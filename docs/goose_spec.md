@@ -617,7 +617,8 @@ pointee where §4.1 asks for one).
   element), and a reference to a non-fixed value denotes one (`let a =
   c.args;`, with `args: u8[>..]&`, binds what the field refers to, as `.=`
   does). To bind a reference-returning call to a fixed-size value, use `.=`
-  (`let e .= pool.push(v);`) or annotate (`let e: T& = pool.push(v);`).
+  (`let e .= pool.push(v);`) or annotate (`let e: T& = pool.push(v);`); a
+  value holding self-relative references cannot be copied at all (§3.9).
   A function whose result type is inferred takes it from a return the same
   way (§7.1). An untyped parameter is an
   anonymous type variable and binds the argument's exact type, reference or
@@ -716,16 +717,31 @@ array/pool* as the location storing it.
   parameter (§8.1, §8.2), an element copy, an `append` of anything but an
   array literal, the value a `format` overload takes by value (§3.7), a
   `resize` fill value, which is copied into every slot it adds even when it
-  is a literal)
+  is a literal, `copy(x)`)
   is a compile error: the copied offsets would still be measured from the
-  source location. Construct such values in place (literals; a field a
+  source location. What a reference names is copied the same way wherever
+  a value destination meets the reference (§3.8, §4.1): `let n = f();`, for
+  an `f` returning `Node&`, copies the node out of the array its links
+  point within, as do a `var`, an annotated declaration, a by-value
+  argument, a return (one whose result type is inferred included), an
+  assignment, a literal's field or element, a pushed element and each
+  reference result of a multi-value binding given it; the error suggests
+  the binding `let n .= f();` (§3.8) where a declaration was likely meant
+  to bind one. Nor may a link be read out of a copy a temporary holds, a
+  popped element or a control construct's value, which copies the value of
+  its branch even where that names storage (§4.1): such a value's fields or
+  elements holding self-relative references are not read, sliced or
+  iterated, a `match` does not bind its payload by reference, and `print`,
+  which renders a reference as its pointee, does not render it, while a
+  scalar field of it reads as usual (`a.pop().v`). Construct such values in
+  place (literals; a field a
   literal's `..` fills takes its type's default, whose links are null and
   whose limited arrays are empty, and is no copy), and bind their
   match payloads, take their variants in case functions and have `format`
   overloads take them by reference: an ADT whose payloads hold them is used
   in variable mode, whose payloads bind by reference where the ADT is not
-  resizable (§3.5). None of these is a copy: a call's result, which is
-  built where it is received where it is not fixed-size (§4.3, §7.3), and
+  resizable (§3.5). None of these is a copy: a call's by-value result, which
+  is built where it is received where it is not fixed-size (§4.3, §7.3), and
   where it is holds no link but `self` and null, a returned literal having
   no other root to point within; a function's named result (§7.3), a local
   every return of the function gives, built at the destination from its

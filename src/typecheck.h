@@ -1434,7 +1434,10 @@ struct TypeCheck {
     TypeExpr *DerefType(TypeExpr *t);
     Val CheckIntAny(Node *n);
     bool HasRelRefT(TypeExpr *t, bool inpool = false);
-    void NoRelRefCopy(Node *n, TypeExpr *t);
+    bool BuiltWhereReceived(Node *n, size_t result);
+    void NoRelRefCopy(Node *n, TypeExpr *t, size_t result = 0, const VarDecl *bind = nullptr,
+                      const Val *src = nullptr);
+    void NoRelRefTempRead(Node *base, TypeExpr *t, TypeExpr *member);
     // The single value a return or a body's tail is checking (CheckReturn,
     // CheckSpecBody), which a named result may be (AllowNamedResult).
     Node *retvalnode = nullptr;

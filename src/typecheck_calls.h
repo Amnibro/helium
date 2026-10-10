@@ -3271,7 +3271,12 @@ inline void TypeCheck::CheckReturn(Return *r) {
                     for (size_t i = 0; i < vals.size(); i++) {
                         auto rt = tspec->rets[i];
                         RequireCopyable(vals[i], r->vals[0], rt);
-                        if (!KeepsRef(vals[i], rt)) vals[i] = DecayRef(vals[i]);
+                        // A decayed reference result is a copy of its
+                        // pointee (NoRelRefCopy), as a binding's is.
+                        if (!KeepsRef(vals[i], rt)) {
+                            vals[i] = DecayRef(vals[i]);
+                            NoRelRefCopy(r->vals[0], rt, i);
+                        }
                         MustFit(vals[i], r->vals[0], rt);
                     }
                 }

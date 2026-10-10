@@ -59,8 +59,10 @@ inline TypeCheck::LVal TypeCheck::CheckLValue(Node *n) {
     }
     if (auto d = Is<Dot>(n)) {
         auto lv = LValueBase(d->obj);
+        auto base = lv.type;
         DerefLValue(lv, d->obj);
         ResolveMemberLValue(lv, d);
+        if (lv.intemp) NoRelRefTempRead(d->obj, base, lv.type);
         n->exprtype = lv.type;
         RecordVal(n, ContainerRead(lv));
         return lv;
@@ -82,6 +84,7 @@ inline TypeCheck::LVal TypeCheck::CheckLValue(Node *n) {
             Error(n, cat(lv.type->kind == TY_SLICE ? "slices" : "arrays",
                          " of variable-size elements cannot be indexed, only iterated; for "
                          "random access, keep your own array of references to them (§3.3)"));
+        if (lv.intemp) NoRelRefTempRead(ix->obj, lv.type, elem);
         CheckIntAny(ix->idx);
         if (lv.type->cq) lv.writable = false;   // An element of a const value.
         lv.letbound = false;
@@ -862,6 +865,7 @@ inline Val TypeCheck::CheckInferredResult(Node *&n, FnSpec *tspec) {
     if (IsNonFixedLValue(v) && !IsOwnLocal(n)) n = AutoRef(n, v);
     // All of a multi-value call's results are forwarded, as they are.
     if (auto c = Is<Call>(n); c && c->rettypes.size() > 1) return v;
+    NoRelRefCopy(n, v.type);
     if (reachable && IsNonFixedRef(v)) {
         auto dies = v.Any([&](const RootAlt &a) {
             return (a.root && a.root->ownerspec == tspec) || IsTemp(a.root);

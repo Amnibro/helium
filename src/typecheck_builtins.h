@@ -124,6 +124,7 @@ inline Val TypeCheck::CheckBuiltin(Call *c, const BuiltinDef &d, vector<Node *> 
                 Error(c, "copy takes a value or a reference, not a slice");
             if (!av.lvalue && !IsPlainRef(av.type))
                 Error(c, "copy of a temporary: the value is fresh already");
+            NoRelRefCopy(args[0], v.type);
             if ((v.type->kind == TY_ENUM || v.type->kind == TY_VARIANT) &&
                 ClassOf(v.type) == SC_RESIZABLE)
                 Error(c, "copying a resizable ADT or variant is not supported by the "
@@ -591,6 +592,9 @@ inline void TypeCheck::CheckPrintable(Call *c, const char *what, vector<Node *> 
     auto &a = args[i];
     auto av = CheckValue(a, nullptr);
     NoUntypedEmptyArray(av, a, what);
+    // A reference is rendered as its pointee, so the links of a copy would
+    // be followed from the copy.
+    if (!av.lvalue && !av.pointee) NoRelRefTempRead(a, av.type, av.type);
     // A value that is no storage -- neither a variable, field or element nor
     // what a reference names -- is rendered from a temporary codegen puts it
     // in (GenLoc), which a format hook taking it by reference is handed,

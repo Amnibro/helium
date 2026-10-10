@@ -2508,32 +2508,53 @@ is only the whole initializer of a non-optional relative field whose pointee
 is the literal's own type; the `in pool` form additionally needs the literal
 to be under construction inside that pool. `NoRelRefCopy` rejects copying any
 value holding self-relative references (`HasRelRefT` excludes `in pool`
-fields, which copy fine) but what is no copy: a literal built in place, a
-default (`B_DEFAULT`, a `..` field's among them: nulls, an empty limited
-array, `self` where a field's default says so), the result of a call of a
-Goose function (built at the receiver where it is not fixed-size; a
-fixed-size one is what the callee's returns made, which by this rule hold
-no link but `self` and null, a returned literal having no destination root
-to point within), and the body's named result. That last is `return x`, or a
+fields, which copy fine) but what is no copy (`BuiltWhereReceived`): a
+literal built in place, a default (`B_DEFAULT`, a `..` field's among them:
+nulls, an empty limited array, `self` where a field's default says so), the
+by-value result of a call of a Goose function (built at the receiver where
+it is not fixed-size; a fixed-size one is what the callee's returns made,
+which by this rule hold no link but `self` and null, a returned literal
+having no destination root to point within), and the body's named result.
+A call is judged by the callee's declared result (`Call::rettypes`), not by
+the value meeting the destination: a reference result decays to a copy of
+its pointee there. The named result is `return x`, or a
 tail `x`, of a local declared alone at the top of the body
 (`AllowNamedResult`, for the value `retvalnode` says the return checks), of a
 result that is not fixed-size and has x's layout, or is the variable array
 x's resizable elements make, where x's type is not a resizable struct whose
 fields before the tail hold a self-relative reference or a value one in the
 tail may point at (`NamedResultKeepsLinks`), since a frame object's head
-reaches the caller as a copy (C.3). Whether every return gives x only the
+reaches the caller as a copy (C.3); a result type still to be inferred is
+x's. Whether every return gives x only the
 whole body says: `CheckNamedResultUses`, at the end of `CheckSpecBody`, runs
 codegen's structural test (`NamedResultOf`, as `CodeGen::NamedResult`; a
 return it cannot place counts against it) and reports each such return
 otherwise. A body relying on it is marked (`FnSpec::relnamedresult`) and
 never inlined (`Optimizer::Scan`), so its result is built by `DetectNrvo`'s
 named result at every call; codegen fails loudly should a return or an
-inlined body's exit ever copy such a local instead (`NoSelfRelCopy`). The
+inlined body's exit ever copy such a local instead (`NoSelfRelCopy`).
+`NoRelRefCopy` runs wherever a value meets a typed destination
+(`CheckValue`), at an un-annotated declaration, at each decayed reference
+result of a multi-value binding or of a forwarded multi-value return (a
+value result, `from_bytes`' array among them, is built at the receiver), at
+a return inferring the result type (`CheckInferredResult`), and at
+`copy(x)`. A rejected un-annotated declaration of storage or of a reference
+result suggests the `.=` binding it most likely meant. The
 same rule rejects by-value `for` and `match` bindings of such elements and
 payloads, the elements `append` copies from anything but a literal (an
 element that is itself a self-relative reference included), and a `resize`
 fill value, literal or not, which is built once and copied into every slot
 added. Varint-width relative references are construction-only.
+`NoRelRefTempRead` closes the other way out of a root: a value that is not
+storage and is materialized in a temporary (`TempContents`: a popped
+element, a control construct's value, which copies its branch's) may be a
+copy, and unless it is `BuiltWhereReceived`, a field or element holding
+self-relative references may not be read out of it (`Dot::Check`,
+`CheckLValue`), nor may it be sliced (but as the view `==` compares),
+iterated, bound by a `match` reference binder or rendered by
+`print`/`str`/`format` (`CheckPrintable`). The check is made where a path
+leaves the value itself, so a scalar field of a popped element reads as
+usual.
 
 A value is never relative (`FitsAt` refuses one anywhere but an identical
 slot), so neither is a result: `CheckSpecBody` rejects a result type written

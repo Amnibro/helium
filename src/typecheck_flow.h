@@ -1493,6 +1493,8 @@ inline Val TypeCheck::CheckMatch(MatchExpr *m, TypeExpr *expected, bool wantvalu
                                             " ", arm.pat.binder));
                     binder->type = ast.RefTo(vt, m->line);
                     BindProv(binder, sv);
+                    ReadBack held;
+                    if (TempContents(sv, held)) NoRelRefTempRead(m->scrutinee, enumtype, vt);
                 } else {
                     if (HasRelRefT(vt))
                         Error(arm.body, cat("payload of ", found->name, " contains "
@@ -1882,6 +1884,7 @@ inline void TypeCheck::CheckFor(ForLoop *x) {
                              "loop's binder is for an integer range or count"));
             auto elem = t->kind == TY_ARRAY ? t->arr->sub : t->sub;
             elemtype = elem;
+            if (intemp) NoRelRefTempRead(x->iter, t, elem);
             x->iterkind = t->kind == TY_ARRAY ? IK_ARRAY : IK_SLICE;
             // Non-fixed elements bind by reference either way (§4.1).
             if (x->byref && ClassOf(elem) != SC_FIXED) {
@@ -2211,6 +2214,11 @@ inline void TypeCheck::CheckVarDecl(VarDecl *vd, bool global) {
             // as a single binding's does, unless the declaration binds by
             // reference (`.=`); one to a non-fixed value binds it (§4.1).
             auto rv = vd->byref || IsNonFixedRef(rets[i]) ? rets[i] : DecayRef(rets[i]);
+            // A decayed reference result is a copy of its pointee, while a
+            // value result is built where it is received, from_bytes' array
+            // included (NoRelRefCopy).
+            if (IsPlainRef(rets[i].type) && !IsRefOrSlice(rv.type))
+                NoRelRefCopy(vd->inits[0], rv.type, i, vd, &rv);
             CheckBindingRoot(d, rv, vd->inits[0]);
             Finish(d, rv.type, &rv, vd->inits[0]);
         }
@@ -2281,7 +2289,7 @@ inline void TypeCheck::CheckVarDecl(VarDecl *vd, bool global) {
         if (v.isnull && !ann)
             Error(vd->inits[i], "null needs an annotated optional type");
         if (!ann) {
-            NoRelRefCopy(vd->inits[i], v.type);
+            NoRelRefCopy(vd->inits[i], v.type, 0, vd, &v);
             CheckBindingRoot(d, v, vd->inits[i]);
         }
         d->assigned = d->maybeassigned = true;
