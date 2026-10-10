@@ -1227,9 +1227,12 @@ elements, which a shrink leaves it pointing at: `struct Walk { start: Cell&,
 text: u8[>..]&, path: Pos[>..] }` holds nothing a shrink of `path` frees,
 and `w.path.clear()` through `w: Walk&` may be followed by any use of `w`.
 A view of the elements taken through such a reference is stored, if at all,
-where the holder's type has room for one. (The right-hand side of a whole
-assignment is another matter: it runs while the array is rebuilt, and may
-not reach the array at all, §4.4.) A reference to a slice variable
+where the holder's type has room for one. The same holds after a whole
+assignment: `s.r = [1, 2]` for `r: u8[>..]&` may be followed by any use of
+`s`. (The right-hand side of a whole assignment is another matter: it runs
+while the array is rebuilt, and may not reach the array at all, §4.4; a
+variable it takes a reference out of counts as holding what that reference
+leads to, but one whose flat fields alone it reads does not.) A reference to a slice variable
 or to a holder, the storage whose tail shrinks among them, counts as what it
 refers to: while the reference is live, so is whatever that slice or holder
 may refer into.

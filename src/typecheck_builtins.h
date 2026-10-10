@@ -1094,6 +1094,7 @@ inline void TypeCheck::GrowOnlyShrinkAt(Node *c, const string &op, VarDef *vd,
         // The array's own holder is scanned as any other where the fields
         // before its tail may hold references, which may point into the tail.
         if (!v->type || (v == vd && (bound || !RefsBesideTail(arrtype)))) return;
+        PathsScope ps(*this, rebuilding && ExposedLater(v));
         auto t = v->type;
         if (IsRefOrSlice(t)) {
             // A recorded root is exact only while the variable keeps its
@@ -2334,6 +2335,7 @@ inline void TypeCheck::NoteLiveViews(Node *at, const string &prefix, VarDef *roo
     });
     ShrinkScanVars([&](VarDef *v) {
         if (v == root || !v->type) return;
+        PathsScope ps(*this, rebuilding && ExposedLater(v));
         auto t = v->type;
         vector<LiveView> vs;
         if (IsRefOrSlice(t)) {

@@ -253,11 +253,8 @@ inline bool TypeCheck::ClassReadMayPointInto(VarDef *cls, VarDef *root, TypeExpr
                                              bool inplace) {
     auto arrtype = bound ? bound : root->type ? LoadType(root->type) : nullptr;
     Line where;
-    auto saved = pathslive;
-    pathslive = saved || inplace;
-    auto r = HolderMayPointInto(cls, root, arrtype, LiveEventBase(cls), &where);
-    pathslive = saved;
-    return r;
+    PathsScope ps(*this, inplace);
+    return HolderMayPointInto(cls, root, arrtype, LiveEventBase(cls), &where);
 }
 
 // Whether a binding of v that its record does not show may point into the
@@ -2371,14 +2368,19 @@ inline void TypeCheck::AssignableClassCheck(TypeExpr *t, Node *at) {
 // ones are built over them, so the assignment is a growth of it as well; the
 // value then runs with that array under construction, which nothing it does
 // may grow (§1.3(4)) or even use (§4.4): a reference to the whole array that
-// it follows leads into the array being built (pathslive).
+// it follows through a variable it takes one out of leads into the array
+// being built (rebuilding, ExposedLater).
 inline Val TypeCheck::CheckAssignedValue(Assign *a, TypeExpr *target, TypeExpr *arr,
                                          const Roots &built, Dest dest) {
     if (arr) {
-        auto saved = pathslive;
-        pathslive = true;
-        ShrinkThrough(a, "assign", ExprStr(a->lval), built, target);
-        pathslive = saved;
+        {
+            struct Restore {
+                bool &flag, saved;
+                ~Restore() { flag = saved; }
+            } restore { rebuilding, rebuilding };
+            rebuilding = true;
+            ShrinkThrough(a, "assign", ExprStr(a->lval), built, target);
+        }
         NoteGrow(a, built, cat("assign ", ExprStr(a->lval)));
     }
     SlotScope ss(*this, true);

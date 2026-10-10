@@ -1185,10 +1185,21 @@ struct TypeCheck {
                                bool inplace = false);
     // A reference to a whole resizable value leads into the array: a
     // rendering walking in place follows it, and so may the right-hand side
-    // of a whole assignment, which runs while the array is rebuilt (§4.4).
-    // The shrink scans otherwise take one for the path to the array, which a
+    // of a whole assignment, which runs while the array is rebuilt (§4.4),
+    // through a variable it takes a reference out of (ExposedLater). The
+    // shrink scans otherwise take one for the path to the array, which a
     // shrink leaves valid (CanHoldViewInto).
     bool pathslive = false;
+    struct PathsScope {
+        TypeCheck &tc;
+        bool saved;
+        PathsScope(TypeCheck &t, bool on) : tc(t), saved(t.pathslive) { tc.pathslive = saved || on; }
+        ~PathsScope() { tc.pathslive = saved; }
+    };
+    // The shrink being scanned is a whole assignment's, whose right-hand
+    // side is the rest of its statement (CheckAssignedValue, ExposedLater).
+    bool rebuilding = false;
+    bool ExposedLater(VarDef *v);
     bool CanHoldViewInto(TypeExpr *t, TypeExpr *arr);
     bool RefMayRetarget(VarDef *v, VarDef *root);
     bool SlotReadable(TypeExpr *t);

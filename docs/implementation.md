@@ -1562,8 +1562,11 @@ one (`CheckAssign`, or `PointeeAssign` through a reference, with
    record says (`CanHoldViewInto`; a view derived from a stored path lies in
    such a slot, its store unrecorded where it came out of the same
    container). A whole assignment's scan counts a path as leading into the
-   array, its right-hand side running while the array is rebuilt, and so
-   does an in-place walk's (`pathslive`). The storage that shrinks is a holder like any other: the
+   array for a variable its right-hand side may take a reference out of,
+   which runs while the array is rebuilt (`ExposedLater`: named there other
+   than to read a field path whose value holds none), and so does an
+   in-place walk's (`pathslive`); for any other variable, used only once
+   the assignment is done, a path is as valid as after a `clear`. The storage that shrinks is a holder like any other: the
    array's own variable is scanned where the fields before its tail can hold
    references (`RefsBesideTail`), and a reference to that storage, a
    reference parameter's class included, by that storage's record rather
