@@ -1248,8 +1248,11 @@ phases, hands out slices of itself freely — "reusable scratch" and
 "structure I can point into" are the same type. The operations
 themselves are the grow-shrink ones: a stack-top move and a length store.
 Assigning the array whole (`a = …`), or a value holding it, replaces its
-elements and is a shrink under the same rule; the right-hand side runs after
-it, so a variable that side names is used after the shrink. `print`, `str`
+elements and is a shrink under the same rule, wherever its location could
+be the receiver of a `clear`: for `s: Stack&`, `s.items = []`,
+`s.items = load(f)` and `s = fresh()` are shrinks of the storage `s`
+names, as `s.items.clear()` is. The right-hand side runs after the shrink,
+so a variable that side names is used after it. `print`, `str`
 and `format` evaluate and render their arguments in order (§3.7), so a
 variable a later argument names is used after a shrink an earlier one makes,
 by a call in it or through a `format` overload rendering it.

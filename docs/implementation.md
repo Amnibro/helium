@@ -1487,13 +1487,15 @@ the record of its cycle's previous round (§3.11), none in the first.
 **Grow-only arrays** (§5.1). `pop`, `pop_n`, `resize` and `clear` on a
 `[>..]` (`CheckBuiltin` → `CheckGrowShrink` → `GrowOnlyShrinkAt`,
 `typecheck_builtins.h`), and whole assignment of one or of a value holding
-one (`CheckAssign`, `ResizableArrayIn`), pass in this order:
+one (`CheckAssign`, or `PointeeAssign` through a reference, with
+`ResizableArrayIn`), pass in this order:
 
 1. the receiver names the array's variable, or a reference variable or
    parameter whose root is known (the array behind it shrinks), or is a
    struct's tail field on such a path, whose roots, those of the storage
    the struct lies in, are the receiver's own (`Val`'s); not a temporary,
-   and not in a global initializer;
+   and not in a global initializer. An assignment's location is such a
+   receiver on the same terms (`ShrinkRootsKnown`, `GrowOnlyAssignKnown`);
 2. not a `reusable` pool;
 3. no operand evaluated earlier in this statement and still held may refer
    into it (`CheckHeldShrinks` over `HeldOperands`, §3.3), nor, where it is

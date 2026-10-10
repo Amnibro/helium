@@ -2126,6 +2126,12 @@ struct TypeCheck {
     StrLit *ConstStrLit(Node *n);
     const string *EmbedShader(Call *c, vector<Node *> &args);
     void CheckGrowShrink(Node *at, const char *op, Node *recv, const Val &rv);
+    void GrowOnlyAssignKnown(Assign *a, const Roots &built, bool whole);
+    // Whether a shrink whose receiver has these roots knows the arrays it
+    // frees: none is static data or a temporary (§5.1).
+    static bool ShrinkRootsKnown(const Roots &roots) {
+        return !roots.Any([](const RootAlt &a) { return !a.root || IsTemp(a.root); });
+    }
     // `what` names the array in the diagnostics; `bound` is its type where vd
     // only bounds it (ShrinkTarget).
     void GrowOnlyShrinkAt(Node *c, const string &op, VarDef *vd, const string &what,

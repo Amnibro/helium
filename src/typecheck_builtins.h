@@ -955,9 +955,20 @@ inline void TypeCheck::CheckGrowShrink(Node *at, const char *op, Node *recv, con
     } else {
         roots = rv.AsRoots();
     }
-    if (roots.Any([&](const RootAlt &a) { return !a.root || IsTemp(a.root); }))
+    if (!ShrinkRootsKnown(roots))
         Error(at, cat(op, " through a reference whose array is not known (§5.1)"));
     ShrinkThrough(at, op, ExprStr(recv), roots, at_type);
+}
+
+// A whole assignment of a grow-only array, or of a value holding one as its
+// tail (`whole` false), shrinks it (§4.4) where a `clear` of its location
+// would: the array's variable, a reference to it or to the value holding it,
+// or a struct's field on such a path, whose roots are those of the storage
+// it lies in (§5.1). CheckAssignedValue scans the shrink.
+inline void TypeCheck::GrowOnlyAssignKnown(Assign *a, const Roots &built, bool whole) {
+    if (!ShrinkRootsKnown(built))
+        Error(a, cat("cannot assign ", whole ? "a grow-only array" : "a value holding a "
+                     "grow-only array", " through a reference whose array is not known (§5.1)"));
 }
 
 // Whether a reference to `of`, or a byte view, may point into what a shrink

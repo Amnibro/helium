@@ -2457,11 +2457,7 @@ inline void TypeCheck::CheckAssign(Assign *a) {
     auto arr = ResizableArrayIn(target);
     if (arr && (!lv.var || lv.var->assigned)) {
         if (lv.var) built.Set(lv.var, true); else built = lv;
-        if (arr->arr->akind == A_GROW &&
-            (built.None() || built.Any([](const RootAlt &r) { return !r.root || !r.root->type; })))
-            Error(a, "cannot assign a grow-only array through a reference: a shrink of "
-                     "a grow-only array applies to a local of the function that owns "
-                     "it (§5.1)");
+        if (arr->arr->akind == A_GROW) GrowOnlyAssignKnown(a, built, arr == target);
     } else {
         arr = nullptr;
     }
@@ -2564,12 +2560,9 @@ inline void TypeCheck::PointeeAssign(Assign *a, LVal &lv, const LVal &at) {
         Error(a, "varint fields are written only at construction (§3.6)");
     AssignableClassCheck(pt, a);
     auto arr = ResizableArrayIn(pt);
-    if (arr && arr->arr->akind == A_GROW)
-        Error(a, cat("cannot assign ", arr == pt ? "a grow-only array" : "a value holding a "
-                     "grow-only array", " through a reference: a shrink of a grow-only "
-                     "array applies to a local of the function that owns it (§5.1)"));
     Roots built;
     if (arr) built = at;
+    if (arr && arr->arr->akind == A_GROW) GrowOnlyAssignKnown(a, built, arr == pt);
     Dest dest(at, false, at.reached);
     dest.slot = pt->kind == TY_SLICE;
     CheckAssignedValue(a, pt, arr, built, dest);
