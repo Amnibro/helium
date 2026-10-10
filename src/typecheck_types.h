@@ -1161,14 +1161,14 @@ inline Roots TypeCheck::ReadBackRoot(TypeExpr *rt, const Roots &container, bool 
         auto global = croot->isglobal;
         if (!global && (!c.exact || croot->ownerspec != CurRealFrame().spec)) {
             if (c.exact && inplace && croot->type && !IsTemp(croot) && croot->ownerspec &&
-                OuterLocal(croot) && ContentsReadBack(croot, out))
+                OuterLocal(croot) && ContentsReadBack(croot, of, out))
                 continue;
             out.Add({ croot, false, from, false, classread });
             continue;
         }
         // A holder of the activation's whose stores say where what it holds
         // points: there.
-        if (!global && inplace && ContentsReadBack(croot, out)) continue;
+        if (!global && inplace && ContentsReadBack(croot, of, out)) continue;
         // Only globals outlive globals (§11.1), so a global container's
         // pointee is owned by a global or by static data, whatever local scope
         // is open here. A local container's was reachable from this frame and
@@ -1213,15 +1213,21 @@ inline Roots TypeCheck::ReadBackRoot(TypeExpr *rt, const Roots &container, bool 
 // else there adds a root to h's contents or takes the mark off one, which
 // the loop feeds back: it checks the read again. A root that only bounds
 // what was stored (a holder copied out of a slot, Bounds) says nothing of
-// which storage that is: false, and the read takes every candidate.
-inline bool TypeCheck::ContentsReadBack(VarDef *h, Roots &out) {
+// which storage that is: false, and the read takes every candidate. A
+// variable's own storage that cannot hold the pointee type `of` owns none of
+// what was stored there for a reference or slice of this type: a view of
+// another type stored beside it.
+inline bool TypeCheck::ContentsReadBack(VarDef *h, TypeExpr *of, Roots &out) {
     if (!h->type || IsRefOrSlice(h->type)) return false;
     Roots r;
     auto known = false;
     for (auto &a : h->contents.alts) {
         if (a.classread) r.Add({ a.root, false, h, false, true });
         else if (!a.root) r.Add({ nullptr, a.exact });
-        else if (a.exact) r.Add({ a.root, true, h });
+        else if (a.exact) {
+            if (!of || !a.root->type || CanContain(LoadType(a.root->type), of))
+                r.Add({ a.root, true, h });
+        }
         else if (IsClassRoot(a.root)) r.Add({ a.root, false, h });
         else return false;
         known = known || a.classread || a.exact || IsClassRoot(a.root);

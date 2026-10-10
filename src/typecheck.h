@@ -1497,7 +1497,7 @@ struct TypeCheck {
     Roots ReadBackRoot(TypeExpr *rt, const Roots &container, bool byteview = false,
                        const ReadBack *contents = nullptr, bool slotread = false,
                        bool inplace = false);
-    bool ContentsReadBack(VarDef *h, Roots &out);
+    bool ContentsReadBack(VarDef *h, TypeExpr *of, Roots &out);
     string ReadBackWhy(const Roots &r);
     bool HoldsByValue(TypeExpr *t, TypeExpr *of, vector<TypeExpr *> &open);
     int ElemArrayPlaces(TypeExpr *t, TypeExpr *of);

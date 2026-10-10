@@ -3111,7 +3111,10 @@ variable stays its candidate. Then, by where `C`'s own root lies:
    was passed to, or later in a loop around the read -- and where each of
    those was rooted at one variable exactly, at static data, or at the
    storage a parameter's argument holds, the value's roots are theirs
-   instead: a word of `words(buf)` for a local `buf` points into `buf`,
+   instead, but for a variable whose storage cannot hold the value's
+   pointee type, which owns none of what was stored there of that type:
+   an `i64&` read out of a holder that also views a `u8` buffer is not
+   rooted at the buffer. A word of `words(buf)` for a local `buf` points into `buf`,
    exactly, whatever else in scope could hold a `u8`, and a by-value
    parameter holds what its argument did, so a slice of `g.edges` for a
    `g: Graph` parameter is bounded by that argument's root, not by the

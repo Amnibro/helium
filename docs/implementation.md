@@ -1195,7 +1195,9 @@ into; `ReadBackRoot` (`typecheck_types.h`) re-derives the owner exactly as
   parameter's contents start with where its argument points into several
   arrays, `RootArg::heldexact` false), a value read out of the holder where
   it is checked (`ReadBackLVal`) is one of them (`ContentsReadBack`): an
-  exact root stays exact, as it was stored, a marked one is one of the
+  exact root stays exact, as it was stored, but for a variable whose own
+  storage cannot hold the value's pointee type (`CanContain`), which a
+  store of some other view put there; a marked one is one of the
   views, as one read out of the storage is, and a class bound stays a
   bound, the caller's storage, which it filled before the call and which
   can hold nothing of the activation's own. So
