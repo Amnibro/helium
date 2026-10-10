@@ -2386,7 +2386,7 @@ inline Val TypeCheck::CheckAssignedValue(Assign *a, TypeExpr *target, TypeExpr *
     auto v = CheckValueAt(a->rhs, target, dest);
     if (arr && !built.None()) {
         CheckGrowsSince(base, built, cat("the value assigned to ", ExprStr(a->lval)));
-        CheckBuiltUses(a->rhs, a->lval, built, arr);
+        CheckBuiltUses(a->rhs, a->lval, target, built, arr);
     }
     if (v.type->kind == TY_VOID && reachable)
         Error(a, "the right-hand side has no value");

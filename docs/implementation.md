@@ -1999,17 +1999,22 @@ shrinks reach the caller's constructions only through the summary.
 **Uses during a whole assignment** (§4.4). The new contents are built over
 the old ones, so once the right-hand side is checked, `CheckBuiltUses`
 walks it for anything that may use the array: an identifier naming the
-array's variable (or the value holding it), or a reference to either
-(`ReachesBuilt`: `CanContain` of the array type, then `MayAliasRoots` as for
-growth, `AL_DEFER` going to `growconflicts`); and for each call, each
+array's variable (or the value holding it), or a reference to storage that
+may be or hold the location assigned (`ReachesBuilt`: `CanContain` of the
+array type for a variable, `MayHoldBuilt` of the pointee for a reference --
+the location's type, a resizable on its tail path, or for a field path
+storage holding its holder by value -- then `MayAliasRoots` as for growth,
+`AL_DEFER` going to `growconflicts`); and for each call, each
 specialization it may run (`spec`, `dispatch`, `fmtspecs`), what that
 callee's body and its callees' name outside their own activations
 (`NamedOutside`, walking the checked bodies with `RunChildren`, so function
 value bodies are included): globals and variables of lexical parents. A
 callee still being checked counts as naming every global and every variable
 in `vars`. A rebind's target (`r .= …`) is not a use, and a field path
-from the lvalue's own variable that parts from the lvalue's path at a flat
-field is not one either (`FieldsApart`): `t.chars = f(t.font)`. Slices and
+from the lvalue's own variable that parts from the lvalue's path at a field
+whose references, at any remove (`ReachedThroughRefs`), reach no storage
+`MayHoldBuilt` accepts is not one either (`FieldsApart`):
+`t.chars = f(t.font)`, `s.path = find(s.start)` for a `start: Cell&`. Slices and
 element references are left to the shrink scan, which sees the right-hand
 side as after the shrink. A reference parameter's class may be a global or
 captured array, so using one while building such an array is an error in

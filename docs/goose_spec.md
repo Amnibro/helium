@@ -1108,8 +1108,15 @@ different array: of a reference parameter a caller may bind to the global
 being assigned, say, or through a call into a recursive cycle still being
 checked, which counts as using every global and every variable in scope.
 Where the assignment names the array as a field (`t.chars = …`), the
-right-hand side may still name the holding value's other fields that are
-flat (§1.1): `t.chars = render(t.font)`. A slice or reference into the old
+right-hand side may still name the holding value's other fields that cannot
+lead back to it: flat ones (§1.1), and ones whose references, however many
+it takes, are to storage of no type that can be the assigned location, a
+resizable on the way from it to the array, or hold the value it is a field
+of. `t.chars = render(t.font)` is fine, and so is `s.path = find(s.start)`
+through `s: Walk&` for `struct Walk { start: Cell&, path: Pos[>..] }`, as
+is a reference of such a type bound to a variable first; a field
+`last: Walk&` or `other: Pos[>..]&` may refer to `s` or to `s.path`, and
+naming it is an error. A slice or reference into the old
 elements is the shrink rule's to judge (§5.1): the right-hand side runs
 after the shrink the assignment starts with, so one it uses is live there.
 New contents computed from the old are built in a variable of their own and

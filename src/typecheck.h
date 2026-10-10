@@ -2446,11 +2446,14 @@ struct TypeCheck {
     // The right-hand side of a whole assignment runs while the array's new
     // contents are built over its old ones (§4.4), so nothing it runs may
     // use the array: name it, or a reference to it, directly or in a
-    // function it calls.
-    void CheckBuiltUses(Node *rhs, Node *lval, const Roots &built, TypeExpr *arr);
-    Alias ReachesBuilt(VarDef *v, VarDef *built, bool exact, TypeExpr *arr, VarDef *&root);
+    // function it calls. The location assigned is `lval`, of type `target`.
+    void CheckBuiltUses(Node *rhs, Node *lval, TypeExpr *target, const Roots &built,
+                        TypeExpr *arr);
+    Alias ReachesBuilt(VarDef *v, VarDef *built, bool exact, Node *lval, TypeExpr *target,
+                       TypeExpr *arr, VarDef *&root);
+    bool MayHoldBuilt(TypeExpr *y, Node *lval, TypeExpr *target);
     template<typename F, typename G> void EachUse(Node *n, F named, G called);
-    bool FieldsApart(Node *use, Node *lval);
+    bool FieldsApart(Node *use, Node *lval, TypeExpr *target);
     bool NamedOutside(FnSpec *spec, vector<VarDef *> &out);
     // Its results for callees whose bodies were all checked, which no
     // later check changes.

@@ -2953,18 +2953,43 @@ inline void TypeCheck::ApplyCalleeGrows(Node *at, FnSpec *spec, vector<Val> &arg
         NoteGrow(at, RootsOf(vd), cat("call ", name, ", which grows ", vd->name));
 }
 
+// Whether storage of type y can be, or hold, the location `lval` assigned,
+// of type `target`, or a resizable on the path from there to its array:
+// one of those itself, or for a field path, storage holding the value the
+// field lies in by value. A variable lies in no other storage; the pointee
+// of a reference may lie in anything that can hold a `target`.
+inline bool TypeCheck::MayHoldBuilt(TypeExpr *y, Node *lval, TypeExpr *target) {
+    for (auto t = target; t;) {
+        if (TypeEq(y, t) || TypeEq(LoadType(y), t)) return true;
+        if (t->kind == TY_ARRAY) break;
+        TypeExpr *next = nullptr;
+        AnyField(t, [&](TypeExpr *ft) { return ResizableArrayIn(ft) && (next = ft); });
+        t = next;
+    }
+    if (auto d = Is<Dot>(lval)) {
+        auto h = d->obj->exprtype;
+        if (h && h->kind == TY_REF) h = h->ref->sub;
+        return !h || CanContain(y, h);
+    }
+    auto id = Is<Ident>(lval);
+    if (id && id->vdef && id->vdef->type && id->vdef->type->kind != TY_REF) return false;
+    return CanContain(y, target);
+}
+
 // Where naming v leads, if that can be the array under construction at
-// `built`, of type arr: v is the array's variable or the value holding it,
-// or a reference to either. A slice, or a reference to anything smaller,
-// points into the old elements, which the shrink the assignment starts
-// with keeps from being used (§5.1).
+// `built`, of type arr, which the location `lval` of type `target` holds: v
+// is the array's variable or the value holding it, or a reference to storage
+// that can be or hold the location (MayHoldBuilt). A slice, or a reference
+// to anything else, points into the old elements, which the shrink the
+// assignment starts with keeps from being used (§5.1), or elsewhere.
 inline TypeCheck::Alias TypeCheck::ReachesBuilt(VarDef *v, VarDef *built, bool exact,
-                                                TypeExpr *arr, VarDef *&root) {
+                                                Node *lval, TypeExpr *target, TypeExpr *arr,
+                                                VarDef *&root) {
     auto t = v->type;
     if (!t || t->kind == TY_SLICE || (t->kind == TY_REF && t->ref->lenstorage >= 0))
         return AL_NO;
     auto isref = t->kind == TY_REF;
-    if (!CanContain(isref ? t->ref->sub : t, arr)) return AL_NO;
+    if (isref ? !MayHoldBuilt(t->ref->sub, lval, target) : !CanContain(t, arr)) return AL_NO;
     auto roots = isref ? RefRootsOf(v) : RootsOf(v);
     auto worst = AL_NO;
     for (auto &a : roots.alts) {
@@ -2983,8 +3008,8 @@ inline TypeCheck::Alias TypeCheck::ReachesBuilt(VarDef *v, VarDef *built, bool e
 // which reaches the caller's arrays only through its arguments and what it
 // names outside its own activation. A use the checker cannot show to be of
 // a different array is an error, as a growth is (CheckGrowsSince).
-inline void TypeCheck::CheckBuiltUses(Node *rhs, Node *lval, const Roots &built,
-                                      TypeExpr *arr) {
+inline void TypeCheck::CheckBuiltUses(Node *rhs, Node *lval, TypeExpr *target,
+                                      const Roots &built, TypeExpr *arr) {
     if (!built.Root() || IsTemp(built.Root())) return;
     auto what = ExprStr(lval);
     auto base = lval;
@@ -2996,7 +3021,7 @@ inline void TypeCheck::CheckBuiltUses(Node *rhs, Node *lval, const Roots &built,
         for (auto &b : built.alts) {
             if (!b.root || IsTemp(b.root)) continue;
             VarDef *root = nullptr;
-            auto may = ReachesBuilt(v, b.root, b.exact, arr, root);
+            auto may = ReachesBuilt(v, b.root, b.exact, lval, target, arr, root);
             if (may == AL_NO) continue;
             // The reference the assignment writes through needs no mention.
             auto refers = v->type->kind == TY_REF && v != lvvar;
@@ -3013,7 +3038,7 @@ inline void TypeCheck::CheckBuiltUses(Node *rhs, Node *lval, const Roots &built,
     };
     EachUse(rhs,
             [&](Ident *id, Node *path) {
-                if (!FieldsApart(path, lval))
+                if (!FieldsApart(path, lval, target))
                     check(id, id->vdef, cat("use ", ExprStr(path)), string());
             },
             [&](Call *c, FnSpec *sp) {
@@ -3056,8 +3081,10 @@ template<typename F, typename G> void TypeCheck::EachUse(Node *n, F named, G cal
 
 // Whether field paths `use` and `lval` start at one variable and part at
 // some field, what `use` reads holding no reference that could lead back
-// to what `lval` names.
-inline bool TypeCheck::FieldsApart(Node *use, Node *lval) {
+// to what `lval` names: none to storage that can be or hold that location
+// (MayHoldBuilt), at any remove. A view of the old elements it leads to is
+// the shrink rule's to judge (§5.1).
+inline bool TypeCheck::FieldsApart(Node *use, Node *lval, TypeExpr *target) {
     auto path = [](Node *n, vector<Dot *> &fields) -> VarDef * {
         for (auto d = Is<Dot>(n); d; d = Is<Dot>(n)) {
             if (d->fieldidx < 0) return nullptr;
@@ -3075,7 +3102,14 @@ inline bool TypeCheck::FieldsApart(Node *use, Node *lval) {
         auto ot = uf[0]->obj->exprtype;
         if (ot && ot->kind == TY_REF) ot = ot->ref->sub;
         auto runs = ot ? FieldRuns(ot) : vector<FieldRun>();
-        return runs.size() == 1 && IsFlat((*runs[0].ftypes)[uf[0]->fieldidx]);
+        if (runs.size() != 1) return false;
+        auto ft = (*runs[0].ftypes)[uf[0]->fieldidx];
+        if (IsFlat(ft)) return true;
+        vector<TypeExpr *> reached;
+        ReachedThroughRefs(ft, reached);
+        for (auto y : reached)
+            if (MayHoldBuilt(y, lval, target)) return false;
+        return true;
     }
     return false;
 }
