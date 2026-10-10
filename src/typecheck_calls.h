@@ -1341,8 +1341,16 @@ inline FnSpec *TypeCheck::GetOrCreateSpec(MatchInfo &mi, vector<Val> &argvals, N
         // that only bounds a reference or slice argument stands for what it
         // leads to as well: a grow-shrink array there the argument may point
         // into (GrowShrinkTaint), or one its pointee holds, which the body
-        // reaches through the parameter.
-        auto gsroot = ar.Any([&](const RootAlt &a) { return IsGrowShrinkRoot(a.root); });
+        // reaches through the parameter. A reference or slice whose pointee
+        // can neither lie in such an array's elements nor hold one has
+        // nothing to do with it (a `u8[>..]&` beside a `u8[>..<]` tail).
+        auto pointee = isrs ? PointeeOf(pt) : nullptr;
+        auto gsroot = ar.Any([&](const RootAlt &a) {
+            if (!IsGrowShrinkRoot(a.root)) return false;
+            if (!pointee || argvals[i].byteview || ContainsGrowShrink(pointee)) return true;
+            return GrowShrinkCanHold(a.root, pointee) ||
+                   (!a.exact && BoundReachesGrowShrink(a.root, pointee, false));
+        });
         auto gspointee = isrs && ar.Any([&](const RootAlt &a) {
             return !a.exact && ContainsGrowShrink(PointeeOf(pt));
         });

@@ -814,6 +814,11 @@ one a slice the argument refers to views, or one in what an inexact
 alternative's root leads to that the argument may point into or that its
 pointee holds, a whole grow-shrink array read back out of a parameter's
 storage among them) is taken to hold anything a grow-shrink array could.
+A reference or slice argument whose pointee neither holds a grow-shrink
+array nor can lie in the elements of one its roots hold or, for an inexact
+one, lead to (`GrowShrinkCanHold`, `BoundReachesGrowShrink`) gets no
+grow-shrink class at all: a `u8[>..]&` read out of a struct whose tail is a
+`u8[>..<]`.
 Where every place an argument with such a root, or with a pointee holding
 one, may point, or for a holder every place its references may, is a slot
 read (§3.10), it points into no grow-shrink array's elements all the same:
@@ -1844,7 +1849,11 @@ recursive cycle still being checked has the pairs its cycle's previous
 round recorded, which the call maps (§3.11), and none in the first round.
 A class the callee shrank, mapped onto an argument
 whose root only bounds it, may be any array of the shrink's kind in what
-that root leads to (`BoundReach`), as well as the root's own.
+that root leads to (`BoundReach`), as well as the root's own; where the
+class stands for a reference parameter's resizable pointee, it is a value
+of that type there, which becomes the pair's bound, as `ApplyCalleeShrinks`
+takes it. A pair about a parameter's own value whose argument is a slot read
+passes for a grow-shrink array: no reference into one is ever stored.
 
 **Balanced calls** (§5.2). Each summary entry carries a `ShrinkBalance`,
 the worst of the shrinks `NoteShrink` recorded against it: balanced or

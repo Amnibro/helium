@@ -1365,7 +1365,10 @@ again against the pairs the cycle records once the whole cycle is.
   The rule is about references that can point *into* the array:
   one merely rooted at a value that holds one, whose pointee type the
   array's elements cannot contain — a slice key read back out of a
-  dictionary's slots — stores like any other.
+  dictionary's slots — stores like any other, passed to a parameter or
+  not: a `keys: u8[>..]&` read out of a struct with a `u8[>..<]` tail, and
+  a slice a callee makes of the buffer it refers to, are stored as dictionary
+  keys freely.
 * **A shrink is an error while any live variable or value may refer into the
   array** — the test a grow-only shrink applies (§5.1), the values its
   statement still uses, its liveness rule and its call summaries for a shrink

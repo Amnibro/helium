@@ -2609,6 +2609,18 @@ inline bool TypeCheck::MapLiveShrinks(const CallSite &site) {
         one.Set(r, exact);
         return one;
     };
+    // The storage a reference parameter's class stands for, where it is a
+    // resizable value, which a shrink of the class shrinks: the type an
+    // argument's root that only bounds it leads to (ApplyCalleeShrinks).
+    auto storage = [&](VarDef *r) -> TypeExpr * {
+        for (size_t p = 0; r && p < spec->params.size() && p < spec->argtypes.size(); p++) {
+            auto pt = spec->argtypes[p];
+            if (spec->params[p]->ref.Root() == r && pt->kind == TY_REF &&
+                ClassOf(pt->ref->sub) == SC_RESIZABLE)
+                return LoadType(pt->ref->sub);
+        }
+        return nullptr;
+    };
     auto grew = false;
     // The caller may be the callee, whose record then grows underneath.
     for (size_t k = 0; k < site.record->liveshrinks.size(); k++) {
@@ -2616,11 +2628,21 @@ inline bool TypeCheck::MapLiveShrinks(const CallSite &site) {
         auto name = orig.name;
         auto shrunk = mapped(orig.shrunk, orig.shrunkexact);
         auto live = mapped(orig.live, orig.liveexact);
+        auto shrunkat = orig.shrunkexact && !orig.bound ? storage(orig.shrunk) : nullptr;
+        // What is still used is the argument passed for a parameter, itself:
+        // one loaded out of a field, an element or a global points into no
+        // grow-shrink array (§5.2), as the scans say of a slot read.
+        auto liveparam = false;
+        for (size_t p = 0; p < spec->params.size(); p++)
+            liveparam = liveparam || spec->params[p]->ref.Root() == orig.live;
+        auto slotsafe = liveparam && !orig.growonly && !orig.inplace && !orig.contents;
         for (auto &sa : shrunk.alts) {
             for (auto &la : live.alts) {
+                if (slotsafe && la.slotread) continue;
                 auto ls = orig;
                 ls.shrunk = sa.root;
                 ls.shrunkexact = sa.exact;
+                if (!sa.exact && shrunkat) ls.bound = shrunkat;
                 ls.live = la.root;
                 ls.liveexact = la.exact;
                 if (!ls.shrunk || !ls.live) continue;
@@ -2682,26 +2704,30 @@ inline bool TypeCheck::MapLiveShrinks(const CallSite &site) {
                     // The array as the caller names it: the shrunk argument's
                     // root, or where that only bounds the array, the view's
                     // own, or else the first array it bounds that the view
-                    // may point into.
+                    // may point into, of the bound's type where it has one.
                     auto arr = x.shrunkexact || !x.liveexact ? x.shrunk : x.live;
-                    if (!x.shrunkexact && !x.liveexact && !x.bound && x.shrunk->type &&
+                    auto unnamed = x.bound && arr != x.live;
+                    auto st = x.bound ? x.bound
+                                      : x.shrunk->type ? LoadType(x.shrunk->type) : nullptr;
+                    if (!x.shrunkexact && !x.liveexact && st &&
                         site.caller == CurRealFrame().spec) {
                         Roots one;
                         one.Set(x.shrunk, false);
-                        for (auto &t : ShrinkTargets(one, LoadType(x.shrunk->type))) {
+                        for (auto &t : ShrinkTargets(one, st)) {
                             if (t.bound ||
                                 MayAliasRoots(x.live, false, t.root, true, site.caller) == AL_NO)
                                 continue;
                             arr = t.root;
+                            unnamed = false;
                             break;
                         }
                     }
-                    auto what = x.bound ? cat("an array ", x.shrunk->name, " leads to")
+                    auto what = unnamed ? cat("an array ", x.shrunk->name, " leads to")
                                         : string(arr->name);
                     Error(site.at, cat("cannot call ", site.name, ": it ",
                                        x.bound || !shrunk.Exact() ? "may shrink " : "shrinks ",
                                        what, " while ", name, " is still used, and ", name,
-                                       " may refer into ", x.bound ? "it" : what,
+                                       " may refer into ", unnamed ? "it" : what,
                                        x.growonly ? " (§5.1)" : " (§5.2)"));
                 }
             }
