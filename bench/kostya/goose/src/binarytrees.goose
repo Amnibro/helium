@@ -41,7 +41,7 @@ fn prepare(s: BinarytreesObj&) {}
 
 fn run(s: BinarytreesObj&, iteration_id: i64) {
     var nodes: TreeNode[>..] = [];
-    let root = new_tree_node(nodes, 0, s.n as i32);
+    let root .= new_tree_node(nodes, 0, s.n as i32);
     s.result_val += root.sum();
 }
 
