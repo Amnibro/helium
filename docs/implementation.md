@@ -1065,7 +1065,11 @@ a `for` or `match` binder's copy takes too, and `ReadBackRoot` and
 a merge keeps only where every value it joins names it), and neither does
 one out of a reference or slice variable, which holds what its binding
 says, not what a store put there. The stored alternative's own root bounds
-such a value. `RecordStore` also maintains
+such a value. A value read back out of the container and stored back into
+its own storage adds nothing and makes no event; stored into storage the
+container only leads to (`StoreEvent::bound`), which may outlive what it
+points into, it is an event like any other, its source the container (a
+call replays it as well). `RecordStore` also maintains
 the container's `contents`: the union of every root stored into it so far,
 one at a parameter's class marked where every store of it there put views
 that class's storage holds (`AddContents`, §3.10 **Class reads**).

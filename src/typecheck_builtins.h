@@ -1268,9 +1268,12 @@ inline void TypeCheck::RecordStore(VarDef *container, const Roots &roots, bool b
     if (holds && roots.Unknown()) container->contents.unknown = true;
     for (auto &a : roots.alts) {
         // A view the storage of a parameter's class held was read out of
-        // that storage (RootAlt::classread).
+        // that storage (RootAlt::classread). Stored back into that storage
+        // it adds nothing; into storage the container only leads to
+        // (`bound`), which may outlive what the view points into, it is a
+        // store like any other.
         auto from = a.classread ? a.root : a.from;
-        if (!a.exact && from == container) continue;
+        if (!a.exact && from == container && !bound) continue;
         StoreEvent e;
         e.container = container;
         e.root = a.root;
@@ -1282,7 +1285,7 @@ inline void TypeCheck::RecordStore(VarDef *container, const Roots &roots, bool b
         // A reference read back out of a container inexactly (§9.5) points
         // at whatever was stored into that container: its stores are the
         // precise answer, where a bound would implicate every sibling.
-        if (!e.src && !a.exact && from != container) e.src = StoreSource(from);
+        if (!e.src && !a.exact) e.src = StoreSource(from);
         // Out of a parameter's class, what was stored holds what its storage
         // holds only where it came out of that storage alone: a holder that
         // lies there alone (Val::holderfrom), or a view the read says it
@@ -1355,7 +1358,7 @@ inline void TypeCheck::ApplyCalleeStores(FnSpec *spec, vector<Val> &argvals, Nod
             src = a.root;
             classread = true;
         }
-        if (!container || src == container) return;
+        if (!container || (src == container && !bound)) return;
         StoreEvent e;
         e.container = container;
         e.root = a.root;
@@ -1549,7 +1552,7 @@ inline void TypeCheck::ApplyCalleeStores(FnSpec *spec, vector<Val> &argvals, Nod
     // until what they store no longer grows.
     vector<pair<const StoreEvent *, Roots>> held;
     for (auto &e : rec->classevents) {
-        if (e.src == e.container) continue;
+        if (e.src == e.container && !e.bound) continue;
         Roots unused;
         if (e.classread && e.src == e.root && !e.exact && classat(e.root, unused) >= 0) {
             held.push_back({ &e, Roots {} });

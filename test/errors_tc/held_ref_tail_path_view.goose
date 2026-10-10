@@ -1,6 +1,7 @@
-// error: cannot call go: it shrinks b while b is still used, and b may refer into b (§5.1)
+// error: cannot call run, which shrinks b while b is still used: what it refers to may hold a reference or slice into it (§5.1)
 // A reference to the struct's own tail, as a whole array, leads to the views
-// taken of it: here one stored into a table the struct refers to (§5.1).
+// taken of it: here one stored into a table the struct refers to, which go
+// cannot tell from a view of another array (§5.1).
 struct V { s: const u8[:] }
 struct B { keys: u8[>..]&, vars: V&, r: u8[>..] }
 fn run(b: B&) {
