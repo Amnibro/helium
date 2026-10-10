@@ -2986,7 +2986,8 @@ inline void TypeCheck::ApplyCalleeGrows(Node *at, FnSpec *spec, vector<Val> &arg
 // of type `target`, or a resizable on the path from there to its array:
 // one of those itself, or for a field path, storage holding the value the
 // field lies in by value. A variable lies in no other storage; the pointee
-// of a reference may lie in anything that can hold a `target`.
+// of a reference, which an assignment through a reference variable or field
+// writes (§3.8), may lie in anything that can hold a `target`.
 inline bool TypeCheck::MayHoldBuilt(TypeExpr *y, Node *lval, TypeExpr *target) {
     for (auto t = target; t;) {
         if (TypeEq(y, t) || TypeEq(LoadType(y), t)) return true;
@@ -2995,6 +2996,7 @@ inline bool TypeCheck::MayHoldBuilt(TypeExpr *y, Node *lval, TypeExpr *target) {
         AnyField(t, [&](TypeExpr *ft) { return ResizableArrayIn(ft) && (next = ft); });
         t = next;
     }
+    if (lval->exprtype && lval->exprtype->kind == TY_REF) return CanContain(y, target);
     if (auto d = Is<Dot>(lval)) {
         auto h = d->obj->exprtype;
         if (h && h->kind == TY_REF) h = h->ref->sub;
@@ -3046,6 +3048,16 @@ inline void TypeCheck::CheckBuiltUses(Node *rhs, Node *lval, TypeExpr *target,
     auto lvvar = Is<Ident>(base) ? Is<Ident>(base)->vdef : nullptr;
     // `via` says which function names v, when the right-hand side's own
     // text does not.
+    auto report = [&](Node *at, Alias may, VarDef *root, VarDef *b, const string &how,
+                      const string &why) {
+        auto msg = cat("cannot ", how, " in the value assigned to ", what, ": ",
+                       why.empty() ? string() : cat(why, ", and "),
+                       "that value is built over the old contents of ", what,
+                       " (§4.4); build it in a variable of its own, and assign copy() of "
+                       "that");
+        if (may == AL_YES) Error(at, msg);
+        growconflicts.push_back({ at, CurRealFrame().spec, root, b, msg });
+    };
     auto check = [&](Node *at, VarDef *v, const string &how, const string &via) {
         for (auto &b : built.alts) {
             if (!b.root || IsTemp(b.root)) continue;
@@ -3056,19 +3068,49 @@ inline void TypeCheck::CheckBuiltUses(Node *rhs, Node *lval, TypeExpr *target,
             auto refers = v->type->kind == TY_REF && v != lvvar;
             auto why = via.empty() ? (refers ? cat(v->name, " may refer to ", what) : string())
                                    : cat(via, refers ? cat(", which may refer to ", what) : "");
-            auto msg = cat("cannot ", how, " in the value assigned to ", what, ": ",
-                           why.empty() ? string() : cat(why, ", and "),
-                           "that value is built over the old contents of ", what,
-                           " (§4.4); build it in a variable of its own, and assign copy() of "
-                           "that");
-            if (may == AL_YES) Error(at, msg);
-            growconflicts.push_back({ at, CurRealFrame().spec, root, b.root, msg });
+            report(at, may, root, b.root, how, why);
+        }
+    };
+    // A field path reads a value out of the variable's storage, a reference
+    // among them, which may lead to the location whatever the variable's own
+    // type holds: where the references stored there point, by a local
+    // holder's record, else anywhere the variable's storage bounds.
+    auto checkread = [&](Ident *id, Node *path) {
+        auto v = id->vdef;
+        // The field's own type: a reference loads as what it refers to.
+        TypeExpr *vt = nullptr;
+        if (auto d = Is<Dot>(path); d && d->fieldidx >= 0) {
+            auto ot = d->obj->exprtype;
+            if (ot && ot->kind == TY_REF) ot = ot->ref->sub;
+            auto runs = ot ? FieldRuns(ot) : vector<FieldRun>();
+            if (runs.size() == 1) vt = (*runs[0].ftypes)[d->fieldidx];
+        }
+        if (!v || !v->type || !vt) return;
+        vector<TypeExpr *> reached;
+        ReachedThroughRefs(vt, reached);
+        if (none_of(reached.begin(), reached.end(),
+                    [&](TypeExpr *y) { return MayHoldBuilt(y, lval, target); }))
+            return;
+        Roots at;
+        if (IsRefOrSlice(v->type)) at = Bounds(RefRootsOf(v));
+        else if (!v->isglobal && !v->contents.Unknown()) at = v->contents;
+        else at = Bounds(RootsOf(v));
+        for (auto &b : built.alts) {
+            if (!b.root || IsTemp(b.root)) continue;
+            for (auto &a : at.alts) {
+                auto may = MayAliasRoots(a.root, a.exact, b.root, b.exact);
+                if (may == AL_NO) continue;
+                report(id, may, a.root, b.root, cat("use ", ExprStr(path)),
+                       cat(ExprStr(path), " may refer to ", what));
+                break;
+            }
         }
     };
     EachUse(rhs,
             [&](Ident *id, Node *path) {
-                if (!FieldsApart(path, lval, target))
-                    check(id, id->vdef, cat("use ", ExprStr(path)), string());
+                if (FieldsApart(path, lval, target)) return;
+                check(id, id->vdef, cat("use ", ExprStr(path)), string());
+                if (path != id) checkread(id, path);
             },
             [&](Call *c, FnSpec *sp) {
                 vector<VarDef *> named;
@@ -3111,8 +3153,9 @@ template<typename F, typename G> void TypeCheck::EachUse(Node *n, F named, G cal
 // Whether field paths `use` and `lval` start at one variable and part at
 // some field, what `use` reads holding no reference that could lead back
 // to what `lval` names: none to storage that can be or hold that location
-// (MayHoldBuilt), at any remove. A view of the old elements it leads to is
-// the shrink rule's to judge (§5.1).
+// (MayHoldBuilt), at any remove, and, where `lval` ends in a reference whose
+// pointee is assigned, not that location itself. A view of the old
+// elements it leads to is the shrink rule's to judge (§5.1).
 inline bool TypeCheck::FieldsApart(Node *use, Node *lval, TypeExpr *target) {
     auto path = [](Node *n, vector<Dot *> &fields) -> VarDef * {
         for (auto d = Is<Dot>(n); d; d = Is<Dot>(n)) {
@@ -3133,6 +3176,10 @@ inline bool TypeCheck::FieldsApart(Node *use, Node *lval, TypeExpr *target) {
         auto runs = ot ? FieldRuns(ot) : vector<FieldRun>();
         if (runs.size() != 1) return false;
         auto ft = (*runs[0].ftypes)[uf[0]->fieldidx];
+        // Through a reference field the location is its pointee, which may
+        // be this field itself or lie in it (`d.r .= d.own`).
+        if (lval->exprtype && lval->exprtype->kind == TY_REF && CanContain(ft, target))
+            return false;
         if (IsFlat(ft)) return true;
         vector<TypeExpr *> reached;
         ReachedThroughRefs(ft, reached);

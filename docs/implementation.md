@@ -2029,7 +2029,14 @@ in `vars`. A rebind's target (`r .= …`) is not a use, and a field path
 from the lvalue's own variable that parts from the lvalue's path at a field
 whose references, at any remove (`ReachedThroughRefs`), reach no storage
 `MayHoldBuilt` accepts is not one either (`FieldsApart`):
-`t.chars = f(t.font)`, `s.path = find(s.start)` for a `start: Cell&`. Slices and
+`t.chars = f(t.font)`, `s.path = find(s.start)` for a `start: Cell&`.
+Where the lvalue ends in a reference (`d.r = …`, `PointeeAssign`), the
+location is its pointee, which `MayHoldBuilt` takes to lie in anything that
+can hold its type, and a field that can hold it by value is no field apart.
+Any other field path is a use of the variable, and of what the field holds
+as well: where its references may reach the location, they point where the
+variable's storage bounds, or for a local holder where its record says
+(`VarDef::contents`), against the array's roots. Slices and
 element references are left to the shrink scan, which sees the right-hand
 side as after the shrink. A reference parameter's class may be a global or
 captured array, so using one while building such an array is an error in

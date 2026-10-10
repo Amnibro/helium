@@ -1116,7 +1116,13 @@ of. `t.chars = render(t.font)` is fine, and so is `s.path = find(s.start)`
 through `s: Walk&` for `struct Walk { start: Cell&, path: Pos[>..] }`, as
 is a reference of such a type bound to a variable first; a field
 `last: Walk&` or `other: Pos[>..]&` may refer to `s` or to `s.path`, and
-naming it is an error. A slice or reference into the old
+naming it is an error. An assignment through a reference field
+(`d.r = …` for `r: u8[>..<]&`) writes the array the field refers to, which
+may lie anywhere an array of its type can, the holding value's other fields
+included: there a field that is, or holds by value, an array of that type
+may be the one assigned (`d.r .= d.own`), and so may what another field
+refers to, so naming either is an error, but for a local whose record shows
+where the reference field may point. A slice or reference into the old
 elements is the shrink rule's to judge (§5.1): the right-hand side runs
 after the shrink the assignment starts with, so one it uses is live there.
 New contents computed from the old are built in a variable of their own and
