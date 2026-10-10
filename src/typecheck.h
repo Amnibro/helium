@@ -1181,7 +1181,15 @@ struct TypeCheck {
     bool GrowShrinkContains(TypeExpr *t, TypeExpr *of);
     bool RefMayPointInto(VarDef *v, VarDef *root, bool growonly = false,
                          TypeExpr *bound = nullptr);
-    bool ClassReadMayPointInto(VarDef *cls, VarDef *root, TypeExpr *bound);
+    bool ClassReadMayPointInto(VarDef *cls, VarDef *root, TypeExpr *bound,
+                               bool inplace = false);
+    // A reference to a whole resizable value leads into the array: a
+    // rendering walking in place follows it, and so may the right-hand side
+    // of a whole assignment, which runs while the array is rebuilt (§4.4).
+    // The shrink scans otherwise take one for the path to the array, which a
+    // shrink leaves valid (CanHoldViewInto).
+    bool pathslive = false;
+    bool CanHoldViewInto(TypeExpr *t, TypeExpr *arr);
     bool RefMayRetarget(VarDef *v, VarDef *root);
     bool SlotReadable(TypeExpr *t);
     bool HeldRefsMayPointInto(VarDef *v, const Prov &p, TypeExpr *t, VarDef *root,
@@ -2225,6 +2233,7 @@ struct TypeCheck {
         bool Covered(VarDef *src, VarDef *root, bool exact);
     };
     bool GrowOnlyTail(TypeExpr *t);
+    bool RefsBesideTail(TypeExpr *t);
     bool IsGrowOnlyRootVar(VarDef *r);
     void RefPointees(TypeExpr *t, vector<TypeExpr *> &out);
     void RefSlots(TypeExpr *t, vector<pair<TypeExpr *, bool>> &out);

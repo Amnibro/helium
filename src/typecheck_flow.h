@@ -246,11 +246,18 @@ inline bool TypeCheck::RefMayPointInto(VarDef *v, VarDef *root, bool growonly, T
 // classread) may point into, or lead to, what a shrink of the grow-only
 // array at root frees, of type `bound` where root only bounds it: where the
 // activation's own stores into that storage say (HolderMayPointInto), the
-// stores its callers made there being theirs to judge (NoteLiveViews).
-inline bool TypeCheck::ClassReadMayPointInto(VarDef *cls, VarDef *root, TypeExpr *bound) {
+// stores its callers made there being theirs to judge (NoteLiveViews). What
+// a rendering walks in place (`inplace`) follows a reference to a whole
+// resizable value into it.
+inline bool TypeCheck::ClassReadMayPointInto(VarDef *cls, VarDef *root, TypeExpr *bound,
+                                             bool inplace) {
     auto arrtype = bound ? bound : root->type ? LoadType(root->type) : nullptr;
     Line where;
-    return HolderMayPointInto(cls, root, arrtype, LiveEventBase(cls), &where);
+    auto saved = pathslive;
+    pathslive = saved || inplace;
+    auto r = HolderMayPointInto(cls, root, arrtype, LiveEventBase(cls), &where);
+    pathslive = saved;
+    return r;
 }
 
 // Whether a binding of v that its record does not show may point into the
@@ -315,9 +322,15 @@ inline bool TypeCheck::HeldRefsMayPointInto(VarDef *v, const Prov &p, TypeExpr *
     vector<TypeExpr *> pointees;
     if (growonly) ReachedThroughRefs(sub, pointees);
     else RefPointees(sub, pointees);
+    // Those are all the references the pointee leads to, so a view derived
+    // from one lies in a slot of one of those types too. A reference to a
+    // whole resizable value is the path to it, which no array's elements
+    // hold (§3.3): it is left valid by the shrink, and leads into the array
+    // only through the views derived from it (but where pathslive).
     auto freed = false;
     for (auto pt : pointees)
-        freed = freed || ShrinkMayFree(root, bound, growonly, pt, byteview && IsU8(pt));
+        freed = freed || ((pathslive || ClassOf(pt) != SC_RESIZABLE) &&
+                          ShrinkMayFree(root, bound, growonly, pt, byteview && IsU8(pt)));
     if (!freed) return false;
     if (v && !v->refrootknown) return !UnboundIsBottom() && Depth(v) >= Depth(root);
     for (auto &a : p.alts) {
@@ -329,7 +342,12 @@ inline bool TypeCheck::HeldRefsMayPointInto(VarDef *v, const Prov &p, TypeExpr *
             if (ClassReadMayPointInto(r, root, bound)) return true;
             continue;
         }
-        if (r == root) return true;
+        auto holder = growonly && (slice || sub->kind != TY_SLICE) && r && !r->isglobal &&
+                      a.exact && (r->type || IsClassRoot(r)) && !slot && !(v && v->isvar);
+        // A reference to the storage that shrinks, the path to the array
+        // included, leads to what the stores into that storage put there,
+        // which its record says as for any other holder.
+        if (r == root && (!holder || slice || bound)) return true;
         if (growonly && (slice || sub->kind != TY_SLICE)) {
             // A global holder, or static data, holds views of globals only,
             // and a shrink of a global judges what every global holds
@@ -340,7 +358,7 @@ inline bool TypeCheck::HeldRefsMayPointInto(VarDef *v, const Prov &p, TypeExpr *
             // caller's array whose elements a slice views -- of what the
             // activation stored there: what the callers did they judge,
             // from the pair NoteLiveViews keeps (LiveShrink::contents).
-            if (a.exact && (r->type || IsClassRoot(r)) && !slot && !(v && v->isvar)) {
+            if (holder) {
                 auto arrtype = bound ? bound : root->type ? LoadType(root->type) : nullptr;
                 Line where;
                 if (HolderMayPointInto(r, root, arrtype, LiveEventBase(r), &where)) return true;
@@ -2352,11 +2370,15 @@ inline void TypeCheck::AssignableClassCheck(TypeExpr *t, Node *at) {
 // which anything still pointing into it rejects (§5.1, §5.2) -- and the new
 // ones are built over them, so the assignment is a growth of it as well; the
 // value then runs with that array under construction, which nothing it does
-// may grow (§1.3(4)) or even use (§4.4).
+// may grow (§1.3(4)) or even use (§4.4): a reference to the whole array that
+// it follows leads into the array being built (pathslive).
 inline Val TypeCheck::CheckAssignedValue(Assign *a, TypeExpr *target, TypeExpr *arr,
                                          const Roots &built, Dest dest) {
     if (arr) {
+        auto saved = pathslive;
+        pathslive = true;
         ShrinkThrough(a, "assign", ExprStr(a->lval), built, target);
+        pathslive = saved;
         NoteGrow(a, built, cat("assign ", ExprStr(a->lval)));
     }
     SlotScope ss(*this, true);

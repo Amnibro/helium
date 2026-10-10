@@ -1545,7 +1545,18 @@ one (`CheckAssign`, or `PointeeAssign` through a reference, with
    global one a holder refers to, or a global holder a reference or slice
    leads to, which item 5 judges. A slot's references may lead into the
    array at any remove, so both count every type they reach
-   (`ReachedThroughRefs`). The variables are the body's and its lexical
+   (`ReachedThroughRefs`), but for a reference to a whole resizable value,
+   the path to it, which no array's elements hold: a holder whose type has
+   no slot for a view into the array's elements holds none, whatever its
+   record says (`CanHoldViewInto`; a view derived from a stored path lies in
+   such a slot, its store unrecorded where it came out of the same
+   container). A whole assignment's scan counts a path as leading into the
+   array, its right-hand side running while the array is rebuilt, and so
+   does an in-place walk's (`pathslive`). The storage that shrinks is a holder like any other: the
+   array's own variable is scanned where the fields before its tail can hold
+   references (`RefsBesideTail`), and a reference to that storage, a
+   reference parameter's class included, by that storage's record rather
+   than as live outright. The variables are the body's and its lexical
    parents', and in a function value's body those of the function running
    it too (`ShrinkScanVars`); every caller's are judged at its call
    instead, the first caller's too (**Calls** below), where the rest of its
@@ -1713,7 +1724,10 @@ parameter names loaded by value, wherever the source is the class exactly
 (`HolderSource`) -- is marked on the store record (`StoreEvent::classread`,
 in `RecordStore`): what the holder got there, the storage holds. A call
 keeps the mark where the class the event names maps onto a class of the
-caller's exactly (`ApplyCalleeStores`). For a grow-only array, the scans
+caller's exactly (`ApplyCalleeStores`), and gives it to a callee's store of
+a value rooted at one of its classes where the argument for that class is
+a view with the mark (`put(b.vars, key(b.keys))` stores what `b`'s storage
+holds, as the same store in the caller would). For a grow-only array, the scans
 judge such an event by the activation's stores into the storage
 (`HolderMayPointInto` on the class, as for a copy of a variable's contents),
 and a slice's slot what came out of there refers to by the class's depth, as

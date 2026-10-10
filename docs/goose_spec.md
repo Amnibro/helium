@@ -1201,15 +1201,25 @@ reference or slice variable rooted at the array (a `var` reference the
 same-depth rebinding rule (§9.2) could retarget into it counts, as does one
 not bound yet further down a loop body), and any value that *holds* a
 reference into it — a struct with a reference field, an array of slices, a
-`let` copy of an element of such. Values hold references only where a store
+`let` copy of an element of such, and the struct whose tail the array is,
+through its other fields. Values hold references only where a store
 put them, and every store the checker has seen is on record (§9.2), so this
 half of the test is exact to the store: the error names the holder and the
 line where a reference into the array was stored into it. A value whose type
-cannot hold a reference to anything the array's elements contain by value
-is never a holder, nor is one linked by relative references alone (a node
-pool): those point within their own root. A reference to a slice variable
-or to a holder counts as what it refers to: while the reference is live,
-so is whatever that slice or holder may refer into.
+cannot hold a reference to anything the array's elements contain by value,
+however many references it leads through, is never a holder, nor is one
+linked by relative references alone (a node pool): those point within their
+own root. A reference to a whole array or table is no reference into its
+elements, which a shrink leaves it pointing at: `struct Walk { start: Cell&,
+text: u8[>..]&, path: Pos[>..] }` holds nothing a shrink of `path` frees,
+and `w.path.clear()` through `w: Walk&` may be followed by any use of `w`.
+A view of the elements taken through such a reference is stored, if at all,
+where the holder's type has room for one. (The right-hand side of a whole
+assignment is another matter: it runs while the array is rebuilt, and may
+not reach the array at all, §4.4.) A reference to a slice variable
+or to a holder, the storage whose tail shrinks among them, counts as what it
+refers to: while the reference is live, so is whatever that slice or holder
+may refer into.
 
 Nor may the shrink free what a `for` loop around it walks (§6.5): each
 reference or slice on the path to its sequence, which the loop loads again

@@ -1016,7 +1016,7 @@ inline void TypeCheck::CheckHeldShrinks(Node *at, const string &op, VarDef *root
                         // not just another at that depth.
                         if (!growonly && !inplace && a.slotread) return false;
                         if ((growonly || inplace) && a.classread)
-                            return ClassReadMayPointInto(a.root, root, bound);
+                            return ClassReadMayPointInto(a.root, root, bound, inplace);
                         return a.root == root || (!a.exact && Depth(a.root) >= Depth(root));
                     });
         // A reference to a slice also reaches where the slice points, and,
@@ -1091,7 +1091,9 @@ inline void TypeCheck::GrowOnlyShrinkAt(Node *c, const string &op, VarDef *vd,
     auto arrtype = bound ? bound : vd->type ? LoadType(vd->type) : nullptr;
     CheckHeldShrinks(c, op, vd, what, true, bound);
     ShrinkScanVars([&](VarDef *v) {
-        if (v == vd || !v->type) return;
+        // The array's own holder is scanned as any other where the fields
+        // before its tail may hold references, which may point into the tail.
+        if (!v->type || (v == vd && (bound || !RefsBesideTail(arrtype)))) return;
         auto t = v->type;
         if (IsRefOrSlice(t)) {
             // A recorded root is exact only while the variable keeps its
@@ -1346,6 +1348,13 @@ inline void TypeCheck::ApplyCalleeStores(FnSpec *spec, vector<Val> &argvals, Nod
     auto push = [&](VarDef *container, const RootAlt &a, TypeExpr *pointee, VarDef *src,
                     bool classread, bool byteview, TypeExpr *reached, bool bound, bool slot,
                     bool sliceref) {
+        // A view the storage of one of the caller's classes held, passed as
+        // the argument: it holds what that storage holds, as the same value
+        // stored here would (RecordStore).
+        if (!src && !a.exact && a.classread && IsClassRoot(a.root)) {
+            src = a.root;
+            classread = true;
+        }
         if (!container || src == container) return;
         StoreEvent e;
         e.container = container;
@@ -1774,7 +1783,9 @@ inline bool TypeCheck::GlobalReach::Covered(VarDef *src, VarDef *root, bool exac
 // or one to a slot whose own references may point into it
 // (StoredSlotMayPointInto). `arrtype` is the type of the array whose
 // elements are in question, null where it is not known (a parameter class),
-// which lets any pointee in.
+// which lets any pointee in. A holder whose type has no slot for a view
+// into those elements holds none (CanHoldViewInto), but where a reference
+// to the whole array is followed into it (pathslive).
 inline bool TypeCheck::HolderMayPointInto(VarDef *holder, VarDef *arr, TypeExpr *arrtype,
                                           size_t from, Line *where, size_t *hit,
                                           TypeExpr **via) {
@@ -1786,6 +1797,11 @@ inline bool TypeCheck::HolderMayPointInto(VarDef *holder, VarDef *arr, TypeExpr 
                                           size_t from, Line *where, set<VarDef *> &seen,
                                           size_t *hitat, TypeExpr **via) {
     if (!seen.insert(holder).second) return false;
+    // Whatever a store put there, or a view derived from it later, lies in a
+    // slot of the holder's type.
+    if (!pathslive && holder->type && !IsRefOrSlice(holder->type) &&
+        !CanHoldViewInto(LoadType(holder->type), arrtype))
+        return false;
     auto contains = [&](TypeExpr *pt) { return !arrtype || CanContain(arrtype, pt); };
     auto found = [&](size_t i, TypeExpr *through) {
         auto &e = storeevents[i];
@@ -1936,6 +1952,32 @@ inline void TypeCheck::RefSlots(TypeExpr *t, vector<pair<TypeExpr *, bool>> &out
         case TY_ARRAY: RefSlots(t->arr->sub, out); return;
         default: EachField(t, [&](TypeExpr *ft) { RefSlots(ft, out); }); return;
     }
+}
+
+// Whether a value of type t holds plain references or slices outside the
+// elements of its resizable array: in the fields before its tail, at any
+// depth of nested tails (§3.4).
+inline bool TypeCheck::RefsBesideTail(TypeExpr *t) {
+    if (t->kind == TY_ARRAY) return false;
+    return AnyField(t, [&](TypeExpr *ft) {
+        return ResizableArrayIn(ft) ? RefsBesideTail(ft) : HoldsPlainRef(ft);
+    });
+}
+
+// Whether storage of type t has a slot, at any remove through its
+// references, for a reference or slice into the elements of an array of
+// type arr (null: of any type), or for a byte view of one. A view derived
+// from a reference stored there is stored in such a slot too, so a holder
+// without one never refers into the array (§5.1). A reference to a whole
+// resizable value is the path to it, which no array's elements hold (§3.3).
+inline bool TypeCheck::CanHoldViewInto(TypeExpr *t, TypeExpr *arr) {
+    vector<TypeExpr *> ps;
+    ReachedThroughRefs(t, ps);
+    for (auto pt : ps) {
+        if (ClassOf(pt) == SC_RESIZABLE) continue;
+        if (!arr || CanContain(arr, pt) || (IsU8(pt) && Viewable(arr))) return true;
+    }
+    return false;
 }
 
 // Whether what a shrink of storage of type t frees is a grow-only array's:
@@ -2247,7 +2289,13 @@ inline void TypeCheck::NoteLiveViews(Node *at, const string &prefix, VarDef *roo
     // though what a reference to a slice leads to may, and so may a walk's
     // path. What a class's storage holds is theirs to judge whatever array
     // shrinks, the class's own included.
+    // What a class's storage holds never refers into the array where its
+    // type has no slot for a view into the array's elements (CanHoldViewInto).
+    auto arrtype = bound ? bound : root->type ? LoadType(root->type) : nullptr;
     auto judges = [&](const LiveView &w, const RootAlt &a) {
+        if (growonly && !pathslive && w.contents && !w.inplace && w.pointee && arrtype &&
+            !CanHoldViewInto(w.pointee, arrtype))
+            return false;
         return (w.contents || CallersJudge(a.root, root)) &&
                (growonly || w.reached || w.inplace || !a.slotread);
     };
