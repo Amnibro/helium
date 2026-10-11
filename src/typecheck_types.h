@@ -65,6 +65,7 @@ inline StructInst *TypeCheck::GetStructInst(TypeExpr *t) {
     auto inst = ast.NewStructInst();
     inst->st = st;
     inst->args = t->struc->args;
+    inst->run = { &st->fields, &inst->ftypes };
     st->insts.push_back(inst);
     t->struc->inst = inst;
     vector<pair<string_view, TypeExpr *>> bindings;
@@ -135,6 +136,8 @@ inline EnumInst *TypeCheck::GetEnumInst(TypeExpr *t) {
                 inst->vftypes.back().push_back(f.ispad ? nullptr : Subst(f.type));
         }
     });
+    for (size_t vi = 0; vi < en->variants.size(); vi++)
+        inst->runs.push_back({ &en->variants[vi].fields, &inst->vftypes[vi] });
     inst->vbuilt.assign(en->variants.size(), 0);
     typechain.push_back(t);
     BeginTypeBuild();
@@ -149,14 +152,14 @@ inline EnumInst *TypeCheck::GetEnumInst(TypeExpr *t) {
     // (CheckMatch), is left alone.
     if (inst->selfrel && inst->varclass == SC_RESIZABLE) {
         auto resizable = [&](size_t vi) {
-            return AnyFieldOf({ RunOf(inst, (int)vi) },
+            return AnyFieldOf(RunsOf(inst, (int)vi),
                               [&](TypeExpr *ft) { return ClassOf(ft) == SC_RESIZABLE; });
         };
         size_t tail = 0;
         while (!resizable(tail)) tail++;
         for (size_t vi = 0; vi < en->variants.size(); vi++)
             if (!resizable(vi) &&
-                AnyFieldOf({ RunOf(inst, (int)vi) }, [&](TypeExpr *ft) { return HasRelRefT(ft); }))
+                AnyFieldOf(RunsOf(inst, (int)vi), [&](TypeExpr *ft) { return HasRelRefT(ft); }))
                 Error(en->line, cat("enum ", TypeStr(ast.EnumOf(en, inst->args, false, en->line)),
                                     " is resizable (its variant ", en->variants[tail].name,
                                     "'s payload is), so a whole assignment may replace its "
@@ -285,19 +288,16 @@ inline Node *TypeCheck::DefaultValue(TypeExpr *t, Line line) {
     }
 }
 
-inline vector<FieldRun> TypeCheck::FieldRuns(TypeExpr *t) {
-    vector<FieldRun> runs;
+inline span<const FieldRun> TypeCheck::FieldRuns(TypeExpr *t) {
     switch (t->kind) {
-        case TY_STRUCT: runs.push_back(RunOf(GetStructInst(t))); break;
-        case TY_ENUM: AllRunsOf(GetEnumInst(t), runs); break;
+        case TY_STRUCT: return RunsOf(GetStructInst(t));
+        case TY_ENUM: return RunsOf(GetEnumInst(t));
         case TY_VARIANT: {
             auto inst = GetEnumInst(t->var->adt);
-            runs.push_back(RunOf(inst, inst->en->VariantIndex(t->var->variant)));
-            break;
+            return RunsOf(inst, inst->en->VariantIndex(t->var->variant));
         }
-        default: break;
+        default: return {};
     }
-    return runs;
 }
 
 inline SizeClass TypeCheck::ClassOf(TypeExpr *t) {
@@ -433,7 +433,7 @@ inline bool TypeCheck::HasDefault(TypeExpr *t, string &why) {
             return false;
         case TY_STRUCT: case TY_ENUM: case TY_VARIANT: {
             auto runs = FieldRuns(t);
-            if (t->kind == TY_ENUM) runs.resize(1);   // Variant 0 is the default variant.
+            if (t->kind == TY_ENUM) runs = runs.first(1);   // Variant 0 is the default variant.
             for (auto &run : runs) {
                 for (size_t i = 0; i < run.fields->size(); i++) {
                     auto &f = (*run.fields)[i];

@@ -3125,7 +3125,7 @@ inline void TypeCheck::CheckBuiltUses(Node *rhs, Node *lval, TypeExpr *target,
         if (auto d = Is<Dot>(path); d && d->fieldidx >= 0) {
             auto ot = d->obj->exprtype;
             if (ot && ot->kind == TY_REF) ot = ot->ref->sub;
-            auto runs = ot ? FieldRuns(ot) : vector<FieldRun>();
+            auto runs = ot ? FieldRuns(ot) : span<const FieldRun>();
             if (runs.size() == 1) vt = (*runs[0].ftypes)[d->fieldidx];
         }
         if (!v || !v->type || !vt) return;
@@ -3216,7 +3216,7 @@ inline bool TypeCheck::FieldsApart(Node *use, Node *lval, TypeExpr *target) {
         if (uf[uf.size() - i]->fieldidx == lf[lf.size() - i]->fieldidx) continue;
         auto ot = uf[0]->obj->exprtype;
         if (ot && ot->kind == TY_REF) ot = ot->ref->sub;
-        auto runs = ot ? FieldRuns(ot) : vector<FieldRun>();
+        auto runs = ot ? FieldRuns(ot) : span<const FieldRun>();
         if (runs.size() != 1) return false;
         auto ft = (*runs[0].ftypes)[uf[0]->fieldidx];
         // Through a reference field the location is its pointee, which may
