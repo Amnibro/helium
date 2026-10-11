@@ -2078,10 +2078,22 @@ inline string_view GlobalLeaf(string_view name) {
 // ---------------------------------------------------------------------------
 // Ast: owner of everything produced by parsing.
 
+// A package (docs/design/packages.md §4.1): a directory of modules, under
+// which a file's `import a.b;` resolves `a/b.goose`. Package 0 is the
+// program, rooted at its root file's directory; a standard library
+// directory is one too, once a module in it is reached.
+struct Package {
+    string name;
+    string root;          // With its trailing separator, or "" for the working directory.
+    bool stdlib = false;
+};
+
 struct Ast {
     // Source buffers stay alive here; all string_views point into them. The
     // contents are heap-boxed so vector growth never moves an SSO buffer.
     vector<pair<string, unique_ptr<string>>> sources;   // (filename, contents).
+    vector<Package> packages;
+    vector<int> filepkg;                                // Per source, its package.
 
     vector<Node *> allnodes;
     vector<TypeExpr *> alltypes;

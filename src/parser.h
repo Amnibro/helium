@@ -5,8 +5,8 @@
 
 namespace goose {
 
-// An `import a.b.c;` (path a/b/c.goose relative to the main file) or
-// `import .a.b;` (relative to the importing file).
+// An `import a.b.c;` (path a/b/c.goose relative to the importing file's
+// package root, §11.1) or `import .a.b;` (relative to the importing file).
 struct Import {
     string path;                     // Slash-separated, no extension.
     bool relative = false;           // Leading dot form.

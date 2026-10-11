@@ -124,18 +124,28 @@ vector<string> StdlibDirs(const string &stdlibdir, const string &exe) {
 }
 
 // Parses a root file and, transitively, everything it imports (each file once).
-// `import a.b;` resolves relative to the root file's directory, then in the
-// standard library; `import .a.b;` relative to the importing file's. A
+// `import a.b;` resolves relative to the importing file's package root (§11.1):
+// the root file's directory for the program's own files, the library's
+// directory for a standard library module; then in the standard library.
+// `import .a.b;` resolves relative to the importing file's directory. A
 // `rootsource` is the root file's text, which is then not read from disk.
 void ParseProgram(Ast &ast, const string &rootpath, const vector<string> &stdlibdirs,
                   const string *rootsource = nullptr) {
-    auto rootdir = DirOf(rootpath);
-    vector<string> queue = { rootpath };
+    // The program is package 0; a standard library directory becomes a
+    // package the first time a module in it is reached.
+    ast.packages.push_back(Package { PathStem(rootpath), DirOf(rootpath), false });
+    auto stdlibpkg = [&](const string &dir) {
+        for (size_t i = 0; i < ast.packages.size(); i++)
+            if (ast.packages[i].stdlib && ast.packages[i].root == dir) return (int)i;
+        ast.packages.push_back(Package { "stdlib", dir, true });
+        return (int)ast.packages.size() - 1;
+    };
+    vector<pair<string, int>> queue = { { rootpath, 0 } };   // (path, its package).
     set<string> loaded = { rootpath };
     map<string, int> fileof;                 // Resolved path -> index in ast.sources.
     vector<vector<string>> importsof;        // Per source, the paths it imports.
     while (!queue.empty()) {
-        auto path = queue.back();
+        auto [path, pkg] = queue.back();
         queue.pop_back();
         auto contents = make_unique<string>();
         if (rootsource && path == rootpath) *contents = *rootsource;
@@ -143,21 +153,28 @@ void ParseProgram(Ast &ast, const string &rootpath, const vector<string> &stdlib
             throw CompileError { cat("cannot open file: ", path) };
         auto fileidx = (int)ast.sources.size();
         ast.sources.emplace_back(path, std::move(contents));
+        ast.filepkg.push_back(pkg);
         fileof[path] = fileidx;
         importsof.emplace_back();
         auto &[filename, source] = ast.sources.back();
         Parser parser(ast, filename, source->c_str(), fileidx);
         parser.ParseTop();
         for (auto &imp : parser.imports) {
-            auto imppath = cat(imp.relative ? DirOf(path) : rootdir, imp.path, ".goose");
+            auto imppkg = pkg;
+            auto imppath = cat(imp.relative ? DirOf(path) : ast.packages[pkg].root, imp.path,
+                               ".goose");
             if (!imp.relative && !FileExists(imppath)) {
                 for (auto &dir : stdlibdirs) {
                     auto cand = cat(dir, imp.path, ".goose");
-                    if (FileExists(cand)) { imppath = cand; break; }
+                    if (FileExists(cand)) {
+                        imppath = cand;
+                        imppkg = stdlibpkg(dir);
+                        break;
+                    }
                 }
             }
             importsof[fileidx].push_back(imppath);
-            if (loaded.insert(imppath).second) queue.push_back(imppath);
+            if (loaded.insert(imppath).second) queue.push_back({ imppath, imppkg });
         }
     }
     // Globals initialize in import order: everything a file imports runs before

@@ -3374,11 +3374,12 @@ the caller's own facts about `src` intact.
 ### 11.1 Modules and globals
 
 * One program, compiled whole. `import a.b.c;` includes the file `a/b/c.goose`
-  once, resolved relative to the *main file being compiled*, then in the
-  standard library's directory (`--stdlib <dir>`, else `GOOSE_STDLIB`, else
-  the `stdlib/` of the source tree the compiler was built in); the form
-  `import .a.b;` (leading dot) resolves relative to the *importing file*
-  instead. All declarations are public in v1; a name collision within one
+  once, resolved relative to the root of the *importing file's package*: for
+  the program's own files the directory of the root file being compiled, for
+  a standard library module the library's directory; then in the standard
+  library's directory (`--stdlib <dir>`, else `GOOSE_STDLIB`, else the
+  `stdlib/` of the source tree the compiler was built in); the form `import
+  .a.b;` (leading dot) resolves relative to the *importing file* instead. All declarations are public in v1; a name collision within one
   namespace is an error, except that a global variable and functions may
   share a name (below). Top-level declarations are order-independent.
 * **Namespaces** (docs/design/namespaces.md). `namespace image;`, at most
