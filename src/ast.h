@@ -1899,6 +1899,10 @@ struct OuterExit {
 // The event range locates this round's stores in TypeCheck::storeevents; it
 // is replay metadata, not a fact compared for convergence.
 struct FnRecord {
+    // Whether this specialization can resume its immediate Goose caller.
+    // A return-from to an outer body does not, although its C function returns
+    // normally to propagate that exit. Unknown recursive calls may return.
+    bool mayreturn = true;
     vector<RetRoot> retroots;      // Per ret: the checked returns' roots and the prediction.
     // External optional bindings this body (or a callee) may rebind.
     set<VarDef *> reboundoptionals;

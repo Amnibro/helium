@@ -380,9 +380,12 @@ The language's checks and limitations still apply:
 * Recursive code can throw to an outer handler. A `try` cannot itself be
   re-entered recursively: its non-fixed handler result would hold a data
   stack across the recursive call (§7.8).
-* A library call to `throw` is not recognized as a never-returning expression.
-  It cannot by itself supply a missing result in a value-returning function.
-  Ordinary functions with a success return after the error check work.
+* The checker propagates calls that never resume their caller. A function
+  declared to return a value may end with `exception::throw(error);`, and a
+  throwing branch needs no result. This does not give `throw` a value type:
+  use it as a statement or branch, rather than `return throw(error);` or as
+  an argument that requires a value. Recursive inference is conservative
+  (spec §7.3).
 * Only calls to `throw` are caught. Runtime failures, `abort` and `exit`
   remain uncatchable. There is no stack-trace facility.
 

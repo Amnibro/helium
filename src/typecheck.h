@@ -1960,7 +1960,8 @@ struct TypeCheck {
     FnValBind LocalFnValue(const vector<SFunction *> &fns, FnSpec *env);
     Val CheckUfcsCall(Call *c, Dot *d, TypeExpr *expected);
     Val ResolveCall(Call *c, vector<SFunction *> &cands, FnSpec *env, string_view name, Val *preval,
-                    Node *&prenode, bool *nomatch = nullptr, TypeExpr *expected = nullptr);
+                    Node *&prenode, bool entryreach, bool *nomatch = nullptr,
+                    TypeExpr *expected = nullptr);
     void MatchCandidates(Call *c, vector<SFunction *> &cands, FnSpec *env, vector<Val> &argvals,
                          vector<MatchInfo> &tied, vector<MatchInfo> &converting, string *failures,
                          string_view name);
@@ -1991,7 +1992,7 @@ struct TypeCheck {
     bool BindTypes(TypeExpr *pt, TypeExpr *at, vector<pair<string_view, TypeExpr *>> &b);
     TypeExpr *SubstOwn(TypeExpr *pt, vector<pair<string_view, TypeExpr *>> &b);
     Val TryDispatch(Call *c, vector<SFunction *> &cands, FnSpec *env, vector<Node *> &argnodes,
-                    vector<Val> &argvals, string_view name);
+                    vector<Val> &argvals, string_view name, bool entryreach);
 
     // ------------------------------------------------------------------
     // Specialization: find or create the FnSpec for a resolved call and

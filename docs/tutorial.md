@@ -1103,6 +1103,11 @@ place you will meet it.
 And the ones that stop the program rather than reporting: `assert(c)` for
 invariants, `abort(msg)` with a message, `exit(code)`. The checker knows the
 last two never return, so a branch ending in either gives no value.
+That knowledge also propagates through ordinary calls, including wrappers
+around `exception::throw`: a value-returning function can end by calling
+one, without a dummy result afterward. Statements and a trailing expression
+after a proven exit are not typechecked. Unknown recursive calls are
+conservatively assumed to return.
 
 ---
 

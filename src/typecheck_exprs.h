@@ -3014,9 +3014,17 @@ inline void TypeCheck::CheckSelfInit(Node *n, TypeExpr *ft, TypeExpr *selft) {
 
 inline void TypeCheck::CheckStmts(Block *b) {
     for (size_t i = 0; i < b->stmts.size(); i++) {
+        if (!reachable) {
+            b->stmts.resize(i);
+            break;
+        }
         blockpos.back().idx = i;
         CheckStmt(b->stmts[i]);
     }
+    // Drop the unreachable suffix (including the tail), so later passes never
+    // see unchecked nodes. Function bodies are specialization clones; unknown
+    // recursive calls may return, so only proven exits can prune them.
+    if (!reachable) b->tail = nullptr;
     blockpos.back().idx = b->stmts.size();
 }
 
