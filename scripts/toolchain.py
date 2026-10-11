@@ -147,7 +147,7 @@ def native_imports(text):
 # GPU device to run on. The runners report these as skips.
 GFX_UNAVAILABLE = "built without SDL3"
 GFX_NO_DEVICE = "gfx: no GPU device"
-PHYSICS_UNAVAILABLE = "built without Box3D"
+PHYSICS_UNAVAILABLE = "built without the package physics"
 UI_UNAVAILABLE = "built without Nuklear"
 AUDIO_UNAVAILABLE = "built without SDL3 audio"
 

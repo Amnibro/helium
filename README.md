@@ -393,21 +393,26 @@ The [summary](bench/summary.md) explains the gains and losses;
 You need CMake 3.20 or later, a C++20 compiler (MSVC, clang or gcc) and Python
 3 for the test and sample runners. TinyCC, which the in-process backend is
 built from, is part of the tree. Three submodules are optional: SDL3, which
-the `gfx` graphics module is built from, Box3D, which the `physics` module
-is built from, and Nuklear, which the `ui` module is built from. The
-compiler builds without these submodules, but the corresponding features
-are unavailable: graphics, physics, or windows of widgets.
+the `gfx` graphics module is built from, Box3D, which the `physics` package
+is built from, and Nuklear, which the `ui` module is built from.
+`-DGOOSE_BUILTIN_LIBS=all` compiles the blessed packages (`physics` so far;
+the other native modules follow as they become packages,
+`docs/design/packages.md`) into the compiler, so their programs run with
+nothing else installed. Without it the compiler builds alone, and a program
+importing one of them has it built into `~/.goose` the first time, which
+needs cmake and a C compiler.
 
 ```bash
 git clone --recursive https://github.com/aardappel/goose
 cd goose
-cmake -B build -DCMAKE_BUILD_TYPE=Release
+cmake -B build -DCMAKE_BUILD_TYPE=Release -DGOOSE_BUILTIN_LIBS=all
 cmake --build build --config Release
 ```
 
-To leave SDL, Box3D or Nuklear out, clone without `--recursive` and then run
-`git submodule update --init` on the ones wanted, or configure with
-`-DGOOSE_GFX=OFF`, `-DGOOSE_PHYSICS=OFF` or `-DGOOSE_UI=OFF`. On
+To leave SDL or Nuklear out, clone without `--recursive` and then run `git
+submodule update --init` on the ones wanted, or configure with
+`-DGOOSE_GFX=OFF` or `-DGOOSE_UI=OFF`; a `GOOSE_BUILTIN_LIBS` naming only
+some packages builds those in. On
 Linux, SDL needs the X11 or Wayland development packages
 ([`third_party/SDL/docs/README-linux.md`](https://github.com/libsdl-org/SDL/blob/main/docs/README-linux.md));
 without them the build leaves the `gfx` module out and says what to install.

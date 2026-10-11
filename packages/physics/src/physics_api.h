@@ -1,8 +1,7 @@
-/* The physics layer's C API: every function stdlib/physics.goose reaches
-   through an `extern "gs_phys_..." fn`, listed once in GS_PHYS_API. That list
-   expands into the prototypes below and into the symbol table a JIT run
-   registers (src/jit.h), and the test suite checks stdlib/physics.goose
-   against it (test/api_check.py).
+/* The physics layer's C API: every function physics.goose reaches through
+   an `extern "gs_phys_..." fn`, listed once in GS_PHYS_API. That list
+   expands into the prototypes below, and the test suite checks
+   physics.goose against it (test/api_check.py).
 
    The layer sits over Box3D (third_party/box3d) and changes little of it:
    the same worlds, bodies, shapes, joints and queries, under the same
@@ -993,7 +992,7 @@ typedef struct { gs_phys_compound_mesh *data; int64_t len; } gs_phys_compound_me
 GS_PHYS_API(GS_PHYS_PROTO)
 #undef GS_PHYS_PROTO
 
-/* The constants stdlib/physics.goose declares, with their Goose types; here
+/* The constants physics.goose declares, with their Goose types; here
    they are GS_PHYS_<name>. Where one is Box3D's own enum, it has Box3D's
    value. */
 #define GS_PHYS_CONSTANTS(X) \

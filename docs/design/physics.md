@@ -2,7 +2,7 @@
 
 This document describes the optional physics module's implementation, test
 coverage, and remaining work. See `docs/stdlib.md` for the API reference and
-`stdlib/physics.goose` for the module source.
+`packages/physics/physics.goose` for the module source.
 
 ## What it is
 
@@ -15,7 +15,7 @@ character mover, and recording and replay. It is built the way `gfx` is
 
     Goose program --extern fn--> gs_phys_* (goose_physics, native C) --> Box3D (static)
 
-The layer, `goose_physics` (`src/physics/`), is native C compiled once into a
+The layer, `goose_physics` (`packages/physics/src/`), is native C compiled once into a
 static library: `goose` links it for JIT runs and hands its functions to
 TinyCC with `tcc_add_symbol` (`AddPhysicsSymbols`, `src/jit.h`), and a program
 built from the generated C links the same archive. Neither the generated C
@@ -33,43 +33,53 @@ position: p }` is a whole definition. The layer covers nearly all of
   a commit of its main branch from September 2026. The one release, v0.1.0 of
   June 2026, has a different API in places (the replay player's functions
   and the center-of-mass getters were renamed since) and misses fixes made
-  since; the next release should replace the pin. `cmake/physics.cmake` adds
+  since; the next release should replace the pin. `packages/physics/CMakeLists.txt` adds
   it with `add_subdirectory`, which leaves out its samples, tests and
   documentation (options of a top-level build only), in single precision,
   static, and on the release C runtime everywhere: Box3D asks for the debug
   one in a debug build, which does not link into a `/MT` program. Box3D is
   C17 with no dependencies beyond the C runtime, libm and threads; its CMake
   needs 3.22, and an older CMake takes the opt-out path.
-* **Link inputs for AOT programs**: `build/physics/<config>/link-cc.rsp` and
-  `link-msvc.rsp` on Windows name the two archives, and on other systems
-  `-lm -pthread`. `goose --physics-link msvc|cc` prints the path, looked for
-  as `--gfx-link` does: `GOOSE_PHYSICS_LINK`, then a `physics/` beside the
-  binary, then the build tree (`NativeLinkFile`, `src/utils.h`). A program
-  using both modules passes both files.
+* **A package** (`docs/design/packages.md`): `packages/physics/` holds the
+  module `physics.goose`, the sidecar `physics.build` naming the CMake
+  target `goose_physics` and `main_thread_only`, the layer under `src/` and
+  the CMakeLists that builds it with Box3D. `import physics;` finds it
+  through the blessed table (`src/blessed.txt`). A compiler configured with
+  `-DGOOSE_BUILTIN_LIBS=all` has it compiled in (`cmake/package.cmake`):
+  its functions reach a JIT run through the symbol table CMake generates
+  from the module's `extern fn`s, and the link closure of a probe
+  executable, read from CMake's file API reply once the compiler is built
+  (`cmake/linkclosure.cmake`), is the response file
+  `build/pkg/physics/<config>/link-{cc,msvc}.rsp` that `goose build` links
+  programs with (`goose --physics-link msvc|cc` prints its path). A
+  compiler without it builds the package into `GOOSE_HOME` the first time a
+  program uses it, through the wrapper project of `src/native.h`, and loads
+  the shared library that build makes for JIT runs.
 
-**Opting out**: `-DGOOSE_PHYSICS=OFF`, a checkout without the submodule, or
-CMake older than 3.22. The compiler then builds and behaves as before:
-physics programs typecheck and generate the same C, and only running one
-in-process fails, with "this compiler was built without Box3D; check out
-third_party/box3d and reconfigure". `--physics-link` fails the same way.
+**Opting out**: a `GOOSE_BUILTIN_LIBS` without physics, or a checkout
+without the submodule (the package's CMakeLists then builds nothing, and
+the compiler's configure says the package is not compiled in). Physics
+programs typecheck and generate the same C either way; running or building
+one then needs cmake and a C compiler, and the submodule.
 
 ## The compiler's side
 
 The compiler integration is small: physics has no compile-time processing
 comparable to shader compilation by `embed_shader`.
 
-* **Calls into the layer** are recognized by their C symbol's `gs_phys_`
-  prefix: codegen notes it in `NativeLayers`, a JIT run registers the layer's
-  functions, and a compiler without the layer refuses the run.
+* **Calls into the layer** are extern fns of the physics package: codegen
+  notes the packages a program's extern calls reach (`NativePackagesUsed`),
+  and a JIT run takes their functions from the compiled-in table or the
+  package's library.
 * **A `thread_fn` never reaches the layer**, as with gfx: the layer keeps
   its error text, misuse count and geometry tables for the process, and
   Box3D's world creation is not thread-safe. Box3D does its own threading
   inside a step, on as many workers as `WorldDef.workers` asks for.
 
-## The layer (`src/physics/`)
+## The layer (`packages/physics/src/`)
 
 `physics_api.h` lists every function once (`GS_PHYS_API`) and every constant
-(`GS_PHYS_CONSTANTS`); `test/api_check.py` checks `stdlib/physics.goose`
+(`GS_PHYS_CONSTANTS`); `test/api_check.py` checks `packages/physics/physics.goose`
 declares exactly those functions with the same C shapes, the same struct
 fields in the same order, and the same constant values, as it does for gfx.
 
@@ -125,7 +135,7 @@ tooling: custom contact filters and pre-solve callbacks, debug drawing, the
 standalone dynamic tree, the low-level collide-pair functions, and the
 replay player's query inspection.
 
-## The Goose module (`stdlib/physics.goose`)
+## The Goose module (`packages/physics/physics.goose`)
 
 Namespace `physics`: constants, handles, definitions with Box3D's defaults,
 the `extern` declarations, thin wrappers (events, queries and lists as fresh

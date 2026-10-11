@@ -14,9 +14,6 @@
 #ifdef GOOSE_HAVE_AUDIO
 #include "audio/audio_api.h"
 #endif
-#ifdef GOOSE_HAVE_PHYSICS
-#include "physics/physics_api.h"
-#endif
 #ifdef GOOSE_HAVE_UI
 #include "ui/ui_api.h"
 #endif
@@ -65,17 +62,6 @@ inline void AddGfxSymbols(TCCState *s) {
         #define GS_GFX_SYMBOL(ret, name, params) tcc_add_symbol(s, #name, (const void *)&name);
         GS_GFX_API(GS_GFX_SYMBOL)
         #undef GS_GFX_SYMBOL
-    #else
-        (void)s;
-    #endif
-}
-
-// The physics layer's functions (src/physics/physics_api.h), the same way.
-inline void AddPhysicsSymbols(TCCState *s) {
-    #ifdef GOOSE_HAVE_PHYSICS
-        #define GS_PHYS_SYMBOL(ret, name, params) tcc_add_symbol(s, #name, (const void *)&name);
-        GS_PHYS_API(GS_PHYS_SYMBOL)
-        #undef GS_PHYS_SYMBOL
     #else
         (void)s;
     #endif
@@ -134,7 +120,6 @@ inline int RunJit(const string &csrc, const string &libpath, const string &progn
     if (tcc_compile_string(s, source.c_str()) < 0) fail("compiling the generated C failed");
     if (layers.audio) AddAudioSymbols(s);
     if (layers.gfx) AddGfxSymbols(s);
-    if (layers.physics) AddPhysicsSymbols(s);
     if (layers.ui) AddUiSymbols(s);
     for (auto &[name, addr] : symbols) tcc_add_symbol(s, name.c_str(), addr);
     // tcc_run hands these to the program's main, which takes them as C main

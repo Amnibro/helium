@@ -20,6 +20,7 @@ add_executable(goose
     src/packages.h
     src/json.h
     src/native.h
+    src/builtin.h
     src/includes.h
     src/utils.h
     src/lexer.h
@@ -62,7 +63,6 @@ add_executable(goose
     src/runtime/runtime_os.h
     src/gfx.h
     src/audio.h
-    src/physics.h
     src/ui.h
 )
 
@@ -146,20 +146,15 @@ if(GOOSE_HAVE_AUDIO)
         GOOSE_HAVE_AUDIO=1 GOOSE_AUDIO_LINK_PATH="${CMAKE_BINARY_DIR}/audio/$<CONFIG>")
 endif()
 
-# The optional physics module (stdlib/physics.goose): Box3D from the
-# third_party/box3d submodule and the C layer over it, built in and linked
-# the way gfx is. Without the submodule, or with -DGOOSE_PHYSICS=OFF, the
-# compiler builds and behaves the same, except that it cannot run a physics
-# program itself.
-option(GOOSE_PHYSICS "Build the Box3D physics module when the submodule is present" ON)
-if(GOOSE_PHYSICS AND EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/third_party/box3d/CMakeLists.txt")
-    include(cmake/physics.cmake)
-endif()
-if(GOOSE_HAVE_PHYSICS)
-    target_link_libraries(goose PRIVATE goose_physics)
-    target_compile_definitions(goose PRIVATE
-        GOOSE_HAVE_PHYSICS=1 GOOSE_PHYSICS_LINK_PATH="${CMAKE_BINARY_DIR}/physics/$<CONFIG>")
-endif()
+# The blessed packages GOOSE_BUILTIN_LIBS names (src/blessed.txt; `all`, or
+# a list of their names), compiled into the compiler (cmake/package.cmake),
+# so that their programs run with nothing else installed. Empty by default:
+# the compiler builds alone, and a program importing one of them has it
+# fetched and built into GOOSE_HOME on first use.
+set(GOOSE_BUILTIN_LIBS "" CACHE STRING
+    "Blessed packages to compile into the compiler: all, or a list of their names")
+include(cmake/package.cmake)
+goose_builtin_packages("${GOOSE_BUILTIN_LIBS}")
 
 # The optional ui module (stdlib/ui.goose): Nuklear from the third_party/nuklear
 # submodule and the C layer over it, built in and linked the way gfx is; it

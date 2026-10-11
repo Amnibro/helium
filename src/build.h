@@ -207,7 +207,6 @@ inline int BuildExecutable(const string &rootfile, const string &cfile, const st
     // the program's own C and the packages' before all of them.
     vector<string> rsps = nativersps;
     if (layers.ui) rsps.push_back(UiLinkFile(exedir, tc.style));
-    if (layers.physics) rsps.push_back(PhysicsLinkFile(exedir, tc.style));
     if (layers.gfx) rsps.push_back(GfxLinkFile(exedir, tc.style));
     if (layers.audio) rsps.push_back(AudioLinkFile(exedir, tc.style));
     auto exe = opts.exe;

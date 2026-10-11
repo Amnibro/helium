@@ -11,7 +11,6 @@
 #include "builtins.h"
 #include "gfx.h"
 #include "audio.h"
-#include "physics.h"
 #include "ui.h"
 #include "typecheck.h"
 #include "typecheck_types.h"
@@ -42,6 +41,7 @@
 #include "process.h"
 #include "buildfile.h"
 #include "toolchain.h"
+#include "builtin.h"
 #include "build.h"
 #include "packages.h"
 #include "json.h"
@@ -161,6 +161,47 @@ void ParseProgram(Ast &ast, const string &rootpath, const vector<string> &stdlib
         return (int)ast.packages.size() - 1;
     };
     map<string, DeclaredPackage> declared;
+    // Loads a blessed package (§4.5) once, under its package name among the
+    // declared ones: from where the compiler's build put it when it is
+    // compiled in, else from its source as a declared package would be (a
+    // path in the table is relative to the source tree the standard
+    // library is found in).
+    auto loadblessed = [&](const BlessedEntry &be) -> int {
+        auto it = declared.find(be.package);
+        if (it != declared.end()) return it->second.pkg;
+        auto builtin = BuiltinLookup(be.package);
+        PackageSource src;
+        src.text = be.source;
+        string root;
+        if (builtin && PathExists(cat(builtin->srcdir, be.package, ".goose"))) {
+            src.ispath = true;
+            src.dir = root = builtin->srcdir;
+        } else if (IsPathSource(be.source)) {
+            auto rel = be.source.rfind("./", 0) == 0 ? be.source.substr(2) : be.source;
+            for (auto &dir : stdlibdirs) {
+                auto cand = cat(dir, "../", rel);
+                if (PathExists(cat(cand, "/", be.package, ".goose"))) {
+                    src.ispath = true;
+                    src.dir = PackageDir(cand);
+                    break;
+                }
+            }
+            if (src.dir.empty())
+                throw CompileError { cat("cannot find the blessed package ", be.package,
+                                         " at ", be.source, " of the source tree") };
+            root = PackageRoot(src, be.package);
+        } else {
+            src = ParsePackageSource(cat(be.source, "@", be.ref), "");
+            root = PackageRoot(src, be.package);
+        }
+        ast.packages.push_back(Package { be.package, root, false });
+        auto &p = ast.packages.back();
+        if (!src.ispath) p.cachekey = GitCacheKey(src);
+        if (builtin && root == builtin->srcdir) p.builtin = BuiltinIndex(builtin);
+        LoadSidecar(p, false);
+        declared.emplace(be.package, DeclaredPackage { src, (int)ast.packages.size() - 1, 0 });
+        return (int)ast.packages.size() - 1;
+    };
     vector<pair<string, int>> queue = { { rootpath, 0 } };   // (path, its package).
     set<string> loaded = { rootpath };
     map<string, int> fileof;                 // Resolved path -> index in ast.sources.
@@ -207,7 +248,16 @@ void ParseProgram(Ast &ast, const string &rootpath, const vector<string> &stdlib
                     LoadSidecar(ast.packages.back(), false);
                     it = declared.emplace(imp.path, DeclaredPackage { src, (int)ast.packages.size() - 1,
                                                                       imp.line }).first;
-                } else if (it == declared.end()) {
+                } else {
+                    // A requirement: satisfied by the root's declaration, or
+                    // by the blessed table where the root declared nothing.
+                    if (it == declared.end())
+                        if (auto be = BlessedLookup(imp.path); be && be->package == imp.path) {
+                            loadblessed(*be);
+                            it = declared.find(imp.path);
+                        }
+                }
+                if (it == declared.end()) {
                     // A requirement the root does not satisfy: the error is
                     // the line to add there.
                     ImportError(filename, imp.line,
@@ -215,12 +265,12 @@ void ParseProgram(Ast &ast, const string &rootpath, const vector<string> &stdlib
                                     ": add\n    import ", imp.path, " from \"",
                                     SourceForRoot(src, rootdir), "\";\nto ", rootpath,
                                     " (packages are declared by the root file only)"));
-                } else if (!SameSource(it->second.source, src)) {
+                } else if (fileidx != 0 && !SameSource(it->second.source, src)) {
                     ImportError(filename, imp.line,
                                 cat(ast.packages[pkg].name, " needs the package ", imp.path,
                                     " from ", src.text, ", which ", rootpath, ":", it->second.line,
                                     " declared from a different source, ", it->second.source.text));
-                } else if (it->second.source.ref != src.ref) {
+                } else if (fileidx != 0 && it->second.source.ref != src.ref) {
                     fprintf(stderr, "%s:%d: warning: %s needs the package %s at %s, which %s:%d "
                                     "declares at %s\n",
                             filename.c_str(), imp.line, ast.packages[pkg].name.c_str(),
@@ -240,18 +290,24 @@ void ParseProgram(Ast &ast, const string &rootpath, const vector<string> &stdlib
             } else {
                 // A file under this package's root; a module of a package the
                 // root declared (`import pkg;` is its entry, `import pkg.sub;`
-                // its sub.goose); the standard library.
+                // its sub.goose); a blessed name, its package loaded as if
+                // the root had declared it (§4.5); the standard library.
                 auto local = cat(ast.packages[pkg].root, imp.path, ".goose");
                 auto first = imp.path.substr(0, imp.path.find('/'));
+                auto rest = imp.path.size() > first.size() ? imp.path.substr(first.size() + 1)
+                                                           : first;
                 auto it = declared.find(first);
+                auto blessed = it == declared.end() && !FileExists(local) ? BlessedLookup(first)
+                                                                           : nullptr;
                 if (it != declared.end()) {
                     if (FileExists(local))
                         ImportError(filename, imp.line,
                                     cat(imp.path, " is both a file of this package (", local,
                                         ") and the declared package ", first, "'s module"));
                     imppkg = it->second.pkg;
-                    auto rest = imp.path.size() > first.size() ? imp.path.substr(first.size() + 1)
-                                                               : first;
+                    imppath = cat(ast.packages[imppkg].root, rest, ".goose");
+                } else if (blessed) {
+                    imppkg = loadblessed(*blessed);
                     imppath = cat(ast.packages[imppkg].root, rest, ".goose");
                 } else {
                     imppath = local;
@@ -618,15 +674,18 @@ int Main(int argc, char **argv) {
         // Hidden: what a shader compiles to, without a program around it.
         else if (arg == "--compile-shader" && i + 1 < argc) shaderfile = argv[++i];
         else if (arg == "--shader-source" && i + 1 < argc) shadersource = argv[++i];
-        else if ((arg == "--audio-link" || arg == "--gfx-link" ||
-                  arg == "--physics-link" || arg == "--ui-link") &&
+        // `--<name>-link msvc|cc`: the response file of a stdlib module with
+        // a native layer, or of a blessed package compiled in (builtin.h).
+        else if ((arg == "--audio-link" || arg == "--gfx-link" || arg == "--ui-link" ||
+                  (arg.size() > 7 && arg.rfind("--", 0) == 0 &&
+                   arg.compare(arg.size() - 5, 5, "-link") == 0)) &&
                  i + 1 < argc) {
             try {
                 auto style = argv[++i];
-                auto path = arg == "--audio-link"     ? AudioLinkFile(DirOf(exe), style)
-                            : arg == "--gfx-link"     ? GfxLinkFile(DirOf(exe), style)
-                            : arg == "--physics-link" ? PhysicsLinkFile(DirOf(exe), style)
-                                                      : UiLinkFile(DirOf(exe), style);
+                auto path = arg == "--audio-link" ? AudioLinkFile(DirOf(exe), style)
+                            : arg == "--gfx-link" ? GfxLinkFile(DirOf(exe), style)
+                            : arg == "--ui-link"  ? UiLinkFile(DirOf(exe), style)
+                            : BuiltinLinkFile(arg.substr(2, arg.size() - 7), style, DirOf(exe));
                 printf("%s\n", path.c_str());
             } catch (CompileError &e) {
                 fprintf(stderr, "%s\n", e.msg.c_str());
@@ -931,7 +990,6 @@ int Main(int argc, char **argv) {
             // The native layers are this compiler's own, handed to the program.
             if (cg.layers.audio && !have_audio) throw CompileError { no_audio_error };
             if (cg.layers.gfx && !have_gfx) throw CompileError { no_gfx_error };
-            if (cg.layers.physics && !have_physics) throw CompileError { no_physics_error };
             if (cg.layers.ui && !have_ui) throw CompileError { no_ui_error };
             program = assemble(false);
         }
@@ -978,7 +1036,8 @@ int Main(int argc, char **argv) {
             if (verb == "build") {
                 if (nocgen) return 0;
                 // The native parts first, so that the link can take their
-                // response files.
+                // response files: a builtin package's from the compiler's
+                // build, the others' built now.
                 Toolchain tc;
                 string why;
                 vector<string> rsps;
@@ -989,6 +1048,12 @@ int Main(int argc, char **argv) {
                     }
                     Builder b { tc, buildopts, msgs };
                     for (auto pkg : nativepkgs) {
+                        auto &p = astp->packages[pkg];
+                        if (p.builtin >= 0) {
+                            rsps.push_back(BuiltinPackageLinkFile(builtin_packages[p.builtin],
+                                                                  tc.style, DirOf(exe)));
+                            continue;
+                        }
                         NativeBuild nb;
                         if (!BuildNativePart(*astp, pkg, filename, b, false, nb)) return 1;
                         rsps.push_back(nb.rsp);
@@ -998,29 +1063,36 @@ int Main(int argc, char **argv) {
                                        msgs, rsps, astp->packages[0].output);
             }
             if (program.empty()) return code;
-            // The native parts the program reaches, built as libraries this
-            // process loads, hand the run their functions by name.
+            // The native parts the program reaches hand the run their
+            // functions by name: a builtin package's from the table compiled
+            // in with it, the others' from libraries built now and loaded.
             vector<pair<string, const void *>> symbols;
-            if (!nativepkgs.empty()) {
-                Toolchain tc;
+            Toolchain tc;
+            auto havetc = false;
+            BuildOptions jitopts;
+            jitopts.ccrequest = ccrequest;
+            jitopts.verbose = verbose;
+            for (auto pkg : nativepkgs) {
+                auto &p = astp->packages[pkg];
+                if (p.builtin >= 0) {
+                    if (auto table = builtin_packages[p.builtin].symbols)
+                        for (auto e = table(); e->name; e++) symbols.emplace_back(e->name, e->addr);
+                    continue;
+                }
                 string why;
-                if (!FindToolchain(ccrequest, tc, why)) {
+                if (!havetc && !FindToolchain(ccrequest, tc, why)) {
                     fprintf(stderr, "%s\n", why.c_str());
                     return 1;
                 }
-                BuildOptions jitopts;
-                jitopts.ccrequest = ccrequest;
-                jitopts.verbose = verbose;
+                havetc = true;
                 Builder b { tc, jitopts, msgs };
-                for (auto pkg : nativepkgs) {
-                    NativeBuild nb;
-                    if (!BuildNativePart(*astp, pkg, filename, b, true, nb)) return 1;
-                    string err;
-                    if (!LoadSharedSymbols(nb.jitlib, symbols, err)) {
-                        fprintf(stderr, "cannot load the package %s's library: %s\n",
-                                astp->packages[pkg].name.c_str(), err.c_str());
-                        return 1;
-                    }
+                NativeBuild nb;
+                if (!BuildNativePart(*astp, pkg, filename, b, true, nb)) return 1;
+                string err;
+                if (!LoadSharedSymbols(nb.jitlib, symbols, err)) {
+                    fprintf(stderr, "cannot load the package %s's library: %s\n", p.name.c_str(),
+                            err.c_str());
+                    return 1;
                 }
             }
             // The program shares this process, so its exit code becomes ours

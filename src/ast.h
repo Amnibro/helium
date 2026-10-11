@@ -2087,6 +2087,7 @@ struct Package {
     string root;          // With its trailing separator, or "" for the working directory.
     bool stdlib = false;
     string cachekey;      // A git source's place under GOOSE_HOME/pkg; "" for a path.
+    int builtin = -1;     // Its index in builtin_packages when compiled into the compiler.
     // The sidecar beside its entry, `<name>.build` (docs/design/packages.md
     // §4.7), read when the package is loaded: the C it compiles, which makes
     // its native part (§5), and the rest of its settings.

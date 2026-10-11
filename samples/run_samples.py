@@ -156,9 +156,15 @@ def main():
         if any(not native[m] for m in modules):
             nativeskips.append(f.name)
             return lines, failures, jitskips, nativeskips
-        ok, log = cc.compile(cfile, efile, opt=2 if args.profile == "baseline" else 1,
-                             extra=extra, strict_decls=True, libs=libs, runtime=runtime,
-                             log=gendir / f"{name}.cc.log")
+        if modules:
+            # A sample using a native module is built by the compiler, which
+            # finds the module's link inputs itself.
+            code, out, err = tc.run_capture([exe, "build", "-O2", "-o", str(efile), str(f)])
+            ok, log = code == 0, out + err
+        else:
+            ok, log = cc.compile(cfile, efile, opt=2 if args.profile == "baseline" else 1,
+                                 extra=extra, strict_decls=True, libs=libs, runtime=runtime,
+                                 log=gendir / f"{name}.cc.log")
         if not ok:
             say("\n".join(log.splitlines()[:8]))
             say(f"FAIL sample-cc {f.name}")

@@ -1,4 +1,4 @@
-/* Shared by the physics layer's own C files in src/physics/, never by a
+/* Shared by the physics layer's own C files, never by a
    program: the conversions between the packed Goose-shaped structs of
    physics_api.h and Box3D's, the handle checks every entry point starts
    with, errors, and the slot tables of the geometry the layer owns. Like the

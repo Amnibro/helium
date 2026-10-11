@@ -8,7 +8,7 @@ tree; use `--stdlib <dir>` or `GOOSE_STDLIB` to select another location.
 Everything is written in Goose except the C behind `os`
 (`src/runtime/runtime_os.h`), the byte search behind `std`'s `find_any` and
 `find_pair` (`src/runtime/runtime_impl.h`), libm behind `math`, the graphics layer behind
-`gfx` (`src/gfx/`), the physics layer behind `physics` (`src/physics/`) and
+`gfx` (`src/gfx/`), the physics layer behind `physics` (`packages/physics/src/`) and
 the ui layer behind `ui` (`src/ui/`), and the PCM mixer behind `audio`
 (`src/audio/`), all reached through `extern fn` (spec
 §7.10). The design and its rationale are in `design/stdlib_design.md` (and

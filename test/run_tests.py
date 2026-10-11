@@ -31,7 +31,7 @@ import, as a ui test drawing through gfx does -- linking what `goose
 --audio-link`, `--gfx-link`, `--physics-link` or `--ui-link` names, and a machine without a
 GPU device counts as a skip for gfx. A fixture there with `// error:`
 markers is a rejection test, as in errors_tc/. test/api_check.py checks
-stdlib/audio.goose, stdlib/gfx.goose, stdlib/physics.goose and stdlib/ui.goose against their C
+stdlib/audio.goose, stdlib/gfx.goose, packages/physics/physics.goose and stdlib/ui.goose against their C
 layers' own lists of functions, structs and constants.
 
 Profiles keep the CI coverage deliberate: baseline compares Goose/native C
@@ -819,9 +819,10 @@ class Runner:
                         bad = True
                         continue
                     argv = built.get(ol)
-                    if not argv and res.sidecar:
-                        # A program with C of its own is built by the
-                        # compiler, which builds that C too (native.h).
+                    if not argv and (res.sidecar or modules):
+                        # A program with C of its own, or using a native
+                        # module, is built by the compiler, which builds or
+                        # finds that C too (native.h, builtin.h).
                         argv = [efile]
                         code, out, err = tc.run_capture([self.exe, "build", f"-O{ol}", "-o", efile, f])
                         if code != 0:
