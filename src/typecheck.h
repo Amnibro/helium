@@ -259,7 +259,9 @@ struct TypeCheck {
         bool operator==(const FlowEntry &) const = default;
     };
     struct FlowState {
-        vector<FlowEntry> locals;
+        small_vector<FlowEntry, 16> locals;
+        // The narrowed globals only, in ast.globals order: the others are
+        // not narrowed.
         vector<pair<VarDef *, TypeExpr *>> globals;
         bool reachable = true;
         bool operator==(const FlowState &) const = default;
@@ -1285,7 +1287,7 @@ struct TypeCheck {
     // the ones it is lexically nested in, the global initializers', and
     // those the function values bound in `spec`, or in the specialization
     // of any of those frames, were written in (which calling one reaches).
-    vector<int> NamedFrames(int fi, FnSpec *spec);
+    small_vector<int, 8> NamedFrames(int fi, FnSpec *spec);
     // The variables of those frames, in vars order.
     template<typename F> void EachNamedVar(int fi, FnSpec *spec, F f) {
         for (auto k : NamedFrames(fi, spec)) {
