@@ -391,7 +391,7 @@ The [summary](bench/summary.md) explains the gains and losses;
 
 ## Build and run
 
-You need CMake 3.20 or later, a C++20 compiler (MSVC, clang or gcc) and Python
+You need CMake 3.27 or later, a C++20 compiler (MSVC, clang or gcc) and Python
 3 for the test and sample runners. TinyCC, which the in-process backend is
 built from, is part of the tree. The graphics, audio, ui and physics
 modules are packages in repositories of their own

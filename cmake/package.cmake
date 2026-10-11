@@ -219,7 +219,9 @@ function(goose_builtin_packages wanted)
     endforeach()
     # The file API reply, written as this build generates, is where
     # linkclosure.cmake reads the probes' link lines after goose is built.
-    file(WRITE "${CMAKE_BINARY_DIR}/.cmake/api/v1/query/codemodel-v2" "")
+    # A query file written during configure is only read on the next run.
+    # Request this run's reply so a clean build has the link lines too.
+    cmake_file_api(QUERY API_VERSION 1 CODEMODEL 2)
     get_property(names GLOBAL PROPERTY GOOSE_BUILTIN_NAMES)
     get_property(srcdirs GLOBAL PROPERTY GOOSE_BUILTIN_SRCDIRS)
     get_property(rspdirs GLOBAL PROPERTY GOOSE_BUILTIN_RSPDIRS)

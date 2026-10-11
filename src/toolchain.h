@@ -307,7 +307,8 @@ inline Toolchain MsvcStyle(const string &name, const string &cc, const string &h
 // GOOSE_HOME/config, else the first found on this machine (the order in
 // docs/design/packages.md §6.1). False, with `why` saying what was looked
 // for, when there is none.
-inline bool FindToolchain(string request, Toolchain &out, string &why, bool refresh = false) {
+inline bool FindToolchain(string request, Toolchain &out, string &why,
+                          [[maybe_unused]] bool refresh = false) {
     string how = "--cc";
     if (request.empty()) {
         if (auto env = getenv("GOOSE_CC"); env && *env) {

@@ -13,20 +13,43 @@ struct Json {
     vector<Json> arr;
     vector<pair<string, Json>> obj;
 
-    const Json *Get(const string &key) const {
-        for (auto &[k, v] : obj) if (k == key) return &v;
-        return nullptr;
-    }
-    string Str(const string &key) const {
-        auto v = Get(key);
-        return v && v->kind == STRING ? v->str : string();
-    }
-    const vector<Json> &Arr(const string &key) const {
-        static const vector<Json> none;
-        auto v = Get(key);
-        return v && v->kind == ARRAY ? v->arr : none;
-    }
+    // Define these after Json is complete: pair's constructor traits can
+    // otherwise instantiate this recursive type's vector members too early.
+    Json();
+    ~Json();
+    Json(const Json &);
+    Json(Json &&) noexcept;
+    Json &operator=(const Json &);
+    Json &operator=(Json &&) noexcept;
+
+    const Json *Get(const string &key) const;
+    string Str(const string &key) const;
+    const vector<Json> &Arr(const string &key) const;
 };
+
+inline Json::Json() = default;
+inline Json::~Json() = default;
+inline Json::Json(const Json &) = default;
+inline Json::Json(Json &&) noexcept = default;
+inline Json &Json::operator=(const Json &) = default;
+inline Json &Json::operator=(Json &&) noexcept = default;
+
+// Iterating obj instantiates pair<string, Json>, which needs Json complete.
+inline const Json *Json::Get(const string &key) const {
+    for (auto &[k, v] : obj) if (k == key) return &v;
+    return nullptr;
+}
+
+inline string Json::Str(const string &key) const {
+    auto v = Get(key);
+    return v && v->kind == STRING ? v->str : string();
+}
+
+inline const vector<Json> &Json::Arr(const string &key) const {
+    static const vector<Json> none;
+    auto v = Get(key);
+    return v && v->kind == ARRAY ? v->arr : none;
+}
 
 struct JsonReader {
     const char *p;
