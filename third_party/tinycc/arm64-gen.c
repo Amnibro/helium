@@ -828,6 +828,9 @@ static unsigned long arm64_pcs_aux(int variadic, int n, CType **type, unsigned l
         if (variadic && i == variadic) {
             nx = 8;
             nv = 8;
+
+            /* Fixed arguments may have ended partway through a slot. */
+            ns = (ns + 7) & ~7;
 	}
 
 #elif defined(TCC_TARGET_PE)
@@ -867,6 +870,21 @@ static unsigned long arm64_pcs_aux(int variadic, int n, CType **type, unsigned l
             nv += hfa;
             continue;
         }
+
+#if defined(TCC_TARGET_MACHO)
+        /* Apple packs fixed floating-point arguments on the stack at their
+           natural size and alignment. In particular, an HFA of three floats
+           takes 12 bytes, not 16; a following float starts at offset 12.
+           Variadic arguments still use the standard eight-byte slots. */
+        if ((!variadic || i < variadic) && (hfa || is_float(bt))) {
+            if (hfa)
+                nv = 8;
+            ns = (ns + align - 1) & -align;
+            a[i] = ns;
+            ns += size;
+            continue;
+        }
+#endif
 
         // C.3
         if (hfa) {
@@ -938,6 +956,12 @@ static unsigned long arm64_pcs_aux(int variadic, int n, CType **type, unsigned l
         ns += size;
     }
 
+#if defined(TCC_TARGET_MACHO)
+    /* The callee only classifies the fixed parameters; va_start must skip
+       their final partial slot just as the caller does above. */
+    if (variadic)
+        ns = (ns + 7) & ~7;
+#endif
     return ns - 32;
 }
 
