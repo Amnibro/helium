@@ -81,6 +81,16 @@ window be made. The link reserves 64 MB for that thread's stack as well on
 Windows and macOS (`CMakeLists.txt`); on Linux it has the stack limit the
 process started with (`ulimit -s`), which nothing in the executable sets.
 
+**Verbs** (`Main` in `main.cpp`). `goose run file.goose [options] [-- args]`
+compiles the program in this process and runs it (`--jit`), `goose check
+file.goose` typechecks it (`--check`), and `goose version` prints the
+runtime hash. A first argument that is no verb is read as the flags below,
+so `goose file.goose` is `goose run file.goose`. The verbs are the
+command line as documented; the flags are the plumbing they are built on
+(`docs/design/packages.md`). Other processes (the C compiler, cmake, git)
+are started through `process.h`, a translation unit of its own over
+`third_party/subprocess/subprocess.h`.
+
 **Driver flags** (`Main` in `main.cpp`):
 
 | Flag | Effect |

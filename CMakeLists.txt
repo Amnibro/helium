@@ -12,6 +12,8 @@ set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded")
 
 add_executable(goose
     src/main.cpp
+    src/process.cpp
+    src/process.h
     src/includes.h
     src/utils.h
     src/lexer.h
@@ -61,6 +63,8 @@ add_executable(goose
 # The compile runs on a thread of its own, with a larger stack (main.cpp).
 find_package(Threads REQUIRED)
 target_link_libraries(goose PRIVATE Threads::Threads)
+# The library the process runner (process.cpp) is built on.
+target_include_directories(goose PRIVATE third_party/subprocess)
 
 # A program run in-process runs on the main thread (main.cpp), whose stack the
 # executable sets: 64 MB reserved, as for the compile thread, where Windows

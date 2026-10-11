@@ -414,7 +414,8 @@ without them the build leaves the `gfx` module out and says what to install.
 
 The compiler is `build/goose` (`build/Release/goose.exe` with the Visual Studio
 generator), and it finds the standard library in the source tree it was built
-from. Run a program straight from source, in-process:
+from. Run a program straight from source, in-process (`goose run` says the
+same explicitly, and `goose check` only typechecks):
 
 ```bash
 build/goose samples/01_tour.goose

@@ -1798,6 +1798,31 @@ def main():
         r.section("resource paths")
         r.show_task(resource_paths)
 
+    def driver_verbs():
+        """The verb forms of the command line against the flag forms they
+        stand for: `goose run`, `goose check` and `goose version`."""
+        probe = gendir / "verbs.goose"
+        tc.write_text(probe, 'fn main() { print("verbs"); }\n')
+        checks = []
+        if jit:
+            code, out, err = tc.run_capture([exe, "run", probe])
+            checks.append(("run", code == 0 and out.strip() == "verbs", out + err))
+        code, out, err = tc.run_capture([exe, "check", probe])
+        checks.append(("check", code == 0 and "typechecked ok" in out + err and
+                       "verbs" not in out, out + err))
+        code, out, err = tc.run_capture([exe, "run", "-o", str(gendir / "verbs.c"), probe])
+        checks.append(("run -o (refused)", code != 0 and "takes no -o" in err, out + err))
+        code, out, err = tc.run_capture([exe, "version"])
+        checks.append(("version", code == 0 and
+                       re.match(r"goose runtime [0-9a-f]{12}\s*$", out) is not None, out + err))
+        for what, good, text in checks:
+            if good:
+                r.ok(f"goose {what}")
+            else:
+                r.fail(f"goose {what}", text)
+    r.section("driver verbs")
+    r.show_task(driver_verbs)
+
     show_goose_in_goose()
 
     # --- JIT: the same programs, compiled and run inside the compiler --------

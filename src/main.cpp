@@ -39,6 +39,7 @@
 #include "codegen_nodes.h"
 #include "runtime_inline.h"
 #include "jit.h"
+#include "process.h"
 
 namespace goose {
 
@@ -424,6 +425,22 @@ CodeGen::StackConfig StackConfigOf(const vector<string> &cdefines) {
 
 int Main(int argc, char **argv) {
     auto exe = ExePath(argv[0]);
+    // The verb forms, `goose run|check|version ...`. A first argument that is
+    // none of them is read as an option or a file, as it always was, so
+    // `goose foo.goose` is `goose run foo.goose`.
+    string verb;
+    auto firstarg = 1;
+    if (argc > 1) {
+        string v = argv[1];
+        if (v == "run" || v == "check" || v == "version") {
+            verb = v;
+            firstarg = 2;
+        }
+    }
+    if (verb == "version") {
+        printf("goose runtime %s\n", RuntimeVersion().c_str());
+        return 0;
+    }
     string outname, headername, stdlibdir, shaderfile, shadersource, dumpfile;
     auto dump = false, tokens = false, parseonly = false, specs = false, nocgen = false;
     auto roundtrip = false, multitest = false;
@@ -432,7 +449,7 @@ int Main(int argc, char **argv) {
     auto forcejit = false, standalone = false;
     auto optlevel = 1;
     vector<string> cdefines, progargs, includenames, files;
-    for (int i = 1; i < argc; i++) {
+    for (int i = firstarg; i < argc; i++) {
         string arg = argv[i];
         // Everything past `--` belongs to the program being run, not here.
         if (arg == "--") {
@@ -515,6 +532,16 @@ int Main(int argc, char **argv) {
         }
         else files.push_back(arg);
     }
+    if (verb == "run") {
+        if (!outname.empty()) {
+            fprintf(stderr, "goose run takes no -o: it compiles and runs the program in this "
+                            "process\n");
+            return 1;
+        }
+        forcejit = true;
+    } else if (verb == "check") {
+        nocgen = true;
+    }
     if (files.size() > 1 && !multitest) {
         fprintf(stderr, "multiple input files given\n");
         return 1;
@@ -529,7 +556,9 @@ int Main(int argc, char **argv) {
         return 0;
     }
     if (files.empty()) {
-        fprintf(stderr, "usage: goose [--dump] [--parse] [--tokens] [--roundtrip] "
+        fprintf(stderr, "usage: goose run file.goose [options] [-- program args...] | "
+                        "goose check file.goose [options] | goose version\n");
+        fprintf(stderr, "   or: goose [--dump] [--parse] [--tokens] [--roundtrip] "
                         "[--dump-file out.goose] [--specs] [--stacks] [--check] "
                         "[--no-bce] [--bce-test] [--bce-lines] [--unsafe-no-rf-check] [-O0|-O1|-O2] "
                         "[-o out.c [--standalone]] [--jit] [-DNAME=VALUE]... [--stack-reserve size] "
