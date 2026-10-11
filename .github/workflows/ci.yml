@@ -65,7 +65,7 @@ jobs:
         run: cmake --build build --config Debug
 
       - name: Test
-        run: python test/run_tests.py --profile baseline --cc native --require-clang
+        run: python test/run_tests.py --exe build/${{ runner.os == 'Windows' && 'Debug/goose.exe' || 'goose' }} --profile baseline --cc native --require-clang
 
   sanitize:
     name: Linux / ASan + UBSan
