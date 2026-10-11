@@ -359,7 +359,7 @@ struct TypeCheck {
     bool Descend(Node *n);
     void Ascend(Node *n);
     // The checked value of every expression that points somewhere, by node.
-    unordered_map<Node *, Val> nodevals;
+    flat_map<Node *, Val> nodevals;
     void RecordVal(Node *n, const Val &v) {
         if (!v.None() || v.holderset) nodevals[n] = v;
     }

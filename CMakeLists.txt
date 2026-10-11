@@ -24,6 +24,7 @@ add_executable(goose
     src/includes.h
     src/utils.h
     src/small_vector.h
+    src/flat_map.h
     src/lexer.h
     src/ast.h
     src/dump.h

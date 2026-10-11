@@ -505,9 +505,9 @@ template<typename F> void TypeCheck::HoldForSequence(ForLoop *fl, const Val &v, 
         else if (auto ix = Is<Index>(n)) obj = ix->obj;
         else break;
         // The slot lies in what obj is, or leads to.
-        auto it = nodevals.find(obj);
-        if (n->exprtype && IsRefOrSlice(n->exprtype) && it != nodevals.end()) {
-            auto slot = DecayRef(it->second);
+        auto ov = nodevals.find(obj);
+        if (n->exprtype && IsRefOrSlice(n->exprtype) && ov) {
+            auto slot = DecayRef(*ov);
             slot.byteview = false;
             slot.type = ast.SliceOf(LoadType(n->exprtype), n->line);
             hold(n, slot, true);
@@ -533,12 +533,12 @@ template<typename F> void TypeCheck::HeldOperands(F f) {
         ForOperands(e.node, [&](Node *ch, HoldKind kind) {
             auto at = i++;
             if (at >= e.pos) return;
-            auto it = nodevals.find(ch);
-            if (it == nodevals.end()) return;
+            auto cv = nodevals.find(ch);
+            if (!cv) return;
             if (ch == cur.renderarg && cur.rendering) {
-                HoldAs(ch, it->second, HK_VIEW, e.node, cur.rendering, f);
+                HoldAs(ch, *cv, HK_VIEW, e.node, cur.rendering, f);
                 if (ch == cur.renderwhere) {
-                    auto where = it->second;
+                    auto where = *cv;
                     where.type = ast.RefTo(where.type, ch->line);
                     f(Held { ch, std::move(where), false, cur.rendering });
                 }
@@ -551,7 +551,7 @@ template<typename F> void TypeCheck::HeldOperands(F f) {
                 return;
             }
             if (own) return;
-            HoldAs(ch, it->second, kind, e.node, nullptr, f);
+            HoldAs(ch, *cv, kind, e.node, nullptr, f);
         });
     }
 }

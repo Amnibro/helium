@@ -10,6 +10,7 @@
 #include <string.h>
 
 #include <algorithm>
+#include <bit>
 #include <charconv>
 #include <cmath>
 #include <deque>

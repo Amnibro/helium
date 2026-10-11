@@ -3,6 +3,7 @@
 #include "includes.h"
 #include "utils.h"
 #include "small_vector.h"
+#include "flat_map.h"
 #include "lexer.h"
 #include "ast.h"
 #include "dump.h"
