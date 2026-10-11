@@ -124,7 +124,7 @@ def main():
 
     # How: in-process, then built by each toolchain.
     modes = []
-    if tc.have_jit(exe) and tc.have_gfx(exe):
+    if tc.have_gfx(exe):
         modes.append(("jit", None))
     if not args.quick:
         ccs = list(tc.find_ccs().values())

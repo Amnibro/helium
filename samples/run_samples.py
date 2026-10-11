@@ -13,9 +13,9 @@ or the machine no GPU device. A sample importing audio, physics or ui links what
 `goose --audio-link`, `--physics-link` or `--ui-link` names, and is skipped where the
 compiler has no such layer.
 
-A compiler built with the TinyCC backend also runs every sample a second way,
-in JIT mode -- built and run inside the compiler process, with no C file and no
-external toolchain -- and compares that against the same expected output.
+Every sample also runs a second way, in JIT mode -- built and run inside the
+compiler process, with no C file and no external toolchain -- and is compared
+against the same expected output.
 
 Used by test/run_tests.py; runnable on its own:
   python samples/run_samples.py [--exe path/to/goose] [--bless] [--no-jit] [-j N]
@@ -82,7 +82,7 @@ def main():
         tc.use_sanitizer_suppressions()
     # Blessing rewrites the expected outputs from the compiled run, so the
     # JIT comparison against them has nothing to say until that has happened.
-    jit = not args.no_jit and not args.bless and tc.have_jit(exe)
+    jit = not args.no_jit and not args.bless
 
     gendir = tc.REPO_ROOT / "build" / "gen" / args.profile / "samples"
     gendir.mkdir(parents=True, exist_ok=True)

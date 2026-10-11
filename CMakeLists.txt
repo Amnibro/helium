@@ -94,19 +94,12 @@ else()
 endif()
 target_link_libraries(goose PRIVATE goose_shaderc)
 
-# The optional in-process C backend. Present only when the TinyCC submodule has
-# been checked out (`git submodule update --init`); the compiler builds and
-# behaves exactly the same without it, minus JIT mode.
-option(GOOSE_LIBTCC "Build the in-process TinyCC backend when the submodule is present" ON)
-if(GOOSE_LIBTCC AND EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/third_party/tinycc/libtcc.h")
-    include(cmake/libtcc.cmake)
-endif()
-if(GOOSE_HAVE_LIBTCC)
-    target_link_libraries(goose PRIVATE libtcc)
-    add_dependencies(goose tcc_runtime)
-    target_compile_definitions(goose PRIVATE
-        GOOSE_HAVE_LIBTCC=1 GOOSE_TCC_LIB_PATH="${TCC_STAGE}")
-endif()
+# The in-process C backend: TinyCC, vendored under third_party/tinycc and
+# built into every compiler (cmake/libtcc.cmake).
+include(cmake/libtcc.cmake)
+target_link_libraries(goose PRIVATE libtcc)
+add_dependencies(goose tcc_runtime)
+target_compile_definitions(goose PRIVATE GOOSE_TCC_LIB_PATH="${TCC_STAGE}")
 
 # The optional graphics module (stdlib/gfx.goose): SDL3 from the
 # third_party/SDL submodule and the C layer over it, built into the compiler

@@ -1279,7 +1279,7 @@ def main():
     # Not under the sanitizers: the program runs inside the compiler process and
     # is not itself instrumented, and its runtime allocations are still held
     # when the compiler exits, which LeakSanitizer reports against the compiler.
-    jit = not args.no_jit and args.profile != "sanitize" and tc.have_jit(exe)
+    jit = not args.no_jit and args.profile != "sanitize"
     r = Runner(exe, args.jobs, args.verbose)
     r.gpulock = threading.BoundedSemaphore(args.gpu_jobs) if args.gpu_jobs else None
     r.batch = args.batch

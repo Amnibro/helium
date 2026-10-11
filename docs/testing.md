@@ -176,11 +176,9 @@ platform, checks what the program reports about its own readbacks, and decodes
 the screenshots it saves (under `build/gfx-window/`) to check them for detail
 and compare them across runs.
 
-The TinyCC runs need the `third_party/tinycc` submodule at configure time; a
-compiler built without it skips them, and the runners find that out by running
-a one-line program rather than by asking the build. They are also skipped under
-the sanitizers, where the program runs uninstrumented inside an instrumented
-compiler and still holds its runtime allocations when that compiler exits.
+The TinyCC runs are skipped under the sanitizers, where the program runs
+uninstrumented inside an instrumented compiler and still holds its runtime
+allocations when that compiler exits.
 A test the backend cannot run yet is reported as a skip, not a failure: either
 because the compiler refuses the program outright (`JIT mode does not support`)
 or because the test's first line says `no-jit`. Prefer portable assertions to

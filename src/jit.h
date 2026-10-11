@@ -1,18 +1,13 @@
-// The optional in-process C backend: instead of writing the generated C out
-// for another compiler to build, hand it to TinyCC, which compiles it into
-// this process's memory and calls its main. That is what happens when no `-o`
-// is given ("JIT mode").
-//
-// Present only when the third_party/tinycc submodule was checked out at
-// configure time; everything below compiles to a "not built in" error
-// otherwise, and the driver falls back to writing the .c file.
+// The in-process C backend: instead of writing the generated C out for
+// another compiler to build, hand it to TinyCC, which compiles it into this
+// process's memory and calls its main. That is what happens when no `-o` is
+// given ("JIT mode"). TinyCC is vendored under third_party/tinycc and built
+// into every compiler.
 
 #pragma once
 
-#ifdef GOOSE_HAVE_LIBTCC
 #include "libtcc.h"
 #include <filesystem>
-#endif
 #ifdef GOOSE_HAVE_GFX
 #include "gfx/gfx_api.h"
 #endif
@@ -27,12 +22,6 @@
 #endif
 
 namespace goose {
-
-#ifdef GOOSE_HAVE_LIBTCC
-inline constexpr bool have_jit = true;
-#else
-inline constexpr bool have_jit = false;
-#endif
 
 // Where TinyCC's own headers and its libtcc1 support archive were staged: an
 // explicit override for a moved build tree, next to the compiler binary for an
@@ -53,8 +42,6 @@ inline string JitLibPath(const string &exedir) {
     }
     return staged;
 }
-
-#ifdef GOOSE_HAVE_LIBTCC
 
 // TinyCC reports through a callback rather than a return value, so its
 // diagnostics are collected and raised as one CompileError.
@@ -162,15 +149,5 @@ inline int RunJit(const string &csrc, const string &libpath, const string &progn
     tcc_delete(s);
     return code;
 }
-
-#else
-
-inline int RunJit(const string &, const string &, const string &,
-                  const vector<string> &, const NativeLayers &) {
-    throw CompileError { "this compiler was built without the TinyCC backend; "
-                         "check out third_party/tinycc and reconfigure, or pass -o" };
-}
-
-#endif
 
 }  // namespace goose

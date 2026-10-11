@@ -540,8 +540,7 @@ int Main(int argc, char **argv) {
                         "--gen-runtime-header | "
                         "--audio-link msvc|cc | --gfx-link msvc|cc | "
                         "--physics-link msvc|cc | --ui-link msvc|cc\n");
-        fprintf(stderr, "without -o the program is compiled and run in this process%s.\n",
-                have_jit ? " by TinyCC" : " -- unavailable in this build, so the .c is written");
+        fprintf(stderr, "without -o the program is compiled and run in this process by TinyCC.\n");
         fprintf(stderr, "the .c that -o writes links with the runtime that --emit-runtime "
                         "writes, compiled once;\n--standalone writes one that holds the "
                         "runtime itself.\n");
@@ -555,9 +554,8 @@ int Main(int argc, char **argv) {
         return 1;
     }
     // With no output file the program is compiled into this process and run,
-    // which is what --jit asks for explicitly. A build without the backend
-    // keeps writing the .c next to the source instead.
-    auto jit = forcejit || (outname.empty() && have_jit);
+    // which is what --jit asks for explicitly.
+    auto jit = forcejit || outname.empty();
     if (!headername.empty() && (jit || multitest)) {
         fprintf(stderr, "--header requires C output for a single input file\n");
         return 1;
@@ -748,10 +746,6 @@ int Main(int argc, char **argv) {
             for (auto pos = outfile.find('%'); pos != string::npos;
                  pos = outfile.find('%', pos + stem.size()))
                 outfile.replace(pos, 1, stem);
-        }
-        if (outfile.empty() && !jit) {
-            auto dot = filename.find_last_of('.');
-            outfile = cat(dot == string::npos ? filename : filename.substr(0, dot), ".c");
         }
         includes = includenames;
         program.clear();

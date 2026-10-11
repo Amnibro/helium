@@ -391,12 +391,12 @@ The [summary](bench/summary.md) explains the gains and losses;
 ## Build and run
 
 You need CMake 3.20 or later, a C++20 compiler (MSVC, clang or gcc) and Python
-3 for the test and sample runners. Four submodules are optional: TinyCC,
-which the in-process backend is built from, SDL3, which the `gfx` graphics
-module is built from, Box3D, which the `physics` module is built from, and
-Nuklear, which the `ui` module is built from. The compiler builds without
-these submodules, but the corresponding features are unavailable: JIT
-execution, graphics, physics, or windows of widgets.
+3 for the test and sample runners. TinyCC, which the in-process backend is
+built from, is part of the tree. Three submodules are optional: SDL3, which
+the `gfx` graphics module is built from, Box3D, which the `physics` module
+is built from, and Nuklear, which the `ui` module is built from. The
+compiler builds without these submodules, but the corresponding features
+are unavailable: graphics, physics, or windows of widgets.
 
 ```bash
 git clone --recursive https://github.com/aardappel/goose

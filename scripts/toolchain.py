@@ -84,25 +84,6 @@ def find_goose(explicit=None):
     sys.exit("no goose binary under build/ -- build it first, or pass --exe")
 
 
-def have_jit(exe):
-    """Whether this compiler was built with the TinyCC backend, answered by
-    running a one-line program through it. That also proves the support
-    library CMake staged alongside it is where the compiler looks for it,
-    which no build-time flag could tell us. A backend that is built in but
-    cannot run the probe stops the run rather than reading as absent, which
-    would otherwise skip every JIT test and pass."""
-    probe = REPO_ROOT / "build" / "jitprobe.goose"
-    probe.parent.mkdir(parents=True, exist_ok=True)
-    write_text(probe, "fn main() { print(7); }\n")
-    code, out, err = run_capture([exe, "--jit", probe])
-    if code == 0 and out.strip() == "7":
-        return True
-    if "built without the TinyCC backend" in err:
-        return False
-    sys.exit(f"{exe} has the TinyCC backend but cannot run a one-line program "
-             f"with it (pass --no-jit to skip JIT runs):\n{err.rstrip()}")
-
-
 # The compiler's own wording for a program the TinyCC backend cannot run yet.
 # The runners report those as skips rather than failures, so the coverage
 # returns by itself once the backend grows the feature.
@@ -110,8 +91,8 @@ JIT_UNSUPPORTED = "JIT mode does not support"
 
 
 def have_gfx(exe):
-    """Whether this compiler has the gfx layer built in, answered as have_jit
-    answers for TinyCC: by running a one-line program that calls into it."""
+    """Whether this compiler has the gfx layer built in, answered by running
+    a one-line program that calls into it."""
     probe = REPO_ROOT / "build" / "gfxprobe.goose"
     probe.parent.mkdir(parents=True, exist_ok=True)
     write_text(probe, "import gfx;\nfn main() { print(gfx::available()); }\n")
