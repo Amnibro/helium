@@ -221,6 +221,29 @@ inline vector<string> VsCmakeDirs() {
 
 #endif
 
+// cmake and ninja, on PATH or where Visual Studio installs its own.
+inline string CMakePath() {
+    #ifdef _WIN32
+        return FindTool("cmake", VsCmakeDirs()).path;
+    #else
+        return FindOnPath("cmake");
+    #endif
+}
+
+inline string NinjaPath() {
+    auto p = FindOnPath("ninja");
+    #ifdef _WIN32
+        if (p.empty()) {
+            auto vs = VsInstallDir();
+            if (!vs.empty()) {
+                auto cand = cat(vs, "\\Common7\\IDE\\CommonExtensions\\Microsoft\\CMake\\Ninja\\ninja.exe");
+                if (PathExists(cand)) p = cand;
+            }
+        }
+    #endif
+    return p;
+}
+
 // --- the C toolchain -----------------------------------------------------------
 
 // Fills in what the driver at `cc` says about itself: its version, the

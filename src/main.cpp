@@ -44,6 +44,7 @@
 #include "toolchain.h"
 #include "build.h"
 #include "packages.h"
+#include "json.h"
 #include "native.h"
 
 namespace goose {

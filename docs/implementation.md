@@ -95,7 +95,12 @@ link, and for a run a shared library whose one export hands the C
 functions to `RunJit` by name), and the native parts of the packages
 whose extern fns the program calls (`NativePackagesUsed`, from codegen's
 `usedexterns`; a package before the ones it requires, under
-`GOOSE_HOME/build/pkg`). `goose fetch file.goose` fetches
+`GOOSE_HOME/build/pkg`). A package with a `cmake_target` is built through
+a generated wrapper project (`BuildCMakePart`): the JIT library a shared
+target linked to the package's, and a probe executable whose link line,
+read from CMake's file API reply (`json.h`, `CMakeLinkClosure`), is the
+package's link closure, written as its response file. `goose fetch
+file.goose` fetches
 the packages the root declares and stops (`--parse`; `--update` fetches
 tags and branches again), `goose toolchain` prints the C
 compiler, cmake and git a build would use (`toolchain.h`: `--cc`,

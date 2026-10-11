@@ -93,6 +93,7 @@ JIT_UNSUPPORTED = "JIT mode does not support"
 # to build) and the machine has none it can find: a skip, like a layer
 # that was not built in.
 NO_TOOLCHAIN = "cannot find a C compiler"
+NO_CMAKE = "cannot find `cmake`"
 
 
 def have_gfx(exe):

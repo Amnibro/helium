@@ -825,7 +825,7 @@ class Runner:
                         argv = [efile]
                         code, out, err = tc.run_capture([self.exe, "build", f"-O{ol}", "-o", efile, f])
                         if code != 0:
-                            if tc.NO_TOOLCHAIN in err:
+                            if tc.NO_TOOLCHAIN in err or tc.NO_CMAKE in err:
                                 res.nativeskips.append(f.name)
                             else:
                                 self.fail(f"goose build -O{ol} {f.name}", out + err)
@@ -877,7 +877,7 @@ class Runner:
                     res.jitskips.append(f.name)
                     return
                 if any(tc.native_unavailable(m, err) for m in modules) or \
-                        (code != 0 and tc.NO_TOOLCHAIN in err):
+                        (code != 0 and (tc.NO_TOOLCHAIN in err or tc.NO_CMAKE in err)):
                     res.nativeskips.append(f.name)
                     return
                 out = self.check_run(name, f"jit -O{ol} {f.name}", code, out, err)

@@ -454,7 +454,9 @@ A program with C of its own names it in a sidecar beside the source,
 for one platform's part. Both forms build it: `goose build` links it in,
 and `goose run` builds it into a library the in-process run loads, so an
 `extern fn` reaches it either way. A library does the same with a sidecar
-beside its entry, and a program takes a library with `import name from
+beside its entry (or names the static library target of its own CMake
+project, `cmake_target = "x";`, which the compiler builds through cmake), and
+a program takes a library with `import name from
 "source";` in its root file: a directory (`"./lib"`), or a git repository
 at a tag or commit (`"owner/repo@v1"` on GitHub, `"host/owner/repo@ref"`),
 fetched into `~/.goose` and built there once per C compiler
