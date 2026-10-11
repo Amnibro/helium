@@ -1089,6 +1089,12 @@ error rather than reserving it for catastrophes
 [`18_json`](../samples/18_json.goose) — a bad token, a missing bracket and a
 bad escape are all one line each).
 
+The [`exception` module](stdlib.md#exception) packages this mechanism as
+`exception::try<E>(body) { error => ... }` and `exception::throw(value)`.
+It can catch owned text or application-defined error values without naming
+the application's outer function at each throw site. See its reference for
+the ownership and recursion restrictions; it does not provide `finally`.
+
 The same machinery is what lets a block `return` from its enclosing function
 rather than from the HOF calling it
 ([section 13](#13-generics-and-blocks-that-disappear)), which is the other
