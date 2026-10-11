@@ -2147,6 +2147,7 @@ struct TypeCheck {
                          Node *arg);
     StrLit *ConstStrLit(Node *n);
     const string *EmbedShader(Call *c, vector<Node *> &args);
+    const string *EmbedFile(Call *c, vector<Node *> &args);
     void CheckGrowShrink(Node *at, const char *op, Node *recv, const Val &rv);
     void GrowOnlyAssignKnown(Assign *a, const Roots &built, bool whole);
     // Whether a shrink whose receiver has these roots knows the arrays it

@@ -2782,6 +2782,10 @@ get one specialization each (`EnsureThreadSpec`) with flat parameters, and
 `CheckThreadGlobals` walks a thread program's call graph rejecting non-flat
 globals.
 
+`embed_file(path)` reads a file when the program is compiled (`EmbedFile`):
+the path a string literal or a `let`/`const` global holding one, relative to
+the file with the call, the bytes kept in `Ast::shaders` under `"file\n"`
+and the path and emitted as static data the way a shader blob is.
 `embed_shader` is a compile-time graphics extension (`EmbedShader`, `gfx.h`).
 With one argument it reads a file relative to the Goose file containing
 the call (or an absolute path), inferring the GLSL stage from `.vert`,

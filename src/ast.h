@@ -1014,7 +1014,7 @@ NODE(Call)
     // free_slice/realloc_slice: the slice handed back is not provably the pool's,
     // so codegen checks at run time that it lies inside the pool (§5.4).
     bool poolcheck = false;
-    const string *shaderblob = nullptr;  // embed_shader: its compiled blob, in Ast::shaders.
+    const string *shaderblob = nullptr;  // embed_shader's compiled blob or embed_file's bytes, in Ast::shaders.
     Call(Line l, Node *_callee) : Node(l, NKind), callee(_callee) {}
     // What the call passes for the callee's free variable v (fvremap).
     VarDef *FreeVarArg(VarDef *v) const {
@@ -2116,6 +2116,7 @@ struct Ast {
     // embed_shader's compiled blobs, compiled once by the checker and emitted
     // by codegen: a shader file's by its path as resolved from the file
     // calling it, a shader given as source by that file, stage and source.
+    // And embed_file's bytes, by "file\n" and the path, read the same way.
     map<string, string> shaders;
 
     // Every checked tree that runs outside a function body: the global
