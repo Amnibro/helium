@@ -2444,6 +2444,12 @@ struct BCE {
 
     // Everything the prescan and the walks collect for one body.
     void ResetSpecState() {
+        // Place IDs and their generations belong to this body's prescan.
+        // Interprocedural summaries use variables/parameter indices, never
+        // these IDs. Keeping old places makes every kill scan earlier bodies.
+        flow = Flow {};
+        places.clear();
+        placeids.clear();
         addrof.clear();
         intvars.clear();
         wdecl.clear();
@@ -2690,6 +2696,9 @@ struct BCE {
             if ((*it)->live && (*it)->body) RunSpec(*it);
         // Global initializers: judged with no surrounding context.
         ResetSpecState();
+        // They need their own prescan now that the last body's places have
+        // been discarded, including places a call can invalidate.
+        ast.ForEachRootTree([&](Node *n) { Mark(n); });
         mode = M_JUDGE;
         ast.ForEachRootTree([&](Node *n) {
             flow = Flow {};
