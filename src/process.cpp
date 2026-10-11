@@ -98,7 +98,12 @@ string FindOnPath(const string &name) {
         i = end + 1;
         if (dir.empty()) continue;
         for (auto &ext : exts) {
-            auto cand = cat(dir, dir.back() == '/' || dir.back() == '\\' ? "" : "/", name, ext);
+            #ifdef _WIN32
+                const char *slash = "\\";
+            #else
+                const char *slash = "/";
+            #endif
+            auto cand = cat(dir, dir.back() == '/' || dir.back() == '\\' ? "" : slash, name, ext);
             if (IsFile(cand)) return cand;
         }
     }

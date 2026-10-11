@@ -14,6 +14,8 @@ add_executable(goose
     src/main.cpp
     src/process.cpp
     src/process.h
+    src/buildfile.h
+    src/toolchain.h
     src/includes.h
     src/utils.h
     src/lexer.h

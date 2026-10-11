@@ -40,6 +40,8 @@
 #include "runtime_inline.h"
 #include "jit.h"
 #include "process.h"
+#include "buildfile.h"
+#include "toolchain.h"
 
 namespace goose {
 
@@ -425,14 +427,14 @@ CodeGen::StackConfig StackConfigOf(const vector<string> &cdefines) {
 
 int Main(int argc, char **argv) {
     auto exe = ExePath(argv[0]);
-    // The verb forms, `goose run|check|version ...`. A first argument that is
-    // none of them is read as an option or a file, as it always was, so
-    // `goose foo.goose` is `goose run foo.goose`.
+    // The verb forms, `goose run|check|toolchain|version ...`. A first
+    // argument that is none of them is read as an option or a file, as it
+    // always was, so `goose foo.goose` is `goose run foo.goose`.
     string verb;
     auto firstarg = 1;
     if (argc > 1) {
         string v = argv[1];
-        if (v == "run" || v == "check" || v == "version") {
+        if (v == "run" || v == "check" || v == "toolchain" || v == "version") {
             verb = v;
             firstarg = 2;
         }
@@ -447,6 +449,8 @@ int Main(int argc, char **argv) {
     auto nobce = false, bcetest = false, bcelines = false, norfcheck = false;
     auto stacks = false;
     auto forcejit = false, standalone = false;
+    auto json = false, refresh = false;
+    string ccrequest;
     auto optlevel = 1;
     vector<string> cdefines, progargs, includenames, files;
     for (int i = firstarg; i < argc; i++) {
@@ -522,6 +526,9 @@ int Main(int argc, char **argv) {
         else if (arg == "--header" && i + 1 < argc) headername = argv[++i];
         else if (arg == "--include" && i + 1 < argc) includenames.push_back(argv[++i]);
         else if (arg == "--stdlib" && i + 1 < argc) stdlibdir = argv[++i];
+        else if (arg == "--cc" && i + 1 < argc) ccrequest = argv[++i];
+        else if (arg == "--json") json = true;
+        else if (arg == "--refresh") refresh = true;
         // A -D lands in the generated C itself rather than on some backend's
         // command line, so a JIT run and a compiled one see the same source.
         else if (arg == "-D" && i + 1 < argc) cdefines.push_back(argv[++i]);
@@ -531,6 +538,16 @@ int Main(int argc, char **argv) {
             return 1;
         }
         else files.push_back(arg);
+    }
+    if (verb == "toolchain") {
+        try {
+            auto tools = FindTools(ccrequest, refresh);
+            fputs(ToolsReport(tools, json).c_str(), stdout);
+            return tools.havecc ? 0 : 1;
+        } catch (CompileError &e) {
+            fprintf(stderr, "%s\n", e.msg.c_str());
+            return 1;
+        }
     }
     if (verb == "run") {
         if (!outname.empty()) {
@@ -557,7 +574,8 @@ int Main(int argc, char **argv) {
     }
     if (files.empty()) {
         fprintf(stderr, "usage: goose run file.goose [options] [-- program args...] | "
-                        "goose check file.goose [options] | goose version\n");
+                        "goose check file.goose [options] | goose version |\n"
+                        "       goose toolchain [--cc name|path] [--json] [--refresh]\n");
         fprintf(stderr, "   or: goose [--dump] [--parse] [--tokens] [--roundtrip] "
                         "[--dump-file out.goose] [--specs] [--stacks] [--check] "
                         "[--no-bce] [--bce-test] [--bce-lines] [--unsafe-no-rf-check] [-O0|-O1|-O2] "

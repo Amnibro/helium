@@ -67,6 +67,7 @@ to a process.
 """
 
 import argparse
+import json
 import concurrent.futures
 import os
 import re
@@ -1815,6 +1816,16 @@ def main():
         code, out, err = tc.run_capture([exe, "version"])
         checks.append(("version", code == 0 and
                        re.match(r"goose runtime [0-9a-f]{12}\s*$", out) is not None, out + err))
+        # The compiler's own toolchain discovery: where this runner found a C
+        # compiler, the compiler must find one too, and say so as JSON.
+        code, out, err = tc.run_capture([exe, "toolchain", "--json"])
+        try:
+            info = json.loads(out)
+            good = (cc is None or info.get("cc") is not None) and \
+                   code == (0 if info.get("cc") else 1)
+        except ValueError:
+            good = False
+        checks.append(("toolchain --json", good, out + err))
         for what, good, text in checks:
             if good:
                 r.ok(f"goose {what}")
