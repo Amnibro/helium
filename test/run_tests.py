@@ -27,12 +27,12 @@ use the SDL3 graphics module, the physics/ tests the Box3D
 physics module and the ui/ tests the Nuklear ui module. They always parse,
 typecheck and generate C; they build and run where the compiler has the
 native layers they use built in -- their category's, and any other they
-import, as a ui test drawing through gfx does -- linking what `goose
---audio-link`, `--gfx-link`, `--physics-link` or `--ui-link` names, and a machine without a
-GPU device counts as a skip for gfx. A fixture there with `// error:`
-markers is a rejection test, as in errors_tc/. test/api_check.py checks
-packages/gfx/audio.goose, packages/gfx/gfx.goose and packages/gfx/ui.goose against their C
-layers' own lists of functions, structs and constants.
+import, as a ui test drawing through gfx does -- built by `goose build`,
+which links the packages the compiler was configured with, and a machine
+without a GPU device counts as a skip for gfx. A fixture there with
+`// error:` markers is a rejection test, as in errors_tc/. The packages
+check their modules against their C layers themselves (test/api_check.py in
+each of their repositories).
 
 Profiles keep the CI coverage deliberate: baseline compares Goose/native C
 -O0 and -O2 plus the targeted debug-runtime runs; sanitize uses Goose -O2 and
@@ -82,7 +82,6 @@ from pathlib import Path
 HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE.parent / "scripts"))
 import toolchain as tc
-import api_check
 
 
 def native_modules(f, native):
@@ -1552,18 +1551,6 @@ def main():
     for name in ("gfx_err_shader_syntax", "gfx_err_shader_part"):
         r.show_task(shader_error_line, name)
 
-    # Both sides of each native module's C boundary describe it: they must
-    # agree.
-    def api(module):
-        problems = api_check.check(module)
-        what = f"{module}-api {api_check.MODULES[module][1]} against its C layer's header"
-        if problems:
-            r.fail(what, "\n".join(problems))
-        else:
-            r.ok(what)
-    # The modules still in this tree; a package of its own checks itself.
-    for module in api_check.MODULES:
-        r.show_task(api, module)
 
     r.section("parse, roundtrip and typecheck")
     for f in tests:

@@ -32,23 +32,19 @@ jobs:
         os: [ubuntu-latest, macos-latest, windows-latest]
 
     steps:
-      # The SDL and Nuklear submodules are what the gfx package is built
-      # from; without them the compiler still builds, and that part of the
-      # suite is skipped. The physics package is fetched from its own
-      # repository by the configure below.
+      # The gfx and physics packages are fetched from their own repositories
+      # by the configure below (GOOSE_BUILTIN_LIBS), submodules and all.
       - uses: actions/checkout@v4
-        with:
-          submodules: true
 
       - uses: actions/setup-python@v5
         with:
           python-version: '3.x'
 
-      # SDL3, built for the gfx module from its submodule, needs the headers
-      # of what it can talk to (third_party/SDL/docs/README-linux.md, less
-      # OpenGL, which it is built without); with no window system at all the
-      # build takes the no-gfx path instead. Mesa's lavapipe is a Vulkan
-      # device with no GPU, for the gfx tests to run on.
+      # SDL3, built for the gfx package, needs the headers of what it can
+      # talk to (SDL's docs/README-linux.md, less OpenGL, which it is built
+      # without); with no window system at all the package builds nothing.
+      # Mesa's lavapipe is a Vulkan device with no GPU, for the gfx tests to
+      # run on.
       - name: Install SDL build dependencies
         if: runner.os == 'Linux'
         run: >-
@@ -88,9 +84,9 @@ jobs:
         with:
           python-version: '3.x'
 
-      # No submodule checkout and no builtin packages: this is the build
-      # that takes the no-gfx and no-physics paths, where those tests still
-      # typecheck and generate C. The sanitizer profile does not
+      # No builtin packages: this is the build that takes the no-gfx and
+      # no-physics paths, where those tests still typecheck and generate C.
+      # The sanitizer profile does not
       # run the JIT, whose program is uninstrumented and outlives its own
       # allocations.
 

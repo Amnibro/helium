@@ -82,7 +82,6 @@ Test fixtures are grouped by category; `run_tests.py` stays at the root of `test
 | `run_tests.py` | The Python test runner. |
 | `compiler_roots.cpp` | Root-set join laws, feedback on weakening, order-independent equality and the deliberate comparison projections; compiled and run in both native profiles. |
 | `resource_paths.py` | JIT entry-source resource roots, native executable roots with separate and standalone runtimes, relocation, and unchanged working-directory file access. Called by the main runner. |
-| `api_check.py` | Checks `packages/gfx/gfx.goose`, `packages/gfx/audio.goose` and `packages/gfx/ui.goose` against their C layers' headers; run by `run_tests.py`. The physics package, a repository of its own, checks itself with a copy. |
 
 Positive fixtures are discovered one level below `test/`; nested import helpers
 run through their entry programs. `goose_in_goose/` is handled separately as one
@@ -132,9 +131,10 @@ mappings and Windows handles across worker churn, including unjoined workers,
 concurrent/repeated waits and children outliving their parents. It runs in both
 profiles. The normal suite also checks user-visible worker error diagnostics.
 
-The `gfx/` tests exercise the SDL3 graphics module (`docs/design/gfx.md`). They
+The `gfx/` tests exercise the gfx package (https://github.com/aardappel/goose_gfx,
+its `docs/gfx.md`). They
 always parse, typecheck and generate C. When the compiler includes the gfx layer
-(built from the `third_party/SDL` submodule), the tests also link against the
+(configured with the package, `GOOSE_BUILTIN_LIBS`), the tests also link against the
 libraries listed by `goose --gfx-link` and run at -O0 and -O2 and through
 TinyCC. They render headless into textures and read back only pixel-aligned
 results, so their output is the same on every backend and GPU; a machine with no
@@ -152,7 +152,7 @@ is deterministic across platforms and worker counts, so they print physics
 results, rounded, and compare them exactly. Between them they call every
 function of the layer.
 
-The `ui/` tests exercise the Nuklear ui module (`docs/design/ui.md`) in the
+The `ui/` tests exercise the ui module of the gfx package (its `docs/ui.md`) in the
 same way, linking `goose --ui-link` and, for the one that renders through
 gfx, `goose --gfx-link` too: a test needs the layers of its own category and
 of every module it imports, and is skipped where one is missing. They drive a
@@ -161,9 +161,8 @@ drawn; `ui_render` draws through headless gfx and reads back pixels only
 where the ui drew solid color. Between them they call every function of the
 layer.
 
-`api_check.py` compares the functions, structs, and constants in
-`packages/gfx/gfx.goose`, `packages/gfx/audio.goose` and `packages/gfx/ui.goose`
-with their C headers. This catches
+Each package's own `test/api_check.py` compares the functions, structs, and
+constants in its modules with their C headers. This catches
 interface mismatches that can compile successfully on both sides. It also
 rejects a struct the layer passes by value that TinyCC would pass differently
 from the C compilers on System V x86-64: one of at most 16 bytes with a

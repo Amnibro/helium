@@ -392,27 +392,25 @@ The [summary](bench/summary.md) explains the gains and losses;
 
 You need CMake 3.20 or later, a C++20 compiler (MSVC, clang or gcc) and Python
 3 for the test and sample runners. TinyCC, which the in-process backend is
-built from, is part of the tree. Two submodules are optional: SDL3, which
-the `gfx` graphics module is built from, and Nuklear, which the `ui` module
-is built from. `-DGOOSE_BUILTIN_LIBS=all` compiles the blessed packages
-(`gfx` with `audio` and `ui`, and `physics`, fetched from its own
-repository, [goose_physics](https://github.com/aardappel/goose_physics);
-`docs/design/packages.md`) into the compiler, so their programs run with
-nothing else installed. Without it the compiler builds alone, and a program
-importing one of them has it built into `~/.goose` the first time, which
-needs git, cmake and a C compiler.
+built from, is part of the tree. The graphics, audio, ui and physics
+modules are packages in repositories of their own
+([goose_gfx](https://github.com/aardappel/goose_gfx) and
+[goose_physics](https://github.com/aardappel/goose_physics);
+`docs/design/packages.md`): `-DGOOSE_BUILTIN_LIBS=all` fetches them at the
+pinned tags (git, at configure time) and compiles them into the compiler, so
+their programs run with nothing else installed. Without it the compiler
+builds alone, and a program importing one of them has it built into
+`~/.goose` the first time, which needs git, cmake and a C compiler.
 
 ```bash
-git clone --recursive https://github.com/aardappel/goose
+git clone https://github.com/aardappel/goose
 cd goose
 cmake -B build -DCMAKE_BUILD_TYPE=Release -DGOOSE_BUILTIN_LIBS=all
 cmake --build build --config Release
 ```
 
-To leave a package out, clone without `--recursive` and then run `git
-submodule update --init` on the submodules wanted (the gfx package needs
-SDL and Nuklear), or name only some packages in `GOOSE_BUILTIN_LIBS`
-(`physics`, or `gfx`, which carries `audio` and `ui` too). On
+`GOOSE_BUILTIN_LIBS` can also name some of the packages (`physics`, or
+`gfx`, which carries `audio` and `ui` too). On
 Linux, SDL needs the X11 or Wayland development packages
 ([`third_party/SDL/docs/README-linux.md`](https://github.com/libsdl-org/SDL/blob/main/docs/README-linux.md));
 without them the build leaves the `gfx` module out and says what to install.
@@ -512,11 +510,11 @@ code --install-extension vscode/goose-language.vsix
   boxes raining into a heap and a to-do list in windows of widgets.
 * [Standard library](docs/stdlib.md): fourteen modules, all readable Goose under
   `stdlib/`, including `gfx`, graphics on SDL3's GPU API
-  ([how it is built](docs/design/gfx.md)), `physics`, rigid body physics
+  ([how it is built](https://github.com/aardappel/goose_gfx/blob/main/docs/gfx.md)), `physics`, rigid body physics
   on Box3D ([how it is built](https://github.com/aardappel/goose_physics/blob/main/docs/physics.md)), and `ui`, fonts,
   [text rendering and game HUDs](docs/stdlib.md#text-rendering-and-game-huds),
   windows and widgets on Nuklear, drawn through gfx
-  ([how it is built](docs/design/ui.md)).
+  ([how it is built](https://github.com/aardappel/goose_gfx/blob/main/docs/ui.md)).
 * [Benchmarks](bench/summary.md): the numbers, with the
   [full results](bench/results.md) and the [design](bench/design.md) behind them.
 * [Implementation notes](docs/implementation.md): how the compiler works, pass

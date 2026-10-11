@@ -2807,7 +2807,7 @@ constant expressions or locals. Compilation failure is a Goose compile
 error. The result is a static, read-only `const u8[:]` shader blob, with no
 runtime reads of the named globals. Its platform blob format and the
 native graphics library interface are separate compatibility surfaces
-(`gfx/gfx_blob.h`, `gfx/gfx_api.h`, `docs/design/gfx.md`), not general Goose
+(`src/gfx_blob.h`, and the gfx package's `gfx_api.h` and `docs/gfx.md`), not general Goose
 value layouts.
 
 A pool's kind travels with its provenance as bits, `RU_SLOTS` for `reusable`
@@ -4622,18 +4622,18 @@ valid. The emitted code keeps the element region's count and top and fills
 the default values itself.
 
 **The native layers** behind `gfx`, `audio`, `ui` and `physics` are not
-part of this runtime: they are packages (`docs/design/packages.md`), native
-C under `packages/gfx/src/` (over SDL3 and Nuklear) and, in the repository
-of its own that `src/blessed.txt` names, the physics package's (over
-Box3D), compiled once into static libraries
+part of this runtime: they are packages (`docs/design/packages.md`) in
+repositories of their own, which `src/blessed.txt` names: native C over
+SDL3 and Nuklear in the gfx package, over Box3D in the physics package,
+compiled once into static libraries
 that a program links when built from the generated C, and into the compiler
 itself when it is configured with them, for JIT runs. The generated C only
 declares the `gs_gfx_*`, `gs_audio_*`, `gs_ui_*` and `gs_phys_*` functions
 it calls; a JIT run gets their addresses from the symbol table compiled in
 with the package (`builtin.h`) or from the library the compiler builds for a
-package that is not (`native.h`), by `tcc_add_symbol`. `docs/design/gfx.md`,
-`audio.md` and `ui.md` describe the layers here, and the physics package's
-own `docs/physics.md` its layer.
+package that is not (`native.h`), by `tcc_add_symbol`. The packages' own
+`docs/gfx.md`, `docs/audio.md`, `docs/ui.md` and `docs/physics.md` describe
+the layers.
 
 **Byte search** (std's `find_any` and `find_pair`, `docs/stdlib.md`):
 `gs_scan_any` and `gs_scan_pair` in `runtime_impl.h`, which std's `extern`
