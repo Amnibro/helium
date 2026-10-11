@@ -31,7 +31,7 @@ import, as a ui test drawing through gfx does -- linking what `goose
 --audio-link`, `--gfx-link`, `--physics-link` or `--ui-link` names, and a machine without a
 GPU device counts as a skip for gfx. A fixture there with `// error:`
 markers is a rejection test, as in errors_tc/. test/api_check.py checks
-packages/gfx/audio.goose, packages/gfx/gfx.goose, packages/physics/physics.goose and packages/gfx/ui.goose against their C
+packages/gfx/audio.goose, packages/gfx/gfx.goose and packages/gfx/ui.goose against their C
 layers' own lists of functions, structs and constants.
 
 Profiles keep the CI coverage deliberate: baseline compares Goose/native C
@@ -1556,12 +1556,13 @@ def main():
     # agree.
     def api(module):
         problems = api_check.check(module)
-        what = f"{module}-api stdlib/{module}.goose against its C layer's header"
+        what = f"{module}-api {api_check.MODULES[module][1]} against its C layer's header"
         if problems:
             r.fail(what, "\n".join(problems))
         else:
             r.ok(what)
-    for module in native:
+    # The modules still in this tree; a package of its own checks itself.
+    for module in api_check.MODULES:
         r.show_task(api, module)
 
     r.section("parse, roundtrip and typecheck")

@@ -1,7 +1,6 @@
 """Checks that each stdlib module with a native layer and that layer's C API
 header describe the same boundary: packages/gfx/gfx.goose against
-packages/gfx/src/gfx/gfx_api.h, packages/physics/physics.goose against packages/physics/src/physics_api.h,
-packages/gfx/ui.goose against packages/gfx/src/ui/ui_api.h, and
+packages/gfx/src/gfx/gfx_api.h, packages/gfx/ui.goose against packages/gfx/src/ui/ui_api.h, and
 packages/gfx/audio.goose against packages/gfx/src/audio/audio_api.h. Every `extern "gs_..." fn`
 against the header's list of functions, parameter by parameter; every struct
 that crosses, field by field; and every constant. A mismatch there compiles
@@ -16,10 +15,11 @@ mixing floats and integers would arrive in different registers.
 The naming convention the check relies on: the Goose struct `TextureDesc` is
 `gs_gfx_texture_desc` in C, a slice `const Buffer[:]` is
 `gs_gfx_buffer_slice`, `u8[:]` is `gs_gfx_bytes`, `T&` is a pointer; the
-same with `gs_phys_` for physics, `gs_ui_` for ui and `gs_audio_` for audio.
+same with `gs_ui_` for ui and `gs_audio_` for audio. A package of its own
+checks itself the same way with its copy of this script (physics does).
 
 Used by run_tests.py: check(module) returns a list of problems, empty when the
-two agree. Runnable alone: python test/api_check.py [audio|gfx|physics|ui]
+two agree. Runnable alone: python test/api_check.py [audio|gfx|ui]
 """
 
 import re
@@ -40,7 +40,6 @@ VECS = ("int2", "int3", "float2", "float3", "float4")
 MODULES = {
     "audio": ("packages/gfx/src/audio/audio_api.h", "packages/gfx/audio.goose", "AUDIO", "gs_audio_"),
     "gfx": ("packages/gfx/src/gfx/gfx_api.h", "packages/gfx/gfx.goose", "GFX", "gs_gfx_"),
-    "physics": ("packages/physics/src/physics_api.h", "packages/physics/physics.goose", "PHYS", "gs_phys_"),
     "ui": ("packages/gfx/src/ui/ui_api.h", "packages/gfx/ui.goose", "UI", "gs_ui_"),
 }
 

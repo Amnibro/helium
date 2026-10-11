@@ -82,7 +82,7 @@ Test fixtures are grouped by category; `run_tests.py` stays at the root of `test
 | `run_tests.py` | The Python test runner. |
 | `compiler_roots.cpp` | Root-set join laws, feedback on weakening, order-independent equality and the deliberate comparison projections; compiled and run in both native profiles. |
 | `resource_paths.py` | JIT entry-source resource roots, native executable roots with separate and standalone runtimes, relocation, and unchanged working-directory file access. Called by the main runner. |
-| `api_check.py` | Checks `packages/gfx/gfx.goose`, `packages/gfx/audio.goose`, `packages/gfx/ui.goose` and `packages/physics/physics.goose` against their C layers' headers; run by `run_tests.py`. |
+| `api_check.py` | Checks `packages/gfx/gfx.goose`, `packages/gfx/audio.goose` and `packages/gfx/ui.goose` against their C layers' headers; run by `run_tests.py`. The physics package, a repository of its own, checks itself with a copy. |
 
 Positive fixtures are discovered one level below `test/`; nested import helpers
 run through their entry programs. `goose_in_goose/` is handled separately as one
@@ -143,10 +143,11 @@ does a compiler without the layer. Linux CI runs them on Mesa's lavapipe. The
 runners set `GOOSE_GFX_HEADLESS=1`, so no test or sample opens a window. The
 hidden `--compile-shader` flag is probed on `gfx/probe.frag`.
 
-The `physics/` tests exercise the Box3D physics module
-(`docs/design/physics.md`) in the same way. They always generate C. When the
-compiler includes the physics layer from `third_party/box3d`, they link using
-`goose --physics-link` and run at -O0 and -O2 and through TinyCC. Box3D
+The `physics/` tests exercise the physics package
+(https://github.com/aardappel/goose_physics) in the same way. They always
+generate C. When the compiler was configured with the package
+(`GOOSE_BUILTIN_LIBS`), `goose build` links them and they run at -O0 and
+-O2 and through TinyCC. Box3D
 is deterministic across platforms and worker counts, so they print physics
 results, rounded, and compare them exactly. Between them they call every
 function of the layer.
@@ -161,8 +162,8 @@ where the ui drew solid color. Between them they call every function of the
 layer.
 
 `api_check.py` compares the functions, structs, and constants in
-`packages/gfx/gfx.goose`, `packages/gfx/audio.goose`, `packages/gfx/ui.goose` and `packages/physics/physics.goose` with their C
-headers. This catches
+`packages/gfx/gfx.goose`, `packages/gfx/audio.goose` and `packages/gfx/ui.goose`
+with their C headers. This catches
 interface mismatches that can compile successfully on both sides. It also
 rejects a struct the layer passes by value that TinyCC would pass differently
 from the C compilers on System V x86-64: one of at most 16 bytes with a

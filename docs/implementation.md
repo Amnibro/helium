@@ -4623,15 +4623,17 @@ the default values itself.
 
 **The native layers** behind `gfx`, `audio`, `ui` and `physics` are not
 part of this runtime: they are packages (`docs/design/packages.md`), native
-C under `packages/gfx/src/` (over SDL3 and Nuklear) and
-`packages/physics/src/` (over Box3D), compiled once into static libraries
+C under `packages/gfx/src/` (over SDL3 and Nuklear) and, in the repository
+of its own that `src/blessed.txt` names, the physics package's (over
+Box3D), compiled once into static libraries
 that a program links when built from the generated C, and into the compiler
 itself when it is configured with them, for JIT runs. The generated C only
 declares the `gs_gfx_*`, `gs_audio_*`, `gs_ui_*` and `gs_phys_*` functions
 it calls; a JIT run gets their addresses from the symbol table compiled in
 with the package (`builtin.h`) or from the library the compiler builds for a
 package that is not (`native.h`), by `tcc_add_symbol`. `docs/design/gfx.md`,
-`audio.md`, `ui.md` and `physics.md` describe the layers.
+`audio.md` and `ui.md` describe the layers here, and the physics package's
+own `docs/physics.md` its layer.
 
 **Byte search** (std's `find_any` and `find_pair`, `docs/stdlib.md`):
 `gs_scan_any` and `gs_scan_pair` in `runtime_impl.h`, which std's `extern`

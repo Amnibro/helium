@@ -9,11 +9,13 @@ Everything is written in Goose except the C behind `os`
 (`src/runtime/runtime_os.h`), the byte search behind `std`'s `find_any` and
 `find_pair` (`src/runtime/runtime_impl.h`), libm behind `math`, the graphics layer behind
 `gfx`, the ui layer behind `ui` and the PCM mixer behind `audio` (the `gfx`
-package, `packages/gfx/src/`), and the physics layer behind `physics`
-(`packages/physics/src/`), all reached through `extern fn` (spec
-§7.10). The design and its rationale are in `design/stdlib_design.md` (and
-`design/gfx.md` for `gfx`, `design/physics.md` for `physics`, `design/ui.md`
-for `ui`, and `design/audio.md` for `audio`); this is the reference.
+package, `packages/gfx/src/`), and the physics layer behind `physics` (the
+[goose_physics](https://github.com/aardappel/goose_physics) package, a
+repository of its own), all reached through `extern fn` (spec §7.10). The
+design and its rationale are in `design/stdlib_design.md` (and
+`design/gfx.md` for `gfx`, `design/ui.md` for `ui`, `design/audio.md` for
+`audio`, and the physics package's
+[docs/physics.md](https://github.com/aardappel/goose_physics/blob/main/docs/physics.md)); this is the reference.
 
 For **text rendering, fonts and game HUDs**, start with
 [`ui`](#text-rendering-and-game-huds), which renders over `gfx`. For external
@@ -1304,7 +1306,7 @@ prints (`cl game.c @<it>`, `cc game.c -o game @<it>`; a program using `gfx`
 too adds that one's). A compiler without it still typechecks and generates C
 for such a program; only running it in-process fails. Everything is in
 namespace `physics`; `samples/28_physics_boxes.goose` is a complete program,
-`design/physics.md` how it works.
+and the package's [docs/physics.md](https://github.com/aardappel/goose_physics/blob/main/docs/physics.md) says how it works.
 
 The API is Box3D's under Goose names: `b3Body_GetPosition` is
 `position(body)`, `b3CreateRevoluteJoint` is `create_revolute_joint`, a
