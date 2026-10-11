@@ -2628,6 +2628,8 @@ inline void TypeCheck::ApplyCalleeLiveShrinks(Node *at, FnSpec *spec, vector<Val
                                               string_view name) {
     CallSite site { at, CurRealFrame().spec, spec, RecordOf(spec), {}, string(name), {}, {} };
     if (!site.record) return;   // A cycle's first round: no record yet.
+    site.args.reserve(argvals.size());
+    site.views.reserve(argvals.size());
     for (size_t q = 0; q < spec->argtypes.size() && q < argvals.size(); q++) {
         site.args.push_back(ClassArgRoots(spec->argtypes[q], argvals[q]));
         site.views.push_back(ViewClassOf(spec, q) ? argvals[q].held.AsRoots() : Roots {});

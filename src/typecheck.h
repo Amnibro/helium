@@ -2507,6 +2507,10 @@ struct TypeCheck {
     // The driver: globals in order, then main, then thread entry points.
 
     TypeCheck(Ast &_ast, bool _library = false) : ast(_ast), library(_library) {
+        // A checked program records values for about two thirds as many
+        // nodes as it parsed to, clones included, so this is the size the
+        // table grows to anyway.
+        nodevals.reserve(ast.allnodes.size());
         temproot = ast.NewVarDef();
         temproot->name = "<temporary>";
         temproot->istemp = true;
