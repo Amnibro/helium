@@ -8,15 +8,6 @@
 
 #include "libtcc.h"
 #include <filesystem>
-#ifdef GOOSE_HAVE_GFX
-#include "gfx/gfx_api.h"
-#endif
-#ifdef GOOSE_HAVE_AUDIO
-#include "audio/audio_api.h"
-#endif
-#ifdef GOOSE_HAVE_UI
-#include "ui/ui_api.h"
-#endif
 
 namespace goose {
 
@@ -46,45 +37,13 @@ inline void JitDiag(void *opaque, const char *msg) {
     Append(*(string *)opaque, msg, "\n");
 }
 
-// Register each optional native layer's own functions before relocation.
-inline void AddAudioSymbols(TCCState *s) {
-    #ifdef GOOSE_HAVE_AUDIO
-        #define GS_AUDIO_SYMBOL(ret, name, params) tcc_add_symbol(s, #name, (const void *)&name);
-        GS_AUDIO_API(GS_AUDIO_SYMBOL)
-        #undef GS_AUDIO_SYMBOL
-    #else
-        (void)s;
-    #endif
-}
-
-inline void AddGfxSymbols(TCCState *s) {
-    #ifdef GOOSE_HAVE_GFX
-        #define GS_GFX_SYMBOL(ret, name, params) tcc_add_symbol(s, #name, (const void *)&name);
-        GS_GFX_API(GS_GFX_SYMBOL)
-        #undef GS_GFX_SYMBOL
-    #else
-        (void)s;
-    #endif
-}
-
-// The ui layer's functions (src/ui/ui_api.h), the same way.
-inline void AddUiSymbols(TCCState *s) {
-    #ifdef GOOSE_HAVE_UI
-        #define GS_UI_SYMBOL(ret, name, params) tcc_add_symbol(s, #name, (const void *)&name);
-        GS_UI_API(GS_UI_SYMBOL)
-        #undef GS_UI_SYMBOL
-    #else
-        (void)s;
-    #endif
-}
-
 // Compiles `csrc` in memory and calls its main, returning what the program
 // returned or exited with. `progargs` become the program's argv after argv[0].
-// `layers` says which native layers the program calls into, and `symbols`
-// holds the C functions of the packages' native parts it reaches, by name
-// (native.h), loaded from their libraries.
+// `symbols` holds the C functions of the packages' native parts the program
+// reaches, by name (native.h, builtin.h): from the tables compiled in with
+// builtin packages, or loaded from the libraries built for the others.
 inline int RunJit(const string &csrc, const string &libpath, const string &progname,
-                  const vector<string> &progargs, const NativeLayers &layers,
+                  const vector<string> &progargs,
                   const vector<pair<string, const void *>> &symbols) {
     string diags;
     auto s = tcc_new();
@@ -118,9 +77,6 @@ inline int RunJit(const string &csrc, const string &libpath, const string &progn
     source += "\"\n";
     source += csrc;
     if (tcc_compile_string(s, source.c_str()) < 0) fail("compiling the generated C failed");
-    if (layers.audio) AddAudioSymbols(s);
-    if (layers.gfx) AddGfxSymbols(s);
-    if (layers.ui) AddUiSymbols(s);
     for (auto &[name, addr] : symbols) tcc_add_symbol(s, name.c_str(), addr);
     // tcc_run hands these to the program's main, which takes them as C main
     // does: an array of writable pointers. Hence the mutable copies.

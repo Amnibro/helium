@@ -121,6 +121,11 @@ def main():
         header = HERE / f"{name}.h"
         if header.exists():
             gargs += ["--include", str(header)]
+        # A sample using a native module runs only where its package is
+        # compiled in; the compiler would otherwise build the package.
+        if any(not native[m] for m in modules):
+            nativeskips.append(f.name)
+            return lines, failures, jitskips, nativeskips
         if jit:
             # Same source, same expected output, no C file and no external
             # compiler: the sample built and run inside the compiler process.

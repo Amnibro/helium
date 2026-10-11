@@ -2,7 +2,7 @@
 
 This document describes the optional graphics module's implementation, test
 coverage, and remaining work. See `docs/stdlib.md` for the API reference and
-`stdlib/gfx.goose` for the module source.
+`packages/gfx/gfx.goose` for the module source.
 
 For **text rendering, fonts, labels and game HUDs**, use the existing
 [`ui` module](../stdlib.md#text-rendering-and-game-huds): `ui::label` places
@@ -23,13 +23,13 @@ after their stage (`embed_shader("frag", """ ... """)`), or in a file
 
     Goose program --extern fn--> gs_gfx_* (goose_gfx, native C) --> SDL3 (static)
 
-The layer between Goose and SDL, `goose_gfx` (`src/gfx/`), is a natively
+The layer between Goose and SDL, `goose_gfx` (`packages/gfx/src/gfx/`), is a natively
 compiled static library rather than a runtime header spliced into the
 generated C:
 
 * Neither the generated C nor TinyCC ever sees an SDL header. A JIT run only
   needs the layer's own functions defined for it with `tcc_add_symbol`: the
-  64 of `src/gfx/gfx_api.h`, not SDL's 1,270.
+  64 of `packages/gfx/src/gfx/gfx_api.h`, not SDL's 1,270.
 * Code that needs platform headers, such as calling `D3DCompile`, stays in
   native code.
 * JIT and AOT execute the same compiled layer: a JIT run gets the copy linked
@@ -37,9 +37,26 @@ generated C:
 
 ## How it is built
 
+* **A package** (`docs/design/packages.md`): `packages/gfx/` holds the
+  modules `gfx.goose`, `audio.goose` and `ui.goose`, the sidecar `gfx.build`
+  naming the CMake target `goose_gfx_package` and `main_thread_only`, the
+  three layers under `src/`, and the CMakeLists that builds them with SDL3
+  and Nuklear. The three are one package because they share SDL and ui
+  draws through gfx; `import gfx;`, `import audio;` and `import ui;` find
+  it through the blessed table (`src/blessed.txt`). A compiler configured
+  with `-DGOOSE_BUILTIN_LIBS=all` has it compiled in (`cmake/package.cmake`):
+  the layers' functions reach a JIT run through the symbol table CMake
+  generates from the modules' `extern fn`s, and the link closure of a probe
+  executable, read from CMake's file API reply once the compiler is built
+  (`cmake/linkclosure.cmake`), is the response file
+  `build/pkg/gfx/<config>/link-{cc,msvc}.rsp` that `goose build` links
+  programs with (`goose --gfx-link msvc|cc` prints its path). A compiler
+  without it builds the package into `GOOSE_HOME` the first time a program
+  uses it, through the wrapper project of `src/native.h`, and loads the
+  shared library that build makes for JIT runs.
 * **SDL3** comes from the submodule `third_party/SDL` (shallow, at
-  `release-3.4.16`). `cmake/gfx.cmake` builds it static, without its 2D
-  renderer, OpenGL or the camera, none of which SDL_GPU needs.
+  `release-3.4.16`). The package's CMakeLists builds it static, without its
+  2D renderer, OpenGL or the camera, none of which SDL_GPU needs.
   `SDL_DEPS_SHARED` stays on, so on Linux SDL links only the C library and
   loads X11, Wayland, audio and udev at run time.
 * **The static C runtime on Windows** (`CMAKE_MSVC_RUNTIME_LIBRARY
@@ -50,24 +67,20 @@ generated C:
   does not load them. Compile times were unchanged.
 * **`cute_spirv`** (`third_party/cute_spirv`, copied from cute_framework, see
   its README) compiles GLSL to SPIR-V and transpiles it to HLSL and MSL. It is
-  built into every compiler, SDL or not, as `goose_shaderc` (`src/shaderc.c`).
-* **Link inputs for AOT programs**: CMake writes
-  `build/gfx/<config>/link-cc.rsp` (and `link-msvc.rsp` on Windows): the two
-  archives, then the system libraries SDL records in its `SDL3-collector`
-  target, the same list its pkg-config file is generated from. `goose
-  --gfx-link msvc|cc` prints the path: `GOOSE_GFX_LINK` first, then a `gfx/`
-  beside the binary, then the build tree. On Windows, cl and clang-cl both
-  take `@link-msvc.rsp` among the sources, and gcc-style clang takes
-  `@link-cc.rsp`.
+  built into every compiler, SDL or not, as `goose_shaderc` (`src/shaderc.c`),
+  since shader compilation is the compiler's side of graphics. The blob it
+  writes is a contract between the compiler (`src/gfx_blob.h`) and the
+  package's layer, which carries its own copy of the header
+  (`packages/gfx/src/gfx/gfx_blob.h`) and checks the blob's version.
 
-**Building without graphics** has been tested in three configurations: `-DGOOSE_GFX=OFF`, a checkout
-without the SDL submodule, and a Linux machine without the X11 and Wayland
-development files (where SDL's own configure would silently build an SDL that
-cannot open a window, `gfx.cmake` says what to install and takes this path).
-The compiler then builds and behaves as before: gfx programs typecheck and
-generate the same C, shaders still compile, and only running one in-process
-fails, with "this compiler was built without SDL3; check out third_party/SDL
-and reconfigure". `--gfx-link` fails the same way.
+**Building without graphics**: a `GOOSE_BUILTIN_LIBS` without gfx, a
+checkout without the SDL or Nuklear submodule, or a Linux machine without
+the X11 and Wayland development files (where SDL's own configure would
+silently build an SDL that cannot open a window, the package's CMakeLists
+says what to install and builds nothing). The package is then not compiled
+in, and the compiler's configure says so. Gfx programs typecheck and
+generate the same C either way, and shaders still compile; running or
+building one then needs cmake and a C compiler, and the submodules.
 
 ## The compiler's side
 
@@ -88,7 +101,7 @@ and reconfigure". `--gfx-link` fails the same way.
   shader files include the shader's own `file:line`. The result is a `const u8[:]` into static
   data, like a string literal's, which codegen emits as an initializer list
   of bytes.
-* **The blob** (`src/gfx/gfx_blob.h`, shared by `shaderc.c` and the layer)
+* **The blob** (`src/gfx_blob.h`, and the package's copy of it, which `shaderc.c` and the layer share)
   holds SPIR-V, MSL and HLSL together, so the generated C builds anywhere,
   plus the reflection SDL_GPU needs: counts of samplers, storage textures and
   storage buffers (read-only and read-write), the std140 size of each uniform
@@ -98,19 +111,18 @@ and reconfigure". `--gfx-link` fails the same way.
   samplers, storage textures, storage buffers. A resource in the wrong place
   works on no backend or on only some; here it is a compile error naming the
   rule (`test/gfx/gfx_err_shader_binding.goose`).
-* **Calls into the layer** are recognized by their C symbol's `gs_gfx_` prefix.
-  Codegen notes it in `NativeLayers` (`src/utils.h`), a JIT run of such a
-  program registers the layer's functions before relocating it
-  (`AddGfxSymbols`, `src/jit.h`), and a compiler without the layer refuses
-  the run.
+* **Calls into the layer** are extern fns of the gfx package: codegen
+  notes the packages a program's extern calls reach (`NativePackagesUsed`),
+  and a JIT run takes their functions from the compiled-in table or the
+  package's library before relocating the program.
 * **A `thread_fn` never reaches the layer**: SDL_GPU and windowing are
   main-thread only, and a thread program calling into gfx is a compile error.
 
-## The layer (`src/gfx/`)
+## The layer (`packages/gfx/src/gfx/`)
 
 The layer handles SDL_GPU's resource management and validation rules for the
 Goose API. `gfx_api.h` lists every function once (`GS_GFX_API`) and every constant
-(`GS_GFX_CONSTANTS`); `test/api_check.py` checks `stdlib/gfx.goose`
+(`GS_GFX_CONSTANTS`); `test/api_check.py` checks `packages/gfx/gfx.goose`
 declares exactly those functions with the same C shapes, the same struct
 fields in the same order, and the same constant values.
 
@@ -163,7 +175,7 @@ fields in the same order, and the same constant values.
   installed) is on in a debug build of the layer, with the `DEBUG` open flag,
   or `GOOSE_GFX_DEBUG=1`.
 
-## The Goose module (`stdlib/gfx.goose`)
+## The Goose module (`packages/gfx/gfx.goose`)
 
 Namespace `gfx`: constants, the handle and description structs, the `extern`
 declarations, and thin wrappers. Descriptions have defaults and are passed by

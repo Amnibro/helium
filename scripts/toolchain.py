@@ -131,9 +131,9 @@ def ui_link(exe, cc):
     return native_link(exe, cc, "ui")
 
 
-# The stdlib modules with a native layer, and the pattern of a program's own
-# import of one: the layers it links. The ui module draws through gfx, so a
-# program showing its ui imports both.
+# The blessed packages' modules with a native part, and the pattern of a
+# program's own import of one. The ui module draws through gfx, so a program
+# showing its ui imports both.
 NATIVE_MODULES = ("audio", "gfx", "physics", "ui")
 
 
@@ -142,14 +142,15 @@ def native_imports(text):
     return [m for m in NATIVE_MODULES if re.search(rf"^import {m};", text, re.M)]
 
 
-# What the compiler says when asked to run a gfx, physics or ui program
-# without that layer built in, and what a gfx test prints when there is no
-# GPU device to run on. The runners report these as skips.
-GFX_UNAVAILABLE = "built without SDL3"
+# What the compiler says when asked for the link inputs of a package it was
+# not built with (the runners then skip that module's fixtures, rather than
+# have the compiler build the package), and what a gfx test prints when
+# there is no GPU device to run on.
+GFX_UNAVAILABLE = "built without the package gfx"
 GFX_NO_DEVICE = "gfx: no GPU device"
 PHYSICS_UNAVAILABLE = "built without the package physics"
-UI_UNAVAILABLE = "built without Nuklear"
-AUDIO_UNAVAILABLE = "built without SDL3 audio"
+UI_UNAVAILABLE = "built without the package gfx"
+AUDIO_UNAVAILABLE = "built without the package gfx"
 
 
 def native_unavailable(module, err):

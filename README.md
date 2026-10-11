@@ -395,12 +395,11 @@ You need CMake 3.20 or later, a C++20 compiler (MSVC, clang or gcc) and Python
 built from, is part of the tree. Three submodules are optional: SDL3, which
 the `gfx` graphics module is built from, Box3D, which the `physics` package
 is built from, and Nuklear, which the `ui` module is built from.
-`-DGOOSE_BUILTIN_LIBS=all` compiles the blessed packages (`physics` so far;
-the other native modules follow as they become packages,
-`docs/design/packages.md`) into the compiler, so their programs run with
-nothing else installed. Without it the compiler builds alone, and a program
-importing one of them has it built into `~/.goose` the first time, which
-needs cmake and a C compiler.
+`-DGOOSE_BUILTIN_LIBS=all` compiles the blessed packages (`gfx` with `audio`
+and `ui`, and `physics`; `docs/design/packages.md`) into the compiler, so
+their programs run with nothing else installed. Without it the compiler
+builds alone, and a program importing one of them has it built into
+`~/.goose` the first time, which needs cmake and a C compiler.
 
 ```bash
 git clone --recursive https://github.com/aardappel/goose
@@ -409,10 +408,11 @@ cmake -B build -DCMAKE_BUILD_TYPE=Release -DGOOSE_BUILTIN_LIBS=all
 cmake --build build --config Release
 ```
 
-To leave SDL or Nuklear out, clone without `--recursive` and then run `git
-submodule update --init` on the ones wanted, or configure with
-`-DGOOSE_GFX=OFF` or `-DGOOSE_UI=OFF`; a `GOOSE_BUILTIN_LIBS` naming only
-some packages builds those in. On
+To leave a package out, clone without `--recursive` and then run `git
+submodule update --init` on the submodules wanted (the gfx package needs
+SDL and Nuklear, physics needs Box3D), or name only some packages in
+`GOOSE_BUILTIN_LIBS` (`physics`, or `gfx`, which carries `audio` and `ui`
+too). On
 Linux, SDL needs the X11 or Wayland development packages
 ([`third_party/SDL/docs/README-linux.md`](https://github.com/libsdl-org/SDL/blob/main/docs/README-linux.md));
 without them the build leaves the `gfx` module out and says what to install.
@@ -484,8 +484,7 @@ before the gfx one it draws through). `goose build --dry-run` prints all of
 this for the program at hand.
 
 A program using `audio` plays procedural mono/stereo PCM through SDL3 without
-opening a graphics window; the optional `GOOSE_AUDIO` build setting is
-independent of `GOOSE_GFX`. See the [audio reference](docs/stdlib.md#audio).
+opening a graphics window. See the [audio reference](docs/stdlib.md#audio).
 
 The test suite and the samples run on Windows, macOS and Linux:
 

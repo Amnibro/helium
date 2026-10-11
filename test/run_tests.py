@@ -31,7 +31,7 @@ import, as a ui test drawing through gfx does -- linking what `goose
 --audio-link`, `--gfx-link`, `--physics-link` or `--ui-link` names, and a machine without a
 GPU device counts as a skip for gfx. A fixture there with `// error:`
 markers is a rejection test, as in errors_tc/. test/api_check.py checks
-stdlib/audio.goose, stdlib/gfx.goose, packages/physics/physics.goose and stdlib/ui.goose against their C
+packages/gfx/audio.goose, packages/gfx/gfx.goose, packages/physics/physics.goose and packages/gfx/ui.goose against their C
 layers' own lists of functions, structs and constants.
 
 Profiles keep the CI coverage deliberate: baseline compares Goose/native C
@@ -742,7 +742,11 @@ class Runner:
         name = f.stem
         res.modules = modules = native_modules(f, self.native)
         levels = self.levels if self.cc else ()
-        res.jitlevels = jitlevels = ("0", "2") if self.jit and "no-jit" not in line else ()
+        # A native module's fixture runs in-process only where the package
+        # is compiled in; the compiler would otherwise build the package.
+        available = all(self.native[m] for m in modules)
+        res.jitlevels = jitlevels = ("0", "2") if self.jit and available and \
+            "no-jit" not in line else ()
         gen, cfiles = res.gen, res.c
         with self.into(res.cgen):
             for ol in sorted(set(levels) | set(jitlevels)):
@@ -863,6 +867,10 @@ class Runner:
                         self.ok(f"cgen+run {f.name}")
 
         if not self.jit:
+            return
+        if any(not self.native[m] for m in modules):
+            if f.name not in res.nativeskips:
+                res.nativeskips.append(f.name)
             return
         if not jitlevels:
             res.jitskips.append(f.name)

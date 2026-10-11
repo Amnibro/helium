@@ -1,8 +1,8 @@
 """Checks that each stdlib module with a native layer and that layer's C API
-header describe the same boundary: stdlib/gfx.goose against
-src/gfx/gfx_api.h, packages/physics/physics.goose against packages/physics/src/physics_api.h,
-stdlib/ui.goose against src/ui/ui_api.h, and stdlib/audio.goose against
-src/audio/audio_api.h. Every `extern "gs_..." fn`
+header describe the same boundary: packages/gfx/gfx.goose against
+packages/gfx/src/gfx/gfx_api.h, packages/physics/physics.goose against packages/physics/src/physics_api.h,
+packages/gfx/ui.goose against packages/gfx/src/ui/ui_api.h, and
+packages/gfx/audio.goose against packages/gfx/src/audio/audio_api.h. Every `extern "gs_..." fn`
 against the header's list of functions, parameter by parameter; every struct
 that crosses, field by field; and every constant. A mismatch there compiles
 on both sides and then passes garbage, which is why it is checked rather
@@ -38,10 +38,10 @@ VECS = ("int2", "int3", "float2", "float3", "float4")
 # Each module: its header, its Goose file, the prefix of its list macros and
 # of its C names.
 MODULES = {
-    "audio": ("src/audio/audio_api.h", "stdlib/audio.goose", "AUDIO", "gs_audio_"),
-    "gfx": ("src/gfx/gfx_api.h", "stdlib/gfx.goose", "GFX", "gs_gfx_"),
+    "audio": ("packages/gfx/src/audio/audio_api.h", "packages/gfx/audio.goose", "AUDIO", "gs_audio_"),
+    "gfx": ("packages/gfx/src/gfx/gfx_api.h", "packages/gfx/gfx.goose", "GFX", "gs_gfx_"),
     "physics": ("packages/physics/src/physics_api.h", "packages/physics/physics.goose", "PHYS", "gs_phys_"),
-    "ui": ("src/ui/ui_api.h", "stdlib/ui.goose", "UI", "gs_ui_"),
+    "ui": ("packages/gfx/src/ui/ui_api.h", "packages/gfx/ui.goose", "UI", "gs_ui_"),
 }
 
 

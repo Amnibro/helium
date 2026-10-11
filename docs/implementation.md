@@ -130,9 +130,7 @@ are started through `process.h`, a translation unit of its own over
 | `--bce-lines` | print elided/kept counts per source line |
 | `--unsafe-no-rf-check` | omit the `return from` discriminant checks after calls: a measurement aid, unsound |
 | `-o out.c`, `--jit`, `--header`, `-D`, `--include`, `--stdlib`, `--` | output file, in-process run, a C API header for the exports (which builds the C without a `main`, for a C host), a define written into the generated C, a user header, the stdlib directory, program arguments |
-| `--gfx-link msvc\|cc` | print the response file of link inputs a program using `gfx` needs (`gfx.h`, `GfxLinkFile`) |
-| `--physics-link msvc\|cc` | the same for `physics`, now a package compiled in (`builtin.h`, `BuiltinLinkFile`: `--<name>-link` for any blessed package) |
-| `--ui-link msvc\|cc` | the same for `ui` (`ui.h`, `UiLinkFile`) |
+| `--<name>-link msvc\|cc` | print the response file of link inputs a program using the blessed package imported as `name` (`gfx`, `audio`, `ui`, `physics`) needs, when the package is compiled into this compiler (`builtin.h`, `BuiltinLinkFile`) |
 | `--multi-test a.goose b.goose ...` | compile each file in turn with the other flags, as a process of its own on it would (an `Ast` and a compile thread each, which is all the state a compile has), each file's output on both streams ending in a line `==== goose --multi-test: exit <code> <file>`; an `-o` names each file's C with `%` for its name. It runs no programs and writes no dump files. The test runner's batches of compiler runs (`docs/testing.md`) |
 | `--compile-shader f [--shader-source msl\|hlsl]` | hidden: what a shader compiles to, without a program around it |
 
@@ -4623,20 +4621,17 @@ are chained for reuse, which keeps node numbers, and so a worker's copy,
 valid. The emitted code keeps the element region's count and top and fills
 the default values itself.
 
-**The graphics layer** behind `stdlib/gfx.goose` is not part of this runtime:
-it is native C in `src/gfx/`, compiled once into a static library over SDL3
-that `goose` links for JIT runs and a program links when built from the
-generated C. The generated C only declares the `gs_gfx_*` functions it calls,
-and `AddGfxSymbols` (`jit.h`) defines them for a JIT run. `docs/design/gfx.md`
-describes it. **The physics layer** behind `packages/physics/physics.goose` is built
-the same way over Box3D, in `packages/physics/src/`, as a package
-(`docs/design/packages.md`: its functions reach a JIT run through the symbol
-table its build generates, `builtin.h`); `docs/design/physics.md`
-describes it. **The ui layer** behind `stdlib/ui.goose` is built the same
-way over Nuklear, in `src/ui/`, its functions `gs_ui_*` and their JIT
-definitions `AddUiSymbols`; `docs/design/ui.md` describes it. Codegen notes
-which of the three a program calls in `NativeLayers` (`utils.h`), by symbol
-prefix, for the JIT run to register.
+**The native layers** behind `gfx`, `audio`, `ui` and `physics` are not
+part of this runtime: they are packages (`docs/design/packages.md`), native
+C under `packages/gfx/src/` (over SDL3 and Nuklear) and
+`packages/physics/src/` (over Box3D), compiled once into static libraries
+that a program links when built from the generated C, and into the compiler
+itself when it is configured with them, for JIT runs. The generated C only
+declares the `gs_gfx_*`, `gs_audio_*`, `gs_ui_*` and `gs_phys_*` functions
+it calls; a JIT run gets their addresses from the symbol table compiled in
+with the package (`builtin.h`) or from the library the compiler builds for a
+package that is not (`native.h`), by `tcc_add_symbol`. `docs/design/gfx.md`,
+`audio.md`, `ui.md` and `physics.md` describe the layers.
 
 **Byte search** (std's `find_any` and `find_pair`, `docs/stdlib.md`):
 `gs_scan_any` and `gs_scan_pair` in `runtime_impl.h`, which std's `extern`

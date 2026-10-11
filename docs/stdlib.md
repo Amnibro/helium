@@ -8,9 +8,9 @@ tree; use `--stdlib <dir>` or `GOOSE_STDLIB` to select another location.
 Everything is written in Goose except the C behind `os`
 (`src/runtime/runtime_os.h`), the byte search behind `std`'s `find_any` and
 `find_pair` (`src/runtime/runtime_impl.h`), libm behind `math`, the graphics layer behind
-`gfx` (`src/gfx/`), the physics layer behind `physics` (`packages/physics/src/`) and
-the ui layer behind `ui` (`src/ui/`), and the PCM mixer behind `audio`
-(`src/audio/`), all reached through `extern fn` (spec
+`gfx`, the ui layer behind `ui` and the PCM mixer behind `audio` (the `gfx`
+package, `packages/gfx/src/`), and the physics layer behind `physics`
+(`packages/physics/src/`), all reached through `extern fn` (spec
 §7.10). The design and its rationale are in `design/stdlib_design.md` (and
 `design/gfx.md` for `gfx`, `design/physics.md` for `physics`, `design/ui.md`
 for `ui`, and `design/audio.md` for `audio`); this is the reference.
@@ -1229,11 +1229,10 @@ coordinates with (0, 0) at the top left.
 ## audio
 
 Procedural PCM sound effects over SDL3, independent of a window or graphics
-device. `import audio;` uses the `audio::` namespace. Built when SDL is present
-and `GOOSE_AUDIO=ON` (the default), including with `GOOSE_GFX=OFF`. Programs
-built from generated C link the response file named by `goose --audio-link
-msvc|cc`. A compiler without the layer can still typecheck and emit the same C;
-JIT use reports that audio was not built in. See `design/audio.md` for the mixer.
+device. `import audio;` uses the `audio::` namespace. A module of the `gfx`
+package (`design/gfx.md`), compiled into the compiler with
+`-DGOOSE_BUILTIN_LIBS=all` and otherwise built on first use; `goose build`
+links it. See `design/audio.md` for the mixer.
 
 | Function | Behavior |
 |---|---|

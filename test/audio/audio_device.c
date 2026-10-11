@@ -1,6 +1,6 @@
 /* SDL dummy-device coverage. Build target goose_audio_test, then run it.
    Does not need a window, GPU, speakers, or an interactive audio session. */
-#include "../../src/audio/audio_api.h"
+#include "../../packages/gfx/src/audio/audio_api.h"
 #include <SDL3/SDL.h>
 #include <math.h>
 #include <stdio.h>

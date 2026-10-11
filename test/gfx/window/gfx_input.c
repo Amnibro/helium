@@ -3,7 +3,7 @@
    the user's pointer. Run with run_input_test.py. */
 #define SDL_MAIN_HANDLED
 #include <SDL3/SDL.h>
-#include "../../../src/gfx/gfx_api.h"
+#include "../../../packages/gfx/src/gfx/gfx_api.h"
 
 #include <stdio.h>
 

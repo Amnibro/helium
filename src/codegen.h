@@ -108,9 +108,6 @@ struct CodeGen {
     string exportprotos;
     bool usesthreads = false;
     bool library = false;
-    // Which native layers (stdlib/gfx.goose, physics.goose, ui.goose) the
-    // program calls into.
-    NativeLayers layers;
     // Measurement only, and unsound: emit the whole `return ... from`
     // machinery but none of the post-call discriminant checks, so a program
     // that never takes a long-distance return still prints the right answer

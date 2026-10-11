@@ -21,12 +21,6 @@ struct BuildOptions {
     string exe;               // -o: the executable; "" puts it beside the root source
 };
 
-inline string PathStem(const string &path) {
-    auto base = path.substr(path.find_last_of("/\\") + 1);
-    auto dot = base.find_last_of('.');
-    return dot == string::npos ? base : base.substr(0, dot);
-}
-
 inline string AbsolutePath(const string &path) {
     std::error_code ec;
     auto abs = filesystem::absolute(filesystem::path(path), ec);
@@ -181,14 +175,13 @@ inline string RuntimeObject(const Builder &b) {
 }
 
 // What `goose build` does once the compiler has written the program's C to
-// `cfile` in `builddir`: finds the toolchain, the runtime object, the
-// response files of the native parts `nativersps` (native.h, built by the
-// caller) and of the native modules, and links the executable, named by -o,
-// the program's sidecar (`output`) or the root file. The exit code.
+// `cfile` in `builddir`: finds the toolchain, the runtime object and the
+// response files of the native parts `nativersps` (native.h and builtin.h,
+// found by the caller), and links the executable, named by -o, the
+// program's sidecar (`output`) or the root file. The exit code.
 inline int BuildExecutable(const string &rootfile, const string &cfile, const string &builddir,
-                           const NativeLayers &layers, const BuildOptions &opts,
-                           const string &exedir, FILE *msgs, const vector<string> &nativersps,
-                           const string &output) {
+                           const BuildOptions &opts, const string &exedir, FILE *msgs,
+                           const vector<string> &nativersps, const string &output) {
     Toolchain tc;
     string why;
     if (!FindToolchain(opts.ccrequest, tc, why)) {
@@ -202,13 +195,10 @@ inline int BuildExecutable(const string &rootfile, const string &cfile, const st
         if (obj.empty()) return 1;
         objects.push_back(obj);
     }
-    // A module's response file lists its archives before what they need, so
-    // a module goes before the ones it draws through: ui before gfx, and
-    // the program's own C and the packages' before all of them.
-    vector<string> rsps = nativersps;
-    if (layers.ui) rsps.push_back(UiLinkFile(exedir, tc.style));
-    if (layers.gfx) rsps.push_back(GfxLinkFile(exedir, tc.style));
-    if (layers.audio) rsps.push_back(AudioLinkFile(exedir, tc.style));
+    // The response files in link order: a package's before the packages it
+    // requires, the program's own C first of all.
+    auto rsps = nativersps;
+    (void)exedir;
     auto exe = opts.exe;
     if (exe.empty()) {
         exe = cat(DirOf(rootfile), output.empty() ? PathStem(rootfile) : output);

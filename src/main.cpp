@@ -10,8 +10,6 @@
 #include "resolve.h"
 #include "builtins.h"
 #include "gfx.h"
-#include "audio.h"
-#include "ui.h"
 #include "typecheck.h"
 #include "typecheck_types.h"
 #include "typecheck_exprs.h"
@@ -297,6 +295,8 @@ void ParseProgram(Ast &ast, const string &rootpath, const vector<string> &stdlib
                 auto rest = imp.path.size() > first.size() ? imp.path.substr(first.size() + 1)
                                                            : first;
                 auto it = declared.find(first);
+                // A package's own name, from inside it, is its own file.
+                if (it != declared.end() && it->second.pkg == pkg) it = declared.end();
                 auto blessed = it == declared.end() && !FileExists(local) ? BlessedLookup(first)
                                                                            : nullptr;
                 if (it != declared.end()) {
@@ -674,18 +674,13 @@ int Main(int argc, char **argv) {
         // Hidden: what a shader compiles to, without a program around it.
         else if (arg == "--compile-shader" && i + 1 < argc) shaderfile = argv[++i];
         else if (arg == "--shader-source" && i + 1 < argc) shadersource = argv[++i];
-        // `--<name>-link msvc|cc`: the response file of a stdlib module with
-        // a native layer, or of a blessed package compiled in (builtin.h).
-        else if ((arg == "--audio-link" || arg == "--gfx-link" || arg == "--ui-link" ||
-                  (arg.size() > 7 && arg.rfind("--", 0) == 0 &&
-                   arg.compare(arg.size() - 5, 5, "-link") == 0)) &&
-                 i + 1 < argc) {
+        // `--<name>-link msvc|cc`: the response file of a blessed package
+        // compiled into this compiler (builtin.h).
+        else if (arg.size() > 7 && arg.rfind("--", 0) == 0 &&
+                 arg.compare(arg.size() - 5, 5, "-link") == 0 && i + 1 < argc) {
             try {
                 auto style = argv[++i];
-                auto path = arg == "--audio-link" ? AudioLinkFile(DirOf(exe), style)
-                            : arg == "--gfx-link" ? GfxLinkFile(DirOf(exe), style)
-                            : arg == "--ui-link"  ? UiLinkFile(DirOf(exe), style)
-                            : BuiltinLinkFile(arg.substr(2, arg.size() - 7), style, DirOf(exe));
+                auto path = BuiltinLinkFile(arg.substr(2, arg.size() - 7), style, DirOf(exe));
                 printf("%s\n", path.c_str());
             } catch (CompileError &e) {
                 fprintf(stderr, "%s\n", e.msg.c_str());
@@ -785,8 +780,7 @@ int Main(int argc, char **argv) {
                         "[--stdlib dir] file.goose [-- program args...] | "
                         "--multi-test [options] file.goose... | --emit-runtime runtime.c | "
                         "--gen-runtime-header | "
-                        "--audio-link msvc|cc | --gfx-link msvc|cc | "
-                        "--physics-link msvc|cc | --ui-link msvc|cc\n");
+                        "--<package>-link msvc|cc\n");
         fprintf(stderr, "without -o the program is compiled and run in this process by TinyCC.\n");
         fprintf(stderr, "the .c that -o writes links with the runtime that --emit-runtime "
                         "writes, compiled once;\n--standalone writes one that holds the "
@@ -827,7 +821,6 @@ int Main(int argc, char **argv) {
     vector<string> includes;
     // What a JIT run compiles and starts, once the compile produced it.
     string program;
-    NativeLayers layers;
     // The program's Ast outlives the compile: a build and a JIT run read
     // its packages, for the native parts the program needs (native.h).
     unique_ptr<Ast> astp;
@@ -926,12 +919,11 @@ int Main(int argc, char **argv) {
         auto stackcfg = StackConfigOf(cdefines);
         CodeGen cg(ast, runtime_ext_text, includes, norfcheck, library, stackcfg.maxstacks);
         if (stacks) cg.StackReport(msgs, stackcfg);
-        // The native layers the program calls into: what a JIT run hands
-        // it, and what a build links. And the packages whose native parts
-        // it needs: its own, when it has one, and every package an extern
-        // fn it calls was declared in, each before the packages it
-        // requires, which is the order a linker resolves their archives in.
-        layers = cg.layers;
+        // The packages whose native parts the program needs, which a JIT
+        // run takes functions from and a build links: its own, when it has
+        // one, and every package an extern fn it calls was declared in,
+        // each before the packages it requires, which is the order a
+        // linker resolves their archives in.
         nativepkgs = NativePackagesUsed(ast, cg.usedexterns);
         // Assemble: compiler-set feature defines, the embedded runtime, then
         // the generated program. A program built with a separate runtime
@@ -987,10 +979,6 @@ int Main(int argc, char **argv) {
                 throw CompileError { "JIT mode does not support threads yet (TinyCC cannot "
                                      "place thread-local storage in an in-memory run); "
                                      "compile with -o and a C compiler instead" };
-            // The native layers are this compiler's own, handed to the program.
-            if (cg.layers.audio && !have_audio) throw CompileError { no_audio_error };
-            if (cg.layers.gfx && !have_gfx) throw CompileError { no_gfx_error };
-            if (cg.layers.ui && !have_ui) throw CompileError { no_ui_error };
             program = assemble(false);
         }
         return 0;
@@ -1022,7 +1010,6 @@ int Main(int argc, char **argv) {
                 if (FileExists(inc)) inc = AbsolutePath(inc);
         }
         program.clear();
-        layers = NativeLayers();
         astp.reset();
         nativepkgs.clear();
         try {
@@ -1059,8 +1046,8 @@ int Main(int argc, char **argv) {
                         rsps.push_back(nb.rsp);
                     }
                 }
-                return BuildExecutable(filename, outfile, builddir, layers, buildopts, DirOf(exe),
-                                       msgs, rsps, astp->packages[0].output);
+                return BuildExecutable(filename, outfile, builddir, buildopts, DirOf(exe), msgs,
+                                       rsps, astp->packages[0].output);
             }
             if (program.empty()) return code;
             // The native parts the program reaches hand the run their
@@ -1098,7 +1085,7 @@ int Main(int argc, char **argv) {
             // The program shares this process, so its exit code becomes ours
             // and whatever it wrote is already on the same streams.
             fflush(msgs);
-            return RunJit(program, JitLibPath(DirOf(exe)), filename, progargs, layers, symbols);
+            return RunJit(program, JitLibPath(DirOf(exe)), filename, progargs, symbols);
         } catch (CompileError &e) {
             fprintf(stderr, "%s\n", e.msg.c_str());
             return 1;

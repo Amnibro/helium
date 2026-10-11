@@ -2,7 +2,7 @@
 
 This document describes the optional ui module's implementation, test
 coverage, and remaining work. See `docs/stdlib.md` for the API reference and
-`stdlib/ui.goose` for the module source.
+`packages/gfx/ui.goose` for the module source.
 
 This is also Goose's **text rendering and font module**, including for games
 that otherwise render directly with gfx. See
@@ -23,10 +23,10 @@ SDL3:
 
     Goose program --extern fn--> gs_ui_* (goose_ui, native C) --> Nuklear (compiled in)
 
-and draws through gfx: `stdlib/ui.goose` turns a frame into triangles and
+and draws through gfx: `packages/gfx/ui.goose` turns a frame into triangles and
 draws them with a gfx pipeline, and feeds a context the input gfx collected.
 
-The layer, `goose_ui` (`src/ui/`), is native C compiled once into a static
+The layer, `goose_ui` (`packages/gfx/src/ui/`), is native C compiled once into a static
 library: `goose` links it for JIT runs and hands its functions to TinyCC with
 `tcc_add_symbol` (`AddUiSymbols`, `src/jit.h`), and a program built from the
 generated C links the same archive. Neither the generated C nor TinyCC sees
@@ -44,10 +44,11 @@ it.
 * **Nuklear** comes from the submodule `third_party/nuklear` (shallow),
   pinned to a commit of its master branch 36 commits after v4.13.3, which
   adds the link widget, tooltips shown after a delay and a property's
-  precision; the next release should replace the pin. `cmake/ui.cmake`
-  compiles its implementation once, in `src/ui/ui_nuklear.c`, with the
-  configuration every file of the layer includes it with
-  (`src/ui/ui_internal.h`): fixed-size types, the default allocator, font
+  precision; the next release should replace the pin. The gfx package's
+  CMakeLists (`packages/gfx/CMakeLists.txt`; ui is a module of that package,
+  `docs/design/gfx.md`) compiles its implementation once, in
+  `packages/gfx/src/ui/ui_nuklear.c`, with the configuration every file of
+  the layer includes it with (`ui_internal.h`): fixed-size types, the default allocator, font
   baking with its built-in font, vertex buffer output with 32-bit indices,
   256 bytes of typed text per frame, and `strtod` for its number parsing.
   The layer's own files build with warnings on, Nuklear's without.
@@ -58,11 +59,11 @@ it.
   (`NativeLinkFile`, `src/utils.h`). A program that renders its ui through
   gfx passes the gfx file too.
 
-**Opting out**: `-DGOOSE_UI=OFF`, or a checkout without the submodule. The
-compiler then builds and behaves as before: ui programs typecheck and
-generate the same C, and only running one in-process fails, with "this
-compiler was built without Nuklear; check out third_party/nuklear and
-reconfigure". `--ui-link` fails the same way.
+**Opting out**: as for the gfx package it belongs to (`docs/design/gfx.md`):
+a `GOOSE_BUILTIN_LIBS` without gfx, or a checkout without the Nuklear or
+SDL submodule, leaves the package out of the compiler; ui programs typecheck
+and generate the same C, and running or building one then builds the
+package first.
 
 ## The compiler's side
 
@@ -74,10 +75,10 @@ reconfigure". `--ui-link` fails the same way.
   state are the process's, and gfx, which it draws through, is main-thread
   only.
 
-## The layer (`src/ui/`)
+## The layer (`packages/gfx/src/ui/`)
 
 `ui_api.h` lists every function once (`GS_UI_API`) and every constant
-(`GS_UI_CONSTANTS`); `test/api_check.py` checks `stdlib/ui.goose` declares
+(`GS_UI_CONSTANTS`); `test/api_check.py` checks `packages/gfx/ui.goose` declares
 exactly those functions with the same C shapes, the same struct fields in
 the same order, and the same constant values, as it does for gfx and
 physics. The constants have Nuklear's values, a static assert in
@@ -180,7 +181,7 @@ Nuklear's string, buffer and draw list APIs; pushing single style values
 (the style goes whole); and the printf-style labels and tooltips, which
 `str()` makes.
 
-## The Goose module (`stdlib/ui.goose`)
+## The Goose module (`packages/gfx/ui.goose`)
 
 Namespace `ui`: constants, handles, value and style structs, the `extern`
 declarations, and thin wrappers -- fresh arrays for commands, vertices,

@@ -2743,22 +2743,16 @@ struct TypeCheck {
                                      entry->sf->name, ")"));
                 }
                 if (auto c = Is<Call>(n)) {
-                    // The native layers keep one state for the process, and
-                    // SDL's windowing is main-thread only: a package says so
-                    // in its sidecar (main_thread_only), the stdlib modules
-                    // by their symbols' prefixes.
+                    // A native layer that keeps one state for the process,
+                    // or SDL's windowing, is main-thread only: its package
+                    // says so in its sidecar (main_thread_only), and the
+                    // error names the module the extern fn was declared in.
                     if (c->spec && c->spec->sf->isextern) {
-                        auto &cname = c->spec->sf->cname;
-                        auto &pkg = ast.packages[ast.filepkg[c->spec->sf->line.fileidx]];
-                        auto module = pkg.main_thread_only                  ? pkg.name.c_str()
-                                      : cname.rfind("gs_audio_", 0) == 0  ? "audio"
-                                      : cname.rfind("gs_gfx_", 0) == 0    ? "gfx"
-                                      : cname.rfind("gs_ui_", 0) == 0     ? "ui"
-                                                                          : nullptr;
-                        if (module)
-                            Error(n, cat(module, " runs on the main thread only: ",
-                                         c->spec->sf->qname, " is reached from thread_fn ",
-                                         entry->sf->name));
+                        auto fileidx = c->spec->sf->line.fileidx;
+                        if (ast.packages[ast.filepkg[fileidx]].main_thread_only)
+                            Error(n, cat(PathStem(ast.sources[fileidx].first),
+                                         " runs on the main thread only: ", c->spec->sf->qname,
+                                         " is reached from thread_fn ", entry->sf->name));
                     }
                     rec(c->spec);
                     for (auto d : c->dispatch) rec(d);

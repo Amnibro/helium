@@ -1,11 +1,11 @@
 # PCM audio
 
-`stdlib/audio.goose` exposes a small sound-effects API. It owns no PCM in Goose:
+`packages/gfx/audio.goose` exposes a small sound-effects API. It owns no PCM in Goose:
 `create_sound` validates and copies a slice to the native layer, which keeps it
 until `release_sound` or `close`. Releasing a sound stops every voice referring
 to it. This makes source-array lifetimes independent of asynchronous playback.
 
-The implementation is `src/audio/audio.c`; `audio_api.h` is its packed extern
+The implementation is `packages/gfx/src/audio/audio.c`; `audio_api.h` is its packed extern
 boundary and JIT symbol list. `test/api_check.py audio` checks the C and Goose
 declarations. The compiler tracks native audio calls and rejects them from
 `thread_fn`, as it does for gfx, physics and ui. The native callback is C only.
@@ -40,11 +40,11 @@ boundaries. It also permits a program to generate PCM for its own file writer.
 
 ## Builds and validation
 
-`GOOSE_AUDIO` defaults on when the SDL submodule is present. `cmake/sdl.cmake`
-owns the shared SDL target and collects its platform link inputs for both audio
-and gfx. Audio remains available with `GOOSE_GFX=OFF` and does not depend on the
-gfx Linux video-header check. `--audio-link msvc|cc` returns the response file;
-`GOOSE_AUDIO_LINK` can override its directory for a moved installation.
+Audio is a module of the gfx package (`packages/gfx/audio.goose`, its layer
+in `packages/gfx/src/audio/`), which shares one SDL build between gfx, audio
+and ui (`docs/design/gfx.md`); `-DGOOSE_BUILTIN_LIBS=all` compiles it into
+the compiler, and `--audio-link msvc|cc` then prints the package's response
+file.
 
 The normal test runner includes `test/audio/audio_mixer.goose` and
 `audio_errors.goose` in JIT and generated-C runs. They exercise PCM ownership,
