@@ -979,13 +979,40 @@ inline void TypeCheck::ValidatePool(TypeExpr *t) {
 // variable, and rules that need identity (a relative-reference store,
 // §3.9) may use it; otherwise the candidates only bound the lifetime.
 
+// A question about two types answered once where both graphs are complete,
+// as AppendArrayElemsReached's is; an unfinished graph takes the walk each
+// time. A complete graph stays complete, so a pair once answered needs no
+// second look at its graphs.
+template<typename F> bool TypeCheck::StableTypeQuery(TypePairCache &cache, TypeExpr *t,
+                                                     TypeExpr *of, F walk) {
+    pair key { t, of };
+    if (auto known = cache.find(key)) {
+        // Assertion builds compare each cached answer with the walk.
+        assert(*known == walk());
+        return *known;
+    }
+    if (typesbuilding || !stabletypes.Ready(t) || !stabletypes.Ready(of)) return walk();
+    auto r = walk();
+    cache[key] = r;
+    return r;
+}
+
 // Can a value of type `t` contain an `of` by value anywhere inside it? A
 // reference or slice field ends the search: what is behind one belongs to
 // its own root. A slice's pointee is its element type as stored, which for a
 // relative reference is not the plain reference a load yields, so the stored
-// type matches too.
+// type matches too. Only the types holding others are worth remembering an
+// answer for.
 inline bool TypeCheck::CanContain(TypeExpr *t, TypeExpr *of) {
     if (!t) return false;
+    switch (t->kind) {
+        case TY_STRUCT: case TY_ENUM: case TY_VARIANT: case TY_ARRAY:
+            return StableTypeQuery(cancontain, t, of, [&]() { return CanContainWalk(t, of); });
+        default: return CanContainWalk(t, of);
+    }
+}
+
+inline bool TypeCheck::CanContainWalk(TypeExpr *t, TypeExpr *of) {
     if (TypeEq(t, of)) return true;
     auto loaded = LoadedTypeEq(t, of);
     assert(loaded == TypeEq(LoadType(t), of));
@@ -1064,11 +1091,13 @@ inline void TypeCheck::ReachedThroughRefs(TypeExpr *t, vector<TypeExpr *> &out) 
 
 // Whether storage that can hold an `of` is among those.
 inline bool TypeCheck::ReachesThroughRefs(TypeExpr *t, TypeExpr *of) {
-    vector<TypeExpr *> reached;
-    ReachedThroughRefs(t, reached);
-    for (auto p : reached)
-        if (CanContain(p, of)) return true;
-    return false;
+    return StableTypeQuery(reachesthrough, t, of, [&]() {
+        vector<TypeExpr *> reached;
+        ReachedThroughRefs(t, reached);
+        for (auto p : reached)
+            if (CanContain(p, of)) return true;
+        return false;
+    });
 }
 
 // The types of the storage an inexact root r stands for beside its own: a

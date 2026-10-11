@@ -126,6 +126,11 @@ struct TypeCheck {
     Ast &ast;
     StableTypeGraph stabletypes;
     unordered_map<TypeExpr *, vector<TypeExpr *>> arrayelements;
+    // CanContain's and ReachesThroughRefs' answers for complete type graphs:
+    // RootCandidates asks them of every variable in scope and every global,
+    // at each store and shrink it judges.
+    using TypePairCache = flat_map<pair<TypeExpr *, TypeExpr *>, bool>;
+    TypePairCache cancontain, reachesthrough;
     bool library = false;   // Built for a C host (--header): fn main() is optional.
 
     // (Val, the checked value of an expression, lives in ast.h: node Check
@@ -1498,7 +1503,10 @@ struct TypeCheck {
     // What a parameter's references lead to is the caller's storage, known
     // here only by the parameter's root, which is then a bound as well.
 
+    template<typename F> bool StableTypeQuery(TypePairCache &cache, TypeExpr *t, TypeExpr *of,
+                                              F walk);
     bool CanContain(TypeExpr *t, TypeExpr *of);
+    bool CanContainWalk(TypeExpr *t, TypeExpr *of);
     void ReachedThroughRefs(TypeExpr *t, vector<TypeExpr *> &out);
     bool ReachesThroughRefs(TypeExpr *t, TypeExpr *of);
     void BoundReach(VarDef *r, vector<TypeExpr *> &out);
