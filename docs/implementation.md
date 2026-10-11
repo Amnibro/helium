@@ -105,7 +105,8 @@ the packages the root declares and stops (`--parse`; `--update` fetches
 tags and branches again), `goose toolchain` prints the C
 compiler, cmake and git a build would use (`toolchain.h`: `--cc`,
 `GOOSE_CC`, `cc` in `GOOSE_HOME/config`, else discovery; `--json` for
-scripts), and `goose version` prints the runtime hash. A first argument
+scripts, which also lists the modules whose packages are compiled in), and
+`goose version` prints the runtime hash. A first argument
 that is no verb is read as the flags below,
 so `goose file.goose` is `goose run file.goose`. The verbs are the
 command line as documented; the flags are the plumbing they are built on

@@ -12,6 +12,7 @@ intent.
 
 import ctypes
 import hashlib
+import json
 import os
 import platform
 import re
@@ -106,11 +107,26 @@ def have_gfx(exe):
     return code == 0 and out.strip() == "true"
 
 
+def builtin_modules(exe):
+    """The native modules (audio, gfx, physics, ui) whose packages are
+    compiled into this compiler, from `goose toolchain --json`: a program
+    using one of them runs and builds without the package being built first,
+    which is what the runners need to know. Empty when the compiler cannot
+    say."""
+    code, out, _ = run_capture([exe, "toolchain", "--json"])
+    try:
+        return list(json.loads(out).get("builtin", []))
+    except ValueError:
+        return []
+
+
 def native_link(exe, cc, module):
-    """The link inputs a program using a stdlib module with a native layer
-    (gfx, physics, ui) needs with this toolchain, as a list for CC.compile's
-    `libs`: the response file cmake/<module>.cmake wrote. An empty list when
-    the compiler was built without that module."""
+    """The link inputs a program using a blessed package's module (gfx,
+    physics, ui, audio) needs with this toolchain, as a list for CC.compile's
+    `libs`: the response file the compiler's build wrote for the package. An
+    empty list when the package is not compiled in. The runners build such
+    programs with `goose build`, which finds this itself; this is for the
+    windowed gfx tests, which compile a C program of their own."""
     code, out, _ = run_capture([exe, f"--{module}-link", "msvc" if cc.style == "msvc" else "cc"])
     return [f"@{out.strip()}"] if code == 0 and out.strip() else []
 

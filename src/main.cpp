@@ -718,7 +718,12 @@ int Main(int argc, char **argv) {
     if (verb == "toolchain") {
         try {
             auto tools = FindTools(ccrequest, refresh);
-            fputs(ToolsReport(tools, json).c_str(), stdout);
+            // The modules a program can import without a build: those of
+            // the blessed packages compiled in.
+            vector<string> builtin;
+            for (auto &e : BlessedTable())
+                if (BuiltinLookup(e.package)) builtin.push_back(e.import);
+            fputs(ToolsReport(tools, json, builtin).c_str(), stdout);
             return tools.havecc ? 0 : 1;
         } catch (CompileError &e) {
             fprintf(stderr, "%s\n", e.msg.c_str());

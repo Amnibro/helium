@@ -460,7 +460,9 @@ inline string JsonString(const string &s) {
 }
 
 // What `goose toolchain` prints: for people, or as JSON for scripts.
-inline string ToolsReport(const Tools &t, bool json) {
+// `builtin` names the modules whose packages are compiled into this
+// compiler (builtin.h), for the runners to know what runs without a build.
+inline string ToolsReport(const Tools &t, bool json, const vector<string> &builtin) {
     string s;
     if (json) {
         auto tool = [](const ToolInfo &ti) {
@@ -478,7 +480,9 @@ inline string ToolsReport(const Tools &t, bool json) {
             Append(s, "  \"cc\": null,\n  \"cc_error\": ", JsonString(t.ccwhy), ",\n");
         }
         Append(s, "  \"cmake\": ", tool(t.cmake), ",\n  \"git\": ", tool(t.git), ",\n");
-        Append(s, "  \"home\": ", JsonString(t.home), "\n}\n");
+        s += "  \"builtin\": [";
+        for (size_t i = 0; i < builtin.size(); i++) Append(s, i ? ", " : "", JsonString(builtin[i]));
+        Append(s, "],\n  \"home\": ", JsonString(t.home), "\n}\n");
         return s;
     }
     if (t.havecc) {
@@ -494,6 +498,9 @@ inline string ToolsReport(const Tools &t, bool json) {
     };
     tool("cmake:       ", t.cmake);
     tool("git:         ", t.git);
+    string mods;
+    for (auto &m : builtin) Append(mods, mods.empty() ? "" : ", ", m);
+    Append(s, "built in:     ", mods.empty() ? "no packages" : mods, "\n");
     Append(s, "GOOSE_HOME:   ", t.home, "\n");
     return s;
 }

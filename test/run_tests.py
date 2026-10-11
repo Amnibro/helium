@@ -799,7 +799,6 @@ class Runner:
         judges the program's TinyCC runs."""
         name = f.stem
         modules = res.modules
-        libs = [lib for m in modules for lib in self.native[m]]
         levels = self.levels if self.cc else ()
         jitlevels, gen, cfiles = res.jitlevels, res.gen, res.c
         if levels:
@@ -841,7 +840,7 @@ class Runner:
                         argv = [efile]
                         opt, _ = self.build_options(ol)
                         ok, log = self.cc.compile(cfile, efile, opt=opt,
-                                                  extra=self.extra, strict_decls=True, libs=libs,
+                                                  extra=self.extra, strict_decls=True,
                                                   runtime=self.runtime,
                                                   log=self.gendir / f"{name}-O{ol}.cc.log")
                         if not ok:
@@ -1355,16 +1354,15 @@ def main():
     clang = None if args.nocgen or args.profile == "sanitize" else tc.find_clang_c()
     if args.require_clang and not clang:
         ap.error("requested secondary C front end is unavailable: clang")
-    # What a gfx, physics or ui test program links, by the category directory
-    # it is in and what it imports, empty for a compiler built without that
-    # layer: those tests then only generate C.
-    native = {"audio": tc.audio_link(exe, cc) if cc else [],
-              "gfx": tc.gfx_link(exe, cc) if cc else [],
-              "physics": tc.physics_link(exe, cc) if cc else [],
-              "ui": tc.ui_link(exe, cc) if cc else []}
+    # Which native modules (by a fixture's category directory and what it
+    # imports) have their package compiled into the compiler: a fixture using
+    # one that is not only generates C, so that the suite never has the
+    # compiler fetch and build a package.
+    builtin = tc.builtin_modules(exe)
+    native = {m: m in builtin for m in tc.NATIVE_MODULES}
     print(f"profile: {args.profile}; C backend: {cc.desc if cc else 'none'}; "
           f"JIT backend: {'TinyCC' if jit else 'none'}; " +
-          "; ".join(f"{m}: {'linked' if libs else 'not built in'}" for m, libs in native.items()))
+          "; ".join(f"{m}: {'built in' if have else 'not built in'}" for m, have in native.items()))
     builddir = tc.REPO_ROOT / "build"
     builddir.mkdir(parents=True, exist_ok=True)
     dumpdir = builddir / "dump"
