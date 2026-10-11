@@ -30,6 +30,12 @@ string FindOnPath(const string &name);
 // process started from here see it.
 void SetEnvVar(const string &name, const string &value);
 
+// Loads the shared library at `path`, a package's JIT library, and reads
+// the table its goose_symbols function hands out (native.h): the names of
+// the package's C functions and their addresses, appended to `out`. False,
+// with `err` saying why, when it cannot be loaded or has no such table.
+bool LoadSharedSymbols(const string &path, vector<pair<string, const void *>> &out, string &err);
+
 // argv as one line a shell would read back as argv, for printing a command
 // (-v, --dry-run): arguments with spaces or shell characters are quoted.
 string CommandLineText(const vector<string> &argv);

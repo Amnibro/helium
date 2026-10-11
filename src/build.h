@@ -90,11 +90,18 @@ struct Builder {
         return false;
     }
 
-    // Compiles the C file `src` to the object `obj`.
+    // A system library by name, as the style's linker takes it.
+    string LibFlag(const string &lib) const {
+        return tc.style == "msvc" ? cat(lib, ".lib") : cat("-l", lib);
+    }
+
+    // Compiles the C file `src` to the object `obj`, with `extra` flags
+    // (a package's includes and defines) after the usual ones.
     bool CompileObject(const string &src, const string &obj, const string &what,
-                       const string &logfile) const {
+                       const string &logfile, const vector<string> &extra = {}) const {
         vector<string> argv = { tc.cc };
         for (auto &f : CFlags()) argv.push_back(f);
+        for (auto &f : extra) argv.push_back(f);
         if (tc.style == "msvc") {
             argv.push_back("/c");
             argv.push_back(src);
@@ -104,6 +111,30 @@ struct Builder {
             argv.push_back(src);
             argv.push_back("-o");
             argv.push_back(obj);
+        }
+        return Run(argv, what, logfile);
+    }
+
+    // Links `objects` and the system libraries `libs` (LibFlag spellings)
+    // into the shared library `out`, with `builddir` taking the
+    // intermediates: a package's JIT library.
+    bool LinkShared(const vector<string> &objects, const vector<string> &libs, const string &out,
+                    const string &builddir, const string &logfile, const string &what) const {
+        vector<string> argv = { tc.cc };
+        if (tc.style == "msvc") {
+            argv.push_back("/nologo");
+            argv.push_back("/LD");
+            argv.push_back(cat("/Fe:", out));
+            argv.push_back(cat("/Fo:", builddir, "\\"));
+            for (auto &o : objects) argv.push_back(o);
+            for (auto &l : libs) argv.push_back(l);
+        } else {
+            argv.push_back("-shared");
+            for (auto &o : objects) argv.push_back(o);
+            argv.push_back("-o");
+            argv.push_back(out);
+            for (auto &l : libs) argv.push_back(l);
+            for (auto &l : SystemLibs()) argv.push_back(l);
         }
         return Run(argv, what, logfile);
     }
@@ -150,11 +181,14 @@ inline string RuntimeObject(const Builder &b) {
 }
 
 // What `goose build` does once the compiler has written the program's C to
-// `cfile` in `builddir`: finds the toolchain, the runtime object and the
-// native modules' response files, and links the executable. The exit code.
+// `cfile` in `builddir`: finds the toolchain, the runtime object, the
+// response files of the native parts `nativersps` (native.h, built by the
+// caller) and of the native modules, and links the executable, named by -o,
+// the program's sidecar (`output`) or the root file. The exit code.
 inline int BuildExecutable(const string &rootfile, const string &cfile, const string &builddir,
                            const NativeLayers &layers, const BuildOptions &opts,
-                           const string &exedir, FILE *msgs) {
+                           const string &exedir, FILE *msgs, const vector<string> &nativersps,
+                           const string &output) {
     Toolchain tc;
     string why;
     if (!FindToolchain(opts.ccrequest, tc, why)) {
@@ -169,17 +203,18 @@ inline int BuildExecutable(const string &rootfile, const string &cfile, const st
         objects.push_back(obj);
     }
     // A module's response file lists its archives before what they need, so
-    // a module goes before the ones it draws through: ui before gfx.
-    vector<string> rsps;
+    // a module goes before the ones it draws through: ui before gfx, and
+    // the program's own C and the packages' before all of them.
+    vector<string> rsps = nativersps;
     if (layers.ui) rsps.push_back(UiLinkFile(exedir, tc.style));
     if (layers.physics) rsps.push_back(PhysicsLinkFile(exedir, tc.style));
     if (layers.gfx) rsps.push_back(GfxLinkFile(exedir, tc.style));
     if (layers.audio) rsps.push_back(AudioLinkFile(exedir, tc.style));
     auto exe = opts.exe;
     if (exe.empty()) {
-        exe = cat(DirOf(rootfile), PathStem(rootfile));
+        exe = cat(DirOf(rootfile), output.empty() ? PathStem(rootfile) : output);
         #ifdef _WIN32
-            exe += ".exe";
+            if (exe.size() < 4 || exe.compare(exe.size() - 4, 4, ".exe") != 0) exe += ".exe";
         #endif
     }
     if (!b.Link(cfile, objects, rsps, exe, builddir, cat(builddir, "/cc.log"))) return 1;

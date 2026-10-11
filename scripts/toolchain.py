@@ -89,6 +89,11 @@ def find_goose(explicit=None):
 # returns by itself once the backend grows the feature.
 JIT_UNSUPPORTED = "JIT mode does not support"
 
+# What the compiler says when a program needs a C compiler (a native part
+# to build) and the machine has none it can find: a skip, like a layer
+# that was not built in.
+NO_TOOLCHAIN = "cannot find a C compiler"
+
 
 def have_gfx(exe):
     """Whether this compiler has the gfx layer built in, answered by running

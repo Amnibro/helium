@@ -2086,6 +2086,20 @@ struct Package {
     string name;
     string root;          // With its trailing separator, or "" for the working directory.
     bool stdlib = false;
+    string cachekey;      // A git source's place under GOOSE_HOME/pkg; "" for a path.
+    // The sidecar beside its entry, `<name>.build` (docs/design/packages.md
+    // §4.7), read when the package is loaded: the C it compiles, which makes
+    // its native part (§5), and the rest of its settings.
+    string sidecar;
+    bool hassidecar = false;
+    vector<string> csources, cincludes;     // Absolute.
+    vector<string> cdefines, cflags_cc, cflags_msvc, clibs;
+    string cmake_target;
+    vector<string> cmake_options;
+    bool main_thread_only = false;
+    string output;                          // A program's executable, relative to its root.
+
+    bool HasNative() const { return !csources.empty() || !cmake_target.empty(); }
 };
 
 struct Ast {

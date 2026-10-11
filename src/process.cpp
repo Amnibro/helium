@@ -21,6 +21,7 @@
     #include <io.h>
 #else
     #include <unistd.h>
+    #include <dlfcn.h>
 #endif
 
 namespace goose {
@@ -119,6 +120,42 @@ void SetEnvVar(const string &name, const string &value) {
     #else
         setenv(name.c_str(), value.c_str(), 1);
     #endif
+}
+
+// The table's entry, as native.h's goose_symbols.c lays it out.
+struct GooseSymbolEntry {
+    const char *name;
+    const void *addr;
+};
+
+bool LoadSharedSymbols(const string &path, vector<pair<string, const void *>> &out, string &err) {
+    typedef const GooseSymbolEntry *(*TableFn)(void);
+    TableFn table = nullptr;
+    #ifdef _WIN32
+        auto wide = MultiByteToWideChar(CP_UTF8, 0, path.c_str(), -1, nullptr, 0);
+        vector<wchar_t> wpath((size_t)wide + 1);
+        MultiByteToWideChar(CP_UTF8, 0, path.c_str(), -1, wpath.data(), wide);
+        auto h = LoadLibraryW(wpath.data());
+        if (!h) {
+            err = cat("cannot load ", path, " (Windows error ", (unsigned)GetLastError(), ")");
+            return false;
+        }
+        table = (TableFn)GetProcAddress(h, "goose_symbols");
+    #else
+        auto h = dlopen(path.c_str(), RTLD_NOW | RTLD_LOCAL);
+        if (!h) {
+            auto why = dlerror();
+            err = cat("cannot load ", path, ": ", why ? why : "unknown error");
+            return false;
+        }
+        table = (TableFn)dlsym(h, "goose_symbols");
+    #endif
+    if (!table) {
+        err = cat(path, " has no goose_symbols table");
+        return false;
+    }
+    for (auto e = table(); e->name; e++) out.emplace_back(e->name, e->addr);
+    return true;
 }
 
 string CommandLineText(const vector<string> &argv) {

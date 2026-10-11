@@ -88,7 +88,11 @@ file.goose` writes the C to the program's build directory under
 (`build.h`: the runtime object compiled once per toolchain and
 configuration, the native modules' response files, `-o`, `--debug`,
 `--standalone`, `-v`, `--dry-run`; `-O2` by default), `goose check
-file.goose` typechecks it (`--check`), `goose fetch file.goose` fetches
+file.goose` typechecks it (`--check`); both build the native part a
+program's sidecar `foo.build` names (`packages.h`: `LoadSidecar`;
+`native.h`: the C compiled once per toolchain, a response file for the
+link, and for a run a shared library whose one export hands the C
+functions to `RunJit` by name). `goose fetch file.goose` fetches
 the packages the root declares and stops (`--parse`; `--update` fetches
 tags and branches again), `goose toolchain` prints the C
 compiler, cmake and git a build would use (`toolchain.h`: `--cc`,

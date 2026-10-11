@@ -306,6 +306,9 @@ class Fixture:
         self.line, self.dumped = "", False
         # By build_options key, the compiler run that wrote the C and where.
         self.modules, self.jitlevels, self.gen, self.c = [], (), {}, {}
+        # Whether a .build sidecar sits beside it: C of its own, which the
+        # compiler builds (goose build) rather than this runner.
+        self.sidecar = False
 
 
 class Runner:
@@ -643,6 +646,7 @@ class Runner:
         program writes, still happen one after another."""
         res = Fixture()
         res.line = line = first_line(f)
+        res.sidecar = f.with_suffix(".build").exists()
         bce = has_bce_annotations(f)
         with self.into(res.front):
             res.dumped = self.front(f, line, bce, res)
@@ -762,7 +766,7 @@ class Runner:
         with others': not where it links a native layer, or was not written
         (where a JIT run of it followed, the run has the exit code)."""
         cfile = res.c.get(key)
-        if cfile is None or res.modules:
+        if cfile is None or res.modules or res.sidecar:
             return False
         return cfile.is_file() if key in res.jitlevels else res.gen[key][0] == 0
 
@@ -813,7 +817,19 @@ class Runner:
                         bad = True
                         continue
                     argv = built.get(ol)
-                    if not argv:
+                    if not argv and res.sidecar:
+                        # A program with C of its own is built by the
+                        # compiler, which builds that C too (native.h).
+                        argv = [efile]
+                        code, out, err = tc.run_capture([self.exe, "build", f"-O{ol}", "-o", efile, f])
+                        if code != 0:
+                            if tc.NO_TOOLCHAIN in err:
+                                res.nativeskips.append(f.name)
+                            else:
+                                self.fail(f"goose build -O{ol} {f.name}", out + err)
+                            bad = True
+                            continue
+                    elif not argv:
                         # A program that did not build in a batch shows here
                         # why, built on its own.
                         argv = [efile]
@@ -858,7 +874,8 @@ class Runner:
                 if code != 0 and tc.JIT_UNSUPPORTED in err:
                     res.jitskips.append(f.name)
                     return
-                if any(tc.native_unavailable(m, err) for m in modules):
+                if any(tc.native_unavailable(m, err) for m in modules) or \
+                        (code != 0 and tc.NO_TOOLCHAIN in err):
                     res.nativeskips.append(f.name)
                     return
                 out = self.check_run(name, f"jit -O{ol} {f.name}", code, out, err)

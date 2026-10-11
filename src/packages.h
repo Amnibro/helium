@@ -92,7 +92,7 @@ inline bool IsCommitHash(const string &ref) {
 // a deeper path) GOOSE_HOME/pkg/<repo>-<hash of the URL>/<ref>, which keeps
 // the path short where Windows limits it. A commit is named by its first
 // twelve digits, a branch's slashes become underscores.
-inline string GitCacheDir(const PackageSource &s) {
+inline string GitCacheKey(const PackageSource &s) {
     auto key = s.url;
     if (auto p = key.find("://"); p != string::npos) key = key.substr(p + 3);
     while (!key.empty() && key.back() == '/') key.pop_back();
@@ -107,7 +107,57 @@ inline string GitCacheDir(const PackageSource &s) {
     }
     auto ref = IsCommitHash(s.ref) ? s.ref.substr(0, 12) : s.ref;
     for (auto &c : ref) if (c == '/' || c == '\\') c = '_';
-    return cat(GooseHome(), "/pkg/", key, "/", ref);
+    return cat(key, "/", ref);
+}
+
+inline string GitCacheDir(const PackageSource &s) {
+    return cat(GooseHome(), "/pkg/", GitCacheKey(s));
+}
+
+// Reads the package's sidecar, `<name>.build` beside its entry, if there is
+// one (§4.7): the C it compiles, where to find headers, what to define and
+// link, or the CMake target to build; and for the program its executable's
+// name. Lists take a _windows, _linux or _macos suffix for a platform's own
+// part. Paths are relative to the package root.
+inline void LoadSidecar(Package &pkg, bool isprogram) {
+    pkg.sidecar = cat(pkg.root, pkg.name, ".build");
+    auto bf = LoadBuildFile(pkg.sidecar, pkg.hassidecar);
+    if (!pkg.hassidecar) return;
+    const char *lists[] = { "c_sources", "c_include", "c_defines", "c_flags_cc", "c_flags_msvc",
+                            "c_libs" };
+    vector<string> known = { "cmake_target", "cmake_options", "main_thread_only" };
+    for (auto key : lists)
+        for (auto suffix : { "", "_windows", "_linux", "_macos" }) known.push_back(cat(key, suffix));
+    if (isprogram) known.push_back("output");
+    bf.CheckKeys(known);
+    #ifdef _WIN32
+        const char *platform = "_windows";
+    #elif defined(__APPLE__)
+        const char *platform = "_macos";
+    #else
+        const char *platform = "_linux";
+    #endif
+    auto list = [&](const char *key, bool paths) {
+        auto v = bf.Strings(key);
+        for (auto &e : bf.Strings(cat(key, platform))) v.push_back(e);
+        if (paths)
+            for (auto &e : v)
+                if (!IsPathSource(e) || e.rfind("./", 0) == 0 || e.rfind("../", 0) == 0)
+                    e = ForwardSlashes(AbsolutePath(cat(pkg.root, e)));
+        return v;
+    };
+    pkg.csources = list("c_sources", true);
+    pkg.cincludes = list("c_include", true);
+    pkg.cdefines = list("c_defines", false);
+    pkg.cflags_cc = list("c_flags_cc", false);
+    pkg.cflags_msvc = list("c_flags_msvc", false);
+    pkg.clibs = list("c_libs", false);
+    pkg.cmake_target = bf.Str("cmake_target");
+    pkg.cmake_options = bf.Strings("cmake_options");
+    pkg.main_thread_only = bf.Bool("main_thread_only");
+    if (isprogram) pkg.output = bf.Str("output");
+    if (!pkg.csources.empty() && !pkg.cmake_target.empty())
+        throw CompileError { cat(pkg.sidecar, ": a package has either c_sources or a cmake_target") };
 }
 
 // Removes a directory tree. A git checkout holds read-only files, which

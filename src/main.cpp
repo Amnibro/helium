@@ -44,6 +44,7 @@
 #include "toolchain.h"
 #include "build.h"
 #include "packages.h"
+#include "native.h"
 
 namespace goose {
 
@@ -151,6 +152,7 @@ void ParseProgram(Ast &ast, const string &rootpath, const vector<string> &stdlib
     // package the first time a module in it is reached.
     auto rootdir = DirOf(rootpath);
     ast.packages.push_back(Package { PathStem(rootpath), rootdir, false });
+    LoadSidecar(ast.packages[0], true);
     auto stdlibpkg = [&](const string &dir) {
         for (size_t i = 0; i < ast.packages.size(); i++)
             if (ast.packages[i].stdlib && ast.packages[i].root == dir) return (int)i;
@@ -200,6 +202,8 @@ void ParseProgram(Ast &ast, const string &rootpath, const vector<string> &stdlib
                         ImportError(filename, imp.line, e.msg);
                     }
                     ast.packages.push_back(Package { imp.path, root, false });
+                    if (!src.ispath) ast.packages.back().cachekey = GitCacheKey(src);
+                    LoadSidecar(ast.packages.back(), false);
                     it = declared.emplace(imp.path, DeclaredPackage { src, (int)ast.packages.size() - 1,
                                                                       imp.line }).first;
                 } else if (it == declared.end()) {
@@ -758,12 +762,17 @@ int Main(int argc, char **argv) {
     // What a JIT run compiles and starts, once the compile produced it.
     string program;
     NativeLayers layers;
+    // The program's Ast outlives the compile: a build and a JIT run read
+    // its packages, for the native parts the program needs (native.h).
+    unique_ptr<Ast> astp;
+    vector<int> nativepkgs;
     auto compile = [&]() -> int {
         if (tokens) {
             DumpTokens(filename);
             return 0;
         }
-        Ast ast;
+        astp = make_unique<Ast>();
+        auto &ast = *astp;
         auto stdlibdirs = StdlibDirs(stdlibdir, exe);
         ParseProgram(ast, filename, stdlibdirs);
         if (dump) {
@@ -852,8 +861,11 @@ int Main(int argc, char **argv) {
         CodeGen cg(ast, runtime_ext_text, includes, norfcheck, library, stackcfg.maxstacks);
         if (stacks) cg.StackReport(msgs, stackcfg);
         // The native layers the program calls into: what a JIT run hands
-        // it, and what a build links.
+        // it, and what a build links. And the packages whose native parts
+        // it needs: its own, when it has one.
         layers = cg.layers;
+        nativepkgs.clear();
+        if (ast.packages[0].HasNative()) nativepkgs.push_back(0);
         // Assemble: compiler-set feature defines, the embedded runtime, then
         // the generated program. A program built with a separate runtime
         // holds what runtime.h has of it and the extern support's
@@ -945,6 +957,8 @@ int Main(int argc, char **argv) {
         }
         program.clear();
         layers = NativeLayers();
+        astp.reset();
+        nativepkgs.clear();
         try {
             // The compile has a thread of its own. The program a JIT run
             // starts runs back on this one, the main thread, which a window
@@ -953,14 +967,58 @@ int Main(int argc, char **argv) {
             // (CMakeLists.txt).
             auto code = RunOnCompilerStack(compile);
             if (code) return code;
-            if (verb == "build")
-                return nocgen ? 0 : BuildExecutable(filename, outfile, builddir, layers, buildopts,
-                                                    DirOf(exe), msgs);
+            if (verb == "build") {
+                if (nocgen) return 0;
+                // The native parts first, so that the link can take their
+                // response files.
+                Toolchain tc;
+                string why;
+                vector<string> rsps;
+                if (!nativepkgs.empty()) {
+                    if (!FindToolchain(buildopts.ccrequest, tc, why)) {
+                        fprintf(stderr, "%s\n", why.c_str());
+                        return 1;
+                    }
+                    Builder b { tc, buildopts, msgs };
+                    for (auto pkg : nativepkgs) {
+                        NativeBuild nb;
+                        if (!BuildNativePart(*astp, pkg, filename, b, false, nb)) return 1;
+                        rsps.push_back(nb.rsp);
+                    }
+                }
+                return BuildExecutable(filename, outfile, builddir, layers, buildopts, DirOf(exe),
+                                       msgs, rsps, astp->packages[0].output);
+            }
             if (program.empty()) return code;
+            // The native parts the program reaches, built as libraries this
+            // process loads, hand the run their functions by name.
+            vector<pair<string, const void *>> symbols;
+            if (!nativepkgs.empty()) {
+                Toolchain tc;
+                string why;
+                if (!FindToolchain(ccrequest, tc, why)) {
+                    fprintf(stderr, "%s\n", why.c_str());
+                    return 1;
+                }
+                BuildOptions jitopts;
+                jitopts.ccrequest = ccrequest;
+                jitopts.verbose = verbose;
+                Builder b { tc, jitopts, msgs };
+                for (auto pkg : nativepkgs) {
+                    NativeBuild nb;
+                    if (!BuildNativePart(*astp, pkg, filename, b, true, nb)) return 1;
+                    string err;
+                    if (!LoadSharedSymbols(nb.jitlib, symbols, err)) {
+                        fprintf(stderr, "cannot load the package %s's library: %s\n",
+                                astp->packages[pkg].name.c_str(), err.c_str());
+                        return 1;
+                    }
+                }
+            }
             // The program shares this process, so its exit code becomes ours
             // and whatever it wrote is already on the same streams.
             fflush(msgs);
-            return RunJit(program, JitLibPath(DirOf(exe)), filename, progargs, layers);
+            return RunJit(program, JitLibPath(DirOf(exe)), filename, progargs, layers, symbols);
         } catch (CompileError &e) {
             fprintf(stderr, "%s\n", e.msg.c_str());
             return 1;

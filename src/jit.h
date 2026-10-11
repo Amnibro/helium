@@ -94,9 +94,12 @@ inline void AddUiSymbols(TCCState *s) {
 
 // Compiles `csrc` in memory and calls its main, returning what the program
 // returned or exited with. `progargs` become the program's argv after argv[0].
-// `layers` says which native layers the program calls into.
+// `layers` says which native layers the program calls into, and `symbols`
+// holds the C functions of the packages' native parts it reaches, by name
+// (native.h), loaded from their libraries.
 inline int RunJit(const string &csrc, const string &libpath, const string &progname,
-                  const vector<string> &progargs, const NativeLayers &layers) {
+                  const vector<string> &progargs, const NativeLayers &layers,
+                  const vector<pair<string, const void *>> &symbols) {
     string diags;
     auto s = tcc_new();
     if (!s) throw CompileError { "libtcc: out of memory" };
@@ -133,6 +136,7 @@ inline int RunJit(const string &csrc, const string &libpath, const string &progn
     if (layers.gfx) AddGfxSymbols(s);
     if (layers.physics) AddPhysicsSymbols(s);
     if (layers.ui) AddUiSymbols(s);
+    for (auto &[name, addr] : symbols) tcc_add_symbol(s, name.c_str(), addr);
     // tcc_run hands these to the program's main, which takes them as C main
     // does: an array of writable pointers. Hence the mutable copies.
     auto name = progname;

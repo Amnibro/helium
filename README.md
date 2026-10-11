@@ -448,6 +448,13 @@ program and each of its workers can take and the cap that puts on
 `hardware_threads()`, and `-DGS_STACK_STATS=1` makes a program report its
 actual use as it ends.
 
+A program with C of its own names it in a sidecar beside the source,
+`foo.build` beside `foo.goose`: `c_sources = ["impl.c"];`, with `c_include`,
+`c_defines`, `c_libs` and `_windows`, `_linux` or `_macos` variants of each
+for one platform's part. Both forms build it: `goose build` links it in,
+and `goose run` builds it into a library the in-process run loads, so an
+`extern fn` reaches it either way (`docs/design/packages.md`).
+
 Underneath, `goose -o tour.c tour.goose` writes the C, which holds the
 program and the part of the runtime that inlines into it; the rest of the
 runtime (the OS layer, data stack reservation, threads, printing) is one more
