@@ -65,7 +65,9 @@ goose build hello.goose && ./hello
 ```
 
 (`goose -o hello.c hello.goose` writes the C for you to build yourself, and
-`goose build --dry-run hello.goose` prints the commands.)
+`goose build --dry-run hello.goose` prints the commands. [packages.md](packages.md)
+has the rest of `goose build`, and how a program uses libraries from other
+repositories.)
 
 The bundled TinyCC backend skips the C compiler: with no verb, or with `goose
 run`, the program is compiled into the compiler's own process and run there,

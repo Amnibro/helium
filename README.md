@@ -7,6 +7,7 @@ lifetime annotations. In this repository's benchmarks, Goose runs faster than
 C++ and Rust while using less memory.
 
 [Tutorial](docs/tutorial.md) · [Specification](docs/goose_spec.md) ·
+[Packages](docs/packages.md) ·
 [Samples](samples/README.md) · [Benchmarks](bench/summary.md) ·
 [Standard library](docs/stdlib.md)
 
@@ -515,6 +516,9 @@ code --install-extension vscode/goose-language.vsix
   [text rendering and game HUDs](docs/stdlib.md#text-rendering-and-game-huds),
   windows and widgets on Nuklear, drawn through gfx
   ([how it is built](https://github.com/aardappel/goose_gfx/blob/main/docs/ui.md)).
+* [Building programs and using packages](docs/packages.md): `goose build`,
+  libraries from git repositories or directories, a program's own C, and
+  how to make a package of your own.
 * [Benchmarks](bench/summary.md): the numbers, with the
   [full results](bench/results.md) and the [design](bench/design.md) behind them.
 * [Implementation notes](docs/implementation.md): how the compiler works, pass

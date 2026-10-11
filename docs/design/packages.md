@@ -1,10 +1,11 @@
 # Builds and packages
 
 How `goose build` replaces the hand-written C compiler invocations, and how a
-program pulls in libraries, Goose or C, from git repositories. This is a
-design and a migration plan, written against the tree at `de24a156`, from the
-discussion that settled the decisions in §1. Nothing in it is implemented yet;
-§10 is the order in which it gets implemented, one working commit at a time.
+program pulls in libraries, Goose or C, from git repositories. This is the
+design and the migration plan, written against the tree at `de24a156`, from
+the discussion that settled the decisions in §1; §10 is the order it was
+implemented in, one working commit at a time. The user's side of it is
+[docs/packages.md](../packages.md).
 
 ## 1. Decisions
 
