@@ -1879,6 +1879,16 @@ def main():
     r.section("driver verbs")
     r.show_task(driver_verbs)
 
+    def runtime_cache():
+        from runtime_cache import check_runtime_cache
+        try:
+            check_runtime_cache(exe, cc, gendir)
+            r.ok("runtime cache: concurrent builds, failed compile, retry and reuse")
+        except (RuntimeError, OSError, subprocess.TimeoutExpired) as e:
+            r.fail("runtime cache", str(e))
+    if cc:
+        r.show_task(runtime_cache)
+
     show_goose_in_goose()
 
     # --- JIT: the same programs, compiled and run inside the compiler --------

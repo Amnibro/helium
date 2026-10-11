@@ -30,6 +30,18 @@ string FindOnPath(const string &name);
 // process started from here see it.
 void SetEnvVar(const string &name, const string &value);
 
+// An exclusive cross-process lock on a persistent file. The OS releases it
+// when this object (or the process) exits; children do not inherit it. The
+// file must not be removed, since waiters may already have it open.
+class FileLock {
+    intptr_t handle = -1;
+public:
+    explicit FileLock(const string &path);
+    ~FileLock();
+    FileLock(const FileLock &) = delete;
+    FileLock &operator=(const FileLock &) = delete;
+};
+
 // Loads the shared library at `path`, a package's JIT library, and reads
 // the table its goose_symbols function hands out (native.h): the names of
 // the package's C functions and their addresses, appended to `out`. False,

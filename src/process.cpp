@@ -22,6 +22,8 @@
 #else
     #include <unistd.h>
     #include <dlfcn.h>
+    #include <fcntl.h>
+    #include <sys/file.h>
 #endif
 
 namespace goose {
@@ -119,6 +121,47 @@ void SetEnvVar(const string &name, const string &value) {
         SetEnvironmentVariableA(name.c_str(), value.c_str());
     #else
         setenv(name.c_str(), value.c_str(), 1);
+    #endif
+}
+
+FileLock::FileLock(const string &path) {
+    #ifdef _WIN32
+        auto h = CreateFileA(path.c_str(), GENERIC_READ | GENERIC_WRITE,
+                             FILE_SHARE_READ | FILE_SHARE_WRITE, nullptr, OPEN_ALWAYS,
+                             FILE_ATTRIBUTE_NORMAL, nullptr);
+        auto error = h == INVALID_HANDLE_VALUE ? GetLastError() : ERROR_SUCCESS;
+        if (h != INVALID_HANDLE_VALUE) {
+            OVERLAPPED offset = {};
+            if (LockFileEx(h, LOCKFILE_EXCLUSIVE_LOCK, 0, 1, 0, &offset)) {
+                handle = reinterpret_cast<intptr_t>(h);
+                return;
+            }
+            error = GetLastError();
+            CloseHandle(h);
+        }
+        throw CompileError { cat("cannot lock ", path, " (Windows error ", (unsigned)error, ")") };
+    #else
+        auto fd = open(path.c_str(), O_CREAT | O_RDWR | O_CLOEXEC, 0666);
+        if (fd >= 0) {
+            int result;
+            do { result = flock(fd, LOCK_EX); } while (result < 0 && errno == EINTR);
+            if (result == 0) {
+                handle = fd;
+                return;
+            }
+            auto error = errno;
+            close(fd);
+            errno = error;
+        }
+        throw CompileError { cat("cannot lock ", path, ": ", strerror(errno)) };
+    #endif
+}
+
+FileLock::~FileLock() {
+    #ifdef _WIN32
+        CloseHandle(reinterpret_cast<HANDLE>(handle));
+    #else
+        close((int)handle);
     #endif
 }
 

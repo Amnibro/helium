@@ -100,6 +100,7 @@ struct Builder {
             argv.push_back("/c");
             argv.push_back(src);
             argv.push_back(cat("/Fo:", obj));
+            if (opts.debug) argv.push_back(cat("/Fd:", obj, ".pdb"));
         } else {
             argv.push_back("-c");
             argv.push_back(src);
@@ -168,9 +169,28 @@ inline string RuntimeObject(const Builder &b) {
     auto obj = cat(dir, "/goose_runtime.", b.tc.style == "msvc" ? "obj" : "o");
     if (PathExists(obj) && !b.opts.dryrun) return obj;
     auto src = cat(dir, "/goose_runtime.c");
-    if (!b.opts.dryrun && !WriteFileMakingDirs(src, RuntimeObjectSource()))
+    auto log = cat(dir, "/cc.log");
+    if (b.opts.dryrun) {
+        b.CompileObject(src, obj, "compiling the runtime", log);
+        return obj;
+    }
+    std::error_code ec;
+    filesystem::create_directories(filesystem::path(dir), ec);
+    if (ec) throw CompileError { cat("cannot create ", dir, ": ", ec.message()) };
+    // Every first build shares these paths. Wait before writing the source
+    // or invoking the compiler, then recheck what the previous builder left.
+    FileLock lock(cat(dir, "/build.lock"));
+    if (PathExists(obj)) return obj;
+    if (!WriteFileMakingDirs(src, RuntimeObjectSource()))
         throw CompileError { cat("cannot write ", src) };
-    if (!b.CompileObject(src, obj, "compiling the runtime", cat(dir, "/cc.log"))) return "";
+    // A failed or interrupted compiler may leave a partial object. Only a
+    // successful compile publishes the name readers use, by atomic rename.
+    auto tmp = cat(dir, "/goose_runtime.tmp.", b.tc.style == "msvc" ? "obj" : "o");
+    filesystem::remove(filesystem::path(tmp), ec);
+    if (ec) throw CompileError { cat("cannot remove ", tmp, ": ", ec.message()) };
+    if (!b.CompileObject(src, tmp, "compiling the runtime", log)) return "";
+    filesystem::rename(filesystem::path(tmp), filesystem::path(obj), ec);
+    if (ec) throw CompileError { cat("cannot publish ", obj, ": ", ec.message()) };
     return obj;
 }
 
