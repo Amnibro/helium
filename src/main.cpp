@@ -227,6 +227,12 @@ void ParseProgram(Ast &ast, const string &rootpath, const vector<string> &stdlib
                             it->second.source.ref.c_str());
                 }
                 imppkg = it->second.pkg;
+                // What a package requires links after it (§5.5).
+                if (fileidx != 0 && pkg != imppkg) {
+                    auto &req = ast.packages[pkg].required;
+                    if (std::find(req.begin(), req.end(), imppkg) == req.end())
+                        req.push_back(imppkg);
+                }
                 imppath = cat(ast.packages[imppkg].root, imp.path, ".goose");
             } else if (imp.relative) {
                 imppath = cat(DirOf(path), imp.path, ".goose");
@@ -862,10 +868,11 @@ int Main(int argc, char **argv) {
         if (stacks) cg.StackReport(msgs, stackcfg);
         // The native layers the program calls into: what a JIT run hands
         // it, and what a build links. And the packages whose native parts
-        // it needs: its own, when it has one.
+        // it needs: its own, when it has one, and every package an extern
+        // fn it calls was declared in, each before the packages it
+        // requires, which is the order a linker resolves their archives in.
         layers = cg.layers;
-        nativepkgs.clear();
-        if (ast.packages[0].HasNative()) nativepkgs.push_back(0);
+        nativepkgs = NativePackagesUsed(ast, cg.usedexterns);
         // Assemble: compiler-set feature defines, the embedded runtime, then
         // the generated program. A program built with a separate runtime
         // holds what runtime.h has of it and the extern support's

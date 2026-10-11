@@ -92,7 +92,10 @@ file.goose` typechecks it (`--check`); both build the native part a
 program's sidecar `foo.build` names (`packages.h`: `LoadSidecar`;
 `native.h`: the C compiled once per toolchain, a response file for the
 link, and for a run a shared library whose one export hands the C
-functions to `RunJit` by name). `goose fetch file.goose` fetches
+functions to `RunJit` by name), and the native parts of the packages
+whose extern fns the program calls (`NativePackagesUsed`, from codegen's
+`usedexterns`; a package before the ones it requires, under
+`GOOSE_HOME/build/pkg`). `goose fetch file.goose` fetches
 the packages the root declares and stops (`--parse`; `--update` fetches
 tags and branches again), `goose toolchain` prints the C
 compiler, cmake and git a build would use (`toolchain.h`: `--cc`,

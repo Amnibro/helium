@@ -8,6 +8,35 @@
 
 namespace goose {
 
+// The packages whose native parts a program needs, in link order: its own
+// (package 0) when it has one, and those an extern fn it calls (`used`,
+// codegen's) was declared in, a package before the ones it requires.
+inline vector<int> NativePackagesUsed(const Ast &ast, const vector<FnSpec *> &used) {
+    set<int> needed;
+    if (ast.packages[0].HasNative()) needed.insert(0);
+    for (auto sp : used) {
+        auto pkg = ast.filepkg[sp->sf->line.fileidx];
+        if (ast.packages[pkg].HasNative()) needed.insert(pkg);
+    }
+    // A package's depth is one more than the deepest it requires; deeper
+    // links first. A cycle of requirements gets whatever depth the walk
+    // reaches, which is all an order can mean there.
+    map<int, int> depth;
+    std::function<int(int)> depthof = [&](int pkg) -> int {
+        auto it = depth.find(pkg);
+        if (it != depth.end()) return it->second;
+        depth[pkg] = 0;
+        auto d = 0;
+        for (auto req : ast.packages[pkg].required) d = std::max(d, depthof(req) + 1);
+        depth[pkg] = d;
+        return d;
+    };
+    vector<int> order(needed.begin(), needed.end());
+    std::stable_sort(order.begin(), order.end(),
+                     [&](int a, int b) { return depthof(a) > depthof(b); });
+    return order;
+}
+
 struct NativeBuild {
     string dir;       // Where it was built.
     string rsp;       // The response file an AOT link takes.

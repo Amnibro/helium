@@ -453,7 +453,12 @@ A program with C of its own names it in a sidecar beside the source,
 `c_defines`, `c_libs` and `_windows`, `_linux` or `_macos` variants of each
 for one platform's part. Both forms build it: `goose build` links it in,
 and `goose run` builds it into a library the in-process run loads, so an
-`extern fn` reaches it either way (`docs/design/packages.md`).
+`extern fn` reaches it either way. A library does the same with a sidecar
+beside its entry, and a program takes a library with `import name from
+"source";` in its root file: a directory (`"./lib"`), or a git repository
+at a tag or commit (`"owner/repo@v1"` on GitHub, `"host/owner/repo@ref"`),
+fetched into `~/.goose` and built there once per C compiler
+(`docs/design/packages.md`).
 
 Underneath, `goose -o tour.c tour.goose` writes the C, which holds the
 program and the part of the runtime that inlines into it; the rest of the

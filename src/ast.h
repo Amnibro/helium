@@ -2098,6 +2098,7 @@ struct Package {
     vector<string> cmake_options;
     bool main_thread_only = false;
     string output;                          // A program's executable, relative to its root.
+    vector<int> required;                   // The packages its files require (§4.3), by index.
 
     bool HasNative() const { return !csources.empty() || !cmake_target.empty(); }
 };

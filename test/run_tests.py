@@ -306,8 +306,10 @@ class Fixture:
         self.line, self.dumped = "", False
         # By build_options key, the compiler run that wrote the C and where.
         self.modules, self.jitlevels, self.gen, self.c = [], (), {}, {}
-        # Whether a .build sidecar sits beside it: C of its own, which the
-        # compiler builds (goose build) rather than this runner.
+        # Whether the compiler builds its program (goose build) rather than
+        # this runner: a .build sidecar beside it (C of its own), or a
+        # packages/ fixture, whose packages may have C the runner cannot
+        # see.
         self.sidecar = False
 
 
@@ -646,7 +648,7 @@ class Runner:
         program writes, still happen one after another."""
         res = Fixture()
         res.line = line = first_line(f)
-        res.sidecar = f.with_suffix(".build").exists()
+        res.sidecar = f.with_suffix(".build").exists() or f.parent.name == "packages"
         bce = has_bce_annotations(f)
         with self.into(res.front):
             res.dumped = self.front(f, line, bce, res)
