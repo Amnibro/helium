@@ -2,7 +2,8 @@
 repository this runner makes, declared by its file:// URL at a tag and at a
 commit, fetched into GOOSE_HOME (which run_tests.py points under build/),
 fetched again by `goose fetch --update` after the tag moved, and a library
-requiring the package at another ref than the root declares."""
+requiring the package at another ref than the root declares. Concurrent
+fetches share a cold cache, including a submodule and an abandoned checkout."""
 import os
 import shutil
 import subprocess
@@ -51,10 +52,19 @@ def check_git_packages(exe, base, *, jit):
 
     def entry(code):
         tc.write_text(work / "gitpkg.goose",
-                      f"namespace gitpkg;\nfn code() -> i64 {{ {code} }}\n")
+                      "namespace gitpkg;\nimport .sub.helper;\n"
+                      f"fn code() -> i64 {{ helper() + {code} }}\n")
+
+    sub = base / "subrepo"
+    sub.mkdir()
+    tc.write_text(sub / "helper.goose", "namespace gitpkg;\nfn helper() -> i64 { 0 }\n")
+    run_git("init", "-q", "-b", "main", ".", cwd=sub)
+    run_git("add", ".", cwd=sub)
+    run_git("commit", "-q", "-m", "submodule", cwd=sub)
 
     entry(5)
     run_git("init", "-q", "-b", "main", ".")
+    run_git("-c", "protocol.file.allow=always", "submodule", "add", "-q", sub.as_uri(), "sub")
     run_git("add", ".")
     run_git("commit", "-q", "-m", "one")
     run_git("tag", "v1")
@@ -87,11 +97,40 @@ def check_git_packages(exe, base, *, jit):
                                   f'import gitpkg from "{url}@v1";',
                                   "fn main() { print(lib::code()); }"])
 
+    # These repositories and their submodule are local; allow Git's file
+    # transport only in these test processes, without changing user config.
+    env = dict(os.environ, GIT_ALLOW_PROTOCOL="file")
+
     def goose(*args):
-        code, out, err = tc.run_capture([exe, *args], cwd=base)
-        if code != 0 or tc.sanitizer_failure(err):
-            raise RuntimeError(f"goose {' '.join(str(a) for a in args)} (exit {code}):\n{out}{err}")
+        r = subprocess.run([exe, *args], cwd=base, env=env, capture_output=True, timeout=60)
+        out, err = tc.decode(r.stdout), tc.decode(r.stderr)
+        if r.returncode != 0 or tc.sanitizer_failure(err):
+            raise RuntimeError(f"goose {' '.join(str(a) for a in args)} "
+                               f"(exit {r.returncode}):\n{out}{err}")
         return out, err
+
+    def concurrent_fetch(path):
+        workers = []
+        outputs = []
+        try:
+            for _ in range(8):
+                workers.append(subprocess.Popen([exe, "fetch", path], cwd=base, env=env,
+                                                stdout=subprocess.PIPE, stderr=subprocess.STDOUT))
+            for worker in workers:
+                output, _ = worker.communicate(timeout=60)
+                output = tc.decode(output)
+                outputs.append(output)
+                if worker.returncode != 0 or tc.sanitizer_failure(output):
+                    raise RuntimeError(f"concurrent fetch {path.name} "
+                                       f"(exit {worker.returncode}):\n{output}")
+        finally:
+            for worker in workers:
+                if worker.poll() is None:
+                    worker.kill()
+                worker.communicate()
+        fetches = sum(output.count("fetching the package gitpkg") for output in outputs)
+        if fetches != 1:
+            raise RuntimeError(f"concurrent fetch {path.name}: fetched {fetches} times, not once")
 
     def expect(path, want, warning=None):
         """The program prints `want` under the JIT, or typechecks where
@@ -107,12 +146,35 @@ def check_git_packages(exe, base, *, jit):
         if not warning and "warning:" in err:
             raise RuntimeError(f"{path.name}: unexpected warning:\n{err}")
 
-    out, err = goose("fetch", use_tag)
-    if "fetching the package gitpkg" not in err:
-        raise RuntimeError(f"goose fetch did not report the fetch:\n{out}{err}")
+    concurrent_fetch(use_tag)
     expect(use_tag, "5")
+    # Simulate an interrupted commit fetch. Only the lock holder may clean
+    # this up, and the waiting processes must use its completed checkout.
+    caches = list((Path(home) / "pkg").glob("gitpkg-*/v1"))
+    if len(caches) != 1:
+        raise RuntimeError(f"expected one cached v1 checkout, found {caches}")
+    stale = caches[0].parent / f"{second[:12]}.tmp"
+    stale.mkdir()
+    tc.write_text(stale / "unfinished", "interrupted fetch\n")
+    concurrent_fetch(use_hash)
+    if stale.exists():
+        raise RuntimeError("commit fetch left its temporary checkout behind")
     expect(use_hash, "6")
     expect(use_lib, "5", warning="declares at v1")
+    # A failed clone must release the lock and leave the ref retryable.
+    use_retry = program("use_retry", [f'import gitpkg from "{url}@retry";',
+                                      "fn main() { print(gitpkg::code()); }"])
+    failed = subprocess.run([exe, "fetch", use_retry], cwd=base, env=env,
+                            capture_output=True, timeout=60)
+    err = tc.decode(failed.stderr)
+    if (failed.returncode != 1 or "cannot fetch the package gitpkg" not in err or
+            tc.sanitizer_failure(err)):
+        raise RuntimeError(f"expected a failed package fetch (exit {failed.returncode}):\n{err}")
+    if any((caches[0].parent / name).exists() for name in ("retry", "retry.tmp")):
+        raise RuntimeError("failed fetch left a checkout behind")
+    run_git("tag", "retry", "HEAD", cwd=bare)
+    concurrent_fetch(use_retry)
+    expect(use_retry, "6")
     # The tag moves; the cached checkout stays until --update.
     run_git("tag", "-f", "v1", "HEAD")
     run_git("fetch", "-q", "--tags", "--force", str(work), cwd=bare)

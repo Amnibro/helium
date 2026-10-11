@@ -1823,7 +1823,8 @@ def main():
             if skipped:
                 r.say(f"skip packages from git ({skipped})")
             else:
-                r.ok("packages from git: a tag, a commit, an update, a differing ref")
+                r.ok("packages from git: concurrent fetches, submodules, interrupted fetch, "
+                     "tag, commit, update, differing ref")
         except RuntimeError as e:
             r.fail("packages from git", str(e))
     r.section("packages from git")

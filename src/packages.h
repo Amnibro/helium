@@ -189,13 +189,23 @@ inline void RunGit(const string &git, const vector<string> &args) {
 // the cache if it is not there (or, for a tag or branch, when --update asks
 // for it again): a shallow clone at the ref, with its submodules, or a
 // fetch of the one commit. An interrupted fetch leaves a .tmp directory,
-// never a half checkout under the name.
+// never a half checkout under the name. A lock beside it keeps concurrent
+// fetches from removing or writing each other's temporary checkout.
 inline string FetchPackage(const PackageSource &s, const string &name) {
     auto dir = GitCacheDir(s);
     std::error_code ec;
     auto have = filesystem::is_directory(filesystem::path(dir), ec);
     auto update = have && package_update && !IsCommitHash(s.ref);
     if (!have || update) {
+        auto parent = filesystem::path(dir).parent_path();
+        filesystem::create_directories(parent, ec);
+        if (ec) throw CompileError { cat("cannot create ", parent.string(), ": ", ec.message()) };
+        // The lock stays outside both the temporary and final checkout, so
+        // cleanup and publication never remove a lock another process holds.
+        FileLock lock(dir + ".lock");
+        have = filesystem::is_directory(filesystem::path(dir), ec);
+        update = have && package_update && !IsCommitHash(s.ref);
+        if (have && !update) return dir + "/";
         auto git = FindOnPath("git");
         if (git.empty())
             throw CompileError { cat("cannot find `git` on PATH, needed to fetch the package ", name,
@@ -214,7 +224,6 @@ inline string FetchPackage(const PackageSource &s, const string &name) {
             } else {
                 auto tmp = dir + ".tmp";
                 RemoveTree(tmp);
-                filesystem::create_directories(filesystem::path(dir).parent_path(), ec);
                 try {
                     if (IsCommitHash(s.ref)) {
                         RunGit(git, { "init", "-q", tmp });

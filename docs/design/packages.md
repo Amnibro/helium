@@ -247,10 +247,13 @@ A tag or branch is `git clone --depth 1 --branch <ref> --recurse-submodules
 --shallow-submodules <url>`; a commit hash is `git init`, `git fetch
 --depth 1 origin <hash>`, `git checkout FETCH_HEAD`, then the submodules.
 A fetch lands in `<ref>.tmp` and is renamed when complete, so an interrupted
-one leaves nothing half there. `run`, `build` and `check` fetch what is
-missing with one line of notice per package; `fetch` fetches everything up
-front. A checkout at a hash or tag is never touched again; `fetch --update`
-re-fetches branch refs. Path sources are used where they are.
+one leaves nothing half there. Fetches and updates take a cross-process lock
+on the persistent `<ref>.lock` file beside the checkout; after waiting, a
+fetch rechecks the cache before touching `<ref>.tmp`. `run`, `build` and
+`check` fetch what is missing with one line of notice per package; `fetch`
+fetches everything up front. A checkout at a hash or tag is never touched
+again; `fetch --update` re-fetches branch refs. Path sources are used where
+they are.
 
 Without git on PATH:
 
