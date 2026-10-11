@@ -125,7 +125,7 @@ inline bool IsBranchConstruct(const Node *n) {
 struct TypeCheck {
     Ast &ast;
     StableTypeGraph stabletypes;
-    unordered_map<TypeExpr *, vector<TypeExpr *>> arrayelements;
+    unordered_map<const void *, vector<TypeExpr *>> arrayelements;
     // CanContain's and ReachesThroughRefs' answers for complete type graphs:
     // RootCandidates asks them of every variable in scope and every global,
     // at each store and shrink it judges.
