@@ -1428,6 +1428,7 @@ struct TypeCheck {
     TypeExpr *GrowU8Array(Line l);
 
     TypeExpr *LoadType(TypeExpr *t);
+    bool LoadedTypeEq(TypeExpr *t, TypeExpr *of);
     TypeExpr *ValueType(TypeExpr *t);
     TypeExpr *DeclType(TypeExpr *t, TypeExpr *s);
     static bool ImplicitInt(IntStorage from, IntStorage to);

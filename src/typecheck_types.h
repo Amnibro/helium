@@ -649,6 +649,27 @@ inline TypeExpr *TypeCheck::LoadType(TypeExpr *t) {
     return t;
 }
 
+// Comparing a loaded type needs no persistent AST node. Keep these views on
+// the stack, with exactly LoadType's conversion order, constness and source
+// location. In particular a relative reference loses its storage/pool detail.
+inline bool TypeCheck::LoadedTypeEq(TypeExpr *t, TypeExpr *of) {
+    if (t->kind == TY_INT && t->intstorage == IS_VARINT)
+        return TypeEq(ast.inttypes[IS_I64], of);
+    TypeExpr value = *t;
+    if (t->cq && !IsRefOrSlice(t)) {
+        value.cq = false;
+        return TypeEq(&value, of);
+    }
+    if (t->kind == TY_REF && t->ref->lenstorage >= 0) {
+        TypeRef ref;
+        ref.sub = t->ref->sub;
+        ref.optional = t->ref->optional;
+        value.ref = &ref;
+        return TypeEq(&value, of);
+    }
+    return TypeEq(t, of);
+}
+
 // The type a value that a type argument gives type t has: a function result
 // or a default<T>(). A relative reference is only ever storage, so as a
 // value it is the plain reference a load of it gives (§3.9).
@@ -965,7 +986,10 @@ inline void TypeCheck::ValidatePool(TypeExpr *t) {
 // type matches too.
 inline bool TypeCheck::CanContain(TypeExpr *t, TypeExpr *of) {
     if (!t) return false;
-    if (TypeEq(t, of) || TypeEq(LoadType(t), of)) return true;
+    if (TypeEq(t, of)) return true;
+    auto loaded = LoadedTypeEq(t, of);
+    assert(loaded == TypeEq(LoadType(t), of));
+    if (loaded) return true;
     if (t->kind == TY_ARRAY) return CanContain(t->arr->sub, of);
     return AnyField(t, [&](TypeExpr *ft) { return CanContain(ft, of); });
 }
