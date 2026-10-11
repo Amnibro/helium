@@ -82,7 +82,12 @@ Windows and macOS (`CMakeLists.txt`); on Linux it has the stack limit the
 process started with (`ulimit -s`), which nothing in the executable sets.
 
 **Verbs** (`Main` in `main.cpp`). `goose run file.goose [options] [-- args]`
-compiles the program in this process and runs it (`--jit`), `goose check
+compiles the program in this process and runs it (`--jit`), `goose build
+file.goose` writes the C to the program's build directory under
+`GOOSE_HOME` and compiles and links it into an executable beside the source
+(`build.h`: the runtime object compiled once per toolchain and
+configuration, the native modules' response files, `-o`, `--debug`,
+`--standalone`, `-v`, `--dry-run`; `-O2` by default), `goose check
 file.goose` typechecks it (`--check`), `goose toolchain` prints the C
 compiler, cmake and git a build would use (`toolchain.h`: `--cc`,
 `GOOSE_CC`, `cc` in `GOOSE_HOME/config`, else discovery; `--json` for

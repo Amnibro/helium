@@ -421,64 +421,52 @@ same explicitly, and `goose check` only typechecks):
 build/goose samples/01_tour.goose
 ```
 
-Or generate C and build it with whatever compiler is around. Programs that use
-threads need this route, since TinyCC cannot place thread-local storage. The C
-that `-o` writes holds the program and the part of the runtime that inlines
-into it; the rest of the runtime (the OS layer, data stack reservation,
-threads, printing) is one more C file, which `--emit-runtime` writes, to be
-compiled once and linked with every program:
+Or build an executable, which lands beside the source (`-o` puts it
+elsewhere). The compiler finds a C compiler on the machine (`goose toolchain`
+says which: MSVC or clang on Windows, cc, gcc or clang elsewhere; `--cc`
+chooses) and links the generated C with the runtime and whatever native
+modules the program uses, graphics included. Programs that use threads need
+this route, since TinyCC cannot place thread-local storage.
 
 ```bash
-build/goose --emit-runtime goose_runtime.c && cc -O2 -c goose_runtime.c
-build/goose -o tour.c samples/01_tour.goose && cc -O2 tour.c goose_runtime.o -o tour -lm -pthread && ./tour
+build/goose build samples/01_tour.goose && samples/01_tour
+build/goose build samples/27_gfx_cube.goose && samples/27_gfx_cube
 ```
 
-On Windows that is `cl /O2 /c goose_runtime.c` once and `cl /O2 tour.c
-goose_runtime.obj`. Build the runtime with the compiler and flags the programs
-use; it takes no `-D` of its own, and a program from another version of the
-compiler fails to link against it. `--standalone` writes a C file that holds
-the whole runtime instead, and builds on its own (`cc tour.c -o tour -lm
--pthread`). Useful flags: `--check` typechecks without emitting C,
-`-O0`/`-O1`/`-O2` set the inlining level, `--bce-lines` reports the bounds
-checks kept per line, and `-DGS_DEBUG=1` turns on the overflow, range and tag
-checks in the generated C, each abort naming its source line (and an overflow
-or a cast the values involved). Every resizable value lives on a data stack
-of 2 GB of reserved address space, committed as it is used: `--stack-reserve
-16G` changes that for a program, `--stacks` reports how many data stacks the
+`--debug` turns on the overflow, range and tag checks in the generated C, each
+abort naming its source line (and an overflow or a cast the values involved),
+and builds the C with debug information; `--dry-run` prints the commands a
+build would run, for a build system of your own; `-v` prints them as they
+run. Intermediates go under `~/.goose` (`GOOSE_HOME`), the runtime object
+compiled once per C compiler. Useful flags of both forms: `-O0`/`-O1`/`-O2`
+set the inlining level (a build defaults to `-O2`, a run to `-O1`),
+`--bce-lines` reports the bounds checks kept per line, and `-DGS_DEBUG=1` is
+what `--debug` defines. Every resizable value lives on a data stack of 2 GB
+of reserved address space, committed as it is used: `--stack-reserve 16G`
+changes that for a program, `--stacks` reports how many data stacks the
 program and each of its workers can take and the cap that puts on
 `hardware_threads()`, and `-DGS_STACK_STATS=1` makes a program report its
 actual use as it ends.
 
+Underneath, `goose -o tour.c tour.goose` writes the C, which holds the
+program and the part of the runtime that inlines into it; the rest of the
+runtime (the OS layer, data stack reservation, threads, printing) is one more
+C file, which `goose --emit-runtime goose_runtime.c` writes, to be compiled
+once and linked with every program (`cc -O2 tour.c goose_runtime.o -o tour
+-lm -pthread`; on Windows `cl /O2 tour.c goose_runtime.obj`). Build the
+runtime with the compiler and flags the programs use; it takes no `-D` of its
+own, and a program from another version of the compiler fails to link
+against it. `--standalone` writes a C file that holds the whole runtime
+instead, and builds on its own. A program using `audio`, `gfx`, `physics` or
+`ui` also links that module's layer, which `goose --audio-link msvc|cc`,
+`--gfx-link`, `--physics-link` and `--ui-link` name in a response file (`cc
+cube.c goose_runtime.o -o cube @$(goose --gfx-link cc)`, a ui program's
+before the gfx one it draws through). `goose build --dry-run` prints all of
+this for the program at hand.
+
 A program using `audio` plays procedural mono/stereo PCM through SDL3 without
-opening a graphics window. The optional `GOOSE_AUDIO` build setting is independent
-of `GOOSE_GFX`; generated-C programs link the response file named by
-`goose --audio-link msvc|cc`. See the [audio reference](docs/stdlib.md#audio).
-
-A program using `gfx` also links the graphics layer and SDL, which the compiler
-names in a response file:
-
-```bash
-build/goose samples/27_gfx_cube.goose
-build/goose -o cube.c samples/27_gfx_cube.goose && cc cube.c goose_runtime.o -o cube @$(build/goose --gfx-link cc)
-```
-
-With MSVC that is `cl cube.c goose_runtime.obj @<the path goose --gfx-link msvc
-prints>`. A
-program using `physics` links what `goose --physics-link` names the same way,
-next to the gfx one if it draws too:
-
-```bash
-build/goose samples/28_physics_boxes.goose
-build/goose -o boxes.c samples/28_physics_boxes.goose && cc boxes.c goose_runtime.o -o boxes @$(build/goose --gfx-link cc) @$(build/goose --physics-link cc)
-```
-
-A program using `ui` links what `goose --ui-link` names, with the gfx one,
-since its windows are drawn through gfx:
-
-```bash
-build/goose samples/29_ui_todo.goose
-build/goose -o todo.c samples/29_ui_todo.goose && cc todo.c goose_runtime.o -o todo @$(build/goose --ui-link cc) @$(build/goose --gfx-link cc)
-```
+opening a graphics window; the optional `GOOSE_AUDIO` build setting is
+independent of `GOOSE_GFX`. See the [audio reference](docs/stdlib.md#audio).
 
 The test suite and the samples run on Windows, macOS and Linux:
 

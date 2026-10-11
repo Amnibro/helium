@@ -42,6 +42,7 @@
 #include "process.h"
 #include "buildfile.h"
 #include "toolchain.h"
+#include "build.h"
 
 namespace goose {
 
@@ -252,7 +253,7 @@ static string RuntimeSections(std::initializer_list<const char *> names) {
 
 // What a separately built program and its runtime object must agree on: a
 // hash of the runtime's text, which names the runtime's entry point.
-static string RuntimeVersion() {
+string RuntimeVersion() {
     uint64_t h = 14695981039346656037ull;
     for (auto &rf : runtime_files)
         for (auto c : string_view(rf.text)) h = (h ^ (uint8_t)c) * 1099511628211ull;
@@ -263,7 +264,7 @@ static string RuntimeVersion() {
 
 // The runtime object's C (goose --emit-runtime): the runtime that programs
 // written with -o declare extern, for any program this compiler writes.
-static string RuntimeObjectSource() {
+string RuntimeObjectSource() {
     return cat("/* The Goose runtime, written by `goose --emit-runtime`. Do not edit.\n"
                "   Compile it once, with the C compiler and flags of the programs it is\n"
                "   for, and link the object with every program `goose -o` writes (all\n"
@@ -427,14 +428,14 @@ CodeGen::StackConfig StackConfigOf(const vector<string> &cdefines) {
 
 int Main(int argc, char **argv) {
     auto exe = ExePath(argv[0]);
-    // The verb forms, `goose run|check|toolchain|version ...`. A first
-    // argument that is none of them is read as an option or a file, as it
-    // always was, so `goose foo.goose` is `goose run foo.goose`.
+    // The verb forms, `goose run|build|check|toolchain|version ...`. A
+    // first argument that is none of them is read as an option or a file, as
+    // it always was, so `goose foo.goose` is `goose run foo.goose`.
     string verb;
     auto firstarg = 1;
     if (argc > 1) {
         string v = argv[1];
-        if (v == "run" || v == "check" || v == "toolchain" || v == "version") {
+        if (v == "run" || v == "build" || v == "check" || v == "toolchain" || v == "version") {
             verb = v;
             firstarg = 2;
         }
@@ -449,9 +450,11 @@ int Main(int argc, char **argv) {
     auto nobce = false, bcetest = false, bcelines = false, norfcheck = false;
     auto stacks = false;
     auto forcejit = false, standalone = false;
-    auto json = false, refresh = false;
+    auto json = false, refresh = false, debug = false, verbose = false, dryrun = false;
     string ccrequest;
-    auto optlevel = 1;
+    // A build is for a deliverable: the inlining and the C compiler's
+    // optimization both at their highest.
+    auto optlevel = verb == "build" ? 2 : 1;
     vector<string> cdefines, progargs, includenames, files;
     for (int i = firstarg; i < argc; i++) {
         string arg = argv[i];
@@ -529,6 +532,12 @@ int Main(int argc, char **argv) {
         else if (arg == "--cc" && i + 1 < argc) ccrequest = argv[++i];
         else if (arg == "--json") json = true;
         else if (arg == "--refresh") refresh = true;
+        else if (arg == "--debug") {
+            debug = true;
+            cdefines.push_back("GS_DEBUG=1");
+        }
+        else if (arg == "-v") verbose = true;
+        else if (arg == "--dry-run") dryrun = true;
         // A -D lands in the generated C itself rather than on some backend's
         // command line, so a JIT run and a compiled one see the same source.
         else if (arg == "-D" && i + 1 < argc) cdefines.push_back(argv[++i]);
@@ -549,6 +558,10 @@ int Main(int argc, char **argv) {
             return 1;
         }
     }
+    // What `goose build` builds with; its -o names the executable, and the
+    // C goes to the program's build directory (build.h).
+    BuildOptions buildopts;
+    string builddir;
     if (verb == "run") {
         if (!outname.empty()) {
             fprintf(stderr, "goose run takes no -o: it compiles and runs the program in this "
@@ -558,6 +571,14 @@ int Main(int argc, char **argv) {
         forcejit = true;
     } else if (verb == "check") {
         nocgen = true;
+    } else if (verb == "build") {
+        if (multitest || !headername.empty()) {
+            fprintf(stderr, "goose build takes one program and no --header; the flag form "
+                            "(-o out.c) writes the C for a C host\n");
+            return 1;
+        }
+        buildopts = BuildOptions { ccrequest, debug, verbose, dryrun, standalone, outname };
+        outname.clear();
     }
     if (files.size() > 1 && !multitest) {
         fprintf(stderr, "multiple input files given\n");
@@ -575,6 +596,8 @@ int Main(int argc, char **argv) {
     if (files.empty()) {
         fprintf(stderr, "usage: goose run file.goose [options] [-- program args...] | "
                         "goose check file.goose [options] | goose version |\n"
+                        "       goose build file.goose [options] [-o exe] [--debug] [--standalone] "
+                        "[--cc name|path] [-v] [--dry-run] |\n"
                         "       goose toolchain [--cc name|path] [--json] [--refresh]\n");
         fprintf(stderr, "   or: goose [--dump] [--parse] [--tokens] [--roundtrip] "
                         "[--dump-file out.goose] [--specs] [--stacks] [--check] "
@@ -601,8 +624,9 @@ int Main(int argc, char **argv) {
         return 1;
     }
     // With no output file the program is compiled into this process and run,
-    // which is what --jit asks for explicitly.
-    auto jit = forcejit || outname.empty();
+    // which is what --jit asks for explicitly; a build writes the C to its
+    // build directory instead.
+    auto jit = verb != "build" && (forcejit || outname.empty());
     if (!headername.empty() && (jit || multitest)) {
         fprintf(stderr, "--header requires C output for a single input file\n");
         return 1;
@@ -720,6 +744,9 @@ int Main(int argc, char **argv) {
         auto stackcfg = StackConfigOf(cdefines);
         CodeGen cg(ast, runtime_ext_text, includes, norfcheck, library, stackcfg.maxstacks);
         if (stacks) cg.StackReport(msgs, stackcfg);
+        // The native layers the program calls into: what a JIT run hands
+        // it, and what a build links.
+        layers = cg.layers;
         // Assemble: compiler-set feature defines, the embedded runtime, then
         // the generated program. A program built with a separate runtime
         // holds what runtime.h has of it and the extern support's
@@ -780,7 +807,6 @@ int Main(int argc, char **argv) {
             if (cg.layers.physics && !have_physics) throw CompileError { no_physics_error };
             if (cg.layers.ui && !have_ui) throw CompileError { no_ui_error };
             program = assemble(false);
-            layers = cg.layers;
         }
         return 0;
     };
@@ -795,6 +821,21 @@ int Main(int argc, char **argv) {
                 outfile.replace(pos, 1, stem);
         }
         includes = includenames;
+        if (verb == "build") {
+            builddir = ProgramBuildDir(file);
+            std::error_code ec;
+            filesystem::create_directories(filesystem::path(builddir), ec);
+            if (ec) {
+                fprintf(stderr, "cannot create the build directory %s\n", builddir.c_str());
+                return 1;
+            }
+            outfile = cat(builddir, "/", PathStem(file), ".c");
+            // The C is written far from where the command was given, so a
+            // header named relative to here is named relative to nowhere
+            // else: absolute, and the C names it relative to itself.
+            for (auto &inc : includes)
+                if (FileExists(inc)) inc = AbsolutePath(inc);
+        }
         program.clear();
         layers = NativeLayers();
         try {
@@ -804,7 +845,11 @@ int Main(int argc, char **argv) {
             // as large as the compile thread's where the platform lets it
             // (CMakeLists.txt).
             auto code = RunOnCompilerStack(compile);
-            if (code || program.empty()) return code;
+            if (code) return code;
+            if (verb == "build")
+                return nocgen ? 0 : BuildExecutable(filename, outfile, builddir, layers, buildopts,
+                                                    DirOf(exe), msgs);
+            if (program.empty()) return code;
             // The program shares this process, so its exit code becomes ours
             // and whatever it wrote is already on the same streams.
             fflush(msgs);

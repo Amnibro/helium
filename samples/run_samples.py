@@ -73,6 +73,7 @@ def main():
         ap.error("the sanitize profile requires Linux and Clang")
 
     tc.setup_console()
+    os.environ["GOOSE_HOME"] = str(tc.REPO_ROOT / "build" / "goose-home")
     # A windowed sample opens no window while it is being tested.
     os.environ["GOOSE_GFX_HEADLESS"] = "1"
     exe = tc.find_goose(args.exe)

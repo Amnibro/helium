@@ -1,0 +1,190 @@
+// Goose compiler — `goose build` (docs/design/packages.md §6): the C the
+// compiler wrote, the runtime object and the native modules' response files,
+// compiled and linked into an executable by the toolchain of toolchain.h.
+// Intermediates live under GOOSE_HOME; the executable lands beside the root
+// source unless -o says otherwise.
+#pragma once
+
+namespace goose {
+
+// In main.cpp: the runtime's text hash, the runtime object's C, and a path's directory.
+string RuntimeVersion();
+string RuntimeObjectSource();
+string DirOf(const string &path);
+
+struct BuildOptions {
+    string ccrequest;         // --cc
+    bool debug = false;       // --debug: GS_DEBUG=1, debug information, no C optimization
+    bool verbose = false;     // -v: print every command and what it prints
+    bool dryrun = false;      // --dry-run: print the commands and run nothing
+    bool standalone = false;  // --standalone: no runtime object
+    string exe;               // -o: the executable; "" puts it beside the root source
+};
+
+inline string PathStem(const string &path) {
+    auto base = path.substr(path.find_last_of("/\\") + 1);
+    auto dot = base.find_last_of('.');
+    return dot == string::npos ? base : base.substr(0, dot);
+}
+
+inline string AbsolutePath(const string &path) {
+    std::error_code ec;
+    auto abs = filesystem::absolute(filesystem::path(path), ec);
+    return ec ? path : abs.lexically_normal().string();
+}
+
+// GOOSE_HOME/build/prog/<stem>-<hash of the root's absolute path>/: where a
+// program's C, objects and logs go.
+inline string ProgramBuildDir(const string &rootfile) {
+    auto abs = AbsolutePath(rootfile);
+    #ifdef _WIN32
+        for (auto &c : abs) c = (char)tolower((unsigned char)c);   // One directory per file, however spelled.
+    #endif
+    return cat(GooseHome(), "/build/prog/", PathStem(rootfile), "-", Hex8(abs));
+}
+
+// Runs the toolchain's commands, printing them as -v and --dry-run ask, and
+// a failed one with what it printed.
+struct Builder {
+    const Toolchain &tc;
+    const BuildOptions &opts;
+    FILE *msgs;
+
+    // The compile flags of both styles: optimization, or debug information
+    // and none of it. Defines go into the C itself (main.cpp), never here.
+    vector<string> CFlags() const {
+        if (tc.style == "msvc") {
+            vector<string> f = { "/nologo" };
+            if (opts.debug) f.push_back("/Od"), f.push_back("/Zi");
+            else f.push_back("/O2");
+            return f;
+        }
+        if (opts.debug) return { "-O0", "-g" };
+        return { "-O2" };
+    }
+
+    // The system libraries a program links beyond the C library, in the cc
+    // style: none on Windows, where they live in the C runtime.
+    vector<string> SystemLibs() const {
+        #ifdef _WIN32
+            return {};
+        #else
+            if (tc.style == "msvc") return {};
+            return { "-lm", "-pthread" };
+        #endif
+    }
+
+    // Runs `argv`, `what` being what it does ("compiling the runtime"), with
+    // its output kept in `logfile`. False when it failed, after saying so.
+    bool Run(const vector<string> &argv, const string &what, const string &logfile) const {
+        if (opts.dryrun || opts.verbose) fprintf(msgs, "%s\n", CommandLineText(argv).c_str());
+        if (opts.dryrun) return true;
+        fflush(msgs);
+        auto r = RunProcess(argv, "", opts.verbose);
+        if (!logfile.empty()) WriteFileMakingDirs(logfile, r.output);
+        if (r.started && r.code == 0) return true;
+        fprintf(stderr, "%s failed%s:\n    %s\n", what.c_str(),
+                r.started ? cat(" (exit ", r.code, ")").c_str() : "", CommandLineText(argv).c_str());
+        if (!opts.verbose) fputs(r.output.c_str(), stderr);
+        if (!logfile.empty()) fprintf(stderr, "(the output is in %s)\n", logfile.c_str());
+        return false;
+    }
+
+    // Compiles the C file `src` to the object `obj`.
+    bool CompileObject(const string &src, const string &obj, const string &what,
+                       const string &logfile) const {
+        vector<string> argv = { tc.cc };
+        for (auto &f : CFlags()) argv.push_back(f);
+        if (tc.style == "msvc") {
+            argv.push_back("/c");
+            argv.push_back(src);
+            argv.push_back(cat("/Fo:", obj));
+        } else {
+            argv.push_back("-c");
+            argv.push_back(src);
+            argv.push_back("-o");
+            argv.push_back(obj);
+        }
+        return Run(argv, what, logfile);
+    }
+
+    // Compiles `src` and links it with `objects` and the response files
+    // `rsps` into `exe`, with `builddir` taking the intermediates.
+    bool Link(const string &src, const vector<string> &objects, const vector<string> &rsps,
+              const string &exe, const string &builddir, const string &logfile) const {
+        vector<string> argv = { tc.cc };
+        for (auto &f : CFlags()) argv.push_back(f);
+        if (tc.style == "msvc") {
+            argv.push_back(cat("/Fe:", exe));
+            argv.push_back(cat("/Fo:", builddir, "\\"));
+            if (opts.debug) argv.push_back(cat("/Fd:", builddir, "\\", PathStem(exe), ".pdb"));
+            argv.push_back(src);
+            for (auto &o : objects) argv.push_back(o);
+            for (auto &r : rsps) argv.push_back(cat("@", r));
+        } else {
+            argv.push_back(src);
+            for (auto &o : objects) argv.push_back(o);
+            argv.push_back("-o");
+            argv.push_back(exe);
+            for (auto &r : rsps) argv.push_back(cat("@", r));
+            for (auto &l : SystemLibs()) argv.push_back(l);
+        }
+        return Run(argv, cat("building ", exe), logfile);
+    }
+};
+
+// The runtime object for this toolchain and configuration, compiled from
+// `goose --emit-runtime`'s C on first use: GOOSE_HOME/build/runtime/<runtime
+// hash>/<toolchain id>-<config>/goose_runtime.o. "" when it could not be
+// built, after the builder said why.
+inline string RuntimeObject(const Builder &b) {
+    auto dir = cat(GooseHome(), "/build/runtime/", RuntimeVersion(), "/", b.tc.id, "-",
+                   b.opts.debug ? "debug" : "release");
+    auto obj = cat(dir, "/goose_runtime.", b.tc.style == "msvc" ? "obj" : "o");
+    if (PathExists(obj) && !b.opts.dryrun) return obj;
+    auto src = cat(dir, "/goose_runtime.c");
+    if (!b.opts.dryrun && !WriteFileMakingDirs(src, RuntimeObjectSource()))
+        throw CompileError { cat("cannot write ", src) };
+    if (!b.CompileObject(src, obj, "compiling the runtime", cat(dir, "/cc.log"))) return "";
+    return obj;
+}
+
+// What `goose build` does once the compiler has written the program's C to
+// `cfile` in `builddir`: finds the toolchain, the runtime object and the
+// native modules' response files, and links the executable. The exit code.
+inline int BuildExecutable(const string &rootfile, const string &cfile, const string &builddir,
+                           const NativeLayers &layers, const BuildOptions &opts,
+                           const string &exedir, FILE *msgs) {
+    Toolchain tc;
+    string why;
+    if (!FindToolchain(opts.ccrequest, tc, why)) {
+        fprintf(stderr, "%s\n", why.c_str());
+        return 1;
+    }
+    Builder b { tc, opts, msgs };
+    vector<string> objects;
+    if (!opts.standalone) {
+        auto obj = RuntimeObject(b);
+        if (obj.empty()) return 1;
+        objects.push_back(obj);
+    }
+    // A module's response file lists its archives before what they need, so
+    // a module goes before the ones it draws through: ui before gfx.
+    vector<string> rsps;
+    if (layers.ui) rsps.push_back(UiLinkFile(exedir, tc.style));
+    if (layers.physics) rsps.push_back(PhysicsLinkFile(exedir, tc.style));
+    if (layers.gfx) rsps.push_back(GfxLinkFile(exedir, tc.style));
+    if (layers.audio) rsps.push_back(AudioLinkFile(exedir, tc.style));
+    auto exe = opts.exe;
+    if (exe.empty()) {
+        exe = cat(DirOf(rootfile), PathStem(rootfile));
+        #ifdef _WIN32
+            exe += ".exe";
+        #endif
+    }
+    if (!b.Link(cfile, objects, rsps, exe, builddir, cat(builddir, "/cc.log"))) return 1;
+    if (!opts.dryrun) fprintf(msgs, "built %s\n", exe.c_str());
+    return 0;
+}
+
+}  // namespace goose

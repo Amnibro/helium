@@ -10,22 +10,17 @@ relative links, and variable-size enums, without heap allocation. Each file
 starts with a comment explaining what it demonstrates. The files are numbered
 in reading order. The later samples assume familiarity with the first six.
 
-Build and run any sample from this directory using a C compiler, with the
-runtime, which `--emit-runtime` writes, compiled once:
+Build any sample into an executable beside it with the C compiler the Goose
+compiler finds on the machine, or run it straight away inside the compiler's
+process:
 
-    goose --emit-runtime goose_runtime.c && cc -c goose_runtime.c
-    goose -o tour.c 01_tour.goose && cc tour.c goose_runtime.o -o tour -lm -pthread && ./tour
-
-    goose --emit-runtime goose_runtime.c && cl /c goose_runtime.c
-    goose -o tour.c 01_tour.goose && cl tour.c goose_runtime.obj && tour
-
-`--standalone` writes a C file that holds the runtime itself and builds on its
-own.
-
-With the TinyCC backend, omit `-o` to compile and run the program inside the
-Goose compiler's process:
-
+    goose build 01_tour.goose && ./01_tour
     goose 01_tour.goose
+
+The C the compiler writes can also be built by hand (`goose -o tour.c
+01_tour.goose`, linked with the runtime `goose --emit-runtime` writes, or
+`--standalone` for a C file that holds the runtime itself); `goose build
+--dry-run` prints those commands.
 
 `run_samples.py` compiles and runs them all and compares their output with
 `expected/`, both ways where the backend is available; `test/run_tests.py`

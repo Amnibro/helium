@@ -9,19 +9,23 @@
 
 namespace goose {
 
-// The environment variable, else ~/.goose.
+// The environment variable, else ~/.goose. With forward slashes throughout,
+// which every tool on Windows takes, so that paths made from it are all of
+// one kind.
 inline string GooseHome() {
-    if (auto env = getenv("GOOSE_HOME"); env && *env) return env;
-    #ifdef _WIN32
-        auto home = getenv("USERPROFILE");
-    #else
-        auto home = getenv("HOME");
-    #endif
-    #ifdef _WIN32
-        return cat(home && *home ? home : ".", "\\.goose");
-    #else
-        return cat(home && *home ? home : ".", "/.goose");
-    #endif
+    string home;
+    if (auto env = getenv("GOOSE_HOME"); env && *env) home = env;
+    else {
+        #ifdef _WIN32
+            auto profile = getenv("USERPROFILE");
+        #else
+            auto profile = getenv("HOME");
+        #endif
+        home = cat(profile && *profile ? profile : ".", "/.goose");
+    }
+    for (auto &c : home) if (c == '\\') c = '/';
+    while (home.size() > 1 && home.back() == '/') home.pop_back();
+    return home;
 }
 
 struct Toolchain {

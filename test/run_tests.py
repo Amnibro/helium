@@ -1266,6 +1266,9 @@ def main():
         ap.error("--jobs must be at least 1, and --gpu-jobs and --batch at least 0")
 
     tc.setup_console()
+    # The compiler's cache (runtime objects, fetched packages) for everything
+    # the suite runs: under the build tree, never the user's own.
+    os.environ["GOOSE_HOME"] = str(tc.REPO_ROOT / "build" / "goose-home")
     started = time.perf_counter()
     # The suite opens no windows: a gfx program asking for one draws off
     # screen instead.
@@ -1826,6 +1829,21 @@ def main():
         except ValueError:
             good = False
         checks.append(("toolchain --json", good, out + err))
+        if cc:
+            # `goose build` against the toolchain the compiler finds itself:
+            # the executable beside -o, running; a dry run writing none.
+            built = gendir / ("verbs_built" + tc.EXE_SUFFIX)
+            code, out, err = tc.run_capture([exe, "build", "-o", str(built), probe])
+            good = code == 0 and built.exists()
+            if good:
+                code, out2, err2 = tc.run_capture([built])
+                good = code == 0 and out2.strip() == "verbs"
+                out, err = out + out2, err + err2
+            checks.append(("build", good, out + err))
+            dry = gendir / ("verbs_dry" + tc.EXE_SUFFIX)
+            code, out, err = tc.run_capture([exe, "build", "--dry-run", "-o", str(dry), probe])
+            checks.append(("build --dry-run", code == 0 and not dry.exists() and
+                           "verbs" in out and "goose_runtime" in out, out + err))
         for what, good, text in checks:
             if good:
                 r.ok(f"goose {what}")

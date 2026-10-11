@@ -129,9 +129,11 @@ string CommandLineText(const vector<string> &argv) {
             s += a;
             continue;
         }
+        // Backslashes stand, as Windows paths are full of them and only a
+        // quote needs the escape on either platform's reading.
         s += '"';
         for (auto c : a) {
-            if (c == '"' || c == '\\') s += '\\';
+            if (c == '"') s += '\\';
             s += c;
         }
         s += '"';
