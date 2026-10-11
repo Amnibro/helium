@@ -43,6 +43,7 @@
 #include "buildfile.h"
 #include "toolchain.h"
 #include "build.h"
+#include "packages.h"
 
 namespace goose {
 
@@ -81,7 +82,7 @@ static vector<string> PathParts(const string &path) {
 // relative directory or the other way round, two absolute paths under
 // different Windows drives, or a leftover ".." that only the filesystem could
 // resolve.
-static string RelativeTo(const string &path, const string &dir) {
+string RelativeTo(const string &path, const string &dir) {
     auto p = PathParts(path), d = PathParts(dir);
     if (p.empty()) return path;
     auto updir = [](const vector<string> &parts) {
@@ -123,23 +124,40 @@ vector<string> StdlibDirs(const string &stdlibdir, const string &exe) {
     return dirs;
 }
 
+// A package the root file declared with `import name from "source";`
+// (docs/design/packages.md §4.3).
+struct DeclaredPackage {
+    PackageSource source;
+    int pkg = 0;             // Its index in Ast::packages.
+    int line = 0;            // Where the root declared it.
+};
+
+[[noreturn]] static void ImportError(const string &file, int line, const string &msg) {
+    throw CompileError { cat(file, ":", line, ": error: ", msg) };
+}
+
 // Parses a root file and, transitively, everything it imports (each file once).
 // `import a.b;` resolves relative to the importing file's package root (§11.1):
-// the root file's directory for the program's own files, the library's
-// directory for a standard library module; then in the standard library.
-// `import .a.b;` resolves relative to the importing file's directory. A
+// the root file's directory for the program's own files, a library's
+// directory for its modules; then as a module of a package the root
+// declared; then in the standard library. `import .a.b;` resolves relative to
+// the importing file's directory. `import name from "source";` declares a
+// package in the root file and is a requirement anywhere else, which the
+// root's declaration must satisfy (docs/design/packages.md §4.3). A
 // `rootsource` is the root file's text, which is then not read from disk.
 void ParseProgram(Ast &ast, const string &rootpath, const vector<string> &stdlibdirs,
                   const string *rootsource = nullptr) {
     // The program is package 0; a standard library directory becomes a
     // package the first time a module in it is reached.
-    ast.packages.push_back(Package { PathStem(rootpath), DirOf(rootpath), false });
+    auto rootdir = DirOf(rootpath);
+    ast.packages.push_back(Package { PathStem(rootpath), rootdir, false });
     auto stdlibpkg = [&](const string &dir) {
         for (size_t i = 0; i < ast.packages.size(); i++)
             if (ast.packages[i].stdlib && ast.packages[i].root == dir) return (int)i;
         ast.packages.push_back(Package { "stdlib", dir, true });
         return (int)ast.packages.size() - 1;
     };
+    map<string, DeclaredPackage> declared;
     vector<pair<string, int>> queue = { { rootpath, 0 } };   // (path, its package).
     set<string> loaded = { rootpath };
     map<string, int> fileof;                 // Resolved path -> index in ast.sources.
@@ -161,15 +179,80 @@ void ParseProgram(Ast &ast, const string &rootpath, const vector<string> &stdlib
         parser.ParseTop();
         for (auto &imp : parser.imports) {
             auto imppkg = pkg;
-            auto imppath = cat(imp.relative ? DirOf(path) : ast.packages[pkg].root, imp.path,
-                               ".goose");
-            if (!imp.relative && !FileExists(imppath)) {
-                for (auto &dir : stdlibdirs) {
-                    auto cand = cat(dir, imp.path, ".goose");
-                    if (FileExists(cand)) {
-                        imppath = cand;
-                        imppkg = stdlibpkg(dir);
-                        break;
+            string imppath;
+            if (!imp.source.empty()) {
+                PackageSource src;
+                try {
+                    src = ParsePackageSource(imp.source, DirOf(path));
+                } catch (CompileError &e) {
+                    ImportError(filename, imp.line, e.msg);
+                }
+                auto it = declared.find(imp.path);
+                if (fileidx == 0) {
+                    // The root declares the package, and imports its entry.
+                    if (it != declared.end())
+                        ImportError(filename, imp.line, cat("the package ", imp.path,
+                                                            " is declared twice"));
+                    string root;
+                    try {
+                        root = PackageRoot(src, imp.path);
+                    } catch (CompileError &e) {
+                        ImportError(filename, imp.line, e.msg);
+                    }
+                    ast.packages.push_back(Package { imp.path, root, false });
+                    it = declared.emplace(imp.path, DeclaredPackage { src, (int)ast.packages.size() - 1,
+                                                                      imp.line }).first;
+                } else if (it == declared.end()) {
+                    // A requirement the root does not satisfy: the error is
+                    // the line to add there.
+                    ImportError(filename, imp.line,
+                                cat(ast.packages[pkg].name, " needs the package ", imp.path,
+                                    ": add\n    import ", imp.path, " from \"",
+                                    SourceForRoot(src, rootdir), "\";\nto ", rootpath,
+                                    " (packages are declared by the root file only)"));
+                } else if (!SameSource(it->second.source, src)) {
+                    ImportError(filename, imp.line,
+                                cat(ast.packages[pkg].name, " needs the package ", imp.path,
+                                    " from ", src.text, ", which ", rootpath, ":", it->second.line,
+                                    " declared from a different source, ", it->second.source.text));
+                } else if (it->second.source.ref != src.ref) {
+                    fprintf(stderr, "%s:%d: warning: %s needs the package %s at %s, which %s:%d "
+                                    "declares at %s\n",
+                            filename.c_str(), imp.line, ast.packages[pkg].name.c_str(),
+                            imp.path.c_str(), src.ref.c_str(), rootpath.c_str(), it->second.line,
+                            it->second.source.ref.c_str());
+                }
+                imppkg = it->second.pkg;
+                imppath = cat(ast.packages[imppkg].root, imp.path, ".goose");
+            } else if (imp.relative) {
+                imppath = cat(DirOf(path), imp.path, ".goose");
+            } else {
+                // A file under this package's root; a module of a package the
+                // root declared (`import pkg;` is its entry, `import pkg.sub;`
+                // its sub.goose); the standard library.
+                auto local = cat(ast.packages[pkg].root, imp.path, ".goose");
+                auto first = imp.path.substr(0, imp.path.find('/'));
+                auto it = declared.find(first);
+                if (it != declared.end()) {
+                    if (FileExists(local))
+                        ImportError(filename, imp.line,
+                                    cat(imp.path, " is both a file of this package (", local,
+                                        ") and the declared package ", first, "'s module"));
+                    imppkg = it->second.pkg;
+                    auto rest = imp.path.size() > first.size() ? imp.path.substr(first.size() + 1)
+                                                               : first;
+                    imppath = cat(ast.packages[imppkg].root, rest, ".goose");
+                } else {
+                    imppath = local;
+                    if (!FileExists(local)) {
+                        for (auto &dir : stdlibdirs) {
+                            auto cand = cat(dir, imp.path, ".goose");
+                            if (FileExists(cand)) {
+                                imppath = cand;
+                                imppkg = stdlibpkg(dir);
+                                break;
+                            }
+                        }
                     }
                 }
             }

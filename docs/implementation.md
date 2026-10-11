@@ -170,11 +170,15 @@ function per construct. Points that matter to later passes:
   block's statements is a parse error.
 * Imports are collected per file; `ParseProgram` resolves `import a.b` against
   the importing file's package root (`Ast::packages`, `Ast::filepkg`: the
-  root file's directory for the program, package 0, and a standard library
-  directory for a module found in it) then the stdlib directories
-  (`StdlibDirs`), and `import .a.b` against the importing file, loads each
-  file once, and stable-sorts `ast.globals` by a post-order walk of the
-  import graph so an imported file's globals initialize first.
+  root file's directory for the program, package 0, a declared package's
+  directory, and a standard library directory for a module found in it),
+  then as a module of a package the root declared, then in the stdlib
+  directories (`StdlibDirs`); `import .a.b` against the importing file; and
+  `import name from "source"` (`Import::source`, `packages.h`) as a
+  declaration in the root file, which adds the package, and a requirement
+  elsewhere, checked against the root's declaration. It loads each file
+  once, and stable-sorts `ast.globals` by a post-order walk of the import
+  graph so an imported file's globals initialize first.
 
 Import traversal visits a file's imports in source order; an edge to a file
 already being visited contributes no second visit. This also determines

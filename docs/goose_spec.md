@@ -3376,10 +3376,25 @@ the caller's own facts about `src` intact.
 * One program, compiled whole. `import a.b.c;` includes the file `a/b/c.goose`
   once, resolved relative to the root of the *importing file's package*: for
   the program's own files the directory of the root file being compiled, for
-  a standard library module the library's directory; then in the standard
+  a library's modules the library's directory; then, where `a` names a
+  package the root file declared (below), as that package's module
+  `b/c.goose` (`import a;` is its entry `a.goose`); then in the standard
   library's directory (`--stdlib <dir>`, else `GOOSE_STDLIB`, else the
-  `stdlib/` of the source tree the compiler was built in); the form `import
-  .a.b;` (leading dot) resolves relative to the *importing file* instead. All declarations are public in v1; a name collision within one
+  `stdlib/` of the source tree the compiler was built in). A file of the
+  importing package with the name of a declared package is an error. The
+  form `import .a.b;` (leading dot) resolves relative to the *importing
+  file* instead.
+* **Packages** (`docs/design/packages.md`). `import name from "source";`
+  in the *root file* declares the package `name`, a directory holding its
+  entry `name.goose`, and imports that entry; the source is a path relative
+  to the root file (`"./lib"`, `"../lib"`) or a git repository at a ref
+  (`"owner/repo@v1"` on GitHub, `"host/owner/repo@commit"`, or a URL),
+  fetched by the compiler. Only the root file declares packages, so a
+  program's dependencies are flat and in one place. The same form in any
+  other file is a *requirement*: the root must declare a package of that
+  name, from the same source, or compilation fails naming the line to add;
+  a different ref is a warning. One version of a package exists in a
+  program. All declarations are public in v1; a name collision within one
   namespace is an error, except that a global variable and functions may
   share a name (below). Top-level declarations are order-independent.
 * **Namespaces** (docs/design/namespaces.md). `namespace image;`, at most
@@ -3968,7 +3983,7 @@ unmapped gap after each region turns runaway growth into a safe abort.
 program     := namespace? topdecl*             // imports may precede namespace
 namespace   := "namespace" ident ";"
 topdecl     := import | struct | enum | typealias | fndecl | globaldecl
-import      := "import" "."? ident ("." ident)* ";"
+import      := "import" "."? ident ("." ident)* ";" | "import" ident "from" strlit ";"
 declname    := ident | ident "::" ident | "::" ident   // the namespace, else the file's
 qname       := ident | ident "::" ident | "::" ident   // a declaration reference
 struct      := "struct" declname generics? "{" fieldlist "}"
