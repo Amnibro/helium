@@ -153,9 +153,45 @@ struct BCE {
     struct Fact { Base l, r; int64_t c; };   // l <= r + c.
     struct Term { bool ok = false; Base b; int64_t off = 0; };
 
+    // The generation of each variable or place id a kill has bumped, by id;
+    // the others are at 0. A body bumps few, and a flow is copied at every
+    // branch, so they are a sorted list rather than a hash table.
+    struct Gens {
+        struct Gen { int id, gen; };
+        small_vector<Gen, 8> gens;
+
+        // Where id is, or would go.
+        size_t At(int id) const {
+            auto it = std::lower_bound(gens.begin(), gens.end(), id,
+                                       [](const Gen &g, int i) { return g.id < i; });
+            return (size_t)(it - gens.begin());
+        }
+        int Get(int id) const {
+            auto i = At(id);
+            return i < gens.size() && gens[i].id == id ? gens[i].gen : 0;
+        }
+        void Set(int id, int gen) {
+            auto i = At(id);
+            if (i < gens.size() && gens[i].id == id) gens[i].gen = gen;
+            else gens.insert(gens.begin() + i, { id, gen });
+        }
+        // Per id, the later of the two.
+        static Gens Max(const Gens &a, const Gens &b) {
+            Gens r;
+            size_t i = 0, j = 0;
+            while (i < a.gens.size() || j < b.gens.size()) {
+                auto ai = i < a.gens.size() ? a.gens[i].id : INT32_MAX;
+                auto bj = j < b.gens.size() ? b.gens[j].id : INT32_MAX;
+                if (ai < bj) r.gens.push_back(a.gens[i++]);
+                else if (bj < ai) r.gens.push_back(b.gens[j++]);
+                else r.gens.push_back({ ai, std::max(a.gens[i++].gen, b.gens[j++].gen) });
+            }
+            return r;
+        }
+    };
     struct Flow {
         vector<Fact> facts;
-        unordered_map<int, int> vgen, pgen;   // var id / place id -> generation.
+        Gens vgen, pgen;   // By var id / place id.
     };
     Flow flow;
     int nextgen = 0;
@@ -210,13 +246,9 @@ struct BCE {
     unordered_map<int, pair<int64_t, int64_t>> tmpival;
     Base VarBase(VarDef *v) {
         auto id = VarId(v);
-        auto it = flow.vgen.find(id);
-        return Base { BK_VAR, id, it == flow.vgen.end() ? 0 : it->second };
+        return Base { BK_VAR, id, flow.vgen.Get(id) };
     }
-    Base LenBase(int pid) {
-        auto it = flow.pgen.find(pid);
-        return Base { BK_LEN, pid, it == flow.pgen.end() ? 0 : it->second };
-    }
+    Base LenBase(int pid) { return Base { BK_LEN, pid, flow.pgen.Get(pid) }; }
 
     void AddFactB(Base l, Base r, int64_t c) {
         if (l == r) return;
@@ -586,13 +618,14 @@ struct BCE {
     // The smallest c for which `l <= r + c` is provable, INF when nothing is.
     int64_t Dist(Base l, Base r) {
         if (l == r) return 0;
-        return DistsFrom(l, { r })[0];
+        return DistsFrom(l, span(&r, 1))[0];
     }
 
     // Shortest paths from `l` to each base in `to`: one run serves every
-    // target, which is what relating a call's arguments pairwise needs.
-    vector<int64_t> DistsFrom(Base l, const vector<Base> &to) {
-        vector<Base> nodes { Zero(), l };
+    // target, which is what relating a call's arguments pairwise needs. The
+    // graph is the facts and the bases they name, few enough to sit in place.
+    small_vector<int64_t, 4> DistsFrom(Base l, span<const Base> to) {
+        small_vector<Base, 16> nodes = { Zero(), l };
         auto add = [&](const Base &b) {
             for (auto &x : nodes) if (x == b) return;
             nodes.push_back(b);
@@ -612,7 +645,7 @@ struct BCE {
             return -1;
         };
         struct Edge { int a, b; int64_t w; };
-        vector<Edge> edges;
+        small_vector<Edge, 32> edges;
         for (auto &f : flow.facts) edges.push_back({ idx(f.l), idx(f.r), f.c });
         for (size_t i = 0; i < nodes.size(); i++) {
             auto &b = nodes[i];
@@ -644,7 +677,8 @@ struct BCE {
                     }
             }
         }
-        vector<int64_t> dist(nodes.size(), INF);
+        small_vector<int64_t, 16> dist;
+        dist.resize(nodes.size(), INF);
         dist[idx(l)] = 0;
         for (size_t round = 0; round < nodes.size(); round++) {
             auto changed = false;
@@ -655,7 +689,7 @@ struct BCE {
             }
             if (!changed) break;
         }
-        vector<int64_t> r;
+        small_vector<int64_t, 4> r;
         for (auto &b : to) r.push_back(dist[idx(b)]);
         return r;
     }
@@ -1063,7 +1097,7 @@ struct BCE {
     void BumpVar(VarDef *v, bool bridge = true) {
         if (!freshvars || !freshvars->count(v)) anybump = true;
         auto old = VarBase(v);
-        flow.vgen[VarId(v)] = ++nextgen;
+        flow.vgen.Set(VarId(v), ++nextgen);
         if (vksum) vksum->insert(v);
         if (!bridge) return;
         auto it = mono.find(v);
@@ -1080,7 +1114,7 @@ struct BCE {
     void BumpPlace(int pid, int dir) {   // dir: +1 grow, -1 shrink, 0 unknown.
         if (!freshvars || !freshvars->count(places[pid].rootv)) anybump = true;
         auto old = LenBase(pid);
-        flow.pgen[pid] = ++nextgen;
+        flow.pgen.Set(pid, ++nextgen);
         if (ksum) ksum->insert(pid);
         if (shsum && dir <= 0) shsum->insert(pid);
         // The direction carries the facts about the old length over to the
@@ -1102,7 +1136,7 @@ struct BCE {
         }
         anybump = true;
         auto old = LenBase(pid);
-        flow.pgen[pid] = ++nextgen;
+        flow.pgen.Set(pid, ++nextgen);
         if (ksum) ksum->insert(pid);
         auto nw = LenBase(pid);
         AddFactB(nw, old, delta);            // new <= old + delta.
@@ -1627,7 +1661,7 @@ struct BCE {
                             to.push_back(terms[y].b);
                             ys.push_back(y);
                         }
-                auto d = to.empty() ? vector<int64_t> {} : DistsFrom(terms[x].b, to);
+                auto d = to.empty() ? small_vector<int64_t, 4> {} : DistsFrom(terms[x].b, to);
                 for (auto y = 0; y < n; y++) {
                     if (y == x) continue;
                     auto &cell = S.c[x * n + y];
@@ -2426,16 +2460,8 @@ struct BCE {
                     r.facts.push_back({ f.l, f.r, std::max(f.c, g.c) });
                     break;
                 }
-        r.vgen = a.vgen;
-        for (auto &[k, v] : b.vgen) {
-            auto &x = r.vgen[k];
-            x = std::max(x, v);
-        }
-        r.pgen = a.pgen;
-        for (auto &[k, v] : b.pgen) {
-            auto &x = r.pgen[k];
-            x = std::max(x, v);
-        }
+        r.vgen = Gens::Max(a.vgen, b.vgen);
+        r.pgen = Gens::Max(a.pgen, b.pgen);
         return r;
     }
 

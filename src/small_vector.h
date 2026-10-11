@@ -136,6 +136,12 @@ template<typename T, int N> class small_vector {
 
     void clear() { len = 0; }
     void reserve(size_t n) { if (n > cap) Grow((uint32_t)n); }
+    void resize(size_t n, const T &fill = T()) {
+        auto f = fill;   // Which may be one of ours, which growing frees.
+        reserve(n);
+        for (auto i = len; i < n; i++) new (data() + i) T(f);
+        len = (uint32_t)n;
+    }
 
     void push_back(const T &e) {
         if (len == cap) {
@@ -154,6 +160,16 @@ template<typename T, int N> class small_vector {
     void pop_back() {
         assert(len);
         len--;
+    }
+    T *insert(const T *pos, const T &e) {
+        auto at = (uint32_t)(pos - data());
+        assert(at <= len);
+        auto copy = e;
+        push_back(copy);
+        auto d = data();
+        memmove((void *)(d + at + 1), d + at, (len - 1 - at) * sizeof(T));
+        d[at] = copy;
+        return d + at;
     }
 
     T *erase(const T *first, const T *last) {
