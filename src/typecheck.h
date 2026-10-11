@@ -61,6 +61,8 @@
 // are typecheck_nodes.h.
 #pragma once
 
+#include "type_queries.h"
+
 namespace goose {
 
 enum IterKind { IK_RANGE, IK_COUNT, IK_ARRAY, IK_SLICE };
@@ -122,6 +124,8 @@ inline bool IsBranchConstruct(const Node *n) {
 
 struct TypeCheck {
     Ast &ast;
+    StableTypeGraph stabletypes;
+    unordered_map<TypeExpr *, vector<TypeExpr *>> arrayelements;
     bool library = false;   // Built for a C host (--header): fn main() is optional.
 
     // (Val, the checked value of an expression, lives in ast.h: node Check
@@ -1518,6 +1522,7 @@ struct TypeCheck {
     int ElemArrayPlaces(TypeExpr *t, TypeExpr *of);
     bool OneArrayOf(VarDef *r, TypeExpr *elem);
     void ArrayElemsReached(TypeExpr *t, vector<TypeExpr *> &out, vector<TypeExpr *> &open);
+    void AppendArrayElemsReached(TypeExpr *t, vector<TypeExpr *> &out);
     bool RootedAtReceiver(const Val &rv, const Val &av, TypeExpr *elem);
     void CheckRootedAtReceiver(Call *c, const char *op, const Val &rv, const Val &av, TypeExpr *elem,
                                const char *what, const char *sec);

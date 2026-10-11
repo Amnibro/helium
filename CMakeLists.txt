@@ -31,6 +31,7 @@ add_executable(goose
     src/resolve.h
     src/builtins.h
     src/typecheck.h
+    src/type_queries.h
     src/typecheck_types.h
     src/typecheck_exprs.h
     src/typecheck_flow.h

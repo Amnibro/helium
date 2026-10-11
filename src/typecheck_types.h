@@ -1391,6 +1391,35 @@ inline void TypeCheck::ArrayElemsReached(TypeExpr *t, vector<TypeExpr *> &out,
     }
 }
 
+// Reuse only complete graphs. An unfinished graph still follows the original
+// traversal, including its lazy instantiation and diagnostics. Each list is
+// in first-appearance order; merging preserves the specialization key's order.
+inline void TypeCheck::AppendArrayElemsReached(TypeExpr *t, vector<TypeExpr *> &out) {
+    if (typesbuilding || !stabletypes.Ready(t)) {
+        vector<TypeExpr *> open;
+        ArrayElemsReached(t, out, open);
+        return;
+    }
+    auto it = arrayelements.find(t);
+    if (it == arrayelements.end()) {
+        vector<TypeExpr *> elems, open;
+        ArrayElemsReached(t, elems, open);
+        it = arrayelements.emplace(t, std::move(elems)).first;
+    }
+#ifndef NDEBUG
+    // Assertion builds continuously compare cached answers with the original
+    // algorithm, including order and const/storage distinctions.
+    vector<TypeExpr *> check, open;
+    ArrayElemsReached(t, check, open);
+    assert(TypeArgsEq(check, it->second));
+#endif
+    for (auto e : it->second) {
+        auto found = false;
+        for (auto x : out) if (TypeEq(x, e)) { found = true; break; }
+        if (!found) out.push_back(e);
+    }
+}
+
 // Whether a reference or slice handed back to the array member called on is
 // known to point into that very array: rooted exactly where the receiver is
 // (§9.2), in storage holding the element type only as that array's elements.

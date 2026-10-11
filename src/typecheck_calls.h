@@ -1412,9 +1412,9 @@ inline FnSpec *TypeCheck::GetOrCreateSpec(MatchInfo &mi, vector<Val> &argvals, N
     for (size_t i = 0; i < roots.size(); i++) {
         auto &ra = roots[i];
         if (ra.cls <= 0 || !ra.exact) continue;
-        vector<TypeExpr *> elems, open;
+        vector<TypeExpr *> elems;
         for (size_t j = 0; j < roots.size(); j++)
-            if (roots[j].cls == ra.cls) ArrayElemsReached(mi.paramtypes[j], elems, open);
+            if (roots[j].cls == ra.cls) AppendArrayElemsReached(mi.paramtypes[j], elems);
         for (auto e : elems)
             if (OneArrayOf(argroots[i], e)) ra.onearray.push_back(e);
     }
