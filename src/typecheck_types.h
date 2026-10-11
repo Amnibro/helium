@@ -1248,7 +1248,7 @@ inline Roots TypeCheck::ReadBackRoot(TypeExpr *rt, const Roots &container, bool 
         // storage owns nothing a slot holds. A bound stays, for the lifetime
         // it gives, and so does the owner of a whole grow-shrink array.
         if (slotread)
-            std::erase_if(cands.alts, [&](const RootAlt &a) {
+            erase_if(cands.alts, [&](const RootAlt &a) {
                 return a.exact && GrowShrinkCanHold(a.root, of);
             });
         if (cands.None()) {

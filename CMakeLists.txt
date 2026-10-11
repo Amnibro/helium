@@ -23,6 +23,7 @@ add_executable(goose
     src/builtin.h
     src/includes.h
     src/utils.h
+    src/small_vector.h
     src/lexer.h
     src/ast.h
     src/dump.h

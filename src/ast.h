@@ -458,7 +458,7 @@ struct RootAlt {
 // would. Two alternatives never share a root: adding one that does keeps the
 // weaker of the two.
 struct Roots {
-    vector<RootAlt> alts;
+    small_vector<RootAlt, 1> alts;
     // No places yet: a reference variable read before its binding in a pass
     // of a loop, or a recursive call's result in the first round of its
     // cycle, which a later pass or round revisits (TypeCheck::RefProvOf,

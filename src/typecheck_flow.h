@@ -2619,7 +2619,7 @@ inline bool TypeCheck::StoreIntoSlot(Node *at, VarDef *r, bool bound, TypeExpr *
     if (auto sv = SliceVarOf(r)) return RebindSliceVar(at, sv, v, via);
     if (!IsClassRoot(r)) return false;
     Val nv = v;
-    std::erase_if(nv.alts, [&](const RootAlt &a) { return !a.exact && a.from == r; });
+    erase_if(nv.alts, [&](const RootAlt &a) { return !a.exact && a.from == r; });
     if (nv.None()) return false;
     auto changed = false;
     VisibleVars([&](VarDef *x) {

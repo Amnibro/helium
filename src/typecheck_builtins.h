@@ -1465,7 +1465,7 @@ inline void TypeCheck::ApplyCalleeStores(FnSpec *spec, vector<Val> &argvals, Nod
         if (!spec->inprogress && classat(e.root, own) >= 0 && x && x->type &&
             !IsRefOrSlice(x->type) && !x->isglobal && !IsTemp(x) && lexical_container(x)) {
             spec->storesout = true;
-            std::erase_if(x->contents.alts, [&](const RootAlt &c) { return c.root == e.root; });
+            erase_if(x->contents.alts, [&](const RootAlt &c) { return c.root == e.root; });
             for (auto &a : r.alts) AddContents(x, a, e.classread, src);
         }
         for (size_t k = 0; k < r.alts.size(); k++) {
@@ -2295,8 +2295,8 @@ inline void TypeCheck::NoteLiveViews(Node *at, const string &prefix, VarDef *roo
             auto own = p;
             if ((growonly || inplace) && !isvar) {
                 Prov held = p;
-                std::erase_if(held.alts, [](const RootAlt &a) { return !a.classread; });
-                std::erase_if(own.alts, [](const RootAlt &a) { return a.classread; });
+                erase_if(held.alts, [](const RootAlt &a) { return !a.classread; });
+                erase_if(own.alts, [](const RootAlt &a) { return a.classread; });
                 auto first = out.size();
                 HeldViews(held, t, false, out);
                 for (auto i = first; i < out.size(); i++) out[i].inplace = inplace;
