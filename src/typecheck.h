@@ -1648,7 +1648,11 @@ struct TypeCheck {
         return v;
     }
 
-    Val DecayRef(Val v);
+    Val DecayRef(const Val &v);
+    // The type DecayRef gives v.
+    TypeExpr *DecayedType(const Val &v) {
+        return IsPlainRef(v.type) ? LoadType(v.type->ref->sub) : v.type;
+    }
     bool KeepsRef(const Val &v, TypeExpr *dt);
     Node *AutoRef(Node *n, Val &v, bool writes = true);
     void SlotRoots(Val &v);

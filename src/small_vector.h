@@ -41,6 +41,13 @@ template<typename T, int N> class small_vector {
         buf = Alloc(n);
         cap = n;
     }
+    // Copies all N in-place slots of o's elements at once, which takes a few
+    // moves where a copy of len elements is a call to memcpy. o has room for
+    // N elements wherever they are, and those past its len are only bytes.
+    void CopyInPlace(const small_vector &o) {
+        memcpy(inl, (const void *)o.data(), sizeof(inl));
+        len = o.len;
+    }
     void CopyFrom(const T *from, uint32_t n) {
         Reset(n);
         if (n) memcpy((void *)data(), from, n * sizeof(T));
@@ -68,16 +75,34 @@ template<typename T, int N> class small_vector {
 
     small_vector() {}
     small_vector(initializer_list<T> l) { CopyFrom(l.begin(), (uint32_t)l.size()); }
-    small_vector(const small_vector &o) { CopyFrom(o.data(), o.len); }
-    small_vector(small_vector &&o) noexcept { MoveFrom(o); }
+    small_vector(const small_vector &o) {
+        if (o.len <= N) CopyInPlace(o);
+        else CopyFrom(o.data(), o.len);
+    }
+    small_vector(small_vector &&o) noexcept {
+        if (o.OnHeap()) {
+            MoveFrom(o);
+        } else {
+            CopyInPlace(o);
+            o.len = 0;
+        }
+    }
     ~small_vector() { Free(); }
 
     small_vector &operator=(const small_vector &o) {
-        if (this != &o) CopyFrom(o.data(), o.len);
+        if (this == &o) return *this;
+        if (!OnHeap() && o.len <= N) CopyInPlace(o);
+        else CopyFrom(o.data(), o.len);
         return *this;
     }
     small_vector &operator=(small_vector &&o) noexcept {
-        if (this != &o) MoveFrom(o);
+        if (this == &o) return *this;
+        if (!OnHeap() && !o.OnHeap()) {
+            CopyInPlace(o);
+            o.len = 0;
+        } else {
+            MoveFrom(o);
+        }
         return *this;
     }
     small_vector &operator=(initializer_list<T> l) {

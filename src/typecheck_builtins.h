@@ -658,7 +658,7 @@ inline void TypeCheck::CheckPrintable(Call *c, const char *what, vector<Node *> 
     Val builder;
     builder.Set(buffer, true);
     builder.writable = true;
-    if (out && ClassOf(DecayRef(*out).type) == SC_RESIZABLE) builder = *out;
+    if (out && ClassOf(DecayedType(*out)) == SC_RESIZABLE) builder = *out;
     auto context = ast.New<Call>(c->line, c->callee);
     RenderSeen seen;
     CheckRenderable(context, what, av.type, a, seen, av, builder);
