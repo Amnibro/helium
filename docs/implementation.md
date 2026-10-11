@@ -88,7 +88,9 @@ file.goose` writes the C to the program's build directory under
 (`build.h`: the runtime object compiled once per toolchain and
 configuration, the native modules' response files, `-o`, `--debug`,
 `--standalone`, `-v`, `--dry-run`; `-O2` by default), `goose check
-file.goose` typechecks it (`--check`), `goose toolchain` prints the C
+file.goose` typechecks it (`--check`), `goose fetch file.goose` fetches
+the packages the root declares and stops (`--parse`; `--update` fetches
+tags and branches again), `goose toolchain` prints the C
 compiler, cmake and git a build would use (`toolchain.h`: `--cc`,
 `GOOSE_CC`, `cc` in `GOOSE_HOME/config`, else discovery; `--json` for
 scripts), and `goose version` prints the runtime hash. A first argument

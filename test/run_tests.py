@@ -1802,6 +1802,19 @@ def main():
         r.section("resource paths")
         r.show_task(resource_paths)
 
+    def git_packages():
+        from packages_git import check_git_packages
+        try:
+            skipped = check_git_packages(exe, gendir, jit=jit)
+            if skipped:
+                r.say(f"skip packages from git ({skipped})")
+            else:
+                r.ok("packages from git: a tag, a commit, an update, a differing ref")
+        except RuntimeError as e:
+            r.fail("packages from git", str(e))
+    r.section("packages from git")
+    r.show_task(git_packages)
+
     def driver_verbs():
         """The verb forms of the command line against the flag forms they
         stand for: `goose run`, `goose check` and `goose version`."""

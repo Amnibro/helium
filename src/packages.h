@@ -76,21 +76,138 @@ inline bool SameSource(const PackageSource &a, const PackageSource &b) {
     return a.ispath ? a.dir == b.dir : a.url == b.url;
 }
 
-// The root directory of the package `name` from `source`: the directory
-// itself for a path, which must hold `<name>.goose`. Fetching from git
-// comes with §4.6.
-inline string PackageRoot(const PackageSource &source, const string &name) {
-    if (!source.ispath)
-        throw CompileError { cat("fetching the package ", name, " from ", source.text,
-                                 " is not supported yet: give a path to a checkout") };
+// --- fetching (§4.6) ------------------------------------------------------------
+
+// `goose fetch --update`: refs that are not commits are fetched again.
+inline bool package_update = false;
+
+inline bool IsCommitHash(const string &ref) {
+    if (ref.size() < 7 || ref.size() > 40) return false;
+    for (auto c : ref) if (!isxdigit((unsigned char)c)) return false;
+    return true;
+}
+
+// Where a git source is checked out: GOOSE_HOME/pkg/<host>/<owner>/<repo>/
+// <ref> for the usual repository URL, and for any other URL (a file:// one,
+// a deeper path) GOOSE_HOME/pkg/<repo>-<hash of the URL>/<ref>, which keeps
+// the path short where Windows limits it. A commit is named by its first
+// twelve digits, a branch's slashes become underscores.
+inline string GitCacheDir(const PackageSource &s) {
+    auto key = s.url;
+    if (auto p = key.find("://"); p != string::npos) key = key.substr(p + 3);
+    while (!key.empty() && key.back() == '/') key.pop_back();
+    if (key.size() > 4 && key.compare(key.size() - 4, 4, ".git") == 0) key.resize(key.size() - 4);
+    auto safe = true;
+    for (auto c : key)
+        if (!(isalnum((unsigned char)c) || c == '.' || c == '_' || c == '-' || c == '/')) safe = false;
+    if (!safe || std::count(key.begin(), key.end(), '/') != 2 || key[0] == '/') {
+        auto repo = key.substr(key.find_last_of('/') + 1);
+        for (auto &c : repo) if (!(isalnum((unsigned char)c) || c == '.' || c == '_' || c == '-')) c = '_';
+        key = cat(repo.empty() ? "repo" : repo, "-", Hex8(s.url));
+    }
+    auto ref = IsCommitHash(s.ref) ? s.ref.substr(0, 12) : s.ref;
+    for (auto &c : ref) if (c == '/' || c == '\\') c = '_';
+    return cat(GooseHome(), "/pkg/", key, "/", ref);
+}
+
+// Removes a directory tree. A git checkout holds read-only files, which
+// Windows will not delete until they are writable.
+inline void RemoveTree(const string &path) {
     std::error_code ec;
-    if (!filesystem::is_directory(filesystem::path(source.dir), ec))
-        throw CompileError { cat("the package ", name, "'s source ", source.text,
-                                 " is not a directory (", source.dir, ")") };
-    if (!PathExists(cat(source.dir, name, ".goose")))
-        throw CompileError { cat("the package ", name, " at ", source.dir, " has no ", name,
-                                 ".goose") };
-    return source.dir;
+    filesystem::path p(path);
+    if (!filesystem::exists(p, ec)) return;
+    #ifdef _WIN32
+        for (auto &e : filesystem::recursive_directory_iterator(p, ec))
+            filesystem::permissions(e.path(), filesystem::perms::owner_write,
+                                    filesystem::perm_options::add, ec);
+    #endif
+    filesystem::remove_all(p, ec);
+}
+
+// Runs git with `args`, and throws what it printed when it failed. A
+// checkout in the cache can lie deep, past the path length Windows allows
+// git by default.
+inline void RunGit(const string &git, const vector<string> &args) {
+    vector<string> argv = { git, "-c", "core.longpaths=true" };
+    for (auto &a : args) argv.push_back(a);
+    auto r = RunProcess(argv);
+    if (r.started && r.code == 0) return;
+    throw CompileError { cat(CommandLineText(argv), "\n", r.output) };
+}
+
+// The checkout of the git source `s` for the package `name`, fetched into
+// the cache if it is not there (or, for a tag or branch, when --update asks
+// for it again): a shallow clone at the ref, with its submodules, or a
+// fetch of the one commit. An interrupted fetch leaves a .tmp directory,
+// never a half checkout under the name.
+inline string FetchPackage(const PackageSource &s, const string &name) {
+    auto dir = GitCacheDir(s);
+    std::error_code ec;
+    auto have = filesystem::is_directory(filesystem::path(dir), ec);
+    auto update = have && package_update && !IsCommitHash(s.ref);
+    if (!have || update) {
+        auto git = FindOnPath("git");
+        if (git.empty())
+            throw CompileError { cat("cannot find `git` on PATH, needed to fetch the package ", name,
+                                     " from ", s.text, ". Install git, or clone that repository "
+                                     "yourself and declare it as\n    import ", name,
+                                     " from \"<the directory>\";") };
+        fprintf(stderr, "%s the package %s from %s\n", update ? "updating" : "fetching",
+                name.c_str(), s.text.c_str());
+        fflush(stderr);
+        try {
+            if (update) {
+                RunGit(git, { "-C", dir, "fetch", "-q", "--depth", "1", s.url, s.ref });
+                RunGit(git, { "-C", dir, "checkout", "-q", "--detach", "FETCH_HEAD" });
+                RunGit(git, { "-C", dir, "submodule", "update", "-q", "--init", "--recursive",
+                              "--depth", "1" });
+            } else {
+                auto tmp = dir + ".tmp";
+                RemoveTree(tmp);
+                filesystem::create_directories(filesystem::path(dir).parent_path(), ec);
+                try {
+                    if (IsCommitHash(s.ref)) {
+                        RunGit(git, { "init", "-q", tmp });
+                        RunGit(git, { "-C", tmp, "fetch", "-q", "--depth", "1", s.url, s.ref });
+                        RunGit(git, { "-C", tmp, "checkout", "-q", "--detach", "FETCH_HEAD" });
+                        RunGit(git, { "-C", tmp, "submodule", "update", "-q", "--init",
+                                      "--recursive", "--depth", "1" });
+                    } else {
+                        RunGit(git, { "clone", "-q", "--depth", "1", "--branch", s.ref,
+                                      "--recurse-submodules", "--shallow-submodules", s.url, tmp });
+                    }
+                } catch (CompileError &) {
+                    RemoveTree(tmp);
+                    throw;
+                }
+                filesystem::rename(filesystem::path(tmp), filesystem::path(dir), ec);
+                if (ec) throw CompileError { cat("cannot move ", tmp, " to ", dir) };
+            }
+        } catch (CompileError &e) {
+            throw CompileError { cat("cannot fetch the package ", name, " from ", s.text, ":\n",
+                                     e.msg) };
+        }
+    }
+    return dir + "/";
+}
+
+// The root directory of the package `name` from `source`: the directory
+// itself for a path, the checkout in the cache for a git source; either
+// must hold `<name>.goose`.
+inline string PackageRoot(const PackageSource &source, const string &name) {
+    string dir;
+    if (source.ispath) {
+        std::error_code ec;
+        if (!filesystem::is_directory(filesystem::path(source.dir), ec))
+            throw CompileError { cat("the package ", name, "'s source ", source.text,
+                                     " is not a directory (", source.dir, ")") };
+        dir = source.dir;
+    } else {
+        dir = FetchPackage(source, name);
+    }
+    if (!PathExists(cat(dir, name, ".goose")))
+        throw CompileError { cat("the package ", name, " at ", dir, " has no ", name, ".goose") };
+    return dir;
 }
 
 // The source as the root file in `rootdir` would write it, for the error

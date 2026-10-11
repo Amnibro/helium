@@ -528,14 +528,15 @@ CodeGen::StackConfig StackConfigOf(const vector<string> &cdefines) {
 
 int Main(int argc, char **argv) {
     auto exe = ExePath(argv[0]);
-    // The verb forms, `goose run|build|check|toolchain|version ...`. A
+    // The verb forms, `goose run|build|check|fetch|toolchain|version ...`. A
     // first argument that is none of them is read as an option or a file, as
     // it always was, so `goose foo.goose` is `goose run foo.goose`.
     string verb;
     auto firstarg = 1;
     if (argc > 1) {
         string v = argv[1];
-        if (v == "run" || v == "build" || v == "check" || v == "toolchain" || v == "version") {
+        if (v == "run" || v == "build" || v == "check" || v == "fetch" || v == "toolchain" ||
+            v == "version") {
             verb = v;
             firstarg = 2;
         }
@@ -638,6 +639,7 @@ int Main(int argc, char **argv) {
         }
         else if (arg == "-v") verbose = true;
         else if (arg == "--dry-run") dryrun = true;
+        else if (arg == "--update") package_update = true;
         // A -D lands in the generated C itself rather than on some backend's
         // command line, so a JIT run and a compiled one see the same source.
         else if (arg == "-D" && i + 1 < argc) cdefines.push_back(argv[++i]);
@@ -671,6 +673,10 @@ int Main(int argc, char **argv) {
         forcejit = true;
     } else if (verb == "check") {
         nocgen = true;
+    } else if (verb == "fetch") {
+        // Parsing is what fetches: every package the root declares is
+        // fetched as its entry is reached.
+        parseonly = true;
     } else if (verb == "build") {
         if (multitest || !headername.empty()) {
             fprintf(stderr, "goose build takes one program and no --header; the flag form "
@@ -695,7 +701,8 @@ int Main(int argc, char **argv) {
     }
     if (files.empty()) {
         fprintf(stderr, "usage: goose run file.goose [options] [-- program args...] | "
-                        "goose check file.goose [options] | goose version |\n"
+                        "goose check file.goose [options] | goose fetch [--update] file.goose | "
+                        "goose version |\n"
                         "       goose build file.goose [options] [-o exe] [--debug] [--standalone] "
                         "[--cc name|path] [-v] [--dry-run] |\n"
                         "       goose toolchain [--cc name|path] [--json] [--refresh]\n");
