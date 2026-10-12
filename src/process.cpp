@@ -73,7 +73,7 @@ static bool IsFile(const string &path) {
     #endif
 }
 
-string FindOnPath(const string &name) {
+string FindOnPath(const string &name, const char *path) {
     if (name.find_first_of("/\\") != string::npos) return IsFile(name) ? name : "";
     vector<string> exts = { "" };
     #ifdef _WIN32
@@ -93,7 +93,7 @@ string FindOnPath(const string &name) {
     #else
         constexpr char sep = ':';
     #endif
-    auto path = getenv("PATH");
+    if (!path) path = getenv("PATH");
     if (!path) return "";
     string dirs = path;
     for (size_t i = 0; i <= dirs.size();) {

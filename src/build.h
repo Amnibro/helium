@@ -13,7 +13,6 @@ string RuntimeObjectSource();
 string DirOf(const string &path);
 
 struct BuildOptions {
-    string ccrequest;         // --cc
     bool debug = false;       // --debug: GS_DEBUG=1, debug information, no C optimization
     bool verbose = false;     // -v: print every command and what it prints
     bool dryrun = false;      // --dry-run: print the commands and run nothing
@@ -202,19 +201,14 @@ inline string RuntimeObject(const Builder &b) {
 }
 
 // What `goose build` does once the compiler has written the program's C to
-// `cfile` in `builddir`: finds the toolchain, the runtime object and the
-// response files of the native parts `nativersps` (native.h and builtin.h,
-// found by the caller), and links the executable, named by -o, the
-// program's sidecar (`output`) or the root file. The exit code.
+// `cfile` in `builddir`: finds the runtime object for the toolchain `tc`,
+// which built the native parts whose response files are `nativersps`
+// (native.h and builtin.h, found by the caller), and links the executable,
+// named by -o, the program's sidecar (`output`) or the root file. The exit
+// code.
 inline int BuildExecutable(const string &rootfile, const string &cfile, const string &builddir,
-                           const BuildOptions &opts, const string &exedir, FILE *msgs,
-                           const vector<string> &nativersps, const string &output) {
-    Toolchain tc;
-    string why;
-    if (!FindToolchain(opts.ccrequest, tc, why)) {
-        fprintf(stderr, "%s\n", why.c_str());
-        return 1;
-    }
+                           const Toolchain &tc, const BuildOptions &opts, const string &exedir,
+                           FILE *msgs, const vector<string> &nativersps, const string &output) {
     Builder b { tc, opts, msgs };
     vector<string> objects;
     if (!opts.standalone) {

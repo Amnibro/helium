@@ -461,6 +461,12 @@ The order: `--cc`, then `GOOSE_CC`, then `cc = "…";` in `GOOSE_HOME/config`
 * **Linux**: `cc`, then `gcc`, then `clang`, on PATH.
 * **macOS**: `cc` (Apple clang).
 
+One command finds its toolchain once and builds everything with it: the
+native parts, the runtime object and the link. "On PATH" is the PATH the
+compiler was started with: building a CMake package on Windows imports the
+vcvars64 environment, which puts `cl` on PATH, and discovery finds the same
+toolchain whether that happened earlier in the process or not.
+
 `--cc` takes a name (`msvc`, `clang-cl`, `clang`, `gcc`) or a path. Each
 toolchain has a *style*, `msvc` or `cc`, which decides the spelling of every
 flag and which response file a package's build writes, exactly as

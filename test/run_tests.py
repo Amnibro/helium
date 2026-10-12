@@ -1902,6 +1902,20 @@ def main():
     if cc:
         r.show_task(runtime_cache)
 
+    def native_toolchain():
+        from native_toolchain import check_native_toolchain
+        try:
+            skipped = check_native_toolchain(exe, gendir, jit=jit)
+            if skipped:
+                r.say(f"skip native toolchain ({skipped})")
+            else:
+                r.ok("native toolchain: one C toolchain for a CMake package, the runtime "
+                     "and the link")
+        except (RuntimeError, OSError, subprocess.TimeoutExpired) as e:
+            r.fail("native toolchain", str(e))
+    if cc:
+        r.show_task(native_toolchain)
+
     show_goose_in_goose()
 
     # --- JIT: the same programs, compiled and run inside the compiler --------

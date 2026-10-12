@@ -143,6 +143,18 @@ inline ToolInfo FindTool(const string &name, const vector<string> &extradirs = {
     return t;
 }
 
+// PATH as this process was started with it, before ImportVcvars put Visual
+// Studio's directories in front: where FindToolchain looks for a compiler
+// "on PATH", so that it finds the same one whether or not something in this
+// process imported vcvars first (building a CMake package does).
+inline const char *InheritedPath() {
+    static const string path = [] {
+        auto p = getenv("PATH");
+        return string(p ? p : "");
+    }();
+    return path.c_str();
+}
+
 // --- Visual Studio -------------------------------------------------------------
 
 #ifdef _WIN32
@@ -192,6 +204,7 @@ inline bool ImportVcvars(bool refresh) {
         env = r.output;
         WriteFileMakingDirs(cachefile, cat(header, env));
     }
+    InheritedPath();   // Taken before the PATH below replaces it.
     for (size_t i = 0; i < env.size();) {
         auto end = env.find('\n', i);
         if (end == string::npos) end = env.size();
@@ -290,7 +303,7 @@ inline string CxxBeside(const string &kind, const string &cc) {
         auto cand = cat(dir, plus, ext);
         if (!dir.empty() && PathExists(cand)) return cand;
     }
-    return FindOnPath(plus);
+    return FindOnPath(plus, InheritedPath());
 }
 
 inline Toolchain GccStyle(const string &cc, const string &how, const string &kind = "") {
@@ -352,7 +365,7 @@ inline bool FindToolchain(string request, Toolchain &out, string &why,
     auto wanted = [&](const char *n) { return name.empty() || name == n; };
     #ifdef _WIN32
         if (wanted("msvc")) {
-            if (auto cl = FindOnPath("cl"); !cl.empty()) {
+            if (auto cl = FindOnPath("cl", InheritedPath()); !cl.empty()) {
                 out = MsvcStyle("msvc", cl, "on PATH");
                 return true;
             }
@@ -362,13 +375,13 @@ inline bool FindToolchain(string request, Toolchain &out, string &why,
                 out = MsvcStyle("clang-cl", p, "in Visual Studio");
                 return true;
             }
-            if (auto p = FindOnPath("clang-cl"); !p.empty()) {
+            if (auto p = FindOnPath("clang-cl", InheritedPath()); !p.empty()) {
                 out = MsvcStyle("clang-cl", p, "on PATH");
                 return true;
             }
         }
         if (wanted("clang")) {
-            if (auto p = FindOnPath("clang"); !p.empty()) {
+            if (auto p = FindOnPath("clang", InheritedPath()); !p.empty()) {
                 out = GccStyle(p, "on PATH", "clang");
                 return true;
             }
@@ -388,13 +401,13 @@ inline bool FindToolchain(string request, Toolchain &out, string &why,
             }
         }
         if (wanted("gcc")) {
-            if (auto p = FindOnPath("gcc"); !p.empty()) {
+            if (auto p = FindOnPath("gcc", InheritedPath()); !p.empty()) {
                 out = GccStyle(p, "on PATH", "gcc");
                 return true;
             }
         }
         if (wanted("cc")) {
-            if (auto p = FindOnPath("cc"); !p.empty()) {
+            if (auto p = FindOnPath("cc", InheritedPath()); !p.empty()) {
                 out = GccStyle(p, "on PATH");
                 return true;
             }

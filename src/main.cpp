@@ -757,7 +757,7 @@ int Main(int argc, char **argv) {
                             "(-o out.c) writes the C for a C host\n");
             return 1;
         }
-        buildopts = BuildOptions { ccrequest, debug, verbose, dryrun, standalone, outname };
+        buildopts = BuildOptions { debug, verbose, dryrun, standalone, outname };
         outname.clear();
     }
     if (files.size() > 1 && !multitest) {
@@ -992,6 +992,18 @@ int Main(int argc, char **argv) {
         }
         return 0;
     };
+    // The C toolchain everything this command builds is built with, found
+    // when first needed: the native parts, the runtime object and the link
+    // have to agree on it.
+    Toolchain tc;
+    string tcwhy;
+    bool tclooked = false, havetc = false;
+    auto findtc = [&] {
+        if (!tclooked) havetc = FindToolchain(ccrequest, tc, tcwhy);
+        tclooked = true;
+        if (!havetc) fprintf(stderr, "%s\n", tcwhy.c_str());
+        return havetc;
+    };
     auto run = [&](const string &file) -> int {
         filename = file;
         outfile = outname;
@@ -1034,39 +1046,29 @@ int Main(int argc, char **argv) {
                 // The native parts first, so that the link can take their
                 // response files: a builtin package's from the compiler's
                 // build, the others' built now.
-                Toolchain tc;
-                string why;
+                if (!findtc()) return 1;
+                Builder b { tc, buildopts, msgs };
                 vector<string> rsps;
-                if (!nativepkgs.empty()) {
-                    if (!FindToolchain(buildopts.ccrequest, tc, why)) {
-                        fprintf(stderr, "%s\n", why.c_str());
-                        return 1;
+                for (auto pkg : nativepkgs) {
+                    auto &p = astp->packages[pkg];
+                    if (p.builtin >= 0) {
+                        rsps.push_back(BuiltinPackageLinkFile(builtin_packages[p.builtin],
+                                                              tc.style, DirOf(exe)));
+                        continue;
                     }
-                    Builder b { tc, buildopts, msgs };
-                    for (auto pkg : nativepkgs) {
-                        auto &p = astp->packages[pkg];
-                        if (p.builtin >= 0) {
-                            rsps.push_back(BuiltinPackageLinkFile(builtin_packages[p.builtin],
-                                                                  tc.style, DirOf(exe)));
-                            continue;
-                        }
-                        NativeBuild nb;
-                        if (!BuildNativePart(*astp, pkg, filename, b, false, nb)) return 1;
-                        rsps.push_back(nb.rsp);
-                    }
+                    NativeBuild nb;
+                    if (!BuildNativePart(*astp, pkg, filename, b, false, nb)) return 1;
+                    rsps.push_back(nb.rsp);
                 }
-                return BuildExecutable(filename, outfile, builddir, buildopts, DirOf(exe), msgs,
-                                       rsps, astp->packages[0].output);
+                return BuildExecutable(filename, outfile, builddir, tc, buildopts, DirOf(exe),
+                                       msgs, rsps, astp->packages[0].output);
             }
             if (program.empty()) return code;
             // The native parts the program reaches hand the run their
             // functions by name: a builtin package's from the table compiled
             // in with it, the others' from libraries built now and loaded.
             vector<pair<string, const void *>> symbols;
-            Toolchain tc;
-            auto havetc = false;
             BuildOptions jitopts;
-            jitopts.ccrequest = ccrequest;
             jitopts.verbose = verbose;
             for (auto pkg : nativepkgs) {
                 auto &p = astp->packages[pkg];
@@ -1075,12 +1077,7 @@ int Main(int argc, char **argv) {
                         for (auto e = table(); e->name; e++) symbols.emplace_back(e->name, e->addr);
                     continue;
                 }
-                string why;
-                if (!havetc && !FindToolchain(ccrequest, tc, why)) {
-                    fprintf(stderr, "%s\n", why.c_str());
-                    return 1;
-                }
-                havetc = true;
+                if (!findtc()) return 1;
                 Builder b { tc, jitopts, msgs };
                 NativeBuild nb;
                 if (!BuildNativePart(*astp, pkg, filename, b, true, nb)) return 1;

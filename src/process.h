@@ -21,11 +21,12 @@ struct ProcessResult {
 // live line (progress.h) sees it.
 ProcessResult RunProcess(const vector<string> &argv, const string &cwd = "", bool echo = false);
 
-// The full path of the program `name` on PATH, or "" when there is none. On
-// Windows a name without an extension is tried with the ones PATHEXT lists
-// (.exe, .cmd, .bat, ...). A name holding a path separator is returned as it
-// is when it exists.
-string FindOnPath(const string &name);
+// The full path of the program `name` on PATH, or on `path` (a list in PATH's
+// form) where that is given, or "" when there is none. On Windows a name
+// without an extension is tried with the ones PATHEXT lists (.exe, .cmd,
+// .bat, ...). A name holding a path separator is returned as it is when it
+// exists.
+string FindOnPath(const string &name, const char *path = nullptr);
 
 // Sets a variable in this process's environment, where getenv and every
 // process started from here see it.
