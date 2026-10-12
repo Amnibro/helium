@@ -257,8 +257,9 @@ inline string FetchPackage(const PackageSource &s, const string &name) {
                     RemoveTree(tmp);
                     throw;
                 }
-                filesystem::rename(filesystem::path(tmp), filesystem::path(dir), ec);
-                if (ec) throw CompileError { cat("cannot move ", tmp, " to ", dir) };
+                ec = RenamePath(tmp, dir);
+                if (ec)
+                    throw CompileError { cat("cannot move ", tmp, " to ", dir, ": ", ec.message()) };
             }
         } catch (CompileError &e) {
             throw CompileError { cat("cannot fetch the package ", name, " from ", s.text, ":\n",

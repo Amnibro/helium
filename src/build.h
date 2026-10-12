@@ -195,7 +195,7 @@ inline string RuntimeObject(const Builder &b) {
     filesystem::remove(filesystem::path(tmp), ec);
     if (ec) throw CompileError { cat("cannot remove ", tmp, ": ", ec.message()) };
     if (!b.CompileObject(src, tmp, "compiling the runtime", log)) return "";
-    filesystem::rename(filesystem::path(tmp), filesystem::path(obj), ec);
+    ec = RenamePath(tmp, obj);
     if (ec) throw CompileError { cat("cannot publish ", obj, ": ", ec.message()) };
     return obj;
 }

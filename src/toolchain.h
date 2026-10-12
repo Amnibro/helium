@@ -6,6 +6,7 @@
 #pragma once
 
 #include <filesystem>
+#include <thread>
 
 namespace goose {
 
@@ -105,6 +106,27 @@ inline string LowerNoExe(string name) {
 inline bool PathExists(const string &path) {
     std::error_code ec;
     return filesystem::exists(filesystem::path(path), ec);
+}
+
+// Renames `from` to `to`. On Windows a scanner (Defender, the indexer) may
+// briefly hold a file just written, and while it does, renaming that file or
+// a directory holding it is denied: those errors are retried, with doubling
+// waits of about two seconds in all.
+inline std::error_code RenamePath(const string &from, const string &to) {
+    std::error_code ec;
+    for (int wait = 1;; wait *= 2) {
+        filesystem::rename(filesystem::path(from), filesystem::path(to), ec);
+        #ifdef _WIN32
+            // ERROR_ACCESS_DENIED and ERROR_SHARING_VIOLATION.
+            auto held = ec.category() == std::system_category() &&
+                        (ec.value() == 5 || ec.value() == 32);
+            if (held && wait <= 1024) {
+                std::this_thread::sleep_for(std::chrono::milliseconds(wait));
+                continue;
+            }
+        #endif
+        return ec;
+    }
 }
 
 // A file whose directory may not exist yet. False when it cannot be written.
