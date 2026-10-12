@@ -473,7 +473,12 @@ all of it.
 Processes are started by a small cross-platform runner (`src/process.h`:
 `CreateProcessW`, `posix_spawn`), output captured to a log file in the build
 directory and shown on failure with the command that failed; `-v` shows
-every command, `--dry-run` only prints them.
+every command, `--dry-run` only prints them. While they run, `src/progress.h`
+keeps a person informed without flooding a log: each step that does real
+work (a fetch, a package's native part, the runtime object) prints one line,
+and only where stderr is a terminal does a live line, redrawn in place,
+show the running command, its time and the last line it printed.
+`GOOSE_PROGRESS=plain|live` overrides the terminal check.
 
 Without any C compiler:
 

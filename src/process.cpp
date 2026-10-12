@@ -5,6 +5,7 @@
 #include "includes.h"
 #include "utils.h"
 #include "process.h"
+#include "progress.h"
 
 #ifdef _MSC_VER
     #pragma warning(push, 0)
@@ -54,6 +55,7 @@ ProcessResult RunProcess(const vector<string> &argv, const string &cwd, bool ech
         if (!n) break;
         r.output.append(buf, n);
         if (echo) fwrite(buf, 1, n, stderr);
+        ProgressOutput(buf, n);
     }
     int code = -1;
     if (subprocess_join(&p, &code)) code = -1;
@@ -124,7 +126,8 @@ void SetEnvVar(const string &name, const string &value) {
     #endif
 }
 
-FileLock::FileLock(const string &path) {
+FileLock::FileLock(const string &path, const string &waiting) {
+    ProgressStep step(waiting);
     #ifdef _WIN32
         auto h = CreateFileA(path.c_str(), GENERIC_READ | GENERIC_WRITE,
                              FILE_SHARE_READ | FILE_SHARE_WRITE, nullptr, OPEN_ALWAYS,

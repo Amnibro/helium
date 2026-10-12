@@ -74,13 +74,19 @@ struct Builder {
         if (opts.dryrun || opts.verbose) fprintf(msgs, "%s\n", CommandLineText(argv).c_str());
         if (opts.dryrun) return true;
         fflush(msgs);
-        auto r = RunProcess(argv, "", opts.verbose);
+        ProcessResult r;
+        {
+            ProgressStep step(what);
+            r = RunProcess(argv, "", opts.verbose);
+        }
         if (!logfile.empty()) WriteFileMakingDirs(logfile, r.output);
         if (r.started && r.code == 0) return true;
-        fprintf(stderr, "%s failed%s:\n    %s\n", what.c_str(),
-                r.started ? cat(" (exit ", r.code, ")").c_str() : "", CommandLineText(argv).c_str());
-        if (!opts.verbose) fputs(r.output.c_str(), stderr);
-        if (!logfile.empty()) fprintf(stderr, "(the output is in %s)\n", logfile.c_str());
+        auto msg = cat(what, " failed", r.started ? cat(" (exit ", r.code, ")") : string(), ":\n    ",
+                       CommandLineText(argv), "\n");
+        if (!opts.verbose) msg += r.output;
+        if (!logfile.empty())
+            Append(msg, msg.back() == '\n' ? "" : "\n", "(the output is in ", logfile, ")");
+        ProgressPrint(msg);
         return false;
     }
 
@@ -179,8 +185,9 @@ inline string RuntimeObject(const Builder &b) {
     if (ec) throw CompileError { cat("cannot create ", dir, ": ", ec.message()) };
     // Every first build shares these paths. Wait before writing the source
     // or invoking the compiler, then recheck what the previous builder left.
-    FileLock lock(cat(dir, "/build.lock"));
+    FileLock lock(cat(dir, "/build.lock"), "waiting for another goose compiling the runtime");
     if (PathExists(obj)) return obj;
+    ProgressStep step(cat("compiling the runtime for ", b.tc.desc), true);
     if (!WriteFileMakingDirs(src, RuntimeObjectSource()))
         throw CompileError { cat("cannot write ", src) };
     // A failed or interrupted compiler may leave a partial object. Only a

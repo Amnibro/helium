@@ -129,7 +129,8 @@ so `goose file.goose` is `goose run file.goose`. The verbs are the
 command line as documented; the flags are the plumbing they are built on
 (`docs/design/packages.md`). Other processes (the C compiler, cmake, git)
 are started through `process.h`, a translation unit of its own over
-`third_party/subprocess/subprocess.h`.
+`third_party/subprocess/subprocess.h`; `progress.h`, another, reports
+the slow steps (a line each, and on a terminal a live line below).
 
 **Driver flags** (`Main` in `main.cpp`):
 

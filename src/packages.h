@@ -174,15 +174,31 @@ inline void RemoveTree(const string &path) {
     filesystem::remove_all(p, ec);
 }
 
+// What a terminal shows of `output`, where a carriage return alone starts
+// the line over: the last of each line's redraws, as git prints progress.
+inline string AsShown(const string &output) {
+    string shown;
+    for (size_t i = 0; i < output.size();) {
+        auto end = output.find('\n', i);
+        if (end == string::npos) end = output.size();
+        auto line = output.substr(i, end - i);
+        if (!line.empty() && line.back() == '\r') line.pop_back();
+        Append(shown, line.substr(line.find_last_of('\r') + 1), end < output.size() ? "\n" : "");
+        i = end + 1;
+    }
+    return shown;
+}
+
 // Runs git with `args`, and throws what it printed when it failed. A
 // checkout in the cache can lie deep, past the path length Windows allows
-// git by default.
+// git by default. A checkout at a tag is detached by design, which git
+// would otherwise explain even with -q.
 inline void RunGit(const string &git, const vector<string> &args) {
-    vector<string> argv = { git, "-c", "core.longpaths=true" };
+    vector<string> argv = { git, "-c", "core.longpaths=true", "-c", "advice.detachedHead=false" };
     for (auto &a : args) argv.push_back(a);
     auto r = RunProcess(argv);
     if (r.started && r.code == 0) return;
-    throw CompileError { cat(CommandLineText(argv), "\n", r.output) };
+    throw CompileError { cat(CommandLineText(argv), "\n", AsShown(r.output)) };
 }
 
 // The checkout of the git source `s` for the package `name`, fetched into
@@ -202,7 +218,7 @@ inline string FetchPackage(const PackageSource &s, const string &name) {
         if (ec) throw CompileError { cat("cannot create ", parent.string(), ": ", ec.message()) };
         // The lock stays outside both the temporary and final checkout, so
         // cleanup and publication never remove a lock another process holds.
-        FileLock lock(dir + ".lock");
+        FileLock lock(dir + ".lock", cat("waiting for another goose fetching the package ", name));
         have = filesystem::is_directory(filesystem::path(dir), ec);
         update = have && package_update && !IsCommitHash(s.ref);
         if (have && !update) return dir + "/";
@@ -212,12 +228,13 @@ inline string FetchPackage(const PackageSource &s, const string &name) {
                                      " from ", s.text, ". Install git, or clone that repository "
                                      "yourself and declare it as\n    import ", name,
                                      " from \"<the directory>\";") };
-        fprintf(stderr, "%s the package %s from %s\n", update ? "updating" : "fetching",
-                name.c_str(), s.text.c_str());
-        fflush(stderr);
+        ProgressStep step(cat(update ? "updating" : "fetching", " the package ", name, " from ", s.text),
+                          true);
+        // Quiet, but for the progress a live line can show.
+        auto progress = ProgressLive() ? "--progress" : "--no-progress";
         try {
             if (update) {
-                RunGit(git, { "-C", dir, "fetch", "-q", "--depth", "1", s.url, s.ref });
+                RunGit(git, { "-C", dir, "fetch", "-q", progress, "--depth", "1", s.url, s.ref });
                 RunGit(git, { "-C", dir, "checkout", "-q", "--detach", "FETCH_HEAD" });
                 RunGit(git, { "-C", dir, "submodule", "update", "-q", "--init", "--recursive",
                               "--depth", "1" });
@@ -227,12 +244,13 @@ inline string FetchPackage(const PackageSource &s, const string &name) {
                 try {
                     if (IsCommitHash(s.ref)) {
                         RunGit(git, { "init", "-q", tmp });
-                        RunGit(git, { "-C", tmp, "fetch", "-q", "--depth", "1", s.url, s.ref });
+                        RunGit(git, { "-C", tmp, "fetch", "-q", progress, "--depth", "1", s.url,
+                                      s.ref });
                         RunGit(git, { "-C", tmp, "checkout", "-q", "--detach", "FETCH_HEAD" });
                         RunGit(git, { "-C", tmp, "submodule", "update", "-q", "--init",
                                       "--recursive", "--depth", "1" });
                     } else {
-                        RunGit(git, { "clone", "-q", "--depth", "1", "--branch", s.ref,
+                        RunGit(git, { "clone", "-q", progress, "--depth", "1", "--branch", s.ref,
                                       "--recurse-submodules", "--shallow-submodules", s.url, tmp });
                     }
                 } catch (CompileError &) {

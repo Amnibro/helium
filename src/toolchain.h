@@ -309,6 +309,8 @@ inline Toolchain MsvcStyle(const string &name, const string &cc, const string &h
 // for, when there is none.
 inline bool FindToolchain(string request, Toolchain &out, string &why,
                           [[maybe_unused]] bool refresh = false) {
+    // Visual Studio's environment takes a second or two to set up the first time.
+    ProgressStep step("finding the C compiler");
     string how = "--cc";
     if (request.empty()) {
         if (auto env = getenv("GOOSE_CC"); env && *env) {

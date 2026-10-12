@@ -44,6 +44,15 @@ objects and each program's C. `goose build --dry-run` shows the commands
 with their paths, for a Makefile or CMake project that wants to drive the
 C compiler itself.
 
+Work that takes a while (fetching a package, building a package's C,
+compiling the runtime) prints one line as it starts. On a terminal a live
+line below it shows what is running, for how long, and the last line the
+tool printed, and is erased when the work is done. When the output goes
+anywhere else (a file, a pipe, a CI log, an agent running the command)
+there is no live line, only those one-line notes. `GOOSE_PROGRESS=plain`
+or `GOOSE_PROGRESS=live` overrides the choice; `-v` and `--dry-run` print
+plainly.
+
 ## 2. Using a package
 
 A *package* is a library in a directory of its own: a module named after it,

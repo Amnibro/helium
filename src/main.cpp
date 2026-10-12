@@ -38,6 +38,7 @@
 #include "codegen_nodes.h"
 #include "runtime_inline.h"
 #include "jit.h"
+#include "progress.h"
 #include "process.h"
 #include "buildfile.h"
 #include "toolchain.h"
@@ -717,6 +718,7 @@ int Main(int argc, char **argv) {
         }
         else files.push_back(arg);
     }
+    if (verbose || dryrun) ProgressPlain();
     if (verb == "toolchain") {
         try {
             auto tools = FindTools(ccrequest, refresh);

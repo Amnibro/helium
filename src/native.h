@@ -342,6 +342,8 @@ inline bool BuildNativePart(const Ast &ast, int pkg, const string &rootfile, con
     if (!p.cmake_target.empty() && p.cachekey.empty()) fresh = false;
     if (fresh && PathExists(out.rsp) && (!wantjit || PathExists(out.jitlib)) && !b.opts.dryrun)
         return true;
+    ProgressStep step(cat("building the package ", p.name, "'s C",
+                          p.cmake_target.empty() ? "" : " with CMake"), !b.opts.dryrun);
     std::error_code ec;
     filesystem::create_directories(filesystem::path(dir), ec);
     if (!p.cmake_target.empty()) {
