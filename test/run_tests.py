@@ -1922,6 +1922,19 @@ def main():
     if cc:
         r.show_task(exit_race)
 
+    def huge_pages():
+        from huge_pages import check_huge_pages
+        try:
+            skipped = check_huge_pages(exe, gendir)
+            if skipped:
+                r.say(f"skip huge pages ({skipped})")
+            else:
+                r.ok("huge pages: data stack regions start without them")
+        except (RuntimeError, OSError, subprocess.TimeoutExpired) as e:
+            r.fail("huge pages", str(e))
+    if cc:
+        r.show_task(huge_pages)
+
     def native_toolchain():
         from native_toolchain import check_native_toolchain
         try:

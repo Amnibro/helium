@@ -1489,6 +1489,11 @@ static uint8_t *gs_os_reserve(size_t usable, size_t size) {
         munmap(p, size);
         gs_panic("cannot protect data stack guard gap");
     }
+    /* Most stacks hold a few bytes, which a transparent huge page at the
+       start would commit 2 MB for. */
+    #ifdef MADV_NOHUGEPAGE
+        madvise(p, usable < (2u << 20) ? usable : (2u << 20), MADV_NOHUGEPAGE);
+    #endif
     return (uint8_t *)p;
 }
 
@@ -1648,7 +1653,8 @@ static int64_t gs_sp_find(gs_sppath *p, int64_t idx) {
     p->h = GS_SPHEAD(p)->height;
     for (l = 0; l < p->h; l++) {
         gs_spinner *in = GS_SPINNER(p, i);
-        for (k = 1; k < in->n && in->key[k] <= idx; k++) {}
+)GSRT"
+R"GSRT(        for (k = 1; k < in->n && in->key[k] <= idx; k++) {}
         p->node[l] = i;
         p->pos[l] = k - 1;
         i = in->child[k - 1];
@@ -1658,8 +1664,7 @@ static int64_t gs_sp_find(gs_sppath *p, int64_t idx) {
     hi = lf->n;
     while (lo < hi) {
         int64_t mid = (lo + hi) / 2;
-)GSRT"
-R"GSRT(        if (lf->idx[mid] <= idx) lo = mid + 1;
+        if (lf->idx[mid] <= idx) lo = mid + 1;
         else hi = mid;
     }
     p->pos[p->h] = lo - 1;
@@ -1892,14 +1897,14 @@ static void gs_sp_near(gs_sppath *p, gs_sppath *q, int64_t idx, gs_spnear *s) {
         s->np = q;
         s->nl = GS_SPLEAF(q, q->node[q->h]);
         s->nk = 0;
-    }
+)GSRT"
+R"GSRT(    }
 }
 
 /* [idx, idx + cnt) back on the freelist beside the spans gs_sp_near found
    around it, merged with the ones it touches. */
 static void gs_sp_release(gs_sppath *p, gs_spnear *s, int64_t idx, int64_t cnt) {
-)GSRT"
-R"GSRT(    int prev = s->k >= 0 && s->lf->idx[s->k] + s->lf->cnt[s->k] == idx;
+    int prev = s->k >= 0 && s->lf->idx[s->k] + s->lf->cnt[s->k] == idx;
     int next = s->nl && idx + cnt == s->nl->idx[s->nk];
     if (prev) {
         s->lf->cnt[s->k] += cnt + (next ? s->nl->cnt[s->nk] : 0);
@@ -2098,11 +2103,11 @@ static GS_SSSE3 GS_INLINE __m128i gs_bsm_tables(const gs_bsm *m, __m128i x) {
 #define GS_ANY_LOOP(TEST)                                                              \
     int64_t i = 0;                                                                     \
     unsigned k;                                                                        \
-    for (; i + 16 <= n; i += 16) {                                                     \
+)GSRT"
+R"GSRT(    for (; i + 16 <= n; i += 16) {                                                     \
         k = (unsigned)_mm_movemask_epi8(TEST(GS_LOAD(p + i)));                         \
         if (k) return i + gs_ctz32(k);                                                 \
-)GSRT"
-R"GSRT(    }                                                                                  \
+    }                                                                                  \
     if (i == n) return -1;                                                             \
     k = (unsigned)_mm_movemask_epi8(TEST(GS_LOAD(p + n - 16))) >> (16 - (n - i));      \
     return k ? i + gs_ctz32(k) : -1;
@@ -2284,15 +2289,15 @@ GS_API int64_t gs_fmt_u64(uint8_t *dst, uint64_t v) {
     return n;
 }
 
-GS_API int64_t gs_fmt_i64(uint8_t *dst, int64_t v) {
+)GSRT"
+R"GSRT(GS_API int64_t gs_fmt_i64(uint8_t *dst, int64_t v) {
     if (v >= 0) return gs_fmt_u64(dst, (uint64_t)v);
     /* The magnitude in unsigned arithmetic, so i64.min needs no case. */
     dst[0] = '-';
     return 1 + gs_fmt_u64(dst + 1, 0 - (uint64_t)v);
 }
 
-)GSRT"
-R"GSRT(/* A float's text is the fewest significant digits that read back as the
+/* A float's text is the fewest significant digits that read back as the
    same value of its own type and, of those, the ones nearest it, a tie going
    to the even digit (as Python's repr and Ryu choose). They are found in
    integers, by Burger and Dybvig's free-format algorithm, not through the C
@@ -2496,15 +2501,15 @@ GS_API int64_t gs_fmt_f64(uint8_t *dst, double v) {
 /* The digits are the f32's own, laid out as an f64's are, so 0.1 as an f32
    prints as 0.1, not as the digits of the f64 it widens to. */
 GS_API int64_t gs_fmt_f32(uint8_t *dst, float v) {
-    double d = v;
+)GSRT"
+R"GSRT(    double d = v;
     uint32_t b;
     if (d != d || isinf(d)) return gs_fmt_f64(dst, d);
     memcpy(&b, &v, sizeof b);
     return gs_fmt_float(dst, (int)(b >> 31), b & 0x7FFFFF, (int)(b >> 23) & 0xFF, 24, -149);
 }
 
-)GSRT"
-R"GSRT(GS_API int64_t gs_fmt_bool(uint8_t *dst, int64_t v) {
+GS_API int64_t gs_fmt_bool(uint8_t *dst, int64_t v) {
     memcpy(dst, v ? "true" : "false", v ? 4 : 5);
     return v ? 4 : 5;
 }

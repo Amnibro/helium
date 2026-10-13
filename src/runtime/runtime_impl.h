@@ -454,6 +454,11 @@ static uint8_t *gs_os_reserve(size_t usable, size_t size) {
         munmap(p, size);
         gs_panic("cannot protect data stack guard gap");
     }
+    /* Most stacks hold a few bytes, which a transparent huge page at the
+       start would commit 2 MB for. */
+    #ifdef MADV_NOHUGEPAGE
+        madvise(p, usable < (2u << 20) ? usable : (2u << 20), MADV_NOHUGEPAGE);
+    #endif
     return (uint8_t *)p;
 }
 
