@@ -1,7 +1,9 @@
 """When a native part is built again: a program's own C edited after a build
 is compiled again for both `goose build` and `goose run`, and an extern fn
 added to the program without touching its C rebuilds the JIT library, whose
-symbol table names every extern fn.
+symbol table names every extern fn. A library's symbol table leaves out the
+extern fns of an example with a sidecar of its own and of a directory its
+sidecar excludes.
 
 A CMake package is configured again when its cmake_options change, including
 after a configure that failed for want of one; a cmake_target its project
@@ -76,6 +78,27 @@ def check_native_rebuild(exe, base, *, jit):
             expect([exe, "run", source], ["111"], "goose run after editing the C")
             program("rebuild_a", "rebuild_b")
             expect([exe, "run", source], ["111", "2"], "goose run after adding an extern fn")
+
+            # A library whose example has C of its own, and a directory its
+            # sidecar excludes: their extern fns are none of the library's.
+            nest = root / "pkgs" / "nest"
+            for file, text in {
+                    "nest.goose": "namespace nest;\nextern fn nest_seven() -> i64;\n"
+                                  "fn f(x: i64) -> i64 { nest_seven() * x }\n",
+                    "nest.c": "#include <stdint.h>\nint64_t nest_seven(void) { return 7; }\n",
+                    "nest.build": 'c_sources = ["nest.c"];\nexclude = ["tools"];\n',
+                    "examples/demo/demo.goose": "import std;\nextern fn demo_only() -> i64;\n"
+                                                "fn main() { print(demo_only()); }\n",
+                    "examples/demo/demo.c": "#include <stdint.h>\n"
+                                            "int64_t demo_only(void) { return 1; }\n",
+                    "examples/demo/demo.build": 'c_sources = ["demo.c"];\n',
+                    "tools/gen.goose": "extern fn tools_only() -> i64;\n"}.items():
+                (nest / file).parent.mkdir(parents=True, exist_ok=True)
+                tc.write_text(nest / file, text)
+            user = root / "use_nest.goose"
+            tc.write_text(user, 'import std;\nimport nest from "./pkgs/nest";\n'
+                                "fn main() { print(nest::f(7)); }\n")
+            expect([exe, "run", user], ["49"], "goose run of a library with an example of its own")
 
         code, out, err = run([exe, "toolchain", "--json"])
         try:

@@ -116,16 +116,17 @@ inline string GitCacheDir(const PackageSource &s) {
 
 // Reads the package's sidecar, `<name>.build` beside its entry, if there is
 // one (§4.7): the C it compiles, where to find headers, what to define and
-// link, or the CMake target to build; and for the program its executable's
-// name. Lists take a _windows, _linux or _macos suffix for a platform's own
-// part. Paths are relative to the package root.
+// link, or the CMake target to build; the directories that are none of its
+// own; and for the program its executable's name. Lists take a _windows,
+// _linux or _macos suffix for a platform's own part. Paths are relative to
+// the package root.
 inline void LoadSidecar(Package &pkg, bool isprogram) {
     pkg.sidecar = cat(pkg.root, pkg.name, ".build");
     auto bf = LoadBuildFile(pkg.sidecar, pkg.hassidecar);
     if (!pkg.hassidecar) return;
     const char *lists[] = { "c_sources", "c_include", "c_defines", "c_flags_cc", "c_flags_msvc",
                             "c_libs" };
-    vector<string> known = { "cmake_target", "cmake_options", "main_thread_only" };
+    vector<string> known = { "cmake_target", "cmake_options", "main_thread_only", "exclude" };
     for (auto key : lists)
         for (auto suffix : { "", "_windows", "_linux", "_macos" }) known.push_back(cat(key, suffix));
     if (isprogram) known.push_back("output");
@@ -155,6 +156,7 @@ inline void LoadSidecar(Package &pkg, bool isprogram) {
     pkg.cmake_target = bf.Str("cmake_target");
     pkg.cmake_options = bf.Strings("cmake_options");
     pkg.main_thread_only = bf.Bool("main_thread_only");
+    for (auto &e : bf.Strings("exclude")) pkg.exclude.push_back(PackageDir(cat(pkg.root, e)));
     if (isprogram) pkg.output = bf.Str("output");
     if (!pkg.csources.empty() && !pkg.cmake_target.empty())
         throw CompileError { cat(pkg.sidecar, ": a package has either c_sources or a cmake_target") };

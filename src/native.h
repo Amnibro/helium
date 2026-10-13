@@ -84,10 +84,21 @@ inline void ExternNamesIn(const string &path, const string &text, set<string> &n
     }
 }
 
+// Whether the directory `dir` holds a sidecar, which makes it a program or
+// package of its own.
+inline bool HasSidecar(const filesystem::path &dir) {
+    std::error_code ec;
+    for (filesystem::directory_iterator it(dir, ec), end; !ec && it != end; it.increment(ec))
+        if (it->path().extension() == ".build" && it->is_regular_file(ec)) return true;
+    return false;
+}
+
 // Every C symbol the package's extern fns name: for the program, those of
 // the files it parsed; for a library, those of every .goose file under its
 // root, so that the library built once serves whatever modules a program
-// imports from it.
+// imports from it. That leaves out the directories its sidecar excludes and
+// those below the root with a sidecar of their own, such as an example
+// program with C of its own.
 inline vector<string> PackageExternNames(const Ast &ast, int pkg) {
     set<string> names;
     if (pkg == 0) {
@@ -98,10 +109,20 @@ inline vector<string> PackageExternNames(const Ast &ast, int pkg) {
                 } catch (CompileError &) {}
             }
     } else {
+        auto &p = ast.packages[pkg];
         std::error_code ec;
-        for (auto &e : filesystem::recursive_directory_iterator(filesystem::path(ast.packages[pkg].root), ec)) {
-            if (!e.is_regular_file() || e.path().extension() != ".goose") continue;
-            auto path = ForwardSlashes(e.path().string());
+        filesystem::recursive_directory_iterator it(filesystem::path(p.root), ec), end;
+        for (; !ec && it != end; it.increment(ec)) {
+            auto path = ForwardSlashes(it->path().string());
+            std::error_code fec;
+            if (it->is_directory(fec)) {
+                auto dir = path + "/";
+                if (std::find(p.exclude.begin(), p.exclude.end(), dir) != p.exclude.end() ||
+                    HasSidecar(it->path()))
+                    it.disable_recursion_pending();
+                continue;
+            }
+            if (it->path().extension() != ".goose" || !it->is_regular_file(fec)) continue;
             string text;
             if (!LoadSource(path, text)) continue;
             try {

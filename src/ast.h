@@ -2099,6 +2099,9 @@ struct Package {
     vector<string> cdefines, cflags_cc, cflags_msvc, clibs;
     string cmake_target;
     vector<string> cmake_options;
+    // Directories whose files are none of its own (§4.7): absolute, forward
+    // slashes, trailing /.
+    vector<string> exclude;
     bool main_thread_only = false;
     string output;                          // A program's executable, relative to its root.
     vector<int> required;                   // The packages its files require (§4.3), by index.

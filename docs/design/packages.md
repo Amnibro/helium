@@ -308,6 +308,7 @@ comments, `key = value;`, strings, `true`/`false`, integers and
 | `cmake_target` | both | the package root holds a CMake project, and this is the static library target to build and link (§5.2) |
 | `cmake_options` | both | `NAME=VALUE` cache entries for its configure |
 | `main_thread_only` | both | its functions may not be reached from a `thread_fn` (§5.4) |
+| `exclude` | both | directories, relative to the package root, whose `.goose` files are not the package's own: the JIT library's symbol table (§5.3) looks for extern fns in neither these nor a directory below the root that holds a sidecar of its own |
 | `output` | program | the executable's name, relative to the root's directory |
 
 Every `c_*` key takes a `_windows`, `_linux` or `_macos` suffix for a
@@ -413,11 +414,12 @@ GOOSE_EXPORT const goose_symbol *goose_symbols(void) {
 ```
 
 The names are every `extern fn`'s C symbol in every `.goose` file under the
-package root, which the compiler parses for this (dummy prototypes: taking a
-function's address needs no signature). One exported symbol per library, so
-Windows needs no export lists. Linking the table pulls exactly the objects
-that define those functions, and their dependencies, into the shared
-library.
+package root (but for the sidecar's `exclude` directories and those below the
+root holding a sidecar of their own, §4.7), which the compiler parses for
+this (dummy prototypes: taking a function's address needs no signature). One
+exported symbol per library, so Windows needs no export lists. Linking the
+table pulls exactly the objects that define those functions, and their
+dependencies, into the shared library.
 
 A JIT run then, for each package whose extern functions the program's code
 reaches (codegen already collects `usedexterns`; each extern's declaring file
