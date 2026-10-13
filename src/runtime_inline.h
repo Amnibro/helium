@@ -737,14 +737,19 @@ typedef struct {
     uint8_t *top;
 } gs_stack;
 
+/* The program defines what goose.h gives C compiled on its own (gs_stack
+   here, gs_rhdr, gs_rref and gs_bld_append after the generated types), so
+   an --include header including it gets nothing more. */
+#define GOOSE_H 1
+
 /* Starts the runtime on main's thread: the program's arguments, each
    region's usable reservation and trailing guard gap, the address space
    budgeted for regions over the whole program, and the most regions the
-   main program and any one worker hold (the compiler's static counts),
+)GSRT"
+R"GSRT(   main program and any one worker hold (the compiler's static counts),
    which size their registries and give hardware_threads() its cap. */
 GS_API void gs_rt_start(int argc, char **argv, uint64_t reserve, uint64_t gap,
-)GSRT"
-R"GSRT(                        uint64_t budget, int64_t mainregions, int64_t workerregions);
+                        uint64_t budget, int64_t mainregions, int64_t workerregions);
 /* A fresh region, registered to the calling thread program. */
 GS_API uint8_t *gs_reserve_region(void);
 /* The calling thread program's stack use, on stderr (GS_STACK_STATS):
@@ -938,13 +943,13 @@ static int64_t gs_zig_read(const uint8_t *p) {
 }
 
 static int64_t gs_zig_write(uint8_t *p, int64_t v) {
-    return gs_uleb_write(p, ((uint64_t)v << 1) ^ (uint64_t)(v >> 63));
+)GSRT"
+R"GSRT(    return gs_uleb_write(p, ((uint64_t)v << 1) ^ (uint64_t)(v >> 63));
 }
 
 /* ---------------------------------------------------------------------------
    Verified loading (docs/design/serialization.md): what the generated
-)GSRT"
-R"GSRT(   gs_verify_<T> walkers are built from. The bytes are untrusted until the
+   gs_verify_<T> walkers are built from. The bytes are untrusted until the
    walk finishes, so every read here is bounded by the image end and reports
    a malformed encoding instead of running past it. */
 
@@ -3593,6 +3598,48 @@ GS_API uint64_t gs_os_random_u64(void) {
     seed = gs_os_mix64(seed ^ (uint64_t)(uintptr_t)&counter);
     return gs_os_mix64(seed ^ ++counter);
 }
+)GSRT"
+    ) },
+    { "goose.h", string_view(
+R"GSRT(/* goose.h -- for C compiled on its own, a package's or a program's sidecar
+   C (docs/packages.md): the Goose values an extern fn hands it that C
+   cannot spell from the layouts alone (spec §7.10, C.2). A `u8[>..]&`
+   parameter arrives as a gs_rref, the resizable's header and its data
+   stack, and C appends to it with gs_bld_append; the stack's top is where
+   the bytes go, and nothing else of it is C's to touch.
+
+   The compiler writes this header beside every native part it builds and
+   puts it on that part's include path, `#include "goose.h"`, and builds
+   the part again whenever the header changes. The generated program
+   defines all of it itself (runtime.h, runtime_ext.h), and GOOSE_H with
+   it, so an --include header may include this one too. */
+
+#ifndef GOOSE_H
+#define GOOSE_H
+
+#include <stdint.h>
+#include <string.h>
+
+typedef struct {
+    uint8_t *top;
+} gs_stack;
+
+#pragma pack(push, 1)
+typedef struct { uint8_t *base; int64_t len; } gs_rhdr;
+typedef struct { gs_rhdr *hdr; gs_stack *stk; } gs_rref;
+#pragma pack(pop)
+
+/* Appends n bytes to the u8[>..] a builder reference points at: the
+   resizable's elements top its stack, so the bytes go at the stack top and
+   the header's count grows. */
+static inline void gs_bld_append(gs_rref b, const void *p, int64_t n) {
+    if (n <= 0) return;
+    memcpy(b.stk->top, p, (size_t)n);
+    b.stk->top += n;
+    b.hdr->len += n;
+}
+
+#endif
 )GSRT"
     ) },
 };

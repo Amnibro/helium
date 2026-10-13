@@ -324,8 +324,10 @@ static C runtime on Windows, in two forms: what an AOT program links, and a
 shared library the JIT loads. Both are built in one go, by the first `run` or
 `build` that reaches the package; `check` never builds. Inputs are stamped:
 a path package rebuilds when any of its C sources (by path, modification
-time and size), its sidecar or the set of its extern fns changes, a git
-checkout never (it never changes).
+time and size), its sidecar or the set of its extern fns changes, and every
+package, a git checkout included, when `goose.h` does: the header the
+compiler gives native C for the values it cannot declare itself, a
+builder's `gs_rref` (spec §7.10).
 
 ### 5.1 Plain C sources
 
@@ -717,7 +719,10 @@ until the new one covers it.
   turn out to be used in anger, `goose vendor`.
 * **Fetching without git** (GitHub tarballs over HTTPS), and prebuilt
   package binaries, when the three platforms times the configurations are
-  worth it.
+  worth it. `goose.h` repeats layouts codegen emits (`gs_stack`, `gs_rhdr`,
+  `gs_rref`), and a part built from source is rebuilt when it changes; a
+  prebuilt one would need those layouts to carry a version it is checked
+  against.
 * **Package data at run time**: a library's files reachable through a
   `package_dir("gfx")` in JIT and copied beside the executable by `build`.
   `embed_file` covers fonts and tables until then.

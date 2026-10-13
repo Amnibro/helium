@@ -1965,6 +1965,20 @@ def main():
     if cc:
         r.show_task(native_rebuild)
 
+    def native_builder():
+        from native_builder import check_native_builder
+        try:
+            skipped = check_native_builder(exe, gendir, jit=jit)
+            if skipped:
+                r.say(f"skip native builder ({skipped})")
+            else:
+                r.ok("native builder: C appends to a builder through goose.h, a program's and "
+                     "a CMake package's")
+        except (RuntimeError, OSError, subprocess.TimeoutExpired) as e:
+            r.fail("native builder", str(e))
+    if cc:
+        r.show_task(native_builder)
+
     show_goose_in_goose()
 
     # --- JIT: the same programs, compiled and run inside the compiler --------

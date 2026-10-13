@@ -2665,7 +2665,9 @@ any flat fixed-size value (including structs, fixed and static-capacity
 limited arrays, and fixed-mode ADTs), by value as its packed C type;
 `T&` to such a `T`, as a pointer; `T[:]` of such a `T`, as the slice struct
 (`{ data, len }`); and `u8[>..]&`, as the resizable's header plus its stack
-(`gs_rref`), which C appends to through `gs_bld_append(ref, p, n)`.
+(`gs_rref`), which C appends to through `gs_bld_append(ref, p, n)`; C
+compiled on its own, a package's, finds both in `goose.h`
+(docs/packages.md).
 Returns are one scalar or flat fixed-size value by value, or nothing;
 references, slices and builders are parameter-only forms. Everything
 else — varints, references inside structs, variable and resizable values

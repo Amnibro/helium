@@ -722,6 +722,11 @@ typedef struct {
     uint8_t *top;
 } gs_stack;
 
+/* The program defines what goose.h gives C compiled on its own (gs_stack
+   here, gs_rhdr, gs_rref and gs_bld_append after the generated types), so
+   an --include header including it gets nothing more. */
+#define GOOSE_H 1
+
 /* Starts the runtime on main's thread: the program's arguments, each
    region's usable reservation and trailing guard gap, the address space
    budgeted for regions over the whole program, and the most regions the
