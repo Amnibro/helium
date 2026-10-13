@@ -462,12 +462,16 @@ inline Prov TypeCheck::SlotView(const Prov &p, TypeExpr *slice) {
 
 // Binds a reference variable to where p points. A pool's operations stay
 // available through it only where its type carries the freelist (§5.4).
+// Bound to places at the classes of an activation only, it is a fact for
+// that activation's loops and rounds, as a rebind is (AddBinding).
 inline void TypeCheck::BindProv(VarDef *vd, const Prov &p) {
     vd->ref = p;
     vd->ref.reached = nullptr;
     if (!vd->type || !CarriesPool(vd->type)) vd->ref.reusable = 0;
     vd->refrootknown = true;
-    NoteFact(vd);
+    auto floor = p.None() ? 0 : (int)scopes.size();
+    for (auto &a : p.alts) floor = min(floor, ActivationFloor(a.root));
+    NoteFact(vd, floor);
 }
 
 // The first non-null binding of a reference variable fixes its provenance.
@@ -2747,11 +2751,7 @@ inline bool TypeCheck::CheckRefRebindRoot(Node *at, VarDef *vd, const Val &rv,
     // A rebind to other storage keeps the lifetime bound but means the
     // variable no longer names one array: a read inside a loop this rebind
     // is in sees both on the next pass (CheckLoopPasses).
-    if (vd->ref.Add(rv)) {
-        NoteFact(vd);
-        changed = true;
-    }
-    return changed;
+    return AddBinding(vd, rv) || changed;
 }
 
 // A `let` binding or field is not assigned as a whole (§4.4).

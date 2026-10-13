@@ -2031,9 +2031,9 @@ struct FnSpec {
     // reaches the spec by.
     vector<pair<Node *, vector<pair<SFunction *, FnSpec *>>>> neededges;
     // The body stored a value rooted at one of its parameters' classes into
-    // a variable outside its activation, which its call mapped onto that
-    // call's arguments in place (TypeCheck::ApplyCalleeStores): no other
-    // call reuses the check.
+    // a variable outside its activation, or bound a reference variable there
+    // to one, which its call mapped onto that call's arguments in place
+    // (TypeCheck::ApplyCalleeStores): no other call reuses the check.
     bool storesout = false;
     // A value with self-relative references is returned as the body's named
     // result, which is right only where it is built at the destination

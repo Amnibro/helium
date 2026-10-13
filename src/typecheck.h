@@ -1614,6 +1614,24 @@ struct TypeCheck {
         if (x->contents.Add({ a.root, a.exact, a.from, a.slotread, held }))
             NoteFact(x, ActivationFloor(a.root));
     }
+    // A reference or slice variable's binding grown by the places `rv` may
+    // point (Roots::Add), which a loop around the rebind feeds back as a
+    // store into a holder is (AddContents): a place at a class of an
+    // activation's to that activation's own loops and rounds, its callers
+    // learning where it points at the call (ApplyCalleeStores). Returns
+    // whether the binding changed.
+    bool AddBinding(VarDef *vd, const Roots &rv) {
+        auto changed = rv.unknown && !vd->ref.unknown;
+        vd->ref.unknown = vd->ref.unknown || rv.unknown;
+        auto floor = changed ? 0 : (int)scopes.size();
+        for (auto &a : rv.alts) {
+            if (!vd->ref.Add(a)) continue;
+            changed = true;
+            floor = min(floor, ActivationFloor(a.root));
+        }
+        if (changed) NoteFact(vd, floor);
+        return changed;
+    }
     // A container a store record may name as the source of what it stores
     // (StoreEvent::src), one whose stores say what it holds. A temporary was
     // filled by whatever made it, and a local reference or slice variable

@@ -287,7 +287,7 @@ function and no existing specialization matches. `GetOrCreateSpec`
 | `litparams` | which parameters are literal parameters (§7.7) |
 | `fnvals` | the identity of each bound function value (the block node or named function, plus the environment it captures) |
 | `narrowedenv` | which optionals of the lexical environment were narrowed at the call (a nested function or block sees them narrowed) |
-| `envreads` | the state of each variable outside the body's activation that it names, or that a callee checked or reused for it named, as the body's check began with it: assigned or not, for a `let` whether it may be assigned (§3.9), where it points (`ref`, `refrootknown`), what it holds (`contents`). A nested function's free variables are hidden parameters (§7.5), a global initializer's locals among them when a function declared or a function value written there reads them: a later call finding one otherwise gets a body of its own. Filled by `NoteEnvRead` (`LookupVar`) and `NoteCalleeEnvReads` (after each call), shared among a cycle's members (`ShareCycleEnvReads`), compared by `EnvUnchanged`. The same variables as the check left them (`envexits`) are where a call reusing the body leaves them (`ReplayEnvExits`). A body that stored a value rooted at one of its parameters' classes into such a variable serves only the call it was checked for (`FnSpec::storesout`, §3.5) |
+| `envreads` | the state of each variable outside the body's activation that it names, or that a callee checked or reused for it named, as the body's check began with it: assigned or not, for a `let` whether it may be assigned (§3.9), where it points (`ref`, `refrootknown`), what it holds (`contents`). A nested function's free variables are hidden parameters (§7.5), a global initializer's locals among them when a function declared or a function value written there reads them: a later call finding one otherwise gets a body of its own. Filled by `NoteEnvRead` (`LookupVar`) and `NoteCalleeEnvReads` (after each call), shared among a cycle's members (`ShareCycleEnvReads`), compared by `EnvUnchanged`. The same variables as the check left them (`envexits`) are where a call reusing the body leaves them (`ReplayEnvExits`). A body that stored a value rooted at one of its parameters' classes into such a variable, or bound one to it, serves only the call it was checked for (`FnSpec::storesout`, §3.5) |
 | `needs` | the concrete specializations of every `return ... from` target enclosing the call must be the same on this path |
 
 `RootArg::exact` and `RootArg::concrete` are excluded from the key: they are
@@ -1160,10 +1160,14 @@ and the variable's `contents` with it: the class means nothing once the
 activation has ended, and a merge or a copy of the variable holds what the
 call passed, marked where that is one of the views the storage of a class
 of the caller's holds (`AddContents`); no class of the callee's is left
-there, marked or not. What the mapping adds reaches the loops around the
-call (`NoteFact`), while the class, as the body recorded it, reaches only
-the loops and rounds of that activation (`ActivationFloor`): a loop calling
-the body checks it again in each pass, whose class is new each time. The events
+there, marked or not. A reference or slice variable such a body rebinds
+to a value rooted at the class is bound the same way: the call takes the
+class out of its `ref` and adds what the class stands for there, as the
+call's result would map it (`RetAltVal`). What the mapping adds reaches the
+loops around the call (`NoteFact`), while the class, as the body recorded or
+bound it, reaches only the loops and rounds of that activation
+(`ActivationFloor`, `AddBinding`): a loop calling the body checks it again
+in each pass, whose class is new each time. The events and bindings
 are mapped for one call, so no other call reuses such a check
 (`FnSpec::storesout`). A global's `contents` are left as they are, and so
 is the reuse of a check storing into globals alone: their stores are judged
@@ -1398,10 +1402,10 @@ construct's first check of its branches keeps its own (`WarningsHeld`,
 (`CheckSpecBody` clears `looppasses`), and a fact it notes about a variable
 outside it feeds the loops of the bodies it was called from as well
 (`outerbodies`): a nested function or a function value rebinds, and stores
-into, the variables of the frames around it. A store of a value rooted at
-one of the body's parameters' classes is a fact for its own loops and
-rounds alone (`ActivationFloor`): the loops around the call see what the
-call maps it to (§3.5).
+into, the variables of the frames around it. A store or a binding of a
+value rooted at one of the body's parameters' classes is a fact for its own
+loops and rounds alone (`ActivationFloor`): the loops around the call see
+what the call maps it to (§3.5).
 
 ### 3.8 Writability
 

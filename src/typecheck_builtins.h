@@ -1464,8 +1464,10 @@ inline void TypeCheck::ApplyCalleeStores(FnSpec *spec, vector<Val> &argvals, Nod
     // them (VarDef::contents) instead of the callee's classes, which mean
     // nothing once its activation has ended, and a loop around the call feeds
     // that back; the check then stands for this call alone (FnSpec::storesout).
-    // A global is left to the judgement of the globals, which follows its
-    // stores through the calls that passed each class (CheckGlobalShrinks).
+    // A reference or slice variable such a body rebinds is bound to them the
+    // same way, as the call's result would be (RetAltVal). A global is left
+    // to the judgement of the globals, which follows its stores through the
+    // calls that passed each class (CheckGlobalShrinks).
     // Cached callee locals retain the depth of their original check. A later
     // deeper call does not make them lexical variables of that caller.
     auto lexical_container = [&](VarDef *x) {
@@ -1475,6 +1477,21 @@ inline void TypeCheck::ApplyCalleeStores(FnSpec *spec, vector<Val> &argvals, Nod
         });
         return named;
     };
+    if (!spec->inprogress) {
+        Roots unused;
+        auto ofcallee = [&](const RootAlt &a) { return classat(a.root, unused) >= 0; };
+        EachNamedVar((int)frames.size() - 1, CurRealFrame().spec, [&](int i) {
+            auto x = vars[i];
+            if (!x->type || !IsRefOrSlice(x->type) || x->isglobal || !x->ref.Any(ofcallee))
+                return;
+            spec->storesout = true;
+            Roots bound;
+            for (auto &a : x->ref.alts)
+                if (ofcallee(a)) bound.Add(RetAltVal(spec, a, argvals, x->type, at));
+            erase_if(x->ref.alts, ofcallee);
+            AddBinding(x, bound);
+        });
+    }
     auto end = min(rec->eventend, storeevents.size());
     for (auto i = rec->eventstart; i < end; i++) {
         auto e = storeevents[i];
