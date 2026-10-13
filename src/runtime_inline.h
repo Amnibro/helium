@@ -1057,14 +1057,22 @@ static const char *gs_errmsgs[] = {
     "pop_n count negative or beyond the array's length",
 };
 
+/* Ends the process with `code`, its streams flushed: every runtime error
+   and exit() comes here. The first thread to call it ends the process
+   without the C library's teardown, which two threads running at once
+   crash in on Windows, and which nothing of the program needs; any later
+   caller waits for that. Under TinyCC the program runs inside the
+   compiler, where exit() on the main thread returns to it instead. */
+static GS_NORETURN void gs_end(int code);
+
 GS_API GS_NORETURN void gs_panic(const char *msg) {
     fprintf(stderr, "goose runtime error: %s\n", msg);
-    exit(1);
+    gs_end(1);
 }
 
 GS_API GS_NORETURN void gs_abort(int err, const char *file, int line) {
     fprintf(stderr, "goose runtime error: %s (%s:%d)\n", gs_errmsgs[err], file, line);
-    exit(1);
+    gs_end(1);
 }
 
 GS_API GS_NORETURN void gs_abort_msg(const uint8_t *msg, int64_t len, const char *file,
@@ -1072,41 +1080,40 @@ GS_API GS_NORETURN void gs_abort_msg(const uint8_t *msg, int64_t len, const char
     fputs("goose runtime error: ", stderr);
     fwrite(msg, 1, (size_t)len, stderr);
     fprintf(stderr, " (%s:%d)\n", file, line);
-    exit(1);
+    gs_end(1);
 }
 
 GS_API GS_NORETURN void gs_exit(int64_t code) {
-    fflush(stdout);
-    exit((int)code);
+    gs_end((int)code);
 }
 
 GS_API GS_NORETURN void gs_idxfail(int64_t i, int64_t n, const char *file, int line) {
     fprintf(stderr, "goose runtime error: index %lld out of bounds (length %lld) "
             "(%s:%d)\n", (long long)i, (long long)n, file, line);
-    exit(1);
+    gs_end(1);
 }
 
 GS_API GS_NORETURN void gs_divfail(const char *file, int line) {
     fprintf(stderr, "goose runtime error: division by zero (%s:%d)\n", file, line);
-    exit(1);
+    gs_end(1);
 }
 
 GS_API GS_NORETURN void gs_divovf(const char *file, int line) {
     fprintf(stderr, "goose runtime error: integer overflow in division (%s:%d)\n", file, line);
-    exit(1);
+    gs_end(1);
 }
 
 GS_API GS_NORETURN void gs_ovf(int64_t a, const char *op, int64_t b, const char *type,
                                const char *file, int line) {
     fprintf(stderr, "goose runtime error: integer overflow (debug): %lld %s %lld at %s "
             "(%s:%d)\n", (long long)a, op, (long long)b, type, file, line);
-    exit(1);
+    gs_end(1);
 }
 
 GS_API GS_NORETURN void gs_ovf_neg(int64_t a, const char *type, const char *file, int line) {
     fprintf(stderr, "goose runtime error: integer overflow (debug): -(%lld) at %s (%s:%d)\n",
             (long long)a, type, file, line);
-    exit(1);
+    gs_end(1);
 }
 
 /* The message of a failing `as` check, with the source value as text. */
@@ -1114,7 +1121,7 @@ static GS_NORETURN void gs_asfail(const char *why, const char *num, const char *
                                   const char *file, int line) {
     fprintf(stderr, "goose runtime error: as conversion %s (debug): %s as %s (%s:%d)\n",
             why, num, type, file, line);
-    exit(1);
+    gs_end(1);
 }
 
 GS_API GS_NORETURN void gs_asfail_i(const char *why, int64_t v, const char *type,
@@ -1221,7 +1228,8 @@ static size_t gs_overflow_text(char *buf, const gs_region *r) {
     }
     p = gs_text(p, " data stacks grew past the ");
     p = gs_size(p, r->usable);
-    p = gs_text(p, " reserved for it");
+)GSRT"
+R"GSRT(    p = gs_text(p, " reserved for it");
     if (r->usable < gs_region_reserve) {
         p = gs_text(p, " (halved from ");
         p = gs_size(p, gs_region_reserve);
@@ -1233,8 +1241,7 @@ static size_t gs_overflow_text(char *buf, const gs_region *r) {
 }
 
 /* The calling thread program's registry, empty, as it starts. */
-)GSRT"
-R"GSRT(static void gs_regions_begin(int64_t capacity) {
+static void gs_regions_begin(int64_t capacity) {
     gs_regions_cap = (long)capacity;
     gs_regions = (gs_region *)calloc((size_t)(capacity > 0 ? capacity : 1), sizeof(gs_region));
     if (!gs_regions) gs_panic("out of memory allocating the data stack registry");
@@ -1342,6 +1349,15 @@ static void gs_release_region(const gs_region *r) {
         gs_panic("cannot release data stack address space");
 }
 
+/* Whether this is the first call of gs_end; and where the later ones wait. */
+static int gs_end_first(void) {
+    static volatile LONG ended;
+    return !InterlockedExchange(&ended, 1);
+}
+static GS_NORETURN void gs_park(void) {
+    for (;;) Sleep(INFINITE);
+}
+
 #else  /* posix */
 
 #include <sys/mman.h>
@@ -1424,7 +1440,8 @@ static void gs_native_stack_init(void) {
     }
     #if defined(__APPLE__)
         hi = (uintptr_t)pthread_get_stackaddr_np(pthread_self());
-        lo = hi - pthread_get_stacksize_np(pthread_self());
+)GSRT"
+R"GSRT(        lo = hi - pthread_get_stacksize_np(pthread_self());
     #elif defined(__linux__)
         pthread_attr_t attr;
         void *base;
@@ -1449,8 +1466,7 @@ static void gs_native_stack_free(void) {
     stack_t ss;
     if (!gs_sigstack) return;
     memset(&ss, 0, sizeof(ss));
-)GSRT"
-R"GSRT(    ss.ss_flags = SS_DISABLE;
+    ss.ss_flags = SS_DISABLE;
     ss.ss_size = gs_sigstack_size();
     sigaltstack(&ss, NULL);
     free(gs_sigstack);
@@ -1480,7 +1496,29 @@ static void gs_release_region(const gs_region *r) {
     if (munmap(r->base, r->size)) gs_panic("cannot release data stack address space");
 }
 
+/* Whether this is the first call of gs_end; and where the later ones wait.
+   TinyCC names the memory orders in its stdatomic.h alone. */
+#ifndef __ATOMIC_SEQ_CST
+#define __ATOMIC_SEQ_CST 5
 #endif
+static int gs_end_first(void) {
+    static int ended;
+    return !__atomic_fetch_add(&ended, 1, __ATOMIC_SEQ_CST);
+}
+static GS_NORETURN void gs_park(void) {
+    for (;;) pause();
+}
+
+#endif
+
+static GS_NORETURN void gs_end(int code) {
+    if (!gs_end_first()) gs_park();
+    fflush(NULL);
+    #ifdef __TINYC__
+        if (gs_current_thread_id < 0) exit(code);
+    #endif
+    _Exit(code);
+}
 
 /* The smallest a region gets before a refusal is fatal. */
 #define GS_REGION_MIN (1u << 20)
@@ -1620,7 +1658,8 @@ static int64_t gs_sp_find(gs_sppath *p, int64_t idx) {
     hi = lf->n;
     while (lo < hi) {
         int64_t mid = (lo + hi) / 2;
-        if (lf->idx[mid] <= idx) lo = mid + 1;
+)GSRT"
+R"GSRT(        if (lf->idx[mid] <= idx) lo = mid + 1;
         else hi = mid;
     }
     p->pos[p->h] = lo - 1;
@@ -1660,8 +1699,7 @@ static void gs_sp_newroot(gs_sppath *p, int64_t a, int64_t b, int leaf) {
 static void gs_sp_addchild(gs_sppath *p, int64_t l, int64_t k, int64_t child, int leaf) {
     for (;;) {
         gs_spinner *in = GS_SPINNER(p, p->node[l]), *o = in;
-)GSRT"
-R"GSRT(        int64_t key = gs_sp_key(p, child, leaf), max = gs_sp_max(p, child, leaf), s = k, nn = 0;
+        int64_t key = gs_sp_key(p, child, leaf), max = gs_sp_max(p, child, leaf), s = k, nn = 0;
         if (in->n == GS_SPAN_FAN) {
             int64_t half = GS_SPAN_FAN / 2;
             gs_spinner *r;
@@ -1860,7 +1898,8 @@ static void gs_sp_near(gs_sppath *p, gs_sppath *q, int64_t idx, gs_spnear *s) {
 /* [idx, idx + cnt) back on the freelist beside the spans gs_sp_near found
    around it, merged with the ones it touches. */
 static void gs_sp_release(gs_sppath *p, gs_spnear *s, int64_t idx, int64_t cnt) {
-    int prev = s->k >= 0 && s->lf->idx[s->k] + s->lf->cnt[s->k] == idx;
+)GSRT"
+R"GSRT(    int prev = s->k >= 0 && s->lf->idx[s->k] + s->lf->cnt[s->k] == idx;
     int next = s->nl && idx + cnt == s->nl->idx[s->nk];
     if (prev) {
         s->lf->cnt[s->k] += cnt + (next ? s->nl->cnt[s->nk] : 0);
@@ -1900,8 +1939,7 @@ GS_API void gs_spans_free(uint8_t *base, int64_t *n, uint8_t **top, int64_t idx,
    difference or reaches the end of the array; otherwise the slice's
    elements go back on the freelist and the run goes where alloc_slice
    places one of cnt elements. The span after the slice is the one after
-)GSRT"
-R"GSRT(   the last span before it, so one descent finds both what growth takes
+   the last span before it, so one descent finds both what growth takes
    from and what the elements merge with. */
 GS_API int64_t gs_spans_regrow(uint8_t *base, int64_t *n, uint8_t **top, int64_t len,
                                int64_t idx, int64_t ol, int64_t cnt) {
@@ -2063,7 +2101,8 @@ static GS_SSSE3 GS_INLINE __m128i gs_bsm_tables(const gs_bsm *m, __m128i x) {
     for (; i + 16 <= n; i += 16) {                                                     \
         k = (unsigned)_mm_movemask_epi8(TEST(GS_LOAD(p + i)));                         \
         if (k) return i + gs_ctz32(k);                                                 \
-    }                                                                                  \
+)GSRT"
+R"GSRT(    }                                                                                  \
     if (i == n) return -1;                                                             \
     k = (unsigned)_mm_movemask_epi8(TEST(GS_LOAD(p + n - 16))) >> (16 - (n - i));      \
     return k ? i + gs_ctz32(k) : -1;
@@ -2080,8 +2119,7 @@ static GS_SSSE3 GS_INLINE __m128i gs_bsm_tables(const gs_bsm *m, __m128i x) {
     if (i == np) return -1;                                                            \
     k = (unsigned)_mm_movemask_epi8(_mm_and_si128(TESTA(GS_LOAD(p + np - 16)),         \
                                                   TESTB(GS_LOAD(p + np - 16 + d))))    \
-)GSRT"
-R"GSRT(        >> (16 - (np - i));                                                            \
+        >> (16 - (np - i));                                                            \
     return k ? i + gs_ctz32(k) : -1;
 
 #define GS_TEST_S(x) gs_bsm_test(&ms, ks, x)
@@ -2253,7 +2291,8 @@ GS_API int64_t gs_fmt_i64(uint8_t *dst, int64_t v) {
     return 1 + gs_fmt_u64(dst + 1, 0 - (uint64_t)v);
 }
 
-/* A float's text is the fewest significant digits that read back as the
+)GSRT"
+R"GSRT(/* A float's text is the fewest significant digits that read back as the
    same value of its own type and, of those, the ones nearest it, a tie going
    to the even digit (as Python's repr and Ryu choose). They are found in
    integers, by Burger and Dybvig's free-format algorithm, not through the C
@@ -2284,8 +2323,7 @@ static void gs_big_mul(gs_big *a, uint32_t m) {
     for (int i = 0; i < a->n; i++) {
         c += (uint64_t)a->d[i] * m;
         a->d[i] = (uint32_t)c;
-)GSRT"
-R"GSRT(        c >>= 32;
+        c >>= 32;
     }
     if (c) a->d[a->n++] = (uint32_t)c;
 }
@@ -2465,7 +2503,8 @@ GS_API int64_t gs_fmt_f32(uint8_t *dst, float v) {
     return gs_fmt_float(dst, (int)(b >> 31), b & 0x7FFFFF, (int)(b >> 23) & 0xFF, 24, -149);
 }
 
-GS_API int64_t gs_fmt_bool(uint8_t *dst, int64_t v) {
+)GSRT"
+R"GSRT(GS_API int64_t gs_fmt_bool(uint8_t *dst, int64_t v) {
     memcpy(dst, v ? "true" : "false", v ? 4 : 5);
     return v ? 4 : 5;
 }
@@ -2508,8 +2547,7 @@ GS_API void gs_out_f32(float v) {
     fwrite(buf, 1, (size_t)gs_fmt_f32(buf, v), stdout);
 }
 GS_API void gs_out_bool(int64_t v) { fputs(v ? "true" : "false", stdout); }
-)GSRT"
-R"GSRT(GS_API void gs_out_bytes(const uint8_t *p, int64_t len) { fwrite(p, 1, (size_t)len, stdout); }
+GS_API void gs_out_bytes(const uint8_t *p, int64_t len) { fwrite(p, 1, (size_t)len, stdout); }
 GS_API void gs_out_nl(void) { fputc('\n', stdout); }
 )GSRT"
     ) },

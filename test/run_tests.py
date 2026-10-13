@@ -1902,6 +1902,16 @@ def main():
     if cc:
         r.show_task(runtime_cache)
 
+    def exit_race():
+        from exit_race import check_exit_race
+        try:
+            check_exit_race(exe, gendir)
+            r.ok("exit race: threads exiting at once end with their code")
+        except (RuntimeError, OSError, subprocess.TimeoutExpired) as e:
+            r.fail("exit race", str(e))
+    if cc:
+        r.show_task(exit_race)
+
     def native_toolchain():
         from native_toolchain import check_native_toolchain
         try:
