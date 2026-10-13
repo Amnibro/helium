@@ -1916,6 +1916,19 @@ def main():
     if cc:
         r.show_task(native_toolchain)
 
+    def native_rebuild():
+        from native_rebuild import check_native_rebuild
+        try:
+            skipped = check_native_rebuild(exe, gendir, jit=jit)
+            if skipped:
+                r.say(f"skip native rebuild ({skipped})")
+            else:
+                r.ok("native rebuild: edited C, a new extern fn")
+        except (RuntimeError, OSError, subprocess.TimeoutExpired) as e:
+            r.fail("native rebuild", str(e))
+    if cc:
+        r.show_task(native_rebuild)
+
     show_goose_in_goose()
 
     # --- JIT: the same programs, compiled and run inside the compiler --------

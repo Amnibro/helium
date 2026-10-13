@@ -204,7 +204,7 @@ inline vector<string> CMakeLinkClosure(const string &builddir, const string &tar
 // changes), built with the discovered compilers through Ninja where there
 // is one, else the platform's generator.
 inline bool BuildCMakePart(const Ast &ast, int pkg, const Builder &b, bool wantjit,
-                           NativeBuild &out) {
+                           const vector<string> &externs, NativeBuild &out) {
     auto &p = ast.packages[pkg];
     auto cmake = CMakePath();
     if (cmake.empty())
@@ -240,7 +240,7 @@ inline bool BuildCMakePart(const Ast &ast, int pkg, const Builder &b, bool wantj
         "add_executable(goose_linkprobe \"", probesrc, "\")\n"
         "target_link_libraries(goose_linkprobe PRIVATE ", p.cmake_target, ")\n");
     if (!b.opts.dryrun) {
-        if (!WriteFileMakingDirs(symsrc, SymbolTableSource(p.name, PackageExternNames(ast, pkg))) ||
+        if (!WriteFileMakingDirs(symsrc, SymbolTableSource(p.name, externs)) ||
             !WriteFileMakingDirs(probesrc, "/* Its link line is the package's link closure. */\n"
                                            "int main(void) { return 0; }\n"))
             throw CompileError { cat("cannot write into ", out.dir) };
@@ -291,14 +291,19 @@ inline bool BuildCMakePart(const Ast &ast, int pkg, const Builder &b, bool wantj
     return true;
 }
 
-inline int64_t NewestMtime(const vector<string> &paths) {
-    int64_t newest = 0;
+// What the files at `paths` are now, as far as a rebuild cares: a hash of
+// each one's path, last write time and size. The times are only compared
+// for equality, since libstdc++'s file clock counts today's as negative.
+inline string FilesHash(const vector<string> &paths) {
+    string s;
     for (auto &p : paths) {
-        std::error_code ec;
-        auto t = filesystem::last_write_time(filesystem::path(p), ec);
-        if (!ec) newest = std::max(newest, (int64_t)t.time_since_epoch().count());
+        std::error_code tec, sec;
+        auto t = filesystem::last_write_time(filesystem::path(p), tec);
+        auto size = filesystem::file_size(filesystem::path(p), sec);
+        Append(s, p, "\n", tec ? 0 : (int64_t)t.time_since_epoch().count(), " ",
+               sec ? 0 : (uint64_t)size, "\n");
     }
-    return newest;
+    return Hex8(s);
 }
 
 inline string ReadStamp(const string &path) {
@@ -330,8 +335,13 @@ inline bool BuildNativePart(const Ast &ast, int pkg, const string &rootfile, con
     inputs.push_back(p.sidecar);
     string sidecartext;
     LoadFile(p.sidecar, sidecartext);
-    auto stampwant = cat(b.tc.id, "\n", NewestMtime(inputs), "\n", Hex8(sidecartext), "\n",
-                         wantjit ? "jit" : "aot", "\n");
+    // The JIT library's symbol table names every extern fn, so a new one
+    // rebuilds it.
+    auto externs = PackageExternNames(ast, pkg);
+    string externtext;
+    for (auto &n : externs) Append(externtext, n, "\n");
+    auto stampwant = cat(b.tc.id, "\n", FilesHash(inputs), "\n", Hex8(sidecartext), "\n",
+                         Hex8(externtext), "\n", wantjit ? "jit" : "aot", "\n");
     auto stampfile = cat(dir, "/stamp");
     auto have = ReadStamp(stampfile);
     // A JIT build holds everything an AOT build has, and more. A CMake
@@ -347,7 +357,7 @@ inline bool BuildNativePart(const Ast &ast, int pkg, const string &rootfile, con
     std::error_code ec;
     filesystem::create_directories(filesystem::path(dir), ec);
     if (!p.cmake_target.empty()) {
-        if (!BuildCMakePart(ast, pkg, b, wantjit, out)) return false;
+        if (!BuildCMakePart(ast, pkg, b, wantjit, externs, out)) return false;
         if (!b.opts.dryrun) WriteFileMakingDirs(stampfile, stampwant);
         return true;
     }
@@ -381,7 +391,7 @@ inline bool BuildNativePart(const Ast &ast, int pkg, const string &rootfile, con
         auto symsrc = cat(dir, "/goose_symbols.c");
         auto symobj = cat(dir, "/goose_symbols", msvc ? ".obj" : ".o");
         if (!b.opts.dryrun &&
-            !WriteFileMakingDirs(symsrc, SymbolTableSource(p.name, PackageExternNames(ast, pkg))))
+            !WriteFileMakingDirs(symsrc, SymbolTableSource(p.name, externs)))
             throw CompileError { cat("cannot write ", symsrc) };
         // Warnings off: a C library's function declared `void f(void)` here
         // is what the compiler knows as a builtin with another shape.
