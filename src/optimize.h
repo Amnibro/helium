@@ -764,7 +764,7 @@ inline Node *Optimizer::TryInline(Call *c) {
     // A global initializer's locals belong to no specialization, so its
     // copies could not be told from the variables they replace.
     if (info.nestedcalls && !curspec) return nullptr;
-    auto argnodes = c->ArgNodes();
+    auto argnodes = c->ValueArgNodes();
     if (argnodes.size() != K->params.size()) return nullptr;
     if (!small && deferonce && branchdepth > 0 && loopdepth == 0) {
         deferred.push_back(K);

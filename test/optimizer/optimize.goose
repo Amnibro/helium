@@ -789,6 +789,13 @@ inline fn il_pair(x: i64) -> i64, i64 {
     if x < 0 { return -x, 1; }
     return x / 3, x % 3;
 }
+// A function value passed by name, as well as one passed as a block, leaves
+// the call inlinable.
+inline fn il_apply<F>(x: i64) -> i64 {
+    if x < 0 { return F(-x); }
+    return F(x) + 1;
+}
+fn il_sq(x: i64) -> i64 { x * x }
 
 fn inline_op() {
     let inline = 7;                                  // still a name
@@ -803,6 +810,7 @@ fn inline_op() {
     print(s + q + r);                                // 1569
     inline fn twice_plus(v: i64) -> i64 { v * 2 + inline }
     print(twice_plus(4));                            // 15
+    print(il_apply(inline, il_sq) + il_apply(-3) { it * 2 });    // 56
 }
 
 fn main_optimize() {

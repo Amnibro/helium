@@ -1015,11 +1015,13 @@ class Runner:
             "ih_slow": True,
             "ih_front": True,
             "ih_work": not optimized,
-            # inline fn: inlined however big; its twin without the keyword
-            # stays; one returning two values stays a call in Goose.
+            # inline fn: inlined however big, and whatever function value
+            # it takes; its twin without the keyword stays; one returning
+            # two values stays a call in Goose.
             "il_big": not optimized,
             "il_plain": True,
             "il_pair": True,
+            "il_apply": not optimized,
         }
         for name, want in left.items():
             if (name in live) != want:

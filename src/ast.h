@@ -1035,6 +1035,14 @@ NODE(Call)
         for (auto a : args) an.push_back(a);
         return an;
     }
+    // What the callee's parameters take: ArgNodes without the function-value
+    // arguments that follow them, which are compile-time only (§7.6).
+    vector<Node *> ValueArgNodes() const {
+        auto an = ArgNodes();
+        while (!an.empty() && an.back()->exprtype && an.back()->exprtype->kind == TY_FN)
+            an.pop_back();
+        return an;
+    }
     // Replaces argument i of that list, the receiver included: the node a
     // check of the argument made of it (TypeCheck::AutoRef) stands in for
     // the original.
