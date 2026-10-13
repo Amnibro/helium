@@ -1044,6 +1044,12 @@ inline void TypeCheck::CheckHeldShrinks(Node *at, const string &op, VarDef *root
                                         const string &what, bool growonly, TypeExpr *bound) {
     HeldOperands([&](const Held &h) {
         auto &[node, v, location, render, elems, loop, reread, inplace] = h;
+        // A variable of the loop's body is made after its sequence and gone
+        // before it, so neither the sequence nor what it holds can lie in
+        // or refer into that variable's storage (§9.2).
+        if (loop && loop->vdef && root && !root->isglobal && !IsClassRoot(root) &&
+            Depth(root) >= Depth(loop->vdef))
+            return;
         auto path = !inplace && v.type->kind == TY_REF &&
                     ClassOf(v.type->ref->sub) == SC_RESIZABLE;
         auto mayfree = inplace
