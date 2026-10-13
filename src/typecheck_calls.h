@@ -2629,7 +2629,16 @@ inline bool TypeCheck::SameRecord(const FnRecord &a, const FnRecord &b, const Fn
     }
     if (a.shrinkexternals != b.shrinkexternals || a.shrinkparams != b.shrinkparams)
         return why("shrinks");
-    if (a.growexternals != b.growexternals || a.growparams != b.growparams)
+    auto samegrows = [&](const auto &x, const auto &y) {
+        if (x.size() != y.size()) return false;
+        for (auto i = x.begin(), j = y.begin(); i != x.end(); ++i, ++j) {
+            if (i->first != j->first || i->second.size() != j->second.size()) return false;
+            for (size_t k = 0; k < i->second.size(); k++)
+                if (!sametype(i->second[k], j->second[k])) return false;
+        }
+        return true;
+    };
+    if (!samegrows(a.growexternals, b.growexternals) || !samegrows(a.growparams, b.growparams))
         return why("growths");
     if (a.reboundoptionals != b.reboundoptionals) return why("rebinds");
     auto samebounds = [&](const auto &x, const auto &y) {

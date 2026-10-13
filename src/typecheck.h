@@ -2396,6 +2396,9 @@ struct TypeCheck {
         bool exact = false;   // root is the array itself, not a bound on its lifetime.
         string what;
         bool shrink = false;
+        // The type of the resizable array grown or shrunk (SoleResizableIn),
+        // null where the checker cannot tell.
+        TypeExpr *arr = nullptr;
     };
 
     // The state of the body being checked, which a body checked inside it
@@ -2466,9 +2469,15 @@ struct TypeCheck {
             std::swap(tc.cur, saved);
         }
     };
-    void NoteGrow(Node *at, const Roots &roots, const string &what);
-    void NoteShrinkEvent(Node *at, VarDef *root, TypeExpr *bound, const string &what);
-    void CheckGrowsSince(size_t base, const Roots &built, const string &what);
+    // Each takes the type of the storage grown, shrunk or built in.
+    void NoteGrow(Node *at, const Roots &roots, const string &what, TypeExpr *t);
+    void NoteShrinkEvent(Node *at, VarDef *root, TypeExpr *bound, const string &what,
+                         TypeExpr *t);
+    void CheckGrowsSince(size_t base, const Roots &built, const string &what, TypeExpr *t);
+    // The type of the one resizable array a value of type t holds (§1.3,
+    // §3.4), where every value of t holds one of the same type: null where
+    // there is none, or a variable ADT's variants hold different ones.
+    TypeExpr *SoleResizableIn(TypeExpr *t);
     void ApplyCalleeGrows(Node *at, FnSpec *spec, vector<Val> &argvals, string_view name);
     // Whether an element pushed into, or allocated in, an array of `elem`
     // is built in place at its slot: a variable-size one, or a fixed one

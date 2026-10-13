@@ -2402,13 +2402,13 @@ inline Val TypeCheck::CheckAssignedValue(Assign *a, TypeExpr *target, TypeExpr *
             rebuilding = true;
             ShrinkThrough(a, "assign", ExprStr(a->lval), built, target);
         }
-        NoteGrow(a, built, cat("assign ", ExprStr(a->lval)));
+        NoteGrow(a, built, cat("assign ", ExprStr(a->lval)), target);
     }
     SlotScope ss(*this, true);
     auto base = cur.growlog.size();
     auto v = CheckValueAt(a->rhs, target, dest);
     if (arr && !built.None()) {
-        CheckGrowsSince(base, built, cat("the value assigned to ", ExprStr(a->lval)));
+        CheckGrowsSince(base, built, cat("the value assigned to ", ExprStr(a->lval)), target);
         CheckBuiltUses(a->rhs, a->lval, target, built, arr);
     }
     if (v.type->kind == TY_VOID && reachable)

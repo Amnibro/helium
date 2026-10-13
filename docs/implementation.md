@@ -2086,7 +2086,17 @@ below the other's depth (as in the held-temporary scan); a parameter class
 is distinct from a variable of the activation named exactly, may be a global
 or a captured local, and two classes of one activation are settled once
 every call site has been seen (`growconflicts`, `ResolveGrowConflicts`):
-distinct only where both are concrete and exact (§3.4). The log is per
+distinct only where both are concrete and exact (§3.4). Whatever the roots,
+an event never conflicts with a construction when both arrays are resizables
+of different types: each event and construction carries the type of its
+storage's one resizable (`GrowEvent::arr`, `SoleResizableIn`: the array, or
+the end of a struct's tail chain), and a callee's record keeps the types
+with `growparams` and `growexternals`. A stack holds one resizable and
+resizables are never elements (§1.3, §3.4), so another one neither is nor
+holds the array the value is built in. The type is null, and the roots
+decide, where it is unknown: a variable ADT whose payloads hold different
+resizables, a limited array (which may lie inside the value being built),
+a holder's or an external's shrink in a callee's record. The log is per
 activation (`CheckSpecBody` saves and clears it), so a callee's growths and
 shrinks reach the caller's constructions only through the summary.
 
