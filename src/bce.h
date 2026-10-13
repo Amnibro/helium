@@ -1828,6 +1828,19 @@ struct BCE {
         }
     }
 
+    // `v + rhs` for the compound assignment `v += rhs` (or `-=`), which a
+    // plain assignment's rules then read: one node per assignment, so that
+    // terms derived from it are memoized like any other operand's.
+    map<Assign *, Binary *> compoundsums;
+    Binary *CompoundSum(Assign *a) {
+        auto &bin = compoundsums[a];
+        if (!bin) {
+            bin = ast.New<Binary>(a->line, a->op == T_PLUSEQ ? T_PLUS : T_MINUS, a->lval, a->rhs);
+            bin->exprtype = a->lval->exprtype;
+        }
+        return bin;
+    }
+
     void VarKillWrite(VarDef *v) {
         if (ScalarIntVar(v)) NoteInt(OwnerTarget(v));
         if (mode == M_RECORD) RecordSet(v, Term {}, false);
@@ -2847,6 +2860,8 @@ inline void Assign::BceMark(BCE &b) {
             (c >= 0 ? b.wkinds[v].inc : b.wkinds[v].dec) = true;
         } else if (BCE::IsUnitStep(this, v)) {
             b.wkinds[v].inc = true;
+        } else if ((op == T_PLUSEQ || op == T_MINUSEQ) && !BCE::WritesVar(rhs, v)) {
+            b.wkinds[v].setw = true;   // v = v + rhs (Assign::BceWalk).
         } else {
             b.wbad.insert(v);
         }
@@ -3483,6 +3498,7 @@ inline bool VarDecl::BceWalk(BCE &b) {
 
 inline bool Assign::BceWalk(BCE &b) {
     b.WalkLvalParts(lval);
+    auto gen = b.nextgen;
     b.Walk(rhs);
     if (op == T_DOTASSIGN) {
         // A rebound field or element slot lies in storage behind the chain's
@@ -3519,7 +3535,9 @@ inline bool Assign::BceWalk(BCE &b) {
                 if (lit && !lit->uns && BCE::SmallOff(lit->val))
                     b.ShiftWrite(v, op == T_PLUSEQ ? lit->val : -lit->val);
                 else if (BCE::IsUnitStep(this, v)) b.StepWrite(v);
-                else b.VarKillWrite(v);
+                // As `v = v + rhs`, unless the rhs changed what v + rhs
+                // would read (Binary::BceWalk's effectful terms).
+                else b.SetWrite(v, b.nextgen == gen ? b.CompoundSum(this) : nullptr, false);
             } else {
                 b.VarKillWrite(v);
             }
