@@ -28,7 +28,8 @@ for example `import std;`. The compiler locates the library in its source
 tree; use `--stdlib <dir>` or `GOOSE_STDLIB` to select another location.
 Everything is written in Goose except the C behind `os`
 (`src/runtime/runtime_os.h`), the byte search behind `std`'s `find_any` and
-`find_pair` (`src/runtime/runtime_impl.h`), libm behind `math`, the graphics layer behind
+`find_pair` (`src/runtime/runtime_impl.h`), `std`'s `popcount`, `clz` and
+`ctz` (`src/runtime/runtime_ext.h`), libm behind `math`, the graphics layer behind
 `gfx`, the ui layer behind `ui` and the PCM mixer behind `audio` (the
 [goose_gfx](https://github.com/aardappel/goose_gfx) package) and the physics layer
 behind `physics` (the [goose_physics](https://github.com/aardappel/goose_physics)
@@ -114,6 +115,10 @@ fn ctz(x: u64) -> i64               // 64 for 0
 fn swap<T>(a: T&, b: T&)            // swap(x, y)
 ```
 
+`popcount`, `clz` and `ctz` are the runtime's, one instruction each where
+the C compiler has one (MSVC's `popcount` needs `/arch:AVX` or up for that),
+a loop under TinyCC.
+
 ### Hashing
 
 ```goose
@@ -172,9 +177,10 @@ fn starts_with<T>(xs: T[:], p: T[:]) -> bool   fn ends_with<T>(xs: T[:], p: T[:]
 ```
 
 `find`/`rfind`/`starts_with`/`ends_with` are generic over the element, so
-they are the string functions too: `find(line, "://")`. (`position` rather
-than `index_of`, which is the builtin turning an element reference into its
-index.)
+they are the string functions too: `find(line, "://")`. `find` and `rfind`
+compare a whole subsequence only where its first element matches.
+(`position` rather than `index_of`, which is the builtin turning an element
+reference into its index.)
 
 ```goose
 let big = xs.find() { it > 100 };

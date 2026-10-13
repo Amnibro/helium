@@ -45,37 +45,11 @@ fn next_pow2(x: i64) -> i64 {
     return p;
 }
 
-fn popcount(x: u64) -> i64 {
-    var v = x;
-    var n = 0;
-    while v != 0 {
-        v = v & (v - 1);
-        n += 1;
-    }
-    return n;
-}
-
-// Leading / trailing zero bits; 64 for zero.
-fn clz(x: u64) -> i64 {
-    if x == 0 { return 64; }
-    var v = x;
-    var n = 0;
-    while (v >> 63) == 0 {
-        v = v << 1;
-        n += 1;
-    }
-    return n;
-}
-fn ctz(x: u64) -> i64 {
-    if x == 0 { return 64; }
-    var v = x;
-    var n = 0;
-    while (v & 1) == 0 {
-        v = v >> 1;
-        n += 1;
-    }
-    return n;
-}
+// The bits set, and the leading / trailing zero bits, 64 for zero: the
+// runtime's (src/runtime/runtime_ext.h), one instruction where it can.
+extern "gs_popcount" fn popcount(x: u64) -> i64;
+extern "gs_clz" fn clz(x: u64) -> i64;
+extern "gs_ctz" fn ctz(x: u64) -> i64;
 
 // The values a and b refer to. `T&` of a reference type is that reference
 // (spec §3.8), so for two elements of an array of references this swaps
@@ -364,16 +338,17 @@ fn find<T>(xs: T[:], sub: T[:]) -> i64 {
     if sub.len == 0 { return 0; }
     var i = 0;
     while i + sub.len <= xs.len {
-        if xs[i..i + sub.len] == sub { return i; }
+        if xs[i] == sub[0] && xs[i..i + sub.len] == sub { return i; }
         i += 1;
     }
     return -1;
 }
 fn rfind<T>(xs: T[:], sub: T[:]) -> i64 {
+    if sub.len == 0 { return xs.len; }
     if sub.len > xs.len { return -1; }
     var i = xs.len - sub.len;
     while i >= 0 {
-        if xs[i..i + sub.len] == sub { return i; }
+        if xs[i] == sub[0] && xs[i..i + sub.len] == sub { return i; }
         i -= 1;
     }
     return -1;
