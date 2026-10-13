@@ -58,6 +58,21 @@ inline Val TypeCheck::CheckBuiltin(Call *c, const BuiltinDef &d, vector<Node *> 
             if (wid && !(wvd && !wvd->isglobal) && !ScopeNameKind(wid->name))
                 for (auto sf : ast.LookupFunctions(wid->name, wid->ns))
                     if (sf->isthread) wsf = sf;
+            // A function parameter bound to a thread_fn's name names it too
+            // (§7.6).
+            const FnValBind *fvb = nullptr;
+            if (wid && wid->ns.empty() && !(wvd && !wvd->isglobal) &&
+                !LookupTypeParam(wid->name, fvb) && fvb && fvb->named) {
+                if (fvb->set) {
+                    for (auto sf : *fvb->set) if (sf->isthread) wsf = sf;
+                } else if (fvb->named->isthread) {
+                    wsf = fvb->named;
+                }
+            }
+            if (!wsf && fvb)
+                Error(c, cat("thread_spawn's first argument names a thread_fn: ", wid->name,
+                             " is bound to ", fvb->named ? cat(fvb->named->name, ", which is not one")
+                                                         : string("a block")));
             if (!wsf) Error(c, "thread_spawn's first argument names a thread_fn");
             wid->fnref = wsf;
             wid->exprtype = fntype;

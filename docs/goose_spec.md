@@ -3543,7 +3543,10 @@ the Linda tuple-space / coordination style.
   re-specializes it per program, exactly like a template instantiation.
 * Worker count is decided **at runtime** (no static maximum):
   `thread_spawn(worker, args…) -> i64` reserves a fresh stack block, copies
-  the args, starts the worker, and returns its id. IDs increase monotonically
+  the args, starts the worker, and returns its id. `worker` names a
+  `thread_fn`, directly or as a function parameter bound to one (§7.6), so
+  `fn spawn<W>(n: i32) -> i64 { thread_spawn(W, n) }` spawns whichever
+  worker its caller passes. IDs increase monotonically
   and are never reused. `hardware_threads() -> i64` exists for sizing, and
   reports no more workers than the implementation's address space for data
   stacks (§10.4) holds beside the main program, so a pool sized by it never
