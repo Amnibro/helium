@@ -1933,7 +1933,7 @@ def main():
             if skipped:
                 r.say(f"skip native rebuild ({skipped})")
             else:
-                r.ok("native rebuild: edited C, a new extern fn")
+                r.ok("native rebuild: edited C, a new extern fn, CMake options, targets and C++")
         except (RuntimeError, OSError, subprocess.TimeoutExpired) as e:
             r.fail("native rebuild", str(e))
     if cc:

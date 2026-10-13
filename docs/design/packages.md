@@ -322,8 +322,9 @@ per toolchain (§6.1) under `build/pkg/…/<toolchain>/`, release configuration,
 static C runtime on Windows, in two forms: what an AOT program links, and a
 shared library the JIT loads. Both are built in one go, by the first `run` or
 `build` that reaches the package; `check` never builds. Inputs are stamped:
-a path package rebuilds when any of its sources is newer than its build, a
-git checkout never (it never changes).
+a path package rebuilds when any of its C sources (by path, modification
+time and size), its sidecar or the set of its extern fns changes, a git
+checkout never (it never changes).
 
 ### 5.1 Plain C sources
 
@@ -342,9 +343,18 @@ CMakeLists directly:
 
 ```cmake
 cmake_minimum_required(VERSION 3.20)
-project(goose_pkg_physics C CXX)
+project(goose_pkg_physics C)
+# C++, and on macOS Objective-C and Objective-C++, where there is a compiler.
+include(CheckLanguage)
+check_language(CXX)
+if(CMAKE_CXX_COMPILER)
+    enable_language(CXX)
+endif()
 set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded")
 add_subdirectory("<package root>" pkg EXCLUDE_FROM_ALL)
+if(NOT TARGET <cmake_target>)
+    message(FATAL_ERROR "... names the CMake target <cmake_target>, which ... does not define")
+endif()
 # The JIT library: the symbol table pulls what it names out of the target.
 add_library(goose_jit_physics SHARED goose_symbols.c)
 target_link_libraries(goose_jit_physics PRIVATE <cmake_target>)
@@ -355,7 +365,10 @@ target_link_libraries(goose_linkprobe PRIVATE <cmake_target>)
 
 configured with `-DCMAKE_BUILD_TYPE=Release`, the discovered C and C++
 compilers, the `cmake_options`, and a generator chosen as Ninja if on PATH,
-else the platform default; built with `--config Release`.
+else the platform default; built with `--config Release`. The configure
+command that last succeeded is kept beside the build; any other one (an
+edited `cmake_options`, or a configure that failed) configures again from a
+fresh cache.
 
 The response file for AOT programs is the link closure of `<cmake_target>`:
 its archive, every static library it depends on, and the system libraries
