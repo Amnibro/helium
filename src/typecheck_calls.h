@@ -3469,6 +3469,8 @@ inline Val TypeCheck::CheckFunValCall(Call *c, const FnValBind &fb, TypeExpr *ex
         if (IsRefOrSlice(ptypes[i])) {
             BindRefProvenance(vd, argvals[i]);
             if (ptypes[i]->cq) vd->ref.writable = false;
+        } else if (HoldsPlainRef(ptypes[i])) {
+            NoteHolderBinding(vd, argvals[i], c->args[i]);
         }
         // A literal parameter handed to the block stays one inside it.
         if (argvals[i].unsized && !params[i].type && !params[i].isvar) {
