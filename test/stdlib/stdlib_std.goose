@@ -230,6 +230,11 @@ fn strings() {
     o.push('|');
     format_uint(o, 5, 2, 8, '0');
     print(o);                                                                  //     ff|-0042|00000101
+    var small: u8[..16] = [];
+    format_int(small, -7, 10, 4, '0');
+    small.push('|');
+    format_uint(small, 255, 16, 0, ' ');
+    print(small);                                                              // -007|ff
     var f: u8[>..] = [];
     format_flt(f, 3.14159, 2);
     f.push(' ');

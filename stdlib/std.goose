@@ -945,11 +945,12 @@ fn make_heap<A, F>(xs: A&) {
 // ---- strings ---------------------------------------------------------------------
 // Plain rendering is the builtin `format`; these add control and parsing.
 
-// Digits of v in the base (2..36), right-aligned in `width` with `pad`.
+// Digits of v in the base (2..36), right-aligned in `width` with `pad`,
+// appended to `out`, any u8 array that grows (u8[>..], or a limited u8[..k]).
 // Base ten is the builtin text of the integer, the runtime's digit loop
 // writing straight into `out`; other bases divide by the `base` parameter,
 // a real division per digit.
-fn format_uint(out: u8[>..]&, v: u64, base: i64, width: i64, padc: u8) {
+fn format_uint<B>(out: B&, v: u64, base: i64, width: i64, padc: u8) {
     if base == 10 {
         if width > 1 {
             var n = 1;
@@ -988,7 +989,7 @@ fn format_uint(out: u8[>..]&, v: u64, base: i64, width: i64, padc: u8) {
 
 // The sign goes in front of any padding: -0042. The magnitude is taken in
 // unsigned arithmetic, which holds i64.min's.
-fn format_int(out: u8[>..]&, v: i64, base: i64, width: i64, padc: u8) {
+fn format_int<B>(out: B&, v: i64, base: i64, width: i64, padc: u8) {
     if v < 0 {
         out.push('-');
         format_uint(out, 0 - v as! u64, base, width - 1, padc);
