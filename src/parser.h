@@ -1308,6 +1308,9 @@ struct Parser {
                         b->stmts.push_back(New<IncDec>(line, op, e));
                         continue;
                     }
+                    case T_COMMA:
+                        b->stmts.push_back(ParseMultiAssign(e, line));
+                        continue;
                     default: break;
                 }
             }
@@ -1324,12 +1327,43 @@ struct Parser {
                 b->stmts.push_back(e);
                 continue;
             }
-            if (lex.tok == T_COMMA)
-                Error("several values exist only in `return a, b;` and in a call's results,"
-                      " so a block or branch cannot end in `a, b`: return from each branch"
-                      " instead (§7.1)");
             Error(cat("\';\' expected after expression, found \'", TokStr(), "\'"));
         }
+    }
+
+    // `a, b = f();` assigns a call's results to places that exist (§7.1),
+    // as `{ let r1, r2 = f(); a = r1; b = r2; }` does: the call runs first,
+    // then each target is assigned in order. The results' names cannot be
+    // written, so nothing else sees them, and the dump writes the statement
+    // back as it was (Block::Dump). `first` is the first target, followed
+    // by the comma.
+    Node *ParseMultiAssign(Node *first, Line line) {
+        vector<Node *> targets = { first };
+        while (IsNext(T_COMMA)) targets.push_back(ParseExpr());
+        switch (lex.tok) {
+            case T_DOTASSIGN: case T_PLUSEQ: case T_MINUSEQ: case T_MULEQ: case T_DIVEQ:
+            case T_MODEQ: case T_ANDEQ: case T_OREQ: case T_XOREQ: case T_SHLEQ: case T_SHREQ:
+                Error(cat("several targets take a call's results with `=` alone, not `",
+                          TokStr(), "` (§7.1)"));
+            default: break;
+        }
+        if (lex.tok != T_ASSIGN)
+            Error("several values exist only in `return a, b;` and in a call's results,"
+                  " so a block or branch cannot end in `a, b`: return from each branch"
+                  " instead (§7.1)");
+        lex.Next();
+        auto rhs = ParseExpr();
+        Expect(T_SEMI, "assignment statement");
+        auto b = New<Block>(line);
+        auto vd = New<VarDecl>(line, false);
+        vd->results = true;
+        for (size_t i = 0; i < targets.size(); i++)
+            vd->names.push_back(ast.Intern(cat("result#", i + 1)));
+        vd->inits.push_back(rhs);
+        b->stmts.push_back(vd);
+        for (size_t i = 0; i < targets.size(); i++)
+            b->stmts.push_back(New<Assign>(line, T_ASSIGN, targets[i], New<Ident>(line, vd->names[i])));
+        return b;
     }
 
     // `guard c; rest` is `if c { rest }`, and `guard c else { s } rest` is

@@ -2051,7 +2051,12 @@ fn scaled(a: i32, b: i32 = 0, c: f32 = 1.0) -> f32 { ... }   // scaled(2) is sca
   The expected result type never selects an overload. An `f32` destination
   may refine an otherwise unconstrained floating generic computation (§7.7),
   provided resolution still selects that same overload.
-* Multiple return values: `fn f() -> A, B`; received as `let a, b = f();`.
+* Multiple return values: `fn f() -> A, B`; received as `let a, b = f();`,
+  or assigned to places that exist as `x, xs[i] = f();`: the call runs
+  first, then each target is assigned its result in order, as `x = f()`
+  would assign one (a non-fixed result is built at its target; a reference
+  to a non-fixed value needs a `let` and an explicit `copy`, §4.1). Only `=`
+  takes several targets.
   There is no tuple *type* — multiple returns are a calling convention;
   structs are the way to keep data together. (Function *types* with
   multiple returns need parens — `fn(i64) -> (A, B)` — to disambiguate the

@@ -1271,6 +1271,9 @@ NODE(VarDecl)
     bool inline_arg = false;    // Synthesized call argument: caller-scope storage.
     string_view ns;             // A global's namespace ("" = global; docs/design/namespaces.md).
     vector<string_view> names;  // let a, b = f();
+    // The results of `a, b = f();`, which the assignments after it in its
+    // block take (Parser::ParseMultiAssign).
+    bool results = false;
     TypeExpr *type = nullptr;
     vector<Node *> inits;       // Empty for uninitialized locals.
     vector<VarDef *> defs;      // Filled by typecheck, aligned with names.
@@ -1457,6 +1460,10 @@ struct VarDef {
     bool copybind = false;
     bool isglobal = false;
     bool isparam = false;
+    // One of the results of `a, b = f();` (VarDecl::results), which its one
+    // assignment takes as the call's value: constructed at the target, as
+    // `a = f()` would construct it (TypeCheck::CheckAssign).
+    bool resulttemp = false;
     // Not a variable but a temporary's storage (typecheck.h TempRoot): a
     // call's result, say, which lasts until the end of the statement that
     // made it.

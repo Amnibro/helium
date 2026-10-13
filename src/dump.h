@@ -158,7 +158,23 @@ inline void TypeExpr::Dump(string &s, size_t limit) const {
 }
 
 // True for nodes that end in a block and therefore need no ';' as a statement.
+// The block `a, b = f();` parses to (Parser::ParseMultiAssign), while it
+// still has that shape: the results' declaration, then one assignment of
+// each.
+inline const VarDecl *MultiAssignOf(const Block *b) {
+    auto vd = b->stmts.empty() ? nullptr : Is<VarDecl>(b->stmts[0]);
+    if (!vd || !vd->results || b->tail || vd->inits.size() != 1 ||
+        b->stmts.size() != vd->names.size() + 1)
+        return nullptr;
+    for (size_t i = 1; i < b->stmts.size(); i++) {
+        auto a = Is<Assign>(b->stmts[i]);
+        if (!a || a->op != T_ASSIGN) return nullptr;
+    }
+    return vd;
+}
+
 inline bool EndsInBlock(const Node *n) {
+    if (auto b = Is<Block>(n); b && MultiAssignOf(b)) return false;
     if (Is<IfExpr>(n) || Is<MatchExpr>(n) || Is<EarlyBlock>(n) || Is<While>(n) ||
         Is<LoopExpr>(n) || Is<ForLoop>(n) || Is<FnDecl>(n) || Is<Block>(n) ||
         Is<InlineBlock>(n)) return true;
@@ -214,6 +230,15 @@ inline void DumpBlockBody(string &s, const Block *b, int ind) {
 }
 
 inline void Block::Dump(string &s, int ind) const {
+    if (auto vd = MultiAssignOf(this)) {
+        for (size_t i = 1; i < stmts.size(); i++) {
+            if (i > 1) s += ", ";
+            Is<Assign>(stmts[i])->lval->Dump(s, ind);
+        }
+        s += " = ";
+        vd->inits[0]->Dump(s, ind);
+        return;
+    }
     s += "{";
     DumpBlockBody(s, this, ind);
 }

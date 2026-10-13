@@ -2145,6 +2145,7 @@ inline void TypeCheck::CheckVarDecl(VarDecl *vd, bool global) {
         d->line = vd->line;
         d->isvar = vd->isvar;
         d->reusable = vd->reusable;
+        d->resulttemp = vd->results;
         d->depth = CurDepth();
         d->ownerspec = frames.back().spec;
         return d;
@@ -2211,7 +2212,9 @@ inline void TypeCheck::CheckVarDecl(VarDecl *vd, bool global) {
         CheckValue(vd->inits[0], nullptr);
         auto call = Is<Call>(vd->inits[0]);
         if (!call || call->rettypes.size() != vd->names.size())
-            Error(vd, cat((int64_t)vd->names.size(), " names need that many values"));
+            Error(vd, cat((int64_t)vd->names.size(), vd->results ? " targets" : " names",
+                          " need that many values", call ? cat(", and the call gives ",
+                          (int64_t)call->rettypes.size()) : string()));
         auto rets = lastcallrets;
         for (size_t i = 0; i < vd->names.size(); i++) {
             auto d = MakeDef(i);
@@ -2410,6 +2413,24 @@ inline Val TypeCheck::CheckAssignedValue(Assign *a, TypeExpr *target, TypeExpr *
 }
 
 inline void TypeCheck::CheckAssign(Assign *a) {
+    // A result of `a, b = f();` stands for the call's value, which a target
+    // takes as `a = f()` would take it: a non-fixed one is constructed there,
+    // which from the result's variable is a copy of it (§7.1, §4.1).
+    if (auto id = Is<Ident>(a->rhs)) {
+        auto r = LookupVar(id->name, id->ns);
+        if (r && r->resulttemp && r->type) {
+            auto t = r->type;
+            if (IsPlainRef(t) && ClassOf(t->ref->sub) != SC_FIXED)
+                Error(a, cat("result ", id->name.substr(id->name.find('#') + 1), " of the call is a "
+                             "reference to a value that is not fixed-size, which is not copied "
+                             "implicitly (§4.1): bind it with `let`, and assign a copy(...) of it"));
+            if (!IsRefOrSlice(t) && ClassOf(t) != SC_FIXED) {
+                auto cp = ast.New<Call>(a->rhs->line, ast.New<Ident>(a->rhs->line, "copy"));
+                cp->args.push_back(a->rhs);
+                a->rhs = cp;
+            }
+        }
+    }
     auto lv = CheckLValue(a->lval);
     // Generic code stores a whole value of a type parameter's type with `.=`
     // (§3.8): it rebinds where the type is a reference, and assigns as `=`

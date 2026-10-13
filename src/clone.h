@@ -183,6 +183,7 @@ inline Node *VarDecl::Clone1(Ast &ast) const {
     vd->reusable = reusable;
     vd->isglobal = isglobal;
     vd->byref = byref;
+    vd->results = results;
     vd->names = names;
     vd->type = type;
     CloneNodes(ast, inits, vd->inits);

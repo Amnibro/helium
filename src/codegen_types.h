@@ -356,6 +356,9 @@ inline int64_t CodeGen::FixedSize(TypeExpr *t) {
 inline string CodeGen::Sanitize(string_view name) {
     string s(name);
     if (s.empty()) s = "_";
+    // `result#1`, a name the parser makes that no program can write
+    // (Parser::ParseMultiAssign); a local's C name is unique either way.
+    for (auto &c : s) if (c == '#') c = '_';
     return s + "_g";
 }
 
