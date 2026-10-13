@@ -28,10 +28,14 @@ inline string PackageDir(const string &dir) {
     return abs + "/";
 }
 
-inline bool IsPathSource(const string &text) {
-    return text.rfind("./", 0) == 0 || text.rfind("../", 0) == 0 || text.rfind(".\\", 0) == 0 ||
-           text.rfind("..\\", 0) == 0 || text[0] == '/' || text[0] == '\\' ||
+inline bool IsAbsoluteSource(const string &text) {
+    return (!text.empty() && (text[0] == '/' || text[0] == '\\')) ||
            (text.size() > 1 && text[1] == ':');
+}
+
+inline bool IsPathSource(const string &text) {
+    return text == "." || text == ".." || text.rfind("./", 0) == 0 || text.rfind("../", 0) == 0 ||
+           text.rfind(".\\", 0) == 0 || text.rfind("..\\", 0) == 0 || IsAbsoluteSource(text);
 }
 
 // Reads a source as written in a file in `fromdir`. A path is resolved from
@@ -44,8 +48,7 @@ inline PackageSource ParsePackageSource(const string &text, const string &fromdi
     if (text.empty()) throw CompileError { "a package source is a path or a git repository" };
     if (IsPathSource(text)) {
         s.ispath = true;
-        auto absolute = text[0] == '/' || text[0] == '\\' || (text.size() > 1 && text[1] == ':');
-        s.dir = PackageDir(absolute ? text : cat(fromdir, text));
+        s.dir = PackageDir(IsAbsoluteSource(text) ? text : cat(fromdir, text));
         return s;
     }
     auto at = text.rfind('@');
@@ -143,8 +146,7 @@ inline void LoadSidecar(Package &pkg, bool isprogram) {
         for (auto &e : bf.Strings(cat(key, platform))) v.push_back(e);
         if (paths)
             for (auto &e : v)
-                if (!IsPathSource(e) || e.rfind("./", 0) == 0 || e.rfind("../", 0) == 0)
-                    e = ForwardSlashes(AbsolutePath(cat(pkg.root, e)));
+                if (!IsAbsoluteSource(e)) e = ForwardSlashes(AbsolutePath(cat(pkg.root, e)));
         return v;
     };
     pkg.csources = list("c_sources", true);

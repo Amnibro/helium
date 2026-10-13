@@ -176,9 +176,9 @@ string:
 * `@ref` is required for a git source. A tag or a commit hash is a pin; a
   branch name is accepted and behaves like a pin until `goose fetch
   --update`, which is spelled out in the docs as the reason to prefer tags.
-* A path (`./`, `../`, `/`, or a drive letter) is a directory used in place,
-  relative to the importing file. No git involved, for developing a library
-  beside the program that uses it.
+* A path (`.`, `..`, `./`, `../`, `/`, or a drive letter) is a directory
+  used in place, relative to the importing file. No git involved, for
+  developing a library beside the program that uses it.
 
 The grammar line becomes
 

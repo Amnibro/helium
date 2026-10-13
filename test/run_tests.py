@@ -1892,6 +1892,16 @@ def main():
     r.section("driver verbs")
     r.show_task(driver_verbs)
 
+    def cli_paths():
+        from cli_paths import check_cli_paths
+        try:
+            check_cli_paths(exe, cc, gendir)
+            r.ok("command line paths: new -o directories, \".\" and \"..\" sources, rooted "
+                 "--include, unresolved imports")
+        except (RuntimeError, OSError, subprocess.TimeoutExpired) as e:
+            r.fail("command line paths", str(e))
+    r.show_task(cli_paths)
+
     def runtime_cache():
         from runtime_cache import check_runtime_cache
         try:
