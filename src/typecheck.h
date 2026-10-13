@@ -2752,9 +2752,30 @@ struct TypeCheck {
         CheckSpecBody(spec, &args, sf->line);
     }
 
+    // A `let` global whose references all lead into static data, as a
+    // string literal's do: a worker's copy of it views the same read-only
+    // bytes, which no program can tell from a copy of its own (§11.2).
+    bool StaticViewsOnly(VarDef *g) {
+        if (g->isvar) return false;
+        function<bool(TypeExpr *)> relative = [&](TypeExpr *t) {
+            switch (t->kind) {
+                case TY_REF: return t->ref->lenstorage >= 0 || relative(t->ref->sub);
+                case TY_SLICE: return relative(t->sub);
+                case TY_ARRAY: return relative(t->arr->sub);
+                default: return AnyField(t, relative);
+            }
+        };
+        if (relative(g->type)) return false;
+        auto statics = [](const Roots &r) {
+            return !r.unknown && r.All([](const RootAlt &a) { return !a.root && a.exact; });
+        };
+        auto k = g->type->kind;
+        return k == TY_REF || k == TY_SLICE ? statics(g->ref) : statics(g->contents);
+    }
+
     // Walks a thread program's call graph: a worker's program has its own
     // copy of every global it uses, taken at spawn (§11.2), which a value
-    // holding references cannot be.
+    // holding references into other storage cannot be.
     void CheckThreadGlobals(FnSpec *entry) {
         set<FnSpec *> seen;
         function<void(FnSpec *)> rec = [&](FnSpec *sp) {
@@ -2763,9 +2784,11 @@ struct TypeCheck {
                 if (!n) return;
                 if (auto id = Is<Ident>(n)) {
                     auto g = id->vdef;
-                    if (g && g->isglobal && g->type && !IsFlat(g->type))
-                        Error(n, cat("thread programs may access only flat globals (§11.2): ",
-                                     id->name, " holds references (reached from thread_fn ",
+                    if (g && g->isglobal && g->type && !IsFlat(g->type) && !StaticViewsOnly(g))
+                        Error(n, cat("thread programs may access only flat globals, and `let` "
+                                     "globals whose references lead only to static data "
+                                     "(§11.2): ", id->name, " holds references",
+                                     g->isvar ? " and is a var" : "", " (reached from thread_fn ",
                                      entry->sf->name, ")"));
                 }
                 if (auto c = Is<Call>(n)) {

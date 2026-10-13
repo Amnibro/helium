@@ -3569,9 +3569,12 @@ the Linda tuple-space / coordination style.
   and writes its copies from then on. Nothing is shared: a worker that
   increments a global increments its own, and main's is what it was. A
   global whose type is not **flat** (§1.1) cannot be copied and is an error
-  in any function a `thread_fn` reaches. `const` globals with compile-time
-  initializers are static data (§1.2), read-only and therefore shared as
-  they are.
+  in any function a `thread_fn` reaches, unless it is a `let` or `const`
+  global whose references all lead to static data, as a string literal's
+  do (`let NAMES = ["a", "b"];`): its copy views the same read-only bytes,
+  which no program can tell from a copy of its own. `const` globals with
+  compile-time initializers are static data (§1.2), read-only and
+  therefore shared as they are.
 * Args and queue elements must be **flat** types (§1.1); values are copied
   in and out, which is cheap because Goose values are contiguous. A
   `thread_fn`'s parameters have no defaults (§7.1): `thread_spawn` passes
