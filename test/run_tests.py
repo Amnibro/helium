@@ -1006,6 +1006,16 @@ class Runner:
                 self.fail(f"guarded base case {level} {name}",
                           f"copies of the body's start: got {got}, want {want}")
                 valid = False
+        # Min/max chains: ra_edit's alone is regrouped, its operands bound in
+        # the order written and the carried operand2 combined last.
+        bound = re.findall(r"\blet (operand\d+) = ", specs)
+        combined = re.findall(r"\blet [ab] = (operand\d+);", specs)
+        want = (["operand1", "operand2", "operand3"], ["operand1", "operand3", "operand2"]) \
+            if optimized else ([], [])
+        if (bound, combined) != want:
+            self.fail(f"min/max chains {level}",
+                      f"(bound, combined): got {(bound, combined)}, want {want}")
+            valid = False
         # Inlining heuristics: which bodies are left out of line.
         live = set(re.findall(r"^(?:inline )?fn (i[hl]_\w+)\(", specs, re.MULTILINE))
         left = {

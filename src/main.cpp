@@ -24,6 +24,7 @@
 #include "optimize_basecase.h"
 #include "optimize_tre.h"
 #include "optimize_loops.h"
+#include "optimize_reassoc.h"
 #include "bce.h"
 #include "codegen.h"
 #include "codegen_types.h"
@@ -1089,10 +1090,10 @@ int Main(int argc, char **argv) {
         }
         fprintf(msgs, "typechecked ok: %d specialization(s), %d struct/%d enum instance(s); "
                 "optimized -O%d: %d inlined, %d base case(s), %d folded, %d propagated, "
-                "%d tail loop(s)\n",
+                "%d tail loop(s), %d reassociated\n",
                 (int)ast.fnspecs.size(), (int)ast.structinsts.size(),
                 (int)ast.enuminsts.size(), optlevel, opt.inlined, opt.basecases,
-                opt.folded, opt.propagated, opt.tailloops);
+                opt.folded, opt.propagated, opt.tailloops, opt.reassociated);
         BCE bce(ast);
         if (!nobce) {
             bce.RunAll();

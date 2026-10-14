@@ -64,7 +64,7 @@ single translation unit, included in the order the driver lists them.
 | Parse | `lexer.h`, `parser.h`, `ParseProgram` in `main.cpp` | source files, following `import` | the `Ast`: nodes, type expressions, symbols per namespace, globals in initialization order |
 | Resolve | `resolve.h` (`ResolveTypeNames`) | type names as written | struct/enum/generic kinds, aliases substituted away |
 | Typecheck | `typecheck*.h` (`TypeCheckProgram`) | the `Ast` | one `FnSpec` per specialization with a cloned, annotated body; `StructInst`/`EnumInst`; `VarDef`s; the store record; every diagnostic of §3--§11; the shader blobs `embed_shader` compiles (`gfx.h`, `shaderc.c`) |
-| Optimize | `optimize.h`, `optimize_basecase.h`, `optimize_tre.h`, `optimize_loops.h` (`Optimizer`) | live specializations | bodies rewritten in place (inlined, folded, loops), liveness and use counts, loop shapes (`ForLoop::stripk`, `sumred`, `While::countdown`) |
+| Optimize | `optimize.h`, `optimize_basecase.h`, `optimize_tre.h`, `optimize_loops.h`, `optimize_reassoc.h` (`Optimizer`) | live specializations | bodies rewritten in place (inlined, folded, loops), liveness and use counts, loop shapes (`ForLoop::stripk`, `sumred`, `While::countdown`) |
 | BCE | `bce.h` (`BCE::RunAll`) | live specializations | `Index::nobc`, `SliceExpr::nobc`, `ForLoop::fixedlen` and `lenbound`, per-loop `hoistrefs` and `hoistfields` |
 | Codegen | `codegen*.h` (`CodeGen`) | live specializations, globals | one C file, with `src/runtime/` (or its part a program's unit holds) around it |
 | JIT | `jit.h` | the C text | the program run in-process through libtcc, when no `-o` was given |
@@ -140,7 +140,7 @@ the slow steps (a line each, and on a terminal a live line below).
 | `--roundtrip` | after resolution, parse the dump as a program of its own and require it to dump to the same text (`CheckRoundtrip`), then go on to whatever else was asked for |
 | `--dump-file f.goose` | also write the dump to a file, and go on |
 | `--check` | stop after typecheck, optimization and BCE; no C is written |
-| `-O0`, `-O1` (default), `-O2` | inlining thresholds (§4); folding and propagation run at every level; base-case inlining and tail-recursion elimination need `-O1` or above |
+| `-O0`, `-O1` (default), `-O2` | inlining thresholds (§4); folding and propagation run at every level; base-case inlining, tail-recursion elimination and min/max regrouping need `-O1` or above |
 | `--specs` | print every live specialization's optimized body |
 | `--stacks` | print the data stack count of the main program and of each worker, the regions they come to, the thread cap that gives `hardware_threads()`, and every function's share (`codegen_stacks.h`); with `--check` it runs the backend for the counts and writes nothing |
 | `--stack-reserve size` | the address space reserved per data stack, written as `-DGS_STACK_RESERVE` (K/M/G/T suffixes; at most 2^48) |
@@ -3169,6 +3169,24 @@ whose new value is root-stable), tails inside loops or function-value bodies
 are skipped, and a callee that can `return ... from` the function disables
 the transform. The `var t = ...; if c { t op= self(x) } t` spelling is
 restated as a return first (`AccVarForm`).
+
+**Min/max regrouping** (`Reassociator`, `optimize_reassoc.h`, `-O1` and
+above): a chain of nested calls of one specialization shaped like std's
+`min` or `max` (`if x < y { return x; } return y;`, or returning `y` first)
+over an integer type, inside a loop, where an operand reads a variable the
+innermost loop writes (assigns, writes an element or field of, or takes `&`
+of) and declares outside itself. Such an operand usually carries the
+previous iteration's result, as the insertion cost of an edit distance
+does, and the C compiler keeps the chain grouped as written, every
+comparison it passes through a compare and a conditional move on the loop's
+critical path. `Call::Opt` offers each call to the pass before its
+arguments, while the chain is still calls; where the carried operands are
+not already combined last, the chain becomes a block that binds every
+non-literal operand to an `operandN` local in written order, so each is
+evaluated once and in order, then combines the others first and the carried
+ones last, reusing the chain's own calls. Integer min and max are
+associative and commutative, so the value is the same; a wrong guess about
+which operand carries the dependence costs nothing but the regrouping.
 
 **Loop shaping** (`LoopShaper`, `optimize_loops.h`, every level). Some
 loops compile to C that clang cannot make fast, while an equivalent

@@ -56,6 +56,7 @@
 namespace goose {
 
 struct BaseCaseInliner;   // optimize_basecase.h.
+struct Reassociator;      // optimize_reassoc.h.
 
 struct Optimizer {
     Ast &ast;
@@ -309,6 +310,15 @@ struct Optimizer {
     void SetupBaseCase(FnSpec *sp);   // Records the base case of sp, if any.
     Node *TryBaseCase(Call *c);       // Rewrites one self-call against it.
     int basecases = 0;
+
+    // Regrouping integer min/max chains around a loop-carried operand:
+    // optimize_reassoc.h, which holds the state and defines this. The loops
+    // around the node being optimized, innermost last, are what it asks
+    // which operands carry a value from one iteration to the next.
+    unique_ptr<Reassociator> reassoc;
+    Node *TryReassoc(Call *c);
+    vector<Node *> loopnodes;
+    int reassociated = 0;
 
     // ------------------------------------------------------------------
     // The fold/propagate/inline walk. Opt returns the (possibly replaced)
@@ -1216,6 +1226,8 @@ inline Node *Dot::Opt(Optimizer &o) {
 }
 
 inline Node *Call::Opt(Optimizer &o) {
+    // Before the arguments: a chain of min or max calls is still calls.
+    if (auto r = o.TryReassoc(this)) return r;
     // A member builtin works on its receiver where it stands (bytes_of
     // returns a view of it), and print, str and format render an argument
     // where it stands around the user format overloads they run.
@@ -1392,20 +1404,25 @@ inline Node *EarlyBlock::Opt(Optimizer &o) {
 
 inline Node *While::Opt(Optimizer &o) {
     o.loopdepth++;
+    o.loopnodes.push_back(this);
     cond = o.OptIn(this, cond);
     if (auto b = Is<BoolLit>(cond); b && !b->val) {
+        o.loopnodes.pop_back();
         o.loopdepth--;
         o.folded++;
         return o.EmptyBlock(this);
     }
     o.OptBlock(body);
+    o.loopnodes.pop_back();
     o.loopdepth--;
     return this;
 }
 
 inline Node *LoopExpr::Opt(Optimizer &o) {
     o.loopdepth++;
+    o.loopnodes.push_back(this);
     o.OptBlock(body);
+    o.loopnodes.pop_back();
     o.loopdepth--;
     return this;
 }
@@ -1413,7 +1430,9 @@ inline Node *LoopExpr::Opt(Optimizer &o) {
 inline Node *ForLoop::Opt(Optimizer &o) {
     iter = o.OptViewed(iter);
     o.loopdepth++;
+    o.loopnodes.push_back(this);
     o.OptBlock(body);
+    o.loopnodes.pop_back();
     o.loopdepth--;
     return this;
 }
