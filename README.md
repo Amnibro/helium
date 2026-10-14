@@ -392,6 +392,25 @@ The [summary](bench/summary.md) explains the gains and losses;
 
 [Tutorial §18](docs/tutorial.md#18-what-it-costs-you) is the full list.
 
+## Install a release
+
+Prebuilt compilers for Windows (x64), Linux (x64) and macOS (Apple silicon
+and Intel) are on the [releases page](https://github.com/aardappel/goose/releases),
+with the graphics, audio, ui and physics packages compiled in. Unpack one
+anywhere and put its directory on PATH: the compiler finds the standard
+library, TinyCC's runtime and the packages beside itself, and keeps what it
+builds under `~/.goose` (`GOOSE_HOME`). The archive also holds these docs, the
+samples and the VS Code extension.
+
+Running a program in-process (`goose file.goose`) needs nothing else on
+Windows. On Linux it needs the C library's headers (`libc6-dev`, or
+`glibc-devel`); on macOS, the SDK of the Xcode command line tools
+(`xcode-select --install`). `goose build` also needs a C compiler: Visual
+Studio 2022 or later, or clang, on Windows; gcc or clang elsewhere. The Linux
+compiler needs glibc 2.35 or later (Ubuntu 22.04, Debian 12), the macOS one
+macOS 13.3 or later. macOS keeps a downloaded archive's files from running
+until `xattr -dr com.apple.quarantine` is run on the unpacked directory.
+
 ## Build and run
 
 You need CMake 3.27 or later, a C++20 compiler (MSVC, clang or gcc) and Python
