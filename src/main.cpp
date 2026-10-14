@@ -37,9 +37,9 @@
 #include "codegen_stacks.h"
 #include "codegen_nodes.h"
 #include "runtime_inline.h"
+#include "process.h"
 #include "jit.h"
 #include "progress.h"
-#include "process.h"
 #include "buildfile.h"
 #include "toolchain.h"
 #include "builtin.h"
@@ -150,8 +150,10 @@ struct DeclaredPackage {
 // package in the root file and is a requirement anywhere else, which the
 // root's declaration must satisfy (docs/design/packages.md §4.3). A
 // `rootsource` is the root file's text, which is then not read from disk.
+// `exedir` is the compiler's directory, where a release keeps the packages
+// compiled into it.
 void ParseProgram(Ast &ast, const string &rootpath, const vector<string> &stdlibdirs,
-                  const string *rootsource = nullptr) {
+                  const string &exedir, const string *rootsource = nullptr) {
     // The program is package 0; a standard library directory becomes a
     // package the first time a module in it is reached.
     auto rootdir = DirOf(rootpath);
@@ -165,20 +167,21 @@ void ParseProgram(Ast &ast, const string &rootpath, const vector<string> &stdlib
     };
     map<string, DeclaredPackage> declared;
     // Loads a blessed package (§4.5) once, under its package name among the
-    // declared ones: from where the compiler's build put it when it is
-    // compiled in, else from its source as a declared package would be (a
-    // path in the table is relative to the source tree the standard
-    // library is found in).
+    // declared ones: from where the compiler's build put it, or a release
+    // beside the compiler, when it is compiled in, else from its source as a
+    // declared package would be (a path in the table is relative to the
+    // source tree the standard library is found in).
     auto loadblessed = [&](const BlessedEntry &be) -> int {
         auto it = declared.find(be.package);
         if (it != declared.end()) return it->second.pkg;
         auto builtin = BuiltinLookup(be.package);
+        auto builtindir = builtin ? BuiltinSrcDir(*builtin, exedir) : string();
         PackageSource src;
         src.text = be.source;
         string root;
-        if (builtin && PathExists(cat(builtin->srcdir, be.package, ".goose"))) {
+        if (builtin && PathExists(cat(builtindir, be.package, ".goose"))) {
             src.ispath = true;
-            src.dir = root = builtin->srcdir;
+            src.dir = root = builtindir;
         } else if (IsPathSource(be.source)) {
             auto rel = be.source.rfind("./", 0) == 0 ? be.source.substr(2) : be.source;
             for (auto &dir : stdlibdirs) {
@@ -200,7 +203,7 @@ void ParseProgram(Ast &ast, const string &rootpath, const vector<string> &stdlib
         ast.packages.push_back(Package { be.package, root, false });
         auto &p = ast.packages.back();
         if (!src.ispath) p.cachekey = GitCacheKey(src);
-        if (builtin && root == builtin->srcdir) p.builtin = BuiltinIndex(builtin);
+        if (builtin && root == builtindir) p.builtin = BuiltinIndex(builtin);
         LoadSidecar(p, false);
         declared.emplace(be.package, DeclaredPackage { src, (int)ast.packages.size() - 1, 0 });
         return (int)ast.packages.size() - 1;
@@ -388,10 +391,10 @@ void ParseProgram(Ast &ast, const string &rootpath, const vector<string> &stdlib
 // that gives back the same text: what `goose --dump` of the dump written to a
 // file would print. `path` is where the dump's diagnostics say they are.
 void CheckRoundtrip(const string &dumped, const string &path,
-                    const vector<string> &stdlibdirs) {
+                    const vector<string> &stdlibdirs, const string &exedir) {
     Ast again;
     try {
-        ParseProgram(again, path, stdlibdirs, &dumped);
+        ParseProgram(again, path, stdlibdirs, exedir, &dumped);
     } catch (CompileError &e) {
         throw CompileError { cat("the dump does not parse again:\n", e.msg) };
     }
@@ -870,7 +873,7 @@ int Main(int argc, char **argv) {
         astp = make_unique<Ast>();
         auto &ast = *astp;
         auto stdlibdirs = StdlibDirs(stdlibdir, exe);
-        ParseProgram(ast, filename, stdlibdirs);
+        ParseProgram(ast, filename, stdlibdirs, DirOf(exe));
         if (dump) {
             // Dump is parse-level output: no name resolution or typecheck,
             // so parse-only test files can roundtrip, and every name shows
@@ -898,7 +901,7 @@ int Main(int argc, char **argv) {
         // it would without --roundtrip.
         if (roundtrip) {
             CheckRoundtrip(dumped, dumpfile.empty() ? cat(filename, ".dump") : dumpfile,
-                           stdlibdirs);
+                           stdlibdirs, DirOf(exe));
             fprintf(msgs, "roundtrip ok: %d bytes of dump\n", (int)dumped.size());
         }
         if (parseonly) return 0;
