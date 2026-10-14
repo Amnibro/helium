@@ -31,6 +31,14 @@
 #define _CRT_SECURE_NO_WARNINGS 1
 #endif
 
+/* The POSIX and BSD declarations the runtime uses (sigaltstack, stack_t,
+   MAP_ANONYMOUS, ...) are what glibc's headers declare by default, but a
+   strict ISO mode (-std=c11, -std=c23) hides them unless this comes before
+   the first system header. */
+#if !defined(_WIN32) && !defined(_DEFAULT_SOURCE)
+#define _DEFAULT_SOURCE 1
+#endif
+
 #include <stdint.h>
 #include <stddef.h>
 #include <string.h>

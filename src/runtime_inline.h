@@ -43,6 +43,14 @@ R"GSRT(/* Goose runtime — the part every compiler-generated C file starts with
 #define _CRT_SECURE_NO_WARNINGS 1
 #endif
 
+/* The POSIX and BSD declarations the runtime uses (sigaltstack, stack_t,
+   MAP_ANONYMOUS, ...) are what glibc's headers declare by default, but a
+   strict ISO mode (-std=c11, -std=c23) hides them unless this comes before
+   the first system header. */
+#if !defined(_WIN32) && !defined(_DEFAULT_SOURCE)
+#define _DEFAULT_SOURCE 1
+#endif
+
 #include <stdint.h>
 #include <stddef.h>
 #include <string.h>
@@ -182,14 +190,14 @@ GS_API GS_NORETURN void gs_ovf(int64_t a, const char *op, int64_t b, const char 
 GS_API GS_NORETURN void gs_ovf_neg(int64_t a, const char *type, const char *file, int line);
 GS_API GS_NORETURN void gs_asfail_i(const char *why, int64_t v, const char *type,
                                     const char *file, int line);
-GS_API GS_NORETURN void gs_asfail_u(const char *why, uint64_t v, const char *type,
+)GSRT"
+R"GSRT(GS_API GS_NORETURN void gs_asfail_u(const char *why, uint64_t v, const char *type,
                                     const char *file, int line);
 /* f32: d is an f32's value, and takes that type's text form. */
 GS_API GS_NORETURN void gs_asfail_f(const char *why, double d, int f32, const char *type,
                                     const char *file, int line);
 
-)GSRT"
-R"GSRT(/* Bounds check as one unsigned compare; the index operand must be side-effect
+/* Bounds check as one unsigned compare; the index operand must be side-effect
    free (the compiler guarantees this at emission). The failing arm's int64_t
    gives the result the type of (i) and an int64_t together, and its call is
    one the C compiler knows does not return, also where gs_idxfail is in the
@@ -367,14 +375,14 @@ static int gs_memeq(const void *a, const void *b, size_t n) {
 
 /* ---------------------------------------------------------------------------
    Integer semantics (§6.2): every operation runs at its operands' type. The
-   operations compute wide (so wrap is defined in C), truncate back, and — when
+)GSRT"
+R"GSRT(   operations compute wide (so wrap is defined in C), truncate back, and — when
    the generated C is compiled with -DGS_DEBUG=1 — abort when the wide result
    does not fit the type. Shifts mask their count to the width; division is
    zero-checked always.
 
    Only division and modulo check anything in a release build, so only they
-)GSRT"
-R"GSRT(   need to be functions there; everything else is a macro whose body is the
+   need to be functions there; everything else is a macro whose body is the
    expression the release function would have returned. An optimizing backend
    inlines either form to the same instruction, but a backend that does not
    inline (libtcc, or any -O0 build) would otherwise pay a call for every
@@ -539,14 +547,14 @@ static uint64_t gs_shr_u64(uint64_t a, int64_t n) { return a >> (n & 63); }
 #define gs_shr_u32(a, n) ((uint32_t)((uint64_t)(a) >> ((n) & 31)))
 
 #define gs_add_i64(a, b, f, l) ((int64_t)((uint64_t)(a) + (uint64_t)(b)))
-#define gs_sub_i64(a, b, f, l) ((int64_t)((uint64_t)(a) - (uint64_t)(b)))
+)GSRT"
+R"GSRT(#define gs_sub_i64(a, b, f, l) ((int64_t)((uint64_t)(a) - (uint64_t)(b)))
 #define gs_mul_i64(a, b, f, l) ((int64_t)((uint64_t)(a) * (uint64_t)(b)))
 #define gs_neg_i64(a, f, l)    ((int64_t)(0u - (uint64_t)(a)))
 #define gs_shl_i64(a, n) ((int64_t)((uint64_t)(a) << ((n) & 63)))
 #define gs_shr_i64(a, n) ((int64_t)((a) >> ((n) & 63)))
 
-)GSRT"
-R"GSRT(#define gs_add_u64(a, b) ((uint64_t)((a) + (b)))
+#define gs_add_u64(a, b) ((uint64_t)((a) + (b)))
 #define gs_sub_u64(a, b) ((uint64_t)((a) - (b)))
 #define gs_mul_u64(a, b) ((uint64_t)((a) * (b)))
 #define gs_shl_u64(a, n) ((uint64_t)((a) << ((n) & 63)))
@@ -738,15 +746,15 @@ typedef struct {
 } gs_stack;
 
 /* The program defines what goose.h gives C compiled on its own (gs_stack
-   here, gs_rhdr, gs_rref and gs_bld_append after the generated types), so
+)GSRT"
+R"GSRT(   here, gs_rhdr, gs_rref and gs_bld_append after the generated types), so
    an --include header including it gets nothing more. */
 #define GOOSE_H 1
 
 /* Starts the runtime on main's thread: the program's arguments, each
    region's usable reservation and trailing guard gap, the address space
    budgeted for regions over the whole program, and the most regions the
-)GSRT"
-R"GSRT(   main program and any one worker hold (the compiler's static counts),
+   main program and any one worker hold (the compiler's static counts),
    which size their registries and give hardware_threads() its cap. */
 GS_API void gs_rt_start(int argc, char **argv, uint64_t reserve, uint64_t gap,
                         uint64_t budget, int64_t mainregions, int64_t workerregions);
@@ -931,7 +939,8 @@ static int64_t gs_uleb_write(uint8_t *p, uint64_t v) {
     uint8_t *q = p;
     for (;;) {
         uint8_t b = v & 0x7f;
-        v >>= 7;
+)GSRT"
+R"GSRT(        v >>= 7;
         if (v) *q++ = b | 0x80; else { *q++ = b; break; }
     }
     return (int64_t)(q - p);
@@ -943,8 +952,7 @@ static int64_t gs_zig_read(const uint8_t *p) {
 }
 
 static int64_t gs_zig_write(uint8_t *p, int64_t v) {
-)GSRT"
-R"GSRT(    return gs_uleb_write(p, ((uint64_t)v << 1) ^ (uint64_t)(v >> 63));
+    return gs_uleb_write(p, ((uint64_t)v << 1) ^ (uint64_t)(v >> 63));
 }
 
 /* ---------------------------------------------------------------------------
