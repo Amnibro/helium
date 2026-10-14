@@ -16,6 +16,9 @@ Every dynamic value lives inline on a data stack managed by the compiler.
 Growth advances a pointer, and memory is freed when its scope ends. The
 language's type and lifetime rules make this memory model safe to use.
 
+[![Discord Chat](https://img.shields.io/badge/chat-discord-blue)](https://discord.gg/397eZdbnsR)
+[![Twitter Follow](https://img.shields.io/twitter/follow/wvo.svg?style=social)](https://twitter.com/wvo)
+
 ## Why Goose
 
 * **Faster than C++ and than safe Rust, while memory safe.** Over sixteen
