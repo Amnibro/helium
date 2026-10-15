@@ -48,47 +48,45 @@ Measured October 2026 on CPUs 16-31 of a Ryzen 9950X3D under Windows 11.
 Each language's fastest program is shown, single-threaded and multithreaded
 separately (a reference using OpenMP, rayon or a multithreaded async runtime
 counts as multithreaded whatever its name), and "ratio" is the fastest other
-language's time over Goose's: above 1 Goose is faster. The binarytrees,
-coro-prime-sieve and fasta rows come from a later run, in which every
-language's times came out a few percent higher.
+language's time over Goose's: above 1 Goose is faster.
 
 | problem | input | Goose | Rust | C/C++ | ratio | Goose -m | Rust -m | C/C++ -m | ratio -m |
 |---|---|---:|---:|---:|---:|---:|---:|---:|---:|
-| binarytrees | 15 | 23 <sub>1 9.2M</sub> | 163 <sub>3 13.5M</sub> | - | 7.10 | 17 <sub>2-m 12.2M</sub> | - | - | - |
-| binarytrees | 18 | 109 <sub>1 19.7M</sub> | 1631 <sub>4 39.9M</sub> | - | 14.95 | 32 <sub>2-m 65.3M</sub> | - | - | - |
-| coro-prime-sieve | 1000 | 14 <sub>1 7.8M</sub> | 62 <sub>3 9.5M</sub> | - | 4.34 | - | 21 <sub>3-m 10.5M</sub> | - | - |
-| coro-prime-sieve | 4000 | 35 <sub>1 8.0M</sub> | 781 <sub>3 14.9M</sub> | - | 22.37 | - | 160 <sub>3-m 16.0M</sub> | - | - |
-| edigits | 100000 | 25 <sub>1 9.2M</sub> | 27 <sub>1 7.9M</sub> | - | 1.09 | - | - | - | - |
-| edigits | 250001 | 58 <sub>1 11.2M</sub> | 69 <sub>1 8.4M</sub> | - | 1.18 | - | - | - | - |
-| fannkuch-redux | 10 | 46 <sub>1 7.6M</sub> | 81 <sub>3-i 7.7M</sub> | - | 1.75 | 17 <sub>1-m 8.1M</sub> | 19 <sub>3-im 9.0M</sub> | 22 <sub>1-im 9.0M</sub> | 1.13 |
-| fannkuch-redux | 11 | 396 <sub>1 7.6M</sub> | 786 <sub>3-i 7.7M</sub> | - | 1.99 | 54 <sub>1-m 8.2M</sub> | 68 <sub>3-im 8.9M</sub> | 84 <sub>1-im 9.0M</sub> | 1.25 |
-| fasta | 250000 | 19 <sub>1 8.8M</sub> | 20 <sub>6 7.7M</sub> | - | 1.08 | 18 <sub>1-m 9.3M</sub> | 36 <sub>5c-m 17.6M</sub> | - | 1.98 |
-| fasta | 2500000 | 66 <sub>1 8.8M</sub> | 77 <sub>6 7.7M</sub> | - | 1.16 | 62 <sub>1-m 13.0M</sub> | 201 <sub>5c-m 17.6M</sub> | - | 3.26 |
-| helloworld | QwQ | 11 <sub>1 7.6M</sub> | 11 <sub>1 7.6M</sub> | 10 <sub>1 7.6M</sub> | 1.00 | - | - | - | - |
-| json-serde | sample 5000 | 26 <sub>1 12.6M</sub> | 28 <sub>4-i 14.4M</sub> | - | 1.09 | - | - | - | - |
-| json-serde | canada 15 | 109 <sub>1 55.6M</sub> | 118 <sub>5-i 62.0M</sub> | - | 1.08 | - | - | - | - |
-| knucleotide | 250000_in | 30 <sub>1 16.1M</sub> | 39 <sub>8 16.1M</sub> | - | 1.29 | 22 <sub>1-m 23.3M</sub> | 24 <sub>8-m 21.4M</sub> | 34 <sub>1 20.2M</sub> | 1.10 |
-| knucleotide | 2500000_in | 142 <sub>1 38.0M</sub> | 180 <sub>8 26.8M</sub> | - | 1.27 | 71 <sub>1-m 71.0M</sub> | 68 <sub>8-m 32.5M</sub> | 182 <sub>1 31.1M</sub> | 0.96 |
-| lru | 100 500000 | 18 <sub>2 7.6M</sub> | 24 <sub>0-unsafe 7.7M</sub> | - | 1.30 | - | - | - | - |
-| lru | 1000 1000000 | 25 <sub>2 7.7M</sub> | 26 <sub>0-unsafe 7.7M</sub> | - | 1.06 | - | - | - | - |
-| lru | 1000 3000000 | 54 <sub>2 7.7M</sub> | 80 <sub>0-unsafe 7.7M</sub> | - | 1.46 | - | - | - | - |
-| mandelbrot | 1000 | 17 <sub>1 7.8M</sub> | 18 <sub>8 7.7M</sub> | - | 1.07 | 14 <sub>1-m 8.6M</sub> | - | - | - |
-| mandelbrot | 5000 | 144 <sub>1 10.7M</sub> | 168 <sub>8 10.4M</sub> | - | 1.17 | 30 <sub>1-m 14.0M</sub> | - | - | - |
-| merkletrees | 15 | 36 <sub>1 11.9M</sub> | 174 <sub>1 15.4M</sub> | - | 4.80 | - | - | - | - |
-| merkletrees | 17 | 130 <sub>1 24.6M</sub> | 810 <sub>1 39.6M</sub> | - | 6.21 | - | - | - | - |
-| nbody | 500000 | 23 <sub>1 7.6M</sub> | 20 <sub>4-i 7.7M</sub> | 20 <sub>0-i 7.6M</sub> | 0.85 | - | - | - | - |
-| nbody | 5000000 | 132 <sub>1 7.6M</sub> | 103 <sub>4-i 7.7M</sub> | 108 <sub>0-i 7.6M</sub> | 0.78 | - | - | - | - |
-| nsieve | 10 | 36 <sub>1 17.4M</sub> | 39 <sub>1 17.1M</sub> | 38 <sub>1 17.1M</sub> | 1.05 | - | - | - | - |
-| nsieve | 12 | 153 <sub>2 12.6M</sub> | 160 <sub>2 12.2M</sub> | 127 <sub>1 12.3M</sub> | 0.83 | - | - | - | - |
-| pidigits | 4000 | 43 <sub>1 7.7M</sub> | 198 <sub>2 8.1M</sub> | - | 4.63 | - | - | - | - |
-| pidigits | 8000 | 147 <sub>1 7.8M</sub> | 866 <sub>2 8.6M</sub> | - | 5.90 | - | - | - | - |
-| regex-redux | 250000_in | 63 <sub>1 17.8M</sub> | - | - | - | 31 <sub>2-m 25.0M</sub> | 36 <sub>7 19.6M</sub> | - | 1.18 |
-| regex-redux | 2500000_in | 496 <sub>1 105.4M</sub> | - | - | - | 177 <sub>2-m 177.1M</sub> | 235 <sub>7 106.2M</sub> | - | 1.33 |
-| secp256k1 | 500 | 30 <sub>1 7.7M</sub> | 28 <sub>0 7.7M</sub> | - | 0.93 | - | - | - | - |
-| secp256k1 | 2000 | 75 <sub>1 7.7M</sub> | 67 <sub>0 7.7M</sub> | - | 0.90 | - | - | - | - |
-| spectral-norm | 2000 | 33 <sub>2 7.7M</sub> | 63 <sub>7 7.7M</sub> | - | 1.89 | 19 <sub>2-m 10.1M</sub> | 20 <sub>7-m 9.2M</sub> | 23 <sub>8 8.9M</sub> | 1.07 |
-| spectral-norm | 4000 | 89 <sub>2 7.7M</sub> | 209 <sub>7 7.7M</sub> | - | 2.34 | 25 <sub>2-m 10.0M</sub> | 39 <sub>7-m 9.3M</sub> | 33 <sub>8 9.0M</sub> | 1.32 |
-| spectral-norm | 8000 | 318 <sub>2 7.8M</sub> | 809 <sub>7 7.7M</sub> | - | 2.54 | 57 <sub>2-m 11.8M</sub> | 115 <sub>7-m 9.4M</sub> | 99 <sub>8 9.1M</sub> | 1.74 |
+| binarytrees | 15 | 22 <sub>1 9.2M</sub> | 150 <sub>4 11.5M</sub> | - | 6.89 | 15 <sub>2-m 12.3M</sub> | - | - | - |
+| binarytrees | 18 | 105 <sub>1 19.7M</sub> | 1506 <sub>4 39.9M</sub> | - | 14.37 | 30 <sub>2-m 64.9M</sub> | - | - | - |
+| coro-prime-sieve | 1000 | 15 <sub>1 7.8M</sub> | 61 <sub>3 9.5M</sub> | - | 4.20 | - | 22 <sub>3-m 10.6M</sub> | - | - |
+| coro-prime-sieve | 4000 | 33 <sub>1 8.0M</sub> | 743 <sub>3 14.9M</sub> | - | 22.81 | - | 111 <sub>3-m 15.9M</sub> | - | - |
+| edigits | 100000 | 26 <sub>1 9.3M</sub> | 29 <sub>1 8.0M</sub> | - | 1.12 | - | - | - | - |
+| edigits | 250001 | 59 <sub>1 11.3M</sub> | 70 <sub>1 8.5M</sub> | - | 1.19 | - | - | - | - |
+| fannkuch-redux | 10 | 45 <sub>1 7.7M</sub> | 78 <sub>3-i 7.7M</sub> | - | 1.73 | 17 <sub>1-m 7.9M</sub> | 18 <sub>3-im 9.0M</sub> | 21 <sub>1-im 9.0M</sub> | 1.10 |
+| fannkuch-redux | 11 | 392 <sub>1 7.7M</sub> | 794 <sub>3-i 7.7M</sub> | - | 2.03 | 55 <sub>1-m 7.8M</sub> | 68 <sub>3-im 9.0M</sub> | 83 <sub>1-im 9.1M</sub> | 1.23 |
+| fasta | 250000 | 18 <sub>1 8.8M</sub> | 19 <sub>6 7.7M</sub> | - | 1.07 | 18 <sub>1-m 9.3M</sub> | 35 <sub>5c-m 17.6M</sub> | - | 1.95 |
+| fasta | 2500000 | 63 <sub>1 8.8M</sub> | 74 <sub>6 7.7M</sub> | - | 1.16 | 60 <sub>1-m 13.2M</sub> | 199 <sub>5c-m 17.6M</sub> | - | 3.33 |
+| helloworld | QwQ | 13 <sub>1 7.7M</sub> | 13 <sub>1 7.7M</sub> | 13 <sub>1 7.7M</sub> | 0.97 | - | - | - | - |
+| json-serde | sample 5000 | 26 <sub>1 12.7M</sub> | 29 <sub>4-i 14.4M</sub> | - | 1.10 | - | - | - | - |
+| json-serde | canada 15 | 106 <sub>1 55.7M</sub> | 114 <sub>5-i 62.1M</sub> | - | 1.07 | - | - | - | - |
+| knucleotide | 250000_in | 31 <sub>1 16.2M</sub> | 38 <sub>8 16.2M</sub> | - | 1.25 | 22 <sub>1-m 23.3M</sub> | 23 <sub>8-m 21.7M</sub> | 33 <sub>1 20.3M</sub> | 1.04 |
+| knucleotide | 2500000_in | 145 <sub>1 38.0M</sub> | 184 <sub>8 26.9M</sub> | - | 1.27 | 73 <sub>1-m 71.2M</sub> | 71 <sub>8-m 32.4M</sub> | 185 <sub>1 31.0M</sub> | 0.97 |
+| lru | 100 500000 | 18 <sub>2 7.7M</sub> | 24 <sub>0-unsafe 7.7M</sub> | - | 1.33 | - | - | - | - |
+| lru | 1000 1000000 | 26 <sub>2 7.8M</sub> | 25 <sub>0-unsafe 7.7M</sub> | - | 0.98 | - | - | - | - |
+| lru | 1000 3000000 | 54 <sub>2 7.8M</sub> | 78 <sub>0-unsafe 7.7M</sub> | - | 1.45 | - | - | - | - |
+| mandelbrot | 1000 | 18 <sub>1 7.9M</sub> | 19 <sub>8 7.8M</sub> | - | 1.04 | 14 <sub>1-m 8.4M</sub> | - | - | - |
+| mandelbrot | 5000 | 149 <sub>1 10.8M</sub> | 176 <sub>8 10.5M</sub> | - | 1.18 | 30 <sub>1-m 12.3M</sub> | - | - | - |
+| merkletrees | 15 | 37 <sub>1 12.0M</sub> | 183 <sub>1 15.5M</sub> | - | 4.90 | - | - | - | - |
+| merkletrees | 17 | 127 <sub>1 24.7M</sub> | 758 <sub>1 39.6M</sub> | - | 5.99 | - | - | - | - |
+| nbody | 500000 | 23 <sub>1 7.7M</sub> | 21 <sub>4-i 7.7M</sub> | 21 <sub>0-i 7.7M</sub> | 0.89 | - | - | - | - |
+| nbody | 5000000 | 132 <sub>1 7.7M</sub> | 103 <sub>4-i 7.7M</sub> | 106 <sub>0-i 7.7M</sub> | 0.78 | - | - | - | - |
+| nsieve | 10 | 37 <sub>1 17.5M</sub> | 39 <sub>1 17.2M</sub> | 38 <sub>1 17.2M</sub> | 1.04 | - | - | - | - |
+| nsieve | 12 | 155 <sub>2 12.6M</sub> | 162 <sub>2 12.3M</sub> | 129 <sub>1 12.4M</sub> | 0.84 | - | - | - | - |
+| pidigits | 4000 | 44 <sub>1 7.8M</sub> | 183 <sub>2 8.3M</sub> | - | 4.18 | - | - | - | - |
+| pidigits | 8000 | 148 <sub>1 7.9M</sub> | 879 <sub>2 8.8M</sub> | - | 5.96 | - | - | - | - |
+| regex-redux | 250000_in | 65 <sub>1 17.8M</sub> | - | - | - | 32 <sub>2-m 25.1M</sub> | 38 <sub>7 19.7M</sub> | - | 1.19 |
+| regex-redux | 2500000_in | 483 <sub>1 105.5M</sub> | - | - | - | 178 <sub>2-m 177.2M</sub> | 237 <sub>7 106.1M</sub> | - | 1.33 |
+| secp256k1 | 500 | 29 <sub>1 7.7M</sub> | 27 <sub>0 7.8M</sub> | - | 0.92 | - | - | - | - |
+| secp256k1 | 2000 | 76 <sub>1 7.7M</sub> | 70 <sub>0 7.8M</sub> | - | 0.91 | - | - | - | - |
+| spectral-norm | 2000 | 33 <sub>2 7.8M</sub> | 63 <sub>7 7.8M</sub> | - | 1.91 | 18 <sub>2-m 8.6M</sub> | 22 <sub>7-m 9.3M</sub> | 23 <sub>8 9.0M</sub> | 1.20 |
+| spectral-norm | 4000 | 89 <sub>2 7.8M</sub> | 210 <sub>7 7.8M</sub> | - | 2.35 | 26 <sub>2-m 8.8M</sub> | 40 <sub>7-m 9.4M</sub> | 40 <sub>8 9.1M</sub> | 1.50 |
+| spectral-norm | 8000 | 321 <sub>2 7.9M</sub> | 796 <sub>7 7.7M</sub> | - | 2.48 | 57 <sub>2-m 9.7M</sub> | 114 <sub>7-m 9.6M</sub> | 92 <sub>8 9.2M</sub> | 1.61 |
 
 The allocation-heavy problems (binarytrees, merkletrees) say as much about
 Windows' heap as about Rust: its `Box` allocations go through `HeapAlloc`,
@@ -142,18 +140,18 @@ With AVX-512 allowed, the `simd fn` programs go further: nbody/2 79.7 ms at
 
 ## Where Goose is behind, and why
 
-* **nbody** (0.78 against intrinsics, 0.90 against plain C++): the `-i`
+* **nbody** (0.78 against intrinsics, 0.89 against plain C++): the `-i`
   programs avoid the divider with a float reciprocal square root estimate and
   Newton steps, which Goose cannot express (no intrinsics, no float bit
   casts). Against the plain C++ program, 132 against 118 ms, the generated C
   is the same loop; clang's result for it moves by 10-20% with unrelated
   changes around it.
-* **nsieve/2 at 12** (0.83 against C++'s `vector<bool>`): two bounds checks
+* **nsieve/2 at 12** (0.84 against C++'s `vector<bool>`): two bounds checks
   stay in the bit-array loops (the analysis cannot derive `j >> 5 <
   (n + 31) >> 5` from `j < n`), and elements are addressed as byte offsets,
   `base + (j >> 5) * 4`, which costs clang the scaled addressing mode.
   Removing both by hand brings it level with hand-written C.
-* **secp256k1** (0.90): Rust's `0.rs` uses the k256 crate, whose scalar
+* **secp256k1** (0.91): Rust's `0.rs` uses the k256 crate, whose scalar
   multiplication uses precomputed tables of signed windows; the Goose program
   follows the hand-written algorithm (`1.rs`, which it beats by 18x). Its
   field arithmetic is faster than k256's.
@@ -162,8 +160,8 @@ With AVX-512 allowed, the `simd fn` programs go further: nbody/2 79.7 ms at
   frequencies, useless on DNA. Rust's regex crate finds these alternations of
   short literals with a SIMD multi-literal search (Teddy). Rust's `7.rs`
   runs on two threads; forced to one it takes about 255 ms against Goose's
-  496.
-* **knucleotide/1-m at 2500000** (0.96): workers share no memory, so each
+  483.
+* **knucleotide/1-m at 2500000** (0.97): workers share no memory, so each
   gets a copy of the sequence, and `thread_spawn` copies a growable argument
   twice (on the spawner's data stack, then into the new thread).
 
