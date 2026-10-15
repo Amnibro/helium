@@ -3277,7 +3277,9 @@ carries its operand's term; `a * b` and `a ± b` with two moving operands,
 handled by *intervals*: where both operands have finite constant bounds the
 result gets a fresh base bounded by the four corner products or the summed
 ranges, stated only when it fits the operation's own width (release-mode
-wrapping, §6.2); and the value of a bare block or of an `InlineBlock`, its
+wrapping, §6.2), a sum also related to an operand whose partner varies
+within a small range (`i * 4 + b` for `b` in `0..4` lies in `[i * 4, i * 4 +
+3]`); and the value of a bare block or of an `InlineBlock`, its
 tail or final return, where no other return leaves the inlined body with a
 value of its own (`BlockValueTerm`). An operation's width is its operands'
 type (`OpType`), not its `exprtype`, which is the possibly wider slot the
@@ -3293,6 +3295,25 @@ and `a >> c` maps its operand's constant bounds through the shift
 (`QuotTerm`: the byte shifted right by two indexes a 64-entry one). Such
 constant bounds of a one-shot base are axioms of that base (`tmpival`),
 not facts, so they never compete for the fact cap.
+
+**Multiples and quotients.** A product by a constant `m >= 1` (`x * m`,
+`x << k`) whose operand's bounds show it fits its type, and a floor
+quotient (`x >> k` whatever the sign, a non-negative `x / m`), is a *Lin*
+base that remembers its operand term and `m` (`Flow::lins`, kept per path
+because `ShiftCore` renames an operand in place). Two Lin bases with the
+same `m` relate as their operands do (`LinRelate`): `x <= y + c` gives
+`x * m <= y * m + c * m`, and `x / m <= y / m + ceil(c / m)` for quotients,
+which is what bounds `r[2 * i + 1]` by `r.len == 2 * n` and `flags[j >> 5]`
+by `flags.len == (n + 31) >> 5` where `i < n` and `j < n`. A multiple or
+quotient of an operand base that already has one is that base, offset
+(`ScaledTerm`, `QuotTerm`), so `buf[4 * i..4 * i + 4]` is four long and
+`(y - 1) * W..y * W` ordered. A quotient is only related once its operand is
+known to be the value the machine shifted: one that cannot have wrapped, or a
+sum with a positive offset whose quotient is non-negative, since a wrapped
+`i64` sum lies near `-2^63`. A completed check or a length that bounds a
+quotient bounds its operand in turn (`QuotBack`): `resize((n + 31) >> 5)`
+puts `n` below `2^53`, which is what keeps a sieve's `i << 1` and `j += i`
+from wrapping.
 
 A term is admissible as a comparison side (`CmpAdmissible`) only if the
 machine comparison equals the mathematical one: any constant, a bare base,
@@ -3349,7 +3370,9 @@ a slice variable or through a reference to a slice (`SlotWriteKill`: every
 slice place that slot may be -- the variable, each reference to it, any
 reachable slot when the slot is unknown -- while the arrays the slices view
 keep their lengths); any other pointee write through a reference
-(`PointeeWriteKill`); a store of a value holding a length (`HoldsLen`) into
+(`PointeeWriteKill`) or store into a field, unless the value holds no length
+and no reference (a struct of scalars changes no length wherever it lands);
+a store of a value holding a length (`HoldsLen`) into
 or inside an array element, or a grow or shrink of an array inside one
 (`ElementLvalKill`: no place lies in an element, but a reference to or into
 one measures what it holds, so every such place over the storage the
@@ -3376,7 +3399,9 @@ short-circuit operand (both senses, through `!`, `&&` and `||`), an integer
 `match` arm's range (the hull of a listed arm's values and ranges), and a
 `for` header's bounds (`0 <= i < n` against the snapshots taken at loop
 entry for ranges and counts, against the re-read length for arrays and
-slices). A condition that itself changed tracked state
+slices). A `!=` alone bounds nothing, but against a side the facts already
+order it is strict: past `if xs.len == 0 { return; }` the length is at least
+one. A condition that itself changed tracked state
 -- a mutating call inside it -- adds nothing (`HasKillEffects`), since the
 comparison ran against pre-kill values; the locals the condition declares
 itself, such as the parameter of a predicate inlined into it, do not count,
@@ -3420,9 +3445,13 @@ bumped places and rebound variables; a **recording** walk that, for every
 eligible local integer variable (single-name declaration, not captured, not
 address-taken, no compound write other than `±constant`), checks that every
 write preserves `v >= 0`, that no write can wrap at the variable's width,
-and that `v <= len(P)` survives for each place `P` the variable indexes or
-bounds and that is never shrunk or re-bound in the body (growth alone never
-breaks it); and the **judging** walk, which is granted the survivors as
+and that `v <= len(P) + c` survives for each place `P` the variable indexes
+or bounds and that is never shrunk or re-bound in the body (growth alone never
+breaks it), where the declaration decides `c`: what its value needs, at least
+0 (`var j = 1` before `while j + 4 <= a.len { ...; j += 4; }` stays within
+`len + 1`, which keeps `j + 4` from wrapping), and also -1 where the value
+starts below the length, as a probe index `i = (i + 1) & mask` with
+`mask == len - 1` stays; and the **judging** walk, which is granted the survivors as
 axioms (`ge0`, `lelen`) and the wrap-free, single-direction variables as
 monotone (`mono`): each `+= c`/`-= c`/`++`/`--` moves its variable by its
 sign, and a plain assignment `v = e` (not the declaration, which starts the
@@ -4828,6 +4857,15 @@ call sites*. In practice:
   `var i = a.len - 1; while i > 0 { let p = (i - 1) / 2; ...; a[i] = a[p];
   i = p; }`, whose index only ever moves down from a proven start (std's
   `heap_push`; `test/optimizer/bce_halving_index.goose`);
+* multiples and quotients of the index against those of the length:
+  `r[2 * i + 1]` for `i < n` and `r.len == 2 * n`, `out[i * 4 + b]` for
+  `b` in `0..4` and `out.len == xs.len * 4`, a bit array's `flags[j >> 5]`
+  for `j < n` and `flags.len == (n + 31) >> 5`, and the chunk
+  `let d = buf[4 * i..4 * i + 4]`, four long, so `d[3]` needs no check
+  (`test/optimizer/bce_scaled_indices.goose`);
+* a stride loop starting above zero, `var j = 1; while j + 4 <= a.len`, and
+  an open-addressing probe `i = (i + 1) & mask` with `mask == a.len - 1`
+  once `a.len != 0` is known (`test/optimizer/bce_invariant_offsets.goose`);
 * row-major indexing with bounded counters: `src[y * W + x]` for `y < H`,
   `x < W` and `src.len == W * H` (products and two-term sums of counters with
   constant bounds), and the row-slice form `let row = src[lo..lo + W]` whose
