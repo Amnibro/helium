@@ -652,6 +652,39 @@ static uint64_t gs_divu_q(uint64_t x, uint64_t magic, uint8_t more) {
 #endif
 }
 
+/* The same for a dividend and divisor that fit in 32 bits, with a 32-bit
+   magic: x / d is the high half of a 32x32 product, which a C compiler
+   vectorizes where it keeps the 64x64 one scalar, and which needs no
+   128-bit arithmetic, so only a zero divisor gets GS_DIVU_NONE. */
+static uint32_t gs_divu32_gen(uint32_t d, uint8_t *more) {
+    int k = 31;
+    uint64_t n;
+    uint32_t m, rem;
+    if (d == 0) { *more = GS_DIVU_NONE; return 0; }
+    while (!(d >> k)) k--;
+    if (!(d & (d - 1))) { *more = (uint8_t)k; return 0; }
+    n = (uint64_t)1 << (32 + k);
+    m = (uint32_t)(n / d);
+    rem = (uint32_t)(n % d);
+    if (d - rem < ((uint32_t)1 << k)) {
+        *more = (uint8_t)k;
+    } else {
+        uint32_t twice = rem + rem;
+        m += m;
+        if (twice >= d || twice < rem) m++;
+        *more = (uint8_t)(k | GS_DIVU_ADD);
+    }
+    return m + 1;
+}
+
+static uint32_t gs_divu32_q(uint32_t x, uint32_t magic, uint8_t more) {
+    uint32_t q;
+    if (!magic) return x >> more;
+    q = (uint32_t)(((uint64_t)magic * x) >> 32);
+    if (more & GS_DIVU_ADD) return (((x - q) >> 1) + q) >> (more & GS_DIVU_SHIFT);
+    return q >> more;
+}
+
 /* `as!` float-to-int: truncate toward zero, wrap modulo 2^64 (§6.3). Defined
    the same on every platform, unlike a raw C cast of an out-of-range value.
    A value lies in the i64 range exactly when its truncation does, and there

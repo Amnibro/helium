@@ -89,16 +89,17 @@ Windows 11, clang 22, rustc 1.98 (best mean of 5 interleaved runs of 5 s):
 | benchmark | Goose | C | C++ | Rust | vs C | vs C++ | vs Rust |
 |---|---:|---:|---:|---:|---:|---:|---:|
 | fibonacci | 37.3 | 41.2 | 43.8 | 39.1 | 1.10 | 1.17 | 1.05 |
-| loops | 40.6 | 108.0 | 107.0 | 108.8 | 2.66 | 2.63 | 2.68 |
+| loops | 35.1 | 109.3 | 110.0 | 109.6 | 3.11 | 3.13 | 3.12 |
 | levenshtein | 28.2 | 51.2 | 88.8 | 37.3 | 1.82 | 3.15 | 1.32 |
 | hello-world | 11.9 | 11.4 | 11.9 | 12.3 | 0.96 | 1.01 | 1.04 |
 
-Linux (Ubuntu 24.04 in WSL), Goose and C only, one 3 s run each:
+Linux (Ubuntu 24.04 in WSL), Goose and C only, one 3 s run each (loops:
+the best of three):
 
 | benchmark | gcc 13: Goose | C | clang 20: Goose | C |
 |---|---:|---:|---:|---:|
 | fibonacci | 0.36 | 21.9 | 33.7 | 37.2 |
-| loops | 36.0 | 108.5 | 39.8 | 107.7 |
+| loops | 37.0 | 113.3 | 33.1 | 113.0 |
 | levenshtein | 32.8 | 56.3 | 26.6 | 49.4 |
 
 hello-world is level: the Goose runtime starts in about 9 µs, and 300
@@ -119,10 +120,17 @@ static function in one file), and clang does it for neither.
 
 **loops**: `j % u` divides by a value the loop does not change. Goose
 computes a libdivide-style magic number for the divisor before the loop
-and makes each `%` a multiplication, a shift and a subtraction
-(`gs_divu_gen`, `gs_divu_q`); C, C++ and Rust leave a `div` instruction in
-the loop. With `-march=native` clang vectorizes the additions around the
-64-bit multiplications, and Goose takes 29.7 ms.
+and makes each `%` a multiplication, a shift and a subtraction; C, C++ and
+Rust leave a `div` instruction in the loop. The operands are `u32`, so the
+magic number is a 32-bit one (`gs_divu32_gen`, `gs_divu32_q`): the quotient
+is the high half of a 32 by 32-bit product, where a 64-bit magic number
+takes the high half of a 64 by 64-bit one, which x86-64 has only as a
+scalar instruction. With `-march=native` clang vectorizes the whole inner
+loop, the remainder included, with AVX-512, and Goose takes 4.6 ms. With a
+64-bit magic number the same program took 44.6 ms, and 33.6 ms with
+`-march=native`, where clang vectorized only the additions around the
+multiplications. gcc 13 vectorizes neither and takes 37 to 39 ms with
+either magic number, `-march=native` or not.
 
 **levenshtein**: each cell is the minimum of three candidates, one of them
 the cell before it, which makes the row a chain of dependent minima. As

@@ -1055,16 +1055,18 @@ struct CodeGen {
     bool InStraightLoop();
     static bool CallsRecursive(Node *n);
 
-    // Divisors fixed for a loop being emitted, by DivisorKey: the C locals
+    // Divisors fixed for a loop being emitted, by DivisionKey: the C locals
     // holding the divisor's value as a u64, its gs_divu_gen magic and its
-    // shift (HoistDivisors).
-    struct DivMagic { string val, magic, more; };
+    // shift, or as a u32 and gs_divu32_gen's where `narrow` (HoistDivisors).
+    struct DivMagic { string val, magic, more; bool narrow; };
     unordered_map<string, DivMagic> divmagic;
     // The variables of the specialization being emitted that a reference is
     // made to somewhere in it (RefdLocals), for refdspec.
     set<const VarDef *> refdlocals;
     FnSpec *refdspec = nullptr;
     bool LoopDivisible(Binary *b);
+    static bool NarrowDivision(Binary *b);
+    string DivisionKey(Binary *b, const VarDef **root = nullptr, bool *path = nullptr);
     string DivisorKey(Node *n, const VarDef **root = nullptr, bool *path = nullptr);
     string DivisorValue(Node *n, string &ok);
     const set<const VarDef *> &RefdLocals();

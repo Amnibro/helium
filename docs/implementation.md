@@ -4414,10 +4414,17 @@ Ahead of the outermost loop the divisor is fixed for, `gs_divu_gen` computes
 libdivide's magic number and shift for it once (one 128-by-64-bit division),
 and each division is the high half of a product, adjusted and shifted
 (`gs_divu_q`); a remainder is the dividend less the quotient times the
-divisor. A zero divisor gets `GS_DIVU_NONE`, under which every division takes
-the plain operator and its zero check, so the abort happens where and when a
-division by zero runs; so does a divisor whose conversion would fail, which
-is computed ahead of the loop without its check (`DivisorValue`), and a C
+divisor. Operands of 32 bits or fewer (`NarrowDivision`) take a 32-bit magic
+number instead (`gs_divu32_gen`, one 64-by-32-bit division, and
+`gs_divu32_q`), of their own even where a 64-bit division by the same
+divisor shares the loop (`DivisionKey`): each division is then the high half
+of a 32-by-32-bit product, which a C compiler vectorizes, where x86-64 has
+the 64-by-64-bit one only as a scalar instruction. A loop summing `u32`
+remainders runs about seven times as fast with AVX-512. A zero divisor gets
+`GS_DIVU_NONE`, under which every division takes the plain operator and its
+zero check, so the abort happens where and when a division by zero runs; so
+does a divisor whose conversion would fail, which is computed ahead of the
+loop without its check (`DivisorValue`), and a 64-bit magic number under a C
 compiler without 128-bit products (TinyCC). The magic costs about one
 division, so a loop pays it back from its second division on.
 

@@ -667,6 +667,39 @@ static uint64_t gs_divu_q(uint64_t x, uint64_t magic, uint8_t more) {
 #endif
 }
 
+/* The same for a dividend and divisor that fit in 32 bits, with a 32-bit
+   magic: x / d is the high half of a 32x32 product, which a C compiler
+   vectorizes where it keeps the 64x64 one scalar, and which needs no
+   128-bit arithmetic, so only a zero divisor gets GS_DIVU_NONE. */
+static uint32_t gs_divu32_gen(uint32_t d, uint8_t *more) {
+    int k = 31;
+    uint64_t n;
+    uint32_t m, rem;
+    if (d == 0) { *more = GS_DIVU_NONE; return 0; }
+    while (!(d >> k)) k--;
+    if (!(d & (d - 1))) { *more = (uint8_t)k; return 0; }
+    n = (uint64_t)1 << (32 + k);
+    m = (uint32_t)(n / d);
+    rem = (uint32_t)(n % d);
+    if (d - rem < ((uint32_t)1 << k)) {
+        *more = (uint8_t)k;
+    } else {
+        uint32_t twice = rem + rem;
+        m += m;
+        if (twice >= d || twice < rem) m++;
+        *more = (uint8_t)(k | GS_DIVU_ADD);
+    }
+    return m + 1;
+}
+
+static uint32_t gs_divu32_q(uint32_t x, uint32_t magic, uint8_t more) {
+    uint32_t q;
+    if (!magic) return x >> more;
+    q = (uint32_t)(((uint64_t)magic * x) >> 32);
+    if (more & GS_DIVU_ADD) return (((x - q) >> 1) + q) >> (more & GS_DIVU_SHIFT);
+    return q >> more;
+}
+
 /* `as!` float-to-int: truncate toward zero, wrap modulo 2^64 (§6.3). Defined
    the same on every platform, unlike a raw C cast of an out-of-range value.
    A value lies in the i64 range exactly when its truncation does, and there
@@ -719,7 +752,8 @@ static uint64_t gs_f2uchk(double d, int f32, const char *file, int line) {
     return v;
 }
 #define GS_RANGE(v, lo, hi, t, f, l) gs_rangechk((v), (lo), (hi), (t), (f), (l))
-#define GS_RANGE_U(v, hi, t, f, l)   gs_rangechk_u((v), (hi), (t), (f), (l))
+)GSRT"
+R"GSRT(#define GS_RANGE_U(v, hi, t, f, l)   gs_rangechk_u((v), (hi), (t), (f), (l))
 #define GS_F2I(d, s, lo, hi, t, f, l) gs_f2ichk((d), (s), (lo), (hi), (t), (f), (l))
 #define GS_F2U(d, s, f, l)            gs_f2uchk((d), (s), (f), (l))
 
@@ -746,8 +780,7 @@ typedef struct {
 } gs_stack;
 
 /* The program defines what goose.h gives C compiled on its own (gs_stack
-)GSRT"
-R"GSRT(   here, gs_rhdr, gs_rref and gs_bld_append after the generated types), so
+   here, gs_rhdr, gs_rref and gs_bld_append after the generated types), so
    an --include header including it gets nothing more. */
 #define GOOSE_H 1
 
@@ -914,7 +947,8 @@ static int64_t gs_uleb_size(const uint8_t *p) {
     return (int64_t)(q - p) + 1;
 }
 
-/* An inline array's length prefix is one byte unless the array holds 128
+)GSRT"
+R"GSRT(/* An inline array's length prefix is one byte unless the array holds 128
    elements or more, so the two macros below are what the compiler emits for
    it: a load, a test, and the byte. The continuation is a call the caller's
    loop does not contain, and reaching it means there is a large array to
@@ -939,8 +973,7 @@ static int64_t gs_uleb_write(uint8_t *p, uint64_t v) {
     uint8_t *q = p;
     for (;;) {
         uint8_t b = v & 0x7f;
-)GSRT"
-R"GSRT(        v >>= 7;
+        v >>= 7;
         if (v) *q++ = b | 0x80; else { *q++ = b; break; }
     }
     return (int64_t)(q - p);

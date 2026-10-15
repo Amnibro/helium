@@ -137,6 +137,21 @@ inline bool CodeGen::LoopDivisible(Binary *b) {
     return rt && rt->kind == TY_INT && !DivisorKey(b->right).empty();
 }
 
+// Whether a LoopDivisible division's operands, of the left one's type, fit
+// in 32 bits, for a 32-bit magic: the high half of a 32x32 product, which a
+// C compiler vectorizes, where it keeps a 64x64 one scalar.
+inline bool CodeGen::NarrowDivision(Binary *b) {
+    return IntBits(b->left->exprtype->intstorage) <= 32;
+}
+
+// What HoistDivisors files a LoopDivisible division's magic under: its
+// divisor's DivisorKey, distinct for a NarrowDivision, which takes a 32-bit
+// magic.
+inline string CodeGen::DivisionKey(Binary *b, const VarDef **root, bool *path) {
+    auto k = DivisorKey(b->right, root, path);
+    return NarrowDivision(b) ? cat(k, " u32") : k;
+}
+
 // What a divisor a loop may fix is known by, or "" where it is none: an
 // integer variable, a field of a fixed-size struct variable (or of a field
 // of one, and so on), or an integer conversion of one of those. `root` gets
@@ -312,7 +327,7 @@ inline vector<string> CodeGen::HoistDivisors(Block *loopbody, Node *cond,
     for (auto b : divs) {
         const VarDef *root = nullptr;
         auto path = false;
-        auto key = DivisorKey(b->right, &root, &path);
+        auto key = DivisionKey(b, &root, &path);
         if (divmagic.count(key) || inner.count(root) || root->captured || root->refwrite ||
             nrvo.count(root))
             continue;
@@ -324,12 +339,15 @@ inline vector<string> CodeGen::HoistDivisors(Block *loopbody, Node *cond,
         auto ok = string("1");
         auto x = DivisorValue(b->right, ok);
         auto v = T(), m = T(), more = T();
+        auto narrow = NarrowDivision(b);
+        auto w = narrow ? "uint32_t" : "uint64_t";
+        auto gen = narrow ? "gs_divu32_gen(" : "gs_divu_gen(";
         L("uint8_t ", more, ";");
-        L("uint64_t ", v, " = (uint64_t)(", x, ");");
-        if (ok == "1") L("uint64_t ", m, " = gs_divu_gen(", v, ", &", more, ");");
-        else L("uint64_t ", m, " = (", ok, ") ? gs_divu_gen(", v, ", &", more, ") : (", more,
+        L(w, " ", v, " = (", w, ")(", x, ");");
+        if (ok == "1") L(w, " ", m, " = ", gen, v, ", &", more, ");");
+        else L(w, " ", m, " = (", ok, ") ? ", gen, v, ", &", more, ") : (", more,
                " = GS_DIVU_NONE, 0);");
-        divmagic[key] = { v, m, more };
+        divmagic[key] = { v, m, more, narrow };
         added.push_back(key);
     }
     return added;
