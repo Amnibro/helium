@@ -1053,6 +1053,7 @@ struct CodeGen {
                      vector<const VarDef *> binders = {});
     static bool StraightCode(Node *n);
     bool InStraightLoop();
+    static bool CallsRecursive(Node *n);
 
     // Divisors fixed for a loop being emitted, by DivisorKey: the C locals
     // holding the divisor's value as a u64, its gs_divu_gen magic and its

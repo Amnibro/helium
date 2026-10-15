@@ -1093,7 +1093,7 @@ inline void ForLoop::CgStmt(CodeGen &cg) {
     // the backend already knows nothing aliases, and hoisting it by hand only
     // lengthens a live range.
     auto memlen = v.len.find('*') != string::npos || v.len.find("->") != string::npos;
-    if (fixedlen && memlen) {
+    auto hoist = [&]() {
         auto nv = cg.T();
         cg.L("int64_t ", nv, " = ", v.len, ";");
         auto bv = cg.T();
@@ -1101,7 +1101,8 @@ inline void ForLoop::CgStmt(CodeGen &cg) {
         else cg.L("uint8_t *", bv, " = (uint8_t *)(", v.elems, ");");
         v.len = nv;
         v.elems = bv;
-    }
+    };
+    if (fixedlen && memlen) hoist();
     // A body that re-points a slice on the path, or rebinds a reference on it,
     // moves the walk to the elements the path leads to now, as the length read
     // again does: the next iteration takes the element at its index there. An
@@ -1185,6 +1186,7 @@ inline void ForLoop::CgStmt(CodeGen &cg) {
     }
     auto esz = cg.FixedSize(v.elem);
     auto nbinds = 0;
+    string at;   // The cursor of a pointer walk (below), if the loop is one.
     auto bind = [&]() {
         // Each copy of a body run in blocks binds the element under a name of
         // its own: an aggregate's declaration moves to the top of the
@@ -1197,7 +1199,9 @@ inline void ForLoop::CgStmt(CodeGen &cg) {
         // The start of the elements behind a varint length prefix is a
         // statement's (RawArrayView), which runs again where they can move.
         auto elems = moves ? cg.ArrayView(lv).elems : v.elems;
-        string elem = v.typedelems
+        string elem = !at.empty() ? (v.typedelems ? cat("(*", at, ")")
+                                                  : cat("(*(", cg.CT(v.elem), " *)", at, ")"))
+                      : v.typedelems
                           ? cat(elems, "[", gi, "]")
                           : cat("(*(", cg.CT(v.elem), " *)((", elems, ") + ", gi, " * ",
                                 esz, "))");
@@ -1232,6 +1236,37 @@ inline void ForLoop::CgStmt(CodeGen &cg) {
         }
     }
     setbound();
+    // A body that calls a recursive function keeps what the loop needs in
+    // callee-saved registers or spills it. With no index binder, elements
+    // that stay where they are and a count the body cannot change, a cursor
+    // walks the elements up to their end there: two values to keep rather
+    // than the elements, the length and an index, and the end spills as a
+    // value the loop only reads, where a count left would be stored back
+    // every iteration. Elsewhere the index is the shape the C compiler reads
+    // best: from a cursor clang can no longer tell the element from another
+    // one of the same array (n-body's planet from the ones after it), nor
+    // keep the other one's fields in registers. A fixed array's length is a
+    // constant and keeps the index too. An empty sequence's elements may be
+    // NULL, and NULL + 0 is undefined in C, so the end is only computed for a
+    // sequence that has some. The test is `<`: with `!=`, clang loses the
+    // bound it knows on a short loop's trip count and no longer unrolls it.
+    if (!idxdef && fixedlen && !fixedarr && !exitlen && CodeGen::CallsRecursive(body)) {
+        if (!memlen) hoist();
+        at = v.elems;
+        auto end = cg.T();
+        cg.L("if (", v.len, " > 0) {");
+        cg.ind++;
+        cg.GenLoopBody(bind, body, d,
+            v.typedelems
+                ? cat("for (", cg.CT(v.elem), " *", end, " = ", at, " + ", v.len, "; ", at,
+                      " < ", end, "; ", at, "++) {")
+                : cat("for (uint8_t *", end, " = ", at, " + ", v.len, " * ", esz, "; ", at,
+                      " < ", end, "; ", at, " += ", esz, ") {"),
+            nullptr, 0, { vdef, idxdef });
+        cg.ind--;
+        cg.L("}");
+        return;
+    }
     cg.GenLoopBody([&]() {
         testlen();
         bind();

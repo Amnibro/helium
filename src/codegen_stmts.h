@@ -100,6 +100,21 @@ inline bool CodeGen::StraightCode(Node *n) {
     return ok;
 }
 
+// Whether n, where it runs, calls a recursive function: a call the C compiler
+// cannot inline away, across which everything live is in a callee-saved
+// register or spilled.
+inline bool CodeGen::CallsRecursive(Node *n) {
+    if (!n) return false;
+    if (auto c = Is<Call>(n)) {
+        if (c->spec && c->spec->sf && c->spec->sf->isrec) return true;
+        for (auto s : c->dispatch)
+            if (s && s->sf && s->sf->isrec) return true;
+    }
+    auto found = false;
+    RunChildren(n, [&](Node *ch) { found = found || CallsRecursive(ch); });
+    return found;
+}
+
 // Whether the code being emitted is in a loop StraightCode accepts, the
 // innermost one around it in this function.
 inline bool CodeGen::InStraightLoop() {
