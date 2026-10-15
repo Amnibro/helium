@@ -3701,7 +3701,12 @@ Layout details needed for byte/C compatibility (`FixedSize`, `LayoutFields`,
   (`FoBytes`): a literal builds it so, anything else as a C frame object
   whose elements land behind room left for the fixed fields
   (`GenFoAsBytes`), and a whole read loads it into one that views the
-  elements in place (`FoView`).
+  elements in place (`FoView`). The base is a `uint8_t *`, so an element
+  is generally reached at a byte offset, `*(T *)(base + i * size)`; a
+  number of 2, 4 or 8 bytes is indexed through a pointer to its type,
+  `((T *)base)[i]` (`IndexLoc`), which keeps the scale in the address: as a
+  byte offset clang folds `(j >> 5) * 4` into `(j >> 3) & -4` and loses the
+  scaled addressing mode (nsieve's bit array, 150 against 138 ms).
 * **Fat references** (`gs_rref { hdr, stk }`) are references to
   resizable-class values: the header address plus the stack, so a callee can
   push through them. A reference with `reusable`-pool provenance is a

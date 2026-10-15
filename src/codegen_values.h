@@ -579,8 +579,17 @@ inline CodeGen::Loc CodeGen::IndexLoc(Loc lv, Node *idxnode, Line ln, bool nobc)
         return r;
     }
     assert(IsFix(v.elem));   // Variable elements are never indexed (TC).
-    return BytesLoc(cat("(", v.elems, " + ", ix, " * ", FixedSize(v.elem), ")"), v.elem,
-                    lv);
+    // A number of 2, 4 or 8 bytes is indexed through a pointer to its type,
+    // which keeps the index scaled in the address. As a byte offset the C
+    // compiler folds the scale into the index's own shift (`(j >> 5) * 4`
+    // becomes `(j >> 3) & -4`) and loses the scaled addressing mode.
+    auto esz = FixedSize(v.elem);
+    if ((v.elem->kind == TY_INT || v.elem->kind == TY_FLT) && (esz == 2 || esz == 4 || esz == 8)) {
+        auto r = BytesLoc(v.elems, v.elem, lv);
+        r.s = cat("(((", CT(v.elem), " *)(", v.elems, "))[", ix, "])");
+        return r;
+    }
+    return BytesLoc(cat("(", v.elems, " + ", ix, " * ", esz, ")"), v.elem, lv);
 }
 
 // A path whose address takes no check and calls nothing: a variable, or a
