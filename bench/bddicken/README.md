@@ -27,11 +27,15 @@ repository asks.
 The repository also needs these entries in `languages.sh`:
 
 ```bash
-compile 'Goose' 'goose' 'goose -O2 --standalone -o goose/run.c goose/run.goose && gcc -O3 goose/run.c -o goose/run -lm -pthread'
+compile 'Goose' 'goose' 'goose -O2 --standalone -o goose/run.c goose/run.goose && clang -O3 goose/run.c -o goose/run -lm -pthread'
 run 'Goose' './goose/run' './goose/run'
 ```
 
-and `goose/run` and `goose/run.c` in its `.gitignore` and `clean.sh`.
+and `goose/run` and `goose/run.c` in its `.gitignore` and `clean.sh`. The
+C is compiled with clang rather than the gcc the C version uses: gcc
+removes most of fibonacci's recursive calls from Goose's C (see below),
+which the rules allow but which would make that result an outlier no other
+language shows.
 
 ## The implementations
 
