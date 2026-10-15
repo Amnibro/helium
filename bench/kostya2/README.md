@@ -201,15 +201,15 @@ about the code.
 
 ## In the suite itself
 
-The files go where the suite keeps each language's tests (`brainfuck/bf.goose`,
-`base64/test.goose`, `json/test.goose`, `json/test_dom.goose`,
-`matmul/matmul.goose`, `primes/primes.goose`), `common/notify.h` to
-`common/goose/notify.h`, and the suite needs:
+The `add-goose` branch of the suite adds the tests where it keeps each
+language's (`brainfuck/bf.goose`, `base64/test.goose`, `json/test.goose`,
+`json/test_dom.goose`, `matmul/matmul.goose`, `primes/primes.goose`), a
+POSIX-only `common/goose/notify.h` over `common/libnotify`, and:
 
-* `common/commands.mk`:
+* `common/commands.mk`, where `-w` keeps the generated C's unused runtime
+  helpers and temporaries out of the build log:
   ```make
-  GOOSE_BUILD = goose -O2 --standalone --include ../common/goose/notify.h -o $@.c $< \
-      && clang $(CLANG_FLAGS) -std=c23 -o $@ $@.c $(LIBNOTIFY_FLAGS) -lm -pthread
+  GOOSE_BUILD =		goose -O2 --standalone --include notify.h -o $@.c $^ && clang $(CLANG_FLAGS) -w -std=c23 -I../common/goose -o $@ $@.c $(LIBNOTIFY_FLAGS) -lm -pthread
   ```
 * in each test's `Makefile`, its binary in `executables` and a rule, for
   example in `brainfuck/Makefile`:
@@ -217,19 +217,19 @@ The files go where the suite keeps each language's tests (`brainfuck/bf.goose`,
   target/bin_goose: bf.goose | target libnotify
   	$(GOOSE_BUILD)
   ```
-  (`target/json_goose` from `test.goose` and `target/json_dom_goose` from
-  `test_dom.goose`, and so on.)
-* `docker/Dockerfile`, Goose built from source:
+  (`target/base64_goose`, `target/json_goose` and `target/json_dom_goose`,
+  `target/matmul_goose`, `target/primes_goose` likewise).
+* `docker/Dockerfile`, Goose built from source at a commit on GitHub:
   ```dockerfile
   # https://github.com/aardappel/goose
   ARG GOOSE=<a goose commit>
-  RUN git clone https://github.com/aardappel/goose /opt/goose \
-      && cd /opt/goose && git checkout $GOOSE \
-      && cmake -B build -DCMAKE_BUILD_TYPE=Release -DGOOSE_LIBTCC=OFF \
-      && cmake --build build --target goose -j \
-      && ln -s /opt/goose/build/goose /usr/local/bin/goose
+  RUN git clone -q https://github.com/aardappel/goose \
+      && git -C goose checkout -q $GOOSE \
+      && CXX=clang++ cmake -S goose -B goose/build -DCMAKE_BUILD_TYPE=Release -DGOOSE_LIBTCC=OFF \
+      && cmake --build goose/build --target goose -j
+  ENV PATH="/root/bin/goose/build/:${PATH}"
   ```
 * `docker/versions.rb`:
   ```ruby
-  'Goose' => -> { `git -C /opt/goose log -1 --format='%h %cs'` },
+  'Goose' => -> { `git -C /root/bin/goose log -1 --format='%h %cs'` },
   ```
