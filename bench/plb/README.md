@@ -128,9 +128,8 @@ With AVX-512 allowed, the `simd fn` programs go further: nbody/2 79.7 ms at
   **/2** counts with the stdlib `dictionary`.
 * **lru/1** uses the stdlib `dictionary`; **/2** a table made for the cache.
 * **json-serde** reads into typed records with the stdlib `json` reader and
-  writes with its writer, but converts numbers itself: nearly every number in
-  canada.json takes the stdlib's exact slow paths, which take the parse from
-  18 to 112 ms and the writing from 37 to 421 ms.
+  writes with its writer, numbers included, but for the integral values the
+  Rust programs' `MyF64` writes as integers.
 * **pidigits**, **edigits** and **secp256k1** carry their own big-integer
   arithmetic on 64-bit limbs: the spigot's products and sums fused into one
   pass each (GMP's addmul kind), Toom-3 and Karatsuba multiplication and
@@ -206,9 +205,6 @@ In the compiler, runtime and library, while writing these programs:
   element (`var a: f64[8]; for l in 8 { a[l] = 1.0; } return a;`).
 * **No `bool` to integer cast**, and `x as! i64 & mask` parses `i64 &` as a
   reference type, with an error that does not say so.
-* **json** number conversion: 17-digit inputs take the big-integer path and
-  16-17-digit shortest forms take C formatting and exact re-reads; json-serde
-  converts numbers itself instead.
 * **regex** has no multi-literal search, and its prefilter's byte
   frequencies suit English text only.
 * **dictionary** grows at 2/3 load with 16-byte slots, which costs miss-heavy

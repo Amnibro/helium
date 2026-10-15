@@ -4,12 +4,6 @@
 // polygon is a run of rings, a ring a run of points, and a document a run of
 // features, each run a start and a count in the arena below it. Strings are
 // views of the text, or of the decoded text for those that held escapes.
-//
-// Numbers have conversions of their own here, since nearly every number in
-// canada.json takes json's exact slow paths: 17 significant digits, past
-// what its reader converts with one division, and a shortest form of 16 or
-// 17 digits, past what its writer finds with a scaling. Both hand anything
-// outside their own fast paths back to json.
 
 import std;
 import os;
@@ -23,275 +17,15 @@ struct GeoData { kind: const u8[:], features: Run }
 
 // --- numbers --------------------------------------------------------------------
 
-let POW10: f64[23] = [1e0, 1e1, 1e2, 1e3, 1e4, 1e5, 1e6, 1e7, 1e8, 1e9, 1e10, 1e11,
-                      1e12, 1e13, 1e14, 1e15, 1e16, 1e17, 1e18, 1e19, 1e20, 1e21, 1e22];
-
-// The number at the cursor, correctly rounded. A plain decimal with at most
-// 15 digits before its point and 15 after is i + f / 10^k, both parts exact
-// integers in a double, so f / 10^k is rounded once; adding i rounds again,
-// which gives the correctly rounded sum unless the sum lies within an ulp
-// of f of a point halfway between two doubles. Rounding is monotonic, so if
-// the sums with f nudged an ulp down and up round alike, that is the
-// answer. Anything else goes to json's exact reader.
-fn read_f64(r: json::Reader&) -> f64 {
-    let t = r.text;
-    let at = json::skip_space(t, r.pos);
-    var p = at;
-    var neg = false;
-    if p < t.len && t[p] == '-' { neg = true; p++; }
-    let int_start = p;
-    var i: u64 = 0;
-    while p < t.len && t[p] >= '0' && t[p] <= '9' {
-        i = i * 10 + (t[p] - '0');
-        p++;
-    }
-    let int_digits = p - int_start;
-    var f: u64 = 0;
-    var k = 0;
-    if p < t.len && t[p] == '.' {
-        p++;
-        let frac_start = p;
-        while p < t.len && t[p] >= '0' && t[p] <= '9' {
-            f = f * 10 + (t[p] - '0');
-            p++;
-        }
-        k = p - frac_start;
-    }
-    guard int_digits > 0 && int_digits <= 15 && (int_digits == 1 || t[int_start] != '0') && k <= 15
-          && (k > 0 || p == int_start + int_digits)
-          && !(p < t.len && (t[p] == 'e' || t[p] == 'E' || t[p] == '.')) else {
-        r.pos = at;
-        return json::read_number(r);
-    }
-    var v: f64 = i;
-    if k > 0 {
-        let q = f / POW10[k];
-        if i == 0 {
-            v = q;
-        } else {
-            let lo = v + q * 0.9999999999999998;
-            let hi = v + q * 1.0000000000000002;
-            guard lo == hi else {
-                r.pos = at;
-                return json::read_number(r);
-            }
-            v = lo;
-        }
-    }
-    r.pos = p;
-    return if neg { -v } else { v };
-}
-
-let POW10_INT: u64[20] = [1, 10, 100, 1000, 10000, 100000, 1000000, 10000000, 100000000, 1000000000,
-                          10000000000, 100000000000, 1000000000000, 10000000000000, 100000000000000,
-                          1000000000000000, 10000000000000000, 100000000000000000, 1000000000000000000,
-                          10000000000000000000];
-
-// The bits of a double.
-fn bits_of(x: f64) -> u64 {
-    let a: f64[1] = [x];
-    let b = bytes_of(a);
-    return b[0] | (b[1] as u64) << 8 | (b[2] as u64) << 16 | (b[3] as u64) << 24 |
-        (b[4] as u64) << 32 | (b[5] as u64) << 40 | (b[6] as u64) << 48 | (b[7] as u64) << 56;
-}
-
-// a * b in 128 bits: the high and the low half.
-fn mul_wide(a: u64, b: u64) -> u64, u64 {
-    let a0 = a & 0xFFFFFFFF;
-    let a1 = a >> 32;
-    let b0 = b & 0xFFFFFFFF;
-    let b1 = b >> 32;
-    let p00 = a0 * b0;
-    let p01 = a0 * b1;
-    let p10 = a1 * b0;
-    let mid = (p00 >> 32) + (p01 & 0xFFFFFFFF) + (p10 & 0xFFFFFFFF);
-    return a1 * b1 + (p01 >> 32) + (p10 >> 32) + (mid >> 32), (mid << 32) | (p00 & 0xFFFFFFFF);
-}
-
-let DIGIT_PAIRS = "00010203040506070809101112131415161718192021222324252627282930313233343536373839404142434445464748495051525354555657585960616263646566676869707172737475767778798081828384858687888990919293949596979899";
-
-// v, below 10^8, as 8 digits into out[at..at + 8], all at once: four
-// lanes of the 64-bit word split their numbers by multiplying by
-// reciprocals until each byte holds one digit.
-fn put8(out: u8[:], at: i64, v: u64) {
-    let merged = (v / 10000) | ((v % 10000) << 32);
-    let top = ((merged * 10486) >> 20) & 0x0000007F0000007F;
-    let hundreds = ((merged - 100 * top) << 16) + top;
-    var tens = ((hundreds * 103) >> 10) & 0x000F000F000F000F;
-    tens += (hundreds - 10 * tens) << 8;
-    let w = tens | 0x3030303030303030;
-    let o = out[at..at + 8];
-    for j in 8 { o[j] = (w >> (8 * j)) as! u8; }
-}
-
-// v, below 10^n, as n digits into out[0..n]: eight at a time from the
-// right, and what is left above them two at a time.
-fn put_digits(out: u8[:], v: u64, n: i64) {
-    assert(n >= 1 && n <= out.len);
-    var x = v;
-    var i = n;
-    while i >= 8 {
-        put8(out, i - 8, x % 100000000);
-        x /= 100000000;
-        i -= 8;
-    }
-    while i >= 2 {
-        let r = x % 100;
-        x /= 100;
-        i -= 2;
-        out[i] = DIGIT_PAIRS[2 * r];
-        out[i + 1] = DIGIT_PAIRS[2 * r + 1];
-    }
-    if i == 1 { out[0] = ('0' + x) as! u8; }
-}
-
-// The shortest decimal that reads back as x, laid out as serde_json's ryu
-// lays it out (json::format_number's rules), for x > 0 and not integral.
-// This is ryu's digit loop, run on exact values instead of ryu's tables:
-// with x = m * 2^-sh and k chosen to give x * 10^k 18 or 19 digits, x * 10^k
-// and the bounds of the interval that reads back as x, half an ulp either
-// side (a quarter below a power of two), are m * 10^k and 10^k / 2 apart in
-// units of 2^-sh: 128-bit integers, which shifted right give ryu's vr, vp
-// and vm, and the bits shifted out whether each is exact. x below 1/128,
-// where that 10^k is past u64, goes to json::format_number.
-fn format_positive(out: u8[>..]&, x: f64) {
-    let b = bits_of(x);
-    let be = ((b >> 52) & 0x7FF) as! i64;
-    let frac = b & 0xFFFFFFFFFFFFF;
-    let sh = 1075 - be;
-    let k = 17 - (((be - 1023) * 78913) >> 18);     // 17 - floor(log10(2^(be - 1023)))
-    guard be >= 1016 && sh >= 1 && k >= 0 && k <= 19 else { json::format_number(out, x); return; }
-    let m = frac | 0x10000000000000;
-    let even = (m & 1) == 0;
-    let p = POW10_INT[k];
-    let nh, nl = mul_wide(m, p);
-    // 4x, and the upper and lower bounds, in units of 2^-(sh + 2).
-    let xh = (nh << 2) | (nl >> 62);
-    let xl = nl << 2;
-    var uh = xh;
-    var ul = xl;
-    for i in 2 {
-        ul += p;
-        if ul < p { uh++; }
-    }
-    var lh = xh;
-    var ll = xl;
-    for i in (if frac != 0 { 2 } else { 1 }) {
-        if ll < p { lh--; }
-        ll -= p;
-    }
-    let t = sh + 2;                     // < 64, since be >= 1016
-    let low = ((1 as u64) << t) - 1;
-    var vr = (xh << (64 - t)) | (xl >> t);
-    var vp = (uh << (64 - t)) | (ul >> t);
-    var vm = (lh << (64 - t)) | (ll >> t);
-    let digits0 = if vr >= 1000000000000000000 { 19 } else { 18 };
-    var vr_exact = (xl & low) == 0;
-    var vm_exact = even && (ll & low) == 0;
-    if !even && (ul & low) == 0 { vp--; }
-    var removed = 0;
-    var c: u64 = 0;
-    if !vr_exact && !vm_exact {
-        // Nearly always neither x * 10^k nor an included lower bound is
-        // exact, and the digits dropped only round: ryu's common case, two
-        // digits a step first, then one.
-        var round_up = false;
-        let vp100 = vp / 100;
-        let vm100 = vm / 100;
-        if vp100 > vm100 {
-            let vr100 = vr / 100;
-            round_up = vr - 100 * vr100 >= 50;
-            vr = vr100;
-            vp = vp100;
-            vm = vm100;
-            removed = 2;
-        }
-        loop {
-            let vp10 = vp / 10;
-            let vm10 = vm / 10;
-            if vp10 <= vm10 { break; }
-            let vr10 = vr / 10;
-            round_up = vr - 10 * vr10 >= 5;
-            vr = vr10;
-            vp = vp10;
-            vm = vm10;
-            removed++;
-        }
-        c = vr + (if vr == vm || round_up { 1 } else { 0 });
-    } else {
-        var last: u64 = 0;
-        loop {
-            let vp10 = vp / 10;
-            let vm10 = vm / 10;
-            if vp10 <= vm10 { break; }
-            let vr10 = vr / 10;
-            vm_exact = vm_exact && vm - 10 * vm10 == 0;
-            vr_exact = vr_exact && last == 0;
-            last = vr - 10 * vr10;
-            vr = vr10;
-            vp = vp10;
-            vm = vm10;
-            removed++;
-        }
-        if vm_exact {
-            loop {
-                let vm10 = vm / 10;
-                if vm - 10 * vm10 != 0 { break; }
-                let vr10 = vr / 10;
-                vr_exact = vr_exact && last == 0;
-                last = vr - 10 * vr10;
-                vr = vr10;
-                vp /= 10;
-                vm = vm10;
-                removed++;
-            }
-        }
-        if vr_exact && last == 5 && vr % 2 == 0 { last = 4; }
-        c = vr + (if (vr == vm && !vm_exact) || last >= 5 { 1 } else { 0 });
-    }
-    var len = digits0 - removed;
-    if c >= POW10_INT[len] { len++; }
-    // The digits go one place in, so that a point can go in front of the
-    // fraction by moving the integer digits, nearly always one to three, out.
-    var text: u8[21] = [0; 21];
-    put_digits(text[1..], c, len);
-    let point = len + removed - k;
-    while len > 1 && text[len] == '0' { len--; }
-    if point > 0 && point < len && point <= 16 {
-        for i in point { text[i] = text[i + 1]; }
-        text[point] = '.';
-        out.append(text[..len + 1]);
-        return;
-    }
-    let d = text[1..len + 1];
-    if point >= len && point <= 16 {
-        out.append(d);
-        for i in point - len { out.push('0'); }
-        out.append(".0");
-    } else if point > -5 && point <= 0 {
-        out.append("0.");
-        for i in -point { out.push('0'); }
-        out.append(d);
-    } else {
-        out.push(d[0]);
-        if len > 1 {
-            out.push('.');
-            out.append(d[1..]);
-        }
-        out.push('e');
-        format(out, point - 1);
-    }
-}
-
 // As the Rust programs' MyF64 writes a number: integral values as an i64
-// (saturated, as Rust's `as` is), others in their shortest form.
+// (saturated, as Rust's `as` is), others as json writes them.
 fn format_num(out: u8[>..]&, x: f64) {
     if x != x || x - x != 0.0 { json::format_number(out, x); return; }
     if x >= 9223372036854775807.0 { format(out, 9223372036854775807); return; }
     if x <= -9223372036854775808.0 { format(out, -9223372036854775807 - 1); return; }
     let i = x as! i64;
     if i == x { format(out, i); return; }
-    if x < 0.0 { out.push('-'); format_positive(out, -x); } else { format_positive(out, x); }
+    json::format_number(out, x);
 }
 
 // --- MD5 (RFC 1321) ---------------------------------------------------------------
@@ -409,7 +143,7 @@ fn main() {
         json::each_element(r) {
             var k = 0;
             json::each_element(r) {
-                if k < 2 { points.push(read_f64(r)); } else { json::skip(r); }
+                if k < 2 { points.push(json::read_number(r)); } else { json::skip(r); }
                 k++;
             };
             if k != 2 { abort("a point is two numbers"); }

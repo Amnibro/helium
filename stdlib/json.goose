@@ -69,54 +69,80 @@ let DIGIT_PAIRS = "0001020304050607080910111213141516171819202122232425262728293
 let POW10: f64[23] = [1e0, 1e1, 1e2, 1e3, 1e4, 1e5, 1e6, 1e7, 1e8, 1e9, 1e10, 1e11,
                       1e12, 1e13, 1e14, 1e15, 1e16, 1e17, 1e18, 1e19, 1e20, 1e21, 1e22];
 
+// The powers of ten and of five that fit a u64.
+let POW10_U64: u64[20] = [1, 10, 100, 1000, 10000, 100000, 1000000, 10000000, 100000000, 1000000000,
+                          10000000000, 100000000000, 1000000000000, 10000000000000, 100000000000000,
+                          1000000000000000, 10000000000000000, 100000000000000000, 1000000000000000000,
+                          10000000000000000000];
+let POW5: u64[28] = [1, 5, 25, 125, 625, 3125, 15625, 78125, 390625, 1953125, 9765625, 48828125,
+                     244140625, 1220703125, 6103515625, 30517578125, 152587890625, 762939453125,
+                     3814697265625, 19073486328125, 95367431640625, 476837158203125, 2384185791015625,
+                     11920928955078125, 59604644775390625, 298023223876953125, 1490116119384765625,
+                     7450580596923828125];
+
+// The bits of a double.
+fn bits_of(x: f64) -> u64 {
+    let a: f64[1] = [x];
+    let b = bytes_of(a);
+    return b[0] | (b[1] as u64) << 8 | (b[2] as u64) << 16 | (b[3] as u64) << 24 |
+        (b[4] as u64) << 32 | (b[5] as u64) << 40 | (b[6] as u64) << 48 | (b[7] as u64) << 56;
+}
+
+// a * b in 128 bits: the high and the low half.
+fn mul_wide(a: u64, b: u64) -> u64, u64 {
+    let a0 = a & 0xFFFFFFFF;
+    let a1 = a >> 32;
+    let b0 = b & 0xFFFFFFFF;
+    let b1 = b >> 32;
+    let p00 = a0 * b0;
+    let p01 = a0 * b1;
+    let p10 = a1 * b0;
+    let mid = (p00 >> 32) + (p01 & 0xFFFFFFFF) + (p10 & 0xFFFFFFFF);
+    return a1 * b1 + (p01 >> 32) + (p10 >> 32) + (mid >> 32), (mid << 32) | (p00 & 0xFFFFFFFF);
+}
+
 // v as a JSON number: the fewest significant digits that read back as v,
 // laid out as serde_json's ryu lays them out: 0.5, 1.0, 123.25, 1e-7,
 // 1.5e300, 0.30000000000000004. JSON has no NaN or infinity, so those are
 // written as null, as serde_json writes them.
 fn format_number(out: u8[>..]&, v: f64) {
+    var text: u8[21] = [0; 21];
+    let len, point = ryu_digits(v, text[1..]);
+    guard len > 0 else { format_other(out, v); return; }
+    if v < 0.0 { out.push('-'); }
+    lay_out(out, text, len, point);
+}
+
+// format_number for v outside ryu_digits' range. It is called from a
+// guard's else only, which keeps its fallbacks, big and seldom taken, out
+// of line instead of in format_number's fast path.
+fn format_other(out: u8[>..]&, v: f64) {
     if v != v || v - v != 0.0 { out.append("null"); return; }
     if v == 0.0 { out.append(if 1.0 / v < 0.0 { "-0.0" } else { "0.0" }); return; }
-    var x = v;
-    if x < 0.0 { out.push('-'); x = -x; }
-    // A double whose shortest form has at most 15 significant digits, as
-    // most have, is x rounded to 15 digits: above the subnormals the
-    // 15-digit decimals are further apart than x's neighbours, so at most
-    // one of them reads back as x, the nearest. With x * 10^s scaled into
-    // [10^14, 10^15) by an exact power of ten, that decimal is the nearest
-    // integer n, and it reads back as x exactly when n / 10^s, one
-    // correctly rounded division, is x. shortest_digits handles the rest.
-    var s = 15;
-    var p = x * 1e15;
-    while p < 1e14 && s < 22 { s++; p = x * POW10[s]; }
-    while p >= 1e15 && s > -22 { s--; p = if s >= 0 { x * POW10[s] } else { x / POW10[-s] }; }
-    var n: u64 = 0;
-    if p >= 1e14 && p < 1e15 {
-        n = (p + 0.5) as! u64;
-        if n == 1000000000000000 { n = 100000000000000; s--; }
-        let back = if s >= 0 { n / POW10[s] } else { n * POW10[-s] };
-        if back != x { n = 0; }
+    var text: u8[21] = [0; 21];
+    let len, point = general_digits(abs(v), text[1..18]);
+    if v < 0.0 { out.push('-'); }
+    lay_out(out, text, len, point);
+}
+
+// The number 0.d1 d2 ... dlen * 10^point as format_number writes it, the
+// digits in text[1..len + 1]: one place in, so that a point can go in front
+// of the fraction by moving the digits before it, nearly always one to
+// three, out.
+inline fn lay_out(out: u8[>..]&, text: u8[21]&, digits: i64, point: i64) {
+    var len = digits;
+    while text[len] == '0' { len--; }
+    if point > 0 && point < len {
+        for i in point { text[i] = text[i + 1]; }
+        text[point] = '.';
+        out.append(text[..len + 1]);
+        return;
     }
-    // x = 0.d1 d2 ... dlen * 10^point
-    var digits: u8[17] = [0; 17];
-    var len = 15;
-    var point = 15 - s;
-    if n > 0 {
-        put_digits(digits[..15], n);
-    } else {
-        let l, q = shortest_digits(x, digits);
-        len = l;
-        point = q;
-    }
-    while digits[len - 1] == '0' { len--; }
-    let d = digits[..len];
+    let d = text[1..len + 1];
     if point >= len && point <= 16 {
         out.append(d);
         for i in point - len { out.push('0'); }
         out.append(".0");
-    } else if point > 0 && point <= 16 {
-        out.append(d[..point]);
-        out.push('.');
-        out.append(d[point..]);
     } else if point > -5 && point <= 0 {
         out.append("0.");
         for i in -point { out.push('0'); }
@@ -132,11 +158,152 @@ fn format_number(out: u8[>..]&, v: f64) {
     }
 }
 
-// The decimal digits of v, below 10^out.len, zero-padded to fill out, two at
-// a time.
-fn put_digits(out: u8[:], v: u64) {
+// The digits of the shortest form of |x| into out, with their count and
+// the power of ten they are a fraction of, as format_number takes them; a
+// count of 0 for |x| outside about [1e-10, 2^51], NaN and the infinities
+// included, which format_number handles otherwise. This is ryu's digit
+// loop, run on exact values instead of ryu's tables: with |x| = m * 2^-sh
+// and k chosen to give |x| * 10^k 18 or 19 digits, |x| * 10^k and the
+// bounds of the interval that reads back as x, half an ulp either side (a
+// quarter below a power of two), are 4m * 5^k and 2 * 5^k apart in units of
+// 2^(k - sh - 2): 128-bit integers, which shifted right give ryu's vr, vp
+// and vm, and the bits shifted out whether each is exact. The range is where
+// 5^k fits a u64 and the shift is within one.
+inline fn ryu_digits(x: f64, out: u8[:]) -> i64, i64 {
+    let b = bits_of(x);
+    let be = ((b >> 52) & 0x7FF) as! i64;
+    let frac = b & 0xFFFFFFFFFFFFF;
+    let k = 17 - (((be - 1023) * 78913) >> 18);     // 17 - floor(log10(2^(be - 1023)))
+    let t = 1077 - be - k;                          // sh + 2 - k, sh = 1075 - be
+    guard k >= 0 && k <= 27 && t >= 1 && t <= 63 else { return 0, 0; }
+    let m = frac | 0x10000000000000;
+    let even = (m & 1) == 0;
+    let p = POW5[k];
+    let nh, nl = mul_wide(m, p);
+    // 4x, and the upper and lower bounds.
+    let xh = (nh << 2) | (nl >> 62);
+    let xl = nl << 2;
+    var uh = xh;
+    var ul = xl;
+    for i in 2 {
+        ul += p;
+        if ul < p { uh++; }
+    }
+    var lh = xh;
+    var ll = xl;
+    for i in (if frac != 0 { 2 } else { 1 }) {
+        if ll < p { lh--; }
+        ll -= p;
+    }
+    let low = ((1 as u64) << t) - 1;
+    var vr = (xh << (64 - t)) | (xl >> t);
+    var vp = (uh << (64 - t)) | (ul >> t);
+    var vm = (lh << (64 - t)) | (ll >> t);
+    let digits0 = if vr >= 1000000000000000000 { 19 } else { 18 };
+    var vr_exact = (xl & low) == 0;
+    var vm_exact = even && (ll & low) == 0;
+    if !even && (ul & low) == 0 { vp--; }
+    var removed = 0;
+    var c: u64 = 0;
+    if !vr_exact && !vm_exact {
+        // Nearly always neither x * 10^k nor an included lower bound is
+        // exact, and the digits dropped only round: ryu's common case, two
+        // digits a step first, then one.
+        var round_up = false;
+        let vp100 = vp / 100;
+        let vm100 = vm / 100;
+        if vp100 > vm100 {
+            let vr100 = vr / 100;
+            round_up = vr - 100 * vr100 >= 50;
+            vr = vr100;
+            vp = vp100;
+            vm = vm100;
+            removed = 2;
+        }
+        loop {
+            let vp10 = vp / 10;
+            let vm10 = vm / 10;
+            if vp10 <= vm10 { break; }
+            let vr10 = vr / 10;
+            round_up = vr - 10 * vr10 >= 5;
+            vr = vr10;
+            vp = vp10;
+            vm = vm10;
+            removed++;
+        }
+        c = vr + (if vr == vm || round_up { 1 } else { 0 });
+    } else {
+        var last: u64 = 0;
+        loop {
+            let vp10 = vp / 10;
+            let vm10 = vm / 10;
+            if vp10 <= vm10 { break; }
+            let vr10 = vr / 10;
+            vm_exact = vm_exact && vm - 10 * vm10 == 0;
+            vr_exact = vr_exact && last == 0;
+            last = vr - 10 * vr10;
+            vr = vr10;
+            vp = vp10;
+            vm = vm10;
+            removed++;
+        }
+        if vm_exact {
+            loop {
+                let vm10 = vm / 10;
+                if vm - 10 * vm10 != 0 { break; }
+                let vr10 = vr / 10;
+                vr_exact = vr_exact && last == 0;
+                last = vr - 10 * vr10;
+                vr = vr10;
+                vp /= 10;
+                vm = vm10;
+                removed++;
+            }
+        }
+        if vr_exact && last == 5 && vr % 2 == 0 { last = 4; }
+        c = vr + (if (vr == vm && !vm_exact) || last >= 5 { 1 } else { 0 });
+    }
+    var len = digits0 - removed;
+    if c >= POW10_U64[len] { len++; }
+    put_digits(out[..len], c);
+    return len, len + removed - k;
+}
+
+// The digits of the shortest form of x > 0 outside ryu_digits' range, as
+// it gives them. A double whose shortest form has at most 15 significant
+// digits, as most have, is x rounded to 15 digits: above the subnormals the
+// 15-digit decimals are further apart than x's neighbours, so at most one
+// of them reads back as x, the nearest. With x * 10^s scaled into [10^14,
+// 10^15) by an exact power of ten, that decimal is the nearest integer n,
+// and it reads back as x exactly when n / 10^s, one correctly rounded
+// division, is x. shortest_digits handles the rest.
+fn general_digits(x: f64, out: u8[:]) -> i64, i64 {
+    var s = 15;
+    var p = x * 1e15;
+    while p < 1e14 && s < 22 { s++; p = x * POW10[s]; }
+    while p >= 1e15 && s > -22 { s--; p = if s >= 0 { x * POW10[s] } else { x / POW10[-s] }; }
+    if p >= 1e14 && p < 1e15 {
+        var n = (p + 0.5) as! u64;
+        if n == 1000000000000000 { n = 100000000000000; s--; }
+        let back = if s >= 0 { n / POW10[s] } else { n * POW10[-s] };
+        if back == x {
+            put_digits(out[..15], n);
+            return 15, 15 - s;
+        }
+    }
+    return shortest_digits(x, out);
+}
+
+// The decimal digits of v, below 10^out.len, zero-padded to fill out: eight
+// at a time from the right, and what is left above them two at a time.
+inline fn put_digits(out: u8[:], v: u64) {
     var x = v;
     var i = out.len;
+    while i >= 8 {
+        put8(out, i - 8, x % 100000000);
+        x /= 100000000;
+        i -= 8;
+    }
     while i >= 2 {
         let r = x % 100;
         x /= 100;
@@ -147,7 +314,21 @@ fn put_digits(out: u8[:], v: u64) {
     if i == 1 { out[0] = ('0' + x) as! u8; }
 }
 
-// The rest of format_number: the digits of the shortest form of x > 0, into
+// v, below 10^8, as 8 digits into out[at..at + 8], all at once: four lanes
+// of the 64-bit word split their numbers by multiplying by reciprocals until
+// each byte holds one digit.
+fn put8(out: u8[:], at: i64, v: u64) {
+    let merged = (v / 10000) | ((v % 10000) << 32);
+    let top = ((merged * 10486) >> 20) & 0x0000007F0000007F;
+    let hundreds = ((merged - 100 * top) << 16) + top;
+    var tens = ((hundreds * 103) >> 10) & 0x000F000F000F000F;
+    tens += (hundreds - 10 * tens) << 8;
+    let w = tens | 0x3030303030303030;
+    let o = out[at..at + 8];
+    for j in 8 { o[j] = (w >> (8 * j)) as! u8; }
+}
+
+// The rest of general_digits: the digits of the shortest form of x > 0, into
 // `out`, with their count and the power of ten they are a fraction of. The
 // builtin text of a double has 15 significant digits if those read back,
 // which above the subnormals makes it the shortest form once its trailing
@@ -339,10 +520,16 @@ fn decode_string(text: u8[:], at: i64, end: i64, out: u8[>..]&) -> const u8[:], 
 struct Number { value: f64, int: i64, is_int: bool, end: i64 }
 
 // The number starting at text[at], or one with end == at when there is none.
-// A plain decimal whose digits make an integer of at most 2^53, as nearly
-// every number is, is read here: that integer and the power of ten that
-// divides it are both exact, so the one divide is correctly rounded.
-// Anything else is read by scan_number_general.
+// A plain decimal of at most 19 digits, as nearly every number is, is read
+// here. Where its digits make an integer of at most 2^53, that integer and
+// the power of ten that divides it are both exact, so the one divide is
+// correctly rounded. Where they make more, as 17 significant digits do, but
+// the whole part w and the fraction's digits f make at most 2^53 each, the
+// number is w + f / 10^k: f / 10^k is rounded once, and adding w rounds
+// again, which gives the correctly rounded sum unless the sum lies within
+// an ulp of f / 10^k of a point halfway between two doubles. Rounding is
+// monotonic, so if the sums with f / 10^k nudged an ulp down and up round
+// alike, that is the answer. Anything else is read by scan_number_general.
 fn scan_number(text: u8[:], at: i64) -> Number {
     guard at >= 0 else { return Number { value: 0.0, int: 0, is_int: false, end: at }; }
     var pos = at;
@@ -355,6 +542,7 @@ fn scan_number(text: u8[:], at: i64) -> Number {
         pos++;
     }
     let int_end = pos;
+    let whole = mant;
     var frac_digits = 0;
     if pos < text.len && text[pos] == '.' {
         pos++;
@@ -368,12 +556,22 @@ fn scan_number(text: u8[:], at: i64) -> Number {
     }
     let int_digits = int_end - int_start;
     guard int_digits > 0 && (int_digits == 1 || text[int_start] != '0')
-          && int_digits + frac_digits <= 19 && mant <= MAX_EXACT
+          && int_digits + frac_digits <= 19
           && !(pos < text.len && (text[pos] == 'e' || text[pos] == 'E')) else {
         return scan_number_general(text, at);
     }
     var v: f64 = mant;
-    if frac_digits > 0 { v /= POW10[frac_digits]; }
+    if mant > MAX_EXACT {
+        let frac = mant - whole * POW10_U64[frac_digits];
+        guard frac_digits > 0 && whole <= MAX_EXACT && frac <= MAX_EXACT else { return scan_number_general(text, at); }
+        let w: f64 = whole;
+        let f: f64 = frac;
+        let q = f / POW10[frac_digits];
+        v = w + q * 0.9999999999999998;
+        guard v == w + q * 1.0000000000000002 else { return scan_number_general(text, at); }
+    } else if frac_digits > 0 {
+        v /= POW10[frac_digits];
+    }
     if neg { v = -v; }
     let i = if neg { 0 - mant as! i64 } else { mant as! i64 };
     return Number { value: v, int: i, is_int: frac_digits == 0, end: pos };
@@ -385,7 +583,9 @@ let MAX_EXACT: u64 = 9007199254740992;
 // Any number, correctly rounded. Its first 19 significant digits accumulate
 // in a u64, and where that integer and the power of ten that scales it are
 // both exact, one multiply or divide is correctly rounded. Otherwise the
-// value they give in steps is within a few ulps, and round_exact settles it.
+// value they give in steps is within a few ulps, and round_near, for a
+// number all of whose digits are in the u64 and a power of ten up to 10^27
+// either way, or round_exact settles it.
 fn scan_number_general(text: u8[:], at: i64) -> Number {
     let none = Number { value: 0.0, int: 0, is_int: false, end: at };
     guard at >= 0 else { return none; }
@@ -430,6 +630,8 @@ fn scan_number_general(text: u8[:], at: i64) -> Number {
         v = 1.0 / 0.0;
     } else if dropped == 0 && mant <= MAX_EXACT && exp10 >= -22 && exp10 <= 22 {
         v = scale(v, exp10);
+    } else if dropped == 0 && exp10 >= -27 && exp10 <= 27 {
+        v = round_near(mant, exp10, scale(v, exp10));
     } else {
         v = round_exact(text, int_start, pos, exp10, scale(v, exp10 + dropped));
     }
@@ -528,6 +730,57 @@ fn round_exact(text: u8[:], from: i64, to: i64, e10: i64, v: f64) -> f64 {
         break;
     }
     return ldexp(m, k as! i32);
+}
+
+// round_exact for w * 10^e10, |e10| <= 27, where the numbers it compares
+// fit 128 bits: 5^27 is below 2^63.
+fn round_near(w: u64, e10: i64, v: f64) -> f64 {
+    let b = bits_of(v);
+    let m0 = (b & 0xFFFFFFFFFFFFF) | 0x10000000000000;
+    let be = ((b >> 52) & 0x7FF) as! i64;
+    let k0 = be - 1075;
+    var m = m0;
+    var k = k0;
+    loop {
+        let up = compare_near(w, e10, 2 * m + 1, k - 1);
+        if up > 0 || (up == 0 && m % 2 == 1) {
+            m++;
+            if m == MAX_EXACT { m = MAX_EXACT / 2; k++; }
+            continue;
+        }
+        let down = if m == MAX_EXACT / 2 { compare_near(w, e10, 4 * m - 1, k - 2) }
+                   else { compare_near(w, e10, 2 * m - 1, k - 1) };
+        if down < 0 || (down == 0 && m % 2 == 1) {
+            m--;
+            if m < MAX_EXACT / 2 { m = 2 * m + 1; k--; }
+            continue;
+        }
+        break;
+    }
+    return if m == m0 && k == k0 { v } else { ldexp(m, k as! i32) };
+}
+
+// w * 10^e10 against h * 2^p, as compare_exact. That is w * 5^e10 against
+// h * 2^(p - e10), the power of five on whichever side keeps it whole; the
+// two are within a few ulps of each other, so the one shifted left to line
+// them up stays within 128 bits.
+fn compare_near(w: u64, e10: i64, h: u64, p: i64) -> i64 {
+    var ah: u64 = 0;
+    var al = w;
+    var bh: u64 = 0;
+    var bl = h;
+    if e10 >= 0 { ah, al = mul_wide(w, POW5[e10]); } else { bh, bl = mul_wide(h, POW5[-e10]); }
+    let d = e10 - p;
+    if d > 0 { ah, al = shl_wide(ah, al, d); } else if d < 0 { bh, bl = shl_wide(bh, bl, -d); }
+    if ah != bh { return if ah < bh { -1 } else { 1 }; }
+    if al != bl { return if al < bl { -1 } else { 1 }; }
+    return 0;
+}
+
+// The 128-bit h * 2^64 + l shifted left by s, 0 < s < 128.
+fn shl_wide(h: u64, l: u64, s: i64) -> u64, u64 {
+    if s >= 64 { return l << (s - 64), 0; }
+    return (h << s) | (l >> (64 - s)), l << s;
 }
 
 // D * 10^e10 against h * 2^p: -1, 0 or 1 as it is below, equal to or above.
