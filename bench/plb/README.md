@@ -48,20 +48,22 @@ Measured October 2026 on CPUs 16-31 of a Ryzen 9950X3D under Windows 11.
 Each language's fastest program is shown, single-threaded and multithreaded
 separately (a reference using OpenMP, rayon or a multithreaded async runtime
 counts as multithreaded whatever its name), and "ratio" is the fastest other
-language's time over Goose's: above 1 Goose is faster.
+language's time over Goose's: above 1 Goose is faster. The binarytrees,
+coro-prime-sieve and fasta rows come from a later run, in which every
+language's times came out a few percent higher.
 
 | problem | input | Goose | Rust | C/C++ | ratio | Goose -m | Rust -m | C/C++ -m | ratio -m |
 |---|---|---:|---:|---:|---:|---:|---:|---:|---:|
-| binarytrees | 15 | 21 <sub>1 9.1M</sub> | 150 <sub>4 11.4M</sub> | - | 7.10 | 14 <sub>2-m 12.7M</sub> | - | - | - |
-| binarytrees | 18 | 105 <sub>1 19.6M</sub> | 1467 <sub>4 39.9M</sub> | - | 13.97 | 31 <sub>2-m 68.8M</sub> | - | - | - |
-| coro-prime-sieve | 1000 | 13 <sub>1 7.7M</sub> | 60 <sub>3 9.4M</sub> | - | 4.44 | - | 20 <sub>3-m 10.5M</sub> | - | - |
-| coro-prime-sieve | 4000 | 33 <sub>1 7.9M</sub> | 754 <sub>3 14.8M</sub> | - | 23.18 | - | 127 <sub>5 12.8M</sub> | - | - |
+| binarytrees | 15 | 23 <sub>1 9.2M</sub> | 163 <sub>3 13.5M</sub> | - | 7.10 | 17 <sub>2-m 12.2M</sub> | - | - | - |
+| binarytrees | 18 | 109 <sub>1 19.7M</sub> | 1631 <sub>4 39.9M</sub> | - | 14.95 | 32 <sub>2-m 65.3M</sub> | - | - | - |
+| coro-prime-sieve | 1000 | 14 <sub>1 7.8M</sub> | 62 <sub>3 9.5M</sub> | - | 4.34 | - | 21 <sub>3-m 10.5M</sub> | - | - |
+| coro-prime-sieve | 4000 | 35 <sub>1 8.0M</sub> | 781 <sub>3 14.9M</sub> | - | 22.37 | - | 160 <sub>3-m 16.0M</sub> | - | - |
 | edigits | 100000 | 25 <sub>1 9.2M</sub> | 27 <sub>1 7.9M</sub> | - | 1.09 | - | - | - | - |
 | edigits | 250001 | 58 <sub>1 11.2M</sub> | 69 <sub>1 8.4M</sub> | - | 1.18 | - | - | - | - |
 | fannkuch-redux | 10 | 46 <sub>1 7.6M</sub> | 81 <sub>3-i 7.7M</sub> | - | 1.75 | 17 <sub>1-m 8.1M</sub> | 19 <sub>3-im 9.0M</sub> | 22 <sub>1-im 9.0M</sub> | 1.13 |
 | fannkuch-redux | 11 | 396 <sub>1 7.6M</sub> | 786 <sub>3-i 7.7M</sub> | - | 1.99 | 54 <sub>1-m 8.2M</sub> | 68 <sub>3-im 8.9M</sub> | 84 <sub>1-im 9.0M</sub> | 1.25 |
-| fasta | 250000 | 20 <sub>1 8.7M</sub> | 18 <sub>6 7.6M</sub> | - | 0.93 | 17 <sub>1-m 9.2M</sub> | 34 <sub>5-m 17.5M</sub> | - | 1.97 |
-| fasta | 2500000 | 88 <sub>1 8.7M</sub> | 76 <sub>6 7.6M</sub> | - | 0.86 | 61 <sub>1-m 13.7M</sub> | 213 <sub>5c-m 17.5M</sub> | - | 3.51 |
+| fasta | 250000 | 19 <sub>1 8.8M</sub> | 20 <sub>6 7.7M</sub> | - | 1.08 | 18 <sub>1-m 9.3M</sub> | 36 <sub>5c-m 17.6M</sub> | - | 1.98 |
+| fasta | 2500000 | 66 <sub>1 8.8M</sub> | 77 <sub>6 7.7M</sub> | - | 1.16 | 62 <sub>1-m 13.0M</sub> | 201 <sub>5c-m 17.6M</sub> | - | 3.26 |
 | helloworld | QwQ | 11 <sub>1 7.6M</sub> | 11 <sub>1 7.6M</sub> | 10 <sub>1 7.6M</sub> | 1.00 | - | - | - | - |
 | json-serde | sample 5000 | 26 <sub>1 12.6M</sub> | 28 <sub>4-i 14.4M</sub> | - | 1.09 | - | - | - | - |
 | json-serde | canada 15 | 109 <sub>1 55.6M</sub> | 118 <sub>5-i 62.0M</sub> | - | 1.08 | - | - | - | - |
@@ -90,10 +92,7 @@ language's time over Goose's: above 1 Goose is faster.
 
 The allocation-heavy problems (binarytrees, merkletrees) say as much about
 Windows' heap as about Rust: its `Box` allocations go through `HeapAlloc`,
-which is slower than glibc's malloc, where PLB runs. The `-m` Goose programs
-use more memory than they need here because `hardware_threads()` reports all
-32 hardware threads of the machine while the run is pinned to 16, so they
-start 32 workers, each with its own data stacks.
+which is slower than glibc's malloc, where PLB runs.
 
 With AVX-512 allowed, the `simd fn` programs go further: nbody/2 79.7 ms at
 5000000 (against 103 for Rust's fastest), spectral-norm/2 126 ms and 2-m
@@ -149,10 +148,6 @@ With AVX-512 allowed, the `simd fn` programs go further: nbody/2 79.7 ms at
   casts). Against the plain C++ program, 132 against 118 ms, the generated C
   is the same loop; clang's result for it moves by 10-20% with unrelated
   changes around it.
-* **fasta/1** (0.86): Goose's stdout on Windows is in text mode, so every
-  `\n` goes out as `\r\n` through the C runtime's per-byte translation, and it
-  is unbuffered. With the stream set to binary the same program takes 63 ms,
-  ahead of Rust's 73 in the same run.
 * **nsieve/2 at 12** (0.83 against C++'s `vector<bool>`): two bounds checks
   stay in the bit-array loops (the analysis cannot derive `j >> 5 <
   (n + 31) >> 5` from `j < n`), and elements are addressed as byte offsets,
@@ -176,11 +171,6 @@ With AVX-512 allowed, the `simd fn` programs go further: nbody/2 79.7 ms at
 
 In the compiler, runtime and library, while writing these programs:
 
-* **stdout**: unbuffered, text mode on Windows (`print("a")` writes `61 0D
-  0A`), and `print` makes two writes per line, the text and then the newline,
-  although §3.7 promises one.
-* **`hardware_threads()`** ignores the process's affinity mask
-  (`GetSystemInfo`, `sysconf`), so pinned runs start too many workers.
 * **No 64x64->128-bit multiply.** The 32-bit-halves idiom compiles to one
   `mulx` only while clang sees it on its own; inlined, clang rewrites the
   halves of an operand it knows something about and the pattern is lost.

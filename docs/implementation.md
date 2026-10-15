@@ -4193,9 +4193,8 @@ the rendered type. This is narrower than ordinary generic overload
 resolution. Reference rendering follows pointees and has no cycle
 detection: a cyclic value recurses through its render functions until the
 native stack runs out (§7, **Native stacks**). An integer's text is the
-runtime's digit loop (`gs_fmt_i64`, `gs_fmt_u64`, and `gs_out_int` for
-print): the digit count, then the digits from the right, two per division
-by 100, where printf's format parsing and locale handling cost several
+runtime's digit loop (`gs_fmt_i64`, `gs_fmt_u64`): the digit count, then
+the digits from the right, two per division by 100, where printf's format parsing and locale handling cost several
 times the conversion. Finite float formatting
 (`gs_fmt_f64`, `gs_fmt_f32`) writes the fewest significant decimal digits
 that read back as the same value of the float's own type and, of those,
@@ -4219,6 +4218,14 @@ float literals and dumps use, is the same text, its digits from
 `-inf`, `nan`) rather than by the C library, which differs between
 backends: msvcrt writes `1.#INF` and `-1.#IND`, and others print a NaN's
 sign.
+
+**Output.** `print` renders its whole line, newline included, into a
+statement-stack builder and hands it to one `fwrite` (`gs_out_bytes`) on an
+unbuffered stdout, so nothing printed is lost to an abort and no other
+thread's line lands inside it. On Windows the runtime puts stdout and
+stderr in binary mode as it starts (`gs_rt_start`): a newline goes out as
+the one byte it is everywhere else, not as the `\r\n` the CRT's text mode
+writes a byte at a time.
 
 ### 6.10 Loop-invariant views and stack-top caching
 

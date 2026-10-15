@@ -1025,7 +1025,6 @@ GS_API void gs_out_flt(double v);
 GS_API void gs_out_f32(float v);
 GS_API void gs_out_bool(int64_t v);
 GS_API void gs_out_bytes(const uint8_t *p, int64_t len);
-GS_API void gs_out_nl(void);
 
 /* Byte search behind std's find_any and find_pair (runtime_impl.h): the
    first i < n with p[i] in the set, or with p[i] in a and p[i + d] in b
@@ -1275,6 +1274,8 @@ GS_API void gs_release_regions(void) {
 #define WIN32_LEAN_AND_MEAN
 #define NOMINMAX
 #include <windows.h>
+#include <io.h>
+#include <fcntl.h>
 
 static size_t gs_page_size = 0;
 #define GS_COMMIT_CHUNK (1u << 20)
@@ -1444,9 +1445,9 @@ static void gs_native_stack_init(void) {
         else free(ss.ss_sp);
     }
     #if defined(__APPLE__)
-        hi = (uintptr_t)pthread_get_stackaddr_np(pthread_self());
 )GSRT"
-R"GSRT(        lo = hi - pthread_get_stacksize_np(pthread_self());
+R"GSRT(        hi = (uintptr_t)pthread_get_stackaddr_np(pthread_self());
+        lo = hi - pthread_get_stacksize_np(pthread_self());
     #elif defined(__linux__)
         pthread_attr_t attr;
         void *base;
@@ -1657,9 +1658,9 @@ static int64_t gs_sp_find(gs_sppath *p, int64_t idx) {
     gs_spleaf *lf;
     p->h = GS_SPHEAD(p)->height;
     for (l = 0; l < p->h; l++) {
-        gs_spinner *in = GS_SPINNER(p, i);
 )GSRT"
-R"GSRT(        for (k = 1; k < in->n && in->key[k] <= idx; k++) {}
+R"GSRT(        gs_spinner *in = GS_SPINNER(p, i);
+        for (k = 1; k < in->n && in->key[k] <= idx; k++) {}
         p->node[l] = i;
         p->pos[l] = k - 1;
         i = in->child[k - 1];
@@ -1900,10 +1901,10 @@ static void gs_sp_near(gs_sppath *p, gs_sppath *q, int64_t idx, gs_spnear *s) {
     *q = *p;
     if (gs_sp_nextleaf(q)) {
         s->np = q;
-        s->nl = GS_SPLEAF(q, q->node[q->h]);
-        s->nk = 0;
 )GSRT"
-R"GSRT(    }
+R"GSRT(        s->nl = GS_SPLEAF(q, q->node[q->h]);
+        s->nk = 0;
+    }
 }
 
 /* [idx, idx + cnt) back on the freelist beside the spans gs_sp_near found
@@ -2245,6 +2246,13 @@ GS_API void gs_rt_start(int argc, char **argv, uint64_t reserve, uint64_t gap,
     // and interleaves correctly with stderr diagnostics. Revisit if print
     // throughput ever matters.
     setvbuf(stdout, NULL, _IONBF, 0);
+    #ifdef _WIN32
+        // The bytes a program writes are the bytes that come out, '\n' one
+        // byte as on every other platform, rather than a "\r\n" the CRT's
+        // text mode makes of it byte by byte.
+        _setmode(_fileno(stdout), _O_BINARY);
+        _setmode(_fileno(stderr), _O_BINARY);
+    #endif
     gs_regions_init();
     gs_regions_begin(mainregions);
     gs_native_stack_init();
@@ -2282,7 +2290,8 @@ GS_API int64_t gs_fmt_u64(uint8_t *dst, uint64_t v) {
         unsigned r = (unsigned)(v % 100);
         v /= 100;
         p -= 2;
-        p[0] = (uint8_t)gs_digit_pairs[2 * r];
+)GSRT"
+R"GSRT(        p[0] = (uint8_t)gs_digit_pairs[2 * r];
         p[1] = (uint8_t)gs_digit_pairs[2 * r + 1];
     }
     if (v >= 10) {
@@ -2294,8 +2303,7 @@ GS_API int64_t gs_fmt_u64(uint8_t *dst, uint64_t v) {
     return n;
 }
 
-)GSRT"
-R"GSRT(GS_API int64_t gs_fmt_i64(uint8_t *dst, int64_t v) {
+GS_API int64_t gs_fmt_i64(uint8_t *dst, int64_t v) {
     if (v >= 0) return gs_fmt_u64(dst, (uint64_t)v);
     /* The magnitude in unsigned arithmetic, so i64.min needs no case. */
     dst[0] = '-';
@@ -2499,15 +2507,15 @@ GS_API int64_t gs_fmt_f64(uint8_t *dst, double v) {
         return 4;
     }
     memcpy(&b, &v, sizeof b);
-    return gs_fmt_float(dst, (int)(b >> 63), b & (((uint64_t)1 << 52) - 1),
+)GSRT"
+R"GSRT(    return gs_fmt_float(dst, (int)(b >> 63), b & (((uint64_t)1 << 52) - 1),
                         (int)(b >> 52) & 0x7FF, 53, -1074);
 }
 
 /* The digits are the f32's own, laid out as an f64's are, so 0.1 as an f32
    prints as 0.1, not as the digits of the f64 it widens to. */
 GS_API int64_t gs_fmt_f32(uint8_t *dst, float v) {
-)GSRT"
-R"GSRT(    double d = v;
+    double d = v;
     uint32_t b;
     if (d != d || isinf(d)) return gs_fmt_f64(dst, d);
     memcpy(&b, &v, sizeof b);
@@ -2558,7 +2566,6 @@ GS_API void gs_out_f32(float v) {
 }
 GS_API void gs_out_bool(int64_t v) { fputs(v ? "true" : "false", stdout); }
 GS_API void gs_out_bytes(const uint8_t *p, int64_t len) { fwrite(p, 1, (size_t)len, stdout); }
-GS_API void gs_out_nl(void) { fputc('\n', stdout); }
 )GSRT"
     ) },
     { "runtime_threads.h", string_view(
@@ -2574,14 +2581,38 @@ R"GSRT(/* Goose runtime — threads and typed queues (§11.2), as runtime.h decl
    data stack budget holds beside the main program (gs_rt_start), so a pool
    sized by it never runs the program out of address space. */
 #ifdef _WIN32
+/* The CPUs the process may run on, which `start /affinity` or a job object
+   can make fewer than the machine has. */
 static int64_t gs_os_threads(void) {
+    DWORD_PTR proc, sys;
+    if (GetProcessAffinityMask(GetCurrentProcess(), &proc, &sys) && proc) {
+        int64_t n = 0;
+        for (; proc; proc &= proc - 1) n++;
+        return n;
+    }
     SYSTEM_INFO si;
     GetSystemInfo(&si);
     return (int64_t)si.dwNumberOfProcessors;
 }
 #else
 #include <unistd.h>
+#ifdef __linux__
+#include <sys/syscall.h>
+#endif
+/* The CPUs the process may run on, which taskset or a cgroup cpuset can make
+   fewer than the machine has. Linux asks the system call itself: glibc
+   declares sched_getaffinity and CPU_COUNT only under _GNU_SOURCE. */
 static int64_t gs_os_threads(void) {
+    #ifdef __linux__
+        unsigned long mask[1024 / (8 * sizeof(unsigned long))];
+        long len = syscall(SYS_sched_getaffinity, 0, sizeof mask, mask);
+        if (len > 0) {
+            int64_t n = 0;
+            for (long i = 0; i < len / (long)sizeof(unsigned long); i++)
+                for (unsigned long w = mask[i]; w; w &= w - 1) n++;
+            if (n > 0) return n;
+        }
+    #endif
     long n = sysconf(_SC_NPROCESSORS_ONLN);
     return n > 0 ? (int64_t)n : 1;
 }
@@ -2749,7 +2780,8 @@ GS_API int64_t gs_thread_start(void (*run)(void (*)(uint8_t *), uint8_t *),
 
 GS_API void gs_thread_wait(int64_t id, const char *file, int line) {
     gs_mutex_lock(&gs_threads_mutex);
-    if (id < 0 || id >= gs_numthreads) gs_abort(GS_E_THREADID, file, line);
+)GSRT"
+R"GSRT(    if (id < 0 || id >= gs_numthreads) gs_abort(GS_E_THREADID, file, line);
     if (id == gs_current_thread_id) gs_abort(GS_E_THREADSELF, file, line);
     for (;;) {
         gs_thread *t = gs_threads;
@@ -2781,8 +2813,7 @@ GS_API void gs_qinit(gs_queue *q) {
 GS_API void gs_qput(gs_queue *q, const void *data, int64_t size) {
     struct gs_qstate *s = *q;
     gs_qnode *n = (gs_qnode *)malloc(sizeof(gs_qnode) + (size_t)size);
-)GSRT"
-R"GSRT(    if (!n) gs_panic("out of memory in qput");
+    if (!n) gs_panic("out of memory in qput");
     n->next = NULL;
     n->size = size;
     memcpy(n + 1, data, (size_t)size);

@@ -53,13 +53,13 @@ inline vector<string> CodeGen::EmitBuiltin(Call *c, Dst d0) {
     auto ln = c->line;
     switch ((BuiltinKind)c->builtin) {
         case B_PRINT: {
-            // The whole line is rendered before any of it is written, so
-            // an argument that prints on its own (a call) cannot interleave
-            // with it (§3.7).
+            // The whole line, newline included, is rendered before any of
+            // it is written, so an argument that prints on its own (a call)
+            // cannot interleave with it, and it goes out as one write (§3.7).
             auto b = TempBuilder();
             for (auto a : an) EmitFormatInto(b, a, ln, c);
+            RenderLit(b, "\n");
             L("gs_out_bytes(", b.hdr, ".base, ", b.hdr, ".len);");
-            L("gs_out_nl();");
             return {};
         }
         case B_STR: return EmitStr(c, an, d0, ln);
