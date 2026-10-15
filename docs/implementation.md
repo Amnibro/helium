@@ -4364,18 +4364,58 @@ division, so a loop pays it back from its second division on.
 
 ### 6.11 `&&` and `||`
 
-The left operand lands in a `uint8_t` temporary. The right one is emitted
-inside an `if` on it, short-circuit style, unless the operator sits in the
-body of a loop that can be straight-line code and evaluating the operand can
-neither fail nor have an effect, whatever the left operand gave
-(`CodeGen::Speculatable`): then it is evaluated unconditionally and combined
-with the left's 0 or 1 by `&` or `|`. A C compiler keeps the branch of a
-short circuit, which in a loop blocks if-conversion and vectorization (a
-loop counting the positions of a block where `p1[j] == a && p2[j] == b`
-stays scalar), but if-converts and vectorizes the unconditional form. The
-operator's value is the same either way, and the short circuit the
-specification promises (§6.1) skips nothing observable in such an operand:
-it has no effect to skip and no failure to avoid.
+A `&&` or `||` whose value only decides a branch -- the condition of an
+`if`, a `guard`, a `while` or an `assert` -- compiles to a chain of
+conditional branches on its operands (`CodeGen::GenBranch`), the shape a C
+compiler gives its own: `while i < n && y & (1 << i) != 0 { i++; }` is `if
+(!(i < n)) goto brk;`, then the right operand's statements, then `if
+(!(<right>)) goto brk;`. A `&&` branches to the target for false as soon as
+an operand is false and a `||` to the one for true as soon as an operand is
+true; one nested in an operator of the other kind branches past its own
+right operand to a label of its own, and a `!` swaps the targets. An
+inlined call of a `bool` function there branches too (`CodeGen::BranchCall`):
+its `return`s and the end of its body branch on the value they give, a
+constant one jumping or doing nothing, as a C compiler finds C once it has
+inlined it -- `if plain(key)`, over a body that returns false from inside a
+loop, jumps from that loop to the else-arm. An `if` with an `else` branches
+to the else-arm, which the then-arm jumps over; a guard, whose else cannot
+complete normally, branches past it to the then-contents that follow. Each
+operand at a leaf of the chain is evaluated in a scope of its own: where it
+builds temporaries on data stacks, its truth value is taken into a
+`uint8_t` and their restores follow at once, ahead of its branch, so
+neither path skips them; a branch out of an inlined call restores what its
+scopes and its arguments hold on the way, as its `return` does.
+
+As a value -- stored, passed, returned -- the left operand lands in a
+`uint8_t` temporary and the right one is emitted inside an `if` on it,
+short-circuit style, setting the temporary. In a condition that flag, or an
+inlined call's result held for the branch, is a value the C compiler may or
+may not see through, and clang's choices went both ways on it. plb2's
+nqueen, whose inner loop is the `while` above, ran 4-8% slower under clang
+20 and 22 with the flag than with the chain, which is as fast as the loop
+written with a `break`. Over the LangArena port (`bench/kostya`), chains
+for `&&` and `||` alone left the suite level: a CSV parser 11-15% and a
+Huffman encoder 12-17% faster, but a JSON writer 7% and a word counter
+9-14% slower, both where a small `bool` function's result decided the
+branch. With those calls branching as well the suite ran 1.5% faster in
+geomean, the JSON writer level and the word counter 5% slower, where clang
+now reloads a 64-bit constant inside the loop it tests whitespace in; the
+`bench/run_bench.py` programs whose C changed ran 1.5% faster in geomean
+under v145 and clang, `lru` and `calc` 7% under v145, none slower.
+
+Either way, where the operator sits in the body of a loop that can be
+straight-line code and evaluating its right operand can neither fail nor
+have an effect, whatever the left operand gave (`CodeGen::Speculatable`),
+the operand is evaluated unconditionally and combined with the left's 0 or
+1 by `&` or `|`, and a condition branches on that one value. A C compiler
+keeps the branch of a short circuit, flag or chain, which in a loop blocks
+if-conversion and vectorization, but if-converts and vectorizes the
+unconditional form: a loop counting the positions of a 32-byte block where
+`p1[j] == a && p2[j] == b` ran 5.4 times as fast in it as in the chain,
+which clang 22 leaves scalar. The operator's value is the same either way,
+and the short circuit the specification promises (§6.1) skips nothing
+observable in such an operand: it has no effect to skip and no failure to
+avoid.
 
 The loop is the innermost one around the operator in its function, and it
 qualifies when neither its body nor a `while` condition holds a loop, a

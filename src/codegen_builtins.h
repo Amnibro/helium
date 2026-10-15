@@ -69,6 +69,13 @@ inline vector<string> CodeGen::EmitBuiltin(Call *c, Dst d0) {
             return {};
         }
         case B_ASSERT: {
+            if (BranchChain(an[0])) {
+                auto ok = Lbl();
+                GenBranch(an[0], true, ok);
+                L("gs_abort(GS_E_ASSERT, ", LocArgs(ln), ");");
+                L(ok, ":;");
+                return {};
+            }
             auto x = GenTruth(an[0]);
             L("if (!(", x, ")) gs_abort(GS_E_ASSERT, ", LocArgs(ln), ");");
             return {};

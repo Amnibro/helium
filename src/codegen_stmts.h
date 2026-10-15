@@ -564,6 +564,7 @@ inline void CodeGen::LandValue(const string &stk, const string &top0, const stri
 // A break's value, or a return's leaving an inlined body, for scope si.
 inline void CodeGen::GenExitValue(Node *val, int si) {
     auto d = cscopes[si].dst;
+    if (d.k == DK_BRANCH) return GenBranch(val, d.when, d.s, d.exitscope);
     if (d.k != DK_STACK || !NrvoBoundAt(val, d.s, d.lenlv)) NoSelfRelCopy(val);
     auto start = d.k == DK_STACK ? ExitStart(val, d.s, d.lenlv, cscopes[si].open0) : "";
     GenAny(val, d);

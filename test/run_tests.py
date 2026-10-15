@@ -1039,9 +1039,11 @@ class Runner:
         # function of the fixture must have the one it is named for, and no
         # keep_ function any.
         bodies = {}
+        texts = {}
         for m in re.finditer(r"^static [^\n;]*?\b((?:shape|keep)_\w+?)_g\d*\([^\n]*\) \{\n(.*?)^\}\n",
                              text, re.MULTILINE | re.DOTALL):
             bodies[m[1]] = re.findall(r"/\* loop shape: ([^*]*?) \*/", m[2])
+            texts[m[1]] = m[2]
         strip = "strip-mined by"
         sums = "sum terms in blocks of 8"
         bound = "trip count bounded by"
@@ -1067,6 +1069,34 @@ class Runner:
                 valid = False
             elif (want not in got) if want else got:
                 self.fail(f"loop shapes {name}", f"got {got}, want {want or 'none'}")
+                valid = False
+        # A && or || condition is a chain of branches (CodeGen::GenBranch):
+        # neither the 0/1 flag the right operand sets inside an `if`, which
+        # a value keeps, nor the two flags combined with & or | of a loop that
+        # can be straight-line code (§6.11), nor an inlined bool call's result
+        # held for the branch (or the call left a call).
+        def forms(body):
+            got = set()
+            if re.search(r"uint8_t (t\d+) = \(uint8_t\)\([^\n]* != 0\);\n\s*if \(!?\1\) \{", body):
+                got.add("flag")
+            if re.search(r"\(uint8_t\)\(t\d+ [&|] \(uint8_t\)\(", body):
+                got.add("speculative")
+            if (re.search(r"^\s*uint8_t (t\d+);\n(?:.*\n)*?\s*if \(!?\(?\1\)?\) ", body, re.M)
+                    or re.search(r"\bclean_g\d*\(", body)):
+                got.add("call")
+            return got
+        chains = {
+            "shape_chain_while": set(), "shape_chain_skip": set(), "shape_chain_if": set(),
+            "shape_chain_guard": set(), "shape_chain_order": set(), "shape_chain_call": set(),
+            "keep_chain_value": {"flag"}, "keep_chain_spec": {"speculative"},
+        }
+        for name, want in chains.items():
+            if name not in texts:
+                self.fail(f"loop shapes {name}", "no C function of its own (inlined?)")
+                valid = False
+            elif forms(texts[name]) != want:
+                self.fail(f"loop shapes {name}",
+                          f"got {sorted(forms(texts[name])) or 'branches'}, want {sorted(want) or 'branches'}")
                 valid = False
         return valid
 

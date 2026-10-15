@@ -145,8 +145,8 @@ inline string Binary::CgX(CodeGen &cg) {
         // if-convert that, and vectorize the loop, where it keeps the branch
         // of a short circuit. Elsewhere the early branch is as good, and
         // better ahead of a branch that stays (docs/implementation.md §6.11).
-        auto budget = 24;
-        if (cg.InStraightLoop() && cg.Speculatable(right, specidx > 0, true, budget)) {
+        // A condition takes the short circuit as branches (GenBranch).
+        if (cg.SpeculativeForm(this)) {
             auto r = cg.GenTruth(right);
             return cat("(uint8_t)(", t, op == T_ANDAND ? " & " : " | ", "(uint8_t)(", r,
                        " != 0))");
@@ -447,12 +447,27 @@ inline void Block::CgAny(CodeGen &cg, const Dst &d) {
 }
 
 inline void IfExpr::CgAny(CodeGen &cg, const Dst &d) {
-    auto c = cg.GenTruth(cond);
+    // Both arms starting with the same bounds check (same array, same index,
+    // nothing before it): one check ahead of the branch, after the
+    // condition, reporting the line of the arm that is taken. The arms'
+    // accesses are then plain addresses, which lets the C compiler merge
+    // their stores into one of a select instead of keeping the branch.
+    auto ta = !flat && elseb ? cg.LeadingCheck(thenb) : nullptr;
+    auto ea = ta ? cg.LeadingCheck(elseb) : nullptr;
+    auto hoist = ea && cg.SameCheck(ta, ea);
+    // A && or || condition, or an inlined bool call, branches to the arm it
+    // selects (GenBranch).
+    string lbl;
+    if (!hoist && cg.BranchChain(cond)) {
+        lbl = cg.Lbl();
+        cg.GenBranch(cond, flat, lbl);
+    }
+    auto c = lbl.empty() ? cg.GenTruth(cond) : "";
     if (flat) {
         // The else cannot complete normally, so the then-block's contents
         // follow it in this C block, a scope without braces of its own: a
         // run of guards nests no C blocks, however long.
-        cg.L("if (!(", c, ")) {");
+        cg.L(lbl.empty() ? cat("if (!(", c, ")) {") : "{");
         cg.ind++;
         cg.PushSc(CodeGen::SC_PLAIN);
         if (auto b = Is<Block>(elseb)) cg.GenBlockInner(b, d);
@@ -461,20 +476,13 @@ inline void IfExpr::CgAny(CodeGen &cg, const Dst &d) {
         cg.PopSc();
         cg.ind--;
         cg.L("}");
+        if (!lbl.empty()) cg.L(lbl, ":;");
         cg.PushSc(CodeGen::SC_PLAIN);
         cg.GenBlockInner(thenb, d);
         cg.PopSc();
         cg.termjump = false;
         return;
     }
-    // Both arms starting with the same bounds check (same array, same index,
-    // nothing before it): one check ahead of the branch, after the
-    // condition, reporting the line of the arm that is taken. The arms'
-    // accesses are then plain addresses, which lets the C compiler merge
-    // their stores into one of a select instead of keeping the branch.
-    auto ta = elseb ? cg.LeadingCheck(thenb) : nullptr;
-    auto ea = ta ? cg.LeadingCheck(elseb) : nullptr;
-    auto hoist = ea && cg.SameCheck(ta, ea);
     if (hoist) {
         auto ct = cg.T();
         cg.L("uint8_t ", ct, " = (uint8_t)(", c, ");");
@@ -482,22 +490,35 @@ inline void IfExpr::CgAny(CodeGen &cg, const Dst &d) {
         cg.EmitHoistedCheck(ta, ea, c);
         ta->nobc = ea->nobc = true;
     }
-    cg.L("if (", c, ") {");
+    cg.L(lbl.empty() ? cat("if (", c, ") {") : "{");
     cg.ind++;
     cg.PushSc(CodeGen::SC_PLAIN);
     cg.GenBlockInner(thenb, d);
     cg.PopSc();
     cg.ind--;
     if (elseb) {
-        cg.L("} else {");
+        string endlbl;
+        if (lbl.empty()) {
+            cg.L("} else {");
+        } else {
+            endlbl = cg.Lbl();
+            cg.L("}");
+            cg.L("goto ", endlbl, ";");
+            cg.L(lbl, ":;");
+            cg.L("{");
+        }
         cg.ind++;
         cg.PushSc(CodeGen::SC_PLAIN);
         if (auto b = Is<Block>(elseb)) cg.GenBlockInner(b, d);
         else cg.GenAny(elseb, d);
         cg.PopSc();
         cg.ind--;
+        cg.L("}");
+        if (!endlbl.empty()) cg.L(endlbl, ":;");
+    } else {
+        cg.L("}");
+        if (!lbl.empty()) cg.L(lbl, ":;");
     }
-    cg.L("}");
     cg.termjump = false;
     // A body can be emitted more than once (element-run twins).
     if (hoist) ta->nobc = ea->nobc = false;
@@ -1004,12 +1025,11 @@ inline void While::CgStmt(CodeGen &cg) {
         return;
     }
     cg.GenLoopBody([&]() {
-        auto c = cg.GenTruth(cond);
-        auto si = (int)cg.cscopes.size() - 1;
         // The loop scope has no allocations yet, so a plain goto exits
-        // cleanly; the condition's own temps were allocated in this
-        // scope's compile-time list and are restored... none yet either.
-        cg.L("if (!(", c, ")) goto ", cg.cscopes[si].brklbl, ";");
+        // cleanly; the condition's own are restored ahead of each branch.
+        auto si = (int)cg.cscopes.size() - 1;
+        assert(cg.cscopes[si].saves.empty());
+        cg.GenBranch(cond, false, cg.cscopes[si].brklbl);
         cg.cscopes[si].usedbrk = true;
     }, body, d, "", cond);
 }

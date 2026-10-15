@@ -60,13 +60,19 @@ namespace goose {
 // the element count (or the whole frame object) to it. A `pool` lvalue is a
 // gs_pref, which a construct's value choosing among pools reaches as each
 // branch's pool reference (GenPrefVal).
-enum DstKind { DK_DISCARD, DK_LVALUE, DK_STACK };
+// DK_BRANCH is where an inlined bool call in a condition delivers its value
+// (CodeGen::GenBranch): a branch to label s where the value is `when`,
+// leaving the scopes down to `exitscope` on the way, and on through the
+// call where it is not.
+enum DstKind { DK_DISCARD, DK_LVALUE, DK_STACK, DK_BRANCH };
 struct Dst {
     DstKind k = DK_DISCARD;
     string s;
     TypeExpr *t = nullptr;
     string lenlv;
     bool pool = false;
+    bool when = false;
+    int exitscope = -1;
 };
 
 // What a relative store knows of the reference it encodes beyond its type:
@@ -881,6 +887,11 @@ struct CodeGen {
     string GenRefVal(Node *child, Line ln);
     string GenXD(Node *n, TypeExpr *want);
     string GenTruth(Node *n);
+    bool SpeculativeForm(Binary *b);
+    Binary *ChainOp(Node *n);
+    InlineBlock *BranchCall(Node *n);
+    bool BranchChain(Node *n);
+    void GenBranch(Node *n, bool when, string lbl, int exitscope = -1);
     bool Speculatable(Node *n, bool idxok, bool truth, int &budget);
     bool SpeculatablePlace(Node *n, bool idxok, int &budget);
 
