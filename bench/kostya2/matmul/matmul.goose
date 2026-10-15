@@ -1,5 +1,5 @@
-// Matmul: the product of two n x n matrices, with the second one transposed
-// first so both operands of every dot product are rows.
+// Matmul: the product of two n x n matrices, row by row: each row of the
+// product gathers a[i][k] times row k of b, for k in order.
 
 import std;
 import os;
@@ -24,25 +24,20 @@ fn mat_gen(pool: f64[>..]&, n: i64, seed: f64) -> (f64[:])[>..] {
     return m;
 }
 
+// The loop order of the suite's Julia test, without its threads: every
+// c[i][j] still sums a[i][k] * b[k][j] for k in order, starting at zero, so
+// it comes out the same to the bit as the transposed dot products of plb's
+// version, but the innermost loop walks rows of b and c, which vectorizes,
+// where a dot product is one long chain of adds.
 fn mat_mul(pool: f64[>..]&, a: (f64[:])[:], b: (f64[:])[:]) -> (f64[:])[>..] {
     let m = a.len;
-    let n = a[0].len;
     let p = b[0].len;
-
-    var b2 = new_mat(pool, n, p);
-    for row, i in b {
-        for x, j in row { b2[j][i] = x; }
-    }
-
     var c = new_mat(pool, m, p);
     for ci, i in c {
-        let a_row = a[i];
-        for &cij, j in ci {
-            let b2j = b2[j];
-            assert(b2j.len == a_row.len);
-            var s = 0.0;
-            for x, k in a_row { s += x * b2j[k]; }
-            cij = s;
+        for aik, k in a[i] {
+            let bk = b[k];
+            assert(bk.len == ci.len);
+            for &cij, j in ci { cij += aik * bk[j]; }
         }
     }
     return c;

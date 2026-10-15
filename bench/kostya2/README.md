@@ -21,7 +21,7 @@ what Goose's memory model and library give it:
 | Base64 | `base64/test.goose` | `base64.rs`: the library codec, a new buffer per call | `std`'s `base64`, whose loops the C compiler vectorizes; each buffer is a data-stack bump, freed at the loop body's brace |
 | Json | `json/test.goose` | `json_struct.rs` (serde, typed) | `json::Reader` maps the text onto `Coordinate`s as serde's derive does, building no tree |
 | Json | `json/test_dom.goose` | `json_value.rs` (serde `Value`), RapidJSON's `Document` | `json::parse`'s tree: fixed-size nodes in one array, linked by 4-byte self-relative offsets, strings as views of the text |
-| Matmul | `matmul/matmul.goose` | `matmul.c`/`matmul.rs` (plb): transpose, then a dot product per cell | a matrix is an array of row slices, the rows runs of one `reusable[]` pool; one `assert` per row lets every index in the inner loop go unchecked |
+| Matmul | `matmul/matmul.goose` | `matmul.jl` without threads: `c[i][j] += a[i][k] * b[k][j]` with j innermost, no transpose | a matrix is an array of row slices, the rows runs of one `reusable[]` pool; one `assert` per row lets every index in the inner loop go unchecked |
 | Primes | `primes/primes.goose` | `primes.rs`: sieve of Atkin, a trie of the primes' digits, a breadth-first walk | trie nodes in one array; each node's map is a run of (digit, node) pairs in a `reusable[]` pool; queue entries hold their prefix inline in a `u8[..16]` |
 
 Two departures the other languages do not need, both forced by the memory
@@ -97,9 +97,9 @@ is the suite's base + increase of the resident set.
 
 | test | time, s | min | memory, MiB | its time / Goose's |
 |---|---:|---:|---:|---:|
-| goose | 1.218 | 1.205 | 2.72 + 69.06 | 1.00 |
-| c | 2.385 | 2.360 | 2.56 + 68.06 | 1.96 |
-| rust | 1.235 | 1.213 | 2.52 + 68.32 | 1.01 |
+| goose | 0.234 | 0.227 | 2.71 + 52.32 | 1.00 |
+| c | 2.475 | 2.416 | 2.80 + 67.80 | 10.57 |
+| rust | 1.341 | 1.263 | 2.52 + 68.32 | 5.73 |
 
 ### Primes
 
@@ -111,8 +111,8 @@ is the suite's base + increase of the resident set.
 
 ## Where Goose is behind, and why
 
-Goose is fastest of the four languages on Brainfuck mandel.b, Matmul (with
-Rust) and Primes, and of the implementations that are not SIMD libraries on
+Goose is fastest of the four languages on Brainfuck mandel.b, Matmul and
+Primes, and of the implementations that are not SIMD libraries on
 Base64 and Json. It is behind in three places:
 
 * **Brainfuck bench.b, 7% behind Rust** (level with C and C++). Not the
@@ -126,8 +126,8 @@ Base64 and Json. It is behind in three places:
   pointer was 3% faster on bench.b and 1-2% on mandel.b. Two other ways of
   writing it were slower overall: a reference to the current cell, which in
   Goose stays valid as the tape grows (13% faster on bench.b, 14-30% slower
-  on mandel.b), and the head's position
-  passed into and out of each `run` (10% slower on bench.b).
+  on mandel.b), and the head's position passed into and out of each `run`
+  (10% slower on bench.b).
 * **Base64, 2x behind aklomp/base64**, a C library of hand-written SSSE3,
   AVX2 and AVX-512 intrinsics (the suite lists it apart from plain C, as
   "C (aklomp)"); 5.3x ahead of Rust's base64 crate and 6.9x of plain C.
@@ -148,22 +148,27 @@ Base64 and Json. It is behind in three places:
   means are Python's to the last digit; serde's default parser is one ulp
   off in z.
 
-Matmul: C's 2x is the multiply and add of `t += p[k] * r[k]` fused into one
-FMA, which clang does by default under `-march=native`; on Zen 5 that is a
-4-cycle chain per step where a separate add is 2. Goose, like Rust, rounds
-each operation on its own (so the two print the same digits), and the
-dot products, one long dependency chain each, set the time for both. The
-loop order of the suite's Julia test (`c[i][j] += a[i][k] * b[k][j]` with
-j innermost, no transpose) adds the same products in the same order, so
-the result is the same to the bit, and vectorizes: 0.27 s here. It is not
-the version above, since the C and Rust tests follow plb's transposed dot
-products.
+Matmul follows the loop order of the suite's Julia test (`matmul.jl`,
+whose `c[m, n] += a[m, k] * b[k, n]` runs down columns, Julia's arrays being
+column-major) rather than the transposed dot products of plb that the C and
+Rust tests have, which the suite's "variants are acceptable if the
+reference implementation exists" allows. Every cell still sums the same
+products in the same order, from zero, so the result is the same to the
+bit as Rust's, at every size tried (101, 333, 1000, 1500); but the inner
+loop runs along rows of b and c, which vectorizes and needs no transposed
+copy (a quarter less memory), where each dot product is one dependency
+chain of adds. Written as plb's version, Goose took 1.218 s, level with
+Rust. C's 2x behind Rust there is the multiply and add of `t += p[k] *
+r[k]` fused into one FMA, which clang does by default under
+`-march=native`: on Zen 5 a 4-cycle step where a separate add takes 2.
+Goose, like Rust, rounds every operation on its own.
 
 Memory: Primes takes a third of what the C++ and Rust take, its trie being
 one array of 17-byte nodes and one of 9-byte map entries where each C++ and
-Rust node is a hash map with allocations of its own. Elsewhere Goose's
-numbers are within half a MiB of the others', but for the Json tree, which
-takes 183 MiB against serde `Value`'s 840.
+Rust node is a hash map with allocations of its own. Matmul takes 52 MiB
+against 68, having no transposed copy, and the Json tree 183 MiB against
+serde `Value`'s 840; elsewhere Goose's numbers are within half a MiB of the
+others'.
 
 ## Running it
 
