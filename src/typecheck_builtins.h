@@ -1500,6 +1500,11 @@ inline void TypeCheck::ApplyCalleeStores(FnSpec *spec, vector<Val> &argvals, Nod
     auto end = min(rec->eventend, storeevents.size());
     for (auto i = rec->eventstart; i < end; i++) {
         auto e = storeevents[i];
+        // A call back into a body still being checked leaves the events of
+        // that body's own variables as they are: a cycle's rounds keep the
+        // variables, so they are those of the activation being checked, which
+        // this call's arguments do not describe.
+        if (spec->inprogress && e.container && e.container->ownerspec == spec) continue;
         auto r = mapped(e.root, e.exact);
         auto src = source(e.src);
         e.classread = e.classread && IsClassRoot(src);
