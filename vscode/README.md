@@ -13,9 +13,13 @@ language server, runtime dependencies, or compiler changes are required.
 - Bracket matching, auto-closing, indentation, comment toggling, folding and
   snippets (`main`, `fn`, `struct`, `enum`, `for`, `guard`, `match`, and more).
 - Compiler checks on open/save, error and warning underlines, and Problems
-  entries. Use **F8 / Shift+F8** to jump between problems. Lexer errors use the
-  compiler's caret; type errors highlight the source line. Instantiation chains
-  appear as related locations in Problems.
+  entries. Use **F8 / Shift+F8** to jump between problems. A compiler with
+  `goose check --diagnostics json` reports the source range of each error and
+  warning, which is what gets underlined, and instantiation chains appear as
+  related locations in Problems at the calls that made them. With an older
+  compiler the extension reads the text output instead: lexer errors use the
+  compiler's caret, type errors highlight the source line, and instantiation
+  chains link to the calling line.
   While a Goose file is open, a status bar item shows the last check: **Goose**
   with a check mark, **Goose: N errors** (opens Problems), or **Goose: Check
   Failed** when the check failed without a source location (compiler not found,
@@ -103,7 +107,10 @@ when no folder is open. Settings can be configured per folder in a multi-root
 workspace. `goose.stdlibPath` supplies `--stdlib`; leave it empty to use Goose's
 usual lookup, including `GOOSE_STDLIB` and directories near the executable.
 
-Checks use `goose check` and never run the program or generate C. They check
+Checks use `goose check --diagnostics json` and never run the program or
+generate C. A compiler that rejects the flag is checked with plain `goose check`
+from then on, until it is rebuilt, and its text output is parsed instead; the
+Goose output channel shows the compiler's text either way. Checks run on
 saved files, wait while any open Goose file in the same folder has unsaved
 changes, and keep the last result, marked stale, until the next check completes.
 Changing Goose settings or workspace folders, or closing the files that use an
@@ -190,10 +197,12 @@ button. Program arguments still come from `goose.runArguments`.
 ## Verification
 
 `npm test` exercises the actual TextMate/Oniguruma grammar, declaration/import
-scanning, diagnostic parsing (including Windows paths and UTF-8 carets), task
-arguments, and cancellation/stale-result handling. Compiler integration tests
-run when a Goose build exists in the parent repository; set `GOOSE_TEST_COMPILER`
-to test another executable. Missing compilers are reported as skipped tests.
+scanning, parsing of the compiler's JSON and text diagnostics (including
+Windows paths and UTF-8 byte columns), the fallback from `--diagnostics json`
+to text, task arguments, and cancellation/stale-result handling. Compiler
+integration tests run when a Goose build exists in the parent repository; set
+`GOOSE_TEST_COMPILER` to test another executable. Missing compilers are
+reported as skipped tests, as is the JSON test with a compiler that lacks the flag.
 
 For the editor integration suite, create an empty directory
 `build/goose-extension-fixture` in the parent repository, then select **Test Goose

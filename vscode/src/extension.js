@@ -3,7 +3,7 @@
 const vscode = require('vscode');
 const path = require('node:path');
 const { settings, argumentsFor, stdlibDirectories, absolute } = require('./config');
-const { parseDiagnostics, failureMessage, runCompiler, CheckQueue } = require('./diagnostics');
+const { parseDiagnostics, parseJsonDiagnostics, failureMessage, runCompiler, CheckQueue } = require('./diagnostics');
 const { declarations, imports, importCandidates } = require('./language');
 
 const isGoose = doc => doc.languageId === 'goose' && doc.uri.scheme === 'file';
@@ -60,8 +60,23 @@ function activate(context) {
     // checked: a stale result keeps them as they were while files are edited.
     async function build(result) {
         const { config, error, output: text } = result;
-        const parsed = parseDiagnostics(text, config.cwd);
-        output.appendLine(`> ${config.compiler} ${argumentsFor('check', config).map(arg => JSON.stringify(arg)).join(' ')}`);
+        const lines = new Map();
+        async function sourceLine(file, line) {
+            if (!lines.has(file)) {
+                const open = vscode.workspace.textDocuments.find(doc => doc.uri.fsPath === file);
+                try {
+                    const source = open ? open.getText() : Buffer.from(await vscode.workspace.fs.readFile(vscode.Uri.file(file))).toString('utf8');
+                    lines.set(file, source.split(/\r?\n/));
+                } catch { lines.set(file, []); }
+            }
+            return lines.get(file)[line];
+        }
+        // The diagnostics as data from a compiler with --diagnostics json, or
+        // read from the text of one without.
+        const parsed = result.diagnostics
+            ? await parseJsonDiagnostics(result.diagnostics, config.cwd, sourceLine)
+            : parseDiagnostics(text, config.cwd);
+        output.appendLine(`> ${config.compiler} ${(result.args || argumentsFor('check', config)).map(arg => JSON.stringify(arg)).join(' ')}`);
         if (text.trim()) output.appendLine(text.trimEnd());
         // A failure with no source location is not an error on any line. It is
         // listed in Problems against the checked file at an empty range, so it
@@ -81,29 +96,29 @@ function activate(context) {
                 void vscode.window.showWarningMessage(message);
             }
         } else if (!error) reportedFailure = '';
-        const lines = new Map();
-        async function sourceLine(file, line) {
-            if (!lines.has(file)) {
-                const open = vscode.workspace.textDocuments.find(doc => doc.uri.fsPath === file);
-                try {
-                    const source = open ? open.getText() : Buffer.from(await vscode.workspace.fs.readFile(vscode.Uri.file(file))).toString('utf8');
-                    lines.set(file, source.split(/\r?\n/));
-                } catch { lines.set(file, []); }
-            }
-            return lines.get(file)[line] || '';
-        }
         const files = new Map();
         let errors = 0;
         for (const item of parsed) {
-            const line = await sourceLine(item.file, item.line);
+            const line = (await sourceLine(item.file, item.line)) ?? '';
             const start = item.column === undefined ? Math.max(0, line.search(/\S/)) : Math.min(item.column, line.length);
-            const end = item.empty ? start : item.column === undefined ? line.length : Math.min(line.length, start + (line.slice(start).match(/^[A-Za-z_][A-Za-z0-9_]*/)?.[0].length || 1));
-            const range = new vscode.Range(item.line, start, item.line, Math.max(start, end));
+            const from = new vscode.Position(item.line, start);
+            let range;
+            if (item.empty) range = new vscode.Range(from, from);
+            else if (item.endLine !== undefined) {
+                // The range the compiler reports, ending one past its last character.
+                const endLine = item.endLine === item.line ? line : (await sourceLine(item.file, item.endLine)) ?? '';
+                const to = new vscode.Position(item.endLine, Math.min(item.endColumn, endLine.length));
+                range = new vscode.Range(from, to.isBefore(from) ? from : to);
+            } else {
+                // Without one: the identifier at the column, or the line's text.
+                const end = item.column === undefined ? line.length : Math.min(line.length, start + (line.slice(start).match(/^[A-Za-z_][A-Za-z0-9_]*/)?.[0].length || 1));
+                range = new vscode.Range(item.line, start, item.line, Math.max(start, end));
+            }
             const diagnostic = new vscode.Diagnostic(range, item.message,
                 item.severity === 'warning' ? vscode.DiagnosticSeverity.Warning : vscode.DiagnosticSeverity.Error);
             diagnostic.source = 'Goose';
             diagnostic.relatedInformation = item.related.map(frame => new vscode.DiagnosticRelatedInformation(
-                new vscode.Location(vscode.Uri.file(frame.file), new vscode.Range(frame.line, 0, frame.line, 0)), frame.message));
+                new vscode.Location(vscode.Uri.file(frame.file), new vscode.Range(frame.line, frame.column ?? 0, frame.line, frame.column ?? 0)), frame.message));
             const entry = files.get(item.file) || [];
             if (entry.some(other => other.message === diagnostic.message && other.range.isEqual(range))) continue;
             entry.push(diagnostic);
