@@ -115,8 +115,8 @@ expressions are written (temporaries, casts, the mask of a shift count) move
 it by as much as the gap, in both directions, and so does the placement of
 the code: with every loop aligned to 32 or 64 bytes, the Linux gap is 3-5%.
 
-One spelling costs more, and the port avoids it. The search for the next
-free column is written as plb2's C writes it, a `while` with a `break`:
+The search for the next free column is written as plb2's C writes it, a
+`while` with a `break`:
 
 ```goose
 while i < n {
@@ -125,14 +125,12 @@ while i < n {
 }
 ```
 
-Written as `while i < n && y & (1 << i) != 0 { i++; }` it runs 3% slower
-here. Goose compiles that `&&` to a `uint8_t` flag that the right operand
-sets inside an `if` (`docs/implementation.md` §6.11), and plb2's C
-rewritten into that shape slows down by 4-6% under clang 22 and clang 20
-alike, and by 3-8% in the other shape §6.11 uses, the two flags combined
-with `&`. The plain chain of branches, `if (!(i < n)) break; if (!(y & 1u
-<< i)) break;`, is as fast as the original. A `&&` that decides a branch, as
-a loop condition does, could be emitted as that chain.
+`while i < n && y & (1 << i) != 0 { i++; }` times the same: a `&&` that
+decides a branch compiles to the chain of branches a C compiler would give
+it (`docs/implementation.md` §6.11). As a `uint8_t` flag that the right
+operand set inside an `if`, the form it compiled to before, it cost this
+loop 3%, and plb2's C rewritten into that shape 4-6% under clang 22 and
+clang 20 alike.
 
 **`sudoku` is level with C, after one change that was worth 13%.** The
 solver first copied the matrix rows it walks into locals (`let rs =
@@ -168,9 +166,6 @@ the other two languages'.
 
 ## Compiler follow-ups
 
-* Emit a `&&` or `||` that decides a branch (a `while`, `if` or `guard`
-  condition) as a chain of branches rather than as a flag: 3-6% on loops of
-  `nqueen`'s shape under clang.
 * A `let` copy of a fixed-size value that is only read while the source stays
   unchanged could name the source instead: 13% on `sudoku` as first written.
 * Track a slice's length when its bounds differ by a variable
