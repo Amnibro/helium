@@ -22,6 +22,12 @@ inside the compiler process. Those runs are compared with the same blessed
 outputs. A first-line `no-jit` marker leaves a test out of them, and a program
 the backend refuses outright is counted as a skip, not a failure.
 
+The language reference's examples (docs/reference.md) are checked by
+scripts/check_doc_examples.py, a process of its own like the samples' runner:
+every code block of the document compiles, the blocks marked `// error` fail,
+and where the JIT runs, each complete program's output is the one the
+document shows after it.
+
 The audio/ tests use the SDL3 PCM mixer without a device, the gfx/ tests
 use the SDL3 graphics module, the physics/ tests the Box3D
 physics module and the ui/ tests the Nuklear ui module. They always parse,
@@ -1419,6 +1425,25 @@ def main():
     r.gendir, r.dumpdir = gendir, dumpdir
     deepdir = gendir
 
+    # The language reference's examples, compiled and (through the JIT) run
+    # by their own checker, which reports a FAIL line per block that does not
+    # compile or print what the document shows, and a summary line last.
+    dargs = [sys.executable, str(tc.REPO_ROOT / "scripts" / "check_doc_examples.py"),
+             str(tc.REPO_ROOT / "docs" / "reference.md"), "--exe", str(exe),
+             "--jobs", str(args.jobs), "--out-dir", str(gendir / "doc_examples")]
+    if jit:
+        dargs.append("--run")
+
+    def doc_examples():
+        result = subprocess.run(dargs, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
+        lines = tc.decode(result.stdout).splitlines()
+        if result.returncode == 0 and lines:
+            r.ok("reference examples: " + lines[-1])
+        else:
+            r.say("\n".join(lines) if lines else "the checker printed nothing")
+            r.local.out.failures += max(1, sum(line.startswith("FAIL ") for line in lines))
+    doc_examples_future = r.task(doc_examples, alone=True)
+
     # One level of category directories; nested syntax helpers and the modules
     # of the goose_in_goose bootstrap are exercised through their entry points.
     tests = [f for f in sorted(HERE.glob("*/*.goose"))
@@ -2106,6 +2131,9 @@ def main():
     r.section("long call chains and guard runs")
     for future in deep:
         r.show(future)
+
+    r.section("language reference examples (docs/reference.md)")
+    r.show(doc_examples_future)
 
     r.section("samples")
     r.show(samples_future)
