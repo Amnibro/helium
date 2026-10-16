@@ -288,13 +288,15 @@ inline string CodeGen::SigParams(FnSpec *sp, bool decls, bool er) {
             add(cat(ct, " ", pn));
             return;
         }
-        string init;
+        // The members are assigned one by one: TinyCC compiles a brace
+        // initializer into a memset call that zeroes the struct first.
+        string sets;
         for (auto &f : fs) {
             auto m = decls ? Unique2(cat(pn, "_", f.second)) : cat(pn, "_", f.second);
             add(cat(f.first, m));
-            Append(init, init.empty() ? "" : ", ", m);
+            Append(sets, " ", pn, ".", f.second, " = ", m, ";");
         }
-        if (decls) Append(paramcopies, "    ", ct, " ", pn, " = { ", init, " };\n");
+        if (decls) Append(paramcopies, "    ", ct, " ", pn, ";", sets, "\n");
     };
     for (size_t i = 0; i < sp->params.size(); i++) {
         auto vd = sp->params[i];

@@ -499,11 +499,13 @@ inline string CodeGen::CT(TypeExpr *t) {
                 // after it.
                 Append(tdecls, "typedef struct { ", NameCT(t->sub), " *data; int64_t len; } ",
                        name, ";\n\n");
+                slicects.insert(name);
                 CT(t->sub);
                 return name;
             }
             auto e = IsBytesT(t->sub) ? string("uint8_t") : CT(t->sub);
             Append(d, "typedef struct { ", e, " *data; int64_t len; } ", name, ";\n");
+            slicects.insert(name);
             break;
         }
         case TY_ARRAY: {

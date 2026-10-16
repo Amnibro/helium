@@ -294,6 +294,7 @@ struct CodeGen {
     static bool StructLike(TypeExpr *t);
     string NameCT(TypeExpr *t);
     set<string> cdefined;    // Mangled names whose C body has been emitted.
+    set<string> slicects;    // The C typedef names of slice types.
 
     void EmitCFields(string &d, const vector<Field> &fields, const vector<TypeExpr *> &ftypes);
 
@@ -685,6 +686,8 @@ struct CodeGen {
     string ExpandTopMarkers(const string &b, TopCachePlan &plan);
     string ExpandTopMarkers1(const string &b, TopCachePlan &plan, vector<bool> &lenok, bool &clean);
     string HoistAggregateDecls(string &b);
+    vector<string> BraceFields(const string &ct);
+    static vector<string> SplitBraceInit(const string &init);
     void PushSc(int kind);
     void EmitRestores(const CScope &s);
     void PopSc();
