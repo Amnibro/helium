@@ -347,7 +347,7 @@ inline vector<string> CodeGen::HoistDivisors(Block *loopbody, Node *cond,
         if (ok == "1") L(w, " ", m, " = ", gen, v, ", &", more, ");");
         else L(w, " ", m, " = (", ok, ") ? ", gen, v, ", &", more, ") : (", more,
                " = GS_DIVU_NONE, 0);");
-        divmagic[key] = { v, m, more, narrow };
+        divmagic[key] = { v, m, more, narrow, narrow && ok == "1" };
         added.push_back(key);
     }
     return added;

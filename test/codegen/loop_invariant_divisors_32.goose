@@ -92,6 +92,16 @@ fn mixed(d: u32, xs: u32[>..<]) -> i64 {
     return bad;
 }
 
+// A divisor whose conversion a debug build would find failing: a release
+// build divides by the truncated value (§6.3), for which no magic is made.
+fn converted(d: i64, xs: u32[>..<]) -> i64 {
+    var bad = 0;
+    for x in xs {
+        if wrong(x, d as! u32, x / (d as u32), x % (d as u32)) { bad += 1; }
+    }
+    return bad;
+}
+
 fn by_zero(d: u32, runs: i64) -> u32 {
     var s: u32 = 0;
     for i in runs { s += 100 / d; }
@@ -133,6 +143,10 @@ fn main() {
     print("signed ", bad, " ", check_i16(0), " ", check_i32(-5, 10));
 
     print("mixed ", mixed(7, dividends(7)) + mixed(0x80000001, dividends(0x80000001)));
+    bad = 0;
+    let truncated: i64[] = [-1, -2, -65536, 0x100000003];
+    for d in truncated { bad += converted(d, dividends(d as! u32)); }
+    print("converted ", bad);
     print(by_zero(0, 0), " ", by_zero(7, 3));
     print(by_zero(0, 1));
 }

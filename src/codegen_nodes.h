@@ -264,6 +264,13 @@ inline string Binary::CgX(CodeGen &cg) {
                         auto q = cat(mg.narrow ? "gs_divu32_q(" : "gs_divu_q(", "(", w, ")(", lc,
                                      "), ", mg.magic, ", ", mg.more, ")");
                         auto fast = div ? q : cat("(", w, ")(", lc, ") - ", q, " * ", mg.val);
+                        // Where only a zero divisor goes without, the plain division would
+                        // fail. Failing outright leaves a test of the loop-invariant `more`
+                        // that gcc takes out of the loop; the plain division's own zero
+                        // test would be a loop exit after which the loop's stores might
+                        // not run, which keeps gcc from holding them in registers (and
+                        // from vectorizing the loop).
+                        if (mg.zeronone) plain = cat("(gs_divfail(", cg.LocArgs(line), "), 0)");
                         return cat("(", ct, ")(", mg.more, " != GS_DIVU_NONE ? ", fast, " : ",
                                    plain, ")");
                     }

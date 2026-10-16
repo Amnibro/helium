@@ -129,8 +129,13 @@ scalar instruction. With `-march=native` clang vectorizes the whole inner
 loop, the remainder included, with AVX-512, and Goose takes 4.6 ms. With a
 64-bit magic number the same program took 44.6 ms, and 33.6 ms with
 `-march=native`, where clang vectorized only the additions around the
-multiplications. gcc 13 vectorizes neither and takes 37 to 39 ms with
-either magic number, `-march=native` or not.
+multiplications. gcc 13 vectorizes the loop with `-march=native` too (5.1
+ms in WSL), but only because Goose stores `a[i]` as it loads it, as
+`(*a).e[i]`, rather than through a pointer taken first, and fails a zero
+divisor outright rather than with the plain `%` and its zero test: either
+one keeps gcc from holding `a[i]` in a register across the inner loop. At
+`-O3` alone gcc does not vectorize the 64-bit product the high half comes
+from, and takes 35.5 ms.
 
 **levenshtein**: each cell is the minimum of three candidates, one of them
 the cell before it, which makes the row a chain of dependent minima. As

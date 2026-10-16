@@ -709,23 +709,38 @@ inline CodeGen::Loc CodeGen::GenLoc(Node *n) {
 
 // Whether a destination's C lvalue names the same storage wherever in its
 // statement it is evaluated: a variable, or a field of a fixed-size value
-// down from one, with no index on the way (and no reference that can be
-// rebound, which the caller sees as Loc::viaref). An assignment stores to
-// such a destination as it is spelled, a member store the C compiler's
+// or an element of a fixed-size array down from one, at an index that takes
+// no check, which IndexLoc holds in a temporary (and no reference that can
+// be rebound, which the caller sees as Loc::viaref). An assignment stores
+// to such a destination as it is spelled, a member store the C compiler's
 // type-based alias analysis tells apart from other structs' fields, where
 // a store through a pointer taken first is to any value of the field's type.
+// Spelled like the destination's loads, it is also one location to gcc's
+// loop invariant motion, which keeps an element a loop reads and writes in
+// a register (and so lets the loop vectorize) only then.
 inline bool CodeGen::StableDest(Node *n) {
-    while (auto d = Is<Dot>(n)) {
-        if (!d->IsField()) return false;
-        auto ot = d->obj->exprtype;
-        if (ot && ot->kind == TY_REF) {
-            if (ot->ref->lenstorage >= 0) return false;
-            ot = ot->ref->sub;
+    auto fixed = [&](TypeExpr *t) {
+        if (t && t->kind == TY_REF) {
+            if (t->ref->lenstorage >= 0) return (TypeExpr *)nullptr;
+            t = t->ref->sub;
         }
-        if (!ot || !IsFix(ot)) return false;
-        n = d->obj;
+        return t && IsFix(t) ? t : nullptr;
+    };
+    for (;;) {
+        if (auto d = Is<Dot>(n)) {
+            if (!d->IsField() || !fixed(d->obj->exprtype)) return false;
+            n = d->obj;
+        } else if (auto ix = Is<Index>(n)) {
+            auto at = fixed(ix->obj->exprtype);
+            if (!at || at->kind != TY_ARRAY || at->arr->akind != A_FIXED || fillvalues.count(ix))
+                return false;
+            auto il = Is<IntLit>(ix->idx);
+            if (!ix->nobc && !(il && il->val >= 0 && il->val < ArrSize(at->arr))) return false;
+            n = ix->obj;
+        } else {
+            return Is<Ident>(n) != nullptr;
+        }
     }
-    return Is<Ident>(n) != nullptr;
 }
 
 // A fresh statement-scoped stack for a bytes-class temporary, returned in

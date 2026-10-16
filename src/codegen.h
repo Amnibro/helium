@@ -1058,7 +1058,8 @@ struct CodeGen {
     // Divisors fixed for a loop being emitted, by DivisionKey: the C locals
     // holding the divisor's value as a u64, its gs_divu_gen magic and its
     // shift, or as a u32 and gs_divu32_gen's where `narrow` (HoistDivisors).
-    struct DivMagic { string val, magic, more; bool narrow; };
+    // `zeronone`: only a zero divisor leaves it without a magic.
+    struct DivMagic { string val, magic, more; bool narrow, zeronone; };
     unordered_map<string, DivMagic> divmagic;
     // The variables of the specialization being emitted that a reference is
     // made to somewhere in it (RefdLocals), for refdspec.

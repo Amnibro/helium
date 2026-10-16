@@ -2904,13 +2904,17 @@ presence of aliases (`Snapshot`, `IndexLoc`, `GenSlice`, `Assign::CgStmt`,
 * Assignment resolves its destination before evaluating its right-hand
   side. Compound assignment also samples the old value first. A
   destination the right side cannot move -- a variable, or a field of a
-  fixed-size value down from one with no index on the way and no reference
-  that can be rebound (`StableDest`) -- is stored to as it is spelled after
-  the right side has run, rather than through a pointer taken first: a
-  member store, which the C compiler's type-based alias analysis keeps
-  apart from other structs' fields of the same type (a loop updating
-  `s.w` keeps `n.e` in a register), where a store through a `double *`
-  may be to any double. Whole
+  fixed-size value or an element of a fixed-size array down from one, at
+  an index that takes no check, with no reference that can be rebound
+  (`StableDest`) -- is stored to as it is spelled after the right side has
+  run, rather than through a pointer taken first: a member store, which
+  the C compiler's type-based alias analysis keeps apart from other
+  structs' fields of the same type (a loop updating `s.w` keeps `n.e` in a
+  register), where a store through a `double *` may be to any double.
+  Spelled like the loads of the same element, the store is also one
+  location to gcc's loop invariant motion, which only then keeps an
+  element a loop reads and writes (`a[i] = a[i] + x` in a loop over `j`)
+  in a register, and so lets the loop vectorize. Whole
   resizable assignment has the clear-before-construction semantics of
   spec §4.4; overlapping permitted copies have memmove semantics.
 * A range/count `for` samples its bounds once, before iteration, and runs
@@ -4425,8 +4429,14 @@ remainders runs about seven times as fast with AVX-512. A zero divisor gets
 zero check, so the abort happens where and when a division by zero runs; so
 does a divisor whose conversion would fail, which is computed ahead of the
 loop without its check (`DivisorValue`), and a 64-bit magic number under a C
-compiler without 128-bit products (TinyCC). The magic costs about one
-division, so a loop pays it back from its second division on.
+compiler without 128-bit products (TinyCC). Where only a zero divisor can
+go without a 32-bit magic (`DivMagic::zeronone`: no conversion is checked),
+the division fails outright under `GS_DIVU_NONE` instead: gcc copies that
+test of a loop-invariant value out of the loop, where the plain division's
+own zero test would leave a loop exit after which the loop's stores might
+not run, and gcc holds such stores in registers, as vectorizing needs, only
+where they always run. The magic costs about one division, so a loop pays
+it back from its second division on.
 
 ### 6.11 `&&` and `||`
 
