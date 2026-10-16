@@ -3831,7 +3831,8 @@ the end, each with where its resolution lives.
     operation on the array itself (§5.1), so such an index could only be
     invalidated by one the analysis sees. This
     could extend §10.5 by making index validity a type property, rather
-    than relying only on dataflow analysis.
+    than relying only on dataflow analysis. Proposal, with `checkfree`
+    functions that must keep no bounds check: `docs/design/index_types.md`.
 0f. **Bounds-check analysis, known gaps** (§10.5) — a loop's exit condition
     is a disjunction (`!(i < n && p)`), which a difference-constraint domain
     cannot represent, so post-loop bounds rest on the inferred invariants
