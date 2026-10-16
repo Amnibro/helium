@@ -26,6 +26,8 @@
 This working specification defines Goose's syntax, semantics, and compilation
 model. It provides the detail needed to implement the language, without the
 formal structure of an ISO specification. Appendix B lists unresolved items.
+A readable account of the same rules, with an example for each, is
+[the language reference](reference.md).
 
 Priorities, in order: **Speed, Safety, Expressiveness.**
 Safety here means: no out-of-bounds access, no access to memory at a type

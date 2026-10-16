@@ -285,6 +285,13 @@ The runner checks more than exit status and runtime output:
 | `member_stores.goose` at O1 | Read the generated C: `store_links` stores to fields reached through references that cannot be rebound, with no index on the way, as C member stores rather than through a pointer taken first (`StableDest`); its runs check the stores, and that a right side rebinding the reference on the way still stores where the destination named before it ran (`evaluation_order.goose` has a right side writing the destination itself). |
 | `optimize.goose` at O0/O1/O2 | Inspect named tail-recursion bodies in `--specs`: supported integer accumulator/plain recursion becomes loops; modulo, floating-point reassociation, nonlocal-return frames and returns inside nested loops retain self calls. Mixed operators retain the ineligible call. Leading locals prevent base-case inlining from consuming these cases first. The `gb_` functions count the copies of their first statement: guarded base-case inlining copies the body once per self-call site where the test compares unassigned parameters, UFCS-spelled self-calls included, and not where it reads a global or a node, does arithmetic, or reads an assigned parameter. |
 
+The examples of the language reference are checked separately, by hand,
+with `python scripts/check_doc_examples.py docs/reference.md --run`: every
+```` ```goose ```` block of the document compiles (as written, or wrapped
+in a `main`), a block marked `// error` fails, and a complete program's
+output matches the block shown after it. The script's docstring has the
+markers a document uses for the exceptions.
+
 ## Fixture audit
 
 The fixture audit retained the small lifetime, optional-narrowing, alias-cycle,
