@@ -1145,8 +1145,8 @@ did where that container is a class of the caller's; the specialization's
 one entry for events alike but for that keeps the mark only where each of
 them has it (`AddStoreEvent`), and a cycle's rounds compare it
 (`SameRecord`). A place the mapping names exactly whose storage cannot hold
-the stored reference's pointee by value, under any qualifier
-(`MayHoldValueOf`), is left out: a view a caller's holder holds may stand
+the stored reference's pointee by value, under any qualifier or storage
+form (`MayHoldValueOf` over `MaySameType`), is left out: a view a caller's holder holds may stand
 for a `Link&` the callee pushed into the `Link[>..]` one of its references
 names, never for one into the `u8[>..]` another names, so only the arrays
 that can hold a `Link` must outlive the storage it lands in. A nested function's store through a
@@ -1742,6 +1742,26 @@ callers. A body's kills judge only the variables it names: a nested
 function's scan of a lexical parent's reference finds no kill made through
 its own parameter, which the call sites alone could tell is the same
 storage.
+
+**What a class leads to** (`ShrinkTargets`' `classbound`). A shrink through
+a reference read out of the storage behind one of the activation's
+parameter classes (an inexact alternative at the class, read out of it or
+only bounded by it), and a callee's shrink of an array the argument only
+leads to where the argument is such a class, frees the class's own target,
+a bound, or any array of the type at its depth or outside, globals
+included. Those others (`ShrinkTarget::viaclass`) are scanned against the
+activation's own variables but not recorded (`GrowOnlyShrinkAt`'s
+`viaclass`: no `NoteShrink`, `NoteShrinkOrder`, `NoteLiveViews` or
+`NoteGlobalShrink`): the class's bound stands for them at every call, where
+the argument names them. A call whose argument for such a bound is a
+reference or slice naming one local holder exactly, whose record says it
+holds references into variables named exactly alone, takes the arrays from
+that record (`HeldAt`, its contents, which by then include the callee's own
+stores there): a variable whose type can hold the array and leads to none
+through its references is the array itself, one that can neither hold nor
+lead to one is left out (`MayHoldValueOf`), and any other only bounds it.
+A holder holding anything else -- a parameter's class, an inexact root --
+leaves the argument's own roots to bound the array, as before.
 
 **`for` loops** (§6.5). A `for` around the shrink holds what it walks while
 its body is checked (`HoldForSequence`, §3.3): item 4, and the grow-shrink

@@ -1233,7 +1233,8 @@ inline bool TypeCheck::KilledFor(VarDef *c, VarDef *base, TypeExpr *t, TypeExpr 
 // record -- the first caller's too, though this body is checked inside its
 // check -- where the rest of the caller's statement is in view.
 inline void TypeCheck::GrowOnlyShrinkAt(Node *c, const string &op, VarDef *vd,
-                                        const string &what, TypeExpr *bound, TypeExpr *arr) {
+                                        const string &what, TypeExpr *bound, TypeExpr *arr,
+                                        bool viaclass) {
     struct ClassType {
         TypeCheck &tc;
         VarDef *cls;
@@ -1338,6 +1339,10 @@ inline void TypeCheck::GrowOnlyShrinkAt(Node *c, const string &op, VarDef *vd,
                      " is still used: it may hold a reference or slice into it",
                      why.empty() ? "" : "; ", why, " (§5.1)"));
     });
+    // An array only the storage behind a parameter's class leads to is the
+    // callers' to name: the class's bound stands for it at every call, where
+    // the argument says what that storage holds.
+    if (viaclass) return;
     // What the other globals hold may yet be stored by functions not checked
     // so far: they are judged once every one has been.
     if (vd->isglobal) NoteGlobalShrink(c, cat("cannot ", op, " ", what), vd, bound);
@@ -2473,24 +2478,34 @@ inline bool TypeCheck::SamePath(Node *a, Node *b) {
 // root is static data where exact, and where not, the globals. The same
 // storage is where a store rooted there into a slot inside an `arr` may land
 // (FitsAt, ApplyCalleeStores), and where the slot is one a reference to a
-// slice names (`slots`), a slice variable may be it.
+// slice names (`slots`), a slice variable may be it. With `classbound`, the
+// arrays a bound that is a parameter's class of the activation stands for --
+// what was read out of the storage behind it, or what that storage leads to
+// -- are only where the class leads (ShrinkTarget::viaclass), the class
+// itself coming first.
 inline vector<TypeCheck::ShrinkTarget> TypeCheck::ShrinkTargets(const Roots &roots,
-                                                                 TypeExpr *arr, bool slots) {
+                                                                 TypeExpr *arr, bool slots,
+                                                                 bool classbound) {
     vector<ShrinkTarget> out;
-    auto add = [&](VarDef *r, bool bound) {
+    auto add = [&](VarDef *r, bool bound, bool viaclass) {
         for (auto &t : out)
             if (t.root == r) {
                 t.bound = t.bound && bound;
+                t.viaclass = t.viaclass && viaclass;
                 return;
             }
-        out.push_back({ r, bound });
+        out.push_back({ r, bound, viaclass });
     };
+    auto own = classbound ? CurRealFrame().spec : nullptr;
     for (auto &a : roots.alts) {
         auto root = a.root;
         if (a.exact) {
-            if (root) add(root, false);
+            if (root) add(root, false, false);
             continue;
         }
+        auto behind = own && IsClassRoot(root) && (!a.from || a.from == root) &&
+                      find(own->classroots.begin(), own->classroots.end(), root) !=
+                          own->classroots.end();
         auto cands = RootCandidates(arr, Depth(root), false, true, slots);
         if (root) {
             auto isbound = false;
@@ -2498,10 +2513,10 @@ inline vector<TypeCheck::ShrinkTarget> TypeCheck::ShrinkTargets(const Roots &roo
                 isbound = true;
                 for (auto &c : cands.alts) if (c.root == root && c.exact) isbound = false;
             }
-            add(root, isbound);
+            add(root, isbound, false);
         }
         for (auto &c : cands.alts)
-            if (c.root && c.root != root) add(c.root, !c.exact);
+            if (c.root && c.root != root) add(c.root, !c.exact, behind);
     }
     return out;
 }
@@ -2522,12 +2537,12 @@ inline void TypeCheck::ShrinkThrough(Node *at, const string &verb, const string 
                                      const Roots &roots, TypeExpr *arr, ShrinkBalance balance) {
     auto root = roots.Root();
     auto growonly = GrowOnlyTail(arr);
-    for (auto &t : ShrinkTargets(roots, arr)) {
+    for (auto &t : ShrinkTargets(roots, arr, false, growonly)) {
         auto bound = t.bound ? arr : nullptr;
         if (growonly) {
             auto what = t.root == root ? string(t.root->name)
                                        : cat(t.root->name, " (which ", recv, " may point at)");
-            GrowOnlyShrinkAt(at, verb, t.root, what, bound, arr);
+            GrowOnlyShrinkAt(at, verb, t.root, what, bound, arr, t.viaclass);
         } else {
             auto what = t.root == root ? recv : cat(t.root->name, ", which ", recv,
                                                     " may point at");
@@ -3107,6 +3122,7 @@ inline void TypeCheck::ApplyCalleeShrinks(Node *at, FnSpec *spec, vector<Val> &a
         ShrinkBalance balance;
         const char *how;
         const FnRecord::ShrinkOrder *order;   // Null where the record does not say.
+        bool viaclass;
     };
     vector<Hit> hits;
     auto storesbase = storeevents.size();
@@ -3157,7 +3173,8 @@ inline void TypeCheck::ApplyCalleeShrinks(Node *at, FnSpec *spec, vector<Val> &a
                 callorder = { storesbase, &origins, h.order->before, &classorigins, classbase };
                 for (auto &[p, path] : h.order->kills) argkill(p, path);
             }
-            GrowOnlyShrinkAt(at, what, h.root, string(h.root->name), h.bound, h.arr);
+            GrowOnlyShrinkAt(at, what, h.root, string(h.root->name), h.bound, h.arr,
+                             h.viaclass);
         } else if (judged == SB_UNBALANCED) {
             ShrinkGrowShrink(at, op, h.root, string(h.root->name), h.bound);
         } else {
@@ -3170,13 +3187,14 @@ inline void TypeCheck::ApplyCalleeShrinks(Node *at, FnSpec *spec, vector<Val> &a
     // external's type is its root's own, which a parameter class takes from
     // its call site. A callee's are applied once all of them are known.
     auto shrink = [&](const Roots &roots, TypeExpr *arr, const char *how,
-                      ShrinkBalance balance, const FnRecord::ShrinkOrder *order) {
+                      ShrinkBalance balance, const FnRecord::ShrinkOrder *order,
+                      bool classbound = false) {
         auto growonly = arr ? GrowOnlyTail(arr) : IsGrowOnlyRootVar(roots.Root());
-        for (auto &t : ShrinkTargets(roots, arr))
+        for (auto &t : ShrinkTargets(roots, arr, false, classbound && growonly))
             hits.push_back({ t.root, t.bound ? arr : nullptr, arr, growonly,
                              growonly ? SB_UNBALANCED : balance,
                              roots.Exact() && t.root == roots.Root() ? how : "may shrink",
-                             order });
+                             order, t.viaclass });
     };
     {
         struct Restore {
@@ -3232,9 +3250,38 @@ inline void TypeCheck::ApplyCalleeShrinks(Node *at, FnSpec *spec, vector<Val> &a
     // for a by-value holder, bound.
     for (auto &b : rec->shrinkparambounds) {
         if (b.key >= (int)argvals.size()) continue;
-        auto roots = ClassArgRoots(spec->argtypes[b.key], argvals[b.key]);
+        auto pt = spec->argtypes[b.key];
+        auto roots = ClassArgRoots(pt, argvals[b.key]);
         roots.Weaken();
-        shrink(roots, b.type, "may shrink", b.balance, orderof(b.key, nullptr, b.type));
+        // Through a reference or slice naming one local holder exactly, the
+        // references are those its record says it holds (HeldAt), the
+        // callee's own stores there among them by now (ApplyCalleeStores): a
+        // place one names exactly is the array where its storage holds one
+        // and its references lead to none, leads to none where neither may
+        // be, and otherwise only bounds the array, as any other root does.
+        // Where it holds anything else -- a parameter's class, whose storage
+        // the candidates at its depth name best -- the argument bounds them.
+        auto held = IsRefOrSlice(pt) && HolderSource(argvals[b.key]) ? HeldAt(argvals[b.key])
+                                                                     : Roots {};
+        if (!held.None() && !held.unknown &&
+            held.All([](const RootAlt &a) {
+                return a.exact && a.root && a.root->type && !IsRefOrSlice(a.root->type);
+            })) {
+            roots.Clear();
+            for (auto a : held.alts) {
+                a.from = nullptr;
+                a.classread = false;
+                auto rt = LoadType(a.root->type);
+                vector<TypeExpr *> reached;
+                ReachedThroughRefs(rt, reached);
+                auto leads = any_of(reached.begin(), reached.end(),
+                                    [&](TypeExpr *t) { return MayHoldValueOf(t, b.type); });
+                if (!leads && !MayHoldValueOf(rt, b.type)) continue;
+                a.exact = !leads && CanContain(rt, b.type);
+                roots.Add(a);
+            }
+        }
+        shrink(roots, b.type, "may shrink", b.balance, orderof(b.key, nullptr, b.type), true);
     }
     for (auto &[vd, balance] : rec->shrinkexternals)
         shrink(RootsOf(vd), nullptr, "shrinks", balance, orderof(-1, vd, nullptr));

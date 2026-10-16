@@ -1460,7 +1460,15 @@ any array of its type that the root bounds, and a shrink through it counts
 as a shrink of each of them: those in variables at the root's scope or
 outside it, and the caller's arrays a parameter's references lead to, for
 which the callers check it. The same holds where a call shrinks what an
-inexactly rooted argument points at.
+inexactly rooted argument points at. Read out of the storage behind a
+reference parameter — `s.text = …` for `s: S&` — the reference may point
+at anything the callers or the function stored there: the function judges
+its own variables against every array of the type outliving the call, and
+its callers judge the shrink as one of an array that storage leads to,
+each by its argument. A struct of the caller's leads to the arrays its
+record says it refers to, of the type shrunk, or holding or leading to one:
+`s.text = copy(t)` in a callee frees no global `u8[>..]` the caller views,
+where the caller's struct refers to a local text and a node pool.
 
 Nor can a shrink inside a function tell what its parameters point into: a
 parameter's pointee is whatever each call passes, which may be a global, a

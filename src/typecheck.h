@@ -1579,6 +1579,7 @@ struct TypeCheck {
     bool CanContain(TypeExpr *t, TypeExpr *of);
     bool CanContainWalk(TypeExpr *t, TypeExpr *of);
     bool MayHoldValueOf(TypeExpr *t, TypeExpr *of);
+    bool MaySameType(TypeExpr *a, TypeExpr *b);
     void ReachedThroughRefs(TypeExpr *t, vector<TypeExpr *> &out);
     bool ReachesThroughRefs(TypeExpr *t, TypeExpr *of);
     void BoundReach(VarDef *r, vector<TypeExpr *> &out);
@@ -2276,8 +2277,11 @@ struct TypeCheck {
     // `what` names the array in the diagnostics; `bound` is its type where vd
     // only bounds it (ShrinkTarget), and `arr` the type of the storage shrunk
     // where known, which a parameter's class vd does not say itself.
+    // `viaclass`: judged here, recorded for the callers as a class's bound
+    // (ShrinkTarget::viaclass).
     void GrowOnlyShrinkAt(Node *c, const string &op, VarDef *vd, const string &what,
-                          TypeExpr *bound = nullptr, TypeExpr *arr = nullptr);
+                          TypeExpr *bound = nullptr, TypeExpr *arr = nullptr,
+                          bool viaclass = false);
     // Kills (Kill): the part of a holder a checked location path names, a
     // whole assignment's of a value holding no references, and whether those
     // in force empty every slot of a `t` at `base` in container c that can
@@ -2442,11 +2446,16 @@ struct TypeCheck {
     // An array a shrink may free (§5.1, §5.2): the one in root's own storage,
     // or, where root cannot hold one, one its storage leads to through the
     // references it holds (`bound`: root only bounds that array's lifetime).
+    // `viaclass`: only where the storage behind a parameter's class of the
+    // activation leads, which the class's own target, a bound, records for
+    // the call sites (`classbound`).
     struct ShrinkTarget {
         VarDef *root = nullptr;
         bool bound = false;
+        bool viaclass = false;
     };
-    vector<ShrinkTarget> ShrinkTargets(const Roots &roots, TypeExpr *arr, bool slots = false);
+    vector<ShrinkTarget> ShrinkTargets(const Roots &roots, TypeExpr *arr, bool slots = false,
+                                       bool classbound = false);
     string TargetStr(const ShrinkTarget &t);
     void ShrinkThrough(Node *at, const string &verb, const string &recv, const Roots &roots,
                        TypeExpr *arr, ShrinkBalance balance = SB_UNBALANCED);

@@ -1085,20 +1085,33 @@ inline bool TypeCheck::CanContainWalk(TypeExpr *t, TypeExpr *of) {
 }
 
 // CanContain up to qualifiers and storage forms: false only where no part
-// of t by value is of `of`'s kind, or of its struct or enum at all, so a
-// `const` pointee or a loaded field type never makes two such types miss.
+// of t by value may be an `of` (MaySameType), so a `const` pointee or a
+// loaded field type never makes two such types miss.
 inline bool TypeCheck::MayHoldValueOf(TypeExpr *t, TypeExpr *of) {
-    auto adt = [](TypeExpr *x) { return x->kind == TY_ENUM || x->kind == TY_VARIANT; };
-    auto same = [&]() {
-        if (adt(t) || adt(of))
-            return adt(t) && adt(of) &&
-                   (t->kind != TY_ENUM || of->kind != TY_ENUM || t->enu->en == of->enu->en);
-        if (t->kind != of->kind) return false;
-        return t->kind != TY_STRUCT || t->struc->st == of->struc->st;
-    };
-    if (same()) return true;
+    if (MaySameType(t, of)) return true;
     if (t->kind == TY_ARRAY) return MayHoldValueOf(t->arr->sub, of);
     return AnyField(t, [&](TypeExpr *ft) { return MayHoldValueOf(ft, of); });
+}
+
+// Whether a and b may be one type up to qualifiers and storage forms: of
+// one kind, the same struct or enum, integers of one width (a varint loads
+// as any), floats of one width, arrays of one kind of such elements.
+inline bool TypeCheck::MaySameType(TypeExpr *a, TypeExpr *b) {
+    auto adt = [](TypeExpr *x) { return x->kind == TY_ENUM || x->kind == TY_VARIANT; };
+    if (adt(a) || adt(b))
+        return adt(a) && adt(b) &&
+               (a->kind != TY_ENUM || b->kind != TY_ENUM || a->enu->en == b->enu->en);
+    if (a->kind != b->kind) return false;
+    switch (a->kind) {
+        case TY_STRUCT: return a->struc->st == b->struc->st;
+        case TY_INT:
+            return a->intstorage == b->intstorage || a->intstorage == IS_VARINT ||
+                   b->intstorage == IS_VARINT;
+        case TY_FLT: return a->fltstorage == b->fltstorage;
+        case TY_ARRAY:
+            return a->arr->akind == b->arr->akind && MaySameType(a->arr->sub, b->arr->sub);
+        default: return true;
+    }
 }
 
 // The pointee type a reference or slice type reaches: for a slice, its
