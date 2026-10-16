@@ -513,6 +513,36 @@ inline string CodeGen::GenPure(Node *n) {
     return Snapshot(n->exprtype, GenX(n));
 }
 
+// An integer `/` or `%` at storage s, through runtime.h's gs_div_/gs_mod_
+// macros. Those name their operands more than once, so an operand that is
+// not already a C name or a number is read into a temp first; a signed `%`
+// also gets the temp it keeps the remainder in.
+inline string CodeGen::DivX(bool div, IntStorage s, const string &l, const string &r,
+                            Line line) {
+    auto pure = [&](const string &x) {
+        auto core = x;
+        while (core.size() > 2 && core.front() == '(' && core.back() == ')' &&
+               core.find_first_of("()", 1) == core.size() - 1)
+            core = core.substr(1, core.size() - 2);
+        auto name = !core.empty() && !isdigit((uint8_t)core[0]);
+        auto num = !core.empty() && isdigit((uint8_t)core[0]);
+        for (auto ch : core) {
+            if (!isalnum((uint8_t)ch) && ch != '_') name = false;
+            if (!isdigit((uint8_t)ch) && !strchr("uUlL", ch)) num = false;
+        }
+        if (name || num) return core;
+        auto t = T();
+        L(IntCT(s), " ", t, " = ", x, ";");
+        return t;
+    };
+    auto a = pure(l), b = pure(r);
+    if (div) return cat("gs_div_", IntSfx(s), "(", a, ", ", b, ", ", LocArgs(line), ")");
+    if (IsUnsigned(s)) return cat("gs_mod_", IntSfx(s), "(", a, ", ", b, ", ", LocArgs(line), ")");
+    auto t = T();
+    L("int64_t ", t, ";");
+    return cat("gs_mod_", IntSfx(s), "(", t, ", ", a, ", ", b, ", ", LocArgs(line), ")");
+}
+
 // The two minima are written as a subtraction: C has no negative decimal
 // constants, and MSVC's C front end types both magnitudes as unsigned
 // (C90 literal rules), which the negation would carry through.
@@ -1627,9 +1657,8 @@ inline void CodeGen::GenElemwiseInto(TypeExpr *t, TType op, Line line, const str
             case T_PLUS: case T_PLUSEQ:   return cat("gs_add_", sfx, "(", a, ", ", c, ovf, ")");
             case T_MINUS: case T_MINUSEQ: return cat("gs_sub_", sfx, "(", a, ", ", c, ovf, ")");
             case T_MUL: case T_MULEQ:     return cat("gs_mul_", sfx, "(", a, ", ", c, ovf, ")");
-            case T_DIV: case T_DIVEQ:
-                return cat("gs_div_", sfx, "(", a, ", ", c, ", ", LocArgs(line), ")");
-            default: return cat("gs_mod_", sfx, "(", a, ", ", c, ", ", LocArgs(line), ")");
+            case T_DIV: case T_DIVEQ: return DivX(true, tt->intstorage, a, c, line);
+            default: return DivX(false, tt->intstorage, a, c, line);
         }
     });
 }

@@ -381,9 +381,8 @@ R"GSRT(   operations compute wide (so wrap is defined in C), truncate back, and 
    does not fit the type. Shifts mask their count to the width; division is
    zero-checked always.
 
-   Only division and modulo check anything in a release build, so only they
-   need to be functions there; everything else is a macro whose body is the
-   expression the release function would have returned. An optimizing backend
+   In a release build every operation is a macro whose body is the
+   expression the debug function would have returned. An optimizing backend
    inlines either form to the same instruction, but a backend that does not
    inline (libtcc, or any -O0 build) would otherwise pay a call for every
    arithmetic operation in the program — which measured as 13-37% of total
@@ -393,41 +392,66 @@ R"GSRT(   operations compute wide (so wrap is defined in C), truncate back, and 
    operation, for the debug build's overflow message; the release macros
    drop them unevaluated. */
 
-#if GS_DEBUG
-#define GS_OVFCHK(r, MIN, MAX, a, op, b, type, file, line) \
-    do { if ((r) < (MIN) || (r) > (MAX)) gs_ovf((a), (op), (b), (type), (file), (line)); } while (0)
-#else
-#define GS_OVFCHK(r, MIN, MAX, a, op, b, type, file, line) ((void)0)
-#endif
+/* Division and modulo, both builds: the zero check is not optional, `%` is
+   Euclidean, and i64.min / -1 aborts. They are macros for the reason the
+   other operations are, but each names its operands more than once, so the
+   compiler passes side-effect-free ones (as GS_IDX's index); a signed
+   modulo also takes t, an int64_t of the caller's that holds the C
+   remainder while its sign is fixed. Operands convert to the operation's
+   type first, as a function's parameters would. Only the debug build's
+   narrow signed division, which also checks that the quotient fits (-128 /
+   -1 in i8), is a function. */
+#define GS_DIVU(T, a, b, f, l) \
+    ((T)(b) ? (T)((T)(a) / (T)(b)) : (gs_divfail((f), (l)), (T)0))
+#define GS_MODU(T, a, b, f, l) \
+    ((T)(b) ? (T)((T)(a) % (T)(b)) : (gs_divfail((f), (l)), (T)0))
+#define GS_DIVS(T, a, b, f, l) \
+    ((T)(b) ? (T)((int64_t)(T)(a) / (int64_t)(T)(b)) : (gs_divfail((f), (l)), (T)0))
+#define GS_MODS(T, t, a, b, f, l) \
+    ((T)(b) == 0 ? (gs_divfail((f), (l)), (T)0) \
+     : (T)(((t) = (int64_t)(T)(a) % (int64_t)(T)(b)) < 0 \
+               ? (t) + ((T)(b) < 0 ? -(int64_t)(T)(b) : (int64_t)(T)(b)) : (t)))
 
-/* Division and modulo, both builds: the zero check is not optional, and `%`
-   is Euclidean. */
+#define gs_div_u8(a, b, f, l)  GS_DIVU(uint8_t, a, b, f, l)
+#define gs_div_u16(a, b, f, l) GS_DIVU(uint16_t, a, b, f, l)
+#define gs_div_u32(a, b, f, l) GS_DIVU(uint32_t, a, b, f, l)
+#define gs_div_u64(a, b, f, l) GS_DIVU(uint64_t, a, b, f, l)
+#define gs_mod_u8(a, b, f, l)  GS_MODU(uint8_t, a, b, f, l)
+#define gs_mod_u16(a, b, f, l) GS_MODU(uint16_t, a, b, f, l)
+#define gs_mod_u32(a, b, f, l) GS_MODU(uint32_t, a, b, f, l)
+#define gs_mod_u64(a, b, f, l) GS_MODU(uint64_t, a, b, f, l)
+#define gs_mod_i8(t, a, b, f, l)  GS_MODS(int8_t, t, a, b, f, l)
+#define gs_mod_i16(t, a, b, f, l) GS_MODS(int16_t, t, a, b, f, l)
+#define gs_mod_i32(t, a, b, f, l) GS_MODS(int32_t, t, a, b, f, l)
+#define gs_div_i64(a, b, f, l) \
+    ((int64_t)(b) == 0 ? (gs_divfail((f), (l)), (int64_t)0) \
+     : (int64_t)(a) == INT64_MIN && (int64_t)(b) == -1 ? (gs_divovf((f), (l)), (int64_t)0) \
+     : (int64_t)(a) / (int64_t)(b))
+/* i64.min % -1 would trap, and is exactly 0 as every x % -1 is; |b| is
+   unsigned, so a divisor of i64.min (unrepresentable negated) works. */
+#define gs_mod_i64(t, a, b, f, l) \
+    ((int64_t)(b) == 0 ? (gs_divfail((f), (l)), (int64_t)0) \
+     : (int64_t)(b) == -1 ? (int64_t)0 \
+     : ((t) = (int64_t)(a) % (int64_t)(b)) < 0 \
+         ? (int64_t)((uint64_t)(t) + ((int64_t)(b) < 0 ? 0u - (uint64_t)(int64_t)(b) \
+                                                       : (uint64_t)(int64_t)(b))) \
+         : (t))
+
+#if GS_DEBUG
 #define GS_DIVOPS_S(SFX, T, MIN, MAX) \
 static T gs_div_##SFX(T a, T b, const char *file, int line) { \
     if (b == 0) gs_divfail(file, line); \
     int64_t r = (int64_t)a / (int64_t)b; \
-    GS_OVFCHK(r, MIN, MAX, a, "/", b, #SFX, file, line); \
-    return (T)r; } \
-static T gs_mod_##SFX(T a, T b, const char *file, int line) { \
-    if (b == 0) gs_divfail(file, line); \
-    int64_t r = (int64_t)a % (int64_t)b; \
-    if (r < 0) r += (int64_t)b < 0 ? -(int64_t)b : (int64_t)b; \
+    if (r < (MIN) || r > (MAX)) gs_ovf(a, "/", b, #SFX, file, line); \
     return (T)r; }
-
-#define GS_DIVOPS_U(SFX, T) \
-static T gs_div_##SFX(T a, T b, const char *file, int line) { \
-    if (b == 0) gs_divfail(file, line); \
-    return (T)(a / b); } \
-static T gs_mod_##SFX(T a, T b, const char *file, int line) { \
-    if (b == 0) gs_divfail(file, line); \
-    return (T)(a % b); }
-
 GS_DIVOPS_S(i8, int8_t, -128, 127)
 GS_DIVOPS_S(i16, int16_t, -32768, 32767)
 GS_DIVOPS_S(i32, int32_t, INT32_MIN, INT32_MAX)
-GS_DIVOPS_U(u8, uint8_t)
-GS_DIVOPS_U(u16, uint16_t)
-GS_DIVOPS_U(u32, uint32_t)
+#else
+#define gs_div_i8(a, b, f, l)  GS_DIVS(int8_t, a, b, f, l)
+#define gs_div_i16(a, b, f, l) GS_DIVS(int16_t, a, b, f, l)
+#define gs_div_i32(a, b, f, l) GS_DIVS(int32_t, a, b, f, l)
+#endif
 
 #if GS_DEBUG
 
@@ -514,7 +538,8 @@ static uint64_t gs_shr_u64(uint64_t a, int64_t n) { return a >> (n & 63); }
 #define gs_shl_i8(a, n)  ((int8_t)((uint64_t)(a) << ((n) & 7)))
 #define gs_shr_i8(a, n)  ((int8_t)((int64_t)(a) >> ((n) & 7)))
 
-#define gs_add_i16(a, b, f, l) ((int16_t)((int64_t)(a) + (int64_t)(b)))
+)GSRT"
+R"GSRT(#define gs_add_i16(a, b, f, l) ((int16_t)((int64_t)(a) + (int64_t)(b)))
 #define gs_sub_i16(a, b, f, l) ((int16_t)((int64_t)(a) - (int64_t)(b)))
 #define gs_mul_i16(a, b, f, l) ((int16_t)((int64_t)(a) * (int64_t)(b)))
 #define gs_neg_i16(a, f, l)    ((int16_t)(-(int64_t)(a)))
@@ -547,8 +572,7 @@ static uint64_t gs_shr_u64(uint64_t a, int64_t n) { return a >> (n & 63); }
 #define gs_shr_u32(a, n) ((uint32_t)((uint64_t)(a) >> ((n) & 31)))
 
 #define gs_add_i64(a, b, f, l) ((int64_t)((uint64_t)(a) + (uint64_t)(b)))
-)GSRT"
-R"GSRT(#define gs_sub_i64(a, b, f, l) ((int64_t)((uint64_t)(a) - (uint64_t)(b)))
+#define gs_sub_i64(a, b, f, l) ((int64_t)((uint64_t)(a) - (uint64_t)(b)))
 #define gs_mul_i64(a, b, f, l) ((int64_t)((uint64_t)(a) * (uint64_t)(b)))
 #define gs_neg_i64(a, f, l)    ((int64_t)(0u - (uint64_t)(a)))
 #define gs_shl_i64(a, n) ((int64_t)((uint64_t)(a) << ((n) & 63)))
@@ -561,30 +585,6 @@ R"GSRT(#define gs_sub_i64(a, b, f, l) ((int64_t)((uint64_t)(a) - (uint64_t)(b)))
 #define gs_shr_u64(a, n) ((uint64_t)((a) >> ((n) & 63)))
 
 #endif  /* GS_DEBUG */
-
-/* 64-bit division and modulo. Division overflow (i64.min / -1) would trap in
-   hardware and aborts in every build. */
-static int64_t gs_div_i64(int64_t a, int64_t b, const char *file, int line) {
-    if (b == 0) gs_divfail(file, line);
-    if (a == INT64_MIN && b == -1) gs_divovf(file, line);
-    return a / b;
-}
-static int64_t gs_mod_i64(int64_t a, int64_t b, const char *file, int line) {
-    if (b == 0) gs_divfail(file, line);
-    if (b == -1) return 0;   /* Exactly 0, and i64.min % -1 would trap. */
-    int64_t r = a % b;
-    /* |b| unsigned, so a divisor of i64.min (unrepresentable negated) works. */
-    if (r < 0) r = (int64_t)((uint64_t)r + (b < 0 ? 0u - (uint64_t)b : (uint64_t)b));
-    return r;
-}
-static uint64_t gs_div_u64(uint64_t a, uint64_t b, const char *file, int line) {
-    if (b == 0) gs_divfail(file, line);
-    return a / b;
-}
-static uint64_t gs_mod_u64(uint64_t a, uint64_t b, const char *file, int line) {
-    if (b == 0) gs_divfail(file, line);
-    return a % b;
-}
 
 /* Unsigned division by a divisor a loop does not change, in libdivide's
    form: computed once before the loop (gs_divu_gen), x / d is then the high
@@ -736,7 +736,8 @@ static uint64_t gs_rangechk_u(uint64_t v, uint64_t hi, const char *type, const c
 }
 /* To a signed type or a narrower unsigned one, whose range is lo..hi. */
 static int64_t gs_f2ichk(double d, int f32, int64_t lo, int64_t hi, const char *type,
-                         const char *file, int line) {
+)GSRT"
+R"GSRT(                         const char *file, int line) {
     if (!(d >= -9223372036854775808.0 && d < 9223372036854775808.0))
         gs_asfail_f("out of range", d, f32, type, file, line);
     int64_t v = (int64_t)d;
@@ -752,8 +753,7 @@ static uint64_t gs_f2uchk(double d, int f32, const char *file, int line) {
     return v;
 }
 #define GS_RANGE(v, lo, hi, t, f, l) gs_rangechk((v), (lo), (hi), (t), (f), (l))
-)GSRT"
-R"GSRT(#define GS_RANGE_U(v, hi, t, f, l)   gs_rangechk_u((v), (hi), (t), (f), (l))
+#define GS_RANGE_U(v, hi, t, f, l)   gs_rangechk_u((v), (hi), (t), (f), (l))
 #define GS_F2I(d, s, lo, hi, t, f, l) gs_f2ichk((d), (s), (lo), (hi), (t), (f), (l))
 #define GS_F2U(d, s, f, l)            gs_f2uchk((d), (s), (f), (l))
 
@@ -922,7 +922,8 @@ GS_API int64_t gs_spans_alloc(uint8_t *base, int64_t *n, uint8_t **top, int64_t 
    end the array, to cnt elements: where it starts now. The caller copies
    the elements where that moved. */
 GS_API int64_t gs_spans_regrow(uint8_t *base, int64_t *n, uint8_t **top, int64_t len,
-                               int64_t idx, int64_t ol, int64_t cnt);
+)GSRT"
+R"GSRT(                               int64_t idx, int64_t ol, int64_t cnt);
 /* free_slice, and what realloc_slice lets go of: [idx, idx + cnt) back on
    the freelist. */
 GS_API void gs_spans_free(uint8_t *base, int64_t *n, uint8_t **top, int64_t idx, int64_t cnt);
@@ -947,8 +948,7 @@ static int64_t gs_uleb_size(const uint8_t *p) {
     return (int64_t)(q - p) + 1;
 }
 
-)GSRT"
-R"GSRT(/* An inline array's length prefix is one byte unless the array holds 128
+/* An inline array's length prefix is one byte unless the array holds 128
    elements or more, so the two macros below are what the compiler emits for
    it: a load, a test, and the byte. The continuation is a call the caller's
    loop does not contain, and reaching it means there is a large array to

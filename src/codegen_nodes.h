@@ -250,15 +250,16 @@ inline string Binary::CgX(CodeGen &cg) {
                                              cg.OvfLocArgs(lt->intstorage, line), ")");
                     default: {   // T_DIV, T_MOD
                         auto div = op == T_DIV;
-                        auto plain = nonneg ? cat("(", ct, ")((uint64_t)(", lc, div ? ") / " : ") % ",
-                                                  "(uint64_t)(", rc, "))")
-                                            : cat(div ? "gs_div_" : "gs_mod_", sfx, "(", l, ", ", r,
-                                                  ", ", cg.LocArgs(line), ")");
+                        auto plainx = [&] {
+                            return nonneg ? cat("(", ct, ")((uint64_t)(", lc, div ? ") / " : ") % ",
+                                                "(uint64_t)(", rc, "))")
+                                          : cg.DivX(div, lt->intstorage, l, r, line);
+                        };
                         // A divisor fixed for an enclosing loop: its magic, unless
                         // gs_divu_gen found none to give (HoistDivisors).
                         auto key = cg.LoopDivisible(this) ? cg.DivisionKey(this) : string();
                         auto dm = key.empty() ? cg.divmagic.end() : cg.divmagic.find(key);
-                        if (dm == cg.divmagic.end()) return plain;
+                        if (dm == cg.divmagic.end()) return plainx();
                         auto &mg = dm->second;
                         auto w = mg.narrow ? "uint32_t" : "uint64_t";
                         auto q = cat(mg.narrow ? "gs_divu32_q(" : "gs_divu_q(", "(", w, ")(", lc,
@@ -270,7 +271,8 @@ inline string Binary::CgX(CodeGen &cg) {
                         // test would be a loop exit after which the loop's stores might
                         // not run, which keeps gcc from holding them in registers (and
                         // from vectorizing the loop).
-                        if (mg.zeronone) plain = cat("(gs_divfail(", cg.LocArgs(line), "), 0)");
+                        auto plain = mg.zeronone ? cat("(gs_divfail(", cg.LocArgs(line), "), 0)")
+                                                 : plainx();
                         return cat("(", ct, ")(", mg.more, " != GS_DIVU_NONE ? ", fast, " : ",
                                    plain, ")");
                     }
@@ -945,15 +947,13 @@ inline void Assign::CgStmt(CodeGen &cg) {
                 break;
             case T_DIVEQ:
                 if (lv.t->kind == TY_FLT) cg.L(lv.s, " = ", old, " / (", r, ");");
-                else cg.L(lv.s, " = gs_div_", sfx, "(", old, ", ", r, ", ",
-                          cg.LocArgs(line), ");");
+                else cg.L(lv.s, " = ", cg.DivX(true, lv.t->intstorage, old, r, line), ";");
                 break;
             case T_MODEQ:
                 if (lv.t->kind == TY_FLT)
                     cg.L(lv.s, " = ", lv.t->fltstorage == FS_F32 ? "fmodf(" : "fmod(", old,
                       ", ", r, ");");
-                else cg.L(lv.s, " = gs_mod_", sfx, "(", old, ", ", r, ", ",
-                          cg.LocArgs(line), ");");
+                else cg.L(lv.s, " = ", cg.DivX(false, lv.t->intstorage, old, r, line), ";");
                 break;
             case T_ANDEQ: cg.L(lv.s, " = (", cg.CT(lv.t), ")(", old, " & (", r, "));"); break;
             case T_SHLEQ:

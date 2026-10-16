@@ -855,6 +855,7 @@ struct CodeGen {
         ~FillScope() { for (auto n : added) cg.fillvalues.erase(n); }
     };
     string GenPure(Node *n);
+    string DivX(bool div, IntStorage s, const string &l, const string &r, Line line);
     string IndexTypeCheck(const string &x, TypeExpr *t, Line ln);
     static string IntStr(int64_t v);
     static string FltStr(double v, bool f32);
