@@ -3448,11 +3448,13 @@ carries them too. Every call site records what it proves about the arguments
 it passes — constant bounds on an array's length, and how the passed lengths
 and integers relate — and a specialization enters with the meet of those
 facts once all of its sites have been analyzed (callers are analyzed first;
-a site inside a recursive cycle leaves its callee with nothing). In the
-other direction a callee is summarized rather than assumed hostile: the
-storage it may resize or overwrite, through its reference parameters, in
-globals, or in captured outer locals, is computed as a fixpoint over the
-call graph, and a call kills only what those effects can name. A kernel
+a site inside a recursive cycle leaves its callee with nothing). A thread's
+entry point and an `export fn`, which C may call with any arguments, enter
+with nothing. In the other direction a callee is summarized rather than
+assumed hostile: the storage it may resize or overwrite, through its
+reference parameters, in globals, or in captured outer locals, is computed
+as a fixpoint over the call graph, and a call kills only what those effects
+can name. A kernel
 `fn blur(src: u8[>..]&, dst: u8[>..]&)` that only reads and writes elements
 thus sees `src.len == W * W` when every caller established it, and leaves
 the caller's own facts about `src` intact.

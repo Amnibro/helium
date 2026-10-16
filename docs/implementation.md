@@ -3530,7 +3530,8 @@ bounds just stated, a literal's its count), and how they relate pairwise
 `SeedEntryFacts` grants a specialization the meet of its sites on entry once
 every site has been analyzed -- callers are analyzed before callees for
 this -- and only if nothing reaches it another way: a thread spawn, a
-`format` overload called by `print`, or any use the optimizer counted that
+`format` overload called by `print`, an `export fn`'s C wrapper (which
+passes whatever its C caller does), or any use the optimizer counted that
 the call scan did not see makes it opaque. A site inside a recursive cycle
 is walked after its callee and contributes nothing. This is what carries
 `src.len == W * W` from `main` into `blur(src: u8[>..]&, ...)`.

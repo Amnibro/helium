@@ -611,7 +611,8 @@ struct BCE {
     // The call graph over live specializations: callees per caller, the
     // number of ordinary call sites per callee, and the callees also reached
     // some way a site cannot describe (a thread spawn, print's format
-    // overloads), plus the order every callee precedes its callers in.
+    // overloads, an export's C wrapper), plus the order every callee
+    // precedes its callers in.
     map<FnSpec *, vector<FnSpec *>> callees;
     map<FnSpec *, int> nsites;
     set<FnSpec *> opaquesites;
@@ -2853,8 +2854,9 @@ struct BCE {
         ast.ForEachRootTree([&](Node *n) { ScanCalls(n, nullptr, uses); });
         // The optimizer's count is the authority on how a specialization is
         // reached: a use this scan did not see is one it cannot describe.
+        // An export's C wrapper passes whatever its C caller does.
         for (auto sp : ast.fnspecs)
-            if (sp->live && uses[sp] != sp->uses) opaquesites.insert(sp);
+            if (sp->live && (uses[sp] != sp->uses || sp->sf->isexport)) opaquesites.insert(sp);
         set<FnSpec *> visited;
         function<void(FnSpec *)> visit = [&](FnSpec *sp) {
             if (!visited.insert(sp).second) return;
