@@ -1849,7 +1849,8 @@ def main():
 
     def driver_verbs():
         """The verb forms of the command line against the flag forms they
-        stand for: `goose run`, `goose check` and `goose version`."""
+        stand for: `goose run`, `goose check` and `goose version`, and the
+        help."""
         probe = gendir / "verbs.goose"
         tc.write_text(probe, 'fn main() { print("verbs"); }\n')
         checks = []
@@ -1864,6 +1865,38 @@ def main():
         code, out, err = tc.run_capture([exe, "version"])
         checks.append(("version", code == 0 and
                        re.match(r"goose runtime [0-9a-f]{12}\s*$", out) is not None, out + err))
+        # The help: `goose --help` on the commands, `goose <command> --help`
+        # and `goose help <topic>` on each, which between them name every
+        # option the driver reads, but for the hidden shader ones.
+        code, overview, err = tc.run_capture([exe, "--help"])
+        checks.append(("--help", code == 0 and "build" in overview and
+                       "--multi-test" not in overview, overview + err))
+        pages = overview
+        for cmd in ["run", "build", "check", "fetch", "toolchain", "version"]:
+            code, out, err = tc.run_capture([exe, cmd, "--help"])
+            checks.append((f"{cmd} --help", code == 0 and
+                           out.startswith(f"usage: goose {cmd}"), out + err))
+            pages += out
+        for topic in ["c", "internals"]:
+            code, out, err = tc.run_capture([exe, "help", topic])
+            checks.append((f"help {topic}", code == 0 and out.startswith("usage:"), out + err))
+            pages += out
+        hidden = {"--compile-shader", "--shader-source"}
+        options = set(re.findall(r'arg == "(-[^"]+)"',
+                                 (HERE.parent / "src" / "main.cpp").read_text(encoding="utf-8")))
+        missing = sorted(o for o in options - hidden if not re.search(re.escape(o) + r"\b", pages))
+        checks.append(("help on every option", len(options) > 20 and not missing,
+                       f"in no help: {missing}"))
+        code, out, err = tc.run_capture([exe, "help", "build"])
+        checks.append(("help build", code == 0 and "--dry-run" in out, out + err))
+        code, out, err = tc.run_capture([exe, "help", "nosuch"])
+        checks.append(("help nosuch (refused)", code == 1 and "no help on nosuch" in err,
+                       out + err))
+        code, out, err = tc.run_capture([exe])
+        checks.append(("(no file)", code == 1 and "usage:" in err and "--help" in err, out + err))
+        code, out, err = tc.run_capture([exe, "build"])
+        checks.append(("build (no file)", code == 1 and "usage: goose build" in err and
+                       "goose build --help" in err, out + err))
         # The compiler's own toolchain discovery: where this runner found a C
         # compiler, the compiler must find one too, and say so as JSON.
         code, out, err = tc.run_capture([exe, "toolchain", "--json"])

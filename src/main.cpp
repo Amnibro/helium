@@ -544,6 +544,183 @@ int RunOnCompilerStack(const function<int()> &fn);
 // the file's name as given.
 constexpr const char *MULTIMARK = "==== goose --multi-test: exit";
 
+// The options run, build and check share, for their help.
+constexpr const char *COMPILEOPTIONS =
+R"(  -D NAME[=VALUE]       Define a C macro in the generated program (or -DNAME).
+  --stdlib dir          The standard library's directory (or GOOSE_STDLIB);
+                        found from where goose is by default.
+  --update              Fetch packages at a tag or branch again (a commit is
+                        never fetched again).
+  --stack-reserve size  Address space reserved per data stack, with a K, M, G
+                        or T suffix (default 2G).
+  --stacks              Report the data stacks the program and each worker can
+                        take, and the cap that puts on hardware_threads().
+  --no-bce              Keep every bounds check.
+  --bce-lines           Report the bounds checks elided and kept on each line.
+  --specs               Print the specializations of each function.
+)";
+
+constexpr const char *DEBUGOPTION =
+R"(  --debug               Overflow, range and tag checks that name the source
+                        line they fail on.
+)";
+
+// The help on a command or topic, `goose help` or `goose --help`'s for ""
+// or "help", and "" for none. Each starts with its usage lines and a blank
+// line, which a command line without a file prints.
+string HelpText(const string &topic) {
+    if (topic.empty() || topic == "help") return
+R"(usage: goose <command> file.goose [options]
+       goose file.goose [options] [-- program args...]
+
+Commands:
+  run        Compile a program and run it in this process, which goose
+             file.goose does too.
+  build      Build an executable with a C compiler on this machine.
+  check      Parse and typecheck a program, and run nothing.
+  fetch      Fetch the packages a program declares.
+  toolchain  Report the C compiler, cmake and git found, and GOOSE_HOME.
+  version    Print the runtime version.
+  help       Print this (or --help, -h); with a command, that command's help.
+
+Common options:
+  -O0, -O1, -O2   Inlining level (a run defaults to -O1, a build to -O2).
+  --debug         Overflow, range and tag checks that name the source line
+                  they fail on.
+  -- args...      What follows is the program's arguments.
+
+Environment:
+  GOOSE_HOME      Fetched packages, build intermediates and settings
+                  (default ~/.goose).
+  GOOSE_CC        The C compiler, where --cc is not given.
+  GOOSE_STDLIB    The standard library, where --stdlib is not given.
+  GOOSE_PROGRESS  plain or live: how progress shows on stderr.
+
+goose <command> --help, or goose help <command>, lists a command's options.
+goose help c covers writing the C yourself (goose -o out.c), and goose help
+internals the options for looking into the compiler and testing it.
+)";
+    if (topic == "run") return cat(
+R"(usage: goose run file.goose [options] [-- program args...]
+       goose file.goose [options] [-- program args...]
+
+Compiles the program and runs it in this process with TinyCC, and exits with
+its exit code. What follows -- is the program's arguments. A program that
+starts threads needs goose build.
+
+Options:
+  -O0, -O1, -O2         Inlining level (default -O1).
+)", DEBUGOPTION, COMPILEOPTIONS,
+R"(  --cc name|path        The C compiler for packages' native parts: msvc,
+                        clang-cl, clang, gcc, cc or a path (or GOOSE_CC).
+  -v                    Print each command that builds a native part, and
+                        what it prints.
+)");
+    if (topic == "build") return cat(
+R"(usage: goose build file.goose [options]
+
+Builds an executable beside the source with a C compiler on this machine
+(goose toolchain says which), linking the runtime and the native parts of
+the packages the program uses. Intermediates go under GOOSE_HOME.
+
+Options:
+  -o exe                Where the executable goes.
+  -O0, -O1, -O2         Inlining level and the C compiler's optimization
+                        (default -O2).
+  --debug               Overflow, range and tag checks that name the source
+                        line they fail on, and the C built for a debugger.
+)", COMPILEOPTIONS,
+R"(  --cc name|path        The C compiler: msvc, clang-cl, clang, gcc, cc or a
+                        path (or GOOSE_CC; by default the first one found).
+  --standalone          Compile the runtime into the program rather than link
+                        the runtime object built once per C compiler.
+  -v                    Print each command the build runs and what it prints.
+  --dry-run             Print the commands the build would run, and run none.
+)");
+    if (topic == "check") return cat(
+R"(usage: goose check file.goose [options]
+
+Parses and typechecks the program and what it imports, and writes and runs
+nothing.
+
+Options:
+)", COMPILEOPTIONS);
+    if (topic == "fetch") return
+R"(usage: goose fetch [--update] file.goose
+
+Fetches the packages the program declares from git into GOOSE_HOME, and
+compiles nothing. A run or a build fetches what is missing as well.
+
+Options:
+  --update              Fetch packages at a tag or branch again (a commit is
+                        never fetched again).
+)";
+    if (topic == "toolchain") return
+R"(usage: goose toolchain [--cc name|path] [--json] [--refresh]
+
+Reports the C compiler a build would use, cmake, git, GOOSE_HOME and the
+modules compiled into goose. Exits with 1 when there is no C compiler.
+
+Options:
+  --cc name|path        Look for this C compiler: msvc, clang-cl, clang, gcc,
+                        cc or a path (or GOOSE_CC).
+  --json                Report as JSON.
+  --refresh             Set up Visual Studio's environment again rather than
+                        take the one kept from last time.
+)";
+    if (topic == "version") return
+R"(usage: goose version
+
+Prints the runtime version, which the runtime that goose --emit-runtime
+writes has to match.
+)";
+    if (topic == "c") return cat(
+R"(usage: goose -o out.c file.goose [options]
+       goose --emit-runtime runtime.c
+       goose --<package>-link msvc|cc
+
+Writes the program's C, for a build of your own or a C host. It links with
+the runtime that --emit-runtime writes, compiled once with the C compiler
+and flags the programs use. goose build --dry-run prints the commands for
+the program at hand.
+
+Options:
+  -o out.c              Write the program's C rather than run it.
+  --standalone          Write C that holds the whole runtime and builds alone.
+  --header out.h        Also write a header for a C host, which supplies main
+                        and starts the program through goose_init.
+  --include header.h    Have the C include this header (may be repeated).
+  --jit                 Also run the program in this process.
+  --emit-runtime out.c  Write the runtime's C.
+  --<package>-link msvc|cc
+                        Print the response file that links the native part of
+                        a package compiled into goose (--gfx-link cc).
+  -O0, -O1, -O2         Inlining level (default -O1).
+)", DEBUGOPTION, COMPILEOPTIONS);
+    if (topic == "internals") return cat(
+R"(usage: goose [options] file.goose
+
+Options for looking into what the compiler does, and for its test suite.
+
+Options:
+  --tokens              Print the file's tokens.
+  --parse               Stop after parsing.
+  --check               Stop after typechecking, as goose check does.
+  --dump                Print the parsed program back as source.
+  --dump-file out       Write that dump to a file, and go on.
+  --roundtrip           Check that the dump parses and dumps back to itself.
+  --multi-test file...  Compile each file as a run of its own would, ending what
+                        each printed with a line on stdout and on stderr:
+                        `)", MULTIMARK, R"( <code> <file>`.
+                        A % in -o stands for each file's name.
+  --bce-test            Verify the `// bce:elide` and `// bce:keep` annotations.
+  --unsafe-no-rf-check  Leave out the checks after calls that a `return ...
+                        from` can pass through: unsound, for pricing them only.
+  --gen-runtime-header  Regenerate src/runtime_inline.h from src/runtime/.
+)");
+    return "";
+}
+
 // A size with an optional K, M, G or T suffix (--stack-reserve).
 bool ParseSize(string s, uint64_t &out) {
     if (!s.empty() && toupper((unsigned char)s.back()) == 'B') s.pop_back();
@@ -630,18 +807,38 @@ CodeGen::StackConfig StackConfigOf(const vector<string> &cdefines) {
 
 int Main(int argc, char **argv) {
     auto exe = ExePath(argv[0]);
-    // The verb forms, `goose run|build|check|fetch|toolchain|version ...`. A
-    // first argument that is none of them is read as an option or a file, as
-    // it always was, so `goose foo.goose` is `goose run foo.goose`.
+    // The verb forms, `goose run|build|check|fetch|toolchain|version|help ...`.
+    // A first argument that is none of them is read as an option or a file,
+    // as it always was, so `goose foo.goose` is `goose run foo.goose`.
     string verb;
     auto firstarg = 1;
     if (argc > 1) {
         string v = argv[1];
         if (v == "run" || v == "build" || v == "check" || v == "fetch" || v == "toolchain" ||
-            v == "version") {
+            v == "version" || v == "help") {
             verb = v;
             firstarg = 2;
         }
+    }
+    // --help anywhere before a `--` is the help on the command given, or on
+    // all of them when none is.
+    for (int i = firstarg; i < argc; i++) {
+        string arg = argv[i];
+        if (arg == "--") break;
+        if (arg == "--help" || arg == "-h") {
+            fputs(HelpText(verb).c_str(), stdout);
+            return 0;
+        }
+    }
+    if (verb == "help") {
+        auto topic = argc > 2 ? string(argv[2]) : string();
+        auto help = HelpText(topic);
+        if (help.empty()) {
+            fprintf(stderr, "no help on %s: goose help lists the commands\n", topic.c_str());
+            return 1;
+        }
+        fputs(help.c_str(), stdout);
+        return 0;
     }
     if (verb == "version") {
         printf("goose runtime %s\n", RuntimeVersion().c_str());
@@ -745,7 +942,7 @@ int Main(int argc, char **argv) {
         else if (arg == "-D" && i + 1 < argc) cdefines.push_back(argv[++i]);
         else if (arg.rfind("-D", 0) == 0 && arg.size() > 2) cdefines.push_back(arg.substr(2));
         else if (!arg.empty() && arg[0] == '-') {
-            fprintf(stderr, "unknown option: %s\n", arg.c_str());
+            fprintf(stderr, "unknown option: %s (goose --help lists them)\n", arg.c_str());
             return 1;
         }
         else files.push_back(arg);
@@ -806,33 +1003,10 @@ int Main(int argc, char **argv) {
         return 0;
     }
     if (files.empty()) {
-        fprintf(stderr, "usage: goose run file.goose [options] [-- program args...] | "
-                        "goose check file.goose [options] | goose fetch [--update] file.goose | "
-                        "goose version |\n"
-                        "       goose build file.goose [options] [-o exe] [--debug] [--standalone] "
-                        "[--cc name|path] [-v] [--dry-run] |\n"
-                        "       goose toolchain [--cc name|path] [--json] [--refresh]\n");
-        fprintf(stderr, "   or: goose [--dump] [--parse] [--tokens] [--roundtrip] "
-                        "[--dump-file out.goose] [--specs] [--stacks] [--check] "
-                        "[--no-bce] [--bce-test] [--bce-lines] [--unsafe-no-rf-check] [-O0|-O1|-O2] "
-                        "[-o out.c [--standalone]] [--jit] [-DNAME=VALUE]... [--stack-reserve size] "
-                        "[--include header.h]... "
-                        "[--header out.h] "
-                        "[--stdlib dir] file.goose [-- program args...] | "
-                        "--multi-test [options] file.goose... | --emit-runtime runtime.c | "
-                        "--gen-runtime-header | "
-                        "--<package>-link msvc|cc\n");
-        fprintf(stderr, "without -o the program is compiled and run in this process by TinyCC.\n");
-        fprintf(stderr, "the .c that -o writes links with the runtime that --emit-runtime "
-                        "writes, compiled once;\n--standalone writes one that holds the "
-                        "runtime itself.\n");
-        fprintf(stderr, "--stacks reports the data stacks the program and each worker can take "
-                        "and the thread cap they\ngive hardware_threads(); --stack-reserve sets "
-                        "the address space reserved per stack (K/M/G/T suffixes).\n");
-        fprintf(stderr, "--multi-test compiles each file as a run of its own would, one after "
-                        "another, ending what each\nprinted with a line `%s <exit code> <file>` "
-                        "on stdout and on stderr; an -o names\neach file's C with a %% "
-                        "standing for the file's name without its extension.\n", MULTIMARK);
+        auto help = HelpText(verb);
+        fprintf(stderr, "%s\n%s\n", help.substr(0, help.find("\n\n") + 1).c_str(),
+                verb.empty() ? "goose --help lists the commands and common options."
+                             : cat("goose ", verb, " --help lists its options.").c_str());
         return 1;
     }
     // With no output file the program is compiled into this process and run,
