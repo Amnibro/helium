@@ -246,6 +246,21 @@ struct TypeCheck {
     };
 
     enum ScopeKind { SK_PLAIN, SK_FN, SK_LOOP, SK_BLOCK, SK_EXPANSION };
+    // A part of a holder's storage a whole assignment of a value holding no
+    // references emptied (§5.1): the part `path` -- field names, each after
+    // a '.' -- names under `base`, a holder variable's own storage or a
+    // `let` reference's or parameter's pointee, which lies in `container`.
+    // The stores into the container before event `at` put nothing there that
+    // is still in it, so long as no store into the container since went
+    // unrecorded (RecordStore) and no call ran (ApplyCalleeShrinks), whose
+    // callee's stores the record may not show in order (KilledFor).
+    struct Kill {
+        VarDef *container = nullptr;
+        VarDef *base = nullptr;
+        string path;
+        size_t at = 0;
+        bool operator==(const Kill &) const = default;
+    };
     // Snapshot of assigned/narrowed for the variables the code between a
     // save and its restore can name (NamedFrames): those of the current
     // frame, of the frames it is lexically nested in, and of the frames the
@@ -271,6 +286,8 @@ struct TypeCheck {
         // not narrowed.
         vector<pair<VarDef *, TypeExpr *>> globals;
         bool reachable = true;
+        // The body's kills in force (BodyState::kills).
+        vector<Kill> kills;
         bool operator==(const FlowState &) const = default;
     };
     struct Scope {
@@ -2261,6 +2278,46 @@ struct TypeCheck {
     // where known, which a parameter's class vd does not say itself.
     void GrowOnlyShrinkAt(Node *c, const string &op, VarDef *vd, const string &what,
                           TypeExpr *bound = nullptr, TypeExpr *arr = nullptr);
+    // Kills (Kill): the part of a holder a checked location path names, a
+    // whole assignment's of a value holding no references, and whether those
+    // in force empty every slot of a `t` at `base` in container c that can
+    // hold a view into an `arr`'s elements, since which event.
+    bool KillPath(Node *n, VarDef *&base, string &path);
+    void NoteKill(Node *lval, const Roots &loc, TypeExpr *target, const Val &v, size_t at);
+    bool KilledFor(VarDef *c, VarDef *base, TypeExpr *t, TypeExpr *arr, size_t &since);
+    void NoteShrinkOrder(VarDef *root, TypeExpr *bound);
+    // While a callee's shrink is judged at a call: the store events the call
+    // replayed from `base` on, each with the index of the callee's class
+    // event it came from (-1: none, or no order known), and how many of
+    // those preceded the shrink. The rest the callee made after it.
+    // So are the class events of the caller's own the call added or met
+    // from `classbase` on, each with the earliest such origin, which say
+    // where the caller's record puts the shrink in turn (NoteShrinkOrder).
+    struct CallOrder {
+        size_t base = SIZE_MAX;
+        const vector<int> *origins = nullptr;
+        size_t before = 0;
+        const vector<int> *classorigins = nullptr;
+        size_t classbase = 0;
+    } callorder;
+    // While a call replays its callee's stores (ApplyCalleeStores): the
+    // class event being replayed, and the origins of the caller's class
+    // events from `classbase` on, which AddStoreEvent keeps.
+    struct Replay {
+        int origin = -1;
+        vector<int> *classorigins = nullptr;
+        size_t classbase = 0;
+    } replay;
+    bool StoredLater(size_t i) {
+        if (i < callorder.base || !callorder.origins) return false;
+        auto k = i - callorder.base;
+        if (k >= callorder.origins->size()) return false;
+        auto o = (*callorder.origins)[k];
+        return o >= 0 && (size_t)o >= callorder.before;
+    }
+    void DropKills(VarDef *container) {
+        erase_if(cur.kills, [&](const Kill &k) { return k.container == container; });
+    }
 
     // Every store of a reference, slice or holder value into a container
     // (ast.h StoreEvent), program-wide: a function value's body stores into
@@ -2298,7 +2355,10 @@ struct TypeCheck {
     TypeExpr *StoredSlotMayPointInto(VarDef *holder, TypeExpr *pointee, bool sliceref, VarDef *r,
                                      bool exact, VarDef *arr, TypeExpr *arrtype, Line *where,
                                      set<VarDef *> &seen);
-    void ApplyCalleeStores(FnSpec *spec, vector<Val> &argvals, Node *at);
+    // `origins`: for each store event the call adds, the index of the class
+    // event it replays, -1 for any other (CallOrder).
+    void ApplyCalleeStores(FnSpec *spec, vector<Val> &argvals, Node *at,
+                           vector<int> *origins = nullptr);
     void NoteHolderBinding(VarDef *d, const Val &v, Node *at);
 
     // Whether a global may hold a reference into a global array is known
@@ -2390,7 +2450,10 @@ struct TypeCheck {
     string TargetStr(const ShrinkTarget &t);
     void ShrinkThrough(Node *at, const string &verb, const string &recv, const Roots &roots,
                        TypeExpr *arr, ShrinkBalance balance = SB_UNBALANCED);
-    void ApplyCalleeShrinks(Node *at, FnSpec *spec, vector<Val> &argvals, string_view name);
+    // `argnodes`: the argument expressions, aligned with argvals, which say
+    // what part of the caller's holders a callee's kills empty (Kill).
+    void ApplyCalleeShrinks(Node *at, FnSpec *spec, vector<Val> &argvals, string_view name,
+                            const vector<Node *> *argnodes = nullptr);
     // A shrink's scan sees the views of the activation only, and takes a
     // parameter's class for an array of its own: whether an argument was a
     // view of the shrunk array, or the shrunk array one the activation's
@@ -2428,8 +2491,12 @@ struct TypeCheck {
                        set<VarDef *> &seen);
     void StoredViews(VarDef *r, bool exact, TypeExpr *pointee, bool sliceref, bool byteview,
                      TypeExpr *ht, vector<LiveView> &out, set<VarDef *> &seen);
+    // `base`: the `let` reference or parameter p is the binding of, whose
+    // kills of what it points at (Kill) leave what holds views into an
+    // `arrtype` to the stores since.
     void HeldViews(const Prov &p, TypeExpr *held, bool isvar, vector<LiveView> &out,
-                   const TempHolds *temps = nullptr);
+                   const TempHolds *temps = nullptr, VarDef *base = nullptr,
+                   TypeExpr *arrtype = nullptr);
     template<typename F> void EachHolderRoot(VarDef *holder, size_t from, F f);
     int NoteLiveShrink(LiveShrink ls, FnSpec *current);
     void ApplyCalleeLiveShrinks(Node *at, FnSpec *spec, vector<Val> &argvals, string_view name);
@@ -2501,6 +2568,9 @@ struct TypeCheck {
         // is checked against those logged while its expression ran
         // (CheckGrowsSince).
         vector<GrowEvent> growlog;
+        // The parts of holders emptied on every path here (Kill), part of
+        // the flow state, which a branch joins and a loop's head takes.
+        vector<Kill> kills;
     };
     BodyState cur;
     // The states of the bodies being checked around this one, outermost

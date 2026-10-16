@@ -1353,6 +1353,26 @@ or to a holder, the storage whose tail shrinks among them, counts as what it
 refers to: while the reference is live, so is whatever that slice or holder
 may refer into.
 
+A whole assignment of a value that holds no references — `refs = []`,
+`s.refs = []`, a struct literal with none in it — *empties* the part of
+the holder it writes: what was stored there before is gone. The part is a
+variable's own storage or the pointee of a `let` reference or of a
+reference parameter, which no rebinding moves, and the fields named after
+it. A holder each of whose slots that can hold a view into the array lies,
+on every path to the shrink, in a part so emptied — the whole of it, or its
+fields one by one — holds only what was stored into its storage since; but
+no longer once a store into that storage the record cannot show is made,
+one moving the holder's own references within it, or once a call runs, a
+callee's stores never being on record in their order. So
+`for i in 3 { refs = []; pool = []; refs.push(pool.push(i)); }` passes,
+the store at the end of one iteration being gone by the shrink at the start
+of the next, while emptying `refs` on some paths only, after a store that
+reaches the shrink, or only in a copy of it, does not; and so does
+`s.refs = []; s.pool = []; s.refs.push(s.pool.push(i));` through
+`s: S&`, `struct S { pool: i64[>..]&, refs: (i64&)[>..] }`, the path to
+the pool being no reference into it, and a view taken through it stored, if
+at all, in `refs`.
+
 Nor may the shrink free what a `for` loop around it walks (§6.5): each
 reference or slice on the path to its sequence, which the loop loads again
 on every iteration, and the sequence it iterates in place — a slice, an
@@ -1404,7 +1424,17 @@ variables, so it is checked at every level: each function specialization
 records which globals, and which parameters' pointees, it shrinks — directly
 or through its own callees — and what its calls stored into those pointees,
 and a call is checked as if it performed those shrinks and stores in the
-caller. The pointees of a parameter that holds references by value (a
+caller, each grow-only shrink where it stands in the body: against the
+stores the body made before it (in a loop, any the body makes), not those
+it makes after, and with the parts of reference parameters' pointees the
+body had emptied before it on every path empty in the caller's holders
+too, where the argument names such a part — the caller's variable, a field
+path in it, or the pointee of its own `let` reference or reference
+parameter, which its own callers judge the same way — of storage no nested
+function or function value names. A function doing
+`s.refs = []; s.pool = []; s.refs.push(s.pool.push(i));` may be called
+again and again on the same holder, in a loop or through a function taking
+the holder by reference. The pointees of a parameter that holds references by value (a
 struct with a reference field, an array of slices) are what those
 references point to: a shrink or a store through one of them is of the
 caller's storage, not of the callee's copy of the holder. The other globals

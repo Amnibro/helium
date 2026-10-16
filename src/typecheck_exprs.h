@@ -1777,7 +1777,14 @@ inline Val TypeCheck::CheckLogical(Binary *b) {
     }
     for (auto [gv, gn] : mid.globals)
         if (gn && !gv->narrowed) b->rightkills.push_back(gv);
+    // What it leaves emptied may not be, but what it ended stays ended.
+    auto rightkills = cur.kills;
     RestoreFlow(snap);
+    erase_if(cur.kills, [&](const Kill &k) {
+        return none_of(rightkills.begin(), rightkills.end(), [&](const Kill &l) {
+            return l.container == k.container && l.base == k.base && l.path == k.path;
+        });
+    });
     for (auto kv : b->rightkills) kv->narrowed = nullptr;
     for (auto v : mayassign) v->maybeassigned = true;
     Val v;

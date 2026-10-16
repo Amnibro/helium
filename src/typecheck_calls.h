@@ -415,7 +415,7 @@ inline Val TypeCheck::ResolveCall(Call *c, vector<SFunction *> &cands, FnSpec *e
         BindBranchesByRef(argnodes, argvals, best.paramtypes, best.sf, -1, best.nwritten);
     }
     auto spec = GetOrCreateSpec(best, argvals, c);
-    ApplyCalleeShrinks(c, spec, argvals, name);
+    ApplyCalleeShrinks(c, spec, argvals, name, &argnodes);
     ApplyCalleeGrows(c, spec, argvals, name);
     // Phase 2: re-check arguments against the resolved parameter types.
     // Arguments construct into fresh parameter slots, not curdst.
@@ -3431,6 +3431,9 @@ inline Val TypeCheck::CheckFunValCall(Call *c, const FnValBind &fb, TypeExpr *ex
     }
     auto fv = fb.fv;
     auto entryreach = reachable;
+    // The body runs in this body's state, as part of the calling statement:
+    // kills hold neither into it nor out of it (Kill), as across any call.
+    cur.kills.clear();
     if (!c->tyargs.empty()) Error(c, "a block takes no type arguments");
     vector<Val> argvals;
     argvals.reserve(c->args.size());
@@ -3549,6 +3552,7 @@ inline Val TypeCheck::CheckFunValCall(Call *c, const FnValBind &fb, TypeExpr *ex
     c->fvbody->exprtype = v.type;
     PopScope();
     frames.pop_back();
+    cur.kills.clear();
     // The call's value is a copy of the body's, a temporary of the calling
     // statement as any call's result is (§9.2): no storage to bind by
     // reference, even where the body's value names a variable.

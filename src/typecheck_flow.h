@@ -341,10 +341,17 @@ inline bool TypeCheck::HeldRefsMayPointInto(VarDef *v, const Prov &p, TypeExpr *
         }
         auto holder = growonly && (slice || sub->kind != TY_SLICE) && r && !r->isglobal &&
                       a.exact && (r->type || IsClassRoot(r)) && !slot && !(v && v->isvar);
+        // Where kills emptied every slot of the pointee a view into the array
+        // could lie in, the stores since are all it holds: a view derived
+        // from a path it keeps, the one to the array shrunk included, would
+        // have been stored since, unrecorded, which ends the kill (Kill).
+        size_t since = 0;
+        auto emptied = holder && !slice && v && !pathslive &&
+                       KilledFor(r, v, sub, ShrunkType(root, bound), since);
         // A reference to the storage that shrinks, the path to the array
         // included, leads to what the stores into that storage put there,
         // which its record says as for any other holder.
-        if (r == root && (!holder || slice || bound)) return true;
+        if (r == root && (!holder || slice || bound) && !emptied) return true;
         if (growonly && (slice || sub->kind != TY_SLICE)) {
             // A global holder, or static data, holds views of globals only,
             // and a shrink of a global judges what every global holds
@@ -358,7 +365,9 @@ inline bool TypeCheck::HeldRefsMayPointInto(VarDef *v, const Prov &p, TypeExpr *
             if (holder) {
                 auto arrtype = ShrunkType(root, bound);
                 Line where;
-                if (HolderMayPointInto(r, root, arrtype, LiveEventBase(r), &where)) return true;
+                auto from = LiveEventBase(r);
+                if (emptied) from = std::max(from, since);
+                if (HolderMayPointInto(r, root, arrtype, from, &where)) return true;
                 continue;
             }
         }
@@ -841,6 +850,7 @@ inline TypeCheck::FlowState TypeCheck::SaveFlow() {
         for (auto v : g->defs)
             if (v->narrowed) f.globals.push_back({ v, v->narrowed });
     f.reachable = reachable;
+    f.kills = cur.kills;
     return f;
 }
 
@@ -855,6 +865,7 @@ inline void TypeCheck::RestoreFlow(const FlowState &f) {
         for (auto v : g->defs) v->narrowed = nullptr;
     for (auto [v, narrowed] : f.globals) v->narrowed = narrowed;
     reachable = f.reachable;
+    cur.kills = f.kills;
 }
 
 inline TypeCheck::FlowState TypeCheck::JoinFlow(const FlowState &a, const FlowState &b) {
@@ -886,6 +897,17 @@ inline TypeCheck::FlowState TypeCheck::JoinFlow(const FlowState &a, const FlowSt
         for (auto &g : a.globals)
             for (auto &h : b.globals)
                 if (h.first == g.first) joined.globals.push_back(g);
+    }
+    // A part stays emptied where every reachable side emptied it, since the
+    // earlier of the two kills.
+    if (!a.reachable) joined.kills = b.kills;
+    else if (!b.reachable) joined.kills = a.kills;
+    else {
+        joined.kills.clear();
+        for (auto &k : a.kills)
+            for (auto &l : b.kills)
+                if (k.container == l.container && k.base == l.base && k.path == l.path)
+                    joined.kills.push_back({ k.container, k.base, k.path, std::min(k.at, l.at) });
     }
     joined.reachable = a.reachable || b.reachable;
     return joined;
@@ -2537,8 +2559,10 @@ inline void TypeCheck::CheckAssign(Assign *a) {
     } else {
         arr = nullptr;
     }
+    auto killat = storeevents.size();
     auto v = CheckAssignedValue(a, target, arr, built,
                                 Dest(lv, lv.var && IsRefOrSlice(target), lv.reached));
+    NoteKill(a->lval, lv, target, v, killat);
     if (lv.var) {
         NoLetReassign(a, lv.var, "assign to", "assigned");
         // Slice variables carry their value's provenance (refs use .=).
@@ -2641,7 +2665,11 @@ inline void TypeCheck::PointeeAssign(Assign *a, LVal &lv, const LVal &at) {
     if (arr && arr->arr->akind == A_GROW) GrowOnlyAssignKnown(a, built, arr == pt);
     Dest dest(at, false, at.reached);
     dest.slot = pt->kind == TY_SLICE;
-    CheckAssignedValue(a, pt, arr, built, dest);
+    auto killat = storeevents.size();
+    auto v = CheckAssignedValue(a, pt, arr, built, dest);
+    // Through a reference variable the part written is its whole pointee; a
+    // reference loaded out of a field names no part KillPath can.
+    if (Is<Ident>(a->lval)) NoteKill(a->lval, at, pt, v, killat);
 }
 
 // A slice v stored into the slot a reference to a slice names, which lies in

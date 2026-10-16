@@ -1689,6 +1689,60 @@ included, is on record when the body is checked again (`CheckLoopPasses`,
 §3.7), so item 4 finds it, and names it as reaching the shrink on the next
 iteration (`CarriedEvent`).
 
+**Emptied holders** (`Kill`). A whole assignment of a value holding no
+references (`NoteKill` from `CheckAssign`, and from `PointeeAssign` through
+a reference variable) empties the part of a holder its location names
+(`KillPath`): a variable's own storage, or the pointee of a `let` reference
+or a reference parameter, then the field names stepped into, in the one
+container the location lies in exactly. The kill keeps the index of the
+event at which the value began to be checked, and lives in the body state
+(`BodyState::kills`) as part of the flow state (`FlowState::kills`): a
+branch join keeps a kill both sides made, at the earlier index, a loop's
+head takes the join of its entry with its back edges, and an `&&` or `||`
+keeps one its right operand did not end. A store into the container no
+event records (`RecordStore`: a holder's own references put back into it, a
+value pointing nowhere yet) ends its kills (`DropKills`), and a call ends
+them all (`ApplyCalleeShrinks`, `CheckFunValCall`): a callee's own
+unrecorded stores, and a nested function's stores replayed in place under
+the events of its first check, show in no event after the kill. Item 4
+then scans a holder from the earliest kill on (`KilledFor`) where kills
+empty every slot of it that can hold a view into the array's elements
+(`CanHoldViewInto`): a holder variable from its own kills, a reference to a
+holder (`HeldRefsMayPointInto`), a parameter's class included, from the
+kills through that reference, whose pointee type being the container's own
+makes them the container's own; and the pairs `NoteLiveViews` keeps leave
+out the class's contents where its kills empty them (`HeldViews`). That
+replaces the outright verdict on a reference to the storage whose
+references lead to the array shrunk: a view derived from the path there
+would have been stored since, unrecorded, which ends the kill. A whole
+assignment whose right-hand side may follow such a path (`pathslive`)
+takes no kill.
+
+**Calls in order** (`FnRecord::ShrinkOrder`, `NoteShrinkOrder`). Beside each
+grow-only shrink's entry, a body records how many of its class events were
+on record at the shrink, at its latest occurrence (a loop's later passes
+count the earlier passes' stores), and the parts of reference parameters'
+pointees every occurrence had emptied, as a parameter index and a path; a
+shrink recorded on a lexical parent's record, or in a body a recursive
+cycle's rounds replace, records every event and no kill. A call
+(`ApplyCalleeShrinks`) replays the callee's class events first, noting for
+each event it adds the class event it came from (`ApplyCalleeStores`'s
+`origins`), and judges each grow-only shrink as it stood: with the events
+from class events made after it set aside (`CallOrder`, `StoredLater`, in
+`HolderMayPointInto` and `EachHolderRoot`), and with the callee's kills
+mapped onto the parts of the caller's holders the arguments name
+(`argkill`: the argument's path by `KillPath`, through its implicit `&`, in
+the one container it points into, which no nested function or function
+value names), each from the call's first event on. The caller's own record
+puts the shrink after the class events of its own the call added or met
+from the callee's earlier ones (`Replay`, `AddStoreEvent`), and keeps the
+mapped kills where they are its own parameters', so a function looping over
+such calls through a reference parameter is judged the same way by its
+callers. A body's kills judge only the variables it names: a nested
+function's scan of a lexical parent's reference finds no kill made through
+its own parameter, which the call sites alone could tell is the same
+storage.
+
 **`for` loops** (§6.5). A `for` around the shrink holds what it walks while
 its body is checked (`HoldForSequence`, §3.3): item 4, and the grow-shrink
 scan below, meet its sequence and the references and slices on the path to

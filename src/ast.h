@@ -2001,6 +2001,21 @@ struct FnRecord {
     // Stores into the caller's storage, through reference parameters'
     // class roots (§5.1): the call sites map them onto their arguments.
     vector<StoreEvent> classevents;
+    // Where in the body each grow-only shrink above stands, as its call
+    // sites judge it (§5.1): of a parameter's pointee or what it leads to
+    // (`param`), or of an external, the bound's type where the root only
+    // bounds it; how many of `classevents` were on record at it, at its
+    // latest occurrence (the later ones were stored after it); and the parts
+    // of reference parameters' pointees every occurrence had emptied
+    // (TypeCheck::Kill), each a parameter's index and the part's path.
+    struct ShrinkOrder {
+        int param = -1;
+        VarDef *external = nullptr;
+        TypeExpr *bound = nullptr;
+        size_t before = 0;
+        vector<pair<int, string>> kills;
+    };
+    vector<ShrinkOrder> shrinkorders;
     size_t eventstart = 0;         // storeevents.size() when the body's check began.
     size_t eventend = 0;           // And when it ended.
 };
