@@ -27,15 +27,14 @@ repository asks.
 The repository also needs these entries in `languages.sh`:
 
 ```bash
-compile 'Goose' 'goose' 'goose -O2 --standalone -o goose/run.c goose/run.goose && clang -O3 goose/run.c -o goose/run -lm -pthread'
+compile 'Goose' 'goose' 'goose -O2 --standalone -o goose/run.c goose/run.goose && gcc -O3 -march=native goose/run.c -o goose/run -lm -pthread'
 run 'Goose' './goose/run' './goose/run'
 ```
 
-and `goose/run` and `goose/run.c` in its `.gitignore` and `clean.sh`. The
-C is compiled with clang rather than the gcc the C version uses: gcc
-removes most of fibonacci's recursive calls from Goose's C (see below),
-which the rules allow but which would make that result an outlier no other
-language shows.
+and `goose/run` and `goose/run.c` in its `.gitignore` and `clean.sh`. Of
+gcc and clang, each with and without `-march=native` (which the C++ entry
+uses too), gcc with it is the fastest over the three timed benchmarks
+(below).
 
 ## The implementations
 
@@ -93,14 +92,14 @@ Windows 11, clang 22, rustc 1.98 (best mean of 5 interleaved runs of 5 s):
 | levenshtein | 28.2 | 51.2 | 88.8 | 37.3 | 1.82 | 3.15 | 1.32 |
 | hello-world | 11.9 | 11.4 | 11.9 | 12.3 | 0.96 | 1.01 | 1.04 |
 
-Linux (Ubuntu 24.04 in WSL), Goose and C only, one 3 s run each (loops:
-the best of three):
+Linux (Ubuntu 24.04 in WSL), the C entry as `languages.sh` builds it and
+Goose under each candidate compile line, one 5 s run each:
 
-| benchmark | gcc 13: Goose | C | clang 20: Goose | C |
-|---|---:|---:|---:|---:|
-| fibonacci | 0.36 | 21.9 | 33.7 | 37.2 |
-| loops | 37.0 | 113.3 | 33.1 | 113.0 |
-| levenshtein | 32.8 | 56.3 | 26.6 | 49.4 |
+| benchmark | C, gcc -O3 | Goose, gcc -O3 | gcc -O3 -march=native | clang -O3 | clang -O3 -march=native |
+|---|---:|---:|---:|---:|---:|
+| fibonacci | 22.2 | 0.37 | 0.38 | 34.6 | 37.4 |
+| loops | 112.2 | 37.2 | 5.1 | 31.6 | 4.4 |
+| levenshtein | 57.6 | 33.7 | 35.9 | 35.0 | 32.7 |
 
 hello-world is level: the Goose runtime starts in about 9 µs, and 300
 interleaved runs put Goose and C within 0.1 ms of each other.
