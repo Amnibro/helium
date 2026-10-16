@@ -1561,6 +1561,7 @@ struct TypeCheck {
                                               F walk);
     bool CanContain(TypeExpr *t, TypeExpr *of);
     bool CanContainWalk(TypeExpr *t, TypeExpr *of);
+    bool MayHoldValueOf(TypeExpr *t, TypeExpr *of);
     void ReachedThroughRefs(TypeExpr *t, vector<TypeExpr *> &out);
     bool ReachesThroughRefs(TypeExpr *t, TypeExpr *of);
     void BoundReach(VarDef *r, vector<TypeExpr *> &out);

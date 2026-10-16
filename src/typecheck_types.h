@@ -1084,6 +1084,23 @@ inline bool TypeCheck::CanContainWalk(TypeExpr *t, TypeExpr *of) {
     return AnyField(t, [&](TypeExpr *ft) { return CanContain(ft, of); });
 }
 
+// CanContain up to qualifiers and storage forms: false only where no part
+// of t by value is of `of`'s kind, or of its struct or enum at all, so a
+// `const` pointee or a loaded field type never makes two such types miss.
+inline bool TypeCheck::MayHoldValueOf(TypeExpr *t, TypeExpr *of) {
+    auto adt = [](TypeExpr *x) { return x->kind == TY_ENUM || x->kind == TY_VARIANT; };
+    auto same = [&]() {
+        if (adt(t) || adt(of))
+            return adt(t) && adt(of) &&
+                   (t->kind != TY_ENUM || of->kind != TY_ENUM || t->enu->en == of->enu->en);
+        if (t->kind != of->kind) return false;
+        return t->kind != TY_STRUCT || t->struc->st == of->struc->st;
+    };
+    if (same()) return true;
+    if (t->kind == TY_ARRAY) return MayHoldValueOf(t->arr->sub, of);
+    return AnyField(t, [&](TypeExpr *ft) { return MayHoldValueOf(ft, of); });
+}
+
 // The pointee type a reference or slice type reaches: for a slice, its
 // elements (a candidate must hold a run of those).
 inline TypeExpr *TypeCheck::PointeeOf(TypeExpr *t) {

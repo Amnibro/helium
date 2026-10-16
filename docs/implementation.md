@@ -1144,7 +1144,12 @@ that slice names exactly. What came out of a class's storage alone still
 did where that container is a class of the caller's; the specialization's
 one entry for events alike but for that keeps the mark only where each of
 them has it (`AddStoreEvent`), and a cycle's rounds compare it
-(`SameRecord`). A nested function's store through a
+(`SameRecord`). A place the mapping names exactly whose storage cannot hold
+the stored reference's pointee by value, under any qualifier
+(`MayHoldValueOf`), is left out: a view a caller's holder holds may stand
+for a `Link&` the callee pushed into the `Link[>..]` one of its references
+names, never for one into the `u8[>..]` another names, so only the arrays
+that can hold a `Link` must outlive the storage it lands in. A nested function's store through a
 parameter of the function it is declared in, or a function value's through
 one of the function it is written in, is into a class of that function's,
 not the

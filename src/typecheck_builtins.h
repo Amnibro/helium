@@ -1616,7 +1616,17 @@ inline void TypeCheck::ApplyCalleeStores(FnSpec *spec, vector<Val> &argvals, Nod
     // A slice writes the caller's elements just as an array reference does.
     // Only a read-back from the same container preserves its existing
     // contents provenance (for example a permutation).
-    auto applyevent = [&](const StoreEvent &e, const Roots &r, bool first) {
+    auto applyevent = [&](const StoreEvent &e, const Roots &mappedroots, bool first) {
+        // A place the mapping names exactly whose storage cannot hold the
+        // stored reference's pointee is none it points into: a view the
+        // argument's storage holds that leads elsewhere (a `u8[>..]&` beside
+        // the `Link[>..]&` a stored `Link&` came out of).
+        Roots r = mappedroots;
+        if (e.pointee && !e.byteview)
+            erase_if(r.alts, [&](const RootAlt &a) {
+                return a.exact && a.root && a.root->type &&
+                       !MayHoldValueOf(LoadType(a.root->type), e.pointee);
+            });
         Roots cr;
         auto p = classat(e.container, cr);
         auto src = source(e.src);
