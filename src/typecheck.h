@@ -1243,6 +1243,20 @@ struct TypeCheck {
         PathsScope(TypeCheck &t, bool on) : tc(t), saved(t.pathslive) { tc.pathslive = saved || on; }
         ~PathsScope() { tc.pathslive = saved; }
     };
+    // A parameter's class whose grow-only shrink is being scanned, and the
+    // type of the array the shrink frees as the callee's record or the
+    // receiver gives it: a class root has no type of its own (ShrunkType).
+    VarDef *shrunkclass = nullptr;
+    TypeExpr *shrunkclasstype = nullptr;
+    // The type of the storage whose elements a grow-only shrink at root
+    // frees: the bound's where root only bounds it, else root's own, or the
+    // one given for the class being scanned; null where nothing says, which
+    // lets any pointee in.
+    TypeExpr *ShrunkType(VarDef *root, TypeExpr *bound) {
+        if (bound) return bound;
+        if (root->type) return LoadType(root->type);
+        return root == shrunkclass ? shrunkclasstype : nullptr;
+    }
     // The shrink being scanned is a whole assignment's, whose right-hand
     // side is the rest of its statement (CheckAssignedValue, ExposedLater).
     bool rebuilding = false;
@@ -2242,9 +2256,10 @@ struct TypeCheck {
         return !roots.Any([](const RootAlt &a) { return !a.root || IsTemp(a.root); });
     }
     // `what` names the array in the diagnostics; `bound` is its type where vd
-    // only bounds it (ShrinkTarget).
+    // only bounds it (ShrinkTarget), and `arr` the type of the storage shrunk
+    // where known, which a parameter's class vd does not say itself.
     void GrowOnlyShrinkAt(Node *c, const string &op, VarDef *vd, const string &what,
-                          TypeExpr *bound = nullptr);
+                          TypeExpr *bound = nullptr, TypeExpr *arr = nullptr);
 
     // Every store of a reference, slice or holder value into a container
     // (ast.h StoreEvent), program-wide: a function value's body stores into

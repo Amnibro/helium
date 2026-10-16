@@ -251,7 +251,7 @@ inline bool TypeCheck::RefMayPointInto(VarDef *v, VarDef *root, bool growonly, T
 // resizable value into it.
 inline bool TypeCheck::ClassReadMayPointInto(VarDef *cls, VarDef *root, TypeExpr *bound,
                                              bool inplace) {
-    auto arrtype = bound ? bound : root->type ? LoadType(root->type) : nullptr;
+    auto arrtype = ShrunkType(root, bound);
     Line where;
     PathsScope ps(*this, inplace);
     return HolderMayPointInto(cls, root, arrtype, LiveEventBase(cls), &where);
@@ -356,7 +356,7 @@ inline bool TypeCheck::HeldRefsMayPointInto(VarDef *v, const Prov &p, TypeExpr *
             // activation stored there: what the callers did they judge,
             // from the pair NoteLiveViews keeps (LiveShrink::contents).
             if (holder) {
-                auto arrtype = bound ? bound : root->type ? LoadType(root->type) : nullptr;
+                auto arrtype = ShrunkType(root, bound);
                 Line where;
                 if (HolderMayPointInto(r, root, arrtype, LiveEventBase(r), &where)) return true;
                 continue;

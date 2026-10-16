@@ -1033,7 +1033,10 @@ inline bool TypeCheck::ShrinkMayFree(VarDef *root, TypeExpr *bound, bool growonl
                                      TypeExpr *of, bool byteview) {
     if (byteview) return bound ? Viewable(bound) : MayBeViewed(root);
     if (bound) return !of || (growonly ? CanContain(bound, of) : GrowShrinkContains(bound, of));
-    if (growonly) return !of || !root->type || CanContain(LoadType(root->type), of);
+    if (growonly) {
+        auto st = ShrunkType(root, nullptr);
+        return !of || !st || CanContain(st, of);
+    }
     return GrowShrinkCanHold(root, of);
 }
 
@@ -1141,7 +1144,21 @@ inline void TypeCheck::CheckHeldShrinks(Node *at, const string &op, VarDef *root
 // record -- the first caller's too, though this body is checked inside its
 // check -- where the rest of the caller's statement is in view.
 inline void TypeCheck::GrowOnlyShrinkAt(Node *c, const string &op, VarDef *vd,
-                                        const string &what, TypeExpr *bound) {
+                                        const string &what, TypeExpr *bound, TypeExpr *arr) {
+    struct ClassType {
+        TypeCheck &tc;
+        VarDef *cls;
+        TypeExpr *type;
+        ClassType(TypeCheck &t) : tc(t), cls(t.shrunkclass), type(t.shrunkclasstype) {}
+        ~ClassType() {
+            tc.shrunkclass = cls;
+            tc.shrunkclasstype = type;
+        }
+    } classtype(*this);
+    if (!bound && !vd->type && arr) {
+        shrunkclass = vd;
+        shrunkclasstype = arr;
+    }
     if (!frames.back().spec)
         Error(c, cat("cannot ", op, " ", what, " in a global initializer (§5.1)"));
     if (vd->reusable)
@@ -1158,7 +1175,7 @@ inline void TypeCheck::GrowOnlyShrinkAt(Node *c, const string &op, VarDef *vd,
     }
     // The elements freed: of the array itself, or for a bound, of an array
     // of its type. A parameter class's storage is not known here.
-    auto arrtype = bound ? bound : vd->type ? LoadType(vd->type) : nullptr;
+    auto arrtype = ShrunkType(vd, bound);
     CheckHeldShrinks(c, op, vd, what, true, bound);
     ShrinkScanVars([&](VarDef *v) {
         // The array's own holder is scanned as any other where the fields
@@ -1896,8 +1913,8 @@ inline bool TypeCheck::GlobalReach::Covered(VarDef *src, VarDef *root, bool exac
 // a root the array outlives whose pointee the array's elements can hold,
 // or one to a slot whose own references may point into it
 // (StoredSlotMayPointInto). `arrtype` is the type of the array whose
-// elements are in question, null where it is not known (a parameter class),
-// which lets any pointee in. A holder whose type has no slot for a view
+// elements are in question (ShrunkType), null where nothing says (a
+// parameter's class no record gives a type), which lets any pointee in. A holder whose type has no slot for a view
 // into those elements holds none (CanHoldViewInto), but where a reference
 // to the whole array is followed into it (pathslive).
 inline bool TypeCheck::HolderMayPointInto(VarDef *holder, VarDef *arr, TypeExpr *arrtype,
@@ -2313,7 +2330,7 @@ inline void TypeCheck::ShrinkThrough(Node *at, const string &verb, const string 
         if (growonly) {
             auto what = t.root == root ? string(t.root->name)
                                        : cat(t.root->name, " (which ", recv, " may point at)");
-            GrowOnlyShrinkAt(at, verb, t.root, what, bound);
+            GrowOnlyShrinkAt(at, verb, t.root, what, bound, arr);
         } else {
             auto what = t.root == root ? recv : cat(t.root->name, ", which ", recv,
                                                     " may point at");
@@ -2405,7 +2422,7 @@ inline void TypeCheck::NoteLiveViews(Node *at, const string &prefix, VarDef *roo
     // shrinks, the class's own included.
     // What a class's storage holds never refers into the array where its
     // type has no slot for a view into the array's elements (CanHoldViewInto).
-    auto arrtype = bound ? bound : root->type ? LoadType(root->type) : nullptr;
+    auto arrtype = ShrunkType(root, bound);
     auto judges = [&](const LiveView &w, const RootAlt &a) {
         if (growonly && !pathslive && w.contents && !w.inplace && w.pointee && arrtype &&
             !CanHoldViewInto(w.pointee, arrtype))
@@ -2879,7 +2896,7 @@ inline void TypeCheck::ApplyCalleeShrinks(Node *at, FnSpec *spec, vector<Val> &a
         auto what = cat("call ", name, ", which ", h.how);
         auto op = cat(what, " ", h.root->name);
         if (h.growonly) {
-            GrowOnlyShrinkAt(at, what, h.root, string(h.root->name), h.bound);
+            GrowOnlyShrinkAt(at, what, h.root, string(h.root->name), h.bound, h.arr);
         } else if (judged == SB_UNBALANCED) {
             ShrinkGrowShrink(at, op, h.root, string(h.root->name), h.bound);
         } else {

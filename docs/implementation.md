@@ -1637,7 +1637,12 @@ one (`CheckAssign`, or `PointeeAssign` through a reference, with
    no slot for a view into the array's elements holds none, whatever its
    record says (`CanHoldViewInto`; a view derived from a stored path lies in
    such a slot, its store unrecorded where it came out of the same
-   container). A whole assignment's scan counts a path as leading into the
+   container). The array's elements are those of the storage the shrink
+   names (`ShrunkType`): the root's own type, the bound's where the root
+   only bounds it, and for a parameter's class, which has no type, the one
+   the callee's record or the receiver gives the array -- a callee
+   replacing an argument's `u8[>..]` through a reference field frees no
+   `i64` a holder of the caller's may refer to. A whole assignment's scan counts a path as leading into the
    array for a variable its right-hand side may take a reference out of,
    which runs while the array is rebuilt (`ExposedLater`: named there other
    than to read a field path whose value holds none), and so does an
