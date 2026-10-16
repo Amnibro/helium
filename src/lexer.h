@@ -97,6 +97,11 @@ struct Lexer {
     bool smultiline = false;         // T_STRLIT: a """ string spanning lines.
     int tokline = 1;
     const char *toklinestart = nullptr;
+    // The documentation above the current token: the run of // comment
+    // lines, each on a line of its own and directly below the one before,
+    // that ends on the line before the token; from the first // to the end
+    // of the last line. Empty for a token with none.
+    string_view doc;
 
     Lexer(string_view _filename, const char *_source, int _fileidx = 0)
         : p(_source), filename(_filename), source(_source), fileidx(_fileidx) {
@@ -143,6 +148,11 @@ struct Lexer {
         prevend = p;
         prevendline = line;
         prevendlinestart = linestart;
+        // The run of // comment lines on lines of their own, each directly
+        // below the one before, that the scan has passed: the token's
+        // documentation where it ends on the line above the token.
+        const char *docstart = nullptr, *docend = nullptr;
+        int docline = 0;
         again:
         for (;;) {
             auto c = *p;
@@ -153,6 +163,8 @@ struct Lexer {
         auto start = p;
         tokline = line;
         toklinestart = linestart;
+        doc = docstart && docline + 1 == line ? string_view(docstart, (size_t)(docend - docstart))
+                                              : string_view();
         // An error raised while the token is still being scanned puts its
         // caret at the token's start.
         attr = string_view(start, 0);
@@ -238,7 +250,17 @@ struct Lexer {
 
             case '/':
                 if (*p == '/') {
+                    // A comment with nothing but indentation before it on
+                    // its line joins the run directly above it, or starts
+                    // one; one after code on its line is no documentation.
+                    auto own = true;
+                    for (auto q = linestart; q < start; q++) own = own && (*q == ' ' || *q == '\t');
+                    if (own && (!docstart || docline + 1 != line)) docstart = start;
                     while (*p && *p != '\n') p++;
+                    if (own) {
+                        docend = p > start && p[-1] == '\r' ? p - 1 : p;
+                        docline = line;
+                    }
                     goto again;
                 }
                 if (*p == '*') {

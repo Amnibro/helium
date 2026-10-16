@@ -154,10 +154,18 @@ inline string PathStem(const string &path) {
 
 // A Goose source file, without the UTF-8 byte-order mark many Windows
 // editors write at its start (spec §2).
+inline void StripBom(string &s) {
+    if (s.compare(0, 3, "\xEF\xBB\xBF") == 0) s.erase(0, 3);
+}
 inline bool LoadSource(const string &path, string &dest) {
     if (!LoadFile(path, dest)) return false;
-    if (dest.compare(0, 3, "\xEF\xBB\xBF") == 0) dest.erase(0, 3);
+    StripBom(dest);
     return true;
 }
+
+// Where a file's text comes from before the disk: the text for the path, or
+// null for the disk's. The dump `--roundtrip` parses again is served this
+// way, as an editor's unsaved buffers would be.
+using SourceProvider = function<const string *(const string &path)>;
 
 }  // namespace goose

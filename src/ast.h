@@ -380,6 +380,7 @@ struct Param {
 struct Field {
     string_view name;
     Line line;                  // Of the name, or of `pad`.
+    string_view doc;            // The comment lines above it (Lexer::doc).
     TypeExpr *type = nullptr;
     Node *defaultval = nullptr;
     bool isconst = false;       // "let" field: const after construction.
@@ -1357,6 +1358,7 @@ NODE(VarDecl)
     bool byref = false;         // `x .= e`: bound by reference, no decay (§3.8).
     bool inline_arg = false;    // Synthesized call argument: caller-scope storage.
     string_view ns;             // A global's namespace ("" = global; docs/design/namespaces.md).
+    string_view doc;            // The comment lines above it (Lexer::doc).
     vector<string_view> names;  // let a, b = f();
     // The results of `a, b = f();`, which the assignments after it in its
     // block take (Parser::ParseMultiAssign).
@@ -1412,6 +1414,7 @@ struct SFunction {
     string_view qname;          // `ns::name`, or just name in the global namespace; interned in Ast.
     Line line;
     Line end;                   // One past the declaration's last byte (its `}` or `;`).
+    string_view doc;            // The comment lines above it (Lexer::doc).
     vector<GenericParam> generics;
     vector<Param> params;
     vector<TypeExpr *> rets;    // Empty + !has_rets = inferred/none.
@@ -1438,6 +1441,7 @@ struct SStruct {
     string_view qname;
     Line line;
     Line end;                   // As SFunction::end.
+    string_view doc;            // As SFunction::doc.
     vector<GenericParam> generics;
     vector<Field> fields;
     vector<StructInst *> insts;  // Instantiations (typecheck), owned by Ast.
@@ -1446,6 +1450,7 @@ struct SStruct {
 struct SVariant {
     string_view name;
     Line line;                  // Of the name.
+    string_view doc;            // As SFunction::doc.
     vector<Field> fields;
     bool has_payload = false;   // Distinguishes "Point" from "Point {}".
 };
@@ -1456,6 +1461,7 @@ struct SEnum {
     string_view qname;
     Line line;
     Line end;                   // As SFunction::end.
+    string_view doc;            // As SFunction::doc.
     vector<GenericParam> generics;
     vector<SVariant> variants;  // Stable once parsing completes; pointed at by TY_VARIANT.
     vector<EnumInst *> insts;   // Instantiations (typecheck), owned by Ast.
@@ -1497,6 +1503,7 @@ struct SAlias {
     string_view qname;
     Line line;
     Line end;                   // As SFunction::end.
+    string_view doc;            // As SFunction::doc.
     TypeExpr *type = nullptr;
 };
 

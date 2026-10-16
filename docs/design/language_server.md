@@ -457,8 +457,11 @@ visible improvement before any server exists. Each item is a change of its
 own with its tests. A and C are in (`docs/implementation.md` §2,
 `test/diagnostics_json.py`): a diagnostic's range runs from the earliest
 token its node has on the anchor's line to the node's end, and a call is
-anchored at its callee rather than its `(`. B, E and H, and the
-extension's reading of the JSON, are not.
+anchored at its callee rather than its `(`. So are B (`ParseProgram`'s
+`SourceProvider`), E (`--offline`, `package_nofetch`, an error at the
+import) and H (`Lexer::doc` on declarations, fields and variants, printed
+by `--dump-docs`). The extension's reading of the JSON is a task of its
+own.
 
 **Phase 1, a server:** F, G, `goose lsp` with the transport, workspace and
 analysis of §4, and diagnostics on change, hover, go to definition,

@@ -137,8 +137,10 @@ debug information and no optimization for the C compiler; packages stay
 release builds), `--standalone` (no runtime object), `-o <exe>`, `--cc
 <name|path>` (§6.1), `--dry-run` (print every command and write nothing),
 `-v` (print every command as it runs), and the ones shared with the
-plumbing: `-D`, `--include`, `--stack-reserve`, `--stdlib`. `run` takes the
-same except `-o`, `--standalone` and `--debug`.
+plumbing: `-D`, `--include`, `--stack-reserve`, `--stdlib`, and `--offline`
+(fetch nothing: a package not in the cache is an error at its import, which
+`fetch` resolves; what an editor's checks pass). `run` takes the same except
+`-o`, `--standalone` and `--debug`.
 
 ## 4. Packages
 

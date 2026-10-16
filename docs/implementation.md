@@ -137,10 +137,12 @@ the slow steps (a line each, and on a terminal a live line below).
 | Flag | Effect |
 |---|---|
 | `--tokens`, `--dump`, `--parse` | stop after lexing, after parsing (dump is parse-level: no resolution), after resolution |
+| `--dump-docs` | stop after parsing and print the documentation comments of the program's declarations, fields and variants (`DumpDocs`; §2) |
 | `--roundtrip` | after resolution, parse the dump as a program of its own and require it to dump to the same text (`CheckRoundtrip`), then go on to whatever else was asked for |
 | `--dump-file f.goose` | also write the dump to a file, and go on |
 | `--check` | stop after typecheck, optimization and BCE; no C is written |
 | `--diagnostics json` | print the compile's errors and warnings as JSON on stdout (`DiagnosticsJson`): one object each with its severity, message, file, line, column, end and related lines, and the text the terminal would have shown; the progress lines go to stderr. What an editor reads (§2, `docs/design/language_server.md`) |
+| `--offline` | fetch nothing (`package_nofetch`, `packages.h`): a declared package whose checkout is not in the cache is an error at its import, which `goose fetch` resolves |
 | `-O0`, `-O1` (default), `-O2` | inlining thresholds (§4); folding and propagation run at every level; base-case inlining, tail-recursion elimination and min/max regrouping need `-O1` or above |
 | `--specs` | print every live specialization's optimized body |
 | `--stacks` | print the data stack count of the main program and of each worker, the regions they come to, the thread cap that gives `hardware_threads()`, and every function's share (`codegen_stacks.h`); with `--check` it runs the backend for the counts and writes nothing |
@@ -173,7 +175,14 @@ only when a digit follows. `LexRawString`
 removes the closing line's indentation from each content line of a `"""` string
 and normalizes `\r\n` to `\n`. Its token and the resulting `StrLit` record
 whether it was multiline, allowing `embed_shader` to report errors at the
-corresponding source line.
+corresponding source line. Comments are skipped, but a run of `//` comment
+lines standing on lines of their own, each directly below the one before,
+that ends on the line above a token is kept as that token's documentation
+(`Lexer::doc`, a view from the first `//` to the end of the last line): the
+parser attaches it to the declaration, field or variant that starts with
+the token (`SFunction::doc` and the like), and `--dump-docs` prints them. A
+blank line, a block comment or any token ends a run, and a comment after
+code on its line starts none.
 
 **Parser** (`parser.h`): recursive descent mirroring Appendix D, one
 function per construct. Points that matter to later passes:
@@ -200,6 +209,13 @@ function per construct. Points that matter to later passes:
   rest ends in one and as its last statement otherwise. No later pass has a
   guard node, and `--dump` prints the `if`. A guard anywhere but among a
   block's statements is a parse error.
+* `ParseProgram` takes each file's text from the source provider it is
+  given where that has it (`SourceProvider`, `utils.h`: the dump
+  `--roundtrip` parses again; an editor's unsaved buffers), else from disk
+  (`LoadSource`), without a byte-order mark either way. Under `--offline`
+  (`package_nofetch`, `packages.h`) a declared or blessed package whose
+  checkout is not in the cache is an error at its import rather than a
+  fetch.
 * Imports are collected per file; `ParseProgram` resolves `import a.b` against
   the importing file's package root (`Ast::packages`, `Ast::filepkg`: the
   root file's directory for the program, package 0, a declared package's

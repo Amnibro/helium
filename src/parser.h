@@ -167,6 +167,7 @@ struct Parser {
 
     void ParseTopDecl() {
         auto line = CurLine();
+        auto doc = lex.doc;
         curns = filens;
         switch (lex.tok) {
             case T_NAMESPACE: {
@@ -218,6 +219,7 @@ struct Parser {
                 al->ns = curns;
                 al->qname = ast.QualifiedName(al->ns, al->name);
                 al->line = line;
+                al->doc = doc;
                 CheckFreshTypeName(al->ns, al->name);
                 Expect(T_ASSIGN, "type alias");
                 al->type = ParseType();
@@ -280,6 +282,7 @@ struct Parser {
     void ParseStructDecl() {
         auto firsttype = ast.alltypes.size();
         auto line = CurLine();
+        auto doc = lex.doc;
         lex.Next();
         auto st = new SStruct();
         ast.structs.push_back(st);
@@ -287,6 +290,7 @@ struct Parser {
         st->ns = curns;
         st->qname = ast.QualifiedName(st->ns, st->name);
         st->line = line;
+        st->doc = doc;
         CheckFreshTypeName(st->ns, st->name);
         ParseGenerics(st->generics);
         Expect(T_LCURLY, "struct declaration");
@@ -302,6 +306,7 @@ struct Parser {
         while (lex.tok != T_RCURLY) {
             Field f;
             f.line = CurLine();
+            f.doc = lex.doc;
             if (IsNext(T_PAD)) {
                 f.ispad = true;
                 if (lex.tok == T_INTLIT) {
@@ -330,6 +335,7 @@ struct Parser {
     void ParseEnumDecl() {
         auto firsttype = ast.alltypes.size();
         auto line = CurLine();
+        auto doc = lex.doc;
         lex.Next();
         auto en = new SEnum();
         ast.enums.push_back(en);
@@ -337,12 +343,14 @@ struct Parser {
         en->ns = curns;
         en->qname = ast.QualifiedName(en->ns, en->name);
         en->line = line;
+        en->doc = doc;
         CheckFreshTypeName(en->ns, en->name);
         ParseGenerics(en->generics);
         Expect(T_LCURLY, "enum declaration");
         while (lex.tok != T_RCURLY) {
             SVariant v;
             v.line = CurLine();
+            v.doc = lex.doc;
             v.name = ExpectIdent("enum variant");
             for (auto &prev : en->variants)
                 if (prev.name == v.name) Error(cat("duplicate variant name: ", v.name));
@@ -367,6 +375,7 @@ struct Parser {
         auto sf = new SFunction();
         ast.functions.push_back(sf);
         sf->line = line;
+        sf->doc = lex.doc;
         sf->isnested = nested;
         sf->outer = curfn;
         auto checkfree = false;
@@ -490,6 +499,7 @@ struct Parser {
 
     VarDecl *ParseVarDecl(bool isglobal) {
         auto line = CurLine();
+        auto doc = lex.doc;
         auto reusable = 0;
         if (IsNext(T_REUSABLE)) {
             reusable = RU_SLOTS;
@@ -507,6 +517,7 @@ struct Parser {
         vd->isconst = isconst;
         vd->reusable = reusable;
         vd->isglobal = isglobal;
+        vd->doc = doc;
         for (;;) {
             vd->names.push_back(isglobal ? ParseDeclName("global declaration")
                                          : ExpectIdent("variable declaration"));

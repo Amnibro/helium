@@ -159,12 +159,12 @@ struct DeclaredPackage {
 // declared; then in the standard library. `import .a.b;` resolves relative to
 // the importing file's directory. `import name from "source";` declares a
 // package in the root file and is a requirement anywhere else, which the
-// root's declaration must satisfy (docs/design/packages.md §4.3). A
-// `rootsource` is the root file's text, which is then not read from disk.
-// `exedir` is the compiler's directory, where a release keeps the packages
-// compiled into it.
+// root's declaration must satisfy (docs/design/packages.md §4.3). A file's
+// text comes from `sources` where that has it (SourceProvider, utils.h),
+// else from disk. `exedir` is the compiler's directory, where a release
+// keeps the packages compiled into it.
 void ParseProgram(Ast &ast, const string &rootpath, const vector<string> &stdlibdirs,
-                  const string &exedir, const string *rootsource = nullptr) {
+                  const string &exedir, const SourceProvider &sources = {}) {
     // The program is package 0; a standard library directory becomes a
     // package the first time a module in it is reached.
     auto rootdir = DirOf(rootpath);
@@ -227,9 +227,12 @@ void ParseProgram(Ast &ast, const string &rootpath, const vector<string> &stdlib
         auto [path, pkg] = queue.back();
         queue.pop_back();
         auto contents = make_unique<string>();
-        if (rootsource && path == rootpath) *contents = *rootsource;
-        else if (!LoadSource(path, *contents))
+        if (auto text = sources ? sources(path) : nullptr) {
+            *contents = *text;
+            StripBom(*contents);
+        } else if (!LoadSource(path, *contents)) {
             throw CompileError { cat("cannot open file: ", path) };
+        }
         auto fileidx = (int)ast.sources.size();
         ast.sources.emplace_back(path, std::move(contents));
         ast.filepkg.push_back(pkg);
@@ -325,7 +328,11 @@ void ParseProgram(Ast &ast, const string &rootpath, const vector<string> &stdlib
                     imppkg = it->second.pkg;
                     imppath = cat(ast.packages[imppkg].root, rest, ".goose");
                 } else if (blessed) {
-                    imppkg = loadblessed(*blessed);
+                    try {
+                        imppkg = loadblessed(*blessed);
+                    } catch (CompileError &e) {
+                        ImportError(filename, imp, e.msg);
+                    }
                     imppath = cat(ast.packages[imppkg].root, rest, ".goose");
                 } else {
                     imppath = local;
@@ -404,7 +411,8 @@ void CheckRoundtrip(const string &dumped, const string &path,
                     const vector<string> &stdlibdirs, const string &exedir) {
     Ast again;
     try {
-        ParseProgram(again, path, stdlibdirs, exedir, &dumped);
+        ParseProgram(again, path, stdlibdirs, exedir,
+                     [&](const string &p) -> const string * { return p == path ? &dumped : nullptr; });
     } catch (CompileError &e) {
         throw CompileError { cat("the dump does not parse again:\n", e.msg) };
     }
@@ -445,6 +453,52 @@ void DumpTokens(const string &path) {
         lex.Next();
     }
     fputs(s.c_str(), stdout);
+}
+
+// What --dump-docs prints: the documentation comments (Lexer::doc) of the
+// top-level declarations, in source order, and of their fields and
+// variants: a line naming each one that has one (`fn add`, `field
+// Point.x`, `variant Shape.Circle`), then the comment's lines, each less
+// its indentation and indented by four spaces.
+void DumpDocs(Ast &ast, string &s) {
+    auto doc = [&](const string &head, string_view text) {
+        if (text.empty()) return;
+        Append(s, head, "\n");
+        for (size_t pos = 0; pos <= text.size();) {
+            auto end = text.find('\n', pos);
+            if (end == string_view::npos) end = text.size();
+            auto line = text.substr(pos, end - pos);
+            if (!line.empty() && line.back() == '\r') line.remove_suffix(1);
+            auto first = line.find_first_not_of(" \t");
+            Append(s, "    ", first == string_view::npos ? string_view() : line.substr(first),
+                   "\n");
+            pos = end + 1;
+        }
+    };
+    auto fields = [&](const string &owner, const vector<Field> &fs) {
+        for (auto &f : fs)
+            if (!f.ispad) doc(cat("field ", owner, ".", f.name), f.doc);
+    };
+    for (auto d : ast.topdecls) {
+        if (auto fd = Is<FnDecl>(d)) {
+            doc(cat("fn ", fd->sf->qname), fd->sf->doc);
+        } else if (auto sd = Is<StructDecl>(d)) {
+            doc(cat("struct ", sd->st->qname), sd->st->doc);
+            fields(string(sd->st->qname), sd->st->fields);
+        } else if (auto ed = Is<EnumDecl>(d)) {
+            doc(cat("enum ", ed->en->qname), ed->en->doc);
+            for (auto &v : ed->en->variants) {
+                auto name = cat(ed->en->qname, ".", v.name);
+                doc(cat("variant ", name), v.doc);
+                fields(name, v.fields);
+            }
+        } else if (auto ad = Is<AliasDecl>(d)) {
+            doc(cat("type ", ad->al->qname), ad->al->doc);
+        } else if (auto vd = Is<VarDecl>(d)) {
+            doc(cat(vd->isconst ? "const " : vd->isvar ? "var " : "let ",
+                    ast.QualifiedName(vd->ns, vd->names[0])), vd->doc);
+        }
+    }
 }
 
 // The runtime C sources embedded into the compiler (runtime_inline.h), in the
@@ -557,6 +611,8 @@ constexpr const char *MULTIMARK = "==== goose --multi-test: exit";
 constexpr const char *COMPILEOPTIONS =
 R"(  --diagnostics json    Print the errors and warnings as JSON on stdout, and
                         the progress lines on stderr.
+  --offline             Fetch nothing: a package that is not fetched is an
+                        error at its import, which goose fetch resolves.
   -D NAME[=VALUE]       Define a C macro in the generated program (or -DNAME).
   --stdlib dir          The standard library's directory (or GOOSE_STDLIB);
                         found from where goose is by default.
@@ -718,6 +774,8 @@ Options:
   --parse               Stop after parsing.
   --check               Stop after typechecking, as goose check does.
   --dump                Print the parsed program back as source.
+  --dump-docs           Print the documentation comments of the program's
+                        declarations, fields and variants.
   --dump-file out       Write that dump to a file, and go on.
   --roundtrip           Check that the dump parses and dumps back to itself.
   --multi-test file...  Compile each file as a run of its own would, ending what
@@ -896,7 +954,8 @@ int Main(int argc, char **argv) {
         return 0;
     }
     string outname, headername, stdlibdir, shaderfile, shadersource, dumpfile;
-    auto dump = false, tokens = false, parseonly = false, specs = false, nocgen = false;
+    auto dump = false, dumpdocs = false, tokens = false, parseonly = false, specs = false;
+    auto nocgen = false;
     auto roundtrip = false, multitest = false;
     auto nobce = false, bcetest = false, bcelines = false, norfcheck = false;
     auto stacks = false;
@@ -997,6 +1056,8 @@ int Main(int argc, char **argv) {
         else if (arg == "-v") verbose = true;
         else if (arg == "--dry-run") dryrun = true;
         else if (arg == "--update") package_update = true;
+        else if (arg == "--offline") package_nofetch = true;
+        else if (arg == "--dump-docs") dumpdocs = true;
         // A -D lands in the generated C itself rather than on some backend's
         // command line, so a JIT run and a compiled one see the same source.
         else if (arg == "-D" && i + 1 < argc) cdefines.push_back(argv[++i]);
@@ -1114,6 +1175,12 @@ int Main(int argc, char **argv) {
         if (jsondiag) ast.warnsink = [&](const Diagnostic &d) { found.push_back(d); };
         auto stdlibdirs = StdlibDirs(stdlibdir, exe);
         ParseProgram(ast, filename, stdlibdirs, DirOf(exe));
+        if (dumpdocs) {
+            string s;
+            DumpDocs(ast, s);
+            fputs(s.c_str(), stdout);
+            return 0;
+        }
         if (dump) {
             // Dump is parse-level output: no name resolution or typecheck,
             // so parse-only test files can roundtrip, and every name shows

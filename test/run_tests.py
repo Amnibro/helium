@@ -1906,7 +1906,7 @@ def main():
                 r.say(f"skip packages from git ({skipped})")
             else:
                 r.ok("packages from git: concurrent fetches, submodules, interrupted fetch, "
-                     "tag, commit, update, differing ref")
+                     "tag, commit, update, differing ref, offline")
         except RuntimeError as e:
             r.fail("packages from git", str(e))
     r.section("packages from git")
@@ -2014,6 +2014,16 @@ def main():
         except (RuntimeError, OSError, subprocess.TimeoutExpired) as e:
             r.fail("diagnostics as JSON", str(e))
     r.show_task(diagnostics_json)
+
+    def doc_comments():
+        from doc_comments import check_doc_comments
+        try:
+            check_doc_comments(exe, gendir)
+            r.ok("documentation comments: the comment lines above declarations, fields and "
+                 "variants, and what ends a run of them")
+        except (RuntimeError, OSError, subprocess.TimeoutExpired) as e:
+            r.fail("documentation comments", str(e))
+    r.show_task(doc_comments)
 
     def runtime_cache():
         from runtime_cache import check_runtime_cache
