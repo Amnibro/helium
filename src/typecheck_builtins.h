@@ -1223,6 +1223,73 @@ inline bool TypeCheck::KilledFor(VarDef *c, VarDef *base, TypeExpr *t, TypeExpr 
     return emptied(t, "") && since != SIZE_MAX;
 }
 
+// The type of the part kill k emptied, null where its path names no field.
+inline TypeExpr *TypeCheck::KillPartType(const Kill &k) {
+    auto t = k.base->type;
+    if (!t) return nullptr;
+    if (t->kind == TY_REF) t = t->ref->sub;
+    t = LoadType(t);
+    size_t at = 0;
+    while (at < k.path.size()) {
+        auto end = k.path.find('.', at + 1);
+        if (end == string::npos) end = k.path.size();
+        auto name = string_view(k.path).substr(at + 1, end - at - 1);
+        at = end;
+        if (t->kind != TY_STRUCT) return nullptr;
+        auto inst = GetStructInst(t);
+        TypeExpr *ft = nullptr;
+        for (size_t i = 0; i < inst->st->fields.size() && i < inst->ftypes.size(); i++)
+            if (!inst->st->fields[i].ispad && inst->st->fields[i].name == name) ft = inst->ftypes[i];
+        if (!ft) return nullptr;
+        t = LoadType(ft);
+    }
+    return t;
+}
+
+// Whether a call may write into the part kill k emptied, which only a
+// reference to storage holding the part, or to storage lying in it, can: an
+// argument pointing at storage that may be the container, whose pointee may
+// hold the part's value or lie in it, or any reference an argument leads to
+// through its pointee's or its own references, whatever its root, whose
+// pointee may (MayHoldValueOf either way). A callee that can name the
+// caller's variables -- a nested function, one handed a function value --
+// may write through one bound into the part, and is taken to.
+inline bool TypeCheck::CallMayWrite(FnSpec *spec, const vector<Val> &argvals, const Kill &k) {
+    auto part = KillPartType(k);
+    if (!part || spec->sf->isnested || spec->isfunval) return true;
+    for (auto &[name, fb] : spec->fnvals) {
+        if (fb.fv) return true;
+        if (fb.set) {
+            for (auto sf : *fb.set)
+                if (sf->isnested) return true;
+        } else if (fb.named && fb.named->isnested) {
+            return true;
+        }
+    }
+    auto overlaps = [&](TypeExpr *t) {
+        return t && (MayHoldValueOf(t, part) || MayHoldValueOf(part, t));
+    };
+    for (size_t i = 0; i < spec->argtypes.size(); i++) {
+        auto pt = spec->argtypes[i];
+        if (pt->kind == TY_FN) return true;
+        TypeExpr *reach = pt;
+        if (IsRefOrSlice(pt)) {
+            reach = PointeeOf(pt);
+            auto mayname = i >= argvals.size() || argvals[i].Unknown() ||
+                           argvals[i].Any([&](const RootAlt &a) {
+                               return !a.root ||
+                                      MayAliasRoots(a.root, a.exact, k.container, true) != AL_NO;
+                           });
+            if (mayname && overlaps(reach)) return true;
+        }
+        vector<TypeExpr *> reached;
+        ReachedThroughRefs(reach, reached);
+        for (auto t : reached)
+            if (overlaps(t)) return true;
+    }
+    return false;
+}
+
 // A grow-only array shrinks wherever nothing can still point into it: a
 // local of this function, a caller's array reached through a reference
 // parameter, a global, or an enclosing function's local. Everything in
@@ -3108,8 +3175,10 @@ inline void TypeCheck::ApplyCalleeShrinks(Node *at, FnSpec *spec, vector<Val> &a
                                           string_view name, const vector<Node *> *argnodes) {
     // The callee may store into what the caller emptied in ways no event
     // shows (a store of its own unrecorded, one of a nested function's
-    // re-applied in place), so no kill of the caller's outlasts a call.
-    cur.kills.clear();
+    // re-applied in place), so a kill of the caller's outlasts a call only
+    // where the callee cannot write into the part it emptied; its recorded
+    // stores elsewhere in the container come after the kill.
+    erase_if(cur.kills, [&](const Kill &k) { return CallMayWrite(spec, argvals, k); });
     // A shrink of an array the call may free: a grow-only array takes the
     // §5.1 scan (variables and recorded stores), a grow-shrink one the §5.2
     // scan (variables only) and the pairs its callers judge (NoteLiveViews),

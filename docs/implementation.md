@@ -1701,10 +1701,22 @@ branch join keeps a kill both sides made, at the earlier index, a loop's
 head takes the join of its entry with its back edges, and an `&&` or `||`
 keeps one its right operand did not end. A store into the container no
 event records (`RecordStore`: a holder's own references put back into it, a
-value pointing nowhere yet) ends its kills (`DropKills`), and a call ends
-them all (`ApplyCalleeShrinks`, `CheckFunValCall`): a callee's own
-unrecorded stores, and a nested function's stores replayed in place under
-the events of its first check, show in no event after the kill. Item 4
+value pointing nowhere yet) ends its kills (`DropKills`), and so does a
+call that may write into the part a kill names (`CallMayWrite` from
+`ApplyCalleeShrinks`), a function value's call ending them all
+(`CheckFunValCall`): a callee's own unrecorded stores, and a nested
+function's stores replayed in place under the events of its first check,
+show in no event after the kill. Only a reference to storage holding the
+part, or lying in it, can write there: a call may where an argument points
+at storage that may be the container (`MayAliasRoots`) with a pointee that
+may hold the part's type or lie in it, where any reference an argument
+leads to through its references, whatever its root, has such a pointee
+(`ReachedThroughRefs`, `MayHoldValueOf` either way), and where the callee
+can name the caller's variables -- a nested function, or one with a
+function value bound (`FnSpec::fnvals`) or handed. A struct of the caller's
+own built from the holder's reference fields, handed to a callee
+rebuilding the tree those lead to, leaves the holder's emptied tree empty.
+Item 4
 then scans a holder from the earliest kill on (`KilledFor`) where kills
 empty every slot of it that can hold a view into the array's elements
 (`CanHoldViewInto`): a holder variable from its own kills, a reference to a

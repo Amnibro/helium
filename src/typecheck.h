@@ -252,8 +252,9 @@ struct TypeCheck {
     // `let` reference's or parameter's pointee, which lies in `container`.
     // The stores into the container before event `at` put nothing there that
     // is still in it, so long as no store into the container since went
-    // unrecorded (RecordStore) and no call ran (ApplyCalleeShrinks), whose
-    // callee's stores the record may not show in order (KilledFor).
+    // unrecorded (RecordStore) and no call that may write into the part ran
+    // (CallMayWrite), whose callee's stores the record may not show in order
+    // (KilledFor).
     struct Kill {
         VarDef *container = nullptr;
         VarDef *base = nullptr;
@@ -2289,6 +2290,8 @@ struct TypeCheck {
     bool KillPath(Node *n, VarDef *&base, string &path);
     void NoteKill(Node *lval, const Roots &loc, TypeExpr *target, const Val &v, size_t at);
     bool KilledFor(VarDef *c, VarDef *base, TypeExpr *t, TypeExpr *arr, size_t &since);
+    TypeExpr *KillPartType(const Kill &k);
+    bool CallMayWrite(FnSpec *spec, const vector<Val> &argvals, const Kill &k);
     void NoteShrinkOrder(VarDef *root, TypeExpr *bound);
     // While a callee's shrink is judged at a call: the store events the call
     // replayed from `base` on, each with the index of the callee's class

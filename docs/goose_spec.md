@@ -1362,8 +1362,14 @@ it. A holder each of whose slots that can hold a view into the array lies,
 on every path to the shrink, in a part so emptied — the whole of it, or its
 fields one by one — holds only what was stored into its storage since; but
 no longer once a store into that storage the record cannot show is made,
-one moving the holder's own references within it, or once a call runs, a
-callee's stores never being on record in their order. So
+one moving the holder's own references within it, or once a call that may
+write into the part runs, a callee's stores never being on record in their
+order: one handed a reference that may point at the holder's storage, with
+room for the part or lying in it, or anything whose references may lead to
+storage of the part's type, whatever it points at; a nested function; one
+handed a block or any other function value; and a block's own call. A call
+handed a struct of the function's own built from the holder's reference
+fields, whose references lead only to what those do, may not. So
 `for i in 3 { refs = []; pool = []; refs.push(pool.push(i)); }` passes,
 the store at the end of one iteration being gone by the shrink at the start
 of the next, while emptying `refs` on some paths only, after a store that
