@@ -12,7 +12,8 @@
 - [7. Worked example: CSR breadth-first search](#7-worked-example-csr-breadth-first-search)
 - [8. Implementation](#8-implementation)
 - [9. Testing](#9-testing)
-- [10. Open questions](#10-open-questions)
+- [10. Measurements](#10-measurements)
+- [11. Open questions](#11-open-questions)
 
 </details>
 
@@ -22,8 +23,11 @@ type* `u32 in nodes` is an integer that is a valid index of the global array
 `checkfree fn` is a function the compiler rejects if any bounds check is left
 in it. Together they let a programmer move the bounds checks of a hot loop to
 where its data enters the program, and have the compiler confirm that the
-loop is left with none. Neither is implemented. This is TODO 0e of the spec,
-and the answer to the indirect-indexing gap TODO 0f lists.
+loop is left with none. This was TODO 0e of the spec, and is the answer to
+the indirect-indexing gap TODO 0f lists. Both features are implemented
+(spec §3.11 and §7.14). This note keeps the reasoning behind them; §8 to §10
+record how they were built, what building them turned up, and what they
+measure.
 
 ## 1. The check no analysis removes
 
@@ -115,9 +119,9 @@ generated C does not see the type.
 
 * **A conversion.** `x as (uN in a)`, for `x` of any integer type, aborts
   unless `0 <= x < a.len`, with the ordinary index-out-of-bounds error that
-  `a[x]` would give. Where `a`'s reservation (§10.4) can hold more elements
-  than `uN` can number, it also aborts unless `x` fits `uN`. `x as (uN upto
-  a)` is the same with `x <= a.len`.
+  `a[x]` would give. `x as (uN upto a)` is the same with `x <= a.len`. A
+  value `uN` cannot hold then converts as any `as` does: checked in debug,
+  wrapped in release, and what it wraps to is smaller, so still in range.
   * Unlike every other `as`, this one is checked in every build: it is a
     bounds check moved, not a debug conversion check.
   * The bounds-check pass judges it as it judges `a[x]` and elides it
@@ -182,9 +186,10 @@ generated C does not see the type.
 ### 2.6 What may not hold or make one
 
 * **Defaults.** An index type has no default value: `default<T>()`, a
-  literal's `..`, a fixed array without an initializer and a field default
-  all need one (`HasDefault`). The array may be empty, so not even 0 is
-  valid.
+  literal's `..`, a field default and a global without an initializer all
+  need one (`HasDefault`). The array may be empty, so not even 0 is valid. A
+  local declared without an initializer is fine, since it must be assigned
+  before it is read.
 * **Byte writers.** `format` and `to_bytes(a, out)` reject an output array of
   an index type (`(u8 in x)[>..]`). `bytes_of` views are read-only already.
 * **Images.** `from_bytes` accepts element types holding index types, and
@@ -196,9 +201,9 @@ generated C does not see the type.
 * **Threads.** Each thread program has its own copy of every global it uses
   (§11.2), and the copies of `a` grow apart after the spawn. `qput`, `qget`,
   `qpoll` and `thread_spawn` arguments reject types that hold index types.
-* **C.** `extern fn` results and writable reference or slice parameters, and
-  `export fn` parameters, may not hold index types, since C code is not
-  checked. By-value parameters to C are fine.
+* **C.** An `extern fn` or `export fn` signature holds no index type at any
+  depth, since C code is not checked against the array (`ExternValueOk`).
+  By-value parameters to C would be harmless; v1 does not tell them apart.
 
 ### 2.7 The array never shrinks
 
@@ -206,7 +211,10 @@ An array that an index or bound type names is never shrunk. `pop`, `pop_n`,
 `resize`, `clear` and a whole assignment of it are errors, anywhere in the
 program, directly or through a reference parameter. The per-specialization
 shrink summaries that §5.1 already keeps for globals find every such shrink.
-The error names the index type that pins the array. Element writes,
+The error names the index type that pins the array. A shrink through a
+reference whose root only bounds the storage (§9.5) is rejected where an
+array the root may reach is of a named array's type, which is conservative.
+Element writes,
 `push`, `append` and a `reusable` pool's `free` (whose slot stays a valid
 element, §5.4) are unaffected.
 
@@ -252,8 +260,18 @@ The contents of `a` change freely. Only its length matters.
     sized, the generation of `len(nodes)` moves on and the check stays.
 * **The conversion** is an index check of `a` and is elided the same way: in
   `for v in nodes.len { edges.push(v as NodeId); }` it costs nothing.
-* **`index_of(r)` and `alloc_index(v)`** results get `0 <= t < len(recv)`,
-  which they already satisfy, so `a.index_of(r) as (u32 in a)` is free.
+* **Not yet: `index_of(r)` and `alloc_index(v)`.** Their results could get
+  `0 <= t < len(recv)`, which they already satisfy, so that
+  `a.index_of(r) as (u32 in a)` would be free. Today that conversion is
+  checked.
+* **Typed kills.** The worked example (§7) turned up a gap the facts above
+  depend on: a `q.clear()` through a reference parameter, or a call that
+  pushes through one, killed every global's length, whatever its type. An
+  array is of one type and a reference reaches only an array of its own
+  type (array kinds do not convert at a reference), so a growth or shrink
+  now kills only places of the receiver's type, and a callee's write through
+  an argument that is an array of scalars only places of that array's type
+  (spec §10.5).
 
 ## 5. Index types and relative references
 
@@ -387,22 +405,34 @@ facts from callers, effect summaries, step counters) is best-effort.
 
 ### 6.5 Diagnostics
 
-The error is per remaining check, at its index. It says which bound failed
-(the lower, the upper, or both) and why, in the terms of
-`docs/implementation.md` §9.1's "Kept" list:
+The error is per remaining check, at its index, with the source line. It
+says why, in the terms of `docs/implementation.md` §9.1's "Kept" list. The
+implemented reasons:
 
-* **A value read out of an array or field.** `w` is read out of `adj`, so
-  the error suggests giving `adj`'s elements an index type.
+* **A value read out of an array, a field or a call.** The error suggests
+  an index type for what is stored there.
 * **A `u64` index variable.**
-* **A length that was invalidated.** `dist`'s length was invalidated by the
-  call to `f` at line N, or by `q.pop()`.
-* **A fact that came from callers.** The call at file:line passes `src`
-  without `src.len == W * W`.
-* **A shape the domain cannot state:** a disjunctive loop exit, a counter
-  stepped twice, a doubled child index.
+* **A term the domain cannot relate to the length**, or a length it does
+  not track there.
+* **Which bound failed:** nothing shows `x >= 0`, or nothing shows
+  `x < a.len`. For an index type of another array the error names the
+  `assert` that would settle it:
 
-Plain "check kept at line 61" is what `--bce-lines` gives today. The
-explanation is where most of this feature's work is (§8).
+  ```
+  checkfree fn bfs keeps a bounds check: nothing shows u < dist.len; u is a
+  u32 in nodes, so `assert(dist.len >= nodes.len)` where neither changes
+  after it would settle it
+  ```
+* **Slices:** which of the three comparisons failed.
+
+Two reasons are not implemented yet, since they need the pass to keep
+provenance it does not keep today:
+* **A length that was invalidated:** `dist`'s length was invalidated by the
+  call to `f` at line N, or by `q.pop()`. That needs the statement behind
+  each generation of a length base.
+* **A fact that came from callers:** the call at file:line passes `src`
+  without `src.len == W * W`. That needs to know which site's meet dropped
+  an entry fact.
 
 ### 6.6 Flags and combinations
 
@@ -411,13 +441,14 @@ explanation is where most of this feature's work is (§8).
     every check is present as usual.
   * Debug and release builds run the same analysis and get the same verdict.
   * At `-O0` nothing is inlined. A function whose checks are settled by its
-    own types and asserts gets the same verdict there.
+    own types and asserts gets the same verdict there. The worked example
+    passes at `-O0`, `-O1` and `-O2`, an inlined helper included.
 * **Combinations.**
   * `checkfree` is an error with `extern`, which has no body.
   * It may be combined with `inline`, `simd`, `recursive`, `thread_fn` and
     `export`.
-  * A thread entry and an export get no call-site facts, which the core
-    never relies on anyway.
+  * A thread entry gets no call-site facts, which the core never relies on
+    anyway. An export should get none either, but does today (§8.3).
 
 ## 7. Worked example: CSR breadth-first search
 
@@ -494,131 +525,121 @@ Notes on the example:
 
 ## 8. Implementation
 
-### 8.1 Where the risk is
+`docs/implementation.md` §3.13 and §5.5 to §5.12 describe the implementation
+pass by pass. This section records how it went against the plan.
+
+### 8.1 The plan held
 
 Every typed store already passes `TypeCheck::FitsAt`, which is also where
-`in pool` checks roots. Making it reject an index-typed destination for
-anything but a value of the same type covers almost every way an element can
-be written. The rest is §2.6's short list.
+`in pool` checks roots, so making it take only a value of the same array
+covered nearly every way an element can be written. The risk was integer
+code that picks a result type by storage width, or by copying an operand's
+`TypeExpr *`. Two choke points made that fail closed, as planned: the brand
+is stripped in `TypeCheck::Operand`, where every operator operand passes,
+and every branded destination or join requires the same array. The sites
+that copied a type along were the ones predicted: `MergeVals`' constant
+`adapt`, `UnifyBranch`, `FitsAt`'s constant and literal cases, and
+`Converts` for the cast judgements. The brand stayed a field on `TY_INT`
+rather than a kind of its own.
 
-The real risk is integer code that picks a result type by storage width, or
-by copying an operand's `TypeExpr *`, and so would carry an index type along
-silently:
-* `MergeVals`' constant `adapt`, which would type `if c { 4000000 } else { w
-  }` as `u32 in nodes`;
-* `UnifyBranch`'s `ImplicitInt` cases;
-* shifts, which take the left operand's type;
-* `UnifyNumeric`;
-* the constant and literal cases of `FitsAt`.
+### 8.2 What the plan missed
 
-The typechecker has about 70 `intstorage`, `SameNum` and `IsU8` tests, and
-each needs looking at.
+* **The optimizer folds casts.** `AsCast::Opt` turned `5 as NodeId` into the
+  constant 5, dropping the check. A conversion into an index type now never
+  folds.
+* **Two codegen paths look inside casts.** `DivisorKey` and `DivisorValue`
+  hoist a divisor's conversion checks ahead of a loop, and `Speculatable`
+  evaluates a cast unconditionally where it cannot fail. Both now treat a
+  conversion into an index type as the check it is.
+* **The worked example needed typed kills** (§4): without them the entry
+  `assert` of `bfs` died at `q.clear()`.
+* **Attributing a check to its text.** Tracking the function a walk is in
+  attributed an argument expression, which the inliner places inside the
+  callee's block, to the callee. Source-line spans, as `--bce-test` uses,
+  attribute every copy correctly.
+* **A dump of a `for` binder** needs the parentheses the parser does.
 
-Two choke points make that fail closed:
-* **Strip the type in `TypeCheck::Operand`.** Every operator operand comes
-  through it, so no arithmetic result can carry an index type. Index
-  positions keep it on `exprtype` for the bounds-check pass before
-  decaying.
-* **Require `TypeEq`** of every value stored at, or joined into, an index
-  type.
+### 8.3 A soundness bug found on the way
 
-The alternative is a separate `TY_INDEX` kind, which every `kind == TY_INT`
-test rejects. A site it misses becomes a spurious error rather than a hole,
-at the price of about 100 such tests to visit, codegen included.
+The `checkfree_parallel` fixture first used an `export fn`, and the check
+that should have stayed was elided. A Goose caller's facts are granted to
+an `export fn`'s entry, but its C wrapper calls the same specialization with
+arguments nobody checked: `export fn api(d: i32[:], i: i64) -> i32 { d[i] }`
+called once from Goose with a known length and index compiles without its
+check, and C can then read past the end. This predates index types (the
+compiler before this change does the same). The fix is to grant an export
+no call-site facts, as a thread entry gets none. It is not part of this
+change.
 
-### 8.2 By area
+### 8.4 Size
 
-* **`ast.h`.**
-  * `TypeExpr` gains the named array (and the name the parser saw) outside
-    the union, since `intstorage` is the `TY_INT` member. It also gains an
-    `in`/`upto` bit.
-  * Function declarations gain `checkfree`.
-  * `AsCast` gains a `nobc` flag.
-* **`parser.h`, `dump.h`, `TypeStr`.** The `indextype` production with its
-  no-postfix rule, and the modifier. Small.
-* **Typechecker.**
-  * Resolving the name once, as `TypeRef::pool` is resolved, and §2.2's
-    validity.
-  * `TypeEq`, `FitsAt`, `Operand`, `MergeVals` and `UnifyBranch`.
-  * `CompoundAssign` and `CheckIncDec`, `HasDefault`.
-  * The cast rules: always checked, never redundant into a different type,
-    no `as!`.
-  * The `for` variable's type.
-  * Queue, spawn, `extern`/`export`, `format` and `to_bytes` targets.
-  * The shrink ban, through the global shrink summaries
-    (`CheckGlobalShrinks`).
-  * `checkfree`'s call rule, over the call graph `BuildCallGraph` already
-    builds.
-* **`bce.h`.**
-  * §4's facts.
-  * The cast as an index check.
-  * `checkfree` verification. `lineout` already counts kept checks per
-    source line across every specialization and inlined copy, so a check of
-    zero kept over a function's lines is close to free.
-  * The diagnostics of §6.5, which need the pass to record per kept check
-    which bound failed, the base kind of the index term, the statement that
-    last killed the length base, and which call site's meet dropped an entry
-    fact.
-* **Codegen.**
-  * The conversion's check (`GS_IDX`, plus the width test of §2.3).
-  * The `from_bytes` verifier's range check.
-  * Making sure `Box<u32 in nodes>` and `Box<u32>` cannot collide in
-    `Mangle`.
-  * Nothing else. The C type comes from `intstorage`.
-* **Optimizer.** Nothing for soundness. Its rewrites keep values, so an
-  index type a rewrite keeps is still true, and one it drops only costs a
-  check.
-
-### 8.3 Size
-
-For calibration, `in pool` landed in cae09614 as about 380 lines of compiler
-source (typecheck +135, codegen +216, ast +21) plus spec and seven error
-fixtures. About ten follow-ups over the next month fixed exactly the paths
-§8.1 is about. Examples are "Encode references that literals, branches and
-calls store in relative slots", "Keep relative references out of results and
-default<T>() values" and "Give type-parameter locals and parameters the plain
-reference for links".
-
-Index types have no encoding half, since the C representation is the plain
-integer, so codegen work is small. They are values that flow everywhere, so
-the typechecker part is wider. Expect 400–600 lines for the types and the
-`checkfree` check, plus about 20 error fixtures. Expect an open-ended amount
-for §6.5's explanations, and a tail of the same kind as `in pool`'s.
+Against the estimate of 400–600 lines: +685 −44 in 19 source files, the
+typed kills and `checkfree`'s messages included. Plus 28 rejection fixtures,
+three parse-error fixtures and six programs with blessed output.
 
 ## 9. Testing
 
-* **`test/errors_tc` fixtures, one per rejection:**
+* **Rejections** (`test/errors_tc`, one per rule; `test/errors` for the
+  parse errors):
   * a constant, an arithmetic result, compound assignment and `++` into an
-    index type;
-  * a mixed-branch join stored as one;
-  * a `u32[:]` parameter given a `NodeId[:]`;
-  * `default<NodeId>()`;
-  * `format` into `(u8 in x)[>..]`;
-  * `qput` of one, an `extern` result;
-  * each shrink of a named array, directly and through a reference
-    parameter;
-  * `as!` into one;
-  * an invalid named array (local, grow-shrink, sequential).
-* **`// bce:elide` and `// bce:keep` fixtures** for §4. Among the keeps is
-  `dist[w]` after `nodes` grows past where `dist` was sized.
-* **Execution tests:** the conversion's abort, with its message, in release;
-  `from_bytes` rejecting an out-of-range index; the width check of a `u8 in
-  a` conversion.
-* **`checkfree` fixtures:**
-  * each core rule accepted;
-  * a kept check rejected with each §6.5 reason;
-  * a call to an unannotated function;
-  * a new caller dropping an entry fact.
-* **Fuzzing.** `bench/bce_fuzz.py` grows index-typed shapes: loads, joins,
-  generic pass-through and growth between sizing and use.
-* **Benchmarks.** Ports of `graph_csr.goose`, as in §7, and of a gather
-  kernel (`out[i] = xf(verts[idx[i]])`). They measure the win, which is
-  unmeasured so far. On clang a kept check is usually a well-predicted
-  branch. On MSVC a kept check in a loop prevents vectorization
-  (`docs/implementation.md` §9.1: `blur` was 1.75x slower with nine checks),
-  and gather loops only vectorize without checks.
+    index type; a branch joining one with a constant;
+  * one array's index into another's slot, and a bound into an index slot;
+  * a view of index-typed storage as plain integers;
+  * `default<NodeId>()` and a literal's `..`;
+  * `as!` into one, and a float converted to one;
+  * `format` into `(u8 in x)[>..]`, `qput`, a thread argument, an `extern`
+    result;
+  * each shrink of a named array, `pop`, `clear` and whole assignment, and
+    one through a reference parameter;
+  * an invalid named array: a local, a grow-shrink array, a `let`, a
+    sequential array; a signed index type; the missing parentheses;
+  * `checkfree`: a call to an unannotated function, a block written outside
+    one, an index read out of an array, an index of another array without
+    the length relation, and `checkfree extern`.
+* **Programs** (blessed output, run at -O0 and -O2, natively and through the
+  JIT):
+  * `test/typing/index_types.goose`: loads, joins, widths, calls, ADT
+    payloads, generic code (`sort`, `swap_at`, `max`), `for` binders, and
+    `from_bytes` accepting and rejecting images;
+  * `test/optimizer/bce_index_types.goose`: what the types prove, including
+    the keep after `nodes` grows past where `dist` was sized;
+  * `test/optimizer/bce_typed_kills.goose`: kills of same- and
+    other-typed arrays, by the operation and through a callee;
+  * `test/optimizer/checkfree_bfs.goose`: §7 with an inlined `checkfree`
+    helper, checked against a plain-integer version of the same BFS;
+  * `test/codegen/index_type_abort.goose` and `bound_type_abort.goose`: the
+    conversions' aborts and their messages.
+* **Fuzzing.** `bench/bce_fuzz.py` (400 programs, seed 7) still finds no
+  mismatch with the typed kills. It does not generate index-typed shapes
+  yet.
 
-## 10. Open questions
+## 10. Measurements
+
+Built by `goose build` with clang-cl 22 for x64 at its default target, on
+the development machine, best and median of 9–11 interleaved runs. These
+are rough numbers, not a benchmark-suite row.
+
+* **The BFS of §7** at a million nodes, eight million edges and eight
+  sources, against the same program with plain `u32` storage and the same
+  layout: 0.606 s against 0.628 s for the searches (medians, build time
+  subtracted). That is within noise. The walk is memory-bound, and the
+  checks it drops are well-predicted branches, as `docs/implementation.md`
+  §5.12 found for an earlier analysis of array contents.
+* **A gather kernel**, `out[i] = verts[idx[i]] * 2.0 + 1.0` over four
+  million indices, 50 passes: 0.220 s against 0.232 s (best), 0.224 s
+  against 0.247 s (median), so 5–9% for the whole run.
+* An earlier draft of the comparison used `i64` fields and edges for the
+  plain version and measured 25% in favour of index types. That was the
+  halved memory traffic of the narrower layout, which the plain version can
+  have too. Index types are no reason to narrow, but they make the narrow
+  layout as safe to index as the wide one.
+
+So on clang the value is the guarantee, and the check moved to where data
+enters the program, more than the speed. MSVC, where a kept check prevents
+vectorization outright (`blur` was 1.75x slower with nine checks), and wider
+instruction sets with gather instructions are untested.
+
+## 11. Open questions
 
 * **Names.** `checkfree` overpromises slightly, since other aborts remain.
   `proven` and `boundsfree` are alternatives. Names that read as permission
@@ -647,6 +668,9 @@ for §6.5's explanations, and a tail of the same kind as `in pool`'s.
   `a` is taken at the spawn, provided the worker uses `a`. v1 rejects them.
 * **`index_of` and `alloc_index`** could return index types instead of
   `i64`. That would break code doing arithmetic on the result in place, so
-  v1 only adds the fact (§4).
+  the plan is the fact of §4, which is not implemented yet.
+* **The two missing diagnostics** of §6.5.
+* **Index-typed shapes in `bench/bce_fuzz.py`**: loads, joins, generic
+  pass-through and growth between sizing and use.
 * **Fixed arrays as `a`** (`u8 in table` for a `T[256]`) are sound trivially
   and mostly cover what the type's range already gives.

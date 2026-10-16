@@ -355,7 +355,11 @@ inline string SliceExpr::CgX(CodeGen &cg) {
 // rounds like float arithmetic does, and beyond f32's range it is an
 // infinity.
 inline string AsCast::CgX(CodeGen &cg) {
-    auto x = cg.GenX(child);
+    // Into an index or bound type: the value converted is checked against
+    // the array first, in every build (§3.11). A narrower width then
+    // converts as any `as` does; what it wraps to is still in range.
+    auto x = totype->ix && !nobc ? cg.IndexTypeCheck(cg.GenPure(child), totype, line)
+                                 : cg.GenX(child);
     auto st = child->exprtype;
     auto tt = totype;
     // u64 is the one source whose values exceed the int64 range the checks

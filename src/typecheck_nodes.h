@@ -518,6 +518,18 @@ inline Val AsCast::Check(TypeCheck &tc, TypeExpr *) {
         tc.Error(this, cat("as can only convert between numeric types, not to ", tc.TypeStr(tt)));
     Val v;
     totype = v.type = tt;
+    // Into an index or bound type the conversion is a bounds check, made in
+    // every build, which no unchecked form skips; a conversion with a
+    // check of its own is never redundant (§3.11).
+    if (tt->ix) {
+        if (unchecked)
+            tc.Error(this, cat("as! cannot make a ", tc.TypeStr(tt), ": only the checked `as` "
+                               "converts into an index type (§3.11)"));
+        if (!IsIntT(st))
+            tc.Error(this, cat("only an integer converts to ", tc.TypeStr(tt), ", not ",
+                               tc.TypeStr(st), " (§3.11)"));
+        return v;
+    }
     tc.NoteCast(this, raw, cv, v);
     return v;
 }

@@ -61,7 +61,9 @@ inline void TypeExpr::Dump(string &s, size_t limit) const {
     };
     if (cq) s += "const ";
     auto SubDump = [&](const TypeExpr *inner) {
-        auto parens = inner->kind == TY_FN || inner->cq || (cq && chainhasrs(inner));
+        // An index type takes no postfix of its own: `(u32 in a)[>..]`.
+        auto parens = inner->kind == TY_FN || inner->cq || inner->ix ||
+                      (cq && chainhasrs(inner));
         if (parens) s += "(";
         inner->Dump(s, limit);
         if (parens) s += ")";
@@ -76,7 +78,10 @@ inline void TypeExpr::Dump(string &s, size_t limit) const {
         s += ">";
     };
     switch (kind) {
-        case TY_INT:  s += IntStorageName(intstorage); break;
+        case TY_INT:
+            s += IntStorageName(intstorage);
+            if (ix) Append(s, ix->upto ? " upto " : " in ", ix->name);
+            break;
         case TY_FLT:  s += FltStorageName(fltstorage); break;
         case TY_BOOL: s += "bool"; break;
         case TY_STRUCT: s += struc->st->qname; ArgsDump(struc->args); break;
@@ -495,15 +500,17 @@ inline void ForLoop::Dump(string &s, int ind) const {
     s += "for ";
     if (byref) s += "&";
     s += var;
-    if (vartype) {
+    // The loop's own `in` follows a binder's type, so an index type there
+    // takes parentheses.
+    auto binder = [&](TypeExpr *t) {
         s += ": ";
-        vartype->Dump(s);
-    }
+        if (t->ix) s += "(";
+        t->Dump(s);
+        if (t->ix) s += ")";
+    };
+    if (vartype) binder(vartype);
     if (!idxvar.empty()) Append(s, ", ", idxvar);
-    if (idxtype) {
-        s += ": ";
-        idxtype->Dump(s);
-    }
+    if (idxtype) binder(idxtype);
     s += " in ";
     DumpOperand(s, iter, ind);
     s += " ";
@@ -618,6 +625,9 @@ inline void FnDecl::Dump(string &s, int ind) const {
         s += "extern ";
         if (sf->cname != sf->name) { s += "\""; s += sf->cname; s += "\" "; }
     }
+    // A nested function takes its enclosing function's checkfree.
+    if (sf->checkfree && !(sf->isnested && sf->outer && sf->outer->checkfree))
+        s += "checkfree ";
     if (sf->issimd) s += "simd ";
     if (sf->isinline) s += "inline ";
     if (sf->isrec) s += "recursive ";

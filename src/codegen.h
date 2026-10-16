@@ -284,6 +284,7 @@ struct CodeGen {
     // uniquified mangle.
 
     string Mangle(TypeExpr *t);
+    map<VarDef *, int> ixmangles;   // Index types' arrays, numbered for Mangle.
 
     unordered_map<string, string> ctypes;   // mangle -> emitted C type name.
     bool corebuiltins = false;
@@ -854,6 +855,7 @@ struct CodeGen {
         ~FillScope() { for (auto n : added) cg.fillvalues.erase(n); }
     };
     string GenPure(Node *n);
+    string IndexTypeCheck(const string &x, TypeExpr *t, Line ln);
     static string IntStr(int64_t v);
     static string FltStr(double v, bool f32);
     Loc IndexLoc(Loc lv, Node *idxnode, Line ln, bool nobc);

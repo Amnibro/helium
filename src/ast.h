@@ -275,6 +275,18 @@ struct TypeVariant : TypeDetail {    // TY_VARIANT
     SVariant *variant = nullptr;     // Resolved declaration; null until its ADT is known.
 };
 
+// `u32 in a` / `u32 upto a` on a TY_INT (docs/design/index_types.md): a
+// value below a.len (at most a.len for `upto`) wherever it can be named. As
+// for a pool, the name is what the parser saw and typecheck resolves it
+// once; the array is part of the type's identity from then on. Copies of a
+// type (an alias's uses, `const`) share the detail.
+struct TypeIndex : TypeDetail {
+    string_view name;
+    string_view ns;                  // The namespace name resolves in (as TypeName::ns).
+    VarDef *arr = nullptr;
+    bool upto = false;
+};
+
 struct TypeExpr {
     TypeKind kind;
     Line line;
@@ -286,6 +298,9 @@ struct TypeExpr {
     // sizes name what they name where the alias is declared, at top level,
     // whatever scope the use is in (TypeCheck::ConstNamesIn).
     bool aliasuse = false;
+    // On a TY_INT: an index or bound type (TypeIndex). Outside the union,
+    // since intstorage is the member a TY_INT uses.
+    TypeIndex *ix = nullptr;
     union {                          // Active member selected by kind:
         IntStorage intstorage;       //   TY_INT
         FltStorage fltstorage;       //   TY_FLT
@@ -327,7 +342,13 @@ inline bool IsIntT(const TypeExpr *t) { return t->kind == TY_INT && t->intstorag
 inline bool IsVarintT(const TypeExpr *t) {
     return t && t->kind == TY_INT && t->intstorage == IS_VARINT;
 }
-inline bool IsU8(const TypeExpr *t) { return t->kind == TY_INT && t->intstorage == IS_U8; }
+// A plain u8: an index type of u8 is not a byte (a string, a byte view or a
+// text sink would write any byte into it).
+inline bool IsU8(const TypeExpr *t) {
+    return t->kind == TY_INT && t->intstorage == IS_U8 && !t->ix;
+}
+// An index or bound type (`u32 in a`, `u32 upto a`).
+inline bool IsIndexT(const TypeExpr *t) { return t && t->kind == TY_INT && t->ix; }
 inline bool IsF32(const TypeExpr *t) { return t && t->kind == TY_FLT && t->fltstorage == FS_F32; }
 
 // The primitive type keyword tokens, in a contiguous range.
@@ -1095,12 +1116,17 @@ NODE(SliceExpr)
 NODE_END
 
 NODE(AsCast)
+    BCE_WALK
     Node *child;
     TypeExpr *type;
     bool unchecked;             // as! vs as.
     // An integer's conversion to a float the checker inserted (§6.3), not
     // written by the user: TypeCheck::ToFloat.
     bool implicit = false;
+    // A conversion to an index or bound type checks the operand against
+    // the array as indexing it would, in every build; nobc is that check
+    // proven redundant (bce.h).
+    bool nobc = false;
     // Filled by typecheck: the concrete type the cast converts to. exprtype
     // can be wider: it is the slot the result lands in (an i8 cast stored
     // into an i64), and the cast still wraps and checks at its own type.
@@ -1358,6 +1384,9 @@ struct SFunction {
     bool isrec = false;         // Declared with `recursive`.
     bool isinline = false;      // Declared with `inline`: inlined whatever its size (§7.13).
     bool issimd = false;        // Declared with `simd`: one version per instruction set (§7.12).
+    // Declared with `checkfree`, or nested in such a function: a bounds
+    // check left in any copy of the body is an error (bce.h).
+    bool checkfree = false;
     bool isthread = false;
     bool isextern = false;      // A C function behind a Goose signature (§7.10); no body.
     bool isexport = false;      // A Goose function exposed through a C ABI wrapper.
@@ -2277,6 +2306,22 @@ struct Ast {
         auto d = new T();
         typedetails.push_back(d);
         return d;
+    }
+
+    // The plain integer an index or bound type's value is as a number:
+    // what arithmetic computes with, and what any other type gets.
+    TypeExpr *NoIndex(TypeExpr *t) {
+        return t && t->kind == TY_INT && t->ix ? inttypes[t->intstorage] : t;
+    }
+    // An index (or, with upto, bound) type of the resolved global array `arr`.
+    TypeExpr *IndexTypeOf(IntStorage s, VarDef *arr, bool upto, Line line) {
+        auto t = NewType(TY_INT, line);
+        t->intstorage = s;
+        t->ix = NewDetail<TypeIndex>();
+        t->ix->name = arr->name;
+        t->ix->arr = arr;
+        t->ix->upto = upto;
+        return t;
     }
 
     // The type constructors every pass builds types with. Each gives a

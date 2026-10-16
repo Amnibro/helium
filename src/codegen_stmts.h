@@ -176,7 +176,9 @@ inline string CodeGen::DivisorKey(Node *n, const VarDef **root, bool *path) {
         return cat(k, ".", d->fieldidx);
     }
     if (auto c = Is<AsCast>(n)) {
-        if (!isint(c->totype) || !isint(c->child->exprtype)) return "";
+        // A conversion into an index type checks against its array, which
+        // no hoisted divisor condition stands in for (§3.11).
+        if (!isint(c->totype) || !isint(c->child->exprtype) || c->totype->ix) return "";
         auto k = DivisorKey(c->child, root, path);
         if (k.empty()) return "";
         return cat("(", k, c->unchecked ? " as! " : " as ", IntStorageName(c->totype->intstorage),
@@ -190,7 +192,7 @@ inline string CodeGen::DivisorKey(Node *n, const VarDef **root, bool *path) {
 // of them would fail (or stays "1"), and the value is used only under it.
 inline string CodeGen::DivisorValue(Node *n, string &ok) {
     auto c = Is<AsCast>(n);
-    if (!c) return GenX(n);
+    if (!c || c->totype->ix) return GenX(n);
     auto x = DivisorValue(c->child, ok);
     auto st = c->child->exprtype;
     auto is = c->totype->intstorage;

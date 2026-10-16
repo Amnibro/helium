@@ -464,6 +464,7 @@ inline Val TypeCheck::ResolveCall(Call *c, vector<SFunction *> &cands, FnSpec *e
     // Arguments the re-check rebound by reference replace the originals.
     c->SetArgNodes(argnodes);
     c->spec = spec;
+    CheckfreeCallee(c, spec->sf);
     reachable = reachable && argsreach;
     ApplyCalleeRebinds(spec);
     if (auto rec = RecordOf(spec); rec && !rec->mayreturn) reachable = false;
@@ -1199,6 +1200,7 @@ inline Val TypeCheck::TryDispatch(Call *c, vector<SFunction *> &cands, FnSpec *e
     }
     // Like an ordinary call's, the cases' rebinds follow the argument checks.
     for (auto sp : c->dispatch) ApplyCalleeRebinds(sp);
+    for (auto sp : c->dispatch) CheckfreeCallee(c, sp->sf);
     // The cases are alternatives of one call, like a match's arms: the result
     // is only as long-lived, exact and writable as every case's result. A case
     // checked without recording a root for a result only returns null there or
@@ -2382,9 +2384,31 @@ inline void TypeCheck::AddNeed(FnSpec *s, FnSpec *t) {
     }
 }
 
+// checkfree (§7.14): what runs while a checkfree function does is its own
+// text, inlined or not, and what it calls, which must be checkfree in turn.
+// The text is the innermost frame's: a block's is the function it was
+// written in. A C function has no bounds checks of Goose's to run.
+inline SFunction *TypeCheck::TextFn() {
+    for (auto i = frames.size(); i-- > 0;)
+        if (frames[i].sf) return frames[i].sf;
+    return nullptr;
+}
+
+inline void TypeCheck::CheckfreeCallee(Node *at, SFunction *callee) {
+    auto t = TextFn();
+    if (!t || !t->checkfree || !callee || callee->checkfree || callee->isextern) return;
+    Error(at, cat("checkfree fn ", t->qname, " calls ", callee->qname, ", which is not "
+                  "checkfree: the bounds checks left in it would run inside ", t->qname,
+                  " (§7.14)"));
+}
+
 // A fixed-size value C takes by value (§7.10): a scalar, bool, or a flat
 // fixed struct or array (packed, no references).
 inline bool TypeCheck::ExternValueOk(TypeExpr *t, string &why) {
+    if (HoldsIndexT(t)) {
+        why = "C code is not checked against the array an index type names (§3.11)";
+        return false;
+    }
     switch (t->kind) {
         case TY_INT:
             if (t->intstorage == IS_VARINT) { why = "varints have no C form"; return false; }
@@ -3468,8 +3492,17 @@ inline Val TypeCheck::CheckFunValCall(Call *c, const FnValBind &fb, TypeExpr *ex
     auto env = ast.NewFunValEnv();
     env->sf = named ? named->sf : nullptr;
     env->lexparent = fb.env;
+    // A block runs inside the function calling it, as text of the function
+    // it was written in: a checkfree caller takes only one written in a
+    // checkfree function (§7.14).
+    auto writer = named ? named->sf : CurRealFrame().sf;
+    if (auto t = TextFn(); t && t != writer && t->checkfree && !(writer && writer->checkfree))
+        Error(c, cat("checkfree fn ", t->qname, " calls a block written in ",
+                     writer ? cat("fn ", writer->qname) : string("a global initializer"),
+                     ", which is not checkfree: the bounds checks left in it would run "
+                     "inside ", t->qname, " (§7.14)"));
     Frame f;
-    f.sf = named ? named->sf : CurRealFrame().sf;
+    f.sf = writer;
     f.spec = CurRealFrame().spec;
     f.lexspec = env;
     f.lexframe = fb.env ? LexFrame(fb.env) : 0;

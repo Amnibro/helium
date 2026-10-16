@@ -797,6 +797,15 @@ inline void CodeGen::EmitGlobalInit() {
     code += "}\n\n";
 }
 
+// x, a pure expression, as a value of index or bound type t: checked below
+// (at most, for a bound) the length of the array t names (§3.11).
+inline string CodeGen::IndexTypeCheck(const string &x, TypeExpr *t, Line ln) {
+    auto n = GlobalLenLv(t->ix->arr);
+    if (!t->ix->upto) return cat("GS_IDX(", x, ", ", n, ", ", LocArgs(ln), ")");
+    return cat("((uint64_t)(", x, ") <= (uint64_t)(", n, ") ? (", x, ") : (gs_idxfail((int64_t)(",
+               x, "), (", n, "), ", LocArgs(ln), "), (int64_t)0))");
+}
+
 // A resizable global's receiving lvalue: its header's count, or the
 // whole frame object.
 inline string CodeGen::GlobalLenLv(VarDef *d) {

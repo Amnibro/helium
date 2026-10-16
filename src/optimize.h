@@ -1270,6 +1270,9 @@ inline Node *SliceExpr::Opt(Optimizer &o) {
 inline Node *AsCast::Opt(Optimizer &o) {
     child = o.Opt(child);
     auto tt = totype;
+    // A conversion into an index type checks against the array's length at
+    // run time, which no constant settles (§3.11).
+    if (tt->ix) return this;
     if (auto i = Is<IntLit>(child)) {
         // Whether the source value's bits read as a u64 above i64.max.
         auto st = Optimizer::IntTypeOf(child);

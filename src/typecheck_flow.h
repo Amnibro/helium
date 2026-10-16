@@ -983,7 +983,7 @@ inline Val TypeCheck::MergeVals(const Val &a, bool areach, const Val &b, bool br
         if (c.unsized) {
             // A literal parameter adapts to the other branch like a
             // constant (§7.7).
-            RecordLitAdapt(c, o.type, at->line);
+            RecordLitAdapt(c, ast.NoIndex(o.type), at->line);
             return true;
         }
         if (!ConstsFit(c, o.type->intstorage)) return false;
@@ -1014,9 +1014,10 @@ inline Val TypeCheck::MergeVals(const Val &a, bool areach, const Val &b, bool br
         if (a.constfrom && b.constfrom) RelyOnNamed(b, at);
         v.constfrom = a.constfrom ? a.constfrom : b.constfrom;
     } else if (adapt(a, b)) {
-        v.type = b.type;
+        // A constant adapts to the number an index type holds (§3.11).
+        v.type = ast.NoIndex(b.type);
     } else if (adapt(b, a)) {
-        v.type = a.type;
+        v.type = ast.NoIndex(a.type);
     } else {
         v.type = UnifyBranch(a.type, b.type, at, wantvalue);
     }
@@ -1851,10 +1852,18 @@ inline void TypeCheck::CheckFor(ForLoop *x) {
         } else {
             auto lo = CheckIntAny(r->lo);
             auto hi = CheckIntAny(r->hi);
+            // Bounds of one array's index or bound types: every value the
+            // binder takes is below the end, so at most the array's
+            // length, and is an index of it (§3.11).
+            auto lot = r->lo->exprtype, hit = r->hi->exprtype;
+            auto arr = IsIndexT(lot) && IsIndexT(hit) && lot->ix->arr == hit->ix->arr
+                           ? lot->ix->arr : nullptr;
             auto ct = UnifyNumeric(r, T_DOTDOT, lo, hi, lo.type, hi.type);
             RetypeOperands(r->lo, r->hi, lo, hi, ct);
             r->exprtype = ct;
             bindtype = ct;
+            if (arr && IsIntT(ct) && IsUnsigned(ct->intstorage))
+                bindtype = ast.IndexTypeOf(ct->intstorage, arr, false, x->line);
         }
     } else {
         auto iv = CheckV(x->iter, nullptr);
@@ -1878,7 +1887,8 @@ inline void TypeCheck::CheckFor(ForLoop *x) {
             // keeps the reference, the loop iterating it where it lies.
             auto nv = DecayRef(iv);
             x->iter->exprtype = nv.type;
-            bindtype = t;
+            // A count of an index or bound type: each value is below it.
+            bindtype = t->ix ? ast.IndexTypeOf(t->intstorage, t->ix->arr, false, x->line) : t;
             if (vartype) {
                 // The count is the end of the range from 0, as above.
                 if (!pastend(x->iter)) {
@@ -2796,6 +2806,7 @@ inline void TypeCheck::CompoundAssign(Assign *a, TypeExpr *st, bool writable) {
                  "instantiation, §9.5)");
     auto isbit = a->op == T_ANDEQ || a->op == T_OREQ || a->op == T_XOREQ;
     auto isshift = a->op == T_SHLEQ || a->op == T_SHREQ;
+    if (IsIndexT(st)) NoIndexUpdate(a, TName(a->op), st);
     if (st->kind == TY_INT && st->intstorage != IS_VARINT && isshift) {
         // A shift count is any integer type, masked to the width (§6.2).
         CheckIntAny(a->rhs);
@@ -2847,6 +2858,15 @@ inline void TypeCheck::CheckIncDec(IncDec *x) {
                             "instantiation, §9.5)");
     if (!IsIntT(st))
         Error(x, cat(TName(x->op), " requires an integer lvalue, got ", TypeStr(st)));
+    if (st->ix) NoIndexUpdate(x, TName(x->op), st);
+}
+
+// An update computes a plain integer, which an index or bound type does not
+// take back (§3.11).
+inline void TypeCheck::NoIndexUpdate(Node *at, const char *op, TypeExpr *st) {
+    Error(at, cat(op, " cannot update a ", TypeStr(st), ": what it computes is a plain ",
+                  IntStorageName(st->intstorage), "; compute it, then convert it back with `as ",
+                  TypeStr(st), "` (§3.11)"));
 }
 
 }  // namespace goose

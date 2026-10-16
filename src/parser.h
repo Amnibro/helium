@@ -35,6 +35,9 @@ struct Parser {
     bool stmt_ended = false;
 
     SFunction *curfn = nullptr;      // The function whose body is being parsed.
+    // A for binder's type is followed by the loop's own `in`, so an index
+    // type there needs parentheses: `for w: (u32 in nodes) in edges`.
+    bool forbindtype = false;
 
     // Namespaces (docs/design/namespaces.md): the file's `namespace` directive,
     // and the namespace of the declaration being parsed -- the file's, or the
@@ -63,6 +66,15 @@ struct Parser {
         if (lex.tok != T_IDENT || lex.attr != "inline") return false;
         auto next = lex.PeekTok();
         return next == T_FN || next == T_RECURSIVE || next == T_THREADFN;
+    }
+
+    // `checkfree` likewise, before the rest of a declaration's modifiers
+    // (`inline` among them, which is a name to the lexer).
+    bool AtCheckfree() {
+        if (lex.tok != T_IDENT || lex.attr != "checkfree") return false;
+        auto next = lex.PeekTok();
+        return next == T_FN || next == T_RECURSIVE || next == T_THREADFN || next == T_SIMD ||
+               next == T_EXTERN || next == T_IDENT;
     }
 
     void Expect(TType t, const char *context) {
@@ -178,7 +190,7 @@ struct Parser {
             default: break;
         }
         declseen = true;
-        if (AtInline()) goto fndecl;
+        if (AtInline() || AtCheckfree()) goto fndecl;
         switch (lex.tok) {
             case T_STRUCT: ParseStructDecl(); return;
             case T_ENUM:   ParseEnumDecl();   return;
@@ -334,6 +346,11 @@ struct Parser {
         sf->line = line;
         sf->isnested = nested;
         sf->outer = curfn;
+        auto checkfree = false;
+        if (AtCheckfree()) {
+            checkfree = true;
+            lex.Next();
+        }
         if (lex.tok == T_EXPORT) {
             sf->isexport = true;
             if (nested) Error("export fn must be declared at top level");
@@ -353,6 +370,14 @@ struct Parser {
                 lex.Next();
             }
         }
+        if (!checkfree && AtCheckfree()) {
+            checkfree = true;
+            lex.Next();
+        }
+        if (checkfree && sf->isextern)
+            Error("extern fn cannot be checkfree: it has no body to check");
+        // A nested function is part of the body it is declared in.
+        sf->checkfree = checkfree || (nested && curfn && curfn->checkfree);
         if (IsNext(T_SIMD)) {
             if (sf->isextern) Error("extern fn cannot be simd: it has no body to compile");
             sf->issimd = true;
@@ -619,6 +644,28 @@ struct Parser {
         if (IsPrimTypeToken(lex.tok)) {
             auto t = ast.PrimTypeForToken(lex.tok);
             lex.Next();
+            auto upto = lex.tok == T_IDENT && lex.attr == "upto";
+            if (t->kind == TY_INT && !forbindtype && (lex.tok == T_IN || upto)) {
+                // `u32 in a` / `u32 upto a` (docs/design/index_types.md).
+                if (!IsUnsigned(t->intstorage))
+                    Error(cat("an index type is unsigned (u8, u16, u32 or u64), not ",
+                              IntStorageName(t->intstorage)));
+                lex.Next();
+                auto it = ast.NewType(TY_INT, line);
+                it->intstorage = t->intstorage;
+                it->ix = ast.NewDetail<TypeIndex>();
+                it->ix->upto = upto;
+                it->ix->name = ParseQualifiedName(upto ? "bound type" : "index type");
+                it->ix->ns = curns;
+                // It takes no postfix: `u32 in nodes[>..]` would read as an
+                // index into `nodes[>..]`.
+                if (lex.tok == T_LBRACKET || lex.tok == T_BITAND || lex.tok == T_QUESTION ||
+                    lex.tok == T_DOTDOT || lex.tok == T_DOT)
+                    Error(cat("an index type takes no postfix: parenthesize it, as in (",
+                              IntStorageName(it->intstorage), upto ? " upto " : " in ",
+                              it->ix->name, ")", TokStr()));
+                return it;
+            }
             return t;
         }
         switch (lex.tok) {
@@ -663,7 +710,10 @@ struct Parser {
             case T_LPAREN: {
                 // Grouping, e.g. (Sexp..&<varint>)[varint].
                 lex.Next();
+                auto forbind = forbindtype;
+                forbindtype = false;
                 auto t = ParseType();
+                forbindtype = forbind;
                 Expect(T_RPAREN, "parenthesized type");
                 return t;
             }
@@ -803,11 +853,19 @@ struct Parser {
         auto byref = IsNext(T_BITAND);
         auto var = ExpectIdent("for binding");
         TypeExpr *vartype = nullptr, *idxtype = nullptr;
-        if (IsNext(T_COLON)) vartype = ParseType();
         string_view idxvar;
-        if (IsNext(T_COMMA)) {
-            idxvar = ExpectIdent("for index binding");
-            if (IsNext(T_COLON)) idxtype = ParseType();
+        {
+            // Restored on the throw of an error a tentative parse backtracks over too.
+            struct Scope {
+                bool &f, saved;
+                Scope(bool &_f) : f(_f), saved(_f) { f = true; }
+                ~Scope() { f = saved; }
+            } fs(forbindtype);
+            if (IsNext(T_COLON)) vartype = ParseType();
+            if (IsNext(T_COMMA)) {
+                idxvar = ExpectIdent("for index binding");
+                if (IsNext(T_COLON)) idxtype = ParseType();
+            }
         }
         Expect(T_IN, "for statement");
         Node *iter;
@@ -1331,7 +1389,7 @@ struct Parser {
             stmt_level = false;
             stmt_ended = false;
             if (IsNext(T_RCURLY)) break;
-            if (AtInline()) goto nestedfndecl;
+            if (AtInline() || AtCheckfree()) goto nestedfndecl;
             switch (lex.tok) {
                 case T_LET: case T_VAR: case T_CONST: case T_REUSABLE: {
                     if (lex.tok == T_CONST && lex.PeekTok() == T_FOR) {

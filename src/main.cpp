@@ -1099,6 +1099,13 @@ int Main(int argc, char **argv) {
             bce.RunAll();
             fprintf(msgs, "bce: elided %d/%d index and %d/%d slice checks\n",
                     bce.idxelided, bce.idxtotal, bce.slelided, bce.sltotal);
+            if (!bce.checkfreefails.empty()) throw CompileError { bce.CheckfreeReport() };
+        } else {
+            for (auto sf : ast.functions)
+                if (sf->checkfree && !sf->isnested) {
+                    fprintf(stderr, "warning: checkfree is not verified under --no-bce\n");
+                    break;
+                }
         }
         // Per-line outcomes, for comparing two builds of the pass.
         if (bcelines)

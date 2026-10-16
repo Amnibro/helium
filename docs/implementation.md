@@ -2657,6 +2657,49 @@ links hold the plain reference, bound and checked as one, and a store of it
 back into an element meets the element's relative slot in `FitsAt` like any
 other plain reference. A field or element of type `T` stays relative.
 
+**Index and bound types** (spec §3.11) name a global the same way: a
+`TY_INT` carries a `TypeIndex` detail outside the union (`TypeExpr::ix`),
+which copies of the type share, and `ResolveIndexTypes` binds it to its
+global before any comparison, collecting those globals in `indexarrays`;
+`ValidateIndexType` then requires a grow-only `var` with fixed-size
+elements. `TypeEq` and `SameNum` compare the array and the kind (`SameIndex`),
+so the type is fail-closed wherever a type is compared, and the places that
+pick an integer result by its storage are where it could leak:
+* `Operand` strips it (`Ast::NoIndex`) from the value an operator computes
+  with, while the operand's `exprtype` keeps it for the bounds-check pass, so
+  no arithmetic result has one;
+* `FitsAt` takes only a value of the same array, at most as wide (an index
+  where a bound is wanted), never a constant, a flexible literal or a literal
+  parameter, and `Converts` agrees for the cast judgements;
+* `UnifyBranch` joins two of one array at the wider width (a bound if either
+  is one) and anything else as plain integers, and `MergeVals` adapts a
+  constant branch to the plain type;
+* `CompoundAssign` and `CheckIncDec` reject an index-typed target
+  (`NoIndexUpdate`), and `HasDefault` gives one no default;
+* `AsCast::Check` makes a conversion into one never redundant and rejects
+  `as!`; `CheckFor` gives a binder the index type when both range bounds, or
+  the count, are index or bound types of one array;
+* `GrowOnlyShrinkAt` rejects any shrink of a named array, which covers whole
+  assignments and callees' shrinks applied at the call;
+* `HoldsIndexT` keeps the type out of queues, thread arguments and C
+  signatures (`ExternValueOk`), and `IsU8` is false for one, so no text
+  sink writes into an array of them.
+
+Codegen erases the type: the C type is the storage's, `Mangle` numbers the
+array into the name so per-type artifacts such as a `from_bytes` verifier
+stay apart, the verifier checks each value against the array's current
+length, and a conversion wraps its operand in `IndexTypeCheck` (`GS_IDX`, or
+`<= len` for a bound) unless the bounds-check pass set `AsCast::nobc`. The
+optimizer folds no such conversion, and `DivisorKey` and `Speculatable` treat
+one as the check it is.
+
+`checkfree` (spec §7.14) is a parse-time flag on `SFunction`, inherited by
+nested functions. The typechecker's half is the call rule: `CheckfreeCallee`
+at a direct call, each case of a dispatch and each `format` overload a print
+reaches, and at a block call the function the block was written in, all
+judged against the function whose text the call is in (`TextFn`: a block's
+frame names its writer). The bounds-check pass does the rest (§5.11).
+
 ### 3.14 Arithmetic, constants, and the rest
 
 `UnifyNumeric` (§6.1) unifies operands: equal types stand, a constant adapts
@@ -3408,6 +3451,14 @@ writes shift facts in place when the pre-state provably cannot wrap
 otherwise; a set `v = e` re-pins `v` and records `v == e` when `e` has a term
 that cannot have wrapped.
 
+An array is of one type and a reference reaches only an array of its own
+type (array kinds do not convert at a reference), so a grow or shrink kills
+no place whose array type is surely another (`DistinctTypes` in
+`GrowShrinkKill`), and a callee's write through an argument that is an
+array of scalars, which holds no other array, kills only places of that
+array's type (`OtherArray` in `KillArgStorage`). A shrink of a reference
+parameter's array thus leaves a global of another type alone.
+
 A directional bump records that the new length is at least (or at most) the
 old one only where a fact names the old length (`BumpPlace`): a growth
 through a reference parameter may be a growth of any global array, and a
@@ -3618,10 +3669,34 @@ two runs differ (it finds the pass's former misreading of an inlined body
 with several returns as the value of its last one within a few hundred
 programs).
 
+**Index and bound types.** Every array an index type names gets a place in
+each body from the prescan on (`IndexPlaces`), so every kill of its length
+reaches it. A variable of an index type, and a one-shot base standing for a
+value of one read out of storage, a call, a branch or a conversion
+(`IndexTypeTerm`, `tmplen`), get the axioms `0 <= v` and
+`v <= len(a) - 1` (`<= len(a)` for a bound) against the length's *current*
+generation (`IndexBoundOf` in `DistsFrom`): the array never shrinks, so a
+value below any earlier length is below the current one, and no bridge
+facts are involved. A `u64` of an index type is a base, being below a
+length. `JudgeIndexCast` judges a conversion into one as `a[x]` would be
+judged, sets `AsCast::nobc`, and states the completed check's facts.
+
+**checkfree.** A kept check belongs to the text it is written in, as for
+`--bce-test`: the source lines each `checkfree` function spans
+(`CheckfreeSpans`) cover every specialization, every inlined copy and
+whatever the optimizer restated the check as, while a caller's argument
+inlined into the callee's block stays the caller's. Each kept check on such
+a line is recorded once with why (`KeptInCheckfree`, `KeptWhy`: a value read
+out of storage, a `u64` variable, a term the domain cannot relate, the lower
+or the upper bound, and for an index of another array the length relation
+an `assert` would state), and the driver reports them all as errors
+(`CheckfreeReport`). Under `--no-bce` nothing is judged, which it warns
+about.
+
 ### 5.12 Known gaps
 
 Indices loaded from array contents (`dist[q[i]]`) have no known range and
-keep their check. An analysis of array-content invariants was implemented
+keep their check, unless what is stored has an index type (§3.13). An analysis of array-content invariants was implemented
 and measured, then dropped because it produced no measurable speedup
 (`bench/adoption.md`). A `u64` variable is never a
 base, so a `u64` local loses the range its initializer had (TODO 0a). Loop
@@ -4930,10 +5005,20 @@ call sites*. In practice:
   passed: `xs[k]` after `xs[k]`, `xs[i]` for `i in lo..hi` after
   `xs[lo..hi]`.
 
+* an index of an index type into its array (`nodes[w]` for `w: u32 in
+  nodes`, spec §3.11), and into another array once their lengths are
+  related (`dist[w]` after `assert(dist.len >= nodes.len)`, with nothing
+  growing `nodes` since): `test/optimizer/bce_index_types.goose`;
+* a growth or shrink through a reference to an array of one type, next to
+  facts about arrays of other types: they survive it
+  (`test/optimizer/bce_typed_kills.goose`).
+
 **Kept** (the check stays, and is usually a well-predicted branch):
 
 * an index loaded from a data structure -- `dist[q[i]]`, `pool[slots[k].node]`,
-  `out[cursor[s]]`: the analysis tracks no array contents;
+  `out[cursor[s]]`: the analysis tracks no array contents. Storing an index
+  type there moves the check to where the value is converted, and a
+  `checkfree` function (spec §7.14) proves none is left in a loop;
 * a `u64`-typed index variable (a `u64` is never a base), an index read out
   of a field or element (`n.count`, only variables and lengths are bases,
   though a narrow type's range still counts), and any value that reaches the

@@ -1285,6 +1285,7 @@ inline bool CodeGen::Speculatable(Node *n, bool idxok, bool truth, int &budget) 
     if (auto c = Is<AsCast>(n)) {
         auto st = c->child->exprtype, tt = c->totype;
         if (!st || !tt || !(IsIntT(st) || st->kind == TY_FLT)) return false;
+        if (tt->ix && !c->nobc) return false;   // Its bounds check may fail.
         if (tt->kind == TY_INT) {
             if (!IsIntT(st) || !IsIntT(tt)) return false;
             auto [slo, shi] = IntRange(st->intstorage);
