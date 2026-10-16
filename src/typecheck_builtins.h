@@ -3325,21 +3325,44 @@ inline void TypeCheck::ApplyCalleeShrinks(Node *at, FnSpec *spec, vector<Val> &a
         // Through a reference or slice naming one local holder exactly, the
         // references are those its record says it holds (HeldAt), the
         // callee's own stores there among them by now (ApplyCalleeStores): a
-        // place one names exactly is the array where its storage holds one
+        // variable one names exactly is the array where its storage holds one
         // and its references lead to none, leads to none where neither may
-        // be, and otherwise only bounds the array, as any other root does.
-        // Where it holds anything else -- a parameter's class, whose storage
-        // the candidates at its depth name best -- the argument bounds them.
-        auto held = IsRefOrSlice(pt) && HolderSource(argvals[b.key]) ? HeldAt(argvals[b.key])
-                                                                     : Roots {};
-        if (!held.None() && !held.unknown &&
-            held.All([](const RootAlt &a) {
-                return a.exact && a.root && a.root->type && !IsRefOrSlice(a.root->type);
+        // be, and otherwise only bounds the array, as any other root does. A
+        // parameter's class of this activation that only bounds one bounds
+        // the array as what the storage behind the class leads to, which the
+        // class's bound records for the callers (ShrinkTargets'
+        // `classbound`). A reference the holder's own root only bounds was
+        // derived from what the holder holds, which its other entries say,
+        // unless it points into the holder's own storage, the array where
+        // that can hold one. Where it holds anything else -- a reference into
+        // a class's storage, whose candidates name it best -- the argument
+        // bounds the array.
+        auto own = CurRealFrame().spec;
+        auto ownclass = [&](VarDef *r) {
+            return own && IsClassRoot(r) &&
+                   find(own->classroots.begin(), own->classroots.end(), r) !=
+                       own->classroots.end();
+        };
+        auto holder = IsRefOrSlice(pt) ? HolderSource(argvals[b.key]) : nullptr;
+        if (holder && (!holder->type || holder->isglobal || IsRefOrSlice(holder->type)))
+            holder = nullptr;
+        auto held = holder ? HeldAt(argvals[b.key]) : Roots {};
+        if (!held.None() && !held.unknown && held.All([&](const RootAlt &a) {
+                return a.exact ? a.root && a.root->type && !IsRefOrSlice(a.root->type)
+                               : ownclass(a.root) || a.root == holder;
             })) {
             roots.Clear();
             for (auto a : held.alts) {
                 a.from = nullptr;
                 a.classread = false;
+                if (!a.exact && ownclass(a.root)) {
+                    roots.Add(a);
+                    continue;
+                }
+                if (a.root == holder && !a.exact) {
+                    if (!MayHoldValueOf(LoadType(holder->type), b.type)) continue;
+                    a.exact = true;
+                }
                 auto rt = LoadType(a.root->type);
                 vector<TypeExpr *> reached;
                 ReachedThroughRefs(rt, reached);

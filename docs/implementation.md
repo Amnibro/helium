@@ -1766,14 +1766,19 @@ activation's own variables but not recorded (`GrowOnlyShrinkAt`'s
 `viaclass`: no `NoteShrink`, `NoteShrinkOrder`, `NoteLiveViews` or
 `NoteGlobalShrink`): the class's bound stands for them at every call, where
 the argument names them. A call whose argument for such a bound is a
-reference or slice naming one local holder exactly, whose record says it
-holds references into variables named exactly alone, takes the arrays from
-that record (`HeldAt`, its contents, which by then include the callee's own
-stores there): a variable whose type can hold the array and leads to none
-through its references is the array itself, one that can neither hold nor
-lead to one is left out (`MayHoldValueOf`), and any other only bounds it.
-A holder holding anything else -- a parameter's class, an inexact root --
-leaves the argument's own roots to bound the array, as before.
+reference or slice naming one local holder exactly takes the arrays from
+that holder's record (`HeldAt`, its contents, which by then include the
+callee's own stores there): a variable named exactly whose type can hold
+the array and leads to none through its references is the array itself,
+one that can neither hold nor lead to one is left out (`MayHoldValueOf`),
+and any other only bounds it; a parameter's class of the activation bounds
+it as what the storage behind the class leads to, its candidates
+`viaclass` like those above; and a reference the holder's own root only
+bounds, derived from what the holder holds, adds only the holder's own
+storage, where that can hold the array -- what a callee read out of the
+holder's references and stored back. A holder holding anything else -- a
+lexical parent's class, an inexact root of another variable -- leaves the
+argument's own roots to bound the array.
 
 **`for` loops** (§6.5). A `for` around the shrink holds what it walks while
 its body is checked (`HoldForSequence`, §3.3): item 4, and the grow-shrink

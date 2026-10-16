@@ -1474,7 +1474,9 @@ its callers judge the shrink as one of an array that storage leads to,
 each by its argument. A struct of the caller's leads to the arrays its
 record says it refers to, of the type shrunk, or holding or leading to one:
 `s.text = copy(t)` in a callee frees no global `u8[>..]` the caller views,
-where the caller's struct refers to a local text and a node pool.
+where the caller's struct refers to a local text and a node pool. One built
+from the caller's own struct parameter's reference fields leads where those
+do, which the caller's callers judge in turn.
 
 Nor can a shrink inside a function tell what its parameters point into: a
 parameter's pointee is whatever each call passes, which may be a global, a
