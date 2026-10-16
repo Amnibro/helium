@@ -6,8 +6,8 @@ A memory-safe systems language with no heap allocator, garbage collector, or
 lifetime annotations. In this repository's benchmarks, Goose runs faster than
 C++ and Rust while using less memory.
 
-[Tutorial](docs/tutorial.md) · [Specification](docs/goose_spec.md) ·
-[Packages](docs/packages.md) ·
+[Tutorial](docs/tutorial.md) · [Reference](docs/reference.md) ·
+[Specification](docs/goose_spec.md) · [Packages](docs/packages.md) ·
 [Samples](samples/README.md) · [Benchmarks](bench/results.md) ·
 [Standard library](docs/stdlib.md)
 
@@ -65,7 +65,8 @@ language's type and lifetime rules make this memory model safe to use.
   TinyCC backend compiles and runs a program in-process, with no build step.
 
 The [tutorial](docs/tutorial.md) walks through all of this by example, the
-[specification](docs/goose_spec.md) has the exact rules, and the
+[reference](docs/reference.md) covers the whole language topic by topic,
+the [specification](docs/goose_spec.md) has the exact rules, and the
 [benchmarks](bench/results.md) have the numbers, losses included.
 
 ## Features
@@ -531,8 +532,14 @@ code --install-extension vscode/goose-language.vsix
 
 ## Documentation
 
+* [Documentation index](docs/index.md): the map of everything below, and
+  the root of the documentation site built from these files
+  ([how](docs/site/README.md)).
 * [Tutorial](docs/tutorial.md): the friendly introduction, by example. Read
   this first.
+* [Language reference](docs/reference.md): every feature, topic by topic,
+  with a compiling example for each: the whole language, written to be
+  read.
 * [Language specification](docs/goose_spec.md): the exact rules, when you want
   to know why something did not compile.
 * [Samples](samples/README.md): thirty-one complete programs in reading
