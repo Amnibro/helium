@@ -177,7 +177,7 @@ inline bool EndsInBlock(const Node *n) {
     if (auto b = Is<Block>(n); b && MultiAssignOf(b)) return false;
     if (Is<IfExpr>(n) || Is<MatchExpr>(n) || Is<EarlyBlock>(n) || Is<While>(n) ||
         Is<LoopExpr>(n) || Is<ForLoop>(n) || Is<FnDecl>(n) || Is<Block>(n) ||
-        Is<InlineBlock>(n)) return true;
+        Is<InlineBlock>(n) || Is<ConstFor>(n)) return true;
     if (auto c = Is<Call>(n)) return c->trailing != nullptr;
     return false;
 }
@@ -289,6 +289,43 @@ inline void StructLit::Dump(string &s, int ind) const {
     }
     if (defaultall) s += inits.empty() ? ".." : ", ..";
     s += inits.empty() && !defaultall ? "}" : " }";
+}
+
+inline void ConstFor::Dump(string &s, int ind) const {
+    s += "const for <";
+    for (size_t i = 0; i < names.size(); i++) {
+        if (i) s += ", ";
+        s += names[i];
+    }
+    s += "> in ";
+    if (source == ES_CONSTANTS) {
+        s += "[";
+        for (size_t i = 0; i < constants.size(); i++) {
+            if (i) s += ", ";
+            constants[i]->Dump(s, ind);
+        }
+        s += "]";
+    } else {
+        s += source == ES_FIELDS ? "fields<" : "types<";
+        for (size_t i = 0; i < types.size(); i++) {
+            if (i) s += ", ";
+            types[i]->Dump(s);
+        }
+        s += ">";
+    }
+    s += " ";
+    if (body) body->Dump(s, ind);
+    else {
+        s += "{";
+        for (auto &fi : inits) {
+            NL(s, ind + 1);
+            if (!fi.name.empty()) Append(s, fi.name, ": ");
+            fi.val->Dump(s, ind + 1);
+            s += ",";
+        }
+        NL(s, ind);
+        s += "}";
+    }
 }
 
 inline void Unary::Dump(string &s, int ind) const {

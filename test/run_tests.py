@@ -599,13 +599,16 @@ class Runner:
             self.fail(f"{label} {path.name} (exit {code})", out + err)
             return False
         markers = error_markers(path)
-        # Match diagnostic headers, not echoed source (which may itself name
-        # the expected message). The missing-main error has no source location.
+        # Match diagnostic headers and structural expansion contexts, not
+        # echoed source (which may itself name the expected message).
+        # The missing-main error has no source location.
         diagnostics = []
         for line in err.splitlines():
             match = re.match(r"^\S.*:\d+(?::\d+)?: error: (.*)$", line)
             if match:
                 diagnostics.append(match[1])
+            elif line.startswith("  in const for "):
+                diagnostics.append(line.strip())
             elif line == "program needs exactly one global fn main()":
                 diagnostics.append(line)
         diagnostics = "\n".join(diagnostics)

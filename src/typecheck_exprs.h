@@ -22,6 +22,7 @@ inline TypeCheck::LVal TypeCheck::CheckLValue(Node *n) {
         RecordVal(n, v);
     };
     if (auto id = Is<Ident>(n)) {
+        if (!id->expansionerror.empty()) Error(id, string(id->expansionerror));
         auto vd = LookupVar(id->name, id->ns, n);
         if (!vd) {
             if (auto kind = ScopeNameKind(id->name))
@@ -602,6 +603,9 @@ inline VarDef *TypeCheck::HolderRootOf(const Val &v) { return ContentsOf(v).Root
 // Field / builtin-property resolution on an lvalue path.
 inline void TypeCheck::ResolveMemberLValue(LVal &lv, Dot *d) {
     auto t = lv.type;
+    if (d->accessorowner && !TypeEq(ast.PlainOf(t), d->accessorowner))
+        Error(d, cat("const for accessor belongs to ", TypeStr(d->accessorowner),
+                     ", not ", TypeStr(t)));
     // Steps the path into the named field of a field run; a frame
     // object's resizable tail has a header of its own to address (C.2).
     auto step = [&](const vector<Field> &fields, const vector<TypeExpr *> &ftypes,
@@ -2452,6 +2456,7 @@ inline void TypeCheck::ReportRedundantCasts() {
 // parameter default, which names what a top-level declaration would, a name
 // its scope makes something else is an error as well (DefaultScopeName).
 inline void TypeCheck::ConstName(Ident *id, const char *what) {
+    if (!id->expansionerror.empty()) Error(id, string(id->expansionerror));
     if (auto vd = LookupVar(id->name, id->ns); vd && !vd->isglobal)
         Error(id, cat(what, " ", id->name, " names a local variable, not a constant"));
     if (auto kind = ScopeNameKind(id->name))
@@ -2518,11 +2523,11 @@ inline int64_t TypeCheck::FillCount(Node *n) {
 inline bool TypeCheck::ConstIntValue(Node *n, Val &v, bool &literal,
                                      set<VarDecl *> &visiting, ConstUse *use) {
     if (auto i = Is<IntLit>(n)) {
-        v.type = ast.inttypes[i->uns ? IS_U64 : IS_I64];
+        v.type = i->fixedtype ? i->fixedtype : ast.inttypes[i->uns ? IS_U64 : IS_I64];
         v.ck = CK_INT;
         v.ival = i->val;
         v.uns = i->uns;
-        literal = true;
+        literal = !i->fixedtype;
         return true;
     }
     if (auto id = Is<Ident>(n)) {
@@ -2884,6 +2889,9 @@ inline TypeCheck::LitDeep TypeCheck::CheckInits(StructLit *sl, vector<Field> &fi
     auto pos = 0;
     for (auto &fi : sl->inits) {
         auto idx = -1;
+        if (fi.accessorowner && !TypeEq(ast.PlainOf(selft), fi.accessorowner))
+            Error(fi.val, cat("const for accessor belongs to ", TypeStr(fi.accessorowner),
+                              ", not ", TypeStr(selft)));
         if (named) {
             for (auto i = 0; i < (int)fields.size(); i++)
                 if (!fields[i].ispad && fields[i].name == fi.name) { idx = i; break; }
@@ -3019,6 +3027,7 @@ inline void TypeCheck::CheckStmts(Block *b) {
             break;
         }
         blockpos.back().idx = i;
+        if (auto cf = Is<ConstFor>(b->stmts[i])) b->stmts[i] = ExpandStatements(cf);
         CheckStmt(b->stmts[i]);
     }
     // Drop the unreachable suffix (including the tail), so later passes never

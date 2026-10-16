@@ -1,7 +1,7 @@
-# `const for`: specialization-time expansion (v1 draft)
+# `const for`: specialization-time expansion (v1)
 
-Status: design proposal, not implemented. Examples using `const for` describe
-the proposed language, not programs accepted by the current compiler.
+Status: implemented. V1 supports the three sources below in statement lists
+and constructor initializer lists.
 
 This design replaces a family of compiler-provided field visitors with one
 expansion construct inside ordinary Goose functions. The compiler supplies a
@@ -395,8 +395,9 @@ no per-entry semantic checks to perform.
 Structural expansion may be cached where its dependencies permit. Checked
 results must not be reused across incompatible reference roots, writability
 provenances, or other existing specialization inputs. The implementation
-should bound expansion growth and report the expansion chain when a limit is
-exceeded; the numerical limit is an implementation choice.
+bounds expansion growth and reports the expansion chain when the limit is
+exceeded. The current limit is 100,000 AST nodes cloned by expansions per
+compilation, including nested fragments and nested function bodies.
 
 Ordinary field access is the semantic contract, not a promise that repeated
 accesses are already optimal. For variable-size records, check generated code
@@ -423,7 +424,11 @@ cloning even if no expanded view is implemented initially.
 
 ## 9. Validation targets for an implementation
 
-These are proposed checks, not tests run for this document:
+Regression fixtures are `test/typing/const_for_*.goose` and the corresponding
+`test/errors/const_for_*.goose` and `test/errors_tc/const_for_*.goose` rejection
+tests. The test runner checks source round trips, expected output at `-O0`
+and `-O2` through generated C and TinyCC, and expansion diagnostics. Coverage
+includes:
 
 * Statement visitation of heterogeneous, empty, padded, const-qualified, and
   generic structs; declaration order and no implicit recursion.

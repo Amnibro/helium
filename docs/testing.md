@@ -243,7 +243,8 @@ Parser/resolver errors live in `test/errors/`; semantic errors live in
 `test/errors_tc/` and must get past parsing and resolution (`parsed ok`)
 before they fail. Each source declares one or
 more `// error: <diagnostic substring>` lines. The compiler must exit with 1,
-and all markers must occur in diagnostic headers, excluding echoed source.
+and all markers must occur in diagnostic headers or `in const for` expansion
+context lines, excluding echoed source.
 Use the specific rejection reason and relevant types/roots; omit source paths,
 line numbers and specification section numbers. These inline assertions replace
 the old compiler-error `.stderr` files.

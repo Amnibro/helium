@@ -8,6 +8,10 @@
 
 namespace goose {
 
+inline string ConstFor::CgX(CodeGen &cg) { cg.Fail(line, "internal: unexpanded const for"); }
+inline void ConstFor::CgAny(CodeGen &cg, const Dst &) { cg.Fail(line, "internal: unexpanded const for"); }
+inline void ConstFor::CgStmt(CodeGen &cg) { cg.Fail(line, "internal: unexpanded const for"); }
+
 // ---- CgX ------------------------------------------------------------------
 
 inline string IntLit::CgX(CodeGen &) {

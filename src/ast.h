@@ -26,6 +26,7 @@ struct Inliner;
 struct BCE;
 struct CodeGen;
 struct Dst;
+struct ExpansionClone;
 
 struct Line {
     int line = 0;
@@ -231,6 +232,8 @@ struct TypeEnum : TypeDetail {       // TY_ENUM
 };
 
 struct TypeName : TypeDetail {       // TY_UNRESOLVED and TY_GENERIC
+    int expansionbinding = 0;       // Lexical const-for binding, never a name lookup.
+    string_view expansionerror;     // Invalid substitution, diagnosed only when instantiated.
     string_view name;                // As written: `Name`, `ns::Name` or `::Name`.
     string_view ns;                  // Where an unqualified name resolves first: the
                                      // namespace of the declaration it was written in
@@ -355,6 +358,8 @@ struct FieldInit {
     string_view name;           // Empty for positional.
     Node *val = nullptr;
     bool fromdefault = false;   // Checked in the type declaration's environment.
+    int expansionbinding = 0;
+    TypeExpr *accessorowner = nullptr;
 };
 
 enum PatKind { P_WILDCARD, P_LIST };
@@ -758,6 +763,7 @@ enum NodeKind : uint8_t {
     NK_While,
     NK_LoopExpr,
     NK_ForLoop,
+    NK_ConstFor,
     NK_Return,
     NK_Break,
     NK_Continue,
@@ -783,6 +789,9 @@ struct Node {
     // The node as the source has it, which every clone of it shares; null in
     // that one itself.
     const Node *origin = nullptr;
+    // Specialization-time provenance, retained in clones for diagnostics.
+    string_view expansiontrace;
+    int expansionbinding = 0;   // Ident or Dot: a lexical expansion binding.
     Node(Line _line, NodeKind _nkind) : line(_line), nkind(_nkind) {}
     virtual ~Node() {}
     virtual void Dump(string &s, int ind) const = 0;
@@ -849,6 +858,7 @@ template<typename T> T *Is(Node *n) {
 #define NODE_END };
 
 NODE(IntLit)
+    TypeExpr *fixedtype = nullptr; // Materialized typed constant; not an adaptable literal.
     int64_t val;       // The value's bits; uns says how to read them.
     string_view text;  // Original spelling, so hex/char literals dump readably.
     bool uns;          // Value above i64.max: a u64 constant carried as bits.
@@ -857,6 +867,7 @@ NODE(IntLit)
 NODE_END
 
 NODE(FltLit)
+    TypeExpr *fixedtype = nullptr;
     double val;
     string_view text;  // Original spelling, so hex floats and overflowing exponents dump as written.
     FltLit(Line l, double _val, string_view _text = {}) : Node(l, NKind), val(_val), text(_text) {}
@@ -877,6 +888,7 @@ NODE(StrLit)
 NODE_END
 
 NODE(Ident)
+    string_view expansionerror;
     BCE_MARK
     string_view name;               // As written: `x`, `ns::x` or `::x`. A qualified
                                     // spelling is one interned string, so it can never
@@ -956,6 +968,7 @@ NODE(Binary)
 NODE_END
 
 NODE(Dot)
+    TypeExpr *accessorowner = nullptr; // The concrete struct declaring a bound selector.
     BCE_MARK
     Node *obj;
     string_view name;
@@ -1118,6 +1131,7 @@ NODE(Block)
     BCE_WALK
     vector<Node *> stmts;
     Node *tail = nullptr;
+    bool expansionboundary = false;
     Block(Line l) : Node(l, NKind) {}
 NODE_END
 
@@ -1224,6 +1238,19 @@ NODE(ForLoop)
     int iterkind = 0;           // IterKind, typecheck.h.
     ForLoop(Line l, bool _byref, string_view _var, string_view _idxvar, Node *_iter, Block *_body)
         : Node(l, NKind), byref(_byref), var(_var), idxvar(_idxvar), iter(_iter), body(_body) {}
+NODE_END
+
+enum ExpansionSource { ES_FIELDS, ES_TYPES, ES_CONSTANTS };
+
+NODE(ConstFor)
+    ExpansionSource source = ES_FIELDS;
+    vector<string_view> names;
+    vector<int> bindings;           // Assigned by BindExpansionNames, stable across clones.
+    vector<TypeExpr *> types;
+    vector<Node *> constants;
+    Block *body = nullptr;          // Statement fragments, or null for initializer fragments.
+    vector<FieldInit> inits;
+    ConstFor(Line l) : Node(l, NKind) {}
 NODE_END
 
 NODE(Return)
@@ -2127,6 +2154,11 @@ struct Package {
 };
 
 struct Ast {
+    // Non-null only while specializing a const-for fragment. Ordinary clones
+    // retain templates; expansion clones substitute lexically bound uses.
+    ExpansionClone *expansionclone = nullptr;
+    TypeExpr *CloneExpansionType(TypeExpr *t);
+    FieldInit CloneFieldInit(const FieldInit &fi);
     // Source buffers stay alive here; all string_views point into them. The
     // contents are heap-boxed so vector growth never moves an SSO buffer.
     vector<pair<string, unique_ptr<string>>> sources;   // (filename, contents).

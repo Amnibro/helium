@@ -1354,7 +1354,7 @@ inline Val TypeCheck::CheckBlockVal(Block *b, TypeExpr *expected, bool wantvalue
                                     Node *scopenode) {
     auto onpath = argpath == b;
     auto onjoin = joinpath == b;
-    PushScope(scopekind, scopenode);
+    PushScope(b->expansionboundary ? SK_EXPANSION : scopekind, scopenode);
     BlockScope bs(*this, b);
     CheckStmts(b);
     Val v = VoidVal();
@@ -1998,12 +1998,14 @@ inline int TypeCheck::FindBreakScope(bool forcontinue) {
         if (scopes[i].kind == SK_LOOP) return i;
         if (!forcontinue && scopes[i].kind == SK_BLOCK) return i;
         if (scopes[i].kind == SK_FN) break;
+        if (scopes[i].kind == SK_EXPANSION) return -2;
     }
     return -1;
 }
 
 inline void TypeCheck::CheckBreak(Break *b) {
     auto si = FindBreakScope(false);
+    if (si == -2) Error(b, "break cannot cross a const for expansion boundary");
     if (si < 0) Error(b, "break outside of a loop or block");
     if (b->val) {
         if (!Is<LoopExpr>(scopes[si].node) && !Is<EarlyBlock>(scopes[si].node))
@@ -2105,6 +2107,7 @@ inline void TypeCheck::JoinBreakFlow(const Scope &sc, bool ownexit) {
 // next iteration starts in (CheckLoopPasses).
 inline void TypeCheck::CheckContinue(Node *n) {
     auto si = FindBreakScope(true);
+    if (si == -2) Error(n, "continue cannot cross a const for expansion boundary");
     if (si < 0) Error(n, "continue outside of a loop");
     auto &sc = scopes[si];
     sc.backedge = sc.backedges ? JoinFlow(sc.backedge, SaveFlow()) : SaveFlow();

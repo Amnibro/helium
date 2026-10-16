@@ -1183,17 +1183,71 @@ struct Parser {
         return a;
     }
 
-    StructLit *ParseStructLitBody(TypeExpr *type, Line line) {
-        Expect(T_LCURLY, "struct literal");
-        auto sl = New<StructLit>(line, type);
+    ConstFor *ParseConstFor(bool initializers) {
+        auto cf = New<ConstFor>(CurLine());
+        Expect(T_CONST, "const for");
+        Expect(T_FOR, "const for");
+        Expect(T_LT, "const for bindings");
+        do {
+            auto name = ExpectIdent("const for binding");
+            if (find(cf->names.begin(), cf->names.end(), name) != cf->names.end())
+                Error(cat("duplicate const for binding: ", name));
+            cf->names.push_back(name);
+            if (!IsNext(T_COMMA)) break;
+        } while (lex.tok != T_GT);
+        ExpectClosingAngle("const for bindings");
+        Expect(T_IN, "const for");
+        if (IsNext(T_LBRACKET)) {
+            cf->source = ES_CONSTANTS;
+            auto sub = Sub();
+            while (lex.tok != T_RBRACKET) {
+                cf->constants.push_back(ParseExpr());
+                if (!IsNext(T_COMMA)) break;
+            }
+            Expect(T_RBRACKET, "const for constant list");
+        } else {
+            auto query = ExpectIdent("const for source");
+            if (query != "fields" && query != "types")
+                Error("const for source must be fields<T>, types<...>, or [constants]");
+            cf->source = query == "fields" ? ES_FIELDS : ES_TYPES;
+            Expect(T_LT, "const for source");
+            while (lex.tok != T_GT && lex.tok != T_SHR) {
+                cf->types.push_back(ParseType());
+                if (!IsNext(T_COMMA)) break;
+            }
+            ExpectClosingAngle("const for source");
+            if (cf->source == ES_FIELDS && cf->types.size() != 1)
+                Error("fields requires exactly one type");
+        }
+        auto arity = cf->source == ES_FIELDS ? 2u : 1u;
+        if (cf->names.size() != arity)
+            Error(cat("const for source requires exactly ", arity, " binding(s)"));
+        if (initializers) {
+            bool defaults = false;
+            ParseInitList(cf->inits, defaults, true);
+        } else {
+            cf->body = ParseBlockExpr("const for body");
+        }
+        return cf;
+    }
+
+    void ParseInitList(vector<FieldInit> &inits, bool &defaultall, bool fragment = false) {
+        Expect(T_LCURLY, "constructor initializers");
         auto sub = Sub();
         while (lex.tok != T_RCURLY) {
             // A trailing `..` fills in every field not given (§4.2).
             if (IsNext(T_DOTDOT)) {
-                sl->defaultall = true;
+                if (fragment) Error("trailing .. belongs to the whole constructor, not a const for fragment");
+                defaultall = true;
                 break;
             }
             FieldInit fi;
+            if (lex.tok == T_CONST && lex.PeekTok() == T_FOR) {
+                fi.val = ParseConstFor(true);
+                inits.push_back(fi);
+                if (!IsNext(T_COMMA)) break;
+                continue;
+            }
             if (lex.tok == T_IDENT) {
                 // Only an `ident :` pair is a named initializer.
                 auto save2 = lex;
@@ -1202,12 +1256,21 @@ struct Parser {
                 if (IsNext(T_COLON)) fi.name = name; else lex = save2;
             }
             fi.val = ParseExpr();
-            sl->inits.push_back(fi);
+            inits.push_back(fi);
             if (!IsNext(T_COMMA)) break;
         }
         Expect(T_RCURLY, "struct literal");
+    }
+
+    StructLit *ParseStructLitBody(TypeExpr *type, Line line) {
+        auto sl = New<StructLit>(line, type);
+        ParseInitList(sl->inits, sl->defaultall);
         auto named = 0;
-        for (auto &fi : sl->inits) named += !fi.name.empty();
+        for (auto &fi : sl->inits) {
+            // Empty expansions may disappear; mixed-form checks follow flattening.
+            if (Is<ConstFor>(fi.val)) return sl;
+            named += !fi.name.empty();
+        }
         if (named && named != (int)sl->inits.size())
             Error("struct literal mixes named and positional initializers");
         return sl;
@@ -1271,6 +1334,10 @@ struct Parser {
             if (AtInline()) goto nestedfndecl;
             switch (lex.tok) {
                 case T_LET: case T_VAR: case T_CONST: case T_REUSABLE: {
+                    if (lex.tok == T_CONST && lex.PeekTok() == T_FOR) {
+                        b->stmts.push_back(ParseConstFor(false));
+                        continue;
+                    }
                     auto vd = ParseVarDecl(false);
                     Expect(T_SEMI, "variable declaration");
                     b->stmts.push_back(vd);

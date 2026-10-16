@@ -706,6 +706,7 @@ struct Inliner {
     Node *Cp(const Node *n) {
         auto r = n->Cp1(*this);
         r->exprtype = n->exprtype;
+        r->expansiontrace = n->expansiontrace;
         return r;
     }
 
@@ -818,8 +819,12 @@ inline Node *Optimizer::TryInline(Call *c) {
 // kind. Inliner::Cp wraps every call and carries exprtype over; TypeExprs and
 // symbols are shared, VarDefs remap via Inliner::Remap.
 
-inline Node *IntLit::Cp1(Inliner &inl) const { return inl.ast.New<IntLit>(line, val, text, uns); }
-inline Node *FltLit::Cp1(Inliner &inl) const { return inl.ast.New<FltLit>(line, val, text); }
+inline Node *IntLit::Cp1(Inliner &inl) const { return Clone1(inl.ast); }
+inline Node *FltLit::Cp1(Inliner &inl) const { return Clone1(inl.ast); }
+
+// Specialization eliminates every expansion before these passes.
+inline Node *ConstFor::Cp1(Inliner &) const { assert(false); return nullptr; }
+inline Node *ConstFor::Opt(Optimizer &) { assert(false); return nullptr; }
 inline Node *BoolLit::Cp1(Inliner &inl) const { return inl.ast.New<BoolLit>(line, val); }
 inline Node *StrLit::Cp1(Inliner &inl) const {
     return inl.ast.New<StrLit>(line, val, multiline);

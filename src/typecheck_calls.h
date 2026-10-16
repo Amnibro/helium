@@ -46,6 +46,7 @@ inline Val TypeCheck::CheckCall(Call *c, TypeExpr *expected) {
 }
 
 inline Val TypeCheck::CheckNamedCall(Call *c, Ident *id, TypeExpr *expected) {
+    if (!id->expansionerror.empty()) Error(id, string(id->expansionerror));
     // A variable in scope hides the functions of its name (§11.1). A global
     // one does not: no variable can be called, so the call names the
     // functions the namespaces declare, which a global variable of the same
@@ -168,6 +169,7 @@ inline FnValBind TypeCheck::LocalFnValue(const vector<SFunction *> &fns, FnSpec 
 }
 
 inline Val TypeCheck::CheckUfcsCall(Call *c, Dot *d, TypeExpr *expected) {
+    if (d->accessorowner) Error(d, "const for field accessor is not callable");
     auto entryreach = reachable;
     Val ov;
     {
@@ -958,6 +960,10 @@ inline bool TypeCheck::HasGenerics(TypeExpr *t) {
         case TY_SLICE:  return HasGenerics(t->sub);
         case TY_REF:    return HasGenerics(t->ref->sub);
         case TY_VARIANT: return HasGenerics(t->var->adt);
+        case TY_FN:
+            for (auto a : t->fn->args) if (HasGenerics(a)) return true;
+            for (auto r : t->fn->rets) if (HasGenerics(r)) return true;
+            return false;
         default: return false;
     }
 }
@@ -2352,7 +2358,8 @@ inline void TypeCheck::ValidateNeeds(FnSpec *spec, Node *callnode) {
         if (frames[found].spec != t)
             Error(callnode, "recursive call changes the enclosing specialization of a "
                             "long-distance return");
-        for (auto i = found + 1; i < (int)frames.size(); i++) AddNeed(frames[i].spec, t);
+        for (auto i = found + 1; i < (int)frames.size(); i++)
+            if (frames[i].spec != t) AddNeed(frames[i].spec, t);
     }
 }
 
@@ -2725,6 +2732,7 @@ inline void TypeCheck::CheckSpecBodyOnce(FnSpec *spec, vector<Val> *argvals, Lin
     f.scopebase = (int)scopes.size();
     f.varbase = (int)vars.size();
     f.callline = callline;
+    f.expansiontrace = ActiveExpansionTrace();
     f.exits = &exits;
     frames.push_back(f);
     auto fi = (int)frames.size() - 1;
@@ -3285,7 +3293,8 @@ inline void TypeCheck::CheckReturn(Return *r) {
     auto tspec = frames[tf].spec;
     r->target = frames[tf].sf;
     r->targetspec = tspec;
-    for (auto i = tf + 1; i < (int)frames.size(); i++) AddNeed(frames[i].spec, tspec);
+    for (auto i = tf + 1; i < (int)frames.size(); i++)
+        if (frames[i].spec != tspec) AddNeed(frames[i].spec, tspec);
     // Values.
     vector<Val> vals;
     auto expectone = [&](size_t i) -> TypeExpr * {
@@ -3467,6 +3476,7 @@ inline Val TypeCheck::CheckFunValCall(Call *c, const FnValBind &fb, TypeExpr *ex
     f.scopebase = (int)scopes.size();
     f.varbase = (int)vars.size();
     f.callline = c->line;
+    f.expansiontrace = c->expansiontrace;
     f.isfunval = true;
     f.bodyidx = (int)outerbodies.size();
     frames.push_back(f);
