@@ -975,7 +975,7 @@ inline void CodeGen::EmitVerifyWalk(string &b, TypeExpr *t, TypeExpr *elem, cons
                 auto sz = IntSize(t->intstorage);
                 auto v = VTmp();
                 VNeed(b, q, cat(sz));
-                Append(b, "    { ", IntCT(t->intstorage), " ", v, "; memcpy(&", v, ", p + ", q,
+                Append(b, "    { ", IntCT(t->intstorage), " ", v, "; GS_MEMCPY(&", v, ", p + ", q,
                        ", ", sz, "); if ((uint64_t)", v, t->ix->upto ? " > " : " >= ",
                        "(uint64_t)", GlobalLenLv(t->ix->arr), ") return -1; ", q, " += ", sz,
                        "; }\n");
@@ -1190,7 +1190,7 @@ inline bool CodeGen::HasFieldDefaults(TypeExpr *t) {
 // checker builds its default as a literal (TypeCheck::CheckBuiltin).
 inline void CodeGen::EmitDefaultInto(const string &lv, TypeExpr *t) {
     assert(!HasFieldDefaults(t));
-    L("memset(&", lv, ", 0, sizeof(", lv, "));");
+    L("GS_MEMZERO(&", lv, ", sizeof(", lv, "));");
 }
 
 // ------------------------------------------------------------------

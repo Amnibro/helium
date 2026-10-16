@@ -50,7 +50,7 @@ inline string StrLit::CgX(CodeGen &cg) {
     cg.FixedLocal(et, t, et->arr->akind == A_LIMITED ? "{0}" : "");
     if (et->arr->akind == A_LIMITED) cg.L(t, ".len = ", val.size(), ";");
     if (!val.empty())
-        cg.L("memcpy(", t, ".e, ", cg.StrRaw(val), ", ", val.size(), ");");
+        cg.L("GS_MEMCPY(", t, ".e, ", cg.StrRaw(val), ", ", val.size(), ");");
     return t;
 }
 
@@ -639,7 +639,7 @@ inline void MatchExpr::CgAny(CodeGen &cg, const Dst &d) {
                 cg.vstk[arm.binder] = stk;
                 auto sz = cg.T();
                 cg.L("int64_t ", sz, " = ", cg.SizeX(vt, payload), ";");
-                cg.L("memcpy(", cg.Top(stk), ", ", payload, ", (size_t)", sz, ");");
+                cg.L("GS_MEMCPY(", cg.Top(stk), ", ", payload, ", (size_t)", sz, ");");
                 cg.Bump(stk, sz);
             } else if (EmptyLayout(variant->fields)) {
                 cg.FixedLocal(vt, bn, "{0}");
@@ -1001,7 +1001,7 @@ inline void Assign::CgStmt(CodeGen &cg) {
         cg.L("if (", nn, " > ", cg.LimitedCap(lv), ") gs_abort(GS_E_CAPACITY, ",
              cg.LocArgs(line), ");");
         cg.L("*(uint32_t *)((", lv.s, ") + 4) = (uint32_t)", nn, ";");
-        cg.L("memcpy((", lv.s, ") + 8, ", src, " + 8, (size_t)(", nn, " * ",
+        cg.L("GS_MEMCPY((", lv.s, ") + 8, ", src, " + 8, (size_t)(", nn, " * ",
           cg.FixedSize(t->arr->sub), "));");
         return;
     }

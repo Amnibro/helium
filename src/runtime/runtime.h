@@ -274,10 +274,55 @@ static inline int gs_simd_level(void) {
 }
 #endif
 
-/* Unaligned loads of 4 and 8 bytes. The optimizing backends turn the
-   fixed-size memcpy into one move. */
+/* The generated code's memcpy and memset of zeros. Most move or clear the
+   1 to 32 bytes of a field, an element or a reference, a constant size the
+   optimizing backends turn into a few moves. TinyCC calls the C library for
+   every memcpy and memset, so under it a constant size of up to 32 bytes
+   is written out as loads and stores, overlapping where the size is not a
+   power of two (which needs the runs not to overlap, as memcpy's do not).
+   TinyCC generates only the arm a constant condition selects, so these
+   macros compile to the stores alone or to the library call alone; the
+   stores name d and s several times, which the compiler's operands allow
+   (addresses of locals, fields, elements and data-stack tops). */
+#ifdef __TINYC__
+#define GS_KSZ(n, lo, hi) (__builtin_constant_p(n) && (n) >= (lo) && (n) <= (hi))
+#define GS_AT(T, p, k) (*(T *)((uint8_t *)(p) + (k)))
+#define GS_CP(T, d, s, k) (GS_AT(T, d, k) = GS_AT(const T, s, k))
+#define GS_MEMCPY(d, s, n) \
+    (GS_KSZ(n, 8, 8) ? (void)GS_CP(uint64_t, d, s, 0) \
+     : GS_KSZ(n, 4, 4) ? (void)GS_CP(uint32_t, d, s, 0) \
+     : GS_KSZ(n, 1, 1) ? (void)GS_CP(uint8_t, d, s, 0) \
+     : GS_KSZ(n, 2, 2) ? (void)GS_CP(uint16_t, d, s, 0) \
+     : GS_KSZ(n, 3, 3) ? (void)(GS_CP(uint16_t, d, s, 0), GS_CP(uint8_t, d, s, 2)) \
+     : GS_KSZ(n, 5, 7) ? (void)(GS_CP(uint32_t, d, s, 0), GS_CP(uint32_t, d, s, (n) - 4)) \
+     : GS_KSZ(n, 9, 16) ? (void)(GS_CP(uint64_t, d, s, 0), GS_CP(uint64_t, d, s, (n) - 8)) \
+     : GS_KSZ(n, 17, 32) ? (void)(GS_CP(uint64_t, d, s, 0), GS_CP(uint64_t, d, s, 8), \
+                                  GS_CP(uint64_t, d, s, (n) - 16), GS_CP(uint64_t, d, s, (n) - 8)) \
+     : (void)memcpy((d), (s), (n)))
+#define GS_MEMZERO(d, n) \
+    (GS_KSZ(n, 8, 8) ? (void)(GS_AT(uint64_t, d, 0) = 0) \
+     : GS_KSZ(n, 4, 4) ? (void)(GS_AT(uint32_t, d, 0) = 0) \
+     : GS_KSZ(n, 1, 1) ? (void)(GS_AT(uint8_t, d, 0) = 0) \
+     : GS_KSZ(n, 2, 2) ? (void)(GS_AT(uint16_t, d, 0) = 0) \
+     : GS_KSZ(n, 3, 3) ? (void)(GS_AT(uint16_t, d, 0) = 0, GS_AT(uint8_t, d, 2) = 0) \
+     : GS_KSZ(n, 5, 7) ? (void)(GS_AT(uint32_t, d, 0) = 0, GS_AT(uint32_t, d, (n) - 4) = 0) \
+     : GS_KSZ(n, 9, 16) ? (void)(GS_AT(uint64_t, d, 0) = 0, GS_AT(uint64_t, d, (n) - 8) = 0) \
+     : GS_KSZ(n, 17, 32) ? (void)(GS_AT(uint64_t, d, 0) = 0, GS_AT(uint64_t, d, 8) = 0, \
+                                  GS_AT(uint64_t, d, (n) - 16) = 0, GS_AT(uint64_t, d, (n) - 8) = 0) \
+     : (void)memset((d), 0, (n)))
+#else
+#define GS_MEMCPY(d, s, n) memcpy((d), (s), (n))
+#define GS_MEMZERO(d, n) memset((d), 0, (n))
+#endif
+
+/* Unaligned loads of 4 and 8 bytes. */
+#ifdef __TINYC__
+#define gs_ld32(p) GS_AT(const uint32_t, p, 0)
+#define gs_ld64(p) GS_AT(const uint64_t, p, 0)
+#else
 static uint32_t gs_ld32(const void *p) { uint32_t v; memcpy(&v, p, 4); return v; }
 static uint64_t gs_ld64(const void *p) { uint64_t v; memcpy(&v, p, 8); return v; }
+#endif
 
 /* The low k bytes of a word set (none for k <= 0, all for k >= 8): which
    bytes of a little-endian load lie within a length. */

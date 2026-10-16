@@ -496,7 +496,7 @@ inline void CodeGen::FixedLocal(TypeExpr *t, string &name, const string &init, b
     SaveBase(forlocal, stk, cat("(uint8_t *)", name));
     Bump(stk, cat("sizeof(", CT(t), ")"));
     name = cat("(*", name, ")");
-    if (init == "{0}") L("memset(&", name, ", 0, sizeof(", name, "));");
+    if (init == "{0}") L("GS_MEMZERO(&", name, ", sizeof(", name, "));");
     else if (!init.empty()) L(name, " = ", init, ";");
 }
 
@@ -981,7 +981,7 @@ inline string CodeGen::AdaptToFixed(Loc lv, TypeExpr *et, Line ln) {
             L("case ", TagConst(ei, (int)vi), ":");
             ind++;
             if (psz)
-                L("memcpy(&", tv, ".u.v_", Sanitize(ei->en->variants[vi].name), ", ",
+                L("GS_MEMCPY(&", tv, ".u.v_", Sanitize(ei->en->variants[vi].name), ", ",
                   lv.s, " + ", ts, ", ", psz, ");");
             L("break;");
             ind--;

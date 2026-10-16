@@ -287,10 +287,55 @@ static inline int gs_simd_level(void) {
 }
 #endif
 
-/* Unaligned loads of 4 and 8 bytes. The optimizing backends turn the
-   fixed-size memcpy into one move. */
+/* The generated code's memcpy and memset of zeros. Most move or clear the
+   1 to 32 bytes of a field, an element or a reference, a constant size the
+   optimizing backends turn into a few moves. TinyCC calls the C library for
+   every memcpy and memset, so under it a constant size of up to 32 bytes
+   is written out as loads and stores, overlapping where the size is not a
+   power of two (which needs the runs not to overlap, as memcpy's do not).
+   TinyCC generates only the arm a constant condition selects, so these
+   macros compile to the stores alone or to the library call alone; the
+   stores name d and s several times, which the compiler's operands allow
+   (addresses of locals, fields, elements and data-stack tops). */
+#ifdef __TINYC__
+#define GS_KSZ(n, lo, hi) (__builtin_constant_p(n) && (n) >= (lo) && (n) <= (hi))
+#define GS_AT(T, p, k) (*(T *)((uint8_t *)(p) + (k)))
+#define GS_CP(T, d, s, k) (GS_AT(T, d, k) = GS_AT(const T, s, k))
+#define GS_MEMCPY(d, s, n) \
+    (GS_KSZ(n, 8, 8) ? (void)GS_CP(uint64_t, d, s, 0) \
+     : GS_KSZ(n, 4, 4) ? (void)GS_CP(uint32_t, d, s, 0) \
+     : GS_KSZ(n, 1, 1) ? (void)GS_CP(uint8_t, d, s, 0) \
+     : GS_KSZ(n, 2, 2) ? (void)GS_CP(uint16_t, d, s, 0) \
+     : GS_KSZ(n, 3, 3) ? (void)(GS_CP(uint16_t, d, s, 0), GS_CP(uint8_t, d, s, 2)) \
+     : GS_KSZ(n, 5, 7) ? (void)(GS_CP(uint32_t, d, s, 0), GS_CP(uint32_t, d, s, (n) - 4)) \
+     : GS_KSZ(n, 9, 16) ? (void)(GS_CP(uint64_t, d, s, 0), GS_CP(uint64_t, d, s, (n) - 8)) \
+     : GS_KSZ(n, 17, 32) ? (void)(GS_CP(uint64_t, d, s, 0), GS_CP(uint64_t, d, s, 8), \
+                                  GS_CP(uint64_t, d, s, (n) - 16), GS_CP(uint64_t, d, s, (n) - 8)) \
+     : (void)memcpy((d), (s), (n)))
+#define GS_MEMZERO(d, n) \
+    (GS_KSZ(n, 8, 8) ? (void)(GS_AT(uint64_t, d, 0) = 0) \
+     : GS_KSZ(n, 4, 4) ? (void)(GS_AT(uint32_t, d, 0) = 0) \
+     : GS_KSZ(n, 1, 1) ? (void)(GS_AT(uint8_t, d, 0) = 0) \
+     : GS_KSZ(n, 2, 2) ? (void)(GS_AT(uint16_t, d, 0) = 0) \
+     : GS_KSZ(n, 3, 3) ? (void)(GS_AT(uint16_t, d, 0) = 0, GS_AT(uint8_t, d, 2) = 0) \
+     : GS_KSZ(n, 5, 7) ? (void)(GS_AT(uint32_t, d, 0) = 0, GS_AT(uint32_t, d, (n) - 4) = 0) \
+     : GS_KSZ(n, 9, 16) ? (void)(GS_AT(uint64_t, d, 0) = 0, GS_AT(uint64_t, d, (n) - 8) = 0) \
+     : GS_KSZ(n, 17, 32) ? (void)(GS_AT(uint64_t, d, 0) = 0, GS_AT(uint64_t, d, 8) = 0, \
+                                  GS_AT(uint64_t, d, (n) - 16) = 0, GS_AT(uint64_t, d, (n) - 8) = 0) \
+     : (void)memset((d), 0, (n)))
+#else
+#define GS_MEMCPY(d, s, n) memcpy((d), (s), (n))
+#define GS_MEMZERO(d, n) memset((d), 0, (n))
+#endif
+
+/* Unaligned loads of 4 and 8 bytes. */
+#ifdef __TINYC__
+#define gs_ld32(p) GS_AT(const uint32_t, p, 0)
+#define gs_ld64(p) GS_AT(const uint64_t, p, 0)
+#else
 static uint32_t gs_ld32(const void *p) { uint32_t v; memcpy(&v, p, 4); return v; }
 static uint64_t gs_ld64(const void *p) { uint64_t v; memcpy(&v, p, 8); return v; }
+#endif
 
 /* The low k bytes of a word set (none for k <= 0, all for k >= 8): which
    bytes of a little-endian load lie within a length. */
@@ -306,7 +351,8 @@ static uint64_t gs_bytemask(int64_t k) {
    overlapping, where the library's memcpy would take a call and a dispatch
    on the length; as the C library's memcpy, it takes runs that do not
    overlap. */
-static void gs_memcpy(void *dst, const void *src, size_t n) {
+)GSRT"
+R"GSRT(static void gs_memcpy(void *dst, const void *src, size_t n) {
 #ifndef __TINYC__
     uint8_t *d = (uint8_t *)dst;
     const uint8_t *s = (const uint8_t *)src;
@@ -375,8 +421,7 @@ static int gs_memeq(const void *a, const void *b, size_t n) {
 
 /* ---------------------------------------------------------------------------
    Integer semantics (§6.2): every operation runs at its operands' type. The
-)GSRT"
-R"GSRT(   operations compute wide (so wrap is defined in C), truncate back, and — when
+   operations compute wide (so wrap is defined in C), truncate back, and — when
    the generated C is compiled with -DGS_DEBUG=1 — abort when the wide result
    does not fit the type. Shifts mask their count to the width; division is
    zero-checked always.
@@ -481,7 +526,8 @@ static T gs_shr_##SFX(T a, int64_t n) { \
 
 /* Unsigned types wrap modulo 2^width by definition (§6.2) in every build:
    plain C unsigned arithmetic, truncated back to the width. */
-#define GS_INTOPS_U(SFX, T, MAX, BITS) \
+)GSRT"
+R"GSRT(#define GS_INTOPS_U(SFX, T, MAX, BITS) \
 static T gs_add_##SFX(T a, T b) { return (T)(a + b); } \
 static T gs_sub_##SFX(T a, T b) { return (T)(a - b); } \
 static T gs_mul_##SFX(T a, T b) { return (T)((uint64_t)a * (uint64_t)b); } \
@@ -538,8 +584,7 @@ static uint64_t gs_shr_u64(uint64_t a, int64_t n) { return a >> (n & 63); }
 #define gs_shl_i8(a, n)  ((int8_t)((uint64_t)(a) << ((n) & 7)))
 #define gs_shr_i8(a, n)  ((int8_t)((int64_t)(a) >> ((n) & 7)))
 
-)GSRT"
-R"GSRT(#define gs_add_i16(a, b, f, l) ((int16_t)((int64_t)(a) + (int64_t)(b)))
+#define gs_add_i16(a, b, f, l) ((int16_t)((int64_t)(a) + (int64_t)(b)))
 #define gs_sub_i16(a, b, f, l) ((int16_t)((int64_t)(a) - (int64_t)(b)))
 #define gs_mul_i16(a, b, f, l) ((int16_t)((int64_t)(a) * (int64_t)(b)))
 #define gs_neg_i16(a, f, l)    ((int16_t)(-(int64_t)(a)))
@@ -670,7 +715,8 @@ static uint64_t gs_divu_q(uint64_t x, uint64_t magic, uint8_t more) {
 /* The same for a dividend and divisor that fit in 32 bits, with a 32-bit
    magic: x / d is the high half of a 32x32 product, which a C compiler
    vectorizes where it keeps the 64x64 one scalar, and which needs no
-   128-bit arithmetic, so only a zero divisor gets GS_DIVU_NONE. */
+)GSRT"
+R"GSRT(   128-bit arithmetic, so only a zero divisor gets GS_DIVU_NONE. */
 static uint32_t gs_divu32_gen(uint32_t d, uint8_t *more) {
     int k = 31;
     uint64_t n;
@@ -736,8 +782,7 @@ static uint64_t gs_rangechk_u(uint64_t v, uint64_t hi, const char *type, const c
 }
 /* To a signed type or a narrower unsigned one, whose range is lo..hi. */
 static int64_t gs_f2ichk(double d, int f32, int64_t lo, int64_t hi, const char *type,
-)GSRT"
-R"GSRT(                         const char *file, int line) {
+                         const char *file, int line) {
     if (!(d >= -9223372036854775808.0 && d < 9223372036854775808.0))
         gs_asfail_f("out of range", d, f32, type, file, line);
     int64_t v = (int64_t)d;
@@ -855,7 +900,8 @@ static void gs_stack_init(gs_stack *s) {
 static void gs_stack_block(int64_t n) {
     gs_stks = (gs_stack *)calloc((size_t)(n > 0 ? n : 1), sizeof(gs_stack));
     if (!gs_stks) gs_panic("out of memory allocating stack block");
-    for (int64_t i = 0; i < n; i++) gs_stack_init(&gs_stks[i]);
+)GSRT"
+R"GSRT(    for (int64_t i = 0; i < n; i++) gs_stack_init(&gs_stks[i]);
     gs_nstks = n;
 }
 
@@ -922,8 +968,7 @@ GS_API int64_t gs_spans_alloc(uint8_t *base, int64_t *n, uint8_t **top, int64_t 
    end the array, to cnt elements: where it starts now. The caller copies
    the elements where that moved. */
 GS_API int64_t gs_spans_regrow(uint8_t *base, int64_t *n, uint8_t **top, int64_t len,
-)GSRT"
-R"GSRT(                               int64_t idx, int64_t ol, int64_t cnt);
+                               int64_t idx, int64_t ol, int64_t cnt);
 /* free_slice, and what realloc_slice lets go of: [idx, idx + cnt) back on
    the freelist. */
 GS_API void gs_spans_free(uint8_t *base, int64_t *n, uint8_t **top, int64_t idx, int64_t cnt);
@@ -1056,7 +1101,8 @@ GS_API int64_t gs_fmt_u64(uint8_t *dst, uint64_t v);
 GS_API int64_t gs_fmt_f64(uint8_t *dst, double v);
 GS_API int64_t gs_fmt_f32(uint8_t *dst, float v);
 GS_API int64_t gs_fmt_bool(uint8_t *dst, int64_t v);
-/* A u8 array inside an aggregate: quoted, with the escapes Goose reads. */
+)GSRT"
+R"GSRT(/* A u8 array inside an aggregate: quoted, with the escapes Goose reads. */
 GS_API int64_t gs_fmt_quoted(uint8_t *dst, const uint8_t *s, int64_t n);
 
 /* print(...) (§3.7): each argument's text, then a newline. */

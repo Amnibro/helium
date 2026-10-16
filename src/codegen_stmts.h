@@ -771,7 +771,7 @@ inline void CodeGen::GenRebind(Assign *a, Loc lv) {
     }
     assert(lv.val);
     if (Is<NullLit>(a->rhs)) {
-        if (IsResz(lv.t->ref->sub)) L("memset(&", lv.s, ", 0, sizeof(", lv.s, "));");
+        if (IsResz(lv.t->ref->sub)) L("GS_MEMZERO(&", lv.s, ", sizeof(", lv.s, "));");
         else L(lv.s, " = NULL;");
         return;
     }
@@ -954,7 +954,7 @@ inline void CodeGen::EmitPrefixPatch(const string &pref, IntStorage ls, const st
     L("int64_t ", ms, " = gs_uleb_write(", tmp, ", (uint64_t)(", count, "));");
     L("memmove((", elems, ") + ", ms, " - 1, ", elems, ", (size_t)(", Top(stk), " - (",
       elems, ")));");
-    L("memcpy(", pref, ", ", tmp, ", (size_t)", ms, ");");
+    L("GS_MEMCPY(", pref, ", ", tmp, ", (size_t)", ms, ");");
     L(TopW(stk), " += ", ms, " - 1;");
     ind--;
     L("}");

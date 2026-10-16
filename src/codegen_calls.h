@@ -392,7 +392,7 @@ inline void CodeGen::EmitReprefix(FnSpec *sp, const Dst &dd, const string &base,
         auto tmp = T();
         L("uint8_t ", tmp, "[10];");
         L("int64_t ", ms, " = gs_uleb_write(", tmp, ", (uint64_t)", count, ");");
-        writepref = cat("memcpy(", base, ", ", tmp, ", (size_t)", ms, ");");
+        writepref = cat("GS_MEMCPY(", base, ", ", tmp, ", (size_t)", ms, ");");
     } else {
         L("int64_t ", ms, " = ", IntSize(ls), ";");
         writepref = cat("*(", IntCT(ls), " *)", base, " = (", IntCT(ls), ")", count, ";");
@@ -570,7 +570,7 @@ inline vector<string> CodeGen::EmitDispatch(Call *c, Dst d0, vector<Dst> *alldst
                 copied = BytesTemp(stk);
                 auto sz = T();
                 L("int64_t ", sz, " = ", SizeX(enumtype, p), ";");
-                L("memcpy(", Top(stk), ", ", p, ", (size_t)", sz, ");");
+                L("GS_MEMCPY(", Top(stk), ", ", p, ", (size_t)", sz, ");");
                 Bump(stk, sz);
             }
             tag = cat("*(", IntCT(TagStore(ei->en)), " *)", p);
