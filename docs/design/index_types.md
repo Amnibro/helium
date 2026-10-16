@@ -447,8 +447,8 @@ provenance it does not keep today:
   * `checkfree` is an error with `extern`, which has no body.
   * It may be combined with `inline`, `simd`, `recursive`, `thread_fn` and
     `export`.
-  * A thread entry gets no call-site facts, which the core never relies on
-    anyway. An export should get none either, but does today (§8.3).
+  * A thread entry and an export get no call-site facts, which the core
+    never relies on anyway (§8.3).
 
 ## 7. Worked example: CSR breadth-first search
 
@@ -566,10 +566,9 @@ that should have stayed was elided. A Goose caller's facts are granted to
 an `export fn`'s entry, but its C wrapper calls the same specialization with
 arguments nobody checked: `export fn api(d: i32[:], i: i64) -> i32 { d[i] }`
 called once from Goose with a known length and index compiles without its
-check, and C can then read past the end. This predates index types (the
-compiler before this change does the same). The fix is to grant an export
-no call-site facts, as a thread entry gets none. It is not part of this
-change.
+check, and C can then read past the end. This predated index types. It is
+fixed separately (2f7e1b6b): an export, like a thread entry, gets no
+call-site facts.
 
 ### 8.4 Size
 
