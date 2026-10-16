@@ -13,7 +13,8 @@ struct Import {
     string path;                     // Slash-separated, no extension.
     bool relative = false;           // Leading dot form.
     string source;                   // The `from` string, "" for none.
-    int line = 0;
+    Line line;                       // Of `import`.
+    Line end;                        // One past its `;`.
 };
 
 struct Parser {
@@ -48,11 +49,25 @@ struct Parser {
     bool declseen = false;           // The directive must come before any declaration.
 
     Parser(Ast &_ast, string_view filename, const char *source, int _fileidx)
-        : ast(_ast), lex(filename, source), fileidx(_fileidx) {}
+        : ast(_ast), lex(filename, source, _fileidx), fileidx(_fileidx) {}
 
     [[noreturn]] void Error(const string &msg) { lex.Error(msg); }
 
-    Line CurLine() { return { lex.tokline, fileidx }; }
+    // Where the current token starts.
+    Line CurLine() {
+        return { lex.tokline, fileidx, (int)(lex.attr.data() - lex.toklinestart) + 1 };
+    }
+    // One past the token before the current one: where a construct whose
+    // last token has been consumed ends.
+    Line PrevEnd() {
+        return { lex.prevendline, fileidx, (int)(lex.prevend - lex.prevendlinestart) + 1 };
+    }
+    // A node whose last token has been consumed, or that ends at `end`.
+    template<typename T> T *Finish(T *n, Line end) {
+        n->end = end;
+        return n;
+    }
+    template<typename T> T *Finish(T *n) { return Finish(n, PrevEnd()); }
 
     bool IsNext(TType t) {
         if (lex.tok != t) return false;
@@ -167,7 +182,7 @@ struct Parser {
             }
             case T_IMPORT: {
                 Import imp;
-                imp.line = lex.tokline;
+                imp.line = line;
                 lex.Next();
                 imp.relative = IsNext(T_DOT);
                 imp.path = ExpectIdent("import");
@@ -182,6 +197,7 @@ struct Parser {
                     lex.Next();
                 }
                 Expect(T_SEMI, "import");
+                imp.end = PrevEnd();
                 // Not a topdecl: the driver inlines the imported file's decls,
                 // which keeps a dump of the program self-contained.
                 imports.push_back(imp);
@@ -206,8 +222,9 @@ struct Parser {
                 Expect(T_ASSIGN, "type alias");
                 al->type = ParseType();
                 Expect(T_SEMI, "type alias");
+                al->end = PrevEnd();
                 ast.NS(al->ns).aliasmap[al->name] = al;
-                ast.topdecls.push_back(New<AliasDecl>(line, al));
+                ast.topdecls.push_back(Finish(New<AliasDecl>(line, al)));
                 return;
             }
             case T_RECURSIVE: case T_FN: case T_THREADFN: case T_EXTERN: case T_EXPORT:
@@ -236,6 +253,7 @@ struct Parser {
         if (!IsNext(T_LT)) return;
         for (;;) {
             GenericParam g;
+            g.line = CurLine();
             g.name = ExpectIdent("generic parameter list");
             if (IsNext(T_COLON)) g.bound = ParseType();
             generics.push_back(g);
@@ -274,14 +292,16 @@ struct Parser {
         Expect(T_LCURLY, "struct declaration");
         ParseFieldList(st->fields, "struct body");
         Expect(T_RCURLY, "struct declaration");
+        st->end = PrevEnd();
         BindGenericNames(firsttype, st->generics);
         ast.NS(st->ns).structmap[st->name] = st;
-        ast.topdecls.push_back(New<StructDecl>(line, st));
+        ast.topdecls.push_back(Finish(New<StructDecl>(line, st)));
     }
 
     void ParseFieldList(vector<Field> &fields, const char *context) {
         while (lex.tok != T_RCURLY) {
             Field f;
+            f.line = CurLine();
             if (IsNext(T_PAD)) {
                 f.ispad = true;
                 if (lex.tok == T_INTLIT) {
@@ -292,6 +312,7 @@ struct Parser {
                 // `const f: T` is `let f: const T` (§3.2).
                 auto constq = IsNext(T_CONST);
                 f.isconst = constq || IsNext(T_LET);
+                f.line = CurLine();
                 f.name = ExpectIdent(context);
                 for (auto &prev : fields)
                     if (!prev.ispad && prev.name == f.name)
@@ -321,6 +342,7 @@ struct Parser {
         Expect(T_LCURLY, "enum declaration");
         while (lex.tok != T_RCURLY) {
             SVariant v;
+            v.line = CurLine();
             v.name = ExpectIdent("enum variant");
             for (auto &prev : en->variants)
                 if (prev.name == v.name) Error(cat("duplicate variant name: ", v.name));
@@ -333,9 +355,10 @@ struct Parser {
             if (!IsNext(T_COMMA)) break;
         }
         Expect(T_RCURLY, "enum declaration");
+        en->end = PrevEnd();
         BindGenericNames(firsttype, en->generics);
         ast.NS(en->ns).enummap[en->name] = en;
-        ast.topdecls.push_back(New<EnumDecl>(line, en));
+        ast.topdecls.push_back(Finish(New<EnumDecl>(line, en)));
     }
 
     FnDecl *ParseFnDecl(bool nested) {
@@ -413,6 +436,7 @@ struct Parser {
         while (lex.tok != T_RPAREN) {
             Param p;
             p.isvar = IsNext(T_VAR);
+            p.line = CurLine();
             p.name = ExpectIdent("parameter list");
             for (auto &prev : sf->params)
                 if (prev.name == p.name) Error(cat("duplicate parameter name: ", p.name));
@@ -454,13 +478,14 @@ struct Parser {
             sf->body = ParseBlockExpr("function body");
             curfn = savefn;
         }
+        sf->end = PrevEnd();
         BindGenericNames(firsttype, sf->generics);
         // Only the root file's `fn main` is the program entry; an imported
         // file's main is ignored entirely (§11.1), letting a runnable file
         // double as an importable library.
         if (!nested && !(sf->name == "main" && fileidx != 0))
             ast.NS(sf->ns).functionmap[sf->name].push_back(sf);
-        return New<FnDecl>(line, sf);
+        return Finish(New<FnDecl>(line, sf));
     }
 
     VarDecl *ParseVarDecl(bool isglobal) {
@@ -511,7 +536,7 @@ struct Parser {
             ns.globalmap[name] = vd;
             ast.globals.push_back(vd);
         }
-        return vd;
+        return Finish(vd);
     }
 
     // ------------------------------------------------------------------
@@ -766,7 +791,7 @@ struct Parser {
             }
             case T_BLOCK: {
                 lex.Next();
-                auto e = New<EarlyBlock>(line, ParseBlockExpr("block expression"));
+                auto e = Finish(New<EarlyBlock>(line, ParseBlockExpr("block expression")));
                 if (stmt_level) stmt_ended = true;
                 return e;
             }
@@ -781,13 +806,13 @@ struct Parser {
             case T_WHILE: {
                 lex.Next();
                 auto cond = ParseScrutinee();
-                auto e = New<While>(line, cond, ParseBlockExpr("while body"));
+                auto e = Finish(New<While>(line, cond, ParseBlockExpr("while body")));
                 if (stmt_level) stmt_ended = true;
                 return e;
             }
             case T_LOOP: {
                 lex.Next();
-                auto e = New<LoopExpr>(line, ParseBlockExpr("loop body"));
+                auto e = Finish(New<LoopExpr>(line, ParseBlockExpr("loop body")));
                 if (stmt_level) stmt_ended = true;
                 return e;
             }
@@ -813,17 +838,17 @@ struct Parser {
                     r->from = ParseQualifiedName("return from");
                     r->ns = curns;
                 }
-                return r;
+                return Finish(r);
             }
             case T_BREAK: {
                 lex.Next();
                 auto sub = Sub(no_struct_lit);
                 auto val = lex.tok != T_SEMI && lex.tok != T_RCURLY ? ParseExpr() : nullptr;
-                return New<Break>(line, val);
+                return Finish(New<Break>(line, val));
             }
             case T_CONTINUE:
                 lex.Next();
-                return New<Continue>(line);
+                return Finish(New<Continue>(line));
             default:
                 return ParseBinary(1);
         }
@@ -844,7 +869,7 @@ struct Parser {
         Node *elseb = nullptr;
         if (IsNext(T_ELSE))
             elseb = lex.tok == T_IF ? ParseIf() : ParseBlockExpr("else body");
-        return New<IfExpr>(line, cond, thenb, elseb);
+        return Finish(New<IfExpr>(line, cond, thenb, elseb));
     }
 
     Node *ParseFor() {
@@ -872,12 +897,12 @@ struct Parser {
         {
             auto sub = Sub(true);
             iter = ParseExpr();
-            if (IsNext(T_DOTDOT)) iter = New<RangeExpr>(line, iter, ParseExpr());
+            if (IsNext(T_DOTDOT)) iter = Finish(New<RangeExpr>(line, iter, ParseExpr()));
         }
         auto f = New<ForLoop>(line, byref, var, idxvar, iter, ParseBlockExpr("for body"));
         f->vartype = vartype;
         f->idxtype = idxtype;
-        return f;
+        return Finish(f);
     }
 
     Node *ParseMatch() {
@@ -898,7 +923,7 @@ struct Parser {
         }
         Expect(T_RCURLY, "match expression");
         if (m->arms.empty()) Error("match must have at least one arm");
-        return m;
+        return Finish(m);
     }
 
     Pattern ParsePattern() {
@@ -945,9 +970,10 @@ struct Parser {
     Node *ParsePatternBound() {
         auto line = CurLine();
         auto neg = IsNext(T_MINUS);
+        auto operandline = CurLine();
         if (lex.tok == T_IDENT || lex.tok == T_COLONCOLON) {
-            Node *n = New<Ident>(line, ParseQualifiedName("match pattern"), curns);
-            return neg ? New<Unary>(line, T_MINUS, n) : n;
+            Node *n = Finish(New<Ident>(operandline, ParseQualifiedName("match pattern"), curns));
+            return neg ? Finish(New<Unary>(line, T_MINUS, n)) : n;
         }
         if (lex.tok != T_INTLIT)
             Error(cat("integer constant expected in match pattern, found \'", TokStr(), "\'"));
@@ -957,7 +983,7 @@ struct Parser {
         auto val = neg ? (int64_t)(0u - (uint64_t)lex.ival) : lex.ival;
         auto n = New<IntLit>(line, val, neg ? string_view {} : lex.attr, !neg && lex.iuns);
         lex.Next();
-        return n;
+        return Finish(n);
     }
 
     // Bitwise operators bind tighter than comparisons (as in Rust, unlike
@@ -1004,7 +1030,7 @@ struct Parser {
                 auto sub = Sub(no_struct_lit);
                 r = ParseBinary(prec + 1);  // All binary operators left-associate.
             }
-            l = New<Binary>(line, op, l, r);
+            l = Finish(New<Binary>(line, op, l, r));
         }
     }
 
@@ -1015,7 +1041,7 @@ struct Parser {
                 auto op = lex.tok;
                 lex.Next();
                 auto sub = Sub(no_struct_lit);
-                return New<Unary>(line, op, ParseUnary());
+                return Finish(New<Unary>(line, op, ParseUnary()));
             }
             default:
                 return ParsePostfix();
@@ -1029,8 +1055,9 @@ struct Parser {
             auto line = CurLine();
             switch (lex.tok) {
                 case T_LPAREN:
+                    // A call is anchored where its callee is.
                     lex.Next();
-                    e = ParseCallRest(e, {}, line);
+                    e = ParseCallRest(e, {}, e->line);
                     continue;
                 case T_LBRACKET:
                     e = ParseIndexOrSlice(e, line);
@@ -1044,14 +1071,14 @@ struct Parser {
                         auto base = NewUnresolvedType(Is<Ident>(e)->name, e->line);
                         e = ParseStructLitBody(ast.VariantOf(base, name, nullptr, line), line);
                     } else {
-                        e = New<Dot>(line, e, name, curns);
+                        e = Finish(New<Dot>(line, e, name, curns));
                     }
                     continue;
                 }
                 case T_AS: {
                     lex.Next();
                     auto unchecked = IsNext(T_NOT);
-                    e = New<AsCast>(line, e, ParseType(), unchecked);
+                    e = Finish(New<AsCast>(line, e, ParseType(), unchecked));
                     continue;
                 }
                 default:
@@ -1077,7 +1104,7 @@ struct Parser {
             // In statement position a trailing block ends the statement.
             if (stmt_level) stmt_ended = true;
         }
-        return c;
+        return Finish(c);
     }
 
     Node *ParseIndexOrSlice(Node *obj, Line line) {
@@ -1107,7 +1134,7 @@ struct Parser {
             result = New<Index>(line, obj, lo);
         }
         Expect(T_RBRACKET, "indexing");
-        return result;
+        return Finish(result);
     }
 
     Node *ParsePrimary() {
@@ -1116,22 +1143,22 @@ struct Parser {
             case T_INTLIT: {
                 auto n = New<IntLit>(line, lex.ival, lex.attr, lex.iuns);
                 lex.Next();
-                return n;
+                return Finish(n);
             }
             case T_FLTLIT: {
                 auto n = New<FltLit>(line, lex.fval, lex.attr);
                 lex.Next();
-                return n;
+                return Finish(n);
             }
             case T_STRLIT: {
                 auto n = New<StrLit>(line, lex.sval, lex.smultiline);
                 lex.Next();
-                return n;
+                return Finish(n);
             }
-            case T_TRUE:  lex.Next(); return New<BoolLit>(line, true);
-            case T_FALSE: lex.Next(); return New<BoolLit>(line, false);
-            case T_NULLLIT: lex.Next(); return New<NullLit>(line);
-            case T_SELF:  lex.Next(); return New<SelfRef>(line);
+            case T_TRUE:  lex.Next(); return Finish(New<BoolLit>(line, true));
+            case T_FALSE: lex.Next(); return Finish(New<BoolLit>(line, false));
+            case T_NULLLIT: lex.Next(); return Finish(New<NullLit>(line));
+            case T_SELF:  lex.Next(); return Finish(New<SelfRef>(line));
             case T_LPAREN: {
                 lex.Next();
                 auto sub = Sub();
@@ -1142,14 +1169,15 @@ struct Parser {
             case T_LBRACKET: return ParseArrayLit(line);
             case T_IDENT: case T_COLONCOLON: {
                 auto name = ParseQualifiedName("expression");
+                auto nameend = PrevEnd();
                 if (lex.tok == T_LT) {
                     // Possibly f<T>(...), Name<T> { ... }, or the variant
                     // literal Name<T>.Variant { ... }; backtrack if not.
                     vector<TypeExpr *> tyargs;
                     if (TryParseTyArgs(tyargs)) {
                         if (IsNext(T_LPAREN))
-                            return ParseCallRest(New<Ident>(line, name, curns), std::move(tyargs),
-                                                 line);
+                            return ParseCallRest(Finish(New<Ident>(line, name, curns), nameend),
+                                                 std::move(tyargs), line);
                         auto t = NewUnresolvedType(name, line);
                         t->named->args = std::move(tyargs);
                         if (IsNext(T_DOT)) {
@@ -1162,7 +1190,7 @@ struct Parser {
                 if (lex.tok == T_LCURLY && !no_struct_lit) {
                     return ParseStructLitBody(NewUnresolvedType(name, line), line);
                 }
-                return New<Ident>(line, name, curns);
+                return Finish(New<Ident>(line, name, curns), nameend);
             }
             default:
                 Error(cat("expression expected, found \'", TokStr(), "\'"));
@@ -1238,7 +1266,7 @@ struct Parser {
             }
         }
         Expect(T_RBRACKET, "array literal");
-        return a;
+        return Finish(a);
     }
 
     ConstFor *ParseConstFor(bool initializers) {
@@ -1286,7 +1314,7 @@ struct Parser {
         } else {
             cf->body = ParseBlockExpr("const for body");
         }
-        return cf;
+        return Finish(cf);
     }
 
     void ParseInitList(vector<FieldInit> &inits, bool &defaultall, bool fragment = false) {
@@ -1323,6 +1351,7 @@ struct Parser {
     StructLit *ParseStructLitBody(TypeExpr *type, Line line) {
         auto sl = New<StructLit>(line, type);
         ParseInitList(sl->inits, sl->defaultall);
+        Finish(sl);
         auto named = 0;
         for (auto &fi : sl->inits) {
             // Empty expansions may disappear; mixed-form checks follow flattening.
@@ -1336,11 +1365,9 @@ struct Parser {
 
     FunVal *ParseFunVal() {
         auto line = CurLine();
-        auto col = (int)(lex.attr.data() - lex.toklinestart) + 1;
         Expect(T_LCURLY, "function value");
         auto b = New<Block>(line);
         auto fv = New<FunVal>(line, b);
-        fv->col = col;
         if (lex.tok == T_IDENT || lex.tok == T_VAR) {
             // Tentative `params =>` prefix; else the body starts right away
             // with an implicit `it` parameter.
@@ -1352,6 +1379,7 @@ struct Parser {
                     Param p;
                     p.isvar = IsNext(T_VAR);
                     if (lex.tok != T_IDENT) { ok = false; break; }
+                    p.line = CurLine();
                     p.name = lex.attr;
                     lex.Next();
                     if (IsNext(T_COLON)) p.type = ParseType();
@@ -1368,7 +1396,8 @@ struct Parser {
             }
         }
         ParseBlockBody(b);
-        return fv;
+        Finish(b);
+        return Finish(fv);
     }
 
     // ------------------------------------------------------------------
@@ -1379,7 +1408,7 @@ struct Parser {
         Expect(T_LCURLY, context);
         auto b = New<Block>(line);
         ParseBlockBody(b);
-        return b;
+        return Finish(b);
     }
 
     // The '{' has been consumed; consumes the closing '}'.
@@ -1423,14 +1452,14 @@ struct Parser {
                         lex.Next();
                         auto rhs = ParseExpr();
                         Expect(T_SEMI, "assignment statement");
-                        b->stmts.push_back(New<Assign>(line, op, e, rhs));
+                        b->stmts.push_back(Finish(New<Assign>(line, op, e, rhs)));
                         continue;
                     }
                     case T_INC: case T_DEC: {
                         auto op = lex.tok;
                         lex.Next();
                         Expect(T_SEMI, "increment statement");
-                        b->stmts.push_back(New<IncDec>(line, op, e));
+                        b->stmts.push_back(Finish(New<IncDec>(line, op, e)));
                         continue;
                     }
                     case T_COMMA:
@@ -1479,15 +1508,16 @@ struct Parser {
         lex.Next();
         auto rhs = ParseExpr();
         Expect(T_SEMI, "assignment statement");
-        auto b = New<Block>(line);
-        auto vd = New<VarDecl>(line, false);
+        auto b = Finish(New<Block>(line));
+        auto vd = Finish(New<VarDecl>(line, false));
         vd->results = true;
         for (size_t i = 0; i < targets.size(); i++)
             vd->names.push_back(ast.Intern(cat("result#", i + 1)));
         vd->inits.push_back(rhs);
         b->stmts.push_back(vd);
         for (size_t i = 0; i < targets.size(); i++)
-            b->stmts.push_back(New<Assign>(line, T_ASSIGN, targets[i], New<Ident>(line, vd->names[i])));
+            b->stmts.push_back(Finish(New<Assign>(line, T_ASSIGN, targets[i],
+                                                  Finish(New<Ident>(line, vd->names[i])))));
         return b;
     }
 
@@ -1509,7 +1539,8 @@ struct Parser {
         }
         auto rest = New<Block>(line);
         ParseBlockBody(rest);  // Through the '}' that ends b.
-        auto ife = New<IfExpr>(line, cond, rest, elseb);
+        Finish(rest);
+        auto ife = Finish(New<IfExpr>(line, cond, rest, elseb));
         if (rest->tail) b->tail = ife; else b->stmts.push_back(ife);
     }
 };

@@ -1279,15 +1279,15 @@ inline void ForLoop::CgStmt(CodeGen &cg) {
     if (!idxdef && fixedlen && !fixedarr && !exitlen && CodeGen::CallsRecursive(body)) {
         if (!memlen) hoist();
         at = v.elems;
-        auto end = cg.T();
+        auto endp = cg.T();
         cg.L("if (", v.len, " > 0) {");
         cg.ind++;
         cg.GenLoopBody(bind, body, d,
             v.typedelems
-                ? cat("for (", cg.CT(v.elem), " *", end, " = ", at, " + ", v.len, "; ", at,
-                      " < ", end, "; ", at, "++) {")
-                : cat("for (uint8_t *", end, " = ", at, " + ", v.len, " * ", esz, "; ", at,
-                      " < ", end, "; ", at, " += ", esz, ") {"),
+                ? cat("for (", cg.CT(v.elem), " *", endp, " = ", at, " + ", v.len, "; ", at,
+                      " < ", endp, "; ", at, "++) {")
+                : cat("for (uint8_t *", endp, " = ", at, " + ", v.len, " * ", esz, "; ", at,
+                      " < ", endp, "; ", at, " += ", esz, ") {"),
             nullptr, 0, { vdef, idxdef });
         cg.ind--;
         cg.L("}");

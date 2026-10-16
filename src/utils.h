@@ -54,8 +54,63 @@ template<typename... Ts> string cat(const Ts &...args) {
     return s;
 }
 
-// Compile errors (in the program being compiled) throw a string, caught in main.
-struct CompileError { string msg; };
+// Where a diagnostic is: a file of the program (an index in Ast::sources), the
+// 1-based line and byte column it starts at, and where it ends, one past its
+// last byte. A column of 0 is a line alone; an end on line 0 is unknown.
+struct DiagLoc {
+    int fileidx = -1;
+    int line = 0, col = 0;
+    int endline = 0, endcol = 0;
+};
+
+// A compile error or warning as data: what the text the compiler prints is
+// made of (RenderDiagnostic), and what `--diagnostics json` prints instead.
+struct Diagnostic {
+    bool warning = false;
+    DiagLoc where;
+    string message;
+    // The lines after the message, innermost first: the instantiation chain
+    // and the const for expansions an error was reached through, each with
+    // the place it names where it names one.
+    struct Related { DiagLoc where; string message; };
+    vector<Related> related;
+    string text;                // As the terminal shows it.
+};
+
+// The text the terminal shows for d: `file:line: error: message` (the message
+// alone where it has no file), the source line it is on where the file's
+// text is given, under that a caret at its column where asked, and each
+// related line indented after.
+inline string RenderDiagnostic(const Diagnostic &d, string_view filename, string_view source,
+                               bool caret) {
+    string s;
+    auto &w = d.where;
+    if (!filename.empty()) Append(s, filename, ":", w.line, ": ");
+    Append(s, d.warning ? "warning: " : "error: ", d.message);
+    if (!filename.empty() && w.line > 0 && source.data()) {
+        auto p = source.data(), e = p + source.size();
+        for (auto ln = 1; p < e && ln < w.line; p++) if (*p == '\n') ln++;
+        auto end = p;
+        while (end < e && *end != '\n' && *end != '\r') end++;
+        Append(s, "\n", string_view(p, (size_t)(end - p)));
+        if (caret && w.col > 0 && w.col - 1 <= end - p) {
+            s += '\n';
+            for (auto q = p; q < p + w.col - 1; q++) s += *q == '\t' ? '\t' : ' ';
+            s += '^';
+        }
+    }
+    for (auto &r : d.related) Append(s, "\n  ", r.message);
+    return s;
+}
+
+// Compile errors (in the program being compiled) throw their text, caught in
+// main, with the same as data where the error has a place in the program
+// (bounds-check-free functions report every check kept at once; a driver's
+// error, such as a file that cannot be opened, has none).
+struct CompileError {
+    string msg;
+    vector<Diagnostic> diags;
+};
 
 // The native stack. The typechecker recurses once per function on the
 // compile-time call path, which is as long as the program makes it, so the

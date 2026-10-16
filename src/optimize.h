@@ -715,6 +715,7 @@ struct Inliner {
 
     Node *Cp(const Node *n) {
         auto r = n->Cp1(*this);
+        r->end = n->end;
         r->exprtype = n->exprtype;
         r->expansiontrace = n->expansiontrace;
         return r;

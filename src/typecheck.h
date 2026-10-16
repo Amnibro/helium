@@ -540,30 +540,49 @@ struct TypeCheck {
         return {};
     }
     [[noreturn]] void Error(Line l, const string &msg) {
-        ErrorIn(l, msg, cat(ActiveExpansionTrace(), InstantiationChain()));
+        ErrorIn(LocOf(l), msg, Chain(ActiveExpansionTrace()));
     }
 
     // An error at code checked earlier, with the instantiation chain taken
     // there: how a check made once the whole program has been reports one.
-    [[noreturn]] void ErrorIn(Line l, const string &msg, const string &chain) {
+    // The text echoes the offending source line, with no caret, and then
+    // the chain.
+    [[noreturn]] void ErrorIn(DiagLoc where, const string &msg,
+                              vector<Diagnostic::Related> chain) {
         for (auto &w : cur.pendingwarnings) if (!w.cast) PrintWarning(w);
         cur.pendingwarnings.clear();
-        auto s = cat(Where(l), ": error: ", msg);
-        // Show the offending source line with a caret-less underline context.
-        if (l.fileidx >= 0 && l.fileidx < (int)ast.sources.size() && l.line > 0) {
-            auto &src = *ast.sources[l.fileidx].second;
-            auto p = src.c_str();
-            for (auto ln = 1; *p && ln < l.line; p++) if (*p == '\n') ln++;
-            auto end = p;
-            while (*end && *end != '\n' && *end != '\r') end++;
-            Append(s, "\n", string_view(p, (size_t)(end - p)));
-        }
-        s += chain;
-        throw CompileError { s };
+        Diagnostic d;
+        d.where = where;
+        d.message = msg;
+        d.related = std::move(chain);
+        d.text = ast.DiagnosticText(d, true);
+        throw CompileError { d.text, { d } };
     }
 
-    string InstantiationChain() {
-        string s;
+    // What an error reports after its message: the const for expansions
+    // `trace` names, then the instantiation chain.
+    vector<Diagnostic::Related> Chain(string_view trace) {
+        vector<Diagnostic::Related> chain;
+        AppendTrace(chain, trace);
+        InstantiationChain(chain);
+        return chain;
+    }
+
+    // A trace is lines of "\n  in const for ..." (ExpandConstFor): one
+    // entry each, at no known place.
+    static void AppendTrace(vector<Diagnostic::Related> &chain, string_view trace) {
+        while (!trace.empty()) {
+            if (trace.substr(0, 3) == "\n  ") trace.remove_prefix(3);
+            auto next = trace.find("\n  ");
+            chain.push_back({ {}, string(trace.substr(0, next)) });
+            if (next == string_view::npos) break;
+            trace.remove_prefix(next);
+        }
+    }
+
+    // The compile-time call path, innermost first: one entry per
+    // instantiation, at the call that made it.
+    void InstantiationChain(vector<Diagnostic::Related> &out) {
         // A long chain shows its innermost and outermost instantiations.
         auto chain = 0, nth = 0;
         string_view lasttrace;
@@ -571,35 +590,37 @@ struct TypeCheck {
         for (auto i = (int)frames.size() - 1; i > 0; i--) {
             auto &f = frames[i];
             if (!f.expansiontrace.empty() && f.expansiontrace != lasttrace) {
-                s += f.expansiontrace;
+                AppendTrace(out, f.expansiontrace);
                 lasttrace = f.expansiontrace;
             }
             if (f.defaultfn) {
-                Append(s, "\n  in the default of parameter ",
-                       f.defaultfn->params[f.defaultparam].name, " of ", f.defaultfn->qname,
-                       ", for the call at ", Where(f.callline));
+                out.push_back({ LocOf(f.callline),
+                                cat("in the default of parameter ",
+                                    f.defaultfn->params[f.defaultparam].name, " of ",
+                                    f.defaultfn->qname, ", for the call at ", Where(f.callline)) });
                 continue;
             }
             if (f.defaultfield) {
-                Append(s, "\n  in the default of field ", f.defaultfield->name, " of ",
-                       LitTypeStr(f.defaultlit, f.defaultowner), ", for the construction at ",
-                       Where(f.defaultlit->line));
+                out.push_back({ LocOf(f.defaultlit->line),
+                                cat("in the default of field ", f.defaultfield->name, " of ",
+                                    LitTypeStr(f.defaultlit, f.defaultowner),
+                                    ", for the construction at ", Where(f.defaultlit->line)) });
                 continue;
             }
             if (!f.sf || f.isfunval) continue;
             nth++;
             if (chain > MAXCHAIN && nth > MAXCHAIN / 2 && nth <= chain - MAXCHAIN / 2) {
                 if (nth == MAXCHAIN / 2 + 1)
-                    Append(s, "\n  ... ", chain - MAXCHAIN, " more instantiations");
+                    out.push_back({ {}, cat("... ", chain - MAXCHAIN, " more instantiations") });
                 continue;
             }
-            Append(s, "\n  in ", f.sf->isthread ? "thread_fn " : "fn ");
+            string s = f.sf->isthread ? "in thread_fn " : "in fn ";
             if (!f.spec) Append(s, f.sf->qname, "()");
             else DumpInstance(s, f.sf, f.spec->argtypes, f.spec->litparams, f.spec->bindings,
                               f.spec->fnvals);
             Append(s, " instantiated from ", Where(f.callline));
+            out.push_back({ LocOf(f.callline), std::move(s) });
         }
-        return s;
     }
 
     // A specialization as a diagnostic names it. The argument types show the
@@ -622,7 +643,7 @@ struct TypeCheck {
                 item(n);
                 auto fv = fb.fv;
                 if (fb.named) s += fb.named->qname;
-                else if (fv) Append(s, "{block at ", Where(fv->line), ":", fv->col, "}");
+                else if (fv) Append(s, "{block at ", Where(fv->line), ":", fv->line.col, "}");
                 else s += "?";
             }
             auto named = false;
@@ -655,16 +676,16 @@ struct TypeCheck {
     }
 
     [[noreturn]] void Error(const Node *n, const string &msg) {
-        ErrorIn(n->line, msg, cat(n->expansiontrace.empty() ? ActiveExpansionTrace() : n->expansiontrace,
-                                 InstantiationChain()));
+        ErrorIn(LocOf(n), msg,
+                Chain(n->expansiontrace.empty() ? ActiveExpansionTrace() : n->expansiontrace));
     }
 
-    // A warning's text, about node `at` as the source has it; or, where
-    // `cast` is set, a check's verdict on that explicit cast as the source
-    // has it (CastVerdict): redundant, `text` saying why, with the cast it
+    // A warning, about node `at` as the source has it; or, where `cast` is
+    // set, a check's verdict on that explicit cast as the source has it
+    // (CastVerdict): redundant, the message saying why, with the cast it
     // was judged at, which has to stay; or not.
     struct Warning {
-        string text;
+        Diagnostic diag;
         const Node *at = nullptr;
         const AsCast *cast = nullptr;
         bool redundant = false;
@@ -675,7 +696,10 @@ struct TypeCheck {
     bool quiet = false;
     void Warn(const Node *n, const string &msg) {
         if (quiet) return;
-        Warning w { cat(Where(n->line), ": warning: ", msg, "\n"), n->Origin() };
+        Warning w;
+        w.diag.where = LocOf(n);
+        w.diag.message = msg;
+        w.at = n->Origin();
         if (WarningsHeld()) {
             cur.pendingwarnings.push_back(std::move(w));
             return;
@@ -706,7 +730,7 @@ struct TypeCheck {
     // first gives it.
     set<pair<const Node *, string>> warned;
     void PrintWarning(const Warning &w) {
-        if (warned.insert({ w.at, w.text }).second) fputs(w.text.c_str(), stderr);
+        if (warned.insert({ w.at, w.diag.message }).second) ast.Warn(w.diag);
     }
 
     string TypeStr(const TypeExpr *t) {
@@ -2395,7 +2419,7 @@ struct TypeCheck {
         TypeExpr *bound = nullptr;
         Line at;
         string prefix;
-        string chain;
+        vector<Diagnostic::Related> chain;
     };
     vector<GlobalShrink> globalshrinks;
     void NoteGlobalShrink(Node *at, const string &prefix, VarDef *vd, TypeExpr *bound);

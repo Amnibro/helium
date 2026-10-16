@@ -78,6 +78,14 @@ struct Lexer {
     const char *linestart = nullptr;
     int line = 1;
     string_view filename;
+    const char *source = nullptr;    // The whole text, for the line an error echoes.
+    int fileidx = 0;                 // The file's index in Ast::sources, for diagnostics.
+
+    // One past the previous token: where a construct that ended with it
+    // ends (Parser::PrevEnd).
+    const char *prevend = nullptr;
+    const char *prevendlinestart = nullptr;
+    int prevendline = 1;
 
     // Current token.
     TType tok = T_EOF;
@@ -90,7 +98,8 @@ struct Lexer {
     int tokline = 1;
     const char *toklinestart = nullptr;
 
-    Lexer(string_view _filename, const char *source) : p(source), filename(_filename) {
+    Lexer(string_view _filename, const char *_source, int _fileidx = 0)
+        : p(_source), filename(_filename), source(_source), fileidx(_fileidx) {
         linestart = p;
         Next();
     }
@@ -104,25 +113,36 @@ struct Lexer {
         return copy.tok;
     }
 
+    // An error on a line of the source, which its text echoes, with a caret
+    // under the given position, else under the token's start where the line
+    // is the token's. The caret's column is the error's; it extends over the
+    // token where the caret is at one that lies on one line, else one byte.
     [[noreturn]] void ErrorAt(const string &msg, int errline, const char *errlinestart,
                               const char *caret = nullptr) {
-        auto s = cat(filename, ":", errline, ": error: ", msg);
+        Diagnostic d;
+        d.where = { fileidx, errline, 0, 0, 0 };
+        d.message = msg;
         if (errlinestart) {
             auto end = errlinestart;
             while (*end && *end != '\n' && *end != '\r') end++;
-            Append(s, "\n", string_view(errlinestart, (size_t)(end - errlinestart)), "\n");
-            // Caret under the given position, else under the token start
-            // where we have it on this line.
             auto caretpos = caret ? caret : errlinestart == toklinestart ? attr.data() : nullptr;
             if (caretpos && caretpos >= errlinestart && caretpos <= end) {
-                for (auto q = errlinestart; q < caretpos; q++) s += *q == '\t' ? '\t' : ' ';
-                s += '^';
+                d.where.col = (int)(caretpos - errlinestart) + 1;
+                auto len = caretpos == attr.data() && attr.find('\n') == string_view::npos
+                               ? attr.size() : (size_t)0;
+                d.where.endline = errline;
+                d.where.endcol = d.where.col + (int)max<size_t>(len, 1);
             }
         }
-        throw CompileError { s };
+        d.text = RenderDiagnostic(d, filename, errlinestart ? string_view(source) : string_view(),
+                                  true);
+        throw CompileError { d.text, { d } };
     }
 
     void Next() {
+        prevend = p;
+        prevendline = line;
+        prevendlinestart = linestart;
         again:
         for (;;) {
             auto c = *p;

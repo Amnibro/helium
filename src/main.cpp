@@ -139,8 +139,17 @@ struct DeclaredPackage {
     int line = 0;            // Where the root declared it.
 };
 
-[[noreturn]] static void ImportError(const string &file, int line, const string &msg) {
-    throw CompileError { cat(file, ":", line, ": error: ", msg) };
+// An error at an import in the file named `file`: over the whole `import ...;`.
+[[noreturn]] static void ImportError(const string &file, const Import &imp, const string &msg) {
+    Diagnostic d;
+    d.where = LocOf(imp.line);
+    if (imp.end.line > 0) {
+        d.where.endline = imp.end.line;
+        d.where.endcol = imp.end.col;
+    }
+    d.message = msg;
+    d.text = RenderDiagnostic(d, file, {}, false);
+    throw CompileError { d.text, { d } };
 }
 
 // Parses a root file and, transitively, everything it imports (each file once).
@@ -237,25 +246,25 @@ void ParseProgram(Ast &ast, const string &rootpath, const vector<string> &stdlib
                 try {
                     src = ParsePackageSource(imp.source, DirOf(path));
                 } catch (CompileError &e) {
-                    ImportError(filename, imp.line, e.msg);
+                    ImportError(filename, imp, e.msg);
                 }
                 auto it = declared.find(imp.path);
                 if (fileidx == 0) {
                     // The root declares the package, and imports its entry.
                     if (it != declared.end())
-                        ImportError(filename, imp.line, cat("the package ", imp.path,
+                        ImportError(filename, imp, cat("the package ", imp.path,
                                                             " is declared twice"));
                     string root;
                     try {
                         root = PackageRoot(src, imp.path);
                     } catch (CompileError &e) {
-                        ImportError(filename, imp.line, e.msg);
+                        ImportError(filename, imp, e.msg);
                     }
                     ast.packages.push_back(Package { imp.path, root, false });
                     if (!src.ispath) ast.packages.back().cachekey = GitCacheKey(src);
                     LoadSidecar(ast.packages.back(), false);
                     it = declared.emplace(imp.path, DeclaredPackage { src, (int)ast.packages.size() - 1,
-                                                                      imp.line }).first;
+                                                                      imp.line.line }).first;
                 } else {
                     // A requirement: satisfied by the root's declaration, or
                     // by the blessed table where the root declared nothing.
@@ -268,22 +277,21 @@ void ParseProgram(Ast &ast, const string &rootpath, const vector<string> &stdlib
                 if (it == declared.end()) {
                     // A requirement the root does not satisfy: the error is
                     // the line to add there.
-                    ImportError(filename, imp.line,
+                    ImportError(filename, imp,
                                 cat(ast.packages[pkg].name, " needs the package ", imp.path,
                                     ": add\n    import ", imp.path, " from \"",
                                     SourceForRoot(src, rootdir), "\";\nto ", rootpath,
                                     " (packages are declared by the root file only)"));
                 } else if (fileidx != 0 && !SameSource(it->second.source, src)) {
-                    ImportError(filename, imp.line,
+                    ImportError(filename, imp,
                                 cat(ast.packages[pkg].name, " needs the package ", imp.path,
                                     " from ", src.text, ", which ", rootpath, ":", it->second.line,
                                     " declared from a different source, ", it->second.source.text));
                 } else if (fileidx != 0 && it->second.source.ref != src.ref) {
-                    fprintf(stderr, "%s:%d: warning: %s needs the package %s at %s, which %s:%d "
-                                    "declares at %s\n",
-                            filename.c_str(), imp.line, ast.packages[pkg].name.c_str(),
-                            imp.path.c_str(), src.ref.c_str(), rootpath.c_str(), it->second.line,
-                            it->second.source.ref.c_str());
+                    ast.Warn(LocOf(imp.line),
+                             cat(ast.packages[pkg].name, " needs the package ", imp.path, " at ",
+                                 src.ref, ", which ", rootpath, ":", it->second.line,
+                                 " declares at ", it->second.source.ref));
                 }
                 imppkg = it->second.pkg;
                 // What a package requires links after it (§5.5).
@@ -311,7 +319,7 @@ void ParseProgram(Ast &ast, const string &rootpath, const vector<string> &stdlib
                                                                            : nullptr;
                 if (it != declared.end()) {
                     if (FileExists(local))
-                        ImportError(filename, imp.line,
+                        ImportError(filename, imp,
                                     cat(imp.path, " is both a file of this package (", local,
                                         ") and the declared package ", first, "'s module"));
                     imppkg = it->second.pkg;
@@ -353,7 +361,7 @@ void ParseProgram(Ast &ast, const string &rootpath, const vector<string> &stdlib
                                 }
                                 Append(msg, "\nset --stdlib or GOOSE_STDLIB to its directory");
                             }
-                            ImportError(filename, imp.line, msg);
+                            ImportError(filename, imp, msg);
                         }
                     }
                 }
@@ -547,7 +555,9 @@ constexpr const char *MULTIMARK = "==== goose --multi-test: exit";
 
 // The options run, build and check share, for their help.
 constexpr const char *COMPILEOPTIONS =
-R"(  -D NAME[=VALUE]       Define a C macro in the generated program (or -DNAME).
+R"(  --diagnostics json    Print the errors and warnings as JSON on stdout, and
+                        the progress lines on stderr.
+  -D NAME[=VALUE]       Define a C macro in the generated program (or -DNAME).
   --stdlib dir          The standard library's directory (or GOOSE_STDLIB);
                         found from where goose is by default.
   --update              Fetch packages at a tag or branch again (a commit is
@@ -722,6 +732,46 @@ Options:
     return "";
 }
 
+// The diagnostics as `--diagnostics json` prints them: an array with one
+// object per error or warning, holding its severity, its message, where it
+// is (the file as the compiler names it, its 1-based line and byte column,
+// and one past its last byte as endLine and endCol, each left out where
+// unknown), the related lines after the message the same way, and the text
+// the terminal would have shown.
+string DiagnosticsJson(const vector<Diagnostic> &diags, const Ast *ast) {
+    string s = "[";
+    auto where = [&](const DiagLoc &w) {
+        if (!ast || w.fileidx < 0 || w.fileidx >= (int)ast->sources.size()) return;
+        s += ", \"file\": ";
+        JsonQuote(s, ast->sources[w.fileidx].first);
+        Append(s, ", \"line\": ", w.line);
+        if (w.col > 0) Append(s, ", \"col\": ", w.col);
+        if (w.endline > 0) Append(s, ", \"endLine\": ", w.endline, ", \"endCol\": ", w.endcol);
+    };
+    for (size_t i = 0; i < diags.size(); i++) {
+        auto &d = diags[i];
+        Append(s, i ? ",\n  {" : "\n  {", "\"severity\": \"", d.warning ? "warning" : "error",
+               "\", \"message\": ");
+        JsonQuote(s, d.message);
+        where(d.where);
+        if (!d.related.empty()) {
+            s += ", \"related\": [";
+            for (size_t j = 0; j < d.related.size(); j++) {
+                Append(s, j ? ", {" : "{", "\"message\": ");
+                JsonQuote(s, d.related[j].message);
+                where(d.related[j].where);
+                s += "}";
+            }
+            s += "]";
+        }
+        s += ", \"text\": ";
+        JsonQuote(s, d.text);
+        s += "}";
+    }
+    s += diags.empty() ? "]\n" : "\n]\n";
+    return s;
+}
+
 // A size with an optional K, M, G or T suffix (--stack-reserve).
 bool ParseSize(string s, uint64_t &out) {
     if (!s.empty() && toupper((unsigned char)s.back()) == 'B') s.pop_back();
@@ -852,6 +902,7 @@ int Main(int argc, char **argv) {
     auto stacks = false;
     auto forcejit = false, standalone = false;
     auto json = false, refresh = false, debug = false, verbose = false, dryrun = false;
+    auto jsondiag = false;
     string ccrequest;
     // A build is for a deliverable: the inlining and the C compiler's
     // optimization both at their highest.
@@ -882,6 +933,14 @@ int Main(int argc, char **argv) {
             cdefines.push_back(cat("GS_STACK_RESERVE=", size, "ull"));
         }
         else if (arg == "--check") nocgen = true;
+        else if (arg == "--diagnostics" && i + 1 < argc) {
+            string how = argv[++i];
+            if (how == "json") jsondiag = true;
+            else if (how != "text") {
+                fprintf(stderr, "--diagnostics takes json or text, not %s\n", how.c_str());
+                return 1;
+            }
+        }
         else if (arg == "--no-bce") nobce = true;
         else if (arg == "--bce-test") bcetest = true;
         else if (arg == "--bce-lines") bcelines = true;
@@ -1029,8 +1088,9 @@ int Main(int argc, char **argv) {
                         "--dump-file, --jit or program arguments\n");
         return 1;
     }
-    // The program shares stdout in JIT mode; progress goes to stderr.
-    auto msgs = jit ? stderr : stdout;
+    // The program shares stdout in JIT mode, and the diagnostics have it as
+    // JSON; progress goes to stderr then.
+    auto msgs = jit || jsondiag ? stderr : stdout;
     // The file being compiled, the C file it goes to, if any, and the
     // --include headers as that C file names them.
     string filename, outfile;
@@ -1041,6 +1101,9 @@ int Main(int argc, char **argv) {
     // its packages, for the native parts the program needs (native.h).
     unique_ptr<Ast> astp;
     vector<int> nativepkgs;
+    // The compile's diagnostics as data (--diagnostics json): the warnings
+    // as they come, then the error's.
+    vector<Diagnostic> found;
     auto compile = [&]() -> int {
         if (tokens) {
             DumpTokens(filename);
@@ -1048,6 +1111,7 @@ int Main(int argc, char **argv) {
         }
         astp = make_unique<Ast>();
         auto &ast = *astp;
+        if (jsondiag) ast.warnsink = [&](const Diagnostic &d) { found.push_back(d); };
         auto stdlibdirs = StdlibDirs(stdlibdir, exe);
         ParseProgram(ast, filename, stdlibdirs, DirOf(exe));
         if (dump) {
@@ -1099,11 +1163,11 @@ int Main(int argc, char **argv) {
             bce.RunAll();
             fprintf(msgs, "bce: elided %d/%d index and %d/%d slice checks\n",
                     bce.idxelided, bce.idxtotal, bce.slelided, bce.sltotal);
-            if (!bce.checkfreefails.empty()) throw CompileError { bce.CheckfreeReport() };
+            if (!bce.checkfreefails.empty()) throw bce.CheckfreeError();
         } else {
             for (auto sf : ast.functions)
                 if (sf->checkfree && !sf->isnested) {
-                    fprintf(stderr, "warning: checkfree is not verified under --no-bce\n");
+                    ast.Warn(DiagLoc {}, "checkfree is not verified under --no-bce");
                     break;
                 }
         }
@@ -1243,7 +1307,8 @@ int Main(int argc, char **argv) {
         program.clear();
         astp.reset();
         nativepkgs.clear();
-        try {
+        found.clear();
+        auto attempt = [&]() -> int {
             // The compile has a thread of its own. The program a JIT run
             // starts runs back on this one, the main thread, which a window
             // on macOS has to be made on, and whose stack the link reserves
@@ -1302,10 +1367,25 @@ int Main(int argc, char **argv) {
             // and whatever it wrote is already on the same streams.
             fflush(msgs);
             return RunJit(program, JitLibPath(DirOf(exe)), filename, progargs, symbols);
+        };
+        auto code = 0;
+        try {
+            code = attempt();
         } catch (CompileError &e) {
-            fprintf(stderr, "%s\n", e.msg.c_str());
-            return 1;
+            if (!jsondiag) fprintf(stderr, "%s\n", e.msg.c_str());
+            // A driver's error has no place in the program: its text is all
+            // there is to report.
+            if (e.diags.empty()) {
+                Diagnostic d;
+                d.message = d.text = e.msg;
+                found.push_back(std::move(d));
+            } else {
+                found.insert(found.end(), e.diags.begin(), e.diags.end());
+            }
+            code = 1;
         }
+        if (jsondiag) fputs(DiagnosticsJson(found, astp.get()).c_str(), stdout);
+        return code;
     };
     if (!multitest) return run(files[0]);
     // Each file has an Ast and a compile thread of its own, which is all the

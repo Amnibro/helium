@@ -2455,7 +2455,7 @@ inline void TypeCheck::CheckExternSpec(FnSpec *spec) {
         auto vd = ast.NewVarDef();
         vd->name = p.name;
         vd->type = pt;
-        vd->line = sf->line;
+        vd->line = p.line.line ? p.line : sf->line;
         vd->isparam = true;
         vd->ownerspec = spec;
         spec->params.push_back(vd);

@@ -2009,7 +2009,7 @@ inline void TypeCheck::NoteGlobalShrink(Node *at, const string &prefix, VarDef *
                                         TypeExpr *bound) {
     for (auto &gs : globalshrinks)
         if (gs.arr == vd && !gs.bound == !bound && (!bound || TypeEq(gs.bound, bound))) return;
-    globalshrinks.push_back({ vd, bound, at->line, prefix, InstantiationChain() });
+    globalshrinks.push_back({ vd, bound, at->line, prefix, Chain({}) });
 }
 
 // A global may hold a reference into a global array only where a store, or
@@ -2051,7 +2051,8 @@ inline void TypeCheck::CheckGlobalShrinks() {
                     GlobalReach reach { *this, arr, arrtype, bycontainer, {}, {} };
                     Line where;
                     if (!reach.Holds(gd, &where)) continue;
-                    ErrorIn(gs.at, cat(into, ", stored at ", Where(where), " (§5.1)"), gs.chain);
+                    ErrorIn(LocOf(gs.at), cat(into, ", stored at ", Where(where), " (§5.1)"),
+                            gs.chain);
                 }
             }
         }

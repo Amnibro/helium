@@ -140,6 +140,7 @@ the slow steps (a line each, and on a terminal a live line below).
 | `--roundtrip` | after resolution, parse the dump as a program of its own and require it to dump to the same text (`CheckRoundtrip`), then go on to whatever else was asked for |
 | `--dump-file f.goose` | also write the dump to a file, and go on |
 | `--check` | stop after typecheck, optimization and BCE; no C is written |
+| `--diagnostics json` | print the compile's errors and warnings as JSON on stdout (`DiagnosticsJson`): one object each with its severity, message, file, line, column, end and related lines, and the text the terminal would have shown; the progress lines go to stderr. What an editor reads (§2, `docs/design/language_server.md`) |
 | `-O0`, `-O1` (default), `-O2` | inlining thresholds (§4); folding and propagation run at every level; base-case inlining, tail-recursion elimination and min/max regrouping need `-O1` or above |
 | `--specs` | print every live specialization's optimized body |
 | `--stacks` | print the data stack count of the main program and of each worker, the regions they come to, the thread cap that gives `hardware_threads()`, and every function's share (`codegen_stacks.h`); with `--check` it runs the backend for the counts and writes nothing |
@@ -224,6 +225,30 @@ reading its type). The standard-library search order in `StdlibDirs` is
 `--stdlib`, `GOOSE_STDLIB`, `stdlib/` beside the executable and up to three
 ancestors, then `stdlib/` in the working directory; the first existing
 candidate wins, after the root-file-relative candidate.
+
+**Positions and diagnostics.** Every node, type expression and declaration
+records where it starts (`Line`: the file, the 1-based line and the 1-based
+byte column, `Parser::CurLine`), as do fields, variants, parameters, type
+parameters and imports, and every node and every function, struct, enum and
+alias declaration records where it ends, one past its last byte
+(`Node::end`, set by `Parser::Finish` from the lexer's `prevend`, the end
+of the token before the current one). A node is anchored at its first
+token, except a binary expression, assignment, index, field access or
+cast, anchored at their operator, and a call, anchored where its callee
+is; diagnostics name the anchor's line. A diagnostic is data before it is
+text (`Diagnostic`, `utils.h`): its severity, message, place (`DiagLoc`:
+the file, where it starts and where it ends, which for a node is from the
+earliest token it has on its anchor's line to its end, `LocOf`) and the
+related lines after the message (the instantiation chain,
+`TypeCheck::InstantiationChain`, each at the call it names).
+`RenderDiagnostic` makes the text the terminal shows: the head
+`file:line: error: message`, the echoed source line (an error's; the
+lexer's with a caret under its column), and the related lines. A
+`CompileError` carries the text and the data (several diagnostics for a
+`checkfree` function's kept checks, `BCE::CheckfreeError`); `Ast::Warn`
+prints a warning's text, or hands the data to the sink the driver sets
+under `--diagnostics json`, which prints every diagnostic of the compile as
+JSON on stdout (§1).
 
 **Resolution** (`resolve.h`): every parse-time `TY_UNRESOLVED` name is
 rewritten in place. A struct or enum name becomes `TY_STRUCT`/`TY_ENUM`; an
@@ -379,7 +404,8 @@ way, and names the one a call would create in the polymorphic recursion
 error (§3.11). Each type is cut short at 200 characters (`DumpShort`): the
 text of one a runaway recursion built can be exponentially longer than the
 type. A chain longer than `MAXCHAIN` (20) shows its innermost and outermost
-ten and counts the rest.
+ten and counts the rest. Each line of the chain is one of the diagnostic's
+related entries (§2), at the call it names.
 
 ### 3.2 Types, instantiation, and size classes
 

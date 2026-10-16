@@ -44,6 +44,7 @@ inline Node *Node::Clone(Ast &ast) const {
                     // function unused. Keep the error with this bound use
                     // until ordinary checking actually reaches it.
                     auto c = ast.New<Ident>(line, id->name, id->ns);
+                    c->end = end;
                     c->expansionerror = ast.Intern(cat("const for binding ", id->name,
                                                       " is not a value (or a callable function)"));
                     c->expansiontrace = ctx->trace;
@@ -52,6 +53,7 @@ inline Node *Node::Clone(Ast &ast) const {
                 }
                 auto c = arg->value->Clone(ast);
                 c->line = line;
+                c->end = end;
                 c->origin = Origin();
                 c->expansiontrace = ctx->trace;
                 return c;
@@ -59,6 +61,7 @@ inline Node *Node::Clone(Ast &ast) const {
         }
     }
     auto c = Clone1(ast);
+    c->end = end;
     c->origin = Origin();
     c->expansionbinding = expansionbinding;
     c->expansiontrace = ctx ? ctx->trace : expansiontrace;
@@ -243,7 +246,6 @@ inline Node *FunVal::Clone1(Ast &ast) const {
     fv->params = params;
     for (auto &p : fv->params) p.type = ast.CloneExpansionType(p.type);
     fv->explicit_params = explicit_params;
-    fv->col = col;
     return fv;
 }
 

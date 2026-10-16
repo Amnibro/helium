@@ -2498,23 +2498,20 @@ struct BCE {
     }
 
     // The errors, each where the check is, with its source line.
-    string CheckfreeReport() {
-        string s;
+    // The checks kept in checkfree functions, as one error reporting them
+    // all: each at its line, which the text echoes.
+    CompileError CheckfreeError() {
+        CompileError e;
         for (auto &f : checkfreefails) {
-            if (!s.empty()) s += "\n";
-            auto l = f.line;
-            auto known = l.fileidx >= 0 && l.fileidx < (int)ast.sources.size();
-            Append(s, known ? cat(ast.sources[l.fileidx].first, ":", l.line) : string("?"),
-                   ": error: ", f.why);
-            if (!known || l.line <= 0) continue;
-            auto &src = *ast.sources[l.fileidx].second;
-            auto p = src.c_str();
-            for (auto ln = 1; *p && ln < l.line; p++) if (*p == '\n') ln++;
-            auto end = p;
-            while (*end && *end != '\n' && *end != '\r') end++;
-            Append(s, "\n", string_view(p, (size_t)(end - p)));
+            Diagnostic d;
+            d.where = LocOf(f.line);
+            d.message = f.why;
+            d.text = ast.DiagnosticText(d, true);
+            if (!e.msg.empty()) e.msg += "\n";
+            e.msg += d.text;
+            e.diags.push_back(std::move(d));
         }
-        return s;
+        return e;
     }
 
     static string TypeName(TypeExpr *t) {

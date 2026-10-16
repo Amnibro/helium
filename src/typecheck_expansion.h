@@ -109,7 +109,7 @@ inline void TypeCheck::ExpandConstFor(ConstFor *cf, const function<void(Expansio
                                   cf->expansiontrace));
         ctx.size = &expansionsize;
         ctx.error = [&](Line line, const string &msg) {
-            ErrorIn(line, msg, cat(ctx.trace, InstantiationChain()));
+            ErrorIn(LocOf(line), msg, Chain(ctx.trace));
         };
         auto saved = ast.expansionclone;
         ast.expansionclone = &ctx;

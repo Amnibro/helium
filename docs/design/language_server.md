@@ -454,7 +454,11 @@ with a server to keep in step, a job that runs `npm test` on Linux is due.
 ends), B, C with `--diagnostics json`, E, H. The extension reads the JSON
 and underlines exact ranges, with the warnings and the chain, which is a
 visible improvement before any server exists. Each item is a change of its
-own with its tests.
+own with its tests. A and C are in (`docs/implementation.md` §2,
+`test/diagnostics_json.py`): a diagnostic's range runs from the earliest
+token its node has on the anchor's line to the node's end, and a call is
+anchored at its callee rather than its `(`. B, E and H, and the
+extension's reading of the JSON, are not.
 
 **Phase 1, a server:** F, G, `goose lsp` with the transport, workspace and
 analysis of §4, and diagnostics on change, hover, go to definition,

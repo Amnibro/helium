@@ -28,10 +28,19 @@ struct CodeGen;
 struct Dst;
 struct ExpansionClone;
 
+// A place in a source file: the 1-based line, which diagnostics name, and
+// the 1-based byte column, which Parser::CurLine records for every node,
+// type and declaration and the parser's Finish gives the ends of nodes as
+// well, one past their last byte. A column of 0 is a line alone (a place
+// the checker made up, Line {}), and a line of 0 is no place.
 struct Line {
     int line = 0;
     int fileidx = 0;
+    int col = 0;
 };
+
+// Where a diagnostic at a place, or over a node's extent, is.
+inline DiagLoc LocOf(Line l) { return { l.fileidx, l.line, l.col, 0, 0 }; }
 
 // ---------------------------------------------------------------------------
 // Type expressions. During parsing, a type name cannot generally be looked up
@@ -356,11 +365,13 @@ inline bool IsPrimTypeToken(TType t) { return t >= T_TBOOL && t <= T_TF64; }
 
 struct GenericParam {
     string_view name;
+    Line line;
     TypeExpr *bound = nullptr;  // Optional ": fn(...)" style documentation bound.
 };
 
 struct Param {
     string_view name;
+    Line line;                  // Of the name.
     TypeExpr *type = nullptr;   // Null = untyped, i.e. generic.
     Node *defaultval = nullptr; // What a call leaving the argument out passes (§7.1).
     bool isvar = false;
@@ -368,6 +379,7 @@ struct Param {
 
 struct Field {
     string_view name;
+    Line line;                  // Of the name, or of `pad`.
     TypeExpr *type = nullptr;
     Node *defaultval = nullptr;
     bool isconst = false;       // "let" field: const after construction.
@@ -800,7 +812,11 @@ enum NodeKind : uint8_t {
 };
 
 struct Node {
-    Line line;
+    Line line;                      // Where the node is anchored: its first token, or
+                                    // its operator's for a binary, assignment, index,
+                                    // field or cast. Diagnostics name this line.
+    Line end;                       // One past its last byte (Parser::Finish); unknown
+                                    // (line 0) for a node the checker or optimizer made.
     TypeExpr *exprtype = nullptr;   // Filled by typecheck (the value's type; TY_VOID for none).
     // Filled by typecheck: the value is of non-fixed-size class and no
     // storage, so it is a temporary of its statement, held on a data stack
@@ -853,6 +869,25 @@ struct Node {
     virtual void CgAny(CodeGen &cg, const Dst &d) = 0;
     virtual void CgStmt(CodeGen &cg) = 0;
 };
+
+// Where a diagnostic about n is: on its anchor's line, from the earliest
+// token the node has there (a binary expression's left operand, an
+// assignment's target, a field access's object, where they are on that
+// line) to the node's end.
+inline DiagLoc LocOf(const Node *n) {
+    auto l = LocOf(n->line);
+    function<void(Node *)> leftmost = [&](Node *c) {
+        if (!c || c->line.fileidx != n->line.fileidx || c->line.line != n->line.line) return;
+        if (c->line.col > 0 && (l.col == 0 || c->line.col < l.col)) l.col = c->line.col;
+        c->Children(leftmost);
+    };
+    n->Children(leftmost);
+    if (n->end.line > 0 && n->end.fileidx == n->line.fileidx) {
+        l.endline = n->end.line;
+        l.endcol = n->end.col;
+    }
+    return l;
+}
 
 // The node as a T, or null when it is some other kind.
 template<typename T> const T *Is(const Node *n) {
@@ -1307,8 +1342,6 @@ NODE(FunVal)
     BCE_WALK
     vector<Param> params;       // Empty param list = implicit "it".
     bool explicit_params = false;
-    int col = 0;                // Of the `{`, 1-based: tells blocks on one line apart
-                                // in the instantiation chain (Line has no column).
     Block *body;
     FunVal(Line l, Block *_body) : Node(l, NKind), body(_body) {}
 NODE_END
@@ -1378,6 +1411,7 @@ struct SFunction {
     string_view ns;             // Its namespace, "" for the global one (docs/design/namespaces.md).
     string_view qname;          // `ns::name`, or just name in the global namespace; interned in Ast.
     Line line;
+    Line end;                   // One past the declaration's last byte (its `}` or `;`).
     vector<GenericParam> generics;
     vector<Param> params;
     vector<TypeExpr *> rets;    // Empty + !has_rets = inferred/none.
@@ -1403,6 +1437,7 @@ struct SStruct {
     string_view ns;             // As SFunction::ns / qname.
     string_view qname;
     Line line;
+    Line end;                   // As SFunction::end.
     vector<GenericParam> generics;
     vector<Field> fields;
     vector<StructInst *> insts;  // Instantiations (typecheck), owned by Ast.
@@ -1410,6 +1445,7 @@ struct SStruct {
 
 struct SVariant {
     string_view name;
+    Line line;                  // Of the name.
     vector<Field> fields;
     bool has_payload = false;   // Distinguishes "Point" from "Point {}".
 };
@@ -1419,6 +1455,7 @@ struct SEnum {
     string_view ns;             // As SFunction::ns / qname.
     string_view qname;
     Line line;
+    Line end;                   // As SFunction::end.
     vector<GenericParam> generics;
     vector<SVariant> variants;  // Stable once parsing completes; pointed at by TY_VARIANT.
     vector<EnumInst *> insts;   // Instantiations (typecheck), owned by Ast.
@@ -1459,6 +1496,7 @@ struct SAlias {
     string_view ns;             // As SFunction::ns / qname.
     string_view qname;
     Line line;
+    Line end;                   // As SFunction::end.
     TypeExpr *type = nullptr;
 };
 
@@ -2207,6 +2245,36 @@ struct Ast {
     // Source buffers stay alive here; all string_views point into them. The
     // contents are heap-boxed so vector growth never moves an SSO buffer.
     vector<pair<string, unique_ptr<string>>> sources;   // (filename, contents).
+
+    // Where a warning goes: stderr, as its text, or the sink the driver sets
+    // to collect it as data (--diagnostics json).
+    function<void(const Diagnostic &)> warnsink;
+
+    // The text the terminal shows for d (RenderDiagnostic), the source line
+    // it is on included where `withsource`: an error echoes its line, a
+    // warning does not.
+    string DiagnosticText(const Diagnostic &d, bool withsource) const {
+        auto known = d.where.fileidx >= 0 && d.where.fileidx < (int)sources.size();
+        return RenderDiagnostic(d, known ? sources[d.where.fileidx].first : string(),
+                                known && withsource ? string_view(*sources[d.where.fileidx].second)
+                                                    : string_view(),
+                                false);
+    }
+
+    void Warn(Diagnostic d) {
+        d.warning = true;
+        d.text = DiagnosticText(d, false);
+        if (warnsink) warnsink(d);
+        else fprintf(stderr, "%s\n", d.text.c_str());
+    }
+
+    // A warning about a place, as the checker and the driver give them.
+    void Warn(DiagLoc where, string message) {
+        Diagnostic d;
+        d.where = where;
+        d.message = std::move(message);
+        Warn(std::move(d));
+    }
     vector<Package> packages;
     vector<int> filepkg;                                // Per source, its package.
 

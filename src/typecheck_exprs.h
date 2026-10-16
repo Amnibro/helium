@@ -2438,8 +2438,9 @@ inline void TypeCheck::CastVerdict(const CastAlt &a, const string &reason,
     w.cast = a.cast->Origin();
     w.redundant = !reason.empty();
     if (w.redundant) {
-        w.text = cat("redundant `as", a.cast->unchecked ? "! " : " ", TypeStr(a.cast->totype),
-                     "`: ", reason);
+        w.diag.where = LocOf(a.cast);
+        w.diag.message = cat("redundant `as", a.cast->unchecked ? "! " : " ",
+                             TypeStr(a.cast->totype), "`: ", reason);
         w.dependson = dependson;
     }
     if (WarningsHeld()) cur.pendingwarnings.push_back(std::move(w));
@@ -2483,10 +2484,7 @@ inline void TypeCheck::ReportRedundantCasts() {
         return tuple(l.fileidx, l.line, i);
     };
     sort(out.begin(), out.end(), [&](size_t i, size_t j) { return key(i) < key(j); });
-    for (auto i : out)
-        fputs(cat(Where(castverdicts[i].cast->line), ": warning: ", castverdicts[i].text, "\n")
-                  .c_str(),
-              stderr);
+    for (auto i : out) ast.Warn(castverdicts[i].diag);
 }
 
 // A name in a compile-time size, capacity or fill count, or in an integer

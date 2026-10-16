@@ -2005,6 +2005,16 @@ def main():
             r.fail("command line paths", str(e))
     r.show_task(cli_paths)
 
+    def diagnostics_json():
+        from diagnostics_json import check_diagnostics_json
+        try:
+            check_diagnostics_json(exe, gendir)
+            r.ok("diagnostics as JSON: the text mode's text, positions and ranges, the "
+                 "instantiation chain at its calls, warnings, several errors at once")
+        except (RuntimeError, OSError, subprocess.TimeoutExpired) as e:
+            r.fail("diagnostics as JSON", str(e))
+    r.show_task(diagnostics_json)
+
     def runtime_cache():
         from runtime_cache import check_runtime_cache
         try:
