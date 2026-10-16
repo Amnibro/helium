@@ -143,7 +143,8 @@ inline vector<Node *> CodeGen::CallArgNodes(Call *c, size_t nparams) {
 }
 
 // One argument by the parameter's calling convention; appends to args.
-inline void CodeGen::EmitArg(FnSpec *sp, size_t i, Node *node, vector<string> &args) {
+inline void CodeGen::EmitArg(FnSpec *sp, size_t i, Node *node, vector<string> &args,
+                             bool later) {
     auto pt = sp->argtypes[i];
     if (IsPoolParam(sp, i)) {
         PushArg(args, pt, true, GenPrefVal(node));
@@ -178,7 +179,12 @@ inline void CodeGen::EmitArg(FnSpec *sp, size_t i, Node *node, vector<string> &a
         args.push_back(t);
         return;
     }
-    auto value = Snapshot(pt, GenXD(node, pt));
+    // A value read before later arguments that run statements lands in a
+    // temp, as one passed by its address always does; otherwise C copies
+    // the expression's value into the parameter at the call (GenOperandVal).
+    auto x = GenXD(node, pt);
+    auto value = later || IsLargeFixed(pt) || (HasStmts(node) && !IsCName(x)) ? Snapshot(pt, x)
+                                                                              : x;
     if (IsLargeFixed(pt)) args.push_back(cat("&", value));
     else PushArg(args, pt, false, value);
 }
@@ -237,7 +243,10 @@ inline vector<string> CodeGen::EmitSpecCall(Call *c, FnSpec *sp, Dst d0, vector<
     string reprefixbase, reprefixcnt;
     Dst reprefix;
     vector<string> args;
-    for (size_t i = 0; i < an.size(); i++) EmitArg(sp, i, an[i], args);
+    // Whether the arguments after each one run statements (EmitArg).
+    vector<bool> later(an.size() + 1, false);
+    for (size_t i = an.size(); i-- > 0;) later[i] = later[i + 1] || HasStmts(an[i]);
+    for (size_t i = 0; i < an.size(); i++) EmitArg(sp, i, an[i], args, later[i + 1]);
     for (auto fv : ki.freevars) EmitFvArg(c->FreeVarArg(fv), args);
     vector<string> retex(sp->rets.size());
     for (size_t i = 0; i < sp->rets.size(); i++) {

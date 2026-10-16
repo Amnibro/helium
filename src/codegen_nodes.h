@@ -217,8 +217,9 @@ inline string Binary::CgX(CodeGen &cg) {
         return op == T_EQ ? eq : cat("(uint8_t)(!", eq, ")");
     }
     // Order of evaluation is left-to-right (§2): the left operand lands in
-    // a temp before the right one runs.
-    auto l = cg.GenPureVal(left);
+    // a temp before the right one runs, where the right one can change what
+    // it read (GenOperandVal).
+    auto l = cg.GenOperandVal(left, cg.HasStmts(right));
     auto r = cg.GenVal(right);
     if (exprtype && (exprtype->kind == TY_STRUCT || exprtype->kind == TY_ARRAY))
         return cg.GenElemwise(this, l, r);
@@ -917,12 +918,13 @@ inline void Assign::CgStmt(CodeGen &cg) {
         lv.stk = s;
     }
     if (op == T_DOTASSIGN) { cg.GenRebind(this, lv); return; }
-    // Read the old value before the RHS runs, as for scalar compound math.
-    // Aggregates use the ordinary elementwise lowering, with both operands
-    // evaluated before writing any member of the destination.
+    // Read the old value before the RHS runs, as for scalar compound math,
+    // where the RHS runs statements that could change it. Aggregates use
+    // the ordinary elementwise lowering, with both operands evaluated
+    // before writing any member of the destination.
     if (op != T_ASSIGN) {
         assert(lv.val);
-        auto old = cg.Snapshot(lv.t, lv.s);
+        auto old = cg.HasStmts(rhs) ? cg.Snapshot(lv.t, lv.s) : lv.s;
         if (lv.t->kind == TY_STRUCT || lv.t->kind == TY_ARRAY) {
             auto r = cg.GenPureVal(rhs);
             cg.GenElemwiseInto(lv.t, op, line, old, r, lv.s, false,

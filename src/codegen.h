@@ -939,6 +939,8 @@ struct CodeGen {
     TypeExpr *OperandT(TypeExpr *t);
     string GenVal(Node *n);
     string GenPureVal(Node *n);
+    string GenOperandVal(Node *n, bool later);
+    static bool IsCName(const string &x);
     bool HasStmts(Node *n);
     string GenEquality(TypeExpr *lt, const string &l, const string &r);
     string GenSliceEq(TypeExpr *st, const string &l, const string &r);
@@ -1172,7 +1174,7 @@ struct CodeGen {
     vector<string> EmitExternCall(Call *c, FnSpec *sp);
     string ExternProto(FnSpec *sp);
     vector<Node *> CallArgNodes(Call *c, size_t nparams);
-    void EmitArg(FnSpec *sp, size_t i, Node *node, vector<string> &args);
+    void EmitArg(FnSpec *sp, size_t i, Node *node, vector<string> &args, bool later);
     void EmitFvArg(const VarDef *fv, vector<string> &args);
     vector<string> EmitSpecCall(Call *c, FnSpec *sp, Dst d0, vector<Dst> *alldst);
     bool NeedsReprefix(const Dst &d, TypeExpr *rt);

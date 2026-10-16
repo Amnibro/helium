@@ -1574,6 +1574,28 @@ inline string CodeGen::GenPureVal(Node *n) {
     return Snapshot(et, GenVal(n));
 }
 
+// An operand whose value must not change before it is used: when `later`,
+// the code that runs between, has statements, its value lands in a temp
+// (GenPureVal). Code without statements calls nothing and assigns
+// nothing, so the operand's expression stands as it is -- unless its own
+// statements left more than a variable's name in it, which may hold a
+// call that C could order after the later operands. A number is converted
+// to the operand's type as the temp would have converted it: a literal 1
+// shifted at u64 must not shift as a C int.
+inline string CodeGen::GenOperandVal(Node *n, bool later) {
+    auto et = OperandT(n->exprtype);
+    if (later || IsBytesT(et)) return GenPureVal(n);
+    auto x = GenVal(n);
+    if (HasStmts(n) && !IsCName(x)) return Snapshot(et, x);
+    if (et->kind == TY_INT || et->kind == TY_FLT) return cat("(", CT(et), ")(", x, ")");
+    return x;
+}
+
+inline bool CodeGen::IsCName(const string &x) {
+    return !x.empty() && !isdigit((unsigned char)x[0]) &&
+           all_of(x.begin(), x.end(), [](char c) { return isalnum((unsigned char)c) || c == '_'; });
+}
+
 inline bool CodeGen::HasStmts(Node *n) {
     if (!n) return false;
     if (Is<Call>(n) || IsCtl(n) || Is<StrLit>(n)) return true;
