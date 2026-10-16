@@ -55,19 +55,19 @@ is the suite's base + increase of the resident set.
 
 | test | time, s | min | memory, MiB | its time / Goose's |
 |---|---:|---:|---:|---:|
-| goose | 0.797 | 0.774 | 1.29 + 0.00 | 1.00 |
-| c | 0.824 | 0.810 | 1.05 + 0.00 | 1.03 |
-| c++ | 0.778 | 0.772 | 2.00 + 0.00 | 0.98 |
-| rust | 0.741 | 0.728 | 1.14 + 0.00 | 0.93 |
+| goose | 0.749 | 0.740 | 1.29 + 0.00 | 1.00 |
+| c | 0.803 | 0.792 | 1.05 + 0.00 | 1.07 |
+| c++ | 0.754 | 0.752 | 2.00 + 0.00 | 1.01 |
+| rust | 0.715 | 0.712 | 1.12 + 0.00 | 0.95 |
 
 ### Brainfuck mandel.b
 
 | test | time, s | min | memory, MiB | its time / Goose's |
 |---|---:|---:|---:|---:|
-| goose | 8.838 | 8.747 | 2.30 + 0.00 | 1.00 |
-| c | 9.220 | 9.133 | 1.04 + 0.77 | 1.04 |
-| c++ | 9.246 | 9.125 | 3.67 + 0.52 | 1.05 |
-| rust | 9.879 | 9.836 | 1.16 + 1.04 | 1.12 |
+| goose | 8.716 | 8.590 | 2.30 + 0.00 | 1.00 |
+| c | 9.201 | 9.149 | 1.05 + 0.77 | 1.06 |
+| c++ | 9.192 | 9.164 | 3.68 + 0.52 | 1.05 |
+| rust | 9.880 | 9.844 | 1.14 + 1.04 | 1.13 |
 
 ### Base64
 
@@ -115,15 +115,14 @@ Goose is fastest of the four languages on Brainfuck mandel.b, Matmul and
 Primes, and of the implementations that are not SIMD libraries on
 Base64 and Json. It is behind in three places:
 
-* **Brainfuck bench.b, 7% behind Rust** (level with C and C++). Not the
-  bounds checks the tape's indexing keeps (Rust's test uses
+* **Brainfuck bench.b, 5% behind Rust** (level with C++, ahead of C). Not
+  the bounds checks the tape's indexing keeps (Rust's test uses
   `get_unchecked`): taking them out of the generated C moved it by 0-4%,
   inside the spread code placement alone gives (builds of the same source
-  differ by up to 10%). About half of it is the op loop: `for op in
-  program` keeps the slice's data, its length and an index, three
-  registers, two of which the recursive interpreter spills and reloads per
-  op, where Rust walks a pointer; the same C with the loop walking a
-  pointer was 3% faster on bench.b and 1-2% on mandel.b. Two other ways of
+  differ by up to 10%). `for op in program` walks a pointer to the end of
+  the ops, as Rust's loop does: around the recursive call, the slice's
+  data, its length and an index would take three registers, two of them
+  spilled and reloaded per op, which cost bench.b 2-3%. Two other ways of
   writing it were slower overall: a reference to the current cell, which in
   Goose stays valid as the tape grows (13% faster on bench.b, 14-30% slower
   on mandel.b), and the head's position passed into and out of each `run`

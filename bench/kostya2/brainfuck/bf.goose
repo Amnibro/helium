@@ -84,13 +84,7 @@ fn run_program(code: const u8[:], p: Printer&) {
     var pool: Op[>..] = [];
     var pending: Op[>..<] = [];
     var pos = 0;
-    execute(parse(code, pos, pool, pending), p);
-}
-
-// The tape is a local of a function of its own: next to the op pool, as a
-// local of run_program, the checker cannot tell the loop bodies run walks
-// from the tape it may shrink, and rejects the recursive call.
-fn execute(ops: Op[:], p: Printer&) {
+    let ops = parse(code, pos, pool, pending);
     var tape = new_tape();
     run(ops, tape, p);
 }
