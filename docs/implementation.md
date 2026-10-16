@@ -14,6 +14,7 @@
 - [9. Writing fast Goose](#9-writing-fast-goose)
 - [10. Where the compiler is more conservative than the specification](#10-where-the-compiler-is-more-conservative-than-the-specification)
 - [11. Audit findings and resolutions](#11-audit-findings-and-resolutions)
+- [12. The language server](#12-the-language-server)
 
 </details>
 
@@ -123,7 +124,8 @@ tags and branches again), `goose toolchain` prints the C
 compiler, cmake and git a build would use (`toolchain.h`: `--cc`,
 `GOOSE_CC`, `cc` in `GOOSE_HOME/config`, else discovery; `--json` for
 scripts, which also lists the modules whose packages are compiled in), and
-`goose version` prints the runtime hash. A first argument
+`goose version` prints the runtime hash, and `goose lsp` serves an
+editor over the Language Server Protocol (§12). A first argument
 that is no verb is read as the flags below,
 so `goose file.goose` is `goose run file.goose`. The verbs are the
 command line as documented; the flags are the plumbing they are built on
@@ -5801,3 +5803,88 @@ failures.
    packed-layout changes relocate bytes there; they do not materialize a
    separate result. Spec §4.3 allows that relocation, and separately allows
    staging a result of unknown length to check a limited receiver's capacity.
+
+---
+
+## 12. The language server
+
+`goose lsp` (`lsp.h`) serves an editor over the Language Server Protocol
+on stdin and stdout, as `docs/design/language_server.md` lays out: the
+compiler is the server, and a program is analyzed again, whole, each time
+one of its files changes. `goose lsp --probe` prints the protocol version
+served and exits, which a client runs to tell a compiler with the verb
+from one without.
+
+**Transport** (`lsp_rpc.h`). Messages are JSON-RPC framed by
+`Content-Length`, on streams put in binary mode (`SetBinaryStdio`,
+`main.cpp`). A reader thread parses each message as it arrives
+(`Transport::ReadAll`) into a queue the worker, the main thread, drains
+(`Transport::Pop`); a `$/cancelRequest` is noted rather than queued, and a
+request so named gets the protocol's cancelled error when its turn comes.
+A change to a document (`didOpen`, `didChange`, `didClose`) also sets
+`Transport::cancel`, which the parser polls at each top-level declaration
+and the checker at each body and statement (`Ast::CheckCancel`), throwing
+`Cancelled`: not a `CompileError`, so neither a tentative parse nor a
+driver's catch takes it for one. `JsonOut` writes the replies; `JsonQuote`
+(`json.h`) their strings. The protocol's positions are UTF-16 columns on
+0-based lines, the compiler's byte columns on 1-based ones: `TextIndex`
+converts between them and byte offsets over a file's text, `Utf16Col` and
+`ByteCol` within a line. `PathOfUri` and `UriOfPath` convert between
+`file:` URIs as VS Code spells them (`file:///c%3A/dir/a.goose`) and
+paths; `PathKey` is the form two spellings of one file share, lower case
+on Windows.
+
+**Workspace** (`lsp_workspace.h`). The open documents' texts are served to
+the compiler before the disk through `ParseProgram`'s `SourceProvider`.
+A root is a program analyzed: an entry file the editor configured
+(`initializationOptions.entryFiles`, or the `goose` section of its
+settings), or an open file no root reaches. A change to a file marks every
+root reaching it dirty, due after a debounce (`DEBOUNCE_MS`); an open file
+no root reaches becomes a root of its own, dropped again once a root
+reaches it or it closes. The worker analyzes a due root whenever no message
+is waiting (`Workspace::Analyze`, on the compile thread's stack through
+`RunOnCompilerStack`): parse, resolve, check with `nomain`, optimize and
+run bounds-check elimination, as `goose check` does, with
+`package_nofetch` set so that nothing is fetched. Every diagnostic is
+collected, the warnings through `Ast::warnsink` and the error from its
+`CompileError`, and published for every file the attempt reached (an empty
+list where it has none, so the editor drops the last attempt's), the
+related lines with a place as related information and the rest appended to
+the message. An attempt that got past resolution replaces the analysis the
+root's queries read; one that failed earlier keeps the last, so queries go
+on answering from it. A cancelled attempt leaves the root dirty.
+
+**Analysis** (`lsp_analysis.h`). The `Ast` as the check left it, with the
+indexes the features read. `FileIndex::occs` is every occurrence of a name
+in a file, by start offset: a use (`IDENT`, `DOT` for a member, `TYPE` for
+a type name, each with its source node or type expression) or a
+declaration or a part of one (`FN`, `STRUCT`, `ENUM`, `ALIAS`, `GLOBAL`,
+`LOCAL`, `FIELD`, `VARIANT`, `PARAM`, `GENERIC`, and `BINDER` for the
+variables a loop, a match arm or a block parameter binds), found by
+walking every declaration and body once; `FileIndex::calls` is every
+call's extent. `Analysis::clones` maps each source node to the clones the
+checker made of it, one per specialization (`Node::origin`), which carry
+`exprtype` and the resolutions (`Ident::vdef`, `Dot::fieldidx`,
+`Call::spec`); `Find` gives the first clone a predicate accepts, which is
+how a feature reads a type or a target, and `TypesOf` every distinct type
+the clones gave a node, for a generic body's hover.
+
+**Features** (`lsp_features.h`). Each request locates its file's analysis
+and the occurrence at its position (`Locate`, `FileIndex::At`). Hover
+renders a declaration header (`FnHeader`, `VariantHeader`), the type a
+clone gave the node, the specializations a function has (`SpecsText`) and
+the documentation comment (`DocText`, the `//` stripped); a name no
+instantiation reaches says so. Go to definition follows the resolution to
+the declaration's name (`DefinitionOf`), and on an `import` line opens the
+file (`Ast::imports`). Document symbols are the file's top-level
+declarations with their fields, variants and nested functions; workspace
+symbols every root's. Semantic tokens classify the occurrences by their
+resolution (`SemanticTokenOf`, the legend in `SEMANTIC_TYPES`). Signature
+help finds the innermost call whose parentheses hold the position
+(`FileIndex::CallAt`), counts the commas before it for the active
+parameter, and lists the overloads of the callee's name, the resolved one
+active.
+
+**Testing.** `test/lsp_protocol.py` (`docs/testing.md`) drives the server
+over its own protocol on the fixtures in `test/lsp/`, whose `// lsp:`
+lines state the queries and their answers.

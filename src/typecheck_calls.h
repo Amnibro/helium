@@ -2592,6 +2592,7 @@ inline int TypeCheck::EnvReach(const MatchInfo &mi) {
 // it broken. A member whose calls a round no longer reaches is left as it
 // is: nothing checked afterwards names it.
 inline void TypeCheck::CheckSpecBody(FnSpec *spec, vector<Val> *argvals, Line callline) {
+    ast.CheckCancel();
     struct RoundScope {
         TypeCheck &tc;
         RoundScope(TypeCheck &t) : tc(t) { tc.cyclerounds.push_back({ tc.CurDepth(), false }); }
@@ -2790,7 +2791,7 @@ inline void TypeCheck::CheckSpecBodyOnce(FnSpec *spec, vector<Val> *argvals, Lin
         auto &p = sf->params[i];
         auto pt = spec->argtypes[i];
         ValidateType(pt, sf->line, VT_PARAM);
-        auto vd = NewVar(p.name, pt, sf->line, p.isvar,
+        auto vd = NewVar(p.name, pt, p.line.line ? p.line : sf->line, p.isvar,
                          i < oldparams.size() ? oldparams[i] : nullptr);
         vd->isparam = true;
         vd->assigned = vd->maybeassigned = true;

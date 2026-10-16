@@ -468,6 +468,11 @@ analysis of §4, and diagnostics on change, hover, go to definition,
 document and workspace symbols, semantic tokens and signature help, all of
 which the annotations of a first-error analysis already support. The
 extension's client and fallback. A `test/lsp_protocol.py` from the start.
+The server side of this is in (`docs/implementation.md` §12: `lsp_rpc.h`,
+`lsp_workspace.h`, `lsp_analysis.h`, `lsp_features.h` and `lsp.h`, with
+`Ast::CheckCancel` and the shader cache in `CompileShader`); the index is
+one occurrence per name per file rather than a node-per-position table,
+and the extension's client is still to do.
 
 **Phase 2, more than one error:** D1, then D2; completion (both kinds),
 references and rename, inlay hints, folding and selection ranges. `goose

@@ -166,6 +166,7 @@ struct Parser {
     }
 
     void ParseTopDecl() {
+        ast.CheckCancel();
         auto line = CurLine();
         auto doc = lex.doc;
         curns = filens;

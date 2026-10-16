@@ -49,6 +49,11 @@
 #include "packages.h"
 #include "json.h"
 #include "native.h"
+#include "lsp_rpc.h"
+#include "lsp_analysis.h"
+#include "lsp_workspace.h"
+#include "lsp_features.h"
+#include "lsp.h"
 
 namespace goose {
 
@@ -374,6 +379,7 @@ void ParseProgram(Ast &ast, const string &rootpath, const vector<string> &stdlib
                 }
             }
             importsof[fileidx].push_back(imppath);
+            ast.imports.push_back({ imp.line, imp.end, imppath });
             if (loaded.insert(imppath).second) queue.push_back({ imppath, imppkg });
         }
     }
@@ -648,6 +654,7 @@ Commands:
   fetch      Fetch the packages a program declares.
   toolchain  Report the C compiler, cmake and git found, and GOOSE_HOME.
   version    Print the runtime version.
+  lsp        Serve an editor over the Language Server Protocol.
   help       Print this (or --help, -h); with a command, that command's help.
 
 Common options:
@@ -721,6 +728,22 @@ compiles nothing. A run or a build fetches what is missing as well.
 Options:
   --update              Fetch packages at a tag or branch again (a commit is
                         never fetched again).
+)";
+    if (topic == "lsp") return
+R"(usage: goose lsp [--stdlib dir]
+       goose lsp --probe
+
+Serves an editor over the Language Server Protocol, on stdin and stdout:
+diagnostics as files change, hover, go to definition, document and
+workspace symbols, semantic highlighting and signature help. It analyzes
+the programs whose entry files the editor configures (the
+initializationOptions' entryFiles, with the standard library's directory as
+stdlib) and every open file none of them imports. It fetches nothing: a
+package not fetched is an error at its import, which goose fetch resolves.
+
+Options:
+  --probe               Print the protocol version and exit.
+  --stdlib dir          The standard library's directory (or GOOSE_STDLIB).
 )";
     if (topic == "toolchain") return
 R"(usage: goose toolchain [--cc name|path] [--json] [--refresh]
@@ -924,7 +947,7 @@ int Main(int argc, char **argv) {
     if (argc > 1) {
         string v = argv[1];
         if (v == "run" || v == "build" || v == "check" || v == "fetch" || v == "toolchain" ||
-            v == "version" || v == "help") {
+            v == "version" || v == "help" || v == "lsp") {
             verb = v;
             firstarg = 2;
         }
@@ -953,6 +976,7 @@ int Main(int argc, char **argv) {
         printf("goose runtime %s\n", RuntimeVersion().c_str());
         return 0;
     }
+    if (verb == "lsp") return RunLsp(exe, vector<string>(argv + firstarg, argv + argc));
     string outname, headername, stdlibdir, shaderfile, shadersource, dumpfile;
     auto dump = false, dumpdocs = false, tokens = false, parseonly = false, specs = false;
     auto nocgen = false;
@@ -1480,6 +1504,8 @@ int Main(int argc, char **argv) {
     #define NOMINMAX
     #include <windows.h>
     #include <process.h>
+    #include <io.h>
+    #include <fcntl.h>
 #else
     #include <pthread.h>
     #include <unistd.h>
@@ -1489,6 +1515,16 @@ int Main(int argc, char **argv) {
 #endif
 
 namespace goose {
+
+// The language server's streams carry bytes with Content-Length counts,
+// which the text mode Windows gives them, translating line breaks, would
+// put off.
+void SetBinaryStdio() {
+    #ifdef _WIN32
+        _setmode(_fileno(stdin), _O_BINARY);
+        _setmode(_fileno(stdout), _O_BINARY);
+    #endif
+}
 
 // The running executable's path with links resolved, so that what is found
 // relative to the compiler (the standard library, the runtime sources) is found

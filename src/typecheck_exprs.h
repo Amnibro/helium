@@ -3247,6 +3247,7 @@ inline bool TypeCheck::UsedAfter(VarDef *v) {
 }
 
 inline void TypeCheck::CheckStmt(Node *n) {
+    ast.CheckCancel();
     // A statement inside a returned value's block is no part of that value:
     // the function's locals outlive it.
     FlagScope rs(inreturn, false);

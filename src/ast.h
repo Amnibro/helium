@@ -2257,6 +2257,20 @@ struct Ast {
     // to collect it as data (--diagnostics json).
     function<void(const Diagnostic &)> warnsink;
 
+    // Set where an analysis may be abandoned for a newer one (the language
+    // server, lsp_workspace.h): the parser polls it at each top-level
+    // declaration and the checker at each body and statement, and throw
+    // Cancelled when it is set.
+    const atomic<bool> *cancel = nullptr;
+    void CheckCancel() const {
+        if (cancel && cancel->load(memory_order_relaxed)) throw Cancelled {};
+    }
+
+    // Every `import` as a file wrote it, with the file it resolved to: what
+    // a go to definition on the import line opens.
+    struct ImportSite { Line line; Line end; string path; };
+    vector<ImportSite> imports;
+
     // The text the terminal shows for d (RenderDiagnostic), the source line
     // it is on included where `withsource`: an error echoes its line, a
     // warning does not.

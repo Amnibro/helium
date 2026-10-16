@@ -1446,8 +1446,10 @@ def main():
 
     # One level of category directories; nested syntax helpers and the modules
     # of the goose_in_goose bootstrap are exercised through their entry points.
+    # The lsp/ fixtures are the language server's, driven by lsp_protocol.py.
     tests = [f for f in sorted(HERE.glob("*/*.goose"))
-             if f.parent.name not in ("errors", "errors_tc", "goose_in_goose") and f.name != "lexer_tokens.goose"]
+             if f.parent.name not in ("errors", "errors_tc", "goose_in_goose", "lsp") and
+             f.name != "lexer_tokens.goose"]
     if len({f.stem for f in tests}) != len(tests):
         ap.error("fixture names must be unique across categories (shared expected/ and build outputs)")
     # A gfx, physics or ui fixture with error markers is a rejection test,
@@ -2024,6 +2026,16 @@ def main():
         except (RuntimeError, OSError, subprocess.TimeoutExpired) as e:
             r.fail("documentation comments", str(e))
     r.show_task(doc_comments)
+
+    def lsp_protocol():
+        from lsp_protocol import check_lsp_protocol
+        try:
+            check_lsp_protocol(exe, gendir)
+            r.ok("language server: diagnostics, hover, definition, symbols, semantic tokens, "
+                 "signature help, edits and cancellation")
+        except (RuntimeError, OSError, subprocess.TimeoutExpired) as e:
+            r.fail("language server", str(e))
+    r.show_task(lsp_protocol)
 
     def runtime_cache():
         from runtime_cache import check_runtime_cache

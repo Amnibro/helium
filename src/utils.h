@@ -103,6 +103,11 @@ inline string RenderDiagnostic(const Diagnostic &d, string_view filename, string
     return s;
 }
 
+// Thrown by the parser and the checker where Ast::cancel is set: the analysis
+// a language server abandons for a newer one. Not a CompileError, so no
+// tentative parse or recovery takes it for an error of the program.
+struct Cancelled {};
+
 // Compile errors (in the program being compiled) throw their text, caught in
 // main, with the same as data where the error has a place in the program
 // (bounds-check-free functions report every check kept at once; a driver's
