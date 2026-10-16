@@ -339,18 +339,17 @@ static uint64_t gs_bytemask(int64_t k) {
    on the length; as the C library's memcpy, it takes runs that do not
    overlap. */
 static void gs_memcpy(void *dst, const void *src, size_t n) {
-#ifndef __TINYC__
     uint8_t *d = (uint8_t *)dst;
     const uint8_t *s = (const uint8_t *)src;
     if (n <= 16) {
         if (n >= 8) {
             uint64_t a = gs_ld64(s), b = gs_ld64(s + n - 8);
-            memcpy(d, &a, 8);
-            memcpy(d + n - 8, &b, 8);
+            GS_MEMCPY(d, &a, 8);
+            GS_MEMCPY(d + n - 8, &b, 8);
         } else if (n >= 4) {
             uint32_t a = gs_ld32(s), b = gs_ld32(s + n - 4);
-            memcpy(d, &a, 4);
-            memcpy(d + n - 4, &b, 4);
+            GS_MEMCPY(d, &a, 4);
+            GS_MEMCPY(d + n - 4, &b, 4);
         } else if (n) {
             uint8_t a = s[0], b = s[n >> 1], c = s[n - 1];
             d[0] = a;
@@ -360,12 +359,11 @@ static void gs_memcpy(void *dst, const void *src, size_t n) {
         return;
     }
     if (n <= 256) {
-        for (size_t i = 0; i + 16 < n; i += 16) memcpy(d + i, s + i, 16);
-        memcpy(d + n - 16, s + n - 16, 16);
+        for (size_t i = 0; i + 16 < n; i += 16) GS_MEMCPY(d + i, s + i, 16);
+        GS_MEMCPY(d + n - 16, s + n - 16, 16);
         return;
     }
-#endif
-    if (n) memcpy(dst, src, n);
+    memcpy(dst, src, n);
 }
 
 static void gs_memmove(void *dst, const void *src, size_t n) {
@@ -377,9 +375,7 @@ static void gs_memmove(void *dst, const void *src, size_t n) {
    the last 16 overlapping, up to 256, the library's memcmp beyond. Below
    that a call and memcmp's own dispatch cost more than the compare. The
    longer compares are a function of their own, so that gs_memeq stays small
-   enough for the C compiler to inline where the length is known. TinyCC
-   inlines no memcpy, so its build calls memcmp for every length. */
-#ifndef __TINYC__
+   enough for the C compiler to inline where the length is known. */
 static GS_NOINLINE int gs_memeq_long(const uint8_t *p, const uint8_t *q, size_t n) {
     if (n > 256) return memcmp(p, q, n) == 0;
     for (size_t i = 0; i + 16 < n; i += 16)
@@ -388,10 +384,8 @@ static GS_NOINLINE int gs_memeq_long(const uint8_t *p, const uint8_t *q, size_t 
     return ((gs_ld64(p + n - 16) ^ gs_ld64(q + n - 16)) |
             (gs_ld64(p + n - 8) ^ gs_ld64(q + n - 8))) == 0;
 }
-#endif
 
 static int gs_memeq(const void *a, const void *b, size_t n) {
-#ifndef __TINYC__
     const uint8_t *p = (const uint8_t *)a, *q = (const uint8_t *)b;
     if (n >= 8 && n <= 16)
         return ((gs_ld64(p) ^ gs_ld64(q)) | (gs_ld64(p + n - 8) ^ gs_ld64(q + n - 8))) == 0;
@@ -400,9 +394,6 @@ static int gs_memeq(const void *a, const void *b, size_t n) {
     if (n < 4)
         return n == 0 || ((p[0] ^ q[0]) | (p[n >> 1] ^ q[n >> 1]) | (p[n - 1] ^ q[n - 1])) == 0;
     return gs_memeq_long(p, q, n);
-#else
-    return n == 0 || memcmp(a, b, n) == 0;
-#endif
 }
 
 /* ---------------------------------------------------------------------------

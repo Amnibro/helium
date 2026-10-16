@@ -353,18 +353,17 @@ static uint64_t gs_bytemask(int64_t k) {
    overlap. */
 )GSRT"
 R"GSRT(static void gs_memcpy(void *dst, const void *src, size_t n) {
-#ifndef __TINYC__
     uint8_t *d = (uint8_t *)dst;
     const uint8_t *s = (const uint8_t *)src;
     if (n <= 16) {
         if (n >= 8) {
             uint64_t a = gs_ld64(s), b = gs_ld64(s + n - 8);
-            memcpy(d, &a, 8);
-            memcpy(d + n - 8, &b, 8);
+            GS_MEMCPY(d, &a, 8);
+            GS_MEMCPY(d + n - 8, &b, 8);
         } else if (n >= 4) {
             uint32_t a = gs_ld32(s), b = gs_ld32(s + n - 4);
-            memcpy(d, &a, 4);
-            memcpy(d + n - 4, &b, 4);
+            GS_MEMCPY(d, &a, 4);
+            GS_MEMCPY(d + n - 4, &b, 4);
         } else if (n) {
             uint8_t a = s[0], b = s[n >> 1], c = s[n - 1];
             d[0] = a;
@@ -374,12 +373,11 @@ R"GSRT(static void gs_memcpy(void *dst, const void *src, size_t n) {
         return;
     }
     if (n <= 256) {
-        for (size_t i = 0; i + 16 < n; i += 16) memcpy(d + i, s + i, 16);
-        memcpy(d + n - 16, s + n - 16, 16);
+        for (size_t i = 0; i + 16 < n; i += 16) GS_MEMCPY(d + i, s + i, 16);
+        GS_MEMCPY(d + n - 16, s + n - 16, 16);
         return;
     }
-#endif
-    if (n) memcpy(dst, src, n);
+    memcpy(dst, src, n);
 }
 
 static void gs_memmove(void *dst, const void *src, size_t n) {
@@ -391,9 +389,7 @@ static void gs_memmove(void *dst, const void *src, size_t n) {
    the last 16 overlapping, up to 256, the library's memcmp beyond. Below
    that a call and memcmp's own dispatch cost more than the compare. The
    longer compares are a function of their own, so that gs_memeq stays small
-   enough for the C compiler to inline where the length is known. TinyCC
-   inlines no memcpy, so its build calls memcmp for every length. */
-#ifndef __TINYC__
+   enough for the C compiler to inline where the length is known. */
 static GS_NOINLINE int gs_memeq_long(const uint8_t *p, const uint8_t *q, size_t n) {
     if (n > 256) return memcmp(p, q, n) == 0;
     for (size_t i = 0; i + 16 < n; i += 16)
@@ -402,10 +398,8 @@ static GS_NOINLINE int gs_memeq_long(const uint8_t *p, const uint8_t *q, size_t 
     return ((gs_ld64(p + n - 16) ^ gs_ld64(q + n - 16)) |
             (gs_ld64(p + n - 8) ^ gs_ld64(q + n - 8))) == 0;
 }
-#endif
 
 static int gs_memeq(const void *a, const void *b, size_t n) {
-#ifndef __TINYC__
     const uint8_t *p = (const uint8_t *)a, *q = (const uint8_t *)b;
     if (n >= 8 && n <= 16)
         return ((gs_ld64(p) ^ gs_ld64(q)) | (gs_ld64(p + n - 8) ^ gs_ld64(q + n - 8))) == 0;
@@ -414,9 +408,6 @@ static int gs_memeq(const void *a, const void *b, size_t n) {
     if (n < 4)
         return n == 0 || ((p[0] ^ q[0]) | (p[n >> 1] ^ q[n >> 1]) | (p[n - 1] ^ q[n - 1])) == 0;
     return gs_memeq_long(p, q, n);
-#else
-    return n == 0 || memcmp(a, b, n) == 0;
-#endif
 }
 
 /* ---------------------------------------------------------------------------
@@ -526,11 +517,11 @@ static T gs_shr_##SFX(T a, int64_t n) { \
 
 /* Unsigned types wrap modulo 2^width by definition (§6.2) in every build:
    plain C unsigned arithmetic, truncated back to the width. */
-)GSRT"
-R"GSRT(#define GS_INTOPS_U(SFX, T, MAX, BITS) \
+#define GS_INTOPS_U(SFX, T, MAX, BITS) \
 static T gs_add_##SFX(T a, T b) { return (T)(a + b); } \
 static T gs_sub_##SFX(T a, T b) { return (T)(a - b); } \
-static T gs_mul_##SFX(T a, T b) { return (T)((uint64_t)a * (uint64_t)b); } \
+)GSRT"
+R"GSRT(static T gs_mul_##SFX(T a, T b) { return (T)((uint64_t)a * (uint64_t)b); } \
 static T gs_shl_##SFX(T a, int64_t n) { \
     return (T)((uint64_t)a << (n & (BITS - 1))); } \
 static T gs_shr_##SFX(T a, int64_t n) { \
@@ -715,13 +706,13 @@ static uint64_t gs_divu_q(uint64_t x, uint64_t magic, uint8_t more) {
 /* The same for a dividend and divisor that fit in 32 bits, with a 32-bit
    magic: x / d is the high half of a 32x32 product, which a C compiler
    vectorizes where it keeps the 64x64 one scalar, and which needs no
-)GSRT"
-R"GSRT(   128-bit arithmetic, so only a zero divisor gets GS_DIVU_NONE. */
+   128-bit arithmetic, so only a zero divisor gets GS_DIVU_NONE. */
 static uint32_t gs_divu32_gen(uint32_t d, uint8_t *more) {
     int k = 31;
     uint64_t n;
     uint32_t m, rem;
-    if (d == 0) { *more = GS_DIVU_NONE; return 0; }
+)GSRT"
+R"GSRT(    if (d == 0) { *more = GS_DIVU_NONE; return 0; }
     while (!(d >> k)) k--;
     if (!(d & (d - 1))) { *more = (uint8_t)k; return 0; }
     n = (uint64_t)1 << (32 + k);
@@ -900,13 +891,13 @@ static void gs_stack_init(gs_stack *s) {
 static void gs_stack_block(int64_t n) {
     gs_stks = (gs_stack *)calloc((size_t)(n > 0 ? n : 1), sizeof(gs_stack));
     if (!gs_stks) gs_panic("out of memory allocating stack block");
-)GSRT"
-R"GSRT(    for (int64_t i = 0; i < n; i++) gs_stack_init(&gs_stks[i]);
+    for (int64_t i = 0; i < n; i++) gs_stack_init(&gs_stks[i]);
     gs_nstks = n;
 }
 
 /* The compiler passes the main program's stack count and the most regions
-   it and any one worker hold: their stacks plus the dedicated ones of the
+)GSRT"
+R"GSRT(   it and any one worker hold: their stacks plus the dedicated ones of the
    globals and of a worker's arguments. */
 static void gs_rt_init(int argc, char **argv, int64_t mainstacks, int64_t mainregions,
                        int64_t workerregions) {
@@ -1101,12 +1092,12 @@ GS_API int64_t gs_fmt_u64(uint8_t *dst, uint64_t v);
 GS_API int64_t gs_fmt_f64(uint8_t *dst, double v);
 GS_API int64_t gs_fmt_f32(uint8_t *dst, float v);
 GS_API int64_t gs_fmt_bool(uint8_t *dst, int64_t v);
-)GSRT"
-R"GSRT(/* A u8 array inside an aggregate: quoted, with the escapes Goose reads. */
+/* A u8 array inside an aggregate: quoted, with the escapes Goose reads. */
 GS_API int64_t gs_fmt_quoted(uint8_t *dst, const uint8_t *s, int64_t n);
 
 /* print(...) (§3.7): each argument's text, then a newline. */
-GS_API void gs_out_int(int64_t v);
+)GSRT"
+R"GSRT(GS_API void gs_out_int(int64_t v);
 GS_API void gs_out_uint(uint64_t v);
 GS_API void gs_out_flt(double v);
 GS_API void gs_out_f32(float v);
