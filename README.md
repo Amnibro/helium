@@ -363,14 +363,15 @@ per-object teardown, contiguous data, narrow links, and enums sized for the
 variant they contain. Every index is bounds-checked, and the compiler removes
 checks it can prove unnecessary. An `assert` on a slice length often lets a
 kernel eliminate its remaining checks and vectorize. `--bce-lines` reports
-the checks that remain. Benchmark measurements use whole-process wall-clock
-time, including teardown.
+the checks that remain. `checkfree fn` rejects a kernel if any bounds check
+survives; index types let graph edges retain validation done during construction.
+Benchmark measurements use whole-process wall-clock time, including teardown.
 
 | Geometric mean over 16 benchmarks | vs idiomatic C++ | vs hand-optimized C++ | vs best safe Rust |
 |---|---:|---:|---:|
-| speed, MSVC backend | 3.30x | 1.16x | 1.04x |
-| speed, clang backend | 3.35x | 1.19x | 1.12x |
-| peak memory | 1.93x less | 1.30x less | 1.24x less |
+| speed, MSVC backend | 3.51x | 1.24x | 1.13x |
+| speed, clang backend | 3.54x | 1.26x | 1.19x |
+| peak memory | 1.95x less | 1.32x less | 1.25x less |
 
 The [summary](bench/summary.md) explains the gains and losses;
 [results.md](bench/results.md) has every measurement, and
