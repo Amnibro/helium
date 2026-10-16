@@ -30,6 +30,8 @@ async function run() {
     await config.update('compilerPath', process.env.GOOSE_TEST_COMPILER || compilerPath('', root), vscode.ConfigurationTarget.WorkspaceFolder);
     await config.update('entryFile', 'main.goose', vscode.ConfigurationTarget.WorkspaceFolder);
     await config.update('checkOnSave', false, vscode.ConfigurationTarget.WorkspaceFolder);
+    // The checks of saved files first; the language server at the end.
+    await config.update('useLanguageServer', false, vscode.ConfigurationTarget.Workspace);
     const main = vscode.Uri.joinPath(folder.uri, 'main.goose');
     const helper = vscode.Uri.joinPath(folder.uri, 'helper.goose');
     await fs.writeFile(main.fsPath, 'import helper;\nfn main() { helper(); }\n');
@@ -138,6 +140,24 @@ async function run() {
     }), other.fsPath);
     assert.equal(vscode.debug.activeDebugSession, undefined, 'JIT runs do not create a debugger session');
     console.log('Goose extension host: editor features, diagnostics, build tasks and JIT run configurations passed.');
+
+    // The language server, where the compiler serves one: it answers the
+    // editor's hover for the program, in place of the checks of saved files.
+    await config.update('useLanguageServer', true, vscode.ConfigurationTarget.Workspace);
+    const server = () => extension.exports.server();
+    const deadline = Date.now() + 15000;
+    while (server().status !== 'running' && Date.now() < deadline) await new Promise(resolve => setTimeout(resolve, 100));
+    if (server().status !== 'running') {
+        console.log('Goose extension host: the compiler serves no language server; its checks were skipped.');
+        return;
+    }
+    const mainDoc = await vscode.workspace.openTextDocument(main);
+    await vscode.window.showTextDocument(mainDoc);
+    await until(async () => {
+        const hovers = await vscode.commands.executeCommand('vscode.executeHoverProvider', main, new vscode.Position(1, 12));
+        return (hovers || []).some(hover => hover.contents.some(content => String(content.value ?? content).includes('fn helper')));
+    }, 'the language server answers a hover on the call of helper');
+    console.log('Goose extension host: the language server answered a hover.');
 }
 
 module.exports = { run };
