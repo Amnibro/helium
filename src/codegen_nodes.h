@@ -601,7 +601,10 @@ inline void MatchExpr::CgAny(CodeGen &cg, const Dst &d) {
         tag = varmode ? cat("*(", cg.IntCT(cg.TagStore(ei->en)), " *)", p)
                       : cat("((", cg.CT(enumtype), " *)", p, ")->tag");
     } else {
-        sv = cg.GenPure(scrutinee);
+        // The value is read twice, for its tag and for an arm's binder, which
+        // the arm copies first thing: a variable needs no copy of its own.
+        sv = cg.GenX(scrutinee);
+        if (!cg.IsCName(sv)) sv = cg.Snapshot(scrutinee->exprtype, sv);
         tag = cat(sv, ".tag");
     }
     cg.L("switch (", tag, ") {");
