@@ -1,25 +1,33 @@
 // Goose compiler — a language server's analysis of one program
 // (docs/design/language_server.md §4): the Ast a check of a root left,
 // the diagnostics it gave, and the indexes the features read: every
-// occurrence of a name in each file, every call's extent, and each source
-// node's clones, which carry the types and resolutions the checker made
-// per specialization (Node::origin).
+// occurrence of a name in each file, every call's and every node's extent,
+// where each checked variable is declared, and each source node's clones,
+// which carry the types and resolutions the checker made per
+// specialization (Node::origin).
 #pragma once
 
 namespace goose {
 
+// A place in a file: a name's, or an extent's.
+struct Place {
+    int fileidx = -1;
+    size_t start = 0, len = 0;
+    bool Known() const { return fileidx >= 0; }
+};
+
 // A name as a file has it: a use, or a declaration of something.
 struct Occurrence {
     enum Kind {
-        IDENT, DOT, TYPE,                           // Uses: a name, a member, a type name.
+        IDENT, DOT, TYPE, INIT,                     // Uses: a name, a member, a type name, a literal's field.
         FN, STRUCT, ENUM, ALIAS, GLOBAL, LOCAL,     // Declarations.
         FIELD, VARIANT, PARAM, GENERIC, BINDER      // Parts of declarations, and the bindings of loops, arms and blocks.
     };
     Kind kind = IDENT;
     size_t start = 0, len = 0;      // In the file's text.
     string_view name;
-    const Node *node = nullptr;     // IDENT, DOT: the source node. GLOBAL, LOCAL: the VarDecl.
-                                    // BINDER: the ForLoop, MatchExpr or FunVal.
+    const Node *node = nullptr;     // IDENT, DOT: the source node. INIT: the StructLit. GLOBAL,
+                                    // LOCAL: the VarDecl. BINDER: the ForLoop, MatchExpr or FunVal.
     TypeExpr *type = nullptr;       // TYPE
     SFunction *sf = nullptr;        // FN, PARAM
     SStruct *st = nullptr;          // STRUCT, FIELD of a struct
@@ -29,11 +37,14 @@ struct Occurrence {
     const SVariant *variant = nullptr;      // VARIANT, FIELD of a variant
     const Param *param = nullptr;   // PARAM
     const GenericParam *generic = nullptr;  // GENERIC
-    int index = 0;                  // GLOBAL, LOCAL: which name. BINDER: 0 the loop
-                                    // variable, 1 its index; a match arm's number; a
+    int index = 0;                  // GLOBAL, LOCAL: which name. INIT: which initializer. BINDER: 0
+                                    // the loop variable, 1 its index; a match arm's number; a
                                     // block parameter's number.
     bool callee = false;            // IDENT, DOT: a call's callee.
     bool isvar = false;             // A declaration that can be assigned.
+
+    // Whether it declares what it names rather than using it.
+    bool IsDeclaration() const { return kind >= FN; }
 };
 
 // A call's extent, for the signature help at a position inside it.
@@ -42,12 +53,21 @@ struct CallSpan {
     const Call *call = nullptr;
 };
 
+// A node's extent: from the first token in it (a binary's left operand,
+// which lies before the operator the node is anchored at) to one past its
+// last.
+struct NodeSpan {
+    size_t start = 0, end = 0;
+    const Node *node = nullptr;
+};
+
 struct FileIndex {
     int fileidx = 0;
     string uri;
     TextIndex text;
     vector<Occurrence> occs;        // By start, one per start.
     vector<CallSpan> calls;         // By start.
+    vector<NodeSpan> spans;         // By start, the outer of two starting together first.
 
     // The occurrence covering an offset.
     const Occurrence *At(size_t offset) const {
@@ -66,16 +86,36 @@ struct FileIndex {
         }
         return found;
     }
+    // The node extents holding an offset, outer first. An offset at an
+    // extent's end is in it, so that the end of a name still selects it.
+    vector<const NodeSpan *> SpansAt(size_t offset) const {
+        vector<const NodeSpan *> found;
+        for (auto &s : spans) {
+            if (s.start > offset) break;
+            if (offset <= s.end) found.push_back(&s);
+        }
+        return found;
+    }
 };
 
 struct Analysis {
     unique_ptr<Ast> ast;
     bool parsed = false;            // Past resolution: the indexes stand on a whole program.
     bool checked = false;           // Checked, optimized and bounds-check analyzed without error.
+    bool built = false;             // The indexes below stand.
     vector<Diagnostic> diags;       // Warnings as they came, then the error's.
     map<string, int> fileof;        // PathKey -> index in ast->sources.
     vector<FileIndex> files;        // Per source.
     unordered_map<const Node *, vector<Node *>> clones;   // Source node -> its clones.
+    // Where each checked variable is declared: the `let` or `var` of a
+    // local or global, and the place of its name, which for a loop's, an
+    // arm's or a block parameter's binding the checker does not keep (it
+    // places those at the loop, the match or the call). A binding with no
+    // place is synthesized, such as a block's implicit `it`.
+    unordered_map<const VarDef *, const VarDecl *> vardecls;
+    unordered_map<const VarDef *, Place> defplaces;
+    // The variant a match pattern's name (its source Ident) resolved to.
+    unordered_map<const Node *, const SVariant *> patternvariants;
 
     int FileOf(const string &key) const {
         auto it = fileof.find(key);
@@ -112,20 +152,10 @@ struct Analysis {
     }
 
     // The declaration (as the source has it) of a variable the checker
-    // made: a global's, or a local's found in the body it is in.
+    // made: the `let` or `var` of a local or a global.
     const VarDecl *VarDeclOf(const VarDef *vd) const {
-        for (auto g : ast->globals)
-            for (auto d : g->defs) if (d == vd) return g;
-        const VarDecl *found = nullptr;
-        function<void(Node *)> walk = [&](Node *n) {
-            if (!n || found) return;
-            if (auto v = Is<VarDecl>(n))
-                for (auto d : v->defs) if (d == vd) { found = (const VarDecl *)v->Origin(); return; }
-            if (auto c = Is<Call>(n)) if (c->fvbody) walk(c->fvbody);
-            n->Children(walk);
-        };
-        for (auto sp : ast->fnspecs) if (sp->body && !found) walk(sp->body);
-        return found;
+        auto it = vardecls.find(vd);
+        return it == vardecls.end() ? nullptr : it->second;
     }
 
     // The byte offset of a name the parser kept as a view into the file's
@@ -134,6 +164,11 @@ struct Analysis {
         auto &src = *ast->sources[(size_t)fileidx].second;
         if (name.data() < src.data() || name.data() + name.size() > src.data() + src.size()) return -1;
         return name.data() - src.data();
+    }
+    Place PlaceOfView(int fileidx, string_view name) const {
+        if (fileidx < 0 || fileidx >= (int)files.size() || name.empty()) return {};
+        auto off = OffsetOfView(fileidx, name);
+        return off < 0 ? Place {} : Place { fileidx, (size_t)off, name.size() };
     }
 
     // The files: their texts, line starts and URIs, which publishing the
@@ -152,20 +187,23 @@ struct Analysis {
 
     // The rest of the indexes, from the Ast as the check left it.
     void Build() {
+        if (built) return;
+        built = true;
         auto &a = *ast;
         if (files.size() != a.sources.size()) IndexFiles();
+        auto infile = [&](int fileidx) { return fileidx >= 0 && fileidx < (int)files.size(); };
         auto add = [&](Occurrence o, int fileidx, int64_t start) {
-            if (start < 0 || fileidx < 0 || fileidx >= (int)files.size() || !o.len) return;
+            if (start < 0 || !infile(fileidx) || !o.len) return;
             o.start = (size_t)start;
             files[(size_t)fileidx].occs.push_back(o);
         };
         auto view = [&](Occurrence o, int fileidx, string_view name) {
             o.name = name;
             o.len = name.size();
-            add(o, fileidx, OffsetOfView(fileidx, name));
+            add(o, fileidx, infile(fileidx) ? OffsetOfView(fileidx, name) : -1);
         };
         auto at = [&](Occurrence o, Line l, string_view name) {
-            if (l.line <= 0 || l.fileidx < 0 || l.fileidx >= (int)files.size()) return;
+            if (l.line <= 0 || !infile(l.fileidx)) return;
             o.name = name;
             o.len = name.size();
             add(o, l.fileidx, files[(size_t)l.fileidx].text.OffsetOf(l.line, l.col));
@@ -243,7 +281,7 @@ struct Analysis {
         // copies share it and are left out, as is a place that does not
         // spell the type's name (a declaration's own type at its keyword).
         for (auto t : a.alltypes) {
-            if (t->line.line <= 0 || t->line.fileidx < 0 || t->line.fileidx >= (int)files.size()) continue;
+            if (t->line.line <= 0 || !infile(t->line.fileidx)) continue;
             string_view leaf;
             switch (t->kind) {
                 case TY_STRUCT:  leaf = t->struc->st->name; break;
@@ -269,9 +307,13 @@ struct Analysis {
             o.len = len;
             add(o, t->line.fileidx, start);
         }
-        // Uses inside bodies and initializers, and the bindings declared there.
-        function<void(Node *, bool)> visit = [&](Node *n, bool callee) {
-            if (!n) return;
+        // Uses inside bodies and initializers, the bindings declared there,
+        // and the extent of every node, from the earliest token in it to
+        // its end: a visit gives where its node's tokens start, -1 for
+        // none known.
+        unordered_map<const Node *, const FunVal *> funvals;    // A block's body -> the block.
+        function<int64_t(Node *, bool)> visit = [&](Node *n, bool callee) -> int64_t {
+            if (!n) return -1;
             auto fileidx = n->line.fileidx;
             if (auto id = Is<Ident>(n)) {
                 Occurrence o;
@@ -286,9 +328,17 @@ struct Analysis {
                 o.callee = callee;
                 o.name = d->name;
                 o.len = d->name.size();
-                if (n->end.line > 0 && n->end.fileidx == fileidx) {
+                if (n->end.line > 0 && n->end.fileidx == fileidx && infile(fileidx)) {
                     auto end = files[(size_t)fileidx].text.OffsetOf(n->end.line, n->end.col);
                     if (end >= (int64_t)o.len) add(o, fileidx, end - (int64_t)o.len);
+                }
+            } else if (auto sl = Is<StructLit>(n)) {
+                for (size_t i = 0; i < sl->inits.size(); i++) {
+                    if (sl->inits[i].name.empty()) continue;
+                    auto o = decl(Occurrence::INIT);
+                    o.node = n;
+                    o.index = (int)i;
+                    view(o, fileidx, sl->inits[i].name);
                 }
             } else if (auto vd = Is<VarDecl>(n)) {
                 if (!vd->isglobal && !vd->results)
@@ -318,6 +368,7 @@ struct Analysis {
                     view(o, fileidx, m->arms[i].pat.binder);
                 }
             } else if (auto fv = Is<FunVal>(n)) {
+                funvals[fv->body] = fv;
                 for (size_t i = 0; i < fv->params.size(); i++) {
                     auto o = decl(Occurrence::BINDER);
                     o.node = n;
@@ -326,19 +377,30 @@ struct Analysis {
                     at(o, fv->params[i].line, fv->params[i].name);
                 }
             }
+            int64_t start = infile(fileidx) && n->line.line > 0
+                ? files[(size_t)fileidx].text.OffsetOf(n->line.line, n->line.col) : -1;
+            auto child = [&](Node *ch, bool iscallee) {
+                auto s = visit(ch, iscallee);
+                if (s >= 0 && ch->line.fileidx == fileidx && (start < 0 || s < start)) start = s;
+            };
             if (auto c = Is<Call>(n)) {
-                if (n->line.line > 0 && n->end.line > 0 && fileidx >= 0 && fileidx < (int)files.size()) {
+                if (start >= 0 && n->end.line > 0) {
                     auto &f = files[(size_t)fileidx];
-                    auto start = f.text.OffsetOf(n->line.line, n->line.col);
                     auto end = f.text.OffsetOf(n->end.line, n->end.col);
-                    if (start >= 0 && end >= start) f.calls.push_back({ (size_t)start, (size_t)end, c });
+                    if (end >= start) f.calls.push_back({ (size_t)start, (size_t)end, c });
                 }
-                visit(c->callee, true);
-                for (auto arg : c->args) visit(arg, false);
-                if (c->trailing) visit(c->trailing, false);
-                return;
+                child(c->callee, true);
+                for (auto arg : c->args) child(arg, false);
+                if (c->trailing) child(c->trailing, false);
+            } else {
+                n->Children([&](Node *ch) { child(ch, false); });
             }
-            n->Children([&](Node *ch) { visit(ch, false); });
+            if (start >= 0 && n->end.line > 0 && n->end.fileidx == fileidx) {
+                auto &f = files[(size_t)fileidx];
+                auto end = f.text.OffsetOf(n->end.line, n->end.col);
+                if (end >= start) f.spans.push_back({ (size_t)start, (size_t)end, n });
+            }
+            return start;
         };
         for (auto sf : a.functions) {
             if (sf->body) visit(sf->body, false);
@@ -352,6 +414,14 @@ struct Analysis {
         for (auto g : a.globals) {
             for (auto init : g->inits) visit(init, false);
         }
+        // The declarations' extents, outermost of all.
+        for (auto d : a.topdecls) {
+            if (d->line.line <= 0 || d->end.line <= 0 || !infile(d->line.fileidx)) continue;
+            auto &f = files[(size_t)d->line.fileidx];
+            auto start = f.text.OffsetOf(d->line.line, d->line.col);
+            auto end = f.text.OffsetOf(d->end.line, d->end.col);
+            if (start >= 0 && end >= start) f.spans.push_back({ (size_t)start, (size_t)end, d });
+        }
         for (auto &f : files) {
             stable_sort(f.occs.begin(), f.occs.end(),
                         [](const Occurrence &x, const Occurrence &y) { return x.start < y.start; });
@@ -360,20 +430,65 @@ struct Analysis {
                          f.occs.end());
             stable_sort(f.calls.begin(), f.calls.end(),
                         [](const CallSpan &x, const CallSpan &y) { return x.start < y.start; });
+            stable_sort(f.spans.begin(), f.spans.end(), [](const NodeSpan &x, const NodeSpan &y) {
+                return x.start != y.start ? x.start < y.start : x.end > y.end;
+            });
         }
         // The clones: every specialization's body, the bodies of the
         // function values its calls checked, and the defaults they made.
+        // From them, where each checked variable is declared and what each
+        // match pattern names, which the source nodes alone do not say.
+        auto bind = [&](const VarDef *vd, Place p) { if (vd && p.Known()) defplaces[vd] = p; };
         function<void(Node *)> mark = [&](Node *n) {
             if (!n) return;
             if (n->origin) clones[n->origin].push_back(n);
-            if (auto c = Is<Call>(n)) {
-                if (c->fvbody) mark(c->fvbody);
+            auto fileidx = n->Origin()->line.fileidx;
+            if (auto v = Is<VarDecl>(n)) {
+                auto o = Is<VarDecl>(n->Origin());
+                for (size_t i = 0; i < v->defs.size() && i < o->names.size(); i++) {
+                    if (!v->defs[i]) continue;
+                    vardecls[v->defs[i]] = o;
+                    bind(v->defs[i], PlaceOfView(fileidx, o->names[i]));
+                }
+            } else if (auto fl = Is<ForLoop>(n)) {
+                auto o = Is<ForLoop>(n->Origin());
+                bind(fl->vdef, PlaceOfView(fileidx, o->var));
+                bind(fl->idxdef, PlaceOfView(fileidx, o->idxvar));
+            } else if (auto m = Is<MatchExpr>(n)) {
+                auto o = Is<MatchExpr>(n->Origin());
+                for (size_t i = 0; i < m->arms.size() && i < o->arms.size(); i++) {
+                    auto &arm = m->arms[i];
+                    bind(arm.binder, PlaceOfView(fileidx, o->arms[i].pat.binder));
+                    if (arm.variants.size() != arm.pat.items.size()) continue;
+                    for (size_t k = 0; k < arm.variants.size(); k++)
+                        if (arm.pat.items[k].lo && arm.variants[k])
+                            patternvariants[arm.pat.items[k].lo->Origin()] = arm.variants[k];
+                }
+            } else if (auto c = Is<Call>(n)) {
+                if (c->fvbody) {
+                    // The block's parameters, where the block spells them.
+                    if (auto it = funvals.find(c->fvbody->Origin()); it != funvals.end())
+                        for (size_t i = 0; i < c->fvparams.size() && i < it->second->params.size(); i++) {
+                            auto &p = it->second->params[i];
+                            if (p.line.line <= 0 || !infile(p.line.fileidx)) continue;
+                            auto off = files[(size_t)p.line.fileidx].text.OffsetOf(p.line.line, p.line.col);
+                            if (off >= 0) bind(c->fvparams[i], Place { p.line.fileidx, (size_t)off, p.name.size() });
+                        }
+                    mark(c->fvbody);
+                }
                 if (c->defaultinit) mark(c->defaultinit);
             }
             n->Children(mark);
         };
         for (auto sp : a.fnspecs) if (sp->body) mark(sp->body);
-        for (auto g : a.globals) for (auto init : g->inits) mark(init);
+        for (auto g : a.globals) {
+            for (auto init : g->inits) mark(init);
+            for (size_t i = 0; i < g->defs.size() && i < g->names.size(); i++) {
+                if (!g->defs[i]) continue;
+                vardecls[g->defs[i]] = g;
+                bind(g->defs[i], PlaceOfView(g->line.fileidx, g->names[i]));
+            }
+        }
     }
 };
 

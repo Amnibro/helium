@@ -61,21 +61,23 @@ class Client:
             headers[name.strip()] = value.strip()
         return json.loads(self.p.stdout.read(int(headers["Content-Length"])))
 
-    def reply(self, rid, timeout=30):
+    def reply(self, rid, timeout=30, raw=False):
         """The reply to request rid; the notifications before it wait in
-        `pending`."""
+        `pending`. Raw: the whole message, an error reply included."""
         deadline = time.time() + timeout
         while time.time() < deadline:
             m = self.read()
             if m.get("id") == rid:
+                if raw:
+                    return m
                 if "error" in m:
                     raise RuntimeError(f"request {rid} failed: {m['error']}")
                 return m.get("result")
             self.pending.append(m)
         raise RuntimeError(f"no reply to request {rid} in {timeout}s")
 
-    def request(self, method, params):
-        return self.reply(self.send(method, params))
+    def request(self, method, params, raw=False):
+        return self.reply(self.send(method, params), raw=raw)
 
     def notification(self, method, timeout=30):
         """The next notification of that method, pending or arriving."""
@@ -145,6 +147,18 @@ def check_lsp_protocol(exe, base):
         uri = uri_of(path)
         doc = {"textDocument": {"uri": uri}}
         errors = []
+        lines = text.splitlines()
+
+        def text_at(rng):
+            """The fixture's text in a range on one line."""
+            s, e = rng["start"], rng["end"]
+            if s["line"] != e["line"]:
+                return None
+            return lines[s["line"]][s["character"]:e["character"]]
+
+        def whole_range():
+            return {"start": {"line": 0, "character": 0}, "end": {"line": len(lines), "character": 0}}
+
         for line in text.splitlines():
             m = re.match(r"// lsp: (\w+) (.*)$", line)
             if not m or line.startswith("// lsp: fixture"):
@@ -197,6 +211,60 @@ def check_lsp_protocol(exe, base):
                 p = position(pos)
                 if tokens.get((p["line"], p["character"])) != want:
                     fail(f"token {pos} is not {want}", {"at": p, "got": tokens.get((p["line"], p["character"]))})
+            elif kind == "references":
+                pos, want = rest.split()
+                got = client.request("textDocument/references",
+                                     {**doc, "position": position(pos), "context": {"includeDeclaration": True}})
+                if len(got or []) != int(want):
+                    fail(f"references {pos} are not {want}", got)
+            elif kind == "rename":
+                # `rename L:C NAME -> N` renames to NAME with N edits, each
+                # replacing the leaf of the name at the position; `-> error`
+                # is a refusal.
+                pos, name, _, want = rest.split()
+                m = client.request("textDocument/rename", {**doc, "position": position(pos), "newName": name}, raw=True)
+                if want == "error":
+                    if "error" not in m:
+                        fail(f"rename {pos} was not refused", m)
+                    continue
+                if "error" in m:
+                    fail(f"rename {pos} was refused", m)
+                changes = (m.get("result") or {}).get("changes", {})
+                edits = [e for es in changes.values() for e in es]
+                p = position(pos)
+                leaf = re.match(r"\w+", lines[p["line"]][p["character"]:]).group()
+                if len(edits) != int(want) or any(e["newText"] != name for e in edits):
+                    fail(f"rename {pos} does not make {want} edits to {name}", m)
+                for e in changes.get(uri, changes.get(uri.lower(), [])):
+                    if text_at(e["range"]) != leaf:
+                        fail(f"rename {pos} edits more than the name {leaf}", m)
+            elif kind == "hint":
+                pos, want = re.match(r'(\S+) "(.*)"$', rest).groups()
+                got = client.request("textDocument/inlayHint", {**doc, "range": whole_range()})
+                p = position(pos)
+                if not any(h["position"] == p and h["label"] == want for h in got or []):
+                    fail(f"hint {pos} is not {want}", got)
+            elif kind == "folding":
+                a, b = (int(x) for x in rest.split("-"))
+                got = client.request("textDocument/foldingRange", doc)
+                if not any(r["startLine"] == a - 1 and r["endLine"] == b - 1 for r in got or []):
+                    fail(f"folding {a}-{b}", got)
+            elif kind == "selection":
+                # `selection L:C -> L:C-L:C`: the chain at the position holds
+                # that range, and each range holds the one before it.
+                pos, _, want = rest.split()
+                s, e = want.split("-")
+                got = client.request("textDocument/selectionRange", {**doc, "positions": [position(pos)]})
+                chain = []
+                r = (got or [None])[0]
+                while r:
+                    chain.append(r["range"])
+                    r = r.get("parent")
+                before = lambda a, b: (a["line"], a["character"]) <= (b["line"], b["character"])
+                nested = all(before(outer["start"], inner["start"]) and before(inner["end"], outer["end"])
+                             for inner, outer in zip(chain, chain[1:]))
+                if {"start": position(s), "end": position(e)} not in chain or not nested:
+                    fail(f"selection {pos} lacks {want}", got)
             else:
                 raise RuntimeError(f"lsp: unknown query {kind} in {path.name}")
         got = sorted(d["range"]["start"]["line"] + 1 for d in diags if d["severity"] == 1)

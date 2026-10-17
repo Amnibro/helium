@@ -5939,22 +5939,36 @@ appended to the message. A program with errors is not optimized or
 bounds-check analyzed. An attempt that got past resolution replaces the
 analysis the root's queries read, with whatever its check annotated
 before each error; one that failed earlier keeps the last, so queries go
-on answering from it. A cancelled attempt leaves the root dirty.
+on answering from it. A cancelled attempt leaves the root dirty. The
+indexes are built as soon as the check is done, before the optimizer
+rewrites the bodies: it inlines calls and drops constants, and with them
+the clones the features read, which stay allocated (the `Ast` owns every
+node) but leave the tree.
 
 **Analysis** (`lsp_analysis.h`). The `Ast` as the check left it, with the
 indexes the features read. `FileIndex::occs` is every occurrence of a name
 in a file, by start offset: a use (`IDENT`, `DOT` for a member, `TYPE` for
-a type name, each with its source node or type expression) or a
-declaration or a part of one (`FN`, `STRUCT`, `ENUM`, `ALIAS`, `GLOBAL`,
-`LOCAL`, `FIELD`, `VARIANT`, `PARAM`, `GENERIC`, and `BINDER` for the
-variables a loop, a match arm or a block parameter binds), found by
-walking every declaration and body once; `FileIndex::calls` is every
-call's extent. `Analysis::clones` maps each source node to the clones the
-checker made of it, one per specialization (`Node::origin`), which carry
-`exprtype` and the resolutions (`Ident::vdef`, `Dot::fieldidx`,
+a type name, `INIT` for a field named in a struct literal, each with its
+source node or type expression) or a declaration or a part of one (`FN`,
+`STRUCT`, `ENUM`, `ALIAS`, `GLOBAL`, `LOCAL`, `FIELD`, `VARIANT`, `PARAM`,
+`GENERIC`, and `BINDER` for the variables a loop, a match arm or a block
+parameter binds), found by walking every declaration and body once;
+`FileIndex::calls` is every call's extent, and `FileIndex::spans` every
+node's, from the earliest token in it (a binary's left operand lies before
+the operator the node is anchored at) to its end, the top-level
+declarations' among them. `Analysis::clones` maps each source node to the
+clones the checker made of it, one per specialization (`Node::origin`),
+which carry `exprtype` and the resolutions (`Ident::vdef`, `Dot::fieldidx`,
 `Call::spec`); `Find` gives the first clone a predicate accepts, which is
 how a feature reads a type or a target, and `TypesOf` every distinct type
-the clones gave a node, for a generic body's hover.
+the clones gave a node, for a generic body's hover. The same walk of the
+clones records what the source alone does not say: `vardecls` and
+`defplaces`, the `let` or `var` of each checked variable (`VarDef`) and
+the place of its name, which for a loop's, an arm's or a block parameter's
+binding is where the source spells it rather than where the checker placed
+the variable (the loop, the match, the call); and `patternvariants`, the
+variant each match pattern's name resolved to. A binding with no place is
+one the compiler synthesized, such as a block's implicit `it`.
 
 **Features** (`lsp_features.h`). Each request locates its file's analysis
 and the occurrence at its position (`Locate`, `FileIndex::At`). Hover
@@ -5971,6 +5985,29 @@ help finds the innermost call whose parentheses hold the position
 (`FileIndex::CallAt`), counts the commas before it for the active
 parameter, and lists the overloads of the callee's name, the resolved one
 active.
+
+References and rename share one notion of identity: the place of the
+declaration's name, as `DefinitionOf` finds it for any occurrence, so two
+occurrences refer to one thing when their definitions coincide
+(`ReferencesTo`, over every occurrence in every file of the analysis,
+through the clones). References lists them, the declaration's own included
+when the request asks; rename replaces the leaf of each spelling (a
+`ns::name` keeps its qualifier) and the declaration's name with the new
+name, as a `WorkspaceEdit` keyed by URI, and answers with an error rather
+than an edit for a keyword, a builtin, a name with no declaration, or one
+the compiler synthesized (its declaration does not spell it). Inlay hints
+give the type of each `let` or `var` without one written, after its name,
+where the clones' `VarDef`s agree on it (none where the specializations
+differ), and the parameter's name before each argument of a call resolved
+to a specialization, a UFCS call's object standing for the first
+parameter, skipping an argument that is the parameter's own name. Folding
+ranges are every brace-delimited body (a block, a match, a struct literal)
+and declaration spanning more than one line, as `region`, ending a line
+short where text follows the body on its last line (an editor folds whole
+lines), and every run of `//` comment lines, as `comment`. Selection
+ranges give, for each position, the chain of extents holding it, the name
+at it first, then the node extents of `FileIndex::spans` outward to the
+declaration, each holding the one before.
 
 **Testing.** `test/lsp_protocol.py` (`docs/testing.md`) drives the server
 over its own protocol on the fixtures in `test/lsp/`, whose `// lsp:`

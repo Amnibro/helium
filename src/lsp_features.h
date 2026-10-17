@@ -1,9 +1,9 @@
 // Goose compiler — the language server's features (docs/design/
 // language_server.md §6), each a request answered from a root's analysis:
-// hover, go to definition, document and workspace symbols, semantic
-// tokens and signature help. Every one takes the request's params and
-// writes its result, or writes nothing and returns false for a null
-// result.
+// hover, go to definition, references and rename, document and workspace
+// symbols, semantic tokens, signature help, inlay hints, folding ranges and
+// selection ranges. Every one takes the request's params and writes its
+// result, or writes nothing and returns false for a null result.
 #pragma once
 
 namespace goose {
@@ -186,6 +186,64 @@ inline const SFunction *CalleeOf(const Call *c) {
     return nullptr;
 }
 
+// The field a struct literal's initializer names, in the literal's type as
+// the first clone that resolved it has it.
+inline const Field *FieldOfInit(const Analysis &an, const Occurrence &occ) {
+    auto c = an.Find(occ.node, [](const Node *n) {
+        auto x = Is<StructLit>(n);
+        return x && (x->variant || (x->sinst && x->sinst->st));
+    });
+    if (!c) return nullptr;
+    auto sl = Is<StructLit>(c);
+    auto &fields = sl->variant ? sl->variant->fields : sl->sinst->st->fields;
+    for (auto &f : fields) if (!f.ispad && f.name == occ.name) return &f;
+    return nullptr;
+}
+
+// The variant a match pattern's name resolved to, where the occurrence is
+// one.
+inline const SVariant *PatternVariantOf(const Analysis &an, const Occurrence &occ) {
+    if (occ.kind != Occurrence::IDENT) return nullptr;
+    auto it = an.patternvariants.find(occ.node);
+    return it == an.patternvariants.end() ? nullptr : it->second;
+}
+
+// The leaf of a spelling: what follows its last `::`.
+inline string_view LeafOf(string_view spelled) {
+    auto q = spelled.rfind("::");
+    return q == string_view::npos ? spelled : spelled.substr(q + 2);
+}
+
+// The type parameter a name at a place refers to: the innermost function
+// declared around the place that has one so named, or an outer one of
+// its, else the struct or enum declared there.
+inline const GenericParam *GenericAt(const Analysis &an, int fileidx, size_t offset, string_view name) {
+    auto &t = an.files[(size_t)fileidx].text;
+    auto startof = [&](Line l, Line e) -> int64_t {
+        if (l.fileidx != fileidx || l.line <= 0 || e.line <= 0) return -1;
+        auto s = t.OffsetOf(l.line, l.col), x = t.OffsetOf(e.line, e.col);
+        return s >= 0 && (int64_t)offset >= s && (int64_t)offset <= x ? s : -1;
+    };
+    auto named = [&](const vector<GenericParam> &gs) -> const GenericParam * {
+        for (auto &g : gs) if (g.name == name) return &g;
+        return nullptr;
+    };
+    const SFunction *inner = nullptr;
+    int64_t innerstart = -1;
+    for (auto sf : an.ast->functions)
+        if (auto s = startof(sf->line, sf->end); s > innerstart) {
+            inner = sf;
+            innerstart = s;
+        }
+    for (auto sf = inner; sf; sf = sf->outer)
+        if (auto g = named(sf->generics)) return g;
+    for (auto st : an.ast->structs)
+        if (startof(st->line, st->end) >= 0) if (auto g = named(st->generics)) return g;
+    for (auto en : an.ast->enums)
+        if (startof(en->line, en->end) >= 0) if (auto g = named(en->generics)) return g;
+    return nullptr;
+}
+
 // --- positions in results ---------------------------------------------------
 
 inline void WritePosition(JsonOut &j, const TextIndex &t, size_t offset) {
@@ -215,12 +273,6 @@ inline void WriteLocation(JsonOut &j, const FileIndex &f, size_t start, size_t e
 
 // A declaration's name, as a place: the view the parser kept, else the
 // declaration's own place.
-struct Place {
-    int fileidx = -1;
-    size_t start = 0, len = 0;
-    bool Known() const { return fileidx >= 0; }
-};
-
 inline Place PlaceOfLine(const Analysis &an, Line l, size_t len) {
     Place p;
     if (l.line <= 0 || l.fileidx < 0 || l.fileidx >= (int)an.files.size()) return p;
@@ -243,14 +295,13 @@ inline Place PlaceOfName(const Analysis &an, int fileidx, string_view name, Line
 inline Place PlaceOfFn(const Analysis &an, const SFunction *sf) {
     return PlaceOfName(an, sf->line.fileidx, sf->name, sf->line);
 }
-// A variable's declaration: its parameter, or the name in its `let` or
-// `var`, else where the checker placed it (a loop's or an arm's binding).
+// A variable's declaration: its parameter, or the name in its `let`,
+// `var`, loop, arm or block (Analysis::defplaces); unknown for a binding
+// the source does not spell.
 inline Place PlaceOfVarDef(const Analysis &an, const VarDef *vd) {
+    if (auto it = an.defplaces.find(vd); it != an.defplaces.end()) return it->second;
     if (vd->isparam) return PlaceOfLine(an, vd->line, vd->name.size());
-    if (auto decl = an.VarDeclOf(vd))
-        for (auto &name : decl->names)
-            if (name == vd->name) return PlaceOfName(an, decl->line.fileidx, name, decl->line);
-    return PlaceOfLine(an, vd->line, 0);
+    return {};
 }
 
 inline void WritePlace(JsonOut &j, const Analysis &an, const Place &p) {
@@ -271,6 +322,11 @@ inline HoverText HoverIdent(const Located &loc, const Occurrence &occ) {
     auto &an = *loc.an;
     auto &ast = *an.ast;
     auto id = Is<Ident>(occ.node);
+    if (auto v = PatternVariantOf(an, occ)) {
+        h.header = VariantHeader(EnumOfVariant(ast, v), v);
+        h.doc = DocText(v->doc);
+        return h;
+    }
     auto c = an.Find(occ.node, [](const Node *n) {
         auto x = Is<Ident>(n);
         return x && (x->vdef || x->fnref);
@@ -507,6 +563,12 @@ inline HoverText HoverOf(const Located &loc, const Occurrence &occ) {
             if (type) Append(h.header, ": ", TypeText(type));
             break;
         }
+        case Occurrence::INIT:
+            if (auto f = FieldOfInit(an, occ)) {
+                h.header = cat(f->isconst ? "let " : "", f->name, ": ", TypeText(f->type));
+                h.doc = DocText(f->doc);
+            }
+            break;
         case Occurrence::IDENT: return HoverIdent(loc, occ);
         case Occurrence::DOT:   return HoverDot(loc, occ);
         case Occurrence::TYPE:  return HoverType(loc, occ);
@@ -552,8 +614,12 @@ inline Place DefinitionOf(const Located &loc, const Occurrence &occ) {
         case Occurrence::GENERIC: return PlaceOfLine(an, occ.generic->line, occ.generic->name.size());
         case Occurrence::GLOBAL: case Occurrence::LOCAL: case Occurrence::BINDER:
             return Place { loc.fi->fileidx, occ.start, occ.len };
+        case Occurrence::INIT:
+            if (auto f = FieldOfInit(an, occ)) return PlaceOfLine(an, f->line, f->name.size());
+            return {};
         case Occurrence::IDENT: {
             auto id = Is<Ident>(occ.node);
+            if (auto v = PatternVariantOf(an, occ)) return PlaceOfLine(an, v->line, v->name.size());
             auto c = an.Find(occ.node, [](const Node *n) {
                 auto x = Is<Ident>(n);
                 return x && (x->vdef || x->fnref);
@@ -595,6 +661,10 @@ inline Place DefinitionOf(const Located &loc, const Occurrence &occ) {
                 case TY_STRUCT:  return PlaceOfName(an, t->struc->st->line.fileidx, t->struc->st->name, t->struc->st->line);
                 case TY_ENUM:    return PlaceOfName(an, t->enu->en->line.fileidx, t->enu->en->name, t->enu->en->line);
                 case TY_VARIANT: return t->var->variant ? PlaceOfLine(an, t->var->variant->line, t->var->variant->name.size()) : Place {};
+                case TY_GENERIC:
+                    if (auto g = GenericAt(an, loc.fi->fileidx, occ.start, t->named->name))
+                        return PlaceOfLine(an, g->line, g->name.size());
+                    return {};
                 default:         return {};
             }
         }
@@ -811,8 +881,10 @@ inline int SemanticTokenOf(const Located &loc, const Occurrence &occ, int &modif
                 case TY_GENERIC: return ST_TYPEPARAMETER;
                 default:         return -1;
             }
+        case Occurrence::INIT: return ST_PROPERTY;
         case Occurrence::IDENT: {
             auto id = Is<Ident>(occ.node);
+            if (PatternVariantOf(an, occ)) return ST_ENUMMEMBER;
             auto c = an.Find(occ.node, [](const Node *n) {
                 auto x = Is<Ident>(n);
                 return x && (x->vdef || x->fnref);
@@ -979,6 +1051,324 @@ inline bool SignatureHelp(Workspace &ws, const Json &params, JsonOut &j) {
     j.Member("activeSignature", (int64_t)activesig);
     j.Member("activeParameter", (int64_t)(active + (ufcs ? 1 : 0)));
     j.EndObject();
+    return true;
+}
+
+// --- references and rename -----------------------------------------------------------
+
+// Every occurrence in the program that resolves to the declaration whose
+// name is at `target`, the declaration's own among them, file by file.
+inline void ReferencesTo(Root *root, Analysis &an, const Place &target,
+                         const function<void(const FileIndex &, const Occurrence &)> &f) {
+    for (auto &fi : an.files) {
+        Located at { root, &an, &fi, 0 };
+        for (auto &occ : fi.occs) {
+            auto p = DefinitionOf(at, occ);
+            if (p.Known() && p.fileidx == target.fileidx && p.start == target.start) f(fi, occ);
+        }
+    }
+}
+
+inline bool References(Workspace &ws, const Json &params, JsonOut &j) {
+    Located loc;
+    if (!Locate(ws, params, loc)) return false;
+    auto occ = loc.fi->At(loc.offset);
+    if (!occ) return false;
+    auto target = DefinitionOf(loc, *occ);
+    if (!target.Known()) return false;
+    auto context = params.Get("context");
+    auto withdecl = JsonBool(context ? context->Get("includeDeclaration") : nullptr);
+    j.BeginArray();
+    ReferencesTo(loc.root, *loc.an, target, [&](const FileIndex &f, const Occurrence &o) {
+        if (withdecl || !o.IsDeclaration()) WriteLocation(j, f, o.start, o.start + o.len);
+    });
+    j.EndArray();
+    return true;
+}
+
+inline bool IsKeyword(string_view s) {
+    static const set<string_view> keywords = {
+        #define F(t, str) str,
+        TOKENS_KEYWORDS
+        #undef F
+    };
+    return keywords.count(s) > 0;
+}
+
+inline bool IsIdentifier(string_view s) {
+    if (s.empty() || !IsIdentStart(s[0])) return false;
+    for (auto c : s) if (!IsIdentCont(c)) return false;
+    return true;
+}
+
+// Whether an occurrence that resolves to no declaration names a builtin:
+// a call of one, a builtin member, or a name that is nothing else.
+inline bool IsBuiltinUse(const Located &loc, const Occurrence &occ) {
+    if (occ.kind == Occurrence::IDENT) {
+        if (occ.callee)
+            if (auto call = ResolvedCall(loc, occ); call && call->builtin >= 0) return true;
+        return LookupBuiltin(GlobalLeaf(Is<Ident>(occ.node)->name)) != nullptr;
+    }
+    if (occ.kind == Occurrence::DOT) {
+        auto c = loc.an->Find(occ.node, [](const Node *n) {
+            auto x = Is<Dot>(n);
+            return x && x->member >= 0;
+        });
+        if (c) return true;
+        if (occ.callee)
+            if (auto call = ResolvedCall(loc, occ); call && call->builtin >= 0) return true;
+    }
+    return false;
+}
+
+// The identifier around an offset, for a position on a keyword.
+inline string_view WordAt(const TextIndex &t, size_t offset) {
+    auto text = t.text;
+    auto s = min(offset, text.size());
+    while (s > 0 && IsIdentCont(text[s - 1])) s--;
+    auto e = s;
+    while (e < text.size() && IsIdentCont(text[e])) e++;
+    return text.substr(s, e - s);
+}
+
+// The edits renaming what is at the position, as a WorkspaceEdit: the leaf
+// of each spelling (`ns::name` keeps its qualifier) and the declaration's
+// name. False with the reason where the name cannot be renamed: a keyword,
+// a builtin, a name the compiler synthesized, or one with no declaration.
+inline bool Rename(Workspace &ws, const Json &params, JsonOut &j, string &error) {
+    Located loc;
+    if (!Locate(ws, params, loc)) {
+        error = "the file has not been analyzed yet";
+        return false;
+    }
+    auto newname = JsonStr(params.Get("newName"));
+    if (!IsIdentifier(newname) || IsKeyword(newname)) {
+        error = cat("'", newname, "' is not a name a declaration can have");
+        return false;
+    }
+    auto occ = loc.fi->At(loc.offset);
+    if (!occ) {
+        auto word = WordAt(loc.fi->text, loc.offset);
+        error = IsKeyword(word) ? cat("'", word, "' is a keyword") : "there is no name to rename here";
+        return false;
+    }
+    auto leaf = LeafOf(occ->name);
+    auto target = DefinitionOf(loc, *occ);
+    if (!target.Known()) {
+        error = IsBuiltinUse(loc, *occ) ? cat("'", leaf, "' is a builtin")
+                                        : cat("'", leaf, "' has no declaration to rename");
+        return false;
+    }
+    // The declaration must spell the name; a binding the compiler
+    // synthesized, such as a block's implicit `it`, has none to edit.
+    auto &tf = loc.an->files[(size_t)target.fileidx];
+    if (tf.text.text.substr(target.start, target.len) != leaf) {
+        error = cat("'", leaf, "' is a name the compiler gives, not one declared");
+        return false;
+    }
+    map<string, set<pair<size_t, size_t>>> edits;    // By URI, then by place.
+    ReferencesTo(loc.root, *loc.an, target, [&](const FileIndex &f, const Occurrence &o) {
+        edits[f.uri].insert({ o.start + (o.name.size() - LeafOf(o.name).size()), o.start + o.len });
+    });
+    j.BeginObject();
+    j.Key("changes");
+    j.BeginObject();
+    for (auto &[uri, places] : edits) {
+        auto fileidx = loc.an->FileOf(PathKey(PathOfUri(uri)));
+        if (fileidx < 0) continue;
+        auto &f = loc.an->files[(size_t)fileidx];
+        j.Key(uri);
+        j.BeginArray();
+        for (auto &[start, end] : places) {
+            j.BeginObject();
+            j.Key("range");
+            WriteRange(j, f.text, start, end);
+            j.Member("newText", newname);
+            j.EndObject();
+        }
+        j.EndArray();
+    }
+    j.EndObject();
+    j.EndObject();
+    return true;
+}
+
+// --- inlay hints ----------------------------------------------------------------------
+
+// LSP InlayHintKind.
+enum InlayHintKind { IH_TYPE = 1, IH_PARAMETER = 2 };
+
+// Where a node's tokens start: the earliest place in it, which for a node
+// anchored at its operator lies in its left operand.
+inline int64_t StartOf(const FileIndex &f, const Node *n) {
+    int64_t start = -1;
+    function<void(const Node *)> walk = [&](const Node *c) {
+        if (!c || c->line.fileidx != f.fileidx || c->line.line <= 0) return;
+        auto s = f.text.OffsetOf(c->line.line, c->line.col);
+        if (s >= 0 && (start < 0 || s < start)) start = s;
+        c->Children([&](Node *ch) { walk(ch); });
+    };
+    walk(n);
+    return start;
+}
+
+inline void WriteInlayHint(JsonOut &j, const TextIndex &t, size_t offset, const string &label, int kind,
+                           bool padleft, bool padright) {
+    j.BeginObject();
+    j.Key("position");
+    WritePosition(j, t, offset);
+    j.Member("label", label);
+    j.Member("kind", (int64_t)kind);
+    if (padleft) j.Member("paddingLeft", true);
+    if (padright) j.Member("paddingRight", true);
+    j.EndObject();
+}
+
+// The hints in the requested range: the type of each `let` or `var`
+// without one written, after its name, where the specializations agree on
+// it; and the parameter's name before each argument of a call resolved to
+// a function, but for an argument that is that name itself.
+inline bool InlayHints(Workspace &ws, const Json &params, JsonOut &j) {
+    Located loc;
+    if (!Locate(ws, params, loc, false)) return false;
+    auto &an = *loc.an;
+    auto &f = *loc.fi;
+    size_t from = 0, to = f.text.text.size();
+    if (auto range = params.Get("range")) {
+        if (auto s = range->Get("start")) from = f.text.OffsetOfPosition(JsonInt(s->Get("line")), JsonInt(s->Get("character")));
+        if (auto e = range->Get("end")) to = f.text.OffsetOfPosition(JsonInt(e->Get("line")), JsonInt(e->Get("character")));
+    }
+    j.BeginArray();
+    for (auto &occ : f.occs) {
+        if (occ.start > to) break;
+        if (occ.start + occ.len < from) continue;
+        if (occ.kind != Occurrence::LOCAL && occ.kind != Occurrence::GLOBAL) continue;
+        auto vd = Is<VarDecl>(occ.node);
+        if (vd->type) continue;
+        auto i = (size_t)occ.index;
+        set<string> types;
+        auto consider = [&](const Node *n) {
+            auto x = Is<VarDecl>(n);
+            if (x && x->defs.size() > i && x->defs[i] && x->defs[i]->type) types.insert(TypeText(x->defs[i]->type));
+        };
+        consider(occ.node);
+        if (auto it = an.clones.find(occ.node); it != an.clones.end()) for (auto c : it->second) consider(c);
+        if (types.size() != 1) continue;
+        WriteInlayHint(j, f.text, occ.start + occ.len, cat(": ", *types.begin()), IH_TYPE, false, false);
+    }
+    for (auto &span : f.calls) {
+        if (span.start > to) break;
+        if (span.end < from) continue;
+        auto c = an.Find(span.call, [](const Node *n) {
+            auto x = Is<Call>(n);
+            return x && x->spec;
+        });
+        if (!c) continue;
+        auto sf = Is<Call>(c)->spec->sf;
+        // A UFCS call's object is the first parameter's argument.
+        size_t first = Is<Dot>(span.call->callee) ? 1 : 0;
+        for (size_t i = 0; i < span.call->args.size() && i + first < sf->params.size(); i++) {
+            auto &p = sf->params[i + first];
+            auto arg = span.call->args[i];
+            if (auto id = Is<Ident>(arg); id && LeafOf(id->name) == p.name) continue;
+            auto start = StartOf(f, arg);
+            if (start < 0 || (size_t)start < from || (size_t)start > to) continue;
+            WriteInlayHint(j, f.text, (size_t)start, cat(p.name, ":"), IH_PARAMETER, false, true);
+        }
+    }
+    j.EndArray();
+    return true;
+}
+
+// --- folding ranges --------------------------------------------------------------------
+
+// Every brace-delimited body (a block, a match, a struct literal) and
+// declaration spanning more than one line, and every run of `//` comment
+// lines.
+inline bool FoldingRanges(Workspace &ws, const Json &params, JsonOut &j) {
+    Located loc;
+    if (!Locate(ws, params, loc, false)) return false;
+    auto &f = *loc.fi;
+    auto &t = f.text;
+    set<pair<int, int>> seen;
+    j.BeginArray();
+    auto fold = [&](int startline, int endline, const char *kind) {
+        if (endline <= startline || !seen.insert({ startline, endline }).second) return;
+        j.BeginObject();
+        j.Member("startLine", (int64_t)startline);
+        j.Member("endLine", (int64_t)endline);
+        j.Member("kind", kind);
+        j.EndObject();
+    };
+    auto extent = [&](size_t start, size_t end) {
+        end = min(end, t.text.size());
+        if (end <= start) return;
+        auto startline = t.LineOf(start);
+        auto endline = t.LineOf(end - 1);
+        // An editor folds whole lines: text after the extent on its last
+        // line stays visible by ending the fold a line short.
+        auto rest = t.LineText(endline).substr(min(end - t.linestarts[(size_t)endline], t.LineText(endline).size()));
+        if (rest.find_first_not_of(" \t") != string_view::npos) endline--;
+        fold(startline, endline, "region");
+    };
+    for (auto &s : f.spans)
+        if (Is<Block>(s.node) || Is<MatchExpr>(s.node) || Is<StructLit>(s.node) || Is<FnDecl>(s.node) ||
+            Is<StructDecl>(s.node) || Is<EnumDecl>(s.node))
+            extent(s.start, s.end);
+    auto runstart = -1;
+    for (auto l = 0; l <= t.Lines(); l++) {
+        auto line = t.LineText(l);
+        auto first = line.find_first_not_of(" \t");
+        auto comment = l < t.Lines() && first != string_view::npos && line.substr(first, 2) == "//";
+        if (comment) {
+            if (runstart < 0) runstart = l;
+        } else {
+            if (runstart >= 0) fold(runstart, l - 1, "comment");
+            runstart = -1;
+        }
+    }
+    j.EndArray();
+    return true;
+}
+
+// --- selection ranges -------------------------------------------------------------------
+
+// For each position, the chain of extents holding it, from the name or
+// innermost node outward to the declaration.
+inline bool SelectionRanges(Workspace &ws, const Json &params, JsonOut &j) {
+    Located loc;
+    if (!Locate(ws, params, loc, false)) return false;
+    auto &f = *loc.fi;
+    auto positions = params.Get("positions");
+    if (!positions || positions->kind != Json::ARRAY) return false;
+    j.BeginArray();
+    for (auto &pos : positions->arr) {
+        auto offset = f.text.OffsetOfPosition(JsonInt(pos.Get("line")), JsonInt(pos.Get("character")));
+        vector<pair<size_t, size_t>> ranges;
+        // The name at the position, where the occurrence's extent is not a node's own.
+        if (auto occ = f.At(offset)) ranges.push_back({ occ->start, occ->start + occ->len });
+        else if (auto word = WordAt(f.text, offset); !word.empty())
+            ranges.push_back({ (size_t)(word.data() - f.text.text.data()), (size_t)(word.data() - f.text.text.data()) + word.size() });
+        for (auto s : f.SpansAt(offset)) ranges.push_back({ s->start, s->end });
+        sort(ranges.begin(), ranges.end(), [](const pair<size_t, size_t> &x, const pair<size_t, size_t> &y) {
+            return x.second - x.first != y.second - y.first ? x.second - x.first < y.second - y.first : x.first < y.first;
+        });
+        // Innermost first, each holding the one before it.
+        vector<pair<size_t, size_t>> chain;
+        for (auto &r : ranges) {
+            if (!chain.empty() && (r == chain.back() || r.first > chain.back().first || r.second < chain.back().second)) continue;
+            chain.push_back(r);
+        }
+        if (chain.empty()) chain.push_back({ offset, offset });
+        for (size_t i = 0; i < chain.size(); i++) {
+            j.BeginObject();
+            j.Key("range");
+            WriteRange(j, f.text, chain[i].first, chain[i].second);
+            if (i + 1 < chain.size()) j.Key("parent");
+        }
+        for (size_t i = 0; i < chain.size(); i++) j.EndObject();
+    }
+    j.EndArray();
     return true;
 }
 

@@ -56,8 +56,13 @@ struct Server {
         j.Member("textDocumentSync", (int64_t)1);   // Full: each change carries the text.
         j.Member("hoverProvider", true);
         j.Member("definitionProvider", true);
+        j.Member("referencesProvider", true);
+        j.Member("renameProvider", true);
         j.Member("documentSymbolProvider", true);
         j.Member("workspaceSymbolProvider", true);
+        j.Member("inlayHintProvider", true);
+        j.Member("foldingRangeProvider", true);
+        j.Member("selectionRangeProvider", true);
         j.Key("signatureHelpProvider");
         j.BeginObject();
         j.Key("triggerCharacters");
@@ -139,6 +144,21 @@ struct Server {
             Respond(m, [&](JsonOut &j) { return SemanticTokens(ws, p, j); });
         } else if (method == "textDocument/signatureHelp") {
             Respond(m, [&](JsonOut &j) { return SignatureHelp(ws, p, j); });
+        } else if (method == "textDocument/references") {
+            Respond(m, [&](JsonOut &j) { return References(ws, p, j); });
+        } else if (method == "textDocument/rename") {
+            // A name that cannot be renamed is an error the editor shows,
+            // not an empty edit.
+            JsonOut edit;
+            string error;
+            if (Rename(ws, p, edit, error)) Respond(m, [&](JsonOut &j) { j.Raw(edit.s); return true; });
+            else RespondError(m, -32803, error);
+        } else if (method == "textDocument/inlayHint") {
+            Respond(m, [&](JsonOut &j) { return InlayHints(ws, p, j); });
+        } else if (method == "textDocument/foldingRange") {
+            Respond(m, [&](JsonOut &j) { return FoldingRanges(ws, p, j); });
+        } else if (method == "textDocument/selectionRange") {
+            Respond(m, [&](JsonOut &j) { return SelectionRanges(ws, p, j); });
         } else if (!m.id.empty()) {
             RespondError(m, -32601, cat("goose lsp does not handle ", method));
         }

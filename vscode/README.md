@@ -10,12 +10,14 @@ older compiler, the extension checks saved files with `goose check` instead.
 - With the language server: errors and warnings as you type, over every file
   of the program (the entry file set in `goose.entryFile`, or the open file),
   hover with declarations, types, instantiations and documentation comments,
-  go to definition (including across imports and on `import` lines), the
-  outline and Go to Symbol in the file and the workspace, semantic
-  highlighting of what resolves to a function, type, parameter, field or
-  variant, and signature help while typing a call's arguments. **Goose:
-  Restart Language Server** restarts it; `goose.useLanguageServer` turns it
-  off.
+  go to definition (including across imports and on `import` lines), find
+  all references and rename across the program's files, the outline and Go
+  to Symbol in the file and the workspace, semantic highlighting of what
+  resolves to a function, type, parameter, field or variant, signature help
+  while typing a call's arguments, inlay hints for the types of `let`s and
+  `var`s and the parameter names at calls, folding of bodies and comment
+  runs, and expand selection by syntax. **Goose: Restart Language Server**
+  restarts it; `goose.useLanguageServer` turns it off.
 
 - Syntax highlighting for `.goose` files, including nested block comments,
   escaped strings and characters, raw `"""` strings across lines, decimal/hex

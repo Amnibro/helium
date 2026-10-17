@@ -184,6 +184,11 @@ struct Workspace {
                 ResolveTypeNames(ast);
                 an->parsed = true;
                 TypeCheckProgram(ast, false, true);
+                // The indexes stand on the tree as the checker left it: the
+                // optimizer then rewrites the bodies, inlining calls and
+                // dropping constants, and the nodes the features read with
+                // them.
+                an->Build();
                 if (!ast.errors.empty()) return 0;
                 Optimizer opt(ast, 1);
                 BCE bce(ast);
@@ -206,10 +211,10 @@ struct Workspace {
         r.dirty = false;
         r.files.clear();
         for (auto &[path, text] : ast.sources) r.files.insert(PathKey(path));
-        an->IndexFiles();
+        if (!an->built) an->IndexFiles();
         Publish(r, *an);
         if (an->parsed || !r.analysis) {
-            an->Build();
+            if (!an->built) an->Build();
             r.analysis = std::move(an);
         }
         PruneUnreached();

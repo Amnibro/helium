@@ -501,6 +501,16 @@ declaration (a struct with a bad field is dropped whole today, so its
 uses fail resolution, which still ends the analysis), and the import
 errors, which still end the parse.
 
+The features needing no recovery are in
+(`docs/implementation.md` §12): references and rename, whose identity is
+the place of the declaration a use resolves to, through the clones, with
+rename refusing builtins, keywords and synthesized names as an error reply;
+inlay hints for the types of `let`s and `var`s and the parameter names at
+calls; folding ranges for bodies and comment runs; and selection ranges
+from the node extents the index records (`FileIndex::spans`). The
+analysis's indexes are built before the optimizer runs, which inlines calls
+and drops constants and would lose the clones with them.
+
 **Phase 3:** code lens, exemplar instantiation for generics, parse caching
 per file if a workspace turns out to need it, the other editors' entries.
 

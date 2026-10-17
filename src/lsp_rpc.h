@@ -64,6 +64,7 @@ inline string JsonStr(const Json *v) { return v && v->kind == Json::STRING ? v->
 inline int64_t JsonInt(const Json *v, int64_t dflt = 0) {
     return v && v->kind == Json::NUMBER ? (int64_t)v->num : dflt;
 }
+inline bool JsonBool(const Json *v, bool dflt = false) { return v && v->kind == Json::BOOL ? v->b : dflt; }
 
 // One message from the client: a request (an id), a notification (none),
 // or the end of the stream, after which the client is gone.

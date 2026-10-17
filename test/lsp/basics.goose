@@ -73,3 +73,45 @@ fn main() {
 // lsp: token 31:21 property
 // lsp: token 33:11 variable
 // lsp: token 15:30 parameter
+// lsp: token 30:21 property
+// lsp: token 24:9 enumMember
+// lsp: hover 30:21 "x: i64"
+// lsp: hover 24:9 "Shape.Circle { r: i64 }"
+// lsp: definition 30:21 -> 10:5
+// lsp: definition 24:9 -> 18:5
+// lsp: definition 24:21 -> 24:16
+// lsp: definition 15:14 -> 15:8
+// lsp: references 31:15 3
+// lsp: references 15:8 4
+// lsp: references 10:5 3
+// lsp: references 18:5 2
+// lsp: references 24:16 3
+// lsp: references 22:9 2
+// lsp: references 37:9 3
+// lsp: references 36:19 2
+// lsp: rename 31:15 plus -> 3
+// lsp: rename 30:9 q -> 3
+// lsp: rename 15:8 U -> 4
+// lsp: rename 24:9 Disc -> 2
+// lsp: rename 36:19 double -> 2
+// lsp: rename 38:7 shove -> error
+// lsp: rename 33:5 shout -> error
+// lsp: rename 31:5 be -> error
+// lsp: hint 30:10 ": Point"
+// lsp: hint 31:12 ": i64"
+// lsp: hint 32:10 ": f64"
+// lsp: hint 31:19 "a:"
+// lsp: hint 31:24 "b:"
+// lsp: hint 32:17 "a:"
+// lsp: hint 35:16 "s:"
+// lsp: hint 36:25 "x:"
+// lsp: folding 1-3
+// lsp: folding 8-12
+// lsp: folding 17-20
+// lsp: folding 22-27
+// lsp: folding 23-26
+// lsp: folding 29-40
+// lsp: selection 31:21 -> 31:21-31:22
+// lsp: selection 31:21 -> 31:19-31:22
+// lsp: selection 31:21 -> 31:15-31:28
+// lsp: selection 31:21 -> 29:1-40:2
