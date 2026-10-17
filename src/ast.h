@@ -2137,6 +2137,11 @@ struct FnSpec {
     vector<TypeExpr *> rets;       // TY_VOID-free: empty = no return values.
     bool retsknown = false;
     bool inprogress = false;
+    // Its body was being checked when the root being checked ended on an
+    // error (TypeCheck::CheckRoot): checked no further, never reused, and a
+    // call that would reuse it ends its own root silently, as a
+    // consequence of the error reported (TypeCheck::GetOrCreateSpec).
+    bool failed = false;
     bool incycle = false;          // Part of a recursive cycle (§7.8).
     // The cycle member this one was merged under; following the links ends
     // at the outermost member on the call path that found the cycle, which

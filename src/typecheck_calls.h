@@ -1527,8 +1527,10 @@ inline FnSpec *TypeCheck::GetOrCreateSpec(MatchInfo &mi, vector<Val> &argvals, N
         if (spec->lexparent != mi.env || spec->escaped != escaped) continue;
         if (!spec->inprogress && spec->narrowedenv != narrowedenv) continue;
         // A cycle's member due for its next round is checked again below
-        // with what it reads then.
-        if (!spec->inprogress && !spec->stale && (spec->storesout || !EnvUnchanged(spec)))
+        // with what it reads then. A failed one read what it read before
+        // its check was cut short, which decides nothing.
+        if (!spec->inprogress && !spec->stale && !spec->failed &&
+            (spec->storesout || !EnvUnchanged(spec)))
             continue;
         if (!TypeArgsEq(spec->argtypes, mi.paramtypes)) continue;
         // A type argument no parameter type mentions (`size<u8>()`) shows
@@ -1579,6 +1581,10 @@ inline FnSpec *TypeCheck::GetOrCreateSpec(MatchInfo &mi, vector<Val> &argvals, N
             }
         }
         if (!needsok && !spec->inprogress) continue;
+        // The call would reuse a specialization whose check the error of
+        // another root cut short (FnSpec::failed): what that error reported
+        // stands for this call too, and this root ends here, silently.
+        if (spec->failed) throw Abandoned {};
         // Exactness and concreteness are not part of the key, so what the
         // specialization records is what every call site that reaches it
         // agrees on. A back edge with other classes than the key's passes
@@ -2520,6 +2526,9 @@ inline void TypeCheck::CheckExport(SFunction *sf) {
     if (sf->specs.size() != 1)
         fail("could not resolve one concrete function signature");
     auto spec = sf->specs[0];
+    // Its check failed (FnSpec::failed), which was reported: nothing more
+    // can be said of the export.
+    if (spec->failed) throw Abandoned {};
     if (spec->params.size() != sf->params.size())
         fail("could not resolve one concrete function signature");
     for (size_t i = 0; i < spec->argtypes.size(); i++) {
@@ -3431,7 +3440,12 @@ inline void TypeCheck::CheckReturn(Return *r) {
 // driver rather than from a call.
 
 inline FnSpec *TypeCheck::EnsureThreadSpec(SFunction *sf, Line l) {
-    if (!sf->specs.empty()) return sf->specs[0];
+    if (!sf->specs.empty()) {
+        // Its one check failed (FnSpec::failed): what that reported stands
+        // for this spawn too.
+        if (sf->specs[0]->failed) throw Abandoned {};
+        return sf->specs[0];
+    }
     if (!sf->generics.empty()) Error(l, cat("thread_fn ", sf->name, " cannot be generic"));
     if (sf->has_rets) Error(l, cat("thread_fn ", sf->name, " cannot return values"));
     auto spec = ast.NewFnSpec();

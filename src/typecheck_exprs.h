@@ -170,6 +170,9 @@ inline void TypeCheck::DerefLValue(LVal &lv, Node *at) {
 // is when its initializer runs (§11.1).
 inline void TypeCheck::RequireAssigned(VarDef *vd, Node *at) {
     if (vd->assigned) return;
+    // Its initializer's check failed and reported why: a use is no error
+    // of its own.
+    if (failedglobals.count(vd)) throw Abandoned {};
     auto order = vd->isglobal
                      ? cat(": globals initialize in declaration order, imported files first "
                            "(§11.1), so ", vd->name, " has no value until its initializer at ",

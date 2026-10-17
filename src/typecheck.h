@@ -2722,6 +2722,91 @@ struct TypeCheck {
     // ------------------------------------------------------------------
     // The driver: globals in order, then main, then thread entry points.
 
+    // The checker's state at a root's entry, which the root's check returns
+    // to where it ends on an error (CheckRoot): what the check had opened
+    // by then is closed again -- the frames, scopes, variables and nested
+    // functions past the root's own, the body state, a type build in
+    // progress -- the globals' flow is as it was, and the specializations
+    // whose bodies were being checked are marked failed (FnSpec::failed).
+    // What the root recorded for the whole-program fixups stays: it is
+    // what checked code did, and a specialization that completed is sound
+    // and reused as any other.
+    struct Checkpoint {
+        TypeCheck &tc;
+        size_t frames, scopes, vars, localfns, blockpos, outerbodies, cyclerounds, typechain,
+               laterpointees, fnspecs;
+        int typesbuilding;
+        BodyState cur;
+        struct GlobalFlow { VarDef *v; bool assigned, maybeassigned; TypeExpr *narrowed; };
+        vector<GlobalFlow> globals;
+        Checkpoint(TypeCheck &t)
+            : tc(t), frames(t.frames.size()), scopes(t.scopes.size()), vars(t.vars.size()),
+              localfns(t.localfns.size()), blockpos(t.blockpos.size()),
+              outerbodies(t.outerbodies.size()), cyclerounds(t.cyclerounds.size()),
+              typechain(t.typechain.size()), laterpointees(t.laterpointees.size()),
+              fnspecs(t.ast.fnspecs.size()), typesbuilding(t.typesbuilding), cur(t.cur) {
+            for (auto g : tc.ast.globals)
+                for (auto v : g->defs) globals.push_back({ v, v->assigned, v->maybeassigned, v->narrowed });
+        }
+        void Restore() {
+            tc.frames.resize(frames);
+            tc.scopes.resize(scopes);
+            tc.vars.resize(vars);
+            tc.localfns.resize(localfns);
+            tc.blockpos.resize(blockpos);
+            tc.outerbodies.resize(outerbodies);
+            tc.cyclerounds.resize(cyclerounds);
+            tc.typechain.resize(typechain);
+            tc.laterpointees.resize(laterpointees);
+            tc.typesbuilding = typesbuilding;
+            tc.cur = cur;
+            tc.reachable = true;
+            tc.fitnode = nullptr;
+            tc.lastcallrets.clear();
+            for (auto i = fnspecs; i < tc.ast.fnspecs.size(); i++) {
+                auto sp = tc.ast.fnspecs[i];
+                if (!sp->inprogress) continue;
+                sp->failed = true;
+                sp->inprogress = false;
+                sp->stale = false;
+            }
+            for (auto &g : globals) {
+                g.v->assigned = g.assigned;
+                g.v->maybeassigned = g.maybeassigned;
+                g.v->narrowed = g.narrowed;
+            }
+        }
+    };
+
+    // Checks one root of the program -- a global's initializer, main, a
+    // thread entry, a function nothing reached, an export, a whole-program
+    // fixup -- and goes on past its error: a CompileError is reported
+    // (Ast::Report), an Abandoned is a consequence of one reported before,
+    // and either returns the checker to the root's entry (Checkpoint).
+    // Returns whether the root completed.
+    template<typename F> bool CheckRoot(F f) {
+        Checkpoint cp(*this);
+        try {
+            f();
+            return true;
+        } catch (CompileError &e) {
+            if (e.diags.empty()) {
+                Diagnostic d;
+                d.message = d.text = e.msg;
+                ast.Report(d);
+            }
+            for (auto &d : e.diags) ast.Report(d);
+        } catch (Abandoned &) {
+        }
+        cp.Restore();
+        return false;
+    }
+
+    // The globals whose initializer's check failed: unassigned for good,
+    // and a use of one is a consequence of the error reported there
+    // (RequireAssigned).
+    set<VarDef *> failedglobals;
+
     TypeCheck(Ast &_ast, bool _library = false, bool _nomain = false) : ast(_ast), library(_library), nomain(_nomain) {
         // A checked program records values for about two thirds as many
         // nodes as it parsed to, clones included, so this is the size the
@@ -2770,18 +2855,22 @@ struct TypeCheck {
             for (auto &v : en->variants)
                 for (auto &fld : v.fields)
                     if (fld.type) TypeParamSizes(fld.type, en->generics);
-        // A body the parser broke outside any function (a global's
-        // initializer, a default) ends the check silently where its
-        // error was reported (Abandoned).
-        try {
-            CheckRoots();
-        } catch (Abandoned &) {}
+        CheckRoots();
     }
 
+    // The roots, each checked past the others' errors (CheckRoot): the
+    // globals' initializers in order, main, the thread entry points, the
+    // functions nothing reached, the exports, then the whole-program
+    // fixups. An error ends the root it is in, and costs the program the
+    // diagnostics of the code that root reached after it; the rest is
+    // checked as if the root had completed.
     void CheckRoots() {
         for (auto g : ast.globals) {
-            CheckVarDecl(g, true);
-            for (auto d : g->defs) d->assigned = d->maybeassigned = true;
+            if (CheckRoot([&] { CheckVarDecl(g, true); })) {
+                for (auto d : g->defs) d->assigned = d->maybeassigned = true;
+            } else {
+                for (auto d : g->defs) failedglobals.insert(d);
+            }
         }
         // Concrete ones only; a pointee still spelled with a type parameter
         // gets here again once a specialization substitutes it.
@@ -2793,24 +2882,27 @@ struct TypeCheck {
         if (!mainsf && !library && !(nomain && !ast.DeclaresMain()))
             throw CompileError { "program needs exactly one global fn main()" };
         if (mainsf) {
-            if (!mainsf->params.empty() || mainsf->has_rets || !mainsf->generics.empty() ||
-                mainsf->isthread)
-                Error(mainsf->line, "fn main() takes no parameters and returns nothing");
-            auto mainspec = ast.NewFnSpec();
-            mainspec->sf = mainsf;
-            mainsf->specs.push_back(mainspec);
-            CheckSpecBody(mainspec, nullptr, mainsf->line);
+            CheckRoot([&] {
+                if (!mainsf->params.empty() || mainsf->has_rets || !mainsf->generics.empty() ||
+                    mainsf->isthread)
+                    Error(mainsf->line, "fn main() takes no parameters and returns nothing");
+                auto mainspec = ast.NewFnSpec();
+                mainspec->sf = mainsf;
+                mainsf->specs.push_back(mainspec);
+                CheckSpecBody(mainspec, nullptr, mainsf->line);
+            });
         }
         // Thread entry points compile as separate programs (§11.2); check any
         // that no spawn reached.
         for (size_t i = 0; i < ast.functions.size(); i++) {
             auto sf = ast.functions[i];
-            if (sf->isthread) EnsureThreadSpec(sf, sf->line);
+            if (sf->isthread) CheckRoot([&] { EnsureThreadSpec(sf, sf->line); });
         }
         // Thread programs may not touch globals: that would be shared mutable
         // memory between programs (§11.2).
         for (auto sf : ast.functions)
-            if (sf->isthread && !sf->specs.empty()) CheckThreadGlobals(sf->specs[0]);
+            if (sf->isthread && !sf->specs.empty() && !sf->specs[0]->failed)
+                CheckRoot([&] { CheckThreadGlobals(sf->specs[0]); });
         // NOTE: in this compilation model, code no call reaches would never be
         // typechecked at all. That is right for generic functions (they need a
         // caller's types), but silently skipping plain dead code makes for a
@@ -2820,20 +2912,23 @@ struct TypeCheck {
         // reusable where it could be).
         // Errors these produce are real; a lack of errors is weaker than for
         // reached code, since no call-site facts were available.
-        for (size_t i = 0; i < ast.functions.size(); i++) CheckUnreached(ast.functions[i]);
+        for (size_t i = 0; i < ast.functions.size(); i++) {
+            auto sf = ast.functions[i];
+            CheckRoot([&] { CheckUnreached(sf); });
+        }
         auto exportcount = 0;
         for (auto sf : ast.functions) {
             if (!sf->isexport) continue;
             exportcount++;
-            CheckExport(sf);
+            CheckRoot([&] { CheckExport(sf); });
         }
         if (library && !exportcount)
             throw CompileError { "--header requires at least one export fn" };
-        CheckGlobalShrinks();
-        SettleParamRootExactness();
-        ResolveGrowConflicts();
-        VerifyLiterals();
-        ReportRedundantCasts();
+        CheckRoot([&] { CheckGlobalShrinks(); });
+        CheckRoot([&] { SettleParamRootExactness(); });
+        CheckRoot([&] { ResolveGrowConflicts(); });
+        CheckRoot([&] { VerifyLiterals(); });
+        CheckRoot([&] { ReportRedundantCasts(); });
     }
 
     // Two parameter classes of one activation are one array where some
@@ -3059,7 +3154,10 @@ struct TypeCheck {
     }
 };
 
-// Runs the whole pass; errors throw CompileError.
+// Runs the whole pass. An error in a root is reported and ends that root
+// (TypeCheck::CheckRoot, Ast::errors); one before the roots, or in what the
+// driver asked for (a program without main, a header without an export),
+// throws CompileError.
 inline void TypeCheckProgram(Ast &ast, bool library = false, bool nomain = false) {
     TypeCheck tc(ast, library, nomain);
 }

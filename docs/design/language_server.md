@@ -479,16 +479,27 @@ check-on-save mode kept for a compiler without the verb or
 
 **Phase 2, more than one error:** D1, then D2; completion (both kinds),
 references and rename, inlay hints, folding and selection ranges. `goose
-check` reports every error. D1 is in (`docs/implementation.md` §2 and
-§3.1): the parser recovers per statement (`Block::brokenat`,
+check` reports every error. D1 and D2 are in (`docs/implementation.md`
+§2 and §3.1): the parser recovers per statement (`Block::brokenat`,
 `SFunction::broken`, `Dot::incomplete`) and per declaration, which it
 drops whole, reporting each error as it goes (`Ast::Report`, kept in
 `Ast::errors`); the checker checks a broken body up to its error and
 finishes the specialization from the signature (`Abandoned`), so a call
 of a broken function is checked against the signature alone and the
-caller goes on; the server skips the optimizer and bounds-check
-elimination for a program with errors and answers queries from what was
-annotated. The fixtures are in `test/errors_tc/recovery/`.
+caller goes on; each root is checked by `CheckRoot`, which reports its
+error and returns the checker to the root's entry (`Checkpoint`). One
+refinement on the text above: only the specializations whose bodies were
+being checked when the error struck are marked `failed`, since one that
+completed before it is sound and keeping it reusable spares the roots
+that call it (a helper `main` called before its error, say); what the
+root recorded for the fixups stays, being what checked code did. The
+server skips the optimizer and bounds-check elimination for a program
+with errors and answers queries from what was annotated. The fixtures
+are in `test/errors_tc/recovery/` and `test/lsp/recovery.goose`. Not
+done, and worth doing when an editor shows the need: recovery inside a
+declaration (a struct with a bad field is dropped whole today, so its
+uses fail resolution, which still ends the analysis), and the import
+errors, which still end the parse.
 
 **Phase 3:** code lens, exemplar instantiation for generics, parse caching
 per file if a workspace turns out to need it, the other editors' entries.

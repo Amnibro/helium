@@ -118,7 +118,6 @@ def check_lsp_protocol(exe, base):
     main = fixtures / "basics.goose"
     helper = fixtures / "helper.goose"
     text = main.read_text(encoding="utf-8")
-    lines = text.splitlines()
     main_uri, helper_uri = uri_of(main), uri_of(helper)
 
     def position(spec):
@@ -132,64 +131,81 @@ def check_lsp_protocol(exe, base):
     client.request("initialize", {"processId": None, "rootUri": uri_of(fixtures), "capabilities": {},
                                   "initializationOptions": {"entryFiles": [str(main)]}})
     client.send("initialized", {}, request=False)
-    client.send("textDocument/didOpen", {"textDocument": {
-        "uri": main_uri, "languageId": "goose", "version": 1, "text": text}}, request=False)
-    diags = client.diagnostics_for(main_uri)
-    if diags:
-        fail("the fixture has diagnostics", diags)
-    doc = {"textDocument": {"uri": main_uri}}
-    for line in lines:
-        m = re.match(r"// lsp: (\w+) (.*)$", line)
-        if not m or line.startswith("// lsp: fixture"):
-            continue
-        kind, rest = m.groups()
-        if kind == "hover":
-            pos, want = rest.split(" ", 1)
-            got = client.request("textDocument/hover", {**doc, "position": position(pos)})
-            if not got or json.loads(want) not in got["contents"]["value"]:
-                fail(f"hover {pos} lacks {want}", got)
-        elif kind == "definition":
-            pos, _, target = rest.split(" ", 2)
-            got = client.request("textDocument/definition", {**doc, "position": position(pos)})
-            if not got:
-                fail(f"definition {pos}", got)
-            if target.endswith(".goose"):
-                if not got["uri"].lower().endswith(target):
-                    fail(f"definition {pos} is not in {target}", got)
+
+    def open_fixture(path, text):
+        """Opens a fixture and returns the diagnostics published for it."""
+        client.send("textDocument/didOpen", {"textDocument": {
+            "uri": uri_of(path), "languageId": "goose", "version": 1, "text": text}}, request=False)
+        return client.diagnostics_for(uri_of(path))
+
+    def queries(path, text, diags):
+        """Asks what the fixture's `// lsp:` lines say to ask, and checks the
+        answers; its `error` lines are the lines its diagnostics must be at,
+        all of them."""
+        uri = uri_of(path)
+        doc = {"textDocument": {"uri": uri}}
+        errors = []
+        for line in text.splitlines():
+            m = re.match(r"// lsp: (\w+) (.*)$", line)
+            if not m or line.startswith("// lsp: fixture"):
+                continue
+            kind, rest = m.groups()
+            if kind == "error":
+                errors.append(int(rest))
+            elif kind == "hover":
+                pos, want = rest.split(" ", 1)
+                got = client.request("textDocument/hover", {**doc, "position": position(pos)})
+                if not got or json.loads(want) not in got["contents"]["value"]:
+                    fail(f"hover {pos} lacks {want}", got)
+            elif kind == "definition":
+                pos, _, target = rest.split(" ", 2)
+                got = client.request("textDocument/definition", {**doc, "position": position(pos)})
+                if not got:
+                    fail(f"definition {pos}", got)
+                if target.endswith(".goose"):
+                    if not got["uri"].lower().endswith(target):
+                        fail(f"definition {pos} is not in {target}", got)
+                else:
+                    want = position(target)
+                    if got["uri"].lower() != uri.lower() or got["range"]["start"] != want:
+                        fail(f"definition {pos} is not at {target}", got)
+            elif kind == "symbol":
+                name, symkind = rest.split()
+                kinds = {"function": 12, "struct": 23, "enum": 10, "constant": 14, "variable": 13}
+                got = client.request("textDocument/documentSymbol", doc)
+                if not any(s["name"] == name and s["kind"] == kinds[symkind] for s in got or []):
+                    fail(f"symbol {name} ({symkind})", got)
+            elif kind == "signature":
+                pos, want, active = re.match(r'(\S+) "(.*)" (\d+)$', rest).groups()
+                got = client.request("textDocument/signatureHelp", {**doc, "position": position(pos)})
+                if (not got or got["signatures"][got["activeSignature"]]["label"] != want or
+                        got["activeParameter"] != int(active)):
+                    fail(f"signature {pos}", got)
+            elif kind == "token":
+                pos, want = rest.split()
+                got = client.request("textDocument/semanticTokens/full", doc)
+                legend = ["namespace", "type", "struct", "enum", "enumMember", "typeParameter",
+                          "parameter", "variable", "property", "function", "method"]
+                data = got["data"]
+                tokens = {}
+                line = char = 0
+                for i in range(0, len(data), 5):
+                    dline, dchar, length, ttype, mods = data[i:i + 5]
+                    line += dline
+                    char = char + dchar if dline == 0 else dchar
+                    tokens[(line, char)] = legend[ttype]
+                p = position(pos)
+                if tokens.get((p["line"], p["character"])) != want:
+                    fail(f"token {pos} is not {want}", {"at": p, "got": tokens.get((p["line"], p["character"]))})
             else:
-                want = position(target)
-                if got["uri"].lower() != main_uri.lower() or got["range"]["start"] != want:
-                    fail(f"definition {pos} is not at {target}", got)
-        elif kind == "symbol":
-            name, symkind = rest.split()
-            kinds = {"function": 12, "struct": 23, "enum": 10, "constant": 14, "variable": 13}
-            got = client.request("textDocument/documentSymbol", doc)
-            if not any(s["name"] == name and s["kind"] == kinds[symkind] for s in got or []):
-                fail(f"symbol {name} ({symkind})", got)
-        elif kind == "signature":
-            pos, want, active = re.match(r'(\S+) "(.*)" (\d+)$', rest).groups()
-            got = client.request("textDocument/signatureHelp", {**doc, "position": position(pos)})
-            if (not got or got["signatures"][got["activeSignature"]]["label"] != want or
-                    got["activeParameter"] != int(active)):
-                fail(f"signature {pos}", got)
-        elif kind == "token":
-            pos, want = rest.split()
-            got = client.request("textDocument/semanticTokens/full", doc)
-            legend = ["namespace", "type", "struct", "enum", "enumMember", "typeParameter",
-                      "parameter", "variable", "property", "function", "method"]
-            data = got["data"]
-            tokens = {}
-            line = char = 0
-            for i in range(0, len(data), 5):
-                dline, dchar, length, ttype, mods = data[i:i + 5]
-                line += dline
-                char = char + dchar if dline == 0 else dchar
-                tokens[(line, char)] = legend[ttype]
-            p = position(pos)
-            if tokens.get((p["line"], p["character"])) != want:
-                fail(f"token {pos} is not {want}", {"at": p, "got": tokens.get((p["line"], p["character"]))})
-        else:
-            raise RuntimeError(f"lsp: unknown query {kind} in {main.name}")
+                raise RuntimeError(f"lsp: unknown query {kind} in {path.name}")
+        got = sorted(d["range"]["start"]["line"] + 1 for d in diags if d["severity"] == 1)
+        if got != sorted(errors):
+            fail(f"{path.name} has errors at lines {got}, not {sorted(errors)}", diags)
+
+    diags = open_fixture(main, text)
+    queries(main, text, diags)
+    doc = {"textDocument": {"uri": main_uri}}
     got = client.request("workspace/symbol", {"query": "twi"})
     if not any(s["name"] == "twice" and s["location"]["uri"].lower() == helper_uri.lower() for s in got):
         fail("workspace symbol twice", got)
@@ -211,6 +227,11 @@ def check_lsp_protocol(exe, base):
     got = client.request("textDocument/hover", {**doc, "position": position("33:11")})
     if not got or "let sum: i64" not in got["contents"]["value"]:
         fail("hover after the edits", got)
+    # A program with errors in two functions, opened as a root of its own:
+    # both are published, and the queries answer from what was checked.
+    recovery = fixtures / "recovery.goose"
+    rtext = recovery.read_text(encoding="utf-8")
+    queries(recovery, rtext, open_fixture(recovery, rtext))
     client.request("shutdown", None)
     client.send("exit", request=False)
     code = client.p.wait(timeout=30)

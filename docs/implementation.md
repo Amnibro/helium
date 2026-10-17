@@ -405,8 +405,36 @@ skipped. So a call of a broken function is checked against its signature
 alone, as a call of an extern function is, and the caller goes on; a
 function with no declared results returns none. Nothing is reported: the
 parser did. A body broken outside any function -- a global's
-initializer, a default -- ends the whole check the same way, silently,
-at the `TypeCheck` constructor.
+initializer, a default -- ends its root the same way, silently.
+
+**Roots and recovery.** Each root -- a global's initializer, `main`, a
+thread entry (`EnsureThreadSpec`, then `CheckThreadGlobals`), a function
+nothing reached, an export, and each whole-program fixup -- is checked by
+`CheckRoot`, which goes on past the root's error: a `CompileError` is
+reported through `Ast::Report` (§2) with the pending warnings before it,
+an `Abandoned` is a consequence of an error reported before, and either
+returns the checker to the root's entry (`Checkpoint`): the frames,
+scopes, variables, nested functions, block positions, body states and
+cycle rounds past the root's own are closed, a type build in progress
+dropped, reachability and the globals' flow (assigned, narrowed) as they
+were. The specializations whose bodies were being checked when the error
+struck are marked `FnSpec::failed`: checked no further, and never reused
+-- `GetOrCreateSpec` throws `Abandoned` for a call whose key matches one,
+as `EnsureThreadSpec` and `CheckExport` do for a failed entry or export,
+since what the error reported stands for that call too, and the root
+making it ends silently. A specialization that completed before the
+error is sound, and is reused as any other; what the root recorded for
+the fixups (stores, shrinks, literal checks, cast verdicts) stays, being
+what checked code did. A global whose initializer failed stays
+unassigned (`failedglobals`), and a use of it ends its root silently
+rather than as a use before assignment. So one error costs the program
+the diagnostics of what its root reached after it -- the rest of that
+body and of its callers' -- and of the roots whose calls would reuse the
+specializations it cut short, and nothing else; `goose check` prints
+every error in root order, and stops before the optimizer when there
+were any. An error before the roots (a declaration's validation) or in
+what the driver asked for (no `main`, a header without an export) still
+throws.
 
 **Depth.** Since a body is checked inside the call that first reaches it,
 the native stack holds a `CheckSpecBody` activation for every call on the
@@ -5946,4 +5974,6 @@ active.
 
 **Testing.** `test/lsp_protocol.py` (`docs/testing.md`) drives the server
 over its own protocol on the fixtures in `test/lsp/`, whose `// lsp:`
-lines state the queries and their answers.
+lines state the queries and their answers, and the lines the errors are
+at (`recovery.goose`: an error in each of two functions, both published,
+with the queries answered from what was checked).
