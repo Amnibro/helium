@@ -824,7 +824,15 @@ inline void Binary::CgAny(CodeGen &cg, const Dst &d) {
 }
 inline void Dot::CgAny(CodeGen &cg, const Dst &d) { cg.LeafAny(this, d); }
 inline void Index::CgAny(CodeGen &cg, const Dst &d) { cg.LeafAny(this, d); }
-inline void SliceExpr::CgAny(CodeGen &cg, const Dst &d) { cg.LeafAny(this, d); }
+inline void SliceExpr::CgAny(CodeGen &cg, const Dst &d) {
+    // A slice stored in a variable of its own type is built in the variable.
+    if (d.k == DK_LVALUE && !d.pool && d.t && d.t->kind == TY_SLICE &&
+        exprtype->kind == TY_SLICE && cg.CT(d.t) == cg.CT(exprtype) && CodeGen::IsCName(d.s)) {
+        cg.GenSlice(this, d.s);
+        return;
+    }
+    cg.LeafAny(this, d);
+}
 inline void AsCast::CgAny(CodeGen &cg, const Dst &d) { cg.LeafAny(this, d); }
 inline void RangeExpr::CgAny(CodeGen &cg, const Dst &d) { cg.LeafAny(this, d); }
 

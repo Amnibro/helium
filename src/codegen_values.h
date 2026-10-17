@@ -1760,7 +1760,11 @@ inline string CodeGen::GenElemwise(Binary *b, const string &l, const string &r) 
     return tv;
 }
 
-inline string CodeGen::GenSlice(SliceExpr *se) {
+// A slice expression's value, in a new temp, or with `into` (a variable of
+// the slice's C type) in that variable's members: the members are computed
+// from temps only, so writing one cannot change the other, and TinyCC is
+// spared building a temp and copying it.
+inline string CodeGen::GenSlice(SliceExpr *se, const string &into) {
     auto lv = GenLoc(se->obj);
     if (lv.t->kind == TY_REF) DerefLoc(lv);
     auto v = ArrayView(lv);
@@ -1783,19 +1787,27 @@ inline string CodeGen::GenSlice(SliceExpr *se) {
     if (!se->nobc)
         L("if (", lov, " < 0 || ", hiv, " < ", lov, " || ", hiv, " > ", lenv,
           ") gs_abort(GS_E_SLICE, ", LocArgs(se->line), ");");
-    auto t = T();
     // Adapted contexts (slice constructing an array) leave an array
     // exprtype on the node; the slice value's own type comes from the
     // source element.
     auto et = se->exprtype->kind == TY_SLICE ? se->exprtype : ast.SliceOf(v.elem, se->line);
+    string data, len;
     if (IsFix(v.elem)) {
         auto dp = v.typedelems ? v.elems
                                : cat("(", CT(v.elem), " *)(", v.elems, ")");
-        L(CT(et), " ", t, " = { ", dp, " + ", lov, ", ", hiv, " - ", lov, " };");
+        data = cat(dp, " + ", lov);
+        len = cat(hiv, " - ", lov);
     } else {
         // Whole-array slices only (TC): elements are sequential bytes.
-        L(CT(et), " ", t, " = { ", v.elems, ", ", lenv, " };");
+        data = v.elems;
+        len = lenv;
     }
+    if (!into.empty()) {
+        L(into, ".data = ", data, "; ", into, ".len = ", len, ";");
+        return into;
+    }
+    auto t = T();
+    L(CT(et), " ", t, " = { ", data, ", ", len, " };");
     return t;
 }
 

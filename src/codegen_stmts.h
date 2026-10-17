@@ -698,9 +698,9 @@ inline void CodeGen::BindLocal(VarDef *d, Node *init, bool forlocal) {
                        RelValue(init));
         return;
     }
-    // Literals holding relative references construct into the variable
-    // itself rather than through an initializer copy.
-    if (IsCtl(init) || Is<Call>(init) ||
+    // Literals holding relative references, and slices, construct into the
+    // variable itself rather than through an initializer copy.
+    if (IsCtl(init) || Is<Call>(init) || (Is<SliceExpr>(init) && t->kind == TY_SLICE) ||
         ((Is<StructLit>(init) || Is<ArrayLit>(init)) && HasRelRef(t))) {
         L(CT(t), " ", name, ";");
         GenAny(init, Dst { DK_LVALUE, name, t });
