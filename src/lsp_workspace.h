@@ -173,14 +173,18 @@ struct Workspace {
         an->ast = make_unique<Ast>();
         auto &ast = *an->ast;
         ast.cancel = &rpc.cancel;
-        ast.warnsink = [&](const Diagnostic &d) { an->diags.push_back(d); };
+        ast.sink = [&](const Diagnostic &d) { an->diags.push_back(d); };
         SourceProvider sources = [&](const string &path) { return TextOf(path); };
         try {
             RunOnCompilerStack([&]() -> int {
+                // The parser and the checker go on past the errors they
+                // recover from, which the sink collects; the passes after
+                // the check want a program without any.
                 ParseProgram(ast, r.path, stdlibdirs, DirOf(exe), sources);
                 ResolveTypeNames(ast);
                 an->parsed = true;
                 TypeCheckProgram(ast, false, true);
+                if (!ast.errors.empty()) return 0;
                 Optimizer opt(ast, 1);
                 BCE bce(ast);
                 bce.RunAll();

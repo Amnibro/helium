@@ -59,6 +59,7 @@ inline TypeCheck::LVal TypeCheck::CheckLValue(Node *n) {
         return lv;
     }
     if (auto d = Is<Dot>(n)) {
+        if (d->incomplete) IncompleteDot(d);
         auto lv = LValueBase(d->obj);
         auto base = lv.type;
         DerefLValue(lv, d->obj);
@@ -3062,15 +3063,21 @@ inline void TypeCheck::CheckSelfInit(Node *n, TypeExpr *ft, TypeExpr *selft) {
 // Statements.
 
 inline void TypeCheck::CheckStmts(Block *b) {
+    // The parser lost a statement here (Block::brokenat), which it reported:
+    // what the block holds from there on was not what the program meant,
+    // and the body ends silently.
+    auto lost = [&](size_t i) { return (int)i == b->brokenat; };
     for (size_t i = 0; i < b->stmts.size(); i++) {
         if (!reachable) {
             b->stmts.resize(i);
             break;
         }
+        if (lost(i)) throw Abandoned {};
         blockpos.back().idx = i;
         if (auto cf = Is<ConstFor>(b->stmts[i])) b->stmts[i] = ExpandStatements(cf);
         CheckStmt(b->stmts[i]);
     }
+    if (lost(b->stmts.size())) throw Abandoned {};
     // Drop the unreachable suffix (including the tail), so later passes never
     // see unchecked nodes. Function bodies are specialization clones; unknown
     // recursive calls may return, so only proven exits can prune them.

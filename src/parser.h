@@ -48,10 +48,122 @@ struct Parser {
     string_view curns;
     bool declseen = false;           // The directive must come before any declaration.
 
+    // Recovery (docs/design/language_server.md §5 D): a statement or a
+    // declaration an error is raised in is reported and lost, and the parse
+    // goes on after it (ParseBlockBody, ParseTopDecl). A tentative parse
+    // (TryParseTyArgs, a function value's parameter prefix) catches the
+    // errors of its own extent and backtracks, so nothing is reported or
+    // recovered from while one is under way.
+    int tentative = 0;
+    struct Tentatively {
+        Parser &p;
+        Tentatively(Parser &_p) : p(_p) { p.tentative++; }
+        ~Tentatively() { p.tentative--; }
+    };
+    // The incomplete `.` (Dot::incomplete) the statement being parsed holds,
+    // if any: kept as a statement of its own where the rest of the
+    // statement is lost, so that a completion finds it.
+    Dot *pendingdot = nullptr;
+    // An error at the end of the file has been reported: the blocks still
+    // open there end silently, rather than each report the end once more.
+    bool eoferror = false;
+
     Parser(Ast &_ast, string_view filename, const char *source, int _fileidx)
         : ast(_ast), lex(filename, source, _fileidx), fileidx(_fileidx) {}
 
     [[noreturn]] void Error(const string &msg) { lex.Error(msg); }
+
+    // An error the parse goes on past, reported through the program as the
+    // driver and the server read them. A parser's error carries its
+    // diagnostic; one without is reported as its text.
+    void Report(const CompileError &e) {
+        if (e.diags.empty()) {
+            Diagnostic d;
+            d.message = d.text = e.msg;
+            ast.Report(d);
+        }
+        for (auto &d : e.diags) ast.Report(d);
+        if (lex.tok == T_EOF) eoferror = true;
+    }
+
+    // The next token, past any the lexer rejects, each reported once; a
+    // token whose scan the error ended is skipped with the rest of its line
+    // (Lexer::SkipBrokenToken).
+    void NextSkipping() {
+        for (;;) {
+            try {
+                if (lex.scanning) lex.SkipBrokenToken();
+                else lex.Next();
+                return;
+            } catch (CompileError &e) {
+                Report(e);
+            }
+        }
+    }
+
+    // Whether the token can only begin a statement (or, at the top level, a
+    // declaration), so that a skip finding it at depth 0 stops before it.
+    bool StartsNext(bool declaration) {
+        switch (lex.tok) {
+            case T_LET: case T_VAR: case T_CONST: case T_REUSABLE: case T_FN: case T_RECURSIVE:
+            case T_THREADFN: case T_EXTERN: case T_EXPORT: case T_SIMD:
+                return true;
+            case T_IMPORT: case T_NAMESPACE: case T_STRUCT: case T_ENUM: case T_TYPE:
+                return declaration;
+            case T_IF: case T_MATCH: case T_LOOP: case T_WHILE: case T_FOR: case T_GUARD:
+            case T_RETURN: case T_BREAK: case T_CONTINUE:
+                return !declaration;
+            default:
+                return AtInline() || AtCheckfree();
+        }
+    }
+
+    // Skips what is left of a statement or declaration an error was raised
+    // in, from the token the error is at, `startp` being where it began.
+    // A statement is skipped through the next `;` at the block's depth,
+    // or up to and including the `}` that closes the block, braces
+    // balanced; a declaration through the next `;` at depth 0, or through
+    // the `}` matching a `{` at depth 0, its body's. A keyword that can
+    // only start the next statement or declaration (StartsNext) ends the
+    // skip before it, unless it is the token the failed one began with,
+    // which would skip nothing. Returns whether the block ended: its `}`
+    // was consumed, or the file ended.
+    bool Resync(bool declaration, const char *startp) {
+        if (lex.scanning) NextSkipping();
+        auto depth = 0;
+        for (auto consumed = lex.attr.data() != startp;; consumed = true) {
+            switch (lex.tok) {
+                case T_EOF:
+                    return true;
+                case T_SEMI:
+                    if (depth == 0) {
+                        NextSkipping();
+                        return false;
+                    }
+                    break;
+                case T_LCURLY:
+                    depth++;
+                    break;
+                case T_RCURLY:
+                    if (depth == 0) {
+                        // The block's own: a stray one at the top level is
+                        // skipped like any token.
+                        if (!declaration) {
+                            NextSkipping();
+                            return true;
+                        }
+                    } else if (--depth == 0 && declaration) {
+                        NextSkipping();
+                        return false;
+                    }
+                    break;
+                default:
+                    if (depth == 0 && consumed && StartsNext(declaration)) return false;
+                    break;
+            }
+            NextSkipping();
+        }
+    }
 
     // Where the current token starts.
     Line CurLine() {
@@ -165,8 +277,30 @@ struct Parser {
         while (lex.tok != T_EOF) ParseTopDecl();
     }
 
+    // A declaration an error is raised in is reported and dropped, whatever
+    // it made so far with it, and the parse goes on at the next one
+    // (Resync). A function whose body lost a statement is no such error:
+    // its body recovered (ParseBlockBody), and the function stands, marked
+    // broken.
     void ParseTopDecl() {
         ast.CheckCancel();
+        auto mark = ast.Mark();
+        auto startp = lex.attr.data();
+        pendingdot = nullptr;
+        try {
+            ParseTopDeclInner();
+        } catch (CompileError &e) {
+            if (tentative) throw;
+            // An incomplete `.` was reported already; the error that
+            // followed it is a consequence.
+            if (!pendingdot) Report(e);
+            pendingdot = nullptr;
+            ast.DropSince(mark);
+            Resync(true, startp);
+        }
+    }
+
+    void ParseTopDeclInner() {
         auto line = CurLine();
         auto doc = lex.doc;
         curns = filens;
@@ -483,10 +617,15 @@ struct Parser {
             Expect(T_SEMI, "extern declaration");
         } else {
             if (sf->isexport && sf->cname.empty()) sf->cname = string(sf->name);
-            auto savefn = curfn;
-            curfn = sf;
+            // The enclosing function returns when the body ends, on the
+            // throw of an error the declaration is lost to included.
+            struct FnScope {
+                Parser &p;
+                SFunction *saved;
+                FnScope(Parser &_p, SFunction *sf) : p(_p), saved(_p.curfn) { p.curfn = sf; }
+                ~FnScope() { p.curfn = saved; }
+            } fs(*this, sf);
             sf->body = ParseBlockExpr("function body");
-            curfn = savefn;
         }
         sf->end = PrevEnd();
         BindGenericNames(firsttype, sf->generics);
@@ -1076,6 +1215,22 @@ struct Parser {
                     continue;
                 case T_DOT: {
                     lex.Next();
+                    if (lex.tok != T_IDENT && !tentative) {
+                        // A `.` with no name after it, as an editor asking
+                        // for completion has one: reported, and kept as a
+                        // Dot with an empty name, which the checker checks
+                        // for its object's type and stops the body on
+                        // (Dot::incomplete). The statement ends here; what
+                        // follows is lost with it or stands on its own.
+                        ast.Report(lex.Diagnose(cat("expected identifier in field access, found \'",
+                                                    TokStr(), "\'"),
+                                                lex.tokline, lex.toklinestart));
+                        auto d = Finish(New<Dot>(line, e, string_view(), curns));
+                        d->incomplete = true;
+                        pendingdot = d;
+                        if (curfn) curfn->broken = true;
+                        return d;
+                    }
                     auto name = ExpectIdent("field access");
                     // `Ident.Ident {` is a variant literal; anything else a Dot
                     // (fields, UFCS, payload-less variant constants).
@@ -1216,14 +1371,14 @@ struct Parser {
     // them for written ones, and the `ns::limit` of `a < ns::limit` is no type.
     bool TryParseTyArgs(vector<TypeExpr *> &tyargs) {
         auto save = lex;
-        auto ntypes = ast.alltypes.size();
-        auto nfunctions = ast.functions.size();
+        auto mark = ast.Mark();
         auto backtrack = [&]() {
             lex = save;
             tyargs.clear();
-            ast.DropSince(ntypes, nfunctions);
+            ast.DropSince(mark);
             return false;
         };
+        Tentatively t(*this);
         lex.Next();  // The '<'.
         try {
             for (;;) {
@@ -1387,6 +1542,7 @@ struct Parser {
             vector<Param> params;
             auto ok = true;
             try {
+                Tentatively t(*this);
                 for (;;) {
                     Param p;
                     p.isvar = IsNext(T_VAR);
@@ -1423,78 +1579,110 @@ struct Parser {
         return Finish(b);
     }
 
-    // The '{' has been consumed; consumes the closing '}'.
+    // The '{' has been consumed; consumes the closing '}'. A statement an
+    // error is raised in is reported and lost, with any nested function it
+    // declared, and the parse goes on at the next one or after the block's
+    // `}` (Resync); the block records where it lost one (Block::brokenat)
+    // and the function being parsed that its body did (SFunction::broken).
     void ParseBlockBody(Block *b) {
         auto ctx = Sub();
         for (;;) {
             stmt_level = false;
             stmt_ended = false;
             if (IsNext(T_RCURLY)) break;
-            if (AtInline() || AtCheckfree()) goto nestedfndecl;
-            switch (lex.tok) {
-                case T_LET: case T_VAR: case T_CONST: case T_REUSABLE: {
-                    if (lex.tok == T_CONST && lex.PeekTok() == T_FOR) {
-                        b->stmts.push_back(ParseConstFor(false));
-                        continue;
-                    }
-                    auto vd = ParseVarDecl(false);
-                    Expect(T_SEMI, "variable declaration");
-                    b->stmts.push_back(vd);
-                    continue;
+            if (lex.tok == T_EOF && eoferror) return;
+            auto nfunctions = ast.functions.size();
+            auto startp = lex.attr.data();
+            pendingdot = nullptr;
+            try {
+                if (!ParseStatement(b)) return;
+            } catch (CompileError &e) {
+                if (tentative) throw;
+                // An incomplete `.` was reported already, and the error
+                // that followed it is a consequence: the `.` stands as the
+                // statement instead, so that a completion finds it.
+                if (pendingdot) {
+                    b->stmts.push_back(pendingdot);
+                } else {
+                    Report(e);
+                    for (auto i = nfunctions; i < ast.functions.size(); i++) delete ast.functions[i];
+                    ast.functions.resize(nfunctions);
                 }
-                case T_RECURSIVE: case T_FN: case T_THREADFN: case T_EXTERN: case T_EXPORT:
-                case T_SIMD: nestedfndecl:
-                    b->stmts.push_back(ParseFnDecl(true));
-                    continue;
-                case T_GUARD:
-                    ParseGuard(b);
-                    return;
+                pendingdot = nullptr;
+                if (b->brokenat < 0) b->brokenat = (int)b->stmts.size();
+                if (curfn) curfn->broken = true;
+                if (Resync(false, startp)) return;
+            }
+        }
+    }
+
+    // One statement of b, or its tail; returns false once the block has
+    // ended (its `}` consumed, by a guard's rest of the block included).
+    bool ParseStatement(Block *b) {
+        if (AtInline() || AtCheckfree()) goto nestedfndecl;
+        switch (lex.tok) {
+            case T_LET: case T_VAR: case T_CONST: case T_REUSABLE: {
+                if (lex.tok == T_CONST && lex.PeekTok() == T_FOR) {
+                    b->stmts.push_back(ParseConstFor(false));
+                    return true;
+                }
+                auto vd = ParseVarDecl(false);
+                Expect(T_SEMI, "variable declaration");
+                b->stmts.push_back(vd);
+                return true;
+            }
+            case T_RECURSIVE: case T_FN: case T_THREADFN: case T_EXTERN: case T_EXPORT:
+            case T_SIMD: nestedfndecl:
+                b->stmts.push_back(ParseFnDecl(true));
+                return true;
+            case T_GUARD:
+                ParseGuard(b);
+                return false;
+            default: break;
+        }
+        stmt_level = true;
+        auto e = ParseExpr();
+        stmt_level = false;
+        auto line = CurLine();
+        if (!stmt_ended) {
+            switch (lex.tok) {
+                case T_ASSIGN: case T_DOTASSIGN: case T_PLUSEQ: case T_MINUSEQ:
+                case T_MULEQ: case T_DIVEQ: case T_MODEQ: case T_ANDEQ: case T_OREQ:
+                case T_XOREQ: case T_SHLEQ: case T_SHREQ: {
+                    auto op = lex.tok;
+                    lex.Next();
+                    auto rhs = ParseExpr();
+                    Expect(T_SEMI, "assignment statement");
+                    b->stmts.push_back(Finish(New<Assign>(line, op, e, rhs)));
+                    return true;
+                }
+                case T_INC: case T_DEC: {
+                    auto op = lex.tok;
+                    lex.Next();
+                    Expect(T_SEMI, "increment statement");
+                    b->stmts.push_back(Finish(New<IncDec>(line, op, e)));
+                    return true;
+                }
+                case T_COMMA:
+                    b->stmts.push_back(ParseMultiAssign(e, line));
+                    return true;
                 default: break;
             }
-            stmt_level = true;
-            auto e = ParseExpr();
-            stmt_level = false;
-            auto line = CurLine();
-            if (!stmt_ended) {
-                switch (lex.tok) {
-                    case T_ASSIGN: case T_DOTASSIGN: case T_PLUSEQ: case T_MINUSEQ:
-                    case T_MULEQ: case T_DIVEQ: case T_MODEQ: case T_ANDEQ: case T_OREQ:
-                    case T_XOREQ: case T_SHLEQ: case T_SHREQ: {
-                        auto op = lex.tok;
-                        lex.Next();
-                        auto rhs = ParseExpr();
-                        Expect(T_SEMI, "assignment statement");
-                        b->stmts.push_back(Finish(New<Assign>(line, op, e, rhs)));
-                        continue;
-                    }
-                    case T_INC: case T_DEC: {
-                        auto op = lex.tok;
-                        lex.Next();
-                        Expect(T_SEMI, "increment statement");
-                        b->stmts.push_back(Finish(New<IncDec>(line, op, e)));
-                        continue;
-                    }
-                    case T_COMMA:
-                        b->stmts.push_back(ParseMultiAssign(e, line));
-                        continue;
-                    default: break;
-                }
-            }
-            if (IsNext(T_SEMI)) {  // A ';' is always accepted, even when optional.
-                b->stmts.push_back(e);
-                continue;
-            }
-            if (IsNext(T_RCURLY)) {
-                b->tail = e;  // Trailing expression: the block's value.
-                break;
-            }
-            // Block-ended constructs stand as statements without a semicolon.
-            if (stmt_ended) {
-                b->stmts.push_back(e);
-                continue;
-            }
-            Error(cat("\';\' expected after expression, found \'", TokStr(), "\'"));
         }
+        if (IsNext(T_SEMI)) {  // A ';' is always accepted, even when optional.
+            b->stmts.push_back(e);
+            return true;
+        }
+        if (IsNext(T_RCURLY)) {
+            b->tail = e;  // Trailing expression: the block's value.
+            return false;
+        }
+        // Block-ended constructs stand as statements without a semicolon.
+        if (stmt_ended) {
+            b->stmts.push_back(e);
+            return true;
+        }
+        Error(cat("\';\' expected after expression, found \'", TokStr(), "\'"));
     }
 
     // `a, b = f();` assigns a call's results to places that exist (§7.1),

@@ -134,6 +134,7 @@ inline Node *Binary::Clone1(Ast &ast) const {
 inline Node *Dot::Clone1(Ast &ast) const {
     auto d = ast.New<Dot>(line, obj->Clone(ast), name, ns);
     d->accessorowner = accessorowner;
+    d->incomplete = incomplete;
     return d;
 }
 
@@ -174,6 +175,7 @@ inline Node *RangeExpr::Clone1(Ast &ast) const {
 inline Node *Block::Clone1(Ast &ast) const {
     auto b = ast.New<Block>(line);
     b->expansionboundary = expansionboundary;
+    b->brokenat = brokenat;
     CloneNodes(ast, stmts, b->stmts);
     b->tail = CloneOrNull(ast, tail);
     return b;

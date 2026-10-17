@@ -559,6 +559,24 @@ struct TypeCheck {
         throw CompileError { d.text, { d } };
     }
 
+    // A `.` with no name after it (Dot::incomplete), which the parser
+    // reported: its object is checked, for the type a completion asks
+    // for, and the body ends here. An enum's name before the `.` is no
+    // value; a completion reads its variants from the declaration.
+    [[noreturn]] void IncompleteDot(Dot *d) {
+        auto isenum = false;
+        if (auto id = Is<Ident>(d->obj); id && id->expansionerror.empty()) {
+            const FnValBind *fb;
+            isenum = !LookupVar(id->name, id->ns) && !LookupTypeParam(id->name, fb) && !fb &&
+                     ast.LookupEnum(id->name, id->ns);
+        }
+        if (!isenum) {
+            auto ov = CheckV(d->obj, nullptr);
+            d->obj->exprtype = ov.type;
+        }
+        throw Abandoned {};
+    }
+
     // What an error reports after its message: the const for expansions
     // `trace` names, then the instantiation chain.
     vector<Diagnostic::Related> Chain(string_view trace) {
@@ -2752,6 +2770,15 @@ struct TypeCheck {
             for (auto &v : en->variants)
                 for (auto &fld : v.fields)
                     if (fld.type) TypeParamSizes(fld.type, en->generics);
+        // A body the parser broke outside any function (a global's
+        // initializer, a default) ends the check silently where its
+        // error was reported (Abandoned).
+        try {
+            CheckRoots();
+        } catch (Abandoned &) {}
+    }
+
+    void CheckRoots() {
         for (auto g : ast.globals) {
             CheckVarDecl(g, true);
             for (auto d : g->defs) d->assigned = d->maybeassigned = true;

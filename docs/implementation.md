@@ -211,6 +211,38 @@ function per construct. Points that matter to later passes:
   rest ends in one and as its last statement otherwise. No later pass has a
   guard node, and `--dump` prints the `if`. A guard anywhere but among a
   block's statements is a parse error.
+* Recovery (`docs/design/language_server.md` §5 D). An error raised in a
+  statement is reported (`Ast::Report`) and the statement lost:
+  `ParseBlockBody` catches the `CompileError`, drops any nested function
+  the statement declared, records where the block lost it
+  (`Block::brokenat`, the index the statement would have had; the
+  statements parsed after it follow at that index), marks the function
+  being parsed (`SFunction::broken`), and skips to the end of the
+  statement (`Resync`): through the next `;` at the block's depth, or
+  up to and including the `}` that closes the block, braces balanced,
+  stopping short of a keyword that can only start a statement
+  (`StartsNext`) unless it is where the lost statement began. A
+  declaration an error is raised in is dropped whole, with the types,
+  functions and declarations it had made (`Ast::DropSince` from the
+  `Ast::Mark` taken at its start, a global's name leaving its namespace
+  too), and `ParseTopDecl` skips through the next `;` at depth 0 or the
+  `}` matching a `{` at depth 0, or to a keyword only a declaration can
+  start with. A token the lexer rejects is skipped with the rest of its
+  line, or past the closing quotes of a `"""` string
+  (`Lexer::scanning`, `SkipBrokenToken`), and `PeekTok` reads one as the
+  end of the file, so that the scan that reaches it raises the error
+  once. A `.` with no name after it is reported and kept as a `Dot` with
+  an empty name (`Dot::incomplete`), the statement ending there: where
+  the rest of the statement then fails, its error is a consequence and
+  goes unreported, and the `Dot` stands as the statement instead, so
+  that a completion finds it and the checker can give its object a
+  type. The tentative parses (`TryParseTyArgs`, a function value's
+  parameter prefix) are unaffected: while one is under way
+  (`Parser::tentative`) nothing is reported or recovered from, since it
+  catches the errors of its own extent and backtracks, and the parse
+  that then fails for real does so outside it. Only the blocks still
+  open at the end of the file report nothing more once an error has
+  been reported there (`eoferror`).
 * `ParseProgram` takes each file's text from the source provider it is
   given where that has it (`SourceProvider`, `utils.h`: the dump
   `--roundtrip` parses again; an editor's unsaved buffers), else from disk
@@ -263,10 +295,17 @@ related lines after the message (the instantiation chain,
 `file:line: error: message`, the echoed source line (an error's; the
 lexer's with a caret under its column), and the related lines. A
 `CompileError` carries the text and the data (several diagnostics for a
-`checkfree` function's kept checks, `BCE::CheckfreeError`); `Ast::Warn`
-prints a warning's text, or hands the data to the sink the driver sets
-under `--diagnostics json`, which prints every diagnostic of the compile as
-JSON on stdout (§1).
+`checkfree` function's kept checks, `BCE::CheckfreeError`), and ends the
+compile where it is thrown; an error the compile goes on past -- the
+parser's, per statement and declaration (above), and the checker's, per
+root (§3.1) -- is reported as it is found (`Ast::Report`) and kept in
+`Ast::errors`, any of which fails the compile: the driver stops after the
+parse, or after the check, when there are any, so the text and the exit
+code of a program with one error are what they were when the first error
+ended the compile. `Ast::Warn` and `Ast::Report` print the text, or hand
+the data to the sink the driver sets (`Ast::sink`) under `--diagnostics
+json`, which prints every diagnostic of the compile as JSON on stdout
+(§1), and the language server sets to collect them (§12).
 
 **Resolution** (`resolve.h`): every parse-time `TY_UNRESOLVED` name is
 rewritten in place. A struct or enum name becomes `TY_STRUCT`/`TY_ENUM`; an
@@ -351,6 +390,23 @@ destination, the slot and return flags (§3.8), and narrowings of outer
 variables; the outer variables it assigns are left assigned where all of
 its exits agree, and maybe assigned where any of them may be (§3.9). Only
 the specialization's effect summaries reach the caller.
+
+**Broken bodies.** A function whose body the parser lost a statement of,
+or that holds an incomplete `.` (`SFunction::broken`, §2), is checked up
+to there: `CheckStmts` throws `Abandoned` (`utils.h`) at the lost
+statement (`Block::brokenat`), and `IncompleteDot` after checking the
+`.`'s object, for the type a completion asks for. `CheckSpecBodyOnce`
+catches it for a broken function's body, closes what the check had opened
+by then (the frames, scopes, variables and nested functions past its own,
+the type build in progress), and finishes the specialization from the
+signature: it may return, its results are rooted nowhere a rule reads
+(`Roots::unknown`, the most permissive), and the named-result checks are
+skipped. So a call of a broken function is checked against its signature
+alone, as a call of an extern function is, and the caller goes on; a
+function with no declared results returns none. Nothing is reported: the
+parser did. A body broken outside any function -- a global's
+initializer, a default -- ends the whole check the same way, silently,
+at the `TypeCheck` constructor.
 
 **Depth.** Since a body is checked inside the call that first reaches it,
 the native stack holds a `CheckSpecBody` activation for every call on the
@@ -5846,12 +5902,15 @@ is waiting (`Workspace::Analyze`, on the compile thread's stack through
 `RunOnCompilerStack`): parse, resolve, check with `nomain`, optimize and
 run bounds-check elimination, as `goose check` does, with
 `package_nofetch` set so that nothing is fetched. Every diagnostic is
-collected, the warnings through `Ast::warnsink` and the error from its
-`CompileError`, and published for every file the attempt reached (an empty
-list where it has none, so the editor drops the last attempt's), the
-related lines with a place as related information and the rest appended to
-the message. An attempt that got past resolution replaces the analysis the
-root's queries read; one that failed earlier keeps the last, so queries go
+collected, the warnings and the errors the parser and the checker went on
+past through `Ast::sink` (§2) and the error that ended the attempt from
+its `CompileError`, and published for every file the attempt reached (an
+empty list where it has none, so the editor drops the last attempt's),
+the related lines with a place as related information and the rest
+appended to the message. A program with errors is not optimized or
+bounds-check analyzed. An attempt that got past resolution replaces the
+analysis the root's queries read, with whatever its check annotated
+before each error; one that failed earlier keeps the last, so queries go
 on answering from it. A cancelled attempt leaves the root dirty.
 
 **Analysis** (`lsp_analysis.h`). The `Ast` as the check left it, with the

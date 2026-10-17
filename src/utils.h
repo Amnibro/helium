@@ -108,10 +108,19 @@ inline string RenderDiagnostic(const Diagnostic &d, string_view filename, string
 // tentative parse or recovery takes it for an error of the program.
 struct Cancelled {};
 
+// Thrown by the checker where a check cannot go on and has nothing to report
+// that was not reported already: the rest of a body the parser lost a
+// statement of (Block::brokenat, Dot::incomplete), or a call that would reuse
+// a specialization whose check failed (FnSpec::failed). The body or root
+// being checked ends there as it does on a CompileError, with no diagnostic.
+struct Abandoned {};
+
 // Compile errors (in the program being compiled) throw their text, caught in
 // main, with the same as data where the error has a place in the program
 // (bounds-check-free functions report every check kept at once; a driver's
-// error, such as a file that cannot be opened, has none).
+// error, such as a file that cannot be opened, has none). The parser and the
+// checker go on past errors where they can (Ast::Report); what is thrown
+// ended the compile.
 struct CompileError {
     string msg;
     vector<Diagnostic> diags;

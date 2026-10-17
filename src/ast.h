@@ -1037,6 +1037,10 @@ NODE(Dot)
     int member = -1;                // BuiltinKind, builtins.h.
     SVariant *variantconst = nullptr;
     EnumInst *einst = nullptr;
+    // A `.` with no name after it, which the parser reported and kept, with
+    // an empty name: a completion asks for its object's type, which the
+    // checker records before it stops the body here (Abandoned).
+    bool incomplete = false;
     Dot(Line l, Node *_obj, string_view _name, string_view _ns = {})
         : Node(l, NKind), obj(_obj), name(_name), ns(_ns) {}
     // A field, which lies in its object's storage: a path, as codegen
@@ -1195,6 +1199,11 @@ NODE(Block)
     vector<Node *> stmts;
     Node *tail = nullptr;
     bool expansionboundary = false;
+    // Where the parser lost a statement to an error it reported (-1 for
+    // none): the statements before it are what the block had up to the
+    // error, those from it on what parsed after. The checker checks the
+    // block up to it and stops the body there (Abandoned).
+    int brokenat = -1;
     Block(Line l) : Node(l, NKind) {}
 NODE_END
 
@@ -1432,6 +1441,11 @@ struct SFunction {
     bool isnested = false;
     SFunction *outer = nullptr;     // The function a nested one is declared in.
     Block *body = nullptr;
+    // The body lost a statement to a parse error, or holds an incomplete
+    // `.` (Block::brokenat, Dot::incomplete): the signature is whole, and a
+    // call is checked against it alone, the body up to the error
+    // (TypeCheck::CheckSpecBodyOnce).
+    bool broken = false;
     vector<FnSpec *> specs;     // Specializations (typecheck), owned by Ast.
 };
 
@@ -2253,9 +2267,14 @@ struct Ast {
     // contents are heap-boxed so vector growth never moves an SSO buffer.
     vector<pair<string, unique_ptr<string>>> sources;   // (filename, contents).
 
-    // Where a warning goes: stderr, as its text, or the sink the driver sets
-    // to collect it as data (--diagnostics json).
-    function<void(const Diagnostic &)> warnsink;
+    // Where a warning, or an error the compile went on past, goes: stderr,
+    // as its text, or the sink the driver sets to collect it as data
+    // (--diagnostics json, the language server).
+    function<void(const Diagnostic &)> sink;
+    // The errors the compile went on past (Report), in the order found: the
+    // parser's, which it recovers from per statement and declaration, and
+    // the checker's, per root. Any of them fails the compile.
+    vector<Diagnostic> errors;
 
     // Set where an analysis may be abandoned for a newer one (the language
     // server, lsp_workspace.h): the parser polls it at each top-level
@@ -2285,7 +2304,20 @@ struct Ast {
     void Warn(Diagnostic d) {
         d.warning = true;
         d.text = DiagnosticText(d, false);
-        if (warnsink) warnsink(d);
+        Emit(d);
+    }
+
+    // An error the compile goes on past: reported as a warning is, at once
+    // as text or through the sink, and kept in `errors`.
+    void Report(Diagnostic d) {
+        d.warning = false;
+        if (d.text.empty()) d.text = DiagnosticText(d, true);
+        errors.push_back(d);
+        Emit(d);
+    }
+
+    void Emit(const Diagnostic &d) {
+        if (sink) sink(d);
         else fprintf(stderr, "%s\n", d.text.c_str());
     }
 
@@ -2375,14 +2407,42 @@ struct Ast {
         return t;
     }
 
-    // Deletes the types and functions made since the two lists had these
-    // sizes: a parse the parser backtracked over made them, and the passes
-    // that walk the lists would take them for written ones.
-    void DropSince(size_t ntypes, size_t nfunctions) {
-        for (auto i = ntypes; i < alltypes.size(); i++) delete alltypes[i];
-        alltypes.resize(ntypes);
-        for (auto i = nfunctions; i < functions.size(); i++) delete functions[i];
-        functions.resize(nfunctions);
+    // The sizes of the declaration lists at a point of the parse, so that
+    // what a parse abandoned after it can be dropped again (DropSince).
+    struct DeclMark {
+        size_t types = 0, functions = 0, structs = 0, enums = 0, aliases = 0, globals = 0,
+               topdecls = 0;
+    };
+    DeclMark Mark() const {
+        return { alltypes.size(), functions.size(), structs.size(), enums.size(), aliases.size(),
+                 globals.size(), topdecls.size() };
+    }
+
+    // Deletes the types and declarations made since the mark: a parse the
+    // parser backtracked over made them, or a declaration it lost to an
+    // error, and the passes that walk the lists would take them for written
+    // ones. A global registers its name as it is parsed, so one dropped
+    // leaves the namespace too; the other declarations register at their
+    // end, which a dropped one never reached. The nodes stay owned here.
+    void DropSince(const DeclMark &m) {
+        for (auto i = m.types; i < alltypes.size(); i++) delete alltypes[i];
+        alltypes.resize(m.types);
+        for (auto i = m.functions; i < functions.size(); i++) delete functions[i];
+        functions.resize(m.functions);
+        for (auto i = m.structs; i < structs.size(); i++) delete structs[i];
+        structs.resize(m.structs);
+        for (auto i = m.enums; i < enums.size(); i++) delete enums[i];
+        enums.resize(m.enums);
+        for (auto i = m.aliases; i < aliases.size(); i++) delete aliases[i];
+        aliases.resize(m.aliases);
+        for (auto i = m.globals; i < globals.size(); i++) {
+            auto g = globals[i];
+            auto &gm = NS(g->ns).globalmap;
+            for (auto name : g->names)
+                if (auto it = gm.find(name); it != gm.end() && it->second == g) gm.erase(it);
+        }
+        globals.resize(m.globals);
+        topdecls.resize(m.topdecls);
     }
 
     // The same type with its contents read-only (§9.5): a fresh node, since

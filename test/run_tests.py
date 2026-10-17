@@ -2160,6 +2160,42 @@ def main():
     for f in tc_errors:
         r.show_later(tc_error, f)
 
+    # Recovery fixtures: several errors each, which the parser and the
+    # checker go on past (docs/design/language_server.md §5 D), reported in
+    # the order found, in text and as JSON. Each `// error:` marker is part
+    # of the message of the error in its position, and there are no others.
+    recovery = sorted((HERE / "errors_tc" / "recovery").glob("*.goose"))
+    recovery_runs = r.goose_each(["--check"], recovery)
+
+    def recovery_error(f):
+        code, out, err = r.screened(f, recovery_runs[f]())
+        if code != 1 or tc.sanitizer_failure(err):
+            r.fail(f"recovery {f.name} (exit {code})", out + err)
+            return
+        markers = error_markers(f)
+        heads = [m[1] for m in (re.match(r"^\S.*:\d+(?::\d+)?: error: (.*)$", line)
+                                for line in err.splitlines()) if m]
+
+        def in_order(got):
+            return len(got) == len(markers) and all(m in g for m, g in zip(markers, got))
+        if not in_order(heads):
+            r.fail(f"recovery {f.name}: the errors in order",
+                   "want:\n" + "\n".join(markers) + "\ngot:\n" + "\n".join(heads) + "\n" + err)
+            return
+        jcode, jout, jerr = r.goose("check", "--diagnostics", "json", f)
+        try:
+            diags = json.loads(jout)
+        except ValueError:
+            diags = []
+        messages = [d["message"] for d in diags if d.get("severity") == "error"]
+        if jcode != 1 or not in_order(messages) or any("line" not in d for d in diags):
+            r.fail(f"recovery {f.name}: --diagnostics json", jout + jerr)
+            return
+        r.ok(f"recovery {f.name}")
+    r.section("recovery (errors_tc/recovery/)")
+    for f in recovery:
+        r.show_later(recovery_error, f)
+
     r.section("long call chains and guard runs")
     for future in deep:
         r.show(future)

@@ -97,6 +97,9 @@ struct Lexer {
     bool smultiline = false;         // T_STRLIT: a """ string spanning lines.
     int tokline = 1;
     const char *toklinestart = nullptr;
+    // A token's scan is under way: an error raised now is the lexer's own,
+    // with the scan position inside the token (SkipBrokenToken).
+    bool scanning = false;
     // The documentation above the current token: the run of // comment
     // lines, each on a line of its own and directly below the one before,
     // that ends on the line before the token; from the first // to the end
@@ -111,10 +114,15 @@ struct Lexer {
 
     [[noreturn]] void Error(const string &msg) { ErrorAt(msg, tokline, toklinestart); }
 
-    // The token after the current one, without moving.
+    // The token after the current one, without moving. One the lexer
+    // rejects reads as the end: the scan that reaches it raises the error.
     TType PeekTok() const {
         auto copy = *this;
-        copy.Next();
+        try {
+            copy.Next();
+        } catch (CompileError &) {
+            return T_EOF;
+        }
         return copy.tok;
     }
 
@@ -124,6 +132,14 @@ struct Lexer {
     // token where the caret is at one that lies on one line, else one byte.
     [[noreturn]] void ErrorAt(const string &msg, int errline, const char *errlinestart,
                               const char *caret = nullptr) {
+        auto d = Diagnose(msg, errline, errlinestart, caret);
+        throw CompileError { d.text, { d } };
+    }
+
+    // The diagnostic ErrorAt would throw, for one the parser reports and
+    // goes on past.
+    Diagnostic Diagnose(const string &msg, int errline, const char *errlinestart,
+                        const char *caret = nullptr) {
         Diagnostic d;
         d.where = { fileidx, errline, 0, 0, 0 };
         d.message = msg;
@@ -141,7 +157,29 @@ struct Lexer {
         }
         d.text = RenderDiagnostic(d, filename, errlinestart ? string_view(source) : string_view(),
                                   true);
-        throw CompileError { d.text, { d } };
+        return d;
+    }
+
+    // Where the parser recovers from an error the scan of a token raised
+    // (`scanning`: an escape, a character or a string the lexer rejected),
+    // the rest of that token is no token either: the scan goes on after
+    // the line, or for a """ string after its closing quotes where it has
+    // them.
+    void SkipBrokenToken() {
+        if (!scanning) return;
+        auto start = attr.data();
+        if (start[0] == '"' && start[1] == '"' && start[2] == '"') {
+            auto close = strstr(start + 3, "\"\"\"");
+            if (close) {
+                for (auto q = p; q < close; q++)
+                    if (*q == '\n') { line++; linestart = q + 1; }
+                p = close + 3;
+                Next();
+                return;
+            }
+        }
+        while (*p && *p != '\n') p++;
+        Next();
     }
 
     void Next() {
@@ -168,9 +206,11 @@ struct Lexer {
         // An error raised while the token is still being scanned puts its
         // caret at the token's start.
         attr = string_view(start, 0);
+        scanning = true;
         auto Set = [&](TType t) {
             tok = t;
             attr = string_view(start, (size_t)(p - start));
+            scanning = false;
         };
         auto c = *p++;
         switch (c) {
@@ -379,7 +419,6 @@ struct Lexer {
                     if (it != keywords.end()) tok = it->second;
                     return;
                 }
-                Set(T_EOF);
                 Error(cat("illegal character: \'", string_view(start, 1), "\' (", (int)(uint8_t)c, ")"));
             }
         }

@@ -416,6 +416,7 @@ inline Val Binary::Check(TypeCheck &tc, TypeExpr *) {
 }
 
 inline Val Dot::Check(TypeCheck &tc, TypeExpr *) {
+    if (incomplete) tc.IncompleteDot(this);
     // EnumName.Variant: a payload-less variant constant (§3.5).
     if (auto id = Is<Ident>(obj); id && id->expansionerror.empty()) {
         const FnValBind *fb;

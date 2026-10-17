@@ -1196,9 +1196,12 @@ int Main(int argc, char **argv) {
         }
         astp = make_unique<Ast>();
         auto &ast = *astp;
-        if (jsondiag) ast.warnsink = [&](const Diagnostic &d) { found.push_back(d); };
+        if (jsondiag) ast.sink = [&](const Diagnostic &d) { found.push_back(d); };
         auto stdlibdirs = StdlibDirs(stdlibdir, exe);
         ParseProgram(ast, filename, stdlibdirs, DirOf(exe));
+        // The parser reported what it recovered from as it went; nothing
+        // further is asked of a program with a syntax error.
+        if (!ast.errors.empty()) return 1;
         if (dumpdocs) {
             string s;
             DumpDocs(ast, s);
@@ -1237,6 +1240,8 @@ int Main(int argc, char **argv) {
         }
         if (parseonly) return 0;
         TypeCheckProgram(ast, library, nocgen);
+        // The checker reported the errors it went on past, root by root.
+        if (!ast.errors.empty()) return 1;
         Optimizer opt(ast, optlevel);
         if (specs) {
             string s;

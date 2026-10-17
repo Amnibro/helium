@@ -479,7 +479,16 @@ check-on-save mode kept for a compiler without the verb or
 
 **Phase 2, more than one error:** D1, then D2; completion (both kinds),
 references and rename, inlay hints, folding and selection ranges. `goose
-check` reports every error.
+check` reports every error. D1 is in (`docs/implementation.md` §2 and
+§3.1): the parser recovers per statement (`Block::brokenat`,
+`SFunction::broken`, `Dot::incomplete`) and per declaration, which it
+drops whole, reporting each error as it goes (`Ast::Report`, kept in
+`Ast::errors`); the checker checks a broken body up to its error and
+finishes the specialization from the signature (`Abandoned`), so a call
+of a broken function is checked against the signature alone and the
+caller goes on; the server skips the optimizer and bounds-check
+elimination for a program with errors and answers queries from what was
+annotated. The fixtures are in `test/errors_tc/recovery/`.
 
 **Phase 3:** code lens, exemplar instantiation for generics, parse caching
 per file if a workspace turns out to need it, the other editors' entries.

@@ -94,6 +94,7 @@ Test fixtures are grouped by category; `run_tests.py` stays at the root of `test
 | `physics/` | The `physics` module: worlds, bodies, every kind of shape and geometry, all joint kinds, queries, events, recording and replay, a runtime misuse, and the threading rejection. |
 | `ui/` | The `ui` module: fonts, windows and layout, widgets, popups and menus, text editing, style, drawing and the input queries, charts, rendering and input through headless gfx, whether the keys and the mouse are the ui's, a runtime misuse, the layer's misuse messages, and the threading rejection. |
 | `errors/`, `errors_tc/` | Expected parser/resolver and semantic rejections. |
+| `errors_tc/recovery/` | Programs with several errors, which the parser and the checker go on past (`docs/design/language_server.md` §5 D): each `// error:` marker is part of the message of the error in its position, in the order the compiler reports them, with no error besides, in text and under `--diagnostics json`. |
 | `lsp/` | The language server's fixtures, driven over the protocol by `lsp_protocol.py` rather than compiled as programs: `basics.goose`, an entry file whose `// lsp:` lines state the queries and their answers, and `helper.goose`, which it imports. |
 | `expected/` | Shared output and runtime-diagnostic expectations. |
 | `run_tests.py` | The Python test runner. |
@@ -248,7 +249,10 @@ Parser/resolver errors live in `test/errors/`; semantic errors live in
 before they fail. Each source declares one or
 more `// error: <diagnostic substring>` lines. The compiler must exit with 1,
 and all markers must occur in diagnostic headers or `in const for` expansion
-context lines, excluding echoed source.
+context lines, excluding echoed source. The compiler goes on past the
+errors it can recover from, so a fixture may print more errors than it
+declares; `test/errors_tc/recovery/` holds the fixtures that declare every
+one of theirs, in order (the table above).
 Use the specific rejection reason and relevant types/roots; omit source paths,
 line numbers and specification section numbers. These inline assertions replace
 the old compiler-error `.stderr` files.

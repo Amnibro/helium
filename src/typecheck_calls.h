@@ -2992,44 +2992,79 @@ inline void TypeCheck::CheckSpecBodyOnce(FnSpec *spec, vector<Val> *argvals, Lin
     // values written in it keep their identity, which specialization keys
     // carry (FnValBind).
     if (!spec->body) spec->body = (Block *)sf->body->Clone(ast);
-    // The body: statements plus a value-producing tail (treated exactly
-    // like `return tail`). A tail that produces on no path is a statement
-    // instead, so a void function may end in one.
-    BlockScope bs(*this, spec->body);
-    CheckStmts(spec->body);
-    if (spec->body->tail) {
-        auto tail = spec->body->tail;
-        auto asvalue = !(spec->retsknown && spec->rets.empty());
-        if (IsValuelessTail(tail)) asvalue = false;
-        if (!asvalue) {
-            CheckStmtExpr(tail);
-            if (reachable && spec->retsknown && !spec->rets.empty())
-                Error(tail, cat("function ", sf->name, " must return value(s)"));
-        } else {
-            auto expected = spec->retsknown && spec->rets.size() == 1 ? spec->rets[0]
-                                                                      : nullptr;
-            Val tv;
-            {
-                FlagScope ret(inreturn, true);
-                RetValScope rv(*this, spec->body->tail);
-                tv = spec->retsknown ? CheckValue(spec->body->tail, expected)
-                                     : CheckInferredResult(spec->body->tail, spec);
-            }
-            tail = spec->body->tail;
-            if (reachable) {
-                if (tv.type->kind == TY_VOID) {
-                    if (spec->retsknown && !spec->rets.empty())
+    // A body the parser lost a statement of, or that holds an incomplete
+    // `.` (SFunction::broken), is checked up to there, which ends it as
+    // every path returning would (Abandoned, CheckStmts, IncompleteDot):
+    // what the check had opened by then is closed again, and the call is
+    // checked against the signature alone, with results rooted nowhere a
+    // rule reads (Roots::unknown), the most permissive.
+    auto abandoned = false;
+    {
+        auto nscopes = scopes.size(), nvars = vars.size(), nlocalfns = localfns.size();
+        auto ntypechain = typechain.size(), nlater = laterpointees.size();
+        auto building = typesbuilding;
+        auto savefit = fitnode;
+        try {
+            // The body: statements plus a value-producing tail (treated
+            // exactly like `return tail`). A tail that produces on no path
+            // is a statement instead, so a void function may end in one.
+            BlockScope bs(*this, spec->body);
+            CheckStmts(spec->body);
+            if (spec->body->tail) {
+                auto tail = spec->body->tail;
+                auto asvalue = !(spec->retsknown && spec->rets.empty());
+                if (IsValuelessTail(tail)) asvalue = false;
+                if (!asvalue) {
+                    CheckStmtExpr(tail);
+                    if (reachable && spec->retsknown && !spec->rets.empty())
                         Error(tail, cat("function ", sf->name, " must return value(s)"));
                 } else {
-                    vector<Val> vals = { tv };
-                    RecordReturn(spec, vals, tail);
-                    NoteExit(fi);
-                    reachable = false;
+                    auto expected = spec->retsknown && spec->rets.size() == 1 ? spec->rets[0]
+                                                                              : nullptr;
+                    Val tv;
+                    {
+                        FlagScope ret(inreturn, true);
+                        RetValScope rv(*this, spec->body->tail);
+                        tv = spec->retsknown ? CheckValue(spec->body->tail, expected)
+                                             : CheckInferredResult(spec->body->tail, spec);
+                    }
+                    tail = spec->body->tail;
+                    if (reachable) {
+                        if (tv.type->kind == TY_VOID) {
+                            if (spec->retsknown && !spec->rets.empty())
+                                Error(tail, cat("function ", sf->name, " must return value(s)"));
+                        } else {
+                            vector<Val> vals = { tv };
+                            RecordReturn(spec, vals, tail);
+                            NoteExit(fi);
+                            reachable = false;
+                        }
+                    }
                 }
             }
+        } catch (Abandoned &) {
+            if (!sf->broken) throw;
+            abandoned = true;
+            frames.resize(fi + 1);
+            scopes.resize(nscopes);
+            vars.resize(nvars);
+            localfns.resize(nlocalfns);
+            typechain.resize(ntypechain);
+            laterpointees.resize(nlater);
+            typesbuilding = building;
+            fitnode = savefit;
+            reachable = false;
         }
     }
-    if (reachable) {
+    if (abandoned) {
+        exits.reached = true;
+        spec->record.retroots.resize(spec->rets.size());
+        for (auto &rr : spec->record.retroots) {
+            rr.alts.SetUnknown();
+            rr.writable = true;
+            rr.set = true;
+        }
+    } else if (reachable) {
         NoteExit(fi);
         if (spec->retsknown && !spec->rets.empty())
             Error(sf->body, cat("function ", sf->name,
@@ -3037,8 +3072,10 @@ inline void TypeCheck::CheckSpecBodyOnce(FnSpec *spec, vector<Val> *argvals, Lin
         if (!spec->retsknown) spec->retsknown = true;  // No returns at all: void.
     }
     if (!spec->retsknown) spec->retsknown = true;
-    NamedResultCopyWarning(spec);
-    CheckNamedResultUses(spec);
+    if (!abandoned) {
+        NamedResultCopyWarning(spec);
+        CheckNamedResultUses(spec);
+    }
     PopScope();
     frames.pop_back();
     for (auto [v, n] : outernarrowed) v->narrowed = n;
