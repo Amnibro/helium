@@ -5984,7 +5984,22 @@ resolution (`SemanticTokenOf`, the legend in `SEMANTIC_TYPES`). Signature
 help finds the innermost call whose parentheses hold the position
 (`FileIndex::CallAt`), counts the commas before it for the active
 parameter, and lists the overloads of the callee's name, the resolved one
-active.
+active. Completion (`Completion`) looks at what precedes the name being
+typed. After a `.`, the members of the value before it
+(`MemberCompletions`): the innermost node ending at the `.` is the object
+(the incomplete `Dot` the parser keeps, §2, is what makes the checker type
+it), and its type from a clone gives the fields of a struct or a variant's
+payload, the functions whose first parameter takes the type
+(`FirstParamTakes`: untyped, generic, the type or a reference to it) as
+UFCS calls, and the builtin members of its kind (`RecvKindOf`); an enum's
+name before the `.` gives its variants; a value no instantiation typed
+gives every field and function. After `::`, the namespace's declarations.
+Otherwise the names in scope (`ScopeCompletions`), from the parse tree
+alone, so a generic body has them too: the bindings of the enclosing
+blocks declared before the position, the enclosing functions' parameters,
+type parameters and nested functions, every namespace's declarations
+(qualified where the file's is another), the builtins and the keywords,
+in that order of nearness (`sortText`).
 
 References and rename share one notion of identity: the place of the
 declaration's name, as `DefinitionOf` finds it for any occurrence, so two

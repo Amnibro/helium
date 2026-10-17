@@ -1372,4 +1372,267 @@ inline bool SelectionRanges(Workspace &ws, const Json &params, JsonOut &j) {
     return true;
 }
 
+// --- completion ---------------------------------------------------------------------
+
+// LSP CompletionItemKind.
+enum CompletionKind {
+    CK_METHOD = 2, CK_FUNCTION = 3, CK_FIELD = 5, CK_VARIABLE = 6, CK_MODULE = 9, CK_PROPERTY = 10,
+    CK_ENUM = 13, CK_KEYWORD = 14, CK_ENUMMEMBER = 20, CK_CONSTANT = 21, CK_STRUCT = 22,
+    CK_TYPEPARAMETER = 25
+};
+
+// The items a completion offers, one per label, in groups the editor sorts
+// by: what is nearest first (a local before a global before a builtin
+// before a keyword).
+struct Completions {
+    struct Item {
+        string label, detail, doc, insert, sort;
+        int kind;
+    };
+    vector<Item> items;
+    set<string> seen;
+
+    void Add(string_view label, int kind, int group, string detail = {}, string_view doc = {},
+             string_view insert = {}) {
+        if (label.empty() || !seen.insert(string(label)).second) return;
+        items.push_back({ string(label), std::move(detail), DocText(doc), string(insert),
+                          cat(group, label), kind });
+    }
+
+    void Write(JsonOut &j) const {
+        j.BeginObject();
+        j.Member("isIncomplete", false);
+        j.Key("items");
+        j.BeginArray();
+        for (auto &it : items) {
+            j.BeginObject();
+            j.Member("label", it.label);
+            j.Member("kind", (int64_t)it.kind);
+            if (!it.detail.empty()) j.Member("detail", it.detail);
+            if (!it.doc.empty()) {
+                j.Key("documentation");
+                j.BeginObject();
+                j.Member("kind", "markdown");
+                j.Member("value", it.doc);
+                j.EndObject();
+            }
+            if (!it.insert.empty() && it.insert != it.label) j.Member("insertText", it.insert);
+            j.Member("sortText", it.sort);
+            j.EndObject();
+        }
+        j.EndArray();
+        j.EndObject();
+    }
+};
+
+// A node's extent in its file, from its anchor; -1 for none.
+inline pair<int64_t, int64_t> NodeExtent(const FileIndex &f, const Node *n) {
+    if (!n || n->line.fileidx != f.fileidx || n->line.line <= 0) return { -1, -1 };
+    auto start = f.text.OffsetOf(n->line.line, n->line.col);
+    auto end = n->end.line > 0 && n->end.fileidx == f.fileidx ? f.text.OffsetOf(n->end.line, n->end.col)
+                                                               : start;
+    return { start, max(start, end) };
+}
+
+// The namespace a file's declarations are in: that of the first one the
+// file declares, "" for none.
+inline string_view NamespaceOfFile(const Ast &ast, int fileidx) {
+    for (auto sf : ast.functions) if (sf->line.fileidx == fileidx && !sf->isnested) return sf->ns;
+    for (auto st : ast.structs) if (st->line.fileidx == fileidx) return st->ns;
+    for (auto en : ast.enums) if (en->line.fileidx == fileidx) return en->ns;
+    for (auto al : ast.aliases) if (al->line.fileidx == fileidx) return al->ns;
+    for (auto g : ast.globals) if (g->line.fileidx == fileidx) return g->ns;
+    return {};
+}
+
+inline string DeclDetail(const SStruct *st) { return cat("struct ", st->qname, GenericsText(st->generics)); }
+inline string DeclDetail(const SEnum *en) { return cat("enum ", en->qname, GenericsText(en->generics)); }
+inline string DeclDetail(const SAlias *al) { return cat("type ", al->qname, " = ", TypeText(al->type)); }
+
+// The declarations of a namespace, as `leaf` or `ns::leaf` spells them
+// from where the completion is.
+inline void NamespaceCompletions(string_view nsname, const Namespace &ns, bool qualify, Completions &out) {
+    auto name = [&](string_view leaf) { return qualify ? cat(nsname, "::", leaf) : string(leaf); };
+    for (auto &[leaf, fns] : ns.functionmap)
+        if (!fns.empty()) out.Add(name(leaf), CK_FUNCTION, 1, FnHeader(fns[0]), fns[0]->doc, leaf);
+    for (auto &[leaf, st] : ns.structmap) out.Add(name(leaf), CK_STRUCT, 1, DeclDetail(st), st->doc, leaf);
+    for (auto &[leaf, en] : ns.enummap) out.Add(name(leaf), CK_ENUM, 1, DeclDetail(en), en->doc, leaf);
+    for (auto &[leaf, al] : ns.aliasmap)
+        out.Add(name(leaf), CK_TYPEPARAMETER, 1, DeclDetail(al), al->doc, leaf);
+    for (auto &[leaf, vd] : ns.globalmap) {
+        auto def = vd->defs.empty() ? nullptr : vd->defs[0];
+        out.Add(name(leaf), vd->isvar ? CK_VARIABLE : CK_CONSTANT, 1,
+                cat(vd->isvar ? "var " : "let ", leaf,
+                    def && def->type ? cat(": ", TypeText(def->type)) : string()),
+                vd->doc, leaf);
+    }
+}
+
+// The names in scope at an offset: the bindings of the blocks around it
+// declared before it, the enclosing functions' parameters and type
+// parameters and the functions they declare, then every namespace's
+// declarations (qualified where the file's is another), the builtins and
+// the keywords.
+inline void ScopeCompletions(const Located &loc, size_t offset, Completions &out) {
+    auto &an = *loc.an;
+    auto &ast = *an.ast;
+    auto &f = *loc.fi;
+    auto contains = [&](const Node *n) {
+        auto [s, e] = NodeExtent(f, n);
+        return s >= 0 && (size_t)s <= offset && offset <= (size_t)e;
+    };
+    auto endsbefore = [&](const Node *n) {
+        auto [s, e] = NodeExtent(f, n);
+        return s >= 0 && (size_t)e < offset;
+    };
+    // The functions whose declarations hold the offset, innermost first.
+    vector<SFunction *> enclosing;
+    for (auto sf : ast.functions) {
+        if (sf->line.fileidx != f.fileidx || sf->line.line <= 0 || sf->end.line <= 0) continue;
+        auto start = f.text.OffsetOf(sf->line.line, sf->line.col);
+        auto end = f.text.OffsetOf(sf->end.line, sf->end.col);
+        if (start >= 0 && (size_t)start <= offset && offset <= (size_t)end) enclosing.push_back(sf);
+    }
+    sort(enclosing.begin(), enclosing.end(), [&](SFunction *x, SFunction *y) {
+        return f.text.OffsetOf(x->line.line, x->line.col) > f.text.OffsetOf(y->line.line, y->line.col);
+    });
+    function<void(Node *)> walk = [&](Node *n) {
+        if (!n || !contains(n)) return;
+        if (auto b = Is<Block>(n)) {
+            for (auto s : b->stmts) {
+                if (endsbefore(s)) {
+                    if (auto vd = Is<VarDecl>(s)) {
+                        if (!vd->results)
+                            for (auto &name : vd->names)
+                                out.Add(name, vd->isvar ? CK_VARIABLE : CK_CONSTANT, 0,
+                                        cat(vd->isconst ? "const " : vd->isvar ? "var " : "let ", name));
+                    } else if (auto fd = Is<FnDecl>(s)) {
+                        out.Add(fd->sf->name, CK_FUNCTION, 0, FnHeader(fd->sf), fd->sf->doc);
+                    }
+                }
+                walk(s);
+            }
+            walk(b->tail);
+            return;
+        }
+        if (auto fl = Is<ForLoop>(n)) {
+            if (contains(fl->body)) {
+                out.Add(fl->var, CK_VARIABLE, 0, cat("for ", fl->var));
+                if (!fl->idxvar.empty())
+                    out.Add(fl->idxvar, CK_VARIABLE, 0, cat("for ", fl->var, ", ", fl->idxvar));
+            }
+        } else if (auto m = Is<MatchExpr>(n)) {
+            for (auto &arm : m->arms)
+                if (arm.body && contains(arm.body) && !arm.pat.binder.empty())
+                    out.Add(arm.pat.binder, CK_VARIABLE, 0, cat("match binding ", arm.pat.binder));
+        } else if (auto fv = Is<FunVal>(n)) {
+            if (contains(fv->body)) {
+                if (fv->params.empty()) out.Add("it", CK_VARIABLE, 0, "the block's parameter");
+                for (auto &p : fv->params) out.Add(p.name, CK_VARIABLE, 0, cat("block parameter ", p.name));
+            }
+        }
+        n->Children(walk);
+    };
+    for (auto sf : enclosing) {
+        for (auto &p : sf->params)
+            out.Add(p.name, CK_VARIABLE, 0, cat("parameter ", p.isvar ? "var " : "", p.name,
+                                                 p.type ? cat(": ", TypeText(p.type)) : string()));
+        for (auto &g : sf->generics) out.Add(g.name, CK_TYPEPARAMETER, 0, cat("type parameter ", g.name));
+        if (sf->body) walk(sf->body);
+    }
+    auto filens = enclosing.empty() ? NamespaceOfFile(ast, f.fileidx) : enclosing[0]->ns;
+    for (auto &[nsname, ns] : ast.namespaces)
+        NamespaceCompletions(nsname, ns, !nsname.empty() && nsname != filens, out);
+    for (auto &b : builtindefs)
+        if (!(b.flags & BF_PROPERTY)) out.Add(b.name, CK_FUNCTION, 2, "builtin");
+    for (int t = T_IMPORT; t <= T_TF64; t++) out.Add(TName((TType)t), CK_KEYWORD, 3);
+}
+
+// Whether a function's first parameter takes a value of a type, as a UFCS
+// call `value.f()` passes it: untyped or generic, the type itself, or a
+// reference to it.
+inline bool FirstParamTakes(const TypeExpr *pt, const string &otext) {
+    if (!pt || pt->kind == TY_GENERIC) return true;
+    if (pt->kind == TY_REF && pt->ref->sub && pt->ref->sub->kind == TY_GENERIC) return true;
+    auto ptext = TypeText(pt);
+    return ptext == otext || ptext == cat("const ", otext) || ptext.rfind(otext + "&", 0) == 0 ||
+           ptext.rfind(cat("const ", otext, "&"), 0) == 0;
+}
+
+// The members of the value before a `.`: the fields of its type, the
+// functions that take it first (UFCS) and the builtin members of its kind;
+// an enum's name offers its variants; a value whose type no instantiation
+// gave offers every field and function.
+inline void MemberCompletions(const Located &loc, size_t dotpos, Completions &out) {
+    auto &an = *loc.an;
+    auto &ast = *an.ast;
+    auto &f = *loc.fi;
+    auto objend = dotpos;
+    while (objend > 0 && (f.text.text[objend - 1] == ' ' || f.text.text[objend - 1] == '\t')) objend--;
+    const NodeSpan *object = nullptr;
+    for (auto &s : f.spans) {
+        if (s.start >= objend) break;
+        if (s.end == objend && (!object || s.start >= object->start)) object = &s;
+    }
+    auto fields = [&](const vector<Field> &fs) {
+        for (auto &fld : fs)
+            if (!fld.ispad)
+                out.Add(fld.name, CK_FIELD, 0,
+                        cat(fld.isconst ? "let " : "", fld.name, ": ", TypeText(fld.type)), fld.doc);
+    };
+    auto builtins = [&](int recv) {
+        for (auto &b : builtindefs)
+            if ((b.flags & (BF_MEMBER | BF_PROPERTY)) && (b.recv & recv))
+                out.Add(b.name, b.flags & BF_PROPERTY ? CK_PROPERTY : CK_METHOD, 2, "builtin");
+    };
+    auto type = object ? an.TypeOf(object->node) : nullptr;
+    if (object && !type)
+        if (auto id = Is<Ident>(object->node))
+            if (auto en = ast.LookupEnum(id->name, id->ns)) {
+                for (auto &v : en->variants) out.Add(v.name, CK_ENUMMEMBER, 0, VariantHeader(en, &v), v.doc);
+                return;
+            }
+    if (!type) {
+        for (auto st : ast.structs) fields(st->fields);
+        for (auto en : ast.enums) for (auto &v : en->variants) fields(v.fields);
+        for (auto sf : ast.functions)
+            if (!sf->isnested && !sf->params.empty()) out.Add(sf->name, CK_METHOD, 1, FnHeader(sf), sf->doc);
+        builtins(BR_ANY);
+        return;
+    }
+    while (type->kind == TY_REF && type->ref->sub) type = type->ref->sub;
+    if (type->kind == TY_STRUCT) fields(type->struc->st->fields);
+    else if (type->kind == TY_VARIANT && type->var->variant) fields(type->var->variant->fields);
+    auto otext = TypeText(type);
+    for (auto sf : ast.functions)
+        if (!sf->isnested && !sf->params.empty() && FirstParamTakes(sf->params[0].type, otext))
+            out.Add(sf->name, CK_METHOD, 1, FnHeader(sf), sf->doc);
+    builtins(RecvKindOf(type));
+}
+
+inline bool Completion(Workspace &ws, const Json &params, JsonOut &j) {
+    Located loc;
+    if (!Locate(ws, params, loc)) return false;
+    auto &text = loc.fi->text.text;
+    auto offset = min(loc.offset, text.size());
+    // The name being typed, and what comes before it: a `.`, a `::`, or
+    // anything else.
+    auto start = offset;
+    while (start > 0 && IsIdentCont(text[start - 1])) start--;
+    Completions out;
+    if (start > 0 && text[start - 1] == '.' && !(start > 1 && text[start - 2] == '.')) {
+        MemberCompletions(loc, start - 1, out);
+    } else if (start > 1 && text[start - 1] == ':' && text[start - 2] == ':') {
+        auto nsend = start - 2;
+        auto nsstart = nsend;
+        while (nsstart > 0 && IsIdentCont(text[nsstart - 1])) nsstart--;
+        auto nsname = text.substr(nsstart, nsend - nsstart);
+        if (auto ns = loc.an->ast->FindNS(nsname)) NamespaceCompletions(nsname, *ns, false, out);
+    } else {
+        ScopeCompletions(loc, offset, out);
+    }
+    out.Write(j);
+    return true;
+}
+
 }  // namespace goose

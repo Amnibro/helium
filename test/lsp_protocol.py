@@ -195,6 +195,13 @@ def check_lsp_protocol(exe, base):
                 if (not got or got["signatures"][got["activeSignature"]]["label"] != want or
                         got["activeParameter"] != int(active)):
                     fail(f"signature {pos}", got)
+            elif kind == "complete":
+                # `complete L:C has NAME` / `lacks NAME`: the labels offered.
+                pos, mode, name = rest.split()
+                got = client.request("textDocument/completion", {**doc, "position": position(pos)})
+                labels = {item["label"] for item in (got or {}).get("items", [])}
+                if (name in labels) != (mode == "has"):
+                    fail(f"completion {pos} {mode} {name}", sorted(labels))
             elif kind == "token":
                 pos, want = rest.split()
                 got = client.request("textDocument/semanticTokens/full", doc)
@@ -300,6 +307,11 @@ def check_lsp_protocol(exe, base):
     recovery = fixtures / "recovery.goose"
     rtext = recovery.read_text(encoding="utf-8")
     queries(recovery, rtext, open_fixture(recovery, rtext))
+    # Completion, on a program whose last statement is the `p.` an editor
+    # has when it asks.
+    complete = fixtures / "complete.goose"
+    ctext = complete.read_text(encoding="utf-8")
+    queries(complete, ctext, open_fixture(complete, ctext))
     client.request("shutdown", None)
     client.send("exit", request=False)
     code = client.p.wait(timeout=30)

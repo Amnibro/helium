@@ -509,7 +509,11 @@ inlay hints for the types of `let`s and `var`s and the parameter names at
 calls; folding ranges for bodies and comment runs; and selection ranges
 from the node extents the index records (`FileIndex::spans`). The
 analysis's indexes are built before the optimizer runs, which inlines calls
-and drops constants and would lose the clones with them.
+and drops constants and would lose the clones with them. Completion is in
+as well (`docs/implementation.md` §12, `test/lsp/complete.goose`): names in
+scope from the parse tree, members from the type the clone of the value
+before the `.` carries, with UFCS functions and builtin members, and a
+namespace's declarations after `::`. With that, phase 2 is complete.
 
 **Phase 3:** code lens, exemplar instantiation for generics, parse caching
 per file if a workspace turns out to need it, the other editors' entries.

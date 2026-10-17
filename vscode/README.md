@@ -58,9 +58,11 @@ older compiler, the extension checks saved files with `goose check` instead.
 - Check, Run, Build and Generate C tasks, plus the `$goose` problem matcher for
   custom tasks with absolute paths or paths relative to the workspace folder.
 
-The language server does not yet provide completion, rename, references,
+The language server also completes names in scope and members after a `.`,
+finds references, renames, shows inlay hints, and folds. It does not provide
 formatting or debugging (`docs/design/language_server.md` has the plan). A
-body no instantiation reaches has no types: hover says so.
+body no instantiation reaches has no types: hover says so, and a member
+completion there offers every field and function.
 
 ## Install the prebuilt extension
 

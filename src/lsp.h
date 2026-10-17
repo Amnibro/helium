@@ -71,6 +71,15 @@ struct Server {
         j.Str(",");
         j.EndArray();
         j.EndObject();
+        j.Key("completionProvider");
+        j.BeginObject();
+        j.Key("triggerCharacters");
+        j.BeginArray();
+        j.Str(".");
+        j.Str(":");
+        j.EndArray();
+        j.Member("resolveProvider", false);
+        j.EndObject();
         j.Key("semanticTokensProvider");
         j.BeginObject();
         j.Key("legend");
@@ -144,6 +153,8 @@ struct Server {
             Respond(m, [&](JsonOut &j) { return SemanticTokens(ws, p, j); });
         } else if (method == "textDocument/signatureHelp") {
             Respond(m, [&](JsonOut &j) { return SignatureHelp(ws, p, j); });
+        } else if (method == "textDocument/completion") {
+            Respond(m, [&](JsonOut &j) { return Completion(ws, p, j); });
         } else if (method == "textDocument/references") {
             Respond(m, [&](JsonOut &j) { return References(ws, p, j); });
         } else if (method == "textDocument/rename") {
