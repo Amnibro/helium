@@ -4059,7 +4059,8 @@ the end, each with where its resolution lives.
     say which versions it wants (an AVX-512 version is not faster for
     every loop).
 13. **Labels for `break`** — if early-out patterns demand them.
-15. **Wasm fallback** — index-based reference representation details.
+15. **Wasm fallback** — index-based reference representation details
+    (`docs/design/wasm.md` compares the options).
 16. **Relative-reference region tracking** — copies of values containing
     *self-relative* references are currently rejected outright (§3.9; the
     `in pool` form already copies); track the region an offset ranges over so

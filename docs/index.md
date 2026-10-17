@@ -75,6 +75,8 @@ and the reference describe what was built; these say why.
   checker's analyses and options for simplifying them.
 * [Column arrays](design/soa.md): a struct-of-arrays storage proposal, not
   implemented.
+* [WebAssembly](design/wasm.md): running without address-space reservation,
+  fixed partitions against relocating stacks; a proposal.
 
 ## Getting the compiler
 
