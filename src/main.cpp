@@ -765,19 +765,23 @@ Options:
                         never fetched again).
 )";
     if (topic == "lsp") return
-R"(usage: goose lsp [--stdlib dir]
+R"(usage: goose lsp [--stdio] [--stdlib dir]
        goose lsp --probe
 
 Serves an editor over the Language Server Protocol, on stdin and stdout:
-diagnostics as files change, hover, go to definition, document and
-workspace symbols, semantic highlighting and signature help. It analyzes
-the programs whose entry files the editor configures (the
-initializationOptions' entryFiles, with the standard library's directory as
-stdlib) and every open file none of them imports. It fetches nothing: a
+diagnostics as files change, hover, go to definition, references and
+rename, document and workspace symbols, semantic highlighting, signature
+help, completion, inlay hints, folding and selection ranges, and code
+lenses. It analyzes the programs whose entry files the editor configures
+(the initializationOptions' entryFiles, with the standard library's
+directory as stdlib) and every open file none of them imports; the
+initializationOptions' commands are the client's own commands a code lens
+may name (goose.run, goose.showInstantiations). It fetches nothing: a
 package not fetched is an error at its import, which goose fetch resolves.
 
 Options:
   --probe               Print the protocol version and exit.
+  --stdio               Serve on stdin and stdout, as it does anyway.
   --stdlib dir          The standard library's directory (or GOOSE_STDLIB).
 )";
     if (topic == "toolchain") return

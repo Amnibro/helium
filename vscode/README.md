@@ -4,6 +4,8 @@ An extension for the [Goose language](https://github.com/aardappel/goose). With
 a compiler that has `goose lsp`, the compiler itself is the language server:
 the extension starts it and it analyzes your programs as you type. With an
 older compiler, the extension checks saved files with `goose check` instead.
+Other editors can use the same server: [Goose in other editors](../docs/editors.md)
+has the configuration for Neovim, Helix and Emacs.
 
 ## Features
 
@@ -16,8 +18,10 @@ older compiler, the extension checks saved files with `goose check` instead.
   resolves to a function, type, parameter, field or variant, signature help
   while typing a call's arguments, inlay hints for the types of `let`s and
   `var`s and the parameter names at calls, folding of bodies and comment
-  runs, and expand selection by syntax. **Goose: Restart Language Server**
-  restarts it; `goose.useLanguageServer` turns it off.
+  runs, expand selection by syntax, and code lenses: above each generic
+  function the number of its instantiations, which a click lists, and
+  **Run** above `main`, which runs that file with the JIT. **Goose: Restart
+  Language Server** restarts it; `goose.useLanguageServer` turns it off.
 
 - Syntax highlighting for `.goose` files, including nested block comments,
   escaped strings and characters, raw `"""` strings across lines, decimal/hex
@@ -247,8 +251,9 @@ and settings only in that disposable directory. It exercises activation, real
 compiler diagnostics, related error locations, imports, outline, tasks, and the
 edit/save lifecycle, and real JIT execution through commands, build tasks, and
 Run configurations, with the language server off, and then a hover answered by
-the language server where the compiler has one. Build the compiler with TinyCC
-first.
+the language server where the compiler has one, and its code lenses: a generic
+function's instantiations, and **Run** running the file it is in rather than the
+entry file. Build the compiler with TinyCC first.
 
 The implementation uses VS Code's [TextMate grammar support](https://code.visualstudio.com/api/language-extensions/syntax-highlight-guide),
 [task provider API](https://code.visualstudio.com/api/extension-guides/task-provider),

@@ -352,15 +352,20 @@ async function activate(context) {
         return deciding;
     }
 
-    async function savedActiveDocument() {
-        const doc = vscode.window.activeTextEditor?.document;
+    // The document a command acts on, the active editor's or the one at
+    // `uri`, saved with the open Goose files of its folder.
+    async function savedDocument(uri) {
+        const pick = async () => uri
+            ? vscode.workspace.openTextDocument(uri).then(doc => doc, () => undefined)
+            : vscode.window.activeTextEditor?.document;
+        const doc = await pick();
         if (!doc || doc.languageId !== 'goose') return undefined;
         if (!vscode.workspace.isTrusted) {
             void vscode.window.showWarningMessage('Trust this workspace to run the Goose compiler.');
             return undefined;
         }
         if (doc.isUntitled && !await doc.save()) return undefined;
-        const active = vscode.window.activeTextEditor?.document;
+        const active = await pick();
         if (!active || !isGoose(active)) return undefined;
         const cwd = cwdOf(active);
         for (const open of vscode.workspace.textDocuments) {
@@ -421,7 +426,7 @@ async function activate(context) {
                 }
                 uri = vscode.Uri.file(absolute(file, base || path.dirname(file), active?.uri.fsPath || ''));
             } else if (!folder || active && vscode.workspace.getWorkspaceFolder(active.uri)?.uri.toString() === folder.uri.toString()) {
-                uri = (await savedActiveDocument())?.uri;
+                uri = (await savedDocument())?.uri;
             }
             if (!uri) {
                 void vscode.window.showErrorMessage('Open a Goose file or set goose.entryFile to run with JIT.');
@@ -448,7 +453,7 @@ async function activate(context) {
         vscode.commands.registerCommand('goose.showOutput', () => output.show()),
         vscode.commands.registerCommand('goose.restartServer', () => decide(true)),
         vscode.commands.registerCommand('goose.check', async () => {
-            const doc = await savedActiveDocument();
+            const doc = await savedDocument();
             if (!doc) return;
             // With the server checking the program as it is edited, an explicit
             // check shows the compiler's whole output in a terminal.
@@ -459,10 +464,27 @@ async function activate(context) {
             const completed = await queue.schedule(settings(vscode, doc.uri), 0);
             if (completed) output.show(true);
         }),
-        ...['run', 'build', 'generateC'].map(action => vscode.commands.registerCommand(`goose.${action}`, async () => {
-            const doc = await savedActiveDocument();
+        // The server's code lens above a `main` passes its file's URI, as a
+        // string: that file runs. The editor title's play button passes its
+        // resource, which runs as the active file does, the entry file
+        // standing for it where goose.entryFile sets one.
+        vscode.commands.registerCommand('goose.run', async target => {
+            const uri = typeof target === 'string' ? vscode.Uri.parse(target) : undefined;
+            const doc = await savedDocument(uri);
+            if (!doc) return;
+            const definition = { type: 'goose', action: 'run' };
+            if (uri) definition.file = doc.uri.fsPath;
+            await vscode.tasks.executeTask(makeTask(definition, doc.uri));
+        }),
+        ...['build', 'generateC'].map(action => vscode.commands.registerCommand(`goose.${action}`, async () => {
+            const doc = await savedDocument();
             if (doc) await vscode.tasks.executeTask(makeTask({ type: 'goose', action }, doc.uri));
         })),
+        // The server's code lens above a generic function: its
+        // specializations, one per line.
+        vscode.commands.registerCommand('goose.showInstantiations', (name, lines) => {
+            if (Array.isArray(lines)) void vscode.window.showQuickPick(lines, { title: `Instantiations of ${name}` });
+        }),
         vscode.tasks.registerTaskProvider('goose', {
             provideTasks() {
                 if (!vscode.workspace.isTrusted) return [];

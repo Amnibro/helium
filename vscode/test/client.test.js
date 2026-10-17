@@ -59,7 +59,7 @@ test('without a folder, the open Goose file\'s directory is the working director
     assert.equal(setup.compiler, 'goose');
 });
 
-test('createClient starts goose lsp on stdio with the entry files as initialization options', () => {
+test('createClient starts goose lsp on stdio with the entry files and the commands lenses may name as initialization options', () => {
     let seen;
     class LanguageClient {
         constructor(id, name, server, client) { seen = { id, name, server, client }; }
@@ -71,7 +71,7 @@ test('createClient starts goose lsp on stdio with the entry files as initializat
     assert.equal(seen.id, 'goose');
     assert.deepEqual(seen.server, { command: 'C:/t/goose.exe', args: ['lsp'], transport: 'stdio', options: { cwd: 'C:/w' } });
     assert.deepEqual(seen.client.documentSelector, [{ language: 'goose', scheme: 'file' }]);
-    assert.deepEqual(seen.client.initializationOptions, { entryFiles: ['C:/w/main.goose'], stdlib: '' });
+    assert.deepEqual(seen.client.initializationOptions, { entryFiles: ['C:/w/main.goose'], stdlib: '', commands: ['goose.run', 'goose.showInstantiations'] });
     assert.equal(seen.client.outputChannel, output);
     assert.equal(seen.client.synchronize.fileEvents, watcher);
 });

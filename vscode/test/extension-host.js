@@ -158,6 +158,27 @@ async function run() {
         return (hovers || []).some(hover => hover.contents.some(content => String(content.value ?? content).includes('fn helper')));
     }, 'the language server answers a hover on the call of helper');
     console.log('Goose extension host: the language server answered a hover.');
+    // The code lenses: a generic function's instantiations, which a quick
+    // pick lists, and above a `main`, Run, which runs its own file rather
+    // than the entry file.
+    const lensed = vscode.Uri.joinPath(folder.uri, 'lensed.goose');
+    await fs.writeFile(lensed.fsPath, 'fn twice(x) { x + x }\nfn main() { print(twice(1)); print(twice(1.5)); }\n');
+    await vscode.window.showTextDocument(await vscode.workspace.openTextDocument(lensed));
+    let lenses = [];
+    await until(async () => {
+        lenses = await vscode.commands.executeCommand('vscode.executeCodeLensProvider', lensed) || [];
+        return lenses.some(lens => lens.command?.title === 'Run');
+    }, 'the language server gives a Run lens above main');
+    const count = lenses.find(lens => lens.command?.title === '2 instantiations');
+    assert.ok(count, JSON.stringify(lenses.map(lens => lens.command)));
+    assert.equal(count.command.command, 'goose.showInstantiations');
+    assert.deepEqual(count.command.arguments, ['twice', ['twice(literal i64)', 'twice(literal f64)']]);
+    await vscode.commands.executeCommand(count.command.command, ...count.command.arguments);
+    await vscode.commands.executeCommand('workbench.action.closeQuickOpen');
+    const run = lenses.find(lens => lens.command?.title === 'Run');
+    assert.equal(run.command.command, 'goose.run');
+    await runTask(() => vscode.commands.executeCommand(run.command.command, ...run.command.arguments), lensed.fsPath);
+    console.log('Goose extension host: the code lenses listed instantiations and ran their file.');
 }
 
 module.exports = { run };

@@ -543,12 +543,14 @@ python samples/run_samples.py
 For editing, the [VS Code extension](vscode/README.md) gives syntax
 highlighting, the compiler's language server (`goose lsp`: errors as you
 type, hover, go to definition, completion, rename, symbols) and one-key runs
-through the JIT; other editors can run `goose lsp` themselves
-(`docs/implementation.md` §12):
+through the JIT:
 
 ```bash
 code --install-extension vscode/goose-language.vsix
 ```
+
+Other editors can run `goose lsp` themselves; [editors](docs/editors.md)
+has the configuration for Neovim, Helix and Emacs.
 
 ## Documentation
 

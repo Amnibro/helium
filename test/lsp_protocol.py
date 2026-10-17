@@ -30,6 +30,7 @@ class Client:
                                   stdout=subprocess.PIPE, stderr=subprocess.PIPE)
         self.seq = 0
         self.pending = []    # Notifications read while waiting for a reply.
+        self.requests = []   # The methods of the server's requests, each answered with null.
 
     def send(self, method, params=None, request=True):
         msg = {"jsonrpc": "2.0", "method": method}
@@ -38,6 +39,10 @@ class Client:
         if request:
             self.seq += 1
             msg["id"] = self.seq
+        self.write(msg)
+        return self.seq if request else None
+
+    def write(self, msg):
         body = json.dumps(msg).encode()
         try:
             self.p.stdin.write(b"Content-Length: %d\r\n\r\n" % len(body) + body)
@@ -45,9 +50,18 @@ class Client:
         except OSError:
             raise RuntimeError(f"the server is gone (exit {self.p.wait()}):\n"
                                f"{tc.decode(self.p.stderr.read())}")
-        return self.seq if request else None
 
     def read(self):
+        """The next message from the server other than a request of its."""
+        while True:
+            m = self.read_one()
+            if "method" in m and "id" in m:
+                self.requests.append(m["method"])
+                self.write({"jsonrpc": "2.0", "id": m["id"], "result": None})
+                continue
+            return m
+
+    def read_one(self):
         headers = {}
         while True:
             line = self.p.stdout.readline()
@@ -130,8 +144,12 @@ def check_lsp_protocol(exe, base):
         raise RuntimeError(f"lsp {what}:\n{json.dumps(got, indent=1)[:3000]}")
 
     client = Client(exe, fixtures)
-    client.request("initialize", {"processId": None, "rootUri": uri_of(fixtures), "capabilities": {},
-                                  "initializationOptions": {"entryFiles": [str(main)]}})
+    # The client has the commands of the VS Code extension's that code
+    # lenses name.
+    client.request("initialize", {"processId": None, "rootUri": uri_of(fixtures),
+                                  "capabilities": {"workspace": {"codeLens": {"refreshSupport": True}}},
+                                  "initializationOptions": {"entryFiles": [str(main)],
+                                                            "commands": ["goose.run", "goose.showInstantiations"]}})
     client.send("initialized", {}, request=False)
 
     def open_fixture(path, text):
@@ -251,6 +269,27 @@ def check_lsp_protocol(exe, base):
                 p = position(pos)
                 if not any(h["position"] == p and h["label"] == want for h in got or []):
                     fail(f"hint {pos} is not {want}", got)
+            elif kind == "lens":
+                # `lens L "title"`: a lens on line L with that title. A count
+                # of instantiations has as many lines as its data, which its
+                # command shows; "Run" runs the file.
+                at, want = re.match(r'(\d+) "(.*)"$', rest).groups()
+                got = client.request("textDocument/codeLens", doc)
+                lens = next((x for x in got or [] if x["range"]["start"]["line"] == int(at) - 1 and
+                             x["command"]["title"] == want), None)
+                if not lens:
+                    fail(f"lens {at} {want}", got)
+                command = lens["command"]
+                count = re.match(r"(\d+) instantiations?$", want)
+                if want == "Run":
+                    ok = command["command"] == "goose.run" and command["arguments"] == [uri]
+                elif count:
+                    ok = (len(lens["data"]) == int(count.group(1)) and
+                          command["command"] == "goose.showInstantiations" and command["arguments"][1] == lens["data"])
+                else:
+                    ok = want == "not instantiated" and lens["data"] == [] and command["command"] == ""
+                if not ok:
+                    fail(f"lens {at} {want}", lens)
             elif kind == "folding":
                 a, b = (int(x) for x in rest.split("-"))
                 got = client.request("textDocument/foldingRange", doc)
@@ -280,6 +319,10 @@ def check_lsp_protocol(exe, base):
 
     diags = open_fixture(main, text)
     queries(main, text, diags)
+    # The analysis answering the queries asked for the lenses again, since
+    # an editor asks as a file opens.
+    if "workspace/codeLens/refresh" not in client.requests:
+        fail("no workspace/codeLens/refresh after an analysis", client.requests)
     doc = {"textDocument": {"uri": main_uri}}
     got = client.request("workspace/symbol", {"query": "twi"})
     if not any(s["name"] == "twice" and s["location"]["uri"].lower() == helper_uri.lower() for s in got):

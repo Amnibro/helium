@@ -63,6 +63,10 @@ struct Server {
         j.Member("inlayHintProvider", true);
         j.Member("foldingRangeProvider", true);
         j.Member("selectionRangeProvider", true);
+        j.Key("codeLensProvider");
+        j.BeginObject();
+        j.Member("resolveProvider", false);
+        j.EndObject();
         j.Key("signatureHelpProvider");
         j.BeginObject();
         j.Key("triggerCharacters");
@@ -110,12 +114,22 @@ struct Server {
         static const Json none;
         auto &p = params ? *params : none;
         auto &method = m.method;
+        // A reply to a request of the server's needs nothing.
+        if (method.empty()) return true;
         if (!m.id.empty() && rpc.IsCancelled(m.id)) {
             RespondError(m, -32800, "the request was cancelled");
             return true;
         }
         if (method == "initialize") {
-            ws.Configure(p.Get("initializationOptions"));
+            auto options = p.Get("initializationOptions");
+            ws.Configure(options);
+            if (auto commands = options ? options->Get("commands") : nullptr; commands && commands->kind == Json::ARRAY)
+                for (auto &c : commands->arr)
+                    if (c.kind == Json::STRING) ws.clientcommands.insert(c.str);
+            auto caps = p.Get("capabilities");
+            auto wcaps = caps ? caps->Get("workspace") : nullptr;
+            auto lens = wcaps ? wcaps->Get("codeLens") : nullptr;
+            ws.lensrefresh = JsonBool(lens ? lens->Get("refreshSupport") : nullptr);
             Respond(m, [&](JsonOut &j) { WriteCapabilities(j); return true; });
         } else if (method == "shutdown") {
             shutdown = true;
@@ -170,6 +184,8 @@ struct Server {
             Respond(m, [&](JsonOut &j) { return FoldingRanges(ws, p, j); });
         } else if (method == "textDocument/selectionRange") {
             Respond(m, [&](JsonOut &j) { return SelectionRanges(ws, p, j); });
+        } else if (method == "textDocument/codeLens") {
+            Respond(m, [&](JsonOut &j) { return CodeLenses(ws, p, j); });
         } else if (!m.id.empty()) {
             RespondError(m, -32601, cat("goose lsp does not handle ", method));
         }
@@ -207,7 +223,10 @@ inline int RunLsp(const string &exe, const vector<string> &args) {
             stdlib = args[++i];
             continue;
         }
-        fprintf(stderr, "goose lsp takes --probe or --stdlib dir, not %s\n", args[i].c_str());
+        // The one transport there is, which clients (vscode-languageclient
+        // among them) name when they start a server on stdio.
+        if (args[i] == "--stdio") continue;
+        fprintf(stderr, "goose lsp takes --probe, --stdio or --stdlib dir, not %s\n", args[i].c_str());
         return 1;
     }
     SetBinaryStdio();

@@ -534,6 +534,14 @@ exemplar's. Across the test corpus (2,500 files) the server's diagnostics
 are unchanged by it, and its analyses take about a sixth longer in total,
 none of the large programs measurably.
 
+Code lens is in (`docs/implementation.md` §12): the instantiation count
+above each generic function, which the VS Code extension lists in a quick
+pick (`goose.showInstantiations`), and "Run" above `main` through the
+extension's run command, each naming its command only for a client whose
+initialization options list it, with `workspace/codeLens/refresh` after
+each analysis. The other editors' entries are `docs/editors.md`: Neovim,
+Helix and Emacs (Eglot).
+
 Phases 0 and 1 together are the bulk of the compiler-side work; the
 features of phase 2 are mostly server code over data phase 0 provided.
 

@@ -5978,7 +5978,8 @@ on stdin and stdout, as `docs/design/language_server.md` lays out: the
 compiler is the server, and a program is analyzed again, whole, each time
 one of its files changes. `goose lsp --probe` prints the protocol version
 served and exits, which a client runs to tell a compiler with the verb
-from one without.
+from one without. `--stdio`, which clients such as `vscode-languageclient`
+pass, names the one transport there is.
 
 **Transport** (`lsp_rpc.h`). Messages are JSON-RPC framed by
 `Content-Length`, on streams put in binary mode (`SetBinaryStdio`,
@@ -5986,6 +5987,8 @@ from one without.
 (`Transport::ReadAll`) into a queue the worker, the main thread, drains
 (`Transport::Pop`); a `$/cancelRequest` is noted rather than queued, and a
 request so named gets the protocol's cancelled error when its turn comes.
+A message with no method is the client's reply to a request of the
+server's, which needs nothing.
 A change to a document (`didOpen`, `didChange`, `didClose`) also sets
 `Transport::cancel`, which the parser polls at each top-level declaration
 and the checker at each body and statement (`Ast::CheckCancel`), throwing
@@ -6026,7 +6029,10 @@ on answering from it. A cancelled attempt leaves the root dirty. The
 indexes are built as soon as the check is done, before the optimizer
 rewrites the bodies: it inlines calls and drops constants, and with them
 the clones the features read, which stay allocated (the `Ast` owns every
-node) but leave the tree.
+node) but leave the tree. A client that takes `workspace/codeLens/refresh`
+is sent one each time an analysis replaces the last, since an editor asks
+for lenses as a file opens or changes, often before the analysis that
+answers them.
 
 **Analysis** (`lsp_analysis.h`). The `Ast` as the check left it, with the
 indexes the features read. `FileIndex::occs` is every occurrence of a name
@@ -6112,7 +6118,18 @@ short where text follows the body on its last line (an editor folds whole
 lines), and every run of `//` comment lines, as `comment`. Selection
 ranges give, for each position, the chain of extents holding it, the name
 at it first, then the node extents of `FileIndex::spans` outward to the
-declaration, each holding the one before.
+declaration, each holding the one before. Code lenses (`CodeLenses`) sit
+on the names of the file's top-level functions: above a generic one (type
+parameters or an untyped parameter, `IsGeneric`), the number of its
+specializations, with their `name(argument types)` lines as the lens's
+data (`SpecLines`, which hover shows too: specializations the types do not
+tell apart are one line); above `main`, "Run" with the file's URI. The
+protocol has no way to ask which commands a client runs itself, so a lens
+names one only where the client listed it in its initialization options'
+`commands` (`Workspace::clientcommands`): `goose.showInstantiations`, with
+the function's name and the lines as arguments, and `goose.run`, as the VS
+Code extension does. Otherwise a count is a title alone and there is no
+"Run".
 
 **Testing.** `test/lsp_protocol.py` (`docs/testing.md`) drives the server
 over its own protocol on the fixtures in `test/lsp/`, whose `// lsp:`
@@ -6123,3 +6140,6 @@ definition, signature help and completion inside generic functions
 nothing calls; and `errors_tc/recovery/exemplar_unchecked.goose`, whose
 generic functions no binding could make right, with no diagnostic from
 the server either, as `goose check` gives none for them).
+Its client declares the
+VS Code extension's commands and the lens refresh, and answers the
+server's requests. The editors' configuration is in `docs/editors.md`.

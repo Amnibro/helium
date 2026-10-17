@@ -1,9 +1,10 @@
 // Goose compiler — the language server's features (docs/design/
 // language_server.md §6), each a request answered from a root's analysis:
 // hover, go to definition, references and rename, document and workspace
-// symbols, semantic tokens, signature help, inlay hints, folding ranges and
-// selection ranges. Every one takes the request's params and writes its
-// result, or writes nothing and returns false for a null result.
+// symbols, semantic tokens, signature help, inlay hints, folding ranges,
+// selection ranges, completion and code lens. Every one takes the request's
+// params and writes its result, or writes nothing and returns false for a
+// null result.
 #pragma once
 
 namespace goose {
@@ -82,23 +83,35 @@ inline string FnHeader(const SFunction *sf) {
     return s;
 }
 
-// The specializations a function has, as `name(argument types)`, up to
-// `most` of them.
-inline string SpecsText(const SFunction *sf, size_t most) {
-    string s;
-    size_t n = 0;
+// The specializations a function has, as `name(argument types)`, in the
+// order they were made. Ones the key tells apart by what the types do not
+// show (the roots an argument holds, say) read alike and are listed once.
+inline vector<string> SpecLines(const SFunction *sf) {
+    vector<string> lines;
     for (auto sp : sf->specs) {
         if (sp->isfunval) continue;
-        if (n++ == most) {
-            Append(s, "\n... ", sf->specs.size() - most, " more");
-            break;
-        }
-        Append(s, s.empty() ? "" : "\n", sf->qname, "(");
+        auto s = cat(sf->qname, "(");
         for (size_t i = 0; i < sp->argtypes.size(); i++) {
             if (i) s += ", ";
+            for (auto li : sp->litparams) if (li == (int)i) s += "literal ";
             s += TypeText(sp->argtypes[i]);
         }
         s += ")";
+        if (find(lines.begin(), lines.end(), s) == lines.end()) lines.push_back(std::move(s));
+    }
+    return lines;
+}
+
+// SpecLines, up to `most` of them.
+inline string SpecsText(const SFunction *sf, size_t most) {
+    string s;
+    auto lines = SpecLines(sf);
+    for (size_t i = 0; i < lines.size(); i++) {
+        if (i == most) {
+            Append(s, "\n... ", lines.size() - most, " more");
+            break;
+        }
+        Append(s, s.empty() ? "" : "\n", lines[i]);
     }
     return s;
 }
@@ -1666,6 +1679,78 @@ inline bool Completion(Workspace &ws, const Json &params, JsonOut &j) {
         ScopeCompletions(loc, offset, out);
     }
     out.Write(j);
+    return true;
+}
+
+// --- code lens --------------------------------------------------------------------------
+
+// A function checked once per distinct argument types: one with type
+// parameters or an untyped parameter.
+inline bool IsGeneric(const SFunction *sf) {
+    if (!sf->generics.empty()) return true;
+    for (auto &p : sf->params) if (!p.type) return true;
+    return false;
+}
+
+// Above each top-level generic function, how many specializations it has,
+// their lines as the lens's data; above `main`, "Run". A lens names a
+// command only where the client said it has one (Workspace::clientcommands):
+// the count is a title alone otherwise, and there is no "Run".
+inline bool CodeLenses(Workspace &ws, const Json &params, JsonOut &j) {
+    Located loc;
+    if (!Locate(ws, params, loc, false)) return false;
+    auto &an = *loc.an;
+    auto &f = *loc.fi;
+    auto lens = [&](const Place &p, const string &title, const char *command,
+                    const function<void()> &arguments, const function<void()> &data) {
+        j.BeginObject();
+        j.Key("range");
+        WriteRange(j, f.text, p.start, p.start + p.len);
+        j.Key("command");
+        j.BeginObject();
+        j.Member("title", title);
+        j.Member("command", command);
+        if (arguments) {
+            j.Key("arguments");
+            j.BeginArray();
+            arguments();
+            j.EndArray();
+        }
+        j.EndObject();
+        if (data) {
+            j.Key("data");
+            data();
+        }
+        j.EndObject();
+    };
+    j.BeginArray();
+    for (auto d : an.ast->topdecls) {
+        auto fd = Is<FnDecl>(d);
+        if (!fd || d->line.fileidx != f.fileidx) continue;
+        auto sf = fd->sf;
+        auto p = PlaceOfFn(an, sf);
+        if (!p.Known() || p.fileidx != f.fileidx) continue;
+        if (IsGeneric(sf)) {
+            auto lines = SpecLines(sf);
+            auto title = lines.empty() ? string("not instantiated")
+                                       : cat(lines.size(), lines.size() == 1 ? " instantiation" : " instantiations");
+            auto writelines = [&] {
+                j.BeginArray();
+                for (auto &l : lines) j.Str(l);
+                j.EndArray();
+            };
+            if (!lines.empty() && ws.clientcommands.count("goose.showInstantiations"))
+                lens(p, title, "goose.showInstantiations", [&] {
+                    j.Str(sf->qname);
+                    writelines();
+                }, writelines);
+            else
+                lens(p, title, "", {}, writelines);
+        }
+        if (sf->qname == "main" && ws.clientcommands.count("goose.run"))
+            lens(p, "Run", "goose.run", [&] { j.Str(f.uri); }, {});
+    }
+    j.EndArray();
     return true;
 }
 

@@ -29,6 +29,8 @@ library, the tools and the compiler.
   Mandelbrot, a spinning cube and two small games.
 * [VS Code extension](../vscode/README.md): highlighting, checks on save,
   and one-key runs.
+* [Other editors](editors.md): the language server in Neovim, Helix and
+  Emacs.
 
 ## Benchmarks
 

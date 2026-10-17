@@ -42,6 +42,10 @@ function serverSetup(vscode) {
     };
 }
 
+// The extension's commands the server's code lenses may name: running a
+// file, and listing a generic function's instantiations.
+const CLIENT_COMMANDS = ['goose.run', 'goose.showInstantiations'];
+
 // The client for a setup, through the language client library given (the
 // `vscode-languageclient/node` module), logging to the output channel and
 // telling the server of files changed on disk through the watcher.
@@ -51,7 +55,7 @@ function createClient(languageclient, setup, output, watcher) {
         { command: setup.compiler, args: setup.args, transport: TransportKind.stdio, options: { cwd: setup.cwd } },
         {
             documentSelector: [{ language: 'goose', scheme: 'file' }],
-            initializationOptions: { entryFiles: setup.entryFiles, stdlib: setup.stdlib },
+            initializationOptions: { entryFiles: setup.entryFiles, stdlib: setup.stdlib, commands: CLIENT_COMMANDS },
             synchronize: { fileEvents: watcher },
             outputChannel: output,
             diagnosticCollectionName: 'goose-server'

@@ -39,6 +39,9 @@ fn main() {
     print(v.len);
 }
 
+// Called by nothing.
+fn spare(x) { x }
+
 // lsp: hover 31:15 "fn add<T>(a: T, b: T) -> T"
 // lsp: hover 31:15 "Adds two numbers."
 // lsp: hover 31:21 "x: i64"
@@ -115,3 +118,6 @@ fn main() {
 // lsp: selection 31:21 -> 31:19-31:22
 // lsp: selection 31:21 -> 31:15-31:28
 // lsp: selection 31:21 -> 29:1-40:2
+// lsp: lens 15 "2 instantiations"
+// lsp: lens 29 "Run"
+// lsp: lens 43 "not instantiated"
