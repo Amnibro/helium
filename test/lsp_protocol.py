@@ -317,6 +317,14 @@ def check_lsp_protocol(exe, base):
     complete = fixtures / "complete.goose"
     ctext = complete.read_text(encoding="utf-8")
     queries(complete, ctext, open_fixture(complete, ctext))
+    # Generic functions nothing calls, which the server checks as exemplars:
+    # the queries answer from them, and one whose body no binding could make
+    # right reports nothing, as `goose check` does not (its errors_tc
+    # recovery fixture, whose one error is main's).
+    for exemplar in (fixtures / "exemplar.goose",
+                     HERE / "errors_tc" / "recovery" / "exemplar_unchecked.goose"):
+        etext = exemplar.read_text(encoding="utf-8")
+        queries(exemplar, etext, open_fixture(exemplar, etext))
     client.request("shutdown", None)
     client.send("exit", request=False)
     code = client.p.wait(timeout=30)

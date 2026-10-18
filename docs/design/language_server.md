@@ -13,6 +13,7 @@
 - [8. Testing](#8-testing)
 - [9. The plan](#9-the-plan)
 - [10. Deferred and open](#10-deferred-and-open)
+- [11. Exemplar instantiation](#11-exemplar-instantiation)
 
 </details>
 
@@ -108,7 +109,8 @@ and `Node::Children` walks any tree, so a map from a source node to its
 clones, and from a position to a node, is a walk over `ast.fnspecs` and
 `Ast::ForEachRootTree`. The template body itself is never annotated. A
 generic function nothing instantiates, or a nested function nothing calls,
-has no clone and so no types (`docs/implementation.md` §3.1); a
+has no clone and so no types (`docs/implementation.md` §3.1; the server's
+exemplars, §11, give the former one); a
 non-generic, fully annotated top-level function nothing reaches is checked
 standalone (`CheckUnreached`), and a module without `main` is accepted
 under `check` (`nomain`), which is how the extension checks a module file
@@ -390,10 +392,9 @@ comments and prints a `guard` as the `if` it became, so it is not one).
 | Code lens | the specializations of a generic function (`sf->specs`), "run" above `main` through the existing task | |
 | Formatting | not offered (§5) | |
 
-Hover on a name inside a generic function nothing instantiates shows the
-declaration and no type, and says so. An exemplar instantiation (checking
-such a function with each type parameter bound to a fresh opaque type)
-would show more and is deferred (§10).
+Inside a generic function nothing instantiates, the features answer from
+an exemplar instantiation (§11): the function checked with each type
+parameter bound to a fresh opaque type, as far as that check gets.
 
 ## 7. The extension
 
@@ -524,18 +525,31 @@ namespace's declarations after `::`. With that, phase 2 is complete.
 
 **Phase 3:** code lens, exemplar instantiation for generics, parse caching
 per file if a workspace turns out to need it, the other editors' entries.
+Exemplar instantiation is in (§11; `docs/implementation.md` §3.1 and §12,
+`test/lsp/exemplar.goose`): after the real roots, the server's check gives
+each generic function no root specialized one specialization with opaque
+bindings, whose errors end it silently and which no later pass sees, and
+the features read its clone as any other, saying where a type is an
+exemplar's. Across the test corpus (2,500 files) the server's diagnostics
+are unchanged by it, and its analyses take about a sixth longer in total,
+none of the large programs measurably.
 
 Phases 0 and 1 together are the bulk of the compiler-side work; the
 features of phase 2 are mostly server code over data phase 0 provided.
 
 ## 10. Deferred and open
 
-* **Exemplar instantiation.** Checking an uninstantiated generic with
-  opaque type parameters would give hover and completion inside it, at
-  the cost of a check mode the language does not otherwise have (what
-  does `T` support?). The checker's keys (roots, literal parameters) make
-  even a permissive mode a design of its own. Deferred; the server says
-  "not instantiated" meanwhile.
+* **Exemplar instantiation.** Designed in §11 and in: what `T` supports
+  is answered by giving every operator and member an opaque result, and
+  the keys by checking the exemplar as an unreached function is checked,
+  apart from the real specializations. Open: an exemplar ends at the first
+  thing it does not support, of which the commonest are a literal where a
+  `T` is expected (`var total: T = 0`), a builtin given a `T` (`print`,
+  `hash` where it is no overload set), and a type parameter called as a
+  function value (`F(x)`), which could be bound to a function value whose
+  call gives an opaque result. A nested generic function, and a generic
+  function only other exemplars call, are exemplified only as the
+  exemplar's body reaches them.
 * **Rename across programs.** A module reached from several roots gets
   edits from each; the server unions them by position. A name spelled
   through a namespace qualifier is renamed at its leaf. Builtins and
@@ -555,3 +569,73 @@ features of phase 2 are mostly server code over data phase 0 provided.
   configured entries holds many. If that matters, roots can be analyzed
   lazily (only those with open files) and dropped when their files close,
   which the root selection of §4 already allows.
+
+## 11. Exemplar instantiation
+
+A generic function nothing calls has no specialization, so nothing inside
+it has a type. An exemplar is the specialization the server asks for in
+place of the missing call: the function checked once with each type
+parameter bound to an opaque type.
+
+**Opaque types.** Each type parameter, and each untyped parameter, is
+bound to a fresh `TY_GENERIC` marked `TypeName::opaque`, which prints as
+the parameter's name (`T`; `type of x` for an untyped `x`). It stands for
+itself: equal only to itself (by its `TypeName`, which a `const` copy
+shares), concrete as far as the checker is concerned (substitution leaves
+it alone, `HasGenerics` is false of it, `ValidateType` accepts it), and a
+fixed-size, flat value holding no references, which is what the size-class
+and root queries already say of a kind they do not otherwise handle. It
+has no fields, members or operators of its own; the check gives it these:
+
+- A binary operator with an opaque operand gives `bool` for a comparison
+  and the opaque operand's type for anything else (the left one's where
+  both are), so `a + b` on two `T`s is a `T`; unary `-` and `~` give the
+  operand's type, and a compound assignment to an opaque target takes any
+  operand.
+- A member access on an opaque value, read or written, gives a value of
+  one more opaque type, `?`, which all such accesses share: the exemplar
+  cannot know what the member is. So does a call of a function with an
+  opaque argument (one at any depth of the argument's type) that none of
+  its overloads takes, `hash(key)`, which only a real binding could
+  resolve; an overload with a generic parameter takes it, and the callee
+  is specialized for the opaque binding as for any other.
+- An `as` from or to an opaque type gives the target type.
+- Anything else is an error: a literal where an opaque type is expected,
+  a builtin given an opaque value, a type parameter called as a function
+  value (`F(x)`), indexing, iterating or testing an opaque value.
+
+**The check.** The server sets `Ast::exemplars`; `goose check` never does.
+After the real roots and the whole-program fixups, every top-level
+function with type parameters or untyped parameters that no root
+specialized gets an exemplar, checked as `CheckUnreached` checks a plain
+function nothing reached (each reference, slice or holder parameter rooted
+at a class of its own, writable), in a mode where an error is not
+reported: a `CompileError` or an `Abandoned` ends the exemplar silently,
+returning the checker to the root's entry as `CheckRoot` does, and no
+warning is given. What the check annotated before the error stays, so an
+exemplar is as useful as the code before the first thing the opaque types
+do not support; for a body that only moves its `T`s around, compares them
+and passes them on, that is all of it.
+
+**Isolation.** Exemplars run after everything that reports, so nothing they
+record reaches a fixup or a diagnostic. A call inside an exemplar does not
+reuse a specialization a real root made, since a reuse merges what the
+call site says into facts left out of the key (`RootArg::exact`,
+`concrete`, the needed targets), which the later passes read; it makes its
+own. When the exemplars are done, every specialization they made leaves
+`ast.fnspecs` and its function's `specs` for `Ast::exemplarspecs`, marked
+with the function whose exemplar made it (`FnSpec::exemplar`): the
+optimizer, bounds-check elimination, `--specs` and the counts never see
+one, and no real call can reuse one, since every real call came first.
+
+**The server.** `Analysis::Build` indexes those of the exemplar
+specializations that belong to the exemplar's function or to a function
+nested in it (a callee's specialization made for it carries the caller's
+opaque types, which say nothing about the callee), after the real ones,
+and remembers which clones they are. Hover on `a` then shows `a: T`, with
+"in an exemplar instantiation" after it; completion after a `.` reads the
+object's type from the clone, as for any value (the builtin members of a
+slice's element, or for an opaque value only the functions whose first
+parameter is generic); signature help and definitions follow the clone's
+resolutions, and references and rename see the uses; a name past the
+error that ended the exemplar says that the exemplar stopped before it.

@@ -644,6 +644,17 @@ inline void TypeCheck::ResolveMemberLValue(LVal &lv, Dot *d) {
         Error(d, cat("variant ", inst->en->name, ".", t->var->variant->name,
                      " has no field ", d->name));
     }
+    // A member of an exemplar's opaque value (CheckExemplars) is one more,
+    // of a type that all of them share: what it is, only a call could say.
+    if (IsOpaque(t)) {
+        if (t->cq) lv.writable = false;
+        lv.letbound = lv.fotail = lv.isvarint = false;
+        lv.type = OpaqueMember();
+        lv.var = nullptr;
+        lv.fromstorage = true;
+        lv.isslot = true;
+        return;
+    }
     Error(d, cat("no field access on a value of type ", TypeStr(t)));
 }
 
@@ -1805,6 +1816,15 @@ inline Val TypeCheck::CheckBinaryResult(Binary *b, Val &lv, Val &rv) {
     NoUntypedEmptyArray(lv, b->left, TName(b->op));
     NoUntypedEmptyArray(rv, b->right, TName(b->op));
     auto lt = LoadType(lv.type), rt = LoadType(rv.type);
+    // An exemplar's opaque operand (CheckExemplars) supports any operator:
+    // a comparison is a bool, anything else is of the opaque type.
+    if (IsOpaque(lt) || IsOpaque(rt)) {
+        Val v;
+        auto compare = b->op == T_EQ || b->op == T_NEQ || b->op == T_LT || b->op == T_GT ||
+                       b->op == T_LTEQ || b->op == T_GTEQ;
+        v.type = compare ? ast.booltype : IsOpaque(lt) ? lt : rt;
+        return v;
+    }
     auto numeric = [](TypeExpr *t) { return IsIntT(t) || t->kind == TY_FLT; };
     if (b->op == T_EQ || b->op == T_NEQ) {
         Val v;

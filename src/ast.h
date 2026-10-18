@@ -249,6 +249,10 @@ struct TypeName : TypeDetail {       // TY_UNRESOLVED and TY_GENERIC
                                      // (docs/design/namespaces.md).
     vector<TypeExpr *> args;         // Args on a TY_GENERIC are an error (typecheck).
     bool varmode = false;            // T.. as written; resolution moves it to TypeEnum.
+    // A TY_GENERIC an exemplar binds a type parameter to (TypeCheck::
+    // CheckExemplar): a concrete type equal only to itself, by this detail,
+    // which its `const` copies share.
+    bool opaque = false;
 };
 
 struct TypeFn : TypeDetail {         // TY_FN
@@ -332,6 +336,7 @@ struct TypeExpr {
 // The views of a type's shape that every pass asks for.
 inline bool IsRefOrSlice(const TypeExpr *t) { return t->kind == TY_REF || t->kind == TY_SLICE; }
 inline bool IsOptional(const TypeExpr *t) { return t->kind == TY_REF && t->ref->optional; }
+inline bool IsOpaque(const TypeExpr *t) { return t && t->kind == TY_GENERIC && t->named->opaque; }
 // A plain reference: an address, neither optional nor a relative offset.
 inline bool IsPlainRef(const TypeExpr *t) {
     return t->kind == TY_REF && !t->ref->optional && t->ref->lenstorage < 0;
@@ -2160,6 +2165,10 @@ struct FnSpec {
     // call that would reuse it ends its own root silently, as a
     // consequence of the error reported (TypeCheck::GetOrCreateSpec).
     bool failed = false;
+    // Made by the exemplar check of this generic function, which nothing
+    // instantiated (TypeCheck::CheckExemplar): its types are the opaque
+    // bindings', and it is in Ast::exemplarspecs, not fnspecs.
+    SFunction *exemplar = nullptr;
     bool incycle = false;          // Part of a recursive cycle (§7.8).
     // The cycle member this one was merged under; following the links ends
     // at the outermost member on the call path that found the cycle, which
@@ -2307,6 +2316,9 @@ struct Ast {
     void CheckCancel() const {
         if (cancel && cancel->load(memory_order_relaxed)) throw Cancelled {};
     }
+    // Set by the language server: the checker gives each generic function
+    // nothing instantiated an exemplar check (TypeCheck::CheckExemplars).
+    bool exemplars = false;
 
     // Every `import` as a file wrote it, with the file it resolved to: what
     // a go to definition on the import line opens.
@@ -2371,6 +2383,9 @@ struct Ast {
     vector<EnumInst *> enuminsts;
     vector<FnSpec *> fnspecs;
     vector<FnSpec *> fvenvs;     // FnSpec::isfunval environments, which only the checker reads.
+    // The specializations exemplar checks made (FnSpec::exemplar), which
+    // only the language server reads.
+    vector<FnSpec *> exemplarspecs;
 
     vector<Node *> topdecls;                        // In source/import order.
     vector<VarDecl *> globals;                      // Initialization order.
@@ -2426,6 +2441,7 @@ struct Ast {
         for (auto i : enuminsts) delete i;
         for (auto sp : fnspecs) delete sp;
         for (auto sp : fvenvs) delete sp;
+        for (auto sp : exemplarspecs) delete sp;
     }
 
     TypeExpr *NewType(TypeKind kind, Line line) {

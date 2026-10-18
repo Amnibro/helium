@@ -373,7 +373,8 @@ of the compiler sees as written), then `main`, then every
 That last check covers only top-level functions with fully annotated
 parameters, no generics, and no syntactically detected `return from` to an
 outside target. Unused generic and nested bodies are checked only when
-instantiated. The standalone check roots each reference, slice and holder
+instantiated, but for the language server's exemplars (below). The
+standalone check (`CheckStandalone`) roots each reference, slice and holder
 parameter at a class of its own at the globals' depth, as a call from the
 global initializers passing distinct globals would, with writable
 provenance, and gives eligible grow-only parameters both reusable-pool
@@ -482,6 +483,39 @@ every error in root order, and stops before the optimizer when there
 were any. An error before the roots (a declaration's validation) or in
 what the driver asked for (no `main`, a header without an export) still
 throws.
+
+**Exemplars.** For the language server (`Ast::exemplars`, never set by
+`goose check`), `CheckExemplars` runs after the fixups: each top-level
+function with type parameters or untyped parameters that no root
+specialized is checked once more, as an exemplar
+(`docs/design/language_server.md` §11). `CheckExemplar` binds each type
+parameter, and makes each untyped parameter's type, an opaque type of its
+own (`OpaqueType`: a `TY_GENERIC` with `TypeName::opaque`, named `T` or
+`type of x`), and checks the body standalone as `CheckUnreached` does. An
+opaque type is concrete to the checker: `SubstRaw` leaves it alone,
+`HasGenerics` is false of it, `ValidateType` accepts it, `TypeEq` takes it
+as equal only to itself (by its `TypeName`, which a `const` copy shares),
+and the size-class and root queries take it, as a kind they have no case
+for, as a fixed-size flat value. A binary operator with an opaque operand
+gives `bool` for a comparison and the opaque type otherwise
+(`CheckBinaryResult`), as unary `-` and `~` and a compound assignment to an
+opaque target do; a member of an opaque value (`ResolveMemberLValue`), and
+a call with an opaque argument that no overload takes (`ResolveCall`,
+`HasOpaque`), give a value of one shared opaque type, `?`
+(`OpaqueMember`); an `as` from or to an opaque type gives the target
+type. Anything else is an error, which ends the exemplar: it is caught
+there, unreported, and the checker returned to the exemplar's entry
+(`Checkpoint`), and no warning is given meanwhile (`quiet`), so the
+exemplar's clone keeps what it annotated up to its first error. The
+exemplars' calls never reuse a specialization a real root made
+(`GetOrCreateSpec` skips those below `exemplarbase`), since a reuse merges
+the call's facts into those the key leaves out; and once all of them ran,
+every specialization they made leaves `ast.fnspecs` and its function's
+`specs` for `Ast::exemplarspecs`, marked with the function whose exemplar
+made it (`FnSpec::exemplar`), where only the server's index reads it
+(§12). `WithBindings` restores the bindings it set when its function
+throws, which an exemplar's argument types and a root's struct
+instantiation may.
 
 **Depth.** Since a body is checked inside the call that first reaches it,
 the native stack holds a `CheckSpecBody` activation for every call on the
@@ -5976,7 +6010,9 @@ reaches it or it closes. The worker analyzes a due root whenever no message
 is waiting (`Workspace::Analyze`, on the compile thread's stack through
 `RunOnCompilerStack`): parse, resolve, check with `nomain`, optimize and
 run bounds-check elimination, as `goose check` does, with
-`package_nofetch` set so that nothing is fetched. Every diagnostic is
+`package_nofetch` set so that nothing is fetched and `Ast::exemplars` so
+that the generic functions nothing instantiated are checked as exemplars
+(§3.1). Every diagnostic is
 collected, the warnings and the errors the parser and the checker went on
 past through `Ast::sink` (§2) and the error that ended the attempt from
 its `CompileError`, and published for every file the attempt reached (an
@@ -6008,7 +6044,11 @@ clones the checker made of it, one per specialization (`Node::origin`),
 which carry `exprtype` and the resolutions (`Ident::vdef`, `Dot::fieldidx`,
 `Call::spec`); `Find` gives the first clone a predicate accepts, which is
 how a feature reads a type or a target, and `TypesOf` every distinct type
-the clones gave a node, for a generic body's hover. The same walk of the
+the clones gave a node, for a generic body's hover. The exemplars' clones
+(`Ast::exemplarspecs`, §3.1) follow the real ones: those of an exemplar's
+own function and of the functions nested in it, not a callee's
+specialization made for one, whose types are the caller's opaque ones;
+`exemplarclones` says which clones they are. The same walk of the
 clones records what the source alone does not say: `vardecls` and
 `defplaces`, the `let` or `var` of each checked variable (`VarDef`) and
 the place of its name, which for a loop's, an arm's or a block parameter's
@@ -6022,7 +6062,10 @@ and the occurrence at its position (`Locate`, `FileIndex::At`). Hover
 renders a declaration header (`FnHeader`, `VariantHeader`), the type a
 clone gave the node, the specializations a function has (`SpecsText`) and
 the documentation comment (`DocText`, the `//` stripped); a name no
-instantiation reaches says so. Go to definition follows the resolution to
+instantiation reaches says so, a type an exemplar's clone gave says that
+it is an exemplar's (`NoteExemplar`: `a: T`, "in an exemplar
+instantiation"), and a name past the error that ended an exemplar says
+that the exemplar stopped before it (`NotChecked`). Go to definition follows the resolution to
 the declaration's name (`DefinitionOf`), and on an `import` line opens the
 file (`Ast::imports`). Document symbols are the file's top-level
 declarations with their fields, variants and nested functions; workspace
@@ -6060,7 +6103,7 @@ than an edit for a keyword, a builtin, a name with no declaration, or one
 the compiler synthesized (its declaration does not spell it). Inlay hints
 give the type of each `let` or `var` without one written, after its name,
 where the clones' `VarDef`s agree on it (none where the specializations
-differ), and the parameter's name before each argument of a call resolved
+differ, or where an exemplar knows it only as `?`), and the parameter's name before each argument of a call resolved
 to a specialization, a UFCS call's object standing for the first
 parameter, skipping an argument that is the parameter's own name. Folding
 ranges are every brace-delimited body (a block, a match, a struct literal)
@@ -6075,4 +6118,8 @@ declaration, each holding the one before.
 over its own protocol on the fixtures in `test/lsp/`, whose `// lsp:`
 lines state the queries and their answers, and the lines the errors are
 at (`recovery.goose`: an error in each of two functions, both published,
-with the queries answered from what was checked).
+with the queries answered from what was checked; `exemplar.goose`: hover,
+definition, signature help and completion inside generic functions
+nothing calls; and `errors_tc/recovery/exemplar_unchecked.goose`, whose
+generic functions no binding could make right, with no diagnostic from
+the server either, as `goose check` gives none for them).

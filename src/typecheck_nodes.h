@@ -399,6 +399,11 @@ inline Val Unary::Check(TypeCheck &tc, TypeExpr *) {
         r.type = tc.ast.booltype;
         return r;
     }
+    if (auto t = tc.LoadType(v.type); IsOpaque(t)) {
+        Val r;
+        r.type = t;
+        return r;
+    }
     auto r = tc.NumericUnary(this, v, false);
     tc.JudgeUnaryCast(this, child, r);
     return r;
@@ -512,9 +517,20 @@ inline Val AsCast::Check(TypeCheck &tc, TypeExpr *) {
     auto cv = tc.DecayRef(raw);
     child->exprtype = cv.type;
     auto st = tc.LoadType(cv.type);
+    // To or from an exemplar's opaque type (TypeCheck::CheckExemplars): the
+    // type the code says the value has.
+    Val ov;
+    if (IsOpaque(st)) {
+        totype = ov.type = tc.Subst(type);
+        return ov;
+    }
     if (!IsIntT(st) && st->kind != TY_FLT)
         tc.Error(this, cat("as requires a numeric source, got ", tc.TypeStr(st)));
     auto tt = tc.Subst(type);
+    if (IsOpaque(tt)) {
+        totype = ov.type = tt;
+        return ov;
+    }
     if (tt->kind == TY_INT && tt->intstorage == IS_VARINT)
         tc.Error(this, "cannot cast to varint (varints are written at construction only)");
     if (tt->kind != TY_INT && tt->kind != TY_FLT)

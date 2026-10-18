@@ -107,6 +107,9 @@ struct Analysis {
     map<string, int> fileof;        // PathKey -> index in ast->sources.
     vector<FileIndex> files;        // Per source.
     unordered_map<const Node *, vector<Node *>> clones;   // Source node -> its clones.
+    // The clones an exemplar check made (FnSpec::exemplar), which follow
+    // the real ones in `clones`.
+    unordered_set<const Node *> exemplarclones;
     // Where each checked variable is declared: the `let` or `var` of a
     // local or global, and the place of its name, which for a loop's, an
     // arm's or a block parameter's binding the checker does not keep (it
@@ -129,6 +132,15 @@ struct Analysis {
         if (auto it = clones.find(n); it != clones.end())
             for (auto c : it->second) if (pred(c)) return c;
         return nullptr;
+    }
+
+    bool FromExemplar(const Node *clone) const { return exemplarclones.count(clone) > 0; }
+    // Whether an exemplar check cloned a source node at all: one that gave
+    // it no annotation ended before it.
+    bool InExemplar(const Node *n) const {
+        if (auto it = clones.find(n); it != clones.end())
+            for (auto c : it->second) if (FromExemplar(c)) return true;
+        return false;
     }
 
     // The value type of a source node in the first specialization that
@@ -439,9 +451,13 @@ struct Analysis {
         // From them, where each checked variable is declared and what each
         // match pattern names, which the source nodes alone do not say.
         auto bind = [&](const VarDef *vd, Place p) { if (vd && p.Known()) defplaces[vd] = p; };
+        auto exemplar = false;
         function<void(Node *)> mark = [&](Node *n) {
             if (!n) return;
-            if (n->origin) clones[n->origin].push_back(n);
+            if (n->origin) {
+                clones[n->origin].push_back(n);
+                if (exemplar) exemplarclones.insert(n);
+            }
             auto fileidx = n->Origin()->line.fileidx;
             if (auto v = Is<VarDecl>(n)) {
                 auto o = Is<VarDecl>(n->Origin());
@@ -488,6 +504,16 @@ struct Analysis {
                 vardecls[g->defs[i]] = g;
                 bind(g->defs[i], PlaceOfView(g->line.fileidx, g->names[i]));
             }
+        }
+        // The exemplars, after the real clones: those of the exemplar's own
+        // function and the functions nested in it. A callee's specialization
+        // made for one has the caller's opaque types, which say nothing of
+        // the callee.
+        exemplar = true;
+        for (auto sp : a.exemplarspecs) {
+            auto own = false;
+            for (auto sf = sp->sf; sf && !own; sf = sf->outer) own = sf == sp->exemplar;
+            if (own && sp->body) mark(sp->body);
         }
     }
 };

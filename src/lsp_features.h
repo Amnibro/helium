@@ -317,6 +317,21 @@ struct HoverText {
     string extra;       // More Goose, in a second code block.
 };
 
+// Says where the types a hover shows come from an exemplar check's clone
+// (Analysis::exemplarclones) rather than from a call's.
+inline void NoteExemplar(HoverText &h, const Analysis &an, const Node *clone) {
+    if (!clone || !an.FromExemplar(clone)) return;
+    Append(h.doc, h.doc.empty() ? "" : "\n\n",
+           "In an exemplar instantiation: nothing instantiates this function, so each type "
+           "parameter stands for an opaque type of its own.");
+}
+
+// What hover says of a node no check annotated.
+inline string NotChecked(const Analysis &an, const Node *n) {
+    return an.InExemplar(n) ? "Not checked: the exemplar instantiation ends before this code."
+                            : "Not checked: no instantiation reaches this code.";
+}
+
 inline HoverText HoverIdent(const Located &loc, const Occurrence &occ) {
     HoverText h;
     auto &an = *loc.an;
@@ -341,6 +356,7 @@ inline HoverText HoverIdent(const Located &loc, const Occurrence &occ) {
                 h.extra = "// in other instantiations:";
                 for (auto t : types) Append(h.extra, "\n", ci->vdef->name, ": ", TypeText(t));
             }
+            NoteExemplar(h, an, c);
         } else {
             h.header = FnHeader(ci->fnref);
             h.doc = DocText(ci->fnref->doc);
@@ -389,7 +405,7 @@ inline HoverText HoverIdent(const Located &loc, const Occurrence &occ) {
         return h;
     }
     h.header = string(id->name);
-    h.doc = "Not checked: no instantiation reaches this code.";
+    h.doc = NotChecked(an, occ.node);
     return h;
 }
 
@@ -415,6 +431,7 @@ inline HoverText HoverDot(const Located &loc, const Occurrence &occ) {
             h.header = cat(f && f->isconst ? "let " : "", cd->name, ": ", TypeText(cd->exprtype));
             if (f) h.doc = DocText(f->doc);
         }
+        NoteExemplar(h, an, c);
         return h;
     }
     if (occ.callee) {
@@ -439,7 +456,7 @@ inline HoverText HoverDot(const Located &loc, const Occurrence &occ) {
         return h;
     }
     h.header = cat(".", d->name);
-    h.doc = "Not checked: no instantiation reaches this code.";
+    h.doc = NotChecked(an, occ.node);
     return h;
 }
 
@@ -511,6 +528,8 @@ inline HoverText HoverOf(const Located &loc, const Occurrence &occ) {
             h.header = cat(vd->isconst ? "const " : vd->isvar ? "var " : "let ", vd->names[i], ": ",
                            def ? TypeText(def->type) : vd->type ? TypeText(vd->type) : string("?"));
             h.doc = DocText(vd->doc);
+            if (c) NoteExemplar(h, an, c);
+            else if (!vd->isglobal) Append(h.doc, h.doc.empty() ? "" : "\n\n", NotChecked(an, occ.node));
             break;
         }
         case Occurrence::FIELD:
@@ -535,6 +554,12 @@ inline HoverText HoverOf(const Located &loc, const Occurrence &occ) {
                     auto s = TypeText(sp->argtypes[idx]);
                     if (seen.insert(s).second && seen.size() <= 4) Append(h.extra, h.extra.empty() ? "" : "\n", p.name, ": ", s);
                 }
+                for (auto sp : an.ast->exemplarspecs) {
+                    if (!seen.empty() || sp->sf != occ.sf || sp->exemplar != occ.sf || idx >= sp->argtypes.size()) continue;
+                    h.extra = cat(p.name, ": ", TypeText(sp->argtypes[idx]));
+                    if (sp->body) NoteExemplar(h, an, sp->body);
+                    seen.insert(h.extra);
+                }
                 if (seen.empty()) h.doc = "Not checked: no instantiation reaches this code.";
             }
             break;
@@ -546,12 +571,14 @@ inline HoverText HoverOf(const Located &loc, const Occurrence &occ) {
         case Occurrence::BINDER: {
             h.header = string(occ.name);
             TypeExpr *type = nullptr;
+            const Node *found = nullptr;
             if (auto fl = Is<ForLoop>(occ.node)) {
                 auto c = an.Find(occ.node, [&](const Node *n) {
                     auto x = Is<ForLoop>(n);
                     return x && (occ.index ? x->idxdef : x->vdef);
                 });
                 if (c) type = occ.index ? Is<ForLoop>(c)->idxdef->type : Is<ForLoop>(c)->vdef->type;
+                found = c;
                 (void)fl;
             } else if (Is<MatchExpr>(occ.node)) {
                 auto c = an.Find(occ.node, [&](const Node *n) {
@@ -559,8 +586,10 @@ inline HoverText HoverOf(const Located &loc, const Occurrence &occ) {
                     return x && (size_t)occ.index < x->arms.size() && x->arms[(size_t)occ.index].binder;
                 });
                 if (c) type = Is<MatchExpr>(c)->arms[(size_t)occ.index].binder->type;
+                found = c;
             }
             if (type) Append(h.header, ": ", TypeText(type));
+            NoteExemplar(h, an, found);
             break;
         }
         case Occurrence::INIT:
@@ -1247,13 +1276,18 @@ inline bool InlayHints(Workspace &ws, const Json &params, JsonOut &j) {
         if (vd->type) continue;
         auto i = (size_t)occ.index;
         set<string> types;
+        auto unknown = false;
         auto consider = [&](const Node *n) {
             auto x = Is<VarDecl>(n);
-            if (x && x->defs.size() > i && x->defs[i] && x->defs[i]->type) types.insert(TypeText(x->defs[i]->type));
+            if (!x || x->defs.size() <= i || !x->defs[i] || !x->defs[i]->type) return;
+            auto t = x->defs[i]->type;
+            // What an exemplar knows only as `?` (TypeCheck::OpaqueMember).
+            unknown = unknown || (IsOpaque(t) && t->named->name == "?");
+            types.insert(TypeText(t));
         };
         consider(occ.node);
         if (auto it = an.clones.find(occ.node); it != an.clones.end()) for (auto c : it->second) consider(c);
-        if (types.size() != 1) continue;
+        if (types.size() != 1 || unknown) continue;
         WriteInlayHint(j, f.text, occ.start + occ.len, cat(": ", *types.begin()), IH_TYPE, false, false);
     }
     for (auto &span : f.calls) {

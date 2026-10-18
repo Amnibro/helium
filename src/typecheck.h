@@ -920,7 +920,9 @@ struct TypeCheck {
                        a->ref->lenstorage == b->ref->lenstorage && a->ref->pool == b->ref->pool;
             case TY_VARIANT:
                 return a->var->variant == b->var->variant && TypeEq(a->var->adt, b->var->adt);
-            case TY_GENERIC: return a->named->name == b->named->name;
+            case TY_GENERIC:
+                if (a->named->opaque || b->named->opaque) return a->named == b->named;
+                return a->named->name == b->named->name;
             default: assert(false); return false;
         }
     }
@@ -990,6 +992,10 @@ struct TypeCheck {
     TypeExpr *SubstRaw(TypeExpr *t) {
         switch (t->kind) {
             case TY_GENERIC: {
+                // An exemplar's binding is the type it stands for wherever it
+                // has got to, whatever a callee's own type variable of that
+                // name is bound to.
+                if (t->named->opaque) return t;
                 if (!t->named->expansionerror.empty()) Error(t->line, string(t->named->expansionerror));
                 auto b = LookupBindingOuter(t->named->name);
                 if (!b) return t;  // Unknown name; ValidateType reports it.
@@ -1112,15 +1118,21 @@ struct TypeCheck {
     void BindGenerics(vector<GenericParam> &generics, vector<TypeExpr *> &args, string_view what,
                       string_view name, Line l, vector<pair<string_view, TypeExpr *>> &out);
 
-    // Runs f with only the given bindings visible to Subst.
+    // Runs f with only the given bindings visible to Subst; an error in f
+    // leaves them as they were too, for the root checked next (CheckRoot).
     template<typename F> void WithBindings(vector<pair<string_view, TypeExpr *>> &b, F f) {
-        auto saveb = extrabindings;
-        auto saveo = bindonly;
+        struct Restore {
+            TypeCheck &tc;
+            vector<pair<string_view, TypeExpr *>> *saveb;
+            bool saveo;
+            ~Restore() {
+                tc.extrabindings = saveb;
+                tc.bindonly = saveo;
+            }
+        } restore { *this, extrabindings, bindonly };
         extrabindings = &b;
         bindonly = true;
         f();
-        extrabindings = saveb;
-        bindonly = saveo;
     }
 
     StructInst *GetStructInst(TypeExpr *t);
@@ -2179,6 +2191,7 @@ struct TypeCheck {
     }
     TypeExpr *LitElemsAt(const Val &av, TypeExpr *dt, bool &tofloat, string *why = nullptr);
     bool HasGenerics(TypeExpr *t);
+    bool HasOpaque(TypeExpr *t);
     bool BindTypes(TypeExpr *pt, TypeExpr *at, vector<pair<string_view, TypeExpr *>> &b);
     TypeExpr *SubstOwn(TypeExpr *pt, vector<pair<string_view, TypeExpr *>> &b);
     Val TryDispatch(Call *c, vector<SFunction *> &cands, FnSpec *env, vector<Node *> &argnodes,
@@ -2965,6 +2978,7 @@ struct TypeCheck {
         CheckRoot([&] { ResolveGrowConflicts(); });
         CheckRoot([&] { VerifyLiterals(); });
         CheckRoot([&] { ReportRedundantCasts(); });
+        if (ast.exemplars) CheckExemplars();
     }
 
     // Two parameter classes of one activation are one array where some
@@ -3018,17 +3032,6 @@ struct TypeCheck {
         }
     }
 
-    // A function nothing calls is checked as if the global initializers
-    // called it with a global of its own for each reference, slice or holder
-    // parameter, made up here: a class to itself at the globals' depth
-    // (RootArg's defaults), concrete and exact, standing for that global
-    // (VarDef::classfrom). So the body may shrink or grow the array apart
-    // from the others' and store its references wherever a global's may go,
-    // inside a recursive cycle too. A plain reference to the element type of
-    // a pool (§3.9), the one pool of that type, is given a reference into
-    // that pool instead, as a call building a linked structure there would
-    // pass, so the body may store it in the pool's relative links; the
-    // parameters given one share its class, as a call's would.
     void CheckUnreached(SFunction *sf) {
         if (!sf->specs.empty() || sf->isthread || sf->isnested || sf->brokensig) return;
         if (!sf->generics.empty()) return;
@@ -3039,6 +3042,97 @@ struct TypeCheck {
         if (foreign) return;
         auto spec = ast.NewFnSpec();
         spec->sf = sf;
+        for (auto &p : sf->params) spec->argtypes.push_back(Subst(p.type));
+        CheckStandalone(spec);
+    }
+
+    // The language server's exemplar checks (Ast::exemplars), after every
+    // root that reports: each top-level function with type parameters or
+    // untyped parameters that no root specialized is checked once, with each
+    // of them bound to an opaque type of its own (TypeName::opaque), as
+    // CheckUnreached checks a plain function. An exemplar's error ends it,
+    // unreported, with what it annotated before kept for the server, and no
+    // warning is given. A call in one makes specializations of its own
+    // rather than merge its facts into a real root's (GetOrCreateSpec), and
+    // what the exemplars made then leaves fnspecs and every function's
+    // specs for Ast::exemplarspecs, so no later pass sees it.
+    int exemplarbase = -1;    // The first specialization an exemplar made.
+    void CheckExemplars() {
+        vector<SFunction *> todo;
+        for (auto sf : ast.functions) {
+            if (!sf->specs.empty() || sf->isthread || sf->isnested || sf->isextern || !sf->body)
+                continue;
+            auto generic = !sf->generics.empty();
+            for (auto &p : sf->params) generic = generic || !p.type;
+            if (generic) todo.push_back(sf);
+        }
+        if (todo.empty()) return;
+        exemplarbase = (int)ast.fnspecs.size();
+        FlagScope q(quiet, true);
+        for (auto sf : todo) {
+            auto from = ast.fnspecs.size();
+            Checkpoint cp(*this);
+            try {
+                CheckExemplar(sf);
+            } catch (CompileError &) {
+                cp.Restore();
+            } catch (Abandoned &) {
+                cp.Restore();
+            }
+            for (auto i = from; i < ast.fnspecs.size(); i++) ast.fnspecs[i]->exemplar = sf;
+        }
+        for (auto sf : ast.functions)
+            erase_if(sf->specs, [](FnSpec *sp) { return sp->exemplar != nullptr; });
+        ast.exemplarspecs.assign(ast.fnspecs.begin() + exemplarbase, ast.fnspecs.end());
+        ast.fnspecs.resize((size_t)exemplarbase);
+    }
+
+    // A concrete type equal only to itself, standing for whatever a call
+    // would bind the parameter so named to. Operators, member accesses, and
+    // calls no overload of takes it, on a value of one give opaque values
+    // (CheckBinaryResult, ResolveMemberLValue, ResolveCall), and a cast its
+    // target type; anything else asking more of it is an error.
+    TypeExpr *OpaqueType(string_view name) {
+        auto t = ast.NewType(TY_GENERIC, Line {});
+        t->named = ast.NewDetail<TypeName>();
+        t->named->name = name;
+        t->named->opaque = true;
+        return t;
+    }
+    // The one opaque type of what an exemplar cannot know: a member of an
+    // opaque value, a call's result.
+    TypeExpr *opaquemember = nullptr;
+    TypeExpr *OpaqueMember() {
+        if (!opaquemember) opaquemember = OpaqueType("?");
+        return opaquemember;
+    }
+
+    void CheckExemplar(SFunction *sf) {
+        auto spec = ast.NewFnSpec();
+        spec->sf = sf;
+        for (auto &g : sf->generics) spec->bindings.push_back({ g.name, OpaqueType(g.name) });
+        WithBindings(spec->bindings, [&] {
+            for (auto &p : sf->params)
+                spec->argtypes.push_back(p.type ? Subst(p.type)
+                                                : OpaqueType(ast.Intern(cat("type of ", p.name))));
+        });
+        CheckStandalone(spec);
+    }
+
+    // A function nothing calls, given the argument types `spec` has, is
+    // checked as if the global initializers called it with a global of its
+    // own for each reference, slice or holder parameter, made up here: a
+    // class to itself at the globals' depth (RootArg's defaults), concrete
+    // and exact, standing for that global (VarDef::classfrom). So the body
+    // may shrink or grow the array apart from the others' and store its
+    // references wherever a global's may go, inside a recursive cycle too. A
+    // plain reference to the element type of a pool (§3.9), the one pool of
+    // that type, is given a reference into that pool instead, as a call
+    // building a linked structure there would pass, so the body may store it
+    // in the pool's relative links; the parameters given one share its
+    // class, as a call's would.
+    void CheckStandalone(FnSpec *spec) {
+        auto sf = spec->sf;
         vector<Val> args(sf->params.size());
         auto classes = 0;
         // The pool a plain reference of type t points into, where exactly one
@@ -3058,9 +3152,8 @@ struct TypeCheck {
         map<VarDef *, int> poolclasses;
         for (size_t i = 0; i < sf->params.size(); i++) {
             auto &p = sf->params[i];
-            auto t = Subst(p.type);
+            auto t = spec->argtypes[i];
             ValidateType(t, sf->line, VT_PARAM);
-            spec->argtypes.push_back(t);
             RootArg ra;
             RootArg noview;
             noview.cls = -1;

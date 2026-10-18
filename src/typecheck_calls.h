@@ -401,6 +401,14 @@ inline Val TypeCheck::ResolveCall(Call *c, vector<SFunction *> &cands, FnSpec *e
         // resort, after dispatch and a builtin: a call either took before
         // the conversion was implicit takes it still (§7.1).
         if (converting.empty()) {
+            // What a call would give with an exemplar's opaque argument
+            // (CheckExemplars), which only a real binding could resolve.
+            for (auto &av : argvals)
+                if (HasOpaque(av.type)) {
+                    Val v;
+                    v.type = OpaqueMember();
+                    return v;
+                }
             for (auto &av : argvals) NoArrayJoin(av);
             // A parameter of a type naming nothing takes no argument, which
             // is the consequence of the error reported at the name.
@@ -963,9 +971,22 @@ inline TypeExpr *TypeCheck::LitElemsAt(const Val &av, TypeExpr *dt, bool &tofloa
     return rebuild(av.type);
 }
 
+inline bool TypeCheck::HasOpaque(TypeExpr *t) {
+    switch (t->kind) {
+        case TY_GENERIC: return t->named->opaque;
+        case TY_STRUCT: for (auto a : t->struc->args) if (HasOpaque(a)) return true; return false;
+        case TY_ENUM:   for (auto a : t->enu->args) if (HasOpaque(a)) return true; return false;
+        case TY_ARRAY:  return HasOpaque(t->arr->sub);
+        case TY_SLICE:  return HasOpaque(t->sub);
+        case TY_REF:    return HasOpaque(t->ref->sub);
+        case TY_VARIANT: return HasOpaque(t->var->adt);
+        default: return false;
+    }
+}
+
 inline bool TypeCheck::HasGenerics(TypeExpr *t) {
     switch (t->kind) {
-        case TY_GENERIC: return true;
+        case TY_GENERIC: return !t->named->opaque;
         case TY_STRUCT: for (auto a : t->struc->args) if (HasGenerics(a)) return true; return false;
         case TY_ENUM:   for (auto a : t->enu->args) if (HasGenerics(a)) return true; return false;
         case TY_ARRAY:  return HasGenerics(t->arr->sub);
@@ -1536,6 +1557,9 @@ inline FnSpec *TypeCheck::GetOrCreateSpec(MatchInfo &mi, vector<Val> &argvals, N
         }
     }
     for (auto spec : sf->specs) {
+        // A reuse would merge an exemplar's call into what the real calls
+        // agreed on (CheckExemplars).
+        if (spec->id < exemplarbase) continue;
         if (spec->lexparent != mi.env || spec->escaped != escaped) continue;
         if (!spec->inprogress && spec->narrowedenv != narrowedenv) continue;
         // A cycle's member due for its next round is checked again below

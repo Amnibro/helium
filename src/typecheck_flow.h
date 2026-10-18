@@ -2836,7 +2836,10 @@ inline void TypeCheck::CompoundAssign(Assign *a, TypeExpr *st, bool writable) {
     auto isbit = a->op == T_ANDEQ || a->op == T_OREQ || a->op == T_XOREQ;
     auto isshift = a->op == T_SHLEQ || a->op == T_SHREQ;
     if (IsIndexT(st)) NoIndexUpdate(a, TName(a->op), st);
-    if (st->kind == TY_INT && st->intstorage != IS_VARINT && isshift) {
+    if (IsOpaque(LoadType(st))) {
+        // An exemplar's opaque value (CheckExemplars) takes any operand.
+        Operand(a->rhs);
+    } else if (st->kind == TY_INT && st->intstorage != IS_VARINT && isshift) {
         // A shift count is any integer type, masked to the width (§6.2).
         CheckIntAny(a->rhs);
     } else if (st->kind == TY_INT && st->intstorage != IS_VARINT) {

@@ -557,6 +557,7 @@ inline void TypeCheck::RequireComplete(TypeExpr *t, Line l) {
 inline void TypeCheck::ValidateType(TypeExpr *t, Line l, int pos) {
     switch (t->kind) {
         case TY_GENERIC:
+            if (t->named->opaque) return;
             Error(l, cat("unknown type: ", t->named->name));
         case TY_UNRESOLVED:
             assert(false);

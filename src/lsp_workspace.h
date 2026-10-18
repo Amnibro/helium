@@ -173,6 +173,7 @@ struct Workspace {
         an->ast = make_unique<Ast>();
         auto &ast = *an->ast;
         ast.cancel = &rpc.cancel;
+        ast.exemplars = true;
         ast.sink = [&](const Diagnostic &d) { an->diags.push_back(d); };
         SourceProvider sources = [&](const string &path) { return TextOf(path); };
         try {
