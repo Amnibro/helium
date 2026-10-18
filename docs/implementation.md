@@ -4331,8 +4331,14 @@ the worker program's globals as `[size][image]` records (a resizable's image
 is its count, its fixed fields and its tail's elements; a pool's carries its
 freelist), and hands the packet to the runtime; the generated thunk
 (`EnsureThreadThunk`) unpacks the arguments onto fresh stacks, allocates the
-worker's `gs_globals_t`, fills it from the image, runs the body, and frees
-it. Queues are one `gs_queue` per element type, which `main` creates
+worker's `gs_globals_t`, fills it from the image, and runs the body; the
+runtime frees the instance (`gs_thread_release`). `thread_spawn_contained`
+is the same spawn with the runtime's contained flag set (§7), and
+`thread_wait` is emitted into a temporary, so a discarded answer still waits.
+`thread_wait(id, msg)` appends the message the runtime hands over to `msg`
+as `to_bytes(a, out)` appends its image (`AppendBytes`), then frees it
+(`gs_free_msg`).
+Queues are one `gs_queue` per element type, which `main` creates
 (`gs_qinit`) before anything else runs, carrying one contiguous image per
 value; a missed `qpoll` yields the all-zero image (`ZeroSize`). A value
 of no bytes (spec §3.4) crosses a queue or a thread's arguments as none, and
@@ -4921,6 +4927,19 @@ overflow is not reported). A fault that is neither kind gets back the
 handler the runtime replaced and recurs under it: the default action, or a
 sanitizer's report. A JIT program installs all this on the compiler's main
 thread, which it runs on (§1).
+
+**Contained workers** (spec §11.2). A worker started with
+`thread_spawn_contained` runs its thread program under `gs_run_contained`,
+which points the thread-local `gs_contain` at a `gs_contained` on its stack:
+a `jmp_buf` and the message. Every failed check and `abort(msg)` ends in
+`gs_fail`, which formats the message. In such a worker it stores the message
+in a `malloc`ed buffer and jumps; anywhere else it prints the message and
+calls `gs_end`. After the jump, the worker releases what a return does: its
+globals instance and stack block (`gs_thread_release`), copied arguments, and
+regions. Its id and message go into `gs_aborted`, from which `thread_wait`
+answers `false`. The first wait that asks for the message takes it, so the
+list keeps a message only until then, and an id for good. `gs_panic`,
+`gs_exit`, and the fault handlers still end the process.
 
 **Integer semantics** (§6.2): every operation runs at its type through
 `gs_add_i32`-style helpers, which are functions that check the wide result

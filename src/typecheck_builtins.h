@@ -49,7 +49,7 @@ inline Val TypeCheck::CheckBuiltin(Call *c, const BuiltinDef &d, vector<Node *> 
             else CheckIntAny(args[0]);
             reachable = false;
             return VoidVal();
-        case B_THREAD_SPAWN: {
+        case B_THREAD_SPAWN: case B_THREAD_SPAWN_CONTAINED: {
             auto wid = Is<Ident>(args[0]);
             SFunction *wsf = nullptr;
             // A variable in scope, a type parameter or a nested function of the
@@ -70,15 +70,15 @@ inline Val TypeCheck::CheckBuiltin(Call *c, const BuiltinDef &d, vector<Node *> 
                 }
             }
             if (!wsf && fvb)
-                Error(c, cat("thread_spawn's first argument names a thread_fn: ", wid->name,
+                Error(c, cat(d.name, "'s first argument names a thread_fn: ", wid->name,
                              " is bound to ", fvb->named ? cat(fvb->named->name, ", which is not one")
                                                          : string("a block")));
-            if (!wsf) Error(c, "thread_spawn's first argument names a thread_fn");
+            if (!wsf) Error(c, cat(d.name, "'s first argument names a thread_fn"));
             wid->fnref = wsf;
             wid->exprtype = fntype;
             auto spec = EnsureThreadSpec(wsf, c->line);
             if (args.size() != 1 + spec->argtypes.size())
-                Error(c, cat("thread_spawn(", wsf->name, ", ...) takes ",
+                Error(c, cat(d.name, "(", wsf->name, ", ...) takes ",
                              (int64_t)spec->argtypes.size(), " worker argument(s)"));
             {
                 DestScope ds(*this, Dest {});
@@ -90,6 +90,15 @@ inline Val TypeCheck::CheckBuiltin(Call *c, const BuiltinDef &d, vector<Node *> 
             c->spec = spec;
             Val v;
             v.type = ast.inttypes[IS_I64];
+            return v;
+        }
+        case B_THREAD_WAIT: {
+            // thread_wait(id, msg) appends a contained worker's abort
+            // message to msg (§11.2).
+            CheckIntAny(args[0]);
+            if (args.size() == 2) CheckByteOut(c, args[1], "thread_wait(id, msg)");
+            Val v;
+            v.type = ast.booltype;
             return v;
         }
         case B_QPUT: {
@@ -361,20 +370,7 @@ inline Val TypeCheck::CheckBuiltin(Call *c, const BuiltinDef &d, vector<Node *> 
             return v;
         }
         if (args.size() == 2) {
-            auto ov = CheckV(args[1], nullptr);
-            args[1]->exprtype = ov.type;
-            auto ot = ov.type;
-            if (IsPlainRef(ot)) ot = ot->ref->sub;
-            auto ok = ot->kind == TY_ARRAY && IsU8(ot->arr->sub) &&
-                      (ot->arr->akind == A_GROW || ot->arr->akind == A_GROWSHRINK ||
-                       ot->arr->akind == A_LIMITED);
-            if (!ok)
-                Error(c, cat("to_bytes(a, out) appends to a growable u8 array, not ",
-                             TypeStr(ov.type)));
-            if (!ov.writable)
-                Error(c, "cannot append through a non-writable value (let, or "
-                         "non-writable provenance, §9.5)");
-            NoteGrow(c, ov, cat("append to ", ExprStr(args[1])), ot);
+            CheckByteOut(c, args[1], "to_bytes(a, out)");
             return VoidVal();
         }
         auto t = GrowU8Array(c->line);
@@ -602,6 +598,23 @@ inline Val TypeCheck::CheckBuiltin(Call *c, const BuiltinDef &d, vector<Node *> 
         default: assert(false);
     }
     return v;
+}
+
+// The growable u8 array a builtin's `out` argument appends to, as `form`
+// names the call: to_bytes(a, out), thread_wait(id, msg).
+inline void TypeCheck::CheckByteOut(Call *c, Node *out, const string &form) {
+    auto ov = CheckV(out, nullptr);
+    out->exprtype = ov.type;
+    auto ot = ov.type;
+    if (IsPlainRef(ot)) ot = ot->ref->sub;
+    auto ok = ot->kind == TY_ARRAY && IsU8(ot->arr->sub) &&
+              (ot->arr->akind == A_GROW || ot->arr->akind == A_GROWSHRINK ||
+               ot->arr->akind == A_LIMITED);
+    if (!ok) Error(c, cat(form, " appends to a growable u8 array, not ", TypeStr(ov.type)));
+    if (!ov.writable)
+        Error(c, "cannot append through a non-writable value (let, or "
+                 "non-writable provenance, §9.5)");
+    NoteGrow(c, ov, cat("append to ", ExprStr(out)), ot);
 }
 
 // An argument of print/str/format (§3.7): every value type has a text
