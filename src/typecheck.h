@@ -1062,8 +1062,10 @@ struct TypeCheck {
                     Error(t->line, cat("variant type of non-ADT type ", TypeStr(adt)));
                 auto name = t->var->name;
                 auto found = adt->enu->en->FindVariant(name);
-                if (!found)
+                if (!found) {
+                    if (adt->enu->en->broken) throw Abandoned {};
                     Error(t->line, cat("enum ", adt->enu->en->name, " has no variant named ", name));
+                }
                 return ast.VariantOf(adt, name, found, t->line);
             }
             case TY_FN: {
@@ -1779,7 +1781,41 @@ struct TypeCheck {
                      "evaluate runtime expressions separately");
         NoteTemp(n, v, cyclecalls);
         RecordVal(n, v);
+        // A value of a type naming nothing is a consequence of the error
+        // reported where the name is written, and says nothing more.
+        if (!ast.unknowntypes.empty() && v.type && MentionsUnknown(v.type)) throw Abandoned {};
         return v;
+    }
+
+    // Whether t is, or is built on, a struct standing for a type name that
+    // names nothing (SStruct::unknown).
+    bool MentionsUnknown(const TypeExpr *t) {
+        auto any = [&](const vector<TypeExpr *> &ts) {
+            for (auto a : ts) if (a && MentionsUnknown(a)) return true;
+            return false;
+        };
+        switch (t->kind) {
+            case TY_STRUCT: return t->struc->st->unknown || any(t->struc->args);
+            case TY_ENUM: return any(t->enu->args);
+            case TY_ARRAY: return MentionsUnknown(t->arr->sub);
+            case TY_SLICE: return MentionsUnknown(t->sub);
+            case TY_REF: return MentionsUnknown(t->ref->sub);
+            case TY_VARIANT: return MentionsUnknown(t->var->adt);
+            case TY_FN: return any(t->fn->args) || any(t->fn->rets);
+            default: return false;
+        }
+    }
+
+    // Whether a name t lacks is a consequence of an error reported before:
+    // its declaration lost members to a parse error (SStruct::broken,
+    // SEnum::broken), or it stands for a name that names nothing.
+    static bool LacksByError(const TypeExpr *t) {
+        switch (t->kind) {
+            case TY_STRUCT: return t->struc->st->broken;
+            case TY_ENUM: return t->enu->en->broken;
+            case TY_VARIANT: return t->var->adt->kind == TY_ENUM && t->var->adt->enu->en->broken;
+            default: return false;
+        }
     }
 
     Val DecayRef(const Val &v);
@@ -2881,7 +2917,7 @@ struct TypeCheck {
         auto mainsf = ast.MainFunction();
         if (!mainsf && !library && !(nomain && !ast.DeclaresMain()))
             throw CompileError { "program needs exactly one global fn main()" };
-        if (mainsf) {
+        if (mainsf && !mainsf->brokensig) {
             CheckRoot([&] {
                 if (!mainsf->params.empty() || mainsf->has_rets || !mainsf->generics.empty() ||
                     mainsf->isthread)
@@ -2994,7 +3030,7 @@ struct TypeCheck {
     // pass, so the body may store it in the pool's relative links; the
     // parameters given one share its class, as a call's would.
     void CheckUnreached(SFunction *sf) {
-        if (!sf->specs.empty() || sf->isthread || sf->isnested) return;
+        if (!sf->specs.empty() || sf->isthread || sf->isnested || sf->brokensig) return;
         if (!sf->generics.empty()) return;
         for (auto &p : sf->params) if (!p.type) return;
         set<string_view> names = { sf->name };

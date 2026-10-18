@@ -1446,6 +1446,11 @@ struct SFunction {
     // call is checked against it alone, the body up to the error
     // (TypeCheck::CheckSpecBodyOnce).
     bool broken = false;
+    // The header lost to a parse error after the name (Parser::ParseMembers):
+    // the parameters, results and type parameters parsed before the error
+    // stand, but there is no body, and nothing a call could be checked
+    // against (TypeCheck::ResolveCall).
+    bool brokensig = false;
     vector<FnSpec *> specs;     // Specializations (typecheck), owned by Ast.
 };
 
@@ -1459,6 +1464,16 @@ struct SStruct {
     vector<GenericParam> generics;
     vector<Field> fields;
     vector<StructInst *> insts;  // Instantiations (typecheck), owned by Ast.
+    // The declaration lost a field to a parse error (Parser::ParseMembers):
+    // its fields are those parsed before the error, and a name it lacks is
+    // a consequence of the error, which ends the check of the code naming
+    // it silently.
+    bool broken = false;
+    // Stands for a type name that names nothing, reported where it is
+    // written (ResolveTypeNames, Ast::unknowntypes): broken, with no fields,
+    // and a value of it, or one expected to be of it, ends the check of the
+    // code at hand silently.
+    bool unknown = false;
 };
 
 struct SVariant {
@@ -1479,6 +1494,9 @@ struct SEnum {
     vector<GenericParam> generics;
     vector<SVariant> variants;  // Stable once parsing completes; pointed at by TY_VARIANT.
     vector<EnumInst *> insts;   // Instantiations (typecheck), owned by Ast.
+    // As SStruct::broken, of its variants: those parsed before the error,
+    // each whole.
+    bool broken = false;
 
     SVariant *FindVariant(string_view vname) {
         for (auto &v : variants) if (v.name == vname) return &v;
@@ -2343,6 +2361,9 @@ struct Ast {
     vector<SStruct *> structs;
     vector<SEnum *> enums;
     vector<SAlias *> aliases;
+    // The structs standing for the type names that name nothing
+    // (SStruct::unknown), in no namespace and no declaration list.
+    vector<SStruct *> unknowntypes;
 
     // Typecheck products (owned here so later phases can rely on them).
     vector<VarDef *> vardefs;
@@ -2397,6 +2418,7 @@ struct Ast {
         for (auto d : typedetails) delete d;
         for (auto f : functions) delete f;
         for (auto s : structs) delete s;
+        for (auto s : unknowntypes) delete s;
         for (auto e : enums) delete e;
         for (auto a : aliases) delete a;
         for (auto v : vardefs) delete v;

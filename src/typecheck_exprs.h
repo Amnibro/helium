@@ -634,6 +634,7 @@ inline void TypeCheck::ResolveMemberLValue(LVal &lv, Dot *d) {
     if (t->kind == TY_STRUCT) {
         auto inst = GetStructInst(t);
         if (step(inst->st->fields, inst->ftypes, FieldsInFrame(d))) return;
+        if (inst->st->broken) throw Abandoned {};
         Error(d, cat("struct ", inst->st->name, " has no field ", d->name));
     }
     if (t->kind == TY_VARIANT) {
@@ -985,6 +986,10 @@ inline void TypeCheck::MustFit(Val &v, Node *n, TypeExpr *dt) {
             RelyOnNamed(v, n);
         }
     } else {
+        // A type naming nothing fits nothing, which is the consequence of
+        // the error reported at the name.
+        if (!ast.unknowntypes.empty() && (MentionsUnknown(dt) || MentionsUnknown(v.type)))
+            throw Abandoned {};
         if (!fitfail.empty()) Error(n, fitfail);
         auto got = dt->kind == TY_REF ? StorageType(v) : v.type;
         string hint;
@@ -2786,6 +2791,7 @@ inline Val TypeCheck::CheckVariantConst(Dot *d, SEnum *en) {
     auto t = ast.EnumOf(en, {}, false, d->line);
     auto inst = GetEnumInst(t);
     auto found = en->FindVariant(d->name);
+    if (!found && en->broken) throw Abandoned {};
     if (!found) Error(d, cat("enum ", en->name, " has no variant named ", d->name));
     if (found->has_payload)
         Error(d, cat("variant ", en->name, ".", d->name,
@@ -2940,10 +2946,12 @@ inline TypeCheck::LitDeep TypeCheck::CheckInits(StructLit *sl, vector<Field> &fi
         if (named) {
             for (auto i = 0; i < (int)fields.size(); i++)
                 if (!fields[i].ispad && fields[i].name == fi.name) { idx = i; break; }
+            if (idx < 0 && LacksByError(selft)) throw Abandoned {};
             if (idx < 0) Error(fi.val, cat(what, " has no field ", fi.name));
             if (got[idx]) Error(fi.val, cat("duplicate initializer for field ", fi.name));
         } else {
             while (pos < (int)fields.size() && fields[pos].ispad) pos++;
+            if (pos >= (int)fields.size() && LacksByError(selft)) throw Abandoned {};
             if (pos >= (int)fields.size())
                 Error(fi.val, cat("too many initializers for ", what));
             idx = pos++;
@@ -2973,6 +2981,8 @@ inline TypeCheck::LitDeep TypeCheck::CheckInits(StructLit *sl, vector<Field> &fi
                                   " (it has no declared default, and ", why, ")"));
                 fi.val = DefaultValue(ftypes[i], sl->line);
             }
+            // No value could be written for a field of a type naming nothing.
+            else if (!ast.unknowntypes.empty() && MentionsUnknown(ftypes[i])) throw Abandoned {};
             else Error(sl, cat("missing initializer for field ", fields[i].name, " of ", what,
                                " (it has no default)"));
         }

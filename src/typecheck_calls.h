@@ -231,6 +231,7 @@ inline Val TypeCheck::CheckUfcsCall(Call *c, Dot *d, TypeExpr *expected) {
         return v;
     }
     if (bd) Error(c, cat(".", d->name, " is a property, not a call"));
+    if (LacksByError(rt)) throw Abandoned {};
     Error(c, cat("unknown function or member: ", d->name));
 }
 
@@ -363,6 +364,10 @@ inline Val TypeCheck::ResolveCall(Call *c, vector<SFunction *> &cands, FnSpec *e
             argvals.push_back(std::move(v));
         }
     }
+    // A function whose header was lost to a parse error has nothing to
+    // check the call against, nor the call's result to go on with.
+    for (auto sf : cands)
+        if (sf->brokensig) throw Abandoned {};
     MatchInfo best;
     vector<MatchInfo> tied, converting;
     string failures;
@@ -397,6 +402,12 @@ inline Val TypeCheck::ResolveCall(Call *c, vector<SFunction *> &cands, FnSpec *e
         // the conversion was implicit takes it still (§7.1).
         if (converting.empty()) {
             for (auto &av : argvals) NoArrayJoin(av);
+            // A parameter of a type naming nothing takes no argument, which
+            // is the consequence of the error reported at the name.
+            if (!ast.unknowntypes.empty())
+                for (auto sf : cands)
+                    for (auto &p : sf->params)
+                        if (p.type && MentionsUnknown(p.type)) throw Abandoned {};
             Error(c, cat("no matching overload for call to ", name, failures));
         }
         if (converting.size() > 1) ambiguous(converting);
@@ -1297,6 +1308,7 @@ inline bool TypeCheck::HasView(Val &av, TypeExpr *pt, int reach, SFunction *sf) 
 
 inline FnSpec *TypeCheck::GetOrCreateSpec(MatchInfo &mi, vector<Val> &argvals, Node *callnode) {
     auto sf = mi.sf;
+    if (sf->brokensig) throw Abandoned {};
     // A nested function is specialized where it is declared (§7.5). A call
     // that reaches the declaration ahead of the declaring body (a nested
     // function declared earlier calling it) would have it name variables
@@ -2483,6 +2495,7 @@ inline void TypeCheck::CheckExternSpec(FnSpec *spec) {
 }
 
 inline void TypeCheck::CheckExport(SFunction *sf) {
+    if (sf->brokensig) throw Abandoned {};
     auto fail = [&](const string &why) {
         Error(sf->line, cat("export fn ", sf->name, ": ", why));
     };
@@ -3440,6 +3453,7 @@ inline void TypeCheck::CheckReturn(Return *r) {
 // driver rather than from a call.
 
 inline FnSpec *TypeCheck::EnsureThreadSpec(SFunction *sf, Line l) {
+    if (sf->brokensig) throw Abandoned {};
     if (!sf->specs.empty()) {
         // Its one check failed (FnSpec::failed): what that reported stands
         // for this spawn too.

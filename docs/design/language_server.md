@@ -495,11 +495,18 @@ that call it (a helper `main` called before its error, say); what the
 root recorded for the fixups stays, being what checked code did. The
 server skips the optimizer and bounds-check elimination for a program
 with errors and answers queries from what was annotated. The fixtures
-are in `test/errors_tc/recovery/` and `test/lsp/recovery.goose`. Not
-done, and worth doing when an editor shows the need: recovery inside a
-declaration (a struct with a bad field is dropped whole today, so its
-uses fail resolution, which still ends the analysis), and the import
-errors, which still end the parse.
+are in `test/errors_tc/recovery/` and `test/lsp/recovery.goose`. So is
+recovery inside a declaration and from a failed import
+(`docs/implementation.md` §2 and §3.1, `test/lsp/broken_decls.goose`):
+a struct, an enum or a top-level function with an error past its name
+stands with what was parsed before it, marked broken (a function with
+no body, which calls are checked against nothing), and what it lacks is
+a consequence the checker does not report; resolution reports an
+unknown name where it is written and gives the use a type standing for
+nothing, a value of which is a consequence too, rather than ending the
+analysis; and an import that fails is reported at the import, the
+program going on without the module, whose names are then unknown
+where they are used.
 
 The features needing no recovery are in
 (`docs/implementation.md` §12): references and rename, whose identity is

@@ -307,6 +307,11 @@ def check_lsp_protocol(exe, base):
     recovery = fixtures / "recovery.goose"
     rtext = recovery.read_text(encoding="utf-8")
     queries(recovery, rtext, open_fixture(recovery, rtext))
+    # Declarations with errors inside them, and an import that finds
+    # nothing: each published, and the rest of the program checked.
+    broken = fixtures / "broken_decls.goose"
+    btext = broken.read_text(encoding="utf-8")
+    queries(broken, btext, open_fixture(broken, btext))
     # Completion, on a program whose last statement is the `p.` an editor
     # has when it asks.
     complete = fixtures / "complete.goose"

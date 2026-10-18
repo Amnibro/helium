@@ -145,7 +145,7 @@ struct DeclaredPackage {
 };
 
 // An error at an import in the file named `file`: over the whole `import ...;`.
-[[noreturn]] static void ImportError(const string &file, const Import &imp, const string &msg) {
+static Diagnostic ImportDiagnostic(const string &file, const Import &imp, const string &msg) {
     Diagnostic d;
     d.where = LocOf(imp.line);
     if (imp.end.line > 0) {
@@ -154,6 +154,11 @@ struct DeclaredPackage {
     }
     d.message = msg;
     d.text = RenderDiagnostic(d, file, {}, false);
+    return d;
+}
+
+[[noreturn]] static void ImportError(const string &file, const Import &imp, const string &msg) {
+    auto d = ImportDiagnostic(file, imp, msg);
     throw CompileError { d.text, { d } };
 }
 
@@ -167,7 +172,10 @@ struct DeclaredPackage {
 // root's declaration must satisfy (docs/design/packages.md §4.3). A file's
 // text comes from `sources` where that has it (SourceProvider, utils.h),
 // else from disk. `exedir` is the compiler's directory, where a release
-// keeps the packages compiled into it.
+// keeps the packages compiled into it. An import that fails is reported
+// at the import (Ast::Report), and the program goes on without what it
+// would have loaded: the names it would have declared are unknown where
+// they are used.
 void ParseProgram(Ast &ast, const string &rootpath, const vector<string> &stdlibdirs,
                   const string &exedir, const SourceProvider &sources = {}) {
     // The program is package 0; a standard library directory becomes a
@@ -228,6 +236,11 @@ void ParseProgram(Ast &ast, const string &rootpath, const vector<string> &stdlib
     set<string> loaded = { rootpath };
     map<string, int> fileof;                 // Resolved path -> index in ast.sources.
     vector<vector<string>> importsof;        // Per source, the paths it imports.
+    // An imported file's first import, where an error opening it is.
+    map<string, pair<string, Import>> importedat;
+    // The packages whose declaration, or blessed load, failed: what imports
+    // them again was reported at that import.
+    set<string> failedpkgs;
     while (!queue.empty()) {
         auto [path, pkg] = queue.back();
         queue.pop_back();
@@ -236,7 +249,11 @@ void ParseProgram(Ast &ast, const string &rootpath, const vector<string> &stdlib
             *contents = *text;
             StripBom(*contents);
         } else if (!LoadSource(path, *contents)) {
-            throw CompileError { cat("cannot open file: ", path) };
+            auto it = importedat.find(path);
+            if (it == importedat.end()) throw CompileError { cat("cannot open file: ", path) };
+            ast.Report(ImportDiagnostic(it->second.first, it->second.second,
+                                        cat("cannot open file: ", path)));
+            continue;
         }
         auto fileidx = (int)ast.sources.size();
         ast.sources.emplace_back(path, std::move(contents));
@@ -247,140 +264,158 @@ void ParseProgram(Ast &ast, const string &rootpath, const vector<string> &stdlib
         Parser parser(ast, filename, source->c_str(), fileidx);
         parser.ParseTop();
         for (auto &imp : parser.imports) {
-            auto imppkg = pkg;
-            string imppath;
-            if (!imp.source.empty()) {
-                PackageSource src;
-                try {
-                    src = ParsePackageSource(imp.source, DirOf(path));
-                } catch (CompileError &e) {
-                    ImportError(filename, imp, e.msg);
-                }
-                auto it = declared.find(imp.path);
-                if (fileidx == 0) {
-                    // The root declares the package, and imports its entry.
-                    if (it != declared.end())
-                        ImportError(filename, imp, cat("the package ", imp.path,
-                                                            " is declared twice"));
-                    string root;
+            // The package this import declares or loads, where it does.
+            string pkgname;
+            try {
+                auto imppkg = pkg;
+                string imppath;
+                if (!imp.source.empty()) {
+                    if (failedpkgs.count(imp.path)) continue;
+                    pkgname = imp.path;
+                    PackageSource src;
                     try {
-                        root = PackageRoot(src, imp.path);
+                        src = ParsePackageSource(imp.source, DirOf(path));
                     } catch (CompileError &e) {
                         ImportError(filename, imp, e.msg);
                     }
-                    ast.packages.push_back(Package { imp.path, root, false });
-                    if (!src.ispath) ast.packages.back().cachekey = GitCacheKey(src);
-                    LoadSidecar(ast.packages.back(), false);
-                    it = declared.emplace(imp.path, DeclaredPackage { src, (int)ast.packages.size() - 1,
-                                                                      imp.line.line }).first;
-                } else {
-                    // A requirement: satisfied by the root's declaration, or
-                    // by the blessed table where the root declared nothing.
-                    if (it == declared.end())
-                        if (auto be = BlessedLookup(imp.path); be && be->package == imp.path) {
-                            loadblessed(*be);
-                            it = declared.find(imp.path);
+                    auto it = declared.find(imp.path);
+                    if (fileidx == 0) {
+                        // The root declares the package, and imports its entry.
+                        if (it != declared.end())
+                            ImportError(filename, imp, cat("the package ", imp.path,
+                                                                " is declared twice"));
+                        string root;
+                        try {
+                            root = PackageRoot(src, imp.path);
+                        } catch (CompileError &e) {
+                            ImportError(filename, imp, e.msg);
                         }
-                }
-                if (it == declared.end()) {
-                    // A requirement the root does not satisfy: the error is
-                    // the line to add there.
-                    ImportError(filename, imp,
-                                cat(ast.packages[pkg].name, " needs the package ", imp.path,
-                                    ": add\n    import ", imp.path, " from \"",
-                                    SourceForRoot(src, rootdir), "\";\nto ", rootpath,
-                                    " (packages are declared by the root file only)"));
-                } else if (fileidx != 0 && !SameSource(it->second.source, src)) {
-                    ImportError(filename, imp,
-                                cat(ast.packages[pkg].name, " needs the package ", imp.path,
-                                    " from ", src.text, ", which ", rootpath, ":", it->second.line,
-                                    " declared from a different source, ", it->second.source.text));
-                } else if (fileidx != 0 && it->second.source.ref != src.ref) {
-                    ast.Warn(LocOf(imp.line),
-                             cat(ast.packages[pkg].name, " needs the package ", imp.path, " at ",
-                                 src.ref, ", which ", rootpath, ":", it->second.line,
-                                 " declares at ", it->second.source.ref));
-                }
-                imppkg = it->second.pkg;
-                // What a package requires links after it (§5.5).
-                if (fileidx != 0 && pkg != imppkg) {
-                    auto &req = ast.packages[pkg].required;
-                    if (std::find(req.begin(), req.end(), imppkg) == req.end())
-                        req.push_back(imppkg);
-                }
-                imppath = cat(ast.packages[imppkg].root, imp.path, ".goose");
-            } else if (imp.relative) {
-                imppath = cat(DirOf(path), imp.path, ".goose");
-            } else {
-                // A file under this package's root; a module of a package the
-                // root declared (`import pkg;` is its entry, `import pkg.sub;`
-                // its sub.goose); a blessed name, its package loaded as if
-                // the root had declared it (§4.5); the standard library.
-                auto local = cat(ast.packages[pkg].root, imp.path, ".goose");
-                auto first = imp.path.substr(0, imp.path.find('/'));
-                auto rest = imp.path.size() > first.size() ? imp.path.substr(first.size() + 1)
-                                                           : first;
-                auto it = declared.find(first);
-                // A package's own name, from inside it, is its own file.
-                if (it != declared.end() && it->second.pkg == pkg) it = declared.end();
-                auto blessed = it == declared.end() && !FileExists(local) ? BlessedLookup(first)
-                                                                           : nullptr;
-                if (it != declared.end()) {
-                    if (FileExists(local))
+                        ast.packages.push_back(Package { imp.path, root, false });
+                        if (!src.ispath) ast.packages.back().cachekey = GitCacheKey(src);
+                        LoadSidecar(ast.packages.back(), false);
+                        auto dp = DeclaredPackage { src, (int)ast.packages.size() - 1,
+                                                    imp.line.line };
+                        it = declared.emplace(imp.path, dp).first;
+                    } else {
+                        // A requirement: satisfied by the root's declaration, or
+                        // by the blessed table where the root declared nothing.
+                        if (it == declared.end())
+                            if (auto be = BlessedLookup(imp.path); be && be->package == imp.path) {
+                                loadblessed(*be);
+                                it = declared.find(imp.path);
+                            }
+                    }
+                    if (it == declared.end()) {
+                        // A requirement the root does not satisfy: the error is
+                        // the line to add there.
                         ImportError(filename, imp,
-                                    cat(imp.path, " is both a file of this package (", local,
-                                        ") and the declared package ", first, "'s module"));
-                    imppkg = it->second.pkg;
-                    imppath = cat(ast.packages[imppkg].root, rest, ".goose");
-                } else if (blessed) {
-                    try {
-                        imppkg = loadblessed(*blessed);
-                    } catch (CompileError &e) {
-                        ImportError(filename, imp, e.msg);
+                                    cat(ast.packages[pkg].name, " needs the package ", imp.path,
+                                        ": add\n    import ", imp.path, " from \"",
+                                        SourceForRoot(src, rootdir), "\";\nto ", rootpath,
+                                        " (packages are declared by the root file only)"));
+                    } else if (fileidx != 0 && !SameSource(it->second.source, src)) {
+                        ImportError(filename, imp,
+                                    cat(ast.packages[pkg].name, " needs the package ", imp.path,
+                                        " from ", src.text, ", which ", rootpath, ":",
+                                        it->second.line, " declared from a different source, ",
+                                        it->second.source.text));
+                    } else if (fileidx != 0 && it->second.source.ref != src.ref) {
+                        ast.Warn(LocOf(imp.line),
+                                 cat(ast.packages[pkg].name, " needs the package ", imp.path,
+                                     " at ", src.ref, ", which ", rootpath, ":", it->second.line,
+                                     " declares at ", it->second.source.ref));
                     }
-                    imppath = cat(ast.packages[imppkg].root, rest, ".goose");
+                    imppkg = it->second.pkg;
+                    // What a package requires links after it (§5.5).
+                    if (fileidx != 0 && pkg != imppkg) {
+                        auto &req = ast.packages[pkg].required;
+                        if (std::find(req.begin(), req.end(), imppkg) == req.end())
+                            req.push_back(imppkg);
+                    }
+                    imppath = cat(ast.packages[imppkg].root, imp.path, ".goose");
+                } else if (imp.relative) {
+                    imppath = cat(DirOf(path), imp.path, ".goose");
                 } else {
-                    imppath = local;
-                    if (!FileExists(local)) {
-                        for (auto &dir : stdlibdirs) {
-                            auto cand = cat(dir, imp.path, ".goose");
-                            if (FileExists(cand)) {
-                                imppath = cand;
-                                imppkg = stdlibpkg(dir);
-                                break;
-                            }
+                    // A file under this package's root; a module of a package the
+                    // root declared (`import pkg;` is its entry, `import pkg.sub;`
+                    // its sub.goose); a blessed name, its package loaded as if
+                    // the root had declared it (§4.5); the standard library.
+                    auto local = cat(ast.packages[pkg].root, imp.path, ".goose");
+                    auto first = imp.path.substr(0, imp.path.find('/'));
+                    auto rest = imp.path.size() > first.size() ? imp.path.substr(first.size() + 1)
+                                                               : first;
+                    auto it = declared.find(first);
+                    // A package's own name, from inside it, is its own file.
+                    if (it != declared.end() && it->second.pkg == pkg) it = declared.end();
+                    if (it == declared.end() && failedpkgs.count(first)) continue;
+                    auto blessed = it == declared.end() && !FileExists(local) ? BlessedLookup(first)
+                                                                               : nullptr;
+                    if (blessed) pkgname = blessed->package;
+                    if (it != declared.end()) {
+                        if (FileExists(local))
+                            ImportError(filename, imp,
+                                        cat(imp.path, " is both a file of this package (", local,
+                                            ") and the declared package ", first, "'s module"));
+                        imppkg = it->second.pkg;
+                        imppath = cat(ast.packages[imppkg].root, rest, ".goose");
+                    } else if (blessed) {
+                        try {
+                            imppkg = loadblessed(*blessed);
+                        } catch (CompileError &e) {
+                            ImportError(filename, imp, e.msg);
                         }
-                        // Not found: where it was looked for, the standard
-                        // library being the directories that hold std.goose.
-                        if (imppath == local) {
-                            auto name = imp.path;
-                            for (auto &c : name) if (c == '/') c = '.';
-                            auto msg = cat("cannot find the module ", name, ", looked for\n    ",
-                                           ForwardSlashes(AbsolutePath(local)));
-                            auto havestd = false;
-                            for (auto &dir : stdlibdirs)
-                                if (FileExists(cat(dir, "std.goose"))) {
-                                    havestd = true;
-                                    Append(msg, "\n    ",
-                                           ForwardSlashes(AbsolutePath(cat(dir, imp.path, ".goose"))));
+                        imppath = cat(ast.packages[imppkg].root, rest, ".goose");
+                    } else {
+                        imppath = local;
+                        if (!FileExists(local)) {
+                            for (auto &dir : stdlibdirs) {
+                                auto cand = cat(dir, imp.path, ".goose");
+                                if (FileExists(cand)) {
+                                    imppath = cand;
+                                    imppkg = stdlibpkg(dir);
+                                    break;
                                 }
-                            if (!havestd) {
-                                Append(msg, "\nand found no standard library, looking in");
-                                set<string> shown;
-                                for (auto &dir : stdlibdirs) {
-                                    auto abs = ForwardSlashes(AbsolutePath(dir));
-                                    if (shown.insert(abs).second) Append(msg, "\n    ", abs);
-                                }
-                                Append(msg, "\nset --stdlib or GOOSE_STDLIB to its directory");
                             }
-                            ImportError(filename, imp, msg);
+                            // Not found: where it was looked for, the standard
+                            // library being the directories that hold std.goose.
+                            if (imppath == local) {
+                                auto name = imp.path;
+                                for (auto &c : name) if (c == '/') c = '.';
+                                auto msg = cat("cannot find the module ", name,
+                                               ", looked for\n    ",
+                                               ForwardSlashes(AbsolutePath(local)));
+                                auto havestd = false;
+                                for (auto &dir : stdlibdirs)
+                                    if (FileExists(cat(dir, "std.goose"))) {
+                                        havestd = true;
+                                        auto cand = cat(dir, imp.path, ".goose");
+                                        Append(msg, "\n    ", ForwardSlashes(AbsolutePath(cand)));
+                                    }
+                                if (!havestd) {
+                                    Append(msg, "\nand found no standard library, looking in");
+                                    set<string> shown;
+                                    for (auto &dir : stdlibdirs) {
+                                        auto abs = ForwardSlashes(AbsolutePath(dir));
+                                        if (shown.insert(abs).second) Append(msg, "\n    ", abs);
+                                    }
+                                    Append(msg, "\nset --stdlib or GOOSE_STDLIB to its directory");
+                                }
+                                ImportError(filename, imp, msg);
+                            }
                         }
                     }
                 }
+                importsof[fileidx].push_back(imppath);
+                ast.imports.push_back({ imp.line, imp.end, imppath });
+                if (loaded.insert(imppath).second) {
+                    queue.push_back({ imppath, imppkg });
+                    importedat.emplace(imppath, make_pair(filename, imp));
+                }
+            } catch (CompileError &e) {
+                if (e.diags.empty()) ast.Report(ImportDiagnostic(filename, imp, e.msg));
+                for (auto &d : e.diags) ast.Report(d);
+                if (!pkgname.empty() && !declared.count(pkgname)) failedpkgs.insert(pkgname);
             }
-            importsof[fileidx].push_back(imppath);
-            ast.imports.push_back({ imp.line, imp.end, imppath });
-            if (loaded.insert(imppath).second) queue.push_back({ imppath, imppkg });
         }
     }
     // Globals initialize in import order: everything a file imports runs before
@@ -1227,6 +1262,8 @@ int Main(int argc, char **argv) {
             fclose(f);
         }
         ResolveTypeNames(ast);
+        // As after the parse, which an unknown type name is part of.
+        if (!ast.errors.empty()) return 1;
         // Printed by every run that gets this far, so that one which goes on
         // to fail says by itself which side of resolution it failed on.
         fprintf(msgs, "parsed ok: %d top-level declarations, %d file(s)\n",

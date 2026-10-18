@@ -1473,6 +1473,7 @@ inline Val TypeCheck::CheckMatch(MatchExpr *m, TypeExpr *expected, bool wantvalu
                 if (!id || pi.hi || id->name.find("::") != string_view::npos)
                     Error(arm.body, "ADT match arms are variant names (or _)");
                 auto found = en->FindVariant(id->name);
+                if (!found && en->broken) throw Abandoned {};
                 if (!found)
                     Error(arm.body, cat("enum ", en->name, " has no variant named ", id->name));
                 auto vi = en->VariantIndex(found);

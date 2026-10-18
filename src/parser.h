@@ -165,6 +165,60 @@ struct Parser {
         }
     }
 
+    // Whether the token can only begin a declaration, where a skip through
+    // a struct's or enum's body finds it outside the body's own braces: the
+    // body lacks its `}`. A field may begin with `let` or `const`, and its
+    // type be a function type, `fn(`.
+    bool StartsDeclInBody() {
+        switch (lex.tok) {
+            case T_LET: case T_CONST: return false;
+            case T_FN: return lex.PeekTok() == T_IDENT;
+            default: return StartsNext(true);
+        }
+    }
+
+    // Skips what is left of the body of a declaration an error was raised
+    // in, `depth` being the braces open outside the declaration: through
+    // the `}` that closes the body, braces balanced, or up to a keyword
+    // only a declaration starts with outside the braces inside the body,
+    // where the body lacks its `}`.
+    void SkipBody(int depth) {
+        while (lex.tok != T_EOF) {
+            auto inbody = lex.DepthBefore() == depth + 1;
+            if (inbody && lex.tok == T_RCURLY) {
+                NextSkipping();
+                return;
+            }
+            if (inbody && StartsDeclInBody()) return;
+            NextSkipping();
+        }
+    }
+
+    // Parses the rest of a declaration whose name stands (`f`), which an
+    // error then costs only what had not been parsed: the error is
+    // reported, what the member it was raised in made is dropped
+    // (Ast::DropSince of `kept`, which `f` moves past each whole member),
+    // the declaration is marked `broken`, and the parse skips the rest of
+    // it: where `depth`, the braces open before the declaration, is given
+    // and the error is inside its body, through the body's `}` (SkipBody),
+    // else as Resync skips a declaration, `startp` being where it began.
+    template<typename F> void ParseMembers(bool &broken, int depth, const char *startp, F f) {
+        auto kept = ast.Mark();
+        try {
+            f(kept);
+        } catch (CompileError &e) {
+            if (tentative) throw;
+            // As in ParseTopDecl.
+            if (!pendingdot) Report(e);
+            pendingdot = nullptr;
+            ast.DropSince(kept);
+            broken = true;
+            if (lex.scanning) NextSkipping();
+            if (depth >= 0 && lex.DepthBefore() > depth) SkipBody(depth);
+            else Resync(true, startp);
+        }
+    }
+
     // Where the current token starts.
     Line CurLine() {
         return { lex.tokline, fileidx, (int)(lex.attr.data() - lex.toklinestart) + 1 };
@@ -281,7 +335,8 @@ struct Parser {
     // it made so far with it, and the parse goes on at the next one
     // (Resync). A function whose body lost a statement is no such error:
     // its body recovered (ParseBlockBody), and the function stands, marked
-    // broken.
+    // broken; nor is one past the name of a struct, an enum or a function,
+    // which stands with what was parsed before the error (ParseMembers).
     void ParseTopDecl() {
         ast.CheckCancel();
         auto mark = ast.Mark();
@@ -386,7 +441,8 @@ struct Parser {
             Error(cat("type name already declared: ", QualifiedStr(ns, name)));
     }
 
-    void ParseGenerics(vector<GenericParam> &generics) {
+    // `kept`, where given, is moved past each whole parameter (ParseMembers).
+    void ParseGenerics(vector<GenericParam> &generics, Ast::DeclMark *kept = nullptr) {
         if (!IsNext(T_LT)) return;
         for (;;) {
             GenericParam g;
@@ -394,6 +450,7 @@ struct Parser {
             g.name = ExpectIdent("generic parameter list");
             if (IsNext(T_COLON)) g.bound = ParseType();
             generics.push_back(g);
+            if (kept) *kept = ast.Mark();
             if (!IsNext(T_COMMA)) break;
             if (lex.tok == T_GT || lex.tok == T_SHR) break;
         }
@@ -418,6 +475,8 @@ struct Parser {
         auto firsttype = ast.alltypes.size();
         auto line = CurLine();
         auto doc = lex.doc;
+        auto depth = lex.DepthBefore();
+        auto startp = lex.attr.data();
         lex.Next();
         auto st = new SStruct();
         ast.structs.push_back(st);
@@ -427,17 +486,21 @@ struct Parser {
         st->line = line;
         st->doc = doc;
         CheckFreshTypeName(st->ns, st->name);
-        ParseGenerics(st->generics);
-        Expect(T_LCURLY, "struct declaration");
-        ParseFieldList(st->fields, "struct body");
-        Expect(T_RCURLY, "struct declaration");
+        ParseMembers(st->broken, depth, startp, [&](Ast::DeclMark &kept) {
+            ParseGenerics(st->generics, &kept);
+            Expect(T_LCURLY, "struct declaration");
+            ParseFieldList(st->fields, "struct body", &kept);
+            Expect(T_RCURLY, "struct declaration");
+        });
         st->end = PrevEnd();
         BindGenericNames(firsttype, st->generics);
         ast.NS(st->ns).structmap[st->name] = st;
         ast.topdecls.push_back(Finish(New<StructDecl>(line, st)));
     }
 
-    void ParseFieldList(vector<Field> &fields, const char *context) {
+    // `kept`, where given, is moved past each whole field (ParseMembers).
+    void ParseFieldList(vector<Field> &fields, const char *context,
+                        Ast::DeclMark *kept = nullptr) {
         while (lex.tok != T_RCURLY) {
             Field f;
             f.line = CurLine();
@@ -463,6 +526,7 @@ struct Parser {
                 if (IsNext(T_ASSIGN)) f.defaultval = ParseExpr();
             }
             fields.push_back(f);
+            if (kept) *kept = ast.Mark();
             if (!IsNext(T_COMMA)) break;
         }
     }
@@ -471,6 +535,8 @@ struct Parser {
         auto firsttype = ast.alltypes.size();
         auto line = CurLine();
         auto doc = lex.doc;
+        auto depth = lex.DepthBefore();
+        auto startp = lex.attr.data();
         lex.Next();
         auto en = new SEnum();
         ast.enums.push_back(en);
@@ -480,24 +546,27 @@ struct Parser {
         en->line = line;
         en->doc = doc;
         CheckFreshTypeName(en->ns, en->name);
-        ParseGenerics(en->generics);
-        Expect(T_LCURLY, "enum declaration");
-        while (lex.tok != T_RCURLY) {
-            SVariant v;
-            v.line = CurLine();
-            v.doc = lex.doc;
-            v.name = ExpectIdent("enum variant");
-            for (auto &prev : en->variants)
-                if (prev.name == v.name) Error(cat("duplicate variant name: ", v.name));
-            if (IsNext(T_LCURLY)) {
-                v.has_payload = true;
-                ParseFieldList(v.fields, "variant body");
-                Expect(T_RCURLY, "enum variant");
+        ParseMembers(en->broken, depth, startp, [&](Ast::DeclMark &kept) {
+            ParseGenerics(en->generics, &kept);
+            Expect(T_LCURLY, "enum declaration");
+            while (lex.tok != T_RCURLY) {
+                SVariant v;
+                v.line = CurLine();
+                v.doc = lex.doc;
+                v.name = ExpectIdent("enum variant");
+                for (auto &prev : en->variants)
+                    if (prev.name == v.name) Error(cat("duplicate variant name: ", v.name));
+                if (IsNext(T_LCURLY)) {
+                    v.has_payload = true;
+                    ParseFieldList(v.fields, "variant body");
+                    Expect(T_RCURLY, "enum variant");
+                }
+                en->variants.push_back(v);
+                kept = ast.Mark();
+                if (!IsNext(T_COMMA)) break;
             }
-            en->variants.push_back(v);
-            if (!IsNext(T_COMMA)) break;
-        }
-        Expect(T_RCURLY, "enum declaration");
+            Expect(T_RCURLY, "enum declaration");
+        });
         en->end = PrevEnd();
         BindGenericNames(firsttype, en->generics);
         ast.NS(en->ns).enummap[en->name] = en;
@@ -507,6 +576,7 @@ struct Parser {
     FnDecl *ParseFnDecl(bool nested) {
         auto firsttype = ast.alltypes.size();
         auto line = CurLine();
+        auto startp = lex.attr.data();
         auto sf = new SFunction();
         ast.functions.push_back(sf);
         sf->line = line;
@@ -575,47 +645,60 @@ struct Parser {
         }
         sf->ns = curns;
         sf->qname = ast.QualifiedName(sf->ns, sf->name);
-        ParseGenerics(sf->generics);
-        Expect(T_LPAREN, "function declaration");
-        while (lex.tok != T_RPAREN) {
-            Param p;
-            p.isvar = IsNext(T_VAR);
-            p.line = CurLine();
-            p.name = ExpectIdent("parameter list");
-            for (auto &prev : sf->params)
-                if (prev.name == p.name) Error(cat("duplicate parameter name: ", p.name));
-            if (IsNext(T_COLON)) p.type = ParseType();
-            if (IsNext(T_ASSIGN)) {
-                // A default is a value of the parameter's type (§7.1), which
-                // an untyped parameter has only from an argument.
-                if (!p.type)
-                    Error(cat("parameter ", p.name, " has a default but no type: an untyped "
-                              "parameter takes its type from its argument (§7.1)"));
-                if (sf->isthread)
-                    Error(cat("thread_fn parameter ", p.name, " cannot have a default: "
-                              "thread_spawn passes every argument (§11.2)"));
-                p.defaultval = ParseExpr();
-            } else if (!sf->params.empty() && sf->params.back().defaultval) {
-                Error(cat("parameter ", p.name, " needs a default: only trailing parameters "
-                          "have defaults, and ", sf->params.back().name,
-                          " before it has one (§7.1)"));
-            }
-            sf->params.push_back(p);
-            if (!IsNext(T_COMMA)) break;
-        }
-        Expect(T_RPAREN, "function declaration");
-        if (IsNext(T_ARROW)) {
-            // Declaration headers take a bare comma-separated return type list.
-            sf->has_rets = true;
-            for (;;) {
-                sf->rets.push_back(ParseType());
+        // A top-level function's header recovers from its errors: the
+        // function stands, with no body (SFunction::brokensig). A nested one
+        // is lost with the statement it is, as the block recovers.
+        auto header = [&](Ast::DeclMark *kept) {
+            ParseGenerics(sf->generics, kept);
+            Expect(T_LPAREN, "function declaration");
+            while (lex.tok != T_RPAREN) {
+                Param p;
+                p.isvar = IsNext(T_VAR);
+                p.line = CurLine();
+                p.name = ExpectIdent("parameter list");
+                for (auto &prev : sf->params)
+                    if (prev.name == p.name) Error(cat("duplicate parameter name: ", p.name));
+                if (IsNext(T_COLON)) p.type = ParseType();
+                if (IsNext(T_ASSIGN)) {
+                    // A default is a value of the parameter's type (§7.1), which
+                    // an untyped parameter has only from an argument.
+                    if (!p.type)
+                        Error(cat("parameter ", p.name, " has a default but no type: an untyped "
+                                  "parameter takes its type from its argument (§7.1)"));
+                    if (sf->isthread)
+                        Error(cat("thread_fn parameter ", p.name, " cannot have a default: "
+                                  "thread_spawn passes every argument (§11.2)"));
+                    p.defaultval = ParseExpr();
+                } else if (!sf->params.empty() && sf->params.back().defaultval) {
+                    Error(cat("parameter ", p.name, " needs a default: only trailing parameters "
+                              "have defaults, and ", sf->params.back().name,
+                              " before it has one (§7.1)"));
+                }
+                sf->params.push_back(p);
+                if (kept) *kept = ast.Mark();
                 if (!IsNext(T_COMMA)) break;
             }
-        }
-        if (sf->isextern) {
-            if (sf->cname.empty()) sf->cname = string(sf->name);
-            Expect(T_SEMI, "extern declaration");
-        } else {
+            Expect(T_RPAREN, "function declaration");
+            if (IsNext(T_ARROW)) {
+                // Declaration headers take a bare comma-separated return type list.
+                sf->has_rets = true;
+                for (;;) {
+                    sf->rets.push_back(ParseType());
+                    if (kept) *kept = ast.Mark();
+                    if (!IsNext(T_COMMA)) break;
+                }
+            }
+            if (sf->isextern) {
+                if (sf->cname.empty()) sf->cname = string(sf->name);
+                Expect(T_SEMI, "extern declaration");
+            } else if (kept && lex.tok != T_LCURLY) {
+                // A missing body is the header's error.
+                Expect(T_LCURLY, "function body");
+            }
+        };
+        if (nested) header(nullptr);
+        else ParseMembers(sf->brokensig, -1, startp, [&](Ast::DeclMark &kept) { header(&kept); });
+        if (!sf->isextern && !sf->brokensig) {
             if (sf->isexport && sf->cname.empty()) sf->cname = string(sf->name);
             // The enclosing function returns when the body ends, on the
             // throw of an error the declaration is lost to included.

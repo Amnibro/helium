@@ -105,6 +105,9 @@ struct Lexer {
     // that ends on the line before the token; from the first // to the end
     // of the last line. Empty for a token with none.
     string_view doc;
+    // The `{` scanned so far less the `}`, the current token's included
+    // (DepthBefore).
+    int curlies = 0;
 
     Lexer(string_view _filename, const char *_source, int _fileidx = 0)
         : p(_source), filename(_filename), source(_source), fileidx(_fileidx) {
@@ -113,6 +116,10 @@ struct Lexer {
     }
 
     [[noreturn]] void Error(const string &msg) { ErrorAt(msg, tokline, toklinestart); }
+
+    // How many braces are open before the current token, which is where a
+    // recovering parse is (Parser::SkipBody).
+    int DepthBefore() const { return curlies - (tok == T_LCURLY) + (tok == T_RCURLY); }
 
     // The token after the current one, without moving. One the lexer
     // rejects reads as the end: the scan that reaches it raises the error.
@@ -220,8 +227,8 @@ struct Lexer {
             case ')': Set(T_RPAREN);   return;
             case '[': Set(T_LBRACKET); return;
             case ']': Set(T_RBRACKET); return;
-            case '{': Set(T_LCURLY);   return;
-            case '}': Set(T_RCURLY);   return;
+            case '{': curlies++; Set(T_LCURLY); return;
+            case '}': curlies--; Set(T_RCURLY); return;
             case ',': Set(T_COMMA);    return;
             case ';': Set(T_SEMI);     return;
             case ':':

@@ -221,15 +221,28 @@ function per construct. Points that matter to later passes:
   statement (`Resync`): through the next `;` at the block's depth, or
   up to and including the `}` that closes the block, braces balanced,
   stopping short of a keyword that can only start a statement
-  (`StartsNext`) unless it is where the lost statement began. A
+  (`StartsNext`) unless it is where the lost statement began. An error
+  past the name of a struct, an enum or a top-level function costs the
+  declaration only what was not parsed yet (`ParseMembers`): it stands
+  with the fields, variants, parameters, results and type parameters
+  parsed before the error, the member the error was raised in dropped
+  with what it had made (`Ast::DropSince` from a mark the parse moves
+  past each whole member), and is marked broken (`SStruct::broken`,
+  `SEnum::broken`, `SFunction::brokensig`, which has no body). A struct
+  or an enum then skips to the `}` that closes its body, braces balanced
+  (`SkipBody`, by the lexer's count of the braces open,
+  `Lexer::DepthBefore`), stopping short of a keyword only a declaration
+  starts with outside the body's inner braces, where the body lacks its
+  `}`; a function skips as a dropped declaration does. Any other
   declaration an error is raised in is dropped whole, with the types,
   functions and declarations it had made (`Ast::DropSince` from the
   `Ast::Mark` taken at its start, a global's name leaving its namespace
   too), and `ParseTopDecl` skips through the next `;` at depth 0 or the
   `}` matching a `{` at depth 0, or to a keyword only a declaration can
-  start with. A token the lexer rejects is skipped with the rest of its
-  line, or past the closing quotes of a `"""` string
-  (`Lexer::scanning`, `SkipBrokenToken`), and `PeekTok` reads one as the
+  start with; a nested function's header error loses the statement it
+  is, as any statement's does. A token the lexer rejects is skipped
+  with the rest of its line, or past the closing quotes of a `"""`
+  string (`Lexer::scanning`, `SkipBrokenToken`), and `PeekTok` reads one as the
   end of the file, so that the scan that reaches it raises the error
   once. A `.` with no name after it is reported and kept as a `Dot` with
   an empty name (`Dot::incomplete`), the statement ending there: where
@@ -260,7 +273,15 @@ function per construct. Points that matter to later passes:
   declaration in the root file, which adds the package, and a requirement
   elsewhere, checked against the root's declaration. It loads each file
   once, and stable-sorts `ast.globals` by a post-order walk of the import
-  graph so an imported file's globals initialize first.
+  graph so an imported file's globals initialize first. An import that
+  fails -- a module found nowhere, a package that cannot be declared,
+  loaded or required, a file that cannot be opened -- is reported at the
+  import (`Ast::Report`, after the errors of the importing file's text)
+  and the program goes on without what it would have loaded: the other
+  files are parsed, and the names the module would have declared are
+  unknown where they are used. A package whose declaration or blessed
+  load failed is reported at that import only (`failedpkgs`): the
+  imports of it elsewhere are left out silently.
 
 Import traversal visits a file's imports in source order; an edge to a file
 already being visited contributes no second visit. This also determines
@@ -314,9 +335,19 @@ that treats nominal declarations as boundaries), keeping the use site's line
 and adding its `const` qualifier; anything else becomes `TY_GENERIC`, which
 the typechecker later validates against the generics in scope -- except a
 qualified unknown name, which is an error here since it can only be a
-declaration. Variant types (`Shape.Circle`) are resolved last. After this
-pass, aliases do not exist as types and "is this an integer" is a kind
-comparison.
+declaration, and a name in a struct's, an enum's or an alias's declaration
+that is not one of its type parameters. Variant types (`Shape.Circle`) are
+resolved last. After this pass, aliases do not exist as types and "is this
+an integer" is a kind comparison. An error here is reported
+(`Ast::Report`, in the order of the source, once per name as written
+however many nodes share its detail) and resolution goes on, the use
+given a type: an unknown name, the use closing an alias cycle, and a
+variant its enum lacks stand for a struct with no fields that names
+nothing (`SStruct::unknown`, `Ast::unknowntypes`, one per name), the
+variant a broken enum lacks silently; type arguments on an alias use and
+a `..` that cannot apply are reported and left out. The driver stops
+after resolution when it reported an error, as after the parse; the
+language server goes on to the check.
 
 **Dump** (`dump.h`): `--dump` regenerates source from the parsed tree, and
 the test runner checks that dump, reparse and dump again are identical.
@@ -406,6 +437,22 @@ alone, as a call of an extern function is, and the caller goes on; a
 function with no declared results returns none. Nothing is reported: the
 parser did. A body broken outside any function -- a global's
 initializer, a default -- ends its root the same way, silently.
+
+**Broken declarations.** What follows from a declaration the parser or
+resolution reported is not reported again: it ends the check of the
+root at hand silently (`Abandoned`). A name a broken struct or enum
+lacks (`SStruct::broken`, `SEnum::broken`, `LacksByError`) -- a field
+accessed, a field or a variant a literal names, a variant constant, a
+match arm, a member call -- is the parser's error. A value of a type
+that names nothing (`SStruct::unknown`, `MentionsUnknown`) is refused
+by `CheckV`, as is one expected to be of such a type (`MustFit`, a call
+no candidate takes, a literal leaving a field of one out). A function
+whose header was lost (`SFunction::brokensig`) has nothing a call could
+be checked against, nor a result to go on with: a call of it ends
+after its arguments are checked (`ResolveCall`), and naming it as a
+value, spawning it, or exporting it ends the same way; it is no root,
+`main` included. A broken struct is otherwise the struct of the fields
+it has, which are validated and laid out as any.
 
 **Roots and recovery.** Each root -- a global's initializer, `main`, a
 thread entry (`EnsureThreadSpec`, then `CheckThreadGlobals`), a function

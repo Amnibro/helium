@@ -164,6 +164,8 @@ inline Val Ident::Check(TypeCheck &tc, TypeExpr *) {
     }
     if (auto &cands = tc.ast.LookupFunctions(name, ns); !cands.empty()) {
         fnref = cands[0];
+        for (auto sf : cands)
+            if (sf->brokensig) throw Abandoned {};
         Val v;
         v.type = tc.fntype;
         v.fnv.named = cands[0];
