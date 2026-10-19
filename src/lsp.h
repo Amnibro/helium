@@ -237,7 +237,14 @@ inline int RunLsp(const string &exe, const vector<string> &args) {
     // error at its import.
     package_nofetch = true;
     Server server(exe, stdlib);
-    return server.Run();
+    auto code = server.Run();
+    // The reader thread is still blocked in fgetc on stdin, holding the
+    // stream's lock, which glibc's exit waits for while it closes the
+    // streams: the process would never end. Every reply was flushed as it
+    // was sent, so nothing of exit's cleanup is needed.
+    fflush(stdout);
+    fflush(stderr);
+    _Exit(code);
 }
 
 }  // namespace goose
