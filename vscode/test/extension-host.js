@@ -158,6 +158,40 @@ async function run() {
         return (hovers || []).some(hover => hover.contents.some(content => String(content.value ?? content).includes('fn helper')));
     }, 'the language server answers a hover on the call of helper');
     console.log('Goose extension host: the language server answered a hover.');
+    // A file opened while the server analyzes another is highlighted and
+    // hinted before any edit. The editor asks for both as it opens, the
+    // server answers once the other analysis is done but before the file's
+    // own, and the editor asks again when the server says to. The client's
+    // middleware sees what the editor itself asked for, where the provider
+    // commands would ask anew.
+    const busy = vscode.Uri.joinPath(folder.uri, 'busy.goose');
+    const functions = Array.from({ length: 3000 }, (_, k) => k);
+    await fs.writeFile(busy.fsPath, functions.map(k => `fn g${k}(x) { let y = x + ${k}; y * 2 }\n`).join('') +
+        `fn main() { var s = 0;${functions.map(k => ` s = g${k}(s);`).join('')} print(s); }\n`);
+    const fresh = vscode.Uri.joinPath(folder.uri, 'fresh.goose');
+    await fs.writeFile(fresh.fsPath, 'fn main() { let n = 1 + 2; print(n); }\n');
+    const middleware = server().client.clientOptions.middleware;
+    const isFresh = document => document.uri.fsPath === fresh.fsPath;
+    const shown = { tokens: false, hints: false };
+    middleware.provideDocumentSemanticTokens = async (document, token, next) => {
+        const tokens = await next(document, token);
+        if (isFresh(document) && tokens?.data.length) shown.tokens = true;
+        return tokens;
+    };
+    middleware.provideInlayHints = async (document, range, token, next) => {
+        const hints = await next(document, range, token);
+        if (isFresh(document) && hints?.length) shown.hints = true;
+        return hints;
+    };
+    try {
+        await vscode.workspace.openTextDocument(busy);
+        await vscode.window.showTextDocument(fresh);
+        await until(() => shown.tokens && shown.hints, 'the editor gets semantic tokens and inlay hints for a file just opened');
+    } finally {
+        delete middleware.provideDocumentSemanticTokens;
+        delete middleware.provideInlayHints;
+    }
+    console.log('Goose extension host: a file just opened got semantic tokens and inlay hints.');
     // The code lenses: a generic function's instantiations, which a quick
     // pick lists, and above a `main`, Run, which runs its own file rather
     // than the entry file.

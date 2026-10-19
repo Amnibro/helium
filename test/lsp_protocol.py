@@ -15,6 +15,8 @@ from pathlib import Path
 import toolchain as tc
 
 HERE = Path(__file__).resolve().parent
+# The features whose workspace/<feature>/refresh the client takes.
+REFRESHED = ("codeLens", "semanticTokens", "inlayHint")
 
 
 def uri_of(path):
@@ -147,7 +149,7 @@ def check_lsp_protocol(exe, base):
     # The client has the commands of the VS Code extension's that code
     # lenses name.
     client.request("initialize", {"processId": None, "rootUri": uri_of(fixtures),
-                                  "capabilities": {"workspace": {"codeLens": {"refreshSupport": True}}},
+                                  "capabilities": {"workspace": {f: {"refreshSupport": True} for f in REFRESHED}},
                                   "initializationOptions": {"entryFiles": [str(main)],
                                                             "commands": ["goose.run", "goose.showInstantiations"]}})
     client.send("initialized", {}, request=False)
@@ -319,10 +321,11 @@ def check_lsp_protocol(exe, base):
 
     diags = open_fixture(main, text)
     queries(main, text, diags)
-    # The analysis answering the queries asked for the lenses again, since
-    # an editor asks as a file opens.
-    if "workspace/codeLens/refresh" not in client.requests:
-        fail("no workspace/codeLens/refresh after an analysis", client.requests)
+    # The analysis answering the queries asked for the lenses, semantic
+    # tokens and inlay hints again, since an editor asks as a file opens.
+    for f in REFRESHED:
+        if f"workspace/{f}/refresh" not in client.requests:
+            fail(f"no workspace/{f}/refresh after an analysis", client.requests)
     doc = {"textDocument": {"uri": main_uri}}
     got = client.request("workspace/symbol", {"query": "twi"})
     if not any(s["name"] == "twice" and s["location"]["uri"].lower() == helper_uri.lower() for s in got):

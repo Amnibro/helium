@@ -6029,10 +6029,15 @@ on answering from it. A cancelled attempt leaves the root dirty. The
 indexes are built as soon as the check is done, before the optimizer
 rewrites the bodies: it inlines calls and drops constants, and with them
 the clones the features read, which stay allocated (the `Ast` owns every
-node) but leave the tree. A client that takes `workspace/codeLens/refresh`
-is sent one each time an analysis replaces the last, since an editor asks
-for lenses as a file opens or changes, often before the analysis that
-answers them.
+node) but leave the tree. Each time an analysis replaces the last, a
+client is sent the refreshes it takes (`workspace/codeLens/refresh`,
+`workspace/semanticTokens/refresh`, `workspace/inlayHint/refresh`, as
+its `capabilities.workspace` declares), through `Workspace::Request`: an
+editor asks for lenses, semantic tokens and inlay hints as a file opens
+or changes, and a request the worker takes before the analysis answering
+it (one that came during another root's analysis, or with others waiting)
+gets a stale answer or none, which the editor would keep until the next
+edit.
 
 **Analysis** (`lsp_analysis.h`). The `Ast` as the check left it, with the
 indexes the features read. `FileIndex::occs` is every occurrence of a name
@@ -6141,5 +6146,5 @@ nothing calls; and `errors_tc/recovery/exemplar_unchecked.goose`, whose
 generic functions no binding could make right, with no diagnostic from
 the server either, as `goose check` gives none for them).
 Its client declares the
-VS Code extension's commands and the lens refresh, and answers the
-server's requests. The editors' configuration is in `docs/editors.md`.
+VS Code extension's commands and the three refreshes, checks that each
+comes after an analysis, and answers the server's requests. The editors' configuration is in `docs/editors.md`.

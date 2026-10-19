@@ -40,9 +40,10 @@ struct Workspace {
     // protocol has no way to ask, so its initialization options list them
     // (`commands`).
     set<string> clientcommands;
-    // Whether the client takes workspace/codeLens/refresh, and the id of
-    // the last request the server sent.
-    bool lensrefresh = false;
+    // The refresh requests the client takes (`workspace/codeLens/refresh`,
+    // `workspace/semanticTokens/refresh`, `workspace/inlayHint/refresh`),
+    // and the id of the last request the server sent.
+    vector<string> refreshes;
     int64_t requests = 0;
     // How long after the last change to a root's files it is analyzed again.
     static constexpr int DEBOUNCE_MS = 150;
@@ -225,19 +226,23 @@ struct Workspace {
         if (an->parsed || !r.analysis) {
             if (!an->built) an->Build();
             r.analysis = std::move(an);
-            // An editor asks for lenses as a file opens or changes, which
-            // may be before the analysis answering it.
-            if (lensrefresh) {
-                JsonOut j;
-                j.BeginObject();
-                j.Member("jsonrpc", "2.0");
-                j.Member("id", ++requests);
-                j.Member("method", "workspace/codeLens/refresh");
-                j.EndObject();
-                rpc.Send(j.s);
-            }
+            // An editor asks for lenses, semantic tokens and inlay hints as
+            // a file opens or changes, which may be before the analysis
+            // answering it, and asks again only when told to.
+            for (auto &method : refreshes) Request(method);
         }
         PruneUnreached();
+    }
+
+    // A request of the server's without parameters; the reply is ignored.
+    void Request(const string &method) {
+        JsonOut j;
+        j.BeginObject();
+        j.Member("jsonrpc", "2.0");
+        j.Member("id", ++requests);
+        j.Member("method", method);
+        j.EndObject();
+        rpc.Send(j.s);
     }
 
     // Where a file's queries are answered from: the first root (the

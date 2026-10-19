@@ -128,8 +128,11 @@ struct Server {
                     if (c.kind == Json::STRING) ws.clientcommands.insert(c.str);
             auto caps = p.Get("capabilities");
             auto wcaps = caps ? caps->Get("workspace") : nullptr;
-            auto lens = wcaps ? wcaps->Get("codeLens") : nullptr;
-            ws.lensrefresh = JsonBool(lens ? lens->Get("refreshSupport") : nullptr);
+            for (auto feature : { "codeLens", "semanticTokens", "inlayHint" }) {
+                auto fcaps = wcaps ? wcaps->Get(feature) : nullptr;
+                if (JsonBool(fcaps ? fcaps->Get("refreshSupport") : nullptr))
+                    ws.refreshes.push_back(cat("workspace/", feature, "/refresh"));
+            }
             Respond(m, [&](JsonOut &j) { WriteCapabilities(j); return true; });
         } else if (method == "shutdown") {
             shutdown = true;
