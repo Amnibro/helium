@@ -6037,7 +6037,12 @@ editor asks for lenses, semantic tokens and inlay hints as a file opens
 or changes, and a request the worker takes before the analysis answering
 it (one that came during another root's analysis, or with others waiting)
 gets a stale answer or none, which the editor would keep until the next
-edit.
+edit. The analysis an attempt replaces, and a removed root's, is freed on
+a thread of the workspace's (`Workspace::Reap`): freeing a large program's
+tree takes a tenth of the time its check did, and the requests after an
+analysis, the editor's refreshes first among them, would otherwise wait
+for it. The `Ast` owns everything it frees, so the next analysis runs
+meanwhile; the thread is joined when the server exits.
 
 **Analysis** (`lsp_analysis.h`). The `Ast` as the check left it, with the
 indexes the features read. `FileIndex::occs` is every occurrence of a name
@@ -6147,4 +6152,7 @@ generic functions no binding could make right, with no diagnostic from
 the server either, as `goose check` gives none for them).
 Its client declares the
 VS Code extension's commands and the three refreshes, checks that each
-comes after an analysis, and answers the server's requests. The editors' configuration is in `docs/editors.md`.
+comes after an analysis, and answers the server's requests.
+`test/lsp_sweep.py` is the robustness and latency sweep over the
+repository's programs (`docs/design/language_server.md` §12), run by
+hand. The editors' configuration is in `docs/editors.md`.

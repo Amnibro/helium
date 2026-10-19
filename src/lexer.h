@@ -70,6 +70,31 @@ inline const char *TName(TType t) {
 inline bool IsIdentStart(char c) { return isalpha((uint8_t)c) || c == '_'; }
 inline bool IsIdentCont(char c)  { return isalnum((uint8_t)c) || c == '_'; }
 
+// The UTF-8 sequence at p, where its bytes make one; empty for a byte that
+// is no character on its own, which a message must not quote: a diagnostic
+// is text, and the server sends it as JSON, which is UTF-8 throughout.
+inline string_view Utf8CharAt(const char *p) {
+    auto c = (uint8_t)*p;
+    size_t len = c < 0x80 ? 1 : c >= 0xC2 && c < 0xE0 ? 2 : c >= 0xE0 && c < 0xF0 ? 3 : c >= 0xF0 && c < 0xF5 ? 4 : 0;
+    for (size_t i = 1; i < len; i++)
+        if (((uint8_t)p[i] & 0xC0) != 0x80) return {};
+    return string_view(p, len);
+}
+
+// What a message calls the character at p: quoted, with its code point
+// where it is not ASCII, or the byte's value where it is no character.
+inline string QuotedCharAt(const char *p) {
+    auto seq = Utf8CharAt(p);
+    if (seq.empty()) return cat("byte ", (int)(uint8_t)*p);
+    auto s = cat("'", seq, "'");
+    if (seq.size() == 1) return cat(s, " (", (int)(uint8_t)*p, ")");
+    uint32_t cp = (uint8_t)seq[0] & (0xFFu >> (seq.size() + 1));
+    for (size_t i = 1; i < seq.size(); i++) cp = (cp << 6) | ((uint8_t)seq[i] & 0x3F);
+    char buf[16];
+    snprintf(buf, sizeof buf, " (U+%04X)", (unsigned)cp);
+    return s + buf;
+}
+
 // The lexer holds exactly one current token. The parser copies the whole Lexer
 // object where it needs to look ahead and backtrack, so it holds nothing
 // that is not that token's: the file name is a view of the driver's.
@@ -426,7 +451,7 @@ struct Lexer {
                     if (it != keywords.end()) tok = it->second;
                     return;
                 }
-                Error(cat("illegal character: \'", string_view(start, 1), "\' (", (int)(uint8_t)c, ")"));
+                Error(cat("illegal character: ", QuotedCharAt(start)));
             }
         }
     }
@@ -506,7 +531,11 @@ struct Lexer {
                     p += 2;
                     return v;
                 }
-                default:   p -= 2; Error(cat("unknown escape sequence: \\", string_view(p + 1, 1)));
+                default: {
+                    p -= 2;
+                    auto seq = Utf8CharAt(p + 1);
+                    Error(cat("unknown escape sequence: \\", seq.empty() ? QuotedCharAt(p + 1) : string(seq)));
+                }
             }
         }
         if (!c || c == '\n') { p--; Error(cat("unterminated ", quote == '"' ? "string" : "character", " literal")); }

@@ -47,9 +47,50 @@ struct Workspace {
     int64_t requests = 0;
     // How long after the last change to a root's files it is analyzed again.
     static constexpr int DEBOUNCE_MS = 150;
+    // The analyses let go of, and the thread that frees them (Reap).
+    mutex reapm;
+    condition_variable reapcv;
+    deque<unique_ptr<Analysis>> reapq;
+    bool reapstop = false;
+    thread reaper;
 
     Workspace(Transport &r, const string &e, const string &stdlib) : rpc(r), exe(e) {
         stdlibdirs = StdlibDirs(stdlib, exe);
+    }
+
+    ~Workspace() {
+        {
+            lock_guard<mutex> lock(reapm);
+            reapstop = true;
+        }
+        reapcv.notify_all();
+        if (reaper.joinable()) reaper.join();
+    }
+
+    // Frees an analysis a root no longer reads, on a thread of its own: a
+    // large program's tree takes a tenth of the time to free that it took
+    // to check, and the requests that follow a root's analysis (the
+    // editor's refreshes among them) or a close would otherwise wait for
+    // it. The Ast owns everything it frees, so the next analysis can run
+    // meanwhile.
+    void Reap(unique_ptr<Analysis> old) {
+        if (!old) return;
+        lock_guard<mutex> lock(reapm);
+        reapq.push_back(std::move(old));
+        if (!reaper.joinable())
+            reaper = thread([this] {
+                unique_lock<mutex> lock(reapm);
+                for (;;) {
+                    reapcv.wait(lock, [&] { return reapstop || !reapq.empty(); });
+                    if (reapq.empty()) return;
+                    auto a = std::move(reapq.front());
+                    reapq.pop_front();
+                    lock.unlock();
+                    a.reset();
+                    lock.lock();
+                }
+            });
+        reapcv.notify_all();
     }
 
     // The editor's options: `entryFiles`, the programs to analyze, and
@@ -91,6 +132,7 @@ struct Workspace {
 
     void RemoveRoot(Root *root) {
         for (auto &uri : root->published) PublishEmpty(uri);
+        Reap(std::move(root->analysis));
         for (auto it = roots.begin(); it != roots.end(); ++it)
             if (it->get() == root) { roots.erase(it); return; }
     }
@@ -225,6 +267,7 @@ struct Workspace {
         Publish(r, *an);
         if (an->parsed || !r.analysis) {
             if (!an->built) an->Build();
+            Reap(std::move(r.analysis));
             r.analysis = std::move(an);
             // An editor asks for lenses, semantic tokens and inlay hints as
             // a file opens or changes, which may be before the analysis

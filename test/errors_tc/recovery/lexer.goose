@@ -1,5 +1,6 @@
 // error: unknown escape sequence: \q
 // error: illegal character: '@'
+// error: illegal character: '©' (U+00A9)
 // error: expected closing ' of character literal
 // error: unterminated string literal
 // error: unterminated """ string
@@ -9,6 +10,7 @@
 fn main() {
     let s = "bad\q";
     let e = 3 @ 4;
+    let u = 3 © 4;
     let c = 'ab';
     let t = "open
     print(s, e, c, t);
