@@ -93,29 +93,6 @@ inline bool BreaksWithValue(Node *body) {
     return found;
 }
 
-// Whether a trailing expression can never supply a value: an `if` without a
-// final `else`, or with a branch that cannot; a `match` with an arm that
-// cannot; a `loop` none of whose `break`s carries a value; and a block
-// ending in one of those. Callers that decide whether a body's tail is
-// its result consult this first, so that such a tail -- inside `block { }`
-// or a bare scope or not -- is a statement, checked as one, rather than a
-// value the construct has no way to supply. A block ending in a statement
-// is not one: its end may be unreachable (`if a { 1 } else { return 2; }`).
-inline bool IsValuelessTail(const Node *n) {
-    if (!n) return false;
-    if (auto fi = Is<IfExpr>(n))
-        return !fi->elseb || IsValuelessTail(fi->thenb) || IsValuelessTail(fi->elseb);
-    if (auto m = Is<MatchExpr>(n)) {
-        for (auto &arm : m->arms)
-            if (IsValuelessTail(arm.body)) return true;
-        return false;
-    }
-    if (auto l = Is<LoopExpr>(n)) return !BreaksWithValue(l->body);
-    if (auto b = Is<Block>(n)) return IsValuelessTail(b->tail);
-    if (auto e = Is<EarlyBlock>(n)) return IsValuelessTail(e->body);
-    return false;
-}
-
 // A control construct, whose value is what one of its branches gives (§6.4).
 inline bool IsBranchConstruct(const Node *n) {
     return Is<IfExpr>(n) || Is<MatchExpr>(n) || Is<Block>(n) || Is<EarlyBlock>(n) ||
@@ -344,6 +321,7 @@ struct TypeCheck {
     Block *ExpandStatements(ConstFor *cf);
     void ExpandInitializers(vector<FieldInit> &inits);
     void ExpandArms(vector<MatchArm> &arms);
+    bool IsValuelessTail(const Node *n);
     bool MentionsName(Node *n, string_view name, set<SFunction *> &seen);
     bool EscapingContinue(Node *n);
     bool UsedAfter(VarDef *v);

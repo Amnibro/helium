@@ -4,6 +4,78 @@
 
 namespace goose {
 
+// A body's trailing construct is a statement if any of its branches cannot
+// supply a value. Arm fragments count only when their source is nonempty.
+// This reads source shapes without checking or expanding expressions: a
+// nested block's locals are not in scope yet, and its tail may be unreachable.
+inline bool TypeCheck::IsValuelessTail(const Node *n) {
+    size_t visited = 0;
+    vector<pair<int, TypeExpr *>> bindings;
+    function<TypeExpr *(TypeExpr *)> shape = [&](TypeExpr *t) -> TypeExpr * {
+        set<TypeExpr *> seen;
+        while (t && t->kind == TY_GENERIC) {
+            if (!seen.insert(t).second) return nullptr;
+            auto id = t->named->expansionbinding;
+            if (!id) { t = LookupBindingOuter(t->named->name); continue; }
+            auto found = find_if(bindings.rbegin(), bindings.rend(),
+                                 [&](auto &b) { return b.first == id; });
+            t = found == bindings.rend() ? nullptr : found->second;
+        }
+        if (t && t->kind == TY_VARIANT && !t->var->variant) {
+            auto owner = shape(t->var->adt);
+            auto v = owner && owner->kind == TY_ENUM ? owner->enu->en->FindVariant(t->var->name) : nullptr;
+            return v ? ast.VariantTypeOf(owner, v, t->line) : nullptr;
+        }
+        return t;
+    };
+    function<bool(const Node *)> walk;
+    auto arms = [&](const vector<MatchArm> &as) {
+        return any_of(as.begin(), as.end(), [&](const MatchArm &a) {
+            return walk(a.expansion ? a.expansion : a.body);
+        });
+    };
+    walk = [&](const Node *x) {
+        if (!x) return false;
+        // Normal expansion diagnoses an oversized reachable source. The
+        // shape walk must stay bounded even for a tail never reached.
+        if (++visited > ExpansionClone::MAXNODES) return false;
+        if (auto fi = Is<IfExpr>(x))
+            return !fi->elseb || walk(fi->thenb) || walk(fi->elseb);
+        if (auto m = Is<MatchExpr>(x)) return arms(m->arms);
+        if (auto cf = Is<ConstFor>(x)) {
+            auto entry = [&](TypeExpr *t = nullptr) {
+                if (t) bindings.push_back({ cf->bindings.back(), t });
+                auto result = arms(cf->arms);
+                if (t) bindings.pop_back();
+                return result;
+            };
+            if (cf->source == ES_CONSTANTS) return !cf->constants.empty() && entry();
+            if (cf->source == ES_TYPES) {
+                for (auto t : cf->types) if (entry(shape(t))) return true;
+                return false;
+            }
+            auto t = shape(cf->types[0]);
+            if (!t) return false;
+            if (cf->source == ES_FIELDS) {
+                auto fields = t->kind == TY_STRUCT ? &t->struc->st->fields
+                            : t->kind == TY_VARIANT ? &t->var->variant->fields : nullptr;
+                return fields && any_of(fields->begin(), fields->end(),
+                                        [](const Field &f) { return !f.ispad; }) && entry();
+            }
+            if (t->kind == TY_ENUM) {
+                for (auto &v : t->enu->en->variants)
+                    if (entry(ast.VariantTypeOf(t, &v, cf->line))) return true;
+            }
+            return false;
+        }
+        if (auto l = Is<LoopExpr>(x)) return !BreaksWithValue(l->body);
+        if (auto b = Is<Block>(x)) return walk(b->tail);
+        if (auto e = Is<EarlyBlock>(x)) return walk(e->body);
+        return false;
+    };
+    return walk(n);
+}
+
 inline Node *TypeCheck::ExpansionConstant(Node *n, set<VarDecl *> &visiting) {
     // Checking a named global may have inserted its ordinary integer-to-
     // float conversion. This is not permission for a source-level cast.

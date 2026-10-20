@@ -21,6 +21,7 @@ struct ExpansionArg {
 };
 
 struct ExpansionClone {
+    static constexpr size_t MAXNODES = 100000;
     vector<ExpansionArg> args;
     map<SFunction *, SFunction *> functions;
     string_view trace;
@@ -38,8 +39,8 @@ struct ExpansionClone {
 inline Node *Node::Clone(Ast &ast) const {
     auto ctx = ast.expansionclone;
     if (ctx) {
-        if (++*ctx->size > 100000)
-            ctx->error(line, "const for expansion exceeds 100000 generated nodes");
+        if (++*ctx->size > ExpansionClone::MAXNODES)
+            ctx->error(line, cat("const for expansion exceeds ", ExpansionClone::MAXNODES, " generated nodes"));
         if (auto id = Is<Ident>(this)) {
             if (auto arg = ctx->Find(expansionbinding)) {
                 if (!arg->value) {
