@@ -297,6 +297,8 @@ fn min<T>(a: T, b: T) -> T
 fn max<T>(a: T, b: T) -> T
 fn clamp<T>(x: T, lo: T, hi: T) -> T
 fn abs<T>(x: T) -> T            // integers; plus abs(f32) and abs(f64) overloads
+fn rem<T>(a: T, b: T) -> T         // integers; pairs with `/`
+fn div_euclid<T>(a: T, b: T) -> T  // integers; pairs with `%`
 fn sign<T>(x: T) -> T           // -1, 0, 1 at x's type; f32/f64 overloads
 fn lerp(a: f64, b: f64, t: f64) -> f64      // and an f32 overload
 fn next_pow2(x: i64) -> i64     // smallest power of two >= max(x, 1)
@@ -306,11 +308,18 @@ fn ctz(x: u64) -> i64           // 64 for x == 0
 fn swap<T>(a: T&, b: T&)
 ```
 
-Generic numeric bodies cannot use literals for floats (`x < 0` does not
-typecheck at `T = f64`, since an integer constant never becomes a float,
-§6.3), hence the explicit float overloads. `popcount`/`clz`/`ctz` are pure
-Goose bit tricks; `extern` intrinsics (§8.4) can replace them if
-measurements justify the change.
+`rem` and `div_euclid` supply the missing partners of truncating `/` and
+Euclidean `%` without changing either operator. They compute at the
+operands' integer type, using the truncating quotient and its remainder,
+whose product and subtraction fit whenever the quotient does. Forming
+`a - a % b` instead can underflow. `rem` handles divisor -1 before division,
+since its zero result fits even when the quotient does not. The test for a
+negative value with all bits set accepts unsigned types too and requires
+integer operands. `div_euclid`
+uses `/` for its initial quotient, preserving its overflow checks.
+
+`abs` and `sign` have explicit float overloads. `popcount`/`clz`/`ctz` use
+the runtime's `extern` intrinsics (§8.4).
 
 ### 4.2 Hashing
 

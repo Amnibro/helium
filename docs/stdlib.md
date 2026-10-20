@@ -106,6 +106,8 @@ The library uses these conventions:
 fn min<T>(a: T, b: T) -> T          fn max<T>(a: T, b: T) -> T
 fn clamp<T>(x: T, lo: T, hi: T) -> T
 fn abs<T>(x: T) -> T                // integers; abs(f32) and abs(f64) overloads
+fn rem<T>(a: T, b: T) -> T         // integers; pairs with `/`
+fn div_euclid<T>(a: T, b: T) -> T  // integers; pairs with `%`
 fn sign<T>(x: T) -> T               // -1, 0, 1 at x's type; f32/f64 overloads
 fn lerp(a: f64, b: f64, t: f64) -> f64      // and f32
 fn next_pow2(x: i64) -> i64         // smallest power of two >= max(x, 1)
@@ -118,6 +120,22 @@ fn swap<T>(a: T&, b: T&)            // swap(x, y)
 `popcount`, `clz` and `ctz` are the runtime's, one instruction each where
 the C compiler has one (MSVC's `popcount` needs `/arch:AVX` or up for that),
 a loop under TinyCC.
+
+`rem` is the remainder of truncating division: `rem(-7, 3) == -1`, paired
+with `-7 / 3 == -2`. `div_euclid` is the quotient paired with Euclidean `%`:
+`div_euclid(-7, 3) == -3` and `-7 % 3 == 2`. It rounds down for positive
+divisors and up for negative ones (`div_euclid(-7, -3) == 3`). Thus a
+coordinate's tile and offset are `div_euclid(x, width)` and `x % width`.
+
+Both functions return the operands' integer type and abort on a zero
+divisor. `rem(MIN, -1)` is zero, including at `i64`; `div_euclid` follows
+`/`'s overflow rules (always abort at `i64.min, -1`; at narrower signed
+widths, debug abort and release wrap). Unsigned `rem` and `div_euclid` are
+ordinary `%` and `/`. Neither function takes floats; float `%` is already
+the truncating remainder (`fmod`). The identities
+`b * (a / b) + rem(a, b) == a` and
+`b * div_euclid(a, b) + a % b == a` hold mathematically when the quotient
+is representable, but evaluating their intermediate products can overflow.
 
 ### Hashing
 

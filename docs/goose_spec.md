@@ -1825,7 +1825,8 @@ the scalar is a member of the destination.
   never widens both sides behind the programmer's back.
 * Signedness is part of the type: `/`, `>>`, and the ordering comparisons are
   unsigned operations on unsigned types (`>>` shifts in zeroes) and signed on
-  signed ones (`>>` replicates the sign bit).
+  signed ones (`>>` replicates the sign bit). Integer `/` truncates toward
+  zero: `-7 / 3 == -2`, while `-7 >> 1 == -4`.
 * **`%` is Euclidean** at every integer type: the result lies in `[0, |b|)`
   and is never negative, whatever the dividend's sign. So `x % n` is a valid
   index into a length-`n` array for *any* `x` — the reduction idiom means
@@ -1834,8 +1835,20 @@ the scalar is a member of the destination.
   On unsigned types this is ordinary remainder; on signed ones it costs one
   predictable conditional add over C's truncating `%`, on an operation that
   is already a division. Consequently `i64.min % -1` is `0`, not a trap.
-  (A truncating form may be added later if a use for it appears; float `%`
-  stays C `fmod`, whose convention numeric code expects.)
+  Float `%` stays C `fmod`, so `-7.0 % 3.0 == -1.0`, while `-7 % 3 == 2`.
+* **Division pairs.** Integer `/` and `%` use different conventions, so
+  `b * (a / b) + a % b == a` does not hold in general. With `import std;`,
+  `rem(a, b)` is the truncating remainder (zero or the dividend's sign),
+  and `div_euclid(a, b)` is the Euclidean quotient. The matching identities
+  are `b * (a / b) + rem(a, b) == a` and
+  `b * div_euclid(a, b) + a % b == a`, as mathematical identities when the
+  quotient is representable; evaluating their intermediate products can
+  overflow. Both functions accept all eight integer types, returning the
+  operands' type. `div_euclid` rounds down for a positive divisor and up
+  for a negative one, and has the same zero-divisor and quotient-overflow
+  behavior as `/`. `rem` aborts on a zero divisor and returns zero for
+  `MIN, -1` at every signed width. For unsigned integers `div_euclid` is
+  ordinary `/` and `rem` is `%`.
 * **Signed overflow** (at the operation's width): aborts in debug builds;
   wraps two's-complement (defined) in release. The debug abort is per
   operation *as it executes*, not per operation as written: the optimizer

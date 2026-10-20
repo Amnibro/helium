@@ -363,6 +363,32 @@ print(-7 % 3, " ", 7 % -3, " ", -7 / 3);
 2 1 -2
 ```
 
+Integer `/` truncates toward zero, so `/` and `%` do not form a matching
+quotient/remainder pair for negative dividends. `std` supplies both missing
+partners, at every integer width: `rem(a, b)` pairs with `/`, and
+`div_euclid(a, b)` pairs with `%`.
+
+```goose
+import std;
+fn main() {
+    print(-7 / 3, " ", rem(-7, 3));
+    print(div_euclid(-7, 3), " ", -7 % 3);
+    print(div_euclid(-1, 10), " ", -1 % 10);  // tile and offset
+}
+```
+
+```
+-2 -1
+-3 2
+-1 9
+```
+
+`div_euclid` rounds down for a positive divisor and up for a negative one;
+its quotient overflows exactly when `/` does. `rem` is zero or has the
+dividend's sign, and `rem(MIN, -1)` is zero at every signed width.
+Both functions abort on a zero divisor. Float `%` uses C `fmod`, so
+`-7.0 % 3.0` is `-1.0`; these `std` functions take integers only.
+
 **Overflow.** Unsigned arithmetic wraps modulo 2^width in every build, by
 definition: that is what hashes, random number generators and bit tricks
 mean by unsigned math. Signed overflow aborts in a debug build (`--debug`)

@@ -19,6 +19,25 @@ fn abs<T>(x: T) -> T { if x < 0 { return -x; } return x; }
 fn abs(x: f32) -> f32 { if x < 0.0 { return -x; } return x; }
 fn abs(x: f64) -> f64 { if x < 0.0 { return -x; } return x; }
 
+// Truncating remainder pairs with `/`. The product stays between a and
+// zero; divisor -1 has remainder zero even when its quotient cannot fit.
+fn rem<T>(a: T, b: T) -> T {
+    // A negative all-ones divisor is -1; this also accepts unsigned types.
+    if b < 0 && ~b == 0 { return 0; }
+    return a - (a / b) * b;
+}
+
+// Euclidean division pairs with `%`. Adjust the truncating quotient from
+// its remainder, without forming a - (a % b), which can underflow.
+fn div_euclid<T>(a: T, b: T) -> T {
+    let q = a / b;
+    if rem(a, b) < 0 {
+        if b > 0 { return q - 1; }
+        return q + 1;
+    }
+    return q;
+}
+
 fn sign<T>(x: T) -> T {
     if x < 0 { return -1; }
     if 0 < x { return 1; }
