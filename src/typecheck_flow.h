@@ -1424,6 +1424,17 @@ inline Val TypeCheck::CheckMatch(MatchExpr *m, TypeExpr *expected, bool wantvalu
     } else if (st->kind == TY_ENUM) {
         enumtype = st;
     }
+    // A bound variant retains its concrete ADT identity across modes and
+    // cannot become a same-named constant in an integer match.
+    for (auto &arm : m->arms) {
+        for (auto &pi : arm.pat.items) {
+            auto owner = pi.variantowner;
+            if (owner && (!enumtype || owner->enu->en != enumtype->enu->en ||
+                          !TypeArgsEq(owner->enu->args, enumtype->enu->args)))
+                Error(arm.body, cat("const for variant ", ExprStr(pi.lo), " belongs to ",
+                                    TypeStr(owner), ", not ", TypeStr(enumtype ? enumtype : st)));
+        }
+    }
     auto entry = SaveFlow();
     Val result;
     auto resultreach = false;
@@ -1476,9 +1487,6 @@ inline Val TypeCheck::CheckMatch(MatchExpr *m, TypeExpr *expected, bool wantvalu
                 auto id = Is<Ident>(pi.lo);
                 if (!id || pi.hi || id->name.find("::") != string_view::npos)
                     Error(arm.body, "ADT match arms are variant names (or _)");
-                if (pi.variantowner && pi.variantowner->enu->en != en)
-                    Error(arm.body, cat("const for variant ", id->name, " belongs to ",
-                                        TypeStr(pi.variantowner), ", not ", en->name));
                 auto found = en->FindVariant(id->name);
                 if (!found && en->broken) throw Abandoned {};
                 if (!found)

@@ -1,6 +1,13 @@
 enum Item<T> { Some { value: T }, None }
 type Payload = Item<i64>.Some;
 
+fn fixed_name<T>(value: Item<T>&) {
+    match value { const for <N, V> in variants<const Item<T>..> { V => N, } }
+}
+fn variable_name<T>(value: Item<T>..&) {
+    match value { const for <N, V> in variants<Item<T>> { V => N, } }
+}
+
 fn filled<T>(value: T) {
     let payload = Item<T>.Some {
         const for <N, A> in fields<Item<T>.Some> { A: value, }
@@ -14,6 +21,7 @@ fn filled<T>(value: T) {
     print(payload.value);
     match fixed { Some p => print(p.value), None => {} }
     match variable { Some &p => print(p.value), None => {} }
+    print(fixed_name(fixed), " ", variable_name(variable));
 }
 
 fn main() {
