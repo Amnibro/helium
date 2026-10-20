@@ -2963,7 +2963,8 @@ inline TypeCheck::LitDeep TypeCheck::CheckInits(StructLit *sl, vector<Field> &fi
         // A variant's accessor (fields<V> over a variant type) belongs to a
         // literal of that variant, whichever mode the literal settles to.
         auto owned = fi.accessorowner && fi.accessorowner->kind == TY_VARIANT
-                         ? sl->variant && fi.accessorowner->var->variant == sl->variant
+                         ? sl->variant && fi.accessorowner->var->variant == sl->variant &&
+                               TypeArgsEq(fi.accessorowner->var->adt->enu->args, sl->einst->args)
                          : !fi.accessorowner || TypeEq(ast.PlainOf(selft), fi.accessorowner);
         if (!owned)
             Error(fi.val, cat("const for accessor belongs to ", TypeStr(fi.accessorowner),
