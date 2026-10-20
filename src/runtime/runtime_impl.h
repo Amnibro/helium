@@ -628,44 +628,93 @@ static void gs_sp_dropnode(gs_sppath *p, int64_t i) {
     GS_SPHEAD(p)->chain = i;
 }
 
-/* The largest count under node i, a leaf or an inner node. */
-static int64_t gs_sp_max(gs_sppath *p, int64_t i, int leaf) {
-    int64_t m = 0, k;
-    if (leaf) {
-        gs_spleaf *l = GS_SPLEAF(p, i);
-        for (k = 0; k < l->n; k++)
-            if (l->cnt[k] > m) m = l->cnt[k];
-    } else {
-        gs_spinner *in = GS_SPINNER(p, i);
-        for (k = 0; k < in->n; k++)
-            if (in->max[k] > m) m = in->max[k];
+/* Moves a node's entries from position s on up one, making room at s, or
+   those after s down onto it. A loop over the arrays together rather than
+   a memmove of each: a node holds a few entries, and the call costs more
+   than moving them. */
+static void gs_sp_open(gs_spleaf *lf, int64_t s) {
+    int64_t j;
+    for (j = lf->n; j > s; j--) {
+        lf->idx[j] = lf->idx[j - 1];
+        lf->cnt[j] = lf->cnt[j - 1];
     }
+    lf->n++;
+}
+
+static void gs_sp_close(gs_spleaf *lf, int64_t s) {
+    int64_t j;
+    lf->n--;
+    for (j = s; j < lf->n; j++) {
+        lf->idx[j] = lf->idx[j + 1];
+        lf->cnt[j] = lf->cnt[j + 1];
+    }
+}
+
+static void gs_sp_openin(gs_spinner *in, int64_t s) {
+    int64_t j;
+    for (j = in->n; j > s; j--) {
+        in->key[j] = in->key[j - 1];
+        in->max[j] = in->max[j - 1];
+        in->child[j] = in->child[j - 1];
+    }
+    in->n++;
+}
+
+static void gs_sp_closein(gs_spinner *in, int64_t s) {
+    int64_t j;
+    in->n--;
+    for (j = s; j < in->n; j++) {
+        in->key[j] = in->key[j + 1];
+        in->max[j] = in->max[j + 1];
+        in->child[j] = in->child[j + 1];
+    }
+}
+
+/* The largest of the w counts at v, or `stop` as soon as one reaches it. */
+static int64_t gs_sp_most(const int64_t *v, int64_t w, int64_t stop) {
+    int64_t m = 0, k;
+    for (k = 0; k < w && m < stop; k++)
+        if (v[k] > m) m = v[k];
     return m;
+}
+
+/* The largest count under node i, a leaf or an inner node, or `stop` as
+   soon as one reaches it. */
+static int64_t gs_sp_max(gs_sppath *p, int64_t i, int leaf, int64_t stop) {
+    return leaf ? gs_sp_most(GS_SPLEAF(p, i)->cnt, GS_SPLEAF(p, i)->n, stop)
+                : gs_sp_most(GS_SPINNER(p, i)->max, GS_SPINNER(p, i)->n, stop);
 }
 
 static int64_t gs_sp_key(gs_sppath *p, int64_t i, int leaf) {
     return leaf ? GS_SPLEAF(p, i)->idx[0] : GS_SPINNER(p, i)->key[0];
 }
 
-/* Brings the entries above level `from` of the path (the leaf being level
-   h) up to date with the node below each, stopping at the first that is. */
-static void gs_sp_fix(gs_sppath *p, int64_t from) {
-    int64_t l;
-    for (l = from - 1; l >= 0; l--) {
-        gs_spinner *in = GS_SPINNER(p, p->node[l]);
-        int64_t c = p->node[l + 1], k = p->pos[l];
-        int leaf = l + 1 == p->h;
-        int64_t key = gs_sp_key(p, c, leaf), max = gs_sp_max(p, c, leaf);
-        if (in->key[k] == key && in->max[k] == max) return;
+/* Brings the entries above level l of the path (the leaf being level h) up
+   to date with the node below each, after one count in the node at level l
+   went from `was` to `now` (0 for an entry added or removed), stopping at
+   the first entry that is unchanged. A node's largest count is rescanned
+   only where the count that held it shrank, and only until another as
+   large turns up; a `was` of INT64_MAX rescans the node at level l whole,
+   whatever changed in it. */
+static void gs_sp_fix(gs_sppath *p, int64_t l, int64_t was, int64_t now) {
+    for (; l > 0; l--) {
+        gs_spinner *in = GS_SPINNER(p, p->node[l - 1]);
+        int64_t k = p->pos[l - 1], c = p->node[l], m = in->max[k];
+        int leaf = l == p->h;
+        int64_t key = gs_sp_key(p, c, leaf);
+        int64_t nm = now >= m ? now : was < m ? m : gs_sp_max(p, c, leaf, was);
+        if (in->key[k] == key && nm == m) return;
         in->key[k] = key;
-        in->max[k] = max;
+        in->max[k] = nm;
+        was = m;
+        now = nm;
     }
 }
 
 /* Descends to the leaf holding the last span that starts at or before idx,
    and returns its position there, or -1 where no span does. */
 static int64_t gs_sp_find(gs_sppath *p, int64_t idx) {
-    int64_t l, i = GS_SPHEAD(p)->root, k, lo = 0, hi;
+    int64_t l, i = GS_SPHEAD(p)->root, k;
     gs_spleaf *lf;
     p->h = GS_SPHEAD(p)->height;
     for (l = 0; l < p->h; l++) {
@@ -677,27 +726,9 @@ static int64_t gs_sp_find(gs_sppath *p, int64_t idx) {
     }
     p->node[p->h] = i;
     lf = GS_SPLEAF(p, i);
-    hi = lf->n;
-    while (lo < hi) {
-        int64_t mid = (lo + hi) / 2;
-        if (lf->idx[mid] <= idx) lo = mid + 1;
-        else hi = mid;
-    }
-    p->pos[p->h] = lo - 1;
-    return lo - 1;
-}
-
-/* Moves the path to the next leaf, or returns 0 at the last. */
-static int gs_sp_nextleaf(gs_sppath *p) {
-    int64_t l = p->h - 1;
-    while (l >= 0 && p->pos[l] + 1 >= GS_SPINNER(p, p->node[l])->n) l--;
-    if (l < 0) return 0;
-    p->pos[l]++;
-    for (; l < p->h; l++) {
-        p->node[l + 1] = GS_SPINNER(p, p->node[l])->child[p->pos[l]];
-        p->pos[l + 1] = 0;
-    }
-    return 1;
+    for (k = 0; k < lf->n && lf->idx[k] <= idx; k++) {}
+    p->pos[p->h] = k - 1;
+    return k - 1;
 }
 
 /* A node full at the root splits under a new root of the two halves. */
@@ -706,10 +737,10 @@ static void gs_sp_newroot(gs_sppath *p, int64_t a, int64_t b, int leaf) {
     gs_spinner *rn = GS_SPINNER(p, r);
     rn->n = 2;
     rn->key[0] = gs_sp_key(p, a, leaf);
-    rn->max[0] = gs_sp_max(p, a, leaf);
+    rn->max[0] = gs_sp_max(p, a, leaf, INT64_MAX);
     rn->child[0] = a;
     rn->key[1] = gs_sp_key(p, b, leaf);
-    rn->max[1] = gs_sp_max(p, b, leaf);
+    rn->max[1] = gs_sp_max(p, b, leaf, INT64_MAX);
     rn->child[1] = b;
     GS_SPHEAD(p)->root = r;
     GS_SPHEAD(p)->height++;
@@ -720,7 +751,8 @@ static void gs_sp_newroot(gs_sppath *p, int64_t a, int64_t b, int leaf) {
 static void gs_sp_addchild(gs_sppath *p, int64_t l, int64_t k, int64_t child, int leaf) {
     for (;;) {
         gs_spinner *in = GS_SPINNER(p, p->node[l]), *o = in;
-        int64_t key = gs_sp_key(p, child, leaf), max = gs_sp_max(p, child, leaf), s = k, nn = 0;
+        int64_t key = gs_sp_key(p, child, leaf), max = gs_sp_max(p, child, leaf, INT64_MAX);
+        int64_t s = k, nn = 0;
         if (in->n == GS_SPAN_FAN) {
             int64_t half = GS_SPAN_FAN / 2;
             gs_spinner *r;
@@ -736,15 +768,12 @@ static void gs_sp_addchild(gs_sppath *p, int64_t l, int64_t k, int64_t child, in
                 s = k - half;
             }
         }
-        memmove(o->key + s + 1, o->key + s, (size_t)(o->n - s) * 8);
-        memmove(o->max + s + 1, o->max + s, (size_t)(o->n - s) * 8);
-        memmove(o->child + s + 1, o->child + s, (size_t)(o->n - s) * 8);
+        gs_sp_openin(o, s);
         o->key[s] = key;
         o->max[s] = max;
         o->child[s] = child;
-        o->n++;
         if (!nn) {
-            gs_sp_fix(p, l);
+            gs_sp_fix(p, l, 0, max);
             return;
         }
         if (l == 0) {
@@ -753,7 +782,7 @@ static void gs_sp_addchild(gs_sppath *p, int64_t l, int64_t k, int64_t child, in
         }
         /* The node keeps its place above, and its new right half goes
            after it. */
-        gs_sp_fix(p, l);
+        gs_sp_fix(p, l, INT64_MAX, 0);
         child = nn;
         leaf = 0;
         k = p->pos[l - 1] + 1;
@@ -779,17 +808,15 @@ static void gs_sp_insert(gs_sppath *p, int64_t k, int64_t idx, int64_t cnt) {
             s = k - half;
         }
     }
-    memmove(o->idx + s + 1, o->idx + s, (size_t)(o->n - s) * 8);
-    memmove(o->cnt + s + 1, o->cnt + s, (size_t)(o->n - s) * 8);
+    gs_sp_open(o, s);
     o->idx[s] = idx;
     o->cnt[s] = cnt;
-    o->n++;
     if (!nn) {
-        gs_sp_fix(p, p->h);
+        gs_sp_fix(p, p->h, 0, cnt);
     } else if (p->h == 0) {
         gs_sp_newroot(p, p->node[0], nn, 1);
     } else {
-        gs_sp_fix(p, p->h);
+        gs_sp_fix(p, p->h, INT64_MAX, 0);
         gs_sp_addchild(p, p->h - 1, p->pos[p->h - 1] + 1, nn, 1);
     }
 }
@@ -798,24 +825,19 @@ static void gs_sp_insert(gs_sppath *p, int64_t k, int64_t idx, int64_t cnt) {
    leaves its parent, and a root left with one child hands the root down. */
 static void gs_sp_delete(gs_sppath *p, int64_t k) {
     gs_spleaf *lf = GS_SPLEAF(p, p->node[p->h]);
-    int64_t l;
-    memmove(lf->idx + k, lf->idx + k + 1, (size_t)(lf->n - k - 1) * 8);
-    memmove(lf->cnt + k, lf->cnt + k + 1, (size_t)(lf->n - k - 1) * 8);
-    lf->n--;
+    int64_t c = lf->cnt[k], l;
+    gs_sp_close(lf, k);
     if (lf->n > 0 || p->h == 0) {
-        gs_sp_fix(p, p->h);
+        gs_sp_fix(p, p->h, c, 0);
         return;
     }
     gs_sp_dropnode(p, p->node[p->h]);
     for (l = p->h - 1;; l--) {
         gs_spinner *in = GS_SPINNER(p, p->node[l]);
-        int64_t e = p->pos[l];
-        memmove(in->key + e, in->key + e + 1, (size_t)(in->n - e - 1) * 8);
-        memmove(in->max + e, in->max + e + 1, (size_t)(in->n - e - 1) * 8);
-        memmove(in->child + e, in->child + e + 1, (size_t)(in->n - e - 1) * 8);
-        in->n--;
+        int64_t e = p->pos[l], m = in->max[e];
+        gs_sp_closein(in, e);
         if (in->n > 0) {
-            gs_sp_fix(p, l);
+            gs_sp_fix(p, l, m, 0);
             break;
         }
         /* Never the root: a root of one child is handed down below, so
@@ -834,13 +856,14 @@ static void gs_sp_delete(gs_sppath *p, int64_t k) {
    leaf, or the whole span where it holds no more. */
 static void gs_sp_take(gs_sppath *p, int64_t k, int64_t cnt) {
     gs_spleaf *lf = GS_SPLEAF(p, p->node[p->h]);
-    if (lf->cnt[k] <= cnt) {
+    int64_t c = lf->cnt[k];
+    if (c <= cnt) {
         gs_sp_delete(p, k);
         return;
     }
     lf->idx[k] += cnt;
-    lf->cnt[k] -= cnt;
-    gs_sp_fix(p, p->h);
+    lf->cnt[k] = c - cnt;
+    gs_sp_fix(p, p->h, c, c - cnt);
 }
 
 /* The front of the first span holding cnt, in index order, else the end of
@@ -851,52 +874,104 @@ static void gs_sp_take(gs_sppath *p, int64_t k, int64_t cnt) {
 GS_API int64_t gs_spans_alloc(uint8_t *base, int64_t *n, uint8_t **top, int64_t len,
                               int64_t cnt) {
     gs_sppath p;
-    int64_t l, i, k, idx;
-    gs_spleaf *lf;
-    int fit;
+    int64_t l, i, k = 0, j, m, c, now, idx, before[GS_SPAN_DEPTH];
+    gs_spleaf *lf = NULL;
     if (cnt == 0 || *n == 0) return len;
     p.base = base;
     p.n = n;
     p.top = top;
     p.h = GS_SPHEAD(&p)->height;
     i = GS_SPHEAD(&p)->root;
-    /* Down to the first fit, or else to the last span. A tree of one leaf
-       learns which while scanning it. */
-    fit = p.h == 0 || gs_sp_max(&p, i, 0) >= cnt;
+    /* Down the first entry at each level whose largest count holds cnt,
+       noting the largest count of the ones before it, all smaller than
+       cnt, for bringing the entries up to date once the span is taken
+       from. Where the root holds none, down to the last span. */
     for (l = 0; l < p.h; l++) {
         gs_spinner *in = GS_SPINNER(&p, i);
-        k = in->n - 1;
-        if (fit)
-            for (k = 0; in->max[k] < cnt; k++) {}
+        for (k = 0, m = 0; k < in->n && in->max[k] < cnt; k++)
+            if (in->max[k] > m) m = in->max[k];
+        if (k == in->n) break;
         p.node[l] = i;
         p.pos[l] = k;
+        before[l] = m;
         i = in->child[k];
     }
-    p.node[p.h] = i;
-    lf = GS_SPLEAF(&p, i);
-    k = 0;
-    if (fit)
-        while (k < lf->n && lf->cnt[k] < cnt) k++;
-    if (!fit || k == lf->n) {
+    if (l == p.h) {
+        lf = GS_SPLEAF(&p, i);
+        for (k = 0, m = 0; k < lf->n && lf->cnt[k] < cnt; k++)
+            if (lf->cnt[k] > m) m = lf->cnt[k];
+        before[l] = m;
+    }
+    if (l < p.h || k == lf->n) {
+        for (l = 0, i = GS_SPHEAD(&p)->root; l < p.h; l++) {
+            gs_spinner *in = GS_SPINNER(&p, i);
+            p.node[l] = i;
+            p.pos[l] = in->n - 1;
+            i = in->child[in->n - 1];
+        }
+        p.node[p.h] = i;
+        lf = GS_SPLEAF(&p, i);
         k = lf->n - 1;
         if (k < 0 || lf->idx[k] + lf->cnt[k] != len) return len;
+        idx = lf->idx[k];
+        gs_sp_take(&p, k, cnt);
+        return idx;
     }
+    p.node[p.h] = i;
+    p.pos[p.h] = k;
     idx = lf->idx[k];
-    gs_sp_take(&p, k, cnt);
+    c = lf->cnt[k];
+    if (c > cnt) {
+        lf->idx[k] = idx + cnt;
+        lf->cnt[k] = now = c - cnt;
+        j = k + 1;
+    } else if (lf->n > 1 || p.h == 0) {
+        gs_sp_close(lf, k);
+        now = 0;
+        j = k;
+    } else {
+        gs_sp_delete(&p, k);
+        return idx;
+    }
+    /* As gs_sp_fix, with what the descent noted: the count on the path at
+       level l went from c to `now`, and the node's other entries are the
+       ones before, smaller than cnt, and those from j on, which need
+       scanning only where c was the node's largest. */
+    for (l = p.h; l > 0; l--) {
+        gs_spinner *in = GS_SPINNER(&p, p.node[l - 1]);
+        int64_t e = p.pos[l - 1], mx = in->max[e], nm = mx;
+        int64_t key = gs_sp_key(&p, p.node[l], l == p.h);
+        if (c == mx) {
+            const int64_t *v = l == p.h ? lf->cnt : GS_SPINNER(&p, p.node[l])->max;
+            int64_t w = l == p.h ? lf->n : GS_SPINNER(&p, p.node[l])->n;
+            nm = before[l] > now ? before[l] : now;
+            for (; j < w && nm < c; j++)
+                if (v[j] > nm) nm = v[j];
+        }
+        if (in->key[e] == key && nm == mx) break;
+        in->key[e] = key;
+        in->max[e] = nm;
+        c = mx;
+        now = nm;
+        j = e + 1;
+    }
     return idx;
 }
 
-/* The spans around a run that starts at idx: the path to the leaf holding
-   the last span that starts at or before idx (its position k there, or -1),
-   and the span after that one, which follows it in its leaf or starts the
-   next leaf (nl and nk, reached by the path np), where there is one. */
+/* The spans around a run [idx, end): the path to the leaf holding the last
+   span that starts at or before idx (its position k there, or -1), and the
+   span after that one where it follows in the same leaf, or where it starts
+   the next leaf and at end (nl and nk, reached by the path np). A next
+   leaf's first index is the key of the entry that leads to it, so a path
+   to it is only made where its first span touches the run. */
 typedef struct {
     gs_spleaf *lf, *nl;
     int64_t k, nk;
     gs_sppath *np;
 } gs_spnear;
 
-static void gs_sp_near(gs_sppath *p, gs_sppath *q, int64_t idx, gs_spnear *s) {
+static void gs_sp_near(gs_sppath *p, gs_sppath *q, int64_t idx, int64_t end, gs_spnear *s) {
+    int64_t l;
     s->k = gs_sp_find(p, idx);
     s->lf = GS_SPLEAF(p, p->node[p->h]);
     s->nl = NULL;
@@ -907,30 +982,45 @@ static void gs_sp_near(gs_sppath *p, gs_sppath *q, int64_t idx, gs_spnear *s) {
         s->nk = s->k + 1;
         return;
     }
-    if (p->h == 0) return;
-    *q = *p;
-    if (gs_sp_nextleaf(q)) {
-        s->np = q;
-        s->nl = GS_SPLEAF(q, q->node[q->h]);
-        s->nk = 0;
+    for (l = p->h - 1; l >= 0 && p->pos[l] + 1 >= GS_SPINNER(p, p->node[l])->n; l--) {}
+    if (l < 0 || GS_SPINNER(p, p->node[l])->key[p->pos[l] + 1] != end) return;
+    q->base = p->base;
+    q->n = p->n;
+    q->top = p->top;
+    q->h = p->h;
+    memcpy(q->node, p->node, (size_t)(l + 1) * 8);
+    memcpy(q->pos, p->pos, (size_t)(l + 1) * 8);
+    for (q->pos[l]++; l < q->h; l++) {
+        q->node[l + 1] = GS_SPINNER(q, q->node[l])->child[q->pos[l]];
+        q->pos[l + 1] = 0;
     }
+    s->np = q;
+    s->nl = GS_SPLEAF(q, q->node[q->h]);
+    s->nk = 0;
 }
 
 /* [idx, idx + cnt) back on the freelist beside the spans gs_sp_near found
    around it, merged with the ones it touches. */
 static void gs_sp_release(gs_sppath *p, gs_spnear *s, int64_t idx, int64_t cnt) {
-    int prev = s->k >= 0 && s->lf->idx[s->k] + s->lf->cnt[s->k] == idx;
-    int next = s->nl && idx + cnt == s->nl->idx[s->nk];
+    gs_spleaf *lf = s->lf, *nl = s->nl;
+    int64_t k = s->k, nk = s->nk;
+    int prev = k >= 0 && lf->idx[k] + lf->cnt[k] == idx;
+    int next = nl && idx + cnt == nl->idx[nk];
     if (prev) {
-        s->lf->cnt[s->k] += cnt + (next ? s->nl->cnt[s->nk] : 0);
-        gs_sp_fix(p, p->h);
-        if (next) gs_sp_delete(s->np, s->nk);
+        int64_t c = lf->cnt[k], m = c + cnt + (next ? nl->cnt[nk] : 0);
+        lf->cnt[k] = m;
+        /* The merged count is larger than both it replaces, so one fix
+           covers the span after leaving the leaf as well. */
+        if (next && nl == lf) gs_sp_close(lf, nk);
+        gs_sp_fix(p, p->h, c, m);
+        if (next && nl != lf) gs_sp_delete(s->np, nk);
     } else if (next) {
-        s->nl->idx[s->nk] = idx;
-        s->nl->cnt[s->nk] += cnt;
-        gs_sp_fix(s->np, s->np->h);
+        int64_t c = nl->cnt[nk];
+        nl->idx[nk] = idx;
+        nl->cnt[nk] = c + cnt;
+        gs_sp_fix(s->np, s->np->h, c, c + cnt);
     } else {
-        gs_sp_insert(p, s->k + 1, idx, cnt);
+        gs_sp_insert(p, k + 1, idx, cnt);
     }
 }
 
@@ -951,7 +1041,7 @@ GS_API void gs_spans_free(uint8_t *base, int64_t *n, uint8_t **top, int64_t idx,
         hd->root = gs_sp_newnode(&p);
         GS_SPLEAF(&p, hd->root)->n = 0;
     }
-    gs_sp_near(&p, &q, idx, &s);
+    gs_sp_near(&p, &q, idx, idx + cnt, &s);
     gs_sp_release(&p, &s, idx, cnt);
 }
 
@@ -973,7 +1063,7 @@ GS_API int64_t gs_spans_regrow(uint8_t *base, int64_t *n, uint8_t **top, int64_t
     p.base = base;
     p.n = n;
     p.top = top;
-    gs_sp_near(&p, &q, idx, &s);
+    gs_sp_near(&p, &q, idx, end, &s);
     if (s.nl && s.nl->idx[s.nk] == end &&
         (s.nl->cnt[s.nk] >= cnt - ol || end + s.nl->cnt[s.nk] == len)) {
         gs_sp_take(s.np, s.nk, cnt - ol);

@@ -5192,12 +5192,24 @@ the largest count under it. Placing a run (`gs_spans_alloc`, for
 span that holds it by those largest counts, falling back to the last span,
 which starts the run where it reaches the end of the array; freeing
 (`gs_spans_free`) descends by index to the last span before the run, the
-span after it being its neighbor in the leaf or the first of the next. Growth
-of a slice that does not end the array (`gs_spans_regrow`) takes the same
-descent from the slice's start: the span after is the one it grows into,
-and failing that the two are what its elements merge with before it is
-placed again. Each is one descent, two for a move, and the entries above a
-changed leaf are brought up to date on the way back until one is unchanged.
+span after it being its neighbor in the leaf or the first of the next, whose
+first index is the key of the entry leading there, so a path to that leaf is
+only made where its first span touches the run. Growth of a slice that does
+not end the array (`gs_spans_regrow`) takes the same descent from the
+slice's start: the span after is the one it grows into, and failing that the
+two are what its elements merge with before it is placed again. Each is one
+descent, two for a move, and the entries above a changed leaf are brought up
+to date on the way back until one is unchanged. A largest count follows from
+the one count that changed under it: a count that grew only raises it, and
+the node is rescanned only where the count that held the largest shrank,
+and then only until another as large turns up. Placing a run notes on its
+way down the largest count before the first fit at each level, all smaller
+than the run, so that once it has taken from the span only the entries
+after the path need scanning. Nodes are searched front to back, which on
+nodes this size measured faster than a binary search, with branches or
+without (its steps wait on each other's loads), and entries are moved by
+loops rather than `memmove`, whose calls cost more than moving a few
+entries.
 A full node splits in halves; an emptied one leaves its parent, and a root
 left with one child hands the root down, so a freelist that empties is a
 single empty leaf again. Nodes are never returned to the stack: emptied ones
