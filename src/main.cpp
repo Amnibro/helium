@@ -1482,8 +1482,8 @@ int Main(int argc, char **argv) {
                     if (!BuildNativePart(*astp, pkg, filename, b, false, nb)) return 1;
                     rsps.push_back(nb.rsp);
                 }
-                return BuildExecutable(filename, outfile, builddir, tc, buildopts, DirOf(exe),
-                                       msgs, rsps, astp->packages[0].output);
+                return BuildExecutable(filename, outfile, builddir, tc, buildopts, msgs, rsps,
+                                       astp->packages[0].output);
             }
             if (program.empty()) return code;
             // The native parts the program reaches hand the run their
