@@ -355,7 +355,8 @@ given a type: an unknown name, the use closing an alias cycle, and a
 variant its enum lacks stand for a struct with no fields that names
 nothing (`SStruct::unknown`, `Ast::unknowntypes`, one per name), the
 variant a broken enum lacks silently; type arguments on an alias use and
-a `..` that cannot apply are reported and left out. The driver stops
+a `..` that cannot apply are reported and left out, the `..` silently
+where the alias's type is such a struct. The driver stops
 after resolution when it reported an error, as after the parse; the
 language server goes on to the check.
 
