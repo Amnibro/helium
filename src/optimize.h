@@ -63,7 +63,6 @@ struct Optimizer {
     int nc = 0, ncu = 0;         // Inline thresholds; 0 = inlining off.
     bool caninline = false;
     FnSpec *curspec = nullptr;   // Specialization being optimized (null: globals).
-    SFunction *cursf = nullptr;
     int inlined = 0, folded = 0, propagated = 0, tailloops = 0;
 
     // Per-VarDef write/address facts, collected across every live body before
@@ -602,14 +601,12 @@ struct Optimizer {
         caninline = nc > 0;
         for (auto sp : postorder) {
             curspec = sp;
-            cursf = sp->sf;
             SetupBaseCase(sp);
             OptBody(sp);
             TailRecurse(sp);
             Scan(sp);
         }
         curspec = nullptr;
-        cursf = nullptr;
         // Globals again, now able to inline into their initializers.
         for (auto g : ast.globals) OptGlobal(g);
         // Final liveness over the rewritten trees: specs whose every call got

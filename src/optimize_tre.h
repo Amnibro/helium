@@ -393,8 +393,6 @@ struct TailRecursion {
         auto ok = true;
         if (auto r = Is<Return>(n)) {
             if (r->target == sp->sf && r->vals.size() != 1) return false;
-        } else if (auto ib = Is<InlineBlock>(n)) {
-            if (ib->sf == sp->sf) return false;   // Our own body, spliced in.
         } else if (auto c = Is<Call>(n)) {
             if (SelfCall(c)) selfcalls = true;
             // A `return ... from` us lands in the innermost active frame
