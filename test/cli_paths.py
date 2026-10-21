@@ -3,8 +3,10 @@ exist yet, for the C and for `goose build`'s executable; a package source of
 "." or ".."; an --include path rooted by a leading separator kept as it is
 when -o names a file in the working directory; an import that resolves
 nowhere, which names the module and where it was looked for, or says that no
-standard library was found; and a directory where a file is read, a source or
-an embed_file, which a POSIX system opens and then fails to read."""
+standard library was found; a directory where a file is read, a source or
+an embed_file, which a POSIX system opens and then fails to read; and
+--gen-runtime-header from a compiler with no source tree around it, which
+says it cannot find the runtime's sources."""
 import os
 import shutil
 import subprocess
@@ -20,7 +22,7 @@ def check_cli_paths(exe, cc, base):
     base.mkdir(parents=True, exist_ok=True)
     with tempfile.TemporaryDirectory(prefix="cli-paths-", dir=base) as tmp:
         root = Path(tmp)
-        env = {k: v for k, v in os.environ.items() if k != "GOOSE_STDLIB"}
+        env = {k: v for k, v in os.environ.items() if k not in ("GOOSE_STDLIB", "GOOSE_RUNTIME")}
 
         def run(argv, cwd=root):
             r = subprocess.run([str(a) for a in argv], cwd=cwd, env=env, capture_output=True,
@@ -90,3 +92,7 @@ def check_cli_paths(exe, cc, base):
         require(code == 1 and "cannot find the module std" in text and
                 "found no standard library" in text and "GOOSE_STDLIB" in text,
                 "no standard library", text)
+        # Nor the runtime's sources, which --gen-runtime-header says.
+        code, text = run([lonexe, "--gen-runtime-header"], cwd=lone)
+        require(code == 1 and "cannot locate the runtime sources" in text,
+                "--gen-runtime-header outside a source tree", text)

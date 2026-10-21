@@ -1073,7 +1073,15 @@ int Main(int argc, char **argv) {
         else if (arg == "--jit") forcejit = true;
         else if (arg == "--standalone") standalone = true;
         else if (arg == "--multi-test") multitest = true;
-        else if (arg == "--gen-runtime-header") { GenRuntimeHeader(exe.c_str()); return 0; }
+        else if (arg == "--gen-runtime-header") {
+            try {
+                GenRuntimeHeader(exe.c_str());
+            } catch (CompileError &e) {
+                fprintf(stderr, "%s\n", e.msg.c_str());
+                return 1;
+            }
+            return 0;
+        }
         else if (arg == "--emit-runtime" && i + 1 < argc) {
             auto path = argv[++i];
             auto src = RuntimeObjectSource();

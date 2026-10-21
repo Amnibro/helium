@@ -198,8 +198,9 @@ inline vector<string> CMakeLinkClosure(const string &builddir, const string &tar
     auto replydir = cat(builddir, "/.cmake/api/v1/reply");
     string indexfile;
     std::error_code ec;
-    for (auto &e : filesystem::directory_iterator(filesystem::path(replydir), ec)) {
-        auto name = e.path().filename().string();
+    for (filesystem::directory_iterator it(filesystem::path(replydir), ec), end; !ec && it != end;
+         it.increment(ec)) {
+        auto name = it->path().filename().string();
         if (name.rfind("index-", 0) == 0 && name > indexfile) indexfile = name;   // The newest.
     }
     if (indexfile.empty())
