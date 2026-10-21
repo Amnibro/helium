@@ -199,6 +199,9 @@ struct TypeCheck {
         string_view expansiontrace;  // Structural entry containing the call site.
         bool isfunval = false;
         bool isdefault = false;    // Lexically isolated, but caller values remain live.
+        // A function value's body checking its tail as its value, the value
+        // of the call (CheckFunValCall, BuiltInPlace).
+        bool tailvalue = false;
         // A parameter default's (§7.1): the function, which parameter, and
         // for a nested function its declaration site, whose names the
         // default may not use (DefaultScopeName).
@@ -2692,6 +2695,7 @@ struct TypeCheck {
     Node *FindTemp(Node *n, bool self = true);
     void CycleCallTemps(int fi, Node *callnode);
     void CycleCallResult(FnSpec *spec, Node *callnode);
+    bool BuiltInPlace(int fi, int k, const vector<TypeExpr *> &rets);
     // A fresh body state for the extent of a scope; the enclosing one
     // returns when it ends.
     struct BodyScope {

@@ -2494,13 +2494,22 @@ is in), and reports the frame's call with it. A value under construction is
 caught after the fact: `NoteTemp` compares the frame's count of calls into
 the cycle across the check of an array or struct literal of non-fixed class
 and of `print` and `str`, as `CheckCycleInit` does across an initializer.
-The call's own non-fixed result is checked by position (`CycleCallResult`):
-along each joining frame's path from its call outward, through the
-constructs whose value the call's is, it must reach a `return` (or the
-body's tail) of the same result types, where codegen forwards it to the
-caller's destination, or a `push` or `append`, which builds it at the
-receiver's top (and which §1.3(4) then rejects as a growth the callee
-makes); anywhere else the caller takes a temporary for it before the call.
+The call's own non-fixed result is checked by position (`CycleCallResult`,
+`BuiltInPlace`): along each joining frame's path from its call outward,
+through the constructs whose value the call's is, it must reach a `return`
+(or the body's tail) of the same result types, where codegen forwards it to
+the caller's destination (a long-distance return's, into its channels), or
+a `push` or `append`, which builds it at the receiver's top (and which
+§1.3(4) then rejects as a growth the callee makes); anywhere else the caller
+takes a temporary for it before the call. A function value's body and a
+default are checked in frames of their own on the path of the statement
+taking them, so a call there is checked the same way up to the top of the
+body or default: a default's value is the argument or field taking it, and
+a function value's body's value is its call's, whose destination
+`EmitFvCall` takes before the body runs. That is known once the body's check
+ends, where `NoteTemp` checks a call of a function value whose non-fixed
+value was built across a call into the cycle by the same path walk, in the
+frame making the call.
 Codegen asserts the outcome: `NoStackAcrossCycleCall`, at
 every call emitted with a stack index, fails with an internal error where
 the callee is in the caller's cycle and any of the caller's stack indices

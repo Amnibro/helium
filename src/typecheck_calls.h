@@ -2044,12 +2044,26 @@ inline void TypeCheck::JoinCycle(FnSpec *spec, Node *callnode) {
 // literal, or the text print or str renders -- was under construction while
 // its parts were checked, on such a stack, so a call into the cycle among
 // them (the frame counts them, JoinCycle) held that stack across the call.
-// Not so format, whose text goes into the storage it is given.
+// Not so format, whose text goes into the storage it is given. A block's
+// value is built at its call's destination, which codegen takes before the
+// block's arguments and body run (EmitFvCall), so the calls into the cycle
+// among them hold it unless it is in place.
 inline void TypeCheck::NoteTemp(Node *n, const Val &v, int cyclecalls) {
     auto nonfixed = v.type && ClassOf(v.type) != SC_FIXED;
     n->nftemp = nonfixed && !v.lvalue && !v.pointee;
     auto fi = (int)frames.size() - 1;
     if (frames[fi].cyclecalls == cyclecalls) return;
+    if (auto c = Is<Call>(n); c && c->fvbody && nonfixed) {
+        auto &path = StateOf(fi).nodepath;
+        auto k = (int)path.size() - 1;
+        if (k >= 0 && path[k].node == n && !BuiltInPlace(fi, k, { v.type }))
+            Error(n, cat(FrameFnName(fi), " calls into its recursive cycle inside the block it "
+                         "calls here, whose non-fixed-size value would land in a temporary, "
+                         "holding a data stack across the call (§7.8): return it as the whole "
+                         "result, or take an output buffer by reference and build into it in "
+                         "place"));
+        return;
+    }
     const char *where = nullptr;
     if (auto c = Is<Call>(n)) {
         if (c->builtin == B_PRINT) where = "the arguments of print(...), whose text";
@@ -2151,25 +2165,18 @@ inline void TypeCheck::CycleCallTemps(int fi, Node *callnode) {
 }
 
 // The result of each frame's call into the cycle (JoinCycle), where it is
-// of non-fixed-size class: it is built where the call's destination is,
-// which is a temporary of the statement -- a data stack taken before the
-// call and held across it (§7.8) -- unless the destination is the caller's,
-// where the call is the whole value of a return of the same result types
-// (forwarded, codegen GenNormalReturn), reached through the constructs
-// whose value it is (a block's tail, a branch, a break's value); resizable
-// storage the value is pushed or appended into, built in place at its top
-// (which §1.3(4) then rejects where the callee grows that storage, as every
-// function of a cycle appending into it does); or a local being
-// initialized, which CheckCycleInit reports. An assignment's value is one
-// whose callee may use the target, rejected by §4.4 before this. A frame's
+// of non-fixed-size class, must be built in place (BuiltInPlace). A frame's
 // call is the innermost call on its path, whose callee's body the next
-// frame checks.
+// frame checks. A frame calling a block makes its call into the cycle
+// through the block's body, whose value is not known before the body's
+// check ends: NoteTemp checks that call then. A frame taking a default
+// makes none: the default's frame does.
 inline void TypeCheck::CycleCallResult(FnSpec *spec, Node *callnode) {
     auto last = (int)frames.size() - 1;
     auto fi = FrameOfSpec(CycleHead(spec));
     if (fi < 0) fi = 0;
     for (auto i = fi; i <= last; i++) {
-        if (!frames[i].spec || !frames[i].sf || frames[i].isfunval) continue;
+        if (!frames[i].spec) continue;
         auto callee = i == last ? spec : frames[i + 1].spec;
         if (i < last && (!callee || !frames[i + 1].sf || frames[i + 1].isfunval)) continue;
         auto nonfixed = false;
@@ -2179,59 +2186,80 @@ inline void TypeCheck::CycleCallResult(FnSpec *spec, Node *callnode) {
         auto k = (int)path.size() - 1;
         while (k >= 0 && (path[k].frame != i || !Is<Call>(path[k].node))) k--;
         if (k < 0 || (i == last && path[k].node != callnode)) continue;
-        auto call = path[k].node;
-        auto returned = [&](FnSpec *target, size_t at, size_t count) {
-            if (!target || !target->retsknown) return false;
-            if (count == 1 && callee->rets.size() > 1) {
-                // A single call forwarding every result (§7.1).
-                if (target->rets.size() != callee->rets.size()) return false;
-                for (size_t r = 0; r < callee->rets.size(); r++)
-                    if (!TypeEq(callee->rets[r], target->rets[r])) return false;
-                return true;
-            }
-            return callee->rets.size() == 1 && at < target->rets.size() &&
-                   TypeEq(callee->rets[0], target->rets[at]);
-        };
-        auto ok = false, exiting = false;
-        for (k--; k >= 0; k--) {
-            auto parent = path[k].node, child = path[k + 1].node;
-            // A break's value lands where the loop or block it exits
-            // delivers its own; nothing between them consumes it.
-            if (exiting) {
-                if (Is<LoopExpr>(parent) || Is<EarlyBlock>(parent)) exiting = false;
-                else if (Is<While>(parent) || Is<ForLoop>(parent)) break;
-                continue;
-            }
-            if (Is<Break>(parent)) { exiting = true; continue; }
-            if (auto b = Is<Block>(parent)) { if (b->tail == child) continue; break; }
-            if (auto ie = Is<IfExpr>(parent)) { if (child != ie->cond) continue; break; }
-            if (auto m = Is<MatchExpr>(parent)) { if (child != m->scrutinee) continue; break; }
-            if (Is<EarlyBlock>(parent) || Is<LoopExpr>(parent)) continue;
-            if (auto r = Is<Return>(parent)) {
-                size_t at = 0;
-                while (at < r->vals.size() && r->vals[at] != child) at++;
-                ok = returned(r->targetspec, at, r->vals.size());
-            } else if (auto c = Is<Call>(parent)) {
-                ok = (c->builtin == B_PUSH || c->builtin == B_APPEND) &&
-                     OperandIndex(c, child) == 1;
-            } else if (Is<VarDecl>(parent)) {
-                ok = true;
-            }
-            break;
-        }
-        // Off the top of the path through constructs whose value the call's
-        // is: the body's tail, which is returned (CheckSpecBodyOnce), else a
-        // statement whose value is dropped.
-        auto body = frames[i].spec->body;
-        if (k < 0 && !exiting && body && path[0].node == body->tail)
-            ok = returned(frames[i].spec, 0, 1);
-        if (ok) continue;
-        Error(call, cat(FrameFnName(i), " calls into its recursive cycle through ",
-                        callee->sf->name, ", whose non-fixed-size result would land in a "
-                        "temporary here, holding a data stack across the call (§7.8): return "
-                        "it as the whole result, or take an output buffer by reference and "
-                        "build into it in place"));
+        if (BuiltInPlace(i, k, callee->rets)) continue;
+        Error(path[k].node, cat(FrameFnName(i), " calls into its recursive cycle through ",
+                                callee->sf->name, ", whose non-fixed-size result would land in "
+                                "a temporary here, holding a data stack across the call (§7.8): "
+                                "return it as the whole result, or take an output buffer by "
+                                "reference and build into it in place"));
     }
+}
+
+// Whether the non-fixed-size value of path[k], a node of frame fi's
+// statement, of types `rets` (several for a call forwarding them all, §7.1),
+// is built where its destination is rather than in a temporary of the
+// statement: a data stack taken before the value is built, and held across
+// the calls into the recursive cycle made meanwhile (§7.8). It is where the
+// destination is the caller's, the value being the whole value of a return
+// of the same result types (forwarded, codegen GenNormalReturn, or built in
+// a long-distance return's channels, GenFromReturn), reached through the
+// constructs whose value it is (a block's tail, a branch, a break's value);
+// resizable storage the value is pushed or appended into, built in place at
+// its top (which §1.3(4) then rejects where the callee grows that storage,
+// as every function of a cycle appending into it does); or a local being
+// initialized, which CheckCycleInit reports. An assignment's value is one
+// whose callee may use the target, rejected by §4.4 before this. A function
+// value's body and a default are checked in frames of their own on the path
+// of the statement taking them: a function value's body's value lands where
+// its call's does, which NoteTemp checks once the body's check ends, and a
+// default's in the argument or field taking it.
+inline bool TypeCheck::BuiltInPlace(int fi, int k, const vector<TypeExpr *> &rets) {
+    auto &path = StateOf(fi).nodepath;
+    auto returned = [&](FnSpec *target, size_t at, size_t count) {
+        if (!target || !target->retsknown) return false;
+        if (count == 1 && rets.size() > 1) {
+            // A single call forwarding every result (§7.1).
+            if (target->rets.size() != rets.size()) return false;
+            for (size_t r = 0; r < rets.size(); r++)
+                if (!TypeEq(rets[r], target->rets[r])) return false;
+            return true;
+        }
+        return rets.size() == 1 && at < target->rets.size() && TypeEq(rets[0], target->rets[at]);
+    };
+    auto exiting = false;
+    for (k--; k >= 0; k--) {
+        auto parent = path[k].node, child = path[k + 1].node;
+        // Out of a function value's body, or out of a default.
+        if (path[k].frame != fi) {
+            auto c = Is<Call>(parent);
+            return !exiting && frames[fi].tailvalue && c && c->fvbody && c->fvbody->tail == child;
+        }
+        // A break's value lands where the loop or block it exits delivers
+        // its own; nothing between them consumes it.
+        if (exiting) {
+            if (Is<LoopExpr>(parent) || Is<EarlyBlock>(parent)) exiting = false;
+            else if (Is<While>(parent) || Is<ForLoop>(parent)) return false;
+            continue;
+        }
+        if (Is<Break>(parent)) { exiting = true; continue; }
+        if (auto b = Is<Block>(parent)) { if (b->tail == child) continue; return false; }
+        if (auto ie = Is<IfExpr>(parent)) { if (child != ie->cond) continue; return false; }
+        if (auto m = Is<MatchExpr>(parent)) { if (child != m->scrutinee) continue; return false; }
+        if (Is<EarlyBlock>(parent) || Is<LoopExpr>(parent)) continue;
+        if (auto r = Is<Return>(parent)) {
+            size_t at = 0;
+            while (at < r->vals.size() && r->vals[at] != child) at++;
+            return returned(r->targetspec, at, r->vals.size());
+        }
+        if (auto c = Is<Call>(parent))
+            return (c->builtin == B_PUSH || c->builtin == B_APPEND) && OperandIndex(c, child) == 1;
+        return Is<VarDecl>(parent) != nullptr;
+    }
+    // Off the top of the path through constructs whose value it is: the
+    // body's tail, which is returned (CheckSpecBodyOnce), else a statement
+    // whose value is dropped.
+    auto body = frames[fi].isfunval ? nullptr : frames[fi].spec->body;
+    return !exiting && body && path[0].node == body->tail && returned(frames[fi].spec, 0, 1);
 }
 
 // A cycle's back edges take the roots of its functions' results before their
@@ -3702,8 +3730,12 @@ inline Val TypeCheck::CheckFunValCall(Call *c, const FnValBind &fb, TypeExpr *ex
     CheckStmts(c->fvbody);
     Val v = VoidVal();
     if (auto tail = c->fvbody->tail) {
-        if (IsValuelessTail(tail)) CheckStmtExpr(tail);
-        else v = CheckValue(c->fvbody->tail, nullptr);
+        if (IsValuelessTail(tail)) {
+            CheckStmtExpr(tail);
+        } else {
+            frames.back().tailvalue = true;
+            v = CheckValue(c->fvbody->tail, nullptr);
+        }
     }
     // The body's value is checked without a destination and the call's value
     // is built as the body's, so a [] there never gets an element type.
