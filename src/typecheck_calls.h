@@ -3762,7 +3762,6 @@ inline Val TypeCheck::CheckFunValCall(Call *c, const FnValBind &fb, TypeExpr *ex
         }
         c->fvparams.push_back(vd);
     }
-    c->fvtarget = env->sf;
     c->fvbody = (Block *)fv->body->Clone(ast);
     BlockScope bs(*this, c->fvbody);
     CheckStmts(c->fvbody);

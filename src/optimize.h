@@ -929,7 +929,6 @@ inline Node *Call::Cp1(Inliner &inl) const {
     c->poolcheck = poolcheck;
     c->qtype = qtype;
     c->shaderblob = shaderblob;
-    c->fvtarget = fvtarget;
     c->rettypes = rettypes;
     c->fmtspecs = fmtspecs;
     c->fmtcontexts = fmtcontexts;

@@ -1081,7 +1081,6 @@ NODE(Call)
     Block *fvbody = nullptr;            // Call of a function value: checked body instance.
     Node *defaultinit = nullptr;        // Per-use default construction, visible to every pass.
     vector<VarDef *> fvparams;          //   its parameter bindings.
-    SFunction *fvtarget = nullptr;      //   the named fn a plain `return` inside exits.
     vector<TypeExpr *> rettypes;        // All return values (exprtype is rettypes[0] or void).
     // A call to a nested function that the optimizer copied out of the body
     // declaring it (Inliner): the variables the callee reaches as free
@@ -1866,12 +1865,13 @@ struct RootArg {
     // the same reason growshrink is: the shrink scans dismiss a slice whose
     // pointee the root cannot hold, and this is the one that survives that.
     bool byteview = false;
-    // Val::rootexact of the argument, ANDed over every call site that reaches
-    // the specialization. Deliberately not part of the key: within the callee
-    // a class always names one root's storage (typecheck.h keeps an inexactly rooted
-    // argument out of every other argument's class), and the only use of this
-    // bit -- codegen's proof that two classes are *different* arrays -- runs
-    // after every call site has been seen.
+    // Roots::Exact() of the roots the argument's class stands for (where it
+    // may point, or a holder's contents may), ANDed over every call site that
+    // reaches the specialization. Deliberately not part of the key: within
+    // the callee a class always names one root's storage (typecheck.h keeps
+    // an inexactly rooted argument out of every other argument's class), and
+    // the only use of this bit -- codegen's proof that two classes are
+    // *different* arrays -- runs after every call site has been seen.
     bool exact = true;
     // For a holder parameter (§9.2): everything the argument holds points
     // into the one array its class names, which the body then takes as that
