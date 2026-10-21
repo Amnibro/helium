@@ -385,7 +385,67 @@ inline string CodeGen::Unique(string base) {
 // every per-type artifact (typedef, size fn, eq fn); the C name is the
 // uniquified mangle.
 
+// The raw spelling does not tell every pair of types apart: `E<F..>` and
+// `E<F>..` both spell E_g_F_g_vm, `E<G.B>` and `E<G>.B` both E_g_G_g_B_p,
+// and `A<B>` spells what a struct named A_g_B does. The first type to spell
+// one keeps it; a type of other parts (SameMangle) spelling it later gets a
+// suffix, `_m1` and up, past every mangle already handed out. Parts are
+// mangled here too, so a type built of told-apart ones is told apart too.
 inline string CodeGen::Mangle(TypeExpr *t) {
+    auto raw = RawMangle(t);
+    auto &owners = mangleowners[raw];
+    for (auto &[o, m] : owners)
+        if (SameMangle(o, t)) return m;
+    auto m = raw;
+    for (auto n = 1; mangles.count(m); n++) m = cat(raw, "_m", n);
+    mangles.insert(m);
+    owners.push_back({ t, m });
+    return m;
+}
+
+// Whether two types are made of the parts RawMangle spells: TEq, but for
+// a nominal type its declaration and arguments rather than its instance,
+// so that instances whose arguments differ only in `const`, which shares a
+// layout, keep sharing their C types too.
+inline bool CodeGen::SameMangle(TypeExpr *a, TypeExpr *b) {
+    if (a == b) return true;
+    if (a->kind != b->kind) return false;
+    auto sameargs = [&](const vector<TypeExpr *> &x, const vector<TypeExpr *> &y) {
+        if (x.size() != y.size()) return false;
+        for (size_t i = 0; i < x.size(); i++)
+            if (!SameMangle(x[i], y[i])) return false;
+        return true;
+    };
+    switch (a->kind) {
+        case TY_INT:
+            return a->intstorage == b->intstorage && !a->ix == !b->ix &&
+                   (!a->ix || (a->ix->arr == b->ix->arr && a->ix->upto == b->ix->upto));
+        case TY_STRUCT:
+            return a->struc->st == b->struc->st && sameargs(a->struc->args, b->struc->args);
+        case TY_ENUM:
+            return a->enu->en == b->enu->en && a->enu->varmode == b->enu->varmode &&
+                   sameargs(a->enu->args, b->enu->args);
+        case TY_VARIANT:
+            return a->var->variant == b->var->variant && SameMangle(a->var->adt, b->var->adt);
+        case TY_ARRAY: {
+            auto &x = *a->arr, &y = *b->arr;
+            if (x.akind != y.akind || !SameMangle(x.sub, y.sub)) return false;
+            switch (x.akind) {
+                case A_FIXED: case A_LIMITED: return ArrSize(a->arr) == ArrSize(b->arr);
+                case A_VAR:                   return LenStore(a->arr) == LenStore(b->arr);
+                default:                      return true;
+            }
+        }
+        case TY_SLICE: return SameMangle(a->sub, b->sub);
+        case TY_REF:
+            return a->ref->optional == b->ref->optional &&
+                   a->ref->lenstorage == b->ref->lenstorage &&
+                   SameMangle(a->ref->sub, b->ref->sub);
+        default: return TEq(a, b);
+    }
+}
+
+inline string CodeGen::RawMangle(TypeExpr *t) {
     switch (t->kind) {
         case TY_INT: {
             if (t->intstorage == IS_VARINT) return "vi";
@@ -614,9 +674,12 @@ inline void CodeGen::EmitCFields(string &d, const vector<Field> &fields,
 inline void CodeGen::EnsureTagEnum(EnumInst *ei) {
     if (tagenums.count(ei)) return;
     tagenums.insert(ei);
-    // Use the base (mode-less) mangle as the constant prefix.
-    string base = Sanitize(ei->en->ns, ei->en->name);
-    for (auto a : ei->args) Append(base, "_", Mangle(a));
+    // Use the base (mode-less) mangle as the constant prefix, told apart
+    // from another instance's as a mangle is (Mangle).
+    string raw = Sanitize(ei->en->ns, ei->en->name);
+    for (auto a : ei->args) Append(raw, "_", Mangle(a));
+    auto base = raw;
+    for (auto n = 1; !tagbases.insert(base).second; n++) base = cat(raw, "_m", n);
     tagprefix[ei] = base;
     string d = "enum {\n";
     for (size_t vi = 0; vi < ei->en->variants.size(); vi++)

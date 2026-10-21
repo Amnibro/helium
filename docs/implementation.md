@@ -4189,7 +4189,14 @@ Layout details needed for byte/C compatibility (`FixedSize`, `LayoutFields`,
   of the two a signature names first; a variant type emits its enum, whose
   union holds the variant's struct by value and so emits it first. Every
   program name carries the `_g` suffix (`Sanitize`), namespaced ones the
-  namespace's length as well.
+  namespace's length as well. A type's mangle, which names its C type, its
+  per-type functions (`gs_eq_<T>`, `gs_size_<T>`, ...) and its queue,
+  spells its parts in a row, which runs some pairs of types together
+  (`E<F..>` and `E<F>..`, `E<G.B>` and `E<G>.B`, `A<B>` and a struct
+  `A_g_B`): the first type to spell one keeps it, and a later one of other
+  parts gets a suffix, `_m1` and up (`Mangle`, `SameMangle`), as does an
+  instance's prefix of tag constants another instance spells first
+  (`EnsureTagEnum`).
 * **Bytes values** (variable class) are self-describing byte images held as
   a `uint8_t *` to the value's start; a field behind a variable-size field
   is reached by a cursor that walks the intervening sizes (`FieldPtr`,

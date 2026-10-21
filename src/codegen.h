@@ -284,7 +284,13 @@ struct CodeGen {
     // uniquified mangle.
 
     string Mangle(TypeExpr *t);
+    string RawMangle(TypeExpr *t);
+    bool SameMangle(TypeExpr *a, TypeExpr *b);
     map<VarDef *, int> ixmangles;   // Index types' arrays, numbered for Mangle.
+    // Per raw spelling, the types it was handed out for (one of each set of
+    // parts, SameMangle) with the mangle each got; and every mangle handed out.
+    unordered_map<string, vector<pair<TypeExpr *, string>>> mangleowners;
+    unordered_set<string> mangles;
 
     unordered_map<string, string> ctypes;   // mangle -> emitted C type name.
     bool corebuiltins = false;
@@ -301,6 +307,7 @@ struct CodeGen {
     // Tag constants, one enum per EnumInst: <Mangle>_<Variant>_k.
     set<EnumInst *> tagenums;
     unordered_map<EnumInst *, string> tagprefix;
+    unordered_set<string> tagbases;   // The prefixes taken.
 
     void EnsureTagEnum(EnumInst *ei);
     string TagConst(EnumInst *ei, int vi);
