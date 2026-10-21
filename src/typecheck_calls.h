@@ -347,7 +347,8 @@ inline Val TypeCheck::ResolveCall(Call *c, vector<SFunction *> &cands, FnSpec *e
                 v = CheckV(a, nullptr);
             }
             // A pending array (`var out = []`) is completed by the builtin
-            // sharing this name (push, append, format), never by user code.
+            // sharing this name (push, append, alloc_index, alloc_ref,
+            // format), never by user code.
             if (nomatch && IsPendingArray(v.type)) {
                 *nomatch = true;
                 return Val {};

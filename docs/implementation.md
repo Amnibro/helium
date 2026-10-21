@@ -3281,13 +3281,17 @@ every check of which found it redundant, and which was not judged at a cast
 that warns itself.
 
 Builtins are one X-macro table (`builtins.h`) driving arity, receiver kinds,
-provenance requirements and simple signatures; `CheckBuiltin` handles the
-custom ones. `print`/`str`/`format` check renderability per type
-(`CheckRenderable`) and look up a user `format` overload in the type's
-namespace, then globally, specializing it with each rendered argument's
-permissions and provenance (`fmtspecs`, `fmtcontexts`). Nested hooks obey
-the same constraints. Their effects are applied between rendered arguments
-(§3.10, **Format overloads**).
+provenance requirements, simple signatures, and the arrays a builtin grows
+and shrinks: a growth of the receiver, or of the `out` argument `to_bytes`
+and `thread_wait` take (`BF_OUTARG`), is logged under the table's name for
+it (`grows`, `NoteGrow`), a `BF_SHRINKS` receiver gets the shrink checks,
+and an `e` or `a` argument completes a pending `var x = []` receiver.
+`CheckBuiltin` handles the custom ones. `print`/`str`/`format` check
+renderability per type (`CheckRenderable`) and look up a user `format`
+overload in the type's namespace, then globally, specializing it with each
+rendered argument's permissions and provenance (`fmtspecs`, `fmtcontexts`).
+Nested hooks obey the same constraints. Their effects are applied between
+rendered arguments (§3.10, **Format overloads**).
 `to_bytes`/`bytes_of` require `ImageSafe` element types (no plain references,
 slices or `in pool` references), `from_bytes` the stricter `VerifiableElem`
 (every relative reference points at an element or a variant of it); a

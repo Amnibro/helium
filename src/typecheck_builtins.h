@@ -11,8 +11,8 @@ namespace goose {
 
 // One entry for every builtin (builtins.h), for both spellings — f(a, b)
 // and a.f(b) arrive with a uniform argument list (receiver first). The
-// table drives arity, receiver kind/provenance, and simple signatures;
-// BF_CUSTOM entries get dedicated code below.
+// table drives arity, receiver kind/provenance, simple signatures and the
+// growths and shrinks; what it cannot express gets dedicated code below.
 inline Val TypeCheck::CheckBuiltin(Call *c, const BuiltinDef &d, vector<Node *> &args, Val *precv) {
     c->builtin = d.kind;
     if (c->trailing) Error(c, cat(d.name, " takes no function value"));
@@ -155,8 +155,9 @@ inline Val TypeCheck::CheckBuiltin(Call *c, const BuiltinDef &d, vector<Node *> 
         case B_EMBED_SHADER:
         case B_EMBED_FILE: {
             // The shader compiled, or the file read, now, and the result a
-            // read-only view of static data, like a string literal's
-            // (stdlib/gfx.goose, docs/design/packages.md §6.5).
+            // read-only view of static data, like a string literal's (the
+            // gfx package's gfx.goose, github.com/aardappel/goose_gfx, and
+            // docs/design/packages.md §6.5).
             c->shaderblob = c->builtin == B_EMBED_FILE ? EmbedFile(c, args) : EmbedShader(c, args);
             c->rettypes.push_back(cu8slice);
             Val v;
@@ -338,12 +339,12 @@ inline Val TypeCheck::CheckBuiltin(Call *c, const BuiltinDef &d, vector<Node *> 
     if (elem && elem->kind == TY_VOID) {
         auto rt = rv.type;
         if (IsPlainRef(rt)) rt = rt->ref->sub;
-        if (d.kind == B_PUSH || d.kind == B_ALLOC_INDEX || d.kind == B_ALLOC_REF) {
+        if (d.args[0] == 'e') {
             auto av = DecayRef(CheckV(args[1], nullptr));
             // The element's own type is what completes the array (JudgeCastAt).
             JudgeCastAt(args[1], nullptr, av);
             CompletePending(rt, PendingElemFrom(av, args[1]), c->line);
-        } else if (d.kind == B_APPEND) {
+        } else if (d.args[0] == 'a') {
             auto av = DecayRef(CheckV(args[1], nullptr));
             CompletePending(rt, PendingElemFromSeq(av, c), c->line);
         } else if (d.kind == B_FORMAT) {
@@ -356,14 +357,8 @@ inline Val TypeCheck::CheckBuiltin(Call *c, const BuiltinDef &d, vector<Node *> 
     // The receiver grows (§1.3(4)): logged ahead of the arguments, so that
     // a value built in place among them is checked against the growths
     // within it alone.
-    if (d.kind == B_PUSH || d.kind == B_APPEND || d.kind == B_ALLOC_INDEX ||
-        d.kind == B_ALLOC_REF || d.kind == B_ALLOC_SLICE || d.kind == B_REALLOC_SLICE ||
-        d.kind == B_FORMAT || d.kind == B_RESIZE) {
-        auto how = d.kind == B_PUSH ? "push into " : d.kind == B_APPEND ? "append to "
-                 : d.kind == B_FORMAT ? "format into " : d.kind == B_RESIZE ? "resize "
-                 : "allocate in ";
-        NoteGrow(c, rv, cat(how, ExprStr(args[0])), recvarr);
-    }
+    if (*d.grows && !(d.flags & BF_OUTARG))
+        NoteGrow(c, rv, cat(d.grows, " ", ExprStr(args[0])), recvarr);
     // The serialization pair (docs/design/serialization.md §4). to_bytes
     // builds the image -- a varint byte count then the element region --
     // either as a fresh u8[>..] or appended to a builder the caller owns, so
@@ -410,8 +405,7 @@ inline Val TypeCheck::CheckBuiltin(Call *c, const BuiltinDef &d, vector<Node *> 
     // A grow-only array shrinks only where nothing can still be rooted in
     // it (§5.1); pop, pop_n and resize also need an element the shrink can
     // find, which a sequential array has not got.
-    auto shrink = d.kind == B_POP || d.kind == B_POP_N || d.kind == B_RESIZE ||
-                  d.kind == B_CLEAR;
+    auto shrink = (d.flags & BF_SHRINKS) != 0;
     if (ak == A_GROW && shrink) {
         CheckGrowShrink(c, d.name, args[0], rv);
         if (d.kind != B_CLEAR && ClassOf(elem) != SC_FIXED)
@@ -513,8 +507,6 @@ inline Val TypeCheck::CheckBuiltin(Call *c, const BuiltinDef &d, vector<Node *> 
         auto &an = args[base + i];
         switch (d.args[i]) {
             case 'i': CheckIntAny(an); break;
-            case 'f': CheckValue(an, ast.flttypes[FS_F64]); break;
-            case 'b': CheckValue(an, ast.booltype); break;
             case 'e': {
                 // An element built in place is under construction while
                 // its expression runs (§1.3(4)).
@@ -581,7 +573,6 @@ inline Val TypeCheck::CheckBuiltin(Call *c, const BuiltinDef &d, vector<Node *> 
     switch (d.rets[0]) {
         case 0: break;
         case 'i': v.type = ast.inttypes[IS_I64]; break;
-        case 'b': v.type = ast.booltype; break;
         case 'e':
             // A popped reference or slice leaves as itself: what a temporary
             // holds is not rooted at the temporary (§9.2).
@@ -631,8 +622,8 @@ inline Val TypeCheck::CheckBuiltin(Call *c, const BuiltinDef &d, vector<Node *> 
     return v;
 }
 
-// The growable u8 array a builtin's `out` argument appends to, as `form`
-// names the call: to_bytes(a, out), thread_wait(id, msg).
+// The growable u8 array a builtin's `out` argument appends to (BF_OUTARG),
+// as `form` names the call: to_bytes(a, out), thread_wait(id, msg).
 inline void TypeCheck::CheckByteOut(Call *c, Node *out, const string &form) {
     auto ov = CheckV(out, nullptr);
     out->exprtype = ov.type;
@@ -645,7 +636,7 @@ inline void TypeCheck::CheckByteOut(Call *c, Node *out, const string &form) {
     if (!ov.writable)
         Error(c, "cannot append through a non-writable value (let, or "
                  "non-writable provenance, §9.5)");
-    NoteGrow(c, ov, cat("append to ", ExprStr(out)), ot);
+    NoteGrow(c, ov, cat(BuiltinByKind(c->builtin).grows, " ", ExprStr(out)), ot);
 }
 
 // An argument of print/str/format (§3.7): every value type has a text
