@@ -501,7 +501,7 @@ inline void TypeCheck::BindRefProvenance(VarDef *vd, const Val &v) {
 inline bool TypeCheck::BoundAnywhere(VarDef *vd) {
     auto t = vd->type;
     return vd->isglobal && vd->isvar && t && IsRefOrSlice(t) &&
-           !(t->kind == TY_REF && t->ref->lenstorage >= 0 && !t->ref->pool);
+           !IsSelfRelRef(t);
 }
 
 // Where such a global points, as a read of it in a function's body sees it.

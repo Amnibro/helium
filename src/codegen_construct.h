@@ -278,11 +278,7 @@ inline bool CodeGen::HasRelRef(TypeExpr *t) {
 // Does a value of type t hold a self-relative reference by value, at any
 // depth, variable-size parts included? Its offsets depend on where it sits.
 inline bool CodeGen::HasSelfRelRef(TypeExpr *t) {
-    switch (t->kind) {
-        case TY_REF: return t->ref->lenstorage >= 0 && !t->ref->pool;
-        case TY_ARRAY: return HasSelfRelRef(t->arr->sub);
-        default: return AnyField(t, [&](TypeExpr *ft) { return HasSelfRelRef(ft); });
-    }
+    return HasRelRefOf(t, false, [&](TypeExpr *x) { return FieldRuns(x); });
 }
 
 // An exit's value that is a local holding self-relative references reaches
@@ -364,7 +360,7 @@ inline CodeGen::SrcElems CodeGen::GenSrcElems(Node *n) {
 inline void CodeGen::GenConstruct(Node *n, const string &stk, TypeExpr *want, const string &lenlv) {
     if (auto it = fillvalues.find(n); it != fillvalues.end()) {
         auto target = want ? want : it->second.t;
-        if (target->kind == TY_REF && target->ref->lenstorage >= 0)
+        if (IsRelRef(target))
             EmitRelStore(stk, target, GenX(n), n->line, RelValue(n));
         else if (IsVarintT(target)) EmitVarintStore(stk, GenXD(n, ast.inttypes[IS_I64]));
         else if (IsBytesT(target) || IsResz(target))
@@ -448,7 +444,7 @@ inline void CodeGen::GenConstruct(Node *n, const string &stk, TypeExpr *want, co
     // from that slot, not the pointer (§3.9), and null the optional's zero.
     // Reference values always reach here as plain pointers, relative ones
     // having been decoded on the read.
-    if (want && want->kind == TY_REF && want->ref->lenstorage >= 0 && et->kind == TY_REF) {
+    if (want && IsRelRef(want) && et->kind == TY_REF) {
         EmitRelStore(stk, want, GenX(n), n->line, RelValue(n));
         return;
     }
@@ -603,7 +599,7 @@ inline void CodeGen::ConstructCall(Call *c, TypeExpr *et, const string &stk, Typ
     // A returned reference landing in a relative-reference slot stores the
     // offset, as any other reference value does there (§3.9).
     auto slot = want ? want : et;
-    if (slot->kind == TY_REF && slot->ref->lenstorage >= 0) {
+    if (IsRelRef(slot)) {
         EmitRelStore(stk, slot, CallVal0(c, rets[0], slot), c->line);
         return;
     }
@@ -929,7 +925,7 @@ inline void CodeGen::FreezeFill(Node *n, TypeExpr *t, vector<Node *> &added) {
         }
     }
     if (IsVarintT(t)) t = ast.inttypes[IS_I64];
-    if (t->kind == TY_REF && t->ref->lenstorage >= 0)
+    if (IsRelRef(t))
         t = ast.RefTo(t->ref->sub, n->line, t->ref->optional);
     Loc lv;
     lv.t = t;
@@ -965,7 +961,7 @@ inline void CodeGen::FixedLitAtStk(Node *n, const string &stk) {
             Gap(FixedSize(ft));
             return;
         }
-        if (ft->kind == TY_REF && ft->ref->lenstorage >= 0) {
+        if (IsRelRef(ft)) {
             if (Is<SelfRef>(init)) {
                 EmitRelSelfStore(stk, ft, fieldoff, n->line);
             } else {
@@ -1062,7 +1058,7 @@ inline void CodeGen::FixedArrayLitAt(ArrayLit *al, const string &base, bool inro
     auto et = al->exprtype;
     assert(et->kind == TY_ARRAY);
     auto elem = et->arr->sub;
-    auto rel = elem->kind == TY_REF && elem->ref->lenstorage >= 0;
+    auto rel = IsRelRef(elem);
     auto emitelem = [&](Node *e, const string &path) {
         if (rel) EmitRelStoreAt(cat("(uint8_t *)&", path), elem, GenX(e), al->line, inroot,
                                 RelValue(e));
@@ -1109,7 +1105,7 @@ inline void CodeGen::StructLitAt(StructLit *sl, const string &base, bool inroot)
                 L("GS_MEMZERO(&", path, ", sizeof(", path, "));");
                 continue;
             }
-            if (ft->kind == TY_REF && ft->ref->lenstorage >= 0) {
+            if (IsRelRef(ft)) {
                 if (Is<SelfRef>(init))
                     EmitRelSelfAt(cat("(uint8_t *)&", path), ft, baseoff + lo.offs[i],
                                   sl->line, inroot);
@@ -1288,7 +1284,7 @@ inline void CodeGen::GenFrameObjLit(StructLit *sl, StructInst *si, const string 
         }
         // Only the `in pool` form can be a frame object's field (C.2), so
         // the offset does not depend on where the object is built.
-        if (ft->kind == TY_REF && ft->ref->lenstorage >= 0) {
+        if (IsRelRef(ft)) {
             EmitRelStoreAt(cat("(uint8_t *)&", flv), ft, GenX(init), sl->line, true,
                            RelValue(init));
             continue;
@@ -1308,7 +1304,7 @@ inline void CodeGen::GenFieldInits(StructLit *sl, const vector<Field> &fields,
         }
         auto init = sl->InitFor((int)i);
         auto ft = ftypes[i];
-        if (ft->kind == TY_REF && ft->ref->lenstorage >= 0) {
+        if (IsRelRef(ft)) {
             // Relative-reference slot: store from the plain reference.
             if (!init) {
                 if (ft->ref->lenstorage == IS_VARINT) { L("*", Top(stk), " = 0;"); Bump(stk, "1"); }

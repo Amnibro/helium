@@ -960,7 +960,7 @@ inline string CodeGen::LoadLoc(Loc lv, TypeExpr *et, Line ln) {
         DerefLoc(lv);
         return LoadLoc(lv, et, ln);
     }
-    if (lv.t->kind == TY_REF && lv.t->ref->lenstorage >= 0) {
+    if (IsRelRef(lv.t)) {
         // Relative reference load: an ordinary (possibly fat) reference;
         // a zero offset is the null of the optional form (§3.9).
         auto &r = *lv.t->ref;
@@ -1442,7 +1442,7 @@ inline string CodeGen::CtlValX(Node *n) {
     auto t = T();
     auto vt = n->exprtype;
     if (vt->kind == TY_INT && vt->intstorage == IS_VARINT) vt = ast.inttypes[IS_I64];
-    if (vt->kind == TY_REF && vt->ref->lenstorage >= 0)
+    if (IsRelRef(vt))
         vt = ast.RefTo(vt->ref->sub, n->line, vt->ref->optional);
     FixedLocal(vt, t);
     // The type rides along: a spliced body may deliver a reference where

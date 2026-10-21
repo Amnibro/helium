@@ -3630,7 +3630,7 @@ inline TypeCheck::Alias TypeCheck::ReachesBuilt(VarDef *v, VarDef *built, bool e
                                                 Node *lval, TypeExpr *target, TypeExpr *arr,
                                                 VarDef *&root) {
     auto t = v->type;
-    if (!t || t->kind == TY_SLICE || (t->kind == TY_REF && t->ref->lenstorage >= 0))
+    if (!t || t->kind == TY_SLICE || IsRelRef(t))
         return AL_NO;
     auto isref = t->kind == TY_REF;
     if (isref ? !MayHoldBuilt(t->ref->sub, lval, target) : !CanContain(t, arr)) return AL_NO;

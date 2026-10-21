@@ -704,7 +704,7 @@ inline TypeExpr *TypeCheck::LoadType(TypeExpr *t) {
     // A const value loads as a copy, which is plain; a const reference or
     // slice loads as itself, its qualifier being about the pointee.
     if (t->cq && !IsRefOrSlice(t)) return ast.PlainOf(t);
-    if (t->kind == TY_REF && t->ref->lenstorage >= 0) {
+    if (IsRelRef(t)) {
         auto r = ast.RefTo(t->ref->sub, t->line, t->ref->optional);
         r->cq = t->cq;
         return r;
@@ -723,7 +723,7 @@ inline bool TypeCheck::LoadedTypeEq(TypeExpr *t, TypeExpr *of) {
         value.cq = false;
         return TypeEq(&value, of);
     }
-    if (t->kind == TY_REF && t->ref->lenstorage >= 0) {
+    if (IsRelRef(t)) {
         TypeRef ref;
         ref.sub = t->ref->sub;
         ref.optional = t->ref->optional;
@@ -737,7 +737,7 @@ inline bool TypeCheck::LoadedTypeEq(TypeExpr *t, TypeExpr *of) {
 // or a default<T>(). A relative reference is only ever storage, so as a
 // value it is the plain reference a load of it gives (§3.9).
 inline TypeExpr *TypeCheck::ValueType(TypeExpr *t) {
-    return t->kind == TY_REF && t->ref->lenstorage >= 0 ? LoadType(t) : t;
+    return IsRelRef(t) ? LoadType(t) : t;
 }
 
 // The type of a variable or parameter declared with written type t, which
@@ -747,7 +747,7 @@ inline TypeExpr *TypeCheck::ValueType(TypeExpr *t) {
 // generic code over an array of links, holds the plain reference, as a
 // result of that type does (§3.9).
 inline TypeExpr *TypeCheck::DeclType(TypeExpr *t, TypeExpr *s) {
-    return t->kind == TY_REF && t->ref->lenstorage >= 0 ? s : ValueType(s);
+    return IsRelRef(t) ? s : ValueType(s);
 }
 
 // The implicit numeric widenings (§6.3): conversions that can never
@@ -776,11 +776,7 @@ inline Val TypeCheck::CheckIntAny(Node *n) {
 // `in pool` offset is measured from the pool and copies fine (§3.9), and
 // counts only with `inpool`.
 inline bool TypeCheck::HasRelRefT(TypeExpr *t, bool inpool) {
-    switch (t->kind) {
-        case TY_REF: return t->ref->lenstorage >= 0 && (inpool || !t->ref->pool);
-        case TY_ARRAY: return HasRelRefT(t->arr->sub, inpool);
-        default: return AnyField(t, [&](TypeExpr *ft) { return HasRelRefT(ft, inpool); });
-    }
+    return HasRelRefOf(t, inpool, [&](TypeExpr *x) { return FieldRuns(x); });
 }
 
 // Whether n's value (`result`: which of a multi-value call's results) is
@@ -942,7 +938,7 @@ inline void TypeCheck::CheckNamedResultUses(FnSpec *spec) {
 inline void TypeCheck::SelfRelPointees(TypeExpr *t, vector<TypeExpr *> &out) {
     switch (t->kind) {
         case TY_REF:
-            if (t->ref->lenstorage >= 0 && !t->ref->pool) out.push_back(LoadType(t->ref->sub));
+            if (IsSelfRelRef(t)) out.push_back(LoadType(t->ref->sub));
             return;
         case TY_ARRAY: SelfRelPointees(t->arr->sub, out); return;
         default: EachField(t, [&](TypeExpr *ft) { SelfRelPointees(ft, out); });
@@ -1321,7 +1317,7 @@ inline Roots TypeCheck::ReadBackRoot(TypeExpr *rt, const Roots &container, bool 
         out.unknown = true;
         return out;
     }
-    auto relative = rt->kind == TY_REF && rt->ref->lenstorage >= 0;
+    auto relative = IsRelRef(rt);
     if (contents && !relative && container.Any([&](const RootAlt &a) { return IsTemp(a.root); }))
         return contents->roots;
     // A relative reference that names a pool points into that pool, exactly,

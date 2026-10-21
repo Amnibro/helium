@@ -733,7 +733,7 @@ inline void Call::CgAny(CodeGen &cg, const Dst &d) {
     if (!rets.empty() && !cg.IsVoidT(exprtype) &&
         (!cg.IsBytesT(exprtype) || IsVarintT(exprtype) || exprtype->kind == TY_REF)) {
         auto r0 = cg.CallVal0(this, rets[0], d.t);
-        if (d.k == DK_LVALUE && d.t && d.t->kind == TY_REF && d.t->ref->lenstorage >= 0)
+        if (d.k == DK_LVALUE && d.t && IsRelRef(d.t))
             cg.EmitRelStoreAt(cat("(uint8_t *)&", d.s), d.t, r0, line, false);
         else if (d.k == DK_LVALUE && r0 != d.s) cg.L(d.s, " = ", r0, ";");
     }
@@ -885,7 +885,7 @@ inline void Assign::CgStmt(CodeGen &cg) {
     }
     // Plain assignment, by the target's representation (§4.4).
     auto t = lv.t;
-    if (t->kind == TY_REF && t->ref->lenstorage >= 0) {
+    if (IsRelRef(t)) {
         // Relative-reference slot: encode from the plain reference value.
         cg.GenRelAssign(lv, lval, rhs, line);
         return;
@@ -1133,7 +1133,7 @@ inline void ForLoop::CgStmt(CodeGen &cg) {
                                 esz, "))");
         if (!vdef->copybind && !held) {
             cg.L(cg.CT(et), " ", iv, " = &", elem, ";");
-        } else if (v.elem->kind == TY_REF && v.elem->ref->lenstorage >= 0) {
+        } else if (IsRelRef(v.elem)) {
             // A relative-reference element bound by value: the binding is the
             // decoded pointer, as indexing the array would give (§3.9).
             auto fa = cg.T();

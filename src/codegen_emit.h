@@ -803,7 +803,7 @@ inline void CodeGen::EmitGlobalInit() {
                 GenConstruct(g->inits[i], gstks[d], d->type);
             } else if (PrefVar(d)) {
                 L(gnames[d], " = ", GenPrefVal(g->inits[i]), ";");
-            } else if (d->type->kind == TY_REF && d->type->ref->lenstorage >= 0) {
+            } else if (IsRelRef(d->type)) {
                 EmitRelStoreAt(cat("(uint8_t *)&", gnames[d]), d->type, GenX(g->inits[i]),
                                g->inits[i]->line, true, RelValue(g->inits[i]));
             } else {

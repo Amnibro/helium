@@ -341,6 +341,10 @@ inline bool IsOpaque(const TypeExpr *t) { return t && t->kind == TY_GENERIC && t
 inline bool IsPlainRef(const TypeExpr *t) {
     return t->kind == TY_REF && !t->ref->optional && t->ref->lenstorage < 0;
 }
+// A relative reference (§3.9): an offset stored in place of an address.
+inline bool IsRelRef(const TypeExpr *t) { return t->kind == TY_REF && t->ref->lenstorage >= 0; }
+// One measured from where it lies, rather than from an `in pool` base.
+inline bool IsSelfRelRef(const TypeExpr *t) { return IsRelRef(t) && !t->ref->pool; }
 inline bool IsArrayKind(const TypeExpr *t, ArrayKind k) {
     return t->kind == TY_ARRAY && t->arr->akind == k;
 }
@@ -1831,6 +1835,20 @@ template<typename F> bool AnyFieldOf(span<const FieldRun> runs, F f) {
 template<typename F> void EachFieldOf(span<const FieldRun> runs, F f) {
     for (auto &run : runs)
         for (auto ft : *run.ftypes) if (ft) f(ft);
+}
+
+// Whether a value of type t holds a relative reference by value, at any
+// depth, variable-size parts included but not what a plain reference or a
+// slice leads to: any with `inpool`, else a self-relative one, whose offset
+// depends on where the value sits (§3.9). `runs` is the pass's FieldRuns, as
+// for AnyFieldOf.
+template<typename R> bool HasRelRefOf(TypeExpr *t, bool inpool, R runs) {
+    switch (t->kind) {
+        case TY_REF: return IsRelRef(t) && (inpool || !t->ref->pool);
+        case TY_ARRAY: return HasRelRefOf(t->arr->sub, inpool, runs);
+        default:
+            return AnyFieldOf(runs(t), [&](TypeExpr *ft) { return HasRelRefOf(ft, inpool, runs); });
+    }
 }
 
 // Call-site facts about one reference/slice or holder parameter, part of the

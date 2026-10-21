@@ -3089,7 +3089,7 @@ inline void TypeCheck::CheckSpecBodyOnce(FnSpec *spec, vector<Val> *argvals, Lin
             // A result is a value, which is never relative (§3.9): written so,
             // it is an error, and one a type argument makes relative is the
             // plain reference a load of it gives.
-            if (rt->kind == TY_REF && rt->ref->lenstorage >= 0)
+            if (IsRelRef(rt))
                 Error(sf->line, cat("function ", sf->name, " cannot return ", TypeStr(ct),
                                     ": a result is a value, never a relative reference "
                                     "(§3.9); return ", TypeStr(LoadType(ct)),

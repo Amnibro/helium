@@ -317,7 +317,7 @@ inline vector<string> CodeGen::EmitBuiltin(Call *c, Dst d0) {
             // A relative-reference element leaves as the plain reference it
             // loads as (§3.9): its offset is measured from the slot it
             // leaves, whose bytes nothing has written over yet.
-            if (elem->kind == TY_REF && elem->ref->lenstorage >= 0)
+            if (IsRelRef(elem))
                 return { LoadLoc(BytesLoc(at, elem, lv), c->rettypes[0], ln) };
             auto tv = T();
             FixedLocal(elem, tv, cat("*(", CT(elem), " *)", at));
@@ -347,7 +347,7 @@ inline vector<string> CodeGen::EmitBuiltin(Call *c, Dst d0) {
             auto elem = v.elem;
             auto esz = FixedSize(elem);
             auto ak = lv.t->arr->akind;
-            auto relref = elem->kind == TY_REF && elem->ref->lenstorage >= 0;
+            auto relref = IsRelRef(elem);
             if (ak != A_LIMITED) NoteLen(lv.stk, v.lenlv);
             auto nn = GenPure(an[1]);
             string fv;
@@ -565,7 +565,7 @@ inline bool CodeGen::UniformFillByte(Node *n, TypeExpr *t, int &byte) {
 // from growing while such a value is under construction (§1.3,
 // BuiltInPlace).
 inline string CodeGen::ElemValue(Node *n, TypeExpr *elem) {
-    if (elem->kind == TY_REF && elem->ref->lenstorage >= 0) {
+    if (IsRelRef(elem)) {
         auto ev = T();
         L("uint8_t *", ev, " = (uint8_t *)(", GenX(n), ");");
         return ev;
@@ -580,7 +580,7 @@ inline void CodeGen::StoreElemAt(Node *n, TypeExpr *elem, const string &e, const
                                  Line ln) {
     // A relative-reference element stores the offset from its own slot,
     // not the pointer (§3.9).
-    if (elem->kind == TY_REF && elem->ref->lenstorage >= 0)
+    if (IsRelRef(elem))
         EmitRelStoreAt(cat("(uint8_t *)", e), elem, ev, ln, true, RelValue(n));
     else if (ev.empty()) GenAny(n, Dst { DK_LVALUE, cat("(*", e, ")"), elem });
     else StoreWhole(e, elem, ev);
@@ -613,7 +613,7 @@ inline vector<string> CodeGen::EmitPush(vector<Node *> &an, Line ln) {
         }
         // StoreElemAt's three cases, at the stack's top, which each moves
         // past the element.
-        if (elem->kind == TY_REF && elem->ref->lenstorage >= 0)
+        if (IsRelRef(elem))
             EmitRelStore(lv.stk, elem, ev, ln, RelValue(an[1]));
         else if (ev.empty()) GenConstruct(an[1], lv.stk, elem);
         else EmitValStore(lv.stk, elem, ev);

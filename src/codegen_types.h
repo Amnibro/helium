@@ -854,11 +854,7 @@ inline int64_t CodeGen::MinBytes(TypeExpr *t, bool zero) {
 // HasRelRef this looks through variable-size types too, since an image's
 // elements are exactly the types HasRelRef does not reach.
 inline bool CodeGen::HasRelRefAny(TypeExpr *t) {
-    switch (t->kind) {
-        case TY_REF: return t->ref->lenstorage >= 0;
-        case TY_ARRAY: return HasRelRefAny(t->arr->sub);
-        default: return AnyField(t, [&](TypeExpr *ft) { return HasRelRefAny(ft); });
-    }
+    return HasRelRefOf(t, true, [&](TypeExpr *x) { return FieldRuns(x); });
 }
 
 // Whether the verifier has anything to say about a value of this type, or

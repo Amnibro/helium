@@ -691,7 +691,7 @@ inline void CodeGen::BindLocal(VarDef *d, Node *init, bool forlocal) {
     }
     // A relative reference variable holds the offset (§3.9): whatever the
     // initializer, its value is the plain reference to encode.
-    if (t->kind == TY_REF && t->ref->lenstorage >= 0) {
+    if (IsRelRef(t)) {
         L(CT(t), " ", name, ";");
         EmitRelStoreAt(cat("(uint8_t *)&", name), t, GenX(init), init->line, true,
                        RelValue(init));
@@ -822,7 +822,7 @@ inline void CodeGen::GenRelAssign(Loc lv, Node *lval, Node *rhs, Line ln) {
 }
 
 inline void CodeGen::GenRebind(Assign *a, Loc lv) {
-    if (lv.t->kind == TY_REF && lv.t->ref->lenstorage >= 0) {
+    if (IsRelRef(lv.t)) {
         GenRelAssign(lv, a->lval, a->rhs, a->line);
         return;
     }

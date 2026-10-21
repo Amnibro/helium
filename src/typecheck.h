@@ -3234,7 +3234,7 @@ struct TypeCheck {
     // bytes, which no program can tell from a copy of its own (§11.2).
     bool StaticViewsOnly(VarDef *g) {
         if (g->isvar) return false;
-        if (Reaches(g->type, [](TypeExpr *t) { return t->kind == TY_REF && t->ref->lenstorage >= 0; }))
+        if (Reaches(g->type, [](TypeExpr *t) { return IsRelRef(t); }))
             return false;
         auto statics = [](const Roots &r) {
             return !r.unknown && r.All([](const RootAlt &a) { return !a.root && a.exact; });

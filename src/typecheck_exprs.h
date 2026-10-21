@@ -236,7 +236,7 @@ inline void TypeCheck::ReadBackLVal(LVal &lv) {
 // points within the value or array its slot lies in (§3.9), which is no more
 // writable through it than along the path.
 inline bool TypeCheck::SlotLoadWritable(TypeExpr *t, bool path) {
-    auto selfrel = t->kind == TY_REF && t->ref->lenstorage >= 0 && !t->ref->pool;
+    auto selfrel = IsSelfRelRef(t);
     return !t->cq && (path || !selfrel);
 }
 
