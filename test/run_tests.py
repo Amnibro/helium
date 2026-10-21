@@ -2010,6 +2010,28 @@ def main():
         except ValueError:
             good = False
         checks.append(("toolchain --json with a tab in GOOSE_HOME", good, tab.stdout + tab.stderr))
+        # A directory on PATH that has a tool's name is not that tool.
+        fakebin = gendir / "fakebin"
+        (fakebin / "git").mkdir(parents=True, exist_ok=True)
+        found = subprocess.run([str(exe), "toolchain", "--json"], capture_output=True, text=True,
+                               errors="replace",
+                               env=dict(os.environ, PATH=os.pathsep.join(
+                                   [str(fakebin), os.environ.get("PATH", "")])))
+        try:
+            git = json.loads(found.stdout).get("git")
+            good = not git or Path(git["path"]) != fakebin / "git"
+        except ValueError:
+            good = False
+        checks.append(("toolchain --json with a directory named git on PATH", good,
+                       found.stdout + found.stderr))
+        # A C compiler that cannot be started is reported with the reason.
+        notcc = gendir / ("not_a_compiler" + tc.EXE_SUFFIX)
+        tc.write_text(notcc, "not a program\n")
+        code, out, err = tc.run_capture([exe, "build", "--cc", str(notcc), "-o",
+                                         str(gendir / ("never" + tc.EXE_SUFFIX)), probe])
+        checks.append(("build --cc <not a program> (refused)",
+                       code == 1 and "cannot start" in out + err and "No error" not in out + err,
+                       out + err))
         if cc:
             # `goose build` against the toolchain the compiler finds itself:
             # the executable beside -o, running; a dry run writing none.
