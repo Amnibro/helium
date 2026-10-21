@@ -3740,7 +3740,12 @@ What invalidates a fact: a grow or shrink builtin (the receiver takes the
 exact delta, every place it may alias the directional bump); a whole-value
 write to a variable or through a chain (`StorageWriteKill`: everything under
 that owner, or everything reachable when the target is unknown); a rebind of
-a reference variable (`RebindKill`); a slice stored into a slot, by assigning
+a reference variable (`RebindKill`); a reference stored into a field or an
+element, by rebinding one held there or storing a value that holds one
+(`RefSlotWriteKill`: every place whose path reads a stored reference,
+`Place::readsref`, and may read it there, whatever name the path starts
+from -- `p.r` is `h.r` where `p = &h`; the field holding the slice a place
+is reads none); a slice stored into a slot, by assigning
 a slice variable or through a reference to a slice (`SlotWriteKill`: every
 slice place that slot may be -- the variable, each reference to it, any
 reachable slot when the slot is unknown -- while the arrays the slices view
@@ -3886,7 +3891,9 @@ resizes a slice argument or a reference to one (`KillSliceArg`): through the
 reference it may store another slice into the slot, which is that slot's kill
 (§5.5), and through either it may write the elements the slice views, where
 only a reference into an element measures a length, and only where the
-element type holds one (`HoldsLen`, `ElementWriteKill`). A class of this
+element type holds one (`HoldsLen`, `ElementWriteKill`), or reads through a
+reference an element holds, where the element type holds one (`HoldsRef`,
+`RefSlotWriteKill`). A class of this
 body's own parameters names none of its variables (`KillClassWrite`), but
 the class an inlined body's parameter kept stands for this body's arguments
 to it, so storage named through that may be anything reachable.

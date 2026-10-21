@@ -328,6 +328,7 @@ struct BCE {
         VarDef *ultv = nullptr;
         int ultkind = UK_OPAQUE;
         bool refcrossed = false;
+        bool readsref = false;  // Its path reads a reference stored in a field.
         bool lenmut = false;    // A grow/shrink operation can target it.
         bool slice = false;     // Its length is a slice's, held in a slot.
         bool inelem = false;    // Of a type an array element can have.
@@ -421,7 +422,8 @@ struct BCE {
 
     // The place of the array or slice of type t (a reference's pointee
     // included) at `path` under `root`; -1 where there is nothing to track.
-    int PlaceFor(VarDef *root, const vector<int> &path, TypeExpr *t) {
+    // `readsref`: the path reads a reference stored in a field (PlaceOf).
+    int PlaceFor(VarDef *root, const vector<int> &path, TypeExpr *t, bool readsref = false) {
         if (t && t->kind == TY_REF) t = t->ref->sub;
         auto slice = t && t->kind == TY_SLICE;
         auto arr = t && t->kind == TY_ARRAY && t->arr->akind != A_FIXED;
@@ -439,6 +441,7 @@ struct BCE {
                          root->type->kind == TY_REF;
         auto midcross = std::find(path.begin() + (rootcross ? 1 : 0), path.end(), -1) != path.end();
         P.refcrossed = midcross || (root->type && root->type->kind == TY_REF);
+        P.readsref = readsref;
         if (!P.refcrossed) {
             P.ultkind = UK_OWNED;
             P.ultv = root;
@@ -468,6 +471,7 @@ struct BCE {
                 TypeExpr *as = nullptr) {
         vector<int> path;
         VarDef *root = nullptr;
+        auto readsref = false;
         for (auto cur = n;;) {
             if (auto id = Is<Ident>(cur)) { root = id->vdef; break; }
             if (auto d = Is<Dot>(cur); d && d->fieldidx >= 0) {
@@ -477,6 +481,11 @@ struct BCE {
                 if ((as && cur == n) ? IsRefOrSlice(as) : ReadsStoredRef(d)) {
                     path.push_back(-1);
                     if (crossed) *crossed = true;
+                    // It reads the reference stored there, unless the field
+                    // holds the slice the place is, whose length lies in the
+                    // field itself.
+                    auto ft = cur == n ? (as ? as : FieldTypeOf(d)) : nullptr;
+                    if (!ft || ft->kind != TY_SLICE) readsref = true;
                 }
                 path.push_back(d->fieldidx);
                 if (d->obj->exprtype && d->obj->exprtype->kind == TY_REF) path.push_back(-1);
@@ -491,7 +500,7 @@ struct BCE {
         }
         if (!root) return -1;
         std::reverse(path.begin(), path.end());
-        return PlaceFor(root, path, as ? as : n->exprtype);
+        return PlaceFor(root, path, as ? as : n->exprtype, readsref);
     }
 
     // The place a variable's own array/slice value occupies (used at
@@ -527,6 +536,7 @@ struct BCE {
         P.ultkind = places[apid].ultkind;
         P.ultv = places[apid].ultv;
         P.refcrossed = true;
+        P.readsref = places[apid].readsref;
         P.slice = t->kind == TY_SLICE;
         P.lenmut = t->kind == TY_ARRAY && t->arr->akind != A_VAR;
         if (t->kind == TY_ARRAY && t->arr->akind == A_LIMITED && t->arr->size >= 0)
@@ -1555,6 +1565,17 @@ struct BCE {
             if (places[i].rootv == root) BumpPlace((int)i, 0);
     }
 
+    // A reference stored into a field or element slot, in storage tu owns
+    // (tk == UK_OWNED) or storage unknown here: whatever is read through the
+    // slot, under any name, is a place whose path reads a stored reference.
+    void RefSlotWriteKill(int tk, VarDef *tu, VarDef *chainroot) {
+        if (tk == UK_STATIC) return;   // Static data is never writable.
+        NoteStorage(UltTarget(tk, tu));
+        for (size_t i = 0; i < places.size(); i++)
+            if (places[i].readsref && AffectedByWrite((int)i, -1, tk, tu, chainroot))
+                BumpPlace((int)i, 0);
+    }
+
     // The blanket kill for a call whose effects are unknown.
     void KillByCall(bool anyrefarg) {
         NoteStorage({ TG_OPAQUE });
@@ -1731,20 +1752,22 @@ struct BCE {
     // other than a fixed one, or a fixed array, struct or enum holding one.
     // A nominal type whose instance is not at hand counts as one. With
     // `refs`, a reference anywhere in it counts too: storing one redirects
-    // whatever place is reached through it.
-    static bool HoldsLen(TypeExpr *t, bool refs = false, int depth = 0) {
+    // whatever place is reached through it. Without `lens`, only a
+    // reference does.
+    static bool HoldsLen(TypeExpr *t, bool refs = false, bool lens = true, int depth = 0) {
         if (!t || depth > 32) return true;
         auto any = [&](const vector<TypeExpr *> &fts) {
-            for (auto ft : fts) if (ft && HoldsLen(ft, refs, depth + 1)) return true;
+            for (auto ft : fts) if (ft && HoldsLen(ft, refs, lens, depth + 1)) return true;
             return false;
         };
         switch (t->kind) {
             case TY_SLICE:
-                return true;
+                return lens;
             case TY_REF:
                 return refs;
             case TY_ARRAY:
-                return t->arr->akind != A_FIXED || HoldsLen(t->arr->sub, refs, depth + 1);
+                return (lens && t->arr->akind != A_FIXED) ||
+                       HoldsLen(t->arr->sub, refs, lens, depth + 1);
             case TY_STRUCT:
                 return !t->struc->inst || any(t->struc->inst->ftypes);
             case TY_ENUM: case TY_VARIANT: {
@@ -1759,6 +1782,8 @@ struct BCE {
                 return false;   // Scalars, references, functions.
         }
     }
+
+    static bool HoldsRef(TypeExpr *t) { return HoldsLen(t, true, false); }
 
     // The slot a reference to a slice passed as `a` names: the slice lvalue
     // behind `&`, or where a reference variable points. One read out of a
@@ -1775,7 +1800,8 @@ struct BCE {
     // A slice argument, or a reference to one, other than a slice
     // expression. The callee resizes neither: it may store another slice
     // into the slot a reference names, and write the elements the slice
-    // views, where only references to elements measure a length.
+    // views, where only references to elements measure a length or read the
+    // references the elements hold.
     bool KillSliceArg(Node *a, Node *lv) {
         auto t = a->exprtype;
         auto st = IsSliceRef(t) ? t->ref->sub : t;
@@ -1785,9 +1811,11 @@ struct BCE {
             auto [k, u] = ArgSlot(a, lv);
             SlotWriteKill(k, u);
         }
-        if (HoldsLen(st->sub)) {
+        auto lens = HoldsLen(st->sub), refs = HoldsRef(st->sub);
+        if (lens || refs) {
             auto [k, u] = ChainUlt(lv);
-            ElementWriteKill(k, u);
+            if (lens) ElementWriteKill(k, u);
+            if (refs) RefSlotWriteKill(k, u, nullptr);
         }
         return true;
     }
@@ -4062,22 +4090,23 @@ inline bool Assign::BceWalk(BCE &b) {
     auto gen = b.nextgen;
     b.Walk(rhs);
     if (op == T_DOTASSIGN) {
-        // A rebound field or element slot lies in storage behind the chain's
-        // root, which the summary reports even where no place tracks it.
-        if (!Is<Ident>(lval)) b.NoteStorage(b.ExprTarget(lval, true));
         auto ch = b.ChainOf(lval);
-        if (ch.kind == BCE::CH_INDEX) return true;   // Element ref slots: no tracked places.
-        if (ch.kind != BCE::CH_OK) {
-            b.StorageWriteKill(BCE::UK_OPAQUE, nullptr, nullptr);
+        if (Is<Ident>(lval) && ch.kind == BCE::CH_OK) {
+            // Only the places rooted at a reference variable read it.
+            b.RebindKill(ch.root);
+            // A reference variable rebound to a place has that place's length.
+            if (b.mode != BCE::M_KILLS) {
+                auto lt = b.BoundLenOf(rhs);
+                auto pid = lt.ok ? b.PlaceOfVar(ch.root) : -1;
+                if (pid >= 0) b.ExactLenIs(pid, lt);
+            }
             return true;
         }
-        b.RebindKill(ch.root);
-        // A reference variable rebound to a place has that place's length.
-        if (b.mode != BCE::M_KILLS && Is<Ident>(lval)) {
-            auto lt = b.BoundLenOf(rhs);
-            auto pid = lt.ok ? b.PlaceOfVar(ch.root) : -1;
-            if (pid >= 0) b.ExactLenIs(pid, lt);
-        }
+        // A field or element slot lies in storage that other names may reach
+        // too (`p.r` is `h.r` where `p = &h`). The kill reports that storage
+        // in the summary even where no place tracks it.
+        auto [k, u] = b.ChainUlt(lval, true);
+        b.RefSlotWriteKill(k, u, ch.root);
         return true;
     }
     if (pointee) {
@@ -4121,9 +4150,15 @@ inline bool Assign::BceWalk(BCE &b) {
     }
     auto lt = lval->exprtype;
     // A value stored in or into an element changes a length only if it holds
-    // one, which only a reference into the element measures.
+    // one, which only a reference into the element measures, and redirects
+    // what such a reference reads through the element only if it holds a
+    // reference.
     auto elemwrite = [&] {
         if (BCE::HoldsLen(lt)) b.ElementLvalKill(lval);
+        if (BCE::HoldsRef(lt)) {
+            auto [k, u] = b.ChainUlt(lval, true);
+            b.RefSlotWriteKill(k, u, nullptr);
+        }
         return true;
     };
     if (Is<Index>(lval)) return elemwrite();
