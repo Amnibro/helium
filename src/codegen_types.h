@@ -748,34 +748,12 @@ inline void CodeGen::EmitSizeElems(string &b, TypeExpr *elem, const string &q) {
     }
 }
 
-// The size of the all-zeroes minimal value of a type (arrays empty, ADTs
-// at variant 0): what a missed qpoll writes so the value stays valid.
-inline int64_t CodeGen::ZeroSize(TypeExpr *t) {
-    assert(!IsResz(t));   // Resizable zero values are empty headers.
-    if (IsFix(t)) return FixedSize(t);
-    switch (t->kind) {
-        case TY_INT: case TY_REF: return 1;   // varint / varint relref: one 0 byte.
-        case TY_ARRAY:
-            switch (t->arr->akind) {
-                case A_VAR:     return LenStore(t->arr) == IS_VARINT ? 1
-                                                                     : IntSize(LenStore(t->arr));
-                case A_LIMITED: return 8;
-                default:        return 8;
-            }
-        case TY_STRUCT: case TY_VARIANT: {
-            int64_t n = 0;
-            EachField(t, [&](TypeExpr *ft) { n += ZeroSize(ft); });
-            return n;
-        }
-        case TY_ENUM:
-            return TagSize(EIOf(t)->en) + ZeroSize(VariantType(t, 0));
-        default: assert(false); return 0;
-    }
-}
-
 // The fewest bytes any value of this type can occupy: what bounds the
 // element count a length field may claim, before a single element is walked.
-inline int64_t CodeGen::MinBytes(TypeExpr *t) {
+// With `zero`, the size of the all-zeroes value instead, whose arrays are
+// empty and whose ADTs are at variant 0: what a missed qpoll writes so the
+// value stays valid.
+inline int64_t CodeGen::MinBytes(TypeExpr *t, bool zero) {
     if (IsFix(t)) return FixedSize(t);
     switch (t->kind) {
         case TY_INT: case TY_REF: return 1;   // varint / varint-width relative ref
@@ -791,13 +769,14 @@ inline int64_t CodeGen::MinBytes(TypeExpr *t) {
                 for (size_t i = 0; i < run.fields->size(); i++) {
                     auto &f = (*run.fields)[i];
                     if (f.ispad) { if (f.padsize > 0) n += f.padsize; continue; }
-                    n += MinBytes((*run.ftypes)[i]);
+                    n += MinBytes((*run.ftypes)[i], zero);
                 }
             }
             return n;
         }
         case TY_ENUM: {
             auto ei = EIOf(t);
+            if (zero) return TagSize(ei->en) + MinBytes(VariantType(t, 0), true);
             int64_t m = INT64_MAX;
             for (size_t vi = 0; vi < ei->en->variants.size(); vi++)
                 m = std::min(m, MinBytes(VariantType(t, (int)vi)));
@@ -1384,7 +1363,9 @@ inline void CodeGen::EmitEqBytes(string &bo, TypeExpr *t) {
             if (IsFix(x)) return BitwiseEq(x);
             switch (x->kind) {
                 case TY_INT: case TY_REF: return true;
-                case TY_ARRAY: return rec(x->arr->sub);
+                // A runtime-capacity limited array's capacity and the slots
+                // past its length are no part of its value.
+                case TY_ARRAY: return x->arr->akind != A_LIMITED && rec(x->arr->sub);
                 case TY_STRUCT: case TY_VARIANT: case TY_ENUM:
                     for (auto &run : FieldRuns(x))
                         for (size_t i = 0; i < run.fields->size(); i++)
@@ -1472,7 +1453,19 @@ inline void CodeGen::EmitEqWalk(string &bo, TypeExpr *t, const string &pa, const
             return;
         }
         case TY_STRUCT: case TY_VARIANT:
-            EachField(t, [&](TypeExpr *ft) { EmitEqWalk(bo, ft, pa, pb, depth); });
+            for (auto &run : FieldRuns(t)) {
+                for (size_t i = 0; i < run.fields->size(); i++) {
+                    auto &f = (*run.fields)[i];
+                    if (!f.ispad) {
+                        EmitEqWalk(bo, (*run.ftypes)[i], pa, pb, depth);
+                    } else if (f.padsize > 0) {
+                        // Stepped over, never compared (§4.5). A bare pad has
+                        // no bytes in a bytes layout.
+                        Append(bo, I, pa, " += ", f.padsize, "; ", pb, " += ", f.padsize,
+                               ";\n");
+                    }
+                }
+            }
             return;
         case TY_ENUM: {
             auto ei = EIOf(t);

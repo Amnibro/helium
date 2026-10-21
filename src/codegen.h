@@ -320,8 +320,7 @@ struct CodeGen {
     string SizeFn(TypeExpr *t);
     void EmitSizeWalk(string &b, TypeExpr *t, const string &q);
     void EmitSizeElems(string &b, TypeExpr *elem, const string &q);
-    int64_t ZeroSize(TypeExpr *t);
-    int64_t MinBytes(TypeExpr *t);
+    int64_t MinBytes(TypeExpr *t, bool zero = false);
 
     // ------------------------------------------------------------------
     // The verifier from_bytes runs over an untrusted image

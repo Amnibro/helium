@@ -257,8 +257,8 @@ inline vector<string> CodeGen::EmitBuiltin(Call *c, Dst d0) {
                     // A missed poll still yields a valid (zero) value.
                     L("} else {");
                     ind++;
-                    L("GS_MEMZERO(", Top(stk), ", ", ZeroSize(t), ");");
-                    Bump(stk, cat(ZeroSize(t)));
+                    L("GS_MEMZERO(", Top(stk), ", ", MinBytes(t, true), ");");
+                    Bump(stk, cat(MinBytes(t, true)));
                     ind--;
                 }
                 L("}");

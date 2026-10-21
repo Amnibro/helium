@@ -4631,7 +4631,7 @@ as `to_bytes(a, out)` appends its image (`AppendBytes`), then frees it
 (`gs_free_msg`).
 Queues are one `gs_queue` per element type, which `main` creates
 (`gs_qinit`) before anything else runs, carrying one contiguous image per
-value; a missed `qpoll` yields the all-zero image (`ZeroSize`). A queue is a
+value; a missed `qpoll` yields the all-zero image (`MinBytes`). A queue is a
 linked list of `malloc`'d nodes under a mutex, with a condition variable for
 its receivers, and a count of its messages. `gs_qput` allocates and copies
 before it takes the lock, and checks the queue's limit under the lock; a
@@ -4649,8 +4649,10 @@ past the image.
 Per type on demand: `gs_size_<T>` (the byte size of a dynamic value),
 `gs_eq_<T>` (structural equality, a `memcmp` for gap-free fixed types of
 more than four scalars and canonical-encoding bytes values that hold no
-floats, a cursor walk otherwise; a fixed value of at most four integer or
-bool scalars compares field by field, through its `gs_eq_<T>`, which the C
+floats, pads or runtime-capacity limited arrays, a cursor walk otherwise,
+which steps over pads and over a limited array's slots past its length; a
+fixed value of at most four integer or bool scalars compares field by
+field, through its `gs_eq_<T>`, which the C
 compiler inlines: through `memcmp` an operand just built in registers is
 stored field by field and read back in one wider load, which store
 forwarding cannot serve; a static-capacity limited array of such elements compares its
