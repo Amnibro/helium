@@ -3740,14 +3740,27 @@ inline bool While::BceWalk(BCE &b) {
     b.LoopViewRefs(body, cond, hoistrefs, hoistfields);
     b.StripKills(cond);
     b.StripKills(body);
+    // A break in the condition leaves with only part of it run, where what
+    // its evaluation states need not hold yet: only the state at the top of
+    // an iteration does.
+    auto condbreaks = b.HasBreaks(cond);
+    auto top = condbreaks ? b.flow : BCE::Flow {};
     b.Walk(cond);
     auto exitf = b.flow;
     auto killfree = !b.HasKillEffects(cond);
     if (killfree) b.CondFacts(cond, true);
     b.Walk(body);
-    b.flow = std::move(exitf);
+    if (condbreaks) {
+        b.flow = std::move(top);
+    } else {
+        b.flow = std::move(exitf);
+        // A break in the body leaves after any part of it ran, which may have
+        // moved what the condition's evaluation stated. The loop depth still
+        // counts a redeclaration in the body as a kill, as at entry.
+        if (b.HasBreaks(body)) b.StripKills(body);
+        else if (killfree) b.CondFacts(cond, false);
+    }
     b.loopdepth--;
-    if (killfree && !b.HasBreaks(body)) b.CondFacts(cond, false);
     return true;
 }
 

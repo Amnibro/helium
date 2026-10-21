@@ -3812,9 +3812,14 @@ contributes nothing.
 Every loop body is walked first in kills-only mode (`StripKills`) to
 invalidate whatever an earlier iteration may have changed, then for real;
 a `while` condition's facts re-establish at every body entry, and its
-negation holds after the loop only if the body has no `break`. Facts
-established by an `EarlyBlock` or an `InlineBlock` with early exits are
-likewise reduced to their kills at the join. A counted loop whose body
+negation holds after the loop only if nothing in the loop can `break`. A
+`break` in the body leaves after any part of the body ran, so what
+evaluating the condition stated (a completed check, the length a `pop`
+leaves) holds after such a loop only as far as the body's kills leave it,
+and a `break` in the condition itself leaves with only part of the
+condition run, where only the state at the top of an iteration holds.
+Facts established by an `EarlyBlock` or an `InlineBlock` with early exits
+are likewise reduced to their kills at the join. A counted loop whose body
 pushes onto an array a fixed number of times per iteration states the
 array's length after the loop, unless a `break` or `continue` can cut an
 iteration short (`HasIterationJumps`); a `continue` inside a `block { }`
