@@ -195,8 +195,13 @@ def check_lsp_protocol(exe, base):
                 if not got or json.loads(want) not in got["contents"]["value"]:
                     fail(f"hover {pos} lacks {want}", got)
             elif kind == "definition":
+                # `-> none`: a name that resolves to no declaration.
                 pos, _, target = rest.split(" ", 2)
                 got = client.request("textDocument/definition", {**doc, "position": position(pos)})
+                if target == "none":
+                    if got:
+                        fail(f"definition {pos} is not none", got)
+                    continue
                 if not got:
                     fail(f"definition {pos}", got)
                 if target.endswith(".goose"):
@@ -226,6 +231,7 @@ def check_lsp_protocol(exe, base):
                 if (name in labels) != (mode == "has"):
                     fail(f"completion {pos} {mode} {name}", sorted(labels))
             elif kind == "token":
+                # `none`: no token at the place.
                 pos, want = rest.split()
                 got = client.request("textDocument/semanticTokens/full", doc)
                 legend = ["namespace", "type", "struct", "enum", "enumMember", "typeParameter",
@@ -239,7 +245,7 @@ def check_lsp_protocol(exe, base):
                     char = char + dchar if dline == 0 else dchar
                     tokens[(line, char)] = legend[ttype]
                 p = position(pos)
-                if tokens.get((p["line"], p["character"])) != want:
+                if tokens.get((p["line"], p["character"]), "none") != want:
                     fail(f"token {pos} is not {want}", {"at": p, "got": tokens.get((p["line"], p["character"]))})
             elif kind == "references":
                 pos, want = rest.split()
@@ -274,6 +280,12 @@ def check_lsp_protocol(exe, base):
                 p = position(pos)
                 if not any(h["position"] == p and h["label"] == want for h in got or []):
                     fail(f"hint {pos} is not {want}", got)
+            elif kind == "hints":
+                # `hints L N`: line L has N hints, no more.
+                at, want = (int(x) for x in rest.split())
+                got = client.request("textDocument/inlayHint", {**doc, "range": whole_range()})
+                if sum(h["position"]["line"] == at - 1 for h in got or []) != want:
+                    fail(f"line {at} has not {want} hints", got)
             elif kind == "lens":
                 # `lens L "title"`: a lens on line L with that title. A count
                 # of instantiations has as many lines as its data, which its
@@ -398,6 +410,12 @@ def check_lsp_protocol(exe, base):
     broken = fixtures / "broken_decls.goose"
     btext = broken.read_text(encoding="utf-8")
     queries(broken, btext, open_fixture(broken, btext))
+    # The names as written where the check rewrites a global's initializer
+    # in place, the bindings of the arms a const for generates, and the
+    # commas in literals and comments, which are no argument's.
+    sindex = fixtures / "source_index.goose"
+    stext = sindex.read_text(encoding="utf-8")
+    queries(sindex, stext, open_fixture(sindex, stext))
     # Completion, on a program whose last statement is the `p.` an editor
     # has when it asks.
     complete = fixtures / "complete.goose"

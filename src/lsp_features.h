@@ -481,6 +481,11 @@ inline HoverText HoverType(const Located &loc, const Occurrence &occ) {
     auto written = TypeText(t);
     switch (t->kind) {
         case TY_STRUCT:
+            // What resolution gives a name that names nothing.
+            if (t->struc->st->unknown) {
+                h.header = cat("unknown type ", written);
+                break;
+            }
             h.header = cat("struct ", t->struc->st->qname, GenericsText(t->struc->st->generics));
             h.doc = DocText(t->struc->st->doc);
             if (!t->struc->st->generics.empty()) h.extra = written;
@@ -600,6 +605,15 @@ inline HoverText HoverOf(const Located &loc, const Occurrence &occ) {
                 });
                 if (c) type = Is<MatchExpr>(c)->arms[(size_t)occ.index].binder->type;
                 found = c;
+            } else if (Is<ConstFor>(occ.node)) {
+                // An arm the const for generates for each entry: the types
+                // the clones' arms bind here.
+                set<string> types;
+                for (auto &[vd, p] : an.defplaces)
+                    if (p.fileidx == loc.fi->fileidx && p.start == occ.start && vd->type)
+                        types.insert(TypeText(vd->type));
+                for (auto &t : types)
+                    Append(h.extra, h.extra.empty() ? "// in the arms generated:" : "", "\n", occ.name, ": ", t);
             }
             if (type) Append(h.header, ": ", TypeText(type));
             NoteExemplar(h, an, found);
@@ -700,7 +714,9 @@ inline Place DefinitionOf(const Located &loc, const Occurrence &occ) {
         case Occurrence::TYPE: {
             auto t = occ.type;
             switch (t->kind) {
-                case TY_STRUCT:  return PlaceOfName(an, t->struc->st->line.fileidx, t->struc->st->name, t->struc->st->line);
+                case TY_STRUCT:
+                    if (t->struc->st->unknown) return {};
+                    return PlaceOfName(an, t->struc->st->line.fileidx, t->struc->st->name, t->struc->st->line);
                 case TY_ENUM:    return PlaceOfName(an, t->enu->en->line.fileidx, t->enu->en->name, t->enu->en->line);
                 case TY_VARIANT: return t->var->variant ? PlaceOfLine(an, t->var->variant->line, t->var->variant->name.size()) : Place {};
                 case TY_GENERIC:
@@ -917,7 +933,7 @@ inline int SemanticTokenOf(const Located &loc, const Occurrence &occ, int &modif
             return ST_VARIABLE;
         case Occurrence::TYPE:
             switch (occ.type->kind) {
-                case TY_STRUCT:  return ST_STRUCT;
+                case TY_STRUCT:  return occ.type->struc->st->unknown ? -1 : ST_STRUCT;
                 case TY_ENUM:    return ST_ENUM;
                 case TY_VARIANT: return ST_ENUMMEMBER;
                 case TY_GENERIC: return ST_TYPEPARAMETER;
@@ -1038,13 +1054,30 @@ inline bool SignatureHelp(Workspace &ws, const Json &params, JsonOut &j) {
         }
     }
     if (!span) return false;
-    // The active parameter: the commas at depth 0 before the position.
+    // The active parameter: the commas at depth 0 before the position,
+    // those in literals and comments left out.
     auto active = 0;
     auto depth = 0;
-    for (auto i = paren + 1; i < loc.offset && i < text.size(); i++) {
+    auto end = min(loc.offset, text.size());
+    for (auto i = paren + 1; i < end; i++) {
         auto c = text[i];
-        if (c == '"') {
-            for (i++; i < loc.offset && i < text.size() && text[i] != '"'; i++) if (text[i] == '\\') i++;
+        if (text.substr(i, 3) == "\"\"\"") {
+            i = min(text.find("\"\"\"", i + 3), end) + 2;
+        } else if (c == '"' || c == '\'') {
+            for (i++; i < end && text[i] != c; i++) if (text[i] == '\\') i++;
+        } else if (text.substr(i, 2) == "//") {
+            while (i < end && text[i] != '\n') i++;
+        } else if (text.substr(i, 2) == "/*") {
+            // Block comments nest.
+            for (auto nesting = 0; i < end; i++) {
+                if (text.substr(i, 2) == "/*") {
+                    nesting++;
+                    i++;
+                } else if (text.substr(i, 2) == "*/") {
+                    i++;
+                    if (!--nesting) break;
+                }
+            }
         } else if (c == '(' || c == '[' || c == '{') {
             depth++;
         } else if (c == ')' || c == ']' || c == '}') {
@@ -1419,11 +1452,13 @@ inline bool OutgoingCalls(Workspace &ws, const Json &params, JsonOut &j) {
 enum InlayHintKind { IH_TYPE = 1, IH_PARAMETER = 2 };
 
 // Where a node's tokens start: the earliest place in it, which for a node
-// anchored at its operator lies in its left operand.
+// anchored at its operator lies in its left operand. Clones are left out:
+// a global's initializer, checked in place, holds the defaults the check
+// filled in, which are written elsewhere.
 inline int64_t StartOf(const FileIndex &f, const Node *n) {
     int64_t start = -1;
     function<void(const Node *)> walk = [&](const Node *c) {
-        if (!c || c->line.fileidx != f.fileidx || c->line.line <= 0) return;
+        if (!c || c->origin || c->line.fileidx != f.fileidx || c->line.line <= 0) return;
         auto s = f.text.OffsetOf(c->line.line, c->line.col);
         if (s >= 0 && (start < 0 || s < start)) start = s;
         c->Children([&](Node *ch) { walk(ch); });
@@ -1490,9 +1525,12 @@ inline bool InlayHints(Workspace &ws, const Json &params, JsonOut &j) {
         });
         if (!c) continue;
         auto sf = Is<Call>(c)->spec->sf;
-        // A UFCS call's object is the first parameter's argument.
+        // A UFCS call's object is the first parameter's argument. A call
+        // checked in place, in a global's initializer, has the defaults of
+        // the parameters it leaves out after the arguments written.
         size_t first = Is<Dot>(span.call->callee) ? 1 : 0;
-        for (size_t i = 0; i < span.call->args.size() && i + first < sf->params.size(); i++) {
+        auto written = span.call->args.size() - (size_t)span.call->ndefaults;
+        for (size_t i = 0; i < written && i + first < sf->params.size(); i++) {
             auto &p = sf->params[i + first];
             auto arg = span.call->args[i];
             if (auto id = Is<Ident>(arg); id && LeafOf(id->name) == p.name) continue;

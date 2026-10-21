@@ -279,11 +279,14 @@ struct Workspace {
                 ParseProgram(ast, r.path, stdlibdirs, DirOf(exe), sources);
                 ResolveTypeNames(ast);
                 an->parsed = true;
+                // The source's indexes stand on the tree as written, which
+                // the check rewrites where it checks in place (a global's
+                // initializer); the clones' on the tree as the checker left
+                // it: the optimizer then rewrites the bodies, inlining calls
+                // and dropping constants, and the nodes the features read
+                // with them.
+                an->IndexSource();
                 TypeCheckProgram(ast, false, true);
-                // The indexes stand on the tree as the checker left it: the
-                // optimizer then rewrites the bodies, inlining calls and
-                // dropping constants, and the nodes the features read with
-                // them.
                 an->Build();
                 if (!ast.errors.empty()) return 0;
                 Optimizer opt(ast, 1);
@@ -307,7 +310,7 @@ struct Workspace {
         r.dirty = false;
         r.files.clear();
         for (auto &[path, text] : ast.sources) r.files.insert(PathKey(path));
-        if (!an->built) an->IndexFiles();
+        if (!an->indexed) an->IndexFiles();
         Publish(r, *an);
         if (an->parsed || !r.analysis) {
             if (!an->built) an->Build();

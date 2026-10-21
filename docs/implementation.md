@@ -6241,7 +6241,10 @@ bounds-check analyzed. An attempt that got past resolution replaces the
 analysis the root's queries read, with whatever its check annotated
 before each error; one that failed earlier keeps the last, so queries go
 on answering from it. A cancelled attempt leaves the root dirty. The
-indexes are built as soon as the check is done, before the optimizer
+index of the names as written is built once resolution is done, before
+the check, which checks a global's initializer in place rather than a
+clone of it and so rewrites it (`Analysis::IndexSource`, below); the rest
+of the indexes as soon as the check is done, before the optimizer
 rewrites the bodies: it inlines calls and drops constants, and with them
 the clones the features read, which stay allocated (the `Ast` owns every
 node) but leave the tree. Each time an analysis replaces the last, a
@@ -6272,12 +6275,20 @@ in a file, by start offset: a use (`IDENT`, `DOT` for a member, `TYPE` for
 a type name, `INIT` for a field named in a struct literal, each with its
 source node or type expression) or a declaration or a part of one (`FN`,
 `STRUCT`, `ENUM`, `ALIAS`, `GLOBAL`, `LOCAL`, `FIELD`, `VARIANT`, `PARAM`,
-`GENERIC`, and `BINDER` for the variables a loop, a match arm or a block
-parameter binds), found by walking every declaration and body once;
-`FileIndex::calls` is every call's extent, and `FileIndex::spans` every
-node's, from the earliest token in it (a binary's left operand lies before
-the operator the node is anchored at) to its end, the top-level
-declarations' among them. `Analysis::clones` maps each source node to the
+`GENERIC`, and `BINDER` for the variables a loop, a match arm, an arm a
+`const for` generates or a block parameter binds), found by walking every
+declaration and body once; `FileIndex::calls` is every call's extent, and
+`FileIndex::spans` every node's, from the earliest token in it (a binary's
+left operand lies before the operator the node is anchored at) to its end,
+the top-level declarations' among them. These are of the program as
+written (`IndexSource`), walked before the check: it checks a global's
+initializer in place, putting the defaults of the parameters a call
+leaves out among its arguments and the defaults of the fields a struct
+literal leaves out among its initializers (clones of the declaration's,
+which is indexed where it is written), ordering the literal's initializers
+by field, under the field's name, and expanding a `const for` into clones
+of its fragments, none of which is what the source says there.
+`Analysis::clones` maps each source node to the
 clones the checker made of it, one per specialization (`Node::origin`),
 which carry `exprtype` and the resolutions (`Ident::vdef`, `Dot::fieldidx`,
 `Call::spec`); `Find` gives the first clone a predicate accepts, which is
@@ -6291,7 +6302,9 @@ clones records what the source alone does not say: `vardecls` and
 `defplaces`, the `let` or `var` of each checked variable (`VarDef`) and
 the place of its name, which for a loop's, an arm's or a block parameter's
 binding is where the source spells it rather than where the checker placed
-the variable (the loop, the match, the call); and `patternvariants`, the
+the variable (the loop, the match, the call), read from the clone's own
+names (an arm a `const for` generated has no counterpart among the arms of
+the source's match); and `patternvariants`, the
 variant each match pattern's name resolved to. A binding with no place is
 one the compiler synthesized, such as a block's implicit `it`.
 
@@ -6303,7 +6316,11 @@ the documentation comment (`DocText`, the `//` stripped); a name no
 instantiation reaches says so, a type an exemplar's clone gave says that
 it is an exemplar's (`NoteExemplar`: `a: T`, "in an exemplar
 instantiation"), and a name past the error that ended an exemplar says
-that the exemplar stopped before it (`NotChecked`). Go to definition follows the resolution to
+that the exemplar stopped before it (`NotChecked`). The binding of an arm
+a `const for` generates shows the type each arm gave it. A type name that
+names nothing, which resolution gives a placeholder struct
+(`SStruct::unknown`), is an unknown type to hover, with no definition or
+semantic token, and rename refuses it. Go to definition follows the resolution to
 the declaration's name (`DefinitionOf`), and on an `import` line opens the
 file (`Ast::imports`). Document symbols are the file's top-level
 declarations with their fields, variants and nested functions; workspace
@@ -6311,7 +6328,8 @@ symbols every root's. Semantic tokens classify the occurrences by their
 resolution (`SemanticTokenOf`, the legend in `SEMANTIC_TYPES`). Signature
 help finds the innermost call whose parentheses hold the position
 (`FileIndex::CallAt`), counts the commas before it for the active
-parameter, and lists the overloads of the callee's name, the resolved one
+parameter, those in string and character literals and in comments left
+out, and lists the overloads of the callee's name, the resolved one
 active. Completion (`Completion`) looks at what precedes the name being
 typed. After a `.`, the members of the value before it
 (`MemberCompletions`): the innermost node ending at the `.` is the object
@@ -6352,8 +6370,9 @@ function's calls left to the nested function, and a builtin's left out.
 Each group's ranges are the callee's name at each call. Inlay hints
 give the type of each `let` or `var` without one written, after its name,
 where the clones' `VarDef`s agree on it (none where the specializations
-differ, or where an exemplar knows it only as `?`), and the parameter's name before each argument of a call resolved
-to a specialization, a UFCS call's object standing for the first
+differ, or where an exemplar knows it only as `?`), and the parameter's name before each argument written in a call resolved
+to a specialization (not the defaults a global's initializer, checked in
+place, holds), a UFCS call's object standing for the first
 parameter, skipping an argument that is the parameter's own name. Folding
 ranges are every brace-delimited body (a block, a match, a struct literal)
 and declaration spanning more than one line, as `region`, ending a line
