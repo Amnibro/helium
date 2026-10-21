@@ -522,11 +522,12 @@ struct BCE {
     // The slice or array an element of a tracked resizable or limited array
     // holds (`adj[v]`, `g.rows[i]`): one place for all the elements, its
     // length lying in the array's storage, which is where a reference to an
-    // element would measure it -- so an element write, a resize or an
-    // overwrite of the array is a kill, and nothing else is. It has the
-    // array's owner: a variable, the root class of a reference parameter
-    // the array is reached through (PlaceFor), or storage unknown here. -1
-    // for any other expression.
+    // element would measure it -- so an element write, a refill among them
+    // (GrowShrinkKill), or an overwrite of the array is a kill, and nothing
+    // else is: a resize moves no element, and the slots a shrink drops keep
+    // their values. It has the array's owner: a variable, the root class of
+    // a reference parameter the array is reached through (PlaceFor), or
+    // storage unknown here. -1 for any other expression.
     int ElemPlaceOf(Node *n) {
         auto ix = Is<Index>(n);
         auto t = n->exprtype;
@@ -539,7 +540,8 @@ struct BCE {
         if (apid < 0) return -1;
         auto path = places[apid].path;
         path.push_back(-2);
-        return InternPlace(places[apid].rootv, path, t, nullptr, [&](Place &P) {
+        auto arr = t->kind == TY_ARRAY ? t : nullptr;
+        return InternPlace(places[apid].rootv, path, t, arr, [&](Place &P) {
             P.ultkind = places[apid].ultkind;
             P.ultv = places[apid].ultv;
             P.refcrossed = true;

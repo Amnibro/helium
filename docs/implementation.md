@@ -3855,10 +3855,13 @@ distinct arrays.
 A loop over a slice or limited array that an element of a tracked array
 holds (`for x in g.adj[v]`) has a place of its own (`ElemPlaceOf`): one for
 every element of that array, whose length lies in the array's storage, as it
-does for a reference to an element, so only what writes an element, resizes
-the array or overwrites it kills it. Its owner is the array's: where the
-array is reached through a reference variable and fields alone, the
-variable or parameter class that reference's exact root names, so that, as
+does for a reference to an element, so only what writes an element (a
+refill included, §5.5) or overwrites the array kills it. As for any array's
+place, a grow or shrink of an array of another type leaves it alone
+(`DistinctTypes`) -- the array's own too, which moves no element, and whose
+shrink leaves the slots it drops as they were. Its owner is the array's:
+where the array is reached through a reference variable and fields alone,
+the variable or parameter class that reference's exact root names, so that, as
 for any place behind one of the body's parameters, writes to storage the
 body's own variables own leave it alone (`HandedApart`), even where the
 body hands a reference to one to a callee.
