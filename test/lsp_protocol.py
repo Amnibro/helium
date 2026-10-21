@@ -33,6 +33,7 @@ class Client:
         self.seq = 0
         self.pending = []    # Notifications read while waiting for a reply.
         self.requests = []   # The methods of the server's requests, each answered with null.
+        self.published = {}  # The diagnostics last published for each URI (lower case), as an editor has them.
 
     def send(self, method, params=None, request=True):
         msg = {"jsonrpc": "2.0", "method": method}
@@ -61,6 +62,8 @@ class Client:
                 self.requests.append(m["method"])
                 self.write({"jsonrpc": "2.0", "id": m["id"], "result": None})
                 continue
+            if m.get("method") == "textDocument/publishDiagnostics":
+                self.published[m["params"]["uri"].lower()] = m["params"]["diagnostics"]
             return m
 
     def read_one(self):
@@ -408,6 +411,56 @@ def check_lsp_protocol(exe, base):
                      HERE / "errors_tc" / "recovery" / "exemplar_unchecked.goose"):
         etext = exemplar.read_text(encoding="utf-8")
         queries(exemplar, etext, open_fixture(exemplar, etext))
+
+    # Roots as files open and close (docs/design/language_server.md §4),
+    # judged by the diagnostics an editor has once a request has had the
+    # analyses due run, and by the queries answering. A module with an
+    # error, opened alone, is a root of its own; a program opened after it
+    # takes it over, and its error stays; the program closed, the module is
+    # a root again; two programs reaching it report its error once, and it
+    # stays when one stops importing it.
+    lib, app, app2 = (fixtures / f"roots_{n}.goose" for n in ("lib", "app", "app2"))
+
+    def close_doc(path):
+        client.send("textDocument/didClose", {"textDocument": {"uri": uri_of(path)}}, request=False)
+
+    def change_doc(path, body):
+        client.send("textDocument/didChange", {"textDocument": {"uri": uri_of(path), "version": 2},
+                                               "contentChanges": [{"text": body}]}, request=False)
+
+    def lib_error(when):
+        client.request("workspace/symbol", {"query": "nothing is named this"})
+        got = client.published.get(uri_of(lib).lower())
+        if [d["range"]["start"]["line"] + 1 for d in got or []] != [6]:
+            fail(f"roots_lib.goose's diagnostics {when}", got)
+
+    def hover_has(path, pos, want, when):
+        got = client.request("textDocument/hover", {"textDocument": {"uri": uri_of(path)}, "position": position(pos)})
+        if not got or want not in got["contents"]["value"]:
+            fail(f"hover {pos} in {path.name} {when} lacks {want}", got)
+
+    open_fixture(lib, lib.read_text(encoding="utf-8"))
+    lib_error("opened alone")
+    open_fixture(app, app.read_text(encoding="utf-8"))
+    lib_error("once roots_app.goose, which imports it, is open")
+    close_doc(app)
+    lib_error("once roots_app.goose closes")
+    hover_has(lib, "6:4", "fn roots_lib::helperfn", "once roots_app.goose closes")
+    if not client.request("textDocument/documentSymbol", {"textDocument": {"uri": uri_of(lib)}}):
+        fail("roots_lib.goose's symbols once roots_app.goose closes", None)
+    atext = app.read_text(encoding="utf-8")
+    open_fixture(app, atext)
+    open_fixture(app2, app2.read_text(encoding="utf-8"))
+    lib_error("with two programs importing it")
+    change_doc(app, atext.replace("import roots_lib;", "").replace("roots_lib::helperfn(1)", "1"))
+    lib_error("once one of the two programs stops importing it")
+    # The configured entry goes while a file only it reached is open: the
+    # file gets a root of its own.
+    open_fixture(helper, helper.read_text(encoding="utf-8"))
+    close_doc(complete)
+    close_doc(main)
+    client.send("workspace/didChangeConfiguration", {"settings": {"goose": {"entryFiles": []}}}, request=False)
+    hover_has(helper, "4:4", "fn helper::twice", "once basics.goose is no entry file")
     client.request("shutdown", None)
     client.send("exit", request=False)
     code = client.p.wait(timeout=30)

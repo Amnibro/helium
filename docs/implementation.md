@@ -6214,7 +6214,10 @@ A root is a program analyzed: an entry file the editor configured
 settings), or an open file no root reaches. A change to a file marks every
 root reaching it dirty, due after a debounce (`DEBOUNCE_MS`); an open file
 no root reaches becomes a root of its own, dropped again once a root
-reaches it or it closes. The worker analyzes a due root whenever no message
+reaches it or it closes. That holds whatever takes an open file's root
+away: the program reaching it closes, stops importing it or stops being
+configured, and the file is a root of its own again (`RootOpenFiles`, after
+every change to the roots). The worker analyzes a due root whenever no message
 is waiting (`Workspace::Analyze`, on the compile thread's stack through
 `RunOnCompilerStack`): parse, resolve, check with `nomain`, optimize and
 run bounds-check elimination, as `goose check` does, with
@@ -6226,7 +6229,14 @@ past through `Ast::sink` (§2) and the error that ended the attempt from
 its `CompileError`, and published for every file the attempt reached (an
 empty list where it has none, so the editor drops the last attempt's),
 the related lines with a place as related information and the rest
-appended to the message. A program with errors is not optimized or
+appended to the message. A root keeps what its latest attempt gave each
+file (`Root::published`, as the protocol's JSON), and a file is published
+as the union of what every root reaching it gave
+(`Workspace::PublishDiagnostics`), an error two roots report alike (its
+range, severity and message; the instantiation chains differ) once: a
+file two programs import keeps the errors one of them finds in it when
+the other is dropped or stops importing it, and a root that goes takes
+only its own away. A program with errors is not optimized or
 bounds-check analyzed. An attempt that got past resolution replaces the
 analysis the root's queries read, with whatever its check annotated
 before each error; one that failed earlier keeps the last, so queries go
