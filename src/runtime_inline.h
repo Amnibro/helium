@@ -3823,16 +3823,18 @@ GS_API void gs_os_write_stderr(sl_u8 s) {
 
 GS_API void gs_os_flush_stdout(void) { fflush(stdout); }
 
-/* One line of stdin, without its newline; false at end of input. */
+/* One line of stdin, without its newline or a carriage return before it;
+   false at end of input. */
 GS_API uint8_t gs_os_read_line(gs_rref out) {
     int c = fgetc(stdin);
     if (c == EOF) return 0;
+    int64_t start = out.hdr->len;
     while (c != EOF && c != '\n') {
         uint8_t b = (uint8_t)c;
         gs_bld_append(out, &b, 1);
         c = fgetc(stdin);
     }
-    if (out.hdr->len > 0 && out.hdr->base[out.hdr->len - 1] == '\r') {
+    if (out.hdr->len > start && out.hdr->base[out.hdr->len - 1] == '\r') {
         out.hdr->len--;
         out.stk->top--;
     }
@@ -3893,11 +3895,11 @@ GS_API uint8_t gs_os_resource_dir(gs_rref out) {
         if (n >= suffixlen && !memcmp(path + n - suffixlen, suffix, suffixlen)) {
             n -= sizeof "MacOS/" - 1;
             if (n + sizeof "Resources/" - 1 >= sizeof path) return 0;
-            memcpy(path + n, "Resources/", sizeof "Resources/" - 1);
+)GSRT"
+R"GSRT(            memcpy(path + n, "Resources/", sizeof "Resources/" - 1);
             n += sizeof "Resources/" - 1;
         }
-)GSRT"
-R"GSRT(    #endif
+    #endif
     gs_bld_append(out, path, (int64_t)n);
     return 1;
 #endif

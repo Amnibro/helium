@@ -1,7 +1,9 @@
 """The runtime's standard input at its edges (stdlib/os.goose), built by
 `goose build` and, where the JIT runs, run by `goose run`: stdin read as the
 bytes piped in, a carriage return before a line break and a Ctrl-Z among
-them, which Windows' text mode would translate and stop at."""
+them, which Windows' text mode would translate and stop at; and read_line
+taking off a carriage return it read itself, never one the builder held
+before."""
 import os
 from pathlib import Path
 import subprocess
@@ -13,12 +15,17 @@ PROGRAM = """\
 import std;
 import os;
 
-// Standard input as the program reads it: with `all`, read_stdin's bytes.
+// Standard input as the program reads it: with `all`, read_stdin's bytes;
+// with `lines`, read_line's lines, each followed by a `|`, into a builder
+// that holds `x` and a carriage return already.
 fn main() {
     let argv = args();
     var got: u8[>..] = [];
     if argv[1] == "all" {
         read_stdin(got);
+    } else if argv[1] == "lines" {
+        got.append("x\\r");
+        while read_line(got) { got.append("|"); }
     }
     print(got.len);
     for b in got { print(b); }
@@ -46,7 +53,8 @@ def check_runtime_io(exe, base, *, jit):
         if code != 0:
             raise RuntimeError(f"runtime io: goose build:\n{out}{err}")
         runners = [("built", [app])] + ([("JIT", [exe, "run", source, "--"])] if jit else [])
-        cases = [("all", b"a\r\nb\x1ac", [6, 97, 13, 10, 98, 26, 99])]
+        cases = [("all", b"a\r\nb\x1ac", [6, 97, 13, 10, 98, 26, 99]),
+                 ("lines", b"\nab\r\n", [6, 120, 13, 124, 97, 98, 124])]
         for how, argv in runners:
             for mode, data, want in cases:
                 code, out, err = run(argv + [mode], data)
