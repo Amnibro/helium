@@ -926,15 +926,6 @@ static void gs_rt_stats(void) {
 #endif
 }
 
-/* Every region the calling thread program owns, with its stack block. No
-   Goose reference to these mappings may outlive it. */
-static void gs_free_thread_stacks(void) {
-    gs_release_regions();
-    free(gs_stks);
-    gs_stks = NULL;
-    gs_nstks = 0;
-}
-
 #if GS_NEED_THREADS
 /* A worker's thread program: its entry thunk opens the stack block, whose
    count the compiler knows, and allocates the globals instance. */
@@ -1092,13 +1083,13 @@ static int64_t gs_zig_check(const uint8_t *p, const uint8_t *end, int64_t *out) 
 #define GS_BM_MAX ((int64_t)(GS_STACK_RESERVE))
 
 /* An image is little-endian by definition (serialization.md 7), which every
-)GSRT"
-R"GSRT(   target this compiles for is. The test is a constant to any optimizer; it is
+   target this compiles for is. The test is a constant to any optimizer; it is
    here so that a big-endian host fails loudly instead of writing bytes that
    only it can read back. */
 static int gs_is_le(void) {
     const uint16_t one = 1;
-    return *(const uint8_t *)&one == 1;
+)GSRT"
+R"GSRT(    return *(const uint8_t *)&one == 1;
 }
 
 /* ---------------------------------------------------------------------------
@@ -1116,12 +1107,7 @@ GS_API int64_t gs_fmt_bool(uint8_t *dst, int64_t v);
 /* A u8 array inside an aggregate: quoted, with the escapes Goose reads. */
 GS_API int64_t gs_fmt_quoted(uint8_t *dst, const uint8_t *s, int64_t n);
 
-/* print(...) (§3.7): each argument's text, then a newline. */
-GS_API void gs_out_int(int64_t v);
-GS_API void gs_out_uint(uint64_t v);
-GS_API void gs_out_flt(double v);
-GS_API void gs_out_f32(float v);
-GS_API void gs_out_bool(int64_t v);
+/* print(...) (§3.7): the whole line, rendered first, in one write. */
 GS_API void gs_out_bytes(const uint8_t *p, int64_t len);
 
 /* Byte search behind std's find_any and find_pair (runtime_impl.h): the
@@ -2825,26 +2811,7 @@ R"GSRT(            case '\r': *d++ = '\\'; *d++ = 'r'; break;
     return (int64_t)(d - dst);
 }
 
-/* stdout is unbuffered (gs_rt_start), so every piece is its own write;
-   revisit if print throughput ever matters. */
-
-GS_API void gs_out_int(int64_t v) {
-    uint8_t buf[GS_FMT_MAX];
-    fwrite(buf, 1, (size_t)gs_fmt_i64(buf, v), stdout);
-}
-GS_API void gs_out_uint(uint64_t v) {
-    uint8_t buf[GS_FMT_MAX];
-    fwrite(buf, 1, (size_t)gs_fmt_u64(buf, v), stdout);
-}
-GS_API void gs_out_flt(double v) {
-    uint8_t buf[GS_FMT_MAX];
-    fwrite(buf, 1, (size_t)gs_fmt_f64(buf, v), stdout);
-}
-GS_API void gs_out_f32(float v) {
-    uint8_t buf[GS_FMT_MAX];
-    fwrite(buf, 1, (size_t)gs_fmt_f32(buf, v), stdout);
-}
-GS_API void gs_out_bool(int64_t v) { fputs(v ? "true" : "false", stdout); }
+/* stdout is unbuffered (gs_rt_start): each print is this one write. */
 GS_API void gs_out_bytes(const uint8_t *p, int64_t len) { fwrite(p, 1, (size_t)len, stdout); }
 )GSRT"
     ) },
