@@ -331,15 +331,29 @@ inline Val StructLit::Check(TypeCheck &tc, TypeExpr *expected) {
     if (t->kind == TY_STRUCT) {
         auto st = t->struc->st;
         if (t->struc->args.empty() && !st->generics.empty()) {
-            // Infer the struct's generics from the field initializers.
+            // Infer the struct's generics from the field initializers as
+            // written, in the order written: the first to bind a parameter
+            // binds it. A check after the first finds them as CheckInits
+            // left them, in declaration order beside the defaults it put in,
+            // which belong to the declaration's environment and to the type
+            // the first inference gave; the source order it kept
+            // (sourcefieldindices) picks out the written ones.
+            vector<FieldInit *> written;
+            if (sourcefieldindices.empty()) {
+                for (auto &fi : inits) written.push_back(&fi);
+            } else {
+                for (auto idx : sourcefieldindices)
+                    for (auto &fi : inits)
+                        if (fi.name == st->fields[idx].name) written.push_back(&fi);
+            }
             vector<pair<string_view, TypeExpr *>> b;
-            auto named = !inits.empty() && !inits[0].name.empty();
+            auto named = !written.empty() && !written[0]->name.empty();
             auto pos = 0;
-            for (auto &fi : inits) {
+            for (auto fi : written) {
                 Field *field = nullptr;
                 if (named) {
                     for (auto &f2 : st->fields)
-                        if (!f2.ispad && f2.name == fi.name) { field = &f2; break; }
+                        if (!f2.ispad && f2.name == fi->name) { field = &f2; break; }
                 } else {
                     while (pos < (int)st->fields.size() && st->fields[pos].ispad) pos++;
                     if (pos < (int)st->fields.size()) field = &st->fields[pos++];
@@ -347,11 +361,11 @@ inline Val StructLit::Check(TypeCheck &tc, TypeExpr *expected) {
                 if (!field) continue;  // Reported properly below.
                 // `self` says nothing about the arguments (its type is the
                 // literal's own), and has no meaning outside CheckInits.
-                if (Is<SelfRef>(fi.val)) continue;
-                auto av = tc.CheckV(fi.val, nullptr);
-                fi.val->exprtype = av.type;
+                if (Is<SelfRef>(fi->val)) continue;
+                auto av = tc.CheckV(fi->val, nullptr);
+                fi->val->exprtype = av.type;
                 // The value's own type is what binds the arguments.
-                tc.JudgeCastAt(fi.val, nullptr, av);
+                tc.JudgeCastAt(fi->val, nullptr, av);
                 auto nt = tc.NaturalType(av);
                 // The shape-changing coercion generics see through, as a
                 // call's do: an array, or a reference to one, meeting a

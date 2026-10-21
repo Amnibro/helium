@@ -746,7 +746,12 @@ length prefixes and relative offsets, at field, argument, return and local slots
 This conservative AST proof follows completed callees with a recursion guard;
 unknown calls, mutation, loops and potentially failing operations are barriers.
 It is independent of optimization and treats debug-only failures as barriers too.
-No source-order staging or extra copies are emitted.
+No source-order staging or extra copies are emitted. The literal keeps its
+initializers in declaration order, beside the defaults put in, and the order
+they were written in (`StructLit::sourcefieldindices`): a generic struct
+literal checked again (an argument's two phases, a loop's passes, a cycle's
+rounds) infers its type arguments from the written ones alone, in that order,
+as its first check did (`StructLit::Check`).
 
 **Defaults.** An omitted optional field is null even without an explicit
 default. Other omitted fields need a declared default, unless the literal
