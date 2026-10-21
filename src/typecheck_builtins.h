@@ -3029,7 +3029,7 @@ inline int TypeCheck::NoteLiveShrink(LiveShrink ls, FnSpec *current) {
     }
     for (auto &e : current->record.liveshrinks) {
         if (e.shrunk != s || e.live != l || !e.bound != !ls.bound || e.contents != ls.contents ||
-            e.inplace != ls.inplace)
+            e.inplace != ls.inplace || e.growonly != ls.growonly)
             continue;
         if (e.bound && !TypeEq(e.bound, ls.bound)) continue;
         if (e.contents && !TypeEq(e.pointee, ls.pointee)) continue;
