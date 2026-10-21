@@ -2877,11 +2877,25 @@ returning function's definition context (a nested function in scope, else
 the overload set) and is the innermost frame whose function is in that set;
 every specialization between records the target in `needs`, and every path
 by which a specialization was later reused (`neededges`) is re-validated
-against it (`ValidateNeeds`, `AddNeed`). A long-distance return may carry
-only references rooted at globals or static data -- more conservative than
-the spec's "rooted at or above the target's frame" (TODO 0d). The returns of
-one function may give different roots: `RecordReturn` keeps every distinct
-root (`RetRoot::alts`), the writability ANDed, and every call maps and unites
+against it (`ValidateNeeds`, `AddNeed`). A long-distance return from a named
+function may carry only references rooted at globals or static data -- more
+conservative than the spec's "rooted at or above the target's frame" (TODO
+0d). One from a function value's body, plain or `from`, gives the target
+what returning out of each call it leaves in turn would
+(`ReturnThroughCalls`): a value rooted at such a call's parameter classes
+points where that call's arguments did, mapped as the call's own result
+would be (`RetAltVal`, through the arguments the frame keeps,
+`Frame::argvals`), so a block may return the element the function calling
+it handed it (`json::each(n) { c => return c; }`), and one rooted in a
+variable of such a call, the body's own locals among them, is an error.
+What is left is rooted where the target names it, which its calls map in
+turn. The target's record then holds what that one call gave it, so no
+other call reuses the check of a call such a return left
+(`FnSpec::storesout`, as for what `ApplyCalleeStores` maps in place): a
+later pass of a loop may hand it other arguments, and a later round of a
+cycle the target is in records its returns anew. The returns of one
+function may give different roots: `RecordReturn` keeps every distinct root
+(`RetRoot::alts`), the writability ANDed, and every call maps and unites
 them (`CallResult`, §3.4).
 
 ### 3.13 Relative references and pools
@@ -5676,8 +5690,9 @@ reads of `b`.
 Rules the current implementation applies beyond, or in place of, what the
 specification allows, and the shapes the C backend refuses outright:
 
-* A long-distance return may carry only references rooted at globals or
-  static data (TODO 0d).
+* A long-distance return from a named function may carry only references
+  rooted at globals or static data (TODO 0d); one out of a function value's
+  body is mapped through the calls it leaves (§3.12).
 * Inside a recursive cycle, a reference rooted at a caller's fixed-size local
   is pass-down only unless the parameter it came through is threaded (§3.11);
   the spec's cycle store rule is stated the same way and marked for

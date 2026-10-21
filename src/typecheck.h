@@ -218,8 +218,11 @@ struct TypeCheck {
         // index in outerbodies the state is saved at while a body is
         // checked inside it, or past them for the state being checked now.
         int bodyidx = 0;
-        // A specialization's body being checked (CheckSpecBodyOnce): its exits.
+        // A specialization's body being checked (CheckSpecBodyOnce): its exits,
+        // and the arguments of the call it is checked for, as the caller
+        // checked them, where there is one.
         BodyExits *exits = nullptr;
+        vector<Val> *argvals = nullptr;
     };
 
     enum ScopeKind { SK_PLAIN, SK_FN, SK_LOOP, SK_BLOCK, SK_EXPANSION };
@@ -2264,6 +2267,7 @@ struct TypeCheck {
     void NamedResultCopyWarning(FnSpec *spec);
     Val RetAltVal(FnSpec *spec, const RootAlt &alt, vector<Val> &argvals, TypeExpr *t, Node *at);
     Val CallResult(Call *c, FnSpec *spec, vector<Val> &argvals);
+    void ReturnThroughCalls(Val &v, int tf, Return *r);
     void CheckReturn(Return *r);
     FnSpec *EnsureThreadSpec(SFunction *sf, Line l);
 

@@ -2805,6 +2805,7 @@ inline void TypeCheck::CheckSpecBodyOnce(FnSpec *spec, vector<Val> *argvals, Lin
     f.callline = callline;
     f.expansiontrace = ActiveExpansionTrace();
     f.exits = &exits;
+    f.argvals = argvals;
     frames.push_back(f);
     auto fi = (int)frames.size() - 1;
     // The caller's body state is its own (BodyState): this body's loops run
@@ -3365,6 +3366,71 @@ inline Val TypeCheck::CallResult(Call *c, FnSpec *spec, vector<Val> &argvals) {
     return lastcallrets[0];
 }
 
+// A return out of a function value's body leaves the calls between its frame
+// and the target's, frame tf, and gives the target what returning out of
+// each in turn would: where it is rooted at a call's parameter classes, it
+// points where that call's arguments did, as the call's own result would
+// (RetAltVal), and a variable of the call, the body's own locals among them,
+// dies with it. What is left is rooted where the target names it, which the
+// target's calls map in turn (RecordReturn). What the target's record gets is
+// then this call's, as what ApplyCalleeStores maps in place is: another call
+// reusing the check -- a later pass of a loop, a later round of a cycle the
+// target is in, which records its returns anew -- would give it nothing.
+inline void TypeCheck::ReturnThroughCalls(Val &v, int tf, Return *r) {
+    auto isrs = IsRefOrSlice(v.type);
+    if (!isrs && !HoldsPlainRef(v.type)) return;
+    Val mapped;
+    mapped.type = v.type;
+    mapped.TakeAlts(isrs ? v.AsRoots() : ContentsOf(v));
+    mapped.writable = true;
+    for (auto k = (int)frames.size() - 1; k > tf; k--) {
+        auto s = frames[k].spec;
+        if (frames[k].isfunval || !s || s == frames[tf].spec) continue;
+        s->storesout = true;
+        auto classof = [&](const RootAlt &a) {
+            return a.root && find(s->classroots.begin(), s->classroots.end(), a.root) !=
+                                 s->classroots.end();
+        };
+        for (auto &a : mapped.alts)
+            if (a.root && a.root->ownerspec == s)
+                Error(r, cat("returning a reference rooted in ", a.root->name,
+                             ", which dies with the call of ", s->sf->name,
+                             " that this return leaves (§7.9)"));
+        if (!mapped.Any(classof)) continue;
+        Val out;
+        auto first = true;
+        for (auto &a : mapped.alts) {
+            Val m;
+            if (classof(a) && frames[k].argvals) {
+                m = RetAltVal(s, a, *frames[k].argvals, mapped.type, r);
+            } else {
+                m.type = mapped.type;
+                m.alts.push_back(a);
+                m.writable = true;
+            }
+            out = first ? m : MergeVals(out, true, m, true, r, true);
+            first = false;
+        }
+        if (auto left = find_if(out.alts.begin(), out.alts.end(), classof); left != out.alts.end())
+            Error(r, cat("returning a reference rooted at parameter ", left->root->name, " of ",
+                         s->sf->name, ", whose call this return leaves (§7.9)"));
+        out.unknown = out.unknown || mapped.unknown;
+        out.writable = out.writable && mapped.writable;
+        out.byteview = out.byteview || mapped.byteview;
+        out.freshview = out.freshview || mapped.freshview;
+        mapped = out;
+    }
+    v.byteview = v.byteview || mapped.byteview;
+    if (!isrs) {
+        v.contents = mapped.AsRoots();
+        v.holderset = true;
+        return;
+    }
+    v.TakeAlts(mapped);
+    v.writable = v.writable && mapped.writable;
+    v.freshview = v.freshview || mapped.freshview;
+}
+
 inline void TypeCheck::CheckReturn(Return *r) {
     if (frames.back().isdefault) Error(r, "return outside of a function");
     // Which function does this exit? `from f` names one on the current
@@ -3453,10 +3519,16 @@ inline void TypeCheck::CheckReturn(Return *r) {
         Error(r, cat("function ", frames[tf].sf->name, " must return value(s)"));
     if (!vals.empty() || !tspec->retsknown) {
         // For long-distance returns, references, including those a returned
-        // value holds, must not be rooted in frames that unwind;
-        // conservatively require globals/static.
-        if (tf != (int)frames.size() - 1 && !frames.back().isfunval) {
+        // value holds, must not be rooted in frames that unwind. One out of a
+        // function value's body is mapped through the calls it leaves; one
+        // written in a named function must conservatively be rooted at
+        // globals/static.
+        if (tf != (int)frames.size() - 1) {
             for (auto &v : vals) {
+                if (frames.back().isfunval) {
+                    ReturnThroughCalls(v, tf, r);
+                    continue;
+                }
                 auto isrs = IsRefOrSlice(v.type);
                 if (!isrs && !HoldsPlainRef(v.type)) continue;
                 const Roots &roots = isrs ? v.AsRoots() : ContentsOf(v);

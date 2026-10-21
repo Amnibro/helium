@@ -2208,7 +2208,10 @@ struct FnSpec {
     // The body stored a value rooted at one of its parameters' classes into
     // a variable outside its activation, or bound a reference variable there
     // to one, which its call mapped onto that call's arguments in place
-    // (TypeCheck::ApplyCalleeStores): no other call reuses the check.
+    // (TypeCheck::ApplyCalleeStores), or a function value's body checked in
+    // it returned a reference out of it into the record of a function outside
+    // it, mapped the same way (TypeCheck::ReturnThroughCalls): no other call
+    // reuses the check.
     bool storesout = false;
     // A value with self-relative references is returned as the body's named
     // result, which is right only where it is built at the destination
