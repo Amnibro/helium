@@ -140,31 +140,72 @@ inline bool CodeGen::InStraightLoop() {
     return false;
 }
 
-// An unsigned `/` or `%`, or a signed one BCE found to be of nonnegative
-// operands (Binary::nonneg), by a divisor DivisorKey names, which
-// HoistDivisors may find a loop cannot change.
-inline bool CodeGen::LoopDivisible(Binary *b) {
-    if (b->op != T_DIV && b->op != T_MOD) return false;
-    auto t = b->left->exprtype;
-    if (!t || t->kind != TY_INT || t->intstorage == IS_VARINT) return false;
-    if (!IsUnsigned(t->intstorage) && !b->nonneg) return false;
-    auto rt = b->right->exprtype;
-    return rt && rt->kind == TY_INT && !DivisorKey(b->right).empty();
+// n as the division it computes, if it is a `/` or `%`, or a `/=` or `%=`,
+// whose dividend is its target's old value (a reference's pointee where it
+// writes that).
+inline bool CodeGen::AsDivision(Node *n, Division &dv) {
+    if (auto b = Is<Binary>(n); b && (b->op == T_DIV || b->op == T_MOD)) {
+        dv = { b->op, b->left->exprtype, b->right, b->nonneg };
+        return true;
+    }
+    if (auto a = Is<Assign>(n); a && (a->op == T_DIVEQ || a->op == T_MODEQ)) {
+        auto t = a->lval->exprtype;
+        if (a->pointee && t && t->kind == TY_REF) t = t->ref->sub;
+        dv = { a->op == T_DIVEQ ? T_DIV : T_MOD, t, a->rhs, false };
+        return true;
+    }
+    return false;
 }
 
-// Whether a LoopDivisible division's operands, of the left one's type, fit
+// An unsigned division, or a signed one BCE found to be of nonnegative
+// operands (Division::nonneg), by a divisor DivisorKey names, which
+// HoistDivisors may find a loop cannot change.
+inline bool CodeGen::LoopDivisible(const Division &dv) {
+    auto t = dv.t;
+    if (!t || t->kind != TY_INT || t->intstorage == IS_VARINT) return false;
+    if (!IsUnsigned(t->intstorage) && !dv.nonneg) return false;
+    auto rt = dv.divisor->exprtype;
+    return rt && rt->kind == TY_INT && !DivisorKey(dv.divisor).empty();
+}
+
+// Whether a LoopDivisible division's operands, of the dividend's type, fit
 // in 32 bits, for a 32-bit magic: the high half of a 32x32 product, which a
 // C compiler vectorizes, where it keeps a 64x64 one scalar.
-inline bool CodeGen::NarrowDivision(Binary *b) {
-    return IntBits(b->left->exprtype->intstorage) <= 32;
+inline bool CodeGen::NarrowDivision(const Division &dv) {
+    return IntBits(dv.t->intstorage) <= 32;
 }
 
 // What HoistDivisors files a LoopDivisible division's magic under: its
 // divisor's DivisorKey, distinct for a NarrowDivision, which takes a 32-bit
 // magic.
-inline string CodeGen::DivisionKey(Binary *b, const VarDef **root, bool *path) {
-    auto k = DivisorKey(b->right, root, path);
-    return NarrowDivision(b) ? cat(k, " u32") : k;
+inline string CodeGen::DivisionKey(const Division &dv, const VarDef **root, bool *path) {
+    auto k = DivisorKey(dv.divisor, root, path);
+    return NarrowDivision(dv) ? cat(k, " u32") : k;
+}
+
+// A division of l by a divisor fixed for an enclosing loop (HoistDivisors):
+// the high half of a product by its magic number, unless gs_divu_gen found
+// none to give. `plain`, the division by the divisor itself, where no loop
+// fixed it.
+inline string CodeGen::FixedDivX(const Division &dv, const string &l,
+                                 const function<string()> &plain, Line line) {
+    auto key = LoopDivisible(dv) ? DivisionKey(dv) : string();
+    auto dm = key.empty() ? divmagic.end() : divmagic.find(key);
+    if (dm == divmagic.end()) return plain();
+    auto &mg = dm->second;
+    auto ct = CT(dv.t);
+    auto lc = cat("(", ct, ")(", l, ")");
+    auto w = mg.narrow ? "uint32_t" : "uint64_t";
+    auto q = cat(mg.narrow ? "gs_divu32_q(" : "gs_divu_q(", "(", w, ")(", lc, "), ", mg.magic, ", ",
+                 mg.more, ")");
+    auto fast = dv.op == T_DIV ? q : cat("(", w, ")(", lc, ") - ", q, " * ", mg.val);
+    // Where only a zero divisor goes without, the plain division would fail.
+    // Failing outright leaves a test of the loop-invariant `more` that gcc
+    // takes out of the loop; the plain division's own zero test would be a
+    // loop exit after which the loop's stores might not run, which keeps gcc
+    // from holding them in registers (and from vectorizing the loop).
+    auto slow = mg.zeronone ? cat("(gs_divfail(", LocArgs(line), "), 0)") : plain();
+    return cat("(", ct, ")(", mg.more, " != GS_DIVU_NONE ? ", fast, " : ", slow, ")");
 }
 
 // What a divisor a loop may fix is known by, or "" where it is none: an
@@ -282,28 +323,29 @@ inline const set<const VarDef *> &CodeGen::RefdLocals() {
     return refdlocals;
 }
 
-// The divisions in a loop by a divisor the loop cannot change (LoopDivisible)
-// multiply by a magic number computed here, ahead of the loop, once for every
-// loop nested in it as well: a hardware division takes several times as long
-// as a multiply and a shift. The divisor is a variable bound before the loop
-// -- named already, and bound nowhere inside, nor by the loop itself
-// (`binders`, a `for`'s variables) -- or fields of one, or a conversion of
-// either, and the loop (its condition included) writes nothing of that
-// variable. Nothing else may: no reference is made to the variable anywhere
-// in the function (RefdLocals), nor may another function's code reach it
-// (captured, or a function's named result built at its destination). A
-// global, which other functions' code may write, or a variable of global
-// initialization code, which RefdLocals does not see, counts only as an
-// integer `let` no writable reference is bound to (VarDef::refwrite). A
-// conversion that would fail leaves the divisions plain, to fail where and
-// when one runs. Returns the divisors it adds to divmagic, for the loop to
-// retire. Tail-recursion elimination turns self-calls into a loop that
-// assigns the parameters each round (optimize_tre.h), which is a write.
+// The divisions in a loop by a divisor the loop cannot change (LoopDivisible:
+// a `/` or `%`, or a `/=` or `%=`) multiply by a magic number computed here,
+// ahead of the loop, once for every loop nested in it as well (FixedDivX): a
+// hardware division takes several times as long as a multiply and a shift.
+// The divisor is a variable bound before the loop -- named already, and bound
+// nowhere inside, nor by the loop itself (`binders`, a `for`'s variables) --
+// or fields of one, or a conversion of either, and the loop (its condition
+// included) writes nothing of that variable. Nothing else may: no reference
+// is made to the variable anywhere in the function (RefdLocals), nor may
+// another function's code reach it (captured, or a function's named result
+// built at its destination). A global, which other functions' code may
+// write, or a variable of global initialization code, which RefdLocals does
+// not see, counts only as an integer `let` no writable reference is bound to
+// (VarDef::refwrite). A conversion that would fail leaves the divisions
+// plain, to fail where and when one runs. Returns the divisors it adds to
+// divmagic, for the loop to retire. Tail-recursion elimination turns
+// self-calls into a loop that assigns the parameters each round
+// (optimize_tre.h), which is a write.
 inline vector<string> CodeGen::HoistDivisors(Block *loopbody, Node *cond,
                                              const vector<const VarDef *> &binders) {
     vector<string> added;
     set<const VarDef *> inner(binders.begin(), binders.end());
-    vector<Binary *> divs;
+    vector<Division> divs;
     function<void(Node *)> all = [&](Node *n) {
         if (!n) return;
         if (auto id = Is<Ident>(n); id && id->vdef) inner.insert(id->vdef);
@@ -336,15 +378,15 @@ inline vector<string> CodeGen::HoistDivisors(Block *loopbody, Node *cond,
             if (c->builtin >= 0 && (BuiltinByKind(c->builtin).flags & BF_WRITE))
                 written(c->FirstArg());
         }
-        if (auto b = Is<Binary>(n); b && LoopDivisible(b)) divs.push_back(b);
+        if (Division dv; AsDivision(n, dv) && LoopDivisible(dv)) divs.push_back(dv);
         RunChildren(n, walk);
     };
     walk(loopbody);
     walk(cond);
-    for (auto b : divs) {
+    for (auto &dv : divs) {
         const VarDef *root = nullptr;
         auto path = false;
-        auto key = DivisionKey(b, &root, &path);
+        auto key = DivisionKey(dv, &root, &path);
         if (divmagic.count(key) || inner.count(root) || root->captured || root->refwrite ||
             nrvo.count(root))
             continue;
@@ -354,9 +396,9 @@ inline vector<string> CodeGen::HoistDivisors(Block *loopbody, Node *cond,
             continue;
         }
         auto ok = string("1");
-        auto x = DivisorValue(b->right, ok);
+        auto x = DivisorValue(dv.divisor, ok);
         auto v = T(), m = T(), more = T();
-        auto narrow = NarrowDivision(b);
+        auto narrow = NarrowDivision(dv);
         auto w = narrow ? "uint32_t" : "uint64_t";
         auto gen = narrow ? "gs_divu32_gen(" : "gs_divu_gen(";
         L("uint8_t ", more, ";");

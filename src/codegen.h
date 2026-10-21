@@ -865,6 +865,8 @@ struct CodeGen {
     };
     string GenPure(Node *n);
     string DivX(bool div, IntStorage s, const string &l, const string &r, Line line);
+    string ArithX(TType op, TypeExpr *t, const string &l, const string &r, Line line,
+                  bool nonneg = false, string lx = "", string rx = "");
     string IndexTypeCheck(const string &x, TypeExpr *t, Line ln);
     static string IntStr(int64_t v);
     static string FltStr(double v, bool f32);
@@ -1086,9 +1088,17 @@ struct CodeGen {
     // made to somewhere in it (RefdLocals), for refdspec.
     set<const VarDef *> refdlocals;
     FnSpec *refdspec = nullptr;
-    bool LoopDivisible(Binary *b);
-    static bool NarrowDivision(Binary *b);
-    string DivisionKey(Binary *b, const VarDef **root = nullptr, bool *path = nullptr);
+    // A `/` or `%`, or a `/=` or `%=` dividing its target (AsDivision): the
+    // plain operator, the dividend's type, the divisor, and whether BCE found
+    // a signed one to be of nonnegative operands (Binary::nonneg, which BCE
+    // judges for no compound assignment).
+    struct Division { TType op; TypeExpr *t; Node *divisor; bool nonneg; };
+    static bool AsDivision(Node *n, Division &dv);
+    bool LoopDivisible(const Division &dv);
+    static bool NarrowDivision(const Division &dv);
+    string DivisionKey(const Division &dv, const VarDef **root = nullptr, bool *path = nullptr);
+    string FixedDivX(const Division &dv, const string &l, const function<string()> &plain,
+                     Line line);
     string DivisorKey(Node *n, const VarDef **root = nullptr, bool *path = nullptr);
     string DivisorValue(Node *n, string &ok);
     const set<const VarDef *> &RefdLocals();

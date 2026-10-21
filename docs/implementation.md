@@ -4973,9 +4973,11 @@ is ready at once.
 
 **Divisors.** An unsigned `/` or `%`, or a signed one `Binary::nonneg` marks
 (§5.10), by a divisor the loop cannot change multiplies instead of dividing
-(`LoopDivisible`, `HoistDivisors`). The divisor is an integer variable, a
-field of a fixed-size struct variable (through any number of struct fields),
-or an integer conversion of either (`DivisorKey`: `x / (t.total as u64)`),
+(`LoopDivisible`, `HoistDivisors`, `FixedDivX`), and so does an unsigned `/=`
+or `%=` (`AsDivision`); a signed one divides, BCE judging no compound
+assignment's operands. The divisor is an integer variable, a field of a
+fixed-size struct variable (through any number of struct fields), or an
+integer conversion of either (`DivisorKey`: `x / (t.total as u64)`),
 whose variable is bound before the loop, not inside it nor by the loop
 itself, and which nothing can write while the loop runs: the loop, its
 condition included, writes no part of it (tail-recursion elimination assigns
@@ -4998,12 +5000,14 @@ number instead (`gs_divu32_gen`, one 64-by-32-bit division, and
 divisor shares the loop (`DivisionKey`): each division is then the high half
 of a 32-by-32-bit product, which a C compiler vectorizes, where x86-64 has
 the 64-by-64-bit one only as a scalar instruction. A loop summing `u32`
-remainders runs about seven times as fast with AVX-512. A zero divisor gets
-`GS_DIVU_NONE`, under which every division takes the plain operator and its
-zero check, so the abort happens where and when a division by zero runs; so
-does a divisor whose conversion would fail, which is computed ahead of the
-loop without its check (`DivisorValue`), and a 64-bit magic number under a C
-compiler without 128-bit products (TinyCC). Where only a zero divisor can
+remainders runs about seven times as fast with AVX-512, and one reducing a
+million `u32`s in place by `x %= m` 4.3 times as fast at x86-64's baseline
+(clang-cl 22). A zero divisor gets `GS_DIVU_NONE`, under which every
+division takes the plain operator and its zero check, so the abort happens
+where and when a division by zero runs; so does a divisor whose conversion
+would fail, which is computed ahead of the loop without its check
+(`DivisorValue`), and a 64-bit magic number under a C compiler without
+128-bit products (TinyCC). Where only a zero divisor can
 go without a 32-bit magic (`DivMagic::zeronone`: no conversion is checked),
 the division fails outright under `GS_DIVU_NONE` instead: gcc copies that
 test of a loop-invariant value out of the loop, where the plain division's
@@ -5349,8 +5353,11 @@ list keeps a message only until then, and an id for good. `gs_panic`,
 under `GS_DEBUG` and macros equal to the release expression otherwise
 (measured at 13--37% of runtime under a non-inlining backend when they were
 functions); division and modulo are always functions, zero-checked, with
-Euclidean `%`. `as` goes through `GS_RANGE`/`GS_F2I`/... macros that check in
-debug and cast in release, except to a float, and from an integer type whose
+Euclidean `%`. One table spells the scalar operators (`CodeGen::ArithX`)
+wherever one is applied: a binary operator, a compound assignment (its
+plain operator), `++` and `--`, and each member of an elementwise operation.
+`as` goes through `GS_RANGE`/`GS_F2I`/... macros that check in debug and
+cast in release, except to a float, and from an integer type whose
 every value the target holds, which are plain C casts in every build; `as!`
 and release float-to-int use the defined wrap of `gs_f2iwrap`, which tests
 the i64 range on the value itself (a value lies in it exactly when its

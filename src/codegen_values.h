@@ -545,6 +545,66 @@ inline string CodeGen::DivX(bool div, IntStorage s, const string &l, const strin
     return cat("gs_mod_", IntSfx(s), "(", t, ", ", a, ", ", b, ", ", LocArgs(line), ")");
 }
 
+// Scalar `l op r` at type t, an integer or a float type: the one table of
+// arithmetic, bitwise and shift operators that binary operators, compound
+// assignments (whose operator stands for its plain one), `++` and `--`, and
+// the members of elementwise operations share. A call takes l and r as they
+// are, converted by its parameters; an infix operator takes lx and rx, by
+// default l and r cast to t, which realizes the implicit widening of
+// operands the typechecker unified without converting them. `nonneg`: a
+// signed `/`, `%` or `>>` computed unsigned (Binary::nonneg).
+inline string CodeGen::ArithX(TType op, TypeExpr *t, const string &l, const string &r, Line line,
+                              bool nonneg, string lx, string rx) {
+    assert(t->kind == TY_FLT || (t->kind == TY_INT && t->intstorage != IS_VARINT));
+    switch (op) {
+        case T_PLUSEQ:  op = T_PLUS;   break;
+        case T_MINUSEQ: op = T_MINUS;  break;
+        case T_MULEQ:   op = T_MUL;    break;
+        case T_DIVEQ:   op = T_DIV;    break;
+        case T_MODEQ:   op = T_MOD;    break;
+        case T_ANDEQ:   op = T_BITAND; break;
+        case T_OREQ:    op = T_BITOR;  break;
+        case T_XOREQ:   op = T_XOR;    break;
+        case T_SHLEQ:   op = T_SHL;    break;
+        case T_SHREQ:   op = T_SHR;    break;
+        default: break;
+    }
+    auto ct = CT(t);
+    if (lx.empty()) lx = cat("(", ct, ")(", l, ")");
+    if (rx.empty()) rx = cat("(", ct, ")(", r, ")");
+    if (t->kind == TY_FLT) {
+        switch (op) {
+            case T_PLUS:  return cat("(", lx, " + ", rx, ")");
+            case T_MINUS: return cat("(", lx, " - ", rx, ")");
+            case T_MUL:   return cat("(", lx, " * ", rx, ")");
+            case T_DIV:   return cat("(", lx, " / ", rx, ")");
+            case T_MOD:
+                return cat(t->fltstorage == FS_F32 ? "fmodf(" : "fmod(", lx, ", ", rx, ")");
+            default: assert(false); return l;
+        }
+    }
+    auto s = t->intstorage;
+    auto sfx = IntSfx(s);
+    switch (op) {
+        case T_PLUS:  return cat("gs_add_", sfx, "(", l, ", ", r, OvfLocArgs(s, line), ")");
+        case T_MINUS: return cat("gs_sub_", sfx, "(", l, ", ", r, OvfLocArgs(s, line), ")");
+        case T_MUL:   return cat("gs_mul_", sfx, "(", l, ", ", r, OvfLocArgs(s, line), ")");
+        case T_DIV: case T_MOD:
+            if (!nonneg) return DivX(op == T_DIV, s, l, r, line);
+            return cat("(", ct, ")((uint64_t)(", lx, op == T_DIV ? ") / " : ") % ", "(uint64_t)(",
+                       rx, "))");
+        case T_BITAND: return cat("(", ct, ")(", lx, " & ", rx, ")");
+        case T_BITOR:  return cat("(", ct, ")(", lx, " | ", rx, ")");
+        case T_XOR:    return cat("(", ct, ")(", lx, " ^ ", rx, ")");
+        case T_SHL:    return cat("gs_shl_", sfx, "(", l, ", (int64_t)(", r, "))");
+        case T_SHR:
+            if (!nonneg) return cat("gs_shr_", sfx, "(", l, ", (int64_t)(", r, "))");
+            return cat("(", ct, ")((uint64_t)(", lx, ") >> ((int64_t)(", r, ") & ", IntBits(s) - 1,
+                       "))");
+        default: assert(false); return l;
+    }
+}
+
 // The two minima are written as a subtraction: C has no negative decimal
 // constants, and MSVC's C front end types both magnitudes as unsigned
 // (C90 literal rules), which the negation would carry through.
@@ -1667,25 +1727,7 @@ inline void CodeGen::GenElemwiseInto(TypeExpr *t, TType op, Line line, const str
     GenElemwiseLeaves(t, dst, [&](TypeExpr *tt, const string &path) {
         auto a = cat("(", l, ")", lscalar ? string() : path);
         auto c = cat("(", r, ")", rscalar ? string() : path);
-        if (tt->kind == TY_FLT) {
-            switch (op) {
-                case T_PLUS: case T_PLUSEQ:   return cat("(", a, " + ", c, ")");
-                case T_MINUS: case T_MINUSEQ: return cat("(", a, " - ", c, ")");
-                case T_MUL: case T_MULEQ:     return cat("(", a, " * ", c, ")");
-                case T_DIV: case T_DIVEQ:     return cat("(", a, " / ", c, ")");
-                default: return cat((tt->fltstorage == FS_F32 ? "fmodf(" : "fmod("), a, ", ",
-                                    c, ")");
-            }
-        }
-        auto sfx = IntSfx(tt->intstorage);
-        auto ovf = OvfLocArgs(tt->intstorage, line);
-        switch (op) {
-            case T_PLUS: case T_PLUSEQ:   return cat("gs_add_", sfx, "(", a, ", ", c, ovf, ")");
-            case T_MINUS: case T_MINUSEQ: return cat("gs_sub_", sfx, "(", a, ", ", c, ovf, ")");
-            case T_MUL: case T_MULEQ:     return cat("gs_mul_", sfx, "(", a, ", ", c, ovf, ")");
-            case T_DIV: case T_DIVEQ: return DivX(true, tt->intstorage, a, c, line);
-            default: return DivX(false, tt->intstorage, a, c, line);
-        }
+        return ArithX(op, tt, a, c, line, false, a, c);
     });
 }
 
