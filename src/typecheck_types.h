@@ -568,6 +568,11 @@ inline TypeExpr *TypeCheck::PendingElemFromSeq(const Val &av, Node *at) {
 inline void TypeCheck::CompletePending(TypeExpr *arrt, TypeExpr *elem, Line l) {
     arrt->arr->sub = elem;
     ValidateType(arrt, l, VT_LOCAL);
+    auto pool = pendingpools.find(arrt);
+    if (pool != pendingpools.end() && ClassOf(elem) != SC_FIXED)
+        Error(l, cat(pool->second->reusable == RU_SLICES ? "reusable[]" : "reusable",
+                     " applies to grow-only arrays of fixed-size elements (§5.4), and this "
+                     "makes ", pool->second->name, " a ", TypeStr(arrt)));
 }
 
 inline void TypeCheck::RequireComplete(TypeExpr *t, Line l) {

@@ -715,6 +715,9 @@ element is a private void type (`PendingArray`); the first `push`, `append`,
 (`CompletePending`), which completes it in the `VarDef`, in every `Ident`
 already checked and in the literal, since all of them share the one type
 object. A pending array that reaches a scope exit uncompleted is an error.
+The pending array of a `reusable` declaration (`pendingpools`) takes only a
+fixed-size element from whatever completes it, as `CheckVarDecl` requires of
+an annotated pool (§5.4).
 Anywhere else a `[]` checked without an array type to take is the
 fixed-size placeholder `void[0]` (`Val::emptyarr`), which a consumer with a
 type checks again at that type: an argument at the parameter type overload

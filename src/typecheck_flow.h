@@ -2235,6 +2235,9 @@ inline void TypeCheck::CheckVarDecl(VarDecl *vd, bool global) {
             if (!IsArrayKind(t, A_GROW) || ClassOf(t->arr->sub) != SC_FIXED)
                 Error(vd, cat(kw, " applies to grow-only arrays of fixed-size "
                                   "elements (§5.4)"));
+            // `= []` leaves the element to what first goes into the pool
+            // (§4.2), which CompletePending judges.
+            if (IsPendingArray(t)) pendingpools[t] = d;
         }
         if (!global) {
             CheckCycleInit(d, fi, calls);

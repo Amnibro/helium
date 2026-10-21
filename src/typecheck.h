@@ -1208,6 +1208,9 @@ struct TypeCheck {
     TypeExpr *PendingElemFrom(const Val &av, Node *at);
     TypeExpr *PendingElemFromSeq(const Val &av, Node *at);
     void CompletePending(TypeExpr *arrt, TypeExpr *elem, Line l);
+    // The pending arrays of `reusable` declarations, by the pool each is the
+    // type of: whatever completes one gives a pool its element (§5.4).
+    map<TypeExpr *, VarDef *> pendingpools;
     void RequireComplete(TypeExpr *t, Line l);
     void ValidateType(TypeExpr *t, Line l, int pos);
 
