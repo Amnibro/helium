@@ -2001,6 +2001,15 @@ def main():
         except ValueError:
             good = False
         checks.append(("toolchain --json", good, out + err))
+        # A control character in what it reports is escaped, not lost.
+        home = str(gendir / "home\twith a tab")
+        tab = subprocess.run([str(exe), "toolchain", "--json"], capture_output=True, text=True,
+                             errors="replace", env=dict(os.environ, GOOSE_HOME=home))
+        try:
+            good = json.loads(tab.stdout).get("home") == home.replace("\\", "/")
+        except ValueError:
+            good = False
+        checks.append(("toolchain --json with a tab in GOOSE_HOME", good, tab.stdout + tab.stderr))
         if cc:
             # `goose build` against the toolchain the compiler finds itself:
             # the executable beside -o, running; a dry run writing none.

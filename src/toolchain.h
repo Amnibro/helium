@@ -495,45 +495,35 @@ inline Tools FindTools(const string &ccrequest, bool refresh = false) {
     return t;
 }
 
-inline string JsonString(const string &s) {
-    string out = "\"";
-    for (auto c : s) {
-        if (c == '"' || c == '\\') {
-            out += '\\';
-            out += c;
-        } else if ((uint8_t)c < 0x20) {
-            out += ' ';
-        } else {
-            out += c;
-        }
-    }
-    return out + "\"";
-}
-
 // What `goose toolchain` prints: for people, or as JSON for scripts.
 // `builtin` names the modules whose packages are compiled into this
 // compiler (builtin.h), for the runners to know what runs without a build.
 inline string ToolsReport(const Tools &t, bool json, const vector<string> &builtin) {
     string s;
     if (json) {
-        auto tool = [](const ToolInfo &ti) {
+        auto q = [](const string &v) {
+            string out;
+            JsonQuote(out, v);
+            return out;
+        };
+        auto tool = [&](const ToolInfo &ti) {
             return ti.path.empty() ? string("null")
-                 : cat("{\"path\": ", JsonString(ti.path), ", \"version\": ", JsonString(ti.version), "}");
+                 : cat("{\"path\": ", q(ti.path), ", \"version\": ", q(ti.version), "}");
         };
         s += "{\n";
         if (t.havecc) {
             auto &c = t.cc;
-            Append(s, "  \"cc\": {\"name\": ", JsonString(c.name), ", \"style\": ", JsonString(c.style),
-                   ", \"path\": ", JsonString(c.cc), ", \"cxx\": ", JsonString(c.cxx),
-                   ", \"version\": ", JsonString(c.version), ", \"desc\": ", JsonString(c.desc),
-                   ", \"id\": ", JsonString(c.id), ", \"how\": ", JsonString(c.how), "},\n");
+            Append(s, "  \"cc\": {\"name\": ", q(c.name), ", \"style\": ", q(c.style),
+                   ", \"path\": ", q(c.cc), ", \"cxx\": ", q(c.cxx),
+                   ", \"version\": ", q(c.version), ", \"desc\": ", q(c.desc),
+                   ", \"id\": ", q(c.id), ", \"how\": ", q(c.how), "},\n");
         } else {
-            Append(s, "  \"cc\": null,\n  \"cc_error\": ", JsonString(t.ccwhy), ",\n");
+            Append(s, "  \"cc\": null,\n  \"cc_error\": ", q(t.ccwhy), ",\n");
         }
         Append(s, "  \"cmake\": ", tool(t.cmake), ",\n  \"git\": ", tool(t.git), ",\n");
         s += "  \"builtin\": [";
-        for (size_t i = 0; i < builtin.size(); i++) Append(s, i ? ", " : "", JsonString(builtin[i]));
-        Append(s, "],\n  \"home\": ", JsonString(t.home), "\n}\n");
+        for (size_t i = 0; i < builtin.size(); i++) Append(s, i ? ", " : "", q(builtin[i]));
+        Append(s, "],\n  \"home\": ", q(t.home), "\n}\n");
         return s;
     }
     if (t.havecc) {
