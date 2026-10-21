@@ -495,7 +495,13 @@ what its root reached after it -- the rest of that body and of its
 callers' -- and of the roots whose calls would reuse the specializations
 it cut short or that use the instances it did, and nothing else; `goose
 check` prints every error in root order, and stops before the optimizer
-when there were any. An error before the roots (a declaration's
+when there were any. A fixup goes on past an error item by item
+(`CheckItem`), an item opening no frame or scope to restore: each shrink
+of a global array (`CheckGlobalShrinks`), growth conflict
+(`ResolveGrowConflicts`) and literal argument (`VerifyLiterals`) reports
+its own error, once, since an item recorded by code checked more than
+once -- a call in each specialization of its function, or in each round
+of a cycle -- repeats. An error before the roots (a declaration's
 validation) or in what the driver asked for (no `main`, a header
 without an export) still throws.
 

@@ -2047,7 +2047,7 @@ inline void TypeCheck::CheckGlobalShrinks() {
     map<VarDef *, vector<size_t>> bycontainer;
     for (size_t i = 0; i < madestores.size(); i++)
         bycontainer[madestores[i].container].push_back(i);
-    for (auto &gs : globalshrinks) {
+    for (auto &gs : globalshrinks) CheckItem([&] {
         vector<VarDef *> arrays;
         if (!gs.bound) arrays.push_back(gs.arr);
         else
@@ -2080,7 +2080,7 @@ inline void TypeCheck::CheckGlobalShrinks() {
                 }
             }
         }
-    }
+    });
 }
 
 // Whether a reference to a pointee of this type, or a byte view, can point

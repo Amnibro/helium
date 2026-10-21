@@ -2858,18 +2858,37 @@ struct TypeCheck {
             f();
             return true;
         } catch (CompileError &e) {
-            if (report) {
-                if (e.diags.empty()) {
-                    Diagnostic d;
-                    d.message = d.text = e.msg;
-                    ast.Report(d);
-                }
-                for (auto &d : e.diags) ast.Report(d);
-            }
+            if (report) ReportError(e);
         } catch (Abandoned &) {
         }
         cp.Restore();
         return false;
+    }
+
+    // One item of a whole-program fixup -- a literal argument, a growth
+    // conflict, a shrink of a global array -- whose error ends that item
+    // alone, so the fixup goes on to report the next one's. An item opens
+    // no frame or scope, so nothing is left to restore. Items repeat where
+    // the code they come from was checked more than once -- a call in each
+    // specialization of the function it is in, or in each round of a cycle
+    // -- and an error reported already is not reported again.
+    set<string> itemerrors;
+    template<typename F> void CheckItem(F f) {
+        try {
+            f();
+        } catch (CompileError &e) {
+            if (itemerrors.insert(e.msg).second) ReportError(e);
+        } catch (Abandoned &) {
+        }
+    }
+
+    void ReportError(const CompileError &e) {
+        if (e.diags.empty()) {
+            Diagnostic d;
+            d.message = d.text = e.msg;
+            ast.Report(d);
+        }
+        for (auto &d : e.diags) ast.Report(d);
     }
 
     // The globals whose initializer's check failed: unassigned for good,
@@ -2931,9 +2950,10 @@ struct TypeCheck {
     // The roots, each checked past the others' errors (CheckRoot): the
     // globals' initializers in order, main, the thread entry points, the
     // functions nothing reached, the exports, then the whole-program
-    // fixups. An error ends the root it is in, and costs the program the
-    // diagnostics of the code that root reached after it; the rest is
-    // checked as if the root had completed.
+    // fixups, whose items are each checked past the others' (CheckItem). An
+    // error ends the root it is in, and costs the program the diagnostics of
+    // the code that root reached after it; the rest is checked as if the
+    // root had completed.
     void CheckRoots() {
         for (auto g : ast.globals) {
             if (CheckRoot([&] { CheckVarDecl(g, true); })) {
@@ -3017,7 +3037,8 @@ struct TypeCheck {
                 }
                 return found;
             };
-            if (!distinct(gc.grown) || !distinct(gc.built)) Error(gc.at, gc.msg);
+            if (!distinct(gc.grown) || !distinct(gc.built))
+                CheckItem([&] { Error(gc.at, gc.msg); });
         }
     }
 

@@ -1972,7 +1972,7 @@ inline void TypeCheck::NoteLitArgs(FnSpec *spec, vector<Val> &argvals, Node *at)
 }
 
 inline void TypeCheck::VerifyLiterals() {
-    for (auto &lc : litchecks) {
+    for (auto &lc : litchecks) CheckItem([&] {
         set<pair<FnSpec *, int>> seen;
         vector<pair<FnSpec *, int>> todo { { lc.spec, lc.param } };
         while (!todo.empty()) {
@@ -1991,7 +1991,7 @@ inline void TypeCheck::VerifyLiterals() {
             for (auto &lf : spec->litflows)
                 if (lf.param == param) todo.push_back({ lf.to, lf.toparam });
         }
-    }
+    });
 }
 
 inline void TypeCheck::ValidateCycle(FnSpec *spec, Node *callnode) {
