@@ -116,14 +116,16 @@ inline string Unary::CgX(CodeGen &cg) {
 inline string Binary::CgX(CodeGen &cg) {
     if (op == T_DOTEQ || op == T_DOTNEQ) {
         // Reference identity: the addresses (a fat reference's header
-        // pointer); null is the null address.
+        // pointer); null is the null address. A relative reference variable
+        // holds an offset, which loads as the address it encodes (§3.9).
         auto side = [&](Node *n) -> string {
             if (Is<NullLit>(n)) return "NULL";
             string x;
             TypeExpr *t = n->exprtype;
             if (auto id = Is<Ident>(n); id && id->vdef && id->vdef->type->kind == TY_REF) {
-                x = cg.VarLoc(id->vdef).s;
                 t = id->vdef->type;
+                auto lv = cg.VarLoc(id->vdef);
+                x = t->ref->lenstorage >= 0 ? cg.LoadLoc(lv, t, line) : lv.s;
             } else {
                 x = cg.GenX(n);
             }

@@ -4490,9 +4490,10 @@ it (`ScopeTop0`, `DstTop0`). An exit at statement level emits nothing more.
 reloads the cached tops the callee can reach (`SyncReach`), and checks the
 long-distance discriminant afterwards where the callee can propagate one
 (`EmitRfCheck`). Tag dispatch (`EmitDispatch`) evaluates every argument once
-in source order, snapshots a by-value scrutinee before later arguments run,
-and switches on the tag with one call per arm sharing the argument
-temporaries and return channels. The arms have no element-run form: a
+in source order, the ones the cases share by the convention an ordinary
+call passes them by (`EmitArg`), snapshots a by-value scrutinee before later
+arguments run, and switches on the tag with one call per arm sharing the
+argument temporaries and return channels. The arms have no element-run form: a
 variable-array result arrives in the arms' layout and is slid out of its
 prefix for a run receiver, or re-prefixed once after the switch for a slot of
 another length storage. A function value is spliced inline
@@ -4564,8 +4565,10 @@ an `in pool` field, a C member of the object, through the same helper
 (`GenFrameObjLit`). A local, global or parameter declared with a relative
 type is such a slot too: its initializer or argument is encoded into it
 (`BindLocal`, `EmitGlobalInit`, `EmitArg`), at varint width on a data stack
-as any variable-size value is (`GenConstruct`), and a `var` global without
-an initializer starts as `null` (`DefaultValue`). A call's value is plain
+as any variable-size value is (`GenConstruct`), a `var` global without
+an initializer starts as `null` (`DefaultValue`), and an identity
+comparison (`.==`) reads the variable as the address it encodes, as every
+other read does. A call's value is plain
 too, `default<T>()` of a relative reference being the null pointer, so where
 `default<Rel[N]>()` fills its temporary's elements with it, the lvalue store
 encodes it (`Call::CgAny`). The store's range check is emitted only
