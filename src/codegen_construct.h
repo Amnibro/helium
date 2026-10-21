@@ -588,6 +588,14 @@ inline bool CodeGen::CallBuildsAt(Call *c, TypeExpr *rt, TypeExpr *et, const str
 inline void CodeGen::ConstructCall(Call *c, TypeExpr *et, const string &stk, TypeExpr *want,
                                    const string &lenlv) {
     auto rt0 = c->rettypes.empty() ? nullptr : c->rettypes[0];
+    auto delivered = c->fvbody ? c->fvbody->exprtype : rt0;
+    if (c->builtin < 0 && delivered && NeedsResultLocation(delivered) && TEq(delivered, et)) {
+        auto p = T();
+        L(CT(et), " *", p, " = (", CT(et), " *)", Top(stk), ";");
+        Bump(stk, cat(FixedSize(et)));
+        EmitCall(c, Dst { DK_LVALUE, cat("(*", p, ")"), et });
+        return;
+    }
     // A bytes-class result feeding a fixed-class slot (an array
     // constructing a static-capacity limited one, §4.2), or a slot of an
     // array kind it cannot be built in (CallBuildsAt), is built on a
@@ -676,6 +684,20 @@ inline void CodeGen::GenAdtAdapted(TypeExpr *from, TypeExpr *to, const Dst &d, L
     }
     // The fixed-mode ADT, from a variant (fixed-size, as the mode requires)
     // or from the variable-mode ADT.
+    if (from->kind == TY_VARIANT && NeedsResultLocation(from)) {
+        auto base = d.s;
+        if (d.k == DK_STACK) {
+            auto p = T();
+            L(CT(to), " *", p, " = (", CT(to), " *)", Top(d.s), ";");
+            Bump(d.s, cat(FixedSize(to)));
+            base = cat("(*", p, ")");
+        }
+        auto ei = EIOf(to);
+        auto vi = ei->en->VariantIndex(from->var->variant);
+        L(base, ".tag = ", TagConst(ei, vi), ";");
+        gen(Dst { DK_LVALUE, cat(base, ".u.v_", Sanitize(from->var->variant->name)), from });
+        return;
+    }
     Loc lv;
     lv.t = from;
     if (IsBytesT(from)) {

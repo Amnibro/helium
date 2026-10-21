@@ -578,6 +578,13 @@ inline void CodeGen::EmitSpec(FnSpec *sp, bool er) {
         EnsureFromChannels(sp);
         auto tid = fromids[sp];
         for (size_t i = 0; i < sp->rets.size(); i++) {
+            if (NeedsResultLocation(sp->rets[i])) {
+                auto sav = T(), chan = cat("gs_lret_", tid, "_", i);
+                L(CT(sp->rets[i]), " *", sav, " = ", chan, ";");
+                L(chan, " = gs_r", i, ";");
+                fdstsaves.push_back(cat(chan, " = ", sav, ";"));
+                continue;
+            }
             if (!IsBytesT(sp->rets[i])) continue;
             auto sav = T();
             L("gs_stack *", sav, " = gs_fdst_", tid, "_", i, ";");

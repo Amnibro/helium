@@ -924,14 +924,16 @@ inline void CodeGen::GenNormalReturn(const vector<Node *> &vals) {
                 auto dst = cat("gs_dst", i);
                 if (IsResz(rt)) chans[i] = Dst { DK_STACK, dst, rt, cat("(*gs_rl", i, ")") };
                 else if (IsBytesT(rt)) chans[i] = Dst { DK_STACK, dst };
+                else if (NeedsResultLocation(rt))
+                    chans[i] = Dst { DK_LVALUE, cat("(*gs_r", i, ")"), rt };
                 else continue;
-                starts[i] = ExitStart(c, dst, "", 0);
+                if (IsBytesT(rt)) starts[i] = ExitStart(c, dst, "", 0);
             }
             auto fixed = GenForward(c, sp->rets, chans);
             for (size_t i = 0; i < sp->rets.size(); i++) {
                 if (IsBytesT(sp->rets[i])) continue;
                 if ((int)i == si.cret) retv = fixed[i];
-                else L("*gs_r", i, " = ", fixed[i], ";");
+                else if (!NeedsResultLocation(sp->rets[i])) L("*gs_r", i, " = ", fixed[i], ";");
             }
             for (size_t i = 0; i < sp->rets.size(); i++)
                 if (!starts[i].empty())
@@ -975,6 +977,8 @@ inline void CodeGen::GenNormalReturn(const vector<Node *> &vals) {
             auto start = ExitStart(vals[i], dst, "", 0);
             GenConstruct(vals[i], dst, rt);
             if (!start.empty()) LandValue(dst, DstTop0(i), start, rt, "");
+        } else if (NeedsResultLocation(rt)) {
+            GenAny(vals[i], Dst { DK_LVALUE, cat("(*gs_r", i, ")"), rt });
         } else if ((int)i == si.cret) {
             retv = T();
             L(CT(rt), " ", retv, ";");
@@ -1076,16 +1080,21 @@ inline void CodeGen::GenFromReturn(Return *r) {
                              cat("gs_lret_", tid, "_", i));
             else if (IsBytesT(rets[i]))
                 GenConstruct(r->vals[i], cat("gs_fdst_", tid, "_", i), rets[i]);
-            else GenAny(r->vals[i], Dst { DK_LVALUE, cat("gs_lret_", tid, "_", i), rets[i] });
+            else {
+                auto dst = cat("gs_lret_", tid, "_", i);
+                if (NeedsResultLocation(rets[i])) dst = cat("(*", dst, ")");
+                GenAny(r->vals[i], Dst { DK_LVALUE, dst, rets[i] });
+            }
         }
     } else {
         // Forward one call's values into the channels.
         vector<Dst> chans;
         for (size_t i = 0; i < rets.size(); i++) {
             auto stk = cat("gs_fdst_", tid, "_", i), lret = cat("gs_lret_", tid, "_", i);
+            if (NeedsResultLocation(rets[i])) lret = cat("(*", lret, ")");
             if (IsResz(rets[i])) chans.push_back(Dst { DK_STACK, stk, rets[i], lret });
             else if (IsBytesT(rets[i])) chans.push_back(Dst { DK_STACK, stk });
-            else chans.push_back(Dst { DK_LVALUE, lret });
+            else chans.push_back(Dst { DK_LVALUE, lret, rets[i] });
         }
         auto fixed = GenForward(Is<Call>(r->vals[0]), rets, chans);
         for (size_t i = 0; i < rets.size(); i++)
@@ -1102,7 +1111,8 @@ inline void CodeGen::EnsureFromChannels(FnSpec *t) {
     auto &rets = t->rets;
     for (size_t i = 0; i < rets.size(); i++) {
         if (IsFix(rets[i])) {
-            Append(data, "static GS_TLS ", CT(rets[i]), " gs_lret_", tid, "_", i, ";\n");
+            Append(data, "static GS_TLS ", CT(rets[i]), NeedsResultLocation(rets[i]) ? " *" : " ",
+                   "gs_lret_", tid, "_", i, ";\n");
             continue;
         }
         Append(data, "static GS_TLS gs_stack *gs_fdst_", tid, "_", i, ";\n");

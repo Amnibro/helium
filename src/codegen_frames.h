@@ -101,7 +101,8 @@ inline void CodeGen::CollectSpecs() {
         si.cname = Unique(base);
         si.hasrf = !sp->needs.empty();
         for (size_t i = 0; i < sp->rets.size(); i++)
-            if (si.cret < 0 && IsFix(sp->rets[i]) && !IsLargeFixed(sp->rets[i]))
+            if (si.cret < 0 && IsFix(sp->rets[i]) && !IsLargeFixed(sp->rets[i]) &&
+                !NeedsResultLocation(sp->rets[i]))
                 si.cret = (int)i;
         for (auto t : sp->needs)
             if (!fromids.count(t)) fromids[t] = (int)fromids.size() + 1;

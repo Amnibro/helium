@@ -316,7 +316,8 @@ inline vector<string> CodeGen::EmitSpecCall(Call *c, FnSpec *sp, Dst d0, vector<
         } else if ((int)i != ki.cret) {
             // A reference the destination loads through lands in a
             // temporary first (EmitCallInto).
-            if (dd.k == DK_LVALUE && !NeedsDeref(rt, dd.t)) {
+            if (dd.k == DK_LVALUE && !NeedsDeref(rt, dd.t) &&
+                (!NeedsResultLocation(rt) || (dd.t && TEq(rt, dd.t)))) {
                 retex[i] = dd.s;
                 args.push_back(cat("&", dd.s));
             } else {
@@ -426,6 +427,7 @@ inline void CodeGen::EmitRfCheck(FnSpec *callee) {
         string retv;
         for (size_t i = 0; i < curspec->rets.size(); i++) {
             auto rt = curspec->rets[i];
+            if (NeedsResultLocation(rt)) continue;   // The channel names the receiver itself.
             auto lret = cat("gs_lret_", tid, "_", i);
             // The value is on our destination, behind anything the calls it
             // unwound had built there: down to where our caller expects it.
@@ -641,6 +643,8 @@ inline vector<string> CodeGen::EmitDispatch(Call *c, Dst d0, vector<Dst> *alldst
             retex[i] = BytesResultBase(dd, stk);
             dststk[i] = stk;
             if (i == 0 && NeedsReprefix(dd, rt)) reprefix = dd;
+        } else if (NeedsResultLocation(rt) && dd.k == DK_LVALUE && TEq(rt, dd.t)) {
+            retex[i] = dd.s;
         } else {
             auto tv = T();
             FixedLocal(rt, tv);

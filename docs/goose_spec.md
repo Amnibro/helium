@@ -1174,6 +1174,13 @@ storage**, including through calls and the selected branch of an
 `if`/`match`/case-dispatch. Passing through such an expression is not a
 reason to materialize a separate result and then copy it into place.
 
+The same guarantee applies to fresh fixed-size aggregates containing
+relative references when the receiver takes their representation. Their
+result channels name the receiving storage,
+including through multiple and nonlocal returns; correctness does not
+depend on inlining or C compiler optimization. Other fixed-size results
+may travel as ordinary C values.
+
 The packed byte layout may require relocation within the receiving
 storage: a length prefix whose width becomes known after constructing the
 elements can grow or shrink, and a value-form result delivered as an

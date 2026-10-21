@@ -1456,11 +1456,12 @@ inline void CodeGen::LeafAny(Node *n, const Dst &d) {
     if (d.k == DK_STACK) { GenConstruct(n, d.s, d.t, d.lenlv); return; }
     if (d.k == DK_LVALUE) {
         if (d.pool) { L(d.s, " = ", GenPrefVal(n), ";"); return; }
+        if (GenIntoLimited(n, d.t, d.s, true)) return;   // The source may lie in d.s.
         // A literal holding relative references builds at the destination;
         // assigning it from a temporary would copy the temporary's offsets.
         if ((Is<StructLit>(n) || Is<ArrayLit>(n)) && HasRelRef(n->exprtype)) {
             FixedLitAt(n, d.s);
-        } else if (!GenIntoLimited(n, d.t, d.s, true)) {   // The source may lie in d.s.
+        } else {
             L(d.s, " = ", GenXD(n, d.t), ";");
         }
         return;
