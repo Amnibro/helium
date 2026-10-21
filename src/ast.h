@@ -2190,8 +2190,10 @@ struct FnSpec {
     // record from the round before, which the calls back into it read while
     // it is in progress -- none in the first round, whose back edges have no
     // effects and results that point nowhere yet. `stale`: a member the
-    // next round has yet to check again. The class roots its parameters
-    // stand at are made once and kept across rounds (TypeCheck::ThreadedClass).
+    // next round has yet to check again, and once the cycle is checked, one
+    // its last round did not, which no later call reuses. The class roots
+    // its parameters stand at are made once and kept across rounds
+    // (TypeCheck::ThreadedClass).
     vector<FnSpec *> cyclemembers;
     FnRecord record;
     unique_ptr<FnRecord> prev;

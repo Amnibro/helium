@@ -2562,8 +2562,12 @@ checks the head's body again on the same clone; a stale member is checked
 again when a call reaches it
 (`GetOrCreateSpec`), with the parameters and class roots its first round
 made (`FnSpec::classroots`), so the records and the threaded classes name
-the same objects across rounds. The variables outside the cycle's
-activations start each round as the round before left them, so a `let`
+the same objects across rounds. A member the last round does not reach
+(the calls to it may lie after one that the round before's records say
+never returns, unreachable code the round drops) stays stale, with the
+record that round started empty: a call after the cycle is checked makes
+a specialization of its own instead of reusing it. The variables outside
+the cycle's activations start each round as the round before left them, so a `let`
 declared outside the cycle that a round may assign is maybe assigned in the
 next, where assigning it errs (§3.9): every activation shares it. In the
 first round a back edge has no record: it may return, applies no other effects, and its

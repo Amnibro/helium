@@ -1568,6 +1568,9 @@ inline FnSpec *TypeCheck::GetOrCreateSpec(MatchInfo &mi, vector<Val> &argvals, N
         if (!spec->inprogress && !spec->stale && !spec->failed &&
             (spec->storesout || !EnvUnchanged(spec)))
             continue;
+        // One the last round of its cycle did not reach has no record that
+        // settled (CheckSpecBody): a call after the cycle is checked anew.
+        if (spec->stale && !CycleHead(spec)->inprogress) continue;
         if (!TypeArgsEq(spec->argtypes, mi.paramtypes)) continue;
         // A type argument no parameter type mentions (`size<u8>()`) shows
         // only in the bindings.
@@ -2635,8 +2638,9 @@ inline int TypeCheck::EnvReach(const MatchInfo &mi) {
 // each round (FnSpec::stale, GetOrCreateSpec) with the class roots its first
 // round made, so a store it made before a call joined it to the cycle is
 // checked as inside it, and one relying on a class a later call broke finds
-// it broken. A member whose calls a round no longer reaches is left as it
-// is: nothing checked afterwards names it.
+// it broken. A member the last round no longer reaches stays stale: its
+// record, read by no call of that round, settled with nothing, so a call
+// after the cycle is checked does not reuse it (GetOrCreateSpec).
 inline void TypeCheck::CheckSpecBody(FnSpec *spec, vector<Val> *argvals, Line callline) {
     ast.CheckCancel();
     struct RoundScope {
@@ -2669,13 +2673,8 @@ inline void TypeCheck::CheckSpecBody(FnSpec *spec, vector<Val> *argvals, Line ca
             fprintf(stderr, "round %d of %.*s: a variable outside it changed\n", spec->rounds,
                     (int)spec->sf->name.size(), spec->sf->name.data());
         auto settled = broken == 0 && !outer;
-        for (auto m : members) {
-            if (m->stale) {
-                m->stale = false;
-                continue;
-            }
-            settled = settled && SameRecord(m->record, *m->prev, m);
-        }
+        for (auto m : members)
+            if (!m->stale) settled = settled && SameRecord(m->record, *m->prev, m);
         for (auto m : members) m->prev = nullptr;
         if (settled) break;
     }
