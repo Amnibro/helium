@@ -51,24 +51,34 @@ inline Val TypeCheck::CheckBuiltin(Call *c, const BuiltinDef &d, vector<Node *> 
             return VoidVal();
         case B_THREAD_SPAWN: case B_THREAD_SPAWN_CONTAINED: {
             auto wid = Is<Ident>(args[0]);
-            SFunction *wsf = nullptr;
+            vector<SFunction *> workers;
             // A variable in scope, a type parameter or a nested function of the
             // name hides it, as at a call (§11.1).
             auto wvd = wid ? LookupVar(wid->name, wid->ns) : nullptr;
             if (wid && !(wvd && !wvd->isglobal) && !ScopeNameKind(wid->name))
                 for (auto sf : ast.LookupFunctions(wid->name, wid->ns))
-                    if (sf->isthread) wsf = sf;
+                    if (sf->isthread) workers.push_back(sf);
             // A function parameter bound to a thread_fn's name names it too
             // (§7.6).
             const FnValBind *fvb = nullptr;
             if (wid && !(wvd && !wvd->isglobal) &&
                 !LookupTypeParam(wid->name, fvb) && fvb && fvb->named) {
                 if (fvb->set) {
-                    for (auto sf : *fvb->set) if (sf->isthread) wsf = sf;
+                    for (auto sf : *fvb->set) if (sf->isthread) workers.push_back(sf);
                 } else if (fvb->named->isthread) {
-                    wsf = fvb->named;
+                    workers.push_back(fvb->named);
                 }
             }
+            // A spawn names one worker (§11.2): its arguments do not choose
+            // among thread_fns of one name, as a call's do among overloads.
+            if (workers.size() > 1) {
+                string which;
+                for (auto sf : workers)
+                    Append(which, "\n  candidate thread_fn ", sf->name, " at ", Where(sf->line));
+                Error(c, cat("ambiguous ", d.name, " of ", wid->name, ": more than one thread_fn "
+                             "has that name (§11.2)", which));
+            }
+            auto wsf = workers.empty() ? nullptr : workers[0];
             if (!wsf && fvb)
                 Error(c, cat(d.name, "'s first argument names a thread_fn: ", wid->name,
                              " is bound to ", fvb->named ? cat(fvb->named->name, ", which is not one")

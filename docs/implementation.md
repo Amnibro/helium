@@ -3270,7 +3270,12 @@ slices or `in pool` references), `from_bytes` the stricter `VerifiableElem`
 as able to point into any storage the root could image. Thread entry points
 get one specialization each (`EnsureThreadSpec`) with flat parameters, and
 `CheckThreadGlobals` walks a thread program's call graph rejecting non-flat
-globals.
+globals. No call makes one: `GetOrCreateSpec` rejects every call that
+resolves to a `thread_fn`, by name, as a member, through a function value,
+as a dispatched case or as a `format` overload, while a plain function of
+the same name stays callable. `thread_spawn` takes the one `thread_fn` its
+first argument names, and a name with several is ambiguous: the worker's
+arguments do not choose among them.
 
 `embed_file(path)` reads a file when the program is compiled (`EmbedFile`):
 the path a string literal or a `let`/`const` global holding one, relative to

@@ -71,10 +71,6 @@ inline Val TypeCheck::CheckNamedCall(Call *c, Ident *id, TypeExpr *expected) {
     // `ns::f` never names one.
     auto bd = LookupBuiltin(GlobalLeaf(id->name));
     if (!cands.empty()) {
-        for (auto sf : cands)
-            if (sf->isthread)
-                Error(c, cat("thread_fn ", id->name, " is spawned with thread_spawn, "
-                             "not called"));
         Node *nopre = nullptr;
         // A user function set sharing a builtin's name (a `format`
         // overload, §3.7) takes the calls it matches; the builtin the rest.
@@ -1364,6 +1360,12 @@ inline bool TypeCheck::HasView(Val &av, TypeExpr *pt, int reach, SFunction *sf) 
 inline FnSpec *TypeCheck::GetOrCreateSpec(MatchInfo &mi, vector<Val> &argvals, Node *callnode) {
     auto sf = mi.sf;
     if (sf->brokensig) throw Abandoned {};
+    // A thread_fn starts a program of its own (§11.2), whose one
+    // specialization a spawn makes (EnsureThreadSpec): no call runs it,
+    // however it names it -- as a member, through a function value, as a
+    // dispatched case or as a format overload.
+    if (sf->isthread)
+        Error(callnode, cat("thread_fn ", sf->name, " is spawned with thread_spawn, not called"));
     // A nested function is specialized where it is declared (§7.5). A call
     // that reaches the declaration ahead of the declaring body (a nested
     // function declared earlier calling it) would have it name variables
@@ -3613,6 +3615,8 @@ inline void TypeCheck::CheckReturn(Return *r) {
 
 inline FnSpec *TypeCheck::EnsureThreadSpec(SFunction *sf, Line l) {
     if (sf->brokensig) throw Abandoned {};
+    // One an earlier spawn made, the checks below passed: a call makes none
+    // (GetOrCreateSpec).
     if (!sf->specs.empty()) {
         // Its one check failed (FnSpec::failed): what that reported stands
         // for this spawn too.
