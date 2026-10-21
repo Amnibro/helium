@@ -262,8 +262,8 @@ function per construct. Points that matter to later passes:
   (`Parser::tentative`) nothing is reported or recovered from, since it
   catches the errors of its own extent and backtracks, and the parse
   that then fails for real does so outside it. Only the blocks still
-  open at the end of the file report nothing more once an error has
-  been reported there (`eoferror`).
+  open at the end of the file report nothing more, once recovering from
+  an error has skipped to it (`eoferror`).
 * `ParseProgram` takes each file's text from the source provider it is
   given where that has it (`SourceProvider`, `utils.h`: the dump
   `--roundtrip` parses again; an editor's unsaved buffers), else from disk

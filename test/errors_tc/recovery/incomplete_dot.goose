@@ -1,9 +1,11 @@
 // error: expected identifier in field access, found ';'
 // error: expected identifier in field access, found 'let'
 // error: expected identifier in field access, found '}'
+// error: expected identifier in field access, found 'end of file'
 // A `.` with no name after it is reported once and kept as an
 // incomplete Dot (docs/design/language_server.md §5 D); the error the rest
-// of its statement then raises is a consequence and is not reported.
+// of its statement then raises is a consequence and is not reported, nor,
+// where the `.` ends the file, is the end of the blocks still open there.
 struct V { x: i64 }
 fn f(v: V) -> i64 {
     let a = v.;
@@ -16,3 +18,6 @@ fn main() {
     print(f(v));
     let w = v.
 }
+fn g(v: V) {
+    if v.x > 0 {
+        let y = v.

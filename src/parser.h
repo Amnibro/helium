@@ -64,8 +64,9 @@ struct Parser {
     // if any: kept as a statement of its own where the rest of the
     // statement is lost, so that a completion finds it.
     Dot *pendingdot = nullptr;
-    // An error at the end of the file has been reported: the blocks still
-    // open there end silently, rather than each report the end once more.
+    // Recovering from an error has skipped to the end of the file (Resync):
+    // the blocks still open there end silently, rather than each report
+    // the end once more.
     bool eoferror = false;
 
     Parser(Ast &_ast, string_view filename, const char *source, int _fileidx)
@@ -83,7 +84,6 @@ struct Parser {
             ast.Report(d);
         }
         for (auto &d : e.diags) ast.Report(d);
-        if (lex.tok == T_EOF) eoferror = true;
     }
 
     // The next token, past any the lexer rejects, each reported once; a
@@ -144,6 +144,7 @@ struct Parser {
             auto atstmt = !declaration && lex.DepthBefore() <= stmtdepth;
             switch (lex.tok) {
                 case T_EOF:
+                    eoferror = true;
                     return true;
                 case T_SEMI:
                     if (depth == 0) {
