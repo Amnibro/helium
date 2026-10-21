@@ -557,26 +557,31 @@ inline Val TypeCheck::CheckBuiltin(Call *c, const BuiltinDef &d, vector<Node *> 
     }
     // Returns, from the table.
     Val v = VoidVal();
+    // A reference or slice element read out as itself: it points where the
+    // element does and is as writable as its slot says, as an element read
+    // is (ContainerRead).
+    auto heldread = [&] {
+        LVal lv;
+        lv.SetProv(rv);
+        lv.type = elem;
+        lv.fromstorage = true;
+        lv.isslot = true;
+        v.type = LoadType(elem);
+        v.SetProv(ContainerRead(lv));
+        c->rettypes.push_back(v.type);
+    };
     switch (d.rets[0]) {
         case 0: break;
         case 'i': v.type = ast.inttypes[IS_I64]; break;
         case 'b': v.type = ast.booltype; break;
         case 'e':
-            v.type = LoadType(elem);
-            if (IsRefOrSlice(v.type)) {
-                // A reference or slice element leaves as itself: what a
-                // temporary holds is not rooted at the temporary (§9.2), so
-                // it points where the element did and is as writable as its
-                // slot says, as an element read is (ContainerRead).
-                LVal lv;
-                lv.SetProv(rv);
-                lv.type = elem;
-                lv.fromstorage = true;
-                lv.isslot = true;
-                v.SetProv(ContainerRead(lv));
-                c->rettypes.push_back(v.type);
+            // A popped reference or slice leaves as itself: what a temporary
+            // holds is not rooted at the temporary (§9.2).
+            if (IsRefOrSlice(elem)) {
+                heldread();
                 break;
             }
+            v.type = LoadType(elem);
             v.Set(TempRoot(), false);
             if (HoldsPlainRef(v.type)) {
                 // The element leaves as a temporary, holding what it held in
@@ -591,6 +596,13 @@ inline Val TypeCheck::CheckBuiltin(Call *c, const BuiltinDef &d, vector<Node *> 
             c->rettypes.push_back(v.type);
             break;
         case 'r':
+            // An element that is itself a reference gives the one it holds,
+            // loaded if relative, as `&` of it does: there are no references
+            // to references (§3.8).
+            if (elem->kind == TY_REF) {
+                heldread();
+                break;
+            }
             v.type = ast.RefTo(elem, c->line);
             v.TakeAlts(rv);
             v.ClearReads();

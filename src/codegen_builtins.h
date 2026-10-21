@@ -620,9 +620,18 @@ inline vector<string> CodeGen::EmitPush(vector<Node *> &an, Line ln) {
         L(v.lenlv, "++;");
         ref = e;
     }
-    // push returns a reference on grow-only and limited arrays (§3.3), which
-    // a receiver decaying it loads from (CallVal0).
-    return { ref };
+    return { NewElemResult(ref, elem, lv, ln) };
+}
+
+// What push and alloc_ref return for the element just added at `e`, a
+// pointer to its slot: a reference to it (§3.3), which a receiver decaying it
+// loads from (CallVal0). An element that is itself a reference gives the one
+// it holds instead, loaded if relative, as `&` of it does: there are no
+// references to references (§3.8).
+inline string CodeGen::NewElemResult(const string &e, TypeExpr *elem, const Loc &lv, Line ln) {
+    if (elem->kind != TY_REF) return e;
+    if (elem->ref->lenstorage >= 0) return LoadLoc(BytesLoc(e, elem, lv), elem, ln);
+    return Snapshot(elem, cat("*", e));
 }
 
 inline void CodeGen::EmitAppend(vector<Node *> &an, Line ln) {
@@ -759,7 +768,7 @@ inline vector<string> CodeGen::EmitAlloc(Call *c, vector<Node *> &an, Line ln) {
     ind--;
     L("}");
     if (c->builtin == B_ALLOC_INDEX) return { iv };
-    return { e };
+    return { NewElemResult(e, elem, lv, c->line) };
 }
 
 // A slice pool (§5.4): the element region grows like any grow-only array's,

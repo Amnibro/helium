@@ -1253,6 +1253,7 @@ struct CodeGen {
 
     RzDest OpenRzDest(TypeExpr *t, Dst d0, Line ln, const char *what);
     void CloseRzDest(RzDest &rd, const string &count);
+    string NewElemResult(const string &e, TypeExpr *elem, const Loc &lv, Line ln);
     vector<string> EmitPush(vector<Node *> &an, Line ln);
     string ElemValue(Node *n, TypeExpr *elem);
     void StoreElemAt(Node *n, TypeExpr *elem, const string &e, const string &ev, Line ln);

@@ -1027,9 +1027,9 @@ a branch of an `if` would not be.
 | a variable `x` (`Ident::Check`) | `x` | yes |
 | `&lvalue` (`CheckRefOf`), or an lvalue bound by reference (`AutoRef`, a slice's slot being `Val::slot`) | the lvalue's owner | as the path |
 | a reference or slice variable (`RefProvOf`) | its committed binding (§3.7); for a global `var` used in a function's body, the read-back rule (`GlobalVarRead`) | its binding's, weakened by rebinds; the read-back's |
-| a reference read out of a field or element (`ContainerRead`), a popped reference or slice element, a `for` binder of one | the read-back rule (§3.6) | only with one candidate |
+| a reference read out of a field or element (`ContainerRead`), a popped reference or slice element, a `for` binder of one, the reference element `a.push(v)` or `a.alloc_ref(v)` adds | the read-back rule (§3.6) | only with one candidate |
 | a slice loaded through a reference to one (`SlotView`) | for a reference to a slice variable, that variable's binding; behind a parameter's class that has a class for the slice its slot holds (below), the binding of the variable standing for that slice (`VarDef::heldslice`); out of a field or element, the read-back rule; behind any other parameter's class or a temporary, the root as a bound | as that |
-| `a.push(v)`, `a.alloc_ref(v)`, `&a[i]` | `a`'s root | `a`'s exactness |
+| `a.push(v)`, `a.alloc_ref(v)`, `&a[i]` of an element that is no reference | `a`'s root | `a`'s exactness |
 | `a.alloc_slice(n)`, `a.realloc_slice(s, n)` | `a`'s root | `a`'s exactness |
 | `a[lo..hi]` (`SliceExpr::Check`) | `a`'s root | `a`'s exactness |
 | a call result (`CallResult`) | every root the callee's returns give (`RetRoot::alts`), mapped (`RetAltVal`: a parameter's class back to the argument's roots at this site -- at a back edge, every argument the class's parameters get -- a global or captured local as itself, null as static data, which at a back edge only bounds the result: the key gave a parameter static data that the back edge may give other storage) and united as branches are (`MergeVals`) | only where they all map to one root exactly |
@@ -4368,7 +4368,10 @@ ask for one too.
 the element is added (§2), and the argument may itself grow the array
 (`v.push(v.push(1))`, `v.push(f(v))`): a fixed-size element is therefore
 evaluated before its slot is claimed, so it follows whatever the argument
-pushed and the returned reference names it. A variable-size element, and a
+pushed and the returned reference names it. An element that is itself a
+reference returns the one it holds instead, loaded from the slot if
+relative, as `alloc_ref`'s does (`NewElemResult`): there are no references
+to references (§3.8). A variable-size element, and a
 fixed one holding relative references of either form (a self-relative
 offset measures from where the element lives, an `in pool` `self` is its
 position in the pool), are built in the slot instead -- for limited
