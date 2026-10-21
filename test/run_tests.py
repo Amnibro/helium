@@ -2024,6 +2024,21 @@ def main():
             good = False
         checks.append(("toolchain --json with a directory named git on PATH", good,
                        found.stdout + found.stderr))
+        # With no C compiler anywhere, every one looked for is named.
+        nowhere = gendir / "nowhere"
+        nowhere.mkdir(exist_ok=True)
+        env = {k: v for k, v in os.environ.items()
+               if k.upper() not in ("GOOSE_CC", "PATH", "PROGRAMFILES(X86)")}
+        # Nothing on PATH, and no Visual Studio where vswhere would be.
+        env.update({"PATH": str(nowhere), "GOOSE_HOME": str(nowhere / "home"),
+                    "PROGRAMFILES(X86)": str(nowhere)})
+        nocc = subprocess.run([str(exe), "toolchain"], capture_output=True, text=True,
+                              errors="replace", env=env)
+        names = re.search(r"cannot find a C compiler \(looked for ([^)]*)\)", nocc.stdout)
+        checks.append(("toolchain with no C compiler",
+                       nocc.returncode == 1 and names is not None and
+                       all(re.search(rf"\b{n}\b", names[1]) for n in ("clang", "gcc", "cc")),
+                       nocc.stdout + nocc.stderr))
         # A C compiler that cannot be started is reported with the reason.
         notcc = gendir / ("not_a_compiler" + tc.EXE_SUFFIX)
         tc.write_text(notcc, "not a program\n")

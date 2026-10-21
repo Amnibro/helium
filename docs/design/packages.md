@@ -518,11 +518,11 @@ and only where stderr is a terminal does a live line, redrawn in place,
 show the running command, its time and the last line it printed.
 `GOOSE_PROGRESS=plain|live` overrides the terminal check.
 
-Without any C compiler:
+Without any C compiler, on Windows:
 
-    cannot find a C compiler (looked for cl, clang-cl, clang on PATH and in
-    Visual Studio), needed to build foo.goose. Install Visual Studio with C++
-    or LLVM, or set GOOSE_CC.
+    cannot find a C compiler (looked for cl, clang-cl and clang on PATH and in
+    Visual Studio, and for gcc and cc on PATH); install Visual Studio with C++
+    or LLVM, or set GOOSE_CC
 
 ### 6.2 The runtime object
 

@@ -455,7 +455,8 @@ inline bool FindToolchain(string request, Toolchain &out, string &why,
         }
         why = name.empty()
             ? "cannot find a C compiler (looked for cl, clang-cl and clang on PATH and in "
-              "Visual Studio); install Visual Studio with C++ or LLVM, or set GOOSE_CC"
+              "Visual Studio, and for gcc and cc on PATH); install Visual Studio with C++ or "
+              "LLVM, or set GOOSE_CC"
             : cat("cannot find the C compiler ", request, " (", how, ") on PATH or in Visual Studio");
         return false;
     #else
