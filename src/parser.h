@@ -448,6 +448,8 @@ struct Parser {
             GenericParam g;
             g.line = CurLine();
             g.name = ExpectIdent("generic parameter list");
+            for (auto &prev : generics)
+                if (prev.name == g.name) Error(cat("duplicate type parameter name: ", g.name));
             if (IsNext(T_COLON)) g.bound = ParseType();
             generics.push_back(g);
             if (kept) *kept = ast.Mark();
@@ -1639,6 +1641,10 @@ struct Parser {
             auto save = lex;
             vector<Param> params;
             auto ok = true;
+            // The lexer at a parameter named as an earlier one: raised inside
+            // the tentative prefix, the error would only backtrack it, so it
+            // is raised from there once the prefix stands.
+            optional<Lexer> dup;
             try {
                 Tentatively t(*this);
                 for (;;) {
@@ -1647,6 +1653,8 @@ struct Parser {
                     if (lex.tok != T_IDENT) { ok = false; break; }
                     p.line = CurLine();
                     p.name = lex.attr;
+                    for (auto &prev : params)
+                        if (prev.name == p.name && !dup) dup = lex;
                     lex.Next();
                     if (IsNext(T_COLON)) p.type = ParseType();
                     params.push_back(p);
@@ -1655,6 +1663,7 @@ struct Parser {
                 if (!ok || !IsNext(T_FATARROW)) ok = false;
             } catch (CompileError &) { ok = false; }
             if (ok) {
+                if (dup) dup->Error(cat("duplicate parameter name: ", dup->attr));
                 fv->params = std::move(params);
                 fv->explicit_params = true;
             } else {
