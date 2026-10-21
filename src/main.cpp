@@ -659,8 +659,8 @@ R"(  --diagnostics json    Print the errors and warnings as JSON on stdout, and
                         found from where goose is by default.
   --update              Fetch packages at a tag or branch again (a commit is
                         never fetched again).
-  --stack-reserve size  Address space reserved per data stack, with a K, M, G
-                        or T suffix (default 2G).
+  --stack-reserve size  Address space reserved per data stack, from 64K, with a
+                        K, M, G or T suffix (default 2G).
   --stacks              Report the data stacks the program and each worker can
                         take, and the cap that puts on hardware_threads().
   --no-bce              Keep every bounds check.
@@ -1046,8 +1046,10 @@ int Main(int argc, char **argv) {
         else if (arg == "--stacks") stacks = true;
         else if (arg == "--stack-reserve" && i + 1 < argc) {
             uint64_t size;
-            if (!ParseSize(argv[++i], size) || !size || size > (1ull << 48)) {
-                fprintf(stderr, "--stack-reserve takes a size from 1 byte to 256 TB (2^48, "
+            // A whole page at least, 64 KB being the largest a platform
+            // uses: the runtime rounds a reservation down to whole pages.
+            if (!ParseSize(argv[++i], size) || size < (64ull << 10) || size > (1ull << 48)) {
+                fprintf(stderr, "--stack-reserve takes a size from 64 KB to 256 TB (2^48, "
                                 "goose_spec.md 10.4), with an optional K, M, G or T suffix: %s\n",
                         argv[i]);
                 return 1;

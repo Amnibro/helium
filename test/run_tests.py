@@ -1955,6 +1955,10 @@ def main():
         code, out, err = tc.run_capture([exe, "version"])
         checks.append(("version", code == 0 and
                        re.match(r"goose runtime [0-9a-f]{12}\s*$", out) is not None, out + err))
+        # Less than a page or two of data stack is no reservation to run on.
+        code, out, err = tc.run_capture([exe, "check", "--stack-reserve", "5000", probe])
+        checks.append(("check --stack-reserve 5000 (refused)",
+                       code == 1 and "from 64 KB" in err, out + err))
         # The help: `goose --help` on the commands, `goose <command> --help`
         # and `goose help <topic>` on each, which between them name every
         # option the driver reads, but for the hidden shader ones.

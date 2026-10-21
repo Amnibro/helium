@@ -150,7 +150,7 @@ the slow steps (a line each, and on a terminal a live line below).
 | `-O0`, `-O1` (default), `-O2` | inlining thresholds (§4); folding and propagation run at every level; base-case inlining, tail-recursion elimination and min/max regrouping need `-O1` or above |
 | `--specs` | print every live specialization's optimized body |
 | `--stacks` | print the data stack count of the main program and of each worker, the regions they come to, the thread cap that gives `hardware_threads()`, and every function's share (`codegen_stacks.h`); with `--check` it runs the backend for the counts and writes nothing |
-| `--stack-reserve size` | the address space reserved per data stack, written as `-DGS_STACK_RESERVE` (K/M/G/T suffixes; at most 2^48) |
+| `--stack-reserve size` | the address space reserved per data stack, written as `-DGS_STACK_RESERVE` (K/M/G/T suffixes; at least 64 KB, at most 2^48) |
 | `--no-bce` | skip bounds-check elimination (this also loses the loop-view hoist, §6.10, and the restated array loops that need BCE's facts, §6.12) |
 | `--bce-test` | verify `// bce:elide` / `// bce:keep` annotations in the sources |
 | `--bce-lines` | print elided/kept counts per source line |
@@ -5288,11 +5288,14 @@ C compiler needs to keep a check's path short.
 **Data stacks.** Each stack is one reserved region of `GS_STACK_RESERVE`
 bytes (default 2 GB, capped at 2^48 by §10.4) plus a `GS_STACK_GAP`
 unmapped tail, sizes the program's configuration sets and hands to the
-runtime as it starts; Windows commits on fault through a vectored handler that
-tells a commit from an overrun, POSIX reserves with overcommit and protects
-the gap. A region the platform refuses (its address space, an address-space
-limit or strict overcommit accounting exhausted) is retried at half the
-size, and every region after it starts that much smaller, down to 1 MB
+runtime as it starts, which rounds the reservation down to whole pages: the gap
+has to start on a page to be protected, and on Windows a stack would grow
+unseen through the rest of a part page committed at its end. Windows commits
+on fault through a vectored handler that tells a commit from an overrun,
+POSIX reserves with overcommit and protects the gap. A region the platform
+refuses (its address space, an address-space limit or strict overcommit
+accounting exhausted) is retried at half the size, in whole pages, and every
+region after it starts that much smaller, down to 1 MB
 (`gs_reserve_region`): a smaller region is always safe, since the checks the
 compiler leaves out assume no more than `GS_STACK_RESERVE` bytes in a stack
 and the guard gap aborts growth sooner, so each region carries its own sizes

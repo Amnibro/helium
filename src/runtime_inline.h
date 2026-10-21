@@ -1312,8 +1312,9 @@ static char **gs_argv;
 
 /* What a new region reserves: the usable part, which halves whenever the
    platform refuses one (gs_reserve_region), and the guard gap behind it;
-   and the usable part as configured, for the reports. */
-static size_t gs_region_usable, gs_region_gap, gs_region_reserve;
+   the usable part as configured, for the reports; and the page size, a
+   whole number of which the usable part always is (gs_rt_start). */
+static size_t gs_region_usable, gs_region_gap, gs_region_reserve, gs_region_page;
 /* The worker running on this thread, main's being -1 (runtime_threads.h). */
 static GS_TLS int64_t gs_current_thread_id = -1;
 /* The program's address space budget for regions and the most regions its
@@ -1325,11 +1326,11 @@ static int64_t gs_mainregions, gs_workerregions;
 static int64_t gs_thread_cap = INT64_MAX;
 
 /* A region's own sizes travel with it: those reserved before a refusal
-   halved the size are larger than those after. */
+)GSRT"
+R"GSRT(   halved the size are larger than those after. */
 typedef struct {
     uint8_t *base;
-)GSRT"
-R"GSRT(    size_t usable, size;    /* size: with the guard gap */
+    size_t usable, size;    /* size: with the guard gap */
 } gs_region;
 static GS_TLS gs_region *gs_regions;
 static GS_TLS volatile long gs_nregions;
@@ -1467,11 +1468,16 @@ static LONG WINAPI gs_fault_filter(EXCEPTION_POINTERS *ep) {
     return EXCEPTION_CONTINUE_SEARCH;
 }
 
-/* Installed once by main, before any worker can start. */
-static void gs_regions_init(void) {
+/* The unit memory is committed and protected in. */
+static size_t gs_os_page_size(void) {
     SYSTEM_INFO si;
     GetSystemInfo(&si);
-    gs_page_size = si.dwPageSize;
+    return si.dwPageSize;
+}
+
+/* Installed once by main, before any worker can start. */
+static void gs_regions_init(void) {
+    gs_page_size = gs_os_page_size();
     if (!AddVectoredExceptionHandler(1, gs_fault_filter))
         gs_panic("cannot install data stack fault handler");
 }
@@ -1539,14 +1545,14 @@ static void gs_fault_handler(int sig, siginfo_t *info, void *ctx) {
         const gs_region *r = &gs_regions[i];
         if ((uintptr_t)hit - (uintptr_t)r->base < r->size) {
             char msg[GS_OVERFLOW_TEXT];
-            ssize_t w = write(2, msg, gs_overflow_text(msg, r));
+)GSRT"
+R"GSRT(            ssize_t w = write(2, msg, gs_overflow_text(msg, r));
             (void)w;
             _exit(1);
         }
     }
     if ((uintptr_t)hit - gs_native_lo < gs_native_hi - gs_native_lo) {
-)GSRT"
-R"GSRT(        static const char msg[] = "goose runtime error: native call stack overflow\n";
+        static const char msg[] = "goose runtime error: native call stack overflow\n";
         ssize_t w = write(2, msg, sizeof(msg) - 1);
         (void)w;
         _exit(1);
@@ -1554,6 +1560,12 @@ R"GSRT(        static const char msg[] = "goose runtime error: native call stack
     /* Not ours: the access faults again under what handled it before, the
        default action or a sanitizer's report. */
     sigaction(sig, sig == SIGSEGV ? &gs_prev_segv : &gs_prev_bus, NULL);
+}
+
+/* The unit memory is mapped and protected in. */
+static size_t gs_os_page_size(void) {
+    long n = sysconf(_SC_PAGESIZE);
+    return n > 0 ? (size_t)n : 4096;
 }
 
 static void gs_regions_init(void) {
@@ -1683,12 +1695,13 @@ static GS_NORETURN void gs_end(int code) {
 #define GS_REGION_MIN (1u << 20)
 
 /* A region of the size new ones currently get. Where the platform refuses
-   one, every region from then on is half as large, down to GS_REGION_MIN:
-   a smaller region is always safe, since the checks the compiler leaves
-   out assume no more than GS_STACK_RESERVE bytes in a stack, and the guard
-   gap behind a smaller one aborts growth that much sooner. Workers racing
-   through a refusal may each halve the size once more than needed, or
-   restore a larger one for a moment; it only ever settles downward. */
+   one, every region from then on is half as large, in whole pages, down to
+   GS_REGION_MIN: a smaller region is always safe, since the checks the
+   compiler leaves out assume no more than GS_STACK_RESERVE bytes in a
+   stack, and the guard gap behind a smaller one aborts growth that much
+   sooner. Workers racing through a refusal may each halve the size once
+   more than needed, or restore a larger one for a moment; it only ever
+   settles downward. */
 GS_API uint8_t *gs_reserve_region(void) {
     if (gs_nregions >= gs_regions_cap)
         gs_panic("too many data stack regions");
@@ -1699,6 +1712,7 @@ GS_API uint8_t *gs_reserve_region(void) {
         if (p) break;
         if (usable <= GS_REGION_MIN) gs_panic("cannot reserve data stack address space");
         usable /= 2;
+        usable -= usable % gs_region_page;
         gs_region_usable = usable;
     }
     long i = gs_nregions;
@@ -1738,7 +1752,8 @@ typedef struct { int64_t n, link, key[GS_SPAN_FAN], max[GS_SPAN_FAN], child[GS_S
 typedef struct { int64_t root, height, chain; } gs_sphead;
 
 /* A freelist, and a path down it: the node and entry taken at each level,
-   the leaf's last. */
+)GSRT"
+R"GSRT(   the leaf's last. */
 typedef struct {
     uint8_t *base;
     int64_t *n;
@@ -1752,8 +1767,7 @@ typedef struct {
 
 static int64_t gs_sp_newnode(gs_sppath *p) {
     int64_t i = GS_SPHEAD(p)->chain;
-)GSRT"
-R"GSRT(    if (i) {
+    if (i) {
         GS_SPHEAD(p)->chain = GS_SPLEAF(p, i)->link;
         return i;
     }
@@ -1980,7 +1994,8 @@ static void gs_sp_delete(gs_sppath *p, int64_t k) {
         }
         /* Never the root: a root of one child is handed down below, so
            every root has two or more. */
-        gs_sp_dropnode(p, p->node[l]);
+)GSRT"
+R"GSRT(        gs_sp_dropnode(p, p->node[l]);
     }
     while (GS_SPHEAD(p)->height > 0 && GS_SPINNER(p, GS_SPHEAD(p)->root)->n == 1) {
         int64_t r = GS_SPHEAD(p)->root;
@@ -1992,8 +2007,7 @@ static void gs_sp_delete(gs_sppath *p, int64_t k) {
 
 /* Takes cnt elements off the front of the span at position k of the path's
    leaf, or the whole span where it holds no more. */
-)GSRT"
-R"GSRT(static void gs_sp_take(gs_sppath *p, int64_t k, int64_t cnt) {
+static void gs_sp_take(gs_sppath *p, int64_t k, int64_t cnt) {
     gs_spleaf *lf = GS_SPLEAF(p, p->node[p->h]);
     int64_t c = lf->cnt[k];
     if (c <= cnt) {
@@ -2205,7 +2219,8 @@ GS_API int64_t gs_spans_regrow(uint8_t *base, int64_t *n, uint8_t **top, int64_t
     gs_sp_near(&p, &q, idx, end, &s);
     if (s.nl && s.nl->idx[s.nk] == end &&
         (s.nl->cnt[s.nk] >= cnt - ol || end + s.nl->cnt[s.nk] == len)) {
-        gs_sp_take(s.np, s.nk, cnt - ol);
+)GSRT"
+R"GSRT(        gs_sp_take(s.np, s.nk, cnt - ol);
         return idx;
     }
     gs_sp_release(&p, &s, idx, ol);
@@ -2215,8 +2230,7 @@ GS_API int64_t gs_spans_regrow(uint8_t *base, int64_t *n, uint8_t **top, int64_t
 /* ---------------------------------------------------------------------------
    Byte search: std's find_any and find_pair (docs/stdlib.md). A set arrives
    as std's ByteSet, made by its byte_set, which gs_byteset lays out as the
-)GSRT"
-R"GSRT(   Goose struct is (spec C.2: packed, in declaration order). `members` is
+   Goose struct is (spec C.2: packed, in declaration order). `members` is
    the set. `kind` says how a block of bytes is tested for it: by comparing
    with 1 to 3 of `bytes` (kinds 1-3), or as the range bytes[0] .. bytes[0] +
    bytes[1] (kind 4), both complemented where `invert` is set; kind 0 is the
@@ -2383,7 +2397,8 @@ static GS_SSSE3 GS_INLINE __m128i gs_bsm_tables(const gs_bsm *m, __m128i x) {
 #define GS_TEST_S(x) gs_bsm_test(&ms, ks, x)
 #define GS_TEST_A(x) gs_bsm_test(&ma, ka, x)
 #define GS_TEST_B(x) gs_bsm_test(&mb, kb, x)
-#define GS_TABLES_S(x) gs_bsm_tables(&ms, x)
+)GSRT"
+R"GSRT(#define GS_TABLES_S(x) gs_bsm_tables(&ms, x)
 #define GS_TABLES_A(x) gs_bsm_tables(&ma, x)
 #define GS_TABLES_B(x) gs_bsm_tables(&mb, x)
 
@@ -2393,8 +2408,7 @@ static GS_INLINE int64_t gs_scan_any_k(const uint8_t *p, int64_t n, const gs_byt
     GS_ANY_LOOP(GS_TEST_S)
 }
 
-)GSRT"
-R"GSRT(static GS_SSSE3 int64_t gs_scan_any_tables(const uint8_t *p, int64_t n, const gs_byteset *s) {
+static GS_SSSE3 int64_t gs_scan_any_tables(const uint8_t *p, int64_t n, const gs_byteset *s) {
     gs_bsm ms;
     gs_bsm_init(&ms, s, 1);
     GS_ANY_LOOP(GS_TABLES_S)
@@ -2474,6 +2488,13 @@ GS_API void gs_rt_start(int argc, char **argv, uint64_t reserve, uint64_t gap,
                         uint64_t budget, int64_t mainregions, int64_t workerregions) {
     gs_argc = argc;
     gs_argv = argv;
+    /* A region's usable part is whole pages: the guard gap behind it has to
+       start on a page to be protected, and on Windows a stack would run on
+       unseen through the rest of a part page committed at its end, past the
+       GS_STACK_RESERVE bytes the compiler's checks go by. */
+    gs_region_page = gs_os_page_size();
+    reserve -= reserve % gs_region_page;
+    if (!reserve) gs_panic("the data stack reservation (GS_STACK_RESERVE) is less than a page");
     gs_region_usable = gs_region_reserve = (size_t)reserve;
     gs_region_gap = (size_t)gap;
     gs_stack_budget = budget;
@@ -2575,7 +2596,8 @@ GS_API int64_t gs_fmt_i64(uint8_t *dst, int64_t v) {
 typedef struct { int n; uint32_t d[36]; } gs_big;
 
 /* a = v << sh, for v > 0. */
-static void gs_big_set(gs_big *a, uint64_t v, int sh) {
+)GSRT"
+R"GSRT(static void gs_big_set(gs_big *a, uint64_t v, int sh) {
     int w = sh >> 5, b = sh & 31, i;
     uint64_t lo = v << b, hi = b ? v >> (64 - b) : 0;
     for (i = 0; i < w; i++) a->d[i] = 0;
@@ -2800,7 +2822,8 @@ GS_API int64_t gs_fmt_quoted(uint8_t *dst, const uint8_t *s, int64_t n) {
 
 GS_API void gs_out_int(int64_t v) {
     uint8_t buf[GS_FMT_MAX];
-    fwrite(buf, 1, (size_t)gs_fmt_i64(buf, v), stdout);
+)GSRT"
+R"GSRT(    fwrite(buf, 1, (size_t)gs_fmt_i64(buf, v), stdout);
 }
 GS_API void gs_out_uint(uint64_t v) {
     uint8_t buf[GS_FMT_MAX];
