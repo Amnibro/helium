@@ -257,8 +257,10 @@ function per construct. Points that matter to later passes:
   the rest of the statement then fails, its error is a consequence and
   goes unreported, and the `Dot` stands as the statement instead, so
   that a completion finds it and the checker can give its object a
-  type. The tentative parses (`TryParseTyArgs`, a function value's
-  parameter prefix) are unaffected: while one is under way
+  type. In a declaration that stands with its members, only an error
+  in the rest of the member holding the `.` is such a consequence
+  (`KeepMember`). The tentative parses (`TryParseTyArgs`, a function
+  value's parameter prefix) are unaffected: while one is under way
   (`Parser::tentative`) nothing is reported or recovered from, since it
   catches the errors of its own extent and backtracks, and the parse
   that then fails for real does so outside it. Only the blocks still

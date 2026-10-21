@@ -209,11 +209,12 @@ struct Parser {
     // Parses the rest of a declaration whose name stands (`f`), which an
     // error then costs only what had not been parsed: the error is
     // reported, what the member it was raised in made is dropped
-    // (Ast::DropSince of `kept`, which `f` moves past each whole member),
-    // the declaration is marked `broken`, and the parse skips the rest of
-    // it: where `depth`, the braces open before the declaration, is given
-    // and the error is inside its body, through the body's `}` (SkipBody),
-    // else as Resync skips a declaration, `startp` being where it began.
+    // (Ast::DropSince of `kept`, which `f` moves past each whole member
+    // with KeepMember), the declaration is marked `broken`, and the parse
+    // skips the rest of it: where `depth`, the braces open before the
+    // declaration, is given and the error is inside its body, through the
+    // body's `}` (SkipBody), else as Resync skips a declaration, `startp`
+    // being where it began.
     template<typename F> void ParseMembers(bool &broken, int depth, const char *startp, F f) {
         auto kept = ast.Mark();
         try {
@@ -229,6 +230,15 @@ struct Parser {
             if (depth >= 0 && lex.DepthBefore() > depth) SkipBody(depth);
             else Resync(true, startp);
         }
+    }
+
+    // Moves `kept`, where given, past a whole member (ParseMembers). An
+    // incomplete `.` in the member stands with it, and the error of a
+    // later member is no consequence of it.
+    void KeepMember(Ast::DeclMark *kept) {
+        if (!kept) return;
+        *kept = ast.Mark();
+        pendingdot = nullptr;
     }
 
     // Where the current token starts.
@@ -464,7 +474,7 @@ struct Parser {
                 if (prev.name == g.name) Error(cat("duplicate type parameter name: ", g.name));
             if (IsNext(T_COLON)) g.bound = ParseType();
             generics.push_back(g);
-            if (kept) *kept = ast.Mark();
+            KeepMember(kept);
             if (!IsNext(T_COMMA)) break;
             if (lex.tok == T_GT || lex.tok == T_SHR) break;
         }
@@ -540,7 +550,7 @@ struct Parser {
                 if (IsNext(T_ASSIGN)) f.defaultval = ParseExpr();
             }
             fields.push_back(f);
-            if (kept) *kept = ast.Mark();
+            KeepMember(kept);
             if (!IsNext(T_COMMA)) break;
         }
     }
@@ -576,7 +586,7 @@ struct Parser {
                     Expect(T_RCURLY, "enum variant");
                 }
                 en->variants.push_back(v);
-                kept = ast.Mark();
+                KeepMember(&kept);
                 if (!IsNext(T_COMMA)) break;
             }
             Expect(T_RCURLY, "enum declaration");
@@ -689,7 +699,7 @@ struct Parser {
                               " before it has one (§7.1)"));
                 }
                 sf->params.push_back(p);
-                if (kept) *kept = ast.Mark();
+                KeepMember(kept);
                 if (!IsNext(T_COMMA)) break;
             }
             Expect(T_RPAREN, "function declaration");
@@ -698,7 +708,7 @@ struct Parser {
                 sf->has_rets = true;
                 for (;;) {
                     sf->rets.push_back(ParseType());
-                    if (kept) *kept = ast.Mark();
+                    KeepMember(kept);
                     if (!IsNext(T_COMMA)) break;
                 }
             }
