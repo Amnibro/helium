@@ -6351,7 +6351,14 @@ References and rename share one notion of identity: the place of the
 declaration's name, as `DefinitionOf` finds it for any occurrence, so two
 occurrences refer to one thing when their definitions coincide
 (`ReferencesTo`, over every occurrence in every file of the analysis,
-through the clones). References lists them, the declaration's own included
+through the clones). The search runs in every program reaching the
+declaration's file, the analysis of each root that has the file with the
+request's text, not only in the one answering for the file: a module two
+programs import is renamed in both, and a use another program alone
+resolves (in a generic function only it instantiates) is found too. A
+place several analyses find counts once, and a file is read in the
+analyses that have the text the first one reaching it has, so that their
+places agree. References lists them, the declaration's own included
 when the request asks; rename replaces the leaf of each spelling (a
 `ns::name` keeps its qualifier) and the declaration's name with the new
 name, as a `WorkspaceEdit` keyed by URI, and answers with an error rather
@@ -6361,10 +6368,12 @@ hierarchy stands on the same identity: `textDocument/prepareCallHierarchy`
 answers with the function whose declaration the position's occurrence
 resolves to, as an item whose selection range is its name, which the
 `callHierarchy/incomingCalls` and `outgoingCalls` that follow find it by
-again. Incoming calls are its references that are a call's callee,
+again. Incoming calls are its references that are a call's callee, in
+every program reaching it as for references,
 grouped by the innermost function declared around each (`EnclosingFn`,
 by the declarations' extents; a call in a global's initializer is in no
-function and is left out); outgoing calls are the callees in its body
+function and is left out; one function as two analyses have it is one
+group, by its file and place); outgoing calls are the callees in its body
 that resolve to a function of the program, grouped by it, a nested
 function's calls left to the nested function, and a builtin's left out.
 Each group's ranges are the callee's name at each call. Inlay hints

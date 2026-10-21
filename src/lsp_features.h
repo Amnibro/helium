@@ -1131,17 +1131,36 @@ inline bool SignatureHelp(Workspace &ws, const Json &params, JsonOut &j) {
 
 // --- references and rename -----------------------------------------------------------
 
-// Every occurrence in the program that resolves to the declaration whose
-// name is at `target`, the declaration's own among them, file by file.
-inline void ReferencesTo(Root *root, Analysis &an, const Place &target,
-                         const function<void(const FileIndex &, const Occurrence &)> &f) {
-    for (auto &fi : an.files) {
-        Located at { root, &an, &fi, 0 };
-        for (auto &occ : fi.occs) {
-            auto p = DefinitionOf(at, occ);
-            if (p.Known() && p.fileidx == target.fileidx && p.start == target.start) f(fi, occ);
+// Every occurrence that resolves to the declaration whose name is at
+// `target` in the located analysis, the declaration's own among them, file
+// by file, in every program reaching the declaration's file: the analysis
+// of each root that has the file with the located analysis's text, the
+// configured roots first. Another program may reach files the located one
+// does not, and resolve a use in a file both reach that the located one
+// does not (in a generic function only it instantiates). A file is read in
+// the analyses that have the text the first one reaching it has, so that
+// the places they find agree; a place two of them find is given twice.
+inline void ReferencesTo(Workspace &ws, const Located &loc, const Place &target,
+                         const function<void(const Analysis &, const FileIndex &, const Occurrence &)> &f) {
+    auto key = PathKey(loc.an->ast->sources[(size_t)target.fileidx].first);
+    auto text = loc.an->files[(size_t)target.fileidx].text.text;
+    map<string, string_view> texts;     // By URI: the first analysis's text of the file.
+    for (auto configured : { true, false })
+        for (auto &r : ws.roots) {
+            if (r->configured != configured || !r->analysis) continue;
+            auto &an = *r->analysis;
+            auto fileidx = an.FileOf(key);
+            if (fileidx < 0 || an.files[(size_t)fileidx].text.text != text) continue;
+            for (auto &fi : an.files) {
+                auto [it, first] = texts.insert({ fi.uri, fi.text.text });
+                if (!first && it->second != fi.text.text) continue;
+                Located at { r.get(), &an, &fi, 0 };
+                for (auto &occ : fi.occs) {
+                    auto p = DefinitionOf(at, occ);
+                    if (p.Known() && p.fileidx == fileidx && p.start == target.start) f(an, fi, occ);
+                }
+            }
         }
-    }
 }
 
 inline bool References(Workspace &ws, const Json &params, JsonOut &j) {
@@ -1154,8 +1173,10 @@ inline bool References(Workspace &ws, const Json &params, JsonOut &j) {
     auto context = params.Get("context");
     auto withdecl = JsonBool(context ? context->Get("includeDeclaration") : nullptr);
     j.BeginArray();
-    ReferencesTo(loc.root, *loc.an, target, [&](const FileIndex &f, const Occurrence &o) {
-        if (withdecl || !o.IsDeclaration()) WriteLocation(j, f, o.start, o.start + o.len);
+    set<pair<string, size_t>> seen;     // By URI and start.
+    ReferencesTo(ws, loc, target, [&](const Analysis &, const FileIndex &f, const Occurrence &o) {
+        if ((withdecl || !o.IsDeclaration()) && seen.insert({ f.uri, o.start }).second)
+            WriteLocation(j, f, o.start, o.start + o.len);
     });
     j.EndArray();
     return true;
@@ -1241,23 +1262,24 @@ inline bool Rename(Workspace &ws, const Json &params, JsonOut &j, string &error)
         error = cat("'", leaf, "' is a name the compiler gives, not one declared");
         return false;
     }
-    map<string, set<pair<size_t, size_t>>> edits;    // By URI, then by place.
-    ReferencesTo(loc.root, *loc.an, target, [&](const FileIndex &f, const Occurrence &o) {
-        edits[f.uri].insert({ o.start + (o.name.size() - LeafOf(o.name).size()), o.start + o.len });
+    // By URI: the file as an analysis reaching it has it, and the places.
+    map<string, pair<const FileIndex *, set<pair<size_t, size_t>>>> edits;
+    ReferencesTo(ws, loc, target, [&](const Analysis &, const FileIndex &f, const Occurrence &o) {
+        auto &[file, places] = edits[f.uri];
+        file = &f;
+        places.insert({ o.start + (o.name.size() - LeafOf(o.name).size()), o.start + o.len });
     });
     j.BeginObject();
     j.Key("changes");
     j.BeginObject();
-    for (auto &[uri, places] : edits) {
-        auto fileidx = loc.an->FileOf(PathKey(PathOfUri(uri)));
-        if (fileidx < 0) continue;
-        auto &f = loc.an->files[(size_t)fileidx];
+    for (auto &[uri, edit] : edits) {
+        auto &[file, places] = edit;
         j.Key(uri);
         j.BeginArray();
         for (auto &[start, end] : places) {
             j.BeginObject();
             j.Key("range");
-            WriteRange(j, f.text, start, end);
+            WriteRange(j, file->text, start, end);
             j.Member("newText", newname);
             j.EndObject();
         }
@@ -1380,19 +1402,22 @@ inline const FnExtent *FnOfItem(Workspace &ws, const Json &params, Located &loc,
 }
 
 // Calls grouped by the function at their other end, in the order first met:
-// each with the ranges of the callee's name in the caller.
+// each with the ranges of the callee's name in the caller. The function is
+// one of an analysis's, which the analyses of the other programs reaching
+// its file have at the same place.
 struct CallGroup {
+    const Analysis *an = nullptr;
     const FnExtent *fn = nullptr;
     const FileIndex *file = nullptr;
     vector<pair<size_t, size_t>> ranges;
 };
 
-inline void WriteCallGroups(JsonOut &j, const Analysis &an, const vector<CallGroup> &groups, const char *key) {
+inline void WriteCallGroups(JsonOut &j, const vector<CallGroup> &groups, const char *key) {
     j.BeginArray();
     for (auto &g : groups) {
         j.BeginObject();
         j.Key(key);
-        WriteCallItem(j, an, *g.fn);
+        WriteCallItem(j, *g.an, *g.fn);
         j.Key("fromRanges");
         j.BeginArray();
         for (auto &r : g.ranges) WriteRange(j, g.file->text, r.first, r.second);
@@ -1402,26 +1427,35 @@ inline void WriteCallGroups(JsonOut &j, const Analysis &an, const vector<CallGro
     j.EndArray();
 }
 
-inline void AddCall(vector<CallGroup> &groups, const FnExtent *fn, const FileIndex &file, const Occurrence &occ) {
-    auto it = find_if(groups.begin(), groups.end(), [&](const CallGroup &g) { return g.fn == fn; });
-    if (it == groups.end()) it = groups.insert(groups.end(), CallGroup { fn, &file, {} });
-    it->ranges.push_back({ occ.start, occ.start + occ.len });
+inline void AddCall(vector<CallGroup> &groups, const Analysis &an, const FnExtent *fn, const FileIndex &file,
+                    const Occurrence &occ) {
+    auto &uri = an.files[(size_t)fn->fd->line.fileidx].uri;
+    auto it = find_if(groups.begin(), groups.end(), [&](const CallGroup &g) {
+        return g.fn->start == fn->start && g.an->files[(size_t)g.fn->fd->line.fileidx].uri == uri;
+    });
+    if (it == groups.end()) it = groups.insert(groups.end(), CallGroup { &an, fn, &file, {} });
+    pair<size_t, size_t> range { occ.start, occ.start + occ.len };
+    if (find(it->ranges.begin(), it->ranges.end(), range) == it->ranges.end()) it->ranges.push_back(range);
 }
 
-// callHierarchy/incomingCalls: the calls of the item's function, by the
-// function each is made in (a call in a global's initializer is in none).
+// callHierarchy/incomingCalls: the calls of the item's function, in every
+// program reaching it (ReferencesTo), by the function each is made in (a
+// call in a global's initializer is in none).
 inline bool IncomingCalls(Workspace &ws, const Json &params, JsonOut &j) {
     Located loc;
     vector<FnExtent> fns;
     auto target = FnOfItem(ws, params, loc, fns);
     if (!target) return false;
-    auto &an = *loc.an;
+    map<const Analysis *, vector<FnExtent>> callers;   // Each analysis's functions.
     vector<CallGroup> groups;
-    ReferencesTo(loc.root, an, PlaceOfFn(an, target->fd->sf), [&](const FileIndex &f, const Occurrence &o) {
+    ReferencesTo(ws, loc, PlaceOfFn(*loc.an, target->fd->sf),
+                 [&](const Analysis &an, const FileIndex &f, const Occurrence &o) {
         if (!o.callee || o.IsDeclaration()) return;
-        if (auto caller = EnclosingFn(fns, f.fileidx, o.start)) AddCall(groups, caller, f, o);
+        auto it = callers.find(&an);
+        if (it == callers.end()) it = callers.emplace(&an, FnExtents(an)).first;
+        if (auto caller = EnclosingFn(it->second, f.fileidx, o.start)) AddCall(groups, an, caller, f, o);
     });
-    WriteCallGroups(j, an, groups, "from");
+    WriteCallGroups(j, groups, "from");
     return true;
 }
 
@@ -1440,9 +1474,9 @@ inline bool OutgoingCalls(Workspace &ws, const Json &params, JsonOut &j) {
     for (auto &o : file.occs) {
         if (o.start < target->start || o.start >= target->end) continue;
         if (EnclosingFn(fns, file.fileidx, o.start) != target) continue;
-        if (auto callee = CalleeAt(at, fns, o)) AddCall(groups, callee, file, o);
+        if (auto callee = CalleeAt(at, fns, o)) AddCall(groups, an, callee, file, o);
     }
-    WriteCallGroups(j, an, groups, "to");
+    WriteCallGroups(j, groups, "to");
     return true;
 }
 

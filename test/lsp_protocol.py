@@ -484,3 +484,50 @@ def check_lsp_protocol(exe, base):
     code = client.p.wait(timeout=30)
     if code != 0:
         raise RuntimeError(f"goose lsp exited with {code}:\n{tc.decode(client.p.stderr.read())}")
+
+    # Two programs importing one module, both entry files of a client of
+    # their own (docs/design/language_server.md §10): the module's twice is
+    # renamed, and its references and callers found, in both programs, each
+    # place once, though the first program's analysis answers for the
+    # module; and its second half, which only a generic function the second
+    # program alone instantiates calls, is found called there.
+    shared = fixtures / "two_shared.goose"
+    two = Client(exe, fixtures)
+    two.request("initialize", {"processId": None, "rootUri": uri_of(fixtures), "capabilities": {},
+                               "initializationOptions": {"entryFiles": [str(fixtures / "two_a.goose"),
+                                                                        str(fixtures / "two_b.goose")]}})
+    two.send("initialized", {}, request=False)
+    two.send("textDocument/didOpen", {"textDocument": {"uri": uri_of(shared), "languageId": "goose", "version": 1,
+                                                       "text": shared.read_text(encoding="utf-8")}}, request=False)
+    sdoc = {"textDocument": {"uri": uri_of(shared)}}
+
+    def places(locations):
+        """Each location as file:line:column, sorted."""
+        return sorted(f"{loc['uri'].rsplit('/', 1)[-1]}:{loc['range']['start']['line'] + 1}:"
+                      f"{loc['range']['start']['character'] + 1}" for loc in locations)
+
+    def renamed(pos):
+        changes = two.request("textDocument/rename", {**sdoc, "position": position(pos), "newName": "renamed"})
+        return places({"uri": uri, "range": e["range"]} for uri, es in changes["changes"].items() for e in es)
+
+    def callers(pos):
+        items = two.request("textDocument/prepareCallHierarchy", {**sdoc, "position": position(pos)})
+        calls = two.request("callHierarchy/incomingCalls", {"item": items[0]}) if items else None
+        return sorted(f"{c['from']['uri'].rsplit('/', 1)[-1]}:{c['from']['name']}@" +
+                      ",".join(str(r["start"]["line"] + 1) for r in c["fromRanges"]) for c in calls or [])
+
+    for what, got, want in (
+            ("rename 5:4", renamed("5:4"), ["two_a.goose:5:31", "two_b.goose:6:23", "two_shared.goose:5:4"]),
+            ("references 5:4", places(two.request("textDocument/references", {
+                **sdoc, "position": position("5:4"), "context": {"includeDeclaration": True}})),
+             ["two_a.goose:5:19", "two_b.goose:6:11", "two_shared.goose:5:4"]),
+            ("incoming 5:4", callers("5:4"), ["two_a.goose:main@5", "two_b.goose:main@6"]),
+            ("rename 8:4", renamed("8:4"), ["two_shared.goose:13:44", "two_shared.goose:8:4"]),
+            ("incoming 8:4", callers("8:4"), ["two_shared.goose:apply@13"])):
+        if got != want:
+            fail(f"two entry files: {what} are not {want}", got)
+    two.request("shutdown", None)
+    two.send("exit", request=False)
+    code = two.p.wait(timeout=30)
+    if code != 0:
+        raise RuntimeError(f"goose lsp exited with {code}:\n{tc.decode(two.p.stderr.read())}")

@@ -572,7 +572,8 @@ features of phase 2 are mostly server code over data phase 0 provided.
 * **Rename across programs.** A module reached from several roots gets
   edits from each; the server unions them by position. A name spelled
   through a namespace qualifier is renamed at its leaf. Builtins and
-  keywords are not renamable, nor are synthesized names.
+  keywords are not renamable, nor are synthesized names. This is in, for
+  references and incoming calls too (`docs/implementation.md` §12).
 * **Whether the CLI shows columns for typecheck errors.** With columns
   known, `goose check` could print `file:line:col:` heads and a caret
   under the node as the lexer does. The test runner and the extension's
