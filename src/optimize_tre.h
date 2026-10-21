@@ -109,10 +109,8 @@ struct TailRecursion {
         if (!id || !id->vdef || id->vdef->isglobal) return false;
         // An unchanged reference slot does not make the pointee immutable:
         // the recursive call can write it through another parameter/alias.
-        // Scalar storage plus the address/write facts below is the proof.
-        if (!Optimizer::ScalarType(id->vdef->type)) return false;
-        auto &f = facts[id->vdef];
-        return f.writes == 0 && f.addrof == 0;
+        // Scalar storage plus the address/write facts is the proof.
+        return Optimizer::Unwritten(facts, id->vdef);
     }
 
     // What each variable the body binds once and for all stands for: a
@@ -381,7 +379,7 @@ struct TailRecursion {
     // Control provably leaves this statement rather than falling past it.
     static bool Diverges(Node *n) {
         if (!n) return false;
-        if (Is<Return>(n) || Is<Break>(n) || Is<Continue>(n)) return true;
+        if (Optimizer::Jumps(n)) return true;
         auto b = Is<Block>(n);
         return b && !b->tail && !b->stmts.empty() && Diverges(b->stmts.back());
     }

@@ -189,12 +189,7 @@ struct BaseCaseInliner {
             if (!v || !v->isparam || v->ownerspec != sp) return false;
             // Write facts describe the binding. Composite and reference-like
             // values can still observe storage changed through another binding.
-            switch (v->type->kind) {
-                case TY_INT: case TY_FLT: case TY_BOOL: break;
-                default: return false;
-            }
-            auto &f = o.facts[v];
-            return f.writes == 0 && f.addrof == 0;
+            return Optimizer::Unwritten(o.facts, v);
         }
         if (auto u = Is<Unary>(n)) return u->op == T_NOT && GuardOK(u->child, sp);
         if (auto b = Is<Binary>(n)) {

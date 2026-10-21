@@ -124,14 +124,20 @@ struct Optimizer {
     bool deferonce = false;
     vector<FnSpec *> deferred;
 
-    // Whether block b ends by leaving: a return, a break, or abort or exit.
+    // Whether control never goes on past statement st: a return, a break, a
+    // continue, or abort or exit.
+    static bool Jumps(Node *st) {
+        if (Is<Return>(st) || Is<Break>(st) || Is<Continue>(st)) return true;
+        auto c = Is<Call>(st);
+        return c && (c->builtin == B_ABORT || c->builtin == B_EXIT);
+    }
+    // Whether block b ends by leaving: a return, a break, or abort or exit (a
+    // continue goes on with its loop).
     static bool Leaves(Node *b) {
         auto blk = Is<Block>(b);
         if (!blk || blk->tail || blk->stmts.empty()) return false;
         auto last = blk->stmts.back();
-        if (Is<Return>(last) || Is<Break>(last)) return true;
-        auto c = Is<Call>(last);
-        return c && (c->builtin == B_ABORT || c->builtin == B_EXIT);
+        return Jumps(last) && !Is<Continue>(last);
     }
     // The deepest C nesting an inlined body may reach: half of MSVC's limit
     // of 128 blocks in a function. The rest is for the blocks codegen opens
@@ -144,6 +150,14 @@ struct Optimizer {
     static bool ScalarType(TypeExpr *t) {
         return t && (t->kind == TY_BOOL || t->kind == TY_FLT ||
                      (t->kind == TY_INT && t->intstorage != IS_VARINT));
+    }
+
+    // A scalar variable that nothing assigns or takes the address of, by the
+    // write/address facts: wherever it is read, it holds what it was bound to.
+    static bool Unwritten(unordered_map<VarDef *, VarFacts> &facts, VarDef *d) {
+        if (!ScalarType(d->type)) return false;
+        auto &f = facts[d];
+        return f.writes == 0 && f.addrof == 0;
     }
 
     static Node *AsLiteral(Node *n) {
@@ -441,9 +455,7 @@ struct Optimizer {
             out.push_back(r);
             // The checker leaves values after program termination unadapted:
             // they never reach a destination and must not become C assignments.
-            auto call = Is<Call>(r);
-            if (Is<Return>(r) || Is<Break>(r) || Is<Continue>(r) ||
-                (call && (call->builtin == B_ABORT || call->builtin == B_EXIT))) dead = true;
+            if (Jumps(r)) dead = true;
         }
         b->stmts = std::move(out);
         if (b->tail) {
@@ -465,8 +477,7 @@ struct Optimizer {
             if (vd->names.size() == 1 && vd->inits.size() == 1 && vd->defs.size() == 1) {
                 auto d = vd->defs[0];
                 auto lit = AsLiteral(vd->inits[0]);
-                auto &f = facts[d];
-                if (lit && ScalarType(d->type) && f.writes == 0 && f.addrof == 0) {
+                if (lit && Unwritten(facts, d)) {
                     consts[d] = lit;
                     // Uses outside this walk exist only via capture; otherwise
                     // every use gets replaced and the binding is dead.
@@ -573,8 +584,7 @@ struct Optimizer {
         if (g->names.size() == 1 && g->inits.size() == 1 && !g->defs.empty()) {
             auto d = g->defs[0];
             auto lit = AsLiteral(g->inits[0]);
-            auto &f = facts[d];
-            if (lit && ScalarType(d->type) && f.writes == 0 && f.addrof == 0)
+            if (lit && Unwritten(facts, d))
                 consts[d] = lit;  // The declaration itself always stays.
         }
     }
@@ -702,9 +712,8 @@ struct Inliner {
     // Remap owns all copied-variable state, including the write/address facts
     // that later folds use, for ordinary and recursive base-case inlining.
     VarDecl *BindArg(VarDef *pv, Node *arg, Line ln) {
-        auto &f = o.facts[pv];
-        if (Optimizer::AsLiteral(arg) && Optimizer::ScalarType(pv->type) &&
-            f.writes == 0 && f.addrof == 0 && !(keepcaptured && pv->captured)) {
+        if (Optimizer::AsLiteral(arg) && Optimizer::Unwritten(o.facts, pv) &&
+            !(keepcaptured && pv->captured)) {
             subst[pv] = arg;
             return nullptr;
         }
@@ -1158,6 +1167,19 @@ inline Node *Binary::Opt(Optimizer &o) {
     }
     left = o.Opt(left);
     right = o.Opt(right);
+    // A comparison of two constants, at the type they compare at; null for
+    // any other operator.
+    auto compare = [&](auto a, auto b) -> Node * {
+        switch (op) {
+            case T_LT:   return o.NewBool(this, a < b);
+            case T_GT:   return o.NewBool(this, a > b);
+            case T_LTEQ: return o.NewBool(this, a <= b);
+            case T_GTEQ: return o.NewBool(this, a >= b);
+            case T_EQ:   return o.NewBool(this, a == b);
+            case T_NEQ:  return o.NewBool(this, a != b);
+            default:     return nullptr;
+        }
+    };
     auto li = Is<IntLit>(left), ri = Is<IntLit>(right);
     if (li && ri) {
         // Folds compute at the operands' checked type (the typechecker
@@ -1171,30 +1193,9 @@ inline Node *Binary::Opt(Optimizer &o) {
         if (FoldIntOp(op, li->val, ri->val, s, r)) return o.NewInt(this, r);
         // A comparison has no integer result to fold, so it is not one of
         // FoldIntOp's; its operands compare at their own signedness.
-        if (IsUnsigned(s)) {
-            auto a = (uint64_t)li->val, b = (uint64_t)ri->val;
-            switch (op) {
-                case T_LT:   return o.NewBool(this, a < b);
-                case T_GT:   return o.NewBool(this, a > b);
-                case T_LTEQ: return o.NewBool(this, a <= b);
-                case T_GTEQ: return o.NewBool(this, a >= b);
-                case T_EQ:   return o.NewBool(this, a == b);
-                case T_NEQ:  return o.NewBool(this, a != b);
-                default: break;
-            }
-            return this;
-        }
-        auto a = li->val, b = ri->val;
-        switch (op) {
-            case T_LT:   return o.NewBool(this, a < b);
-            case T_GT:   return o.NewBool(this, a > b);
-            case T_LTEQ: return o.NewBool(this, a <= b);
-            case T_GTEQ: return o.NewBool(this, a >= b);
-            case T_EQ:   return o.NewBool(this, a == b);
-            case T_NEQ:  return o.NewBool(this, a != b);
-            default: break;
-        }
-        return this;
+        auto c = IsUnsigned(s) ? compare((uint64_t)li->val, (uint64_t)ri->val)
+                               : compare(li->val, ri->val);
+        return c ? c : this;
     }
     auto lf = Is<FltLit>(left), rf = Is<FltLit>(right);
     if (lf && rf) {
@@ -1208,15 +1209,10 @@ inline Node *Binary::Opt(Optimizer &o) {
             case T_MINUS: return o.NewFlt(this, f32 ? (double)(float)(a - b) : a - b);
             case T_MUL:   return o.NewFlt(this, f32 ? (double)(float)(a * b) : a * b);
             case T_DIV:   return o.NewFlt(this, f32 ? (double)(float)(a / b) : a / b);
-            case T_LT:    return o.NewBool(this, a < b);
-            case T_GT:    return o.NewBool(this, a > b);
-            case T_LTEQ:  return o.NewBool(this, a <= b);
-            case T_GTEQ:  return o.NewBool(this, a >= b);
-            case T_EQ:    return o.NewBool(this, a == b);
-            case T_NEQ:   return o.NewBool(this, a != b);
-            default: break;  // % (fmod) is left to the runtime.
+            default: break;
         }
-        return this;
+        auto c = compare(a, b);
+        return c ? c : this;   // % (fmod) is left to the runtime.
     }
     auto lb = Is<BoolLit>(left), rb = Is<BoolLit>(right);
     if (lb && rb && (op == T_EQ || op == T_NEQ))
