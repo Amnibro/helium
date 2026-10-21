@@ -7,8 +7,10 @@ sidecar excludes.
 
 A CMake package is configured again when its cmake_options change, including
 after a configure that failed for want of one; a cmake_target its project
-does not define is reported at configure; and a target compiled as C++ that
-publishes a C++ standard to what links it builds, for both runs."""
+does not define is reported at configure; a target compiled as C++ that
+publishes a C++ standard to what links it builds, for both runs; and built
+again with nothing changed, the files the compiler generates for CMake keep
+their times."""
 import json
 import os
 import subprocess
@@ -161,4 +163,27 @@ def check_native_rebuild(exe, base, *, jit):
         expect([app], ["14"], "the program using a C++ package")
         if jit:
             expect([exe, "run", user], ["14"], "goose run of a C++ package")
+
+        # Built again with nothing changed, the files the compiler generates
+        # for CMake keep their times, so that its build relinks nothing.
+        def wrapper(d):
+            lists = d / "wrapper" / "CMakeLists.txt"
+            return lists.read_text() if lists.is_file() else ""
+
+        built = [d for d in (root / "home" / "build" / "pkg" / "local").glob("*/*")
+                 if "project(goose_pkg_cxx " in wrapper(d)]
+        require(len(built) == 1, f"the C++ package was built in {built}")
+        generated = [built[0] / name for name in
+                     ("goose_symbols.c", "goose_linkprobe.c", "wrapper/CMakeLists.txt",
+                      "include/goose.h", f"link-{info['cc']['style']}.rsp")]
+        if jit:
+            generated += list(built[0].glob("goose_jit_cxx.*"))
+        times = {f: f.stat().st_mtime_ns for f in generated}
+        if jit:
+            expect([exe, "run", user], ["14"], "goose run of a C++ package again")
+        else:
+            expect([exe, "build", "-o", app, user], None, "goose build of a C++ package again")
+        rewritten = [str(f.relative_to(built[0])) for f in generated
+                     if f.stat().st_mtime_ns != times[f]]
+        require(not rewritten, f"a build with nothing changed rewrote {rewritten}")
     return None

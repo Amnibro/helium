@@ -373,7 +373,9 @@ compilers, the `cmake_options`, and a generator chosen as Ninja if on PATH,
 else the platform default; built with `--config Release`. The configure
 command that last succeeded is kept beside the build; any other one (an
 edited `cmake_options`, or a configure that failed) configures again from a
-fresh cache.
+fresh cache. The wrapper and its two C files are written only when they
+change, so that a build with nothing new compiles and relinks nothing: on
+Windows a JIT library another process has loaded cannot be written over.
 
 The response file for AOT programs is the link closure of `<cmake_target>`:
 its archive, every static library it depends on, and the system libraries

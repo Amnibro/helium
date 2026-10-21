@@ -140,6 +140,19 @@ inline bool WriteFileMakingDirs(const string &path, const string &text) {
     return true;
 }
 
+// Writes `text` to `path` unless the file holds it already, so that its
+// modification time, which a build tool goes by, moves only with its
+// contents; and then whole, through `path`.tmp renamed over it, so that a
+// reader in another process finds the old text or the new one, never a
+// part. The caller keeps other writers of `path` out (a FileLock). False
+// when it cannot be written.
+inline bool WriteFileIfChanged(const string &path, const string &text) {
+    string old;
+    if (LoadFile(path, old) && old == text) return true;
+    auto tmp = cat(path, ".tmp");
+    return WriteFileMakingDirs(tmp, text) && !RenamePath(tmp, path);
+}
+
 // The program `name`'s version line, from the arguments that make it print
 // one (`--version` for the gcc-style drivers and cmake and git; cl prints
 // its banner when given nothing).

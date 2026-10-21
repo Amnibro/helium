@@ -164,11 +164,7 @@ inline string NativeIncludeDir(const NativeBuild &out) { return cat(out.dir, "/i
 
 inline void WriteGooseHeader(const NativeBuild &out) {
     auto path = cat(NativeIncludeDir(out), "/goose.h");
-    auto text = GooseHeader();
-    string old;
-    LoadFile(path, old);
-    if (old != text && !WriteFileMakingDirs(path, text))
-        throw CompileError { cat("cannot write ", path) };
+    if (!WriteFileIfChanged(path, GooseHeader())) throw CompileError { cat("cannot write ", path) };
 }
 
 // --- CMake packages (§5.2) ----------------------------------------------------------
@@ -305,14 +301,15 @@ inline bool BuildCMakePart(const Ast &ast, int pkg, const Builder &b, bool wantj
         "# A probe whose link line is the package's whole link closure.\n"
         "add_executable(goose_linkprobe \"", probesrc, "\")\n"
         "target_link_libraries(goose_linkprobe PRIVATE ", p.cmake_target, ")\n");
+    // What CMake's build goes by keeps its time unless it changed, so that a
+    // build with nothing new compiles and relinks nothing: a JIT library
+    // another process has loaded could not be written over on Windows.
     if (!b.opts.dryrun) {
-        if (!WriteFileMakingDirs(symsrc, SymbolTableSource(p.name, externs)) ||
-            !WriteFileMakingDirs(probesrc, "/* Its link line is the package's link closure. */\n"
-                                           "int main(void) { return 0; }\n"))
+        if (!WriteFileIfChanged(symsrc, SymbolTableSource(p.name, externs)) ||
+            !WriteFileIfChanged(probesrc, "/* Its link line is the package's link closure. */\n"
+                                          "int main(void) { return 0; }\n"))
             throw CompileError { cat("cannot write into ", out.dir) };
-        string old;
-        LoadFile(cat(wrapper, "/CMakeLists.txt"), old);
-        if (old != lists && !WriteFileMakingDirs(cat(wrapper, "/CMakeLists.txt"), lists))
+        if (!WriteFileIfChanged(cat(wrapper, "/CMakeLists.txt"), lists))
             throw CompileError { cat("cannot write into ", wrapper) };
         WriteFileMakingDirs(cat(builddir, "/.cmake/api/v1/query/codemodel-v2"), "");
     }
@@ -368,7 +365,7 @@ inline bool BuildCMakePart(const Ast &ast, int pkg, const Builder &b, bool wantj
     string rsp;
     for (auto &i : CMakeLinkClosure(builddir, "goose_linkprobe"))
         Append(rsp, i.find(' ') != string::npos ? cat("\"", i, "\"") : i, "\n");
-    if (!WriteFileMakingDirs(out.rsp, rsp)) throw CompileError { cat("cannot write ", out.rsp) };
+    if (!WriteFileIfChanged(out.rsp, rsp)) throw CompileError { cat("cannot write ", out.rsp) };
     return true;
 }
 
