@@ -866,14 +866,19 @@ struct BCE {
     // value lands in, which can be wider (an i8 sum stored into an i64).
     static TypeExpr *OpType(Binary *b) { return b->left->exprtype; }
 
+    // An integer type the domain computes at: each of its values is the i64
+    // the facts state, which a u64 above i64.max or a varint is not.
+    static bool MachineInt(TypeExpr *t) {
+        return t && t->kind == TY_INT && t->intstorage != IS_U64 && t->intstorage != IS_VARINT;
+    }
+
     // A one-shot base carrying [lo, hi], for a value the operation computes
     // but the domain cannot relate to anything else. The interval is only
     // stated when the machine's own arithmetic agrees with it: §6.2 wraps at
     // the operation's width in release builds, so a result the facts place
     // outside that width is not the value the program computed.
     static bool FitsType(TypeExpr *t, int64_t lo, int64_t hi) {
-        if (!t || t->kind != TY_INT || t->intstorage == IS_U64 || t->intstorage == IS_VARINT)
-            return false;
+        if (!MachineInt(t)) return false;
         auto [tlo, thi] = IntRange(t->intstorage);
         return lo >= tlo && hi <= thi;
     }
@@ -891,9 +896,7 @@ struct BCE {
     Term MulTerm(Binary *b) {
         if (mode == M_KILLS) return {};
         auto t = OpType(b);
-        if (!t || t->kind != TY_INT || t->intstorage == IS_U64 ||
-            t->intstorage == IS_VARINT)
-            return {};
+        if (!MachineInt(t)) return {};
         auto lt = TermOf(b->left), rt = TermOf(b->right);
         if (!lt.ok || !rt.ok) return {};
         if (rt.b.kind == BK_ZERO && rt.off >= 1) return ScaledTerm(t, lt, rt.off);
@@ -1043,8 +1046,7 @@ struct BCE {
     Term ShlTerm(Binary *b) {
         if (mode == M_KILLS) return {};
         auto t = OpType(b);
-        if (!t || t->kind != TY_INT || t->intstorage == IS_U64 || t->intstorage == IS_VARINT)
-            return {};
+        if (!MachineInt(t)) return {};
         auto kt = TermOf(b->right);
         if (!kt.ok || kt.b.kind != BK_ZERO) return {};
         auto k = kt.off & (IntBits(t->intstorage) - 1);
@@ -1097,19 +1099,13 @@ struct BCE {
             return Term { true, Zero(), i->val };
         }
         if (auto id = Is<Ident>(n)) {
-            auto v = id->vdef;
-            if (!v || !v->type || v->type->kind != TY_INT) return {};
-            auto s = v->type->intstorage;
-            // A u64 of an index type is below a length, so within i64.
-            if ((s == IS_U64 && !v->type->ix) || s == IS_VARINT) return {};
-            return Term { true, VarBase(v), 0 };
+            if (!IntBaseVar(id->vdef)) return {};
+            return Term { true, VarBase(id->vdef), 0 };
         }
         if (auto d = Is<Dot>(n); d && d->member == B_LEN) return LenTermOf(d->obj);
         if (auto b = Is<Binary>(n); b && (b->op == T_PLUS || b->op == T_MINUS)) {
             auto t = OpType(b);
-            if (!t || t->kind != TY_INT || t->intstorage == IS_U64 ||
-                t->intstorage == IS_VARINT)
-                return {};
+            if (!MachineInt(t)) return {};
             auto lt = TermOf(b->left), rt = TermOf(b->right);
             if (!lt.ok || !rt.ok) return {};
             if (b->op == T_PLUS && lt.b.kind == BK_ZERO) std::swap(lt, rt);
@@ -1243,8 +1239,7 @@ struct BCE {
     Term QuotTerm(Binary *b) {
         if (mode == M_KILLS) return {};
         auto t = OpType(b);
-        if (!t || t->kind != TY_INT || t->intstorage == IS_U64 || t->intstorage == IS_VARINT)
-            return {};
+        if (!MachineInt(t)) return {};
         auto shift = b->op == T_SHR;
         auto xt = TermOf(b->left);
         if (!xt.ok) return {};
@@ -1302,9 +1297,7 @@ struct BCE {
         if (t.ok && CmpAdmissible(t) && Query(Zero(), t.b, t.off)) return true;
         auto b = Is<Binary>(n);
         if (!b || b->op != T_MINUS || effectfulterms.count(b)) return false;
-        auto ot = OpType(b);
-        if (!ot || ot->kind != TY_INT || ot->intstorage == IS_U64 || ot->intstorage == IS_VARINT)
-            return false;
+        if (!MachineInt(OpType(b))) return false;
         auto lt = TermOf(b->left), rt = TermOf(b->right);
         return lt.ok && rt.ok && CmpAdmissible(lt) && CmpAdmissible(rt) &&
                Query(Zero(), rt.b, rt.off) && Query(rt.b, lt.b, SatSub(lt.off, rt.off));
@@ -1874,7 +1867,7 @@ struct BCE {
         if (auto u = Is<Unary>(a); u && u->op == T_BITAND) lv = u->child;
         if (auto id = Is<Ident>(lv); id && id->vdef) {
             auto v = id->vdef;
-            if (ScalarIntVar(v)) {
+            if (IntBaseVar(v)) {
                 NoteInt(OwnerTarget(v));
                 if (mode == M_RECORD) RecordSet(v, Term {}, false);   // As in PointeeWriteKill.
                 BumpVar(v);
@@ -1884,7 +1877,7 @@ struct BCE {
             auto [k, u] = UltOf(v);
             if (k == UK_STATIC) return;
             if (k == UK_OWNED) {
-                if (ScalarIntVar(u)) {
+                if (IntBaseVar(u)) {
                     NoteInt(OwnerTarget(u));
                     if (mode == M_RECORD) RecordSet(u, Term {}, false);
                     BumpVar(u);
@@ -1975,7 +1968,7 @@ struct BCE {
         f.bases.push_back({ false, -1 });
         for (size_t j = 0; j < sp->params.size(); j++) {
             auto p = sp->params[j];
-            if (ScalarIntVar(p)) f.bases.push_back({ false, (int)j });
+            if (IntBaseVar(p)) f.bases.push_back({ false, (int)j });
             else if (LenTrackable(p->type)) f.bases.push_back({ true, (int)j });
         }
         return f;
@@ -2247,14 +2240,16 @@ struct BCE {
     }
 
     void VarKillWrite(VarDef *v) {
-        if (ScalarIntVar(v)) NoteInt(OwnerTarget(v));
+        if (IntBaseVar(v)) NoteInt(OwnerTarget(v));
         if (mode == M_RECORD) RecordSet(v, Term {}, false);
         BumpVar(v, false);
     }
 
-    static bool ScalarIntVar(VarDef *v) {
-        return v && v->type && v->type->kind == TY_INT &&
-               v->type->intstorage != IS_U64 && v->type->intstorage != IS_VARINT;
+    // A variable whose value is a base (TermOf), so that every write of it
+    // has to reach the facts: a machine integer, or a u64 of an index type,
+    // which is below a length and so within i64.
+    static bool IntBaseVar(VarDef *v) {
+        return v && (MachineInt(v->type) || IsIndexT(v->type));
     }
 
     // ------------------------------------------------------------------
@@ -2353,7 +2348,7 @@ struct BCE {
         scan(body);
         vector<VarDef *> out;
         for (auto v : written)
-            if (ScalarIntVar(v) && !v->captured && !v->isglobal && !addrof.count(v) &&
+            if (IntBaseVar(v) && !v->captured && !v->isglobal && !addrof.count(v) &&
                 StepsOf(body, v) <= 1)
                 out.push_back(v);
         return out;
@@ -2661,12 +2656,7 @@ struct BCE {
         if (op != T_LT && op != T_GT && op != T_LTEQ && op != T_GTEQ && op != T_EQ &&
             op != T_NEQ)
             return;
-        auto intok = [](Node *n) {
-            auto t = n->exprtype;
-            return t && t->kind == TY_INT && t->intstorage != IS_U64 &&
-                   t->intstorage != IS_VARINT;
-        };
-        if (!intok(b->left) || !intok(b->right)) return;
+        if (!MachineInt(b->left->exprtype) || !MachineInt(b->right->exprtype)) return;
         auto lt = TermOf(b->left), rt = TermOf(b->right);
         if (!lt.ok || !rt.ok || !CmpAdmissible(lt) || !CmpAdmissible(rt)) return;
         if (!truth) {
@@ -2742,7 +2732,7 @@ struct BCE {
     // Prescans.
 
     void NoteVar(VarDef *v) {
-        if (ScalarIntVar(v)) intvars.insert(v);
+        if (IntBaseVar(v)) intvars.insert(v);
     }
 
     void MarkAddr(Node *n) {
@@ -3087,7 +3077,7 @@ struct BCE {
         // never-invalidated places.
         auto eligible = [&](VarDef *v) {
             return v && wdecl.count(v) && !wbad.count(v) && !v->captured && !v->isglobal &&
-                   !v->isparam && !addrof.count(v) && ScalarIntVar(v);
+                   !v->isparam && !addrof.count(v) && IntBaseVar(v);
         };
         for (auto v : wdecl) {
             if (!eligible(v)) continue;
@@ -3241,7 +3231,7 @@ struct BCE {
         for (auto g : ast.globals) {
             if (g->defs.size() != 1 || g->inits.size() != 1) continue;
             auto v = g->defs[0];
-            if (!ScalarIntVar(v)) continue;
+            if (!IntBaseVar(v)) continue;
             auto lit = Is<IntLit>(g->inits[0]);
             gge0[v] = lit && !lit->uns && lit->val >= 0;
         }
@@ -3557,8 +3547,7 @@ inline bool Call::BceWalk(BCE &b) {
         b.Walk(a);
         if (!site) return;
         auto t = a->exprtype;
-        auto isint = t && t->kind == TY_INT && t->intstorage != IS_U64 &&
-                     t->intstorage != IS_VARINT;
+        auto isint = BCE::MachineInt(t);
         auto it = isint ? b.TermOf(a) : BCE::Term {};
         ints.push_back(isint && b.NoWrap(it, t->intstorage) ? it : BCE::Term {});
         slens.push_back(Is<SliceExpr>(a) ? b.slicelen : BCE::Term {});
@@ -3955,7 +3944,7 @@ inline bool ForLoop::BceWalk(BCE &b) {
     // index of a branchless partition needs. The index moves by exactly one
     // per iteration, as long as nothing but the loop can write it.
     vector<pair<VarDef *, int64_t>> stepped;
-    if (iv && BCE::ScalarIntVar(iv) && !iv->captured && !b.addrof.count(iv)) {
+    if (iv && BCE::IntBaseVar(iv) && !iv->captured && !b.addrof.count(iv)) {
         auto start = iterkind == IK_ARRAY || iterkind == IK_SLICE
                          ? BCE::Term { true, BCE::Zero(), 0 } : lot;
         if (start.ok && b.CmpAdmissible(start))
@@ -4090,7 +4079,7 @@ inline bool VarDecl::BceWalk(BCE &b) {
             lt = b.slicelen;
         else if (b.mode != BCE::M_KILLS && v->type && IsRefOrSlice(v->type))
             lt = b.BoundLenOf(inits[0]);
-        if (BCE::ScalarIntVar(v)) {
+        if (BCE::IntBaseVar(v)) {
             b.SetWrite(v, inits[0], true);
         } else if (b.loopdepth > 0 && v->type && IsRefOrSlice(v->type)) {
             b.RebindKill(v);   // Loop-repeated redeclaration rebinds.
@@ -4146,7 +4135,7 @@ inline bool Assign::BceWalk(BCE &b) {
     if (auto id = Is<Ident>(lval)) {
         auto v = id->vdef;
         if (!v) return true;
-        if (BCE::ScalarIntVar(v)) {
+        if (BCE::IntBaseVar(v)) {
             if (op == T_ASSIGN) {
                 b.SetWrite(v, rhs, false);
             } else if (op == T_PLUSEQ || op == T_MINUSEQ) {
@@ -4219,7 +4208,7 @@ inline bool IncDec::BceWalk(BCE &b) {
         return true;
     }
     if (auto id = Is<Ident>(lval); id && id->vdef) {
-        if (BCE::ScalarIntVar(id->vdef)) b.ShiftWrite(id->vdef, op == T_INC ? 1 : -1);
+        if (BCE::IntBaseVar(id->vdef)) b.ShiftWrite(id->vdef, op == T_INC ? 1 : -1);
         else b.VarKillWrite(id->vdef);
     }
     // A field or element integer is not a tracked base.

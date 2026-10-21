@@ -3667,7 +3667,8 @@ bridges across their kills.
 ### 5.3 Terms
 
 `TermOf` reads a machine-integer expression as *base + offset*: a literal;
-an integer variable that is not `u64` or `varint`; `.len` of a place (a
+an integer variable that is not `varint` or a `u64` outside an index type
+(`IntBaseVar`, §5.11); `.len` of a place (a
 fixed array's length is a constant); `x + c`/`x - c` at `i64` only (narrower
 widths wrap below the 64-bit math the facts are stated in); `a % b` and
 `a & b`, which land in `[0, b]` on a fresh base when `b` is provably
@@ -4050,7 +4051,10 @@ value of one read out of storage, a call, a branch or a conversion
 generation (`IndexBoundOf` in `DistsFrom`): the array never shrinks, so a
 value below any earlier length is below the current one, and no bridge
 facts are involved. A `u64` of an index type is a base, being below a
-length. `JudgeIndexCast` judges a conversion into one as `a[x]` would be
+length, so every write of one -- an assignment, a callee's write through
+a reference to it or of it as a global, a write through a reference that
+may name it -- kills it as it does any other integer variable
+(`IntBaseVar`). `JudgeIndexCast` judges a conversion into one as `a[x]` would be
 judged, sets `AsCast::nobc`, and states the completed check's facts.
 
 **checkfree.** A kept check belongs to the text it is written in, as for
@@ -4071,7 +4075,8 @@ Indices loaded from array contents (`dist[q[i]]`) have no known range and
 keep their check, unless what is stored has an index type (§3.13). An analysis of array-content invariants was implemented
 and measured, then dropped because it produced no measurable speedup
 (`bench/adoption.md`). A `u64` variable is never a
-base, so a `u64` local loses the range its initializer had (TODO 0a). Loop
+base unless it is of an index type, so a plain `u64` local loses the range
+its initializer had (TODO 0a). Loop
 exit conditions that are disjunctions are not represented (TODO 0f). A
 value read out of a field or element (only variables and lengths are
 bases; a narrow type still bounds it), a value through a call without a
@@ -5434,7 +5439,7 @@ call sites*. In practice:
   `out[cursor[s]]`: the analysis tracks no array contents. Storing an index
   type there moves the check to where the value is converted, and a
   `checkfree` function (spec §7.14) proves none is left in a loop;
-* a `u64`-typed index variable (a `u64` is never a base), an index read out
+* a `u64`-typed index variable (a plain `u64` is never a base), an index read out
   of a field or element (`n.count`, only variables and lengths are bases,
   though a narrow type's range still counts), and any value that reaches the
   index through a cast the facts cannot prove in range;
@@ -5737,7 +5742,7 @@ specification allows, and the shapes the C backend refuses outright:
   rooted reference argument points into, rather than only those, would lift
   that, at the cost of one specialization per distinct global passed.
 * Bounds-check elimination tracks no array contents and no `u64` variables
-  (§5.12).
+  other than those of index types (§5.12).
 * A slice loaded through a reference-to-slice parameter is a class of its
   own only where the body reaches the argument's slot through references
   alone (§3.4). Behind a parameter given a field or an element (a `format`
