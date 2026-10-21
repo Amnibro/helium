@@ -436,6 +436,7 @@ inline Val Binary::Check(TypeCheck &tc, TypeExpr *) {
 }
 
 inline Val Dot::Check(TypeCheck &tc, TypeExpr *) {
+    TypeCheck::DestScope ds(tc, TypeCheck::Dest {});
     if (incomplete) tc.IncompleteDot(this);
     // EnumName.Variant: a payload-less variant constant (§3.5).
     if (auto id = Is<Ident>(obj); id && id->expansionerror.empty()) {
@@ -482,10 +483,12 @@ inline Val Dot::Check(TypeCheck &tc, TypeExpr *) {
 inline Val Call::Check(TypeCheck &tc, TypeExpr *expected) { return tc.CheckCall(this, expected); }
 
 inline Val Index::Check(TypeCheck &tc, TypeExpr *) {
+    TypeCheck::DestScope ds(tc, TypeCheck::Dest {});
     return tc.ContainerRead(tc.CheckLValue(this));
 }
 
 inline Val SliceExpr::Check(TypeCheck &tc, TypeExpr *) {
+    TypeCheck::DestScope ds(tc, TypeCheck::Dest {});
     auto lv = tc.LValueBase(obj, cmpview);
     tc.DerefLValue(lv, obj);
     tc.SliceProvenance(lv, obj);
@@ -517,6 +520,7 @@ inline Val SliceExpr::Check(TypeCheck &tc, TypeExpr *) {
 }
 
 inline Val AsCast::Check(TypeCheck &tc, TypeExpr *) {
+    TypeCheck::DestScope ds(tc, TypeCheck::Dest {});
     // A conversion the checker inserted is checked again as the integer it
     // converts, which its destination or operator converts again
     // (TypeCheck::ToFloat).

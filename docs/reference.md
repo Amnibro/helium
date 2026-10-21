@@ -1794,6 +1794,32 @@ are all `in pool` copies like any other, since its offsets do not depend
 on where it sits. The one copy that is always allowed is a default value:
 a literal's `..` gives a relative field null. Spec §3.9.
 
+A function or trailing block can return a fresh value with relative links.
+It is constructed at the receiver, including across function calls and
+with optimization disabled:
+
+```goose
+struct Node { value: i64, next: Node&<u32>? }
+fn linked(first: Node&, value: i64) -> Node {
+    Node { value: value, next: first }
+}
+fn add<F>(nodes: Node[>..]&) { nodes.push(F()); }
+fn main() {
+    var nodes: Node[>..] = [Node { value: 1 }];
+    nodes.push(linked(nodes[0], 2));
+    let first .= nodes[0];
+    add(nodes) { Node { value: 3, next: first } };
+    let next = nodes[2].next;
+    if next { print(next.value); }  // 1
+}
+```
+
+Each call must place the result in the same root as the linked element.
+For example, `let n = linked(nodes[0], 2)` is an error: the new local is
+separate storage. Returning an existing node by value is still a prohibited
+copy. A result that needs its receiver's root also cannot be used as a
+resize fill or converted through a temporary array representation.
+
 ### Pool-relative links and `self`
 
 `pool` in `T&<u32 in pool>` names a global `var` or `reusable var` of a
@@ -3071,8 +3097,9 @@ foo(1, h)                            // a named function
   the callee has parameters where the rest have defaults.
 * A name with several overloads passes them all, and each call of the
   value resolves among them.
-* A block's value is checked without the destination its call meets, so a
-  block cannot be `[]`.
+* A block infers its value's type without the destination type its call
+  meets, so a block cannot be `[]`. Its receiving storage is still available
+  for checking relative links in a fresh result.
 
 ```goose
 fn each_pair<T, F>(xs: T[:]) {

@@ -809,11 +809,9 @@ inline bool TypeCheck::BuiltWhereReceived(Node *n, size_t result) {
     // expose it as fresh; returning existing relative storage is a copy.
     if (auto c = Is<Call>(n); c && c->fvbody && result == 0)
         return BuiltWhereReceived(c->fvbody->tail, 0);
-    // A function's result is built where it is received where it is not
-    // fixed-size (§4.3, §7.3). A fixed-size one is what its returns made,
-    // which by this same rule is a literal, a default, another call's result
-    // or a named result, and a returned literal has no root for a relative
-    // reference to point within but itself: its links are nulls and `self`.
+    // A function's fresh relative aggregate is built at its receiver
+    // (§4.3, §7.3); its returns obey this same rule and any links into the
+    // receiving root are validated at each call (CheckCalleeRelative).
     // A reference result is none of these: what it points at is copied, out
     // of the storage its links point within.
     if (auto c = Is<Call>(n); c && c->builtin < 0 && result < c->rettypes.size() &&

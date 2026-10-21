@@ -38,6 +38,10 @@ inline Val TypeCheck::CheckCall(Call *c, TypeExpr *expected) {
     // Arguments construct into parameter slots, not whatever destination
     // encloses this call, and a parameter's constness is its instantiation's
     // (§9.5); member ops re-set both for element pushes.
+    Saved<vector<Dest>> results(callresultdsts, c == multidestnode ? multidests
+                                                                 : vector<Dest> { curdst });
+    Saved<TypeExpr *> resulttype(callresulttype, expected);
+    Saved<bool> forward(callforwarding, c == multidestnode);
     DestScope ds(*this, Dest {});
     SlotScope ss(*this, false);
     if (auto d = Is<Dot>(c->callee)) return CheckUfcsCall(c, d, expected);
@@ -465,6 +469,7 @@ inline Val TypeCheck::ResolveCall(Call *c, vector<SFunction *> &cands, FnSpec *e
     // Arguments the re-check rebound by reference replace the originals.
     c->SetArgNodes(argnodes);
     c->spec = spec;
+    CheckCalleeRelative(c, spec, argvals);
     CalleesReturn(c, { spec }, argsreach);
     return CallResult(c, spec, argvals);
 }
@@ -1270,6 +1275,7 @@ inline Val TypeCheck::TryDispatch(Call *c, vector<SFunction *> &cands, FnSpec *e
         RecordVal(argnodes[found], byreference ? argvals[found] : DecayRef(argvals[found]));
     });
     // Like an ordinary call's, the cases' rebinds follow the argument checks.
+    for (auto spec : c->dispatch) CheckCalleeRelative(c, spec, argvals);
     CalleesReturn(c, c->dispatch, argsreach);
     // The cases are alternatives of one call, like a match's arms: the result
     // is only as long-lived, exact and writable as every case's result. A case
@@ -2775,6 +2781,13 @@ inline bool TypeCheck::SameRecord(const FnRecord &a, const FnRecord &b, const Fn
         return false;
     };
     auto sametype = [&](TypeExpr *x, TypeExpr *y) { return !x == !y && (!x || TypeEq(x, y)); };
+    if (a.relativestores.size() != b.relativestores.size()) return why("relative destinations");
+    for (auto &p : a.relativestores)
+        if (none_of(b.relativestores.begin(), b.relativestores.end(), [&](const auto &q) {
+                return p.result == q.result && sameroots(p.source, q.source) &&
+                       sameroots(p.destination, q.destination);
+            }))
+            return why("relative destinations");
     if (a.mayreturn != b.mayreturn) return why("normal completion");
     if (a.retroots.size() != b.retroots.size()) return why("returns");
     for (size_t i = 0; i < a.retroots.size(); i++) {
@@ -2896,10 +2909,11 @@ inline void TypeCheck::CheckSpecBodyOnce(FnSpec *spec, vector<Val> *argvals, Lin
     frames[fi].bodyidx = (int)outerbodies.size();
     auto savereach = reachable;
     DestScope ds(*this, Dest {});
-    // Whatever the call's result is for -- the slot it lands in, the return
-    // it is a value of -- is the caller's business: this body's own
-    // statements say where their values go, and its tail is a return of its
-    // own, whose constness is inferred (§9.5).
+    Saved<vector<Dest>> cds(callresultdsts, {});
+    Saved<TypeExpr *> cdt(callresulttype, nullptr);
+    // Statements have their own destinations. Returns name symbolic result
+    // locations, whose relative-link requirements each caller validates;
+    // result constness is inferred from the returns (§9.5).
     SlotScope ss(*this, false);
     FlagScope rs(inreturn, false);
     reachable = true;
@@ -3157,6 +3171,12 @@ inline void TypeCheck::CheckSpecBodyOnce(FnSpec *spec, vector<Val> *argvals, Lin
                     {
                         FlagScope ret(inreturn, true);
                         RetValScope rv(*this, spec->body->tail);
+                        DestScope rd(*this, ResultDest(spec));
+                        Saved<Node *> mn(multidestnode, spec->body->tail);
+                        vector<Dest> dests;
+                        for (size_t i = 0; i < max<size_t>(1, spec->rets.size()); i++)
+                            dests.push_back(ResultDest(spec, (int)i));
+                        Saved<vector<Dest>> md(multidests, std::move(dests));
                         tv = spec->retsknown ? CheckValue(spec->body->tail, expected)
                                              : CheckInferredResult(spec->body->tail, spec);
                     }
@@ -3565,6 +3585,12 @@ inline void TypeCheck::CheckReturn(Return *r) {
             Val v;
             {
                 RetValScope rv(*this, tf == (int)frames.size() - 1 ? r->vals[0] : nullptr);
+                DestScope rd(*this, ResultDest(tspec));
+                Saved<Node *> mn(multidestnode, r->vals[0]);
+                vector<Dest> dests;
+                for (size_t i = 0; i < max<size_t>(1, tspec->rets.size()); i++)
+                    dests.push_back(ResultDest(tspec, (int)i));
+                Saved<vector<Dest>> md(multidests, std::move(dests));
                 v = tspec->retsknown ? CheckValue(r->vals[0], one)
                                      : CheckInferredResult(r->vals[0], tspec);
             }
@@ -3591,6 +3617,7 @@ inline void TypeCheck::CheckReturn(Return *r) {
             }
         } else {
             for (size_t i = 0; i < r->vals.size(); i++) {
+                DestScope rd(*this, ResultDest(tspec, (int)i));
                 auto v = tspec->retsknown ? CheckValue(r->vals[i], expectone(i))
                                           : CheckInferredResult(r->vals[i], tspec);
                 if (v.type->kind == TY_VOID) Error(r, "cannot return a valueless expression");
@@ -3785,22 +3812,34 @@ inline Val TypeCheck::CheckFunValCall(Call *c, const FnValBind &fb, TypeExpr *ex
     BlockScope bs(*this, c->fvbody);
     CheckStmts(c->fvbody);
     Val v = VoidVal();
+    auto resultdest = callresultdsts.empty() ? Dest {} : callresultdsts[0];
+    bool needslocation = false;
     if (auto tail = c->fvbody->tail) {
         if (IsValuelessTail(tail)) {
             CheckStmtExpr(tail);
         } else {
             frames.back().tailvalue = true;
+            auto dest = resultdest;
+            dest.used = &needslocation;
+            DestScope rd(*this, dest);
             v = CheckValue(c->fvbody->tail, nullptr);
             NoRelRefCopy(c->fvbody->tail, v.type);
         }
     }
-    // The body's value is checked without a destination and the call's value
-    // is built as the body's, so a [] there never gets an element type.
+    // Storage provenance is supplied independently of a destination type:
+    // the block still infers its own value type, so [] has no element type.
     if (IsUntypedEmptyArray(v.type))
         Error(c->fvbody->tail, "cannot infer the element type of []: a block's value is checked "
-                               "without its call's destination (§7.6); end the block with an "
+                               "without its call's destination type (§7.6); end the block with an "
                                "annotated local instead, as in `let e: T[] = []; e`");
     c->fvbody->exprtype = v.type;
+    if (needslocation && !ResultLayoutFits(v.type, expected))
+        Error(c, "a block result containing relative links to its destination cannot change "
+                 "representation; construct the receiver's type in the block");
+    if (needslocation && resultdest.fill)
+        Error(c, "a block result containing relative links to its destination cannot be a "
+                 "resize fill value, which is constructed once and copied");
+    if (needslocation && resultdest.used) *resultdest.used = true;
     PopScope();
     frames.pop_back();
     cur.kills.clear();
@@ -3808,6 +3847,116 @@ inline Val TypeCheck::CheckFunValCall(Call *c, const FnValBind &fb, TypeExpr *ex
     // storage to bind by reference even where the tail names a variable.
     // Fresh construction still uses the receiver (BuiltWhereReceived).
     return TempCopy(v);
+}
+
+// A result with links into its receiving root cannot pass through a layout
+// adapter that stages or moves its bytes. A variant can construct directly
+// behind its ADT's tag, in either mode.
+inline bool TypeCheck::ResultLayoutFits(TypeExpr *from, TypeExpr *to) {
+    if (!to || to->kind == TY_VOID || TopConstEq(from, to)) return true;
+    return from->kind == TY_VARIANT && to->kind == TY_ENUM && SameAdt(AdtOf(from), to);
+}
+
+// Relate a relative link's target to its receiving root. A named result's
+// root is a caller-supplied location, independent of argument slots. A
+// relationship between parameter classes and captured storage is likewise
+// checked at every call, rather than assumed from the call that first
+// specialized the body. Concrete local roots must agree here.
+inline bool TypeCheck::RelativeDestination(const Roots &source, Dest dest, Node *at, bool record,
+                                          bool forwarding) {
+    if (source.None() || dest.unknown) return true;
+    if (!source.Exact() || (!dest.result && !dest.roots.Exact())) return false;
+    auto roots = source;
+    auto spec = CurRealFrame().spec;
+    if (dest.result && dest.result != spec) {
+        auto target = FrameOfSpec(dest.result);
+        if (target < 0) return false;
+        for (auto k = RealFrameIndex(); k > target; k--) {
+            auto s = frames[k].spec;
+            if (frames[k].isfunval || !s || s == dest.result) continue;
+            if (record) s->storesout = true;
+            for (auto &a : roots.alts)
+                if (IsTemp(a.root) || (a.root && a.root->ownerspec == s)) return false;
+            if (!frames[k].argvals) continue;
+            Roots mapped;
+            for (auto &a : roots.alts)
+                mapped.Add(RetAltVal(s, a, *frames[k].argvals, ast.voidtype, at).AsRoots());
+            roots = mapped;
+        }
+        spec = dest.result;
+        if (!roots.Exact()) return false;
+    }
+    auto have = roots.Root(), want = dest.roots.Root();
+    auto same = !dest.result && have && want &&
+                (have == want || (PoolOf(have) && PoolOf(have) == PoolOf(want)));
+    // One parameter class names one particular root within the activation,
+    // even when the caller can only bound where that argument points.
+    if (same) {
+        if (record && dest.used) *dest.used = true;
+        return true;
+    }
+    if (!dest.result && !dest.used && !forwarding) return false;
+    auto local = [&](VarDef *r) {
+        return IsTemp(r) || (r && r->ownerspec == spec && !r->isglobal);
+    };
+    if (!spec || !have || local(have) || (!dest.result && local(want))) return false;
+    if (!dest.result && !IsClassRoot(have) && !IsClassRoot(want)) return false;
+    if (!record) return true;
+    if (dest.used) *dest.used = true;
+    FnRecord::RelativeStore rs;
+    rs.source.Set(have, true);
+    if (dest.result) rs.result = dest.resultindex;
+    else rs.destination.Set(want, true);
+    auto &stores = spec->record.relativestores;
+    if (none_of(stores.begin(), stores.end(), [&](const auto &s) {
+            return s.result == rs.result && s.source == rs.source && s.destination == rs.destination;
+        }))
+        stores.push_back(rs);
+    return true;
+}
+
+inline void TypeCheck::CheckCalleeRelative(Call *call, FnSpec *spec, vector<Val> &args) {
+    if (!reachable) return;
+    auto rec = RecordOf(spec);
+    if (!rec) return;
+    // A recursive call may append to this very record through its caller.
+    auto stores = rec->relativestores;
+    auto mapped = [&](const Roots &roots) {
+        Roots out;
+        for (auto &a : roots.alts)
+            out.Add(RetAltVal(spec, a, args, ast.voidtype, call).AsRoots());
+        return out;
+    };
+    for (auto &s : stores) {
+        auto source = mapped(s.source);
+        Dest dest;
+        if (s.result < 0) dest = Dest(mapped(s.destination));
+        else {
+            auto i = (size_t)s.result;
+            if (i < callresultdsts.size()) dest = callresultdsts[i];
+            else if (callforwarding && !callresultdsts.empty() && callresultdsts[0].result) {
+                dest = callresultdsts[0];
+                dest.resultindex += s.result;
+            }
+            if (dest.fill)
+                Error(call, "a result containing relative links to its destination cannot be a "
+                            "resize fill value, which is constructed once and copied");
+            auto want = i == 0 ? callresulttype : nullptr;
+            if (!want && dest.result && (size_t)dest.resultindex < dest.result->rets.size())
+                want = dest.result->rets[dest.resultindex];
+            if (i < spec->rets.size() && !ResultLayoutFits(spec->rets[i], want))
+                Error(call, "a result containing relative links to its destination cannot change "
+                            "representation; return the receiver's type");
+        }
+        if (!RelativeDestination(source, dest, call, true, true)) {
+            auto target = source.Root() ? string(source.Root()->name) : string("static data");
+            auto receiver = dest.result ? cat("result ", dest.resultindex + 1, " of ", dest.result->sf->name)
+                : dest.roots.Root() ? string(dest.roots.Root()->name) : string("a temporary or argument slot");
+            Error(call, cat("a relative reference must point within the same root as its location "
+                            "(§3.9); call of ", spec->sf->name, " links a target rooted at ",
+                            target, " to receiving storage ", receiver));
+        }
+    }
 }
 
 inline TypeExpr *TypeCheck::SubstEnv(TypeExpr *t, FnSpec *env) {

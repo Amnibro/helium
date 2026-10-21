@@ -1396,6 +1396,7 @@ inline Val TypeCheck::CheckMatch(MatchExpr *m, TypeExpr *expected, bool wantvalu
     Val sv;
     {
         FlagScope rs(inreturn, false);
+        DestScope ds(*this, Dest {});
         sv = CheckV(m->scrutinee, nullptr);
     }
     // A reference to an integer reads as its pointee (§3.8); one to an ADT
@@ -1698,6 +1699,7 @@ inline Val TypeCheck::CheckEarlyBlock(EarlyBlock *x, TypeExpr *expected, bool wa
     PushScope(SK_BLOCK, x);
     if (wantvalue) {
         scopes.back().breakexpected = expected;
+        scopes.back().breakdest = curdst;
         scopes.back().onargpath = onpath;
         scopes.back().onjoinpath = onjoin;
         scopes.back().inreturn = inreturn;
@@ -1796,6 +1798,7 @@ inline Val TypeCheck::CheckLoop(LoopExpr *x, TypeExpr *expected, bool wantvalue)
         x->breaks.clear();
         if (wantvalue) {
             scopes.back().breakexpected = expected;
+            scopes.back().breakdest = curdst;
             scopes.back().onargpath = onpath;
             scopes.back().onjoinpath = onjoin;
             scopes.back().inreturn = inreturn;
@@ -2069,7 +2072,7 @@ inline void TypeCheck::CheckBreak(Break *b) {
             PathScope ps(*this, scopes[si].onargpath ? b->val : nullptr);
             JoinPathScope js(*this, scopes[si].onjoinpath ? b->val : nullptr);
             FlagScope rs(inreturn, scopes[si].inreturn);
-            DestScope ds(*this, unstored ? Dest {} : curdst);
+            DestScope ds(*this, unstored ? Dest {} : scopes[si].breakdest);
             v = CheckValue(b->val, expected, false, CopiesBranch(be));
         }
         // The construct's value is a new one: the break's type and what its
@@ -2162,6 +2165,7 @@ inline void TypeCheck::CheckContinue(Node *n) {
 // other values are computed and discarded. Like any statement, it is no
 // part of a value being returned (CheckStmt).
 inline void TypeCheck::CheckStmtExpr(Node *n) {
+    DestScope ds(*this, Dest {});
     FlagScope rs(inreturn, false);
     NodeScope ns(*this, n);
     if (auto x = Is<IfExpr>(n)) { CheckIf(x, nullptr, false); n->exprtype = ast.voidtype; return; }
@@ -2259,7 +2263,18 @@ inline void TypeCheck::CheckVarDecl(VarDecl *vd, bool global) {
     if (vd->inits.size() == 1 && vd->names.size() > 1) {
         // let a, b = f();
         if (ann) Error(vd, "a type annotation is not supported on multi-value bindings");
-        CheckValue(vd->inits[0], nullptr);
+        vector<VarDef *> defs;
+        vector<Dest> dests;
+        for (size_t i = 0; i < vd->names.size(); i++) {
+            auto d = MakeDef(i);
+            defs.push_back(d);
+            dests.emplace_back(d);
+        }
+        {
+            Saved<Node *> mn(multidestnode, vd->inits[0]);
+            Saved<vector<Dest>> md(multidests, std::move(dests));
+            CheckValue(vd->inits[0], nullptr);
+        }
         auto call = Is<Call>(vd->inits[0]);
         if (!call || call->rettypes.size() != vd->names.size())
             Error(vd, cat((int64_t)vd->names.size(), vd->results ? " targets" : " names",
@@ -2267,7 +2282,7 @@ inline void TypeCheck::CheckVarDecl(VarDecl *vd, bool global) {
                           (int64_t)call->rettypes.size()) : string()));
         auto rets = lastcallrets;
         for (size_t i = 0; i < vd->names.size(); i++) {
-            auto d = MakeDef(i);
+            auto d = defs[i];
             d->assigned = d->maybeassigned = true;
             // A reference result decays to a copy of a fixed-size pointee,
             // as a single binding's does, unless the declaration binds by

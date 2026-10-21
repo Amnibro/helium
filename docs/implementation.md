@@ -2920,8 +2920,9 @@ specialization key), which each call of the value resolves against
 `Call::fvbody` and checked inline in a frame marked `isfunval` whose lexical
 lookups chain to the definer, with parameters as locals bound to the
 arguments (reference provenance and literal-ness carried through). The
-body's value is checked without a destination, so a `[]` there has no
-element type (Pending arrays, §3.2). The body
+body's value is checked without a destination type, so a `[]` there has no
+element type (Pending arrays, §3.2). Its receiving storage is carried
+separately (`callresultdsts`), and supplied while checking its tail. The body
 as that check sees it is a lexical environment of its own, the frame's
 `lexspec`: an `FnSpec` marked `isfunval` (`NewFunValEnv`, outside
 `ast.fnspecs`), whose `lexparent` is where the value was written. A nested
@@ -2986,6 +2987,28 @@ be exact (or name a pool), the value must be exactly rooted, and the two
 roots must coincide -- the destination's root for the self-relative form,
 the named pool for `in pool`. The diagnostic names the read-back candidates
 when the value is inexact.
+
+Named returns use a symbolic `Dest::result` and result index, separately
+from the empty destinations of argument slots. `RelativeDestination`
+records a required relationship in `FnRecord::relativestores` when a
+relative initializer depends on that result location, or a block's
+receiving parameter class must agree with captured storage. Each call
+maps both ends through `RetAltVal` and validates them against its own
+receivers (`CheckCalleeRelative`); forwarding records the requirement in
+the caller's summary. This applies to reused specializations and to every
+round of a recursive cycle (`SameRecord`). It does not equate parameter
+classes with the concrete roots of whichever call checked the body first.
+For a nonlocal return, intervening classes map through their active calls
+to the target, with the same no-reuse rule as nonlocal reference returns.
+Operands and statements have no receiving destination; valued breaks keep
+their construct's destination in `Scope::breakdest`.
+
+Result requirements also reject resize fills and representation adapters
+that would copy the value. `ResultLayoutFits` admits an identical type
+(ignoring top-level constness) or a variant constructing its ADT payload.
+Self-contained `self` and null links need no receiving-root requirement,
+so their existing representation adaptations remain available.
+
 `index_of` needs the same exactness at the receiver. `self` (`CheckSelfInit`)
 is only the whole initializer of a non-optional relative field whose pointee
 is the literal's own type; the `in pool` form additionally needs the literal
@@ -2996,10 +3019,10 @@ value holding self-relative references (`HasRelRefT` excludes `in pool`
 fields, which copy fine) but what is no copy (`BuiltWhereReceived`): a
 literal built in place, a default (`B_DEFAULT`, a `..` field's among them:
 nulls, an empty limited array, `self` where a field's default says so), the
-by-value result of a call of a Goose function (built at the receiver where
-it is not fixed-size; a fixed-size one is what the callee's returns made,
-which by this rule hold no link but `self` and null, a returned literal
-having no destination root to point within), and the body's named result.
+by-value result of a call of a Goose function, a block's fresh result, and
+the body's named result. `BuiltWhereReceived` follows value-producing
+branches and breaks; `CheckFunValCall` checks the tail's copy restrictions
+before exposing its value as fresh.
 A call is judged by the callee's declared result (`Call::rettypes`), not by
 the value meeting the destination: a reference result decays to a copy of
 its pointee there. The named result is `return x`, or a
@@ -4363,8 +4386,12 @@ its `gs_stack *`; a pool parameter is a `gs_pref`; a bytes value is a
 results other than the first fixed result; per nonfixed result a
 destination `gs_stack *` and, for a resizable, the count out-parameter or
 frame object out-parameter); and `gs_sp` when the function touches stacks.
-The C return value is the first fixed result, even when it is not result
-zero; with none it is `void`.
+The C return value is the first small fixed result eligible for native
+return, even when it is not result zero; with none it is `void`. A fixed
+aggregate containing relative references (`NeedsResultLocation`) always
+uses a typed output pointer. Returns, forwarding and case dispatch pass
+that pointer through; a stack receiver claims the fixed slot and supplies
+its address (`ConstructCall`). A block gets the same lvalue destination.
 A slice, a fat reference and a pool's `gs_pref`, as a declared parameter or
 a captured pool, are passed as their members (`ParamFields`): `data` (as
 `void *`) and `len`, `hdr` and `stk`, and those two with `fl` and `flstk`,
@@ -4636,6 +4663,9 @@ restored at its exit). A propagating function's ordinary exit writes
 nothing; a call on a propagation path costs one load and a never-taken
 branch, and an intermediate frame returns a dummy value after restoring its
 watermarks. `--unsafe-no-rf-check` omits the checks for measurement only.
+A fixed relative aggregate's `gs_lret` channel is a pointer to the target's
+receiving storage, saved and restored at target entry/exit. The nonlocal
+return constructs through it, and the catch has no value to copy.
 A nonfixed value is built at its channel's top, which the return records
 first (`gs_fval_<id>_<i>`): the calls it unwinds may have built there in
 the destination the target handed them -- a named result, part of a value,

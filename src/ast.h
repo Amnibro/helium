@@ -2102,6 +2102,14 @@ struct OuterExit {
 // The event range locates this round's stores in TypeCheck::storeevents; it
 // is replay metadata, not a fact compared for convergence.
 struct FnRecord {
+    // Relative links need their location and target in the same root.
+    // A result location is supplied by the caller; other destinations
+    // name parameter classes or lexical storage, mapped as return roots are.
+    struct RelativeStore {
+        Roots source, destination;
+        int result = -1;
+    };
+    vector<RelativeStore> relativestores;
     // Whether this specialization can resume its immediate Goose caller.
     // A return-from to an outer body does not, although its C function returns
     // normally to propagate that exit. Unknown recursive calls may return.

@@ -274,6 +274,34 @@ struct TypeCheck {
         vector<Kill> kills;
         bool operator==(const FlowState &) const = default;
     };
+    // The destination of the value under construction (for reference stores):
+    // where the storage the value lands in may be (an lvalue's roots).
+    struct Dest {
+        Roots roots;
+        FnSpec *result = nullptr;
+        int resultindex = 0;
+        // Set while a block's tail is checked: a link needed this location,
+        // so adapting the result must preserve where its bytes are built.
+        bool *used = nullptr;
+        bool varbind = false;  // A reference/slice variable itself: a binding, not a store.
+        // The type of the storage the path to it reached, which the slots it
+        // fills lie in (Prov::reached); null where it crossed no reference.
+        TypeExpr *reached = nullptr;
+        // A destination reached through a reference that points nowhere yet
+        // (RefProvOf): it has no roots, unlike no destination at all.
+        bool unknown = false;
+        // The slot a reference to a slice names, which may be a slice
+        // variable's own (StoreIntoSlot).
+        bool slot = false;
+        // A resize's fill value: built once and copied into each slot the
+        // resize adds, so no position in the array is its own (§3.9).
+        bool fill = false;
+        Dest() {}
+        Dest(const Roots &r, bool vb = false, TypeExpr *re = nullptr)
+            : roots(r), varbind(vb), reached(re), unknown(r.None()) {}
+        // A variable's own storage.
+        Dest(VarDef *vd, bool vb = false) : varbind(vb) { roots.Set(vd, true); }
+    };
     struct Scope {
         int kind = SK_PLAIN;
         int serial = 0;              // Unique per scope opened: tells a later one at its index apart.
@@ -283,6 +311,7 @@ struct TypeCheck {
         TypeExpr *breaktype = nullptr;
         Val breakvalue;             // Roots and permissions of all valued exits.
         TypeExpr *breakexpected = nullptr;   // The construct's expected value type.
+        Dest breakdest;             // Its receiving storage, even inside a statement's branches.
         bool onargpath = false;     // The construct is on argpath, and so are its breaks' values.
         bool onjoinpath = false;    // The same of joinpath.
         bool inreturn = false;      // The construct's value is returned, as are its breaks' values.
@@ -447,30 +476,24 @@ struct TypeCheck {
         Saved(T &v, T val) : var(v), saved(std::move(v)) { var = std::move(val); }
         ~Saved() { var = std::move(saved); }
     };
-    // The destination of the value under construction (for reference stores):
-    // where the storage the value lands in may be (an lvalue's roots).
-    struct Dest {
-        Roots roots;
-        bool varbind = false;  // A reference/slice variable itself: a binding, not a store.
-        // The type of the storage the path to it reached, which the slots it
-        // fills lie in (Prov::reached); null where it crossed no reference.
-        TypeExpr *reached = nullptr;
-        // A destination reached through a reference that points nowhere yet
-        // (RefProvOf): it has no roots, unlike no destination at all.
-        bool unknown = false;
-        // The slot a reference to a slice names, which may be a slice
-        // variable's own (StoreIntoSlot).
-        bool slot = false;
-        // A resize's fill value: built once and copied into each slot the
-        // resize adds, so no position in the array is its own (§3.9).
-        bool fill = false;
-        Dest() {}
-        Dest(const Roots &r, bool vb = false, TypeExpr *re = nullptr)
-            : roots(r), varbind(vb), reached(re), unknown(r.None()) {}
-        // A variable's own storage.
-        Dest(VarDef *vd, bool vb = false) : varbind(vb) { roots.Set(vd, true); }
-    };
     Dest curdst;
+    vector<Dest> callresultdsts;
+    bool callforwarding = false;
+    TypeExpr *callresulttype = nullptr;
+    // A whole multi-result call's receivers, installed by a binding or return.
+    Node *multidestnode = nullptr;
+    vector<Dest> multidests;
+    bool recordingrelative = false;
+    Dest ResultDest(FnSpec *spec, int index = 0) {
+        Dest d;
+        d.result = spec;
+        d.resultindex = index;
+        return d;
+    }
+    bool RelativeDestination(const Roots &source, Dest dest, Node *at, bool record,
+                             bool forwarding = false);
+    void CheckCalleeRelative(Call *call, FnSpec *spec, vector<Val> &args);
+    bool ResultLayoutFits(TypeExpr *from, TypeExpr *to);
     // Whether the value being checked lands in a typed slot -- a field, an
     // element, an annotated variable, an assignment target -- whose declared
     // constness a read-only reference or slice must match (§9.5). A call

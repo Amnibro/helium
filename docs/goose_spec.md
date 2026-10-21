@@ -766,9 +766,15 @@ array/pool* as the location storing it.
   overloads take them by reference: an ADT whose payloads hold them is used
   in variable mode, whose payloads bind by reference where the ADT is not
   resizable (§3.5). None of these is a copy: a call's by-value result, which
-  is built where it is received where it is not fixed-size (§4.3, §7.3), and
-  where it is holds no link but `self` and null, a returned literal having
-  no other root to point within; a function's named result (§7.3), a local
+  is built where it is received (§4.3, §7.3), including a fixed-size
+  aggregate or a trailing block's fresh result. Links to existing elements
+  require the receiving storage and those elements to share an exact root,
+  checked at every call, including forwarded and recursive calls. An
+  argument slot, discarded result, or operand temporary does not inherit
+  the enclosing result's root. A result relying on that root cannot be a
+  resize fill or undergo a representation conversion that stages or moves
+  its bytes; a variant may construct behind its ADT's tag. Also no copy:
+  a function's named result (§7.3), a local
   every return of the function gives, built at the destination from its
   declaration (a struct ending in a resizable needs its fields before the
   resizable tail free of self-relative references and of anything one in
@@ -2445,9 +2451,13 @@ reported with the instantiation chain). `F` is the function value wherever
 it is in scope, hiding a variable around a nested function's declaration and
 a global or function of its name (§11.1), and is called as `F(a)`: a member
 call `a.F()` names it too, and is an error. A block's value is checked
-without the destination its call's value meets, so it cannot be a `[]` (nor
+without the destination **type** its call's value meets, so it cannot be a `[]` (nor
 a construct whose branches all are one), which would have no element type
 (§4.2).
+
+Its receiving storage is supplied independently of that type inference:
+relative links in a fresh result are checked against where it will be
+constructed, including when the block is called from another function.
 
 A fresh block result follows the same construction rules as a named
 function's result, including literals containing self-relative references.
@@ -4300,6 +4310,10 @@ is that header's `len`, so its tail cannot be referenced either.
   value; additional fixed returns use out-pointers. A slice, a reference to
   a resizable value and a reusable pool's reference parameter are passed as
   their members, each a C parameter of its own.
+  A fixed aggregate result containing relative references instead uses a
+  typed out-pointer at every size, and constructs directly through it.
+  Ordinary C-return selection skips these results. A nonlocal return uses
+  a saved pointer to the same receiver, rather than a copied result value.
 * Larger fixed-size parameters: the caller makes a private value copy on a
   scoped data stack and passes its typed pointer. The callee can mutate
   that copy without affecting the argument's source. Larger fixed returns

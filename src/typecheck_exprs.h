@@ -11,6 +11,7 @@ namespace goose {
 // Lvalue paths: names, fields, elements, optionally through references.
 
 inline TypeCheck::LVal TypeCheck::CheckLValue(Node *n) {
+    DestScope ds(*this, Dest {});
     NodeScope ns(*this, n);
     // The value the path denotes, recorded as its Check would (Ident::Check,
     // ContainerRead): what the operands evaluated before a later point of
@@ -109,6 +110,7 @@ inline TypeCheck::LVal TypeCheck::CheckLValue(Node *n) {
 // `cmpview`: the path is the slice `==` compares an operand as (§4.5),
 // which ends with the comparison, so it may view any temporary.
 inline TypeCheck::LVal TypeCheck::LValueBase(Node *n, bool cmpview) {
+    DestScope ds(*this, Dest {});
     if (Is<Ident>(n) || Is<Dot>(n) || Is<Index>(n)) return CheckLValue(n);
     auto v = CheckV(n, nullptr);
     NoUntypedEmptyArray(v, n, "an index, slice or field of it");
@@ -987,6 +989,7 @@ inline Val TypeCheck::CheckValueAt(Node *&n, TypeExpr *expected, Dest d, bool ca
 
 // An operand of an operator: always the pointee.
 inline Val TypeCheck::Operand(Node *n) {
+    DestScope ds(*this, Dest {});
     auto v = DecayRef(CheckV(n, nullptr));
     n->exprtype = v.type;
     // An operator computes with the number an index type holds (§3.11), so
@@ -997,6 +1000,7 @@ inline Val TypeCheck::Operand(Node *n) {
 }
 
 inline void TypeCheck::MustFit(Val &v, Node *n, TypeExpr *dt) {
+    FlagScope recording(recordingrelative, true);
     auto vt = DecayedType(v);
     if (vt->kind == TY_ARRAY && vt->arr->akind == A_FIXED)
         CheckArrayCount(n, dt, ArraySize(vt->arr));
@@ -1321,8 +1325,9 @@ inline bool TypeCheck::FitsAt(Val &v, TypeExpr *dt) {
                 // bounds the pointee's lifetime will not do (§9.5).
                 auto want = dt->ref->pool ? dt->ref->pool : curdst.roots.Root();
                 auto have = dt->ref->pool ? PoolOf(links.Root()) : links.Root();
-                if (!want || (!dt->ref->pool && !curdst.roots.Exact()) || !links.Exact() ||
-                    have != want) {
+                auto fits = dt->ref->pool ? want && links.Exact() && have == want
+                    : RelativeDestination(links, curdst, fitnode, recordingrelative);
+                if (!fits) {
                     auto why = links.Exact() ? string() : ReadBackWhy(links);
                     auto vroot = links.Root() ? links.Root()->name : string_view("static data");
                     fitfail = cat(dt->ref->pool
@@ -1367,6 +1372,7 @@ inline string TypeCheck::ConstStr(const Val &v) {
 // references decay (a bool& condition reads its pointee); an already
 // narrowed optional stays a valid (trivially true) test.
 inline Val TypeCheck::CheckCond(Node *n) {
+    DestScope ds(*this, Dest {});
     FlagScope rs(inreturn, false);
     auto v = CheckV(n, nullptr);
     auto id = Is<Ident>(n);
@@ -1421,6 +1427,7 @@ inline Val TypeCheck::VoidVal() {
 // that itself holds a reference (a reference variable or field), yields
 // the stored reference — there are no references to references.
 inline Val TypeCheck::CheckRefOf(Unary *x) {
+    DestScope ds(*this, Dest {});
     auto lv = CheckLValue(x->child);
     if (lv.var) RequireAssigned(lv.var, x);
     // A resizable value has a header of its own only as a whole variable or
@@ -1759,6 +1766,7 @@ inline void TypeCheck::RetypeVal(Val &v, TypeExpr *ct) {
 }
 
 inline Val TypeCheck::CheckRefIdentity(Binary *b) {
+    DestScope ds(*this, Dest {});
     // Reference identity (§4.5): the addresses, never the pointees. Each
     // side is a reference (plain or optional) or null, or storage taken
     // by reference as a `.=` binding takes it; the pointee types agree.
@@ -3106,7 +3114,9 @@ inline void TypeCheck::CheckSelfInit(Node *n, TypeExpr *ft, TypeExpr *selft) {
     // An `in pool` self is the value's own offset in the pool, so unlike a
     // self-relative one it only means anything where the literal is being
     // built: inside that pool.
-    if (ft->ref->pool && (!curdst.roots.Exact() || PoolOf(curdst.roots.Root()) != ft->ref->pool))
+    Roots poolroot;
+    if (ft->ref->pool) poolroot.Set(ft->ref->pool, true);
+    if (ft->ref->pool && !RelativeDestination(poolroot, curdst, n, true))
         Error(n, cat("self initializes ", TypeStr(ft), " only in a literal being built "
                      "inside ", ft->ref->pool->name, " (a push, an append, an alloc, or an "
                      "element store), since it stores the value's own offset in it (§3.9)"));
@@ -3318,6 +3328,7 @@ inline bool TypeCheck::UsedAfter(VarDef *v) {
 }
 
 inline void TypeCheck::CheckStmt(Node *n) {
+    DestScope ds(*this, Dest {});
     ast.CheckCancel();
     // A statement inside a returned value's block is no part of that value:
     // the function's locals outlive it.
