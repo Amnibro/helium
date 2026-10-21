@@ -1482,8 +1482,7 @@ inline string CodeGen::GenFixedArrayLit(ArrayLit *al) {
     if (et->kind == TY_SLICE) {
         // A literal in slice position: a temporary fixed array, sliced
         // whole (§3.10; rooted as a temporary by the checker).
-        auto count = al->fillval ? ((IntLit *)al->fillcount)->val
-                                 : (int64_t)al->elems.size();
+        auto count = LitCount(al);
         auto at = ast.ArrayOf(et->sub, A_FIXED, al->line, count);
         auto save = al->exprtype;
         al->exprtype = at;

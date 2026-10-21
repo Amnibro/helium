@@ -230,6 +230,9 @@ struct CodeGen {
     // only the innermost tail's elements occupy a data stack. A gs_rref to
     // one carries the object's address in `hdr`.
     bool IsFrameObj(TypeExpr *t) { return t->kind == TY_STRUCT && SI(t)->frameobj; }
+    // The C type of a resizable value's header: a frame object's own struct,
+    // a gs_rhdr for anything else.
+    string RzCT(TypeExpr *t) { return IsFrameObj(t) ? CT(t) : "gs_rhdr"; }
     string FoTailHdr(TypeExpr *t, const string &obj);
     TypeExpr *FoTailArr(TypeExpr *t);
     string FoPrefixSize(TypeExpr *t);
@@ -674,6 +677,7 @@ struct CodeGen {
     vector<string> loopcons;
     static constexpr const char *BLOCKREGION = "{";
     bool InConsOf(const string &stk);
+    int OpenRegion(const string &cons);
     int MarkLoopBegin();
     int MarkBlockBegin();
     void MarkLoopEnd(int id);
@@ -771,6 +775,7 @@ struct CodeGen {
     void FindRefAliases(FnSpec *sp);
     const VarDef *AliasTarget(VarDef *d, Node *init, Node *&path);
     static bool HandedRef(Node *n);
+    static Node *FieldChainRoot(Node *n, bool typed);
 
     // Optimizer splices can leave a reference-typed tree in a slot whose
     // checked type already decayed; Dst::t says what the receiver wants, and
@@ -975,6 +980,8 @@ struct CodeGen {
     void StoreWhole(const string &p, TypeExpr *t, const string &x);
     void EmitLenCheck(IntStorage ls, const string &n);
     void EmitLenStore(const string &stk, IntStorage ls, const string &n);
+    void EmitArrayCount(const string &stk, TypeExpr *at, const string &lenlv, const string &n,
+                        bool check);
     void EmitVarintStore(const string &stk, const string &x);
     void EmitRelRangeCheck(TypeExpr *rt, const string &off, Line ln, bool inroot);
     RelFacts RelValue(Node *v);
@@ -1035,6 +1042,13 @@ struct CodeGen {
     void FixedArrayLitAt(ArrayLit *al, const string &base, bool inroot);
     void StructLitAt(StructLit *sl, const string &base, bool inroot);
     void EmitValStoreTag(const string &stk, IntStorage ts, const string &x);
+    // How many elements an array literal writes: its fill count, which the
+    // checker evaluated into an IntLit (§4.2), or its element list's length.
+    static int64_t LitCount(ArrayLit *al) {
+        if (!al->fillval) return (int64_t)al->elems.size();
+        assert(Is<IntLit>(al->fillcount));
+        return ((IntLit *)al->fillcount)->val;
+    }
     void GenArrayLit(ArrayLit *al, const string &stk, const string &lenlv = "",
                      TypeExpr *as = nullptr);
     static bool HasSelfInit(StructLit *sl);
@@ -1315,7 +1329,7 @@ struct CodeGen {
     const VarDef *NamedResult(Block *fnbody, SFunction *target, size_t nrets, size_t resultidx);
     const VarDef *OpenIbNrvo(InlineBlock *ib, const Dst &d);
     void PlanTopClasses(FnSpec *sp);
-    bool RefTopsOk(FnSpec *sp);
+    bool RefTopsOk(FnSpec *sp, bool farreturn);
     void ResetFnState();
     string EnsureEr(FnSpec *sp);
     void EmitSpec(FnSpec *sp, bool er = false);

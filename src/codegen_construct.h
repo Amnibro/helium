@@ -33,9 +33,7 @@ inline void CodeGen::StoreWhole(const string &p, TypeExpr *t, const string &x) {
         return;
     }
     auto v = x;
-    auto simple = !v.empty() && !isdigit((unsigned char)v[0]);
-    for (auto c : v) simple &= isalnum((unsigned char)c) || c == '_';
-    if (!simple) {
+    if (!IsCName(v)) {
         v = T();
         FixedLocal(t, v, x);
     }
@@ -59,6 +57,34 @@ inline void CodeGen::EmitLenStore(const string &stk, IntStorage ls, const string
     } else {
         L("*(", IntCT(ls), " *)", Top(stk), " = (", IntCT(ls), ")(", n, ");");
         Bump(stk, cat(IntSize(ls)));
+    }
+}
+
+// The count of an array of type at, n elements long, built at stk's top:
+// into the receiving count lenlv where the destination has one -- a
+// resizable's always, a variable array's in the element-run form -- and in
+// front of the elements otherwise, as the array's length prefix or a limited
+// array's header. A limited array's n is range-checked against the header's
+// u32 fields where `check` says it is not a constant.
+inline void CodeGen::EmitArrayCount(const string &stk, TypeExpr *at, const string &lenlv,
+                                    const string &n, bool check) {
+    switch (at->arr->akind) {
+        case A_VAR:
+            if (!lenlv.empty()) L(lenlv, " = ", n, ";");
+            else EmitLenStore(stk, LenStore(at->arr), n);
+            break;
+        case A_LIMITED: {   // Runtime capacity: chosen as the initial length (v1).
+            if (check) EmitLenCheck(IS_U32, n);
+            auto x = check ? cat("(uint32_t)", n) : n;
+            L("*(uint32_t *)", Top(stk), " = ", x, ";");
+            L("*(uint32_t *)(", Top(stk), " + 4) = ", x, ";");
+            Bump(stk, "8");
+            break;
+        }
+        default:
+            assert(!lenlv.empty());
+            L(lenlv, " = ", n, ";");
+            break;
     }
 }
 
@@ -449,28 +475,10 @@ inline void CodeGen::GenConstruct(Node *n, const string &stk, TypeExpr *want, co
         }
         return;
     }
-    if (auto s2 = Is<StrLit>(n); s2 && (IsResz(et) || !lenlv.empty())) {
-        // A string literal building a resizable string: raw elements,
-        // count into the receiving header.
-        assert(!lenlv.empty());
-        L(lenlv, " = ", s2->val.size(), ";");
-        if (!s2->val.empty()) {
-            L("GS_MEMCPY(", Top(stk), ", ", StrRaw(s2->val), ", ", s2->val.size(), ");");
-            Bump(stk, cat(s2->val.size()));
-        }
-        return;
-    }
     if (auto s = Is<StrLit>(n)) {
-        assert(et->kind == TY_ARRAY && lenlv.empty());
-        if (et->arr->akind == A_LIMITED) {
-            // Runtime capacity: chosen as the literal's length (v1).
-            L("*(uint32_t *)", Top(stk), " = ", s->val.size(), ";");
-            L("*(uint32_t *)(", Top(stk), " + 4) = ", s->val.size(), ";");
-            Bump(stk, "8");
-        } else {
-            assert(et->arr->akind == A_VAR);
-            EmitLenStore(stk, LenStore(et->arr), cat(s->val.size()));
-        }
+        // A string literal building a u8 array: its count, then its bytes.
+        assert(et->kind == TY_ARRAY);
+        EmitArrayCount(stk, et, lenlv, cat(s->val.size()), false);
         if (!s->val.empty()) {
             L("GS_MEMCPY(", Top(stk), ", ", StrRaw(s->val), ", ", s->val.size(), ");");
             Bump(stk, cat(s->val.size()));
@@ -727,22 +735,7 @@ inline void CodeGen::GenArrayFromLoc(Loc lv, TypeExpr *et, const string &stk, Li
     auto v = ArrayView(lv);
     auto nn = T();
     L("int64_t ", nn, " = ", v.len, ";");
-    switch (et->arr->akind) {
-        case A_VAR:
-            if (!lenlv.empty()) L(lenlv, " = ", nn, ";");
-            else EmitLenStore(stk, LenStore(et->arr), nn);
-            break;
-        case A_LIMITED:   // Runtime capacity: chosen as the initial length (v1).
-            EmitLenCheck(IS_U32, nn);
-            L("*(uint32_t *)", Top(stk), " = (uint32_t)", nn, ";");
-            L("*(uint32_t *)(", Top(stk), " + 4) = (uint32_t)", nn, ";");
-            Bump(stk, "8");
-            break;
-        default:
-            assert(!lenlv.empty());
-            L(lenlv, " = ", nn, ";");
-            break;
-    }
+    EmitArrayCount(stk, et, lenlv, nn, true);
     EmitCopyElems(stk, et->arr->sub, v.elems, nn);
 }
 
@@ -990,16 +983,12 @@ inline void CodeGen::FixedLitAtStk(Node *n, const string &stk) {
     };
     if (auto al = Is<ArrayLit>(n)) {
         auto elem = et->arr->sub;
-        if (et->arr->akind == A_LIMITED) {
-            EmitLenStore(stk, LenStore(et->arr),
-                         cat(al->fillval ? ((IntLit *)al->fillcount)->val
-                                         : (int64_t)al->elems.size()));
-        }
+        auto count = LitCount(al);
+        if (et->arr->akind == A_LIMITED) EmitLenStore(stk, LenStore(et->arr), cat(count));
         if (al->fillval) {
             FillScope fill(*this, al->fillval, elem);
-            auto fc = Is<IntLit>(al->fillcount);
             auto iv = T();
-            L("for (int64_t ", iv, " = 0; ", iv, " < ", fc->val, "; ", iv, "++) {");
+            L("for (int64_t ", iv, " = 0; ", iv, " < ", count, "; ", iv, "++) {");
             ind++;
             PushSc(SC_PLAIN);
             EmitF(al->fillval, elem);
@@ -1009,11 +998,7 @@ inline void CodeGen::FixedLitAtStk(Node *n, const string &stk) {
         } else {
             for (auto e : al->elems) EmitF(e, elem);
         }
-        if (et->arr->akind == A_LIMITED) {
-            auto filled = al->fillval ? ((IntLit *)al->fillcount)->val
-                                      : (int64_t)al->elems.size();
-            Gap((ArrSize(et->arr) - filled) * FixedSize(elem));
-        }
+        if (et->arr->akind == A_LIMITED) Gap((ArrSize(et->arr) - count) * FixedSize(elem));
         return;
     }
     auto sl = Is<StructLit>(n);
@@ -1083,20 +1068,15 @@ inline void CodeGen::FixedArrayLitAt(ArrayLit *al, const string &base, bool inro
                                 RelValue(e));
         else GenAny(e, Dst { DK_LVALUE, path, elem });
     };
-    if (et->arr->akind == A_LIMITED) {
-        auto count = al->fillval ? ((IntLit *)al->fillcount)->val
-                                 : (int64_t)al->elems.size();
-        L(base, ".len = ", count, ";");
-    }
+    auto count = LitCount(al);
+    if (et->arr->akind == A_LIMITED) L(base, ".len = ", count, ";");
     if (al->fillval) {
-        auto fc = Is<IntLit>(al->fillcount);
-        assert(fc);
         FillScope fill(*this, al->fillval, elem);
         // Captured values repeat; relative offsets are encoded per slot.
         auto perelem = HasRelRef(elem);
         auto fv = perelem ? string() : GenXD(al->fillval, elem);
         auto iv = T();
-        L("for (int64_t ", iv, " = 0; ", iv, " < ", fc->val, "; ", iv, "++) {");
+        L("for (int64_t ", iv, " = 0; ", iv, " < ", count, "; ", iv, "++) {");
         ind++;
         auto path = cat(base, ".e[", iv, "]");
         PushSc(SC_PLAIN);
@@ -1195,30 +1175,8 @@ inline void CodeGen::GenArrayLit(ArrayLit *al, const string &stk, const string &
         Bump(stk, cat("8 + ", t, " * ", FixedSize(elem)));
         return;
     }
-    int64_t count = al->fillval ? -1 : (int64_t)al->elems.size();
-    string cn;
-    if (al->fillval) {
-        // The fill count is a constant expression (§4.2).
-        auto fc = Is<IntLit>(al->fillcount);
-        assert(fc);
-        count = fc->val;
-    }
-    cn = cat(count);
-    switch (et->arr->akind) {
-        case A_VAR:
-            if (!lenlv.empty()) L(lenlv, " = ", cn, ";");
-            else EmitLenStore(stk, LenStore(et->arr), cn);
-            break;
-        case A_LIMITED:
-            L("*(uint32_t *)", Top(stk), " = ", count, ";");
-            L("*(uint32_t *)(", Top(stk), " + 4) = ", count, ";");
-            Bump(stk, "8");
-            break;
-        default:
-            assert(!lenlv.empty());
-            L(lenlv, " = ", cn, ";");
-            break;
-    }
+    auto count = LitCount(al);
+    EmitArrayCount(stk, et, lenlv, cat(count), false);
     if (al->fillval) {
         FillScope fill(*this, al->fillval, elem);
         if (IsVarintT(elem)) {

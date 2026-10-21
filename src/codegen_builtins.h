@@ -689,7 +689,7 @@ inline void CodeGen::EmitAppend(vector<Node *> &an, Line ln) {
             L(v.lenlv, " += ", nn, ";");
             return;
         }
-        auto count = al->fillval ? Is<IntLit>(al->fillcount)->val : (int64_t)al->elems.size();
+        auto count = LitCount(al);
         string ol, at = Top(lv.stk);
         if (ak == A_LIMITED) {
             ol = T();
@@ -1076,7 +1076,7 @@ inline void CodeGen::EmitThreadThunk(FnSpec *sp, int64_t stacks) {
             auto a = cat("a", i), stk = cat(a, "_stk");
             regions++;
             Append(b, "    gs_stack ", stk, "; gs_stack_init(&", stk, ");\n",
-                   "    ", IsFrameObj(pt) ? CT(pt) : string("gs_rhdr"), " ", a, ";\n",
+                   "    ", RzCT(pt), " ", a, ";\n",
                    "    {\n        int64_t sz = *(int64_t *)p; p += 8;\n");
             auto pre = IsFrameObj(pt) ? FoPrefixSize(pt) : string("0");
             auto hdr = IsFrameObj(pt) ? FoTailHdr(pt, a) : a;

@@ -664,8 +664,7 @@ inline void CodeGen::EmitCFields(string &d, const vector<Field> &fields,
     }
     for (auto i = n; i < fields.size(); i++) {
         EmitCoreTypes();
-        Append(d, "    ", IsFrameObj(ftypes[i]) ? CT(ftypes[i]) : string("gs_rhdr"), " ",
-               Sanitize(fields[i].name), ";\n");
+        Append(d, "    ", RzCT(ftypes[i]), " ", Sanitize(fields[i].name), ";\n");
     }
 }
 

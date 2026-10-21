@@ -1114,10 +1114,8 @@ inline void CodeGen::EnsureFromChannels(FnSpec *t) {
 }
 
 // ------------------------------------------------------------------
-// Calls. Returns one entry per return value: a C expression for fixed
-// values, the value's base pointer for bytes-class ones. d0 is the
-// preferred destination for the first return (in-place construction);
-// alldst supplies destinations for every return (multi-value receives).
+// A call's first result as its receiver takes it (the calls themselves are
+// in codegen_calls.h).
 
 // The first return value adjusted to the context it is received in: a
 // reference received in a value context loads the pointee, and an array

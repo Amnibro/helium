@@ -356,8 +356,6 @@ inline vector<string> CodeGen::EmitSpecCall(Call *c, FnSpec *sp, Dst d0, vector<
         // report the count (the one caller-side copy of this fallback).
         EmitSlidePrefix(slidebase, LenStore(sp->rets[0]->arr), slide.s, slide.lenlv);
     }
-    // A fixed first return requested onto a stack: store it (mixed cases
-    // are handled above via cret; nothing more to do here).
     return retex;
 }
 
