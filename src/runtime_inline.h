@@ -3549,11 +3549,14 @@ static int gs_os_kind(const gs_os_char *p) {
 #endif
 }
 
+/* Appends the whole file; on a failure, nothing. */
 GS_API uint8_t gs_os_read_file(sl_u8 path, gs_rref out) {
     gs_os_char p[GS_OS_PATH_MAX];
     if (gs_os_native(path, p) < 0) return 0;
     FILE *f = gs_os_fopen(p, "rb");
     if (!f) return 0;
+    int64_t len = out.hdr->len;
+    uint8_t *top = out.stk->top;
     uint8_t buf[65536];
     for (;;) {
         size_t n = fread(buf, 1, sizeof buf, f);
@@ -3562,7 +3565,12 @@ GS_API uint8_t gs_os_read_file(sl_u8 path, gs_rref out) {
     }
     int bad = ferror(f);
     fclose(f);
-    return bad ? 0 : 1;
+    if (bad) {
+        out.hdr->len = len;
+        out.stk->top = top;
+        return 0;
+    }
+    return 1;
 }
 
 /* write_file and append_file. */
@@ -3642,13 +3650,13 @@ GS_API uint8_t gs_os_write_file_atomic(sl_u8 path, sl_u8 data) {
             return 0;
         }
         while (ok && left > 0) {
-            DWORD chunk = left > (1 << 30) ? (DWORD)1 << 30 : (DWORD)left, wrote = 0;
+)GSRT"
+R"GSRT(            DWORD chunk = left > (1 << 30) ? (DWORD)1 << 30 : (DWORD)left, wrote = 0;
             ok = WriteFile(h, d, chunk, &wrote, NULL) && wrote == chunk;
             d += chunk;
             left -= chunk;
         }
-)GSRT"
-R"GSRT(        ok = ok && FlushFileBuffers(h);
+        ok = ok && FlushFileBuffers(h);
         if (!CloseHandle(h)) ok = 0;
         ok = ok && gs_os_replace(t, p);
         if (!ok) DeleteFileW(t);
@@ -3892,11 +3900,11 @@ GS_API uint8_t gs_os_resource_dir(gs_rref out) {
     #ifdef __APPLE__
         const char suffix[] = ".app/Contents/MacOS/";
         size_t suffixlen = sizeof suffix - 1;
-        if (n >= suffixlen && !memcmp(path + n - suffixlen, suffix, suffixlen)) {
+)GSRT"
+R"GSRT(        if (n >= suffixlen && !memcmp(path + n - suffixlen, suffix, suffixlen)) {
             n -= sizeof "MacOS/" - 1;
             if (n + sizeof "Resources/" - 1 >= sizeof path) return 0;
-)GSRT"
-R"GSRT(            memcpy(path + n, "Resources/", sizeof "Resources/" - 1);
+            memcpy(path + n, "Resources/", sizeof "Resources/" - 1);
             n += sizeof "Resources/" - 1;
         }
     #endif
