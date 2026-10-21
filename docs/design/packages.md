@@ -468,7 +468,10 @@ gfx, audio, physics and ui all set it.
   the packages it requires, so ui's response file precedes gfx's, which is
   what the GNU linker needs; otherwise the root's declaration order.
 * A package is built release, once per toolchain; `--debug` affects the
-  program and the runtime object only.
+  program and the runtime object only. The program's own `c_sources` follow
+  it, built apart from their release build (`native/<toolchain>-debug` in
+  the program's build directory); a CMake part, the program's too, is
+  always built release.
 * The archives built this way link into a program built by the same
   toolchain; the toolchain id (§6.1) is in the build path, so switching
   `--cc` builds the package again rather than mixing.

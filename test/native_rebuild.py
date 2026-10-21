@@ -2,9 +2,10 @@
 is compiled again for both `goose build` and `goose run`, and an extern fn
 added to the program without touching its C rebuilds the JIT library, whose
 symbol table names every extern fn. Two C files of one name in different
-directories each have an object of their own. A library's symbol table
-leaves out the extern fns of an example with a sidecar of its own and of a
-directory its sidecar excludes.
+directories each have an object of their own. --debug builds the program's
+own C for a debugger, apart from its release build, and a package's C
+release. A library's symbol table leaves out the extern fns of an example
+with a sidecar of its own and of a directory its sidecar excludes.
 
 A CMake package is configured again when its cmake_options change, including
 after a configure that failed for want of one; a cmake_target its project
@@ -93,6 +94,40 @@ def check_native_rebuild(exe, base, *, jit):
         if jit:
             expect([exe, "run", twin / "twin.goose"], ["1", "2"],
                    "goose run of two C files of one name")
+
+        # --debug compiles the program's own C for a debugger, apart from its
+        # release build, and leaves a package's C a release build.
+        rel = root / "pkgs" / "rel"
+        rel.mkdir(parents=True)
+        tc.write_text(rel / "rel.goose", "namespace rel;\nextern fn rel_three() -> i64;\n"
+                                         "fn f() -> i64 { rel_three() }\n")
+        tc.write_text(rel / "rel.c", "#include <stdint.h>\nint64_t rel_three(void) { return 3; }\n")
+        tc.write_text(rel / "rel.build", 'c_sources = ["rel.c"];\n')
+        tc.write_text(root / "dbg.goose", 'import std;\nimport rel from "./pkgs/rel";\n'
+                                          "extern fn dbg_four() -> i64;\n"
+                                          'fn main() { print(rel::f(), " ", dbg_four()); }\n')
+        tc.write_text(root / "dbg_impl.c",
+                      "#include <stdint.h>\nint64_t dbg_four(void) { return 4; }\n")
+        tc.write_text(root / "dbg.build", 'c_sources = ["dbg_impl.c"];\n')
+        dbgapp = root / ("dbg" + tc.EXE_SUFFIX)
+        for flags, want in ((["--debug"], {"dbg_impl.c": True, "rel.c": False}),
+                            ([], {"dbg_impl.c": False}),
+                            (["--debug"], {})):
+            how = " ".join(flags) or "release"
+            code, out, err = run([exe, "build", "-v", *flags, "-o", dbgapp, root / "dbg.goose"])
+            require(code == 0, f"goose build {how}:\n{out}{err}")
+            expect([dbgapp], ["3", "4"], f"the program built {how}")
+            # The C files the build compiled, each with whether it was for a
+            # debugger, from the commands -v prints.
+            got = {}
+            for line in out.splitlines():
+                words = line.split()
+                if "-c" in words or "/c" in words:
+                    for name in ("dbg_impl.c", "rel.c"):
+                        if name in line:
+                            got[name] = "-O0" in words or "/Od" in words
+            require(got == want, f"goose build {how} compiled {got} (true: for a debugger), "
+                                 f"not {want}:\n{out}")
         if jit:
             expect([exe, "run", source], ["11"], "goose run")
             impl(111)

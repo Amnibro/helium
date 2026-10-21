@@ -43,14 +43,15 @@ struct NativeBuild {
     string jitlib;    // The shared library a JIT run loads.
 };
 
-// Where the package `pkg`'s native part is built for the toolchain `tc`:
-// under the program's build directory for the program itself, under
-// GOOSE_HOME/build/pkg for a package, by its checkout or its path.
-inline string NativeBuildDir(const Ast &ast, int pkg, const string &rootfile, const Toolchain &tc) {
+// Where the package `pkg`'s native part is built by `b`: under the
+// program's build directory for the program itself, a --debug build apart,
+// and under GOOSE_HOME/build/pkg for a package, by its checkout or its path.
+inline string NativeBuildDir(const Ast &ast, int pkg, const string &rootfile, const Builder &b) {
     auto &p = ast.packages[pkg];
-    if (pkg == 0) return cat(ProgramBuildDir(rootfile), "/native/", tc.id);
-    if (!p.cachekey.empty()) return cat(GooseHome(), "/build/pkg/", p.cachekey, "/", tc.id);
-    return cat(GooseHome(), "/build/pkg/local/", Hex8(p.root), "/", tc.id);
+    if (pkg == 0)
+        return cat(ProgramBuildDir(rootfile), "/native/", b.tc.id, b.opts.debug ? "-debug" : "");
+    if (!p.cachekey.empty()) return cat(GooseHome(), "/build/pkg/", p.cachekey, "/", b.tc.id);
+    return cat(GooseHome(), "/build/pkg/local/", Hex8(p.root), "/", b.tc.id);
 }
 
 // The C symbols a file's extern fns name: `extern "sym" fn f` gives sym,
@@ -390,19 +391,25 @@ inline string ReadStamp(const string &path) {
     return s;
 }
 
-// Builds the package's native part for `b`'s toolchain, unless the build
-// there is up to date with its inputs (the sidecar, the C sources, the
-// toolchain), and names what was built in `out`. The JIT library is built
-// only when `wantjit`. Every program and process that uses the package
-// builds it in that one directory: a lock there keeps them to one build at
-// a time, and the response file and the stamp, which the others read
-// without it, are replaced whole, the stamp last. False after a failed
-// command, which the builder reports; a dry run prints the commands and
-// reports success.
-inline bool BuildNativePart(const Ast &ast, int pkg, const string &rootfile, const Builder &b,
-                            bool wantjit, NativeBuild &out) {
+// Builds the package's native part with the toolchain the program is built
+// with, unless the build there is up to date with its inputs (the sidecar,
+// the C sources, the toolchain), and names what was built in `out`. The JIT
+// library is built only when `wantjit`. Every program and process that uses
+// the package builds it in that one directory: a lock there keeps them to
+// one build at a time, and the response file and the stamp, which the
+// others read without it, are replaced whole, the stamp last. False after a
+// failed command, which the builder reports; a dry run prints the commands
+// and reports success.
+inline bool BuildNativePart(const Ast &ast, int pkg, const string &rootfile,
+                            const Builder &program, bool wantjit, NativeBuild &out) {
     auto &p = ast.packages[pkg];
-    auto dir = NativeBuildDir(ast, pkg, rootfile, b.tc);
+    // A package is built release whatever the program is (§5.5), one build
+    // serving every program, and so is a CMake part. The program's own C
+    // sources follow --debug, built apart.
+    auto opts = program.opts;
+    opts.debug = opts.debug && pkg == 0 && p.cmake_target.empty();
+    Builder b { program.tc, opts, program.msgs };
+    auto dir = NativeBuildDir(ast, pkg, rootfile, b);
     out.dir = dir;
     out.rsp = cat(dir, "/link-", b.tc.style, ".rsp");
     #ifdef _WIN32
