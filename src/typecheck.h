@@ -451,6 +451,9 @@ struct TypeCheck {
         // The slot a reference to a slice names, which may be a slice
         // variable's own (StoreIntoSlot).
         bool slot = false;
+        // A resize's fill value: built once and copied into each slot the
+        // resize adds, so no position in the array is its own (§3.9).
+        bool fill = false;
         Dest() {}
         Dest(const Roots &r, bool vb = false, TypeExpr *re = nullptr)
             : roots(r), varbind(vb), reached(re), unknown(r.None()) {}
@@ -2703,10 +2706,12 @@ struct TypeCheck {
     TypeExpr *SoleResizableIn(TypeExpr *t);
     void ApplyCalleeGrows(Node *at, FnSpec *spec, vector<Val> &argvals, string_view name);
     // Whether an element pushed into, or allocated in, an array of `elem`
-    // is built in place at its slot: a variable-size one, or a fixed one
-    // holding relative references of either form, which codegen writes
-    // where the element stays (an `in pool` offset measures from the pool,
-    // but is stored field by field all the same).
+    // is built in place at its slot, as codegen builds it (ElemValue): a
+    // variable-size one, or a fixed one holding relative references of
+    // either form, since a self-relative offset measures from where the
+    // element lives and an `in pool` `self` is its position in the pool. A
+    // relative-reference element is the plain reference it encodes,
+    // evaluated before the slot is claimed.
     bool BuiltInPlace(TypeExpr *elem);
     // The array an array literal appended to an array of `elem` is: the run
     // of elements it adds (§4.2).
@@ -2745,7 +2750,8 @@ struct TypeCheck {
     // Its results for callees whose bodies were all checked, which no
     // later check changes.
     map<FnSpec *, vector<VarDef *>> namedoutside;
-    void ElemArg(Node *&n, TypeExpr *elem, Val &rv);
+    // `fill`: a resize's fill value (Dest::fill).
+    void ElemArg(Node *&n, TypeExpr *elem, Val &rv, bool fill = false);
 
     // ------------------------------------------------------------------
     // Calling a function value F(a): the body is cloned and checked inline

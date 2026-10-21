@@ -3094,6 +3094,10 @@ inline void TypeCheck::CheckSelfInit(Node *n, TypeExpr *ft, TypeExpr *selft) {
         Error(n, cat("self initializes ", TypeStr(ft), " only in a literal being built "
                      "inside ", ft->ref->pool->name, " (a push, an append, an alloc, or an "
                      "element store), since it stores the value's own offset in it (§3.9)"));
+    if (ft->ref->pool && curdst.fill)
+        Error(n, cat("self cannot initialize ", TypeStr(ft), " in a .resize fill value, which "
+                     "is built once and copied into every slot the resize adds, while self "
+                     "stores the value's own offset in ", ft->ref->pool->name, " (§3.9)"));
     // A resizable pointee needs a header the offset cannot carry; the root
     // rule keeps every other relative reference away from one, but a
     // self-reference satisfies that rule by construction.

@@ -2372,9 +2372,9 @@ through one, which leaves the payload rule above complete.
 array's top or slot is under construction while its expression is checked,
 and nothing may grow or shrink that array meanwhile: a pushed or pool-allocated
 element that is variable-size or holds relative references of either form
-(`BuiltInPlace`: `EmitPush` builds such an element in its slot, and
-`EmitAlloc` a literal of one; any other fixed-size element is evaluated
-before its slot is claimed, §6.5), a call's array result being appended
+(`BuiltInPlace`: `EmitPush` and `EmitAlloc` build such an element in its
+slot, whatever expression gives it; any other fixed-size element is
+evaluated before its slot is claimed, §6.5), a call's array result being appended
 to a non-limited array (a `T[..]` result too, though `EmitAppend` builds it
 on a temporary, §6.5), an appended literal of elements that are
 variable-size or hold relative references of either form (which
@@ -2924,7 +2924,9 @@ when the value is inexact.
 `index_of` needs the same exactness at the receiver. `self` (`CheckSelfInit`)
 is only the whole initializer of a non-optional relative field whose pointee
 is the literal's own type; the `in pool` form additionally needs the literal
-to be under construction inside that pool. `NoRelRefCopy` rejects copying any
+to be under construction inside that pool, which nothing in a `resize` fill
+value is: that is built once and copied into every slot the resize adds
+(`Dest::fill`). `NoRelRefCopy` rejects copying any
 value holding self-relative references (`HasRelRefT` excludes `in pool`
 fields, which copy fine) but what is no copy (`BuiltWhereReceived`): a
 literal built in place, a default (`B_DEFAULT`, a `..` field's among them:
@@ -4349,10 +4351,13 @@ fixed one holding relative references of either form (a self-relative
 offset measures from where the element lives, an `in pool` `self` is its
 position in the pool), are built in the slot instead -- for limited
 arrays too -- which is what the checker's growth rule (§3.10) keeps safe.
-A pool allocation builds a literal holding relative references at its
-slot the same way (`EmitAlloc`): a slot off the freelist is taken first,
-and a fresh one at the top is counted only once the element is written, so
-nothing the literal's initializers call can read it half-built.
+A relative-reference element is the plain reference it is given, evaluated
+first, and stores the offset from its slot. A pool allocation evaluates or
+builds its element the same way (`EmitAlloc`; both go through `ElemValue`
+and, at a slot named by a pointer, `StoreElemAt`): a slot off the freelist
+is taken before an element built there runs, and a fresh one at the top is
+counted only once the element is written, so nothing its initializers call
+can read it half-built.
 
 **Adaptation into limited arrays.** `FitsAt` lets any array
 or slice of the element type construct a `T[..k]` (§4.2), and codegen copies
@@ -4577,7 +4582,7 @@ what the thread-spawn image copies.
 
 A fixed struct or array literal that holds relative references is built at
 its final address, never in a C temporary that is then copied (`FixedLitAt`,
-`FixedLitAtStk`, the `alloc_ref` slot path); a literal with unused limited
+`FixedLitAtStk`); a literal with unused limited
 array slots is zero-initialized first, and every aggregate-typed C local is
 hoisted to the function's opening brace (`HoistAggregateDecls`) -- both
 workarounds for MSVC miscompilations described in Appendix E. A zero-length

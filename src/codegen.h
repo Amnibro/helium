@@ -1255,10 +1255,12 @@ struct CodeGen {
     RzDest OpenRzDest(TypeExpr *t, Dst d0, Line ln, const char *what);
     void CloseRzDest(RzDest &rd, const string &count);
     vector<string> EmitPush(vector<Node *> &an, Line ln);
+    string ElemValue(Node *n, TypeExpr *elem);
+    void StoreElemAt(Node *n, TypeExpr *elem, const string &e, const string &ev, Line ln);
     bool LiteralBytes(Node *n, TypeExpr *t, vector<uint8_t> &out);
     bool UniformFillByte(Node *n, TypeExpr *t, int &byte);
     void EmitAppend(vector<Node *> &an, Line ln);
-    vector<string> EmitAlloc(Call *c, vector<Node *> &an);
+    vector<string> EmitAlloc(Call *c, vector<Node *> &an, Line ln);
     vector<string> EmitSlicePool(Call *c, vector<Node *> &an, Line ln);
     string SpanArgs(const Loc &lv);
     string PlaceRun(const Loc &lv, const string &n);

@@ -421,7 +421,7 @@ inline Val TypeCheck::CheckBuiltin(Call *c, const BuiltinDef &d, vector<Node *> 
     if (d.kind == B_RESIZE) {
         CheckIntAny(args[1]);
         if (args.size() == 3) {
-            ElemArg(args[2], elem, rv);
+            ElemArg(args[2], elem, rv, true);
             // The fill value is built once and copied into every slot the
             // resize adds, so not even a literal is built in place (§3.9).
             if (HasRelRefT(elem) && (Is<StructLit>(args[2]) || Is<ArrayLit>(args[2])))
@@ -3850,10 +3850,12 @@ inline bool TypeCheck::NamedOutside(FnSpec *spec, vector<VarDef *> &out) {
 
 // Element construction targets the array's storage (relative references
 // in the element must derive from the same root, §3.9).
-inline void TypeCheck::ElemArg(Node *&n, TypeExpr *elem, Val &rv) {
+inline void TypeCheck::ElemArg(Node *&n, TypeExpr *elem, Val &rv, bool fill) {
     SlotScope ss(*this, true);
     auto orig = n;
-    auto v = CheckValueAt(n, elem, Dest(rv, false, rv.reached), true);
+    Dest d(rv, false, rv.reached);
+    d.fill = fill;
+    auto v = CheckValueAt(n, elem, d, true);
     // The element meets the array's element type as a value meets any
     // destination.
     JudgeCastAt(orig, elem, v);
