@@ -2085,7 +2085,8 @@ inline void TypeCheck::CheckBreak(Break *b) {
         // The construct's value is a new one: the break's type and what its
         // references point at, never the operand's storage or literal form,
         // but for a number's: an integer constant, or a float of literals,
-        // adapts as a branch's does (§6.4).
+        // adapts as a branch's does (§6.4), relying on the named constants
+        // it was read from (RelyOnNamed).
         Val exit;
         exit.SetProv(v);
         exit.type = v.type;
@@ -2094,6 +2095,7 @@ inline void TypeCheck::CheckBreak(Break *b) {
             exit.nonneg = exit.litlo >= 0;
         }
         exit.litfloat = LitFloat(v);
+        exit.constfrom = v.constfrom;
         exit.isnull = v.isnull;
         exit.contents = v.contents;
         exit.holderset = v.holderset;
@@ -2367,7 +2369,7 @@ inline void TypeCheck::CheckVarDecl(VarDecl *vd, bool global) {
         auto fltlit = vt && vt->kind == TY_FLT && !IsF32(vt) && LitFloat(v);
         d->constlit = !vd->isvar && !ann && !vd->byref &&
                       ((global && (v.ck == CK_INT || v.notconst)) || fltlit);
-        d->constnot = v.notconst;
+        d->constnot = d->constlit && v.notconst;
         d->constval = v.notconst ? ~v.litlo : v.ival;
         d->constuns = v.uns;
         d->constflt = v.ck == CK_FLT;

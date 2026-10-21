@@ -3143,8 +3143,9 @@ all integer constants give a `Val::litint`, the range of the constants,
 which adapts wherever a constant would (`FitsAt`, `UnifyNumeric`) to a type
 the whole range fits; floats of literals, with integers among them, give a
 `litfloat`; and a literal branch beside a typed one takes its type. A break
-passes its value's literal form on (`CheckBreak`), and a literal one leaves
-the later breaks unconstrained, as a slice join does; the `block` or `loop`
+passes its value's literal form on (`CheckBreak`), with the named constants
+it was read from (`Val::constfrom`), and a literal one leaves the later
+breaks unconstrained, as a slice join does; the `block` or `loop`
 records its valued breaks (`EarlyBlock::breaks`, `LoopExpr::breaks`). The
 branches' nodes take the joined type once the construct's first check
 settles it (`CheckJoin` → `RetypeBranches`): an integer branch in a float

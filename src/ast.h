@@ -1628,7 +1628,7 @@ struct VarDef {
     bool constlit = false;
     bool constuns = false;      // constval's bits are a u64 above i64.max (Val::uns).
     int64_t constval = 0;
-    bool constnot = false;      // constval is `~c` of a constant c >= 0 (Val::notconst).
+    bool constnot = false;      // A constlit whose constval is `~c`, c >= 0 (Val::notconst).
     bool constflt = false;      // A float constant, of value constfval.
     double constfval = 0;
     VarDef *constfrom = nullptr;    // The initializer's Val::constfrom.
