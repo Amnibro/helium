@@ -3458,6 +3458,9 @@ variable stays its candidate. Then, by where `C`'s own root lies:
    holder during the call: neither the function nor a function value it runs
    can name it directly. Reads then have that contents root, including any
    roots stored through possibly aliased parameters while the body runs.
+   A nested function or callback's stores keep the distinction that the
+   resulting references came from that holder's contents; call sites judge
+   them by the actual stores into its storage, including aliased stores.
    Stores feed back around loops, and calls are specialized for the contents
    they receive; a call after a rebind is checked for the new contents. The
    same rule applies when a parameter forwards such a holder to another

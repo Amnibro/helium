@@ -1529,8 +1529,10 @@ inline void TypeCheck::AddStoreEvent(const StoreEvent &e) {
 // parents', and those of the bodies its function values were written in.
 // Only the activation's own stores name roots its body can bind the variable
 // to: a store checked in a body nested in it, or in a function value it
-// wrote, leaves the slot holding what outlives the slot, which its class
-// bounds; its callers' calls map what it stored as they reach the body.
+// wrote, leaves an aggregate view holding the class's contents, which the
+// caller judges by the storage's stores (RootAlt::classread), or a slice
+// binding bounded by the slot's class. Its callers' calls map the stored
+// roots as they reach the body.
 inline void TypeCheck::NoteSlotStore(const StoreEvent &e) {
     auto x = e.container;
     if (x->type || x->isglobal || IsTemp(x)) return;
@@ -1544,7 +1546,7 @@ inline void TypeCheck::NoteSlotStore(const StoreEvent &e) {
                     // A store through any of them may fill this holder.
                     auto h = slot->heldholder;
                     RootAlt a { e.root, e.exact };
-                    if (h->ownerspec != own) a = { slot, false };
+                    if (h->ownerspec != own) a = { slot, false, nullptr, false, true };
                     AddContents(h, a, e.classread, e.src);
                     if (e.byteview && !h->contentbyteview) {
                         h->contentbyteview = true;
