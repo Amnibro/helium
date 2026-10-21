@@ -340,7 +340,9 @@ renamed into place, the stamp last.
 ### 5.1 Plain C sources
 
 Each file of `c_sources` is compiled to an object with the package's
-includes, defines and flags. The AOT form is the objects themselves, listed
+includes, defines and flags, named for the file's name and a hash of its
+path, so that two of one name in different directories do not share one.
+The AOT form is the objects themselves, listed
 in the response file ahead of `c_libs`: no archiver is needed. The JIT form
 links the objects, `goose_symbols.c` (§5.3) and the system libraries into
 `goose_jit_<name>.{dll,so,dylib}` through the same driver (`-shared`, or

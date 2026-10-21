@@ -475,10 +475,13 @@ inline bool BuildNativePart(const Ast &ast, int pkg, const string &rootfile, con
     #endif
     vector<string> objects;
     for (auto &src : p.csources) {
-        auto obj = cat(dir, "/", PathStem(src), msvc ? ".obj" : ".o");
+        // Named for the source's path too: two files in different
+        // directories may share a name.
+        auto name = cat(PathStem(src), "-", Hex8(src));
+        auto obj = cat(dir, "/", name, msvc ? ".obj" : ".o");
         if (!objectsbuilt &&
             !b.CompileObject(src, obj, cat("compiling ", src, " for the package ", p.name),
-                             cat(dir, "/", PathStem(src), ".cc.log"), flags))
+                             cat(dir, "/", name, ".cc.log"), flags))
             return false;
         objects.push_back(obj);
     }

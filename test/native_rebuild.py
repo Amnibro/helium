@@ -1,9 +1,10 @@
 """When a native part is built again: a program's own C edited after a build
 is compiled again for both `goose build` and `goose run`, and an extern fn
 added to the program without touching its C rebuilds the JIT library, whose
-symbol table names every extern fn. A library's symbol table leaves out the
-extern fns of an example with a sidecar of its own and of a directory its
-sidecar excludes.
+symbol table names every extern fn. Two C files of one name in different
+directories each have an object of their own. A library's symbol table
+leaves out the extern fns of an example with a sidecar of its own and of a
+directory its sidecar excludes.
 
 A CMake package is configured again when its cmake_options change, including
 after a configure that failed for want of one; a cmake_target its project
@@ -74,6 +75,24 @@ def check_native_rebuild(exe, base, *, jit):
         impl(11)
         expect([exe, "build", "-o", app, source], None, "goose build after editing the C")
         expect([app], ["11"], "the program built after editing the C")
+
+        # Two C files of one name, in different directories.
+        twin = root / "twin"
+        for sub, value in (("src", 1), ("lib", 2)):
+            (twin / sub).mkdir(parents=True)
+            tc.write_text(twin / sub / "util.c", "#include <stdint.h>\n"
+                          f"int64_t twin_{sub}(void) {{ return {value}; }}\n")
+        tc.write_text(twin / "twin.build", 'c_sources = ["src/util.c", "lib/util.c"];\n')
+        tc.write_text(twin / "twin.goose", "import std;\nextern fn twin_src() -> i64;\n"
+                      "extern fn twin_lib() -> i64;\n"
+                      'fn main() { print(twin_src(), " ", twin_lib()); }\n')
+        twinapp = root / ("twin_app" + tc.EXE_SUFFIX)
+        expect([exe, "build", "-o", twinapp, twin / "twin.goose"], None,
+               "goose build of two C files of one name")
+        expect([twinapp], ["1", "2"], "the program built from two C files of one name")
+        if jit:
+            expect([exe, "run", twin / "twin.goose"], ["1", "2"],
+                   "goose run of two C files of one name")
         if jit:
             expect([exe, "run", source], ["11"], "goose run")
             impl(111)
