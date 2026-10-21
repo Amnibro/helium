@@ -628,8 +628,9 @@ type once per argument list (cached on the `TypeStruct`/`TypeEnum` detail
 and searched by argument equality for clones), substitute the field types,
 validate them, and compute the derived properties every later pass reads:
 
-* the **size class** (`ClassOf`): a resizable field only as the last real
-  field, making the struct resizable; any variable-class part makes it
+* the **size class** (`ClassOf`): a resizable field only as the final
+  field, with no pad after it either (a payload's likewise), making the
+  struct resizable; any variable-class part makes it
   variable; `varint` fields and varint-width relative references are
   variable-class; a limited array is fixed with a static capacity and
   variable with `[..]`; a fixed-mode enum is fixed, a variable-mode one is

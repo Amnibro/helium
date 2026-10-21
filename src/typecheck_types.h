@@ -96,9 +96,12 @@ inline StructInst *TypeCheck::GetStructInst(TypeExpr *t) {
                                 " cannot be ", zs, ": ", TypeStr(ft), " (§3.4)"));
         auto c = ClassOf(ft);
         if (c == SC_RESIZABLE) {
-            if (i != lastreal)
+            // A pad after the tail too: its bytes would lie where the tail
+            // grows.
+            if (i + 1 < (int)st->fields.size())
                 Error(st->line, cat("resizable field ", st->fields[i].name, " of struct ",
-                                    st->name, " must be the final field"));
+                                    st->name, " must be the final field",
+                                    i == lastreal ? ", with no pad after it" : ""));
             inst->sclass = SC_RESIZABLE;
         } else if (c == SC_VARIABLE && inst->sclass == SC_FIXED) {
             inst->sclass = SC_VARIABLE;
@@ -198,9 +201,10 @@ inline void TypeCheck::BuildVariant(EnumInst *inst, size_t vi) {
                                 " cannot be ", zs, ": ", TypeStr(ft), " (§3.4)"));
         auto c = ClassOf(ft);
         if (c == SC_RESIZABLE) {
-            if (i != lastreal)
+            if (i + 1 < (int)v.fields.size())
                 Error(en->line, cat("resizable field ", v.fields[i].name, " of variant ",
-                                    en->name, ".", v.name, " must be the final field"));
+                                    en->name, ".", v.name, " must be the final field",
+                                    i == lastreal ? ", with no pad after it" : ""));
             inst->varclass = SC_RESIZABLE;
         }
         if (c != SC_FIXED) inst->allfixed = false;
