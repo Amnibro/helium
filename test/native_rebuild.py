@@ -1,18 +1,20 @@
 """When a native part is built again: a program's own C edited after a build
-is compiled again for both `goose build` and `goose run`, and an extern fn
-added to the program without touching its C rebuilds the JIT library, whose
-symbol table names every extern fn. Two C files of one name in different
-directories each have an object of their own. --debug builds the program's
-own C for a debugger, apart from its release build, and a package's C
-release. A library's symbol table leaves out the extern fns of an example
-with a sidecar of its own and of a directory its sidecar excludes.
+is compiled again for both `goose build` and `goose run`, but not when the
+program is named by another path, and an extern fn added to the program
+without touching its C rebuilds the JIT library, whose symbol table names
+every extern fn. Two C files of one name in different directories each have
+an object of their own. --debug builds the program's own C for a debugger,
+apart from its release build, and a package's C release. A library's symbol
+table leaves out the extern fns of an example with a sidecar of its own and
+of a directory its sidecar excludes.
 
 A CMake package is configured again when its cmake_options change, including
 after a configure that failed for want of one; a cmake_target its project
 does not define is reported at configure; a target compiled as C++ that
-publishes a C++ standard to what links it builds, for both runs; and built
-again with nothing changed, the files the compiler generates for CMake keep
-their times."""
+publishes a C++ standard to what links it builds, for both runs; built again
+with nothing changed, the files the compiler generates for CMake keep their
+times; and a program's own CMake target builds whether the program is named
+by a relative path, from its directory or by its absolute path."""
 import json
 import os
 import subprocess
@@ -32,8 +34,8 @@ def check_native_rebuild(exe, base, *, jit):
         env = dict(os.environ)
         env["GOOSE_HOME"] = str(root / "home")
 
-        def run(argv):
-            r = subprocess.run([str(a) for a in argv], cwd=root, env=env, capture_output=True,
+        def run(argv, cwd=root):
+            r = subprocess.run([str(a) for a in argv], cwd=cwd, env=env, capture_output=True,
                                text=True, errors="replace", timeout=600)
             return r.returncode, r.stdout, r.stderr
 
@@ -41,8 +43,8 @@ def check_native_rebuild(exe, base, *, jit):
             if not good:
                 raise RuntimeError(f"native rebuild: {message}")
 
-        def expect(argv, want, what):
-            code, out, err = run(argv)
+        def expect(argv, want, what, cwd=root):
+            code, out, err = run(argv, cwd)
             require(code == 0 and (want is None or out.split() == want),
                     f"{what}: wanted {' '.join(want or ['success'])}, got exit {code}:\n"
                     f"{out}{err}")
@@ -73,6 +75,11 @@ def check_native_rebuild(exe, base, *, jit):
         app = root / ("rebuild" + tc.EXE_SUFFIX)
         expect([exe, "build", "-o", app, source], None, "goose build")
         expect([app], ["1"], "the built program")
+        # Named by a path relative to the working directory, it is the same
+        # program, whose C is built.
+        code, out, err = run([exe, "build", "-o", app, source.name])
+        require(code == 0 and "building the package rebuild's C" not in out + err,
+                f"goose build by a relative path built the program's C again:\n{out}{err}")
         impl(11)
         expect([exe, "build", "-o", app, source], None, "goose build after editing the C")
         expect([app], ["11"], "the program built after editing the C")
@@ -240,4 +247,24 @@ def check_native_rebuild(exe, base, *, jit):
         rewritten = [str(f.relative_to(built[0])) for f in generated
                      if f.stat().st_mtime_ns != times[f]]
         require(not rewritten, f"a build with nothing changed rewrote {rewritten}")
+
+        # A program's own CMake target, the program named by a path relative
+        # to the working directory, from its directory and by its absolute
+        # path.
+        own = root / "own"
+        own.mkdir()
+        tc.write_text(own / "CMakeLists.txt", "cmake_minimum_required(VERSION 3.20)\n"
+                                              "project(ownlib C)\nadd_library(ownlib STATIC ownlib.c)\n")
+        tc.write_text(own / "ownlib.c",
+                      "#include <stdint.h>\nint64_t own_nine(void) { return 9; }\n")
+        tc.write_text(own / "own.build", 'cmake_target = "ownlib";\n')
+        tc.write_text(own / "own.goose", "import std;\nextern fn own_nine() -> i64;\n"
+                                         "fn main() { print(own_nine()); }\n")
+        ownapp = root / ("own_app" + tc.EXE_SUFFIX)
+        for path, cwd, how in (("own/own.goose", root, "by a relative path"),
+                               ("own.goose", own, "from its directory"),
+                               (own / "own.goose", root, "by its absolute path")):
+            expect([exe, "build", "-o", ownapp, path], None,
+                   f"goose build of a program with a CMake target of its own {how}", cwd=cwd)
+            expect([ownapp], ["9"], f"the program with a CMake target of its own, built {how}")
     return None
