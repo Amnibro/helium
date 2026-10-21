@@ -2080,6 +2080,15 @@ def main():
             r.fail("native part cache", str(e))
     if cc:
         r.show_task(native_cache)
+    def runtime_io():
+        from runtime_io import check_runtime_io
+        try:
+            check_runtime_io(exe, gendir, jit=jit)
+            r.ok("runtime io: stdin's bytes as they came")
+        except (RuntimeError, OSError, subprocess.TimeoutExpired) as e:
+            r.fail("runtime io", str(e))
+    if cc:
+        r.show_task(runtime_io)
 
     def exit_race():
         from exit_race import check_exit_race

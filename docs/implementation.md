@@ -4865,10 +4865,12 @@ sign.
 **Output.** `print` renders its whole line, newline included, into a
 statement-stack builder and hands it to one `fwrite` (`gs_out_bytes`) on an
 unbuffered stdout, so nothing printed is lost to an abort and no other
-thread's line lands inside it. On Windows the runtime puts stdout and
-stderr in binary mode as it starts (`gs_rt_start`): a newline goes out as
+thread's line lands inside it. On Windows the runtime puts stdin, stdout
+and stderr in binary mode as it starts (`gs_rt_start`): a newline goes out as
 the one byte it is everywhere else, not as the `\r\n` the CRT's text mode
-writes a byte at a time.
+writes a byte at a time, and `read_stdin` gets the bytes that came in, which
+text mode would hand over with each `\r\n` made `\n` and only up to the
+first Ctrl-Z (`read_line` takes off a `\r` before the newline itself).
 
 ### 6.10 Loop-invariant views and stack-top caching
 

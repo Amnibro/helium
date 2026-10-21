@@ -1356,7 +1356,10 @@ GS_API void gs_rt_start(int argc, char **argv, uint64_t reserve, uint64_t gap,
     #ifdef _WIN32
         // The bytes a program writes are the bytes that come out, '\n' one
         // byte as on every other platform, rather than a "\r\n" the CRT's
-        // text mode makes of it byte by byte.
+        // text mode makes of it byte by byte; and the bytes it reads are
+        // the bytes that came in, where text mode would make "\r\n" '\n'
+        // and stop at the first Ctrl-Z.
+        _setmode(_fileno(stdin), _O_BINARY);
         _setmode(_fileno(stdout), _O_BINARY);
         _setmode(_fileno(stderr), _O_BINARY);
     #endif

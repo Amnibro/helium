@@ -595,6 +595,10 @@ keep only the characters it has. A path is refused, and the call returns
 is not valid UTF-8: cut short or read another way, it could name a
 different file.
 
+`read_stdin` appends the bytes as they came, on Windows too, where the C
+library's text mode would make each `\r\n` a `\n` and stop at a Ctrl-Z;
+`read_line` leaves out a line's `\r` before its newline as well.
+
 `write_file_atomic` is for files that must never be seen half-written, such
 as saved games. It writes the data to a new file beside `path`, named after
 it with a random tag and `.tmp` added, flushes that file to disk and renames

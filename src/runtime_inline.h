@@ -2497,7 +2497,10 @@ GS_API void gs_rt_start(int argc, char **argv, uint64_t reserve, uint64_t gap,
     #ifdef _WIN32
         // The bytes a program writes are the bytes that come out, '\n' one
         // byte as on every other platform, rather than a "\r\n" the CRT's
-        // text mode makes of it byte by byte.
+        // text mode makes of it byte by byte; and the bytes it reads are
+        // the bytes that came in, where text mode would make "\r\n" '\n'
+        // and stop at the first Ctrl-Z.
+        _setmode(_fileno(stdin), _O_BINARY);
         _setmode(_fileno(stdout), _O_BINARY);
         _setmode(_fileno(stderr), _O_BINARY);
     #endif
@@ -2593,13 +2596,13 @@ static void gs_big_mul(gs_big *a, uint32_t m) {
     if (c) a->d[a->n++] = (uint32_t)c;
 }
 
-static void gs_big_mul_pow10(gs_big *a, int k) {
+)GSRT"
+R"GSRT(static void gs_big_mul_pow10(gs_big *a, int k) {
     for (; k >= 9; k -= 9) gs_big_mul(a, 1000000000u);
     for (; k > 0; k--) gs_big_mul(a, 10);
 }
 
-)GSRT"
-R"GSRT(static int gs_big_cmp(const gs_big *a, const gs_big *b) {
+static int gs_big_cmp(const gs_big *a, const gs_big *b) {
     if (a->n != b->n) return a->n < b->n ? -1 : 1;
     for (int i = a->n - 1; i >= 0; i--)
         if (a->d[i] != b->d[i]) return a->d[i] < b->d[i] ? -1 : 1;
