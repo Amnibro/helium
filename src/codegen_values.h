@@ -237,6 +237,7 @@ inline CodeGen::Loc CodeGen::VarLoc(VarDef *vd) {
             auto &p = pit != vpool.end() ? pit->second : git->second;
             auto hdr = fvptr.count(vd) ? cat("(*", name, ")") : name;
             l.val = false;
+            l.hdr = hdr;
             l.s = PoolBaseOr(vd, cat(hdr, ".base"));
             l.lenlv = cat(hdr, ".len");
             l.stk = VStkOf(vd);
@@ -244,6 +245,7 @@ inline CodeGen::Loc CodeGen::VarLoc(VarDef *vd) {
             l.flstk = p.second;
         } else {
             l.val = false;
+            l.hdr = cat("(*", name, ".hdr)");
             l.s = cat(name, ".hdr->base");
             l.lenlv = cat(name, ".hdr->len");
             l.stk = cat(name, ".stk");

@@ -315,14 +315,33 @@ inline string CodeGen::RefArg(const Loc &lv, TypeExpr *sub, Line ln) {
     return lv.val ? cat("&", lv.s) : cat("(", CT(sub), " *)(", lv.s, ")");
 }
 
+// A pool reference to the reusable pool at lv, for a parameter its
+// specialization takes one for (IsPoolParam), as a call's argument is
+// (EmitArg): the pool's header and stack, and its free list's.
+inline string CodeGen::PrefArg(const Loc &lv, Line ln) {
+    if (lv.hdr.empty() || lv.stk.empty() || lv.fl.empty() || lv.flstk.empty())
+        Fail(ln, "internal: a pool reference to storage that is no pool");
+    auto p = T();
+    L("gs_pref ", p, " = { &", lv.hdr, ", ", lv.stk, ", &", lv.fl, ", ", lv.flstk, " };");
+    return p;
+}
+
 // A user `format(out, v)` overload applied to the value at lv.
 inline void CodeGen::EmitUserFormat(Loc &out, Loc lv, FnSpec *sp, Line ln) {
     assert(!out.hdr.empty() && !out.stk.empty());
     PushSc(SC_PLAIN);
-    auto r = T();
-    L("gs_rref ", r, " = { (gs_rhdr *)&", out.hdr, ", ", out.stk, " };");
+    auto outpool = IsPoolParam(sp, 0), pool = IsPoolParam(sp, 1);
+    string r;
+    if (outpool) {
+        r = PrefArg(out, ln);
+    } else {
+        r = T();
+        L("gs_rref ", r, " = { (gs_rhdr *)&", out.hdr, ", ", out.stk, " };");
+    }
     auto pt = sp->argtypes[1];
-    auto arg = pt->kind == TY_REF ? RefArg(lv, pt->ref->sub, ln) : LoadLoc(lv, pt, ln);
+    auto arg = pool                ? PrefArg(lv, ln)
+               : pt->kind == TY_REF ? RefArg(lv, pt->ref->sub, ln)
+                                    : LoadLoc(lv, pt, ln);
     if (IsLargeFixed(pt)) arg = cat("&", Snapshot(pt, arg));
     MarkFlush();
     auto &ki = sinfo[sp];
@@ -334,9 +353,9 @@ inline void CodeGen::EmitUserFormat(Loc &out, Loc lv, FnSpec *sp, Line ln) {
     if (ki.needssp) NoStackAcrossCycleCall(sp, ln);
     if (ki.needssp) NoteStackCall(sp, ln);
     vector<string> args;
-    PushArg(args, sp->argtypes[0], false, r);
+    PushArg(args, sp->argtypes[0], outpool, r);
     if (IsLargeFixed(pt)) args.push_back(arg);
-    else PushArg(args, pt, false, arg);
+    else PushArg(args, pt, pool, arg);
     if (ki.needssp) args.push_back(SpTop());
     string argstr;
     for (auto &a : args) Append(argstr, argstr.empty() ? "" : ", ", a);

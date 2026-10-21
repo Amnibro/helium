@@ -1219,6 +1219,7 @@ struct CodeGen {
     void RenderLoc(Loc &out, Loc lv, TypeExpr *t, bool nested, Call *c, Line ln);
     void RenderVariant(Loc &out, Loc lv, TypeExpr *t, Call *c, Line ln);
     string RefArg(const Loc &lv, TypeExpr *sub, Line ln);
+    string PrefArg(const Loc &lv, Line ln);
     void EmitUserFormat(Loc &out, Loc lv, FnSpec *sp, Line ln);
 
     // A type that reaches itself through references renders the levels of a

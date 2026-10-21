@@ -4727,8 +4727,12 @@ a type (§3.7), so none of it depends on the call. It takes no stack index
 either: the builder's stack is the only one it writes, it opens none of
 its own, and as it runs no overload it hands none on, so the overloads a
 rendering runs are all called by the function printing, above its live
-stacks (`EmitUserFormat`). A resizable tail with no header of its own is
-rendered in place one level more, up to the reference to the next.
+stacks (`EmitUserFormat`). An overload's parameter its specialization keys
+to a reusable pool (`IsPoolParam`) -- the value rendered, or the builder a
+`format` writes into -- is handed the pool's `gs_pref` (`PrefArg`), as a
+call's argument for one is (`EmitArg`). A resizable tail with no header of
+its own is rendered in place one level more, up to the reference to the
+next.
 
 **Serialization contract.** The following is the observable part of
 `docs/design/serialization.md`, independent of how a verifier is organized:
