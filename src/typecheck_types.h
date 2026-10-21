@@ -783,12 +783,32 @@ inline bool TypeCheck::HasRelRefT(TypeExpr *t, bool inpool) {
 // built where it is received rather than copied out of storage, so that
 // its self-relative references point within it whatever it lands in.
 inline bool TypeCheck::BuiltWhereReceived(Node *n, size_t result) {
+    if (!n || (n->exprtype && n->exprtype->kind == TY_VOID)) return true;
+    if (auto b = Is<Block>(n)) return BuiltWhereReceived(b->tail, result);
+    if (auto x = Is<IfExpr>(n))
+        return BuiltWhereReceived(x->thenb, result) && BuiltWhereReceived(x->elseb, result);
+    if (auto m = Is<MatchExpr>(n))
+        return all_of(m->arms.begin(), m->arms.end(), [&](const MatchArm &a) {
+            return BuiltWhereReceived(a.body, result);
+        });
+    auto breaks = [&](const vector<Break *> &bs) {
+        return all_of(bs.begin(), bs.end(), [&](Break *b) {
+            return BuiltWhereReceived(b->val, result);
+        });
+    };
+    if (auto l = Is<LoopExpr>(n)) return breaks(l->breaks);
+    if (auto b = Is<EarlyBlock>(n))
+        return breaks(b->breaks) && BuiltWhereReceived(b->body->tail, result);
     if (Is<StructLit>(n) || Is<ArrayLit>(n)) return true;   // Constructed in place.
     if (auto d = Is<Dot>(n); d && d->variantconst) return true;   // A payload-less variant: a tag.
     // A default value's relative references are nulls, an empty limited
     // array's none, and `self` where a field's default says so: offsets that
     // mean the same wherever the value sits.
     if (auto c = Is<Call>(n); c && c->builtin == B_DEFAULT) return true;
+    // The inline body's tail is checked as a value before the call can
+    // expose it as fresh; returning existing relative storage is a copy.
+    if (auto c = Is<Call>(n); c && c->fvbody && result == 0)
+        return BuiltWhereReceived(c->fvbody->tail, 0);
     // A function's result is built where it is received where it is not
     // fixed-size (§4.3, §7.3). A fixed-size one is what its returns made,
     // which by this same rule is a literal, a default, another call's result

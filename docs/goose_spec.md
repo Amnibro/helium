@@ -2442,6 +2442,12 @@ without the destination its call's value meets, so it cannot be a `[]` (nor
 a construct whose branches all are one), which would have no element type
 (§4.2).
 
+A fresh block result follows the same construction rules as a named
+function's result, including literals containing self-relative references.
+Selecting a fresh result through `if`, `match`, `loop`, or `block` preserves
+that property. A tail that instead names existing storage (or a reference
+to it) is still a copy and must obey §3.9's relative-reference restrictions.
+
 A function argument must be a function name (including a bound generic
 function parameter) or a block literal. A name with several overloads
 passes them all, and each call of the value resolves among them as a call

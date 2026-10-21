@@ -3791,6 +3791,7 @@ inline Val TypeCheck::CheckFunValCall(Call *c, const FnValBind &fb, TypeExpr *ex
         } else {
             frames.back().tailvalue = true;
             v = CheckValue(c->fvbody->tail, nullptr);
+            NoRelRefCopy(c->fvbody->tail, v.type);
         }
     }
     // The body's value is checked without a destination and the call's value
@@ -3803,9 +3804,9 @@ inline Val TypeCheck::CheckFunValCall(Call *c, const FnValBind &fb, TypeExpr *ex
     PopScope();
     frames.pop_back();
     cur.kills.clear();
-    // The call's value is a copy of the body's, a temporary of the calling
-    // statement as any call's result is (§9.2): no storage to bind by
-    // reference, even where the body's value names a variable.
+    // The result has the calling statement's lifetime (§9.2), with no
+    // storage to bind by reference even where the tail names a variable.
+    // Fresh construction still uses the receiver (BuiltWhereReceived).
     return TempCopy(v);
 }
 
