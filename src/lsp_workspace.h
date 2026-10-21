@@ -293,7 +293,6 @@ struct Workspace {
                 BCE bce(ast);
                 bce.RunAll();
                 if (!bce.checkfreefails.empty()) throw bce.CheckfreeError();
-                an->checked = true;
                 return 0;
             });
         } catch (CompileError &e) {
@@ -335,15 +334,14 @@ struct Workspace {
         rpc.Send(j.s);
     }
 
-    // Where a file's queries are answered from: the first root (the
-    // configured ones first) whose analysis reached it.
-    bool Locate(const string &key, Root *&root, Analysis *&an, int &fileidx) {
+    // Where a file's queries are answered from: the analysis of the first
+    // root (the configured ones first) that reached it.
+    bool Locate(const string &key, Analysis *&an, int &fileidx) {
         for (auto configured : { true, false })
             for (auto &r : roots) {
                 if (r->configured != configured || !r->analysis) continue;
                 auto f = r->analysis->FileOf(key);
                 if (f < 0) continue;
-                root = r.get();
                 an = r->analysis.get();
                 fileidx = f;
                 return true;

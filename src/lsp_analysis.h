@@ -30,11 +30,11 @@ struct Occurrence {
                                     // LOCAL: the VarDecl. BINDER: the ForLoop, MatchExpr or FunVal.
     TypeExpr *type = nullptr;       // TYPE
     SFunction *sf = nullptr;        // FN, PARAM
-    SStruct *st = nullptr;          // STRUCT, FIELD of a struct
-    SEnum *en = nullptr;            // ENUM, VARIANT, FIELD of a variant
+    SStruct *st = nullptr;          // STRUCT
+    SEnum *en = nullptr;            // ENUM, VARIANT
     SAlias *al = nullptr;           // ALIAS
     const Field *field = nullptr;   // FIELD
-    const SVariant *variant = nullptr;      // VARIANT, FIELD of a variant
+    const SVariant *variant = nullptr;      // VARIANT
     const Param *param = nullptr;   // PARAM
     const GenericParam *generic = nullptr;  // GENERIC
     int index = 0;                  // GLOBAL, LOCAL: which name. INIT: which initializer. BINDER: 0
@@ -101,7 +101,6 @@ struct FileIndex {
 struct Analysis {
     unique_ptr<Ast> ast;
     bool parsed = false;            // Past resolution: the indexes stand on a whole program.
-    bool checked = false;           // Checked, optimized and bounds-check analyzed without error.
     bool indexed = false;           // The source's indexes stand (IndexSource).
     bool built = false;             // All the indexes below stand.
     vector<Diagnostic> diags;       // Warnings as they came, then the error's.
@@ -236,14 +235,11 @@ struct Analysis {
                 at(o, g.line, g.name);
             }
         };
-        auto fields = [&](const vector<Field> &fs, SStruct *st, SEnum *en, const SVariant *v) {
+        auto fields = [&](const vector<Field> &fs) {
             for (auto &f : fs) {
                 if (f.ispad) continue;
                 auto o = decl(Occurrence::FIELD);
                 o.field = &f;
-                o.st = st;
-                o.en = en;
-                o.variant = v;
                 o.isvar = !f.isconst;
                 at(o, f.line, f.name);
             }
@@ -266,7 +262,7 @@ struct Analysis {
             o.st = st;
             view(o, st->line.fileidx, st->name);
             generics(st->generics);
-            fields(st->fields, st, nullptr, nullptr);
+            fields(st->fields);
         }
         for (auto en : a.enums) {
             auto o = decl(Occurrence::ENUM);
@@ -278,7 +274,7 @@ struct Analysis {
                 vo.en = en;
                 vo.variant = &v;
                 at(vo, v.line, v.name);
-                fields(v.fields, nullptr, en, &v);
+                fields(v.fields);
             }
         }
         for (auto al : a.aliases) {
