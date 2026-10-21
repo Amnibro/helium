@@ -1719,6 +1719,7 @@ struct TypeCheck {
     // with the containers it was read out of where `keepfrom` (Bounds).
     static Roots HeldAt(const Roots &at, bool keepfrom = false) {
         auto src = HolderSource(at);
+        if (src && src->heldholder) return src->heldholder->contents;
         if (src && src->type && !src->isglobal && !IsRefOrSlice(src->type))
             return src->contents;
         if (!keepfrom) return Bounds(at);

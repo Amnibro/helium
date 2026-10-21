@@ -213,6 +213,7 @@ inline void TypeCheck::ReadBackLVal(LVal &lv) {
     // a slot read, byte view or not (§5.2).
     lv.byteview = lv.byteview || lv.Any([&](const RootAlt &a) {
         return a.root && (a.root->contentbyteview ||
+                          (a.root->heldholder && a.root->heldholder->contentbyteview) ||
                           (a.root->isglobal && lv.type->cq && IsU8(PointeeOf(lv.type))));
     });
     // What was stored into a slot passed the store rule (§5.2) with its own

@@ -1520,8 +1520,8 @@ inline void TypeCheck::AddStoreEvent(const StoreEvent &e) {
     origin(evs.size() - 1);
 }
 
-// A store that may write the slot a parameter's view stands for joins what
-// the variable standing for the slice there holds (VarDef::heldslice): a
+// A store that may write a parameter's view joins its aggregate contents
+// (VarDef::heldholder), or its slice binding (VarDef::heldslice): a
 // store into the slot's own class, or into any other class or bound, which
 // may be that slot where some call site passes it to both (§3.4), unless it
 // cannot hold a slice of the slot's type. The views are those of the bodies
@@ -1539,6 +1539,18 @@ inline void TypeCheck::NoteSlotStore(const StoreEvent &e) {
     for (auto fi = (int)frames.size() - 1; fi >= RealFrameIndex(); fi--) {
         for (auto s = frames[fi].lexspec; s && seen.insert(s).second; s = s->lexparent) {
             for (auto slot : s->classroots) {
+                if (slot && slot->heldholder) {
+                    // Distinct parameter classes need not be disjoint.
+                    // A store through any of them may fill this holder.
+                    auto h = slot->heldholder;
+                    RootAlt a { e.root, e.exact };
+                    if (h->ownerspec != own) a = { slot, false };
+                    AddContents(h, a, e.classread, e.src);
+                    if (e.byteview && !h->contentbyteview) {
+                        h->contentbyteview = true;
+                        NoteFact(h);
+                    }
+                }
                 auto h = slot ? slot->heldslice : nullptr;
                 if (!h) continue;
                 if (x != slot && ((e.pointee && !TopConstEq(e.pointee, h->type->sub)) ||
@@ -2436,12 +2448,17 @@ inline void TypeCheck::NoteRootEvent(VarDef *root, P param, X external) {
         auto spec = frames[fi].spec;
         if (!spec) continue;
         auto found = false;
-        // A view's class is reached through its parameter's slot, which its
-        // callers' storage behind the slot bounds (FnSpec::views).
+        // A view's contents are a different effect target from the holder
+        // or slice slot itself, even though one parameter reaches both.
         for (size_t i = 0; i < spec->params.size(); i++) {
-            if (RefRootOf(spec->params[i]) != root && ViewClassOf(spec, i) != root) continue;
-            param(spec, (int)i);
-            found = true;
+            if (RefRootOf(spec->params[i]) == root) {
+                param(spec, (int)i);
+                found = true;
+            }
+            if (ViewClassOf(spec, i) == root) {
+                param(spec, (int)(spec->params.size() + i));
+                found = true;
+            }
         }
         if (found) {
             if (spec != current) external(current, root);
@@ -3320,6 +3337,10 @@ inline void TypeCheck::ApplyCalleeShrinks(Node *at, FnSpec *spec, vector<Val> &a
         return nullptr;
     };
     for (size_t i = 0; i < argvals.size() && i < spec->argtypes.size(); i++) {
+        auto vi = (int)(spec->params.size() + i);
+        if (auto view = rec->shrinkparams.find(vi); view != rec->shrinkparams.end())
+            shrink(argvals[i].held, nullptr, "shrinks", view->second,
+                   orderof(vi, nullptr, nullptr));
         auto pt = spec->argtypes[i];
         auto entry = rec->shrinkparams.find((int)i);
         auto recorded = entry != rec->shrinkparams.end();
@@ -3345,6 +3366,16 @@ inline void TypeCheck::ApplyCalleeShrinks(Node *at, FnSpec *spec, vector<Val> &a
     // points at: any of its type that the argument's roots, or its contents'
     // for a by-value holder, bound.
     for (auto &b : rec->shrinkparambounds) {
+        if (b.key >= (int)spec->params.size()) {
+            auto p = b.key - spec->params.size();
+            if (p < argvals.size()) {
+                Roots roots = argvals[p].held;
+                roots.Weaken();
+                shrink(roots, b.type, "may shrink", b.balance,
+                       orderof(b.key, nullptr, b.type), true);
+            }
+            continue;
+        }
         if (b.key >= (int)argvals.size()) continue;
         auto pt = spec->argtypes[b.key];
         auto roots = ClassArgRoots(pt, argvals[b.key]);
@@ -3570,8 +3601,11 @@ inline void TypeCheck::ApplyCalleeGrows(Node *at, FnSpec *spec, vector<Val> &arg
                                         string_view name) {
     // A record notes a growth of a parameter's class (ClassArgRoot).
     auto grows = [&](size_t i, const char *how, TypeExpr *arr) {
+        auto view = i >= spec->params.size();
+        if (view) i -= spec->params.size();
         if (i >= argvals.size()) return;
-        auto roots = ClassArgRoots(spec->argtypes[i], argvals[i]);
+        auto roots = view ? argvals[i].held.AsRoots()
+                          : ClassArgRoots(spec->argtypes[i], argvals[i]);
         auto root = roots.Root();
         if (!root || IsTemp(root)) return;
         NoteGrow(at, roots, cat("call ", name, ", which ", how, " ", root->name), arr);

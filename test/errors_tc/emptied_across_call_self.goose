@@ -1,4 +1,4 @@
-// error: cannot call prepare, which may shrink pool while s is still used: a reference into it was stored there
+// error: cannot call prepare, which shrinks pool while s is still used
 // A callee handed the holder itself may write into the part emptied before
 // the call, here a view taken through its reference field and stored back,
 // which no event records (§5.1).

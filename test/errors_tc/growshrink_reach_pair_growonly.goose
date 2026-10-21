@@ -1,4 +1,4 @@
-// error: cannot call f: it may shrink mine while c is still used, and c may refer into mine
+// error: cannot pop arr while d is still used
 // The grow-only form (§5.1): shrink pops the array it is given while its
 // copy of c is still used, and from f that array is t.a, bounded by the
 // caller's storage behind t, which leads to mine.

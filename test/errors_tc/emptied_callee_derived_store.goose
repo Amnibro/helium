@@ -1,4 +1,4 @@
-// error: cannot call run, which may shrink pool while s is still used: a reference into it was stored there
+// error: cannot call run, which shrinks pool while s is still used
 struct S { pool: i64[>..]&, refs: (i64&)[>..] }
 // A view a callee takes through its struct parameter's reference field and
 // stores back into the emptied part, a store no event records, fills it

@@ -1,4 +1,4 @@
-// error: cannot call drive, which may shrink cfg while view is still used
+// error: cannot call drive, which shrinks cfg while view is still used
 // A function passing its struct parameter on to a callee replacing an array
 // it refers to records that for its own callers, which judge it by what
 // their struct refers to (§5.1).

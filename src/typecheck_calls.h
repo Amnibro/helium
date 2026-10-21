@@ -1333,24 +1333,36 @@ inline void TypeCheck::NoteHeld(Val &av, TypeExpr *slice) {
     av.hasheld = true;
 }
 
-// Whether a `T[:]&` parameter gets a view: a class of its own for the slice
-// its argument's slot holds as the call is made, which a load through the
-// parameter's class sees (FnSpec::views, VarDef::heldslice). Its body must
-// see every store into that slot while it runs (NoteSlotStore), so the slot
-// is one it reaches only through references: a slice variable it cannot
-// name (EnvReach), so no global, a temporary, or a caller's parameter class
-// with a view of its own. A recursive fn gets none: its back edges reuse its
-// body whatever their slots hold.
+// A reference parameter gets a view of its contents when only parameters
+// can reach its argument's storage: a slice slot's binding, or the known
+// single root of an aggregate's contents. Stores through possibly aliased
+// parameters join that view (NoteSlotStore). Globals and lexical storage
+// the body or a callback can name have no view, nor does a recursive fn,
+// whose back edges reuse its body whatever their arguments hold.
 inline bool TypeCheck::HasView(Val &av, TypeExpr *pt, int reach, SFunction *sf) {
-    if (sf->isrec || sf->isextern || !IsPlainRef(pt) || pt->ref->sub->kind != TY_SLICE ||
+    if (sf->isrec || sf->isextern || !IsPlainRef(pt) ||
+        (pt->ref->sub->kind != TY_SLICE && !HoldsPlainRef(pt->ref->sub)) ||
         av.alts.size() != 1)
         return false;
     // A path into a call's result is rooted at its temporary as the result
     // is, inexactly, but lies in it all the same.
     auto r = av.Root();
     if (!r || (!av.alts[0].exact && !IsTemp(r)) || ClassDepth(r) <= reach) return false;
-    if (r->type ? r->type->kind != TY_SLICE : !IsTemp(r) && !r->heldslice) return false;
-    if (!av.hasheld) NoteHeld(av, pt->ref->sub);
+    if (pt->ref->sub->kind == TY_SLICE) {
+        if (r->type ? r->type->kind != TY_SLICE : !IsTemp(r) && !r->heldslice) return false;
+        if (!av.hasheld) NoteHeld(av, pt->ref->sub);
+    } else {
+        // A whole local's stores describe every aggregate inside it. A
+        // class may supply the same record through its own holder view.
+        if (IsTemp(r) || (r->type ? IsRefOrSlice(r->type) : !r->heldholder)) return false;
+        auto held = HeldAt(av);
+        if (!held.Exact()) return false;
+        av.held.TakeAlts(held);
+        av.held.writable = true;
+        av.held.byteview = r->contentbyteview ||
+                           (r->heldholder && r->heldholder->contentbyteview);
+        av.hasheld = true;
+    }
     return true;
 }
 
@@ -1481,9 +1493,8 @@ inline FnSpec *TypeCheck::GetOrCreateSpec(MatchInfo &mi, vector<Val> &argvals, N
         if (ra.exact) ra.pool = PoolOf(r);
         classify(ra, r);
     }
-    // A reference to a slice whose slot only the callee's parameters reach:
-    // the slice that slot holds is a class of its own, which a load through
-    // the parameter's class sees (HasView).
+    // The contents of an argument only the callee's parameters reach get
+    // a class of their own, which a load through that parameter sees.
     auto reach = EnvReach(mi);
     for (size_t i = 0; i < mi.paramtypes.size(); i++) {
         auto pt = mi.paramtypes[i];
@@ -1495,12 +1506,14 @@ inline FnSpec *TypeCheck::GetOrCreateSpec(MatchInfo &mi, vector<Val> &argvals, N
         va.writable = hp.writable && !pt->ref->sub->cq;
         va.reusable = CarriesPool(pt->ref->sub) ? hp.reusable : 0;
         va.exact = hp.Exact();
-        auto slice = pt->ref->sub;
+        va.heldexact = pt->ref->sub->kind != TY_SLICE && hp.Exact();
+        auto contents = pt->ref->sub;
         auto gsroot = hp.Any([&](const RootAlt &a) { return IsGrowShrinkRoot(a.root); });
-        auto gspointee = hp.Any([&](const RootAlt &a) {
-            return !a.exact && ContainsGrowShrink(PointeeOf(slice));
+        auto holder = contents->kind != TY_SLICE;
+        auto gspointee = !holder && hp.Any([&](const RootAlt &a) {
+            return !a.exact && ContainsGrowShrink(PointeeOf(contents));
         });
-        va.growshrink = gsroot || gspointee || GrowShrinkTaint(hp, slice);
+        va.growshrink = gsroot || gspointee || (!holder && GrowShrinkTaint(hp, contents));
         va.gsvia = va.growshrink && !(hp.Exact() && IsGrowShrinkRoot(hr));
         if (va.growshrink && !va.gsvia) {
             if (hr->type) GrowShrinkElems(hr->type, va.gselems);
@@ -2998,13 +3011,9 @@ inline void TypeCheck::CheckSpecBodyOnce(FnSpec *spec, vector<Val> *argvals, Lin
         }
         spec->params.push_back(vd);
     }
-    // A reference to a slice with a view (FnSpec::views): the slice its slot
-    // holds is a class of its own, bound to a variable of the body that loads
-    // through the slot's class see (VarDef::heldslice), at the parameters'
-    // depth, outside every loop of the body. Stores into the slot join it
-    // (NoteSlotStore); each round of a cycle starts it afresh. A view is no
-    // pool and is never threaded: what a slice points into outlives its
-    // slot, which no call back into a cycle passes on (§7.8).
+    // A view's contents are a variable of the body, outside its loops.
+    // Loads and stores through any alias see this binding or holder record;
+    // loops feed stores back, and each check starts the view afresh.
     set<VarDef *> heldset;
     for (size_t i = 0; i < sf->params.size() && i < spec->views.size(); i++) {
         auto &va = spec->views[i];
@@ -3028,14 +3037,17 @@ inline void TypeCheck::CheckSpecBodyOnce(FnSpec *spec, vector<Val> *argvals, Lin
             rv->poolclass = false;
             if (!va.pool) rv->classpool = nullptr;
             rv->contentbyteview |= va.byteview;
-            exactrefs[va.cls] = false;
+            if (pt->ref->sub->kind == TY_SLICE || !va.heldexact)
+                exactrefs[va.cls] = false;
             vr = rv;
         }
         auto slot = vd->ref.Root();
         if (!slot || !heldset.insert(slot).second) continue;
-        auto h = slot->heldslice;
+        auto holder = pt->ref->sub->kind != TY_SLICE;
+        auto &saved = holder ? slot->heldholder : slot->heldslice;
+        auto h = saved;
         if (h) *h = VarDef {};
-        else h = slot->heldslice = ast.NewVarDef();
+        else h = saved = ast.NewVarDef();
         h->name = sf->params[i].name;
         h->type = pt->ref->sub;
         h->line = sf->line;
@@ -3043,6 +3055,12 @@ inline void TypeCheck::CheckSpecBodyOnce(FnSpec *spec, vector<Val> *argvals, Lin
         h->ownerspec = spec;
         h->assigned = true;
         h->refrootknown = true;
+        if (holder) {
+            if (va.unknown) h->contents.SetUnknown();
+            else h->contents.Set(vr, va.heldexact);
+            h->contentbyteview = va.byteview;
+            continue;
+        }
         if (va.unknown) h->ref.SetUnknown();
         else h->ref.Set(vr, true, nullptr, va.slotread);
         h->ref.writable = va.writable;

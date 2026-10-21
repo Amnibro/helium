@@ -1,4 +1,4 @@
-// error: cannot call retarget, which may shrink cfg while view is still used
+// error: cannot call retarget, which shrinks cfg while view is still used
 // What a callee stores into its struct parameter before replacing the array
 // a field refers to is among the arrays the caller's struct may lead to
 // (§5.1).

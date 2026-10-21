@@ -1696,6 +1696,10 @@ struct VarDef {
     // every store that may write the slot joins (TypeCheck::SlotView,
     // NoteSlotStore).
     VarDef *heldslice = nullptr;
+    // A reference parameter's aggregate contents, keyed as a view beside
+    // slice slots. Stores through any possibly aliased class join this
+    // holder, so reads retain only roots known at entry or stored since.
+    VarDef *heldholder = nullptr;
     // For variables of reference/slice type: where the value they hold
     // points, fixed at first binding (see typecheck.h header note). A
     // null-initialized optional has no commitment yet (refrootknown false),
@@ -2109,6 +2113,8 @@ struct FnRecord {
     // §5.2): global/captured roots, and indices of parameters whose pointee
     // shrinks, each with how every shrink of it leaves it.
     map<VarDef *, ShrinkBalance> shrinkexternals;
+    // Effect keys below: [0, params.size()) names the argument's class;
+    // [params.size(), 2 * params.size()) names its view's contents class.
     map<int, ShrinkBalance> shrinkparams;
     // Shrinks of an array of the given type that such a root's storage only
     // leads to, through the references it holds: the call counts each as a
@@ -2167,12 +2173,12 @@ struct FnSpec {
     // Aligned with argtypes/params; a parameter holding no roots has the
     // default entry. Every pass uses the parameter index directly.
     vector<RootArg> roots;
-    // Aligned the same way, for a `T[:]&` parameter whose argument is a slot
-    // only the callee's parameters reach (TypeCheck::HasView): the class of
-    // the slice that slot holds as the call is made, numbered with the
-    // classes of `roots`, which a load through the parameter's class sees
-    // (VarDef::heldslice); cls is -1 for every other parameter. Part of the
-    // key, like `roots`.
+    // Aligned the same way, for reference parameters whose contents only
+    // the callee's parameters reach (TypeCheck::HasView): the class of a
+    // slice slot's binding or an aggregate's known single-root contents,
+    // numbered with `roots`. Loads through the parameter's class see the
+    // view (VarDef::heldslice/heldholder), including stores made while the
+    // body runs. cls is -1 for every other parameter. Part of the key.
     vector<RootArg> views;
     // A nested function reached after the scope declaring it ended, its
     // value having left that block or function value body (§7.5): part of

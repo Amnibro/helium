@@ -1,4 +1,4 @@
-// error: cannot call prepare, which may shrink pool while s is still used: a reference into it was stored there
+// error: cannot call prepare, which shrinks pool while s is still used
 // A nested function names its parent's variables, so a call of one may write
 // into the part emptied before it, whatever it is handed (§5.1).
 struct S { pool: i64[>..]&, refs: (i64&)[>..] }

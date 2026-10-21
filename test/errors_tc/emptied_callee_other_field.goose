@@ -1,4 +1,4 @@
-// error: cannot call run, which may shrink pool while s is still used: a reference into it was stored there
+// error: cannot call run, which shrinks pool while s is still used
 // A callee emptying one field of its struct parameter before the pool it
 // refers to leaves what the caller stored into another (§5.1).
 struct H { r: (i64&)? }

@@ -1,4 +1,4 @@
-// error: cannot call wrap, which may shrink cfg while view is still used
+// error: cannot call wrap, which shrinks cfg while view is still used
 // A local struct built from a struct parameter's reference fields leads to
 // what those lead to: a callee replacing the array one refers to replaces
 // what the caller's caller's struct refers to, here a global (§5.1).

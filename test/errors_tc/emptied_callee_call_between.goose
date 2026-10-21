@@ -1,4 +1,4 @@
-// error: cannot call run, which may shrink pool while s is still used: a reference into it was stored there
+// error: cannot call run, which shrinks pool while s is still used
 struct S { pool: i64[>..]&, refs: (i64&)[>..] }
 // A call between emptying the holder and shrinking the pool may fill the
 // holder again (§5.1).

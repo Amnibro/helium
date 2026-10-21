@@ -3452,6 +3452,21 @@ variable stays its candidate. Then, by where `C`'s own root lies:
    iterations read.
 3. **A reference parameter's pointee, or itself inexact.** The owner may be
    caller storage this function cannot enumerate: the root is `C`'s, inexact.
+   A non-recursive function can retain the caller's more precise record when
+   its argument names a local holder exactly, all the holder's recorded
+   contents point into one root exactly, and only parameters can reach that
+   holder during the call: neither the function nor a function value it runs
+   can name it directly. Reads then have that contents root, including any
+   roots stored through possibly aliased parameters while the body runs.
+   Stores feed back around loops, and calls are specialized for the contents
+   they receive; a call after a rebind is checked for the new contents. The
+   same rule applies when a parameter forwards such a holder to another
+   function. It does not separate fields whose contents have different
+   roots: those retain the conservative bound. For example, a `Cache&`
+   naming a local `Cache { bytes: buffer }` keeps `buffer` as the root of
+   `cache.bytes`, so an unrelated reusable byte pool cannot be that buffer.
+   Shrinking it still checks every live reference and stored view into
+   `buffer`, including those in the caller.
 4. **A temporary** (§9.2). Everything in it came from the literal's
    initializers, from the call whose result it is, or from the value it is
    a copy of, so the root is theirs: the innermost root among the

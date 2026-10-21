@@ -1,4 +1,4 @@
-// error: cannot call fill, which may shrink text while s is still used: a reference into it was stored there
+// error: cannot call fill, which shrinks text while s is still used
 // A holder whose references can point into the array a callee replaces
 // through its reference field, and do, keeps the caller from using it
 // after the call (§5.1).

@@ -1,4 +1,4 @@
-// error: cannot call prepare, which may shrink pool while s is still used: a reference into it was stored there
+// error: cannot call prepare, which shrinks pool while s is still used
 // A callee handed a block may run it, and the block may write into the part
 // emptied before the call (§5.1).
 struct S { pool: i64[>..]&, refs: (i64&)[>..] }

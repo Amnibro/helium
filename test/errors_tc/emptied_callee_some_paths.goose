@@ -1,4 +1,4 @@
-// error: cannot assign s while s is still used: what it refers to may hold a reference or slice into it
+// error: cannot call run, which shrinks pool while s is still used
 struct S { pool: i64[>..]&, refs: (i64&)[>..] }
 // A struct parameter whose references are emptied on some paths only still
 // holds the caller's, and its own earlier ones, on the others (§5.1).

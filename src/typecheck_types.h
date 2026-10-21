@@ -1368,6 +1368,10 @@ inline Roots TypeCheck::ReadBackRoot(TypeExpr *rt, const Roots &container, bool 
         // the activation's own are, and the body is checked again for a call
         // that finds them otherwise (FnSpec::envreads).
         auto global = croot->isglobal;
+        if (c.exact && inplace && croot->heldholder) {
+            NoteEnvRead(croot->heldholder);
+            if (ContentsReadBack(croot->heldholder, of, out)) continue;
+        }
         if (!global && (!c.exact || croot->ownerspec != CurRealFrame().spec)) {
             if (c.exact && inplace && croot->type && !IsTemp(croot) && croot->ownerspec &&
                 OuterLocal(croot) && ContentsReadBack(croot, of, out))

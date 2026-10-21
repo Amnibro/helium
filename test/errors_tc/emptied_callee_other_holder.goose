@@ -1,4 +1,4 @@
-// error: cannot call run, which may shrink pool while s1 is still used: a reference into it was stored there
+// error: cannot call run, which shrinks pool while s1 is still used
 struct S { pool: i64[>..]&, refs: (i64&)[>..] }
 // A callee emptying one struct parameter's references empties no other
 // holder referring to the same pool (§5.1).
