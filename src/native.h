@@ -393,8 +393,12 @@ inline string ReadStamp(const string &path) {
 // Builds the package's native part for `b`'s toolchain, unless the build
 // there is up to date with its inputs (the sidecar, the C sources, the
 // toolchain), and names what was built in `out`. The JIT library is built
-// only when `wantjit`. False after a failed command, which the builder
-// reports; a dry run prints the commands and reports success.
+// only when `wantjit`. Every program and process that uses the package
+// builds it in that one directory: a lock there keeps them to one build at
+// a time, and the response file and the stamp, which the others read
+// without it, are replaced whole, the stamp last. False after a failed
+// command, which the builder reports; a dry run prints the commands and
+// reports success.
 inline bool BuildNativePart(const Ast &ast, int pkg, const string &rootfile, const Builder &b,
                             bool wantjit, NativeBuild &out) {
     auto &p = ast.packages[pkg];
@@ -418,29 +422,45 @@ inline bool BuildNativePart(const Ast &ast, int pkg, const string &rootfile, con
     auto externs = PackageExternNames(ast, pkg);
     string externtext;
     for (auto &n : externs) Append(externtext, n, "\n");
-    auto stampwant = cat(b.tc.id, "\n", FilesHash(inputs), "\n", Hex8(sidecartext), "\n",
-                         Hex8(externtext), "\n", Hex8(GooseHeader()), "\n",
-                         wantjit ? "jit" : "aot", "\n");
+    // The stamp: what the build was made from, then whether it holds the
+    // JIT library besides everything an AOT build has.
+    auto made = cat(b.tc.id, "\n", FilesHash(inputs), "\n", Hex8(sidecartext), "\n",
+                    Hex8(externtext), "\n", Hex8(GooseHeader()), "\n");
+    auto aotstamp = cat(made, "aot\n"), jitstamp = cat(made, "jit\n");
     auto stampfile = cat(dir, "/stamp");
-    auto have = ReadStamp(stampfile);
-    // A JIT build holds everything an AOT build has, and more. A CMake
-    // package from a path is handed to CMake every time, whose own build is
-    // incremental and sees the sources this stamp does not; a checkout
-    // never changes.
-    auto fresh = have == stampwant || (!wantjit && have == cat(stampwant.substr(0, stampwant.size() - 4), "jit\n"));
-    if (!p.cmake_target.empty() && p.cachekey.empty()) fresh = false;
-    if (fresh && PathExists(out.rsp) && (!wantjit || PathExists(out.jitlib)) && !b.opts.dryrun)
-        return true;
-    ProgressStep step(cat("building the package ", p.name, "'s C",
-                          p.cmake_target.empty() ? "" : " with CMake"), !b.opts.dryrun);
+    // Whether the build there serves this one. A CMake package from a path
+    // is handed to CMake every time, whose own build is incremental and
+    // sees the sources this stamp does not; a checkout never changes.
+    auto serves = [&](const string &have) {
+        if (!p.cmake_target.empty() && p.cachekey.empty()) return false;
+        return (have == jitstamp || (!wantjit && have == aotstamp)) && PathExists(out.rsp) &&
+               (!wantjit || PathExists(out.jitlib));
+    };
+    if (!b.opts.dryrun && serves(ReadStamp(stampfile))) return true;
     std::error_code ec;
     filesystem::create_directories(filesystem::path(dir), ec);
+    // One build at a time, and one that waited finds what the one before it
+    // built. A dry run builds nothing, and needs no lock.
+    optional<FileLock> lock;
+    string have;
+    if (!b.opts.dryrun) {
+        lock.emplace(cat(dir, "/build.lock"),
+                     cat("waiting for another goose building the package ", p.name, "'s C"));
+        have = ReadStamp(stampfile);
+        if (serves(have)) return true;
+    }
+    ProgressStep step(cat("building the package ", p.name, "'s C",
+                          p.cmake_target.empty() ? "" : " with CMake"), !b.opts.dryrun);
     if (!b.opts.dryrun) WriteGooseHeader(out);
     if (!p.cmake_target.empty()) {
         if (!BuildCMakePart(ast, pkg, b, wantjit, externs, out)) return false;
-        if (!b.opts.dryrun) WriteFileMakingDirs(stampfile, stampwant);
+        if (!b.opts.dryrun) WriteFileIfChanged(stampfile, wantjit ? jitstamp : aotstamp);
         return true;
     }
+    // Where only the JIT library is missing, the objects already made from
+    // these inputs serve as they are: a link in another process may be
+    // reading them.
+    auto objectsbuilt = (have == aotstamp || have == jitstamp) && PathExists(out.rsp);
     // The flags the package's C compiles with: its includes, defines and
     // flags for this style; position independent where a shared library
     // needs it.
@@ -456,7 +476,8 @@ inline bool BuildNativePart(const Ast &ast, int pkg, const string &rootfile, con
     vector<string> objects;
     for (auto &src : p.csources) {
         auto obj = cat(dir, "/", PathStem(src), msvc ? ".obj" : ".o");
-        if (!b.CompileObject(src, obj, cat("compiling ", src, " for the package ", p.name),
+        if (!objectsbuilt &&
+            !b.CompileObject(src, obj, cat("compiling ", src, " for the package ", p.name),
                              cat(dir, "/", PathStem(src), ".cc.log"), flags))
             return false;
         objects.push_back(obj);
@@ -466,7 +487,7 @@ inline bool BuildNativePart(const Ast &ast, int pkg, const string &rootfile, con
     string rsp;
     for (auto &o : objects) Append(rsp, "\"", o, "\"\n");
     for (auto &l : libs) Append(rsp, l, "\n");
-    if (!b.opts.dryrun && !WriteFileMakingDirs(out.rsp, rsp))
+    if (!b.opts.dryrun && !WriteFileIfChanged(out.rsp, rsp))
         throw CompileError { cat("cannot write ", out.rsp) };
     if (wantjit) {
         auto symsrc = cat(dir, "/goose_symbols.c");
@@ -488,7 +509,7 @@ inline bool BuildNativePart(const Ast &ast, int pkg, const string &rootfile, con
                           cat("building the package ", p.name, "'s library for the JIT")))
             return false;
     }
-    if (!b.opts.dryrun) WriteFileMakingDirs(stampfile, stampwant);
+    if (!b.opts.dryrun) WriteFileIfChanged(stampfile, wantjit ? jitstamp : aotstamp);
     return true;
 }
 

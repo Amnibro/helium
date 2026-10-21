@@ -2071,6 +2071,16 @@ def main():
     if cc:
         r.show_task(runtime_cache)
 
+    def native_cache():
+        from native_cache import check_native_cache
+        try:
+            check_native_cache(exe, cc, gendir)
+            r.ok("native part cache: concurrent builds of one package compile its C once")
+        except (RuntimeError, OSError, subprocess.TimeoutExpired) as e:
+            r.fail("native part cache", str(e))
+    if cc:
+        r.show_task(native_cache)
+
     def exit_race():
         from exit_race import check_exit_race
         try:

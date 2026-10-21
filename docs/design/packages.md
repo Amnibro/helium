@@ -323,13 +323,19 @@ header is spliced into the generated C as today.
 A package with any `c_*` key or a `cmake_target` has a native part, built once
 per toolchain (§6.1) under `build/pkg/…/<toolchain>/`, release configuration,
 static C runtime on Windows, in two forms: what an AOT program links, and a
-shared library the JIT loads. Both are built in one go, by the first `run` or
-`build` that reaches the package; `check` never builds. Inputs are stamped:
+shared library the JIT loads. The first `run` or `build` that reaches the
+package builds the first, and the first `run` the library, from the same
+objects; `check` never builds. Inputs are stamped:
 a path package rebuilds when any of its C sources (by path, modification
 time and size), its sidecar or the set of its extern fns changes, and every
 package, a git checkout included, when `goose.h` does: the header the
 compiler gives native C for the values it cannot declare itself, a
-builder's `gs_rref` (spec §7.10).
+builder's `gs_rref` (spec §7.10). Every program and process that reaches a
+package builds it in that one directory, under a cross-process lock on its
+persistent `build.lock`: one that waited checks the stamp again before
+building anything, and the response file and the stamp, which a build that
+finds the stamp current reads without the lock, are written beside and
+renamed into place, the stamp last.
 
 ### 5.1 Plain C sources
 

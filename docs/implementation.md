@@ -117,7 +117,9 @@ whose extern fns the program calls (`NativePackagesUsed`, from codegen's
 a generated wrapper project (`BuildCMakePart`): the JIT library a shared
 target linked to the package's, and a probe executable whose link line,
 read from CMake's file API reply (`json.h`, `CMakeLinkClosure`), is the
-package's link closure, written as its response file. `goose fetch
+package's link closure, written as its response file. Processes building
+one native part at once take turns on a lock in its directory, and the
+response file and the stamp are replaced whole (`BuildNativePart`). `goose fetch
 file.goose` fetches
 the packages the root declares and stops (`--parse`; `--update` fetches
 tags and branches again), `goose toolchain` prints the C
