@@ -4619,6 +4619,11 @@ one slot its C struct has, and copying a C object nothing wrote is undefined.
 For the same reason a struct or variant literal without fields zeroes its C
 object (`StructLitAt`), its `gs_empty` byte or its pads.
 
+A string literal read as a `u8[]` value, of any length storage, is an image
+in static data (`GenStrBytes`); one read as a runtime-capacity `u8[..]` is
+built on a temporary as any other value is (`GenConstruct`), which gives it
+the capacity a literal has, its length.
+
 ### 6.8 Threads and queues
 
 `thread_spawn` packs the flat arguments contiguously on a scratch stack, then

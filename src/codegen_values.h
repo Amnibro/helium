@@ -1473,7 +1473,9 @@ inline string CodeGen::GenPtr(Node *n, string *stkout) {
         if (stkout) *stkout = stk;
         return base;
     }
-    if (auto s = Is<StrLit>(n)) return GenStrBytes(s);
+    // A `u8[]` literal is an image in static data. A runtime-capacity limited
+    // one is built below as any other value, which gives it its capacity.
+    if (auto s = Is<StrLit>(n); s && n->exprtype->arr->akind == A_VAR) return GenStrBytes(s);
     // Everything else constructs on a fresh temp stack.
     string stk;
     auto base = BytesTemp(stk);
@@ -1516,7 +1518,7 @@ inline string CodeGen::BlobRaw(const string &v) {
 
 inline string CodeGen::GenStrBytes(StrLit *s) {
     auto et = s->exprtype;
-    assert(et->kind == TY_ARRAY);
+    assert(et->kind == TY_ARRAY && et->arr->akind == A_VAR);
     auto key = cat(Mangle(et), "|", s->val);
     auto it = strval.find(key);
     if (it != strval.end()) return it->second;
