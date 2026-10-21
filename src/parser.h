@@ -105,9 +105,14 @@ struct Parser {
     // declaration), so that a skip finding it at depth 0 stops before it.
     bool StartsNext(bool declaration) {
         switch (lex.tok) {
-            case T_LET: case T_VAR: case T_CONST: case T_REUSABLE: case T_FN: case T_RECURSIVE:
+            case T_LET: case T_VAR: case T_CONST: case T_REUSABLE: case T_RECURSIVE:
             case T_THREADFN: case T_EXTERN: case T_EXPORT: case T_SIMD:
                 return true;
+            case T_FN: {
+                // Not `fn(`, a function type.
+                auto next = lex.PeekTok();
+                return next == T_IDENT || next == T_COLONCOLON;
+            }
             case T_IMPORT: case T_NAMESPACE: case T_STRUCT: case T_ENUM: case T_TYPE:
                 return declaration;
             case T_IF: case T_MATCH: case T_LOOP: case T_WHILE: case T_FOR: case T_GUARD:
@@ -175,12 +180,10 @@ struct Parser {
 
     // Whether the token can only begin a declaration, where a skip through
     // a struct's or enum's body finds it outside the body's own braces: the
-    // body lacks its `}`. A field may begin with `let` or `const`, and its
-    // type be a function type, `fn(`.
+    // body lacks its `}`. A field may begin with `let` or `const`.
     bool StartsDeclInBody() {
         switch (lex.tok) {
             case T_LET: case T_CONST: return false;
-            case T_FN: return lex.PeekTok() == T_IDENT;
             default: return StartsNext(true);
         }
     }

@@ -221,8 +221,9 @@ function per construct. Points that matter to later passes:
   statement (`Resync`): through the next `;` outside the braces opened
   since the error, or up to and including the `}` that closes the
   block, stopping short of a keyword that can only start a statement
-  (`StartsNext`) unless it is where the lost statement began. That `}`
-  and that keyword are where the lexer's count of the braces open
+  (`StartsNext`, `fn` before a name, as `fn(` begins a function type)
+  unless it is where the lost statement began. That `}` and that
+  keyword are where the lexer's count of the braces open
   (`Lexer::DepthBefore`) is back at the statement's, as in `SkipBody`,
   so that a struct literal or a match the error is inside is skipped
   whole, its `}` included. A `;` ends the statement even inside one,
