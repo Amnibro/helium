@@ -3003,10 +3003,13 @@ pick an integer result by its storage are where it could leak:
   is one) and anything else as plain integers, and `MergeVals` adapts a
   constant branch to the plain type;
 * `CompoundAssign` and `CheckIncDec` reject an index-typed target
-  (`NoIndexUpdate`), and `HasDefault` gives one no default;
+  (`NoIndexUpdate`), `ElementwiseOK` a struct or fixed array with one among
+  its leaves, whose elementwise result would keep the type, and
+  `HasDefault` gives one no default;
 * `AsCast::Check` makes a conversion into one never redundant and rejects
-  `as!`; `CheckFor` gives a binder the index type when both range bounds, or
-  the count, are index or bound types of one array;
+  `as!`, and `InitOrderSafe` lets no named initializer cross one, whatever
+  the widths; `CheckFor` gives a binder the index type when both range
+  bounds, or the count, are index or bound types of one array;
 * `GrowOnlyShrinkAt` rejects any shrink of a named array, which covers whole
   assignments and callees' shrinks applied at the call;
 * `HoldsIndexT` keeps the type out of queues, thread arguments and C

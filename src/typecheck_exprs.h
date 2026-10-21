@@ -2744,13 +2744,15 @@ inline bool TypeCheck::ConstExtent(Ident *id, bool cap, int64_t &extent,
 }
 
 // All scalar leaves integers, or all floats; only structs and fixed
-// arrays compose; the value must be fixed-size (a constructed result).
+// arrays compose; the value must be fixed-size (a constructed result). No
+// leaf is of an index or bound type: arithmetic on one computes a plain
+// integer (§3.11), which the result's leaf of that type could not hold.
 inline bool TypeCheck::ElementwiseOK(TypeExpr *t) {
     int isint = -1;
     function<bool(TypeExpr *)> rec = [&](TypeExpr *t2) -> bool {
         switch (t2->kind) {
             case TY_INT:
-                if (t2->intstorage == IS_VARINT) return false;
+                if (t2->intstorage == IS_VARINT || t2->ix) return false;
                 if (isint == 0) return false;
                 isint = 1;
                 return true;
@@ -2890,12 +2892,15 @@ inline bool TypeCheck::InitOrderSafe(Node *n, set<FnSpec *> &visiting, FnSpec *c
     }
     if (auto c = Is<AsCast>(n)) {
         auto from = LoadType(c->child->exprtype), to = c->totype;
-        bool lossless = from && to && IsIntT(from) && IsIntT(to) &&
+        // Into an index or bound type the conversion is a bounds check, in
+        // every build, whatever the widths (§3.11).
+        if (to->ix) return false;
+        bool lossless = IsIntT(from) && IsIntT(to) &&
             ((IsUnsigned(from->intstorage) == IsUnsigned(to->intstorage) &&
               IntBits(to->intstorage) >= IntBits(from->intstorage)) ||
              (IsUnsigned(from->intstorage) && !IsUnsigned(to->intstorage) &&
               IntBits(to->intstorage) > IntBits(from->intstorage)));
-        return (c->unchecked || c->implicit || (to && to->kind == TY_FLT) || lossless) &&
+        return (c->unchecked || c->implicit || to->kind == TY_FLT || lossless) &&
                safe(c->child);
     }
     if (auto c = Is<Call>(n)) {

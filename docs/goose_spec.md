@@ -1792,7 +1792,8 @@ without conversion overhead.
 
 **Elementwise math**: the arithmetic operators apply memberwise to any two
 values of the *same* struct/fixed-array type whose scalar leaves are all
-integers or all floats; the result has that same type. The compound forms
+integers or all floats, none of an index or bound type (§3.11); the
+result has that same type. The compound forms
 `+= -= *= /= %=` apply to these same types, resolving the destination once
 and reading its old value before the right-hand side runs (§2). Unary `-`
 negates such a value memberwise where no leaf is an unsigned integer

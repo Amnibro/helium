@@ -2359,7 +2359,8 @@ var edges: NodeId[>..] = [];
 * **Using one.** Indexing `a` with an index of `a` needs no check. A
   value converts implicitly to its plain integer type, so arithmetic on it
   gives plain integers; compound assignment on a place of an index type is
-  an error.
+  an error, and so is memberwise arithmetic on a struct or fixed array
+  holding one.
 * **Loops.** `for i in lo..hi` whose bounds are index or bound types of
   one array gives `i` that array's index type; so does `for i in n` with
   `n` of one.
