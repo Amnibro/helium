@@ -5113,8 +5113,19 @@ time in a loop of its own, each running a copy of the body. Neither copy
 re-reads a length the body cannot change, so the iterations, their order
 and every value are the loop's. "At least K left" is computed without
 overflow at the counter's type (`AtLeastLeft`). The copies share one Goose
-loop scope: a `break` in either leaves both, a `continue` reaches the end of
-the copy it is in, whose step advances the counter. A body is emitted twice
+loop scope (`OpenLoop`), as a loop run one iteration at a time has: a
+`break` in either leaves both, a `continue` reaches the end of the copy it
+is in, whose step advances the counter, both divide by the magic number of
+a divisor fixed for the loop (§6.10's divisors), and both take `&&` and
+`||` in the unconditional form where the body can be straight-line code
+(§6.11). Measured with clang-cl 22 at `/O2` over a million elements, a
+strip-mined loop adding `x / d` into 4 lanes ran 4.4 times as fast with the
+magic number as with the division, and an in-order sum of `if x > lo && x <
+hi { x } else { 0.0 }` 8 times as fast in the unconditional form. clang's
+choice between a select and a branch for such a term is fickle, though: a
+sum of byte compares that ran 2.9 times as fast on its own ran 1.5 times as
+slow inlined into each copy of a strip-mined loop around it, where clang
+branched on each compare again. A body is emitted twice
 only where nothing binds to its locals once per function (`Dupable`): it
 declares no data-stack local, no captured one, no named result built at the
 destination, no nested function and no function value, and builds no

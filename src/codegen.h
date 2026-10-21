@@ -1062,6 +1062,13 @@ struct CodeGen {
     // the watermarks of declarations it ran past, so the continue label
     // sits after the fallthrough restores rather than sharing them.
 
+    // A Goose loop's scope, open around the C loop or loops that run its body
+    // (OpenLoop to CloseLoop): its index and top-caching region, and the
+    // divisors fixed for it.
+    struct OpenedLoop { int si = -1, loopid = -1; vector<string> divisors; };
+    OpenedLoop OpenLoop(Block *bodyb, Node *cond, const vector<const VarDef *> &binders,
+                        const Dst &d);
+    void CloseLoop(const OpenedLoop &lp);
     void GenLoopBody(const function<void()> &condexit, Block *bodyb, Dst d,
                      const string &forhead = "", Node *cond = nullptr, size_t first = 0,
                      vector<const VarDef *> binders = {});
@@ -1119,7 +1126,7 @@ struct CodeGen {
     bool Dupable(Node *n);
     int BlockSize(ForLoop *f);
     string AtLeastLeft(TypeExpr *ct, const string &hi, const string &ctr, int k, bool fromzero);
-    void GenBodyCopy(Block *bodyb, int si);
+    void GenBodyCopy(Block *bodyb, int si, size_t first = 0);
     void GenBlocked(ForLoop *f, int k, const string &more, const string &step,
                     const function<void()> &bind, const string &cond);
 

@@ -1078,9 +1078,9 @@ class Runner:
             "shape_strip_lanes": f"{strip} 8", "shape_strip_count": f"{strip} 4",
             "shape_strip_range": f"{strip} 3", "shape_strip_u8": f"{strip} 16",
             "shape_strip_return": f"{strip} 4", "shape_strip_structs": f"{strip} 2",
-            "shape_strip_fixed": f"{strip} 4",
+            "shape_strip_fixed": f"{strip} 4", "shape_strip_div": f"{strip} 4",
             "shape_sum_dot": sums, "shape_sum_count": sums, "shape_sum_f32": sums,
-            "shape_sum_range": sums, "keep_sum_reads": None,
+            "shape_sum_range": sums, "shape_sum_spec": sums, "keep_sum_reads": None,
             "shape_bound_count": f"{bound} 8", "shape_bound_any": f"{bound} 8",
             "shape_bound_all": f"{bound} 8", "shape_bound_for": f"{bound} 6",
             "shape_bound_grow": f"{bound} 8",
@@ -1096,6 +1096,12 @@ class Runner:
             elif (want not in got) if want else got:
                 self.fail(f"loop shapes {name}", f"got {got}, want {want or 'none'}")
                 valid = False
+        # Both copies of a body run in blocks divide by the magic number of a
+        # divisor the loop cannot change (HoistDivisors), never by the divisor.
+        body = texts.get("shape_strip_div", "")
+        if "gs_divu32_q(" not in body or re.search(r"\bgs_(?:div|mod)_u32\(", body):
+            self.fail("loop shapes shape_strip_div", "a division not by the divisor's magic number")
+            valid = False
         # A && or || condition is a chain of branches (CodeGen::GenBranch):
         # neither the 0/1 flag the right operand sets inside an `if`, which
         # a value keeps, nor the two flags combined with & or | of a loop that
@@ -1115,6 +1121,7 @@ class Runner:
             "shape_chain_while": set(), "shape_chain_skip": set(), "shape_chain_if": set(),
             "shape_chain_guard": set(), "shape_chain_order": set(), "shape_chain_call": set(),
             "keep_chain_value": {"flag"}, "keep_chain_spec": {"speculative"},
+            "shape_sum_spec": {"speculative"},
         }
         for name, want in chains.items():
             if name not in texts:

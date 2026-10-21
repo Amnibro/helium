@@ -54,37 +54,52 @@ inline void CodeGen::GenStmt(Node *n) {
 // the watermarks of declarations it ran past, so the continue label
 // sits after the fallthrough restores rather than sharing them.
 
+// The scope of a Goose loop, opened ahead of the C loop or loops that run its
+// body: the divisors fixed for the loop (HoistDivisors), declared in front of
+// it, its break and continue labels, where its break values go, and its
+// region for top caching.
+inline CodeGen::OpenedLoop CodeGen::OpenLoop(Block *bodyb, Node *cond,
+                                             const vector<const VarDef *> &binders,
+                                             const Dst &d) {
+    OpenedLoop lp;
+    lp.divisors = HoistDivisors(bodyb, cond, binders);
+    PushSc(SC_LOOP);
+    lp.si = (int)cscopes.size() - 1;
+    cscopes[lp.si].brklbl = Lbl();
+    cscopes[lp.si].cntlbl = Lbl();
+    EnterDst(lp.si, d);
+    lp.loopid = MarkLoopBegin();
+    return lp;
+}
+
+// Closes a loop's scope after its last C loop: the break label follows where
+// a break used it, and the loop's divisors retire.
+inline void CodeGen::CloseLoop(const OpenedLoop &lp) {
+    assert(lp.si == (int)cscopes.size() - 1);
+    auto usedbrk = cscopes[lp.si].usedbrk;
+    auto brklbl = cscopes[lp.si].brklbl;
+    cscopes[lp.si].saves.clear();   // Restores already emitted in-loop.
+    PopSc();
+    if (usedbrk) L(brklbl, ":;");
+    MarkLoopEnd(lp.loopid);
+    for (auto &k : lp.divisors) divmagic.erase(k);
+    termjump = false;
+}
+
 inline void CodeGen::GenLoopBody(const function<void()> &condexit, Block *bodyb, Dst d,
                                  const string &forhead, Node *cond, size_t first,
                                  vector<const VarDef *> binders) {
-    auto divisors = HoistDivisors(bodyb, cond, binders);
-    PushSc(SC_LOOP);
-    auto si = (int)cscopes.size() - 1;
-    cscopes[si].brklbl = Lbl();
-    cscopes[si].cntlbl = Lbl();
-    EnterDst(si, d);
-    auto loopid = MarkLoopBegin();
+    auto lp = OpenLoop(bodyb, cond, binders, d);
     L(forhead.empty() ? "for (;;) {" : forhead);
     ind++;
     // The condition is the loop's exit, a branch that stays, so only the
     // body's && and || may take the unconditional form.
     if (condexit) condexit();
-    cscopes[si].straight = StraightCode(bodyb) && (!cond || StraightCode(cond));
-    for (auto i = first; i < bodyb->stmts.size(); i++) GenStmt(bodyb->stmts[i]);
-    if (bodyb->tail) GenStmt(bodyb->tail);
-    auto &sc = cscopes.back();
-    EmitRestores(sc);
-    if (sc.usedcnt) L(sc.cntlbl, ":;");
+    cscopes[lp.si].straight = StraightCode(bodyb) && (!cond || StraightCode(cond));
+    GenBodyCopy(bodyb, lp.si, first);
     ind--;
     L("}");
-    auto usedbrk = sc.usedbrk;
-    auto brklbl = sc.brklbl;
-    cscopes.back().saves.clear();   // Restores already emitted in-loop.
-    PopSc();
-    if (usedbrk) L(brklbl, ":;");
-    MarkLoopEnd(loopid);
-    for (auto &k : divisors) divmagic.erase(k);
-    termjump = false;
+    CloseLoop(lp);
 }
 
 // Whether n can compile to straight-line code once its ifs are converted:
@@ -421,10 +436,10 @@ inline string CodeGen::AtLeastLeft(TypeExpr *ct, const string &hi, const string 
     return cat(ctr, " < ", hi, " && (uint64_t)", hi, " - (uint64_t)", ctr, " >= ", k);
 }
 
-// One copy of a loop's body in the C loop the caller opened, ending where a
-// continue in it lands.
-inline void CodeGen::GenBodyCopy(Block *bodyb, int si) {
-    for (auto st : bodyb->stmts) GenStmt(st);
+// One copy of a loop's body, from its statement `first` on, in the C loop the
+// caller opened, ending where a continue in it lands.
+inline void CodeGen::GenBodyCopy(Block *bodyb, int si, size_t first) {
+    for (auto i = first; i < bodyb->stmts.size(); i++) GenStmt(bodyb->stmts[i]);
     if (bodyb->tail) GenStmt(bodyb->tail);
     EmitRestores(cscopes[si]);
     if (cscopes[si].usedcnt) L(cscopes[si].cntlbl, ":;");
@@ -433,7 +448,8 @@ inline void CodeGen::GenBodyCopy(Block *bodyb, int si) {
 // `while (<more>) { k iterations }`, then `for (; <cond>; <step>)` for the
 // rest; `bind` declares an iteration's loop variables, and `step` advances
 // them. The two copies of the body share one Goose loop scope, so a break in
-// either leaves both, while each has its own continue label.
+// either leaves both and a divisor fixed for the loop serves both, while each
+// has its own continue label.
 //
 // Strip-mined (stripk), the block is a loop of k iterations whose counter is
 // the value of every `i % k` the body takes. An in-order sum (sumred)
@@ -441,11 +457,9 @@ inline void CodeGen::GenBodyCopy(Block *bodyb, int si) {
 // one after another, as the loop would have.
 inline void CodeGen::GenBlocked(ForLoop *f, int k, const string &more, const string &step,
                                 const function<void()> &bind, const string &cond) {
-    PushSc(SC_LOOP);
-    auto si = (int)cscopes.size() - 1;
-    cscopes[si].brklbl = Lbl();
-    cscopes[si].cntlbl = Lbl();
-    auto loopid = MarkLoopBegin();
+    auto lp = OpenLoop(f->body, nullptr, { f->vdef, f->idxdef }, Dst {});
+    auto si = lp.si;
+    cscopes[si].straight = StraightCode(f->body);
     {
         NameScope ns(*this);
         L(f->stripk ? "/* loop shape: strip-mined by " : "/* loop shape: sum terms in blocks of ",
@@ -496,13 +510,7 @@ inline void CodeGen::GenBlocked(ForLoop *f, int k, const string &more, const str
     GenBodyCopy(f->body, si);
     ind--;
     L("}");
-    auto usedbrk = cscopes[si].usedbrk;
-    auto brklbl = cscopes[si].brklbl;
-    cscopes.back().saves.clear();
-    PopSc();
-    if (usedbrk) L(brklbl, ":;");
-    MarkLoopEnd(loopid);
-    termjump = false;
+    CloseLoop(lp);
 }
 
 // ------------------------------------------------------------------
