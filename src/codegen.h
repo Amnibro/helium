@@ -1140,6 +1140,7 @@ struct CodeGen {
     // Declarations and assignment.
 
     void BindLocal(VarDef *d, Node *init, bool forlocal = true);
+    Dst DeclStackLocal(VarDef *d, bool forlocal);
     string GenPrefVal(Node *n);
     string Unique2(const string &base);
     void GenRelAssign(Loc lv, Node *lval, Node *rhs, Line ln);

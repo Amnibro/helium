@@ -619,61 +619,10 @@ inline void CodeGen::BindLocal(VarDef *d, Node *init, bool forlocal) {
     }
     auto name = LocalName(d);
     auto t = d->type;
-    if (IsResz(t)) {
+    if (IsResz(t) || IsBytesT(t)) {
         assert(init);
-        EmitCoreTypes();
-        string stk;
-        auto nit = nrvo.find(d);
-        if (nit != nrvo.end()) {
-            auto &nd = nit->second;
-            stk = nd.stk;
-            // The receiving prefix goes in front of the elements, so its
-            // bytes are claimed before the first one lands. A varint takes
-            // one byte here and is widened at the return only if the count
-            // does not fit (EmitPrefixPatch).
-            if (nd.prefix) {
-                nd.pref = T();
-                L("uint8_t *", nd.pref, " = ", Top(stk), ";");
-                Bump(stk, cat(PrefixBytes(nd.ls)));
-            }
-            nd.hdr = name;
-            // A return of another value finds it in front (ExitStart).
-            if (!nd.inlined) openat[stk]++;
-        } else {
-            stk = AllocStk(forlocal);
-        }
-        if (IsFrameObj(t)) {
-            L(CT(t), " ", name, ";");
-            if (nit == nrvo.end()) SaveBase(forlocal, stk, cat(FoTailHdr(t, name), ".base"));
-            vstk[d] = stk;
-            GenConstruct(init, stk, t, name);
-            return;
-        }
-        L("gs_rhdr ", name, " = { ", Top(stk), ", 0 };");
-        // The destination outlives us: no watermark to restore there.
-        if (nit == nrvo.end()) SaveBase(forlocal, stk, cat(name, ".base"));
-        vstk[d] = stk;
-        if (d->reusable) {
-            // Companion freelist: free slot indices on their own stack.
-            auto flstk = AllocStk(forlocal);
-            auto fln = Unique2(cat(name, "_fl"));
-            L("gs_rhdr ", fln, " = { ", Top(flstk), ", 0 };");
-            SaveBase(forlocal, flstk, cat(fln, ".base"));
-            vpool[d] = { fln, flstk };
-        }
-        GenConstruct(init, stk, t, cat(name, ".len"));
-        return;
-    }
-    if (IsBytesT(t)) {
-        assert(init);
-        auto nit = nrvo.find(d);
-        auto stk = nit != nrvo.end() ? nit->second.stk : AllocStk(forlocal);
-        if (nit != nrvo.end() && !nit->second.inlined) openat[stk]++;
-        L("uint8_t *", name, " = ", Top(stk), ";");
-        // A named result lives at the destination, which outlives us.
-        if (nit == nrvo.end()) SaveBase(forlocal, stk, name);
-        vstk[d] = stk;
-        GenConstruct(init, stk, t);
+        auto dst = DeclStackLocal(d, forlocal);
+        GenConstruct(init, dst.s, dst.t, dst.lenlv);
         return;
     }
     if (LargeFixedOnStack(t)) {
@@ -713,6 +662,64 @@ inline void CodeGen::BindLocal(VarDef *d, Node *init, bool forlocal) {
         return;
     }
     L(CT(t), " ", name, " = ", GenXD(init, t), ";");
+}
+
+// Declares the local `d` of a resizable or bytes type -- a resizable's
+// header or frame object, a reusable pool's freelist beside it, a bytes
+// value's base pointer -- at the top of a data stack of its own, or of its
+// destination's for a named result, and returns where its value is built.
+inline Dst CodeGen::DeclStackLocal(VarDef *d, bool forlocal) {
+    auto name = LocalName(d);
+    auto t = d->type;
+    auto resz = IsResz(t);
+    if (resz) EmitCoreTypes();
+    string stk;
+    auto nit = nrvo.find(d);
+    if (nit != nrvo.end()) {
+        auto &nd = nit->second;
+        stk = nd.stk;
+        if (resz) {
+            // The receiving prefix goes in front of the elements, so its
+            // bytes are claimed before the first one lands. A varint takes
+            // one byte here and is widened at the return only if the count
+            // does not fit (EmitPrefixPatch).
+            if (nd.prefix) {
+                nd.pref = T();
+                L("uint8_t *", nd.pref, " = ", Top(stk), ";");
+                Bump(stk, cat(PrefixBytes(nd.ls)));
+            }
+            nd.hdr = name;
+        }
+        // A return of another value finds it in front (ExitStart).
+        if (!nd.inlined) openat[stk]++;
+    } else {
+        stk = AllocStk(forlocal);
+    }
+    vstk[d] = stk;
+    // A named result lives at the destination, which outlives us: no
+    // watermark to restore there.
+    auto own = nit == nrvo.end();
+    if (!resz) {
+        L("uint8_t *", name, " = ", Top(stk), ";");
+        if (own) SaveBase(forlocal, stk, name);
+        return Dst { DK_STACK, stk, t };
+    }
+    if (IsFrameObj(t)) {
+        L(CT(t), " ", name, ";");
+        if (own) SaveBase(forlocal, stk, cat(FoTailHdr(t, name), ".base"));
+        return Dst { DK_STACK, stk, t, name };
+    }
+    L("gs_rhdr ", name, " = { ", Top(stk), ", 0 };");
+    if (own) SaveBase(forlocal, stk, cat(name, ".base"));
+    if (d->reusable) {
+        // Companion freelist: free slot indices on their own stack.
+        auto flstk = AllocStk(forlocal);
+        auto fln = Unique2(cat(name, "_fl"));
+        L("gs_rhdr ", fln, " = { ", Top(flstk), ", 0 };");
+        SaveBase(forlocal, flstk, cat(fln, ".base"));
+        vpool[d] = { fln, flstk };
+    }
+    return Dst { DK_STACK, stk, t, cat(name, ".len") };
 }
 
 // A gs_pref value from a &pool expression or another pool reference, or

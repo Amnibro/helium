@@ -739,9 +739,6 @@ inline bool CodeGen::StaticInitX(Node *n, TypeExpr *t, string &out) {
 
 inline void CodeGen::EmitGlobalDecls() {
     for (auto g : ast.globals) {
-        // The multi-value call form has one initializer for several defs;
-        // only the one-init-per-def shape can carry a static initializer.
-        auto perdef = g->inits.size() == g->defs.size();
         for (size_t di = 0; di < g->defs.size(); di++) {
             auto d = g->defs[di];
             auto name = Unique(Sanitize(g->ns, d->name));
@@ -781,7 +778,7 @@ inline void CodeGen::EmitGlobalDecls() {
                 // the qualifier, as the pointers and slices into it that
                 // Goose types do not mark const take it. A `var` one may
                 // be assigned as a whole.
-                if (perdef && !d->isvar && d->type->cq && !PrefVar(d) &&
+                if (!d->isvar && d->type->cq && !PrefVar(d) &&
                     StaticInitX(g->inits[di], d->type, init)) {
                     Append(data, "static const ", VarCT(d), " ", name, " = ", init, ";\n");
                     gstatic[d] = g->inits[di];
@@ -803,41 +800,22 @@ inline void CodeGen::EmitGlobalInit() {
     for (auto g : ast.globals) {
         if (g->inits.empty()) continue;
         PushSc(SC_STMT);
-        if (g->defs.size() > 1 && g->inits.size() == 1) {
-            auto c = Is<Call>(g->inits[0]);
-            assert(c);
-            vector<Dst> dsts;
-            for (size_t i = 0; i < g->defs.size(); i++) {
-                auto d = g->defs[i];
-                if (IsResz(d->type)) {
-                    InitGlobalStack(d);
-                    dsts.push_back(Dst { DK_STACK, gstks[d], d->type, GlobalLenLv(d) });
-                } else if (IsBytesT(d->type)) {
-                    InitGlobalStack(d);
-                    dsts.push_back(Dst { DK_STACK, gstks[d] });
-                } else {
-                    dsts.push_back(Dst { DK_LVALUE, gnames[d] });
-                }
-            }
-            EmitCallInto(c, dsts);
-        } else {
-            for (size_t i = 0; i < g->defs.size(); i++) {
-                auto d = g->defs[i];
-                if (gstatic.count(d)) continue;   // Initialized at its declaration.
-                if (IsResz(d->type)) {
-                    InitGlobalStack(d);
-                    GenConstruct(g->inits[i], gstks[d], d->type, GlobalLenLv(d));
-                } else if (IsBytesT(d->type)) {
-                    InitGlobalStack(d);
-                    GenConstruct(g->inits[i], gstks[d], d->type);
-                } else if (PrefVar(d)) {
-                    L(gnames[d], " = ", GenPrefVal(g->inits[i]), ";");
-                } else if (d->type->kind == TY_REF && d->type->ref->lenstorage >= 0) {
-                    EmitRelStoreAt(cat("(uint8_t *)&", gnames[d]), d->type, GenX(g->inits[i]),
-                                   g->inits[i]->line, true, RelValue(g->inits[i]));
-                } else {
-                    GenAny(g->inits[i], Dst { DK_LVALUE, gnames[d], d->type });
-                }
+        for (size_t i = 0; i < g->defs.size(); i++) {
+            auto d = g->defs[i];
+            if (gstatic.count(d)) continue;   // Initialized at its declaration.
+            if (IsResz(d->type)) {
+                InitGlobalStack(d);
+                GenConstruct(g->inits[i], gstks[d], d->type, GlobalLenLv(d));
+            } else if (IsBytesT(d->type)) {
+                InitGlobalStack(d);
+                GenConstruct(g->inits[i], gstks[d], d->type);
+            } else if (PrefVar(d)) {
+                L(gnames[d], " = ", GenPrefVal(g->inits[i]), ";");
+            } else if (d->type->kind == TY_REF && d->type->ref->lenstorage >= 0) {
+                EmitRelStoreAt(cat("(uint8_t *)&", gnames[d]), d->type, GenX(g->inits[i]),
+                               g->inits[i]->line, true, RelValue(g->inits[i]));
+            } else {
+                GenAny(g->inits[i], Dst { DK_LVALUE, gnames[d], d->type });
             }
         }
         if (termjump) cscopes.back().saves.clear();

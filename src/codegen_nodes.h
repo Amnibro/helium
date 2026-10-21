@@ -863,31 +863,11 @@ inline void VarDecl::CgStmt(CodeGen &cg) {
         auto c = Is<Call>(inits[0]);
         assert(c);
         vector<Dst> dsts;
-        for (size_t i = 0; i < defs.size(); i++) {
-            auto d = defs[i];
-            auto rt = c->rettypes[i];
-            auto name = cg.LocalName(d);
-            if (cg.IsResz(rt) && cg.IsFrameObj(rt)) {
-                cg.EmitCoreTypes();
-                auto stk = cg.AllocStk(true);
-                cg.L(cg.CT(rt), " ", name, ";");
-                cg.SaveBase(true, stk, cat(cg.FoTailHdr(rt, name), ".base"));
-                cg.vstk[d] = stk;
-                dsts.push_back(Dst { DK_STACK, stk, d->type, name });
-            } else if (cg.IsResz(rt)) {
-                cg.EmitCoreTypes();
-                auto stk = cg.AllocStk(true);
-                cg.L("gs_rhdr ", name, " = { ", cg.Top(stk), ", 0 };");
-                cg.SaveBase(true, stk, cat(name, ".base"));
-                cg.vstk[d] = stk;
-                dsts.push_back(Dst { DK_STACK, stk, d->type, cat(name, ".len") });
-            } else if (cg.IsBytesT(rt)) {
-                auto stk = cg.AllocStk(true);
-                cg.L("uint8_t *", name, " = ", cg.Top(stk), ";");
-                cg.SaveBase(true, stk, name);
-                cg.vstk[d] = stk;
-                dsts.push_back(Dst { DK_STACK, stk });
+        for (auto d : defs) {
+            if (cg.IsResz(d->type) || cg.IsBytesT(d->type)) {
+                dsts.push_back(cg.DeclStackLocal(d, true));
             } else {
+                auto name = cg.LocalName(d);
                 cg.FixedLocal(d->type, name, "", true);
                 cg.vnames[d] = name;
                 dsts.push_back(Dst { DK_LVALUE, name, d->type });

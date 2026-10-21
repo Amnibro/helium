@@ -4313,7 +4313,10 @@ nothing of them is in memory the body can reach.
 A multi-value binding takes each fixed result straight into its variable
 (`EmitCallInto`), except a reference result the checker decayed to a copy of
 its fixed-size pointee (§4.1): that one arrives in a temporary and is loaded
-through it, as the destination's type (`Dst::t`) asks. A return forwarding a
+through it, as the destination's type (`Dst::t`) asks. A resizable or bytes
+result is built where a declaration of its variable alone would build it,
+on a data stack of its own, with a reusable pool's freelist beside it
+(`DeclStackLocal`, which `BindLocal` declares with too). A return forwarding a
 call's results, to the function's caller or to a `return from` target's
 channels, converts each one the checker adapted (`GenForward`, §6.5).
 `CollectSpecs` computes per specialization, to a fixpoint over the call
