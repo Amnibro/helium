@@ -386,8 +386,6 @@ inline Val TypeCheck::ResolveCall(Call *c, vector<SFunction *> &cands, FnSpec *e
                      which));
     };
     if (tied.size() > 1) ambiguous(tied);
-    if (tied.size() == 1)
-        JudgeCallCasts(c, cands, env, argnodes, argvals, best, name, nomatch != nullptr);
     if (tied.empty()) {
         // Tag dispatch (§8.2): the match-as-overload-set form.
         auto v = TryDispatch(c, cands, env, argnodes, argvals, name, entryreach);
@@ -420,6 +418,20 @@ inline Val TypeCheck::ResolveCall(Call *c, vector<SFunction *> &cands, FnSpec *e
         if (converting.size() > 1) ambiguous(converting);
         best = converting[0];
     }
+    // Without a cast, the call resolves as it does where it comes to best
+    // again: as the one match that ranks best, or as the one that converts
+    // an integer to a float, where neither tag dispatch (an ADT argument)
+    // nor a builtin of the name comes first.
+    JudgeCallCasts(cands, best, argnodes, argvals, [&](vector<Val> &trial) {
+        vector<MatchInfo> ties, conv;
+        MatchCandidates(c, cands, env, trial, ties, conv, nullptr, name);
+        if (ties.size() == 1) return SameMatch(ties[0], best);
+        auto adt = any_of(trial.begin(), trial.end(), [](const Val &av) {
+            auto t = IsPlainRef(av.type) ? av.type->ref->sub : av.type;
+            return t && t->kind == TY_ENUM;
+        });
+        return ties.empty() && conv.size() == 1 && !nomatch && !adt && SameMatch(conv[0], best);
+    });
     ContextualFloatCall(c, cands, env, argnodes, argvals, best, expected, name);
     FnSpec *denv = nullptr;
     if (best.nwritten < best.paramtypes.size()) {
@@ -433,40 +445,14 @@ inline Val TypeCheck::ResolveCall(Call *c, vector<SFunction *> &cands, FnSpec *e
         BindBranchesByRef(argnodes, argvals, best.paramtypes, best.sf, -1, best.nwritten);
     }
     auto spec = GetOrCreateSpec(best, argvals, c);
-    ApplyCalleeShrinks(c, spec, argvals, name, &argnodes);
+    ApplyCalleeShrinks(c, spec, argvals, name, argnodes);
     ApplyCalleeGrows(c, spec, argvals, name);
-    // Phase 2: re-check arguments against the resolved parameter types.
-    // Arguments construct into fresh parameter slots, not curdst.
-    // Start at the call's entry again: a later argument may have diverged
-    // during discovery, but earlier arguments still execute before it.
+    // Phase 2 starts at the call's entry again: a later argument may have
+    // diverged during discovery, but earlier arguments still execute before
+    // it.
     auto argsreach = reachable;
     reachable = entryreach;
-    {
-        DestScope ds(*this, Dest {});
-        for (size_t i = 0; i < best.paramtypes.size(); i++) {
-            UnrefForValueParam(argnodes[i], best.paramtypes[i]);
-            // A `&` at a parameter declared as a reference is redundant
-            // (§4.1) -- unless it picked this overload. RefArg has warned
-            // of one to a value that is not fixed-size; a varint's is the
-            // i64 it decodes to (§3.6).
-            auto &p = best.sf->params[i];
-            if (i < best.nwritten && UserRefOf(argnodes[i]) && cands.size() == 1 && p.type &&
-                !HasGenerics(p.type) && p.type->kind == TY_REF &&
-                ClassOf(LoadType(p.type->ref->sub)) == SC_FIXED)
-                Warn(argnodes[i], cat("redundant &: ", ExprStr(Is<Unary>(argnodes[i])->child),
-                                      " is passed by reference without it (§4.1)"));
-            if (i < best.nwritten) CheckArg(argnodes[i], best.paramtypes[i]);
-            else InParamDefault(c, best, denv, i,
-                                [&]() { CheckArg(argnodes[i], best.paramtypes[i]); });
-            // A by-value non-fixed-size parameter takes a copy of its
-            // argument (§4.1), a temporary of the statement whatever the
-            // argument names (NoteTemp).
-            if (ClassOf(best.paramtypes[i]) != SC_FIXED) argnodes[i]->nftemp = true;
-            // The call's own operands are what later arguments' checks see
-            // held (HeldOperands), so a rebound one replaces its original now.
-            c->SetArgNode(i, argnodes[i]);
-        }
-    }
+    RecheckArgs(c, cands, best, denv, argnodes, -1, {});
     // A C function's parameters are what they say (§7.10): a read-only
     // reference or slice needs the parameter declared const.
     if (best.sf->isextern) {
@@ -482,11 +468,62 @@ inline Val TypeCheck::ResolveCall(Call *c, vector<SFunction *> &cands, FnSpec *e
     // Arguments the re-check rebound by reference replace the originals.
     c->SetArgNodes(argnodes);
     c->spec = spec;
-    CheckfreeCallee(c, spec->sf);
-    reachable = reachable && argsreach;
-    ApplyCalleeRebinds(spec);
-    if (auto rec = RecordOf(spec); rec && !rec->mayreturn) reachable = false;
+    CalleesReturn(c, { spec }, argsreach);
     return CallResult(c, spec, argvals);
+}
+
+// Phase 2 of a call (ResolveCall, TryDispatch): each argument checked again
+// against its parameter's type as resolution chose it, in order, each
+// constructing into a fresh parameter slot rather than curdst; a parameter
+// from mi.nwritten on takes its default (AddParamDefaults), checked in the
+// default's frame. `skip` is a dispatch position, whose value the cases
+// take as it is, where `atskip` runs instead.
+inline void TypeCheck::RecheckArgs(Call *c, vector<SFunction *> &cands, MatchInfo &mi,
+                                   FnSpec *denv, vector<Node *> &argnodes, int skip,
+                                   const function<void()> &atskip) {
+    DestScope ds(*this, Dest {});
+    for (size_t i = 0; i < mi.paramtypes.size(); i++) {
+        if ((int)i == skip) {
+            atskip();
+            continue;
+        }
+        UnrefForValueParam(argnodes[i], mi.paramtypes[i]);
+        // A `&` at a parameter declared as a reference is redundant
+        // (§4.1) -- unless it picked this overload. RefArg has warned
+        // of one to a value that is not fixed-size; a varint's is the
+        // i64 it decodes to (§3.6).
+        auto &p = mi.sf->params[i];
+        if (i < mi.nwritten && UserRefOf(argnodes[i]) && cands.size() == 1 && p.type &&
+            !HasGenerics(p.type) && p.type->kind == TY_REF &&
+            ClassOf(LoadType(p.type->ref->sub)) == SC_FIXED)
+            Warn(argnodes[i], cat("redundant &: ", ExprStr(Is<Unary>(argnodes[i])->child),
+                                  " is passed by reference without it (§4.1)"));
+        if (i < mi.nwritten) CheckArg(argnodes[i], mi.paramtypes[i]);
+        else InParamDefault(c, mi, denv, i, [&]() { CheckArg(argnodes[i], mi.paramtypes[i]); });
+        // A by-value non-fixed-size parameter takes a copy of its
+        // argument (§4.1), a temporary of the statement whatever the
+        // argument names (NoteTemp).
+        if (ClassOf(mi.paramtypes[i]) != SC_FIXED) argnodes[i]->nftemp = true;
+        // The call's own operands are what later arguments' checks see
+        // held (HeldOperands), so a rebound one replaces its original now.
+        c->SetArgNode(i, argnodes[i]);
+    }
+}
+
+// What a call's callees do once its arguments are checked again: one, or a
+// dispatch's cases, alternatives of one call (TryDispatch). The checkfree
+// rule holds for each, the optionals any may rebind are rebound, and the
+// call returns where any of them may -- one whose record is not read yet,
+// a back edge's in its cycle's first round, may.
+inline void TypeCheck::CalleesReturn(Call *c, const vector<FnSpec *> &specs, bool argsreach) {
+    auto mayreturn = false;
+    for (auto sp : specs) {
+        CheckfreeCallee(c, sp->sf);
+        ApplyCalleeRebinds(sp);
+        auto rec = RecordOf(sp);
+        mayreturn = mayreturn || !rec || rec->mayreturn;
+    }
+    reachable = reachable && argsreach && mayreturn;
 }
 
 // A control construct whose branches are all storage, or references, binds
@@ -612,62 +649,53 @@ inline void TypeCheck::ContextualFloatCall(Call *c, vector<SFunction *> &cands, 
     if (expected && IsF32(expected)) best = tied[0];
 }
 
-// The followed casts (§6.3) among a call's written arguments, each judged by
-// resolving the call without it (§7.1): to the same function, with the same
-// parameter types, bindings (a generic one's inference, §7.7) and literal
-// parameters, as the one match that ranks best; or as the one match that
-// converts an integer to a float, where neither tag dispatch nor a builtin
-// of the name (`builtin`) comes first. The argument then meets its parameter
-// as a value meets a typed destination (JudgeCastAt). Where overloads or
-// generic parameters resolve the arguments together, the arguments whose
-// values would differ without their casts (casttyped) are resolved without
-// all of them as well: two may both go where the call resolves alike all
-// three ways, and where it does not without both, one may, the later one
-// where it can; more are not judged.
-inline void TypeCheck::JudgeCallCasts(Call *c, vector<SFunction *> &cands, FnSpec *env,
-                                      vector<Node *> &argnodes, vector<Val> &argvals,
-                                      MatchInfo &best, string_view name, bool builtin) {
-    auto same = [&](MatchInfo &mi) {
-        if (mi.sf != best.sf || mi.nwritten != best.nwritten || mi.litparams != best.litparams ||
-            mi.paramtypes.size() != best.paramtypes.size() || !BindingsEq(mi.bindings, best.bindings))
-            return false;
-        for (size_t k = 0; k < mi.paramtypes.size(); k++)
-            if (!TypeEq(mi.paramtypes[k], best.paramtypes[k])) return false;
-        return true;
-    };
-    // Tag dispatch needs an ADT argument (TryDispatch).
-    auto dispatchable = [&](const vector<Val> &vals) {
-        for (auto &av : vals) {
-            auto t = IsPlainRef(av.type) ? av.type->ref->sub : av.type;
-            if (t && t->kind == TY_ENUM) return true;
-        }
+// Whether two resolutions of a call chose alike: the same function, with the
+// same parameter types, bindings (a generic one's inference, §7.7) and
+// literal parameters.
+inline bool TypeCheck::SameMatch(MatchInfo &a, MatchInfo &b) {
+    if (a.sf != b.sf || a.nwritten != b.nwritten || a.litparams != b.litparams ||
+        a.paramtypes.size() != b.paramtypes.size() || !BindingsEq(a.bindings, b.bindings))
         return false;
-    };
-    auto resolves = [&](const vector<size_t> &without) {
+    for (size_t k = 0; k < a.paramtypes.size(); k++)
+        if (!TypeEq(a.paramtypes[k], b.paramtypes[k])) return false;
+    return true;
+}
+
+// The followed casts (§6.3) among a call's written arguments, each judged by
+// resolving the call without it (§7.1): `resolves` says whether the call,
+// given the arguments with the casts in question deleted, comes to the
+// choice it made, best -- for a dispatch, the case of each variant (§8.2).
+// The argument then meets its parameter as a value meets a typed
+// destination (JudgeCastAt). Where overloads or generic parameters resolve
+// the arguments together, the arguments whose values would differ without
+// their casts (casttyped) are resolved without all of them as well: two may
+// both go where the call resolves alike all three ways, and where it does
+// not without both, one may, the later one where it can; more are not
+// judged.
+inline void TypeCheck::JudgeCallCasts(vector<SFunction *> &cands, MatchInfo &best,
+                                      vector<Node *> &argnodes, vector<Val> &argvals,
+                                      const function<bool(vector<Val> &)> &resolves) {
+    auto without = [&](const vector<size_t> &deleted) {
         auto trial = argvals;
-        for (auto i : without) {
+        for (auto i : deleted) {
             auto &a = castalts[argnodes[i]];
             trial[i] = a.pending ? a.alt : a.raw;
         }
-        vector<MatchInfo> tied, converting;
-        MatchCandidates(c, cands, env, trial, tied, converting, nullptr, name);
-        return tied.size() == 1 ? same(tied[0])
-               : tied.empty() && converting.size() == 1 && !builtin && !dispatchable(trial) &&
-                     same(converting[0]);
+        return resolves(trial);
     };
     auto joint = cands.size() > 1 || !best.bindings.empty();
     for (auto &p : best.sf->params) joint = joint || !p.type || HasGenerics(p.type);
     vector<size_t> differing;
     for (size_t i = 0; i < best.nwritten && i < argnodes.size(); i++)
         if (casttyped.count(argnodes[i])) differing.push_back(i);
-    auto together = !joint || differing.size() < 2 || (differing.size() == 2 && resolves(differing));
+    auto together = !joint || differing.size() < 2 || (differing.size() == 2 && without(differing));
     auto pair = !together && differing.size() == 2;
-    auto later = pair && resolves({ differing[1] });
+    auto later = pair && without({ differing[1] });
     for (size_t i = 0; i < best.nwritten && i < argnodes.size(); i++) {
         auto it = castalts.find(argnodes[i]);
         if (it == castalts.end()) continue;
         auto a = it->second;
-        auto ok = resolves({ i });
+        auto ok = without({ i });
         if (ok && casttyped.count(argnodes[i]) && !together)
             ok = pair && (i == differing[1] || !later);
         if (ok) JudgeCastAt(argnodes[i], best.paramtypes[i], DecayRef(argvals[i]));
@@ -1062,18 +1090,38 @@ inline Val TypeCheck::TryDispatch(Call *c, vector<SFunction *> &cands, FnSpec *e
     vector<MatchInfo> matches;  // Per variant, for the found position.
     TypeExpr *enumtype = nullptr;
     auto byref = false;
-    // Whether each variant of et, passed at pos, matches exactly one case,
-    // which vm collects. A dispatched call evaluates its arguments once,
-    // before the tag picks the case, so the cases get every argument
+    // The ADT the argument vals[pos] is, if any, and whether the cases take
+    // its payload by reference.
+    auto adtat = [&](const vector<Val> &vals, size_t pos, bool &isref) -> TypeExpr * {
+        auto at = vals[pos].type;
+        TypeExpr *et = nullptr;
+        isref = false;
+        if (at->kind == TY_ENUM) {
+            et = at;
+            // A control construct whose branches are all storage passes
+            // them by reference, as that storage would be (§4.1).
+            isref = vals[pos].storagebranches;
+        } else if (IsPlainRef(at) && at->ref->sub->kind == TY_ENUM) {
+            et = at->ref->sub;
+            isref = true;
+        }
+        // Fixed-mode payloads pass by copy even through a reference, for
+        // the same soundness reason as match binders (§3.5).
+        isref = isref && et && et->enu->varmode;
+        return et;
+    };
+    // Whether each variant of et, passed at pos among vals, matches exactly
+    // one case, which vm collects. A dispatched call evaluates its arguments
+    // once, before the tag picks the case, so the cases get every argument
     // written, and none of their defaults (§8.2): only `defaults` tries
     // with them, to say so. A case converting an integer argument to a
     // float counts only where no other matches (ResolveCall).
-    auto dispatches = [&](size_t pos, TypeExpr *et, bool isref, bool defaults,
-                          vector<MatchInfo> &vm) {
+    auto dispatches = [&](vector<Val> &vals, size_t pos, TypeExpr *et, bool isref,
+                          bool defaults, vector<MatchInfo> &vm) {
         for (auto &var : et->enu->en->variants) {
             auto vt = ast.VariantTypeOf(et, &var, c->line);
-            auto saved = argvals[pos];
-            argvals[pos].type = isref ? ast.RefTo(vt, c->line) : vt;
+            auto saved = vals[pos];
+            vals[pos].type = isref ? ast.RefTo(vt, c->line) : vt;
             MatchInfo onlymatch, onlyconverting;
             auto count = 0, converting = 0;
             for (auto sf : cands) {
@@ -1081,7 +1129,7 @@ inline Val TypeCheck::TryDispatch(Call *c, vector<SFunction *> &cands, FnSpec *e
                 mi.sf = sf;
                 mi.env = env;
                 string why;
-                if (!TryMatch(sf, c, argvals, mi, why, defaults)) continue;
+                if (!TryMatch(sf, c, vals, mi, why, defaults)) continue;
                 if (mi.tier == MatchInfo::INTTOFLOAT) {
                     onlyconverting = mi;
                     converting++;
@@ -1090,7 +1138,7 @@ inline Val TypeCheck::TryDispatch(Call *c, vector<SFunction *> &cands, FnSpec *e
                     count++;
                 }
             }
-            argvals[pos] = saved;
+            vals[pos] = saved;
             if (!count) {
                 count = converting;
                 onlymatch = onlyconverting;
@@ -1102,26 +1150,13 @@ inline Val TypeCheck::TryDispatch(Call *c, vector<SFunction *> &cands, FnSpec *e
     };
     auto withdefaults = false;
     for (size_t pos = 0; pos < argvals.size(); pos++) {
-        auto at = argvals[pos].type;
-        TypeExpr *et = nullptr;
         auto isref = false;
-        if (at->kind == TY_ENUM) {
-            et = at;
-            // A control construct whose branches are all storage passes
-            // them by reference, as that storage would be (§4.1).
-            isref = argvals[pos].storagebranches;
-        } else if (IsPlainRef(at) && at->ref->sub->kind == TY_ENUM) {
-            et = at->ref->sub;
-            isref = true;
-        }
+        auto et = adtat(argvals, pos, isref);
         if (!et) continue;
-        // Fixed-mode payloads pass by copy even through a reference, for
-        // the same soundness reason as match binders (§3.5).
-        isref = isref && et->enu->varmode;
         vector<MatchInfo> vm;
-        if (!dispatches(pos, et, isref, false, vm)) {
+        if (!dispatches(argvals, pos, et, isref, false, vm)) {
             vector<MatchInfo> unused;
-            withdefaults = withdefaults || dispatches(pos, et, isref, true, unused);
+            withdefaults = withdefaults || dispatches(argvals, pos, et, isref, true, unused);
             continue;
         }
         if (found >= 0)
@@ -1138,6 +1173,26 @@ inline Val TypeCheck::TryDispatch(Call *c, vector<SFunction *> &cands, FnSpec *e
                          "written: a dispatched call passes no case's defaults (§8.2)"));
         return Val {};
     }
+    // Without a cast, the call resolves as it does where no overload takes
+    // it (ResolveCall) and it dispatches at the same position, each variant
+    // to the same case.
+    JudgeCallCasts(cands, matches[0], argnodes, argvals, [&](vector<Val> &trial) {
+        vector<MatchInfo> ties, conv;
+        MatchCandidates(c, cands, env, trial, ties, conv, nullptr, name);
+        if (!ties.empty()) return false;
+        auto alike = false;
+        for (size_t pos = 0; pos < trial.size(); pos++) {
+            auto isref = false;
+            auto et = adtat(trial, pos, isref);
+            vector<MatchInfo> vm;
+            if (!et || !dispatches(trial, pos, et, isref, false, vm)) continue;
+            if ((int)pos != found) return false;
+            alike = true;
+            for (size_t vi = 0; vi < vm.size(); vi++)
+                alike = alike && SameMatch(vm[vi], matches[vi]);
+        }
+        return alike;
+    });
     if (ClassOf(enumtype) == SC_RESIZABLE)
         Error(c, "dispatching a resizable ADT payload is not supported by the C backend "
                  "yet; match its tag without a payload binder, or use a standalone "
@@ -1187,7 +1242,7 @@ inline Val TypeCheck::TryDispatch(Call *c, vector<SFunction *> &cands, FnSpec *e
         armvals[found] = argvals[found];
         armvals[found].type = byref ? ast.RefTo(vt, c->line) : vt;
         auto spec = GetOrCreateSpec(mi, armvals, c);
-        ApplyCalleeShrinks(c, spec, armvals, name);
+        ApplyCalleeShrinks(c, spec, armvals, name, argnodes);
         ApplyCalleeGrows(c, spec, armvals, name);
         if (first) {
             if (spec->rets.size() != first->rets.size())
@@ -1210,26 +1265,15 @@ inline Val TypeCheck::TryDispatch(Call *c, vector<SFunction *> &cands, FnSpec *e
     // calls cannot clobber lastcallrets); the dispatch arg keeps its type.
     auto argsreach = reachable;
     reachable = entryreach;
-    {
-        DestScope ds(*this, Dest {});
-        for (size_t i = 0; i < matches[0].paramtypes.size(); i++)
-            if ((int)i != found) {
-                UnrefForValueParam(argnodes[i], matches[0].paramtypes[i]);
-                CheckArg(argnodes[i], matches[0].paramtypes[i]);
-                // As in ResolveCall: the rebound argument replaces its original.
-                c->SetArgNode(i, argnodes[i]);
-            } else {
-                // Value cases receive an enum snapshot before later arguments.
-                // A reference case retains the original storage instead.
-                auto byreference = false;
-                for (auto sp : c->dispatch)
-                    byreference |= sp->argtypes[i]->kind == TY_REF;
-                RecordVal(argnodes[i], byreference ? argvals[i] : DecayRef(argvals[i]));
-            }
-    }
+    RecheckArgs(c, cands, matches[0], nullptr, argnodes, found, [&]() {
+        // Value cases receive an enum snapshot before later arguments.
+        // A reference case retains the original storage instead.
+        auto byreference = false;
+        for (auto sp : c->dispatch) byreference |= sp->argtypes[found]->kind == TY_REF;
+        RecordVal(argnodes[found], byreference ? argvals[found] : DecayRef(argvals[found]));
+    });
     // Like an ordinary call's, the cases' rebinds follow the argument checks.
-    for (auto sp : c->dispatch) ApplyCalleeRebinds(sp);
-    for (auto sp : c->dispatch) CheckfreeCallee(c, sp->sf);
+    CalleesReturn(c, c->dispatch, argsreach);
     // The cases are alternatives of one call, like a match's arms: the result
     // is only as long-lived, exact and writable as every case's result. A case
     // checked without recording a root for a result only returns null there or
@@ -1248,13 +1292,6 @@ inline Val TypeCheck::TryDispatch(Call *c, vector<SFunction *> &cands, FnSpec *e
         }
     }
     lastcallrets = results;
-    reachable = reachable && argsreach;
-    auto mayreturn = false;
-    for (auto spec : c->dispatch) {
-        auto rec = RecordOf(spec);
-        mayreturn |= !rec || rec->mayreturn;
-    }
-    reachable = reachable && mayreturn;
     return results.empty() ? VoidVal() : results[0];
 }
 

@@ -2169,8 +2169,12 @@ struct TypeCheck {
     void MatchCandidates(Call *c, vector<SFunction *> &cands, FnSpec *env, vector<Val> &argvals,
                          vector<MatchInfo> &tied, vector<MatchInfo> &converting, string *failures,
                          string_view name);
-    void JudgeCallCasts(Call *c, vector<SFunction *> &cands, FnSpec *env, vector<Node *> &argnodes,
-                        vector<Val> &argvals, MatchInfo &best, string_view name, bool builtin);
+    bool SameMatch(MatchInfo &a, MatchInfo &b);
+    void JudgeCallCasts(vector<SFunction *> &cands, MatchInfo &best, vector<Node *> &argnodes,
+                        vector<Val> &argvals, const function<bool(vector<Val> &)> &resolves);
+    void RecheckArgs(Call *c, vector<SFunction *> &cands, MatchInfo &mi, FnSpec *denv,
+                     vector<Node *> &argnodes, int skip, const function<void()> &atskip);
+    void CalleesReturn(Call *c, const vector<FnSpec *> &specs, bool argsreach);
     // `defaults`: the call may leave out parameters that have a default
     // (§7.1), which ResolveCall then passes. Tag dispatch and rendering
     // hooks give every argument.
@@ -2558,9 +2562,10 @@ struct TypeCheck {
     void ShrinkThrough(Node *at, const string &verb, const string &recv, const Roots &roots,
                        TypeExpr *arr, ShrinkBalance balance = SB_UNBALANCED);
     // `argnodes`: the argument expressions, aligned with argvals, which say
-    // what part of the caller's holders a callee's kills empty (Kill).
+    // what part of the caller's holders a callee's kills empty (Kill); null
+    // for an argument that is no expression of the call's.
     void ApplyCalleeShrinks(Node *at, FnSpec *spec, vector<Val> &argvals, string_view name,
-                            const vector<Node *> *argnodes = nullptr);
+                            const vector<Node *> &argnodes);
     // A shrink's scan sees the views of the activation only, and takes a
     // parameter's class for an array of its own: whether an argument was a
     // view of the shrunk array, or the shrunk array one the activation's

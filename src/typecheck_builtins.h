@@ -891,7 +891,9 @@ inline FnSpec *TypeCheck::UserFormatIn(Call *c, TypeExpr *t, string_view ns,
                          "self-relative references, into the format overload taking it by "
                          "value is not supported; take it by reference"));
         auto sp = GetOrCreateSpec(mi, argvals, c);
-        ApplyCalleeShrinks(c, sp, argvals, "format");
+        // A kill in the value empties the argument's part, where it is all
+        // of the value; the builder has no node here, and holds no references.
+        ApplyCalleeShrinks(c, sp, argvals, "format", { nullptr, arg });
         ApplyCalleeRebinds(sp);
         ApplyCalleeGrows(c, sp, argvals, "format");
         CheckfreeCallee(c, sp->sf);
@@ -3209,7 +3211,7 @@ inline bool TypeCheck::MapLiveShrinks(const CallSite &site) {
 // back edge applies the shrinks of the round before (RecordOf), and none
 // in the cycle's first round.
 inline void TypeCheck::ApplyCalleeShrinks(Node *at, FnSpec *spec, vector<Val> &argvals,
-                                          string_view name, const vector<Node *> *argnodes) {
+                                          string_view name, const vector<Node *> &argnodes) {
     // The callee may store into what the caller emptied in ways no event
     // shows (a store of its own unrecorded, one of a nested function's
     // re-applied in place), so a kill of the caller's outlasts a call only
@@ -3243,13 +3245,12 @@ inline void TypeCheck::ApplyCalleeShrinks(Node *at, FnSpec *spec, vector<Val> &a
     // value names keep the events of an earlier check of its body, which no
     // order says anything of, so a kill never empties one.
     auto argkill = [&](int p, const string &path) {
-        if (!argnodes || p < 0 || (size_t)p >= argnodes->size() || (size_t)p >= argvals.size())
-            return;
+        if (p < 0 || (size_t)p >= argnodes.size() || (size_t)p >= argvals.size()) return;
         auto &v = argvals[(size_t)p];
         if (!v.Exact()) return;
         auto x = v.Root();
         if (!x || x->isglobal || IsTemp(x) || x->captured) return;
-        auto n = (*argnodes)[(size_t)p];
+        auto n = argnodes[(size_t)p];
         if (auto u = Is<Unary>(n); u && u->op == T_BITAND) n = u->child;
         VarDef *base = nullptr;
         string bpath;

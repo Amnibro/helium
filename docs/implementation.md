@@ -2823,7 +2823,13 @@ by reference, or one holding self-relative references by value, is an
 error; the result's provenance is the merge of the arms' (deeper root,
 exact only when the same, writable only if all are). The cases get every
 argument written: a call that would dispatch only by leaving parameters to
-their defaults is an error.
+their defaults is an error. Past the choice, a dispatched call goes on as
+a resolved one does, through the same steps: each case's shrinks and
+growths applied with the argument nodes (`ApplyCalleeShrinks`, which takes
+them at every call), its casts judged (`JudgeCallCasts`), the arguments
+checked again in order (`RecheckArgs`, which snapshots the dispatched value
+in its place), and the cases' checkfree rule, rebinds and completion
+applied together (`CalleesReturn`).
 
 **Nested functions** (`DeclareLocalFn`, §7.5): checking a declaration
 records a `DeclSite` for the function, under the environment declaring it
@@ -3220,11 +3226,14 @@ without the cast with `NumericBinary` or `NumericUnary`, the arithmetic of
 `Binary::Check` and `Unary::Check` factored out with a trial mode that
 changes no node and reports no error (`unifytrial` in `UnifyNumeric`). A
 call (`JudgeCallCasts`) resolves again without the cast (`MatchCandidates`):
-the same function, parameter types, bindings and literal parameters, nothing
-ranking alike, and then the argument meets its parameter as a typed
-destination; the builtin a call takes for want of a matching function judges
-nothing (`builtinfallback`). A cast around the node judges it too
-(`NoteCast`), a verdict that holds only while that cast stays. Where an
+the same function, parameter types, bindings and literal parameters
+(`SameMatch`), nothing ranking alike, where it ranked best or was the one
+match converting an integer to a float, and for a dispatched call (§8.2) no
+overload taking it and the same case for every variant; then the argument
+meets its parameter as a typed destination. The builtin a call takes for
+want of a matching function judges nothing (`builtinfallback`). A cast
+around the node judges it too (`NoteCast`), a verdict that holds only while
+that cast stays. Where an
 operator's value without the cast differs from its own in nothing but what
 its consumer can still tell -- a float of literals yet to settle
 (`CastAlt::settle`, which must be the type the value now computes at) or a
