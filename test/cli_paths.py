@@ -1,9 +1,10 @@
 """Paths on the command line and in imports: -o into a directory that does not
 exist yet, for the C and for `goose build`'s executable; a package source of
 "." or ".."; an --include path rooted by a leading separator kept as it is
-when -o names a file in the working directory; and an import that resolves
+when -o names a file in the working directory; an import that resolves
 nowhere, which names the module and where it was looked for, or says that no
-standard library was found."""
+standard library was found; and a directory where a file is read, a source or
+an embed_file, which a POSIX system opens and then fails to read."""
 import os
 import shutil
 import subprocess
@@ -72,6 +73,14 @@ def check_cli_paths(exe, cc, base):
         require(code == 1 and "missing.goose:2: error: cannot find the module no_such_module, "
                               "looked for" in text and
                 text.count("no_such_module.goose") >= 2, "an import resolving nowhere", text)
+
+        (root / "adir").mkdir()
+        code, text = run([exe, "check", root / "adir"])
+        require(code == 1 and "cannot open file: " in text, "a directory as the source", text)
+        tc.write_text(root / "embeds.goose", 'fn main() { print(embed_file("adir").len); }\n')
+        code, text = run([exe, "check", root / "embeds.goose"])
+        require(code == 1 and "error: embed_file: cannot open " in text,
+                "a directory to embed_file", text)
 
         # A compiler with no standard library anywhere it looks.
         lone = root / "lone" / "a" / "b" / "c"
