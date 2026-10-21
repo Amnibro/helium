@@ -956,8 +956,7 @@ inline bool CodeGen::IsCtl(Node *n) {
 // widening is implicit in C, varints decode, relative references load,
 // and a reference loc decays to its pointee when the exprtype says so.
 inline string CodeGen::LoadLoc(Loc lv, TypeExpr *et, Line ln) {
-    if (lv.t->kind == TY_REF && et->kind != TY_REF &&
-        !(IsOptional(lv.t) && et->kind == TY_REF)) {
+    if (lv.t->kind == TY_REF && et->kind != TY_REF) {
         DerefLoc(lv);
         return LoadLoc(lv, et, ln);
     }

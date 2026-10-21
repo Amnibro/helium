@@ -1240,17 +1240,6 @@ inline void CodeGen::GenArrayLit(ArrayLit *al, const string &stk, const string &
             PopSc();
             ind--;
             L("}");
-        } else if (elem->kind == TY_REF && elem->ref->lenstorage >= 0) {
-            // Each relative slot stores its own offset to the one plain
-            // reference, or the optional's zero for null (§3.9).
-            auto p = T();
-            L("uint8_t *", p, " = (uint8_t *)(", GenX(al->fillval), ");");
-            auto iv = T();
-            L("for (int64_t ", iv, " = 0; ", iv, " < ", count, "; ", iv, "++) {");
-            ind++;
-            EmitRelStore(stk, elem, p, al->line);
-            ind--;
-            L("}");
         } else {
             auto fv = GenXD(al->fillval, elem);
             auto iv = T();

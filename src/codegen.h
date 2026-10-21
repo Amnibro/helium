@@ -1257,7 +1257,6 @@ struct CodeGen {
     void EmitRenderFn(RenderFnReq r);
     Loc RenderedLoc(Node *a);
     Loc RenderToTemp(Node *a, Call *c);
-    void EmitOutArg(Node *a, Call *c);
     string FmtCall(Node *a, const string &dst);
     void EmitFormatInto(Loc lv, Node *a, Line ln, Call *c);
     vector<string> EmitStr(Call *c, vector<Node *> &an, Dst d0, Line ln);

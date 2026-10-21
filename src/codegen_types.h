@@ -24,10 +24,8 @@ inline bool CodeGen::TEq(TypeExpr *a, TypeExpr *b) {
             auto &x = *a->arr, &y = *b->arr;
             if (x.akind != y.akind || !TEq(x.sub, y.sub)) return false;
             switch (x.akind) {
-                case A_FIXED:   return ArrSize(a->arr) == ArrSize(b->arr);
+                case A_FIXED: case A_LIMITED: return ArrSize(a->arr) == ArrSize(b->arr);
                 case A_VAR:     return LenStore(a->arr) == LenStore(b->arr);
-                case A_LIMITED: return (x.sizeexpr ? ArrSize(a->arr) : -1) ==
-                                       (y.sizeexpr ? ArrSize(b->arr) : -1);
                 default:        return true;
             }
         }

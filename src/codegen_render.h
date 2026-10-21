@@ -40,7 +40,7 @@ inline FnSpec *CodeGen::FmtSpecFor(Call *c, TypeExpr *t) {
     return nullptr;
 }
 
-// The scalar, bool, u8-array cases EmitOutArg/FmtCall handle directly.
+// The scalar, bool, u8-array cases EmitFormatInto/EmitStr handle directly.
 inline bool CodeGen::SimpleText(Call *c, TypeExpr *t) {
     if (FmtSpecFor(c, t)) return false;
     if (t->kind == TY_INT || t->kind == TY_FLT || t->kind == TY_BOOL) return true;
@@ -463,29 +463,6 @@ inline CodeGen::Loc CodeGen::RenderToTemp(Node *a, Call *c) {
     auto lv = RenderedLoc(a);
     RenderLoc(b, lv, a->exprtype, false, c, a->line);
     return b;
-}
-
-inline void CodeGen::EmitOutArg(Node *a, Call *c) {
-    c = FmtContext(c, a);
-    auto t = a->exprtype;
-    if (!SimpleText(c, t)) {
-        auto b = RenderToTemp(a, c);
-        L("gs_out_bytes(", b.hdr, ".base, ", b.hdr, ".len);");
-        return;
-    }
-    if (t->kind == TY_INT) {
-        if (t->intstorage == IS_U64) L("gs_out_uint(", GenX(a), ");");
-        else L("gs_out_int((int64_t)(", GenX(a), "));");
-    } else if (IsF32(t)) {
-        L("gs_out_f32(", GenX(a), ");");
-    } else if (t->kind == TY_FLT) {
-        L("gs_out_flt((double)(", GenX(a), "));");
-    } else if (t->kind == TY_BOOL) {
-        L("gs_out_bool(", GenX(a), ");");
-    } else {
-        auto se = GenSrcElems(a);
-        L("gs_out_bytes((const uint8_t *)(", se.elems, "), ", se.n, ");");
-    }
 }
 
 // The C expression formatting scalar `a` at `dst`, yielding the byte count.

@@ -140,7 +140,7 @@ inline string Binary::CgX(CodeGen &cg) {
     if (op == T_ANDAND || op == T_OROR) {
         auto l = cg.GenTruth(left);
         auto t = cg.T();
-        cg.L("uint8_t ", t, " = (uint8_t)(", l, op == T_ANDAND ? " != 0);" : " != 0);");
+        cg.L("uint8_t ", t, " = (uint8_t)(", l, " != 0);");
         // In a loop that can be straight-line code, a right operand that can
         // neither fail nor have an effect runs whatever the left gave,
         // combined with & or | on the two 0/1 values: a C compiler can
@@ -963,7 +963,7 @@ inline void While::CgStmt(CodeGen &cg) {
 inline void ForLoop::CgStmt(CodeGen &cg) {
     auto d = Dst {};
     CodeGen::ViewScope vs(cg, hoistrefs, hoistfields);
-    auto iv = vdef ? cg.LocalName(vdef) : cg.T();
+    auto iv = cg.LocalName(vdef);
     auto ix = idxdef ? cg.LocalName(idxdef) : "";
     if (iterkind == IK_RANGE || iterkind == IK_COUNT) {
         // The loop variable runs at the range's own type: narrow counters
@@ -1204,10 +1204,9 @@ inline void Return::CgStmt(CodeGen &cg) {
     // Exiting an inlined body?
     for (auto i = (int)cg.cscopes.size() - 1; i >= 0; i--) {
         if (cg.cscopes[i].kind == CodeGen::SC_IB && cg.cscopes[i].ibsf == target) {
-            if (!vals.empty()) {
-                cg.GenExitValue(vals[0], i);
-                for (size_t j = 1; j < vals.size(); j++) cg.GenAny(vals[j], Dst {});
-            }
+            // A function with several results is never inlined (Optimizer::Scan).
+            assert(vals.size() <= 1);
+            if (!vals.empty()) cg.GenExitValue(vals[0], i);
             cg.EmitExitRestores(i);
             cg.cscopes[i].usedbrk = true;
             cg.L("goto ", cg.cscopes[i].brklbl, ";");

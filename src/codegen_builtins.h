@@ -779,6 +779,7 @@ inline vector<string> CodeGen::EmitSlicePool(Call *c, vector<Node *> &an, Line l
     auto v = ArrayView(lv);
     auto elem = v.elem;
     auto esz = FixedSize(elem);
+    assert(esz > 0);   // No element is zero-size (§3.4).
     // A slice handed back becomes an index into the pool. An empty one can be
     // a default slice pointing at no storage at all; with no cells to free or
     // keep, index 0 serves it. A non-empty one the checker rooted at this pool
@@ -786,9 +787,9 @@ inline vector<string> CodeGen::EmitSlicePool(Call *c, vector<Node *> &an, Line l
     // one is checked to, and to end inside the length (§5.4).
     auto indexof = [&](const string &sv) {
         auto i = T();
-        if (!c->poolcheck || !esz) {
+        if (!c->poolcheck) {
             L("int64_t ", i, " = ", sv, ".len ? ((uint8_t *)", sv, ".data - (uint8_t *)", v.elems,
-              ") / ", std::max<int64_t>(esz, 1), " : 0;");
+              ") / ", esz, " : 0;");
             return i;
         }
         L("int64_t ", i, " = 0;");
@@ -879,11 +880,8 @@ inline string CodeGen::SliceLen(Node *n, TypeExpr *elem, Line ln) {
     auto nv = T();
     L("int64_t ", nv, " = (int64_t)(", GenX(n), ");");
     auto esz = FixedSize(elem);
-    if (esz)
-        L("if ((uint64_t)", nv, " > GS_STACK_RESERVE / ", esz, ") gs_abort(GS_E_SLICELEN, ",
-          LocArgs(ln), ");");
-    else
-        L("if (", nv, " < 0) gs_abort(GS_E_SLICELEN, ", LocArgs(ln), ");");
+    L("if ((uint64_t)", nv, " > GS_STACK_RESERVE / ", esz, ") gs_abort(GS_E_SLICELEN, ",
+      LocArgs(ln), ");");
     return nv;
 }
 
@@ -904,7 +902,6 @@ inline void CodeGen::EmitSliceExtend(const Loc &lv, const string &end, int64_t e
 inline void CodeGen::EmitDefaultElems(const ArrView &v, const string &first,
                                       const string &count, Node *init) {
     auto esz = FixedSize(v.elem);
-    if (!esz) return;
     if (!HasFieldDefaults(v.elem)) {
         L("GS_MEMZERO(", ElemAddr(v, cat("(", first, ")")), ", (size_t)((", count, ") * ", esz,
           "));");
