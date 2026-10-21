@@ -2266,6 +2266,7 @@ struct TypeCheck {
     bool ThreadStorable(VarDef *r);
     void Unthread(VarDef *cls, const string &why);
     string CycleStoreError(VarDef *root, const string &more = {});
+    template<typename F> void NeedOnPath(FnSpec *spec, FnSpec *t, Node *at, int n, F step);
     void ValidateNeeds(FnSpec *spec, Node *callnode);
     void AddNeed(FnSpec *s, FnSpec *t);
     // The record of a callee a call reads: the callee's own once it is

@@ -2916,6 +2916,11 @@ value, or the same call checked again as an argument, specializes anew
 instead of reusing one whose captures codegen never declares. `NamedSpec`
 gives the named function around such an environment, which a plain `return`
 inside it targets (`CheckReturn`); that is how HOF-based iteration returns.
+A call path -- the frames, or one a reuse recorded (`neededges`) -- names
+the frame checking such a body by the specialization calling it. Where that
+is the target of a `return ... from` below the body, the target needs
+nothing of itself (`AddNeed`; `ValidateNeeds` and it walk a path alike,
+`NeedOnPath`).
 
 **`return ... from`** (`CheckReturn`, §7.9): the target resolves in the
 returning function's definition context (a nested function in scope, else

@@ -2455,42 +2455,41 @@ inline string TypeCheck::CycleStoreError(VarDef *root, const string &more) {
     return s;
 }
 
+// spec's `return from` target t on one call path that reaches spec, of n
+// entries, outermost first: step(i) is a (function, specialization) pair,
+// with no function for a function value's body, which `from` cannot name.
+// The innermost call of t's function on it must be t (§7.9), and every
+// specialization after it lies between them, needing t as well.
+template<typename F>
+void TypeCheck::NeedOnPath(FnSpec *spec, FnSpec *t, Node *at, int n, F step) {
+    auto found = n - 1;
+    while (found >= 0 && step(found).first != t->sf) found--;
+    if (found < 0)
+        Error(at, cat("call to ", spec->sf->name, " requires an enclosing call of ", t->sf->name,
+                      " (it does `return ... from ", t->sf->name, "`)"));
+    if (step(found).second != t)
+        Error(at, "recursive call changes the enclosing specialization of a long-distance return");
+    for (auto i = found + 1; i < n; i++) AddNeed(step(i).second, t);
+}
+
 // `return from` targets recorded by a callee must be live on every
 // compile-time call path (§7.9); cached reuse re-validates here.
 inline void TypeCheck::ValidateNeeds(FnSpec *spec, Node *callnode) {
-    for (auto t : spec->needs) {
-        auto found = -1;
-        for (auto i = (int)frames.size() - 1; i >= 0; i--)
-            if (frames[i].sf == t->sf && !frames[i].isfunval) { found = i; break; }
-        if (found < 0)
-            Error(callnode, cat("call to ", spec->sf->name, " requires an enclosing call "
-                                "of ", t->sf->name, " (it does `return ... from ", t->sf->name,
-                                "`)"));
-        if (frames[found].spec != t)
-            Error(callnode, "recursive call changes the enclosing specialization of a "
-                            "long-distance return");
-        for (auto i = found + 1; i < (int)frames.size(); i++)
-            if (frames[i].spec != t) AddNeed(frames[i].spec, t);
-    }
+    for (auto t : spec->needs)
+        NeedOnPath(spec, t, callnode, (int)frames.size(), [&](int i) {
+            return pair<SFunction *, FnSpec *>(frames[i].isfunval ? nullptr : frames[i].sf,
+                                               frames[i].spec);
+        });
 }
 
 // Records a `return from` target on a spec, and on every path a call reached
-// it by before the target was known.
+// it by before the target was known. The target needs nothing of itself: a
+// function value's body the target's own body calls stands on a path as the
+// target's specialization, which the return lands in.
 inline void TypeCheck::AddNeed(FnSpec *s, FnSpec *t) {
-    if (!s || !s->needs.insert(t).second) return;
-    for (auto &e : s->neededges) {
-        auto &path = e.second;
-        auto found = -1;
-        for (auto i = (int)path.size() - 1; i >= 0; i--)
-            if (path[i].first == t->sf) { found = i; break; }
-        if (found < 0)
-            Error(e.first, cat("call to ", s->sf->name, " requires an enclosing call of ",
-                               t->sf->name, " (it does `return ... from ", t->sf->name, "`)"));
-        if (path[found].second != t)
-            Error(e.first, "recursive call changes the enclosing specialization of a "
-                           "long-distance return");
-        for (auto i = found + 1; i < (int)path.size(); i++) AddNeed(path[i].second, t);
-    }
+    if (!s || s == t || !s->needs.insert(t).second) return;
+    for (auto &e : s->neededges)
+        NeedOnPath(s, t, e.first, (int)e.second.size(), [&](int i) { return e.second[i]; });
 }
 
 // checkfree (§7.14): what runs while a checkfree function does is its own
@@ -3532,8 +3531,7 @@ inline void TypeCheck::CheckReturn(Return *r) {
     auto tspec = frames[tf].spec;
     r->target = frames[tf].sf;
     r->targetspec = tspec;
-    for (auto i = tf + 1; i < (int)frames.size(); i++)
-        if (frames[i].spec != tspec) AddNeed(frames[i].spec, tspec);
+    for (auto i = tf + 1; i < (int)frames.size(); i++) AddNeed(frames[i].spec, tspec);
     // Values.
     vector<Val> vals;
     auto expectone = [&](size_t i) -> TypeExpr * {
