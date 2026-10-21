@@ -982,6 +982,7 @@ class Runner:
             "tre_inloop": (False, True),
             "tre_walk": (optimized, not optimized),
             "tre_local": (False, True),
+            "tre_and": (optimized, not optimized),
         }
         valid = True
         for name, want in shapes.items():
@@ -994,6 +995,13 @@ class Runner:
                 self.fail(f"tail-recursion {level} {name}",
                           f"(loop, self call): got {got}, want {want}")
                 valid = False
+        # A u64 above i64.max that the optimizer makes -- a fold, a tail loop's
+        # accumulator start -- dumps as that value, not as its bits signed.
+        want = ["18446744073709539270"] + (["var acc = 18446744073709551615;"] if optimized else [])
+        missing = [w for w in want if w not in specs]
+        if missing or "-12346" in specs:
+            self.fail(f"u64 constants {level}", f"missing {missing} or a signed -12346")
+            valid = False
         # Guarded base-case inlining: a copy of the body's first statement
         # per self-call site the rewrite took.
         copies = {

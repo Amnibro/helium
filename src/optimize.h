@@ -172,8 +172,10 @@ struct Optimizer {
     }
 
     Node *NewInt(Node *at, int64_t v) {
-        auto r = ast.New<IntLit>(at->line, v);
-        r->exprtype = at->exprtype;
+        auto t = at->exprtype;
+        auto r = ast.New<IntLit>(at->line, v, string_view {},
+                                 v < 0 && t && t->kind == TY_INT && t->intstorage == IS_U64);
+        r->exprtype = t;
         folded++;
         return r;
     }
