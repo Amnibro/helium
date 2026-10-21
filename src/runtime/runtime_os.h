@@ -608,12 +608,20 @@ GS_API uint64_t gs_os_random_u64(void) {
         if (n == sizeof v) return v;
     }
 #endif
+    /* Which call this is, counted atomically: workers calling at once each
+       get a count of their own. */
+#ifdef _WIN32
+    static volatile LONG64 counter;
+    uint64_t count = (uint64_t)InterlockedIncrement64(&counter);
+#else
     static uint64_t counter;
+    uint64_t count = __atomic_add_fetch(&counter, 1, __ATOMIC_SEQ_CST);
+#endif
     uint64_t seed = (uint64_t)gs_os_time_ns();
     seed = gs_os_mix64(seed ^ (uint64_t)gs_os_clock_ns());
 #ifdef _WIN32
     seed = gs_os_mix64(seed ^ (uint64_t)GetCurrentProcessId());
 #endif
     seed = gs_os_mix64(seed ^ (uint64_t)(uintptr_t)&counter);
-    return gs_os_mix64(seed ^ ++counter);
+    return gs_os_mix64(seed ^ count);
 }
