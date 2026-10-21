@@ -2118,6 +2118,19 @@ def main():
     if cc:
         r.show_task(huge_pages)
 
+    def commit_limit():
+        from commit_limit import check_commit_limit
+        try:
+            skipped = check_commit_limit(exe, gendir)
+            if skipped:
+                r.say(f"skip commit limit ({skipped})")
+            else:
+                r.ok("commit limit: a data stack the system will not commit is out of memory")
+        except (RuntimeError, OSError, subprocess.TimeoutExpired) as e:
+            r.fail("commit limit", str(e))
+    if cc:
+        r.show_task(commit_limit)
+
     def native_toolchain():
         from native_toolchain import check_native_toolchain
         try:

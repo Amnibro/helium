@@ -1449,7 +1449,8 @@ static LONG WINAPI gs_fault_filter(EXCEPTION_POINTERS *ep) {
         const gs_region *r = &gs_regions[i];
         if ((uintptr_t)hit - (uintptr_t)r->base < r->size) {
             /* Within the usable part: commit another chunk (clamped to the
-               region) and resume. Within the gap: a data stack overran. */
+               region) and resume, or where the system has no more memory to
+               commit, say so. Within the gap: a data stack overran. */
             if (hit < r->base + r->usable) {
                 uint8_t *page = (uint8_t *)((size_t)hit & ~(gs_page_size - 1));
                 size_t n = GS_COMMIT_CHUNK;
@@ -1457,6 +1458,12 @@ static LONG WINAPI gs_fault_filter(EXCEPTION_POINTERS *ep) {
                     n = (size_t)(r->base + r->usable - page);
                 if (VirtualAlloc(page, n, MEM_COMMIT, PAGE_READWRITE))
                     return EXCEPTION_CONTINUE_EXECUTION;
+                static const char nomem[] =
+                    "goose runtime error: out of memory committing a data stack\n";
+                DWORD written;
+                WriteFile(GetStdHandle(STD_ERROR_HANDLE), nomem, sizeof(nomem) - 1, &written,
+                          NULL);
+                ExitProcess(1);
             }
             char msg[GS_OVERFLOW_TEXT];
             DWORD written;
@@ -1536,7 +1543,8 @@ static GS_TLS uintptr_t gs_native_lo, gs_native_hi;
 static GS_TLS void *gs_sigstack;
 #define GS_SIGSTACK_MIN (64u << 10)
 /* What the fault handler replaced, for the faults that are not its own. */
-static struct sigaction gs_prev_segv, gs_prev_bus;
+)GSRT"
+R"GSRT(static struct sigaction gs_prev_segv, gs_prev_bus;
 
 static void gs_fault_handler(int sig, siginfo_t *info, void *ctx) {
     (void)ctx;
@@ -1545,8 +1553,7 @@ static void gs_fault_handler(int sig, siginfo_t *info, void *ctx) {
         const gs_region *r = &gs_regions[i];
         if ((uintptr_t)hit - (uintptr_t)r->base < r->size) {
             char msg[GS_OVERFLOW_TEXT];
-)GSRT"
-R"GSRT(            ssize_t w = write(2, msg, gs_overflow_text(msg, r));
+            ssize_t w = write(2, msg, gs_overflow_text(msg, r));
             (void)w;
             _exit(1);
         }
@@ -1746,14 +1753,14 @@ GS_API uint8_t *gs_reserve_region(void) {
    of the one before: no freelist gets this deep. */
 #define GS_SPAN_DEPTH 24
 
-/* `link` chains emptied nodes. */
+)GSRT"
+R"GSRT(/* `link` chains emptied nodes. */
 typedef struct { int64_t n, link, idx[GS_SPAN_LEAF], cnt[GS_SPAN_LEAF]; } gs_spleaf;
 typedef struct { int64_t n, link, key[GS_SPAN_FAN], max[GS_SPAN_FAN], child[GS_SPAN_FAN]; } gs_spinner;
 typedef struct { int64_t root, height, chain; } gs_sphead;
 
 /* A freelist, and a path down it: the node and entry taken at each level,
-)GSRT"
-R"GSRT(   the leaf's last. */
+   the leaf's last. */
 typedef struct {
     uint8_t *base;
     int64_t *n;
@@ -1985,7 +1992,8 @@ static void gs_sp_delete(gs_sppath *p, int64_t k) {
     }
     gs_sp_dropnode(p, p->node[p->h]);
     for (l = p->h - 1;; l--) {
-        gs_spinner *in = GS_SPINNER(p, p->node[l]);
+)GSRT"
+R"GSRT(        gs_spinner *in = GS_SPINNER(p, p->node[l]);
         int64_t e = p->pos[l], m = in->max[e];
         gs_sp_closein(in, e);
         if (in->n > 0) {
@@ -1994,8 +2002,7 @@ static void gs_sp_delete(gs_sppath *p, int64_t k) {
         }
         /* Never the root: a root of one child is handed down below, so
            every root has two or more. */
-)GSRT"
-R"GSRT(        gs_sp_dropnode(p, p->node[l]);
+        gs_sp_dropnode(p, p->node[l]);
     }
     while (GS_SPHEAD(p)->height > 0 && GS_SPINNER(p, GS_SPHEAD(p)->root)->n == 1) {
         int64_t r = GS_SPHEAD(p)->root;
@@ -2209,7 +2216,8 @@ GS_API int64_t gs_spans_regrow(uint8_t *base, int64_t *n, uint8_t **top, int64_t
     gs_sppath p, q;
     gs_spnear s;
     int64_t end = idx + ol;
-    if (*n == 0) {
+)GSRT"
+R"GSRT(    if (*n == 0) {
         gs_spans_free(base, n, top, idx, ol);
         return gs_spans_alloc(base, n, top, len, cnt);
     }
@@ -2219,8 +2227,7 @@ GS_API int64_t gs_spans_regrow(uint8_t *base, int64_t *n, uint8_t **top, int64_t
     gs_sp_near(&p, &q, idx, end, &s);
     if (s.nl && s.nl->idx[s.nk] == end &&
         (s.nl->cnt[s.nk] >= cnt - ol || end + s.nl->cnt[s.nk] == len)) {
-)GSRT"
-R"GSRT(        gs_sp_take(s.np, s.nk, cnt - ol);
+        gs_sp_take(s.np, s.nk, cnt - ol);
         return idx;
     }
     gs_sp_release(&p, &s, idx, ol);
@@ -2390,15 +2397,15 @@ static GS_SSSE3 GS_INLINE __m128i gs_bsm_tables(const gs_bsm *m, __m128i x) {
     }                                                                                  \
     if (i == np) return -1;                                                            \
     k = (unsigned)_mm_movemask_epi8(_mm_and_si128(TESTA(GS_LOAD(p + np - 16)),         \
-                                                  TESTB(GS_LOAD(p + np - 16 + d))))    \
+)GSRT"
+R"GSRT(                                                  TESTB(GS_LOAD(p + np - 16 + d))))    \
         >> (16 - (np - i));                                                            \
     return k ? i + gs_ctz32(k) : -1;
 
 #define GS_TEST_S(x) gs_bsm_test(&ms, ks, x)
 #define GS_TEST_A(x) gs_bsm_test(&ma, ka, x)
 #define GS_TEST_B(x) gs_bsm_test(&mb, kb, x)
-)GSRT"
-R"GSRT(#define GS_TABLES_S(x) gs_bsm_tables(&ms, x)
+#define GS_TABLES_S(x) gs_bsm_tables(&ms, x)
 #define GS_TABLES_A(x) gs_bsm_tables(&ma, x)
 #define GS_TABLES_B(x) gs_bsm_tables(&mb, x)
 
@@ -2587,7 +2594,8 @@ GS_API int64_t gs_fmt_i64(uint8_t *dst, int64_t v) {
    integers, by Burger and Dybvig's free-format algorithm, not through the C
    library: msvcrt, which tcc uses on Windows, rounds a printf tie away from
    zero, and below a power of two the gap to the next float is half the gap
-   above, so the shortest text can lie above the value while the correctly
+)GSRT"
+R"GSRT(   above, so the shortest text can lie above the value while the correctly
    rounded spelling of that length, below it, does not read back.
 
    The numbers are naturals in 32-bit limbs, least significant first. The
@@ -2596,8 +2604,7 @@ GS_API int64_t gs_fmt_i64(uint8_t *dst, int64_t v) {
 typedef struct { int n; uint32_t d[36]; } gs_big;
 
 /* a = v << sh, for v > 0. */
-)GSRT"
-R"GSRT(static void gs_big_set(gs_big *a, uint64_t v, int sh) {
+static void gs_big_set(gs_big *a, uint64_t v, int sh) {
     int w = sh >> 5, b = sh & 31, i;
     uint64_t lo = v << b, hi = b ? v >> (64 - b) : 0;
     for (i = 0; i < w; i++) a->d[i] = 0;
@@ -2808,7 +2815,8 @@ GS_API int64_t gs_fmt_quoted(uint8_t *dst, const uint8_t *s, int64_t n) {
             case '"': *d++ = '\\'; *d++ = '"'; break;
             case '\\': *d++ = '\\'; *d++ = '\\'; break;
             case '\n': *d++ = '\\'; *d++ = 'n'; break;
-            case '\r': *d++ = '\\'; *d++ = 'r'; break;
+)GSRT"
+R"GSRT(            case '\r': *d++ = '\\'; *d++ = 'r'; break;
             case '\t': *d++ = '\\'; *d++ = 't'; break;
             default: *d++ = c; break;
         }
@@ -2822,8 +2830,7 @@ GS_API int64_t gs_fmt_quoted(uint8_t *dst, const uint8_t *s, int64_t n) {
 
 GS_API void gs_out_int(int64_t v) {
     uint8_t buf[GS_FMT_MAX];
-)GSRT"
-R"GSRT(    fwrite(buf, 1, (size_t)gs_fmt_i64(buf, v), stdout);
+    fwrite(buf, 1, (size_t)gs_fmt_i64(buf, v), stdout);
 }
 GS_API void gs_out_uint(uint64_t v) {
     uint8_t buf[GS_FMT_MAX];

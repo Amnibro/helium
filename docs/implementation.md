@@ -5291,8 +5291,9 @@ unmapped tail, sizes the program's configuration sets and hands to the
 runtime as it starts, which rounds the reservation down to whole pages: the gap
 has to start on a page to be protected, and on Windows a stack would grow
 unseen through the rest of a part page committed at its end. Windows commits
-on fault through a vectored handler that tells a commit from an overrun,
-POSIX reserves with overcommit and protects the gap. A region the platform
+on fault through a vectored handler that tells a commit from an overrun, and
+reports a commit the system refuses (its commit limit reached) as out of
+memory; POSIX reserves with overcommit and protects the gap. A region the platform
 refuses (its address space, an address-space limit or strict overcommit
 accounting exhausted) is retried at half the size, in whole pages, and every
 region after it starts that much smaller, down to 1 MB
