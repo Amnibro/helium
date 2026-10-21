@@ -603,9 +603,10 @@ before its newline as well.
 `write_file_atomic` is for files that must never be seen half-written, such
 as saved games. It writes the data to a new file beside `path`, named after
 it with a random tag and `.tmp` added, flushes that file to disk and renames
-it over `path`. A crash or a failure at any point leaves `path` with either
-its old contents or all of the new ones. On a failure the new file is
-removed; after a crash it can remain, its name ending in `.tmp`.
+it over `path`, whose permissions it keeps on POSIX. A crash or a failure at
+any point leaves `path` with either its old contents or all of the new ones.
+On a failure the new file is removed; after a crash it can remain, its name
+ending in `.tmp`.
 `rename_file` is the same one-step replacement for a file the program wrote
 itself, within one volume. On Windows no file can be replaced while another
 program has it open, and virus scanners open files just written for a

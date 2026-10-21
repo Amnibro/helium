@@ -3666,6 +3666,10 @@ R"GSRT(            DWORD chunk = left > (1 << 30) ? (DWORD)1 << 30 : (DWORD)left
             if (errno == EEXIST) continue;
             return 0;
         }
+        /* The permissions of the file it replaces, which write_file leaves
+           as they are, rather than the umask's. */
+        struct stat st;
+        if (stat(p, &st) == 0) ok = fchmod(fd, st.st_mode & 0777) == 0;
         while (ok && left > 0) {
             ssize_t w = write(fd, d, left > (1 << 30) ? (size_t)1 << 30 : (size_t)left);
             if (w < 0 && errno == EINTR) continue;
@@ -3893,15 +3897,15 @@ GS_API uint8_t gs_os_resource_dir(gs_rref out) {
         if (count <= 0 || (size_t)count >= sizeof path) return 0;
         n = (size_t)count;
     #else
-        return 0;
+)GSRT"
+R"GSRT(        return 0;
     #endif
     while (n && path[n - 1] != '/') --n;
     if (!n) return 0;
     #ifdef __APPLE__
         const char suffix[] = ".app/Contents/MacOS/";
         size_t suffixlen = sizeof suffix - 1;
-)GSRT"
-R"GSRT(        if (n >= suffixlen && !memcmp(path + n - suffixlen, suffix, suffixlen)) {
+        if (n >= suffixlen && !memcmp(path + n - suffixlen, suffix, suffixlen)) {
             n -= sizeof "MacOS/" - 1;
             if (n + sizeof "Resources/" - 1 >= sizeof path) return 0;
             memcpy(path + n, "Resources/", sizeof "Resources/" - 1);

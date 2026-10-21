@@ -2085,7 +2085,7 @@ def main():
         try:
             check_runtime_io(exe, gendir, jit=jit)
             r.ok("runtime io: stdin's bytes as they came, read_line into a builder holding a "
-                 "carriage return")
+                 "carriage return, write_file_atomic keeping a file's permissions")
         except (RuntimeError, OSError, subprocess.TimeoutExpired) as e:
             r.fail("runtime io", str(e))
     if cc:

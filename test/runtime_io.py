@@ -1,11 +1,13 @@
-"""The runtime's standard input at its edges (stdlib/os.goose), built by
-`goose build` and, where the JIT runs, run by `goose run`: stdin read as the
-bytes piped in, a carriage return before a line break and a Ctrl-Z among
-them, which Windows' text mode would translate and stop at; and read_line
-taking off a carriage return it read itself, never one the builder held
-before."""
+"""The runtime's standard input and files at their edges (stdlib/os.goose),
+built by `goose build` and, where the JIT runs, run by `goose run`: stdin
+read as the bytes piped in, a carriage return before a line break and a
+Ctrl-Z among them, which Windows' text mode would translate and stop at;
+read_line taking off a carriage return it read itself, never one the
+builder held before; and on POSIX write_file_atomic keeping the
+permissions of the file it replaces."""
 import os
 from pathlib import Path
+import stat
 import subprocess
 import tempfile
 
@@ -17,7 +19,8 @@ import os;
 
 // Standard input as the program reads it: with `all`, read_stdin's bytes;
 // with `lines`, read_line's lines, each followed by a `|`, into a builder
-// that holds `x` and a carriage return already.
+// that holds `x` and a carriage return already; with a path, nothing, but
+// write_file_atomic of `new` over that file.
 fn main() {
     let argv = args();
     var got: u8[>..] = [];
@@ -26,6 +29,9 @@ fn main() {
     } else if argv[1] == "lines" {
         got.append("x\\r");
         while read_line(got) { got.append("|"); }
+    } else {
+        print(write_file_atomic(argv[1], "new"));
+        return;
     }
     print(got.len);
     for b in got { print(b); }
@@ -61,3 +67,17 @@ def check_runtime_io(exe, base, *, jit):
                 if code != 0 or out.split() != [str(n) for n in want]:
                     raise RuntimeError(f"runtime io: the {how} program reading {data!r} with "
                                        f"{mode}: wanted {want}, got exit {code}:\n{out}{err}")
+        if tc.IS_WINDOWS:
+            return
+        for mode in (0o600, 0o755):
+            target = root / f"kept_{mode:o}.txt"
+            target.write_text("old")
+            target.chmod(mode)
+            for how, argv in runners:
+                code, out, err = run(argv + [target])
+                have = stat.S_IMODE(target.stat().st_mode)
+                if code != 0 or target.read_text() != "new" or have != mode:
+                    raise RuntimeError(f"runtime io: the {how} program's write_file_atomic over a "
+                                       f"file of mode {mode:o} left mode {have:o}, exit {code}:"
+                                       f"\n{out}{err}")
+                target.write_text("old")
