@@ -56,11 +56,19 @@ inline void TypeCheck::LimitNestedInsts(TypeExpr *t) {
     Error(t->line, s);
 }
 
+// An instance found again, unless the error of another root cut its build
+// short (StructInst::failed): what that error reported stands for this use
+// too, and the root making it ends here, silently.
+template<typename Inst> Inst *Reused(Inst *inst) {
+    if (inst->failed) throw Abandoned {};
+    return inst;
+}
+
 inline StructInst *TypeCheck::GetStructInst(TypeExpr *t) {
     auto st = t->struc->st;
-    if (t->struc->inst) return t->struc->inst;
+    if (t->struc->inst) return Reused(t->struc->inst);
     for (auto inst : st->insts)
-        if (TypeArgsEq(inst->args, t->struc->args)) return t->struc->inst = inst;
+        if (TypeArgsEq(inst->args, t->struc->args)) return Reused(t->struc->inst = inst);
     LimitNestedInsts(t);
     auto inst = ast.NewStructInst();
     inst->st = st;
@@ -118,9 +126,9 @@ inline StructInst *TypeCheck::GetStructInst(TypeExpr *t) {
 
 inline EnumInst *TypeCheck::GetEnumInst(TypeExpr *t) {
     auto en = t->enu->en;
-    if (t->enu->inst) return t->enu->inst;
+    if (t->enu->inst) return Reused(t->enu->inst);
     for (auto inst : en->insts)
-        if (TypeArgsEq(inst->args, t->enu->args)) return t->enu->inst = inst;
+        if (TypeArgsEq(inst->args, t->enu->args)) return Reused(t->enu->inst = inst);
     LimitNestedInsts(t);
     auto inst = ast.NewEnumInst();
     inst->en = en;

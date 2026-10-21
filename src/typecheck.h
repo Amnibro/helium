@@ -437,6 +437,13 @@ struct TypeCheck {
         FlagScope(bool &f, bool v) : flag(f), saved(f) { f = v; }
         ~FlagScope() { flag = saved; }
     };
+    // The same for a variable of any type.
+    template<typename T> struct Saved {
+        T &var;
+        T saved;
+        Saved(T &v, T val) : var(v), saved(std::move(v)) { var = std::move(val); }
+        ~Saved() { var = std::move(saved); }
+    };
     // The destination of the value under construction (for reference stores):
     // where the storage the value lands in may be (an lvalue's roots).
     struct Dest {
@@ -2769,14 +2776,15 @@ struct TypeCheck {
     // by then is closed again -- the frames, scopes, variables and nested
     // functions past the root's own, the body state, a type build in
     // progress -- the globals' flow is as it was, and the specializations
-    // whose bodies were being checked are marked failed (FnSpec::failed).
-    // What the root recorded for the whole-program fixups stays: it is
-    // what checked code did, and a specialization that completed is sound
-    // and reused as any other.
+    // whose checks were in progress are marked failed (FnSpec::failed), as
+    // are the struct and enum instances whose builds were
+    // (StructInst::failed). What the root recorded for the whole-program
+    // fixups stays: it is what checked code did, and a specialization or
+    // an instance that completed is sound and reused as any other.
     struct Checkpoint {
         TypeCheck &tc;
         size_t frames, scopes, vars, localfns, blockpos, outerbodies, cyclerounds, typechain,
-               laterpointees, fnspecs;
+               laterpointees, fnspecs, structinsts, enuminsts;
         int typesbuilding;
         BodyState cur;
         struct GlobalFlow { VarDef *v; bool assigned, maybeassigned; TypeExpr *narrowed; };
@@ -2786,7 +2794,8 @@ struct TypeCheck {
               localfns(t.localfns.size()), blockpos(t.blockpos.size()),
               outerbodies(t.outerbodies.size()), cyclerounds(t.cyclerounds.size()),
               typechain(t.typechain.size()), laterpointees(t.laterpointees.size()),
-              fnspecs(t.ast.fnspecs.size()), typesbuilding(t.typesbuilding), cur(t.cur) {
+              fnspecs(t.ast.fnspecs.size()), structinsts(t.ast.structinsts.size()),
+              enuminsts(t.ast.enuminsts.size()), typesbuilding(t.typesbuilding), cur(t.cur) {
             for (auto g : tc.ast.globals)
                 for (auto v : g->defs) globals.push_back({ v, v->assigned, v->maybeassigned, v->narrowed });
         }
@@ -2812,6 +2821,10 @@ struct TypeCheck {
                 sp->inprogress = false;
                 sp->stale = false;
             }
+            for (auto i = structinsts; i < tc.ast.structinsts.size(); i++)
+                if (!tc.ast.structinsts[i]->validated) tc.ast.structinsts[i]->failed = true;
+            for (auto i = enuminsts; i < tc.ast.enuminsts.size(); i++)
+                if (!tc.ast.enuminsts[i]->validated) tc.ast.enuminsts[i]->failed = true;
             for (auto &g : globals) {
                 g.v->assigned = g.assigned;
                 g.v->maybeassigned = g.maybeassigned;
@@ -2822,22 +2835,24 @@ struct TypeCheck {
 
     // Checks one root of the program -- a global's initializer, main, a
     // thread entry, a function nothing reached, an export, a whole-program
-    // fixup -- and goes on past its error: a CompileError is reported
-    // (Ast::Report), an Abandoned is a consequence of one reported before,
-    // and either returns the checker to the root's entry (Checkpoint).
-    // Returns whether the root completed.
-    template<typename F> bool CheckRoot(F f) {
+    // fixup, an exemplar -- and goes on past its error: a CompileError is
+    // reported (Ast::Report) unless `report` is off, an Abandoned is a
+    // consequence of one reported before, and either returns the checker
+    // to the root's entry (Checkpoint). Returns whether the root completed.
+    template<typename F> bool CheckRoot(F f, bool report = true) {
         Checkpoint cp(*this);
         try {
             f();
             return true;
         } catch (CompileError &e) {
-            if (e.diags.empty()) {
-                Diagnostic d;
-                d.message = d.text = e.msg;
-                ast.Report(d);
+            if (report) {
+                if (e.diags.empty()) {
+                    Diagnostic d;
+                    d.message = d.text = e.msg;
+                    ast.Report(d);
+                }
+                for (auto &d : e.diags) ast.Report(d);
             }
-            for (auto &d : e.diags) ast.Report(d);
         } catch (Abandoned &) {
         }
         cp.Restore();
@@ -3064,14 +3079,7 @@ struct TypeCheck {
         FlagScope q(quiet, true);
         for (auto sf : todo) {
             auto from = ast.fnspecs.size();
-            Checkpoint cp(*this);
-            try {
-                CheckExemplar(sf);
-            } catch (CompileError &) {
-                cp.Restore();
-            } catch (Abandoned &) {
-                cp.Restore();
-            }
+            CheckRoot([&] { CheckExemplar(sf); }, false);
             for (auto i = from; i < ast.fnspecs.size(); i++) ast.fnspecs[i]->exemplar = sf;
         }
         for (auto sf : ast.functions)

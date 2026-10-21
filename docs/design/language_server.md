@@ -502,10 +502,13 @@ being checked when the error struck are marked `failed`, since one that
 completed before it is sound and keeping it reusable spares the roots
 that call it (a helper `main` called before its error, say); what the
 root recorded for the fixups stays, being what checked code did. The
-server skips the optimizer and bounds-check elimination for a program
-with errors and answers queries from what was annotated. The fixtures
-are in `test/errors_tc/recovery/` and `test/lsp/recovery.goose`. So is
-recovery inside a declaration and from a failed import
+struct and enum instances whose builds the error cut short are marked
+failed too, and a use of one ends its root as a call of a failed
+specialization does. The server skips the optimizer and bounds-check
+elimination for a program with errors and answers queries from what was
+annotated. The fixtures are in `test/errors_tc/recovery/` and
+`test/lsp/recovery.goose`. So is recovery inside a declaration and from
+a failed import
 (`docs/implementation.md` §2 and §3.1, `test/lsp/broken_decls.goose`):
 a struct, an enum or a top-level function with an error past its name
 stands with what was parsed before it, marked broken (a function with

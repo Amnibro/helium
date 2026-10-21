@@ -1770,6 +1770,11 @@ struct StructInst {
     SizeClass sclass = SC_FIXED;
     bool flat = true;
     bool validated = false;        // Guards against recursive by-value nesting.
+    // Its build was cut short by the error that ended the root it was in
+    // (TypeCheck::CheckRoot): never used again, and a use of it ends its own
+    // root silently, as a consequence of the error reported
+    // (TypeCheck::GetStructInst).
+    bool failed = false;
     // Resizable-tailed with an all-fixed prefix free of relative references:
     // a frame object (C.2), whose fixed fields and tail header live in the
     // owning frame and whose tail alone occupies the data stack.
@@ -1790,6 +1795,7 @@ struct EnumInst {
     SizeClass varclass = SC_VARIABLE;     // Class when used in variable mode.
     bool flat = true;
     bool validated = false;
+    bool failed = false;                  // As StructInst::failed.
     // Per variant while the instance is being built: 1 while its payload's
     // fields are being validated, 2 once they are.
     vector<uint8_t> vbuilt;
@@ -2170,7 +2176,7 @@ struct FnSpec {
     vector<TypeExpr *> rets;       // TY_VOID-free: empty = no return values.
     bool retsknown = false;
     bool inprogress = false;
-    // Its body was being checked when the root being checked ended on an
+    // Its check was in progress when the root being checked ended on an
     // error (TypeCheck::CheckRoot): checked no further, never reused, and a
     // call that would reuse it ends its own root silently, as a
     // consequence of the error reported (TypeCheck::GetOrCreateSpec).

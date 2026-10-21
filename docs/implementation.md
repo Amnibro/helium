@@ -465,24 +465,39 @@ returns the checker to the root's entry (`Checkpoint`): the frames,
 scopes, variables, nested functions, block positions, body states and
 cycle rounds past the root's own are closed, a type build in progress
 dropped, reachability and the globals' flow (assigned, narrowed) as they
-were. The specializations whose bodies were being checked when the error
-struck are marked `FnSpec::failed`: checked no further, and never reused
--- `GetOrCreateSpec` throws `Abandoned` for a call whose key matches one,
+were. The specializations whose checks were in progress when the error
+struck -- from the start of `CheckSpecBodyOnce`, an extern's validation
+and the check of the compiler's own stack included -- are marked
+`FnSpec::failed`: checked no further, and never reused --
+`GetOrCreateSpec` throws `Abandoned` for a call whose key matches one,
 as `EnsureThreadSpec` and `CheckExport` do for a failed entry or export,
 since what the error reported stands for that call too, and the root
-making it ends silently. A specialization that completed before the
-error is sound, and is reused as any other; what the root recorded for
-the fixups (stores, shrinks, literal checks, cast verdicts) stays, being
-what checked code did. A global whose initializer failed stays
-unassigned (`failedglobals`), and a use of it ends its root silently
-rather than as a use before assignment. So one error costs the program
-the diagnostics of what its root reached after it -- the rest of that
-body and of its callers' -- and of the roots whose calls would reuse the
-specializations it cut short, and nothing else; `goose check` prints
-every error in root order, and stops before the optimizer when there
-were any. An error before the roots (a declaration's validation) or in
-what the driver asked for (no `main`, a header without an export) still
-throws.
+making it ends silently. A call whose literal arguments rely on a named
+constant they may not (`NoteLitArgs`) is in error before its new
+specialization is registered, which a later call then makes anew. The
+struct and enum instances whose builds the error cut short are marked
+failed the same way (`StructInst::failed`, `EnumInst::failed`), and
+`GetStructInst` and `GetEnumInst` throw `Abandoned` for a use of one
+rather than hand a later root an instance half built. A specialization
+or an instance that completed before the error is sound, and is reused
+as any other; what the root recorded for the fixups (stores, shrinks,
+literal checks, cast verdicts) stays, being what checked code did. A
+global whose initializer failed stays unassigned (`failedglobals`), and
+a use of it ends its root silently rather than as a use before
+assignment. What a check sets for a while it sets through a scope guard
+(`FlagScope`, `Saved`, `WithBindings`), which the error's throw unwinds:
+the bindings an instantiation substitutes with, the callee's own type
+parameters an overload's trial keeps out of the enclosing bindings
+(`ownexclude`), the literal adaptations a trial does not record
+(`litrecord`), a builtin call's arguments no function took
+(`builtinfallback`). So one error costs the program the diagnostics of
+what its root reached after it -- the rest of that body and of its
+callers' -- and of the roots whose calls would reuse the specializations
+it cut short or that use the instances it did, and nothing else; `goose
+check` prints every error in root order, and stops before the optimizer
+when there were any. An error before the roots (a declaration's
+validation) or in what the driver asked for (no `main`, a header
+without an export) still throws.
 
 **Exemplars.** For the language server (`Ast::exemplars`, never set by
 `goose check`), `CheckExemplars` runs after the fixups: each top-level
@@ -503,9 +518,9 @@ opaque target do; a member of an opaque value (`ResolveMemberLValue`), and
 a call with an opaque argument that no overload takes (`ResolveCall`,
 `HasOpaque`), give a value of one shared opaque type, `?`
 (`OpaqueMember`); an `as` from or to an opaque type gives the target
-type. Anything else is an error, which ends the exemplar: it is caught
-there, unreported, and the checker returned to the exemplar's entry
-(`Checkpoint`), and no warning is given meanwhile (`quiet`), so the
+type. Anything else is an error, which ends the exemplar: `CheckRoot`
+catches it without reporting it and returns the checker to the
+exemplar's entry, and no warning is given meanwhile (`quiet`), so the
 exemplar's clone keeps what it annotated up to its first error. The
 exemplars' calls never reuse a specialization a real root made
 (`GetOrCreateSpec` skips those below `exemplarbase`), since a reuse merges

@@ -84,12 +84,11 @@ inline Val TypeCheck::CheckNamedCall(Call *c, Ident *id, TypeExpr *expected) {
                              entryreach, bd ? &nomatch : nullptr, expected);
         if (!nomatch) return v;
         // Without a cast, an argument might have matched a function (JudgeCastAt).
-        auto args = c->args;
-        for (auto a : args) builtinfallback.insert(a);
+        auto fallback = builtinfallback;
+        fallback.insert(c->args.begin(), c->args.end());
+        Saved<unordered_set<Node *>> fs(builtinfallback, std::move(fallback));
         reachable = entryreach;
-        v = CheckBuiltin(c, *bd, c->args, nullptr);
-        for (auto a : args) builtinfallback.erase(a);
-        return v;
+        return CheckBuiltin(c, *bd, c->args, nullptr);
     }
     if (!bd) {
         if (LookupVar(id->name, id->ns))
@@ -707,10 +706,6 @@ inline bool TypeCheck::TryMatch(SFunction *sf, Call *c, vector<Val> &argvals, Ma
         mi.bindings.push_back({ sf->generics[i].name, t });
     }
     mi.paramtypes.resize(P);
-    // The callee's own generic names must not resolve to same-named
-    // enclosing bindings while unifying (the recursive-generic case).
-    auto saveex = ownexclude;
-    ownexclude = &sf->generics;
     // A literal argument (or a literal parameter passed on) to a parameter
     // whose type is a bare type variable no typed argument binds, or that
     // is untyped, stays a literal inside the specialization (§7.7): the
@@ -723,11 +718,13 @@ inline bool TypeCheck::TryMatch(SFunction *sf, Call *c, vector<Val> &argvals, Ma
     };
     auto isliteral = [](const Val &av) { return av.ck != CK_NONE || av.unsized; };
     set<string_view> litbound;   // Type variables bound by literals alone.
-    // Trying a candidate records nothing: the chosen overload's
-    // argument re-check does.
-    auto saverecord = litrecord;
-    litrecord = false;
     auto paramsok = [&]() {
+        // The callee's own generic names must not resolve to same-named
+        // enclosing bindings while unifying (the recursive-generic case).
+        Saved<const vector<GenericParam> *> ex(ownexclude, &sf->generics);
+        // Trying a candidate records nothing: the chosen overload's
+        // argument re-check does.
+        FlagScope lr(litrecord, false);
         // A literal argument adapts to whatever type the other arguments
         // give a type parameter (§3.1), so they unify after the typed ones:
         // a float one first, whose type an integer one converts to (§6.3).
@@ -794,8 +791,6 @@ inline bool TypeCheck::TryMatch(SFunction *sf, Call *c, vector<Val> &argvals, Ma
         }
         return true;
     }();
-    ownexclude = saveex;
-    litrecord = saverecord;
     if (!paramsok) return false;
     // Leftover generics bind function values, in order (§7.6).
     vector<string_view> unbound;
@@ -835,9 +830,11 @@ inline bool TypeCheck::TryMatch(SFunction *sf, Call *c, vector<Val> &argvals, Ma
     // The left-out parameters' types, as the arguments made them. A type
     // variable a function value took leaves one undecided as well.
     for (auto i = K; i < P; i++) {
-        ownexclude = &sf->generics;
-        auto pt = Subst(sf->params[i].type);
-        ownexclude = saveex;
+        TypeExpr *pt;
+        {
+            Saved<const vector<GenericParam> *> ex(ownexclude, &sf->generics);
+            pt = Subst(sf->params[i].type);
+        }
         auto ct = DeclType(sf->params[i].type, SubstOwn(pt, mi.bindings));
         if (HasGenerics(ct)) {
             for (auto g : unbound) if (undecided(g)) return false;
@@ -1688,8 +1685,10 @@ inline FnSpec *TypeCheck::GetOrCreateSpec(MatchInfo &mi, vector<Val> &argvals, N
     spec->litparams = mi.litparams;
     spec->fnvals = mi.fnvals;
     spec->bindings = mi.bindings;
-    sf->specs.push_back(spec);
+    // An error in what the call's literal arguments rely on is the call
+    // site's: it leaves no specialization behind for a later call to reuse.
     NoteLitArgs(spec, argvals, callnode);
+    sf->specs.push_back(spec);
     CheckSpecBody(spec, &argvals, callnode->line);
     NoteCalleeEnvReads(spec);
     return spec;
@@ -2751,6 +2750,9 @@ inline bool TypeCheck::SameRecord(const FnRecord &a, const FnRecord &b, const Fn
 }
 
 inline void TypeCheck::CheckSpecBodyOnce(FnSpec *spec, vector<Val> *argvals, Line callline) {
+    // In progress from here, so that an error before the body's check, an
+    // extern's included, leaves it failed (Checkpoint).
+    spec->inprogress = true;
     // A body is checked inside the call that first reaches it, so the native
     // stack holds one of these per call on the compile-time call path.
     if (StackLow()) {
@@ -2761,7 +2763,6 @@ inline void TypeCheck::CheckSpecBodyOnce(FnSpec *spec, vector<Val> *argvals, Lin
     }
     auto sf = spec->sf;
     if (sf->isextern) { CheckExternSpec(spec); return; }
-    spec->inprogress = true;
     spec->record.eventstart = storeevents.size();
     spec->envreads.clear();
     // A cycle's rounds keep the parameters' identity, as they keep the
