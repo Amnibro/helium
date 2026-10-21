@@ -3188,7 +3188,13 @@ with `Val::notconst` saying it is exactly i64's `~c`: unary `-` takes it as
 that constant, and an untyped `let` global of it is a named constant with
 `VarDef::constnot`, read back as such a value. Its value at a narrower use
 is `~c` wrapped, which `Ident::CgX`'s cast and the optimizer's propagated
-copy (`CloneLit`, `WrapStorage`) give.
+copy (`CloneLit`, `WrapStorage`) give. `ConstIntValue` reports `~c` of a
+literal or of a named constant (an annotated global being none) with
+`Val::notconst` as well, its value i64's `~c` for the arithmetic around it:
+a match pattern is `~c` wrapped to the scrutinee's width where `c` fits it
+(`PatternValue`), an annotated global's initializer to the global's type,
+and a `const for` entry stays the `~c` it is (`ExpansionConstant`), which
+adapts where the expansion uses it.
 
 A construct's numeric branches join in `MergeVals` (§6.4): branches that are
 all integer constants give a `Val::litint`, the range of the constants,

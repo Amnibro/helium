@@ -1601,6 +1601,12 @@ inline Val TypeCheck::CheckMatch(MatchExpr *m, TypeExpr *expected, bool wantvalu
             ConstUse use { n, "match pattern" };
             if (!ConstIntValue(n, v, literal, visiting, &use))
                 Error(n, "constant integer expression expected for match pattern");
+            // `~c` is ~c at the scrutinee's width, where c fits it; where it
+            // does not, i64's ~c does not either.
+            if (v.notconst && FitsIntStorage(v.litlo, false, sit)) {
+                v.ival = WrapStorage(v.ival, sit);
+                v.uns = sit == IS_U64 && v.ival < 0;
+            }
             uns = v.uns;
             return v.ival;
         };

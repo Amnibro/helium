@@ -2616,6 +2616,13 @@ inline bool TypeCheck::ConstIntValue(Node *n, Val &v, bool &literal,
         if (g->type) {
             auto t = g->type;
             if (!IsIntT(t)) return false;
+            if (v.notconst) {
+                // The initializer's `~c` at the width the annotation gives.
+                if (!FitsIntStorage(v.litlo, false, t->intstorage)) Error(n, ConstsNoFit(v, t));
+                v.ival = WrapStorage(v.ival, t->intstorage);
+                v.uns = t->intstorage == IS_U64 && v.ival < 0;
+                v.notconst = false;
+            }
             if (!FitsIntStorage(v.ival, v.uns, t->intstorage))
                 Error(n, cat("constant ", ConstStr(v), " does not fit ", TypeStr(t)));
             v.type = ast.PlainOf(t);
@@ -2627,6 +2634,13 @@ inline bool TypeCheck::ConstIntValue(Node *n, Val &v, bool &literal,
     if (auto u = Is<Unary>(n)) {
         if (u->op != T_MINUS && u->op != T_BITNOT) return false;
         if (!ConstIntValue(u->child, v, literal, visiting, use)) return false;
+        // A constant a check gives no type of its own: a literal, or a named
+        // constant, which only its annotation would give one.
+        auto adapts = literal;
+        if (auto id = Is<Ident>(u->child)) {
+            auto g = ast.LookupGlobal(id->name, id->ns);
+            adapts = g && !g->type;
+        }
         auto s = v.type->intstorage;
         if (u->op == T_MINUS) {
             if (v.uns && (!literal || v.ival != INT64_MIN))
@@ -2638,12 +2652,20 @@ inline bool TypeCheck::ConstIntValue(Node *n, Val &v, bool &literal,
             v.ival = (int64_t)(0u - (uint64_t)v.ival);
             if (literal) v.type = ast.inttypes[IS_I64];
             v.uns = false;
+            v.notconst = false;
+        } else if (adapts && s == IS_I64 && !v.notconst && v.ival >= 0) {
+            // `~c` of such a constant c >= 0 is ~c at the width it is used
+            // at (Val::notconst, NumericUnary), i64's here.
+            v.notconst = true;
+            v.litlo = v.lithi = v.ival;
+            v.ival = ~v.ival;
         } else {
             v.ival = ~v.ival;
             auto bits = IntBits(s);
             if (IsUnsigned(s) && bits < 64)
                 v.ival = (int64_t)((uint64_t)v.ival & ((1ull << bits) - 1));
             v.uns = s == IS_U64 && v.ival < 0;
+            v.notconst = false;
         }
         if (!FitsIntStorage(v.ival, v.uns, v.type->intstorage))
             Error(n, "signed overflow in constant expression");
