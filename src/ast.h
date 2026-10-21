@@ -364,6 +364,11 @@ inline bool IsU8(const TypeExpr *t) {
 // An index or bound type (`u32 in a`, `u32 upto a`).
 inline bool IsIndexT(const TypeExpr *t) { return t && t->kind == TY_INT && t->ix; }
 inline bool IsF32(const TypeExpr *t) { return t && t->kind == TY_FLT && t->fltstorage == FS_F32; }
+// The ADT a variant type is a variant of, and an enum type's own; else null.
+inline TypeExpr *AdtOf(TypeExpr *t) {
+    if (t->kind == TY_VARIANT) return t->var->adt->kind == TY_ENUM ? t->var->adt : nullptr;
+    return t->kind == TY_ENUM ? t : nullptr;
+}
 
 // The primitive type keyword tokens, in a contiguous range.
 inline bool IsPrimTypeToken(TType t) { return t >= T_TBOOL && t <= T_TF64; }
@@ -1466,6 +1471,14 @@ struct SFunction {
     // against (TypeCheck::ResolveCall).
     bool brokensig = false;
     vector<FnSpec *> specs;     // Specializations (typecheck), owned by Ast.
+
+    // Checked once per distinct argument types (§7.7): a function with type
+    // parameters or an untyped parameter.
+    bool IsGeneric() const {
+        if (!generics.empty()) return true;
+        for (auto &p : params) if (!p.type) return true;
+        return false;
+    }
 };
 
 struct SStruct {

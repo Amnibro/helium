@@ -939,6 +939,12 @@ struct TypeCheck {
         return true;
     }
 
+    // Two enum types of one ADT, whichever mode each is in, which TypeEq
+    // tells apart.
+    bool SameAdt(TypeExpr *a, TypeExpr *b) {
+        return a->enu->en == b->enu->en && TypeArgsEq(a->enu->args, b->enu->args);
+    }
+
     // Generic bindings bind each name once, in whatever order explicit type
     // arguments and inference produced them.
     bool BindingsEq(vector<pair<string_view, TypeExpr *>> &a,
@@ -1638,6 +1644,7 @@ struct TypeCheck {
     bool ReachesThroughRefs(TypeExpr *t, TypeExpr *of);
     void BoundReach(VarDef *r, vector<TypeExpr *> &out);
     TypeExpr *PointeeOf(TypeExpr *t);
+    void LexicalVars(int fi, vector<bool> *seen, const function<void(VarDef *)> &f);
     void VisibleVars(const function<void(VarDef *)> &f);
     void ShrinkScanVars(const function<void(VarDef *)> &f);
     bool StaticCanContain(TypeExpr *of);
@@ -1676,6 +1683,7 @@ struct TypeCheck {
     void ReadBackLVal(LVal &lv);
     bool SlotLoadWritable(TypeExpr *t, bool path);
     Val ContainerRead(LVal lv);
+    void CheckAccessorOwner(Node *at, TypeExpr *owner, TypeExpr *t, StructLit *lit = nullptr);
     void ResolveMemberLValue(LVal &lv, Dot *d);
     // Where a holder value's references point: what was derived for it, else
     // for a reference or slice its own roots, and for a by-value holder what
@@ -3060,8 +3068,7 @@ struct TypeCheck {
 
     void CheckUnreached(SFunction *sf) {
         if (!sf->specs.empty() || sf->isthread || sf->isnested || sf->brokensig) return;
-        if (!sf->generics.empty()) return;
-        for (auto &p : sf->params) if (!p.type) return;
+        if (sf->IsGeneric()) return;
         set<string_view> names = { sf->name };
         auto foreign = false;
         if (sf->body) ScanForeignFrom(sf->body, names, foreign);
@@ -3088,9 +3095,7 @@ struct TypeCheck {
         for (auto sf : ast.functions) {
             if (!sf->specs.empty() || sf->isthread || sf->isnested || sf->isextern || !sf->body)
                 continue;
-            auto generic = !sf->generics.empty();
-            for (auto &p : sf->params) generic = generic || !p.type;
-            if (generic) todo.push_back(sf);
+            if (sf->IsGeneric()) todo.push_back(sf);
         }
         if (todo.empty()) return;
         exemplarbase = (int)ast.fnspecs.size();

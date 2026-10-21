@@ -1416,8 +1416,7 @@ inline Val TypeCheck::CheckMatch(MatchExpr *m, TypeExpr *expected, bool wantvalu
     for (auto &arm : m->arms) {
         for (auto &pi : arm.pat.items) {
             auto owner = pi.variantowner;
-            if (owner && (!enumtype || owner->enu->en != enumtype->enu->en ||
-                          !TypeArgsEq(owner->enu->args, enumtype->enu->args)))
+            if (owner && (!enumtype || !SameAdt(owner, enumtype)))
                 Error(arm.body, cat("const for variant ", ExprStr(pi.lo), " belongs to ",
                                     TypeStr(owner), ", not ", TypeStr(enumtype ? enumtype : st)));
         }
@@ -2591,11 +2590,8 @@ inline void TypeCheck::CheckAssign(Assign *a) {
 // function's or function value's written inside one: a function with type
 // parameters or untyped parameters (§7.7).
 inline bool TypeCheck::InGenericBody() {
-    for (auto sf = frames.back().sf; sf; sf = sf->outer) {
-        if (!sf->generics.empty()) return true;
-        for (auto &p : sf->params)
-            if (!p.type) return true;
-    }
+    for (auto sf = frames.back().sf; sf; sf = sf->outer)
+        if (sf->IsGeneric()) return true;
     return false;
 }
 

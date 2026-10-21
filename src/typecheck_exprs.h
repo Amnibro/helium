@@ -63,6 +63,7 @@ inline TypeCheck::LVal TypeCheck::CheckLValue(Node *n) {
         auto lv = LValueBase(d->obj);
         auto base = lv.type;
         DerefLValue(lv, d->obj);
+        CheckAccessorOwner(d, d->accessorowner, lv.type);
         ResolveMemberLValue(lv, d);
         if (lv.intemp) NoRelRefTempRead(d->obj, base, lv.type);
         n->exprtype = lv.type;
@@ -604,12 +605,25 @@ template<typename F> void TypeCheck::AfterHead(Node *n, Node *next, F f) {
 // derived for it, else the value's own root (a temporary's outlives nothing).
 inline VarDef *TypeCheck::HolderRootOf(const Val &v) { return ContentsOf(v).Root(); }
 
-// Field / builtin-property resolution on an lvalue path.
+// A `const for` field accessor over fields<T> (`owner`) names a field of a
+// value of type T, a struct or a variant type, alone; one in a literal of a
+// variant (`lit`) belongs to that variant whichever mode the literal
+// settles to (const_for.md).
+inline void TypeCheck::CheckAccessorOwner(Node *at, TypeExpr *owner, TypeExpr *t,
+                                          StructLit *lit) {
+    if (!owner) return;
+    auto owned = lit && owner->kind == TY_VARIANT
+                     ? lit->variant && owner->var->variant == lit->variant &&
+                           TypeArgsEq(owner->var->adt->enu->args, lit->einst->args)
+                     : TypeEq(ast.PlainOf(t), owner);
+    if (!owned)
+        Error(at, cat("const for accessor belongs to ", TypeStr(owner), ", not ", TypeStr(t)));
+}
+
+// Field / builtin-property resolution on an lvalue path, whose accessor the
+// caller has checked (CheckAccessorOwner).
 inline void TypeCheck::ResolveMemberLValue(LVal &lv, Dot *d) {
     auto t = lv.type;
-    if (d->accessorowner && !TypeEq(ast.PlainOf(t), d->accessorowner))
-        Error(d, cat("const for accessor belongs to ", TypeStr(d->accessorowner),
-                     ", not ", TypeStr(t)));
     // Steps the path into the named field of a field run; a frame
     // object's resizable tail has a header of its own to address (C.2).
     auto step = [&](const vector<Field> &fields, const vector<TypeExpr *> &ftypes,
@@ -1334,16 +1348,8 @@ inline bool TypeCheck::FitsAt(Val &v, TypeExpr *dt) {
         case TY_ENUM: {
             // Mode adaptation copies at construction (fixed <-> variable);
             // a variant value constructs its enum (the tag is static).
-            if (t->kind == TY_VARIANT) {
-                auto adt = t->var->adt;
-                if (adt->enu->en != dt->enu->en) return false;
-                if (!TypeArgsEq(adt->enu->args, dt->enu->args)) return false;
-            } else if (t->kind == TY_ENUM) {
-                if (t->enu->en != dt->enu->en) return false;
-                if (!TypeArgsEq(t->enu->args, dt->enu->args)) return false;
-            } else {
-                return false;
-            }
+            auto adt = AdtOf(t);
+            if (!adt || !SameAdt(adt, dt)) return false;
             if (!dt->enu->varmode && !GetEnumInst(dt)->allfixed) return false;
             v.type = dt;
             return true;
@@ -2215,12 +2221,7 @@ inline void TypeCheck::RetypeFlexInt(Node *n, TypeExpr *t) {
 // or default declared in one -- so that the types around a cast may differ
 // from one specialization to the next (§7.7).
 inline bool TypeCheck::InGenericCode() {
-    auto generic = [](const SFunction *sf) {
-        if (!sf) return false;
-        if (!sf->generics.empty()) return true;
-        for (auto &p : sf->params) if (!p.type) return true;
-        return false;
-    };
+    auto generic = [](const SFunction *sf) { return sf && sf->IsGeneric(); };
     for (auto i = (int)frames.size() - 1; i >= 0;) {
         auto &fr = frames[i];
         if (fr.isfunval && !fr.isdefault) return true;
@@ -2987,15 +2988,7 @@ inline TypeCheck::LitDeep TypeCheck::CheckInits(StructLit *sl, vector<Field> &fi
     auto pos = 0;
     for (auto &fi : sl->inits) {
         auto idx = -1;
-        // A variant's accessor (fields<V> over a variant type) belongs to a
-        // literal of that variant, whichever mode the literal settles to.
-        auto owned = fi.accessorowner && fi.accessorowner->kind == TY_VARIANT
-                         ? sl->variant && fi.accessorowner->var->variant == sl->variant &&
-                               TypeArgsEq(fi.accessorowner->var->adt->enu->args, sl->einst->args)
-                         : !fi.accessorowner || TypeEq(ast.PlainOf(selft), fi.accessorowner);
-        if (!owned)
-            Error(fi.val, cat("const for accessor belongs to ", TypeStr(fi.accessorowner),
-                              ", not ", TypeStr(selft)));
+        CheckAccessorOwner(fi.val, fi.accessorowner, selft, sl);
         if (named) {
             for (auto i = 0; i < (int)fields.size(); i++)
                 if (!fields[i].ispad && fields[i].name == fi.name) { idx = i; break; }

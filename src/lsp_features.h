@@ -1922,14 +1922,6 @@ inline bool Completion(Workspace &ws, const Json &params, JsonOut &j) {
 
 // --- code lens --------------------------------------------------------------------------
 
-// A function checked once per distinct argument types: one with type
-// parameters or an untyped parameter.
-inline bool IsGeneric(const SFunction *sf) {
-    if (!sf->generics.empty()) return true;
-    for (auto &p : sf->params) if (!p.type) return true;
-    return false;
-}
-
 // Above each top-level generic function, how many specializations it has,
 // their lines as the lens's data; above `main`, "Run". A lens names a
 // command only where the client said it has one (Workspace::clientcommands):
@@ -1968,7 +1960,7 @@ inline bool CodeLenses(Workspace &ws, const Json &params, JsonOut &j) {
         auto sf = fd->sf;
         auto p = PlaceOfFn(an, sf);
         if (!p.Known() || p.fileidx != f.fileidx) continue;
-        if (IsGeneric(sf)) {
+        if (sf->IsGeneric()) {
             auto lines = SpecLines(sf);
             auto title = lines.empty() ? string("not instantiated")
                                        : cat(lines.size(), lines.size() == 1 ? " instantiation" : " instantiations");

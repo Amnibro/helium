@@ -320,8 +320,7 @@ inline Val StructLit::Check(TypeCheck &tc, TypeExpr *expected) {
         // adapts to either, or stands as a first-class variant value (§8.2).
         // Which it is decides what `self` inside it denotes, so settle the
         // type before the initializers are checked.
-        v.type = expected && expected->kind == TY_ENUM && expected->enu->en == ei->en &&
-                         tc.TypeArgsEq(expected->enu->args, t->var->adt->enu->args)
+        v.type = expected && expected->kind == TY_ENUM && tc.SameAdt(expected, t->var->adt)
                      ? expected : t;
         auto deep = tc.CheckInits(this, var->fields, ei->vftypes[vi], ei->en->name, v.type);
         v.Set(tc.TempRoot(), false);   // A temporary, as an array literal is.
@@ -457,9 +456,7 @@ inline Val Dot::Check(TypeCheck &tc, TypeExpr *) {
         ov.ClearReads();
         ov.reached = tc.LoadType(t);
     }
-    if (accessorowner && !tc.TypeEq(tc.ast.PlainOf(t), accessorowner))
-        tc.Error(this, cat("const for accessor belongs to ", tc.TypeStr(accessorowner),
-                           ", not ", tc.TypeStr(t)));
+    tc.CheckAccessorOwner(this, accessorowner, t);
     // Builtin properties (.len/.cap) from the table.
     if (auto bd = LookupBuiltin(name); bd && (bd->flags & BF_PROPERTY)) {
         if (RecvKindOf(t) & bd->recv) {

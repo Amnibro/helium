@@ -449,10 +449,8 @@ inline bool TypeCheck::VerifiableElem(TypeExpr *t, TypeExpr *elem, string &why) 
             if (!ImageSafe(t, why)) return false;
             auto p = t->ref->sub;
             if (TypeEq(p, elem)) return true;
-            if (p->kind == TY_VARIANT && elem->kind == TY_ENUM &&
-                p->var->adt->kind == TY_ENUM && p->var->adt->enu->en == elem->enu->en &&
-                TypeArgsEq(p->var->adt->enu->args, elem->enu->args))
-                return true;
+            auto adt = p->kind == TY_VARIANT ? AdtOf(p) : nullptr;
+            if (adt && elem->kind == TY_ENUM && SameAdt(adt, elem)) return true;
             why = cat(TypeStr(t), " points at ", TypeStr(p), ", not at an element of the "
                       "array or one of its variants");
             return false;
@@ -1148,14 +1146,15 @@ inline TypeExpr *TypeCheck::PointeeOf(TypeExpr *t) {
     return nullptr;
 }
 
-// Every variable in scope in the body being checked and in its lexical
-// parents at the call (§7.5): all LookupVar reaches that is still in scope,
-// and for a nested function also what its declaration does not see, since a
-// reference handed to the body may point there (a later nested function's
-// result, a function value written at the call). Globals are enumerated
-// separately.
-inline void TypeCheck::VisibleVars(const function<void(VarDef *)> &f) {
-    for (auto fi = (int)frames.size() - 1; fi >= 0;) {
+// The variables of frame fi and of the frames up its lexical chain,
+// innermost first: each frame's, as many as are declared by now, then those
+// of its lexical parent, or for a default's frame those of the code running
+// it, the frame below. A frame `seen` marks ends the walk, and each frame
+// walked is marked.
+inline void TypeCheck::LexicalVars(int fi, vector<bool> *seen,
+                                   const function<void(VarDef *)> &f) {
+    while (fi >= 0 && !(seen && (*seen)[fi])) {
+        if (seen) (*seen)[fi] = true;
         auto &fr = frames[fi];
         auto limit = fi == (int)frames.size() - 1 ? (int)vars.size()
                                                   : frames[fi + 1].varbase;
@@ -1164,24 +1163,24 @@ inline void TypeCheck::VisibleVars(const function<void(VarDef *)> &f) {
     }
 }
 
+// Every variable in scope in the body being checked and in its lexical
+// parents at the call (§7.5): all LookupVar reaches that is still in scope,
+// and for a nested function also what its declaration does not see, since a
+// reference handed to the body may point there (a later nested function's
+// result, a function value written at the call). Globals are enumerated
+// separately.
+inline void TypeCheck::VisibleVars(const function<void(VarDef *)> &f) {
+    LexicalVars((int)frames.size() - 1, nullptr, f);
+}
+
 // The variables a shrink at the point being checked may leave pointing into
 // freed storage: those VisibleVars gives, and inside a function value's body
 // those of the function running it, which the body cannot name but runs in
 // the middle of (§7.6), with that function's lexical parents in turn.
 inline void TypeCheck::ShrinkScanVars(const function<void(VarDef *)> &f) {
     vector<bool> seen(frames.size(), false);
-    auto walk = [&](int fi) {
-        while (fi >= 0 && !seen[fi]) {
-            seen[fi] = true;
-            auto &fr = frames[fi];
-            auto limit = fi == (int)frames.size() - 1 ? (int)vars.size()
-                                                      : frames[fi + 1].varbase;
-            for (auto i = limit - 1; i >= fr.varbase; i--) f(vars[i]);
-            fi = fr.isdefault ? fi - 1 : fr.lexframe;
-        }
-    };
     for (auto fi = (int)frames.size() - 1; fi >= 0; fi--) {
-        walk(fi);
+        LexicalVars(fi, &seen, f);
         if (!frames[fi].isfunval) break;
     }
 }
