@@ -5362,9 +5362,10 @@ a `jmp_buf` and the message. Every failed check and `abort(msg)` ends in
 in a `malloc`ed buffer and jumps; anywhere else it prints the message and
 calls `gs_end`. After the jump, the worker releases what a return does: its
 globals instance and stack block (`gs_thread_release`), copied arguments, and
-regions. Its id and message go into `gs_aborted`, from which `thread_wait`
-answers `false`. The first wait that asks for the message takes it, so the
-list keeps a message only until then, and an id for good. `gs_panic`,
+regions. Its id goes into a bit set, one bit per id, from which
+`thread_wait` answers `false`, and its message into `gs_aborted` until the
+first wait that asks for it takes it out: the list holds only the messages
+no wait has taken, and the bit stays for good. `gs_panic`,
 `gs_exit`, and the fault handlers still end the process.
 
 **Integer semantics** (§6.2): every operation runs at its type through
