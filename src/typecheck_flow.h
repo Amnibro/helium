@@ -35,16 +35,14 @@ inline void TypeCheck::PopScope() {
 }
 
 // A grow-shrink array anywhere in a value of type t: the array itself, or
-// the tail of a struct (elements are never resizable, §3.3).
+// the tail of a struct or of a variant type's payload (elements are never
+// resizable, §3.3). An enum's payloads are left out: a resizable ADT's are
+// never bound by reference (§8.1), so no reference reaches into one.
 inline bool TypeCheck::ContainsGrowShrink(TypeExpr *t) {
     switch (t->kind) {
         case TY_ARRAY: return t->arr->akind == A_GROWSHRINK;
-        case TY_STRUCT: {
-            auto inst = GetStructInst(t);
-            for (auto ft : inst->ftypes)
-                if (ft && ContainsGrowShrink(ft)) return true;
-            return false;
-        }
+        case TY_STRUCT: case TY_VARIANT:
+            return AnyField(t, [&](TypeExpr *ft) { return ContainsGrowShrink(ft); });
         default: return false;
     }
 }
@@ -66,16 +64,15 @@ inline bool TypeCheck::IsGrowShrinkRoot(VarDef *r) {
 }
 
 // The element types of the grow-shrink arrays a value of type t holds by
-// value.
+// value, where ContainsGrowShrink finds them.
 inline void TypeCheck::GrowShrinkElems(TypeExpr *t, vector<TypeExpr *> &out) {
     switch (t->kind) {
         case TY_ARRAY:
             if (t->arr->akind == A_GROWSHRINK) out.push_back(t->arr->sub);
             else GrowShrinkElems(t->arr->sub, out);
             return;
-        case TY_STRUCT:
-            for (auto ft : GetStructInst(t)->ftypes)
-                if (ft) GrowShrinkElems(ft, out);
+        case TY_STRUCT: case TY_VARIANT:
+            EachField(t, [&](TypeExpr *ft) { GrowShrinkElems(ft, out); });
             return;
         default: return;
     }

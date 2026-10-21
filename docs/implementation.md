@@ -2033,12 +2033,16 @@ value's body still counts whole. The test never depends on what the
 optimizer proves.
 
 **Grow-shrink arrays** (§5.2): `ShrinkGrowShrink` runs from anywhere (a
-local, a reference, a global, a struct's tail, whole assignment) and scans
-held temporaries and the reference and slice variables in scope only
-(`CheckShrinkHolders`), inside a function value's body those of the function
-running it included (`ShrinkScanVars`): references into such an array can
-never be stored (§3.5 rule 3), so checking those variables and temporaries
-is sufficient.
+local, a reference, a global, the tail of a struct or of a variant type's
+payload, whole assignment) and scans held temporaries and the reference and
+slice variables in scope only (`CheckShrinkHolders`), inside a function
+value's body those of the function running it included (`ShrinkScanVars`):
+references into such an array can never be stored (§3.5 rule 3), so
+checking those variables and temporaries is sufficient. A root holds such
+an array where its type is one or has one in such a tail, at any depth
+(`ContainsGrowShrink`, whose element types `GrowShrinkElems` gives); an
+enum's payloads are not looked into, since a resizable ADT's payload is
+never bound by reference (§8.1).
 That includes a reference to a slice variable, whose slice may view the
 array: the variable's own binding says where, as the variable standing for
 the slice a parameter's slot holds does where it has one (§3.4), and any
