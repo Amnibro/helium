@@ -2578,10 +2578,10 @@ GS_API int64_t gs_fmt_i64(uint8_t *dst, int64_t v) {
    same value of its own type and, of those, the ones nearest it, a tie going
    to the even digit (as Python's repr and Ryu choose). They are found in
    integers, by Burger and Dybvig's free-format algorithm, not through the C
-   library: msvcrt, which tcc uses on Windows, rounds a printf tie away from
-   zero, and below a power of two the gap to the next float is half the gap
 )GSRT"
-R"GSRT(   above, so the shortest text can lie above the value while the correctly
+R"GSRT(   library: msvcrt, which tcc uses on Windows, rounds a printf tie away from
+   zero, and below a power of two the gap to the next float is half the gap
+   above, so the shortest text can lie above the value while the correctly
    rounded spelling of that length, below it, does not read back.
 
    The numbers are naturals in 32-bit limbs, least significant first. The
@@ -2611,8 +2611,7 @@ static void gs_big_mul(gs_big *a, uint32_t m) {
     if (c) a->d[a->n++] = (uint32_t)c;
 }
 
-)GSRT"
-R"GSRT(static void gs_big_mul_pow10(gs_big *a, int k) {
+static void gs_big_mul_pow10(gs_big *a, int k) {
     for (; k >= 9; k -= 9) gs_big_mul(a, 1000000000u);
     for (; k > 0; k--) gs_big_mul(a, 10);
 }
@@ -2798,11 +2797,11 @@ GS_API int64_t gs_fmt_quoted(uint8_t *dst, const uint8_t *s, int64_t n) {
     for (int64_t i = 0; i < n; i++) {
         uint8_t c = s[i];
         switch (c) {
-            case '"': *d++ = '\\'; *d++ = '"'; break;
+)GSRT"
+R"GSRT(            case '"': *d++ = '\\'; *d++ = '"'; break;
             case '\\': *d++ = '\\'; *d++ = '\\'; break;
             case '\n': *d++ = '\\'; *d++ = 'n'; break;
-)GSRT"
-R"GSRT(            case '\r': *d++ = '\\'; *d++ = 'r'; break;
+            case '\r': *d++ = '\\'; *d++ = 'r'; break;
             case '\t': *d++ = '\\'; *d++ = 't'; break;
             default: *d++ = c; break;
         }
