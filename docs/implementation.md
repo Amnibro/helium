@@ -3848,8 +3848,11 @@ just before it (`RecordSetDir`), so `i = (i - 1) / 2` keeps a sift-up index
 below where it started. Global integer variables
 get the same `>= 0` treatment across the whole program
 (`ValidateGlobalInvariants`: the initializer is the base case, every write in
-every live body the step), which is what a parse cursor kept in a global
-needs.
+every live body and in every global's initializer the step), which is what a
+parse cursor kept in a global needs. The writes are checked with every
+candidate assumed at once, so a candidate dropped has the writes checked again
+in another round, until none is; a global whose address is taken anywhere, in
+an initializer too, is none.
 
 **Step counters.** A counted `for` loop (a range, a count, or an array or
 slice walk with an index) moves its index by exactly one per iteration. A

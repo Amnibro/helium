@@ -577,7 +577,8 @@ struct BCE {
     map<VarDef *, Cand> cands;
     // Global integer variables that are nonnegative at every program point:
     // established by their initializer and preserved by every write in every
-    // live body (validated in RunAll's first phase, granted in the second).
+    // live body and every global's initializer (validated in RunAll's first
+    // phase, granted in the second).
     // Globals are the idiomatic home for parser/cursor state, whose upper
     // bound comes from a loop condition but whose lower bound has nowhere
     // else to come from.
@@ -1837,6 +1838,7 @@ struct BCE {
             auto v = id->vdef;
             if (ScalarIntVar(v)) {
                 NoteInt(OwnerTarget(v));
+                if (mode == M_RECORD) RecordSet(v, Term {}, false);   // As in PointeeWriteKill.
                 BumpVar(v);
                 return;
             }
@@ -1846,6 +1848,7 @@ struct BCE {
             if (k == UK_OWNED) {
                 if (ScalarIntVar(u)) {
                     NoteInt(OwnerTarget(u));
+                    if (mode == M_RECORD) RecordSet(u, Term {}, false);
                     BumpVar(u);
                 }
                 return;
@@ -2372,6 +2375,10 @@ struct BCE {
             if (tk == UK_OWNED) {
                 if (tu->type && tu->type->kind == TY_INT) {
                     NoteInt(OwnerTarget(tu));
+                    // No invariant candidate has its address taken, which a
+                    // reference to it needs, but should one have, this write
+                    // of a value unknown here ends its invariant.
+                    if (mode == M_RECORD) RecordSet(tu, Term {}, false);
                     BumpVar(tu, false);
                 }
             } else {
@@ -3175,10 +3182,21 @@ struct BCE {
         }
     }
 
+    // Fresh state plus the prescan for the global initializers, each walked
+    // as a tree of its own. They need their own prescan once a body's places
+    // have been discarded, including places a call can invalidate.
+    void SetupRootTrees() {
+        ResetSpecState();
+        IndexPlaces();
+        ast.ForEachRootTree([&](Node *n) { Mark(n); });
+    }
+
     // Seeds gge0 from the globals' initializers, then drops every candidate
-    // some write in some live body fails to preserve. The candidate is
-    // assumed while checking each write (ordinary induction: the initializer
-    // is the base case, every write the step).
+    // some write fails to preserve, in a live body or in a global's
+    // initializer. The candidates are assumed while checking each write
+    // (ordinary induction: the initializer is the base case, every write
+    // the step), all of them at once: a write checked by another candidate
+    // that some write then drops is checked again, in rounds until none is.
     void ValidateGlobalInvariants() {
         for (auto g : ast.globals) {
             if (g->defs.size() != 1 || g->inits.size() != 1) continue;
@@ -3194,22 +3212,13 @@ struct BCE {
             SetupSpec(sp);
             for (auto v : addrof) gaddr.insert(v);
         }
+        SetupRootTrees();
+        for (auto v : addrof) gaddr.insert(v);
         for (auto &[v, ok] : gge0) if (gaddr.count(v)) ok = false;
-        for (auto sp : ast.fnspecs) {
-            if (!sp->live || !sp->body) continue;
-            // Every write that can drop a candidate notes the global in the
-            // body's effect summary, so a body whose summary names none of
-            // the live candidates has nothing to check.
-            auto &writes = effects[sp].intvars;
-            auto any = false, here = false;
-            for (auto &[v, ok] : gge0)
-                if (ok) {
-                    any = true;
-                    here = here || writes.count(v);
-                }
-            if (!any) return;
-            if (!here) continue;
-            SetupSpec(sp);
+        // Walks one tree recording; whether a write in it dropped a candidate.
+        auto check = [&](Node *n) {
+            cands.clear();
+            ge0.clear();
             for (auto &[v, ok] : gge0)
                 if (ok) {
                     cands[v].declseen = true;
@@ -3217,10 +3226,37 @@ struct BCE {
                 }
             mode = M_RECORD;
             flow = Flow {};
-            Walk(sp->body);
+            Walk(n);
+            mode = M_JUDGE;
+            auto dropped = false;
             for (auto &[v, ok] : gge0) {
                 auto it = cands.find(v);
-                if (it != cands.end() && !it->second.ge0) ok = false;
+                if (ok && it != cands.end() && !it->second.ge0) {
+                    ok = false;
+                    dropped = true;
+                }
+            }
+            return dropped;
+        };
+        auto live = [&] {
+            for (auto &[v, ok] : gge0) if (ok) return true;
+            return false;
+        };
+        for (auto dropped = true; dropped && live();) {
+            dropped = false;
+            SetupRootTrees();
+            ast.ForEachRootTree([&](Node *n) { dropped = check(n) || dropped; });
+            for (auto sp : ast.fnspecs) {
+                if (!sp->live || !sp->body) continue;
+                // Every write that can drop a candidate notes the global in
+                // the body's effect summary, so a body whose summary names
+                // none of the live candidates has nothing to check.
+                auto &writes = effects[sp].intvars;
+                auto here = false;
+                for (auto &[v, ok] : gge0) here = here || (ok && writes.count(v));
+                if (!here) continue;
+                SetupSpec(sp);
+                dropped = check(sp->body) || dropped;
             }
         }
         ge0.clear();
@@ -3239,11 +3275,7 @@ struct BCE {
         for (auto it = calleesfirst.rbegin(); it != calleesfirst.rend(); ++it)
             if ((*it)->live && (*it)->body) RunSpec(*it);
         // Global initializers: judged with no surrounding context.
-        ResetSpecState();
-        IndexPlaces();
-        // They need their own prescan now that the last body's places have
-        // been discarded, including places a call can invalidate.
-        ast.ForEachRootTree([&](Node *n) { Mark(n); });
+        SetupRootTrees();
         mode = M_JUDGE;
         ast.ForEachRootTree([&](Node *n) {
             flow = Flow {};
