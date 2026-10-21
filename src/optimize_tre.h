@@ -115,21 +115,64 @@ struct TailRecursion {
         return f.writes == 0 && f.addrof == 0;
     }
 
-    // A rebound reference must still point at something after the iteration's
-    // statement scopes unwind. Anything reached from a variable, or handed
-    // back by a callee, does; a sub-reference of a nonfixed temporary dies
-    // with the statement that built it.
-    static bool RootStable(Node *n) {
-        for (;;) {
-            if (Is<Ident>(n) || Is<NullLit>(n)) return true;
-            if (auto c = Is<Call>(n))
-                return c->exprtype && c->exprtype->kind == TY_REF;
-            if (auto d = Is<Dot>(n)) { n = d->obj; continue; }
-            if (auto ix = Is<Index>(n)) { n = ix->obj; continue; }
-            if (auto se = Is<SliceExpr>(n)) { n = se->obj; continue; }
-            if (auto u = Is<Unary>(n); u && u->op == T_BITAND) { n = u->child; continue; }
-            return false;
-        }
+    // What each variable the body binds once and for all stands for: a
+    // declaration's single initializer, or the scrutinee whose payload a
+    // match arm binds.
+    unordered_map<VarDef *, Node *> bound;
+
+    void CollectBound(Node *n) {
+        if (!n) return;
+        if (auto vd = Is<VarDecl>(n); vd && !vd->results && vd->defs.size() == 1 &&
+                                      vd->inits.size() == 1)
+            bound[vd->defs[0]] = vd->inits[0];
+        if (auto m = Is<MatchExpr>(n))
+            for (auto &arm : m->arms)
+                if (arm.binder) bound[arm.binder] = m->scrutinee;
+        RunChildren(n, [&](Node *ch) { CollectBound(ch); });
+    }
+
+    // Where storage lies: anywhere, the activation included; in the
+    // activation perhaps, but holding only references and slices to storage
+    // outside it; or outside it.
+    enum Loc { LOC_ANY, LOC_HOLDSOUT, LOC_OUT };
+
+    // Where the storage the path n names lies, as far as the body shows.
+    // Globals and the variables of an enclosing function lie outside the
+    // activation, and so does what a reference or slice parameter refers to:
+    // the caller's storage, or what a rebinding checked here put there (the
+    // body may re-point a `var` one only at the same depth, §9.2). Storage
+    // outside holds references only to storage outside (§9.2), and so does a
+    // copy the activation makes of it, so a path goes on through what such
+    // storage holds: `n.next`, or `c.next` of an arm's copy `Cons c`. A `let`
+    // stands for its initializer and an arm's binding for its scrutinee. A
+    // call's result may refer to anything the callee was handed or a nested
+    // function captures, and is not followed. `viewed`: the path goes on
+    // into the elements of the slice n, rather than binding a reference to
+    // its slot.
+    Loc Locate(Node *n, bool viewed = false) {
+        // Past a reference or slice the storage holds, the path is where
+        // that refers to.
+        auto through = [&](TypeExpr *t, Loc l) {
+            auto ref = t && (t->kind == TY_REF || (t->kind == TY_SLICE && viewed));
+            return ref && l == LOC_HOLDSOUT ? LOC_OUT : l;
+        };
+        if (Is<NullLit>(n)) return LOC_OUT;
+        if (auto u = Is<Unary>(n); u && u->op == T_BITAND) return Locate(u->child, viewed);
+        if (auto d = Is<Dot>(n))
+            return d->IsField() ? through(d->exprtype, Locate(d->obj)) : LOC_ANY;
+        if (auto ix = Is<Index>(n)) return through(ix->exprtype, Locate(ix->obj, true));
+        if (auto se = Is<SliceExpr>(n)) return Locate(se->obj, true);
+        auto id = Is<Ident>(n);
+        auto v = id ? id->vdef : nullptr;
+        if (!v || !v->type) return LOC_ANY;
+        if (v->isglobal || v->ownerspec != sp) return LOC_OUT;
+        if (v->isparam) return through(v->type, LOC_HOLDSOUT);
+        auto it = bound.find(v);
+        if (v->isvar || it == bound.end()) return LOC_ANY;
+        auto t = v->type;
+        if (t->kind == TY_REF) return Locate(it->second);
+        if (t->kind == TY_SLICE) return viewed ? Locate(it->second, true) : LOC_ANY;
+        return Locate(it->second) == LOC_ANY ? LOC_ANY : LOC_HOLDSOUT;
     }
 
     // The parameter rebindings one tail call needs; arguments that are
@@ -137,8 +180,12 @@ struct TailRecursion {
     // parameter is not something the source may write inside a cycle (§7.8),
     // but the value stored is one the call already passed to that same
     // parameter of this same specialization, whose root class is part of the
-    // specialization key — so the reference keeps the root the checker gave
-    // it, and the rule it exists to protect still holds.
+    // specialization key, so the reference keeps the root the checker gave
+    // it. That keeps the checker's rules, not the pointee: the recursion kept
+    // each caller's locals and by-value parameters alive and unchanged under
+    // its call, and a call into the cycle may pass a reference into them
+    // down (§7.8), but the loop reinitializes and rebinds them for the next
+    // call. So the reference must point outside the activation (Locate).
     bool Rebinds(Call *c, vector<pair<VarDef *, Node *>> &out) {
         auto an = c->ValueArgNodes();
         if (an.size() != sp->params.size()) return false;
@@ -146,7 +193,7 @@ struct TailRecursion {
             auto p = sp->params[i];
             if (auto id = Is<Ident>(an[i]); id && id->vdef == p) continue;
             if (!Rebindable(p)) return false;
-            if (p->type->kind == TY_REF && !RootStable(an[i])) return false;
+            if (p->type->kind == TY_REF && Locate(an[i]) != LOC_OUT) return false;
             out.push_back({ p, an[i] });
         }
         return true;
@@ -388,6 +435,7 @@ struct TailRecursion {
         if (rt->kind != TY_INT || rt->intstorage == IS_VARINT) return;
         auto selfcalls = false;
         if (!Applicable(sp->body, selfcalls) || !selfcalls) return;
+        CollectBound(sp->body);
         AccVarForm();
         // Classify every result; the accumulating operator is the first one a
         // tail call folds with, and a tail on any other operator stays a call.

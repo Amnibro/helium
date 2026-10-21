@@ -980,6 +980,8 @@ class Runner:
             "tre_flt": (False, True),
             "tre_from": (False, True),
             "tre_inloop": (False, True),
+            "tre_walk": (optimized, not optimized),
+            "tre_local": (False, True),
         }
         valid = True
         for name, want in shapes.items():

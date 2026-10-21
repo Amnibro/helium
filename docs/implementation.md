@@ -3555,10 +3555,19 @@ one associative operator (`+ * & | ^`), becomes `var acc = identity; loop {
 other return folds `acc` in. Self-calls in non-tail position stay calls, so
 `1 + check(l) + check(r)` loses its right spine only. Parameters must be
 rebindable (scalars, or plain non-fat, non-pool, non-relative references
-whose new value is root-stable), tails inside loops or function-value bodies
-are skipped, and a callee that can `return ... from` the function disables
-the transform. The `var t = ...; if c { t op= self(x) } t` spelling is
-restated as a return first (`AccVarForm`).
+whose new value points outside the activation), tails inside loops or
+function-value bodies are skipped, and a callee that can `return ... from`
+the function disables the transform. The recursion kept each caller's
+locals and by-value parameters alive and unchanged under its call, where the
+loop reinitializes and rebinds them for the next, so a reference a tail call
+passes down into them (§7.8) is one the loop cannot carry. `Locate`
+accepts a path into a global, a variable of an enclosing function, or what a
+reference or slice parameter refers to, and through what such storage holds,
+or the activation's copy of it does (`c.next` of an arm's `Cons c`), where a
+`let` stands for its initializer and an arm's binding for its scrutinee; a
+call's result, which may be a reference to anything the callee was handed or
+a nested function captures, is not followed. The `var t = ...; if c { t op=
+self(x) } t` spelling is restated as a return first (`AccVarForm`).
 
 **Min/max regrouping** (`Reassociator`, `optimize_reassoc.h`, `-O1` and
 above): a chain of nested calls of one specialization shaped like std's
