@@ -660,6 +660,10 @@ struct Inliner {
     // Variables src does not own that the copy names under another one: the
     // copies the call being inlined passes for them (Call::fvremap).
     unordered_map<VarDef *, VarDef *> outer;
+    // The calls to nested functions the copy under way has made, each with
+    // the call it copied, for Finish; and how deep in Cp that copy is.
+    vector<pair<const Call *, Call *>> nestedcopies;
+    int cpdepth = 0;
 
     VarDef *Remap(VarDef *v) {
         if (!v) return v;
@@ -714,14 +718,27 @@ struct Inliner {
     }
 
     Node *Cp(const Node *n) {
+        cpdepth++;
         auto r = n->Cp1(*this);
         r->end = n->end;
         r->exprtype = n->exprtype;
         r->expansiontrace = n->expansiontrace;
+        if (!--cpdepth) Finish();
         return r;
     }
 
     Block *CpBlock(const Block *b) { return (Block *)Cp(b); }
+
+    // What a copy can settle only once it is whole, done as the outermost Cp
+    // returns, so that no use of the copier leaves it undone: the free
+    // variables each copied call to a nested function passes, which the
+    // scopes around the call may copy only after it (a `for` copies its
+    // variable after its body), and the provenance of the copied variables.
+    void Finish() {
+        for (auto [from, to] : nestedcopies) RemapFreeVars(from, to);
+        nestedcopies.clear();
+        RemapProvenance();
+    }
 
     // A copied variable's provenance still names the variables of the body
     // it was copied from; point it at their copies, so that an analysis
@@ -793,7 +810,6 @@ inline Node *Optimizer::TryInline(Call *c) {
         }
     }
     auto body = inl.CpBlock(K->body);
-    inl.RemapProvenance();
     body->stmts.insert(body->stmts.begin(), decls.begin(), decls.end());
     auto ib = ast.New<InlineBlock>(c->line, K->sf, K, body);
     ib->exprtype = c->exprtype;
@@ -917,10 +933,12 @@ inline Node *Call::Cp1(Inliner &inl) const {
     c->fmtcontexts = fmtcontexts;
     for (auto p : fvparams) c->fvparams.push_back(inl.Remap(p));
     c->fvbody = fvbody ? inl.CpBlock(fvbody) : nullptr;
-    // Case functions nested in one scope are dispatch targets too.
+    // What a call to a nested function passes for the variables it reaches
+    // is filled in once the copy is whole (Inliner::Finish). Case functions
+    // nested in one scope are dispatch targets too.
     auto nested = spec && spec->lexparent;
     for (auto d : dispatch) nested = nested || d->lexparent;
-    if (nested) inl.RemapFreeVars(this, c);
+    if (nested) inl.nestedcopies.push_back({ this, c });
     c->defaultinit = defaultinit ? inl.Cp(defaultinit) : nullptr;
     return c;
 }

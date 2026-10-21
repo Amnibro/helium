@@ -3452,7 +3452,13 @@ copies; a nested function inlined from such a call names those copies,
 `Inliner::outer`). Codegen passes `Call::FreeVarArg` for each of the
 callee's free variables and follows those edges when it collects a body's
 free variables (`CollectSpecs`), and BCE's call kills name the copies the
-callee's effects reach (`CallKills`). Not into a global initializer, whose
+callee's effects reach (`CallKills`). Those records, and the provenance of
+the copied variables (pointed at the copies of the variables it names, so
+that BCE's aliasing, `UltOf` §5.4, follows a copied reference to the array
+the copy declares), are completed once the copy is whole, as the outermost
+`Inliner::Cp` returns (`Inliner::Finish`): for inlining and base-case
+inlining alike, and after the scopes that copy their variables late (a
+`for` copies its own after its body). Not into a global initializer, whose
 locals belong to no specialization. Nothing is inlined *into* a cycle member
 (its locals would become the cycle's own).
 

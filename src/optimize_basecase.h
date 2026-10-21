@@ -272,7 +272,6 @@ struct BaseCaseInliner {
         for (auto part : { &pre, &post })
             for (auto st : *part) basestmts.push_back(inl.Cp(st));
         if (expr) baseexpr = inl.Cp(expr);
-        inl.RemapProvenance();
         guarded = true;
         basespec = sp;
     }
@@ -326,7 +325,6 @@ struct BaseCaseInliner {
             auto leaf = arm(nullptr);
             for (auto st : basestmts) leaf->stmts.push_back(inl.Cp(st));
             if (baseexpr) leaf->tail = inl.Cp(baseexpr);
-            inl.RemapProvenance();
             auto around = decls.empty() ? 0 : 1;
             o.depth += around;
             o.OptBlock(leaf);
