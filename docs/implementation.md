@@ -3671,7 +3671,9 @@ an integer variable that is not `u64` or `varint`; `.len` of a place (a
 fixed array's length is a constant); `x + c`/`x - c` at `i64` only (narrower
 widths wrap below the 64-bit math the facts are stated in); `a % b` and
 `a & b`, which land in `[0, b]` on a fresh base when `b` is provably
-non-negative (a negative signed mask proves nothing); `a / b` and `a >> k`
+non-negative (a negative signed mask proves nothing, so a mask's term must
+also be one that cannot have wrapped: `n + 1` at i64's top is negative);
+`a / b` and `a >> k`
 on a fresh base (`QuotTerm`): by a constant, a shift maps the dividend's
 constant bounds through; and for a dividend provably non-negative and
 unwrapped the quotient lies in `[0, a]` wherever `b` is non-negative and
@@ -3886,13 +3888,16 @@ breaks it), where the declaration decides `c`: what its value needs, at least
 0 (`var j = 1` before `while j + 4 <= a.len { ...; j += 4; }` stays within
 `len + 1`, which keeps `j + 4` from wrapping), and also -1 where the value
 starts below the length, as a probe index `i = (i + 1) & mask` with
-`mask == len - 1` stays; and the **judging** walk, which is granted the survivors as
+`mask == len - 1` stays (a value whose term may have wrapped, such as `x - 5`
+for an `x` near i64's bottom, preserves neither bound and decides no `c`);
+and the **judging** walk, which is granted the survivors as
 axioms (`ge0`, `lelen`) and the wrap-free, single-direction variables as
-monotone (`mono`): each `+= c`/`-= c`/`++`/`--` moves its variable by its
-sign, and a plain assignment `v = e` (not the declaration, which starts the
-variable over) counts where the recording walk proved `e <= v` or `v <= e`
-just before it (`RecordSetDir`), so `i = (i - 1) / 2` keeps a sift-up index
-below where it started. Global integer variables
+monotone (`mono`): each `+= c`/`-= c` by a literal the facts shift by (below
+2^32), `++` and `--` moves its variable by its sign, and a plain assignment
+`v = e` (not the declaration, which starts the variable over; a step by a
+larger literal is `v = v + c`) counts where the recording walk proved
+`e <= v` or `v <= e` just before it (`RecordSetDir`), so `i = (i - 1) / 2`
+keeps a sift-up index below where it started. Global integer variables
 get the same `>= 0` treatment across the whole program
 (`ValidateGlobalInvariants`: the initializer is the base case, every write in
 every live body and in every global's initializer the step), which is what a

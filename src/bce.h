@@ -1216,10 +1216,11 @@ struct BCE {
             if (Query(Zero(), rt.b, rt.off)) AddFactB(m, rt.b, SatSub(rt.off, 1));
             else if (rt.b.kind == BK_ZERO && rt.off < 0)
                 AddFactB(m, Zero(), SatSub(SatSub(0, rt.off), 1));
-        } else if (Query(Zero(), rt.b, rt.off)) {
+        } else if (CmpAdmissible(rt) && Query(Zero(), rt.b, rt.off)) {
             // A nonnegative mask clears the sign bit. A negative signed
             // mask can preserve it, so it proves neither this lower bound
-            // nor the usual upper bound by itself.
+            // nor the usual upper bound by itself; nor does a mask whose
+            // term may have wrapped to a negative value.
             AddFactB(Zero(), m, 0);
             AddFactB(m, rt.b, rt.off);
         }
@@ -2123,6 +2124,8 @@ struct BCE {
         auto it = cands.find(v);
         if (it == cands.end()) return;
         auto &st = it->second;
+        // A term that may have wrapped says nothing about the value.
+        auto exact = NoWrap(t, v->type->intstorage);
         // The declaration's value decides how far above len(P) the bound
         // sits: `var j = 1` before a loop that strides j up to `j + 4 <=
         // len` stays within len + 1, and a value below len, such as a masked
@@ -2131,7 +2134,7 @@ struct BCE {
         if (isdecl && !st.declseen) {
             vector<pair<int, int64_t>> le;
             for (auto [pid, c] : st.le) {
-                auto d = t.ok ? Dist(t.b, LenBase(pid)) : INF;
+                auto d = exact ? Dist(t.b, LenBase(pid)) : INF;
                 if (d == INF) continue;
                 auto need = SatAdd(d, t.off);
                 if (!SmallOff(need)) continue;
@@ -2141,9 +2144,9 @@ struct BCE {
             st.le = std::move(le);
         }
         if (isdecl) st.declseen = true;
-        st.ge0 = st.ge0 && NoWrap(t, v->type->intstorage) && Query(Zero(), t.b, t.off);
+        st.ge0 = st.ge0 && exact && Query(Zero(), t.b, t.off);
         for (auto pit = st.le.begin(); pit != st.le.end();)
-            if (t.ok && Query(t.b, LenBase(pit->first), SatSub(pit->second, t.off))) ++pit;
+            if (exact && Query(t.b, LenBase(pit->first), SatSub(pit->second, t.off))) ++pit;
             else pit = st.le.erase(pit);
     }
 
@@ -3430,7 +3433,10 @@ inline void Assign::BceMark(BCE &b) {
         auto lit = Is<IntLit>(rhs);
         if (op == T_ASSIGN) {
             b.wkinds[v].setw = true;
-        } else if ((op == T_PLUSEQ || op == T_MINUSEQ) && lit && !lit->uns) {
+        } else if ((op == T_PLUSEQ || op == T_MINUSEQ) && lit && !lit->uns &&
+                   BCE::SmallOff(lit->val)) {
+            // A step the walk shifts by, whose recording checks it cannot
+            // wrap (RecordShift); a larger literal is a sum, as below.
             auto c = op == T_PLUSEQ ? lit->val : -lit->val;
             (c >= 0 ? b.wkinds[v].inc : b.wkinds[v].dec) = true;
         } else if (BCE::IsUnitStep(this, v)) {
