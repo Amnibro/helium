@@ -736,8 +736,10 @@ the literal it synthesizes): a field without one then gets its type's
 default value (`DefaultValue`), null for an optional reference, a
 `default<T>()` call for another fixed-size type, and otherwise `[]` for an
 array, 0 for a varint, or a literal of its struct, variant or first variant
-ending in `..` in turn; one whose type has no default value (`HasDefault`)
-is an error naming the field. A declared
+ending in `..` in turn; one whose type has no default value (`HasDefault`:
+a non-optional reference, an index type, an enum without variants, or a
+type holding one in a field without a declared default) is an error naming
+the field. A declared
 default resolves in its type declaration's namespace and generic bindings,
 with access to globals, not the constructor's locals or sibling fields.
 It is evaluated at each construction that uses it, in field order among
@@ -5214,9 +5216,10 @@ the globals and of the worker's arguments), from which the runtime caps
 `hardware_threads()` at what `GS_STACK_BUDGET` (32 TB by default) holds
 beside the main program, at least one: a pool sized by it never runs the
 program out of address space, which the budget plans for rather than
-enforces. `--stacks` prints the counts, the cap and each function's share,
-and a program built with `-DGS_STACK_STATS=1` reports on stderr, as each
-thread program ends, its stacks and regions.
+enforces. Workers that hold no regions leave it uncapped. `--stacks`
+prints the counts, the cap and each function's share, and a program built
+with `-DGS_STACK_STATS=1` reports on stderr, as each thread program ends,
+its stacks and regions.
 
 **Native stacks.** Recursion consumes only the native call stack (spec
 §7.8), whose size is set as its thread starts; running out of it ends the

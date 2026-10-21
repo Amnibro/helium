@@ -1631,8 +1631,7 @@ inline Val TypeCheck::CheckMatch(MatchExpr *m, TypeExpr *expected, bool wantvalu
         for (auto &arm : m->arms) {
             if (arm.pat.kind == P_WILDCARD) { haswild = true; DoArm(arm, nullptr); continue; }
             if (!arm.pat.binder.empty())
-                Error(arm.pat.items[0].lo, cat("constant pattern ",
-                                               Is<Ident>(arm.pat.items[0].lo)->name,
+                Error(arm.pat.items[0].lo, cat("constant pattern ", ExprStr(arm.pat.items[0].lo),
                                                " has no payload to bind"));
             arm.ranges.clear();
             for (auto &pi : arm.pat.items) {

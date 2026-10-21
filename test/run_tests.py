@@ -1642,9 +1642,11 @@ def main():
         r.show_task(optimize, lvl)
 
     # The data stack report (--stacks): a program with a worker, whose
-    # first-line budget caps the workers at one, and a recursive one whose
-    # first-line GS_MAX_STACKS the compiler checks the count against. The
-    # counts themselves follow the emitted code and are not pinned.
+    # first-line budget caps the workers at one, a recursive one whose
+    # first-line GS_MAX_STACKS the compiler checks the count against, and one
+    # whose worker only puts a fixed value: it holds no regions, which caps
+    # nothing. The counts themselves follow the emitted code and are not
+    # pinned, other than that worker's none.
     def stacks_report(f, patterns):
         # The report goes where the compiler's messages do: without an -o,
         # stderr where it has TinyCC to run the program, stdout where it
@@ -1668,6 +1670,10 @@ def main():
         r"^main program: [1-4] data stacks \+ 0 global stacks = [1-4] regions$",
         r"^thread cap: none, no workers$",
         r"^fn in_block: [1-9]\d* own, [1-4] with callees$",
+    ])
+    r.show_task(stacks_report, HERE / "threads" / "thread_spawn_discarded.goose", [
+        r"^worker `worker`: 0 data stacks \+ 0 argument and global stacks = 0 regions$",
+        r"^thread cap: none, no worker holds a region$",
     ])
     # The loops codegen restates, read in the C of their fixture, where -O1
     # keeps each function a C function of its own.

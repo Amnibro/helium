@@ -445,9 +445,10 @@ inline bool TypeCheck::VerifiableElem(TypeExpr *t, TypeExpr *elem, string &why) 
 }
 
 // Does a type have a default value (§4.2)? Everything does except a
-// non-optional reference, which has nothing to point at, and so anything
-// containing one without a declared field default. default<T>() gives it
-// for a fixed-size T only; DefaultValue builds it for any.
+// non-optional reference, which has nothing to point at, an enum without
+// variants, which has no value at all, and anything containing either
+// without a declared field default. default<T>() gives it for a fixed-size
+// T only; DefaultValue builds it for any.
 inline bool TypeCheck::HasDefault(TypeExpr *t, string &why) {
     switch (t->kind) {
         case TY_INT:
@@ -465,7 +466,13 @@ inline bool TypeCheck::HasDefault(TypeExpr *t, string &why) {
             return false;
         case TY_STRUCT: case TY_ENUM: case TY_VARIANT: {
             auto runs = FieldRuns(t);
-            if (t->kind == TY_ENUM) runs = runs.first(1);   // Variant 0 is the default variant.
+            if (t->kind == TY_ENUM) {
+                if (runs.empty()) {
+                    why = cat(TypeStr(t), " has no variants");
+                    return false;
+                }
+                runs = runs.first(1);   // Variant 0 is the default variant.
+            }
             for (auto &run : runs) {
                 for (size_t i = 0; i < run.fields->size(); i++) {
                     auto &f = (*run.fields)[i];

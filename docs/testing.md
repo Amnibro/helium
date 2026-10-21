@@ -237,7 +237,9 @@ that `hardware_threads()` reports its floor of one wherever it runs, and
 `stack_stats.goose` has its program report its stack use
 (`GS_STACK_STATS`), checked through `expected/stack_stats.stderr`. The
 runner also checks the `--stacks` report of `thread_cap.goose` and
-`cycle_scratch_locals.goose` for its shape, not its counts. A fixture
+`cycle_scratch_locals.goose` for its shape, not its counts, and that of
+`thread_spawn_discarded.goose`, whose worker holds no regions, for the
+thread cap that leaves: none. A fixture
 expecting a debug-only abort sets `GS_DEBUG=1` the same way, which makes
 every run of it a debug build: `cast_abort_location.goose` and
 `overflow_abort_location.goose` check the location a failing check reports,
