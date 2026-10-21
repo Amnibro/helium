@@ -3894,23 +3894,35 @@ inline bool ForLoop::BceWalk(BCE &b) {
     // Counted push loops `for _ in n { ...; a.push(x); ...; }`: when no other
     // statement can touch a's length and no break or continue skips an
     // iteration, the loop grows a by its push count per iteration, so
-    // afterwards len(a) == len-before + k*n.
+    // afterwards len(a) == len-before + k*n. A push also bumps every place
+    // that may name its receiver's array (GrowShrinkKill), so pushes onto
+    // two places that may be one array rule each other out.
     vector<pair<int, int64_t>> pushpids;
     vector<BCE::Term> prelens;
     if ((iterkind == IK_COUNT || iterkind == IK_RANGE) && !body->tail &&
         !b.HasIterationJumps(body)) {
-        map<int, int64_t> counts;
-        set<int> otherbumps;
+        // Each counted push's receiver, named before any statement is
+        // summarized, since a summary only reports places that exist.
+        vector<int> pushed;
         for (auto st : body->stmts) {
+            auto pid = -1;
             if (auto pc = Is<Call>(st); pc && pc->builtin == B_PUSH) {
                 auto pan = pc->ArgNodes();
-                auto pid = pan.size() == 2 ? b.PlaceOf(pan[0]) : -1;
-                if (pid >= 0 && !b.HasKillEffects(pan[1])) {
-                    counts[pid]++;
-                    continue;
-                }
+                pid = pan.size() == 2 ? b.PlaceOf(pan[0]) : -1;
+                if (pid >= 0 && b.HasKillEffects(pan[1])) pid = -1;
             }
-            b.SummarizeInto(st, otherbumps);
+            pushed.push_back(pid);
+        }
+        map<int, int64_t> counts;
+        set<int> otherbumps;
+        for (size_t i = 0; i < body->stmts.size(); i++) {
+            set<int> bumps;
+            b.SummarizeInto(body->stmts[i], bumps);
+            if (pushed[i] >= 0) {
+                counts[pushed[i]]++;
+                bumps.erase(pushed[i]);
+            }
+            otherbumps.insert(bumps.begin(), bumps.end());
         }
         for (auto &[pid, k] : counts)
             if (!otherbumps.count(pid)) {

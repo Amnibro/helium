@@ -3866,10 +3866,12 @@ condition run, where only the state at the top of an iteration holds.
 Facts established by an `EarlyBlock` or an `InlineBlock` with early exits
 are likewise reduced to their kills at the join. A counted loop whose body
 pushes onto an array a fixed number of times per iteration states the
-array's length after the loop, unless a `break` or `continue` can cut an
-iteration short (`HasIterationJumps`); a `continue` inside a `block { }`
-counts, since it goes to the loop around the block, which binds only the
-breaks inside it.
+array's length after the loop, unless another statement of the body can
+change that length -- a push onto another place that may name the same
+array, such as a reference to it, included -- or a `break` or `continue`
+can cut an iteration short (`HasIterationJumps`); a `continue` inside a
+`block { }` counts, since it goes to the loop around the block, which
+binds only the breaks inside it.
 
 Since a kill loses the `i >= 0` and `i <= len` facts that the classic
 `var i = 0; while i < a.len { ...; i++; }` needs, each body runs in three
