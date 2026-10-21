@@ -428,36 +428,48 @@ struct BCE {
         auto slice = t && t->kind == TY_SLICE;
         auto arr = t && t->kind == TY_ARRAY && t->arr->akind != A_FIXED;
         if (!slice && !arr) return -1;
+        return InternPlace(root, path, t, arr ? t : nullptr, [&](Place &P) {
+            // A leading crossing is the root reference's own: what lies past
+            // it is in the storage that reference points into, as for the
+            // root's own pointee. Any later one reads a stored reference.
+            auto rootcross = !path.empty() && path[0] == -1 && root->type &&
+                             root->type->kind == TY_REF;
+            auto midcross =
+                std::find(path.begin() + (rootcross ? 1 : 0), path.end(), -1) != path.end();
+            P.refcrossed = midcross || (root->type && root->type->kind == TY_REF);
+            P.readsref = readsref;
+            if (!P.refcrossed) {
+                P.ultkind = UK_OWNED;
+                P.ultv = root;
+            } else if (midcross) {
+                P.ultkind = UK_OPAQUE;   // Reads a stored reference: target root unknown here.
+            } else {
+                // A slice's length is in the slot a reference to it names.
+                auto [k, u] = UltOf(root, slice);
+                P.ultkind = k;
+                P.ultv = u;
+            }
+        });
+    }
+
+    // The place at `path` under `root` of t, a slice or an array other than
+    // a fixed one: the one made before, or a new one, which `own` gives its
+    // owner and crossings and which records `arr` as its array type.
+    template<typename F>
+    int InternPlace(VarDef *root, const vector<int> &path, TypeExpr *t, TypeExpr *arr, F own) {
         auto key = pair<VarDef *, vector<int>>(root, path);
         auto it = placeids.find(key);
         if (it != placeids.end()) return it->second;
         Place P;
         P.rootv = root;
         P.path = path;
-        // A leading crossing is the root reference's own: what lies past it
-        // is in the storage that reference points into, as for the root's
-        // own pointee. Any later one reads a stored reference.
-        auto rootcross = !path.empty() && path[0] == -1 && root->type &&
-                         root->type->kind == TY_REF;
-        auto midcross = std::find(path.begin() + (rootcross ? 1 : 0), path.end(), -1) != path.end();
-        P.refcrossed = midcross || (root->type && root->type->kind == TY_REF);
-        P.readsref = readsref;
-        if (!P.refcrossed) {
-            P.ultkind = UK_OWNED;
-            P.ultv = root;
-        } else if (midcross) {
-            P.ultkind = UK_OPAQUE;   // Reads a stored reference: target root unknown here.
-        } else {
-            // A slice's length is in the slot a reference to it names.
-            auto [k, u] = UltOf(root, slice);
-            P.ultkind = k;
-            P.ultv = u;
-        }
-        P.lenmut = arr && t->arr->akind != A_VAR;
-        if (arr) P.arr = t;
-        if (arr && t->arr->akind == A_LIMITED && t->arr->size >= 0) P.cap = t->arr->size;
-        P.slice = slice;
-        P.inelem = slice || (arr && t->arr->akind != A_GROW && t->arr->akind != A_GROWSHRINK);
+        own(P);
+        auto isarr = t->kind == TY_ARRAY;
+        P.lenmut = isarr && t->arr->akind != A_VAR;
+        P.arr = arr;
+        if (isarr && t->arr->akind == A_LIMITED && t->arr->size >= 0) P.cap = t->arr->size;
+        P.slice = !isarr;
+        P.inelem = !isarr || (t->arr->akind != A_GROW && t->arr->akind != A_GROWSHRINK);
         auto id = (int)places.size();
         places.push_back(P);
         placeids[key] = id;
@@ -527,25 +539,12 @@ struct BCE {
         if (apid < 0) return -1;
         auto path = places[apid].path;
         path.push_back(-2);
-        auto key = pair<VarDef *, vector<int>>(places[apid].rootv, path);
-        auto it = placeids.find(key);
-        if (it != placeids.end()) return it->second;
-        Place P;
-        P.rootv = places[apid].rootv;
-        P.path = path;
-        P.ultkind = places[apid].ultkind;
-        P.ultv = places[apid].ultv;
-        P.refcrossed = true;
-        P.readsref = places[apid].readsref;
-        P.slice = t->kind == TY_SLICE;
-        P.lenmut = t->kind == TY_ARRAY && t->arr->akind != A_VAR;
-        if (t->kind == TY_ARRAY && t->arr->akind == A_LIMITED && t->arr->size >= 0)
-            P.cap = t->arr->size;
-        P.inelem = true;
-        auto id = (int)places.size();
-        places.push_back(P);
-        placeids[key] = id;
-        return id;
+        return InternPlace(places[apid].rootv, path, t, nullptr, [&](Place &P) {
+            P.ultkind = places[apid].ultkind;
+            P.ultv = places[apid].ultv;
+            P.refcrossed = true;
+            P.readsref = places[apid].readsref;
+        });
     }
 
     // The exact length of a fresh array value, when its construction states
@@ -1428,16 +1427,15 @@ struct BCE {
 
     // A length mutation with an exactly known delta: push (+1), or append of
     // a constant-length source. Only meaningful for a single execution, so
-    // kills-mode summaries fall back to the directional bump.
+    // kills-mode walks, which are what collect summaries, fall back to the
+    // directional bump.
     void ExactLenStep(int pid, int64_t delta) {
         if (mode == M_KILLS) {
             BumpPlace(pid, delta >= 0 ? 1 : -1);
             return;
         }
-        anybump = true;
         auto old = LenBase(pid);
         flow.pgen.Set(pid, ++nextgen);
-        if (ksum) ksum->insert(pid);
         auto nw = LenBase(pid);
         AddFactB(nw, old, delta);            // new <= old + delta.
         AddFactB(old, nw, SatSub(0, delta)); // old <= new - delta.
@@ -1580,18 +1578,9 @@ struct BCE {
     }
 
     // The blanket kill for a call whose effects are unknown.
-    void KillByCall(bool anyrefarg) {
-        NoteStorage({ TG_OPAQUE });
-        NoteInt({ TG_OPAQUE });
-        for (size_t i = 0; i < places.size(); i++) {
-            auto &P = places[i];
-            if (P.ultkind == UK_STATIC) continue;
-            auto hit = Reach(P.rootv) ||
-                       (P.ultkind == UK_OWNED ? Reach(P.ultv) : anyrefarg);
-            if (hit) BumpPlace((int)i, 0);
-        }
-        for (auto v : intvars)
-            if (v->isglobal || v->captured || addrof.count(v)) BumpVar(v);
+    void KillByCall() {
+        StorageWriteKill(UK_OPAQUE, nullptr, nullptr);
+        OpaqueIntWriteKill();
     }
 
     // Rendering calls can reach an argument's nested values without an
@@ -1726,6 +1715,12 @@ struct BCE {
 
     void KillReachableInts() {
         for (auto v : intvars) if (Reach(v)) BumpVar(v);
+    }
+
+    // An integer written in storage unknown here: any reachable one.
+    void OpaqueIntWriteKill() {
+        NoteInt({ TG_OPAQUE });
+        KillReachableInts();
     }
 
     // A write into the elements of storage tu owns (tk == UK_OWNED), or of
@@ -1900,21 +1895,19 @@ struct BCE {
     // local's to that variable. The translated effects are recorded on the
     // same paths, so a summary includes what the body's callees do.
     void ApplyEffects(const Effects &e, const vector<Node *> &an) {
-        if (e.opaque) { KillByCall(true); return; }
+        if (e.opaque) { KillByCall(); return; }
         for (auto j : e.params) {
-            if (j >= (int)an.size()) { KillByCall(true); return; }
+            if (j >= (int)an.size()) { KillByCall(); return; }
             KillArgStorage(an[j]);
         }
         for (auto v : e.vars) StorageWriteKill(UK_OWNED, v, v);
         if (e.intopaque) {
-            NoteInt({ TG_OPAQUE });
-            KillReachableInts();
+            OpaqueIntWriteKill();
             return;
         }
         for (auto j : e.intparams) {
             if (j >= (int)an.size()) {
-                NoteInt({ TG_OPAQUE });
-                KillReachableInts();
+                OpaqueIntWriteKill();
                 return;
             }
             KillArgInt(an[j]);
@@ -1938,7 +1931,7 @@ struct BCE {
         };
         if (c->spec) merge(c->spec);
         for (auto d : c->dispatch) merge(d);
-        if (!known) { KillByCall(true); return; }
+        if (!known) { KillByCall(); return; }
         // The callee writes the variables this call passes for its free
         // variables, where the optimizer copied them.
         if (!c->fvremap.empty()) {
