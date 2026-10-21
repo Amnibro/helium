@@ -578,7 +578,7 @@ inline Val ConstFor::Check(TypeCheck &tc, TypeExpr *) {
 inline Val Block::Check(TypeCheck &tc, TypeExpr *expected) {
     // On joinpath the construct that started it makes the copy (CheckJoin).
     auto onjoin = tc.joinpath == this;
-    auto v = tc.CheckBlockVal(this, expected, true, TypeCheck::SK_PLAIN);
+    auto v = tc.CheckBlockVal(this, expected, true);
     return tc.VoidIfBottom(onjoin ? v : tc.TempCopy(v));
 }
 

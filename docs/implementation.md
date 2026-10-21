@@ -1161,9 +1161,9 @@ for that slice to it (`VarDef::heldslice`), which a load through the slot's
 class sees (`SlotView`) and every store that may write the slot joins
 (below); a call maps the class back to what its argument's slot held, as it
 maps a parameter's class to the argument (`RetAltVal`, `ApplyCalleeStores`,
-`MapLiveShrinks`, `NoteClassUses`, `NoteRootEvent`). Any other slot's class
-only bounds the slice loaded through it. A slice parameter given a reference
-to a slice takes that slice's root (`LoadSliceArgs`).
+`ApplyCalleeLiveShrinks`, `NoteClassUses`, `NoteRootEvent`). Any other
+slot's class only bounds the slice loaded through it. A slice parameter
+given a reference to a slice takes that slice's root (`LoadSliceArgs`).
 Every store event (`AddStoreEvent`, a callee's mapped at its call included)
 into the class of a slot with such a variable joins the stored roots to it
 (`NoteSlotStore`), and so does one into any other class or bound that can
@@ -2163,8 +2163,8 @@ point into. At a call such a pair keeps the mark where the argument has it,
 handing the question to the caller's callers, and a callee's view into what
 an argument with the mark views (`show(out, w)`, `w` read out of `words`)
 becomes a pair about what that storage holds, of a type leading to what the
-view points at (`MapLiveShrinks`). The §5.2 scans do not use it: such a view
-is a slot read, which they pass over.
+view points at (`ApplyCalleeLiveShrinks`). The §5.2 scans do not use it:
+such a view is a slot read, which they pass over.
 
 A store of such a view into a holder (`H { s: words[0] }`, `h.s = r.s`), and
 a holder copied out of that storage alone -- a `for` or `match` binder's

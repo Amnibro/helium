@@ -2011,7 +2011,7 @@ inline void TypeCheck::ValidateCycle(FnSpec *spec, Node *callnode) {
     // A cycle function without an explicit return type is committed to
     // returning nothing at the back edge; a later `return v` then errors
     // with a mismatch (return-type inference cannot cross the back edge).
-    if (!spec->retsknown) spec->retsknown = true;
+    spec->retsknown = true;
 }
 
 inline FnSpec *TypeCheck::CycleHead(FnSpec *s) {
@@ -3182,9 +3182,8 @@ inline void TypeCheck::CheckSpecBodyOnce(FnSpec *spec, vector<Val> *argvals, Lin
         if (spec->retsknown && !spec->rets.empty())
             Error(sf->body, cat("function ", sf->name,
                                 " can fall off the end without returning value(s)"));
-        if (!spec->retsknown) spec->retsknown = true;  // No returns at all: void.
     }
-    if (!spec->retsknown) spec->retsknown = true;
+    spec->retsknown = true;   // Where no return settled them: none, void.
     if (!abandoned) {
         NamedResultCopyWarning(spec);
         CheckNamedResultUses(spec);

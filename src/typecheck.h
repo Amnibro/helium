@@ -1399,7 +1399,6 @@ struct TypeCheck {
     bool InScope(VarDef *v, int idx) { return idx < (int)vars.size() && vars[idx] == v; }
     bool ScopeEnded(const DeclSite &d);
     void DeclareLocalFn(FnDecl *fd);
-    string_view CurNs();
     int FrameOfSpec(FnSpec *sp);
     int LexFrame(FnSpec *env);
     int LexFrame(FnSpec *env, SFunction *sf);
@@ -1566,7 +1565,6 @@ struct TypeCheck {
     TypeExpr *ValueType(TypeExpr *t);
     TypeExpr *DeclType(TypeExpr *t, TypeExpr *s);
     static bool ImplicitInt(IntStorage from, IntStorage to);
-    TypeExpr *DerefType(TypeExpr *t);
     Val CheckIntAny(Node *n);
     bool HasRelRefT(TypeExpr *t, bool inpool = false);
     bool BuiltWhereReceived(Node *n, size_t result);
@@ -2093,8 +2091,7 @@ struct TypeCheck {
     Val TempCopy(Val v);
     Node *WholeSlice(Node *n);
     Val CheckIf(IfExpr *x, TypeExpr *expected, bool wantvalue);
-    Val CheckBlockVal(Block *b, TypeExpr *expected, bool wantvalue, int scopekind,
-                      Node *scopenode = nullptr);
+    Val CheckBlockVal(Block *b, TypeExpr *expected, bool wantvalue);
     Val CheckMatch(MatchExpr *m, TypeExpr *expected, bool wantvalue);
     Val CheckEarlyBlock(EarlyBlock *x, TypeExpr *expected, bool wantvalue);
     void CheckLoopBody(Block *body);
@@ -2588,8 +2585,8 @@ struct TypeCheck {
     void NoteLiveViews(Node *at, const string &prefix, VarDef *root, const string &what,
                        bool growonly, TypeExpr *bound);
     // A view still used after a shrink (NoteLiveViews), or one a callee's
-    // pair leads to at a call (MapLiveShrinks): where it may point, and at
-    // what.
+    // pair leads to at a call (ApplyCalleeLiveShrinks): where it may point,
+    // and at what.
     struct LiveView {
         Prov p;
         TypeExpr *pointee = nullptr;
@@ -2611,21 +2608,8 @@ struct TypeCheck {
                    const TempHolds *temps = nullptr, VarDef *base = nullptr,
                    TypeExpr *arrtype = nullptr);
     template<typename F> void EachHolderRoot(VarDef *holder, size_t from, F f);
-    int NoteLiveShrink(LiveShrink ls, FnSpec *current);
+    bool NoteLiveShrink(LiveShrink ls, FnSpec *current);
     void ApplyCalleeLiveShrinks(Node *at, FnSpec *spec, vector<Val> &argvals, string_view name);
-    // A call, with its arguments' roots, whose callee's pairs are mapped
-    // onto them (MapLiveShrinks).
-    struct CallSite {
-        Node *at = nullptr;
-        FnSpec *caller = nullptr;
-        FnSpec *callee = nullptr;   // Stable parameter/class mapping.
-        const FnRecord *record = nullptr;   // This call's round (RecordOf).
-        vector<Roots> args;   // What each parameter's class stands for here.
-        string name;
-        vector<Roots> views;  // And each parameter's view, the slice its slot held.
-        TempHolds temps;      // What the temporaries among the arguments hold.
-    };
-    bool MapLiveShrinks(const CallSite &site);
     // A growth of the array rooted at root -- a push, an append, a pool
     // allocation, format, resize, a whole assignment -- by this body or by
     // a callee, or a shrink of it. A value built in place at a root's top or

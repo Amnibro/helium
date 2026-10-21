@@ -744,15 +744,6 @@ inline void TypeCheck::DeclareLocalFn(FnDecl *fd) {
     localfns.push_back({ (int)scopes.size() - 1, fd->sf });
 }
 
-// The namespace of the function being checked (a function value's is its
-// definer's): where names the checker looks up without a node of their own
-// resolve first.
-inline string_view TypeCheck::CurNs() {
-    for (auto i = (int)frames.size() - 1; i >= 0; i--)
-        if (frames[i].sf) return frames[i].sf->ns;
-    return {};
-}
-
 // The frame whose vars the above may address next: used to find a spec's
 // frame index for lexparent chains. A function value's body environment
 // (FnSpec::isfunval) is the frame checking the body.
@@ -1334,7 +1325,7 @@ inline Val TypeCheck::CheckIf(IfExpr *x, TypeExpr *expected, bool wantvalue) {
     {
         PathScope ps(*this, onpath ? x->thenb : nullptr);
         JoinPathScope js(*this, onjoin ? x->thenb : nullptr);
-        tv = CheckBlockVal(x->thenb, expected, wantvalue, SK_PLAIN);
+        tv = CheckBlockVal(x->thenb, expected, wantvalue);
     }
     auto aflow = SaveFlow();
     RestoreFlow(entry);
@@ -1348,7 +1339,7 @@ inline Val TypeCheck::CheckIf(IfExpr *x, TypeExpr *expected, bool wantvalue) {
         NodeScope ns(*this, ei);
         ev = CheckIf(ei, expected, wantvalue);
     } else if (x->elseb) {
-        ev = CheckBlockVal((Block *)x->elseb, expected, wantvalue, SK_PLAIN);
+        ev = CheckBlockVal((Block *)x->elseb, expected, wantvalue);
     } else if (wantvalue) {
         Error(x, "an if used as a value requires an else branch");
     }
@@ -1370,11 +1361,10 @@ inline Val TypeCheck::CheckIf(IfExpr *x, TypeExpr *expected, bool wantvalue) {
     return onjoin ? v : TempCopy(v);
 }
 
-inline Val TypeCheck::CheckBlockVal(Block *b, TypeExpr *expected, bool wantvalue, int scopekind,
-                                    Node *scopenode) {
+inline Val TypeCheck::CheckBlockVal(Block *b, TypeExpr *expected, bool wantvalue) {
     auto onpath = argpath == b;
     auto onjoin = joinpath == b;
-    PushScope(b->expansionboundary ? SK_EXPANSION : scopekind, scopenode);
+    PushScope(b->expansionboundary ? SK_EXPANSION : SK_PLAIN);
     BlockScope bs(*this, b);
     CheckStmts(b);
     Val v = VoidVal();
@@ -1835,8 +1825,6 @@ inline void TypeCheck::CheckWhile(While *x) {
     });
     RestoreFlow(exit);
     JoinBreakFlow(sc, true);
-    if (sc.breaktype)
-        Error(x, "break with a value exits loop/block only, not while");
 }
 
 inline void TypeCheck::CheckFor(ForLoop *x) {
@@ -2036,8 +2024,6 @@ inline void TypeCheck::CheckFor(ForLoop *x) {
         CheckLoopBody(x->body);
     });
     JoinBreakFlow(sc, true);
-    if (sc.breaktype)
-        Error(x, "break with a value exits loop/block only, not for");
 }
 
 inline int TypeCheck::RealFrameIndex() {
@@ -2181,7 +2167,7 @@ inline void TypeCheck::CheckStmtExpr(Node *n) {
     NodeScope ns(*this, n);
     if (auto x = Is<IfExpr>(n)) { CheckIf(x, nullptr, false); n->exprtype = ast.voidtype; return; }
     if (auto x = Is<Block>(n)) {
-        CheckBlockVal(x, nullptr, false, SK_PLAIN);
+        CheckBlockVal(x, nullptr, false);
         n->exprtype = ast.voidtype;
         return;
     }

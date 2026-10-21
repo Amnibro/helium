@@ -762,13 +762,6 @@ inline bool TypeCheck::ImplicitInt(IntStorage from, IntStorage to) {
     return IsUnsigned(to) ? IsUnsigned(from) : true;
 }
 
-// The pointee type when v is a (non-optional) reference, else null.
-inline TypeExpr *TypeCheck::DerefType(TypeExpr *t) {
-    if (t->kind != TY_REF) return nullptr;
-    if (t->ref->optional) return nullptr;
-    return t->ref->sub;
-}
-
 // Positions that accept any integer type (indices, slice bounds, sizes,
 // counts): the value is used at 64 bits internally; a u64 above i64.max
 // is out of range for every such use and the bounds check catches it.
@@ -1465,7 +1458,6 @@ inline string TypeCheck::ReadBackWhy(const Roots &r) {
     auto from = r.From();
     if (!from) return {};
     auto n = r.alts.size();
-    if (n == 0) return cat("it was read out of ", from->name, ", whose contents this function cannot trace");
     auto global = BoundAnywhere(from);
     string s = global ? cat(from->name, " is a global var, which any function may bind, and may "
                                         "point into ")
