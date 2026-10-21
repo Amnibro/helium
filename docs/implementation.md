@@ -3757,7 +3757,13 @@ or inside an array element, or a grow or shrink of an array inside one
 (`ElementLvalKill`: no place lies in an element, but a reference to or into
 one measures what it holds, so every such place over the storage the
 elements lie in -- never a resizable array's, which no element is -- or
-anything reachable where a reference the element holds leads out of it); a
+anything reachable where a reference the element holds leads out of it);
+a *refill*, as such a store into the receiver's elements (`GrowShrinkKill`):
+a limited array's growth or a pool's allocation, which stores elements
+into slots that a reference kept across a shrink or a free may still name,
+such a slot staying a value of the element type (a resizable array never
+shrinks while a reference into it lives, so its growth fills fresh slots
+only); a
 repeated declaration inside a loop; and a call. A call with no summary kills
 everything reachable plus every reachable integer variable (`KillByCall`); a
 call with a summary kills exactly what the summary names (§5.8). Integer
@@ -3767,9 +3773,10 @@ otherwise; a set `v = e` re-pins `v` and records `v == e` when `e` has a term
 that cannot have wrapped.
 
 An array is of one type and a reference reaches only an array of its own
-type (array kinds do not convert at a reference), so a grow or shrink kills
-no place whose array type is surely another (`DistinctTypes` in
-`GrowShrinkKill`), and a callee's write through an argument that is an
+type (array kinds do not convert at a reference), so a grow or shrink
+resizes no place whose array type is surely another (`DistinctTypes` in
+`GrowShrinkKill`; what a refill stores is a kill of its own), and a
+callee's write through an argument that is an
 array of scalars, which holds no other array, kills only places of that
 array's type (`OtherArray` in `KillArgStorage`). A shrink of a reference
 parameter's array thus leaves a global of another type alone.

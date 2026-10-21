@@ -1506,9 +1506,9 @@ struct BCE {
     }
 
     // Kills for a grow/shrink builtin; the receiver itself gets the exact
-    // delta when one is known, possible aliases the directional bump. Returns
-    // the receiver's place id (or -1).
-    int GrowShrinkKill(Node *recv, int dir, int64_t exact = INT64_MIN) {
+    // delta when one is known, possible aliases the directional bump. `alloc`
+    // is a pool's allocation. Returns the receiver's place id (or -1).
+    int GrowShrinkKill(Node *recv, int dir, int64_t exact = INT64_MIN, bool alloc = false) {
         if (recv) NoteStorage(ExprTarget(recv));
         auto failidx = false, crossed = false;
         auto pid = recv ? PlaceOf(recv, &failidx, &crossed) : -1;
@@ -1529,6 +1529,15 @@ struct BCE {
             if (!AffectedByWrite((int)i, pid, UK_OPAQUE, nullptr, nullptr)) continue;
             if ((int)i == pid && exact != INT64_MIN) ExactLenStep(pid, exact);
             else BumpPlace((int)i, dir);
+        }
+        // A limited array grows into slots that a reference kept across an
+        // earlier shrink may still name (§5.3), and a pool allocates slots it
+        // freed (§5.4): such a reference, or a loop walking the element,
+        // measures what is stored there now, as after any element store.
+        if (rt && HoldsLen(rt->arr->sub) &&
+            (alloc || (dir >= 0 && rt->arr->akind == A_LIMITED))) {
+            auto [k, u] = ChainUlt(recv);
+            ElementWriteKill(k, u);
         }
         return pid;
     }
@@ -3617,6 +3626,8 @@ inline bool Call::BceWalk(BCE &b) {
                 break;
             }
             case B_ALLOC_INDEX: case B_ALLOC_REF: case B_ALLOC_SLICE: case B_REALLOC_SLICE:
+                b.GrowShrinkKill(rn, 1, INT64_MIN, true);
+                break;
             case B_FORMAT:
                 b.GrowShrinkKill(rn, 1);
                 break;
