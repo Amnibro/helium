@@ -1168,6 +1168,7 @@ struct TypeCheck {
     Node *DefaultValue(TypeExpr *t, Line line);
     SizeClass ClassOf(TypeExpr *t);
     bool IsFlat(TypeExpr *t);
+    bool Reaches(TypeExpr *t, const function<bool(TypeExpr *)> &pred);
     bool HoldsIndexT(TypeExpr *t);
     SFunction *TextFn();
     void CheckfreeCallee(Node *at, SFunction *callee);
@@ -3202,23 +3203,8 @@ struct TypeCheck {
     // bytes, which no program can tell from a copy of its own (§11.2).
     bool StaticViewsOnly(VarDef *g) {
         if (g->isvar) return false;
-        set<void *> seen;
-        function<bool(TypeExpr *)> relative = [&](TypeExpr *t) -> bool {
-            switch (t->kind) {
-                case TY_REF: return t->ref->lenstorage >= 0 || relative(t->ref->sub);
-                case TY_SLICE: return relative(t->sub);
-                case TY_ARRAY: return relative(t->arr->sub);
-                case TY_STRUCT: case TY_ENUM: case TY_VARIANT: {
-                    // An instance once: a recursive type reaches itself again.
-                    auto key = t->kind == TY_STRUCT ? (void *)GetStructInst(t)
-                               : (void *)GetEnumInst(t->kind == TY_ENUM ? t : t->var->adt);
-                    if (!seen.insert(key).second) return false;
-                    return AnyField(t, relative);
-                }
-                default: return false;
-            }
-        };
-        if (relative(g->type)) return false;
+        if (Reaches(g->type, [](TypeExpr *t) { return t->kind == TY_REF && t->ref->lenstorage >= 0; }))
+            return false;
         auto statics = [](const Roots &r) {
             return !r.unknown && r.All([](const RootAlt &a) { return !a.root && a.exact; });
         };

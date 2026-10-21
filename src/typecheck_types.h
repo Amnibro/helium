@@ -351,21 +351,22 @@ inline bool TypeCheck::IsFlat(TypeExpr *t) {
     }
 }
 
-// Whether a value of type t holds an index or bound type at any depth,
-// through references and slices too: what may not reach code that neither
-// keeps the array's length nor is checked against it (§3.11).
-inline bool TypeCheck::HoldsIndexT(TypeExpr *t) {
-    set<void *> seen;
+// Whether t, or a type a value of it reaches through references, slices,
+// arrays and fields, satisfies pred. Each struct, enum and variant type is
+// entered once, as a recursive type reaches itself again; a variant type
+// apart from its enum, since entering it walks that variant's payload only.
+inline bool TypeCheck::Reaches(TypeExpr *t, const function<bool(TypeExpr *)> &pred) {
+    set<pair<void *, void *>> seen;
     function<bool(TypeExpr *)> walk = [&](TypeExpr *t) -> bool {
+        if (pred(t)) return true;
         switch (t->kind) {
-            case TY_INT: return t->ix != nullptr;
             case TY_REF: return walk(t->ref->sub);
             case TY_SLICE: return walk(t->sub);
             case TY_ARRAY: return walk(t->arr->sub);
             case TY_STRUCT: case TY_ENUM: case TY_VARIANT: {
-                // An instance once: a recursive type reaches itself again.
-                auto key = t->kind == TY_STRUCT ? (void *)GetStructInst(t)
-                           : (void *)GetEnumInst(t->kind == TY_ENUM ? t : t->var->adt);
+                auto key = t->kind == TY_STRUCT ? pair<void *, void *>(GetStructInst(t), nullptr)
+                           : t->kind == TY_ENUM ? pair<void *, void *>(GetEnumInst(t), nullptr)
+                           : pair<void *, void *>(GetEnumInst(t->var->adt), t->var->variant);
                 if (!seen.insert(key).second) return false;
                 return AnyField(t, walk);
             }
@@ -373,6 +374,13 @@ inline bool TypeCheck::HoldsIndexT(TypeExpr *t) {
         }
     };
     return walk(t);
+}
+
+// Whether a value of type t holds an index or bound type at any depth,
+// through references and slices too: what may not reach code that neither
+// keeps the array's length nor is checked against it (§3.11).
+inline bool TypeCheck::HoldsIndexT(TypeExpr *t) {
+    return Reaches(t, [](TypeExpr *t) { return t->kind == TY_INT && t->ix; });
 }
 
 // Whether a value of type t can hold a plain reference or a slice at any
