@@ -125,14 +125,14 @@ rest keep working; `goose foo.goose` is `goose run foo.goose`.
 | Verb | Does |
 |---|---|
 | `run` | fetches what the root declares, builds the native parts the program reaches, compiles the program in-process (TinyCC) and runs it; `-O1` by default, as today |
-| `build` | the same, then writes the C, compiles it and links an executable beside the root source (`foo`, `foo.exe`); `-O2` by default for Goose and the C compiler |
+| `build` | the same, then writes the C, compiles it and links an executable beside the root source (`foo`, `foo.exe`); `-O2` by default, Goose's inlining, while the C compiler optimizes at every level |
 | `check` | fetches the Goose sources it needs and typechecks; never builds C |
 | `fetch` | fetches every package the root declares, and builds nothing; `--update` re-fetches refs that are not commit hashes |
 | `toolchain` | prints the C compiler, cmake and git it would use, and why, or what it could not find; `--json` for scripts |
 | `version` | the compiler's version (§11: a commit count, when there is one) and the runtime hash |
 
-Options of `build`: `-O0`/`-O1`/`-O2` (Goose inlining and the C
-optimization level together), `--debug` (`-DGS_DEBUG=1` for the generated C,
+Options of `build`: `-O0`/`-O1`/`-O2` (Goose inlining; the C compiler
+optimizes at every level), `--debug` (`-DGS_DEBUG=1` for the generated C,
 debug information and no optimization for the C compiler; packages stay
 release builds), `--standalone` (no runtime object), `-o <exe>`, `--cc
 <name|path>` (§6.1), `--dry-run` (print every command and write nothing),

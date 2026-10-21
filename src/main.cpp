@@ -734,8 +734,8 @@ the packages the program uses. Intermediates go under GOOSE_HOME.
 
 Options:
   -o exe                Where the executable goes.
-  -O0, -O1, -O2         Inlining level and the C compiler's optimization
-                        (default -O2).
+  -O0, -O1, -O2         Inlining level (default -O2). The C compiler
+                        optimizes at every level, unless --debug.
   --debug               Overflow, range and tag checks that name the source
                         line they fail on, and the C built for a debugger.
 )", COMPILEOPTIONS,
@@ -1026,8 +1026,8 @@ int Main(int argc, char **argv) {
     auto json = false, refresh = false, debug = false, verbose = false, dryrun = false;
     auto jsondiag = false;
     string ccrequest;
-    // A build is for a deliverable: the inlining and the C compiler's
-    // optimization both at their highest.
+    // A build is for a deliverable: the inlining at its highest. The C
+    // compiler optimizes whatever the level, unless --debug (Builder::CFlags).
     auto optlevel = verb == "build" ? 2 : 1;
     vector<string> cdefines, progargs, includenames, files;
     for (int i = firstarg; i < argc; i++) {
