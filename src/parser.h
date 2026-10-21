@@ -119,19 +119,24 @@ struct Parser {
     }
 
     // Skips what is left of a statement or declaration an error was raised
-    // in, from the token the error is at, `startp` being where it began.
-    // A statement is skipped through the next `;` at the block's depth,
-    // or up to and including the `}` that closes the block, braces
-    // balanced; a declaration through the next `;` at depth 0, or through
+    // in, from the token the error is at, `startp` being where it began
+    // and, for a statement, `stmtdepth` the braces open before it. A
+    // statement is skipped through the next `;` outside the braces opened
+    // since the error, or up to and including the `}` that closes the
+    // block, which, like a keyword that ends the skip, is where the lexer's
+    // count of the braces open (Lexer::DepthBefore) is back at `stmtdepth`:
+    // the braces of a struct literal or a match the error is inside are
+    // skipped; a declaration through the next `;` at depth 0, or through
     // the `}` matching a `{` at depth 0, its body's. A keyword that can
     // only start the next statement or declaration (StartsNext) ends the
     // skip before it, unless it is the token the failed one began with,
     // which would skip nothing. Returns whether the block ended: its `}`
     // was consumed, or the file ended.
-    bool Resync(bool declaration, const char *startp) {
+    bool Resync(bool declaration, const char *startp, int stmtdepth = 0) {
         if (lex.scanning) NextSkipping();
-        auto depth = 0;
+        auto depth = 0;  // The braces opened since the error that are open.
         for (auto consumed = lex.attr.data() != startp;; consumed = true) {
+            auto atstmt = !declaration && lex.DepthBefore() <= stmtdepth;
             switch (lex.tok) {
                 case T_EOF:
                     return true;
@@ -145,20 +150,23 @@ struct Parser {
                     depth++;
                     break;
                 case T_RCURLY:
-                    if (depth == 0) {
-                        // The block's own: a stray one at the top level is
-                        // skipped like any token.
-                        if (!declaration) {
-                            NextSkipping();
-                            return true;
-                        }
-                    } else if (--depth == 0 && declaration) {
+                    if (atstmt) {
+                        // The block's own.
+                        NextSkipping();
+                        return true;
+                    }
+                    // One closing a brace the statement opened before the
+                    // error, or a stray one at the top level, is skipped
+                    // like any token.
+                    if (depth > 0 && --depth == 0 && declaration) {
                         NextSkipping();
                         return false;
                     }
                     break;
                 default:
-                    if (depth == 0 && consumed && StartsNext(declaration)) return false;
+                    if ((declaration ? depth == 0 : atstmt) && consumed &&
+                        StartsNext(declaration))
+                        return false;
                     break;
             }
             NextSkipping();
@@ -1700,6 +1708,7 @@ struct Parser {
             if (lex.tok == T_EOF && eoferror) return;
             auto nfunctions = ast.functions.size();
             auto startp = lex.attr.data();
+            auto stmtdepth = lex.DepthBefore();
             pendingdot = nullptr;
             try {
                 if (!ParseStatement(b)) return;
@@ -1718,7 +1727,7 @@ struct Parser {
                 pendingdot = nullptr;
                 if (b->brokenat < 0) b->brokenat = (int)b->stmts.size();
                 if (curfn) curfn->broken = true;
-                if (Resync(false, startp)) return;
+                if (Resync(false, startp, stmtdepth)) return;
             }
         }
     }

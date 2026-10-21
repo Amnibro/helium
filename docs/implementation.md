@@ -218,10 +218,17 @@ function per construct. Points that matter to later passes:
   (`Block::brokenat`, the index the statement would have had; the
   statements parsed after it follow at that index), marks the function
   being parsed (`SFunction::broken`), and skips to the end of the
-  statement (`Resync`): through the next `;` at the block's depth, or
-  up to and including the `}` that closes the block, braces balanced,
-  stopping short of a keyword that can only start a statement
-  (`StartsNext`) unless it is where the lost statement began. An error
+  statement (`Resync`): through the next `;` outside the braces opened
+  since the error, or up to and including the `}` that closes the
+  block, stopping short of a keyword that can only start a statement
+  (`StartsNext`) unless it is where the lost statement began. That `}`
+  and that keyword are where the lexer's count of the braces open
+  (`Lexer::DepthBefore`) is back at the statement's, as in `SkipBody`,
+  so that a struct literal or a match the error is inside is skipped
+  whole, its `}` included. A `;` ends the statement even inside one,
+  which keeps a literal lacking its `}` from taking the statements after
+  it; one lacking it with no `;` before the block's `}` takes that `}`
+  for its own, and the block goes on past it. An error
   past the name of a struct, an enum or a top-level function costs the
   declaration only what was not parsed yet (`ParseMembers`): it stands
   with the fields, variants, parameters, results and type parameters

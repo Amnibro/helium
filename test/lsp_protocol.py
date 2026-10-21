@@ -416,6 +416,13 @@ def check_lsp_protocol(exe, base):
     sindex = fixtures / "source_index.goose"
     stext = sindex.read_text(encoding="utf-8")
     queries(sindex, stext, open_fixture(sindex, stext))
+
+    # Statements with errors inside the braces of a struct literal or a
+    # match they opened: each published where it is, and nothing after
+    # them lost to the function it is in.
+    braces = HERE / "errors_tc" / "recovery" / "inside_braces.goose"
+    ibtext = braces.read_text(encoding="utf-8")
+    queries(braces, ibtext, open_fixture(braces, ibtext))
     # Completion, on a program whose last statement is the `p.` an editor
     # has when it asks.
     complete = fixtures / "complete.goose"
