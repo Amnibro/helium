@@ -3871,13 +3871,15 @@ body hands a reference to one to a callee.
 What invalidates a fact: a grow or shrink builtin (the receiver takes the
 exact delta, every place it may alias the directional bump); a whole-value
 write to a variable or through a chain (`StorageWriteKill`: everything under
-that owner, or everything reachable when the target is unknown); a rebind of
-a reference variable (`RebindKill`); a reference stored into a field or an
-element, by rebinding one held there or storing a value that holds one
-(`RefSlotWriteKill`: every place whose path reads a stored reference,
-`Place::readsref`, and may read it there, whatever name the path starts
-from -- `p.r` is `h.r` where `p = &h`; the field holding the slice a place
-is reads none); a slice stored into a slot, by assigning
+that owner -- for a chain of fields from a reference variable, the owner its
+exact root names (`ChainOf`), the root's own crossing being no stored
+reference read, as for a place -- or everything reachable when the target
+is unknown); a rebind of a reference variable (`RebindKill`); a reference
+stored into a field or an element, by rebinding one held there or storing a
+value that holds one (`RefSlotWriteKill`: every place whose path reads a
+stored reference, `Place::readsref`, and may read it there, whatever name
+the path starts from -- `p.r` is `h.r` where `p = &h`; the field holding the
+slice a place is reads none); a slice stored into a slot, by assigning
 a slice variable or through a reference to a slice (`SlotWriteKill`: every
 slice place that slot may be -- the variable, each reference to it, any
 reachable slot when the slot is unknown -- while the arrays the slices view

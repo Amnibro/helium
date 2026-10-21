@@ -2359,6 +2359,11 @@ struct BCE {
         bool anycross = false, rootonlycross = false;
     };
 
+    // A chain of fields down to its root variable. A field read on the way
+    // that holds a reference crosses into wherever that points
+    // (ReadsStoredRef); the field the chain ends in is the slot written, and
+    // a root reference variable's own crossing names the storage it points
+    // into, as for a place through it (PlaceFor).
     Chain ChainOf(Node *n) {
         Chain ch;
         auto midcross = false;
@@ -2373,7 +2378,7 @@ struct BCE {
                 return ch;
             }
             if (auto d = Is<Dot>(cur); d && d->fieldidx >= 0) {
-                if (d->obj->exprtype && d->obj->exprtype->kind == TY_REF) midcross = true;
+                if (cur != n && ReadsStoredRef(d)) midcross = true;
                 cur = d->obj;
                 continue;
             }
