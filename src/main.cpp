@@ -122,17 +122,25 @@ string RelativeTo(const string &path, const string &dir) {
 
 // Where the standard library lives (§11.1): an explicit --stdlib or
 // GOOSE_STDLIB, else the `stdlib/` directory of the source tree the compiler
-// was built in, found by walking up from the executable.
+// was built in, found by walking up from the executable. A directory more
+// than one of those name is in the list once, as the first named it.
 vector<string> StdlibDirs(const string &stdlibdir, const string &exe) {
-    vector<string> dirs;
-    if (!stdlibdir.empty()) dirs.push_back(cat(stdlibdir, "/"));
-    if (auto env = getenv("GOOSE_STDLIB")) dirs.push_back(cat(env, "/"));
+    vector<string> cands;
+    if (!stdlibdir.empty()) cands.push_back(cat(stdlibdir, "/"));
+    if (auto env = getenv("GOOSE_STDLIB")) cands.push_back(cat(env, "/"));
     auto exedir = DirOf(exe);
-    dirs.push_back(cat(exedir, "stdlib/"));
-    dirs.push_back(cat(exedir, "../stdlib/"));
-    dirs.push_back(cat(exedir, "../../stdlib/"));
-    dirs.push_back(cat(exedir, "../../../stdlib/"));
-    dirs.push_back("stdlib/");
+    cands.push_back(cat(exedir, "stdlib/"));
+    cands.push_back(cat(exedir, "../stdlib/"));
+    cands.push_back(cat(exedir, "../../stdlib/"));
+    cands.push_back(cat(exedir, "../../../stdlib/"));
+    cands.push_back("stdlib/");
+    vector<string> dirs;
+    set<string> seen;
+    for (auto &dir : cands) {
+        std::error_code ec;
+        auto canon = filesystem::weakly_canonical(filesystem::path(dir), ec);
+        if (seen.insert(ec ? dir : canon.string()).second) dirs.push_back(dir);
+    }
     return dirs;
 }
 
@@ -393,11 +401,8 @@ void ParseProgram(Ast &ast, const string &rootpath, const vector<string> &stdlib
                                     }
                                 if (!havestd) {
                                     Append(msg, "\nand found no standard library, looking in");
-                                    set<string> shown;
-                                    for (auto &dir : stdlibdirs) {
-                                        auto abs = ForwardSlashes(AbsolutePath(dir));
-                                        if (shown.insert(abs).second) Append(msg, "\n    ", abs);
-                                    }
+                                    for (auto &dir : stdlibdirs)
+                                        Append(msg, "\n    ", ForwardSlashes(AbsolutePath(dir)));
                                     Append(msg, "\nset --stdlib or GOOSE_STDLIB to its directory");
                                 }
                                 ImportError(filename, imp, msg);

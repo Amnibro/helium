@@ -75,6 +75,14 @@ def check_cli_paths(exe, cc, base):
         require(code == 1 and "missing.goose:2: error: cannot find the module no_such_module, "
                               "looked for" in text and
                 text.count("no_such_module.goose") >= 2, "an import resolving nowhere", text)
+        # The standard library named by --stdlib, beside the compiler and as
+        # stdlib/ in the working directory at once: each place is looked in
+        # once.
+        stdlib = Path(__file__).resolve().parent.parent / "stdlib"
+        code, text = run([exe, "check", "--stdlib", stdlib, root / "missing.goose"],
+                         cwd=stdlib.parent)
+        require(code == 1 and text.count("/stdlib/no_such_module.goose") == 1,
+                "an import resolving nowhere, with the standard library found three ways", text)
 
         (root / "adir").mkdir()
         code, text = run([exe, "check", root / "adir"])
