@@ -80,6 +80,8 @@ and the reference describe what was built; these say why.
   implemented.
 * [WebAssembly](design/wasm.md): running without address-space reservation,
   fixed partitions against relocating stacks; a proposal.
+* [Prior art](design/prior_art.md): the languages, libraries and papers
+  nearest Goose's memory model, ranked, and what has no precedent.
 
 ## Getting the compiler
 
