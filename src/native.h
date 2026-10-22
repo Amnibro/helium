@@ -15,6 +15,8 @@ inline vector<int> NativePackagesUsed(const Ast &ast, const vector<FnSpec *> &us
     set<int> needed;
     if (ast.packages[0].HasNative()) needed.insert(0);
     for (auto sp : used) {
+        // One bound from a shared library at run time comes from no package's C.
+        if (!sp->sf->dylib.empty()) continue;
         auto pkg = ast.filepkg[sp->sf->line.fileidx];
         if (ast.packages[pkg].HasNative()) needed.insert(pkg);
     }
@@ -54,10 +56,13 @@ inline string NativeBuildDir(const Ast &ast, int pkg, const string &rootfile, co
     return cat(GooseHome(), "/build/pkg/local/", Hex8(p.root), "/", b.tc.id);
 }
 
-// The C symbols a file's extern fns name: `extern "sym" fn f` gives sym,
-// `extern fn f` or `extern fn ns::f` gives the leaf name (§7.10). Read by
-// the lexer alone, since this is asked of files the program never parsed.
-inline void ExternNamesIn(const string &path, const string &text, set<string> &names) {
+// The C symbols a file's extern fns name: `extern fn f(...) = "sym"` (or the
+// deprecated `extern "sym" fn f`) gives sym, `extern fn f` or `extern fn
+// ns::f` gives the leaf name (§7.10). Read by the lexer alone, since this is
+// asked of files the program never parsed. The libraries the file's extern
+// blocks name go into `libs`, where it is given.
+inline void ExternNamesIn(const string &path, const string &text, set<string> &names,
+                          set<string> *libs = nullptr) {
     Lexer lex(path, text.c_str());
     while (lex.tok != T_EOF) {
         if (lex.tok != T_EXTERN) {
@@ -70,6 +75,18 @@ inline void ExternNamesIn(const string &path, const string &text, set<string> &n
             cname = lex.sval;
             lex.Next();
         }
+        // An extern block's functions come from its shared library (§7.10),
+        // not from the native part: skipped through its `}`.
+        if (lex.tok == T_LCURLY) {
+            if (libs && !cname.empty()) libs->insert(cname);
+            auto depth = 0;
+            do {
+                if (lex.tok == T_LCURLY) depth++;
+                else if (lex.tok == T_RCURLY) depth--;
+                lex.Next();
+            } while (depth > 0 && lex.tok != T_EOF);
+            continue;
+        }
         if (lex.tok != T_FN) continue;
         lex.Next();
         if (lex.tok == T_IDENT) {
@@ -78,6 +95,19 @@ inline void ExternNamesIn(const string &path, const string &text, set<string> &n
             if (lex.tok == T_COLONCOLON) {
                 lex.Next();
                 if (lex.tok == T_IDENT) leaf = string(lex.attr);
+            }
+            // Past the signature to its `;`: an `=` outside the parameters'
+            // parentheses (where defaults have theirs) is the symbol's.
+            auto parens = 0;
+            while (lex.tok != T_SEMI && lex.tok != T_EOF && lex.tok != T_EXTERN) {
+                if (lex.tok == T_LPAREN) parens++;
+                else if (lex.tok == T_RPAREN) parens--;
+                else if (lex.tok == T_ASSIGN && parens == 0) {
+                    lex.Next();
+                    if (lex.tok == T_STRLIT) cname = lex.sval;
+                    continue;
+                }
+                lex.Next();
             }
             if (cname.empty()) cname = leaf;
         }
@@ -100,13 +130,13 @@ inline bool HasSidecar(const filesystem::path &dir) {
 // imports from it. That leaves out the directories its sidecar excludes and
 // those below the root with a sidecar of their own, such as an example
 // program with C of its own.
-inline vector<string> PackageExternNames(const Ast &ast, int pkg) {
+inline vector<string> PackageExternNames(const Ast &ast, int pkg, set<string> *libs = nullptr) {
     set<string> names;
     if (pkg == 0) {
         for (size_t i = 0; i < ast.sources.size(); i++)
             if (ast.filepkg[i] == pkg) {
                 try {
-                    ExternNamesIn(ast.sources[i].first, *ast.sources[i].second, names);
+                    ExternNamesIn(ast.sources[i].first, *ast.sources[i].second, names, libs);
                 } catch (CompileError &) {}
             }
     } else {
@@ -127,7 +157,7 @@ inline vector<string> PackageExternNames(const Ast &ast, int pkg) {
             string text;
             if (!LoadSource(path, text)) continue;
             try {
-                ExternNamesIn(path, text, names);
+                ExternNamesIn(path, text, names, libs);
             } catch (CompileError &) {}   // A file that does not lex has no externs to offer.
         }
     }

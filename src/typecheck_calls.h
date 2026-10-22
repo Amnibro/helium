@@ -2566,12 +2566,59 @@ inline bool TypeCheck::ExternParamOk(TypeExpr *t, string &why) {
     return ExternValueOk(t, why);
 }
 
+// A value a member of an extern block passes or returns by value goes to C
+// compiled against the library's own types, not Goose's, so its C type must
+// pass the same way as theirs. A `pad` is a byte array in the generated C,
+// where the library's struct has padding the calling convention passes
+// nothing in: `{ f32, pad 4, f64 }` goes in an integer register where C's
+// `{ float; double; }` goes in two float ones (x86-64 System V), so such a
+// value crosses by reference, which passes a pointer either way. A static
+// extern is compiled against the Goose type itself (goose.h) and agrees.
+inline bool TypeCheck::DylibValueOk(SFunction *sf, TypeExpr *t, string &why) {
+    if (sf->dylib.empty() || t->kind == TY_REF || t->kind == TY_SLICE) return true;
+    auto padded = Reaches(t, [&](TypeExpr *t) {
+        if (t->kind != TY_STRUCT) return false;
+        for (auto &f : GetStructInst(t)->st->fields) if (f.ispad) return true;
+        return false;
+    });
+    if (!padded) return true;
+    why = "a struct with pad passes by value unlike the library's own struct, whose padding "
+          "the calling convention leaves out; pass it by reference (§7.10)";
+    return false;
+}
+
+// The C keywords, which no symbol the generated C names can be.
+inline bool IsCKeyword(string_view n) {
+    static const unordered_set<string_view> ckeywords = {
+        "auto", "break", "case", "char", "const", "continue", "default", "do", "double",
+        "else", "enum", "extern", "float", "for", "goto", "if", "inline", "int", "long",
+        "register", "restrict", "return", "short", "signed", "sizeof", "static", "struct",
+        "switch", "typedef", "union", "unsigned", "void", "volatile", "while", "_Alignas",
+        "_Alignof", "_Atomic", "_Bool", "_Complex", "_Generic", "_Imaginary", "_Noreturn",
+        "_Static_assert", "_Thread_local"
+    };
+    return ckeywords.count(n) != 0;
+}
+
 // An extern declaration (§7.10) has typed parameters of C-crossing
 // shapes, at most one fixed-size return, and no body to check.
 inline void TypeCheck::CheckExternSpec(FnSpec *spec) {
     auto sf = spec->sf;
     if (!sf->generics.empty())
         Error(sf->line, cat("extern fn ", sf->name, " cannot be generic"));
+    // The symbol is written into the C as a name, the prototype's or the
+    // pointer's a dynamic extern is called through, so it is a C
+    // identifier: a leading underscore allowed, since the symbol is C's
+    // own (_exit), and a keyword not, since the C would not compile.
+    auto ident = !sf->cname.empty() && !isdigit((unsigned char)sf->cname[0]);
+    for (auto c : sf->cname)
+        if (!(isalnum((unsigned char)c) || c == '_')) ident = false;
+    if (!ident)
+        Error(sf->line, cat("extern fn ", sf->name, ": C symbol \"", sf->cname,
+                            "\" is not a C identifier"));
+    else if (IsCKeyword(sf->cname))
+        Error(sf->line, cat("extern fn ", sf->name, ": C symbol ", sf->cname,
+                            " is a C keyword"));
     for (size_t i = 0; i < sf->params.size(); i++) {
         auto &p = sf->params[i];
         if (!p.type) Error(sf->line, cat("extern fn ", sf->name, ": parameter ", p.name,
@@ -2579,7 +2626,7 @@ inline void TypeCheck::CheckExternSpec(FnSpec *spec) {
         auto pt = spec->argtypes[i];
         ValidateType(pt, sf->line, VT_PARAM);
         string why;
-        if (!ExternParamOk(pt, why))
+        if (!ExternParamOk(pt, why) || !DylibValueOk(sf, pt, why))
             Error(sf->line, cat("extern fn ", sf->name, ": parameter ", p.name, " of type ",
                                 TypeStr(pt), " cannot cross to C: ", why));
         auto vd = ast.NewVarDef();
@@ -2597,7 +2644,7 @@ inline void TypeCheck::CheckExternSpec(FnSpec *spec) {
         auto t = Subst(rt);
         ValidateType(t, sf->line, VT_LOCAL);
         string why;
-        if (!ExternValueOk(t, why))
+        if (!ExternValueOk(t, why) || !DylibValueOk(sf, t, why))
             Error(sf->line, cat("extern fn ", sf->name, " cannot return ", TypeStr(t), ": ",
                                 why));
         spec->rets.push_back(t);
@@ -2628,15 +2675,7 @@ inline void TypeCheck::CheckExport(SFunction *sf) {
     if (!valid_ident(sf->cname)) fail("C symbol must be a C identifier");
     // The symbol is emitted as written, so a C host can ask for a name; a
     // keyword is refused here rather than left to a C compiler's error.
-    static const unordered_set<string_view> ckeywords = {
-        "auto", "break", "case", "char", "const", "continue", "default", "do", "double",
-        "else", "enum", "extern", "float", "for", "goto", "if", "inline", "int", "long",
-        "register", "restrict", "return", "short", "signed", "sizeof", "static", "struct",
-        "switch", "typedef", "union", "unsigned", "void", "volatile", "while", "_Alignas",
-        "_Alignof", "_Atomic", "_Bool", "_Complex", "_Generic", "_Imaginary", "_Noreturn",
-        "_Static_assert", "_Thread_local"
-    };
-    if (ckeywords.count(sf->cname)) fail("C symbol cannot be a C keyword");
+    if (IsCKeyword(sf->cname)) fail("C symbol cannot be a C keyword");
     for (auto other : ast.functions)
         if (other != sf && other->isexport && other->cname == sf->cname)
             fail(cat("C symbol ", sf->cname, " is exported more than once"));

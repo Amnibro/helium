@@ -17,8 +17,8 @@ library, the tools and the compiler.
 
 ## Library and tools
 
-* [Standard library](stdlib.md): the fifteen modules, `std`, `dictionary`,
-  `vec`, `math`, `os`, `binary`, `base64`, `csv`, `json`, `regex`,
+* [Standard library](stdlib.md): the sixteen modules, `std`, `dictionary`,
+  `vec`, `math`, `os`, `ffi`, `binary`, `base64`, `csv`, `json`, `regex`,
   `exception`, and `gfx`, `audio`, `physics` and `ui` for graphics, sound,
   rigid bodies and widgets. All readable Goose under `stdlib/`.
 * [Building programs and using packages](packages.md): `goose build`,
@@ -85,6 +85,9 @@ and the reference describe what was built; these say why.
   fixed partitions against relocating stacks; a proposal.
 * [Prior art](design/prior_art.md): the languages, libraries and papers
   nearest Goose's memory model, ranked, and what has no precedent.
+* [Dynamic externs](design/dynamic_externs.md): `extern "lib" { ... }`,
+  an extern fn bound from a shared library by name at program start; a
+  proposal.
 
 ## Getting the compiler
 

@@ -88,12 +88,14 @@ inline void CodeGen::EmitCallInto(Call *c, vector<Dst> &dsts) {
     }
 }
 
-// A call to an extern fn (§7.10): the C function directly, each argument
-// in its C type, no calling-convention extras; a fixed result lands in
-// a temporary like any other C value.
+// A call to an extern fn (§7.10): the C function directly, or through the
+// pointer the runtime bound from its shared library, each argument in its
+// C type, no calling-convention extras; a fixed result lands in a
+// temporary like any other C value.
 inline vector<string> CodeGen::EmitExternCall(Call *c, FnSpec *sp) {
     if (std::find(usedexterns.begin(), usedexterns.end(), sp) == usedexterns.end())
         usedexterns.push_back(sp);
+    auto callee = sp->sf->dylib.empty() ? sp->sf->cname : DlCall(sp);
     auto an = CallArgNodes(c, sp->argtypes.size());
     string argstr;
     // A builder argument (`u8[>..]&`, or a value holding one) is appended
@@ -111,26 +113,44 @@ inline vector<string> CodeGen::EmitExternCall(Call *c, FnSpec *sp) {
     if (grows) MarkFlush();
     vector<string> rets;
     if (sp->rets.empty()) {
-        L(sp->sf->cname, "(", argstr, ");");
+        L(callee, "(", argstr, ");");
     } else {
         auto r0 = T();
-        L(CT(sp->rets[0]), " ", r0, " = ", sp->sf->cname, "(", argstr, ");");
+        L(CT(sp->rets[0]), " ", r0, " = ", callee, "(", argstr, ");");
         rets.push_back(r0);
     }
     if (grows) MarkReload();
     return rets;
 }
 
-// The C prototype of an extern fn, from its Goose declaration (§7.10).
+// The C prototype of an extern fn, from its Goose declaration (§7.10); for
+// one bound from a shared library, the declaration of the pointer it is
+// called through, which gs_dl_bind fills, and the function calls go through
+// to reach it, which leaves the call out of clang's function-type check
+// (GS_DL_CALL).
 inline string CodeGen::ExternProto(FnSpec *sp) {
-    string s = sp->rets.empty() ? string("void") : CT(sp->rets[0]);
-    Append(s, " ", sp->sf->cname, "(");
+    auto dynamic = !sp->sf->dylib.empty();
+    auto ret = sp->rets.empty() ? string("void") : CT(sp->rets[0]);
+    string s = dynamic ? "static " : "";
+    s += ret;
+    if (dynamic) Append(s, " (*", DlSlot(sp), ")(");
+    else Append(s, " ", sp->sf->cname, "(");
+    string params, args;
     for (size_t i = 0; i < sp->argtypes.size(); i++) {
-        if (i) s += ", ";
+        if (i) {
+            s += ", ";
+            params += ", ";
+            args += ", ";
+        }
         s += CT(sp->argtypes[i]);
+        Append(params, CT(sp->argtypes[i]), " a", i);
+        Append(args, "a", i);
     }
-    if (sp->argtypes.empty()) s += "void";
+    if (sp->argtypes.empty()) s += "void", params = "void";
     s += ");\n";
+    if (dynamic)
+        Append(s, "static GS_DL_CALL ", ret, " ", DlCall(sp), "(", params, ") { ",
+               sp->rets.empty() ? "" : "return ", DlSlot(sp), "(", args, "); }\n");
     return s;
 }
 

@@ -71,6 +71,16 @@ R"GSRT(/* Goose runtime — the part every compiler-generated C file starts with
 #pragma fp_contract(off)
 #endif
 
+/* The function a dynamic extern is called through (§7.10). Its pointer has
+   the Goose declaration's C types, which match the library's in layout but
+   not in name (struct Point_g for the library's Point), so clang's
+   -fsanitize=function would report a call that the ABI makes sound. */
+#if defined(__clang__)
+#define GS_DL_CALL __attribute__((no_sanitize("function")))
+#else
+#define GS_DL_CALL
+#endif
+
 #ifndef GS_NEED_THREADS
 #define GS_NEED_THREADS 0
 #endif
@@ -185,13 +195,13 @@ GS_API GS_NORETURN void gs_abort_msg(const uint8_t *msg, int64_t len, const char
 GS_API GS_NORETURN void gs_exit(int64_t code);
 GS_API GS_NORETURN void gs_idxfail(int64_t i, int64_t n, const char *file, int line);
 GS_API GS_NORETURN void gs_divfail(const char *file, int line);
-GS_API GS_NORETURN void gs_divovf(const char *file, int line);
+)GSRT"
+R"GSRT(GS_API GS_NORETURN void gs_divovf(const char *file, int line);
 /* The debug build's failing overflow and `as` checks. */
 GS_API GS_NORETURN void gs_ovf(int64_t a, const char *op, int64_t b, const char *type,
                                const char *file, int line);
 GS_API GS_NORETURN void gs_ovf_neg(int64_t a, const char *type, const char *file, int line);
-)GSRT"
-R"GSRT(GS_API GS_NORETURN void gs_asfail_i(const char *why, int64_t v, const char *type,
+GS_API GS_NORETURN void gs_asfail_i(const char *why, int64_t v, const char *type,
                                     const char *file, int line);
 GS_API GS_NORETURN void gs_asfail_u(const char *why, uint64_t v, const char *type,
                                     const char *file, int line);
@@ -346,12 +356,12 @@ static uint64_t gs_bytemask(int64_t k) {
 }
 
 /* memcpy, memmove and memcmp for a slice's elements. An empty slice's data
-   pointer is NULL where the slice was zero-filled (default<T>(), a default
+)GSRT"
+R"GSRT(   pointer is NULL where the slice was zero-filled (default<T>(), a default
    element), and C leaves all three undefined on a null pointer even for
    zero bytes. A copy of up to 16 bytes loads both overlapping halves before
    it stores them, and one of up to 256 bytes moves 16 at a time, the last 16
-)GSRT"
-R"GSRT(   overlapping, where the library's memcpy would take a call and a dispatch
+   overlapping, where the library's memcpy would take a call and a dispatch
    on the length; as the C library's memcpy, it takes runs that do not
    overlap. */
 static void gs_memcpy(void *dst, const void *src, size_t n) {
@@ -513,15 +523,15 @@ static T gs_neg_##SFX(T a, const char *file, int line) { \
     if (r < MIN || r > MAX) gs_ovf_neg(a, #SFX, file, line); \
     return (T)r; } \
 static T gs_shl_##SFX(T a, int64_t n) { \
-    return (T)((uint64_t)a << (n & (BITS - 1))); } \
+)GSRT"
+R"GSRT(    return (T)((uint64_t)a << (n & (BITS - 1))); } \
 static T gs_shr_##SFX(T a, int64_t n) { \
     return (T)((int64_t)a >> (n & (BITS - 1))); }
 
 /* Unsigned types wrap modulo 2^width by definition (§6.2) in every build:
    plain C unsigned arithmetic, truncated back to the width. */
 #define GS_INTOPS_U(SFX, T, MAX, BITS) \
-)GSRT"
-R"GSRT(static T gs_add_##SFX(T a, T b) { return (T)(a + b); } \
+static T gs_add_##SFX(T a, T b) { return (T)(a + b); } \
 static T gs_sub_##SFX(T a, T b) { return (T)(a - b); } \
 static T gs_mul_##SFX(T a, T b) { return (T)((uint64_t)a * (uint64_t)b); } \
 static T gs_shl_##SFX(T a, int64_t n) { \
@@ -701,7 +711,8 @@ static uint64_t gs_divu_q(uint64_t x, uint64_t magic, uint8_t more) {
     return q >> more;
 #else
     (void)magic;
-    return x >> more;   /* Never called: GS_DIVU_NONE takes the operator. */
+)GSRT"
+R"GSRT(    return x >> more;   /* Never called: GS_DIVU_NONE takes the operator. */
 #endif
 }
 
@@ -709,8 +720,7 @@ static uint64_t gs_divu_q(uint64_t x, uint64_t magic, uint8_t more) {
    magic: x / d is the high half of a 32x32 product, which a C compiler
    vectorizes where it keeps the 64x64 one scalar, and which needs no
    128-bit arithmetic, so only a zero divisor gets GS_DIVU_NONE. */
-)GSRT"
-R"GSRT(static uint32_t gs_divu32_gen(uint32_t d, uint8_t *more) {
+static uint32_t gs_divu32_gen(uint32_t d, uint8_t *more) {
     int k = 31;
     uint64_t n;
     uint32_t m, rem;
@@ -839,6 +849,30 @@ GS_API void gs_stack_stats(int64_t stacks);
 GS_API void gs_release_regions(void);
 
 /* ---------------------------------------------------------------------------
+   Dynamic externs (§7.10): the shared libraries the program's extern blocks
+   name, and the functions it calls through them, bound by name as the
+   program starts (docs/design/dynamic_externs.md). */
+
+/* A library: the name its block gives and, where the sidecar spells it for
+   a platform, that spelling; NULL where the platform derives its own
+   (name.dll, libname.dylib, libname.so). */
+typedef struct gs_dllib {
+    const char *name, *onwindows, *onmacos, *onlinux;
+} gs_dllib;
+/* One function: its library's index in the table, the symbol the library
+   is asked for, and the pointer the generated code calls through. */
+typedef struct gs_dlbind {
+    int32_t lib;
+    const char *sym;
+    void **slot;
+} gs_dlbind;
+/* Opens each library once and fills every slot, on the main thread before
+   the globals are initialized. A library that does not load, or a symbol it
+   does not have, is a runtime error naming both. */
+GS_API void gs_dl_bind(const gs_dllib *libs, int64_t nlibs, const gs_dlbind *binds,
+                       int64_t nbinds);
+
+/* ---------------------------------------------------------------------------
    Threads and typed queues (§11.2), runtime_threads.h. */
 
 GS_API int64_t gs_hardware_threads(void);
@@ -852,7 +886,8 @@ GS_API int64_t gs_thread_start(void (*run)(void (*)(uint8_t *), uint8_t *),
    `msg` is not NULL, the first such wait for a worker that aborted takes its
    message: `msg` and `len` are set to it, which the caller frees with
    gs_free_msg, or to NULL and no bytes. */
-GS_API uint8_t gs_thread_wait(int64_t id, uint8_t **msg, int64_t *len,
+)GSRT"
+R"GSRT(GS_API uint8_t gs_thread_wait(int64_t id, uint8_t **msg, int64_t *len,
                                const char *file, int line);
 GS_API void gs_free_msg(uint8_t *msg);
 
@@ -888,8 +923,7 @@ static GS_TLS int64_t gs_nstks;
 
 /* The current program instance's globals (goose_spec.md 11.1), a struct the
    compiler lays out: main's is its one static instance, a worker's a fresh
-)GSRT"
-R"GSRT(   copy of the globals its program uses, taken from the spawning instance
+   copy of the globals its program uses, taken from the spawning instance
    at spawn like the arguments (11.2). No global is shared between program
    instances; the only C statics a program shares are read-only ones. */
 static GS_TLS void *gs_gl;
@@ -1053,7 +1087,8 @@ static int64_t gs_uleb_check(const uint8_t *p, const uint8_t *end, uint64_t *out
         b = *q++;
         if (shift > 63 || (shift == 63 && (b & 0x7e))) return 0;
         v |= (uint64_t)(b & 0x7f) << shift;
-        if (!(b & 0x80)) {
+)GSRT"
+R"GSRT(        if (!(b & 0x80)) {
             if (shift && !b) return 0;  /* Redundant high zero group. */
             break;
         }
@@ -1088,8 +1123,7 @@ static int64_t gs_zig_check(const uint8_t *p, const uint8_t *end, int64_t *out) 
    only it can read back. */
 static int gs_is_le(void) {
     const uint16_t one = 1;
-)GSRT"
-R"GSRT(    return *(const uint8_t *)&one == 1;
+    return *(const uint8_t *)&one == 1;
 }
 
 /* ---------------------------------------------------------------------------
@@ -3284,6 +3318,22 @@ static void gs_bld_append(gs_rref b, const void *p, int64_t n) {
     b.hdr->len += n;
 }
 
+/* ffi's cstr and bytes (stdlib/ffi.goose): the bytes at a pointer a C
+   library handed back as a u64, copied into a builder, so nothing foreign
+   is a Goose value without a copy. The pointer is trusted as every extern
+   call trusts C; a null one appends nothing and is the false result. */
+static uint8_t gs_ffi_cstr(uint64_t p, gs_rref out) {
+    const char *s = (const char *)(uintptr_t)p;
+    if (!s) return 0;
+    gs_bld_append(out, s, (int64_t)strlen(s));
+    return 1;
+}
+static uint8_t gs_ffi_bytes(uint64_t p, int64_t n, gs_rref out) {
+    if (!p) return 0;
+    gs_bld_append(out, (const void *)(uintptr_t)p, n);
+    return 1;
+}
+
 /* math's sqrt (stdlib/math.goose). Goose has no errno, and C's sqrt has to
    set it for a negative argument: clang and gcc then guard the square root
    instruction with a test and a library call at every use, and will not
@@ -3441,6 +3491,7 @@ R"GSRT(/* Goose runtime: the OS primitives behind stdlib/os.goose (spec §7.10),
 #include <errno.h>
 #include <fcntl.h>
 #include <dirent.h>
+#include <dlfcn.h>
 #include <sys/stat.h>
 #ifdef __APPLE__
 #include <mach-o/dyld.h>
@@ -3875,40 +3926,41 @@ GS_API void gs_os_read_stdin(gs_rref out) {
 
 GS_API int64_t gs_os_arg_count(void) { return gs_argc; }
 
-/* Application resources, independent of cwd and argv[0]. JIT supplies its
-   entry source directory; AOT discovers the running executable at runtime.
-   Append only on success, including a final path separator. */
-GS_API uint8_t gs_os_resource_dir(gs_rref out) {
+/* The application's resource directory (resource_dir(), below) in native
+   form with its final separator, NUL-terminated in buf (GS_OS_PATH_MAX
+   characters): its length, or 0 where it is not known. JIT supplies its
+   entry source directory; AOT discovers the running executable. */
+static int gs_os_resource_native(gs_os_char *buf) {
 #ifdef GS_JIT_RESOURCE_DIR
-    const char *dir = GS_JIT_RESOURCE_DIR;
-    gs_bld_append(out, dir, (int64_t)strlen(dir));
-    return 1;
+    sl_u8 dir = { (uint8_t *)GS_JIT_RESOURCE_DIR, (int64_t)strlen(GS_JIT_RESOURCE_DIR) };
+    int n = gs_os_native(dir, buf);
+    return n < 0 ? 0 : n;
 #elif defined(_WIN32)
-    wchar_t path[GS_OS_PATH_MAX];
-    DWORD n = GetModuleFileNameW(NULL, path, GS_OS_PATH_MAX);
+    DWORD n = GetModuleFileNameW(NULL, buf, GS_OS_PATH_MAX);
     if (!n || n >= GS_OS_PATH_MAX) return 0;
-    while (n && path[n - 1] != L'\\' && path[n - 1] != L'/') --n;
-    return n && gs_os_append_wide(out, path, (int)n);
+    while (n && buf[n - 1] != L'\\' && buf[n - 1] != L'/') --n;
+    buf[n] = 0;
+    return (int)n;
 #else
-    char path[GS_OS_PATH_MAX];
+    char *path = buf;
     size_t n;
     #ifdef __APPLE__
-        uint32_t capacity = sizeof path;
+        uint32_t capacity = GS_OS_PATH_MAX;
         if (_NSGetExecutablePath(path, &capacity) != 0) return 0;
         /* Resolve the loader's possible relative path and symlinks. */
         char *resolved = realpath(path, NULL);
         if (!resolved) return 0;
         n = strlen(resolved);
-        if (n >= sizeof path) { free(resolved); return 0; }
+        if (n >= (size_t)GS_OS_PATH_MAX) { free(resolved); return 0; }
         memcpy(path, resolved, n + 1);
         free(resolved);
     #elif defined(__linux__)
-        ssize_t count = readlink("/proc/self/exe", path, sizeof path);
-        if (count <= 0 || (size_t)count >= sizeof path) return 0;
+        ssize_t count = readlink("/proc/self/exe", path, (size_t)GS_OS_PATH_MAX);
+)GSRT"
+R"GSRT(        if (count <= 0 || (size_t)count >= (size_t)GS_OS_PATH_MAX) return 0;
         n = (size_t)count;
     #else
-)GSRT"
-R"GSRT(        return 0;
+        return 0;
     #endif
     while (n && path[n - 1] != '/') --n;
     if (!n) return 0;
@@ -3917,14 +3969,136 @@ R"GSRT(        return 0;
         size_t suffixlen = sizeof suffix - 1;
         if (n >= suffixlen && !memcmp(path + n - suffixlen, suffix, suffixlen)) {
             n -= sizeof "MacOS/" - 1;
-            if (n + sizeof "Resources/" - 1 >= sizeof path) return 0;
+            if (n + sizeof "Resources/" - 1 >= (size_t)GS_OS_PATH_MAX) return 0;
             memcpy(path + n, "Resources/", sizeof "Resources/" - 1);
             n += sizeof "Resources/" - 1;
         }
     #endif
+    path[n] = 0;
+    return (int)n;
+#endif
+}
+
+/* Application resources, independent of cwd and argv[0]. Append only on
+   success, including a final path separator. */
+GS_API uint8_t gs_os_resource_dir(gs_rref out) {
+    gs_os_char path[GS_OS_PATH_MAX];
+    int n = gs_os_resource_native(path);
+    if (!n) return 0;
+#ifdef _WIN32
+    return gs_os_append_wide(out, path, n);
+#else
     gs_bld_append(out, path, (int64_t)n);
     return 1;
 #endif
+}
+
+/* ---- Dynamic externs: the libraries the program's extern blocks name ---- */
+
+/* The spelling this platform opens for a library, UTF-8 in buf (GS_OS_PATH_MAX
+   bytes): the sidecar's for the platform, else the block's name. A last
+   component without a dot takes the platform's library form (SDL2 is
+   SDL2.dll, libSDL2.dylib, libSDL2.so); a spelling with a separator, unless
+   absolute, is under the resource directory; a bare one goes to the loader's
+   search as it is. 0 where it does not fit or the resource directory is not
+   known. */
+static int gs_dl_spelling(const gs_dllib *lib, char *buf) {
+#ifdef _WIN32
+    const char *s = lib->onwindows, *prefix = "", *suffix = ".dll";
+#elif defined(__APPLE__)
+    const char *s = lib->onmacos, *prefix = "lib", *suffix = ".dylib";
+#else
+    const char *s = lib->onlinux, *prefix = "lib", *suffix = ".so";
+#endif
+    if (!s) s = lib->name;
+    size_t len = strlen(s), dir = 0;
+    for (size_t i = 0; i < len; i++) {
+        int sep = s[i] == '/';
+#ifdef _WIN32
+        sep = sep || s[i] == '\\';
+#endif
+        if (sep) dir = i + 1;
+    }
+    const char *leaf = s + dir;
+    int bare = !strchr(leaf, '.');
+    int absolute = s[0] == '/';
+#ifdef _WIN32
+    int drive = (s[0] >= 'a' && s[0] <= 'z') || (s[0] >= 'A' && s[0] <= 'Z');
+    absolute = absolute || s[0] == '\\' || (len >= 2 && drive && s[1] == ':');
+#endif
+    char root[GS_OS_PATH_MAX];
+    root[0] = 0;
+    if (dir && !absolute) {
+        gs_os_char native[GS_OS_PATH_MAX];
+        int n = gs_os_resource_native(native);
+        if (!n) return 0;
+#ifdef _WIN32
+        n = WideCharToMultiByte(CP_UTF8, WC_ERR_INVALID_CHARS, native, n, root, GS_OS_PATH_MAX - 1,
+                                NULL, NULL);
+        if (n <= 0) return 0;
+        root[n] = 0;
+#else
+        memcpy(root, native, (size_t)n + 1);
+#endif
+    }
+    int n = snprintf(buf, GS_OS_PATH_MAX, "%s%.*s%s%s%s", root, (int)dir, s, bare ? prefix : "",
+                     leaf, bare ? suffix : "");
+    return n > 0 && n < GS_OS_PATH_MAX ? n : 0;
+}
+
+GS_API void gs_dl_bind(const gs_dllib *libs, int64_t nlibs, const gs_dlbind *binds,
+                       int64_t nbinds) {
+    for (int64_t l = 0; l < nlibs; l++) {
+        char spelling[GS_OS_PATH_MAX], msg[GS_OS_PATH_MAX + 512];
+        if (!gs_dl_spelling(&libs[l], spelling)) {
+            snprintf(msg, sizeof msg, "cannot load %s: its path does not fit or is not known",
+                     libs[l].name);
+            gs_panic(msg);
+        }
+#ifdef _WIN32
+        sl_u8 utf8 = { (uint8_t *)spelling, (int64_t)strlen(spelling) };
+        wchar_t wide[GS_OS_PATH_MAX];
+        HMODULE h = NULL;
+        if (gs_os_native(utf8, wide) >= 0) {
+            /* A path, the resource directory's or an absolute one: the
+               libraries it depends on are looked for beside it first, as
+               a library shipped with its dependencies under lib/ needs.
+               That search wants backslashes. A bare name keeps the
+               loader's own search. */
+            int path = 0;
+            for (wchar_t *c = wide; *c; c++)
+                if (*c == L'/' || *c == L'\\') { *c = L'\\'; path = 1; }
+            h = path ? LoadLibraryExW(wide, NULL, LOAD_WITH_ALTERED_SEARCH_PATH) : LoadLibraryW(wide);
+        }
+        if (!h) {
+            snprintf(msg, sizeof msg, "cannot load %s (%s): Windows error %u", libs[l].name,
+                     spelling, (unsigned)GetLastError());
+            gs_panic(msg);
+        }
+#else
+        void *h = dlopen(spelling, RTLD_NOW | RTLD_LOCAL);
+        if (!h) {
+            const char *why = dlerror();
+            snprintf(msg, sizeof msg, "cannot load %s (%s): %s", libs[l].name, spelling,
+                     why ? why : "unknown error");
+            gs_panic(msg);
+        }
+#endif
+        for (int64_t b = 0; b < nbinds; b++) {
+            if (binds[b].lib != l) continue;
+#ifdef _WIN32
+            void *f = (void *)GetProcAddress(h, binds[b].sym);
+#else
+            void *f = dlsym(h, binds[b].sym);
+#endif
+            if (!f) {
+                snprintf(msg, sizeof msg, "%s (%s) has no symbol %s", libs[l].name, spelling,
+                         binds[b].sym);
+                gs_panic(msg);
+            }
+            *binds[b].slot = f;
+        }
+    }
 }
 
 GS_API void gs_os_arg(int64_t i, gs_rref out) {
@@ -4001,7 +4175,8 @@ GS_API int64_t gs_os_clock_ns(void) {
     QueryPerformanceCounter(&c);
     return (int64_t)((double)c.QuadPart * (1000000000.0 / (double)f.QuadPart));
 #else
-    struct timespec ts;
+)GSRT"
+R"GSRT(    struct timespec ts;
     clock_gettime(CLOCK_MONOTONIC, &ts);
     return (int64_t)ts.tv_sec * 1000000000 + ts.tv_nsec;
 #endif

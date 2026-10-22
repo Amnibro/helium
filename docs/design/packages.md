@@ -309,6 +309,7 @@ comments, `key = value;`, strings, `true`/`false`, integers and
 | `c_libs` | both | system libraries, by name (`m`, `user32`); spelled per style by the compiler |
 | `cmake_target` | both | the package root holds a CMake project, and this is the static library target to build and link (§5.2) |
 | `cmake_options` | both | `NAME=VALUE` cache entries for its configure |
+| `dylibs` | both | `name=spelling` entries: the spelling to open for a shared library an `extern "name" { ... }` block binds from (spec §7.10); a package's map its own names as defaults, the program's map a name for any package and win per platform; a name no block declares is an error |
 | `main_thread_only` | both | its functions may not be reached from a `thread_fn` (§5.4) |
 | `exclude` | both | directories, relative to the package root, whose `.goose` files are not the package's own: the JIT library's symbol table (§5.3) looks for extern fns in neither these nor a directory below the root that holds a sidecar of its own |
 | `output` | program | the executable's name, relative to the root's directory |
@@ -583,8 +584,8 @@ FetchContent_MakeAvailable(goose_pkg_gfx)
 fetches it at configure time with CMake's own fetcher (no Python, no goose
 yet) into the cache layout of §4.6 under the build directory, adds its
 project, links its `cmake_target` into `goose`, generates its symbol table
-(the same `goose_symbols.c`, produced by a CMake regex over `extern "…" fn`
-and `extern fn name` lines, since no compiler exists yet to parse them), and
+(the same `goose_symbols.c`, produced by a CMake regex over `extern fn name`
+lines and their trailing `= "…"`, since no compiler exists yet to parse them), and
 writes `link-cc.rsp` and `link-msvc.rsp` under `pkg/…/<config>/` through the
 same wrapper and file-API probe as §5.2 (`cmake/package.cmake`, shared by
 the two). The compiler is built knowing that directory, as it knows

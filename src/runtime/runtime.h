@@ -59,6 +59,16 @@
 #pragma fp_contract(off)
 #endif
 
+/* The function a dynamic extern is called through (§7.10). Its pointer has
+   the Goose declaration's C types, which match the library's in layout but
+   not in name (struct Point_g for the library's Point), so clang's
+   -fsanitize=function would report a call that the ABI makes sound. */
+#if defined(__clang__)
+#define GS_DL_CALL __attribute__((no_sanitize("function")))
+#else
+#define GS_DL_CALL
+#endif
+
 #ifndef GS_NEED_THREADS
 #define GS_NEED_THREADS 0
 #endif
@@ -821,6 +831,30 @@ GS_API void gs_stack_stats(int64_t stacks);
 /* Releases every region of the calling thread program, and what else the
    runtime keeps for its thread. */
 GS_API void gs_release_regions(void);
+
+/* ---------------------------------------------------------------------------
+   Dynamic externs (§7.10): the shared libraries the program's extern blocks
+   name, and the functions it calls through them, bound by name as the
+   program starts (docs/design/dynamic_externs.md). */
+
+/* A library: the name its block gives and, where the sidecar spells it for
+   a platform, that spelling; NULL where the platform derives its own
+   (name.dll, libname.dylib, libname.so). */
+typedef struct gs_dllib {
+    const char *name, *onwindows, *onmacos, *onlinux;
+} gs_dllib;
+/* One function: its library's index in the table, the symbol the library
+   is asked for, and the pointer the generated code calls through. */
+typedef struct gs_dlbind {
+    int32_t lib;
+    const char *sym;
+    void **slot;
+} gs_dlbind;
+/* Opens each library once and fills every slot, on the main thread before
+   the globals are initialized. A library that does not load, or a symbol it
+   does not have, is a runtime error naming both. */
+GS_API void gs_dl_bind(const gs_dllib *libs, int64_t nlibs, const gs_dlbind *binds,
+                       int64_t nbinds);
 
 /* ---------------------------------------------------------------------------
    Threads and typed queues (§11.2), runtime_threads.h. */

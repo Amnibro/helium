@@ -93,6 +93,7 @@ module.exports = grammar({
       $.enum_declaration,
       $.type_alias_declaration,
       $.function_declaration,
+      $.extern_block,
       $.variable_declaration,
     ),
 
@@ -179,10 +180,35 @@ module.exports = grammar({
       optional(field('type_parameters', $.type_parameters)),
       field('parameters', $.parameters),
       optional(seq('->', field('result', sep1($._type, ',')))),
-      choice(field('body', $.block), ';'),
+      // An extern's C symbol goes where its body would.
+      choice(field('body', $.block), seq(optional($._symbol), ';')),
     ),
 
-    // `export` and `extern` take the C symbol's name.
+    // `extern "lib" { ... }`: functions bound from a shared library, each
+    // written without `extern`, with `= "sym"` for its symbol.
+    extern_block: $ => seq(
+      'extern',
+      field('library', $.string_literal),
+      '{',
+      repeat($.extern_member),
+      '}',
+    ),
+
+    extern_member: $ => seq(
+      'fn',
+      field('name', $._qualified_name),
+      optional(field('type_parameters', $.type_parameters)),
+      field('parameters', $.parameters),
+      optional(seq('->', field('result', sep1($._type, ',')))),
+      optional($._symbol),
+      ';',
+    ),
+
+    // `= "sym"` after an extern's signature: the C symbol it binds.
+    _symbol: $ => seq('=', field('symbol', $.string_literal)),
+
+    // `export` takes the C symbol's name, as `extern` did before the
+    // symbol moved after the signature (still accepted, deprecated).
     function_modifier: $ => choice(
       'checkfree',
       'simd',
