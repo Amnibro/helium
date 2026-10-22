@@ -579,6 +579,7 @@ fn write_stdout(s: const u8[:])   fn write_stderr(s: const u8[:])   fn flush_std
 fn arg_count() -> i64       fn arg(i: i64, out: u8[>..]&)
 fn args() -> u8[:][>..]                              // indexable; argument 0 is the program
 fn env(name: const u8[:], out: u8[>..]&) -> bool
+fn trim_memory() -> bool                            // return unused data-stack pages to the OS
 fn resource_dir() -> u8[>..]                         // absolute directory, trailing separator
 fn resource_dir(out: u8[>..]&) -> bool               // appends; unchanged on failure
 fn time() -> f64                                     // seconds since the epoch
@@ -587,6 +588,22 @@ fn time_ns() -> i64         fn clock_ns() -> i64
 fn sleep(seconds: f64)      fn sleep_ms(ms: i64)
 fn random_seed() -> u64                              // entropy, for rng
 ```
+
+`trim_memory` asks the OS to discard complete pages beyond every current
+data-stack top in the calling thread program, including its globals and
+scratch from scopes that have ended. It preserves live values, borrowed
+views, limited-array capacity and virtual-address reservations; subsequent
+growth works normally. It affects no other worker. Use it after a large
+workload, such as replacing a document, rather than on every temporary:
+ordinary scope exit still keeps pages available for cheap reuse, while
+trimmed pages cost a fault when the stack grows again. The release is
+eager: Windows decommits the pages, returning their commit charge too, and
+Linux drops them from the resident set at once, so either gives growth
+fresh zeroed pages. macOS marks them reusable, which takes them out of the
+footprint at once, and declares them reused as growth takes them back; a
+page the kernel has not reclaimed by then may still hold its old bytes,
+which nothing above a stack's top ever reads. `false` means at least one OS
+request failed.
 
 Paths are UTF-8 on every platform: on Windows the runtime converts them to
 UTF-16 for the system's wide APIs. So are environment values, and the

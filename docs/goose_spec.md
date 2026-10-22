@@ -77,6 +77,12 @@ There is no general-purpose heap and no `malloc`. All dynamic allocation is
 expressed as values living on data stacks, owned by locals (or globals).
 (The runtime itself may allocate internally for thread queues, §11.2.)
 
+Rewinding a data stack makes its storage reusable, while normally keeping
+its pages committed. After a large workload, `trim_memory()` from `os`
+can ask the operating system to discard unused complete pages of the
+calling thread program's stacks. This preserves all live values and the
+virtual reservations; subsequent growth remains valid.
+
 ### 1.3 The stack invariant
 
 For each data stack:
@@ -4420,14 +4426,16 @@ is that header's `len`, so its tail cannot be referenced either.
 
 ### C.4 Guard pages and commit order
 
-Construction rules (§4.2) write stacks front-to-back. When an allocation
-skips ahead without writing (a large limited-array capacity), the runtime
-commits the skipped range explicitly (VirtualAlloc/mprotect) instead of
-relying on touch order — Windows-style guard-page auto-commit covers the
-ordinary sequential-write case; Linux uses reserve + explicit commit.
-Fresh pages arrive zeroed from the OS; reused stack memory does not —
-harmless, since uninitialized slots are unreachable (§5.3). A final
-unmapped gap after each region turns runaway growth into a safe abort.
+Construction rules (§4.2) write stacks front-to-back. Windows and macOS
+commit on fault: the runtime's handler commits a chunk from whichever page
+was touched, so an allocation that skips ahead without writing (a large
+limited-array capacity) needs no explicit commit, and nothing depends on
+touch order. Linux reserves with overcommit and commits on touch. Fresh
+pages arrive zeroed from the OS; reused stack memory does not, nor on
+macOS a page that `trim_memory` released and the kernel has not reclaimed
+yet — harmless, since uninitialized slots are unreachable (§5.3). A final
+gap after each region, never committed, turns runaway growth into a safe
+abort.
 
 ---
 
