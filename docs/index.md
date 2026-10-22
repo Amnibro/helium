@@ -72,6 +72,9 @@ and the reference describe what was built; these say why.
   why read-only data cannot be laundered into writable data.
 * [Independently owned dynamic data](design/owning_dynamic_data.md): an
   editor's open documents as a worked example of slice pools.
+* [Cleanup at scope exit](design/scope_exit_cleanup.md): `defer`,
+  destructor types and pool finalizers compared against the compiler's
+  exit paths and `return … from`; a proposal.
 * [Standard library design](design/stdlib_design.md): the library's
   original scope and conventions.
 * [Compiler analyses](design/analysis_inventory.md): an inventory of the
