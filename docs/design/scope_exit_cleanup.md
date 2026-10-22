@@ -131,12 +131,15 @@ Proposed semantics:
   constructed at its destination first (§7.3), then the defers run, then the
   scope's stacks are released. So `defer close(f); return read(f);` reads
   before closing, and a `defer` may read the scope's locals.
-* **The body cannot leave.** No `return`, `break` or `continue` out of it,
-  and no call that can perform or propagate a long-distance return, which
-  includes `exception::throw` and a trailing block whose `return` targets an
-  outer function. The compiler knows which specializations can propagate
-  (section 4.3 says why this is a hard requirement, not a style rule). The
-  body may abort.
+* **The body cannot leave, and is free of long-distance returns.** No
+  `return`, `break` or `continue` out of it, and no `return … from`,
+  `exception::throw` or trailing block whose `return` targets an outer
+  function. Beyond that, no call to a function that *contains* long-distance
+  return machinery anywhere beneath it, a catch included, even one that
+  throws and catches entirely inside itself. Section 4.3 says why the
+  stronger rule is needed and what the relaxation would be; the compiler can
+  check it with one transitive flag computed in call-graph order. The body
+  may abort.
 * **No writing what is being returned.** The body may not write a local
   that any `return` of the function returns, or storage rooted at one
   (section 4.3). Reads are harmless.
@@ -282,7 +285,9 @@ fn try<E, Body, Catch, Finally>() {
 throw that escapes to an outer handler (a propagation through this frame),
 and after a lexical `return` out of `Body` (the same). That is the `finally`
 stdlib.md explains it cannot offer. The note there would change, and
-`exception::try` would gain the overload.
+`exception::try` would gain the overload. A `Finally` body is a defer body
+and lives under its rules: it cannot throw, and it cannot call anything that
+uses exceptions internally (3.1, 4.3).
 
 ### 3.6 Only on failure
 
@@ -364,18 +369,56 @@ A block's lexical return through a higher-order function is the same
 machinery and behaves the same way: the function the block is written in is
 the target.
 
-What can go wrong is a **second propagation while one is in flight**.
-`gs_rf` is one thread-local flag and the channels are per target; a defer
-body that performs or propagates a long-distance return in an intermediate
-frame overwrites the one being carried and the outer catch never sees it.
+What can go wrong is **any long-distance return machinery running while one
+is in flight**. Today nothing executes between a `return … from` and its
+catch except epilogues, and the propagation state relies on that: `gs_rf` is
+one thread-local flag, and the channels are per target. A defer body in an
+intermediate frame runs in exactly that window.
+
+The obvious case is a body that performs or propagates a long-distance
+return itself: it overwrites the flag being carried, and its own propagation
+starts from inside the frame's `PropagateReturn`. The case that is easy to
+miss is a **contained** one. A callee that throws and catches entirely
+inside itself does not propagate, so its `hasrf` is false, yet its throw
+writes `gs_rf` and its catch zeroes it (`EmitRfCheck` sets `gs_rf = 0` where
+a propagation ends). The intermediate frame then finishes its
+`PropagateReturn` with `gs_rf == 0`, its caller's check sees no propagation
+and takes the dummy return value as a real result, and nothing diagnoses
+it. A `defer close(x)` whose `close` uses `exception::try` three calls down
+would miscompile silently. A callee that re-enters the target in flight
+would also overwrite that target's `gs_lret` and `gs_fval` channels if its
+inner return fires. So "no call to a propagating specialization" is not
+enough.
+
 This is C++'s "destructors must not throw", and unlike C++ it can be a
-compile-time rule: every specialization records whether it can propagate
-(`hasrf`, `needs`), in call-graph order, so a body containing
-`return … from`, a block return, `exception::throw` or a call to a
-propagating specialization is rejected where it is written. The validity
-rule for `return … from` ("every call of a function containing it lies
-within a call of the target") would otherwise also have to treat defers as
-call sites on every exit path; with the restriction it does not.
+compile-time rule, in one of two strengths:
+
+* **Rf-free bodies.** A body may not contain, or call anything that
+  transitively reaches, a `return … from` site or a catch, propagating or
+  contained. That is one more flag beside `hasrf`, computed in call-graph
+  order like it (inside a recursive cycle it is known once the cycle's
+  rounds settle, so a body calling into one is judged then), and one
+  rejection where the body is written, naming the callee that brings the
+  machinery in. Nested propagation and re-entry of the in-flight target are
+  then impossible by construction, and the interaction needs no runtime
+  state at all: nothing executes during propagation except epilogues, and
+  defers are part of the epilogue. The cost is that a cleanup cannot call
+  code that uses exceptions internally.
+* **Save and restore.** Alternatively, each body runs with `gs_rf` saved,
+  cleared and restored around it, which admits contained try/throw with
+  *other* targets, since their channels are distinct. It does not cover a
+  body that re-enters the target in flight, whose channels it would
+  overwrite; covering that needs either saving that target's channels too,
+  chosen at run time by `gs_rf`, or a check that the targets the body can
+  reach internally are disjoint from the targets that can pass through the
+  frame. Escaping propagation stays forbidden under either strength, since
+  it would start a `PropagateReturn` inside one.
+
+The first strength is the one to ship; the second is a relaxation to reach
+for if real cleanups hit the wall. The validity rule for `return … from`
+("every call of a function containing it lies within a call of the target")
+would otherwise also have to treat defers as call sites on every exit path;
+with either rule it does not.
 
 **Named results.** A returned local is placed at the destination from its
 declaration (guaranteed NRVO, §7.3), so after `return x` the local's bytes
@@ -657,8 +700,8 @@ it on every path, which today means a single exit per test body.
 ## 6. Recommendations
 
 1. **Add `defer`**, scope-bound, evaluated at exit, with the three body
-   restrictions of 3.1 (cannot leave, cannot propagate, cannot write a
-   returned local), implemented as entries in the scope list beside the
+   restrictions of 3.1 (cannot leave, free of long-distance returns in the
+   strong sense of 4.3, cannot write a returned local), implemented as entries in the scope list beside the
    watermark saves (4.2), checked at the scope's end (4.4), excluded from
    the tail-recursion rewrite, and documented as not running on abort. It is
    the smallest change that makes handle APIs safe to use with
