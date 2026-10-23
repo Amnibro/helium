@@ -99,6 +99,16 @@ Questions and discussion: the
 [Discord](https://discord.gg/397eZdbnsR) and the
 [GitHub repository](https://github.com/aardappel/goose).
 
+## Standalone pages
+
+Pages made as finished HTML, kept in `docs/html` and published as they
+are.
+
+* [Goose, Byte by Byte](html/Goose,%20Byte%20by%20Byte.html): the
+  language on one long illustrated page, its data drawn byte by byte:
+  the array family, nested data kept inline, references the compiler
+  proves valid, and where the speed comes from.
+
 ---
 
 These pages are built from the repository's markdown by
