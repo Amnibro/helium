@@ -159,6 +159,7 @@ struct DeclaredPackage {
 #define PLATFORM_NULL "/dev/null"
 #endif
 static bool amnicli = false;
+int ExecProgram(const string &exe, const vector<string> &args);
 static string SrcPath(const string &b) { return FileExists(cat(b, ".amni")) && !FileExists(cat(b, ".goose")) ? cat(b, ".amni") : cat(b, ".goose"); }
 static Diagnostic ImportDiagnostic(const string &file, const Import &imp, const string &msg) {
     Diagnostic d;
@@ -1204,6 +1205,13 @@ int Main(int argc, char **argv) {
     // C goes to the program's build directory (build.h).
     BuildOptions buildopts;
     string builddir;
+    auto nativerun = amnicli && !forcejit && (verb.empty() || verb == "run") && outname.empty() && !multitest && !tokens && !dump && !dumpdocs && dumpfile.empty() && !parseonly && headername.empty() && !roundtrip && shaderfile.empty() && !jsondiag && !specs && !getenv("HELIUM_JIT");
+    if (nativerun) {
+        Toolchain probe;
+        string why;
+        nativerun = FindToolchain(ccrequest, probe, why);
+        if (nativerun) verb = "build", optlevel = optlevel == 1 ? 2 : optlevel;
+    }
     if (verb == "run") {
         if (!outname.empty()) {
             fprintf(stderr, "goose run takes no -o: it compiles and runs the program in this "
@@ -1526,8 +1534,27 @@ int Main(int argc, char **argv) {
                     if (!BuildNativePart(*astp, pkg, filename, b, false, nb)) return 1;
                     rsps.push_back(nb.rsp);
                 }
-                return BuildExecutable(filename, outfile, builddir, tc, buildopts, msgs, rsps,
-                                       astp->packages[0].output);
+                if (!nativerun)
+                    return BuildExecutable(filename, outfile, builddir, tc, buildopts, msgs, rsps,
+                                           astp->packages[0].output);
+                string csrc;
+                LoadFile(outfile, csrc);
+                std::error_code ec;
+                auto stamp = filesystem::last_write_time(filesystem::path(exe), ec).time_since_epoch().count();
+                auto stem = cat(PathStem(filename), "-run-");
+                auto exepath = cat(builddir, "/", stem, Hex8(cat(csrc, debug ? "d" : "r", stamp, tc.id))
+                #ifdef _WIN32
+                    , ".exe"
+                #endif
+                );
+                if (!FileExists(exepath)) {
+                    for (auto &de : filesystem::directory_iterator(filesystem::path(builddir), ec))
+                        if (de.path().filename().string().starts_with(stem)) filesystem::remove(de.path(), ec);
+                    auto o = buildopts;
+                    o.exe = exepath;
+                    if (auto c = BuildExecutable(filename, outfile, builddir, tc, o, msgs, rsps, "")) return c;
+                }
+                return ExecProgram(exepath, progargs);
             }
             if (program.empty()) return code;
             // The native parts the program reaches hand the run their
@@ -1619,6 +1646,20 @@ namespace goose {
 // The language server's streams carry bytes with Content-Length counts,
 // which the text mode Windows gives them, translating line breaks, would
 // put off.
+int ExecProgram(const string &exe, const vector<string> &args) {
+    vector<const char *> av { exe.c_str() };
+    for (auto &a : args) av.push_back(a.c_str());
+    av.push_back(nullptr);
+    fflush(stdout), fflush(stderr);
+    #ifdef _WIN32
+        return (int)_spawnv(_P_WAIT, exe.c_str(), av.data());
+    #else
+        execv(exe.c_str(), (char *const *)av.data());
+        perror(exe.c_str());
+        return 1;
+    #endif
+}
+
 void SetBinaryStdio() {
     #ifdef _WIN32
         _setmode(_fileno(stdin), _O_BINARY);
@@ -1716,7 +1757,7 @@ int RunOnCompilerStack(const function<int()> &fn) {
 }  // namespace goose
 
 int main(int argc, char **argv) {
-    goose::amnicli = std::filesystem::path(argv[0]).stem().string().starts_with("amni");
+    goose::amnicli = std::filesystem::path(argv[0]).stem().string().starts_with("helium");
     #ifdef _MSC_VER
         // Asserts and aborts go to stderr and exit, never a dialog, so failing
         // debug runs terminate cleanly under test automation.

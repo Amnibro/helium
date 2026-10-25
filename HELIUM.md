@@ -1,13 +1,13 @@
-# Amni
+# Helium
 
-Amni is Goose (github.com/aardappel/goose) with a leaner surface for LLMs. A `.amni` file differs from a `.goose` file in four ways, and is the same language otherwise:
+Helium is Goose (github.com/aardappel/goose) with a leaner surface for LLMs. Its source files are `.amni`. A `.amni` file differs from a `.goose` file in four ways, and is the same language otherwise:
 
 - Word types: `int`=i64, `uint`=u64, `byte`=u8, `real`=f64. The others stay: `i8 i16 i32 u16 u32 f32 bool varint`.
 - No `:` before a type in declarations and no `->` before results: `fn f(a int, b real) int, bool`, `struct P { x real, y real }`, `var n int = 0`. Literals and named arguments keep `:` (`P { x: 1.0, y: 2.0 }`).
 - `import std;` is implicit. Other modules are imported: `import dictionary;`, `import os;`, `import math;`.
-- The `amni` command prints only the program's output and errors (`-v` shows compiler progress).
+- The `helium` command prints only the program's output and errors (`-v` shows compiler progress).
 
-Run: `amni file.amni` (in-process, no C compiler). `amni check file.amni` typechecks. `amni build file.amni` makes an executable. `goose2amni.py` converts Goose source.
+Run: `helium file.amni` (native through the system C compiler, cached; TinyCC in-process when there is none, or with `--jit`). `helium check file.amni` typechecks. `helium build file.amni` makes an executable. `goose2amni.py` converts Goose source.
 
 ## Core
 
@@ -212,7 +212,7 @@ fn main() {
 - One root file; `import a.b;` loads `a/b.amni` (or `.goose`) relative to the root, then the standard library. `namespace geo;` scopes a file: `geo::Pt`. `fn main()` in the root is the entry.
 - Globals: `var log byte[>..];` starts empty; `let SIZE = 16;` is a named constant usable as an array size.
 - `fn format(out byte[>..]&, p Point) { format(out, "(", p.x, ",", p.y, ")"); }` customizes how a type prints.
-- Threads share nothing: `thread_fn worker() { let j = qget<Job>(); qput(Result { ... }); }`, `thread_spawn(worker)`, `thread_wait(id)`. Only flat (reference-free) values cross queues. Threads need `amni build`.
+- Threads share nothing: `thread_fn worker() { let j = qget<Job>(); qput(Result { ... }); }`, `thread_spawn(worker)`, `thread_wait(id)`. Only flat (reference-free) values cross queues. Threads need `helium build`.
 - `assert(c)`, `abort(msg)`, `exit(code)`. `copy(x)`, `default<T>()`, `to_bytes(a)`, `from_bytes<T[>..]>(b)`, `bytes_of(a)`, `embed_file("path")`.
 - `extern fn hypot(x real, y real) real;` binds C; `extern "SDL2" { fn SDL_Quit(); }` binds a shared library.
 

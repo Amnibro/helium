@@ -10,7 +10,7 @@ def run(exe,f):
     try:r=subprocess.run([B+exe,'run',os.path.basename(f)],cwd=os.path.dirname(f),capture_output=True,text=True,timeout=30,errors='replace');return r.returncode,Q.sub('',r.stdout)
     except subprocess.TimeoutExpired:return 'timeout',''
 def one(f):
-    g=run('goose',f);a=run('amni',f[:-6]+'.amni')
+    g=run('goose',f);a=run('helium',f[:-6]+'.amni')
     return ('skip' if g[0]=='timeout' else 'ok' if g[0]==a[0] and N(g[1])==N(a[1]) else 'DIFF'),f,g[0],a[0]
 with ThreadPoolExecutor(7) as ex:res=list(ex.map(one,fs))
 from collections import Counter

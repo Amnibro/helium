@@ -1,3 +1,48 @@
+# Helium
+
+Helium is a fork of [Goose](https://github.com/aardappel/goose) by Wouter van Oortmerssen, tuned for code that language models read and write. Helium source files use the `.amni` extension; `.goose` files still compile exactly as upstream.
+
+What `.amni` changes:
+
+- Word types: `int` (i64), `uint` (u64), `byte` (u8), `real` (f64).
+- Declarations without `:` or `->`: `fn divide(a int, b int) int, bool`, `struct P { x real, y real }`, `var n int = 0`.
+- `import std;` is implicit, and a program's own overloads win ties against it.
+- The `helium` command prints only the program's output and errors (`-v` for compiler progress).
+- `helium file.amni` compiles to native code with the system C compiler (gcc, clang or MSVC), caches the binary by a hash of the generated C, and runs it. Goose runs through the built-in TinyCC instead, which does not optimize and cannot run threads. `--jit` or `HELIUM_JIT=1` keeps the TinyCC path, which is also the fallback when no C compiler is found.
+- [HELIUM.md](HELIUM.md) teaches the whole language in about 3.9k tokens, against about 169k for the Goose documentation.
+
+Measured with the o200k and Qwen2.5 tokenizers, comments stripped:
+
+| | tokens |
+|---|---:|
+| Goose documentation needed to write the language | ~169,000 |
+| HELIUM.md | ~3,900 |
+| 15 benchmark programs, C++ / Rust / Goose / Helium | 1.00 / 0.57 / 0.52 / 0.48 |
+| Compiler chatter per run, goose / helium | 85 / 0 |
+
+Speed and memory, Linux, Ryzen, gcc, Goose's own benchmarks at the medium size:
+
+| | goose (TinyCC run) | helium (native, cached) |
+|---|---:|---:|
+| run time | 1.00 | 1.8x to 4.1x faster (sum 3.4x, graph 2.1x, sexp 2.4x, lru 3.4x, particles 4.1x, words 3.2x) |
+| peak memory | 1.00 | 1.08x to 1.37x lighter |
+| rerun of an unchanged program | compile + run | run only (7 to 31 ms for the samples) |
+| threads | not supported | supported |
+
+The first run of a changed program pays one C compile (about 0.1 s for the benchmarks), so it already beats the TinyCC run on anything that runs longer than about 0.2 s. Building the generated C with `-O3 -march=native` instead of `-O2` gained only 4.5% on average and lost on some benchmarks, so Helium keeps `-O2`.
+
+`tools/amni/goose2amni.py` converts Goose source to `.amni`; `tools/amni/check.py` converts a directory and checks that every program prints what the original does (all 701 test programs and every runnable sample match). `tools/amni/measure.py` counts tokens.
+
+```bash
+cmake -B build -DCMAKE_BUILD_TYPE=Release
+cmake --build build --config Release
+build/helium samples_amni/01_tour.amni
+```
+
+Helium is licensed under the Apache License 2.0, as Goose is. The Goose README follows.
+
+---
+
 ![The Goose programming language](docs/logo/logo_black_fg_white_bg_mini.png)
 
 # The Goose Programming Language
