@@ -749,3 +749,203 @@ GS_API uint64_t gs_os_random_u64(void) {
     seed = gs_os_mix64(seed ^ (uint64_t)(uintptr_t)&counter);
     return gs_os_mix64(seed ^ count);
 }
+
+#if !defined(__TINYC__) && defined(__has_include)
+#if __has_include(<vulkan/vulkan.h>)
+#define GS_HAVE_VK 1
+#endif
+#endif
+#ifdef GS_HAVE_VK
+#define VK_NO_PROTOTYPES
+#include <vulkan/vulkan.h>
+static struct {
+    int state;
+    void *lib;
+    VkInstance inst;
+    VkPhysicalDevice phys;
+    VkDevice dev;
+    VkQueue queue;
+    uint32_t qfam;
+    VkPhysicalDeviceMemoryProperties mem;
+    PFN_vkGetDeviceProcAddr gdpa;
+} gs_vk;
+#define GS_VKI(n) PFN_##n n = (PFN_##n)gipa(gs_vk.inst, #n)
+#define GS_VKD(n) PFN_##n n = (PFN_##n)gs_vk.gdpa(gs_vk.dev, #n)
+static int gs_vk_init(void) {
+    if (gs_vk.state) return gs_vk.state > 0;
+    gs_vk.state = -1;
+    const char *want = getenv("HELIUM_GPU");
+    if (want && !strcmp(want, "off")) return 0;
+#if defined(__linux__)
+    if (!getenv("VK_LOADER_DRIVERS_SELECT") && !getenv("VK_DRIVER_FILES") && !getenv("VK_ICD_FILENAMES")) {
+        char sel[64] = "", path[64], id[16];
+        for (int c = 0; c < 16; c++) {
+            snprintf(path, sizeof path, "/sys/class/drm/card%d/device/vendor", c);
+            FILE *f = fopen(path, "r");
+            if (!f) continue;
+            const char *g = fgets(id, sizeof id, f) ? (!strncmp(id, "0x1002", 6) ? "*radeon*" : !strncmp(id, "0x8086", 6) ? "*intel*" : !strncmp(id, "0x10de", 6) ? "*nvidia*" : NULL) : NULL;
+            fclose(f);
+            if (g && !strstr(sel, g) && strlen(sel) + strlen(g) + 2 < sizeof sel) strcat(strcat(sel, *sel ? "," : ""), g);
+        }
+        if (*sel) setenv("VK_LOADER_DRIVERS_SELECT", sel, 0);
+    }
+    setenv("MESA_VK_IGNORE_CONFORMANCE_WARNING", "1", 0);
+#endif
+#ifdef _WIN32
+    gs_vk.lib = (void *)LoadLibraryA("vulkan-1.dll");
+    PFN_vkGetInstanceProcAddr gipa = gs_vk.lib ? (PFN_vkGetInstanceProcAddr)GetProcAddress((HMODULE)gs_vk.lib, "vkGetInstanceProcAddr") : NULL;
+#else
+    gs_vk.lib = dlopen("libvulkan.so.1", RTLD_NOW | RTLD_LOCAL);
+#ifdef __APPLE__
+    if (!gs_vk.lib) gs_vk.lib = dlopen("libvulkan.1.dylib", RTLD_NOW | RTLD_LOCAL);
+#endif
+    PFN_vkGetInstanceProcAddr gipa = gs_vk.lib ? (PFN_vkGetInstanceProcAddr)dlsym(gs_vk.lib, "vkGetInstanceProcAddr") : NULL;
+#endif
+    if (!gipa) return 0;
+    PFN_vkCreateInstance vkCreateInstance = (PFN_vkCreateInstance)gipa(NULL, "vkCreateInstance");
+    VkApplicationInfo app = { VK_STRUCTURE_TYPE_APPLICATION_INFO, NULL, "helium", 1, "helium", 1, VK_API_VERSION_1_1 };
+    VkInstanceCreateInfo ici = { VK_STRUCTURE_TYPE_INSTANCE_CREATE_INFO, NULL, 0, &app, 0, NULL, 0, NULL };
+    if (!vkCreateInstance || vkCreateInstance(&ici, NULL, &gs_vk.inst) != VK_SUCCESS) return 0;
+    GS_VKI(vkEnumeratePhysicalDevices); GS_VKI(vkGetPhysicalDeviceProperties); GS_VKI(vkGetPhysicalDeviceFeatures);
+    GS_VKI(vkGetPhysicalDeviceQueueFamilyProperties); GS_VKI(vkGetPhysicalDeviceMemoryProperties); GS_VKI(vkCreateDevice);
+    gs_vk.gdpa = (PFN_vkGetDeviceProcAddr)gipa(gs_vk.inst, "vkGetDeviceProcAddr");
+    VkPhysicalDevice devs[16];
+    uint32_t nd = 16;
+    if (vkEnumeratePhysicalDevices(gs_vk.inst, &nd, devs) < 0 || !nd) return 0;
+    VkPhysicalDeviceType pref = want && (!strcmp(want, "discrete") || !strcmp(want, "dgpu")) ? VK_PHYSICAL_DEVICE_TYPE_DISCRETE_GPU : VK_PHYSICAL_DEVICE_TYPE_INTEGRATED_GPU;
+    int pick = -1;
+    for (uint32_t i = 0; i < nd; i++) {
+        VkPhysicalDeviceProperties p;
+        VkPhysicalDeviceFeatures f;
+        vkGetPhysicalDeviceProperties(devs[i], &p);
+        vkGetPhysicalDeviceFeatures(devs[i], &f);
+        if (!f.shaderInt64 || !f.robustBufferAccess || p.deviceType == VK_PHYSICAL_DEVICE_TYPE_CPU) continue;
+        if (pick < 0 || p.deviceType == pref) pick = (int)i;
+        if (p.deviceType == pref) break;
+    }
+    if (pick < 0) return 0;
+    gs_vk.phys = devs[pick];
+    uint32_t nq = 16;
+    VkQueueFamilyProperties qf[16];
+    vkGetPhysicalDeviceQueueFamilyProperties(gs_vk.phys, &nq, qf);
+    gs_vk.qfam = UINT32_MAX;
+    for (uint32_t i = 0; i < nq; i++) if (qf[i].queueFlags & VK_QUEUE_COMPUTE_BIT) { gs_vk.qfam = i; break; }
+    if (gs_vk.qfam == UINT32_MAX) return 0;
+    float prio = 1.0f;
+    VkDeviceQueueCreateInfo qci = { VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO, NULL, 0, gs_vk.qfam, 1, &prio };
+    VkPhysicalDeviceFeatures en;
+    memset(&en, 0, sizeof en);
+    en.shaderInt64 = VK_TRUE;
+    en.robustBufferAccess = VK_TRUE;
+    VkDeviceCreateInfo dci = { VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO, NULL, 0, 1, &qci, 0, NULL, 0, NULL, &en };
+    if (vkCreateDevice(gs_vk.phys, &dci, NULL, &gs_vk.dev) != VK_SUCCESS) return 0;
+    vkGetPhysicalDeviceMemoryProperties(gs_vk.phys, &gs_vk.mem);
+    GS_VKD(vkGetDeviceQueue);
+    vkGetDeviceQueue(gs_vk.dev, gs_vk.qfam, 0, &gs_vk.queue);
+    gs_vk.state = 1;
+    return 1;
+}
+static int gs_vk_buffer(VkDeviceSize size, VkBuffer *buf, VkDeviceMemory *mem, void **map) {
+    GS_VKD(vkCreateBuffer); GS_VKD(vkGetBufferMemoryRequirements); GS_VKD(vkAllocateMemory); GS_VKD(vkBindBufferMemory); GS_VKD(vkMapMemory);
+    VkBufferCreateInfo bci = { VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO, NULL, 0, size, VK_BUFFER_USAGE_STORAGE_BUFFER_BIT, VK_SHARING_MODE_EXCLUSIVE, 0, NULL };
+    if (vkCreateBuffer(gs_vk.dev, &bci, NULL, buf) != VK_SUCCESS) return 0;
+    VkMemoryRequirements rq;
+    vkGetBufferMemoryRequirements(gs_vk.dev, *buf, &rq);
+    VkMemoryPropertyFlags need = VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT;
+    uint32_t t = UINT32_MAX;
+    for (uint32_t i = 0; i < gs_vk.mem.memoryTypeCount && t == UINT32_MAX; i++)
+        if ((rq.memoryTypeBits & (1u << i)) && (gs_vk.mem.memoryTypes[i].propertyFlags & need) == need) t = i;
+    if (t == UINT32_MAX) return 0;
+    VkMemoryAllocateInfo mai = { VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO, NULL, rq.size, t };
+    if (vkAllocateMemory(gs_vk.dev, &mai, NULL, mem) != VK_SUCCESS) return 0;
+    return vkBindBufferMemory(gs_vk.dev, *buf, *mem, 0) == VK_SUCCESS && vkMapMemory(gs_vk.dev, *mem, 0, size, 0, map) == VK_SUCCESS;
+}
+#endif
+GS_API uint8_t gs_gpu_fill(sl_u8 spv, gs_rref outr, int64_t n, int64_t cpu_ns) {
+#ifdef GS_HAVE_VK
+    int64_t gs_t0 = gs_os_clock_ns();
+    const char *mn = getenv("HELIUM_GPU_MIN_MS");
+    if (cpu_ns < (mn ? atoll(mn) : 30) * 1000000 || n <= 0 || spv.len < 20 || (spv.len & 3) || !gs_vk_init()) return 0;
+    int64_t gs_t1 = gs_os_clock_ns(), gs_t2 = gs_t1;
+    GS_VKD(vkCreateShaderModule); GS_VKD(vkCreateDescriptorSetLayout); GS_VKD(vkCreatePipelineLayout); GS_VKD(vkCreateComputePipelines);
+    GS_VKD(vkCreateDescriptorPool); GS_VKD(vkAllocateDescriptorSets); GS_VKD(vkUpdateDescriptorSets); GS_VKD(vkCreateCommandPool);
+    GS_VKD(vkAllocateCommandBuffers); GS_VKD(vkBeginCommandBuffer); GS_VKD(vkCmdBindPipeline); GS_VKD(vkCmdBindDescriptorSets);
+    GS_VKD(vkCmdPushConstants); GS_VKD(vkCmdDispatch); GS_VKD(vkEndCommandBuffer); GS_VKD(vkQueueSubmit); GS_VKD(vkQueueWaitIdle);
+    GS_VKD(vkResetCommandBuffer); GS_VKD(vkDestroyBuffer); GS_VKD(vkFreeMemory); GS_VKD(vkDestroyPipeline); GS_VKD(vkDestroyPipelineLayout);
+    GS_VKD(vkDestroyDescriptorPool); GS_VKD(vkDestroyDescriptorSetLayout); GS_VKD(vkDestroyShaderModule); GS_VKD(vkDestroyCommandPool);
+    uint8_t ok = 0;
+    VkBuffer vb = VK_NULL_HANDLE, fb = VK_NULL_HANDLE;
+    VkDeviceMemory vm = VK_NULL_HANDLE, fm = VK_NULL_HANDLE;
+    void *vp = NULL, *fp = NULL;
+    VkShaderModule sm = VK_NULL_HANDLE;
+    VkDescriptorSetLayout dsl = VK_NULL_HANDLE;
+    VkPipelineLayout pl = VK_NULL_HANDLE;
+    VkPipeline pipe = VK_NULL_HANDLE;
+    VkDescriptorPool dp = VK_NULL_HANDLE;
+    VkCommandPool cp = VK_NULL_HANDLE;
+    if (!gs_vk_buffer((VkDeviceSize)n * 8, &vb, &vm, &vp) || !gs_vk_buffer((VkDeviceSize)n * 4, &fb, &fm, &fp)) goto done;
+    VkShaderModuleCreateInfo smi = { VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO, NULL, 0, (size_t)spv.len, (const uint32_t *)spv.data };
+    if (vkCreateShaderModule(gs_vk.dev, &smi, NULL, &sm) != VK_SUCCESS) goto done;
+    VkDescriptorSetLayoutBinding bd[2] = { { 0, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 1, VK_SHADER_STAGE_COMPUTE_BIT, NULL }, { 1, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 1, VK_SHADER_STAGE_COMPUTE_BIT, NULL } };
+    VkDescriptorSetLayoutCreateInfo dli = { VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO, NULL, 0, 2, bd };
+    if (vkCreateDescriptorSetLayout(gs_vk.dev, &dli, NULL, &dsl) != VK_SUCCESS) goto done;
+    VkPushConstantRange pr = { VK_SHADER_STAGE_COMPUTE_BIT, 0, 8 };
+    VkPipelineLayoutCreateInfo pli = { VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO, NULL, 0, 1, &dsl, 1, &pr };
+    if (vkCreatePipelineLayout(gs_vk.dev, &pli, NULL, &pl) != VK_SUCCESS) goto done;
+    VkComputePipelineCreateInfo cpi = { VK_STRUCTURE_TYPE_COMPUTE_PIPELINE_CREATE_INFO, NULL, 0, { VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO, NULL, 0, VK_SHADER_STAGE_COMPUTE_BIT, sm, "main", NULL }, pl, VK_NULL_HANDLE, -1 };
+    if (vkCreateComputePipelines(gs_vk.dev, VK_NULL_HANDLE, 1, &cpi, NULL, &pipe) != VK_SUCCESS) goto done;
+    VkDescriptorPoolSize ps = { VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 2 };
+    VkDescriptorPoolCreateInfo dpi = { VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO, NULL, 0, 1, 1, &ps };
+    if (vkCreateDescriptorPool(gs_vk.dev, &dpi, NULL, &dp) != VK_SUCCESS) goto done;
+    VkDescriptorSet ds;
+    VkDescriptorSetAllocateInfo dai = { VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO, NULL, dp, 1, &dsl };
+    if (vkAllocateDescriptorSets(gs_vk.dev, &dai, &ds) != VK_SUCCESS) goto done;
+    VkDescriptorBufferInfo bi[2] = { { vb, 0, VK_WHOLE_SIZE }, { fb, 0, VK_WHOLE_SIZE } };
+    VkWriteDescriptorSet w[2] = { { VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET, NULL, ds, 0, 0, 1, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, NULL, &bi[0], NULL },
+                                  { VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET, NULL, ds, 1, 0, 1, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, NULL, &bi[1], NULL } };
+    vkUpdateDescriptorSets(gs_vk.dev, 2, w, 0, NULL);
+    VkCommandPoolCreateInfo cpci = { VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO, NULL, VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT, gs_vk.qfam };
+    if (vkCreateCommandPool(gs_vk.dev, &cpci, NULL, &cp) != VK_SUCCESS) goto done;
+    VkCommandBuffer cb;
+    VkCommandBufferAllocateInfo cbi = { VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO, NULL, cp, VK_COMMAND_BUFFER_LEVEL_PRIMARY, 1 };
+    if (vkAllocateCommandBuffers(gs_vk.dev, &cbi, &cb) != VK_SUCCESS) goto done;
+    gs_t2 = gs_os_clock_ns();
+    for (int64_t base = 0; base < n; base += 16384) {
+        uint32_t pc[2] = { (uint32_t)base, (uint32_t)n };
+        int64_t cnt = n - base < 16384 ? n - base : 16384;
+        VkCommandBufferBeginInfo bgi = { VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO, NULL, VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT, NULL };
+        vkResetCommandBuffer(cb, 0);
+        if (vkBeginCommandBuffer(cb, &bgi) != VK_SUCCESS) goto done;
+        vkCmdBindPipeline(cb, VK_PIPELINE_BIND_POINT_COMPUTE, pipe);
+        vkCmdBindDescriptorSets(cb, VK_PIPELINE_BIND_POINT_COMPUTE, pl, 0, 1, &ds, 0, NULL);
+        vkCmdPushConstants(cb, pl, VK_SHADER_STAGE_COMPUTE_BIT, 0, 8, pc);
+        vkCmdDispatch(cb, (uint32_t)((cnt + 63) / 64), 1, 1);
+        if (vkEndCommandBuffer(cb) != VK_SUCCESS) goto done;
+        VkSubmitInfo si = { VK_STRUCTURE_TYPE_SUBMIT_INFO, NULL, 0, NULL, NULL, 1, &cb, 0, NULL };
+        if (vkQueueSubmit(gs_vk.queue, 1, &si, VK_NULL_HANDLE) != VK_SUCCESS || vkQueueWaitIdle(gs_vk.queue) != VK_SUCCESS) goto done;
+    }
+    gs_bld_append(outr, (const uint8_t *)vp, n * 8);
+    gs_bld_append(outr, (const uint8_t *)fp, n * 4);
+    ok = 1;
+    if (getenv("HELIUM_GPU_LOG")) {
+        int64_t nf = 0;
+        for (int64_t i = 0; i < n; i++) nf += ((const uint32_t *)fp)[i] != 0;
+        fprintf(stderr, "gpu fill %lld entries (%lld left to the CPU): device %.1f ms, pipeline %.1f ms, run %.1f ms\n", (long long)n, (long long)nf, (gs_t1 - gs_t0) / 1e6, (gs_t2 - gs_t1) / 1e6, (gs_os_clock_ns() - gs_t2) / 1e6);
+    }
+done:
+    if (cp) vkDestroyCommandPool(gs_vk.dev, cp, NULL);
+    if (dp) vkDestroyDescriptorPool(gs_vk.dev, dp, NULL);
+    if (pipe) vkDestroyPipeline(gs_vk.dev, pipe, NULL);
+    if (pl) vkDestroyPipelineLayout(gs_vk.dev, pl, NULL);
+    if (dsl) vkDestroyDescriptorSetLayout(gs_vk.dev, dsl, NULL);
+    if (sm) vkDestroyShaderModule(gs_vk.dev, sm, NULL);
+    if (vb) vkDestroyBuffer(gs_vk.dev, vb, NULL);
+    if (fb) vkDestroyBuffer(gs_vk.dev, fb, NULL);
+    if (vm) vkFreeMemory(gs_vk.dev, vm, NULL);
+    if (fm) vkFreeMemory(gs_vk.dev, fm, NULL);
+    return ok;
+#else
+    (void)spv; (void)outr; (void)n; (void)cpu_ns;
+    return 0;
+#endif
+}

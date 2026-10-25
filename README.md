@@ -10,6 +10,7 @@ What `.amni` changes:
 - The `helium` command prints only the program's output and errors (`-v` for compiler progress).
 - `helium file.amni` compiles to native code with the system C compiler (gcc, clang or MSVC), caches the binary by a hash of the generated C, and runs it. Goose runs through the built-in TinyCC instead, which does not optimize and cannot run threads. `--jit` or `HELIUM_JIT=1` keeps the TinyCC path, which is also the fallback when no C compiler is found.
 - `lut fn` turns a pure function of up to 24 bits of small-integer input into a sparse, persistent lookup table: entries are computed on first use in 4096-entry tiles, saved to `~/.goose/lut/`, and loaded by the next run. A Collatz step count over every `u16`, 200 passes, takes 1,149 ms as a plain function and 15 ms as a `lut fn` (10 ms when the table is already on disk); a 24-bit table used at three points is 83 KB.
+- When a `lut fn` body is integer code and a CPU fill would take over 30 ms, Helium compiles the body to a Vulkan compute shader and fills the whole table on the GPU, exactly matching the CPU. A 3,000-step hash over every `u16` takes 135 ms on the CPU and 24 ms on a Ryzen 9950X3D's integrated GPU, 15 ms on an RX 9060 XT, including Vulkan start-up. Entries the GPU can't finish fall back to the CPU, and builds without Vulkan or `glslc` stay on the CPU.
 - [HELIUM.md](HELIUM.md) teaches the whole language in about 3.9k tokens, against about 169k for the Goose documentation.
 
 Measured with the o200k and Qwen2.5 tokenizers, comments stripped:
