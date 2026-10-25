@@ -133,9 +133,10 @@ struct Lexer {
     // The `{` scanned so far less the `}`, the current token's included
     // (DepthBefore).
     int curlies = 0;
+    bool amni = false;
 
     Lexer(string_view _filename, const char *_source, int _fileidx = 0)
-        : p(_source), filename(_filename), source(_source), fileidx(_fileidx) {
+        : p(_source), filename(_filename), source(_source), fileidx(_fileidx), amni(_filename.ends_with(".amni")) {
         linestart = p;
         Next();
     }
@@ -452,6 +453,8 @@ struct Lexer {
                     };
                     auto it = keywords.find(attr);
                     if (it != keywords.end()) tok = it->second;
+                    static const unordered_map<string_view, TType> words = { { "int", T_TI64 }, { "uint", T_TU64 }, { "byte", T_TU8 }, { "real", T_TF64 } };
+                    if (auto w = amni && tok == T_IDENT ? words.find(attr) : words.end(); w != words.end()) tok = w->second;
                     return;
                 }
                 Error(cat("illegal character: ", QuotedCharAt(start)));

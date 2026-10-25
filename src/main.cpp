@@ -153,6 +153,13 @@ struct DeclaredPackage {
 };
 
 // An error at an import in the file named `file`: over the whole `import ...;`.
+#ifdef _WIN32
+#define PLATFORM_NULL "NUL"
+#else
+#define PLATFORM_NULL "/dev/null"
+#endif
+static bool amnicli = false;
+static string SrcPath(const string &b) { return FileExists(cat(b, ".amni")) && !FileExists(cat(b, ".goose")) ? cat(b, ".amni") : cat(b, ".goose"); }
 static Diagnostic ImportDiagnostic(const string &file, const Import &imp, const string &msg) {
     Diagnostic d;
     d.where = LocOf(imp.line);
@@ -342,13 +349,13 @@ void ParseProgram(Ast &ast, const string &rootpath, const vector<string> &stdlib
                     }
                     imppath = cat(ast.packages[imppkg].root, imp.path, ".goose");
                 } else if (imp.relative) {
-                    imppath = cat(DirOf(path), imp.path, ".goose");
+                    imppath = SrcPath(cat(DirOf(path), imp.path));
                 } else {
                     // A file under this package's root; a module of a package the
                     // root declared (`import pkg;` is its entry, `import pkg.sub;`
                     // its sub.goose); a blessed name, its package loaded as if
                     // the root had declared it (§4.5); the standard library.
-                    auto local = cat(ast.packages[pkg].root, imp.path, ".goose");
+                    auto local = SrcPath(cat(ast.packages[pkg].root, imp.path));
                     auto first = imp.path.substr(0, imp.path.find('/'));
                     auto rest = imp.path.size() > first.size() ? imp.path.substr(first.size() + 1)
                                                                : first;
@@ -1260,7 +1267,8 @@ int Main(int argc, char **argv) {
     }
     // The program shares stdout in JIT mode, and the diagnostics have it as
     // JSON; progress goes to stderr then.
-    auto msgs = jit || jsondiag ? stderr : stdout;
+    static FILE *nul = fopen(PLATFORM_NULL, "w");
+    auto msgs = amnicli && !verbose && nul ? nul : jit || jsondiag ? stderr : stdout;
     // The file being compiled, the C file it goes to, if any, and the
     // --include headers as that C file names them.
     string filename, outfile;
@@ -1708,6 +1716,7 @@ int RunOnCompilerStack(const function<int()> &fn) {
 }  // namespace goose
 
 int main(int argc, char **argv) {
+    goose::amnicli = std::filesystem::path(argv[0]).stem().string().starts_with("amni");
     #ifdef _MSC_VER
         // Asserts and aborts go to stderr and exit, never a dialog, so failing
         // debug runs terminate cleanly under test automation.

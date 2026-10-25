@@ -70,7 +70,9 @@ struct Parser {
     bool eoferror = false;
 
     Parser(Ast &_ast, string_view filename, const char *source, int _fileidx)
-        : ast(_ast), lex(filename, source, _fileidx), fileidx(_fileidx) {}
+        : ast(_ast), lex(filename, source, _fileidx), fileidx(_fileidx) {
+        if (lex.amni) imports.push_back(Import { "std", false, "", CurLine(), CurLine() });
+    }
 
     [[noreturn]] void Error(const string &msg) { lex.Error(msg); }
 
@@ -564,7 +566,7 @@ struct Parser {
                 for (auto &prev : fields)
                     if (!prev.ispad && prev.name == f.name)
                         Error(cat("duplicate field name: ", f.name));
-                Expect(T_COLON, context);
+                if (!AmniType()) Expect(T_COLON, context);
                 f.type = ParseType();
                 if (constq) f.type = ast.ConstOf(f.type);
                 if (IsNext(T_ASSIGN)) f.defaultval = ParseExpr();
@@ -772,7 +774,7 @@ struct Parser {
                 p.name = ExpectIdent("parameter list");
                 for (auto &prev : sf->params)
                     if (prev.name == p.name) Error(cat("duplicate parameter name: ", p.name));
-                if (IsNext(T_COLON)) p.type = ParseType();
+                if (IsNext(T_COLON) || AmniType()) p.type = ParseType();
                 if (IsNext(T_ASSIGN)) {
                     // A default is a value of the parameter's type (§7.1), which
                     // an untyped parameter has only from an argument.
@@ -793,7 +795,7 @@ struct Parser {
                 if (!IsNext(T_COMMA)) break;
             }
             Expect(T_RPAREN, "function declaration");
-            if (IsNext(T_ARROW)) {
+            if (IsNext(T_ARROW) || AmniType()) {
                 // Declaration headers take a bare comma-separated return type list.
                 sf->has_rets = true;
                 for (;;) {
@@ -882,7 +884,7 @@ struct Parser {
             if (!IsNext(T_COMMA)) break;
         }
         vd->ns = curns;
-        if (IsNext(T_COLON)) vd->type = ParseType();
+        if (IsNext(T_COLON) || AmniType()) vd->type = ParseType();
         // `x .= e` declares a reference bound to e, where `x = e` would
         // copy a fixed-size pointee (§3.8).
         if (IsNext(T_DOTASSIGN)) vd->byref = true;
@@ -911,6 +913,9 @@ struct Parser {
     // ------------------------------------------------------------------
     // Types.
 
+    bool AmniType() {
+        return lex.amni && (IsPrimTypeToken(lex.tok) || lex.tok == T_IDENT || lex.tok == T_COLONCOLON || lex.tok == T_FN || lex.tok == T_LPAREN || lex.tok == T_CONST);
+    }
     TypeExpr *ParseType() {
         // `const` qualifies the first reference or slice built on the base
         // type (§9.5): `const u8[:]` is a slice of read-only bytes, `const

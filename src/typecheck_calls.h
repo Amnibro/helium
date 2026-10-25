@@ -386,6 +386,10 @@ inline Val TypeCheck::ResolveCall(Call *c, vector<SFunction *> &cands, FnSpec *e
         Error(c, cat("ambiguous call to ", name, ": multiple overloads match equally well",
                      which));
     };
+    auto file = [&](Line l) { return l.fileidx >= 0 && l.fileidx < (int)ast.sources.size() ? string_view(ast.sources[l.fileidx].first) : string_view(); };
+    auto isstd = [&](const MatchInfo &mi) { auto f = file(mi.sf->line); return f.ends_with("/std.goose") || f == "std.goose"; };
+    if (tied.size() > 1 && file(c->line).ends_with(".amni") && std::any_of(tied.begin(), tied.end(), [&](auto &mi) { return !isstd(mi); }))
+        std::erase_if(tied, isstd), best = tied[0];
     if (tied.size() > 1) ambiguous(tied);
     if (tied.empty()) {
         // Tag dispatch (§8.2): the match-as-overload-set form.

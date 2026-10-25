@@ -77,6 +77,8 @@ add_executable(goose
     src/runtime/goose.h
     src/gfx.h
 )
+add_custom_command(TARGET goose POST_BUILD COMMAND ${CMAKE_COMMAND} -E copy_if_different $<TARGET_FILE:goose> $<TARGET_FILE_DIR:goose>/amni${CMAKE_EXECUTABLE_SUFFIX})
+
 
 # Keep argv, CRT file access, filesystem paths and Win32's narrow APIs in
 # the same encoding as Goose strings. Windows 10 1903+ applies this before
