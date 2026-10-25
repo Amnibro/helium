@@ -29,6 +29,16 @@ Speed and memory, Linux, Ryzen, gcc, Goose's own benchmarks at the medium size:
 | rerun of an unchanged program | compile + run | run only (7 to 31 ms for the samples) |
 | threads | not supported | supported |
 
+Against Rust and C++, all 16 of Goose's benchmarks at the large size (`bench/results_linux.md`; Ryzen 9 9950X3D, Linux, gcc and clang `-O2`, rustc `-O`, every implementation printing the same checksums). Above 1.00 means Helium is faster or smaller:
+
+| Helium vs | speed, gcc | speed, clang | peak memory | tokens to write |
+|---|---:|---:|---:|---:|
+| idiomatic C++ | 2.37x | 2.15x | 1.74x less | 2.08x fewer |
+| expert C++ | 1.04x | 1.08x | 1.26x less | |
+| best safe Rust | 1.09x | 1.11x | 1.19x less | 1.19x fewer |
+
+Helium loses to Rust on `scene` (0.84x/0.92x), `calc` (0.92x/0.89x) and `push` (0.91x/0.93x), and gcc builds `blur` 3.9x slower than clang does, for C++ and Helium alike.
+
 The first run of a changed program pays one C compile (about 0.1 s for the benchmarks), so it already beats the TinyCC run on anything that runs longer than about 0.2 s. Building the generated C with `-O3 -march=native` instead of `-O2` gained only 4.5% on average and lost on some benchmarks, so Helium keeps `-O2`.
 
 `tools/amni/goose2amni.py` converts Goose source to `.amni`; `tools/amni/check.py` converts a directory and checks that every program prints what the original does (all 701 test programs and every runnable sample match). `tools/amni/measure.py` counts tokens.
