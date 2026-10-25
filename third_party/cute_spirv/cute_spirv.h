@@ -116,6 +116,9 @@
 		                  sampling (SPIR-V Grad operands, HLSL SampleGrad, MSL
 		                  gradient2d/gradientcube/gradient3d, native in ES 3.00) on
 		                  sampler2D/Cube/3D/2DArray/2DShadow, legal in every stage.
+		1.10 (10/25/2026) gl_FrontFacing in fragment shaders on all four backends
+		                  (SPIR-V BuiltIn FrontFacing, HLSL SV_IsFrontFace, MSL
+		                  [[front_facing]], native in ES 3.00).
 */
 #ifndef CUTE_SPIRV_H
 #define CUTE_SPIRV_H
@@ -7825,7 +7828,7 @@ static void cspv_emit_hlsl(cspv_ctx* ctx)
 	if (ctx->stage == CSPV_STAGE_VERTEX) {
 		sappend(ctx->tp_out, "static float4 gl_Position;\nstatic int gl_VertexIndex;\nstatic int gl_InstanceIndex;\n");
 	} else if (ctx->stage == CSPV_STAGE_FRAGMENT) {
-		sappend(ctx->tp_out, "static float4 gl_FragCoord;\n");
+		sappend(ctx->tp_out, "static float4 gl_FragCoord;\nstatic bool gl_FrontFacing;\n");
 	} else {
 		sappend(ctx->tp_out,
 			"static uint3 gl_GlobalInvocationID;\nstatic uint3 gl_LocalInvocationID;\n"
@@ -7961,7 +7964,7 @@ static void cspv_emit_hlsl(cspv_ctx* ctx)
 		}
 		sappend(ctx->tp_out, "\treturn cf_out;\n}\n");
 	} else if (ctx->stage == CSPV_STAGE_FRAGMENT) {
-		sappend(ctx->tp_out, "\nstruct cf_ps_in\n{\n\tfloat4 cf_position : SV_Position;\n");
+		sappend(ctx->tp_out, "\nstruct cf_ps_in\n{\n\tfloat4 cf_position : SV_Position;\n\tbool cf_front : SV_IsFrontFace;\n");
 		for (int i = 0; i < (int)asize(ctx->decls); i++) {
 			cspv_decl* d = ctx->decls + i;
 			if (d->kind != CSPV_D_INOUT || !d->is_input) continue;
@@ -7978,7 +7981,7 @@ static void cspv_emit_hlsl(cspv_ctx* ctx)
 			cspv_tp_var(g, d->type, d->name);
 			sfmt_append(ctx->tp_out, "_out : SV_Target%d;\n", d->location);
 		}
-		sappend(ctx->tp_out, "};\ncf_ps_out main(cf_ps_in cf_in)\n{\n\tgl_FragCoord = cf_in.cf_position;\n");
+		sappend(ctx->tp_out, "};\ncf_ps_out main(cf_ps_in cf_in)\n{\n\tgl_FragCoord = cf_in.cf_position;\n\tgl_FrontFacing = cf_in.cf_front;\n");
 		for (int i = 0; i < (int)asize(ctx->decls); i++) {
 			cspv_decl* d = ctx->decls + i;
 			if (d->kind != CSPV_D_INOUT || !d->is_input) continue;
@@ -8703,7 +8706,7 @@ static void cspv_emit_msl(cspv_ctx* ctx)
 	if (ctx->stage == CSPV_STAGE_VERTEX) {
 		sappend(ctx->tp_out, "\tfloat4 gl_Position;\n\tint gl_VertexIndex;\n\tint gl_InstanceIndex;\n");
 	} else if (ctx->stage == CSPV_STAGE_FRAGMENT) {
-		sappend(ctx->tp_out, "\tfloat4 gl_FragCoord;\n");
+		sappend(ctx->tp_out, "\tfloat4 gl_FragCoord;\n\tbool gl_FrontFacing;\n");
 	} else {
 		sappend(ctx->tp_out, "\tuint3 gl_GlobalInvocationID;\n\tuint3 gl_LocalInvocationID;\n\tuint3 gl_WorkGroupID;\n\tuint gl_LocalInvocationIndex;\n");
 	}
@@ -8763,7 +8766,7 @@ static void cspv_emit_msl(cspv_ctx* ctx)
 	if (ctx->stage == CSPV_STAGE_VERTEX) {
 		sappend(ctx->tp_out, "\nvertex cf_vs_out main0(cf_vs_in cf_in [[stage_in]], uint cf_vid [[vertex_id]], uint cf_iid [[instance_id]]");
 	} else if (ctx->stage == CSPV_STAGE_FRAGMENT) {
-		sappend(ctx->tp_out, "\nfragment cf_ps_out main0(cf_ps_in cf_in [[stage_in]]");
+		sappend(ctx->tp_out, "\nfragment cf_ps_out main0(cf_ps_in cf_in [[stage_in]], bool cf_front [[front_facing]]");
 	} else {
 		sappend(ctx->tp_out,
 			"\nkernel void main0(uint3 cf_gtid [[thread_position_in_threadgroup]], uint3 cf_dtid [[thread_position_in_grid]], "
@@ -8841,7 +8844,7 @@ static void cspv_emit_msl(cspv_ctx* ctx)
 		}
 		sappend(ctx->tp_out, "\ts.gl_VertexIndex = int(cf_vid);\n\ts.gl_InstanceIndex = int(cf_iid);\n");
 	} else if (ctx->stage == CSPV_STAGE_FRAGMENT) {
-		sappend(ctx->tp_out, "\ts.gl_FragCoord = cf_in.cf_position;\n");
+		sappend(ctx->tp_out, "\ts.gl_FragCoord = cf_in.cf_position;\n\ts.gl_FrontFacing = cf_front;\n");
 		for (int i = 0; i < (int)asize(ctx->decls); i++) {
 			cspv_decl* d = ctx->decls + i;
 			if (d->kind == CSPV_D_INOUT && d->is_input) sfmt_append(ctx->tp_out, "\ts.%s = cf_in.%s;\n", d->name, d->name);
@@ -9178,6 +9181,7 @@ CSPV_Result cspv_compile_ex(const char* source, CSPV_Stage stage, const CSPV_Opt
 		cspv_add_builtin_input(ctx, "gl_InstanceIndex", ctx->t_int, 43); // BuiltIn InstanceIndex
 	} else if (stage == CSPV_STAGE_FRAGMENT) {
 		cspv_add_builtin_input(ctx, "gl_FragCoord", ctx->t_vec[2], 15);  // BuiltIn FragCoord
+		cspv_add_builtin_input(ctx, "gl_FrontFacing", ctx->t_bool, 17);  // BuiltIn FrontFacing
 	} else if (stage == CSPV_STAGE_COMPUTE) {
 		cspv_init_compute_builtins(ctx);
 	}
