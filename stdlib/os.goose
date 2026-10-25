@@ -18,6 +18,7 @@ extern fn write_file(path: const u8[:], data: const u8[:]) -> bool = "gs_os_writ
 extern fn write_file_atomic(path: const u8[:], data: const u8[:]) -> bool = "gs_os_write_file_atomic";
 extern fn append_file(path: const u8[:], data: const u8[:]) -> bool = "gs_os_append_file";
 extern fn file_exists(path: const u8[:]) -> bool = "gs_os_file_exists";    // a file, not a directory
+extern fn file_mtime(path: const u8[:]) -> i64 = "gs_os_file_mtime";      // seconds since the epoch, -1 if absent
 extern fn delete_file(path: const u8[:]) -> bool = "gs_os_remove_file";
 // Replaces `to`, if there is one, in a single step.
 extern fn rename_file(from: const u8[:], to: const u8[:]) -> bool = "gs_os_rename_file";

@@ -567,6 +567,7 @@ fn write_file(path: const u8[:], data: const u8[:]) -> bool
 fn write_file_atomic(path: const u8[:], data: const u8[:]) -> bool   // the old file or all of the new
 fn append_file(path: const u8[:], data: const u8[:]) -> bool
 fn file_exists(path: const u8[:]) -> bool                  // a file, not a directory
+fn file_mtime(path: const u8[:]) -> i64                   // last modified, seconds since the epoch; -1 if nothing is there
 fn delete_file(path: const u8[:]) -> bool
 fn rename_file(from: const u8[:], to: const u8[:]) -> bool // replaces `to` atomically
 fn make_dir(path: const u8[:]) -> bool                     // true if one is there afterwards
@@ -898,7 +899,7 @@ out.append("]}");
 
 ```goose
 struct Node { next: Node&<u32>?, first: Node&<u32>?, key: const u8[:], val: Value }
-enum Value { Null, Bool { v: bool }, Int { v: i64 }, Num { v: f64 }, Str { s: const u8[:] },
+enum Value { Null, Bool { v: bool }, Int { v: i64 }, UInt { v: u64 }, Num { v: f64 }, Str { s: const u8[:] },
              Arr { count: i64 }, Obj { count: i64 } }
 fn parse(text: u8[:], doc: Node[>..]&, decoded: u8[>..]&) -> Node?, u8[>..]
                                              // the root, or null and the error
@@ -906,6 +907,7 @@ fn member(n: Node?, key: u8[:]) -> Node?     // the first member named key; null
 fn each<F>(n: Node&)                         // F(child) for each element or member, in order
 fn as_f64(n: Node?) -> f64, bool             // an Int or a Num
 fn as_i64(n: Node?) -> i64, bool             // an Int
+fn as_u64(n: Node?) -> u64, bool             // an Int from 0 up, or a UInt (an integer above i64 that fits u64)
 fn as_bool(n: Node?) -> bool, bool
 fn as_string(n: Node?) -> const u8[:], bool
 ```

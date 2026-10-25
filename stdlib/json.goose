@@ -915,6 +915,7 @@ enum Value {
     Null,
     Bool { v: bool },
     Int { v: i64 },
+    UInt { v: u64 },    // an integer above i64's range that fits u64, as serde_json keeps one
     Num { v: f64 },
     Str { s: const u8[:] },
     Arr { count: i64 },
@@ -988,8 +989,11 @@ fn parse(text: u8[:], doc: Node[>..]&, decoded: u8[>..]&) -> Node?, u8[>..] {
             let what = if c == '-' || (c >= '0' && c <= '9') { "bad number" } else { "expected a value" };
             return parse_error(what, pos) from parse;
         }
+        let start = pos;
         pos = n.end;
         if n.is_int { return Value.Int { v: n.int }; }
+        let u, whole = digits_u64(text, start, n.end);
+        if whole { return Value.UInt { v: u }; }
         return Value.Num { v: n.value };
     }
 
@@ -1043,6 +1047,21 @@ fn parse(text: u8[:], doc: Node[>..]&, decoded: u8[>..]&) -> Node?, u8[>..] {
     }
 }
 
+// text[from..to] as a u64 when it is only digits, without a leading zero,
+// and fits; false otherwise.
+fn digits_u64(text: u8[:], from: i64, to: i64) -> u64, bool {
+    guard to > from && (to - from == 1 || text[from] != '0') && to - from <= 20 else { return 0, false; }
+    var v: u64 = 0;
+    for i in from..to {
+        let c = text[i];
+        guard c >= '0' && c <= '9' else { return 0, false; }
+        let d: u64 = c - '0';
+        guard v <= (18446744073709551615 - d) / 10 else { return 0, false; }
+        v = v * 10 + d;
+    }
+    return v, true;
+}
+
 // The first member of object n named key; null if there is none, or if n
 // is no object or null itself, so that lookups chain.
 fn member(n: Node?, key: u8[:]) -> Node? {
@@ -1074,6 +1093,7 @@ fn as_f64(n: Node?) -> f64, bool {
     match n.val {
         Num x => { return x.v, true; },
         Int i => { return i.v, true; },
+        UInt u => { return u.v, true; },
         _ => { return 0.0, false; },
     }
 }
@@ -1084,6 +1104,16 @@ fn as_i64(n: Node?) -> i64, bool {
     guard n else { return 0, false; }
     match n.val {
         Int i => { return i.v, true; },
+        _ => { return 0, false; },
+    }
+}
+
+// An integer from 0 to u64's top; false for anything else.
+fn as_u64(n: Node?) -> u64, bool {
+    guard n else { return 0, false; }
+    match n.val {
+        Int i => { if i.v >= 0 { return i.v as u64, true; } return 0, false; },
+        UInt u => { return u.v, true; },
         _ => { return 0, false; },
     }
 }

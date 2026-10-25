@@ -31,6 +31,7 @@ fn serialize(out: u8[>..]&, doc: json::Node[>..]&) {
             Null => { out.append("null"); },
             Bool b => { json::format_bool(out, b.v); },
             Int i => { json::format_int(out, i.v); },
+            UInt u => { format(out, u.v); },
             Num x => { json::format_number(out, x.v); },
             Str s => { json::format_string(out, s.s); },
             Arr a => { out.push('['); left.push(a.count); obj.push(false); first = true; },
@@ -343,4 +344,12 @@ fn main() {
     var rd = json::reader(" 42 ");
     let n42 = json::read_int(rd);
     print(n42, " ", json::finish(rd), " ", json::peek(rd));
+    var udoc: json::Node[>..] = [];
+    var udec: u8[>..] = [];
+    let uroot, uerr = json::parse("{\"top\": 18446744073709551615, \"mid\": 9223372036854775808, \"neg\": -5, \"over\": 18446744073709551616}", udoc, udec);
+    let ut, utok = json::as_u64(json::member(uroot, "top"));
+    let um, umok = json::as_u64(json::member(uroot, "mid"));
+    let un, unok = json::as_u64(json::member(uroot, "neg"));
+    let uo, uook = json::as_u64(json::member(uroot, "over"));
+    print(uerr, ut, " ", utok, " ", um, " ", umok, " ", un, " ", unok, " ", uo, " ", uook);
 }

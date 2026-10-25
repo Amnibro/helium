@@ -3604,6 +3604,7 @@ GS_API uint8_t gs_os_write_file(sl_u8 path, sl_u8 data);
 GS_API uint8_t gs_os_write_file_atomic(sl_u8 path, sl_u8 data);
 GS_API uint8_t gs_os_append_file(sl_u8 path, sl_u8 data);
 GS_API uint8_t gs_os_file_exists(sl_u8 path);
+GS_API int64_t gs_os_file_mtime(sl_u8 path);
 GS_API uint8_t gs_os_remove_file(sl_u8 path);
 GS_API uint8_t gs_os_rename_file(sl_u8 from, sl_u8 to);
 GS_API uint8_t gs_os_make_dir(sl_u8 path);
@@ -3806,6 +3807,23 @@ GS_API uint8_t gs_os_file_exists(sl_u8 path) {
     return gs_os_native(path, p) >= 0 && gs_os_kind(p) == 1;
 }
 
+/* Last modification, whole seconds since the Unix epoch; -1 when there is no
+   file or directory there. */
+GS_API int64_t gs_os_file_mtime(sl_u8 path) {
+    gs_os_char p[GS_OS_PATH_MAX];
+    if (gs_os_native(path, p) < 0) return -1;
+#ifdef _WIN32
+    WIN32_FILE_ATTRIBUTE_DATA d;
+    if (!GetFileAttributesExW(p, GetFileExInfoStandard, &d)) return -1;
+    uint64_t t = ((uint64_t)d.ftLastWriteTime.dwHighDateTime << 32) | d.ftLastWriteTime.dwLowDateTime;
+    return (int64_t)(t / 10000000ULL) - 11644473600LL;
+#else
+    struct stat st;
+    if (stat(p, &st) != 0) return -1;
+    return (int64_t)st.st_mtime;
+#endif
+}
+
 GS_API uint8_t gs_os_remove_file(sl_u8 path) {
     gs_os_char p[GS_OS_PATH_MAX];
     if (gs_os_native(path, p) < 0) return 0;
@@ -3844,7 +3862,8 @@ GS_API uint8_t gs_os_write_file_atomic(sl_u8 path, sl_u8 data) {
     const uint8_t *d = data.data;
     int64_t left = data.len;
     for (int tries = 0; tries < 8; tries++) {
-        uint64_t tag = gs_os_random_u64();
+)GSRT"
+R"GSRT(        uint64_t tag = gs_os_random_u64();
         int k = n;
         memcpy(t, p, (size_t)n * sizeof *t);
         t[k++] = '.';
@@ -3862,8 +3881,7 @@ GS_API uint8_t gs_os_write_file_atomic(sl_u8 path, sl_u8 data) {
             return 0;
         }
         while (ok && left > 0) {
-)GSRT"
-R"GSRT(            DWORD chunk = left > (1 << 30) ? (DWORD)1 << 30 : (DWORD)left, wrote = 0;
+            DWORD chunk = left > (1 << 30) ? (DWORD)1 << 30 : (DWORD)left, wrote = 0;
             ok = WriteFile(h, d, chunk, &wrote, NULL) && wrote == chunk;
             d += chunk;
             left -= chunk;
@@ -4093,7 +4111,8 @@ static int gs_os_resource_native(gs_os_char *buf) {
     buf[n] = 0;
     return (int)n;
 #else
-    char *path = buf;
+)GSRT"
+R"GSRT(    char *path = buf;
     size_t n;
     #ifdef __APPLE__
         uint32_t capacity = GS_OS_PATH_MAX;
@@ -4107,8 +4126,7 @@ static int gs_os_resource_native(gs_os_char *buf) {
         free(resolved);
     #elif defined(__linux__)
         ssize_t count = readlink("/proc/self/exe", path, (size_t)GS_OS_PATH_MAX);
-)GSRT"
-R"GSRT(        if (count <= 0 || (size_t)count >= (size_t)GS_OS_PATH_MAX) return 0;
+        if (count <= 0 || (size_t)count >= (size_t)GS_OS_PATH_MAX) return 0;
         n = (size_t)count;
     #else
         return 0;
@@ -4308,7 +4326,8 @@ GS_API int64_t gs_os_time_ns(void) {
     /* Windows counts 100 ns ticks from 1601; the offset to the Unix epoch is
        a constant. */
     FILETIME ft;
-    GetSystemTimeAsFileTime(&ft);
+)GSRT"
+R"GSRT(    GetSystemTimeAsFileTime(&ft);
     uint64_t t = ((uint64_t)ft.dwHighDateTime << 32) | ft.dwLowDateTime;
     return (int64_t)(t - 116444736000000000ull) * 100;
 #else
@@ -4326,8 +4345,7 @@ GS_API int64_t gs_os_clock_ns(void) {
     QueryPerformanceCounter(&c);
     return (int64_t)((double)c.QuadPart * (1000000000.0 / (double)f.QuadPart));
 #else
-)GSRT"
-R"GSRT(    struct timespec ts;
+    struct timespec ts;
     clock_gettime(CLOCK_MONOTONIC, &ts);
     return (int64_t)ts.tv_sec * 1000000000 + ts.tv_nsec;
 #endif
@@ -4493,7 +4511,8 @@ static int gs_vk_buffer(VkDeviceSize size, VkBuffer *buf, VkDeviceMemory *mem, v
     VkMemoryPropertyFlags need = VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT;
     uint32_t t = UINT32_MAX;
     for (uint32_t i = 0; i < gs_vk.mem.memoryTypeCount && t == UINT32_MAX; i++)
-        if ((rq.memoryTypeBits & (1u << i)) && (gs_vk.mem.memoryTypes[i].propertyFlags & need) == need) t = i;
+)GSRT"
+R"GSRT(        if ((rq.memoryTypeBits & (1u << i)) && (gs_vk.mem.memoryTypes[i].propertyFlags & need) == need) t = i;
     if (t == UINT32_MAX) return 0;
     VkMemoryAllocateInfo mai = { VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO, NULL, rq.size, t };
     if (vkAllocateMemory(gs_vk.dev, &mai, NULL, mem) != VK_SUCCESS) return 0;
@@ -4504,8 +4523,7 @@ GS_API uint8_t gs_gpu_fill(sl_u8 spv, gs_rref outr, int64_t n, int64_t cpu_ns) {
 #ifdef GS_HAVE_VK
     int64_t gs_t0 = gs_os_clock_ns();
     const char *mn = getenv("HELIUM_GPU_MIN_MS");
-)GSRT"
-R"GSRT(    if (cpu_ns < (mn ? atoll(mn) : 30) * 1000000 || n <= 0 || spv.len < 20 || (spv.len & 3) || !gs_vk_init()) return 0;
+    if (cpu_ns < (mn ? atoll(mn) : 30) * 1000000 || n <= 0 || spv.len < 20 || (spv.len & 3) || !gs_vk_init()) return 0;
     int64_t gs_t1 = gs_os_clock_ns(), gs_t2 = gs_t1;
     GS_VKD(vkCreateShaderModule); GS_VKD(vkCreateDescriptorSetLayout); GS_VKD(vkCreatePipelineLayout); GS_VKD(vkCreateComputePipelines);
     GS_VKD(vkCreateDescriptorPool); GS_VKD(vkAllocateDescriptorSets); GS_VKD(vkUpdateDescriptorSets); GS_VKD(vkCreateCommandPool);

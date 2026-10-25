@@ -170,6 +170,23 @@ GS_API uint8_t gs_os_file_exists(sl_u8 path) {
     return gs_os_native(path, p) >= 0 && gs_os_kind(p) == 1;
 }
 
+/* Last modification, whole seconds since the Unix epoch; -1 when there is no
+   file or directory there. */
+GS_API int64_t gs_os_file_mtime(sl_u8 path) {
+    gs_os_char p[GS_OS_PATH_MAX];
+    if (gs_os_native(path, p) < 0) return -1;
+#ifdef _WIN32
+    WIN32_FILE_ATTRIBUTE_DATA d;
+    if (!GetFileAttributesExW(p, GetFileExInfoStandard, &d)) return -1;
+    uint64_t t = ((uint64_t)d.ftLastWriteTime.dwHighDateTime << 32) | d.ftLastWriteTime.dwLowDateTime;
+    return (int64_t)(t / 10000000ULL) - 11644473600LL;
+#else
+    struct stat st;
+    if (stat(p, &st) != 0) return -1;
+    return (int64_t)st.st_mtime;
+#endif
+}
+
 GS_API uint8_t gs_os_remove_file(sl_u8 path) {
     gs_os_char p[GS_OS_PATH_MAX];
     if (gs_os_native(path, p) < 0) return 0;
