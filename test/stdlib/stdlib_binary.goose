@@ -102,4 +102,9 @@ fn main() {
     source[0] = 90;
     assert(borrowedok && viewok && view == "ZBCD");
     print("binary: checked offsets, names, cursors and subreaders passed");
+    let fb: u8[8] = [0, 0, 192, 63, 0, 0, 0, 128];
+    let f1, f1ok = binary::read_f32le(fb, 0);
+    let f2, f2ok = binary::read_f32le(fb, 4);
+    let f3, f3ok = binary::read_f32le(fb, 5);
+    print(f1, " ", f1ok, " ", binary::f32_bits(f2), " ", f2ok, " ", f3ok, " ", binary::f32_bits(1.0), " ", binary::f32_from_bits(0x40490fdb), " ", binary::f64_bits(-2.0), " ", binary::f64_from_bits(0x3ff8000000000000));
 }

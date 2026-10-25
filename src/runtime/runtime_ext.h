@@ -61,6 +61,13 @@ static double gs_sqrt(double x) { return sqrt(x); }
 static float gs_sqrtf(float x) { return sqrtf(x); }
 #endif
 
+/* binary's bit casts (stdlib/binary.goose): a float's bits as an integer
+   and back, through memcpy so the C compiler turns each into one move. */
+static inline uint32_t gs_f32_bits(float x) { uint32_t b; memcpy(&b, &x, 4); return b; }
+static inline float gs_f32_from_bits(uint32_t b) { float x; memcpy(&x, &b, 4); return x; }
+static inline uint64_t gs_f64_bits(double x) { uint64_t b; memcpy(&b, &x, 8); return b; }
+static inline double gs_f64_from_bits(uint64_t b) { double x; memcpy(&x, &b, 8); return x; }
+
 /* math's other libm functions (stdlib/math.goose). C has them set errno on a
    domain or range error, so a C compiler takes each call for a write to
    memory: a loop around one loads again after it whatever it had hoisted

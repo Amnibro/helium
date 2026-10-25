@@ -29,6 +29,18 @@ fn read_u32le(data: const u8[:], at: i64) -> u32, bool {
            (data[at + 2] as u32 << 16) | (data[at + 3] as u32 << 24), true;
 }
 
+fn read_f32le(data: const u8[:], at: i64) -> f32, bool {
+    let bits, ok = read_u32le(data, at);
+    return f32_from_bits(bits), ok;
+}
+
+// A float's IEEE 754 bits as an unsigned integer, and the float with those
+// bits: no conversion, so NaN payloads and -0.0 survive the round trip.
+extern fn f32_bits(x: f32) -> u32 = "gs_f32_bits";
+extern fn f32_from_bits(b: u32) -> f32 = "gs_f32_from_bits";
+extern fn f64_bits(x: f64) -> u64 = "gs_f64_bits";
+extern fn f64_from_bits(b: u64) -> f64 = "gs_f64_from_bits";
+
 // Validate the entire field, then trim at its first NUL (or keep the full
 // width if none). These are bytes: no encoding or padding validation is done.
 fn read_name(data: const u8[:], at: i64, width: i64) -> const u8[:], bool {

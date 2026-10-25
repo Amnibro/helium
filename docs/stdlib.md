@@ -722,6 +722,7 @@ fn range_ok(data: const u8[:], at: i64, size: i64) -> bool
 fn read_u16le(data: const u8[:], at: i64) -> u16, bool
 fn read_i16le(data: const u8[:], at: i64) -> i16, bool
 fn read_u32le(data: const u8[:], at: i64) -> u32, bool
+fn read_f32le(data: const u8[:], at: i64) -> f32, bool
 fn read_bytes(data: const u8[:], at: i64, size: i64) -> const u8[:], bool
 fn read_name(data: const u8[:], at: i64, width: i64) -> const u8[:], bool
 ```
@@ -733,6 +734,18 @@ is valid. Reads work at unaligned offsets on either host byte order.
 `read_name` validates the entire fixed-width field and returns the bytes
 before its first NUL, or all `width` bytes if there is no NUL. It does not
 validate padding or interpret the bytes as a particular text encoding.
+
+### Bit casts
+
+```goose
+fn f32_bits(x: f32) -> u32
+fn f32_from_bits(b: u32) -> f32
+fn f64_bits(x: f64) -> u64
+fn f64_from_bits(b: u64) -> f64
+```
+
+A float's IEEE 754 bits and back, with no conversion: NaN payloads and
+`-0.0` survive the round trip. Each compiles to a single move.
 
 ### Cursor and bounded subreaders
 

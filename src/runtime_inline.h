@@ -3496,6 +3496,13 @@ static double gs_sqrt(double x) { return sqrt(x); }
 static float gs_sqrtf(float x) { return sqrtf(x); }
 #endif
 
+/* binary's bit casts (stdlib/binary.goose): a float's bits as an integer
+   and back, through memcpy so the C compiler turns each into one move. */
+static inline uint32_t gs_f32_bits(float x) { uint32_t b; memcpy(&b, &x, 4); return b; }
+static inline float gs_f32_from_bits(uint32_t b) { float x; memcpy(&x, &b, 4); return x; }
+static inline uint64_t gs_f64_bits(double x) { uint64_t b; memcpy(&b, &x, 8); return b; }
+static inline double gs_f64_from_bits(uint64_t b) { double x; memcpy(&x, &b, 8); return x; }
+
 /* math's other libm functions (stdlib/math.goose). C has them set errno on a
    domain or range error, so a C compiler takes each call for a write to
    memory: a loop around one loads again after it whatever it had hoisted
@@ -3617,7 +3624,8 @@ GS_API void gs_os_flush_stdout(void);
 GS_API uint8_t gs_os_read_line(gs_rref out);
 GS_API void gs_os_read_stdin(gs_rref out);
 GS_API int64_t gs_os_arg_count(void);
-GS_API void gs_os_arg(int64_t i, gs_rref out);
+)GSRT"
+R"GSRT(GS_API void gs_os_arg(int64_t i, gs_rref out);
 GS_API uint8_t gs_os_getenv(sl_u8 name, gs_rref out);
 GS_API uint8_t gs_os_resource_dir(gs_rref out);
 GS_API int64_t gs_os_time_ns(void);
@@ -3627,8 +3635,7 @@ GS_API uint64_t gs_os_random_u64(void);
 /* os.trim_memory: discards unused complete pages of this thread program's
    data stacks. Defined with the region registry it walks (runtime_impl.h),
    but declared here like the other os primitives, so that no prototype is
-)GSRT"
-R"GSRT(   emitted for it. For generated code only, whose callers write back their
+   emitted for it. For generated code only, whose callers write back their
    cached tops first; C called from Goose must not call it. 0 means an OS
    request failed; a top outside its region panics. */
 GS_API uint8_t gs_trim_memory(void);
