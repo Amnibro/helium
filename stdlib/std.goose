@@ -1050,6 +1050,11 @@ fn parse_uleb(s: u8[:]) -> i64, i64 {
 
 // v with a fixed number of decimals, rounded half up; infinities and NaN
 // in their text form (§3.7).
+extern fn flt_floor(x: f64) -> f64 = "floor";
+extern fn flt_fma(x: f64, y: f64, z: f64) -> f64 = "fma";
+// Rounds the exact decimal value of v, ties to even, as C's printf and Rust's
+// {:.N} do: fma gives the exact remainder of x * scale, so the tie test and
+// the floor never see a rounded product.
 fn format_flt(out: u8[>..]&, v: f64, decimals: i64) {
     if v != v || v - v != 0.0 {
         format(out, v);
@@ -1062,9 +1067,15 @@ fn format_flt(out: u8[>..]&, v: f64, decimals: i64) {
     }
     var scale = 1.0;
     for i in decimals { scale *= 10.0; }
-    // x is not negative, so truncation is floor and adding 0.5 first rounds
-    // half up: `as!`, since dropping the fraction is the point.
-    let scaled = (x * scale + 0.5) as! i64;
+    var f = flt_floor(x * scale);
+    if decimals <= 22 && f < 4503599627370496.0 {
+        if flt_fma(x, scale, -f) < 0.0 { f -= 1.0; }
+        let t = flt_fma(x, scale, -(f + 0.5));
+        if t > 0.0 || (t == 0.0 && f % 2.0 != 0.0) { f += 1.0; }
+    } else {
+        f = flt_floor(x * scale + 0.5);
+    }
+    let scaled = f as! i64;
     let iscale = scale as i64;
     format_uint(out, (scaled / iscale) as u64, 10, 0, ' ');
     if decimals > 0 {

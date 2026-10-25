@@ -241,7 +241,7 @@ fn strings() {
     format_flt(f, -2.5, 0);
     f.push(' ');
     format_flt(f, 0.005, 2);
-    print(f);                                                                  // 3.14 -3 0.01
+    print(f);                                                                  // 3.14 -2 0.01
     let v, ok = parse_int("-123");
     print(v, " ", ok);                                                         // -123 true
     let v2, ok2 = parse_int("12x");
