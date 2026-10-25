@@ -54,6 +54,7 @@
 #include "lsp_workspace.h"
 #include "lsp_features.h"
 #include "lsp.h"
+#include "amni.h"
 
 namespace goose {
 
@@ -272,6 +273,7 @@ void ParseProgram(Ast &ast, const string &rootpath, const vector<string> &stdlib
             continue;
         }
         auto fileidx = (int)ast.sources.size();
+        if (path.ends_with(".amni")) *contents = AmniDesugar(*contents, path, fileidx == 0);
         ast.sources.emplace_back(path, std::move(contents));
         ast.filepkg.push_back(pkg);
         fileof[path] = fileidx;

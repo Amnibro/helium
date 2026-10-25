@@ -9,6 +9,7 @@ What `.amni` changes:
 - `import std;` is implicit, and a program's own overloads win ties against it.
 - The `helium` command prints only the program's output and errors (`-v` for compiler progress).
 - `helium file.amni` compiles to native code with the system C compiler (gcc, clang or MSVC), caches the binary by a hash of the generated C, and runs it. Goose runs through the built-in TinyCC instead, which does not optimize and cannot run threads. `--jit` or `HELIUM_JIT=1` keeps the TinyCC path, which is also the fallback when no C compiler is found.
+- `lut fn` turns a pure function of up to 24 bits of small-integer input into a sparse, persistent lookup table: entries are computed on first use in 4096-entry tiles, saved to `~/.goose/lut/`, and loaded by the next run. A Collatz step count over every `u16`, 200 passes, takes 1,149 ms as a plain function and 15 ms as a `lut fn` (10 ms when the table is already on disk); a 24-bit table used at three points is 83 KB.
 - [HELIUM.md](HELIUM.md) teaches the whole language in about 3.9k tokens, against about 169k for the Goose documentation.
 
 Measured with the o200k and Qwen2.5 tokenizers, comments stripped:

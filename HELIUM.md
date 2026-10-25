@@ -207,6 +207,21 @@ fn main() {
 - Recursion must be marked: `recursive fn` on the cycle's entry, all signatures explicit, and no growable local in scope at a recursive call (pass storage in by reference).
 - `return value from f` returns from the innermost active call of `f`, any depth up (checked statically). No exceptions or Result type; use trailing `bool` results or optionals.
 
+## Lookup-table functions
+
+`lut fn` turns a pure function of small inputs into a lookup table:
+
+```amni
+fn steps(n int) int { var x = n; var c = 0; while x > 1 { x = if x % 2 == 0 { x / 2 } else { 3 * x + 1 }; c++; } c }
+lut fn fast_steps(n u16) int { steps(n) }
+fn main() { print(fast_steps(27), " ", fast_steps(27)); }
+```
+
+- Parameters are `bool`, `byte`/`u8`, `i8`, `u16` or `i16`, 24 bits in all; the result is any fixed-size flat type.
+- Each entry is computed on its first call and then looked up. The table is sparse: 4096-entry tiles exist only once something in them is asked for, so an unvisited range costs nothing.
+- Tables in the root file are saved to `~/.goose/lut/<name>-<hash>.lut` when `main` returns and loaded on first use, so a later run starts with every entry already computed. Editing the function changes the hash.
+- The body must be pure: same inputs, same result, no output.
+
 ## Program, modules, threads
 
 - One root file; `import a.b;` loads `a/b.amni` (or `.goose`) relative to the root, then the standard library. `namespace geo;` scopes a file: `geo::Pt`. `fn main()` in the root is the entry.
