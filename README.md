@@ -1,5 +1,7 @@
 # Helium
 
+**The lightweight, token-friendly alternative to C++, Rust, and Goose.**
+
 Helium is a fork of [Goose](https://github.com/aardappel/goose) by Wouter van Oortmerssen, tuned for code that language models read and write. Helium source files use the `.amni` extension; `.goose` files still compile exactly as upstream.
 
 What `.amni` changes:
