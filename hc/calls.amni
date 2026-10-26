@@ -1,0 +1,429 @@
+import check;
+let B_PRINT = 1; let B_STR = 2; let B_FORMAT = 3; let B_ASSERT = 4; let B_ABORT = 5; let B_EXIT = 6; let B_COPY = 7; let B_DEFAULT = 8; let B_LEN = 9;
+let B_PUSH = 20; let B_APPEND = 21; let B_POP = 22; let B_POPN = 23; let B_RESIZE = 24; let B_CLEAR = 25; let B_INDEXOF = 26; let B_CAP = 27;
+let B_TOBYTES = 30; let B_BYTESOF = 31; let B_FROMBYTES = 32; let B_EMBED = 33;
+struct NF { name i32, node i32, inst i32, own i32 }
+var NESTS NF[>..<];
+var CANDS i32[>..<];
+var BINDS Gb[>..<];
+var RANKS i32[>..<];
+var DIDX i32[>..<];
+fn builtin_of(name const byte[:]) int {
+	if name == "print" { return B_PRINT; } if name == "str" { return B_STR; } if name == "format" { return B_FORMAT; } if name == "assert" { return B_ASSERT; }
+	if name == "abort" { return B_ABORT; } if name == "exit" { return B_EXIT; } if name == "copy" { return B_COPY; } if name == "default" { return B_DEFAULT; }
+	if name == "to_bytes" { return B_TOBYTES; } if name == "bytes_of" { return B_BYTESOF; } if name == "from_bytes" { return B_FROMBYTES; } if name == "embed_file" { return B_EMBED; }
+	if name == "len" { return B_LEN; }
+	-1
+}
+fn member_of(name const byte[:]) int {
+	if name == "push" { return B_PUSH; } if name == "append" { return B_APPEND; } if name == "pop" { return B_POP; } if name == "pop_n" { return B_POPN; }
+	if name == "resize" { return B_RESIZE; } if name == "clear" { return B_CLEAR; } if name == "index_of" { return B_INDEXOF; } if name == "len" { return B_LEN; }
+	-1
+}
+fn find_nest(name int) int { var i = NESTS.len - 1; while i >= 0 { if NESTS[i].name as int == name && visible(NESTS[i].own as int) { return i; } i--; } -1 }
+recursive fn decl_nested(n int) {
+	let i = new_inst(n, n, NEND[n] as int, AOWN);
+	NESTS.push(NF { ND[n].s, n as i32, i as i32, AOWN as i32 });
+	sig_inst(i);
+	check_inst(i);
+}
+fn gen_list(fnode int) int { ND[fnode].d as int }
+fn is_blockparam(fnode int, gname int) bool {
+	for i in ND[fnode].n { let p = kid(fnode, i); if ND[p].a >= 0 && mentions(ND[p].a as int, gname) { return false; } }
+	true
+}
+recursive fn mentions(t int, g int) bool {
+	if t < 0 { return false; }
+	let x = ND[t]; let k = x.k as int;
+	if k == N_TNAME { if x.s as int == g { return true; } for i in x.n { if mentions(kid(t, i), g) { return true; } } return false; }
+	if k == N_TARR || k == N_TSLICE || k == N_TREF || k == N_TCONST || k == N_TVAR { return mentions(x.a as int, g); }
+	false
+}
+fn blk_gen(fnode int) int { let gl = gen_list(fnode); if gl < 0 { return -1; } for i in ND[gl].n { let g = ND[kid(gl, i)].s as int; if is_blockparam(fnode, g) { return g; } } -1 }
+fn upname(p int) int { var s byte[>..] = []; s.push('$'); s.append(nm(ND[p].s as int)); intern(s) }
+recursive fn match_ty(tn0 int, t0 int, g0 int) bool {
+	if tn0 < 0 { return true; }
+	let x = ND[tn0]; let k = x.k as int;
+	let t = deref(t0);
+	if k == N_TNAME {
+		if x.n == 0 {
+			for i in g0..BINDS.len { if BINDS[i].name == x.s { if BINDS[i].ty < 0 { BINDS[i].ty = t as i32; } return true; } }
+			return true;
+		}
+		if TY[t].k == TY_STRUCT { let si = TY[t].a as int; if STI[si].tn == x.n { for i in x.n { match_ty(kid(tn0, i), TYL[(STI[si].ta as int) + i] as int, g0); } } }
+		if TY[t].k == TY_ENUM { let ei = TY[t].a as int; if ENI[ei].tn == x.n { for i in x.n { match_ty(kid(tn0, i), TYL[(ENI[ei].ta as int) + i] as int, g0); } } }
+		return true;
+	}
+	if k == N_TARR || k == N_TSLICE { if TY[t].k == TY_ARR || TY[t].k == TY_SLICE { return match_ty(x.a as int, TY[t].a as int, g0); } if TY[t].k == TY_STRLIT { return match_ty(x.a as int, T_U8, g0); } return true; }
+	if k == N_TREF { if TY[t0].k == TY_REF { return match_ty(x.a as int, TY[t0].a as int, g0); } return match_ty(x.a as int, t, g0); }
+	if k == N_TCONST { return match_ty(x.a as int, t0, g0); }
+	true
+}
+recursive fn arg_rank(n int, a int, p int) int {
+	if p < 0 { return 1; }
+	if a == p { return 0; }
+	let ak = TY[a].k as int; let pk = TY[p].k as int;
+	if pk == TY_ERR || ak == TY_ERR { return 0; }
+	if pk == TY_REF && TY[p].c < 0 && (TY[p].fl & RF_OPT) == 0 { let tgt = TY[p].a as int; if deref(a) == tgt { return 0; } if ak == TY_ILIT || ak == TY_FLIT { return arg_rank(n, a, tgt); } return -1; }
+	if ak == TY_REF && TY[a].c < 0 { let d = TY[a].a as int; if d == p { return 0; } if pk == TY_REF && (TY[p].fl & RF_OPT) != 0 && TY[p].a == TY[a].a { return 0; } return arg_rank(n, d, p); }
+	if ak == TY_ILIT {
+		let v, u, ok = cval(n);
+		if pk == TY_INT { if !ok || int_fits(v, u, p) { return 2; } return -1; }
+		if pk == TY_FLT { return 3; }
+		if pk == TY_VARINT { return 2; }
+		return -1;
+	}
+	if ak == TY_FLIT { if pk == TY_FLT { return if TY[p].s == 8 { 1 } else { 2 }; } return -1; }
+	if ak == TY_STRLIT { if pk == TY_SLICE && TY[p].a as int == T_U8 { return 0; } if is_byte_arr(p) { return 2; } return -1; }
+	if ak == TY_ARRLIT { if pk == TY_ARR || pk == TY_SLICE { return 2; } return -1; }
+	if ak == TY_NULL { if pk == TY_REF && (TY[p].fl & RF_OPT) != 0 { return 0; } return -1; }
+	if pk == TY_REF && (TY[p].fl & RF_OPT) != 0 && TY[p].a as int == a { return 0; }
+	if ak == TY_INT && pk == TY_FLT { return 3; }
+	if widens(a, p) { return 2; }
+	if pk == TY_SLICE && (ak == TY_ARR || ak == TY_SLICE) && TY[a].a == TY[p].a { return 2; }
+	if pk == TY_ENUM && ak == TY_VARIANT && TY[a].a == TY[p].a { return 2; }
+	if pk == TY_ARR && (ak == TY_ARR || ak == TY_SLICE) && TY[a].a == TY[p].a && is_construct(n) { return 2; }
+	-1
+}
+recursive fn sig_inst(i int) {
+	let node = FI_[i].node as int;
+	let ns = ns_of(node);
+	let g0 = GB.len;
+	for j in FI_[i].gn { GB.push(GBS[(FI_[i].g0 as int) + j]); }
+	let p0 = TYL.len;
+	var pts i32[..128] = [];
+	for j in ND[node].n {
+		let p = kid(node, j);
+		var t = -1;
+		if ND[p].a >= 0 { t = rtype(ND[p].a as int, ns); } else { t = gb_find(upname(p)); if t < 0 { t = T_ERRT; } }
+		pts.push(t as i32);
+	}
+	FI_[i].p0 = TYL.len as i32; TYL.append(pts[..]); FI_[i].pn = pts.len as i32;
+	if ND[node].b >= 0 {
+		let rl = ND[node].b as int;
+		if ND[rl].n == 1 { FI_[i].ret = rtype(kid(rl, 0), ns) as i32; }
+		else { var rs i32[..64] = []; for j in ND[rl].n { let r0 = rtype(kid(rl, j), ns); rs.push(r0 as i32); } FI_[i].ret = tlist(TY_MULTI, rs[..], -1) as i32; }
+	} else { FI_[i].ret = -1; FI_[i].rinf = true; if (ND[node].fl & F_EXTERN) != 0 { FI_[i].ret = T_VOID as i32; FI_[i].rinf = false; } }
+	GB.pop_n(GB.len - g0);
+}
+fn ptype_of(i int, j int) int { TYL[(FI_[i].p0 as int) + j] as int }
+recursive fn check_inst(i int) {
+	if FI_[i].st != 0 { return; }
+	let node = FI_[i].node as int;
+	FI_[i].st = 1;
+	if (ND[node].fl & F_EXTERN) != 0 { FI_[i].st = 2; return; }
+	let sa = AOWN; let sc = CFN; let sm = SCOPE.len; let ld = LOOPD; let bt = BRK_T.len; let nm0 = NESTS.len;
+	AOWN = i; CFN = i; LOOPD = 0;
+	let g0 = GB.len;
+	for j in FI_[i].gn { GB.push(GBS[(FI_[i].g0 as int) + j]); }
+	for j in ND[node].n { let p = kid(node, j); if ND[p].b >= 0 { let pt = ptype_of(i, j); ck(ND[p].b as int, pt); conv(ND[p].b as int, pt); } }
+	for j in ND[node].n { let p = kid(node, j); let v = add_lv(ND[p].s as int, ptype_of(i, j), LV_PARAM | (if (ND[p].fl & 1) != 0 { LV_VAR } else { 0 }), p); set_r(p, R_LOCAL, v); }
+	let body = ND[node].c as int;
+	let rt = FI_[i].ret as int;
+	let t = ck(body, if rt >= 0 { rt } else { -1 });
+	let tail = ND[body].a as int;
+	if rt >= 0 { if tail >= 0 && rt != T_VOID && t != T_VOID && !ends(tail) { conv(tail, rt); } }
+	else {
+		if FI_[i].ret < 0 { if tail >= 0 && t != T_VOID { FI_[i].ret = default_t(tail) as i32; } else { FI_[i].ret = T_VOID as i32; } }
+		else { if tail >= 0 && t != T_VOID && FI_[i].ret as int != T_VOID { conv(tail, FI_[i].ret as int); } }
+	}
+	GB.pop_n(GB.len - g0);
+	SCOPE.pop_n(SCOPE.len - sm); NESTS.pop_n(NESTS.len - nm0);
+	while BRK_T.len > bt { BRK_T.pop(); }
+	AOWN = sa; CFN = sc; LOOPD = ld;
+	FI_[i].st = 2;
+}
+fn same_binds(i int, b0 int, bn int) bool {
+	if FI_[i].gn as int != bn { return false; }
+	for j in bn { if GBS[(FI_[i].g0 as int) + j].ty != BINDS[b0 + j].ty || GBS[(FI_[i].g0 as int) + j].name != BINDS[b0 + j].name { return false; } }
+	true
+}
+recursive fn get_inst(node int, b0 int, bn int, blk int, bown int) int {
+	let par = if (ND[node].fl & F_NESTED) != 0 { AOWN } else { -1 };
+	if blk < 0 { for f, i in FI_ { if f.node as int == node && f.blk < 0 && f.par as int == par && same_binds(i, b0, bn) { return i; } } }
+	let i = new_inst(node, node, NEND[node] as int, par);
+	FI_[i].g0 = GBS.len as i32;
+	for j in bn { GBS.push(BINDS[b0 + j]); }
+	FI_[i].gn = bn as i32;
+	FI_[i].blk = blk as i32; FI_[i].bown = bown as i32;
+	sig_inst(i);
+	check_inst(i);
+	i
+}
+fn cands_add(name int, ns int) {
+	let a, b = split_q(name);
+	if a >= 0 { var d = dmap(name); while d >= 0 { if DC[d].k as int == D_FN { CANDS.push(d as i32); } d = DC[d].next as int; } return; }
+	if a == -2 { var d = dmap(b); while d >= 0 { if DC[d].k as int == D_FN { CANDS.push(d as i32); } d = DC[d].next as int; } return; }
+	if ns >= 0 { var d = dmap(qual(ns, name)); while d >= 0 { if DC[d].k as int == D_FN { CANDS.push(d as i32); } d = DC[d].next as int; } }
+	var d = dmap(name);
+	while d >= 0 { if DC[d].k as int == D_FN { CANDS.push(d as i32); } d = DC[d].next as int; }
+}
+fn is_std_node(node int) bool { let f = node_file(node); let sp = lib_path("std"); nm(FILES[f].name) == sp[..] }
+recursive fn resolve(n int, name int, ns int, a0 int, an int, blk int, tyargs int, report bool) int, int, int {
+	let c0 = CANDS.len;
+	cands_add(name, ns);
+	var best = -1; var bestr = 99; var bestb0 = -1; var bestbn = 0; var tie = false; var bestuser = false;
+	let nb0 = BINDS.len;
+	for ci in c0..CANDS.len {
+		let fnode = DC[CANDS[ci]].node as int;
+		let np = ND[fnode].n as int;
+		var nreq = 0;
+		for j in np { if ND[kid(fnode, j)].b < 0 { nreq = j + 1; } }
+		if an > np || an < nreq { continue; }
+		let bg = blk_gen(fnode);
+		if (blk >= 0) != (bg >= 0) && !(blk < 0 && bg >= 0 && tyargs >= 0) { continue; }
+		let b0 = BINDS.len;
+		let gl = gen_list(fnode);
+		if gl >= 0 { for j in ND[gl].n { BINDS.push(Gb { ND[kid(gl, j)].s, -1 }); } }
+		for j in np { let p = kid(fnode, j); if ND[p].a < 0 { BINDS.push(Gb { upname(p) as i32, -1 }); } }
+		if tyargs >= 0 { for j in min(ND[tyargs].n as int, BINDS.len - b0) { BINDS[b0 + j].ty = rtype(kid(tyargs, j), ns) as i32; } }
+		for j in an { let p = kid(fnode, j); let a = ARGW[a0 + j] as int; if !is_pending(a) { if ND[p].a >= 0 { match_ty(ND[p].a as int, a, b0); } else { for q in b0..BINDS.len { if BINDS[q].name as int == upname(p) && BINDS[q].ty < 0 { BINDS[q].ty = deref_val(a) as i32; } } } } }
+		for j in an { let p = kid(fnode, j); let a = ARGW[a0 + j] as int; if is_pending(a) { let dt = pend_default(a); if ND[p].a >= 0 { match_ty(ND[p].a as int, dt, b0); } else { for q in b0..BINDS.len { if BINDS[q].name as int == upname(p) && BINDS[q].ty < 0 { BINDS[q].ty = dt as i32; } } } } }
+		var ok = true;
+		for q in b0..BINDS.len { if BINDS[q].ty < 0 { if bg >= 0 && BINDS[q].name as int == bg { BINDS[q].ty = T_FNV as i32; } else { ok = false; } } }
+		if !ok { BINDS.pop_n(BINDS.len - b0); continue; }
+		let g0 = GB.len;
+		for q in b0..BINDS.len { GB.push(BINDS[q]); }
+		let fns = ns_of(fnode);
+		var worst = 0;
+		for j in an {
+			let p = kid(fnode, j);
+			let pt = if ND[p].a >= 0 { rtype(ND[p].a as int, fns) } else { gb_find(upname(p)) };
+			let r = arg_rank(DIDX[a0 + j] as int, ARGW[a0 + j] as int, pt);
+			if r < 0 { worst = 99; break; }
+			if r > worst { worst = r; }
+		}
+		GB.pop_n(GB.len - g0);
+		if worst < 2 && (gl >= 0 || np > 0 && untyped_any(fnode)) { worst = max(worst, 1); }
+		if worst == 99 { BINDS.pop_n(BINDS.len - b0); continue; }
+		let user = !is_std_node(fnode);
+		if worst < bestr || (worst == bestr && user && !bestuser) { best = fnode; bestr = worst; bestb0 = b0; bestbn = BINDS.len - b0; tie = false; bestuser = user; }
+		else { if worst == bestr && user == bestuser { tie = true; } }
+	}
+	CANDS.pop_n(CANDS.len - c0);
+	if best < 0 { BINDS.pop_n(BINDS.len - nb0); return -1, 0, 0; }
+	if tie && report { var m byte[>..] = []; format(m, "ambiguous call to ", nm(name)); cerr(n, m); }
+	if bestb0 > nb0 { for q in 0..bestbn { BINDS[nb0 + q] = BINDS[bestb0 + q]; } }
+	BINDS.pop_n(BINDS.len - nb0 - bestbn);
+	return best, nb0, bestbn;
+}
+fn untyped_any(f int) bool { for j in ND[f].n { if ND[kid(f, j)].a < 0 { return true; } } false }
+fn deref_val(a int) int { let d = deref(a); if TY[d].k == TY_STRLIT { TT_STR } else { d } }
+fn pend_default(a int) int { let k = TY[a].k as int; if k == TY_ILIT { T_I64 } else { if k == TY_FLIT { T_F64 } else { if k == TY_STRLIT { TT_STR } else { a } } } }
+recursive fn ck_args(n int, a0n int, first int) int {
+	let start = ARGW.len;
+	if first >= 0 { ARGW.push(at(first) as i32); DIDX.push(first as i32); }
+	for i in ND[n].n { let c = kid(n, i); ARGW.push(ck(c, -1) as i32); DIDX.push(c as i32); }
+	start
+}
+fn pop_args(s int) { ARGW.pop_n(ARGW.len - s); DIDX.pop_n(DIDX.len - s); }
+recursive fn ck_call(n int, want int) int {
+	let x = ND[n];
+	let cal = x.a as int;
+	let ck_ = ND[cal].k as int;
+	if ck_ == N_ID {
+		let name = ND[cal].s as int;
+		let v = find_lv(name);
+		let nf = find_nest(name);
+		if v < 0 && nf >= 0 { return call_nested(n, nf); }
+		if v < 0 {
+			let bg = block_binding(name);
+			if bg >= 0 { return call_block(n, bg); }
+			let b = builtin_of(nm(name));
+			if b >= 0 && !(b == B_FORMAT && user_format(n)) && !(b == B_LEN && false) { return ck_builtin(n, b, -1, want); }
+			return call_fn(n, name, -1, want);
+		}
+	}
+	if ck_ == N_DOT {
+		let obj = ND[cal].a as int;
+		let name = ND[cal].s as int;
+		if ND[obj].k == N_ID && find_lv(ND[obj].s as int) < 0 && lookup_q(ND[obj].s as int, ns_of(obj), D_ENUM) >= 0 && lookup_q(ND[obj].s as int, ns_of(obj), D_GLOBAL) < 0 { cerr(n, "a variant is constructed with { }"); return set_t(n, T_ERRT); }
+		var ot = ck(obj, -1);
+		if TY[ot].k == TY_STRLIT { set_t(obj, TT_STR); ot = TT_STR; }
+		let d = deref(ot);
+		let mb = member_of(nm(name));
+		if mb >= 0 && (TY[d].k == TY_ARR || TY[d].k == TY_SLICE) { return ck_builtin(n, mb, obj, want); }
+		if TY[ot].k == TY_ARRLIT || TY[ot].k == TY_ILIT || TY[ot].k == TY_FLIT { default_t(obj); }
+		let b = builtin_of(nm(name));
+		if b == B_FORMAT || b == B_TOBYTES || b == B_BYTESOF || b == B_COPY { return ck_builtin(n, b, obj, want); }
+		set_x(n, 1);
+		return call_fn(n, name, obj, want);
+	}
+	cerr(n, "this call's callee is not supported yet");
+	set_t(n, T_ERRT)
+}
+fn user_format(n int) bool { if ND[n].n != 2 { return false; } let c0 = CANDS.len; cands_add(intern("format"), ns_of(n)); var any = false; for ci in c0..CANDS.len { if !is_std_node(DC[CANDS[ci]].node as int) { any = true; } } CANDS.pop_n(CANDS.len - c0); any }
+fn block_binding(name int) int {
+	var i = AOWN;
+	while i >= 0 {
+		let f = FI_[i];
+		if f.blk >= 0 { let fnode = f.node as int; if blk_gen(fnode) == name { return i; } }
+		i = f.par as int;
+	}
+	-1
+}
+recursive fn call_block(n int, inst int) int {
+	let fv = FI_[inst].blk as int;
+	let own = FI_[inst].bown as int;
+	let s = ck_args(n, 0, -1);
+	let na = ND[n].n as int;
+	for j in na { let c = kid(n, j); if is_pending(at(c)) { ARGW[s + j] = default_t(c) as i32; } else { ARGW[s + j] = deref_val(at(c)) as i32; } }
+	var bi = -1;
+	for f, i in FI_ { if f.node as int == fv && f.par as int == own && f.blk == inst as i32 { bi = i; } }
+	if bi < 0 {
+		bi = new_inst(fv, fv, NEND[fv] as int, own);
+		FI_[bi].blk = inst as i32; FI_[bi].bown = own as i32;
+		FI_[bi].cfn = CFN as i32;
+		let sa = AOWN; let sm = SCOPE.len; let bt = BRK_T.len; let ld = LOOPD;
+		AOWN = bi; LOOPD = 0;
+		let np = ND[fv].n as int;
+		if (ND[fv].fl & 1) != 0 { for j in np { let p = kid(fv, j); let pt = if j < na { ARGW[s + j] as int } else { T_ERRT }; let v = add_lv(ND[p].s as int, pt, LV_BLKP, p); set_r(p, R_LOCAL, v); } }
+		else { if na >= 1 { let v = add_lv(intern("it"), ARGW[s] as int, LV_BLKP, fv); set_r(fv, R_LOCAL, v); } }
+		let body = ND[fv].a as int;
+		let bt0 = ck(body, -1);
+		var rt = T_VOID;
+		if ND[body].a >= 0 && bt0 != T_VOID { rt = if is_pending(bt0) { default_t(ND[body].a as int) } else { bt0 }; }
+		FI_[bi].ret = rt as i32;
+		SCOPE.pop_n(SCOPE.len - sm); while BRK_T.len > bt { BRK_T.pop(); }
+		AOWN = sa; LOOPD = ld;
+		FI_[bi].st = 2;
+	}
+	for j in na { let c = kid(n, j); if is_pending(at(c)) { default_t(c); } }
+	pop_args(s);
+	set_r(n, R_BLOCK, bi);
+	set_t(n, FI_[bi].ret as int)
+}
+recursive fn call_nested(n int, nf int) int {
+	let i = NESTS[nf].inst as int;
+	let s = ck_args(n, 0, -1);
+	for j in ND[n].n { let c = kid(n, j); if j < FI_[i].pn as int { conv(c, ptype_of(i, j)); } }
+	pop_args(s);
+	note_caps_of(i);
+	set_r(n, R_FN, i);
+	set_t(n, if FI_[i].ret >= 0 { FI_[i].ret as int } else { T_VOID })
+}
+fn note_caps_of(i int) {
+	for c in CAPS { if c.inst as int == i { let v = c.lv as int; if LVS[v].cfn as int != CFN { note_cap(v); } } }
+}
+recursive fn call_fn(n int, name int, recv int, want int) int {
+	let s = ck_args(n, 0, recv);
+	let an = ARGW.len - s;
+	let blk = ND[n].b as int;
+	let fnode, b0, bn = resolve(n, name, ns_of(n), s, an, blk, ND[n].c as int, true);
+	if fnode < 0 {
+		var m byte[>..] = []; format(m, "no function ", nm(name), " matches (");
+		for j in an { if j > 0 { m.append(", "); } m.append(tn(ARGW[s + j] as int)); }
+		m.append(")");
+		cerr(n, m);
+		pop_args(s);
+		BINDS.pop_n(BINDS.len - b0);
+		return set_t(n, T_ERRT);
+	}
+	let inst = get_inst(fnode, b0, bn, blk, AOWN);
+	BINDS.pop_n(BINDS.len - b0);
+	for j in an { let c = DIDX[s + j] as int; let pt = ptype_of(inst, j); if pt >= 0 && TY[pt].k == TY_REF && (TY[pt].fl & RF_OPT) == 0 && TY[pt].c < 0 { if is_pending(at(c)) { conv(c, TY[pt].a as int); } } else { conv(c, pt); } }
+	pop_args(s);
+	note_caps_of(inst);
+	if FI_[inst].lr { FI_[CFN].lr = true; }
+	set_r(n, R_FN, inst);
+	let rt = FI_[inst].ret as int;
+	if rt < 0 { if FI_[inst].st == 1 { var m byte[>..] = []; format(m, "recursive call to ", nm(name), " needs its result type written"); cerr(n, m); } return set_t(n, T_ERRT); }
+	set_t(n, rt)
+}
+recursive fn ck_builtin(n int, b int, recv int, want int) int {
+	let x = ND[n];
+	set_r(n, R_BUILTIN, b);
+	set_x(n, if recv >= 0 { 1 } else { 0 });
+	let na = x.n as int;
+	fn arg(i int) int { if recv >= 0 { if i == 0 { recv } else { kid(n, i - 1) } } else { kid(n, i) } }
+	let total = na + (if recv >= 0 { 1 } else { 0 });
+	if b == B_PRINT || b == B_STR {
+		for i in na { let c = kid(n, i); let t = ck(c, -1); if is_pending(t) { default_t(c); } }
+		return set_t(n, if b == B_STR { t_arr(T_U8, A_GROW, -1, -1) } else { T_VOID });
+	}
+	if b == B_FORMAT {
+		let o = arg(0);
+		if recv < 0 { ck(o, -1); }
+		for i in 1..total { let c = arg(i); let t = ck(c, -1); if is_pending(t) { default_t(c); } }
+		return set_t(n, T_VOID);
+	}
+	if b == B_ASSERT { ck(arg(0), T_BOOL); conv(arg(0), T_BOOL); return set_t(n, T_VOID); }
+	if b == B_ABORT { let t = ck(arg(0), TT_STR); if is_pending(t) { default_t(arg(0)); } return set_t(n, T_VOID); }
+	if b == B_EXIT { ck(arg(0), T_I64); conv(arg(0), T_I64); return set_t(n, T_VOID); }
+	if b == B_DEFAULT { let ta = x.c as int; if ta < 0 { cerr(n, "default needs a type: default<T>()"); return set_t(n, T_ERRT); } return set_t(n, rtype(kid(ta, 0), ns_of(n))); }
+	if b == B_COPY {
+		let c = arg(0);
+		if recv < 0 { ck(c, want); }
+		var t = at(c);
+		if is_pending(t) { t = default_t(c); }
+		let d = deref(t);
+		let k = TY[d].k as int;
+		if k == TY_SLICE { return set_t(n, t_arr(TY[d].a as int, A_GROW, -1, -1)); }
+		return set_t(n, d);
+	}
+	if b == B_LEN { let c = arg(0); if recv < 0 { ck(c, -1); } if TY[at(c)].k == TY_STRLIT { set_t(c, TT_STR); } return set_t(n, T_I64); }
+	if b == B_BYTESOF { let c = arg(0); if recv < 0 { ck(c, -1); } if is_pending(at(c)) { default_t(c); } return set_t(n, TT_STR); }
+	if b == B_TOBYTES { let c = arg(0); if recv < 0 { ck(c, -1); } if is_pending(at(c)) { default_t(c); } if total > 1 { ck(arg(1), -1); return set_t(n, T_VOID); } return set_t(n, t_arr(T_U8, A_GROW, -1, -1)); }
+	if b == B_FROMBYTES { let ta = x.c as int; let t = if ta >= 0 { rtype(kid(ta, 0), ns_of(n)) } else { T_ERRT }; ck(arg(0), TT_STR); if is_pending(at(arg(0))) { default_t(arg(0)); } return set_t(n, t); }
+	if b == B_EMBED { ck(arg(0), TT_STR); default_t(arg(0)); return set_t(n, TT_STR); }
+	let r = recv;
+	let rt = deref(at(r));
+	let e = TY[rt].a as int;
+	if b == B_PUSH { if total != 2 { cerr(n, "push takes one value"); return set_t(n, T_ERRT); } let c = arg(1); ck(c, e); conv(c, e); return set_t(n, t_ref(e, 0)); }
+	if b == B_APPEND { let c = arg(1); let t = ck(c, t_slice(e, true)); if TY[t].k == TY_STRLIT { set_t(c, TT_STR); } else { if TY[t].k == TY_ARRLIT { conv(c, t_arr(e, A_GROW, -1, -1)); } else { let dt = deref(t); if (TY[dt].k == TY_ARR || TY[dt].k == TY_SLICE) && TY[dt].a as int != e { cerr(c, "append of a different element type"); } } } return set_t(n, T_VOID); }
+	if b == B_POP { return set_t(n, e); }
+	if b == B_POPN { ck(arg(1), T_I64); conv(arg(1), T_I64); return set_t(n, T_VOID); }
+	if b == B_RESIZE { ck(arg(1), T_I64); conv(arg(1), T_I64); if total > 2 { ck(arg(2), e); conv(arg(2), e); } return set_t(n, T_VOID); }
+	if b == B_CLEAR { return set_t(n, T_VOID); }
+	if b == B_INDEXOF { ck(arg(1), -1); return set_t(n, T_I64); }
+	set_t(n, T_ERRT)
+}
+recursive fn ck_slit(n int, want int) int {
+	let x = ND[n];
+	let tnode = x.a as int;
+	let ns = ns_of(n);
+	var t = -1;
+	if ND[tnode].k == N_TNAME && ND[tnode].n == 0 && gb_find(ND[tnode].s as int) < 0 {
+		let d = lookup_q(ND[tnode].s as int, ns, D_STRUCT);
+		if d >= 0 && ND[DC[d].node].d >= 0 { if want >= 0 && TY[want].k == TY_STRUCT && STI[TY[want].a].node == DC[d].node { t = want; } }
+	}
+	if t < 0 { t = rtype(tnode, ns); }
+	var si = -1;
+	if TY[t].k == TY_STRUCT { si = TY[t].a as int; }
+	if TY[t].k == TY_VARIANT { si = ENV[(ENI[TY[t].a].v0 as int) + (TY[t].c as int)].si as int; }
+	if si < 0 { if TY[t].k != TY_ERR { cerr(n, "not a struct type"); } return set_t(n, T_ERRT); }
+	let nf = STI[si].fnum as int;
+	let named = x.n > 0 && ND[kid(n, 0)].s >= 0;
+	var fpos = 0;
+	for i in x.n {
+		let fi = kid(n, i);
+		var idx = -1;
+		if named { idx = sfield(si, ND[fi].s as int); if idx < 0 { var m byte[>..] = []; format(m, "no field ", nm(ND[fi].s as int), " in ", tn(t)); cerr(fi, m); continue; } }
+		else { while fpos < nf && SFI[(STI[si].f0 as int) + fpos].ty < 0 { fpos++; } idx = fpos; fpos++; if idx >= nf { cerr(fi, "too many initializers"); continue; } }
+		let ft = SFI[(STI[si].f0 as int) + idx].ty as int;
+		set_r(fi, R_FIELD, idx);
+		let v = ND[fi].a as int;
+		ck(v, ft); conv(v, ft);
+	}
+	for j in nf {
+		let f = SFI[(STI[si].f0 as int) + j];
+		if f.ty < 0 { continue; }
+		var given = false;
+		for i in x.n { if rv(kid(n, i)) == j { given = true; } }
+		if !given && f.def >= 0 { let sa = AOWN; AOWN = GLOBI; ck(f.def as int, f.ty as int); conv(f.def as int, f.ty as int); AOWN = sa; }
+		if !given && f.def < 0 && (x.fl & 1) == 0 && !is_opt(f.ty as int) { var m byte[>..] = []; format(m, "missing field ", nm(f.name as int), " in ", tn(t)); cerr(n, m); }
+	}
+	set_r(n, R_CTOR, si);
+	set_t(n, t)
+}
+fn check_program() bool {
+	GLOBI = new_inst(-1, 0, ND.len, -1);
+	FI_[GLOBI].st = 2;
+	AOWN = GLOBI; CFN = GLOBI;
+	let md = lookup(intern("main"), -1, D_FN);
+	if md < 0 { cerr(0, "no main function"); return false; }
+	for d, i in DC { if d.k as int == D_GLOBAL && d.file == 0 { global_type(i); } }
+	let mi = get_inst(DC[md].node as int, BINDS.len, 0, -1, -1);
+	for d, i in DC { if d.k as int == D_GLOBAL { global_type(i); } }
+	NERR == 0
+}

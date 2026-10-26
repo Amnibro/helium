@@ -1,0 +1,199 @@
+import parse;
+let TY_ERR = 0; let TY_VOID = 1; let TY_BOOL = 2; let TY_INT = 3; let TY_FLT = 4; let TY_STRUCT = 5; let TY_ENUM = 6; let TY_VARIANT = 7; let TY_ARR = 8; let TY_SLICE = 9; let TY_REF = 10;
+let TY_NULL = 11; let TY_ILIT = 12; let TY_FLIT = 13; let TY_MULTI = 14; let TY_FNV = 15; let TY_TP = 16; let TY_VARINT = 17; let TY_STRLIT = 18; let TY_ARRLIT = 19;
+let RF_CONST = 1; let RF_OPT = 2;
+let CL_FIXED = 0; let CL_VAR = 1; let CL_RES = 2;
+struct Ty { k u8, s u8, fl u16, a i32, c i32, l i32, n i32, b i64 }
+struct SI { node i32, ta i32, tn i32, f0 i32, fnum i32, cls u8, done u8, flat bool, zero bool, size i64, name i32 }
+struct FI { name i32, ty i32, def i32, fl u16, padn i32, off i64 }
+struct EI { node i32, ta i32, tn i32, v0 i32, vnum i32, cls u8, done u8, tagsz u8, flat bool, size i64, name i32 }
+struct VI { name i32, f0 i32, fnum i32, si i32, size i64, haspay bool }
+var TY Ty[>..];
+var TYL i32[>..];
+var TYH i32[>..];
+var STI SI[>..];
+var SFI FI[>..];
+var ENI EI[>..];
+var ENV VI[>..];
+var T_VOID int; var T_BOOL int; var T_I8 int; var T_I16 int; var T_I32 int; var T_I64 int; var T_U8 int; var T_U16 int; var T_U32 int; var T_U64 int; var T_F32 int; var T_F64 int;
+var T_NULL int; var T_ILIT int; var T_FLIT int; var T_STRLIT int; var T_VARINT int; var T_ERRT int; var TT_STR int; var T_ARRLIT int; var T_FNV int;
+fn th(t Ty) u64 { var h = hash_mix((t.k as u64) | ((t.s as u64) << 8) | ((t.fl as u64) << 16) | ((t.a as! u64) << 32)); h = hash_mix(h ^ (t.c as! u64) ^ ((t.b as! u64) << 20)); for i in t.n { h = hash_mix(h ^ (TYL[(t.l as int) + i] as! u64)); } h }
+fn teq(x Ty, y Ty) bool {
+	if x.k != y.k || x.s != y.s || x.fl != y.fl || x.a != y.a || x.c != y.c || x.b != y.b || x.n != y.n { return false; }
+	for i in x.n { if TYL[(x.l as int) + i] != TYL[(y.l as int) + i] { return false; } }
+	true
+}
+fn tmk(t Ty) int {
+	if TYH.len == 0 { TYH.resize(1 << 14, -1); }
+	if TY.len * 2 >= TYH.len {
+		let n = TYH.len * 2; TYH.clear(); TYH.resize(n, -1);
+		for x, i in TY { var j = (th(x) as int) & (n - 1); while TYH[j] >= 0 { j = (j + 1) & (n - 1); } TYH[j] = i as i32; }
+	}
+	let m = TYH.len - 1;
+	var j = (th(t) as int) & m;
+	while TYH[j] >= 0 { if teq(TY[TYH[j]], t) { return TYH[j]; } j = (j + 1) & m; }
+	TY.push(t); TYH[j] = (TY.len - 1) as i32;
+	TY.len - 1
+}
+fn tsimple(k int, s int) int { tmk(Ty { k: k as u8, s: s as u8, a: -1, c: -1, .. }) }
+fn tlist(k int, xs i32[:], a int) int { let l = TYL.len; TYL.append(xs); tmk(Ty { k: k as u8, a: a as i32, c: -1, l: l as i32, n: xs.len as i32, .. }) }
+fn t_int(s int) int { tsimple(TY_INT, s) }
+fn t_arr(e int, ak int, size i64, ls int) int { tmk(Ty { k: TY_ARR as u8, s: ak as u8, a: e as i32, c: ls as i32, b: size, .. }) }
+fn t_slice(e int, cq bool) int { tmk(Ty { k: TY_SLICE as u8, a: e as i32, c: -1, .. }) }
+fn t_ref(e int, fl int) int { tmk(Ty { k: TY_REF as u8, fl: (fl & RF_OPT) as u16, a: e as i32, c: -1, .. }) }
+fn t_rel(e int, fl int, w int, pool int) int { tmk(Ty { k: TY_REF as u8, fl: fl as u16, a: e as i32, c: w as i32, b: pool, .. }) }
+fn t_struct(si int) int { tmk(Ty { k: TY_STRUCT as u8, a: si as i32, c: -1, .. }) }
+fn t_enum(ei int, vm bool) int { tmk(Ty { k: TY_ENUM as u8, fl: if vm { 1 } else { 0 }, a: ei as i32, c: -1, .. }) }
+fn t_variant(ei int, vi int) int { tmk(Ty { k: TY_VARIANT as u8, a: ei as i32, c: vi as i32, .. }) }
+fn t_tp(name int) int { tmk(Ty { k: TY_TP as u8, a: name as i32, c: -1, .. }) }
+fn types_init() {
+	if TY.len > 0 { return; }
+	T_ERRT = tsimple(TY_ERR, 0); T_VOID = tsimple(TY_VOID, 0); T_BOOL = tsimple(TY_BOOL, 0);
+	T_I8 = t_int(0); T_I16 = t_int(1); T_I32 = t_int(2); T_I64 = t_int(3); T_U8 = t_int(4); T_U16 = t_int(5); T_U32 = t_int(6); T_U64 = t_int(7);
+	T_F32 = tsimple(TY_FLT, 4); T_F64 = tsimple(TY_FLT, 8);
+	T_NULL = tsimple(TY_NULL, 0); T_ILIT = tsimple(TY_ILIT, 0); T_FLIT = tsimple(TY_FLIT, 0); T_STRLIT = tsimple(TY_STRLIT, 0); T_VARINT = tsimple(TY_VARINT, 0); T_ARRLIT = tsimple(TY_ARRLIT, 0); T_FNV = tsimple(TY_FNV, 0);
+	TT_STR = t_slice(T_U8, true);
+}
+fn tk_(t int) int { TY[t].k as int }
+fn is_int(t int) bool { TY[t].k == TY_INT }
+fn is_num(t int) bool { let k = TY[t].k; k == TY_INT || k == TY_FLT }
+fn is_signed(t int) bool { TY[t].s < 4 }
+fn ibits(t int) int { 8 << ((TY[t].s & 3) as int) }
+fn is_arr(t int) bool { TY[t].k == TY_ARR }
+fn akind(t int) int { TY[t].s as int }
+fn elem(t int) int { TY[t].a as int }
+fn is_ref(t int) bool { TY[t].k == TY_REF }
+fn is_opt(t int) bool { TY[t].k == TY_REF && (TY[t].fl & RF_OPT) != 0 }
+fn deref(t int) int { if TY[t].k == TY_REF && TY[t].c < 0 { TY[t].a as int } else { t } }
+fn is_byte_arr(t int) bool { let k = TY[t].k; (k == TY_ARR || k == TY_SLICE) && TY[t].a as int == T_U8 }
+fn int_storage_of_tok(k int) int {
+	if k == K_I8 { return 0; } if k == K_I16 { return 1; } if k == K_I32 { return 2; } if k == K_I64 || k == K_INT { return 3; }
+	if k == K_U8 || k == K_BYTE { return 4; } if k == K_U16 { return 5; } if k == K_U32 { return 6; } if k == K_U64 || k == K_UINT { return 7; }
+	-1
+}
+fn prim_type(k int) int {
+	if k == K_BOOL { return T_BOOL; } if k == K_VARINT { return T_VARINT; } if k == K_F32 { return T_F32; } if k == K_F64 || k == K_REAL { return T_F64; }
+	let s = int_storage_of_tok(k);
+	if s >= 0 { t_int(s) } else { T_ERRT }
+}
+fn int_min(t int) i64 { if !is_signed(t) { return 0; } let b = ibits(t); if b == 64 { -9223372036854775807 - 1 } else { -(1 << (b - 1)) } }
+fn int_max_u(t int) u64 { let b = ibits(t); let sg = is_signed(t); if b == 64 { if sg { 9223372036854775807 } else { 18446744073709551615 } } else { if sg { (1 << (b - 1)) - 1 } else { (1 << b) - 1 } } }
+fn lim_lenstore(cap i64) int { if cap < 256 { 4 } else { if cap < 65536 { 5 } else { if cap < 4294967296 { 6 } else { 7 } } } }
+recursive fn tclass(t int) int {
+	let x = TY[t];
+	let k = x.k as int;
+	if k == TY_STRUCT { si_layout(x.a as int); return STI[x.a].cls as int; }
+	if k == TY_VARIANT { ei_layout(x.a as int); let v = ENV[(ENI[x.a].v0 as int) + (x.c as int)]; if v.si >= 0 { si_layout(v.si as int); return STI[v.si].cls as int; } return CL_FIXED; }
+	if k == TY_ENUM { ei_layout(x.a as int); if (x.fl & 1) == 0 { return CL_FIXED; } return ENI[x.a].cls as int; }
+	if k == TY_ARR { let a = x.s as int; if a == A_GROW || a == A_GS { return CL_RES; } if a == A_VAR { return CL_VAR; } if a == A_LIM && x.b < 0 { return CL_VAR; } let ec = tclass(x.a as int); return if ec > CL_FIXED { CL_VAR } else { CL_FIXED }; }
+	if k == TY_VARINT { return CL_VAR; }
+	CL_FIXED
+}
+fn is_fixed(t int) bool { tclass(t) == CL_FIXED }
+fn isz(s int) i64 { (1 << ((s & 3) as i64)) }
+recursive fn tsize(t int) i64 {
+	let x = TY[t];
+	let k = x.k as int;
+	if k == TY_BOOL { return 1; }
+	if k == TY_INT { return isz(x.s as int); }
+	if k == TY_FLT { return x.s as i64; }
+	if k == TY_REF { if x.c >= 0 { return isz(x.c as int); } return 8; }
+	if k == TY_SLICE { return 16; }
+	if k == TY_STRUCT { si_layout(x.a as int); return STI[x.a].size; }
+	if k == TY_VARIANT { ei_layout(x.a as int); let v = ENV[(ENI[x.a].v0 as int) + (x.c as int)]; return v.size; }
+	if k == TY_ENUM { ei_layout(x.a as int); return ENI[x.a].size; }
+	if k == TY_ARR { let a = x.s as int; if a == A_FIXED { return max(x.b, 1) * tsize(x.a as int); } if a == A_LIM { return isz(x.c as int) + max(x.b, 1) * tsize(x.a as int); } }
+	0
+}
+recursive fn tflat(t int) bool {
+	let x = TY[t]; let k = x.k as int;
+	if k == TY_REF || k == TY_SLICE { return false; }
+	if k == TY_STRUCT { si_layout(x.a as int); return STI[x.a].flat; }
+	if k == TY_ENUM || k == TY_VARIANT { ei_layout(x.a as int); return ENI[x.a].flat; }
+	if k == TY_ARR { return tflat(x.a as int); }
+	true
+}
+var LAYOUT_HOOK int;
+recursive fn si_layout(si int) {
+	if STI[si].done != 0 { return; }
+	STI[si].done = 1;
+	var off i64 = 0; var cls = CL_FIXED; var flat = true;
+	for i in STI[si].fnum {
+		let fi = (STI[si].f0 as int) + i;
+		let ft = SFI[fi].ty as int;
+		if ft < 0 { SFI[fi].off = off; off += SFI[fi].padn as i64; continue; }
+		let c = tclass(ft);
+		SFI[fi].off = if cls == CL_FIXED { off } else { -1 };
+		if c > cls { cls = c; }
+		if c == CL_FIXED { off += tsize(ft); } else { if cls == CL_FIXED { cls = c; } }
+		if !tflat(ft) { flat = false; }
+	}
+	STI[si].cls = cls as u8; STI[si].flat = flat;
+	STI[si].size = if cls == CL_FIXED { max(off, 1) } else { off };
+	STI[si].zero = off == 0;
+	STI[si].done = 2;
+}
+recursive fn ei_layout(ei int) {
+	if ENI[ei].done != 0 { return; }
+	ENI[ei].done = 1;
+	let nv = ENI[ei].vnum as int;
+	let tz = if nv <= 256 { 1 } else { 2 };
+	ENI[ei].tagsz = tz as u8;
+	var mx i64 = 0; var cls = CL_FIXED; var flat = true;
+	for i in nv {
+		let v = (ENI[ei].v0 as int) + i;
+		if ENV[v].si >= 0 {
+			let si = ENV[v].si as int;
+			si_layout(si);
+			if (STI[si].cls as int) > cls { cls = STI[si].cls as int; }
+			if !STI[si].flat { flat = false; }
+			let ps = if STI[si].zero { 0 } else { STI[si].size };
+			ENV[v].size = ps;
+			if ps > mx { mx = ps; }
+		}
+	}
+	ENI[ei].cls = cls as u8; ENI[ei].flat = flat;
+	ENI[ei].size = (tz as i64) + mx;
+	ENI[ei].done = 2;
+}
+fn sfield(si int, name int) int { for i in STI[si].fnum { if SFI[(STI[si].f0 as int) + i].name as int == name { return i; } } -1 }
+fn ls_kind_name(s int, out byte[>..]&) { let names = ["i8", "i16", "i32", "i64", "u8", "u16", "u32", "u64"]; out.append(names[s & 7]); }
+recursive fn ty_name_into(t int, out byte[>..]&) {
+	let x = TY[t];
+	let k = x.k as int;
+	if k == TY_ERR { out.append("<error>"); return; }
+	if k == TY_VOID { out.append("void"); return; }
+	if k == TY_BOOL { out.append("bool"); return; }
+	if k == TY_INT { ls_kind_name(x.s as int, out); return; }
+	if k == TY_FLT { out.append(if x.s == 4 { "f32" } else { "f64" }); return; }
+	if k == TY_VARINT { out.append("varint"); return; }
+	if k == TY_NULL { out.append("null"); return; }
+	if k == TY_ILIT { out.append("integer constant"); return; }
+	if k == TY_FLIT { out.append("float constant"); return; }
+	if k == TY_STRLIT { out.append("const u8[:]"); return; }
+	if k == TY_TP { out.append(nm(x.a as int)); return; }
+	if k == TY_STRUCT { out.append(nm(STI[x.a].name as int)); targs_into(STI[x.a].ta as int, STI[x.a].tn as int, out); return; }
+	if k == TY_ENUM { out.append(nm(ENI[x.a].name as int)); targs_into(ENI[x.a].ta as int, ENI[x.a].tn as int, out); if (x.fl & 1) != 0 { out.append(".."); } return; }
+	if k == TY_VARIANT { out.append(nm(ENI[x.a].name as int)); targs_into(ENI[x.a].ta as int, ENI[x.a].tn as int, out); out.push('.'); out.append(nm(ENV[(ENI[x.a].v0 as int) + (x.c as int)].name as int)); return; }
+	if k == TY_SLICE { if (x.fl & 1) != 0 { out.append("const "); } ty_name_into(x.a as int, out); out.append("[:]"); return; }
+	if k == TY_REF {
+		if (x.fl & 1) != 0 { out.append("const "); }
+		ty_name_into(x.a as int, out);
+		if x.c >= 0 { out.append("&<"); ls_kind_name(x.c as int, out); out.push('>'); if (x.fl & 2) != 0 { out.push('?'); } return; }
+		out.append(if (x.fl & 2) != 0 { "?" } else { "&" }); return;
+	}
+	if k == TY_ARR {
+		ty_name_into(x.a as int, out);
+		let a = x.s as int;
+		if a == A_FIXED { format(out, "[", x.b, "]"); }
+		if a == A_VAR { out.append(if x.c >= 0 && x.c != 6 { "[" } else { "[]" }); if x.c >= 0 && x.c != 6 { if x.c == 8 { out.append("varint"); } else { ls_kind_name(x.c as int, out); } out.push(']'); } }
+		if a == A_LIM { if x.b >= 0 { format(out, "[..", x.b, "]"); } else { out.append("[..]"); } }
+		if a == A_GROW { out.append("[>..]"); }
+		if a == A_GS { out.append("[>..<]"); }
+		return;
+	}
+	if k == TY_MULTI { for i in x.n { if i > 0 { out.append(", "); } ty_name_into(TYL[(x.l as int) + i] as int, out); } return; }
+	out.append("fn");
+}
+recursive fn targs_into(l int, n int, out byte[>..]&) { if n == 0 { return; } out.push('<'); for i in n { if i > 0 { out.append(", "); } ty_name_into(TYL[l + i] as int, out); } out.push('>'); }
+fn ty_name(t int) byte[>..] { var s byte[>..] = []; ty_name_into(t, s); s }

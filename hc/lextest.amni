@@ -1,0 +1,13 @@
+import os;
+import lex;
+fn main() {
+	var line byte[>..] = [];
+	var nf = 0; var bad = 0;
+	while read_line(line) {
+		LERR.clear();
+		if !lex_file(trim(line)) { bad++; print(LERR); }
+		nf++;
+		line.clear();
+	}
+	print(nf, " files, ", bad, " failed, ", TK.len, " tokens, ", NM.len, " names");
+}

@@ -1,0 +1,73 @@
+namespace binary;
+import std;
+fn range_ok(data const byte[:], at int, size int) bool {
+	let start = at as! uint;
+	start <= data.len as uint && (size as! uint) <= data.len as uint - start
+}
+fn read_bytes(data const byte[:], at int, size int) const byte[:], bool {
+	if !range_ok(data, at, size) { return data[..0], false; }
+	return data[at..at + size], true;
+}
+fn read_u16le(data const byte[:], at int) u16, bool {
+	if !range_ok(data, at, 2) { return 0, false; }
+	return data[at] | (data[at + 1] as u16 << 8), true;
+}
+fn read_i16le(data const byte[:], at int) i16, bool {
+	let value, ok = read_u16le(data, at);
+	return value as! i16, ok;
+}
+fn read_u32le(data const byte[:], at int) u32, bool {
+	if !range_ok(data, at, 4) { return 0, false; }
+	return data[at] | (data[at + 1] as u32 << 8) |
+		   (data[at + 2] as u32 << 16) | (data[at + 3] as u32 << 24), true;
+}
+fn read_f32le(data const byte[:], at int) f32, bool {
+	let bits, ok = read_u32le(data, at);
+	return f32_from_bits(bits), ok;
+}
+extern fn f32_bits(x f32) u32 = "hr_f32_bits";
+extern fn f32_from_bits(b u32) f32 = "hr_f32_from_bits";
+extern fn f64_bits(x real) uint = "hr_f64_bits";
+extern fn f64_from_bits(b uint) real = "hr_f64_from_bits";
+fn read_name(data const byte[:], at int, width int) const byte[:], bool {
+	let field, ok = read_bytes(data, at, width);
+	if !ok { return field, false; }
+	var size = 0;
+	while size < field.len && field[size] != 0 { size++; }
+	return field[..size], true;
+}
+struct Reader { data const byte[:], pos int }
+fn reader(data const byte[:]) Reader { Reader { data, 0 } }
+fn read_bytes(r Reader&, size int) const byte[:], bool {
+	let data, ok = read_bytes(r.data, r.pos, size);
+	if ok { r.pos += size; }
+	return data, ok;
+}
+fn read_u16le(r Reader&) u16, bool {
+	let value, ok = read_u16le(r.data, r.pos);
+	if ok { r.pos += 2; }
+	return value, ok;
+}
+fn read_i16le(r Reader&) i16, bool {
+	let value, ok = read_u16le(r);
+	return value as! i16, ok;
+}
+fn read_u32le(r Reader&) u32, bool {
+	let value, ok = read_u32le(r.data, r.pos);
+	if ok { r.pos += 4; }
+	return value, ok;
+}
+fn read_name(r Reader&, width int) const byte[:], bool {
+	let name, ok = read_name(r.data, r.pos, width);
+	if ok { r.pos += width; }
+	return name, ok;
+}
+fn skip(r Reader&, size int) bool {
+	if !range_ok(r.data, r.pos, size) { return false; }
+	r.pos += size;
+	return true;
+}
+fn subreader(r Reader&, size int) Reader, bool {
+	let data, ok = read_bytes(r, size);
+	return reader(data), ok;
+}

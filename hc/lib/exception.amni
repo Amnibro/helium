@@ -1,0 +1,10 @@
+namespace exception;
+fn handler<E, Body>() E[] {
+	Body();
+	return [];
+}
+fn try<E, Body, Catch>() {
+	for error in handler<E>(Body) { Catch(error); }
+}
+fn try<E, Body>() { handler<E>(Body); }
+fn throw(value) { return [value] from handler; }

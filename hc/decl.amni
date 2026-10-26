@@ -1,0 +1,231 @@
+import os;
+import types;
+let D_STRUCT = 1; let D_ENUM = 2; let D_ALIAS = 3; let D_FN = 4; let D_GLOBAL = 5;
+struct Dc { k u8, node i32, file i32, next i32, name i32 }
+struct Gb { name i32, ty i32 }
+var DC Dc[>..];
+var DMAP i32[>..];
+var GB Gb[>..<];
+var ROOTDIR byte[>..];
+var LIBDIR byte[>..];
+var IMPS i32[>..];
+var DERR byte[>..];
+var NS_FILE i32[>..];
+fn derr(t int, m const byte[:]) { if DERR.len > 0 { return; } let x = TK[max(t, 0)]; DERR.append(nm(FILES[x.f].name)); format(DERR, ":", x.line, ": error: ", m); }
+fn dmap(name int) int { if name < 0 || name >= DMAP.len { -1 } else { DMAP[name] as int } }
+fn dadd(k int, node int, file int, name int) {
+	while DMAP.len <= name { DMAP.push(-1); }
+	let i = DC.len;
+	DC.push(Dc { k as u8, node as i32, file as i32, DMAP[name], name as i32 });
+	DMAP[name] = i as i32;
+}
+fn qual(ns int, name int) int { if ns < 0 { name } else { var s byte[>..] = []; s.append(nm(ns)); s.append("::"); s.append(nm(name)); intern(s) } }
+fn node_file(n int) int { TK[ND[n].t].f as int }
+fn file_ns(f int) int { if f < NS_FILE.len { NS_FILE[f] as int } else { -1 } }
+fn collect(file int, t0 int, t1 int) {
+	for i in t0..t1 {
+		let n = TOP[i] as int;
+		let x = ND[n];
+		let k = x.k as int;
+		if k == N_STRUCT { dadd(D_STRUCT, n, file, qual(x.a as int, x.s as int)); }
+		if k == N_ENUM { dadd(D_ENUM, n, file, qual(x.a as int, x.s as int)); }
+		if k == N_ALIAS { dadd(D_ALIAS, n, file, qual(x.a as int, x.s as int)); }
+		if k == N_FN { if !(nm(x.s as int) == "main" && file != 0) { dadd(D_FN, n, file, qual(x.a as int, x.s as int)); } }
+		if k == N_VDECL { dadd(D_GLOBAL, n, file, qual(x.c as int, LS[x.l] as int)); }
+	}
+}
+recursive fn try_load(path const byte[:]) int {
+	let id = intern(path);
+	for f, i in FILES { if f.name as int == id { return i; } }
+	if !file_exists(path) { return -1; }
+	let t0 = TOP.len;
+	if !parse_file(path) { DERR.append(PERR); return -2; }
+	let f = FILES.len - 1;
+	while NS_FILE.len < FILES.len { NS_FILE.push(-1); }
+	NS_FILE[f] = FILENS[FILENS.len - 1];
+	collect(f, t0, TOP.len);
+	let t1 = TOP.len;
+	let im0 = IMPS.len;
+	for i in t0..t1 { if ND[TOP[i]].k == N_IMPORT { IMPS.push(TOP[i]); } }
+	let im1 = IMPS.len;
+	let sp = lib_path("std"); let isstd = path == sp[..];
+	if FILES[f].amni && !isstd { if load_import(NAME_STD, f, -1) < 0 { return -2; } }
+	for q in im0..im1 { let n = IMPS[q] as int; if load_import(ND[n].s as int, f, ND[n].t as int) < 0 { return -2; } }
+	f
+}
+fn lib_path(name const byte[:]) byte[..1024] { var p byte[..1024] = []; p.append(LIBDIR); p.push('/'); p.append(name); p.append(".amni"); p }
+recursive fn load_import(name int, from int, t int) int {
+	var p byte[..1024] = [];
+	p.append(ROOTDIR); p.push('/'); p.append(nm(name)); p.append(".amni");
+	var r = try_load(p[..]);
+	if r == -1 { let lp = lib_path(nm(name)); r = try_load(lp[..]); }
+	if r == -1 { var m byte[>..] = []; format(m, "cannot find module ", nm(name)); derr(t, m); return -2; }
+	r
+}
+fn load_program(root const byte[:]) bool {
+	parse_init();
+	types_init();
+	var d = root.len; while d > 0 && root[d - 1] != '/' { d--; }
+	ROOTDIR.clear(); ROOTDIR.append(if d > 0 { root[..d - 1] } else { "." });
+	try_load(root) >= 0 && DERR.len == 0
+}
+fn gb_find(name int) int { var i = GB.len - 1; while i >= 0 { if GB[i].name as int == name { return GB[i].ty as int; } i--; } -1 }
+fn lookup(name int, ns int, k int) int {
+	if ns >= 0 { var d = dmap(qual(ns, name)); while d >= 0 { if DC[d].k as int == k { return d; } d = DC[d].next as int; } }
+	var d = dmap(name);
+	while d >= 0 { if DC[d].k as int == k { return d; } d = DC[d].next as int; }
+	-1
+}
+fn split_q(q int) int, int {
+	let s = nm(q);
+	for i in s.len { if s[i] == ':' && i + 1 < s.len && s[i + 1] == ':' { if i == 0 { return -2, intern(s[2..]); } return intern(s[..i]), intern(s[i + 2..]); } }
+	return -1, q;
+}
+fn lookup_q(q int, ns int, k int) int {
+	let a, b = split_q(q);
+	if a == -2 { return lookup(b, -1, k); }
+	if a >= 0 { var d = dmap(q); while d >= 0 { if DC[d].k as int == k { return d; } d = DC[d].next as int; } return -1; }
+	lookup(b, ns, k)
+}
+fn ns_of(n int) int { file_ns(node_file(n)) }
+recursive fn rtype(n int, ns int) int {
+	if n < 0 { return T_VOID; }
+	let x = ND[n];
+	let k = x.k as int;
+	if k == N_TPRIM { return prim_type(x.op as int); }
+	if k == N_TCONST { return rtype(x.a as int, ns); }
+	if k == N_TIDX { return prim_type(x.op as int); }
+	if k == N_TSLICE { let e = rtype(x.a as int, ns); return t_slice(e, (x.fl & 1) != 0); }
+	if k == N_TREF {
+		let e = rtype(x.a as int, ns);
+		let fl = ((x.fl & 1) as int) | ((x.fl & 2) as int);
+		if x.c >= 0 { return t_rel(e, fl, int_storage_of_tok(x.c as int), x.s as i64); }
+		if TY[e].k == TY_REF && TY[e].c < 0 { if (fl & 2) != 0 { return t_ref(TY[e].a as int, (TY[e].fl as int) | 2); } return e; }
+		return t_ref(e, fl);
+	}
+	if k == N_TARR {
+		let e = rtype(x.a as int, ns);
+		let a = x.op as int;
+		if a == A_FIXED { let v, ok = ceval(x.b as int, ns); if !ok { derr(x.t as int, "array size must be a constant"); } return t_arr(e, A_FIXED, v, -1); }
+		if a == A_LIM { if x.b < 0 { return t_arr(e, A_LIM, -1, 6); } let v, ok = ceval(x.b as int, ns); if !ok { derr(x.t as int, "capacity must be a constant"); } return t_arr(e, A_LIM, v, lim_lenstore(v)); }
+		if a == A_VAR { let ls = if x.c < 0 { 6 } else { if x.c as int == K_VARINT { 8 } else { int_storage_of_tok(x.c as int) } }; return t_arr(e, A_VAR, -1, ls); }
+		return t_arr(e, a, -1, -1);
+	}
+	if k == N_TVAR {
+		let b = rtype(x.a as int, ns);
+		if TY[b].k != TY_ENUM { derr(x.t as int, "variant type of a non-enum"); return T_ERRT; }
+		let ei = TY[b].a as int;
+		for i in ENI[ei].vnum { if ENV[(ENI[ei].v0 as int) + i].name == x.s { return t_variant(ei, i); } }
+		var m byte[>..] = []; format(m, "no variant ", nm(x.s as int), " in ", ty_name(b)); derr(x.t as int, m);
+		return T_ERRT;
+	}
+	if k == N_TFN { return T_FNV; }
+	if k == N_TNAME {
+		let name = x.s as int;
+		if x.n == 0 { let g = gb_find(name); if g >= 0 { return g; } }
+		var args i32[..16] = [];
+		for i in x.n { let at0 = rtype(kid(n, i), ns); args.push(at0 as i32); }
+		var d = lookup_q(name, ns, D_STRUCT);
+		if d >= 0 { return t_struct(inst_struct(DC[d].node as int, args[..])); }
+		d = lookup_q(name, ns, D_ENUM);
+		if d >= 0 { return t_enum(inst_enum(DC[d].node as int, args[..]), (x.fl & 1) != 0); }
+		d = lookup_q(name, ns, D_ALIAS);
+		if d >= 0 { let an = DC[d].node as int; return rtype(ND[an].b as int, ns_of(an)); }
+		var m byte[>..] = []; format(m, "unknown type ", nm(name)); derr(x.t as int, m);
+		return T_ERRT;
+	}
+	derr(x.t as int, "bad type");
+	T_ERRT
+}
+fn gen_names(gl int, out i32[..16]&) { if gl >= 0 { for i in ND[gl].n { out.push(ND[kid(gl, i)].s); } } }
+recursive fn inst_struct(node int, args i32[:]) int {
+	for s, i in STI { if s.node as int == node && s.tn as int == args.len { var same = true; for j in args.len { if TYL[(s.ta as int) + j] != args[j] { same = false; } } if same { return i; } } }
+	let ta = TYL.len; TYL.append(args);
+	let si = STI.len;
+	STI.push(SI { node: node as i32, ta: ta as i32, tn: args.len as i32, f0: SFI.len as i32, fnum: 0, name: ND[node].s, .. });
+	var gn i32[..16] = []; gen_names(ND[node].d as int, gn);
+	if gn.len != args.len { derr(ND[node].t as int, "wrong number of type arguments"); }
+	let g0 = GB.len;
+	for i in min(gn.len, args.len) { GB.push(Gb { gn[i], args[i] }); }
+	let f0 = fields_into(node, ns_of(node));
+	STI[si].f0 = f0 as i32; STI[si].fnum = (SFI.len - f0) as i32;
+	GB.pop_n(GB.len - g0);
+	si
+}
+recursive fn fields_into(node int, ns int) int {
+	var buf FI[..256] = [];
+	for i in ND[node].n {
+		let f = kid(node, i);
+		let x = ND[f];
+		if (x.fl & 4) != 0 { buf.push(FI { name: -1, ty: -1, def: -1, fl: x.fl, padn: max(x.c, 0), off: 0 }); continue; }
+		let ft = rtype(x.a as int, ns);
+		buf.push(FI { name: x.s, ty: ft as i32, def: x.b, fl: x.fl, padn: 0, off: 0 });
+	}
+	let f0 = SFI.len;
+	SFI.append(buf[..]);
+	f0
+}
+recursive fn inst_enum(node int, args i32[:]) int {
+	for s, i in ENI { if s.node as int == node && s.tn as int == args.len { var same = true; for j in args.len { if TYL[(s.ta as int) + j] != args[j] { same = false; } } if same { return i; } } }
+	let ta = TYL.len; TYL.append(args);
+	let ei = ENI.len;
+	let nv = ND[node].n as int;
+	ENI.push(EI { node: node as i32, ta: ta as i32, tn: args.len as i32, v0: ENV.len as i32, vnum: nv as i32, name: ND[node].s, .. });
+	let v0 = ENV.len;
+	for i in nv { let v = kid(node, i); ENV.push(VI { name: ND[v].s, f0: 0, fnum: 0, si: -1, size: 0, haspay: (ND[v].fl & 1) != 0 }); }
+	var gn i32[..16] = []; gen_names(ND[node].d as int, gn);
+	let g0 = GB.len;
+	for i in min(gn.len, args.len) { GB.push(Gb { gn[i], args[i] }); }
+	let ns = ns_of(node);
+	for i in nv {
+		let v = kid(node, i);
+		let si = STI.len;
+		STI.push(SI { node: v as i32, ta: ta as i32, tn: args.len as i32, f0: SFI.len as i32, fnum: 0, name: ND[v].s, .. });
+		let f0 = fields_into(v, ns);
+		STI[si].f0 = f0 as i32; STI[si].fnum = (SFI.len - f0) as i32;
+		ENV[v0 + i].si = si as i32;
+	}
+	GB.pop_n(GB.len - g0);
+	ei
+}
+recursive fn ceval(n int, ns int) i64, bool {
+	if n < 0 { return 0, false; }
+	let x = ND[n];
+	let k = x.k as int;
+	if k == N_INT { return TK[x.t].v, true; }
+	if k == N_UN {
+		let v, ok = ceval(x.a as int, ns);
+		if x.op as int == T_MINUS { return -v, ok; }
+		if x.op as int == T_BITNOT { return ~v, ok; }
+		return 0, false;
+	}
+	if k == N_BIN {
+		let a, oa = ceval(x.a as int, ns);
+		let b, ob = ceval(x.b as int, ns);
+		if !oa || !ob { return 0, false; }
+		let o = x.op as int;
+		if o == T_PLUS { return a + b, true; } if o == T_MINUS { return a - b, true; } if o == T_MUL { return a * b, true; }
+		if o == T_DIV { if b == 0 { return 0, false; } return a / b, true; }
+		if o == T_MOD { if b == 0 { return 0, false; } return ((a % b) + b) % b, true; }
+		if o == T_SHL { return a << b, true; } if o == T_SHR { return a >> b, true; }
+		if o == T_AND { return a & b, true; } if o == T_OR { return a | b, true; } if o == T_XOR { return a ^ b, true; }
+		return 0, false;
+	}
+	if k == N_AS { return ceval(x.a as int, ns); }
+	if k == N_ID {
+		let d = lookup_q(x.s as int, ns, D_GLOBAL);
+		if d < 0 { return 0, false; }
+		let g = DC[d].node as int;
+		if (ND[g].fl & V_VAR) != 0 || ND[g].b < 0 || (ND[g].a >= 0 && false) { return 0, false; }
+		return ceval(kid(ND[g].b as int, 0), ns_of(g));
+	}
+	if k == N_DOT && nm(x.s as int) == "len" && ND[x.a].k == N_ID {
+		let d = lookup_q(ND[x.a].s as int, ns, D_GLOBAL);
+		if d < 0 { return 0, false; }
+		let g = DC[d].node as int;
+		if ND[g].a >= 0 { let t = rtype(ND[g].a as int, ns_of(g)); if TY[t].k == TY_ARR && TY[t].s == A_FIXED as u8 { return TY[t].b, true; } }
+		if ND[g].b >= 0 { let iv = kid(ND[g].b as int, 0); if ND[iv].k == N_ARR { if ND[iv].b >= 0 { return ceval(ND[iv].b as int, ns_of(g)); } return ND[iv].n as i64, true; } if ND[iv].k == N_STR { return TK[ND[iv].t].w as i64, true; } }
+		return 0, false;
+	}
+	return 0, false;
+}

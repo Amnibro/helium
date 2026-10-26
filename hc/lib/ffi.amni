@@ -1,0 +1,13 @@
+namespace ffi;
+extern fn cstr(p uint, out byte[>..]&) bool = "hr_ffi_cstr";
+extern fn bytes(p uint, n int, out byte[>..]&) bool = "hr_ffi_bytes";
+fn cstr(p uint) byte[>..] {
+	var out byte[>..] = [];
+	cstr(p, out);
+	return out;
+}
+fn bytes(p uint, n int) byte[>..] {
+	var out byte[>..] = [];
+	bytes(p, n, out);
+	return out;
+}

@@ -1,0 +1,23 @@
+extern fn sqrt(x real) real = "hr_sqrt";            extern fn sqrt(x f32) f32 = "hr_sqrtf";
+extern fn sin(x real) real = "hr_sin";              extern fn sin(x f32) f32 = "hr_sinf";
+extern fn cos(x real) real = "hr_cos";              extern fn cos(x f32) f32 = "hr_cosf";
+extern fn tan(x real) real = "hr_tan";              extern fn tan(x f32) f32 = "hr_tanf";
+extern fn asin(x real) real = "hr_asin";            extern fn asin(x f32) f32 = "hr_asinf";
+extern fn acos(x real) real = "hr_acos";            extern fn acos(x f32) f32 = "hr_acosf";
+extern fn atan(x real) real = "hr_atan";            extern fn atan(x f32) f32 = "hr_atanf";
+extern fn atan2(y real, x real) real = "hr_atan2";  extern fn atan2(y f32, x f32) f32 = "hr_atan2f";
+extern fn exp(x real) real = "hr_exp";              extern fn exp(x f32) f32 = "hr_expf";
+extern fn log(x real) real = "hr_log";              extern fn log(x f32) f32 = "hr_logf";
+extern fn log2(x real) real = "hr_log2";            extern fn log2(x f32) f32 = "hr_log2f";
+extern fn log10(x real) real = "hr_log10";          extern fn log10(x f32) f32 = "hr_log10f";
+extern fn pow(x real, y real) real = "hr_pow";      extern fn pow(x f32, y f32) f32 = "hr_powf";
+extern fn floor(x real) real;                       extern fn floor(x f32) f32 = "floorf";
+extern fn ceil(x real) real;                        extern fn ceil(x f32) f32 = "ceilf";
+extern fn round(x real) real;                       extern fn round(x f32) f32 = "roundf";
+extern fn trunc(x real) real;                       extern fn trunc(x f32) f32 = "truncf";
+let PI = 3.141592653589793;
+let TAU = 6.283185307179586;
+fn radians(deg real) real { deg * (PI / 180.0) }
+fn degrees(rad real) real { rad * (180.0 / PI) }
+fn is_nan(x real) bool { x != x }
+fn is_inf(x real) bool { x == x && (x - x) != (x - x) }

@@ -1,0 +1,17 @@
+import os;
+import gen;
+fn main() {
+	var a byte[>..] = [];
+	var o byte[>..] = [];
+	if arg_count() < 3 { print("usage: hc file.amni out.c"); exit(2); }
+	arg(1, a); arg(2, o);
+	var lib byte[>..] = [];
+	if !env("HC_LIB", lib) { lib.append("hc/lib"); }
+	LIBDIR.append(lib);
+	if !load_program(a) { print(DERR); exit(1); }
+	if !check_program() { print(CERR); exit(1); }
+	if DERR.len > 0 { print(DERR); exit(1); }
+	var c byte[>..] = [];
+	if !gen_program(c) { print(GERR); exit(1); }
+	if !write_file(o, c) { print("cannot write ", o); exit(1); }
+}
