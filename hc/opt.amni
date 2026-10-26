@@ -263,18 +263,18 @@ fn sra(fi int) {
 		if nd[d] != 1 { continue; }
 		if op == I_IMM { kn[d] = 1; kv[d] = x.c; }
 		if op == I_SLOT { sbs[d] = sid(x.c as int) as i32; sof[d] = 0; }
-		if op == I_MOV && sbs[x.a] >= 0 { sbs[d] = sbs[x.a]; sof[d] = sof[x.a]; }
+		if (op == I_MOV || op == I_EXT && x.w == 3) && sbs[x.a] >= 0 { sbs[d] = sbs[x.a]; sof[d] = sof[x.a]; }
 		if op == I_BIN && x.c == B_ADD && x.l < 0 && x.w == 3 && sbs[x.a] >= 0 && kn[x.b] != 0 && kv[x.b] >= 0 && kv[x.b] < (1 << 20) && sof[x.a] < (1 << 28) { sbs[d] = sbs[x.a]; sof[d] = sof[x.a] + (kv[x.b] as i32); } }
 	fn root(s int) int { var r = s; while par[r] >= 0 { r = par[r] as int; } r }
 	var fk0 i64[>..] = []; var csz i32[>..<] = []; csz.resize(sb, -1); var cout i8[>..<] = []; cout.resize(sb, 0);
 	fn setsz(s int, z int) { if csz[s] >= 0 && csz[s] as int != z { bad[s] = 1; } csz[s] = z as i32; }
 	for i in i0..i1 { let x = IR[i]; let op = x.op as int; opnds(i);
 		for u in OU { let s = sbs[u] as int; if s < 0 || bad[s] != 0 { continue; }
-			if (op == I_BIN || op == I_MOV) && sbs[x.d] >= 0 && x.a == u { continue; }
+			if (op == I_BIN || op == I_MOV || op == I_EXT && x.w == 3) && sbs[x.d] >= 0 && x.a == u { continue; }
 			if (op == I_LD || op == I_ST && x.b != u) && x.a == u { fk0.push(((s as i64) << 40) | ((sof[u] as i64 + x.c) << 8) | (x.w as i64)); continue; }
 			if op == I_COPY && x.d >= 0 && x.a >= 0 && sbs[x.d] >= 0 && sbs[x.a] >= 0 { let sd = sbs[x.d] as int; let sa = sbs[x.a] as int; if sd != sa && sof[x.d] == 0 && sof[x.a] == 0 && kn[x.b] != 0 { setsz(sd, kv[x.b] as int); setsz(sa, kv[x.b] as int); let ra = root(sa); let rd = root(sd); if ra != rd { par[ra] = rd as i32; } } else { bad[sd] = 1; bad[sa] = 1; } continue; }
 			if (op == I_COPY || op == I_ZERO) && kn[x.b] != 0 && sof[u] == 0 && (x.d == u || op == I_COPY && x.a == u && x.d != u) { setsz(s, kv[x.b] as int); if op == I_COPY && x.a == u { cout[s] = 1; } continue; }
-			var dq byte[>..] = []; if env("HC_SRA", dq) { print("badop fn ", fi, " i ", i, " op ", op, " slot ", so[s], " c ", x.c, " d ", x.d, " a ", x.a, " b ", x.b, " u ", u, "\n"); } bad[s] = 1; } }
+			bad[s] = 1; } }
 	for s in sb { let r = root(s); if r != s { if bad[s] != 0 { bad[r] = 1; } if cout[s] != 0 { cout[r] = 1; } if csz[s] >= 0 { setsz(r, csz[s] as int); } } }
 	for k in fk0.len { let s = (fk0[k] >> 40) as int; let r = root(s); if r != s { fk0[k] = ((r as i64) << 40) | (fk0[k] & 0xFFFFFFFFFF); } }
 	sort(fk0[..]);
@@ -288,7 +288,7 @@ fn sra(fi int) {
 		if cout[r] != 0 && bad[r] == 0 { var cov = 0; for k in a..(b + 1) { cov += wsz(cw[k] as int); } if cov != csz[r] as int { bad[r] = 1; } } }
 	for s in sb { if s + 1 < sb { let e = max(ext[root(s)] as int, csz[s] as int); if so[s + 1] < so[s] + e { bad[root(s)] = 1; bad[root(s + 1)] = 1; } } }
 	var base i32[>..<] = []; base.resize(sb, -1);
-	var any = false; for s in sb { let r = root(s); if bad[r] != 0 || cn[r] == 0 { bad[s] = 1; } else { base[s] = nv as i32; nv += cn[r] as int; any = true; } }
+	var any = false; for s in sb { let r = root(s); if bad[r] != 0 || cn[r] == 0 || cn[r] > 8 { bad[s] = 1; } else { base[s] = nv as i32; nv += cn[r] as int; any = true; } }
 	if !any { return; }
 	fn fid(s int, o int) int { let r = root(s); var lo = cst[r] as int; var hi = lo + (cn[r] as int); while lo < hi { let m = (lo + hi) / 2; if (co[m] as int) < o { lo = m + 1; } else { hi = m; } } base[s] as int + lo - (cst[r] as int) }
 	let ni0 = IR.len;
@@ -296,7 +296,7 @@ fn sra(fi int) {
 		let sa = if x.a >= 0 && (x.a as int) < sbs.len && op != I_IMM && op != I_SLOT && op != I_GADDR && op != I_RADDR && op != I_FADDR && op != I_PARAM { sbs[x.a] as int } else { -1 };
 		let sd = if x.d >= 0 && (x.d as int) < sbs.len && (op == I_COPY || op == I_ZERO) { sbs[x.d] as int } else { -1 };
 		let ga = sa >= 0 && bad[sa] == 0; let gd = sd >= 0 && bad[sd] == 0;
-		if (op == I_SLOT || op == I_BIN || op == I_MOV) && x.d >= 0 && sbs[x.d] >= 0 && bad[sbs[x.d]] == 0 { continue; }
+		if (op == I_SLOT || op == I_BIN || op == I_MOV || op == I_EXT && x.w == 3) && x.d >= 0 && sbs[x.d] >= 0 && bad[sbs[x.d]] == 0 { continue; }
 		if op == I_LD && ga { IR.push(Ir { I_MOV as u8, x.w, x.d, fid(sa, sof[x.a] as int + (x.c as int)) as i32, -1, 0, -1 }); continue; }
 		if op == I_ST && ga { IR.push(Ir { I_EXT as u8, x.w, fid(sa, sof[x.a] as int + (x.c as int)) as i32, x.b, -1, 0, -1 }); continue; }
 		if (op == I_COPY || op == I_ZERO) && gd { let r = root(sd); let a = cst[r] as int; for k in a..(a + (cn[r] as int)) { let v = base[sd] + ((k - a) as i32); if op == I_ZERO { IR.push(Ir { I_IMM as u8, cw[k] as u8, v, -1, -1, 0, -1 }); } else { if ga { IR.push(Ir { I_MOV as u8, cw[k] as u8, v, base[sa] + ((k - a) as i32), -1, 0, -1 }); } else { IR.push(Ir { I_LD as u8, cw[k] as u8, v, x.a, -1, co[k] as i64, -1 }); } } } continue; }
@@ -365,7 +365,7 @@ fn cpfwd(fi int) {
 					if p <= i || p > e { bad = true; break; }
 					if p > last { last = p; }
 					if yo == I_LD && y.a as int == w { continue; }
-					if (yo == I_BIN && (y.c == B_ADD || y.c == B_SUB && y.a as int == w) || yo == I_MOV) && y.d >= 0 && nd[y.d] == 1 { stk.push(y.d); continue; }
+					if (yo == I_BIN && (y.c == B_ADD || y.c == B_SUB && y.a as int == w) || yo == I_MOV || yo == I_EXT && y.w == 3) && y.d >= 0 && nd[y.d] == 1 { stk.push(y.d); continue; }
 					if yo == I_COPY && p == e && y.a as int == w && y.d as int != w && y.b as int != w { cpo = p; continue; }
 					bad = true; break; } } }
 		if bad || cpo >= 0 && last > cpo { continue; }
