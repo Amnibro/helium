@@ -1139,13 +1139,22 @@ recursive fn gspawn(n int, contained bool) {
 	for j in np { if !pneeds(ptype_of(inst, j)) { format(O, "_k", p, "->a", j, " = _a", p, "_", j, "; "); } }
 	format(O, "hr_gsave(&_k", p, "->g); hr_thread_spawn(hr_tw", inst, ", _b", p, ", ", if contained { 1 } else { 0 }, "); })");
 }
+recursive fn has_call(n int) bool {
+	if n < 0 { return false; }
+	let x = ND[n]; let k = x.k as int;
+	if k == N_CALL || k == N_IF || k == N_MATCH || k == N_BLOCK || k == N_EBLOCK || k == N_LOOP { return true; }
+	if k == N_BIN || k == N_IDX { return has_call(x.a as int) || has_call(x.b as int); }
+	if k == N_UN || k == N_DOT || k == N_AS { return has_call(x.a as int); }
+	if k == N_SLIT || k == N_ARR { for i in x.n { if has_call(kid(n, i)) { return true; } } return k == N_ARR && has_call(x.a as int); }
+	false
+}
 recursive fn gbuiltin(n int) {
 	let x = ND[n];
 	let b = rv(n);
 	let hasr = ax(n) == 1;
-	let recv = if hasr { ND[x.a].a as int } else { -1 };
+	let recv = if hasr { ND[x.a].a as int } else { if ax(n) == 2 { kid(n, 0) } else { -1 } };
 	let total = x.n as int + (if hasr { 1 } else { 0 });
-	fn arg(i int) int { if recv >= 0 { if i == 0 { recv } else { kid(n, i - 1) } } else { kid(n, i) } }
+	fn arg(i int) int { if hasr { if i == 0 { recv } else { kid(n, i - 1) } } else { kid(n, i) } }
 	let p = nt();
 	if recv >= 0 && b != B_PRINT && b != B_STR && b != B_FORMAT { let rt0 = deref(at(recv)); if TY[rt0].k == TY_ARR && is_seq(rt0) {
 		if !is_res(rt0) || (b != B_PUSH && b != B_CLEAR) { gerr(n, "this operation on an array of variable-size elements is not supported by the self-hosted compiler yet"); return; }
@@ -1157,8 +1166,8 @@ recursive fn gbuiltin(n int) {
 		format(O, "hr_seqpush(_v", p, ", _x", p, ", ", ez[..], "); })");
 		return;
 	} }
-	if b == B_PRINT { ow("({ "); for i in x.n { let c = kid(n, i); gfmt("&hr_ob", c, fin(c), true); ow("; "); } ow("hr_println(); })"); return; }
-	if b == B_STR { ow("({ hrv _o"); oi(p); ow(" = {0}; "); var nmo byte[..32] = []; format(nmo, "&_o", p); for i in x.n { let c = kid(n, i); gfmt(nmo[..], c, fin(c), true); ow("; "); } ow("_o"); oi(p); ow("; })"); return; }
+	if b == B_PRINT { var hc_ = false; for i in total { if has_call(arg(i)) { hc_ = true; } } if hc_ { ow("({ hrv _o"); oi(p); ow(" __attribute__((cleanup(hr_rdrop))) = {0}; "); var nmo byte[..32] = []; format(nmo, "&_o", p); for i in total { let c = arg(i); gfmt(nmo[..], c, fin(c), true); ow("; "); } ow("hr_fs(&hr_ob, hr_sl(_o"); oi(p); ow(")); hr_println(); })"); return; } ow("({ "); for i in total { let c = arg(i); gfmt("&hr_ob", c, fin(c), true); ow("; "); } ow("hr_println(); })"); return; }
+	if b == B_STR { ow("({ hrv _o"); oi(p); ow(" = {0}; "); var nmo byte[..32] = []; format(nmo, "&_o", p); for i in total { let c = arg(i); gfmt(nmo[..], c, fin(c), true); ow("; "); } ow("_o"); oi(p); ow("; })"); return; }
 	if b == B_FORMAT && is_lim(deref(at(arg(0)))) {
 		let lt = deref(at(arg(0)));
 		ow("({ "); ct(lt); ow(" *_l"); oi(p); ow(" = "); grecv_ptr(arg(0)); ow("; hrv _o"); oi(p); ow(" __attribute__((cleanup(hr_rdrop))) = {0}; ");
@@ -1305,7 +1314,7 @@ recursive fn gx0(n int) {
 	if k == N_ID {
 		let r = rk(n);
 		if r == R_LOCAL { let fc = (LVS[rv(n)].fl & LV_FLET) != 0 && at(n) != (LVS[rv(n)].ty as int); if fc { ow("(("); ct(at(n)); ow(")"); } lv_expr(rv(n)); if fc { ow(")"); } return; }
-		if r == R_GLOBAL { format(O, "g", rv(n)); return; }
+		if r == R_GLOBAL { let fc = GLST[rv(n)] == 7 && at(n) != (GLT[rv(n)] as int); if fc { ow("(("); ct(at(n)); ow(")"); } format(O, "g", rv(n)); if fc { ow(")"); } return; }
 		if r == R_CONST { oint(CONSTV[rv(n)], false, fin_lit(n)); return; }
 		gerr(n, "unsupported name use"); return;
 	}

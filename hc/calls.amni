@@ -30,6 +30,8 @@ fn member_of(name const byte[:]) int {
 	if name == "alloc_slice" { return B_ALLOCS; } if name == "free_slice" { return B_FREES; } if name == "realloc_slice" { return B_REALLOCS; }
 	-1
 }
+var FREEM bool;
+fn has_fn(name int) bool { var d = dmap(name); while d >= 0 { if DC[d].k as int == D_FN { return true; } d = DC[d].next as int; } false }
 fn find_nest(name int) int { var i = NESTS.len - 1; while i >= 0 { if NESTS[i].name as int == name && visible(NESTS[i].own as int) { return i; } i--; } -1 }
 recursive fn decl_nested(n int) {
 	var i = -1;
@@ -317,6 +319,8 @@ recursive fn ck_call(n int, want int) int {
 			if bg >= 0 { return call_block(n, bg); }
 			let b = builtin_of(nm(name));
 			if b >= 0 && !(b == B_FORMAT && user_format(n)) && !(b == B_LEN && false) { return ck_builtin(n, b, -1, want); }
+			let mb = member_of(nm(name));
+			if mb >= 0 && ND[n].n > 0 && !has_fn(name) { let r0 = kid(n, 0); let t0 = ck(r0, -1); let d0 = deref(t0); if TY[d0].k == TY_ARR || TY[d0].k == TY_SLICE { FREEM = true; return ck_builtin(n, mb, r0, want); } }
 			return call_fn(n, name, -1, want);
 		}
 	}
@@ -331,7 +335,7 @@ recursive fn ck_call(n int, want int) int {
 		if mb >= 0 && (TY[d].k == TY_ARR || TY[d].k == TY_SLICE) { return ck_builtin(n, mb, obj, want); }
 		if TY[ot].k == TY_ARRLIT || TY[ot].k == TY_ILIT || TY[ot].k == TY_FLIT { default_t(obj); }
 		let b = builtin_of(nm(name));
-		if b == B_FORMAT || b == B_TOBYTES || b == B_BYTESOF || b == B_COPY { return ck_builtin(n, b, obj, want); }
+		if b == B_FORMAT || b == B_TOBYTES || b == B_BYTESOF || b == B_COPY || (b == B_PRINT || b == B_STR || b == B_ASSERT) && !has_fn(name) { return ck_builtin(n, b, obj, want); }
 		set_x(n, 1);
 		return call_fn(n, name, obj, want);
 	}
@@ -526,14 +530,15 @@ recursive fn call_fn(n int, name int, recv int, want int) int {
 recursive fn ck_builtin(n int, b int, recv int, want int) int {
 	let x = ND[n];
 	set_r(n, R_BUILTIN, b);
-	set_x(n, if recv >= 0 { 1 } else { 0 });
+	let fm = FREEM; FREEM = false;
+	set_x(n, if fm { 2 } else { if recv >= 0 { 1 } else { 0 } });
 	let na = x.n as int;
-	fn arg(i int) int { if recv >= 0 { if i == 0 { recv } else { kid(n, i - 1) } } else { kid(n, i) } }
-	let total = na + (if recv >= 0 { 1 } else { 0 });
+	fn arg(i int) int { if recv >= 0 && !fm { if i == 0 { recv } else { kid(n, i - 1) } } else { kid(n, i) } }
+	let total = na + (if recv >= 0 && !fm { 1 } else { 0 });
 	let need = if b == B_PRINT || b == B_STR || b == B_DEFAULT || b == B_POP || b == B_CLEAR || b == B_HWT || b == B_QGET || b == B_QPOLL { 0 } else { if b == B_REALLOCS { 3 } else { if b == B_PUSH || b == B_APPEND || b == B_POPN || b == B_RESIZE || b == B_INDEXOF || (b >= B_ALLOCI && b <= B_REALLOCS) { 2 } else { 1 } } };
 	if total < need { cerr(n, "too few arguments to a builtin"); return set_t(n, T_ERRT); }
 	if b == B_PRINT || b == B_STR {
-		for i in na { let c = kid(n, i); let t = ck(c, -1); if is_pending(t) { default_t(c); } hook_walk(fin_t(c)); }
+		for i in total { let c = arg(i); let t = if recv >= 0 && i == 0 { at(c) } else { ck(c, -1) }; if is_pending(t) { default_t(c); } hook_walk(fin_t(c)); }
 		return set_t(n, if b == B_STR { t_arr(T_U8, A_GROW, -1, -1) } else { T_VOID });
 	}
 	if b == B_FORMAT {
