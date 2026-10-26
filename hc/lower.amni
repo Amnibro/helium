@@ -393,18 +393,49 @@ fn lower_fn(i int) {
 	ir(I_RET, 3, -1, if rt >= 0 && rt != T_VOID { RETV } else { -1 }, if rt >= 0 && is_pair(rt) { RETV2 } else { -1 }, 0);
 	NFS[nf].i0 = i0 as i32; NFS[nf].i1 = IR.len as i32; NFS[nf].nv = NV as i32; NFS[nf].sb = SB as i32;
 }
+recursive fn ldefault(a int, t int) {
+	if TY[t].k == TY_STRUCT { let si = TY[t].a as int; for j in STI[si].fnum { let f = SFI[(STI[si].f0 as int) + j]; let ft = f.ty as int; if ft < 0 { continue; } let fa = addi(a, foff(si, j)); if f.def >= 0 { let sa = AOWN; AOWN = GLOBI; lstore(fa, f.def as int, ft); AOWN = sa; } else { if has_def(ft) { ldefault(fa, ft); } } } return; }
+	if TY[t].k == TY_ARR && is_fix(t) { let e = TY[t].a as int; for i in TY[t].b as int { ldefault(addi(a, i * tsz(e)), e); } }
+}
+var WDONE int;
+fn greached() int { var c = 0; for g in GOFF { if g >= 0 { c++; } } c }
+fn lower_ginit() int {
+	let nf = NFS.len; NFS.push(NFn { 0, 0, 0, 0, -1 }); FOFF.push(0);
+	AOWN = GLOBI; CUR = GLOBI;
+	var seen = -1; var wn = -1;
+	while greached() != seen || WORK.len != wn { seen = greached(); wn = WORK.len; let s0 = IR.len; AOWN = GLOBI; CUR = GLOBI; ginit_body(); IR.resize(s0); if LERR.len > 0 { return nf; } while WDONE < WORK.len { lower_fn(WORK[WDONE] as int); WDONE++; if LERR.len > 0 { return nf; } } }
+	AOWN = GLOBI; CUR = GLOBI;
+	let i0 = IR.len; ginit_body();
+	NFS[nf].i0 = i0 as i32; NFS[nf].i1 = IR.len as i32; NFS[nf].nv = NV as i32; NFS[nf].sb = SB as i32;
+	nf
+}
+fn ginit_body() {
+	NV = 0; SB = 0; LSLOT.clear();
+	RETV = nv(); RETV2 = nv(); RETL = nlbl();
+	while GOFF.len < GLT.len { GOFF.push(-1); }
+	for d in ORDER {
+		let di = d as int; let t = GLT[di] as int; let g = DC[di].node as int; let x = ND[g];
+		if const_of(di) >= 0 && TY[t].k == TY_ILIT || GOFF[di] < 0 { continue; }
+		let a = nv(); ir(I_GADDR, 8, a, -1, -1, gslot(di));
+		let th = STMP.len;
+		if x.b >= 0 { let iv = kid(x.b as int, 0); if TY[t].k == TY_REF && TY[t].c < 0 { stw(a, 0, if TY[fin(iv)].k == TY_REF { lx(iv) } else { laddr(iv) }, 3); } else { lstore(a, iv, t); } } else { if has_def(t) { ldefault(a, t); } }
+		var i = STMP.len; while i > th { i -= 2; ldrop(STMP[i] as int, STMP[i + 1] as int); } STMP.resize(th);
+	}
+	ir(I_LBL, 3, -1, -1, -1, RETL); ir(I_RET, 3, -1, -1, -1, 0);
+}
 fn lower_program(out byte[>..]&) bool {
 	let md = lookup(intern("main"), -1, D_FN);
 	var mi = -1; for f, i in FI_ { if f.node == DC[md].node && f.par < 0 && f.st == 2 { mi = i; } }
 	RT_DIE = rt_fn("rt_die");
 	let rm = nf_of(mi);
 	let rinit = rt_fn("rt_exit");
-	var w = 0;
-	while w < WORK.len { lower_fn(WORK[w] as int); if LERR.len > 0 { return false; } w++; }
+	while WDONE < WORK.len { lower_fn(WORK[WDONE] as int); if LERR.len > 0 { return false; } WDONE++; }
+	let gi = lower_ginit();
+	if LERR.len > 0 { return false; }
 	let entry = XC.len;
-	call_f(rm); mov_ri(RDI, 0); call_f(rinit); ud2();
+	call_f(gi); call_f(rm); mov_ri(RDI, 0); call_f(rinit); ud2();
 	for f, i in NFS { cg_fn(i); }
-	var dbg byte[>..] = []; if env("HC_NDEBUG", dbg) { for f, i in NFS { print(nm(FI_[f.inst].name as int), " ", 0x400000 + 176 + (FOFF[i] as int), " nv ", f.nv, " sb ", f.sb); } }
+	var dbg byte[>..] = []; if env("HC_NDEBUG", dbg) { for f, i in NFS { print(if f.inst >= 0 { nm(FI_[f.inst].name as int) } else { "<init>" }, " ", 0x400000 + 176 + (FOFF[i] as int), " nv ", f.nv, " sb ", f.sb); } }
 	let o = elf_write(entry);
 	out.append(o[..]);
 	true
