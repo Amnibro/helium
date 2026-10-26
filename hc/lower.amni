@@ -691,7 +691,6 @@ fn lower_fn(i int) {
 		if is_pair(pt) { stw(sa, 0, q, 3); stw(sa, 8, pq[qi + 1] as int, 3); qi += 2; }
 		else { qi++; if is_scal(pt) || TY[pt].k == TY_REF { stw(sa, 0, q, if TY[pt].k == TY_REF { 3 } else { wof(pt) }); } else { ir(I_COPY, 3, sa, q, imm(tsz(pt)), 0); own_drop(sa, pt); } } }
 	RETV = nv(); RETV2 = nv(); RETL = nlbl();
-	ir(I_IMM, 3, RETV, -1, -1, 0); ir(I_IMM, 3, RETV2, -1, -1, 0);
 	if sret { ir(I_MOV, 3, RETV, sp, -1, 0); }
 	let fm = newmark(); MSTK.push(fm as i32); ir(I_DSS, 3, -1, fm, -1, 0); if rt >= 0 && is_vimg(rt) { mark_use(fm); }
 	let body = ND[node].c as int;
@@ -749,8 +748,8 @@ fn lower_program(out byte[>..]&) bool {
 	let entry = XC.len;
 	mov_rr(RDI, RSP); call_f(rst); call_f(gi); call_f(rm); mov_ri(RDI, 0); call_f(rinit); ud2();
 	var irw byte[>..] = []; let dump = env("HC_IR", irw);
-	var noi byte[>..] = []; if !env("HC_NOINL", noi) && !env("HC_NOOPT", noi) { inline_all(); }
-	for f, i in NFS { if dump && f.inst >= 0 && nm(FI_[f.inst].name as int) == irw[..] { ir_dump(i); } var oo byte[>..] = []; if !env("HC_NOOPT", oo) { mem2reg(i); copyprop(i); regalloc(i); } else { REGOF.clear(); RUSED.clear(); VZERO.clear(); FK.clear(); XREG.clear(); } cg_fn(i); }
+	var noi byte[>..] = []; let opt = !env("HC_NOOPT", noi); if opt { optimize_all(); }
+	for f, i in NFS { if dump && f.inst >= 0 && nm(FI_[f.inst].name as int) == irw[..] { ir_dump(i); } if opt { regalloc(i); } else { REGOF.clear(); RUSED.clear(); VZERO.clear(); FK.clear(); XREG.clear(); } cg_fn(i); }
 	var dbg byte[>..] = []; if env("HC_NDEBUG", dbg) { for f, i in NFS { print(if f.inst >= 0 { nm(FI_[f.inst].name as int) } else { "<init>" }, " ", 0x400000 + 176 + (FOFF[i] as int), " nv ", f.nv, " sb ", f.sb); } }
 	let o = elf_write(entry);
 	out.append(o[..]);
