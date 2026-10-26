@@ -913,9 +913,10 @@ recursive fn grel_fix(f0 int, q0 int, p int) {
 	var i = q0;
 	while i < RELQ.len {
 		let f = SFI[f0 + RELQ[i] as int]; let v = ND[RELQ[i + 1]].a as int; let ft = f.ty as int;
-		format(O, "hr_rst(&_p", p, "->"); fname_into(O, f.name as int); ow(", ");
+		let rpd = relpool(ft);
+		format(O, if rpd >= 0 { "hr_pst(&_p" } else { "hr_rst(&_p" }, p, "->"); fname_into(O, f.name as int); ow(", ");
 		if ND[v].k as int == N_SELF { format(O, "(void*)_p", p); } else { format(O, "_r", p, "_", i); }
-		format(O, ", ", ((TY[ft].fl as int) & RF_OPT) != 0, ", ", 8 << ((TY[ft].c as int) & 3), "); ");
+		if rpd >= 0 { format(O, ", (uint8_t*)g", rpd, ".b, ", ((TY[ft].fl as int) & RF_OPT) != 0, "); "); } else { format(O, ", ", ((TY[ft].fl as int) & RF_OPT) != 0, ", ", 8 << ((TY[ft].c as int) & 3), "); "); }
 		i += 2;
 	}
 	RELQ.resize(q0);
@@ -1330,11 +1331,12 @@ recursive fn gx0(n int) {
 			let f = SFI[(STI[si].f0 as int) + rv(n)];
 			if is_vst(st) { gvfield(si, rv(n), a, bt); return; }
 			let rl = is_rel(f.ty as int);
-			if rl { ow("((("); ct(at(n)); ow(")hr_rld(&("); }
+			let rpd = relpool(f.ty as int);
+			if rl { ow("((("); ct(at(n)); ow(if rpd >= 0 { ")hr_pld(&(" } else { ")hr_rld(&(" }); }
 			ow("(");
 			if TY[bt].k == TY_REF { gx0(a); ow(")->"); } else { gx(a); ow(")."); }
 			fname_into(O, f.name as int);
-			if rl { format(O, "), ", ((TY[f.ty].fl as int) & RF_OPT) != 0, ")))"); }
+			if rl { if rpd >= 0 { format(O, "), (uint8_t*)g", rpd, ".b"); } else { ow(")"); } format(O, ", ", ((TY[f.ty].fl as int) & RF_OPT) != 0, ")))"); }
 			return;
 		}
 		gerr(n, "unsupported member"); return;
@@ -1572,7 +1574,9 @@ recursive fn gassign(n int) {
 	if (o == T_DOTASSIGN || o == T_ASSIGN) && rel_field(a) >= 0 {
 		let rt = rel_field(a);
 		let b = x.b as int;
-		ow("hr_rst(&("); grel_lv(a); ow("), (void*)("); if TY[fin(b)].k == TY_REF || TY[fin(b)].k == TY_NULL { gx(b); } else { gaddr(b); } format(O, "), ", ((TY[rt].fl as int) & RF_OPT) != 0, ", ", 8 << ((TY[rt].c as int) & 3), ");");
+		let rpd = relpool(rt);
+		ow(if rpd >= 0 { "hr_pst(&(" } else { "hr_rst(&(" }); grel_lv(a); ow("), (void*)("); if TY[fin(b)].k == TY_REF || TY[fin(b)].k == TY_NULL { gx(b); } else { gaddr(b); }
+		if rpd >= 0 { format(O, "), (uint8_t*)g", rpd, ".b, ", ((TY[rt].fl as int) & RF_OPT) != 0, ");"); } else { format(O, "), ", ((TY[rt].fl as int) & RF_OPT) != 0, ", ", 8 << ((TY[rt].c as int) & 3), ");"); }
 		return;
 	}
 	if o == T_DOTASSIGN && TY[tt].k == TY_REF {
@@ -1604,6 +1608,7 @@ fn glrcheck() {
 	gdummy(); ow(" } ");
 }
 fn is_rel(t int) bool { t >= 0 && TY[t].k == TY_REF && TY[t].c >= 0 }
+fn relpool(t int) int { if is_rel(t) { TY[t].b as int } else { -1 } }
 fn rel_field(n int) int {
 	if ND[n].k != N_DOT || rk(n) != R_FIELD { return -1; }
 	let a = ND[n].a as int; let st = deref(at(a));
