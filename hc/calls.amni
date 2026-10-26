@@ -2,12 +2,14 @@ import check;
 let B_PRINT = 1; let B_STR = 2; let B_FORMAT = 3; let B_ASSERT = 4; let B_ABORT = 5; let B_EXIT = 6; let B_COPY = 7; let B_DEFAULT = 8; let B_LEN = 9;
 let B_PUSH = 20; let B_APPEND = 21; let B_POP = 22; let B_POPN = 23; let B_RESIZE = 24; let B_CLEAR = 25; let B_INDEXOF = 26; let B_CAP = 27;
 let B_TOBYTES = 30; let B_BYTESOF = 31; let B_FROMBYTES = 32; let B_EMBED = 33;
+let B_SPAWN = 40; let B_SPAWNC = 41; let B_TWAIT = 42; let B_HWT = 43; let B_QPUT = 44; let B_QGET = 45; let B_QPOLL = 46; let B_QLIMIT = 47;
 let B_ALLOCI = 34; let B_ALLOCR = 35; let B_FREE = 36; let B_ALLOCS = 37; let B_FREES = 38; let B_REALLOCS = 39;
 struct NF { name i32, node i32, inst i32, own i32 }
 var NESTS NF[>..<];
 var CANDS i32[>..<];
 var BINDS Gb[>..<];
 var DSPL i32[>..<];
+var TSP i32[>..<];
 var RANKS i32[>..<];
 var DIDX i32[>..<];
 fn builtin_of(name const byte[:]) int {
@@ -15,6 +17,8 @@ fn builtin_of(name const byte[:]) int {
 	if name == "abort" { return B_ABORT; } if name == "exit" { return B_EXIT; } if name == "copy" { return B_COPY; } if name == "default" { return B_DEFAULT; }
 	if name == "to_bytes" { return B_TOBYTES; } if name == "bytes_of" { return B_BYTESOF; } if name == "from_bytes" { return B_FROMBYTES; } if name == "embed_file" { return B_EMBED; }
 	if name == "len" { return B_LEN; }
+	if name == "thread_spawn" { return B_SPAWN; } if name == "thread_spawn_contained" { return B_SPAWNC; } if name == "thread_wait" { return B_TWAIT; } if name == "hardware_threads" { return B_HWT; }
+	if name == "qput" { return B_QPUT; } if name == "qget" { return B_QGET; } if name == "qpoll" { return B_QPOLL; } if name == "qlimit" { return B_QLIMIT; }
 	-1
 }
 fn member_of(name const byte[:]) int {
@@ -418,6 +422,23 @@ recursive fn try_case(n int, name int, s int, an int) int {
 	}
 	-1
 }
+recursive fn ck_spawn(n int) int {
+	let x = ND[n];
+	if x.n == 0 || ND[kid(n, 0)].k as int != N_ID { cerr(n, "thread_spawn needs a thread_fn"); return set_t(n, T_ERRT); }
+	let wn = kid(n, 0);
+	let s = ARGW.len;
+	for i in 1..x.n { let c = kid(n, i); ARGW.push(ck(c, -1) as i32); DIDX.push(c as i32); }
+	let an = x.n as int - 1;
+	let fnode, b0, bn = resolve(n, ND[wn].s as int, ns_of(n), s, an, -1, -1, false);
+	if fnode < 0 || (ND[fnode].fl & F_THREAD) == 0 { BINDS.pop_n(BINDS.len - b0); pop_args(s); var m byte[>..] = []; format(m, "no thread_fn ", nm(ND[wn].s as int), " matches these arguments"); cerr(n, m); return set_t(n, T_ERRT); }
+	let inst = get_inst(fnode, b0, bn, -1, AOWN);
+	BINDS.pop_n(BINDS.len - b0);
+	for j in an { let c = DIDX[s + j] as int; conv(c, ptype_of(inst, j)); }
+	pop_args(s);
+	note_edge(inst);
+	TSP.push(n as i32); TSP.push(inst as i32);
+	set_t(n, T_I64)
+}
 recursive fn call_fn(n int, name int, recv int, want int) int {
 	let s = ck_args(n, 0, recv);
 	let an = ARGW.len - s;
@@ -451,7 +472,7 @@ recursive fn ck_builtin(n int, b int, recv int, want int) int {
 	let na = x.n as int;
 	fn arg(i int) int { if recv >= 0 { if i == 0 { recv } else { kid(n, i - 1) } } else { kid(n, i) } }
 	let total = na + (if recv >= 0 { 1 } else { 0 });
-	let need = if b == B_PRINT || b == B_STR || b == B_DEFAULT || b == B_POP || b == B_CLEAR { 0 } else { if b == B_REALLOCS { 3 } else { if b == B_PUSH || b == B_APPEND || b == B_POPN || b == B_RESIZE || b == B_INDEXOF || b >= B_ALLOCI { 2 } else { 1 } } };
+	let need = if b == B_PRINT || b == B_STR || b == B_DEFAULT || b == B_POP || b == B_CLEAR || b == B_HWT || b == B_QGET || b == B_QPOLL { 0 } else { if b == B_REALLOCS { 3 } else { if b == B_PUSH || b == B_APPEND || b == B_POPN || b == B_RESIZE || b == B_INDEXOF || (b >= B_ALLOCI && b <= B_REALLOCS) { 2 } else { 1 } } };
 	if total < need { cerr(n, "too few arguments to a builtin"); return set_t(n, T_ERRT); }
 	if b == B_PRINT || b == B_STR {
 		for i in na { let c = kid(n, i); let t = ck(c, -1); if is_pending(t) { default_t(c); } hook_walk(fin_t(c)); }
@@ -482,6 +503,18 @@ recursive fn ck_builtin(n int, b int, recv int, want int) int {
 	if b == B_TOBYTES { let c = arg(0); if recv < 0 { ck(c, -1); } if is_pending(at(c)) { default_t(c); } if total > 1 { ck(arg(1), -1); return set_t(n, T_VOID); } return set_t(n, t_arr(T_U8, A_GROW, -1, -1)); }
 	if b == B_FROMBYTES { let ta = x.c as int; let t = if ta >= 0 { rtype(kid(ta, 0), ns_of(n)) } else { T_ERRT }; ck(arg(0), TT_STR); if is_pending(at(arg(0))) { default_t(arg(0)); } if TY[t].k == TY_ARR { var rs i32[..2] = []; rs.push(t as i32); rs.push(T_BOOL as i32); return set_t(n, tlist(TY_MULTI, rs[..], -1)); } return set_t(n, t); }
 	if b == B_EMBED { ck(arg(0), TT_STR); default_t(arg(0)); return set_t(n, TT_STR); }
+	if b == B_SPAWN || b == B_SPAWNC { return ck_spawn(n); }
+	if b == B_TWAIT { ck(arg(0), T_I64); conv(arg(0), T_I64); if total > 1 { ck(arg(1), -1); } return set_t(n, T_BOOL); }
+	if b == B_HWT { return set_t(n, T_I64); }
+	if b == B_QPUT { let c = arg(0); var t = ck(c, -1); if is_pending(t) { t = default_t(c); } let d = deref(t); if TY[d].k == TY_VARIANT { conv(c, t_enum(TY[d].a as int, false)); } else { if d != t { set_cv(c, d); } } return set_t(n, T_BOOL); }
+	if b == B_QGET || b == B_QPOLL || b == B_QLIMIT {
+		let ta = x.c as int; let t = if ta >= 0 { rtype(kid(ta, 0), ns_of(n)) } else { T_ERRT };
+		if ta < 0 { cerr(n, "this builtin needs its queue's type: name it as <T>"); return set_t(n, T_ERRT); }
+		if b == B_QLIMIT { ck(arg(0), T_I64); conv(arg(0), T_I64); return set_t(n, T_VOID); }
+		if b == B_QGET && total == 0 { return set_t(n, t); }
+		if total > 0 { ck(arg(0), T_I64); conv(arg(0), T_I64); }
+		var rs i32[..2] = []; rs.push(t as i32); rs.push(T_BOOL as i32); return set_t(n, tlist(TY_MULTI, rs[..], -1));
+	}
 	let r = recv;
 	let rt = deref(at(r));
 	let e = TY[rt].a as int;
@@ -491,7 +524,7 @@ recursive fn ck_builtin(n int, b int, recv int, want int) int {
 	if b == B_POPN { ck(arg(1), T_I64); conv(arg(1), T_I64); return set_t(n, T_VOID); }
 	if b == B_RESIZE { ck(arg(1), T_I64); conv(arg(1), T_I64); if total > 2 { ck(arg(2), e); conv(arg(2), e); } return set_t(n, T_VOID); }
 	if b == B_CLEAR { return set_t(n, T_VOID); }
-	if b == B_INDEXOF { ck(arg(1), -1); return set_t(n, T_I64); }
+	if b == B_INDEXOF { let c = arg(1); ck(c, t_ref(e, 0)); conv(c, t_ref(e, 0)); return set_t(n, T_I64); }
 	if b == B_ALLOCI || b == B_ALLOCR { let c = arg(1); ck(c, e); conv(c, e); return set_t(n, if b == B_ALLOCI { T_I64 } else { t_ref(e, 0) }); }
 	if b == B_FREE || b == B_ALLOCS { ck(arg(1), T_I64); conv(arg(1), T_I64); return set_t(n, if b == B_FREE { T_VOID } else { t_slice(e, false) }); }
 	if b == B_FREES || b == B_REALLOCS { let c = arg(1); ck(c, t_slice(e, true)); conv(c, t_slice(e, true)); if b == B_FREES { return set_t(n, T_VOID); } ck(arg(2), T_I64); conv(arg(2), T_I64); return set_t(n, t_slice(e, false)); }

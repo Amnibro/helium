@@ -12,6 +12,7 @@
 #include <dirent.h>
 #include <pthread.h>
 #include <setjmp.h>
+#include <setjmp.h>
 #include <sys/mman.h>
 #include <sys/stat.h>
 #include <sys/time.h>
@@ -30,7 +31,8 @@ static __thread uint8_t *hr_vbase, *hr_vtop;
 static __thread hrv hr_ob;
 static __thread int hr_lr;
 static void hr_flush(void);
-static __attribute__((noreturn, cold)) void hr_die(const char *m, const char *loc) { hr_flush(); fprintf(stderr, "helium runtime error: %s (%s)\n", m, loc); exit(1); }
+static __thread jmp_buf *hr_cjb; static __thread char *hr_cmsg; static __thread int64_t hr_tid = -1; static int hr_mt;
+static __attribute__((noreturn, cold)) void hr_die(const char *m, const char *loc) { if (hr_cjb) { size_t k = strlen(m) + strlen(loc) + 4; hr_cmsg = malloc(k); snprintf(hr_cmsg, k, "%s (%s)", m, loc); longjmp(*hr_cjb, 1); } hr_flush(); fprintf(stderr, "helium runtime error: %s (%s)\n", m, loc); exit(1); }
 static inline int64_t hr_rget(void *q, int sz) { return sz == 1 ? *(int8_t*)q : sz == 2 ? *(int16_t*)q : sz == 4 ? *(int32_t*)q : *(int64_t*)q; }
 static inline void *hr_rldv(void *q, int sz, int opt) { int64_t d = hr_rget(q, sz); return opt && !d ? (void*)0 : (void*)((char*)q + d); }
 static inline void hr_rstv(void *q, int sz, void *p, int opt) { int64_t d = p ? (char*)p - (char*)q : 0; if (p && opt && d == 0) hr_die("a relative reference would encode as null", "store"); if (sz < 8 && (d < -(1LL << (sz * 8 - 1)) || d >= (1LL << (sz * 8 - 1)))) hr_die("relative reference offset out of range", "store"); if (sz == 1) *(int8_t*)q = (int8_t)d; else if (sz == 2) *(int16_t*)q = (int16_t)d; else if (sz == 4) *(int32_t*)q = (int32_t)d; else *(int64_t*)q = d; }
@@ -234,7 +236,8 @@ static inline bool hr_memeq(const void *a, const void *b, int64_t n) { return n 
 static inline bool hr_streq(hsl a, hsl b) { return a.n == b.n && hr_memeq(a.p, b.p, a.n); }
 static inline hsl hr_str(const char *s, int64_t n) { return (hsl){ (uint8_t *)s, n }; }
 static inline void hr_ob_put(const void *p, int64_t n) { hr_append(&hr_ob, p, n, 1); if (hr_ob.n > 65536) hr_flush(); }
-static void hr_flush(void) { int64_t o = 0; while (o < hr_ob.n) { ssize_t w = write(1, hr_ob.b + o, (size_t)(hr_ob.n - o)); if (w <= 0) break; o += w; } hr_ob.n = 0; }
+static pthread_mutex_t hr_omu = PTHREAD_MUTEX_INITIALIZER;
+static void hr_flush(void) { if (!hr_ob.n) return; if (hr_mt) pthread_mutex_lock(&hr_omu); int64_t o = 0; while (o < hr_ob.n) { ssize_t w = write(1, hr_ob.b + o, (size_t)(hr_ob.n - o)); if (w <= 0) break; o += w; } hr_ob.n = 0; if (hr_mt) pthread_mutex_unlock(&hr_omu); }
 static inline void hr_fb(hrv *o, uint8_t c) { *hr_grow(o, 1, 1) = c; }
 static inline void hr_fs(hrv *o, hsl s) { hr_append(o, s.p, s.n, 1); }
 static inline void hr_fc(hrv *o, const char *s) { hr_append(o, s, (int64_t)strlen(s), 1); }
@@ -344,7 +347,7 @@ static void hr_fflt(hrv *o, double v, int f32) {
 static inline void hr_fd(hrv *o, double v) { hr_fflt(o, v, 0); }
 static inline void hr_ff(hrv *o, float v) { hr_fflt(o, v, 1); }
 static void hr_fq(hrv *o, hsl s) { hr_fb(o, '"'); hr_fs(o, s); hr_fb(o, '"'); }
-static inline void hr_println(void) { hr_fb(&hr_ob, '\n'); if (hr_ob.n > 65536) hr_flush(); }
+static inline void hr_println(void) { hr_fb(&hr_ob, '\n'); if (hr_ob.n > 65536 || hr_mt) hr_flush(); }
 static inline int64_t hr_mod(int64_t a, int64_t b) { int64_t r = a % b; return r < 0 ? (b < 0 ? r - b : r + b) : r; }
 static inline int64_t hr_div(int64_t a, int64_t b) { return a / b; }
 static inline uint64_t hr_umod(uint64_t a, uint64_t b) { return a % b; }
@@ -426,6 +429,7 @@ static inline void hr_tobytes(hrv *o, hsl s) { hr_uleb_put(o, (uint64_t)s.n); hr
 static inline const uint8_t *hr_uleb_rd(hsl s, int64_t *v) { uint64_t r = 0; for (int64_t i = 0, sh = 0; i < s.n && sh < 64; i++, sh += 7) { uint8_t b = s.p[i]; r |= (uint64_t)(b & 127) << sh; if (!(b & 128)) { if ((int64_t)r < 0 || (i > 0 && !b)) return 0; *v = (int64_t)r; return s.p + i + 1; } } return 0; }
 static inline hrv hr_rdup(hrv v, int64_t esz) { return hr_rfrom((hsl){ v.b, v.n }, esz); }
 static inline hrv hr_rdup_var(hrv v) { hrv r = {0}; if (v.top > 0) { hr_rinit(&r); memcpy(r.b, v.b, (size_t)v.top); r.n = v.n; r.top = v.top; } return r; }
+static inline hrv hr_rdupf(hrv r, hrv v) { if (v.flc) { r.fl = malloc((size_t)v.flc * sizeof(int64_t)); memcpy(r.fl, v.fl, (size_t)v.flc * sizeof(int64_t)); r.fln = v.fln; r.flc = v.flc; } return r; }
 static __attribute__((noreturn, cold)) void hr_ovf(const char *loc) { hr_die("integer overflow", loc); }
 static __attribute__((noreturn, cold)) void hr_castf(const char *loc) { hr_die("cast changes the value", loc); }
 #ifdef GS_DEBUG
@@ -494,68 +498,107 @@ static hr_queue *hr_get_q(int qid) {
 	}
 	return q;
 }
-static void hr_qput(int qid, const void *p, int64_t sz) {
+static bool hr_qput(int qid, const void *p, int64_t sz) {
 	hr_queue *q = hr_get_q(qid);
+	pthread_mutex_lock(&q->mu);
+	if (q->limit > 0 && q->count >= q->limit) { pthread_mutex_unlock(&q->mu); return false; }
 	hr_qmsg *m = malloc(sizeof(hr_qmsg) + (size_t)sz);
 	m->next = 0; m->sz = sz; if (sz > 0) memcpy(m->d, p, (size_t)sz);
-	pthread_mutex_lock(&q->mu);
-	while (q->limit > 0 && q->count >= q->limit && !q->closed) pthread_cond_wait(&q->cv_put, &q->mu);
 	if (q->tail) q->tail->next = m; else q->head = m;
 	q->tail = m; q->count++;
 	pthread_cond_signal(&q->cv);
 	pthread_mutex_unlock(&q->mu);
+	return true;
 }
-static bool hr_qget_raw(int qid, bool wait, void *fixed_out, int64_t fixed_sz, uint8_t **bytes_out) {
+static bool hr_qget(int qid, int64_t ms, void *out, int64_t sz) {
 	hr_queue *q = hr_get_q(qid);
+	if (ms) hr_flush();
 	pthread_mutex_lock(&q->mu);
-	while (!q->head && wait && !q->closed) pthread_cond_wait(&q->cv, &q->mu);
+	if (ms < 0) while (!q->head) pthread_cond_wait(&q->cv, &q->mu);
+	else if (ms > 0 && !q->head) { struct timespec ts; clock_gettime(CLOCK_REALTIME, &ts); ts.tv_sec += ms / 1000; ts.tv_nsec += (ms % 1000) * 1000000; if (ts.tv_nsec >= 1000000000) { ts.tv_sec++; ts.tv_nsec -= 1000000000; } while (!q->head) if (pthread_cond_timedwait(&q->cv, &q->mu, &ts) == ETIMEDOUT) break; }
 	hr_qmsg *m = q->head;
-	if (!m) { pthread_mutex_unlock(&q->mu); return false; }
+	if (!m) { pthread_mutex_unlock(&q->mu); memset(out, 0, (size_t)sz); return false; }
 	q->head = m->next; if (!q->head) q->tail = 0;
 	q->count--;
-	if (q->limit > 0) pthread_cond_signal(&q->cv_put);
 	pthread_mutex_unlock(&q->mu);
-	if (bytes_out) { uint8_t *dst = hr_valloc(m->sz); memcpy(dst, m->d, (size_t)m->sz); *bytes_out = dst; }
-	else if (fixed_out && fixed_sz > 0) memcpy(fixed_out, m->d, (size_t)fixed_sz);
+	memcpy(out, m->d, (size_t)sz);
 	free(m);
 	return true;
 }
-static void hr_qlimit(int qid, int64_t lim) { hr_queue *q = hr_get_q(qid); pthread_mutex_lock(&q->mu); q->limit = lim; pthread_cond_broadcast(&q->cv_put); pthread_mutex_unlock(&q->mu); }
-static void hr_qclose(int qid) { hr_queue *q = hr_get_q(qid); pthread_mutex_lock(&q->mu); q->closed = true; pthread_cond_broadcast(&q->cv); pthread_cond_broadcast(&q->cv_put); pthread_mutex_unlock(&q->mu); }
-typedef struct { void (*fn)(uint8_t *); uint8_t *pkt; } hr_targ;
+static hr_qmsg *hr_qget_msg(int qid, int64_t ms) {
+	hr_queue *q = hr_get_q(qid);
+	if (ms) hr_flush();
+	pthread_mutex_lock(&q->mu);
+	if (ms < 0) while (!q->head) pthread_cond_wait(&q->cv, &q->mu);
+	else if (ms > 0 && !q->head) { struct timespec ts; clock_gettime(CLOCK_REALTIME, &ts); ts.tv_sec += ms / 1000; ts.tv_nsec += (ms % 1000) * 1000000; if (ts.tv_nsec >= 1000000000) { ts.tv_sec++; ts.tv_nsec -= 1000000000; } while (!q->head) if (pthread_cond_timedwait(&q->cv, &q->mu, &ts) == ETIMEDOUT) break; }
+	hr_qmsg *m = q->head;
+	if (m) { q->head = m->next; if (!q->head) q->tail = 0; q->count--; }
+	pthread_mutex_unlock(&q->mu);
+	return m;
+}
+static inline void hr_pkv(hrv *o, const uint8_t *p, int64_t z) { hr_append(o, &z, 8, 1); hr_append(o, p, z, 1); }
+static inline uint8_t *hr_ukv(const uint8_t **q) { int64_t z; memcpy(&z, *q, 8); *q += 8; uint8_t *d = hr_grow(&hr_ds, z, 1); memcpy(d, *q, (size_t)z); *q += z; return d; }
+static inline int64_t hr_uk8(const uint8_t **q) { int64_t z; memcpy(&z, *q, 8); *q += 8; return z; }
+static void hr_qlimit(int qid, int64_t lim, const char *loc) { if (lim <= 0) hr_die("a queue limit must be positive", loc); hr_queue *q = hr_get_q(qid); pthread_mutex_lock(&q->mu); q->limit = lim; pthread_mutex_unlock(&q->mu); }
+typedef struct { int done, aborted; char *msg; } hr_trec;
+typedef struct { void (*fn)(uint8_t *); uint8_t *pkt; int64_t id; int contained; } hr_targ;
 static pthread_mutex_t hr_tmu = PTHREAD_MUTEX_INITIALIZER;
-static pthread_t *hr_tids; static int64_t hr_ntids, hr_ctids;
+static pthread_cond_t hr_tcv = PTHREAD_COND_INITIALIZER;
+static hr_trec *hr_tr; static int64_t hr_ntr, hr_ctr;
 static void *hr_tstart(void *arg) {
 	hr_targ a = *(hr_targ *)arg; free(arg);
-	a.fn(a.pkt);
+	hr_tid = a.id;
+	jmp_buf jb; volatile int ab = 0;
+	if (a.contained) { hr_cjb = &jb; if (setjmp(jb)) ab = 1; }
+	if (!ab) a.fn(a.pkt);
+	hr_cjb = 0;
+	hr_flush();
 	free(a.pkt);
+	if (hr_ds.b) hr_rfree(&hr_ds, 1);
+	if (hr_ob.b) hr_rfree(&hr_ob, 1);
 	if (hr_vbase) munmap(hr_vbase, HR_RSZ + 65536);
 	for (int64_t i = 0; i < hr_nfree; i++) munmap(hr_free[i], HR_RSZ + 65536);
 	free(hr_free);
+	pthread_mutex_lock(&hr_tmu);
+	hr_tr[a.id].done = 1; hr_tr[a.id].aborted = ab; hr_tr[a.id].msg = ab ? hr_cmsg : 0;
+	pthread_cond_broadcast(&hr_tcv);
+	pthread_mutex_unlock(&hr_tmu);
 	return 0;
 }
-static int64_t hr_thread_spawn(void (*fn)(uint8_t *), const void *pkt, int64_t sz) {
-	hr_targ *a = malloc(sizeof *a); a->fn = fn;
-	a->pkt = sz > 0 ? malloc((size_t)sz) : 0;
-	if (sz > 0) memcpy(a->pkt, pkt, (size_t)sz);
-	pthread_t th;
-	if (pthread_create(&th, 0, hr_tstart, a) != 0) hr_die("pthread_create failed", "thread_spawn");
+static int64_t hr_thread_spawn(void (*fn)(uint8_t *), uint8_t *pkt, int contained) {
+	hr_flush();
+	hr_mt = 1;
 	pthread_mutex_lock(&hr_tmu);
-	if (hr_ntids == hr_ctids) { hr_ctids = hr_ctids ? hr_ctids * 2 : 64; hr_tids = realloc(hr_tids, (size_t)hr_ctids * sizeof *hr_tids); }
-	int64_t id = hr_ntids++;
-	hr_tids[id] = th;
+	if (hr_ntr == hr_ctr) { hr_ctr = hr_ctr ? hr_ctr * 2 : 64; hr_tr = realloc(hr_tr, (size_t)hr_ctr * sizeof *hr_tr); }
+	int64_t id = hr_ntr++;
+	hr_tr[id] = (hr_trec){0};
 	pthread_mutex_unlock(&hr_tmu);
+	hr_targ *a = malloc(sizeof *a); a->fn = fn; a->pkt = pkt; a->id = id; a->contained = contained;
+	pthread_attr_t at; pthread_attr_init(&at); pthread_attr_setdetachstate(&at, PTHREAD_CREATE_DETACHED); pthread_attr_setstacksize(&at, 64 << 20);
+	pthread_t th;
+	if (pthread_create(&th, &at, hr_tstart, a) != 0) hr_die("could not start a worker", "thread_spawn");
+	pthread_attr_destroy(&at);
 	return id;
 }
-static void hr_thread_wait(int64_t id) {
+static bool hr_thread_wait(int64_t id, hrv *msg, const char *loc) {
 	pthread_mutex_lock(&hr_tmu);
-	pthread_t th = hr_tids[id];
+	int64_t n = hr_ntr;
 	pthread_mutex_unlock(&hr_tmu);
-	pthread_join(th, 0);
+	if (id < 0 || id >= n) hr_die("thread_wait of an id no thread_spawn returned", loc);
+	if (id == hr_tid) hr_die("a worker cannot wait for itself", loc);
+	hr_flush();
+	pthread_mutex_lock(&hr_tmu);
+	while (!hr_tr[id].done) pthread_cond_wait(&hr_tcv, &hr_tmu);
+	bool ok = !hr_tr[id].aborted;
+	char *m = 0;
+	if (msg && hr_tr[id].msg) { m = hr_tr[id].msg; hr_tr[id].msg = 0; }
+	pthread_mutex_unlock(&hr_tmu);
+	if (m) { hr_append(msg, m, (int64_t)strlen(m), 1); free(m); }
+	return ok;
 }
 static int64_t hr_hardware_threads(void) {
 	long n = sysconf(_SC_NPROCESSORS_ONLN);
-	return n > 0 ? (int64_t)n : 1;
+	return n < 1 ? 1 : n > 256 ? 256 : (int64_t)n;
 }
 static void hr_main(void);
 static void hr_init_globals(void);
