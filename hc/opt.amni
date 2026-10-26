@@ -219,7 +219,7 @@ fn constfold(fi int) {
 		fn k(v int) bool { v >= 0 && kn[v] != 0 }
 		if op == I_LBL { for v in mk { kn[v] = 0; } mk.clear(); continue; }
 		if op == I_EXT && (w & 8) == 0 && a >= 0 && ew[a] >= 0 && (ew[a] as int == w || wsz(ew[a] as int) < wsz(w) && !wsg(ew[a] as int) && !wsg(w)) { IR[i] = Ir { I_MOV as u8, 3, d as i32, a as i32, -1, 0, -1 }; if d >= 0 && nd[d] == 1 { ew[d] = ew[a]; } if d >= 0 { if kn[a] != 0 { kn[d] = 1; kv[d] = kv[a]; if nd[d] > 1 { mk.push(d as i32); } } else { kn[d] = 0; } } continue; }
-		if d >= 0 && nd[d] == 1 && (op == I_LD || op == I_EXT) && (w & 8) == 0 { ew[d] = w as i8; }
+		if d >= 0 && nd[d] == 1 && (op == I_LD || op == I_EXT || op == I_BIN || op == I_UN && c < 2) && (w & 8) == 0 { ew[d] = w as i8; }
 		if d >= 0 && nd[d] == 1 && ((op == I_LD || op == I_EXT) && (w & 8) == 0 && !wsg(w) && wsz(w) < 8 || op == I_IMM && c >= 0 || op == I_BIN && x.l < 0 && (c == B_SHR && k(b) && kv[b] >= 1 || c == B_AND && (k(b) && kv[b] >= 0 || nn[a] != 0 || nn[b] != 0)) || ismov(i) && nn[a] != 0) { nn[d] = 1; }
 		if op == I_CVT && c == 2 && a >= 0 && nn[a] != 0 { IR[i].c = 1; }
 		if d >= 0 && nd[d] == 1 && GCS.len > 0 { if op == I_GADDR { ga[d] = c as i64; } if op == I_BIN && c == B_ADD && x.l < 0 { if ga[a] >= 0 && k(b) { ga[d] = ga[a] + kv[b]; } if ga[b] >= 0 && k(a) { ga[d] = ga[b] + kv[a]; } } if op == I_LD && ga[a] >= 0 { let gv, gok = gcread(ga[a] as int + c, wsz(w)); if gok { let r = extw(gv, w); kn[d] = 1; kv[d] = r as i64; IR[i] = Ir { I_IMM as u8, w as u8, d as i32, -1, -1, r as i64, -1 }; continue; } } }

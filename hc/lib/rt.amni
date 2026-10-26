@@ -36,7 +36,7 @@ fn rt_oob(i int, n int, loc const byte[:]) { rt_es("helium runtime error: index 
 fn rt_take() int { if RT_NFREE > 0 { RT_NFREE -= 1; return RT_FREE[RT_NFREE]; } let p = sys6(9, 0, RT_RSZ + 65536, 3, 0x4022, -1, 0); if p < 0 && p > -4096 { rt_es("helium runtime error: out of address space\n"); rt_write(2, RT_EB[..RT_EN]); sys3(60, 1, 0, 0); } sys3(10, p + RT_RSZ, 65536, 0); p }
 fn rt_give(b int, used int) { if b == 0 { return; } if used > (1 << 20) { sys3(28, b + 65536, (used - 65536 + 4095) & -4096, 4); } if RT_NFREE < 4096 { RT_FREE[RT_NFREE] = b; RT_NFREE += 1; } else { sys3(11, b, RT_RSZ + 65536, 0); } }
 fn rt_grow(va int, k int, esz int) int { var b = mld(va); if b == 0 { b = rt_take(); mst(va, b); } let n = mld(va + 8); mst(va + 8, n + k); if (n + k) * esz > RT_RSZ { rt_die(5, "push"); } b + n * esz }
-fn rt_rdrop(v RtV&) { rt_give(v.b, v.n * 64); v.b = 0; v.n = 0; v.top = 0; v.fl = 0; v.fln = 0; v.flc = 0; }
+fn rt_rdrop(v RtV&) { rt_give(v.b, v.n * 64); rt_give(v.fl, v.fln * 16); v.b = 0; v.n = 0; v.top = 0; v.fl = 0; v.fln = 0; v.flc = 0; }
 fn rt_rfrom(v RtV&, p int, n int, esz int) { v.b = 0; v.n = 0; v.top = 0; v.fl = 0; v.fln = 0; v.flc = 0; if n > 0 { let d = rt_grow(vptr(v), n, esz); mcopy(d, p, n * esz); } }
 fn rt_pop(v RtV&, loc const byte[:]) { if v.n == 0 { rt_es("helium runtime error: pop of an empty array"); rt_fail(loc); } v.n -= 1; }
 fn rt_abort(m const byte[:], loc const byte[:]) { rt_es("helium runtime error: "); rt_es(m); rt_fail(loc); }
@@ -244,3 +244,44 @@ fn rt_vmk(n int, cap int, w int, lim int, esz int) int {
 }
 fn rt_vfrom(sp int, sn int, w int, lim int, esz int) int { let p = rt_vmk(sn, sn, w, lim, esz); mcopy(p + rt_vhd(p, w, lim), sp, sn * esz); p }
 fn rt_vret(p int, m int, w int, lim int, esz int) int { let sz = rt_vhd(p, w, lim) + rt_vget(p + (if lim != 0 { w } else { 0 }), w) * esz; if RT_DS.b == 0 { RT_DS.b = rt_take(); } let d = RT_DS.b + m; if d != p { mcopy(d, p, sz); } RT_DS.n = m + sz; d }
+fn rt_rinit(v RtV&) { if v.b == 0 { v.b = rt_take(); } }
+fn rt_flp(v RtV&) int { if v.fl == 0 { v.fl = rt_take(); } v.fl }
+fn rt_zero(p int, n int) { var o = 0; while o + 8 <= n { mst(p + o, 0); o += 8; } while o < n { mst1(p + o, 0); o += 1; } }
+fn rt_pclaim(v RtV&, esz int) int { rt_rinit(v); if v.fln > 0 { v.fln -= 1; return mld(v.fl + 8 * v.fln); } let i = v.n; rt_grow(vptr(v), 1, esz); i }
+fn rt_pfree(v RtV&, i int, loc const byte[:]) { if (i as! u64) >= (v.n as! u64) { rt_oob(i, v.n, loc); } let f = rt_flp(v); mst(f + 8 * v.fln, i); v.fln += 1; }
+fn rt_flmv(f int, d int, s int, k int) { if d < s { for j in k { mst(f + 8 * (d + j), mld(f + 8 * (s + j))); } } else { var j = k - 1; while j >= 0 { mst(f + 8 * (d + j), mld(f + 8 * (s + j))); j -= 1; } } }
+fn rt_sfree(v RtV&, idx int, len int) {
+	if len <= 0 { return; }
+	let f = rt_flp(v); let n = v.fln; var pos = 0;
+	while pos < n && mld(f + 16 * pos) < idx { pos += 1; }
+	let q = f + 16 * (pos - 1);
+	if pos > 0 && mld(q) + mld(q + 8) == idx { mst(q + 8, mld(q + 8) + len); if pos < n && mld(q) + mld(q + 8) == mld(f + 16 * pos) { mst(q + 8, mld(q + 8) + mld(f + 16 * pos + 8)); rt_flmv(f, 2 * pos, 2 * (pos + 1), 2 * (n - pos - 1)); v.fln -= 1; } return; }
+	if pos < n && idx + len == mld(f + 16 * pos) { mst(f + 16 * pos, idx); mst(f + 16 * pos + 8, mld(f + 16 * pos + 8) + len); return; }
+	rt_flmv(f, 2 * (pos + 1), 2 * pos, 2 * (n - pos)); mst(f + 16 * pos, idx); mst(f + 16 * pos + 8, len); v.fln += 1;
+}
+fn rt_stake(v RtV&, k int, esz int, loc const byte[:]) int {
+	if k < 0 { rt_abort("alloc_slice of a negative length", loc); }
+	rt_rinit(v); if k == 0 { return 0; }
+	let f = v.fl; var idx = -1;
+	for i in v.fln { let q = f + 16 * i; if mld(q + 8) >= k { idx = mld(q); if mld(q + 8) == k { rt_flmv(f, 2 * i, 2 * i + 2, 2 * (v.fln - i - 1)); v.fln -= 1; } else { mst(q, idx + k); mst(q + 8, mld(q + 8) - k); } break; } }
+	if idx < 0 { idx = v.n; let q = f + 16 * (v.fln - 1); if v.fln > 0 && mld(q) + mld(q + 8) == v.n { idx = mld(q); v.fln -= 1; } if idx + k > v.n { rt_grow(vptr(v), idx + k - v.n, esz); } }
+	rt_zero(v.b + idx * esz, k * esz); idx
+}
+fn rt_sidx(v RtV&, p int, n int, esz int, loc const byte[:]) int { let off = if v.b != 0 { p - v.b } else { -1 }; if off < 0 || off % esz != 0 || off / esz + n > v.n { rt_abort("the slice is not one of the pool's runs", loc); } off / esz }
+fn rt_sfrees(v RtV&, p int, n int, esz int, loc const byte[:]) { if n > 0 { rt_sfree(v, rt_sidx(v, p, n, esz, loc), n); } }
+fn rt_sreal(v RtV&, p int, n int, k int, esz int, loc const byte[:]) int {
+	if k < 0 { rt_abort("realloc_slice to a negative length", loc); }
+	rt_rinit(v); if n == 0 { return rt_stake(v, k, esz, loc); }
+	let idx = rt_sidx(v, p, n, esz, loc);
+	if k <= n { rt_sfree(v, idx + k, n - k); return idx; }
+	let e = idx + n; let d = k - n;
+	if e == v.n { rt_grow(vptr(v), d, esz); rt_zero(v.b + e * esz, d * esz); return idx; }
+	let f = v.fl;
+	for i in v.fln { let q = f + 16 * i; if mld(q) == e { let ln = mld(q + 8);
+		if ln >= d { if ln == d { rt_flmv(f, 2 * i, 2 * i + 2, 2 * (v.fln - i - 1)); v.fln -= 1; } else { mst(q, e + d); mst(q + 8, ln - d); } rt_zero(v.b + e * esz, d * esz); return idx; }
+		if e + ln == v.n { rt_flmv(f, 2 * i, 2 * i + 2, 2 * (v.fln - i - 1)); v.fln -= 1; rt_grow(vptr(v), d - ln, esz); rt_zero(v.b + e * esz, d * esz); return idx; }
+		break; } }
+	let t = rt_take(); mcopy(t, p, n * esz); rt_sfree(v, idx, n); let r = rt_stake(v, k, esz, loc); mcopy(v.b + r * esz, t, n * esz); rt_give(t, n * esz); r
+}
+fn rt_tobytes(o int, p int, n int) { var v = n as! u64; loop { let b = (v & 127) as int; v = v >> 7; mst1(rt_grow(o, 1, 1), if v != 0 { b | 128 } else { b }); if v == 0 { break; } } rt_appto(o, p, n); }
+fn rt_fbhdr(p int, n int, esz int) int { var r u64 = 0; var sh = 0; var i = 0; while i < n && sh < 64 { let b = mld1(p + i); r = r | (((b & 127) as! u64) << (sh as u64)); if (b & 128) == 0 { let v = r as! int; if v < 0 || i > 0 && b == 0 || v != n - i - 1 || v % esz != 0 { return -1; } return v / esz; } i += 1; sh += 7; } -1 }
