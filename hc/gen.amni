@@ -750,7 +750,7 @@ recursive fn gcase(n int) {
 	let j0 = DSPL[d0] as int;
 	let i0 = DSPL[d0 + 1] as int;
 	let recv = if ax(n) == 1 && ND[ND[n].a].k == N_DOT { ND[ND[n].a].a as int } else { -1 };
-	let na = ND[n].n as int + (if recv >= 0 { 1 } else { 0 });
+	let na = ND[n].n as int + (if recv >= 0 { 1 } else { 0 }) - fna(n);
 	let rt = FI_[i0].ret as int;
 	let vd = rt < 0 || rt == T_VOID;
 	let q = nt();
@@ -797,7 +797,7 @@ recursive fn gcase_arg(pt int) {
 recursive fn gcall_args1(n int, inst int, recv int, op int, on int) {
 	let x = ND[n];
 	let np = ND[FI_[inst].node].n as int;
-	let na = x.n as int + (if recv >= 0 { 1 } else { 0 });
+	let na = x.n as int + (if recv >= 0 { 1 } else { 0 }) - fna(n);
 	var first = true;
 	for j in np {
 		let pt = ptype_of(inst, j);
@@ -826,7 +826,7 @@ recursive fn gcall(n int) {
 	let rt = FI_[inst].ret as int;
 	let vd = rt < 0 || rt == T_VOID;
 	let q = nt();
-	let na = ND[n].n as int + (if recv >= 0 { 1 } else { 0 });
+	let na = ND[n].n as int + (if recv >= 0 { 1 } else { 0 }) - fna(n);
 	var lim = 0;
 	for j in 1..na { if impure(carg(n, recv, j)) { lim = j; } }
 	let so = ORDP; let sn = ORDN;

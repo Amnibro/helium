@@ -360,6 +360,7 @@ recursive fn ck_id(n int, want int) int {
 	}
 	d = lookup_q(name, ns, D_FN);
 	if d >= 0 { set_r(n, R_FN, d); set_x(n, -1); return set_t(n, T_FNV); }
+	if find_nest(name) >= 0 || block_binding(name) >= 0 { set_x(n, -1); return set_t(n, T_FNV); }
 	var m byte[>..] = []; format(m, "unknown name: ", nm(name)); cerr(n, m);
 	set_t(n, T_ERRT)
 }

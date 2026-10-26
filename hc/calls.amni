@@ -10,6 +10,8 @@ var CANDS i32[>..<];
 var BINDS Gb[>..<];
 var DSPL i32[>..<];
 var TSP i32[>..<];
+var FNA i8[>..<];
+fn fna(n int) int { if n < FNA.len && FNA[n] != 0 { 1 } else { 0 } }
 var RANKS i32[>..<];
 var DIDX i32[>..<];
 fn builtin_of(name const byte[:]) int {
@@ -190,7 +192,7 @@ fn same_binds(i int, b0 int, bn int) bool {
 }
 recursive fn get_inst(node int, b0 int, bn int, blk int, bown int) int {
 	let par = if (ND[node].fl & F_NESTED) != 0 { AOWN } else { -1 };
-	if blk < 0 { for f, i in FI_ { if f.node as int == node && f.blk < 0 && f.par as int == par && same_binds(i, b0, bn) { return i; } } }
+	if blk < 0 { for f, i in FI_ { if f.node as int == node && f.blk as int == blk && (blk == -1 || f.bown as int == bown) && f.par as int == par && same_binds(i, b0, bn) { return i; } } }
 	let i = new_inst(node, node, NEND[node] as int, par);
 	FI_[i].g0 = GBS.len as i32;
 	for j in bn { GBS.push(BINDS[b0 + j]); }
@@ -221,7 +223,7 @@ recursive fn resolve(n int, name int, ns int, a0 int, an int, blk int, tyargs in
 		for j in np { if ND[kid(fnode, j)].b < 0 { nreq = j + 1; } }
 		if an > np || an < nreq { continue; }
 		let bg = blk_gen(fnode);
-		if (blk >= 0) != (bg >= 0) && !(blk < 0 && bg >= 0 && tyargs >= 0) { continue; }
+		if (blk != -1) != (bg >= 0) && !(blk == -1 && bg >= 0 && tyargs >= 0) { continue; }
 		let b0 = BINDS.len;
 		let gl = gen_list(fnode);
 		if gl >= 0 { for j in ND[gl].n { BINDS.push(Gb { ND[kid(gl, j)].s, -1 }); } }
@@ -347,12 +349,18 @@ fn block_binding(name int) int {
 	var i = AOWN;
 	while i >= 0 {
 		let f = FI_[i];
-		if f.blk >= 0 { let fnode = f.node as int; if blk_gen(fnode) == name { return i; } }
+		if f.blk >= 0 || f.blk < -1 { let fnode = f.node as int; if blk_gen(fnode) == name { return i; } }
 		i = f.par as int;
 	}
 	-1
 }
 recursive fn call_block(n int, inst int) int {
+	if FI_[inst].blk < -1 {
+		let fnm = -2 - FI_[inst].blk as int;
+		let sa = AOWN; AOWN = FI_[inst].bown as int; let nf = find_nest(fnm); AOWN = sa;
+		if nf >= 0 { return call_nested(n, nf); }
+		return call_fn(n, fnm, -1, -1);
+	}
 	let fv = FI_[inst].blk as int;
 	let own = FI_[inst].bown as int;
 	let s = ck_args(n, 0, -1);
@@ -426,10 +434,13 @@ recursive fn ck_spawn(n int) int {
 	let x = ND[n];
 	if x.n == 0 || ND[kid(n, 0)].k as int != N_ID { cerr(n, "thread_spawn needs a thread_fn"); return set_t(n, T_ERRT); }
 	let wn = kid(n, 0);
+	var wnm = ND[wn].s as int;
+	let wb = block_binding(wnm);
+	if wb >= 0 && FI_[wb].blk < -1 { wnm = -2 - FI_[wb].blk as int; }
 	let s = ARGW.len;
 	for i in 1..x.n { let c = kid(n, i); ARGW.push(ck(c, -1) as i32); DIDX.push(c as i32); }
 	let an = x.n as int - 1;
-	let fnode, b0, bn = resolve(n, ND[wn].s as int, ns_of(n), s, an, -1, -1, false);
+	let fnode, b0, bn = resolve(n, wnm, ns_of(n), s, an, -1, -1, false);
 	if fnode < 0 || (ND[fnode].fl & F_THREAD) == 0 { BINDS.pop_n(BINDS.len - b0); pop_args(s); var m byte[>..] = []; format(m, "no thread_fn ", nm(ND[wn].s as int), " matches these arguments"); cerr(n, m); return set_t(n, T_ERRT); }
 	let inst = get_inst(fnode, b0, bn, -1, AOWN);
 	BINDS.pop_n(BINDS.len - b0);
@@ -441,8 +452,17 @@ recursive fn ck_spawn(n int) int {
 }
 recursive fn call_fn(n int, name int, recv int, want int) int {
 	let s = ck_args(n, 0, recv);
-	let an = ARGW.len - s;
-	let blk = ND[n].b as int;
+	var an = ARGW.len - s;
+	var blk = ND[n].b as int;
+	var bown = AOWN;
+	if blk < 0 && an > 0 && ARGW[s + an - 1] as int == T_FNV && ND[DIDX[s + an - 1]].k as int == N_ID {
+		let fnm = ND[DIDX[s + an - 1]].s as int;
+		let bg = block_binding(fnm);
+		let eb = if bg >= 0 { FI_[bg].blk as int } else { -2 - fnm };
+		let f2, c0, cn0 = resolve(n, name, ns_of(n), s, an - 1, eb, ND[n].c as int, false);
+		BINDS.pop_n(BINDS.len - c0);
+		if f2 >= 0 { an--; blk = eb; bown = if bg >= 0 { FI_[bg].bown as int } else { AOWN }; while FNA.len <= n { FNA.push(0); } FNA[n] = 1; }
+	}
 	let fnode, b0, bn = resolve(n, name, ns_of(n), s, an, blk, ND[n].c as int, true);
 	if fnode < 0 && blk < 0 { BINDS.pop_n(BINDS.len - b0); let dr = try_case(n, name, s, an); if dr >= 0 { pop_args(s); return dr; } }
 	if fnode < 0 {
@@ -454,7 +474,7 @@ recursive fn call_fn(n int, name int, recv int, want int) int {
 		BINDS.pop_n(BINDS.len - b0);
 		return set_t(n, T_ERRT);
 	}
-	let inst = get_inst(fnode, b0, bn, blk, AOWN);
+	let inst = get_inst(fnode, b0, bn, blk, bown);
 	BINDS.pop_n(BINDS.len - b0);
 	for j in an { let c = DIDX[s + j] as int; let pt = ptype_of(inst, j); if pt >= 0 && TY[pt].k == TY_REF && (TY[pt].fl & RF_OPT) == 0 && TY[pt].c < 0 { if is_pending(at(c)) { conv(c, TY[pt].a as int); } } else { conv(c, pt); } }
 	pop_args(s);
