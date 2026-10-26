@@ -105,7 +105,7 @@ recursive fn lidx(n int) int {
 	else { if is_lim(d) { let b = laddr(a); len = ldw(b, 0, 3); base = addi(b, 8); }
 	else { if is_res(d) { let b = laddr(a); base = ldw(b, 0, 3); len = ldw(b, 8, 3); }
 	else { lerr(n, "indexing this array kind"); return i; } } } }
-	let ok = nv(); ir(I_CMP, 3, ok, i, len, CC_B); boob(ok, i, len, n);
+	irl(I_BCHK, 3, -1, i, len, 0, locs(n));
 	bin(B_ADD, 3, base, bin(B_MUL, 3, i, imm(es), -1), -1)
 }
 fn boob(ok int, i int, len int, n int) { let l = nlbl(); ir(I_BNZ, 3, -1, ok, -1, l); let s0 = ARGL.len; ARGL.push(i as i32); ARGL.push(len as i32); let lc = locs(n); let r1 = nv(); ir(I_RADDR, 8, r1, -1, -1, LOCS[2 * lc] as int); ARGL.push(r1 as i32); ARGL.push(imm(LOCS[2 * lc + 1] as int) as i32); ir(I_CALL, 3, -1, s0, 4, rt_fn("rt_oob")); ir(I_LBL, 3, -1, -1, -1, l); }
@@ -258,7 +258,7 @@ fn isf(t int) bool { t >= 0 && (TY[t].k == TY_FLT || TY[t].k == TY_FLIT) }
 fn cvt(v int, k int, w int) int { let d = nv(); ir(I_CVT, w, d, v, -1, k); d }
 fn fconv(v int, st int, t int) int {
 	if st < 0 || t < 0 || !isf(t) { return v; }
-	if !isf(st) { if TY[st].k != TY_INT && TY[st].k != TY_ILIT { return v; } return cvt(v, if TY[st].k == TY_INT && !is_signed(st) { 2 } else { 1 }, wof(t)); }
+	if !isf(st) { if TY[st].k != TY_INT && TY[st].k != TY_ILIT { return v; } return cvt(v, if TY[st].k == TY_INT && !is_signed(st) && wsz(wof(st)) == 8 { 2 } else { 1 }, wof(t)); }
 	if wof(st) == wof(t) { return v; }
 	cvt(v, if wof(t) == 11 { 3 } else { 4 }, wof(t))
 }
@@ -739,7 +739,7 @@ fn ginit_body() {
 fn lower_program(out byte[>..]&) bool {
 	let md = lookup(intern("main"), -1, D_FN);
 	var mi = -1; for f, i in FI_ { if f.node == DC[md].node && f.par < 0 && f.st == 2 { mi = i; } }
-	RT_DIE = rt_fn("rt_die"); RT_F2I = rt_fn("rt_f2i");
+	RT_DIE = rt_fn("rt_die"); RT_OOB = rt_fn("rt_oob"); RT_F2I = rt_fn("rt_f2i");
 	let rm = nf_of(mi);
 	let rinit = rt_fn("rt_exit"); let rst = rt_fn("rt_start");
 	if !drain() { return false; }
