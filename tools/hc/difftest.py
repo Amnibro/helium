@@ -41,7 +41,7 @@ with cf.ThreadPoolExecutor(16) as ex:
 tot = sum(len(v) for v in res.values())
 print(" ".join(f"{k}={len(v)}" for k, v in sorted(res.items())), f"total={tot}")
 with open(W / "report.txt", "w") as o:
-    for k in ("check", "cc", "out", "exit", "run"):
+    for k in ("check", "native", "cc", "out", "exit", "run", "pass"):
         for f, m in res.get(k, []): o.write(f"{k}\t{f.relative_to(S)}\t{m}\n")
-msgs = collections.Counter(re.sub(r"^\S+:\d+: ", "", m)[:70] for k in ("check",) for f, m in res.get(k, []))
+msgs = collections.Counter(re.sub(r"^\S+:\d+: ", "", m)[:70] for k in ("check", "native") for f, m in res.get(k, []))
 for m, c in msgs.most_common(25): print(c, m)

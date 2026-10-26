@@ -33,6 +33,7 @@ fn cg_fn(fi int) {
 	let sba = al(f.sb as int, 16);
 	NFS[fi].sb = sba as i32; CSBA = sba;
 	push_r(RBP); mov_rr(RBP, RSP); sub_rsp(al(sba + 8 * (f.nv as int), 16));
+	if sba > 0 { lea(R11, RBP, -sba); alu(0x31, RAX, RAX); let lz = nlbl(); LBL[lz] = XC.len as i32; st(RAX, R11, 0, 8); xrex(true, 0, 0, R11); xb(0x83); xb(0xC0 | (R11 & 7)); xb(8); alu(0x39, R11, RBP); jcc_l(CC_B, lz); }
 	var traps i32[>..<] = [];
 	for i in (f.i0 as int)..(f.i1 as int) {
 		let x = IR[i]; let op = x.op as int; let w = x.w as int; let d = x.d as int; let a = x.a as int; let b = x.b as int; let c = x.c;

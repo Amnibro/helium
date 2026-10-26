@@ -12,7 +12,7 @@ fn main() {
 	if !env("HC_LIB", lib) { lib.append("hc/lib"); }
 	LIBDIR.append(lib);
 	if !load_program(a) { print(DERR); exit(1); }
-	if native { if load_import(intern("rt"), 0, -1) < 0 { print(DERR); exit(1); } for r in ["rt_ps", "rt_pi", "rt_pu", "rt_pb", "rt_nl", "rt_exit", "rt_die", "rt_oob", "rt_flush"] { XROOTS.push(intern(r) as i32); } }
+	if native { let rf = load_import(intern("rt"), 0, -1); if rf < 0 { print(DERR); exit(1); } for d in DC { if d.k as int == D_FN && d.file as int == rf { XROOTS.push(d.name); } } }
 	if !check_program() { print(CERR); exit(1); }
 	if DERR.len > 0 { print(DERR); exit(1); }
 	var c byte[>..] = [];
