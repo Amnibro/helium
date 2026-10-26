@@ -211,3 +211,21 @@ fn rt_fmod(xb u64, yb u64) u64 {
 	if ex > 0 { ux = ux - ((1 as u64) << 52); ux = ux | ((ex as u64) << 52); } else { ux = ux >> ((-ex + 1) as u64); }
 	ux | (sx << 63)
 }
+fn rt_ldexp(b u64, e0 int) u64 {
+	let sg = b & ((1 as u64) << 63); var ex = ((b >> 52) & 0x7FF) as int; var m = b & 0xFFFFFFFFFFFFF;
+	if ex == 0x7FF || (b << 1) == 0 { return b; }
+	if ex == 0 { while (m >> 52) == 0 { m = m << 1; ex -= 1; } ex += 1; } else { m = m | ((1 as u64) << 52); }
+	let e = ex + max(min(e0, 5000), -5000);
+	if e >= 0x7FF { return sg | 0x7FF0000000000000; }
+	if e > 0 { return sg | ((e as u64) << 52) | (m & 0xFFFFFFFFFFFFF); }
+	let sh = 1 - e; if sh > 54 { return sg; }
+	let q = m >> (sh as u64); let rem = m & (((1 as u64) << (sh as u64)) - 1); let half = (1 as u64) << ((sh - 1) as u64);
+	sg | (q + (if rem > half || rem == half && (q & 1) != 0 { 1 as u64 } else { 0 as u64 }))
+}
+fn rt_frexp(b u64, ep int) u64 {
+	var ex = ((b >> 52) & 0x7FF) as int; var m = b & 0xFFFFFFFFFFFFF;
+	if ex == 0x7FF || (b << 1) == 0 { mst1(ep, 0); mst1(ep + 1, 0); mst1(ep + 2, 0); mst1(ep + 3, 0); return b; }
+	if ex == 0 { while (m >> 52) == 0 { m = m << 1; ex -= 1; } ex += 1; m = m & 0xFFFFFFFFFFFFF; }
+	let e = ex - 1022; mst1(ep, e & 255); mst1(ep + 1, (e >> 8) & 255); mst1(ep + 2, (e >> 16) & 255); mst1(ep + 3, (e >> 24) & 255);
+	(b & ((1 as u64) << 63)) | ((1022 as u64) << 52) | m
+}

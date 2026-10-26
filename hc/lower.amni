@@ -59,6 +59,17 @@ fn nf_of(i int) int { while NFI.len < FI_.len { NFI.push(-1); } if NFI[i] < 0 { 
 fn lslot(v int) int { while LSLOT.len < LVS.len { LSLOT.push(-1); } if LSLOT[v] < 0 { let t = LVS[v].ty as int; LSLOT[v] = slot(tsz(t), tal(t)) as i32; } LSLOT[v] as int }
 fn gslot(d int) int { while GOFF.len < GLT.len { GOFF.push(-1); } if GOFF[d] < 0 { let t = GLT[d] as int; BSS = al(BSS, tal(t)); GOFF[d] = BSS as i32; BSS += tsz(t); } GOFF[d] as int }
 var CAPSL i32[>..<];
+var CURI = -1; var LRF = -1; var LRVO i32[>..<];
+fn bss(sz int, a int) int { BSS = al(BSS, max(a, 1)); let o = BSS; BSS += max(sz, 1); o }
+fn lrflag() int { if LRF < 0 { LRF = bss(8, 8); } let d = nv(); ir(I_GADDR, 8, d, -1, -1, LRF); d }
+fn lrval(f int) int { while LRVO.len < FI_.len { LRVO.push(-1); } let rt = FI_[f].ret as int; if LRVO[f] < 0 { LRVO[f] = bss(if rt >= 0 && rt != T_VOID { tsz(rt) } else { 8 }, if rt >= 0 && rt != T_VOID { tal(rt) } else { 8 }) as i32; } let d = nv(); ir(I_GADDR, 8, d, -1, -1, LRVO[f] as int); d }
+fn lrcheck() {
+	let fl = ldw(lrflag(), 0, 3); let lok = nlbl(); ir(I_BZ, 3, -1, fl, -1, lok);
+	if CURI >= 0 && FI_[CURI].tg { let lno = nlbl(); ir(I_BZ, 3, -1, lcmp(fl, imm(CURI + 1), CC_E), -1, lno); stw(lrflag(), 0, imm(0), 3); let rt = FI_[CURI].ret as int; let va = lrval(CURI);
+		if rt >= 0 && rt != T_VOID { if is_agg(rt) { ir(I_COPY, 3, RETV, va, imm(tsz(rt)), 0); } else { if is_pair(rt) { ir(I_MOV, 3, RETV, ldw(va, 0, 3), -1, 0); ir(I_MOV, 3, RETV2, ldw(va, 8, 3), -1, 0); } else { ir(I_MOV, 3, RETV, ldw(va, 0, wof(rt)), -1, 0); } } }
+		drop_to(0); ir(I_JMP, 3, -1, -1, -1, RETL); ir(I_LBL, 3, -1, -1, -1, lno); }
+	drop_to(0); ir(I_JMP, 3, -1, -1, -1, RETL); ir(I_LBL, 3, -1, -1, -1, lok);
+}
 fn lvaddr(v int) int { let d = nv(); if LVS[v].cfn as int != CUR { while CAPSL.len < LVS.len { CAPSL.push(-1); } if CAPSL[v] < 0 { lerr(-1, "captured variable without a capture slot"); return d; } ir(I_SLOT, 8, d, -1, -1, CAPSL[v] as int); return ldw(d, 0, 3); } ir(I_SLOT, 8, d, -1, -1, lslot(v)); d }
 fn vaddr(n int) int {
 	let d = nv(); let r = rk(n);
@@ -72,6 +83,7 @@ fn bin(o int, w int, a int, b int, l int) int { let d = nv(); irl(I_BIN, w, d, a
 fn addi(a int, v int) int { if v == 0 { a } else { bin(B_ADD, 3, a, imm(v), -1) } }
 recursive fn laddr(n int) int {
 	let x = ND[n]; let k = x.k as int;
+	if rel_of(n) >= 0 { return rel_load(rel_slot(n), rel_of(n)); }
 	if k == N_ID { let t = at(n); if TY[t].k == TY_REF && TY[t].c < 0 { return ldw(vaddr(n), 0, 3); } return vaddr(n); }
 	if k == N_DOT && rk(n) == R_FIELD {
 		let bt = at(x.a as int); let d = deref(bt); let b = if TY[bt].k == TY_REF { lptr(x.a as int) } else { laddr(x.a as int) };
@@ -96,7 +108,7 @@ recursive fn lidx(n int) int {
 	bin(B_ADD, 3, base, bin(B_MUL, 3, i, imm(es), -1), -1)
 }
 fn boob(ok int, i int, len int, n int) { let l = nlbl(); ir(I_BNZ, 3, -1, ok, -1, l); let s0 = ARGL.len; ARGL.push(i as i32); ARGL.push(len as i32); let lc = locs(n); let r1 = nv(); ir(I_RADDR, 8, r1, -1, -1, LOCS[2 * lc] as int); ARGL.push(r1 as i32); ARGL.push(imm(LOCS[2 * lc + 1] as int) as i32); ir(I_CALL, 3, -1, s0, 4, rt_fn("rt_oob")); ir(I_LBL, 3, -1, -1, -1, l); }
-fn rt_fn(name const byte[:]) int { let d = lookup(intern(name), -1, D_FN); if d < 0 { return 0; } for f, i in FI_ { if f.node == DC[d].node && f.st == 2 { return nf_of(i); } } -1 }
+fn rt_fn(name const byte[:]) int { let d = lookup(intern(name), -1, D_FN); if d < 0 { return -1; } for f, i in FI_ { if f.node == DC[d].node && f.st == 2 { return nf_of(i); } } -1 }
 recursive fn lsl(n int) int, int {
 	let t = at(n); let c = cv(n); let k = ND[n].k as int;
 	if k == N_STR || TY[t].k == TY_STRLIT { let s = tok_str_lit(n); let p = nv(); ir(I_RADDR, 8, p, -1, -1, rodata(s[..])); return p, imm(s.len); }
@@ -121,6 +133,7 @@ recursive fn lslice(n int) int, int {
 }
 fn tok_str_lit(n int) byte[>..] { var b byte[>..] = []; b.append(tok_str(ND[n].t as int)); b }
 recursive fn lstore(addr int, n int, t int) {
+	if is_rel(t) { rel_store(addr, if TY[fin(n)].k == TY_REF || TY[fin(n)].k == TY_NULL { lx(n) } else { laddr(n) }, t); return; }
 	if is_scal(t) { stw(addr, 0, lx(n), wof(t)); return; }
 	if is_pair(t) { let p, q = lsl(n); stw(addr, 0, p, 3); stw(addr, 8, q, 3); return; }
 	let k = ND[n].k as int;
@@ -132,7 +145,7 @@ recursive fn lstore(addr int, n int, t int) {
 	if k == N_CALL && TY[at(n)].k == TY_MULTI && TY[t].k != TY_MULTI { ir(I_COPY, 3, addr, lcall_to(n, -1), imm(tsz(t)), 0); return; }
 	if k == N_CALL { lcall_to(n, addr); return; }
 	if TY[t].k == TY_ENUM && sk == TY_VARIANT { let ei = TY[t].a as int; let vi = TY[st0].c as int; lzero(addr, tsz(t)); stw(addr, 0, imm(vi), wof(t)); if vsi(ei, vi) >= 0 { lstore(addi(addr, epoff(ei)), n, st0); } return; }
-	if k == N_DOT && rk(n) == R_VARIANT { lzero(addr, tsz(t)); stw(addr, 0, imm(rv(n)), wof(t)); return; }
+	if k == N_DOT && rk(n) == R_VARIANT { lzero(addr, tsz(t)); if TY[t].k == TY_ENUM { stw(addr, 0, imm(rv(n)), wof(t)); } return; }
 	if k == N_IF || k == N_BLOCK || k == N_EBLOCK || k == N_LOOP || k == N_MATCH { lsink(n, addr, t); return; }
 	var m byte[>..] = []; format(m, "constructing a value (kind ", k, ", resolved ", rk(n), ", type kind ", TY[t].k, ")"); lerr(n, m[..]);
 }
@@ -140,6 +153,40 @@ recursive fn is_lplace(n int) bool { let k = ND[n].k as int; if k == N_ID { let 
 var SINKA i32[>..<]; var SINKT i32[>..<];
 recursive fn lsink(n int, addr int, t int) { SINKA.push(addr as i32); SINKT.push(t as i32); lbranch(n, -2); SINKA.pop(); SINKT.pop(); }
 fn sinkv(n int) { lstore(SINKA[SINKA.len - 1] as int, n, SINKT[SINKT.len - 1] as int); lmove_src(n); }
+recursive fn lres_len(n int, b int, va int, no int, cap int, nn int, e int, total int) {
+	let es = tsz(e); let cur = ldw(va, no, 3);
+	if b == B_POPN { lguard(n, bin(B_AND, 3, lcmp(nn, imm(0), CC_GE), lcmp(nn, cur, CC_LE), -1), "pop_n past the length"); stw(va, no, bin(B_SUB, 3, cur, nn, -1), 3); return; }
+	if cap >= 0 { lguard(n, bin(B_AND, 3, lcmp(nn, imm(0), CC_GE), lcmp(nn, imm(cap), CC_LE), -1), "resize past a limited array's capacity"); } else { lguard(n, lcmp(nn, imm(0), CC_GE), "resize to a negative length"); }
+	let fx = if total > 2 { let q = nv(); ir(I_SLOT, 8, q, -1, -1, slot(es, tal(e))); lstore(q, barg(n, 2), e); q } else { -1 };
+	let l0 = nlbl(); let lend = nlbl(); ir(I_BNZ, 3, -1, lcmp(nn, cur, CC_G), -1, l0); stw(va, no, nn, 3); ir(I_JMP, 3, -1, -1, -1, lend); ir(I_LBL, 3, -1, -1, -1, l0);
+	let cnt = bin(B_SUB, 3, nn, cur, -1);
+	let p = if cap >= 0 { stw(va, no, nn, 3); bin(B_ADD, 3, addi(va, 8), bin(B_MUL, 3, cur, imm(es), -1), -1) } else { rtcall("rt_grow", [va as i32, cnt as i32, imm(es) as i32]) };
+	ir(I_ZERO, 3, p, -1, bin(B_MUL, 3, cnt, imm(es), -1), 0);
+	if fx >= 0 { let kv = nv(); ir(I_MOV, 3, kv, imm(0), -1, 0); let lt = nlbl(); let le = nlbl(); ir(I_LBL, 3, -1, -1, -1, lt); ir(I_BZ, 3, -1, lcmp(kv, cnt, CC_L), -1, le); ir(I_COPY, 3, bin(B_ADD, 3, p, bin(B_MUL, 3, kv, imm(es), -1), -1), fx, imm(es), 0); ir(I_MOV, 3, kv, bin(B_ADD, 3, kv, imm(1), -1), -1, 0); ir(I_JMP, 3, -1, -1, -1, lt); ir(I_LBL, 3, -1, -1, -1, le); }
+	ir(I_LBL, 3, -1, -1, -1, lend);
+}
+fn rw(t int) int { let z = tsz(t); if z == 1 { 0 } else { if z == 2 { 1 } else { if z == 4 { 2 } else { 3 } } } }
+fn rpool_base(t int) int { let g = TY[t].b as int; let a = nv(); ir(I_GADDR, 8, a, -1, -1, gslot(g)); ldw(a, 0, 3) }
+fn rel_load(q int, t int) int {
+	let opt = (TY[t].fl & RF_OPT) != 0; let pool = relpool(t) >= 0;
+	let d = ldw(q, 0, if pool { rw(t) | 4 } else { rw(t) }); let r = nv();
+	ir(I_MOV, 3, r, if pool { bin(B_SUB, 3, bin(B_ADD, 3, rpool_base(t), d, -1), imm(1), -1) } else { bin(B_ADD, 3, q, d, -1) }, -1, 0);
+	if opt || pool { let l = nlbl(); ir(I_BNZ, 3, -1, d, -1, l); ir(I_MOV, 3, r, imm(0), -1, 0); ir(I_LBL, 3, -1, -1, -1, l); }
+	r
+}
+fn sdie(m const byte[:]) { let mp = nv(); ir(I_RADDR, 8, mp, -1, -1, rodata(m)); let lp = nv(); ir(I_RADDR, 8, lp, -1, -1, rodata("store")); rtcall("rt_abort", [mp as i32, imm(m.len) as i32, lp as i32, imm(5) as i32]); }
+fn sguard(ok int, m const byte[:]) { let l = nlbl(); ir(I_BNZ, 3, -1, ok, -1, l); sdie(m); ir(I_LBL, 3, -1, -1, -1, l); }
+fn rel_store(q int, p int, t int) {
+	let opt = (TY[t].fl & RF_OPT) != 0; let sz = tsz(t); let d = nv();
+	if relpool(t) >= 0 { ir(I_MOV, 3, d, imm(0), -1, 0); let l = nlbl(); ir(I_BZ, 3, -1, p, -1, l); ir(I_MOV, 3, d, bin(B_ADD, 3, bin(B_SUB, 3, p, rpool_base(t), -1), imm(1), -1), -1, 0); ir(I_LBL, 3, -1, -1, -1, l); if sz < 8 { sguard(lcmp(bin(B_SHR, 3, d, imm(sz * 8), -1), imm(0), CC_E), "pool-relative reference offset out of range"); } stw(q, 0, d, rw(t)); return; }
+	ir(I_MOV, 3, d, imm(0), -1, 0); let l = nlbl(); ir(I_BZ, 3, -1, p, -1, l); ir(I_MOV, 3, d, bin(B_SUB, 3, p, q, -1), -1, 0);
+	if opt { sguard(lcmp(d, imm(0), CC_NE), "a relative reference would encode as null"); }
+	ir(I_LBL, 3, -1, -1, -1, l);
+	if sz < 8 { let lim = 1 << (sz * 8 - 1); sguard(bin(B_AND, 3, lcmp(d, imm(-lim), CC_GE), lcmp(d, imm(lim), CC_L), -1), "relative reference offset out of range"); }
+	stw(q, 0, d, rw(t));
+}
+fn rel_of(n int) int { let k = ND[n].k as int; if k == N_ID && rk(n) == R_LOCAL { let lt = LVS[rv(n)].ty as int; return if is_rel(lt) { lt } else { -1 }; } if k == N_ID && rk(n) == R_GLOBAL { let lt = GLT[rv(n)] as int; return if is_rel(lt) { lt } else { -1 }; } if k == N_IDX || k == N_DOT && rk(n) == R_FIELD { return rel_field(n); } -1 }
+fn rel_slot(n int) int { let k = ND[n].k as int; if k == N_ID { vaddr(n) } else { laddr0(n) } }
 fn ldie(n int, m const byte[:]) { let mp = nv(); ir(I_RADDR, 8, mp, -1, -1, rodata(m)); let lp, ln = locsl(n); rtcall("rt_abort", [mp as i32, imm(m.len) as i32, lp as i32, ln as i32]); }
 fn lguard(n int, ok int, m const byte[:]) { let l = nlbl(); ir(I_BNZ, 3, -1, ok, -1, l); ldie(n, m); ir(I_LBL, 3, -1, -1, -1, l); }
 fn lcmp(a int, b int, cc int) int { let d = nv(); ir(I_CMP, 3, d, a, b, cc); d }
@@ -168,6 +215,7 @@ recursive fn larr(addr int, n int, t int) {
 }
 fn cc_of(o int, sg bool) int { if o == T_EQ { CC_E } else { if o == T_NEQ { CC_NE } else { if o == T_LT { if sg { CC_L } else { CC_B } } else { if o == T_GT { if sg { CC_G } else { CC_A } } else { if o == T_LTEQ { if sg { CC_LE } else { CC_BE } } else { if sg { CC_GE } else { CC_AE } } } } } } }
 fn bop(o int, sg bool) int { if o == T_PLUS || o == T_PLUSEQ { B_ADD } else { if o == T_MINUS || o == T_MINUSEQ { B_SUB } else { if o == T_MUL || o == T_MULEQ { B_MUL } else { if o == T_DIV || o == T_DIVEQ { if sg { B_DIV } else { B_UDIV } } else { if o == T_MOD || o == T_MODEQ { if sg { B_MOD } else { B_UMOD } } else { if o == T_AND || o == T_ANDEQ { B_AND } else { if o == T_OR || o == T_OREQ { B_OR } else { if o == T_XOR || o == T_XOREQ { B_XOR } else { if o == T_SHL || o == T_SHLEQ { B_SHL } else { if sg { B_SAR } else { B_SHR } } } } } } } } } } }
+fn fw(t int) int { if t >= 0 && isf(t) { wof(t) } else { 0 } }
 fn arith(o int, t int, a int, b int, n int) int {
 	if isf(t) { let bo = bop(o, true); if bo == B_MOD { let w = wof(t); let a8 = if w == 10 { cvt(a, 3, 11) } else { a }; let b8 = if w == 10 { cvt(b, 3, 11) } else { b }; let r = rtcall("rt_fmod", [a8 as i32, b8 as i32]); return if w == 10 { cvt(r, 4, 10) } else { r }; } if bo > B_DIV { lerr(n, "this float operation natively"); return a; } let d = nv(); ir(I_FBIN, wof(t), d, a, b, bo); return d; }
 	let sg = TY[t].k != TY_INT || is_signed(t); let w = wof(t); let bo = bop(o, sg);
@@ -183,7 +231,7 @@ fn fconv(v int, st int, t int) int {
 	if wof(st) == wof(t) { return v; }
 	cvt(v, if wof(t) == 11 { 3 } else { 4 }, wof(t))
 }
-recursive fn lx(n int) int { let ft = fin(n); let st = at(n); if ft >= 0 && st >= 0 && TY[ft].k == TY_REF && TY[ft].c < 0 && TY[st].k != TY_REF && TY[st].k != TY_NULL { return laddr(n); } let v = lx1(n); fconv(v, atn(n), ft) }
+recursive fn lx(n int) int { let ft = fin(n); let st = at(n); if ft == T_BOOL && st >= 0 && TY[st].k == TY_REF && (TY[st].fl & RF_OPT) != 0 { let p = if rel_of(n) >= 0 { laddr(n) } else { if ND[n].k as int == N_ID && (rk(n) == R_LOCAL || rk(n) == R_GLOBAL) { ldw(vaddr(n), 0, 3) } else { if ND[n].k as int == N_DOT && rk(n) == R_FIELD || ND[n].k as int == N_IDX { ldw(laddr0(n), 0, 3) } else { lx1(n) } } }; return lcmp(p, imm(0), CC_NE); } if ft >= 0 && st >= 0 && TY[ft].k == TY_REF && TY[ft].c < 0 && TY[st].k != TY_REF && TY[st].k != TY_NULL { return laddr(n); } let v = lx1(n); fconv(v, atn(n), ft) }
 recursive fn lx1(n int) int {
 	let cv0, cu0, cok = cval(n);
 	let t = fin(n);
@@ -196,7 +244,8 @@ recursive fn lx1(n int) int {
 	if k == N_ID || k == N_DOT && rk(n) == R_FIELD || k == N_IDX || k == N_UN && x.op as int == T_MUL {
 		let st = at(n);
 		if TY[st].k == TY_REF && TY[t].k != TY_REF { return ldw(laddr(n), 0, wof(t)); }
-		if TY[st].k == TY_REF { if k == N_ID { return ldw(vaddr(n), 0, 3); } return ldw(laddr0(n), 0, 3); }
+		if TY[st].k == TY_REF { if rel_of(n) >= 0 { return laddr(n); } if k == N_ID { return ldw(vaddr(n), 0, 3); } return ldw(laddr0(n), 0, 3); }
+		if k == N_ID && isf(st) { let dt = if rk(n) == R_LOCAL { LVS[rv(n)].ty as int } else { if rk(n) == R_GLOBAL { GLT[rv(n)] as int } else { st } }; if dt >= 0 && isf(dt) && wof(dt) != wof(st) { return fconv(ldw(laddr(n), 0, wof(dt)), if TY[dt].k == TY_FLIT { T_F64 } else { dt }, if TY[st].k == TY_FLIT { T_F64 } else { st }); } }
 		return ldw(laddr(n), 0, wof(st));
 	}
 	if k == N_UN { let o = x.op as int; let a = lx(x.a as int); let d = nv(); if o == T_NOT { ir(I_UN, 4, d, a, -1, 2); return d; } if o == T_MINUS { if isf(t) { ir(I_CVT, wof(atn(n)), d, a, -1, 7); return d; } irl(I_UN, wof(t), d, a, -1, 0, if DBG && is_signed(t) { locs(n) } else { -1 }); return d; } if o == T_BITNOT { ir(I_UN, wof(t), d, a, -1, 1); return d; } if o == T_PLUS { return a; } if o == T_AND { return laddr(x.a as int); } }
@@ -204,9 +253,11 @@ recursive fn lx1(n int) int {
 		let o = x.op as int;
 		if o == T_ANDAND || o == T_OROR { let d = nv(); let l = nlbl(); ir(I_MOV, 3, d, lx(x.a as int), -1, 0); ir(if o == T_ANDAND { I_BZ } else { I_BNZ }, 3, -1, d, -1, l); ir(I_MOV, 3, d, lx(x.b as int), -1, 0); ir(I_LBL, 3, -1, -1, -1, l); return d; }
 		if o == T_EQ || o == T_NEQ || o == T_LT || o == T_GT || o == T_LTEQ || o == T_GTEQ { let ta = fin(x.a as int); let dta = deref(ta);
-			if (o == T_EQ || o == T_NEQ) && (is_pair(dta) || TY[dta].k == TY_ARR && !is_vval(dta)) && !(TY[ta].k == TY_REF && (TY[ta].fl & RF_OPT) != 0) { let e = TY[dta].a as int; if !(is_scal(e) && !isf(e)) && TY[dta].k != TY_STRLIT { lerr(n, "comparing arrays of this element type natively"); return imm(0); } let es = if TY[dta].k == TY_STRLIT { 1 } else { tsz(e) }; let p, q = lsl(x.a as int); let p2, q2 = lsl(x.b as int); let r = rtcall("rt_memeq", [p as i32, bin(B_MUL, 3, q, imm(es), -1) as i32, p2 as i32, bin(B_MUL, 3, q2, imm(es), -1) as i32]); if o == T_EQ { return r; } let d = nv(); ir(I_UN, 4, d, r, -1, 2); return d; }
-			let sg = TY[ta].k != TY_INT || is_signed(ta); let a = lx(x.a as int); let b = lx(x.b as int); let d = nv(); if isf(ta) { ir(I_FCMP, wof(ta), d, a, b, if o == T_EQ { 0 } else { if o == T_NEQ { 1 } else { if o == T_LT { 2 } else { if o == T_GT { 3 } else { if o == T_LTEQ { 4 } else { 5 } } } } }); return d; } ir(I_CMP, 3, d, a, b, cc_of(o, sg)); return d; }
-		let a = lx(x.a as int); let b = lx(x.b as int); return arith(o, if isf(at(n)) { atn(n) } else { if TY[t].k == TY_ILIT { T_I64 } else { t } }, a, b, n);
+			if (o == T_EQ || o == T_NEQ) && !is_scal(dta) && !(TY[ta].k == TY_REF && (TY[ta].fl & RF_OPT) != 0) { let dtb = deref(fin(x.b as int)); let r = if is_pair(dta) || TY[dta].k == TY_ARR || is_pair(dtb) || TY[dtb].k == TY_ARR { let s1 = nv(); ir(I_SLOT, 8, s1, -1, -1, slot(16, 8)); let p, q = lsl(x.a as int); stw(s1, 0, p, 3); stw(s1, 8, q, 3); let s2 = nv(); ir(I_SLOT, 8, s2, -1, -1, slot(16, 8)); let p2, q2 = lsl(x.b as int); stw(s2, 0, p2, 3); stw(s2, 8, q2, 3); leq_a(s1, s2, t_slice(if TY[dta].k == TY_STRLIT { T_U8 } else { TY[dta].a as int }, false)) } else { let pa = if TY[ta].k == TY_REF { lx(x.a as int) } else { laddr(x.a as int) }; let tb = fin(x.b as int); let pb = if TY[tb].k == TY_REF { lx(x.b as int) } else { if deref(tb) == dta { laddr(x.b as int) } else { let q = nv(); ir(I_SLOT, 8, q, -1, -1, slot(tsz(dta), tal(dta))); lstore(q, x.b as int, dta); q } }; leq_a(pa, pb, dta) }; if o == T_EQ { return r; } let d = nv(); ir(I_UN, 4, d, r, -1, 2); return d; }
+			let sg = TY[ta].k != TY_INT || is_signed(ta); let a = lx(x.a as int); let b = lx(x.b as int); let d = nv(); if isf(ta) { let tb = fin(x.b as int); let cw = if fw(ta) == 11 || fw(tb) == 11 { 11 } else { wof(ta) }; let ct = if cw == 11 { T_F64 } else { T_F32 }; ir(I_FCMP, cw, d, fconv(a, if TY[ta].k == TY_FLIT { T_F64 } else { ta }, ct), fconv(b, if TY[tb].k == TY_FLIT { T_F64 } else { tb }, ct), if o == T_EQ { 0 } else { if o == T_NEQ { 1 } else { if o == T_LT { 2 } else { if o == T_GT { 3 } else { if o == T_LTEQ { 4 } else { 5 } } } } }); return d; } ir(I_CMP, 3, d, a, b, cc_of(o, sg)); return d; }
+		let a = lx(x.a as int); let b = lx(x.b as int);
+		if isf(at(n)) { let ot = atn(n); let ta = fin(x.a as int); let tb = fin(x.b as int); let wide = wof(ot) == 10 && (fw(ta) == 11 || fw(tb) == 11); let tt = if wide { T_F64 } else { ot }; let r = arith(o, tt, fconv(a, if TY[ta].k == TY_FLIT { T_F64 } else { ta }, tt), fconv(b, if TY[tb].k == TY_FLIT { T_F64 } else { tb }, tt), n); return if wide { cvt(r, 4, 10) } else { r }; }
+		return arith(o, if TY[t].k == TY_ILIT { T_I64 } else { t }, a, b, n);
 	}
 	if k == N_DOT && rk(n) == R_MEMBER { let d = deref(at(x.a as int)); if rv(n) == 2 && (is_fix(d) || is_lim(d)) { return imm(TY[d].b as int); } let p, q = lsl(x.a as int); return q; }
 	if k == N_AS { return lcast(n); }
@@ -214,7 +265,7 @@ recursive fn lx1(n int) int {
 	if k == N_IF || k == N_BLOCK || k == N_EBLOCK || k == N_LOOP || k == N_MATCH { let d = nv(); lbranch(n, d); return d; }
 	var m byte[>..] = []; format(m, "unsupported expression (kind ", k, ", op ", x.op, ", resolved ", rk(n), ")"); lerr(n, m[..]); imm(0)
 }
-recursive fn lptr(n int) int { let k = ND[n].k as int; if k == N_ID && (rk(n) == R_LOCAL || rk(n) == R_GLOBAL) { return ldw(vaddr(n), 0, 3); } if k == N_DOT && rk(n) == R_FIELD || k == N_IDX { return ldw(laddr0(n), 0, 3); } lx(n) }
+recursive fn lptr(n int) int { let k = ND[n].k as int; if rel_of(n) >= 0 { return laddr(n); } if k == N_ID && (rk(n) == R_LOCAL || rk(n) == R_GLOBAL) { return ldw(vaddr(n), 0, 3); } if k == N_DOT && rk(n) == R_FIELD || k == N_IDX { return ldw(laddr0(n), 0, 3); } lx(n) }
 recursive fn laddr0(n int) int { let x = ND[n]; if ND[n].k as int == N_DOT { let bt = at(x.a as int); let d = deref(bt); let b = if TY[bt].k == TY_REF { lptr(x.a as int) } else { laddr(x.a as int) }; return addi(b, foff(ssi(d), rv(n))); } lidx(n) }
 recursive fn lcast(n int) int {
 	let x = ND[n]; let a = x.a as int; let st = fin(a); let t = at(n); let v = lx(a);
@@ -318,8 +369,9 @@ recursive fn lcall_to(n int, dst int) int {
 	for cp in CAPS { if cp.inst as int == i { args.push(lvaddr(cp.lv as int) as i32); } }
 	let s = ARGL.len; ARGL.append(args[..]);
 	let rt = FI_[i].ret as int; let d = if rt >= 0 && rt != T_VOID { nv() } else { -1 };
-	if rt >= 0 && is_pair(rt) { let e = nv(); irl(I_CALL, 3, d, s, args.len, nf_of(i), e); PAIR2 = e; return d; }
+	if rt >= 0 && is_pair(rt) { let e = nv(); irl(I_CALL, 3, d, s, args.len, nf_of(i), e); if FI_[i].lr { lrcheck(); } PAIR2 = e; return d; }
 	ir(I_CALL, 3, d, s, args.len, nf_of(i));
+	if FI_[i].lr { lrcheck(); }
 	if d < 0 { return imm(0); }
 	d
 }
@@ -337,7 +389,11 @@ recursive fn lintrinsic(n int, i int, args i32[>..<]&) int {
 	if s == "!ptr" { return args[0] as int; }
 	if s == "!ld8" { return ldw(args[0] as int, 0, 3); }
 	let mn = if s.len > 0 { s } else { nm(FI_[i].name as int) };
+	if mn == "hr_clz" || mn == "hr_ctz" || mn == "hr_popcount" { let d = nv(); ir(I_FUN, 3, d, args[0] as int, -1, if mn == "hr_clz" { 7 } else { if mn == "hr_ctz" { 8 } else { 9 } }); return d; }
 	let mc = if mn == "floor" || mn == "floorf" { 1 } else { if mn == "ceil" || mn == "ceilf" { 2 } else { if mn == "trunc" || mn == "truncf" { 3 } else { if mn == "hr_sqrt" || mn == "hr_sqrtf" || mn == "sqrt" { 4 } else { if mn == "round" || mn == "roundf" { 5 } else { if mn == "fma" || mn == "fmaf" { 6 } else { 0 } } } } } };
+	if mn == "fmod" || mn == "fmodf" { let w = wof(FI_[i].ret as int); let a8 = if w == 10 { cvt(args[0] as int, 3, 11) } else { args[0] as int }; let b8 = if w == 10 { cvt(args[1] as int, 3, 11) } else { args[1] as int }; let r = rtcall("rt_fmod", [a8 as i32, b8 as i32]); return if w == 10 { cvt(r, 4, 10) } else { r }; }
+	if mn == "ldexp" { return rtcall("rt_ldexp", [args[0], args[1]]); }
+	if mn == "frexp" { return rtcall("rt_frexp", [args[0], args[1]]); }
 	if mc > 0 { let w = wof(FI_[i].ret as int); let d = nv(); irl(I_FUN, w, d, args[0] as int, if mc == 6 { args[1] as int } else { -1 }, mc, if mc == 6 { args[2] as int } else { -1 }); return d; }
 	if s == "!ld1" { return ldw(args[0] as int, 0, 4); }
 	if s == "!st1" { stw(args[0] as int, 0, args[1] as int, 0); return imm(0); }
@@ -358,14 +414,14 @@ recursive fn lbuiltin_to(n int, b int, dst int) int {
 	BHASR = sr; BRECV = sv; r
 }
 recursive fn lbuiltin1(n int, b int, dst int, total int) int {
-	if b == B_PUSH || b == B_APPEND || b == B_POP || b == B_CLEAR || b == B_RESIZE {
+	if b == B_PUSH || b == B_APPEND || b == B_POP || b == B_CLEAR || b == B_RESIZE || b == B_POPN {
 		let rc = barg(n, 0); let d = deref(at(rc)); let e = TY[d].a as int; let es = tsz(e); let va = laddr(rc);
 		if is_res(d) {
 			if b == B_PUSH { let ta = nv(); ir(I_SLOT, 8, ta, -1, -1, slot(es, tal(e))); lstore(ta, barg(n, 1), e); let p = rtcall("rt_grow", [va as i32, imm(1) as i32, imm(es) as i32]); ir(I_COPY, 3, p, ta, imm(es), 0); return p; }
 			if b == B_APPEND { let src = barg(n, 1); if ND[src].k as int == N_ARR && ND[src].a < 0 { let k0 = ND[src].n as int; let p = rtcall("rt_grow", [va as i32, imm(k0) as i32, imm(es) as i32]); for i in k0 { lstore(addi(p, i * es), kid(src, i), e); } return imm(0); } let sp, sn = lsl(src); let p = rtcall("rt_grow", [va as i32, sn as i32, imm(es) as i32]); ir(I_COPY, 3, p, sp, bin(B_MUL, 3, sn, imm(es), -1), 0); return imm(0); }
 			if b == B_POP { let lp, ln = locsl(n); rtcall("rt_pop", [va as i32, lp as i32, ln as i32]); let ea = bin(B_ADD, 3, ldw(va, 0, 3), bin(B_MUL, 3, ldw(va, 8, 3), imm(es), -1), -1); if is_scal(e) { return ldw(ea, 0, wof(e)); } if dst >= 0 { ir(I_COPY, 3, dst, ea, imm(es), 0); return dst; } return ea; }
 			if b == B_CLEAR { stw(va, 8, imm(0), 3); stw(va, 16, imm(0), 3); return imm(0); }
-			if b == B_RESIZE { let nn = lx(barg(n, 1)); let cur = ldw(va, 8, 3); let l1 = nlbl(); let gt = nv(); ir(I_CMP, 3, gt, nn, cur, CC_G); let l0 = nlbl(); ir(I_BNZ, 3, -1, gt, -1, l0); stw(va, 8, nn, 3); ir(I_JMP, 3, -1, -1, -1, l1); ir(I_LBL, 3, -1, -1, -1, l0); let cnt = bin(B_SUB, 3, nn, cur, -1); let p = rtcall("rt_grow", [va as i32, cnt as i32, imm(es) as i32]); if total > 2 { let kv = nv(); ir(I_MOV, 3, kv, imm(0), -1, 0); let lt = nlbl(); let le = nlbl(); ir(I_LBL, 3, -1, -1, -1, lt); let c = nv(); ir(I_CMP, 3, c, kv, cnt, CC_L); ir(I_BZ, 3, -1, c, -1, le); lstore(bin(B_ADD, 3, p, bin(B_MUL, 3, kv, imm(es), -1), -1), barg(n, 2), e); ir(I_MOV, 3, kv, bin(B_ADD, 3, kv, imm(1), -1), -1, 0); ir(I_JMP, 3, -1, -1, -1, lt); ir(I_LBL, 3, -1, -1, -1, le); } ir(I_LBL, 3, -1, -1, -1, l1); return imm(0); }
+			if b == B_RESIZE || b == B_POPN { let nn = lx(barg(n, 1)); lres_len(n, b, va, 8, -1, nn, e, total); return imm(0); }
 		}
 		if is_lim(d) {
 			let ta = if b == B_PUSH { let q = nv(); ir(I_SLOT, 8, q, -1, -1, slot(es, tal(e))); lstore(q, barg(n, 1), e); q } else { -1 };
@@ -373,11 +429,16 @@ recursive fn lbuiltin1(n int, b int, dst int, total int) int {
 			if b == B_PUSH { lguard(n, lcmp(cur, cap, CC_L), "push past a limited array's capacity"); let p = bin(B_ADD, 3, addi(va, 8), bin(B_MUL, 3, cur, imm(es), -1), -1); ir(I_COPY, 3, p, ta, imm(es), 0); stw(va, 0, bin(B_ADD, 3, cur, imm(1), -1), 3); return p; }
 			if b == B_POP { lguard(n, lcmp(imm(0), cur, CC_L), "pop of an empty array"); let nn = bin(B_SUB, 3, cur, imm(1), -1); stw(va, 0, nn, 3); let ea = bin(B_ADD, 3, addi(va, 8), bin(B_MUL, 3, nn, imm(es), -1), -1); if is_scal(e) { return ldw(ea, 0, wof(e)); } if dst >= 0 { ir(I_COPY, 3, dst, ea, imm(es), 0); return dst; } return ea; }
 			if b == B_CLEAR { stw(va, 0, imm(0), 3); return imm(0); }
+			if b == B_RESIZE || b == B_POPN { let nn = lx(barg(n, 1)); lres_len(n, b, va, 0, TY[d].b as int, nn, e, total); return imm(0); }
+			if b == B_APPEND { let src = barg(n, 1); var sp = -1; var sn = -1; if ND[src].k as int == N_ARR && ND[src].a < 0 { let k0 = ND[src].n as int; let q = nv(); ir(I_SLOT, 8, q, -1, -1, slot(max(k0, 1) * es, tal(e))); for i in k0 { lstore(addi(q, i * es), kid(src, i), e); } sp = q; sn = imm(k0); } else { let p0, q0 = lsl(src); sp = p0; sn = q0; } let cur2 = ldw(va, 0, 3); let nn = bin(B_ADD, 3, cur2, sn, -1); lguard(n, lcmp(nn, cap, CC_LE), "append past a limited array's capacity"); ir(I_COPY, 3, bin(B_ADD, 3, addi(va, 8), bin(B_MUL, 3, cur2, imm(es), -1), -1), sp, bin(B_MUL, 3, sn, imm(es), -1), 0); stw(va, 0, nn, 3); return imm(0); }
 		}
 		lerr(n, "this array operation natively"); return imm(0);
 	}
 	if b == B_DEFAULT { let t = at(n); if is_scal(t) { return imm(0); } let dd = if dst >= 0 { dst } else { let q = nv(); ir(I_SLOT, 8, q, -1, -1, slot(tsz(t), tal(t))); tmp_drop(q, t); q }; lzero(dd, tsz(t)); ldefault(dd, t); return dd; }
 	if b == B_BYTESOF { let c = barg(n, 0); let t = deref(fin(c)); if TY[t].k == TY_ARR || TY[t].k == TY_SLICE || TY[t].k == TY_STRLIT { let p, q = lsl(c); PAIR2 = bin(B_MUL, 3, q, imm(if TY[t].k == TY_STRLIT { 1 } else { tsz(TY[t].a as int) }), -1); return p; } PAIR2 = imm(tsz(t)); return if TY[fin(c)].k == TY_REF { lx(c) } else { laddr(c) }; }
+	if b == B_INDEXOF { let rc = barg(n, 0); let d = deref(at(rc)); let e = TY[d].a as int; let es = tsz(e); let p, q = lsl(rc); let r = nv(); ir(I_MOV, 3, r, imm(-1), -1, 0);
+		let kv = nv(); ir(I_MOV, 3, kv, imm(0), -1, 0); let l0 = nlbl(); let l1 = nlbl(); let v = if is_scal(e) && !isf(e) { lx(barg(n, 1)) } else { -1 }; if v < 0 { lerr(n, "index_of on this element type natively"); return r; }
+		ir(I_LBL, 3, -1, -1, -1, l0); ir(I_BZ, 3, -1, lcmp(kv, q, CC_L), -1, l1); let ev = ldw(bin(B_ADD, 3, p, bin(B_MUL, 3, kv, imm(es), -1), -1), 0, wof(e)); let lnx = nlbl(); ir(I_BZ, 3, -1, lcmp(ev, v, CC_E), -1, lnx); ir(I_MOV, 3, r, kv, -1, 0); ir(I_JMP, 3, -1, -1, -1, l1); ir(I_LBL, 3, -1, -1, -1, lnx); ir(I_MOV, 3, kv, bin(B_ADD, 3, kv, imm(1), -1), -1, 0); ir(I_JMP, 3, -1, -1, -1, l0); ir(I_LBL, 3, -1, -1, -1, l1); return r; }
 	if b == B_CAP { let d = deref(at(barg(n, 0))); if is_fix(d) || is_lim(d) { return imm(TY[d].b as int); } return imm((1 << 34) / max(tsz(TY[d].a as int), 1)); }
 	if b == B_ASSERT { let c = lx(barg(n, 0)); let l = nlbl(); ir(I_BNZ, 3, -1, c, -1, l); let lp, ln = locsl(n); rtcall("rt_die", [imm(6) as i32, lp as i32, ln as i32]); ir(I_LBL, 3, -1, -1, -1, l); return imm(0); }
 	if b == B_EXIT { rtcall("rt_exit", [lx(barg(n, 0)) as i32]); return imm(0); }
@@ -401,10 +462,39 @@ recursive fn lhook(hk int, a int, isaddr bool, d int) { let pt = ptype_of(hk, 1)
 fn lscal_out(v int, d int) { let k = TY[d].k as int; if k == TY_BOOL { rtcall("rt_pb", [v as i32]); return; } if isf(d) { rtcall("rt_pf", [v as i32, imm(if wof(d) == 10 { 1 } else { 0 }) as i32]); return; } rtcall(if k == TY_INT && !is_signed(d) { "rt_pu" } else { "rt_pi" }, [v as i32]); }
 fn is_pscal(d int) bool { let k = TY[d].k as int; k == TY_INT || k == TY_ILIT || k == TY_BOOL || isf(d) }
 var FMTT i32[>..<]; var FMTN i32[>..<]; var FDONE int;
+var EQT i32[>..<]; var EQN i32[>..<]; var EDONE int;
+fn drain() bool { while WDONE < WORK.len || FDONE < FMTT.len || EDONE < EQT.len { if WDONE < WORK.len { lower_fn(WORK[WDONE] as int); WDONE++; } else { if FDONE < FMTT.len { lower_fmt(FDONE); FDONE++; } else { lower_eq(EDONE); EDONE++; } } if LERR.len > 0 { return false; } } true }
+fn eq_fn(t int) int { for i in EQT.len { if EQT[i] as int == t { return EQN[i] as int; } } let nf = NFS.len; NFS.push(NFn { 0, 0, 0, 0, -1 }); FOFF.push(0); EQT.push(t as i32); EQN.push(nf as i32); nf }
+fn plain_bytes(t int) bool { let k = TY[t].k as int; if k == TY_INT || k == TY_BOOL { return true; } if k == TY_ARR && is_fix(t) { return plain_bytes(TY[t].a as int); } if k == TY_STRUCT && !is_vst(t) { let si = TY[t].a as int; var o = 0; for j in STI[si].fnum { let ft = SFI[(STI[si].f0 as int) + j].ty as int; if ft < 0 { continue; } if !plain_bytes(ft) || foff(si, j) != o { return false; } o += tsz(ft); } return o == tsz(t); } false }
+recursive fn leq_a(pa int, pb int, t int) int {
+	if isf(t) { let d = nv(); ir(I_FCMP, wof(t), d, ldw(pa, 0, wof(t)), ldw(pb, 0, wof(t)), 0); return d; }
+	if is_scal(t) { let w = if is_rel(t) { rw(t) } else { if TY[t].k == TY_REF || TY[t].k == TY_FNV { 3 } else { wof(t) } }; return lcmp(ldw(pa, 0, w), ldw(pb, 0, w), CC_E); }
+	if plain_bytes(t) { return rtcall("rt_memeq", [pa as i32, imm(tsz(t)) as i32, pb as i32, imm(tsz(t)) as i32]); }
+	let s0 = ARGL.len; ARGL.push(pa as i32); ARGL.push(pb as i32); let d = nv(); ir(I_CALL, 3, d, s0, 2, eq_fn(t)); d
+}
+fn lower_eq(fi int) {
+	let t = EQT[fi] as int; let nf = EQN[fi] as int;
+	CUR = GLOBI; CURI = -1; AOWN = GLOBI; NV = 0; SB = 0; LSLOT.clear();
+	let i0 = IR.len; RETV = nv(); RETV2 = nv(); RETL = nlbl(); ir(I_IMM, 3, RETV, -1, -1, 0);
+	let a = nv(); ir(I_PARAM, 3, a, -1, -1, 0); let b = nv(); ir(I_PARAM, 3, b, -1, -1, 1);
+	let x = TY[t]; let k = x.k as int;
+	if k == TY_STRUCT || k == TY_VARIANT { let si = ssi(t); if si >= 0 { for j in STI[si].fnum { let ft = SFI[(STI[si].f0 as int) + j].ty as int; if ft < 0 { continue; } ir(I_BZ, 3, -1, leq_a(addi(a, foff(si, j)), addi(b, foff(si, j)), ft), -1, RETL); } } }
+	if k == TY_MULTI { for j in x.n { ir(I_BZ, 3, -1, leq_a(addi(a, moff(t, j)), addi(b, moff(t, j)), mel(t, j)), -1, RETL); } }
+	if k == TY_ENUM { let ei = x.a as int; let ta = ldw(a, 0, wof(t)); ir(I_BZ, 3, -1, lcmp(ta, ldw(b, 0, wof(t)), CC_E), -1, RETL); for i in ENI[ei].vnum { let si = vsi(ei, i); if si < 0 { continue; } let ln = nlbl(); ir(I_BZ, 3, -1, lcmp(ta, imm(i), CC_E), -1, ln); ir(I_BZ, 3, -1, leq_a(addi(a, epoff(ei)), addi(b, epoff(ei)), t_struct(si)), -1, RETL); ir(I_LBL, 3, -1, -1, -1, ln); } }
+	if k == TY_ARR || k == TY_SLICE || k == TY_STRLIT {
+		let e = if k == TY_STRLIT { T_U8 } else { x.a as int }; let es = tsz(e); let pa, na = lsl_at(a, t); let pb, nb = lsl_at(b, t);
+		ir(I_BZ, 3, -1, lcmp(na, nb, CC_E), -1, RETL);
+		if plain_bytes(e) { ir(I_MOV, 3, RETV, rtcall("rt_memeq", [pa as i32, bin(B_MUL, 3, na, imm(es), -1) as i32, pb as i32, bin(B_MUL, 3, nb, imm(es), -1) as i32]), -1, 0); ir(I_JMP, 3, -1, -1, -1, RETL); }
+		else { let kv = nv(); ir(I_MOV, 3, kv, imm(0), -1, 0); let l0 = nlbl(); let l1 = nlbl(); ir(I_LBL, 3, -1, -1, -1, l0); ir(I_BZ, 3, -1, lcmp(kv, na, CC_L), -1, l1); let off = bin(B_MUL, 3, kv, imm(es), -1); ir(I_BZ, 3, -1, leq_a(bin(B_ADD, 3, pa, off, -1), bin(B_ADD, 3, pb, off, -1), e), -1, RETL); ir(I_MOV, 3, kv, bin(B_ADD, 3, kv, imm(1), -1), -1, 0); ir(I_JMP, 3, -1, -1, -1, l0); ir(I_LBL, 3, -1, -1, -1, l1); }
+	}
+	ir(I_MOV, 3, RETV, imm(1), -1, 0);
+	ir(I_LBL, 3, -1, -1, -1, RETL); ir(I_RET, 3, -1, RETV, -1, 0);
+	NFS[nf].i0 = i0 as i32; NFS[nf].i1 = IR.len as i32; NFS[nf].nv = NV as i32; NFS[nf].sb = SB as i32;
+}
 fn fmt_fn(t int) int { for i in FMTT.len { if FMTT[i] as int == t { return FMTN[i] as int; } } let nf = NFS.len; NFS.push(NFn { 0, 0, 0, 0, -1 }); FOFF.push(0); FMTT.push(t as i32); FMTN.push(nf as i32); nf }
 recursive fn lfmt_a(a int, t int) {
 	let d = deref(t); let k = TY[d].k as int;
-	if TY[t].k == TY_REF { if TY[t].c >= 0 { lerr(-1, "printing relative references natively"); return; } let p = ldw(a, 0, 3); let l1 = nlbl(); let l2 = nlbl(); ir(I_BZ, 3, -1, p, -1, l1); lfmt_a(p, d); ir(I_JMP, 3, -1, -1, -1, l2); ir(I_LBL, 3, -1, -1, -1, l1); rtps("null", false); ir(I_LBL, 3, -1, -1, -1, l2); return; }
+	if TY[t].k == TY_REF { if TY[t].c >= 0 && relpool(t) < 0 { rtcall("rt_pu", [ldw(a, 0, rw(t)) as i32]); return; } let p = if TY[t].c >= 0 { rel_load(a, t) } else { ldw(a, 0, 3) }; let l1 = nlbl(); let l2 = nlbl(); ir(I_BZ, 3, -1, p, -1, l1); lfmt_a(p, d); ir(I_JMP, 3, -1, -1, -1, l2); ir(I_LBL, 3, -1, -1, -1, l1); rtps("null", false); ir(I_LBL, 3, -1, -1, -1, l2); return; }
 	let hk = fmt_hook(d); if hk >= 0 { lhook(hk, a, true, d); return; }
 	if is_byte_arr(d) || k == TY_STRLIT { let p, q = lsl_at(a, d); rtcall("rt_pq", [p as i32, q as i32]); return; }
 	if is_pscal(d) { lscal_out(ldw(a, 0, wof(d)), d); return; }
@@ -413,7 +503,7 @@ recursive fn lfmt_a(a int, t int) {
 fn lsl_at(a int, d int) int, int { if is_fix(d) { return a, imm(TY[d].b as int); } if is_lim(d) { return addi(a, 8), ldw(a, 0, 3); } return ldw(a, 0, 3), ldw(a, 8, 3); }
 fn lower_fmt(fi int) {
 	let t = FMTT[fi] as int; let nf = FMTN[fi] as int;
-	CUR = GLOBI; AOWN = GLOBI; NV = 0; SB = 0; LSLOT.clear();
+	CUR = GLOBI; CURI = -1; AOWN = GLOBI; NV = 0; SB = 0; LSLOT.clear();
 	let i0 = IR.len; RETV = nv(); RETV2 = nv(); RETL = nlbl();
 	let a = nv(); ir(I_PARAM, 3, a, -1, -1, 0);
 	let x = TY[t]; let k = x.k as int;
@@ -452,7 +542,9 @@ recursive fn lstmt(n int) {
 	if LERR.len > 0 { return; }
 	let th = STMP.len; lstmt1(n); var i = STMP.len; while i > th { i -= 2; ldrop(STMP[i] as int, STMP[i + 1] as int); } STMP.resize(th);
 }
+var LTR = -1;
 recursive fn lstmt1(n int) {
+	if LTR < 0 { var e byte[>..] = []; LTR = if env("HC_LTRACE", e) { 1 } else { 0 }; } if LTR == 1 { let tk0 = TK[max(ND[n].t as int, 0)]; print("lstmt ", nm(FILES[tk0.f].name), ":", tk0.line, " kind ", ND[n].k); }
 	let x = ND[n]; let k = x.k as int;
 	if k == N_VDECL { lvdecl(n); return; }
 	if k == N_ASSIGN { lassign(n); return; }
@@ -463,6 +555,9 @@ recursive fn lstmt1(n int) {
 	if k == N_LOOP { lbranch(n, -1); return; }
 	if k == N_FOR { lfor(n); return; }
 	if k == N_BLOCK { lblk(n, -1); return; }
+	if k == N_RET && ax(n) >= 0 && ax(n) != CURI { let lt = ax(n); let rt0 = FI_[lt].ret as int; let va = lrval(lt);
+		if x.n > 1 { for i in x.n { let c = kid(n, i); lstore(addi(va, moff(rt0, i)), c, mel(rt0, i)); lmove_src(c); } } else { if x.n == 1 { let c = kid(n, 0); lstore(va, c, rt0); lmove_src(c); } }
+		stw(lrflag(), 0, imm(lt + 1), 3); drop_to(0); ir(I_JMP, 3, -1, -1, -1, RETL); return; }
 	if k == N_RET && x.n > 1 { let rt = FI_[CUR].ret as int; for i in x.n { let c = kid(n, i); lstore(addi(RETV, moff(rt, i)), c, mel(rt, i)); lmove_src(c); } drop_to(0); ir(I_JMP, 3, -1, -1, -1, RETL); return; }
 	if k == N_RET { if x.n > 0 { let c = kid(n, 0); lret(c); } else { drop_to(0); ir(I_JMP, 3, -1, -1, -1, RETL); } return; }
 	if k == N_BREAK { if x.a >= 0 && LRV[LRV.len - 1] != -1 && false { } drop_to(LOOPH[LOOPH.len - 1] as int); if x.a >= 0 && LRV[LRV.len - 1] == -2 { sinkv(x.a as int); } if x.a >= 0 && LRV[LRV.len - 1] >= 0 { ir(I_MOV, 3, LRV[LRV.len - 1] as int, lx(x.a as int), -1, 0); } ir(I_JMP, 3, -1, -1, -1, LBRK[LBRK.len - 1] as int); return; }
@@ -498,13 +593,23 @@ recursive fn lvdecl(n int) {
 fn lzero(a int, sz int) { var o = 0; let z = imm(0); while o + 8 <= sz { stw(a, o, z, 3); o += 8; } while o < sz { stw(a, o, z, 4); o += 1; } }
 recursive fn lassign(n int) {
 	let x = ND[n]; let o = x.op as int; let a = x.a as int; let b = x.b as int;
+	if ND[a].k as int == N_LIST {
+		let na = ND[a].n as int; var tv i32[>..<] = [];
+		if ND[b].k as int == N_LIST { for i in na { let t = deref(at(kid(a, i))); let q = nv(); ir(I_SLOT, 8, q, -1, -1, slot(tsz(t), tal(t))); lstore(q, kid(b, i), t); tv.push(q as i32); } }
+		else { let mt = at(b); let q = nv(); ir(I_SLOT, 8, q, -1, -1, slot(tsz(mt), tal(mt))); lstore(q, b, mt); for i in na { tv.push(addi(q, moff(mt, i)) as i32); } }
+		for i in na { let c = kid(a, i); let t = deref(at(c)); let da = laddr(c); if needs_drop(t) { ldrop(da, t); } ir(I_COPY, 3, da, tv[i] as int, imm(tsz(t)), 0); }
+		return;
+	}
 	let tt = at(a); let t = deref(tt);
-	if o == T_DOTASSIGN && TY[tt].k == TY_REF { if TY[tt].c >= 0 { lerr(n, "rebinding relative references natively"); return; } let ra = if ND[a].k as int == N_ID { vaddr(a) } else { laddr0(a) }; stw(ra, 0, if TY[fin(b)].k == TY_REF || TY[fin(b)].k == TY_NULL { lx(b) } else { laddr(b) }, 3); return; }
+	if (o == T_DOTASSIGN || o == T_ASSIGN) && rel_of(a) >= 0 { let q = rel_slot(a); rel_store(q, if TY[fin(b)].k == TY_REF || TY[fin(b)].k == TY_NULL { lx(b) } else { laddr(b) }, rel_of(a)); return; }
+	if o == T_DOTASSIGN && TY[tt].k == TY_REF { let ra = if ND[a].k as int == N_ID { vaddr(a) } else { laddr0(a) }; stw(ra, 0, if TY[fin(b)].k == TY_REF || TY[fin(b)].k == TY_NULL { lx(b) } else { laddr(b) }, 3); return; }
 	let o = if o == T_DOTASSIGN { T_ASSIGN } else { o };
 	if o == T_ASSIGN && is_agg(t) && !is_lplace(b) { let tmp = nv(); ir(I_SLOT, 8, tmp, -1, -1, slot(tsz(t), tal(t))); lstore(tmp, b, t); let da = laddr(a); if needs_drop(t) { ldrop(da, t); } ir(I_COPY, 3, da, tmp, imm(tsz(t)), 0); return; }
 	let p = laddr(a);
 	if o == T_ASSIGN { lstore(p, b, t); return; }
-	let v = ldw(p, 0, wof(t)); let r = arith(o, t, v, lx(b), n); stw(p, 0, r, wof(t));
+	let v = ldw(p, 0, wof(t)); let bv = lx(b); let tb = fin(b);
+	let r = if isf(t) { let wide = wof(t) == 10 && fw(tb) == 11; let tt = if wide { T_F64 } else { t }; let r0 = arith(o, tt, fconv(v, t, tt), fconv(bv, if TY[tb].k == TY_FLIT { T_F64 } else { tb }, tt), n); if wide { cvt(r0, 4, 10) } else { r0 } } else { arith(o, t, v, bv, n) };
+	stw(p, 0, r, wof(t));
 }
 recursive fn lfor(n int) {
 	let x = ND[n]; let v = rv(n); let m = ax(n);
@@ -535,7 +640,7 @@ recursive fn lfor_arr(n int) {
 	LOOPH.pop(); LBRK.pop(); LCNT.pop(); LRV.pop();
 }
 fn lower_fn(i int) {
-	let nf = NFI[i] as int; CUR = FI_[i].cfn as int; AOWN = i;
+	let nf = NFI[i] as int; CUR = FI_[i].cfn as int; AOWN = i; CURI = i;
 	NV = 0; SB = 0; LSLOT.clear();
 	let node = FI_[i].node as int;
 	let i0 = IR.len;
@@ -572,11 +677,11 @@ var WDONE int;
 fn greached() int { var c = 0; for g in GOFF { if g >= 0 { c++; } } c }
 fn lower_ginit() int {
 	let nf = NFS.len; NFS.push(NFn { 0, 0, 0, 0, -1 }); FOFF.push(0);
-	AOWN = GLOBI; CUR = GLOBI;
+	AOWN = GLOBI; CUR = GLOBI; CURI = -1;
 	var seen = -1; var wn = -1;
 	var fn0 = -1;
-	while greached() != seen || WORK.len != wn || FMTT.len != fn0 { fn0 = FMTT.len; seen = greached(); wn = WORK.len; let s0 = IR.len; AOWN = GLOBI; CUR = GLOBI; ginit_body(); IR.resize(s0); if LERR.len > 0 { return nf; } while WDONE < WORK.len || FDONE < FMTT.len { if WDONE < WORK.len { lower_fn(WORK[WDONE] as int); WDONE++; } else { lower_fmt(FDONE); FDONE++; } if LERR.len > 0 { return nf; } } }
-	AOWN = GLOBI; CUR = GLOBI;
+	while greached() != seen || WORK.len != wn || FMTT.len + EQT.len != fn0 { fn0 = FMTT.len + EQT.len; seen = greached(); wn = WORK.len; let s0 = IR.len; AOWN = GLOBI; CUR = GLOBI; CURI = -1; ginit_body(); IR.resize(s0); if LERR.len > 0 { return nf; } if !drain() { return nf; } }
+	AOWN = GLOBI; CUR = GLOBI; CURI = -1;
 	let i0 = IR.len; ginit_body();
 	NFS[nf].i0 = i0 as i32; NFS[nf].i1 = IR.len as i32; NFS[nf].nv = NV as i32; NFS[nf].sb = SB as i32;
 	nf
@@ -601,7 +706,7 @@ fn lower_program(out byte[>..]&) bool {
 	RT_DIE = rt_fn("rt_die"); RT_F2I = rt_fn("rt_f2i");
 	let rm = nf_of(mi);
 	let rinit = rt_fn("rt_exit"); let rst = rt_fn("rt_start");
-	while WDONE < WORK.len || FDONE < FMTT.len { if WDONE < WORK.len { lower_fn(WORK[WDONE] as int); WDONE++; } else { lower_fmt(FDONE); FDONE++; } if LERR.len > 0 { return false; } }
+	if !drain() { return false; }
 	let gi = lower_ginit();
 	if LERR.len > 0 { return false; }
 	let entry = XC.len;
