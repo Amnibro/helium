@@ -345,6 +345,7 @@ recursive fn ck_call(n int, want int) int {
 	cerr(n, "this call's callee is not supported yet");
 	set_t(n, T_ERRT)
 }
+recursive fn ck_defs(t int) { if t < 0 { return; } let k = TY[t].k as int; if k == TY_ENUM { if ENI[TY[t].a].vnum > 0 { ck_defs(t_variant(TY[t].a as int, 0)); } return; } if k == TY_ARR { ck_defs(TY[t].a as int); return; } let si = if k == TY_STRUCT { TY[t].a as int } else { if k == TY_VARIANT { ENV[(ENI[TY[t].a].v0 as int) + (TY[t].c as int)].si as int } else { -1 } }; if si < 0 { return; } for j in STI[si].fnum { let f = SFI[(STI[si].f0 as int) + j]; if f.ty < 0 { continue; } if f.def >= 0 { if at(f.def as int) < 0 { let sa = AOWN; AOWN = GLOBI; ck(f.def as int, f.ty as int); conv(f.def as int, f.ty as int); AOWN = sa; } } else { ck_defs(f.ty as int); } } }
 recursive fn user_format(n int) bool { if ND[n].n == 0 { return false; } let t = deref(ck(kid(n, 0), -1)); if pend_local(kid(n, 0)) { return false; } !(TY[t].k == TY_ARR && TY[t].a as int == T_U8 && (is_grow(t) || TY[t].s as int == A_LIM)) }
 fn is_grow(t int) bool { TY[t].s as int == A_GROW || TY[t].s as int == A_GS }
 var HOOK i32[>..];
@@ -555,7 +556,7 @@ recursive fn ck_builtin(n int, b int, recv int, want int) int {
 	if b == B_ASSERT { ck(arg(0), T_BOOL); conv(arg(0), T_BOOL); narrow_push(arg(0)); return set_t(n, T_VOID); }
 	if b == B_ABORT { let t = ck(arg(0), TT_STR); if is_pending(t) { default_t(arg(0)); } return set_t(n, T_VOID); }
 	if b == B_EXIT { ck(arg(0), T_I64); conv(arg(0), T_I64); return set_t(n, T_VOID); }
-	if b == B_DEFAULT { let ta = x.c as int; if ta < 0 { cerr(n, "default needs a type: default<T>()"); return set_t(n, T_ERRT); } return set_t(n, decode_rel(rtype(kid(ta, 0), ns_of(n)))); }
+	if b == B_DEFAULT { let ta = x.c as int; if ta < 0 { cerr(n, "default needs a type: default<T>()"); return set_t(n, T_ERRT); } let dt = decode_rel(rtype(kid(ta, 0), ns_of(n))); ck_defs(dt); return set_t(n, dt); }
 	if b == B_COPY {
 		let c = arg(0);
 		if recv < 0 { ck(c, want); }

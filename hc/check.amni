@@ -414,7 +414,7 @@ recursive fn global_type(d int) int {
 	let saved = AOWN; let sc = CFN;
 	AOWN = GLOBI; CFN = GLOBI;
 	var t = -1;
-	if x.a >= 0 { t = rtype(x.a as int, ns_of(g)); GLT[d] = t as i32; if x.b >= 0 { let iv = kid(x.b as int, 0); ck(iv, decode_rel(t)); conv(iv, decode_rel(t)); } }
+	if x.a >= 0 { t = rtype(x.a as int, ns_of(g)); GLT[d] = t as i32; if x.b >= 0 { let iv = kid(x.b as int, 0); ck(iv, decode_rel(t)); conv(iv, decode_rel(t)); } else { ck_defs(t); } }
 	else {
 		if GLST[d] == 1 { cerr(g, "global initializer depends on itself"); AOWN = saved; CFN = sc; return T_ERRT; }
 		GLST[d] = 1;
@@ -824,7 +824,7 @@ recursive fn ck_vdecl(n int) {
 			}
 		}
 	} else {
-		if t < 0 { cerr(n, "a declaration needs a type or an initializer"); t = T_ERRT; }
+		if t < 0 { cerr(n, "a declaration needs a type or an initializer"); t = T_ERRT; } else { ck_defs(t); }
 	}
 	if byref && TY[t].k != TY_REF { t = t_ref(t, 0); }
 	let v = add_lv(LS[x.l] as int, t, lf, n);
