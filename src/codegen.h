@@ -170,6 +170,7 @@ struct CodeGen {
     size_t dlbinds = 0;
     string code;        // Function bodies, size/eq helpers, thunks, main.
     string exportprotos;
+    vector<string> exportnames;
     bool usesthreads = false;
     bool library = false;
     // Measurement only, and unsound: emit the whole `return ... from`

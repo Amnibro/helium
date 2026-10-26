@@ -401,6 +401,23 @@ static GS_NORETURN void gs_park(void) {
     for (;;) Sleep(INFINITE);
 }
 
+#elif defined(__wasm__)
+static size_t gs_page_size = 65536;
+static size_t gs_os_page_size(void) { return 65536; }
+static void gs_regions_init(void) { gs_page_size = 65536; }
+static void gs_native_stack_init(void) {}
+static void gs_native_stack_free(void) {}
+static uint8_t *gs_os_reserve(size_t usable, size_t size) {
+    (void)usable;
+    size_t old = __builtin_wasm_memory_grow(0, (size + 65535) / 65536);
+    return old == (size_t)-1 ? NULL : (uint8_t *)(old * 65536);
+}
+static void gs_release_region(const gs_region *r) { (void)r; }
+static int gs_end_first(void) {
+    static int ended;
+    return !ended++;
+}
+static GS_NORETURN void gs_park(void) { __builtin_trap(); }
 #else  /* posix */
 
 #include <sys/mman.h>
@@ -727,6 +744,8 @@ GS_API uint8_t gs_trim_memory(void) {
             if ((uint8_t *)start < r->reuse_lo) r->reuse_lo = (uint8_t *)start;
             if ((uint8_t *)end > r->reuse_hi) r->reuse_hi = (uint8_t *)end;
         }
+#elif defined(__wasm__)
+        (void)len;
 #else
         /* Linux walks only the page tables that were ever populated, so the
            untouched rest of the reservation costs it little. */

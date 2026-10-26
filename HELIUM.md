@@ -241,3 +241,12 @@ fn main() { print(fast_steps(27), " ", fast_steps(27)); }
 - `import dictionary;`: `var d = dictionary<const byte[:], int> {};` with `insert get(gives V?) contains get_or_insert update(d, k, v0) { it += 1; } remove each(d) { k, v => ... } count`.
 - `import math;`: `sqrt sin cos tan atan2 exp log pow floor ceil round PI TAU`. `import os;`: `read_file(path, out) write_file append_file file_exists list_dir read_line args() arg_count clock time sleep_ms random_seed`.
 - Also `vec` (`float2 float3 float4`), `json`, `csv`, `regex`, `base64`, `binary`, `ffi`, `exception`; `gfx`, `audio`, `ui`, `physics` packages.
+
+## Web
+
+`helium build --web app.amni` writes `app.wasm` and the `helium.js` host beside it (`-o` names the `.wasm`; clang and the WASI sysroot, fetched once into `~/.goose/toolchains`). A page starts it with `<script type="module">import {start} from './helium.js'; start({wasm: 'app.wasm'});</script>`. `main` runs once and globals stay alive; the host then calls the program's `export fn he_frame(t real)` every animation frame after `web::frames(true)`, and `export fn he_event(tag i32, kind i32)` for each listener, timer, fetch and JS result, by the tag the program gave (`kind` is `web::EV_DOM`, `EV_TIMER`, `EV_FETCH`, `EV_PROGRESS`, `EV_JS`, `EV_CALLBACK`).
+
+- `import web;` (`web::`): elements are `i32` handles: `el(id) query(h, sel) query_all list_at create append insert_before remove clear text html attr get_attr style cls has_cls prop prop_num get_prop get_num call scroll_into rect listen(h, "click", TAG, flags)`; event fields while `he_event` runs: `ev_x ev_y ev_dx ev_dy ev_button ev_buttons ev_mods ev_key(out) ev_value(out) ev_touches ev_touch_x ev_target ev_prevent ev_id ev_status`; `fetch(url, TAG)` / `request(...)` then `fetch_take(ev_id(), out)`; `timer(ms, TAG)`, `now`, `win_w win_h dpr param(name, out) store_get store_set log`; `js_import js_call js_result` for other JS libraries.
+- `import webgl;` (`gl::`): WebGL2 on a canvas handle: `init(canvas, aa, alpha) create_shader shader_source compile_shader create_program link_program uniform_loc uniform1f uniform_mat4 create_buffer buffer_data(target, bytes_of(xs), usage) create_vao attrib_ptr draw_arrays`, and the GL constants.
+- No threads or files on the web; `print` goes to the browser console. See `samples_web/demo`.
+

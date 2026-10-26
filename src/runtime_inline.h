@@ -1557,12 +1557,29 @@ static GS_NORETURN void gs_park(void) {
     for (;;) Sleep(INFINITE);
 }
 
+#elif defined(__wasm__)
+static size_t gs_page_size = 65536;
+)GSRT"
+R"GSRT(static size_t gs_os_page_size(void) { return 65536; }
+static void gs_regions_init(void) { gs_page_size = 65536; }
+static void gs_native_stack_init(void) {}
+static void gs_native_stack_free(void) {}
+static uint8_t *gs_os_reserve(size_t usable, size_t size) {
+    (void)usable;
+    size_t old = __builtin_wasm_memory_grow(0, (size + 65535) / 65536);
+    return old == (size_t)-1 ? NULL : (uint8_t *)(old * 65536);
+}
+static void gs_release_region(const gs_region *r) { (void)r; }
+static int gs_end_first(void) {
+    static int ended;
+    return !ended++;
+}
+static GS_NORETURN void gs_park(void) { __builtin_trap(); }
 #else  /* posix */
 
 #include <sys/mman.h>
 #include <unistd.h>
-)GSRT"
-R"GSRT(#include <signal.h>
+#include <signal.h>
 #include <pthread.h>
 
 /* The calling thread's native stack, from GS_NATIVE_SLOP below its lowest
@@ -1737,7 +1754,8 @@ static uint8_t *gs_os_reserve(size_t usable, size_t size) {
                    MAP_PRIVATE | MAP_ANONYMOUS
                    #ifdef MAP_NORESERVE
                        | MAP_NORESERVE
-                   #endif
+)GSRT"
+R"GSRT(                   #endif
                    , -1, 0);
     if (p == MAP_FAILED) return NULL;
     if (mprotect((uint8_t *)p + usable, size - usable, PROT_NONE)) {
@@ -1757,8 +1775,7 @@ static void gs_release_region(const gs_region *r) {
     if (munmap(r->base, r->size)) gs_panic("cannot release data stack address space");
 }
 
-)GSRT"
-R"GSRT(/* Whether this is the first call of gs_end; and where the later ones wait.
+/* Whether this is the first call of gs_end; and where the later ones wait.
    TinyCC names the memory orders in its stdatomic.h alone. */
 #ifndef __ATOMIC_SEQ_CST
 #define __ATOMIC_SEQ_CST 5
@@ -1885,6 +1902,8 @@ GS_API uint8_t gs_trim_memory(void) {
             if ((uint8_t *)start < r->reuse_lo) r->reuse_lo = (uint8_t *)start;
             if ((uint8_t *)end > r->reuse_hi) r->reuse_hi = (uint8_t *)end;
         }
+#elif defined(__wasm__)
+        (void)len;
 #else
         /* Linux walks only the page tables that were ever populated, so the
            untouched rest of the reservation costs it little. */
@@ -1917,7 +1936,8 @@ GS_API uint8_t gs_trim_memory(void) {
    of the one before: no freelist gets this deep. */
 #define GS_SPAN_DEPTH 24
 
-/* `link` chains emptied nodes. */
+)GSRT"
+R"GSRT(/* `link` chains emptied nodes. */
 typedef struct { int64_t n, link, idx[GS_SPAN_LEAF], cnt[GS_SPAN_LEAF]; } gs_spleaf;
 typedef struct { int64_t n, link, key[GS_SPAN_FAN], max[GS_SPAN_FAN], child[GS_SPAN_FAN]; } gs_spinner;
 typedef struct { int64_t root, height, chain; } gs_sphead;
@@ -1935,8 +1955,7 @@ typedef struct {
 #define GS_SPLEAF(p, i) ((gs_spleaf *)((p)->base + (i) * GS_SPAN_NODE))
 #define GS_SPINNER(p, i) ((gs_spinner *)((p)->base + (i) * GS_SPAN_NODE))
 
-)GSRT"
-R"GSRT(static int64_t gs_sp_newnode(gs_sppath *p) {
+static int64_t gs_sp_newnode(gs_sppath *p) {
     int64_t i = GS_SPHEAD(p)->chain;
     if (i) {
         GS_SPHEAD(p)->chain = GS_SPLEAF(p, i)->link;
@@ -2156,7 +2175,8 @@ static void gs_sp_delete(gs_sppath *p, int64_t k) {
     }
     gs_sp_dropnode(p, p->node[p->h]);
     for (l = p->h - 1;; l--) {
-        gs_spinner *in = GS_SPINNER(p, p->node[l]);
+)GSRT"
+R"GSRT(        gs_spinner *in = GS_SPINNER(p, p->node[l]);
         int64_t e = p->pos[l], m = in->max[e];
         gs_sp_closein(in, e);
         if (in->n > 0) {
@@ -2176,8 +2196,7 @@ static void gs_sp_delete(gs_sppath *p, int64_t k) {
 }
 
 /* Takes cnt elements off the front of the span at position k of the path's
-)GSRT"
-R"GSRT(   leaf, or the whole span where it holds no more. */
+   leaf, or the whole span where it holds no more. */
 static void gs_sp_take(gs_sppath *p, int64_t k, int64_t cnt) {
     gs_spleaf *lf = GS_SPLEAF(p, p->node[p->h]);
     int64_t c = lf->cnt[k];
@@ -2380,7 +2399,8 @@ GS_API int64_t gs_spans_regrow(uint8_t *base, int64_t *n, uint8_t **top, int64_t
     gs_sppath p, q;
     gs_spnear s;
     int64_t end = idx + ol;
-    if (*n == 0) {
+)GSRT"
+R"GSRT(    if (*n == 0) {
         gs_spans_free(base, n, top, idx, ol);
         return gs_spans_alloc(base, n, top, len, cnt);
     }
@@ -2399,8 +2419,7 @@ GS_API int64_t gs_spans_regrow(uint8_t *base, int64_t *n, uint8_t **top, int64_t
 
 /* ---------------------------------------------------------------------------
    Byte search: std's find_any and find_pair (docs/stdlib.md). A set arrives
-)GSRT"
-R"GSRT(   as std's ByteSet, made by its byte_set, which gs_byteset lays out as the
+   as std's ByteSet, made by its byte_set, which gs_byteset lays out as the
    Goose struct is (spec C.2: packed, in declaration order). `members` is
    the set. `kind` says how a block of bytes is tested for it: by comparing
    with 1 to 3 of `bytes` (kinds 1-3), or as the range bytes[0] .. bytes[0] +
@@ -2561,7 +2580,8 @@ static GS_SSSE3 GS_INLINE __m128i gs_bsm_tables(const gs_bsm *m, __m128i x) {
     }                                                                                  \
     if (i == np) return -1;                                                            \
     k = (unsigned)_mm_movemask_epi8(_mm_and_si128(TESTA(GS_LOAD(p + np - 16)),         \
-                                                  TESTB(GS_LOAD(p + np - 16 + d))))    \
+)GSRT"
+R"GSRT(                                                  TESTB(GS_LOAD(p + np - 16 + d))))    \
         >> (16 - (np - i));                                                            \
     return k ? i + gs_ctz32(k) : -1;
 
@@ -2578,8 +2598,7 @@ static GS_INLINE int64_t gs_scan_any_k(const uint8_t *p, int64_t n, const gs_byt
     GS_ANY_LOOP(GS_TEST_S)
 }
 
-)GSRT"
-R"GSRT(static GS_SSSE3 int64_t gs_scan_any_tables(const uint8_t *p, int64_t n, const gs_byteset *s) {
+static GS_SSSE3 int64_t gs_scan_any_tables(const uint8_t *p, int64_t n, const gs_byteset *s) {
     gs_bsm ms;
     gs_bsm_init(&ms, s, 1);
     GS_ANY_LOOP(GS_TABLES_S)
@@ -2756,7 +2775,8 @@ GS_API int64_t gs_fmt_i64(uint8_t *dst, int64_t v) {
    same value of its own type and, of those, the ones nearest it, a tie going
    to the even digit (as Python's repr and Ryu choose). They are found in
    integers, by Burger and Dybvig's free-format algorithm, not through the C
-   library: msvcrt, which tcc uses on Windows, rounds a printf tie away from
+)GSRT"
+R"GSRT(   library: msvcrt, which tcc uses on Windows, rounds a printf tie away from
    zero, and below a power of two the gap to the next float is half the gap
    above, so the shortest text can lie above the value while the correctly
    rounded spelling of that length, below it, does not read back.
@@ -2769,8 +2789,7 @@ typedef struct { int n; uint32_t d[36]; } gs_big;
 /* a = v << sh, for v > 0. */
 static void gs_big_set(gs_big *a, uint64_t v, int sh) {
     int w = sh >> 5, b = sh & 31, i;
-)GSRT"
-R"GSRT(    uint64_t lo = v << b, hi = b ? v >> (64 - b) : 0;
+    uint64_t lo = v << b, hi = b ? v >> (64 - b) : 0;
     for (i = 0; i < w; i++) a->d[i] = 0;
     a->d[w] = (uint32_t)lo;
     a->d[w + 1] = (uint32_t)(lo >> 32);
@@ -2975,7 +2994,8 @@ GS_API int64_t gs_fmt_quoted(uint8_t *dst, const uint8_t *s, int64_t n) {
     for (int64_t i = 0; i < n; i++) {
         uint8_t c = s[i];
         switch (c) {
-            case '"': *d++ = '\\'; *d++ = '"'; break;
+)GSRT"
+R"GSRT(            case '"': *d++ = '\\'; *d++ = '"'; break;
             case '\\': *d++ = '\\'; *d++ = '\\'; break;
             case '\n': *d++ = '\\'; *d++ = 'n'; break;
             case '\r': *d++ = '\\'; *d++ = 'r'; break;

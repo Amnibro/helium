@@ -55,6 +55,7 @@
 #include "lsp_features.h"
 #include "lsp.h"
 #include "amni.h"
+#include "web.h"
 
 namespace goose {
 
@@ -791,6 +792,10 @@ R"(  --cc name|path        The C compiler: msvc, clang-cl, clang, gcc, cc or a
                         the runtime object built once per C compiler.
   -v                    Print each command the build runs and what it prints.
   --dry-run             Print the commands the build would run, and run none.
+  --web                 Build WebAssembly for the browser: file.wasm and the
+                        helium.js host beside it (-o names the .wasm). Uses
+                        clang and the WASI sysroot, fetched on first use into
+                        GOOSE_HOME/toolchains (or HELIUM_WASI).
 )");
     if (topic == "check") return cat(
 R"(usage: goose check file.goose [options]
@@ -1068,7 +1073,7 @@ int Main(int argc, char **argv) {
     auto roundtrip = false, multitest = false;
     auto nobce = false, bcetest = false, bcelines = false, norfcheck = false;
     auto stacks = false;
-    auto forcejit = false, standalone = false;
+    auto forcejit = false, standalone = false, web = false;
     auto json = false, refresh = false, debug = false, verbose = false, dryrun = false;
     auto jsondiag = false;
     string ccrequest;
@@ -1118,6 +1123,7 @@ int Main(int argc, char **argv) {
         else if (arg == "--unsafe-no-rf-check") norfcheck = true;
         else if (arg == "--jit") forcejit = true;
         else if (arg == "--standalone") standalone = true;
+        else if (arg == "--web") web = true;
         else if (arg == "--multi-test") multitest = true;
         else if (arg == "--gen-runtime-header") {
             try {
@@ -1207,7 +1213,7 @@ int Main(int argc, char **argv) {
     // C goes to the program's build directory (build.h).
     BuildOptions buildopts;
     string builddir;
-    auto nativerun = amnicli && !forcejit && (verb.empty() || verb == "run") && outname.empty() && !multitest && !tokens && !dump && !dumpdocs && dumpfile.empty() && !parseonly && headername.empty() && !roundtrip && shaderfile.empty() && !jsondiag && !specs && !getenv("HELIUM_JIT");
+    auto nativerun = amnicli && !forcejit && (verb.empty() || verb == "run") && outname.empty() && !multitest && !tokens && !dump && !dumpdocs && dumpfile.empty() && !parseonly && headername.empty() && !roundtrip && shaderfile.empty() && !jsondiag && !specs && !web && !getenv("HELIUM_JIT");
     if (nativerun) {
         Toolchain probe;
         string why;
@@ -1232,6 +1238,10 @@ int Main(int argc, char **argv) {
             fprintf(stderr, "goose build takes one program and no --header; the flag form "
                             "(-o out.c) writes the C for a C host\n");
             return 1;
+        }
+        if (web) {
+            standalone = true;
+            if (none_of(cdefines.begin(), cdefines.end(), [](const string &d) { return d.starts_with("GS_STACK_RESERVE="); })) cdefines.push_back("GS_STACK_RESERVE=33554432ull");
         }
         buildopts = BuildOptions { debug, verbose, dryrun, standalone, outname };
         outname.clear();
@@ -1266,7 +1276,7 @@ int Main(int argc, char **argv) {
     }
     // A header is for a C host, which supplies its own main and starts the
     // program through goose_init.
-    auto library = !headername.empty();
+    auto library = !headername.empty() || web;
     if (multitest && (tokens || !dumpfile.empty() || !progargs.empty() ||
                       (!outname.empty() && outname.find('%') == string::npos) ||
                       (jit && !nocgen && !parseonly && !dump))) {
@@ -1289,6 +1299,7 @@ int Main(int argc, char **argv) {
     // its packages, for the native parts the program needs (native.h).
     unique_ptr<Ast> astp;
     vector<int> nativepkgs;
+    vector<string> webexports;
     // The compile's diagnostics as data (--diagnostics json): the warnings
     // as they come, then the error's.
     vector<Diagnostic> found;
@@ -1413,6 +1424,7 @@ int Main(int argc, char **argv) {
         // each before the packages it requires, which is the order a
         // linker resolves their archives in.
         nativepkgs = NativePackagesUsed(ast, cg.usedexterns);
+        webexports = cg.exportnames;
         // Assemble: compiler-set feature defines, the embedded runtime, then
         // the generated program. A program built with a separate runtime
         // holds what runtime.h has of it and the extern support's
@@ -1519,6 +1531,10 @@ int Main(int argc, char **argv) {
             if (code) return code;
             if (verb == "build") {
                 if (nocgen) return 0;
+                if (web) {
+                    for (auto pkg : nativepkgs) return fprintf(stderr, "package %s has native code, which the web target cannot link\n", astp->packages[pkg].name.c_str()), 1;
+                    return BuildWeb(filename, outfile, builddir, buildopts, msgs, webexports, StdlibDirs(stdlibdir, exe));
+                }
                 // The native parts first, so that the link can take their
                 // response files: a builtin package's from the compiler's
                 // build, the others' built now.
