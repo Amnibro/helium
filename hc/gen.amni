@@ -16,7 +16,13 @@ fn gerr(n int, m const byte[:]) { if GERR.len > 0 { return; } let x = TK[ND[max(
 fn cn_grow() { while CNO.len < TY.len { CNO.push(-1); CNL.push(0); CST.push(0); HFN.push(0); HEQ.push(0); } }
 fn fwd(s0 int) { TF.append("typedef struct "); TF.append(CN[s0..]); TF.push(' '); TF.append(CN[s0..]); TF.append(";\n"); }
 fn is_res(t int) bool { TY[t].k == TY_ARR && (TY[t].s as int == A_GROW || TY[t].s as int == A_GS) }
-fn is_lim(t int) bool { TY[t].k == TY_ARR && TY[t].s as int == A_LIM }
+fn is_lim(t int) bool { TY[t].k == TY_ARR && TY[t].s as int == A_LIM && TY[t].b >= 0 }
+fn is_vimg(t int) bool { t >= 0 && TY[t].k == TY_ARR && (TY[t].s as int == A_VAR || (TY[t].s as int == A_LIM && TY[t].b < 0)) }
+fn vlim(t int) int { if TY[t].s as int == A_LIM { 1 } else { 0 } }
+fn vargs(t int) { format(O, ", ", isz(TY[t].c as int), ", ", vlim(t)); }
+fn vok(n int, t int) bool { if TY[t].c == 8 { gerr(n, "varint array lengths are not supported by the self-hosted compiler yet"); return false; } if !is_fixed(TY[t].a as int) { gerr(n, "arrays of variable-size elements are not supported by the self-hosted compiler yet"); return false; } true }
+var DSU = 0;
+var SCR2 byte[>..];
 fn is_fix(t int) bool { TY[t].k == TY_ARR && TY[t].s as int == A_FIXED }
 recursive fn cn(t int) const byte[:] {
 	cn_grow();
@@ -180,13 +186,15 @@ recursive fn gsl(n int, f int) {
 		let p = nt();
 		ow("({ "); ct(f); ow(" _t"); oi(p); ow(" = "); gx0(n); ow("; ");
 		if k == TY_SLICE { ow("*_t"); oi(p); }
+		else { if is_vimg(d) { ow("hr_vsl(*_t"); oi(p); vargs(d); ow(")"); }
 		else { if is_res(d) { ow("hr_sl(*_t"); oi(p); ow(")"); }
 		else { if is_fix(d) { ow("(hsl){ (uint8_t*)_t"); oi(p); format(O, "->e, ", TY[d].b, " }"); }
-		else { ow("(hsl){ (uint8_t*)_t"); oi(p); ow("->e, _t"); oi(p); ow("->n }"); } } }
+		else { ow("(hsl){ (uint8_t*)_t"); oi(p); ow("->e, _t"); oi(p); ow("->n }"); } } } }
 		ow("; })");
 		return;
 	}
 	if k == TY_SLICE || k == TY_STRLIT { gx0(n); return; }
+	if is_vimg(d) { if !vok(n, d) { return; } ow("hr_vsl("); gx0(n); vargs(d); ow(")"); return; }
 	if is_res(d) { ow("hr_sl("); if is_place(n) { gx0(n); } else { let tk0 = tmp(d, true); ow("*hr_tmp(&"); ot(tk0); ow(", "); gx0(n); ow(")"); } ow(")"); return; }
 	let p = nt();
 	ow("({ "); ct(d); ow(" *_t"); oi(p); ow(" = ");
@@ -225,6 +233,7 @@ recursive fn gcv(n int, f int, t int) {
 		return;
 	}
 	if tk0 == TY_REF { if fk == TY_REF { gx1(n); return; } gaddr(n); return; }
+	if is_vimg(t) { if !vok(n, t) { return; } DSU++; ow("hr_vfrom("); gsl(n, f); vargs(t); ow(", sizeof("); ct(TY[t].a as int); ow("))"); return; }
 	if is_res(t) { ow("hr_rfrom("); gsl(n, f); ow(", "); esz(TY[t].a as int); ow(")"); return; }
 	if is_fix(t) || is_lim(t) {
 		let p = nt();
@@ -297,6 +306,7 @@ recursive fn gidx(n int) {
 		ow("("); gx(a); ow(").e[hr_ix("); gx(x.b as int); format(O, ", ", TY[d].b, ", "); wloc(n); ow(")]"); return;
 	}
 	ow("(*({ ");
+	if is_vimg(d) { ow("hsl _t"); oi(p); ow(" = hr_vsl("); if TY[bt].k == TY_REF { ow("*"); gx0(a); } else { gx(a); } vargs(d); ow("); int64_t _i"); oi(p); ow(" = "); gx(x.b as int); ow("; ("); ct(e); ow("*)_t"); oi(p); format(O, ".p + hr_ix(_i", p, ", _t", p, ".n, "); wloc(n); ow("); }))"); return; }
 	if TY[d].k == TY_SLICE { ow("hsl _t"); oi(p); ow(" = "); if TY[bt].k == TY_REF { ow("*"); gx0(a); } else { gx(a); } ow("; int64_t _i"); oi(p); ow(" = "); gx(x.b as int); ow("; ("); ct(e); ow("*)_t"); oi(p); format(O, ".p + hr_ix(_i", p, ", _t", p, ".n, "); wloc(n); ow("); }))"); return; }
 	ct(d); ow(" *_t"); oi(p); ow(" = ");
 	if TY[bt].k == TY_REF { gx0(a); } else { if is_place(a) { ow("&("); gx(a); ow(")"); } else { let k = tmp(d, is_res(d)); ow("("); ot(k); ow(" = "); gxo(a); ow(", &"); ot(k); ow(")"); } }
@@ -338,6 +348,17 @@ recursive fn garr(n int) {
 		ow("_t"); oi(p); ow("; })");
 		return;
 	}
+	if is_vimg(t) {
+		if !vok(n, t) { return; }
+		DSU++;
+		let hb = isz(TY[t].c as int) * ((vlim(t) + 1) as i64);
+		ow("({ uint8_t *_t"); oi(p); ow(" = ");
+		if x.c >= 0 { ow("hr_vmk(0, "); gx(x.c as int); vargs(t); ow(", sizeof("); ct(e); ow(")); "); }
+		else { if x.a >= 0 { ow("hr_vmk("); gx(x.b as int); ow(", "); gx(x.b as int); vargs(t); ow(", sizeof("); ct(e); ow(")); "); ct(e); ow(" _v"); oi(p); ow(" = "); gx(x.a as int); ow("; "); ct(e); ow(" *_e"); oi(p); ow(" = ("); ct(e); format(O, "*)(_t", p, " + ", hb, "); for (int64_t _k = 0; _k < hr_vsl(_t", p); vargs(t); format(O, ").n; _k++) _e", p, "[_k] = _v", p, "; "); }
+		else { format(O, "hr_vmk(", x.n, ", ", x.n); vargs(t); ow(", sizeof("); ct(e); ow(")); "); ct(e); ow(" *_e"); oi(p); ow(" = ("); ct(e); format(O, "*)(_t", p, " + ", hb, "); "); for i in x.n { format(O, "_e", p, "[", i, "] = "); gx(kid(n, i)); ow("; "); } } }
+		ow("_t"); oi(p); ow("; })");
+		return;
+	}
 	gerr(n, "unsupported array literal type");
 }
 recursive fn gstr(n int) {
@@ -347,6 +368,7 @@ recursive fn gstr(n int) {
 	if is_res(a) { ow("hr_rfrom(hr_str("); cstr_lit(s); format(O, ", ", s.len, "), 1)"); return; }
 	if is_fix(a) { ow("(("); ct(a); ow("){ "); cstr_lit(s); ow(" })"); return; }
 	if is_lim(a) { ow("(("); ct(a); format(O, "){ ", s.len, ", "); cstr_lit(s); ow(" })"); return; }
+	if is_vimg(a) { DSU++; ow("hr_vfrom(hr_str("); cstr_lit(s); format(O, ", ", s.len, ")"); vargs(a); ow(", 1)"); return; }
 	ow("hr_str("); cstr_lit(s); format(O, ", ", s.len, ")");
 }
 recursive fn gslit(n int) {
@@ -754,6 +776,7 @@ recursive fn gx0(n int) {
 		if r == R_VARIANT { let t = at(n); let p = nt(); ow("({ "); ct(t); ow(" _t"); oi(p); format(O, "; memset(&_t", p, ", 0, sizeof _t", p, "); _t", p, ".tag = ", rv(n), "; _t", p, "; })"); return; }
 		if r == R_MEMBER {
 			let d = deref(at(a));
+			if is_vimg(d) { if rv(n) == 2 { ow("((int64_t)hr_vget("); } else { ow("(hr_vsl("); } if TY[at(a)].k == TY_REF { ow("*"); gx0(a); } else { gx(a); } if rv(n) == 2 { format(O, ", ", isz(TY[d].c as int), "))"); } else { vargs(d); ow(").n)"); } return; }
 			if rv(n) == 2 { format(O, "((int64_t)", TY[d].b, ")"); return; }
 			if is_fix(d) { format(O, "((int64_t)", TY[d].b, ")"); return; }
 			if is_lim(d) { ow("((int64_t)("); if TY[at(a)].k == TY_REF { gx0(a); ow(")->n)"); } else { gx(a); ow(").n)"); } return; }
@@ -780,7 +803,7 @@ recursive fn gx0(n int) {
 	if k == N_AS { let t = at(n); let ft = TY[fin(x.a as int)].k as int; if TY[t].k == TY_INT && (ft == TY_FLT || ft == TY_FLIT) { ow("(("); ct(t); ow(")hr_f2i("); gx(x.a as int); ow("))"); return; } ow("(("); ct(t); ow(")("); gx(x.a as int); ow("))"); return; }
 	if k == N_ARR { garr(n); return; }
 	if k == N_SLIT { gslit(n); return; }
-	if k == N_CALL { gcall(n); return; }
+	if k == N_CALL { if is_vimg(at(n)) { DSU++; } gcall(n); return; }
 	if k == N_BLOCK { ow("({ "); gblk(n, -1, at(n) != T_VOID); ow(" })"); return; }
 	if k == N_IF || k == N_MATCH || k == N_EBLOCK || k == N_LOOP {
 		let t = at(n);
@@ -809,6 +832,12 @@ recursive fn gtail(tl int, res int) {
 recursive fn gblk(b int, res int, val bool) {
 	let x = ND[b];
 	if x.k as int != N_BLOCK { if res >= 0 { gtail(b, res); } else { if val { gx(b); ow(";"); } else { gstmt(b); } } return; }
+	let bsp = O.len; let bdu = DSU;
+	gblk1(b, res, val);
+	if DSU > bdu && !is_vimg(fin(b)) && !is_vimg(at(b)) { SCR2.clear(); SCR2.append(O[bsp..]); O.resize(bsp); ow("int64_t _bm"); oi(nt()); ow(" __attribute__((cleanup(hr_dsr))) = hr_ds.n; "); O.append(SCR2[..]); }
+}
+recursive fn gblk1(b int, res int, val bool) {
+	let x = ND[b];
 	for i in x.n { gstmt(kid(b, i)); }
 	if x.a >= 0 {
 		let tl = x.a as int;
@@ -1055,8 +1084,10 @@ recursive fn gret(n int) {
 	let rt = FI_[f].ret as int;
 	if x.n > 1 { ow("return ("); ct(rt); ow("){ "); for i in x.n { if i > 0 { ow(", "); } let c = kid(n, i); if is_res(fin(c)) { gmove(c); } else { gx(c); } } ow(" };"); return; }
 	let c = kid(n, 0);
+	if is_vimg(rt) { gvret(c, rt); return; }
 	ow("return "); if is_res(rt) { gmove(c); } else { gx(c); } ow(";");
 }
+recursive fn gvret(c int, rt int) { if !vok(c, rt) { return; } DSU++; ow("return hr_dsret("); gx(c); ow(", _fm"); vargs(rt); ow(", sizeof("); ct(TY[rt].a as int); ow("));"); }
 recursive fn gbreak(n int) {
 	let x = ND[n];
 	if LSTK.len == 0 { gerr(n, "break outside a loop"); return; }
@@ -1131,6 +1162,7 @@ fn gen_fn(i int) {
 	gsig(i);
 	PR.append(O[s0..]); PR.append(";\n");
 	ow(" {\n");
+	let fsp = O.len; let du0 = DSU;
 	for j in ND[node].n { let p = kid(node, j); let v = rv(p); if is_res(ptype_of(i, j)) { ow("hrv "); lv_name(v); ow(" __attribute__((cleanup(hr_rdrop))) = "); lv_name(v); ow("_in;\n"); } }
 	let body = ND[node].c as int;
 	let rt = FI_[i].ret as int;
@@ -1139,12 +1171,14 @@ fn gen_fn(i int) {
 	if tl >= 0 {
 		if rt >= 0 && rt != T_VOID && at(tl) != T_VOID && !ends(tl) {
 			let sp = O.len; let td = TDS.len;
-			if TY[rt].k == TY_MULTI && ND[tl].k == N_CALL { ow("return "); gx(tl); ow(";\n"); }
-			else { ow("return "); if is_res(rt) { gmove(tl); } else { gx(tl); } ow(";\n"); }
+			if is_vimg(rt) { gvret(tl, rt); ow("\n"); }
+			else { if TY[rt].k == TY_MULTI && ND[tl].k == N_CALL { ow("return "); gx(tl); ow(";\n"); }
+			else { ow("return "); if is_res(rt) { gmove(tl); } else { gx(tl); } ow(";\n"); } }
 			if TDS.len > td { SCR.clear(); SCR.append(O[sp..]); O.resize(sp); ow("{ "); O.append(TDS[td..]); TDS.resize(td); O.append(SCR[..]); ow("}\n"); }
 		} else { gstmt(tl); }
 	}
 	ow("}\n");
+	if DSU > du0 || is_vimg(rt) { SCR2.clear(); SCR2.append(O[fsp..]); O.resize(fsp); ow(if is_vimg(rt) { "int64_t _fm __attribute__((cleanup(hr_dsf))) = hr_ds.n;\n" } else { "int64_t _fm __attribute__((cleanup(hr_dsr))) = hr_ds.n;\n" }); O.append(SCR2[..]); }
 }
 fn gen_program(out byte[>..]&) bool {
 	O.clear();
