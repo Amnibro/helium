@@ -99,7 +99,11 @@ recursive fn rtype(n int, ns int) int {
 	if k == N_TREF {
 		let e = rtype(x.a as int, ns);
 		let fl = ((x.fl & 1) as int) | ((x.fl & 2) as int);
-		if x.c >= 0 { return t_rel(e, fl, int_storage_of_tok(x.c as int), x.s as i64); }
+		if x.c >= 0 {
+			let w = if x.c as int == K_VARINT { 8 } else { int_storage_of_tok(x.c as int) };
+			let pd = if x.s >= 0 { lookup_q(x.s as int, ns, D_GLOBAL) } else { -1 };
+			return t_rel(e, fl, w, pd as i64);
+		}
 		if TY[e].k == TY_REF && TY[e].c < 0 { if (fl & 2) != 0 { return t_ref(TY[e].a as int, (TY[e].fl as int) | 2); } return e; }
 		return t_ref(e, fl);
 	}
@@ -157,7 +161,7 @@ recursive fn fields_into(node int, ns int) int {
 	for i in ND[node].n {
 		let f = kid(node, i);
 		let x = ND[f];
-		if (x.fl & 4) != 0 { buf.push(FI { name: -1, ty: -1, def: -1, fl: x.fl, padn: max(x.c, 0), off: 0 }); continue; }
+		if (x.fl & 4) != 0 { buf.push(FI { name: -1, ty: -1, def: -1, fl: x.fl, padn: x.c, off: 0 }); continue; }
 		let ft = rtype(x.a as int, ns);
 		buf.push(FI { name: x.s, ty: ft as i32, def: x.b, fl: x.fl, padn: 0, off: 0 });
 	}

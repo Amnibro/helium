@@ -198,6 +198,7 @@ recursive fn gas(n int) {
 recursive fn gcv(n int, f int, t int) {
 	if f == t { gx1(n); return; }
 	let fk = TY[f].k as int; let tk0 = TY[t].k as int;
+	if tk0 == TY_BOOL && fk == TY_REF && (TY[f].fl & RF_OPT) != 0 { ow("(("); gx1(n); ow(") != 0)"); return; }
 	if fk == TY_REF && TY[f].c < 0 && tk0 != TY_REF {
 		let m = TY[f].a as int;
 		if m == t { ow("(*"); gx1(n); ow(")"); return; }
@@ -586,10 +587,16 @@ recursive fn gcall(n int) {
 	if r != R_FN { gerr(n, "unsupported call"); return; }
 	let inst = rv(n);
 	let recv = if ax(n) == 1 && ND[ND[n].a].k == N_DOT { ND[ND[n].a].a as int } else { -1 };
+	let lrw = !is_ext(inst) && FI_[inst].lr;
+	let rt = FI_[inst].ret as int;
+	let vd = rt < 0 || rt == T_VOID;
+	let q = nt();
+	if lrw { ow("({ "); if !vd { ct(rt); format(O, " _c", q, " = "); } }
 	if is_ext(inst) { ext_name(inst); } else { fn_cname(inst); }
 	ow("(");
 	gcall_args(n, inst, recv);
 	ow(")");
+	if lrw { ow("; "); glrcheck(); if !vd { format(O, "_c", q, "; "); } ow("})"); }
 }
 recursive fn gblkcall(n int) {
 	let bi = rv(n);
@@ -703,6 +710,7 @@ recursive fn gx0(n int) {
 	if k == N_DOT {
 		let r = rk(n);
 		let a = x.a as int;
+		if r == R_VARIANT && TY[at(n)].k == TY_VARIANT { let t = at(n); let v = ENV[(ENI[TY[t].a].v0 as int) + (TY[t].c as int)]; if v.si >= 0 { ow("(("); ct(t); ow("){0})"); } else { ow("((hr_unit)0)"); } return; }
 		if r == R_VARIANT { let t = at(n); let p = nt(); ow("({ "); ct(t); ow(" _t"); oi(p); format(O, "; memset(&_t", p, ", 0, sizeof _t", p, "); _t", p, ".tag = ", rv(n), "; _t", p, "; })"); return; }
 		if r == R_MEMBER {
 			let d = deref(at(a));
@@ -955,6 +963,12 @@ recursive fn gassign(n int) {
 	garith(base_op(o), d, -1, x.b as int, p, n);
 	ow("; }");
 }
+fn gdummy() { let rt = FI_[GCF].ret as int; if rt < 0 || rt == T_VOID { ow("return;"); return; } ow("{ "); ct(rt); ow(" _z; memset(&_z, 0, sizeof _z); return _z; }"); }
+fn glrcheck() {
+	ow("if (HR_UNLIKELY(hr_lr)) { ");
+	if FI_[GCF].tg { let rt = FI_[GCF].ret as int; format(O, "if (hr_lr == ", GCF + 1, ") { hr_lr = 0; "); if rt < 0 || rt == T_VOID { ow("return; } "); } else { format(O, "return _lrv", GCF, "; } "); } }
+	gdummy(); ow(" } ");
+}
 fn movable_local(c int) bool { if ND[c].k != N_ID || rk(c) != R_LOCAL { return false; } let v = rv(c); LVS[v].cfn as int == GCF && !lv_isptr(v) && TY[LVS[v].ty].k != TY_REF && (cv(c) < 0 || cv(c) == at(c)) }
 recursive fn gmove(c int) {
 	if movable_local(c) { let v = rv(c); let p = nt(); ow("({ hrv _mv"); oi(p); ow(" = "); lv_name(v); ow("; "); lv_name(v); ow(".b = 0; "); lv_name(v); format(O, ".n = 0; _mv", p, "; })"); return; }
@@ -962,10 +976,17 @@ recursive fn gmove(c int) {
 }
 recursive fn gret(n int) {
 	let x = ND[n];
-	if ax(n) >= 0 { gerr(n, "return from inside a block is not supported by the self-hosted compiler yet"); return; }
-	if x.s >= 0 { gerr(n, "return from an enclosing function is not supported by the self-hosted compiler yet"); return; }
+	let lt = ax(n);
+	if lt >= 0 && lt != GCF {
+		let rt0 = FI_[lt].ret as int;
+		ow("{ ");
+		if x.n > 1 { format(O, "_lrv", lt, " = ("); ct(rt0); ow("){ "); for i in x.n { if i > 0 { ow(", "); } let c = kid(n, i); if is_res(fin(c)) { gmove(c); } else { gx(c); } } ow(" }; "); }
+		else { if x.n == 1 { format(O, "_lrv", lt, " = "); let c = kid(n, 0); if is_res(rt0) { gmove(c); } else { gx(c); } ow("; "); } }
+		format(O, "hr_lr = ", lt + 1, "; "); gdummy(); ow(" }");
+		return;
+	}
 	if x.n == 0 { ow("return;"); return; }
-	let f = ret_fn();
+	let f = if lt >= 0 { lt } else { ret_fn() };
 	let rt = FI_[f].ret as int;
 	if x.n > 1 { ow("return ("); ct(rt); ow("){ "); for i in x.n { if i > 0 { ow(", "); } let c = kid(n, i); if is_res(fin(c)) { gmove(c); } else { gx(c); } } ow(" };"); return; }
 	let c = kid(n, 0);
@@ -1062,6 +1083,7 @@ fn gen_fn(i int) {
 }
 fn gen_program(out byte[>..]&) bool {
 	O.clear();
+	for f, i in FI_ { if f.tg && f.ret >= 0 && f.ret as int != T_VOID { let sv = O.len; ow("static __thread "); ct(f.ret as int); format(O, " _lrv", i, ";\n"); GL.append(O[sv..]); O.resize(sv); } }
 	for d in ORDER {
 		let di = d as int;
 		let t = GLT[di] as int;

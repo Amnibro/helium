@@ -11,11 +11,12 @@
 #include <fcntl.h>
 #include <dirent.h>
 #include <pthread.h>
+#include <setjmp.h>
 #include <sys/mman.h>
 #include <sys/stat.h>
 #include <sys/time.h>
 typedef struct { uint8_t *p; int64_t n; } hsl;
-typedef struct { uint8_t *b; int64_t n; int64_t top; } hrv;
+typedef struct { uint8_t *b; int64_t n; int64_t top; int64_t *fl; int64_t fln, flc; } hrv;
 #define HR_RSZ ((int64_t)1 << 34)
 #define HR_LIKELY(x) __builtin_expect(!!(x), 1)
 #define HR_UNLIKELY(x) __builtin_expect(!!(x), 0)
@@ -31,8 +32,9 @@ static __attribute__((noreturn, cold)) void hr_slerr(int64_t a, int64_t b, int64
 static inline int64_t hr_ix(int64_t i, int64_t n, const char *loc) { if (HR_UNLIKELY((uint64_t)i >= (uint64_t)n)) hr_oob(i, n, loc); return i; }
 static uint8_t *hr_take(void) {
 	if (hr_nfree) return hr_free[--hr_nfree];
-	void *p = mmap(NULL, HR_RSZ, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS | MAP_NORESERVE, -1, 0);
+	void *p = mmap(NULL, HR_RSZ + 65536, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS | MAP_NORESERVE, -1, 0);
 	if (p == MAP_FAILED) { fprintf(stderr, "helium runtime error: out of address space\n"); exit(1); }
+	mprotect((uint8_t *)p + HR_RSZ, 65536, PROT_NONE);
 	return p;
 }
 static void hr_give(uint8_t *b, int64_t used) {
@@ -43,12 +45,139 @@ static void hr_give(uint8_t *b, int64_t used) {
 }
 static inline void hr_rinit(hrv *v) { if (HR_UNLIKELY(!v->b)) v->b = hr_take(); }
 static inline uint8_t *hr_grow(hrv *v, int64_t k, int64_t esz) { hr_rinit(v); uint8_t *p = v->b + v->n * esz; v->n += k; if (HR_UNLIKELY(v->n * esz > HR_RSZ)) hr_die("array grew past 16 GiB", "push"); return p; }
-static inline void hr_rfree(hrv *v, int64_t esz) { hr_give(v->b, v->n * esz); v->b = 0; v->n = 0; }
+static inline void hr_rfree(hrv *v, int64_t esz) { if (v->fl) free(v->fl); hr_give(v->b, v->top ? v->top : v->n * esz); *v = (hrv){0}; }
 static inline void hr_resize(hrv *v, int64_t n, int64_t esz) { hr_rinit(v); if (n > v->n) memset(v->b + v->n * esz, 0, (size_t)((n - v->n) * esz)); v->n = n; }
 static inline void hr_append(hrv *v, const void *p, int64_t k, int64_t esz) { if (k <= 0) return; uint8_t *d = hr_grow(v, k, esz); memmove(d, p, (size_t)(k * esz)); }
 static inline hsl hr_sl(hrv v) { return (hsl){ v.b, v.n }; }
 static inline uint8_t *hr_vmark(void) { if (HR_UNLIKELY(!hr_vbase)) hr_vbase = hr_vtop = hr_take(); return hr_vtop; }
 static inline uint8_t *hr_valloc(int64_t n) { hr_vmark(); uint8_t *p = hr_vtop; hr_vtop += (n + 7) & ~7; return p; }
+static inline int64_t hr_uleb_size(const uint8_t *p) {
+	if (HR_LIKELY(!(*p & 0x80))) return 1;
+	int64_t n = 1; while (*p++ & 0x80) n++; return n;
+}
+static inline uint64_t hr_uleb_read(const uint8_t *p) {
+	if (HR_LIKELY(!(*p & 0x80))) return *p;
+	uint64_t v = 0; int s = 0; uint8_t b;
+	do { b = *p++; v |= (uint64_t)(b & 0x7f) << s; s += 7; } while (b & 0x80);
+	return v;
+}
+static inline int64_t hr_uleb_write(uint8_t *p, uint64_t v) {
+	if (HR_LIKELY(v < 0x80)) { *p = (uint8_t)v; return 1; }
+	uint8_t *q = p;
+	while (v >= 0x80) { *q++ = (uint8_t)(v | 0x80); v >>= 7; }
+	*q++ = (uint8_t)v;
+	return q - p;
+}
+static inline int64_t hr_zig_read(const uint8_t *p) {
+	uint64_t u = hr_uleb_read(p);
+	return (int64_t)((u >> 1) ^ -(u & 1));
+}
+static inline int64_t hr_zig_write(uint8_t *p, int64_t v) {
+	uint64_t u = ((uint64_t)v << 1) ^ (uint64_t)(v >> 63);
+	return hr_uleb_write(p, u);
+}
+static inline int64_t hr_uleb_check(const uint8_t *p, const uint8_t *e, uint64_t *out) {
+	if (p >= e) return 0;
+	if (HR_LIKELY(!(*p & 0x80))) { *out = *p; return 1; }
+	uint64_t v = 0; int s = 0; const uint8_t *q = p;
+	while (q < e) {
+		uint8_t b = *q++;
+		if (s == 63 && b > 1) return 0;
+		v |= (uint64_t)(b & 0x7f) << s;
+		if (!(b & 0x80)) {
+			if (b == 0) return 0;
+			*out = v;
+			return q - p;
+		}
+		s += 7;
+		if (s > 63) return 0;
+	}
+	return 0;
+}
+static inline int64_t hr_zig_check(const uint8_t *p, const uint8_t *e, int64_t *out) {
+	uint64_t u = 0;
+	int64_t k = hr_uleb_check(p, e, &u);
+	if (!k) return 0;
+	*out = (int64_t)((u >> 1) ^ -(u & 1));
+	return k;
+}
+static inline int64_t hr_pool_claim(hrv *v, int64_t esz, int64_t *is_new) {
+	hr_rinit(v);
+	if (v->fln > 0) { *is_new = 0; return v->fl[--v->fln]; }
+	*is_new = 1;
+	int64_t iv = v->n;
+	if (HR_UNLIKELY((iv + 1) * esz > HR_RSZ)) hr_die("array grew past 16 GiB", "alloc");
+	return iv;
+}
+static inline void hr_pool_free(hrv *v, int64_t idx, const char *loc) {
+	if (HR_UNLIKELY((uint64_t)idx >= (uint64_t)v->n)) hr_oob(idx, v->n, loc);
+	if (v->fln == v->flc) { v->flc = v->flc ? v->flc * 2 : 64; v->fl = realloc(v->fl, (size_t)v->flc * sizeof(int64_t)); }
+	v->fl[v->fln++] = idx;
+}
+static void hr_span_free(hrv *v, int64_t idx, int64_t len) {
+	if (len <= 0) return;
+	int64_t n = v->fln, pos = 0;
+	while (pos < n && v->fl[2 * pos] < idx) pos++;
+	if (pos > 0 && v->fl[2 * (pos - 1)] + v->fl[2 * (pos - 1) + 1] == idx) {
+		v->fl[2 * (pos - 1) + 1] += len;
+		if (pos < n && v->fl[2 * (pos - 1)] + v->fl[2 * (pos - 1) + 1] == v->fl[2 * pos]) {
+			v->fl[2 * (pos - 1) + 1] += v->fl[2 * pos + 1];
+			memmove(&v->fl[2 * pos], &v->fl[2 * (pos + 1)], (size_t)(2 * (n - pos - 1)) * sizeof(int64_t));
+			v->fln--;
+		}
+		return;
+	}
+	if (pos < n && idx + len == v->fl[2 * pos]) {
+		v->fl[2 * pos] = idx;
+		v->fl[2 * pos + 1] += len;
+		return;
+	}
+	if (2 * (n + 1) > v->flc) { v->flc = v->flc ? v->flc * 2 : 64; v->fl = realloc(v->fl, (size_t)v->flc * sizeof(int64_t)); }
+	memmove(&v->fl[2 * (pos + 1)], &v->fl[2 * pos], (size_t)(2 * (n - pos)) * sizeof(int64_t));
+	v->fl[2 * pos] = idx;
+	v->fl[2 * pos + 1] = len;
+	v->fln++;
+}
+static int64_t hr_span_alloc(hrv *v, int64_t len) {
+	if (len <= 0) return 0;
+	int64_t best = -1;
+	for (int64_t i = 0; i < v->fln; i++) {
+		int64_t sl = v->fl[2 * i + 1];
+		if (sl >= len && (best < 0 || sl < v->fl[2 * best + 1])) best = i;
+	}
+	if (best < 0) return v->n;
+	int64_t idx = v->fl[2 * best];
+	if (v->fl[2 * best + 1] == len) {
+		memmove(&v->fl[2 * best], &v->fl[2 * (best + 1)], (size_t)(2 * (v->fln - best - 1)) * sizeof(int64_t));
+		v->fln--;
+	} else {
+		v->fl[2 * best] += len;
+		v->fl[2 * best + 1] -= len;
+	}
+	return idx;
+}
+static int64_t hr_span_regrow(hrv *v, int64_t idx, int64_t ol, int64_t nl) {
+	int64_t need = nl - ol;
+	for (int64_t i = 0; i < v->fln; i++) {
+		if (v->fl[2 * i] == idx + ol) {
+			int64_t sl = v->fl[2 * i + 1];
+			if (sl >= need || idx + ol + sl == v->n) {
+				int64_t take = sl < need ? sl : need;
+				if (sl == take) {
+					memmove(&v->fl[2 * i], &v->fl[2 * (i + 1)], (size_t)(2 * (v->fln - i - 1)) * sizeof(int64_t));
+					v->fln--;
+				} else {
+					v->fl[2 * i] += take;
+					v->fl[2 * i + 1] -= take;
+				}
+				return idx;
+			}
+			break;
+		}
+	}
+	hr_span_free(v, idx, ol);
+	return hr_span_alloc(v, nl);
+}
 static inline bool hr_memeq(const void *a, const void *b, int64_t n) { return n == 0 || memcmp(a, b, (size_t)n) == 0; }
 static inline bool hr_streq(hsl a, hsl b) { return a.n == b.n && hr_memeq(a.p, b.p, a.n); }
 static inline hsl hr_str(const char *s, int64_t n) { return (hsl){ (uint8_t *)s, n }; }
@@ -166,12 +295,13 @@ static uint64_t hr_f64_bits(double x) { uint64_t b; memcpy(&b, &x, 8); return b;
 static double hr_f64_from_bits(uint64_t b) { double x; memcpy(&x, &b, 8); return x; }
 typedef uint8_t hr_unit;
 static inline int64_t hr_f2i(double x) { if (x != x) return 0; x = trunc(x); if (x >= -9223372036854775808.0 && x < 9223372036854775808.0) return (int64_t)x; double m = fmod(x, 18446744073709551616.0); if (m < 0) m += 18446744073709551616.0; return (int64_t)(uint64_t)m; }
-static inline void hr_rdrop(hrv *v) { hr_give(v->b, 0); v->b = 0; v->n = 0; }
-static inline void hr_rgive(hrv v) { hr_give(v.b, 0); }
-static inline hrv *hr_tmp(hrv *t, hrv v) { hr_give(t->b, 0); *t = v; return t; }
-static inline void hr_rset(hrv *d, hrv v) { hr_give(d->b, 0); *d = v; }
+static inline void hr_rdrop(hrv *v) { if (v->fl) free(v->fl); hr_give(v->b, 0); *v = (hrv){0}; }
+static inline void hr_rgive(hrv v) { if (v.fl) free(v.fl); hr_give(v.b, 0); }
+static inline hrv *hr_tmp(hrv *t, hrv v) { if (t->fl) free(t->fl); hr_give(t->b, 0); *t = v; return t; }
+static inline void hr_rset(hrv *d, hrv v) { if (d->fl) free(d->fl); hr_give(d->b, 0); *d = v; }
 static inline hrv hr_rfrom(hsl s, int64_t esz) { hrv r = {0}; if (s.n) hr_append(&r, s.p, s.n, esz); return r; }
 static inline hrv hr_rdup(hrv v, int64_t esz) { return hr_rfrom((hsl){ v.b, v.n }, esz); }
+static inline hrv hr_rdup_var(hrv v) { hrv r = {0}; if (v.top > 0) { hr_rinit(&r); memcpy(r.b, v.b, (size_t)v.top); r.n = v.n; r.top = v.top; } return r; }
 #define HR_SDIV(T, a, b, loc) ({ T _da = (a), _db = (b); if (HR_UNLIKELY(_db == 0)) hr_die("division by zero", loc); if (sizeof(T) == 8 && HR_UNLIKELY(_db == -1 && _da == (T)((uint64_t)1 << 63))) hr_die("division overflow", loc); (T)(_db == -1 ? (T)(0 - (uint64_t)_da) : _da / _db); })
 #define HR_UDIV(T, a, b, loc) ({ T _da = (a), _db = (b); if (HR_UNLIKELY(_db == 0)) hr_die("division by zero", loc); (T)(_da / _db); })
 #define HR_UDIV_MOD(T, a, b, loc) ({ T _da = (a), _db = (b); if (HR_UNLIKELY(_db == 0)) hr_die("division by zero", loc); (T)(_da % _db); })
@@ -206,6 +336,82 @@ static int64_t hr_find_any(hsl s, const void *set) { const bool *m = set; for (i
 static int64_t hr_find_pair(hsl s, const void *a, int64_t d, const void *b) { const bool *x = a, *y = b; for (int64_t i = 0; i + d < s.n; i++) if (x[s.p[i]] && y[s.p[i + d]]) return i; return -1; }
 static bool hr_ffi_cstr(uint64_t p, hrv *out) { if (!p) return false; hr_append(out, (const void *)(uintptr_t)p, (int64_t)strlen((const char *)(uintptr_t)p), 1); return true; }
 static bool hr_ffi_bytes(uint64_t p, int64_t n, hrv *out) { if (!p || n < 0) return false; hr_append(out, (const void *)(uintptr_t)p, n, 1); return true; }
+typedef struct hr_qmsg { struct hr_qmsg *next; int64_t sz; uint8_t d[]; } hr_qmsg;
+typedef struct { pthread_mutex_t mu; pthread_cond_t cv, cv_put; hr_qmsg *head, *tail; int64_t count, limit; bool init, closed; } hr_queue;
+static pthread_mutex_t hr_qinit_mu = PTHREAD_MUTEX_INITIALIZER;
+static hr_queue hr_qs[512];
+static hr_queue *hr_get_q(int qid) {
+	hr_queue *q = &hr_qs[qid & 511];
+	if (HR_UNLIKELY(!q->init)) {
+		pthread_mutex_lock(&hr_qinit_mu);
+		if (!q->init) { pthread_mutex_init(&q->mu, 0); pthread_cond_init(&q->cv, 0); pthread_cond_init(&q->cv_put, 0); q->init = true; }
+		pthread_mutex_unlock(&hr_qinit_mu);
+	}
+	return q;
+}
+static void hr_qput(int qid, const void *p, int64_t sz) {
+	hr_queue *q = hr_get_q(qid);
+	hr_qmsg *m = malloc(sizeof(hr_qmsg) + (size_t)sz);
+	m->next = 0; m->sz = sz; if (sz > 0) memcpy(m->d, p, (size_t)sz);
+	pthread_mutex_lock(&q->mu);
+	while (q->limit > 0 && q->count >= q->limit && !q->closed) pthread_cond_wait(&q->cv_put, &q->mu);
+	if (q->tail) q->tail->next = m; else q->head = m;
+	q->tail = m; q->count++;
+	pthread_cond_signal(&q->cv);
+	pthread_mutex_unlock(&q->mu);
+}
+static bool hr_qget_raw(int qid, bool wait, void *fixed_out, int64_t fixed_sz, uint8_t **bytes_out) {
+	hr_queue *q = hr_get_q(qid);
+	pthread_mutex_lock(&q->mu);
+	while (!q->head && wait && !q->closed) pthread_cond_wait(&q->cv, &q->mu);
+	hr_qmsg *m = q->head;
+	if (!m) { pthread_mutex_unlock(&q->mu); return false; }
+	q->head = m->next; if (!q->head) q->tail = 0;
+	q->count--;
+	if (q->limit > 0) pthread_cond_signal(&q->cv_put);
+	pthread_mutex_unlock(&q->mu);
+	if (bytes_out) { uint8_t *dst = hr_valloc(m->sz); memcpy(dst, m->d, (size_t)m->sz); *bytes_out = dst; }
+	else if (fixed_out && fixed_sz > 0) memcpy(fixed_out, m->d, (size_t)fixed_sz);
+	free(m);
+	return true;
+}
+static void hr_qlimit(int qid, int64_t lim) { hr_queue *q = hr_get_q(qid); pthread_mutex_lock(&q->mu); q->limit = lim; pthread_cond_broadcast(&q->cv_put); pthread_mutex_unlock(&q->mu); }
+static void hr_qclose(int qid) { hr_queue *q = hr_get_q(qid); pthread_mutex_lock(&q->mu); q->closed = true; pthread_cond_broadcast(&q->cv); pthread_cond_broadcast(&q->cv_put); pthread_mutex_unlock(&q->mu); }
+typedef struct { void (*fn)(uint8_t *); uint8_t *pkt; } hr_targ;
+static pthread_mutex_t hr_tmu = PTHREAD_MUTEX_INITIALIZER;
+static pthread_t *hr_tids; static int64_t hr_ntids, hr_ctids;
+static void *hr_tstart(void *arg) {
+	hr_targ a = *(hr_targ *)arg; free(arg);
+	a.fn(a.pkt);
+	free(a.pkt);
+	if (hr_vbase) munmap(hr_vbase, HR_RSZ + 65536);
+	for (int64_t i = 0; i < hr_nfree; i++) munmap(hr_free[i], HR_RSZ + 65536);
+	free(hr_free);
+	return 0;
+}
+static int64_t hr_thread_spawn(void (*fn)(uint8_t *), const void *pkt, int64_t sz) {
+	hr_targ *a = malloc(sizeof *a); a->fn = fn;
+	a->pkt = sz > 0 ? malloc((size_t)sz) : 0;
+	if (sz > 0) memcpy(a->pkt, pkt, (size_t)sz);
+	pthread_t th;
+	if (pthread_create(&th, 0, hr_tstart, a) != 0) hr_die("pthread_create failed", "thread_spawn");
+	pthread_mutex_lock(&hr_tmu);
+	if (hr_ntids == hr_ctids) { hr_ctids = hr_ctids ? hr_ctids * 2 : 64; hr_tids = realloc(hr_tids, (size_t)hr_ctids * sizeof *hr_tids); }
+	int64_t id = hr_ntids++;
+	hr_tids[id] = th;
+	pthread_mutex_unlock(&hr_tmu);
+	return id;
+}
+static void hr_thread_wait(int64_t id) {
+	pthread_mutex_lock(&hr_tmu);
+	pthread_t th = hr_tids[id];
+	pthread_mutex_unlock(&hr_tmu);
+	pthread_join(th, 0);
+}
+static int64_t hr_hardware_threads(void) {
+	long n = sysconf(_SC_NPROCESSORS_ONLN);
+	return n > 0 ? (int64_t)n : 1;
+}
 static void hr_main(void);
 static void hr_init_globals(void);
 int main(int argc, char **argv) { hr_argc = argc; hr_argv = argv; hr_init_globals(); hr_main(); hr_flush(); return 0; }

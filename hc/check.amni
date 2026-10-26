@@ -1,14 +1,17 @@
 import decl;
-let R_NONE = 0; let R_LOCAL = 1; let R_GLOBAL = 2; let R_FN = 3; let R_BUILTIN = 4; let R_FIELD = 5; let R_CONST = 6; let R_VARIANT = 7; let R_MEMBER = 8; let R_CTOR = 9; let R_BLOCK = 10; let R_UFCS = 11; let R_VCTOR = 12; let R_FCONST = 13;
+let R_NONE = 0; let R_LOCAL = 1; let R_GLOBAL = 2; let R_FN = 3; let R_BUILTIN = 4; let R_FIELD = 5; let R_CONST = 6; let R_VARIANT = 7; let R_MEMBER = 8; let R_CTOR = 9; let R_BLOCK = 10; let R_UFCS = 11; let R_VCTOR = 12; let R_FCONST = 13; let R_CASE = 14;
 let LV_VAR = 1; let LV_CONST = 2; let LV_PARAM = 4; let LV_REF = 8; let LV_FOR = 16; let LV_BLKP = 32;
 let IS_DONE = 2;
-struct FnI { node i32, lo i32, hi i32, ab i32, par i32, cfn i32, g0 i32, gn i32, ret i32, p0 i32, pn i32, st u8, lr bool, blk i32, bown i32, name i32, fl u16, rinf bool }
+struct FnI { node i32, lo i32, hi i32, ab i32, par i32, cfn i32, g0 i32, gn i32, ret i32, p0 i32, pn i32, st u8, lr bool, blk i32, bown i32, name i32, fl u16, rinf bool, tg bool }
 struct LV { name i32, ty i32, fl u16, cfn i32, own i32, node i32, cnt i32 }
 struct Cap { inst i32, lv i32 }
+struct CEdge { caller i32, callee i32 }
 var FI_ FnI[>..];
 var LVS LV[>..];
 var SCOPE i32[>..<];
+var NAR i32[>..<];
 var CAPS Cap[>..];
+var CEDGES CEdge[>..];
 var GBS Gb[>..];
 var AT i32[>..]; var AC i32[>..]; var AK u8[>..]; var AV i32[>..]; var AX i32[>..];
 var CI int = -1;
@@ -50,17 +53,55 @@ fn add_lv(name int, t int, fl int, node int) int {
 	SCOPE.push((LVS.len - 1) as i32);
 	LVS.len - 1
 }
-fn visible(own int) bool { var i = AOWN; while i >= 0 { if i == own { return true; } i = FI_[i].par as int; } false }
+fn visible_in(own int, cur int) bool { var i = cur; while i >= 0 { if i == own { return true; } i = FI_[i].par as int; } false }
+fn visible(own int) bool { visible_in(own, AOWN) }
 fn find_lv(name int) int {
 	var i = SCOPE.len - 1;
 	while i >= 0 { let v = SCOPE[i] as int; if LVS[v].name as int == name && visible(LVS[v].own as int) { return v; } i--; }
 	-1
 }
+fn add_cap_one(cf int, v int) bool {
+	if cf < 0 || cf == (LVS[v].cfn as int) { return false; }
+	for x in CAPS { if x.inst as int == cf && x.lv as int == v { return false; } }
+	CAPS.push(Cap { cf as i32, v as i32 });
+	true
+}
 fn note_cap(v int) {
-	let c = LVS[v].cfn as int;
-	if c == CFN { return; }
-	for x in CAPS { if x.inst as int == CFN && x.lv as int == v { return; } }
-	CAPS.push(Cap { CFN as i32, v as i32 });
+	let own = LVS[v].own as int;
+	var a = AOWN;
+	while a >= 0 && a != own {
+		add_cap_one(FI_[a].cfn as int, v);
+		a = FI_[a].par as int;
+	}
+}
+fn note_edge(callee int) {
+	if CFN < 0 || callee < 0 || CFN == callee { return; }
+	for e in CEDGES { if e.caller as int == CFN && e.callee as int == callee { return; } }
+	CEDGES.push(CEdge { CFN as i32, callee as i32 });
+}
+recursive fn narrow_push(c int) {
+	if c < 0 { return; }
+	let x = ND[c]; let k = x.k as int;
+	if k == N_ID && rk(c) == R_LOCAL {
+		let v = rv(c);
+		let t = LVS[v].ty as int;
+		if TY[t].k == TY_REF && (TY[t].fl & RF_OPT) != 0 {
+			NAR.push(v as i32); NAR.push(t as i32);
+			LVS[v].ty = t_ref(TY[t].a as int, 0) as i32;
+		}
+		return;
+	}
+	if k == N_BIN && x.op as int == T_ANDAND {
+		narrow_push(x.a as int);
+		narrow_push(x.b as int);
+	}
+}
+fn narrow_pop(m int) {
+	while NAR.len > m {
+		let old_t = NAR.pop();
+		let v = NAR.pop() as int;
+		LVS[v].ty = old_t;
+	}
 }
 fn is_pending(t int) bool { let k = TY[t].k as int; k == TY_ILIT || k == TY_FLIT || k == TY_STRLIT || k == TY_ARRLIT || k == TY_NULL }
 fn int_fits(v i64, uns bool, t int) bool {
@@ -107,6 +148,7 @@ recursive fn conv(n int, t int) bool {
 	let fk = TY[f].k as int;
 	let tkd = TY[t].k as int;
 	if tkd == TY_ERR || fk == TY_ERR { return true; }
+	if tkd == TY_BOOL && fk == TY_REF && (TY[f].fl & RF_OPT) != 0 { set_cv(n, T_BOOL); return true; }
 	if tkd == TY_REF && TY[t].c < 0 && fk != TY_NULL && fk != TY_REF { if tclass(t) >= 0 { let ok = conv(n, TY[t].a as int); if ok && cv(n) < 0 { set_cv(n, t); } return ok; } }
 	if fk == TY_REF && TY[f].c < 0 && tkd != TY_REF { if conv_ok(TY[f].a as int, t, n) { set_cv(n, t); return true; } }
 	if fk == TY_ILIT {
@@ -126,13 +168,19 @@ fn conv_ok(f int, t int, n int) bool {
 	if f == t { return true; }
 	let a = TY[f]; let b = TY[t];
 	if widens(f, t) { return true; }
+	if b.k == TY_BOOL && a.k == TY_REF && (a.fl & RF_OPT) != 0 { return true; }
 	if b.k == TY_SLICE && (a.k == TY_ARR || a.k == TY_SLICE) && a.a == b.a { return true; }
 	if b.k == TY_SLICE && a.k == TY_STRLIT && b.a as int == T_U8 { return true; }
-	if b.k == TY_REF && (b.fl & RF_OPT) != 0 && a.k == TY_REF && a.a == b.a { return true; }
-	if b.k == TY_REF && b.c < 0 && (b.a as int == f) { return true; }
+	if b.k == TY_REF && a.k == TY_REF && ((b.fl & RF_OPT) != 0 || (a.fl & RF_OPT) == 0) {
+		if a.a == b.a { return true; }
+		if TY[b.a].k == TY_ENUM && TY[a.a].k == TY_VARIANT && TY[a.a].a == TY[b.a].a { return true; }
+		if TY[b.a].k == TY_ENUM && TY[a.a].k == TY_ENUM && TY[a.a].a == TY[b.a].a { return true; }
+	}
+	if b.k == TY_REF && (b.a as int == f) { return true; }
 	if b.k == TY_ENUM && a.k == TY_VARIANT && a.a == b.a { return true; }
-	if b.k == TY_ARR && a.k == TY_ARR && a.a == b.a && n >= 0 && is_construct(n) { return true; }
-	if b.k == TY_ARR && a.k == TY_SLICE && a.a == b.a && n >= 0 && is_construct(n) { return true; }
+	if b.k == TY_ENUM && a.k == TY_ENUM && a.a == b.a { return true; }
+	if b.k == TY_ARR && a.k == TY_ARR && a.a == b.a { return true; }
+	if b.k == TY_ARR && a.k == TY_SLICE && a.a == b.a { return true; }
 	false
 }
 fn is_construct(n int) bool { let k = ND[n].k as int; k == N_CALL || k == N_ARR || k == N_STR }
@@ -203,6 +251,9 @@ fn unify(n int, a int, b int) int {
 	if widens(db, da) && !(kb == TY_FLT && ka == TY_INT) { set_cv(b, da); if ta != da { set_cv(a, da); } return da; }
 	if ka == TY_INT && kb == TY_FLT { set_cv(a, db); return db; }
 	if kb == TY_INT && ka == TY_FLT { set_cv(b, da); return da; }
+	if ka == TY_VARIANT && kb == TY_VARIANT && TY[da].a == TY[db].a { let et = t_enum(TY[da].a as int, false); set_cv(a, et); set_cv(b, et); return et; }
+	if ka == TY_ENUM && kb == TY_VARIANT && TY[da].a == TY[db].a { set_cv(b, da); if ta != da { set_cv(a, da); } return da; }
+	if kb == TY_ENUM && ka == TY_VARIANT && TY[da].a == TY[db].a { set_cv(a, db); if tb != db { set_cv(b, db); } return db; }
 	var m byte[>..] = []; format(m, "operands of types ", tn(da), " and ", tn(db), " need a cast to a common type"); cerr(n, m);
 	T_ERRT
 }
@@ -223,7 +274,14 @@ recursive fn leaf_type(t int) int {
 recursive fn ck_bin(n int, want int) int {
 	let x = ND[n]; let o = x.op as int;
 	let a = x.a as int; let b = x.b as int;
-	if o == T_ANDAND || o == T_OROR { ck(a, T_BOOL); conv(a, T_BOOL); ck(b, T_BOOL); conv(b, T_BOOL); return set_t(n, T_BOOL); }
+	if o == T_ANDAND {
+		ck(a, T_BOOL); conv(a, T_BOOL);
+		let nm0 = NAR.len; narrow_push(a);
+		ck(b, T_BOOL); conv(b, T_BOOL);
+		narrow_pop(nm0);
+		return set_t(n, T_BOOL);
+	}
+	if o == T_OROR { ck(a, T_BOOL); conv(a, T_BOOL); ck(b, T_BOOL); conv(b, T_BOOL); return set_t(n, T_BOOL); }
 	if o == T_DOTEQ || o == T_DOTNEQ { ck(a, -1); ck(b, -1); return set_t(n, T_BOOL); }
 	let cmp = o == T_EQ || o == T_NEQ || o == T_LT || o == T_GT || o == T_LTEQ || o == T_GTEQ;
 	let w = if cmp { -1 } else { want };
@@ -333,6 +391,7 @@ recursive fn global_type(d int) int {
 		ck(iv, -1);
 		t = default_t(iv);
 		if TY[t].k == TY_STRLIT { t = TT_STR; }
+		if TY[t].k == TY_VARIANT && (ND[iv].k == N_DOT || ND[iv].k == N_SLIT) && (x.fl & V_VAR) != 0 { t = t_enum(TY[t].a as int, false); set_cv(iv, t); }
 		GLT[d] = t as i32;
 	}
 	if !ORD_HAS(d) { ORDER.push(d as i32); }
@@ -341,6 +400,7 @@ recursive fn global_type(d int) int {
 }
 fn ORD_HAS(d int) bool { for o in ORDER { if o as int == d { return true; } } false }
 fn place_ok(n int) bool { let k = ND[n].k as int; k == N_ID || k == N_DOT || k == N_IDX || (k == N_UN && ND[n].op as int == T_MUL) }
+fn decode_rel(ft int) int { if TY[ft].k == TY_REF && TY[ft].c >= 0 { t_ref(TY[ft].a as int, TY[ft].fl as int) } else { ft } }
 recursive fn ck_dot(n int, want int) int {
 	let x = ND[n];
 	let a = x.a as int;
@@ -351,7 +411,7 @@ recursive fn ck_dot(n int, want int) int {
 		if de >= 0 && lookup_q(ND[a].s as int, ns, D_GLOBAL) < 0 {
 			let et = rtype_name_enum(de);
 			let ei = TY[et].a as int;
-			for i in ENI[ei].vnum { if ENV[(ENI[ei].v0 as int) + i].name as int == name { set_r(n, R_VARIANT, i); return set_t(n, et); } }
+			for i in ENI[ei].vnum { if ENV[(ENI[ei].v0 as int) + i].name as int == name { set_r(n, R_VARIANT, i); return set_t(n, t_variant(ei, i)); } }
 			var m byte[>..] = []; format(m, "no variant ", nm(name), " in ", tn(et)); cerr(n, m); return set_t(n, T_ERRT);
 		}
 	}
@@ -366,11 +426,11 @@ recursive fn ck_dot(n int, want int) int {
 	if k == TY_STRUCT {
 		let si = TY[d].a as int;
 		let fi = sfield(si, name);
-		if fi >= 0 { set_r(n, R_FIELD, fi); let ft = SFI[(STI[si].f0 as int) + fi].ty as int; return set_t(n, ft); }
+		if fi >= 0 { set_r(n, R_FIELD, fi); let ft = SFI[(STI[si].f0 as int) + fi].ty as int; return set_t(n, decode_rel(ft)); }
 	}
 	if k == TY_VARIANT {
 		let v = ENV[(ENI[TY[d].a].v0 as int) + (TY[d].c as int)];
-		if v.si >= 0 { let fi = sfield(v.si as int, name); if fi >= 0 { set_r(n, R_FIELD, fi); set_x(n, v.si as int); return set_t(n, SFI[(STI[v.si].f0 as int) + fi].ty as int); } }
+		if v.si >= 0 { let fi = sfield(v.si as int, name); if fi >= 0 { set_r(n, R_FIELD, fi); set_x(n, v.si as int); return set_t(n, decode_rel(SFI[(STI[v.si].f0 as int) + fi].ty as int)); } }
 	}
 	var m byte[>..] = []; format(m, "no field ", nm(name), " in ", tn(d)); cerr(n, m);
 	set_t(n, T_ERRT)
@@ -383,9 +443,9 @@ recursive fn ck_idx(n int, want int) int {
 	if TY[t].k == TY_ARRLIT { t = default_t(x.a as int); }
 	let d = deref(t);
 	let ti = ck(x.b as int, T_I64);
-	if TY[ti].k == TY_ILIT { conv(x.b as int, T_I64); } else { let di = deref(ti); if TY[di].k != TY_INT { cerr(x.b as int, "index must be an integer"); } else { if di != ti { set_cv(x.b as int, di); } } }
+	if TY[ti].k == TY_ILIT { conv(x.b as int, T_I64); } else { let di = deref(ti); if TY[di].k != TY_INT && TY[di].k != TY_VARINT { cerr(x.b as int, "index must be an integer"); } else { if di != ti { set_cv(x.b as int, di); } } }
 	let k = TY[d].k as int;
-	if k == TY_ARR || k == TY_SLICE { return set_t(n, TY[d].a as int); }
+	if k == TY_ARR || k == TY_SLICE { return set_t(n, decode_rel(TY[d].a as int)); }
 	var m byte[>..] = []; format(m, "cannot index ", tn(d)); cerr(n, m);
 	set_t(n, T_ERRT)
 }
@@ -415,9 +475,13 @@ recursive fn ck_as(n int, want int) int {
 recursive fn ck_block(n int, want int) int {
 	let x = ND[n];
 	let m = SCOPE.len;
+	let nm0 = NAR.len;
+	let nf0 = pre_decl_block_fns(n);
 	for i in x.n { cstmt(kid(n, i)); }
 	var t = T_VOID;
-	if x.a >= 0 { t = ck(x.a as int, want); if want >= 0 && t != T_VOID && !is_pending(t) && want != T_VOID { } }
+	if x.a >= 0 { t = ck(x.a as int, want); }
+	pop_block_fns(nf0);
+	narrow_pop(nm0);
 	SCOPE.pop_n(SCOPE.len - m);
 	set_t(n, t)
 }
@@ -436,19 +500,28 @@ recursive fn has_break(n int) bool {
 	let x = ND[n]; let k = x.k as int;
 	if k == N_BREAK { return true; }
 	if k == N_WHILE || k == N_LOOP || k == N_FOR || k == N_FN || k == N_FUNVAL { return false; }
-	if has_break(x.a as int) || has_break(x.b as int) || has_break(x.c as int) { return true; }
-	if k == N_BLOCK || k == N_MATCH { for i in x.n { let c = kid(n, i); if has_break(c) { return true; } if k == N_MATCH && has_break(ND[c].b as int) { return true; } } }
+	if k >= 40 && k < 50 { return false; }
+	if k == N_VDECL { return has_break(x.b as int); }
+	if k == N_CALL { if has_break(x.a as int) { return true; } for i in x.n { if has_break(kid(n, i)) { return true; } } return false; }
+	if has_break(x.a as int) || has_break(x.b as int) || has_break(x.c as int) || has_break(x.d as int) { return true; }
+	if k == N_BLOCK || k == N_MATCH || k == N_LIST || k == N_ARR || k == N_SLIT || k == N_RET {
+		for i in x.n {
+			let c = kid(n, i);
+			if has_break(c) { return true; }
+			if k == N_MATCH && has_break(ND[c].b as int) { return true; }
+		}
+	}
 	false
 }
 recursive fn ck_if(n int, want int) int {
 	let x = ND[n];
 	let c = ck(x.a as int, T_BOOL);
-	if TY[deref(c)].k == TY_REF || (TY[c].k == TY_REF && (TY[c].fl & RF_OPT) != 0) { set_x(n, 1); }
-	else { conv(x.a as int, T_BOOL); }
-	let narrow = narrow_of(x.a as int);
+	conv(x.a as int, T_BOOL);
 	let m = SCOPE.len;
-	if narrow >= 0 { let v = LVS[narrow]; add_lv(v.name as int, TY[v.ty].a as int, (v.fl as int) | LV_REF, x.a as int); set_x(n, (LVS.len - 1) | (1 << 30)); }
+	let nm0 = NAR.len;
+	narrow_push(x.a as int);
 	let tb = ck(x.b as int, want);
+	narrow_pop(nm0);
 	SCOPE.pop_n(SCOPE.len - m);
 	if x.c < 0 { return set_t(n, T_VOID); }
 	let tc = ck(x.c as int, want);
@@ -462,21 +535,16 @@ recursive fn ck_if(n int, want int) int {
 	let u = unify(n, x.b as int, x.c as int);
 	set_t(n, u)
 }
-fn narrow_of(c int) int {
-	if ND[c].k != N_ID || rk(c) != R_LOCAL { return -1; }
-	let v = rv(c);
-	let t = LVS[v].ty as int;
-	if TY[t].k == TY_REF && (TY[t].fl & RF_OPT) != 0 { return v; }
-	-1
-}
 recursive fn ck_while(n int) int {
 	let x = ND[n];
 	let c = ck(x.a as int, T_BOOL);
-	let narrow = narrow_of(x.a as int);
-	if narrow < 0 { conv(x.a as int, T_BOOL); } else { set_x(n, 1); }
+	conv(x.a as int, T_BOOL);
+	let nm0 = NAR.len;
+	narrow_push(x.a as int);
 	LOOPD++;
 	ck(x.b as int, T_VOID);
 	LOOPD--;
+	narrow_pop(nm0);
 	set_t(n, T_VOID)
 }
 var BRK_T i32[>..<];
@@ -503,12 +571,12 @@ recursive fn ck_for(n int) int {
 		if TY[t].k == TY_ARRLIT { t = default_t(x.a as int); }
 		let d = deref(t);
 		if TY[d].k == TY_ILIT { conv(x.a as int, T_I64); et = T_I64; set_x(n, 0); }
-		else { if TY[d].k == TY_INT { et = d; if d != t { set_cv(x.a as int, d); } set_x(n, 0); }
-		else { if TY[d].k == TY_ARR || TY[d].k == TY_SLICE { et = TY[d].a as int; set_x(n, 1); }
+		else { if TY[d].k == TY_INT || TY[d].k == TY_VARINT { et = if TY[d].k == TY_VARINT { T_I64 } else { d }; if et != t { set_cv(x.a as int, et); } set_x(n, 0); }
+		else { if TY[d].k == TY_ARR || TY[d].k == TY_SLICE { et = decode_rel(TY[d].a as int); set_x(n, 1); }
 		else { var mm byte[>..] = []; format(mm, "cannot iterate over ", tn(d)); cerr(n, mm); } } }
 	}
 	if x.l >= 0 { et = rtype(x.l as int, ns_of(n)); }
-	let byref = (x.fl & 1) != 0;
+	let byref = (x.fl & 1) != 0 || is_bytes(et);
 	let v = add_lv(x.s as int, if byref { t_ref(et, 0) } else { et }, LV_FOR | (if byref { LV_REF } else { 0 }), n);
 	set_r(n, R_LOCAL, v);
 	if x.c >= 0 { let iv = add_lv(x.c as int, if x.n >= 0 { rtype(x.n as int, ns_of(n)) } else { T_I64 }, LV_FOR, n); set_x(n, ax(n) | (iv << 2)); }
@@ -522,6 +590,7 @@ recursive fn ck_match(n int, want int) int {
 	let x = ND[n];
 	var st = ck(x.a as int, -1);
 	if TY[st].k == TY_ILIT { conv(x.a as int, T_I64); st = T_I64; }
+	if TY[st].k == TY_VARIANT { st = t_enum(TY[st].a as int, false); set_cv(x.a as int, st); }
 	let d = deref(st);
 	var rt = -1;
 	var allv = true;
@@ -539,7 +608,7 @@ recursive fn ck_match(n int, want int) int {
 					for q in ENI[ei].vnum { if ENV[(ENI[ei].v0 as int) + q].name == ND[lo].s { found = q; } }
 					if found < 0 { var mm byte[>..] = []; format(mm, "no variant ", nm(ND[lo].s as int), " in ", tn(d)); cerr(lo, mm); }
 					set_r(lo, R_VARIANT, found); set_t(lo, d);
-					if ax0.s >= 0 && found >= 0 { let vt = t_variant(ei, found); let byr = (ax0.fl & 2) != 0; let v = add_lv(ax0.s as int, if byr { t_ref(vt, 0) } else { vt }, if byr { LV_REF } else { 0 }, arm); set_r(arm, R_LOCAL, v); }
+					if ax0.s >= 0 && found >= 0 { let vt = t_variant(ei, found); let byr = (ax0.fl & 2) != 0 || is_bytes(vt); let v = add_lv(ax0.s as int, if byr { t_ref(vt, 0) } else { vt }, if byr { LV_REF } else { 0 }, arm); set_r(arm, R_LOCAL, v); }
 				} else {
 					ck(lo, d); conv(lo, d);
 					if ND[it].b >= 0 { ck(ND[it].b as int, d); conv(ND[it].b as int, d); }
@@ -559,12 +628,19 @@ recursive fn ck_match(n int, want int) int {
 	for i in x.n { let b = ND[kid(n, i)].b as int; if !ends(b) { conv(b, rt); } }
 	set_t(n, rt)
 }
+fn find_from_fn(name int) int {
+	var i = AOWN;
+	while i >= 0 {
+		if FI_[i].node >= 0 && ND[FI_[i].node].k == N_FN && FI_[i].name as int == name { return i; }
+		i = if FI_[i].bown >= 0 { FI_[i].bown as int } else { FI_[i].par as int };
+	}
+	-1
+}
 recursive fn ck_ret(n int) int {
 	let x = ND[n];
-	if x.s >= 0 { for i in x.n { ck(kid(n, i), -1); default_t(kid(n, i)); } set_t(n, T_VOID); return T_VOID; }
-	let f = ret_fn();
+	let f = if x.s >= 0 { find_from_fn(x.s as int) } else { ret_fn() };
 	if f < 0 { cerr(n, "return outside a function"); return T_VOID; }
-	if f != CFN { FI_[CFN].lr = true; set_x(n, f); } else { set_x(n, -1); }
+	if f != CFN { FI_[CFN].lr = true; FI_[f].tg = true; set_x(n, f); } else { set_x(n, -1); }
 	let rt = FI_[f].ret as int;
 	if x.n == 0 { if rt >= 0 && rt != T_VOID && !FI_[f].rinf { cerr(n, "return needs a value"); } if rt < 0 { FI_[f].ret = T_VOID as i32; } return set_t(n, T_VOID); }
 	if rt >= 0 && TY[rt].k == TY_MULTI && x.n == 1 { let c = kid(n, 0); ck(c, rt); return set_t(n, T_VOID); }
@@ -598,6 +674,7 @@ recursive fn ck(n int, want int) int {
 	if k == N_STR { if want >= 0 && is_byte_arr(want) { return set_t(n, want); } return set_t(n, T_STRLIT); }
 	if k == N_TRUE || k == N_FALSE { return set_t(n, T_BOOL); }
 	if k == N_NULL { if want >= 0 && is_opt(want) { return set_t(n, want); } return set_t(n, T_NULL); }
+	if k == N_SELF { return set_t(n, if want >= 0 { want } else { T_ERRT }); }
 	if k == N_ID { return ck_id(n, want); }
 	if k == N_BIN { let t = ck_bin(n, want); if want >= 0 && is_pending(t) && (TY[want].k == TY_INT || TY[want].k == TY_FLT) { conv(n, want); return want; } return t; }
 	if k == N_UN { let t = ck_un(n, want); if want >= 0 && is_pending(t) && (TY[want].k == TY_INT || TY[want].k == TY_FLT) { conv(n, want); return want; } return t; }
@@ -641,7 +718,7 @@ recursive fn cstmt(n int) {
 	let k = x.k as int;
 	if k == N_VDECL { ck_vdecl(n); return; }
 	if k == N_ASSIGN { ck_assign(n); return; }
-	if k == N_INCDEC { let t = ck(x.a as int, -1); if TY[deref(t)].k != TY_INT { cerr(n, "++/-- needs an integer"); } return; }
+	if k == N_INCDEC { let t = ck(x.a as int, -1); if TY[deref(t)].k != TY_INT && TY[deref(t)].k != TY_VARINT { cerr(n, "++/-- needs an integer"); } return; }
 	if k == N_FN { decl_nested(n); return; }
 	let t = ck(n, -1);
 	if is_pending(t) { default_t(n); }
@@ -666,13 +743,19 @@ recursive fn ck_vdecl(n int) {
 	var t = dt;
 	if x.b >= 0 {
 		let init = kid(x.b as int, 0);
-		let it = ck(init, dt);
-		if dt >= 0 { if byref { if !(TY[dt].k == TY_REF) { conv(init, dt); } } else { conv(init, dt); } }
-		else {
-			t = default_t(init);
-			if TY[t].k == TY_MULTI { t = TYL[TY[t].l] as int; }
-			if byref || (ND[init].k == N_UN && ND[init].op as int == T_AND) { if TY[t].k != TY_REF { t = t_ref(t, 0); } }
-			else { if TY[t].k == TY_REF && TY[t].c < 0 && (TY[t].fl & RF_OPT) == 0 && is_fixed(TY[t].a as int) { t = TY[t].a as int; set_cv(init, t); } }
+		if dt < 0 && ND[init].k == N_ARR && ND[init].n == 0 && ND[init].a < 0 && ND[init].c < 0 {
+			t = t_arr(T_ERRT, A_GROW, -1, -1);
+			set_t(init, t);
+		} else {
+			let it = ck(init, dt);
+			if dt >= 0 { if byref { if !(TY[dt].k == TY_REF) { conv(init, dt); } } else { conv(init, dt); } }
+			else {
+				t = default_t(init);
+				if TY[t].k == TY_MULTI { t = TYL[TY[t].l] as int; }
+				if TY[t].k == TY_VARIANT && (ND[init].k == N_DOT || ND[init].k == N_SLIT) && (lf & LV_VAR) != 0 { t = t_enum(TY[t].a as int, false); set_cv(init, t); }
+				if byref || (ND[init].k == N_UN && ND[init].op as int == T_AND) { if TY[t].k != TY_REF { t = t_ref(t, 0); } }
+				else { if TY[t].k == TY_REF && TY[t].c < 0 && (TY[t].fl & RF_OPT) == 0 && is_fixed(TY[t].a as int) { t = TY[t].a as int; set_cv(init, t); } }
+			}
 		}
 	} else {
 		if t < 0 { cerr(n, "a declaration needs a type or an initializer"); t = T_ERRT; }
@@ -692,13 +775,30 @@ recursive fn ck_assign(n int) {
 	}
 	if o == T_DOTASSIGN {
 		let tt = ck(x.a as int, -1);
-		let rt = ck(x.b as int, -1);
-		if is_pending(rt) { default_t(x.b as int); }
+		let rt = ck(x.b as int, tt);
+		if is_pending(rt) {
+			if TY[rt].k == TY_NULL && TY[tt].k == TY_REF { set_t(x.b as int, t_ref(TY[tt].a as int, RF_OPT)); }
+			else { default_t(x.b as int); }
+		}
+		if ND[x.a].k == N_ID && rk(x.a as int) == R_LOCAL {
+			let v = rv(x.a as int);
+			if is_opt(at(x.b as int)) || TY[at(x.b as int)].k == TY_NULL {
+				LVS[v].ty = t_ref(TY[LVS[v].ty].a as int, RF_OPT) as i32;
+			}
+		}
 		return;
 	}
 	let tt = ck(x.a as int, -1);
 	let d = deref(tt);
-	if o == T_ASSIGN { ck(x.b as int, d); conv(x.b as int, d); return; }
+	if o == T_ASSIGN {
+		if TY[tt].k == TY_REF && is_opt(tt) {
+			let rt = ck(x.b as int, tt);
+			if TY[rt].k == TY_NULL { commit(x.b as int, tt); return; }
+			if TY[rt].k == TY_REF { conv(x.b as int, tt); return; }
+		}
+		ck(x.b as int, d); conv(x.b as int, d);
+		return;
+	}
 	let lk = leaf_kind(d);
 	let rt = ck(x.b as int, if lk >= 4 && (o == T_MULEQ || o == T_DIVEQ) { -1 } else { d });
 	if lk >= 4 && (o == T_MULEQ || o == T_DIVEQ) && deref(rt) != d { conv(x.b as int, leaf_type(d)); return; }

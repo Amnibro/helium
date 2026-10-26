@@ -22,10 +22,27 @@ fn member_of(name const byte[:]) int {
 }
 fn find_nest(name int) int { var i = NESTS.len - 1; while i >= 0 { if NESTS[i].name as int == name && visible(NESTS[i].own as int) { return i; } i--; } -1 }
 recursive fn decl_nested(n int) {
-	let i = new_inst(n, n, NEND[n] as int, AOWN);
-	NESTS.push(NF { ND[n].s, n as i32, i as i32, AOWN as i32 });
-	sig_inst(i);
+	var i = -1;
+	for f in NESTS { if f.node as int == n && f.own as int == AOWN { i = f.inst as int; } }
+	if i < 0 { i = new_inst(n, n, NEND[n] as int, AOWN); NESTS.push(NF { ND[n].s, n as i32, i as i32, AOWN as i32 }); sig_inst(i); }
 	check_inst(i);
+}
+recursive fn pre_decl_block_fns(b int) int {
+	let m = NESTS.len;
+	for q in ND[b].n { let c = kid(b, q); if ND[c].k as int == N_FN { let i = new_inst(c, c, NEND[c] as int, AOWN); NESTS.push(NF { ND[c].s, c as i32, i as i32, AOWN as i32 }); sig_inst(i); } }
+	m
+}
+fn pop_block_fns(m int) { if NESTS.len > m { NESTS.pop_n(NESTS.len - m); } }
+fn propagate_calls() {
+	var changed = true;
+	while changed {
+		changed = false;
+		for e in CEDGES {
+			let cr = e.caller as int; let ce = e.callee as int;
+			if FI_[ce].lr && !FI_[cr].lr { FI_[cr].lr = true; changed = true; }
+			for c in CAPS { if c.inst as int == ce { let v = c.lv as int; if visible_in(LVS[v].own as int, cr) || LVS[v].cfn as int != cr { if add_cap_one(cr, v) { changed = true; } } } }
+		}
+	}
 }
 fn gen_list(fnode int) int { ND[fnode].d as int }
 fn is_blockparam(fnode int, gname int) bool {
@@ -47,7 +64,7 @@ recursive fn match_ty(tn0 int, t0 int, g0 int) bool {
 	let t = deref(t0);
 	if k == N_TNAME {
 		if x.n == 0 {
-			for i in g0..BINDS.len { if BINDS[i].name == x.s { if BINDS[i].ty < 0 { BINDS[i].ty = t as i32; } return true; } }
+			for i in g0..BINDS.len { if BINDS[i].name == x.s { if BINDS[i].ty < 0 { BINDS[i].ty = deref_val(t) as i32; } return true; } }
 			return true;
 		}
 		if TY[t].k == TY_STRUCT { let si = TY[t].a as int; if STI[si].tn == x.n { for i in x.n { match_ty(kid(tn0, i), TYL[(STI[si].ta as int) + i] as int, g0); } } }
@@ -226,7 +243,7 @@ recursive fn resolve(n int, name int, ns int, a0 int, an int, blk int, tyargs in
 	return best, nb0, bestbn;
 }
 fn untyped_any(f int) bool { for j in ND[f].n { if ND[kid(f, j)].a < 0 { return true; } } false }
-fn deref_val(a int) int { let d = deref(a); if TY[d].k == TY_STRLIT { TT_STR } else { d } }
+fn deref_val(a int) int { let d = deref(a); if TY[d].k == TY_STRLIT { TT_STR } else { if TY[d].k == TY_VARIANT { t_enum(TY[d].a as int, false) } else { d } } }
 fn pend_default(a int) int { let k = TY[a].k as int; if k == TY_ILIT { T_I64 } else { if k == TY_FLIT { T_F64 } else { if k == TY_STRLIT { TT_STR } else { a } } } }
 recursive fn ck_args(n int, a0n int, first int) int {
 	let start = ARGW.len;
@@ -316,7 +333,7 @@ recursive fn call_nested(n int, nf int) int {
 	let s = ck_args(n, 0, -1);
 	for j in ND[n].n { let c = kid(n, j); if j < FI_[i].pn as int { conv(c, ptype_of(i, j)); } }
 	pop_args(s);
-	note_caps_of(i);
+	note_caps_of(i); note_edge(i);
 	set_r(n, R_FN, i);
 	set_t(n, if FI_[i].ret >= 0 { FI_[i].ret as int } else { T_VOID })
 }
@@ -341,8 +358,7 @@ recursive fn call_fn(n int, name int, recv int, want int) int {
 	BINDS.pop_n(BINDS.len - b0);
 	for j in an { let c = DIDX[s + j] as int; let pt = ptype_of(inst, j); if pt >= 0 && TY[pt].k == TY_REF && (TY[pt].fl & RF_OPT) == 0 && TY[pt].c < 0 { if is_pending(at(c)) { conv(c, TY[pt].a as int); } } else { conv(c, pt); } }
 	pop_args(s);
-	note_caps_of(inst);
-	if FI_[inst].lr { FI_[CFN].lr = true; }
+	note_caps_of(inst); note_edge(inst);
 	set_r(n, R_FN, inst);
 	let rt = FI_[inst].ret as int;
 	if rt < 0 { if FI_[inst].st == 1 { var m byte[>..] = []; format(m, "recursive call to ", nm(name), " needs its result type written"); cerr(n, m); } return set_t(n, T_ERRT); }
@@ -443,5 +459,6 @@ fn check_program() bool {
 	for d, i in DC { if d.k as int == D_GLOBAL && d.file == 0 { global_type(i); } }
 	let mi = get_inst(DC[md].node as int, BINDS.len, 0, -1, -1);
 	for d, i in DC { if d.k as int == D_GLOBAL { global_type(i); } }
+	propagate_calls();
 	NERR == 0
 }

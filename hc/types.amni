@@ -84,13 +84,22 @@ recursive fn tclass(t int) int {
 	let k = x.k as int;
 	if k == TY_STRUCT { si_layout(x.a as int); return STI[x.a].cls as int; }
 	if k == TY_VARIANT { ei_layout(x.a as int); let v = ENV[(ENI[x.a].v0 as int) + (x.c as int)]; if v.si >= 0 { si_layout(v.si as int); return STI[v.si].cls as int; } return CL_FIXED; }
-	if k == TY_ENUM { ei_layout(x.a as int); if (x.fl & 1) == 0 { return CL_FIXED; } return ENI[x.a].cls as int; }
+	if k == TY_ENUM { ei_layout(x.a as int); if (x.fl & 1) == 0 { return CL_FIXED; } return CL_VAR; }
 	if k == TY_ARR { let a = x.s as int; if a == A_GROW || a == A_GS { return CL_RES; } if a == A_VAR { return CL_VAR; } if a == A_LIM && x.b < 0 { return CL_VAR; } let ec = tclass(x.a as int); return if ec > CL_FIXED { CL_VAR } else { CL_FIXED }; }
-	if k == TY_VARINT { return CL_VAR; }
+	if k == TY_VARINT || (k == TY_REF && x.c == 8) { return CL_VAR; }
 	CL_FIXED
 }
 fn is_fixed(t int) bool { tclass(t) == CL_FIXED }
+fn is_bytes(t int) bool { tclass(t) == CL_VAR && TY[t].k != TY_VARINT && TY[t].k != TY_REF }
 fn isz(s int) i64 { (1 << ((s & 3) as i64)) }
+fn pad_align(t int) i64 {
+	let x = TY[t]; let k = x.k as int;
+	if k == TY_INT { return isz(x.s as int); }
+	if k == TY_FLT { return x.s as i64; }
+	if k == TY_REF { if x.c >= 0 { return if x.c == 8 { 1 } else { isz(x.c as int) }; } return 8; }
+	if k == TY_SLICE { return 8; }
+	1
+}
 recursive fn tsize(t int) i64 {
 	let x = TY[t];
 	let k = x.k as int;
@@ -118,19 +127,47 @@ recursive fn si_layout(si int) {
 	if STI[si].done != 0 { return; }
 	STI[si].done = 1;
 	var off i64 = 0; var cls = CL_FIXED; var flat = true;
-	for i in STI[si].fnum {
-		let fi = (STI[si].f0 as int) + i;
+	let f0 = STI[si].f0 as int; let fnum = STI[si].fnum as int;
+	for i in fnum {
+		let fi = f0 + i;
 		let ft = SFI[fi].ty as int;
-		if ft < 0 { SFI[fi].off = off; off += SFI[fi].padn as i64; continue; }
+		if ft >= 0 {
+			let c = tclass(ft);
+			if c > cls { cls = c; }
+			if !tflat(ft) { flat = false; }
+		}
+	}
+	var cur_var = false;
+	for i in fnum {
+		let fi = f0 + i;
+		let ft = SFI[fi].ty as int;
+		if ft < 0 {
+			if SFI[fi].padn < 0 {
+				if cls == CL_FIXED {
+					var a i64 = 1;
+					for j in i + 1..fnum { if SFI[f0 + j].ty >= 0 { a = pad_align(SFI[f0 + j].ty as int); break; } }
+					let next_off = (off + a - 1) / a * a;
+					SFI[fi].padn = (next_off - off) as i32;
+					SFI[fi].off = off;
+					off = next_off;
+				} else {
+					SFI[fi].padn = 0;
+					SFI[fi].off = -1;
+				}
+			} else {
+				SFI[fi].off = if !cur_var { off } else { -1 };
+				if !cur_var { off += SFI[fi].padn as i64; }
+			}
+			continue;
+		}
 		let c = tclass(ft);
-		SFI[fi].off = if cls == CL_FIXED { off } else { -1 };
-		if c > cls { cls = c; }
-		if c == CL_FIXED { off += tsize(ft); } else { if cls == CL_FIXED { cls = c; } }
-		if !tflat(ft) { flat = false; }
+		if c != CL_FIXED { cur_var = true; }
+		SFI[fi].off = if !cur_var { off } else { -1 };
+		if !cur_var { off += tsize(ft); }
 	}
 	STI[si].cls = cls as u8; STI[si].flat = flat;
 	STI[si].size = if cls == CL_FIXED { max(off, 1) } else { off };
-	STI[si].zero = off == 0;
+	STI[si].zero = cls == CL_FIXED && off == 0;
 	STI[si].done = 2;
 }
 recursive fn ei_layout(ei int) {
@@ -179,7 +216,7 @@ recursive fn ty_name_into(t int, out byte[>..]&) {
 	if k == TY_REF {
 		if (x.fl & 1) != 0 { out.append("const "); }
 		ty_name_into(x.a as int, out);
-		if x.c >= 0 { out.append("&<"); ls_kind_name(x.c as int, out); out.push('>'); if (x.fl & 2) != 0 { out.push('?'); } return; }
+		if x.c >= 0 { out.append("&<"); if x.c == 8 { out.append("varint"); } else { ls_kind_name(x.c as int, out); } out.push('>'); if (x.fl & 2) != 0 { out.push('?'); } return; }
 		out.append(if (x.fl & 2) != 0 { "?" } else { "&" }); return;
 	}
 	if k == TY_ARR {
