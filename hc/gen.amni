@@ -19,7 +19,7 @@ fn is_res(t int) bool { TY[t].k == TY_ARR && (TY[t].s as int == A_GROW || TY[t].
 fn is_lim(t int) bool { TY[t].k == TY_ARR && TY[t].s as int == A_LIM && TY[t].b >= 0 }
 fn is_vimg(t int) bool { t >= 0 && TY[t].k == TY_ARR && (TY[t].s as int == A_VAR || (TY[t].s as int == A_LIM && TY[t].b < 0)) }
 fn vlim(t int) int { if TY[t].s as int == A_LIM { 1 } else { 0 } }
-fn vw(t int) i64 { if TY[t].c == 8 { 0 } else { vw(t) } }
+fn vw(t int) i64 { if TY[t].c == 8 { 0 } else { isz(TY[t].c as int) } }
 fn vargs(t int) { format(O, ", ", vw(t), ", ", vlim(t)); }
 fn vok(n int, t int) bool { if !is_fixed(TY[t].a as int) && !is_vval(TY[t].a as int) { gerr(n, "arrays of these variable-size elements are not supported by the self-hosted compiler yet"); return false; } if is_seq(t) && vlim(t) == 1 { gerr(n, "limited arrays need fixed-size elements"); return false; } true }
 fn is_seq(t int) bool { (TY[t].k == TY_ARR || TY[t].k == TY_SLICE) && is_vval(TY[t].a as int) }
