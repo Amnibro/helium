@@ -87,6 +87,7 @@ struct RelFacts {
     bool apart = false;
 };
 
+inline int64_t target_ptrsize = 8;
 struct CodeGen {
     Ast &ast;
 
@@ -173,6 +174,7 @@ struct CodeGen {
     vector<string> exportnames;
     bool usesthreads = false;
     bool library = false;
+    int64_t ptrsize = target_ptrsize;   // The target's pointer width: 4 on wasm32 (--web).
     // Measurement only, and unsound: emit the whole `return ... from`
     // machinery but none of the post-call discriminant checks, so a program
     // that never takes a long-distance return still prints the right answer

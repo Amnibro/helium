@@ -1416,6 +1416,7 @@ int Main(int argc, char **argv) {
         for (auto &rf : runtime_files)
             if (string_view(rf.name) == "runtime_ext.h") runtime_ext_text = rf.text;
         auto stackcfg = StackConfigOf(cdefines);
+        target_ptrsize = web ? 4 : 8;
         CodeGen cg(ast, runtime_ext_text, includes, norfcheck, library, stackcfg.maxstacks);
         if (stacks) cg.StackReport(msgs, stackcfg);
         // The packages whose native parts the program needs, which a JIT

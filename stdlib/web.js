@@ -106,7 +106,7 @@ export async function start(o = {}) {
     he_fetch_take: (id, r) => { const f = fetches.get(id); if (!f) return 0; put(r, f.bytes); return 1; }, he_fetch_free: id => fetches.delete(id),
     he_js_global: p => nh(path(globalThis, S(p))), he_js_get: (h, p) => nh(path(H[h], S(p))),
     he_js_import: (u, tag) => { const id = nid++; import(S(u)).then(m => jsdone(id, tag, m), e => jsdone(id, tag, null, e)); return id; },
-    he_js_call: (h, m, a, tag) => { const id = nid++, o = H[h], args = revive(JSON.parse(S(a) || '[]')); Promise.resolve().then(() => path(o, S(m)).apply(o, args)).then(v => jsdone(id, tag, v), e => jsdone(id, tag, null, e)); return id; },
+    he_js_call: (h, m, a, tag) => { const id = nid++, o = H[h], ms = S(m), i = ms.lastIndexOf('.'), args = revive(JSON.parse(S(a) || '[]')); Promise.resolve().then(() => Reflect.apply(ms ? path(o, ms) : o, i < 0 ? o : path(o, ms.slice(0, i)), args)).then(v => jsdone(id, tag, v), e => jsdone(id, tag, null, e)); return id; },
     he_js_result: (id, r) => { const v = jsres.get(id); if (!v) return 0; put(r, v.json ?? v.err ?? ''); return v.err === undefined ? 1 : 0; }, he_js_handle: id => jsres.get(id)?.h || 0,
     he_gl_init: (c, aa, al) => { gl = el(c)?.getContext('webgl2', { antialias: !!aa, alpha: !!al, premultipliedAlpha: false, preserveDrawingBuffer: false }); return gl ? 1 : 0; },
     he_gl_viewport: (x, y, w, h) => gl.viewport(x, y, w, h), he_gl_clear_color: (r, g, b, a) => gl.clearColor(r, g, b, a), he_gl_clear: m => gl.clear(m),
