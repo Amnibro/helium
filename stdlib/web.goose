@@ -78,6 +78,7 @@ extern fn get_bool(h: i32, name: const u8[:]) -> bool = "he_get_bool";
 extern fn call(h: i32, method: const u8[:]) = "he_call";
 extern fn scroll_into(h: i32, smooth: bool, center: bool) = "he_scroll_into";
 extern fn rect(h: i32, r: Rect&) = "he_rect";
+extern fn put_pixels(canvas: i32, w: i32, h: i32, rgba: const u8[:]) = "he_put_pixels";
 extern fn listen(h: i32, kind: const u8[:], tag: i32, flags: i32) = "he_listen";
 extern fn capture_pointer(h: i32, id: i32) = "he_capture_pointer";
 extern fn ev_type(out: u8[>..]&) = "he_ev_type";

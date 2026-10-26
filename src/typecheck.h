@@ -3029,7 +3029,7 @@ struct TypeCheck {
             exportcount++;
             CheckRoot([&] { CheckExport(sf); });
         }
-        if (library && !exportcount)
+        if (library && !exportcount && !ast.MainFunction())
             throw CompileError { "--header requires at least one export fn" };
         CheckRoot([&] { CheckGlobalShrinks(); });
         CheckRoot([&] { SettleParamRootExactness(); });

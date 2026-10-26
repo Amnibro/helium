@@ -36,16 +36,17 @@ export async function start(o = {}) {
   const mods = e => (e.shiftKey ? 1 : 0) | (e.ctrlKey ? 2 : 0) | (e.altKey ? 4 : 0) | (e.metaKey ? 8 : 0);
   const loc = { protocol: () => location.protocol, host: () => location.host, hostname: () => location.hostname, pathname: () => location.pathname, search: () => location.search, hash: () => location.hash, href: () => location.href, origin: () => location.origin };
   const finish = (id, tag, rec) => { fetches.set(id, rec); fire(tag, 3, { id, status: rec.status }); };
+  const gunzip = async (u, b) => /\.gz(\?|#|$)/.test(u) && b[0] === 0x1f && b[1] === 0x8b && globalThis.DecompressionStream ? new Uint8Array(await new Response(new Blob([b]).stream().pipeThrough(new DecompressionStream('gzip'))).arrayBuffer()) : b;
   const doFetch = (u, init, tag, ms) => {
     const id = nid++, ctl = new AbortController(), to = ms > 0 ? setTimeout(() => ctl.abort(), ms) : 0;
     (async () => {
       try {
         const r = await fetch(u, { ...init, signal: ctl.signal }), total = +r.headers.get('content-length') || 0;
-        if (!r.body || !total) { const b = new Uint8Array(await r.arrayBuffer()); finish(id, tag, { status: r.status, bytes: b }); return; }
+        if (!r.body || !total) { const b = new Uint8Array(await r.arrayBuffer()); finish(id, tag, { status: r.status, bytes: await gunzip(u, b) }); return; }
         const rd = r.body.getReader(), parts = []; let got = 0, last = 0;
         for (;;) { const { done, value } = await rd.read(); if (done) break; parts.push(value); got += value.length; const t = now(); if (t - last > 70) { last = t; fire(tag, 4, { id, loaded: got, total }); } }
         const b = new Uint8Array(got); let k = 0; for (const p of parts) { b.set(p, k); k += p.length; }
-        finish(id, tag, { status: r.status, bytes: b });
+        finish(id, tag, { status: r.status, bytes: await gunzip(u, b) });
       } catch (e) { finish(id, tag, { status: 0, bytes: te.encode(String(e && e.message || e)) }); } finally { clearTimeout(to); }
     })();
     return id;
@@ -85,6 +86,7 @@ export async function start(o = {}) {
     he_get_num: (h, n) => +(el(h)?.[S(n)]) || 0, he_get_bool: (h, n) => el(h)?.[S(n)] ? 1 : 0,
     he_call: (h, m) => { const e = el(h), k = S(m); e?.[k]?.call(e); },
     he_scroll_into: (h, sm, c) => el(h)?.scrollIntoView({ behavior: sm ? 'smooth' : 'auto', block: c ? 'center' : 'nearest' }),
+    he_put_pixels: (h, w, ht, p) => { const c = el(h); if (!c || w <= 0 || ht <= 0) return; if (c.width !== w) c.width = w; if (c.height !== ht) c.height = ht; c.getContext('2d').putImageData(new ImageData(new Uint8ClampedArray(B(p).slice().buffer), w, ht), 0, 0); },
     he_rect: (h, p) => { const r = el(h)?.getBoundingClientRect() || { x: 0, y: 0, width: 0, height: 0 }, d = dv(); d.setFloat64(p, r.x, true); d.setFloat64(p + 8, r.y, true); d.setFloat64(p + 16, r.width, true); d.setFloat64(p + 24, r.height, true); },
     he_listen: (h, k, tag, f) => el(h)?.addEventListener(S(k), e => { if (f & 1) e.preventDefault(); if (f & 8) e.stopPropagation(); fire(tag, 1, { e }); }, { passive: !!(f & 2), capture: !!(f & 4) }),
     he_capture_pointer: (h, id) => { try { el(h)?.setPointerCapture(id); } catch {} },
@@ -116,7 +118,7 @@ export async function start(o = {}) {
     he_gl_link_program: p => { gl.linkProgram(H[p]); return gl.getProgramParameter(H[p], gl.LINK_STATUS) ? 1 : 0; }, he_gl_program_log: (p, r) => put(r, gl.getProgramInfoLog(H[p]) || ''),
     he_gl_use_program: p => gl.useProgram(H[p] || null), he_gl_uniform_loc: (p, n) => nh(gl.getUniformLocation(H[p], S(n))),
     he_gl_uniform1f: (l, x) => gl.uniform1f(H[l], x), he_gl_uniform2f: (l, x, y) => gl.uniform2f(H[l], x, y), he_gl_uniform3f: (l, x, y, z) => gl.uniform3f(H[l], x, y, z), he_gl_uniform4f: (l, x, y, z, w) => gl.uniform4f(H[l], x, y, z, w),
-    he_gl_uniform1i: (l, v) => gl.uniform1i(H[l], v), he_gl_uniform_mat4: (l, p) => gl.uniformMatrix4fv(H[l], false, new Float32Array(B(p).slice().buffer, 0, 16)),
+    he_gl_uniform1i: (l, v) => gl.uniform1i(H[l], v), he_gl_uniform_mat4: (l, p) => gl.uniformMatrix4fv(H[l], false, new Float32Array(u8().slice(dv().getUint32(p, true), dv().getUint32(p, true) + 64).buffer)),
     he_gl_create_buffer: () => nh(gl.createBuffer()), he_gl_bind_buffer: (t, b) => gl.bindBuffer(t, H[b] || null),
     he_gl_buffer_data: (t, p, u) => gl.bufferData(t, B(p), u), he_gl_buffer_alloc: (t, n, u) => gl.bufferData(t, n, u), he_gl_buffer_sub: (t, off, p) => gl.bufferSubData(t, off, B(p)),
     he_gl_create_vao: () => nh(gl.createVertexArray()), he_gl_bind_vao: v => gl.bindVertexArray(H[v] || null),
