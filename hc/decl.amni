@@ -188,44 +188,60 @@ recursive fn inst_enum(node int, args i32[:]) int {
 	GB.pop_n(GB.len - g0);
 	ei
 }
-recursive fn ceval(n int, ns int) i64, bool {
-	if n < 0 { return 0, false; }
+fn cwrap(v i64, c int) i64 {
+	if c < 0 || (c & 3) == 3 { return v; }
+	let b = 8 << ((c & 3) as i64);
+	let u = (v as! u64) & ((1 << (b as u64)) - 1);
+	if c < 4 && u >= (1 << ((b - 1) as u64)) { return (u as! i64) - (1 << b); }
+	u as! i64
+}
+fn ceval(n int, ns int) i64, bool { let v, c, ok = ceval3(n, ns); return v, ok; }
+recursive fn ceval3(n int, ns int) i64, int, bool {
+	if n < 0 { return 0, -1, false; }
 	let x = ND[n];
 	let k = x.k as int;
-	if k == N_INT { return TK[x.t].v, true; }
+	if k == N_INT { return TK[x.t].v, if TK[x.t].uns { 7 } else { -1 }, true; }
 	if k == N_UN {
-		let v, ok = ceval(x.a as int, ns);
-		if x.op as int == T_MINUS { return -v, ok; }
-		if x.op as int == T_BITNOT { return ~v, ok; }
-		return 0, false;
+		let v, c, ok = ceval3(x.a as int, ns);
+		if x.op as int == T_MINUS { let c2 = if c == 7 && ND[x.a].k == N_INT { -1 } else { c }; return cwrap(0 - v, c2), c2, ok; }
+		if x.op as int == T_BITNOT { return cwrap(~v, c), c, ok; }
+		return 0, -1, false;
 	}
 	if k == N_BIN {
-		let a, oa = ceval(x.a as int, ns);
-		let b, ob = ceval(x.b as int, ns);
-		if !oa || !ob { return 0, false; }
+		let a, ca, oa = ceval3(x.a as int, ns);
+		let b, cb, ob = ceval3(x.b as int, ns);
+		if !oa || !ob { return 0, -1, false; }
 		let o = x.op as int;
-		if o == T_PLUS { return a + b, true; } if o == T_MINUS { return a - b, true; } if o == T_MUL { return a * b, true; }
-		if o == T_DIV { if b == 0 { return 0, false; } return a / b, true; }
-		if o == T_MOD { if b == 0 { return 0, false; } return ((a % b) + b) % b, true; }
-		if o == T_SHL { return a << b, true; } if o == T_SHR { return a >> b, true; }
-		if o == T_AND { return a & b, true; } if o == T_OR { return a | b, true; } if o == T_XOR { return a ^ b, true; }
-		return 0, false;
+		let c = if o == T_SHL || o == T_SHR { ca } else { if ca >= 0 { ca } else { cb } };
+		let un = c >= 4;
+		let ua = a as! u64; let ub = b as! u64;
+		let sh = if c >= 0 { ((8 << ((c & 3) as i64)) - 1) as u64 } else { 63 };
+		if o == T_PLUS { return cwrap(a + b, c), c, true; } if o == T_MINUS { return cwrap(a - b, c), c, true; } if o == T_MUL { return cwrap(a * b, c), c, true; }
+		if o == T_DIV { if b == 0 { return 0, -1, false; } if un { return cwrap((ua / ub) as! i64, c), c, true; } if b == -1 { return cwrap(0 - a, c), c, true; } return cwrap(a / b, c), c, true; }
+		if o == T_MOD { if b == 0 { return 0, -1, false; } if un { return cwrap((ua % ub) as! i64, c), c, true; } if b == -1 || b == 1 { return 0, c, true; } let r = a % b; return cwrap(if r < 0 { if b < 0 { r - b } else { r + b } } else { r }, c), c, true; }
+		if o == T_SHL { return cwrap(a << (ub & sh), c), c, true; }
+		if o == T_SHR { if un { let w = if c >= 0 && (c & 3) != 3 { (a as! u64) & ((1 << (sh + 1)) - 1) } else { ua }; return cwrap((w >> (ub & sh)) as! i64, c), c, true; } return cwrap(a >> (ub & sh), c), c, true; }
+		if o == T_AND { return cwrap(a & b, c), c, true; } if o == T_OR { return cwrap(a | b, c), c, true; } if o == T_XOR { return cwrap(a ^ b, c), c, true; }
+		return 0, -1, false;
 	}
-	if k == N_AS { return ceval(x.a as int, ns); }
+	if k == N_AS { let v, c, ok = ceval3(x.a as int, ns); let tn0 = x.b as int; if ND[tn0].k == N_TPRIM { let tc = int_storage_of_tok(ND[tn0].op as int); if tc >= 0 { return cwrap(v, tc), tc, ok; } } return v, c, ok; }
 	if k == N_ID {
 		let d = lookup_q(x.s as int, ns, D_GLOBAL);
-		if d < 0 { return 0, false; }
+		if d < 0 { return 0, -1, false; }
 		let g = DC[d].node as int;
-		if (ND[g].fl & V_VAR) != 0 || ND[g].b < 0 || (ND[g].a >= 0 && false) { return 0, false; }
-		return ceval(kid(ND[g].b as int, 0), ns_of(g));
+		if (ND[g].fl & V_VAR) != 0 || ND[g].b < 0 { return 0, -1, false; }
+		let v, c, ok = ceval3(kid(ND[g].b as int, 0), ns_of(g));
+		let tn0 = ND[g].a as int;
+		if tn0 >= 0 && ND[tn0].k == N_TPRIM { let tc = int_storage_of_tok(ND[tn0].op as int); if tc >= 0 { return cwrap(v, tc), tc, ok; } }
+		return v, c, ok;
 	}
 	if k == N_DOT && nm(x.s as int) == "len" && ND[x.a].k == N_ID {
 		let d = lookup_q(ND[x.a].s as int, ns, D_GLOBAL);
-		if d < 0 { return 0, false; }
+		if d < 0 { return 0, -1, false; }
 		let g = DC[d].node as int;
-		if ND[g].a >= 0 { let t = rtype(ND[g].a as int, ns_of(g)); if TY[t].k == TY_ARR && TY[t].s == A_FIXED as u8 { return TY[t].b, true; } }
-		if ND[g].b >= 0 { let iv = kid(ND[g].b as int, 0); if ND[iv].k == N_ARR { if ND[iv].b >= 0 { return ceval(ND[iv].b as int, ns_of(g)); } return ND[iv].n as i64, true; } if ND[iv].k == N_STR { return TK[ND[iv].t].w as i64, true; } }
-		return 0, false;
+		if ND[g].a >= 0 { let t = rtype(ND[g].a as int, ns_of(g)); if TY[t].k == TY_ARR && TY[t].s == A_FIXED as u8 { return TY[t].b, -1, true; } }
+		if ND[g].b >= 0 { let iv = kid(ND[g].b as int, 0); if ND[iv].k == N_ARR { if ND[iv].b >= 0 { let v, c, ok = ceval3(ND[iv].b as int, ns_of(g)); return v, -1, ok; } return ND[iv].n as i64, -1, true; } if ND[iv].k == N_STR { return TK[ND[iv].t].w as i64, -1, true; } }
+		return 0, -1, false;
 	}
-	return 0, false;
+	return 0, -1, false;
 }

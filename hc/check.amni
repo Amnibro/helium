@@ -511,7 +511,7 @@ recursive fn ck_for(n int) int {
 	let byref = (x.fl & 1) != 0;
 	let v = add_lv(x.s as int, if byref { t_ref(et, 0) } else { et }, LV_FOR | (if byref { LV_REF } else { 0 }), n);
 	set_r(n, R_LOCAL, v);
-	if x.c >= 0 { let iv = add_lv(x.c as int, T_I64, LV_FOR, n); set_x(n, ax(n) | (iv << 2)); }
+	if x.c >= 0 { let iv = add_lv(x.c as int, if x.n >= 0 { rtype(x.n as int, ns_of(n)) } else { T_I64 }, LV_FOR, n); set_x(n, ax(n) | (iv << 2)); }
 	LOOPD++;
 	ck(x.d as int, T_VOID);
 	LOOPD--;
@@ -671,7 +671,7 @@ recursive fn ck_vdecl(n int) {
 		else {
 			t = default_t(init);
 			if TY[t].k == TY_MULTI { t = TYL[TY[t].l] as int; }
-			if byref { if TY[t].k != TY_REF { t = t_ref(t, 0); } }
+			if byref || (ND[init].k == N_UN && ND[init].op as int == T_AND) { if TY[t].k != TY_REF { t = t_ref(t, 0); } }
 			else { if TY[t].k == TY_REF && TY[t].c < 0 && (TY[t].fl & RF_OPT) == 0 && is_fixed(TY[t].a as int) { t = TY[t].a as int; set_cv(init, t); } }
 		}
 	} else {

@@ -59,16 +59,33 @@ static inline void hr_fs(hrv *o, hsl s) { hr_append(o, s.p, s.n, 1); }
 static inline void hr_fc(hrv *o, const char *s) { hr_append(o, s, (int64_t)strlen(s), 1); }
 static void hr_fu(hrv *o, uint64_t v) { char b[24]; int i = 24; do { b[--i] = (char)('0' + v % 10); v /= 10; } while (v); hr_append(o, b + i, 24 - i, 1); }
 static void hr_fi(hrv *o, int64_t v) { if (v < 0) { hr_fb(o, '-'); hr_fu(o, (uint64_t)0 - (uint64_t)v); } else hr_fu(o, (uint64_t)v); }
+static int hr_ftry(char *buf, int nd, const char *dig, int x, int neg, double v, int f32, long double *err) {
+	char *q = buf; if (neg) *q++ = '-'; *q++ = dig[0]; if (nd > 1) { *q++ = '.'; memcpy(q, dig + 1, (size_t)(nd - 1)); q += nd - 1; }
+	sprintf(q, "e%+03d", x);
+	double r = strtod(buf, 0);
+	if (f32 ? (float)r != (float)v : r != v) return 0;
+	*err = fabsl(strtold(buf, 0) - (f32 ? (long double)(float)v : (long double)v)); return 1;
+}
 static void hr_fflt(hrv *o, double v, int f32) {
 	if (v != v) { hr_fc(o, "nan"); return; }
 	if (isinf(v)) { hr_fc(o, v > 0 ? "inf" : "-inf"); return; }
-	char buf[40]; int p = 1;
-	for (; p <= 17; p++) { snprintf(buf, sizeof buf, "%.*e", p - 1, v); if (f32 ? (float)strtod(buf, 0) == (float)v : strtod(buf, 0) == v) break; }
-	char *e = strchr(buf, 'e'); char dig[24]; int n = 0;
-	for (char *q = buf; q != e; q++) if (*q != '-' && *q != '.') dig[n++] = *q;
-	int x = atoi(e + 1);
-	if (x < -4 || x >= (n > 15 ? n : 15)) { hr_fc(o, buf); return; }
-	if (buf[0] == '-') hr_fb(o, '-');
+	char buf[48], best[48] = ""; char dig[24]; int n = 0, x = 0, neg = signbit(v) != 0;
+	for (int p = 1; p <= 17 && !best[0]; p++) {
+		snprintf(buf, sizeof buf, "%.*e", p - 1, fabs(v));
+		char *e = strchr(buf, 'e'); int k = 0;
+		for (char *q = buf; q != e; q++) if (*q != '.') dig[k++] = *q;
+		int ex = atoi(e + 1); long double be = 1e300L, er; int bev = 0;
+		for (int d = -1; d <= 1; d++) {
+			char cd[24]; memcpy(cd, dig, (size_t)k); int cx = ex, i = k - 1, cn = k;
+			if (d == 1) { while (i >= 0 && cd[i] == '9') cd[i--] = '0'; if (i < 0) { memmove(cd + 1, cd, (size_t)k); cd[0] = '1'; cx++; cn = k; } else cd[i]++; }
+			if (d == -1) { while (i >= 0 && cd[i] == '0') cd[i--] = '9'; if (i < 0 || (i == 0 && cd[0] == '1' && k == 1)) continue; cd[i]--; if (cd[0] == '0') continue; }
+			char tb[48];
+			if (hr_ftry(tb, cn, cd, cx, neg, v, f32, &er)) { int ev = ((cd[cn - 1] - '0') & 1) == 0; int tie = best[0] && fabsl(er - be) <= be * 1e-12L; if (!best[0] || (tie ? ev && !bev : er < be)) { be = er; bev = ev; strcpy(best, tb); memcpy(dig, cd, (size_t)cn); n = cn; x = cx; } }
+		}
+	}
+	while (n > 1 && dig[n - 1] == '0') n--;
+	if (x < -4 || x >= (n > 15 ? n : 15)) { char tb[48]; hr_ftry(tb, n, dig, x, neg, v, f32, &(long double){0}); hr_fc(o, tb); return; }
+	if (neg) hr_fb(o, '-');
 	if (x < 0) { hr_fc(o, "0."); for (int i = 0; i < -x - 1; i++) hr_fb(o, '0'); hr_append(o, dig, n, 1); return; }
 	for (int i = 0; i <= x; i++) hr_fb(o, i < n ? (uint8_t)dig[i] : '0');
 	hr_fb(o, '.');
@@ -148,6 +165,7 @@ static float hr_f32_from_bits(uint32_t b) { float x; memcpy(&x, &b, 4); return x
 static uint64_t hr_f64_bits(double x) { uint64_t b; memcpy(&b, &x, 8); return b; }
 static double hr_f64_from_bits(uint64_t b) { double x; memcpy(&x, &b, 8); return x; }
 typedef uint8_t hr_unit;
+static inline int64_t hr_f2i(double x) { if (x != x) return 0; x = trunc(x); if (x >= -9223372036854775808.0 && x < 9223372036854775808.0) return (int64_t)x; double m = fmod(x, 18446744073709551616.0); if (m < 0) m += 18446744073709551616.0; return (int64_t)(uint64_t)m; }
 static inline void hr_rdrop(hrv *v) { hr_give(v->b, 0); v->b = 0; v->n = 0; }
 static inline void hr_rgive(hrv v) { hr_give(v.b, 0); }
 static inline hrv *hr_tmp(hrv *t, hrv v) { hr_give(t->b, 0); *t = v; return t; }
