@@ -1,4 +1,5 @@
 import ir;
+import opt;
 import gen;
 import flt;
 var LSLOT i32[>..<];
@@ -110,7 +111,7 @@ recursive fn lidx(n int) int {
 fn boob(ok int, i int, len int, n int) { let l = nlbl(); ir(I_BNZ, 3, -1, ok, -1, l); let s0 = ARGL.len; ARGL.push(i as i32); ARGL.push(len as i32); let lc = locs(n); let r1 = nv(); ir(I_RADDR, 8, r1, -1, -1, LOCS[2 * lc] as int); ARGL.push(r1 as i32); ARGL.push(imm(LOCS[2 * lc + 1] as int) as i32); ir(I_CALL, 3, -1, s0, 4, rt_fn("rt_oob")); ir(I_LBL, 3, -1, -1, -1, l); }
 fn rt_fn(name const byte[:]) int { let d = lookup(intern(name), -1, D_FN); if d < 0 { return -1; } for f, i in FI_ { if f.node == DC[d].node && f.st == 2 { return nf_of(i); } } -1 }
 recursive fn lsl(n int) int, int {
-	let t = at(n); let c = cv(n); let k = ND[n].k as int;
+	let t = at(n); if t >= 0 && is_seq(deref(t)) { lerr(n, "arrays of variable-size elements natively"); return imm(0), imm(0); } let c = cv(n); let k = ND[n].k as int;
 	if k == N_STR || TY[t].k == TY_STRLIT { let s = tok_str_lit(n); let p = nv(); ir(I_RADDR, 8, p, -1, -1, rodata(s[..])); return p, imm(s.len); }
 	let ft = if c >= 0 { c } else { t };
 	let d = deref(t);
@@ -134,6 +135,7 @@ recursive fn lslice(n int) int, int {
 }
 fn tok_str_lit(n int) byte[>..] { var b byte[>..] = []; b.append(tok_str(ND[n].t as int)); b }
 recursive fn lstore(addr int, n int, t int) {
+	if is_seq(t) { lerr(n, "arrays of variable-size elements natively"); return; }
 	if is_vimg(t) { stw(addr, 0, lvimg(n, t), 3); return; }
 	if is_rel(t) { rel_store(addr, lrefv(n), t); return; }
 	if is_scal(t) { stw(addr, 0, lx(n), wof(t)); return; }
@@ -449,7 +451,7 @@ recursive fn lbuiltin_to(n int, b int, dst int) int {
 }
 recursive fn lbuiltin1(n int, b int, dst int, total int) int {
 	if b == B_PUSH || b == B_APPEND || b == B_POP || b == B_CLEAR || b == B_RESIZE || b == B_POPN {
-		let rc = barg(n, 0); let d = deref(at(rc)); let e = TY[d].a as int; let es = tsz(e); let va = laddr(rc);
+		let rc = barg(n, 0); let d = deref(at(rc)); let e = TY[d].a as int; let es = tsz(e); if is_seq(d) { lerr(n, "arrays of variable-size elements natively"); return imm(0); } let va = laddr(rc);
 		if is_res(d) {
 			if b == B_PUSH { let ta = nv(); ir(I_SLOT, 8, ta, -1, -1, slot(es, tal(e))); lstore(ta, barg(n, 1), e); let p = rtcall("rt_grow", [va as i32, imm(1) as i32, imm(es) as i32]); ir(I_COPY, 3, p, ta, imm(es), 0); return p; }
 			if b == B_APPEND { let src = barg(n, 1); if ND[src].k as int == N_ARR && ND[src].a < 0 { let k0 = ND[src].n as int; let p = rtcall("rt_grow", [va as i32, imm(k0) as i32, imm(es) as i32]); for i in k0 { lstore(addi(p, i * es), kid(src, i), e); } return imm(0); } let sp, sn = lsl(src); let p = rtcall("rt_grow", [va as i32, sn as i32, imm(es) as i32]); ir(I_COPY, 3, p, sp, bin(B_MUL, 3, sn, imm(es), -1), 0); return imm(0); }
@@ -746,7 +748,9 @@ fn lower_program(out byte[>..]&) bool {
 	if LERR.len > 0 { return false; }
 	let entry = XC.len;
 	mov_rr(RDI, RSP); call_f(rst); call_f(gi); call_f(rm); mov_ri(RDI, 0); call_f(rinit); ud2();
-	for f, i in NFS { cg_fn(i); }
+	var irw byte[>..] = []; let dump = env("HC_IR", irw);
+	var noi byte[>..] = []; if !env("HC_NOINL", noi) && !env("HC_NOOPT", noi) { inline_all(); }
+	for f, i in NFS { if dump && f.inst >= 0 && nm(FI_[f.inst].name as int) == irw[..] { ir_dump(i); } var oo byte[>..] = []; if !env("HC_NOOPT", oo) { mem2reg(i); copyprop(i); regalloc(i); } else { REGOF.clear(); RUSED.clear(); VZERO.clear(); FK.clear(); XREG.clear(); } cg_fn(i); }
 	var dbg byte[>..] = []; if env("HC_NDEBUG", dbg) { for f, i in NFS { print(if f.inst >= 0 { nm(FI_[f.inst].name as int) } else { "<init>" }, " ", 0x400000 + 176 + (FOFF[i] as int), " nv ", f.nv, " sb ", f.sb); } }
 	let o = elf_write(entry);
 	out.append(o[..]);

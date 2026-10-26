@@ -37,4 +37,7 @@ fn leave() { xb(0xC9); }
 fn syscall() { xb(0x0F); xb(0x05); }
 fn ud2() { xb(0x0F); xb(0x0B); }
 fn sse(pfx int, w bool, op int, r int, rm int) { if pfx != 0 { xb(pfx); } xrex(w, r, 0, rm); xb(0x0F); xb(op); xb(0xC0 | ((r & 7) << 3) | (rm & 7)); }
+fn alu_ri(ext int, r int, v int) { xrex(true, 0, 0, r); if v >= -128 && v < 128 { xb(0x83); xb(0xC0 | (ext << 3) | (r & 7)); xb(v & 255); } else { xb(0x81); xb(0xC0 | (ext << 3) | (r & 7)); x32(v); } }
+fn imul_ri(d int, s int, v int) { xrex(true, d, 0, s); xb(0x69); xb(0xC0 | ((d & 7) << 3) | (s & 7)); x32(v); }
+fn sh_ri(ext int, r int, v int) { xrex(true, 0, 0, r); xb(0xC1); xb(0xC0 | (ext << 3) | (r & 7)); xb(v & 63); }
 fn put32(at int, v int) { for i in 4 { XC[at + i] = ((v >> (i * 8)) & 255) as! byte; } }
