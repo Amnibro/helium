@@ -9,6 +9,7 @@
 #include <errno.h>
 #include <unistd.h>
 #include <fcntl.h>
+#include <sys/stat.h>
 #include <dirent.h>
 #include <pthread.h>
 #include <setjmp.h>
@@ -385,6 +386,7 @@ static bool hr_wfile(hsl path, hsl data, int flags) {
 	return close(fd) == 0;
 }
 static bool hr_os_write_file(hsl p, hsl d) { return hr_wfile(p, d, O_TRUNC); }
+static bool hr_os_make_exec(hsl p) { char b[4096]; if (p.n >= 4096) return false; memcpy(b, p.p, (size_t)p.n); b[p.n] = 0; return chmod(b, 0755) == 0; }
 static bool hr_os_append_file(hsl p, hsl d) { return hr_wfile(p, d, O_APPEND); }
 static bool hr_os_write_file_atomic(hsl p, hsl d) {
 	char tb[600]; if (p.n > 500) return hr_wfile(p, d, O_TRUNC);

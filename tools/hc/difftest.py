@@ -13,11 +13,13 @@ def run(f):
     if not exp: return None
     c = W / (f.stem + ".c"); x = W / f.stem
     env = dict(os.environ, HC_LIB=str(R / "hc" / "lib"))
-    try: p = subprocess.run([HC, str(f), str(c)], capture_output=True, timeout=30, env=env)
+    nat = os.environ.get("HC_NATIVE") == "1"
+    try: p = subprocess.run([HC, str(f), str(x if nat else c)] + (["--native"] if nat else []), capture_output=True, timeout=30, env=env)
     except subprocess.TimeoutExpired: return f, "check", "timeout"
-    if p.returncode != 0: return f, "check", (p.stdout + p.stderr).decode(errors="replace").strip().split("\n")[0][:220]
+    if p.returncode != 0: return f, ("native" if nat and b"native backend" in p.stdout + p.stderr else "check"), (p.stdout + p.stderr).decode(errors="replace").strip().split("\n")[0][:220]
+    if nat: c.write_text("")
     defs = ["-D" + d.strip() for l in f.read_text(errors="replace").split("\n")[:5] if l.startswith("// runtime-define:") for d in l.split(":", 1)[1].split(",")] + ["-D" + d for d in os.environ.get("HC_DEFS", "").split(",") if d]
-    p = subprocess.run(["nice", "-n", "10", "clang", "-O1", "-fwrapv", "-w", "-ferror-limit=1", *defs, "-I", str(R / "hc"), str(c), "-o", str(x), "-lm", "-lpthread"], capture_output=True)
+    p = subprocess.run(["true"] if nat else ["nice", "-n", "10", "clang", "-O1", "-fwrapv", "-w", "-ferror-limit=1", *defs, "-I", str(R / "hc"), str(c), "-o", str(x), "-lm", "-lpthread"], capture_output=True)
     if p.returncode != 0:
         m = [l for l in p.stderr.decode(errors="replace").split("\n") if "error" in l]
         return f, "cc", (m[0] if m else p.stderr.decode()[:200])[:220]

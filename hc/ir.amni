@@ -1,0 +1,86 @@
+import elf;
+let I_IMM = 1; let I_MOV = 2; let I_BIN = 3; let I_CMP = 4; let I_UN = 5; let I_LBL = 6; let I_JMP = 7; let I_BZ = 8; let I_BNZ = 9; let I_CALL = 10; let I_RET = 11;
+let I_LD = 12; let I_ST = 13; let I_SLOT = 14; let I_GADDR = 15; let I_RADDR = 16; let I_PARAM = 17; let I_SYS = 18; let I_EXT = 19; let I_CHK = 20; let I_COPY = 21; let I_FADDR = 22; let I_CALLR = 23; let I_RET2 = 24; let I_RES2 = 25;
+let B_ADD = 0; let B_SUB = 1; let B_MUL = 2; let B_DIV = 3; let B_MOD = 4; let B_AND = 5; let B_OR = 6; let B_XOR = 7; let B_SHL = 8; let B_SAR = 9; let B_SHR = 10; let B_UDIV = 11; let B_UMOD = 12;
+let K_OVF = 1; let K_DIV0 = 2; let K_OOB = 3; let K_NARROW = 4;
+struct Ir { op u8, w u8, d i32, a i32, b i32, c i64, l i32 }
+struct NFn { i0 i32, i1 i32, nv i32, sb i32, inst i32 }
+var IR Ir[>..<];
+var ARGL i32[>..<];
+var NFS NFn[>..<];
+var NV int; var SB int; var NLB int;
+var LOCS i32[>..<];
+var RT_DIE int = -1;
+fn nv() int { NV++; NV - 1 }
+fn loc_id(s const byte[:]) int { LOCS.push(rodata(s) as i32); LOCS.push(s.len as i32); LOCS.len / 2 - 1 }
+fn nlbl() int { LBL.push(-1); LBL.len - 1 }
+fn slot(sz int, a int) int { SB = al(SB, max(a, 1)); let o = SB; SB += sz; o }
+fn ir(op int, w int, d int, a int, b int, c int) { IR.push(Ir { op as u8, w as u8, d as i32, a as i32, b as i32, c, -1 }); }
+fn irl(op int, w int, d int, a int, b int, c int, l int) { IR.push(Ir { op as u8, w as u8, d as i32, a as i32, b as i32, c, l as i32 }); }
+fn imm(v int) int { let d = nv(); ir(I_IMM, 8, d, -1, -1, v); d }
+fn rodata(s const byte[:]) int { RO.resize(al(RO.len, 8)); let o = RO.len; RO.append(s); o }
+var CSBA int;
+fn vo(v int) int { -8 * (v + 1) - CSBA }
+fn ldv(r int, v int) { ld(r, RBP, vo(v), 8, false); }
+fn stv(r int, v int) { st(r, RBP, vo(v), 8); }
+fn wsz(w int) int { 1 << (w & 3) }
+fn wsg(w int) bool { (w & 4) == 0 }
+fn ext_r(r int, w int) { let z = wsz(w); if z == 8 { return; } if z == 4 && !wsg(w) { xrex(false, r, 0, r); xb(0x8B); xb(0xC0 | ((r & 7) << 3) | (r & 7)); return; } xrex(true, r, 0, r); if z == 4 { xb(0x63); } else { xb(0x0F); xb(if z == 1 { if wsg(w) { 0xBE } else { 0xB6 } } else { if wsg(w) { 0xBF } else { 0xB7 } }); } xb(0xC0 | ((r & 7) << 3) | (r & 7)); }
+fn trap_to(k int, l int, tl i32[>..<]&) int { let lb = nlbl(); tl.push(lb as i32); tl.push(k as i32); tl.push(l as i32); lb }
+fn cg_fn(fi int) {
+	let f = NFS[fi];
+	FOFF[fi] = XC.len as i32;
+	let sba = al(f.sb as int, 16);
+	NFS[fi].sb = sba as i32; CSBA = sba;
+	push_r(RBP); mov_rr(RBP, RSP); sub_rsp(al(sba + 8 * (f.nv as int), 16));
+	var traps i32[>..<] = [];
+	for i in (f.i0 as int)..(f.i1 as int) {
+		let x = IR[i]; let op = x.op as int; let w = x.w as int; let d = x.d as int; let a = x.a as int; let b = x.b as int; let c = x.c;
+		if op == I_IMM { mov_ri(RAX, c); stv(RAX, d); }
+		else { if op == I_MOV { ldv(RAX, a); stv(RAX, d); }
+		else { if op == I_BIN {
+			ldv(RAX, a); ldv(RCX, b);
+			if c == B_ADD { alu(0x01, RAX, RCX); } if c == B_SUB { alu(0x29, RAX, RCX); } if c == B_MUL { imul(RAX, RCX); }
+			if c == B_AND { alu(0x21, RAX, RCX); } if c == B_OR { alu(0x09, RAX, RCX); } if c == B_XOR { alu(0x31, RAX, RCX); }
+			if c == B_SHL { shcl(4, RAX); } if c == B_SAR { shcl(7, RAX); } if c == B_SHR { shcl(5, RAX); }
+			if c >= B_ADD && c <= B_MUL && x.l >= 0 { if wsz(w) == 8 { jcc_l(CC_O, trap_to(K_OVF, x.l as int, traps)); } else { mov_rr(RDX, RAX); ext_r(RDX, w); alu(0x39, RDX, RAX); jcc_l(CC_NE, trap_to(K_OVF, x.l as int, traps)); } }
+			if c == B_DIV || c == B_MOD || c == B_UDIV || c == B_UMOD {
+				test_rr(RCX, RCX); jcc_l(CC_E, trap_to(K_DIV0, x.l as int, traps));
+				if c == B_DIV || c == B_MOD { if wsz(w) == 8 { mov_ri(RDX, -1); alu(0x39, RCX, RDX); let sk = nlbl(); jcc_l(CC_NE, sk); mov_ri(RDX, 1); shl_imm(RDX, 63); alu(0x39, RAX, RDX); jcc_l(CC_E, trap_to(K_OVF, x.l as int, traps)); LBL[sk] = XC.len as i32; } cqo(); grp3(7, RCX); } else { alu(0x31, RDX, RDX); grp3(6, RCX); }
+				if c == B_MOD || c == B_UMOD { mov_rr(RAX, RDX); }
+			}
+			if x.l < 0 || c > B_MUL { ext_r(RAX, w); }
+			stv(RAX, d);
+		}
+		else { if op == I_CMP { ldv(RAX, a); ldv(RCX, b); alu(0x39, RAX, RCX); setcc(c, RAX); stv(RAX, d); }
+		else { if op == I_UN { ldv(RAX, a); if c == 0 { grp3(3, RAX); if x.l >= 0 { if wsz(w) == 8 { jcc_l(CC_O, trap_to(K_OVF, x.l as int, traps)); } else { mov_rr(RDX, RAX); ext_r(RDX, w); alu(0x39, RDX, RAX); jcc_l(CC_NE, trap_to(K_OVF, x.l as int, traps)); } } else { ext_r(RAX, w); } } if c == 1 { grp3(2, RAX); ext_r(RAX, w); } if c == 2 { xb(0x48); xb(0x83); xb(0xF0); xb(1); } stv(RAX, d); }
+		else { if op == I_EXT { ldv(RAX, a); ext_r(RAX, w); stv(RAX, d); }
+		else { if op == I_CHK { ldv(RAX, a); mov_rr(RDX, RAX); ext_r(RDX, w); alu(0x39, RDX, RAX); jcc_l(CC_NE, trap_to(K_NARROW, x.l as int, traps)); if d >= 0 { stv(RAX, d); } }
+		else { if op == I_LBL { LBL[c] = XC.len as i32; }
+		else { if op == I_JMP { jmp_l(c); }
+		else { if op == I_BZ || op == I_BNZ { ldv(RAX, a); test_rr(RAX, RAX); jcc_l(if op == I_BZ { CC_E } else { CC_NE }, c); }
+		else { if op == I_CALL || op == I_CALLR || op == I_SYS {
+			let n = b; let st0 = if n > 6 && op != I_SYS { n - 6 } else { 0 }; let pdn = st0 & 1;
+			if pdn == 1 { sub_rsp(8); }
+			var k = n - 1; while k >= 6 && op != I_SYS { ldv(RAX, ARGL[a + k] as int); push_r(RAX); k--; }
+			if op == I_SYS { let sr = [0, 7, 6, 2, 10, 8, 9]; for j in n { ldv(sr[j], ARGL[a + j] as int); } syscall(); }
+			else { for j in min(n, 6) { ldv(ARGR[j], ARGL[a + j] as int); } if op == I_CALL { call_f(c); } else { ldv(R11, c); call_r(R11); } }
+			if st0 + pdn > 0 { add_rsp(8 * (st0 + pdn)); }
+			if d >= 0 { stv(RAX, d); }
+			if x.l >= 0 { stv(RDX, x.l as int); }
+		}
+		else { if op == I_RET { if a >= 0 { ldv(RAX, a); } if b >= 0 { ldv(RDX, b); } leave(); ret(); }
+		else { if op == I_LD { ldv(RCX, a); ld(RAX, RCX, c, wsz(w), wsg(w)); stv(RAX, d); }
+		else { if op == I_ST { ldv(RCX, a); ldv(RAX, b); st(RAX, RCX, c, wsz(w)); }
+		else { if op == I_SLOT { lea(RAX, RBP, c - sba); stv(RAX, d); }
+		else { if op == I_GADDR || op == I_RADDR { lea_rip(RAX, if op == I_GADDR { 3 } else { 2 }, c); stv(RAX, d); }
+		else { if op == I_FADDR { lea_rip(RAX, 1, c); stv(RAX, d); }
+		else { if op == I_PARAM { if c < 6 { stv(ARGR[c], d); } else { ld(RAX, RBP, 16 + 8 * (c - 6), 8, false); stv(RAX, d); } }
+		else { if op == I_COPY { ldv(RDI, d); ldv(RSI, a); ldv(RCX, b); xb(0xF3); xb(0xA4); }
+		} } } } } } } } } } } } } } } } } }
+	}
+	leave(); ret();
+	var j = 0;
+	while j < traps.len { LBL[traps[j]] = XC.len as i32; let l = traps[j + 2] as int; mov_ri(RDI, traps[j + 1] as int); lea_rip(RSI, 2, LOCS[2 * l] as int); mov_ri(RDX, LOCS[2 * l + 1] as int); call_f(RT_DIE); j += 3; }
+}
+fn shl_imm(r int, v int) { xrex(true, 0, 0, r); xb(0xC1); xb(0xE0 | (r & 7)); xb(v); }

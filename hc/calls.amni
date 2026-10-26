@@ -640,6 +640,7 @@ recursive fn ck_slit(n int, want int) int {
 	set_r(n, R_CTOR, si);
 	set_t(n, t)
 }
+var XROOTS i32[>..];
 fn check_program() bool {
 	GLOBI = new_inst(-1, 0, ND.len, -1);
 	FI_[GLOBI].st = 2;
@@ -648,6 +649,7 @@ fn check_program() bool {
 	if md < 0 { cerr(0, "no main function"); return false; }
 	for d, i in DC { if d.k as int == D_GLOBAL && d.file == 0 { global_type(i); } }
 	let mi = get_inst(DC[md].node as int, BINDS.len, 0, -1, -1);
+	for r in XROOTS { let d = lookup(r as int, -1, D_FN); if d >= 0 { get_inst(DC[d].node as int, BINDS.len, 0, -1, -1); } }
 	for d, i in DC { if d.k as int == D_GLOBAL { global_type(i); } }
 	propagate_calls();
 	NERR == 0

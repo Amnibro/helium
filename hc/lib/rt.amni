@@ -1,0 +1,21 @@
+extern fn sys3(n int, a int, b int, c int) int = "!sys3";
+extern fn ptr(s const byte[:]) int = "!ptr";
+var RT_OB byte[65536];
+var RT_ON int;
+var RT_EB byte[512];
+var RT_EN int;
+fn rt_write(fd int, s const byte[:]) { var o = 0; while o < s.len { let w = sys3(1, fd, ptr(s[o..]), s.len - o); if w <= 0 { return; } o += w; } }
+fn rt_flush() { if RT_ON > 0 { rt_write(1, RT_OB[..RT_ON]); RT_ON = 0; } }
+fn rt_ps(s const byte[:]) { for c in s { if RT_ON == 65536 { rt_flush(); } RT_OB[RT_ON] = c; RT_ON += 1; } }
+fn rt_digits(b byte[24]&, u u64) int { var v = u; var i = 24; loop { i -= 1; b[i] = (48 + v % 10) as byte; v = v / 10; if v == 0 { break; } } i }
+fn rt_pu(u u64) { var b byte[24]; let i = rt_digits(b, u); rt_ps(b[i..]); }
+fn rt_pi(v int) { var u = v as! u64; if v < 0 { rt_ps("-"); u = 0 - u; } rt_pu(u); }
+fn rt_pb(b bool) { if b { rt_ps("true"); } else { rt_ps("false"); } }
+fn rt_nl() { rt_ps("\n"); }
+fn rt_exit(c int) { rt_flush(); sys3(60, c, 0, 0); }
+fn rt_es(s const byte[:]) { for c in s { if RT_EN < 512 { RT_EB[RT_EN] = c; RT_EN += 1; } } }
+fn rt_eu(u u64) { var b byte[24]; let i = rt_digits(b, u); rt_es(b[i..]); }
+fn rt_ei(v int) { var u = v as! u64; if v < 0 { rt_es("-"); u = 0 - u; } rt_eu(u); }
+fn rt_fail(loc const byte[:]) { rt_es(" ("); rt_es(loc); rt_es(")\n"); rt_flush(); rt_write(2, RT_EB[..RT_EN]); sys3(60, 1, 0, 0); }
+fn rt_die(k int, loc const byte[:]) { rt_es("helium runtime error: "); if k == 1 { rt_es("integer overflow"); } if k == 2 { rt_es("division by zero"); } if k == 4 { rt_es("cast changes the value"); } rt_fail(loc); }
+fn rt_oob(i int, n int, loc const byte[:]) { rt_es("helium runtime error: index "); rt_ei(i); rt_es(" out of bounds (length "); rt_ei(n); rt_es(")"); rt_fail(loc); }

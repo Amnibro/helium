@@ -1,17 +1,22 @@
 import os;
-import gen;
+import lower;
 fn main() {
 	var a byte[>..] = [];
 	var o byte[>..] = [];
-	if arg_count() < 3 { print("usage: hc file.amni out.c"); exit(2); }
+	if arg_count() < 3 { print("usage: hc file.amni out.c [--native]"); exit(2); }
 	arg(1, a); arg(2, o);
+	var m byte[>..] = [];
+	if arg_count() > 3 { arg(3, m); }
+	let native = m[..] == "--native";
 	var lib byte[>..] = [];
 	if !env("HC_LIB", lib) { lib.append("hc/lib"); }
 	LIBDIR.append(lib);
 	if !load_program(a) { print(DERR); exit(1); }
+	if native { if load_import(intern("rt"), 0, -1) < 0 { print(DERR); exit(1); } for r in ["rt_ps", "rt_pi", "rt_pu", "rt_pb", "rt_nl", "rt_exit", "rt_die", "rt_oob", "rt_flush"] { XROOTS.push(intern(r) as i32); } }
 	if !check_program() { print(CERR); exit(1); }
 	if DERR.len > 0 { print(DERR); exit(1); }
 	var c byte[>..] = [];
+	if native { if !lower_program(c) { print(LERR); exit(1); } if !write_file(o, c) || !make_exec(o) { print("cannot write ", o); exit(1); } return; }
 	if !gen_program(c) { print(GERR); exit(1); }
 	if !write_file(o, c) { print("cannot write ", o); exit(1); }
 }

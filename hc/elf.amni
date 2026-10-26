@@ -1,0 +1,35 @@
+import x64;
+let EBASE = 0x400000;
+var RO byte[>..<];
+var DA byte[>..<];
+var BSS int;
+var LBL i32[>..<];
+var FOFF i32[>..<];
+fn eb(o byte[>..]&, v int, n int) { for i in n { o.push(((v >> (i * 8)) & 255) as! byte); } }
+fn al(v int, a int) int { (v + a - 1) / a * a }
+fn elf_write(entry int) byte[>..] {
+	let hs = 64 + 56 * 2;
+	let co = al(hs, 16);
+	let ro = al(co + XC.len, 16);
+	let rxe = ro + RO.len;
+	let dof = al(rxe, 4096);
+	let dva = EBASE + dof + 4096;
+	let rova = EBASE + ro;
+	for f in XFIX {
+		let at = f.at as int; let k = f.k as int; let to = f.to as int;
+		let tv = if k == 0 { EBASE + co + (LBL[to] as int) } else { if k == 1 { EBASE + co + (FOFF[to] as int) } else { if k == 2 { rova + to } else { dva + to } } };
+		put32(at, tv - (EBASE + co + at + 4));
+	}
+	var o byte[>..] = [];
+	o.append("\x7FELF"); eb(o, 2, 1); eb(o, 1, 1); eb(o, 1, 1); eb(o, 0, 9);
+	eb(o, 2, 2); eb(o, 0x3E, 2); eb(o, 1, 4); eb(o, EBASE + co + entry, 8); eb(o, 64, 8); eb(o, 0, 8); eb(o, 0, 4); eb(o, 64, 2); eb(o, 56, 2); eb(o, 2, 2); eb(o, 64, 2); eb(o, 0, 2); eb(o, 0, 2);
+	eb(o, 1, 4); eb(o, 5, 4); eb(o, 0, 8); eb(o, EBASE, 8); eb(o, EBASE, 8); eb(o, rxe, 8); eb(o, rxe, 8); eb(o, 4096, 8);
+	eb(o, 1, 4); eb(o, 6, 4); eb(o, dof, 8); eb(o, dva, 8); eb(o, dva, 8); eb(o, DA.len, 8); eb(o, DA.len + BSS, 8); eb(o, 4096, 8);
+	while o.len < co { o.push(0); }
+	o.append(XC[..]);
+	while o.len < ro { o.push(0); }
+	o.append(RO[..]);
+	while o.len < dof { o.push(0); }
+	o.append(DA[..]);
+	o
+}

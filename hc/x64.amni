@@ -1,0 +1,39 @@
+let RAX = 0; let RCX = 1; let RDX = 2; let RBX = 3; let RSP = 4; let RBP = 5; let RSI = 6; let RDI = 7; let R8 = 8; let R9 = 9; let R10 = 10; let R11 = 11;
+let ARGR = [7, 6, 2, 1, 8, 9];
+let CC_O = 0; let CC_B = 2; let CC_AE = 3; let CC_E = 4; let CC_NE = 5; let CC_BE = 6; let CC_A = 7; let CC_L = 12; let CC_GE = 13; let CC_LE = 14; let CC_G = 15;
+struct Fix { at i32, to i32, k u8 }
+var XC byte[>..<];
+var XFIX Fix[>..<];
+fn xb(b int) { XC.push(b as! byte); }
+fn x32(v int) { for i in 4 { xb((v >> (i * 8)) & 255); } }
+fn x64v(v int) { for i in 8 { xb((v >> (i * 8)) & 255); } }
+fn xrex(w bool, r int, x int, b int) { let v = 0x40 | (if w { 8 } else { 0 }) | ((r >> 3) << 2) | ((x >> 3) << 1) | (b >> 3); if v != 0x40 { xb(v); } }
+fn xrexb(r int, b int) { xb(0x40 | ((r >> 3) << 2) | (b >> 3)); }
+fn xmem(r int, base int, d int) { let lo = base & 7; if d == 0 && lo != 5 { xb(((r & 7) << 3) | lo); } else { if d >= -128 && d < 128 { xb(0x40 | ((r & 7) << 3) | lo); } else { xb(0x80 | ((r & 7) << 3) | lo); } } if lo == 4 { xb(0x24); } if d != 0 || lo == 5 { if d >= -128 && d < 128 { xb(d & 255); } else { x32(d); } } }
+fn xrr(op int, r int, rm int) { xrex(true, r, 0, rm); xb(op); xb(0xC0 | ((r & 7) << 3) | (rm & 7)); }
+fn mov_ri(r int, v int) { if v >= 0 && v < (1 << 31) { xrex(false, 0, 0, r); xb(0xB8 + (r & 7)); x32(v); } else { if v >= -(1 << 31) && v < 0 { xrex(true, 0, 0, r); xb(0xC7); xb(0xC0 | (r & 7)); x32(v); } else { xrex(true, 0, 0, r); xb(0xB8 + (r & 7)); x64v(v); } } }
+fn mov_rr(d int, s int) { if d != s { xrr(0x89, s, d); } }
+fn ld(r int, base int, d int, w int, sx bool) { if w == 8 { xrex(true, r, 0, base); xb(0x8B); } else { if w == 4 { if sx { xrex(true, r, 0, base); xb(0x63); } else { xrex(false, r, 0, base); xb(0x8B); } } else { xrex(true, r, 0, base); xb(0x0F); xb(if w == 1 { if sx { 0xBE } else { 0xB6 } } else { if sx { 0xBF } else { 0xB7 } }); } } xmem(r, base, d); }
+fn st(r int, base int, d int, w int) { if w == 2 { xb(0x66); } if w == 1 { xrexb(r, base); } else { xrex(w == 8, r, 0, base); } xb(if w == 1 { 0x88 } else { 0x89 }); xmem(r, base, d); }
+fn lea(r int, base int, d int) { xrex(true, r, 0, base); xb(0x8D); xmem(r, base, d); }
+fn lea_rip(r int, k int, to int) { xrex(true, r, 0, 0); xb(0x8D); xb(((r & 7) << 3) | 5); XFIX.push(Fix { XC.len as i32, to as i32, k as u8 }); x32(0); }
+fn alu(op int, d int, s int) { xrr(op, s, d); }
+fn imul(d int, s int) { xrex(true, d, 0, s); xb(0x0F); xb(0xAF); xb(0xC0 | ((d & 7) << 3) | (s & 7)); }
+fn grp3(ext int, r int) { xrex(true, 0, 0, r); xb(0xF7); xb(0xC0 | (ext << 3) | (r & 7)); }
+fn shcl(ext int, r int) { xrex(true, 0, 0, r); xb(0xD3); xb(0xC0 | (ext << 3) | (r & 7)); }
+fn cqo() { xb(0x48); xb(0x99); }
+fn setcc(cc int, r int) { xrexb(0, r); xb(0x0F); xb(0x90 + cc); xb(0xC0 | (r & 7)); xrex(true, r, 0, r); xb(0x0F); xb(0xB6); xb(0xC0 | ((r & 7) << 3) | (r & 7)); }
+fn test_rr(a int, b int) { xrr(0x85, b, a); }
+fn jmp_l(to int) { xb(0xE9); XFIX.push(Fix { XC.len as i32, to as i32, 0 }); x32(0); }
+fn jcc_l(cc int, to int) { xb(0x0F); xb(0x80 + cc); XFIX.push(Fix { XC.len as i32, to as i32, 0 }); x32(0); }
+fn call_f(f int) { xb(0xE8); XFIX.push(Fix { XC.len as i32, f as i32, 1 }); x32(0); }
+fn call_r(r int) { xrex(false, 0, 0, r); xb(0xFF); xb(0xD0 | (r & 7)); }
+fn push_r(r int) { xrex(false, 0, 0, r); xb(0x50 + (r & 7)); }
+fn pop_r(r int) { xrex(false, 0, 0, r); xb(0x58 + (r & 7)); }
+fn sub_rsp(v int) { xb(0x48); xb(0x81); xb(0xEC); x32(v); }
+fn add_rsp(v int) { xb(0x48); xb(0x81); xb(0xC4); x32(v); }
+fn ret() { xb(0xC3); }
+fn leave() { xb(0xC9); }
+fn syscall() { xb(0x0F); xb(0x05); }
+fn ud2() { xb(0x0F); xb(0x0B); }
+fn put32(at int, v int) { for i in 4 { XC[at + i] = ((v >> (i * 8)) & 255) as! byte; } }

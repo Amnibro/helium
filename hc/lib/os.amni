@@ -2,6 +2,7 @@ import std;
 extern fn trim_memory() bool = "hr_trim_memory";
 extern fn read_file(path const byte[:], out byte[>..]&) bool = "hr_os_read_file";    // appends the whole file
 extern fn write_file(path const byte[:], data const byte[:]) bool = "hr_os_write_file";
+extern fn make_exec(path const byte[:]) bool = "hr_os_make_exec";
 extern fn write_file_atomic(path const byte[:], data const byte[:]) bool = "hr_os_write_file_atomic";
 extern fn append_file(path const byte[:], data const byte[:]) bool = "hr_os_append_file";
 extern fn file_exists(path const byte[:]) bool = "hr_os_file_exists";    // a file, not a directory
