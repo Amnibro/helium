@@ -23,6 +23,8 @@ fn vargs(t int) { format(O, ", ", isz(TY[t].c as int), ", ", vlim(t)); }
 fn vok(n int, t int) bool { if TY[t].c == 8 { gerr(n, "varint array lengths are not supported by the self-hosted compiler yet"); return false; } if !is_fixed(TY[t].a as int) && !is_vval(TY[t].a as int) { gerr(n, "arrays of these variable-size elements are not supported by the self-hosted compiler yet"); return false; } if is_seq(t) && vlim(t) == 1 { gerr(n, "limited arrays need fixed-size elements"); return false; } true }
 fn is_seq(t int) bool { (TY[t].k == TY_ARR || TY[t].k == TY_SLICE) && is_vval(TY[t].a as int) }
 var DSU = 0;
+var EFW i8[>..];
+var EBD i8[>..];
 var VSTC i8[>..];
 recursive fn is_vst(t int) bool { if t < 0 || TY[t].k != TY_STRUCT { return false; } while VSTC.len < TY.len { VSTC.push(0); } if VSTC[t] != 0 { return VSTC[t] == 1; } si_layout(TY[t].a as int); var r = false; if STI[TY[t].a].cls as int == CL_VAR && ND[STI[TY[t].a].node].k as int == N_STRUCT { let f0 = STI[TY[t].a].f0 as int; for i in STI[TY[t].a].fnum { let ft = SFI[f0 + i].ty as int; if ft >= 0 && (is_vimg(ft) || is_vst(ft)) { r = true; } } } VSTC[t] = if r { 1 } else { 2 }; r }
 fn is_vval(t int) bool { is_vimg(t) || is_vst(t) }
@@ -100,7 +102,7 @@ recursive fn cn_make(t int) {
 	else { if k == TY_VOID { CN.append("void"); }
 	else { if k == TY_STRUCT && is_vst(t) { CN.append("uint8_t*"); }
 	else { if k == TY_STRUCT { format(CN, "S", x.a); fwd(s0); }
-	else { if k == TY_ENUM { format(CN, "E", x.a); fwd(s0); }
+	else { if k == TY_ENUM { format(CN, "E", x.a); while EFW.len <= x.a as int { EFW.push(0); } if EFW[x.a] == 0 { EFW[x.a] = 1; fwd(s0); } }
 	else { if k == TY_VARIANT { CN.append("hr_unit"); }
 	else { if k == TY_ARR { let a = x.s as int; if a == A_GROW || a == A_GS { CN.append("hrv"); } else { if a == A_FIXED { format(CN, "A", t); fwd(s0); } else { if a == A_LIM && x.b >= 0 { format(CN, "L", t); fwd(s0); } else { CN.append("uint8_t*"); } } } }
 	else { if k == TY_SLICE || k == TY_STRLIT || k == TY_ARRLIT { CN.append("hsl"); }
@@ -136,6 +138,9 @@ recursive fn cbody(t int) {
 	}
 	if k == TY_ENUM {
 		let ei = x.a as int; ei_layout(ei);
+		while EBD.len <= ei { EBD.push(0); }
+		if EBD[ei] != 0 { return; }
+		EBD[ei] = 1;
 		let v0 = ENI[ei].v0 as int;
 		var pay = false;
 		for i in ENI[ei].vnum { let v = ENV[v0 + i]; if v.si >= 0 && !STI[v.si].zero { cbody(t_struct(v.si as int)); pay = true; } }
@@ -714,6 +719,58 @@ fn ext_name(i int) {
 }
 fn is_ext(i int) bool { (ND[FI_[i].node].fl & F_EXTERN) != 0 }
 recursive fn gcall_args(n int, inst int, recv int) { gcall_args1(n, inst, recv, -1, 0); }
+var DSPJ = -1;
+var DSPV = 0;
+var DSPQ = 0;
+recursive fn gcase(n int) {
+	let d0 = rv(n);
+	let j0 = DSPL[d0] as int;
+	let i0 = DSPL[d0 + 1] as int;
+	let recv = if ax(n) == 1 && ND[ND[n].a].k == N_DOT { ND[ND[n].a].a as int } else { -1 };
+	let na = ND[n].n as int + (if recv >= 0 { 1 } else { 0 });
+	let rt = FI_[i0].ret as int;
+	let vd = rt < 0 || rt == T_VOID;
+	let q = nt();
+	let c0 = carg(n, recv, j0);
+	let et = deref(at(c0));
+	let ei = TY[et].a as int;
+	var lrw = false;
+	ow("({ ");
+	for j in na {
+		if j != j0 { gcall_arg(n, i0, recv, j, true, q); continue; }
+		ct(et); format(O, " *_m", q, " = ");
+		var byr = false;
+		for vi in ENI[ei].vnum { let pt = ptype_of(DSPL[d0 + 1 + vi] as int, j0); if TY[pt].k == TY_REF { byr = true; } }
+		if byr && TY[at(c0)].k == TY_REF { gx0(c0); } else { if byr && is_place(c0) { ow("&("); gx(c0); ow(")"); } else { let k = tmp(et, false); ow("("); ot(k); ow(" = "); if TY[at(c0)].k == TY_REF { ow("*"); gx0(c0); } else { gx(c0); } ow(", &"); ot(k); ow(")"); } }
+		ow("; ");
+	}
+	if !vd { ct(rt); format(O, " _r", q, "; "); }
+	format(O, "switch (_m", q, "->tag) { ");
+	let sj = DSPJ; let sv = DSPV; let sq = DSPQ;
+	for vi in ENI[ei].vnum {
+		let i = DSPL[d0 + 1 + vi] as int;
+		if !is_ext(i) && FI_[i].lr { lrw = true; }
+		format(O, "case ", vi, ": ");
+		if !vd { format(O, "_r", q, " = "); }
+		if is_ext(i) { ext_name(i); } else { fn_cname(i); }
+		ow("(");
+		DSPJ = j0; DSPV = vi; DSPQ = q;
+		gcall_args1(n, i, recv, q, na);
+		DSPJ = sj; DSPV = sv; DSPQ = sq;
+		ow("); break; ");
+	}
+	ow("default: __builtin_unreachable(); } ");
+	if lrw { glrcheck(); }
+	if !vd { format(O, "_r", q, "; "); }
+	ow("})");
+}
+recursive fn gcase_arg(pt int) {
+	let byr = TY[pt].k == TY_REF;
+	let vt = deref(pt);
+	let v = ENV[(ENI[TY[vt].a].v0 as int) + DSPV];
+	if v.si >= 0 && !STI[v.si].zero { if byr { ow("&"); } format(O, "_m", DSPQ, "->u.v", DSPV); return; }
+	if byr { ow("&"); } ow("("); ct(vt); ow("){0}");
+}
 recursive fn gcall_args1(n int, inst int, recv int, op int, on int) {
 	let x = ND[n];
 	let np = ND[FI_[inst].node].n as int;
@@ -728,6 +785,7 @@ recursive fn gcall_args1(n int, inst int, recv int, op int, on int) {
 			let sa = AOWN; AOWN = inst; gx(ND[p].b as int); AOWN = sa;
 			continue;
 		}
+		if j == DSPJ { DSPJ = -1; gcase_arg(pt); DSPJ = j; continue; }
 		if j < on { format(O, "_o", op, "_", j); continue; }
 		gcall_arg(n, inst, recv, j, false, 0);
 	}
@@ -737,6 +795,7 @@ recursive fn gcall(n int) {
 	let r = rk(n);
 	if r == R_BUILTIN { gbuiltin(n); return; }
 	if r == R_BLOCK { gblkcall(n); return; }
+	if r == R_CASE { gcase(n); return; }
 	if r != R_FN { gerr(n, "unsupported call"); return; }
 	let inst = rv(n);
 	let recv = if ax(n) == 1 && ND[ND[n].a].k == N_DOT { ND[ND[n].a].a as int } else { -1 };
@@ -1160,6 +1219,7 @@ fn decl_lv(v int) {
 recursive fn gassign(n int) {
 	let x = ND[n];
 	let o = x.op as int;
+	if x.b >= 0 && at(x.b as int) == T_VOID && ends(x.b as int) { gx0(x.b as int); ow(";"); return; }
 	if o == T_COMMA {
 		let p = nt();
 		ow("{ "); ct(at(x.b as int)); ow(" _t"); oi(p); ow(" = "); gx(x.b as int); ow("; ");
