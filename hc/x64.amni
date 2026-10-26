@@ -9,7 +9,8 @@ fn x32(v int) { for i in 4 { xb((v >> (i * 8)) & 255); } }
 fn x64v(v int) { for i in 8 { xb((v >> (i * 8)) & 255); } }
 fn xrex(w bool, r int, x int, b int) { let v = 0x40 | (if w { 8 } else { 0 }) | ((r >> 3) << 2) | ((x >> 3) << 1) | (b >> 3); if v != 0x40 { xb(v); } }
 fn xrexb(r int, b int) { xb(0x40 | ((r >> 3) << 2) | (b >> 3)); }
-fn xmem(r int, base int, d int) { let lo = base & 7; if d == 0 && lo != 5 { xb(((r & 7) << 3) | lo); } else { if d >= -128 && d < 128 { xb(0x40 | ((r & 7) << 3) | lo); } else { xb(0x80 | ((r & 7) << 3) | lo); } } if lo == 4 { xb(0x24); } if d != 0 || lo == 5 { if d >= -128 && d < 128 { xb(d & 255); } else { x32(d); } } }
+var RIPM = false; var RIPK = 0; var RIPT = 0;
+fn xmem(r int, base int, d int) { if RIPM { RIPM = false; xb(((r & 7) << 3) | 5); XFIX.push(Fix { XC.len as i32, RIPT as i32, RIPK as u8 }); x32(0); return; } let lo = base & 7; if d == 0 && lo != 5 { xb(((r & 7) << 3) | lo); } else { if d >= -128 && d < 128 { xb(0x40 | ((r & 7) << 3) | lo); } else { xb(0x80 | ((r & 7) << 3) | lo); } } if lo == 4 { xb(0x24); } if d != 0 || lo == 5 { if d >= -128 && d < 128 { xb(d & 255); } else { x32(d); } } }
 fn xrr(op int, r int, rm int) { xrex(true, r, 0, rm); xb(op); xb(0xC0 | ((r & 7) << 3) | (rm & 7)); }
 fn mov_ri(r int, v int) { if v >= 0 && v < (1 << 31) { xrex(false, 0, 0, r); xb(0xB8 + (r & 7)); x32(v); } else { if v >= -(1 << 31) && v < 0 { xrex(true, 0, 0, r); xb(0xC7); xb(0xC0 | (r & 7)); x32(v); } else { xrex(true, 0, 0, r); xb(0xB8 + (r & 7)); x64v(v); } } }
 fn mov_rr(d int, s int) { if d != s { xrr(0x89, s, d); } }

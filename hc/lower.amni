@@ -72,6 +72,16 @@ fn lrcheck() {
 	drop_to(0); ir(I_JMP, 3, -1, -1, -1, RETL); ir(I_LBL, 3, -1, -1, -1, lok);
 }
 fn lvaddr(v int) int { let d = nv(); if LVS[v].cfn as int != CUR { while CAPSL.len < LVS.len { CAPSL.push(-1); } if CAPSL[v] < 0 { lerr(-1, "captured variable without a capture slot"); return d; } ir(I_SLOT, 8, d, -1, -1, CAPSL[v] as int); return ldw(d, 0, 3); } ir(I_SLOT, 8, d, -1, -1, lslot(v)); d }
+fn gconst(d int, st int) int, bool {
+	let g = DC[d].node as int; let x = ND[g]; let t = GLT[d] as int;
+	if (x.fl & V_VAR) != 0 || x.b < 0 || !is_scal(t) || is_vimg(t) || TY[t].k == TY_REF { return 0, false; }
+	let iv = kid(x.b as int, 0); let ik = ND[iv].k as int;
+	if isf(t) { if ik != N_FLT || !isf(st) || wof(st) != wof(t) { return 0, false; } let b = flt_bits(tok_text(ND[iv].t as int)); return (if wof(t) == 10 { d2f_bits(b) } else { b }) as! int, true; }
+	if isf(st) { return 0, false; }
+	if ik == N_TRUE { return 1, true; } if ik == N_FALSE { return 0, true; }
+	if !all_int(iv) { return 0, false; }
+	let v, ok = ceval(iv, ns_of(g)); return v as int, ok;
+}
 fn vaddr(n int) int {
 	let d = nv(); let r = rk(n);
 	if r == R_LOCAL { return lvaddr(rv(n)); }
@@ -272,6 +282,7 @@ recursive fn lx1(n int) int {
 	if k == N_DOT && rk(n) == R_VARIANT { return imm(rv(n)); }
 	if TY[t].k == TY_ENUM && TY[at(n)].k == TY_VARIANT { return imm(TY[at(n)].c as int); }
 	if k == N_TRUE { return imm(1); } if k == N_FALSE { return imm(0); } if k == N_NULL { return imm(0); }
+	if k == N_ID && rk(n) == R_GLOBAL { let cv, ok = gconst(rv(n), at(n)); if ok { return imm(cv); } }
 	if k == N_ID || k == N_DOT && rk(n) == R_FIELD || k == N_IDX || k == N_UN && x.op as int == T_MUL {
 		let st = at(n);
 		if TY[st].k == TY_REF && TY[t].k != TY_REF { return ldw(laddr(n), 0, wof(t)); }
