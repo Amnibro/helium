@@ -477,7 +477,7 @@ recursive fn ck_builtin(n int, b int, recv int, want int) int {
 	if b == B_LEN { let c = arg(0); if recv < 0 { ck(c, -1); } if TY[at(c)].k == TY_STRLIT { set_t(c, TT_STR); } return set_t(n, T_I64); }
 	if b == B_BYTESOF { let c = arg(0); if recv < 0 { ck(c, -1); } if is_pending(at(c)) { default_t(c); } return set_t(n, TT_STR); }
 	if b == B_TOBYTES { let c = arg(0); if recv < 0 { ck(c, -1); } if is_pending(at(c)) { default_t(c); } if total > 1 { ck(arg(1), -1); return set_t(n, T_VOID); } return set_t(n, t_arr(T_U8, A_GROW, -1, -1)); }
-	if b == B_FROMBYTES { let ta = x.c as int; let t = if ta >= 0 { rtype(kid(ta, 0), ns_of(n)) } else { T_ERRT }; ck(arg(0), TT_STR); if is_pending(at(arg(0))) { default_t(arg(0)); } return set_t(n, t); }
+	if b == B_FROMBYTES { let ta = x.c as int; let t = if ta >= 0 { rtype(kid(ta, 0), ns_of(n)) } else { T_ERRT }; ck(arg(0), TT_STR); if is_pending(at(arg(0))) { default_t(arg(0)); } if TY[t].k == TY_ARR { var rs i32[..2] = []; rs.push(t as i32); rs.push(T_BOOL as i32); return set_t(n, tlist(TY_MULTI, rs[..], -1)); } return set_t(n, t); }
 	if b == B_EMBED { ck(arg(0), TT_STR); default_t(arg(0)); return set_t(n, TT_STR); }
 	let r = recv;
 	let rt = deref(at(r));

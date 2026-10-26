@@ -390,6 +390,9 @@ static inline void hr_rgive(hrv v) { if (v.fl) free(v.fl); hr_give(v.b, 0); }
 static inline hrv *hr_tmp(hrv *t, hrv v) { if (t->fl) free(t->fl); hr_give(t->b, 0); *t = v; return t; }
 static inline void hr_rset(hrv *d, hrv v) { if (d->fl) free(d->fl); hr_give(d->b, 0); *d = v; }
 static inline hrv hr_rfrom(hsl s, int64_t esz) { hrv r = {0}; if (s.n) hr_append(&r, s.p, s.n, esz); return r; }
+static inline void hr_uleb_put(hrv *o, uint64_t v) { do { uint8_t b = v & 127; v >>= 7; if (v) b |= 128; *hr_grow(o, 1, 1) = b; } while (v); }
+static inline void hr_tobytes(hrv *o, hsl s) { hr_uleb_put(o, (uint64_t)s.n); hr_append(o, s.p, s.n, 1); }
+static inline const uint8_t *hr_uleb_rd(hsl s, int64_t *v) { uint64_t r = 0; for (int64_t i = 0, sh = 0; i < s.n && sh < 64; i++, sh += 7) { uint8_t b = s.p[i]; r |= (uint64_t)(b & 127) << sh; if (!(b & 128)) { if ((int64_t)r < 0 || (i > 0 && !b)) return 0; *v = (int64_t)r; return s.p + i + 1; } } return 0; }
 static inline hrv hr_rdup(hrv v, int64_t esz) { return hr_rfrom((hsl){ v.b, v.n }, esz); }
 static inline hrv hr_rdup_var(hrv v) { hrv r = {0}; if (v.top > 0) { hr_rinit(&r); memcpy(r.b, v.b, (size_t)v.top); r.n = v.n; r.top = v.top; } return r; }
 static __attribute__((noreturn, cold)) void hr_ovf(const char *loc) { hr_die("integer overflow", loc); }
