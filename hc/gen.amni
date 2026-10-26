@@ -335,12 +335,17 @@ recursive fn garith(o int, t0 int, a int, b int, tv int, loc int) {
 	if sg && (o == T_PLUS || o == T_MINUS || o == T_MUL) { ow(if o == T_PLUS { "HR_SADD(" } else { if o == T_MINUS { "HR_SSUB(" } else { "HR_SMUL(" } }); ct(t); ow(", "); gopnd(a, tv); ow(", "); gopnd(b, tv); ow(", "); wloc(loc); ow(")"); return; }
 	ow("(("); ct(t); ow(")("); if sg { ow("(int64_t)"); } else { ow("(uint64_t)"); } gopnd(a, tv); ow(" "); ow(ar_op(o)); ow(" "); if sg { ow("(int64_t)"); } else { ow("(uint64_t)"); } gopnd(b, tv); ow("))");
 }
+recursive fn grefp(c int) { let t = at(c); if TY[t].k == TY_REF || TY[t].k == TY_NULL { ow("(const void*)("); gx0(c); ow(")"); return; } if TY[t].k == TY_SLICE { ow("(const void*)("); gas(c); ow(").p"); return; } ow("(const void*)"); gaddr(c); }
 recursive fn gbin(n int) {
 	let x = ND[n]; let o = x.op as int; let a = x.a as int; let b = x.b as int;
 	if o == T_ANDAND || o == T_OROR { ow("("); gx(a); ow(if o == T_ANDAND { " && " } else { " || " }); gx(b); ow(")"); return; }
 	let cmp = o == T_EQ || o == T_NEQ || o == T_LT || o == T_GT || o == T_LTEQ || o == T_GTEQ;
 	let ord = impure(b) && ND[a].k as int != N_INT && ND[a].k as int != N_FLT && ND[a].k as int != N_STR;
 	let q = nt();
+	if o == T_DOTEQ || o == T_DOTNEQ {
+		format(O, "({ const void *_l", q, " = "); grefp(a); format(O, "; _l", q, if o == T_DOTEQ { " == " } else { " != " }); grefp(b); ow("; })");
+		return;
+	}
 	if cmp {
 		let m = ax(n);
 		let ta = fin(a); let tb = fin(b);
@@ -908,6 +913,26 @@ recursive fn gbuiltin(n int) {
 	if recv < 0 { gerr(n, "unsupported builtin call"); return; }
 	let rt = deref(at(recv));
 	let e = TY[rt].a as int;
+	if is_vimg(rt) && vlim(rt) == 1 && !is_seq(rt) {
+		let w = isz(TY[rt].c as int);
+		ow("({ uint8_t *_v"); oi(p); ow(" = "); if TY[at(recv)].k == TY_REF { gx0(recv); } else { gx(recv); } ow("; ");
+		if b == B_PUSH || b == B_INDEXOF { ct(e); ow(" _x"); oi(p); ow(" = "); gx(arg(1)); ow("; "); }
+		if b == B_APPEND { format(O, "hsl _s", p, " = "); gas(arg(1)); ow("; "); }
+		if b == B_POPN || b == B_RESIZE { format(O, "int64_t _k", p, " = "); gx(arg(1)); ow("; "); }
+		format(O, "int64_t _n", p, " = hr_vget(_v", p, " + ", w, ", ", w, "), _c", p, " = hr_vget(_v", p, ", ", w, "); (void)_c", p, "; "); ct(e); format(O, " *_e", p, " = ("); ct(e); format(O, "*)(_v", p, " + ", 2 * w, "); ");
+		if b == B_PUSH { format(O, "if (_n", p, " >= _c", p, ") hr_die(\"push past a limited array's capacity\", "); wloc(n); format(O, "); _e", p, "[_n", p, "] = _x", p, "; hr_vput(_v", p, " + ", w, ", ", w, ", _n", p, " + 1); &_e", p, "[_n", p, "]; })"); return; }
+		if b == B_APPEND { format(O, "if (_n", p, " + _s", p, ".n > _c", p, ") hr_die(\"append past a limited array's capacity\", "); wloc(n); format(O, "); memmove(_e", p, " + _n", p, ", _s", p, ".p, (size_t)_s", p, ".n * sizeof _e", p, "[0]); hr_vput(_v", p, " + ", w, ", ", w, ", _n", p, " + _s", p, ".n); })"); return; }
+		if b == B_POP { format(O, "if (!_n", p, ") hr_die(\"pop of an empty array\", "); wloc(n); format(O, "); hr_vput(_v", p, " + ", w, ", ", w, ", _n", p, " - 1); _e", p, "[_n", p, " - 1]; })"); return; }
+		if b == B_POPN { format(O, "if (_k", p, " < 0 || _k", p, " > _n", p, ") hr_die(\"pop_n past the length\", "); wloc(n); format(O, "); hr_vput(_v", p, " + ", w, ", ", w, ", _n", p, " - _k", p, "); })"); return; }
+		if b == B_CLEAR { format(O, "hr_vput(_v", p, " + ", w, ", ", w, ", 0); })"); return; }
+		if b == B_RESIZE {
+			format(O, "if (_k", p, " < 0 || _k", p, " > _c", p, ") hr_die(\"resize past a limited array's capacity\", "); wloc(n); ow("); ");
+			if total > 2 { ct(e); ow(" _f"); oi(p); ow(" = "); gx(arg(2)); format(O, "; for (int64_t _j = _n", p, "; _j < _k", p, "; _j++) _e", p, "[_j] = _f", p, "; "); } else { format(O, "for (int64_t _j = _n", p, "; _j < _k", p, "; _j++) memset(&_e", p, "[_j], 0, sizeof _e", p, "[0]); "); }
+			format(O, "hr_vput(_v", p, " + ", w, ", ", w, ", _k", p, "); })"); return;
+		}
+		if b == B_INDEXOF { format(O, "int64_t _r", p, " = -1; for (int64_t _j = 0; _j < _n", p, "; _j++) if ("); var ea byte[..64] = []; format(ea, "_e", p, "[_j]"); var eb byte[..64] = []; format(eb, "_x", p); heq_o(e, ea[..], eb[..]); format(O, ") { _r", p, " = _j; break; } _r", p, "; })"); return; }
+		gerr(n, "unsupported limited-array operation"); return;
+	}
 	if is_lim(rt) {
 		ow("({ "); ct(rt); ow(" *_v"); oi(p); ow(" = "); grecv_ptr(recv); ow("; ");
 		if b == B_PUSH { ct(e); ow(" _x"); oi(p); ow(" = "); gx(arg(1)); format(O, "; if (_v", p, "->n >= ", TY[rt].b, ") hr_die(\"push past a limited array's capacity\", "); wloc(n); format(O, "); _v", p, "->e[_v", p, "->n] = _x", p, "; &_v", p, "->e[_v", p, "->n++]; })"); return; }
