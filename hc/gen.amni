@@ -379,6 +379,7 @@ recursive fn gun(n int) {
 	if o == T_NOT { ow("(!("); gx(a); ow("))"); return; }
 	if o == T_AND { gx(a); return; }
 	let t = fin(n);
+	if o == T_MINUS && TY[t].k == TY_INT { let cv0, cu0, cok = cval(n); if cok { oint(cv0, false, t); return; } }
 	if o == T_MINUS { if TY[t].k == TY_FLT { ow("(-("); gx(a); ow("))"); return; } if leaf_kind(t) >= 4 { ow("hneg"); oi(t); ow("("); gx(a); ow(")"); gen_hneg(t); return; } if TY[t].k == TY_INT && is_signed(t) { ow("HR_SNEG("); ct(t); ow(", "); gx(a); ow(", "); wloc(n); ow(")"); return; } ow("(("); ct(t); ow(")(0 - (uint64_t)("); gx(a); ow(")))"); return; }
 	if o == T_BITNOT { ow("(("); ct(t); ow(")~("); gx(a); ow("))"); return; }
 	if o == T_MUL { if is_vval(deref(at(a))) { gx(a); return; } ow("(*"); gx(a); ow(")"); return; }
@@ -879,7 +880,7 @@ recursive fn gblkcall(n int) {
 	let body = ND[fv].a as int;
 	for i in ND[body].n { gstmt(kid(body, i)); }
 	let tl = ND[body].a as int;
-	if tl >= 0 { if FI_[bi].ret as int != T_VOID && !ends(tl) { gx(tl); ow("; "); } else { gstmt(tl); } }
+	if tl >= 0 { if FI_[bi].ret as int != T_VOID && !ends(tl) { if is_res(FI_[bi].ret as int) { gxo(tl); } else { gx(tl); } ow("; "); } else { gstmt(tl); } }
 	AOWN = sa;
 	ow(" })");
 }
@@ -1347,7 +1348,7 @@ recursive fn gx0(n int) {
 	if k == N_ARR { garr(n); return; }
 	if k == N_SLIT { gslit(n); return; }
 	if k == N_CALL { if is_vval(at(n)) { DSU++; } gcall(n); return; }
-	if k == N_BLOCK { ow("({ "); gblk(n, -1, at(n) != T_VOID); ow(" })"); return; }
+	if k == N_BLOCK { if is_res(at(n)) { let r = nt(); ow("({ "); ct(at(n)); ow(" _r"); oi(r); ow("; "); gblk(n, r, false); ow(" _r"); oi(r); ow("; })"); return; } ow("({ "); gblk(n, -1, at(n) != T_VOID); ow(" })"); return; }
 	if k == N_IF || k == N_MATCH || k == N_EBLOCK || k == N_LOOP {
 		let t = at(n);
 		if t == T_VOID || t < 0 { ow("({ "); gstmt(n); ow(" })"); return; }
@@ -1705,7 +1706,7 @@ recursive fn gbreak(n int) {
 	let l = LSTK[LSTK.len - 1] as int;
 	let r = LRES[LRES.len - 1] as int;
 	ow("{ ");
-	if x.a >= 0 { if r >= 0 { ow("_r"); oi(r); ow(" = "); gx(x.a as int); ow("; "); } else { ow("(void)("); gx(x.a as int); ow("); "); } }
+	if x.a >= 0 { if r >= 0 { ow("_r"); oi(r); ow(" = "); if is_res(fin(x.a as int)) { gxo(x.a as int); } else { gx(x.a as int); } ow("; "); } else { ow("(void)("); gx(x.a as int); ow("); "); } }
 	format(O, "goto _bk", l, "; }");
 }
 recursive fn gstmt(n int) {

@@ -54,6 +54,9 @@ static uint8_t *hr_take(void) {
 }
 static void hr_give(uint8_t *b, int64_t used) {
 	if (!b) return;
+#ifdef GS_DEBUG
+	for (int64_t i = 0; i < hr_nfree; i++) if (hr_free[i] == b) hr_die("a resizable array's storage was released twice", "release");
+#endif
 	if (used > (1 << 20)) madvise(b + 65536, (size_t)(used - 65536 + 4095) & ~(size_t)4095, MADV_DONTNEED);
 	if (hr_nfree == hr_cfree) { hr_cfree = hr_cfree ? hr_cfree * 2 : 64; hr_free = realloc(hr_free, (size_t)hr_cfree * sizeof *hr_free); }
 	hr_free[hr_nfree++] = b;
