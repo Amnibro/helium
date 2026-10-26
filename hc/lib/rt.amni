@@ -1,5 +1,7 @@
 extern fn sys3(n int, a int, b int, c int) int = "!sys3";
 extern fn ptr(s const byte[:]) int = "!ptr";
+extern fn iptr(s const int[:]) int = "!ptr";
+extern fn uptr(s const u64[:]) int = "!ptr";
 extern fn sys6(n int, a int, b int, c int, d int, e int, f int) int = "!sys6";
 extern fn mld(a int) int = "!ld8";
 extern fn mst(a int, v int) = "!st8";
@@ -136,3 +138,76 @@ fn rt_fflt(o byte[48]&, bits u64, is32 bool) int {
 	n
 }
 fn rt_pf(bits u64, is32 int) { var o byte[48]; let n = rt_fflt(o, bits, is32 != 0); rt_ps(o[..n]); }
+fn rt_memeq(a const byte[:], b const byte[:]) bool { if a.len != b.len { return false; } for i in a.len { if a[i] != b[i] { return false; } } true }
+extern fn mld1(a int) int = "!ld1";
+extern fn mst1(a int, v int) = "!st1";
+var RT_SP int;
+var RT_PB byte[4096]; var RT_PB2 byte[4096]; var RT_ST byte[144]; var RT_TS int[2];
+var RT_IB byte[65536]; var RT_IP int; var RT_IN int;
+fn rt_start(sp int) { RT_SP = sp; }
+fn rt_cstr(p int) int { var n = 0; while mld1(p + n) != 0 { n += 1; } n }
+fn rt_appto(va int, p int, n int) { if n > 0 { let d = rt_grow(va, n, 1); mcopy(d, p, n); } }
+fn rt_path(s const byte[:], b byte[4096]&) int { if s.len >= 4095 { return 0; } for i in s.len { b[i] = s[i]; } b[s.len] = 0; ptr(b[..]) }
+fn rt_os_arg_count() int { mld(RT_SP) }
+fn rt_os_arg(i int, out int) { if i >= 0 && i < mld(RT_SP) { let p = mld(RT_SP + 8 + 8 * i); rt_appto(out, p, rt_cstr(p)); } }
+fn rt_os_getenv(name const byte[:], out int) bool {
+	var e = RT_SP + 8 + 8 * (mld(RT_SP) + 1);
+	while mld(e) != 0 { let p = mld(e); var ok = true; for i in name.len { if ok && mld1(p + i) != name[i] as int { ok = false; } } if ok && mld1(p + name.len) == 61 { let v = p + name.len + 1; rt_appto(out, v, rt_cstr(v)); return true; } e += 8; }
+	false
+}
+fn rt_os_read_file(path const byte[:], out int) bool {
+	let c = rt_path(path, RT_PB); if c == 0 { return false; } let fd = sys3(2, c, 0, 0); if fd < 0 { return false; }
+	if sys3(5, fd, ptr(RT_ST[..]), 0) == 0 && (RT_ST[25] & 0xF0) == 0x40 { sys3(3, fd, 0, 0); return false; }
+	loop { let d = rt_grow(out, 1 << 20, 1); let r = sys3(0, fd, d, 1 << 20); mst(out + 8, mld(out + 8) - (1 << 20) + max(r, 0)); if r < 0 { sys3(3, fd, 0, 0); return false; } if r == 0 { break; } }
+	sys3(3, fd, 0, 0); true
+}
+fn rt_wfile(c int, data const byte[:], flags int) bool { if c == 0 { return false; } let fd = sys3(2, c, 0x41 | flags, 420); if fd < 0 { return false; } var o = 0; while o < data.len { let w = sys3(1, fd, ptr(data[o..]), data.len - o); if w <= 0 { sys3(3, fd, 0, 0); return false; } o += w; } sys3(3, fd, 0, 0) == 0 }
+fn rt_os_write_file(p const byte[:], d const byte[:]) bool { rt_wfile(rt_path(p, RT_PB), d, 0x200) }
+fn rt_os_append_file(p const byte[:], d const byte[:]) bool { rt_wfile(rt_path(p, RT_PB), d, 0x400) }
+fn rt_os_make_exec(p const byte[:]) bool { let c = rt_path(p, RT_PB); c != 0 && sys3(90, c, 493, 0) == 0 }
+fn rt_os_write_file_atomic(p const byte[:], d const byte[:]) bool { if p.len > 500 { return rt_os_write_file(p, d); } let c = rt_path(p, RT_PB); for i in 5 { RT_PB2[i] = 0; } for i in p.len { RT_PB2[i] = p[i]; } let tl = ".tmp~"; for i in 5 { RT_PB2[p.len + i] = tl[i]; } RT_PB2[p.len + 5] = 0; if !rt_wfile(ptr(RT_PB2[..]), d, 0x200) { return false; } sys3(82, ptr(RT_PB2[..]), c, 0) == 0 }
+fn rt_stat(p const byte[:]) int { let c = rt_path(p, RT_PB); if c == 0 { return -1; } if sys3(4, c, ptr(RT_ST[..]), 0) != 0 { return -1; } (RT_ST[25] & 0xF0) as int }
+fn rt_os_file_exists(p const byte[:]) bool { let m = rt_stat(p); m >= 0 && m != 0x40 }
+fn rt_os_is_dir(p const byte[:]) bool { rt_stat(p) == 0x40 }
+fn rt_os_file_mtime(p const byte[:]) int { if rt_stat(p) < 0 { return -1; } mld(ptr(RT_ST[88..])) }
+fn rt_os_remove_file(p const byte[:]) bool { let c = rt_path(p, RT_PB); c != 0 && sys3(87, c, 0, 0) == 0 }
+fn rt_os_remove_dir(p const byte[:]) bool { let c = rt_path(p, RT_PB); c != 0 && sys3(84, c, 0, 0) == 0 }
+fn rt_os_rename_file(a const byte[:], b const byte[:]) bool { let x = rt_path(a, RT_PB); let y = rt_path(b, RT_PB2); x != 0 && y != 0 && sys3(82, x, y, 0) == 0 }
+fn rt_os_make_dir(p const byte[:]) bool { let c = rt_path(p, RT_PB); if c == 0 { return false; } let r = sys3(83, c, 493, 0); r == 0 || r == -17 }
+fn rt_os_list_dir(p const byte[:], out int) bool {
+	let c = rt_path(p, RT_PB); if c == 0 { return false; } let fd = sys3(2, c, 0x10000, 0); if fd < 0 { return false; }
+	var nb byte[>..] = []; var offs int[>..] = []; var buf byte[32768];
+	loop { let r = sys3(217, fd, ptr(buf[..]), 32768); if r <= 0 { break; } var o = 0; while o < r { let rl = buf[o + 16] as int | (buf[o + 17] as int) << 8; let np = ptr(buf[(o + 19)..]); let ln = rt_cstr(np); let nm = buf[(o + 19)..(o + 19 + ln)]; if !(nm == "." || nm == "..") { offs.push(nb.len); offs.push(ln); nb.append(nm); } o += rl; } }
+	sys3(3, fd, 0, 0);
+	let k = offs.len / 2; var ix int[>..] = []; for i in k { ix.push(i); }
+	for i in 1..k { var j = i; while j > 0 && rt_lt(nb[offs[2 * ix[j]]..offs[2 * ix[j]] + offs[2 * ix[j] + 1]], nb[offs[2 * ix[j - 1]]..offs[2 * ix[j - 1]] + offs[2 * ix[j - 1] + 1]]) { let t = ix[j]; ix[j] = ix[j - 1]; ix[j - 1] = t; j -= 1; } }
+	for i in k { let q = ix[i]; rt_appto(out, ptr(nb[offs[2 * q]..]), offs[2 * q + 1]); rt_appto(out, ptr("\n"), 1); }
+	true
+}
+fn rt_lt(a const byte[:], b const byte[:]) bool { for i in min(a.len, b.len) { if a[i] != b[i] { return a[i] < b[i]; } } a.len < b.len }
+fn rt_getc() int { if RT_IP == RT_IN { RT_IN = max(sys3(0, 0, ptr(RT_IB[..]), 65536), 0); RT_IP = 0; if RT_IN == 0 { return -1; } } RT_IP += 1; RT_IB[RT_IP - 1] as int }
+fn rt_os_read_line(out int) bool { rt_flush(); var any = false; loop { let c = rt_getc(); if c < 0 { break; } any = true; if c == 10 { break; } let d = rt_grow(out, 1, 1); mst1(d, c); } let n = mld(out + 8); if n > 0 && mld1(mld(out) + n - 1) == 13 { mst(out + 8, n - 1); } any }
+fn rt_os_read_stdin(out int) { rt_flush(); while RT_IP < RT_IN { let d = rt_grow(out, 1, 1); mst1(d, RT_IB[RT_IP] as int); RT_IP += 1; } loop { let d = rt_grow(out, 1 << 20, 1); let r = sys3(0, 0, d, 1 << 20); mst(out + 8, mld(out + 8) - (1 << 20) + max(r, 0)); if r <= 0 { break; } } }
+fn rt_os_write_stdout(s const byte[:]) { rt_appto(vptr(RT_OUT), ptr(s), s.len); if RT_OUT.n > 65536 { rt_flush(); } }
+fn rt_os_write_stderr(s const byte[:]) { rt_flush(); rt_write(2, s); }
+fn rt_os_flush_stdout() { rt_flush(); }
+fn rt_os_time_ns() int { sys3(228, 0, iptr(RT_TS[..]), 0); RT_TS[0] * 1000000000 + RT_TS[1] }
+fn rt_os_clock_ns() int { sys3(228, 1, iptr(RT_TS[..]), 0); RT_TS[0] * 1000000000 + RT_TS[1] }
+fn rt_os_sleep_ms(ms int) { RT_TS[0] = ms / 1000; RT_TS[1] = (ms % 1000) * 1000000; sys3(35, iptr(RT_TS[..]), 0, 0); }
+fn rt_os_random_u64() u64 { var b u64[1]; if sys3(318, uptr(b[..]), 8, 0) != 8 { return rt_os_time_ns() as! u64; } b[0] }
+fn rt_trim_memory() bool { true }
+fn rt_os_resource_dir(out int) bool { false }
+fn rt_fmod(xb u64, yb u64) u64 {
+	var ex = ((xb >> 52) & 0x7FF) as int; var ey = ((yb >> 52) & 0x7FF) as int; let sx = xb >> 63; var ux = xb; var uy = yb;
+	let xnan = ex == 0x7FF && (xb << 12) != 0; let ynan = ey == 0x7FF && (yb << 12) != 0;
+	if xnan { return xb | ((1 as u64) << 51); } if ynan { return yb | ((1 as u64) << 51); }
+	if (yb << 1) == 0 || ex == 0x7FF { return 0xFFF8000000000000; }
+	if (ux << 1) <= (uy << 1) { if (ux << 1) == (uy << 1) { return sx << 63; } return xb; }
+	if ex == 0 { var i = ux << 12; while (i >> 63) == 0 { ex -= 1; i = i << 1; } ux = ux << ((-ex + 1) as u64); } else { ux = (ux & 0xFFFFFFFFFFFFF) | ((1 as u64) << 52); }
+	if ey == 0 { var i = uy << 12; while (i >> 63) == 0 { ey -= 1; i = i << 1; } uy = uy << ((-ey + 1) as u64); } else { uy = (uy & 0xFFFFFFFFFFFFF) | ((1 as u64) << 52); }
+	while ex > ey { let i = ux - uy; if (i >> 63) == 0 { if i == 0 { return sx << 63; } ux = i; } ux = ux << 1; ex -= 1; }
+	let i = ux - uy; if (i >> 63) == 0 { if i == 0 { return sx << 63; } ux = i; }
+	while (ux >> 52) == 0 { ux = ux << 1; ex -= 1; }
+	if ex > 0 { ux = ux - ((1 as u64) << 52); ux = ux | ((ex as u64) << 52); } else { ux = ux >> ((-ex + 1) as u64); }
+	ux | (sx << 63)
+}
