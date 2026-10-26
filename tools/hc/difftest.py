@@ -15,11 +15,11 @@ def run(f):
     env = dict(os.environ, HC_LIB=str(R / "hc" / "lib"))
     nat = os.environ.get("HC_NATIVE") == "1"
     dbg = nat and "GS_DEBUG" in "".join(l for l in f.read_text(errors="replace").split("\n")[:5] if l.startswith("// runtime-define:")) + os.environ.get("HC_DEFS", "")
-    try: p = subprocess.run([HC, str(f), str(x if nat else c)] + (["--native"] if nat else []) + (["--debug"] if dbg else []), capture_output=True, timeout=30, env=env)
+    defs = ["-D" + d.strip() for l in f.read_text(errors="replace").split("\n")[:5] if l.startswith("// runtime-define:") for d in l.split(":", 1)[1].split(",")] + ["-D" + d for d in os.environ.get("HC_DEFS", "").split(",") if d]
+    try: p = subprocess.run([HC, str(f), str(x if nat else c)] + (["--native", *defs] if nat else []) + (["--debug"] if dbg else []), capture_output=True, timeout=30, env=env)
     except subprocess.TimeoutExpired: return f, "check", "timeout"
     if p.returncode != 0: return f, ("native" if nat and b"native backend" in p.stdout + p.stderr else "check"), (p.stdout + p.stderr).decode(errors="replace").strip().split("\n")[0][:220]
     if nat: c.write_text("")
-    defs = ["-D" + d.strip() for l in f.read_text(errors="replace").split("\n")[:5] if l.startswith("// runtime-define:") for d in l.split(":", 1)[1].split(",")] + ["-D" + d for d in os.environ.get("HC_DEFS", "").split(",") if d]
     p = subprocess.run(["true"] if nat else ["nice", "-n", "10", "clang", "-O1", "-fwrapv", "-w", "-ferror-limit=1", *defs, "-I", str(R / "hc"), str(c), "-o", str(x), "-lm", "-lpthread"], capture_output=True)
     if p.returncode != 0:
         m = [l for l in p.stderr.decode(errors="replace").split("\n") if "error" in l]

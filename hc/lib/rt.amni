@@ -6,8 +6,12 @@ extern fn sys6(n int, a int, b int, c int, d int, e int, f int) int = "!sys6";
 extern fn mld(a int) int = "!ld8";
 extern fn mst(a int, v int) = "!st8";
 extern fn mcopy(d int, s int, n int) = "!copy";
+extern fn sysclone(flags int, sp int, ptid int, ctid int, tls int) int = "!clone";
+extern fn xchg(p int, v int) int = "!xchg";
+extern fn callp(f int, a int) int = "!callp";
+extern fn tlsb() int = "!tlsb";
 struct RtV { b int, n int, top int, fl int, fln int, flc int }
-let RT_RSZ = 1 << 34;
+var RT_RSZ int; var RT_SBUD int;
 var RT_FREE int[4096];
 var RT_NFREE int;
 var RT_OUT RtV; var RT_SINK int;
@@ -15,7 +19,7 @@ extern fn vptr(v RtV&) int = "!ptr";
 var RT_EB byte[512];
 var RT_EN int;
 fn rt_write(fd int, s const byte[:]) { var o = 0; while o < s.len { let w = sys3(1, fd, ptr(s[o..]), s.len - o); if w <= 0 { return; } o += w; } }
-fn rt_flush() { var o = 0; while o < RT_OUT.n { let w = sys3(1, 1, RT_OUT.b + o, RT_OUT.n - o); if w <= 0 { break; } o += w; } RT_OUT.n = 0; }
+fn rt_flush() { if RT_OUT.n == 0 { return; } if RT_SH != 0 { rt_lock(RT_SH); } var o = 0; while o < RT_OUT.n { let w = sys3(1, 1, RT_OUT.b + o, RT_OUT.n - o); if w <= 0 { break; } o += w; } RT_OUT.n = 0; if RT_SH != 0 { rt_unlock(RT_SH); } }
 fn rt_sink() int { if RT_SINK == 0 { vptr(RT_OUT) } else { RT_SINK } }
 fn rt_sink_set(a int) int { let o = RT_SINK; RT_SINK = a; o }
 fn rt_app(p int, n int) { if n > 0 { let d = rt_grow(rt_sink(), n, 1); mcopy(d, p, n); } }
@@ -26,14 +30,15 @@ fn rt_pu(u u64) { var b byte[24]; let i = rt_digits(b, u); rt_ps(b[i..]); }
 fn rt_pi(v int) { var u = v as! u64; if v < 0 { rt_ps("-"); u = 0 - u; } rt_pu(u); }
 fn rt_pb(b bool) { if b { rt_ps("true"); } else { rt_ps("false"); } }
 fn rt_nl() { rt_ps("\n"); if RT_OUT.n > 65536 { rt_flush(); } }
-fn rt_exit(c int) { rt_flush(); sys3(60, c, 0, 0); }
+fn rt_exit(c int) { rt_flush(); sys3(231, c, 0, 0); }
 fn rt_es(s const byte[:]) { for c in s { if RT_EN < 512 { RT_EB[RT_EN] = c; RT_EN += 1; } } }
 fn rt_eu(u u64) { var b byte[24]; let i = rt_digits(b, u); rt_es(b[i..]); }
 fn rt_ei(v int) { var u = v as! u64; if v < 0 { rt_es("-"); u = 0 - u; } rt_eu(u); }
-fn rt_fail(loc const byte[:]) { rt_es(" ("); rt_es(loc); rt_es(")\n"); rt_flush(); rt_write(2, RT_EB[..RT_EN]); sys3(60, 1, 0, 0); }
+fn rt_fail(loc const byte[:]) { rt_es(" ("); rt_es(loc); rt_es(")\n"); if RT_TID >= 0 && mld(RT_REC + 56) != 0 { rt_tabort(); } rt_flush(); rt_write(2, RT_EB[..RT_EN]); sys3(231, 1, 0, 0); }
 fn rt_die(k int, loc const byte[:]) { rt_es("helium runtime error: "); if k == 1 { rt_es("integer overflow"); } if k == 2 { rt_es("division by zero"); } if k == 4 { rt_es("cast changes the value"); } if k == 5 { rt_es("array grew past 16 GiB"); } if k == 6 { rt_es("assertion failed"); } if k == 7 { rt_es("division overflow"); } rt_fail(loc); }
 fn rt_oob(i int, n int, loc const byte[:]) { rt_es("helium runtime error: index "); rt_ei(i); rt_es(" out of bounds (length "); rt_ei(n); rt_es(")"); rt_fail(loc); }
-fn rt_take() int { if RT_NFREE > 0 { RT_NFREE -= 1; return RT_FREE[RT_NFREE]; } let p = sys6(9, 0, RT_RSZ + 65536, 3, 0x4022, -1, 0); if p < 0 && p > -4096 { rt_es("helium runtime error: out of address space\n"); rt_write(2, RT_EB[..RT_EN]); sys3(60, 1, 0, 0); } sys3(10, p + RT_RSZ, 65536, 0); p }
+fn rt_take() int { if RT_NFREE > 0 { RT_NFREE -= 1; return RT_FREE[RT_NFREE]; } rt_map() }
+fn rt_map() int { let p = sys6(9, 0, RT_RSZ + 65536, 3, 0x4022, -1, 0); if p < 0 && p > -4096 { rt_es("helium runtime error: out of address space\n"); rt_write(2, RT_EB[..RT_EN]); sys3(231, 1, 0, 0); } sys3(10, p + RT_RSZ, 65536, 0); p }
 fn rt_give(b int, used int) { if b == 0 { return; } if used > (1 << 20) { sys3(28, b + 65536, (used - 65536 + 4095) & -4096, 4); } if RT_NFREE < 4096 { RT_FREE[RT_NFREE] = b; RT_NFREE += 1; } else { sys3(11, b, RT_RSZ + 65536, 0); } }
 fn rt_grow(va int, k int, esz int) int { var b = mld(va); if b == 0 { b = rt_take(); mst(va, b); } let n = mld(va + 8); mst(va + 8, n + k); if (n + k) * esz > RT_RSZ { rt_die(5, "push"); } b + n * esz }
 fn rt_rdrop(v RtV&) { rt_give(v.b, max(v.n * 64, v.top)); rt_give(v.fl, v.fln * 16); v.b = 0; v.n = 0; v.top = 0; v.fl = 0; v.fln = 0; v.flc = 0; }
@@ -144,7 +149,7 @@ extern fn mst1(a int, v int) = "!st1";
 var RT_SP int;
 var RT_PB byte[4096]; var RT_PB2 byte[4096]; var RT_ST byte[144]; var RT_TS int[2];
 var RT_IB byte[65536]; var RT_IP int; var RT_IN int;
-fn rt_start(sp int) { RT_SP = sp; }
+fn rt_start(sp int) { RT_SP = sp; if RT_RSZ == 0 { RT_RSZ = 1 << 34; } if RT_SBUD == 0 { RT_SBUD = 1 << 46; } }
 fn rt_cstr(p int) int { var n = 0; while mld1(p + n) != 0 { n += 1; } n }
 fn rt_appto(va int, p int, n int) { if n > 0 { let d = rt_grow(va, n, 1); mcopy(d, p, n); } }
 fn rt_path(s const byte[:], b byte[4096]&) int { if s.len >= 4095 { return 0; } for i in s.len { b[i] = s[i]; } b[s.len] = 0; ptr(b[..]) }
@@ -294,3 +299,206 @@ fn rt_sreal(v RtV&, p int, n int, k int, esz int, loc const byte[:]) int {
 }
 fn rt_tobytes(o int, p int, n int) { var v = n as! u64; loop { let b = (v & 127) as int; v = v >> 7; mst1(rt_grow(o, 1, 1), if v != 0 { b | 128 } else { b }); if v == 0 { break; } } rt_appto(o, p, n); }
 fn rt_fbhdr(p int, n int, esz int) int { var r u64 = 0; var sh = 0; var i = 0; while i < n && sh < 64 { let b = mld1(p + i); r = r | (((b & 127) as! u64) << (sh as u64)); if (b & 128) == 0 { let v = r as! int; if v < 0 || i > 0 && b == 0 || v != n - i - 1 || v % esz != 0 { return -1; } return v / esz; } i += 1; sh += 7; } -1 }
+var RT_SH int; var RT_TID = -1; var RT_REC int;
+fn rt_fwait(a int, v int) { sys6(202, a, 128, v, 0, 0, 0); }
+fn rt_fwake(a int) { sys6(202, a, 129, 1 << 30, 0, 0, 0); }
+fn rt_lock(m int) { if xchg(m, 1) == 0 { return; } while xchg(m, 2) != 0 { rt_fwait(m, 2); } }
+fn rt_unlock(m int) { if xchg(m, 0) == 2 { rt_fwake(m); } }
+fn rt_tblk() int { if RT_SH == 0 { RT_SH = rt_map(); mst(RT_SH + 24, rt_map()); } rt_flush(); let b = tlsb(); let sz = mld(b + 8); let nb = sys6(9, 0, sz, 3, 0x22, -1, 0); mcopy(nb, b, sz); mst(nb, nb); nb }
+fn rt_spawn(fnp int, tmain int, pkt int, blk int, contained int) int {
+	rt_lock(RT_SH + 8); let id = mld(RT_SH + 16); mst(RT_SH + 16, id + 1); rt_unlock(RT_SH + 8);
+	let r = mld(RT_SH + 24) + id * 128;
+	mst(r + 40, fnp); mst(r + 48, pkt); mst(r + 56, contained); mst(r + 72, blk); mst(r + 80, mld(blk + 8)); mst(r + 32, 1);
+	let ss = 64 << 20; let st = sys6(9, 0, ss, 3, 0x4022, -1, 0); sys3(10, st, 4096, 0); mst(r + 64, st);
+	let sp = st + ss - 16; mst(sp, tmain); mst(sp + 8, r);
+	if sysclone(0x2D0F00, sp, 0, r + 32, blk) < 0 { rt_abort("could not start a worker", "thread_spawn"); }
+	while mld(r + 96) == 0 { rt_fwait(r + 96, 0); }
+	id
+}
+fn rt_tmain(r int) {
+	RT_DS.b = 0; RT_DS.n = 0; RT_DS.top = 0; RT_DS.fl = 0; RT_DS.fln = 0; RT_DS.flc = 0; RT_NFREE = 0; RT_OUT.b = 0; RT_OUT.n = 0; RT_OUT.top = 0; RT_SINK = 0; RT_EN = 0;
+	RT_TID = (r - mld(RT_SH + 24)) / 128; RT_REC = r;
+	callp(mld(r + 40), r);
+	rt_tdone(0);
+}
+fn rt_tdone(ab int) {
+	rt_flush();
+	let r = RT_REC; mst(r + 8, ab);
+	if RT_DS.b != 0 { sys3(11, RT_DS.b, RT_RSZ + 65536, 0); } if RT_OUT.b != 0 { sys3(11, RT_OUT.b, RT_RSZ + 65536, 0); }
+	for i in RT_NFREE { sys3(11, RT_FREE[i], RT_RSZ + 65536, 0); }
+	RT_NFREE = 0; mst(r, 1); rt_fwake(r);
+}
+fn rt_tabort() {
+	let k = 22; let n = max(RT_EN - k - 1, 0); let p = sys6(9, 0, n + 8, 3, 0x22, -1, 0); mcopy(p, ptr(RT_EB[k..]), n);
+	mst(RT_REC + 16, p); mst(RT_REC + 24, n); rt_tdone(1); sys3(60, 0, 0, 0);
+}
+fn rt_twait(id int, mv int, loc const byte[:]) bool {
+	let n = if RT_SH == 0 { 0 } else { mld(RT_SH + 16) };
+	if id < 0 || id >= n { rt_abort("thread_wait of an id no thread_spawn returned", loc); }
+	if id == RT_TID { rt_abort("a worker cannot wait for itself", loc); }
+	rt_flush();
+	let r = mld(RT_SH + 24) + id * 128;
+	while mld(r) == 0 { rt_fwait(r, 0); }
+	let ok = mld(r + 8) == 0;
+	if mv != 0 && mld(r + 16) != 0 { let k = mld(r + 24); if k > 0 { mcopy(rt_grow(mv, k, 1), mld(r + 16), k); } mst(r + 16, 0); }
+	if xchg(r + 88, 1) == 0 { loop { let c = mld(r + 32) & 0xFFFFFFFF; if c == 0 { break; } sys6(202, r + 32, 0, c, 0, 0, 0); } sys3(11, mld(r + 64), 64 << 20, 0); sys3(11, mld(r + 72), mld(r + 80), 0); }
+	ok
+}
+fn rt_qapv(bf int, p int, z int) { if z < 0 { mcopy(rt_grow(bf, -z, 1), p, -z); return; } let d = rt_grow(bf, z + 8, 1); mst(d, z); mcopy(d + 8, p, z); }
+fn rt_tgo(r int) { mst(r + 96, 1); rt_fwake(r + 96); }
+fn rt_hwt() int { var m u64[16]; let k = sys3(204, 0, 128, uptr(m[..])); var c = 0; if k > 0 { for i in 16 { var x = m[i]; while x != 0 { x = x & (x - 1); c += 1; } } } max(1, min(c, (RT_SBUD / (RT_RSZ * 4)) - 1)) }
+fn rt_rdupg(v RtV&, esz int) { let ob = v.b; let ofl = v.fl; v.b = 0; v.fl = 0; if ob != 0 { v.b = rt_take(); mcopy(v.b, ob, if esz == 0 { v.top } else { max(v.n * esz, v.top) }); } if ofl != 0 { v.fl = rt_take(); mcopy(v.fl, ofl, v.fln * 16); } }
+fn rt_q(qid int) int { if RT_SH == 0 { RT_SH = rt_map(); mst(RT_SH + 24, rt_map()); } RT_SH + 4096 + (qid & 511) * 64 }
+fn rt_qput(qid int, p int, n int) bool {
+	let q = rt_q(qid); rt_lock(q);
+	if mld(q + 40) > 0 && mld(q + 8) >= mld(q + 40) { rt_unlock(q); return false; }
+	if mld(q + 16) == 0 { mst(q + 16, rt_take()); }
+	let t = mld(q + 32); let b = mld(q + 16); mst(b + t, n); if n > 0 { mcopy(b + t + 8, p, n); }
+	mst(q + 32, t + 8 + ((n + 7) & -8)); mst(q + 8, mld(q + 8) + 1); mst(q + 48, mld(q + 48) + 1); rt_unlock(q); rt_fwake(q + 48);
+	true
+}
+fn rt_qget(qid int, ms0 int, cl int, dst int, sz int) bool {
+	let ms = if cl != 0 { max(ms0, 0) } else { ms0 }; if ms != 0 { rt_flush(); }
+	let q = rt_q(qid); var dl = 0;
+	if ms > 0 { sys3(228, 1, iptr(RT_TS[..]), 0); dl = RT_TS[0] * 1000000000 + RT_TS[1] + ms * 1000000; }
+	loop {
+		rt_lock(q);
+		if mld(q + 8) > 0 {
+			let b = mld(q + 16); let h = mld(q + 24); let n = mld(b + h); if sz >= 0 { mcopy(dst, b + h + 8, min(n, sz)); } else { let p = rt_dsput(n); mcopy(p, b + h + 8, n); mst(dst, p); mst(dst + 8, n / -sz); }
+			let c = mld(q + 8) - 1; mst(q + 8, c); if c == 0 { mst(q + 24, 0); mst(q + 32, 0); } else { mst(q + 24, h + 8 + ((n + 7) & -8)); }
+			rt_unlock(q); return true;
+		}
+		let sq = mld(q + 48); rt_unlock(q);
+		if ms == 0 { break; }
+		if ms < 0 { rt_fwait(q + 48, sq); } else { sys3(228, 1, iptr(RT_TS[..]), 0); let now = RT_TS[0] * 1000000000 + RT_TS[1]; if now >= dl { break; } let rem = dl - now; RT_TS[0] = rem / 1000000000; RT_TS[1] = rem % 1000000000; sys6(202, q + 48, 128, sq, iptr(RT_TS[..]), 0, 0); }
+	}
+	if sz >= 0 { rt_zero(dst, sz); } else { mst(dst, 0); mst(dst + 8, 0); }
+	false
+}
+fn rt_qlimit(qid int, lim int, loc const byte[:]) { if lim <= 0 { rt_abort("a queue limit must be positive", loc); } let q = rt_q(qid); rt_lock(q); mst(q + 40, lim); rt_unlock(q); }
+fn rt_find_any(s const byte[:], m int) int { for c, i in s { if mld1(m + c as int) != 0 { return i; } } -1 }
+fn rt_find_pair(s const byte[:], a int, d int, b int) int { var i = 0; while i + d < s.len { if mld1(a + s[i] as int) != 0 && mld1(b + s[i + d] as int) != 0 { return i; } i += 1; } -1 }
+extern fn rt_fma(x real, y real, z real) real = "fma";
+extern fn rt_fsq(x real) real = "hr_sqrt";
+extern fn rt_ffl(x real) real = "floor";
+extern fn rt_db(x real) u64 = "hr_f64_bits";
+extern fn rt_bd(b u64) real = "hr_f64_from_bits";
+let RT_2PI u64[48] = [0xA2F9836E, 0x4E441529, 0xFC2757D1, 0xF534DDC0, 0xDB629599, 0x3C439041, 0xFE5163AB, 0xDEBBC561, 0xB7246E3A, 0x424DD2E0, 0x06492EEA, 0x09D1921C, 0xFE1DEB1C, 0xB129A73E, 0xE88235F5, 0x2EBB4484, 0xE99C7026, 0xB45F7E41, 0x3991D639, 0x835339F4, 0x9C845F8B, 0xBDF9283B, 0x1FF897FF, 0xDE05980F, 0xEF2F118B, 0x5A0A6D1F, 0x6D367ECF, 0x27CB09B7, 0x4F463F66, 0x9E5FEA2D, 0x7527BAC7, 0xEBE5F17B, 0x3D0739F7, 0x8A5292EA, 0x6BFB5FB1, 0x1F8D5D08, 0x56033046, 0xFC7B6BAB, 0xF0CFBC20, 0x9AF4361D, 0xA9E39161, 0x5EE61B08, 0x6599855F, 0x14A06840, 0x8DFFD880, 0x4D732731, 0x06061556, 0xCA73A8C9];
+let RT_P1 = 0x1.921fb54442d18p0; let RT_P2 = 0x1.1a62633145c07p-54; let RT_P3 = -0x1.f1976b7ed8fbcp-110;
+let RT_L2H = 0x1.62e42fefa39efp-1; let RT_L2L = 0x1.abc9e3b39803fp-56; let RT_IL2H = 0x1.71547652b82fep0; let RT_IL2L = 0x1.777d0ffda0d24p-56; let RT_IL10H = 0x1.bcb7b1526e50ep-2; let RT_IL10L = 0x1.95355baaafad3p-57;
+fn dd_s(a real, b real) real, real { let s = a + b; let v = s - a; return s, (a - (s - v)) + (b - v); }
+fn dd_add(ah real, al real, bh real, bl real) real, real { let s, e = dd_s(ah, bh); let t, f = dd_s(al, bl); let h, l = dd_s(s, e + t); let h2, l2 = dd_s(h, l + f); return h2, l2; }
+fn dd_mul(ah real, al real, bh real, bl real) real, real { let p = ah * bh; let h, l = dd_s(p, rt_fma(ah, bh, -p) + (ah * bl + al * bh)); return h, l; }
+fn dd_divd(ah real, al real, b real) real, real { let q1 = ah / b; let p = q1 * b; let rh, rl = dd_add(ah, al, -p, -rt_fma(q1, b, -p)); let h, l = dd_s(q1, (rh + rl) / b); return h, l; }
+fn dd_div(ah real, al real, bh real, bl real) real, real { let q1 = ah / bh; let ph, pl = dd_mul(q1, 0.0, bh, bl); let rh, rl = dd_add(ah, al, -ph, -pl); let q2 = rh / bh; let ph2, pl2 = dd_mul(q2, 0.0, bh, bl); let sh, sl = dd_add(rh, rl, -ph2, -pl2); let h, l = dd_s(q1, q2); let h2, l2 = dd_add(h, l, sh / bh, 0.0); return h2, l2; }
+fn dd_sqrt(ah real, al real) real, real { if ah <= 0.0 { return 0.0, 0.0; } let s = rt_fsq(ah); let p = s * s; let rh, rl = dd_add(ah, al, -p, -rt_fma(s, s, -p)); let h, l = dd_s(s, (rh + rl) / (2.0 * s)); return h, l; }
+fn rt_inf(neg bool) real { rt_bd(if neg { 0xFFF0000000000000 } else { 0x7FF0000000000000 }) }
+fn rt_ldx(x real, k int) real { rt_bd(rt_ldexp(rt_db(x), k)) }
+fn rt_expdd(xh real, xl real) real {
+	if xh != xh { return xh; } if xh > 709.8 { return rt_inf(false); } if xh < -745.2 { return 0.0; }
+	let k = rt_ffl(xh * RT_IL2H + 0.5); let ph = k * RT_L2H; let r1, r2 = dd_add(xh, xl, -ph, -rt_fma(k, RT_L2H, -ph)); let qh = k * RT_L2L; let rh, rl = dd_add(r1, r2, -qh, -rt_fma(k, RT_L2L, -qh));
+	let zh = rh / 256.0; let zl = rl / 256.0; var th = 1.0; var tl = 0.0; var i = 11;
+	while i >= 1 { let mh, ml = dd_mul(zh, zl, th, tl); let dh, dl = dd_divd(mh, ml, i as real); let h, l = dd_add(1.0, 0.0, dh, dl); th = h; tl = l; i -= 1; }
+	for _ in 8 { let h, l = dd_mul(th, tl, th, tl); th = h; tl = l; }
+	rt_ldx(th, k as int)
+}
+fn rt_lgm(x real) int, real, real {
+	var b = rt_db(x); var e = 0; if ((b >> 52) & 0x7FF) == 0 { b = rt_db(x * 0x1p54); e = -54; }
+	e += ((b >> 52) & 0x7FF) as int - 1023; var m = rt_bd((b & 0xFFFFFFFFFFFFF) | 0x3FF0000000000000);
+	if m > 1.4142135623730951 { m = m * 0.5; e += 1; }
+	let dh, dl = dd_s(m, 1.0); let sh, sl = dd_div(m - 1.0, 0.0, dh, dl); let zh, zl = dd_mul(sh, sl, sh, sl);
+	var th, tl = dd_divd(1.0, 0.0, 43.0); var k = 20;
+	while k >= 0 { let mh, ml = dd_mul(zh, zl, th, tl); let ih, il = dd_divd(1.0, 0.0, (2 * k + 1) as real); let h, l = dd_add(ih, il, mh, ml); th = h; tl = l; k -= 1; }
+	let h, l = dd_mul(sh, sl, th, tl);
+	return e, 2.0 * h, 2.0 * l;
+}
+fn rt_logdd(x real) real, real { let e, mh, ml = rt_lgm(x); let er = e as real; let ph = er * RT_L2H; let h, l = dd_add(ph, rt_fma(er, RT_L2H, -ph), mh, ml); let h2, l2 = dd_add(h, l, er * RT_L2L, 0.0); return h2, l2; }
+fn rt_lgsp(x real) real { if x != x || x < 0.0 { return rt_bd(0x7FF8000000000000); } if x == 0.0 { return rt_inf(true); } x }
+fn rt_exp(x real) real { rt_expdd(x, 0.0) }
+fn rt_log(x real) real { if x != x || x <= 0.0 || x == rt_inf(false) { return rt_lgsp(x); } let h, l = rt_logdd(x); h + l }
+fn rt_log2(x real) real { if x != x || x <= 0.0 || x == rt_inf(false) { return rt_lgsp(x); } let e, mh, ml = rt_lgm(x); let h, l = dd_mul(mh, ml, RT_IL2H, RT_IL2L); let h2, l2 = dd_add(e as real, 0.0, h, l); h2 + l2 }
+fn rt_log10(x real) real { if x != x || x <= 0.0 || x == rt_inf(false) { return rt_lgsp(x); } let h, l = rt_logdd(x); let h2, l2 = dd_mul(h, l, RT_IL10H, RT_IL10L); h2 + l2 }
+fn rt_isint(y real) bool { rt_ffl(y) == y }
+fn rt_odd(y real) bool { rt_isint(y) && y < 0x1p53 && y > -0x1p53 && rt_ffl(y * 0.5) * 2.0 != y }
+fn rt_pow(x real, y real) real {
+	if y == 0.0 || x == 1.0 { return 1.0; } if x != x || y != y { return x + y; }
+	let inf = rt_inf(false); let ax = if x < 0.0 { -x } else { x }; let neg = x < 0.0 && rt_odd(y);
+	if y == inf || y == -inf { if ax == 1.0 { return 1.0; } return if (ax < 1.0) == (y > 0.0) { 0.0 } else { inf }; }
+	if x < 0.0 && !rt_isint(y) && ax != inf { return rt_bd(0x7FF8000000000000); }
+	if ax == 0.0 || ax == inf { let big = (ax == inf) == (y > 0.0); let r = if big { inf } else { 0.0 }; return if neg || x == 0.0 && rt_db(x) != 0 && rt_odd(y) { -r } else { r }; }
+	let lh, ll = rt_logdd(ax); let th, tl = dd_mul(y, 0.0, lh, ll); let r = rt_expdd(th, tl);
+	if neg { -r } else { r }
+}
+fn rt_rp2(x real) int, real, real {
+	let ax = if x < 0.0 { -x } else { x };
+	if ax <= 0.7853981633974483 { return 0, x, 0.0; }
+	if ax < 268435456.0 {
+		let k = rt_ffl(x * 0.6366197723675814 + 0.5); let ph = k * RT_P1; let s1 = x - ph;
+		let h1, l1 = dd_add(s1, 0.0, -rt_fma(k, RT_P1, -ph), 0.0); let qh = k * RT_P2; let h2, l2 = dd_add(h1, l1, -qh, -rt_fma(k, RT_P2, -qh)); let h3, l3 = dd_add(h2, l2, -k * RT_P3, 0.0);
+		return (k as int), h3, l3;
+	}
+	let b = rt_db(ax); let q = ((b >> 52) & 0x7FF) as int - 1075; let m = (b & 0xFFFFFFFFFFFFF) | 0x10000000000000;
+	let i0 = if q < 2 { 0 } else { (q - 2) / 32 }; var p u64[11]; let ml = m & 0xFFFFFFFF; let mh = m >> 32;
+	for j in 8 { let w = RT_2PI[i0 + 7 - j]; var c u64 = 0; var t = p[j] + ml * w; p[j] = t & 0xFFFFFFFF; c = t >> 32; t = p[j + 1] + mh * w + c; p[j + 1] = t & 0xFFFFFFFF; c = t >> 32; var z = j + 2; while c != 0 { t = p[z] + c; p[z] = t & 0xFFFFFFFF; c = t >> 32; z += 1; } }
+	let s = 224 + 32 * (i0 + 1) - q;
+	var n = (((p[s / 32] >> ((s % 32) as u64)) | (if s % 32 > 30 { p[s / 32 + 1] << ((32 - s % 32) as u64) } else { 0 })) as int) & 3;
+	var fh = 0.0; var fl = 0.0;
+	for g in 6 { let lo = s - 32 * (g + 1); let v = ((p[lo / 32] >> ((lo % 32) as u64)) | (if lo % 32 != 0 { p[lo / 32 + 1] << ((32 - lo % 32) as u64) } else { 0 })) & 0xFFFFFFFF; let h, l = dd_add(fh, fl, (v as real) * rt_ldx(1.0, -32 * (g + 1)), 0.0); fh = h; fl = l; }
+	if fh >= 0.5 { n = (n + 1) & 3; let h, l = dd_add(fh, fl, -1.0, 0.0); fh = h; fl = l; }
+	let rh, rl = dd_mul(fh, fl, RT_P1, RT_P2);
+	return if x < 0.0 { (4 - n) & 3 } else { n }, if x < 0.0 { -rh } else { rh }, if x < 0.0 { -rl } else { rl };
+}
+fn rt_sc(rh real, rl real, c bool) real, real {
+	let zh, zl = dd_mul(rh, rl, rh, rl); var th = 1.0; var tl = 0.0; var k = 14;
+	while k >= 1 { let d = if c { (2 * k - 1) * (2 * k) } else { (2 * k) * (2 * k + 1) }; let mh, ml = dd_mul(zh, zl, th, tl); let qh, ql = dd_divd(mh, ml, d as real); let h, l = dd_add(1.0, 0.0, -qh, -ql); th = h; tl = l; k -= 1; }
+	if c { return th, tl; } let h, l = dd_mul(rh, rl, th, tl); return h, l;
+}
+fn rt_trig(x real, w int) real {
+	if x != x || x == rt_inf(false) || x == rt_inf(true) { return x - x; }
+	let n, rh, rl = rt_rp2(x); let q = n & 3;
+	let sh, sl = rt_sc(rh, rl, false); let ch, cl = rt_sc(rh, rl, true);
+	if w == 2 { let h, l = if (q & 1) == 0 { dd_div(sh, sl, ch, cl) } else { dd_div(-ch, -cl, sh, sl) }; return h + l; }
+	let k = (q + w) & 3;
+	if k == 0 { sh + sl } else { if k == 1 { ch + cl } else { if k == 2 { -(sh + sl) } else { -(ch + cl) } } }
+}
+fn rt_sin(x real) real { rt_trig(x, 0) }
+fn rt_cos(x real) real { rt_trig(x, 1) }
+fn rt_tan(x real) real { rt_trig(x, 2) }
+fn rt_atdd(t0h real, t0l real) real, real {
+	var th = t0h; var tl = t0l;
+	for _ in 3 { let mh, ml = dd_mul(th, tl, th, tl); let ah, al = dd_add(1.0, 0.0, mh, ml); let sh, sl = dd_sqrt(ah, al); let dh, dl = dd_add(1.0, 0.0, sh, sl); let h, l = dd_div(th, tl, dh, dl); th = h; tl = l; }
+	let zh, zl = dd_mul(th, tl, th, tl); var vh, vl = dd_divd(1.0, 0.0, 33.0); var k = 15;
+	while k >= 0 { let mh, ml = dd_mul(zh, zl, vh, vl); let ih, il = dd_divd(if k % 2 == 0 { 1.0 } else { -1.0 }, 0.0, (2 * k + 1) as real); let h, l = dd_add(ih, il, mh, ml); vh = h; vl = l; k -= 1; }
+	let h, l = dd_mul(th, tl, vh, vl); return 8.0 * h, 8.0 * l;
+}
+fn rt_at2(yh real, yl real, xh real, xl real) real, real {
+	if yh <= xh { let qh, ql = dd_div(yh, yl, xh, xl); let h, l = rt_atdd(qh, ql); return h, l; }
+	let qh, ql = dd_div(xh, xl, yh, yl); let ah, al = rt_atdd(qh, ql); let h, l = dd_add(RT_P1, RT_P2, -ah, -al); return h, l;
+}
+fn rt_sgn(neg bool, v real) real { if neg { -v } else { v } }
+fn rt_atan(x real) real { if x != x { return x; } let neg = rt_db(x) >> 63 != 0; let ax = if neg { -x } else { x }; if ax == rt_inf(false) { return rt_sgn(neg, RT_P1); } let h, l = rt_at2(ax, 0.0, 1.0, 0.0); rt_sgn(neg, h + l) }
+fn rt_atan2(y real, x real) real {
+	if x != x || y != y { return x + y; }
+	let ny = rt_db(y) >> 63 != 0; let nx = rt_db(x) >> 63 != 0; let ay = if ny { -y } else { y }; let ax = if nx { -x } else { x }; let inf = rt_inf(false);
+	if ay == 0.0 { return if nx { rt_sgn(ny, RT_P1 * 2.0) } else { y }; }
+	if ax == 0.0 { return rt_sgn(ny, RT_P1); }
+	if ax == inf { if ay == inf { let h, l = if nx { dd_mul(RT_P1, RT_P2, 1.5, 0.0) } else { dd_mul(RT_P1, RT_P2, 0.5, 0.0) }; return rt_sgn(ny, h + l); } return rt_sgn(ny, if nx { RT_P1 * 2.0 } else { 0.0 }); }
+	if ay == inf { return rt_sgn(ny, RT_P1); }
+	let h, l = rt_at2(ay, 0.0, ax, 0.0);
+	if nx { let h2, l2 = dd_add(2.0 * RT_P1, 2.0 * RT_P2, -h, -l); return rt_sgn(ny, h2 + l2); }
+	rt_sgn(ny, h + l)
+}
+fn rt_asin(x real) real { if !(x >= -1.0 && x <= 1.0) { return rt_bd(0x7FF8000000000000); } let neg = x < 0.0; let ax = if neg { -x } else { x }; let ah, al = dd_add(1.0, 0.0, -ax, 0.0); let bh, bl = dd_add(1.0, 0.0, ax, 0.0); let mh, ml = dd_mul(ah, al, bh, bl); let sh, sl = dd_sqrt(mh, ml); if sh == 0.0 { return rt_sgn(neg, RT_P1); } let h, l = rt_at2(ax, 0.0, sh, sl); if x == 0.0 { return x; } rt_sgn(neg, h + l) }
+fn rt_acos(x real) real { if !(x >= -1.0 && x <= 1.0) { return rt_bd(0x7FF8000000000000); } let neg = x < 0.0; let ax = if neg { -x } else { x }; let ah, al = dd_add(1.0, 0.0, -ax, 0.0); let bh, bl = dd_add(1.0, 0.0, ax, 0.0); let mh, ml = dd_mul(ah, al, bh, bl); let sh, sl = dd_sqrt(mh, ml); if ax == 0.0 { return RT_P1; } let h, l = rt_at2(sh, sl, ax, 0.0); if neg { let h2, l2 = dd_add(2.0 * RT_P1, 2.0 * RT_P2, -h, -l); return h2 + l2; } h + l }
+fn rt_sinf(x f32) f32 { rt_sin(x as real) as f32 }
+fn rt_cosf(x f32) f32 { rt_cos(x as real) as f32 }
+fn rt_tanf(x f32) f32 { rt_tan(x as real) as f32 }
+fn rt_asinf(x f32) f32 { rt_asin(x as real) as f32 }
+fn rt_acosf(x f32) f32 { rt_acos(x as real) as f32 }
+fn rt_atanf(x f32) f32 { rt_atan(x as real) as f32 }
+fn rt_atan2f(y f32, x f32) f32 { rt_atan2(y as real, x as real) as f32 }
+fn rt_expf(x f32) f32 { rt_exp(x as real) as f32 }
+fn rt_logf(x f32) f32 { rt_log(x as real) as f32 }
+fn rt_log2f(x f32) f32 { rt_log2(x as real) as f32 }
+fn rt_log10f(x f32) f32 { rt_log10(x as real) as f32 }
+fn rt_powf(x f32, y f32) f32 { rt_pow(x as real, y as real) as f32 }

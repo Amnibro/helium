@@ -159,8 +159,9 @@ recursive fn conv_tail(n int, t int) {
 	if k == N_IF { if !ends(x.b as int) { conv(x.b as int, t); } if x.c >= 0 && !ends(x.c as int) { conv(x.c as int, t); } return; }
 	if k == N_MATCH { for i in x.n { let b = ND[kid(n, i)].b as int; if b >= 0 && !ends(b) { conv(b, t); } } }
 }
+recursive fn errleaf(t int) bool { if t == T_ERRT { return true; } let x = TY[t]; if x.k == TY_STRUCT { for i in STI[x.a].fnum { let ft = SFI[(STI[x.a].f0 as int) + i].ty as int; if ft >= 0 && errleaf(ft) { return true; } } } x.k == TY_ARR && x.s == A_FIXED as u8 && errleaf(x.a as int) }
 recursive fn conv(n int, t int) bool {
-	if t < 0 || n < 0 { return true; }
+	if t < 0 || n < 0 || errleaf(t) { return true; }
 	let f = at(n);
 	if f < 0 { return true; }
 	if f == t { return true; }
@@ -286,7 +287,7 @@ fn unify(n int, a int, b int) int {
 recursive fn leaf_kind(t int) int {
 	let x = TY[t]; let k = x.k as int;
 	if k == TY_INT { return 1; } if k == TY_FLT { return 2; }
-	if k == TY_STRUCT { var r = 0; for i in STI[x.a].fnum { let f = SFI[(STI[x.a].f0 as int) + i]; if f.ty < 0 { continue; } let l = leaf_kind(f.ty as int); if l == 0 || (r != 0 && r != l) { return 0; } r = l; } return r + 4; }
+	if k == TY_STRUCT { var r = 0; for i in STI[x.a].fnum { let f = SFI[(STI[x.a].f0 as int) + i]; if f.ty < 0 { continue; } let l = leaf_kind(f.ty as int) & 3; if l == 0 || (r != 0 && r != l) { return 0; } r = l; } return r + 4; }
 	if k == TY_ARR && x.s == A_FIXED as u8 { let l = leaf_kind(x.a as int); if l == 0 { return 0; } return (l & 3) + 4; }
 	0
 }

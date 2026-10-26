@@ -6,7 +6,7 @@ fn main() {
 	if arg_count() < 3 { print("usage: hc file.amni out.c [--native] [--debug]"); exit(2); }
 	arg(1, a); arg(2, o);
 	var native = false;
-	for i in 3..arg_count() { var m byte[>..] = []; arg(i, m); if m[..] == "--native" { native = true; } if m[..] == "--debug" { DBG = true; } }
+	for i in 3..arg_count() { var m byte[>..] = []; arg(i, m); if m[..] == "--native" { native = true; } if m[..] == "--debug" { DBG = true; } if m.len > 2 && m[0] == '-' && m[1] == 'D' { HDEF.append(m[2..]); HDEF.push('\n'); } }
 	var lib byte[>..] = [];
 	if !env("HC_LIB", lib) { lib.append("hc/lib"); }
 	LIBDIR.append(lib);

@@ -54,9 +54,11 @@ recursive fn try_load(path const byte[:]) int {
 	f
 }
 fn lib_path(name const byte[:]) byte[..1024] { var p byte[..1024] = []; p.append(LIBDIR); p.push('/'); p.append(name); p.append(".amni"); p }
+fn imp_rel(t int) bool { for n in IMPS { if ND[n].t as int == t && ND[n].k == N_IMPORT { return ND[n].fl == 1; } } false }
 recursive fn load_import(name int, from int, t int) int {
 	var p byte[..1024] = [];
-	p.append(ROOTDIR); p.push('/'); p.append(nm(name)); p.append(".amni");
+	let rel = t >= 0 && from >= 0 && from < FILES.len && imp_rel(t); let fnm = nm(FILES[from].name as int); var sl = -1; if rel { for c, i in fnm { if c == '/' { sl = i; } } }
+	if sl >= 0 { p.append(fnm[..sl]); } else { p.append(ROOTDIR); } p.push('/'); p.append(nm(name)); p.append(".amni");
 	var r = try_load(p[..]);
 	if r == -1 { let lp = lib_path(nm(name)); r = try_load(lp[..]); }
 	if r == -1 { var m byte[>..] = []; format(m, "cannot find module ", nm(name)); derr(t, m); return -2; }

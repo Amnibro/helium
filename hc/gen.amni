@@ -333,8 +333,8 @@ recursive fn garith(o int, t0 int, a int, b int, tv int, loc int) {
 	let lk = leaf_kind(t);
 	if lk >= 4 {
 		let ta = if a >= 0 { fin(a) } else { t }; let tb = if b >= 0 { fin(b) } else { t };
-		if ta != t { if o != T_MUL { gerr(loc, "only * takes a scalar on the left of a struct or array"); return; } ow("hop"); oi(t); ow("_"); oi(o); ow("("); gopnd(b, tv); ow(", "); gopnd(a, tv); ow(")"); gen_hop(t, o, ta); return; }
-		ow("hop"); oi(t); ow("_"); oi(o); ow("("); gopnd(a, tv); ow(", "); gopnd(b, tv); ow(")"); gen_hop(t, o, tb); return;
+		if ta != t { if o != T_MUL { ow("hopl"); oi(t); ow("_"); oi(o); ow("("); gopnd(a, tv); ow(", "); gopnd(b, tv); ow(")"); gen_hop(t, o, ta, true); return; } ow("hop"); oi(t); ow("_"); oi(o); ow("("); gopnd(b, tv); ow(", "); gopnd(a, tv); ow(")"); gen_hop(t, o, ta, false); return; }
+		ow("hop"); oi(t); ow("_"); oi(o); ow("("); gopnd(a, tv); ow(", "); gopnd(b, tv); ow(")"); gen_hop(t, o, tb, false); return;
 	}
 	if k == TY_FLT { if o == T_MOD { ow(if TY[t].s == 4 { "fmodf(" } else { "fmod(" }); gopnd(a, tv); ow(", "); gopnd(b, tv); ow(")"); return; } ow("(("); ct(t); ow(")("); gopnd(a, tv); ow(" "); ow(ar_op(o)); ow(" "); gopnd(b, tv); ow("))"); return; }
 	if k == TY_BOOL { ow("(("); gopnd(a, tv); ow(") "); ow(ar_op(o)); ow(" ("); gopnd(b, tv); ow("))"); return; }
@@ -692,22 +692,22 @@ recursive fn gen_heq(t int) {
 	hh("}\n");
 }
 var HOPD i64[>..];
-recursive fn gen_hop(t int, o int, bt int) {
-	let key = (t as i64) * 4096 + (o as i64) * 64 + (if bt == t { 0 } else { 1 });
+recursive fn gen_hop(t int, o int, bt int, sl bool) {
+	let key = (t as i64) * 4096 + (o as i64) * 64 + (if bt == t { 0 } else { 1 }) + (if sl { 2 } else { 0 });
 	for h in HOPD { if h == key { return; } }
 	HOPD.push(key);
 	cbody(t);
 	let lt = leaf_type(t);
-	let sc = bt != t;
+	let sc = if sl { 2 } else { if bt != t { 1 } else { 0 } };
 	var sig byte[..256] = [];
-	format(sig, "static "); sig.append(cn(t)); format(sig, " hop", t, "_", o, "(");
-	sig.append(cn(t)); sig.append(" a, "); sig.append(cn(if sc { bt } else { t })); sig.append(" b)");
+	format(sig, "static "); sig.append(cn(t)); format(sig, if sl { " hopl" } else { " hop" }, t, "_", o, "(");
+	sig.append(cn(if sl { bt } else { t })); sig.append(" a, "); sig.append(cn(if sc == 1 { bt } else { t })); sig.append(" b)");
 	PR.append(sig[..]); PR.append(";\n");
 	HF.append(sig[..]); hh(" { "); HF.append(cn(t)); hh(" r; ");
 	hop_body(t, o, "r", "a", "b", sc);
 	hh("return r; }\n");
 }
-recursive fn hop_body(t int, o int, r const byte[:], a const byte[:], b const byte[:], sc bool) {
+recursive fn hop_body(t int, o int, r const byte[:], a const byte[:], b const byte[:], sc int) {
 	let k = TY[t].k as int;
 	if k == TY_INT {
 		let sg = is_signed(t);
@@ -722,9 +722,9 @@ recursive fn hop_body(t int, o int, r const byte[:], a const byte[:], b const by
 		for i in STI[si].fnum {
 			let f = SFI[f0 + i]; if f.ty < 0 { continue; }
 			var rr byte[..256] = []; var aa byte[..256] = []; var bb byte[..256] = [];
-			rr.append(r); rr.push('.'); aa.append(a); aa.push('.'); bb.append(b); if !sc { bb.push('.'); }
-			for ch in nm(f.name as int) { rr.push(ch); aa.push(ch); if !sc { bb.push(ch); } }
-			rr.push('_'); aa.push('_'); if !sc { bb.push('_'); }
+			rr.append(r); rr.push('.'); aa.append(a); if sc != 2 { aa.push('.'); } bb.append(b); if sc != 1 { bb.push('.'); }
+			for ch in nm(f.name as int) { rr.push(ch); if sc != 2 { aa.push(ch); } if sc != 1 { bb.push(ch); } }
+			rr.push('_'); if sc != 2 { aa.push('_'); } if sc != 1 { bb.push('_'); }
 			hop_body(f.ty as int, o, rr[..], aa[..], bb[..], sc);
 		}
 		return;
@@ -733,7 +733,7 @@ recursive fn hop_body(t int, o int, r const byte[:], a const byte[:], b const by
 		let p = nt();
 		format(HF, "for (int64_t _i", p, " = 0; _i", p, " < ", TY[t].b, "; _i", p, "++) { ");
 		var rr byte[..256] = []; var aa byte[..256] = []; var bb byte[..256] = [];
-		format(rr, r, ".e[_i", p, "]"); format(aa, a, ".e[_i", p, "]"); if sc { bb.append(b); } else { format(bb, b, ".e[_i", p, "]"); }
+		format(rr, r, ".e[_i", p, "]"); if sc == 2 { aa.append(a); } else { format(aa, a, ".e[_i", p, "]"); } if sc == 1 { bb.append(b); } else { format(bb, b, ".e[_i", p, "]"); }
 		hop_body(TY[t].a as int, o, rr[..], aa[..], bb[..], sc);
 		hh("} ");
 	}
@@ -747,7 +747,7 @@ recursive fn gen_hneg(t int) {
 	format(sig, "static "); sig.append(cn(t)); format(sig, " hneg", t, "("); sig.append(cn(t)); sig.append(" a)");
 	PR.append(sig[..]); PR.append(";\n");
 	HF.append(sig[..]); hh(" { "); HF.append(cn(t)); hh(" z; memset(&z, 0, sizeof z); "); HF.append(cn(t)); hh(" r; ");
-	hop_body(t, T_MINUS, "r", "z", "a", false);
+	hop_body(t, T_MINUS, "r", "z", "a", 0);
 	hh("return r; }\n");
 }
 fn fn_cname_to(b byte[>..<]&, i int) { format(b, "f", i, "_"); let s = FI_[i].name as int; if s >= 0 { for c in nm(s) { b.push(if c == ':' { '_' } else { c }); } } }
