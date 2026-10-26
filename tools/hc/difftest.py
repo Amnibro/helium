@@ -14,7 +14,8 @@ def run(f):
     c = W / (f.stem + ".c"); x = W / f.stem
     env = dict(os.environ, HC_LIB=str(R / "hc" / "lib"))
     nat = os.environ.get("HC_NATIVE") == "1"
-    try: p = subprocess.run([HC, str(f), str(x if nat else c)] + (["--native"] if nat else []), capture_output=True, timeout=30, env=env)
+    dbg = nat and "GS_DEBUG" in "".join(l for l in f.read_text(errors="replace").split("\n")[:5] if l.startswith("// runtime-define:")) + os.environ.get("HC_DEFS", "")
+    try: p = subprocess.run([HC, str(f), str(x if nat else c)] + (["--native"] if nat else []) + (["--debug"] if dbg else []), capture_output=True, timeout=30, env=env)
     except subprocess.TimeoutExpired: return f, "check", "timeout"
     if p.returncode != 0: return f, ("native" if nat and b"native backend" in p.stdout + p.stderr else "check"), (p.stdout + p.stderr).decode(errors="replace").strip().split("\n")[0][:220]
     if nat: c.write_text("")

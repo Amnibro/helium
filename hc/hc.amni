@@ -3,11 +3,10 @@ import lower;
 fn main() {
 	var a byte[>..] = [];
 	var o byte[>..] = [];
-	if arg_count() < 3 { print("usage: hc file.amni out.c [--native]"); exit(2); }
+	if arg_count() < 3 { print("usage: hc file.amni out.c [--native] [--debug]"); exit(2); }
 	arg(1, a); arg(2, o);
-	var m byte[>..] = [];
-	if arg_count() > 3 { arg(3, m); }
-	let native = m[..] == "--native";
+	var native = false;
+	for i in 3..arg_count() { var m byte[>..] = []; arg(i, m); if m[..] == "--native" { native = true; } if m[..] == "--debug" { DBG = true; } }
 	var lib byte[>..] = [];
 	if !env("HC_LIB", lib) { lib.append("hc/lib"); }
 	LIBDIR.append(lib);
