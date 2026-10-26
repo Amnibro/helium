@@ -350,6 +350,7 @@ recursive fn ck_id(n int, want int) int {
 	let v = find_lv(name);
 	if v >= 0 { set_r(n, R_LOCAL, v); note_cap(v); return set_t(n, if (LVS[v].fl & LV_FLET) != 0 { T_FLIT } else { LVS[v].ty as int }); }
 	let ns = ns_of(n);
+	if find_nest(name) >= 0 || block_binding(name) >= 0 { set_x(n, -1); return set_t(n, T_FNV); }
 	var d = lookup_q(name, ns, D_GLOBAL);
 	if d >= 0 {
 		let g = DC[d].node as int;

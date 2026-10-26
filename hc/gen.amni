@@ -1120,7 +1120,7 @@ recursive fn gen_tw(inst int) {
 recursive fn gspawn(n int, contained bool) {
 	var inst = -1;
 	var i = 0;
-	while i < TSP.len { if TSP[i] as int == n { inst = TSP[i + 1] as int; } i += 2; }
+	while i < TSP.len { if TSP[i] as int == n && TSP[i + 1] as int == AOWN { inst = TSP[i + 2] as int; } i += 3; }
 	if inst < 0 { gerr(n, "unresolved thread_spawn"); return; }
 	let np = ND[FI_[inst].node].n as int;
 	gen_tw(inst);

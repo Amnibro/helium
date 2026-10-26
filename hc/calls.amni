@@ -447,7 +447,7 @@ recursive fn ck_spawn(n int) int {
 	for j in an { let c = DIDX[s + j] as int; conv(c, ptype_of(inst, j)); }
 	pop_args(s);
 	note_edge(inst);
-	TSP.push(n as i32); TSP.push(inst as i32);
+	TSP.push(n as i32); TSP.push(AOWN as i32); TSP.push(inst as i32);
 	set_t(n, T_I64)
 }
 recursive fn call_fn(n int, name int, recv int, want int) int {
