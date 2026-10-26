@@ -32,7 +32,8 @@ var CSBA int;
 fn vo(v int) int { -8 * (v + 1) - CSBA }
 fn i32ok(v int) bool { v >= -(1 << 31) && v < (1 << 31) }
 fn ldv(r int, v int) { let k = fk(v); if k == 1 { mov_ri(r, FD[v] as int); return; } if k == 2 { lea(r, RBP, (FD[v] as int) - CSBA); return; } if k >= 3 && k <= 5 { lea_rip(r, if k == 3 { 3 } else { if k == 4 { 2 } else { 1 } }, FD[v] as int); return; } if k == 6 { ldv(r, FB[v] as int); if FD[v] != 0 { alu_ri(0, r, FD[v] as int); } return; } if xg(v) >= 0 { rx(r, XREG[v] as int, XW[v] as int); return; } if v < REGOF.len && REGOF[v] >= 0 { mov_rr(r, REGOF[v] as int); } else { ld(r, RBP, vo(v), 8, false); } }
-fn ldx(x int, v int, w int) { let g = xg(v); if g >= 0 { if g != x { sse(0, false, 0x28, x, g); } return; } if v < REGOF.len && REGOF[v] >= 0 && fk(v) == 0 { xr(x, REGOF[v] as int, w); return; } ldv(RAX, v); xr(x, RAX, w); }
+fn spl(v int) bool { v >= 0 && fk(v) == 0 && xg(v) < 0 && (v >= REGOF.len || REGOF[v] < 0) }
+fn ldx(x int, v int, w int) { let g = xg(v); if g >= 0 { if g != x { sse(0, false, 0x28, x, g); } return; } if v < REGOF.len && REGOF[v] >= 0 && fk(v) == 0 { xr(x, REGOF[v] as int, w); return; } if spl(v) { ssem(fpx(w), false, 0x10, x, RBP, vo(v)); return; } ldv(RAX, v); xr(x, RAX, w); }
 fn stx(x int, v int, w int) { let g = xg(v); if g >= 0 { if g != x { sse(0, false, 0x28, g, x); } return; } if v < REGOF.len && REGOF[v] >= 0 { rx(REGOF[v] as int, x, w); return; } rx(RAX, x, w); stv(RAX, v); }
 fn gr(v int) int { if v >= 0 && v < REGOF.len && REGOF[v] >= 0 && xg(v) < 0 { REGOF[v] as int } else { -1 } }
 fn srcr(v int, t int) int { let g = gr(v); if g >= 0 { g } else { ldv(t, v); t } }
@@ -116,8 +117,8 @@ fn cg_fn(fi int) {
 		else { if op == I_GADDR || op == I_RADDR { lea_rip(RAX, if op == I_GADDR { 3 } else { 2 }, c); stv(RAX, d); }
 		else { if op == I_FADDR { lea_rip(RAX, 1, c); stv(RAX, d); }
 		else { if op == I_PARAM { if c < 6 { stv(ARGR[c], d); } else { ld(RAX, RBP, 16 + 8 * (c - 6), 8, false); stv(RAX, d); } }
-		else { if op == I_FBIN { let xd = xg(d); let R = if xd >= 0 && xd != xg(b) { xd } else { 0 }; ldx(R, a, w); let sb = if xg(b) >= 0 { XREG[b] as int } else { ldx(1, b, w); 1 }; sse(fpx(w), false, if c == B_ADD { 0x58 } else { if c == B_SUB { 0x5C } else { if c == B_MUL { 0x59 } else { 0x5E } } }, R, sb); if R != xd { stx(R, d, w); } }
-		else { if op == I_FCMP { let sw = c == 2 || c == 4; let p0 = if sw { b } else { a }; let p1 = if sw { a } else { b }; let X0 = if xg(p0) >= 0 { xg(p0) } else { ldx(0, p0, w); 0 }; let X1 = if xg(p1) >= 0 { xg(p1) } else { ldx(1, p1, w); 1 }; sse(if (w & 3) == 2 { 0 } else { 0x66 }, false, 0x2E, X0, X1);
+		else { if op == I_FBIN { let xd = xg(d); let R = if xd >= 0 && xd != xg(b) { xd } else { 0 }; ldx(R, a, w); let fo = if c == B_ADD { 0x58 } else { if c == B_SUB { 0x5C } else { if c == B_MUL { 0x59 } else { 0x5E } } }; if spl(b) { ssem(fpx(w), false, fo, R, RBP, vo(b)); } else { let sb = if xg(b) >= 0 { XREG[b] as int } else { ldx(1, b, w); 1 }; sse(fpx(w), false, fo, R, sb); } if R != xd { stx(R, d, w); } }
+		else { if op == I_FCMP { let sw = c == 2 || c == 4; let p0 = if sw { b } else { a }; let p1 = if sw { a } else { b }; let X0 = if xg(p0) >= 0 { xg(p0) } else { ldx(0, p0, w); 0 }; if spl(p1) { ssem(if (w & 3) == 2 { 0 } else { 0x66 }, false, 0x2E, X0, RBP, vo(p1)); } else { let X1 = if xg(p1) >= 0 { xg(p1) } else { ldx(1, p1, w); 1 }; sse(if (w & 3) == 2 { 0 } else { 0x66 }, false, 0x2E, X0, X1); }
 			if c == 0 { setcc(CC_E, RAX); setcc(11, RCX); alu(0x21, RAX, RCX); } if c == 1 { setcc(CC_NE, RAX); setcc(10, RCX); alu(0x09, RAX, RCX); } if c >= 2 && fusable(i, d, f.i1 as int) { FUSEC = if c <= 3 { CC_A } else { CC_AE }; } else { if c == 2 || c == 3 { setcc(CC_A, RAX); } if c == 4 || c == 5 { setcc(CC_AE, RAX); } stv(RAX, d); } }
 		else { if op == I_CVT && (c == 3 || c == 4) { ldx(0, a, if c == 3 { 10 } else { 11 }); sse(if c == 3 { 0xF3 } else { 0xF2 }, false, 0x5A, 0, 0); stx(0, d, if c == 3 { 11 } else { 10 }); }
 		else { if op == I_CVT && c == 1 { let xd = xg(d); let R = if xd >= 0 { xd } else { 0 }; let A = srcr(a, RAX); sse(fpx(w), true, 0x2A, R, A); if R != xd { stx(R, d, w); } }
