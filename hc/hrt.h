@@ -193,33 +193,102 @@ static inline void hr_fs(hrv *o, hsl s) { hr_append(o, s.p, s.n, 1); }
 static inline void hr_fc(hrv *o, const char *s) { hr_append(o, s, (int64_t)strlen(s), 1); }
 static void hr_fu(hrv *o, uint64_t v) { char b[24]; int i = 24; do { b[--i] = (char)('0' + v % 10); v /= 10; } while (v); hr_append(o, b + i, 24 - i, 1); }
 static void hr_fi(hrv *o, int64_t v) { if (v < 0) { hr_fb(o, '-'); hr_fu(o, (uint64_t)0 - (uint64_t)v); } else hr_fu(o, (uint64_t)v); }
-static int hr_ftry(char *buf, int nd, const char *dig, int x, int neg, double v, int f32, long double *err) {
-	char *q = buf; if (neg) *q++ = '-'; *q++ = dig[0]; if (nd > 1) { *q++ = '.'; memcpy(q, dig + 1, (size_t)(nd - 1)); q += nd - 1; }
-	sprintf(q, "e%+03d", x);
-	double r = strtod(buf, 0);
-	if (f32 ? (float)r != (float)v : r != v) return 0;
-	*err = fabsl(strtold(buf, 0) - (f32 ? (long double)(float)v : (long double)v)); return 1;
+static uint64_t hr_p5i[342][2], hr_p5[326][2];
+static inline int hr_p5b(int e) { return (int)(((uint32_t)e * 1217359) >> 19) + 1; }
+static void hr_bx(const uint32_t *b, int nl, int s, uint64_t *o) { unsigned __int128 r = 0; for (int k = nl - 1; k >= 0; k--) { int p = 32 * k - s; if (p >= 128 || p <= -32) continue; r |= p >= 0 ? (unsigned __int128)b[k] << p : (unsigned __int128)(b[k] >> -p); } o[0] = (uint64_t)r; o[1] = (uint64_t)(r >> 64); }
+__attribute__((constructor)) static void hr_ryu_init(void) {
+	uint32_t a[34] = {1}, d[34] = {0}; int na = 1; d[32] = 1;
+	for (int i = 0; i < 342; i++) {
+		if (i < 326) hr_bx(a, na, hr_p5b(i) - 125, hr_p5[i]);
+		hr_bx(d, 33, 1024 - (hr_p5b(i) - 1 + 125), hr_p5i[i]); hr_p5i[i][0]++; if (!hr_p5i[i][0]) hr_p5i[i][1]++;
+		uint64_t c = 0; for (int k = 0; k < na; k++) { c += (uint64_t)a[k] * 5; a[k] = (uint32_t)c; c >>= 32; } if (c) a[na++] = (uint32_t)c;
+		uint64_t r = 0; for (int k = 32; k >= 0; k--) { r = (r << 32) | d[k]; d[k] = (uint32_t)(r / 5); r %= 5; }
+	}
+}
+static inline uint64_t hr_ms64(uint64_t m, const uint64_t *mul, int j) { unsigned __int128 b0 = (unsigned __int128)m * mul[0], b2 = (unsigned __int128)m * mul[1]; return (uint64_t)(((b0 >> 64) + b2) >> (j - 64)); }
+static inline int hr_p5f(uint64_t v) { int c = 0; while (v % 5 == 0) { v /= 5; c++; } return c; }
+static inline uint32_t hr_l10p2(int e) { return ((uint32_t)e * 78913) >> 18; }
+static inline uint32_t hr_l10p5(int e) { return ((uint32_t)e * 732923) >> 20; }
+static uint64_t hr_d2d(uint64_t bits, int *ex) {
+	uint64_t ma = bits & ((1ULL << 52) - 1); uint32_t ie = (uint32_t)(bits >> 52) & 0x7ff;
+	int e2; uint64_t m2;
+	if (ie == 0) { e2 = 1 - 1023 - 52 - 2; m2 = ma; } else { e2 = (int)ie - 1023 - 52 - 2; m2 = (1ULL << 52) | ma; }
+	int ab = (m2 & 1) == 0; uint64_t mv = 4 * m2; uint32_t mms = ma != 0 || ie <= 1;
+	uint64_t vr, vp, vm; int e10; int vmt = 0, vrt = 0;
+	if (e2 >= 0) {
+		uint32_t q = hr_l10p2(e2) - (e2 > 3); e10 = (int)q;
+		int k = 125 + hr_p5b((int)q) - 1, i = -e2 + (int)q + k;
+		vr = hr_ms64(mv, hr_p5i[q], i); vp = hr_ms64(mv + 2, hr_p5i[q], i); vm = hr_ms64(mv - 1 - mms, hr_p5i[q], i);
+		if (q <= 21) { if (mv % 5 == 0) vrt = hr_p5f(mv) >= (int)q; else if (ab) vmt = hr_p5f(mv - 1 - mms) >= (int)q; else vp -= hr_p5f(mv + 2) >= (int)q; }
+	} else {
+		uint32_t q = hr_l10p5(-e2) - (-e2 > 1); e10 = (int)q + e2;
+		int i = -e2 - (int)q, k = hr_p5b(i) - 125, j = (int)q - k;
+		vr = hr_ms64(mv, hr_p5[i], j); vp = hr_ms64(mv + 2, hr_p5[i], j); vm = hr_ms64(mv - 1 - mms, hr_p5[i], j);
+		if (q <= 1) { vrt = 1; if (ab) vmt = mms == 1; else --vp; } else if (q < 63) vrt = (mv & ((1ULL << q) - 1)) == 0;
+	}
+	int rm = 0; uint8_t ld = 0; uint64_t out;
+	if (vmt || vrt) {
+		for (;;) { uint64_t pd = vp / 10, md = vm / 10; if (pd <= md) break; vmt &= vm % 10 == 0; vrt &= ld == 0; ld = (uint8_t)(vr % 10); vr /= 10; vp = pd; vm = md; rm++; }
+		if (vmt) for (;;) { if (vm % 10 != 0) break; vrt &= ld == 0; ld = (uint8_t)(vr % 10); vr /= 10; vp /= 10; vm /= 10; rm++; }
+		if (vrt && ld == 5 && vr % 2 == 0) ld = 4;
+		out = vr + ((vr == vm && (!ab || !vmt)) || ld >= 5);
+	} else {
+		int up = 0;
+		if (vp / 100 > vm / 100) { up = vr % 100 >= 50; vr /= 100; vp /= 100; vm /= 100; rm += 2; }
+		for (;;) { uint64_t pd = vp / 10, md = vm / 10; if (pd <= md) break; up = vr % 10 >= 5; vr /= 10; vp = pd; vm = md; rm++; }
+		out = vr + (vr == vm || up);
+	}
+	*ex = e10 + rm; return out;
+}
+static inline uint32_t hr_ms32(uint32_t m, uint64_t f, int sh) { uint64_t b0 = (uint64_t)m * (uint32_t)f, b1 = (uint64_t)m * (f >> 32); return (uint32_t)((((b0 >> 32) + b1)) >> (sh - 32)); }
+static inline uint32_t hr_p5ii(uint32_t m, uint32_t q, int j) { return hr_ms32(m, hr_p5i[q][1] + 1, j); }
+static inline uint32_t hr_p5d(uint32_t m, uint32_t i, int j) { return hr_ms32(m, hr_p5[i][1], j); }
+static uint64_t hr_f2d(uint32_t bits, int *ex) {
+	uint32_t ma = bits & ((1u << 23) - 1), ie = (bits >> 23) & 0xff;
+	int e2; uint32_t m2;
+	if (ie == 0) { e2 = 1 - 127 - 23 - 2; m2 = ma; } else { e2 = (int)ie - 127 - 23 - 2; m2 = (1u << 23) | ma; }
+	int ab = (m2 & 1) == 0; uint32_t mv = 4 * m2, mp = 4 * m2 + 2, mms = ma != 0 || ie <= 1, mm = 4 * m2 - 1 - mms;
+	uint32_t vr, vp, vm; int e10; int vmt = 0, vrt = 0; uint8_t ld = 0;
+	if (e2 >= 0) {
+		uint32_t q = hr_l10p2(e2); e10 = (int)q;
+		int k = 61 + hr_p5b((int)q) - 1, i = -e2 + (int)q + k;
+		vr = hr_p5ii(mv, q, i); vp = hr_p5ii(mp, q, i); vm = hr_p5ii(mm, q, i);
+		if (q != 0 && (vp - 1) / 10 <= vm / 10) { int l = 61 + hr_p5b((int)q - 1) - 1; ld = (uint8_t)(hr_p5ii(mv, q - 1, -e2 + (int)q - 1 + l) % 10); }
+		if (q <= 9) { if (mv % 5 == 0) vrt = hr_p5f(mv) >= (int)q; else if (ab) vmt = hr_p5f(mm) >= (int)q; else vp -= hr_p5f(mp) >= (int)q; }
+	} else {
+		uint32_t q = hr_l10p5(-e2); e10 = (int)q + e2;
+		int i = -e2 - (int)q, k = hr_p5b(i) - 61, j = (int)q - k;
+		vr = hr_p5d(mv, (uint32_t)i, j); vp = hr_p5d(mp, (uint32_t)i, j); vm = hr_p5d(mm, (uint32_t)i, j);
+		if (q != 0 && (vp - 1) / 10 <= vm / 10) { j = (int)q - 1 - (hr_p5b(i + 1) - 61); ld = (uint8_t)(hr_p5d(mv, (uint32_t)(i + 1), j) % 10); }
+		if (q <= 1) { vrt = 1; if (ab) vmt = mms == 1; else --vp; } else if (q < 31) vrt = (mv & ((1u << (q - 1)) - 1)) == 0;
+	}
+	int rm = 0; uint32_t out;
+	if (vmt || vrt) {
+		while (vp / 10 > vm / 10) { vmt &= vm % 10 == 0; vrt &= ld == 0; ld = (uint8_t)(vr % 10); vr /= 10; vp /= 10; vm /= 10; rm++; }
+		if (vmt) while (vm % 10 == 0) { vrt &= ld == 0; ld = (uint8_t)(vr % 10); vr /= 10; vp /= 10; vm /= 10; rm++; }
+		if (vrt && ld == 5 && vr % 2 == 0) ld = 4;
+		out = vr + ((vr == vm && (!ab || !vmt)) || ld >= 5);
+	} else {
+		while (vp / 10 > vm / 10) { ld = (uint8_t)(vr % 10); vr /= 10; vp /= 10; vm /= 10; rm++; }
+		out = vr + (vr == vm || ld >= 5);
+	}
+	*ex = e10 + rm; return out;
 }
 static void hr_fflt(hrv *o, double v, int f32) {
 	if (v != v) { hr_fc(o, "nan"); return; }
 	if (isinf(v)) { hr_fc(o, v > 0 ? "inf" : "-inf"); return; }
-	char buf[48], best[48] = ""; char dig[24]; int n = 0, x = 0, neg = signbit(v) != 0;
-	for (int p = 1; p <= 17 && !best[0]; p++) {
-		snprintf(buf, sizeof buf, "%.*e", p - 1, fabs(v));
-		char *e = strchr(buf, 'e'); int k = 0;
-		for (char *q = buf; q != e; q++) if (*q != '.') dig[k++] = *q;
-		int ex = atoi(e + 1); long double be = 1e300L, er; int bev = 0;
-		for (int d = -1; d <= 1; d++) {
-			char cd[24]; memcpy(cd, dig, (size_t)k); int cx = ex, i = k - 1, cn = k;
-			if (d == 1) { while (i >= 0 && cd[i] == '9') cd[i--] = '0'; if (i < 0) { memmove(cd + 1, cd, (size_t)k); cd[0] = '1'; cx++; cn = k; } else cd[i]++; }
-			if (d == -1) { while (i >= 0 && cd[i] == '0') cd[i--] = '9'; if (i < 0 || (i == 0 && cd[0] == '1' && k == 1)) continue; cd[i]--; if (cd[0] == '0') continue; }
-			char tb[48];
-			if (hr_ftry(tb, cn, cd, cx, neg, v, f32, &er)) { int ev = ((cd[cn - 1] - '0') & 1) == 0; int tie = best[0] && fabsl(er - be) <= be * 1e-12L; if (!best[0] || (tie ? ev && !bev : er < be)) { be = er; bev = ev; strcpy(best, tb); memcpy(dig, cd, (size_t)cn); n = cn; x = cx; } }
-		}
+	char dig[24]; int n = 0, x = 0, neg = signbit(v) != 0;
+	if (v == 0) { dig[0] = '0'; n = 1; }
+	else {
+		int e; uint64_t u;
+		if (f32) { float f = (float)v; uint32_t b; memcpy(&b, &f, 4); u = hr_f2d(b, &e); } else { uint64_t b; memcpy(&b, &v, 8); u = hr_d2d(b, &e); }
+		char t[24]; int k = 0; while (u) { t[k++] = (char)('0' + u % 10); u /= 10; }
+		for (int i = 0; i < k; i++) dig[i] = t[k - 1 - i];
+		n = k; x = e + k - 1;
 	}
 	while (n > 1 && dig[n - 1] == '0') n--;
-	if (x < -4 || x >= (n > 15 ? n : 15)) { char tb[48]; hr_ftry(tb, n, dig, x, neg, v, f32, &(long double){0}); hr_fc(o, tb); return; }
 	if (neg) hr_fb(o, '-');
+	if (x < -4 || x >= (n > 15 ? n : 15)) { char tb[48]; char *q = tb; *q++ = dig[0]; if (n > 1) { *q++ = '.'; memcpy(q, dig + 1, (size_t)(n - 1)); q += n - 1; } int ax = x < 0 ? -x : x; *q++ = 'e'; *q++ = x < 0 ? '-' : '+'; if (ax >= 100) *q++ = (char)('0' + ax / 100); *q++ = (char)('0' + ax / 10 % 10); *q++ = (char)('0' + ax % 10); hr_append(o, tb, q - tb, 1); return; }
 	if (x < 0) { hr_fc(o, "0."); for (int i = 0; i < -x - 1; i++) hr_fb(o, '0'); hr_append(o, dig, n, 1); return; }
 	for (int i = 0; i <= x; i++) hr_fb(o, i < n ? (uint8_t)dig[i] : '0');
 	hr_fb(o, '.');
