@@ -180,7 +180,7 @@ recursive fn check_inst(i int) {
 	let tail = ND[body].a as int;
 	if rt >= 0 { if tail >= 0 && rt != T_VOID && t != T_VOID && !ends(tail) { conv(tail, rt); } }
 	else {
-		if FI_[i].ret < 0 { if tail >= 0 && t != T_VOID { FI_[i].ret = default_t(tail) as i32; } else { FI_[i].ret = T_VOID as i32; } }
+		if FI_[i].ret < 0 { if tail >= 0 && t != T_VOID { let rr = ref_res(tail, default_t(tail)); FI_[i].ret = rr as i32; if TY[rr].k == TY_REF { conv(tail, rr); } } else { FI_[i].ret = T_VOID as i32; } }
 		else { if tail >= 0 && t != T_VOID && FI_[i].ret as int != T_VOID { conv(tail, FI_[i].ret as int); } }
 	}
 	GB.pop_n(GB.len - g0);
@@ -265,7 +265,7 @@ recursive fn resolve(n int, name int, ns int, a0 int, an int, blk int, tyargs in
 		for j in np { imp_tv(ND[kid(fnode, j)].a as int, ns_of(fnode), b0); }
 		for j in np { let p = kid(fnode, j); if ND[p].a < 0 { BINDS.push(Gb { upname(p) as i32, -1 }); } }
 		if tyargs >= 0 { for j in min(ND[tyargs].n as int, BINDS.len - b0) { BINDS[b0 + j].ty = rtype(kid(tyargs, j), ns) as i32; } }
-		for j in an { let p = kid(fnode, j); let a = ARGW[a0 + j] as int; AMPA = is_amp(DIDX[a0 + j] as int) && TY[a].k == TY_REF; if !is_pending(a) { if ND[p].a >= 0 { match_ty(ND[p].a as int, a, b0); } else { for q in b0..BINDS.len { if BINDS[q].name as int == upname(p) && BINDS[q].ty < 0 { BINDS[q].ty = (if AMPA { a } else { deref_val(a) }) as i32; } } } } AMPA = false; }
+		for j in an { let p = kid(fnode, j); let a = ARGW[a0 + j] as int; AMPA = is_amp(DIDX[a0 + j] as int) && TY[a].k == TY_REF; if !is_pending(a) { if ND[p].a >= 0 { match_ty(ND[p].a as int, a, b0); } else { for q in b0..BINDS.len { if BINDS[q].name as int == upname(p) && BINDS[q].ty < 0 { BINDS[q].ty = (if AMPA { a } else { let dv = deref_val(a); if TY[dv].k != TY_SLICE && !is_fixed(dv) && names_store(DIDX[a0 + j] as int) { t_ref(dv, 0) } else { dv } }) as i32; } } } } AMPA = false; }
 		for j in an { let p = kid(fnode, j); let a = ARGW[a0 + j] as int; if is_pending(a) { let dt = if TY[a].k == TY_ARRLIT { arrlit_default(DIDX[a0 + j] as int) } else { pend_default(a) }; if ND[p].a >= 0 { match_ty(ND[p].a as int, dt, b0); } else { for q in b0..BINDS.len { if BINDS[q].name as int == upname(p) && BINDS[q].ty < 0 { BINDS[q].ty = dt as i32; } } } } }
 		var ok = true;
 		for q in b0..BINDS.len { if BINDS[q].ty < 0 { if bg >= 0 && BINDS[q].name as int == bg { BINDS[q].ty = T_FNV as i32; } else { ok = false; } } }
@@ -418,7 +418,7 @@ recursive fn call_block(n int, inst int) int {
 		let sa = AOWN; let sm = SCOPE.len; let bt = BRK_T.len; let ld = LOOPD;
 		AOWN = bi; LOOPD = 0;
 		let np = ND[fv].n as int;
-		if (ND[fv].fl & 1) != 0 { for j in np { let p = kid(fv, j); let pt = if j < na { ARGW[s + j] as int } else { T_ERRT }; let v = add_lv(ND[p].s as int, pt, LV_BLKP | (if ((lpm >> j) & 1) != 0 { LV_LIT } else { 0 }), p); set_r(p, R_LOCAL, v); } }
+		if (ND[fv].fl & 1) != 0 { for j in np { let p = kid(fv, j); let pt0 = if j < na { ARGW[s + j] as int } else { T_ERRT }; let at0 = if ND[p].a >= 0 { rtype(ND[p].a as int, ns_of(fv)) } else { -1 }; let pt = if at0 >= 0 && TY[at0].k == TY_REF { at0 } else { pt0 }; let v = add_lv(ND[p].s as int, pt, LV_BLKP | (if ((lpm >> j) & 1) != 0 { LV_LIT } else { 0 }), p); set_r(p, R_LOCAL, v); } }
 		else { if na >= 1 { let v = add_lv(intern("it"), ARGW[s] as int, LV_BLKP | (if (lpm & 1) != 0 { LV_LIT } else { 0 }), fv); set_r(fv, R_LOCAL, v); } }
 		let body = ND[fv].a as int;
 		let bt0 = ck(body, -1);

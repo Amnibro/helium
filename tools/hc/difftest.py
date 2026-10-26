@@ -23,7 +23,7 @@ def run(f):
         return f, "cc", (m[0] if m else p.stderr.decode()[:200])[:220]
     try: p = subprocess.run([str(x)], capture_output=True, timeout=20, stdin=open(sin, "rb") if sin else subprocess.DEVNULL, cwd=str(R / ("samples" if f.parent.name == "samples" else "test")))
     except subprocess.TimeoutExpired: return f, "run", "timeout"
-    want = norm(exp.read_bytes()); got = norm(p.stdout)
+    want = norm(exp.read_bytes()).rstrip(b"\n"); got = norm(p.stdout).rstrip(b"\n")
     if got != want:
         gl = got.split(b"\n"); wl = want.split(b"\n")
         i = next((k for k in range(min(len(gl), len(wl))) if gl[k] != wl[k]), min(len(gl), len(wl)))

@@ -245,6 +245,8 @@ recursive fn gaddr(n int) {
 	if is_vval(deref(at(n))) { gx0(n); return; }
 	if is_place(n) { ow("(&("); gx0(n); ow("))"); return; }
 	let t = at(n);
+	let nk = ND[n].k as int;
+	if (nk == N_IF || nk == N_MATCH || nk == N_EBLOCK || nk == N_LOOP || nk == N_BLOCK) && t != T_VOID && t >= 0 && TY[t].k != TY_REF && !is_res(t) { let r = nt(); ARES.push(r as i32); ow("({ "); ct(t); ow(" *_r"); oi(r); ow("; "); if nk == N_IF { gif(n, r); } else { if nk == N_MATCH { gmatch(n, r); } else { if nk == N_EBLOCK { geblock(n, r); } else { if nk == N_LOOP { gloop(n, r); } else { gblk(n, r, false); } } } } ARES.pop(); ow(" _r"); oi(r); ow("; })"); return; }
 	let c = cv(n);
 	if c >= 0 && TY[c].k == TY_REF && TY[t].k != TY_REF {
 		let pt = TY[c].a as int;
@@ -1381,10 +1383,13 @@ recursive fn gx0(n int) {
 fn hsl_ty(t int) bool { TY[t].k == TY_SLICE || (TY[t].k == TY_ARR && !is_fix(t) && !is_lim(t)) }
 recursive fn gxas(n int, t int) { let f = fin(n); if f == t { gx(n); return; } gcv(n, at(n), t); }
 fn fin_lit(n int) int { let t = at(n); if t < 0 || TY[t].k == TY_ILIT { T_I64 } else { if TY[t].k == TY_FLIT { T_F64 } else { t } } }
+var ARES i32[>..] = [];
+recursive fn garef(n int) { if TY[at(n)].k == TY_REF { gx0(n); } else { gaddr(n); } }
+fn is_ares(r int) bool { for a in ARES { if a as int == r { return true; } } false }
 recursive fn gtail(tl int, res int) {
 	if res >= 0 && !ends(tl) {
 		ow("_r"); oi(res); ow(" = ");
-		if is_res(fin(tl)) { gxo(tl); } else { gx(tl); }
+		if is_ares(res) { garef(tl); } else { if is_res(fin(tl)) { gxo(tl); } else { gx(tl); } }
 		ow("; ");
 		return;
 	}
@@ -1662,6 +1667,7 @@ recursive fn grel_lv(n int) {
 	fname_into(O, f.name as int);
 }
 fn movable_local(c int) bool { if ND[c].k != N_ID || rk(c) != R_LOCAL { return false; } let v = rv(c); LVS[v].cfn as int == GCF && !lv_isptr(v) && TY[LVS[v].ty].k != TY_REF && (cv(c) < 0 || cv(c) == at(c)) }
+fn dup_later(n int, i int) bool { let c = kid(n, i); if ND[c].k as int != N_ID || rk(c) != R_LOCAL { return false; } for j in (i + 1)..(ND[n].n as int) { let d = kid(n, j); if ND[d].k as int == N_ID && rk(d) == R_LOCAL && rv(d) == rv(c) { return true; } } false }
 recursive fn gmove(c int) {
 	if movable_local(c) { let v = rv(c); let p = nt(); ow("({ hrv _mv"); oi(p); ow(" = "); lv_name(v); ow("; "); lv_name(v); ow(".b = 0; "); lv_name(v); format(O, ".n = 0; _mv", p, "; })"); return; }
 	gxo(c);
@@ -1672,7 +1678,7 @@ recursive fn gret(n int) {
 	if lt >= 0 && lt != GCF {
 		let rt0 = FI_[lt].ret as int;
 		ow("{ ");
-		if x.n > 1 { format(O, "_lrv", lt, " = ("); ct(rt0); ow("){ "); for i in x.n { if i > 0 { ow(", "); } let c = kid(n, i); if is_res(fin(c)) { gmove(c); } else { gx(c); } } ow(" }; "); }
+		if x.n > 1 { format(O, "_lrv", lt, " = ("); ct(rt0); ow("){ "); for i in x.n { if i > 0 { ow(", "); } let c = kid(n, i); if is_res(fin(c)) { if dup_later(n, i) { gxo(c); } else { gmove(c); } } else { gx(c); } } ow(" }; "); }
 		else { if x.n == 1 { format(O, "_lrv", lt, " = "); let c = kid(n, 0); if is_res(rt0) { gmove(c); } else { gx(c); } ow("; "); } }
 		format(O, "hr_lr = ", lt + 1, "; "); gdummy(); ow(" }");
 		return;
@@ -1680,7 +1686,7 @@ recursive fn gret(n int) {
 	if x.n == 0 { ow("return;"); return; }
 	let f = if lt >= 0 { lt } else { ret_fn() };
 	let rt = FI_[f].ret as int;
-	if x.n > 1 { ow("return ("); ct(rt); ow("){ "); for i in x.n { if i > 0 { ow(", "); } let c = kid(n, i); if is_res(fin(c)) { gmove(c); } else { gx(c); } } ow(" };"); return; }
+	if x.n > 1 { ow("return ("); ct(rt); ow("){ "); for i in x.n { if i > 0 { ow(", "); } let c = kid(n, i); if is_res(fin(c)) { if dup_later(n, i) { gxo(c); } else { gmove(c); } } else { gx(c); } } ow(" };"); return; }
 	let c = kid(n, 0);
 	if is_vval(rt) { gvret(c, rt); return; }
 	ow("return "); if is_res(rt) { gmove(c); } else { gx(c); } ow(";");
@@ -1742,7 +1748,7 @@ recursive fn gbreak(n int) {
 	let l = LSTK[LSTK.len - 1] as int;
 	let r = LRES[LRES.len - 1] as int;
 	ow("{ ");
-	if x.a >= 0 { if r >= 0 { ow("_r"); oi(r); ow(" = "); if is_res(fin(x.a as int)) { gxo(x.a as int); } else { gx(x.a as int); } ow("; "); } else { ow("(void)("); gx(x.a as int); ow("); "); } }
+	if x.a >= 0 { if r >= 0 { ow("_r"); oi(r); ow(" = "); if is_ares(r) { garef(x.a as int); } else { if is_res(fin(x.a as int)) { gxo(x.a as int); } else { gx(x.a as int); } } ow("; "); } else { ow("(void)("); gx(x.a as int); ow("); "); } }
 	format(O, "goto _bk", l, "; }");
 }
 recursive fn gstmt(n int) {

@@ -704,7 +704,7 @@ recursive fn ck_ret(n int) int {
 		return set_t(n, T_VOID);
 	}
 	let c = kid(n, 0);
-	if rt < 0 { ck(c, -1); var t = default_t(c); FI_[f].ret = t as i32; return set_t(n, T_VOID); }
+	if rt < 0 { ck(c, -1); let t = ref_res(c, default_t(c)); FI_[f].ret = t as i32; if TY[t].k == TY_REF { conv(c, t); } return set_t(n, T_VOID); }
 	ck(c, rt); conv(c, rt);
 	set_t(n, T_VOID)
 }
@@ -780,6 +780,8 @@ recursive fn cstmt(n int) {
 	if is_pending(t) { default_t(n); }
 }
 fn fin_t(n int) int { let c = cv(n); if c >= 0 { c } else { at(n) } }
+recursive fn own_root(n int) bool { let k = ND[n].k as int; if k == N_ID { let v = AV[aix(n)] as int; rk(n) == R_LOCAL && LVS[v].cfn as int == CFN && TY[LVS[v].ty as int].k != TY_REF } else { if (k == N_DOT || k == N_IDX) && TY[at(ND[n].a as int)].k != TY_REF && TY[deref(at(ND[n].a as int))].k != TY_SLICE { own_root(ND[n].a as int) } else { false } } }
+fn ref_res(n int, t int) int { if ND[n].k as int == N_UN && ND[n].op as int == T_AND { if TY[t].k == TY_REF { t } else { t_ref(t, 0) } } else { if TY[t].k != TY_REF && TY[t].k != TY_SLICE && !is_fixed(t) && names_store(n) && !own_root(n) { t_ref(t, 0) } else { t } } }
 recursive fn names_store(n int) bool {
 	let x = ND[n]; let k = x.k as int;
 	if k == N_ID { let r = rk(n); return r == R_LOCAL || r == R_GLOBAL; }
