@@ -1581,7 +1581,7 @@ recursive fn gvdecl(n int) {
 		let p = nt();
 		ct(at(init)); ow(" _t"); oi(p); ow(" = "); gx(init); ow("; ");
 		let v0 = rv(n);
-		for i in x.n { decl_lv(v0 + i); format(O, " = _t", p, ".r", i, "; "); }
+		for i in x.n { decl_lv(v0 + i); let et = TYL[(TY[at(init)].l as int) + i] as int; format(O, if TY[et].k == TY_REF && TY[LVS[v0 + i].ty].k != TY_REF { " = *_t" } else { " = _t" }, p, ".r", i, "; "); }
 		return;
 	}
 	let v = rv(n);

@@ -802,7 +802,7 @@ recursive fn ck_vdecl(n int) {
 		let t = ck(init, -1);
 		if TY[t].k != TY_MULTI { if ND[x.b].n as int == x.n as int { for i in 1..x.n { let iv = kid(x.b as int, i); ck(iv, dt); if dt >= 0 { conv(iv, dt); } else { default_t(iv); } } if dt >= 0 { conv(init, dt); } else { default_t(init); } for i in x.n { let iv = kid(x.b as int, i); let v = add_lv(LS[(x.l as int) + i] as int, if dt >= 0 { dt } else { fin_t(iv) }, lf, n); if i == 0 { set_r(n, R_LOCAL, v); } } set_x(n, 1); return; } cerr(n, "several names need a call with as many results"); return; }
 		if TY[t].n != x.n { cerr(n, "result count does not match the names"); }
-		for i in x.n { let et = if i < TY[t].n as int { TYL[(TY[t].l as int) + i] as int } else { T_ERRT }; let v = add_lv(LS[(x.l as int) + i] as int, et, lf, n); if i == 0 { set_r(n, R_LOCAL, v); } }
+		for i in x.n { let et0 = if i < TY[t].n as int { TYL[(TY[t].l as int) + i] as int } else { T_ERRT }; let et = if !byref && TY[et0].k == TY_REF && TY[et0].c < 0 && (TY[et0].fl & RF_OPT) == 0 && (is_fixed(TY[et0].a as int) || TY[TY[et0].a].k == TY_VARINT) && !has_rel(TY[et0].a as int) { TY[et0].a as int } else { et0 }; let v = add_lv(LS[(x.l as int) + i] as int, et, lf, n); if i == 0 { set_r(n, R_LOCAL, v); } }
 		return;
 	}
 	var t = dt;
@@ -820,7 +820,7 @@ recursive fn ck_vdecl(n int) {
 				if TY[t].k == TY_MULTI { t = TYL[TY[t].l] as int; }
 				if TY[t].k == TY_VARIANT && (ND[init].k == N_DOT || ND[init].k == N_SLIT) && (lf & LV_VAR) != 0 { t = t_enum(TY[t].a as int, false); set_cv(init, t); }
 				if byref || (ND[init].k == N_UN && ND[init].op as int == T_AND) { if TY[t].k != TY_REF { t = t_ref(t, 0); } }
-				else { if TY[t].k == TY_REF && TY[t].c < 0 && (TY[t].fl & RF_OPT) == 0 && is_fixed(TY[t].a as int) && !has_rel(TY[t].a as int) { t = TY[t].a as int; set_cv(init, t); } else { if TY[t].k != TY_REF && TY[t].k != TY_SLICE && !is_fixed(t) && names_store(init) { t = t_ref(t, 0); } } }
+				else { if TY[t].k == TY_REF && TY[t].c < 0 && (TY[t].fl & RF_OPT) == 0 && (is_fixed(TY[t].a as int) || TY[TY[t].a].k == TY_VARINT) && !has_rel(TY[t].a as int) { t = TY[t].a as int; set_cv(init, t); } else { if TY[t].k != TY_REF && TY[t].k != TY_SLICE && TY[t].k != TY_VARINT && !is_fixed(t) && names_store(init) { t = t_ref(t, 0); } } }
 			}
 		}
 	} else {
