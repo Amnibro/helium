@@ -1358,6 +1358,13 @@ inline Roots TypeCheck::ReadBackRoot(TypeExpr *rt, const Roots &container, bool 
             out.unknown = true;
             continue;
         }
+        // A `let` global whose references all lead into static data, a table
+        // of string literals: whatever is read out of it, a byte view too, is
+        // static data.
+        if (croot && croot->isglobal && croot->type && !relative && StaticViewsOnly(croot)) {
+            out.Add({ nullptr, true, from });
+            continue;
+        }
         if (byteview) {
             // A byte view can point at any typed storage: the container's
             // contents where they are known, else the container as a bound.
