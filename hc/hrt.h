@@ -351,7 +351,7 @@ static inline void hr_println(void) { hr_fb(&hr_ob, '\n'); if (hr_ob.n > 65536 |
 static inline int64_t hr_mod(int64_t a, int64_t b) { int64_t r = a % b; return r < 0 ? (b < 0 ? r - b : r + b) : r; }
 static inline int64_t hr_div(int64_t a, int64_t b) { return a / b; }
 static inline uint64_t hr_umod(uint64_t a, uint64_t b) { return a % b; }
-static __attribute__((noreturn)) void hr_abort(hsl m) { hr_flush(); fprintf(stderr, "abort: %.*s\n", (int)m.n, (const char *)m.p); exit(1); }
+static __attribute__((noreturn)) void hr_abort(hsl m, const char *loc) { char *s = malloc((size_t)m.n + 1); memcpy(s, m.p, (size_t)m.n); s[m.n] = 0; hr_die(s, loc); }
 static __attribute__((noreturn)) void hr_exit(int64_t c) { hr_flush(); exit((int)c); }
 static void hr_assert_fail(const char *loc) { hr_die("assertion failed", loc); }
 static int64_t hr_os_arg_count(void) { return hr_argc; }
@@ -598,7 +598,13 @@ static bool hr_thread_wait(int64_t id, hrv *msg, const char *loc) {
 }
 static int64_t hr_hardware_threads(void) {
 	long n = sysconf(_SC_NPROCESSORS_ONLN);
-	return n < 1 ? 1 : n > 256 ? 256 : (int64_t)n;
+#ifdef GS_STACK_BUDGET
+	int64_t cap = (int64_t)(GS_STACK_BUDGET) / ((int64_t)HR_RSZ * 4) - 1;
+#else
+	int64_t cap = ((int64_t)1 << 46) / ((int64_t)HR_RSZ * 4) - 1;
+#endif
+	if (cap < 1) cap = 1;
+	return n < 1 ? 1 : n > cap ? cap : (int64_t)n;
 }
 static void hr_main(void);
 static void hr_init_globals(void);

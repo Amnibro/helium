@@ -506,7 +506,7 @@ recursive fn ck_builtin(n int, b int, recv int, want int) int {
 	if b == B_SPAWN || b == B_SPAWNC { return ck_spawn(n); }
 	if b == B_TWAIT { ck(arg(0), T_I64); conv(arg(0), T_I64); if total > 1 { ck(arg(1), -1); } return set_t(n, T_BOOL); }
 	if b == B_HWT { return set_t(n, T_I64); }
-	if b == B_QPUT { let c = arg(0); var t = ck(c, -1); if is_pending(t) { t = default_t(c); } let d = deref(t); if TY[d].k == TY_VARIANT { conv(c, t_enum(TY[d].a as int, false)); } else { if d != t { set_cv(c, d); } } return set_t(n, T_BOOL); }
+	if b == B_QPUT { let c = arg(0); var t = ck(c, -1); if is_pending(t) { t = default_t(c); } let d = deref(t); if d != t { set_cv(c, d); } return set_t(n, T_BOOL); }
 	if b == B_QGET || b == B_QPOLL || b == B_QLIMIT {
 		let ta = x.c as int; let t = if ta >= 0 { rtype(kid(ta, 0), ns_of(n)) } else { T_ERRT };
 		if ta < 0 { cerr(n, "this builtin needs its queue's type: name it as <T>"); return set_t(n, T_ERRT); }
