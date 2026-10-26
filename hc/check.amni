@@ -214,7 +214,7 @@ recursive fn commit(n int, t int) {
 		let e = if TY[t].k == TY_ARR || TY[t].k == TY_SLICE { TY[t].a as int } else { T_ERRT };
 		if x.a >= 0 { conv(x.a as int, e); conv(x.b as int, T_I64); }
 		for i in x.n { conv(kid(n, i), e); }
-		if TY[t].k == TY_SLICE { set_t(n, t_arr(e, A_FIXED, max(x.n as i64, 1), -1)); set_cv(n, t); }
+		if TY[t].k == TY_SLICE { set_t(n, t_arr(e, A_FIXED, x.n as i64, -1)); set_cv(n, t); }
 		return;
 	}
 }
@@ -337,7 +337,7 @@ fn ck_un(n int, want int) int {
 	let a = x.a as int;
 	if o == T_NOT { ck(a, T_BOOL); conv(a, T_BOOL); return set_t(n, T_BOOL); }
 	if o == T_AND { let t = ck(a, if want >= 0 && TY[want].k == TY_REF { TY[want].a as int } else { -1 }); if is_pending(t) { default_t(a); } set_x(n, 1); return set_t(n, at(a)); }
-	let t = ck(a, want);
+	let t = ck(a, if ND[a].k as int == N_INT || ND[a].k as int == N_FLT { -1 } else { want });
 	let d = deref(t);
 	if t != d { set_cv(a, d); }
 	if o == T_MINUS && TY[d].k == TY_INT && !is_signed(d) { cerr(n, "unary - of an unsigned integer"); }
@@ -410,6 +410,20 @@ recursive fn global_type(d int) int {
 }
 fn ORD_HAS(d int) bool { for o in ORDER { if o as int == d { return true; } } false }
 fn place_ok(n int) bool { let k = ND[n].k as int; k == N_ID || k == N_DOT || k == N_IDX || (k == N_UN && ND[n].op as int == T_MUL) }
+var HRELC i8[>..];
+recursive fn has_rel(t int) bool {
+	if t < 0 { return false; }
+	while HRELC.len < TY.len { HRELC.push(-1); }
+	if HRELC[t] >= 0 { return HRELC[t] == 1; }
+	HRELC[t] = 0;
+	let x = TY[t]; let k = x.k as int;
+	var r = false;
+	if k == TY_STRUCT { let si = x.a as int; for i in STI[si].fnum { let ft = SFI[(STI[si].f0 as int) + i].ty as int; if ft >= 0 && ((TY[ft].k == TY_REF && TY[ft].c >= 0) || has_rel(ft)) { r = true; } } }
+	if k == TY_ARR && x.s as int == A_FIXED { r = has_rel(x.a as int); }
+	while HRELC.len < TY.len { HRELC.push(-1); }
+	HRELC[t] = if r { 1 } else { 0 };
+	r
+}
 fn decode_rel(ft int) int { if TY[ft].k == TY_REF && TY[ft].c >= 0 { t_ref(TY[ft].a as int, TY[ft].fl as int) } else { ft } }
 recursive fn ck_dot(n int, want int) int {
 	let x = ND[n];
@@ -718,11 +732,12 @@ recursive fn ck_arr(n int, want int) int {
 	for i in x.n { ck(kid(n, i), e); }
 	if e >= 0 {
 		for i in x.n { conv(kid(n, i), e); }
-		if TY[want].k == TY_SLICE { set_t(n, t_arr(e, A_FIXED, max(x.n as i64, 1), -1)); set_cv(n, want); return want; }
+		if TY[want].k == TY_SLICE { set_t(n, t_arr(e, A_FIXED, x.n as i64, -1)); set_cv(n, want); return want; }
 		return set_t(n, want);
 	}
 	set_t(n, T_ARRLIT)
 }
+var STMTN = -1;
 recursive fn cstmt(n int) {
 	let x = ND[n];
 	let k = x.k as int;
@@ -730,6 +745,7 @@ recursive fn cstmt(n int) {
 	if k == N_ASSIGN { ck_assign(n); return; }
 	if k == N_INCDEC { let t = ck(x.a as int, -1); if TY[deref(t)].k != TY_INT && TY[deref(t)].k != TY_VARINT { cerr(n, "++/-- needs an integer"); } return; }
 	if k == N_FN { decl_nested(n); return; }
+	STMTN = n;
 	let t = ck(n, -1);
 	if is_pending(t) { default_t(n); }
 }
@@ -765,7 +781,7 @@ recursive fn ck_vdecl(n int) {
 				if TY[t].k == TY_MULTI { t = TYL[TY[t].l] as int; }
 				if TY[t].k == TY_VARIANT && (ND[init].k == N_DOT || ND[init].k == N_SLIT) && (lf & LV_VAR) != 0 { t = t_enum(TY[t].a as int, false); set_cv(init, t); }
 				if byref || (ND[init].k == N_UN && ND[init].op as int == T_AND) { if TY[t].k != TY_REF { t = t_ref(t, 0); } }
-				else { if TY[t].k == TY_REF && TY[t].c < 0 && (TY[t].fl & RF_OPT) == 0 && is_fixed(TY[t].a as int) { t = TY[t].a as int; set_cv(init, t); } }
+				else { if TY[t].k == TY_REF && TY[t].c < 0 && (TY[t].fl & RF_OPT) == 0 && is_fixed(TY[t].a as int) && !has_rel(TY[t].a as int) { t = TY[t].a as int; set_cv(init, t); } }
 			}
 		}
 	} else {

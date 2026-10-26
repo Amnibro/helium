@@ -27,6 +27,11 @@ static __thread hrv hr_ob;
 static __thread int hr_lr;
 static void hr_flush(void);
 static __attribute__((noreturn, cold)) void hr_die(const char *m, const char *loc) { hr_flush(); fprintf(stderr, "helium runtime error: %s (%s)\n", m, loc); exit(1); }
+static inline int64_t hr_rget(void *q, int sz) { return sz == 1 ? *(int8_t*)q : sz == 2 ? *(int16_t*)q : sz == 4 ? *(int32_t*)q : *(int64_t*)q; }
+static inline void *hr_rldv(void *q, int sz, int opt) { int64_t d = hr_rget(q, sz); return opt && !d ? (void*)0 : (void*)((char*)q + d); }
+static inline void hr_rstv(void *q, int sz, void *p, int opt) { int64_t d = p ? (char*)p - (char*)q : 0; if (p && opt && d == 0) hr_die("a relative reference would encode as null", "store"); if (sz < 8 && (d < -(1LL << (sz * 8 - 1)) || d >= (1LL << (sz * 8 - 1)))) hr_die("relative reference offset out of range", "store"); if (sz == 1) *(int8_t*)q = (int8_t)d; else if (sz == 2) *(int16_t*)q = (int16_t)d; else if (sz == 4) *(int32_t*)q = (int32_t)d; else *(int64_t*)q = d; }
+#define hr_rld(q, opt) hr_rldv((void*)(q), (int)sizeof *(q), (opt))
+#define hr_rst(q, p, opt, bits) hr_rstv((void*)(q), (int)sizeof *(q), (p), (opt))
 static __attribute__((noreturn, cold)) void hr_oob(int64_t i, int64_t n, const char *loc) { char b[96]; snprintf(b, sizeof b, "index %lld out of bounds (length %lld)", (long long)i, (long long)n); hr_die(b, loc); }
 static __attribute__((noreturn, cold)) void hr_slerr(int64_t a, int64_t b, int64_t n, const char *loc) { char m[128]; snprintf(m, sizeof m, "slice %lld..%lld out of bounds (length %lld)", (long long)a, (long long)b, (long long)n); hr_die(m, loc); }
 static inline int64_t hr_ix(int64_t i, int64_t n, const char *loc) { if (HR_UNLIKELY((uint64_t)i >= (uint64_t)n)) hr_oob(i, n, loc); return i; }

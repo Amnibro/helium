@@ -349,7 +349,7 @@ recursive fn call_block(n int, inst int) int {
 	let own = FI_[inst].bown as int;
 	let s = ck_args(n, 0, -1);
 	let na = ND[n].n as int;
-	for j in na { let c = kid(n, j); if is_pending(at(c)) { ARGW[s + j] = default_t(c) as i32; } else { ARGW[s + j] = deref_val(at(c)) as i32; } }
+	for j in na { let c = kid(n, j); if is_pending(at(c)) { ARGW[s + j] = default_t(c) as i32; } else { let ct0 = at(c); ARGW[s + j] = (if has_rel(deref(ct0)) { if TY[ct0].k == TY_REF { ct0 } else { t_ref(ct0, 0) } } else { deref_val(ct0) }) as i32; } }
 	var bi = -1;
 	for f, i in FI_ { if f.node as int == fv && f.par as int == own && f.blk == inst as i32 && f.cfn as int == CFN { bi = i; } }
 	if bi < 0 {
@@ -408,6 +408,7 @@ recursive fn call_fn(n int, name int, recv int, want int) int {
 	note_caps_of(inst); note_edge(inst);
 	set_r(n, R_FN, inst);
 	let rt = FI_[inst].ret as int;
+	if rt < 0 && FI_[inst].st == 1 && n == STMTN { return set_t(n, T_VOID); }
 	if rt < 0 { if FI_[inst].st == 1 { var m byte[>..] = []; format(m, "recursive call to ", nm(name), " needs its result type written"); cerr(n, m); } return set_t(n, T_ERRT); }
 	set_t(n, rt)
 }

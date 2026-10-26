@@ -30,7 +30,7 @@ recursive fn cn_make(t int) {
 	if k == TY_VARIANT { let v = ENV[(ENI[x.a].v0 as int) + (x.c as int)]; if v.si >= 0 { let e = cn(t_struct(v.si as int)); let s0 = CN.len; CN.append(e); CNO[t] = s0 as i32; CNL[t] = (CN.len - s0) as i32; return; } }
 	let s0 = CN.len;
 	if k == TY_INT { CN.append(INTC[x.s & 7]); }
-	else { if k == TY_REF { CN.append(INTC[(x.c & 3) + 4]); }
+	else { if k == TY_REF { CN.append(INTC[x.c & 3]); }
 	else { if k == TY_BOOL { CN.append("bool"); }
 	else { if k == TY_FLT { CN.append(if x.s == 4 { "float" } else { "double" }); }
 	else { if k == TY_VOID { CN.append("void"); }
@@ -121,7 +121,7 @@ fn fin(n int) int { let c = cv(n); if c >= 0 { c } else { let t = at(n); if t < 
 recursive fn is_place(n int) bool {
 	let x = ND[n]; let k = x.k as int;
 	if k == N_ID { let r = rk(n); return r == R_LOCAL || r == R_GLOBAL; }
-	if k == N_DOT { return rk(n) == R_FIELD && (is_place(x.a as int) || TY[at(x.a as int)].k == TY_REF); }
+	if k == N_DOT { return rk(n) == R_FIELD && rel_field(n) < 0 && (is_place(x.a as int) || TY[at(x.a as int)].k == TY_REF); }
 	if k == N_IDX { let bt = at(x.a as int); return TY[deref(bt)].k == TY_SLICE || is_place(x.a as int) || TY[bt].k == TY_REF; }
 	if k == N_UN && x.op as int == T_AND { return is_place(x.a as int); }
 	if k == N_CALL && rk(n) == R_BUILTIN && (rv(n) == B_PUSH) { return true; }
@@ -363,6 +363,7 @@ recursive fn gslit(n int) {
 		for i in x.n { if rv(kid(n, i)) == j { given = kid(n, i); } }
 		if given < 0 && f.def < 0 { continue; }
 		ow("."); fname_into(O, f.name as int); ow(" = ");
+		if is_rel(f.ty as int) { if given >= 0 && ND[ND[given].a].k as int != N_NULL { gerr(given, "a relative reference built inside a literal is not supported by the self-hosted compiler yet; store it with .= after placing the value"); } ow("0, "); any = true; continue; }
 		if given >= 0 { let v = ND[given].a as int; if is_res(f.ty as int) { gxo(v); } else { gx(v); } }
 		else { let sa = AOWN; AOWN = GLOBI; gx(f.def as int); AOWN = sa; }
 		ow(", "); any = true;
@@ -631,9 +632,9 @@ recursive fn gblkcall(n int) {
 	let np = ND[fv].n as int;
 	let na = ND[n].n as int;
 	if (ND[fv].fl & 1) != 0 {
-		for j in np { let p = kid(fv, j); AOWN = bi; let v = rv(p); AOWN = sa; if j < na { ct(LVS[v].ty as int); ow(" "); lv_name(v); ow(" = "); gx(kid(n, j)); ow("; "); } }
+		for j in np { let p = kid(fv, j); AOWN = bi; let v = rv(p); AOWN = sa; if j < na { ct(LVS[v].ty as int); ow(" "); lv_name(v); ow(" = "); gxas(kid(n, j), LVS[v].ty as int); ow("; "); } }
 	} else {
-		if na >= 1 { AOWN = bi; let v = rv(fv); AOWN = sa; if v >= 0 { ct(LVS[v].ty as int); ow(" "); lv_name(v); ow(" = "); gx(kid(n, 0)); ow("; "); } else { ow("(void)("); gx(kid(n, 0)); ow("); "); } }
+		if na >= 1 { AOWN = bi; let v = rv(fv); AOWN = sa; if v >= 0 { ct(LVS[v].ty as int); ow(" "); lv_name(v); ow(" = "); gxas(kid(n, 0), LVS[v].ty as int); ow("; "); } else { ow("(void)("); gx(kid(n, 0)); ow("); "); } }
 	}
 	AOWN = bi;
 	let body = ND[fv].a as int;
@@ -764,9 +765,12 @@ recursive fn gx0(n int) {
 			let st = deref(bt);
 			let si = if TY[st].k == TY_STRUCT { TY[st].a as int } else { ax(n) };
 			let f = SFI[(STI[si].f0 as int) + rv(n)];
+			let rl = is_rel(f.ty as int);
+			if rl { ow("((("); ct(at(n)); ow(")hr_rld(&("); }
 			ow("(");
 			if TY[bt].k == TY_REF { gx0(a); ow(")->"); } else { gx(a); ow(")."); }
 			fname_into(O, f.name as int);
+			if rl { format(O, "), ", ((TY[f.ty].fl as int) & RF_OPT) != 0, ")))"); }
 			return;
 		}
 		gerr(n, "unsupported member"); return;
@@ -980,6 +984,12 @@ recursive fn gassign(n int) {
 	let a = x.a as int;
 	let tt = at(a);
 	let d = deref(tt);
+	if (o == T_DOTASSIGN || o == T_ASSIGN) && rel_field(a) >= 0 {
+		let rt = rel_field(a);
+		let b = x.b as int;
+		ow("hr_rst(&("); grel_lv(a); ow("), (void*)("); if TY[fin(b)].k == TY_REF || TY[fin(b)].k == TY_NULL { gx(b); } else { gaddr(b); } format(O, "), ", ((TY[rt].fl as int) & RF_OPT) != 0, ", ", 8 << ((TY[rt].c as int) & 3), ");");
+		return;
+	}
 	if o == T_DOTASSIGN && TY[tt].k == TY_REF {
 		let b = x.b as int;
 		gx0(a); ow(" = ");
@@ -1007,6 +1017,22 @@ fn glrcheck() {
 	ow("if (HR_UNLIKELY(hr_lr)) { ");
 	if FI_[GCF].tg { let rt = FI_[GCF].ret as int; format(O, "if (hr_lr == ", GCF + 1, ") { hr_lr = 0; "); if rt < 0 || rt == T_VOID { ow("return; } "); } else { format(O, "return _lrv", GCF, "; } "); } }
 	gdummy(); ow(" } ");
+}
+fn is_rel(t int) bool { t >= 0 && TY[t].k == TY_REF && TY[t].c >= 0 }
+fn rel_field(n int) int {
+	if ND[n].k != N_DOT || rk(n) != R_FIELD { return -1; }
+	let a = ND[n].a as int; let st = deref(at(a));
+	let si = if TY[st].k == TY_STRUCT { TY[st].a as int } else { ax(n) };
+	let ft = SFI[(STI[si].f0 as int) + rv(n)].ty as int;
+	if is_rel(ft) { ft } else { -1 }
+}
+recursive fn grel_lv(n int) {
+	let a = ND[n].a as int; let bt = at(a); let st = deref(bt);
+	let si = if TY[st].k == TY_STRUCT { TY[st].a as int } else { ax(n) };
+	let f = SFI[(STI[si].f0 as int) + rv(n)];
+	ow("(");
+	if TY[bt].k == TY_REF { gx0(a); ow(")->"); } else { gx(a); ow(")."); }
+	fname_into(O, f.name as int);
 }
 fn movable_local(c int) bool { if ND[c].k != N_ID || rk(c) != R_LOCAL { return false; } let v = rv(c); LVS[v].cfn as int == GCF && !lv_isptr(v) && TY[LVS[v].ty].k != TY_REF && (cv(c) < 0 || cv(c) == at(c)) }
 recursive fn gmove(c int) {
