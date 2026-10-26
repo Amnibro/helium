@@ -16,7 +16,8 @@ def run(f):
     try: p = subprocess.run([HC, str(f), str(c)], capture_output=True, timeout=30, env=env)
     except subprocess.TimeoutExpired: return f, "check", "timeout"
     if p.returncode != 0: return f, "check", (p.stdout + p.stderr).decode(errors="replace").strip().split("\n")[0][:220]
-    p = subprocess.run(["nice", "-n", "10", "clang", "-O1", "-fwrapv", "-w", "-ferror-limit=1", "-I", str(R / "hc"), str(c), "-o", str(x), "-lm", "-lpthread"], capture_output=True)
+    defs = ["-D" + d.strip() for l in f.read_text(errors="replace").split("\n")[:5] if l.startswith("// runtime-define:") for d in l.split(":", 1)[1].split(",")]
+    p = subprocess.run(["nice", "-n", "10", "clang", "-O1", "-fwrapv", "-w", "-ferror-limit=1", *defs, "-I", str(R / "hc"), str(c), "-o", str(x), "-lm", "-lpthread"], capture_output=True)
     if p.returncode != 0:
         m = [l for l in p.stderr.decode(errors="replace").split("\n") if "error" in l]
         return f, "cc", (m[0] if m else p.stderr.decode()[:200])[:220]

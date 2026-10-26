@@ -17,7 +17,11 @@
 #include <sys/time.h>
 typedef struct { uint8_t *p; int64_t n; } hsl;
 typedef struct { uint8_t *b; int64_t n; int64_t top; int64_t *fl; int64_t fln, flc; } hrv;
+#ifdef GS_STACK_RESERVE
+#define HR_RSZ ((int64_t)(GS_STACK_RESERVE) & ~(int64_t)4095)
+#else
 #define HR_RSZ ((int64_t)1 << 34)
+#endif
 #define HR_LIKELY(x) __builtin_expect(!!(x), 1)
 #define HR_UNLIKELY(x) __builtin_expect(!!(x), 0)
 static int hr_argc; static char **hr_argv;
@@ -385,7 +389,28 @@ static inline void hr_rset(hrv *d, hrv v) { if (d->fl) free(d->fl); hr_give(d->b
 static inline hrv hr_rfrom(hsl s, int64_t esz) { hrv r = {0}; if (s.n) hr_append(&r, s.p, s.n, esz); return r; }
 static inline hrv hr_rdup(hrv v, int64_t esz) { return hr_rfrom((hsl){ v.b, v.n }, esz); }
 static inline hrv hr_rdup_var(hrv v) { hrv r = {0}; if (v.top > 0) { hr_rinit(&r); memcpy(r.b, v.b, (size_t)v.top); r.n = v.n; r.top = v.top; } return r; }
-#define HR_SDIV(T, a, b, loc) ({ T _da = (a), _db = (b); if (HR_UNLIKELY(_db == 0)) hr_die("division by zero", loc); if (sizeof(T) == 8 && HR_UNLIKELY(_db == -1 && _da == (T)((uint64_t)1 << 63))) hr_die("division overflow", loc); (T)(_db == -1 ? (T)(0 - (uint64_t)_da) : _da / _db); })
+static __attribute__((noreturn, cold)) void hr_ovf(const char *loc) { hr_die("integer overflow", loc); }
+static __attribute__((noreturn, cold)) void hr_castf(const char *loc) { hr_die("cast changes the value", loc); }
+#ifdef GS_DEBUG
+#define HR_SADD(T, a, b, loc) ({ T _ha = (a), _hb = (b), _hr; if (__builtin_add_overflow(_ha, _hb, &_hr)) hr_ovf(loc); _hr; })
+#define HR_SSUB(T, a, b, loc) ({ T _ha = (a), _hb = (b), _hr; if (__builtin_sub_overflow(_ha, _hb, &_hr)) hr_ovf(loc); _hr; })
+#define HR_SMUL(T, a, b, loc) ({ T _ha = (a), _hb = (b), _hr; if (__builtin_mul_overflow(_ha, _hb, &_hr)) hr_ovf(loc); _hr; })
+#define HR_SNEG(T, a, loc) ({ T _ha = (a), _hr; if (__builtin_sub_overflow((T)0, _ha, &_hr)) hr_ovf(loc); _hr; })
+#define HR_SINC(T, p, d, loc) ({ T *_hp = (p), _hr; if (__builtin_add_overflow(*_hp, (T)(d), &_hr)) hr_ovf(loc); *_hp = _hr; })
+#define HR_CF2I(T, x, loc) ({ double _hv = (x); T _hr = (T)hr_f2i(_hv); if (!(_hv == (double)_hr)) hr_castf(loc); _hr; })
+#define HR_CI2I(T, x, loc) ({ __typeof__(x) _hv = (x); T _hr = (T)_hv; if ((__int128)_hv != (__int128)_hr) hr_castf(loc); _hr; })
+#define HR_DBG 1
+#else
+#define HR_SADD(T, a, b, loc) ((T)((int64_t)(a) + (int64_t)(b)))
+#define HR_SSUB(T, a, b, loc) ((T)((int64_t)(a) - (int64_t)(b)))
+#define HR_SMUL(T, a, b, loc) ((T)((int64_t)(a) * (int64_t)(b)))
+#define HR_SNEG(T, a, loc) ((T)(0 - (uint64_t)(a)))
+#define HR_SINC(T, p, d, loc) ((void)(*(p) += (d)))
+#define HR_CF2I(T, x, loc) ((T)hr_f2i(x))
+#define HR_CI2I(T, x, loc) ((T)(x))
+#define HR_DBG 0
+#endif
+#define HR_SDIV(T, a, b, loc) ({ T _da = (a), _db = (b); if (HR_UNLIKELY(_db == 0)) hr_die("division by zero", loc); if (sizeof(T) == 8 && HR_UNLIKELY(_db == -1 && _da == (T)((uint64_t)1 << 63))) hr_die("division overflow", loc); if (HR_DBG && sizeof(T) < 8 && _db == -1 && _da == (T)((uint64_t)1 << (sizeof(T) * 8 - 1))) hr_ovf(loc); (T)(_db == -1 ? (T)(0 - (uint64_t)_da) : _da / _db); })
 #define HR_UDIV(T, a, b, loc) ({ T _da = (a), _db = (b); if (HR_UNLIKELY(_db == 0)) hr_die("division by zero", loc); (T)(_da / _db); })
 #define HR_UDIV_MOD(T, a, b, loc) ({ T _da = (a), _db = (b); if (HR_UNLIKELY(_db == 0)) hr_die("division by zero", loc); (T)(_da % _db); })
 #define HR_SMOD(T, a, b, loc) ({ T _da = (a), _db = (b); if (HR_UNLIKELY(_db == 0)) hr_die("division by zero", loc); T _dr = _db == -1 ? 0 : (T)(_da % _db); (T)(_dr < 0 ? (_db < 0 ? _dr - _db : _dr + _db) : _dr); })

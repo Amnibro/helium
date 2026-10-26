@@ -266,6 +266,7 @@ recursive fn garith(o int, t0 int, a int, b int, tv int, loc int) {
 		ct(t); ow(", "); gopnd(a, tv); ow(", "); gopnd(b, tv); ow(", "); wloc(loc); ow(")"); return;
 	}
 	if o == T_SHL || o == T_SHR { ow("(("); ct(t); ow(")(("); gopnd(a, tv); ow(") "); ow(ar_op(o)); ow(" (("); gopnd(b, tv); format(O, ") & ", ibits(t) - 1, ")))"); return; }
+	if sg && (o == T_PLUS || o == T_MINUS || o == T_MUL) { ow(if o == T_PLUS { "HR_SADD(" } else { if o == T_MINUS { "HR_SSUB(" } else { "HR_SMUL(" } }); ct(t); ow(", "); gopnd(a, tv); ow(", "); gopnd(b, tv); ow(", "); wloc(loc); ow(")"); return; }
 	ow("(("); ct(t); ow(")("); if sg { ow("(int64_t)"); } else { ow("(uint64_t)"); } gopnd(a, tv); ow(" "); ow(ar_op(o)); ow(" "); if sg { ow("(int64_t)"); } else { ow("(uint64_t)"); } gopnd(b, tv); ow("))");
 }
 recursive fn gbin(n int) {
@@ -282,14 +283,14 @@ recursive fn gbin(n int) {
 		if ka == TY_REF || ka == TY_NULL || TY[tb].k == TY_REF { ow("((void*)("); gx(a); ow(") "); ow(cmp_op(o)); ow(" (void*)("); gx(b); ow("))"); return; }
 		ow("(("); gx(a); ow(") "); ow(cmp_op(o)); ow(" ("); gx(b); ow("))"); return;
 	}
-	garith(o, fin(n), a, b, 0, n);
+	garith(o, if is_pending(at(n)) { fin(n) } else { at(n) }, a, b, 0, n);
 }
 recursive fn gun(n int) {
 	let x = ND[n]; let o = x.op as int; let a = x.a as int;
 	if o == T_NOT { ow("(!("); gx(a); ow("))"); return; }
 	if o == T_AND { gx(a); return; }
 	let t = fin(n);
-	if o == T_MINUS { if TY[t].k == TY_FLT { ow("(-("); gx(a); ow("))"); return; } if leaf_kind(t) >= 4 { ow("hneg"); oi(t); ow("("); gx(a); ow(")"); gen_hneg(t); return; } ow("(("); ct(t); ow(")(0 - (uint64_t)("); gx(a); ow(")))"); return; }
+	if o == T_MINUS { if TY[t].k == TY_FLT { ow("(-("); gx(a); ow("))"); return; } if leaf_kind(t) >= 4 { ow("hneg"); oi(t); ow("("); gx(a); ow(")"); gen_hneg(t); return; } if TY[t].k == TY_INT && is_signed(t) { ow("HR_SNEG("); ct(t); ow(", "); gx(a); ow(", "); wloc(n); ow(")"); return; } ow("(("); ct(t); ow(")(0 - (uint64_t)("); gx(a); ow(")))"); return; }
 	if o == T_BITNOT { ow("(("); ct(t); ow(")~("); gx(a); ow("))"); return; }
 	if o == T_MUL { ow("(*"); gx(a); ow(")"); return; }
 	if o == T_PLUS { gx(a); return; }
@@ -559,7 +560,14 @@ recursive fn gen_hop(t int, o int, bt int) {
 }
 recursive fn hop_body(t int, o int, r const byte[:], a const byte[:], b const byte[:], sc bool) {
 	let k = TY[t].k as int;
-	if k == TY_INT || k == TY_FLT { format(HF, r, " = ("); HF.append(cn(t)); format(HF, ")((", a, ") ", ar_op(o), " (", b, ")); "); return; }
+	if k == TY_INT {
+		let sg = is_signed(t);
+		if o == T_DIV || o == T_MOD { format(HF, r, " = ", if o == T_DIV { if sg { "HR_SDIV(" } else { "HR_UDIV(" } } else { if sg { "HR_SMOD(" } else { "HR_UDIV_MOD(" } }); HF.append(cn(t)); format(HF, ", ", a, ", ", b, ", \"elementwise\"); "); return; }
+		if sg && (o == T_PLUS || o == T_MINUS || o == T_MUL) { format(HF, r, " = ", if o == T_PLUS { "HR_SADD(" } else { if o == T_MINUS { "HR_SSUB(" } else { "HR_SMUL(" } }); HF.append(cn(t)); format(HF, ", ", a, ", ", b, ", \"elementwise\"); "); return; }
+		if o == T_SHL || o == T_SHR { format(HF, r, " = ("); HF.append(cn(t)); format(HF, ")((", a, ") ", ar_op(o), " ((", b, ") & ", ibits(t) - 1, ")); "); return; }
+		format(HF, r, " = ("); HF.append(cn(t)); format(HF, ")((uint64_t)(", a, ") ", ar_op(o), " (uint64_t)(", b, ")); "); return;
+	}
+	if k == TY_FLT { if o == T_MOD { format(HF, r, " = ", if TY[t].s == 4 { "fmodf(" } else { "fmod(" }, a, ", ", b, "); "); return; } format(HF, r, " = ("); HF.append(cn(t)); format(HF, ")((", a, ") ", ar_op(o), " (", b, ")); "); return; }
 	if k == TY_STRUCT {
 		let si = TY[t].a as int; let f0 = STI[si].f0 as int;
 		for i in STI[si].fnum {
@@ -800,7 +808,7 @@ recursive fn gx0(n int) {
 	}
 	if k == N_IDX { gidx(n); return; }
 	if k == N_SLICE { gslice(n); return; }
-	if k == N_AS { let t = at(n); let ft = TY[fin(x.a as int)].k as int; if TY[t].k == TY_INT && (ft == TY_FLT || ft == TY_FLIT) { ow("(("); ct(t); ow(")hr_f2i("); gx(x.a as int); ow("))"); return; } ow("(("); ct(t); ow(")("); gx(x.a as int); ow("))"); return; }
+	if k == N_AS { let t = at(n); let ft = TY[fin(x.a as int)].k as int; let chk = (x.fl & 1) == 0 && TY[t].k == TY_INT; if chk && (ft == TY_FLT || ft == TY_FLIT) { ow("HR_CF2I("); ct(t); ow(", "); gx(x.a as int); ow(", "); wloc(n); ow(")"); return; } if chk && ft == TY_INT { ow("HR_CI2I("); ct(t); ow(", "); gx(x.a as int); ow(", "); wloc(n); ow(")"); return; } if TY[t].k == TY_INT && (ft == TY_FLT || ft == TY_FLIT) { ow("(("); ct(t); ow(")hr_f2i("); gx(x.a as int); ow("))"); return; } ow("(("); ct(t); ow(")("); gx(x.a as int); ow("))"); return; }
 	if k == N_ARR { garr(n); return; }
 	if k == N_SLIT { gslit(n); return; }
 	if k == N_CALL { if is_vimg(at(n)) { DSU++; } gcall(n); return; }
@@ -888,11 +896,11 @@ recursive fn gfor(n int) {
 	if (m & 3) == 0 {
 		let rt0 = fin(if x.b >= 0 { x.b as int } else { x.a as int });
 		let ctt = if TY[rt0].k == TY_INT { rt0 } else { T_I64 };
-		ow("{ "); ct(ctt); ow(" _e"); oi(p); ow(" = ");
-		if x.b >= 0 { gx(x.b as int); } else { gx(x.a as int); }
-		ow("; for ("); ct(ctt); format(O, " _k", p, " = ");
+		ow("{ "); ct(ctt); ow(" _s"); oi(p); ow(" = ");
 		if x.b >= 0 { gx(x.a as int); } else { ow("0"); }
-		format(O, "; _k", p, " < _e", p, "; _k", p, "++) { "); ct(et); ow(" "); lv_name(v); format(O, " = ("); ct(et); format(O, ")_k", p, "; ");
+		ow("; "); ct(ctt); ow(" _e"); oi(p); ow(" = ");
+		if x.b >= 0 { gx(x.b as int); } else { gx(x.a as int); }
+		ow("; for ("); ct(ctt); format(O, " _k", p, " = _s", p, "; _k", p, " < _e", p, "; _k", p, "++) { "); ct(et); ow(" "); lv_name(v); format(O, " = ("); ct(et); format(O, ")_k", p, "; ");
 		if iv >= 0 { ct(LVS[iv].ty as int); ow(" "); lv_name(iv); ow(" = ("); ct(LVS[iv].ty as int); format(O, ")_k", p, "; "); }
 		gblk(x.d as int, -1, false);
 		ow(" } }");
@@ -1117,7 +1125,7 @@ recursive fn gstmt1(n int) {
 	let x = ND[n];
 	let k = x.k as int;
 	if k == N_ASSIGN { gassign(n); return; }
-	if k == N_INCDEC { let a = x.a as int; let tt = at(a); if TY[tt].k == TY_REF { ow("(*"); gx0(a); ow(")"); } else { gx(a); } ow(if x.op as int == T_INC { "++;" } else { "--;" }); return; }
+	if k == N_INCDEC { let a = x.a as int; let tt = at(a); let dt = deref(tt); if TY[dt].k == TY_INT && is_signed(dt) { ow("HR_SINC("); ct(dt); ow(", "); if TY[tt].k == TY_REF { gx0(a); } else { ow("&("); gx(a); ow(")"); } ow(if x.op as int == T_INC { ", 1, " } else { ", -1, " }); wloc(n); ow(");"); return; } if TY[tt].k == TY_REF { ow("(*"); gx0(a); ow(")"); } else { gx(a); } ow(if x.op as int == T_INC { "++;" } else { "--;" }); return; }
 	if k == N_FN { return; }
 	if k == N_IF { gif(n, -1); return; }
 	if k == N_WHILE { gwhile(n); return; }
