@@ -535,6 +535,7 @@ fn plain_bytes(t int) bool { let k = TY[t].k as int; if k == TY_INT || k == TY_B
 recursive fn leq_a(pa int, pb int, t int) int {
 	if isf(t) { let d = nv(); ir(I_FCMP, wof(t), d, ldw(pa, 0, wof(t)), ldw(pb, 0, wof(t)), 0); return d; }
 	if is_scal(t) && !is_vimg(t) { let w = if is_rel(t) { rw(t) } else { if TY[t].k == TY_REF || TY[t].k == TY_FNV { 3 } else { wof(t) } }; return lcmp(ldw(pa, 0, w), ldw(pb, 0, w), CC_E); }
+	if plain_bytes(t) && tsz(t) <= 32 { var r = -1; var o = 0; let z = tsz(t); while o < z { let q = if z - o >= 8 { 8 } else { if z - o >= 4 { 4 } else { if z - o >= 2 { 2 } else { 1 } } }; let w = if q == 8 { 3 } else { if q == 4 { 6 } else { if q == 2 { 5 } else { 4 } } }; let e = lcmp(ldw(pa, o, w), ldw(pb, o, w), CC_E); r = if r < 0 { e } else { bin(B_AND, 3, r, e, -1) }; o += q; } return if r < 0 { imm(1) } else { r }; }
 	if plain_bytes(t) { return rtcall("rt_memeq", [pa as i32, imm(tsz(t)) as i32, pb as i32, imm(tsz(t)) as i32]); }
 	let s0 = ARGL.len; ARGL.push(pa as i32); ARGL.push(pb as i32); let d = nv(); ir(I_CALL, 3, d, s0, 2, eq_fn(t)); d
 }

@@ -351,36 +351,47 @@ fn lvn(fi int) {
 fn rdonly(i int) bool { let x = IR[i]; let op = x.op as int; op == I_IMM || op == I_MOV || op == I_EXT || op == I_BIN || op == I_UN || op == I_CMP || op == I_SLOT || op == I_GADDR || op == I_RADDR || op == I_FADDR || op == I_LD || op == I_FBIN || op == I_FCMP || op == I_BCHK || op == I_NOP || op == I_BZ || op == I_BNZ || op == I_CVT && x.c != 5 || op == I_FUN && (x.c >= 1 && x.c <= 4 || x.c >= 7) }
 fn cpfwd(fi int) {
 	let f = NFS[fi]; let i0 = f.i0 as int; let i1 = f.i1 as int; let nv = f.nv as int;
-	var nd i32[>..<] = []; nd.resize(nv, 0); var us i32[>..<] = []; us.resize(nv + 1, 0); var kn i8[>..<] = []; kn.resize(nv, 0); var kv i64[>..<] = []; kv.resize(nv, 0); var sv i64[>..<] = []; sv.resize(nv, -1);
+	var nd i32[>..<] = []; nd.resize(nv, 0); var us i32[>..<] = []; us.resize(nv + 1, 0); var kn i8[>..<] = []; kn.resize(nv, 0); var kv i64[>..<] = []; kv.resize(nv, 0); var db i64[>..<] = []; db.resize(nv, -1);
 	var so int[>..] = []; var mk int[>..] = [];
 	for i in i0..i1 { opnds(i); for d in OD { nd[d] += 1; } for u in OU { us[u + 1] += 1; } let op = IR[i].op as int; if op == I_SLOT { so.push(IR[i].c as int); } if op == I_DSS || op == I_DSR { if MSLOT[IR[i].a] >= 0 { mk.push(MSLOT[IR[i].a] as int); } } }
-	for i in i0..i1 { let x = IR[i]; let d = x.d as int; if d >= 0 && nd[d] == 1 { if x.op as int == I_IMM { kn[d] = 1; kv[d] = x.c; } if x.op as int == I_SLOT { sv[d] = x.c; } } }
+	for i in i0..i1 { let x = IR[i]; let d = x.d as int; let op = x.op as int; if d >= 0 && nd[d] == 1 { if op == I_IMM { kn[d] = 1; kv[d] = x.c; } if op == I_SLOT { db[d] = x.c; } if (op == I_MOV || op == I_EXT && x.w == 3 || op == I_BIN && x.l < 0 && (x.c == B_ADD || x.c == B_SUB)) && x.a >= 0 && db[x.a] >= 0 { db[d] = db[x.a]; } if op == I_BIN && x.l < 0 && x.c == B_ADD && x.b >= 0 && db[x.b] >= 0 && (x.a < 0 || db[x.a] < 0) { db[d] = db[x.b]; } } }
 	sort(so[..]); for v in nv { us[v + 1] += us[v]; }
 	var ul i32[>..<] = []; ul.resize(us[nv] as int, 0); var uc i32[>..<] = []; uc.resize(nv, 0);
 	for i in i0..i1 { opnds(i); for u in OU { ul[(us[u] + uc[u]) as int] = i as i32; uc[u] += 1; } }
-	var sl i32[>..<] = []; var stk i32[>..<] = []; var dirty int[>..] = [];
+	var esc int[>..] = [];
+	for v in nv { if db[v] < 0 { continue; } for q in (us[v] as int)..(us[v + 1] as int) { let y = IR[ul[q]]; let yo = y.op as int; let ok = yo == I_LD || (yo == I_ST || yo == I_COPY || yo == I_ZERO) && y.b as int != v || (yo == I_MOV || yo == I_EXT && y.w == 3 || yo == I_BIN && y.l < 0 && (y.c == B_ADD || y.c == B_SUB)) && y.d >= 0 && db[y.d] >= 0; if !ok { esc.push(db[v] as int); } } }
+	var lsrc i32[>..<] = []; lsrc.resize(LBL.len, 0); var lpos i32[>..<] = []; lpos.resize(LBL.len, -1);
+	for i in i0..i1 { let op = IR[i].op as int; if op == I_JMP || op == I_BZ || op == I_BNZ { lsrc[IR[i].c] += 1; } if op == I_LBL { lpos[IR[i].c] = i as i32; } }
+	fn dst(q int) int { let y = IR[q]; let op = y.op as int; let v = if op == I_ST { y.a as int } else { y.d as int }; if v >= 0 && db[v] >= 0 { db[v] as int } else { -1 } }
+	var sl i32[>..<] = []; var stk i32[>..<] = []; var dirty int[>..] = []; var inr i32[>..<] = [];
 	for i in i0..i1 {
-		let x = IR[i]; if x.op as int != I_COPY || x.d < 0 || sv[x.d] < 0 || !(kn[x.b] != 0) { continue; }
-		let s = sv[x.d] as int; let z = kv[x.b] as int; let a = x.a as int; if a < 0 || sv[a] >= 0 && (sv[a] as int) == s { continue; }
+		let x = IR[i]; if x.op as int != I_COPY || x.d < 0 || nd[x.d] != 1 || IR[i].op as int != I_COPY || !(kn[x.b] != 0) || db[x.d] < 0 { continue; }
+		let s = db[x.d] as int; let z = kv[x.b] as int; let a = x.a as int; if a < 0 || db[a] >= 0 && (db[a] as int) == s { continue; }
 		var bad = false; for m in dirty { if m == s { bad = true; } } for m in mk { if m >= s && m < s + z { bad = true; } } for o in so { if o > s && o < s + z { bad = true; } } if bad { continue; }
-		var e = i + 1; while e < i1 && rdonly(e) { e++; }
 		sl.clear(); for k in i0..i1 { if IR[k].op as int == I_SLOT && IR[k].c as int == s { sl.push(k as i32); } }
-		var last = i; var cpo = -1;
+		var last = i;
 		for k in sl { let v = IR[k].d as int; if nd[v] != 1 { bad = true; break; }
 			stk.clear(); stk.push(v as i32);
 			while stk.len > 0 && !bad { let w = stk.pop() as int;
 				for q in (us[w] as int)..(us[w + 1] as int) { let p = ul[q] as int; let y = IR[p]; let yo = y.op as int;
 					if p == i && y.d as int == w && y.a as int != w { if w != v { bad = true; } continue; }
-					if p <= i || p > e { bad = true; break; }
+					if p <= i { bad = true; break; }
 					if p > last { last = p; }
 					if yo == I_LD && y.a as int == w { continue; }
 					if (yo == I_BIN && (y.c == B_ADD || y.c == B_SUB && y.a as int == w) || yo == I_MOV || yo == I_EXT && y.w == 3) && y.d >= 0 && nd[y.d] == 1 { stk.push(y.d); continue; }
-					if yo == I_COPY && p == e && y.a as int == w && y.d as int != w && y.b as int != w { cpo = p; continue; }
+					if yo == I_COPY && y.a as int == w && y.d as int != w && y.b as int != w { continue; }
 					bad = true; break; } } }
-		if bad || cpo >= 0 && last > cpo { continue; }
+		if bad { continue; }
+		let ab = if db[a] >= 0 { db[a] as int } else { -1 };
+		for q in (i + 1)..(last + 1) { let op = IR[q].op as int;
+			if rdonly(q) || op == I_JMP || op == I_NOP { continue; }
+			if op == I_LBL { let l = IR[q].c as int; var cnt = 0; for r in (i + 1)..(last + 1) { let ro = IR[r].op as int; if (ro == I_JMP || ro == I_BZ || ro == I_BNZ) && IR[r].c as int == l { cnt++; } } if cnt as i32 != lsrc[l] { bad = true; break; } continue; }
+			if op == I_ST || op == I_COPY || op == I_ZERO { let t = dst(q); if t >= 0 && t != s && t != ab { var e = false; for m in esc { if m == t { e = true; } } if !e { continue; } } if q == last && op == I_COPY && IR[q].a >= 0 && db[IR[q].a] >= 0 && db[IR[q].a] as int == s { continue; } }
+			bad = true; break; }
+		if bad { continue; }
 		if nd[a] > 1 { for p in (i + 1)..(last + 1) { opnds(p); for d in OD { if d as int == a { bad = true; } } } }
 		if bad { continue; }
-		IR[i].op = I_NOP as u8; if sv[a] >= 0 { dirty.push(sv[a] as int); }
+		IR[i].op = I_NOP as u8; if ab >= 0 { dirty.push(ab); }
 		for k in sl { let v = IR[k].d as int; for q in (us[v] as int)..(us[v + 1] as int) { let p = ul[q] as int; if p > i { if IR[p].a as int == v { IR[p].a = a as i32; } if IR[p].b as int == v && usesb(IR[p].op as int) { IR[p].b = a as i32; } } } }
 	}
 }
