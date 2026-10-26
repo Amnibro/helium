@@ -1469,7 +1469,9 @@ recursive fn gfor(n int) {
 		vpre_e(e);
 		var qn byte[..32] = []; format(qn, "_q", p);
 		var ez byte[..512] = []; vz_into(ez, e, qn[..]);
-		ow("{ hsl _v"); oi(p); ow(" = "); gsl(a, bt); format(O, "; uint8_t *_q", p, " = _v", p, ".p; for (int64_t _k", p, " = 0; _k", p, " < _v", p, ".n; _k", p, "++, _q", p, " += ", ez[..], ") { ");
+		if is_res(d) && TY[bt].k == TY_REF && ND[a].k as int == N_ID { var ez2 byte[..512] = []; vz_into(ez2, e, "_q2"); ow("{ hsl _v"); oi(p); ow(" = "); gsl(a, bt); format(O, "; uint8_t *_q", p, " = _v", p, ".p; for (int64_t _k", p, " = 0; ; _k", p, "++, _q", p, " += ", ez[..], ") { hsl _c", p, " = "); gsl(a, bt); format(O, "; if (_k", p, " >= _c", p, ".n) break; if (_c", p, ".p != _v", p, ".p || _c", p, ".n != _v", p, ".n) { _v", p, " = _c", p, "; uint8_t *_q2 = _v", p, ".p; for (int64_t _j = 0; _j < _k", p, "; _j++) _q2 += ", ez2[..], "; _q", p, " = _q2; } "); } else {
+		if TY[d].k == TY_SLICE && (TY[bt].k == TY_REF || is_place(a)) { var ez2 byte[..512] = []; vz_into(ez2, e, "_q2"); ow("{ hsl *_w"); oi(p); ow(" = "); if TY[bt].k == TY_REF { gx0(a); } else { ow("&("); gx(a); ow(")"); } format(O, "; hsl _v", p, " = *_w", p, "; uint8_t *_q", p, " = _v", p, ".p; for (int64_t _k", p, " = 0; _k", p, " < _w", p, "->n; _k", p, "++, _q", p, " += ", ez[..], ") { if (_w", p, "->p != _v", p, ".p || _w", p, "->n != _v", p, ".n) { _v", p, " = *_w", p, "; uint8_t *_q2 = _v", p, ".p; for (int64_t _j = 0; _j < _k", p, "; _j++) _q2 += ", ez2[..], "; _q", p, " = _q2; } "); } else {
+		ow("{ hsl _v"); oi(p); ow(" = "); gsl(a, bt); format(O, "; uint8_t *_q", p, " = _v", p, ".p; for (int64_t _k", p, " = 0; _k", p, " < _v", p, ".n; _k", p, "++, _q", p, " += ", ez[..], ") { "); } }
 		ow("uint8_t *"); lv_name(v); format(O, " = _q", p, "; ");
 		if iv >= 0 { ct(LVS[iv].ty as int); ow(" "); lv_name(iv); ow(" = ("); ct(LVS[iv].ty as int); format(O, ")_k", p, "; "); }
 		gblk(x.d as int, -1, false);
@@ -1478,11 +1480,15 @@ recursive fn gfor(n int) {
 		return;
 	}
 	if is_res(d) {
-		ow("{ hrv *_v"); oi(p); ow(" = "); grecv_ptr(a); format(O, "; for (int64_t _k", p, " = 0; _k", p, " < _v", p, "->n; _k", p, "++) { ");
+		if TY[bt].k == TY_REF && ND[a].k as int == N_ID { format(O, "{ for (int64_t _k", p, " = 0; ; _k", p, "++) { hrv *_v", p, " = "); grecv_ptr(a); format(O, "; if (_k", p, " >= _v", p, "->n) break; "); } else {
+		ow("{ hrv *_v"); oi(p); ow(" = "); grecv_ptr(a); format(O, "; for (int64_t _k", p, " = 0; _k", p, " < _v", p, "->n; _k", p, "++) { "); }
 		if is_rel(e) && !byref { ct(LVS[v].ty as int); ow(" "); lv_name(v); ow(" = "); rdec_pre_t(e, LVS[v].ty as int); ow("(("); ct(e); format(O, "*)_v", p, "->b)[_k", p, "]"); rdec_post(e); ow("; "); } else {
 		ct(e); ow(if byref { " *" } else { " " }); lv_name(v); ow(if byref { " = &((" } else { " = ((" }); ct(e); format(O, "*)_v", p, "->b)[_k", p, "]; "); }
 	} else {
-		ow("{ hsl _v"); oi(p); ow(" = "); gsl(a, bt); format(O, "; for (int64_t _k", p, " = 0; _k", p, " < _v", p, ".n; _k", p, "++) { ");
+		if is_lim(d) && !is_vimg(d) && (TY[bt].k == TY_REF || is_place(a)) { ow("{ "); ct(d); ow(" *_w"); oi(p); ow(" = "); if TY[bt].k == TY_REF { gx0(a); } else { ow("&("); gx(a); ow(")"); } format(O, "; for (int64_t _k", p, " = 0; _k", p, " < _w", p, "->n; _k", p, "++) { hsl _v", p, " = (hsl){ (uint8_t*)_w", p, "->e, _w", p, "->n }; "); } else {
+		if TY[d].k != TY_SLICE && TY[bt].k == TY_REF && ND[a].k as int == N_ID { format(O, "{ for (int64_t _k", p, " = 0; ; _k", p, "++) { hsl _v", p, " = "); gsl(a, bt); format(O, "; if (_k", p, " >= _v", p, ".n) break; "); } else {
+		if TY[d].k == TY_SLICE && (TY[bt].k == TY_REF || is_place(a)) { ow("{ hsl *_w"); oi(p); ow(" = "); if TY[bt].k == TY_REF { gx0(a); } else { ow("&("); gx(a); ow(")"); } format(O, "; for (int64_t _k", p, " = 0; _k", p, " < _w", p, "->n; _k", p, "++) { hsl _v", p, " = *_w", p, "; "); } else {
+		ow("{ hsl _v"); oi(p); ow(" = "); gsl(a, bt); format(O, "; for (int64_t _k", p, " = 0; _k", p, " < _v", p, ".n; _k", p, "++) { "); } } }
 		if is_rel(e) && !byref { ct(LVS[v].ty as int); ow(" "); lv_name(v); ow(" = "); rdec_pre_t(e, LVS[v].ty as int); ow("(("); ct(e); format(O, "*)_v", p, ".p)[_k", p, "]"); rdec_post(e); ow("; "); } else {
 		ct(e); ow(if byref { " *" } else { " " }); lv_name(v); ow(if byref { " = &((" } else { " = ((" }); ct(e); format(O, "*)_v", p, ".p)[_k", p, "]; "); }
 	}

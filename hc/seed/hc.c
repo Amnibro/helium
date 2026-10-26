@@ -495,26 +495,26 @@ static int64_t f420_lbl_push(int64_t res_2561);
 static void f421_lbl_pop(int64_t l_2564);
 static void f422_gloop(int64_t n_2565, int64_t res_2566);
 static void f423_gfor(int64_t n_2568);
-static void f424_gmatch(int64_t n_2585, int64_t res_2586);
-static void f425_geblock(int64_t n_2608, int64_t res_2609);
-static void f426_gret(int64_t n_2611);
-static void f427_gmove(int64_t c_2617);
-static bool f428_movable_local(int64_t c_2618);
+static void f424_gmatch(int64_t n_2587, int64_t res_2588);
+static void f425_geblock(int64_t n_2610, int64_t res_2611);
+static void f426_gret(int64_t n_2613);
+static void f427_gmove(int64_t c_2619);
+static bool f428_movable_local(int64_t c_2620);
 static void f429_gdummy(void);
-static void f430_gvret(int64_t c_2629, int64_t rt_2630);
-static void f431_gbreak(int64_t n_2634);
-static bool f432_owned(int64_t n_2638);
-static void f433_gcase(int64_t n_2640);
-static int64_t f434_fna(int64_t n_2645);
-static int64_t f435_carg(int64_t n_2650, int64_t recv_2651, int64_t j_2652);
-static void f436_gcall_arg(int64_t n_2658, int64_t inst_2659, int64_t recv_2660, int64_t j_2661, bool decl_2662, int64_t q_2663);
-static bool f437_is_ext(int64_t i_2676);
-static void f438_ext_name(int64_t i_2677);
-static void f439_gcall_args1(int64_t n_2681, int64_t inst_2682, int64_t recv_2683, int64_t op_2684, int64_t on_2685);
-static void f440_gcase_arg(int64_t pt_2694);
+static void f430_gvret(int64_t c_2631, int64_t rt_2632);
+static void f431_gbreak(int64_t n_2636);
+static bool f432_owned(int64_t n_2640);
+static void f433_gcase(int64_t n_2642);
+static int64_t f434_fna(int64_t n_2647);
+static int64_t f435_carg(int64_t n_2652, int64_t recv_2653, int64_t j_2654);
+static void f436_gcall_arg(int64_t n_2660, int64_t inst_2661, int64_t recv_2662, int64_t j_2663, bool decl_2664, int64_t q_2665);
+static bool f437_is_ext(int64_t i_2678);
+static void f438_ext_name(int64_t i_2679);
+static void f439_gcall_args1(int64_t n_2683, int64_t inst_2684, int64_t recv_2685, int64_t op_2686, int64_t on_2687);
+static void f440_gcase_arg(int64_t pt_2696);
 static void f441_glrcheck(void);
-static void f442_gen_fn(int64_t i_2721);
-static void f443_gsig(int64_t i_2724);
+static void f442_gen_fn(int64_t i_2723);
+static void f443_gsig(int64_t i_2726);
 static hrv g623;
 static hrv g1041;
 static A25 g984;
@@ -1038,7 +1038,7 @@ return id_17;
 }
 static uint64_t f9_hash(hsl s_9) {
 uint64_t h_10 = ((uint64_t)1469598103934665603LL); 
-{ hsl _v106 = s_9; for (int64_t _k106 = 0; _k106 < _v106.n; _k106++) { uint8_t c_11 = ((uint8_t*)_v106.p)[_k106]; h_10 = ((uint64_t)((uint64_t)((uint64_t)((uint64_t)h_10 ^ (uint64_t)HR_CI2I(uint64_t, c_11, "/home/anmire/ai/amni-lang/helium-self/hc/lex.amni:30"))) * (uint64_t)((uint64_t)1099511628211LL)));
+{ hsl *_w106 = &(s_9); for (int64_t _k106 = 0; _k106 < _w106->n; _k106++) { hsl _v106 = *_w106; uint8_t c_11 = ((uint8_t*)_v106.p)[_k106]; h_10 = ((uint64_t)((uint64_t)((uint64_t)((uint64_t)h_10 ^ (uint64_t)HR_CI2I(uint64_t, c_11, "/home/anmire/ai/amni-lang/helium-self/hc/lex.amni:30"))) * (uint64_t)((uint64_t)1099511628211LL)));
  } } _bk105:; 
 return h_10;
 }
@@ -6947,18 +6947,18 @@ if ((f177_visible_in(HR_CI2I(int64_t, ((*({ hrv *_t7367 = &(g505); int64_t _i736
 }
 static bool f280_gen_program(hrv* out_1687) {
 (void)(({ hrv *_v7371 = &(g163); _v7371->n = 0; }));
-{ hrv *_v7373 = &(g504); for (int64_t _k7373 = 0; _k7373 < _v7373->n; _k7373++) { S6 f_1688 = ((S6*)_v7373->b)[_k7373]; int64_t i_1689 = (int64_t)_k7373; if ((((f_1688).tg_ && (((f_1688).ret_) >= (((int32_t)0LL)))) && ((HR_CI2I(int64_t, (f_1688).ret_, "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:1827")) != (g688)))) { int64_t sv_1690 = (g163).n; 
+{ hrv *_v7373 = &(g504); for (int64_t _k7373 = 0; _k7373 < _v7373->n; _k7373++) { S6 f_1688 = ((S6*)_v7373->b)[_k7373]; int64_t i_1689 = (int64_t)_k7373; if ((((f_1688).tg_ && (((f_1688).ret_) >= (((int32_t)0LL)))) && ((HR_CI2I(int64_t, (f_1688).ret_, "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:1833")) != (g688)))) { int64_t sv_1690 = (g163).n; 
 (void)(f281_ow(hr_str("static __thread ", 16)));
-(void)(f282_ct(HR_CI2I(int64_t, (f_1688).ret_, "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:1827")));
+(void)(f282_ct(HR_CI2I(int64_t, (f_1688).ret_, "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:1833")));
 (void)(({ hrv *_o7378 = &(g163); hr_fs(_o7378, hr_str(" _lrv", 5)); hr_fi(_o7378, i_1689); hr_fs(_o7378, hr_str(";\012", 2)); }));
-(void)(({ hrv *_v7379 = &(g167); hsl _s7379 = ({ hsl _t7380 = hr_sl(g163); int64_t _l7380 = sv_1690, _h7380 = _t7380.n; if (_l7380 < 0 || _h7380 < _l7380 || _h7380 > _t7380.n) hr_slerr(_l7380, _h7380, _t7380.n, "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:1827"); (hsl){ _t7380.p + _l7380 * (int64_t)sizeof(uint8_t), _h7380 - _l7380 }; }); hr_append(_v7379, _s7379.p, _s7379.n, sizeof(uint8_t)); }));
-(void)(({ hrv *_v7381 = &(g163); int64_t _k7381 = sv_1690; if (_k7381 < 0) hr_die("resize to a negative length", "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:1827"); hr_resize(_v7381, _k7381, sizeof(uint8_t)); }));
+(void)(({ hrv *_v7379 = &(g167); hsl _s7379 = ({ hsl _t7380 = hr_sl(g163); int64_t _l7380 = sv_1690, _h7380 = _t7380.n; if (_l7380 < 0 || _h7380 < _l7380 || _h7380 > _t7380.n) hr_slerr(_l7380, _h7380, _t7380.n, "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:1833"); (hsl){ _t7380.p + _l7380 * (int64_t)sizeof(uint8_t), _h7380 - _l7380 }; }); hr_append(_v7379, _s7379.p, _s7379.n, sizeof(uint8_t)); }));
+(void)(({ hrv *_v7381 = &(g163); int64_t _k7381 = sv_1690; if (_k7381 < 0) hr_die("resize to a negative length", "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:1833"); hr_resize(_v7381, _k7381, sizeof(uint8_t)); }));
  }
  } } _bk7372:; 
-{ hrv *_v7383 = &(g525); for (int64_t _k7383 = 0; _k7383 < _v7383->n; _k7383++) { int32_t d_1739 = ((int32_t*)_v7383->b)[_k7383]; int64_t di_1740 = HR_CI2I(int64_t, d_1739, "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:1829"); 
-int64_t t_1741 = HR_CI2I(int64_t, (*({ hrv *_t7384 = &(g575); int64_t _i7384 = di_1740; (int32_t*)_t7384->b + hr_ix(_i7384, _t7384->n, "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:1830"); })), "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:1830"); 
-int64_t g_1742 = HR_CI2I(int64_t, ((*({ hrv *_t7385 = &(g619); int64_t _i7385 = di_1740; (S5*)_t7385->b + hr_ix(_i7385, _t7385->n, "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:1831"); }))).node_, "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:1831"); 
-if ((((f188_const_of(di_1740)) >= (((int64_t)0LL))) && ((((*({ hrv *_t7389 = &(g681); int64_t _i7389 = t_1741; (S1*)_t7389->b + hr_ix(_i7389, _t7389->n, "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:1832"); }))).k_) == (((uint8_t)12LL))))) { continue;
+{ hrv *_v7383 = &(g525); for (int64_t _k7383 = 0; _k7383 < _v7383->n; _k7383++) { int32_t d_1739 = ((int32_t*)_v7383->b)[_k7383]; int64_t di_1740 = HR_CI2I(int64_t, d_1739, "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:1835"); 
+int64_t t_1741 = HR_CI2I(int64_t, (*({ hrv *_t7384 = &(g575); int64_t _i7384 = di_1740; (int32_t*)_t7384->b + hr_ix(_i7384, _t7384->n, "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:1836"); })), "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:1836"); 
+int64_t g_1742 = HR_CI2I(int64_t, ((*({ hrv *_t7385 = &(g619); int64_t _i7385 = di_1740; (S5*)_t7385->b + hr_ix(_i7385, _t7385->n, "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:1837"); }))).node_, "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:1837"); 
+if ((((f188_const_of(di_1740)) >= (((int64_t)0LL))) && ((((*({ hrv *_t7389 = &(g681); int64_t _i7389 = t_1741; (S1*)_t7389->b + hr_ix(_i7389, _t7389->n, "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:1838"); }))).k_) == (((uint8_t)12LL))))) { continue;
  }
 int64_t sv_1743 = (g163).n; 
 g517 = g519;
@@ -6969,30 +6969,30 @@ g179 = g519;
 if ((((g415).n) > (((int64_t)0LL)))) { int64_t s2_1744 = (g163).n; 
 (void)(f282_ct(t_1741));
 (void)(({ hrv *_o7397 = &(g163); hr_fs(_o7397, hr_str(" g", 2)); hr_fi(_o7397, di_1740); hr_fs(_o7397, hr_str("; ", 2)); }));
-(void)(({ hrv *_v7398 = &(g198); hsl _s7398 = ({ hsl _t7399 = hr_sl(g163); int64_t _l7399 = s2_1744, _h7399 = _t7399.n; if (_l7399 < 0 || _h7399 < _l7399 || _h7399 > _t7399.n) hr_slerr(_l7399, _h7399, _t7399.n, "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:1836"); (hsl){ _t7399.p + _l7399 * (int64_t)sizeof(uint8_t), _h7399 - _l7399 }; }); hr_append(_v7398, _s7398.p, _s7398.n, sizeof(uint8_t)); }));
-(void)(({ hrv *_v7400 = &(g163); int64_t _k7400 = s2_1744; if (_k7400 < 0) hr_die("resize to a negative length", "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:1836"); hr_resize(_v7400, _k7400, sizeof(uint8_t)); }));
+(void)(({ hrv *_v7398 = &(g198); hsl _s7398 = ({ hsl _t7399 = hr_sl(g163); int64_t _l7399 = s2_1744, _h7399 = _t7399.n; if (_l7399 < 0 || _h7399 < _l7399 || _h7399 > _t7399.n) hr_slerr(_l7399, _h7399, _t7399.n, "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:1842"); (hsl){ _t7399.p + _l7399 * (int64_t)sizeof(uint8_t), _h7399 - _l7399 }; }); hr_append(_v7398, _s7398.p, _s7398.n, sizeof(uint8_t)); }));
+(void)(({ hrv *_v7400 = &(g163); int64_t _k7400 = s2_1744; if (_k7400 < 0) hr_die("resize to a negative length", "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:1842"); hr_resize(_v7400, _k7400, sizeof(uint8_t)); }));
 if (f292_is_res(t_1741)) { if (f293_is_seq(t_1741)) { (void)(({ hrv *_o7403 = &(g199); hr_fs(_o7403, hr_str("s->g", 4)); hr_fi(_o7403, di_1740); hr_fs(_o7403, hr_str(" = hr_rdup_var(g", 16)); hr_fi(_o7403, di_1740); hr_fs(_o7403, hr_str("); ", 3)); }));
  } else { (void)(({ hrv *_o7404 = &(g199); hr_fs(_o7404, hr_str("s->g", 4)); hr_fi(_o7404, di_1740); hr_fs(_o7404, hr_str(" = hr_rdupf(hr_rdup(g", 21)); hr_fi(_o7404, di_1740); hr_fs(_o7404, hr_str(", ", 2)); }));
 int64_t s3_1747 = (g163).n; 
-(void)(f294_esz(HR_CI2I(int64_t, ((*({ hrv *_t7406 = &(g681); int64_t _i7406 = t_1741; (S1*)_t7406->b + hr_ix(_i7406, _t7406->n, "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:1836"); }))).a_, "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:1836")));
-(void)(({ hrv *_v7407 = &(g199); hsl _s7407 = ({ hsl _t7408 = hr_sl(g163); int64_t _l7408 = s3_1747, _h7408 = _t7408.n; if (_l7408 < 0 || _h7408 < _l7408 || _h7408 > _t7408.n) hr_slerr(_l7408, _h7408, _t7408.n, "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:1836"); (hsl){ _t7408.p + _l7408 * (int64_t)sizeof(uint8_t), _h7408 - _l7408 }; }); hr_append(_v7407, _s7407.p, _s7407.n, sizeof(uint8_t)); }));
-(void)(({ hrv *_v7409 = &(g163); int64_t _k7409 = s3_1747; if (_k7409 < 0) hr_die("resize to a negative length", "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:1836"); hr_resize(_v7409, _k7409, sizeof(uint8_t)); }));
+(void)(f294_esz(HR_CI2I(int64_t, ((*({ hrv *_t7406 = &(g681); int64_t _i7406 = t_1741; (S1*)_t7406->b + hr_ix(_i7406, _t7406->n, "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:1842"); }))).a_, "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:1842")));
+(void)(({ hrv *_v7407 = &(g199); hsl _s7407 = ({ hsl _t7408 = hr_sl(g163); int64_t _l7408 = s3_1747, _h7408 = _t7408.n; if (_l7408 < 0 || _h7408 < _l7408 || _h7408 > _t7408.n) hr_slerr(_l7408, _h7408, _t7408.n, "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:1842"); (hsl){ _t7408.p + _l7408 * (int64_t)sizeof(uint8_t), _h7408 - _l7408 }; }); hr_append(_v7407, _s7407.p, _s7407.n, sizeof(uint8_t)); }));
+(void)(({ hrv *_v7409 = &(g163); int64_t _k7409 = s3_1747; if (_k7409 < 0) hr_die("resize to a negative length", "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:1842"); hr_resize(_v7409, _k7409, sizeof(uint8_t)); }));
 (void)(({ hrv *_o7410 = &(g199); hr_fs(_o7410, hr_str("), g", 4)); hr_fi(_o7410, di_1740); hr_fs(_o7410, hr_str("); ", 3)); }));
  }
  } else { (void)(({ hrv *_o7411 = &(g199); hr_fs(_o7411, hr_str("s->g", 4)); hr_fi(_o7411, di_1740); hr_fs(_o7411, hr_str(" = g", 4)); hr_fi(_o7411, di_1740); hr_fs(_o7411, hr_str("; ", 2)); }));
  }
 if (f287_is_vval(t_1741)) { L101 gn_1749 = ({ L101 _t7413; memset(&_t7413, 0, sizeof _t7413); _t7413.n = 0; _t7413; }); 
-(void)(({ L101 *_l7414 = &(gn_1749); hrv _o7414 __attribute__((cleanup(hr_rdrop))) = {0}; hr_fs(&_o7414, hr_str("s->g", 4)); hr_fi(&_o7414, di_1740); if (_l7414->n + _o7414.n > 32) hr_die("format past a limited array's capacity", "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:1836"); memcpy(_l7414->e + _l7414->n, _o7414.b, (size_t)_o7414.n); _l7414->n += _o7414.n; }));
+(void)(({ L101 *_l7414 = &(gn_1749); hrv _o7414 __attribute__((cleanup(hr_rdrop))) = {0}; hr_fs(&_o7414, hr_str("s->g", 4)); hr_fi(&_o7414, di_1740); if (_l7414->n + _o7414.n > 32) hr_die("format past a limited array's capacity", "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:1842"); memcpy(_l7414->e + _l7414->n, _o7414.b, (size_t)_o7414.n); _l7414->n += _o7414.n; }));
 L102 z_1750 = ({ L102 _t7415; memset(&_t7415, 0, sizeof _t7415); _t7415.n = 0; _t7415; }); 
-(void)(f295_vz_into((&(z_1750)), t_1741, ({ hsl _t7417 = ({ L101 *_t7418 = &(gn_1749); (hsl){ (uint8_t*)_t7418->e, _t7418->n }; }); int64_t _l7417 = 0, _h7417 = _t7417.n; if (_l7417 < 0 || _h7417 < _l7417 || _h7417 > _t7417.n) hr_slerr(_l7417, _h7417, _t7417.n, "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:1836"); (hsl){ _t7417.p + _l7417 * (int64_t)sizeof(uint8_t), _h7417 - _l7417 }; })));
-(void)(({ hrv *_o7419 = &(g200); hr_fs(_o7419, hr_str("{ int64_t z = ", 14)); hr_fs(_o7419, ({ hsl _t7420 = ({ L102 *_t7421 = &(z_1750); (hsl){ (uint8_t*)_t7421->e, _t7421->n }; }); int64_t _l7420 = 0, _h7420 = _t7420.n; if (_l7420 < 0 || _h7420 < _l7420 || _h7420 > _t7420.n) hr_slerr(_l7420, _h7420, _t7420.n, "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:1836"); (hsl){ _t7420.p + _l7420 * (int64_t)sizeof(uint8_t), _h7420 - _l7420 }; })); hr_fs(_o7419, hr_str("; g", 3)); hr_fi(_o7419, di_1740); hr_fs(_o7419, hr_str(" = memcpy(hr_grow(&hr_ds, z, 1), s->g", 37)); hr_fi(_o7419, di_1740); hr_fs(_o7419, hr_str(", (size_t)z); } ", 16)); }));
+(void)(f295_vz_into((&(z_1750)), t_1741, ({ hsl _t7417 = ({ L101 *_t7418 = &(gn_1749); (hsl){ (uint8_t*)_t7418->e, _t7418->n }; }); int64_t _l7417 = 0, _h7417 = _t7417.n; if (_l7417 < 0 || _h7417 < _l7417 || _h7417 > _t7417.n) hr_slerr(_l7417, _h7417, _t7417.n, "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:1842"); (hsl){ _t7417.p + _l7417 * (int64_t)sizeof(uint8_t), _h7417 - _l7417 }; })));
+(void)(({ hrv *_o7419 = &(g200); hr_fs(_o7419, hr_str("{ int64_t z = ", 14)); hr_fs(_o7419, ({ hsl _t7420 = ({ L102 *_t7421 = &(z_1750); (hsl){ (uint8_t*)_t7421->e, _t7421->n }; }); int64_t _l7420 = 0, _h7420 = _t7420.n; if (_l7420 < 0 || _h7420 < _l7420 || _h7420 > _t7420.n) hr_slerr(_l7420, _h7420, _t7420.n, "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:1842"); (hsl){ _t7420.p + _l7420 * (int64_t)sizeof(uint8_t), _h7420 - _l7420 }; })); hr_fs(_o7419, hr_str("; g", 3)); hr_fi(_o7419, di_1740); hr_fs(_o7419, hr_str(" = memcpy(hr_grow(&hr_ds, z, 1), s->g", 37)); hr_fi(_o7419, di_1740); hr_fs(_o7419, hr_str(", (size_t)z); } ", 16)); }));
  } else { (void)(({ hrv *_o7422 = &(g200); hr_fs(_o7422, hr_str("g", 1)); hr_fi(_o7422, di_1740); hr_fs(_o7422, hr_str(" = s->g", 7)); hr_fi(_o7422, di_1740); hr_fs(_o7422, hr_str("; ", 2)); }));
  }
  }
-(void)(({ hrv *_v7423 = &(g167); hsl _s7423 = ({ hsl _t7424 = hr_sl(g163); int64_t _l7424 = sv_1743, _h7424 = _t7424.n; if (_l7424 < 0 || _h7424 < _l7424 || _h7424 > _t7424.n) hr_slerr(_l7424, _h7424, _t7424.n, "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:1837"); (hsl){ _t7424.p + _l7424 * (int64_t)sizeof(uint8_t), _h7424 - _l7424 }; }); hr_append(_v7423, _s7423.p, _s7423.n, sizeof(uint8_t)); }));
-(void)(({ hrv *_v7425 = &(g163); int64_t _k7425 = sv_1743; if (_k7425 < 0) hr_die("resize to a negative length", "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:1837"); hr_resize(_v7425, _k7425, sizeof(uint8_t)); }));
-S4 x_1773 = (*({ hrv *_t7426 = &(g834); int64_t _i7426 = g_1742; (S4*)_t7426->b + hr_ix(_i7426, _t7426->n, "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:1838"); })); 
-if ((((x_1773).b_) >= (((int32_t)0LL)))) { int64_t iv_1774 = f90_kid(HR_CI2I(int64_t, (x_1773).b_, "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:1840"), ((int64_t)0LL)); 
+(void)(({ hrv *_v7423 = &(g167); hsl _s7423 = ({ hsl _t7424 = hr_sl(g163); int64_t _l7424 = sv_1743, _h7424 = _t7424.n; if (_l7424 < 0 || _h7424 < _l7424 || _h7424 > _t7424.n) hr_slerr(_l7424, _h7424, _t7424.n, "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:1843"); (hsl){ _t7424.p + _l7424 * (int64_t)sizeof(uint8_t), _h7424 - _l7424 }; }); hr_append(_v7423, _s7423.p, _s7423.n, sizeof(uint8_t)); }));
+(void)(({ hrv *_v7425 = &(g163); int64_t _k7425 = sv_1743; if (_k7425 < 0) hr_die("resize to a negative length", "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:1843"); hr_resize(_v7425, _k7425, sizeof(uint8_t)); }));
+S4 x_1773 = (*({ hrv *_t7426 = &(g834); int64_t _i7426 = g_1742; (S4*)_t7426->b + hr_ix(_i7426, _t7426->n, "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:1844"); })); 
+if ((((x_1773).b_) >= (((int32_t)0LL)))) { int64_t iv_1774 = f90_kid(HR_CI2I(int64_t, (x_1773).b_, "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:1846"), ((int64_t)0LL)); 
 int64_t sp_1775 = (g163).n; 
 if (f303_is_rel(t_1741)) { (void)(f304_grel_st_open(t_1741));
 (void)(({ hrv *_o7431 = &(g163); hr_fs(_o7431, hr_str("g", 1)); hr_fi(_o7431, di_1740); }));
@@ -7005,35 +7005,35 @@ if (f292_is_res(t_1741)) { (void)(f340_gxo(iv_1774));
 (void)(f281_ow(hr_str(";\012", 2)));
  }
 if ((((g176).n) > (((int64_t)0LL)))) { (void)(({ hrv *_v7440 = &(g177); _v7440->n = 0; }));
-(void)(({ hrv *_v7441 = &(g177); hsl _s7441 = ({ hsl _t7442 = hr_sl(g163); int64_t _l7442 = sp_1775, _h7442 = _t7442.n; if (_l7442 < 0 || _h7442 < _l7442 || _h7442 > _t7442.n) hr_slerr(_l7442, _h7442, _t7442.n, "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:1846"); (hsl){ _t7442.p + _l7442 * (int64_t)sizeof(uint8_t), _h7442 - _l7442 }; }); hr_append(_v7441, _s7441.p, _s7441.n, sizeof(uint8_t)); }));
-(void)(({ hrv *_v7443 = &(g163); int64_t _k7443 = sp_1775; if (_k7443 < 0) hr_die("resize to a negative length", "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:1846"); hr_resize(_v7443, _k7443, sizeof(uint8_t)); }));
+(void)(({ hrv *_v7441 = &(g177); hsl _s7441 = ({ hsl _t7442 = hr_sl(g163); int64_t _l7442 = sp_1775, _h7442 = _t7442.n; if (_l7442 < 0 || _h7442 < _l7442 || _h7442 > _t7442.n) hr_slerr(_l7442, _h7442, _t7442.n, "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:1852"); (hsl){ _t7442.p + _l7442 * (int64_t)sizeof(uint8_t), _h7442 - _l7442 }; }); hr_append(_v7441, _s7441.p, _s7441.n, sizeof(uint8_t)); }));
+(void)(({ hrv *_v7443 = &(g163); int64_t _k7443 = sp_1775; if (_k7443 < 0) hr_die("resize to a negative length", "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:1852"); hr_resize(_v7443, _k7443, sizeof(uint8_t)); }));
 (void)(f281_ow(hr_str("{ ", 2)));
-(void)(({ hrv *_v7445 = &(g163); hsl _s7445 = ({ hsl _t7446 = hr_sl(g176); int64_t _l7446 = 0, _h7446 = _t7446.n; if (_l7446 < 0 || _h7446 < _l7446 || _h7446 > _t7446.n) hr_slerr(_l7446, _h7446, _t7446.n, "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:1846"); (hsl){ _t7446.p + _l7446 * (int64_t)sizeof(uint8_t), _h7446 - _l7446 }; }); hr_append(_v7445, _s7445.p, _s7445.n, sizeof(uint8_t)); }));
+(void)(({ hrv *_v7445 = &(g163); hsl _s7445 = ({ hsl _t7446 = hr_sl(g176); int64_t _l7446 = 0, _h7446 = _t7446.n; if (_l7446 < 0 || _h7446 < _l7446 || _h7446 > _t7446.n) hr_slerr(_l7446, _h7446, _t7446.n, "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:1852"); (hsl){ _t7446.p + _l7446 * (int64_t)sizeof(uint8_t), _h7446 - _l7446 }; }); hr_append(_v7445, _s7445.p, _s7445.n, sizeof(uint8_t)); }));
 (void)(({ hrv *_v7447 = &(g176); _v7447->n = 0; }));
-(void)(({ hrv *_v7448 = &(g163); hsl _s7448 = ({ hsl _t7449 = hr_sl(g177); int64_t _l7449 = 0, _h7449 = _t7449.n; if (_l7449 < 0 || _h7449 < _l7449 || _h7449 > _t7449.n) hr_slerr(_l7449, _h7449, _t7449.n, "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:1846"); (hsl){ _t7449.p + _l7449 * (int64_t)sizeof(uint8_t), _h7449 - _l7449 }; }); hr_append(_v7448, _s7448.p, _s7448.n, sizeof(uint8_t)); }));
+(void)(({ hrv *_v7448 = &(g163); hsl _s7448 = ({ hsl _t7449 = hr_sl(g177); int64_t _l7449 = 0, _h7449 = _t7449.n; if (_l7449 < 0 || _h7449 < _l7449 || _h7449 > _t7449.n) hr_slerr(_l7449, _h7449, _t7449.n, "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:1852"); (hsl){ _t7449.p + _l7449 * (int64_t)sizeof(uint8_t), _h7449 - _l7449 }; }); hr_append(_v7448, _s7448.p, _s7448.n, sizeof(uint8_t)); }));
 (void)(f281_ow(hr_str("}\012", 2)));
  }
-(void)(({ hrv *_v7451 = &(g168); hsl _s7451 = ({ hsl _t7452 = hr_sl(g163); int64_t _l7452 = sp_1775, _h7452 = _t7452.n; if (_l7452 < 0 || _h7452 < _l7452 || _h7452 > _t7452.n) hr_slerr(_l7452, _h7452, _t7452.n, "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:1847"); (hsl){ _t7452.p + _l7452 * (int64_t)sizeof(uint8_t), _h7452 - _l7452 }; }); hr_append(_v7451, _s7451.p, _s7451.n, sizeof(uint8_t)); }));
-(void)(({ hrv *_v7453 = &(g163); int64_t _k7453 = sp_1775; if (_k7453 < 0) hr_die("resize to a negative length", "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:1847"); hr_resize(_v7453, _k7453, sizeof(uint8_t)); }));
+(void)(({ hrv *_v7451 = &(g168); hsl _s7451 = ({ hsl _t7452 = hr_sl(g163); int64_t _l7452 = sp_1775, _h7452 = _t7452.n; if (_l7452 < 0 || _h7452 < _l7452 || _h7452 > _t7452.n) hr_slerr(_l7452, _h7452, _t7452.n, "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:1853"); (hsl){ _t7452.p + _l7452 * (int64_t)sizeof(uint8_t), _h7452 - _l7452 }; }); hr_append(_v7451, _s7451.p, _s7451.n, sizeof(uint8_t)); }));
+(void)(({ hrv *_v7453 = &(g163); int64_t _k7453 = sp_1775; if (_k7453 < 0) hr_die("resize to a negative length", "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:1853"); hr_resize(_v7453, _k7453, sizeof(uint8_t)); }));
  }
  } } _bk7382:; 
 if ((((g415).n) > (((int64_t)0LL)))) { (void)(({ hrv *_v7455 = &(g167); hsl _s7455 = hr_str("typedef struct { uint8_t _e; ", 29); hr_append(_v7455, _s7455.p, _s7455.n, sizeof(uint8_t)); }));
-(void)(({ hrv *_v7456 = &(g167); hsl _s7456 = ({ hsl _t7457 = hr_sl(g198); int64_t _l7457 = 0, _h7457 = _t7457.n; if (_l7457 < 0 || _h7457 < _l7457 || _h7457 > _t7457.n) hr_slerr(_l7457, _h7457, _t7457.n, "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:1850"); (hsl){ _t7457.p + _l7457 * (int64_t)sizeof(uint8_t), _h7457 - _l7457 }; }); hr_append(_v7456, _s7456.p, _s7456.n, sizeof(uint8_t)); }));
+(void)(({ hrv *_v7456 = &(g167); hsl _s7456 = ({ hsl _t7457 = hr_sl(g198); int64_t _l7457 = 0, _h7457 = _t7457.n; if (_l7457 < 0 || _h7457 < _l7457 || _h7457 > _t7457.n) hr_slerr(_l7457, _h7457, _t7457.n, "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:1856"); (hsl){ _t7457.p + _l7457 * (int64_t)sizeof(uint8_t), _h7457 - _l7457 }; }); hr_append(_v7456, _s7456.p, _s7456.n, sizeof(uint8_t)); }));
 (void)(({ hrv *_v7458 = &(g167); hsl _s7458 = hr_str("} HRG;\012static void hr_gsave(HRG *s) { ", 38); hr_append(_v7458, _s7458.p, _s7458.n, sizeof(uint8_t)); }));
-(void)(({ hrv *_v7459 = &(g167); hsl _s7459 = ({ hsl _t7460 = hr_sl(g199); int64_t _l7460 = 0, _h7460 = _t7460.n; if (_l7460 < 0 || _h7460 < _l7460 || _h7460 > _t7460.n) hr_slerr(_l7460, _h7460, _t7460.n, "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:1850"); (hsl){ _t7460.p + _l7460 * (int64_t)sizeof(uint8_t), _h7460 - _l7460 }; }); hr_append(_v7459, _s7459.p, _s7459.n, sizeof(uint8_t)); }));
+(void)(({ hrv *_v7459 = &(g167); hsl _s7459 = ({ hsl _t7460 = hr_sl(g199); int64_t _l7460 = 0, _h7460 = _t7460.n; if (_l7460 < 0 || _h7460 < _l7460 || _h7460 > _t7460.n) hr_slerr(_l7460, _h7460, _t7460.n, "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:1856"); (hsl){ _t7460.p + _l7460 * (int64_t)sizeof(uint8_t), _h7460 - _l7460 }; }); hr_append(_v7459, _s7459.p, _s7459.n, sizeof(uint8_t)); }));
 (void)(({ hrv *_v7461 = &(g167); hsl _s7461 = hr_str("}\012static void hr_gload(HRG *s) { ", 33); hr_append(_v7461, _s7461.p, _s7461.n, sizeof(uint8_t)); }));
-(void)(({ hrv *_v7462 = &(g167); hsl _s7462 = ({ hsl _t7463 = hr_sl(g200); int64_t _l7463 = 0, _h7463 = _t7463.n; if (_l7463 < 0 || _h7463 < _l7463 || _h7463 > _t7463.n) hr_slerr(_l7463, _h7463, _t7463.n, "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:1850"); (hsl){ _t7463.p + _l7463 * (int64_t)sizeof(uint8_t), _h7463 - _l7463 }; }); hr_append(_v7462, _s7462.p, _s7462.n, sizeof(uint8_t)); }));
+(void)(({ hrv *_v7462 = &(g167); hsl _s7462 = ({ hsl _t7463 = hr_sl(g200); int64_t _l7463 = 0, _h7463 = _t7463.n; if (_l7463 < 0 || _h7463 < _l7463 || _h7463 > _t7463.n) hr_slerr(_l7463, _h7463, _t7463.n, "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:1856"); (hsl){ _t7463.p + _l7463 * (int64_t)sizeof(uint8_t), _h7463 - _l7463 }; }); hr_append(_v7462, _s7462.p, _s7462.n, sizeof(uint8_t)); }));
 (void)(({ hrv *_v7464 = &(g167); hsl _s7464 = hr_str("}\012", 2); hr_append(_v7464, _s7464.p, _s7464.n, sizeof(uint8_t)); }));
  }
-int64_t mi_2717 = ((int64_t)-1LL); 
-{ hrv *_v7466 = &(g504); for (int64_t _k7466 = 0; _k7466 < _v7466->n; _k7466++) { S6 f_2718 = ((S6*)_v7466->b)[_k7466]; int64_t i_2719 = (int64_t)_k7466; if (((((f_2718).node_) < (((int32_t)0LL))) || (((f_2718).st_) != (((uint8_t)2LL))))) { continue;
+int64_t mi_2719 = ((int64_t)-1LL); 
+{ hrv *_v7466 = &(g504); for (int64_t _k7466 = 0; _k7466 < _v7466->n; _k7466++) { S6 f_2720 = ((S6*)_v7466->b)[_k7466]; int64_t i_2721 = (int64_t)_k7466; if (((((f_2720).node_) < (((int32_t)0LL))) || (((f_2720).st_) != (((uint8_t)2LL))))) { continue;
  }
-int64_t node_2720 = HR_CI2I(int64_t, (f_2718).node_, "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:1854"); 
-if ((((((*({ hrv *_t7470 = &(g834); int64_t _i7470 = node_2720; (S4*)_t7470->b + hr_ix(_i7470, _t7470->n, "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:1855"); }))).k_) != (((uint8_t)50LL))) || ((((uint16_t)((uint64_t)((*({ hrv *_t7473 = &(g834); int64_t _i7473 = node_2720; (S4*)_t7473->b + hr_ix(_i7473, _t7473->n, "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:1855"); }))).fl_ & (uint64_t)((uint16_t)1LL)))) != (((uint16_t)0LL))))) { continue;
+int64_t node_2722 = HR_CI2I(int64_t, (f_2720).node_, "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:1860"); 
+if ((((((*({ hrv *_t7470 = &(g834); int64_t _i7470 = node_2722; (S4*)_t7470->b + hr_ix(_i7470, _t7470->n, "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:1861"); }))).k_) != (((uint8_t)50LL))) || ((((uint16_t)((uint64_t)((*({ hrv *_t7473 = &(g834); int64_t _i7473 = node_2722; (S4*)_t7473->b + hr_ix(_i7473, _t7473->n, "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:1861"); }))).fl_ & (uint64_t)((uint16_t)1LL)))) != (((uint16_t)0LL))))) { continue;
  }
-if (((((f_2718).par_) < (((int32_t)0LL))) && hr_streq(f10_nm(HR_CI2I(int64_t, (f_2718).name_, "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:1856")), hr_str("main", 4)))) { mi_2717 = i_2719;
+if (((((f_2720).par_) < (((int32_t)0LL))) && hr_streq(f10_nm(HR_CI2I(int64_t, (f_2720).name_, "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:1862")), hr_str("main", 4)))) { mi_2719 = i_2721;
  }
-(void)(f442_gen_fn(i_2719));
+(void)(f442_gen_fn(i_2721));
 if ((((g182).n) > (((int64_t)0LL)))) { return false;
  }
  } } _bk7465:; 
@@ -7044,21 +7044,21 @@ if ((((g182).n) > (((int64_t)0LL)))) { return false;
 (void)(({ hrv *_v7483 = out_1687; hsl _s7483 = hr_str("#pragma pack(pop)\012", 18); hr_append(_v7483, _s7483.p, _s7483.n, sizeof(uint8_t)); }));
 (void)(({ hrv *_v7484 = out_1687; hsl _s7484 = hr_sl(g166); hr_append(_v7484, _s7484.p, _s7484.n, sizeof(uint8_t)); }));
 (void)(({ hrv *_v7485 = out_1687; hsl _s7485 = hr_sl(g167); hr_append(_v7485, _s7485.p, _s7485.n, sizeof(uint8_t)); }));
-(void)(({ hrv *_v7486 = out_1687; hsl _s7486 = ({ hsl _t7487 = hr_sl(g201); int64_t _l7487 = 0, _h7487 = _t7487.n; if (_l7487 < 0 || _h7487 < _l7487 || _h7487 > _t7487.n) hr_slerr(_l7487, _h7487, _t7487.n, "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:1867"); (hsl){ _t7487.p + _l7487 * (int64_t)sizeof(uint8_t), _h7487 - _l7487 }; }); hr_append(_v7486, _s7486.p, _s7486.n, sizeof(uint8_t)); }));
-(void)(({ hrv *_v7488 = out_1687; hsl _s7488 = ({ hsl _t7489 = hr_sl(g169); int64_t _l7489 = 0, _h7489 = _t7489.n; if (_l7489 < 0 || _h7489 < _l7489 || _h7489 > _t7489.n) hr_slerr(_l7489, _h7489, _t7489.n, "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:1868"); (hsl){ _t7489.p + _l7489 * (int64_t)sizeof(uint8_t), _h7489 - _l7489 }; }); hr_append(_v7488, _s7488.p, _s7488.n, sizeof(uint8_t)); }));
-(void)(({ hrv *_v7490 = out_1687; hsl _s7490 = ({ hsl _t7491 = hr_sl(g163); int64_t _l7491 = 0, _h7491 = _t7491.n; if (_l7491 < 0 || _h7491 < _l7491 || _h7491 > _t7491.n) hr_slerr(_l7491, _h7491, _t7491.n, "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:1869"); (hsl){ _t7491.p + _l7491 * (int64_t)sizeof(uint8_t), _h7491 - _l7491 }; }); hr_append(_v7490, _s7490.p, _s7490.n, sizeof(uint8_t)); }));
+(void)(({ hrv *_v7486 = out_1687; hsl _s7486 = ({ hsl _t7487 = hr_sl(g201); int64_t _l7487 = 0, _h7487 = _t7487.n; if (_l7487 < 0 || _h7487 < _l7487 || _h7487 > _t7487.n) hr_slerr(_l7487, _h7487, _t7487.n, "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:1873"); (hsl){ _t7487.p + _l7487 * (int64_t)sizeof(uint8_t), _h7487 - _l7487 }; }); hr_append(_v7486, _s7486.p, _s7486.n, sizeof(uint8_t)); }));
+(void)(({ hrv *_v7488 = out_1687; hsl _s7488 = ({ hsl _t7489 = hr_sl(g169); int64_t _l7489 = 0, _h7489 = _t7489.n; if (_l7489 < 0 || _h7489 < _l7489 || _h7489 > _t7489.n) hr_slerr(_l7489, _h7489, _t7489.n, "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:1874"); (hsl){ _t7489.p + _l7489 * (int64_t)sizeof(uint8_t), _h7489 - _l7489 }; }); hr_append(_v7488, _s7488.p, _s7488.n, sizeof(uint8_t)); }));
+(void)(({ hrv *_v7490 = out_1687; hsl _s7490 = ({ hsl _t7491 = hr_sl(g163); int64_t _l7491 = 0, _h7491 = _t7491.n; if (_l7491 < 0 || _h7491 < _l7491 || _h7491 > _t7491.n) hr_slerr(_l7491, _h7491, _t7491.n, "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:1875"); (hsl){ _t7491.p + _l7491 * (int64_t)sizeof(uint8_t), _h7491 - _l7491 }; }); hr_append(_v7490, _s7490.p, _s7490.n, sizeof(uint8_t)); }));
 (void)(({ hrv *_v7492 = out_1687; hsl _s7492 = hr_str("static void hr_init_globals(void) {\012", 36); hr_append(_v7492, _s7492.p, _s7492.n, sizeof(uint8_t)); }));
 (void)(({ hrv *_v7493 = out_1687; hsl _s7493 = hr_sl(g168); hr_append(_v7493, _s7493.p, _s7493.n, sizeof(uint8_t)); }));
 (void)(({ hrv *_v7494 = out_1687; hsl _s7494 = hr_str("}\012", 2); hr_append(_v7494, _s7494.p, _s7494.n, sizeof(uint8_t)); }));
 (void)(({ hrv *_v7495 = out_1687; hsl _s7495 = hr_str("static void hr_main(void) { ", 28); hr_append(_v7495, _s7495.p, _s7495.n, sizeof(uint8_t)); }));
-if (((mi_2717) >= (((int64_t)0LL)))) { int64_t rt_2746 = HR_CI2I(int64_t, ((*({ hrv *_t7497 = &(g504); int64_t _i7497 = mi_2717; (S6*)_t7497->b + hr_ix(_i7497, _t7497->n, "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:1872"); }))).ret_, "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:1872"); 
-if ((((rt_2746) >= (((int64_t)0LL))) && ((((*({ hrv *_t7500 = &(g681); int64_t _i7500 = rt_2746; (S1*)_t7500->b + hr_ix(_i7500, _t7500->n, "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:1872"); }))).k_) == (((uint8_t)3LL))))) { (void)(({ hrv *_v7501 = out_1687; hsl _s7501 = hr_str("hr_flush(); exit((int)", 22); hr_append(_v7501, _s7501.p, _s7501.n, sizeof(uint8_t)); }));
+if (((mi_2719) >= (((int64_t)0LL)))) { int64_t rt_2748 = HR_CI2I(int64_t, ((*({ hrv *_t7497 = &(g504); int64_t _i7497 = mi_2719; (S6*)_t7497->b + hr_ix(_i7497, _t7497->n, "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:1878"); }))).ret_, "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:1878"); 
+if ((((rt_2748) >= (((int64_t)0LL))) && ((((*({ hrv *_t7500 = &(g681); int64_t _i7500 = rt_2748; (S1*)_t7500->b + hr_ix(_i7500, _t7500->n, "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:1878"); }))).k_) == (((uint8_t)3LL))))) { (void)(({ hrv *_v7501 = out_1687; hsl _s7501 = hr_str("hr_flush(); exit((int)", 22); hr_append(_v7501, _s7501.p, _s7501.n, sizeof(uint8_t)); }));
  }
 (void)(({ hrv *_v7502 = &(g163); _v7502->n = 0; }));
-(void)(f383_fn_cname(mi_2717));
-(void)(({ hrv *_v7504 = out_1687; hsl _s7504 = ({ hsl _t7505 = hr_sl(g163); int64_t _l7505 = 0, _h7505 = _t7505.n; if (_l7505 < 0 || _h7505 < _l7505 || _h7505 > _t7505.n) hr_slerr(_l7505, _h7505, _t7505.n, "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:1872"); (hsl){ _t7505.p + _l7505 * (int64_t)sizeof(uint8_t), _h7505 - _l7505 }; }); hr_append(_v7504, _s7504.p, _s7504.n, sizeof(uint8_t)); }));
+(void)(f383_fn_cname(mi_2719));
+(void)(({ hrv *_v7504 = out_1687; hsl _s7504 = ({ hsl _t7505 = hr_sl(g163); int64_t _l7505 = 0, _h7505 = _t7505.n; if (_l7505 < 0 || _h7505 < _l7505 || _h7505 > _t7505.n) hr_slerr(_l7505, _h7505, _t7505.n, "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:1878"); (hsl){ _t7505.p + _l7505 * (int64_t)sizeof(uint8_t), _h7505 - _l7505 }; }); hr_append(_v7504, _s7504.p, _s7504.n, sizeof(uint8_t)); }));
 (void)(({ hrv *_v7506 = out_1687; hsl _s7506 = hr_str("()", 2); hr_append(_v7506, _s7506.p, _s7506.n, sizeof(uint8_t)); }));
-if ((((rt_2746) >= (((int64_t)0LL))) && ((((*({ hrv *_t7509 = &(g681); int64_t _i7509 = rt_2746; (S1*)_t7509->b + hr_ix(_i7509, _t7509->n, "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:1872"); }))).k_) == (((uint8_t)3LL))))) { (void)(({ hrv *_v7510 = out_1687; hsl _s7510 = hr_str(")", 1); hr_append(_v7510, _s7510.p, _s7510.n, sizeof(uint8_t)); }));
+if ((((rt_2748) >= (((int64_t)0LL))) && ((((*({ hrv *_t7509 = &(g681); int64_t _i7509 = rt_2748; (S1*)_t7509->b + hr_ix(_i7509, _t7509->n, "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:1878"); }))).k_) == (((uint8_t)3LL))))) { (void)(({ hrv *_v7510 = out_1687; hsl _s7510 = hr_str(")", 1); hr_append(_v7510, _s7510.p, _s7510.n, sizeof(uint8_t)); }));
  }
 (void)(({ hrv *_v7511 = out_1687; hsl _s7511 = hr_str("; ", 2); hr_append(_v7511, _s7511.p, _s7511.n, sizeof(uint8_t)); }));
  }
@@ -7395,22 +7395,22 @@ static int64_t f302_vlim(int64_t t_1772) {
 return ({ int64_t _r7927; if (((HR_CI2I(int64_t, ((*({ hrv *_t7929 = &(g681); int64_t _i7929 = t_1772; (S1*)_t7929->b + hr_ix(_i7929, _t7929->n, "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:21"); }))).s_, "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:21")) == (((int64_t)3LL)))) { _r7927 = ((int64_t)1LL);  } else { _r7927 = ((int64_t)0LL);  } _r7927; });
 }
 static bool f303_is_rel(int64_t t_1776) {
-return ((((t_1776) >= (((int64_t)0LL))) && ((((*({ hrv *_t7932 = &(g681); int64_t _i7932 = t_1776; (S1*)_t7932->b + hr_ix(_i7932, _t7932->n, "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:1631"); }))).k_) == (((uint8_t)10LL)))) && ((((*({ hrv *_t7934 = &(g681); int64_t _i7934 = t_1776; (S1*)_t7934->b + hr_ix(_i7934, _t7934->n, "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:1631"); }))).c_) >= (((int32_t)0LL))));
+return ((((t_1776) >= (((int64_t)0LL))) && ((((*({ hrv *_t7932 = &(g681); int64_t _i7932 = t_1776; (S1*)_t7932->b + hr_ix(_i7932, _t7932->n, "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:1637"); }))).k_) == (((uint8_t)10LL)))) && ((((*({ hrv *_t7934 = &(g681); int64_t _i7934 = t_1776; (S1*)_t7934->b + hr_ix(_i7934, _t7934->n, "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:1637"); }))).c_) >= (((int32_t)0LL))));
 }
 static void f304_grel_st_open(int64_t rt_1777) {
 (void)(f281_ow(({ hsl _r7936; if (((f305_relpool(rt_1777)) >= (((int64_t)0LL)))) { _r7936 = hr_str("hr_pst(&(", 9);  } else { _r7936 = hr_str("hr_rst(&(", 9);  } _r7936; })));
 }
 static int64_t f305_relpool(int64_t t_1778) {
-return ({ int64_t _r7939; if (f303_is_rel(t_1778)) { _r7939 = HR_CI2I(int64_t, ((*({ hrv *_t7941 = &(g681); int64_t _i7941 = t_1778; (S1*)_t7941->b + hr_ix(_i7941, _t7941->n, "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:1632"); }))).b_, "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:1632");  } else { _r7939 = ((int64_t)-1LL);  } _r7939; });
+return ({ int64_t _r7939; if (f303_is_rel(t_1778)) { _r7939 = HR_CI2I(int64_t, ((*({ hrv *_t7941 = &(g681); int64_t _i7941 = t_1778; (S1*)_t7941->b + hr_ix(_i7941, _t7941->n, "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:1638"); }))).b_, "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:1638");  } else { _r7939 = ((int64_t)-1LL);  } _r7939; });
 }
 static void f306_grel_st_close(int64_t rt_1779, int64_t b_1780) {
 int64_t rpd_1781 = f305_relpool(rt_1779); 
 (void)(f281_ow(hr_str("), (void*)(", 11)));
-if ((((((*({ hrv *_t7945 = &(g681); int64_t _i7945 = f307_fin(b_1780); (S1*)_t7945->b + hr_ix(_i7945, _t7945->n, "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:1637"); }))).k_) == (((uint8_t)10LL))) || ((((*({ hrv *_t7948 = &(g681); int64_t _i7948 = f307_fin(b_1780); (S1*)_t7948->b + hr_ix(_i7948, _t7948->n, "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:1637"); }))).k_) == (((uint8_t)11LL))))) { (void)(f308_gx(b_1780));
+if ((((((*({ hrv *_t7945 = &(g681); int64_t _i7945 = f307_fin(b_1780); (S1*)_t7945->b + hr_ix(_i7945, _t7945->n, "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:1643"); }))).k_) == (((uint8_t)10LL))) || ((((*({ hrv *_t7948 = &(g681); int64_t _i7948 = f307_fin(b_1780); (S1*)_t7948->b + hr_ix(_i7948, _t7948->n, "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:1643"); }))).k_) == (((uint8_t)11LL))))) { (void)(f308_gx(b_1780));
  } else { (void)(f337_gaddr(b_1780));
  }
-if (((rpd_1781) >= (((int64_t)0LL)))) { (void)(({ hrv *_o7953 = &(g163); hr_fs(_o7953, hr_str("), (uint8_t*)g", 14)); hr_fi(_o7953, rpd_1781); hr_fs(_o7953, hr_str(".b, ", 4)); hr_fc(_o7953, (((((int64_t)((int64_t)HR_CI2I(int64_t, ((*({ hrv *_t7956 = &(g681); int64_t _i7956 = rt_1779; (S1*)_t7956->b + hr_ix(_i7956, _t7956->n, "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:1637"); }))).fl_, "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:1637") & (int64_t)((int64_t)2LL)))) != (((int64_t)0LL)))) ? "true" : "false"); hr_fs(_o7953, hr_str(");", 2)); }));
- } else { (void)(({ hrv *_o7957 = &(g163); hr_fs(_o7957, hr_str("), ", 3)); hr_fc(_o7957, (((((int64_t)((int64_t)HR_CI2I(int64_t, ((*({ hrv *_t7960 = &(g681); int64_t _i7960 = rt_1779; (S1*)_t7960->b + hr_ix(_i7960, _t7960->n, "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:1637"); }))).fl_, "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:1637") & (int64_t)((int64_t)2LL)))) != (((int64_t)0LL)))) ? "true" : "false"); hr_fs(_o7957, hr_str(", ", 2)); hr_fi(_o7957, ((int64_t)((((int64_t)8LL)) << ((((int64_t)((int64_t)HR_CI2I(int64_t, ((*({ hrv *_t7963 = &(g681); int64_t _i7963 = rt_1779; (S1*)_t7963->b + hr_ix(_i7963, _t7963->n, "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:1637"); }))).c_, "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:1637") & (int64_t)((int64_t)3LL)))) & 63)))); hr_fs(_o7957, hr_str(");", 2)); }));
+if (((rpd_1781) >= (((int64_t)0LL)))) { (void)(({ hrv *_o7953 = &(g163); hr_fs(_o7953, hr_str("), (uint8_t*)g", 14)); hr_fi(_o7953, rpd_1781); hr_fs(_o7953, hr_str(".b, ", 4)); hr_fc(_o7953, (((((int64_t)((int64_t)HR_CI2I(int64_t, ((*({ hrv *_t7956 = &(g681); int64_t _i7956 = rt_1779; (S1*)_t7956->b + hr_ix(_i7956, _t7956->n, "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:1643"); }))).fl_, "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:1643") & (int64_t)((int64_t)2LL)))) != (((int64_t)0LL)))) ? "true" : "false"); hr_fs(_o7953, hr_str(");", 2)); }));
+ } else { (void)(({ hrv *_o7957 = &(g163); hr_fs(_o7957, hr_str("), ", 3)); hr_fc(_o7957, (((((int64_t)((int64_t)HR_CI2I(int64_t, ((*({ hrv *_t7960 = &(g681); int64_t _i7960 = rt_1779; (S1*)_t7960->b + hr_ix(_i7960, _t7960->n, "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:1643"); }))).fl_, "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:1643") & (int64_t)((int64_t)2LL)))) != (((int64_t)0LL)))) ? "true" : "false"); hr_fs(_o7957, hr_str(", ", 2)); hr_fi(_o7957, ((int64_t)((((int64_t)8LL)) << ((((int64_t)((int64_t)HR_CI2I(int64_t, ((*({ hrv *_t7963 = &(g681); int64_t _i7963 = rt_1779; (S1*)_t7963->b + hr_ix(_i7963, _t7963->n, "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:1643"); }))).c_, "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:1643") & (int64_t)((int64_t)3LL)))) & 63)))); hr_fs(_o7957, hr_str(");", 2)); }));
  }
 }
 static int64_t f307_fin(int64_t n_1782) {
@@ -7457,21 +7457,21 @@ if (((((k_1791) == (((int64_t)11LL))) && ((f151_rk(n_1789)) == (((int64_t)4LL)))
 return false;
 }
 static int64_t f311_rel_field(int64_t n_1793) {
-if ((((HR_CI2I(int64_t, ((*({ hrv *_t8025 = &(g834); int64_t _i8025 = n_1793; (S4*)_t8025->b + hr_ix(_i8025, _t8025->n, "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:1639"); }))).k_, "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:1639")) == (((int64_t)8LL))) && ((f151_rk(n_1793)) == (((int64_t)1LL))))) { int64_t lt_1794 = HR_CI2I(int64_t, ((*({ hrv *_t8028 = &(g505); int64_t _i8028 = f152_rv(n_1793); (S12*)_t8028->b + hr_ix(_i8028, _t8028->n, "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:1639"); }))).ty_, "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:1639"); 
+if ((((HR_CI2I(int64_t, ((*({ hrv *_t8025 = &(g834); int64_t _i8025 = n_1793; (S4*)_t8025->b + hr_ix(_i8025, _t8025->n, "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:1645"); }))).k_, "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:1645")) == (((int64_t)8LL))) && ((f151_rk(n_1793)) == (((int64_t)1LL))))) { int64_t lt_1794 = HR_CI2I(int64_t, ((*({ hrv *_t8028 = &(g505); int64_t _i8028 = f152_rv(n_1793); (S12*)_t8028->b + hr_ix(_i8028, _t8028->n, "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:1645"); }))).ty_, "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:1645"); 
 return ({ int64_t _r8030; if (f303_is_rel(lt_1794)) { _r8030 = lt_1794;  } else { _r8030 = ((int64_t)-1LL);  } _r8030; });
  }
-if ((((HR_CI2I(int64_t, ((*({ hrv *_t8033 = &(g834); int64_t _i8033 = n_1793; (S4*)_t8033->b + hr_ix(_i8033, _t8033->n, "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:1640"); }))).k_, "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:1640")) == (((int64_t)8LL))) && ((f151_rk(n_1793)) == (((int64_t)2LL))))) { int64_t lt_1795 = HR_CI2I(int64_t, (*({ hrv *_t8036 = &(g575); int64_t _i8036 = f152_rv(n_1793); (int32_t*)_t8036->b + hr_ix(_i8036, _t8036->n, "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:1640"); })), "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:1640"); 
+if ((((HR_CI2I(int64_t, ((*({ hrv *_t8033 = &(g834); int64_t _i8033 = n_1793; (S4*)_t8033->b + hr_ix(_i8033, _t8033->n, "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:1646"); }))).k_, "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:1646")) == (((int64_t)8LL))) && ((f151_rk(n_1793)) == (((int64_t)2LL))))) { int64_t lt_1795 = HR_CI2I(int64_t, (*({ hrv *_t8036 = &(g575); int64_t _i8036 = f152_rv(n_1793); (int32_t*)_t8036->b + hr_ix(_i8036, _t8036->n, "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:1646"); })), "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:1646"); 
 return ({ int64_t _r8038; if (f303_is_rel(lt_1795)) { _r8038 = lt_1795;  } else { _r8038 = ((int64_t)-1LL);  } _r8038; });
  }
-if (((HR_CI2I(int64_t, ((*({ hrv *_t8041 = &(g834); int64_t _i8041 = n_1793; (S4*)_t8041->b + hr_ix(_i8041, _t8041->n, "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:1641"); }))).k_, "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:1641")) == (((int64_t)12LL)))) { int64_t e_1796 = HR_CI2I(int64_t, ((*({ hrv *_t8042 = &(g681); int64_t _i8042 = f193_deref(f142_at(HR_CI2I(int64_t, ((*({ hrv *_t8045 = &(g834); int64_t _i8045 = n_1793; (S4*)_t8045->b + hr_ix(_i8045, _t8045->n, "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:1641"); }))).a_, "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:1641"))); (S1*)_t8042->b + hr_ix(_i8042, _t8042->n, "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:1641"); }))).a_, "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:1641"); 
+if (((HR_CI2I(int64_t, ((*({ hrv *_t8041 = &(g834); int64_t _i8041 = n_1793; (S4*)_t8041->b + hr_ix(_i8041, _t8041->n, "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:1647"); }))).k_, "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:1647")) == (((int64_t)12LL)))) { int64_t e_1796 = HR_CI2I(int64_t, ((*({ hrv *_t8042 = &(g681); int64_t _i8042 = f193_deref(f142_at(HR_CI2I(int64_t, ((*({ hrv *_t8045 = &(g834); int64_t _i8045 = n_1793; (S4*)_t8045->b + hr_ix(_i8045, _t8045->n, "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:1647"); }))).a_, "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:1647"))); (S1*)_t8042->b + hr_ix(_i8042, _t8042->n, "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:1647"); }))).a_, "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:1647"); 
 return ({ int64_t _r8046; if (f303_is_rel(e_1796)) { _r8046 = e_1796;  } else { _r8046 = ((int64_t)-1LL);  } _r8046; });
  }
-if ((((((*({ hrv *_t8049 = &(g834); int64_t _i8049 = n_1793; (S4*)_t8049->b + hr_ix(_i8049, _t8049->n, "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:1642"); }))).k_) != (((uint8_t)14LL))) || ((f151_rk(n_1793)) != (((int64_t)5LL))))) { return ((int64_t)-1LL);
+if ((((((*({ hrv *_t8049 = &(g834); int64_t _i8049 = n_1793; (S4*)_t8049->b + hr_ix(_i8049, _t8049->n, "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:1648"); }))).k_) != (((uint8_t)14LL))) || ((f151_rk(n_1793)) != (((int64_t)5LL))))) { return ((int64_t)-1LL);
  }
-int64_t a_1797 = HR_CI2I(int64_t, ((*({ hrv *_t8052 = &(g834); int64_t _i8052 = n_1793; (S4*)_t8052->b + hr_ix(_i8052, _t8052->n, "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:1643"); }))).a_, "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:1643"); 
+int64_t a_1797 = HR_CI2I(int64_t, ((*({ hrv *_t8052 = &(g834); int64_t _i8052 = n_1793; (S4*)_t8052->b + hr_ix(_i8052, _t8052->n, "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:1649"); }))).a_, "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:1649"); 
 int64_t st_1798 = f193_deref(f142_at(a_1797)); 
-int64_t si_1799 = ({ int64_t _r8055; if (((((*({ hrv *_t8057 = &(g681); int64_t _i8057 = st_1798; (S1*)_t8057->b + hr_ix(_i8057, _t8057->n, "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:1644"); }))).k_) == (((uint8_t)5LL)))) { _r8055 = HR_CI2I(int64_t, ((*({ hrv *_t8058 = &(g681); int64_t _i8058 = st_1798; (S1*)_t8058->b + hr_ix(_i8058, _t8058->n, "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:1644"); }))).a_, "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:1644");  } else { _r8055 = f236_ax(n_1793);  } _r8055; }); 
-int64_t ft_1800 = HR_CI2I(int64_t, ((*({ hrv *_t8060 = &(g685); int64_t _i8060 = ({ int64_t _t8061[1] = { HR_CI2I(int64_t, ((*({ hrv *_t8062 = &(g684); int64_t _i8062 = si_1799; (S10*)_t8062->b + hr_ix(_i8062, _t8062->n, "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:1645"); }))).f0_, "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:1645") }; HR_SADD(int64_t, (*_t8061), f152_rv(n_1793), "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:1645"); }); (S11*)_t8060->b + hr_ix(_i8060, _t8060->n, "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:1645"); }))).ty_, "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:1645"); 
+int64_t si_1799 = ({ int64_t _r8055; if (((((*({ hrv *_t8057 = &(g681); int64_t _i8057 = st_1798; (S1*)_t8057->b + hr_ix(_i8057, _t8057->n, "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:1650"); }))).k_) == (((uint8_t)5LL)))) { _r8055 = HR_CI2I(int64_t, ((*({ hrv *_t8058 = &(g681); int64_t _i8058 = st_1798; (S1*)_t8058->b + hr_ix(_i8058, _t8058->n, "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:1650"); }))).a_, "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:1650");  } else { _r8055 = f236_ax(n_1793);  } _r8055; }); 
+int64_t ft_1800 = HR_CI2I(int64_t, ((*({ hrv *_t8060 = &(g685); int64_t _i8060 = ({ int64_t _t8061[1] = { HR_CI2I(int64_t, ((*({ hrv *_t8062 = &(g684); int64_t _i8062 = si_1799; (S10*)_t8062->b + hr_ix(_i8062, _t8062->n, "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:1651"); }))).f0_, "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:1651") }; HR_SADD(int64_t, (*_t8061), f152_rv(n_1793), "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:1651"); }); (S11*)_t8060->b + hr_ix(_i8060, _t8060->n, "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:1651"); }))).ty_, "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:1651"); 
 return ({ int64_t _r8064; if (f303_is_rel(ft_1800)) { _r8064 = ft_1800;  } else { _r8064 = ((int64_t)-1LL);  } _r8064; });
 }
 static int64_t f312_tmp(int64_t t_1802, bool clean_1803) {
@@ -7697,15 +7697,15 @@ if (((k_1808) == (((int64_t)11LL)))) { if (f287_is_vval(f142_at(n_1806))) { HR_S
 (void)(f377_gcall(n_1806));
 return;
  }
-if (((k_1808) == (((int64_t)23LL)))) { if (f292_is_res(f142_at(n_1806))) { int64_t r_2714 = f331_nt(); 
+if (((k_1808) == (((int64_t)23LL)))) { if (f292_is_res(f142_at(n_1806))) { int64_t r_2716 = f331_nt(); 
 (void)(f281_ow(hr_str("({ ", 3)));
 (void)(f282_ct(f142_at(n_1806)));
 (void)(f281_ow(hr_str(" _r", 3)));
-(void)(f335_oi(r_2714));
+(void)(f335_oi(r_2716));
 (void)(f281_ow(hr_str("; ", 2)));
-(void)(f416_gblk(n_1806, r_2714, false));
+(void)(f416_gblk(n_1806, r_2716, false));
 (void)(f281_ow(hr_str(" _r", 3)));
-(void)(f335_oi(r_2714));
+(void)(f335_oi(r_2716));
 (void)(f281_ow(hr_str("; })", 4)));
 return;
  }
@@ -7714,27 +7714,27 @@ return;
 (void)(f281_ow(hr_str(" })", 3)));
 return;
  }
-if ((((((k_1808) == (((int64_t)19LL))) || ((k_1808) == (((int64_t)20LL)))) || ((k_1808) == (((int64_t)24LL)))) || ((k_1808) == (((int64_t)26LL))))) { int64_t t_2715 = f142_at(n_1806); 
-if ((((t_2715) == (g688)) || ((t_2715) < (((int64_t)0LL))))) { (void)(f281_ow(hr_str("({ ", 3)));
+if ((((((k_1808) == (((int64_t)19LL))) || ((k_1808) == (((int64_t)20LL)))) || ((k_1808) == (((int64_t)24LL)))) || ((k_1808) == (((int64_t)26LL))))) { int64_t t_2717 = f142_at(n_1806); 
+if ((((t_2717) == (g688)) || ((t_2717) < (((int64_t)0LL))))) { (void)(f281_ow(hr_str("({ ", 3)));
 (void)(f406_gstmt(n_1806));
 (void)(f281_ow(hr_str(" })", 3)));
 return;
  }
-int64_t r_2716 = f331_nt(); 
+int64_t r_2718 = f331_nt(); 
 (void)(f281_ow(hr_str("({ ", 3)));
-(void)(f282_ct(t_2715));
+(void)(f282_ct(t_2717));
 (void)(f281_ow(hr_str(" _r", 3)));
-(void)(f335_oi(r_2716));
+(void)(f335_oi(r_2718));
 (void)(f281_ow(hr_str("; ", 2)));
-if (((k_1808) == (((int64_t)19LL)))) { (void)(f415_gif(n_1806, r_2716));
- } else { if (((k_1808) == (((int64_t)20LL)))) { (void)(f424_gmatch(n_1806, r_2716));
- } else { if (((k_1808) == (((int64_t)24LL)))) { (void)(f425_geblock(n_1806, r_2716));
- } else { (void)(f422_gloop(n_1806, r_2716));
+if (((k_1808) == (((int64_t)19LL)))) { (void)(f415_gif(n_1806, r_2718));
+ } else { if (((k_1808) == (((int64_t)20LL)))) { (void)(f424_gmatch(n_1806, r_2718));
+ } else { if (((k_1808) == (((int64_t)24LL)))) { (void)(f425_geblock(n_1806, r_2718));
+ } else { (void)(f422_gloop(n_1806, r_2718));
  }
  }
  }
 (void)(f281_ow(hr_str(" _r", 3)));
-(void)(f335_oi(r_2716));
+(void)(f335_oi(r_2718));
 (void)(f281_ow(hr_str("; })", 4)));
 return;
  }
@@ -7815,7 +7815,7 @@ return ({ hsl _t8432 = hr_sl(g1040); int64_t _l8432 = HR_CI2I(int64_t, (x_1819).
 }
 static void f319_cstr_lit(hsl s_1822) {
 (void)(({ hrv *_v8434 = &(g163); uint8_t _x8434 = ((uint8_t)34LL); uint8_t *_p8434 = (uint8_t*)hr_grow(_v8434, 1, sizeof _x8434); *_p8434 = _x8434; _p8434; }));
-{ hsl _v8436 = s_1822; for (int64_t _k8436 = 0; _k8436 < _v8436.n; _k8436++) { uint8_t c_1823 = ((uint8_t*)_v8436.p)[_k8436]; if ((((c_1823) == (((uint8_t)34LL))) || ((c_1823) == (((uint8_t)92LL))))) { (void)(({ hrv *_v8439 = &(g163); uint8_t _x8439 = ((uint8_t)92LL); uint8_t *_p8439 = (uint8_t*)hr_grow(_v8439, 1, sizeof _x8439); *_p8439 = _x8439; _p8439; }));
+{ hsl *_w8436 = &(s_1822); for (int64_t _k8436 = 0; _k8436 < _w8436->n; _k8436++) { hsl _v8436 = *_w8436; uint8_t c_1823 = ((uint8_t*)_v8436.p)[_k8436]; if ((((c_1823) == (((uint8_t)34LL))) || ((c_1823) == (((uint8_t)92LL))))) { (void)(({ hrv *_v8439 = &(g163); uint8_t _x8439 = ((uint8_t)92LL); uint8_t *_p8439 = (uint8_t*)hr_grow(_v8439, 1, sizeof _x8439); *_p8439 = _x8439; _p8439; }));
 (void)(({ hrv *_v8440 = &(g163); uint8_t _x8440 = c_1823; uint8_t *_p8440 = (uint8_t*)hr_grow(_v8440, 1, sizeof _x8440); *_p8440 = _x8440; _p8440; }));
  } else { if (((((c_1823) >= (((uint8_t)32LL))) && ((c_1823) < (((uint8_t)127LL)))) && ((c_1823) != (((uint8_t)63LL))))) { (void)(({ hrv *_v8444 = &(g163); uint8_t _x8444 = c_1823; uint8_t *_p8444 = (uint8_t*)hr_grow(_v8444, 1, sizeof _x8444); *_p8444 = _x8444; _p8444; }));
  } else { (void)(({ hrv *_v8445 = &(g163); uint8_t _x8445 = ((uint8_t)92LL); uint8_t *_p8445 = (uint8_t*)hr_grow(_v8445, 1, sizeof _x8445); *_p8445 = _x8445; _p8445; }));
@@ -7855,7 +7855,7 @@ int64_t rpd_1834 = f305_relpool(e_1833);
 if (((rpd_1834) >= (((int64_t)0LL)))) { (void)(({ hrv *_o8490 = &(g163); hr_fs(_o8490, hr_str("), (uint8_t*)g", 14)); hr_fi(_o8490, rpd_1834); hr_fs(_o8490, hr_str(".b", 2)); }));
  } else { (void)(f281_ow(hr_str(")", 1)));
  }
-(void)(({ hrv *_o8492 = &(g163); hr_fs(_o8492, hr_str(", ", 2)); hr_fc(_o8492, (((((int64_t)((int64_t)HR_CI2I(int64_t, ((*({ hrv *_t8495 = &(g681); int64_t _i8495 = e_1833; (S1*)_t8495->b + hr_ix(_i8495, _t8495->n, "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:1635"); }))).fl_, "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:1635") & (int64_t)((int64_t)2LL)))) != (((int64_t)0LL)))) ? "true" : "false"); hr_fs(_o8492, hr_str(")))", 3)); }));
+(void)(({ hrv *_o8492 = &(g163); hr_fs(_o8492, hr_str(", ", 2)); hr_fc(_o8492, (((((int64_t)((int64_t)HR_CI2I(int64_t, ((*({ hrv *_t8495 = &(g681); int64_t _i8495 = e_1833; (S1*)_t8495->b + hr_ix(_i8495, _t8495->n, "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:1641"); }))).fl_, "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:1641") & (int64_t)((int64_t)2LL)))) != (((int64_t)0LL)))) ? "true" : "false"); hr_fs(_o8492, hr_str(")))", 3)); }));
 }
 static void f326_lv_expr(int64_t v_1836) {
 bool p_1838 = f327_lv_isptr(v_1836); 
@@ -9189,8 +9189,8 @@ L105 sig_2086 = ({ L105 _t10034; memset(&_t10034, 0, sizeof _t10034); _t10034.n 
 (void)(f299_hh(hr_str("return r; }\012", 12)));
 }
 static void f365_gvfield(int64_t si_2098, int64_t i_2099, int64_t a_2100, int64_t bt_2101) {
-S11 f_2102 = (*({ hrv *_t10058 = &(g685); int64_t _i10058 = HR_SADD(int64_t, HR_CI2I(int64_t, ((*({ hrv *_t10060 = &(g684); int64_t _i10060 = si_2098; (S10*)_t10060->b + hr_ix(_i10060, _t10060->n, "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:1692"); }))).f0_, "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:1692"), i_2099, "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:1692"); (S11*)_t10058->b + hr_ix(_i10058, _t10058->n, "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:1692"); })); 
-int64_t ft_2103 = HR_CI2I(int64_t, (f_2102).ty_, "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:1693"); 
+S11 f_2102 = (*({ hrv *_t10058 = &(g685); int64_t _i10058 = HR_SADD(int64_t, HR_CI2I(int64_t, ((*({ hrv *_t10060 = &(g684); int64_t _i10060 = si_2098; (S10*)_t10060->b + hr_ix(_i10060, _t10060->n, "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:1698"); }))).f0_, "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:1698"), i_2099, "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:1698"); (S11*)_t10058->b + hr_ix(_i10058, _t10058->n, "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:1698"); })); 
+int64_t ft_2103 = HR_CI2I(int64_t, (f_2102).ty_, "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:1699"); 
 bool vv_2104 = f287_is_vval(ft_2103); 
 if ((!(vv_2104))) { (void)(f350_pk_need(ft_2103));
 (void)(({ hrv *_o10063 = &(g163); hr_fs(_o10063, hr_str("(((PK", 5)); hr_fi(_o10063, ft_2103); hr_fs(_o10063, hr_str("*)(", 3)); }));
@@ -9199,7 +9199,7 @@ if ((((f_2102).off_) >= (((int64_t)0LL)))) { (void)(f281_ow(hr_str("((uint8_t*)(
  } else { (void)(f349_gen_vo(si_2098));
 (void)(({ hrv *_o10067 = &(g163); hr_fs(_o10067, hr_str("vo", 2)); hr_fi(_o10067, si_2098); hr_fs(_o10067, hr_str("_", 1)); hr_fi(_o10067, i_2099); hr_fs(_o10067, hr_str("(", 1)); }));
  }
-if (((((*({ hrv *_t10069 = &(g681); int64_t _i10069 = bt_2101; (S1*)_t10069->b + hr_ix(_i10069, _t10069->n, "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:1697"); }))).k_) == (((uint8_t)10LL)))) { (void)(f314_gx0(a_2100));
+if (((((*({ hrv *_t10069 = &(g681); int64_t _i10069 = bt_2101; (S1*)_t10069->b + hr_ix(_i10069, _t10069->n, "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:1703"); }))).k_) == (((uint8_t)10LL)))) { (void)(f314_gx0(a_2100));
  } else { (void)(f308_gx(a_2100));
  }
 if ((((f_2102).off_) >= (((int64_t)0LL)))) { (void)(({ hrv *_o10073 = &(g163); hr_fs(_o10073, hr_str(") + ", 4)); hr_fi(_o10073, (f_2102).off_); hr_fs(_o10073, hr_str(")", 1)); }));
@@ -9604,58 +9604,58 @@ if ((!(any_2184))) { (void)(f281_ow(hr_str("0", 1)));
 (void)(f281_ow(hr_str("})", 2)));
 }
 static void f372_gvst(int64_t si_2146, int64_t n_2147) {
-HR_SINC(int64_t, &(g197), 1, "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:1707");
+HR_SINC(int64_t, &(g197), 1, "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:1713");
 int64_t p_2148 = f331_nt(); 
-int64_t f0_2149 = HR_CI2I(int64_t, ((*({ hrv *_t10482 = &(g684); int64_t _i10482 = si_2146; (S10*)_t10482->b + hr_ix(_i10482, _t10482->n, "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:1709"); }))).f0_, "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:1709"); 
+int64_t f0_2149 = HR_CI2I(int64_t, ((*({ hrv *_t10482 = &(g684); int64_t _i10482 = si_2146; (S10*)_t10482->b + hr_ix(_i10482, _t10482->n, "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:1715"); }))).f0_, "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:1715"); 
 (void)(f281_ow(hr_str("({ ", 3)));
-{ int32_t _s10485 = 0; int32_t _e10485 = ((*({ hrv *_t10486 = &(g684); int64_t _i10486 = si_2146; (S10*)_t10486->b + hr_ix(_i10486, _t10486->n, "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:1711"); }))).fnum_; for (int32_t _k10485 = _s10485; _k10485 < _e10485; _k10485++) { int32_t j_2150 = (int32_t)_k10485; S11 f_2151 = (*({ hrv *_t10487 = &(g685); int64_t _i10487 = HR_SADD(int64_t, f0_2149, ((int64_t)(j_2150)), "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:1711"); (S11*)_t10487->b + hr_ix(_i10487, _t10487->n, "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:1711"); })); 
-if ((((((f_2151).ty_) >= (((int32_t)0LL))) && (!(f221_is_fixed(HR_CI2I(int64_t, (f_2151).ty_, "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:1711"))))) && (!(f287_is_vval(HR_CI2I(int64_t, (f_2151).ty_, "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:1711")))))) { int64_t g_2152 = ((int64_t)-1LL); 
-if (((n_2147) >= (((int64_t)0LL)))) { { int32_t _s10494 = 0; int32_t _e10494 = ((*({ hrv *_t10495 = &(g834); int64_t _i10495 = n_2147; (S4*)_t10495->b + hr_ix(_i10495, _t10495->n, "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:1711"); }))).n_; for (int32_t _k10494 = _s10494; _k10494 < _e10494; _k10494++) { int32_t i_2153 = (int32_t)_k10494; if (((f152_rv(f90_kid(n_2147, ((int64_t)(i_2153))))) == (((int64_t)(j_2150))))) { g_2152 = f90_kid(n_2147, ((int64_t)(i_2153)));
+{ int32_t _s10485 = 0; int32_t _e10485 = ((*({ hrv *_t10486 = &(g684); int64_t _i10486 = si_2146; (S10*)_t10486->b + hr_ix(_i10486, _t10486->n, "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:1717"); }))).fnum_; for (int32_t _k10485 = _s10485; _k10485 < _e10485; _k10485++) { int32_t j_2150 = (int32_t)_k10485; S11 f_2151 = (*({ hrv *_t10487 = &(g685); int64_t _i10487 = HR_SADD(int64_t, f0_2149, ((int64_t)(j_2150)), "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:1717"); (S11*)_t10487->b + hr_ix(_i10487, _t10487->n, "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:1717"); })); 
+if ((((((f_2151).ty_) >= (((int32_t)0LL))) && (!(f221_is_fixed(HR_CI2I(int64_t, (f_2151).ty_, "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:1717"))))) && (!(f287_is_vval(HR_CI2I(int64_t, (f_2151).ty_, "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:1717")))))) { int64_t g_2152 = ((int64_t)-1LL); 
+if (((n_2147) >= (((int64_t)0LL)))) { { int32_t _s10494 = 0; int32_t _e10494 = ((*({ hrv *_t10495 = &(g834); int64_t _i10495 = n_2147; (S4*)_t10495->b + hr_ix(_i10495, _t10495->n, "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:1717"); }))).n_; for (int32_t _k10494 = _s10494; _k10494 < _e10494; _k10494++) { int32_t i_2153 = (int32_t)_k10494; if (((f152_rv(f90_kid(n_2147, ((int64_t)(i_2153))))) == (((int64_t)(j_2150))))) { g_2152 = f90_kid(n_2147, ((int64_t)(i_2153)));
  }
  } } _bk10493:; 
  }
-if (((g_2152) >= (((int64_t)0LL)))) { (void)(f282_ct(HR_CI2I(int64_t, (f_2151).ty_, "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:1711")));
+if (((g_2152) >= (((int64_t)0LL)))) { (void)(f282_ct(HR_CI2I(int64_t, (f_2151).ty_, "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:1717")));
 (void)(({ hrv *_o10502 = &(g163); hr_fs(_o10502, hr_str(" _h", 3)); hr_fi(_o10502, p_2148); hr_fs(_o10502, hr_str("_", 1)); hr_fi(_o10502, j_2150); hr_fs(_o10502, hr_str(" = ", 3)); }));
-(void)(f308_gx(HR_CI2I(int64_t, ((*({ hrv *_t10504 = &(g834); int64_t _i10504 = g_2152; (S4*)_t10504->b + hr_ix(_i10504, _t10504->n, "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:1711"); }))).a_, "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:1711")));
+(void)(f308_gx(HR_CI2I(int64_t, ((*({ hrv *_t10504 = &(g834); int64_t _i10504 = g_2152; (S4*)_t10504->b + hr_ix(_i10504, _t10504->n, "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:1717"); }))).a_, "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:1717")));
 (void)(f281_ow(hr_str("; ", 2)));
  }
  }
  } } _bk10484:; 
 (void)(({ hrv *_o10506 = &(g163); hr_fs(_o10506, hr_str("int64_t _b", 10)); hr_fi(_o10506, p_2148); hr_fs(_o10506, hr_str(" = hr_ds.n, _c", 14)); hr_fi(_o10506, p_2148); hr_fs(_o10506, hr_str("; (void)_c", 10)); hr_fi(_o10506, p_2148); hr_fs(_o10506, hr_str("; ", 2)); }));
-{ int32_t _s10508 = 0; int32_t _e10508 = ((*({ hrv *_t10509 = &(g684); int64_t _i10509 = si_2146; (S10*)_t10509->b + hr_ix(_i10509, _t10509->n, "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:1713"); }))).fnum_; for (int32_t _k10508 = _s10508; _k10508 < _e10508; _k10508++) { int32_t j_2154 = (int32_t)_k10508; S11 f_2155 = (*({ hrv *_t10510 = &(g685); int64_t _i10510 = HR_SADD(int64_t, f0_2149, ((int64_t)(j_2154)), "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:1714"); (S11*)_t10510->b + hr_ix(_i10510, _t10510->n, "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:1714"); })); 
+{ int32_t _s10508 = 0; int32_t _e10508 = ((*({ hrv *_t10509 = &(g684); int64_t _i10509 = si_2146; (S10*)_t10509->b + hr_ix(_i10509, _t10509->n, "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:1719"); }))).fnum_; for (int32_t _k10508 = _s10508; _k10508 < _e10508; _k10508++) { int32_t j_2154 = (int32_t)_k10508; S11 f_2155 = (*({ hrv *_t10510 = &(g685); int64_t _i10510 = HR_SADD(int64_t, f0_2149, ((int64_t)(j_2154)), "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:1720"); (S11*)_t10510->b + hr_ix(_i10510, _t10510->n, "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:1720"); })); 
 if ((((f_2155).ty_) < (((int32_t)0LL)))) { if ((((f_2155).padn_) > (((int32_t)0LL)))) { (void)(({ hrv *_o10514 = &(g163); hr_fs(_o10514, hr_str("memset(hr_grow(&hr_ds, ", 23)); hr_fi(_o10514, (f_2155).padn_); hr_fs(_o10514, hr_str(", 1), 0, ", 9)); hr_fi(_o10514, (f_2155).padn_); hr_fs(_o10514, hr_str("); ", 3)); }));
  }
 continue;
  }
-int64_t ft_2156 = HR_CI2I(int64_t, (f_2155).ty_, "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:1716"); 
+int64_t ft_2156 = HR_CI2I(int64_t, (f_2155).ty_, "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:1722"); 
 int64_t given_2157 = ((int64_t)-1LL); 
-if (((n_2147) >= (((int64_t)0LL)))) { { int32_t _s10517 = 0; int32_t _e10517 = ((*({ hrv *_t10518 = &(g834); int64_t _i10518 = n_2147; (S4*)_t10518->b + hr_ix(_i10518, _t10518->n, "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:1718"); }))).n_; for (int32_t _k10517 = _s10517; _k10517 < _e10517; _k10517++) { int32_t i_2158 = (int32_t)_k10517; if (((f152_rv(f90_kid(n_2147, ((int64_t)(i_2158))))) == (((int64_t)(j_2154))))) { given_2157 = f90_kid(n_2147, ((int64_t)(i_2158)));
+if (((n_2147) >= (((int64_t)0LL)))) { { int32_t _s10517 = 0; int32_t _e10517 = ((*({ hrv *_t10518 = &(g834); int64_t _i10518 = n_2147; (S4*)_t10518->b + hr_ix(_i10518, _t10518->n, "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:1724"); }))).n_; for (int32_t _k10517 = _s10517; _k10517 < _e10517; _k10517++) { int32_t i_2158 = (int32_t)_k10517; if (((f152_rv(f90_kid(n_2147, ((int64_t)(i_2158))))) == (((int64_t)(j_2154))))) { given_2157 = f90_kid(n_2147, ((int64_t)(i_2158)));
  }
  } } _bk10516:; 
  }
 (void)(({ hrv *_o10523 = &(g163); hr_fs(_o10523, hr_str("_c", 2)); hr_fi(_o10523, p_2148); hr_fs(_o10523, hr_str(" = hr_ds.n; { ", 14)); }));
 if (f287_is_vval(ft_2156)) { (void)(f281_ow(hr_str("uint8_t *_f = ", 14)));
-if (((given_2157) >= (((int64_t)0LL)))) { (void)(f308_gx(HR_CI2I(int64_t, ((*({ hrv *_t10528 = &(g834); int64_t _i10528 = given_2157; (S4*)_t10528->b + hr_ix(_i10528, _t10528->n, "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:1722"); }))).a_, "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:1722")));
+if (((given_2157) >= (((int64_t)0LL)))) { (void)(f308_gx(HR_CI2I(int64_t, ((*({ hrv *_t10528 = &(g834); int64_t _i10528 = given_2157; (S4*)_t10528->b + hr_ix(_i10528, _t10528->n, "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:1728"); }))).a_, "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:1728")));
  } else { if ((((f_2155).def_) >= (((int32_t)0LL)))) { int64_t sa_2159 = g517; 
 g517 = g519;
-(void)(f308_gx(HR_CI2I(int64_t, (f_2155).def_, "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:1722")));
+(void)(f308_gx(HR_CI2I(int64_t, (f_2155).def_, "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:1728")));
 g517 = sa_2159;
  } else { (void)(f373_gvdef(ft_2156));
  }
  }
 L102 e_2161 = ({ L102 _t10532; memset(&_t10532, 0, sizeof _t10532); _t10532.n = 0; _t10532; }); 
 (void)(f295_vz_into((&(e_2161)), ft_2156, hr_str("_f", 2)));
-(void)(({ hrv *_o10534 = &(g163); hr_fs(_o10534, hr_str("; hr_vplace(_c", 14)); hr_fi(_o10534, p_2148); hr_fs(_o10534, hr_str(", _f, ", 6)); hr_fs(_o10534, ({ hsl _t10535 = ({ L102 *_t10536 = &(e_2161); (hsl){ (uint8_t*)_t10536->e, _t10536->n }; }); int64_t _l10535 = 0, _h10535 = _t10535.n; if (_l10535 < 0 || _h10535 < _l10535 || _h10535 > _t10535.n) hr_slerr(_l10535, _h10535, _t10535.n, "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:1724"); (hsl){ _t10535.p + _l10535 * (int64_t)sizeof(uint8_t), _h10535 - _l10535 }; })); hr_fs(_o10534, hr_str("); } ", 5)); }));
+(void)(({ hrv *_o10534 = &(g163); hr_fs(_o10534, hr_str("; hr_vplace(_c", 14)); hr_fi(_o10534, p_2148); hr_fs(_o10534, hr_str(", _f, ", 6)); hr_fs(_o10534, ({ hsl _t10535 = ({ L102 *_t10536 = &(e_2161); (hsl){ (uint8_t*)_t10536->e, _t10536->n }; }); int64_t _l10535 = 0, _h10535 = _t10535.n; if (_l10535 < 0 || _h10535 < _l10535 || _h10535 > _t10535.n) hr_slerr(_l10535, _h10535, _t10535.n, "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:1730"); (hsl){ _t10535.p + _l10535 * (int64_t)sizeof(uint8_t), _h10535 - _l10535 }; })); hr_fs(_o10534, hr_str("); } ", 5)); }));
  } else { (void)(f282_ct(ft_2156));
 (void)(f281_ow(hr_str(" _v", 3)));
 if ((((given_2157) >= (((int64_t)0LL))) && (!(f221_is_fixed(ft_2156))))) { (void)(({ hrv *_o10541 = &(g163); hr_fs(_o10541, hr_str(" = _h", 5)); hr_fi(_o10541, p_2148); hr_fs(_o10541, hr_str("_", 1)); hr_fi(_o10541, j_2154); hr_fs(_o10541, hr_str("; ", 2)); }));
  } else { if (((given_2157) >= (((int64_t)0LL)))) { (void)(f281_ow(hr_str(" = ", 3)));
-(void)(f308_gx(HR_CI2I(int64_t, ((*({ hrv *_t10545 = &(g834); int64_t _i10545 = given_2157; (S4*)_t10545->b + hr_ix(_i10545, _t10545->n, "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:1727"); }))).a_, "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:1727")));
+(void)(f308_gx(HR_CI2I(int64_t, ((*({ hrv *_t10545 = &(g834); int64_t _i10545 = given_2157; (S4*)_t10545->b + hr_ix(_i10545, _t10545->n, "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:1733"); }))).a_, "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:1733")));
 (void)(f281_ow(hr_str("; ", 2)));
  } else { if ((((f_2155).def_) >= (((int32_t)0LL)))) { (void)(f281_ow(hr_str(" = ", 3)));
 int64_t sa_2162 = g517; 
 g517 = g519;
-(void)(f308_gx(HR_CI2I(int64_t, (f_2155).def_, "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:1727")));
+(void)(f308_gx(HR_CI2I(int64_t, (f_2155).def_, "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:1733")));
 g517 = sa_2162;
 (void)(f281_ow(hr_str("; ", 2)));
  } else { (void)(f281_ow(hr_str("; memset(&_v, 0, sizeof _v); ", 29)));
@@ -9671,11 +9671,11 @@ static void f373_gvdef(int64_t t_2160) {
 if (f288_is_vimg(t_2160)) { (void)(f281_ow(hr_str("hr_vmk(0, 0", 11)));
 (void)(f322_vargs(t_2160));
 (void)(f281_ow(hr_str(", sizeof(", 9)));
-(void)(f282_ct(HR_CI2I(int64_t, ((*({ hrv *_t10559 = &(g681); int64_t _i10559 = t_2160; (S1*)_t10559->b + hr_ix(_i10559, _t10559->n, "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:1702"); }))).a_, "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:1702")));
+(void)(f282_ct(HR_CI2I(int64_t, ((*({ hrv *_t10559 = &(g681); int64_t _i10559 = t_2160; (S1*)_t10559->b + hr_ix(_i10559, _t10559->n, "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:1708"); }))).a_, "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:1708")));
 (void)(f281_ow(hr_str("))", 2)));
 return;
  }
-if (f289_is_vst(t_2160)) { (void)(f372_gvst(HR_CI2I(int64_t, ((*({ hrv *_t10563 = &(g681); int64_t _i10563 = t_2160; (S1*)_t10563->b + hr_ix(_i10563, _t10563->n, "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:1703"); }))).a_, "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:1703"), ((int64_t)-1LL)));
+if (f289_is_vst(t_2160)) { (void)(f372_gvst(HR_CI2I(int64_t, ((*({ hrv *_t10563 = &(g681); int64_t _i10563 = t_2160; (S1*)_t10563->b + hr_ix(_i10563, _t10563->n, "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:1709"); }))).a_, "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:1709"), ((int64_t)-1LL)));
 return;
  }
 (void)(f328_gerr(((int64_t)0LL), hr_str("unsupported variable-size default", 33)));
@@ -9739,47 +9739,47 @@ return;
 if (((r_2192) != (((int64_t)3LL)))) { (void)(f328_gerr(n_2191, hr_str("unsupported call", 16)));
 return;
  }
-int64_t inst_2700 = f152_rv(n_2191); 
-int64_t recv_2701 = ({ int64_t _r10647; if ((((f236_ax(n_2191)) == (((int64_t)1LL))) && ((((*({ hrv *_t10651 = &(g834); int64_t _i10651 = ((*({ hrv *_t10652 = &(g834); int64_t _i10652 = n_2191; (S4*)_t10652->b + hr_ix(_i10652, _t10652->n, "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:826"); }))).a_; (S4*)_t10651->b + hr_ix(_i10651, _t10651->n, "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:826"); }))).k_) == (((uint8_t)14LL))))) { _r10647 = HR_CI2I(int64_t, ((*({ hrv *_t10653 = &(g834); int64_t _i10653 = ((*({ hrv *_t10654 = &(g834); int64_t _i10654 = n_2191; (S4*)_t10654->b + hr_ix(_i10654, _t10654->n, "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:826"); }))).a_; (S4*)_t10653->b + hr_ix(_i10653, _t10653->n, "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:826"); }))).a_, "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:826");  } else { _r10647 = ((int64_t)-1LL);  } _r10647; }); 
-bool lrw_2702 = ((!(f437_is_ext(inst_2700))) && ((*({ hrv *_t10656 = &(g504); int64_t _i10656 = inst_2700; (S6*)_t10656->b + hr_ix(_i10656, _t10656->n, "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:827"); }))).lr_); 
-int64_t rt_2703 = HR_CI2I(int64_t, ((*({ hrv *_t10657 = &(g504); int64_t _i10657 = inst_2700; (S6*)_t10657->b + hr_ix(_i10657, _t10657->n, "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:828"); }))).ret_, "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:828"); 
-bool vd_2704 = (((rt_2703) < (((int64_t)0LL))) || ((rt_2703) == (g688))); 
-int64_t q_2705 = f331_nt(); 
-int64_t na_2706 = ({ int64_t _t10661[1] = { HR_SADD(int64_t, HR_CI2I(int64_t, ((*({ hrv *_t10663 = &(g834); int64_t _i10663 = n_2191; (S4*)_t10663->b + hr_ix(_i10663, _t10663->n, "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:831"); }))).n_, "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:831"), ({ int64_t _r10664; if (((recv_2701) >= (((int64_t)0LL)))) { _r10664 = ((int64_t)1LL);  } else { _r10664 = ((int64_t)0LL);  } _r10664; }), "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:831") }; HR_SSUB(int64_t, (*_t10661), f434_fna(n_2191), "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:831"); }); 
-int64_t lim_2707 = ((int64_t)0LL); 
-{ int64_t _s10668 = ((int64_t)1LL); int64_t _e10668 = na_2706; for (int64_t _k10668 = _s10668; _k10668 < _e10668; _k10668++) { int64_t j_2708 = (int64_t)_k10668; if (f330_impure(f435_carg(n_2191, recv_2701, j_2708))) { lim_2707 = j_2708;
+int64_t inst_2702 = f152_rv(n_2191); 
+int64_t recv_2703 = ({ int64_t _r10647; if ((((f236_ax(n_2191)) == (((int64_t)1LL))) && ((((*({ hrv *_t10651 = &(g834); int64_t _i10651 = ((*({ hrv *_t10652 = &(g834); int64_t _i10652 = n_2191; (S4*)_t10652->b + hr_ix(_i10652, _t10652->n, "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:826"); }))).a_; (S4*)_t10651->b + hr_ix(_i10651, _t10651->n, "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:826"); }))).k_) == (((uint8_t)14LL))))) { _r10647 = HR_CI2I(int64_t, ((*({ hrv *_t10653 = &(g834); int64_t _i10653 = ((*({ hrv *_t10654 = &(g834); int64_t _i10654 = n_2191; (S4*)_t10654->b + hr_ix(_i10654, _t10654->n, "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:826"); }))).a_; (S4*)_t10653->b + hr_ix(_i10653, _t10653->n, "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:826"); }))).a_, "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:826");  } else { _r10647 = ((int64_t)-1LL);  } _r10647; }); 
+bool lrw_2704 = ((!(f437_is_ext(inst_2702))) && ((*({ hrv *_t10656 = &(g504); int64_t _i10656 = inst_2702; (S6*)_t10656->b + hr_ix(_i10656, _t10656->n, "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:827"); }))).lr_); 
+int64_t rt_2705 = HR_CI2I(int64_t, ((*({ hrv *_t10657 = &(g504); int64_t _i10657 = inst_2702; (S6*)_t10657->b + hr_ix(_i10657, _t10657->n, "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:828"); }))).ret_, "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:828"); 
+bool vd_2706 = (((rt_2705) < (((int64_t)0LL))) || ((rt_2705) == (g688))); 
+int64_t q_2707 = f331_nt(); 
+int64_t na_2708 = ({ int64_t _t10661[1] = { HR_SADD(int64_t, HR_CI2I(int64_t, ((*({ hrv *_t10663 = &(g834); int64_t _i10663 = n_2191; (S4*)_t10663->b + hr_ix(_i10663, _t10663->n, "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:831"); }))).n_, "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:831"), ({ int64_t _r10664; if (((recv_2703) >= (((int64_t)0LL)))) { _r10664 = ((int64_t)1LL);  } else { _r10664 = ((int64_t)0LL);  } _r10664; }), "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:831") }; HR_SSUB(int64_t, (*_t10661), f434_fna(n_2191), "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:831"); }); 
+int64_t lim_2709 = ((int64_t)0LL); 
+{ int64_t _s10668 = ((int64_t)1LL); int64_t _e10668 = na_2708; for (int64_t _k10668 = _s10668; _k10668 < _e10668; _k10668++) { int64_t j_2710 = (int64_t)_k10668; if (f330_impure(f435_carg(n_2191, recv_2703, j_2710))) { lim_2709 = j_2710;
  }
  } } _bk10667:; 
-int64_t so_2709 = g294; 
-int64_t sn_2710 = g295; 
-if (((lim_2707) > (((int64_t)0LL)))) { (void)(f281_ow(hr_str("({ ", 3)));
-{ int64_t _s10674 = 0; int64_t _e10674 = lim_2707; for (int64_t _k10674 = _s10674; _k10674 < _e10674; _k10674++) { int64_t j_2711 = (int64_t)_k10674; (void)(f436_gcall_arg(n_2191, inst_2700, recv_2701, j_2711, true, q_2705));
+int64_t so_2711 = g294; 
+int64_t sn_2712 = g295; 
+if (((lim_2709) > (((int64_t)0LL)))) { (void)(f281_ow(hr_str("({ ", 3)));
+{ int64_t _s10674 = 0; int64_t _e10674 = lim_2709; for (int64_t _k10674 = _s10674; _k10674 < _e10674; _k10674++) { int64_t j_2713 = (int64_t)_k10674; (void)(f436_gcall_arg(n_2191, inst_2702, recv_2703, j_2713, true, q_2707));
  } } _bk10673:; 
-g294 = q_2705;
-g295 = lim_2707;
+g294 = q_2707;
+g295 = lim_2709;
  }
-if (lrw_2702) { (void)(f281_ow(hr_str("({ ", 3)));
-if ((!(vd_2704))) { (void)(f282_ct(rt_2703));
-(void)(({ hrv *_o10678 = &(g163); hr_fs(_o10678, hr_str(" _c", 3)); hr_fi(_o10678, q_2705); hr_fs(_o10678, hr_str(" = ", 3)); }));
+if (lrw_2704) { (void)(f281_ow(hr_str("({ ", 3)));
+if ((!(vd_2706))) { (void)(f282_ct(rt_2705));
+(void)(({ hrv *_o10678 = &(g163); hr_fs(_o10678, hr_str(" _c", 3)); hr_fi(_o10678, q_2707); hr_fs(_o10678, hr_str(" = ", 3)); }));
  }
  }
-if (f437_is_ext(inst_2700)) { (void)(f438_ext_name(inst_2700));
- } else { (void)(f383_fn_cname(inst_2700));
+if (f437_is_ext(inst_2702)) { (void)(f438_ext_name(inst_2702));
+ } else { (void)(f383_fn_cname(inst_2702));
  }
 (void)(f281_ow(hr_str("(", 1)));
-int64_t po_2712 = g294; 
-int64_t pn_2713 = g295; 
-g294 = so_2709;
-g295 = sn_2710;
-(void)(f439_gcall_args1(n_2191, inst_2700, recv_2701, po_2712, pn_2713));
+int64_t po_2714 = g294; 
+int64_t pn_2715 = g295; 
+g294 = so_2711;
+g295 = sn_2712;
+(void)(f439_gcall_args1(n_2191, inst_2702, recv_2703, po_2714, pn_2715));
 (void)(f281_ow(hr_str(")", 1)));
-if (lrw_2702) { (void)(f281_ow(hr_str("; ", 2)));
+if (lrw_2704) { (void)(f281_ow(hr_str("; ", 2)));
 (void)(f441_glrcheck());
-if ((!(vd_2704))) { (void)(({ hrv *_o10687 = &(g163); hr_fs(_o10687, hr_str("_c", 2)); hr_fi(_o10687, q_2705); hr_fs(_o10687, hr_str("; ", 2)); }));
+if ((!(vd_2706))) { (void)(({ hrv *_o10687 = &(g163); hr_fs(_o10687, hr_str("_c", 2)); hr_fi(_o10687, q_2707); hr_fs(_o10687, hr_str("; ", 2)); }));
  }
 (void)(f281_ow(hr_str("})", 2)));
  }
-if (((lim_2707) > (((int64_t)0LL)))) { (void)(f281_ow(hr_str("; })", 4)));
+if (((lim_2709) > (((int64_t)0LL)))) { (void)(f281_ow(hr_str("; })", 4)));
  }
 }
 static void f378_gbuiltin(int64_t n_2193) {
@@ -11331,12 +11331,12 @@ g517 = bi_2466;
 int64_t body_2475 = HR_CI2I(int64_t, ((*({ hrv *_t12602 = &(g834); int64_t _i12602 = fv_2467; (S4*)_t12602->b + hr_ix(_i12602, _t12602->n, "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:881"); }))).a_, "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:881"); 
 { int32_t _s12604 = 0; int32_t _e12604 = ((*({ hrv *_t12605 = &(g834); int64_t _i12605 = body_2475; (S4*)_t12605->b + hr_ix(_i12605, _t12605->n, "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:882"); }))).n_; for (int32_t _k12604 = _s12604; _k12604 < _e12604; _k12604++) { int32_t i_2476 = (int32_t)_k12604; (void)(f406_gstmt(f90_kid(body_2475, ((int64_t)(i_2476)))));
  } } _bk12603:; 
-int64_t tl_2639 = HR_CI2I(int64_t, ((*({ hrv *_t12608 = &(g834); int64_t _i12608 = body_2475; (S4*)_t12608->b + hr_ix(_i12608, _t12608->n, "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:883"); }))).a_, "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:883"); 
-if (((tl_2639) >= (((int64_t)0LL)))) { if ((((HR_CI2I(int64_t, ((*({ hrv *_t12611 = &(g504); int64_t _i12611 = bi_2466; (S6*)_t12611->b + hr_ix(_i12611, _t12611->n, "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:884"); }))).ret_, "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:884")) != (g688)) && (!(f143_ends(tl_2639))))) { if (f292_is_res(HR_CI2I(int64_t, ((*({ hrv *_t12614 = &(g504); int64_t _i12614 = bi_2466; (S6*)_t12614->b + hr_ix(_i12614, _t12614->n, "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:884"); }))).ret_, "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:884"))) { (void)(f340_gxo(tl_2639));
- } else { (void)(f308_gx(tl_2639));
+int64_t tl_2641 = HR_CI2I(int64_t, ((*({ hrv *_t12608 = &(g834); int64_t _i12608 = body_2475; (S4*)_t12608->b + hr_ix(_i12608, _t12608->n, "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:883"); }))).a_, "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:883"); 
+if (((tl_2641) >= (((int64_t)0LL)))) { if ((((HR_CI2I(int64_t, ((*({ hrv *_t12611 = &(g504); int64_t _i12611 = bi_2466; (S6*)_t12611->b + hr_ix(_i12611, _t12611->n, "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:884"); }))).ret_, "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:884")) != (g688)) && (!(f143_ends(tl_2641))))) { if (f292_is_res(HR_CI2I(int64_t, ((*({ hrv *_t12614 = &(g504); int64_t _i12614 = bi_2466; (S6*)_t12614->b + hr_ix(_i12614, _t12614->n, "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:884"); }))).ret_, "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:884"))) { (void)(f340_gxo(tl_2641));
+ } else { (void)(f308_gx(tl_2641));
  }
 (void)(f281_ow(hr_str("; ", 2)));
- } else { (void)(f406_gstmt(tl_2639));
+ } else { (void)(f406_gstmt(tl_2641));
  }
  }
 g517 = sa_2468;
@@ -11347,31 +11347,31 @@ if (((n_2477) < (((int64_t)0LL)))) { return;
  }
 int64_t sp_2478 = (g163).n; 
 int64_t td_2479 = (g176).n; 
-S4 x_2480 = (*({ hrv *_t12621 = &(g834); int64_t _i12621 = n_2477; (S4*)_t12621->b + hr_ix(_i12621, _t12621->n, "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:1745"); })); 
-int64_t k_2481 = HR_CI2I(int64_t, (x_2480).k_, "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:1746"); 
+S4 x_2480 = (*({ hrv *_t12621 = &(g834); int64_t _i12621 = n_2477; (S4*)_t12621->b + hr_ix(_i12621, _t12621->n, "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:1751"); })); 
+int64_t k_2481 = HR_CI2I(int64_t, (x_2480).k_, "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:1752"); 
 bool decl_2482 = ((k_2481) == (((int64_t)33LL))); 
 if (((k_2481) == (((int64_t)33LL)))) { (void)(f407_gvdecl(n_2477));
  } else { (void)(f411_gstmt1(n_2477));
  }
 (void)(f281_ow(hr_str("\012", 1)));
 if ((((g176).n) > (td_2479))) { (void)(({ hrv *_v12628 = &(g177); _v12628->n = 0; }));
-(void)(({ hrv *_v12629 = &(g177); hsl _s12629 = ({ hsl _t12630 = hr_sl(g163); int64_t _l12630 = sp_2478, _h12630 = _t12630.n; if (_l12630 < 0 || _h12630 < _l12630 || _h12630 > _t12630.n) hr_slerr(_l12630, _h12630, _t12630.n, "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:1751"); (hsl){ _t12630.p + _l12630 * (int64_t)sizeof(uint8_t), _h12630 - _l12630 }; }); hr_append(_v12629, _s12629.p, _s12629.n, sizeof(uint8_t)); }));
-(void)(({ hrv *_v12631 = &(g163); int64_t _k12631 = sp_2478; if (_k12631 < 0) hr_die("resize to a negative length", "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:1751"); hr_resize(_v12631, _k12631, sizeof(uint8_t)); }));
+(void)(({ hrv *_v12629 = &(g177); hsl _s12629 = ({ hsl _t12630 = hr_sl(g163); int64_t _l12630 = sp_2478, _h12630 = _t12630.n; if (_l12630 < 0 || _h12630 < _l12630 || _h12630 > _t12630.n) hr_slerr(_l12630, _h12630, _t12630.n, "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:1757"); (hsl){ _t12630.p + _l12630 * (int64_t)sizeof(uint8_t), _h12630 - _l12630 }; }); hr_append(_v12629, _s12629.p, _s12629.n, sizeof(uint8_t)); }));
+(void)(({ hrv *_v12631 = &(g163); int64_t _k12631 = sp_2478; if (_k12631 < 0) hr_die("resize to a negative length", "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:1757"); hr_resize(_v12631, _k12631, sizeof(uint8_t)); }));
 if ((!(decl_2482))) { (void)(f281_ow(hr_str("{ ", 2)));
  }
-(void)(({ hrv *_v12633 = &(g163); hsl _s12633 = ({ hsl _t12634 = hr_sl(g176); int64_t _l12634 = td_2479, _h12634 = _t12634.n; if (_l12634 < 0 || _h12634 < _l12634 || _h12634 > _t12634.n) hr_slerr(_l12634, _h12634, _t12634.n, "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:1753"); (hsl){ _t12634.p + _l12634 * (int64_t)sizeof(uint8_t), _h12634 - _l12634 }; }); hr_append(_v12633, _s12633.p, _s12633.n, sizeof(uint8_t)); }));
-(void)(({ hrv *_v12635 = &(g176); int64_t _k12635 = td_2479; if (_k12635 < 0) hr_die("resize to a negative length", "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:1753"); hr_resize(_v12635, _k12635, sizeof(uint8_t)); }));
-(void)(({ hrv *_v12636 = &(g163); hsl _s12636 = ({ hsl _t12637 = hr_sl(g177); int64_t _l12637 = 0, _h12637 = _t12637.n; if (_l12637 < 0 || _h12637 < _l12637 || _h12637 > _t12637.n) hr_slerr(_l12637, _h12637, _t12637.n, "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:1754"); (hsl){ _t12637.p + _l12637 * (int64_t)sizeof(uint8_t), _h12637 - _l12637 }; }); hr_append(_v12636, _s12636.p, _s12636.n, sizeof(uint8_t)); }));
+(void)(({ hrv *_v12633 = &(g163); hsl _s12633 = ({ hsl _t12634 = hr_sl(g176); int64_t _l12634 = td_2479, _h12634 = _t12634.n; if (_l12634 < 0 || _h12634 < _l12634 || _h12634 > _t12634.n) hr_slerr(_l12634, _h12634, _t12634.n, "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:1759"); (hsl){ _t12634.p + _l12634 * (int64_t)sizeof(uint8_t), _h12634 - _l12634 }; }); hr_append(_v12633, _s12633.p, _s12633.n, sizeof(uint8_t)); }));
+(void)(({ hrv *_v12635 = &(g176); int64_t _k12635 = td_2479; if (_k12635 < 0) hr_die("resize to a negative length", "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:1759"); hr_resize(_v12635, _k12635, sizeof(uint8_t)); }));
+(void)(({ hrv *_v12636 = &(g163); hsl _s12636 = ({ hsl _t12637 = hr_sl(g177); int64_t _l12637 = 0, _h12637 = _t12637.n; if (_l12637 < 0 || _h12637 < _l12637 || _h12637 > _t12637.n) hr_slerr(_l12637, _h12637, _t12637.n, "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:1760"); (hsl){ _t12637.p + _l12637 * (int64_t)sizeof(uint8_t), _h12637 - _l12637 }; }); hr_append(_v12636, _s12636.p, _s12636.n, sizeof(uint8_t)); }));
 if ((!(decl_2482))) { (void)(f281_ow(hr_str("}\012", 2)));
  }
  }
 }
 static void f407_gvdecl(int64_t n_2483) {
-S4 x_2484 = (*({ hrv *_t12639 = &(g834); int64_t _i12639 = n_2483; (S4*)_t12639->b + hr_ix(_i12639, _t12639->n, "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:1542"); })); 
+S4 x_2484 = (*({ hrv *_t12639 = &(g834); int64_t _i12639 = n_2483; (S4*)_t12639->b + hr_ix(_i12639, _t12639->n, "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:1548"); })); 
 if ((((x_2484).n_) > (((int32_t)1LL)))) { if (((f236_ax(n_2483)) == (((int64_t)1LL)))) { L89 ids_2485 = ({ L89 _t12643; memset(&_t12643, 0, sizeof _t12643); _t12643.n = 0; _t12643; }); 
-{ int32_t _s12645 = 0; int32_t _e12645 = (x_2484).n_; for (int32_t _k12645 = _s12645; _k12645 < _e12645; _k12645++) { int32_t i_2486 = (int32_t)_k12645; int64_t iv_2487 = f90_kid(HR_CI2I(int64_t, (x_2484).b_, "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:1546"), ((int64_t)(i_2486))); 
+{ int32_t _s12645 = 0; int32_t _e12645 = (x_2484).n_; for (int32_t _k12645 = _s12645; _k12645 < _e12645; _k12645++) { int32_t i_2486 = (int32_t)_k12645; int64_t iv_2487 = f90_kid(HR_CI2I(int64_t, (x_2484).b_, "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:1552"), ((int64_t)(i_2486))); 
 int64_t p_2488 = f331_nt(); 
-(void)(({ L89 *_v12648 = &(ids_2485); int32_t _x12648 = HR_CI2I(int32_t, p_2488, "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:1546"); if (_v12648->n >= 64) hr_die("push past a limited array's capacity", "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:1546"); _v12648->e[_v12648->n] = _x12648; &_v12648->e[_v12648->n++]; }));
+(void)(({ L89 *_v12648 = &(ids_2485); int32_t _x12648 = HR_CI2I(int32_t, p_2488, "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:1552"); if (_v12648->n >= 64) hr_die("push past a limited array's capacity", "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:1552"); _v12648->e[_v12648->n] = _x12648; &_v12648->e[_v12648->n++]; }));
 (void)(f282_ct(f307_fin(iv_2487)));
 (void)(f281_ow(hr_str(" _t", 3)));
 (void)(f335_oi(p_2488));
@@ -11380,12 +11380,12 @@ int64_t p_2488 = f331_nt();
 (void)(f281_ow(hr_str("; ", 2)));
  } } _bk12644:; 
 int64_t v0_2489 = f152_rv(n_2483); 
-{ int32_t _s12658 = 0; int32_t _e12658 = (x_2484).n_; for (int32_t _k12658 = _s12658; _k12658 < _e12658; _k12658++) { int32_t i_2490 = (int32_t)_k12658; (void)(f408_decl_lv(HR_SADD(int64_t, v0_2489, ((int64_t)(i_2490)), "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:1548")));
-(void)(({ hrv *_o12661 = &(g163); hr_fs(_o12661, hr_str(" = _t", 5)); hr_fi(_o12661, (*({ L89 *_t12662 = &(ids_2485); int64_t _i12662 = i_2490; _t12662->e + hr_ix(_i12662, _t12662->n, "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:1548"); }))); hr_fs(_o12661, hr_str("; ", 2)); }));
+{ int32_t _s12658 = 0; int32_t _e12658 = (x_2484).n_; for (int32_t _k12658 = _s12658; _k12658 < _e12658; _k12658++) { int32_t i_2490 = (int32_t)_k12658; (void)(f408_decl_lv(HR_SADD(int64_t, v0_2489, ((int64_t)(i_2490)), "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:1554")));
+(void)(({ hrv *_o12661 = &(g163); hr_fs(_o12661, hr_str(" = _t", 5)); hr_fi(_o12661, (*({ L89 *_t12662 = &(ids_2485); int64_t _i12662 = i_2490; _t12662->e + hr_ix(_i12662, _t12662->n, "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:1554"); }))); hr_fs(_o12661, hr_str("; ", 2)); }));
  } } _bk12657:; 
 return;
  }
-int64_t init_2493 = f90_kid(HR_CI2I(int64_t, (x_2484).b_, "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:1551"), ((int64_t)0LL)); 
+int64_t init_2493 = f90_kid(HR_CI2I(int64_t, (x_2484).b_, "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:1557"), ((int64_t)0LL)); 
 int64_t p_2494 = f331_nt(); 
 (void)(f282_ct(f142_at(init_2493)));
 (void)(f281_ow(hr_str(" _t", 3)));
@@ -11394,19 +11394,19 @@ int64_t p_2494 = f331_nt();
 (void)(f308_gx(init_2493));
 (void)(f281_ow(hr_str("; ", 2)));
 int64_t v0_2495 = f152_rv(n_2483); 
-{ int32_t _s12674 = 0; int32_t _e12674 = (x_2484).n_; for (int32_t _k12674 = _s12674; _k12674 < _e12674; _k12674++) { int32_t i_2496 = (int32_t)_k12674; (void)(f408_decl_lv(HR_SADD(int64_t, v0_2495, ((int64_t)(i_2496)), "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:1555")));
+{ int32_t _s12674 = 0; int32_t _e12674 = (x_2484).n_; for (int32_t _k12674 = _s12674; _k12674 < _e12674; _k12674++) { int32_t i_2496 = (int32_t)_k12674; (void)(f408_decl_lv(HR_SADD(int64_t, v0_2495, ((int64_t)(i_2496)), "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:1561")));
 (void)(({ hrv *_o12677 = &(g163); hr_fs(_o12677, hr_str(" = _t", 5)); hr_fi(_o12677, p_2494); hr_fs(_o12677, hr_str(".r", 2)); hr_fi(_o12677, i_2496); hr_fs(_o12677, hr_str("; ", 2)); }));
  } } _bk12673:; 
 return;
  }
 int64_t v_2497 = f152_rv(n_2483); 
-int64_t t_2498 = HR_CI2I(int64_t, ((*({ hrv *_t12679 = &(g505); int64_t _i12679 = v_2497; (S12*)_t12679->b + hr_ix(_i12679, _t12679->n, "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:1559"); }))).ty_, "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:1559"); 
+int64_t t_2498 = HR_CI2I(int64_t, ((*({ hrv *_t12679 = &(g505); int64_t _i12679 = v_2497; (S12*)_t12679->b + hr_ix(_i12679, _t12679->n, "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:1565"); }))).ty_, "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:1565"); 
 (void)(f408_decl_lv(v_2497));
 (void)(f281_ow(hr_str(" = ", 3)));
 if ((((x_2484).b_) < (((int32_t)0LL)))) { (void)(f281_ow(hr_str("{0}; ", 5)));
 return;
  }
-int64_t init_2499 = f90_kid(HR_CI2I(int64_t, (x_2484).b_, "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:1563"), ((int64_t)0LL)); 
+int64_t init_2499 = f90_kid(HR_CI2I(int64_t, (x_2484).b_, "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:1569"), ((int64_t)0LL)); 
 if (f303_is_rel(t_2498)) { (void)(f281_ow(hr_str("0; ", 3)));
 (void)(f304_grel_st_open(t_2498));
 (void)(f324_lv_name(v_2497));
@@ -11414,13 +11414,13 @@ if (f303_is_rel(t_2498)) { (void)(f281_ow(hr_str("0; ", 3)));
 (void)(f281_ow(hr_str(" ", 1)));
 return;
  }
-if ((((((((*({ hrv *_t12692 = &(g681); int64_t _i12692 = t_2498; (S1*)_t12692->b + hr_ix(_i12692, _t12692->n, "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:1565"); }))).k_) == (((uint8_t)5LL))) && (!(f289_is_vst(t_2498)))) && f374_has_relq(init_2499)) && (!(f327_lv_isptr(v_2497))))) { (void)(f281_ow(hr_str("{0}; ", 5)));
+if ((((((((*({ hrv *_t12692 = &(g681); int64_t _i12692 = t_2498; (S1*)_t12692->b + hr_ix(_i12692, _t12692->n, "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:1571"); }))).k_) == (((uint8_t)5LL))) && (!(f289_is_vst(t_2498)))) && f374_has_relq(init_2499)) && (!(f327_lv_isptr(v_2497))))) { (void)(f281_ow(hr_str("{0}; ", 5)));
 (void)(f409_grel_at(init_2499, ((int64_t)-1LL), v_2497));
 (void)(f281_ow(hr_str(" ", 1)));
 return;
  }
-if (((((*({ hrv *_t12700 = &(g681); int64_t _i12700 = t_2498; (S1*)_t12700->b + hr_ix(_i12700, _t12700->n, "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:1566"); }))).k_) == (((uint8_t)10LL)))) { int64_t it_2509 = f307_fin(init_2499); 
-if ((((((*({ hrv *_t12703 = &(g681); int64_t _i12703 = it_2509; (S1*)_t12703->b + hr_ix(_i12703, _t12703->n, "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:1566"); }))).k_) == (((uint8_t)10LL))) || ((((*({ hrv *_t12705 = &(g681); int64_t _i12705 = it_2509; (S1*)_t12705->b + hr_ix(_i12705, _t12705->n, "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:1566"); }))).k_) == (((uint8_t)11LL))))) { (void)(f308_gx(init_2499));
+if (((((*({ hrv *_t12700 = &(g681); int64_t _i12700 = t_2498; (S1*)_t12700->b + hr_ix(_i12700, _t12700->n, "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:1572"); }))).k_) == (((uint8_t)10LL)))) { int64_t it_2509 = f307_fin(init_2499); 
+if ((((((*({ hrv *_t12703 = &(g681); int64_t _i12703 = it_2509; (S1*)_t12703->b + hr_ix(_i12703, _t12703->n, "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:1572"); }))).k_) == (((uint8_t)10LL))) || ((((*({ hrv *_t12705 = &(g681); int64_t _i12705 = it_2509; (S1*)_t12705->b + hr_ix(_i12705, _t12705->n, "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:1572"); }))).k_) == (((uint8_t)11LL))))) { (void)(f308_gx(init_2499));
  } else { (void)(f337_gaddr(init_2499));
  }
 (void)(f281_ow(hr_str("; ", 2)));
@@ -11431,7 +11431,7 @@ if (f292_is_res(t_2498)) { (void)(f340_gxo(init_2499));
 return;
  }
 int64_t it_2510 = f142_at(init_2499); 
-if (((((*({ hrv *_t12714 = &(g681); int64_t _i12714 = it_2510; (S1*)_t12714->b + hr_ix(_i12714, _t12714->n, "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:1569"); }))).k_) == (((uint8_t)14LL)))) { (void)(f308_gx(init_2499));
+if (((((*({ hrv *_t12714 = &(g681); int64_t _i12714 = it_2510; (S1*)_t12714->b + hr_ix(_i12714, _t12714->n, "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:1575"); }))).k_) == (((uint8_t)14LL)))) { (void)(f308_gx(init_2499));
 (void)(({ hrv *_o12716 = &(g163); hr_fs(_o12716, hr_str(".r0; ", 5)); }));
 return;
  }
@@ -11439,7 +11439,7 @@ return;
 (void)(f281_ow(hr_str("; ", 2)));
 }
 static void f408_decl_lv(int64_t v_2491) {
-int64_t t_2492 = HR_CI2I(int64_t, ((*({ hrv *_t12719 = &(g505); int64_t _i12719 = v_2491; (S12*)_t12719->b + hr_ix(_i12719, _t12719->n, "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:1573"); }))).ty_, "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:1573"); 
+int64_t t_2492 = HR_CI2I(int64_t, ((*({ hrv *_t12719 = &(g505); int64_t _i12719 = v_2491; (S12*)_t12719->b + hr_ix(_i12719, _t12719->n, "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:1579"); }))).ty_, "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:1579"); 
 (void)(f282_ct(t_2492));
 (void)(f281_ow(hr_str(" ", 1)));
 if (f327_lv_isptr(v_2491)) { (void)(f281_ow(hr_str("*", 1)));
@@ -11480,33 +11480,33 @@ return;
 (void)(f324_lv_name(v_2507));
 }
 static void f411_gstmt1(int64_t n_2511) {
-S4 x_2512 = (*({ hrv *_t12752 = &(g834); int64_t _i12752 = n_2511; (S4*)_t12752->b + hr_ix(_i12752, _t12752->n, "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:1759"); })); 
-int64_t k_2513 = HR_CI2I(int64_t, (x_2512).k_, "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:1760"); 
+S4 x_2512 = (*({ hrv *_t12752 = &(g834); int64_t _i12752 = n_2511; (S4*)_t12752->b + hr_ix(_i12752, _t12752->n, "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:1765"); })); 
+int64_t k_2513 = HR_CI2I(int64_t, (x_2512).k_, "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:1766"); 
 if (((k_2513) == (((int64_t)34LL)))) { (void)(f412_gassign(n_2511));
 return;
  }
-if (((k_2513) == (((int64_t)35LL)))) { int64_t a_2537 = HR_CI2I(int64_t, (x_2512).a_, "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:1762"); 
+if (((k_2513) == (((int64_t)35LL)))) { int64_t a_2537 = HR_CI2I(int64_t, (x_2512).a_, "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:1768"); 
 int64_t tt_2538 = f142_at(a_2537); 
 int64_t dt_2539 = f193_deref(tt_2538); 
-if ((((((*({ hrv *_t12759 = &(g681); int64_t _i12759 = dt_2539; (S1*)_t12759->b + hr_ix(_i12759, _t12759->n, "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:1762"); }))).k_) == (((uint8_t)3LL))) && f147_is_signed(dt_2539))) { (void)(f281_ow(hr_str("HR_SINC(", 8)));
+if ((((((*({ hrv *_t12759 = &(g681); int64_t _i12759 = dt_2539; (S1*)_t12759->b + hr_ix(_i12759, _t12759->n, "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:1768"); }))).k_) == (((uint8_t)3LL))) && f147_is_signed(dt_2539))) { (void)(f281_ow(hr_str("HR_SINC(", 8)));
 (void)(f282_ct(dt_2539));
 (void)(f281_ow(hr_str(", ", 2)));
-if (((((*({ hrv *_t12765 = &(g681); int64_t _i12765 = tt_2538; (S1*)_t12765->b + hr_ix(_i12765, _t12765->n, "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:1762"); }))).k_) == (((uint8_t)10LL)))) { (void)(f314_gx0(a_2537));
+if (((((*({ hrv *_t12765 = &(g681); int64_t _i12765 = tt_2538; (S1*)_t12765->b + hr_ix(_i12765, _t12765->n, "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:1768"); }))).k_) == (((uint8_t)10LL)))) { (void)(f314_gx0(a_2537));
  } else { (void)(f281_ow(hr_str("&(", 2)));
 (void)(f308_gx(a_2537));
 (void)(f281_ow(hr_str(")", 1)));
  }
-(void)(f281_ow(({ hsl _r12771; if (((HR_CI2I(int64_t, (x_2512).op_, "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:1762")) == (((int64_t)34LL)))) { _r12771 = hr_str(", 1, ", 5);  } else { _r12771 = hr_str(", -1, ", 6);  } _r12771; })));
+(void)(f281_ow(({ hsl _r12771; if (((HR_CI2I(int64_t, (x_2512).op_, "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:1768")) == (((int64_t)34LL)))) { _r12771 = hr_str(", 1, ", 5);  } else { _r12771 = hr_str(", -1, ", 6);  } _r12771; })));
 (void)(f339_wloc(n_2511));
 (void)(f281_ow(hr_str(");", 2)));
 return;
  }
-if (((((*({ hrv *_t12776 = &(g681); int64_t _i12776 = tt_2538; (S1*)_t12776->b + hr_ix(_i12776, _t12776->n, "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:1762"); }))).k_) == (((uint8_t)10LL)))) { (void)(f281_ow(hr_str("(*", 2)));
+if (((((*({ hrv *_t12776 = &(g681); int64_t _i12776 = tt_2538; (S1*)_t12776->b + hr_ix(_i12776, _t12776->n, "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:1768"); }))).k_) == (((uint8_t)10LL)))) { (void)(f281_ow(hr_str("(*", 2)));
 (void)(f314_gx0(a_2537));
 (void)(f281_ow(hr_str(")", 1)));
  } else { (void)(f308_gx(a_2537));
  }
-(void)(f281_ow(({ hsl _r12782; if (((HR_CI2I(int64_t, (x_2512).op_, "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:1762")) == (((int64_t)34LL)))) { _r12782 = hr_str("++;", 3);  } else { _r12782 = hr_str("--;", 3);  } _r12782; })));
+(void)(f281_ow(({ hsl _r12782; if (((HR_CI2I(int64_t, (x_2512).op_, "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:1768")) == (((int64_t)34LL)))) { _r12782 = hr_str("++;", 3);  } else { _r12782 = hr_str("--;", 3);  } _r12782; })));
 return;
  }
 if (((k_2513) == (((int64_t)50LL)))) { return;
@@ -11556,78 +11556,78 @@ return;
 (void)(f281_ow(hr_str(");", 2)));
 }
 static void f412_gassign(int64_t n_2514) {
-S4 x_2515 = (*({ hrv *_t12816 = &(g834); int64_t _i12816 = n_2514; (S4*)_t12816->b + hr_ix(_i12816, _t12816->n, "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:1580"); })); 
-int64_t o_2516 = HR_CI2I(int64_t, (x_2515).op_, "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:1581"); 
-if ((((((x_2515).b_) >= (((int32_t)0LL))) && ((f142_at(HR_CI2I(int64_t, (x_2515).b_, "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:1582"))) == (g688))) && f143_ends(HR_CI2I(int64_t, (x_2515).b_, "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:1582")))) { (void)(f314_gx0(HR_CI2I(int64_t, (x_2515).b_, "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:1582")));
+S4 x_2515 = (*({ hrv *_t12816 = &(g834); int64_t _i12816 = n_2514; (S4*)_t12816->b + hr_ix(_i12816, _t12816->n, "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:1586"); })); 
+int64_t o_2516 = HR_CI2I(int64_t, (x_2515).op_, "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:1587"); 
+if ((((((x_2515).b_) >= (((int32_t)0LL))) && ((f142_at(HR_CI2I(int64_t, (x_2515).b_, "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:1588"))) == (g688))) && f143_ends(HR_CI2I(int64_t, (x_2515).b_, "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:1588")))) { (void)(f314_gx0(HR_CI2I(int64_t, (x_2515).b_, "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:1588")));
 (void)(f281_ow(hr_str(";", 1)));
 return;
  }
-if ((((((((o_2516) == (((int64_t)36LL))) && (((x_2515).b_) >= (((int32_t)0LL)))) && ((((*({ hrv *_t12826 = &(g681); int64_t _i12826 = f142_at(HR_CI2I(int64_t, (x_2515).a_, "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:1583")); (S1*)_t12826->b + hr_ix(_i12826, _t12826->n, "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:1583"); }))).k_) == (((uint8_t)5LL)))) && (!(f289_is_vst(f142_at(HR_CI2I(int64_t, (x_2515).a_, "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:1583")))))) && f374_has_relq(HR_CI2I(int64_t, (x_2515).b_, "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:1583"))) && f310_is_place(HR_CI2I(int64_t, (x_2515).a_, "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:1583")))) { (void)(f409_grel_at(HR_CI2I(int64_t, (x_2515).b_, "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:1583"), HR_CI2I(int64_t, (x_2515).a_, "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:1583"), ((int64_t)-1LL)));
+if ((((((((o_2516) == (((int64_t)36LL))) && (((x_2515).b_) >= (((int32_t)0LL)))) && ((((*({ hrv *_t12826 = &(g681); int64_t _i12826 = f142_at(HR_CI2I(int64_t, (x_2515).a_, "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:1589")); (S1*)_t12826->b + hr_ix(_i12826, _t12826->n, "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:1589"); }))).k_) == (((uint8_t)5LL)))) && (!(f289_is_vst(f142_at(HR_CI2I(int64_t, (x_2515).a_, "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:1589")))))) && f374_has_relq(HR_CI2I(int64_t, (x_2515).b_, "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:1589"))) && f310_is_place(HR_CI2I(int64_t, (x_2515).a_, "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:1589")))) { (void)(f409_grel_at(HR_CI2I(int64_t, (x_2515).b_, "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:1589"), HR_CI2I(int64_t, (x_2515).a_, "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:1589"), ((int64_t)-1LL)));
 return;
  }
 if (((o_2516) == (((int64_t)11LL)))) { int64_t p_2517 = f331_nt(); 
 (void)(f281_ow(hr_str("{ ", 2)));
-(void)(f282_ct(f142_at(HR_CI2I(int64_t, (x_2515).b_, "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:1586"))));
+(void)(f282_ct(f142_at(HR_CI2I(int64_t, (x_2515).b_, "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:1592"))));
 (void)(f281_ow(hr_str(" _t", 3)));
 (void)(f335_oi(p_2517));
 (void)(f281_ow(hr_str(" = ", 3)));
-(void)(f308_gx(HR_CI2I(int64_t, (x_2515).b_, "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:1586")));
+(void)(f308_gx(HR_CI2I(int64_t, (x_2515).b_, "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:1592")));
 (void)(f281_ow(hr_str("; ", 2)));
-int64_t tl_2518 = HR_CI2I(int64_t, (x_2515).a_, "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:1587"); 
-{ int32_t _s12844 = 0; int32_t _e12844 = ((*({ hrv *_t12845 = &(g834); int64_t _i12845 = tl_2518; (S4*)_t12845->b + hr_ix(_i12845, _t12845->n, "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:1588"); }))).n_; for (int32_t _k12844 = _s12844; _k12844 < _e12844; _k12844++) { int32_t i_2519 = (int32_t)_k12844; int64_t tg_2520 = f90_kid(tl_2518, ((int64_t)(i_2519))); 
+int64_t tl_2518 = HR_CI2I(int64_t, (x_2515).a_, "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:1593"); 
+{ int32_t _s12844 = 0; int32_t _e12844 = ((*({ hrv *_t12845 = &(g834); int64_t _i12845 = tl_2518; (S4*)_t12845->b + hr_ix(_i12845, _t12845->n, "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:1594"); }))).n_; for (int32_t _k12844 = _s12844; _k12844 < _e12844; _k12844++) { int32_t i_2519 = (int32_t)_k12844; int64_t tg_2520 = f90_kid(tl_2518, ((int64_t)(i_2519))); 
 (void)(f308_gx(tg_2520));
 (void)(({ hrv *_o12848 = &(g163); hr_fs(_o12848, hr_str(" = _t", 5)); hr_fi(_o12848, p_2517); hr_fs(_o12848, hr_str(".r", 2)); hr_fi(_o12848, i_2519); hr_fs(_o12848, hr_str("; ", 2)); }));
  } } _bk12843:; 
 (void)(f281_ow(hr_str("}", 1)));
 return;
  }
-int64_t a_2521 = HR_CI2I(int64_t, (x_2515).a_, "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:1592"); 
+int64_t a_2521 = HR_CI2I(int64_t, (x_2515).a_, "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:1598"); 
 int64_t tt_2522 = f142_at(a_2521); 
 int64_t d_2523 = f193_deref(tt_2522); 
 if (((((o_2516) == (((int64_t)18LL))) || ((o_2516) == (((int64_t)36LL)))) && ((f311_rel_field(a_2521)) >= (((int64_t)0LL))))) { int64_t rt_2524 = f311_rel_field(a_2521); 
-int64_t b_2525 = HR_CI2I(int64_t, (x_2515).b_, "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:1597"); 
+int64_t b_2525 = HR_CI2I(int64_t, (x_2515).b_, "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:1603"); 
 int64_t rpd_2526 = f305_relpool(rt_2524); 
 (void)(f281_ow(({ hsl _r12859; if (((rpd_2526) >= (((int64_t)0LL)))) { _r12859 = hr_str("hr_pst(&(", 9);  } else { _r12859 = hr_str("hr_rst(&(", 9);  } _r12859; })));
 (void)(f413_grel_lv(a_2521));
 (void)(f281_ow(hr_str("), (void*)(", 11)));
-if ((((((*({ hrv *_t12864 = &(g681); int64_t _i12864 = f307_fin(b_2525); (S1*)_t12864->b + hr_ix(_i12864, _t12864->n, "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:1599"); }))).k_) == (((uint8_t)10LL))) || ((((*({ hrv *_t12867 = &(g681); int64_t _i12867 = f307_fin(b_2525); (S1*)_t12867->b + hr_ix(_i12867, _t12867->n, "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:1599"); }))).k_) == (((uint8_t)11LL))))) { (void)(f308_gx(b_2525));
+if ((((((*({ hrv *_t12864 = &(g681); int64_t _i12864 = f307_fin(b_2525); (S1*)_t12864->b + hr_ix(_i12864, _t12864->n, "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:1605"); }))).k_) == (((uint8_t)10LL))) || ((((*({ hrv *_t12867 = &(g681); int64_t _i12867 = f307_fin(b_2525); (S1*)_t12867->b + hr_ix(_i12867, _t12867->n, "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:1605"); }))).k_) == (((uint8_t)11LL))))) { (void)(f308_gx(b_2525));
  } else { (void)(f337_gaddr(b_2525));
  }
-if (((rpd_2526) >= (((int64_t)0LL)))) { (void)(({ hrv *_o12872 = &(g163); hr_fs(_o12872, hr_str("), (uint8_t*)g", 14)); hr_fi(_o12872, rpd_2526); hr_fs(_o12872, hr_str(".b, ", 4)); hr_fc(_o12872, (((((int64_t)((int64_t)HR_CI2I(int64_t, ((*({ hrv *_t12875 = &(g681); int64_t _i12875 = rt_2524; (S1*)_t12875->b + hr_ix(_i12875, _t12875->n, "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:1600"); }))).fl_, "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:1600") & (int64_t)((int64_t)2LL)))) != (((int64_t)0LL)))) ? "true" : "false"); hr_fs(_o12872, hr_str(");", 2)); }));
- } else { (void)(({ hrv *_o12876 = &(g163); hr_fs(_o12876, hr_str("), ", 3)); hr_fc(_o12876, (((((int64_t)((int64_t)HR_CI2I(int64_t, ((*({ hrv *_t12879 = &(g681); int64_t _i12879 = rt_2524; (S1*)_t12879->b + hr_ix(_i12879, _t12879->n, "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:1600"); }))).fl_, "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:1600") & (int64_t)((int64_t)2LL)))) != (((int64_t)0LL)))) ? "true" : "false"); hr_fs(_o12876, hr_str(", ", 2)); hr_fi(_o12876, ((int64_t)((((int64_t)8LL)) << ((((int64_t)((int64_t)HR_CI2I(int64_t, ((*({ hrv *_t12882 = &(g681); int64_t _i12882 = rt_2524; (S1*)_t12882->b + hr_ix(_i12882, _t12882->n, "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:1600"); }))).c_, "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:1600") & (int64_t)((int64_t)3LL)))) & 63)))); hr_fs(_o12876, hr_str(");", 2)); }));
+if (((rpd_2526) >= (((int64_t)0LL)))) { (void)(({ hrv *_o12872 = &(g163); hr_fs(_o12872, hr_str("), (uint8_t*)g", 14)); hr_fi(_o12872, rpd_2526); hr_fs(_o12872, hr_str(".b, ", 4)); hr_fc(_o12872, (((((int64_t)((int64_t)HR_CI2I(int64_t, ((*({ hrv *_t12875 = &(g681); int64_t _i12875 = rt_2524; (S1*)_t12875->b + hr_ix(_i12875, _t12875->n, "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:1606"); }))).fl_, "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:1606") & (int64_t)((int64_t)2LL)))) != (((int64_t)0LL)))) ? "true" : "false"); hr_fs(_o12872, hr_str(");", 2)); }));
+ } else { (void)(({ hrv *_o12876 = &(g163); hr_fs(_o12876, hr_str("), ", 3)); hr_fc(_o12876, (((((int64_t)((int64_t)HR_CI2I(int64_t, ((*({ hrv *_t12879 = &(g681); int64_t _i12879 = rt_2524; (S1*)_t12879->b + hr_ix(_i12879, _t12879->n, "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:1606"); }))).fl_, "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:1606") & (int64_t)((int64_t)2LL)))) != (((int64_t)0LL)))) ? "true" : "false"); hr_fs(_o12876, hr_str(", ", 2)); hr_fi(_o12876, ((int64_t)((((int64_t)8LL)) << ((((int64_t)((int64_t)HR_CI2I(int64_t, ((*({ hrv *_t12882 = &(g681); int64_t _i12882 = rt_2524; (S1*)_t12882->b + hr_ix(_i12882, _t12882->n, "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:1606"); }))).c_, "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:1606") & (int64_t)((int64_t)3LL)))) & 63)))); hr_fs(_o12876, hr_str(");", 2)); }));
  }
 return;
  }
-if ((((o_2516) == (((int64_t)18LL))) && ((((*({ hrv *_t12885 = &(g681); int64_t _i12885 = tt_2522; (S1*)_t12885->b + hr_ix(_i12885, _t12885->n, "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:1603"); }))).k_) == (((uint8_t)10LL))))) { int64_t b_2533 = HR_CI2I(int64_t, (x_2515).b_, "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:1604"); 
+if ((((o_2516) == (((int64_t)18LL))) && ((((*({ hrv *_t12885 = &(g681); int64_t _i12885 = tt_2522; (S1*)_t12885->b + hr_ix(_i12885, _t12885->n, "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:1609"); }))).k_) == (((uint8_t)10LL))))) { int64_t b_2533 = HR_CI2I(int64_t, (x_2515).b_, "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:1610"); 
 (void)(f314_gx0(a_2521));
 (void)(f281_ow(hr_str(" = ", 3)));
-if ((((((*({ hrv *_t12889 = &(g681); int64_t _i12889 = f307_fin(b_2533); (S1*)_t12889->b + hr_ix(_i12889, _t12889->n, "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:1606"); }))).k_) == (((uint8_t)10LL))) || ((((*({ hrv *_t12892 = &(g681); int64_t _i12892 = f307_fin(b_2533); (S1*)_t12892->b + hr_ix(_i12892, _t12892->n, "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:1606"); }))).k_) == (((uint8_t)11LL))))) { (void)(f308_gx(b_2533));
+if ((((((*({ hrv *_t12889 = &(g681); int64_t _i12889 = f307_fin(b_2533); (S1*)_t12889->b + hr_ix(_i12889, _t12889->n, "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:1612"); }))).k_) == (((uint8_t)10LL))) || ((((*({ hrv *_t12892 = &(g681); int64_t _i12892 = f307_fin(b_2533); (S1*)_t12892->b + hr_ix(_i12892, _t12892->n, "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:1612"); }))).k_) == (((uint8_t)11LL))))) { (void)(f308_gx(b_2533));
  } else { (void)(f337_gaddr(b_2533));
  }
 (void)(f281_ow(hr_str(";", 1)));
 return;
  }
 if ((((o_2516) == (((int64_t)36LL))) || ((o_2516) == (((int64_t)18LL))))) { if (f292_is_res(d_2523)) { (void)(f281_ow(hr_str("hr_rset(", 8)));
-if (((((*({ hrv *_t12902 = &(g681); int64_t _i12902 = tt_2522; (S1*)_t12902->b + hr_ix(_i12902, _t12902->n, "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:1611"); }))).k_) == (((uint8_t)10LL)))) { (void)(f314_gx0(a_2521));
+if (((((*({ hrv *_t12902 = &(g681); int64_t _i12902 = tt_2522; (S1*)_t12902->b + hr_ix(_i12902, _t12902->n, "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:1617"); }))).k_) == (((uint8_t)10LL)))) { (void)(f314_gx0(a_2521));
  } else { (void)(f281_ow(hr_str("&(", 2)));
 (void)(f308_gx(a_2521));
 (void)(f281_ow(hr_str(")", 1)));
  }
 (void)(f281_ow(hr_str(", ", 2)));
-(void)(f340_gxo(HR_CI2I(int64_t, (x_2515).b_, "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:1611")));
+(void)(f340_gxo(HR_CI2I(int64_t, (x_2515).b_, "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:1617")));
 (void)(f281_ow(hr_str(");", 2)));
 return;
  }
-if ((((((((*({ hrv *_t12911 = &(g681); int64_t _i12911 = tt_2522; (S1*)_t12911->b + hr_ix(_i12911, _t12911->n, "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:1612"); }))).k_) == (((uint8_t)10LL))) && ((((*({ hrv *_t12913 = &(g681); int64_t _i12913 = f142_at(HR_CI2I(int64_t, (x_2515).b_, "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:1612")); (S1*)_t12913->b + hr_ix(_i12913, _t12913->n, "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:1612"); }))).k_) != (((uint8_t)10LL)))) && ((((*({ hrv *_t12916 = &(g681); int64_t _i12916 = f307_fin(HR_CI2I(int64_t, (x_2515).b_, "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:1612")); (S1*)_t12916->b + hr_ix(_i12916, _t12916->n, "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:1612"); }))).k_) != (((uint8_t)10LL)))) && ((((*({ hrv *_t12919 = &(g681); int64_t _i12919 = f142_at(HR_CI2I(int64_t, (x_2515).b_, "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:1612")); (S1*)_t12919->b + hr_ix(_i12919, _t12919->n, "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:1612"); }))).k_) != (((uint8_t)11LL))))) { (void)(f281_ow(hr_str("*", 1)));
+if ((((((((*({ hrv *_t12911 = &(g681); int64_t _i12911 = tt_2522; (S1*)_t12911->b + hr_ix(_i12911, _t12911->n, "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:1618"); }))).k_) == (((uint8_t)10LL))) && ((((*({ hrv *_t12913 = &(g681); int64_t _i12913 = f142_at(HR_CI2I(int64_t, (x_2515).b_, "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:1618")); (S1*)_t12913->b + hr_ix(_i12913, _t12913->n, "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:1618"); }))).k_) != (((uint8_t)10LL)))) && ((((*({ hrv *_t12916 = &(g681); int64_t _i12916 = f307_fin(HR_CI2I(int64_t, (x_2515).b_, "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:1618")); (S1*)_t12916->b + hr_ix(_i12916, _t12916->n, "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:1618"); }))).k_) != (((uint8_t)10LL)))) && ((((*({ hrv *_t12919 = &(g681); int64_t _i12919 = f142_at(HR_CI2I(int64_t, (x_2515).b_, "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:1618")); (S1*)_t12919->b + hr_ix(_i12919, _t12919->n, "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:1618"); }))).k_) != (((uint8_t)11LL))))) { (void)(f281_ow(hr_str("*", 1)));
 (void)(f314_gx0(a_2521));
 (void)(f281_ow(hr_str(" = ", 3)));
-(void)(f308_gx(HR_CI2I(int64_t, (x_2515).b_, "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:1612")));
+(void)(f308_gx(HR_CI2I(int64_t, (x_2515).b_, "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:1618")));
 (void)(f281_ow(hr_str(";", 1)));
 return;
  }
-if (((((*({ hrv *_t12927 = &(g834); int64_t _i12927 = a_2521; (S4*)_t12927->b + hr_ix(_i12927, _t12927->n, "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:1613"); }))).k_) == (((uint8_t)8LL)))) { (void)(f308_gx(a_2521));
+if (((((*({ hrv *_t12927 = &(g834); int64_t _i12927 = a_2521; (S4*)_t12927->b + hr_ix(_i12927, _t12927->n, "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:1619"); }))).k_) == (((uint8_t)8LL)))) { (void)(f308_gx(a_2521));
 (void)(f281_ow(hr_str(" = ", 3)));
-(void)(f308_gx(HR_CI2I(int64_t, (x_2515).b_, "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:1613")));
+(void)(f308_gx(HR_CI2I(int64_t, (x_2515).b_, "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:1619")));
 (void)(f281_ow(hr_str(";", 1)));
 return;
  }
@@ -11641,7 +11641,7 @@ int64_t q_2534 = f331_nt();
 (void)(f281_ow(hr_str("); *_t", 6)));
 (void)(f335_oi(q_2534));
 (void)(f281_ow(hr_str(" = ", 3)));
-(void)(f308_gx(HR_CI2I(int64_t, (x_2515).b_, "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:1615")));
+(void)(f308_gx(HR_CI2I(int64_t, (x_2515).b_, "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:1621")));
 (void)(f281_ow(hr_str("; }", 3)));
 return;
  }
@@ -11651,7 +11651,7 @@ int64_t p_2535 = f331_nt();
 (void)(f281_ow(hr_str(" *_t", 4)));
 (void)(f335_oi(p_2535));
 (void)(f281_ow(hr_str(" = ", 3)));
-if (((((*({ hrv *_t12951 = &(g681); int64_t _i12951 = tt_2522; (S1*)_t12951->b + hr_ix(_i12951, _t12951->n, "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:1620"); }))).k_) == (((uint8_t)10LL)))) { (void)(f314_gx0(a_2521));
+if (((((*({ hrv *_t12951 = &(g681); int64_t _i12951 = tt_2522; (S1*)_t12951->b + hr_ix(_i12951, _t12951->n, "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:1626"); }))).k_) == (((uint8_t)10LL)))) { (void)(f314_gx0(a_2521));
  } else { (void)(f281_ow(hr_str("&(", 2)));
 (void)(f308_gx(a_2521));
 (void)(f281_ow(hr_str(")", 1)));
@@ -11659,30 +11659,30 @@ if (((((*({ hrv *_t12951 = &(g681); int64_t _i12951 = tt_2522; (S1*)_t12951->b +
 (void)(f281_ow(hr_str("; *_t", 5)));
 (void)(f335_oi(p_2535));
 (void)(f281_ow(hr_str(" = ", 3)));
-(void)(f358_garith(f414_base_op(o_2516), d_2523, ((int64_t)-1LL), HR_CI2I(int64_t, (x_2515).b_, "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:1622"), p_2535, n_2514));
+(void)(f358_garith(f414_base_op(o_2516), d_2523, ((int64_t)-1LL), HR_CI2I(int64_t, (x_2515).b_, "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:1628"), p_2535, n_2514));
 (void)(f281_ow(hr_str("; }", 3)));
 }
 static void f413_grel_lv(int64_t n_2527) {
-if (((HR_CI2I(int64_t, ((*({ hrv *_t12963 = &(g834); int64_t _i12963 = n_2527; (S4*)_t12963->b + hr_ix(_i12963, _t12963->n, "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:1649"); }))).k_, "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:1649")) == (((int64_t)8LL)))) { if (((f151_rk(n_2527)) == (((int64_t)1LL)))) { (void)(f324_lv_name(f152_rv(n_2527)));
+if (((HR_CI2I(int64_t, ((*({ hrv *_t12963 = &(g834); int64_t _i12963 = n_2527; (S4*)_t12963->b + hr_ix(_i12963, _t12963->n, "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:1655"); }))).k_, "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:1655")) == (((int64_t)8LL)))) { if (((f151_rk(n_2527)) == (((int64_t)1LL)))) { (void)(f324_lv_name(f152_rv(n_2527)));
  } else { (void)(({ hrv *_o12968 = &(g163); hr_fs(_o12968, hr_str("g", 1)); hr_fi(_o12968, f152_rv(n_2527)); }));
  }
 return;
  }
-if (((HR_CI2I(int64_t, ((*({ hrv *_t12971 = &(g834); int64_t _i12971 = n_2527; (S4*)_t12971->b + hr_ix(_i12971, _t12971->n, "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:1650"); }))).k_, "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:1650")) == (((int64_t)12LL)))) { (void)(f368_gidx1(n_2527));
+if (((HR_CI2I(int64_t, ((*({ hrv *_t12971 = &(g834); int64_t _i12971 = n_2527; (S4*)_t12971->b + hr_ix(_i12971, _t12971->n, "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:1656"); }))).k_, "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:1656")) == (((int64_t)12LL)))) { (void)(f368_gidx1(n_2527));
 return;
  }
-int64_t a_2528 = HR_CI2I(int64_t, ((*({ hrv *_t12973 = &(g834); int64_t _i12973 = n_2527; (S4*)_t12973->b + hr_ix(_i12973, _t12973->n, "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:1651"); }))).a_, "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:1651"); 
+int64_t a_2528 = HR_CI2I(int64_t, ((*({ hrv *_t12973 = &(g834); int64_t _i12973 = n_2527; (S4*)_t12973->b + hr_ix(_i12973, _t12973->n, "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:1657"); }))).a_, "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:1657"); 
 int64_t bt_2529 = f142_at(a_2528); 
 int64_t st_2530 = f193_deref(bt_2529); 
-int64_t si_2531 = ({ int64_t _r12976; if (((((*({ hrv *_t12978 = &(g681); int64_t _i12978 = st_2530; (S1*)_t12978->b + hr_ix(_i12978, _t12978->n, "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:1652"); }))).k_) == (((uint8_t)5LL)))) { _r12976 = HR_CI2I(int64_t, ((*({ hrv *_t12979 = &(g681); int64_t _i12979 = st_2530; (S1*)_t12979->b + hr_ix(_i12979, _t12979->n, "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:1652"); }))).a_, "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:1652");  } else { _r12976 = f236_ax(n_2527);  } _r12976; }); 
-S11 f_2532 = (*({ hrv *_t12981 = &(g685); int64_t _i12981 = ({ int64_t _t12982[1] = { HR_CI2I(int64_t, ((*({ hrv *_t12983 = &(g684); int64_t _i12983 = si_2531; (S10*)_t12983->b + hr_ix(_i12983, _t12983->n, "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:1653"); }))).f0_, "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:1653") }; HR_SADD(int64_t, (*_t12982), f152_rv(n_2527), "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:1653"); }); (S11*)_t12981->b + hr_ix(_i12981, _t12981->n, "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:1653"); })); 
+int64_t si_2531 = ({ int64_t _r12976; if (((((*({ hrv *_t12978 = &(g681); int64_t _i12978 = st_2530; (S1*)_t12978->b + hr_ix(_i12978, _t12978->n, "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:1658"); }))).k_) == (((uint8_t)5LL)))) { _r12976 = HR_CI2I(int64_t, ((*({ hrv *_t12979 = &(g681); int64_t _i12979 = st_2530; (S1*)_t12979->b + hr_ix(_i12979, _t12979->n, "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:1658"); }))).a_, "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:1658");  } else { _r12976 = f236_ax(n_2527);  } _r12976; }); 
+S11 f_2532 = (*({ hrv *_t12981 = &(g685); int64_t _i12981 = ({ int64_t _t12982[1] = { HR_CI2I(int64_t, ((*({ hrv *_t12983 = &(g684); int64_t _i12983 = si_2531; (S10*)_t12983->b + hr_ix(_i12983, _t12983->n, "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:1659"); }))).f0_, "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:1659") }; HR_SADD(int64_t, (*_t12982), f152_rv(n_2527), "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:1659"); }); (S11*)_t12981->b + hr_ix(_i12981, _t12981->n, "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:1659"); })); 
 (void)(f281_ow(hr_str("(", 1)));
-if (((((*({ hrv *_t12987 = &(g681); int64_t _i12987 = bt_2529; (S1*)_t12987->b + hr_ix(_i12987, _t12987->n, "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:1655"); }))).k_) == (((uint8_t)10LL)))) { (void)(f314_gx0(a_2528));
+if (((((*({ hrv *_t12987 = &(g681); int64_t _i12987 = bt_2529; (S1*)_t12987->b + hr_ix(_i12987, _t12987->n, "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:1661"); }))).k_) == (((uint8_t)10LL)))) { (void)(f314_gx0(a_2528));
 (void)(f281_ow(hr_str(")->", 3)));
  } else { (void)(f308_gx(a_2528));
 (void)(f281_ow(hr_str(").", 2)));
  }
-(void)(f291_fname_into((&(g163)), HR_CI2I(int64_t, (f_2532).name_, "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:1656")));
+(void)(f291_fname_into((&(g163)), HR_CI2I(int64_t, (f_2532).name_, "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:1662")));
 }
 static int64_t f414_base_op(int64_t o_2536) {
 if (((o_2536) == (((int64_t)26LL)))) { return ((int64_t)21LL);
@@ -11872,587 +11872,639 @@ L101 qn_2583 = ({ L101 _t13170; memset(&_t13170, 0, sizeof _t13170); _t13170.n =
 (void)(({ L101 *_l13171 = &(qn_2583); hrv _o13171 __attribute__((cleanup(hr_rdrop))) = {0}; hr_fs(&_o13171, hr_str("_q", 2)); hr_fi(&_o13171, p_2574); if (_l13171->n + _o13171.n > 32) hr_die("format past a limited array's capacity", "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:1470"); memcpy(_l13171->e + _l13171->n, _o13171.b, (size_t)_o13171.n); _l13171->n += _o13171.n; }));
 L102 ez_2584 = ({ L102 _t13172; memset(&_t13172, 0, sizeof _t13172); _t13172.n = 0; _t13172; }); 
 (void)(f295_vz_into((&(ez_2584)), e_2581, ({ hsl _t13174 = ({ L101 *_t13175 = &(qn_2583); (hsl){ (uint8_t*)_t13175->e, _t13175->n }; }); int64_t _l13174 = 0, _h13174 = _t13174.n; if (_l13174 < 0 || _h13174 < _l13174 || _h13174 > _t13174.n) hr_slerr(_l13174, _h13174, _t13174.n, "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:1471"); (hsl){ _t13174.p + _l13174 * (int64_t)sizeof(uint8_t), _h13174 - _l13174 }; })));
+if (((f292_is_res(d_2580) && ((((*({ hrv *_t13178 = &(g681); int64_t _i13178 = bt_2579; (S1*)_t13178->b + hr_ix(_i13178, _t13178->n, "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:1472"); }))).k_) == (((uint8_t)10LL)))) && ((HR_CI2I(int64_t, ((*({ hrv *_t13180 = &(g834); int64_t _i13180 = a_2578; (S4*)_t13180->b + hr_ix(_i13180, _t13180->n, "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:1472"); }))).k_, "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:1472")) == (((int64_t)8LL))))) { L102 ez2_2585 = ({ L102 _t13181; memset(&_t13181, 0, sizeof _t13181); _t13181.n = 0; _t13181; }); 
+(void)(f295_vz_into((&(ez2_2585)), e_2581, hr_str("_q2", 3)));
 (void)(f281_ow(hr_str("{ hsl _v", 8)));
 (void)(f335_oi(p_2574));
 (void)(f281_ow(hr_str(" = ", 3)));
 (void)(f334_gsl(a_2578, bt_2579));
-(void)(({ hrv *_o13180 = &(g163); hr_fs(_o13180, hr_str("; uint8_t *_q", 13)); hr_fi(_o13180, p_2574); hr_fs(_o13180, hr_str(" = _v", 5)); hr_fi(_o13180, p_2574); hr_fs(_o13180, hr_str(".p; for (int64_t _k", 19)); hr_fi(_o13180, p_2574); hr_fs(_o13180, hr_str(" = 0; _k", 8)); hr_fi(_o13180, p_2574); hr_fs(_o13180, hr_str(" < _v", 5)); hr_fi(_o13180, p_2574); hr_fs(_o13180, hr_str(".n; _k", 6)); hr_fi(_o13180, p_2574); hr_fs(_o13180, hr_str("++, _q", 6)); hr_fi(_o13180, p_2574); hr_fs(_o13180, hr_str(" += ", 4)); hr_fs(_o13180, ({ hsl _t13181 = ({ L102 *_t13182 = &(ez_2584); (hsl){ (uint8_t*)_t13182->e, _t13182->n }; }); int64_t _l13181 = 0, _h13181 = _t13181.n; if (_l13181 < 0 || _h13181 < _l13181 || _h13181 > _t13181.n) hr_slerr(_l13181, _h13181, _t13181.n, "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:1472"); (hsl){ _t13181.p + _l13181 * (int64_t)sizeof(uint8_t), _h13181 - _l13181 }; })); hr_fs(_o13180, hr_str(") { ", 4)); }));
-(void)(f281_ow(hr_str("uint8_t *", 9)));
-(void)(f324_lv_name(v_2570));
-(void)(({ hrv *_o13185 = &(g163); hr_fs(_o13185, hr_str(" = _q", 5)); hr_fi(_o13185, p_2574); hr_fs(_o13185, hr_str("; ", 2)); }));
-if (((iv_2572) >= (((int64_t)0LL)))) { (void)(f282_ct(HR_CI2I(int64_t, ((*({ hrv *_t13188 = &(g505); int64_t _i13188 = iv_2572; (S12*)_t13188->b + hr_ix(_i13188, _t13188->n, "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:1474"); }))).ty_, "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:1474")));
-(void)(f281_ow(hr_str(" ", 1)));
-(void)(f324_lv_name(iv_2572));
-(void)(f281_ow(hr_str(" = (", 4)));
-(void)(f282_ct(HR_CI2I(int64_t, ((*({ hrv *_t13193 = &(g505); int64_t _i13193 = iv_2572; (S12*)_t13193->b + hr_ix(_i13193, _t13193->n, "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:1474"); }))).ty_, "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:1474")));
-(void)(({ hrv *_o13194 = &(g163); hr_fs(_o13194, hr_str(")_k", 3)); hr_fi(_o13194, p_2574); hr_fs(_o13194, hr_str("; ", 2)); }));
- }
-(void)(f416_gblk(HR_CI2I(int64_t, (x_2569).d_, "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:1475"), ((int64_t)-1LL), false));
-(void)(f281_ow(hr_str(" } }", 4)));
-(void)(f421_lbl_pop(l_2573));
-return;
- }
-if (f292_is_res(d_2580)) { (void)(f281_ow(hr_str("{ hrv *_v", 9)));
+(void)(({ hrv *_o13187 = &(g163); hr_fs(_o13187, hr_str("; uint8_t *_q", 13)); hr_fi(_o13187, p_2574); hr_fs(_o13187, hr_str(" = _v", 5)); hr_fi(_o13187, p_2574); hr_fs(_o13187, hr_str(".p; for (int64_t _k", 19)); hr_fi(_o13187, p_2574); hr_fs(_o13187, hr_str(" = 0; ; _k", 10)); hr_fi(_o13187, p_2574); hr_fs(_o13187, hr_str("++, _q", 6)); hr_fi(_o13187, p_2574); hr_fs(_o13187, hr_str(" += ", 4)); hr_fs(_o13187, ({ hsl _t13188 = ({ L102 *_t13189 = &(ez_2584); (hsl){ (uint8_t*)_t13189->e, _t13189->n }; }); int64_t _l13188 = 0, _h13188 = _t13188.n; if (_l13188 < 0 || _h13188 < _l13188 || _h13188 > _t13188.n) hr_slerr(_l13188, _h13188, _t13188.n, "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:1472"); (hsl){ _t13188.p + _l13188 * (int64_t)sizeof(uint8_t), _h13188 - _l13188 }; })); hr_fs(_o13187, hr_str(") { hsl _c", 10)); hr_fi(_o13187, p_2574); hr_fs(_o13187, hr_str(" = ", 3)); }));
+(void)(f334_gsl(a_2578, bt_2579));
+(void)(({ hrv *_o13191 = &(g163); hr_fs(_o13191, hr_str("; if (_k", 8)); hr_fi(_o13191, p_2574); hr_fs(_o13191, hr_str(" >= _c", 6)); hr_fi(_o13191, p_2574); hr_fs(_o13191, hr_str(".n) break; if (_c", 17)); hr_fi(_o13191, p_2574); hr_fs(_o13191, hr_str(".p != _v", 8)); hr_fi(_o13191, p_2574); hr_fs(_o13191, hr_str(".p || _c", 8)); hr_fi(_o13191, p_2574); hr_fs(_o13191, hr_str(".n != _v", 8)); hr_fi(_o13191, p_2574); hr_fs(_o13191, hr_str(".n) { _v", 8)); hr_fi(_o13191, p_2574); hr_fs(_o13191, hr_str(" = _c", 5)); hr_fi(_o13191, p_2574); hr_fs(_o13191, hr_str("; uint8_t *_q2 = _v", 19)); hr_fi(_o13191, p_2574); hr_fs(_o13191, hr_str(".p; for (int64_t _j = 0; _j < _k", 32)); hr_fi(_o13191, p_2574); hr_fs(_o13191, hr_str("; _j++) _q2 += ", 15)); hr_fs(_o13191, ({ hsl _t13192 = ({ L102 *_t13193 = &(ez2_2585); (hsl){ (uint8_t*)_t13193->e, _t13193->n }; }); int64_t _l13192 = 0, _h13192 = _t13192.n; if (_l13192 < 0 || _h13192 < _l13192 || _h13192 > _t13192.n) hr_slerr(_l13192, _h13192, _t13192.n, "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:1472"); (hsl){ _t13192.p + _l13192 * (int64_t)sizeof(uint8_t), _h13192 - _l13192 }; })); hr_fs(_o13191, hr_str("; _q", 4)); hr_fi(_o13191, p_2574); hr_fs(_o13191, hr_str(" = _q2; } ", 10)); }));
+ } else { if ((((((*({ hrv *_t13195 = &(g681); int64_t _i13195 = d_2580; (S1*)_t13195->b + hr_ix(_i13195, _t13195->n, "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:1473"); }))).k_) == (((uint8_t)9LL))) && (((((*({ hrv *_t13197 = &(g681); int64_t _i13197 = bt_2579; (S1*)_t13197->b + hr_ix(_i13197, _t13197->n, "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:1473"); }))).k_) == (((uint8_t)10LL))) || f310_is_place(a_2578)))) { L102 ez2_2586 = ({ L102 _t13199; memset(&_t13199, 0, sizeof _t13199); _t13199.n = 0; _t13199; }); 
+(void)(f295_vz_into((&(ez2_2586)), e_2581, hr_str("_q2", 3)));
+(void)(f281_ow(hr_str("{ hsl *_w", 9)));
 (void)(f335_oi(p_2574));
 (void)(f281_ow(hr_str(" = ", 3)));
-(void)(f380_grecv_ptr(a_2578));
-(void)(({ hrv *_o13203 = &(g163); hr_fs(_o13203, hr_str("; for (int64_t _k", 17)); hr_fi(_o13203, p_2574); hr_fs(_o13203, hr_str(" = 0; _k", 8)); hr_fi(_o13203, p_2574); hr_fs(_o13203, hr_str(" < _v", 5)); hr_fi(_o13203, p_2574); hr_fs(_o13203, hr_str("->n; _k", 7)); hr_fi(_o13203, p_2574); hr_fs(_o13203, hr_str("++) { ", 6)); }));
-if ((f303_is_rel(e_2581) && (!(byref_2582)))) { (void)(f282_ct(HR_CI2I(int64_t, ((*({ hrv *_t13206 = &(g505); int64_t _i13206 = v_2570; (S12*)_t13206->b + hr_ix(_i13206, _t13206->n, "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:1482"); }))).ty_, "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:1482")));
-(void)(f281_ow(hr_str(" ", 1)));
-(void)(f324_lv_name(v_2570));
-(void)(f281_ow(hr_str(" = ", 3)));
-(void)(f323_rdec_pre_t(e_2581, HR_CI2I(int64_t, ((*({ hrv *_t13211 = &(g505); int64_t _i13211 = v_2570; (S12*)_t13211->b + hr_ix(_i13211, _t13211->n, "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:1482"); }))).ty_, "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:1482")));
-(void)(f281_ow(hr_str("((", 2)));
-(void)(f282_ct(e_2581));
-(void)(({ hrv *_o13214 = &(g163); hr_fs(_o13214, hr_str("*)_v", 4)); hr_fi(_o13214, p_2574); hr_fs(_o13214, hr_str("->b)[_k", 7)); hr_fi(_o13214, p_2574); hr_fs(_o13214, hr_str("]", 1)); }));
-(void)(f325_rdec_post(e_2581));
-(void)(f281_ow(hr_str("; ", 2)));
- } else { (void)(f282_ct(e_2581));
-(void)(f281_ow(({ hsl _r13219; if (byref_2582) { _r13219 = hr_str(" *", 2);  } else { _r13219 = hr_str(" ", 1);  } _r13219; })));
-(void)(f324_lv_name(v_2570));
-(void)(f281_ow(({ hsl _r13222; if (byref_2582) { _r13222 = hr_str(" = &((", 6);  } else { _r13222 = hr_str(" = ((", 5);  } _r13222; })));
-(void)(f282_ct(e_2581));
-(void)(({ hrv *_o13224 = &(g163); hr_fs(_o13224, hr_str("*)_v", 4)); hr_fi(_o13224, p_2574); hr_fs(_o13224, hr_str("->b)[_k", 7)); hr_fi(_o13224, p_2574); hr_fs(_o13224, hr_str("]; ", 3)); }));
+if (((((*({ hrv *_t13205 = &(g681); int64_t _i13205 = bt_2579; (S1*)_t13205->b + hr_ix(_i13205, _t13205->n, "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:1473"); }))).k_) == (((uint8_t)10LL)))) { (void)(f314_gx0(a_2578));
+ } else { (void)(f281_ow(hr_str("&(", 2)));
+(void)(f308_gx(a_2578));
+(void)(f281_ow(hr_str(")", 1)));
  }
+(void)(({ hrv *_o13210 = &(g163); hr_fs(_o13210, hr_str("; hsl _v", 8)); hr_fi(_o13210, p_2574); hr_fs(_o13210, hr_str(" = *_w", 6)); hr_fi(_o13210, p_2574); hr_fs(_o13210, hr_str("; uint8_t *_q", 13)); hr_fi(_o13210, p_2574); hr_fs(_o13210, hr_str(" = _v", 5)); hr_fi(_o13210, p_2574); hr_fs(_o13210, hr_str(".p; for (int64_t _k", 19)); hr_fi(_o13210, p_2574); hr_fs(_o13210, hr_str(" = 0; _k", 8)); hr_fi(_o13210, p_2574); hr_fs(_o13210, hr_str(" < _w", 5)); hr_fi(_o13210, p_2574); hr_fs(_o13210, hr_str("->n; _k", 7)); hr_fi(_o13210, p_2574); hr_fs(_o13210, hr_str("++, _q", 6)); hr_fi(_o13210, p_2574); hr_fs(_o13210, hr_str(" += ", 4)); hr_fs(_o13210, ({ hsl _t13211 = ({ L102 *_t13212 = &(ez_2584); (hsl){ (uint8_t*)_t13212->e, _t13212->n }; }); int64_t _l13211 = 0, _h13211 = _t13211.n; if (_l13211 < 0 || _h13211 < _l13211 || _h13211 > _t13211.n) hr_slerr(_l13211, _h13211, _t13211.n, "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:1473"); (hsl){ _t13211.p + _l13211 * (int64_t)sizeof(uint8_t), _h13211 - _l13211 }; })); hr_fs(_o13210, hr_str(") { if (_w", 10)); hr_fi(_o13210, p_2574); hr_fs(_o13210, hr_str("->p != _v", 9)); hr_fi(_o13210, p_2574); hr_fs(_o13210, hr_str(".p || _w", 8)); hr_fi(_o13210, p_2574); hr_fs(_o13210, hr_str("->n != _v", 9)); hr_fi(_o13210, p_2574); hr_fs(_o13210, hr_str(".n) { _v", 8)); hr_fi(_o13210, p_2574); hr_fs(_o13210, hr_str(" = *_w", 6)); hr_fi(_o13210, p_2574); hr_fs(_o13210, hr_str("; uint8_t *_q2 = _v", 19)); hr_fi(_o13210, p_2574); hr_fs(_o13210, hr_str(".p; for (int64_t _j = 0; _j < _k", 32)); hr_fi(_o13210, p_2574); hr_fs(_o13210, hr_str("; _j++) _q2 += ", 15)); hr_fs(_o13210, ({ hsl _t13213 = ({ L102 *_t13214 = &(ez2_2586); (hsl){ (uint8_t*)_t13214->e, _t13214->n }; }); int64_t _l13213 = 0, _h13213 = _t13213.n; if (_l13213 < 0 || _h13213 < _l13213 || _h13213 > _t13213.n) hr_slerr(_l13213, _h13213, _t13213.n, "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:1473"); (hsl){ _t13213.p + _l13213 * (int64_t)sizeof(uint8_t), _h13213 - _l13213 }; })); hr_fs(_o13210, hr_str("; _q", 4)); hr_fi(_o13210, p_2574); hr_fs(_o13210, hr_str(" = _q2; } ", 10)); }));
  } else { (void)(f281_ow(hr_str("{ hsl _v", 8)));
 (void)(f335_oi(p_2574));
 (void)(f281_ow(hr_str(" = ", 3)));
 (void)(f334_gsl(a_2578, bt_2579));
-(void)(({ hrv *_o13229 = &(g163); hr_fs(_o13229, hr_str("; for (int64_t _k", 17)); hr_fi(_o13229, p_2574); hr_fs(_o13229, hr_str(" = 0; _k", 8)); hr_fi(_o13229, p_2574); hr_fs(_o13229, hr_str(" < _v", 5)); hr_fi(_o13229, p_2574); hr_fs(_o13229, hr_str(".n; _k", 6)); hr_fi(_o13229, p_2574); hr_fs(_o13229, hr_str("++) { ", 6)); }));
-if ((f303_is_rel(e_2581) && (!(byref_2582)))) { (void)(f282_ct(HR_CI2I(int64_t, ((*({ hrv *_t13232 = &(g505); int64_t _i13232 = v_2570; (S12*)_t13232->b + hr_ix(_i13232, _t13232->n, "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:1486"); }))).ty_, "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:1486")));
-(void)(f281_ow(hr_str(" ", 1)));
-(void)(f324_lv_name(v_2570));
-(void)(f281_ow(hr_str(" = ", 3)));
-(void)(f323_rdec_pre_t(e_2581, HR_CI2I(int64_t, ((*({ hrv *_t13237 = &(g505); int64_t _i13237 = v_2570; (S12*)_t13237->b + hr_ix(_i13237, _t13237->n, "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:1486"); }))).ty_, "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:1486")));
-(void)(f281_ow(hr_str("((", 2)));
-(void)(f282_ct(e_2581));
-(void)(({ hrv *_o13240 = &(g163); hr_fs(_o13240, hr_str("*)_v", 4)); hr_fi(_o13240, p_2574); hr_fs(_o13240, hr_str(".p)[_k", 6)); hr_fi(_o13240, p_2574); hr_fs(_o13240, hr_str("]", 1)); }));
-(void)(f325_rdec_post(e_2581));
-(void)(f281_ow(hr_str("; ", 2)));
- } else { (void)(f282_ct(e_2581));
-(void)(f281_ow(({ hsl _r13245; if (byref_2582) { _r13245 = hr_str(" *", 2);  } else { _r13245 = hr_str(" ", 1);  } _r13245; })));
-(void)(f324_lv_name(v_2570));
-(void)(f281_ow(({ hsl _r13248; if (byref_2582) { _r13248 = hr_str(" = &((", 6);  } else { _r13248 = hr_str(" = ((", 5);  } _r13248; })));
-(void)(f282_ct(e_2581));
-(void)(({ hrv *_o13250 = &(g163); hr_fs(_o13250, hr_str("*)_v", 4)); hr_fi(_o13250, p_2574); hr_fs(_o13250, hr_str(".p)[_k", 6)); hr_fi(_o13250, p_2574); hr_fs(_o13250, hr_str("]; ", 3)); }));
+(void)(({ hrv *_o13219 = &(g163); hr_fs(_o13219, hr_str("; uint8_t *_q", 13)); hr_fi(_o13219, p_2574); hr_fs(_o13219, hr_str(" = _v", 5)); hr_fi(_o13219, p_2574); hr_fs(_o13219, hr_str(".p; for (int64_t _k", 19)); hr_fi(_o13219, p_2574); hr_fs(_o13219, hr_str(" = 0; _k", 8)); hr_fi(_o13219, p_2574); hr_fs(_o13219, hr_str(" < _v", 5)); hr_fi(_o13219, p_2574); hr_fs(_o13219, hr_str(".n; _k", 6)); hr_fi(_o13219, p_2574); hr_fs(_o13219, hr_str("++, _q", 6)); hr_fi(_o13219, p_2574); hr_fs(_o13219, hr_str(" += ", 4)); hr_fs(_o13219, ({ hsl _t13220 = ({ L102 *_t13221 = &(ez_2584); (hsl){ (uint8_t*)_t13221->e, _t13221->n }; }); int64_t _l13220 = 0, _h13220 = _t13220.n; if (_l13220 < 0 || _h13220 < _l13220 || _h13220 > _t13220.n) hr_slerr(_l13220, _h13220, _t13220.n, "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:1474"); (hsl){ _t13220.p + _l13220 * (int64_t)sizeof(uint8_t), _h13220 - _l13220 }; })); hr_fs(_o13219, hr_str(") { ", 4)); }));
  }
  }
-if (((iv_2572) >= (((int64_t)0LL)))) { (void)(f282_ct(HR_CI2I(int64_t, ((*({ hrv *_t13253 = &(g505); int64_t _i13253 = iv_2572; (S12*)_t13253->b + hr_ix(_i13253, _t13253->n, "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:1489"); }))).ty_, "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:1489")));
+(void)(f281_ow(hr_str("uint8_t *", 9)));
+(void)(f324_lv_name(v_2570));
+(void)(({ hrv *_o13224 = &(g163); hr_fs(_o13224, hr_str(" = _q", 5)); hr_fi(_o13224, p_2574); hr_fs(_o13224, hr_str("; ", 2)); }));
+if (((iv_2572) >= (((int64_t)0LL)))) { (void)(f282_ct(HR_CI2I(int64_t, ((*({ hrv *_t13227 = &(g505); int64_t _i13227 = iv_2572; (S12*)_t13227->b + hr_ix(_i13227, _t13227->n, "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:1476"); }))).ty_, "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:1476")));
 (void)(f281_ow(hr_str(" ", 1)));
 (void)(f324_lv_name(iv_2572));
 (void)(f281_ow(hr_str(" = (", 4)));
-(void)(f282_ct(HR_CI2I(int64_t, ((*({ hrv *_t13258 = &(g505); int64_t _i13258 = iv_2572; (S12*)_t13258->b + hr_ix(_i13258, _t13258->n, "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:1489"); }))).ty_, "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:1489")));
-(void)(({ hrv *_o13259 = &(g163); hr_fs(_o13259, hr_str(")_k", 3)); hr_fi(_o13259, p_2574); hr_fs(_o13259, hr_str("; ", 2)); }));
+(void)(f282_ct(HR_CI2I(int64_t, ((*({ hrv *_t13232 = &(g505); int64_t _i13232 = iv_2572; (S12*)_t13232->b + hr_ix(_i13232, _t13232->n, "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:1476"); }))).ty_, "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:1476")));
+(void)(({ hrv *_o13233 = &(g163); hr_fs(_o13233, hr_str(")_k", 3)); hr_fi(_o13233, p_2574); hr_fs(_o13233, hr_str("; ", 2)); }));
  }
-(void)(f416_gblk(HR_CI2I(int64_t, (x_2569).d_, "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:1490"), ((int64_t)-1LL), false));
+(void)(f416_gblk(HR_CI2I(int64_t, (x_2569).d_, "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:1477"), ((int64_t)-1LL), false));
+(void)(f281_ow(hr_str(" } }", 4)));
+(void)(f421_lbl_pop(l_2573));
+return;
+ }
+if (f292_is_res(d_2580)) { if ((((((*({ hrv *_t13239 = &(g681); int64_t _i13239 = bt_2579; (S1*)_t13239->b + hr_ix(_i13239, _t13239->n, "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:1483"); }))).k_) == (((uint8_t)10LL))) && ((HR_CI2I(int64_t, ((*({ hrv *_t13241 = &(g834); int64_t _i13241 = a_2578; (S4*)_t13241->b + hr_ix(_i13241, _t13241->n, "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:1483"); }))).k_, "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:1483")) == (((int64_t)8LL))))) { (void)(({ hrv *_o13242 = &(g163); hr_fs(_o13242, hr_str("{ for (int64_t _k", 17)); hr_fi(_o13242, p_2574); hr_fs(_o13242, hr_str(" = 0; ; _k", 10)); hr_fi(_o13242, p_2574); hr_fs(_o13242, hr_str("++) { hrv *_v", 13)); hr_fi(_o13242, p_2574); hr_fs(_o13242, hr_str(" = ", 3)); }));
+(void)(f380_grecv_ptr(a_2578));
+(void)(({ hrv *_o13244 = &(g163); hr_fs(_o13244, hr_str("; if (_k", 8)); hr_fi(_o13244, p_2574); hr_fs(_o13244, hr_str(" >= _v", 6)); hr_fi(_o13244, p_2574); hr_fs(_o13244, hr_str("->n) break; ", 12)); }));
+ } else { (void)(f281_ow(hr_str("{ hrv *_v", 9)));
+(void)(f335_oi(p_2574));
+(void)(f281_ow(hr_str(" = ", 3)));
+(void)(f380_grecv_ptr(a_2578));
+(void)(({ hrv *_o13249 = &(g163); hr_fs(_o13249, hr_str("; for (int64_t _k", 17)); hr_fi(_o13249, p_2574); hr_fs(_o13249, hr_str(" = 0; _k", 8)); hr_fi(_o13249, p_2574); hr_fs(_o13249, hr_str(" < _v", 5)); hr_fi(_o13249, p_2574); hr_fs(_o13249, hr_str("->n; _k", 7)); hr_fi(_o13249, p_2574); hr_fs(_o13249, hr_str("++) { ", 6)); }));
+ }
+if ((f303_is_rel(e_2581) && (!(byref_2582)))) { (void)(f282_ct(HR_CI2I(int64_t, ((*({ hrv *_t13252 = &(g505); int64_t _i13252 = v_2570; (S12*)_t13252->b + hr_ix(_i13252, _t13252->n, "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:1485"); }))).ty_, "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:1485")));
+(void)(f281_ow(hr_str(" ", 1)));
+(void)(f324_lv_name(v_2570));
+(void)(f281_ow(hr_str(" = ", 3)));
+(void)(f323_rdec_pre_t(e_2581, HR_CI2I(int64_t, ((*({ hrv *_t13257 = &(g505); int64_t _i13257 = v_2570; (S12*)_t13257->b + hr_ix(_i13257, _t13257->n, "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:1485"); }))).ty_, "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:1485")));
+(void)(f281_ow(hr_str("((", 2)));
+(void)(f282_ct(e_2581));
+(void)(({ hrv *_o13260 = &(g163); hr_fs(_o13260, hr_str("*)_v", 4)); hr_fi(_o13260, p_2574); hr_fs(_o13260, hr_str("->b)[_k", 7)); hr_fi(_o13260, p_2574); hr_fs(_o13260, hr_str("]", 1)); }));
+(void)(f325_rdec_post(e_2581));
+(void)(f281_ow(hr_str("; ", 2)));
+ } else { (void)(f282_ct(e_2581));
+(void)(f281_ow(({ hsl _r13265; if (byref_2582) { _r13265 = hr_str(" *", 2);  } else { _r13265 = hr_str(" ", 1);  } _r13265; })));
+(void)(f324_lv_name(v_2570));
+(void)(f281_ow(({ hsl _r13268; if (byref_2582) { _r13268 = hr_str(" = &((", 6);  } else { _r13268 = hr_str(" = ((", 5);  } _r13268; })));
+(void)(f282_ct(e_2581));
+(void)(({ hrv *_o13270 = &(g163); hr_fs(_o13270, hr_str("*)_v", 4)); hr_fi(_o13270, p_2574); hr_fs(_o13270, hr_str("->b)[_k", 7)); hr_fi(_o13270, p_2574); hr_fs(_o13270, hr_str("]; ", 3)); }));
+ }
+ } else { if (((f321_is_lim(d_2580) && (!(f288_is_vimg(d_2580)))) && (((((*({ hrv *_t13274 = &(g681); int64_t _i13274 = bt_2579; (S1*)_t13274->b + hr_ix(_i13274, _t13274->n, "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:1488"); }))).k_) == (((uint8_t)10LL))) || f310_is_place(a_2578)))) { (void)(f281_ow(hr_str("{ ", 2)));
+(void)(f282_ct(d_2580));
+(void)(f281_ow(hr_str(" *_w", 4)));
+(void)(f335_oi(p_2574));
+(void)(f281_ow(hr_str(" = ", 3)));
+if (((((*({ hrv *_t13282 = &(g681); int64_t _i13282 = bt_2579; (S1*)_t13282->b + hr_ix(_i13282, _t13282->n, "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:1488"); }))).k_) == (((uint8_t)10LL)))) { (void)(f314_gx0(a_2578));
+ } else { (void)(f281_ow(hr_str("&(", 2)));
+(void)(f308_gx(a_2578));
+(void)(f281_ow(hr_str(")", 1)));
+ }
+(void)(({ hrv *_o13287 = &(g163); hr_fs(_o13287, hr_str("; for (int64_t _k", 17)); hr_fi(_o13287, p_2574); hr_fs(_o13287, hr_str(" = 0; _k", 8)); hr_fi(_o13287, p_2574); hr_fs(_o13287, hr_str(" < _w", 5)); hr_fi(_o13287, p_2574); hr_fs(_o13287, hr_str("->n; _k", 7)); hr_fi(_o13287, p_2574); hr_fs(_o13287, hr_str("++) { hsl _v", 12)); hr_fi(_o13287, p_2574); hr_fs(_o13287, hr_str(" = (hsl){ (uint8_t*)_w", 22)); hr_fi(_o13287, p_2574); hr_fs(_o13287, hr_str("->e, _w", 7)); hr_fi(_o13287, p_2574); hr_fs(_o13287, hr_str("->n }; ", 7)); }));
+ } else { if (((((((*({ hrv *_t13289 = &(g681); int64_t _i13289 = d_2580; (S1*)_t13289->b + hr_ix(_i13289, _t13289->n, "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:1489"); }))).k_) != (((uint8_t)9LL))) && ((((*({ hrv *_t13291 = &(g681); int64_t _i13291 = bt_2579; (S1*)_t13291->b + hr_ix(_i13291, _t13291->n, "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:1489"); }))).k_) == (((uint8_t)10LL)))) && ((HR_CI2I(int64_t, ((*({ hrv *_t13293 = &(g834); int64_t _i13293 = a_2578; (S4*)_t13293->b + hr_ix(_i13293, _t13293->n, "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:1489"); }))).k_, "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:1489")) == (((int64_t)8LL))))) { (void)(({ hrv *_o13294 = &(g163); hr_fs(_o13294, hr_str("{ for (int64_t _k", 17)); hr_fi(_o13294, p_2574); hr_fs(_o13294, hr_str(" = 0; ; _k", 10)); hr_fi(_o13294, p_2574); hr_fs(_o13294, hr_str("++) { hsl _v", 12)); hr_fi(_o13294, p_2574); hr_fs(_o13294, hr_str(" = ", 3)); }));
+(void)(f334_gsl(a_2578, bt_2579));
+(void)(({ hrv *_o13296 = &(g163); hr_fs(_o13296, hr_str("; if (_k", 8)); hr_fi(_o13296, p_2574); hr_fs(_o13296, hr_str(" >= _v", 6)); hr_fi(_o13296, p_2574); hr_fs(_o13296, hr_str(".n) break; ", 11)); }));
+ } else { if ((((((*({ hrv *_t13298 = &(g681); int64_t _i13298 = d_2580; (S1*)_t13298->b + hr_ix(_i13298, _t13298->n, "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:1490"); }))).k_) == (((uint8_t)9LL))) && (((((*({ hrv *_t13300 = &(g681); int64_t _i13300 = bt_2579; (S1*)_t13300->b + hr_ix(_i13300, _t13300->n, "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:1490"); }))).k_) == (((uint8_t)10LL))) || f310_is_place(a_2578)))) { (void)(f281_ow(hr_str("{ hsl *_w", 9)));
+(void)(f335_oi(p_2574));
+(void)(f281_ow(hr_str(" = ", 3)));
+if (((((*({ hrv *_t13306 = &(g681); int64_t _i13306 = bt_2579; (S1*)_t13306->b + hr_ix(_i13306, _t13306->n, "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:1490"); }))).k_) == (((uint8_t)10LL)))) { (void)(f314_gx0(a_2578));
+ } else { (void)(f281_ow(hr_str("&(", 2)));
+(void)(f308_gx(a_2578));
+(void)(f281_ow(hr_str(")", 1)));
+ }
+(void)(({ hrv *_o13311 = &(g163); hr_fs(_o13311, hr_str("; for (int64_t _k", 17)); hr_fi(_o13311, p_2574); hr_fs(_o13311, hr_str(" = 0; _k", 8)); hr_fi(_o13311, p_2574); hr_fs(_o13311, hr_str(" < _w", 5)); hr_fi(_o13311, p_2574); hr_fs(_o13311, hr_str("->n; _k", 7)); hr_fi(_o13311, p_2574); hr_fs(_o13311, hr_str("++) { hsl _v", 12)); hr_fi(_o13311, p_2574); hr_fs(_o13311, hr_str(" = *_w", 6)); hr_fi(_o13311, p_2574); hr_fs(_o13311, hr_str("; ", 2)); }));
+ } else { (void)(f281_ow(hr_str("{ hsl _v", 8)));
+(void)(f335_oi(p_2574));
+(void)(f281_ow(hr_str(" = ", 3)));
+(void)(f334_gsl(a_2578, bt_2579));
+(void)(({ hrv *_o13316 = &(g163); hr_fs(_o13316, hr_str("; for (int64_t _k", 17)); hr_fi(_o13316, p_2574); hr_fs(_o13316, hr_str(" = 0; _k", 8)); hr_fi(_o13316, p_2574); hr_fs(_o13316, hr_str(" < _v", 5)); hr_fi(_o13316, p_2574); hr_fs(_o13316, hr_str(".n; _k", 6)); hr_fi(_o13316, p_2574); hr_fs(_o13316, hr_str("++) { ", 6)); }));
+ }
+ }
+ }
+if ((f303_is_rel(e_2581) && (!(byref_2582)))) { (void)(f282_ct(HR_CI2I(int64_t, ((*({ hrv *_t13319 = &(g505); int64_t _i13319 = v_2570; (S12*)_t13319->b + hr_ix(_i13319, _t13319->n, "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:1492"); }))).ty_, "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:1492")));
+(void)(f281_ow(hr_str(" ", 1)));
+(void)(f324_lv_name(v_2570));
+(void)(f281_ow(hr_str(" = ", 3)));
+(void)(f323_rdec_pre_t(e_2581, HR_CI2I(int64_t, ((*({ hrv *_t13324 = &(g505); int64_t _i13324 = v_2570; (S12*)_t13324->b + hr_ix(_i13324, _t13324->n, "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:1492"); }))).ty_, "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:1492")));
+(void)(f281_ow(hr_str("((", 2)));
+(void)(f282_ct(e_2581));
+(void)(({ hrv *_o13327 = &(g163); hr_fs(_o13327, hr_str("*)_v", 4)); hr_fi(_o13327, p_2574); hr_fs(_o13327, hr_str(".p)[_k", 6)); hr_fi(_o13327, p_2574); hr_fs(_o13327, hr_str("]", 1)); }));
+(void)(f325_rdec_post(e_2581));
+(void)(f281_ow(hr_str("; ", 2)));
+ } else { (void)(f282_ct(e_2581));
+(void)(f281_ow(({ hsl _r13332; if (byref_2582) { _r13332 = hr_str(" *", 2);  } else { _r13332 = hr_str(" ", 1);  } _r13332; })));
+(void)(f324_lv_name(v_2570));
+(void)(f281_ow(({ hsl _r13335; if (byref_2582) { _r13335 = hr_str(" = &((", 6);  } else { _r13335 = hr_str(" = ((", 5);  } _r13335; })));
+(void)(f282_ct(e_2581));
+(void)(({ hrv *_o13337 = &(g163); hr_fs(_o13337, hr_str("*)_v", 4)); hr_fi(_o13337, p_2574); hr_fs(_o13337, hr_str(".p)[_k", 6)); hr_fi(_o13337, p_2574); hr_fs(_o13337, hr_str("]; ", 3)); }));
+ }
+ }
+if (((iv_2572) >= (((int64_t)0LL)))) { (void)(f282_ct(HR_CI2I(int64_t, ((*({ hrv *_t13340 = &(g505); int64_t _i13340 = iv_2572; (S12*)_t13340->b + hr_ix(_i13340, _t13340->n, "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:1495"); }))).ty_, "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:1495")));
+(void)(f281_ow(hr_str(" ", 1)));
+(void)(f324_lv_name(iv_2572));
+(void)(f281_ow(hr_str(" = (", 4)));
+(void)(f282_ct(HR_CI2I(int64_t, ((*({ hrv *_t13345 = &(g505); int64_t _i13345 = iv_2572; (S12*)_t13345->b + hr_ix(_i13345, _t13345->n, "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:1495"); }))).ty_, "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:1495")));
+(void)(({ hrv *_o13346 = &(g163); hr_fs(_o13346, hr_str(")_k", 3)); hr_fi(_o13346, p_2574); hr_fs(_o13346, hr_str("; ", 2)); }));
+ }
+(void)(f416_gblk(HR_CI2I(int64_t, (x_2569).d_, "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:1496"), ((int64_t)-1LL), false));
 (void)(f281_ow(hr_str(" } }", 4)));
 (void)(f421_lbl_pop(l_2573));
 }
-static void f424_gmatch(int64_t n_2585, int64_t res_2586) {
-S4 x_2587 = (*({ hrv *_t13263 = &(g834); int64_t _i13263 = n_2585; (S4*)_t13263->b + hr_ix(_i13263, _t13263->n, "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:1495"); })); 
-int64_t a_2588 = HR_CI2I(int64_t, (x_2587).a_, "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:1496"); 
-int64_t st_2589 = f142_at(a_2588); 
-int64_t d_2590 = f193_deref(st_2589); 
-int64_t p_2591 = f331_nt(); 
-bool isenum_2592 = ((((*({ hrv *_t13268 = &(g681); int64_t _i13268 = d_2590; (S1*)_t13268->b + hr_ix(_i13268, _t13268->n, "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:1500"); }))).k_) == (((uint8_t)6LL))); 
+static void f424_gmatch(int64_t n_2587, int64_t res_2588) {
+S4 x_2589 = (*({ hrv *_t13350 = &(g834); int64_t _i13350 = n_2587; (S4*)_t13350->b + hr_ix(_i13350, _t13350->n, "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:1501"); })); 
+int64_t a_2590 = HR_CI2I(int64_t, (x_2589).a_, "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:1502"); 
+int64_t st_2591 = f142_at(a_2590); 
+int64_t d_2592 = f193_deref(st_2591); 
+int64_t p_2593 = f331_nt(); 
+bool isenum_2594 = ((((*({ hrv *_t13355 = &(g681); int64_t _i13355 = d_2592; (S1*)_t13355->b + hr_ix(_i13355, _t13355->n, "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:1506"); }))).k_) == (((uint8_t)6LL))); 
 (void)(f281_ow(hr_str("{ ", 2)));
-if (isenum_2592) { (void)(f282_ct(d_2590));
+if (isenum_2594) { (void)(f282_ct(d_2592));
 (void)(f281_ow(hr_str(" *_m", 4)));
-(void)(f335_oi(p_2591));
+(void)(f335_oi(p_2593));
 (void)(f281_ow(hr_str(" = ", 3)));
-if (((((*({ hrv *_t13275 = &(g681); int64_t _i13275 = st_2589; (S1*)_t13275->b + hr_ix(_i13275, _t13275->n, "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:1502"); }))).k_) == (((uint8_t)10LL)))) { (void)(f314_gx0(a_2588));
- } else { if (f310_is_place(a_2588)) { (void)(f281_ow(hr_str("&(", 2)));
-(void)(f308_gx(a_2588));
+if (((((*({ hrv *_t13362 = &(g681); int64_t _i13362 = st_2591; (S1*)_t13362->b + hr_ix(_i13362, _t13362->n, "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:1508"); }))).k_) == (((uint8_t)10LL)))) { (void)(f314_gx0(a_2590));
+ } else { if (f310_is_place(a_2590)) { (void)(f281_ow(hr_str("&(", 2)));
+(void)(f308_gx(a_2590));
 (void)(f281_ow(hr_str(")", 1)));
- } else { int64_t k0_2593 = f312_tmp(d_2590, false); 
+ } else { int64_t k0_2595 = f312_tmp(d_2592, false); 
 (void)(f281_ow(hr_str("(", 1)));
-(void)(f313_ot(k0_2593));
+(void)(f313_ot(k0_2595));
 (void)(f281_ow(hr_str(" = ", 3)));
-(void)(f340_gxo(a_2588));
+(void)(f340_gxo(a_2590));
 (void)(f281_ow(hr_str(", &", 3)));
-(void)(f313_ot(k0_2593));
+(void)(f313_ot(k0_2595));
 (void)(f281_ow(hr_str(")", 1)));
  }
  }
 (void)(f281_ow(hr_str("; ", 2)));
- } else { (void)(f282_ct(d_2590));
+ } else { (void)(f282_ct(d_2592));
 (void)(f281_ow(hr_str(" _m", 3)));
-(void)(f335_oi(p_2591));
+(void)(f335_oi(p_2593));
 (void)(f281_ow(hr_str(" = ", 3)));
-(void)(f308_gx(a_2588));
+(void)(f308_gx(a_2590));
 (void)(f281_ow(hr_str("; ", 2)));
  }
-bool first_2594 = true; 
-{ int32_t _s13297 = 0; int32_t _e13297 = (x_2587).n_; for (int32_t _k13297 = _s13297; _k13297 < _e13297; _k13297++) { int32_t i_2595 = (int32_t)_k13297; int64_t arm_2596 = f90_kid(n_2585, ((int64_t)(i_2595))); 
-S4 ar_2597 = (*({ hrv *_t13299 = &(g834); int64_t _i13299 = arm_2596; (S4*)_t13299->b + hr_ix(_i13299, _t13299->n, "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:1507"); })); 
-if ((!(first_2594))) { (void)(f281_ow(hr_str(" else ", 6)));
+bool first_2596 = true; 
+{ int32_t _s13384 = 0; int32_t _e13384 = (x_2589).n_; for (int32_t _k13384 = _s13384; _k13384 < _e13384; _k13384++) { int32_t i_2597 = (int32_t)_k13384; int64_t arm_2598 = f90_kid(n_2587, ((int64_t)(i_2597))); 
+S4 ar_2599 = (*({ hrv *_t13386 = &(g834); int64_t _i13386 = arm_2598; (S4*)_t13386->b + hr_ix(_i13386, _t13386->n, "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:1513"); })); 
+if ((!(first_2596))) { (void)(f281_ow(hr_str(" else ", 6)));
  }
-first_2594 = false;
-if (((((uint16_t)((uint64_t)(ar_2597).fl_ & (uint64_t)((uint16_t)1LL)))) != (((uint16_t)0LL)))) { (void)(f281_ow(hr_str("{ ", 2)));
-(void)(f416_gblk(HR_CI2I(int64_t, (ar_2597).b_, "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:1510"), res_2586, false));
+first_2596 = false;
+if (((((uint16_t)((uint64_t)(ar_2599).fl_ & (uint64_t)((uint16_t)1LL)))) != (((uint16_t)0LL)))) { (void)(f281_ow(hr_str("{ ", 2)));
+(void)(f416_gblk(HR_CI2I(int64_t, (ar_2599).b_, "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:1516"), res_2588, false));
 (void)(f281_ow(hr_str(" }", 2)));
 continue;
  }
 (void)(f281_ow(hr_str("if (", 4)));
-{ int32_t _s13308 = 0; int32_t _e13308 = (ar_2597).n_; for (int32_t _k13308 = _s13308; _k13308 < _e13308; _k13308++) { int32_t j_2598 = (int32_t)_k13308; if (((j_2598) > (((int32_t)0LL)))) { (void)(f281_ow(hr_str(" || ", 4)));
+{ int32_t _s13395 = 0; int32_t _e13395 = (ar_2599).n_; for (int32_t _k13395 = _s13395; _k13395 < _e13395; _k13395++) { int32_t j_2600 = (int32_t)_k13395; if (((j_2600) > (((int32_t)0LL)))) { (void)(f281_ow(hr_str(" || ", 4)));
  }
-int64_t it_2599 = f90_kid(arm_2596, ((int64_t)(j_2598))); 
-int64_t lo_2600 = HR_CI2I(int64_t, ((*({ hrv *_t13312 = &(g834); int64_t _i13312 = it_2599; (S4*)_t13312->b + hr_ix(_i13312, _t13312->n, "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:1515"); }))).a_, "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:1515"); 
-if (isenum_2592) { (void)(({ hrv *_o13313 = &(g163); hr_fs(_o13313, hr_str("_m", 2)); hr_fi(_o13313, p_2591); hr_fs(_o13313, hr_str("->tag == ", 9)); hr_fi(_o13313, f152_rv(lo_2600)); }));
- } else { if (((((*({ hrv *_t13316 = &(g834); int64_t _i13316 = it_2599; (S4*)_t13316->b + hr_ix(_i13316, _t13316->n, "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:1518"); }))).b_) >= (((int32_t)0LL)))) { (void)(({ hrv *_o13317 = &(g163); hr_fs(_o13317, hr_str("(_m", 3)); hr_fi(_o13317, p_2591); hr_fs(_o13317, hr_str(" >= ", 4)); }));
-(void)(f308_gx(lo_2600));
-(void)(({ hrv *_o13319 = &(g163); hr_fs(_o13319, hr_str(" && _m", 6)); hr_fi(_o13319, p_2591); hr_fs(_o13319, hr_str(" < ", 3)); }));
-(void)(f308_gx(HR_CI2I(int64_t, ((*({ hrv *_t13321 = &(g834); int64_t _i13321 = it_2599; (S4*)_t13321->b + hr_ix(_i13321, _t13321->n, "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:1518"); }))).b_, "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:1518")));
+int64_t it_2601 = f90_kid(arm_2598, ((int64_t)(j_2600))); 
+int64_t lo_2602 = HR_CI2I(int64_t, ((*({ hrv *_t13399 = &(g834); int64_t _i13399 = it_2601; (S4*)_t13399->b + hr_ix(_i13399, _t13399->n, "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:1521"); }))).a_, "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:1521"); 
+if (isenum_2594) { (void)(({ hrv *_o13400 = &(g163); hr_fs(_o13400, hr_str("_m", 2)); hr_fi(_o13400, p_2593); hr_fs(_o13400, hr_str("->tag == ", 9)); hr_fi(_o13400, f152_rv(lo_2602)); }));
+ } else { if (((((*({ hrv *_t13403 = &(g834); int64_t _i13403 = it_2601; (S4*)_t13403->b + hr_ix(_i13403, _t13403->n, "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:1524"); }))).b_) >= (((int32_t)0LL)))) { (void)(({ hrv *_o13404 = &(g163); hr_fs(_o13404, hr_str("(_m", 3)); hr_fi(_o13404, p_2593); hr_fs(_o13404, hr_str(" >= ", 4)); }));
+(void)(f308_gx(lo_2602));
+(void)(({ hrv *_o13406 = &(g163); hr_fs(_o13406, hr_str(" && _m", 6)); hr_fi(_o13406, p_2593); hr_fs(_o13406, hr_str(" < ", 3)); }));
+(void)(f308_gx(HR_CI2I(int64_t, ((*({ hrv *_t13408 = &(g834); int64_t _i13408 = it_2601; (S4*)_t13408->b + hr_ix(_i13408, _t13408->n, "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:1524"); }))).b_, "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:1524")));
 (void)(f281_ow(hr_str(")", 1)));
- } else { if (((((f194_leaf_kind(d_2590)) == (((int64_t)0LL))) && ((((*({ hrv *_t13326 = &(g681); int64_t _i13326 = d_2590; (S1*)_t13326->b + hr_ix(_i13326, _t13326->n, "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:1519"); }))).k_) != (((uint8_t)3LL)))) && ((((*({ hrv *_t13328 = &(g681); int64_t _i13328 = d_2590; (S1*)_t13328->b + hr_ix(_i13328, _t13328->n, "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:1519"); }))).k_) != (((uint8_t)2LL))))) { (void)(f281_ow(hr_str("heq", 3)));
-(void)(f335_oi(d_2590));
-(void)(({ hrv *_o13331 = &(g163); hr_fs(_o13331, hr_str("(_m", 3)); hr_fi(_o13331, p_2591); hr_fs(_o13331, hr_str(", ", 2)); }));
-(void)(f308_gx(lo_2600));
+ } else { if (((((f194_leaf_kind(d_2592)) == (((int64_t)0LL))) && ((((*({ hrv *_t13413 = &(g681); int64_t _i13413 = d_2592; (S1*)_t13413->b + hr_ix(_i13413, _t13413->n, "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:1525"); }))).k_) != (((uint8_t)3LL)))) && ((((*({ hrv *_t13415 = &(g681); int64_t _i13415 = d_2592; (S1*)_t13415->b + hr_ix(_i13415, _t13415->n, "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:1525"); }))).k_) != (((uint8_t)2LL))))) { (void)(f281_ow(hr_str("heq", 3)));
+(void)(f335_oi(d_2592));
+(void)(({ hrv *_o13418 = &(g163); hr_fs(_o13418, hr_str("(_m", 3)); hr_fi(_o13418, p_2593); hr_fs(_o13418, hr_str(", ", 2)); }));
+(void)(f308_gx(lo_2602));
 (void)(f281_ow(hr_str(")", 1)));
-(void)(f342_gen_heq(d_2590));
- } else { (void)(({ hrv *_o13335 = &(g163); hr_fs(_o13335, hr_str("_m", 2)); hr_fi(_o13335, p_2591); hr_fs(_o13335, hr_str(" == ", 4)); }));
-(void)(f308_gx(lo_2600));
+(void)(f342_gen_heq(d_2592));
+ } else { (void)(({ hrv *_o13422 = &(g163); hr_fs(_o13422, hr_str("_m", 2)); hr_fi(_o13422, p_2593); hr_fs(_o13422, hr_str(" == ", 4)); }));
+(void)(f308_gx(lo_2602));
  }
  }
  }
- } } _bk13307:; 
+ } } _bk13394:; 
 (void)(f281_ow(hr_str(") { ", 4)));
-if (((((ar_2597).s_) >= (((int32_t)0LL))) && isenum_2592)) { int64_t v_2601 = f152_rv(arm_2596); 
-int64_t vi_2602 = f152_rv(HR_CI2I(int64_t, ((*({ hrv *_t13341 = &(g834); int64_t _i13341 = f90_kid(arm_2596, ((int64_t)0LL)); (S4*)_t13341->b + hr_ix(_i13341, _t13341->n, "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:1525"); }))).a_, "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:1525")); 
-int64_t lt_2603 = HR_CI2I(int64_t, ((*({ hrv *_t13343 = &(g505); int64_t _i13343 = v_2601; (S12*)_t13343->b + hr_ix(_i13343, _t13343->n, "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:1526"); }))).ty_, "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:1526"); 
-int64_t vt_2604 = f193_deref(lt_2603); 
-int64_t ei_2605 = HR_CI2I(int64_t, ((*({ hrv *_t13345 = &(g681); int64_t _i13345 = d_2590; (S1*)_t13345->b + hr_ix(_i13345, _t13345->n, "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:1528"); }))).a_, "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:1528"); 
-S9 vv_2606 = (*({ hrv *_t13346 = &(g687); int64_t _i13346 = HR_SADD(int64_t, HR_CI2I(int64_t, ((*({ hrv *_t13348 = &(g686); int64_t _i13348 = ei_2605; (S8*)_t13348->b + hr_ix(_i13348, _t13348->n, "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:1529"); }))).v0_, "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:1529"), vi_2602, "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:1529"); (S9*)_t13346->b + hr_ix(_i13346, _t13346->n, "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:1529"); })); 
-bool has_2607 = ((((vv_2606).si_) >= (((int32_t)0LL))) && (!(((*({ hrv *_t13350 = &(g684); int64_t _i13350 = (vv_2606).si_; (S10*)_t13350->b + hr_ix(_i13350, _t13350->n, "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:1530"); }))).zero_))); 
-(void)(f282_ct(lt_2603));
+if (((((ar_2599).s_) >= (((int32_t)0LL))) && isenum_2594)) { int64_t v_2603 = f152_rv(arm_2598); 
+int64_t vi_2604 = f152_rv(HR_CI2I(int64_t, ((*({ hrv *_t13428 = &(g834); int64_t _i13428 = f90_kid(arm_2598, ((int64_t)0LL)); (S4*)_t13428->b + hr_ix(_i13428, _t13428->n, "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:1531"); }))).a_, "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:1531")); 
+int64_t lt_2605 = HR_CI2I(int64_t, ((*({ hrv *_t13430 = &(g505); int64_t _i13430 = v_2603; (S12*)_t13430->b + hr_ix(_i13430, _t13430->n, "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:1532"); }))).ty_, "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:1532"); 
+int64_t vt_2606 = f193_deref(lt_2605); 
+int64_t ei_2607 = HR_CI2I(int64_t, ((*({ hrv *_t13432 = &(g681); int64_t _i13432 = d_2592; (S1*)_t13432->b + hr_ix(_i13432, _t13432->n, "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:1534"); }))).a_, "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:1534"); 
+S9 vv_2608 = (*({ hrv *_t13433 = &(g687); int64_t _i13433 = HR_SADD(int64_t, HR_CI2I(int64_t, ((*({ hrv *_t13435 = &(g686); int64_t _i13435 = ei_2607; (S8*)_t13435->b + hr_ix(_i13435, _t13435->n, "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:1535"); }))).v0_, "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:1535"), vi_2604, "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:1535"); (S9*)_t13433->b + hr_ix(_i13433, _t13433->n, "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:1535"); })); 
+bool has_2609 = ((((vv_2608).si_) >= (((int32_t)0LL))) && (!(((*({ hrv *_t13437 = &(g684); int64_t _i13437 = (vv_2608).si_; (S10*)_t13437->b + hr_ix(_i13437, _t13437->n, "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:1536"); }))).zero_))); 
+(void)(f282_ct(lt_2605));
 (void)(f281_ow(hr_str(" ", 1)));
-(void)(f324_lv_name(v_2601));
+(void)(f324_lv_name(v_2603));
 (void)(f281_ow(hr_str(" = ", 3)));
-if (((((*({ hrv *_t13356 = &(g681); int64_t _i13356 = lt_2603; (S1*)_t13356->b + hr_ix(_i13356, _t13356->n, "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:1532"); }))).k_) == (((uint8_t)10LL)))) { if (has_2607) { (void)(({ hrv *_o13357 = &(g163); hr_fs(_o13357, hr_str("&_m", 3)); hr_fi(_o13357, p_2591); hr_fs(_o13357, hr_str("->u.v", 5)); hr_fi(_o13357, vi_2602); hr_fs(_o13357, hr_str("; ", 2)); }));
+if (((((*({ hrv *_t13443 = &(g681); int64_t _i13443 = lt_2605; (S1*)_t13443->b + hr_ix(_i13443, _t13443->n, "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:1538"); }))).k_) == (((uint8_t)10LL)))) { if (has_2609) { (void)(({ hrv *_o13444 = &(g163); hr_fs(_o13444, hr_str("&_m", 3)); hr_fi(_o13444, p_2593); hr_fs(_o13444, hr_str("->u.v", 5)); hr_fi(_o13444, vi_2604); hr_fs(_o13444, hr_str("; ", 2)); }));
  } else { (void)(f281_ow(hr_str("0; ", 3)));
  }
- } else { if (has_2607) { (void)(({ hrv *_o13359 = &(g163); hr_fs(_o13359, hr_str("_m", 2)); hr_fi(_o13359, p_2591); hr_fs(_o13359, hr_str("->u.v", 5)); hr_fi(_o13359, vi_2602); hr_fs(_o13359, hr_str("; ", 2)); }));
+ } else { if (has_2609) { (void)(({ hrv *_o13446 = &(g163); hr_fs(_o13446, hr_str("_m", 2)); hr_fi(_o13446, p_2593); hr_fs(_o13446, hr_str("->u.v", 5)); hr_fi(_o13446, vi_2604); hr_fs(_o13446, hr_str("; ", 2)); }));
  } else { (void)(f281_ow(hr_str("0; ", 3)));
  }
  }
  }
-(void)(f416_gblk(HR_CI2I(int64_t, (ar_2597).b_, "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:1535"), res_2586, false));
+(void)(f416_gblk(HR_CI2I(int64_t, (ar_2599).b_, "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:1541"), res_2588, false));
 (void)(f281_ow(hr_str(" }", 2)));
- } } _bk13296:; 
+ } } _bk13383:; 
 (void)(f281_ow(hr_str(" }", 2)));
 }
-static void f425_geblock(int64_t n_2608, int64_t res_2609) {
-int64_t l_2610 = f420_lbl_push(res_2609); 
+static void f425_geblock(int64_t n_2610, int64_t res_2611) {
+int64_t l_2612 = f420_lbl_push(res_2611); 
 (void)(f281_ow(hr_str("{ ", 2)));
-(void)(f416_gblk(HR_CI2I(int64_t, ((*({ hrv *_t13367 = &(g834); int64_t _i13367 = n_2608; (S4*)_t13367->b + hr_ix(_i13367, _t13367->n, "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:1430"); }))).a_, "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:1430"), res_2609, false));
+(void)(f416_gblk(HR_CI2I(int64_t, ((*({ hrv *_t13454 = &(g834); int64_t _i13454 = n_2610; (S4*)_t13454->b + hr_ix(_i13454, _t13454->n, "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:1430"); }))).a_, "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:1430"), res_2611, false));
 (void)(f281_ow(hr_str(" }", 2)));
-(void)(f421_lbl_pop(l_2610));
+(void)(f421_lbl_pop(l_2612));
 }
-static void f426_gret(int64_t n_2611) {
-S4 x_2612 = (*({ hrv *_t13370 = &(g834); int64_t _i13370 = n_2611; (S4*)_t13370->b + hr_ix(_i13370, _t13370->n, "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:1664"); })); 
-int64_t lt_2613 = f236_ax(n_2611); 
-if ((((lt_2613) >= (((int64_t)0LL))) && ((lt_2613) != (g179)))) { int64_t rt0_2614 = HR_CI2I(int64_t, ((*({ hrv *_t13374 = &(g504); int64_t _i13374 = lt_2613; (S6*)_t13374->b + hr_ix(_i13374, _t13374->n, "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:1667"); }))).ret_, "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:1667"); 
+static void f426_gret(int64_t n_2613) {
+S4 x_2614 = (*({ hrv *_t13457 = &(g834); int64_t _i13457 = n_2613; (S4*)_t13457->b + hr_ix(_i13457, _t13457->n, "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:1670"); })); 
+int64_t lt_2615 = f236_ax(n_2613); 
+if ((((lt_2615) >= (((int64_t)0LL))) && ((lt_2615) != (g179)))) { int64_t rt0_2616 = HR_CI2I(int64_t, ((*({ hrv *_t13461 = &(g504); int64_t _i13461 = lt_2615; (S6*)_t13461->b + hr_ix(_i13461, _t13461->n, "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:1673"); }))).ret_, "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:1673"); 
 (void)(f281_ow(hr_str("{ ", 2)));
-if ((((x_2612).n_) > (((int32_t)1LL)))) { (void)(({ hrv *_o13377 = &(g163); hr_fs(_o13377, hr_str("_lrv", 4)); hr_fi(_o13377, lt_2613); hr_fs(_o13377, hr_str(" = (", 4)); }));
-(void)(f282_ct(rt0_2614));
+if ((((x_2614).n_) > (((int32_t)1LL)))) { (void)(({ hrv *_o13464 = &(g163); hr_fs(_o13464, hr_str("_lrv", 4)); hr_fi(_o13464, lt_2615); hr_fs(_o13464, hr_str(" = (", 4)); }));
+(void)(f282_ct(rt0_2616));
 (void)(f281_ow(hr_str("){ ", 3)));
-{ int32_t _s13381 = 0; int32_t _e13381 = (x_2612).n_; for (int32_t _k13381 = _s13381; _k13381 < _e13381; _k13381++) { int32_t i_2615 = (int32_t)_k13381; if (((i_2615) > (((int32_t)0LL)))) { (void)(f281_ow(hr_str(", ", 2)));
+{ int32_t _s13468 = 0; int32_t _e13468 = (x_2614).n_; for (int32_t _k13468 = _s13468; _k13468 < _e13468; _k13468++) { int32_t i_2617 = (int32_t)_k13468; if (((i_2617) > (((int32_t)0LL)))) { (void)(f281_ow(hr_str(", ", 2)));
  }
-int64_t c_2616 = f90_kid(n_2611, ((int64_t)(i_2615))); 
-if (f292_is_res(f307_fin(c_2616))) { (void)(f427_gmove(c_2616));
- } else { (void)(f308_gx(c_2616));
+int64_t c_2618 = f90_kid(n_2613, ((int64_t)(i_2617))); 
+if (f292_is_res(f307_fin(c_2618))) { (void)(f427_gmove(c_2618));
+ } else { (void)(f308_gx(c_2618));
  }
- } } _bk13380:; 
+ } } _bk13467:; 
 (void)(f281_ow(hr_str(" }; ", 4)));
- } else { if ((((x_2612).n_) == (((int32_t)1LL)))) { (void)(({ hrv *_o13391 = &(g163); hr_fs(_o13391, hr_str("_lrv", 4)); hr_fi(_o13391, lt_2613); hr_fs(_o13391, hr_str(" = ", 3)); }));
-int64_t c_2622 = f90_kid(n_2611, ((int64_t)0LL)); 
-if (f292_is_res(rt0_2614)) { (void)(f427_gmove(c_2622));
- } else { (void)(f308_gx(c_2622));
+ } else { if ((((x_2614).n_) == (((int32_t)1LL)))) { (void)(({ hrv *_o13478 = &(g163); hr_fs(_o13478, hr_str("_lrv", 4)); hr_fi(_o13478, lt_2615); hr_fs(_o13478, hr_str(" = ", 3)); }));
+int64_t c_2624 = f90_kid(n_2613, ((int64_t)0LL)); 
+if (f292_is_res(rt0_2616)) { (void)(f427_gmove(c_2624));
+ } else { (void)(f308_gx(c_2624));
  }
 (void)(f281_ow(hr_str("; ", 2)));
  }
  }
-(void)(({ hrv *_o13397 = &(g163); hr_fs(_o13397, hr_str("hr_lr = ", 8)); hr_fi(_o13397, HR_SADD(int64_t, lt_2613, ((int64_t)1LL), "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:1671")); hr_fs(_o13397, hr_str("; ", 2)); }));
+(void)(({ hrv *_o13484 = &(g163); hr_fs(_o13484, hr_str("hr_lr = ", 8)); hr_fi(_o13484, HR_SADD(int64_t, lt_2615, ((int64_t)1LL), "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:1677")); hr_fs(_o13484, hr_str("; ", 2)); }));
 (void)(f429_gdummy());
 (void)(f281_ow(hr_str(" }", 2)));
 return;
  }
-if ((((x_2612).n_) == (((int32_t)0LL)))) { (void)(f281_ow(hr_str("return;", 7)));
+if ((((x_2614).n_) == (((int32_t)0LL)))) { (void)(f281_ow(hr_str("return;", 7)));
 return;
  }
-int64_t f_2624 = ({ int64_t _r13403; if (((lt_2613) >= (((int64_t)0LL)))) { _r13403 = lt_2613;  } else { _r13403 = f240_ret_fn();  } _r13403; }); 
-int64_t rt_2625 = HR_CI2I(int64_t, ((*({ hrv *_t13406 = &(g504); int64_t _i13406 = f_2624; (S6*)_t13406->b + hr_ix(_i13406, _t13406->n, "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:1676"); }))).ret_, "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:1676"); 
-if ((((x_2612).n_) > (((int32_t)1LL)))) { (void)(f281_ow(hr_str("return (", 8)));
-(void)(f282_ct(rt_2625));
+int64_t f_2626 = ({ int64_t _r13490; if (((lt_2615) >= (((int64_t)0LL)))) { _r13490 = lt_2615;  } else { _r13490 = f240_ret_fn();  } _r13490; }); 
+int64_t rt_2627 = HR_CI2I(int64_t, ((*({ hrv *_t13493 = &(g504); int64_t _i13493 = f_2626; (S6*)_t13493->b + hr_ix(_i13493, _t13493->n, "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:1682"); }))).ret_, "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:1682"); 
+if ((((x_2614).n_) > (((int32_t)1LL)))) { (void)(f281_ow(hr_str("return (", 8)));
+(void)(f282_ct(rt_2627));
 (void)(f281_ow(hr_str("){ ", 3)));
-{ int32_t _s13412 = 0; int32_t _e13412 = (x_2612).n_; for (int32_t _k13412 = _s13412; _k13412 < _e13412; _k13412++) { int32_t i_2626 = (int32_t)_k13412; if (((i_2626) > (((int32_t)0LL)))) { (void)(f281_ow(hr_str(", ", 2)));
+{ int32_t _s13499 = 0; int32_t _e13499 = (x_2614).n_; for (int32_t _k13499 = _s13499; _k13499 < _e13499; _k13499++) { int32_t i_2628 = (int32_t)_k13499; if (((i_2628) > (((int32_t)0LL)))) { (void)(f281_ow(hr_str(", ", 2)));
  }
-int64_t c_2627 = f90_kid(n_2611, ((int64_t)(i_2626))); 
-if (f292_is_res(f307_fin(c_2627))) { (void)(f427_gmove(c_2627));
- } else { (void)(f308_gx(c_2627));
+int64_t c_2629 = f90_kid(n_2613, ((int64_t)(i_2628))); 
+if (f292_is_res(f307_fin(c_2629))) { (void)(f427_gmove(c_2629));
+ } else { (void)(f308_gx(c_2629));
  }
- } } _bk13411:; 
+ } } _bk13498:; 
 (void)(f281_ow(hr_str(" };", 3)));
 return;
  }
-int64_t c_2628 = f90_kid(n_2611, ((int64_t)0LL)); 
-if (f287_is_vval(rt_2625)) { (void)(f430_gvret(c_2628, rt_2625));
+int64_t c_2630 = f90_kid(n_2613, ((int64_t)0LL)); 
+if (f287_is_vval(rt_2627)) { (void)(f430_gvret(c_2630, rt_2627));
 return;
  }
 (void)(f281_ow(hr_str("return ", 7)));
-if (f292_is_res(rt_2625)) { (void)(f427_gmove(c_2628));
- } else { (void)(f308_gx(c_2628));
+if (f292_is_res(rt_2627)) { (void)(f427_gmove(c_2630));
+ } else { (void)(f308_gx(c_2630));
  }
 (void)(f281_ow(hr_str(";", 1)));
 }
-static void f427_gmove(int64_t c_2617) {
-if (f428_movable_local(c_2617)) { int64_t v_2620 = f152_rv(c_2617); 
-int64_t p_2621 = f331_nt(); 
+static void f427_gmove(int64_t c_2619) {
+if (f428_movable_local(c_2619)) { int64_t v_2622 = f152_rv(c_2619); 
+int64_t p_2623 = f331_nt(); 
 (void)(f281_ow(hr_str("({ hrv _mv", 10)));
-(void)(f335_oi(p_2621));
+(void)(f335_oi(p_2623));
 (void)(f281_ow(hr_str(" = ", 3)));
-(void)(f324_lv_name(v_2620));
+(void)(f324_lv_name(v_2622));
 (void)(f281_ow(hr_str("; ", 2)));
-(void)(f324_lv_name(v_2620));
+(void)(f324_lv_name(v_2622));
 (void)(f281_ow(hr_str(".b = 0; ", 8)));
-(void)(f324_lv_name(v_2620));
-(void)(({ hrv *_o13440 = &(g163); hr_fs(_o13440, hr_str(".n = 0; _mv", 11)); hr_fi(_o13440, p_2621); hr_fs(_o13440, hr_str("; })", 4)); }));
+(void)(f324_lv_name(v_2622));
+(void)(({ hrv *_o13527 = &(g163); hr_fs(_o13527, hr_str(".n = 0; _mv", 11)); hr_fi(_o13527, p_2623); hr_fs(_o13527, hr_str("; })", 4)); }));
 return;
  }
-(void)(f340_gxo(c_2617));
+(void)(f340_gxo(c_2619));
 }
-static bool f428_movable_local(int64_t c_2618) {
-if ((((((*({ hrv *_t13443 = &(g834); int64_t _i13443 = c_2618; (S4*)_t13443->b + hr_ix(_i13443, _t13443->n, "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:1658"); }))).k_) != (((uint8_t)8LL))) || ((f151_rk(c_2618)) != (((int64_t)1LL))))) { return false;
+static bool f428_movable_local(int64_t c_2620) {
+if ((((((*({ hrv *_t13530 = &(g834); int64_t _i13530 = c_2620; (S4*)_t13530->b + hr_ix(_i13530, _t13530->n, "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:1664"); }))).k_) != (((uint8_t)8LL))) || ((f151_rk(c_2620)) != (((int64_t)1LL))))) { return false;
  }
-int64_t v_2619 = f152_rv(c_2618); 
-return (((((HR_CI2I(int64_t, ((*({ hrv *_t13448 = &(g505); int64_t _i13448 = v_2619; (S12*)_t13448->b + hr_ix(_i13448, _t13448->n, "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:1658"); }))).cfn_, "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:1658")) == (g179)) && (!(f327_lv_isptr(v_2619)))) && ((((*({ hrv *_t13451 = &(g681); int64_t _i13451 = ((*({ hrv *_t13452 = &(g505); int64_t _i13452 = v_2619; (S12*)_t13452->b + hr_ix(_i13452, _t13452->n, "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:1658"); }))).ty_; (S1*)_t13451->b + hr_ix(_i13451, _t13451->n, "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:1658"); }))).k_) != (((uint8_t)10LL)))) && (((f162_cv(c_2618)) < (((int64_t)0LL))) || ({ __auto_type _l13455 = (f162_cv(c_2618)); (_l13455) == (f142_at(c_2618)); })));
+int64_t v_2621 = f152_rv(c_2620); 
+return (((((HR_CI2I(int64_t, ((*({ hrv *_t13535 = &(g505); int64_t _i13535 = v_2621; (S12*)_t13535->b + hr_ix(_i13535, _t13535->n, "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:1664"); }))).cfn_, "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:1664")) == (g179)) && (!(f327_lv_isptr(v_2621)))) && ((((*({ hrv *_t13538 = &(g681); int64_t _i13538 = ((*({ hrv *_t13539 = &(g505); int64_t _i13539 = v_2621; (S12*)_t13539->b + hr_ix(_i13539, _t13539->n, "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:1664"); }))).ty_; (S1*)_t13538->b + hr_ix(_i13538, _t13538->n, "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:1664"); }))).k_) != (((uint8_t)10LL)))) && (((f162_cv(c_2620)) < (((int64_t)0LL))) || ({ __auto_type _l13542 = (f162_cv(c_2620)); (_l13542) == (f142_at(c_2620)); })));
 }
 static void f429_gdummy(void) {
-int64_t rt_2623 = HR_CI2I(int64_t, ((*({ hrv *_t13458 = &(g504); int64_t _i13458 = g179; (S6*)_t13458->b + hr_ix(_i13458, _t13458->n, "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:1625"); }))).ret_, "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:1625"); 
-if ((((rt_2623) < (((int64_t)0LL))) || ((rt_2623) == (g688)))) { (void)(f281_ow(hr_str("return;", 7)));
+int64_t rt_2625 = HR_CI2I(int64_t, ((*({ hrv *_t13545 = &(g504); int64_t _i13545 = g179; (S6*)_t13545->b + hr_ix(_i13545, _t13545->n, "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:1631"); }))).ret_, "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:1631"); 
+if ((((rt_2625) < (((int64_t)0LL))) || ((rt_2625) == (g688)))) { (void)(f281_ow(hr_str("return;", 7)));
 return;
  }
 (void)(f281_ow(hr_str("{ ", 2)));
-(void)(f282_ct(rt_2623));
+(void)(f282_ct(rt_2625));
 (void)(f281_ow(hr_str(" _z; memset(&_z, 0, sizeof _z); return _z; }", 44)));
 }
-static void f430_gvret(int64_t c_2629, int64_t rt_2630) {
-if ((f288_is_vimg(rt_2630) && (!(f336_vok(c_2629, rt_2630))))) { return;
+static void f430_gvret(int64_t c_2631, int64_t rt_2632) {
+if ((f288_is_vimg(rt_2632) && (!(f336_vok(c_2631, rt_2632))))) { return;
  }
-HR_SINC(int64_t, &(g197), 1, "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:1684");
-int64_t q_2631 = f331_nt(); 
-(void)(({ hrv *_o13468 = &(g163); hr_fs(_o13468, hr_str("{ uint8_t *_r", 13)); hr_fi(_o13468, q_2631); hr_fs(_o13468, hr_str(" = ", 3)); }));
-(void)(f308_gx(c_2629));
-L101 rn_2632 = ({ L101 _t13470; memset(&_t13470, 0, sizeof _t13470); _t13470.n = 0; _t13470; }); 
-(void)(({ L101 *_l13471 = &(rn_2632); hrv _o13471 __attribute__((cleanup(hr_rdrop))) = {0}; hr_fs(&_o13471, hr_str("_r", 2)); hr_fi(&_o13471, q_2631); if (_l13471->n + _o13471.n > 32) hr_die("format past a limited array's capacity", "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:1687"); memcpy(_l13471->e + _l13471->n, _o13471.b, (size_t)_o13471.n); _l13471->n += _o13471.n; }));
-L102 e_2633 = ({ L102 _t13472; memset(&_t13472, 0, sizeof _t13472); _t13472.n = 0; _t13472; }); 
-(void)(f295_vz_into((&(e_2633)), rt_2630, ({ hsl _t13474 = ({ L101 *_t13475 = &(rn_2632); (hsl){ (uint8_t*)_t13475->e, _t13475->n }; }); int64_t _l13474 = 0, _h13474 = _t13474.n; if (_l13474 < 0 || _h13474 < _l13474 || _h13474 > _t13474.n) hr_slerr(_l13474, _h13474, _t13474.n, "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:1688"); (hsl){ _t13474.p + _l13474 * (int64_t)sizeof(uint8_t), _h13474 - _l13474 }; })));
-(void)(({ hrv *_o13476 = &(g163); hr_fs(_o13476, hr_str("; return hr_dsmv(_r", 19)); hr_fi(_o13476, q_2631); hr_fs(_o13476, hr_str(", _fm, ", 7)); hr_fs(_o13476, ({ hsl _t13477 = ({ L102 *_t13478 = &(e_2633); (hsl){ (uint8_t*)_t13478->e, _t13478->n }; }); int64_t _l13477 = 0, _h13477 = _t13477.n; if (_l13477 < 0 || _h13477 < _l13477 || _h13477 > _t13477.n) hr_slerr(_l13477, _h13477, _t13477.n, "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:1689"); (hsl){ _t13477.p + _l13477 * (int64_t)sizeof(uint8_t), _h13477 - _l13477 }; })); hr_fs(_o13476, hr_str("); }", 4)); }));
+HR_SINC(int64_t, &(g197), 1, "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:1690");
+int64_t q_2633 = f331_nt(); 
+(void)(({ hrv *_o13555 = &(g163); hr_fs(_o13555, hr_str("{ uint8_t *_r", 13)); hr_fi(_o13555, q_2633); hr_fs(_o13555, hr_str(" = ", 3)); }));
+(void)(f308_gx(c_2631));
+L101 rn_2634 = ({ L101 _t13557; memset(&_t13557, 0, sizeof _t13557); _t13557.n = 0; _t13557; }); 
+(void)(({ L101 *_l13558 = &(rn_2634); hrv _o13558 __attribute__((cleanup(hr_rdrop))) = {0}; hr_fs(&_o13558, hr_str("_r", 2)); hr_fi(&_o13558, q_2633); if (_l13558->n + _o13558.n > 32) hr_die("format past a limited array's capacity", "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:1693"); memcpy(_l13558->e + _l13558->n, _o13558.b, (size_t)_o13558.n); _l13558->n += _o13558.n; }));
+L102 e_2635 = ({ L102 _t13559; memset(&_t13559, 0, sizeof _t13559); _t13559.n = 0; _t13559; }); 
+(void)(f295_vz_into((&(e_2635)), rt_2632, ({ hsl _t13561 = ({ L101 *_t13562 = &(rn_2634); (hsl){ (uint8_t*)_t13562->e, _t13562->n }; }); int64_t _l13561 = 0, _h13561 = _t13561.n; if (_l13561 < 0 || _h13561 < _l13561 || _h13561 > _t13561.n) hr_slerr(_l13561, _h13561, _t13561.n, "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:1694"); (hsl){ _t13561.p + _l13561 * (int64_t)sizeof(uint8_t), _h13561 - _l13561 }; })));
+(void)(({ hrv *_o13563 = &(g163); hr_fs(_o13563, hr_str("; return hr_dsmv(_r", 19)); hr_fi(_o13563, q_2633); hr_fs(_o13563, hr_str(", _fm, ", 7)); hr_fs(_o13563, ({ hsl _t13564 = ({ L102 *_t13565 = &(e_2635); (hsl){ (uint8_t*)_t13565->e, _t13565->n }; }); int64_t _l13564 = 0, _h13564 = _t13564.n; if (_l13564 < 0 || _h13564 < _l13564 || _h13564 > _t13564.n) hr_slerr(_l13564, _h13564, _t13564.n, "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:1695"); (hsl){ _t13564.p + _l13564 * (int64_t)sizeof(uint8_t), _h13564 - _l13564 }; })); hr_fs(_o13563, hr_str("); }", 4)); }));
 }
-static void f431_gbreak(int64_t n_2634) {
-S4 x_2635 = (*({ hrv *_t13479 = &(g834); int64_t _i13479 = n_2634; (S4*)_t13479->b + hr_ix(_i13479, _t13479->n, "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:1734"); })); 
-if ((((g180).n) == (((int64_t)0LL)))) { (void)(f328_gerr(n_2634, hr_str("break outside a loop", 20)));
+static void f431_gbreak(int64_t n_2636) {
+S4 x_2637 = (*({ hrv *_t13566 = &(g834); int64_t _i13566 = n_2636; (S4*)_t13566->b + hr_ix(_i13566, _t13566->n, "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:1740"); })); 
+if ((((g180).n) == (((int64_t)0LL)))) { (void)(f328_gerr(n_2636, hr_str("break outside a loop", 20)));
 return;
  }
-int64_t l_2636 = HR_CI2I(int64_t, (*({ hrv *_t13482 = &(g180); int64_t _i13482 = HR_SSUB(int64_t, (g180).n, ((int64_t)1LL), "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:1736"); (int32_t*)_t13482->b + hr_ix(_i13482, _t13482->n, "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:1736"); })), "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:1736"); 
-int64_t r_2637 = HR_CI2I(int64_t, (*({ hrv *_t13484 = &(g181); int64_t _i13484 = HR_SSUB(int64_t, (g181).n, ((int64_t)1LL), "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:1737"); (int32_t*)_t13484->b + hr_ix(_i13484, _t13484->n, "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:1737"); })), "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:1737"); 
+int64_t l_2638 = HR_CI2I(int64_t, (*({ hrv *_t13569 = &(g180); int64_t _i13569 = HR_SSUB(int64_t, (g180).n, ((int64_t)1LL), "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:1742"); (int32_t*)_t13569->b + hr_ix(_i13569, _t13569->n, "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:1742"); })), "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:1742"); 
+int64_t r_2639 = HR_CI2I(int64_t, (*({ hrv *_t13571 = &(g181); int64_t _i13571 = HR_SSUB(int64_t, (g181).n, ((int64_t)1LL), "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:1743"); (int32_t*)_t13571->b + hr_ix(_i13571, _t13571->n, "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:1743"); })), "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:1743"); 
 (void)(f281_ow(hr_str("{ ", 2)));
-if ((((x_2635).a_) >= (((int32_t)0LL)))) { if (((r_2637) >= (((int64_t)0LL)))) { (void)(f281_ow(hr_str("_r", 2)));
-(void)(f335_oi(r_2637));
+if ((((x_2637).a_) >= (((int32_t)0LL)))) { if (((r_2639) >= (((int64_t)0LL)))) { (void)(f281_ow(hr_str("_r", 2)));
+(void)(f335_oi(r_2639));
 (void)(f281_ow(hr_str(" = ", 3)));
-if (f292_is_res(f307_fin(HR_CI2I(int64_t, (x_2635).a_, "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:1739")))) { (void)(f340_gxo(HR_CI2I(int64_t, (x_2635).a_, "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:1739")));
- } else { (void)(f308_gx(HR_CI2I(int64_t, (x_2635).a_, "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:1739")));
+if (f292_is_res(f307_fin(HR_CI2I(int64_t, (x_2637).a_, "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:1745")))) { (void)(f340_gxo(HR_CI2I(int64_t, (x_2637).a_, "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:1745")));
+ } else { (void)(f308_gx(HR_CI2I(int64_t, (x_2637).a_, "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:1745")));
  }
 (void)(f281_ow(hr_str("; ", 2)));
  } else { (void)(f281_ow(hr_str("(void)(", 7)));
-(void)(f308_gx(HR_CI2I(int64_t, (x_2635).a_, "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:1739")));
+(void)(f308_gx(HR_CI2I(int64_t, (x_2637).a_, "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:1745")));
 (void)(f281_ow(hr_str("); ", 3)));
  }
  }
-(void)(({ hrv *_o13500 = &(g163); hr_fs(_o13500, hr_str("goto _bk", 8)); hr_fi(_o13500, l_2636); hr_fs(_o13500, hr_str("; }", 3)); }));
+(void)(({ hrv *_o13587 = &(g163); hr_fs(_o13587, hr_str("goto _bk", 8)); hr_fi(_o13587, l_2638); hr_fs(_o13587, hr_str("; }", 3)); }));
 }
-static bool f432_owned(int64_t n_2638) {
-return (f292_is_res(f307_fin(n_2638)) && (!(f310_is_place(n_2638))));
+static bool f432_owned(int64_t n_2640) {
+return (f292_is_res(f307_fin(n_2640)) && (!(f310_is_place(n_2640))));
 }
-static void f433_gcase(int64_t n_2640) {
-int64_t d0_2641 = f152_rv(n_2640); 
-int64_t j0_2642 = HR_CI2I(int64_t, (*({ hrv *_t13505 = &(g414); int64_t _i13505 = d0_2641; (int32_t*)_t13505->b + hr_ix(_i13505, _t13505->n, "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:752"); })), "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:752"); 
-int64_t i0_2643 = HR_CI2I(int64_t, (*({ hrv *_t13506 = &(g414); int64_t _i13506 = HR_SADD(int64_t, d0_2641, ((int64_t)1LL), "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:753"); (int32_t*)_t13506->b + hr_ix(_i13506, _t13506->n, "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:753"); })), "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:753"); 
-int64_t recv_2644 = ({ int64_t _r13508; if ((((f236_ax(n_2640)) == (((int64_t)1LL))) && ((((*({ hrv *_t13512 = &(g834); int64_t _i13512 = ((*({ hrv *_t13513 = &(g834); int64_t _i13513 = n_2640; (S4*)_t13513->b + hr_ix(_i13513, _t13513->n, "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:754"); }))).a_; (S4*)_t13512->b + hr_ix(_i13512, _t13512->n, "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:754"); }))).k_) == (((uint8_t)14LL))))) { _r13508 = HR_CI2I(int64_t, ((*({ hrv *_t13514 = &(g834); int64_t _i13514 = ((*({ hrv *_t13515 = &(g834); int64_t _i13515 = n_2640; (S4*)_t13515->b + hr_ix(_i13515, _t13515->n, "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:754"); }))).a_; (S4*)_t13514->b + hr_ix(_i13514, _t13514->n, "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:754"); }))).a_, "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:754");  } else { _r13508 = ((int64_t)-1LL);  } _r13508; }); 
-int64_t na_2646 = ({ int64_t _t13516[1] = { HR_SADD(int64_t, HR_CI2I(int64_t, ((*({ hrv *_t13518 = &(g834); int64_t _i13518 = n_2640; (S4*)_t13518->b + hr_ix(_i13518, _t13518->n, "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:755"); }))).n_, "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:755"), ({ int64_t _r13519; if (((recv_2644) >= (((int64_t)0LL)))) { _r13519 = ((int64_t)1LL);  } else { _r13519 = ((int64_t)0LL);  } _r13519; }), "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:755") }; HR_SSUB(int64_t, (*_t13516), f434_fna(n_2640), "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:755"); }); 
-int64_t rt_2647 = HR_CI2I(int64_t, ((*({ hrv *_t13522 = &(g504); int64_t _i13522 = i0_2643; (S6*)_t13522->b + hr_ix(_i13522, _t13522->n, "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:756"); }))).ret_, "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:756"); 
-bool vd_2648 = (((rt_2647) < (((int64_t)0LL))) || ((rt_2647) == (g688))); 
-int64_t q_2649 = f331_nt(); 
-int64_t c0_2653 = f435_carg(n_2640, recv_2644, j0_2642); 
-int64_t et_2654 = f193_deref(f142_at(c0_2653)); 
-int64_t ei_2655 = HR_CI2I(int64_t, ((*({ hrv *_t13529 = &(g681); int64_t _i13529 = et_2654; (S1*)_t13529->b + hr_ix(_i13529, _t13529->n, "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:761"); }))).a_, "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:761"); 
-bool lrw_2656 = false; 
+static void f433_gcase(int64_t n_2642) {
+int64_t d0_2643 = f152_rv(n_2642); 
+int64_t j0_2644 = HR_CI2I(int64_t, (*({ hrv *_t13592 = &(g414); int64_t _i13592 = d0_2643; (int32_t*)_t13592->b + hr_ix(_i13592, _t13592->n, "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:752"); })), "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:752"); 
+int64_t i0_2645 = HR_CI2I(int64_t, (*({ hrv *_t13593 = &(g414); int64_t _i13593 = HR_SADD(int64_t, d0_2643, ((int64_t)1LL), "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:753"); (int32_t*)_t13593->b + hr_ix(_i13593, _t13593->n, "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:753"); })), "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:753"); 
+int64_t recv_2646 = ({ int64_t _r13595; if ((((f236_ax(n_2642)) == (((int64_t)1LL))) && ((((*({ hrv *_t13599 = &(g834); int64_t _i13599 = ((*({ hrv *_t13600 = &(g834); int64_t _i13600 = n_2642; (S4*)_t13600->b + hr_ix(_i13600, _t13600->n, "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:754"); }))).a_; (S4*)_t13599->b + hr_ix(_i13599, _t13599->n, "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:754"); }))).k_) == (((uint8_t)14LL))))) { _r13595 = HR_CI2I(int64_t, ((*({ hrv *_t13601 = &(g834); int64_t _i13601 = ((*({ hrv *_t13602 = &(g834); int64_t _i13602 = n_2642; (S4*)_t13602->b + hr_ix(_i13602, _t13602->n, "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:754"); }))).a_; (S4*)_t13601->b + hr_ix(_i13601, _t13601->n, "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:754"); }))).a_, "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:754");  } else { _r13595 = ((int64_t)-1LL);  } _r13595; }); 
+int64_t na_2648 = ({ int64_t _t13603[1] = { HR_SADD(int64_t, HR_CI2I(int64_t, ((*({ hrv *_t13605 = &(g834); int64_t _i13605 = n_2642; (S4*)_t13605->b + hr_ix(_i13605, _t13605->n, "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:755"); }))).n_, "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:755"), ({ int64_t _r13606; if (((recv_2646) >= (((int64_t)0LL)))) { _r13606 = ((int64_t)1LL);  } else { _r13606 = ((int64_t)0LL);  } _r13606; }), "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:755") }; HR_SSUB(int64_t, (*_t13603), f434_fna(n_2642), "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:755"); }); 
+int64_t rt_2649 = HR_CI2I(int64_t, ((*({ hrv *_t13609 = &(g504); int64_t _i13609 = i0_2645; (S6*)_t13609->b + hr_ix(_i13609, _t13609->n, "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:756"); }))).ret_, "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:756"); 
+bool vd_2650 = (((rt_2649) < (((int64_t)0LL))) || ((rt_2649) == (g688))); 
+int64_t q_2651 = f331_nt(); 
+int64_t c0_2655 = f435_carg(n_2642, recv_2646, j0_2644); 
+int64_t et_2656 = f193_deref(f142_at(c0_2655)); 
+int64_t ei_2657 = HR_CI2I(int64_t, ((*({ hrv *_t13616 = &(g681); int64_t _i13616 = et_2656; (S1*)_t13616->b + hr_ix(_i13616, _t13616->n, "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:761"); }))).a_, "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:761"); 
+bool lrw_2658 = false; 
 (void)(f281_ow(hr_str("({ ", 3)));
-{ int64_t _s13532 = 0; int64_t _e13532 = na_2646; for (int64_t _k13532 = _s13532; _k13532 < _e13532; _k13532++) { int64_t j_2657 = (int64_t)_k13532; if (((j_2657) != (j0_2642))) { (void)(f436_gcall_arg(n_2640, i0_2643, recv_2644, j_2657, true, q_2649));
+{ int64_t _s13619 = 0; int64_t _e13619 = na_2648; for (int64_t _k13619 = _s13619; _k13619 < _e13619; _k13619++) { int64_t j_2659 = (int64_t)_k13619; if (((j_2659) != (j0_2644))) { (void)(f436_gcall_arg(n_2642, i0_2645, recv_2646, j_2659, true, q_2651));
 continue;
  }
-(void)(f282_ct(et_2654));
-(void)(({ hrv *_o13536 = &(g163); hr_fs(_o13536, hr_str(" *_m", 4)); hr_fi(_o13536, q_2649); hr_fs(_o13536, hr_str(" = ", 3)); }));
-bool byr_2667 = false; 
-{ int32_t _s13538 = 0; int32_t _e13538 = ((*({ hrv *_t13539 = &(g686); int64_t _i13539 = ei_2655; (S8*)_t13539->b + hr_ix(_i13539, _t13539->n, "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:768"); }))).vnum_; for (int32_t _k13538 = _s13538; _k13538 < _e13538; _k13538++) { int32_t vi_2668 = (int32_t)_k13538; int64_t pt_2669 = f229_ptype_of(HR_CI2I(int64_t, (*({ hrv *_t13541 = &(g414); int64_t _i13541 = HR_SADD(int64_t, HR_SADD(int64_t, d0_2641, ((int64_t)1LL), "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:768"), ((int64_t)(vi_2668)), "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:768"); (int32_t*)_t13541->b + hr_ix(_i13541, _t13541->n, "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:768"); })), "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:768"), j0_2642); 
-if (((((*({ hrv *_t13545 = &(g681); int64_t _i13545 = pt_2669; (S1*)_t13545->b + hr_ix(_i13545, _t13545->n, "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:768"); }))).k_) == (((uint8_t)10LL)))) { byr_2667 = true;
+(void)(f282_ct(et_2656));
+(void)(({ hrv *_o13623 = &(g163); hr_fs(_o13623, hr_str(" *_m", 4)); hr_fi(_o13623, q_2651); hr_fs(_o13623, hr_str(" = ", 3)); }));
+bool byr_2669 = false; 
+{ int32_t _s13625 = 0; int32_t _e13625 = ((*({ hrv *_t13626 = &(g686); int64_t _i13626 = ei_2657; (S8*)_t13626->b + hr_ix(_i13626, _t13626->n, "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:768"); }))).vnum_; for (int32_t _k13625 = _s13625; _k13625 < _e13625; _k13625++) { int32_t vi_2670 = (int32_t)_k13625; int64_t pt_2671 = f229_ptype_of(HR_CI2I(int64_t, (*({ hrv *_t13628 = &(g414); int64_t _i13628 = HR_SADD(int64_t, HR_SADD(int64_t, d0_2643, ((int64_t)1LL), "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:768"), ((int64_t)(vi_2670)), "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:768"); (int32_t*)_t13628->b + hr_ix(_i13628, _t13628->n, "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:768"); })), "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:768"), j0_2644); 
+if (((((*({ hrv *_t13632 = &(g681); int64_t _i13632 = pt_2671; (S1*)_t13632->b + hr_ix(_i13632, _t13632->n, "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:768"); }))).k_) == (((uint8_t)10LL)))) { byr_2669 = true;
  }
- } } _bk13537:; 
-if ((byr_2667 && ((((*({ hrv *_t13547 = &(g681); int64_t _i13547 = f142_at(c0_2653); (S1*)_t13547->b + hr_ix(_i13547, _t13547->n, "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:769"); }))).k_) == (((uint8_t)10LL))))) { (void)(f314_gx0(c0_2653));
- } else { if ((byr_2667 && f310_is_place(c0_2653))) { (void)(f281_ow(hr_str("&(", 2)));
-(void)(f308_gx(c0_2653));
+ } } _bk13624:; 
+if ((byr_2669 && ((((*({ hrv *_t13634 = &(g681); int64_t _i13634 = f142_at(c0_2655); (S1*)_t13634->b + hr_ix(_i13634, _t13634->n, "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:769"); }))).k_) == (((uint8_t)10LL))))) { (void)(f314_gx0(c0_2655));
+ } else { if ((byr_2669 && f310_is_place(c0_2655))) { (void)(f281_ow(hr_str("&(", 2)));
+(void)(f308_gx(c0_2655));
 (void)(f281_ow(hr_str(")", 1)));
- } else { int64_t k_2670 = f312_tmp(et_2654, false); 
+ } else { int64_t k_2672 = f312_tmp(et_2656, false); 
 (void)(f281_ow(hr_str("(", 1)));
-(void)(f313_ot(k_2670));
+(void)(f313_ot(k_2672));
 (void)(f281_ow(hr_str(" = ", 3)));
-if (((((*({ hrv *_t13559 = &(g681); int64_t _i13559 = f142_at(c0_2653); (S1*)_t13559->b + hr_ix(_i13559, _t13559->n, "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:769"); }))).k_) == (((uint8_t)10LL)))) { (void)(f281_ow(hr_str("*", 1)));
-(void)(f314_gx0(c0_2653));
- } else { (void)(f308_gx(c0_2653));
+if (((((*({ hrv *_t13646 = &(g681); int64_t _i13646 = f142_at(c0_2655); (S1*)_t13646->b + hr_ix(_i13646, _t13646->n, "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:769"); }))).k_) == (((uint8_t)10LL)))) { (void)(f281_ow(hr_str("*", 1)));
+(void)(f314_gx0(c0_2655));
+ } else { (void)(f308_gx(c0_2655));
  }
 (void)(f281_ow(hr_str(", &", 3)));
-(void)(f313_ot(k_2670));
+(void)(f313_ot(k_2672));
 (void)(f281_ow(hr_str(")", 1)));
  }
  }
 (void)(f281_ow(hr_str("; ", 2)));
- } } _bk13531:; 
-if ((!(vd_2648))) { (void)(f282_ct(rt_2647));
-(void)(({ hrv *_o13569 = &(g163); hr_fs(_o13569, hr_str(" _r", 3)); hr_fi(_o13569, q_2649); hr_fs(_o13569, hr_str("; ", 2)); }));
+ } } _bk13618:; 
+if ((!(vd_2650))) { (void)(f282_ct(rt_2649));
+(void)(({ hrv *_o13656 = &(g163); hr_fs(_o13656, hr_str(" _r", 3)); hr_fi(_o13656, q_2651); hr_fs(_o13656, hr_str("; ", 2)); }));
  }
-(void)(({ hrv *_o13570 = &(g163); hr_fs(_o13570, hr_str("switch (_m", 10)); hr_fi(_o13570, q_2649); hr_fs(_o13570, hr_str("->tag) { ", 9)); }));
-int64_t sj_2671 = g287; 
-int64_t sv_2672 = g288; 
-int64_t sq_2673 = g289; 
-{ int32_t _s13572 = 0; int32_t _e13572 = ((*({ hrv *_t13573 = &(g686); int64_t _i13573 = ei_2655; (S8*)_t13573->b + hr_ix(_i13573, _t13573->n, "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:775"); }))).vnum_; for (int32_t _k13572 = _s13572; _k13572 < _e13572; _k13572++) { int32_t vi_2674 = (int32_t)_k13572; int64_t i_2675 = HR_CI2I(int64_t, (*({ hrv *_t13574 = &(g414); int64_t _i13574 = HR_SADD(int64_t, HR_SADD(int64_t, d0_2641, ((int64_t)1LL), "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:776"), ((int64_t)(vi_2674)), "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:776"); (int32_t*)_t13574->b + hr_ix(_i13574, _t13574->n, "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:776"); })), "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:776"); 
-if (((!(f437_is_ext(i_2675))) && ((*({ hrv *_t13578 = &(g504); int64_t _i13578 = i_2675; (S6*)_t13578->b + hr_ix(_i13578, _t13578->n, "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:777"); }))).lr_)) { lrw_2656 = true;
+(void)(({ hrv *_o13657 = &(g163); hr_fs(_o13657, hr_str("switch (_m", 10)); hr_fi(_o13657, q_2651); hr_fs(_o13657, hr_str("->tag) { ", 9)); }));
+int64_t sj_2673 = g287; 
+int64_t sv_2674 = g288; 
+int64_t sq_2675 = g289; 
+{ int32_t _s13659 = 0; int32_t _e13659 = ((*({ hrv *_t13660 = &(g686); int64_t _i13660 = ei_2657; (S8*)_t13660->b + hr_ix(_i13660, _t13660->n, "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:775"); }))).vnum_; for (int32_t _k13659 = _s13659; _k13659 < _e13659; _k13659++) { int32_t vi_2676 = (int32_t)_k13659; int64_t i_2677 = HR_CI2I(int64_t, (*({ hrv *_t13661 = &(g414); int64_t _i13661 = HR_SADD(int64_t, HR_SADD(int64_t, d0_2643, ((int64_t)1LL), "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:776"), ((int64_t)(vi_2676)), "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:776"); (int32_t*)_t13661->b + hr_ix(_i13661, _t13661->n, "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:776"); })), "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:776"); 
+if (((!(f437_is_ext(i_2677))) && ((*({ hrv *_t13665 = &(g504); int64_t _i13665 = i_2677; (S6*)_t13665->b + hr_ix(_i13665, _t13665->n, "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:777"); }))).lr_)) { lrw_2658 = true;
  }
-(void)(({ hrv *_o13579 = &(g163); hr_fs(_o13579, hr_str("case ", 5)); hr_fi(_o13579, vi_2674); hr_fs(_o13579, hr_str(": ", 2)); }));
-if ((!(vd_2648))) { (void)(({ hrv *_o13580 = &(g163); hr_fs(_o13580, hr_str("_r", 2)); hr_fi(_o13580, q_2649); hr_fs(_o13580, hr_str(" = ", 3)); }));
+(void)(({ hrv *_o13666 = &(g163); hr_fs(_o13666, hr_str("case ", 5)); hr_fi(_o13666, vi_2676); hr_fs(_o13666, hr_str(": ", 2)); }));
+if ((!(vd_2650))) { (void)(({ hrv *_o13667 = &(g163); hr_fs(_o13667, hr_str("_r", 2)); hr_fi(_o13667, q_2651); hr_fs(_o13667, hr_str(" = ", 3)); }));
  }
-if (f437_is_ext(i_2675)) { (void)(f438_ext_name(i_2675));
- } else { (void)(f383_fn_cname(i_2675));
+if (f437_is_ext(i_2677)) { (void)(f438_ext_name(i_2677));
+ } else { (void)(f383_fn_cname(i_2677));
  }
 (void)(f281_ow(hr_str("(", 1)));
-g287 = j0_2642;
-g288 = ((int64_t)(vi_2674));
-g289 = q_2649;
-(void)(f439_gcall_args1(n_2640, i_2675, recv_2644, q_2649, na_2646));
-g287 = sj_2671;
-g288 = sv_2672;
-g289 = sq_2673;
+g287 = j0_2644;
+g288 = ((int64_t)(vi_2676));
+g289 = q_2651;
+(void)(f439_gcall_args1(n_2642, i_2677, recv_2646, q_2651, na_2648));
+g287 = sj_2673;
+g288 = sv_2674;
+g289 = sq_2675;
 (void)(f281_ow(hr_str("); break; ", 10)));
- } } _bk13571:; 
+ } } _bk13658:; 
 (void)(f281_ow(hr_str("default: __builtin_unreachable(); } ", 36)));
-if (lrw_2656) { (void)(f441_glrcheck());
+if (lrw_2658) { (void)(f441_glrcheck());
  }
-if ((!(vd_2648))) { (void)(({ hrv *_o13589 = &(g163); hr_fs(_o13589, hr_str("_r", 2)); hr_fi(_o13589, q_2649); hr_fs(_o13589, hr_str("; ", 2)); }));
+if ((!(vd_2650))) { (void)(({ hrv *_o13676 = &(g163); hr_fs(_o13676, hr_str("_r", 2)); hr_fi(_o13676, q_2651); hr_fs(_o13676, hr_str("; ", 2)); }));
  }
 (void)(f281_ow(hr_str("})", 2)));
 }
-static int64_t f434_fna(int64_t n_2645) {
-return ({ int64_t _r13591; if ((((n_2645) < ((g416).n)) && (((*({ hrv *_t13594 = &(g416); int64_t _i13594 = n_2645; (int8_t*)_t13594->b + hr_ix(_i13594, _t13594->n, "/home/anmire/ai/amni-lang/helium-self/hc/calls.amni:14"); }))) != (((int8_t)0LL))))) { _r13591 = ((int64_t)1LL);  } else { _r13591 = ((int64_t)0LL);  } _r13591; });
+static int64_t f434_fna(int64_t n_2647) {
+return ({ int64_t _r13678; if ((((n_2647) < ((g416).n)) && (((*({ hrv *_t13681 = &(g416); int64_t _i13681 = n_2647; (int8_t*)_t13681->b + hr_ix(_i13681, _t13681->n, "/home/anmire/ai/amni-lang/helium-self/hc/calls.amni:14"); }))) != (((int8_t)0LL))))) { _r13678 = ((int64_t)1LL);  } else { _r13678 = ((int64_t)0LL);  } _r13678; });
 }
-static int64_t f435_carg(int64_t n_2650, int64_t recv_2651, int64_t j_2652) {
-return ({ int64_t _r13595; if (((recv_2651) >= (((int64_t)0LL)))) { _r13595 = ({ int64_t _r13597; if (((j_2652) == (((int64_t)0LL)))) { _r13597 = recv_2651;  } else { _r13597 = f90_kid(n_2650, HR_SSUB(int64_t, j_2652, ((int64_t)1LL), "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:847"));  } _r13597; });  } else { _r13595 = f90_kid(n_2650, j_2652);  } _r13595; });
+static int64_t f435_carg(int64_t n_2652, int64_t recv_2653, int64_t j_2654) {
+return ({ int64_t _r13682; if (((recv_2653) >= (((int64_t)0LL)))) { _r13682 = ({ int64_t _r13684; if (((j_2654) == (((int64_t)0LL)))) { _r13684 = recv_2653;  } else { _r13684 = f90_kid(n_2652, HR_SSUB(int64_t, j_2654, ((int64_t)1LL), "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:847"));  } _r13684; });  } else { _r13682 = f90_kid(n_2652, j_2654);  } _r13682; });
 }
-static void f436_gcall_arg(int64_t n_2658, int64_t inst_2659, int64_t recv_2660, int64_t j_2661, bool decl_2662, int64_t q_2663) {
-int64_t pt_2664 = f229_ptype_of(inst_2659, j_2661); 
-int64_t c_2665 = f435_carg(n_2658, recv_2660, j_2661); 
-int64_t ct0_2666 = f307_fin(c_2665); 
-if (decl_2662) { if ((((((*({ hrv *_t13606 = &(g681); int64_t _i13606 = pt_2664; (S1*)_t13606->b + hr_ix(_i13606, _t13606->n, "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:863"); }))).k_) == (((uint8_t)10LL))) && ((((*({ hrv *_t13608 = &(g681); int64_t _i13608 = pt_2664; (S1*)_t13608->b + hr_ix(_i13608, _t13608->n, "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:863"); }))).c_) < (((int32_t)0LL))))) { (void)(f282_ct(pt_2664));
- } else { if (f292_is_res(pt_2664)) { (void)(f281_ow(hr_str("hrv", 3)));
- } else { if (((((*({ hrv *_t13613 = &(g681); int64_t _i13613 = pt_2664; (S1*)_t13613->b + hr_ix(_i13613, _t13613->n, "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:863"); }))).k_) == (((uint8_t)9LL)))) { (void)(f281_ow(hr_str("hsl", 3)));
- } else { (void)(f282_ct(pt_2664));
+static void f436_gcall_arg(int64_t n_2660, int64_t inst_2661, int64_t recv_2662, int64_t j_2663, bool decl_2664, int64_t q_2665) {
+int64_t pt_2666 = f229_ptype_of(inst_2661, j_2663); 
+int64_t c_2667 = f435_carg(n_2660, recv_2662, j_2663); 
+int64_t ct0_2668 = f307_fin(c_2667); 
+if (decl_2664) { if ((((((*({ hrv *_t13693 = &(g681); int64_t _i13693 = pt_2666; (S1*)_t13693->b + hr_ix(_i13693, _t13693->n, "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:863"); }))).k_) == (((uint8_t)10LL))) && ((((*({ hrv *_t13695 = &(g681); int64_t _i13695 = pt_2666; (S1*)_t13695->b + hr_ix(_i13695, _t13695->n, "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:863"); }))).c_) < (((int32_t)0LL))))) { (void)(f282_ct(pt_2666));
+ } else { if (f292_is_res(pt_2666)) { (void)(f281_ow(hr_str("hrv", 3)));
+ } else { if (((((*({ hrv *_t13700 = &(g681); int64_t _i13700 = pt_2666; (S1*)_t13700->b + hr_ix(_i13700, _t13700->n, "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:863"); }))).k_) == (((uint8_t)9LL)))) { (void)(f281_ow(hr_str("hsl", 3)));
+ } else { (void)(f282_ct(pt_2666));
  }
  }
  }
-(void)(({ hrv *_o13616 = &(g163); hr_fs(_o13616, hr_str(" _o", 3)); hr_fi(_o13616, q_2663); hr_fs(_o13616, hr_str("_", 1)); hr_fi(_o13616, j_2661); hr_fs(_o13616, hr_str(" = ", 3)); }));
+(void)(({ hrv *_o13703 = &(g163); hr_fs(_o13703, hr_str(" _o", 3)); hr_fi(_o13703, q_2665); hr_fs(_o13703, hr_str("_", 1)); hr_fi(_o13703, j_2663); hr_fs(_o13703, hr_str(" = ", 3)); }));
  }
-if ((((((*({ hrv *_t13618 = &(g681); int64_t _i13618 = pt_2664; (S1*)_t13618->b + hr_ix(_i13618, _t13618->n, "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:864"); }))).k_) == (((uint8_t)10LL))) && ((((*({ hrv *_t13620 = &(g681); int64_t _i13620 = pt_2664; (S1*)_t13620->b + hr_ix(_i13620, _t13620->n, "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:864"); }))).c_) < (((int32_t)0LL))))) { if ((((((*({ hrv *_t13622 = &(g681); int64_t _i13622 = ct0_2666; (S1*)_t13622->b + hr_ix(_i13622, _t13622->n, "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:864"); }))).k_) == (((uint8_t)10LL))) || ((((*({ hrv *_t13624 = &(g681); int64_t _i13624 = ct0_2666; (S1*)_t13624->b + hr_ix(_i13624, _t13624->n, "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:864"); }))).k_) == (((uint8_t)11LL))))) { (void)(f308_gx(c_2665));
- } else { (void)(f337_gaddr(c_2665));
+if ((((((*({ hrv *_t13705 = &(g681); int64_t _i13705 = pt_2666; (S1*)_t13705->b + hr_ix(_i13705, _t13705->n, "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:864"); }))).k_) == (((uint8_t)10LL))) && ((((*({ hrv *_t13707 = &(g681); int64_t _i13707 = pt_2666; (S1*)_t13707->b + hr_ix(_i13707, _t13707->n, "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:864"); }))).c_) < (((int32_t)0LL))))) { if ((((((*({ hrv *_t13709 = &(g681); int64_t _i13709 = ct0_2668; (S1*)_t13709->b + hr_ix(_i13709, _t13709->n, "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:864"); }))).k_) == (((uint8_t)10LL))) || ((((*({ hrv *_t13711 = &(g681); int64_t _i13711 = ct0_2668; (S1*)_t13711->b + hr_ix(_i13711, _t13711->n, "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:864"); }))).k_) == (((uint8_t)11LL))))) { (void)(f308_gx(c_2667));
+ } else { (void)(f337_gaddr(c_2667));
  }
- } else { if (f292_is_res(pt_2664)) { (void)(f340_gxo(c_2665));
- } else { if (((((*({ hrv *_t13630 = &(g681); int64_t _i13630 = pt_2664; (S1*)_t13630->b + hr_ix(_i13630, _t13630->n, "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:865"); }))).k_) == (((uint8_t)9LL)))) { (void)(f333_gas(c_2665));
- } else { (void)(f308_gx(c_2665));
+ } else { if (f292_is_res(pt_2666)) { (void)(f340_gxo(c_2667));
+ } else { if (((((*({ hrv *_t13717 = &(g681); int64_t _i13717 = pt_2666; (S1*)_t13717->b + hr_ix(_i13717, _t13717->n, "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:865"); }))).k_) == (((uint8_t)9LL)))) { (void)(f333_gas(c_2667));
+ } else { (void)(f308_gx(c_2667));
  }
  }
  }
-if (decl_2662) { (void)(f281_ow(hr_str("; ", 2)));
+if (decl_2664) { (void)(f281_ow(hr_str("; ", 2)));
  }
 }
-static bool f437_is_ext(int64_t i_2676) {
-return ((((uint16_t)((uint64_t)((*({ hrv *_t13636 = &(g834); int64_t _i13636 = ((*({ hrv *_t13637 = &(g504); int64_t _i13637 = i_2676; (S6*)_t13637->b + hr_ix(_i13637, _t13637->n, "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:745"); }))).node_; (S4*)_t13636->b + hr_ix(_i13636, _t13636->n, "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:745"); }))).fl_ & (uint64_t)((uint16_t)1LL)))) != (((uint16_t)0LL)));
+static bool f437_is_ext(int64_t i_2678) {
+return ((((uint16_t)((uint64_t)((*({ hrv *_t13723 = &(g834); int64_t _i13723 = ((*({ hrv *_t13724 = &(g504); int64_t _i13724 = i_2678; (S6*)_t13724->b + hr_ix(_i13724, _t13724->n, "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:745"); }))).node_; (S4*)_t13723->b + hr_ix(_i13723, _t13723->n, "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:745"); }))).fl_ & (uint64_t)((uint16_t)1LL)))) != (((uint16_t)0LL)));
 }
-static void f438_ext_name(int64_t i_2677) {
-int64_t node_2678 = HR_CI2I(int64_t, ((*({ hrv *_t13638 = &(g504); int64_t _i13638 = i_2677; (S6*)_t13638->b + hr_ix(_i13638, _t13638->n, "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:740"); }))).node_, "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:740"); 
-int64_t x_2679 = HR_CI2I(int64_t, ((*({ hrv *_t13639 = &(g834); int64_t _i13639 = node_2678; (S4*)_t13639->b + hr_ix(_i13639, _t13639->n, "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:741"); }))).e_, "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:741"); 
-if ((((x_2679) >= (((int64_t)0LL))) && ((((*({ hrv *_t13642 = &(g834); int64_t _i13642 = x_2679; (S4*)_t13642->b + hr_ix(_i13642, _t13642->n, "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:742"); }))).a_) >= (((int32_t)0LL))))) { hsl s_2680 = f318_tok_str(HR_CI2I(int64_t, ((*({ hrv *_t13644 = &(g834); int64_t _i13644 = x_2679; (S4*)_t13644->b + hr_ix(_i13644, _t13644->n, "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:742"); }))).a_, "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:742")); 
-if (((((((s_2680).n) > (((int64_t)3LL))) && (((*({ hsl _t13647 = s_2680; int64_t _i13647 = ((int64_t)0LL); (uint8_t*)_t13647.p + hr_ix(_i13647, _t13647.n, "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:742"); }))) == (((uint8_t)103LL)))) && (((*({ hsl _t13649 = s_2680; int64_t _i13649 = ((int64_t)1LL); (uint8_t*)_t13649.p + hr_ix(_i13649, _t13649.n, "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:742"); }))) == (((uint8_t)115LL)))) && (((*({ hsl _t13651 = s_2680; int64_t _i13651 = ((int64_t)2LL); (uint8_t*)_t13651.p + hr_ix(_i13651, _t13651.n, "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:742"); }))) == (((uint8_t)95LL))))) { (void)(f281_ow(hr_str("hr_", 3)));
-(void)(f281_ow(({ hsl _t13654 = s_2680; int64_t _l13654 = ((int64_t)3LL), _h13654 = _t13654.n; if (_l13654 < 0 || _h13654 < _l13654 || _h13654 > _t13654.n) hr_slerr(_l13654, _h13654, _t13654.n, "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:742"); (hsl){ _t13654.p + _l13654 * (int64_t)sizeof(uint8_t), _h13654 - _l13654 }; })));
+static void f438_ext_name(int64_t i_2679) {
+int64_t node_2680 = HR_CI2I(int64_t, ((*({ hrv *_t13725 = &(g504); int64_t _i13725 = i_2679; (S6*)_t13725->b + hr_ix(_i13725, _t13725->n, "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:740"); }))).node_, "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:740"); 
+int64_t x_2681 = HR_CI2I(int64_t, ((*({ hrv *_t13726 = &(g834); int64_t _i13726 = node_2680; (S4*)_t13726->b + hr_ix(_i13726, _t13726->n, "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:741"); }))).e_, "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:741"); 
+if ((((x_2681) >= (((int64_t)0LL))) && ((((*({ hrv *_t13729 = &(g834); int64_t _i13729 = x_2681; (S4*)_t13729->b + hr_ix(_i13729, _t13729->n, "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:742"); }))).a_) >= (((int32_t)0LL))))) { hsl s_2682 = f318_tok_str(HR_CI2I(int64_t, ((*({ hrv *_t13731 = &(g834); int64_t _i13731 = x_2681; (S4*)_t13731->b + hr_ix(_i13731, _t13731->n, "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:742"); }))).a_, "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:742")); 
+if (((((((s_2682).n) > (((int64_t)3LL))) && (((*({ hsl _t13734 = s_2682; int64_t _i13734 = ((int64_t)0LL); (uint8_t*)_t13734.p + hr_ix(_i13734, _t13734.n, "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:742"); }))) == (((uint8_t)103LL)))) && (((*({ hsl _t13736 = s_2682; int64_t _i13736 = ((int64_t)1LL); (uint8_t*)_t13736.p + hr_ix(_i13736, _t13736.n, "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:742"); }))) == (((uint8_t)115LL)))) && (((*({ hsl _t13738 = s_2682; int64_t _i13738 = ((int64_t)2LL); (uint8_t*)_t13738.p + hr_ix(_i13738, _t13738.n, "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:742"); }))) == (((uint8_t)95LL))))) { (void)(f281_ow(hr_str("hr_", 3)));
+(void)(f281_ow(({ hsl _t13741 = s_2682; int64_t _l13741 = ((int64_t)3LL), _h13741 = _t13741.n; if (_l13741 < 0 || _h13741 < _l13741 || _h13741 > _t13741.n) hr_slerr(_l13741, _h13741, _t13741.n, "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:742"); (hsl){ _t13741.p + _l13741 * (int64_t)sizeof(uint8_t), _h13741 - _l13741 }; })));
 return;
  }
-(void)(f281_ow(s_2680));
+(void)(f281_ow(s_2682));
 return;
  }
-(void)(f281_ow(f10_nm(HR_CI2I(int64_t, ((*({ hrv *_t13658 = &(g834); int64_t _i13658 = node_2678; (S4*)_t13658->b + hr_ix(_i13658, _t13658->n, "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:743"); }))).s_, "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:743"))));
+(void)(f281_ow(f10_nm(HR_CI2I(int64_t, ((*({ hrv *_t13745 = &(g834); int64_t _i13745 = node_2680; (S4*)_t13745->b + hr_ix(_i13745, _t13745->n, "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:743"); }))).s_, "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:743"))));
 }
-static void f439_gcall_args1(int64_t n_2681, int64_t inst_2682, int64_t recv_2683, int64_t op_2684, int64_t on_2685) {
-S4 x_2686 = (*({ hrv *_t13659 = &(g834); int64_t _i13659 = n_2681; (S4*)_t13659->b + hr_ix(_i13659, _t13659->n, "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:800"); })); 
-int64_t np_2687 = HR_CI2I(int64_t, ((*({ hrv *_t13660 = &(g834); int64_t _i13660 = ((*({ hrv *_t13661 = &(g504); int64_t _i13661 = inst_2682; (S6*)_t13661->b + hr_ix(_i13661, _t13661->n, "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:801"); }))).node_; (S4*)_t13660->b + hr_ix(_i13660, _t13660->n, "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:801"); }))).n_, "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:801"); 
-int64_t na_2688 = ({ int64_t _t13662[1] = { HR_SADD(int64_t, HR_CI2I(int64_t, (x_2686).n_, "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:802"), ({ int64_t _r13664; if (((recv_2683) >= (((int64_t)0LL)))) { _r13664 = ((int64_t)1LL);  } else { _r13664 = ((int64_t)0LL);  } _r13664; }), "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:802") }; HR_SSUB(int64_t, (*_t13662), f434_fna(n_2681), "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:802"); }); 
-bool first_2689 = true; 
-{ int64_t _s13668 = 0; int64_t _e13668 = np_2687; for (int64_t _k13668 = _s13668; _k13668 < _e13668; _k13668++) { int64_t j_2690 = (int64_t)_k13668; int64_t pt_2691 = f229_ptype_of(inst_2682, j_2690); 
-if ((!(first_2689))) { (void)(f281_ow(hr_str(", ", 2)));
+static void f439_gcall_args1(int64_t n_2683, int64_t inst_2684, int64_t recv_2685, int64_t op_2686, int64_t on_2687) {
+S4 x_2688 = (*({ hrv *_t13746 = &(g834); int64_t _i13746 = n_2683; (S4*)_t13746->b + hr_ix(_i13746, _t13746->n, "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:800"); })); 
+int64_t np_2689 = HR_CI2I(int64_t, ((*({ hrv *_t13747 = &(g834); int64_t _i13747 = ((*({ hrv *_t13748 = &(g504); int64_t _i13748 = inst_2684; (S6*)_t13748->b + hr_ix(_i13748, _t13748->n, "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:801"); }))).node_; (S4*)_t13747->b + hr_ix(_i13747, _t13747->n, "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:801"); }))).n_, "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:801"); 
+int64_t na_2690 = ({ int64_t _t13749[1] = { HR_SADD(int64_t, HR_CI2I(int64_t, (x_2688).n_, "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:802"), ({ int64_t _r13751; if (((recv_2685) >= (((int64_t)0LL)))) { _r13751 = ((int64_t)1LL);  } else { _r13751 = ((int64_t)0LL);  } _r13751; }), "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:802") }; HR_SSUB(int64_t, (*_t13749), f434_fna(n_2683), "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:802"); }); 
+bool first_2691 = true; 
+{ int64_t _s13755 = 0; int64_t _e13755 = np_2689; for (int64_t _k13755 = _s13755; _k13755 < _e13755; _k13755++) { int64_t j_2692 = (int64_t)_k13755; int64_t pt_2693 = f229_ptype_of(inst_2684, j_2692); 
+if ((!(first_2691))) { (void)(f281_ow(hr_str(", ", 2)));
  }
-first_2689 = false;
-if (((j_2690) >= (na_2688))) { int64_t p_2692 = f90_kid(HR_CI2I(int64_t, ((*({ hrv *_t13673 = &(g504); int64_t _i13673 = inst_2682; (S6*)_t13673->b + hr_ix(_i13673, _t13673->n, "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:809"); }))).node_, "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:809"), j_2690); 
-int64_t sa_2693 = g517; 
-g517 = inst_2682;
-(void)(f308_gx(HR_CI2I(int64_t, ((*({ hrv *_t13675 = &(g834); int64_t _i13675 = p_2692; (S4*)_t13675->b + hr_ix(_i13675, _t13675->n, "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:810"); }))).b_, "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:810")));
-g517 = sa_2693;
+first_2691 = false;
+if (((j_2692) >= (na_2690))) { int64_t p_2694 = f90_kid(HR_CI2I(int64_t, ((*({ hrv *_t13760 = &(g504); int64_t _i13760 = inst_2684; (S6*)_t13760->b + hr_ix(_i13760, _t13760->n, "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:809"); }))).node_, "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:809"), j_2692); 
+int64_t sa_2695 = g517; 
+g517 = inst_2684;
+(void)(f308_gx(HR_CI2I(int64_t, ((*({ hrv *_t13762 = &(g834); int64_t _i13762 = p_2694; (S4*)_t13762->b + hr_ix(_i13762, _t13762->n, "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:810"); }))).b_, "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:810")));
+g517 = sa_2695;
 continue;
  }
-if (((j_2690) == (g287))) { g287 = ((int64_t)-1LL);
-(void)(f440_gcase_arg(pt_2691));
-g287 = j_2690;
+if (((j_2692) == (g287))) { g287 = ((int64_t)-1LL);
+(void)(f440_gcase_arg(pt_2693));
+g287 = j_2692;
 continue;
  }
-if (((j_2690) < (on_2685))) { (void)(({ hrv *_o13679 = &(g163); hr_fs(_o13679, hr_str("_o", 2)); hr_fi(_o13679, op_2684); hr_fs(_o13679, hr_str("_", 1)); hr_fi(_o13679, j_2690); }));
+if (((j_2692) < (on_2687))) { (void)(({ hrv *_o13766 = &(g163); hr_fs(_o13766, hr_str("_o", 2)); hr_fi(_o13766, op_2686); hr_fs(_o13766, hr_str("_", 1)); hr_fi(_o13766, j_2692); }));
 continue;
  }
-(void)(f436_gcall_arg(n_2681, inst_2682, recv_2683, j_2690, false, ((int64_t)0LL)));
- } } _bk13667:; 
-{ hrv *_v13682 = &(g508); for (int64_t _k13682 = 0; _k13682 < _v13682->n; _k13682++) { S13 cp_2698 = ((S13*)_v13682->b)[_k13682]; if (((HR_CI2I(int64_t, (cp_2698).inst_, "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:817")) == (inst_2682))) { if ((!(first_2689))) { (void)(f281_ow(hr_str(", ", 2)));
+(void)(f436_gcall_arg(n_2683, inst_2684, recv_2685, j_2692, false, ((int64_t)0LL)));
+ } } _bk13754:; 
+{ hrv *_v13769 = &(g508); for (int64_t _k13769 = 0; _k13769 < _v13769->n; _k13769++) { S13 cp_2700 = ((S13*)_v13769->b)[_k13769]; if (((HR_CI2I(int64_t, (cp_2700).inst_, "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:817")) == (inst_2684))) { if ((!(first_2691))) { (void)(f281_ow(hr_str(", ", 2)));
  }
-first_2689 = false;
-(void)(f410_lv_addr(HR_CI2I(int64_t, (cp_2698).lv_, "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:817")));
+first_2691 = false;
+(void)(f410_lv_addr(HR_CI2I(int64_t, (cp_2700).lv_, "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:817")));
  }
- } } _bk13681:; 
+ } } _bk13768:; 
 }
-static void f440_gcase_arg(int64_t pt_2694) {
-bool byr_2695 = ((((*({ hrv *_t13687 = &(g681); int64_t _i13687 = pt_2694; (S1*)_t13687->b + hr_ix(_i13687, _t13687->n, "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:793"); }))).k_) == (((uint8_t)10LL))); 
-int64_t vt_2696 = f193_deref(pt_2694); 
-S9 v_2697 = (*({ hrv *_t13689 = &(g687); int64_t _i13689 = HR_SADD(int64_t, HR_CI2I(int64_t, ((*({ hrv *_t13691 = &(g686); int64_t _i13691 = ((*({ hrv *_t13692 = &(g681); int64_t _i13692 = vt_2696; (S1*)_t13692->b + hr_ix(_i13692, _t13692->n, "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:795"); }))).a_; (S8*)_t13691->b + hr_ix(_i13691, _t13691->n, "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:795"); }))).v0_, "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:795"), g288, "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:795"); (S9*)_t13689->b + hr_ix(_i13689, _t13689->n, "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:795"); })); 
-if (((((v_2697).si_) >= (((int32_t)0LL))) && (!(((*({ hrv *_t13694 = &(g684); int64_t _i13694 = (v_2697).si_; (S10*)_t13694->b + hr_ix(_i13694, _t13694->n, "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:796"); }))).zero_)))) { if (byr_2695) { (void)(f281_ow(hr_str("&", 1)));
+static void f440_gcase_arg(int64_t pt_2696) {
+bool byr_2697 = ((((*({ hrv *_t13774 = &(g681); int64_t _i13774 = pt_2696; (S1*)_t13774->b + hr_ix(_i13774, _t13774->n, "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:793"); }))).k_) == (((uint8_t)10LL))); 
+int64_t vt_2698 = f193_deref(pt_2696); 
+S9 v_2699 = (*({ hrv *_t13776 = &(g687); int64_t _i13776 = HR_SADD(int64_t, HR_CI2I(int64_t, ((*({ hrv *_t13778 = &(g686); int64_t _i13778 = ((*({ hrv *_t13779 = &(g681); int64_t _i13779 = vt_2698; (S1*)_t13779->b + hr_ix(_i13779, _t13779->n, "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:795"); }))).a_; (S8*)_t13778->b + hr_ix(_i13778, _t13778->n, "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:795"); }))).v0_, "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:795"), g288, "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:795"); (S9*)_t13776->b + hr_ix(_i13776, _t13776->n, "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:795"); })); 
+if (((((v_2699).si_) >= (((int32_t)0LL))) && (!(((*({ hrv *_t13781 = &(g684); int64_t _i13781 = (v_2699).si_; (S10*)_t13781->b + hr_ix(_i13781, _t13781->n, "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:796"); }))).zero_)))) { if (byr_2697) { (void)(f281_ow(hr_str("&", 1)));
  }
-(void)(({ hrv *_o13696 = &(g163); hr_fs(_o13696, hr_str("_m", 2)); hr_fi(_o13696, g289); hr_fs(_o13696, hr_str("->u.v", 5)); hr_fi(_o13696, g288); }));
+(void)(({ hrv *_o13783 = &(g163); hr_fs(_o13783, hr_str("_m", 2)); hr_fi(_o13783, g289); hr_fs(_o13783, hr_str("->u.v", 5)); hr_fi(_o13783, g288); }));
 return;
  }
-if (byr_2695) { (void)(f281_ow(hr_str("&", 1)));
+if (byr_2697) { (void)(f281_ow(hr_str("&", 1)));
  }
 (void)(f281_ow(hr_str("(", 1)));
-(void)(f282_ct(vt_2696));
+(void)(f282_ct(vt_2698));
 (void)(f281_ow(hr_str("){0}", 4)));
 }
 static void f441_glrcheck(void) {
 (void)(f281_ow(hr_str("if (HR_UNLIKELY(hr_lr)) { ", 26)));
-if (((*({ hrv *_t13702 = &(g504); int64_t _i13702 = g179; (S6*)_t13702->b + hr_ix(_i13702, _t13702->n, "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:1628"); }))).tg_) { int64_t rt_2699 = HR_CI2I(int64_t, ((*({ hrv *_t13703 = &(g504); int64_t _i13703 = g179; (S6*)_t13703->b + hr_ix(_i13703, _t13703->n, "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:1628"); }))).ret_, "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:1628"); 
-(void)(({ hrv *_o13704 = &(g163); hr_fs(_o13704, hr_str("if (hr_lr == ", 13)); hr_fi(_o13704, HR_SADD(int64_t, g179, ((int64_t)1LL), "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:1628")); hr_fs(_o13704, hr_str(") { hr_lr = 0; ", 15)); }));
-if ((((rt_2699) < (((int64_t)0LL))) || ((rt_2699) == (g688)))) { (void)(f281_ow(hr_str("return; } ", 10)));
- } else { (void)(({ hrv *_o13709 = &(g163); hr_fs(_o13709, hr_str("return _lrv", 11)); hr_fi(_o13709, g179); hr_fs(_o13709, hr_str("; } ", 4)); }));
+if (((*({ hrv *_t13789 = &(g504); int64_t _i13789 = g179; (S6*)_t13789->b + hr_ix(_i13789, _t13789->n, "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:1634"); }))).tg_) { int64_t rt_2701 = HR_CI2I(int64_t, ((*({ hrv *_t13790 = &(g504); int64_t _i13790 = g179; (S6*)_t13790->b + hr_ix(_i13790, _t13790->n, "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:1634"); }))).ret_, "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:1634"); 
+(void)(({ hrv *_o13791 = &(g163); hr_fs(_o13791, hr_str("if (hr_lr == ", 13)); hr_fi(_o13791, HR_SADD(int64_t, g179, ((int64_t)1LL), "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:1634")); hr_fs(_o13791, hr_str(") { hr_lr = 0; ", 15)); }));
+if ((((rt_2701) < (((int64_t)0LL))) || ((rt_2701) == (g688)))) { (void)(f281_ow(hr_str("return; } ", 10)));
+ } else { (void)(({ hrv *_o13796 = &(g163); hr_fs(_o13796, hr_str("return _lrv", 11)); hr_fi(_o13796, g179); hr_fs(_o13796, hr_str("; } ", 4)); }));
  }
  }
 (void)(f429_gdummy());
 (void)(f281_ow(hr_str(" } ", 3)));
 }
-static void f442_gen_fn(int64_t i_2721) {
-int64_t node_2722 = HR_CI2I(int64_t, ((*({ hrv *_t13712 = &(g504); int64_t _i13712 = i_2721; (S6*)_t13712->b + hr_ix(_i13712, _t13712->n, "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:1800"); }))).node_, "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:1800"); 
-g517 = i_2721;
-g179 = i_2721;
-(void)(({ hrv *_v13713 = &(g180); _v13713->n = 0; }));
-(void)(({ hrv *_v13714 = &(g181); _v13714->n = 0; }));
-int64_t s0_2723 = (g163).n; 
-(void)(f443_gsig(i_2721));
-(void)(({ hrv *_v13716 = &(g166); hsl _s13716 = ({ hsl _t13717 = hr_sl(g163); int64_t _l13717 = s0_2723, _h13717 = _t13717.n; if (_l13717 < 0 || _h13717 < _l13717 || _h13717 > _t13717.n) hr_slerr(_l13717, _h13717, _t13717.n, "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:1805"); (hsl){ _t13717.p + _l13717 * (int64_t)sizeof(uint8_t), _h13717 - _l13717 }; }); hr_append(_v13716, _s13716.p, _s13716.n, sizeof(uint8_t)); }));
-(void)(({ hrv *_v13718 = &(g166); hsl _s13718 = hr_str(";\012", 2); hr_append(_v13718, _s13718.p, _s13718.n, sizeof(uint8_t)); }));
+static void f442_gen_fn(int64_t i_2723) {
+int64_t node_2724 = HR_CI2I(int64_t, ((*({ hrv *_t13799 = &(g504); int64_t _i13799 = i_2723; (S6*)_t13799->b + hr_ix(_i13799, _t13799->n, "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:1806"); }))).node_, "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:1806"); 
+g517 = i_2723;
+g179 = i_2723;
+(void)(({ hrv *_v13800 = &(g180); _v13800->n = 0; }));
+(void)(({ hrv *_v13801 = &(g181); _v13801->n = 0; }));
+int64_t s0_2725 = (g163).n; 
+(void)(f443_gsig(i_2723));
+(void)(({ hrv *_v13803 = &(g166); hsl _s13803 = ({ hsl _t13804 = hr_sl(g163); int64_t _l13804 = s0_2725, _h13804 = _t13804.n; if (_l13804 < 0 || _h13804 < _l13804 || _h13804 > _t13804.n) hr_slerr(_l13804, _h13804, _t13804.n, "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:1811"); (hsl){ _t13804.p + _l13804 * (int64_t)sizeof(uint8_t), _h13804 - _l13804 }; }); hr_append(_v13803, _s13803.p, _s13803.n, sizeof(uint8_t)); }));
+(void)(({ hrv *_v13805 = &(g166); hsl _s13805 = hr_str(";\012", 2); hr_append(_v13805, _s13805.p, _s13805.n, sizeof(uint8_t)); }));
 (void)(f281_ow(hr_str(" {\012", 3)));
-int64_t fsp_2735 = (g163).n; 
-int64_t du0_2736 = g197; 
-{ int32_t _s13721 = 0; int32_t _e13721 = ((*({ hrv *_t13722 = &(g834); int64_t _i13722 = node_2722; (S4*)_t13722->b + hr_ix(_i13722, _t13722->n, "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:1808"); }))).n_; for (int32_t _k13721 = _s13721; _k13721 < _e13721; _k13721++) { int32_t j_2737 = (int32_t)_k13721; int64_t p_2738 = f90_kid(node_2722, ((int64_t)(j_2737))); 
-int64_t v_2739 = f152_rv(p_2738); 
-if (f292_is_res(f229_ptype_of(i_2721, ((int64_t)(j_2737))))) { (void)(f281_ow(hr_str("hrv ", 4)));
-(void)(f324_lv_name(v_2739));
+int64_t fsp_2737 = (g163).n; 
+int64_t du0_2738 = g197; 
+{ int32_t _s13808 = 0; int32_t _e13808 = ((*({ hrv *_t13809 = &(g834); int64_t _i13809 = node_2724; (S4*)_t13809->b + hr_ix(_i13809, _t13809->n, "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:1814"); }))).n_; for (int32_t _k13808 = _s13808; _k13808 < _e13808; _k13808++) { int32_t j_2739 = (int32_t)_k13808; int64_t p_2740 = f90_kid(node_2724, ((int64_t)(j_2739))); 
+int64_t v_2741 = f152_rv(p_2740); 
+if (f292_is_res(f229_ptype_of(i_2723, ((int64_t)(j_2739))))) { (void)(f281_ow(hr_str("hrv ", 4)));
+(void)(f324_lv_name(v_2741));
 (void)(f281_ow(hr_str(" __attribute__((cleanup(hr_rdrop))) = ", 38)));
-(void)(f324_lv_name(v_2739));
+(void)(f324_lv_name(v_2741));
 (void)(f281_ow(hr_str("_in;\012", 5)));
  }
- } } _bk13720:; 
-int64_t body_2740 = HR_CI2I(int64_t, ((*({ hrv *_t13732 = &(g834); int64_t _i13732 = node_2722; (S4*)_t13732->b + hr_ix(_i13732, _t13732->n, "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:1809"); }))).c_, "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:1809"); 
-int64_t rt_2741 = HR_CI2I(int64_t, ((*({ hrv *_t13733 = &(g504); int64_t _i13733 = i_2721; (S6*)_t13733->b + hr_ix(_i13733, _t13733->n, "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:1810"); }))).ret_, "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:1810"); 
-int64_t tl_2742 = HR_CI2I(int64_t, ((*({ hrv *_t13734 = &(g834); int64_t _i13734 = body_2740; (S4*)_t13734->b + hr_ix(_i13734, _t13734->n, "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:1811"); }))).a_, "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:1811"); 
-{ int32_t _s13736 = 0; int32_t _e13736 = ((*({ hrv *_t13737 = &(g834); int64_t _i13737 = body_2740; (S4*)_t13737->b + hr_ix(_i13737, _t13737->n, "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:1812"); }))).n_; for (int32_t _k13736 = _s13736; _k13736 < _e13736; _k13736++) { int32_t q_2743 = (int32_t)_k13736; (void)(f406_gstmt(f90_kid(body_2740, ((int64_t)(q_2743)))));
- } } _bk13735:; 
-if (((tl_2742) >= (((int64_t)0LL)))) { if ((((((rt_2741) >= (((int64_t)0LL))) && ((rt_2741) != (g688))) && ((f142_at(tl_2742)) != (g688))) && (!(f143_ends(tl_2742))))) { int64_t sp_2744 = (g163).n; 
-int64_t td_2745 = (g176).n; 
-if (f287_is_vval(rt_2741)) { (void)(f430_gvret(tl_2742, rt_2741));
+ } } _bk13807:; 
+int64_t body_2742 = HR_CI2I(int64_t, ((*({ hrv *_t13819 = &(g834); int64_t _i13819 = node_2724; (S4*)_t13819->b + hr_ix(_i13819, _t13819->n, "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:1815"); }))).c_, "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:1815"); 
+int64_t rt_2743 = HR_CI2I(int64_t, ((*({ hrv *_t13820 = &(g504); int64_t _i13820 = i_2723; (S6*)_t13820->b + hr_ix(_i13820, _t13820->n, "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:1816"); }))).ret_, "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:1816"); 
+int64_t tl_2744 = HR_CI2I(int64_t, ((*({ hrv *_t13821 = &(g834); int64_t _i13821 = body_2742; (S4*)_t13821->b + hr_ix(_i13821, _t13821->n, "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:1817"); }))).a_, "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:1817"); 
+{ int32_t _s13823 = 0; int32_t _e13823 = ((*({ hrv *_t13824 = &(g834); int64_t _i13824 = body_2742; (S4*)_t13824->b + hr_ix(_i13824, _t13824->n, "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:1818"); }))).n_; for (int32_t _k13823 = _s13823; _k13823 < _e13823; _k13823++) { int32_t q_2745 = (int32_t)_k13823; (void)(f406_gstmt(f90_kid(body_2742, ((int64_t)(q_2745)))));
+ } } _bk13822:; 
+if (((tl_2744) >= (((int64_t)0LL)))) { if ((((((rt_2743) >= (((int64_t)0LL))) && ((rt_2743) != (g688))) && ((f142_at(tl_2744)) != (g688))) && (!(f143_ends(tl_2744))))) { int64_t sp_2746 = (g163).n; 
+int64_t td_2747 = (g176).n; 
+if (f287_is_vval(rt_2743)) { (void)(f430_gvret(tl_2744, rt_2743));
 (void)(f281_ow(hr_str("\012", 1)));
- } else { if ((((((*({ hrv *_t13750 = &(g681); int64_t _i13750 = rt_2741; (S1*)_t13750->b + hr_ix(_i13750, _t13750->n, "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:1817"); }))).k_) == (((uint8_t)14LL))) && ((((*({ hrv *_t13752 = &(g834); int64_t _i13752 = tl_2742; (S4*)_t13752->b + hr_ix(_i13752, _t13752->n, "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:1817"); }))).k_) == (((uint8_t)11LL))))) { (void)(f281_ow(hr_str("return ", 7)));
-(void)(f308_gx(tl_2742));
+ } else { if ((((((*({ hrv *_t13837 = &(g681); int64_t _i13837 = rt_2743; (S1*)_t13837->b + hr_ix(_i13837, _t13837->n, "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:1823"); }))).k_) == (((uint8_t)14LL))) && ((((*({ hrv *_t13839 = &(g834); int64_t _i13839 = tl_2744; (S4*)_t13839->b + hr_ix(_i13839, _t13839->n, "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:1823"); }))).k_) == (((uint8_t)11LL))))) { (void)(f281_ow(hr_str("return ", 7)));
+(void)(f308_gx(tl_2744));
 (void)(f281_ow(hr_str(";\012", 2)));
  } else { (void)(f281_ow(hr_str("return ", 7)));
-if (f292_is_res(rt_2741)) { (void)(f427_gmove(tl_2742));
- } else { (void)(f308_gx(tl_2742));
+if (f292_is_res(rt_2743)) { (void)(f427_gmove(tl_2744));
+ } else { (void)(f308_gx(tl_2744));
  }
 (void)(f281_ow(hr_str(";\012", 2)));
  }
  }
-if ((((g176).n) > (td_2745))) { (void)(({ hrv *_v13762 = &(g177); _v13762->n = 0; }));
-(void)(({ hrv *_v13763 = &(g177); hsl _s13763 = ({ hsl _t13764 = hr_sl(g163); int64_t _l13764 = sp_2744, _h13764 = _t13764.n; if (_l13764 < 0 || _h13764 < _l13764 || _h13764 > _t13764.n) hr_slerr(_l13764, _h13764, _t13764.n, "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:1819"); (hsl){ _t13764.p + _l13764 * (int64_t)sizeof(uint8_t), _h13764 - _l13764 }; }); hr_append(_v13763, _s13763.p, _s13763.n, sizeof(uint8_t)); }));
-(void)(({ hrv *_v13765 = &(g163); int64_t _k13765 = sp_2744; if (_k13765 < 0) hr_die("resize to a negative length", "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:1819"); hr_resize(_v13765, _k13765, sizeof(uint8_t)); }));
+if ((((g176).n) > (td_2747))) { (void)(({ hrv *_v13849 = &(g177); _v13849->n = 0; }));
+(void)(({ hrv *_v13850 = &(g177); hsl _s13850 = ({ hsl _t13851 = hr_sl(g163); int64_t _l13851 = sp_2746, _h13851 = _t13851.n; if (_l13851 < 0 || _h13851 < _l13851 || _h13851 > _t13851.n) hr_slerr(_l13851, _h13851, _t13851.n, "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:1825"); (hsl){ _t13851.p + _l13851 * (int64_t)sizeof(uint8_t), _h13851 - _l13851 }; }); hr_append(_v13850, _s13850.p, _s13850.n, sizeof(uint8_t)); }));
+(void)(({ hrv *_v13852 = &(g163); int64_t _k13852 = sp_2746; if (_k13852 < 0) hr_die("resize to a negative length", "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:1825"); hr_resize(_v13852, _k13852, sizeof(uint8_t)); }));
 (void)(f281_ow(hr_str("{ ", 2)));
-(void)(({ hrv *_v13767 = &(g163); hsl _s13767 = ({ hsl _t13768 = hr_sl(g176); int64_t _l13768 = td_2745, _h13768 = _t13768.n; if (_l13768 < 0 || _h13768 < _l13768 || _h13768 > _t13768.n) hr_slerr(_l13768, _h13768, _t13768.n, "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:1819"); (hsl){ _t13768.p + _l13768 * (int64_t)sizeof(uint8_t), _h13768 - _l13768 }; }); hr_append(_v13767, _s13767.p, _s13767.n, sizeof(uint8_t)); }));
-(void)(({ hrv *_v13769 = &(g176); int64_t _k13769 = td_2745; if (_k13769 < 0) hr_die("resize to a negative length", "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:1819"); hr_resize(_v13769, _k13769, sizeof(uint8_t)); }));
-(void)(({ hrv *_v13770 = &(g163); hsl _s13770 = ({ hsl _t13771 = hr_sl(g177); int64_t _l13771 = 0, _h13771 = _t13771.n; if (_l13771 < 0 || _h13771 < _l13771 || _h13771 > _t13771.n) hr_slerr(_l13771, _h13771, _t13771.n, "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:1819"); (hsl){ _t13771.p + _l13771 * (int64_t)sizeof(uint8_t), _h13771 - _l13771 }; }); hr_append(_v13770, _s13770.p, _s13770.n, sizeof(uint8_t)); }));
+(void)(({ hrv *_v13854 = &(g163); hsl _s13854 = ({ hsl _t13855 = hr_sl(g176); int64_t _l13855 = td_2747, _h13855 = _t13855.n; if (_l13855 < 0 || _h13855 < _l13855 || _h13855 > _t13855.n) hr_slerr(_l13855, _h13855, _t13855.n, "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:1825"); (hsl){ _t13855.p + _l13855 * (int64_t)sizeof(uint8_t), _h13855 - _l13855 }; }); hr_append(_v13854, _s13854.p, _s13854.n, sizeof(uint8_t)); }));
+(void)(({ hrv *_v13856 = &(g176); int64_t _k13856 = td_2747; if (_k13856 < 0) hr_die("resize to a negative length", "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:1825"); hr_resize(_v13856, _k13856, sizeof(uint8_t)); }));
+(void)(({ hrv *_v13857 = &(g163); hsl _s13857 = ({ hsl _t13858 = hr_sl(g177); int64_t _l13858 = 0, _h13858 = _t13858.n; if (_l13858 < 0 || _h13858 < _l13858 || _h13858 > _t13858.n) hr_slerr(_l13858, _h13858, _t13858.n, "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:1825"); (hsl){ _t13858.p + _l13858 * (int64_t)sizeof(uint8_t), _h13858 - _l13858 }; }); hr_append(_v13857, _s13857.p, _s13857.n, sizeof(uint8_t)); }));
 (void)(f281_ow(hr_str("}\012", 2)));
  }
- } else { (void)(f406_gstmt(tl_2742));
+ } else { (void)(f406_gstmt(tl_2744));
  }
  }
 (void)(f281_ow(hr_str("}\012", 2)));
-if ((((g197) > (du0_2736)) || f287_is_vval(rt_2741))) { (void)(({ hrv *_v13777 = &(g225); _v13777->n = 0; }));
-(void)(({ hrv *_v13778 = &(g225); hsl _s13778 = ({ hsl _t13779 = hr_sl(g163); int64_t _l13779 = fsp_2735, _h13779 = _t13779.n; if (_l13779 < 0 || _h13779 < _l13779 || _h13779 > _t13779.n) hr_slerr(_l13779, _h13779, _t13779.n, "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:1823"); (hsl){ _t13779.p + _l13779 * (int64_t)sizeof(uint8_t), _h13779 - _l13779 }; }); hr_append(_v13778, _s13778.p, _s13778.n, sizeof(uint8_t)); }));
-(void)(({ hrv *_v13780 = &(g163); int64_t _k13780 = fsp_2735; if (_k13780 < 0) hr_die("resize to a negative length", "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:1823"); hr_resize(_v13780, _k13780, sizeof(uint8_t)); }));
-(void)(f281_ow(({ hsl _r13782; if (f287_is_vval(rt_2741)) { _r13782 = hr_str("int64_t _fm __attribute__((cleanup(hr_dsf))) = hr_ds.n;\012", 56);  } else { _r13782 = hr_str("int64_t _fm __attribute__((cleanup(hr_dsr))) = hr_ds.n;\012", 56);  } _r13782; })));
-(void)(({ hrv *_v13784 = &(g163); hsl _s13784 = ({ hsl _t13785 = hr_sl(g225); int64_t _l13785 = 0, _h13785 = _t13785.n; if (_l13785 < 0 || _h13785 < _l13785 || _h13785 > _t13785.n) hr_slerr(_l13785, _h13785, _t13785.n, "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:1823"); (hsl){ _t13785.p + _l13785 * (int64_t)sizeof(uint8_t), _h13785 - _l13785 }; }); hr_append(_v13784, _s13784.p, _s13784.n, sizeof(uint8_t)); }));
+if ((((g197) > (du0_2738)) || f287_is_vval(rt_2743))) { (void)(({ hrv *_v13864 = &(g225); _v13864->n = 0; }));
+(void)(({ hrv *_v13865 = &(g225); hsl _s13865 = ({ hsl _t13866 = hr_sl(g163); int64_t _l13866 = fsp_2737, _h13866 = _t13866.n; if (_l13866 < 0 || _h13866 < _l13866 || _h13866 > _t13866.n) hr_slerr(_l13866, _h13866, _t13866.n, "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:1829"); (hsl){ _t13866.p + _l13866 * (int64_t)sizeof(uint8_t), _h13866 - _l13866 }; }); hr_append(_v13865, _s13865.p, _s13865.n, sizeof(uint8_t)); }));
+(void)(({ hrv *_v13867 = &(g163); int64_t _k13867 = fsp_2737; if (_k13867 < 0) hr_die("resize to a negative length", "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:1829"); hr_resize(_v13867, _k13867, sizeof(uint8_t)); }));
+(void)(f281_ow(({ hsl _r13869; if (f287_is_vval(rt_2743)) { _r13869 = hr_str("int64_t _fm __attribute__((cleanup(hr_dsf))) = hr_ds.n;\012", 56);  } else { _r13869 = hr_str("int64_t _fm __attribute__((cleanup(hr_dsr))) = hr_ds.n;\012", 56);  } _r13869; })));
+(void)(({ hrv *_v13871 = &(g163); hsl _s13871 = ({ hsl _t13872 = hr_sl(g225); int64_t _l13872 = 0, _h13872 = _t13872.n; if (_l13872 < 0 || _h13872 < _l13872 || _h13872 > _t13872.n) hr_slerr(_l13872, _h13872, _t13872.n, "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:1829"); (hsl){ _t13872.p + _l13872 * (int64_t)sizeof(uint8_t), _h13872 - _l13872 }; }); hr_append(_v13871, _s13871.p, _s13871.n, sizeof(uint8_t)); }));
  }
 }
-static void f443_gsig(int64_t i_2724) {
-int64_t rt_2725 = HR_CI2I(int64_t, ((*({ hrv *_t13786 = &(g504); int64_t _i13786 = i_2724; (S6*)_t13786->b + hr_ix(_i13786, _t13786->n, "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:1779"); }))).ret_, "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:1779"); 
+static void f443_gsig(int64_t i_2726) {
+int64_t rt_2727 = HR_CI2I(int64_t, ((*({ hrv *_t13873 = &(g504); int64_t _i13873 = i_2726; (S6*)_t13873->b + hr_ix(_i13873, _t13873->n, "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:1785"); }))).ret_, "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:1785"); 
 (void)(f281_ow(hr_str("static ", 7)));
-if (((rt_2725) < (((int64_t)0LL)))) { (void)(f281_ow(hr_str("void", 4)));
- } else { (void)(f282_ct(rt_2725));
+if (((rt_2727) < (((int64_t)0LL)))) { (void)(f281_ow(hr_str("void", 4)));
+ } else { (void)(f282_ct(rt_2727));
  }
 (void)(f281_ow(hr_str(" ", 1)));
-(void)(f383_fn_cname(i_2724));
+(void)(f383_fn_cname(i_2726));
 (void)(f281_ow(hr_str("(", 1)));
-int64_t node_2726 = HR_CI2I(int64_t, ((*({ hrv *_t13794 = &(g504); int64_t _i13794 = i_2724; (S6*)_t13794->b + hr_ix(_i13794, _t13794->n, "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:1783"); }))).node_, "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:1783"); 
-bool first_2727 = true; 
-int64_t sa_2728 = g517; 
-g517 = i_2724;
-{ int32_t _s13796 = 0; int32_t _e13796 = ((*({ hrv *_t13797 = &(g834); int64_t _i13797 = node_2726; (S4*)_t13797->b + hr_ix(_i13797, _t13797->n, "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:1786"); }))).n_; for (int32_t _k13796 = _s13796; _k13796 < _e13796; _k13796++) { int32_t j_2729 = (int32_t)_k13796; int64_t p_2730 = f90_kid(node_2726, ((int64_t)(j_2729))); 
-int64_t v_2731 = f152_rv(p_2730); 
-if ((!(first_2727))) { (void)(f281_ow(hr_str(", ", 2)));
+int64_t node_2728 = HR_CI2I(int64_t, ((*({ hrv *_t13881 = &(g504); int64_t _i13881 = i_2726; (S6*)_t13881->b + hr_ix(_i13881, _t13881->n, "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:1789"); }))).node_, "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:1789"); 
+bool first_2729 = true; 
+int64_t sa_2730 = g517; 
+g517 = i_2726;
+{ int32_t _s13883 = 0; int32_t _e13883 = ((*({ hrv *_t13884 = &(g834); int64_t _i13884 = node_2728; (S4*)_t13884->b + hr_ix(_i13884, _t13884->n, "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:1792"); }))).n_; for (int32_t _k13883 = _s13883; _k13883 < _e13883; _k13883++) { int32_t j_2731 = (int32_t)_k13883; int64_t p_2732 = f90_kid(node_2728, ((int64_t)(j_2731))); 
+int64_t v_2733 = f152_rv(p_2732); 
+if ((!(first_2729))) { (void)(f281_ow(hr_str(", ", 2)));
  }
-first_2727 = false;
-int64_t t_2732 = f229_ptype_of(i_2724, ((int64_t)(j_2729))); 
-(void)(f282_ct(t_2732));
+first_2729 = false;
+int64_t t_2734 = f229_ptype_of(i_2726, ((int64_t)(j_2731))); 
+(void)(f282_ct(t_2734));
 (void)(f281_ow(hr_str(" ", 1)));
-(void)(f324_lv_name(v_2731));
-if (f292_is_res(t_2732)) { (void)(f281_ow(hr_str("_in", 3)));
+(void)(f324_lv_name(v_2733));
+if (f292_is_res(t_2734)) { (void)(f281_ow(hr_str("_in", 3)));
  }
- } } _bk13795:; 
-g517 = sa_2728;
-{ hrv *_v13808 = &(g508); for (int64_t _k13808 = 0; _k13808 < _v13808->n; _k13808++) { S13 cp_2733 = ((S13*)_v13808->b)[_k13808]; if (((HR_CI2I(int64_t, (cp_2733).inst_, "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:1795")) == (i_2724))) { if ((!(first_2727))) { (void)(f281_ow(hr_str(", ", 2)));
+ } } _bk13882:; 
+g517 = sa_2730;
+{ hrv *_v13895 = &(g508); for (int64_t _k13895 = 0; _k13895 < _v13895->n; _k13895++) { S13 cp_2735 = ((S13*)_v13895->b)[_k13895]; if (((HR_CI2I(int64_t, (cp_2735).inst_, "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:1801")) == (i_2726))) { if ((!(first_2729))) { (void)(f281_ow(hr_str(", ", 2)));
  }
-first_2727 = false;
-int64_t v_2734 = HR_CI2I(int64_t, (cp_2733).lv_, "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:1795"); 
-(void)(f282_ct(HR_CI2I(int64_t, ((*({ hrv *_t13812 = &(g505); int64_t _i13812 = v_2734; (S12*)_t13812->b + hr_ix(_i13812, _t13812->n, "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:1795"); }))).ty_, "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:1795")));
-(void)(f281_ow(({ hsl _r13814; if (f327_lv_isptr(v_2734)) { _r13814 = hr_str(" **c", 4);  } else { _r13814 = hr_str(" *c", 3);  } _r13814; })));
-(void)(f335_oi(v_2734));
+first_2729 = false;
+int64_t v_2736 = HR_CI2I(int64_t, (cp_2735).lv_, "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:1801"); 
+(void)(f282_ct(HR_CI2I(int64_t, ((*({ hrv *_t13899 = &(g505); int64_t _i13899 = v_2736; (S12*)_t13899->b + hr_ix(_i13899, _t13899->n, "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:1801"); }))).ty_, "/home/anmire/ai/amni-lang/helium-self/hc/gen.amni:1801")));
+(void)(f281_ow(({ hsl _r13901; if (f327_lv_isptr(v_2736)) { _r13901 = hr_str(" **c", 4);  } else { _r13901 = hr_str(" *c", 3);  } _r13901; })));
+(void)(f335_oi(v_2736));
  }
- } } _bk13807:; 
-if (first_2727) { (void)(f281_ow(hr_str("void", 4)));
+ } } _bk13894:; 
+if (first_2729) { (void)(f281_ow(hr_str("void", 4)));
  }
 (void)(f281_ow(hr_str(")", 1)));
 }
