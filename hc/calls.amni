@@ -2,6 +2,7 @@ import check;
 let B_PRINT = 1; let B_STR = 2; let B_FORMAT = 3; let B_ASSERT = 4; let B_ABORT = 5; let B_EXIT = 6; let B_COPY = 7; let B_DEFAULT = 8; let B_LEN = 9;
 let B_PUSH = 20; let B_APPEND = 21; let B_POP = 22; let B_POPN = 23; let B_RESIZE = 24; let B_CLEAR = 25; let B_INDEXOF = 26; let B_CAP = 27;
 let B_TOBYTES = 30; let B_BYTESOF = 31; let B_FROMBYTES = 32; let B_EMBED = 33;
+let B_ALLOCI = 34; let B_ALLOCR = 35; let B_FREE = 36; let B_ALLOCS = 37; let B_FREES = 38; let B_REALLOCS = 39;
 struct NF { name i32, node i32, inst i32, own i32 }
 var NESTS NF[>..<];
 var CANDS i32[>..<];
@@ -19,6 +20,8 @@ fn builtin_of(name const byte[:]) int {
 fn member_of(name const byte[:]) int {
 	if name == "push" { return B_PUSH; } if name == "append" { return B_APPEND; } if name == "pop" { return B_POP; } if name == "pop_n" { return B_POPN; }
 	if name == "resize" { return B_RESIZE; } if name == "clear" { return B_CLEAR; } if name == "index_of" { return B_INDEXOF; } if name == "len" { return B_LEN; }
+	if name == "alloc_index" { return B_ALLOCI; } if name == "alloc_ref" { return B_ALLOCR; } if name == "free" { return B_FREE; }
+	if name == "alloc_slice" { return B_ALLOCS; } if name == "free_slice" { return B_FREES; } if name == "realloc_slice" { return B_REALLOCS; }
 	-1
 }
 fn find_nest(name int) int { var i = NESTS.len - 1; while i >= 0 { if NESTS[i].name as int == name && visible(NESTS[i].own as int) { return i; } i--; } -1 }
@@ -448,7 +451,7 @@ recursive fn ck_builtin(n int, b int, recv int, want int) int {
 	let na = x.n as int;
 	fn arg(i int) int { if recv >= 0 { if i == 0 { recv } else { kid(n, i - 1) } } else { kid(n, i) } }
 	let total = na + (if recv >= 0 { 1 } else { 0 });
-	let need = if b == B_PRINT || b == B_STR || b == B_DEFAULT || b == B_POP || b == B_CLEAR { 0 } else { if b == B_PUSH || b == B_APPEND || b == B_POPN || b == B_RESIZE || b == B_INDEXOF { 2 } else { 1 } };
+	let need = if b == B_PRINT || b == B_STR || b == B_DEFAULT || b == B_POP || b == B_CLEAR { 0 } else { if b == B_REALLOCS { 3 } else { if b == B_PUSH || b == B_APPEND || b == B_POPN || b == B_RESIZE || b == B_INDEXOF || b >= B_ALLOCI { 2 } else { 1 } } };
 	if total < need { cerr(n, "too few arguments to a builtin"); return set_t(n, T_ERRT); }
 	if b == B_PRINT || b == B_STR {
 		for i in na { let c = kid(n, i); let t = ck(c, -1); if is_pending(t) { default_t(c); } hook_walk(fin_t(c)); }
@@ -489,6 +492,9 @@ recursive fn ck_builtin(n int, b int, recv int, want int) int {
 	if b == B_RESIZE { ck(arg(1), T_I64); conv(arg(1), T_I64); if total > 2 { ck(arg(2), e); conv(arg(2), e); } return set_t(n, T_VOID); }
 	if b == B_CLEAR { return set_t(n, T_VOID); }
 	if b == B_INDEXOF { ck(arg(1), -1); return set_t(n, T_I64); }
+	if b == B_ALLOCI || b == B_ALLOCR { let c = arg(1); ck(c, e); conv(c, e); return set_t(n, if b == B_ALLOCI { T_I64 } else { t_ref(e, 0) }); }
+	if b == B_FREE || b == B_ALLOCS { ck(arg(1), T_I64); conv(arg(1), T_I64); return set_t(n, if b == B_FREE { T_VOID } else { t_slice(e, false) }); }
+	if b == B_FREES || b == B_REALLOCS { let c = arg(1); ck(c, t_slice(e, true)); conv(c, t_slice(e, true)); if b == B_FREES { return set_t(n, T_VOID); } ck(arg(2), T_I64); conv(arg(2), T_I64); return set_t(n, t_slice(e, false)); }
 	set_t(n, T_ERRT)
 }
 recursive fn ck_slit(n int, want int) int {

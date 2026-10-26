@@ -1103,6 +1103,11 @@ recursive fn gbuiltin(n int) {
 	}
 	if b == B_PUSH && relpush(n, recv, arg(1), e, p, false) { return; }
 	ow("({ hrv *_v"); oi(p); ow(" = "); grecv_ptr(recv); ow("; ");
+	if b == B_ALLOCI || b == B_ALLOCR { ct(e); ow(" _x"); oi(p); ow(" = "); gx(arg(1)); format(O, "; int64_t _w", p, "; int64_t _i", p, " = hr_pool_claim(_v", p, ", sizeof _x", p, ", &_w", p, "); if (_w", p, ") hr_grow(_v", p, ", 1, sizeof _x", p, "); (("); ct(e); format(O, "*)_v", p, "->b)[_i", p, "] = _x", p, "; "); if b == B_ALLOCI { format(O, "_i", p, "; })"); } else { ow("&(("); ct(e); format(O, "*)_v", p, "->b)[_i", p, "]; })"); } return; }
+	if b == B_FREE { format(O, "hr_pool_free(_v", p, ", "); gx(arg(1)); ow(", "); wloc(n); ow("); })"); return; }
+	if b == B_ALLOCS { format(O, "hr_span_take(_v", p, ", "); gx(arg(1)); ow(", sizeof("); ct(e); ow("), "); wloc(n); ow("); })"); return; }
+	if b == B_FREES { format(O, "hsl _s", p, " = "); gas(arg(1)); format(O, "; if (_s", p, ".n) hr_span_free(_v", p, ", hr_span_idx(_v", p, ", _s", p, ", sizeof("); ct(e); ow("), "); wloc(n); format(O, "), _s", p, ".n); })"); return; }
+	if b == B_REALLOCS { format(O, "hsl _s", p, " = "); gas(arg(1)); format(O, "; int64_t _k", p, " = "); gx(arg(2)); format(O, "; hr_span_realloc(_v", p, ", _s", p, ", _k", p, ", sizeof("); ct(e); ow("), "); wloc(n); ow("); })"); return; }
 	if b == B_PUSH { ct(e); ow(" _x"); oi(p); ow(" = "); gx(arg(1)); ow("; "); ct(e); ow(" *_p"); oi(p); ow(" = ("); ct(e); format(O, "*)hr_grow(_v", p, ", 1, sizeof _x", p, "); *_p", p, " = _x", p, "; _p", p, "; })"); return; }
 	if b == B_APPEND { format(O, "hsl _s", p, " = "); gas(arg(1)); format(O, "; hr_append(_v", p, ", _s", p, ".p, _s", p, ".n, sizeof("); ct(e); ow(")); })"); return; }
 	if b == B_POP { format(O, "if (!_v", p, "->n) hr_die(\"pop of an empty array\", "); wloc(n); format(O, "); (("); ct(e); format(O, "*)_v", p, "->b)[--_v", p, "->n]; })"); return; }

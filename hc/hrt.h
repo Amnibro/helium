@@ -159,6 +159,37 @@ static void hr_span_free(hrv *v, int64_t idx, int64_t len) {
 	v->fl[2 * pos + 1] = len;
 	v->fln++;
 }
+static hsl hr_span_take(hrv *v, int64_t k, int64_t esz, const char *loc) {
+	if (k < 0) hr_die("alloc_slice of a negative length", loc);
+	hr_rinit(v);
+	if (!k) return (hsl){ v->b, 0 };
+	int64_t idx = -1;
+	for (int64_t i = 0; i < v->fln; i++) if (v->fl[2 * i + 1] >= k) { idx = v->fl[2 * i]; if (v->fl[2 * i + 1] == k) { memmove(&v->fl[2 * i], &v->fl[2 * i + 2], (size_t)(2 * (v->fln - i - 1)) * sizeof(int64_t)); v->fln--; } else { v->fl[2 * i] += k; v->fl[2 * i + 1] -= k; } break; }
+	if (idx < 0) { idx = v->n; if (v->fln && v->fl[2 * (v->fln - 1)] + v->fl[2 * (v->fln - 1) + 1] == v->n) { idx = v->fl[2 * (v->fln - 1)]; v->fln--; } if (idx + k > v->n) hr_grow(v, idx + k - v->n, esz); }
+	memset(v->b + idx * esz, 0, (size_t)(k * esz));
+	return (hsl){ v->b + idx * esz, k };
+}
+static int64_t hr_span_idx(hrv *v, hsl s, int64_t esz, const char *loc) { int64_t off = v->b ? s.p - v->b : -1; if (off < 0 || off % esz || off / esz + s.n > v->n) hr_die("the slice is not one of the pool's runs", loc); return off / esz; }
+static hsl hr_span_realloc(hrv *v, hsl s, int64_t k, int64_t esz, const char *loc) {
+	if (k < 0) hr_die("realloc_slice to a negative length", loc);
+	hr_rinit(v);
+	if (!s.n) return hr_span_take(v, k, esz, loc);
+	int64_t idx = hr_span_idx(v, s, esz, loc);
+	if (k <= s.n) { hr_span_free(v, idx + k, s.n - k); return (hsl){ s.p, k }; }
+	int64_t end = idx + s.n, d = k - s.n;
+	if (end == v->n) { hr_grow(v, d, esz); memset(v->b + end * esz, 0, (size_t)(d * esz)); return (hsl){ v->b + idx * esz, k }; }
+	for (int64_t i = 0; i < v->fln; i++) if (v->fl[2 * i] == end) {
+		int64_t len = v->fl[2 * i + 1];
+		if (len >= d) { if (len == d) { memmove(&v->fl[2 * i], &v->fl[2 * i + 2], (size_t)(2 * (v->fln - i - 1)) * sizeof(int64_t)); v->fln--; } else { v->fl[2 * i] += d; v->fl[2 * i + 1] -= d; } memset(v->b + end * esz, 0, (size_t)(d * esz)); return (hsl){ v->b + idx * esz, k }; }
+		if (end + len == v->n) { memmove(&v->fl[2 * i], &v->fl[2 * i + 2], (size_t)(2 * (v->fln - i - 1)) * sizeof(int64_t)); v->fln--; hr_grow(v, d - len, esz); memset(v->b + end * esz, 0, (size_t)(d * esz)); return (hsl){ v->b + idx * esz, k }; }
+		break;
+	}
+	uint8_t *t = malloc((size_t)(s.n * esz)); memcpy(t, s.p, (size_t)(s.n * esz));
+	hr_span_free(v, idx, s.n);
+	hsl r = hr_span_take(v, k, esz, loc);
+	memmove(r.p, t, (size_t)(s.n * esz)); free(t);
+	return r;
+}
 static int64_t hr_span_alloc(hrv *v, int64_t len) {
 	if (len <= 0) return 0;
 	int64_t best = -1;
