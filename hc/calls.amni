@@ -287,7 +287,47 @@ recursive fn ck_call(n int, want int) int {
 	cerr(n, "this call's callee is not supported yet");
 	set_t(n, T_ERRT)
 }
-fn user_format(n int) bool { if ND[n].n != 2 { return false; } let c0 = CANDS.len; cands_add(intern("format"), ns_of(n)); var any = false; for ci in c0..CANDS.len { if !is_std_node(DC[CANDS[ci]].node as int) { any = true; } } CANDS.pop_n(CANDS.len - c0); any }
+recursive fn user_format(n int) bool { if ND[n].n == 0 { return false; } let t = deref(ck(kid(n, 0), -1)); !(TY[t].k == TY_ARR && TY[t].a as int == T_U8 && (is_grow(t) || TY[t].s as int == A_LIM)) }
+fn is_grow(t int) bool { TY[t].s as int == A_GROW || TY[t].s as int == A_GS }
+var HOOK i32[>..];
+var HOOKW u8[>..];
+var NAME_FORMAT int = -1;
+recursive fn hook_of(t int) int {
+	while HOOK.len < TY.len { HOOK.push(-2); HOOKW.push(0); }
+	if HOOK[t] != -2 { return HOOK[t] as int; }
+	HOOK[t] = -1;
+	let k = TY[t].k as int;
+	if k == TY_ERR || k == TY_VOID || k == TY_REF || k == TY_MULTI || is_pending(t) { return -1; }
+	let node = if k == TY_STRUCT { STI[TY[t].a].node as int } else { if k == TY_ENUM || k == TY_VARIANT { ENI[TY[t].a].node as int } else { -1 } };
+	if NAME_FORMAT < 0 { NAME_FORMAT = intern("format"); }
+	let s = ARGW.len;
+	ARGW.push(t_ref(t_arr(T_U8, A_GROW, -1, -1), 0) as i32); DIDX.push(0);
+	ARGW.push(t as i32); DIDX.push(0);
+	let fnode, b0, bn = resolve(0, NAME_FORMAT, if node >= 0 { ns_of(node) } else { -1 }, s, 2, -1, -1, false);
+	pop_args(s);
+	if fnode < 0 || ND[fnode].n != 2 || is_std_node(fnode) { BINDS.pop_n(BINDS.len - b0); return -1; }
+	let sa = AOWN; let sc = CFN; AOWN = GLOBI; CFN = GLOBI;
+	let inst = get_inst(fnode, b0, bn, -1, -1);
+	AOWN = sa; CFN = sc;
+	BINDS.pop_n(BINDS.len - b0);
+	while HOOK.len < TY.len { HOOK.push(-2); HOOKW.push(0); }
+	let pd = deref(ptype_of(inst, 1));
+	if pd != t && !(k == TY_VARIANT && TY[pd].k == TY_ENUM) { return -1; }
+	HOOK[t] = inst as i32;
+	inst
+}
+recursive fn hook_walk(t int) {
+	while HOOK.len < TY.len { HOOK.push(-2); HOOKW.push(0); }
+	if t < 0 || HOOKW[t] != 0 { return; }
+	HOOKW[t] = 1;
+	let x = TY[t]; let k = x.k as int;
+	if k == TY_REF { hook_walk(x.a as int); return; }
+	if k == TY_ARR || k == TY_SLICE { hook_walk(x.a as int); return; }
+	if k == TY_MULTI { for i in x.n { hook_walk(TYL[(x.l as int) + i] as int); } return; }
+	if k == TY_STRUCT { hook_of(t); let si = x.a as int; for i in STI[si].fnum { let f = SFI[(STI[si].f0 as int) + i]; if f.ty >= 0 { hook_walk(f.ty as int); } } return; }
+	if k == TY_VARIANT { hook_of(t); let v = ENV[(ENI[x.a].v0 as int) + (x.c as int)]; if v.si >= 0 { for i in STI[v.si].fnum { let f = SFI[(STI[v.si].f0 as int) + i]; if f.ty >= 0 { hook_walk(f.ty as int); } } } return; }
+	if k == TY_ENUM { hook_of(t); let ei = x.a as int; for i in ENI[ei].vnum { hook_walk(t_variant(ei, i)); } }
+}
 fn block_binding(name int) int {
 	var i = AOWN;
 	while i >= 0 {
@@ -372,13 +412,13 @@ recursive fn ck_builtin(n int, b int, recv int, want int) int {
 	fn arg(i int) int { if recv >= 0 { if i == 0 { recv } else { kid(n, i - 1) } } else { kid(n, i) } }
 	let total = na + (if recv >= 0 { 1 } else { 0 });
 	if b == B_PRINT || b == B_STR {
-		for i in na { let c = kid(n, i); let t = ck(c, -1); if is_pending(t) { default_t(c); } }
+		for i in na { let c = kid(n, i); let t = ck(c, -1); if is_pending(t) { default_t(c); } hook_walk(fin_t(c)); }
 		return set_t(n, if b == B_STR { t_arr(T_U8, A_GROW, -1, -1) } else { T_VOID });
 	}
 	if b == B_FORMAT {
 		let o = arg(0);
 		if recv < 0 { ck(o, -1); }
-		for i in 1..total { let c = arg(i); let t = ck(c, -1); if is_pending(t) { default_t(c); } }
+		for i in 1..total { let c = arg(i); let t = ck(c, -1); if is_pending(t) { default_t(c); } hook_walk(fin_t(c)); }
 		return set_t(n, T_VOID);
 	}
 	if b == B_ASSERT { ck(arg(0), T_BOOL); conv(arg(0), T_BOOL); return set_t(n, T_VOID); }
