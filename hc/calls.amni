@@ -404,7 +404,7 @@ recursive fn call_block(n int, inst int) int {
 	let own = FI_[inst].bown as int;
 	let s = ck_args(n, 0, -1);
 	let na = ND[n].n as int;
-	for j in na { let c = kid(n, j); if is_pending(at(c)) { ARGW[s + j] = default_t(c) as i32; } else { let ct0 = at(c); ARGW[s + j] = (if has_rel(deref(ct0)) { if TY[ct0].k == TY_REF { ct0 } else { t_ref(ct0, 0) } } else { deref_val(ct0) }) as i32; } }
+	for j in na { let c = kid(n, j); if is_pending(at(c)) { ARGW[s + j] = default_t(c) as i32; } else { let ct0 = at(c); ARGW[s + j] = (if ND[c].k as int == N_UN && ND[c].op as int == T_AND { if TY[ct0].k == TY_REF { ct0 } else { t_ref(ct0, 0) } } else { if has_rel(deref(ct0)) { if TY[ct0].k == TY_REF { ct0 } else { t_ref(ct0, 0) } } else { deref_val(ct0) } }) as i32; } }
 	var bi = -1;
 	for f, i in FI_ { if f.node as int == fv && f.par as int == own && f.blk == inst as i32 && f.cfn as int == CFN { bi = i; } }
 	if bi < 0 {
