@@ -1157,10 +1157,12 @@ recursive fn gbuiltin(n int) {
 	fn arg(i int) int { if hasr { if i == 0 { recv } else { kid(n, i - 1) } } else { kid(n, i) } }
 	let p = nt();
 	if recv >= 0 && b != B_PRINT && b != B_STR && b != B_FORMAT { let rt0 = deref(at(recv)); if TY[rt0].k == TY_ARR && is_seq(rt0) {
-		if !is_res(rt0) || (b != B_PUSH && b != B_CLEAR) { gerr(n, "this operation on an array of variable-size elements is not supported by the self-hosted compiler yet"); return; }
+		if !is_res(rt0) || (b != B_PUSH && b != B_CLEAR && b != B_APPEND) { gerr(n, "this operation on an array of variable-size elements is not supported by the self-hosted compiler yet"); return; }
 		let e0 = TY[rt0].a as int; vpre_e(e0); DSU++;
 		ow("({ hrv *_v"); oi(p); ow(" = "); grecv_ptr(recv); ow("; ");
 		if b == B_CLEAR { format(O, "_v", p, "->n = 0; _v", p, "->top = 0; })"); return; }
+		if b == B_APPEND && ND[arg(1)].k as int == N_ARR && ND[arg(1)].a < 0 { let la = arg(1); for i in ND[la].n { format(O, "{ uint8_t *_x = "); gx(kid(la, i)); var ez byte[..512] = []; vz_into(ez, e0, "_x"); format(O, "; hr_seqpush(_v", p, ", _x, ", ez[..], "); } "); } ow("})"); return; }
+		if b == B_APPEND { format(O, "hsl _s", p, " = "); gas(arg(1)); var qn byte[..32] = []; format(qn, "_q", p); var qz byte[..512] = []; vz_into(qz, e0, qn[..]); format(O, "; const uint8_t *_q", p, " = _s", p, ".p; for (int64_t _i = 0; _i < _s", p, ".n; _i++) _q", p, " += ", qz[..], "; hr_seqapp(_v", p, ", _s", p, ".p, _s", p, ".n, _q", p, " - _s", p, ".p); })"); return; }
 		format(O, "uint8_t *_x", p, " = "); gx(arg(1)); ow("; ");
 		var xn byte[..32] = []; format(xn, "_x", p); var ez byte[..512] = []; vz_into(ez, e0, xn[..]);
 		format(O, "hr_seqpush(_v", p, ", _x", p, ", ", ez[..], "); })");
@@ -1182,7 +1184,7 @@ recursive fn gbuiltin(n int) {
 	if b == B_EXIT { ow("hr_exit("); gx(arg(0)); ow(")"); return; }
 	if b == B_DEFAULT { let t = at(n); ow("({ "); ct(t); ow(" _d"); oi(p); format(O, "; memset(&_d", p, ", 0, sizeof _d", p, "); _d", p, "; })"); return; }
 	if b == B_LEN { let c = arg(0); let t = deref(fin(c)); if is_fix(t) { format(O, "((int64_t)", TY[t].b, ")"); return; } ow("("); gas(c); ow(").n"); return; }
-	if b == B_COPY { let c = arg(0); let t = deref(fin(c)); if is_res(t) && is_seq(t) { ow("hr_rdup_var("); if TY[fin(c)].k == TY_REF { ow("*"); gx0(c); } else { gx(c); } ow(")"); return; } if TY[t].k == TY_ARR || TY[t].k == TY_SLICE { ow("hr_rfrom("); gas(c); ow(", "); esz(TY[t].a as int); ow(")"); return; } if fin(c) != t { ow("(*"); gx(c); ow(")"); } else { gx(c); } return; }
+	if b == B_COPY { let c = arg(0); let t = deref(fin(c)); if is_res(t) && is_seq(t) { ow("hr_rdup_var("); if TY[fin(c)].k == TY_REF { ow("*"); gx0(c); } else { gx(c); } ow(")"); return; } if is_vimg(t) && !is_seq(t) { DSU++; ow("hr_vfrom("); gas(c); vargs(t); ow(", "); esz(TY[t].a as int); ow(")"); return; } if is_vimg(t) { DSU++; vpre_e(TY[t].a as int); let p2 = nt(); format(O, "({ const uint8_t *_c", p2, " = "); if TY[fin(c)].k == TY_REF { gx0(c); } else { gx(c); } var cz byte[..512] = []; var cn0 byte[..32] = []; format(cn0, "_c", p2); vz_into(cz, t, cn0[..]); format(O, "; int64_t _z", p2, " = ", cz[..], "; uint8_t *_d", p2, " = hr_grow(&hr_ds, _z", p2, ", 1); memcpy(_d", p2, ", _c", p2, ", (size_t)_z", p2, "); _d", p2, "; })"); return; } if TY[t].k == TY_SLICE || is_res(t) { ow("hr_rfrom("); gas(c); ow(", "); esz(TY[t].a as int); ow(")"); return; } if fin(c) != t { ow("(*"); gx(c); ow(")"); } else { gx(c); } return; }
 	if b == B_BYTESOF { let c = arg(0); let t = deref(fin(c)); if TY[t].k == TY_ARR || TY[t].k == TY_SLICE { let q = nt(); ow("({ hsl _s"); oi(q); ow(" = "); gas(c); format(O, "; (hsl){ _s", q, ".p, _s", q, ".n * (int64_t)sizeof("); ct(TY[t].a as int); ow(") }; })"); return; } ow("((hsl){ (uint8_t*)"); gaddr(c); ow(", sizeof("); ct(t); ow(") })"); return; }
 	if b == B_TOBYTES && TY[deref(fin(arg(0)))].k == TY_ARR || b == B_TOBYTES && TY[deref(fin(arg(0)))].k == TY_SLICE {
 		let c = arg(0);

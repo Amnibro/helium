@@ -78,6 +78,7 @@ static inline uint8_t *hr_vmk(int64_t n, int64_t cap, int w, int lim, int64_t es
 static inline uint8_t *hr_vfrom(hsl s, int w, int lim, int64_t esz) { uint8_t *p = hr_vmk(s.n, s.n, w, lim, esz); memcpy(p + hr_vhd(p, w, lim), s.p, (size_t)(s.n * esz)); return p; }
 static inline uint8_t *hr_dsmv(uint8_t *p, int64_t m, int64_t sz) { hr_rinit(&hr_ds); memmove(hr_ds.b + m, p, (size_t)sz); hr_dsk = sz; return hr_ds.b + m; }
 static inline int64_t hr_vszf(const uint8_t *p, int w, int lim, int64_t esz) { return hr_vhd(p, w, lim) + hr_vget(p + (lim ? w : 0), w) * esz; }
+static inline void hr_seqapp(hrv *v, const uint8_t *x, int64_t n, int64_t sz) { hr_rinit(v); if (HR_UNLIKELY(v->top + sz > HR_RSZ)) hr_die("array grew past its reservation", "append"); memmove(v->b + v->top, x, (size_t)sz); v->top += sz; v->n += n; }
 static inline uint8_t *hr_seqpush(hrv *v, const uint8_t *x, int64_t sz) { hr_rinit(v); if (HR_UNLIKELY(v->top + sz > HR_RSZ)) hr_die("array grew past its reservation", "push"); uint8_t *d = v->b + v->top; memmove(d, x, (size_t)sz); v->top += sz; v->n++; return d; }
 static inline void hr_vplace(int64_t c, uint8_t *f, int64_t sz) { hr_rinit(&hr_ds); uint8_t *d = hr_ds.b + c; if (f != d) memmove(d, f, (size_t)sz); hr_ds.n = c + sz; }
 static inline void hr_append(hrv *v, const void *p, int64_t k, int64_t esz) { if (k <= 0) return; uint8_t *d = hr_grow(v, k, esz); memmove(d, p, (size_t)(k * esz)); }
