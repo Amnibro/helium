@@ -122,6 +122,8 @@ fn widens(f int, t int) bool {
 }
 fn is_lp(n int) bool { ND[n].k as int == N_ID && rk(n) == R_LOCAL && (LVS[rv(n)].fl & (LV_LIT | LV_VAR)) == LV_LIT }
 recursive fn lp_tail(n int) bool { let k = ND[n].k as int; if k == N_BLOCK || k == N_EBLOCK { return ND[n].a >= 0 && lp_tail(ND[n].a as int); } is_lp(n) }
+fn pend_local(r int) bool { if ND[r].k as int != N_ID || rk(r) != R_LOCAL { return false; } let t = deref(LVS[rv(r)].ty as int); TY[t].k == TY_ARR && TY[t].a as int == T_ERRT }
+fn complete(r int, e int) { let t = deref(LVS[rv(r)].ty as int); let nt0 = t_arr(e, TY[t].s as int, TY[t].b, TY[t].c as int); LVS[rv(r)].ty = nt0 as i32; set_t(r, nt0); }
 fn big_u(n int) bool { let v, u, ok = cval(n); ok && u && v < 0 }
 fn cinit(n int) int { kid(ND[DC[CONSTD[rv(n)]].node].b as int, 0) }
 recursive fn bn_ad(n int) bool {
@@ -675,6 +677,7 @@ recursive fn ck_match(n int, want int) int {
 	if allw { for i in x.n { let b = ND[kid(n, i)].b as int; if !ends(b) { conv(b, want); } } return set_t(n, want); }
 	if is_pending(rt) { for i in x.n { let b = ND[kid(n, i)].b as int; let bt = at(b); if !is_pending(bt) && !ends(b) { rt = bt; } } }
 	if is_pending(rt) { let b = ND[kid(n, 0)].b as int; rt = default_t(b); }
+	for i in x.n { let b = ND[kid(n, i)].b as int; let bt = deref(at(b)); if !ends(b) && !is_pending(bt) && bt != rt && (widens(rt, bt) && !(TY[rt].k == TY_FLT && TY[bt].k == TY_INT) || TY[rt].k == TY_INT && TY[bt].k == TY_FLT) { rt = bt; } }
 	if TY[rt].k == TY_INT && rt != T_I64 && widens(rt, T_I64) { for i in x.n { let b = ND[kid(n, i)].b as int; if !ends(b) && TY[at(b)].k == TY_ILIT { let v, u, ok = cval(b); if ok && !int_fits(v, u, rt) { rt = T_I64; } } } }
 	for i in x.n { let b = ND[kid(n, i)].b as int; if !ends(b) { conv(b, rt); } }
 	set_t(n, rt)
@@ -852,6 +855,7 @@ recursive fn ck_assign(n int) {
 	let tt = ck(x.a as int, -1);
 	let d = deref(tt);
 	if o == T_ASSIGN {
+		if pend_local(x.a as int) { let rt = ck(x.b as int, -1); let dr = deref(rt); if TY[dr].k == TY_ARR || TY[dr].k == TY_SLICE { complete(x.a as int, TY[dr].a as int); } conv(x.b as int, deref(at(x.a as int))); return; }
 		if TY[tt].k == TY_REF && is_opt(tt) {
 			let rt = ck(x.b as int, tt);
 			if TY[rt].k == TY_NULL { commit(x.b as int, tt); return; }

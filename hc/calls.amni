@@ -266,7 +266,7 @@ recursive fn resolve(n int, name int, ns int, a0 int, an int, blk int, tyargs in
 		for j in np { let p = kid(fnode, j); if ND[p].a < 0 { BINDS.push(Gb { upname(p) as i32, -1 }); } }
 		if tyargs >= 0 { for j in min(ND[tyargs].n as int, BINDS.len - b0) { BINDS[b0 + j].ty = rtype(kid(tyargs, j), ns) as i32; } }
 		for j in an { let p = kid(fnode, j); let a = ARGW[a0 + j] as int; if !is_pending(a) { if ND[p].a >= 0 { match_ty(ND[p].a as int, a, b0); } else { for q in b0..BINDS.len { if BINDS[q].name as int == upname(p) && BINDS[q].ty < 0 { BINDS[q].ty = deref_val(a) as i32; } } } } }
-		for j in an { let p = kid(fnode, j); let a = ARGW[a0 + j] as int; if is_pending(a) { let dt = pend_default(a); if ND[p].a >= 0 { match_ty(ND[p].a as int, dt, b0); } else { for q in b0..BINDS.len { if BINDS[q].name as int == upname(p) && BINDS[q].ty < 0 { BINDS[q].ty = dt as i32; } } } } }
+		for j in an { let p = kid(fnode, j); let a = ARGW[a0 + j] as int; if is_pending(a) { let dt = if TY[a].k == TY_ARRLIT { arrlit_default(DIDX[a0 + j] as int) } else { pend_default(a) }; if ND[p].a >= 0 { match_ty(ND[p].a as int, dt, b0); } else { for q in b0..BINDS.len { if BINDS[q].name as int == upname(p) && BINDS[q].ty < 0 { BINDS[q].ty = dt as i32; } } } } }
 		var ok = true;
 		for q in b0..BINDS.len { if BINDS[q].ty < 0 { if bg >= 0 && BINDS[q].name as int == bg { BINDS[q].ty = T_FNV as i32; } else { ok = false; } } }
 		if !ok { BINDS.pop_n(BINDS.len - b0); continue; }
@@ -297,6 +297,7 @@ recursive fn resolve(n int, name int, ns int, a0 int, an int, blk int, tyargs in
 }
 fn untyped_any(f int) bool { for j in ND[f].n { if ND[kid(f, j)].a < 0 { return true; } } false }
 fn deref_val(a int) int { let d = deref(a); if TY[d].k == TY_STRLIT { TT_STR } else { if TY[d].k == TY_VARIANT { t_enum(TY[d].a as int, false) } else { d } } }
+fn arrlit_default(n int) int { let x = ND[n]; let el = if x.a >= 0 { x.a as int } else { if x.n > 0 { kid(n, 0) } else { -1 } }; if el < 0 { return T_ARRLIT; } let et = at(el); let e = if TY[et].k == TY_ARRLIT { arrlit_default(el) } else { pend_default(et) }; if TY[e].k == TY_ARRLIT { T_ARRLIT } else { t_slice(deref_val(e), false) } }
 fn pend_default(a int) int { let k = TY[a].k as int; if k == TY_ILIT { T_I64 } else { if k == TY_FLIT { T_F64 } else { if k == TY_STRLIT { TT_STR } else { a } } } }
 recursive fn ck_args(n int, a0n int, first int) int {
 	let start = ARGW.len;
@@ -342,7 +343,7 @@ recursive fn ck_call(n int, want int) int {
 	cerr(n, "this call's callee is not supported yet");
 	set_t(n, T_ERRT)
 }
-recursive fn user_format(n int) bool { if ND[n].n == 0 { return false; } let t = deref(ck(kid(n, 0), -1)); !(TY[t].k == TY_ARR && TY[t].a as int == T_U8 && (is_grow(t) || TY[t].s as int == A_LIM)) }
+recursive fn user_format(n int) bool { if ND[n].n == 0 { return false; } let t = deref(ck(kid(n, 0), -1)); if pend_local(kid(n, 0)) { return false; } !(TY[t].k == TY_ARR && TY[t].a as int == T_U8 && (is_grow(t) || TY[t].s as int == A_LIM)) }
 fn is_grow(t int) bool { TY[t].s as int == A_GROW || TY[t].s as int == A_GS }
 var HOOK i32[>..];
 var HOOKW u8[>..];
@@ -544,10 +545,11 @@ recursive fn ck_builtin(n int, b int, recv int, want int) int {
 	if b == B_FORMAT {
 		let o = arg(0);
 		if recv < 0 { ck(o, -1); }
+		if pend_local(o) { complete(o, T_U8); }
 		for i in 1..total { let c = arg(i); let t = ck(c, -1); if is_pending(t) { default_t(c); } hook_walk(fin_t(c)); }
 		return set_t(n, T_VOID);
 	}
-	if b == B_ASSERT { ck(arg(0), T_BOOL); conv(arg(0), T_BOOL); return set_t(n, T_VOID); }
+	if b == B_ASSERT { ck(arg(0), T_BOOL); conv(arg(0), T_BOOL); narrow_push(arg(0)); return set_t(n, T_VOID); }
 	if b == B_ABORT { let t = ck(arg(0), TT_STR); if is_pending(t) { default_t(arg(0)); } return set_t(n, T_VOID); }
 	if b == B_EXIT { ck(arg(0), T_I64); conv(arg(0), T_I64); return set_t(n, T_VOID); }
 	if b == B_DEFAULT { let ta = x.c as int; if ta < 0 { cerr(n, "default needs a type: default<T>()"); return set_t(n, T_ERRT); } return set_t(n, rtype(kid(ta, 0), ns_of(n))); }
@@ -579,6 +581,7 @@ recursive fn ck_builtin(n int, b int, recv int, want int) int {
 		var rs i32[..2] = []; rs.push(t as i32); rs.push(T_BOOL as i32); return set_t(n, tlist(TY_MULTI, rs[..], -1));
 	}
 	let r = recv;
+	if (b == B_PUSH || b == B_APPEND) && total == 2 { let rt0 = deref(at(r)); if TY[rt0].k == TY_ARR && TY[rt0].a as int == T_ERRT && ND[r].k as int == N_ID && rk(r) == R_LOCAL { let c = arg(1); let ct0 = ck(c, -1); let ck0 = TY[ct0].k as int; let e2 = if b == B_APPEND { if ck0 == TY_STRLIT { T_U8 } else { if ck0 == TY_ARRLIT { if ND[c].n > 0 { default_t(kid(c, 0)) } else { T_ERRT } } else { TY[deref(ct0)].a as int } } } else { if ck0 == TY_STRLIT { t_arr(T_U8, A_VAR, -1, 6) } else { if is_pending(ct0) { default_t(c) } else { deref_val(ct0) } } }; if e2 != T_ERRT { complete(r, e2); } } }
 	let rt = deref(at(r));
 	let e = TY[rt].a as int;
 	if b == B_PUSH { if total != 2 { cerr(n, "push takes one value"); return set_t(n, T_ERRT); } let c = arg(1); ck(c, e); conv(c, e); return set_t(n, t_ref(e, 0)); }
