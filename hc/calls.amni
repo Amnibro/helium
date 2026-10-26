@@ -95,7 +95,7 @@ recursive fn arg_rank(n int, a int, p int) int {
 	if ak == TY_REF && TY[a].c < 0 { let d = TY[a].a as int; if d == p { return 0; } if pk == TY_REF && (TY[p].fl & RF_OPT) != 0 && TY[p].a == TY[a].a { return 0; } return arg_rank(n, d, p); }
 	if ak == TY_ILIT {
 		let v, u, ok = cval(n);
-		if pk == TY_INT { if !ok || int_fits(v, u, p) { return 2; } return -1; }
+		if pk == TY_INT { if !ok || int_fits(v, u, p) || bn_ad(n) && !is_signed(p) { return 2; } return -1; }
 		if pk == TY_FLT { return 3; }
 		if pk == TY_VARINT { return 2; }
 		return -1;
@@ -187,6 +187,16 @@ recursive fn check_inst(i int) {
 	AOWN = sa; CFN = sc; LOOPD = ld;
 	FI_[i].st = 2;
 }
+recursive fn imp_tv(t int, ns int, b0 int) {
+	if t < 0 { return; }
+	let x = ND[t]; let k = x.k as int;
+	if k == N_TARR || k == N_TSLICE || k == N_TREF || k == N_TCONST { imp_tv(x.a as int, ns, b0); return; }
+	if k != N_TNAME { return; }
+	if x.n > 0 { for i in x.n { imp_tv(kid(t, i), ns, b0); } return; }
+	for q in b0..BINDS.len { if BINDS[q].name == x.s { return; } }
+	if lookup_q(x.s as int, ns, D_STRUCT) >= 0 || lookup_q(x.s as int, ns, D_ENUM) >= 0 || lookup_q(x.s as int, ns, D_ALIAS) >= 0 { return; }
+	BINDS.push(Gb { x.s, -1 });
+}
 fn tv_name(fnode int, p int) int {
 	let tn = ND[p].a as int;
 	if tn < 0 { return upname(p); }
@@ -200,7 +210,8 @@ fn lit_mask(fnode int, s int, an int) int {
 	for j in min(an, ND[fnode].n as int) {
 		let k = TY[ARGW[s + j] as int].k as int;
 		let v = tv_name(fnode, kid(fnode, j));
-		if (k != TY_ILIT && k != TY_FLIT) || v < 0 || j > 30 { continue; }
+		let an_ = DIDX[s + j] as int;
+		if (k != TY_ILIT && k != TY_FLIT && !is_lp(an_)) || v < 0 || j > 30 { continue; }
 		var typed = false;
 		for q in min(an, ND[fnode].n as int) { if q != j && !is_pending(ARGW[s + q] as int) && tv_name(fnode, kid(fnode, q)) == v { typed = true; } }
 		if !typed { m |= 1 << j; }
@@ -249,6 +260,7 @@ recursive fn resolve(n int, name int, ns int, a0 int, an int, blk int, tyargs in
 		let b0 = BINDS.len;
 		let gl = gen_list(fnode);
 		if gl >= 0 { for j in ND[gl].n { BINDS.push(Gb { ND[kid(gl, j)].s, -1 }); } }
+		for j in np { imp_tv(ND[kid(fnode, j)].a as int, ns_of(fnode), b0); }
 		for j in np { let p = kid(fnode, j); if ND[p].a < 0 { BINDS.push(Gb { upname(p) as i32, -1 }); } }
 		if tyargs >= 0 { for j in min(ND[tyargs].n as int, BINDS.len - b0) { BINDS[b0 + j].ty = rtype(kid(tyargs, j), ns) as i32; } }
 		for j in an { let p = kid(fnode, j); let a = ARGW[a0 + j] as int; if !is_pending(a) { if ND[p].a >= 0 { match_ty(ND[p].a as int, a, b0); } else { for q in b0..BINDS.len { if BINDS[q].name as int == upname(p) && BINDS[q].ty < 0 { BINDS[q].ty = deref_val(a) as i32; } } } } }
@@ -394,11 +406,13 @@ recursive fn call_block(n int, inst int) int {
 		bi = new_inst(fv, fv, NEND[fv] as int, own);
 		FI_[bi].blk = inst as i32; FI_[bi].bown = own as i32;
 		FI_[bi].cfn = CFN as i32;
+		var lpm = 0;
+		for j in min(na, 30) { if is_lp(kid(n, j)) { lpm |= 1 << j; } }
 		let sa = AOWN; let sm = SCOPE.len; let bt = BRK_T.len; let ld = LOOPD;
 		AOWN = bi; LOOPD = 0;
 		let np = ND[fv].n as int;
-		if (ND[fv].fl & 1) != 0 { for j in np { let p = kid(fv, j); let pt = if j < na { ARGW[s + j] as int } else { T_ERRT }; let v = add_lv(ND[p].s as int, pt, LV_BLKP, p); set_r(p, R_LOCAL, v); } }
-		else { if na >= 1 { let v = add_lv(intern("it"), ARGW[s] as int, LV_BLKP, fv); set_r(fv, R_LOCAL, v); } }
+		if (ND[fv].fl & 1) != 0 { for j in np { let p = kid(fv, j); let pt = if j < na { ARGW[s + j] as int } else { T_ERRT }; let v = add_lv(ND[p].s as int, pt, LV_BLKP | (if ((lpm >> j) & 1) != 0 { LV_LIT } else { 0 }), p); set_r(p, R_LOCAL, v); } }
+		else { if na >= 1 { let v = add_lv(intern("it"), ARGW[s] as int, LV_BLKP | (if (lpm & 1) != 0 { LV_LIT } else { 0 }), fv); set_r(fv, R_LOCAL, v); } }
 		let body = ND[fv].a as int;
 		let bt0 = ck(body, -1);
 		var rt = T_VOID;

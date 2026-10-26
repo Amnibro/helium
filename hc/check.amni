@@ -120,12 +120,22 @@ fn widens(f int, t int) bool {
 	if a.k == TY_VARINT && b.k == TY_INT { return t == T_I64; }
 	false
 }
+fn is_lp(n int) bool { ND[n].k as int == N_ID && rk(n) == R_LOCAL && (LVS[rv(n)].fl & (LV_LIT | LV_VAR)) == LV_LIT }
+recursive fn lp_tail(n int) bool { let k = ND[n].k as int; if k == N_BLOCK || k == N_EBLOCK { return ND[n].a >= 0 && lp_tail(ND[n].a as int); } is_lp(n) }
+fn big_u(n int) bool { let v, u, ok = cval(n); ok && u && v < 0 }
+fn cinit(n int) int { kid(ND[DC[CONSTD[rv(n)]].node].b as int, 0) }
+recursive fn bn_ad(n int) bool {
+	let x = ND[n]; let k = x.k as int;
+	if k == N_UN && x.op as int == T_BITNOT { let v, u, ok = cval(x.a as int); return ok && v >= 0; }
+	if k == N_ID && rk(n) == R_CONST { let iv = cinit(n); if ND[iv].k as int != N_UN || ND[iv].op as int != T_BITNOT { return false; } let v, ok = ceval(ND[iv].a as int, ns_of(DC[CONSTD[rv(n)]].node as int)); return ok && v >= 0; }
+	false
+}
 recursive fn cval(n int) i64, bool, bool {
 	if n < 0 { return 0, false, false; }
 	let x = ND[n]; let k = x.k as int;
 	if k == N_INT { return TK[x.t].v, TK[x.t].uns, true; }
 	if k == N_UN { let v, u, ok = cval(x.a as int); if !ok { return 0, false, false; } if x.op as int == T_MINUS { if v == -9223372036854775807 - 1 && ND[x.a].k as int != N_INT { return 0, false, false; } return -v, false, true; } if x.op as int == T_BITNOT { return ~v, false, true; } return 0, false, false; }
-	if k == N_ID && rk(n) == R_CONST { return CONSTV[rv(n)], false, true; }
+	if k == N_ID && rk(n) == R_CONST { let iv = cinit(n); return CONSTV[rv(n)], ND[iv].k as int == N_INT && TK[ND[iv].t].uns, true; }
 	if k == N_BIN {
 		let a, ua, oa = cval(x.a as int); let b, ub, ob = cval(x.b as int);
 		if !oa || !ob { return 0, false, false; }
@@ -157,14 +167,14 @@ recursive fn conv(n int, t int) bool {
 	if tkd == TY_ERR || fk == TY_ERR { return true; }
 	if fk == TY_VOID && ends(n) { return true; }
 	let nk = ND[n].k as int;
-	if (nk == N_BLOCK || nk == N_EBLOCK || nk == N_IF || nk == N_MATCH) && fk != TY_VOID && (fk == TY_VARIANT && tkd == TY_ENUM && TY[f].a == TY[t].a || conv_ok(if fk == TY_REF && TY[f].c < 0 { TY[f].a as int } else { f }, t, n) && (tkd == TY_SLICE || fk == TY_REF)) { conv_tail(n, t); set_t(n, t); return true; }
+	if (nk == N_BLOCK || nk == N_EBLOCK || nk == N_IF || nk == N_MATCH) && fk != TY_VOID && (fk == TY_VARIANT && tkd == TY_ENUM && TY[f].a == TY[t].a || conv_ok(if fk == TY_REF && TY[f].c < 0 { TY[f].a as int } else { f }, t, n) && (tkd == TY_SLICE || fk == TY_REF) || (nk == N_BLOCK || nk == N_EBLOCK) && lp_tail(n)) { conv_tail(n, t); set_t(n, t); return true; }
 	if tkd == TY_BOOL && fk == TY_REF && (TY[f].fl & RF_OPT) != 0 { set_cv(n, T_BOOL); return true; }
 	if tkd == TY_REF && TY[t].c < 0 && fk != TY_NULL && fk != TY_REF { if tclass(t) >= 0 { let ok = conv(n, TY[t].a as int); if ok && cv(n) < 0 { set_cv(n, t); } return ok; } }
 	if fk == TY_REF && TY[f].c < 0 && tkd != TY_REF { if conv_ok(TY[f].a as int, t, n) { set_cv(n, t); return true; } }
-	if nk == N_ID && rk(n) == R_LOCAL && (LVS[rv(n)].fl & (LV_LIT | LV_VAR)) == LV_LIT && (fk == TY_INT || fk == TY_FLT) && (tkd == TY_INT || tkd == TY_FLT) && !(fk == TY_FLT && tkd == TY_INT) { set_cv(n, t); return true; }
+	if is_lp(n) && (fk == TY_INT || fk == TY_FLT) && (tkd == TY_INT || tkd == TY_FLT) && !(fk == TY_FLT && tkd == TY_INT) { set_cv(n, t); return true; }
 	if fk == TY_ILIT {
 		let v, u, ok = cval(n);
-		if tkd == TY_INT { if ok && !int_fits(v, u, t) { var m byte[>..] = []; format(m, "constant ", v, " does not fit in ", tn(t)); cerr(n, m); return false; } commit(n, t); return true; }
+		if tkd == TY_INT { if ok && !int_fits(v, u, t) && !(bn_ad(n) && !is_signed(t)) { var m byte[>..] = []; format(m, "constant ", v, " does not fit in ", tn(t)); cerr(n, m); return false; } commit(n, t); return true; }
 		if tkd == TY_FLT || tkd == TY_VARINT { commit(n, t); return true; }
 	}
 	if fk == TY_FLIT && tkd == TY_FLT { commit(n, t); return true; }
@@ -255,6 +265,8 @@ fn unify(n int, a int, b int) int {
 	if kb == TY_STRLIT || kb == TY_ARRLIT || kb == TY_NULL { conv(b, da); return da; }
 	if ka == TY_ILIT { conv(a, db); return db; }
 	if kb == TY_ILIT { conv(b, da); return da; }
+	if is_lp(a) && !is_lp(b) && (kb == TY_INT || kb == TY_FLT) && !(ka == TY_FLT && kb == TY_INT) { conv(a, db); return db; }
+	if is_lp(b) && !is_lp(a) && (ka == TY_INT || ka == TY_FLT) && !(kb == TY_FLT && ka == TY_INT) { conv(b, da); return da; }
 	if ka == TY_FLIT { if kb == TY_FLT { conv(a, db); return db; } if kb == TY_INT { return T_FLIT; } }
 	if kb == TY_FLIT { if ka == TY_FLT { conv(b, da); return da; } if ka == TY_INT { return T_FLIT; } }
 	if da == db { if ta != da { set_cv(a, da); } if tb != db { set_cv(b, db); } return da; }
@@ -329,7 +341,7 @@ recursive fn ck_bin(n int, want int) int {
 		if (ka == TY_ARR || ka == TY_SLICE) && (kb == TY_ARR || kb == TY_SLICE) && TY[da].a == TY[db].a { let st = t_slice(TY[da].a as int, false); conv(a, st); conv(b, st); set_x(n, 3); return set_t(n, T_BOOL); }
 	}
 	let u = unify(n, a, b);
-	if cmp { if TY[u].k == TY_ILIT { conv(a, T_I64); conv(b, T_I64); } if TY[u].k == TY_FLIT { conv(a, T_F64); conv(b, T_F64); } return set_t(n, T_BOOL); }
+	if cmp { if TY[u].k == TY_ILIT { let ct_ = if big_u(a) || big_u(b) { T_U64 } else { T_I64 }; conv(a, ct_); conv(b, ct_); } if TY[u].k == TY_FLIT { conv(a, T_F64); conv(b, T_F64); } return set_t(n, T_BOOL); }
 	let uk = TY[u].k as int;
 	if (o == T_AND || o == T_OR || o == T_XOR) && uk != TY_INT && uk != TY_ILIT && uk != TY_BOOL && uk != TY_ERR { cerr(n, "bitwise operator on a non-integer"); }
 	if uk == TY_BOOL && o != T_AND && o != T_OR && o != T_XOR { cerr(n, "arithmetic on bool"); }
@@ -497,11 +509,14 @@ recursive fn ck_as(n int, want int) int {
 	let t = rtype(x.b as int, ns_of(n));
 	let f = ck(x.a as int, if TY[t].k == TY_INT || TY[t].k == TY_FLT { -1 } else { t });
 	let df = deref(f);
-	if TY[df].k == TY_ILIT && (x.fl & 1) != 0 && TY[t].k == TY_INT { default_t(x.a as int); }
-	else { if TY[df].k == TY_ILIT || TY[df].k == TY_FLIT { conv(x.a as int, if TY[t].k == TY_INT || TY[t].k == TY_FLT { t } else { T_I64 }); }
-	else { if df != f { set_cv(x.a as int, df); } } }
+	let dk = TY[df].k as int; let tk = TY[t].k as int;
+	if dk == TY_ILIT && tk == TY_INT && ((x.fl & 1) != 0 || !lit_fits(x.a as int, t)) { default_t(x.a as int); }
+	else { if dk == TY_FLIT && tk == TY_INT { conv(x.a as int, T_F64); }
+	else { if dk == TY_ILIT || dk == TY_FLIT { conv(x.a as int, if tk == TY_INT || tk == TY_FLT { t } else { T_I64 }); }
+	else { if df != f { set_cv(x.a as int, df); } } } }
 	set_t(n, t)
 }
+fn lit_fits(n int, t int) bool { let v, u, ok = cval(n); !ok || int_fits(v, u, t) }
 recursive fn ck_block(n int, want int) int {
 	let x = ND[n];
 	let m = SCOPE.len;
@@ -561,7 +576,7 @@ recursive fn ck_if(n int, want int) int {
 	if eb && ec { return set_t(n, tb); }
 	if tb == T_VOID || tc == T_VOID { return set_t(n, T_VOID); }
 	if tb == tc { return set_t(n, tb); }
-	if want >= 0 && want != T_VOID && (is_pending(tb) || conv_ok(tb, want, x.b as int)) && (is_pending(tc) || conv_ok(tc, want, x.c as int)) { conv(x.b as int, want); conv(x.c as int, want); return set_t(n, want); }
+	if want >= 0 && want != T_VOID && (is_pending(tb) || lp_tail(x.b as int) || conv_ok(tb, want, x.b as int)) && (is_pending(tc) || lp_tail(x.c as int) || conv_ok(tc, want, x.c as int)) { conv(x.b as int, want); conv(x.c as int, want); return set_t(n, want); }
 	let db = deref(tb); let dc = deref(tc);
 	if (TY[db].k == TY_ARR || TY[db].k == TY_SLICE) && (TY[dc].k == TY_ARR || TY[dc].k == TY_SLICE) && TY[db].a == TY[dc].a { let st = t_slice(TY[db].a as int, false); conv_tail(n, st); return set_t(n, st); }
 	let u = unify(n, x.b as int, x.c as int);
@@ -657,6 +672,7 @@ recursive fn ck_match(n int, want int) int {
 	if allw { for i in x.n { let b = ND[kid(n, i)].b as int; if !ends(b) { conv(b, want); } } return set_t(n, want); }
 	if is_pending(rt) { for i in x.n { let b = ND[kid(n, i)].b as int; let bt = at(b); if !is_pending(bt) && !ends(b) { rt = bt; } } }
 	if is_pending(rt) { let b = ND[kid(n, 0)].b as int; rt = default_t(b); }
+	if TY[rt].k == TY_INT && rt != T_I64 && widens(rt, T_I64) { for i in x.n { let b = ND[kid(n, i)].b as int; if !ends(b) && TY[at(b)].k == TY_ILIT { let v, u, ok = cval(b); if ok && !int_fits(v, u, rt) { rt = T_I64; } } } }
 	for i in x.n { let b = ND[kid(n, i)].b as int; if !ends(b) { conv(b, rt); } }
 	set_t(n, rt)
 }
