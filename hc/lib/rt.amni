@@ -36,7 +36,7 @@ fn rt_oob(i int, n int, loc const byte[:]) { rt_es("helium runtime error: index 
 fn rt_take() int { if RT_NFREE > 0 { RT_NFREE -= 1; return RT_FREE[RT_NFREE]; } let p = sys6(9, 0, RT_RSZ + 65536, 3, 0x4022, -1, 0); if p < 0 && p > -4096 { rt_es("helium runtime error: out of address space\n"); rt_write(2, RT_EB[..RT_EN]); sys3(60, 1, 0, 0); } sys3(10, p + RT_RSZ, 65536, 0); p }
 fn rt_give(b int, used int) { if b == 0 { return; } if used > (1 << 20) { sys3(28, b + 65536, (used - 65536 + 4095) & -4096, 4); } if RT_NFREE < 4096 { RT_FREE[RT_NFREE] = b; RT_NFREE += 1; } else { sys3(11, b, RT_RSZ + 65536, 0); } }
 fn rt_grow(va int, k int, esz int) int { var b = mld(va); if b == 0 { b = rt_take(); mst(va, b); } let n = mld(va + 8); mst(va + 8, n + k); if (n + k) * esz > RT_RSZ { rt_die(5, "push"); } b + n * esz }
-fn rt_rdrop(v RtV&) { rt_give(v.b, v.n * 64); rt_give(v.fl, v.fln * 16); v.b = 0; v.n = 0; v.top = 0; v.fl = 0; v.fln = 0; v.flc = 0; }
+fn rt_rdrop(v RtV&) { rt_give(v.b, max(v.n * 64, v.top)); rt_give(v.fl, v.fln * 16); v.b = 0; v.n = 0; v.top = 0; v.fl = 0; v.fln = 0; v.flc = 0; }
 fn rt_rfrom(v RtV&, p int, n int, esz int) { v.b = 0; v.n = 0; v.top = 0; v.fl = 0; v.fln = 0; v.flc = 0; if n > 0 { let d = rt_grow(vptr(v), n, esz); mcopy(d, p, n * esz); } }
 fn rt_pop(v RtV&, loc const byte[:]) { if v.n == 0 { rt_es("helium runtime error: pop of an empty array"); rt_fail(loc); } v.n -= 1; }
 fn rt_abort(m const byte[:], loc const byte[:]) { rt_es("helium runtime error: "); rt_es(m); rt_fail(loc); }
@@ -243,7 +243,16 @@ fn rt_vmk(n int, cap int, w int, lim int, esz int) int {
 	p
 }
 fn rt_vfrom(sp int, sn int, w int, lim int, esz int) int { let p = rt_vmk(sn, sn, w, lim, esz); mcopy(p + rt_vhd(p, w, lim), sp, sn * esz); p }
-fn rt_vret(p int, m int, w int, lim int, esz int) int { let sz = rt_vhd(p, w, lim) + rt_vget(p + (if lim != 0 { w } else { 0 }), w) * esz; if RT_DS.b == 0 { RT_DS.b = rt_take(); } let d = RT_DS.b + m; if d != p { mcopy(d, p, sz); } RT_DS.n = m + sz; d }
+fn rt_vsz(p int, w int, lim int, esz int) int { rt_vhd(p, w, lim) + rt_vget(p + (if lim != 0 { w } else { 0 }), w) * esz }
+fn rt_vret(p int, m int, w int, lim int, esz int) int { rt_vretz(p, m, rt_vsz(p, w, lim, esz)) }
+fn rt_vretz(p int, m int, sz int) int { if RT_DS.b == 0 { RT_DS.b = rt_take(); } let d = RT_DS.b + m; if d != p { mcopy(d, p, sz); } RT_DS.n = m + sz; d }
+fn rt_vfromz(p int, n int, z int, w int, lim int) int { let h = rt_vmk(n, n, w, lim, 0); mcopy(rt_grow(vptr(RT_DS), z, 1), p, z); h }
+fn rt_dsn() int { RT_DS.n }
+fn rt_dsput(z int) int { rt_grow(vptr(RT_DS), z, 1) }
+fn rt_dsplace(c int, p int, z int) { let d = RT_DS.b + c; if d != p { mcopy(d, p, z); } RT_DS.n = c + z; }
+fn rt_sqput(v RtV&, z int) int { rt_rinit(v); if v.top + z > RT_RSZ { rt_die(5, "push"); } let d = v.b + v.top; v.top += z; v.n += 1; d }
+fn rt_sqapp(v RtV&, p int, n int, z int) { if z > 0 { rt_rinit(v); if v.top + z > RT_RSZ { rt_die(5, "append"); } mcopy(v.b + v.top, p, z); } v.top += z; v.n += n; }
+fn rt_sqfrom(v RtV&, p int, n int, z int) { v.b = 0; v.n = 0; v.top = 0; v.fl = 0; v.fln = 0; v.flc = 0; rt_sqapp(v, p, n, z); }
 fn rt_rinit(v RtV&) { if v.b == 0 { v.b = rt_take(); } }
 fn rt_flp(v RtV&) int { if v.fl == 0 { v.fl = rt_take(); } v.fl }
 fn rt_zero(p int, n int) { var o = 0; while o + 8 <= n { mst(p + o, 0); o += 8; } while o < n { mst1(p + o, 0); o += 1; } }
