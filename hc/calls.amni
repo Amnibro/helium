@@ -81,7 +81,7 @@ recursive fn match_ty(tn0 int, t0 int, g0 int) bool {
 		if TY[t].k == TY_ENUM { let ei = TY[t].a as int; if ENI[ei].tn == x.n { for i in x.n { match_ty(kid(tn0, i), TYL[(ENI[ei].ta as int) + i] as int, g0); } } }
 		return true;
 	}
-	if k == N_TARR || k == N_TSLICE { if TY[t].k == TY_ARR || TY[t].k == TY_SLICE { return match_ty(x.a as int, TY[t].a as int, g0); } if TY[t].k == TY_STRLIT { return match_ty(x.a as int, T_U8, g0); } return true; }
+	if k == N_TARR || k == N_TSLICE { if TY[t].k == TY_ARR || TY[t].k == TY_SLICE { let et = TY[t].a as int; let en = ND[x.a]; if en.k as int == N_TNAME && en.n == 0 && TY[et].k == TY_REF { for i in g0..BINDS.len { if BINDS[i].name == en.s { if BINDS[i].ty < 0 { BINDS[i].ty = et as i32; } return true; } } } return match_ty(x.a as int, et, g0); } if TY[t].k == TY_STRLIT { return match_ty(x.a as int, T_U8, g0); } return true; }
 	if k == N_TREF { if TY[t0].k == TY_REF { return match_ty(x.a as int, TY[t0].a as int, g0); } return match_ty(x.a as int, t, g0); }
 	if k == N_TCONST { return match_ty(x.a as int, t0, g0); }
 	true
@@ -102,7 +102,7 @@ recursive fn arg_rank(n int, a int, p int) int {
 	}
 	if ak == TY_FLIT { if pk == TY_FLT { return if TY[p].s == 8 { 1 } else { 2 }; } return -1; }
 	if ak == TY_STRLIT { if pk == TY_SLICE && TY[p].a as int == T_U8 { return 0; } if is_byte_arr(p) { return 2; } return -1; }
-	if ak == TY_ARRLIT { if pk == TY_ARR || pk == TY_SLICE { return 2; } return -1; }
+	if ak == TY_ARRLIT { if pk != TY_ARR && pk != TY_SLICE { return -1; } let x = ND[n]; if x.c >= 0 { return 2; } if x.a >= 0 { return if arg_rank(x.a as int, at(x.a as int), TY[p].a as int) < 0 { -1 } else { 2 }; } for i in x.n { if arg_rank(kid(n, i), at(kid(n, i)), TY[p].a as int) < 0 { return -1; } } return 2; }
 	if ak == TY_NULL { if pk == TY_REF && (TY[p].fl & RF_OPT) != 0 { return 0; } return -1; }
 	if pk == TY_REF && (TY[p].fl & RF_OPT) != 0 && TY[p].a as int == a { return 0; }
 	if ak == TY_INT && pk == TY_FLT { return 3; }
@@ -169,7 +169,9 @@ recursive fn check_inst(i int) {
 	let g0 = GB.len;
 	for j in FI_[i].gn { GB.push(GBS[(FI_[i].g0 as int) + j]); }
 	for j in ND[node].n { let p = kid(node, j); if ND[p].b >= 0 { let pt = ptype_of(i, j); ck(ND[p].b as int, pt); conv(ND[p].b as int, pt); } }
-	for j in ND[node].n { let p = kid(node, j); let v = add_lv(ND[p].s as int, ptype_of(i, j), LV_PARAM | (if (ND[p].fl & 1) != 0 { LV_VAR } else { 0 }), p); set_r(p, R_LOCAL, v); }
+	var lm = 0;
+	for j in FI_[i].gn { let g = GBS[(FI_[i].g0 as int) + j]; if g.name as int == LPN { lm = g.ty as int; } }
+	for j in ND[node].n { let p = kid(node, j); let v = add_lv(ND[p].s as int, ptype_of(i, j), LV_PARAM | (if (ND[p].fl & 1) != 0 { LV_VAR } else { 0 }) | (if ((lm >> j) & 1) != 0 { LV_LIT } else { 0 }), p); set_r(p, R_LOCAL, v); }
 	let body = ND[node].c as int;
 	let rt = FI_[i].ret as int;
 	let t = ck(body, if rt >= 0 { rt } else { -1 });
@@ -184,6 +186,26 @@ recursive fn check_inst(i int) {
 	while BRK_T.len > bt { BRK_T.pop(); }
 	AOWN = sa; CFN = sc; LOOPD = ld;
 	FI_[i].st = 2;
+}
+fn tv_name(fnode int, p int) int {
+	let tn = ND[p].a as int;
+	if tn < 0 { return upname(p); }
+	if ND[tn].k as int != N_TNAME || ND[tn].n != 0 { return -1; }
+	let gl = gen_list(fnode);
+	if gl >= 0 { for j in ND[gl].n { if ND[kid(gl, j)].s == ND[tn].s { return ND[tn].s as int; } } }
+	-1
+}
+fn lit_mask(fnode int, s int, an int) int {
+	var m = 0;
+	for j in min(an, ND[fnode].n as int) {
+		let k = TY[ARGW[s + j] as int].k as int;
+		let v = tv_name(fnode, kid(fnode, j));
+		if (k != TY_ILIT && k != TY_FLIT) || v < 0 || j > 30 { continue; }
+		var typed = false;
+		for q in min(an, ND[fnode].n as int) { if q != j && !is_pending(ARGW[s + q] as int) && tv_name(fnode, kid(fnode, q)) == v { typed = true; } }
+		if !typed { m |= 1 << j; }
+	}
+	m
 }
 fn same_binds(i int, b0 int, bn int) bool {
 	if FI_[i].gn as int != bn { return false; }
@@ -250,7 +272,7 @@ recursive fn resolve(n int, name int, ns int, a0 int, an int, blk int, tyargs in
 		if worst == 99 { BINDS.pop_n(BINDS.len - b0); continue; }
 		let user = !is_std_node(fnode);
 		if worst < bestr || (worst == bestr && user && !bestuser) { best = fnode; bestr = worst; bestb0 = b0; bestbn = BINDS.len - b0; tie = false; bestuser = user; }
-		else { if worst == bestr && user == bestuser { tie = true; } }
+		else { if worst == bestr && user == bestuser && ((ND[best].fl & F_EXTERN) == 0 || (ND[fnode].fl & F_EXTERN) == 0) { tie = true; } }
 	}
 	CANDS.pop_n(CANDS.len - c0);
 	if best < 0 { BINDS.pop_n(BINDS.len - nb0); return -1, nb0, 0; }
@@ -474,7 +496,9 @@ recursive fn call_fn(n int, name int, recv int, want int) int {
 		BINDS.pop_n(BINDS.len - b0);
 		return set_t(n, T_ERRT);
 	}
-	let inst = get_inst(fnode, b0, bn, blk, bown);
+	let lm = lit_mask(fnode, s, an);
+	if lm != 0 { BINDS.push(Gb { LPN as i32, lm as i32 }); }
+	let inst = get_inst(fnode, b0, BINDS.len - b0, blk, bown);
 	BINDS.pop_n(BINDS.len - b0);
 	for j in an { let c = DIDX[s + j] as int; let pt = ptype_of(inst, j); if pt >= 0 && TY[pt].k == TY_REF && (TY[pt].fl & RF_OPT) == 0 && TY[pt].c < 0 { if is_pending(at(c)) { conv(c, TY[pt].a as int); } } else { conv(c, pt); } }
 	pop_args(s);
