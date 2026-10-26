@@ -70,6 +70,7 @@ recursive fn mentions(t int, g int) bool {
 	false
 }
 fn blk_gen(fnode int) int { let gl = gen_list(fnode); if gl < 0 { return -1; } for i in ND[gl].n { let g = ND[kid(gl, i)].s as int; if is_blockparam(fnode, g) { return g; } } -1 }
+fn bref(q int) int { let a = ARGW[q] as int; if is_pending(a) || TY[a].k == TY_REF { return a; } let dv = deref_val(a); let k = ND[DIDX[q]].k as int; if TY[dv].k != TY_SLICE && !is_fixed(dv) && (k == N_ID || k == N_DOT || k == N_IDX) { t_ref(dv, 0) } else { a } }
 fn upname(p int) int { var s byte[>..] = []; s.push('$'); s.append(nm(ND[p].s as int)); intern(s) }
 recursive fn match_ty(tn0 int, t0 int, g0 int) bool {
 	if tn0 < 0 { return true; }
@@ -421,8 +422,8 @@ recursive fn call_block(n int, inst int) int {
 		let sa = AOWN; let sm = SCOPE.len; let bt = BRK_T.len; let ld = LOOPD;
 		AOWN = bi; LOOPD = 0;
 		let np = ND[fv].n as int;
-		if (ND[fv].fl & 1) != 0 { for j in np { let p = kid(fv, j); let pt0 = if j < na { ARGW[s + j] as int } else { T_ERRT }; let at0 = if ND[p].a >= 0 { rtype(ND[p].a as int, ns_of(fv)) } else { -1 }; let pt = if at0 >= 0 && TY[at0].k == TY_REF { at0 } else { pt0 }; let v = add_lv(ND[p].s as int, pt, LV_BLKP | (if ((lpm >> j) & 1) != 0 { LV_LIT } else { 0 }), p); set_r(p, R_LOCAL, v); } }
-		else { if na >= 1 { let v = add_lv(intern("it"), ARGW[s] as int, LV_BLKP | (if (lpm & 1) != 0 { LV_LIT } else { 0 }), fv); set_r(fv, R_LOCAL, v); } }
+		if (ND[fv].fl & 1) != 0 { for j in np { let p = kid(fv, j); let pt0 = if j < na { ARGW[s + j] as int } else { T_ERRT }; let at0 = if ND[p].a >= 0 { rtype(ND[p].a as int, ns_of(fv)) } else { -1 }; let pt = if at0 >= 0 && TY[at0].k == TY_REF { at0 } else { if at0 < 0 && j < na { bref(s + j) } else { pt0 } }; let v = add_lv(ND[p].s as int, pt, LV_BLKP | (if ((lpm >> j) & 1) != 0 { LV_LIT } else { 0 }), p); set_r(p, R_LOCAL, v); } }
+		else { if na >= 1 { let v = add_lv(intern("it"), bref(s), LV_BLKP | (if (lpm & 1) != 0 { LV_LIT } else { 0 }), fv); set_r(fv, R_LOCAL, v); } }
 		let body = ND[fv].a as int;
 		let bt0 = ck(body, -1);
 		var rt = T_VOID;
