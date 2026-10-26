@@ -516,7 +516,7 @@ recursive fn ck_as(n int, want int) int {
 	let df = deref(f);
 	let dk = TY[df].k as int; let tk = TY[t].k as int;
 	if dk == TY_ILIT && tk == TY_INT && ((x.fl & 1) != 0 || !lit_fits(x.a as int, t)) { default_t(x.a as int); }
-	else { if dk == TY_FLIT && tk == TY_INT { conv(x.a as int, T_F64); }
+	else { if dk == TY_FLIT && (tk == TY_INT || tk == TY_FLT) { conv(x.a as int, T_F64); }
 	else { if dk == TY_ILIT || dk == TY_FLIT { conv(x.a as int, if tk == TY_INT || tk == TY_FLT { t } else { T_I64 }); }
 	else { if df != f { set_cv(x.a as int, df); } } } }
 	set_t(n, t)
