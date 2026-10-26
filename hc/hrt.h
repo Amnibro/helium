@@ -64,7 +64,10 @@ static inline hsl hr_vsl(uint8_t *p, int w, int lim) { return (hsl){ p + (lim ? 
 static inline void hr_resize(hrv *v, int64_t n, int64_t esz) { hr_rinit(v); if (n > v->n) memset(v->b + v->n * esz, 0, (size_t)((n - v->n) * esz)); v->n = n; }
 static inline uint8_t *hr_vmk(int64_t n, int64_t cap, int w, int lim, int64_t esz) { if (n < 0 || cap < n) hr_die("array count out of range", "construct"); if (w < 8 && (uint64_t)cap >> (w * 8)) hr_die("too many elements for the array's length field", "construct"); int64_t hb = (int64_t)w * (lim + 1); uint8_t *p = hr_grow(&hr_ds, hb + cap * esz, 1); if (lim) { hr_vput(p, w, cap); hr_vput(p + w, w, n); } else hr_vput(p, w, n); return p; }
 static inline uint8_t *hr_vfrom(hsl s, int w, int lim, int64_t esz) { uint8_t *p = hr_vmk(s.n, s.n, w, lim, esz); memcpy(p + (int64_t)w * (lim + 1), s.p, (size_t)(s.n * esz)); return p; }
-static inline uint8_t *hr_dsret(uint8_t *p, int64_t m, int w, int lim, int64_t esz) { int64_t sz = (int64_t)w * (lim + 1) + hr_vget(p, w) * esz; hr_rinit(&hr_ds); memmove(hr_ds.b + m, p, (size_t)sz); hr_dsk = sz; return hr_ds.b + m; }
+static inline uint8_t *hr_dsmv(uint8_t *p, int64_t m, int64_t sz) { hr_rinit(&hr_ds); memmove(hr_ds.b + m, p, (size_t)sz); hr_dsk = sz; return hr_ds.b + m; }
+static inline int64_t hr_vszf(const uint8_t *p, int w, int lim, int64_t esz) { return (int64_t)w * (lim + 1) + hr_vget(p, w) * esz; }
+static inline uint8_t *hr_seqpush(hrv *v, const uint8_t *x, int64_t sz) { hr_rinit(v); if (HR_UNLIKELY(v->top + sz > HR_RSZ)) hr_die("array grew past its reservation", "push"); uint8_t *d = v->b + v->top; memmove(d, x, (size_t)sz); v->top += sz; v->n++; return d; }
+static inline void hr_vplace(int64_t c, uint8_t *f, int64_t sz) { hr_rinit(&hr_ds); uint8_t *d = hr_ds.b + c; if (f != d) memmove(d, f, (size_t)sz); hr_ds.n = c + sz; }
 static inline void hr_append(hrv *v, const void *p, int64_t k, int64_t esz) { if (k <= 0) return; uint8_t *d = hr_grow(v, k, esz); memmove(d, p, (size_t)(k * esz)); }
 static inline hsl hr_sl(hrv v) { return (hsl){ v.b, v.n }; }
 static inline uint8_t *hr_vmark(void) { if (HR_UNLIKELY(!hr_vbase)) hr_vbase = hr_vtop = hr_take(); return hr_vtop; }
