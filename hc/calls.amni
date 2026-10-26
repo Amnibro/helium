@@ -31,6 +31,7 @@ fn member_of(name const byte[:]) int {
 	-1
 }
 var FREEM bool;
+fn user_fn_n(name int, k int) bool { var d = dmap(name); while d >= 0 { if DC[d].k as int == D_FN && !is_std_node(DC[d].node as int) && ND[DC[d].node].n as int == k { return true; } d = DC[d].next as int; } false }
 fn has_fn(name int) bool { var d = dmap(name); while d >= 0 { if DC[d].k as int == D_FN { return true; } d = DC[d].next as int; } false }
 fn find_nest(name int) int { var i = NESTS.len - 1; while i >= 0 { if NESTS[i].name as int == name && visible(NESTS[i].own as int) { return i; } i--; } -1 }
 recursive fn decl_nested(n int) {
@@ -321,7 +322,7 @@ recursive fn ck_call(n int, want int) int {
 			let bg = block_binding(name);
 			if bg >= 0 { return call_block(n, bg); }
 			let b = builtin_of(nm(name));
-			if b >= 0 && !(b == B_FORMAT && user_format(n)) && !(b == B_LEN && false) { return ck_builtin(n, b, -1, want); }
+			if b >= 0 && !(b == B_FORMAT && user_format(n)) && !(b != B_FORMAT && b != B_PRINT && b != B_STR && user_fn_n(name, ND[n].n as int)) { return ck_builtin(n, b, -1, want); }
 			let mb = member_of(nm(name));
 			if mb >= 0 && ND[n].n > 0 && !has_fn(name) { let r0 = kid(n, 0); let t0 = ck(r0, -1); let d0 = deref(t0); if TY[d0].k == TY_ARR || TY[d0].k == TY_SLICE { FREEM = true; return ck_builtin(n, mb, r0, want); } }
 			return call_fn(n, name, -1, want);
