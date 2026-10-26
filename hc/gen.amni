@@ -540,6 +540,7 @@ recursive fn gfmt(o const byte[:], n int, t int, top bool) {
 	if k == TY_FLT { ow(if TY[d].s == 4 { "hr_ff(" } else { "hr_fd(" }); ow(o); ow(", "); if d != t { ow("*"); } gx(n); ow(")"); return; }
 	if k == TY_FLIT { ow("hr_fd("); ow(o); ow(", "); gx(n); ow(")"); return; }
 	if k == TY_BOOL { ow("hr_fc("); ow(o); ow(", ("); if d != t { ow("*"); } gx(n); ow(") ? \"true\" : \"false\")"); return; }
+	if TY[t].k == TY_REF && (TY[t].fl & RF_OPT) != 0 && TY[t].c < 0 && !(k == TY_ARR && !is_fix(d) && !is_lim(d) || k == TY_SLICE) { let p = nt(); ow("({ "); ct(t); format(O, " _q", p, " = "); gx(n); format(O, "; if (_q", p, ") hf", d, "(", o, ", *_q", p, "); else hr_fc(", o, ", \"null\"); })"); gen_hf(d); return; }
 	ow("hf"); oi(d); ow("("); ow(o); ow(", ");
 	if d != t { ow("*"); }
 	if k == TY_ARR && !is_fix(d) && !is_lim(d) || k == TY_SLICE { gsl(n, t); } else { gx(n); }
@@ -560,12 +561,14 @@ recursive fn comp_pre(t int, fmt bool) {
 recursive fn hf_pre(t int) { comp_pre(t, true); }
 recursive fn hf_val(t int, e const byte[:]) {
 	let k = TY[t].k as int;
+	let hk = if t < HOOK.len && (k == TY_INT || k == TY_FLT || k == TY_BOOL) { HOOK[t] as int } else { -1 };
+	if hk >= 0 { hh("{ "); HF.append(cn(t)); format(HF, " _h = (", e, "); "); fn_cname_to(HF, hk); hh(if TY[ptype_of(hk, 1)].k == TY_REF { "(o, &_h); } " } else { "(o, _h); } " }); return; }
 	if is_vimg(t) { if is_byte_arr(t) { format(HF, "hr_fq(o, hr_vsl(", e, ", ", vw(t), ", ", vlim(t), ")); "); return; } format(HF, "hf", t, "(o, hr_vsl(", e, ", ", vw(t), ", ", vlim(t), ")); "); return; }
 	if is_byte_arr(t) { if is_fix(t) { format(HF, "hr_fq(o, (hsl){ (uint8_t*)(", e, ").e, ", TY[t].b, " }); "); return; } if is_lim(t) { format(HF, "hr_fq(o, (hsl){ (uint8_t*)(", e, ").e, (", e, ").n }); "); return; } if TY[t].k == TY_SLICE { format(HF, "hr_fq(o, ", e, "); "); return; } format(HF, "hr_fq(o, hr_sl(", e, ")); "); return; }
 	if k == TY_INT || k == TY_VARINT { format(HF, if k == TY_VARINT || is_signed(t) { "hr_fi(o, " } else { "hr_fu(o, " }, e, "); "); return; }
 	if k == TY_FLT { format(HF, if TY[t].s == 4 { "hr_ff(o, " } else { "hr_fd(o, " }, e, "); "); return; }
 	if k == TY_BOOL { format(HF, "hr_fc(o, (", e, ") ? \"true\" : \"false\"); "); return; }
-	if k == TY_REF { if TY[t].c >= 0 { format(HF, "hr_fu(o, ", e, "); "); return; } var pe byte[..256] = []; if is_vval(TY[t].a as int) { format(pe, "(", e, ")"); } else { format(pe, "(*(", e, "))"); } format(HF, "if (", e, ") { "); hf_val(TY[t].a as int, pe[..]); hh("} else hr_fc(o, \"null\"); "); return; }
+	if k == TY_REF { if TY[t].c >= 0 { let rpd = relpool(t); if rpd < 0 { format(HF, "hr_fu(o, ", e, "); "); return; } let pt = TY[t].a as int; hh("{ "); HF.append(cn(t)); format(HF, " _rq = (", e, "); "); HF.append(cn(pt)); format(HF, " *_rp = ("); HF.append(cn(pt)); format(HF, "*)hr_pld(&_rq, (uint8_t*)g", rpd, ".b, 1); if (_rp) { "); hf_val(pt, "(*_rp)"); hh("} else hr_fc(o, \"null\"); } "); return; } var pe byte[..256] = []; if is_vval(TY[t].a as int) { format(pe, "(", e, ")"); } else { format(pe, "(*(", e, "))"); } format(HF, "if (", e, ") { "); hf_val(TY[t].a as int, pe[..]); hh("} else hr_fc(o, \"null\"); "); return; }
 	if (k == TY_ARR && !is_fix(t) && !is_lim(t)) { format(HF, "hf", t, "(o, hr_sl(", e, ")); "); return; }
 	format(HF, "hf", t, "(o, ", e, "); ");
 }

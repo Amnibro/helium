@@ -360,7 +360,7 @@ recursive fn hook_of(t int) int {
 	if NAME_FORMAT < 0 { NAME_FORMAT = intern("format"); }
 	let s = ARGW.len;
 	ARGW.push(t_ref(t_arr(T_U8, A_GROW, -1, -1), 0) as i32); DIDX.push(0);
-	ARGW.push(t as i32); DIDX.push(0);
+	ARGW.push((if k == TY_VARIANT { t_enum(TY[t].a as int, false) } else { t }) as i32); DIDX.push(0);
 	let fnode, b0, bn = resolve(0, NAME_FORMAT, if node >= 0 { ns_of(node) } else { -1 }, s, 2, -1, -1, false);
 	pop_args(s);
 	if fnode < 0 || ND[fnode].n != 2 || is_std_node(fnode) { BINDS.pop_n(BINDS.len - b0); return -1; }
@@ -384,7 +384,8 @@ recursive fn hook_walk(t int) {
 	if k == TY_MULTI { for i in x.n { hook_walk(TYL[(x.l as int) + i] as int); } return; }
 	if k == TY_STRUCT { hook_of(t); let si = x.a as int; for i in STI[si].fnum { let f = SFI[(STI[si].f0 as int) + i]; if f.ty >= 0 { hook_walk(f.ty as int); } } return; }
 	if k == TY_VARIANT { hook_of(t); let v = ENV[(ENI[x.a].v0 as int) + (x.c as int)]; if v.si >= 0 { for i in STI[v.si].fnum { let f = SFI[(STI[v.si].f0 as int) + i]; if f.ty >= 0 { hook_walk(f.ty as int); } } } return; }
-	if k == TY_ENUM { hook_of(t); let ei = x.a as int; for i in ENI[ei].vnum { hook_walk(t_variant(ei, i)); } }
+	if k == TY_ENUM { hook_of(t); let ei = x.a as int; for i in ENI[ei].vnum { hook_walk(t_variant(ei, i)); } return; }
+	if k == TY_INT || k == TY_FLT || k == TY_BOOL { hook_of(t); }
 }
 fn block_binding(name int) int {
 	var i = AOWN;
