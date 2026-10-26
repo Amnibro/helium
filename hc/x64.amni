@@ -36,4 +36,5 @@ fn ret() { xb(0xC3); }
 fn leave() { xb(0xC9); }
 fn syscall() { xb(0x0F); xb(0x05); }
 fn ud2() { xb(0x0F); xb(0x0B); }
+fn sse(pfx int, w bool, op int, r int, rm int) { if pfx != 0 { xb(pfx); } xrex(w, r, 0, rm); xb(0x0F); xb(op); xb(0xC0 | ((r & 7) << 3) | (rm & 7)); }
 fn put32(at int, v int) { for i in 4 { XC[at + i] = ((v >> (i * 8)) & 255) as! byte; } }

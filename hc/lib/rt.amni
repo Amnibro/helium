@@ -34,3 +34,101 @@ fn rt_rdrop(v RtV&) { rt_give(v.b, v.n * 64); v.b = 0; v.n = 0; v.top = 0; v.fl 
 fn rt_rfrom(v RtV&, p int, n int, esz int) { v.b = 0; v.n = 0; v.top = 0; v.fl = 0; v.fln = 0; v.flc = 0; if n > 0 { let d = rt_grow(v, n, esz); mcopy(d, p, n * esz); } }
 fn rt_pop(v RtV&, loc const byte[:]) { if v.n == 0 { rt_es("helium runtime error: pop of an empty array"); rt_fail(loc); } v.n -= 1; }
 fn rt_abort(m const byte[:], loc const byte[:]) { rt_es("helium runtime error: "); rt_es(m); rt_fail(loc); }
+fn rt_f2i(b u64) int { let ex = ((b >> 52) & 0x7FF) as int; let mt = (b & 0xFFFFFFFFFFFFF) | ((1 as u64) << 52); if ex == 0x7FF || ex < 1023 { return 0; } let sh = ex - 1075; let m = if sh >= 64 { 0 as u64 } else { if sh >= 0 { mt << (sh as u64) } else { mt >> ((-sh) as u64) } }; let r = if (b >> 63) != 0 { 0 - m } else { m }; r as! int }
+var RT_P5I u64[684]; var RT_P5 u64[652]; var RT_RYU bool;
+fn rt_p5b(e int) int { ((e * 1217359) >> 19) + 1 }
+fn rt_bx(b u64[34]&, nl int, s int) u64, u64 { var o0 u64 = 0; var o1 u64 = 0; var k = nl - 1; while k >= 0 { let p = 32 * k - s; let v = b[k]; if p < 128 && p > -32 { if p < 0 { o0 = o0 | (v >> ((-p) as u64)); } else { if p < 64 { o0 = o0 | (v << (p as u64)); if p > 32 { o1 = o1 | (v >> ((64 - p) as u64)); } } else { o1 = o1 | (v << ((p - 64) as u64)); } } } k--; } return o0, o1; }
+fn rt_ryu_init() {
+	RT_RYU = true; var a u64[34]; var d u64[34]; a[0] = 1; d[32] = 1; var na = 1;
+	for i in 342 {
+		if i < 326 { let x0, x1 = rt_bx(a, na, rt_p5b(i) - 125); RT_P5[2 * i] = x0; RT_P5[2 * i + 1] = x1; }
+		let y0, y1 = rt_bx(d, 33, 1024 - (rt_p5b(i) - 1 + 125)); RT_P5I[2 * i] = y0 + 1; RT_P5I[2 * i + 1] = if y0 + 1 == 0 { y1 + 1 } else { y1 };
+		var c u64 = 0; for k in na { c += a[k] * 5; a[k] = c & 0xFFFFFFFF; c = c >> 32; } if c != 0 { a[na] = c; na += 1; }
+		var r u64 = 0; var k = 32; while k >= 0 { r = (r << 32) | d[k]; d[k] = r / 5; r = r % 5; k--; }
+	}
+}
+fn rt_mulw(a u64, b u64) u64, u64 { let a0 = a & 0xFFFFFFFF; let a1 = a >> 32; let b0 = b & 0xFFFFFFFF; let b1 = b >> 32; let p00 = a0 * b0; let p01 = a0 * b1; let p10 = a1 * b0; let mid = (p00 >> 32) + (p01 & 0xFFFFFFFF) + (p10 & 0xFFFFFFFF); return a1 * b1 + (p01 >> 32) + (p10 >> 32) + (mid >> 32), (mid << 32) | (p00 & 0xFFFFFFFF); }
+fn rt_ms64(m u64, t u64[684]&, q int, j int) u64 { let h0, l0 = rt_mulw(m, t[2 * q]); let h2, l2 = rt_mulw(m, t[2 * q + 1]); let lo = l2 + h0; let hi = h2 + (if lo < h0 { 1 as u64 } else { 0 as u64 }); let s = j - 64; if s >= 64 { hi >> ((s - 64) as u64) } else { if s == 0 { lo } else { (lo >> (s as u64)) | (hi << ((64 - s) as u64)) } } }
+fn rt_ms64b(m u64, t u64[652]&, q int, j int) u64 { let h0, l0 = rt_mulw(m, t[2 * q]); let h2, l2 = rt_mulw(m, t[2 * q + 1]); let lo = l2 + h0; let hi = h2 + (if lo < h0 { 1 as u64 } else { 0 as u64 }); let s = j - 64; if s >= 64 { hi >> ((s - 64) as u64) } else { if s == 0 { lo } else { (lo >> (s as u64)) | (hi << ((64 - s) as u64)) } } }
+fn rt_ms32(m u64, f u64, sh int) u64 { let b0 = m * (f & 0xFFFFFFFF); let b1 = m * (f >> 32); (((b0 >> 32) + b1) >> ((sh - 32) as u64)) & 0xFFFFFFFF }
+fn rt_p5f(v0 u64) int { var v = v0; var c = 0; while v % 5 == 0 { v = v / 5; c += 1; } c }
+fn rt_l10p2(e int) int { (e * 78913) >> 18 }
+fn rt_l10p5(e int) int { (e * 732923) >> 20 }
+fn rt_d2d(bits u64) u64, int {
+	let ma = bits & 0xFFFFFFFFFFFFF; let ie = ((bits >> 52) & 0x7FF) as int;
+	let e2 = if ie == 0 { 1 - 1023 - 52 - 2 } else { ie - 1023 - 52 - 2 }; let m2 = if ie == 0 { ma } else { ma | ((1 as u64) << 52) };
+	let ab = (m2 & 1) == 0; let mv = 4 * m2; let mms = if ma != 0 || ie <= 1 { 1 as u64 } else { 0 as u64 };
+	var vr u64 = 0; var vp u64 = 0; var vm u64 = 0; var e10 = 0; var vmt = false; var vrt = false;
+	if e2 >= 0 {
+		let q = rt_l10p2(e2) - (if e2 > 3 { 1 } else { 0 }); e10 = q;
+		let k = 125 + rt_p5b(q) - 1; let i = -e2 + q + k;
+		vr = rt_ms64(mv, RT_P5I, q, i); vp = rt_ms64(mv + 2, RT_P5I, q, i); vm = rt_ms64(mv - 1 - mms, RT_P5I, q, i);
+		if q <= 21 { if mv % 5 == 0 { vrt = rt_p5f(mv) >= q; } else { if ab { vmt = rt_p5f(mv - 1 - mms) >= q; } else { if rt_p5f(mv + 2) >= q { vp -= 1; } } } }
+	} else {
+		let q = rt_l10p5(-e2) - (if -e2 > 1 { 1 } else { 0 }); e10 = q + e2;
+		let i = -e2 - q; let k = rt_p5b(i) - 125; let j = q - k;
+		vr = rt_ms64b(mv, RT_P5, i, j); vp = rt_ms64b(mv + 2, RT_P5, i, j); vm = rt_ms64b(mv - 1 - mms, RT_P5, i, j);
+		if q <= 1 { vrt = true; if ab { vmt = mms == 1; } else { vp -= 1; } } else { if q < 63 { vrt = (mv & (((1 as u64) << (q as u64)) - 1)) == 0; } }
+	}
+	var rm = 0; var ld u64 = 0; var out u64 = 0;
+	if vmt || vrt {
+		loop { let pd = vp / 10; let md = vm / 10; if pd <= md { break; } vmt = vmt && vm % 10 == 0; vrt = vrt && ld == 0; ld = vr % 10; vr = vr / 10; vp = pd; vm = md; rm += 1; }
+		if vmt { loop { if vm % 10 != 0 { break; } vrt = vrt && ld == 0; ld = vr % 10; vr = vr / 10; vp = vp / 10; vm = vm / 10; rm += 1; } }
+		if vrt && ld == 5 && vr % 2 == 0 { ld = 4; }
+		out = vr + (if vr == vm && (!ab || !vmt) || ld >= 5 { 1 as u64 } else { 0 as u64 });
+	} else {
+		var up = false;
+		if vp / 100 > vm / 100 { up = vr % 100 >= 50; vr = vr / 100; vp = vp / 100; vm = vm / 100; rm += 2; }
+		loop { let pd = vp / 10; let md = vm / 10; if pd <= md { break; } up = vr % 10 >= 5; vr = vr / 10; vp = pd; vm = md; rm += 1; }
+		out = vr + (if vr == vm || up { 1 as u64 } else { 0 as u64 });
+	}
+	return out, e10 + rm;
+}
+fn rt_f2d(bits u64) u64, int {
+	let ma = bits & 0x7FFFFF; let ie = ((bits >> 23) & 0xFF) as int;
+	let e2 = if ie == 0 { 1 - 127 - 23 - 2 } else { ie - 127 - 23 - 2 }; let m2 = if ie == 0 { ma } else { ma | ((1 as u64) << 23) };
+	let ab = (m2 & 1) == 0; let mv = 4 * m2; let mp = 4 * m2 + 2; let mms = if ma != 0 || ie <= 1 { 1 as u64 } else { 0 as u64 }; let mm = 4 * m2 - 1 - mms;
+	var vr u64 = 0; var vp u64 = 0; var vm u64 = 0; var e10 = 0; var vmt = false; var vrt = false; var ld u64 = 0;
+	if e2 >= 0 {
+		let q = rt_l10p2(e2); e10 = q;
+		let k = 61 + rt_p5b(q) - 1; let i = -e2 + q + k;
+		vr = rt_ms32(mv, RT_P5I[2 * q + 1] + 1, i); vp = rt_ms32(mp, RT_P5I[2 * q + 1] + 1, i); vm = rt_ms32(mm, RT_P5I[2 * q + 1] + 1, i);
+		if q != 0 && (vp - 1) / 10 <= vm / 10 { let l = 61 + rt_p5b(q - 1) - 1; ld = rt_ms32(mv, RT_P5I[2 * (q - 1) + 1] + 1, -e2 + q - 1 + l) % 10; }
+		if q <= 9 { if mv % 5 == 0 { vrt = rt_p5f(mv) >= q; } else { if ab { vmt = rt_p5f(mm) >= q; } else { if rt_p5f(mp) >= q { vp -= 1; } } } }
+	} else {
+		let q = rt_l10p5(-e2); e10 = q + e2;
+		let i = -e2 - q; let k = rt_p5b(i) - 61; var j = q - k;
+		vr = rt_ms32(mv, RT_P5[2 * i + 1], j); vp = rt_ms32(mp, RT_P5[2 * i + 1], j); vm = rt_ms32(mm, RT_P5[2 * i + 1], j);
+		if q != 0 && (vp - 1) / 10 <= vm / 10 { j = q - 1 - (rt_p5b(i + 1) - 61); ld = rt_ms32(mv, RT_P5[2 * (i + 1) + 1], j) % 10; }
+		if q <= 1 { vrt = true; if ab { vmt = mms == 1; } else { vp -= 1; } } else { if q < 31 { vrt = (mv & (((1 as u64) << ((q - 1) as u64)) - 1)) == 0; } }
+	}
+	var rm = 0; var out u64 = 0;
+	if vmt || vrt {
+		while vp / 10 > vm / 10 { vmt = vmt && vm % 10 == 0; vrt = vrt && ld == 0; ld = vr % 10; vr = vr / 10; vp = vp / 10; vm = vm / 10; rm += 1; }
+		if vmt { while vm % 10 == 0 { vrt = vrt && ld == 0; ld = vr % 10; vr = vr / 10; vp = vp / 10; vm = vm / 10; rm += 1; } }
+		if vrt && ld == 5 && vr % 2 == 0 { ld = 4; }
+		out = vr + (if vr == vm && (!ab || !vmt) || ld >= 5 { 1 as u64 } else { 0 as u64 });
+	} else {
+		while vp / 10 > vm / 10 { ld = vr % 10; vr = vr / 10; vp = vp / 10; vm = vm / 10; rm += 1; }
+		out = vr + (if vr == vm || ld >= 5 { 1 as u64 } else { 0 as u64 });
+	}
+	return out, e10 + rm;
+}
+fn rt_fflt(o byte[48]&, bits u64, is32 bool) int {
+	let sb = if is32 { 31 } else { 63 }; let eb = if is32 { 0xFF as u64 } else { 0x7FF as u64 }; let mb = if is32 { 23 } else { 52 };
+	let ex = (bits >> (mb as u64)) & eb; let mt = bits & (((1 as u64) << (mb as u64)) - 1); let neg = ((bits >> (sb as u64)) & 1) != 0;
+	var n = 0;
+	if ex == eb { if mt != 0 { o[0] = 'n'; o[1] = 'a'; o[2] = 'n'; return 3; } if neg { o[n] = '-'; n += 1; } o[n] = 'i'; o[n + 1] = 'n'; o[n + 2] = 'f'; return n + 3; }
+	var dig byte[24]; var nd = 0; var x = 0;
+	if ex == 0 && mt == 0 { dig[0] = '0'; nd = 1; }
+	else { if !RT_RYU { rt_ryu_init(); } let u0, e = if is32 { rt_f2d(bits) } else { rt_d2d(bits) }; var u = u0; var t byte[24]; var k = 0; while u != 0 { t[k] = (48 + u % 10) as byte; u = u / 10; k += 1; } for i in k { dig[i] = t[k - 1 - i]; } nd = k; x = e + k - 1; }
+	while nd > 1 && dig[nd - 1] == '0' { nd -= 1; }
+	if neg { o[n] = '-'; n += 1; }
+	if x < -4 || x >= max(nd, 15) { o[n] = dig[0]; n += 1; if nd > 1 { o[n] = '.'; n += 1; for i in 1..nd { o[n] = dig[i]; n += 1; } } let ax = if x < 0 { -x } else { x }; o[n] = 'e'; o[n + 1] = if x < 0 { '-' } else { '+' }; n += 2; if ax >= 100 { o[n] = (48 + ax / 100) as byte; n += 1; } o[n] = (48 + ax / 10 % 10) as byte; o[n + 1] = (48 + ax % 10) as byte; return n + 2; }
+	if x < 0 { o[n] = '0'; o[n + 1] = '.'; n += 2; for i in -x - 1 { o[n] = '0'; n += 1; } for i in nd { o[n] = dig[i]; n += 1; } return n; }
+	for i in x + 1 { o[n] = if i < nd { dig[i] } else { '0' }; n += 1; }
+	o[n] = '.'; n += 1;
+	if nd > x + 1 { for i in (x + 1)..nd { o[n] = dig[i]; n += 1; } } else { o[n] = '0'; n += 1; }
+	n
+}
+fn rt_pf(bits u64, is32 int) { var o byte[48]; let n = rt_fflt(o, bits, is32 != 0); rt_ps(o[..n]); }
