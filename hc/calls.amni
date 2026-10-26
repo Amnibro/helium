@@ -127,8 +127,15 @@ fn surely_void(fnode int) bool {
 	let body = ND[fnode].c as int;
 	if body < 0 { return true; }
 	let tl = ND[body].a as int;
-	if tl >= 0 { let k = ND[tl].k as int; if !(k == N_WHILE || k == N_FOR || k == N_RET || k == N_BREAK || k == N_CONT || (k == N_IF && ND[tl].c < 0)) { return false; } }
-	!has_valret(body)
+	tail_void(tl) && !has_valret(body)
+}
+recursive fn tail_void(tl int) bool {
+	if tl < 0 { return true; }
+	let x = ND[tl]; let k = x.k as int;
+	if k == N_WHILE || k == N_FOR || k == N_RET || k == N_BREAK || k == N_CONT { return true; }
+	if k == N_IF { return x.c < 0 || (tail_void(x.b as int) && tail_void(x.c as int)); }
+	if k == N_BLOCK { return tail_void(x.a as int); }
+	false
 }
 recursive fn has_valret(n int) bool {
 	if n < 0 { return false; }
@@ -344,7 +351,7 @@ recursive fn call_block(n int, inst int) int {
 	let na = ND[n].n as int;
 	for j in na { let c = kid(n, j); if is_pending(at(c)) { ARGW[s + j] = default_t(c) as i32; } else { ARGW[s + j] = deref_val(at(c)) as i32; } }
 	var bi = -1;
-	for f, i in FI_ { if f.node as int == fv && f.par as int == own && f.blk == inst as i32 { bi = i; } }
+	for f, i in FI_ { if f.node as int == fv && f.par as int == own && f.blk == inst as i32 && f.cfn as int == CFN { bi = i; } }
 	if bi < 0 {
 		bi = new_inst(fv, fv, NEND[fv] as int, own);
 		FI_[bi].blk = inst as i32; FI_[bi].bown = own as i32;

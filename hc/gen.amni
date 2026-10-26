@@ -739,7 +739,7 @@ recursive fn gx0(n int) {
 	if k == N_NULL { ow("((void*)0)"); return; }
 	if k == N_ID {
 		let r = rk(n);
-		if r == R_LOCAL { lv_expr(rv(n)); return; }
+		if r == R_LOCAL { let fc = (LVS[rv(n)].fl & LV_FLET) != 0 && at(n) != (LVS[rv(n)].ty as int); if fc { ow("(("); ct(at(n)); ow(")"); } lv_expr(rv(n)); if fc { ow(")"); } return; }
 		if r == R_GLOBAL { format(O, "g", rv(n)); return; }
 		if r == R_CONST { oint(CONSTV[rv(n)], false, fin_lit(n)); return; }
 		gerr(n, "unsupported name use"); return;
