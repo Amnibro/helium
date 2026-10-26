@@ -157,7 +157,7 @@ recursive fn conv(n int, t int) bool {
 	if tkd == TY_ERR || fk == TY_ERR { return true; }
 	if fk == TY_VOID && ends(n) { return true; }
 	let nk = ND[n].k as int;
-	if (nk == N_BLOCK || nk == N_EBLOCK || nk == N_IF || nk == N_MATCH) && fk == TY_VARIANT && tkd == TY_ENUM && TY[f].a == TY[t].a { conv_tail(n, t); set_t(n, t); return true; }
+	if (nk == N_BLOCK || nk == N_EBLOCK || nk == N_IF || nk == N_MATCH) && fk != TY_VOID && (fk == TY_VARIANT && tkd == TY_ENUM && TY[f].a == TY[t].a || conv_ok(if fk == TY_REF && TY[f].c < 0 { TY[f].a as int } else { f }, t, n) && (tkd == TY_SLICE || fk == TY_REF)) { conv_tail(n, t); set_t(n, t); return true; }
 	if tkd == TY_BOOL && fk == TY_REF && (TY[f].fl & RF_OPT) != 0 { set_cv(n, T_BOOL); return true; }
 	if tkd == TY_REF && TY[t].c < 0 && fk != TY_NULL && fk != TY_REF { if tclass(t) >= 0 { let ok = conv(n, TY[t].a as int); if ok && cv(n) < 0 { set_cv(n, t); } return ok; } }
 	if fk == TY_REF && TY[f].c < 0 && tkd != TY_REF { if conv_ok(TY[f].a as int, t, n) { set_cv(n, t); return true; } }
@@ -326,6 +326,7 @@ recursive fn ck_bin(n int, want int) int {
 		if (ka == TY_STRUCT || ka == TY_ARR || ka == TY_ENUM || ka == TY_VARIANT || ka == TY_SLICE) && da == db { set_x(n, 3); return set_t(n, T_BOOL); }
 		if ka == TY_ENUM && kb == TY_VARIANT || ka == TY_VARIANT && kb == TY_ENUM { set_x(n, 3); return set_t(n, T_BOOL); }
 		if ka == TY_ARRLIT || kb == TY_ARRLIT { if ka == TY_ARRLIT { conv(a, db); } else { conv(b, da); } set_x(n, 3); return set_t(n, T_BOOL); }
+		if (ka == TY_ARR || ka == TY_SLICE) && (kb == TY_ARR || kb == TY_SLICE) && TY[da].a == TY[db].a { let st = t_slice(TY[da].a as int, false); conv(a, st); conv(b, st); set_x(n, 3); return set_t(n, T_BOOL); }
 	}
 	let u = unify(n, a, b);
 	if cmp { if TY[u].k == TY_ILIT { conv(a, T_I64); conv(b, T_I64); } if TY[u].k == TY_FLIT { conv(a, T_F64); conv(b, T_F64); } return set_t(n, T_BOOL); }
@@ -561,6 +562,8 @@ recursive fn ck_if(n int, want int) int {
 	if tb == T_VOID || tc == T_VOID { return set_t(n, T_VOID); }
 	if tb == tc { return set_t(n, tb); }
 	if want >= 0 && want != T_VOID && (is_pending(tb) || conv_ok(tb, want, x.b as int)) && (is_pending(tc) || conv_ok(tc, want, x.c as int)) { conv(x.b as int, want); conv(x.c as int, want); return set_t(n, want); }
+	let db = deref(tb); let dc = deref(tc);
+	if (TY[db].k == TY_ARR || TY[db].k == TY_SLICE) && (TY[dc].k == TY_ARR || TY[dc].k == TY_SLICE) && TY[db].a == TY[dc].a { let st = t_slice(TY[db].a as int, false); conv_tail(n, st); return set_t(n, st); }
 	let u = unify(n, x.b as int, x.c as int);
 	set_t(n, u)
 }
