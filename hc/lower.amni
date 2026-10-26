@@ -72,6 +72,18 @@ fn lrcheck() {
 	drop_to(0); ir(I_JMP, 3, -1, -1, -1, RETL); ir(I_LBL, 3, -1, -1, -1, lok);
 }
 fn lvaddr(v int) int { let d = nv(); if LVS[v].cfn as int != CUR { while CAPSL.len < LVS.len { CAPSL.push(-1); } if CAPSL[v] < 0 { lerr(-1, "captured variable without a capture slot"); return d; } ir(I_SLOT, 8, d, -1, -1, CAPSL[v] as int); return ldw(d, 0, 3); } ir(I_SLOT, 8, d, -1, -1, lslot(v)); d }
+fn gctab(d int) {
+	let g = DC[d].node as int; let x = ND[g]; let t = GLT[d] as int;
+	if (x.fl & V_VAR) != 0 || x.b < 0 || TY[t].k != TY_ARR || !is_fix(t) { return; }
+	let e = TY[t].a as int; let iv = kid(x.b as int, 0); let z = tsz(e); let nel = TY[t].b as int;
+	if ND[iv].k as int != N_ARR || ND[iv].n as int != nel || !is_scal(e) || is_vimg(e) || TY[e].k == TY_REF { return; }
+	var by byte[>..] = [];
+	for j in nel { let q = kid(iv, j); var v = 0;
+		if isf(e) { if ND[q].k as int != N_FLT { return; } let b = flt_bits(tok_text(ND[q].t as int)); v = (if wof(e) == 10 { d2f_bits(b) } else { b }) as! int; }
+		else { if ND[q].k as int == N_TRUE { v = 1; } else { if ND[q].k as int != N_FALSE { let c, ok = kint(q); if !ok { return; } v = c; } } }
+		for k in z { by.push(((v >> (8 * k)) & 255) as! byte); } }
+	GCS.push(gslot(d) as i32); GCN.push(by.len as i32); GCP.push(GCB.len as i32); for c in by { GCB.push(c); }
+}
 fn gconst(d int, st int) int, bool {
 	let g = DC[d].node as int; let x = ND[g]; let t = GLT[d] as int;
 	if (x.fl & V_VAR) != 0 || x.b < 0 || !is_scal(t) || is_vimg(t) || TY[t].k == TY_REF { return 0, false; }
@@ -79,7 +91,7 @@ fn gconst(d int, st int) int, bool {
 	if isf(t) { if ik != N_FLT || !isf(st) || wof(st) != wof(t) { return 0, false; } let b = flt_bits(tok_text(ND[iv].t as int)); return (if wof(t) == 10 { d2f_bits(b) } else { b }) as! int, true; }
 	if isf(st) { return 0, false; }
 	if ik == N_TRUE { return 1, true; } if ik == N_FALSE { return 0, true; }
-	if !all_int(iv) { return 0, false; }
+	if !klit(iv) || !all_int(iv) { return 0, false; }
 	let v, ok = ceval(iv, ns_of(g)); return v as int, ok;
 }
 fn vaddr(n int) int {
@@ -249,7 +261,10 @@ recursive fn larr(addr int, n int, t int) {
 	if is_res(t) { lzero(addr, 48); if x.a >= 0 { let c = lx(x.b as int); let fv = ltmp(x.a as int, e); let p = rtcall("rt_grow", [addr as i32, c as i32, imm(es) as i32]); lfill(p, c, e, fv); return; } if x.n > 0 { let p = rtcall("rt_grow", [addr as i32, imm(x.n as int) as i32, imm(es) as i32]); for i in x.n { lstore(addi(p, i * es), kid(n, i), e); } } return; }
 	if !is_fix(t) && !is_lim(t) { lerr(n, "this array literal natively"); return; }
 	let base = if is_lim(t) { addi(addr, 8) } else { addr };
-	lzero(addr, tsz(t));
+	let sc = is_fix(t) && is_scal(e) && !is_vimg(e);
+	if sc && x.a >= 0 && kzero(x.a as int) { lzero(addr, tsz(t)); return; }
+	if sc && x.a >= 0 && TY[t].b <= 16 { let fv = ltmp(x.a as int, e); let v = ldw(fv, 0, wof(e)); for i in TY[t].b { stw(addi(base, (i as int) * es), 0, v, wof(e)); } return; }
+	if !(sc && x.a < 0 && x.n as i64 == TY[t].b) { lzero(addr, tsz(t)); }
 	if x.a >= 0 { let fv = ltmp(x.a as int, e); let c = if is_fix(t) { imm(TY[t].b as int) } else { lx(x.b as int) }; if is_lim(t) { lguard(n, lcmp(c, imm(TY[t].b as int), CC_LE), "too many elements for a limited array"); stw(addr, 0, c, 3); } lfill(base, c, e, fv); return; }
 	if is_lim(t) { stw(addr, 0, imm(x.n as int), 3); }
 	for i in x.n { lstore(addi(base, i * es), kid(n, i), e); }
@@ -635,7 +650,8 @@ recursive fn lvdecl(n int) {
 	lstore(a, init, t); lmove_src(init);
 	own_drop(a, t);
 }
-fn lzero(a int, sz int) { var o = 0; let z = imm(0); while o + 8 <= sz { stw(a, o, z, 3); o += 8; } while o < sz { stw(a, o, z, 4); o += 1; } }
+fn kzero(n int) bool { let k = ND[n].k as int; if k == N_FALSE { return true; } if k == N_FLT { return flt_bits(tok_text(ND[n].t as int)) == 0; } let v, ok = kint(n); ok && v == 0 }
+fn lzero(a int, sz int) { if sz > 8 { ir(I_ZERO, 3, a, -1, imm(sz), 0); return; } var o = 0; let z = imm(0); while o + 8 <= sz { stw(a, o, z, 3); o += 8; } while o < sz { stw(a, o, z, 4); o += 1; } }
 recursive fn lassign(n int) {
 	let x = ND[n]; let o = x.op as int; let a = x.a as int; let b = x.b as int;
 	if ND[a].k as int == N_LIST {
@@ -656,9 +672,23 @@ recursive fn lassign(n int) {
 	let r = if isf(t) { let wide = wof(t) == 10 && fw(tb) == 11; let tt = if wide { T_F64 } else { t }; let r0 = arith(o, tt, fconv(v, t, tt), fconv(bv, if TY[tb].k == TY_FLIT { T_F64 } else { tb }, tt), n); if wide { cvt(r0, 4, 10) } else { r0 } } else { arith(o, t, v, bv, n) };
 	stw(p, 0, r, wof(t));
 }
+recursive fn nsz(n int, lim int) int {
+	let x = ND[n]; let k = x.k as int; if k == N_FUNVAL || k == N_CFOR { return lim + 1; }
+	var c = 1; for q in [x.a, x.b, x.c, x.d, x.e] { if q as int > n && (q as int) < ND.len && c <= lim { c += nsz(q as int, lim - c); } }
+	for j in x.n { let q = LS[(x.l as int) + j] as int; if q > n && q < ND.len && c <= lim { c += nsz(q, lim - c); } } c
+}
+recursive fn klit(n int) bool { let x = ND[n]; let k = x.k as int; if k == N_INT { return true; } if k == N_ID { if rk(n) != R_GLOBAL { return false; } let cv, ok = gconst(rv(n), at(n)); return ok || const_of(rv(n)) >= 0; } if k == N_UN || k == N_AS { return x.a > n && klit(x.a as int); } if k == N_BIN { return x.a > n && x.b > n && klit(x.a as int) && klit(x.b as int); } false }
+fn kint(n int) int, bool { if !klit(n) || !all_int(n) { return 0, false; } let v, ok = ceval(n, ns_of(n)); return v as int, ok; }
 recursive fn lfor(n int) {
 	let x = ND[n]; let v = rv(n); let m = ax(n);
 	if (m & 3) != 0 { lfor_arr(n); return; }
+	var s0 = 0; var sk = true; if x.b >= 0 { let a0, a1 = kint(x.a as int); s0 = a0; sk = a1; } let e1, ek = kint(if x.b >= 0 { x.b as int } else { x.a as int }); let tn = e1 - s0;
+	var nu byte[>..] = []; if sk && ek && tn >= 0 && tn <= 16 && !env("HC_NOUNROLL", nu) && nsz(x.d as int, 400 / max(tn, 1)) <= 400 / max(tn, 1) {
+		let l1 = nlbl(); LOOPH.push(DROPS.len as i32); LCH.push(DROPS.len as i32); LBRK.push(l1 as i32); LCNT.push(-1); LRV.push(-1);
+		let iv = if x.c >= 0 { m >> 2 } else { -1 };
+		for j in tn { let lc = nlbl(); LCNT[LCNT.len - 1] = lc as i32; let kv = imm(s0 + j); let va = nv(); ir(I_SLOT, 8, va, -1, -1, lslot(v)); stw(va, 0, kv, wof(LVS[v].ty as int)); if iv >= 0 { let ia = nv(); ir(I_SLOT, 8, ia, -1, -1, lslot(iv)); stw(ia, 0, kv, 3); } lblk(x.d as int, -1); ir(I_LBL, 3, -1, -1, -1, lc); }
+		ir(I_LBL, 3, -1, -1, -1, l1); LOOPH.pop(); LCH.pop(); LBRK.pop(); LCNT.pop(); LRV.pop(); return;
+	}
 	let s = if x.b >= 0 { lx(x.a as int) } else { imm(0) }; let e0 = if x.b >= 0 { lx(x.b as int) } else { lx(x.a as int) };
 	let e = nv(); ir(I_MOV, 3, e, e0, -1, 0); let kv = nv(); ir(I_MOV, 3, kv, s, -1, 0);
 	let l0 = nlbl(); let lc = nlbl(); let l1 = nlbl(); LOOPH.push(DROPS.len as i32); LCH.push(DROPS.len as i32); LBRK.push(l1 as i32); LCNT.push(lc as i32); LRV.push(-1);
@@ -740,7 +770,7 @@ fn ginit_body() {
 	for d in ORDER {
 		let di = d as int; let t = GLT[di] as int; let g = DC[di].node as int; let x = ND[g];
 		if const_of(di) >= 0 && TY[t].k == TY_ILIT || GOFF[di] < 0 { continue; }
-		let a = nv(); ir(I_GADDR, 8, a, -1, -1, gslot(di));
+		let a = nv(); ir(I_GADDR, 8, a, -1, -1, gslot(di)); gctab(di);
 		let th = STMP.len;
 		if x.b >= 0 { let iv = kid(x.b as int, 0); if TY[t].k == TY_REF && TY[t].c < 0 { stw(a, 0, lrefv(iv), 3); } else { lstore(a, iv, t); } } else { if has_def(t) { ldefault(a, t); } }
 		var i = STMP.len; while i > th { i -= 2; ldrop(STMP[i] as int, STMP[i + 1] as int); } STMP.resize(th);

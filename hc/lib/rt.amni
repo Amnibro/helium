@@ -138,7 +138,7 @@ fn rt_fflt(o byte[48]&, bits u64, is32 bool) int {
 	n
 }
 fn rt_pf(bits u64, is32 int) { var o byte[48]; let n = rt_fflt(o, bits, is32 != 0); rt_ps(o[..n]); }
-fn rt_memeq(a const byte[:], b const byte[:]) bool { if a.len != b.len { return false; } for i in a.len { if a[i] != b[i] { return false; } } true }
+fn rt_memeq(a const byte[:], b const byte[:]) bool { if a.len != b.len { return false; } let pa = ptr(a); let pb = ptr(b); var i = 0; while i + 8 <= a.len { if mld(pa + i) != mld(pb + i) { return false; } i += 8; } while i < a.len { if mld1(pa + i) != mld1(pb + i) { return false; } i += 1; } true }
 extern fn mld1(a int) int = "!ld1";
 extern fn mst1(a int, v int) = "!st1";
 var RT_SP int;

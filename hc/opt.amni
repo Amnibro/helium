@@ -137,11 +137,13 @@ fn regalloc(fi int) {
 	for r in CREGS { if rgrp(r) != 0 { continue; } var u = false; for g in REGOF { if g == r as i32 { u = true; } } if u { RUSED.push(r as i32); } }
 }
 fn isize(fi int) int { let f = NFS[fi]; var n = 0; for i in (f.i0 as int)..(f.i1 as int) { let op = IR[i].op as int; if op != I_NOP && op != I_LBL { n++; } } n }
-fn inline_into(fi int, ok i8[>..<]&) {
+fn inline_into(fi int, fsz i32[>..<]&, mx int) {
 	let f = NFS[fi]; let ni0 = IR.len; var nv = f.nv as int; var sb = f.sb as int; var lm i32[>..<] = [];
+	var kn i8[>..<] = []; kn.resize(nv, 0); for i in (f.i0 as int)..(f.i1 as int) { let x = IR[i]; if x.d >= 0 && x.op as int == I_IMM { kn[x.d] = 1; } }
 	for i in (f.i0 as int)..(f.i1 as int) {
 		let x = IR[i]; let cal = x.c as int;
-		if !(x.op as int == I_CALL && cal >= 0 && cal != fi && ok[cal] != 0) { IR.push(x); continue; }
+		var nk = 0; if x.op as int == I_CALL { for q in x.b { let v = ARGL[(x.a as int) + q] as int; if v >= 0 && v < kn.len && kn[v] != 0 { nk++; } } }
+		if !(x.op as int == I_CALL && cal >= 0 && cal != fi && fsz[cal] >= 0 && (fsz[cal] as int) <= min(mx + 40 * nk, 3 * mx)) { IR.push(x); continue; }
 		let g = NFS[cal]; let vb = nv; nv += g.nv as int; let sbase = al(sb, 16); sb = sbase + (g.sb as int); let lend = nlbl();
 		lm.clear(); lm.resize(LBL.len, -1); var mm i32[>..<] = []; var mo i32[>..<] = [];
 		for j in (g.i0 as int)..(g.i1 as int) {
@@ -166,7 +168,7 @@ fn inline_into(fi int, ok i8[>..<]&) {
 fn optimize_all() {
 	var lim byte[>..] = []; let mx = if env("HC_INL", lim) { let v, ok = parse_int(lim[..]); v } else { 100 };
 	var noi byte[>..] = []; let inl = !env("HC_NOINL", noi);
-	let n = NFS.len; var stt i8[>..<] = []; stt.resize(n, 0); var ok i8[>..<] = []; ok.resize(n, 0); var order i32[>..<] = [];
+	let n = NFS.len; var stt i8[>..<] = []; stt.resize(n, 0); var fsz i32[>..<] = []; fsz.resize(n, -1); var order i32[>..<] = [];
 	var sf i32[>..<] = []; var sp i32[>..<] = [];
 	for r in n { if stt[r] != 0 { continue; } sf.push(r as i32); sp.push(NFS[r].i0); stt[r] = 1;
 		while sf.len > 0 { let t = sf.len - 1; let fi = sf[t] as int; var p = sp[t] as int; var pushed = false;
@@ -174,7 +176,7 @@ fn optimize_all() {
 			if !pushed { sf.pop(); sp.pop(); stt[fi] = 2; order.push(fi as i32); } } }
 	var pt int[>..] = []; pt.resize(12, 0); var t0 = clock_ns();
 	fn tk(k int) { let t = clock_ns(); pt[k] += t - t0; t0 = t; }
-	for fi in order { if inl { inline_into(fi as int, ok); } tk(0); mem2reg(fi as int); tk(1); copyprop(fi as int); tk(2); constfold(fi as int); tk(3); sra(fi as int); cpfwd(fi as int); tk(4); copyprop(fi as int); tk(2); constfold(fi as int); tk(3); lvn(fi as int); tk(5); copyprop(fi as int); cpfwd(fi as int); copyprop(fi as int); tk(2); deadcode(fi as int); tk(6); if inl && NFS[fi].inst >= 0 && isize(fi as int) <= mx { ok[fi] = 1; } }
+	for fi in order { if inl { inline_into(fi as int, fsz, mx); } tk(0); mem2reg(fi as int); tk(1); copyprop(fi as int); tk(2); constfold(fi as int); tk(3); sra(fi as int); cpfwd(fi as int); tk(4); copyprop(fi as int); tk(2); constfold(fi as int); tk(3); lvn(fi as int); tk(5); copyprop(fi as int); cpfwd(fi as int); copyprop(fi as int); tk(2); deadcode(fi as int); tk(6); if inl { fsz[fi] = isize(fi as int) as i32; } }
 	var pe byte[>..] = []; if env("HC_PT", pe) { for v, k in pt { print(k, " ", v / 1000000, "ms\n"); } }
 }
 fn subst(i int, rp i32[>..<]&) {
@@ -206,17 +208,23 @@ fn ccv(c int, a int, b int) bool { let ua = a as! u64; let ub = b as! u64; if c 
 fn constfold(fi int) {
 	let f = NFS[fi]; let i0 = f.i0 as int; let i1 = f.i1 as int; let nv = f.nv as int;
 	var nd i32[>..<] = []; nd.resize(nv, 0); for i in i0..i1 { opnds(i); for d in OD { nd[d] += 1; } }
-	var kn i8[>..<] = []; kn.resize(nv, 0); var kv i64[>..<] = []; kv.resize(nv, 0);
+	var kn i8[>..<] = []; kn.resize(nv, 0); var kv i64[>..<] = []; kv.resize(nv, 0); var ga i64[>..<] = []; ga.resize(nv, -1); var mk i32[>..<] = [];
 	for i in i0..i1 {
 		let x = IR[i]; let op = x.op as int; let d = x.d as int; let a = x.a as int; let b = x.b as int; let c = x.c as int; let w = x.w as int;
 		fn k(v int) bool { v >= 0 && kn[v] != 0 }
+		if op == I_LBL { for v in mk { kn[v] = 0; } mk.clear(); continue; }
+		if d >= 0 && nd[d] == 1 && GCS.len > 0 { if op == I_GADDR { ga[d] = c as i64; } if op == I_BIN && c == B_ADD && x.l < 0 { if ga[a] >= 0 && k(b) { ga[d] = ga[a] + kv[b]; } if ga[b] >= 0 && k(a) { ga[d] = ga[b] + kv[a]; } } if op == I_LD && ga[a] >= 0 { let gv, gok = gcread(ga[a] as int + c, wsz(w)); if gok { let r = extw(gv, w); kn[d] = 1; kv[d] = r as i64; IR[i] = Ir { I_IMM as u8, w as u8, d as i32, -1, -1, r as i64, -1 }; continue; } } }
 		var r = 0; var ok = false;
 		if op == I_IMM { ok = true; r = c; }
 		if (op == I_MOV || op == I_EXT && (w & 8) == 0) && k(a) { ok = true; r = if op == I_EXT { extw(kv[a] as int, w) } else { kv[a] as int }; }
 		if op == I_BIN && x.l < 0 && k(a) && k(b) && c != B_DIV && c != B_MOD && c != B_UDIV && c != B_UMOD { let p = kv[a] as int; let q = kv[b] as int; ok = true;
 			r = extw(if c == B_ADD { p + q } else { if c == B_SUB { p - q } else { if c == B_MUL { p * q } else { if c == B_AND { p & q } else { if c == B_OR { p | q } else { if c == B_XOR { p ^ q } else { if c == B_SHL { p << (q & 63) } else { if c == B_SAR { p >> (q & 63) } else { ((p as! u64) >> ((q & 63) as u64)) as! int } } } } } } } }, w); }
 		if op == I_CMP && k(a) && k(b) { ok = true; r = if ccv(c, kv[a] as int, kv[b] as int) { 1 } else { 0 }; }
-		if ok && d >= 0 && nd[d] == 1 { kn[d] = 1; kv[d] = r as i64; if op != I_IMM { IR[i] = Ir { I_IMM as u8, w as u8, d as i32, -1, -1, r as i64, -1 }; } continue; }
+		if op == I_BIN && x.l < 0 && !ok && (k(b) || k(a)) { let kb = k(b); let q = if kb { kv[b] } else { kv[a] }; let o = if kb { a } else { b };
+			if (c == B_MUL || c == B_AND) && q == 0 && (kb || c == B_MUL || c == B_AND) { ok = true; r = 0; }
+			else { if q == 1 && c == B_MUL || q == 0 && (c == B_ADD || c == B_OR || c == B_XOR) || kb && q == 0 && (c == B_SUB || c == B_SHL || c == B_SAR || c == B_SHR) { IR[i] = Ir { I_EXT as u8, w as u8, d as i32, o as i32, -1, 0, -1 }; if d >= 0 { kn[d] = 0; } continue; } } }
+		if ok && d >= 0 { kn[d] = 1; kv[d] = r as i64; if nd[d] > 1 { mk.push(d as i32); } if op != I_IMM { IR[i] = Ir { I_IMM as u8, w as u8, d as i32, -1, -1, r as i64, -1 }; } continue; }
+		if d >= 0 { opnds(i); for v in OD { if nd[v] > 1 { kn[v] = 0; } } }
 		if op == I_BCHK && k(a) && k(b) && (kv[a] as! u64) < (kv[b] as! u64) { IR[i].op = I_NOP as u8; continue; }
 		if (op == I_BZ || op == I_BNZ) && k(a) { let t = kv[a] != 0; if t == (op == I_BNZ) { IR[i] = Ir { I_JMP as u8, 3, -1, -1, -1, c as i64, -1 }; } else { IR[i].op = I_NOP as u8; } }
 	}
@@ -266,7 +274,7 @@ fn sra(fi int) {
 			if (op == I_LD || op == I_ST && x.b != u) && x.a == u { fk0.push(((s as i64) << 40) | ((sof[u] as i64 + x.c) << 8) | (x.w as i64)); continue; }
 			if op == I_COPY && x.d >= 0 && x.a >= 0 && sbs[x.d] >= 0 && sbs[x.a] >= 0 { let sd = sbs[x.d] as int; let sa = sbs[x.a] as int; if sd != sa && sof[x.d] == 0 && sof[x.a] == 0 && kn[x.b] != 0 { setsz(sd, kv[x.b] as int); setsz(sa, kv[x.b] as int); let ra = root(sa); let rd = root(sd); if ra != rd { par[ra] = rd as i32; } } else { bad[sd] = 1; bad[sa] = 1; } continue; }
 			if (op == I_COPY || op == I_ZERO) && kn[x.b] != 0 && sof[u] == 0 && (x.d == u || op == I_COPY && x.a == u && x.d != u) { setsz(s, kv[x.b] as int); if op == I_COPY && x.a == u { cout[s] = 1; } continue; }
-			bad[s] = 1; } }
+			var dq byte[>..] = []; if env("HC_SRA", dq) { print("badop fn ", fi, " i ", i, " op ", op, " slot ", so[s], " c ", x.c, " d ", x.d, " a ", x.a, " b ", x.b, " u ", u, "\n"); } bad[s] = 1; } }
 	for s in sb { let r = root(s); if r != s { if bad[s] != 0 { bad[r] = 1; } if cout[s] != 0 { cout[r] = 1; } if csz[s] >= 0 { setsz(r, csz[s] as int); } } }
 	for k in fk0.len { let s = (fk0[k] >> 40) as int; let r = root(s); if r != s { fk0[k] = ((r as i64) << 40) | (fk0[k] & 0xFFFFFFFFFF); } }
 	sort(fk0[..]);

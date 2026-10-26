@@ -10,6 +10,8 @@ var ARGL i32[>..<];
 var NFS NFn[>..<];
 var NV int; var SB int; var NLB int;
 var LOCS i32[>..<];
+var GCB byte[>..<]; var GCS i32[>..<]; var GCN i32[>..<]; var GCP i32[>..<];
+fn gcread(o int, z int) int, bool { for k in GCS.len { let s = GCS[k] as int; if o >= s && o + z <= s + (GCN[k] as int) { var v = 0; for j in z { v = v | ((GCB[(GCP[k] as int) + o - s + j] as int) << (8 * j)); } return v, true; } } return 0, false; }
 var DBG bool;
 var RT_DIE int = -1; var RT_OOB int = -1; let I_BCHK = 34; var RT_F2I int = -1;
 var FK i8[>..<]; var FB i32[>..<]; var FD i64[>..<]; var UC i32[>..<];
