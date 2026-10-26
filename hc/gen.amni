@@ -627,6 +627,14 @@ recursive fn gbuiltin(n int) {
 	let p = nt();
 	if b == B_PRINT { ow("({ "); for i in x.n { let c = kid(n, i); gfmt("&hr_ob", c, fin(c), true); ow("; "); } ow("hr_println(); })"); return; }
 	if b == B_STR { ow("({ hrv _o"); oi(p); ow(" = {0}; "); var nmo byte[..32] = []; format(nmo, "&_o", p); for i in x.n { let c = kid(n, i); gfmt(nmo[..], c, fin(c), true); ow("; "); } ow("_o"); oi(p); ow("; })"); return; }
+	if b == B_FORMAT && is_lim(deref(at(arg(0)))) {
+		let lt = deref(at(arg(0)));
+		ow("({ "); ct(lt); ow(" *_l"); oi(p); ow(" = "); grecv_ptr(arg(0)); ow("; hrv _o"); oi(p); ow(" __attribute__((cleanup(hr_rdrop))) = {0}; ");
+		var nmo byte[..32] = []; format(nmo, "&_o", p);
+		for i in 1..total { let c = arg(i); gfmt(nmo[..], c, fin(c), true); ow("; "); }
+		format(O, "if (_l", p, "->n + _o", p, ".n > ", TY[lt].b, ") hr_die(\"format past a limited array's capacity\", "); wloc(n); format(O, "); memcpy(_l", p, "->e + _l", p, "->n, _o", p, ".b, (size_t)_o", p, ".n); _l", p, "->n += _o", p, ".n; })");
+		return;
+	}
 	if b == B_FORMAT { ow("({ hrv *_o"); oi(p); ow(" = "); grecv_ptr(arg(0)); ow("; "); var nmo byte[..32] = []; format(nmo, "_o", p); for i in 1..total { let c = arg(i); gfmt(nmo[..], c, fin(c), true); ow("; "); } ow("})"); return; }
 	if b == B_ASSERT { ow("({ if (!("); gx(arg(0)); ow(")) hr_assert_fail("); wloc(n); ow("); })"); return; }
 	if b == B_ABORT { ow("hr_abort("); gas(arg(0)); ow(")"); return; }

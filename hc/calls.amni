@@ -103,8 +103,26 @@ recursive fn sig_inst(i int) {
 		let rl = ND[node].b as int;
 		if ND[rl].n == 1 { FI_[i].ret = rtype(kid(rl, 0), ns) as i32; }
 		else { var rs i32[..64] = []; for j in ND[rl].n { let r0 = rtype(kid(rl, j), ns); rs.push(r0 as i32); } FI_[i].ret = tlist(TY_MULTI, rs[..], -1) as i32; }
-	} else { FI_[i].ret = -1; FI_[i].rinf = true; if (ND[node].fl & F_EXTERN) != 0 { FI_[i].ret = T_VOID as i32; FI_[i].rinf = false; } }
+	} else { FI_[i].ret = -1; FI_[i].rinf = true; if (ND[node].fl & F_EXTERN) != 0 || surely_void(node) { FI_[i].ret = T_VOID as i32; FI_[i].rinf = false; } }
 	GB.pop_n(GB.len - g0);
+}
+fn surely_void(fnode int) bool {
+	let body = ND[fnode].c as int;
+	if body < 0 { return true; }
+	let tl = ND[body].a as int;
+	if tl >= 0 { let k = ND[tl].k as int; if !(k == N_WHILE || k == N_FOR || k == N_RET || k == N_BREAK || k == N_CONT || (k == N_IF && ND[tl].c < 0)) { return false; } }
+	!has_valret(body)
+}
+recursive fn has_valret(n int) bool {
+	if n < 0 { return false; }
+	let x = ND[n]; let k = x.k as int;
+	if k == N_RET { return x.n > 0 && x.s < 0; }
+	if k == N_FN { return false; }
+	if k == N_INT || k == N_FLT || k == N_STR || k == N_ID { return false; }
+	if k >= 40 && k < 50 { return false; }
+	if has_valret(x.a as int) || has_valret(x.b as int) || has_valret(x.c as int) || has_valret(x.d as int) { return true; }
+	if k == N_BLOCK || k == N_CALL || k == N_MATCH || k == N_ARM || k == N_LIST || k == N_ARR || k == N_SLIT || k == N_RET { for i in x.n { if has_valret(kid(n, i)) { return true; } } }
+	false
 }
 fn ptype_of(i int, j int) int { TYL[(FI_[i].p0 as int) + j] as int }
 recursive fn check_inst(i int) {

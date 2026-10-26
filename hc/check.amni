@@ -191,6 +191,9 @@ fn unify(n int, a int, b int) int {
 	if ka == TY_ILIT && kb == TY_ILIT { return T_ILIT; }
 	if (ka == TY_ILIT || ka == TY_FLIT) && kb == TY_FLIT { return T_FLIT; }
 	if ka == TY_FLIT && kb == TY_ILIT { return T_FLIT; }
+	if ka == TY_STRLIT && kb == TY_STRLIT { set_t(a, TT_STR); set_t(b, TT_STR); return TT_STR; }
+	if ka == TY_STRLIT || ka == TY_ARRLIT || ka == TY_NULL { conv(a, db); return db; }
+	if kb == TY_STRLIT || kb == TY_ARRLIT || kb == TY_NULL { conv(b, da); return da; }
 	if ka == TY_ILIT { conv(a, db); return db; }
 	if kb == TY_ILIT { conv(b, da); return da; }
 	if ka == TY_FLIT { if kb == TY_FLT { conv(a, db); return db; } if kb == TY_INT { return T_FLIT; } }
@@ -403,7 +406,7 @@ recursive fn ck_slice(n int, want int) int {
 recursive fn ck_as(n int, want int) int {
 	let x = ND[n];
 	let t = rtype(x.b as int, ns_of(n));
-	let f = ck(x.a as int, t);
+	let f = ck(x.a as int, if TY[t].k == TY_INT || TY[t].k == TY_FLT { -1 } else { t });
 	let df = deref(f);
 	if TY[df].k == TY_ILIT || TY[df].k == TY_FLIT { conv(x.a as int, if TY[t].k == TY_INT || TY[t].k == TY_FLT { t } else { T_I64 }); }
 	else { if df != f { set_cv(x.a as int, df); } }
@@ -454,8 +457,8 @@ recursive fn ck_if(n int, want int) int {
 	if ec && !eb { return set_t(n, tb); }
 	if eb && ec { return set_t(n, tb); }
 	if tb == T_VOID || tc == T_VOID { return set_t(n, T_VOID); }
-	if want >= 0 && want != T_VOID { conv(x.b as int, want); conv(x.c as int, want); return set_t(n, want); }
 	if tb == tc { return set_t(n, tb); }
+	if want >= 0 && want != T_VOID && (is_pending(tb) || conv_ok(tb, want, x.b as int)) && (is_pending(tc) || conv_ok(tc, want, x.c as int)) { conv(x.b as int, want); conv(x.c as int, want); return set_t(n, want); }
 	let u = unify(n, x.b as int, x.c as int);
 	set_t(n, u)
 }
@@ -548,7 +551,9 @@ recursive fn ck_match(n int, want int) int {
 		if bt == T_VOID { allv = false; } else { if !ends(ax0.b as int) { if rt < 0 || is_pending(rt) { rt = bt; } } }
 	}
 	if !allv || rt < 0 { return set_t(n, T_VOID); }
-	if want >= 0 && want != T_VOID { for i in x.n { let b = ND[kid(n, i)].b as int; if !ends(b) { conv(b, want); } } return set_t(n, want); }
+	var allw = want >= 0 && want != T_VOID;
+	if allw { for i in x.n { let b = ND[kid(n, i)].b as int; let bt = at(b); if !ends(b) && !is_pending(bt) && !conv_ok(bt, want, b) { allw = false; } } }
+	if allw { for i in x.n { let b = ND[kid(n, i)].b as int; if !ends(b) { conv(b, want); } } return set_t(n, want); }
 	if is_pending(rt) { for i in x.n { let b = ND[kid(n, i)].b as int; let bt = at(b); if !is_pending(bt) && !ends(b) { rt = bt; } } }
 	if is_pending(rt) { let b = ND[kid(n, 0)].b as int; rt = default_t(b); }
 	for i in x.n { let b = ND[kid(n, i)].b as int; if !ends(b) { conv(b, rt); } }
