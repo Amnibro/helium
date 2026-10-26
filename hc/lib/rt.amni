@@ -229,3 +229,18 @@ fn rt_frexp(b u64, ep int) u64 {
 	let e = ex - 1022; mst1(ep, e & 255); mst1(ep + 1, (e >> 8) & 255); mst1(ep + 2, (e >> 16) & 255); mst1(ep + 3, (e >> 24) & 255);
 	(b & ((1 as u64) << 63)) | ((1022 as u64) << 52) | m
 }
+var RT_DS RtV;
+fn rt_ulen(v int) int { var k = 1; var x = v as! u64; while x >= 128 { x = x >> 7; k += 1; } k }
+fn rt_uget(p int) int { var r = 0; var sh = 0; var q = p; loop { let b = mld1(q); q += 1; r = r | ((b & 127) << sh); if b < 128 { return r; } sh += 7; } }
+fn rt_vput(p int, w int, v int) { if w == 8 { mst(p, v); return; } for i in w { mst1(p + i, (v >> (i * 8)) & 255); } }
+fn rt_vget(p int, w int) int { if w == 0 { return rt_uget(p); } if w == 8 { return mld(p); } var r = 0; for i in w { r = r | (mld1(p + i) << (i * 8)); } r }
+fn rt_vhd(p int, w int, lim int) int { if w > 0 { w * (lim + 1) } else { rt_ulen(rt_uget(p)) } }
+fn rt_vmk(n int, cap int, w int, lim int, esz int) int {
+	if n < 0 || cap < n { rt_abort("array count out of range", "construct"); }
+	if w > 0 && w < 8 && (cap >> (w * 8)) != 0 { rt_abort("too many elements for the array's length field", "construct"); }
+	let p = rt_grow(vptr(RT_DS), (if w > 0 { w * (lim + 1) } else { rt_ulen(n) }) + cap * esz, 1);
+	if w == 0 { var v = n; var q = p; loop { let b = v & 127; v = v >> 7; mst1(q, if v != 0 { b | 128 } else { b }); q += 1; if v == 0 { break; } } } else { if lim != 0 { rt_vput(p, w, cap); rt_vput(p + w, w, n); } else { rt_vput(p, w, n); } }
+	p
+}
+fn rt_vfrom(sp int, sn int, w int, lim int, esz int) int { let p = rt_vmk(sn, sn, w, lim, esz); mcopy(p + rt_vhd(p, w, lim), sp, sn * esz); p }
+fn rt_vret(p int, m int, w int, lim int, esz int) int { let sz = rt_vhd(p, w, lim) + rt_vget(p + (if lim != 0 { w } else { 0 }), w) * esz; if RT_DS.b == 0 { RT_DS.b = rt_take(); } let d = RT_DS.b + m; if d != p { mcopy(d, p, sz); } RT_DS.n = m + sz; d }

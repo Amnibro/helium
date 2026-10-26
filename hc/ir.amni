@@ -1,6 +1,6 @@
 import elf;
 let I_IMM = 1; let I_MOV = 2; let I_BIN = 3; let I_CMP = 4; let I_UN = 5; let I_LBL = 6; let I_JMP = 7; let I_BZ = 8; let I_BNZ = 9; let I_CALL = 10; let I_RET = 11;
-let I_LD = 12; let I_ST = 13; let I_SLOT = 14; let I_GADDR = 15; let I_RADDR = 16; let I_PARAM = 17; let I_SYS = 18; let I_EXT = 19; let I_CHK = 20; let I_COPY = 21; let I_FADDR = 22; let I_CALLR = 23; let I_RET2 = 24; let I_RES2 = 25; let I_FBIN = 26; let I_FCMP = 27; let I_CVT = 28; let I_FUN = 29; let I_ZERO = 30;
+let I_LD = 12; let I_ST = 13; let I_SLOT = 14; let I_GADDR = 15; let I_RADDR = 16; let I_PARAM = 17; let I_SYS = 18; let I_EXT = 19; let I_CHK = 20; let I_COPY = 21; let I_FADDR = 22; let I_CALLR = 23; let I_RET2 = 24; let I_RES2 = 25; let I_FBIN = 26; let I_FCMP = 27; let I_CVT = 28; let I_FUN = 29; let I_ZERO = 30; let I_DSS = 31; let I_DSR = 32;
 let B_ADD = 0; let B_SUB = 1; let B_MUL = 2; let B_DIV = 3; let B_MOD = 4; let B_AND = 5; let B_OR = 6; let B_XOR = 7; let B_SHL = 8; let B_SAR = 9; let B_SHR = 10; let B_UDIV = 11; let B_UMOD = 12;
 let K_OVF = 1; let K_DIV0 = 2; let K_OOB = 3; let K_NARROW = 4; let K_DOVF = 7;
 struct Ir { op u8, w u8, d i32, a i32, b i32, c i64, l i32 }
@@ -12,6 +12,7 @@ var NV int; var SB int; var NLB int;
 var LOCS i32[>..<];
 var DBG bool;
 var RT_DIE int = -1; var RT_F2I int = -1;
+var MUSE i8[>..<]; var MSLOT i32[>..<]; var DSN = -1;
 fn nv() int { NV++; NV - 1 }
 fn loc_id(s const byte[:]) int { LOCS.push(rodata(s) as i32); LOCS.push(s.len as i32); LOCS.len / 2 - 1 }
 fn nlbl() int { LBL.push(-1); LBL.len - 1 }
@@ -51,10 +52,10 @@ fn cg_fn(fi int) {
 			if c == B_SHL { shcl(4, RAX); } if c == B_SAR { shcl(7, RAX); } if c == B_SHR { shcl(5, RAX); }
 			if c >= B_ADD && c <= B_MUL && x.l >= 0 { if wsz(w) == 8 { jcc_l(CC_O, trap_to(K_OVF, x.l as int, traps)); } else { mov_rr(RDX, RAX); ext_r(RDX, w); alu(0x39, RDX, RAX); jcc_l(CC_NE, trap_to(K_OVF, x.l as int, traps)); } }
 			if c == B_DIV || c == B_MOD || c == B_UDIV || c == B_UMOD {
-				test_rr(RCX, RCX); jcc_l(CC_E, trap_to(K_DIV0, x.l as int, traps));
+				if x.l >= 0 { test_rr(RCX, RCX); jcc_l(CC_E, trap_to(K_DIV0, x.l as int, traps)); }
 				if c == B_DIV || c == B_MOD {
 					let lnorm = nlbl(); let ldone = nlbl(); mov_ri(RDX, -1); alu(0x39, RCX, RDX); jcc_l(CC_NE, lnorm);
-					if c == B_MOD { alu(0x31, RAX, RAX); } else { mov_ri(RDX, 1); shl_imm(RDX, if wsz(w) == 8 { 63 } else { wsz(w) * 8 - 1 }); if wsz(w) != 8 { grp3(3, RDX); } alu(0x39, RAX, RDX); if wsz(w) == 8 { jcc_l(CC_E, trap_to(K_DOVF, x.l as int, traps)); } else { if DBG { jcc_l(CC_E, trap_to(K_OVF, x.l as int, traps)); } } grp3(3, RAX); }
+					if c == B_MOD { alu(0x31, RAX, RAX); } else { mov_ri(RDX, 1); shl_imm(RDX, if wsz(w) == 8 { 63 } else { wsz(w) * 8 - 1 }); if wsz(w) != 8 { grp3(3, RDX); } alu(0x39, RAX, RDX); if x.l >= 0 { if wsz(w) == 8 { jcc_l(CC_E, trap_to(K_DOVF, x.l as int, traps)); } else { if DBG { jcc_l(CC_E, trap_to(K_OVF, x.l as int, traps)); } } } grp3(3, RAX); }
 					jmp_l(ldone); LBL[lnorm] = XC.len as i32; cqo(); grp3(7, RCX);
 					if c == B_MOD { mov_rr(RAX, RDX); test_rr(RAX, RAX); jcc_l(CC_GE, ldone); let lneg = nlbl(); test_rr(RCX, RCX); jcc_l(CC_L, lneg); alu(0x01, RAX, RCX); jmp_l(ldone); LBL[lneg] = XC.len as i32; alu(0x29, RAX, RCX); }
 					LBL[ldone] = XC.len as i32;
@@ -96,6 +97,7 @@ fn cg_fn(fi int) {
 			if c == 5 { xr(0, RAX, w); if (w & 3) == 2 { sse(0xF3, false, 0x5A, 0, 0); rx(RDI, 0, 3); } else { mov_rr(RDI, RAX); } sse(0xF2, true, 0x2C, RAX, 0); mov_ri(RCX, 1); shl_imm(RCX, 63); alu(0x39, RAX, RCX); let lk = nlbl(); jcc_l(CC_NE, lk); call_f(RT_F2I); LBL[lk] = XC.len as i32; }
 			if c == 7 { mov_ri(RCX, 1); shl_imm(RCX, if (w & 3) == 2 { 31 } else { 63 }); alu(0x31, RAX, RCX); }
 			stv(RAX, d); }
+		else { if op == I_DSS || op == I_DSR { if MUSE[a] != 0 { let so = (MSLOT[a] as int) - sba; lea_rip(RAX, 3, DSN); if op == I_DSS { ld(RCX, RAX, 0, 8, false); st(RCX, RBP, so, 8); } else { ld(RCX, RBP, so, 8, false); st(RCX, RAX, 0, 8); } } }
 		else { if op == I_FUN && c >= 7 { ldv(RCX, a); xb(0xF3); xb(0x48); xb(0x0F); xb(if c == 7 { 0xBD } else { if c == 8 { 0xBC } else { 0xB8 } }); xb(0xC1); stv(RAX, d); }
 		else { if op == I_FUN { let sgl = (w & 3) == 2; ldv(RAX, a); xr(0, RAX, w);
 			if c >= 1 && c <= 3 { xb(0x66); xb(0x0F); xb(0x3A); xb(if sgl { 0x0A } else { 0x0B }); xb(0xC0); xb(if c == 1 { 9 } else { if c == 2 { 10 } else { 11 } }); }
@@ -105,7 +107,7 @@ fn cg_fn(fi int) {
 			rx(RAX, 0, w); stv(RAX, d); }
 		else { if op == I_ZERO { ldv(RDI, d); ldv(RCX, b); alu(0x31, RAX, RAX); xb(0xF3); xb(0xAA); }
 		else { if op == I_COPY { ldv(RDI, d); ldv(RSI, a); ldv(RCX, b); xb(0xF3); xb(0xA4); }
-		} } } } } } } } } } } } } } } } } } } } } } } }
+		} } } } } } } } } } } } } } } } } } } } } } } } }
 	}
 	leave(); ret();
 	var j = 0;
