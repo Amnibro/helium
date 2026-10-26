@@ -121,7 +121,7 @@ fn regalloc(fi int) {
 		ga[p + 1] = ga[p] + (if op == I_COPY || op == I_ZERO { 1 } else { 0 }); gb[p + 1] = gb[p] + (if op == I_FUN && x.c == 5 { 1 } else { 0 });
 		let d = x.d as int; if d < 0 || op == I_ZERO || op == I_COPY || op == I_ST { continue; }
 		let fw = if op == I_FBIN || op == I_FUN && x.c < 7 || op == I_CVT && (x.c == 1 || x.c == 2 || x.c == 7) || (op == I_LD || op == I_MOV || op == I_EXT) && (w & 8) != 0 { w } else { if op == I_CVT && x.c == 3 { 11 } else { if op == I_CVT && x.c == 4 { 10 } else { -1 } } };
-		if fw < 0 && ismov(i) && (w == 3 || w == 11) { continue; }
+		if fw < 0 && (ismov(i) && (w == 3 || w == 11) || op == I_IMM) { continue; }
 		if fw < 0 || XW[d] != 0 && XW[d] as int != fw { XW[d] = -1; } else { if XW[d] == 0 { XW[d] = fw as i8; } } }
 	var pc = true; var it = 0;
 	while pc && it < 7 { pc = false; it++; for i in i0..i1 { let x = IR[i]; let d = x.d as int; if !ismov(i) || d < 0 || XW[d] < 0 || x.w == 11 { continue; } let a = x.a as int; let fa = XW[a] as int; if fa < 0 { XW[d] = -1; pc = true; continue; } if fa == 0 { continue; } if XW[d] == 0 { XW[d] = fa as i8; pc = true; } else { if XW[d] as int != fa { XW[d] = -1; pc = true; } } } }
@@ -213,13 +213,15 @@ fn ccv(c int, a int, b int) bool { let ua = a as! u64; let ub = b as! u64; if c 
 fn constfold(fi int) {
 	let f = NFS[fi]; let i0 = f.i0 as int; let i1 = f.i1 as int; let nv = f.nv as int;
 	var nd i32[>..<] = []; nd.resize(nv, 0); for i in i0..i1 { opnds(i); for d in OD { nd[d] += 1; } }
-	var kn i8[>..<] = []; kn.resize(nv, 0); var kv i64[>..<] = []; kv.resize(nv, 0); var ga i64[>..<] = []; ga.resize(nv, -1); var mk i32[>..<] = []; var ew i8[>..<] = []; ew.resize(nv, -1);
+	var kn i8[>..<] = []; kn.resize(nv, 0); var kv i64[>..<] = []; kv.resize(nv, 0); var ga i64[>..<] = []; ga.resize(nv, -1); var mk i32[>..<] = []; var ew i8[>..<] = []; ew.resize(nv, -1); var nn i8[>..<] = []; nn.resize(nv, 0);
 	for i in i0..i1 {
 		let x = IR[i]; let op = x.op as int; let d = x.d as int; let a = x.a as int; let b = x.b as int; let c = x.c as int; let w = x.w as int;
 		fn k(v int) bool { v >= 0 && kn[v] != 0 }
 		if op == I_LBL { for v in mk { kn[v] = 0; } mk.clear(); continue; }
 		if op == I_EXT && (w & 8) == 0 && a >= 0 && ew[a] >= 0 && (ew[a] as int == w || wsz(ew[a] as int) < wsz(w) && !wsg(ew[a] as int) && !wsg(w)) { IR[i] = Ir { I_MOV as u8, 3, d as i32, a as i32, -1, 0, -1 }; if d >= 0 && nd[d] == 1 { ew[d] = ew[a]; } if d >= 0 { if kn[a] != 0 { kn[d] = 1; kv[d] = kv[a]; if nd[d] > 1 { mk.push(d as i32); } } else { kn[d] = 0; } } continue; }
 		if d >= 0 && nd[d] == 1 && (op == I_LD || op == I_EXT) && (w & 8) == 0 { ew[d] = w as i8; }
+		if d >= 0 && nd[d] == 1 && ((op == I_LD || op == I_EXT) && (w & 8) == 0 && !wsg(w) && wsz(w) < 8 || op == I_IMM && c >= 0 || op == I_BIN && x.l < 0 && (c == B_SHR && k(b) && kv[b] >= 1 || c == B_AND && (k(b) && kv[b] >= 0 || nn[a] != 0 || nn[b] != 0)) || ismov(i) && nn[a] != 0) { nn[d] = 1; }
+		if op == I_CVT && c == 2 && a >= 0 && nn[a] != 0 { IR[i].c = 1; }
 		if d >= 0 && nd[d] == 1 && GCS.len > 0 { if op == I_GADDR { ga[d] = c as i64; } if op == I_BIN && c == B_ADD && x.l < 0 { if ga[a] >= 0 && k(b) { ga[d] = ga[a] + kv[b]; } if ga[b] >= 0 && k(a) { ga[d] = ga[b] + kv[a]; } } if op == I_LD && ga[a] >= 0 { let gv, gok = gcread(ga[a] as int + c, wsz(w)); if gok { let r = extw(gv, w); kn[d] = 1; kv[d] = r as i64; IR[i] = Ir { I_IMM as u8, w as u8, d as i32, -1, -1, r as i64, -1 }; continue; } } }
 		var r = 0; var ok = false;
 		if op == I_IMM { ok = true; r = c; }
