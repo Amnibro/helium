@@ -67,14 +67,17 @@ static inline void hr_rfree(hrv *v, int64_t esz) { if (v->fl) free(v->fl); hr_gi
 static __thread hrv hr_ds; static __thread int64_t hr_dsk;
 static inline void hr_dsr(int64_t *m) { hr_ds.n = *m; }
 static inline void hr_dsf(int64_t *m) { hr_ds.n = *m + hr_dsk; hr_dsk = 0; }
-static inline int64_t hr_vget(const uint8_t *p, int w) { return w == 1 ? *p : w == 2 ? *(const uint16_t*)p : w == 4 ? *(const uint32_t*)p : *(const int64_t*)p; }
+static inline int64_t hr_ulen(uint64_t v) { int64_t k = 1; while (v >= 128) { v >>= 7; k++; } return k; }
+static inline int64_t hr_uget(const uint8_t *p) { uint64_t r = 0; int sh = 0; for (;;) { uint8_t b = *p++; r |= (uint64_t)(b & 127) << sh; if (!(b & 128)) return (int64_t)r; sh += 7; } }
+static inline int64_t hr_vget(const uint8_t *p, int w) { return !w ? hr_uget(p) : w == 1 ? *p : w == 2 ? *(const uint16_t*)p : w == 4 ? *(const uint32_t*)p : *(const int64_t*)p; }
 static inline void hr_vput(uint8_t *p, int w, int64_t v) { if (w == 1) *p = (uint8_t)v; else if (w == 2) *(uint16_t*)p = (uint16_t)v; else if (w == 4) *(uint32_t*)p = (uint32_t)v; else *(int64_t*)p = v; }
-static inline hsl hr_vsl(uint8_t *p, int w, int lim) { return (hsl){ p + (lim ? 2 * w : w), hr_vget(p + (lim ? w : 0), w) }; }
+static inline int64_t hr_vhd(const uint8_t *p, int w, int lim) { return w ? (int64_t)w * (lim + 1) : hr_ulen((uint64_t)hr_uget(p)); }
+static inline hsl hr_vsl(uint8_t *p, int w, int lim) { return (hsl){ p + hr_vhd(p, w, lim), hr_vget(p + (lim ? w : 0), w) }; }
 static inline void hr_resize(hrv *v, int64_t n, int64_t esz) { hr_rinit(v); if (n > v->n) memset(v->b + v->n * esz, 0, (size_t)((n - v->n) * esz)); v->n = n; }
-static inline uint8_t *hr_vmk(int64_t n, int64_t cap, int w, int lim, int64_t esz) { if (n < 0 || cap < n) hr_die("array count out of range", "construct"); if (w < 8 && (uint64_t)cap >> (w * 8)) hr_die("too many elements for the array's length field", "construct"); int64_t hb = (int64_t)w * (lim + 1); uint8_t *p = hr_grow(&hr_ds, hb + cap * esz, 1); if (lim) { hr_vput(p, w, cap); hr_vput(p + w, w, n); } else hr_vput(p, w, n); return p; }
-static inline uint8_t *hr_vfrom(hsl s, int w, int lim, int64_t esz) { uint8_t *p = hr_vmk(s.n, s.n, w, lim, esz); memcpy(p + (int64_t)w * (lim + 1), s.p, (size_t)(s.n * esz)); return p; }
+static inline uint8_t *hr_vmk(int64_t n, int64_t cap, int w, int lim, int64_t esz) { if (n < 0 || cap < n) hr_die("array count out of range", "construct"); if (w && w < 8 && (uint64_t)cap >> (w * 8)) hr_die("too many elements for the array's length field", "construct"); int64_t hb = w ? (int64_t)w * (lim + 1) : hr_ulen((uint64_t)n); uint8_t *p = hr_grow(&hr_ds, hb + cap * esz, 1); if (!w) { uint64_t v = (uint64_t)n; uint8_t *q = p; do { uint8_t b = v & 127; v >>= 7; *q++ = b | (v ? 128 : 0); } while (v); } else if (lim) { hr_vput(p, w, cap); hr_vput(p + w, w, n); } else hr_vput(p, w, n); return p; }
+static inline uint8_t *hr_vfrom(hsl s, int w, int lim, int64_t esz) { uint8_t *p = hr_vmk(s.n, s.n, w, lim, esz); memcpy(p + hr_vhd(p, w, lim), s.p, (size_t)(s.n * esz)); return p; }
 static inline uint8_t *hr_dsmv(uint8_t *p, int64_t m, int64_t sz) { hr_rinit(&hr_ds); memmove(hr_ds.b + m, p, (size_t)sz); hr_dsk = sz; return hr_ds.b + m; }
-static inline int64_t hr_vszf(const uint8_t *p, int w, int lim, int64_t esz) { return (int64_t)w * (lim + 1) + hr_vget(p, w) * esz; }
+static inline int64_t hr_vszf(const uint8_t *p, int w, int lim, int64_t esz) { return hr_vhd(p, w, lim) + hr_vget(p + (lim ? w : 0), w) * esz; }
 static inline uint8_t *hr_seqpush(hrv *v, const uint8_t *x, int64_t sz) { hr_rinit(v); if (HR_UNLIKELY(v->top + sz > HR_RSZ)) hr_die("array grew past its reservation", "push"); uint8_t *d = v->b + v->top; memmove(d, x, (size_t)sz); v->top += sz; v->n++; return d; }
 static inline void hr_vplace(int64_t c, uint8_t *f, int64_t sz) { hr_rinit(&hr_ds); uint8_t *d = hr_ds.b + c; if (f != d) memmove(d, f, (size_t)sz); hr_ds.n = c + sz; }
 static inline void hr_append(hrv *v, const void *p, int64_t k, int64_t esz) { if (k <= 0) return; uint8_t *d = hr_grow(v, k, esz); memmove(d, p, (size_t)(k * esz)); }
