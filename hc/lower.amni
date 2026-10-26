@@ -364,9 +364,15 @@ recursive fn lmatch(n int, d int) {
 	}
 	ir(I_LBL, 3, -1, -1, -1, lend);
 }
+recursive fn lcond(n int, lf int, onf bool) {
+	let x = ND[n]; let k = x.k as int; let o = x.op as int;
+	if k == N_BIN && (o == T_ANDAND || o == T_OROR) { if (o == T_ANDAND) == onf { lcond(x.a as int, lf, onf); lcond(x.b as int, lf, onf); } else { let lt = nlbl(); lcond(x.a as int, lt, !onf); lcond(x.b as int, lf, onf); ir(I_LBL, 3, -1, -1, -1, lt); } return; }
+	if k == N_UN && o == T_NOT { lcond(x.a as int, lf, !onf); return; }
+	ir(if onf { I_BZ } else { I_BNZ }, 3, -1, lx(n), -1, lf);
+}
 recursive fn lbranch(n int, d int) {
 	let x = ND[n]; let k = x.k as int;
-	if k == N_IF { let l1 = nlbl(); let l2 = nlbl(); ir(I_BZ, 3, -1, lx(x.a as int), -1, l1); lblk(x.b as int, d); ir(I_JMP, 3, -1, -1, -1, l2); ir(I_LBL, 3, -1, -1, -1, l1); if x.c >= 0 { if ND[x.c].k as int == N_IF { lbranch(x.c as int, d); } else { lblk(x.c as int, d); } } ir(I_LBL, 3, -1, -1, -1, l2); return; }
+	if k == N_IF { let l1 = nlbl(); let l2 = nlbl(); lcond(x.a as int, l1, true); lblk(x.b as int, d); ir(I_JMP, 3, -1, -1, -1, l2); ir(I_LBL, 3, -1, -1, -1, l1); if x.c >= 0 { if ND[x.c].k as int == N_IF { lbranch(x.c as int, d); } else { lblk(x.c as int, d); } } ir(I_LBL, 3, -1, -1, -1, l2); return; }
 	if k == N_BLOCK { lblk(n, d); return; }
 	if k == N_MATCH { lmatch(n, d); return; }
 	if k == N_EBLOCK { let l1 = nlbl(); LOOPH.push(DROPS.len as i32); LBRK.push(l1 as i32); LRV.push(d as i32); lblk(x.a as int, d); ir(I_LBL, 3, -1, -1, -1, l1); LOOPH.pop(); LBRK.pop(); LRV.pop(); return; }
@@ -611,7 +617,7 @@ recursive fn lstmt1(n int) {
 	if k == N_INCDEC { let a = x.a as int; let t = deref(at(a)); let p = laddr(a); let v = ldw(p, 0, wof(t)); let r = arith(if x.op as int == T_INC { T_PLUS } else { T_MINUS }, t, v, imm(1), n); stw(p, 0, r, wof(t)); return; }
 	if k == N_FN { return; }
 	if k == N_IF { lbranch(n, -1); return; }
-	if k == N_WHILE { let l0 = nlbl(); let l1 = nlbl(); LOOPH.push(DROPS.len as i32); LCH.push(DROPS.len as i32); LBRK.push(l1 as i32); LCNT.push(l0 as i32); LRV.push(-1); ir(I_LBL, 3, -1, -1, -1, l0); ir(I_BZ, 3, -1, lx(x.a as int), -1, l1); lblk(x.b as int, -1); ir(I_JMP, 3, -1, -1, -1, l0); ir(I_LBL, 3, -1, -1, -1, l1); LOOPH.pop(); LCH.pop(); LBRK.pop(); LCNT.pop(); LRV.pop(); return; }
+	if k == N_WHILE { let l0 = nlbl(); let l1 = nlbl(); LOOPH.push(DROPS.len as i32); LCH.push(DROPS.len as i32); LBRK.push(l1 as i32); LCNT.push(l0 as i32); LRV.push(-1); ir(I_LBL, 3, -1, -1, -1, l0); lcond(x.a as int, l1, true); lblk(x.b as int, -1); ir(I_JMP, 3, -1, -1, -1, l0); ir(I_LBL, 3, -1, -1, -1, l1); LOOPH.pop(); LCH.pop(); LBRK.pop(); LCNT.pop(); LRV.pop(); return; }
 	if k == N_LOOP { lbranch(n, -1); return; }
 	if k == N_FOR { lfor(n); return; }
 	if k == N_BLOCK { lblk(n, -1); return; }
