@@ -124,13 +124,13 @@ recursive fn sig_inst(i int) {
 	for j in ND[node].n {
 		let p = kid(node, j);
 		var t = -1;
-		if ND[p].a >= 0 { t = rtype(ND[p].a as int, ns); } else { t = gb_find(upname(p)); if t < 0 { t = T_ERRT; } }
+		if ND[p].a >= 0 { t = decode_rel(rtype(ND[p].a as int, ns)); } else { t = gb_find(upname(p)); if t < 0 { t = T_ERRT; } }
 		pts.push(t as i32);
 	}
 	FI_[i].p0 = TYL.len as i32; TYL.append(pts[..]); FI_[i].pn = pts.len as i32;
 	if ND[node].b >= 0 {
 		let rl = ND[node].b as int;
-		if ND[rl].n == 1 { FI_[i].ret = rtype(kid(rl, 0), ns) as i32; }
+		if ND[rl].n == 1 { FI_[i].ret = decode_rel(rtype(kid(rl, 0), ns)) as i32; }
 		else { var rs i32[..64] = []; for j in ND[rl].n { let r0 = rtype(kid(rl, j), ns); rs.push(r0 as i32); } FI_[i].ret = tlist(TY_MULTI, rs[..], -1) as i32; }
 	} else { FI_[i].ret = -1; FI_[i].rinf = true; if (ND[node].fl & F_EXTERN) != 0 || surely_void(node) { FI_[i].ret = T_VOID as i32; FI_[i].rinf = false; } }
 	GB.pop_n(GB.len - g0);
@@ -276,7 +276,7 @@ recursive fn resolve(n int, name int, ns int, a0 int, an int, blk int, tyargs in
 		var worst = 0;
 		for j in an {
 			let p = kid(fnode, j);
-			let pt = if ND[p].a >= 0 { rtype(ND[p].a as int, fns) } else { gb_find(upname(p)) };
+			let pt = decode_rel(if ND[p].a >= 0 { rtype(ND[p].a as int, fns) } else { gb_find(upname(p)) });
 			let r = arg_rank(DIDX[a0 + j] as int, ARGW[a0 + j] as int, pt);
 			if r < 0 { worst = 99; break; }
 			if r > worst { worst = r; }
@@ -552,7 +552,7 @@ recursive fn ck_builtin(n int, b int, recv int, want int) int {
 	if b == B_ASSERT { ck(arg(0), T_BOOL); conv(arg(0), T_BOOL); narrow_push(arg(0)); return set_t(n, T_VOID); }
 	if b == B_ABORT { let t = ck(arg(0), TT_STR); if is_pending(t) { default_t(arg(0)); } return set_t(n, T_VOID); }
 	if b == B_EXIT { ck(arg(0), T_I64); conv(arg(0), T_I64); return set_t(n, T_VOID); }
-	if b == B_DEFAULT { let ta = x.c as int; if ta < 0 { cerr(n, "default needs a type: default<T>()"); return set_t(n, T_ERRT); } return set_t(n, rtype(kid(ta, 0), ns_of(n))); }
+	if b == B_DEFAULT { let ta = x.c as int; if ta < 0 { cerr(n, "default needs a type: default<T>()"); return set_t(n, T_ERRT); } return set_t(n, decode_rel(rtype(kid(ta, 0), ns_of(n)))); }
 	if b == B_COPY {
 		let c = arg(0);
 		if recv < 0 { ck(c, want); }
@@ -586,7 +586,7 @@ recursive fn ck_builtin(n int, b int, recv int, want int) int {
 	let e = TY[rt].a as int;
 	if b == B_PUSH { if total != 2 { cerr(n, "push takes one value"); return set_t(n, T_ERRT); } let c = arg(1); ck(c, e); conv(c, e); return set_t(n, t_ref(e, 0)); }
 	if b == B_APPEND { let c = arg(1); let t = ck(c, t_slice(e, true)); if TY[t].k == TY_STRLIT { set_t(c, TT_STR); } else { if TY[t].k == TY_ARRLIT { conv(c, t_arr(e, A_GROW, -1, -1)); } else { let dt = deref(t); if (TY[dt].k == TY_ARR || TY[dt].k == TY_SLICE) && TY[dt].a as int != e { cerr(c, "append of a different element type"); } } } return set_t(n, T_VOID); }
-	if b == B_POP { return set_t(n, e); }
+	if b == B_POP { return set_t(n, decode_rel(e)); }
 	if b == B_POPN { ck(arg(1), T_I64); conv(arg(1), T_I64); return set_t(n, T_VOID); }
 	if b == B_RESIZE { ck(arg(1), T_I64); conv(arg(1), T_I64); if total > 2 { ck(arg(2), e); conv(arg(2), e); } return set_t(n, T_VOID); }
 	if b == B_CLEAR { return set_t(n, T_VOID); }

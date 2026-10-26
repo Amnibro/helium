@@ -365,7 +365,7 @@ fn deref_place(t int) int { if TY[t].k == TY_REF && TY[t].c < 0 { TY[t].a as int
 recursive fn ck_id(n int, want int) int {
 	let name = ND[n].s as int;
 	let v = find_lv(name);
-	if v >= 0 { set_r(n, R_LOCAL, v); note_cap(v); return set_t(n, if (LVS[v].fl & LV_FLET) != 0 { T_FLIT } else { LVS[v].ty as int }); }
+	if v >= 0 { set_r(n, R_LOCAL, v); note_cap(v); return set_t(n, if (LVS[v].fl & LV_FLET) != 0 { T_FLIT } else { decode_rel(LVS[v].ty as int) }); }
 	let ns = ns_of(n);
 	if find_nest(name) >= 0 || block_binding(name) >= 0 { set_x(n, -1); return set_t(n, T_FNV); }
 	var d = lookup_q(name, ns, D_GLOBAL);
@@ -375,7 +375,7 @@ recursive fn ck_id(n int, want int) int {
 		if ci >= 0 { set_r(n, R_CONST, ci); return set_t(n, T_ILIT); }
 		set_r(n, R_GLOBAL, d);
 		let gt = global_type(d);
-		return set_t(n, if GLST[d] == 7 { T_FLIT } else { gt });
+		return set_t(n, if GLST[d] == 7 { T_FLIT } else { decode_rel(gt) });
 	}
 	d = lookup_q(name, ns, D_FN);
 	if d >= 0 { set_r(n, R_FN, d); set_x(n, -1); return set_t(n, T_FNV); }
@@ -414,7 +414,7 @@ recursive fn global_type(d int) int {
 	let saved = AOWN; let sc = CFN;
 	AOWN = GLOBI; CFN = GLOBI;
 	var t = -1;
-	if x.a >= 0 { t = rtype(x.a as int, ns_of(g)); GLT[d] = t as i32; if x.b >= 0 { let iv = kid(x.b as int, 0); ck(iv, t); conv(iv, t); } }
+	if x.a >= 0 { t = rtype(x.a as int, ns_of(g)); GLT[d] = t as i32; if x.b >= 0 { let iv = kid(x.b as int, 0); ck(iv, decode_rel(t)); conv(iv, decode_rel(t)); } }
 	else {
 		if GLST[d] == 1 { cerr(g, "global initializer depends on itself"); AOWN = saved; CFN = sc; return T_ERRT; }
 		GLST[d] = 1;
@@ -446,7 +446,7 @@ recursive fn has_rel(t int) bool {
 	HRELC[t] = if r { 1 } else { 0 };
 	r
 }
-fn decode_rel(ft int) int { if TY[ft].k == TY_REF && TY[ft].c >= 0 { t_ref(TY[ft].a as int, TY[ft].fl as int) } else { ft } }
+fn decode_rel(ft int) int { if ft >= 0 && TY[ft].k == TY_REF && TY[ft].c >= 0 { t_ref(TY[ft].a as int, TY[ft].fl as int) } else { ft } }
 recursive fn ck_dot(n int, want int) int {
 	let x = ND[n];
 	let a = x.a as int;
@@ -629,7 +629,7 @@ recursive fn ck_for(n int) int {
 	}
 	if x.l >= 0 { et = rtype(x.l as int, ns_of(n)); }
 	let byref = (x.fl & 1) != 0 || is_bytes(et);
-	let v = add_lv(x.s as int, if byref { t_ref(et, 0) } else { et }, LV_FOR | (if byref { LV_REF } else { 0 }), n);
+	let v = add_lv(x.s as int, if byref { t_ref(et, 0) } else { decode_rel(et) }, LV_FOR | (if byref { LV_REF } else { 0 }), n);
 	set_r(n, R_LOCAL, v);
 	if x.c >= 0 { let iv = add_lv(x.c as int, if x.n >= 0 { rtype(x.n as int, ns_of(n)) } else { T_I64 }, LV_FOR, n); set_x(n, ax(n) | (iv << 2)); }
 	LOOPD++;
@@ -810,8 +810,8 @@ recursive fn ck_vdecl(n int) {
 			t = t_arr(T_ERRT, A_GROW, -1, -1);
 			set_t(init, t);
 		} else {
-			let it = ck(init, dt);
-			if dt >= 0 { if byref { if !(TY[dt].k == TY_REF) { conv(init, dt); } } else { conv(init, dt); } }
+			let it = ck(init, decode_rel(dt));
+			if dt >= 0 { if byref { if !(TY[dt].k == TY_REF) { conv(init, dt); } } else { conv(init, decode_rel(dt)); } }
 			else {
 				if TY[it].k == TY_FLIT && (lf & (LV_VAR | LV_REF)) == 0 { lf = lf | LV_FLET; }
 				t = default_t(init);
@@ -846,7 +846,7 @@ recursive fn ck_assign(n int) {
 		}
 		if ND[x.a].k == N_ID && rk(x.a as int) == R_LOCAL {
 			let v = rv(x.a as int);
-			if is_opt(at(x.b as int)) || TY[at(x.b as int)].k == TY_NULL {
+			if (is_opt(at(x.b as int)) || TY[at(x.b as int)].k == TY_NULL) && decode_rel(LVS[v].ty as int) == LVS[v].ty as int {
 				LVS[v].ty = t_ref(TY[LVS[v].ty].a as int, RF_OPT) as i32;
 			}
 		}
