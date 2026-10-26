@@ -134,7 +134,7 @@ recursive fn has_valret(n int) bool {
 	if n < 0 { return false; }
 	let x = ND[n]; let k = x.k as int;
 	if k == N_RET { return x.n > 0 && x.s < 0; }
-	if k == N_FN { return false; }
+	if k == N_FN || k == N_CFOR { return k == N_CFOR && has_valret(x.c as int); }
 	if k == N_INT || k == N_FLT || k == N_STR || k == N_ID { return false; }
 	if k >= 40 && k < 50 { return false; }
 	if has_valret(x.a as int) || has_valret(x.b as int) || has_valret(x.c as int) || has_valret(x.d as int) { return true; }
@@ -146,7 +146,7 @@ recursive fn check_inst(i int) {
 	if FI_[i].st != 0 { return; }
 	let node = FI_[i].node as int;
 	FI_[i].st = 1;
-	if (ND[node].fl & F_EXTERN) != 0 { FI_[i].st = 2; return; }
+	if (ND[node].fl & F_EXTERN) != 0 { let sa0 = AOWN; let sc0 = CFN; AOWN = i; CFN = i; for j in ND[node].n { let p = kid(node, j); if ND[p].b >= 0 { let pt = ptype_of(i, j); ck(ND[p].b as int, pt); conv(ND[p].b as int, pt); } } AOWN = sa0; CFN = sc0; FI_[i].st = 2; return; }
 	let sa = AOWN; let sc = CFN; let sm = SCOPE.len; let ld = LOOPD; let bt = BRK_T.len; let nm0 = NESTS.len;
 	AOWN = i; CFN = i; LOOPD = 0;
 	let g0 = GB.len;
@@ -236,7 +236,7 @@ recursive fn resolve(n int, name int, ns int, a0 int, an int, blk int, tyargs in
 		else { if worst == bestr && user == bestuser { tie = true; } }
 	}
 	CANDS.pop_n(CANDS.len - c0);
-	if best < 0 { BINDS.pop_n(BINDS.len - nb0); return -1, 0, 0; }
+	if best < 0 { BINDS.pop_n(BINDS.len - nb0); return -1, nb0, 0; }
 	if tie && report { var m byte[>..] = []; format(m, "ambiguous call to ", nm(name)); cerr(n, m); }
 	if bestb0 > nb0 { for q in 0..bestbn { BINDS[nb0 + q] = BINDS[bestb0 + q]; } }
 	BINDS.pop_n(BINDS.len - nb0 - bestbn);
@@ -411,6 +411,8 @@ recursive fn ck_builtin(n int, b int, recv int, want int) int {
 	let na = x.n as int;
 	fn arg(i int) int { if recv >= 0 { if i == 0 { recv } else { kid(n, i - 1) } } else { kid(n, i) } }
 	let total = na + (if recv >= 0 { 1 } else { 0 });
+	let need = if b == B_PRINT || b == B_STR || b == B_DEFAULT || b == B_POP || b == B_CLEAR { 0 } else { if b == B_PUSH || b == B_APPEND || b == B_POPN || b == B_RESIZE || b == B_INDEXOF { 2 } else { 1 } };
+	if total < need { cerr(n, "too few arguments to a builtin"); return set_t(n, T_ERRT); }
 	if b == B_PRINT || b == B_STR {
 		for i in na { let c = kid(n, i); let t = ck(c, -1); if is_pending(t) { default_t(c); } hook_walk(fin_t(c)); }
 		return set_t(n, if b == B_STR { t_arr(T_U8, A_GROW, -1, -1) } else { T_VOID });
@@ -466,6 +468,7 @@ recursive fn ck_slit(n int, want int) int {
 	if TY[t].k == TY_STRUCT { si = TY[t].a as int; }
 	if TY[t].k == TY_VARIANT { si = ENV[(ENI[TY[t].a].v0 as int) + (TY[t].c as int)].si as int; }
 	if si < 0 { if TY[t].k != TY_ERR { cerr(n, "not a struct type"); } return set_t(n, T_ERRT); }
+	for i in x.n { if ND[kid(n, i)].k as int == N_CFOR { cerr(kid(n, i), "const for is not supported by the self-hosted compiler yet"); return set_t(n, T_ERRT); } }
 	let nf = STI[si].fnum as int;
 	let named = x.n > 0 && ND[kid(n, 0)].s >= 0;
 	var fpos = 0;

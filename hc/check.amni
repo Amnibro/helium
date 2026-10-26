@@ -121,6 +121,7 @@ fn widens(f int, t int) bool {
 	false
 }
 recursive fn cval(n int) i64, bool, bool {
+	if n < 0 { return 0, false, false; }
 	let x = ND[n]; let k = x.k as int;
 	if k == N_INT { return TK[x.t].v, TK[x.t].uns, true; }
 	if k == N_UN { let v, u, ok = cval(x.a as int); if !ok { return 0, false, false; } if x.op as int == T_MINUS { return -v, false, true; } if x.op as int == T_BITNOT { return ~v, false, true; } return 0, false, false; }
