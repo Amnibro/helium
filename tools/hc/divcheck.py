@@ -1,7 +1,7 @@
 import random,sys,os,subprocess,tempfile,pathlib
 T={'int':(64,1),'uint':(64,0),'i32':(32,1),'u32':(32,0),'i16':(16,1),'u16':(16,0),'i8':(8,1),'u8':(8,0)}
 DS=[1,2,3,4,5,6,7,9,10,11,12,13,16,25,31,60,64,97,100,125,127,128,255,256,641,1000,1024,4096,10007,65535,65536,1000000,2147483647,2147483648,4294967295,4294967296,4294967297,1099511627783,(1<<61)+1,(1<<62)-1,(1<<62),(1<<63)-25,(1<<63),(1<<64)-1,(1<<64)-2,(1<<63)+1]
-r=random.Random(int(sys.argv[1]) if len(sys.argv)>1 else 7);L=['use std'];M=['main():']
+r=random.Random(int(sys.argv[1]) if len(sys.argv)>1 else 7);DS=DS+[r.randrange(2,1<<r.choice([8,16,32,48,63])) for _ in range(24)];L=['use std'];M=['main():']
 def ok(t,d):
     b,s=T[t];return (-(1<<(b-1))<=d<(1<<(b-1))) if s else (0<d<(1<<b))
 def lit(t,d): return f'({d} as! {t})' if d>=0 else f'(({d}) as! {t})'
