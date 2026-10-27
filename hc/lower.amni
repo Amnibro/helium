@@ -127,6 +127,7 @@ recursive fn laddr(n int) int {
 }
 recursive fn lidx(n int) int {
 	let x = ND[n]; let a = x.a as int; let bt = at(a); let d = deref(bt); let e = TY[d].a as int; let es = tsz(e);
+	if is_seq(d) { lerr(n, "an array of variable-size elements is sequential: iterate it instead of indexing"); return imm(0); }
 	var base = -1; var len = -1; let sl = TY[d].k == TY_SLICE || TY[d].k == TY_STRLIT || is_vimg(d);
 	if !sl && !is_fix(d) && !is_lim(d) && !is_res(d) { lerr(n, "indexing this array kind"); return lx(x.b as int); }
 	let b = if sl { let p, q = lsl(a); base = p; len = q; -1 } else { laddr(a) };
@@ -205,7 +206,7 @@ recursive fn lres_len(n int, b int, va int, ca int, cw int, eb int, cap int, nn 
 	let fx = if total > 2 && rv0 < 0 { let q = nv(); ir(I_SLOT, 8, q, -1, -1, slot(es, tal(e))); lstore(q, barg(n, 2), e); q } else { -1 };
 	let l0 = nlbl(); let lend = nlbl(); ir(I_BNZ, 3, -1, lcmp(nn, cur, CC_G), -1, l0); stw(ca, 0, nn, cw); ir(I_JMP, 3, -1, -1, -1, lend); ir(I_LBL, 3, -1, -1, -1, l0);
 	let cnt = bin(B_SUB, 3, nn, cur, -1);
-	let p = if cap >= 0 { stw(ca, 0, nn, cw); bin(B_ADD, 3, eb, bin(B_MUL, 3, cur, imm(es), -1), -1) } else { rtcall("rt_grow", [va as i32, cnt as i32, imm(es) as i32]) };
+	let p = if cap >= 0 { stw(ca, 0, nn, cw); bin(B_ADD, 3, eb, bin(B_MUL, 3, cur, imm(es), -1), -1) } else { lgrow(va, cnt, es) };
 	ir(I_ZERO, 3, p, -1, bin(B_MUL, 3, cnt, imm(es), -1), 0);
 	if fx >= 0 || rv0 >= 0 { let kv = nv(); ir(I_MOV, 3, kv, imm(0), -1, 0); let lt = nlbl(); let le = nlbl(); ir(I_LBL, 3, -1, -1, -1, lt); ir(I_BZ, 3, -1, lcmp(kv, cnt, CC_L), -1, le); let sa = bin(B_ADD, 3, p, bin(B_MUL, 3, kv, imm(es), -1), -1); if rv0 >= 0 { rel_store(sa, rv0, e); } else { ir(I_COPY, 3, sa, fx, imm(es), 0); } ir(I_MOV, 3, kv, bin(B_ADD, 3, kv, imm(1), -1), -1, 0); ir(I_JMP, 3, -1, -1, -1, lt); ir(I_LBL, 3, -1, -1, -1, le); }
 	ir(I_LBL, 3, -1, -1, -1, lend);
@@ -606,6 +607,11 @@ recursive fn lintrinsic(n int, i int, args i32[>..<]&) int {
 }
 var BHASR bool; var BRECV int;
 fn barg(n int, i int) int { if BHASR { if i == 0 { BRECV } else { kid(n, i - 1) } } else { kid(n, i) } }
+fn lgrow(va int, k int, es int) int {
+	let rz = hdef("GS_STACK_RESERVE"); let lim = (if rz >= 0 { rz & -4096 } else { 1 << 34 }) / es; let b = ldw(va, 0, 3); let n = ldw(va, 8, 3); let nn = bin(B_ADD, 3, n, k, -1); let p = nv(); let ls = nlbl(); let le = nlbl();
+	ir(I_BZ, 3, -1, b, -1, ls); ir(I_BZ, 3, -1, lcmp(nn, imm(lim), CC_LE), -1, ls); stw(va, 8, nn, 3); ir(I_MOV, 3, p, bin(B_ADD, 3, b, bin(B_MUL, 3, n, imm(es), -1), -1), -1, 0); ir(I_JMP, 3, -1, -1, -1, le);
+	ir(I_LBL, 3, -1, -1, -1, ls); ir(I_MOV, 3, p, rtcall("rt_grow", [va as i32, k as i32, imm(es) as i32]), -1, 0); ir(I_LBL, 3, -1, -1, -1, le); p
+}
 fn rtcall(name const byte[:], args i32[:]) int { let s0 = ARGL.len; ARGL.append(args); let d = nv(); ir(I_CALL, 3, d, s0, args.len, rt_fn(name)); d }
 fn locsl(n int) int, int { let lc = locs(n); let r = nv(); ir(I_RADDR, 8, r, -1, -1, LOCS[2 * lc] as int); return r, imm(LOCS[2 * lc + 1] as int); }
 recursive fn lbuiltin(n int, b int) int { lbuiltin_to(n, b, -1) }
@@ -671,8 +677,8 @@ recursive fn lbuiltin1(n int, b int, dst int, total int) int {
 		}
 		let va = laddr(rc);
 		if is_res(d) {
-			if b == B_PUSH && (is_rel(e) || has_rel(e)) { let p = rtcall("rt_grow", [va as i32, imm(1) as i32, imm(es) as i32]); lstore(p, barg(n, 1), e); return p; }
-			if b == B_PUSH { let ta = nv(); ir(I_SLOT, 8, ta, -1, -1, slot(es, tal(e))); lstore(ta, barg(n, 1), e); let p = rtcall("rt_grow", [va as i32, imm(1) as i32, imm(es) as i32]); ir(I_COPY, 3, p, ta, imm(es), 0); return p; }
+			if b == B_PUSH && (is_rel(e) || has_rel(e)) { let p = lgrow(va, imm(1), es); lstore(p, barg(n, 1), e); return p; }
+			if b == B_PUSH { let ta = nv(); ir(I_SLOT, 8, ta, -1, -1, slot(es, tal(e))); lstore(ta, barg(n, 1), e); let p = lgrow(va, imm(1), es); if is_scal(e) && !is_vimg(e) { let w = wof(e); stw(p, 0, ldw(ta, 0, w), w); } else { ir(I_COPY, 3, p, ta, imm(es), 0); } return p; }
 			if b == B_APPEND { let src = barg(n, 1); if ND[src].k as int == N_ARR && ND[src].a < 0 && has_call(src) && ND[src].n > 0 { let k0 = ND[src].n as int; let ta = nv(); ir(I_SLOT, 8, ta, -1, -1, slot(k0 * es, tal(e))); for i in k0 { lstore(addi(ta, i * es), kid(src, i), e); } let p = rtcall("rt_grow", [va as i32, imm(k0) as i32, imm(es) as i32]); ir(I_COPY, 3, p, ta, imm(k0 * es), 0); return imm(0); } if ND[src].k as int == N_ARR && ND[src].a < 0 { let k0 = ND[src].n as int; let p = rtcall("rt_grow", [va as i32, imm(k0) as i32, imm(es) as i32]); for i in k0 { lstore(addi(p, i * es), kid(src, i), e); } return imm(0); } let sp, sn = lsl(src); let p = rtcall("rt_grow", [va as i32, sn as i32, imm(es) as i32]); ir(I_COPY, 3, p, sp, bin(B_MUL, 3, sn, imm(es), -1), 0); return imm(0); }
 			if b == B_POP { let lp, ln = locsl(n); rtcall("rt_pop", [va as i32, lp as i32, ln as i32]); let ea = bin(B_ADD, 3, ldw(va, 0, 3), bin(B_MUL, 3, ldw(va, 8, 3), imm(es), -1), -1); if is_rel(e) { return rel_load(ea, e); } if is_scal(e) { return ldw(ea, 0, wof(e)); } if is_pair(e) { PAIR2 = ldw(ea, 8, 3); return ldw(ea, 0, 3); } if dst >= 0 { ir(I_COPY, 3, dst, ea, imm(es), 0); return dst; } return ea; }
 			if b == B_CLEAR { stw(va, 8, imm(0), 3); stw(va, 16, imm(0), 3); return imm(0); }
@@ -1091,7 +1097,7 @@ fn lower_program(out byte[>..]&) bool {
 	mov_rr(RDI, RSP); call_f(rst); call_f(gi); call_f(rm); mov_ri(RDI, 0); call_f(rinit); ud2();
 	var irw byte[>..] = []; let dump = env("HC_IR", irw);
 	var noi byte[>..] = []; let opt = !env("HC_NOOPT", noi); if opt { optimize_all(); }
-	for f, i in NFS { if dump && f.inst >= 0 && nm(FI_[f.inst].name as int) == irw[..] { ir_dump(i); } if opt { regalloc(i); } else { REGOF.clear(); RUSED.clear(); VZERO.clear(); FK.clear(); XREG.clear(); } cg_fn(i); }
+	for f, i in NFS { if dump && f.inst >= 0 && nm(FI_[f.inst].name as int) == irw[..] { ir_dump(i); } if opt { regalloc(i); } else { REGOF.clear(); RUSED.clear(); VZERO.clear(); FK.clear(); XREG.clear(); SVR.clear(); } cg_fn(i); }
 	var dbg byte[>..] = []; if env("HC_NDEBUG", dbg) { for f, i in NFS { print(if f.inst >= 0 { nm(FI_[f.inst].name as int) } else { "<init>" }, " ", 0x400000 + 176 + (FOFF[i] as int), " nv ", f.nv, " sb ", f.sb); } }
 	if szp >= 0 { put32(szp, DA.len + BSS); }
 	let o = elf_write(entry);
