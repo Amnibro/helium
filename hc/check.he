@@ -701,6 +701,7 @@ recursive ck_match(n int, want int) int:
 	if TY[st].k == TY_VARIANT: st = t_enum(TY[st].a, false); set_cv(x.a, st)
 	d := deref(st)
 	rt ~= -1
+	rte ~= -1
 	allv ~= true
 	ai := flat_items(n); sa := AOWN; na := ai.len / 2
 	for i na:
@@ -731,6 +732,8 @@ recursive ck_match(n int, want int) int:
 		else:
 			if !ends(ax0.b):
 				if rt < 0 || is_pending(rt): rt = bt
+			else: if rte < 0 { rte = bt }
+	if rt < 0 && allv: rt = rte
 	AOWN = sa; if !allv || rt < 0: return set_t(n, T_VOID)
 	allw ~= want >= 0 && want != T_VOID
 	if allw:

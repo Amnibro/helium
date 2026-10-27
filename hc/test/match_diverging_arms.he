@@ -1,0 +1,10 @@
+use std
+use os
+f(a int) bool: abort("never"); false
+pick(k int) bool:
+	o := match k { 0 => f(k), _ => f(k + 1) }
+	if o { true } else { false }
+main():
+	if args().len > 99: print(str(pick(1)))
+	n := match args().len { 0 => 7, _ => 7 }
+	print(str("ok ", n))
