@@ -82,7 +82,7 @@ recursive fn try_load(path const byte[:], pk int) int {
 	for q in im0..im1 { let n = IMPS[q] as int; if ND[n].a >= 0 && f != 0 && pk_find(ND[n].s as int) < 0 { var m byte[>..] = []; format(m, nm(FILES[f].name as int), " needs the package ", nm(ND[n].s as int), ": add\n    import ", nm(ND[n].s as int), " from \"", tok_str(ND[n].a as int), "\";\nto ", nm(FILES[0].name as int), " (packages are declared by the root file only)"); derr(ND[n].t as int, m); return -2; } if load_import(ND[n].s as int, f, ND[n].t as int) < 0 { return -2; } }
 	f
 }
-recursive fn try_ext(p const byte[:], pk int) int { var a byte[>..] = []; a.append(p); a.append(".amni"); let r = try_load(a[..], pk); if r != -1 { return r; } a.resize(p.len); a.append(".goose"); try_load(a[..], pk) }
+recursive fn try_ext(p const byte[:], pk int) int { var a byte[>..] = []; a.append(p); a.append(".he"); let r0 = try_load(a[..], pk); if r0 != -1 { return r0; } a.resize(p.len); a.append(".amni"); let r = try_load(a[..], pk); if r != -1 { return r; } a.resize(p.len); a.append(".goose"); try_load(a[..], pk) }
 fn lib_path(name const byte[:]) byte[..1024] { var p byte[..1024] = []; p.append(LIBDIR); p.push('/'); p.append(name); p.append(".amni"); p }
 fn imp_rel(t int) bool { for n in IMPS { if ND[n].t as int == t && ND[n].k == N_IMPORT { return ND[n].fl == 1; } } false }
 recursive fn load_import(name int, from int, t int) int {

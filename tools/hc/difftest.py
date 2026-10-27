@@ -14,8 +14,8 @@ def run(f):
     c = W / (f.stem + ".c"); x = W / f.stem
     env = dict(os.environ, HC_LIB=str(R / "hc" / "lib"))
     nat = os.environ.get("HC_NATIVE") == "1"
-    dbg = nat and "GS_DEBUG" in "".join(l for l in f.read_text(errors="replace").split("\n")[:5] if l.startswith("// runtime-define:")) + os.environ.get("HC_DEFS", "")
-    defs = ["-D" + d.strip() for l in f.read_text(errors="replace").split("\n")[:5] if l.startswith("// runtime-define:") for d in l.split(":", 1)[1].split(",")] + ["-D" + d for d in os.environ.get("HC_DEFS", "").split(",") if d]
+    dbg = nat and "GS_DEBUG" in "".join(l for l in f.read_text(errors="replace").split("\n")[:5] if l.startswith(("// runtime-define:", "# runtime-define:"))) + os.environ.get("HC_DEFS", "")
+    defs = ["-D" + d.strip() for l in f.read_text(errors="replace").split("\n")[:5] if l.startswith(("// runtime-define:", "# runtime-define:")) for d in l.split(":", 1)[1].split(",")] + ["-D" + d for d in os.environ.get("HC_DEFS", "").split(",") if d]
     try: p = subprocess.run([HC, str(f), str(x if nat else c)] + (["--native", *defs] if nat else []) + (["--debug"] if dbg else []), capture_output=True, timeout=30, env=env)
     except subprocess.TimeoutExpired: return f, "check", "timeout"
     if p.returncode != 0: return f, ("native" if nat and b"native backend" in p.stdout + p.stderr else "check"), (p.stdout + p.stderr).decode(errors="replace").strip().split("\n")[0][:220]
@@ -35,7 +35,7 @@ def run(f):
     if ab != (p.returncode != 0): return f, "exit", f"exit {p.returncode} {p.stderr.decode(errors='replace')[:120]}"
     x.unlink(); c.unlink()
     return f, "pass", ""
-files = sorted(f for f in S.rglob("*.amni") if flt in str(f))
+files = sorted(f for f in [*S.rglob("*.amni"), *S.rglob("*.he")] if flt in str(f))
 res = collections.defaultdict(list)
 with cf.ThreadPoolExecutor(16) as ex:
     for r in ex.map(run, files):

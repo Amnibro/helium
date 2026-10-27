@@ -66,10 +66,24 @@ fn declname(ctx const byte[:]) int {
 	if is(T_CC) { CURNS = a; return ident(ctx); }
 	a
 }
+var BEND i32[>..]; var KEEPEND = false;
+fn he() bool { FILES[TK[P].f].he }
+fn semi(ctx const byte[:]) { if TK[P].lay && (tk() == T_RC || tk() == T_EOF) { return; } ex(T_SEMI, ctx); }
+fn he_decl() bool {
+	if !he() || tk() != T_IDENT && tk() != T_CC { return false; }
+	var j = P; while tkat(j) == T_IDENT || tkat(j) == T_CC { j++; }
+	if tkat(j) == T_LT { var d = 0; loop { let k = tkat(j); if k == T_LT { d++; } if k == T_GT { d--; } if k == T_SHR { d -= 2; } if k == T_EOF || k == T_SEMI || k == T_LC { return false; } j++; if d <= 0 { break; } } }
+	if tkat(j) != T_LP { return false; }
+	var d = 0; loop { let k = tkat(j); if k == T_LP { d++; } if k == T_RP { d--; } if k == T_EOF { return false; } j++; if d == 0 { break; } }
+	loop { let k = tkat(j); if k == T_LC { return TK[j].lay; } if k == T_SEMI || k == T_RC || k == T_EOF || k == T_FAT || k == T_ASSIGN { return false; } j++; }
+	false
+}
+fn in_ahead() bool { var j = P; var d = 0; loop { let k = tkat(j); if k == T_LP || k == T_LB { d++; } if k == T_RP || k == T_RB { d--; } if d == 0 && k == K_IN { return true; } if k == T_LC || k == T_SEMI || k == T_EOF || k == T_RC { return false; } j++; } false }
 fn at_word(w int) bool { tk() == T_IDENT && TK[P].v == w }
-fn at_inline() bool { at_word(NAME_INLINE) && (tkat(P + 1) == K_FN || tkat(P + 1) == K_RECURSIVE || tkat(P + 1) == K_THREADFN) }
+fn he_fn_at(j int) bool { FILES[TK[P].f].he && tkat(j) == T_IDENT && (tkat(j + 1) == T_LP || tkat(j + 1) == T_LT) }
+fn at_inline() bool { at_word(NAME_INLINE) && (tkat(P + 1) == K_FN || tkat(P + 1) == K_RECURSIVE || tkat(P + 1) == K_THREADFN || he_fn_at(P + 1)) }
 fn at_checkfree() bool { let n = tkat(P + 1); at_word(NAME_CHECKFREE) && (n == K_FN || n == K_RECURSIVE || n == K_THREADFN || n == K_SIMD || n == K_EXTERN || n == T_IDENT) }
-fn at_lut() bool { at_word(NAME_LUT) && tkat(P + 1) == K_FN }
+fn at_lut() bool { at_word(NAME_LUT) && (tkat(P + 1) == K_FN || he_fn_at(P + 1)) }
 fn prim_tok(k int) bool { k >= K_BOOL && k <= K_REAL }
 fn amni_type() bool { let k = tk(); FILES[TK[P].f].amni && (prim_tok(k) || k == T_IDENT || k == T_CC || k == K_FN || k == T_LP || k == K_CONST) }
 fn lenstore() int { let k = tk(); if k == K_U8 || k == K_U16 || k == K_U32 || k == K_U64 || k == K_VARINT || k == K_BYTE || k == K_UINT { nx(); return k; } perr("unsigned integer storage type or varint expected"); 0 }
@@ -189,10 +203,11 @@ fn pfor() int {
 	{ let q_ = ident("for binding"); ND[n].s = q_ as i32; }
 	let fb = FORBIND; FORBIND = true;
 	ND[n].l = -1; ND[n].n = -1;
-	if is(T_COLON) { { let q_ = ptype(); ND[n].l = q_ as i32; } }
-	if is(T_COMMA) { { let q_ = ident("for index binding"); ND[n].c = q_ as i32; } if is(T_COLON) { { let q_ = ptype(); ND[n].n = q_ as i32; } } }
+	let ty_he = he() && in_ahead();
+	if is(T_COLON) || ty_he && tk() != T_COMMA && tk() != K_IN { { let q_ = ptype(); ND[n].l = q_ as i32; } }
+	if is(T_COMMA) { { let q_ = ident("for index binding"); ND[n].c = q_ as i32; } if is(T_COLON) || ty_he && tk() != K_IN { { let q_ = ptype(); ND[n].n = q_ as i32; } } }
 	FORBIND = fb;
-	ex(K_IN, "for statement");
+	if !he() || tk() == K_IN { ex(K_IN, "for statement"); }
 	let s = sub_begin(true);
 	{ let q_ = pexpr(); ND[n].a = q_ as i32; }
 	if is(T_DOTDOT) { { let q_ = pexpr(); ND[n].b = q_ as i32; } }
@@ -216,7 +231,7 @@ fn parms(n int) {
 	while tk() != T_RC && tk() != T_EOF {
 		if tk() == K_CONST && tkat(P + 1) == K_FOR { WS.push(pcfor(2) as i32); }
 		else { let a = ppattern(); ex(T_FAT, "match arm"); { let q_ = pexpr(); ND[a].b = q_ as i32; } WS.push(a as i32); }
-		if !is(T_COMMA) { break; }
+		if !is(T_COMMA) && !(TK[P].lay && is(T_SEMI)) { break; }
 	}
 	setl(n, m);
 	sub_end(s);
@@ -302,7 +317,7 @@ fn ppost() int {
 		if tk() == T_LB { e = pindex(e); continue; }
 		if is(T_DOT) {
 			let nmid = ident("field access");
-			if tk() == T_LC && !NOSL && ND[e].k == N_ID {
+			if tk() == T_LC && !NOSL && !TK[P].lay && ND[e].k == N_ID {
 				let b = mk(N_TNAME, ND[e].t as int); ND[b].s = ND[e].s;
 				let v = mk(N_TVAR, st); ND[v].a = b as i32; ND[v].s = nmid as i32;
 				e = pslit(v, st);
@@ -321,7 +336,7 @@ fn pcall(callee int, tyargs int, st int) int {
 	ex(T_RP, "call arguments");
 	setl(c, m);
 	sub_end(s);
-	if tk() == T_LC && !NOSL { { let q_ = pfunval(); ND[c].b = q_ as i32; } if STMTL { STMTE = true; } }
+	if tk() == T_LC && !NOSL && !TK[P].lay { { let q_ = pfunval(); ND[c].b = q_ as i32; } if STMTL { STMTE = true; } }
 	c
 }
 fn pindex(obj int) int {
@@ -367,7 +382,7 @@ fn pprim() int {
 				return pslit(t, st);
 			}
 		}
-		if tk() == T_LC && !NOSL { let t = mk(N_TNAME, st); ND[t].s = name as i32; return pslit(t, st); }
+		if tk() == T_LC && !NOSL && !TK[P].lay { let t = mk(N_TNAME, st); ND[t].s = name as i32; return pslit(t, st); }
 		let id = mk(N_ID, st); ND[id].s = name as i32;
 		return id;
 	}
@@ -503,7 +518,7 @@ recursive fn pbody(b int) {
 	let m = wbeg();
 	loop {
 		STMTL = false; STMTE = false;
-		if is(T_RC) { break; }
+		if is(T_RC) { if KEEPEND { while BEND.len <= b { BEND.push(-1); } BEND[b] = (P - 1) as i32; } break; }
 		if tk() == T_EOF { perr("expected '}' before end of file"); break; }
 		if !pstmt(b) { break; }
 	}
@@ -512,10 +527,12 @@ recursive fn pbody(b int) {
 }
 fn pstmt(b int) bool {
 	let k = tk();
+	if k == T_SEMI && (TK[P].lay || he()) { nx(); return true; }
+	if he_decl() { WS.push(pfn(true, -1, -1) as i32); return true; }
 	if at_inline() || at_checkfree() || at_lut() || k == K_RECURSIVE || k == K_FN || k == K_THREADFN || k == K_EXTERN || k == K_EXPORT || k == K_SIMD { WS.push(pfn(true, -1, -1) as i32); return true; }
 	if k == K_LET || k == K_VAR || k == K_CONST || k == K_REUSABLE {
 		if k == K_CONST && tkat(P + 1) == K_FOR { WS.push(pcfor(0) as i32); return true; }
-		let v = pvdecl(false); ex(T_SEMI, "variable declaration"); WS.push(v as i32); return true;
+		let v = pvdecl(false); semi("variable declaration"); WS.push(v as i32); return true;
 	}
 	if k == K_GUARD { pguard(b); return false; }
 	STMTL = true;
@@ -525,10 +542,10 @@ fn pstmt(b int) bool {
 	if !STMTE {
 		let o = tk();
 		if o == T_ASSIGN || o == T_DOTASSIGN || o == T_PLUSEQ || o == T_MINUSEQ || o == T_MULEQ || o == T_DIVEQ || o == T_MODEQ || o == T_ANDEQ || o == T_OREQ || o == T_XOREQ || o == T_SHLEQ || o == T_SHREQ {
-			nx(); let r = pexpr(); ex(T_SEMI, "assignment statement");
+			nx(); let r = pexpr(); semi("assignment statement");
 			let n = mk(N_ASSIGN, st); ND[n].op = o as u8; ND[n].a = e as i32; ND[n].b = r as i32; WS.push(n as i32); return true;
 		}
-		if o == T_INC || o == T_DEC { nx(); ex(T_SEMI, "increment statement"); let n = mk(N_INCDEC, st); ND[n].op = o as u8; ND[n].a = e as i32; WS.push(n as i32); return true; }
+		if o == T_INC || o == T_DEC { nx(); semi("increment statement"); let n = mk(N_INCDEC, st); ND[n].op = o as u8; ND[n].a = e as i32; WS.push(n as i32); return true; }
 		if o == T_COMMA { WS.push(pmulti(e, st) as i32); return true; }
 	}
 	if is(T_SEMI) { WS.push(e as i32); return true; }
@@ -547,7 +564,7 @@ fn pmulti(first int, st int) int {
 	if tk() != T_ASSIGN { perr("several values exist only in `return a, b;` and in a call's results, so a block or branch cannot end in `a, b`: return from each branch instead (§7.1)"); }
 	nx();
 	let n = mk(N_ASSIGN, st); ND[n].op = T_COMMA as u8; ND[n].a = tl as i32; { let q_ = pexpr(); ND[n].b = q_ as i32; }
-	ex(T_SEMI, "assignment statement");
+	semi("assignment statement");
 	n
 }
 fn pguard(b int) {
@@ -586,7 +603,7 @@ fn pgenerics() int {
 	let m = wbeg();
 	loop {
 		let g = mk(N_GEN, P); { let q_ = ident("generic parameter list"); ND[g].s = q_ as i32; }
-		if is(T_COLON) { { let q_ = ptype(); ND[g].a = q_ as i32; } }
+		if is(T_COLON) || he() && tk() != T_COMMA && tk() != T_GT && tk() != T_SHR { { let q_ = ptype(); ND[g].a = q_ as i32; } }
 		WS.push(g as i32);
 		if !is(T_COMMA) { break; }
 		if tk() == T_GT || tk() == T_SHR { break; }
@@ -654,7 +671,7 @@ recursive fn pfn(nested bool, cname int, dylib int) int {
 	if is(K_SIMD) { fl |= F_SIMD; }
 	if at_inline() { nx(); fl |= F_INLINE; }
 	if is(K_RECURSIVE) { fl |= F_REC; }
-	if is(K_THREADFN) { fl |= F_THREAD; } else { ex(K_FN, "function declaration"); }
+	if is(K_THREADFN) { fl |= F_THREAD; } else { if !he() || tk() == K_FN { ex(K_FN, "function declaration"); } }
 	{ let q_ = (if nested { ident("function declaration") } else { declname("function declaration") }); ND[n].s = q_ as i32; }
 	ND[n].a = CURNS as i32;
 	{ let q_ = pgenerics(); ND[n].d = q_ as i32; }
@@ -679,7 +696,7 @@ recursive fn pfn(nested bool, cname int, dylib int) int {
 	}
 	if (fl & F_EXTERN) != 0 {
 		if is(T_ASSIGN) { if tk() != T_STR { perr("an extern fn's symbol is a string: fn name(...) = \"symbol\"; (§7.10)"); } cn = P; nx(); }
-		ex(T_SEMI, "extern declaration");
+		semi("extern declaration");
 		let x = mk(N_EXT, st); ND[x].a = cn as i32; ND[x].b = dylib as i32; ND[n].e = x as i32;
 	} else {
 		if (fl & F_EXPORT) != 0 { let x = mk(N_EXT, st); ND[x].a = cn as i32; ND[n].e = x as i32; }
@@ -693,7 +710,9 @@ fn ptop() {
 	let st = P;
 	CURNS = FILENS0;
 	let k = tk();
-	if k == K_NAMESPACE { nx(); FILENS0 = ident("namespace declaration"); CURNS = FILENS0; ex(T_SEMI, "namespace declaration"); return; }
+	if k == T_SEMI && (TK[P].lay || he()) { nx(); return; }
+	if he_decl() { TOP.push(pfn(false, -1, -1) as i32); return; }
+	if k == K_NAMESPACE { nx(); FILENS0 = ident("namespace declaration"); CURNS = FILENS0; semi("namespace declaration"); return; }
 	if k == K_IMPORT {
 		nx();
 		let n = mk(N_IMPORT, st);
@@ -703,14 +722,14 @@ fn ptop() {
 		while is(T_DOT) { path.push('/'); path.append(nm(ident("import"))); }
 		{ let q_ = intern(path); ND[n].s = q_ as i32; }
 		if at_from() || at_word(NAME_FROM) { nx(); if tk() != T_STR { perr("expected the package's source, a string, after from"); } ND[n].a = P as i32; nx(); }
-		ex(T_SEMI, "import");
+		semi("import");
 		TOP.push(n as i32);
 		return;
 	}
 	if at_inline() || at_checkfree() || at_lut() { TOP.push(pfn(false, -1, -1) as i32); return; }
 	if k == K_STRUCT { TOP.push(pstruct() as i32); return; }
 	if k == K_ENUM { TOP.push(penum() as i32); return; }
-	if k == K_TYPE { nx(); let n = mk(N_ALIAS, st); { let q_ = declname("type alias"); ND[n].s = q_ as i32; } ND[n].a = CURNS as i32; ex(T_ASSIGN, "type alias"); { let q_ = ptype(); ND[n].b = q_ as i32; } ex(T_SEMI, "type alias"); TOP.push(n as i32); return; }
+	if k == K_TYPE { nx(); let n = mk(N_ALIAS, st); { let q_ = declname("type alias"); ND[n].s = q_ as i32; } ND[n].a = CURNS as i32; ex(T_ASSIGN, "type alias"); { let q_ = ptype(); ND[n].b = q_ as i32; } semi("type alias"); TOP.push(n as i32); return; }
 	if k == K_EXTERN {
 		nx();
 		var cs = -1;
@@ -728,7 +747,7 @@ fn ptop() {
 		return;
 	}
 	if k == K_RECURSIVE || k == K_FN || k == K_THREADFN || k == K_EXPORT || k == K_SIMD { TOP.push(pfn(false, -1, -1) as i32); return; }
-	if k == K_REUSABLE || k == K_LET || k == K_VAR || k == K_CONST { let v = pvdecl(true); ex(T_SEMI, "global declaration"); TOP.push(v as i32); return; }
+	if k == K_REUSABLE || k == K_LET || k == K_VAR || k == K_CONST { let v = pvdecl(true); semi("global declaration"); TOP.push(v as i32); return; }
 	var m byte[>..] = []; format(m, "top-level declaration expected, found '", cur_text(), "'"); perr(m);
 }
 fn parse_init() {

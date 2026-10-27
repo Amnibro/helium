@@ -15,8 +15,8 @@ let K_LOOP = 77; let K_BLOCK = 78; let K_GUARD = 79; let K_MATCH = 80; let K_RET
 let K_BOOL = 89; let K_VARINT = 90; let K_I8 = 91; let K_I16 = 92; let K_I32 = 93; let K_I64 = 94; let K_U8 = 95; let K_U16 = 96; let K_U32 = 97; let K_U64 = 98; let K_F32 = 99; let K_F64 = 100;
 let K_INT = 101; let K_UINT = 102; let K_BYTE = 103; let K_REAL = 104;
 let NKW = 49;
-struct Tok { k u8, ml bool, uns bool, f u16, line i32, s i32, n i32, w i32, v i64 }
-struct File { s i32, n i32, name i32, amni bool }
+struct Tok { k u8, ml bool, uns bool, lay bool, f u16, line i32, s i32, n i32, w i32, v i64 }
+struct File { s i32, n i32, name i32, amni bool, he bool }
 struct Name { s i32, n i32 }
 var SRC byte[>..];
 var NAMES byte[>..];
@@ -60,6 +60,7 @@ fn esc(p int&, f int, line int) int {
 	lerr(f, line, "unknown escape sequence");
 	-1
 }
+fn lay_else(p0 int) bool { var p = p0; var d = 0; loop { let c = SRC[p]; if c == 0 || c == '\n' || c == '#' { return false; } if c == '"' || c == '\'' { p++; while SRC[p] != c && SRC[p] != 0 && SRC[p] != '\n' { if SRC[p] == '\\' { p++; } p++; } } if c == '(' || c == '[' { d++; } if c == ')' || c == ']' { d--; } if d == 0 && c == '{' { return false; } if d == 0 && c == ':' && SRC[p + 1] != ':' { return true; } if d == 0 && c == ':' { p++; } p++; } false }
 fn lex_file(path const byte[:]) bool {
 	lex_init();
 	var body byte[>..] = [];
@@ -68,15 +69,35 @@ fn lex_file(path const byte[:]) bool {
 	let base = SRC.len;
 	let skip = if body.len >= 3 && body[0] == 0xEF && body[1] == 0xBB && body[2] == 0xBF { 3 } else { 0 };
 	SRC.append(body[skip..]); SRC.push(0); SRC.push(0); SRC.push(0); SRC.push(0);
-	FILES.push(File { base as i32, (body.len - skip) as i32, intern(path) as i32, path.len > 5 && path[^5..] == ".amni" });
-	let amni = FILES[f].amni;
+	FILES.push(File { base as i32, (body.len - skip) as i32, intern(path) as i32, path.len > 5 && path[^5..] == ".amni" || path.len > 3 && path[^3..] == ".he", path.len > 3 && path[^3..] == ".he" });
+	let amni = FILES[f].amni; let he = FILES[f].he; let t0 = TK.len;
+	var dep = 0; var ind i32[>..] = [0]; var inl = 0; var ss = TK.len; var nl = false; var col = 0;
 	var p = base;
 	var line = 1;
-	fn put(k int, s int, e int) { TK.push(Tok { k: k as u8, f: f as u16, line: line as i32, s: s as i32, n: (e - s) as i32, .. }); }
+	fn put(k int, s int, e int) { TK.push(Tok { k: k as u8, f: f as u16, line: line as i32, s: s as i32, n: (e - s) as i32, .. }); let kk = k; if kk == T_SEMI || kk == T_LC || kk == T_RC || kk == T_FAT { ss = TK.len; } }
+	fn lay(k int, s int) { put(k, s, s); TK[TK.len - 1].lay = true; }
+	fn ins(k int, s int) { TK.push(TK[TK.len - 1]); var i = TK.len - 2; while i > ss { TK[i] = TK[i - 1]; i--; } TK[ss] = Tok { k: k as u8, f: f as u16, line: line as i32, s: s as i32, n: 0, lay: true, .. }; }
 	loop {
 		var c = SRC[p];
-		while c == ' ' || c == '\t' || c == '\r' || c == '\n' { if c == '\n' { line++; } p++; c = SRC[p]; }
-		if c == '/' && SRC[p + 1] == '/' { while SRC[p] != '\n' && SRC[p] != 0 { p++; } continue; }
+		while c == ' ' || c == '\t' || c == '\r' || c == '\n' { if c == '\n' { line++; nl = true; col = 0; } else { col++; } p++; c = SRC[p]; }
+		if c == '/' && SRC[p + 1] == '/' && !he { while SRC[p] != '\n' && SRC[p] != 0 { p++; } continue; }
+		if c == '#' && he { while SRC[p] != '\n' && SRC[p] != 0 { p++; } continue; }
+		if he && dep == 0 && (nl || c == 0) && TK.len > t0 {
+			nl = false;
+			while inl > 0 { lay(T_RC, p); inl--; }
+			let lt = TK.len - 1; let top = ind[ind.len - 1] as int;
+			let isel = c == 'e' && SRC[p + 1] == 'l' && SRC[p + 2] == 's' && SRC[p + 3] == 'e' && !idc(SRC[p + 4]);
+			if TK[lt].k as int == T_COLON && TK[lt].lay { if c == 0 || col <= top { return lerr(f, line, "expected an indented block after ':'"); } TK[lt].k = T_LC as u8; ind.push(col as i32); ss = TK.len; }
+			else {
+				let cl = if c == 0 { 0 } else { col };
+				if cl > top { return lerr(f, line, "unexpected indentation"); }
+				while cl < (ind[ind.len - 1] as int) { lay(T_RC, p); ind.pop(); }
+				if cl != (ind[ind.len - 1] as int) { return lerr(f, line, "this line's indentation matches no enclosing block"); }
+				let lk = TK[TK.len - 1].k as int;
+				if !isel && lk != T_SEMI && lk != T_LC { lay(T_SEMI, p); }
+			}
+		}
+		nl = false;
 		if c == '/' && SRC[p + 1] == '*' {
 			p += 2; var nest = 1;
 			while nest > 0 { let d = SRC[p]; if d == 0 { return lerr(f, line, "unterminated /* comment"); } if d == '\n' { line++; } if d == '*' && SRC[p + 1] == '/' { nest--; p++; } else { if d == '/' && SRC[p + 1] == '*' { nest++; p++; } } p++; }
@@ -110,6 +131,8 @@ fn lex_file(path const byte[:]) bool {
 			let id = intern(SRC[s..p]);
 			var k = if id < NKW { T_KW + id } else { T_IDENT };
 			if !amni && k >= K_INT { k = T_IDENT; }
+			if he && dep == 0 && k == K_ELSE && inl > 0 && lay_else(p) { lay(T_RC, s); inl--; }
+			if he && dep == 0 && ind.len == 1 && TK.len == ss && p - s == 3 && SRC[s..p] == "use" && SRC[p] == ' ' { k = K_IMPORT; }
 			put(k, s, p); TK[TK.len - 1].v = id;
 			continue;
 		}
@@ -158,6 +181,9 @@ fn lex_file(path const byte[:]) bool {
 		}
 		p++;
 		var k = -1;
+		if he && (c == ':' && n1 == '=' || c == '~' && n1 == '=') { ins(if c == ':' { K_LET } else { K_VAR }, s); p++; put(T_ASSIGN, s, p); continue; }
+		if he && dep == 0 && c == ':' && n1 != ':' { var q = p; while SRC[q] == ' ' || SRC[q] == '\t' || SRC[q] == '\r' { q++; } if SRC[q] == '\n' || SRC[q] == 0 || SRC[q] == '#' { put(T_COLON, s, p); TK[TK.len - 1].lay = true; } else { lay(T_LC, s); inl++; } continue; }
+		if c == '(' || c == '[' || c == '{' { dep++; } if (c == ')' || c == ']' || c == '}') && dep > 0 { dep--; }
 		if c == '(' { k = T_LP; } else { if c == ')' { k = T_RP; } else { if c == '[' { k = T_LB; } else { if c == ']' { k = T_RB; } else { if c == '{' { k = T_LC; } else { if c == '}' { k = T_RC; } else { if c == ',' { k = T_COMMA; } else { if c == ';' { k = T_SEMI; } else { if c == '?' { k = T_QUEST; } else { if c == '~' { k = T_BITNOT; } } } } } } } } } }
 		if c == ':' { if n1 == ':' { p++; k = T_CC; } else { k = T_COLON; } }
 		if c == '.' { if n1 == '.' { p++; k = T_DOTDOT; } else { if n1 == '=' && n2 == '=' { p += 2; k = T_DOTEQ; } else { if n1 == '!' && n2 == '=' { p += 2; k = T_DOTNEQ; } else { if n1 == '=' { p++; k = T_DOTASSIGN; } else { k = T_DOT; } } } } }
