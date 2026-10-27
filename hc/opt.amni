@@ -78,7 +78,7 @@ fn live(i0 int, i1 int, nv int, st i32[>..<]&, en i32[>..<]&) {
 	cfg(i0, i1); let n = i1 - i0; let nb = CBS.len;
 	var sbk i32[>..<] = []; sbk.resize(nv, -1); var dbk i32[>..<] = []; dbk.resize(nv, -1); var uv i32[>..<] = []; var ub i32[>..<] = []; var dv i32[>..<] = []; var db i32[>..<] = [];
 	for p in n { opnds(i0 + p); let b = CBID[p];
-		for u0 in OU { let u = if FK[u0] == 6 { FB[u0] as int } else { u0 as int }; if FK[u] != 0 || sbk[u] == b { continue; } sbk[u] = b; uv.push(u as i32); ub.push(b); }
+		for u0 in OU { for q in 2 { let u = if FK[u0] == 6 || FK[u0] == 7 { if q == 0 { FB[u0] as int } else { if FK[u0] == 7 { FI[u0] as int } else { -1 } } } else { if q == 0 { u0 as int } else { -1 } }; if u < 0 || FK[u] != 0 || sbk[u] == b { continue; } sbk[u] = b; uv.push(u as i32); ub.push(b); } }
 		for d in OD { if FK[d] != 0 || dbk[d] == b { continue; } dbk[d] = b; sbk[d] = b; dv.push(d); db.push(b); } }
 	var us i32[>..<] = []; us.resize(nv + 1, 0); for v in uv { us[v + 1] += 1; } for v in nv { us[v + 1] += us[v]; }
 	var ul i32[>..<] = []; ul.resize(uv.len, 0); var uc i32[>..<] = []; uc.resize(nv, 0); for k in uv.len { let v = uv[k] as int; ul[(us[v] + uc[v]) as int] = ub[k]; uc[v] += 1; }
@@ -100,17 +100,20 @@ fn regalloc(fi int) {
 	var lp i32[>..<] = []; var dep i32[>..<] = []; dep.resize(n + 1, 0);
 	for i in i0..i1 { let op = IR[i].op as int; if op == I_JMP || op == I_BZ || op == I_BNZ { let p = lpos[IR[i].c] as int; if p >= 0 && p < i - i0 { lp.push(p as i32); lp.push((i - i0) as i32); dep[p] += 1; dep[i - i0 + 1] -= 1; } } }
 	for i in 1..(n + 1) { dep[i] += dep[i - 1]; }
-	FK.clear(); FK.resize(nv, 0); FB.clear(); FB.resize(nv, -1); FD.clear(); FD.resize(nv, 0); UC.clear(); UC.resize(nv, 0);
+	FK.clear(); FK.resize(nv, 0); FB.clear(); FB.resize(nv, -1); FD.clear(); FD.resize(nv, 0); UC.clear(); UC.resize(nv, 0); FI.clear(); FI.resize(nv, -1); FS.clear(); FS.resize(nv, 0); var di i32[>..<] = []; di.resize(nv, -1);
 	for i in i0..i1 { opnds(i); for d in OD { nd[d] += 1; } for u in OU { UC[u] += 1; } }
 	var dn i8[>..<] = []; dn.resize(nv, 0);
-	for i in i0..i1 { let x = IR[i]; let op = x.op as int; let d = x.d as int; if d < 0 { continue; } dn[d] = 1; if nd[d] != 1 { continue; }
+	fn scl(t int) int { if t < 0 || FK[t] != 0 || nd[t] != 1 || UC[t] != 1 || di[t] < 0 { return -1; } let y = IR[di[t]]; let k = if y.b >= 0 && FK[y.b] == 1 { FD[y.b] as int } else { -1 }; if y.op as int != I_BIN || y.l >= 0 || y.w != 3 || y.a < 0 || FK[y.a] != 0 || nd[y.a] != 1 || dn[y.a] == 0 { return -1; } if y.c == B_MUL { if k == 1 { 0 } else { if k == 2 { 1 } else { if k == 4 { 2 } else { if k == 8 { 3 } else { -1 } } } } } else { if y.c == B_SHL && k >= 0 && k <= 3 { k } else { -1 } } }
+	fn sib(d int, bs int, t int) bool { let s = scl(t); if s < 0 || bs < 0 || bs == d || dn[bs] == 0 || !(FK[bs] == 0 && nd[bs] == 1 || FK[bs] >= 2 && FK[bs] <= 4) { return false; } FK[d] = 7; FB[d] = bs as i32; FI[d] = IR[di[t]].a; FS[d] = s as i8; FD[d] = 0; FK[t] = 8; true }
+	for i in i0..i1 { let x = IR[i]; let op = x.op as int; let d = x.d as int; if d < 0 { continue; } dn[d] = 1; if nd[d] != 1 { continue; } di[d] = i as i32;
+		if op == I_BIN && x.c == B_ADD && x.l < 0 && x.w == 3 && x.a != x.d && x.b >= 0 && FK[x.b] != 1 && FK[x.a] != 1 { if !sib(d, x.a as int, x.b as int) { sib(d, x.b as int, x.a as int); } continue; }
 		if op == I_IMM { FK[d] = 1; FD[d] = x.c; }
 		if op == I_SLOT { FK[d] = 2; FD[d] = x.c; } if op == I_GADDR { FK[d] = 3; FD[d] = x.c; } if op == I_RADDR { FK[d] = 4; FD[d] = x.c; } if op == I_FADDR { FK[d] = 5; FD[d] = x.c; }
 		if op == I_BIN && x.c == B_ADD && x.l < 0 && x.w == 3 && x.a != x.d && dn[x.a] != 0 && FK[x.b] == 1 && FD[x.b] > -(1 << 30) && FD[x.b] < (1 << 30) { let a = x.a as int;
-			if FK[a] >= 2 && FK[a] <= 4 { FK[d] = FK[a]; FD[d] = FD[a] + FD[x.b]; } else { if FK[a] == 6 { FK[d] = 6; FB[d] = FB[a]; FD[d] = FD[a] + FD[x.b]; } else { if FK[a] == 0 && nd[a] == 1 { FK[d] = 6; FB[d] = a as i32; FD[d] = FD[x.b]; } } } }
+			if FK[a] >= 2 && FK[a] <= 4 { FK[d] = FK[a]; FD[d] = FD[a] + FD[x.b]; } else { if FK[a] == 6 || FK[a] == 7 { FK[d] = FK[a]; FB[d] = FB[a]; FI[d] = FI[a]; FS[d] = FS[a]; FD[d] = FD[a] + FD[x.b]; } else { if FK[a] == 0 && nd[a] == 1 { FK[d] = 6; FB[d] = a as i32; FD[d] = FD[x.b]; } } } }
 	}
 	for i in i0..i1 { opnds(i); let p = (i - i0) as i32; let m = 1 << (3 * min(dep[i - i0] as int, 4));
-		for u0 in OU { let u = if FK[u0] == 6 { FB[u0] as int } else { u0 as int }; if FK[u] != 0 { continue; } if st[u] < 0 { st[u] = p; } en[u] = p; wt[u] += m as i32; }
+		for u0 in OU { for q in 2 { let u = if FK[u0] == 6 || FK[u0] == 7 { if q == 0 { FB[u0] as int } else { if FK[u0] == 7 { FI[u0] as int } else { -1 } } } else { if q == 0 { u0 as int } else { -1 } }; if u < 0 || FK[u] != 0 { continue; } if st[u] < 0 { st[u] = p; } en[u] = p; wt[u] += m as i32; } }
 		for d in OD { if FK[d] != 0 { continue; } if st[d] < 0 { st[d] = p; } en[d] = p; wt[d] += m as i32; } }
 	for v in VZERO { st[v] = 0; }
 	live(i0, i1, nv, st, en);
@@ -213,7 +216,7 @@ fn ccv(c int, a int, b int) bool { let ua = a as! u64; let ub = b as! u64; if c 
 fn constfold(fi int) {
 	let f = NFS[fi]; let i0 = f.i0 as int; let i1 = f.i1 as int; let nv = f.nv as int;
 	var nd i32[>..<] = []; nd.resize(nv, 0); for i in i0..i1 { opnds(i); for d in OD { nd[d] += 1; } }
-	var kn i8[>..<] = []; kn.resize(nv, 0); var kv i64[>..<] = []; kv.resize(nv, 0); var ga i64[>..<] = []; ga.resize(nv, -1); var mk i32[>..<] = []; var ew i8[>..<] = []; ew.resize(nv, -1); var nn i8[>..<] = []; nn.resize(nv, 0);
+	var kn i8[>..<] = []; kn.resize(nv, 0); var kv i64[>..<] = []; kv.resize(nv, 0); var ga i64[>..<] = []; ga.resize(nv, -1); var mk i32[>..<] = []; var ew i8[>..<] = []; ew.resize(nv, -1); var nn i8[>..<] = []; nn.resize(nv, 0); var um i64[>..<] = []; um.resize(nv, -1);
 	for i in i0..i1 {
 		let x = IR[i]; let op = x.op as int; let d = x.d as int; let a = x.a as int; let b = x.b as int; let c = x.c as int; let w = x.w as int;
 		fn k(v int) bool { v >= 0 && kn[v] != 0 }
@@ -234,6 +237,8 @@ fn constfold(fi int) {
 			else { if q == 1 && c == B_MUL || q == 0 && (c == B_ADD || c == B_OR || c == B_XOR) || kb && q == 0 && (c == B_SUB || c == B_SHL || c == B_SAR || c == B_SHR) { IR[i] = Ir { I_EXT as u8, w as u8, d as i32, o as i32, -1, 0, -1 }; if d >= 0 { kn[d] = 0; } continue; } } }
 		if ok && d >= 0 { kn[d] = 1; kv[d] = r as i64; if nd[d] > 1 { mk.push(d as i32); } if op != I_IMM { IR[i] = Ir { I_IMM as u8, w as u8, d as i32, -1, -1, r as i64, -1 }; } continue; }
 		if d >= 0 { opnds(i); for v in OD { if nd[v] > 1 { kn[v] = 0; } } }
+		if d >= 0 && nd[d] == 1 { um[d] = if op == I_IMM && c >= 0 { c } else { if op == I_BIN && x.l < 0 && c == B_AND && k(b) && kv[b] >= 0 { kv[b] } else { if (op == I_LD || op == I_EXT) && (w & 8) == 0 && !wsg(w) && wsz(w) < 4 { (1 << (8 * wsz(w))) - 1 } else { if ismov(i) && a >= 0 { um[a] } else { -1 } } } }; }
+		if op == I_BCHK && k(b) && a >= 0 && um[a] >= 0 && um[a] < kv[b] { IR[i].op = I_NOP as u8; continue; }
 		if op == I_BCHK && k(a) && k(b) && (kv[a] as! u64) < (kv[b] as! u64) { IR[i].op = I_NOP as u8; continue; }
 		if (op == I_BZ || op == I_BNZ) && k(a) { let t = kv[a] != 0; if t == (op == I_BNZ) { IR[i] = Ir { I_JMP as u8, 3, -1, -1, -1, c as i64, -1 }; } else { IR[i].op = I_NOP as u8; } }
 	}
@@ -256,6 +261,11 @@ fn deadcode(fi int) {
 		uc.clear(); uc.resize(nv, 0); for i in i0..i1 { opnds(i); for u in OU { uc[u] += 1; } }
 		for i in i0..i1 { let d = IR[i].d as int; if d >= 0 && d < nv && uc[d] == 0 && pure(i) && IR[i].op as int != I_NOP { IR[i].op = I_NOP as u8; ch = true; } }
 	}
+	var nd i32[>..<] = []; nd.resize(nv, 0); for i in i0..i1 { opnds(i); for d in OD { nd[d] += 1; } }
+	for i in i0..i1 { let x = IR[i]; let op = x.op as int; let d = x.d as int; if op != I_BIN || d < 0 || nd[d] != 1 || uc[d] != 1 { continue; }
+		var j = i + 1; while j < i1 && IR[j].op as int == I_NOP { j++; } if j >= i1 { continue; } let y = IR[j]; let yo = y.op as int;
+		if y.a as int != d || y.d < 0 || !(yo == I_MOV || yo == I_EXT && y.w == 3) { continue; }
+		IR[i].d = y.d; IR[j].op = I_NOP as u8; }
 }
 fn sra(fi int) {
 	let f = NFS[fi]; let i0 = f.i0 as int; let i1 = f.i1 as int; var nv = f.nv as int;
@@ -315,24 +325,27 @@ fn sra(fi int) {
 }
 fn lvn(fi int) {
 	let f = NFS[fi]; let i0 = f.i0 as int; let i1 = f.i1 as int; let nv = f.nv as int;
-	var vn i32[>..<] = []; vn.resize(nv, -1); var nvn = 0; var mem = 0; var gen = 1;
+	cfg(i0, i1); let nb = CBS.len;
+	var vn i32[>..<] = []; vn.resize(nv, -1); var vst i32[>..<] = []; vst.resize(nv, -1); var nvn = 0; var mem = 0; var memc = 0; var cb = 0;
 	var nd i32[>..<] = []; nd.resize(nv, 0); for i in i0..i1 { opnds(i); for d in OD { nd[d] += 1; } }
 	var hs = 64; while hs < 4 * (i1 - i0) { hs *= 2; }
 	var hk i64[>..<] = []; hk.resize(hs * 4, 0); var hv i32[>..<] = []; hv.resize(hs * 3, 0);
-	fn vof(v int) int { if v < 0 { return -1; } if vn[v] < 0 { vn[v] = nvn as i32; nvn++; } vn[v] as int }
-	for i in i0..i1 {
+	var ul i32[>..<] = []; var uk i64[>..<] = []; var uv i32[>..<] = [];
+	fn vof(v int) int { if v < 0 { return -1; } if nd[v] > 1 && vst[v] != cb as i32 { vn[v] = nvn as i32; nvn++; vst[v] = cb as i32; } if vn[v] < 0 { vn[v] = nvn as i32; nvn++; } vn[v] as int }
+	fn hput(p int, k0 i64, k1 i64, k2 i64, k3 i64, a int, b int) { ul.push(p as i32); for q in 4 { uk.push(hk[4 * p + q]); } for q in 3 { uv.push(hv[3 * p + q]); } hv[3 * p] = 1; hk[4 * p] = k0; hk[4 * p + 1] = k1; hk[4 * p + 2] = k2; hk[4 * p + 3] = k3; hv[3 * p + 1] = a as i32; hv[3 * p + 2] = b as i32; }
+	fn undo(m int) { while ul.len > m { let p = ul[ul.len - 1] as int; ul.pop(); for q in 3 { hv[3 * p + 2 - q] = uv[uv.len - 1]; uv.pop(); } for q in 4 { hk[4 * p + 3 - q] = uk[uk.len - 1]; uk.pop(); } } }
+	fn step(i int) {
 		let x = IR[i]; let op = x.op as int;
-		if op == I_LBL { gen++; continue; }
-		if op == I_ST || op == I_COPY || op == I_ZERO || op == I_CALL || op == I_CALLR || op == I_SYS || op == I_DSS || op == I_DSR || op == I_CVT && x.c == 5 { mem++; }
+		if op == I_ST || op == I_COPY || op == I_ZERO || op == I_CALL || op == I_CALLR || op == I_SYS || op == I_DSS || op == I_DSR || op == I_CVT && x.c == 5 { memc++; mem = memc; }
 		let d = x.d as int;
 		if op == I_BCHK { let k1 = vof(x.a as int) as i64; let k2 = vof(x.b as int) as i64; var h = ((k1 * 1000003 + k2 * 7919 + 34) as! u64); h = (h ^ (h >> 29)) * 0x9E3779B97F4A7C15; var p = ((h >> 20) % (hs as u64)) as int; var hit = false;
-			while hv[3 * p] == gen as i32 { if hk[4 * p] == 34 && hk[4 * p + 1] == k1 && hk[4 * p + 2] == k2 { hit = true; break; } p = (p + 1) % hs; }
-			if hit { IR[i].op = I_NOP as u8; } else { hv[3 * p] = gen as i32; hk[4 * p] = 34; hk[4 * p + 1] = k1; hk[4 * p + 2] = k2; hk[4 * p + 3] = 0; hv[3 * p + 1] = -1; hv[3 * p + 2] = -1; } continue; }
-		if d < 0 || op == I_ZERO || op == I_COPY || op == I_ST { continue; }
-		if nd[d] > 1 { vn[d] = nvn as i32; nvn++; continue; }
-		if op == I_MOV { vn[d] = vof(x.a as int) as i32; continue; }
+			while hv[3 * p] == 1 { if hk[4 * p] == 34 && hk[4 * p + 1] == k1 && hk[4 * p + 2] == k2 { hit = true; break; } p = (p + 1) % hs; }
+			if hit { IR[i].op = I_NOP as u8; } else { hput(p, 34, k1, k2, 0, -1, -1); } return; }
+		if d < 0 || op == I_ZERO || op == I_COPY || op == I_ST { return; }
+		if nd[d] > 1 { vn[d] = nvn as i32; nvn++; vst[d] = cb as i32; return; }
+		if op == I_MOV { vn[d] = vof(x.a as int) as i32; return; }
 		let ok = op == I_IMM || (op == I_BIN || op == I_UN) && x.l < 0 || op == I_CMP || op == I_EXT || op == I_SLOT || op == I_GADDR || op == I_RADDR || op == I_FADDR || op == I_LD || op == I_FBIN || op == I_FCMP || op == I_CVT && x.c != 5 || op == I_FUN && x.c != 6;
-		if !ok { vn[d] = nvn as i32; nvn++; continue; }
+		if !ok { vn[d] = nvn as i32; nvn++; return; }
 		let usea = op != I_IMM && op != I_SLOT && op != I_GADDR && op != I_RADDR && op != I_FADDR;
 		let useb = op == I_BIN || op == I_CMP || op == I_FBIN || op == I_FCMP;
 		var va = if usea { vof(x.a as int) } else { -1 }; var vb = if useb { vof(x.b as int) } else { -1 };
@@ -341,12 +354,30 @@ fn lvn(fi int) {
 		let k0 = (op | (x.w as int << 8)) as i64; let k1 = va as i64; let k2 = vb as i64; let k3 = x.c ^ (if op == I_LD { (mem as i64) << 40 } else { 0 });
 		var h = ((k0 * 31 + k1) * 1000003 + k2 * 7919 + k3 * 131) as! u64; h = (h ^ (h >> 29)) * 0x9E3779B97F4A7C15; var p = ((h >> 20) % (hs as u64)) as int;
 		var hit = -1;
-		while hv[3 * p] == gen as i32 { if hk[4 * p] == k0 && hk[4 * p + 1] == k1 && hk[4 * p + 2] == k2 && hk[4 * p + 3] == k3 { hit = p; break; } p = (p + 1) % hs; }
-		if hit >= 0 { let r = hv[3 * hit + 2] as int; let rv = hv[3 * hit + 1]; if vn[r] == rv && r != d { IR[i] = Ir { I_MOV as u8, 3, d as i32, r as i32, -1, 0, -1 }; vn[d] = rv; continue; } }
+		while hv[3 * p] == 1 { if hk[4 * p] == k0 && hk[4 * p + 1] == k1 && hk[4 * p + 2] == k2 && hk[4 * p + 3] == k3 { hit = p; break; } p = (p + 1) % hs; }
+		if hit >= 0 { let r = hv[3 * hit + 2] as int; let rv = hv[3 * hit + 1]; if vn[r] == rv && r != d && (nd[r] <= 1 || vst[r] == cb as i32) { IR[i] = Ir { I_MOV as u8, 3, d as i32, r as i32, -1, 0, -1 }; vn[d] = rv; return; } }
 		vn[d] = nvn as i32; nvn++;
-		if hit < 0 { hv[3 * p] = gen as i32; hk[4 * p] = k0; hk[4 * p + 1] = k1; hk[4 * p + 2] = k2; hk[4 * p + 3] = k3; }
-		let q = if hit >= 0 { hit } else { p }; hv[3 * q + 1] = vn[d]; hv[3 * q + 2] = d as i32;
+		hput(if hit >= 0 { hit } else { p }, k0, k1, k2, k3, vn[d] as int, d);
 	}
+	var po i32[>..<] = []; po.resize(nb, -1); var rpo i32[>..<] = []; var vis i8[>..<] = []; vis.resize(nb, 0);
+	var ds i32[>..<] = [0]; var di i32[>..<] = [0]; vis[0] = 1;
+	while ds.len > 0 { let t = ds.len - 1; let b = ds[t] as int; let k = di[t] as int; if k < (CSS[b + 1] - CSS[b]) as int { di[t] += 1; let c = CSL[(CSS[b] as int) + k] as int; if vis[c] == 0 { vis[c] = 1; ds.push(c as i32); di.push(0); } } else { po[b] = rpo.len as i32; rpo.push(b as i32); ds.pop(); di.pop(); } }
+	var idom i32[>..<] = []; idom.resize(nb, -1); idom[0] = 0; var ch = true;
+	while ch { ch = false; var r = rpo.len - 2; while r >= 0 { let b = rpo[r] as int; var nw = -1;
+		for k in (CPS[b] as int)..(CPS[b + 1] as int) { let p = CPL[k] as int; if idom[p] < 0 { continue; } if nw < 0 { nw = p; } else { var a1 = p; var a2 = nw; while a1 != a2 { while po[a1] < po[a2] { a1 = idom[a1] as int; } while po[a2] < po[a1] { a2 = idom[a2] as int; } } nw = a1; } }
+		if nw >= 0 && idom[b] != nw as i32 { idom[b] = nw as i32; ch = true; } r -= 1; } }
+	var cs i32[>..<] = []; cs.resize(nb + 1, 0); for b in 1..nb { if idom[b] >= 0 && po[b] >= 0 { cs[idom[b] + 1] += 1; } } for b in nb { cs[b + 1] += cs[b]; }
+	var cl i32[>..<] = []; cl.resize(nb, 0); var cf i32[>..<] = []; cf.resize(nb, 0); for b in 1..nb { if idom[b] >= 0 && po[b] >= 0 { let pp = idom[b] as int; cl[(cs[pp] + cf[pp]) as int] = b as i32; cf[pp] += 1; } }
+	var me i32[>..<] = []; me.resize(nb, 0);
+	var sb i32[>..<] = [0]; var sm i32[>..<] = [-1];
+	while sb.len > 0 { let b = sb[sb.len - 1] as int; let m = sm[sm.len - 1] as int; sb.pop(); sm.pop();
+		if m >= 0 { undo(m); continue; }
+		cb = b; var np = 0; var lp = -1; for k in (CPS[b] as int)..(CPS[b + 1] as int) { if vis[CPL[k]] != 0 { np++; lp = CPL[k] as int; } }
+		if np == 1 && b > 0 { mem = me[lp] as int; } else { memc++; mem = memc; }
+		let mk = ul.len;
+		for p in (CBS[b] as int)..((CBE[b] as int) + 1) { step(i0 + p); }
+		me[b] = mem as i32; sb.push(b as i32); sm.push(mk as i32);
+		for k in (cs[b] as int)..(cs[b + 1] as int) { sb.push(cl[k]); sm.push(-1); } }
 }
 fn rdonly(i int) bool { let x = IR[i]; let op = x.op as int; op == I_IMM || op == I_MOV || op == I_EXT || op == I_BIN || op == I_UN || op == I_CMP || op == I_SLOT || op == I_GADDR || op == I_RADDR || op == I_FADDR || op == I_LD || op == I_FBIN || op == I_FCMP || op == I_BCHK || op == I_NOP || op == I_BZ || op == I_BNZ || op == I_CVT && x.c != 5 || op == I_FUN && (x.c >= 1 && x.c <= 4 || x.c >= 7) }
 fn cpfwd(fi int) {
@@ -384,7 +415,7 @@ fn cpfwd(fi int) {
 		if bad { continue; }
 		let ab = if db[a] >= 0 { db[a] as int } else { -1 };
 		for q in (i + 1)..(last + 1) { let op = IR[q].op as int;
-			if rdonly(q) || op == I_JMP || op == I_NOP { continue; }
+			if rdonly(q) || op == I_JMP || op == I_NOP || op == I_DSS || op == I_DSR { continue; }
 			if op == I_LBL { let l = IR[q].c as int; var cnt = 0; for r in (i + 1)..(last + 1) { let ro = IR[r].op as int; if (ro == I_JMP || ro == I_BZ || ro == I_BNZ) && IR[r].c as int == l { cnt++; } } if cnt as i32 != lsrc[l] { bad = true; break; } continue; }
 			if op == I_ST || op == I_COPY || op == I_ZERO { let t = dst(q); if t >= 0 && t != s && t != ab { var e = false; for m in esc { if m == t { e = true; } } if !e { continue; } } if q == last && op == I_COPY && IR[q].a >= 0 && db[IR[q].a] >= 0 && db[IR[q].a] as int == s { continue; } }
 			bad = true; break; }

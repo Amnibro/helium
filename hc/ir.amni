@@ -14,13 +14,13 @@ var GCB byte[>..<]; var GCS i32[>..<]; var GCN i32[>..<]; var GCP i32[>..<];
 fn gcread(o int, z int) int, bool { for k in GCS.len { let s = GCS[k] as int; if o >= s && o + z <= s + (GCN[k] as int) { var v = 0; for j in z { v = v | ((GCB[(GCP[k] as int) + o - s + j] as int) << (8 * j)); } return v, true; } } return 0, false; }
 var DBG bool;
 var RT_DIE int = -1; var RT_OOB int = -1; let I_BCHK = 34; var RT_F2I int = -1;
-var FK i8[>..<]; var FB i32[>..<]; var FD i64[>..<]; var UC i32[>..<];
+var FK i8[>..<]; var FB i32[>..<]; var FD i64[>..<]; var UC i32[>..<]; var FI i32[>..<]; var FS i8[>..<];
 fn kc(v int) bool { v >= 0 && v < FK.len && FK[v] == 1 }
 fn fk(v int) int { if v >= 0 && v < FK.len { FK[v] as int } else { 0 } }
 fn mvblk(z int, zero bool) { var o = 0; for s in [8, 4, 2, 1] { while z - o >= s { if !zero { ld(RAX, RSI, o, s, false); } st(RAX, RDI, o, s); o += s; } } }
 var XREG i32[>..<]; var XW i8[>..<];
 fn xg(v int) int { if v >= 0 && v < XREG.len { XREG[v] as int } else { -1 } }
-var REGOF i32[>..<]; var RUSED i32[>..<]; var VZERO i32[>..<]; var CNV int;
+var REGOF i32[>..<]; var RUSED i32[>..<]; var VZERO i32[>..<]; var CNV int; var VSI i32[>..<];
 var MUSE i8[>..<]; var MSLOT i32[>..<]; var DSN = -1;
 fn nv() int { NV++; NV - 1 }
 fn loc_id(s const byte[:]) int { LOCS.push(rodata(s) as i32); LOCS.push(s.len as i32); LOCS.len / 2 - 1 }
@@ -31,9 +31,9 @@ fn irl(op int, w int, d int, a int, b int, c int, l int) { IR.push(Ir { op as u8
 fn imm(v int) int { let d = nv(); ir(I_IMM, 8, d, -1, -1, v); d }
 fn rodata(s const byte[:]) int { RO.resize(al(RO.len, 8)); let o = RO.len; RO.append(s); o }
 var CSBA int;
-fn vo(v int) int { -8 * (v + 1) - CSBA }
+fn vo(v int) int { -8 * ((VSI[v] as int) + 1) - CSBA }
 fn i32ok(v int) bool { v >= -(1 << 31) && v < (1 << 31) }
-fn ldv(r int, v int) { let k = fk(v); if k == 1 { mov_ri(r, FD[v] as int); return; } if k == 2 { lea(r, RBP, (FD[v] as int) - CSBA); return; } if k == 3 { lea_g(r, FD[v] as int); return; } if k == 4 || k == 5 { lea_rip(r, if k == 4 { 2 } else { 1 }, FD[v] as int); return; } if k == 6 { ldv(r, FB[v] as int); if FD[v] != 0 { alu_ri(0, r, FD[v] as int); } return; } if xg(v) >= 0 { rx(r, XREG[v] as int, XW[v] as int); return; } if v < REGOF.len && REGOF[v] >= 0 { mov_rr(r, REGOF[v] as int); } else { if LSP == XC.len && LSV == v { mov_rr(r, LSR); } else { ld(r, RBP, vo(v), 8, false); } } }
+fn ldv(r int, v int) { let k = fk(v); if k == 1 { mov_ri(r, FD[v] as int); return; } if k == 2 { lea(r, RBP, (FD[v] as int) - CSBA); return; } if k == 3 { lea_g(r, FD[v] as int); return; } if k == 4 || k == 5 { lea_rip(r, if k == 4 { 2 } else { 1 }, FD[v] as int); return; } if k == 6 { ldv(r, FB[v] as int); if FD[v] != 0 { alu_ri(0, r, FD[v] as int); } return; } if k == 7 { let I = gr(FI[v] as int); let t = if r == RDX { RCX } else { RDX }; let sv = I < 0 || I == r; if sv { push_r(t); ldv(t, FI[v] as int); } ldv(r, FB[v] as int); SIBM = true; SIBI = if sv { t } else { I }; SIBS = FS[v] as int; lea(r, r, FD[v] as int); if sv { pop_r(t); } return; } if xg(v) >= 0 { rx(r, XREG[v] as int, XW[v] as int); return; } if v < REGOF.len && REGOF[v] >= 0 { mov_rr(r, REGOF[v] as int); } else { if LSP == XC.len && LSV == v { mov_rr(r, LSR); } else { ld(r, RBP, vo(v), 8, false); } } }
 var FPK i64[>..<]; var FPO i32[>..<];
 fn fpool(b int, w int) { let z = if (w & 3) == 2 { 4 } else { 8 }; let key = ((b as i64) << 1) | (if z == 4 { 1 } else { 0 }); var o = -1; for k, q in FPK { if k == key { o = FPO[q] as int; } } if o < 0 { while RO.len % z != 0 { RO.push(0); } o = RO.len; for j in z { RO.push(((b >> (8 * j)) & 255) as! byte); } FPK.push(key); FPO.push(o as i32); } RIPM = true; RIPK = 2; RIPT = o; }
 fn kf(v int) bool { fk(v) == 1 }
@@ -44,7 +44,7 @@ fn gr(v int) int { if v >= 0 && v < REGOF.len && REGOF[v] >= 0 && xg(v) < 0 { RE
 fn srcr(v int, t int) int { let g = gr(v); if g >= 0 { g } else { ldv(t, v); t } }
 fn dstr(d int) int { let g = gr(d); if g >= 0 { g } else { RAX } }
 fn fin(r int, d int) { if gr(d) != r { stv(r, d); } }
-fn memb(a int, c int) int, int { if gr(a) >= 0 { return gr(a), c; } let k = fk(a); if k == 2 { return RBP, (FD[a] as int) - CSBA + c; } if k == 3 && TLSM { xb(0x64); FSM = true; FSD = (FD[a] as int) + c; return RBP, 0; } if k == 3 || k == 4 { RIPM = true; RIPK = if k == 3 { 3 } else { 2 }; RIPT = (FD[a] as int) + c; return RBP, 0; } if k == 6 && REGOF[FB[a]] >= 0 { return REGOF[FB[a]] as int, (FD[a] as int) + c; } ldv(RCX, a); return RCX, c; }
+fn memb(a int, c int) int, int { if gr(a) >= 0 { return gr(a), c; } let k = fk(a); if k == 7 { let b = FB[a] as int; let I = if gr(FI[a] as int) >= 0 { gr(FI[a] as int) } else { ldv(RDX, FI[a] as int); RDX }; let B = if gr(b) >= 0 { gr(b) } else { if fk(b) == 2 { RBP } else { ldv(RCX, b); RCX } }; let bd = if gr(b) < 0 && fk(b) == 2 { (FD[b] as int) - CSBA } else { 0 }; SIBM = true; SIBI = I; SIBS = FS[a] as int; return B, bd + (FD[a] as int) + c; } if k == 2 { return RBP, (FD[a] as int) - CSBA + c; } if k == 3 && TLSM { xb(0x64); FSM = true; FSD = (FD[a] as int) + c; return RBP, 0; } if k == 3 || k == 4 { RIPM = true; RIPK = if k == 3 { 3 } else { 2 }; RIPT = (FD[a] as int) + c; return RBP, 0; } if k == 6 && REGOF[FB[a]] >= 0 { return REGOF[FB[a]] as int, (FD[a] as int) + c; } ldv(RCX, a); return RCX, c; }
 var FUSEC = -1; var DEAD = false;
 fn fusable(i int, d int, i1 int) bool { var j = i + 1; while j < i1 && (IR[j].op as int == I_NOP || IR[j].d >= 0 && fk(IR[j].d as int) != 0 && (IR[j].op as int == I_IMM || IR[j].op as int == I_SLOT || IR[j].op as int == I_GADDR || IR[j].op as int == I_RADDR || IR[j].op as int == I_FADDR || IR[j].op as int == I_BIN)) { j++; } j < i1 && (IR[j].op as int == I_BZ || IR[j].op as int == I_BNZ) && IR[j].a as int == d && d < UC.len && UC[d] == 1 }
 var LSP = -1; var LSV = -1; var LSR = -1;
@@ -57,7 +57,7 @@ fn wsg(w int) bool { (w & 12) == 0 }
 fn fpx(w int) int { if (w & 3) == 2 { 0xF3 } else { 0xF2 } }
 fn xr(x int, r int, w int) { sse(0x66, (w & 3) == 3, 0x6E, x, r); }
 fn rx(r int, x int, w int) { sse(0x66, (w & 3) == 3, 0x7E, x, r); }
-fn cvt_u2f(w int) { let l1 = nlbl(); let l2 = nlbl(); test_rr(RAX, RAX); jcc_l(8, l1); sse(fpx(w), true, 0x2A, 0, RAX); jmp_l(l2); bind(l1); mov_rr(RCX, RAX); xrex(true, 0, 0, RCX); xb(0xD1); xb(0xE8 | 1); xb(0x48); xb(0x83); xb(0xE0); xb(1); alu(0x09, RCX, RAX); sse(fpx(w), true, 0x2A, 0, RCX); sse(fpx(w), false, 0x58, 0, 0); bind(l2); rx(RAX, 0, w); }
+fn cvt_u2f(w int) { let l1 = nlbl(); let l2 = nlbl(); sse(0, false, 0x57, 0, 0); test_rr(RAX, RAX); jcc_l(8, l1); sse(fpx(w), true, 0x2A, 0, RAX); jmp_l(l2); bind(l1); mov_rr(RCX, RAX); xrex(true, 0, 0, RCX); xb(0xD1); xb(0xE8 | 1); xb(0x48); xb(0x83); xb(0xE0); xb(1); alu(0x09, RCX, RAX); sse(fpx(w), true, 0x2A, 0, RCX); sse(fpx(w), false, 0x58, 0, 0); bind(l2); rx(RAX, 0, w); }
 fn ext_r(r int, w int) { let z = wsz(w); if z == 8 { return; } if z == 4 && !wsg(w) { xrex(false, r, 0, r); xb(0x8B); xb(0xC0 | ((r & 7) << 3) | (r & 7)); return; } xrex(true, r, 0, r); if z == 4 { xb(0x63); } else { xb(0x0F); xb(if z == 1 { if wsg(w) { 0xBE } else { 0xB6 } } else { if wsg(w) { 0xBF } else { 0xB7 } }); } xb(0xC0 | ((r & 7) << 3) | (r & 7)); }
 fn trap_to(k int, l int, tl i32[>..<]&) int { trap_ab(k, l, -1, -1, tl) }
 fn trap_ab(k int, l int, a int, b int, tl i32[>..<]&) int { let lb = nlbl(); tl.push(lb as i32); tl.push(k as i32); tl.push(l as i32); tl.push(a as i32); tl.push(b as i32); lb }
@@ -66,8 +66,8 @@ fn cg_fn(fi int) {
 	FOFF[fi] = XC.len as i32;
 	let sba = al(f.sb as int, 16);
 	NFS[fi].sb = sba as i32; CSBA = sba;
-	CNV = f.nv as int;
-	push_r(RBP); mov_rr(RBP, RSP); sub_rsp(al(sba + 8 * (f.nv as int) + 8 * RUSED.len, 16)); for r, k in RUSED { st(r as int, RBP, rso(k), 8); }
+	VSI.clear(); VSI.resize(f.nv as int, -1); CNV = 0; for v in (f.nv as int) { if fk(v) == 0 && gr(v) < 0 && xg(v) < 0 { VSI[v] = CNV as i32; CNV++; } }
+	push_r(RBP); mov_rr(RBP, RSP); sub_rsp(al(sba + 8 * CNV + 8 * RUSED.len, 16)); for r, k in RUSED { st(r as int, RBP, rso(k), 8); }
 	var nz byte[>..] = []; if sba > 0 && env("HC_ZFRAME", nz) { lea(R11, RBP, -sba); alu(0x31, RAX, RAX); let lz = nlbl(); bind(lz); st(RAX, R11, 0, 8); xrex(true, 0, 0, R11); xb(0x83); xb(0xC0 | (R11 & 7)); xb(8); alu(0x39, R11, RBP); jcc_l(CC_B, lz); }
 	if VZERO.len > 0 { alu(0x31, RAX, RAX); for v in VZERO { stv(RAX, v as int); } }
 	var traps i32[>..<] = []; DEAD = false; FUSEC = -1;
@@ -132,15 +132,15 @@ fn cg_fn(fi int) {
 		else { if op == I_FCMP { let sw = c == 2 || c == 4; let p0 = if sw { b } else { a }; let p1 = if sw { a } else { b }; let X0 = if xg(p0) >= 0 { xg(p0) } else { ldx(0, p0, w); 0 }; if kf(p1) && FD[p1] != 0 { fpool(FD[p1] as int, w); ssem(if (w & 3) == 2 { 0 } else { 0x66 }, false, 0x2E, X0, RBP, 0); } else { if spl(p1) { ssem(if (w & 3) == 2 { 0 } else { 0x66 }, false, 0x2E, X0, RBP, vo(p1)); } else { let X1 = if xg(p1) >= 0 { xg(p1) } else { ldx(1, p1, w); 1 }; sse(if (w & 3) == 2 { 0 } else { 0x66 }, false, 0x2E, X0, X1); } }
 			if c == 0 { setcc(CC_E, RAX); setcc(11, RCX); alu(0x21, RAX, RCX); } if c == 1 { setcc(CC_NE, RAX); setcc(10, RCX); alu(0x09, RAX, RCX); } if c >= 2 && fusable(i, d, f.i1 as int) { FUSEC = if c <= 3 { CC_A } else { CC_AE }; } else { if c == 2 || c == 3 { setcc(CC_A, RAX); } if c == 4 || c == 5 { setcc(CC_AE, RAX); } stv(RAX, d); } }
 		else { if op == I_CVT && (c == 3 || c == 4) { ldx(0, a, if c == 3 { 10 } else { 11 }); sse(if c == 3 { 0xF3 } else { 0xF2 }, false, 0x5A, 0, 0); stx(0, d, if c == 3 { 11 } else { 10 }); }
-		else { if op == I_CVT && c == 1 { let xd = xg(d); let R = if xd >= 0 { xd } else { 0 }; let A = srcr(a, RAX); sse(fpx(w), true, 0x2A, R, A); if R != xd { stx(R, d, w); } }
+		else { if op == I_CVT && c == 1 { let xd = xg(d); let R = if xd >= 0 { xd } else { 0 }; let A = srcr(a, RAX); sse(0, false, 0x57, R, R); sse(fpx(w), true, 0x2A, R, A); if R != xd { stx(R, d, w); } }
 		else { if op == I_CVT { ldv(RAX, a);
-			if c == 1 { sse(fpx(w), true, 0x2A, 0, RAX); rx(RAX, 0, w); } if c == 2 { cvt_u2f(w); }
+			if c == 1 { sse(0, false, 0x57, 0, 0); sse(fpx(w), true, 0x2A, 0, RAX); rx(RAX, 0, w); } if c == 2 { cvt_u2f(w); }
 			if c == 5 { xr(0, RAX, w); if (w & 3) == 2 { sse(0xF3, false, 0x5A, 0, 0); rx(RDI, 0, 3); } else { mov_rr(RDI, RAX); } sse(0xF2, true, 0x2C, RAX, 0); mov_ri(RCX, 1); shl_imm(RCX, 63); alu(0x39, RAX, RCX); let lk = nlbl(); jcc_l(CC_NE, lk); call_f(RT_F2I); bind(lk); }
 			if c == 7 { mov_ri(RCX, 1); shl_imm(RCX, if (w & 3) == 2 { 31 } else { 63 }); alu(0x31, RAX, RCX); }
 			stv(RAX, d); }
 		else { if op == I_DSS || op == I_DSR { if MUSE[a] != 0 { let so = (MSLOT[a] as int) - sba; lea_g(RAX, DSN); if op == I_DSS { ld(RCX, RAX, 0, 8, false); st(RCX, RBP, so, 8); } else { ld(RCX, RBP, so, 8, false); st(RCX, RAX, 0, 8); } } }
 		else { if op == I_FUN && c >= 7 { ldv(RCX, a); xb(0xF3); xb(0x48); xb(0x0F); xb(if c == 7 { 0xBD } else { if c == 8 { 0xBC } else { 0xB8 } }); xb(0xC1); stv(RAX, d); }
-		else { if op == I_FUN && c >= 1 && c <= 4 { let sgl = (w & 3) == 2; let xd = xg(d); let R = if xd >= 0 { xd } else { 0 }; let A = if xg(a) >= 0 { xg(a) } else { ldx(R, a, w); R }; if c == 4 { sse(fpx(w), false, 0x51, R, A); } else { xb(0x66); xrex(false, R, 0, A); xb(0x0F); xb(0x3A); xb(if sgl { 0x0A } else { 0x0B }); xb(0xC0 | ((R & 7) << 3) | (A & 7)); xb(if c == 1 { 9 } else { if c == 2 { 10 } else { 11 } }); } if R != xd { stx(R, d, w); } }
+		else { if op == I_FUN && c >= 1 && c <= 4 { let sgl = (w & 3) == 2; let xd = xg(d); let R = if xd >= 0 { xd } else { 0 }; let A = if xg(a) >= 0 { xg(a) } else { ldx(R, a, w); R }; if A != R { sse(0, false, 0x57, R, R); } if c == 4 { sse(fpx(w), false, 0x51, R, A); } else { xb(0x66); xrex(false, R, 0, A); xb(0x0F); xb(0x3A); xb(if sgl { 0x0A } else { 0x0B }); xb(0xC0 | ((R & 7) << 3) | (A & 7)); xb(if c == 1 { 9 } else { if c == 2 { 10 } else { 11 } }); } if R != xd { stx(R, d, w); } }
 		else { if op == I_FUN { let sgl = (w & 3) == 2; if c == 5 { ldv(RAX, a); xr(0, RAX, w); } else { ldx(0, a, w); }
 			if c >= 1 && c <= 3 { xb(0x66); xb(0x0F); xb(0x3A); xb(if sgl { 0x0A } else { 0x0B }); xb(0xC0); xb(if c == 1 { 9 } else { if c == 2 { 10 } else { 11 } }); }
 			if c == 4 { sse(fpx(w), false, 0x51, 0, 0); }
