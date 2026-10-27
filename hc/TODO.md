@@ -1,6 +1,6 @@
 # hc: what's left
 
-Status as of 2026-10-27 (gate 66).
+Status as of 2026-10-27 (gate 67).
 
 ## Where things stand
 
@@ -14,7 +14,8 @@ Status as of 2026-10-27 (gate 66).
 | Pom-Pom Grove sim | garden, race, mini, load traces bit-identical on both paths |
 | Own modules replacing Goose packages | `audio` (hc/lib/audio.he on SDL3: the same mixer, bit-identical to goose_gfx offline and live). `gfx`, `ui` and `physics` still load the goose_gfx/goose_physics packages |
 | Full apps | Pom-Pom Grove (`pomling.amni`, gfx + ui) and Waystone (`play.amni`, gfx + ui + audio + C sources) compile natively with hc; they are not run here, since they open the GPU |
-| Waystone parity | `tools/parity.sh` with hc as the compiler (`HELIUM` set to a wrapper around `hc --native`): 193 of 193 traces identical to the JS original |
+| Driver | `hc build file [-o out]`, `hc run file [-- args]` (native, cached under ~/.cache/hc), `hc check`, `hc version`, `hc help`; `hc file` runs; `hc in out [--native]` still works. The library is HC_LIB, else `lib` beside the executable |
+| Waystone parity | `HELIUM=hc tools/parity.sh`: 193 of 193 traces identical to the JS original |
 | Still on the Goose C++ compiler | Pomling, Waystone and Amni Prayer (web target); LSP; shader compilation |
 
 ## 0. The `.he` syntax

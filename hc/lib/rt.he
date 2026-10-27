@@ -224,7 +224,7 @@ rt_os_clock_ns() int: sys3(228, 1, iptr(RT_TS[..]), 0); RT_TS[0] * 1000000000 + 
 rt_os_sleep_ms(ms int): RT_TS[0] = ms / 1000; RT_TS[1] = ms % 1000 * 1000000; sys3(35, iptr(RT_TS[..]), 0, 0);
 rt_os_random_u64() u64: var b u64[1]; if sys3(318, uptr(b[..]), 8, 0) != 8 { return rt_os_time_ns() as! u64 } b[0]
 rt_trim_memory() bool: true
-rt_os_resource_dir(out int) bool: false
+rt_os_resource_dir(out int) bool: c := rt_path("/proc/self/exe", RT_PB); n := sys3(89, c, ptr(RT_PB2[..]), 4096); if n <= 0 { return false } k ~= n; while k > 1 && RT_PB2[k - 1] != '/' { k -= 1 } rt_appto(out, ptr(RT_PB2[..]), k - 1); true
 rt_fmod(xb u64, yb u64) u64:
 	ex ~= (xb >> 52 & 0x7FF) as int; ey ~= (yb >> 52 & 0x7FF) as int; sx := xb >> 63; ux ~= xb; uy ~= yb
 	xnan := ex == 0x7FF && xb << 12 != 0; ynan := ey == 0x7FF && yb << 12 != 0

@@ -427,7 +427,7 @@ static int64_t hr_os_clock_ns(void) { struct timespec t; clock_gettime(CLOCK_MON
 static void hr_os_sleep_ms(int64_t ms) { struct timespec t = { ms / 1000, (ms % 1000) * 1000000 }; nanosleep(&t, 0); }
 static uint64_t hr_os_random_u64(void) { uint64_t v = 0; int fd = open("/dev/urandom", O_RDONLY); if (fd >= 0) { if (read(fd, &v, 8) != 8) v = (uint64_t)hr_os_time_ns(); close(fd); } return v; }
 static bool hr_trim_memory(void) { return true; }
-static bool hr_os_resource_dir(hrv *out) { (void)out; return false; }
+static bool hr_os_resource_dir(hrv *out) { char b[4096]; ssize_t n = readlink("/proc/self/exe", b, sizeof b); if (n <= 0) return false; while (n > 1 && b[n - 1] != '/') n--; hr_append(out, b, n - 1, 1); return true; }
 static int64_t hr_popcount(uint64_t x) { return __builtin_popcountll(x); }
 static int64_t hr_clz(uint64_t x) { return x ? __builtin_clzll(x) : 64; }
 static int64_t hr_ctz(uint64_t x) { return x ? __builtin_ctzll(x) : 64; }
