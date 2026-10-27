@@ -648,7 +648,7 @@ recursive ck_while(n int) int:
 	set_t(n, T_VOID)
 var BRK_T i32[>..<]
 recursive ck_loop(n int, want int) int:
-	BRK_T.push(-1)
+	BRK_T.push(if want >= 0 && want != T_VOID { want as i32 } else { -1 })
 	LOOPD++
 	ck(ND[n].a, T_VOID)
 	LOOPD--
@@ -917,8 +917,8 @@ recursive cstmt(n int):
 	if k == N_ASSIGN: ck_assign(n); return
 	if k == N_INCDEC: t := ck(x.a, -1); if TY[deref(t)].k != TY_INT && TY[deref(t)].k != TY_VARINT { cerr(n, "++/-- needs an integer") } return
 	if k == N_FN: decl_nested(n); return
-	STMTN = n
-	t := ck(n, if k == N_IF { T_VOID } else { -1 })
+	sv := STMTN; STMTN = n
+	t := ck(n, if k == N_IF { T_VOID } else { -1 }); STMTN = sv
 	if is_pending(t): default_t(n);
 fin_t(n int) int:
 	c := cv(n); if c >= 0:
