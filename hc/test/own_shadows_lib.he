@@ -1,0 +1,11 @@
+use std
+use vec
+PI f32 := 3.0
+struct P { x int }
+main():
+	a int[>..] ~= []; b P[>..] ~= []
+	for i 3:
+		if i > 1: a.push(i)
+		else: b.push(P{i})
+	x := PI * 2.0
+	print(str(x, " ", a.len, " ", b.len))

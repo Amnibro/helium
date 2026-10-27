@@ -764,6 +764,8 @@ recursive gen_hop(t int, o int, bt int, sl bool):
 	hh("return r; }\n");
 recursive hop_body(t int, o int, r const byte[:], a const byte[:], b const byte[:], sc int):
 	k := TY[t].k
+	if o < 0 && k == TY_FLT: format(HF, r, " = -(", b, "); "); return
+	if o < 0 && k == TY_INT: hop_body(t, -o, r, a, b, sc); return
 	if k == TY_INT:
 		sg := is_signed(t)
 		if o == T_DIV || o == T_MOD: format(HF, r, " = ", if o == T_DIV { if sg { "HR_SDIV(" } else { "HR_UDIV(" } } else { if sg { "HR_SMOD(" } else { "HR_UDIV_MOD(" } }); HF.append(cn(t)); format(HF, ", ", a, ", ", b, ", \"elementwise\"); "); return
@@ -799,7 +801,7 @@ recursive gen_hneg(t int):
 	format(sig, "static "); sig.append(cn(t)); format(sig, " hneg", t, "("); sig.append(cn(t)); sig.append(" a)")
 	PR.append(sig[..]); PR.append(";\n")
 	HF.append(sig[..]); hh(" { "); HF.append(cn(t)); hh(" z; memset(&z, 0, sizeof z); "); HF.append(cn(t)); hh(" r; ")
-	hop_body(t, T_MINUS, "r", "z", "a", 0)
+	hop_body(t, -T_MINUS, "r", "z", "a", 0)
 	hh("return r; }\n");
 fn_cname_to(b byte[>..<]&, i int):
 	format(b, "f", i, "_"); s := FI_[i].name; if s >= 0:

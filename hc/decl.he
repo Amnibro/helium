@@ -141,9 +141,9 @@ gb_find(name int) int:
 lookup(name int, ns int, k int) int:
 	if ns >= 0:
 		d ~= dmap(qual(ns, name)); while d >= 0: if DC[d].k == k { return d } d = DC[d].next
-	d ~= dmap(name)
-	while d >= 0: if DC[d].k == k { return d } d = DC[d].next
-	-1
+	d ~= dmap(name); f ~= -1
+	while d >= 0: if DC[d].k == k { if DC[d].file == 0 { return d } if f < 0 { f = d } } d = DC[d].next
+	f
 split_q(q int) int, int:
 	s := nm(q)
 	for i s.len:

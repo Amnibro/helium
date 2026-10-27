@@ -626,7 +626,7 @@ recursive ck_if(n int, want int) int:
 	if eb && !ec: return set_t(n, tc)
 	if ec && !eb: return set_t(n, tb)
 	if eb && ec: return set_t(n, tb)
-	if tb == T_VOID || tc == T_VOID: return set_t(n, T_VOID)
+	if want == T_VOID || tb == T_VOID || tc == T_VOID: return set_t(n, T_VOID)
 	if tb == tc: return set_t(n, tb)
 	if want >= 0 && want != T_VOID && (is_pending(tb) || lp_tail(x.b) || conv_ok(tb, want, x.b)) && (is_pending(tc) || lp_tail(x.c) || conv_ok(tc, want, x.c)): conv(x.b, want); conv(x.c, want); return set_t(n, want)
 	db := deref(tb); dc := deref(tc)
