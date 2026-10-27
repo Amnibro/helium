@@ -685,7 +685,7 @@ recursive ck_for(n int) int:
 				if TY[d].k == TY_ARR || TY[d].k == TY_SLICE: et = decode_rel(TY[d].a); set_x(n, 1)
 				else: mm byte[>..] ~= []; format(mm, "cannot iterate over ", tn(d)); cerr(n, mm)
 	if x.l >= 0: et = rtype(x.l, ns_of(n))
-	byref := x.fl & 1 != 0 || is_bytes(et)
+	byref := x.fl & 1 != 0 && TY[et].k != TY_REF || is_bytes(et)
 	v := add_lv(x.s, if byref { t_ref(et, 0) } else { decode_rel(et) }, LV_FOR | (if byref { LV_REF } else { 0 }), n)
 	set_r(n, R_LOCAL, v)
 	if x.c >= 0: iv := add_lv(x.c, if x.n >= 0 { rtype(x.n, ns_of(n)) } else { T_I64 }, LV_FOR, n); set_x(n, ax(n) | iv << 2)

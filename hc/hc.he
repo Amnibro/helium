@@ -10,6 +10,7 @@ main():
 	ol byte[>..] ~= []; OLDLOC = env("HC_OLDLOC", ol) && ol.len > 0 && ol[0] == '1'
 	if a[..] == "--slim": f byte[>..] ~= []; t byte[>..] ~= []; k byte[>..] ~= []; arg(3, f); arg(4, t); if arg_count() > 5 { arg(5, k) } v byte[>..] ~= []; if !env("HC_LIB", v) { v.append("hc/lib") } LIBDIR.append(v); exit(if slim(o[..], f[..], t[..], k[..]) { 0 } else { 1 })
 	if a[..] == "--to-he": t byte[>..] ~= []; arg(3, t); parse_init(); exit(if to_he(o[..], t[..]) { 0 } else { 1 })
+	if a[..] == "--tokens": parse_init(); exit(if dump_tokens(o[..]) { 0 } else { 1 })
 	native ~= false
 	for i 3..arg_count():
 		m byte[>..] ~= []; arg(i, m); if m[..] == "--native" { native = true } if m[..] == "--debug" { DBG = true } if m.len > 2 && m[0] == '-' && m[1] == 'D': HDEF.append(m[2..]); HDEF.push('\n')
@@ -18,8 +19,8 @@ main():
 	LIBDIR.append(lib)
 	if !load_program(a): print(DERR); exit(1)
 	if native:
-		rf := load_import(intern("rt"), 0, -1); if rf < 0 { print(DERR); exit(1) } for d DC:
-			if d.k as int == D_FN && d.file == rf: XROOTS.push(d.name)
+		rf := load_import(intern("rt"), 0, -1); if rf < 0 { print(DERR); exit(1) } for d, i DC:
+			if d.k as int == D_FN && d.file == rf: XROOTS.push(i as i32)
 	if !check_program(): print(CERR); exit(1)
 	if DERR.len > 0: print(DERR); exit(1)
 	if !build_packages(): print(PERRS); exit(1)
@@ -27,3 +28,14 @@ main():
 	if native: if !lower_program(c) { print(LERR); exit(1) } if !write_file(o, c) || !make_exec(o) { print("cannot write ", o); exit(1) } return
 	if !gen_program(c): print(GERR); exit(1)
 	if !write_file(o, c): print("cannot write ", o); exit(1);
+extern tok_f64(b uint) real = "hr_f64_from_bits"
+dump_tokens(path const byte[:]) bool:
+	if !lex_file(path): print(LERR[..]); return false
+	o byte[>..] ~= []
+	for i TK.len:
+		t := TK[i]; k := t.k as int
+		if k == T_EOF: break
+		if k == T_IDENT { format(o, "identifier ", tok_text(i)) } else if k == T_INT { format(o, "integer literal ", t.v, " (", tok_text(i), ")") } else if k == T_FLT { format(o, "float literal ", tok_f64(flt_bits(tok_text(i)))) } else if k == T_STR { o.append("string literal \""); for c tok_str(i) { if c == '\n' { o.append("\\n") } else if c == '\t' { o.append("\\t") } else if c == '\r' { o.append("\\r") } else if c == 0 { o.append("\\0") } else if c == '\\' || c == '"' || c == '\'' { o.push('\\'); o.push(c) } else if c < 32 || c >= 127 { format(o, "\\x", "0123456789abcdef"[(c >> 4) as int], "0123456789abcdef"[(c & 15) as int]) } else { o.push(c) } } o.push('"') } else { o.append(tname(if k == K_INT { K_I64 } else if k == K_UINT { K_U64 } else if k == K_BYTE { K_U8 } else if k == K_REAL { K_F64 } else { k })) }
+		o.push('\n')
+	if o.len > 0 { o.pop() } print(o[..]); true
+

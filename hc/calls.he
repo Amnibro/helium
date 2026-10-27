@@ -907,8 +907,7 @@ check_program() bool:
 	for d DC: if d.k as int == D_FN && ND[d.node].fl & F_EXPORT != 0 && ND[d.node].d < 0 { EXPN.push(d.node) }
 	mi := get_inst(DC[md].node, BINDS.len, 0, -1, -1)
 	for x EXPN: get_inst(x, BINDS.len, 0, -1, -1)
-	for r XROOTS:
-		d := lookup(r, -1, D_FN); if d >= 0: get_inst(DC[d].node, BINDS.len, 0, -1, -1)
+	for d XROOTS: get_inst(DC[d].node, BINDS.len, 0, -1, -1)
 	for d, i DC:
 		if d.k as int == D_GLOBAL: global_type(i)
 	propagate_calls()

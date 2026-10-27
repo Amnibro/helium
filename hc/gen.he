@@ -1571,7 +1571,7 @@ recursive gfor(n int):
 	bt := at(a)
 	d := deref(bt)
 	e := TY[d].a
-	byref := x.fl & 1 != 0 && !(TY[e].k == TY_REF && TY[e].c < 0)
+	byref := x.fl & 1 != 0 && TY[e].k != TY_REF
 	if is_seq(d):
 		vpre_e(e)
 		qn byte[..32] ~= []; format(qn, "_q", p)
