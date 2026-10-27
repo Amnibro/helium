@@ -1,0 +1,11 @@
+use std
+hexw(x int) byte[>..]: s byte[>..] ~= []; format_uint(s, x as uint, 16, 8, '0'); s
+two(x int) byte[>..]: str(hexw(x), "-", hexw(x + 1))
+lenof(x int) int: str(" ", hexw(x)).len
+early(x int) byte[>..]:
+	if x % 2 == 0: return str("e", hexw(x))
+	str("o", hexw(x))
+main():
+	t ~= 0
+	for k 30000: t += two(k).len + lenof(k) + early(k).len
+	print(t)

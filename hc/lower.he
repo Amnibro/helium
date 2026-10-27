@@ -621,7 +621,7 @@ recursive lx1(n int) int:
 		o := x.op; a := lx(x.a); d := nv(); ut := if at(n) >= 0 && TY[at(n)].k == TY_INT { at(n) } else { t }; if o == T_NOT { ir(I_UN, 4, d, a, -1, 2); return d } if o == T_MINUS { return lneg(a, if isf(t) { atn(n) } else { ut }, n) } if o == T_BITNOT { ir(I_UN, wof(ut), d, a, -1, 1); return d } if o == T_PLUS { return a } if o == T_AND: return laddr(x.a)
 	if k == N_BIN:
 		o := x.op
-		if o == T_ANDAND || o == T_OROR: d := nv(); l := nlbl(); ir(I_MOV, 3, d, lx(x.a), -1, 0); ir(if o == T_ANDAND { I_BZ } else { I_BNZ }, 3, -1, d, -1, l); ir(I_MOV, 3, d, lx(x.b), -1, 0); ir(I_LBL, 3, -1, -1, -1, l); return d
+		if o == T_ANDAND || o == T_OROR: d := nv(); l := nlbl(); ir(I_MOV, 3, d, lx(x.a), -1, 0); ir(if o == T_ANDAND { I_BZ } else { I_BNZ }, 3, -1, d, -1, l); BRD++; ir(I_MOV, 3, d, lx(x.b), -1, 0); BRD--; ir(I_LBL, 3, -1, -1, -1, l); return d
 		if o == T_DOTEQ || o == T_DOTNEQ: ra := lrefp(x.a); return lcmp(ra, lrefp(x.b), if o == T_DOTEQ { CC_E } else { CC_NE })
 		if o == T_EQ || o == T_NEQ || o == T_LT || o == T_GT || o == T_LTEQ || o == T_GTEQ:
 			ta := fin(x.a); dta := alit(deref(ta), x.a)
@@ -1249,12 +1249,13 @@ recursive lstmt1(n int):
 	if k == N_CONT: drop_to(LCH[LCH.len - 1] as int); ir(I_JMP, 3, -1, -1, -1, LCNT[LCNT.len - 1] as int); return
 	lx(n);
 recursive lret(c int):
-	rt := FI_[CUR].ret
-	if is_agg(rt): lstore(RETV, c, rt); lmove_src(c); drop_ret(); ir(I_JMP, 3, -1, -1, -1, RETL); return
+	rt := FI_[CUR].ret; th := STMP.len
+	if is_agg(rt): lstore(RETV, c, rt); lmove_src(c); drop_stmp(th); drop_ret(); ir(I_JMP, 3, -1, -1, -1, RETL); return
 	if is_pair(rt): p, q := lsl(c); ir(I_MOV, 3, RETV, p, -1, 0); ir(I_MOV, 3, RETV2, q, -1, 0)
 	else:
 		if is_scal(rt): ir(I_MOV, 3, RETV, lx(c), -1, 0) else: lerr(c, "returning this type natively")
-	drop_to(0); ir(I_JMP, 3, -1, -1, -1, RETL);
+	drop_stmp(th); drop_to(0); ir(I_JMP, 3, -1, -1, -1, RETL);
+drop_stmp(th int): i ~= STMP.len; while i > th { i -= 2; ldrop(tmpa(STMP[i]), STMP[i + 1]) }
 var RETV2 int
 recursive lvdecl(n int):
 	x := ND[n]
@@ -1270,7 +1271,8 @@ recursive lvdecl(n int):
 	if x.b < 0: lzero(a, tsz(t)); if ndef(t) { ldefault(a, t) } return
 	init := kid(x.b, 0)
 	if TY[t].k == TY_REF && TY[t].c < 0: stw(a, 0, lrefv(init), 3); return
-	lstore(a, init, t); lmove_src(init)
+	own := ND[init].k as int == N_ID && rk(init) == R_LOCAL && TY[LVS[rv(init)].ty].k != TY_REF
+	if !(!own && needs_drop(t) && !is_vimg(t) && is_lplace(init) && deref(fin(init)) == t && lcopy_into(a, init, t)) { lstore(a, init, t); lmove_src(init) }
 	own_drop(a, t);
 kzero(n int) bool:
 	k := ND[n].k; if k == N_FALSE { return true } if k == N_FLT { return flt_bits(tok_text(ND[n].t)) == 0 } v, ok := kint(n); ok && v == 0

@@ -1,0 +1,10 @@
+use std
+word(l bool) byte[>..]: if l { return copy("abcdef") } copy("ab")
+either(xs const byte[:], l bool) bool: xs.len > 3 || word(l) == xs
+both(xs const byte[:], l bool) bool:
+	r := xs.len < 3 && word(l) == xs
+	r
+main():
+	n ~= 0
+	for i 3000: n += (if either("abcd", i % 2 == 0) { 1 } else { 0 }) + (if either("ab", i % 3 == 0) { 1 } else { 0 }) + (if both("ab", false) { 1 } else { 0 }) + (if both("abcd", true) { 1 } else { 0 })
+	print(n)

@@ -1,0 +1,8 @@
+use std
+struct T { a int[>..], b int[>..] }
+main():
+	t ~= T{[1, 2, 3], [7, 8, 9]}
+	x := t.a; t.a = t.b; t.b = x
+	print(str(t.a[0], " ", t.b[0], " ", t.a.len, " ", t.b.len))
+	t.b.clear(); t.b.push(5)
+	print(str(t.a.len, " ", t.b.len, " ", t.a[0], " ", t.b[0]))

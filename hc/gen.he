@@ -272,6 +272,10 @@ recursive gx1(n int):
 	gx0(n);
 recursive gxo(n int):
 	c := cv(n); t := at(n)
+	if c >= 0 && c != t && TY[t].k == TY_REF && deref(t) == c && !is_vimg(c):
+		if is_res(c) && is_seq(c): ow("hr_rdup_var(*"); gx0(n); ow(")"); return
+		if is_res(c): ow("hr_rdup(*"); gx0(n); ow(", "); esz(TY[c].a as int); ow(")"); return
+		if ownsd(c): p := nt(); ow("({ "); ct(c); format(O, " _d", p, " = *"); gx0(n); ow("; "); d byte[>..<] ~= []; format(d, "_d", p); gdeep(c, d[..]); format(O, "_d", p, "; })"); return
 	if c >= 0 && c != t: if is_res(c) { gcv(n, t, c); return } gx(n); return
 	if is_res(t) && is_place(n): ow("hr_rdup("); gx0(n); ow(", "); esz(TY[t].a); ow(")"); return
 	if ownsd(t) && is_place(n): p := nt(); ow("({ "); ct(t); format(O, " _d", p, " = "); gx0(n); ow("; "); d byte[>..<] ~= []; format(d, "_d", p); gdeep(t, d[..]); format(O, "_d", p, "; })"); return
