@@ -1,0 +1,36 @@
+use helper
+struct Point { x int, y int }
+twice(p Point) int: p.x * 2 + helper::bump(p.y)
+total(xs int[:]) int:
+	s ~= 0
+	for v xs: s += v
+	s
+main():
+	p := Point{3, 4}
+	t := total([1, 2, 3])
+	print(twice(p), t, p.x)
+# lsp: clean
+# lsp: hover 3:23 "(field) Point.x i64"
+# lsp: hover 11:8 "twice(p Point) int"
+# lsp: hover 10:2 "(let) t i64"
+# lsp: hover 6:12 "(var) s i64"
+# lsp: hover 6:6 "v"
+# lsp: hover 3:7 "(param) p Point"
+# lsp: def 3:41 -> helper.he:2:1
+# lsp: def 9:8 -> main.he:2:8
+# lsp: def 11:21 -> main.he:9:2
+# lsp: refs 9:2 3
+# lsp: refs 2:8 3
+# lsp: rename 9:2 pt 3
+# lsp: sig 11:14 "twice(p Point) int" 0
+# lsp: inlay 9 " Point"
+# lsp: inlay 10 " i64"
+# lsp: symbols 4
+# lsp: complete 11:2 has p
+# lsp: complete 11:2 has t
+# lsp: complete 11:2 has twice
+# lsp: complete 11:2 has Point
+# lsp: complete 11:2 lacks s
+# lsp: dotcomplete 11:10 "	print(p." has x
+# lsp: dotcomplete 11:10 "	print(p." has y
+# lsp: dotcomplete 11:10 "	print(p." lacks t

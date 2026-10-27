@@ -418,6 +418,7 @@ static bool hr_os_list_dir(hsl p, hrv *out) {
 	free(names); return true;
 }
 static bool hr_os_read_line(hrv *out) { hr_flush(); int c, any = 0; while ((c = getchar()) != EOF) { any = 1; if (c == '\n') break; hr_fb(out, (uint8_t)c); } if (out->n && out->b[out->n - 1] == '\r') out->n--; return any; }
+static int64_t hr_os_read_bytes(int64_t n, hrv *out) { hr_flush(); int64_t k = 0; int c; while (k < n && (c = getchar()) != EOF) { hr_fb(out, (uint8_t)c); k++; } return k; }
 static void hr_os_read_stdin(hrv *out) { hr_flush(); for (;;) { hr_rinit(out); ssize_t r = read(0, out->b + out->n, 1 << 20); if (r <= 0) break; out->n += r; } }
 static void hr_os_write_stdout(hsl s) { hr_ob_put(s.p, s.n); }
 static void hr_os_write_stderr(hsl s) { hr_flush(); fwrite(s.p, 1, (size_t)s.n, stderr); }

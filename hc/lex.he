@@ -26,6 +26,9 @@ var NH i32[>..]
 var FILES File[>..]
 var TK Tok[>..]
 var LERR byte[>..]
+struct Ov { p0 int, p1 int, t0 int, t1 int }
+var OVS Ov[>..]
+var OVB byte[>..]
 nm(id int) const byte[:]:
 	x := NM[id]; NAMES[(x.s as int)..x.s + x.n]
 hash(s const byte[:]) u64:
@@ -74,7 +77,8 @@ lay_else(p0 int) bool:
 lex_file(path const byte[:]) bool:
 	lex_init()
 	body byte[>..] ~= []
-	if !read_file(path, body): LERR.append("cannot read "); LERR.append(path); return false
+	ov ~= -1; for o, i OVS { if OVB[o.p0..o.p1] == path { ov = i } }
+	if ov >= 0 { body.append(OVB[OVS[ov].t0..OVS[ov].t1]) } else if !read_file(path, body) { LERR.append("cannot read "); LERR.append(path); return false }
 	f := FILES.len
 	base := SRC.len
 	skip := if body.len >= 3 && body[0] == 0xEF && body[1] == 0xBB && body[2] == 0xBF { 3 } else { 0 }

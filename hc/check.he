@@ -19,13 +19,15 @@ AOWN int ~= -1
 CFN int ~= -1
 GLOBI int ~= -1
 var CERR byte[>..]
+var CALL byte[>..]
+LSPM ~= false
 var NERR int
 RETWANT int ~= -1
 var LOOPD int
 var ARGW i32[>..<]
 var ORDER i32[>..]
-cerrl(f int, line int, m const byte[:]): NERR++; if CERR.len > 0 { return } CERR.append(nm(FILES[f].name)); format(CERR, ":", line, ": error: ", m);
-cerr(n int, m const byte[:]): NERR++; if CERR.len > 0 { return } x := TK[ND[max(n, 0)].t]; CERR.append(nm(FILES[x.f].name)); format(CERR, ":", x.line, ": error: ", m);
+cerrl(f int, line int, m const byte[:]): NERR++; if LSPM { CALL.append(nm(FILES[f].name)); format(CALL, ":", line, ": error: ", m, "\n") } if CERR.len > 0 { return } CERR.append(nm(FILES[f].name)); format(CERR, ":", line, ": error: ", m);
+cerr(n int, m const byte[:]): NERR++; x := TK[ND[max(n, 0)].t]; if LSPM { CALL.append(nm(FILES[x.f].name)); format(CALL, ":", x.line, ": error: ", m, "\n") } if CERR.len > 0 { return } CERR.append(nm(FILES[x.f].name)); format(CERR, ":", x.line, ": error: ", m);
 new_inst(node int, lo int, hi int, par int) int:
 	i := FI_.len
 	FI_.push(FnI{node: node, lo: lo, hi: hi, ab: AT.len, par: par, cfn: i, g0: GBS.len, gn: 0, ret: -1, p0: 0, pn: 0, st: 0, blk: -1, bown: -1, name: if node >= 0 { ND[node].s } else { -1 }, ..})

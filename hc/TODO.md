@@ -1,6 +1,6 @@
 # hc: what's left
 
-Status as of 2026-10-27 (gate 76).
+Status as of 2026-10-27 (gate 90).
 
 ## Where things stand
 
@@ -16,7 +16,9 @@ Status as of 2026-10-27 (gate 76).
 | Full apps | Pom-Pom Grove (`pomling.amni`, gfx + ui) and Waystone (`play.amni`, gfx + ui + audio + C sources) compile natively with hc. On lavapipe, Pom-Pom Grove built by hc with our gfx renders pixel-identical to the Goose build: test_creature, test_render and the app's scripted HUD and menu shots exactly, test_world and test_garden within 1 level on 2 and 4 pixels (libm rounding, as before). With our ui too: Pom-Pom Grove's HUD and menu shots and Waystone's title, lobby, shop, memoir, in-run and HUD screens are 0-pixel-diff vs Goose's ui |
 | Driver | `hc build file [-o out]`, `hc run file [-- args]` (native, cached under ~/.cache/hc), `hc check`, `hc version`, `hc help`; `hc file` runs; `hc in out [--native]` still works. The library is HC_LIB, else `lib` beside the executable |
 | Waystone parity | `HELIUM=hc tools/parity.sh`: 193 of 193 traces identical to the JS original |
-| Still on the Goose C++ compiler | Pomling, Waystone and Amni Prayer (web target); LSP; shader compilation |
+| Shaders | `hc/shaderc.he` compiles GLSL to SPIR-V, MSL and HLSL inside hc (no C tool, no cache). It began as a port of cute_spirv and is byte-identical to it on 2698 real and mutated shaders; since then it emits valid SPIR-V where the original did not (sampler parameters, whole-struct buffer stores, `refract`), and every corpus module passes `spirv-val` |
+| Language server | `hc lsp` (hc/lsp.he): diagnostics as you type (every error, not just the first), hover, definition, references, rename, document and workspace symbols, completion (scope, and members after `.` on a line that does not parse yet), signature help, inlay type hints, folding. Each request is answered by `hc --query` in a child process over the open buffers. `tools/hc/lsptest.py` runs the fixtures in hc/test/lsp |
+| Still on the Goose C++ compiler | Pomling, Waystone and Amni Prayer (web target) |
 
 ## 0. The `.he` syntax
 
@@ -51,6 +53,7 @@ Projects still on `.amni`, because they build with the Goose toolchain: Pomling 
 
 ### 1.2 Checker gaps (73 tests, same on both backends)
 
+- **Globals with the same name in two modules:** a top-level constant in one module silently replaced another module's (`KWS` in lsp.he turned every identifier into a keyword). Make it an error, or resolve to the declaring module first.
 - **Implicit copies of resizable values (§4.1), not in the corpus:** `g(x)` with `g(o H)` and `x` a variable of a struct holding a `[>..]` array, and `h ~= o; ...; h` returned by value, compile without the error §4.1 asks for (`copy(x)`), and the native build then reads freed memory. Make both an error that suggests `copy(x)`.
 - **Overload resolution** (17 tests, "no function X matches"):
   - array adaptation at calls: `call_array_adaptation`, `limited_array_adaptation`, `literal_array_arguments`
@@ -166,9 +169,7 @@ Lower priority, since the C path is the oracle and not the product. It still mat
 ## 3. Own everything (replacing Goose and third-party C)
 
 - **Graphics (`gfx`):** done: hc/lib/gfx.he, the whole goose_gfx API on SDL3's GPU API (dlopened libSDL3), with the C layer's checks and misuse messages.
-- **Shaders (both paths agreed):**
-  - Our own shader compiler from the Helium shader subset to SPIR-V for Vulkan, plus GLSL text for WebGL.
-  - Replaces `src/shaderc.c` and `src/amni_gpu.h`, plus `embed_shader` / `lut fn` GPU tables.
+- **Shaders:** done (hc/shaderc.he). Left: the MSL and HLSL banners still name cute_spirv, and `third_party/cute_spirv` stays until `src/` is deleted (the Goose compiler includes it). The Helium-subset GPU language (`lut fn`, `embed_shader` GPU tables, `src/amni_gpu.h`) is not ported; no app uses it.
 - **`physics`:** done (hc/lib/physics.he, hc/lib/physics_engine.he). Left: starting a recording on a non-empty world, recording queries.
 - **`ui`:** done: hc/lib/ui.he (Nuklear under its public-domain option, no C layer) and hc/lib/ttf.he (TrueType outlines, rasterizing, rect packing). ProggyClean is still the built-in default font; ttf.he reads `glyf` outlines only, so CFF (`.otf`) fonts are not loaded yet.
 - **Pom-Pom Grove app** (`eng/`, `app/`, `pomling.amni`): builds only with Goose today. It moves once gfx and shaders exist.
@@ -176,7 +177,7 @@ Lower priority, since the C path is the oracle and not the product. It still mat
   - hc has `--native` and `--debug` only.
   - Missing: build files and `helium build`, packages (`--update`, `--refresh`, `--offline`), cached and JIT runs, `--check`, `--dump`/`--tokens`/`--parse`, `--stack-reserve`, `--multi-test`, `--standalone`, `--compile-shader`.
 - **Web target:** `main` has `--web` through clang + WASI. hc needs its own wasm32 emitter plus `web`, `webgl` and `web.js` in `hc/lib`; those are the only stdlib modules hc lacks.
-- **LSP:** ~3.6k lines of C++ in `src/lsp*.h`, to be rewritten on hc's parser and checker.
+- **LSP:** done for the features above. Left: semantic tokens, code lenses, call hierarchy, selection ranges, recovery from parse errors beyond member completion, and a VS Code extension for `.he` (the one in `vscode/` is Goose's and starts `goose lsp`).
 - **More targets:**
   - arm64 code generation.
   - Mach-O for the Mac and iOS (Waystone, TOS Learn).

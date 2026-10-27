@@ -55,14 +55,14 @@ recursive decl_nested(n int):
 	for f NESTS:
 		if f.node == n && f.own == AOWN: i = f.inst
 	if i < 0: i = new_inst(n, n, NEND[n], AOWN); NESTS.push(NF{ND[n].s, n, i, AOWN}); sig_inst(i)
-	e0 := CERR.len; ne := NERR; f0 := FI_.len; check_inst(i)
+	e0 := CERR.len; ne := NERR; f0 := FI_.len; c0 := CALL.len; check_inst(i)
 	if NERR > ne && e0 == 0:
-		m byte[>..] ~= []; m.append(CERR[..]); CERR.clear(); NERR = ne; mi := intern(m[..]); DEFE.push(i); DEFM.push(mi); for j f0..FI_.len: DEFE.push(j); DEFM.push(mi)
+		m byte[>..] ~= []; m.append(CERR[..]); CERR.clear(); CALL.resize(c0); NERR = ne; mi := intern(m[..]); DEFE.push(i); DEFM.push(mi); for j f0..FI_.len: DEFE.push(j); DEFM.push(mi)
 var DEFE i32[>..<]; var DEFM i32[>..<]
 defer_err(i int):
 	for e, k DEFE:
 		if e == i:
-			NERR++; if CERR.len == 0: CERR.append(nm(DEFM[k]))
+			NERR++; if LSPM { CALL.append(nm(DEFM[k])); CALL.push('\n') } if CERR.len == 0: CERR.append(nm(DEFM[k]))
 var NGD i32[>..<]; var NGO i32[>..<]
 ngen_decl(c int): for k NGD.len { if DC[NGD[k]].node == c && NGO[k] == AOWN { return } } dadd(D_FN, c, node_file(c), ND[c].s); NGD.push(DC.len - 1); NGO.push(AOWN);
 ngok(d int) bool:
@@ -898,16 +898,21 @@ recursive ck_slit(n int, want int) int:
 	set_r(n, R_CTOR, si)
 	set_t(n, t)
 var XROOTS i32[>..]
+lib_file(f int) bool: n := nm(FILES[f].name); LIBDIR.len > 0 && n.len > LIBDIR.len && n[..LIBDIR.len] == LIBDIR[..]
+all_typed(f int) bool:
+	for j ND[f].n: if ND[kid(f, j)].a < 0 { return false }
+	true
 check_program() bool:
 	GLOBI = new_inst(-1, 0, ND.len, -1)
 	FI_[GLOBI].st = 2
 	AOWN = GLOBI; CFN = GLOBI
 	md := lookup(intern("main"), -1, D_FN)
-	if md < 0: cerr(0, "no main function"); return false
+	if md < 0 && !LSPM: cerr(0, "no main function"); return false
 	for d, i DC:
 		if d.k as int == D_GLOBAL && d.file == 0: global_type(i)
 	for d DC: if d.k as int == D_FN && ND[d.node].fl & F_EXPORT != 0 && ND[d.node].d < 0 { EXPN.push(d.node) }
-	mi := get_inst(DC[md].node, BINDS.len, 0, -1, -1)
+	if md >= 0: get_inst(DC[md].node, BINDS.len, 0, -1, -1)
+	if LSPM: for d DC { fq := d.node as int; if d.k as int == D_FN && ND[fq].d < 0 && ND[fq].fl & (F_EXTERN | F_NESTED) == 0 && ND[fq].c >= 0 && !lib_file(d.file as int) && all_typed(fq) { get_inst(fq, BINDS.len, 0, -1, -1) } }
 	for x EXPN: get_inst(x, BINDS.len, 0, -1, -1)
 	for d XROOTS: get_inst(DC[d].node, BINDS.len, 0, -1, -1)
 	for d, i DC:

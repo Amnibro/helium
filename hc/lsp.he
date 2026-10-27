@@ -1,0 +1,414 @@
+use calls
+use os
+shq(b byte[>..]&, s const byte[:]): b.append(" '"); for c s { if c == '\'' { b.append("'\\''") } else { b.push(c) } } b.push('\'')
+struct Doc { uri byte[>..] = [], path byte[>..] = [], text byte[>..] = [] }
+var DOCS Doc[>..]
+var LQD byte[>..]
+var LEXE byte[>..]
+lsend(b const byte[:]): h byte[>..] ~= []; format(h, "Content-Length: ", b.len, "\r\n\r\n"); write_stdout(h[..]); write_stdout(b); flush_stdout()
+lread(b byte[>..]&) bool:
+	n ~= -1
+	loop:
+		l byte[>..] ~= []; if !read_line(l): return false
+		if l.len == 0: break
+		if l.len > 15 && (l[..15] == "Content-Length:" || l[..15] == "content-length:"): n = 0; for c l[15..] { if c >= '0' && c <= '9' { n = n * 10 + (c - '0') as int } }
+	b.clear(); n >= 0 && read_bytes(n, b) == n
+jws(t const byte[:], p0 int) int: p ~= p0; while p < t.len && (t[p] == ' ' || t[p] == '\n' || t[p] == '\r' || t[p] == '\t') { p += 1 } p
+recursive jend(t const byte[:], p0 int) int:
+	p ~= jws(t, p0); if p >= t.len: return p
+	c := t[p]
+	if c == '"': p += 1; while p < t.len && t[p] != '"' { if t[p] == '\\' { p += 1 } p += 1 } return p + 1
+	if c == '{' || c == '[':
+		d ~= 0
+		while p < t.len: if t[p] == '"' { p = jend(t, p) - 1 } else if t[p] == '{' || t[p] == '[' { d += 1 } else if t[p] == '}' || t[p] == ']' { d -= 1; if d == 0 { return p + 1 } } p += 1
+		return p
+	while p < t.len && t[p] != ',' && t[p] != '}' && t[p] != ']' && t[p] != ' ' && t[p] != '\n' && t[p] != '\r' && t[p] != '\t': p += 1
+	p
+jmem(t const byte[:], a0 int, key const byte[:]) int:
+	if a0 < 0: return -1
+	a := jws(t, a0); if a >= t.len || t[a] != '{': return -1
+	p ~= a + 1
+	loop:
+		p = jws(t, p); if p >= t.len || t[p] != '"': return -1
+		ke := jend(t, p); k := t[p + 1..ke - 1]; p = jws(t, ke) + 1
+		if k == key: return jws(t, p)
+		p = jws(t, jend(t, p)); if p >= t.len || t[p] != ',': return -1
+		p += 1
+	-1
+jidx(t const byte[:], a0 int, i int) int:
+	if a0 < 0: return -1
+	a := jws(t, a0); if a >= t.len || t[a] != '[': return -1
+	p ~= jws(t, a + 1); k ~= 0
+	while p < t.len && t[p] != ']': if k == i { return p } p = jws(t, jend(t, p)); if p < t.len && t[p] == ',' { p = jws(t, p + 1) } k += 1
+	-1
+jlen(t const byte[:], a0 int) int: n ~= 0; while jidx(t, a0, n) >= 0 { n += 1 } n
+hx(c byte) int: if c >= '0' && c <= '9' { (c - '0') as int } else if c >= 'a' && c <= 'f' { (c - 'a') as int + 10 } else if c >= 'A' && c <= 'F' { (c - 'A') as int + 10 } else { 0 }
+putu8(o byte[>..]&, u int):
+	if u < 0x80 { o.push(u as byte) } else if u < 0x800 { o.push((0xC0 | u >> 6) as byte); o.push((0x80 | u & 63) as byte) } else if u < 0x10000 { o.push((0xE0 | u >> 12) as byte); o.push((0x80 | u >> 6 & 63) as byte); o.push((0x80 | u & 63) as byte) } else { o.push((0xF0 | u >> 18) as byte); o.push((0x80 | u >> 12 & 63) as byte); o.push((0x80 | u >> 6 & 63) as byte); o.push((0x80 | u & 63) as byte) }
+jstr(t const byte[:], a int, o byte[>..]&):
+	if a < 0 || a >= t.len || t[a] != '"': return
+	p ~= a + 1
+	while p < t.len && t[p] != '"':
+		c := t[p]; p += 1
+		if c != '\\': o.push(c); continue
+		e := t[p]; p += 1
+		if e == 'u':
+			u ~= hx(t[p]) * 4096 + hx(t[p + 1]) * 256 + hx(t[p + 2]) * 16 + hx(t[p + 3]); p += 4
+			if u >= 0xD800 && u < 0xDC00 && p + 5 < t.len && t[p] == '\\' && t[p + 1] == 'u': l := hx(t[p + 2]) * 4096 + hx(t[p + 3]) * 256 + hx(t[p + 4]) * 16 + hx(t[p + 5]); p += 6; u = 0x10000 + (u - 0xD800) * 1024 + l - 0xDC00
+			putu8(o, u)
+		else:
+			o.push(if e == 'n' { '\n' } else if e == 't' { '\t' } else if e == 'r' { '\r' } else if e == 'b' { 8 } else if e == 'f' { 12 } else { e })
+jint(t const byte[:], a int) int:
+	if a < 0: return -1
+	p ~= a; ng := p < t.len && t[p] == '-'; if ng { p += 1 } v ~= 0
+	while p < t.len && t[p] >= '0' && t[p] <= '9': v = v * 10 + (t[p] - '0') as int; p += 1
+	if ng { -v } else { v }
+jesc(o byte[>..]&, s const byte[:]):
+	o.push('"')
+	for c s: if c == '"' || c == '\\' { o.push('\\'); o.push(c) } else if c == '\n' { o.append("\\n") } else if c == '\r' { o.append("\\r") } else if c == '\t' { o.append("\\t") } else if c < 32 { format(o, "\\u00", "0123456789abcdef"[(c >> 4) as int], "0123456789abcdef"[(c & 15) as int]) } else { o.push(c) }
+	o.push('"')
+upath(u const byte[:], o byte[>..]&):
+	s := if u.len > 7 && u[..7] == "file://" { u[7..] } else { u }; i ~= 0
+	while i < s.len: if s[i] == '%' && i + 2 < s.len { o.push((hx(s[i + 1]) * 16 + hx(s[i + 2])) as byte); i += 3 } else { o.push(s[i]); i += 1 }
+puri(p const byte[:], o byte[>..]&):
+	o.append("file://")
+	for c p: if c >= 'a' && c <= 'z' || c >= 'A' && c <= 'Z' || c >= '0' && c <= '9' || c == '/' || c == '.' || c == '_' || c == '-' || c == '~' { o.push(c) } else { format(o, "%", "0123456789ABCDEF"[(c >> 4) as int], "0123456789ABCDEF"[(c & 15) as int]) }
+ldoc(t const byte[:], pp int) int:
+	u byte[>..] ~= []; jstr(t, jmem(t, jmem(t, pp, "textDocument"), "uri"), u)
+	for d, i DOCS: if d.uri[..] == u[..] { return i }
+	-1
+lquery(m const byte[:], path const byte[:], params const byte[:], out byte[>..]&) bool:
+	q byte[>..] ~= []; format(q, m, "\n", path, "\n", DOCS.len, "\n")
+	for d DOCS: format(q, d.path[..], "\t", d.text.len, "\n"); q.append(d.text[..])
+	q.append(params)
+	qf byte[>..] ~= []; format(qf, LQD[..], "/q"); of byte[>..] ~= []; format(of, LQD[..], "/r")
+	delete_file(of[..]); if !write_file(qf[..], q[..]): return false
+	c byte[>..] ~= []; shq(c, LEXE[..]); c.append(" --query"); shq(c, qf[..]); shq(c, of[..]); c.append(" </dev/null >/dev/null 2>&1")
+	run_command(c[..]); out.clear(); read_file(of[..], out) && out.len > 0
+ldiag(path const byte[:]):
+	r byte[>..] ~= []; if !lquery("diag", path, "{}", r): return
+	s ~= 0
+	for c, i r: if c == '\n' { if i > s { o byte[>..] ~= []; format(o, "{\"jsonrpc\":\"2.0\",\"method\":\"textDocument/publishDiagnostics\",\"params\":", r[s..i], "}"); lsend(o[..]) } s = i + 1 }
+lfold(t const byte[:], o byte[>..]&):
+	st int[>..] ~= []; sl int[>..] ~= []; ln ~= 0; p ~= 0; first ~= true; o.push('[')
+	while p < t.len:
+		e ~= p; while e < t.len && t[e] != '\n' { e += 1 } ind ~= 0; while p + ind < e && (t[p + ind] == ' ' || t[p + ind] == '\t') { ind += 1 }
+		bl := p + ind >= e || t[p + ind] == '#' || p + ind + 1 < e && t[p + ind] == '/' && t[p + ind + 1] == '/'
+		if !bl:
+			while st.len > 0 && st[st.len - 1] >= ind: s := sl[sl.len - 1]; st.pop(); sl.pop(); lst ~= ln - 1; if lst > s { if !first { o.push(',') } first = false; format(o, "{\"startLine\":", s, ",\"endLine\":", lst, "}") }
+			st.push(ind); sl.push(ln)
+		p = e + 1; ln += 1
+	while sl.len > 0: s := sl[sl.len - 1]; sl.pop(); if ln - 1 > s { if !first { o.push(',') } first = false; format(o, "{\"startLine\":", s, ",\"endLine\":", ln - 1, "}") }
+	o.push(']')
+LCAPS := "{\"capabilities\":{\"positionEncoding\":\"utf-16\",\"textDocumentSync\":{\"openClose\":true,\"change\":1,\"save\":true},\"hoverProvider\":true,\"definitionProvider\":true,\"referencesProvider\":true,\"renameProvider\":true,\"documentSymbolProvider\":true,\"workspaceSymbolProvider\":true,\"inlayHintProvider\":true,\"foldingRangeProvider\":true,\"signatureHelpProvider\":{\"triggerCharacters\":[\"(\",\",\"]},\"completionProvider\":{\"triggerCharacters\":[\".\",\":\"],\"resolveProvider\":false}},\"serverInfo\":{\"name\":\"hc\",\"version\":\"0.7\"}}"
+lhandle(m const byte[:], t const byte[:], pp int, r byte[>..]&) int:
+	if m == "initialize": r.append(LCAPS); return 0
+	if m == "initialized" || m == "$/cancelRequest" || m == "$/setTrace" || m == "workspace/didChangeConfiguration": return 1
+	if m == "shutdown": return 1
+	if m == "textDocument/didOpen" || m == "textDocument/didChange":
+		di ~= ldoc(t, pp)
+		if di < 0: u byte[>..] ~= []; jstr(t, jmem(t, jmem(t, pp, "textDocument"), "uri"), u); DOCS.push(Doc{..}); di = DOCS.len - 1; DOCS[di].uri.append(u[..]); upath(u[..], DOCS[di].path)
+		tx byte[>..] ~= []
+		if m == "textDocument/didOpen" { jstr(t, jmem(t, jmem(t, pp, "textDocument"), "text"), tx) } else { cc := jmem(t, pp, "contentChanges"); n := jlen(t, cc); if n > 0 { jstr(t, jmem(t, jidx(t, cc, n - 1), "text"), tx) } }
+		DOCS[di].text.clear(); DOCS[di].text.append(tx[..]); p byte[>..] ~= []; p.append(DOCS[di].path[..]); ldiag(p[..]); return 1
+	if m == "textDocument/didClose":
+		di := ldoc(t, pp)
+		if di >= 0: o byte[>..] ~= []; o.append("{\"jsonrpc\":\"2.0\",\"method\":\"textDocument/publishDiagnostics\",\"params\":{\"uri\":"); jesc(o, DOCS[di].uri[..]); o.append(",\"diagnostics\":[]}}"); lsend(o[..]); remove_at(DOCS, di)
+		return 1
+	if m == "textDocument/didSave" || m == "workspace/didChangeWatchedFiles":
+		ps byte[>..][>..] ~= []; for d DOCS { p byte[>..] ~= []; p.append(d.path[..]); ps.push(p) }
+		for p ps: ldiag(p[..])
+		return 1
+	if m == "textDocument/foldingRange": di := ldoc(t, pp); if di < 0 { return 1 } lfold(DOCS[di].text[..], r); return 0
+	if m == "textDocument/hover" || m == "textDocument/definition" || m == "textDocument/references" || m == "textDocument/rename" || m == "textDocument/documentSymbol" || m == "textDocument/completion" || m == "textDocument/signatureHelp" || m == "textDocument/inlayHint" || m == "workspace/symbol":
+		p byte[>..] ~= []; di := ldoc(t, pp)
+		if di >= 0 { p.append(DOCS[di].path[..]) } else if m == "workspace/symbol" && DOCS.len > 0 { p.append(DOCS[0].path[..]) } else { return 1 }
+		return if lquery(m, p[..], t[pp..jend(t, pp)], r) { 0 } else { 1 }
+	2
+lsp_main(exe const byte[:]) int:
+	LEXE.append(exe); d byte[>..] ~= []; if !env("XDG_RUNTIME_DIR", d) || d.len == 0 { d.clear(); d.append("/tmp") } format(LQD, d[..], "/hc-lsp-", time_ns()); make_dir(LQD[..])
+	b byte[>..] ~= []; down ~= false; rc ~= 1
+	while lread(b):
+		t := b[..]; m byte[>..] ~= []; jstr(t, jmem(t, 0, "method"), m)
+		ip := jmem(t, 0, "id"); pp := jmem(t, 0, "params")
+		if m.len == 0: continue
+		if m[..] == "exit": rc = if down { 0 } else { 1 }; break
+		r byte[>..] ~= []; k := lhandle(m[..], t, pp, r)
+		if m[..] == "shutdown": down = true
+		if ip >= 0:
+			o byte[>..] ~= []; o.append("{\"jsonrpc\":\"2.0\",\"id\":"); o.append(t[ip..jend(t, ip)])
+			if k == 2 { o.append(",\"error\":{\"code\":-32601,\"message\":\"method not found\"}}") } else { o.append(",\"result\":"); o.append(if k == 0 { r[..] } else { "null" }); o.push('}') }
+			lsend(o[..])
+	f byte[>..] ~= []; format(f, LQD[..], "/q"); delete_file(f[..]); f.clear(); format(f, LQD[..], "/r"); delete_file(f[..]); delete_dir(LQD[..])
+	rc
+var QDOTL int = -1
+var QDOTC int
+struct Tg { k int = 0, a int = -1, b int = -1, s int = -1 }
+var QPP int
+var QF int
+var QERR byte[>..]
+u16n(a int, b int) int: n ~= 0; for i a..b { c := SRC[i]; if c & 0xC0 != 0x80 { n += if c >= 0xF0 { 2 } else { 1 } } } n
+lstart(f int, p int) int: q ~= p; b := FILES[f].s as int; while q > b && SRC[q - 1] != '\n' { q -= 1 } q
+tcol(i int) int: t := TK[i]; u16n(lstart(t.f as int, t.s as int), t.s as int)
+tend(i int) int: t := TK[i]; tcol(i) + u16n(t.s as int, (t.s + t.n) as int)
+qfile(path const byte[:]) int:
+	for f, i FILES: if nm(f.name) == path { return i }
+	-1
+ftoks(f int) int, int:
+	a ~= -1; b ~= -1
+	for t, i TK: if t.f as int == f && t.k as int != T_EOF { if a < 0 { a = i } b = i + 1 }
+	return a, b
+qtok(f int, line int, ch int) int:
+	a, b := ftoks(f); best ~= -1
+	if a < 0: return -1
+	for i a..b:
+		t := TK[i]
+		if t.line as int != line + 1 || t.lay || t.n == 0: continue
+		c0 := tcol(i); c1 := tend(i)
+		if ch >= c0 && ch < c1: return i
+		if ch == c1 && t.k as int == T_IDENT: best = i
+	best
+node_inst(n int) int:
+	b ~= -1; bw ~= 0
+	for f, i FI_: if i != GLOBI && n >= f.lo && n < f.hi && f.ab >= 0 && (b < 0 || f.hi - f.lo < bw) { b = i; bw = f.hi - f.lo }
+	b
+nametok(n int, name int) int:
+	if n < 0: return -1
+	i ~= ND[n].t as int; e := min(TK.len, i + 400); s := nm(name); k ~= s.len; while k > 0 && s[k - 1] != ':' { k -= 1 } sh := s[k..]
+	while i < e: if TK[i].k as int == T_IDENT && tok_text(i) == sh { return i } i += 1
+	-1
+tg_of(n int, i int) Tg:
+	k := ND[n].k as int; sa := AOWN; AOWN = i; r := rk(n); v := rv(n); t ~= Tg{..}
+	if r == R_LOCAL: t = Tg{1, v, -1, LVS[v].name as int}
+	else if r == R_GLOBAL: t = Tg{2, v, -1, DC[v].name as int}
+	else if r == R_CONST: t = Tg{2, CONSTD[v] as int, -1, DC[CONSTD[v]].name as int}
+	else if r == R_FN && k == N_CALL: t = Tg{3, FI_[v].node as int, -1, ND[FI_[v].node].s as int}
+	else if r == R_FN: t = Tg{3, DC[v].node as int, -1, DC[v].name as int}
+	else if r == R_FIELD && k == N_DOT:
+		si ~= ax(n); if si < 0 { d := deref(at(ND[n].a)); si = if TY[d].k as int == TY_STRUCT { TY[d].a as int } else { -1 } }
+		if si >= 0: t = Tg{4, si, v, SFI[STI[si].f0 + v].name as int}
+	else if r == R_CTOR: t = Tg{5, STI[v].node as int, -1, STI[v].name as int}
+	AOWN = sa; t
+by_name(s int, ns int) Tg:
+	for k [D_FN, D_STRUCT, D_ENUM, D_ALIAS, D_GLOBAL]: d := lookup_q(s, ns, k); if d >= 0 { return Tg{if k == D_FN { 3 } else if k == D_GLOBAL { 2 } else { 5 }, if k == D_GLOBAL { d } else { DC[d].node as int }, -1, DC[d].name as int} }
+	Tg{..}
+qtarget(ti int) Tg:
+	if ti < 0 || TK[ti].k as int != T_IDENT: return Tg{..}
+	s := intern(tok_text(ti)); tf := TK[ti].f
+	for x, n ND:
+		k := x.k as int
+		if x.t as int == ti && (k == N_ID || k == N_CALL): i := node_inst(n); if i >= 0 { t := tg_of(n, i); if t.k != 0 { return t } }
+	for x, n ND:
+		k := x.k as int
+		if TK[x.t].f != tf || x.t as int > ti || ti - x.t as int > 400 || k != N_PARAM && k != N_VDECL && k != N_FOR && k != N_FIELD && k != N_FN && k != N_STRUCT && k != N_ENUM && k != N_ALIAS: continue
+		if nametok(n, if k == N_PARAM || k == N_VDECL || k == N_FOR { s } else { x.s as int }) != ti: continue
+		if k == N_PARAM || k == N_VDECL || k == N_FOR:
+			for l, li LVS: if l.node as int == n && l.name as int == s { return Tg{1, li, -1, s} }
+			if k == N_VDECL: d := lookup_q(s, ns_of(n), D_GLOBAL); if d >= 0 { return Tg{2, d, -1, DC[d].name as int} }
+			continue
+		if k == N_FIELD:
+			for si, j STI: if si.node as int >= 0 && n > si.node as int && n < top_next(si.node as int) { f := sfield(j, s); if f >= 0 { return Tg{4, j, f, s} } }
+			continue
+		return Tg{if k == N_FN { 3 } else { 5 }, n, -1, x.s as int}
+	bd ~= -1; bt ~= -1
+	for x, n ND: if x.k as int == N_DOT && x.s as int == s && x.t as int <= ti && x.t as int > bt && TK[x.t].f == tf { bd = n; bt = x.t as int }
+	if bd >= 0: i := node_inst(bd); if i >= 0 { t := tg_of(bd, i); if t.k != 0 { return t } }
+	by_name(s, ns_of(max(0, ND.len - 1)))
+top_next(n int) int:
+	b ~= ND.len; for x TOP { if x > n && x < b { b = x } }
+	b
+tg_same(a Tg, b Tg) bool: a.k != 0 && a.k == b.k && a.a == b.a && a.b == b.b
+def_tok(t Tg) int:
+	if t.k == 1: return nametok(LVS[t.a].node as int, t.s)
+	if t.k == 2: return nametok(DC[t.a].node as int, t.s)
+	if t.k == 3 || t.k == 5: return nametok(t.a, t.s)
+	if t.k == 4:
+		sn := STI[t.a].node as int; if sn < 0 { return -1 } e := if sn < NEND.len && NEND[sn] >= 0 { NEND[sn] as int } else { ND.len }
+		for n sn..e: if ND[n].k as int == N_FIELD && ND[n].s as int == t.s { return nametok(n, t.s) }
+	-1
+loc(o byte[>..]&, ti int):
+	o.append("{\"uri\":"); u byte[>..] ~= []; puri(nm(FILES[TK[ti].f].name), u); jesc(o, u[..]); rng(o, ti); o.push('}')
+rng(o byte[>..]&, ti int): format(o, ",\"range\":{\"start\":{\"line\":", TK[ti].line - 1, ",\"character\":", tcol(ti), "},\"end\":{\"line\":", TK[ti].line - 1, ",\"character\":", tend(ti), "}}")
+head(n int) byte[>..]:
+	o byte[>..] ~= []; if n < 0: return o
+	a := TK[ND[n].t].s as int; e ~= a
+	if ND[n].k as int == N_FN && ND[n].c >= 0: e = TK[ND[ND[n].c].t].s as int
+	else: while SRC[e] != 0 && SRC[e] != '\n' { e += 1 }
+	while e > a && (SRC[e - 1] == ' ' || SRC[e - 1] == '\t' || SRC[e - 1] == '\n' || SRC[e - 1] == '\r' || SRC[e - 1] == ':' || SRC[e - 1] == '{'): e -= 1
+	o.append(SRC[a..e]); o
+hover_of(t Tg) byte[>..]:
+	o byte[>..] ~= []
+	if t.k == 1: l := LVS[t.a]; format(o, if l.fl & LV_PARAM != 0 { "(param) " } else if l.fl & LV_VAR != 0 { "(var) " } else { "(let) " }, nm(t.s), " ", tn(decode_rel(l.ty as int)))
+	else if t.k == 2: format(o, "(global) ", nm(t.s), " ", tn(global_type(t.a)))
+	else if t.k == 3 || t.k == 5: o.append(head(t.a)[..])
+	else if t.k == 4: f := SFI[STI[t.a].f0 + t.b]; format(o, "(field) ", nm(STI[t.a].name as int), ".", nm(f.name as int), " ", tn(decode_rel(f.ty as int)))
+	o
+q_hover(pos int, r byte[>..]&) bool:
+	ti := qpos(pos); t := qtarget(ti); if t.k == 0: return false
+	h := hover_of(t); if h.len == 0: return false
+	r.append("{\"contents\":{\"kind\":\"markdown\",\"value\":"); m byte[>..] ~= []; format(m, "```helium\n", h[..], "\n```"); jesc(r, m[..]); r.push('}'); rng(r, ti); r.push('}'); true
+qpos(pp int) int: p := jmem(OVB, pp, "position"); qtok(QF, jint(OVB, jmem(OVB, p, "line")), jint(OVB, jmem(OVB, p, "character")))
+q_def(pos int, r byte[>..]&) bool:
+	t := qtarget(qpos(pos)); d := def_tok(t); if d < 0: return false
+	loc(r, d); true
+refs(t Tg, out int[>..]&):
+	for x, i TK: if x.k as int == T_IDENT && !lib_file(x.f as int) && intern(tok_text(i)) == t.s { if tg_same(qtarget(i), t) { out.push(i) } }
+	d := def_tok(t); if d >= 0 { has ~= false; for i out { if i == d { has = true } } if !has { out.push(d) } }
+q_refs(pos int, r byte[>..]&) bool:
+	t := qtarget(qpos(pos)); if t.k == 0: return false
+	l int[>..] ~= []; refs(t, l); r.push('[')
+	for i, j l: if j > 0 { r.push(',') } loc(r, i)
+	r.push(']'); true
+q_rename(pos int, r byte[>..]&) bool:
+	t := qtarget(qpos(pos)); if t.k == 0: return false
+	nn byte[>..] ~= []; jstr(OVB, jmem(OVB, pos, "newName"), nn); l int[>..] ~= []; refs(t, l)
+	r.append("{\"changes\":{"); fs int[>..] ~= []
+	for i l: has ~= false; for f fs { if f == TK[i].f as int { has = true } } if !has { fs.push(TK[i].f as int) }
+	for f, k fs:
+		if k > 0 { r.push(',') } u byte[>..] ~= []; puri(nm(FILES[f].name), u); jesc(r, u[..]); r.append(":["); first ~= true
+		for i l: if TK[i].f as int == f { if !first { r.push(',') } first = false; r.append("{\"newText\":"); jesc(r, nn[..]); rng(r, i); r.push('}') }
+		r.push(']')
+	r.append("}}"); true
+lasttok(n int) int:
+	e := top_next(n); m ~= ND[n].t as int
+	if TOP.contains(n as i32):
+		nt ~= TK.len; if e < ND.len { nt = ND[e].t as int } m = nt - 1; while m > ND[n].t as int && (TK[m].lay || TK[m].k as int == T_EOF || TK[m].f != TK[ND[n].t].f) { m -= 1 }
+		return m
+	for k n..min(e, if n < NEND.len && NEND[n] >= 0 { NEND[n] as int } else { n + 1 }): if ND[k].t as int > m && !TK[ND[k].t].lay { m = ND[k].t as int }
+	m
+symk(k int) int: if k == N_FN { 12 } else if k == N_STRUCT { 23 } else if k == N_ENUM { 10 } else if k == N_ALIAS { 26 } else if k == N_VDECL { 13 } else { 13 }
+dsym(r byte[>..]&, n int, name const byte[:], kind int, kids bool):
+	a := nametok(n, intern(name)); if a < 0: return
+	e := lasttok(n)
+	r.append("{\"name\":"); jesc(r, name); format(r, ",\"kind\":", kind, ",\"range\":{\"start\":{\"line\":", TK[ND[n].t].line - 1, ",\"character\":", tcol(ND[n].t as int), "},\"end\":{\"line\":", TK[e].line - 1, ",\"character\":", tend(e), "}},\"selectionRange\""); rng2(r, a)
+	if kids && ND[n].k as int == N_STRUCT:
+		r.append(",\"children\":["); first ~= true; ee := top_next(n)
+		for k n..ee: if ND[k].k as int == N_FIELD { ft := nametok(k, ND[k].s as int); if ft >= 0 { if !first { r.push(',') } first = false; r.append("{\"name\":"); jesc(r, tok_text(ft)); r.append(",\"kind\":8,\"range\""); rng2(r, ft); r.append(",\"selectionRange\""); rng2(r, ft); r.push('}') } }
+		r.push(']')
+	r.push('}')
+rng2(o byte[>..]&, ti int): format(o, ":{\"start\":{\"line\":", TK[ti].line - 1, ",\"character\":", tcol(ti), "},\"end\":{\"line\":", TK[ti].line - 1, ",\"character\":", tend(ti), "}}")
+sname(n int) byte[>..]:
+	o byte[>..] ~= []; s := if ND[n].k as int == N_VDECL { LS[ND[n].l] as int } else { ND[n].s as int }; q := nm(s); k ~= q.len; while k > 0 && q[k - 1] != ':' { k -= 1 } o.append(q[k..]); o
+q_dsym(r byte[>..]&) bool:
+	r.push('['); first ~= true
+	for n TOP:
+		if n < 0 || node_file(n) != QF: continue
+		k := ND[n].k as int; if k != N_FN && k != N_STRUCT && k != N_ENUM && k != N_ALIAS && k != N_VDECL { continue }
+		s := sname(n); if s.len == 0 { continue } sv := r.len; if !first { r.push(',') } dsym(r, n, s[..], symk(k), true); if r.len == sv + (if first { 0 } else { 1 }) { r.resize(sv) } else { first = false }
+	r.push(']'); true
+q_wsym(pos int, r byte[>..]&) bool:
+	qq byte[>..] ~= []; jstr(OVB, jmem(OVB, pos, "query"), qq); r.push('['); first ~= true
+	for n TOP:
+		if n < 0 || !!lib_file(node_file(n)): continue
+		k := ND[n].k as int; if k != N_FN && k != N_STRUCT && k != N_ENUM && k != N_ALIAS && k != N_VDECL { continue }
+		s := sname(n); a := nametok(n, intern(s[..])); if a < 0 || !fuzzy(qq[..], s[..]) { continue }
+		if !first { r.push(',') } first = false; r.append("{\"name\":"); jesc(r, s[..]); format(r, ",\"kind\":", symk(k), ",\"location\":"); loc(r, a); r.push('}')
+	r.push(']'); true
+lc(c byte) byte: if c >= 'A' && c <= 'Z' { c + 32 } else { c }
+fuzzy(q const byte[:], s const byte[:]) bool: j ~= 0; for c s { if j < q.len && lc(c) == lc(q[j]) { j += 1 } } j == q.len
+LKWS := ["if", "else", "for", "while", "loop", "match", "return", "break", "continue", "struct", "enum", "var", "use", "import", "namespace", "recursive", "extern", "true", "false", "null"]
+citem(r byte[>..]&, first bool&, seen int[>..]&, s int, kind int, det const byte[:]):
+	for x seen: if x == s { return }
+	seen.push(s); q := nm(s); if q.len == 0 || q[0] == '$' || q[0] == '_' && q.len > 1 && q[1] == '_': return
+	if !first { r.push(',') } first = false; r.append("{\"label\":"); jesc(r, q); format(r, ",\"kind\":", kind); if det.len > 0 { r.append(",\"detail\":"); jesc(r, det) } r.push('}')
+q_comp(pos int, r byte[>..]&) bool:
+	p := jmem(OVB, pos, "position"); line := jint(OVB, jmem(OVB, p, "line")); ch := jint(OVB, jmem(OVB, p, "character"))
+	a, b := ftoks(QF); if a < 0: return false
+	cur ~= -1; for i a..b { t := TK[i]; if !t.lay && t.n > 0 && (t.line as int - 1 < line || t.line as int - 1 == line && tend(i) <= ch) { cur = i } }
+	if cur >= 0 && TK[cur].k as int == T_IDENT && TK[cur].line as int - 1 == line && tend(cur) == ch: cur -= 1
+	r.append("{\"isIncomplete\":false,\"items\":["); first ~= true; seen int[>..] ~= []
+	if QDOTL >= 0:
+		ti ~= -1; for i a..b { t := TK[i]; if !t.lay && t.n > 0 && t.line as int - 1 == QDOTL && tend(i) <= QDOTC { ti = i } } t ~= -1
+		for x, n ND: if TK[x.t].f as int == QF && lasttok(n) == ti && (x.k as int == N_ID || x.k as int == N_DOT || x.k as int == N_CALL || x.k as int == N_IDX) { i := node_inst(n); if i >= 0 { sa := AOWN; AOWN = i; t = at(n); AOWN = sa } if t >= 0 { break } }
+		if t >= 0:
+			d := deref(t); k := TY[d].k as int
+			if k == TY_STRUCT: si := TY[d].a as int; for j STI[si].fnum { f := SFI[STI[si].f0 + j]; if f.name >= 0 { citem(r, first, seen, f.name as int, 5, tn(decode_rel(f.ty as int))[..]) } }
+			if k == TY_ARR || k == TY_SLICE: citem(r, first, seen, intern("len"), 10, "int")
+			if k == TY_ARR: citem(r, first, seen, intern("cap"), 10, "int")
+		r.append("]}"); return true
+	fi ~= -1
+	for x, n ND: if x.k as int == N_FN && TK[x.t].f as int == QF && TK[x.t].line as int - 1 <= line && TK[lasttok(n)].line as int - 1 >= line && (fi < 0 || n > fi) { fi = n }
+	if fi >= 0:
+		e := top_next(fi)
+		for l LVS: if l.node as int >= fi && l.node as int < e && l.name >= 0 { dt := nametok(l.node as int, l.name as int); if dt >= 0 && TK[dt].line as int - 1 <= line { citem(r, first, seen, l.name as int, 6, tn(decode_rel(l.ty as int))[..]) } }
+	for d DC:
+		if !!lib_file(d.file as int) && d.file as int != QF:
+			q := nm(d.name); hasq ~= false; for c q { if c == ':' { hasq = true } } if hasq { continue }
+		k := d.k as int; citem(r, first, seen, d.name as int, if k == D_FN { 3 } else if k == D_GLOBAL { 6 } else if k == D_ENUM { 13 } else { 22 }, "")
+	for k LKWS: citem(r, first, seen, intern(k), 14, "")
+	r.append("]}"); true
+q_sig(pos int, r byte[>..]&) bool:
+	p := jmem(OVB, pos, "position"); line := jint(OVB, jmem(OVB, p, "line")); ch := jint(OVB, jmem(OVB, p, "character"))
+	a, b := ftoks(QF); if a < 0: return false
+	cur ~= -1; for i a..b { t := TK[i]; if !t.lay && t.n > 0 && (t.line as int - 1 < line || t.line as int - 1 == line && tend(i) <= ch) { cur = i } }
+	d ~= 0; ap ~= 0; i ~= cur
+	while i >= a:
+		k := TK[i].k as int
+		if k == T_RP || k == T_RB: d += 1
+		else if k == T_LP || k == T_LB: if d == 0 { break } d -= 1
+		else if k == T_COMMA && d == 0: ap += 1
+		i -= 1
+	if i <= a || TK[i].k as int != T_LP || TK[i - 1].k as int != T_IDENT: return false
+	s := intern(tok_text(i - 1)); dd ~= dmap(s); r.append("{\"signatures\":["); n ~= 0
+	while dd >= 0:
+		if DC[dd].k as int == D_FN:
+			fq := DC[dd].node as int; if n > 0 { r.push(',') } n += 1; h := head(fq); r.append("{\"label\":"); jesc(r, h[..]); r.append(",\"parameters\":[")
+			for j ND[fq].n: pn := kid(fq, j); a0 := TK[ND[pn].t].s as int - TK[ND[fq].t].s as int; e0 ~= a0; dp ~= 0; while e0 < h.len && !(dp == 0 && (h[e0] == ',' || h[e0] == ')')) { if h[e0] == '(' || h[e0] == '[' { dp += 1 } if h[e0] == ')' || h[e0] == ']' { dp -= 1 } e0 += 1 } if j > 0 { r.push(',') } format(r, "{\"label\":[", u16c(h[..a0]), ",", u16c(h[..min(e0, h.len)]), "]}")
+			r.append("]}")
+		dd = DC[dd].next as int
+	format(r, "],\"activeSignature\":0,\"activeParameter\":", ap, "}"); n > 0
+u16c(s const byte[:]) int: n ~= 0; for c s { if c & 0xC0 != 0x80 { n += if c >= 0xF0 { 2 } else { 1 } } } n
+q_inlay(pos int, r byte[>..]&) bool:
+	rg := jmem(OVB, pos, "range"); l0 := jint(OVB, jmem(OVB, jmem(OVB, rg, "start"), "line")); l1 := jint(OVB, jmem(OVB, jmem(OVB, rg, "end"), "line"))
+	r.push('['); first ~= true; done int[>..] ~= []
+	for l LVS:
+		n := l.node as int; if n < 0 || ND[n].k as int != N_VDECL || ND[n].a >= 0 || node_file(n) != QF: continue
+		ti := nametok(n, l.name as int); if ti < 0 || TK[ti].line as int - 1 < l0 || TK[ti].line as int - 1 > l1 { continue }
+		dup ~= false; for x done { if x == ti { dup = true } } if dup { continue } done.push(ti)
+		ty := tn(decode_rel(l.ty as int)); if ty.len == 0 || ty[..] == "?" { continue }
+		if !first { r.push(',') } first = false; format(r, "{\"position\":{\"line\":", TK[ti].line - 1, ",\"character\":", tend(ti), "},\"label\":"); lb byte[>..] ~= []; format(lb, " ", ty[..]); jesc(r, lb[..]); r.append(",\"kind\":1,\"paddingLeft\":false}")
+	r.push(']'); true
+qerrs(path const byte[:], text const byte[:], r byte[>..]&):
+	r.append("{\"uri\":"); u byte[>..] ~= []; puri(path, u); jesc(r, u[..]); r.append(",\"diagnostics\":["); first ~= true; s ~= 0
+	for c, i QERR:
+		if c != '\n': continue
+		ln := QERR[s..i]; s = i + 1; k ~= -1
+		for j ln.len: if j + 9 <= ln.len && ln[j..j + 9] == ": error: " { k = j; break }
+		if k < 0: continue
+		c2 ~= k - 1; while c2 >= 0 && ln[c2] != ':' { c2 -= 1 } if c2 < 0 || ln[..c2] != path { continue }
+		lno ~= 0; for d ln[c2 + 1..k] { if d >= '0' && d <= '9' { lno = lno * 10 + (d - '0') as int } }
+		p ~= 0; cl ~= 1; while p < text.len && cl < lno { if text[p] == '\n' { cl += 1 } p += 1 } e ~= p; while e < text.len && text[e] != '\n' && text[e] != '\r' { e += 1 } b ~= p; while b < e && (text[b] == ' ' || text[b] == '\t') { b += 1 }
+		if !first { r.push(',') } first = false; format(r, "{\"range\":{\"start\":{\"line\":", lno - 1, ",\"character\":", u16c(text[p..b]), "},\"end\":{\"line\":", lno - 1, ",\"character\":", u16c(text[p..e]), "}},\"severity\":1,\"source\":\"hc\",\"message\":"); jesc(r, ln[k + 9..]); r.push('}')
+	r.append("]}\n")
+dot_patch(path const byte[:], line int, ch int):
+	oi ~= -1; for o, i OVS { if OVB[o.p0..o.p1] == path { oi = i } }
+	if oi < 0: return
+	o := OVS[oi]; p ~= o.t0; l ~= 0; while p < o.t1 && l < line { if OVB[p] == '\n' { l += 1 } p += 1 }
+	ls := p; u ~= 0; while p < o.t1 && u < ch && OVB[p] != '\n' { c := OVB[p]; if c & 0xC0 != 0x80 { u += if c >= 0xF0 { 2 } else { 1 } } p += 1 } while p < o.t1 && OVB[p] & 0xC0 == 0x80 { p += 1 }
+	q ~= p; while q > ls && (OVB[q - 1] >= 'a' && OVB[q - 1] <= 'z' || OVB[q - 1] >= 'A' && OVB[q - 1] <= 'Z' || OVB[q - 1] >= '0' && OVB[q - 1] <= '9' || OVB[q - 1] == '_') { q -= 1 }
+	if q <= ls || OVB[q - 1] != '.': return
+	while p < o.t1 && (OVB[p] >= 'a' && OVB[p] <= 'z' || OVB[p] >= 'A' && OVB[p] <= 'Z' || OVB[p] >= '0' && OVB[p] <= '9' || OVB[p] == '_'): p += 1
+	d := q - 1; cl byte[>..] ~= []
+	for i ls..d: c := OVB[i]; if c == '(' { cl.push(')') } else if c == '[' { cl.push(']') } else if c == '{' { cl.push('}') } else if (c == ')' || c == ']' || c == '}') && cl.len > 0 { cl.pop() }
+	nt byte[>..] ~= []; nt.append(OVB[o.t0..d]); i ~= cl.len; while i > 0 { i -= 1; nt.push(cl[i]) } nt.append(OVB[p..o.t1])
+	QDOTL = line; QDOTC = u16c(OVB[ls..d]); n0 := OVB.len; OVB.append(nt[..]); OVS[oi].t0 = n0; OVS[oi].t1 = OVB.len
+qmain(qf const byte[:], of const byte[:]) int:
+	if !read_file(qf, OVB): return 1
+	p ~= 0; ls int[>..] ~= []
+	while ls.len < 6 && p < OVB.len: s := p; while p < OVB.len && OVB[p] != '\n' { p += 1 } ls.push(s); ls.push(p); p += 1
+	m := OVB[ls[0]..ls[1]]; path := OVB[ls[2]..ls[3]]; nd ~= 0; for c OVB[ls[4]..ls[5]] { nd = nd * 10 + (c - '0') as int }
+	for k nd:
+		s := p; while OVB[p] != '\t' { p += 1 } e := p; p += 1; n ~= 0; while OVB[p] != '\n' { n = n * 10 + (OVB[p] - '0') as int; p += 1 } p += 1
+		OVS.push(Ov{s, e, p, p + n}); p += n
+	QPP = p; LSPM = true; r byte[>..] ~= []; ok ~= false
+	if m == "textDocument/completion": pz := jmem(OVB, QPP, "position"); dot_patch(path, jint(OVB, jmem(OVB, pz, "line")), jint(OVB, jmem(OVB, pz, "character")))
+	if load_program(path) { check_program(); QERR.append(CALL[..]) }
+	if DERR.len > 0 { QERR.append(DERR[..]); QERR.push('\n') }
+	QF = qfile(path)
+	if m == "diag":
+		for o OVS: qerrs(OVB[o.p0..o.p1], OVB[o.t0..o.t1], r)
+		ok = true
+	else if QF >= 0:
+		ok = if m == "textDocument/hover" { q_hover(QPP, r) } else if m == "textDocument/definition" { q_def(QPP, r) } else if m == "textDocument/references" { q_refs(QPP, r) } else if m == "textDocument/rename" { q_rename(QPP, r) } else if m == "textDocument/documentSymbol" { q_dsym(r) } else if m == "workspace/symbol" { q_wsym(QPP, r) } else if m == "textDocument/completion" { q_comp(QPP, r) } else if m == "textDocument/signatureHelp" { q_sig(QPP, r) } else if m == "textDocument/inlayHint" { q_inlay(QPP, r) } else { false }
+	if ok { write_file(of, r[..]) } else { write_file(of, "null") }
+	0

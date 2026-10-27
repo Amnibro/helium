@@ -211,6 +211,7 @@ rt_os_list_dir(p const byte[:], out int) bool:
 rt_lt(a const byte[:], b const byte[:]) bool: for i min(a.len, b.len) { if a[i] != b[i] { return a[i] < b[i] } } a.len < b.len
 rt_getc() int: if RT_IP == RT_IN { RT_IN = max(sys3(0, 0, ptr(RT_IB[..]), 65536), 0); RT_IP = 0; if RT_IN == 0 { return -1 } } RT_IP += 1; RT_IB[RT_IP - 1] as int
 rt_os_read_line(out int) bool: rt_flush(); any ~= false; loop { c := rt_getc(); if c < 0 { break } any = true; if c == 10 { break } d := rt_grow(out, 1, 1); mst1(d, c) } n := mld(out + 8); if n > 0 && mld1(mld(out) + n - 1) == 13 { mst(out + 8, n - 1) } any
+rt_os_read_bytes(n int, out int) int: rt_flush(); k ~= 0; while k < n { c := rt_getc(); if c < 0 { break } d := rt_grow(out, 1, 1); mst1(d, c); k += 1 } k
 rt_os_read_stdin(out int): rt_flush(); while RT_IP < RT_IN { d := rt_grow(out, 1, 1); mst1(d, RT_IB[RT_IP] as int); RT_IP += 1 } loop: d := rt_grow(out, 1 << 20, 1); r := sys3(0, 0, d, 1 << 20); mst(out + 8, mld(out + 8) - (1 << 20) + max(r, 0)); if r <= 0: break
 rt_os_write_stdout(s const byte[:]): rt_appto(vptr(RT_OUT), ptr(s), s.len); if RT_OUT.n > 65536: rt_flush();
 rt_os_write_stderr(s const byte[:]): rt_flush(); rt_write(2, s);
