@@ -2026,7 +2026,7 @@ gen_program(out byte[>..]&) bool:
 			if TDS.len > 0: SCR.clear(); SCR.append(O[sp..]); O.resize(sp); ow("{ "); O.append(TDS[..]); TDS.clear(); O.append(SCR[..]); ow("}\n")
 			GI.append(O[sp..]); O.resize(sp)
 		else:
-			if has_def(t) || is_vval(t): sp := O.len; format(O, "g", di, " = "); if is_vval(t) { gvzero(t); } else { gdefault(t); } ow(";\n"); GI.append(O[sp..]); O.resize(sp)
+			if has_def(t) || is_vval(t): sp := O.len; format(O, "g", di, " = "); if is_vval(t) { gvzero(t); } else { gdefault(t); } ow(";\n"); if TDS.len > 0 { SCR.clear(); SCR.append(O[sp..]); O.resize(sp); ow("{ "); O.append(TDS[..]); TDS.clear(); O.append(SCR[..]); ow("}\n") } GI.append(O[sp..]); O.resize(sp)
 	if TSP.len > 0: GL.append("typedef struct { uint8_t _e; "); GL.append(HRG[..]); GL.append("} HRG;\nstatic void hr_gsave(HRG *s) { "); GL.append(HRS[..]); GL.append("}\nstatic void hr_gload(HRG *s) { "); GL.append(HRL[..]); GL.append("}\n")
 	mi ~= -1
 	for f, i FI_:

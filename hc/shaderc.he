@@ -1,0 +1,2674 @@
+namespace shc
+use std
+use exception
+use dictionary
+use binary
+use os
+SOP_NAME := 5
+SOP_MEMBERNAME := 6
+SOP_EXTINSTIMPORT := 11
+SOP_EXTINST := 12
+SOP_MEMORYMODEL := 14
+SOP_ENTRYPOINT := 15
+SOP_EXECUTIONMODE := 16
+SOP_CAPABILITY := 17
+SOP_TYPEVOID := 19
+SOP_TYPEBOOL := 20
+SOP_TYPEINT := 21
+SOP_TYPEFLOAT := 22
+SOP_TYPEVECTOR := 23
+SOP_TYPEMATRIX := 24
+SOP_TYPEIMAGE := 25
+SOP_TYPESAMPLEDIMAGE := 27
+SOP_TYPEARRAY := 28
+SOP_TYPERUNTIMEARRAY := 29
+SOP_TYPESTRUCT := 30
+SOP_TYPEPOINTER := 32
+SOP_TYPEFUNCTION := 33
+SOP_DECORATE := 71
+SOP_MEMBERDECORATE := 72
+SOP_CONSTANTTRUE := 41
+SOP_CONSTANTFALSE := 42
+SOP_CONSTANT := 43
+SOP_CONSTANTCOMPOSITE := 44
+SOP_FUNCTION := 54
+SOP_FUNCTIONPARAMETER := 55
+SOP_FUNCTIONEND := 56
+SOP_FUNCTIONCALL := 57
+SOP_VARIABLE := 59
+SOP_LOAD := 61
+SOP_STORE := 62
+SOP_ACCESSCHAIN := 65
+SOP_ARRAYLENGTH := 68
+SOP_VECTORSHUFFLE := 79
+SOP_COMPOSITECONSTRUCT := 80
+SOP_COMPOSITEEXTRACT := 81
+SOP_COMPOSITEINSERT := 82
+SOP_TRANSPOSE := 84
+SOP_IMAGESAMPLEIMPLICITLOD := 87
+SOP_IMAGESAMPLEEXPLICITLOD := 88
+SOP_IMAGESAMPLEDREFIMPLICITLOD := 89
+SOP_IMAGESAMPLEDREFEXPLICITLOD := 90
+SOP_IMAGEFETCH := 95
+SOP_IMAGEREAD := 98
+SOP_IMAGEWRITE := 99
+SOP_IMAGE := 100
+SOP_IMAGEQUERYSIZELOD := 103
+SOP_IMAGEQUERYSIZE := 104
+SOP_CONVERTFTOU := 109
+SOP_CONVERTFTOS := 110
+SOP_CONVERTSTOF := 111
+SOP_CONVERTUTOF := 112
+SOP_BITCAST := 124
+SOP_SNEGATE := 126
+SOP_FNEGATE := 127
+SOP_IADD := 128
+SOP_FADD := 129
+SOP_ISUB := 130
+SOP_FSUB := 131
+SOP_IMUL := 132
+SOP_FMUL := 133
+SOP_UDIV := 134
+SOP_SDIV := 135
+SOP_FDIV := 136
+SOP_UMOD := 137
+SOP_SMOD := 139
+SOP_FMOD := 141
+SOP_VECTORTIMESSCALAR := 142
+SOP_MATRIXTIMESSCALAR := 143
+SOP_VECTORTIMESMATRIX := 144
+SOP_MATRIXTIMESVECTOR := 145
+SOP_MATRIXTIMESMATRIX := 146
+SOP_DOT := 148
+SOP_ANY := 154
+SOP_ALL := 155
+SOP_LOGICALEQUAL := 164
+SOP_LOGICALNOTEQUAL := 165
+SOP_LOGICALOR := 166
+SOP_LOGICALAND := 167
+SOP_LOGICALNOT := 168
+SOP_SELECT := 169
+SOP_IEQUAL := 170
+SOP_INOTEQUAL := 171
+SOP_UGREATERTHAN := 172
+SOP_SGREATERTHAN := 173
+SOP_UGREATERTHANEQUAL := 174
+SOP_SGREATERTHANEQUAL := 175
+SOP_ULESSTHAN := 176
+SOP_SLESSTHAN := 177
+SOP_ULESSTHANEQUAL := 178
+SOP_SLESSTHANEQUAL := 179
+SOP_FORDEQUAL := 180
+SOP_FUNORDNOTEQUAL := 183
+SOP_FORDLESSTHAN := 184
+SOP_FORDGREATERTHAN := 186
+SOP_FORDLESSTHANEQUAL := 188
+SOP_FORDGREATERTHANEQUAL := 190
+SOP_SHIFTRIGHTLOGICAL := 194
+SOP_SHIFTRIGHTARITHMETIC := 195
+SOP_SHIFTLEFTLOGICAL := 196
+SOP_BITWISEOR := 197
+SOP_BITWISEXOR := 198
+SOP_BITWISEAND := 199
+SOP_NOT := 200
+SOP_DPDX := 207
+SOP_DPDY := 208
+SOP_FWIDTH := 209
+SOP_CONTROLBARRIER := 224
+SOP_MEMORYBARRIER := 225
+SOP_ATOMICEXCHANGE := 229
+SOP_ATOMICCOMPAREEXCHANGE := 230
+SOP_ATOMICIADD := 234
+SOP_ATOMICSMIN := 236
+SOP_ATOMICUMIN := 237
+SOP_ATOMICSMAX := 238
+SOP_ATOMICUMAX := 239
+SOP_ATOMICAND := 240
+SOP_ATOMICOR := 241
+SOP_ATOMICXOR := 242
+SOP_LOOPMERGE := 246
+SOP_SELECTIONMERGE := 247
+SOP_LABEL := 248
+SOP_BRANCH := 249
+SOP_BRANCHCONDITIONAL := 250
+SOP_SWITCH := 251
+SOP_KILL := 252
+SOP_RETURN := 253
+SOP_RETURNVALUE := 254
+SOP_UNREACHABLE := 255
+G_ROUND := 1
+G_TRUNC := 3
+G_FABS := 4
+G_SABS := 5
+G_FSIGN := 6
+G_SSIGN := 7
+G_FLOOR := 8
+G_CEIL := 9
+G_FRACT := 10
+G_SIN := 13
+G_COS := 14
+G_TAN := 15
+G_ASIN := 16
+G_ACOS := 17
+G_ATAN := 18
+G_ATAN2 := 25
+G_POW := 26
+G_EXP := 27
+G_LOG := 28
+G_EXP2 := 29
+G_LOG2 := 30
+G_SQRT := 31
+G_INVERSESQRT := 32
+G_DETERMINANT := 33
+G_MATRIXINVERSE := 34
+G_FMIN := 37
+G_UMIN := 38
+G_SMIN := 39
+G_FMAX := 40
+G_UMAX := 41
+G_SMAX := 42
+G_FCLAMP := 43
+G_UCLAMP := 44
+G_SCLAMP := 45
+G_FMIX := 46
+G_STEP := 48
+G_SMOOTHSTEP := 49
+G_LENGTH := 66
+G_DISTANCE := 67
+G_CROSS := 68
+G_NORMALIZE := 69
+G_REFLECT := 71
+G_REFRACT := 72
+SC_UNIFORMCONSTANT := 0
+SC_INPUT := 1
+SC_UNIFORM := 2
+SC_OUTPUT := 3
+SC_PRIVATE := 6
+SC_FUNCTION := 7
+SC_WORKGROUP := 4
+SC_STORAGEBUFFER := 12
+DEC_BLOCK := 2
+DEC_COLMAJOR := 5
+DEC_ARRAYSTRIDE := 6
+DEC_MATRIXSTRIDE := 7
+DEC_FLAT := 14
+DEC_NONWRITABLE := 24
+DEC_NONREADABLE := 25
+DEC_LOCATION := 30
+DEC_BINDING := 33
+DEC_DESCRIPTORSET := 34
+DEC_OFFSET := 35
+DEC_BUILTIN := 11
+BI_POSITION := 0
+BI_FRAGCOORD := 15
+TK_EOF := 0
+TK_ID := 1
+TK_INT := 2
+TK_UINT := 3
+TK_FLT := 4
+TK_P := 5
+P_SHL := 256
+P_SHR := 257
+P_LE := 258
+P_GE := 259
+P_EQ := 260
+P_NE := 261
+P_AND := 262
+P_OR := 263
+P_ADDA := 264
+P_SUBA := 265
+P_MULA := 266
+P_DIVA := 267
+P_MODA := 268
+P_ANDA := 269
+P_ORA := 270
+P_XORA := 271
+P_SHLA := 272
+P_SHRA := 273
+P_INC := 274
+P_DEC := 275
+struct Tok { k int = 0, line int = 0, id int = -1, fv real = 0.0, iv u64 = 0, p int = 0 }
+struct Mac { name int, isf bool, params int[>..], body byte[>..] }
+struct Cond { pa bool, act bool, taken bool, se bool }
+var ERRM byte[>..]
+var SFILES (byte[>..])[>..]
+var FIDX = 0
+var PPT byte[>..]
+var LP = 0
+var LLINE = 0
+var TOK Tok
+var AHEAD Tok[>..]
+var MACS Mac[>..]
+var MIDX = dictionary<int, int>{..}
+var INCL = dictionary<int, bool>{..}
+var CONDS Cond[>..]
+var EXPN int[>..]
+var PPO byte[>..]
+var PPLINE = 0
+var INCDIR byte[>..]
+var INCDISP (byte[>..])[>..]
+var KW_DEFINED = -1
+ch(s const byte[:], i int) int: if i >= 0 && i < s.len { s[i] as int } else { 0 }
+idst(c int) bool: c >= 'a' && c <= 'z' || c >= 'A' && c <= 'Z' || c == '_'
+idch(c int) bool: idst(c) || c >= '0' && c <= '9'
+lnum(raw int) int: FIDX * 1000000 + raw
+serr(line int, m const byte[:]):
+	fi := line / 1000000; l := line % 1000000
+	ERRM.clear(); ERRM.append(if fi < SFILES.len { SFILES[fi][..] } else { "shader" }); format(ERRM, ":", l, ": error: ", m)
+	exception::throw(1)
+dig(c int, b int) int: d := if c >= '0' && c <= '9' { c - '0' } else if c >= 'a' && c <= 'f' { c - 'a' + 10 } else if c >= 'A' && c <= 'F' { c - 'A' + 10 } else { 99 }; if d < b { d } else { -1 }
+c_strtoull(s const byte[:], i0 int) u64, int:
+	i ~= i0; b ~= 10
+	if ch(s, i) == '0' && (ch(s, i + 1) == 'x' || ch(s, i + 1) == 'X') && dig(ch(s, i + 2), 16) >= 0 { b = 16; i += 2 } else if ch(s, i) == '0' { b = 8 }
+	v u64 ~= 0; st := i
+	while dig(ch(s, i), b) >= 0: v = v * b as u64 + dig(ch(s, i), b) as u64; i += 1
+	return v, if i == st && b != 8 { i0 } else { i }
+c_strtod(s const byte[:], i0 int) real:
+	i ~= i0; while ch(s, i) >= '0' && ch(s, i) <= '9' { i += 1 }
+	if ch(s, i) == '.': i += 1; while ch(s, i) >= '0' && ch(s, i) <= '9' { i += 1 }
+	if ch(s, i) == 'e' || ch(s, i) == 'E':
+		j ~= i + 1; if ch(s, j) == '+' || ch(s, j) == '-' { j += 1 }
+		if ch(s, j) >= '0' && ch(s, j) <= '9': while ch(s, j) >= '0' && ch(s, j) <= '9' { j += 1 } i = j
+	v, ok := parse_flt(s[i0..i]); v
+lex_next() Tok:
+	p ~= LP; s := PPT[..]
+	loop:
+		while ch(s, p) == ' ' || ch(s, p) == '\t' || ch(s, p) == '\r' || ch(s, p) == '\n': if ch(s, p) == '\n' { LLINE += 1 } p += 1
+		if ch(s, p) == '/' && ch(s, p + 1) == '/': while p < s.len && s[p] != '\n' { p += 1 } continue
+		if ch(s, p) == '/' && ch(s, p + 1) == '*':
+			p += 2
+			while p < s.len && !(s[p] == '*' && ch(s, p + 1) == '/'): if s[p] == '\n' { LLINE += 1 } p += 1
+			if p < s.len: p += 2
+			continue
+		if ch(s, p) == '#' && ch(s, p + 1) == 'l' && (ch(s, p + 2) == ' ' || ch(s, p + 2) == '\t'):
+			p += 3; a, q := c_strtol(s, p); LLINE = a; b, q2 := c_strtol(s, q); FIDX = b; p = q2
+			while p < s.len && s[p] != '\n': p += 1
+			if ch(s, p) == '\n': p += 1
+			continue
+		break
+	t ~= Tok{}; t.line = lnum(LLINE); c := ch(s, p)
+	if c == 0: t.k = TK_EOF; LP = p; return t
+	if idst(c): st := p; while idch(ch(s, p)) { p += 1 } t.k = TK_ID; t.id = sid(s[st..p]); LP = p; return t
+	if c >= '0' && c <= '9' || c == '.' && ch(s, p + 1) >= '0' && ch(s, p + 1) <= '9':
+		st := p; fl ~= false
+		if c == '0' && (ch(s, p + 1) == 'x' || ch(s, p + 1) == 'X'):
+			p += 2; while dig(ch(s, p), 16) >= 0 { p += 1 }
+		else:
+			while ch(s, p) >= '0' && ch(s, p) <= '9': p += 1
+			if ch(s, p) == '.': fl = true; p += 1; while ch(s, p) >= '0' && ch(s, p) <= '9' { p += 1 }
+			if ch(s, p) == 'e' || ch(s, p) == 'E': fl = true; p += 1; if ch(s, p) == '+' || ch(s, p) == '-' { p += 1 } while ch(s, p) >= '0' && ch(s, p) <= '9' { p += 1 }
+		if fl:
+			t.k = TK_FLT; t.fv = c_strtod(s, st); if ch(s, p) == 'f' || ch(s, p) == 'F' { p += 1 }
+		else if ch(s, p) == 'f' || ch(s, p) == 'F':
+			t.k = TK_FLT; t.fv = c_strtod(s, st); p += 1
+		else:
+			v, e := c_strtoull(s, st); t.iv = v
+			if ch(s, p) == 'u' || ch(s, p) == 'U' { p += 1; t.k = TK_UINT } else { t.k = TK_INT }
+		LP = p; return t
+	t.k = TK_P; p += 1; c2 := ch(s, p)
+	if c == '<': t.p = if c2 == '<' { p += 1; if ch(s, p) == '=' { p += 1; P_SHLA } else { P_SHL } } else if c2 == '=' { p += 1; P_LE } else { '<' }
+	else if c == '>': t.p = if c2 == '>' { p += 1; if ch(s, p) == '=' { p += 1; P_SHRA } else { P_SHR } } else if c2 == '=' { p += 1; P_GE } else { '>' }
+	else if c == '=': t.p = if c2 == '=' { p += 1; P_EQ } else { '=' }
+	else if c == '!': t.p = if c2 == '=' { p += 1; P_NE } else { '!' }
+	else if c == '&': t.p = if c2 == '&' { p += 1; P_AND } else if c2 == '=' { p += 1; P_ANDA } else { '&' }
+	else if c == '|': t.p = if c2 == '|' { p += 1; P_OR } else if c2 == '=' { p += 1; P_ORA } else { '|' }
+	else if c == '+': t.p = if c2 == '+' { p += 1; P_INC } else if c2 == '=' { p += 1; P_ADDA } else { '+' }
+	else if c == '-': t.p = if c2 == '-' { p += 1; P_DEC } else if c2 == '=' { p += 1; P_SUBA } else { '-' }
+	else if c == '*': t.p = if c2 == '=' { p += 1; P_MULA } else { '*' }
+	else if c == '/': t.p = if c2 == '=' { p += 1; P_DIVA } else { '/' }
+	else if c == '%': t.p = if c2 == '=' { p += 1; P_MODA } else { '%' }
+	else if c == '^': t.p = if c2 == '=' { p += 1; P_XORA } else { '^' }
+	else: t.p = c
+	LP = p; t
+c_strtol(s const byte[:], i0 int) int, int:
+	i ~= i0
+	while ch(s, i) == ' ' || ch(s, i) == '\t' || ch(s, i) == '\n' || ch(s, i) == '\r': i += 1
+	ng ~= false; if ch(s, i) == '-' || ch(s, i) == '+' { ng = ch(s, i) == '-'; i += 1 }
+	v ~= 0; st := i
+	while ch(s, i) >= '0' && ch(s, i) <= '9': v = v * 10 + ch(s, i) - '0'; i += 1
+	return if ng { -v } else { v }, if i == st { i0 } else { i }
+adv(): if AHEAD.len > 0 { TOK = AHEAD[0]; remove_at(AHEAD, 0) } else { TOK = lex_next() }
+peek(n int) Tok:
+	if n == 0: return TOK
+	while AHEAD.len < n: AHEAD.push(lex_next())
+	AHEAD[n - 1]
+isp(p int) bool: TOK.k == TK_P && TOK.p == p
+accp(p int) bool: if isp(p) { adv(); true } else { false }
+expp(p int):
+	if !isp(p): if p < 256 { m byte[>..] ~= []; m.append("expected '"); m.push(p as byte); m.push('\''); serr(TOK.line, m[..]) } else { serr(TOK.line, "unexpected token") }
+	adv()
+isid(id int) bool: TOK.k == TK_ID && TOK.id == id
+accid(id int) bool: if isid(id) { adv(); true } else { false }
+expid() int: if TOK.k != TK_ID { serr(TOK.line, "expected identifier") } n := TOK.id; adv(); n
+pperr(m const byte[:]): serr(lnum(PPLINE), m)
+ppact() bool: for c CONDS { if !c.act { return false } } true
+strip_comments(src const byte[:]) byte[>..]:
+	o byte[>..] ~= []; i ~= 0; n := src.len
+	while i < n:
+		if src[i] == '/' && ch(src, i + 1) == '/':
+			while i < n && src[i] != '\n': i += 1
+		else if src[i] == '/' && ch(src, i + 1) == '*':
+			i += 2; o.push(' ')
+			while i < n && !(src[i] == '*' && ch(src, i + 1) == '/'): if src[i] == '\n' { o.push('\n') } i += 1
+			if i < n: i += 2
+		else:
+			o.push(src[i]); i += 1
+	o
+ppmark(line int, fi int): format(PPO, "\n#l ", line, " ", fi, "\n")
+pexp(name int) bool: for e EXPN { if e == name { return true } } false
+mac(name int) int: if contains(MIDX, name) { get_or_insert(MIDX, name, -1) } else { -1 }
+numskip(s const byte[:], p0 int) int:
+	p ~= p0 + 1
+	while p < s.len && (idch(s[p] as int) || s[p] == '.' || (s[p] == '+' || s[p] == '-') && (s[p - 1] == 'e' || s[p - 1] == 'E')): p += 1
+	p
+recursive expand(s const byte[:], prot bool) byte[>..]:
+	o byte[>..] ~= []; p ~= 0; e := s.len
+	while p < e:
+		c := s[p] as int
+		if idst(c):
+			is := p; while p < e && idch(s[p] as int) { p += 1 } name := sid(s[is..p])
+			if prot && name == KW_DEFINED:
+				o.append("defined"); q ~= p
+				while q < e && (s[q] == ' ' || s[q] == '\t'): q += 1
+				if q < e && s[q] == '(':
+					while p < e && s[p] != ')': o.push(s[p]); p += 1
+					if p < e: o.push(s[p]); p += 1
+				else:
+					while p < e && (s[p] == ' ' || s[p] == '\t'): o.push(s[p]); p += 1
+					while p < e && idch(s[p] as int): o.push(s[p]); p += 1
+				continue
+			m := mac(name)
+			if m < 0 || pexp(name): o.append(s[is..p]); continue
+			if !MACS[m].isf:
+				EXPN.push(name); b := expand(MACS[m].body[..], prot); EXPN.pop(); o.append(b[..]); continue
+			q ~= p
+			while q < e && (s[q] == ' ' || s[q] == '\t' || s[q] == '\n'): q += 1
+			if q >= e || s[q] != '(': o.append(s[is..p]); continue
+			q += 1; args (byte[>..])[>..] ~= []; cur byte[>..] ~= []; dep ~= 0; closed ~= false
+			while q < e:
+				a := s[q]
+				if a == '(':
+					dep += 1; cur.push(a); q += 1
+				else if a == ')':
+					if dep == 0: q += 1; closed = true; break
+					dep -= 1; cur.push(a); q += 1
+				else if a == ',' && dep == 0:
+					args.push(copy(cur)); cur.clear(); q += 1
+				else:
+					cur.push(a); q += 1
+			args.push(copy(cur)); p = q
+			if !closed: pperr(str("unterminated argument list invoking macro '", snm(name), "'"))
+			np := MACS[m].params.len
+			if args.len != np && !(np == 0 && args.len == 1 && args[0].len == 0): pperr(str("macro '", snm(name), "' expects ", np, " argument(s), got ", args.len))
+			sub byte[>..] ~= []; bd := MACS[m].body[..]; b ~= 0
+			while b < bd.len:
+				if idst(bd[b] as int):
+					bs := b; while b < bd.len && idch(bd[b] as int) { b += 1 } bn := sid(bd[bs..b]); pi ~= -1
+					for x, i MACS[m].params: if pi < 0 && x == bn { pi = i }
+					if pi >= 0 { sub.append(args[pi][..]) } else { sub.append(bd[bs..b]) }
+				else:
+					sub.push(bd[b]); b += 1
+			EXPN.push(name); x := expand(sub[..], prot); EXPN.pop(); o.append(x[..]); continue
+		if c >= '0' && c <= '9' || c == '.' && p + 1 < e && s[p + 1] >= '0' && s[p + 1] <= '9': ns := p; p = numskip(s, p); o.append(s[ns..p]); continue
+		o.push(s[p]); p += 1
+	o
+PEND_DONE := 0
+PEND_ARGS := 1
+PEND_PAREN := 2
+scan_pending(s const byte[:]) int:
+	p ~= 0; e := s.len
+	while p < e:
+		c := s[p] as int
+		if idst(c):
+			is := p; while p < e && idch(s[p] as int) { p += 1 } name := sid(s[is..p]); m := mac(name)
+			if m < 0 || !MACS[m].isf || pexp(name): continue
+			q ~= p; while q < e && (s[q] == ' ' || s[q] == '\t') { q += 1 }
+			if q >= e: return PEND_PAREN
+			if s[q] != '(': continue
+			p = q + 1; dep ~= 0; closed ~= false
+			while p < e:
+				a := s[p]; p += 1
+				if a == '(' { dep += 1 } else if a == ')' { if dep == 0 { closed = true; break } dep -= 1 }
+			if !closed: return PEND_ARGS
+			continue
+		if c >= '0' && c <= '9' || c == '.' && p + 1 < e && s[p + 1] >= '0' && s[p + 1] <= '9': p = numskip(s, p); continue
+		p += 1
+	PEND_DONE
+var PXS byte[>..]
+var PXP = 0
+pxws(): while ch(PXS[..], PXP) == ' ' || ch(PXS[..], PXP) == '\t' { PXP += 1 }
+recursive pxprim() int:
+	pxws(); c := ch(PXS[..], PXP)
+	if c == '(':
+		PXP += 1; v := pxtern(); pxws()
+		if ch(PXS[..], PXP) != ')': pperr("expected ')' in #if expression")
+		PXP += 1; return v
+	if c == '!': PXP += 1; return if pxprim() == 0 { 1 } else { 0 }
+	if c == '~': PXP += 1; return ~pxprim()
+	if c == '-': PXP += 1; return -pxprim()
+	if c == '+': PXP += 1; return pxprim()
+	if c >= '0' && c <= '9':
+		v, q := c_strtoull(PXS[..], PXP); PXP = q
+		while ch(PXS[..], PXP) == 'u' || ch(PXS[..], PXP) == 'U' || ch(PXS[..], PXP) == 'l' || ch(PXS[..], PXP) == 'L': PXP += 1
+		return v as! int
+	if idst(c):
+		st := PXP; while idch(ch(PXS[..], PXP)) { PXP += 1 }
+		if sid(PXS[st..PXP]) == KW_DEFINED:
+			pxws(); par := ch(PXS[..], PXP) == '('
+			if par: PXP += 1
+			pxws()
+			if !idst(ch(PXS[..], PXP)): pperr("expected identifier after 'defined'")
+			ns := PXP; while idch(ch(PXS[..], PXP)) { PXP += 1 } name := sid(PXS[ns..PXP])
+			if par:
+				pxws()
+				if ch(PXS[..], PXP) != ')': pperr("expected ')' after defined(")
+				PXP += 1
+			return if mac(name) >= 0 { 1 } else { 0 }
+		return 0
+	pperr("bad #if expression"); 0
+b2i(b bool) int: if b { 1 } else { 0 }
+recursive pxbin(mp int) int:
+	l ~= pxprim()
+	loop:
+		pxws(); a := ch(PXS[..], PXP); b := ch(PXS[..], PXP + 1); pr ~= 0; op ~= 0
+		if a == '*' { pr = 10; op = '*' } else if a == '/' { pr = 10; op = '/' } else if a == '%' { pr = 10; op = '%' } else if a == '+' { pr = 9; op = '+' } else if a == '-' { pr = 9; op = '-' } else if a == '<' && b == '<' { pr = 8; op = P_SHL } else if a == '>' && b == '>' { pr = 8; op = P_SHR } else if a == '<' && b == '=' { pr = 7; op = P_LE } else if a == '>' && b == '=' { pr = 7; op = P_GE } else if a == '<' { pr = 7; op = '<' } else if a == '>' { pr = 7; op = '>' } else if a == '=' && b == '=' { pr = 6; op = P_EQ } else if a == '!' && b == '=' { pr = 6; op = P_NE } else if a == '&' && b == '&' { pr = 2; op = P_AND } else if a == '|' && b == '|' { pr = 1; op = P_OR } else if a == '&' { pr = 5; op = '&' } else if a == '^' { pr = 4; op = '^' } else if a == '|' { pr = 3; op = '|' }
+		if pr == 0 || pr < mp: break
+		PXP += if op >= 256 { 2 } else { 1 }
+		r := pxbin(pr + 1)
+		l = if op == '*' { l * r } else if op == '/' { if r != 0 { l / r } else { 0 } } else if op == '%' { if r != 0 { l % r } else { 0 } } else if op == '+' { l + r } else if op == '-' { l - r } else if op == P_SHL { l << r } else if op == P_SHR { l >> r } else if op == '<' { b2i(l < r) } else if op == '>' { b2i(l > r) } else if op == P_LE { b2i(l <= r) } else if op == P_GE { b2i(l >= r) } else if op == P_EQ { b2i(l == r) } else if op == P_NE { b2i(l != r) } else if op == '&' { l & r } else if op == '^' { l ^ r } else if op == '|' { l | r } else if op == P_AND { b2i(l != 0 && r != 0) } else { b2i(l != 0 || r != 0) }
+	l
+recursive pxtern() int:
+	c := pxbin(1); pxws()
+	if ch(PXS[..], PXP) == '?':
+		PXP += 1; a := pxtern(); pxws()
+		if ch(PXS[..], PXP) != ':': pperr("expected ':' in #if expression")
+		PXP += 1; b := pxtern(); return if c != 0 { a } else { b }
+	c
+ppeval(s const byte[:]) int: x := expand(s, true); PXS.clear(); PXS.append(x[..]); PXP = 0; pxtern()
+ppdefine(s const byte[:]):
+	p ~= 0; e := s.len
+	while p < e && (s[p] == ' ' || s[p] == '\t'): p += 1
+	if p >= e || !idst(s[p] as int): pperr("expected macro name after #define")
+	ns := p; while p < e && idch(s[p] as int) { p += 1 } name := sid(s[ns..p])
+	m ~= Mac{name, false, [], []}
+	if p < e && s[p] == '(':
+		m.isf = true; p += 1
+		loop:
+			while p < e && (s[p] == ' ' || s[p] == '\t'): p += 1
+			if p < e && s[p] == ')': p += 1; break
+			if p >= e || !idst(s[p] as int): pperr(str("bad parameter list for macro '", snm(name), "'"))
+			ps := p; while p < e && idch(s[p] as int) { p += 1 } m.params.push(sid(s[ps..p]))
+			while p < e && (s[p] == ' ' || s[p] == '\t'): p += 1
+			if p < e && s[p] == ',': p += 1; continue
+			if p < e && s[p] == ')': p += 1; break
+			pperr(str("bad parameter list for macro '", snm(name), "'"))
+	while p < e && (s[p] == ' ' || s[p] == '\t'): p += 1
+	m.body.append(s[p..e]); setmac(m)
+setmac(m Mac): k := mac(m.name); if k >= 0 { MACS[k] = m } else { insert(MIDX, m.name, MACS.len); MACS.push(m) }
+recursive ppinclude(s const byte[:], pf int, pl int) bool:
+	p ~= 0; e := s.len
+	while p < e && (s[p] == ' ' || s[p] == '\t'): p += 1
+	op := if p < e { s[p] as int } else { 0 }
+	if op != '"' && op != '<': pperr("expected \"path\" after #include")
+	cl := if op == '"' { '"' } else { '>' }; p += 1; ps := p
+	while p < e && s[p] as int != cl: p += 1
+	if p >= e: pperr("unterminated #include path")
+	path := sid(s[ps..p])
+	if contains(INCL, path): return false
+	insert(INCL, path, true)
+	content byte[>..] ~= []; disp byte[>..] ~= []
+	if !inc_resolve(snm(path), content, disp): pperr(str("cannot open include file \"", snm(path), "\""))
+	ni := SFILES.len; SFILES.push(disp); ppfile(content[..], ni); ppmark(pl, pf); PPLINE = pl; FIDX = pf; true
+inc_resolve(path const byte[:], content byte[>..]&, disp byte[>..]&) bool:
+	f byte[>..] ~= []; f.append(INCDIR[..]); f.append(path)
+	if !read_file(f[..], content): return false
+	disp.append(f[..]); true
+lnend(s const byte[:], i int) int: e ~= i; while e < s.len && s[e] != '\n' { e += 1 } e
+recursive ppfile(raw const byte[:], fi int):
+	src := strip_comments(raw); s := src[..]; ppmark(1, fi); FIDX = fi; PPLINE = 1; cb := CONDS.len; p ~= 0
+	while p < s.len:
+		lst ~= p; sl := PPLINE; jn byte[>..] ~= []; hj ~= false; le ~= 0
+		loop:
+			le = lnend(s, lst); cont := le > lst && s[le - 1] == '\\'
+			if cont || hj: hj = true; jn.append(s[lst..(if cont { le - 1 } else { le })])
+			if !cont: break
+			PPLINE += 1; lst = if le < s.len { le + 1 } else { le }
+		line byte[>..] ~= []; line.append(if hj { jn[..] } else { s[lst..le] })
+		q ~= 0; while q < line.len && (line[q] == ' ' || line[q] == '\t') { q += 1 }
+		isd := q < line.len && line[q] == '#'
+		if !isd && ppact():
+			while le < s.len:
+				pd := scan_pending(line[..])
+				if pd == PEND_DONE: break
+				nx ~= le + 1; pk ~= nx
+				while ch(s, pk) == ' ' || ch(s, pk) == '\t' || ch(s, pk) == '\n': pk += 1
+				if pd == PEND_PAREN && ch(s, pk) != '(': break
+				if ch(s, pk) == '#': break
+				hj = true; line.push(' ')
+				loop:
+					ne := lnend(s, nx); cont := ne > nx && s[ne - 1] == '\\'
+					line.append(s[nx..(if cont { ne - 1 } else { ne })]); le = ne
+					if !cont || le >= s.len: break
+					PPLINE += 1; nx = le + 1
+				PPLINE += 1
+		if isd:
+			q += 1; while q < line.len && (line[q] == ' ' || line[q] == '\t') { q += 1 }
+			ds := q; while q < line.len && idch(line[q] as int) { q += 1 } d := snm(sid(line[ds..q])); rest := line[q..]; act := ppact(); spl ~= false
+			if d == "include":
+				if act: spl = ppinclude(rest, fi, sl + 1)
+			else if d == "define":
+				if act: ppdefine(rest)
+			else if d == "undef":
+				if act: r ~= 0; while r < rest.len && (rest[r] == ' ' || rest[r] == '\t') { r += 1 } ns := r; while r < rest.len && idch(rest[r] as int) { r += 1 } k := mac(sid(rest[ns..r])); if k >= 0 { remove(MIDX, MACS[k].name); MACS[k].name = -2 }
+			else if d == "ifdef" || d == "ifndef":
+				r ~= 0; while r < rest.len && (rest[r] == ' ' || rest[r] == '\t') { r += 1 } ns := r; while r < rest.len && idch(rest[r] as int) { r += 1 }
+				df := mac(sid(rest[ns..r])) >= 0; a := act && (if d == "ifndef" { !df } else { df }); CONDS.push(Cond{act, a, a, false})
+			else if d == "if":
+				a := act && ppeval(rest) != 0; CONDS.push(Cond{act, a, a, false})
+			else if d == "elif":
+				if CONDS.len <= cb: pperr("#elif without #if")
+				c := &CONDS[CONDS.len - 1]
+				if c.se: pperr("#elif after #else")
+				if c.taken { c.act = false } else { c.act = c.pa && ppeval(rest) != 0 } c.taken = c.taken || c.act
+			else if d == "else":
+				if CONDS.len <= cb: pperr("#else without #if")
+				c := &CONDS[CONDS.len - 1]
+				if c.se: pperr("duplicate #else")
+				c.se = true; c.act = c.pa && !c.taken; c.taken = true
+			else if d == "endif":
+				if CONDS.len <= cb: pperr("#endif without #if")
+				CONDS.pop()
+			else if d == "version" || d == "extension" || d == "pragma" || d == "line":
+				d.len
+			else if act:
+				pperr(str("unknown preprocessor directive '#", d, "'"))
+			if !spl: PPO.push('\n')
+		else if ppact():
+			rl := PPLINE; PPLINE = sl; x := expand(line[..], false); PPO.append(x[..]); PPLINE = rl; PPO.push('\n')
+		else:
+			PPO.push('\n')
+		if hj: ppmark(PPLINE + 1, fi)
+		p = if le < s.len { le + 1 } else { le }; PPLINE += 1
+	if CONDS.len != cb: pperr("missing #endif")
+	return
+preprocess(src const byte[:]):
+	KW_DEFINED = sid("defined"); MACS.clear(); MIDX = dictionary<int, int>{..}; INCL = dictionary<int, bool>{..}; CONDS.clear(); EXPN.clear(); PPO.clear()
+	n byte[>..] ~= []; n.append("shader"); SFILES.push(n); ppfile(src, 0); FIDX = 0
+struct Snm { s int, n int }
+var SNB byte[>..]
+var SNM Snm[>..]
+var SNH int[>..]
+snm(id int) const byte[:]: x := SNM[id]; SNB[x.s..x.s + x.n]
+shash(s const byte[:]) u64: h u64 ~= 1469598103934665603; for c s { h = (h ^ c) * 1099511628211 } h
+sid(s const byte[:]) int:
+	if SNH.len == 0: SNH.resize(1 << 10, -1)
+	if SNM.len * 2 >= SNH.len:
+		n := SNH.len * 2; SNH.clear(); SNH.resize(n, -1)
+		for x, i SNM: j ~= (shash(SNB[x.s..x.s + x.n]) as int) & n - 1; while SNH[j] >= 0 { j = j + 1 & n - 1 } SNH[j] = i
+	m := SNH.len - 1; j ~= (shash(s) as int) & m
+	while SNH[j] >= 0: if snm(SNH[j]) == s { return SNH[j] } j = j + 1 & m
+	id := SNM.len; SNM.push(Snm{SNB.len, s.len}); SNB.append(s); SNH[j] = id; id
+dgi<K>(d dictionary<K, int>&, k K) int: i := dat(d, k); if i < 0 { -1 } else { d.slots[i].val }
+T_VOID := 0
+T_BOOL := 1
+T_INT := 2
+T_UINT := 3
+T_FLOAT := 4
+T_VEC := 5
+T_MAT := 6
+T_SAMP := 7
+T_ARR := 8
+T_STRUCT := 9
+T_IMG := 10
+SD_2D := 0
+SD_CUBE := 1
+SD_3D := 2
+SD_2DA := 3
+SD_2DS := 4
+SD_CUBES := 5
+SD_2DAS := 6
+struct Ty { k int, el int = -1, cols int = 0, rows int = 0, name int = -1, fnm int[>..] = [], fty int[>..] = [] }
+E_FLT := 0
+E_INT := 1
+E_UINT := 2
+E_BOOL := 3
+E_REF := 4
+E_BIN := 5
+E_UN := 6
+E_COND := 7
+E_CALL := 8
+E_MEM := 9
+E_IDX := 10
+E_LEN := 11
+struct Ex { k int, line int, rt int = -1, want int = -1, fv real = 0.0, iv u64 = 0, bv bool = false, name int = -1, op int = 0, l int = -1, r int = -1, c int = -1, post bool = false, args int[>..] = [], asz int = -1 }
+S_DECL := 0
+S_EXPR := 1
+S_IF := 2
+S_FOR := 3
+S_WHILE := 4
+S_DO := 5
+S_SWITCH := 6
+S_RET := 7
+S_DISCARD := 8
+S_BREAK := 9
+S_CONT := 10
+S_BLOCK := 11
+struct St { k int, line int, ty int = -1, name int = -1, init int = -1, nx int = -1, e int = -1, a int = -1, b int = -1, it int = -1, blk int[>..] = [], grps int[>..] = [] }
+struct Grp { labels int[>..] = [], def bool, sts int[>..] = [] }
+D_STRUCT := 0
+D_GLOBAL := 1
+D_INOUT := 2
+D_BLOCK := 3
+D_OPAQUE := 4
+D_SHARED := 5
+D_FUNC := 6
+struct Dc { k int, line int, ty int = -1, name int = -1, isin bool = false, flat bool = false, loc int = 0, isc bool = false, init int = -1, set int = 0, bind int = 0, ro bool = false, isbuf bool = false, inst int = -1, mty int[>..] = [], mnm int[>..] = [], pty int[>..] = [], pnm int[>..] = [], pq int[>..] = [], body int = -1 }
+SY_VAR := 0
+SY_BM := 1
+SY_FUNC := 2
+SY_POS := 3
+struct Sym { k int, name int, ty int, id int, st int, mi int = 0, laid int = 0, hcv bool = false, cbits u32 = 0, params int[>..] = [], pq int[>..] = [], nxo int = -1 }
+V_RV := 0
+V_PTR := 1
+V_SW := 2
+struct Val { k int = 0, ty int = -1, id int = 0, st int = 0, lt int = 0, bt int = -1, sw int = 0, swn int = 0 }
+var TY Ty[>..]
+var EX Ex[>..]
+var ST St[>..]
+var GRP Grp[>..]
+var DC Dc[>..]
+var SY Sym[>..]
+var STAGE = 0
+var TVOID = 0
+var TBOOL = 0
+var TINT = 0
+var TUINT = 0
+var TFLOAT = 0
+var TVEC = [0, 0, 0]
+var TIVEC = [0, 0, 0]
+var TUVEC = [0, 0, 0]
+var TBVEC = [0, 0, 0]
+var TMAT = [0, 0, 0]
+var TSAMP = 0
+var TUSAMP = 0
+var TSCUBE = 0
+var TS3D = 0
+var TS2DA = 0
+var TS2DS = 0
+var TSCUBES = 0
+var TS2DAS = 0
+var TYNAMES = dictionary<int, int>{..}
+var ARRTY = dictionary<u64, int>{..}
+var IMGTY = dictionary<int, int>{..}
+var LSIZE = [0, 0, 0]
+var NEXTID = 1
+var GLSLEXT = 0
+var SNAMES u32[>..]
+var SDECOS u32[>..]
+var SGLOB u32[>..]
+var SFUNCS u32[>..]
+var SBODY u32[>..]
+var SLOCALS u32[>..]
+var SIFACE u32[>..]
+var TYIDS = dictionary<int, int>{..}
+var PTRIDS = dictionary<u64, int>{..}
+var CONSTIDS = dictionary<u64, int>{..}
+var FNTYIDS = dictionary<u64, int>{..}
+var LAIDS = dictionary<int, int>{..}
+var LAIDA = dictionary<int, int>{..}
+var LAIDE = dictionary<int, int>{..}
+var SAMPIMG = dictionary<int, int>{..}
+var NEEDIQ = false
+var NEEDEF = false
+var SCD = dictionary<u64, int>{..}
+var SCN int[>..]
+var SCM int[>..]
+var FNS = dictionary<int, int>{..}
+var CURRT = -1
+var FHASRET = false
+var BTERM = false
+var BRKT = 0
+var CONTT = 0
+var ENTRYF = 0
+var PVVAR = 0
+var DECLS int[>..]
+nty(t Ty) int: TY.push(t); TY.len - 1
+nex(k int, line int) int: EX.push(Ex{k, line}); EX.len - 1
+nst(k int, line int) int: ST.push(St{k, line}); ST.len - 1
+nid() int: NEXTID += 1; NEXTID - 1
+emitw(s u32[>..]&, op int, w const int[:]): s.push(((w.len + 1) << 16 | op) as! u32); for x w { s.push(x as! u32) }
+emit0(s u32[>..]&, op int): s.push((1 << 16 | op) as! u32)
+emit1(s u32[>..]&, op int, a int): s.push((2 << 16 | op) as! u32); s.push(a as! u32)
+emit2(s u32[>..]&, op int, a int, b int): s.push((3 << 16 | op) as! u32); s.push(a as! u32); s.push(b as! u32)
+emit3(s u32[>..]&, op int, a int, b int, c int): s.push((4 << 16 | op) as! u32); s.push(a as! u32); s.push(b as! u32); s.push(c as! u32)
+emit4(s u32[>..]&, op int, a int, b int, c int, d int): s.push((5 << 16 | op) as! u32); s.push(a as! u32); s.push(b as! u32); s.push(c as! u32); s.push(d as! u32)
+emit5(s u32[>..]&, op int, a int, b int, c int, d int, e int): s.push((6 << 16 | op) as! u32); s.push(a as! u32); s.push(b as! u32); s.push(c as! u32); s.push(d as! u32); s.push(e as! u32)
+pushstr(s u32[>..]&, t const byte[:]):
+	w u32 ~= 0; sh ~= 0
+	for i t.len + 1: w |= (if i < t.len { t[i] as u32 } else { 0 as u32 }) << sh; sh += 8; if sh == 32 { s.push(w); w = 0; sh = 0 }
+	if sh != 0: s.push(w)
+emitstr(s u32[>..]&, op int, w const int[:], t const byte[:]): s.push(((w.len + (t.len + 4) / 4 + 1) << 16 | op) as! u32); for x w { s.push(x as! u32) } pushstr(s, t)
+nameid(id int, n const byte[:]): emitstr(SNAMES, SOP_NAME, [id], n)
+recursive tyid(t int) int:
+	f := dgi(TYIDS, t); if f >= 0: return f
+	id := nid(); y := TY[t]
+	if y.k == T_VOID { emit1(SGLOB, SOP_TYPEVOID, id) } else if y.k == T_BOOL { emit1(SGLOB, SOP_TYPEBOOL, id) } else if y.k == T_INT { emit3(SGLOB, SOP_TYPEINT, id, 32, 1) } else if y.k == T_UINT { emit3(SGLOB, SOP_TYPEINT, id, 32, 0) } else if y.k == T_FLOAT { emit2(SGLOB, SOP_TYPEFLOAT, id, 32) }
+	if y.k == T_VEC:
+		e := tyid(y.el); emit3(SGLOB, SOP_TYPEVECTOR, id, e, y.cols)
+	else if y.k == T_ARR && y.cols == -1:
+		e := tyid(y.el); emit2(SGLOB, SOP_TYPERUNTIMEARRAY, id, e); ey := TY[y.el]
+		emit3(SDECOS, SOP_DECORATE, id, DEC_ARRAYSTRIDE, if ey.k == T_VEC { if ey.cols == 2 { 8 } else { 16 } } else { 4 })
+	else if y.k == T_ARR:
+		e := tyid(y.el); l := cscalar(TUINT, y.cols as! u32); emit3(SGLOB, SOP_TYPEARRAY, id, e, l)
+	else if y.k == T_STRUCT:
+		w int[>..] ~= [id]; for f y.fty { w.push(tyid(f)) } emitw(SGLOB, SOP_TYPESTRUCT, w[..]); nameid(id, snm(y.name))
+	else if y.k == T_MAT:
+		c := tyid(TVEC[y.rows - 2]); emit3(SGLOB, SOP_TYPEMATRIX, id, c, y.cols)
+	else if y.k == T_IMG:
+		st := tyid(if y.cols == 32 || y.cols == 33 { TUINT } else { TFLOAT }); emitw(SGLOB, SOP_TYPEIMAGE, [id, st, 1, 0, 0, 0, 2, y.cols])
+	else if y.k == T_SAMP:
+		st := tyid(if y.el >= 0 { y.el } else { TFLOAT }); img := nid(); c := y.cols
+		dim := if c == SD_CUBE || c == SD_CUBES { 3 } else if c == SD_3D { 2 } else { 1 }
+		dep := if c == SD_2DS || c == SD_CUBES || c == SD_2DAS { 1 } else { 0 }
+		arr := if c == SD_2DA || c == SD_2DAS { 1 } else { 0 }
+		emitw(SGLOB, SOP_TYPEIMAGE, [img, st, dim, dep, arr, 0, 1, 0]); emit2(SGLOB, SOP_TYPESAMPLEDIMAGE, id, img); insert(SAMPIMG, t, img)
+	insert(TYIDS, t, id); id
+ptridraw(tid int, st int) int:
+	key := (tid as u64) << 4 | st as u64; f := dgi(PTRIDS, key); if f >= 0: return f
+	id := nid(); emit3(SGLOB, SOP_TYPEPOINTER, id, st, tid); insert(PTRIDS, key, id); id
+ptrid(t int, st int) int: ptridraw(tyid(t), st)
+cscalar(t int, bits u32) int:
+	tid := tyid(t); key := (tid as u64) << 32 | bits as u64; f := dgi(CONSTIDS, key); if f >= 0: return f
+	id := nid()
+	if TY[t].k == T_BOOL { emit2(SGLOB, if bits != 0 { SOP_CONSTANTTRUE } else { SOP_CONSTANTFALSE }, tid, id) } else { emit3(SGLOB, SOP_CONSTANT, tid, id, bits as int) }
+	insert(CONSTIDS, key, id); id
+cfloat(f f32) int: cscalar(TFLOAT, binary::f32_bits(f))
+cint(v int) int: cscalar(TINT, v as! u32)
+cuint(v int) int: cscalar(TUINT, v as! u32)
+rv(t int, id int) Val: Val{V_RV, t, id}
+swi(v Val, i int) int: v.sw >> i * 8 & 255
+load(v Val) int:
+	if v.k == V_RV: return v.id
+	y := TY[v.ty]
+	if y.k == T_ARR && y.cols == -1: serr(0, "runtime arrays cannot be loaded whole; index them instead")
+	if v.k == V_PTR && v.lt != 0 && y.k == T_STRUCT:
+		res := nid(); w int[>..] ~= [tyid(v.ty)]; w.push(res)
+		for ft, i y.fty:
+			if !isscal(ft) && !isvec(ft): serr(0, str("cannot load '", snm(y.name), "' whole from a buffer block; access its members instead"))
+			fp := nid(); pt := ptrid(ft, v.st); ci := cint(i); emit4(SBODY, SOP_ACCESSCHAIN, pt, fp, v.id, ci)
+			fv := nid(); ftid := tyid(ft); emit3(SBODY, SOP_LOAD, ftid, fv, fp); w.push(fv)
+		emitw(SBODY, SOP_COMPOSITECONSTRUCT, w[..]); return res
+	ld := nid()
+	if v.k == V_PTR: t := tyid(v.ty); emit3(SBODY, SOP_LOAD, t, ld, v.id); return ld
+	bt := tyid(v.bt); emit3(SBODY, SOP_LOAD, bt, ld, v.id)
+	if v.swn == 1: res := nid(); t := tyid(v.ty); emit4(SBODY, SOP_COMPOSITEEXTRACT, t, res, ld, swi(v, 0)); return res
+	res := nid(); w int[>..] ~= [tyid(v.ty)]; w.push(res); w.push(ld); w.push(ld)
+	for i v.swn: w.push(swi(v, i))
+	emitw(SBODY, SOP_VECTORSHUFFLE, w[..]); res
+store(d Val, src int, line int):
+	if d.k == V_PTR: emit2(SBODY, SOP_STORE, d.id, src); return
+	if d.k != V_SW: serr(line, "cannot assign to this expression")
+	bt := tyid(d.bt); old := nid(); emit3(SBODY, SOP_LOAD, bt, old, d.id); nv ~= 0
+	if d.swn == 1:
+		nv = nid(); emitw(SBODY, SOP_COMPOSITEINSERT, [bt, nv, src, old, swi(d, 0)])
+	else:
+		bc := TY[d.bt].cols; nv = nid(); w int[>..] ~= [bt, nv, old, src]
+		for i bc: sel ~= i; for j d.swn { if sel == i && swi(d, j) == i { sel = bc + j } } w.push(sel)
+		emitw(SBODY, SOP_VECTORSHUFFLE, w[..])
+	emit2(SBODY, SOP_STORE, d.id, nv)
+skey(d int, n int) u64: (d as u64) << 32 | n as u64
+pushsc(): SCM.push(SCN.len)
+popsc():
+	d := SCM.len - 1; m := SCM.pop()
+	while SCN.len > m: remove(SCD, skey(d, SCN.pop()))
+findsym(n int) int:
+	d ~= SCM.len - 1
+	while d >= 0: f := dgi(SCD, skey(d, n)); if f >= 0 { return f } d -= 1
+	-1
+addsym(n int, k int, t int, id int, st int, line int) int:
+	d := SCM.len - 1
+	if contains(SCD, skey(d, n)): serr(line, str("redefinition of '", snm(n), "'"))
+	SY.push(Sym{k, n, t, id, st}); insert(SCD, skey(d, n), SY.len - 1); SCN.push(n); SY.len - 1
+isprec(n int) bool: s := snm(n); s == "highp" || s == "mediump" || s == "lowp"
+lookty(n int) int: dgi(TYNAMES, n)
+attype() bool: TOK.k == TK_ID && (isprec(TOK.id) || lookty(TOK.id) >= 0)
+iskw(s const byte[:]) bool: TOK.k == TK_ID && snm(TOK.id) == s
+acckw(s const byte[:]) bool: if iskw(s) { adv(); true } else { false }
+parsetype() int:
+	while TOK.k == TK_ID && isprec(TOK.id): adv()
+	if TOK.k != TK_ID: serr(TOK.line, "expected type name")
+	t := lookty(TOK.id); if t < 0: serr(TOK.line, str("unknown type '", snm(TOK.id), "'"))
+	adv(); t
+arrtype(el int, len int) int:
+	key := ((el as u64) << 12) ^ ((len as! u32) as u64); f := dgi(ARRTY, key); if f >= 0: return f
+	t := nty(Ty{T_ARR, el, len}); insert(ARRTY, key, t); t
+arrsuffix(base int) int:
+	if !isp('['): return base
+	if TY[base].k == T_ARR: serr(TOK.line, "multi-dimensional arrays are not supported")
+	line := TOK.line; adv(); se := passign(); t, bits := cfold(se)
+	if TY[t].k != T_INT && TY[t].k != T_UINT: serr(line, "array size must be an integer constant expression")
+	len := (bits as! i32) as int
+	if len <= 0: serr(line, "array size must be positive")
+	expp(']')
+	if isp('['): serr(TOK.line, "multi-dimensional arrays are not supported")
+	arrtype(base, len)
+recursive pprimary() int:
+	line := TOK.line
+	if accp('('): e := pexpr(); expp(')'); return e
+	if TOK.k == TK_FLT: e := nex(E_FLT, line); EX[e].fv = TOK.fv; adv(); return e
+	if TOK.k == TK_INT || TOK.k == TK_UINT: e := nex(if TOK.k == TK_INT { E_INT } else { E_UINT }, line); EX[e].iv = TOK.iv; adv(); return e
+	if TOK.k == TK_ID:
+		n := TOK.id; s := snm(n)
+		if s == "true" || s == "false": e := nex(E_BOOL, line); EX[e].bv = s == "true"; adv(); return e
+		adv(); asz ~= -1
+		if isp('[') && lookty(n) >= 0:
+			adv(); asz = 0
+			if TOK.k == TK_INT || TOK.k == TK_UINT: asz = (TOK.iv as! i32) as int; adv()
+			expp(']')
+		if isp('('):
+			adv(); e := nex(E_CALL, line); EX[e].name = n; EX[e].asz = asz
+			if !isp(')'): loop { a := passign(); EX[e].args.push(a); if !accp(',') { break } }
+			expp(')'); return e
+		if asz != -1: serr(line, "expected '(' after array type")
+		e := nex(E_REF, line); EX[e].name = n; return e
+	serr(line, "unexpected token in expression"); -1
+recursive ppostfix() int:
+	e ~= pprimary()
+	loop:
+		line := TOK.line
+		if accp('.'):
+			mb := expid()
+			if snm(mb) == "length" && isp('('): adv(); expp(')'); m := nex(E_LEN, line); EX[m].l = e; e = m; continue
+			m := nex(E_MEM, line); EX[m].l = e; EX[m].name = mb; e = m
+		else if accp('['):
+			x := nex(E_IDX, line); EX[x].l = e; i := pexpr(); EX[x].r = i; expp(']'); e = x
+		else if isp(P_INC) || isp(P_DEC):
+			u := nex(E_UN, line); EX[u].op = TOK.p; EX[u].l = e; EX[u].post = true; adv(); e = u
+		else:
+			break
+	e
+recursive punary() int:
+	line := TOK.line
+	if TOK.k == TK_P:
+		p := TOK.p
+		if p == '-' || p == '!' || p == '~' || p == '+' || p == P_INC || p == P_DEC:
+			adv(); o := punary()
+			if p == '+': return o
+			e := nex(E_UN, line); EX[e].op = p; EX[e].l = o; return e
+	ppostfix()
+binprec(p int) int: if p == '*' || p == '/' || p == '%' { 10 } else if p == '+' || p == '-' { 9 } else if p == P_SHL || p == P_SHR { 8 } else if p == '<' || p == '>' || p == P_LE || p == P_GE { 7 } else if p == P_EQ || p == P_NE { 6 } else if p == '&' { 5 } else if p == '^' { 4 } else if p == '|' { 3 } else if p == P_AND { 2 } else if p == P_OR { 1 } else { 0 }
+recursive pbinary(mp int) int:
+	l ~= punary()
+	loop:
+		if TOK.k != TK_P: break
+		op := TOK.p; pr := binprec(op)
+		if pr == 0 || pr < mp: break
+		line := TOK.line; adv(); r := pbinary(pr + 1); e := nex(E_BIN, line); EX[e].op = op; EX[e].l = l; EX[e].r = r; l = e
+	l
+recursive pternary() int:
+	c := pbinary(1)
+	if accp('?'):
+		line := EX[c].line; a := passign(); expp(':'); b := passign(); e := nex(E_COND, line); EX[e].c = c; EX[e].l = a; EX[e].r = b; return e
+	c
+isassign(p int) bool: p == '=' || p >= P_ADDA && p <= P_SHRA
+recursive passign() int:
+	l := pternary()
+	if TOK.k == TK_P && isassign(TOK.p):
+		op := TOK.p; line := TOK.line; adv(); r := passign(); e := nex(E_BIN, line); EX[e].op = op; EX[e].l = l; EX[e].r = r; return e
+	l
+pexpr() int: passign()
+recursive pblock() int:
+	line := TOK.line; expp('{'); b := nst(S_BLOCK, line)
+	while !isp('}'): if TOK.k == TK_EOF { serr(TOK.line, "unexpected end of file inside block") } s := pstmt(); ST[b].blk.push(s)
+	adv(); b
+pdecl() int:
+	line := TOK.line; bt ~= parsetype(); bt = arrsuffix(bt); head ~= -1; tail ~= -1
+	loop:
+		n := expid(); t := arrsuffix(bt); s := nst(S_DECL, line); ST[s].ty = t; ST[s].name = n
+		if accp('='): i := passign(); ST[s].init = i
+		if tail >= 0 { ST[tail].nx = s } else { head = s }
+		tail = s
+		if !accp(','): break
+	expp(';'); head
+pcomma() int:
+	e ~= passign()
+	while isp(','): line := TOK.line; adv(); r := passign(); s := nex(E_BIN, line); EX[s].op = ','; EX[s].l = e; EX[s].r = r; e = s
+	e
+recursive pstmt() int:
+	line := TOK.line
+	if isp('{'): return pblock()
+	if acckw("if"):
+		expp('('); s := nst(S_IF, line); c := pexpr(); ST[s].e = c; expp(')'); a := pstmt(); ST[s].a = a
+		if acckw("else"): b := pstmt(); ST[s].b = b
+		return s
+	if acckw("for"):
+		expp('('); s := nst(S_FOR, line)
+		if !accp(';'):
+			if attype():
+				i := pdecl(); ST[s].a = i
+			else:
+				i := nst(S_EXPR, TOK.line); x := pexpr(); ST[i].e = x; ST[s].a = i; expp(';')
+		if !isp(';'): c := pexpr(); ST[s].e = c
+		expp(';')
+		if !isp(')'): it := pcomma(); ST[s].it = it
+		expp(')'); b := pstmt(); ST[s].b = b; return s
+	if acckw("while"):
+		expp('('); s := nst(S_WHILE, line); c := pexpr(); ST[s].e = c; expp(')'); b := pstmt(); ST[s].b = b; return s
+	if acckw("do"):
+		s := nst(S_DO, line); b := pstmt(); ST[s].b = b
+		if !acckw("while"): serr(TOK.line, "expected 'while' after do-block")
+		expp('('); c := pexpr(); ST[s].e = c; expp(')'); expp(';'); return s
+	if acckw("switch"):
+		expp('('); s := nst(S_SWITCH, line); c := pexpr(); ST[s].e = c; expp(')'); expp('{'); cur ~= -1
+		while !isp('}'):
+			if TOK.k == TK_EOF: serr(TOK.line, "unexpected end of file inside switch")
+			if acckw("case") || iskw("default"):
+				isd ~= false; lab ~= 0
+				if iskw("default"):
+					adv(); isd = true
+				else:
+					ng := accp('-')
+					if TOK.k != TK_INT && TOK.k != TK_UINT: serr(TOK.line, "case label must be an integer literal")
+					lab = TOK.iv as! int; if ng { lab = -lab } adv()
+				expp(':')
+				if cur < 0 || GRP[cur].sts.len != 0: GRP.push(Grp{[], false, []}); cur = GRP.len - 1; ST[s].grps.push(cur)
+				if isd { GRP[cur].def = true } else { GRP[cur].labels.push(lab) }
+			else:
+				if cur < 0: serr(TOK.line, "statement before first 'case' in switch")
+				b := pstmt(); GRP[cur].sts.push(b)
+		adv(); return s
+	if acckw("return"):
+		s := nst(S_RET, line)
+		if !isp(';'): e := pexpr(); ST[s].e = e
+		expp(';'); return s
+	if acckw("discard"): expp(';'); return nst(S_DISCARD, line)
+	if acckw("break"): expp(';'); return nst(S_BREAK, line)
+	if acckw("continue"): expp(';'); return nst(S_CONT, line)
+	if acckw("const"):
+		if !attype(): serr(TOK.line, "expected type after 'const'")
+		return pdecl()
+	if attype():
+		if peek(1).k == TK_ID: return pdecl()
+		if peek(1).k == TK_P && peek(1).p == '[' && peek(4).k == TK_ID: return pdecl()
+	s := nst(S_EXPR, line); e := pexpr(); ST[s].e = e; expp(';'); s
+struct Lay { loc int = -1, set int = -1, bind int = -1, lx int = -1, ly int = -1, lz int = -1, fmt int = -1 }
+playout() Lay:
+	l ~= Lay{}; expp('(')
+	loop:
+		key := expid(); k := snm(key); v ~= -1
+		if accp('='):
+			if TOK.k != TK_INT && TOK.k != TK_UINT: serr(TOK.line, str("expected integer for layout qualifier '", k, "'"))
+			v = (TOK.iv as! i32) as int; adv()
+		if k == "location" { l.loc = v } else if k == "set" { l.set = v } else if k == "binding" { l.bind = v } else if k == "std140" || k == "std430" { v = v } else if k == "local_size_x" { l.lx = v } else if k == "local_size_y" { l.ly = v } else if k == "local_size_z" { l.lz = v } else if k == "rgba32f" { l.fmt = 1 } else if k == "rgba16f" { l.fmt = 2 } else if k == "r32f" { l.fmt = 3 } else if k == "rgba8" { l.fmt = 4 } else if k == "rgba8ui" { l.fmt = 32 } else if k == "r32ui" { l.fmt = 33 } else if k == "rg32f" { l.fmt = 6 } else if k == "rg16f" { l.fmt = 7 } else if k == "r16f" { l.fmt = 9 } else { serr(TOK.line, str("unsupported layout qualifier '", k, "'")) }
+		if !accp(','): break
+	expp(')'); l
+isscal(t int) bool: k := TY[t].k; k == T_BOOL || k == T_INT || k == T_UINT || k == T_FLOAT
+isvec(t int) bool: TY[t].k == T_VEC
+elty(t int) int: if TY[t].k == T_VEC { TY[t].el } else { t }
+ncomp(t int) int: if TY[t].k == T_VEC { TY[t].cols } else { 1 }
+vecty(el int, n int) int:
+	if n == 1: return el
+	k := TY[el].k
+	if k == T_FLOAT { TVEC[n - 2] } else if k == T_INT { TIVEC[n - 2] } else if k == T_UINT { TUVEC[n - 2] } else if k == T_BOOL { TBVEC[n - 2] } else { -1 }
+tyname(t int) const byte[:]:
+	y := TY[t]; k := y.k; c := y.cols
+	if k == T_VOID: return "void"
+	if k == T_BOOL: return "bool"
+	if k == T_INT: return "int"
+	if k == T_UINT: return "uint"
+	if k == T_FLOAT: return "float"
+	if k == T_SAMP: return if c == SD_CUBE { "samplerCube" } else if c == SD_3D { "sampler3D" } else if c == SD_2DA { "sampler2DArray" } else if c == SD_2DS { "sampler2DShadow" } else if c == SD_CUBES { "samplerCubeShadow" } else if c == SD_2DAS { "sampler2DArrayShadow" } else if y.el >= 0 && TY[y.el].k == T_UINT { "usampler2D" } else { "sampler2D" }
+	if k == T_ARR: return "array"
+	if k == T_STRUCT: return snm(y.name)
+	if k == T_IMG: return "image2D"
+	if k == T_MAT: return if c == 2 { "mat2" } else if c == 3 { "mat3" } else { "mat4" }
+	if k == T_VEC:
+		ek := TY[y.el].k
+		if ek == T_FLOAT: return if c == 2 { "vec2" } else if c == 3 { "vec3" } else { "vec4" }
+		if ek == T_INT: return if c == 2 { "ivec2" } else if c == 3 { "ivec3" } else { "ivec4" }
+		if ek == T_UINT: return if c == 2 { "uvec2" } else if c == 3 { "uvec3" } else { "uvec4" }
+		return if c == 2 { "bvec2" } else if c == 3 { "bvec3" } else { "bvec4" }
+	"?"
+prank(t int) int: k := TY[t].k; if k == T_INT { 1 } else if k == T_UINT { 2 } else if k == T_FLOAT { 3 } else { 0 }
+convert(id int, from int, to int, line int) int:
+	if from == to: return id
+	fk := TY[elty(from)].k; tk := TY[elty(to)].k
+	if ncomp(from) != ncomp(to): serr(line, str("cannot convert '", tyname(from), "' to '", tyname(to), "'"))
+	if fk == tk: return id
+	op := if fk == T_INT && tk == T_FLOAT { SOP_CONVERTSTOF } else if fk == T_UINT && tk == T_FLOAT { SOP_CONVERTUTOF } else if fk == T_INT && tk == T_UINT || fk == T_UINT && tk == T_INT { SOP_BITCAST } else if fk == T_FLOAT && tk == T_INT { SOP_CONVERTFTOS } else if fk == T_FLOAT && tk == T_UINT { SOP_CONVERTFTOU } else { 0 }
+	if op == 0: serr(line, str("cannot convert '", tyname(from), "' to '", tyname(to), "'"))
+	r := nid(); t := tyid(to); emit3(SBODY, op, t, r, id); r
+implconv(from int, to int) bool:
+	if from == to: return true
+	if ncomp(from) != ncomp(to): return false
+	if isscal(from) != isscal(to) && !(isvec(from) && isvec(to)): return false
+	fr := prank(elty(from)); tr := prank(elty(to)); fr != 0 && tr != 0 && fr <= tr
+splat(sid int, st int, n int) int, int:
+	vt := vecty(st, n); r := nid(); w int[>..] ~= [tyid(vt)]; w.push(r)
+	for i n: w.push(sid)
+	emitw(SBODY, SOP_COMPOSITECONSTRUCT, w[..]); return r, vt
+rvalue(e int) int, int: v := genexpr(e); return load(v), v.ty
+spill(v Val) Val:
+	ld := load(v); vr := nid(); pt := ptrid(v.ty, SC_FUNCTION); emit3(SLOCALS, SOP_VARIABLE, pt, vr, SC_FUNCTION); emit2(SBODY, SOP_STORE, vr, ld)
+	Val{V_PTR, v.ty, vr, SC_FUNCTION}
+rvalas(e int, want int) int:
+	id, t := rvalue(e)
+	if t != want && !implconv(t, want): serr(EX[e].line, str("cannot convert '", tyname(t), "' to '", tyname(want), "'"))
+	EX[e].want = want; convert(id, t, want, EX[e].line)
+balance(line int, a0 int, at0 int, b0 int, bt0 int) int, int, int, int:
+	a ~= a0; at ~= at0; b ~= b0; bt ~= bt0; ar := prank(elty(at)); br := prank(elty(bt))
+	if ar == 0 || br == 0: serr(line, str("invalid operands ('", tyname(at), "' and '", tyname(bt), "')"))
+	el := if ar >= br { elty(at) } else { elty(bt) }
+	if elty(at) != el: w := vecty(el, ncomp(at)); a = convert(a, at, w, line); at = w
+	if elty(bt) != el: w := vecty(el, ncomp(bt)); b = convert(b, bt, w, line); bt = w
+	if isvec(at) && isscal(bt):
+		x, y := splat(b, bt, TY[at].cols); b = x; bt = y
+	else if isscal(at) && isvec(bt):
+		x, y := splat(a, at, TY[bt].cols); a = x; at = y
+	else if isvec(at) && isvec(bt) && TY[at].cols != TY[bt].cols:
+		serr(line, str("vector size mismatch ('", tyname(at), "' and '", tyname(bt), "')"))
+	return a, at, b, bt
+dryty(e int) int:
+	sb := copy(SBODY); sl := copy(SLOCALS); st := BTERM; SBODY.clear(); SLOCALS.clear()
+	v := genexpr(e); SBODY.clear(); SBODY.append(sb[..]); SLOCALS.clear(); SLOCALS.append(sl[..]); BTERM = st; v.ty
+unify(at int, bt int, line int) int:
+	if at == bt: return at
+	ar := prank(elty(at)); br := prank(elty(bt))
+	if ar == 0 || br == 0: serr(line, str("mismatched types ('", tyname(at), "' and '", tyname(bt), "')"))
+	el := if ar >= br { elty(at) } else { elty(bt) }; ca := ncomp(at); cb := ncomp(bt)
+	if isvec(at) && isvec(bt) && ca != cb: serr(line, str("vector size mismatch ('", tyname(at), "' and '", tyname(bt), "')"))
+	vecty(el, if ca > cb { ca } else { cb })
+genbinop(op int, line int, a0 int, at0 int, b0 int, bt0 int) Val:
+	at := at0; bt := bt0; ak := TY[at].k; bk := TY[bt].k
+	if ak == T_MAT || bk == T_MAT:
+		if (op == '+' || op == '-') && ak == T_MAT && bk == T_MAT:
+			if at != bt: serr(line, "matrix size mismatch")
+			ct := tyid(TVEC[TY[at].rows - 2]); cols int[>..] ~= []
+			for c TY[at].cols:
+				ca := nid(); emit4(SBODY, SOP_COMPOSITEEXTRACT, ct, ca, a0, c); cb := nid(); emit4(SBODY, SOP_COMPOSITEEXTRACT, ct, cb, b0, c)
+				cr := nid(); emit4(SBODY, if op == '+' { SOP_FADD } else { SOP_FSUB }, ct, cr, ca, cb); cols.push(cr)
+			r := nid(); w int[>..] ~= [tyid(at)]; w.push(r); w.append(cols[..]); emitw(SBODY, SOP_COMPOSITECONSTRUCT, w[..]); return rv(at, r)
+		if op != '*': serr(line, "only '*', '+', and '-' are supported with matrix operands")
+		r := nid()
+		if ak == T_MAT && bk == T_MAT:
+			if at != bt: serr(line, "matrix size mismatch")
+			t := tyid(at); emit4(SBODY, SOP_MATRIXTIMESMATRIX, t, r, a0, b0); return rv(at, r)
+		if ak == T_MAT && isvec(bt):
+			if TY[TY[bt].el].k != T_FLOAT || TY[bt].cols != TY[at].cols: serr(line, "matrix/vector size mismatch")
+			rt := TVEC[TY[at].rows - 2]; t := tyid(rt); emit4(SBODY, SOP_MATRIXTIMESVECTOR, t, r, a0, b0); return rv(rt, r)
+		if isvec(at) && bk == T_MAT:
+			if TY[TY[at].el].k != T_FLOAT || TY[at].cols != TY[bt].rows: serr(line, "vector/matrix size mismatch")
+			rt := TVEC[TY[bt].cols - 2]; t := tyid(rt); emit4(SBODY, SOP_VECTORTIMESMATRIX, t, r, a0, b0); return rv(rt, r)
+		m := if ak == T_MAT { a0 } else { b0 }; mt := if ak == T_MAT { at } else { bt }; s ~= if ak == T_MAT { b0 } else { a0 }; sty := if ak == T_MAT { bt } else { at }
+		if !isscal(sty): serr(line, "invalid matrix operand")
+		s = convert(s, sty, TFLOAT, line); t := tyid(mt); emit4(SBODY, SOP_MATRIXTIMESSCALAR, t, r, m, s); return rv(mt, r)
+	a, at2, b, bt2 := balance(line, a0, at, b0, bt)
+	ek := TY[elty(at2)].k; fl := ek == T_FLOAT; sg := ek == T_INT; rt ~= at2; oc ~= 0
+	if op == '+' { oc = if fl { SOP_FADD } else { SOP_IADD } } else if op == '-' { oc = if fl { SOP_FSUB } else { SOP_ISUB } } else if op == '*' { oc = if fl { SOP_FMUL } else { SOP_IMUL } } else if op == '/' { oc = if fl { SOP_FDIV } else if sg { SOP_SDIV } else { SOP_UDIV } } else if op == '%' { oc = if fl { SOP_FMOD } else if sg { SOP_SMOD } else { SOP_UMOD } } else if op == '&' { oc = SOP_BITWISEAND } else if op == '|' { oc = SOP_BITWISEOR } else if op == '^' { oc = SOP_BITWISEXOR } else if op == P_SHL { oc = SOP_SHIFTLEFTLOGICAL } else if op == P_SHR { oc = if sg { SOP_SHIFTRIGHTARITHMETIC } else { SOP_SHIFTRIGHTLOGICAL } } else if op == '<' { oc = if fl { SOP_FORDLESSTHAN } else if sg { SOP_SLESSTHAN } else { SOP_ULESSTHAN }; rt = TBOOL } else if op == '>' { oc = if fl { SOP_FORDGREATERTHAN } else if sg { SOP_SGREATERTHAN } else { SOP_UGREATERTHAN }; rt = TBOOL } else if op == P_LE { oc = if fl { SOP_FORDLESSTHANEQUAL } else if sg { SOP_SLESSTHANEQUAL } else { SOP_ULESSTHANEQUAL }; rt = TBOOL } else if op == P_GE { oc = if fl { SOP_FORDGREATERTHANEQUAL } else if sg { SOP_SGREATERTHANEQUAL } else { SOP_UGREATERTHANEQUAL }; rt = TBOOL } else if op == P_EQ { oc = if fl { SOP_FORDEQUAL } else { SOP_IEQUAL }; rt = TBOOL } else if op == P_NE { oc = if fl { SOP_FUNORDNOTEQUAL } else { SOP_INOTEQUAL }; rt = TBOOL } else { serr(line, "unsupported binary operator") }
+	if rt == TBOOL && isvec(at2): serr(line, "comparison operators require scalar operands (use lessThan()/equal() for vectors)")
+	if (op == '&' || op == '|' || op == '^' || op == P_SHL || op == P_SHR) && fl: serr(line, "bitwise operators require integer operands")
+	r := nid(); t := tyid(rt); emit4(SBODY, oc, t, r, a, b); rv(rt, r)
+cbaseop(p int) int: if p == P_ADDA { '+' } else if p == P_SUBA { '-' } else if p == P_MULA { '*' } else if p == P_DIVA { '/' } else if p == P_MODA { '%' } else if p == P_ANDA { '&' } else if p == P_ORA { '|' } else if p == P_XORA { '^' } else if p == P_SHLA { P_SHL } else if p == P_SHRA { P_SHR } else { 0 }
+swizidx(s const byte[:]) int, int, bool:
+	if s.len < 1 || s.len > 4: return 0, 0, false
+	o ~= 0
+	for c, i s:
+		x := if c == 'x' || c == 'r' || c == 's' { 0 } else if c == 'y' || c == 'g' || c == 't' { 1 } else if c == 'z' || c == 'b' || c == 'p' { 2 } else if c == 'w' || c == 'a' || c == 'q' { 3 } else { -1 }
+		if x < 0: return 0, 0, false
+		o |= x << i * 8
+	return o, s.len, true
+genmember(e int) Val:
+	x := EX[e]; base := genexpr(x.l); by := TY[base.ty]; mn := snm(x.name)
+	if by.k == T_STRUCT:
+		f ~= -1; for n, i by.fnm { if f < 0 && n == x.name { f = i } }
+		if f < 0: serr(x.line, str("'", snm(by.name), "' has no field '", mn, "'"))
+		ft := by.fty[f]
+		if base.k == V_PTR:
+			fl ~= 0
+			if base.lt != 0:
+				if TY[ft].k == T_STRUCT { fl = laidstruct(ft, x.line) } else if TY[ft].k == T_ARR && TY[ft].cols == -1 && TY[TY[ft].el].k == T_STRUCT { fl = laidrarr(TY[ft].el, x.line) }
+			pt := if fl != 0 { ptridraw(fl, base.st) } else { ptrid(ft, base.st) }
+			p := nid(); ix := cint(f); emit4(SBODY, SOP_ACCESSCHAIN, pt, p, base.id, ix); return Val{V_PTR, ft, p, base.st, fl}
+		ld := load(base); r := nid(); t := tyid(ft); emit4(SBODY, SOP_COMPOSITEEXTRACT, t, r, ld, f); return rv(ft, r)
+	if by.k != T_VEC: serr(x.line, str("'", mn, "' is not a member of '", tyname(base.ty), "'"))
+	sw, cnt, ok := swizidx(mn)
+	if !ok: serr(x.line, str("invalid swizzle '.", mn, "'"))
+	for i cnt: if (sw >> i * 8 & 255) >= by.cols { serr(x.line, str("swizzle '.", mn, "' out of range for '", tyname(base.ty), "'")) }
+	rt := vecty(by.el, cnt)
+	if base.k == V_PTR:
+		if cnt == 1: p := nid(); pt := ptrid(by.el, base.st); ix := cint(sw & 255); emit4(SBODY, SOP_ACCESSCHAIN, pt, p, base.id, ix); return Val{V_PTR, by.el, p, base.st}
+		return Val{V_SW, rt, base.id, base.st, 0, base.ty, sw, cnt}
+	ld := load(base); r := nid()
+	if cnt == 1:
+		t := tyid(rt); emit4(SBODY, SOP_COMPOSITEEXTRACT, t, r, ld, sw & 255)
+	else:
+		w int[>..] ~= [tyid(rt)]; w.push(r); w.push(ld); w.push(ld); for i cnt { w.push(sw >> i * 8 & 255) } emitw(SBODY, SOP_VECTORSHUFFLE, w[..])
+	rv(rt, r)
+genref(e int) Val:
+	x := EX[e]; s := findsym(x.name)
+	if s < 0: serr(x.line, str("undeclared identifier '", snm(x.name), "'"))
+	y := SY[s]
+	if y.k == SY_VAR:
+		v ~= Val{V_PTR, y.ty, y.id, y.st}
+		if TY[y.ty].k == T_STRUCT && (y.st == SC_STORAGEBUFFER || y.st == SC_UNIFORM): v.lt = tyid(y.ty)
+		return v
+	if y.k == SY_BM:
+		p := nid(); pt := if y.laid != 0 { ptridraw(y.laid, y.st) } else { ptrid(y.ty, y.st) }; ix := cint(y.mi); emit4(SBODY, SOP_ACCESSCHAIN, pt, p, y.id, ix); return Val{V_PTR, y.ty, p, y.st, y.laid}
+	if y.k == SY_POS:
+		p := nid(); pt := ptrid(TVEC[2], SC_OUTPUT); ix := cint(0); emit4(SBODY, SOP_ACCESSCHAIN, pt, p, PVVAR, ix); return Val{V_PTR, TVEC[2], p, SC_OUTPUT}
+	serr(x.line, str("'", snm(x.name), "' is a function")); Val{}
+I_EXT := 0
+I_EXTF := 1
+I_CORE1 := 2
+I_DOT := 3
+I_TEX := 4
+I_TEXOFF := 5
+I_TEXLOD := 6
+I_TEXGRAD := 7
+I_FETCH := 8
+I_TEXSIZE := 9
+I_REL := 10
+I_BRED := 11
+I_BNOT := 12
+I_FTEST := 13
+I_BITCAST := 14
+I_PACK := 15
+I_MAT := 16
+I_BARRIER := 17
+I_ATOMIC := 18
+I_IMAGE := 19
+PK_V4U := 0
+PK_V2U := 1
+PK_UV4 := 2
+PK_UV2 := 3
+struct In { k int, op int, ops int, opu int, na int, sh int }
+var INS In[>..]
+var INIX = dictionary<int, int>{..}
+addin(n const byte[:], k int, op int, ops int, opu int, na int, sh int): insert(INIX, sid(n), INS.len); INS.push(In{k, op, ops, opu, na, sh})
+initins():
+	if INS.len > 0: return
+	for n, i ["radians", "degrees"]: addin(n, I_EXT, 11 + i, 0, 0, 1, 0)
+	for n, i ["sin", "cos", "tan", "asin", "acos"]: addin(n, I_EXT, [G_SIN, G_COS, G_TAN, G_ASIN, G_ACOS][i], 0, 0, 1, 0)
+	addin("atan", I_EXT, G_ATAN, 0, 0, -1, 0); addin("pow", I_EXT, G_POW, 0, 0, 2, 0)
+	for n, i ["exp", "log", "exp2", "log2", "sqrt", "inversesqrt"]: addin(n, I_EXT, [G_EXP, G_LOG, G_EXP2, G_LOG2, G_SQRT, G_INVERSESQRT][i], 0, 0, 1, 0)
+	addin("abs", I_EXT, G_FABS, G_SABS, G_SABS, 1, 0); addin("sign", I_EXT, G_FSIGN, G_SSIGN, G_SSIGN, 1, 0)
+	for n, i ["floor", "ceil", "fract", "round", "trunc"]: addin(n, I_EXT, [G_FLOOR, G_CEIL, G_FRACT, G_ROUND, G_TRUNC][i], 0, 0, 1, 0)
+	addin("min", I_EXT, G_FMIN, G_SMIN, G_UMIN, 2, 0); addin("max", I_EXT, G_FMAX, G_SMAX, G_UMAX, 2, 0); addin("clamp", I_EXT, G_FCLAMP, G_SCLAMP, G_UCLAMP, 3, 0)
+	addin("mix", I_EXT, G_FMIX, 0, 0, 3, 0); addin("step", I_EXT, G_STEP, 0, 0, 2, 0); addin("smoothstep", I_EXT, G_SMOOTHSTEP, 0, 0, 3, 0); addin("mod", I_EXT, -1, 0, 0, 2, 0)
+	addin("normalize", I_EXT, G_NORMALIZE, 0, 0, 1, 0); addin("cross", I_EXT, G_CROSS, 0, 0, 2, 0); addin("reflect", I_EXT, G_REFLECT, 0, 0, 2, 0); addin("refract", I_EXT, G_REFRACT, 0, 0, 3, 0)
+	addin("length", I_EXTF, G_LENGTH, 0, 0, 1, 0); addin("distance", I_EXTF, G_DISTANCE, 0, 0, 2, 0); addin("dot", I_DOT, SOP_DOT, 0, 0, 2, 0)
+	addin("dFdx", I_CORE1, SOP_DPDX, 0, 0, 1, 0); addin("dFdy", I_CORE1, SOP_DPDY, 0, 0, 1, 0); addin("fwidth", I_CORE1, SOP_FWIDTH, 0, 0, 1, 0)
+	addin("texture", I_TEX, 0, 0, 0, 2, 0); addin("textureOffset", I_TEXOFF, 0, 0, 0, 3, 0); addin("textureLod", I_TEXLOD, 0, 0, 0, 3, 0); addin("textureGrad", I_TEXGRAD, 0, 0, 0, 4, 0); addin("texelFetch", I_FETCH, 0, 0, 0, 3, 0); addin("textureSize", I_TEXSIZE, 0, 0, 0, 2, 0)
+	addin("lessThan", I_REL, SOP_FORDLESSTHAN, SOP_SLESSTHAN, SOP_ULESSTHAN, 2, 0); addin("lessThanEqual", I_REL, SOP_FORDLESSTHANEQUAL, SOP_SLESSTHANEQUAL, SOP_ULESSTHANEQUAL, 2, 0)
+	addin("greaterThan", I_REL, SOP_FORDGREATERTHAN, SOP_SGREATERTHAN, SOP_UGREATERTHAN, 2, 0); addin("greaterThanEqual", I_REL, SOP_FORDGREATERTHANEQUAL, SOP_SGREATERTHANEQUAL, SOP_UGREATERTHANEQUAL, 2, 0)
+	addin("equal", I_REL, SOP_FORDEQUAL, SOP_IEQUAL, SOP_IEQUAL, 2, 0); addin("notEqual", I_REL, SOP_FUNORDNOTEQUAL, SOP_INOTEQUAL, SOP_INOTEQUAL, 2, 0)
+	addin("all", I_BRED, SOP_ALL, 0, 0, 1, 0); addin("any", I_BRED, SOP_ANY, 0, 0, 1, 0); addin("not", I_BNOT, SOP_LOGICALNOT, 0, 0, 1, 0); addin("isnan", I_FTEST, 156, 0, 0, 1, 0); addin("isinf", I_FTEST, 157, 0, 0, 1, 0)
+	addin("floatBitsToInt", I_BITCAST, T_INT, 0, 0, 1, 0); addin("floatBitsToUint", I_BITCAST, T_UINT, 0, 0, 1, 0); addin("intBitsToFloat", I_BITCAST, T_FLOAT, 0, 0, 1, 0); addin("uintBitsToFloat", I_BITCAST, T_FLOAT, 0, 0, 1, 0)
+	addin("packUnorm4x8", I_PACK, 55, 0, 0, 1, PK_V4U); addin("packSnorm4x8", I_PACK, 54, 0, 0, 1, PK_V4U); addin("packUnorm2x16", I_PACK, 57, 0, 0, 1, PK_V2U); addin("packSnorm2x16", I_PACK, 56, 0, 0, 1, PK_V2U); addin("packHalf2x16", I_PACK, 58, 0, 0, 1, PK_V2U)
+	addin("unpackUnorm4x8", I_PACK, 64, 0, 0, 1, PK_UV4); addin("unpackSnorm4x8", I_PACK, 63, 0, 0, 1, PK_UV4); addin("unpackUnorm2x16", I_PACK, 61, 0, 0, 1, PK_UV2); addin("unpackSnorm2x16", I_PACK, 60, 0, 0, 1, PK_UV2); addin("unpackHalf2x16", I_PACK, 62, 0, 0, 1, PK_UV2)
+	addin("transpose", I_MAT, -1, 0, 0, 1, 0); addin("inverse", I_MAT, G_MATRIXINVERSE, 0, 0, 1, 0); addin("determinant", I_MAT, G_DETERMINANT, 0, 0, 1, 0)
+	for n, i ["barrier", "memoryBarrier", "memoryBarrierShared", "memoryBarrierBuffer", "groupMemoryBarrier"]: addin(n, I_BARRIER, i, 0, 0, 0, 0)
+	addin("atomicAdd", I_ATOMIC, SOP_ATOMICIADD, 0, 0, 2, 0); addin("atomicMin", I_ATOMIC, 0, SOP_ATOMICSMIN, SOP_ATOMICUMIN, 2, 0); addin("atomicMax", I_ATOMIC, 0, SOP_ATOMICSMAX, SOP_ATOMICUMAX, 2, 0)
+	addin("atomicAnd", I_ATOMIC, SOP_ATOMICAND, 0, 0, 2, 0); addin("atomicOr", I_ATOMIC, SOP_ATOMICOR, 0, 0, 2, 0); addin("atomicXor", I_ATOMIC, SOP_ATOMICXOR, 0, 0, 2, 0); addin("atomicExchange", I_ATOMIC, SOP_ATOMICEXCHANGE, 0, 0, 2, 0); addin("atomicCompSwap", I_ATOMIC, SOP_ATOMICCOMPAREEXCHANGE, 0, 0, 3, 1)
+	addin("imageLoad", I_IMAGE, 0, 0, 0, 2, 0); addin("imageStore", I_IMAGE, 1, 0, 0, 3, 0); addin("imageSize", I_IMAGE, 2, 0, 0, 1, 0)
+extinst(rt int, inst int, args const int[:]) int:
+	r := nid(); w int[>..] ~= [tyid(rt)]; w.push(r); w.push(GLSLEXT); w.push(inst); w.append(args); emitw(SBODY, SOP_EXTINST, w[..]); r
+genintrin(e int, ii int) Val:
+	x := EX[e]; f := INS[ii]; argc := x.args.len; fnn := snm(x.name); line := x.line; a := x.args[..]; k := f.k
+	if f.na >= 0 && argc != f.na: serr(line, str("'", fnn, "' expects ", f.na, " argument(s), got ", argc))
+	if f.na == -1 && argc != 1 && argc != 2: serr(line, str("'", fnn, "' expects 1 or 2 arguments, got ", argc))
+	if k >= I_TEX && k <= I_TEXSIZE:
+		smp, st := rvalue(a[0])
+		if TY[st].k != T_SAMP: serr(line, str("'", fnn, "' requires a sampler type"))
+		sd := TY[st].cols; shadow := sd == SD_2DS || sd == SD_CUBES || sd == SD_2DAS
+		if k == I_FETCH && sd != SD_2D && sd != SD_2DA && sd != SD_3D: serr(line, str("texelFetch requires a sampler2D, sampler2DArray, or sampler3D (GLSL defines no texelFetch for ", tyname(st), ")"))
+		if k == I_TEXOFF && sd != SD_2D && sd != SD_2DA: serr(line, "textureOffset requires a sampler2D or sampler2DArray")
+		v4 := if TY[st].el >= 0 && TY[TY[st].el].k == T_UINT { TUVEC[2] } else { TVEC[2] }
+		ct := if sd == SD_2D { TVEC[0] } else if sd == SD_CUBES || sd == SD_2DAS { TVEC[2] } else { TVEC[1] }
+		frag := STAGE == ST_FRAG
+		if k == I_TEX:
+			co := rvalas(a[1], ct); r := nid()
+			if shadow:
+				wide := sd == SD_CUBES || sd == SD_2DAS; xy := nid(); sw int[>..] ~= [tyid(if wide { TVEC[1] } else { TVEC[0] }), xy, co, co, 0, 1]
+				if wide: sw.push(2)
+				emitw(SBODY, SOP_VECTORSHUFFLE, sw[..]); dr := nid(); ft := tyid(TFLOAT); emit4(SBODY, SOP_COMPOSITEEXTRACT, ft, dr, co, if wide { 3 } else { 2 })
+				if frag { emitw(SBODY, SOP_IMAGESAMPLEDREFIMPLICITLOD, [tyid(TFLOAT), r, smp, xy, dr]) } else { lod := cfloat(0.0); emitw(SBODY, SOP_IMAGESAMPLEDREFEXPLICITLOD, [tyid(TFLOAT), r, smp, xy, dr, 2, lod]) }
+				return rv(TFLOAT, r)
+			if frag { t := tyid(v4); emit4(SBODY, SOP_IMAGESAMPLEIMPLICITLOD, t, r, smp, co) } else { lod := cfloat(0.0); emitw(SBODY, SOP_IMAGESAMPLEEXPLICITLOD, [tyid(v4), r, smp, co, 2, lod]) }
+			return rv(v4, r)
+		if k == I_TEXOFF:
+			co := rvalas(a[1], ct); off := constexpr(a[2], TIVEC[0]); r := nid()
+			if frag { emitw(SBODY, SOP_IMAGESAMPLEIMPLICITLOD, [tyid(v4), r, smp, co, 8, off]) } else { lod := cfloat(0.0); emitw(SBODY, SOP_IMAGESAMPLEEXPLICITLOD, [tyid(v4), r, smp, co, 10, lod, off]) }
+			return rv(v4, r)
+		if k == I_TEXLOD:
+			if sd == SD_CUBES || sd == SD_2DAS: serr(line, str("textureLod is not supported with ", tyname(st), " (GLSL has no such overload)"))
+			co := rvalas(a[1], ct); lod := rvalas(a[2], TFLOAT); r := nid()
+			if shadow:
+				xy := nid(); emitw(SBODY, SOP_VECTORSHUFFLE, [tyid(TVEC[0]), xy, co, co, 0, 1]); dr := nid(); ft := tyid(TFLOAT); emit4(SBODY, SOP_COMPOSITEEXTRACT, ft, dr, co, 2)
+				emitw(SBODY, SOP_IMAGESAMPLEDREFEXPLICITLOD, [tyid(TFLOAT), r, smp, xy, dr, 2, lod]); return rv(TFLOAT, r)
+			emitw(SBODY, SOP_IMAGESAMPLEEXPLICITLOD, [tyid(v4), r, smp, co, 2, lod]); return rv(v4, r)
+		if k == I_TEXGRAD:
+			if sd == SD_CUBES || sd == SD_2DAS: serr(line, str("textureGrad is not supported with ", tyname(st), " (comparison fetches are level-zero on every backend; use texture())"))
+			gt := if sd == SD_CUBE || sd == SD_3D { TVEC[1] } else { TVEC[0] }
+			co := rvalas(a[1], ct); dx := rvalas(a[2], gt); dy := rvalas(a[3], gt); r := nid()
+			if shadow:
+				xy := nid(); emitw(SBODY, SOP_VECTORSHUFFLE, [tyid(TVEC[0]), xy, co, co, 0, 1]); dr := nid(); ft := tyid(TFLOAT); emit4(SBODY, SOP_COMPOSITEEXTRACT, ft, dr, co, 2)
+				emitw(SBODY, SOP_IMAGESAMPLEDREFEXPLICITLOD, [tyid(TFLOAT), r, smp, xy, dr, 4, dx, dy]); return rv(TFLOAT, r)
+			emitw(SBODY, SOP_IMAGESAMPLEEXPLICITLOD, [tyid(v4), r, smp, co, 4, dx, dy]); return rv(v4, r)
+		tyid(st); itid := dgi(SAMPIMG, st); img := nid(); emit3(SBODY, SOP_IMAGE, itid, img, smp)
+		three := sd == SD_2DA || sd == SD_3D || sd == SD_2DAS
+		if k == I_FETCH:
+			co := rvalas(a[1], if three { TIVEC[1] } else { TIVEC[0] }); lod := rvalas(a[2], TINT); r := nid()
+			emitw(SBODY, SOP_IMAGEFETCH, [tyid(v4), r, img, co, 2, lod]); return rv(v4, r)
+		NEEDIQ = true; szt := if three { TIVEC[1] } else { TIVEC[0] }; lod := rvalas(a[1], TINT); r := nid(); t := tyid(szt)
+		emit4(SBODY, SOP_IMAGEQUERYSIZELOD, t, r, img, lod); return rv(szt, r)
+	if k == I_BARRIER:
+		if STAGE != ST_COMP: serr(line, str("'", fnn, "' requires a compute shader"))
+		wg := cuint(2); dev := cuint(1)
+		if f.op == 0 { c := cuint(264); emit3(SBODY, SOP_CONTROLBARRIER, wg, wg, c) } else { c := cuint(if f.op == 2 { 264 } else if f.op == 3 { 72 } else { 2376 }); emit2(SBODY, SOP_MEMORYBARRIER, if f.op == 4 { wg } else { dev }, c) }
+		return rv(TVOID, 0)
+	if k == I_ATOMIC:
+		m := genexpr(a[0])
+		if m.k != V_PTR || m.ty != TINT && m.ty != TUINT: serr(line, str("'", fnn, "' requires an int or uint buffer/shared variable"))
+		oc := if f.op != 0 { f.op } else if m.ty == TUINT { f.opu } else { f.ops }
+		sc := cuint(1); sm := cuint(0); r := nid(); tid := tyid(m.ty)
+		if f.sh == 1:
+			cmp := rvalas(a[1], m.ty); val := rvalas(a[2], m.ty); emitw(SBODY, oc, [tid, r, m.id, sc, sm, sm, val, cmp])
+		else:
+			val := rvalas(a[1], m.ty); emitw(SBODY, oc, [tid, r, m.id, sc, sm, val])
+		return rv(m.ty, r)
+	if k == I_IMAGE:
+		img, it := rvalue(a[0])
+		if TY[it].k != T_IMG: serr(line, str("'", fnn, "' requires an image2D"))
+		tt := if TY[it].cols == 32 || TY[it].cols == 33 { TUVEC[2] } else { TVEC[2] }
+		if f.op == 2: NEEDIQ = true; r := nid(); t := tyid(TIVEC[0]); emit3(SBODY, SOP_IMAGEQUERYSIZE, t, r, img); return rv(TIVEC[0], r)
+		co := rvalas(a[1], TIVEC[0])
+		if f.op == 0: r := nid(); t := tyid(tt); emit4(SBODY, SOP_IMAGEREAD, t, r, img, co); return rv(tt, r)
+		tx := rvalas(a[2], tt); emit3(SBODY, SOP_IMAGEWRITE, img, co, tx); return rv(TVOID, 0)
+	if k == I_MAT:
+		m, mt := rvalue(a[0])
+		if TY[mt].k != T_MAT: serr(line, str("'", fnn, "' requires a matrix"))
+		if f.op == -1: r := nid(); t := tyid(mt); emit3(SBODY, SOP_TRANSPOSE, t, r, m); return rv(mt, r)
+		rt := if f.op == G_DETERMINANT { TFLOAT } else { mt }; return rv(rt, extinst(rt, f.op, [m]))
+	if k == I_BITCAST:
+		v, at := rvalue(a[0])
+		if TY[at].k == T_MAT || TY[elty(at)].k == T_BOOL: serr(line, str("invalid operand for '", fnn, "'"))
+		rt := vecty(if f.op == T_INT { TINT } else if f.op == T_UINT { TUINT } else { TFLOAT }, ncomp(at)); r := nid(); t := tyid(rt); emit3(SBODY, SOP_BITCAST, t, r, v); return rv(rt, r)
+	if k == I_PACK:
+		want := if f.sh == PK_V4U { TVEC[2] } else if f.sh == PK_V2U { TVEC[0] } else { TUINT }
+		rt := if f.sh == PK_UV4 { TVEC[2] } else if f.sh == PK_UV2 { TVEC[0] } else { TUINT }
+		v := rvalas(a[0], want); return rv(rt, extinst(rt, f.op, [v]))
+	if k == I_BRED || k == I_BNOT:
+		v, at := rvalue(a[0])
+		if !isvec(at) || TY[at].el != TBOOL: serr(line, str("'", fnn, "' requires a bvec argument"))
+		rt := if k == I_BNOT { at } else { TBOOL }; r := nid(); t := tyid(rt); emit3(SBODY, f.op, t, r, v); return rv(rt, r)
+	if k == I_FTEST:
+		v, at := rvalue(a[0])
+		if TY[elty(at)].k != T_FLOAT: serr(line, str("'", fnn, "' requires float operands"))
+		rt := vecty(TBOOL, ncomp(at)); r := nid(); t := tyid(rt); emit3(SBODY, f.op, t, r, v); return rv(rt, r)
+	ids int[>..] ~= []; tys int[>..] ~= []
+	for i argc: v, t := rvalue(a[i]); ids.push(v); tys.push(t)
+	if k == I_EXT && f.op == G_FMIX && argc == 3 && TY[elty(tys[2])].k == T_BOOL:
+		if tys[0] != tys[1] || ncomp(tys[2]) != ncomp(tys[0]): serr(line, "mix() with a bvec selector requires matching operand types")
+		r := nid(); t := tyid(tys[0]); emit5(SBODY, SOP_SELECT, t, r, ids[2], ids[1], ids[0]); return rv(tys[0], r)
+	tc ~= 1; for t tys { if ncomp(t) > tc { tc = ncomp(t) } }
+	ai ~= f.ops != 0; for t tys { kk := TY[elty(t)].k; if kk != T_INT && kk != T_UINT { ai = false } }
+	el ~= TFLOAT; inst ~= f.op
+	if ai: au ~= false; for t tys { if TY[elty(t)].k == T_UINT { au = true } } el = if au { TUINT } else { TINT }; inst = if au { f.opu } else { f.ops }
+	tg := vecty(el, tc)
+	for i argc:
+		ft := vecty(el, ncomp(tys[i]))
+		if !implconv(tys[i], ft) && !(TY[elty(tys[i])].k == T_UINT && TY[el].k == T_INT): serr(line, str("invalid argument type '", tyname(tys[i]), "' in call to '", fnn, "'"))
+		EX[a[i]].want = ft; ids[i] = convert(ids[i], tys[i], ft, line); tys[i] = ft
+		if ncomp(tys[i]) == 1 && tc > 1:
+			sv, stt := splat(ids[i], el, tc); ids[i] = sv; tys[i] = stt
+		else if ncomp(tys[i]) != tc:
+			serr(line, str("vector size mismatch in call to '", fnn, "'"))
+	if k == I_REL:
+		rt := vecty(TBOOL, tc); oc := if TY[el].k == T_FLOAT { f.op } else if TY[el].k == T_UINT { f.opu } else { f.ops }; r := nid(); t := tyid(rt); emit4(SBODY, oc, t, r, ids[0], ids[1]); return rv(rt, r)
+	if f.op == -1 && k == I_EXT: r := nid(); t := tyid(tg); emit4(SBODY, SOP_FMOD, t, r, ids[0], ids[1]); return rv(tg, r)
+	if k == I_DOT: r := nid(); t := tyid(TFLOAT); emit4(SBODY, SOP_DOT, t, r, ids[0], ids[1]); return rv(TFLOAT, r)
+	if k == I_CORE1: r := nid(); t := tyid(tg); emit3(SBODY, f.op, t, r, ids[0]); return rv(tg, r)
+	if f.na == -1 && argc == 2: inst = G_ATAN2
+	rt := if k == I_EXTF { TFLOAT } else { tg }; rv(rt, extinst(rt, inst, ids[..]))
+extractc(a int, at int, j int) int: x := nid(); t := tyid(TY[at].el); emit4(SBODY, SOP_COMPOSITEEXTRACT, t, x, a, j); x
+genctor(e int, ty int) Val:
+	x := EX[e]; argc := x.args.len; line := x.line; y := TY[ty]
+	if argc == 0: serr(line, str("constructor '", tyname(ty), "' requires arguments"))
+	if isscal(ty):
+		if argc != 1: serr(line, "scalar constructor takes exactly one argument")
+		a ~= 0; at ~= 0; a0, at0 := rvalue(x.args[0]); a = a0; at = at0
+		if isvec(at): a = extractc(a, at, 0); at = TY[at].el
+		return rv(ty, convert(a, at, ty, line))
+	if y.k == T_MAT:
+		rows := y.rows; cols := y.cols; comps int[>..] ~= []
+		if argc == 1:
+			a, at := rvalue(x.args[0])
+			if !isscal(at): serr(line, str("cannot construct '", tyname(ty), "' from '", tyname(at), "'"))
+			d := convert(a, at, TFLOAT, line); z := cfloat(0.0)
+			for c cols: for r rows { comps.push(if c == r { d } else { z }) }
+		else:
+			for i argc:
+				a, at := rvalue(x.args[i])
+				if isscal(at):
+					if comps.len >= 16: serr(line, str("too many components for '", tyname(ty), "'"))
+					comps.push(convert(a, at, TFLOAT, line))
+				else if isvec(at):
+					for j TY[at].cols:
+						if comps.len >= 16: serr(line, str("too many components for '", tyname(ty), "'"))
+						xx := extractc(a, at, j); comps.push(convert(xx, TY[at].el, TFLOAT, line))
+				else:
+					serr(line, str("invalid constructor argument of type '", tyname(at), "'"))
+			if comps.len != rows * cols: serr(line, str("'", tyname(ty), "' constructor requires ", rows * cols, " components, got ", comps.len))
+		ct := tyid(TVEC[rows - 2]); cids int[>..] ~= []
+		for c cols:
+			cid := nid(); w int[>..] ~= [ct, cid]; for r rows { w.push(comps[c * rows + r]) } emitw(SBODY, SOP_COMPOSITECONSTRUCT, w[..]); cids.push(cid)
+		r := nid(); w int[>..] ~= [tyid(ty)]; w.push(r); w.append(cids[..]); emitw(SBODY, SOP_COMPOSITECONSTRUCT, w[..]); return rv(ty, r)
+	if y.k == T_STRUCT:
+		if argc != y.fty.len: serr(line, str("'", snm(y.name), "' constructor requires ", y.fty.len, " argument(s), got ", argc))
+		w int[>..] ~= [tyid(ty)]; r := nid(); w.push(r)
+		for i argc: w.push(rvalas(x.args[i], TY[ty].fty[i]))
+		emitw(SBODY, SOP_COMPOSITECONSTRUCT, w[..]); return rv(ty, r)
+	if !isvec(ty): serr(line, str("unsupported constructor '", tyname(ty), "'"))
+	el := y.el; comps int[>..] ~= []
+	if argc == 1:
+		a, at := rvalue(x.args[0])
+		if isscal(at): cv := convert(a, at, el, line); id, vt := splat(cv, el, y.cols); return rv(ty, id)
+		if isvec(at) && TY[at].cols >= y.cols:
+			for i y.cols: xx := extractc(a, at, i); comps.push(convert(xx, TY[at].el, el, line))
+			r := nid(); w int[>..] ~= [tyid(ty)]; w.push(r); w.append(comps[..]); emitw(SBODY, SOP_COMPOSITECONSTRUCT, w[..]); return rv(ty, r)
+		serr(line, str("cannot construct '", tyname(ty), "' from '", tyname(at), "'"))
+	for i argc:
+		a, at := rvalue(x.args[i])
+		if isscal(at):
+			if comps.len >= 4: serr(line, str("too many components for '", tyname(ty), "'"))
+			comps.push(convert(a, at, el, line))
+		else if isvec(at):
+			for j TY[at].cols:
+				if comps.len >= 4: serr(line, str("too many components for '", tyname(ty), "'"))
+				xx := extractc(a, at, j); comps.push(convert(xx, TY[at].el, el, line))
+		else:
+			serr(line, str("invalid constructor argument of type '", tyname(at), "'"))
+	if comps.len != y.cols: serr(line, str("'", tyname(ty), "' constructor requires ", y.cols, " components, got ", comps.len))
+	r := nid(); w int[>..] ~= [tyid(ty)]; w.push(r); w.append(comps[..]); emitw(SBODY, SOP_COMPOSITECONSTRUCT, w[..]); rv(ty, r)
+gencall(e int) Val:
+	x := EX[e]; n := x.name; argc := x.args.len; line := x.line
+	if x.asz != -1:
+		el := lookty(n)
+		if el < 0: serr(line, str("unknown type '", snm(n), "'"))
+		len := if x.asz != 0 { x.asz } else { argc }
+		if argc != len: serr(line, str("array constructor expects ", len, " element(s), got ", argc))
+		if len <= 0: serr(line, "array constructor requires at least one element")
+		at := arrtype(el, len); w int[>..] ~= [tyid(at)]; r := nid(); w.push(r)
+		for i argc: w.push(rvalas(x.args[i], el))
+		emitw(SBODY, SOP_COMPOSITECONSTRUCT, w[..]); return rv(at, r)
+	ct := lookty(n); if ct >= 0: return genctor(e, ct)
+	fh := dgi(FNS, n)
+	if fh >= 0:
+		ex ~= -1; cv ~= -1; vals Val[>..] ~= []
+		for i argc: vals.push(genexpr(x.args[i]))
+		o ~= fh
+		while o >= 0:
+			if SY[o].params.len == argc:
+				ae ~= true; ac ~= true
+				for i argc:
+					p := SY[o].params[i]
+					if p != vals[i].ty: ae = false
+					ok := if SY[o].pq.len > 0 && SY[o].pq[i] != 0 { p == vals[i].ty } else { implconv(vals[i].ty, p) }
+					if !ok: ac = false
+				if ae: ex = o; break
+				if ac && cv < 0: cv = o
+			o = SY[o].nxo
+		ch := if ex >= 0 { ex } else { cv }
+		if ch < 0: serr(line, str("no matching overload for '", snm(n), "'"))
+		cot int[>..] ~= []; coa int[>..] ~= []; r := nid(); w int[>..] ~= [tyid(SY[ch].ty)]; w.push(r); w.push(SY[ch].id)
+		for i argc:
+			if w.len >= 19: serr(line, "too many arguments")
+			q := if SY[ch].pq.len > 0 { SY[ch].pq[i] } else { 0 }
+			if q != 0:
+				if vals[i].k == V_RV: serr(line, str("argument ", i + 1, " of '", snm(n), "' must be assignable (out/inout parameter)"))
+				tmp := nid(); pt := ptrid(SY[ch].params[i], SC_FUNCTION); emit3(SLOCALS, SOP_VARIABLE, pt, tmp, SC_FUNCTION)
+				if q == 2: cur := load(vals[i]); emit2(SBODY, SOP_STORE, tmp, cur)
+				cot.push(tmp); coa.push(i); w.push(tmp)
+			else:
+				id := load(vals[i]); EX[x.args[i]].want = SY[ch].params[i]; w.push(convert(id, vals[i].ty, SY[ch].params[i], line))
+		emitw(SBODY, SOP_FUNCTIONCALL, w[..])
+		for t, i cot: ag := coa[i]; ld := nid(); pt := tyid(SY[ch].params[ag]); emit3(SBODY, SOP_LOAD, pt, ld, t); store(vals[ag], ld, line)
+		return rv(SY[ch].ty, r)
+	ii := dgi(INIX, n); if ii >= 0: return genintrin(e, ii)
+	serr(line, str("unknown function '", snm(n), "'")); Val{}
+recursive genexpr(e int) Val: v := genexpr1(e); EX[e].rt = v.ty; v
+arrlen(sid0 int, mi int) Val:
+	ln := nid(); ut := tyid(TUINT); emit4(SBODY, SOP_ARRAYLENGTH, ut, ln, sid0, mi); r := nid(); it := tyid(TINT); emit3(SBODY, SOP_BITCAST, it, r, ln); rv(TINT, r)
+recursive genexpr1(e int) Val:
+	x := EX[e]; k := x.k; line := x.line
+	if k == E_FLT: return rv(TFLOAT, cfloat(x.fv as f32))
+	if k == E_INT: return rv(TINT, cint((x.iv as! i32) as int))
+	if k == E_UINT: return rv(TUINT, cuint((x.iv as! u32) as int))
+	if k == E_BOOL: return rv(TBOOL, cscalar(TBOOL, if x.bv { 1 } else { 0 }))
+	if k == E_REF: return genref(e)
+	if k == E_MEM: return genmember(e)
+	if k == E_CALL: return gencall(e)
+	if k == E_LEN:
+		b := EX[x.l]
+		if b.k == E_REF:
+			s := findsym(b.name)
+			if s >= 0 && SY[s].k == SY_BM && TY[SY[s].ty].k == T_ARR && TY[SY[s].ty].cols == -1: return arrlen(SY[s].id, SY[s].mi)
+		if b.k == E_MEM && EX[b.l].k == E_REF:
+			s := findsym(EX[b.l].name)
+			if s >= 0 && SY[s].k == SY_VAR && TY[SY[s].ty].k == T_STRUCT && (SY[s].st == SC_STORAGEBUFFER || SY[s].st == SC_UNIFORM):
+				st := TY[SY[s].ty]
+				for fq, i st.fnm: if fq == b.name && TY[st.fty[i]].k == T_ARR && TY[st.fty[i]].cols == -1 { return arrlen(SY[s].id, i) }
+		base := genexpr(x.l)
+		if TY[base.ty].k != T_ARR || TY[base.ty].cols == -1: serr(line, ".length() requires an array")
+		return rv(TINT, cint(TY[base.ty].cols))
+	if k == E_IDX:
+		base := genexpr(x.l); bt := base.ty; by := TY[bt]
+		if by.k != T_VEC && by.k != T_MAT && by.k != T_ARR: serr(line, str("cannot index '", tyname(bt), "'"))
+		ix, it := rvalue(x.r)
+		if it != TINT && it != TUINT: serr(line, "index must be an integer")
+		el := if by.k == T_VEC || by.k == T_ARR { by.el } else { TVEC[by.rows - 2] }
+		pv := if base.k != V_PTR { spill(base) } else { base }
+		elaid := if pv.lt != 0 { max(dgi(LAIDE, pv.lt), 0) } else { 0 }
+		pt := if elaid != 0 { ptridraw(elaid, pv.st) } else { ptrid(el, pv.st) }
+		p := nid(); emit4(SBODY, SOP_ACCESSCHAIN, pt, p, pv.id, ix); return Val{V_PTR, el, p, pv.st, elaid}
+	if k == E_UN:
+		op := x.op
+		if op == P_INC || op == P_DEC:
+			lv := genexpr(x.l)
+			if lv.k == V_RV: serr(line, str("operand of '", if op == P_INC { "++" } else { "--" }, "' must be assignable"))
+			old := load(lv); t := lv.ty; ek := TY[elty(t)].k
+			one ~= if ek == T_FLOAT { cfloat(1.0) } else if ek == T_UINT { cuint(1) } else { cint(1) }
+			if isvec(t): o2, d := splat(one, elty(t), TY[t].cols); one = o2
+			r := nid(); oc := if ek == T_FLOAT { if op == P_INC { SOP_FADD } else { SOP_FSUB } } else { if op == P_INC { SOP_IADD } else { SOP_ISUB } }
+			tt := tyid(t); emit4(SBODY, oc, tt, r, old, one); store(lv, r, line); return rv(t, if x.post { old } else { r })
+		a, t := rvalue(x.l); ek := TY[elty(t)].k; r := nid()
+		if op == '-':
+			if TY[t].k == T_MAT { n1 := cfloat(-1.0); tt := tyid(t); emit4(SBODY, SOP_MATRIXTIMESSCALAR, tt, r, a, n1) } else if ek == T_FLOAT { tt := tyid(t); emit3(SBODY, SOP_FNEGATE, tt, r, a) } else if ek == T_INT || ek == T_UINT { tt := tyid(t); emit3(SBODY, SOP_SNEGATE, tt, r, a) } else { serr(line, str("cannot negate '", tyname(t), "'")) }
+		else if op == '!':
+			if t != TBOOL: serr(line, "'!' requires a bool operand")
+			tt := tyid(t); emit3(SBODY, SOP_LOGICALNOT, tt, r, a)
+		else if op == '~':
+			if ek != T_INT && ek != T_UINT: serr(line, "'~' requires integer operands")
+			tt := tyid(t); emit3(SBODY, SOP_NOT, tt, r, a)
+		else:
+			serr(line, "unsupported unary operator")
+		return rv(t, r)
+	if k == E_BIN:
+		op := x.op
+		if op == ',': genexpr(x.l); return genexpr(x.r)
+		if op == '=':
+			lv := genexpr(x.l)
+			if lv.k == V_RV: serr(line, "left side of '=' is not assignable")
+			src := rvalas(x.r, lv.ty); store(lv, src, line); return rv(lv.ty, src)
+		bo := cbaseop(op)
+		if bo != 0:
+			lv := genexpr(x.l)
+			if lv.k == V_RV: serr(line, "left side of assignment is not assignable")
+			a := load(lv); b, bt := rvalue(x.r); r := genbinop(bo, line, a, lv.ty, b, bt)
+			if r.ty != lv.ty && !implconv(r.ty, lv.ty): serr(line, str("cannot assign '", tyname(r.ty), "' to '", tyname(lv.ty), "'"))
+			cv := convert(r.id, r.ty, lv.ty, line); store(lv, cv, line); return rv(lv.ty, cv)
+		if op == P_AND || op == P_OR:
+			a, at := rvalue(x.l)
+			if at != TBOOL: serr(line, "'&&'/'||' require bool operands")
+			tmp := nid(); bp := ptrid(TBOOL, SC_FUNCTION); emit3(SLOCALS, SOP_VARIABLE, bp, tmp, SC_FUNCTION); emit2(SBODY, SOP_STORE, tmp, a)
+			rl := nid(); mg := nid(); emit2(SBODY, SOP_SELECTIONMERGE, mg, 0)
+			if op == P_AND { emit3(SBODY, SOP_BRANCHCONDITIONAL, a, rl, mg) } else { emit3(SBODY, SOP_BRANCHCONDITIONAL, a, mg, rl) }
+			BTERM = true; beginblock(rl); b, bt := rvalue(x.r)
+			if bt != TBOOL: serr(line, "'&&'/'||' require bool operands")
+			emit2(SBODY, SOP_STORE, tmp, b); branch(mg); beginblock(mg); r := nid(); tt := tyid(TBOOL); emit3(SBODY, SOP_LOAD, tt, r, tmp); return rv(TBOOL, r)
+		a, at := rvalue(x.l); b, bt := rvalue(x.r); return genbinop(op, line, a, at, b, bt)
+	if k == E_COND:
+		c, ct := rvalue(x.c)
+		if ct != TBOOL: serr(line, "ternary condition must be bool")
+		at := dryty(x.l); bt := dryty(x.r); rt := unify(at, bt, line)
+		tmp := nid(); pt := ptrid(rt, SC_FUNCTION); emit3(SLOCALS, SOP_VARIABLE, pt, tmp, SC_FUNCTION)
+		tl := nid(); el := nid(); mg := nid(); emit2(SBODY, SOP_SELECTIONMERGE, mg, 0); emit3(SBODY, SOP_BRANCHCONDITIONAL, c, tl, el)
+		BTERM = true; beginblock(tl); va := rvalas(x.l, rt); emit2(SBODY, SOP_STORE, tmp, va); branch(mg)
+		beginblock(el); vb := rvalas(x.r, rt); emit2(SBODY, SOP_STORE, tmp, vb); branch(mg)
+		beginblock(mg); r := nid(); tt := tyid(rt); emit3(SBODY, SOP_LOAD, tt, r, tmp); return rv(rt, r)
+	serr(line, "internal: unhandled expression"); Val{}
+beginblock(l int): emit1(SBODY, SOP_LABEL, l); BTERM = false
+branch(t int): emit1(SBODY, SOP_BRANCH, t); BTERM = true
+condb(e int, line int, what const byte[:]) int: c, t := rvalue(e); if t != TBOOL { serr(line, what) } c
+recursive genstmt(s int):
+	if BTERM: beginblock(nid())
+	x := ST[s]; k := x.k; line := x.line
+	if k == S_BLOCK:
+		pushsc(); for b x.blk { genstmt(b) } popsc()
+	else if k == S_DECL:
+		vr := nid(); pt := ptrid(x.ty, SC_FUNCTION); emit3(SLOCALS, SOP_VARIABLE, pt, vr, SC_FUNCTION); nameid(vr, snm(x.name)); addsym(x.name, SY_VAR, x.ty, vr, SC_FUNCTION, line)
+		if x.init >= 0: i := rvalas(x.init, x.ty); emit2(SBODY, SOP_STORE, vr, i)
+		if x.nx >= 0: genstmt(x.nx)
+	else if k == S_EXPR:
+		genexpr(x.e)
+	else if k == S_IF:
+		c := condb(x.e, line, "if condition must be bool"); mg := nid(); tl := nid(); el := if x.b >= 0 { nid() } else { mg }
+		emit2(SBODY, SOP_SELECTIONMERGE, mg, 0); emit3(SBODY, SOP_BRANCHCONDITIONAL, c, tl, el); BTERM = true
+		beginblock(tl); pushsc(); genstmt(x.a); popsc()
+		if !BTERM: branch(mg)
+		if x.b >= 0:
+			beginblock(el); pushsc(); genstmt(x.b); popsc()
+			if !BTERM: branch(mg)
+		beginblock(mg)
+	else if k == S_FOR || k == S_WHILE:
+		pushsc()
+		if k == S_FOR && x.a >= 0: genstmt(x.a)
+		hd := nid(); cl := nid(); bl := nid(); ctl := nid(); mg := nid()
+		branch(hd); beginblock(hd); emit3(SBODY, SOP_LOOPMERGE, mg, ctl, 0); branch(cl); beginblock(cl)
+		c := if x.e >= 0 { condb(x.e, line, "loop condition must be bool") } else { cscalar(TBOOL, 1) }
+		emit3(SBODY, SOP_BRANCHCONDITIONAL, c, bl, mg); BTERM = true; sb := BRKT; sc := CONTT; BRKT = mg; CONTT = ctl
+		beginblock(bl); pushsc(); genstmt(x.b); popsc()
+		if !BTERM: branch(ctl)
+		BRKT = sb; CONTT = sc; beginblock(ctl)
+		if k == S_FOR && x.it >= 0: genexpr(x.it)
+		branch(hd); beginblock(mg); popsc()
+	else if k == S_DO:
+		pushsc(); hd := nid(); bl := nid(); ctl := nid(); mg := nid()
+		branch(hd); beginblock(hd); emit3(SBODY, SOP_LOOPMERGE, mg, ctl, 0); branch(bl); sb := BRKT; sc := CONTT; BRKT = mg; CONTT = ctl
+		beginblock(bl); genstmt(x.b)
+		if !BTERM: branch(ctl)
+		BRKT = sb; CONTT = sc; beginblock(ctl); c := condb(x.e, line, "loop condition must be bool")
+		emit3(SBODY, SOP_BRANCHCONDITIONAL, c, hd, mg); BTERM = true; beginblock(mg); popsc()
+	else if k == S_SWITCH:
+		sel, st := rvalue(x.e)
+		if st != TINT && st != TUINT: serr(line, "switch selector must be int or uint")
+		ng := x.grps.len; mg := nid(); gl int[>..] ~= []; dl ~= mg
+		for g x.grps: l := nid(); gl.push(l); if GRP[g].def { dl = l }
+		emit2(SBODY, SOP_SELECTIONMERGE, mg, 0); w int[>..] ~= [sel, dl]
+		for g, i x.grps: for lb GRP[g].labels { w.push((lb as! i32 as! u32) as int); w.push(gl[i]) }
+		emitw(SBODY, SOP_SWITCH, w[..]); BTERM = true; sb := BRKT; BRKT = mg
+		for g, i x.grps:
+			beginblock(gl[i]); pushsc(); for t GRP[g].sts { genstmt(t) } popsc()
+			if !BTERM: branch(if i + 1 < ng { gl[i + 1] } else { mg })
+		BRKT = sb; beginblock(mg)
+	else if k == S_RET:
+		FHASRET = true; rt := if CURRT >= 0 { CURRT } else { TVOID }
+		if x.e >= 0:
+			if rt == TVOID: serr(line, "void function cannot return a value")
+			v := rvalas(x.e, rt); emit1(SBODY, SOP_RETURNVALUE, v)
+		else:
+			if rt != TVOID: serr(line, "non-void function must return a value")
+			emit0(SBODY, SOP_RETURN)
+		BTERM = true
+	else if k == S_DISCARD:
+		if STAGE != ST_FRAG: serr(line, "discard is only valid in fragment shaders")
+		emit0(SBODY, SOP_KILL); BTERM = true
+	else if k == S_BREAK:
+		if BRKT == 0: serr(line, "break outside of a loop")
+		branch(BRKT)
+	else if k == S_CONT:
+		if CONTT == 0: serr(line, "continue outside of a loop")
+		branch(CONTT)
+	return
+ST_VERT := 0
+ST_FRAG := 1
+ST_COMP := 2
+struct RRes { name int, set int, bind int, ro bool }
+struct RMem { name int, ty int, off int, alen int }
+struct RBlk { name int, set int, bind int, size int, nm int, fm int }
+struct RIn { name int, loc int, ty int }
+var RSAMP RRes[>..]
+var RIMG RRes[>..]
+var RBUF RRes[>..]
+var RBLK RBlk[>..]
+var RMEM RMem[>..]
+var RINP RIn[>..]
+recdecl(k int, line int) int: DC.push(Dc{k, line}); DECLS.push(DC.len - 1); DC.len - 1
+fntyid(ret int, pty const int[:], pq const int[:]) int:
+	rt := tyid(ret); pt int[>..] ~= []
+	for t, i pty: pt.push(if pq[i] != 0 { ptrid(t, SC_FUNCTION) } else { tyid(t) })
+	h u64 ~= 0xcbf29ce484222325; h = (h ^ rt as u64) * 1099511628211
+	for p pt: h = (h ^ p as u64) * 1099511628211
+	f := dgi(FNTYIDS, h); if f >= 0: return f
+	id := nid(); w int[>..] ~= [id, rt]; w.append(pt[..]); emitw(SGLOB, SOP_TYPEFUNCTION, w[..]); insert(FNTYIDS, h, id); id
+genfunc(ret int, name int, pty int[>..], pnm int[>..], pq int[>..], body int, line int):
+	head := dgi(FNS, name); o ~= head
+	while o >= 0:
+		if SY[o].params.len == pty.len:
+			same ~= true; for t, i pty { if SY[o].params[i] != t { same = false } }
+			if same: serr(line, str("redefinition of '", snm(name), "'"))
+		o = SY[o].nxo
+	fid := nid(); ftid := fntyid(ret, pty[..], pq[..]); rtid := tyid(ret); nameid(fid, snm(name)); pids int[>..] ~= []
+	for t pty: pids.push(nid())
+	sb := copy(SBODY); sl := copy(SLOCALS); SBODY.clear(); SLOCALS.clear(); BTERM = false; scr := CURRT; CURRT = ret; shr := FHASRET; FHASRET = false
+	pushsc()
+	for t, i pty:
+		if pq[i] != 0: nameid(pids[i], snm(pnm[i])); addsym(pnm[i], SY_VAR, t, pids[i], SC_FUNCTION, line); continue
+		vr := nid(); pt := ptrid(t, SC_FUNCTION); emit3(SLOCALS, SOP_VARIABLE, pt, vr, SC_FUNCTION); emit2(SBODY, SOP_STORE, vr, pids[i]); nameid(vr, snm(pnm[i])); addsym(pnm[i], SY_VAR, t, vr, SC_FUNCTION, line)
+	genstmt(body); popsc()
+	if !BTERM:
+		if ret == TVOID { emit0(SBODY, SOP_RETURN) } else if FHASRET { emit0(SBODY, SOP_UNREACHABLE) } else { serr(line, str("function '", snm(name), "' is missing a return statement")) }
+	emit4(SFUNCS, SOP_FUNCTION, rtid, fid, 0, ftid)
+	for t, i pty: ptd := if pq[i] != 0 { ptrid(t, SC_FUNCTION) } else { tyid(t) }; emit2(SFUNCS, SOP_FUNCTIONPARAMETER, ptd, pids[i])
+	emit1(SFUNCS, SOP_LABEL, nid()); SFUNCS.append(SLOCALS[..]); SFUNCS.append(SBODY[..]); emit0(SFUNCS, SOP_FUNCTIONEND)
+	SBODY.clear(); SBODY.append(sb[..]); SLOCALS.clear(); SLOCALS.append(sl[..]); CURRT = scr; FHASRET = shr
+	SY.push(Sym{SY_FUNC, name, ret, fid, 0}); s := SY.len - 1; SY[s].params.append(pty[..]); SY[s].pq.append(pq[..]); SY[s].nxo = head; insert(FNS, name, s)
+	if snm(name) == "main":
+		if ret != TVOID || pty.len != 0: serr(line, "main must be 'void main()'")
+		ENTRYF = fid
+	d := recdecl(D_FUNC, line); DC[d].ty = ret; DC[d].name = name; DC[d].pty.append(pty[..]); DC[d].pnm.append(pnm[..]); DC[d].pq.append(pq[..]); DC[d].body = body
+recursive std140(t int, line int) int, int:
+	y := TY[t]
+	if y.k == T_FLOAT || y.k == T_INT || y.k == T_UINT: return 4, 4
+	if y.k == T_VEC: return if y.cols == 2 { 8 } else { 16 }, if y.cols == 2 { 8 } else if y.cols == 3 { 12 } else { 16 }
+	if y.k == T_MAT: return 16, y.cols * 16
+	if y.k == T_ARR: a, s := std140(y.el, line); return 16, s * y.cols
+	serr(line, str("type '", tyname(t), "' is not supported in uniform blocks yet")); return 0, 0
+recursive std430(t int, line int) int, int:
+	y := TY[t]
+	if y.k == T_FLOAT || y.k == T_INT || y.k == T_UINT: return 4, 4
+	if y.k == T_VEC: return if y.cols == 2 { 8 } else { 16 }, if y.cols == 2 { 8 } else if y.cols == 3 { 12 } else { 16 }
+	if y.k == T_STRUCT:
+		ma ~= 4; off ~= 0
+		for ft y.fty: fa, fs := std430(ft, line); off = (off + fa - 1) / fa * fa + fs; if fa > ma { ma = fa }
+		return ma, (off + ma - 1) / ma * ma
+	if y.k == T_ARR: a, s := std430(y.el, line); return 16, s * y.cols
+	serr(line, str("type '", tyname(t), "' is not supported in buffer blocks")); return 0, 0
+laidstruct(t int, line int) int:
+	f := dgi(LAIDS, t); if f >= 0: return f
+	y := TY[t]; id := nid(); w int[>..] ~= [id]
+	for ft, i y.fty:
+		if !isscal(ft) && !isvec(ft): serr(line, str("buffer-block struct fields must be scalars or vectors ('", snm(y.name), ".", snm(y.fnm[i]), "')"))
+		w.push(tyid(ft))
+	emitw(SGLOB, SOP_TYPESTRUCT, w[..]); off ~= 0
+	for ft, i y.fty:
+		fa, fs := std430(ft, line); off = (off + fa - 1) / fa * fa
+		emit4(SDECOS, SOP_MEMBERDECORATE, id, i, DEC_OFFSET, off); emitstr(SNAMES, SOP_MEMBERNAME, [id, i], snm(y.fnm[i])); off += fs
+	nameid(id, snm(y.name)); insert(LAIDS, t, id); id
+laidrarr(el int, line int) int:
+	f := dgi(LAIDA, el); if f >= 0: return f
+	et := laidstruct(el, line); a, st := std430(el, line); id := nid()
+	emit2(SGLOB, SOP_TYPERUNTIMEARRAY, id, et); emit3(SDECOS, SOP_DECORATE, id, DEC_ARRAYSTRIDE, st); insert(LAIDA, el, id); insert(LAIDE, id, et); id
+laidsarr(t int, line int) int:
+	f := dgi(LAIDA, t); if f >= 0: return f
+	et := tyid(TY[t].el); a, st := std140(TY[t].el, line); len := cscalar(TUINT, TY[t].cols as! u32); id := nid()
+	emit3(SGLOB, SOP_TYPEARRAY, id, et, len); emit3(SDECOS, SOP_DECORATE, id, DEC_ARRAYSTRIDE, st); insert(LAIDA, t, id); insert(LAIDE, id, et); id
+rtype(t int) int:
+	y := TY[t]
+	if y.k == T_FLOAT: return 3
+	if y.k == T_INT: return 1
+	if y.k == T_UINT: return 2
+	if y.k == T_MAT: return if y.cols == 4 { 13 } else { 0 }
+	if y.k == T_VEC: ek := TY[y.el].k; return if ek == T_FLOAT { 6 + (y.cols - 2) * 3 } else if ek == T_INT { 4 + (y.cols - 2) * 3 } else if ek == T_UINT { 5 + (y.cols - 2) * 3 } else { 0 }
+	0
+geninout(l Lay, isin bool, flat bool, t int, name int, line int):
+	if l.loc < 0: serr(line, str("'", snm(name), "' requires an explicit layout(location = N)"))
+	st := if isin { SC_INPUT } else { SC_OUTPUT }; vr := nid(); pt := ptrid(t, st)
+	emit3(SGLOB, SOP_VARIABLE, pt, vr, st); emit3(SDECOS, SOP_DECORATE, vr, DEC_LOCATION, l.loc)
+	iv := TY[elty(t)].k != T_FLOAT && (isin && STAGE == ST_FRAG || !isin && STAGE == ST_VERT)
+	if flat || iv: emit2(SDECOS, SOP_DECORATE, vr, DEC_FLAT)
+	nameid(vr, snm(name)); addsym(name, SY_VAR, t, vr, st, line); SIFACE.push(vr as! u32)
+	if isin && STAGE == ST_VERT: RINP.push(RIn{name, l.loc, rtype(t)})
+	d := recdecl(D_INOUT, line); DC[d].ty = t; DC[d].name = name; DC[d].isin = isin; DC[d].flat = flat || iv; DC[d].loc = l.loc
+genublock(l Lay, bn int, isbuf bool, ro bool, line int):
+	kind := if isbuf { "buffer" } else { "uniform" }
+	if l.set < 0 || l.bind < 0: serr(line, str(kind, " block '", snm(bn), "' requires layout(set = N, binding = M)"))
+	mt int[>..] ~= []; mn int[>..] ~= []; ml int[>..] ~= []; expp('{')
+	while !isp('}'):
+		mline := TOK.line; m ~= parsetype(); nmm := expid()
+		if accp('['):
+			if accp(']'):
+				if !isbuf: serr(mline, "runtime arrays are only allowed in buffer blocks")
+				k := TY[m].k
+				if k != T_FLOAT && k != T_INT && k != T_UINT && k != T_VEC && k != T_STRUCT: serr(mline, "runtime array elements must be scalars, vectors, or structs")
+				m = arrtype(m, -1)
+			else:
+				se := passign(); st, bits := cfold(se)
+				if TY[st].k != T_INT && TY[st].k != T_UINT: serr(mline, "array size must be an integer constant expression")
+				al := (bits as! i32) as int
+				if al <= 0: serr(mline, "array size must be positive")
+				expp(']'); y := TY[m]
+				if !(y.k == T_VEC && y.cols == 4) && !(y.k == T_MAT && y.cols == 4 && y.rows == 4): serr(mline, "sized array block members must have vec4, ivec4, uvec4, or mat4 elements")
+				m = arrtype(m, al)
+		if TY[m].k == T_STRUCT && !isbuf: serr(mline, "struct members are only supported in buffer blocks")
+		expp(';')
+		if mt.len > 0 && TY[mt[mt.len - 1]].k == T_ARR && TY[mt[mt.len - 1]].cols == -1: serr(mline, "a runtime array must be the last member of its block")
+		mt.push(m); mn.push(nmm); ml.push(mline)
+	adv(); inst ~= -1
+	if TOK.k == TK_ID: inst = TOK.id; adv()
+	expp(';')
+	if mt.len == 0: serr(line, str(kind, " block '", snm(bn), "' is empty"))
+	mtids int[>..] ~= []
+	for m, i mt:
+		y := TY[m]
+		mtids.push(if y.k == T_STRUCT { laidstruct(m, ml[i]) } else if y.k == T_ARR && y.cols == -1 && TY[y.el].k == T_STRUCT { laidrarr(y.el, ml[i]) } else if y.k == T_ARR && y.cols >= 0 { laidsarr(m, ml[i]) } else { tyid(m) })
+	sid0 := nid(); w int[>..] ~= [sid0]; w.append(mtids[..]); emitw(SGLOB, SOP_TYPESTRUCT, w[..]); off ~= 0; fm := RMEM.len
+	for m, i mt:
+		y := TY[m]; al ~= 0; sz ~= 0
+		if y.k == T_ARR && y.cols == -1 { a, s := std430(y.el, ml[i]); al = a; sz = 0 } else if isbuf { a, s := std430(m, ml[i]); al = a; sz = s } else { a, s := std140(m, ml[i]); al = a; sz = s }
+		off = (off + al - 1) / al * al
+		if !isbuf: RMEM.push(if y.k == T_ARR && y.cols >= 0 { RMem{mn[i], rtype(y.el), off, y.cols} } else { RMem{mn[i], rtype(m), off, 1} })
+		emit4(SDECOS, SOP_MEMBERDECORATE, sid0, i, DEC_OFFSET, off)
+		dm := if y.k == T_ARR && y.cols >= 0 { y.el } else { m }
+		if TY[dm].k == T_MAT: emit3(SDECOS, SOP_MEMBERDECORATE, sid0, i, DEC_COLMAJOR); emit4(SDECOS, SOP_MEMBERDECORATE, sid0, i, DEC_MATRIXSTRIDE, 16)
+		emitstr(SNAMES, SOP_MEMBERNAME, [sid0, i], snm(mn[i])); off += sz
+	emit2(SDECOS, SOP_DECORATE, sid0, DEC_BLOCK); nameid(sid0, snm(bn))
+	if isbuf && ro: for i mt.len { emit3(SDECOS, SOP_MEMBERDECORATE, sid0, i, DEC_NONWRITABLE) }
+	st := if isbuf { SC_STORAGEBUFFER } else { SC_UNIFORM }; pid := nid(); emit3(SGLOB, SOP_TYPEPOINTER, pid, st, sid0); vr := nid()
+	emit3(SGLOB, SOP_VARIABLE, pid, vr, st); emit3(SDECOS, SOP_DECORATE, vr, DEC_DESCRIPTORSET, l.set); emit3(SDECOS, SOP_DECORATE, vr, DEC_BINDING, l.bind)
+	if inst >= 0:
+		for m, i mt: if TY[m].k == T_ARR && TY[m].cols >= 0 { serr(ml[i], "sized array members are not supported in named block instances yet") }
+		vw := nty(Ty{T_STRUCT, -1, 0, 0, bn}); TY[vw].fnm.append(mn[..]); TY[vw].fty.append(mt[..]); insert(TYIDS, vw, sid0); addsym(inst, SY_VAR, vw, vr, st, line)
+	else:
+		for m, i mt:
+			s := addsym(mn[i], SY_BM, m, vr, st, ml[i]); SY[s].mi = i; y := TY[m]
+			SY[s].laid = if y.k == T_STRUCT || y.k == T_ARR && (y.cols >= 0 || TY[y.el].k == T_STRUCT) { mtids[i] } else { 0 }
+	if isbuf { RBUF.push(RRes{bn, l.set, l.bind, ro}) } else { RBLK.push(RBlk{bn, l.set, l.bind, (off + 15) / 16 * 16, mt.len, fm}) }
+	d := recdecl(D_BLOCK, line); DC[d].name = bn; DC[d].set = l.set; DC[d].bind = l.bind; DC[d].ro = ro; DC[d].isbuf = isbuf; DC[d].inst = inst; DC[d].mty.append(mt[..]); DC[d].mnm.append(mn[..])
+genopaque(l Lay, t0 int, name int, ro bool, wo bool, line int):
+	t ~= t0
+	if TY[t].k == T_IMG:
+		if l.fmt < 0: serr(line, str("image '", snm(name), "' requires a format layout qualifier (e.g. rgba8)"))
+		if l.fmt == 6 || l.fmt == 7 || l.fmt == 9: NEEDEF = true
+		f ~= dgi(IMGTY, l.fmt)
+		if f < 0: f = nty(Ty{T_IMG, -1, l.fmt}); insert(IMGTY, l.fmt, f)
+		t = f
+	else if TY[t].k != T_SAMP:
+		serr(line, str("uniforms outside blocks must be opaque types (sampler2D, image2D); put '", snm(name), "' in a uniform block"))
+	if l.set < 0 || l.bind < 0: serr(line, str("'", snm(name), "' requires layout(set = N, binding = M)"))
+	vr := nid(); pt := ptrid(t, SC_UNIFORMCONSTANT); emit3(SGLOB, SOP_VARIABLE, pt, vr, SC_UNIFORMCONSTANT)
+	emit3(SDECOS, SOP_DECORATE, vr, DEC_DESCRIPTORSET, l.set); emit3(SDECOS, SOP_DECORATE, vr, DEC_BINDING, l.bind)
+	if ro: emit2(SDECOS, SOP_DECORATE, vr, DEC_NONWRITABLE)
+	if wo: emit2(SDECOS, SOP_DECORATE, vr, DEC_NONREADABLE)
+	nameid(vr, snm(name)); addsym(name, SY_VAR, t, vr, SC_UNIFORMCONSTANT, line)
+	if TY[t].k == T_SAMP { RSAMP.push(RRes{name, l.set, l.bind, ro}) } else { RIMG.push(RRes{name, l.set, l.bind, ro}) }
+	d := recdecl(D_OPAQUE, line); DC[d].ty = t; DC[d].name = name; DC[d].set = l.set; DC[d].bind = l.bind; DC[d].ro = ro
+fbits(f f32) u32: binary::f32_bits(f)
+bitsf(b u32) f32: binary::f32_from_bits(b)
+recursive cfold(e int) int, u32:
+	x := EX[e]; k := x.k
+	if k == E_FLT: return TFLOAT, fbits(x.fv as f32)
+	if k == E_INT: return TINT, (x.iv as! i32) as! u32
+	if k == E_UINT: return TUINT, x.iv as! u32
+	if k == E_BOOL: return TBOOL, if x.bv { 1 as u32 } else { 0 as u32 }
+	if k == E_UN && x.op == '-':
+		t, b := cfold(x.l); return t, if t == TFLOAT { fbits(-bitsf(b)) } else { (0 - (b as! i32) as int) as! u32 }
+	if k == E_REF:
+		s := findsym(x.name)
+		if s >= 0 && SY[s].hcv: return SY[s].ty, SY[s].cbits
+	if k == E_BIN:
+		op := x.op; io := op == '%' || op == P_SHL || op == P_SHR || op == '&' || op == '|' || op == '^'
+		if op == '+' || op == '-' || op == '*' || op == '/' || io:
+			lt, lb := cfold(x.l); rt, rb := cfold(x.r)
+			if lt == TFLOAT || rt == TFLOAT:
+				if io: serr(x.line, "integer operator on float constants")
+				a := if lt == TFLOAT { bitsf(lb) } else { (lb as! i32) as f32 }; b := if rt == TFLOAT { bitsf(rb) } else { (rb as! i32) as f32 }
+				r := if op == '+' { a + b } else if op == '-' { a - b } else if op == '*' { a * b } else if b != 0.0 { a / b } else { 0.0 as f32 }
+				return TFLOAT, fbits(r)
+			a := (lb as! i32) as int; b := (rb as! i32) as int
+			r := if op == '+' { a + b } else if op == '-' { a - b } else if op == '*' { a * b } else if op == '/' { if b != 0 { a / b } else { 0 } } else if op == '%' { if b != 0 { a % b } else { 0 } } else if op == '&' { a & b } else if op == '|' { a | b } else if op == '^' { a ^ b } else if op == P_SHL { a << b } else { a >> b }
+			return if lt == TUINT || rt == TUINT { TUINT } else { TINT }, r as! u32
+	serr(x.line, "expected a constant expression"); return 0, 0 as u32
+convbits(t int, b u32, want int) u32: if t == TINT && want == TFLOAT { fbits((b as! i32) as f32) } else if t == TUINT && want == TFLOAT { fbits(b as f32) } else { b }
+cscalaras(t int, bits u32, want int, line int) int:
+	if t != want && !(t == TINT && want == TFLOAT || t == TUINT && want == TFLOAT || t == TINT && want == TUINT || t == TUINT && want == TINT): serr(line, str("cannot convert constant to '", tyname(want), "'"))
+	cscalar(want, convbits(t, bits, want))
+recursive constexpr(e int, want int) int:
+	x := EX[e]; y := TY[want]
+	if isscal(want): t, b := cfold(e); return cscalaras(t, b, want, x.line)
+	if y.k == T_VEC:
+		if x.k != E_CALL || lookty(x.name) != want: serr(x.line, str("constant '", tyname(want), "' initializers must be written as constructors"))
+		cs int[>..] ~= []
+		if x.args.len == 1:
+			c := constexpr(x.args[0], y.el); for i y.cols { cs.push(c) }
+		else:
+			for a x.args: if cs.len >= y.cols { serr(x.line, "too many components") } cs.push(constexpr(a, y.el))
+			if cs.len != y.cols: serr(x.line, str("wrong number of components for '", tyname(want), "'"))
+		id := nid(); w int[>..] ~= [tyid(want)]; w.push(id); w.append(cs[..]); emitw(SGLOB, SOP_CONSTANTCOMPOSITE, w[..]); return id
+	if y.k == T_ARR:
+		if x.k != E_CALL || x.asz == -1: serr(x.line, "constant array initializers must use the T[](...) constructor form")
+		if x.args.len != y.cols: serr(x.line, str("array constructor expects ", y.cols, " element(s), got ", x.args.len))
+		id := nid(); w int[>..] ~= [tyid(want)]; w.push(id)
+		for a x.args: w.push(constexpr(a, y.el))
+		emitw(SGLOB, SOP_CONSTANTCOMPOSITE, w[..]); return id
+	serr(x.line, str("unsupported constant initializer type '", tyname(want), "'")); 0
+genstruct():
+	line := TOK.line; name := expid()
+	if lookty(name) >= 0: serr(line, str("redefinition of type '", snm(name), "'"))
+	t := nty(Ty{T_STRUCT, -1, 0, 0, name}); expp('{')
+	while !isp('}'):
+		if TOK.k == TK_EOF: serr(TOK.line, "unexpected end of file inside struct")
+		b ~= parsetype(); b = arrsuffix(b)
+		loop:
+			fq := expid(); ft := arrsuffix(b); TY[t].fnm.push(fq); TY[t].fty.push(ft)
+			if !accp(','): break
+		expp(';')
+	adv(); expp(';')
+	if TY[t].fty.len == 0: serr(line, str("struct '", snm(name), "' has no fields"))
+	insert(TYNAMES, name, t); d := recdecl(D_STRUCT, line); DC[d].ty = t; DC[d].name = name
+genglobal(isc bool, t0 int, name int, line int):
+	t := arrsuffix(t0); iid ~= 0; fd ~= false; fb u32 ~= 0; ie ~= -1
+	if accp('='):
+		ie = passign()
+		if isc && isscal(t):
+			ft, b := cfold(ie); iid = cscalaras(ft, b, t, line); fd = true; fb = convbits(ft, b, t)
+		else:
+			iid = constexpr(ie, t)
+	else if isc:
+		serr(line, str("const '", snm(name), "' requires an initializer"))
+	expp(';'); pt := ptrid(t, SC_PRIVATE); vr := nid()
+	if iid != 0 { emit4(SGLOB, SOP_VARIABLE, pt, vr, SC_PRIVATE, iid) } else { emit3(SGLOB, SOP_VARIABLE, pt, vr, SC_PRIVATE) }
+	nameid(vr, snm(name)); s := addsym(name, SY_VAR, t, vr, SC_PRIVATE, line); SY[s].hcv = fd; SY[s].cbits = fb
+	d := recdecl(D_GLOBAL, line); DC[d].ty = t; DC[d].name = name; DC[d].isc = isc; DC[d].init = ie
+gentop():
+	while TOK.k != TK_EOF:
+		if accp(';'): continue
+		line := TOK.line
+		if acckw("struct"): genstruct(); continue
+		l ~= Lay{}; hl ~= false; flat ~= false; io ~= false; isin ~= false; ro ~= false; wo ~= false
+		loop:
+			if acckw("layout") { l = playout(); hl = true } else if acckw("flat") { flat = true } else if acckw("readonly") { ro = true } else if acckw("writeonly") { wo = true } else if acckw("in") { io = true; isin = true } else if acckw("out") { io = true; isin = false } else { break }
+		if io:
+			if isin && accp(';'):
+				if STAGE != ST_COMP: serr(line, "local_size layout requires a compute shader")
+				LSIZE[0] = if l.lx > 0 { l.lx } else { 1 }; LSIZE[1] = if l.ly > 0 { l.ly } else { 1 }; LSIZE[2] = if l.lz > 0 { l.lz } else { 1 }; continue
+			t := parsetype(); n := expid(); expp(';'); geninout(l, isin, flat, t, n, line); continue
+		if acckw("buffer"): bn := expid(); genublock(l, bn, true, ro, line); continue
+		if acckw("uniform"):
+			loop:
+				if acckw("readonly") { ro = true } else if acckw("writeonly") { wo = true } else { break }
+			if attype():
+				t := parsetype(); n := expid(); expp(';'); genopaque(l, t, n, ro, wo, line)
+			else:
+				bn := expid(); genublock(l, bn, false, false, line)
+			continue
+		if acckw("shared"):
+			if STAGE != ST_COMP: serr(line, "'shared' variables require a compute shader")
+			t0 := parsetype(); n := expid(); t := arrsuffix(t0); expp(';'); pt := ptrid(t, SC_WORKGROUP); vr := nid()
+			emit3(SGLOB, SOP_VARIABLE, pt, vr, SC_WORKGROUP); nameid(vr, snm(n)); addsym(n, SY_VAR, t, vr, SC_WORKGROUP, line)
+			d := recdecl(D_SHARED, line); DC[d].ty = t; DC[d].name = n; continue
+		if hl || flat: serr(line, "layout qualifiers must be followed by 'in', 'out', or 'uniform'")
+		isc := acckw("const")
+		if !attype() && !iskw("void"): serr(line, "unexpected token at global scope")
+		ret := if acckw("void") { TVOID } else { parsetype() }; name := expid()
+		if !isp('('):
+			if ret == TVOID: serr(line, "variables cannot be 'void'")
+			genglobal(isc, ret, name, line); continue
+		if isc: serr(line, "'const' is not valid on a function")
+		expp('('); pty int[>..] ~= []; pnm int[>..] ~= []; pq int[>..] ~= []
+		if !isp(')'):
+			if iskw("void") && peek(1).k == TK_P && peek(1).p == ')':
+				adv()
+			else:
+				loop:
+					q := if acckw("in") { 0 } else if acckw("out") { 1 } else if acckw("inout") { 2 } else { 0 }
+					t ~= parsetype(); t = arrsuffix(t); n := expid(); t = arrsuffix(t); pty.push(t); pnm.push(n); pq.push(q)
+					if !accp(','): break
+		expp(')'); body := pblock(); genfunc(ret, name, pty, pnm, pq, body, line)
+regty(n const byte[:], t int): insert(TYNAMES, sid(n), t)
+inittypes():
+	TVOID = nty(Ty{T_VOID}); TBOOL = nty(Ty{T_BOOL}); TINT = nty(Ty{T_INT}); TUINT = nty(Ty{T_UINT}); TFLOAT = nty(Ty{T_FLOAT})
+	for i 3: TVEC[i] = nty(Ty{T_VEC, TFLOAT, i + 2}); TIVEC[i] = nty(Ty{T_VEC, TINT, i + 2}); TUVEC[i] = nty(Ty{T_VEC, TUINT, i + 2}); TBVEC[i] = nty(Ty{T_VEC, TBOOL, i + 2}); TMAT[i] = nty(Ty{T_MAT, TFLOAT, i + 2, i + 2})
+	TSAMP = nty(Ty{T_SAMP, TFLOAT, SD_2D}); TUSAMP = nty(Ty{T_SAMP, TUINT, SD_2D}); TSCUBE = nty(Ty{T_SAMP, TFLOAT, SD_CUBE}); TS3D = nty(Ty{T_SAMP, TFLOAT, SD_3D}); TS2DA = nty(Ty{T_SAMP, TFLOAT, SD_2DA}); TS2DS = nty(Ty{T_SAMP, TFLOAT, SD_2DS}); TSCUBES = nty(Ty{T_SAMP, TFLOAT, SD_CUBES}); TS2DAS = nty(Ty{T_SAMP, TFLOAT, SD_2DAS})
+	regty("bool", TBOOL); regty("int", TINT); regty("uint", TUINT); regty("float", TFLOAT)
+	for p, i ["vec", "ivec", "uvec", "bvec"]: for j 3 { n byte[>..] ~= []; n.append(p); n.push(('2' + j) as byte); regty(n[..], [TVEC[j], TIVEC[j], TUVEC[j], TBVEC[j]][i]) }
+	regty("sampler2D", TSAMP); regty("usampler2D", TUSAMP); regty("samplerCube", TSCUBE); regty("sampler3D", TS3D); regty("sampler2DArray", TS2DA); regty("sampler2DShadow", TS2DS); regty("samplerCubeShadow", TSCUBES); regty("sampler2DArrayShadow", TS2DAS)
+	regty("mat2", TMAT[0]); regty("mat3", TMAT[1]); regty("mat4", TMAT[2]); regty("image2D", nty(Ty{T_IMG, -1, -1}))
+builtin(n const byte[:], t int, b int):
+	pt := ptrid(t, SC_INPUT); vr := nid(); emit3(SGLOB, SOP_VARIABLE, pt, vr, SC_INPUT); emit3(SDECOS, SOP_DECORATE, vr, DEC_BUILTIN, b); nameid(vr, n); addsym(sid(n), SY_VAR, t, vr, SC_INPUT, 0); SIFACE.push(vr as! u32)
+pervertex():
+	v4 := tyid(TVEC[2]); s := nid(); emit2(SGLOB, SOP_TYPESTRUCT, s, v4); emit2(SDECOS, SOP_DECORATE, s, DEC_BLOCK); emit4(SDECOS, SOP_MEMBERDECORATE, s, 0, DEC_BUILTIN, BI_POSITION)
+	nameid(s, "gl_PerVertex"); emitstr(SNAMES, SOP_MEMBERNAME, [s, 0], "gl_Position"); p := nid(); emit3(SGLOB, SOP_TYPEPOINTER, p, SC_OUTPUT, s); PVVAR = nid()
+	emit3(SGLOB, SOP_VARIABLE, p, PVVAR, SC_OUTPUT); SIFACE.push(PVVAR as! u32); addsym(sid("gl_Position"), SY_POS, TVEC[2], PVVAR, SC_OUTPUT, 0)
+assemble() u32[>..]:
+	m u32[>..] ~= [0x07230203 as u32, 0x00010300 as u32, 0 as u32, NEXTID as! u32, 0 as u32]; emit1(m, SOP_CAPABILITY, 1)
+	if NEEDIQ: emit1(m, SOP_CAPABILITY, 50)
+	if NEEDEF: emit1(m, SOP_CAPABILITY, 49)
+	emitstr(m, SOP_EXTINSTIMPORT, [GLSLEXT], "GLSL.std.450"); emit2(m, SOP_MEMORYMODEL, 0, 1)
+	w u32[>..] ~= [(if STAGE == ST_FRAG { 4 } else if STAGE == ST_COMP { 5 } else { 0 }) as! u32, ENTRYF as! u32]; pushstr(w, "main"); w.append(SIFACE[..])
+	m.push(((w.len + 1) << 16 | SOP_ENTRYPOINT) as! u32); m.append(w[..])
+	if STAGE == ST_FRAG { emit2(m, SOP_EXECUTIONMODE, ENTRYF, 7) } else if STAGE == ST_COMP { emitw(m, SOP_EXECUTIONMODE, [ENTRYF, 17, LSIZE[0], LSIZE[1], LSIZE[2]]) }
+	m.append(SNAMES[..]); m.append(SDECOS[..]); m.append(SGLOB[..]); m.append(SFUNCS[..]); m
+reset():
+	SNB.clear(); SNM.clear(); SNH.clear(); TY.clear(); EX.clear(); ST.clear(); GRP.clear(); DC.clear(); SY.clear(); DECLS.clear(); INS.clear(); INIX = dictionary<int, int>{..}
+	TYNAMES = dictionary<int, int>{..}; ARRTY = dictionary<u64, int>{..}; IMGTY = dictionary<int, int>{..}; TYIDS = dictionary<int, int>{..}; PTRIDS = dictionary<u64, int>{..}; CONSTIDS = dictionary<u64, int>{..}; FNTYIDS = dictionary<u64, int>{..}
+	LAIDS = dictionary<int, int>{..}; LAIDA = dictionary<int, int>{..}; LAIDE = dictionary<int, int>{..}; SAMPIMG = dictionary<int, int>{..}; SCD = dictionary<u64, int>{..}; FNS = dictionary<int, int>{..}
+	SNAMES.clear(); SDECOS.clear(); SGLOB.clear(); SFUNCS.clear(); SBODY.clear(); SLOCALS.clear(); SIFACE.clear(); SCN.clear(); SCM.clear(); SFILES.clear(); AHEAD.clear()
+	RSAMP.clear(); RIMG.clear(); RBUF.clear(); RBLK.clear(); RMEM.clear(); RINP.clear(); ERRM.clear(); MSLO.clear(); HLSLO.clear()
+	NEXTID = 1; GLSLEXT = 0; NEEDIQ = false; NEEDEF = false; CURRT = -1; FHASRET = false; BTERM = false; BRKT = 0; CONTT = 0; ENTRYF = 0; PVVAR = 0; LSIZE[0] = 0; LSIZE[1] = 0; LSIZE[2] = 0; FIDX = 0; LP = 0; LLINE = 1
+cspv(src const byte[:], stage int, spv u32[>..]&) bool:
+	reset(); STAGE = stage; initins(); ok ~= true
+	body():
+		preprocess(src); PPT.clear(); PPT.append(PPO[..]); LP = 0; LLINE = 1; FIDX = 0
+		GLSLEXT = nid(); inittypes(); pushsc()
+		if stage == ST_VERT:
+			pervertex(); builtin("gl_VertexIndex", TINT, 42); builtin("gl_InstanceIndex", TINT, 43)
+		else if stage == ST_FRAG:
+			builtin("gl_FragCoord", TVEC[2], 15); builtin("gl_FrontFacing", TBOOL, 17)
+		else:
+			for n, i ["gl_GlobalInvocationID", "gl_LocalInvocationID", "gl_WorkGroupID", "gl_NumWorkGroups", "gl_LocalInvocationIndex"]: builtin(n, if i == 4 { TUINT } else { TUVEC[1] }, [28, 27, 26, 24, 29][i])
+		adv(); gentop()
+		if ENTRYF == 0: serr(0, "no 'void main()' entry point defined")
+		if stage == ST_COMP && LSIZE[0] == 0: serr(0, "compute shaders must declare layout(local_size_x = ..., ...) in;")
+		emithlsl(); HLSLO.clear(); HLSLO.append(TPO[..]); emitmsl(); MSLO.clear(); MSLO.append(TPO[..]); spv.append(assemble()[..])
+	exception::try<int>(body) { e => ok = false }
+	ok
+var MSLO byte[>..]
+var HLSLO byte[>..]
+bigmul(b int[>..]&, m int): c ~= 0; for i b.len { v := b[i] * m + c; b[i] = v % 1000000000; c = v / 1000000000 } while c > 0 { b.push(c % 1000000000); c = c / 1000000000 }
+exactdig(v real) byte[>..], int:
+	bits := binary::f64_bits(v); ex := (bits >> 52 & 2047) as int; mt := (bits & 0xFFFFFFFFFFFFF) as int
+	m := if ex == 0 { mt } else { mt | 1 << 52 }; e ~= if ex == 0 { -1074 } else { ex - 1075 }; o byte[>..] ~= []
+	if m == 0: o.push('0'); return o, 1
+	b int[>..] ~= [m % 1000000000, m / 1000000000 % 1000000000, m / 1000000000000000000]
+	while b.len > 1 && b[b.len - 1] == 0: b.pop()
+	sh ~= 0
+	if e >= 0:
+		k ~= e; while k >= 29 { bigmul(b, 1 << 29); k -= 29 } if k > 0 { bigmul(b, 1 << k) }
+	else:
+		k ~= -e; sh = k; while k >= 13 { bigmul(b, 1220703125); k -= 13 } p ~= 1; for i k { p *= 5 } if p > 1 { bigmul(b, p) }
+	i ~= b.len - 1; format(o, b[i]); i -= 1
+	while i >= 0: x := b[i]; d ~= 100000000; while d > 0 { o.push(('0' + x / d % 10) as byte); d /= 10 } i -= 1
+	pp := o.len - sh; return o, pp
+fmtg9(o byte[>..]&, v0 real):
+	v ~= v0; if v < 0.0 || v == 0.0 && binary::f64_bits(v) >> 63 != 0 { o.push('-'); v = -v }
+	dg, pp := exactdig(v); x ~= pp - 1; d byte[>..] ~= []
+	if dg.len == 1 && dg[0] == '0': x = 0
+	for i 9: d.push(if i < dg.len { dg[i] } else { '0' as byte })
+	if dg.len > 9:
+		r := dg[9]; rest ~= false; for i dg.len - 10 { if dg[10 + i] != '0' { rest = true } }
+		up := r > '5' || r == '5' && (rest || (d[8] - '0') % 2 == 1)
+		if up:
+			j ~= 8; while j >= 0 && d[j] == '9' { d[j] = '0'; j -= 1 }
+			if j >= 0 { d[j] += 1 } else { d.clear(); d.push('1'); for i 8 { d.push('0') } x += 1 }
+	t byte[>..] ~= []
+	if x < -4 || x >= 9:
+		t.push(d[0]); t.push('.'); t.append(d[1..]); while t[t.len - 1] == '0' { t.pop() } if t[t.len - 1] == '.' { t.pop() }
+		o.append(t[..]); o.push('e'); o.push(if x < 0 { '-' } else { '+' }); ax := if x < 0 { -x } else { x }; if ax < 10 { o.push('0') } format(o, ax); return
+	if x >= 0:
+		t.append(d[..x + 1]); t.push('.'); t.append(d[x + 1..])
+	else:
+		t.append("0."); for i -x - 1 { t.push('0') } t.append(d[..])
+	while t[t.len - 1] == '0': t.pop()
+	if t[t.len - 1] == '.': t.pop()
+	o.append(t[..])
+var TPO byte[>..]
+var TPH = false
+var TPM = false
+var TPI = 0
+var RNF int[>..]
+var RNT int[>..]
+var SHD int[>..]
+var SHM int[>..]
+hlslty(t int) const byte[:]:
+	y := TY[t]; k := y.k; c := y.cols
+	if k == T_VOID: return "void"
+	if k == T_BOOL: return "bool"
+	if k == T_INT: return "int"
+	if k == T_UINT: return "uint"
+	if k == T_FLOAT: return "float"
+	if k == T_STRUCT: return snm(y.name)
+	if k == T_MAT: return if c == 2 { "float2x2" } else if c == 3 { "float3x3" } else { "float4x4" }
+	if k == T_VEC:
+		ek := TY[y.el].k; p := if ek == T_FLOAT { 0 } else if ek == T_INT { 1 } else if ek == T_UINT { 2 } else { 3 }
+		return [["float2", "float3", "float4"], ["int2", "int3", "int4"], ["uint2", "uint3", "uint4"], ["bool2", "bool3", "bool4"]][p][min(c, 4) - 2]
+	"?"
+tprename(f int, t int): RNF.push(f); RNT.push(t)
+tppush(): SHM.push(SHD.len)
+tppop(): m := SHM.pop(); while SHD.len > m { SHD.pop() }
+tpname(n int) int:
+	i ~= SHD.len - 1; while i >= 0 { if SHD[i] == n { return n } i -= 1 }
+	for f, j RNF: if f == n { return RNT[j] }
+	n
+tpind(): for i TPI { TPO.push('\t') }
+tpvar(t int, n const byte[:]): if TY[t].k == T_ARR { format(TPO, hlslty(TY[t].el), " ", n, "[", TY[t].cols, "]") } else { format(TPO, hlslty(t), " ", n) }
+tpopstr(op int) const byte[:]: if op == P_SHL { "<<" } else if op == P_SHR { ">>" } else if op == P_LE { "<=" } else if op == P_GE { ">=" } else if op == P_EQ { "==" } else if op == P_NE { "!=" } else if op == P_AND { "&&" } else if op == P_OR { "||" } else if op == P_ADDA { "+=" } else if op == P_SUBA { "-=" } else if op == P_MULA { "*=" } else if op == P_DIVA { "/=" } else if op == P_MODA { "%=" } else if op == P_ANDA { "&=" } else if op == P_ORA { "|=" } else if op == P_XORA { "^=" } else if op == P_SHLA { "<<=" } else if op == P_SHRA { ">>=" } else if op == '=' { "=" } else if op == '+' { "+" } else if op == '-' { "-" } else if op == '*' { "*" } else if op == '/' { "/" } else if op == '%' { "%" } else if op == '&' { "&" } else if op == '|' { "|" } else if op == '^' { "^" } else if op == '<' { "<" } else if op == '>' { ">" } else if op == ',' { "," } else { "?" }
+tpprec(op int) int: if op == '*' || op == '/' || op == '%' { 13 } else if op == '+' || op == '-' { 12 } else if op == P_SHL || op == P_SHR { 11 } else if op == '<' || op == '>' || op == P_LE || op == P_GE { 10 } else if op == P_EQ || op == P_NE { 9 } else if op == '&' { 8 } else if op == '^' { 7 } else if op == '|' { 6 } else if op == P_AND { 5 } else if op == P_OR { 4 } else if op == ',' { 1 } else if isassign(op) { 2 } else { 0 }
+tpnum(t int) bool: if t < 0 { false } else { k := TY[elty(t)].k; k == T_INT || k == T_UINT || k == T_FLOAT }
+recursive tprt(e int) int:
+	x := EX[e]
+	if x.rt >= 0: return x.rt
+	if x.k == E_FLT: return TFLOAT
+	if x.k == E_INT: return TINT
+	if x.k == E_UINT: return TUINT
+	if x.k == E_BOOL: return TBOOL
+	if x.k == E_UN && (x.op == '-' || x.op == '+'): return tprt(x.l)
+	-1
+recursive tpexprto(e int, want int, prec int):
+	have := tprt(e); x := EX[e]
+	if want >= 0 && have >= 0 && tpnum(want) && tpnum(have):
+		wk := TY[elty(want)].k; hk := TY[elty(have)].k
+		if wk != hk:
+			if x.k == E_INT || x.k == E_UINT:
+				if wk == T_FLOAT { tpflt(x.iv as real) } else if wk == T_UINT { format(TPO, x.iv as! u32, "u") } else { format(TPO, x.iv as! i32) }
+				return
+			if x.k == E_UN && x.op == '-' && wk == T_FLOAT && (EX[x.l].k == E_INT || EX[x.l].k == E_UINT): TPO.push('-'); tpflt(EX[x.l].iv as real); return
+			tg := vecty(elty(want), ncomp(have)); format(TPO, if TPH { "(" } else { "" }, hlslty(tg), if TPH { ")(" } else { "(" }); tpnode(e, 0); TPO.push(')'); return
+	tpnode(e, prec)
+	return
+recursive tpexpr(e int, prec int): tpexprto(e, EX[e].want, prec)
+tpnamedbuf(e int) int:
+	x := EX[e]
+	if x.k != E_MEM || EX[x.l].k != E_REF: return -1
+	for d DECLS: y := DC[d]; if y.k == D_BLOCK && y.isbuf && y.inst == EX[x.l].name && y.mnm.len == 1 && y.mnm[0] == x.name { return d }
+	-1
+recursive tpnode(e int, prec int):
+	x := EX[e]; k := x.k
+	if k == E_FLT:
+		tpflt(x.fv)
+	else if k == E_INT:
+		format(TPO, x.iv as! i32)
+	else if k == E_UINT:
+		format(TPO, x.iv as! u32, "u")
+	else if k == E_BOOL:
+		TPO.append(if x.bv { "true" } else { "false" })
+	else if k == E_REF:
+		TPO.append(snm(tpname(x.name)))
+	else if k == E_MEM:
+		bd := tpnamedbuf(e)
+		if bd >= 0: format(TPO, snm(DC[bd].inst), "_", snm(DC[bd].mnm[0])); return
+		tpexpr(x.l, 15); format(TPO, ".", snm(x.name))
+	else if k == E_IDX:
+		bt := tprt(x.l)
+		if TPH && bt >= 0 && TY[bt].k == T_MAT: TPO.append("transpose("); tpexpr(x.l, 0); TPO.append(")["); tpexpr(x.r, 0); TPO.push(']'); return
+		tpexpr(x.l, 15); TPO.push('['); tpexpr(x.r, 0); TPO.push(']')
+	else if k == E_LEN:
+		bt := tprt(x.l); bd := tpnamedbuf(x.l)
+		if bt >= 0 && TY[bt].k == T_ARR && TY[bt].cols >= 0 { format(TPO, TY[bt].cols) } else if TPH && bd >= 0 { format(TPO, "int(", snm(DC[bd].inst), "_", snm(DC[bd].mnm[0]), "_len())") } else if TPH && EX[x.l].k == E_REF { format(TPO, "int(", snm(EX[x.l].name), "_len())") } else { TPO.push('0') }
+	else if k == E_CALL:
+		if TPH { hlslcall(e) } else { mslcall(e) }
+	else if k == E_UN:
+		op := x.op
+		if op == P_INC || op == P_DEC:
+			mp := if x.post { 15 } else { 14 }; pa := mp < prec
+			if pa: TPO.push('(')
+			if x.post { tpexpr(x.l, 15); TPO.append(if op == P_INC { "++" } else { "--" }) } else { TPO.append(if op == P_INC { "++" } else { "--" }); tpexpr(x.l, 14) }
+			if pa: TPO.push(')')
+			return
+		pa := 14 < prec
+		if pa: TPO.push('(')
+		TPO.push(op as byte); tpexpr(x.l, if op == '-' || op == '+' { 15 } else { 14 })
+		if pa: TPO.push(')')
+	else if k == E_BIN:
+		op := x.op; l := x.l; r := x.r; mp := tpprec(op); pa := mp < prec
+		if pa: TPO.push('(')
+		if isassign(op):
+			if TPH && op == P_MULA:
+				rt := tprt(r)
+				if rt >= 0 && TY[rt].k == T_MAT:
+					tpexpr(l, 3); TPO.append(" = mul("); tpexpr(l, 2); TPO.append(", "); tpexpr(r, 2); TPO.push(')')
+					if pa: TPO.push(')')
+					return
+			tpexpr(l, 3); format(TPO, " ", tpopstr(op), " ")
+			if op == '=':
+				tpexpr(r, 2)
+			else:
+				lt := tprt(l); rt := tprt(r); tg ~= -1
+				if tpnum(lt) && tpnum(rt) && TY[elty(lt)].k != TY[elty(rt)].k && op != P_SHLA && op != P_SHRA: tg = vecty(elty(lt), ncomp(rt))
+				if tg >= 0 { tpexprto(r, tg, 2) } else { tpexpr(r, 2) }
+		else if op == P_AND || op == P_OR || op == ',':
+			tpexpr(l, mp)
+			if op == ',' { TPO.append(", ") } else { format(TPO, " ", tpopstr(op), " ") }
+			tpexpr(r, mp + 1)
+		else:
+			lt := tprt(l); rt := tprt(r)
+			if TPH && op == '*':
+				lm := lt >= 0 && TY[lt].k == T_MAT; rm := rt >= 0 && TY[rt].k == T_MAT; lv := lt >= 0 && TY[lt].k == T_VEC; rv0 := rt >= 0 && TY[rt].k == T_VEC
+				if lm && (rm || rv0) || rm && lv:
+					TPO.append("mul("); tpexpr(l, 2); TPO.append(", "); tpexpr(r, 2); TPO.push(')')
+					if pa: TPO.push(')')
+					return
+			ltg ~= -1; rtg ~= -1
+			if tpnum(lt) && tpnum(rt) && op != P_SHL && op != P_SHR:
+				lk := elty(lt); rk := elty(rt)
+				if TY[lk].k != TY[rk].k: el := if prank(lk) >= prank(rk) { lk } else { rk }; ltg = vecty(el, ncomp(lt)); rtg = vecty(el, ncomp(rt))
+			if ltg >= 0 { tpexprto(l, ltg, mp) } else { tpexpr(l, mp) }
+			format(TPO, " ", tpopstr(op), " ")
+			if rtg >= 0 { tpexprto(r, rtg, mp + 1) } else { tpexpr(r, mp + 1) }
+		if pa: TPO.push(')')
+	else if k == E_COND:
+		if TPH:
+			t ~= tprt(x.l); if t < 0 { t = tprt(x.r) }
+			if t >= 0 && TY[t].k == T_STRUCT: format(TPO, "cf_select_", snm(TY[t].name), "("); tpexpr(x.c, 2); TPO.append(", "); tpexpr(x.l, 2); TPO.append(", "); tpexpr(x.r, 2); TPO.push(')'); return
+		pa := 3 < prec
+		if pa: TPO.push('(')
+		tpexpr(x.c, 4); TPO.append(" ? "); tpexpr(x.l, 0); TPO.append(" : "); tpexpr(x.r, 3)
+		if pa: TPO.push(')')
+	return
+tpinit(e int):
+	x := EX[e]
+	if x.k == E_CALL && x.asz != -1:
+		el := lookty(x.name); TPO.append("{ ")
+		for a, i x.args: if i > 0 { TPO.append(", ") } tpexprto(a, el, 2)
+		TPO.append(" }"); return
+	tpexpr(e, 2)
+tpdecl(s int):
+	x := ST[s]; tpvar(x.ty, snm(x.name)); SHD.push(x.name)
+	if x.init >= 0: TPO.append(" = "); tpinit(x.init)
+	n ~= x.nx
+	while n >= 0:
+		y := ST[n]; TPO.append(", "); TPO.append(snm(y.name))
+		if TY[y.ty].k == T_ARR: format(TPO, "[", TY[y.ty].cols, "]")
+		SHD.push(y.name)
+		if y.init >= 0: TPO.append(" = "); tpinit(y.init)
+		n = y.nx
+recursive tpblock(s int):
+	tpind(); TPO.append("{\n"); TPI += 1; tppush()
+	if ST[s].k == S_BLOCK { for b ST[s].blk { tpstmt(b) } } else { tpstmt(s) }
+	tppop(); TPI -= 1; tpind(); TPO.append("}\n")
+	return
+recursive tpif(s int):
+	x := ST[s]; TPO.append("if ("); tpexpr(x.e, 0); TPO.append(")\n"); tpblock(x.a)
+	if x.b >= 0:
+		tpind()
+		if ST[x.b].k == S_IF { TPO.append("else "); tpif(x.b) } else { TPO.append("else\n"); tpblock(x.b) }
+	return
+recursive tpstmt(s int):
+	x := ST[s]; k := x.k
+	if k == S_BLOCK:
+		tpblock(s)
+	else if k == S_DECL:
+		tpind(); tpdecl(s); TPO.append(";\n")
+	else if k == S_EXPR:
+		tpind(); tpexpr(x.e, 0); TPO.append(";\n")
+	else if k == S_IF:
+		tpind(); tpif(s)
+	else if k == S_FOR:
+		tppush(); tpind(); TPO.append("for (")
+		if x.a >= 0: if ST[x.a].k == S_DECL { tpdecl(x.a) } else { tpexpr(ST[x.a].e, 0) }
+		TPO.append("; ")
+		if x.e >= 0: tpexpr(x.e, 0)
+		TPO.append("; ")
+		if x.it >= 0: tpexpr(x.it, 0)
+		TPO.append(")\n"); tpblock(x.b); tppop()
+	else if k == S_WHILE:
+		tpind(); TPO.append("while ("); tpexpr(x.e, 0); TPO.append(")\n"); tpblock(x.b)
+	else if k == S_DO:
+		tpind(); TPO.append("do\n"); tpblock(x.b); tpind(); TPO.append("while ("); tpexpr(x.e, 0); TPO.append(");\n")
+	else if k == S_SWITCH:
+		tpind(); TPO.append("switch ("); tpexpr(x.e, 0); TPO.append(")\n"); tpind(); TPO.append("{\n"); tppush()
+		for g x.grps:
+			for lb GRP[g].labels: tpind(); format(TPO, "case ", lb as! i32, ":\n")
+			if GRP[g].def: tpind(); TPO.append("default:\n")
+			TPI += 1; for t GRP[g].sts { tpstmt(t) } TPI -= 1
+		tppop(); tpind(); TPO.append("}\n")
+	else if k == S_RET:
+		tpind()
+		if x.e >= 0 { TPO.append("return "); tpexpr(x.e, 0); TPO.append(";\n") } else { TPO.append("return;\n") }
+	else if k == S_DISCARD:
+		tpind(); TPO.append(if TPM { "discard_fragment();\n" } else { "discard;\n" })
+	else if k == S_BREAK:
+		tpind(); TPO.append("break;\n")
+	else if k == S_CONT:
+		tpind(); TPO.append("continue;\n")
+	return
+tpflt(v real):
+	t byte[>..] ~= []; fmtg9(t, v); mk ~= false; for c t { if c == '.' || c == 'e' || c == 'E' { mk = true } }
+	TPO.append(t[..]); if !mk { TPO.append(".0") }
+hlslimgel(f int) const byte[:]: if f == 1 || f == 2 { "float4" } else if f == 3 || f == 9 { "float" } else if f == 4 { "unorm float4" } else if f == 6 || f == 7 { "float2" } else if f == 32 { "uint4" } else if f == 33 { "uint" } else { "float4" }
+hlslren(n const byte[:]) const byte[:]:
+	fr := ["mix", "fract", "inversesqrt", "dFdx", "dFdy", "mod", "floatBitsToInt", "floatBitsToUint", "intBitsToFloat", "uintBitsToFloat", "packUnorm4x8", "packSnorm4x8", "packUnorm2x16", "packSnorm2x16", "packHalf2x16", "unpackUnorm4x8", "unpackSnorm4x8", "unpackUnorm2x16", "unpackSnorm2x16", "unpackHalf2x16"]
+	to := ["lerp", "frac", "rsqrt", "ddx", "ddy", "cf_mod", "asint", "asuint", "asfloat", "asfloat", "cf_packUnorm4x8", "cf_packSnorm4x8", "cf_packUnorm2x16", "cf_packSnorm2x16", "cf_packHalf2x16", "cf_unpackUnorm4x8", "cf_unpackSnorm4x8", "cf_unpackUnorm2x16", "cf_unpackSnorm2x16", "cf_unpackHalf2x16"]
+	for f, i fr: if f == n { return to[i] }
+	""
+hlslrel(n const byte[:]) const byte[:]: if n == "lessThan" { "<" } else if n == "lessThanEqual" { "<=" } else if n == "greaterThan" { ">" } else if n == "greaterThanEqual" { ">=" } else if n == "equal" { "==" } else if n == "notEqual" { "!=" } else { "" }
+hlslatom(n const byte[:]) const byte[:]: if n == "atomicAdd" { "InterlockedAdd" } else if n == "atomicMin" { "InterlockedMin" } else if n == "atomicMax" { "InterlockedMax" } else if n == "atomicAnd" { "InterlockedAnd" } else if n == "atomicOr" { "InterlockedOr" } else if n == "atomicXor" { "InterlockedXor" } else { "" }
+hlslstex(t int) const byte[:]: c := TY[t].cols; if c == SD_CUBE || c == SD_CUBES { "TextureCube<float4>" } else if c == SD_3D { "Texture3D<float4>" } else if c == SD_2DA || c == SD_2DAS { "Texture2DArray<float4>" } else if c == SD_2DS { "Texture2D<float4>" } else if TY[t].el >= 0 && TY[TY[t].el].k == T_UINT { "Texture2D<uint4>" } else { "Texture2D<float4>" }
+isshadow(t int) bool: c := TY[t].cols; c == SD_2DS || c == SD_CUBES || c == SD_2DAS
+hlslssmp(t int) const byte[:]: if isshadow(t) { "SamplerComparisonState" } else { "SamplerState" }
+mslstex(t int) const byte[:]: c := TY[t].cols; if c == SD_CUBE { "texturecube<float>" } else if c == SD_3D { "texture3d<float>" } else if c == SD_2DA { "texture2d_array<float>" } else if c == SD_2DS { "depth2d<float>" } else if c == SD_CUBES { "depthcube<float>" } else if c == SD_2DAS { "depth2d_array<float>" } else if TY[t].el >= 0 && TY[TY[t].el].k == T_UINT { "texture2d<uint>" } else { "texture2d<float>" }
+tpargs(a const int[:], from int):
+	for i a.len - from: if i > 0 { TPO.append(", ") } tpexpr(a[from + i], 2)
+issampref(e int) bool: EX[e].k == E_REF && EX[e].rt >= 0 && TY[EX[e].rt].k == T_SAMP
+hlslcall(e int):
+	x := EX[e]; n := snm(x.name); a := x.args[..]; argc := a.len; ct := lookty(x.name)
+	if ct >= 0 && x.asz == -1:
+		y := TY[ct]
+		if y.k == T_STRUCT: format(TPO, "cf_make_", snm(y.name), "("); tpargs(a, 0); TPO.push(')'); return
+		if y.k == T_MAT:
+			a0 := if argc > 0 { tprt(a[0]) } else { -1 }
+			if argc == 1 && a0 >= 0 && TY[a0].k == T_MAT: format(TPO, "(", hlslty(ct), ")("); tpexpr(a[0], 0); TPO.push(')'); return
+			if argc == 1: format(TPO, "cf_diag", y.cols, "("); tpexpr(a[0], 0); TPO.push(')'); return
+			format(TPO, "transpose(", hlslty(ct), "("); tpargs(a, 0); TPO.append("))"); return
+		if argc == 1: format(TPO, "(", hlslty(ct), ")("); tpexpr(a[0], 0); TPO.push(')'); return
+		format(TPO, hlslty(ct), "("); tpargs(a, 0); TPO.push(')'); return
+	if argc >= 1 && issampref(a[0]):
+		s := snm(EX[a[0]].name); ng := STAGE != ST_FRAG; hd := TY[EX[a[0]].rt].cols; sh := isshadow(EX[a[0]].rt)
+		if sh && (n == "texture" || n == "textureLod" || n == "textureGrad"):
+			hw := hd == SD_CUBES || hd == SD_2DAS; format(TPO, s, "_tex.SampleCmpLevelZero(", s, "_smp, ("); tpexpr(a[1], 2); TPO.append(if hw { ").xyz, (" } else { ").xy, (" }); tpexpr(a[1], 2); TPO.append(if hw { ").w)" } else { ").z)" }); return
+		if n == "texture":
+			format(TPO, s, if ng { "_tex.SampleLevel(" } else { "_tex.Sample(" }, s, "_smp, "); tpexpr(a[1], 2)
+			if ng: TPO.append(", 0")
+			TPO.push(')'); return
+		if n == "textureLod": format(TPO, s, "_tex.SampleLevel(", s, "_smp, "); tpexpr(a[1], 2); TPO.append(", "); tpexpr(a[2], 2); TPO.push(')'); return
+		if n == "textureGrad": format(TPO, s, "_tex.SampleGrad(", s, "_smp, "); tpexpr(a[1], 2); TPO.append(", "); tpexpr(a[2], 2); TPO.append(", "); tpexpr(a[3], 2); TPO.push(')'); return
+		if n == "textureOffset":
+			format(TPO, s, if ng { "_tex.SampleLevel(" } else { "_tex.Sample(" }, s, "_smp, "); tpexpr(a[1], 2)
+			if ng: TPO.append(", 0")
+			TPO.append(", "); tpexpr(a[2], 2); TPO.push(')'); return
+		if n == "texelFetch": format(TPO, s, "_tex.Load(", if hd == SD_2DA || hd == SD_3D { "int4" } else { "int3" }, "("); tpexpr(a[1], 2); TPO.append(", "); tpexpr(a[2], 2); TPO.append("))"); return
+		if n == "textureSize": format(TPO, "cf_texsize(", s, "_tex, "); tpexpr(a[1], 2); TPO.push(')'); return
+	if n == "imageLoad": tpexpr(a[0], 15); TPO.push('['); tpexpr(a[1], 0); TPO.push(']'); return
+	if n == "imageStore": tpexpr(a[0], 15); TPO.push('['); tpexpr(a[1], 0); TPO.append("] = "); tpexpr(a[2], 2); return
+	if n == "imageSize": TPO.append("cf_imgsize("); tpexpr(a[0], 2); TPO.push(')'); return
+	rel := hlslrel(n)
+	if rel.len > 0: TPO.push('('); tpexpr(a[0], 10); format(TPO, " ", rel, " "); tpexpr(a[1], 11); TPO.push(')'); return
+	if n == "not": TPO.append("(!("); tpexpr(a[0], 0); TPO.append("))"); return
+	if n == "barrier": TPO.append("GroupMemoryBarrierWithGroupSync()"); return
+	if n == "groupMemoryBarrier" || n == "memoryBarrierShared": TPO.append("GroupMemoryBarrier()"); return
+	if n == "memoryBarrier" || n == "memoryBarrierBuffer" || n == "memoryBarrierImage": TPO.append("DeviceMemoryBarrier()"); return
+	at := hlslatom(n)
+	if at.len > 0: format(TPO, at, "("); tpexpr(a[0], 2); TPO.append(", "); tpexpr(a[1], 2); TPO.push(')'); return
+	if n == "atomicExchange":
+		t := tprt(a[1]); ii := t >= 0 && TY[elty(t)].k == T_INT; TPO.append("InterlockedExchange("); tpexpr(a[0], 2); TPO.append(", "); tpexpr(a[1], 2); format(TPO, ", ", if ii { "cf_atomic_scratch_i" } else { "cf_atomic_scratch_u" }, ")"); return
+	if n == "atomicCompSwap": TPO.append("InterlockedCompareStore("); tpexpr(a[0], 2); TPO.append(", "); tpexpr(a[1], 2); TPO.append(", "); tpexpr(a[2], 2); TPO.push(')'); return
+	rn ~= hlslren(n)
+	if rn.len == 0 && n == "atan" && argc == 2: rn = "atan2"
+	format(TPO, if rn.len > 0 { rn } else { n }, "(")
+	for q, i a:
+		if i > 0: TPO.append(", ")
+		if issampref(q) { format(TPO, snm(EX[q].name), "_tex, ", snm(EX[q].name), "_smp") } else { tpexpr(q, 2) }
+	TPO.push(')')
+recursive hvexpr(e int, root bool):
+	x := EX[e]
+	if x.k == E_REF && snm(x.name) == "gl_NumWorkGroups": serr(x.line, "gl_NumWorkGroups is not supported in HLSL output")
+	if x.k == E_CALL:
+		n := snm(x.name); t := lookty(x.name)
+		if t >= 0 && TY[t].k == T_STRUCT: for ft TY[t].fty { if TY[ft].k == T_ARR { serr(x.line, str("constructors for structs with array fields are not supported in HLSL/MSL output ('", n, "')")) } }
+		if x.asz != -1 && !root: serr(x.line, "array constructors outside declaration initializers are not supported in HLSL output")
+		if (hlslatom(n).len > 0 || n == "atomicExchange" || n == "atomicCompSwap") && !root: serr(x.line, str("atomic results are not supported in HLSL output; call '", n, "' as a statement"))
+	k := x.k
+	if k == E_BIN { hvexpr(x.l, false); hvexpr(x.r, false) } else if k == E_UN { hvexpr(x.l, false) } else if k == E_COND { hvexpr(x.c, false); hvexpr(x.l, false); hvexpr(x.r, false) } else if k == E_CALL { for a x.args { hvexpr(a, false) } } else if k == E_MEM || k == E_LEN { hvexpr(x.l, false) } else if k == E_IDX { hvexpr(x.l, false); hvexpr(x.r, false) }
+	return
+recursive hvstmt(s int):
+	x := ST[s]; k := x.k
+	if k == S_BLOCK:
+		for b x.blk: hvstmt(b)
+	else if k == S_DECL:
+		n ~= s; while n >= 0 { if ST[n].init >= 0 { hvexpr(ST[n].init, true) } n = ST[n].nx }
+	else if k == S_EXPR:
+		hvexpr(x.e, true)
+	else if k == S_IF:
+		hvexpr(x.e, false); hvstmt(x.a); if x.b >= 0 { hvstmt(x.b) }
+	else if k == S_FOR:
+		if x.a >= 0: hvstmt(x.a)
+		if x.e >= 0: hvexpr(x.e, false)
+		if x.it >= 0: hvexpr(x.it, true)
+		hvstmt(x.b)
+	else if k == S_WHILE || k == S_DO:
+		hvexpr(x.e, false); hvstmt(x.b)
+	else if k == S_SWITCH:
+		hvexpr(x.e, false); for g x.grps { for t GRP[g].sts { hvstmt(t) } }
+	else if k == S_RET:
+		if x.e >= 0: hvexpr(x.e, false)
+	return
+structfac(t int):
+	y := TY[t]; n := snm(y.name)
+	if TPH: format(TPO, n, " cf_select_", n, "(bool c_, ", n, " a_, ", n, " b_) { if (c_) return a_; return b_; }\n")
+	for ft y.fty: if TY[ft].k == T_ARR { return }
+	format(TPO, n, " cf_make_", n, "(")
+	for ft, i y.fty: if i > 0 { TPO.append(", ") } format(TPO, hlslty(ft), " ", snm(y.fnm[i]))
+	format(TPO, ") { ", n, " s_; ")
+	for f y.fnm: format(TPO, "s_.", snm(f), " = ", snm(f), "; ")
+	TPO.append("return s_; }\n")
+hpad(nat int, target int, pi int) int, int:
+	n ~= nat; p ~= pi
+	while n < target: g := (target - n) / 4; c := if g > 4 { 4 } else { g }; if c == 1 { format(TPO, "\tfloat cf_pad", p, ";\n") } else { format(TPO, "\tfloat", c, " cf_pad", p, ";\n") } p += 1; n += c * 4
+	return n, p
+hlslstruct(t int, bl bool):
+	y := TY[t]; format(TPO, "struct ", snm(y.name), "\n{\n"); nat ~= 0; pi ~= 0
+	for ft, i y.fty:
+		if bl: al, sz := std430(ft, 0); n2, p2 := hpad(nat, (nat + al - 1) / al * al, pi); nat = n2 + (if TY[ft].k == T_VEC { TY[ft].cols * 4 } else { 4 }); pi = p2
+		TPO.push('\t'); tpvar(ft, snm(y.fnm[i])); TPO.append(";\n")
+	if bl: al, sz := std430(t, 0); n2, p2 := hpad(nat, sz, pi)
+	TPO.append("};\n")
+hlslfunc(d int):
+	y := DC[d]; mn := snm(y.name) == "main"; format(TPO, hlslty(y.ty), " ", if mn { "cf_main_" } else { snm(y.name) }, "("); tppush()
+	for t, i y.pty:
+		if i > 0: TPO.append(", ")
+		pn := snm(y.pnm[i])
+		if TY[t].k == T_SAMP: format(TPO, hlslstex(t), " ", pn, "_tex, ", hlslssmp(t), " ", pn, "_smp"); SHD.push(y.pnm[i]); continue
+		if y.pq[i] == 1 { TPO.append("out ") } else if y.pq[i] == 2 { TPO.append("inout ") }
+		tpvar(t, pn); SHD.push(y.pnm[i])
+	TPO.append(")\n"); tpblock(y.body); tppop()
+HLSL_PRE := "// Generated by cute_spirv.h (HLSL SM 5.1 transpiler backend).\nfloat cf_mod(float x, float y) { return x - y * floor(x / y); }\nfloat2 cf_mod(float2 x, float2 y) { return x - y * floor(x / y); }\nfloat3 cf_mod(float3 x, float3 y) { return x - y * floor(x / y); }\nfloat4 cf_mod(float4 x, float4 y) { return x - y * floor(x / y); }\nfloat2 cf_mod(float2 x, float y) { return x - y * floor(x / y); }\nfloat3 cf_mod(float3 x, float y) { return x - y * floor(x / y); }\nfloat4 cf_mod(float4 x, float y) { return x - y * floor(x / y); }\nint2 cf_texsize(Texture2D<float4> t, int lod) { uint w, h, l; t.GetDimensions((uint)lod, w, h, l); return int2(w, h); }\nint2 cf_texsize(Texture2D<uint4> t, int lod) { uint w, h, l; t.GetDimensions((uint)lod, w, h, l); return int2(w, h); }\nint2 cf_texsize(TextureCube<float4> t, int lod) { uint w, h, l; t.GetDimensions((uint)lod, w, h, l); return int2(w, h); }\nint3 cf_texsize(Texture2DArray<float4> t, int lod) { uint w, h, e, l; t.GetDimensions((uint)lod, w, h, e, l); return int3(w, h, e); }\nint3 cf_texsize(Texture3D<float4> t, int lod) { uint w, h, d, l; t.GetDimensions((uint)lod, w, h, d, l); return int3(w, h, d); }\nfloat2x2 cf_diag2(float s) { return float2x2(s, 0, 0, s); }\nfloat3x3 cf_diag3(float s) { return float3x3(s, 0, 0, 0, s, 0, 0, 0, s); }\nfloat4x4 cf_diag4(float s) { return float4x4(s, 0, 0, 0, 0, s, 0, 0, 0, 0, s, 0, 0, 0, 0, s); }\nuint cf_packHalf2x16(float2 v) { return f32tof16(v.x) | (f32tof16(v.y) << 16); }\nfloat2 cf_unpackHalf2x16(uint u) { return float2(f16tof32(u & 0xFFFFu), f16tof32(u >> 16)); }\nuint cf_packUnorm4x8(float4 v) { uint4 p = (uint4)round(saturate(v) * 255.0); return p.x | (p.y << 8) | (p.z << 16) | (p.w << 24); }\nfloat4 cf_unpackUnorm4x8(uint u) { return float4(u & 0xFFu, (u >> 8) & 0xFFu, (u >> 16) & 0xFFu, u >> 24) / 255.0; }\nuint cf_packSnorm4x8(float4 v) { int4 p = (int4)round(clamp(v, -1.0, 1.0) * 127.0); return (uint)(p.x & 0xFF) | ((uint)(p.y & 0xFF) << 8) | ((uint)(p.z & 0xFF) << 16) | ((uint)(p.w & 0xFF) << 24); }\nfloat4 cf_unpackSnorm4x8(uint u) { int4 p = int4(u << 24, u << 16, u << 8, u) >> 24; return clamp((float4)p / 127.0, -1.0, 1.0); }\nuint cf_packUnorm2x16(float2 v) { uint2 p = (uint2)round(saturate(v) * 65535.0); return p.x | (p.y << 16); }\nfloat2 cf_unpackUnorm2x16(uint u) { return float2(u & 0xFFFFu, u >> 16) / 65535.0; }\nuint cf_packSnorm2x16(float2 v) { int2 p = (int2)round(clamp(v, -1.0, 1.0) * 32767.0); return (uint)(p.x & 0xFFFF) | ((uint)(p.y & 0xFFFF) << 16); }\nfloat2 cf_unpackSnorm2x16(uint u) { int2 p = int2(u << 16, u) >> 16; return clamp((float2)p / 32767.0, -1.0, 1.0); }\nstatic uint cf_atomic_scratch_u; static int cf_atomic_scratch_i;\n"
+tpclear(): TPO.clear(); RNF.clear(); RNT.clear(); SHD.clear(); SHM.clear(); TPI = 0
+ioloop(isin bool, pre const byte[:], suf const byte[:], fl bool):
+	for d DECLS: y := DC[d]; if y.k == D_INOUT && y.isin == isin { TPO.push('\t'); if fl && y.flat { TPO.append("nointerpolation ") } tpvar(y.ty, snm(y.name)); format(TPO, pre, y.loc, suf) }
+ioassign(isin bool, fmt0 const byte[:], fmt1 const byte[:], fmt2 const byte[:]):
+	for d DECLS: y := DC[d]; if y.k == D_INOUT && y.isin == isin { format(TPO, fmt0, snm(y.name), fmt1, snm(y.name), fmt2) }
+emithlsl():
+	for d DECLS:
+		y := DC[d]
+		if y.k == D_BLOCK:
+			if !y.isbuf && y.inst >= 0: serr(y.line, str("uniform block instance names are not supported in HLSL output ('", snm(y.name), "')"))
+			if y.isbuf && (y.mty.len != 1 || TY[y.mty[0]].k != T_ARR || TY[y.mty[0]].cols != -1): serr(y.line, str("buffer block '", snm(y.name), "' must hold a single runtime array for HLSL output"))
+		if y.k == D_FUNC:
+			for t y.pty: if TY[t].k == T_IMG { serr(y.line, "image2D function parameters are not supported in HLSL output") }
+			hvstmt(y.body)
+		if y.k == D_GLOBAL && y.init >= 0: hvexpr(y.init, true)
+	bs int[>..] ~= []
+	for d DECLS: y := DC[d]; if y.k == D_BLOCK && y.isbuf { el := TY[y.mty[0]].el; if TY[el].k == T_STRUCT { sn ~= false; for b bs { if b == el { sn = true } } if !sn { bs.push(el) } } }
+	tpclear(); TPH = true; TPM = false; TPO.append(HLSL_PRE); seen int[>..] ~= []
+	for d DECLS:
+		y := DC[d]
+		if y.k != D_OPAQUE || TY[y.ty].k != T_IMG: continue
+		el := hlslimgel(TY[y.ty].cols); key byte[>..] ~= []; format(key, "|", el, "|", if y.ro { 1 } else { 0 }, "|")
+		ki := sid(key[..]); dup ~= false; for q seen { if q == ki { dup = true } }
+		if dup: continue
+		seen.push(ki); format(TPO, "int2 cf_imgsize(", if y.ro { "" } else { "RW" }, "Texture2D<", el, "> t) { uint w, h; t.GetDimensions(w, h); return int2(w, h); }\n")
+	TPO.append(if STAGE == ST_VERT { "static float4 gl_Position;\nstatic int gl_VertexIndex;\nstatic int gl_InstanceIndex;\n" } else if STAGE == ST_FRAG { "static float4 gl_FragCoord;\nstatic bool gl_FrontFacing;\n" } else { "static uint3 gl_GlobalInvocationID;\nstatic uint3 gl_LocalInvocationID;\nstatic uint3 gl_WorkGroupID;\nstatic uint gl_LocalInvocationIndex;\n" })
+	for d DECLS:
+		y := DC[d]; k := y.k; n := snm(y.name)
+		if k == D_STRUCT:
+			bl ~= false; for b bs { if b == y.ty { bl = true } }
+			TPO.push('\n'); hlslstruct(y.ty, bl); structfac(y.ty)
+		else if k == D_GLOBAL:
+			TPO.append(if y.isc { "static const " } else { "static " }); tpvar(y.ty, n)
+			if y.init >= 0: TPO.append(" = "); tpinit(y.init)
+			TPO.append(";\n")
+		else if k == D_INOUT:
+			TPO.append("static "); tpvar(y.ty, n); TPO.append(";\n")
+		else if k == D_BLOCK:
+			if y.isbuf:
+				el := TY[y.mty[0]].el; rn byte[>..] ~= []
+				if y.inst >= 0 { format(rn, snm(y.inst), "_", snm(y.mnm[0])) } else { rn.append(snm(y.mnm[0])) }
+				format(TPO, if y.ro { "" } else { "RW" }, "StructuredBuffer<", hlslty(el), "> ", rn[..], " : register(", if y.ro { "t" } else { "u" }, y.bind, ", space", y.set, ");\n")
+				format(TPO, "uint ", rn[..], "_len() { uint c, s; ", rn[..], ".GetDimensions(c, s); return c; }\n")
+			else:
+				format(TPO, "\ncbuffer ", n, " : register(b", y.bind, ", space", y.set, ")\n{\n"); off ~= 0
+				for mt, j y.mty:
+					al, sz := std140(mt, y.line); off = (off + al - 1) / al * al; TPO.push('\t')
+					cm := if TY[mt].k == T_ARR { TY[mt].el } else { mt }
+					if TY[cm].k == T_MAT: TPO.append("column_major ")
+					tpvar(mt, snm(y.mnm[j])); cp := off % 16 / 4
+					if cp != 0 { format(TPO, " : packoffset(c", off / 16, ["", ".y", ".z", ".w"][cp], ")") } else { format(TPO, " : packoffset(c", off / 16, ")") }
+					TPO.append(";\n"); off += sz
+				TPO.append("};\n")
+		else if k == D_OPAQUE:
+			if TY[y.ty].k == T_SAMP:
+				format(TPO, hlslstex(y.ty), " ", n, "_tex : register(t", y.bind, ", space", y.set, ");\n"); format(TPO, hlslssmp(y.ty), " ", n, "_smp : register(s", y.bind, ", space", y.set, ");\n")
+			else:
+				format(TPO, if y.ro { "" } else { "RW" }, "Texture2D<", hlslimgel(TY[y.ty].cols), "> ", n, " : register(", if y.ro { "t" } else { "u" }, y.bind, ", space", y.set, ");\n")
+		else if k == D_SHARED:
+			TPO.append("groupshared "); tpvar(y.ty, n); TPO.append(";\n")
+		else if k == D_FUNC:
+			TPO.push('\n'); hlslfunc(d)
+	if STAGE == ST_VERT:
+		TPO.append("\nstruct cf_vs_in\n{\n"); ioloop(true, "_in : TEXCOORD", ";\n", false); TPO.append("};\nstruct cf_vs_out\n{\n\tfloat4 cf_position : SV_Position;\n"); ioloop(false, "_out : TEXCOORD", ";\n", true)
+		TPO.append("};\ncf_vs_out main(cf_vs_in cf_in, uint cf_vid : SV_VertexID, uint cf_iid : SV_InstanceID)\n{\n"); ioassign(true, "\t", " = cf_in.", "_in;\n")
+		TPO.append("\tgl_VertexIndex = (int)cf_vid;\n\tgl_InstanceIndex = (int)cf_iid;\n\tcf_main_();\n\tcf_vs_out cf_out;\n\tcf_out.cf_position = gl_Position;\n"); ioassign(false, "\tcf_out.", "_out = ", ";\n"); TPO.append("\treturn cf_out;\n}\n")
+	else if STAGE == ST_FRAG:
+		TPO.append("\nstruct cf_ps_in\n{\n\tfloat4 cf_position : SV_Position;\n\tbool cf_front : SV_IsFrontFace;\n"); ioloop(true, "_in : TEXCOORD", ";\n", true); TPO.append("};\nstruct cf_ps_out\n{\n"); ioloop(false, "_out : SV_Target", ";\n", false)
+		TPO.append("};\ncf_ps_out main(cf_ps_in cf_in)\n{\n\tgl_FragCoord = cf_in.cf_position;\n\tgl_FrontFacing = cf_in.cf_front;\n"); ioassign(true, "\t", " = cf_in.", "_in;\n")
+		TPO.append("\tcf_main_();\n\tcf_ps_out cf_out;\n"); ioassign(false, "\tcf_out.", "_out = ", ";\n"); TPO.append("\treturn cf_out;\n}\n")
+	else:
+		format(TPO, "\n[numthreads(", LSIZE[0], ", ", LSIZE[1], ", ", LSIZE[2], ")]\n")
+		TPO.append("void main(uint3 cf_gtid : SV_GroupThreadID, uint3 cf_dtid : SV_DispatchThreadID, uint3 cf_gid : SV_GroupID, uint cf_gidx : SV_GroupIndex)\n{\n\tgl_GlobalInvocationID = cf_dtid;\n\tgl_LocalInvocationID = cf_gtid;\n\tgl_WorkGroupID = cf_gid;\n\tgl_LocalInvocationIndex = cf_gidx;\n\tcf_main_();\n}\n")
+mslimgty(f int, ro bool) const byte[:]: u := f == 32 || f == 33; if ro { if u { "texture2d<uint, access::read>" } else { "texture2d<float, access::read>" } } else { if u { "texture2d<uint, access::read_write>" } else { "texture2d<float, access::read_write>" } }
+mslmty(t int) const byte[:]:
+	y := TY[t]
+	if y.k == T_VEC && y.cols == 3:
+		ek := TY[y.el].k
+		if ek == T_FLOAT: return "packed_float3"
+		if ek == T_INT: return "packed_int3"
+		if ek == T_UINT: return "packed_uint3"
+	hlslty(t)
+recursive mslnat(t int) int, int:
+	y := TY[t]
+	if y.k == T_VEC: return if y.cols == 2 { 8 } else if y.cols == 3 { 4 } else { 16 }, if y.cols == 2 { 8 } else if y.cols == 3 { 12 } else { 16 }
+	if y.k == T_MAT: return 16, y.cols * 16
+	if y.k == T_ARR: a, s := mslnat(y.el); return a, s * y.cols
+	return 4, 4
+mslostruct(n const byte[:], mt const int[:], mn const int[:], s140 bool):
+	format(TPO, "struct ", n, "\n{\n"); nat ~= 0; off ~= 0; pi ~= 0
+	for t, i mt:
+		if TY[t].k == T_ARR && TY[t].cols == -1: continue
+		al ~= 0; sz ~= 0
+		if s140 { a, s := std140(t, 0); al = a; sz = s } else { a, s := std430(t, 0); al = a; sz = s }
+		off = (off + al - 1) / al * al; na, ns := mslnat(t)
+		while nat < off: format(TPO, "\tfloat cf_pad", pi, ";\n"); pi += 1; nat += 4
+		if TY[t].k == T_ARR { format(TPO, "\t", mslmty(TY[t].el), " ", snm(mn[i]), "[", TY[t].cols, "];\n") } else { format(TPO, "\t", mslmty(t), " ", snm(mn[i]), ";\n") }
+		nat += ns; off += sz
+	TPO.append("};\n")
+mslcall(e int):
+	x := EX[e]; n := snm(x.name); a := x.args[..]; argc := a.len; ct := lookty(x.name)
+	if ct >= 0 && x.asz == -1:
+		y := TY[ct]
+		if y.k == T_STRUCT: format(TPO, "cf_make_", snm(y.name), "("); tpargs(a, 0); TPO.push(')'); return
+		if argc == 1 && y.k == T_VEC:
+			a0 := tprt(a[0])
+			if a0 >= 0 && TY[a0].k == T_VEC && TY[a0].cols > y.cols: TPO.push('('); tpexpr(a[0], 15); format(TPO, ").", ["xy", "xyz", "xyzw"][y.cols - 2]); return
+		format(TPO, hlslty(ct), "("); tpargs(a, 0); TPO.push(')'); return
+	if argc >= 1 && issampref(a[0]):
+		s := snm(EX[a[0]].name); ng := STAGE != ST_FRAG; sd := TY[EX[a[0]].rt].cols; sh := isshadow(EX[a[0]].rt); ar := sd == SD_2DA; lv := if ng { ", level(0)" } else { "" }
+		if sd == SD_2DAS && n == "texture": format(TPO, s, "_tex.sample_compare(", s, "_smp, ("); tpexpr(a[1], 2); TPO.append(").xy, uint(rint(("); tpexpr(a[1], 2); TPO.append(").z)), ("); tpexpr(a[1], 2); format(TPO, ").w", lv, ")"); return
+		if sh && (n == "texture" || n == "textureLod" || n == "textureGrad"):
+			mc := sd == SD_CUBES; format(TPO, s, "_tex.sample_compare(", s, "_smp, ("); tpexpr(a[1], 2); TPO.append(if mc { ").xyz, (" } else { ").xy, (" }); tpexpr(a[1], 2); format(TPO, if mc { ").w" } else { ").z" }, lv, ")"); return
+		if ar && (n == "texture" || n == "textureLod" || n == "textureGrad"):
+			format(TPO, s, "_tex.sample(", s, "_smp, ("); tpexpr(a[1], 2); TPO.append(").xy, uint(rint(("); tpexpr(a[1], 2); TPO.append(").z))")
+			if n == "textureLod" { TPO.append(", level("); tpexpr(a[2], 2); TPO.push(')') } else if n == "textureGrad" { TPO.append(", gradient2d("); tpexpr(a[2], 2); TPO.append(", "); tpexpr(a[3], 2); TPO.push(')') } else { TPO.append(lv) }
+			TPO.push(')'); return
+		if n == "texture": format(TPO, s, "_tex.sample(", s, "_smp, "); tpexpr(a[1], 2); format(TPO, lv, ")"); return
+		if n == "textureLod": format(TPO, s, "_tex.sample(", s, "_smp, "); tpexpr(a[1], 2); TPO.append(", level("); tpexpr(a[2], 2); TPO.append("))"); return
+		if n == "textureGrad": format(TPO, s, "_tex.sample(", s, "_smp, "); tpexpr(a[1], 2); format(TPO, ", ", if sd == SD_CUBE { "gradientcube" } else if sd == SD_3D { "gradient3d" } else { "gradient2d" }, "("); tpexpr(a[2], 2); TPO.append(", "); tpexpr(a[3], 2); TPO.append("))"); return
+		if n == "textureOffset":
+			if ar: format(TPO, s, "_tex.sample(", s, "_smp, ("); tpexpr(a[1], 2); TPO.append(").xy, uint(rint(("); tpexpr(a[1], 2); format(TPO, ").z))", lv, ", "); tpexpr(a[2], 2); TPO.push(')'); return
+			format(TPO, s, "_tex.sample(", s, "_smp, "); tpexpr(a[1], 2); format(TPO, lv, ", "); tpexpr(a[2], 2); TPO.push(')'); return
+		if n == "texelFetch":
+			if ar: format(TPO, s, "_tex.read(uint2(("); tpexpr(a[1], 2); TPO.append(").xy), uint(("); tpexpr(a[1], 2); TPO.append(").z), uint("); tpexpr(a[2], 2); TPO.append("))"); return
+			format(TPO, s, if sd == SD_3D { "_tex.read(uint3(" } else { "_tex.read(uint2(" }); tpexpr(a[1], 2); TPO.append("), uint("); tpexpr(a[2], 2); TPO.append("))"); return
+		if n == "textureSize":
+			if ar || sd == SD_2DAS: format(TPO, "int3(", s, "_tex.get_width(uint("); tpexpr(a[1], 2); format(TPO, ")), ", s, "_tex.get_height(uint("); tpexpr(a[1], 2); format(TPO, ")), ", s, "_tex.get_array_size())"); return
+			if sd == SD_3D: format(TPO, "int3(", s, "_tex.get_width(uint("); tpexpr(a[1], 2); format(TPO, ")), ", s, "_tex.get_height(uint("); tpexpr(a[1], 2); format(TPO, ")), ", s, "_tex.get_depth(uint("); tpexpr(a[1], 2); TPO.append(")))"); return
+			format(TPO, "int2(", s, "_tex.get_width(uint("); tpexpr(a[1], 2); format(TPO, ")), ", s, "_tex.get_height(uint("); tpexpr(a[1], 2); TPO.append(")))"); return
+	if n == "imageLoad": tpexpr(a[0], 15); TPO.append(".read(uint2("); tpexpr(a[1], 2); TPO.append("))"); return
+	if n == "imageStore": tpexpr(a[0], 15); TPO.append(".write("); tpexpr(a[2], 2); TPO.append(", uint2("); tpexpr(a[1], 2); TPO.append("))"); return
+	if n == "imageSize": TPO.append("(int2("); tpexpr(a[0], 15); TPO.append(".get_width(), "); tpexpr(a[0], 15); TPO.append(".get_height()))"); return
+	rel := hlslrel(n)
+	if rel.len > 0: TPO.push('('); tpexpr(a[0], 10); format(TPO, " ", rel, " "); tpexpr(a[1], 11); TPO.push(')'); return
+	if n == "not": TPO.append("(!("); tpexpr(a[0], 0); TPO.append("))"); return
+	if n == "barrier" || n == "groupMemoryBarrier" || n == "memoryBarrierShared": TPO.append("threadgroup_barrier(mem_flags::mem_threadgroup)"); return
+	if n == "memoryBarrier" || n == "memoryBarrierBuffer" || n == "memoryBarrierImage": TPO.append("threadgroup_barrier(mem_flags::mem_device)"); return
+	aop := if n == "atomicAdd" { "atomic_fetch_add_explicit" } else if n == "atomicMin" { "atomic_fetch_min_explicit" } else if n == "atomicMax" { "atomic_fetch_max_explicit" } else if n == "atomicAnd" { "atomic_fetch_and_explicit" } else if n == "atomicOr" { "atomic_fetch_or_explicit" } else if n == "atomicXor" { "atomic_fetch_xor_explicit" } else if n == "atomicExchange" { "atomic_exchange_explicit" } else { "" }
+	if aop.len > 0:
+		dest ~= a[0]; rt ~= dest
+		while EX[rt].k == E_MEM || EX[rt].k == E_LEN: rt = EX[rt].l
+		while EX[rt].k == E_IDX: rt = EX[rt].l; while EX[rt].k == E_MEM { rt = EX[rt].l }
+		tg ~= false
+		if EX[rt].k == E_REF: for d DECLS { if DC[d].k == D_SHARED && DC[d].name == EX[rt].name { tg = true } }
+		cp ~= -1
+		if EX[dest].k == E_MEM && snm(EX[dest].name).len == 1:
+			bt := tprt(EX[dest].l)
+			if bt >= 0 && TY[bt].k == T_VEC:
+				c := snm(EX[dest].name)[0]; cp = if c == 'x' || c == 'r' || c == 's' { 0 } else if c == 'y' || c == 'g' || c == 't' { 1 } else if c == 'z' || c == 'b' || c == 'p' { 2 } else if c == 'w' || c == 'a' || c == 'q' { 3 } else { -1 }
+				if cp >= 0: dest = EX[dest].l
+		vt := tprt(a[1]); ii := vt >= 0 && TY[elty(vt)].k == T_INT
+		format(TPO, aop, "((", if tg { "threadgroup" } else { "device" }, " atomic_", if ii { "int" } else { "uint" }, "*)&("); tpexpr(dest, 0)
+		if cp >= 0 { format(TPO, ") + ", cp, ", ") } else { TPO.append("), ") }
+		tpexpr(a[1], 2); TPO.append(", memory_order_relaxed)"); return
+	bt := if n == "floatBitsToInt" { "int" } else if n == "floatBitsToUint" { "uint" } else if n == "intBitsToFloat" || n == "uintBitsToFloat" { "float" } else { "" }
+	if bt.len > 0:
+		at := tprt(a[0]); c := if at >= 0 { ncomp(at) } else { 1 }
+		if c > 1 { format(TPO, "as_type<", bt, c, ">(") } else { format(TPO, "as_type<", bt, ">(") }
+		tpexpr(a[0], 0); TPO.push(')'); return
+	if n == "packHalf2x16": TPO.append("as_type<uint>(half2("); tpexpr(a[0], 0); TPO.append("))"); return
+	if n == "unpackHalf2x16": TPO.append("float2(as_type<half2>("); tpexpr(a[0], 0); TPO.append("))"); return
+	pk := if n == "packUnorm4x8" { "pack_float_to_unorm4x8" } else if n == "packSnorm4x8" { "pack_float_to_snorm4x8" } else if n == "packUnorm2x16" { "pack_float_to_unorm2x16" } else if n == "packSnorm2x16" { "pack_float_to_snorm2x16" } else if n == "unpackUnorm4x8" { "unpack_unorm4x8_to_float" } else if n == "unpackSnorm4x8" { "unpack_snorm4x8_to_float" } else if n == "unpackUnorm2x16" { "unpack_unorm2x16_to_float" } else if n == "unpackSnorm2x16" { "unpack_snorm2x16_to_float" } else { "" }
+	if pk.len > 0: format(TPO, pk, "("); tpexpr(a[0], 0); TPO.push(')'); return
+	rn := if n == "inversesqrt" { "rsqrt" } else if n == "dFdx" { "dfdx" } else if n == "dFdy" { "dfdy" } else if n == "mod" { "cf_mod" } else if n == "radians" { "cf_radians" } else if n == "degrees" { "cf_degrees" } else if n == "atan" && argc == 2 { "atan2" } else { n }
+	format(TPO, rn, "(")
+	for q, i a:
+		if i > 0: TPO.append(", ")
+		if issampref(q) { format(TPO, snm(EX[q].name), "_tex, ", snm(EX[q].name), "_smp") } else { tpexpr(q, 2) }
+	TPO.push(')')
+mslfunc(d int):
+	y := DC[d]; mn := snm(y.name) == "main"; format(TPO, "\t", hlslty(y.ty), " ", if mn { "cf_main_" } else { snm(y.name) }, "("); tppush()
+	for t, i y.pty:
+		if i > 0: TPO.append(", ")
+		pn := snm(y.pnm[i])
+		if TY[t].k == T_SAMP { format(TPO, mslstex(t), " ", pn, "_tex, sampler ", pn, "_smp") } else if TY[t].k == T_ARR { format(TPO, "thread ", hlslty(TY[t].el), "* ", pn) } else if y.pq[i] != 0 { format(TPO, "thread ", hlslty(t), "& ", pn) } else { format(TPO, hlslty(t), " ", pn) }
+		SHD.push(y.pnm[i])
+	TPO.append(") thread\n"); TPI = 1; tpblock(y.body); TPI = 0; tppop()
+MSL_PRE := "// Generated by cute_spirv.h (MSL transpiler backend).\n#include <metal_stdlib>\nusing namespace metal;\nfloat cf_mod(float x, float y) { return x - y * floor(x / y); }\nfloat2 cf_mod(float2 x, float2 y) { return x - y * floor(x / y); }\nfloat3 cf_mod(float3 x, float3 y) { return x - y * floor(x / y); }\nfloat4 cf_mod(float4 x, float4 y) { return x - y * floor(x / y); }\nfloat2 cf_mod(float2 x, float y) { return x - y * floor(x / y); }\nfloat3 cf_mod(float3 x, float y) { return x - y * floor(x / y); }\nfloat4 cf_mod(float4 x, float y) { return x - y * floor(x / y); }\ntemplate <typename T> T cf_radians(T d) { return d * T(0.017453292519943295); }\ntemplate <typename T> T cf_degrees(T r) { return r * T(57.29577951308232); }\n"
+emitmsl():
+	for d DECLS:
+		y := DC[d]
+		if y.k == D_BLOCK:
+			if !y.isbuf && y.inst >= 0: serr(y.line, str("uniform block instance names are not supported in MSL output ('", snm(y.name), "')"))
+			if y.isbuf && (y.mty.len != 1 || TY[y.mty[0]].k != T_ARR || TY[y.mty[0]].cols != -1): serr(y.line, str("buffer block '", snm(y.name), "' must hold a single runtime array for MSL output"))
+			if !y.isbuf: for t y.mty { if TY[t].k == T_MAT && TY[t].cols != 4 { serr(y.line, "only mat4 is supported in uniform blocks for MSL output") } }
+		if y.k == D_FUNC:
+			for t y.pty: if TY[t].k == T_IMG { serr(y.line, "image2D function parameters are not supported in MSL output") }
+			hvstmt(y.body)
+		if y.k == D_GLOBAL && y.init >= 0: hvexpr(y.init, true)
+	tc ~= 0; rwc ~= 0; uc ~= 0; roc ~= 0; cp := STAGE == ST_COMP
+	for d DECLS:
+		y := DC[d]
+		if y.k == D_OPAQUE: if cp && TY[y.ty].k == T_IMG && !y.ro { rwc += 1 } else { tc += 1 }
+		else if y.k == D_BLOCK: if !y.isbuf { uc += 1 } else if y.ro { roc += 1 }
+	tpclear(); TPH = false; TPM = true
+	for d DECLS:
+		y := DC[d]
+		if y.k == D_BLOCK && !y.isbuf: for m y.mnm { r byte[>..] ~= []; format(r, snm(y.name), "->", snm(m)); tprename(m, sid(r[..])) }
+		if y.k == D_SHARED && TY[y.ty].k != T_ARR: r byte[>..] ~= []; format(r, "(*", snm(y.name), ")"); tprename(y.name, sid(r[..]))
+	TPO.append(MSL_PRE); bs int[>..] ~= []
+	for d DECLS: y := DC[d]; if y.k == D_BLOCK && y.isbuf { el := TY[y.mty[0]].el; if TY[el].k == T_STRUCT { sn ~= false; for b bs { if b == el { sn = true } } if !sn { bs.push(el) } } }
+	for d DECLS:
+		y := DC[d]; n := snm(y.name)
+		if y.k == D_STRUCT:
+			bl ~= false; for b bs { if b == y.ty { bl = true } }
+			TPO.push('\n')
+			if bl:
+				mslostruct(n, TY[y.ty].fty[..], TY[y.ty].fnm[..], false)
+			else:
+				format(TPO, "struct ", n, "\n{\n"); for ft, j TY[y.ty].fty { TPO.push('\t'); tpvar(ft, snm(TY[y.ty].fnm[j])); TPO.append(";\n") } TPO.append("};\n")
+			structfac(y.ty)
+		else if y.k == D_BLOCK && !y.isbuf:
+			sn byte[>..] ~= []; format(sn, "cf_ub_", n); TPO.push('\n'); mslostruct(sn[..], y.mty[..], y.mnm[..], true)
+		else if y.k == D_GLOBAL && y.isc:
+			TPO.append("constant "); tpvar(y.ty, n)
+			if y.init >= 0: TPO.append(" = "); tpinit(y.init)
+			TPO.append(";\n")
+	TPO.append("\nstruct cf_shader\n{\n")
+	for d DECLS:
+		y := DC[d]; n := snm(y.name)
+		if y.k == D_BLOCK:
+			if y.isbuf:
+				if y.inst >= 0 { format(TPO, "\tdevice ", if y.ro { "const " } else { "" }, hlslty(TY[y.mty[0]].el), "* ", snm(y.inst), "_", snm(y.mnm[0]), ";\n") } else { format(TPO, "\tdevice ", if y.ro { "const " } else { "" }, hlslty(TY[y.mty[0]].el), "* ", snm(y.mnm[0]), ";\n") }
+			else:
+				format(TPO, "\tconstant cf_ub_", n, "* ", n, ";\n")
+		else if y.k == D_OPAQUE:
+			if TY[y.ty].k == T_SAMP { format(TPO, "\t", mslstex(y.ty), " ", n, "_tex;\n\tsampler ", n, "_smp;\n") } else { format(TPO, "\t", mslimgty(TY[y.ty].cols, y.ro), " ", n, ";\n") }
+		else if y.k == D_SHARED:
+			format(TPO, "\tthreadgroup ", hlslty(if TY[y.ty].k == T_ARR { TY[y.ty].el } else { y.ty }), "* ", n, ";\n")
+	TPO.append(if STAGE == ST_VERT { "\tfloat4 gl_Position;\n\tint gl_VertexIndex;\n\tint gl_InstanceIndex;\n" } else if STAGE == ST_FRAG { "\tfloat4 gl_FragCoord;\n\tbool gl_FrontFacing;\n" } else { "\tuint3 gl_GlobalInvocationID;\n\tuint3 gl_LocalInvocationID;\n\tuint3 gl_WorkGroupID;\n\tuint gl_LocalInvocationIndex;\n" })
+	for d DECLS: y := DC[d]; if y.k == D_INOUT || y.k == D_GLOBAL && !y.isc { TPO.push('\t'); tpvar(y.ty, snm(y.name)); TPO.append(";\n") }
+	for d DECLS: if DC[d].k == D_FUNC { TPO.push('\n'); mslfunc(d) }
+	TPO.append("};\n")
+	if STAGE == ST_VERT:
+		TPO.append("\nstruct cf_vs_in\n{\n")
+		for d DECLS: y := DC[d]; if y.k == D_INOUT && y.isin { format(TPO, "\t", hlslty(y.ty), " ", snm(y.name), " [[attribute(", y.loc, ")]];\n") }
+		TPO.append("};\nstruct cf_vs_out\n{\n\tfloat4 cf_position [[position]];\n")
+		for d DECLS: y := DC[d]; if y.k == D_INOUT && !y.isin { format(TPO, "\t", hlslty(y.ty), " ", snm(y.name), " [[user(locn", y.loc, ")]];\n") }
+		TPO.append("};\n")
+	else if STAGE == ST_FRAG:
+		TPO.append("\nstruct cf_ps_in\n{\n\tfloat4 cf_position [[position]];\n")
+		for d DECLS: y := DC[d]; if y.k == D_INOUT && y.isin { format(TPO, "\t", hlslty(y.ty), " ", snm(y.name), " [[user(locn", y.loc, ")", if y.flat { ", flat" } else { "" }, "]];\n") }
+		TPO.append("};\nstruct cf_ps_out\n{\n")
+		for d DECLS: y := DC[d]; if y.k == D_INOUT && !y.isin { format(TPO, "\t", hlslty(y.ty), " ", snm(y.name), " [[color(", y.loc, ")]];\n") }
+		TPO.append("};\n")
+	TPO.append(if STAGE == ST_VERT { "\nvertex cf_vs_out main0(cf_vs_in cf_in [[stage_in]], uint cf_vid [[vertex_id]], uint cf_iid [[instance_id]]" } else if STAGE == ST_FRAG { "\nfragment cf_ps_out main0(cf_ps_in cf_in [[stage_in]], bool cf_front [[front_facing]]" } else { "\nkernel void main0(uint3 cf_gtid [[thread_position_in_threadgroup]], uint3 cf_dtid [[thread_position_in_grid]], uint3 cf_gid [[threadgroup_position_in_grid]], uint cf_gidx [[thread_index_in_threadgroup]]" })
+	for d DECLS:
+		y := DC[d]; n := snm(y.name)
+		if y.k == D_BLOCK:
+			if y.isbuf:
+				ix := if !cp || y.ro { uc + y.bind - tc } else { uc + roc + y.bind - rwc }; rn byte[>..] ~= []
+				if y.inst >= 0 { format(rn, snm(y.inst), "_", snm(y.mnm[0])) } else { rn.append(snm(y.mnm[0])) }
+				format(TPO, ", device ", if y.ro { "const " } else { "" }, hlslty(TY[y.mty[0]].el), "* ", rn[..], " [[buffer(", ix, ")]]")
+			else:
+				format(TPO, ", constant cf_ub_", n, "& ", n, " [[buffer(", y.bind, ")]]")
+		else if y.k == D_OPAQUE:
+			ix := if cp && TY[y.ty].k == T_IMG && !y.ro { tc + y.bind } else { y.bind }
+			if TY[y.ty].k == T_SAMP { format(TPO, ", ", mslstex(y.ty), " ", n, "_tex [[texture(", ix, ")]], sampler ", n, "_smp [[sampler(", ix, ")]]") } else { format(TPO, ", ", mslimgty(TY[y.ty].cols, y.ro), " ", n, " [[texture(", ix, ")]]") }
+	TPO.append(")\n{\n")
+	for d DECLS: y := DC[d]; if y.k == D_SHARED { if TY[y.ty].k == T_ARR { format(TPO, "\tthreadgroup ", hlslty(TY[y.ty].el), " cf_sh_", snm(y.name), "[", TY[y.ty].cols, "];\n") } else { format(TPO, "\tthreadgroup ", hlslty(y.ty), " cf_sh_", snm(y.name), ";\n") } }
+	TPO.append("\tcf_shader s = {"); fs ~= true
+	for d DECLS:
+		y := DC[d]; n := snm(y.name); sp := if fs { " " } else { ", " }
+		if y.k == D_BLOCK:
+			if y.isbuf && y.inst >= 0 { format(TPO, sp, snm(y.inst), "_", snm(y.mnm[0])) } else if y.isbuf { format(TPO, sp, snm(y.mnm[0])) } else { format(TPO, sp, "&", n) }
+			fs = false
+		else if y.k == D_OPAQUE:
+			if TY[y.ty].k == T_SAMP { format(TPO, sp, n, "_tex, ", n, "_smp") } else { format(TPO, sp, n) }
+			fs = false
+		else if y.k == D_SHARED:
+			format(TPO, sp, if TY[y.ty].k == T_ARR { "cf_sh_" } else { "&cf_sh_" }, n); fs = false
+	TPO.append(" };\n")
+	if STAGE == ST_VERT:
+		for d DECLS: y := DC[d]; if y.k == D_INOUT && y.isin { format(TPO, "\ts.", snm(y.name), " = cf_in.", snm(y.name), ";\n") }
+		TPO.append("\ts.gl_VertexIndex = int(cf_vid);\n\ts.gl_InstanceIndex = int(cf_iid);\n")
+	else if STAGE == ST_FRAG:
+		TPO.append("\ts.gl_FragCoord = cf_in.cf_position;\n\ts.gl_FrontFacing = cf_front;\n")
+		for d DECLS: y := DC[d]; if y.k == D_INOUT && y.isin { format(TPO, "\ts.", snm(y.name), " = cf_in.", snm(y.name), ";\n") }
+	else:
+		TPO.append("\ts.gl_GlobalInvocationID = cf_dtid;\n\ts.gl_LocalInvocationID = cf_gtid;\n\ts.gl_WorkGroupID = cf_gid;\n\ts.gl_LocalInvocationIndex = cf_gidx;\n")
+	for d DECLS: y := DC[d]; if y.k == D_GLOBAL && !y.isc && y.init >= 0 { format(TPO, "\ts.", snm(y.name), " = "); tpinit(y.init); TPO.append(";\n") }
+	TPO.append("\ts.cf_main_();\n")
+	if STAGE == ST_VERT:
+		TPO.append("\tcf_vs_out cf_out;\n\tcf_out.cf_position = s.gl_Position;\n")
+		for d DECLS: y := DC[d]; if y.k == D_INOUT && !y.isin { format(TPO, "\tcf_out.", snm(y.name), " = s.", snm(y.name), ";\n") }
+		TPO.append("\treturn cf_out;\n}\n")
+	else if STAGE == ST_FRAG:
+		TPO.append("\tcf_ps_out cf_out;\n")
+		for d DECLS: y := DC[d]; if y.k == D_INOUT && !y.isin { format(TPO, "\tcf_out.", snm(y.name), " = s.", snm(y.name), ";\n") }
+		TPO.append("\treturn cf_out;\n}\n")
+	else:
+		TPO.append("}\n")
+struct Cls { what const byte[:], set int, first int, count int }
+stname(st int) const byte[:]: if st == ST_VERT { "vertex" } else if st == ST_FRAG { "fragment" } else { "compute" }
+chkcls(path const byte[:], st int, c Cls, rs const RRes[:], rule const byte[:], err byte[>..]&) bool:
+	seen bool[>..] ~= []; seen.resize(64, false)
+	for r rs:
+		if r.set != c.set: format(err, path, ": ", stname(st), " shader ", c.what, " '", snm(r.name), "' is in set ", r.set, ", and must be in set ", c.set, " (", rule, ")"); return false
+		b := r.bind - c.first
+		if b < 0 || b >= c.count || b >= 64 || seen[b]: format(err, path, ": ", stname(st), " shader ", c.what, " '", snm(r.name), "' is at binding ", r.bind, "; the ", c.count, " ", c.what, "(s) of this shader must take bindings ", c.first, " to ", c.first + c.count - 1, " of set ", c.set, " (", rule, ")"); return false
+		seen[b] = true
+	true
+chkbind(path const byte[:], st int, err byte[>..]&) bool:
+	ns := RSAMP.len; nu := RBLK.len
+	if ns > 64 || RIMG.len > 64 || RBUF.len > 64 || nu > 4: format(err, path, ": too many resources for SDL_GPU (at most 4 uniform blocks per stage)"); return false
+	iro RRes[>..] ~= []; irw RRes[>..] ~= []; bro RRes[>..] ~= []; brw RRes[>..] ~= []; ub RRes[>..] ~= []
+	for r RIMG: if r.ro { iro.push(r) } else { irw.push(r) }
+	for r RBUF: if r.ro { bro.push(r) } else { brw.push(r) }
+	for b RBLK: ub.push(RRes{b.name, b.set, b.bind, true})
+	if st == ST_COMP:
+		rule := "SDL_GPU compute sets: 0 holds samplers, then read-only storage textures, then read-only storage buffers; 1 read-write storage textures, then read-write storage buffers; 2 uniform blocks"
+		return chkcls(path, st, Cls{"sampler", 0, 0, ns}, RSAMP[..], rule, err) && chkcls(path, st, Cls{"read-only storage texture", 0, ns, iro.len}, iro[..], rule, err) && chkcls(path, st, Cls{"read-only storage buffer", 0, ns + iro.len, bro.len}, bro[..], rule, err) && chkcls(path, st, Cls{"read-write storage texture", 1, 0, irw.len}, irw[..], rule, err) && chkcls(path, st, Cls{"read-write storage buffer", 1, irw.len, brw.len}, brw[..], rule, err) && chkcls(path, st, Cls{"uniform block", 2, 0, nu}, ub[..], rule, err)
+	rs := if st == ST_VERT { 0 } else { 2 }
+	rule := if st == ST_VERT { "SDL_GPU vertex sets: 0 holds samplers, then storage textures, then storage buffers; 1 uniform blocks" } else { "SDL_GPU fragment sets: 2 holds samplers, then storage textures, then storage buffers; 3 uniform blocks" }
+	if irw.len > 0 || brw.len > 0: format(err, path, ": ", stname(st), " shader storage ", if irw.len > 0 { "texture" } else { "buffer" }, " '", snm(if irw.len > 0 { irw[0].name } else { brw[0].name }), "' must be declared readonly: SDL_GPU graphics stages only read storage resources"); return false
+	chkcls(path, st, Cls{"sampler", rs, 0, ns}, RSAMP[..], rule, err) && chkcls(path, st, Cls{"storage texture", rs, ns, iro.len}, iro[..], rule, err) && chkcls(path, st, Cls{"storage buffer", rs, ns + iro.len, bro.len}, bro[..], rule, err) && chkcls(path, st, Cls{"uniform block", rs + 1, 0, nu}, ub[..], rule, err)
+chkin(path const byte[:], err byte[>..]&) bool:
+	used bool[>..] ~= []; used.resize(256, false)
+	for x RINP:
+		sp := if x.ty == 13 { 4 } else { 1 }
+		if x.loc < 0 || x.loc + sp > 16: format(err, path, ": vertex input '", snm(x.name), "' needs a location from 0 to 15 (layout(location = N))"); return false
+		if x.ty == 0: format(err, path, ": vertex input '", snm(x.name), "' has a type a vertex buffer cannot supply"); return false
+		for k sp:
+			if used[x.loc + k]: format(err, path, ": vertex input '", snm(x.name), "' overlaps location ", x.loc + k); return false
+			used[x.loc + k] = true
+	true
+pu16(b byte[>..]&, v int): b.push((v & 255) as byte); b.push((v >> 8 & 255) as byte)
+pu32(b byte[>..]&, v int): pu16(b, v & 65535); pu16(b, v >> 16 & 65535)
+blob(st int, spv const u32[:], b byte[>..]&):
+	b.append("GSHD"); pu16(b, 1); b.push(st as byte); b.push(RINP.len as byte)
+	for i 3: pu32(b, if st == ST_COMP { LSIZE[i] } else { 0 })
+	iro ~= 0; for r RIMG { if r.ro { iro += 1 } } bro ~= 0; for r RBUF { if r.ro { bro += 1 } }
+	pu16(b, RSAMP.len); pu16(b, iro); pu16(b, RIMG.len - iro); pu16(b, bro); pu16(b, RBUF.len - bro); pu16(b, RBLK.len)
+	nu := RBLK.len; off ~= (56 + 4 * nu + 2 * RINP.len + 3) & ~3; so := off; off += spv.len * 4; mo := off; off += MSLO.len + 1; ho := off
+	pu32(b, so); pu32(b, spv.len * 4); pu32(b, mo); pu32(b, MSLO.len); pu32(b, ho); pu32(b, HLSLO.len)
+	for k nu: sz ~= 0; for x RBLK { if x.bind == k { sz = x.size } } pu32(b, sz)
+	for x RINP: b.push(x.loc as byte); b.push(x.ty as byte)
+	while b.len < so: b.push(0)
+	for w spv: pu32(b, w as int)
+	b.append(MSLO[..]); b.push(0); b.append(HLSLO[..]); b.push(0)
+compile_blob(stage int, path const byte[:], src const byte[:], out byte[>..]&, err byte[>..]&) bool:
+	INCDIR.clear(); sl ~= path.len; while sl > 0 && path[sl - 1] != '/' && path[sl - 1] != '\\' { sl -= 1 } INCDIR.append(path[..sl])
+	spv u32[>..] ~= []
+	if !cspv(src, stage, spv):
+		if ERRM.len >= 7 && ERRM[..7] == "shader:" { err.append(path); err.push(':'); err.append(ERRM[7..]) } else { err.append(ERRM[..]) }
+		return false
+	if !chkbind(path, stage, err) || stage == ST_VERT && !chkin(path, err): return false
+	blob(stage, spv[..], out); true
