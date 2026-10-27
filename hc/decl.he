@@ -170,7 +170,7 @@ recursive rtype(n int, ns int) int:
 			w := if x.c as int == K_VARINT { 8 } else { int_storage_of_tok(x.c as int) }
 			pd := if x.s >= 0 { lookup_q(x.s as int, ns, D_GLOBAL) } else { -1 }
 			return t_rel(e, fl, w, pd as i64)
-		if TY[e].k == TY_REF && TY[e].c < 0: if fl & 2 != 0 { return t_ref(TY[e].a as int, TY[e].fl as int | 2) } return e
+		if TY[e].k == TY_REF: if fl & 2 != 0 { return t_ref(TY[e].a as int, TY[e].fl as int | 2) } return if TY[e].c < 0 { e } else { t_ref(TY[e].a as int, TY[e].fl as int) }
 		return t_ref(e, fl)
 	if k == N_TARR:
 		e := rtype(x.a as int, ns)

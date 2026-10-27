@@ -108,6 +108,8 @@ bref(q int) int:
 		a
 upname(p int) int:
 	s byte[>..] ~= []; s.push('$'); s.append(nm(ND[p].s)); intern(s)
+MEX ~= false
+recursive mty_ex(tn int, t int, g0 int): sv := MEX; MEX = true; match_ty(tn, t, g0); MEX = sv
 recursive match_ty(tn0 int, t0 int, g0 int) bool:
 	if tn0 < 0: return true
 	x := ND[tn0]; k := x.k
@@ -115,14 +117,14 @@ recursive match_ty(tn0 int, t0 int, g0 int) bool:
 	if k == N_TNAME:
 		if x.n == 0:
 			for i g0..BINDS.len:
-				if BINDS[i].name == x.s: if BINDS[i].ty < 0 { BINDS[i].ty = (if AMPA && TY[t0].k == TY_REF { t0 } else { deref_val(t) }) } return true
+				if BINDS[i].name == x.s: if BINDS[i].ty < 0 { BINDS[i].ty = (if MEX || AMPA && TY[t0].k == TY_REF { t0 } else { deref_val(t) }) } return true
 			return true
 		if TY[t].k == TY_STRUCT:
 			si := TY[t].a; if STI[si].tn == x.n:
-				for i x.n: match_ty(kid(tn0, i), TYL[STI[si].ta as int + i], g0)
+				for i x.n: mty_ex(kid(tn0, i), TYL[STI[si].ta as int + i], g0)
 		if TY[t].k == TY_ENUM:
 			ei := TY[t].a; if ENI[ei].tn == x.n:
-				for i x.n: match_ty(kid(tn0, i), TYL[ENI[ei].ta as int + i], g0)
+				for i x.n: mty_ex(kid(tn0, i), TYL[ENI[ei].ta as int + i], g0)
 		return true
 	if k == N_TARR || k == N_TSLICE: if TY[t].k == TY_ARR || TY[t].k == TY_SLICE { et := TY[t].a; en := ND[x.a]; if en.k as int == N_TNAME && en.n == 0 && TY[et].k == TY_REF { for i g0..BINDS.len { if BINDS[i].name == en.s { if BINDS[i].ty < 0 { BINDS[i].ty = et } return true } } } return match_ty(x.a, et, g0) } if TY[t].k == TY_STRLIT { return match_ty(x.a, T_U8, g0) } return true
 	if k == N_TREF: if TY[t0].k == TY_REF { return match_ty(x.a, TY[t0].a, g0) } return match_ty(x.a, t, g0)
@@ -149,6 +151,7 @@ recursive arg_rank(n int, a int, p int) int:
 	if ak == TY_NULL: if pk == TY_REF && TY[p].fl & RF_OPT != 0 { return 0 } return -1
 	if pk == TY_REF && TY[p].fl & RF_OPT != 0 && TY[p].a == a: return 0
 	if (ak == TY_INT || ak == TY_VARINT) && pk == TY_FLT: return 3
+	if pk == TY_ARR && TY[p].s as int == A_LIM && (ak == TY_ARR || ak == TY_SLICE) && TY[a].a == TY[p].a && conv_ok(a, p, n): return 2
 	if widens(a, p): return 2
 	if pk == TY_SLICE && (ak == TY_ARR || ak == TY_SLICE) && TY[a].a == TY[p].a: return 2
 	if pk == TY_ENUM && ak == TY_VARIANT && TY[a].a == TY[p].a: return 2
@@ -623,6 +626,10 @@ recursive case_inst(n int, name int, s int, an int, j int, t int, blk int, bown 
 	inst := if fnode >= 0 { get_inst(fnode, b0, bn, blk, if blk >= 0 { bown } else { AOWN }) } else { -1 }
 	BINDS.pop_n(BINDS.len - b0)
 	inst
+recursive conv_arg(c int, pt int):
+	if pt < 0 || TY[pt].k != TY_REF || TY[pt].fl & RF_OPT != 0 || TY[pt].c >= 0: conv(c, pt); return
+	if is_pending(at(c)): conv(c, TY[pt].a); return
+	k := ND[c].k; if (k == N_BLOCK || k == N_IF || k == N_MATCH) && deref(at(c)) == TY[pt].a && tail_place(c): conv_tail(c, pt); set_t(c, pt)
 recursive try_case(n int, name int, s int, an int, blk int, bown int) int:
 	for j an:
 		a0 := ARGW[s + j]; d := deref(a0)
@@ -639,11 +646,7 @@ recursive try_case(n int, name int, s int, an int, blk int, bown int) int:
 		rt ~= -1; for vi vn:
 			r := FI_[DSPL[d0 + 1 + vi]].ret; if rt < 0: rt = r
 		for vi vn: i := DSPL[d0 + 1 + vi]; if FI_[i].ret >= 0 && FI_[i].ret != rt { cerr(n, "case functions must agree on their result type") } note_caps_of(i); note_edge(i)
-		for k an:
-			if k != j:
-				c := DIDX[s + k]; pt := ptype_of(i0, k); if pt >= 0 && TY[pt].k == TY_REF && TY[pt].fl & RF_OPT == 0 && TY[pt].c < 0:
-					if is_pending(at(c)): conv(c, TY[pt].a)
-				else: conv(c, pt)
+		for k an { if k != j { conv_arg(DIDX[s + k] as int, ptype_of(i0, k)) } }
 		set_r(n, R_CASE, d0)
 		if rt < 0: cerr(n, "a case function called here needs its result type written"); return set_t(n, T_ERRT)
 		return set_t(n, rt)
@@ -699,10 +702,7 @@ recursive call_fn(n int, name int, recv int, want int) int:
 	inst ~= get_inst(fnode, b0, BINDS.len - b0, blk, bown)
 	BINDS.pop_n(BINDS.len - b0)
 	ex := exp_of(inst); if ex >= 0 { inst = ex }
-	for j an:
-		c := DIDX[s + j]; pt := ptype_of(inst, j); if pt >= 0 && TY[pt].k == TY_REF && TY[pt].fl & RF_OPT == 0 && TY[pt].c < 0:
-			if is_pending(at(c)): conv(c, TY[pt].a)
-		else: conv(c, pt)
+	for j an: conv_arg(DIDX[s + j] as int, ptype_of(inst, j))
 	pop_args(s)
 	note_caps_of(inst); note_edge(inst)
 	set_r(n, R_FN, inst)

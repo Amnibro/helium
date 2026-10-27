@@ -30,7 +30,7 @@ dput<K, V>(d dictionary<K, V>&, key K, v0 V) int, bool:
 	return i, !f
 get<K, V>(d dictionary<K, V>&, key K) V?: i := dat(d, key); if i < 0 { return null }; return d.slots[i].val
 contains<K, V>(d dictionary<K, V>&, key K) bool: dat(d, key) >= 0
-insert<K, V>(d dictionary<K, V>&, key K, val V) bool: i, n := dput(d, key, val); if !n { d.slots[i].val = val }; n
+insert<K, V>(d dictionary<K, V>&, key K, val V) bool: i, n := dput(d, key, val); if !n { d.slots[i] = dictionary_slot<K, V>{d.slots[i].key, val, d.slots[i].tag} }; n
 get_or_insert<K, V>(d dictionary<K, V>&, key K, v0 V) V&: i, n := dput(d, key, v0); return d.slots[i].val
 update<K, V, F>(d dictionary<K, V>&, key K, v0 V): i, n := dput(d, key, v0); F(&d.slots[i].val)
 remove<K, V>(d dictionary<K, V>&, key K) bool:

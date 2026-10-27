@@ -1,6 +1,6 @@
 # hc: what's left
 
-Status as of 2026-10-27 (gate 53).
+Status as of 2026-10-27 (gate 55).
 
 ## Where things stand
 
@@ -8,8 +8,8 @@ Status as of 2026-10-27 (gate 53).
 |---|---|
 | hc source | `hc/*.he` and `hc/lib/*.he`, all in the `.he` syntax below; the library was rewritten from scratch, and `json`/`regex` were fuzzed against the old one |
 | Self-host | hc builds itself natively, reaches a fixpoint, and emits the same C as the clang-built hc (`hc/bootstrap.sh` checks both) |
-| Corpus, native (`--native`) | 605 / 646 pass |
-| Corpus, C path | 522 / 646 pass |
+| Corpus, native (`--native`) | 610 / 646 pass |
+| Corpus, C path | 530 / 646 pass |
 | Pom-Pom Grove sim | garden, race, mini, load traces bit-identical on both paths |
 | Still on the Goose C++ compiler | Pomling, Waystone and Amni Prayer (web target); everything with gfx, ui, physics or audio; LSP; shader compilation |
 
