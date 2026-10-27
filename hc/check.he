@@ -916,8 +916,11 @@ recursive names_store(n int) bool:
 	if k == N_IDX: bt := at(x.a); return TY[deref(bt)].k == TY_SLICE || names_store(x.a) || TY[bt].k == TY_REF
 	false
 OLDLOC ~= false
+in_generic() bool:
+	i ~= AOWN; while i >= 0 { d := FI_[i].node as int; if d >= 0 && ND[d].k as int == N_FN && ND[d].d >= 0 { return true }; i = FI_[i].par as int }
+	false
 intloc(n int, init int, t int) bool:
-	!OLDLOC && FILES[TK[ND[n].t].f].he && ND[init].k as int != N_AS && TY[t].k == TY_INT && t != T_I64 && widens(t, T_I64)
+	!OLDLOC && FILES[TK[ND[n].t].f].he && !in_generic() && ND[init].k as int != N_AS && TY[t].k == TY_INT && t != T_I64 && widens(t, T_I64)
 recursive ck_vdecl(n int):
 	x := ND[n]
 	fl := x.fl as int

@@ -1,0 +1,7 @@
+namespace exception
+handler<E, Body>() E[]:
+	Body()
+	return []
+try<E, Body, Catch>(): for e handler<E>(Body): Catch(e)
+try<E, Body>(): handler<E>(Body);
+throw(value): return [value] from handler

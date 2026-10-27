@@ -1,0 +1,402 @@
+min<T>(a T, b T) T: if b < a { b } else { a }
+max<T>(a T, b T) T: if a < b { b } else { a }
+clamp<T>(x T, lo T, hi T) T: if x < lo { lo } else if hi < x { hi } else { x }
+abs<T>(x T) T: if x < 0 { -x } else { x }
+abs(x f32) f32: if x < 0.0 { -x } else { x }
+abs(x real) real: if x < 0.0 { -x } else { x }
+rem<T>(a T, b T) T: if b < 0 && ~b == 0 { 0 } else { a - (a / b) * b }
+div_euclid<T>(a T, b T) T: q T := a / b; if rem(a, b) >= 0 { q } else if b > 0 { q - 1 } else { q + 1 }
+sign<T>(x T) T: if x < 0 { -1 } else if 0 < x { 1 } else { 0 }
+sign(x f32) f32: if x < 0.0 { -1.0 } else if 0.0 < x { 1.0 } else { 0.0 }
+sign(x real) real: if x < 0.0 { -1.0 } else if 0.0 < x { 1.0 } else { 0.0 }
+lerp(a f32, b f32, t f32) f32: a + (b - a) * t
+lerp(a real, b real, t real) real: a + (b - a) * t
+next_pow2(x int) int:
+	p ~= 1; while p < x { p *= 2 }
+	p
+extern popcount(x uint) int = "hr_popcount"; extern clz(x uint) int = "hr_clz"; extern ctz(x uint) int = "hr_ctz"
+swap<T>(a T&, b T&): t T := a; a = b; b = t
+HASH_K uint := 11400714819323198485
+hash_mix(x uint) uint: h := x * HASH_K; h ^ (h >> 32)
+hash(x i8) uint: hash_mix(x as! uint)
+hash(x i16) uint: hash_mix(x as! uint)
+hash(x i32) uint: hash_mix(x as! uint)
+hash(x int) uint: hash_mix(x as! uint)
+hash(x byte) uint: hash_mix(x)
+hash(x u16) uint: hash_mix(x)
+hash(x u32) uint: hash_mix(x)
+hash(x uint) uint: hash_mix(x)
+hash(x bool) uint: hash_mix(if x { 1 } else { 2 })
+hash(x f32) uint: hash_mix((x * 65536.0) as! uint)
+hash(x real) uint: hash_mix((x * 65536.0) as! uint)
+hash_le(s byte[:], i int, n int) uint:
+	v uint ~= 0; for k n { v |= (s[i + k] as uint) << (8 * k) }
+	v
+hash_mixw(h uint, w uint) uint: x := (h ^ w) * HASH_K; (x << 29) | (x >> 35)
+hash_fin(h0 uint) uint: h := (h0 ^ (h0 >> 32)) * 15485907386658061715; h ^ (h >> 32)
+hash(s byte[:]) uint:
+	n := s.len
+	if n > 24: return hash_lanes(s)
+	h ~= (n as! uint) * HASH_K; w uint ~= 0
+	if n > 8:
+		i ~= 0; while i < n - 8 { h = hash_mixw(h, hash_le(s, i, 8)); i += 8 }
+		w = hash_le(s, n - 8, 8)
+	else if n >= 4: w = hash_le(s, 0, 4) | hash_le(s, n - 4, 4) << 32
+	else if n > 0: w = s[0] | (s[n >> 1] as uint) << 8 | (s[n - 1] as uint) << 16
+	hash_fin((h ^ w) * HASH_K)
+hash_lanes(s byte[:]) uint:
+	n := s.len; h ~= (n as! uint) * HASH_K; g ~= h ^ 0x9E3779B97F4A7C15; i ~= 0
+	while i < n - 24: h = hash_mixw(h, hash_le(s, i, 8)); g = hash_mixw(g, hash_le(s, i + 8, 8)); i += 16
+	h = h ^ ((g << 31) | (g >> 33))
+	while i < n - 8: h = hash_mixw(h, hash_le(s, i, 8)); i += 8
+	hash_fin((h ^ hash_le(s, n - 8, 8)) * HASH_K)
+hash_combine(seed uint, h uint) uint: seed ^ (h + HASH_K + (seed << 6) + (seed >> 2))
+struct rng { s uint }
+rand_u64(r rng&) uint:
+	r.s = r.s + HASH_K; z ~= r.s
+	z = (z ^ (z >> 30)) * 13787848793156543929; z = (z ^ (z >> 27)) * 10723151780598845931
+	z ^ (z >> 31)
+rand_int(r rng&, n int) int: (rand_u64(r) % n as uint) as int
+rand_flt(r rng&) real: (rand_u64(r) >> 11) * (1.0 / 9007199254740992.0)
+shuffle<T>(xs T[:], r rng&): i ~= xs.len - 1; while i > 0 { swap_at(xs, i, rand_int(r, i + 1)); i -= 1 }
+swap_at<T>(xs T[:], i int, j int): t T := xs[i]; xs[i] .= xs[j]; xs[j] .= t
+each_rev<T, F>(xs T[:]): i ~= xs.len; while i > 0 { i -= 1; F(xs[i]) }
+each_chunk<T, F>(xs T[:], n int): i ~= 0; k ~= 0; while i < xs.len { e := min(i + n, xs.len); F(xs[i..e], k); i = e; k += 1 }
+find<T, F>(xs T[:]) T?:
+	for &x xs { if F(x) { return x } }
+	null
+find_index<T, F>(xs T[:]) int:
+	for x, i xs { if F(x) { return i } }
+	-1
+position<T>(xs T[:], v T) int:
+	for x, i xs { if x == v { return i } }
+	-1
+contains<T>(xs T[:], v T) bool: position(xs, v) >= 0
+any<T, F>(xs T[:]) bool:
+	for x xs { if F(x) { return true } }
+	false
+all<T, F>(xs T[:]) bool:
+	for x xs { if !F(x) { return false } }
+	true
+count<T, F>(xs T[:]) int:
+	n ~= 0; for x xs { if F(x) { n += 1 } }
+	n
+min<T>(xs T[:]) T:
+	assert(xs.len > 0); m T ~= xs[0]; for x xs { if x < m { m = x } }
+	m
+min<T, F>(xs T[:]) T:
+	assert(xs.len > 0); m T ~= xs[0]; for x xs { if F(x, m) { m = x } }
+	m
+max<T>(xs T[:]) T:
+	assert(xs.len > 0); m T ~= xs[0]; for x xs { if m < x { m = x } }
+	m
+max<T, F>(xs T[:]) T:
+	assert(xs.len > 0); m T ~= xs[0]; for x xs { if F(m, x) { m = x } }
+	m
+min_by<T, F>(xs T[:]) int:
+	if xs.len == 0: return -1
+	b ~= 0; bk ~= F(xs[0]); for x, i xs { k := F(x); if k < bk { bk = k; b = i } }
+	b
+max_by<T, F>(xs T[:]) int:
+	if xs.len == 0: return -1
+	b ~= 0; bk ~= F(xs[0]); for x, i xs { k := F(x); if bk < k { bk = k; b = i } }
+	b
+last<T>(xs T[:]) T&: assert(xs.len > 0); xs[xs.len - 1]
+lower_bound<T, F>(xs T[:]) int:
+	lo ~= 0; hi ~= xs.len; while lo < hi { m := lo + (hi - lo) / 2; if F(xs[m]) { lo = m + 1 } else { hi = m } }
+	lo
+binary_search<T>(xs T[:], v T) int, bool: lo := lower_bound(xs) { it < v }; return lo, lo < xs.len && xs[lo] == v
+find<T>(xs T[:], sub T[:]) int:
+	if sub.len == 0: return 0
+	for i xs.len - sub.len + 1 { if xs[i] == sub[0] && xs[i..i + sub.len] == sub { return i } }
+	-1
+rfind<T>(xs T[:], sub T[:]) int:
+	if sub.len == 0: return xs.len
+	i ~= xs.len - sub.len; while i >= 0 { if xs[i] == sub[0] && xs[i..i + sub.len] == sub { return i }; i -= 1 }
+	-1
+starts_with<T>(xs T[:], p T[:]) bool: p.len <= xs.len && xs[..p.len] == p
+ends_with<T>(xs T[:], p T[:]) bool: p.len <= xs.len && xs[xs.len - p.len..] == p
+struct ByteSet { members bool[256], kind byte, invert bool, bytes byte[3], lo byte[16], hi byte[16] }
+byte_set(members bool[256]) ByteSet:
+	s ~= ByteSet{members, 5, false, [0; 3], [0; 16], [0; 16]}; n ~= 0
+	for b 256:
+		if members[b]:
+			n += 1; bit := (1 << ((b >> 4) & 7)) as byte
+			if b < 128 { s.lo[b & 15] |= bit } else { s.hi[b & 15] |= bit }
+	inv := n > 128; k ~= 0; first ~= 0; last ~= 0
+	for b 256: if members[b] != inv { if k == 0 { first = b }; if k < 3 { s.bytes[k] = b }; last = b; k += 1 }
+	if k <= 3: s.kind = k; s.invert = inv; for j k..3 { s.bytes[j] = s.bytes[0] }
+	else if last - first + 1 == k: s.kind = 4; s.invert = inv; s.bytes[0] = first; s.bytes[1] = last - first
+	s
+byte_set(bytes byte[:]) ByteSet: m bool[256] ~= [false; 256]; for b bytes { m[b] = true }; byte_set(m)
+extern find_any(s const byte[:], set const ByteSet&) int = "hr_find_any"
+extern byte_set_pair(s const byte[:], a const ByteSet&, d int, b const ByteSet&) int = "hr_find_pair"
+find_pair(s byte[:], a const ByteSet&, d int, b const ByteSet&) int: assert(d >= 0); byte_set_pair(s, a, d, b)
+map<T, F>(xs T[:]):
+	o ~= []; for x xs { o.push(F(x)) }
+	o
+filter<T, F>(xs T[:]) T[>..]:
+	o T[>..] ~= []; for x xs { if F(x) { o.push(copy(x)) } }
+	o
+fold<T, A, F>(xs T[:], acc A) A:
+	a A ~= acc; for x xs { a = F(a, x) }
+	a
+sum<T>(xs T[:]) T:
+	s T ~= default<T>(); for x xs { s += x }
+	s
+concat<T>(a T[:], b T[:]) T[>..]: o T[>..] ~= []; o.append(a); o.append(b); o
+fill<T>(xs T[:], v T): for i xs.len { xs[i] .= v }
+copy_into<T>(dst T[:], src T[:]): assert(dst.len == src.len); for i dst.len { dst[i] .= src[i] }
+reverse<T>(xs T[:]): i ~= 0; j ~= xs.len - 1; while i < j { swap_at(xs, i, j); i += 1; j -= 1 }
+to_lower(s byte[:]): for &c s { if c >= 'A' && c <= 'Z' { c += 32 } }
+to_upper(s byte[:]): for &c s { if c >= 'a' && c <= 'z' { c -= 32 } }
+sort_insertion<T, F>(v T[:]):
+	for i 1..v.len:
+		x T := v[i]; j ~= i
+		while j > 0:
+			y T := v[j - 1]
+			if !F(x, y): break
+			v[j] .= y; j -= 1
+		v[j] .= x
+sort_run<T, F>(v T[:]) int:
+	if v.len < 2: return v.len
+	e ~= 2
+	if F(v[1], v[0]):
+		while e < v.len && F(v[e], v[e - 1]): e += 1
+		reverse(v[..e])
+	else: while e < v.len && !F(v[e], v[e - 1]): e += 1
+	e
+sort_median3<T, F>(v T[:], a int, b int, c int) int: x := F(v[a], v[b]); if x != F(v[a], v[c]) { a } else if F(v[b], v[c]) != x { c } else { b }
+sort_m3<T, F>(v T[:], a int, m int) int: sort_median3(v, a, a + m * 4, a + m * 7) { x, y => F(x, y) }
+sort_pivot<T, F>(v T[:]) int:
+	n8 := v.len / 8
+	if v.len < 128: return sort_median3(v, 0, n8 * 4, n8 * 7) { x, y => F(x, y) }
+	m8 := n8 / 8
+	sort_median3(v, sort_m3(v, 0, m8) { x, y => F(x, y) }, sort_m3(v, n8 * 4, m8) { x, y => F(x, y) }, sort_m3(v, n8 * 7, m8) { x, y => F(x, y) }) { x, y => F(x, y) }
+sort_partition<T, F>(v T[:]) int:
+	p T := v[0]; lt ~= 1
+	for i 1..v.len: x T := v[i]; v[i] .= v[lt]; v[lt] .= x; if F(x, p) { lt += 1 }
+	lt - 1
+sort_heap<T, F>(v T[:]):
+	i ~= v.len / 2
+	while i > 0: i -= 1; sift_down(v, i) { a, b => F(b, a) }
+	e ~= v.len
+	while e > 1: e -= 1; swap_at(v, 0, e); sift_down(v[..e], 0) { a, b => F(b, a) }
+sort<T>(xs T[:]): sort(xs) { a, b => a < b }
+sort<T, F>(xs T[:]):
+	n := xs.len
+	if n <= 10: sort_insertion(xs) { a, b => F(a, b) }; return
+	r := sort_run(xs) { a, b => F(a, b) }
+	if r == n: return
+	lim ~= 2 * (63 - clz(n as uint)); st int[..144] ~= []; lo ~= 0; hi ~= n
+	loop:
+		v := xs[lo..hi]
+		if v.len > 10 && lim > 0:
+			lim -= 1; swap_at(v, 0, sort_pivot(v) { a, b => F(a, b) })
+			if lo > 0 && !F(xs[lo - 1], v[0]): m := sort_partition(v) { a, b => !F(b, a) }; swap_at(v, 0, m); lo += m + 1; continue
+			m := sort_partition(v) { a, b => F(a, b) }; swap_at(v, 0, m)
+			if m < v.len - 1 - m { st.push(lo + m + 1); st.push(hi); st.push(lim); hi = lo + m } else { st.push(lo); st.push(lo + m); st.push(lim); lo += m + 1 }
+			continue
+		if v.len > 10 { sort_heap(v) { a, b => F(a, b) } } else { sort_insertion(v) { a, b => F(a, b) } }
+		if st.len == 0: return
+		lim = st.pop(); hi = st.pop(); lo = st.pop()
+sort_merge<T, F>(l T[:], r T[:], d T[:], chaotic bool&):
+	if !F(r[0], l[l.len - 1]): copy_into(d[..l.len], l); copy_into(d[l.len..], r); return
+	a ~= 0; b ~= 0; k ~= 0; sw ~= 0; lr ~= false
+	while a < l.len && b < r.len:
+		tr := F(r[b], l[a]); d[k] .= if tr { r[b] } else { l[a] }
+		if tr { b += 1 } else { a += 1 }; if tr != lr { sw += 1 }; lr = tr; k += 1
+	chaotic = sw * 4 > k
+	if a < l.len { copy_into(d[k..], l[a..]) } else { copy_into(d[k..], r[b..]) }
+stable_sort<T>(xs T[:]): stable_sort(xs) { a, b => a < b }
+stable_sort<T, F>(xs T[:]):
+	n := xs.len
+	if n <= 20: sort_insertion(xs) { a, b => F(a, b) }; return
+	r ~= sort_run(xs) { a, b => F(a, b) }
+	if r == n: return
+	ends int[>..] ~= []; lo ~= 0
+	loop:
+		v := xs[lo..]
+		if r < 16 && r < v.len: r = min(16, v.len); sort_insertion(v[..r]) { a, b => F(a, b) }
+		lo += r; ends.push(lo)
+		if lo >= n: break
+		r = sort_run(xs[lo..]) { a, b => F(a, b) }
+	tmp T[>..] ~= []; tmp.append(xs)
+	ps ~= 0; rs ~= ends.len; while rs > 1 { rs = (rs + 1) / 2; ps += 1 }
+	tt ~= ps % 2 == 0; ch ~= true
+	while ends.len > 1:
+		src T[:] := if tt { xs } else { tmp }; dst T[:] := if tt { tmp } else { xs }; s ~= 0; w ~= 0; i ~= 0
+		while i < ends.len:
+			m := ends[i]; e ~= m
+			if i + 1 < ends.len { e = ends[i + 1]; sort_merge(src[s..m], src[m..e], dst[s..e], ch) { a, b => F(a, b) } } else { copy_into(dst[s..e], src[s..e]) }
+			ends[w] = e; w += 1; s = e; i += 2
+		ends.resize(w); tt = !tt
+push_n<A, T>(xs A&, v T, n int): for i n { xs.push(v) }
+insert_at<A, T>(xs A&, i int, v T): xs.push(v); j ~= xs.len - 1; while j > i { xs[j] .= xs[j - 1]; j -= 1 }; xs[i] .= v
+remove_at<A>(xs A&, i int):
+	v := xs[i]; j ~= i; while j + 1 < xs.len { xs[j] .= xs[j + 1]; j += 1 }
+	xs.pop(); return v
+swap_remove<A>(xs A&, i int): v := xs[i]; xs[i] .= xs[xs.len - 1]; xs.pop(); return v
+retain<A, F>(xs A&): w ~= 0; for i xs.len { if F(xs[i]) { xs[w] .= xs[i]; w += 1 } }; xs.resize(w)
+dedup<A>(xs A&):
+	if xs.len == 0: return
+	w ~= 1; for i 1..xs.len { if !(xs[i] == xs[w - 1]) { xs[w] .= xs[i]; w += 1 } }; xs.resize(w)
+heap_push<A, T>(xs A&, v T): heap_push(xs, v) { a, b => a < b }
+heap_push<A, T, F>(xs A&, v T): xs.push(v); sift_up(xs, xs.len - 1) { a, b => F(a, b) }
+sift_up<T, F>(xs T[:], start int):
+	i ~= start; x T := xs[i]
+	while i > 0: p := (i - 1) / 2; if !F(x, xs[p]) { break }; xs[i] .= xs[p]; i = p
+	xs[i] .= x
+sift_down<T, F>(xs T[:], start int):
+	n := xs.len; i ~= start
+	if 2 * i + 1 >= n: return
+	x T := xs[i]
+	loop:
+		l := 2 * i + 1
+		if l >= n: break
+		m ~= l; if l + 1 < n && F(xs[l + 1], xs[l]) { m = l + 1 }
+		if !F(xs[m], x): break
+		xs[i] .= xs[m]; i = m
+	xs[i] .= x
+heap_pop<A>(xs A&): heap_pop(xs) { a, b => a < b }
+heap_pop<A, F>(xs A&): top := xs[0]; sift_hole(xs) { a, b => F(a, b) }; xs.pop(); return top
+sift_hole<T, F>(xs T[:]):
+	n := xs.len - 1
+	if n == 0: return
+	x T := xs[n]; i ~= 0; c ~= 1
+	while c < n - 1: if F(xs[c + 1], xs[c]) { c += 1 }; xs[i] .= xs[c]; i = c; c = 2 * c + 1
+	if c == n - 1: xs[i] .= xs[c]; i = c
+	while i > 0: p := (i - 1) / 2; if F(xs[p], x) { break }; xs[i] .= xs[p]; i = p
+	xs[i] .= x
+make_heap<A>(xs A&): make_heap(xs) { a, b => a < b }
+make_heap<A, F>(xs A&): i ~= xs.len / 2; while i > 0 { i -= 1; sift_down(xs, i) { a, b => F(a, b) } }
+format_uint<B>(out B&, v uint, base int, width int, padc byte):
+	if base == 10:
+		if width > 1: n ~= 1; x ~= v; while x >= 10 { x /= 10; n += 1 }; for i width - n { out.push(padc) }
+		format(out, v); return
+	d byte[..64] ~= []; x ~= v; b := base as uint
+	if x == 0: d.push('0')
+	while x > 0: k := (x % b) as int; d.push((if k < 10 { '0' + k } else { 'a' + k - 10 }) as byte); x /= b
+	for i width - d.len { out.push(padc) }
+	each_rev(d) { out.push(it) }
+format_int<B>(out B&, v int, base int, width int, padc byte): if v < 0 { out.push('-'); format_uint(out, 0 - v as! uint, base, width - 1, padc) } else { format_uint(out, v as uint, base, width, padc) }
+format_uleb(out byte[>..]&, v int):
+	x ~= v as uint
+	loop: b := (x & 0x7f) as byte; x >>= 7; if x == 0 { out.push(b); return }; out.push(b | 0x80)
+parse_uleb(s byte[:]) int, int:
+	v uint ~= 0; sh ~= 0
+	for i min(s.len, 10):
+		b := s[i]
+		if sh > 63 || sh == 63 && b & 0x7e != 0: return 0, 0
+		v |= ((b & 0x7f) as uint) << sh
+		if b < 0x80: return v as int, i + 1
+		sh += 7
+	return 0, 0
+extern flt_floor(x real) real = "floor"; extern flt_fma(x real, y real, z real) real = "fma"
+format_flt(out byte[>..]&, v real, decimals int):
+	if v != v || v - v != 0.0: format(out, v); return
+	x ~= v; if x < 0.0 { out.push('-'); x = -x }
+	sc ~= 1.0; for i decimals { sc *= 10.0 }
+	f ~= flt_floor(x * sc)
+	if decimals <= 22 && f < 4503599627370496.0:
+		if flt_fma(x, sc, -f) < 0.0: f -= 1.0
+		t := flt_fma(x, sc, -(f + 0.5))
+		if t > 0.0 || t == 0.0 && f % 2.0 != 0.0: f += 1.0
+	else: f = flt_floor(x * sc + 0.5)
+	s := f as! int; i := sc as int
+	format_uint(out, (s / i) as uint, 10, 0, ' ')
+	if decimals > 0: out.push('.'); format_uint(out, (s % i) as uint, 10, decimals, '0')
+parse_int(s byte[:], base int = 10) int, bool:
+	i ~= 0; neg ~= false
+	if s.len > 0 && (s[0] == '-' || s[0] == '+'): neg = s[0] == '-'; i = 1
+	if i >= s.len: return 0, false
+	mn := -9223372036854775807 - 1; v ~= 0
+	while i < s.len:
+		c := s[i]; d := if c >= '0' && c <= '9' { c - '0' } else if c >= 'a' && c <= 'z' { c - 'a' + 10 } else if c >= 'A' && c <= 'Z' { c - 'A' + 10 } else { -1 }
+		if d < 0 || d >= base || v < (mn + d) / base: return 0, false
+		v = v * base - d; i += 1
+	if !neg: if v == mn { return 0, false }; v = -v
+	return v, true
+const parse_flt_pow10 real[23] = [1e0, 1e1, 1e2, 1e3, 1e4, 1e5, 1e6, 1e7, 1e8, 1e9, 1e10, 1e11, 1e12, 1e13, 1e14, 1e15, 1e16, 1e17, 1e18, 1e19, 1e20, 1e21, 1e22]
+flt_digit(c byte) bool: c - '0' < 10
+parse_flt(s byte[:]) real, bool:
+	i ~= 0; neg ~= false
+	if s.len > 0 && (s[0] == '-' || s[0] == '+'): neg = s[0] == '-'; i = 1
+	st := i; m uint ~= 0
+	while i < s.len && flt_digit(s[i]): m = m * 10 + (s[i] - '0'); i += 1
+	nd ~= i - st; e10 ~= 0
+	if i < s.len && s[i] == '.':
+		i += 1; fs := i
+		while i < s.len && flt_digit(s[i]): m = m * 10 + (s[i] - '0'); i += 1
+		e10 = fs - i; nd -= e10
+	if nd == 0: return 0.0, false
+	if nd <= 19 && i == s.len:
+		v real ~= 0.0; if nd <= 18 { v = m as! int } else { v = m }
+		if e10 < 0: v /= parse_flt_pow10[-e10]
+		if neg: v = -v
+		return v, true
+	if nd > 19:
+		m = 0; e10 = 0; md ~= 0; j ~= st
+		while j < s.len && s[j] == '0': j += 1
+		while j < s.len && flt_digit(s[j]):
+			if md < 19 { m = m * 10 + (s[j] - '0'); md += 1 } else { e10 += 1 }
+			j += 1
+		if j < s.len && s[j] == '.':
+			j += 1
+			if m == 0: while j < s.len && s[j] == '0' { e10 -= 1; j += 1 }
+			while j < s.len && flt_digit(s[j]):
+				if md < 19: m = m * 10 + (s[j] - '0'); md += 1; e10 -= 1
+				j += 1
+	if i < s.len && (s[i] == 'e' || s[i] == 'E'):
+		i += 1; en ~= false
+		if i < s.len && (s[i] == '-' || s[i] == '+'): en = s[i] == '-'; i += 1
+		x ~= 0; xd ~= 0
+		while i < s.len && s[i] >= '0' && s[i] <= '9':
+			if x < 100000: x = x * 10 + (s[i] - '0')
+			xd += 1; i += 1
+		if xd == 0: return 0.0, false
+		e10 += if en { -x } else { x }
+	v real ~= m; e ~= e10
+	while e > 22: v *= 1e22; e -= 22
+	while e < -22: v /= 1e22; e += 22
+	if e > 0 { v *= parse_flt_pow10[e] } else if e < 0 { v /= parse_flt_pow10[-e] }
+	if i != s.len: return 0.0, false
+	if neg: v = -v
+	return v, true
+compare(a byte[:], b byte[:]) int:
+	for i min(a.len, b.len) { if a[i] < b[i] { return -1 }; if b[i] < a[i] { return 1 } }
+	if a.len < b.len { -1 } else if b.len < a.len { 1 } else { 0 }
+is_space(c byte) bool: c == ' ' || c == '\t' || c == '\n' || c == '\r'
+trim_start(s byte[:]) byte[:]: i ~= 0; while i < s.len && is_space(s[i]) { i += 1 }; s[i..]
+trim_end(s byte[:]) byte[:]: e ~= s.len; while e > 0 && is_space(s[e - 1]) { e -= 1 }; s[..e]
+trim(s byte[:]) byte[:]: trim_end(trim_start(s))
+split(s byte[:], sep byte) const byte[:][>..]: o const byte[:][>..] ~= []; each_split(s, sep) { o.push(it) }; o
+split(s byte[:], sep byte[:]) const byte[:][>..]: o const byte[:][>..] ~= []; each_split(s, sep) { o.push(it) }; o
+each_split<F>(s byte[:], sep byte): b ~= 0; for c, i s { if c == sep { F(s[b..i]); b = i + 1 } }; F(s[b..])
+each_split<F>(s byte[:], sep byte[:]):
+	if sep.len == 0: F(s); return
+	b ~= 0; i ~= 0
+	while i + sep.len <= s.len: if s[i..i + sep.len] == sep { F(s[b..i]); i += sep.len; b = i } else { i += 1 }
+	F(s[b..])
+words(s byte[:]) const byte[:][>..]: o const byte[:][>..] ~= []; each_word(s) { o.push(it) }; o
+each_word<F>(s byte[:]):
+	i ~= 0
+	while i < s.len:
+		while i < s.len && is_space(s[i]): i += 1
+		b := i
+		while i < s.len && !is_space(s[i]): i += 1
+		if i > b: F(s[b..i])
+join<T>(out byte[>..]&, parts T[:], sep byte[:]): for p, i parts { if i > 0 { out.append(sep) }; out.append(p) }
+format_replaced(out byte[>..]&, s byte[:], old byte[:], with byte[:]): f ~= true; each_split(s, old) { if !f { out.append(with) }; f = false; out.append(it) }
+utf8_cont(s byte[:], i int) int: s[i] & 0x3F
+each_utf8<F>(s byte[:]):
+	i ~= 0
+	while i < s.len:
+		b := s[i]; cp ~= 0xFFFD; n ~= 1
+		if b < 0x80 { cp = b } else if b >= 0xC0 && b < 0xE0 && i + 1 < s.len { cp = (b & 0x1F) << 6 | utf8_cont(s, i + 1); n = 2 } else if b >= 0xE0 && b < 0xF0 && i + 2 < s.len { cp = (b & 0x0F) << 12 | utf8_cont(s, i + 1) << 6 | utf8_cont(s, i + 2); n = 3 } else if b >= 0xF0 && b < 0xF8 && i + 3 < s.len { cp = (b & 0x07) << 18 | utf8_cont(s, i + 1) << 12 | utf8_cont(s, i + 2) << 6 | utf8_cont(s, i + 3); n = 4 }
+		F(cp); i += n
+push_utf8(out byte[>..]&, cp int):
+	if cp < 0x80: out.push(cp as byte); return
+	n := if cp < 0x800 { 2 } else if cp < 0x10000 { 3 } else { 4 }
+	out.push((((0xF00 >> n) & 0xFF) | (cp >> (6 * (n - 1)))) as byte)
+	for k 1..n: out.push((0x80 | ((cp >> (6 * (n - 1 - k))) & 0x3F)) as byte)

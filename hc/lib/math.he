@@ -1,0 +1,22 @@
+extern sqrt(x real) real = "hr_sqrt"; extern sqrt(x f32) f32 = "hr_sqrtf"
+extern sin(x real) real = "hr_sin"; extern sin(x f32) f32 = "hr_sinf"
+extern cos(x real) real = "hr_cos"; extern cos(x f32) f32 = "hr_cosf"
+extern tan(x real) real = "hr_tan"; extern tan(x f32) f32 = "hr_tanf"
+extern asin(x real) real = "hr_asin"; extern asin(x f32) f32 = "hr_asinf"
+extern acos(x real) real = "hr_acos"; extern acos(x f32) f32 = "hr_acosf"
+extern atan(x real) real = "hr_atan"; extern atan(x f32) f32 = "hr_atanf"
+extern atan2(y real, x real) real = "hr_atan2"; extern atan2(y f32, x f32) f32 = "hr_atan2f"
+extern exp(x real) real = "hr_exp"; extern exp(x f32) f32 = "hr_expf"
+extern log(x real) real = "hr_log"; extern log(x f32) f32 = "hr_logf"
+extern log2(x real) real = "hr_log2"; extern log2(x f32) f32 = "hr_log2f"
+extern log10(x real) real = "hr_log10"; extern log10(x f32) f32 = "hr_log10f"
+extern pow(x real, y real) real = "hr_pow"; extern pow(x f32, y f32) f32 = "hr_powf"
+extern floor(x real) real; extern floor(x f32) f32 = "floorf"
+extern ceil(x real) real; extern ceil(x f32) f32 = "ceilf"
+extern round(x real) real; extern round(x f32) f32 = "roundf"
+extern trunc(x real) real; extern trunc(x f32) f32 = "truncf"
+PI := 3.141592653589793; TAU := 6.283185307179586
+radians(d real) real: d * (PI / 180.0)
+degrees(r real) real: r * (180.0 / PI)
+is_nan(x real) bool: x != x
+is_inf(x real) bool: x == x && x - x != x - x

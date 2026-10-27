@@ -1,0 +1,38 @@
+use std
+extern trim_memory() bool = "hr_trim_memory"
+extern read_file(path const byte[:], out byte[>..]&) bool = "hr_os_read_file"
+extern write_file(path const byte[:], data const byte[:]) bool = "hr_os_write_file"
+extern make_exec(path const byte[:]) bool = "hr_os_make_exec"
+extern write_file_atomic(path const byte[:], data const byte[:]) bool = "hr_os_write_file_atomic"
+extern append_file(path const byte[:], data const byte[:]) bool = "hr_os_append_file"
+extern file_exists(path const byte[:]) bool = "hr_os_file_exists"
+extern file_mtime(path const byte[:]) int = "hr_os_file_mtime"
+extern delete_file(path const byte[:]) bool = "hr_os_remove_file"
+extern rename_file(from const byte[:], to const byte[:]) bool = "hr_os_rename_file"
+extern make_dir(path const byte[:]) bool = "hr_os_make_dir"
+extern is_dir(path const byte[:]) bool = "hr_os_is_dir"
+extern delete_dir(path const byte[:]) bool = "hr_os_remove_dir"
+extern list_dir(path const byte[:], out byte[>..]&) bool = "hr_os_list_dir"
+extern read_line(out byte[>..]&) bool = "hr_os_read_line"
+extern read_stdin(out byte[>..]&) = "hr_os_read_stdin"
+extern write_stdout(s const byte[:]) = "hr_os_write_stdout"
+extern write_stderr(s const byte[:]) = "hr_os_write_stderr"
+extern flush_stdout() = "hr_os_flush_stdout"
+extern arg_count() int = "hr_os_arg_count"
+extern arg(i int, out byte[>..]&) = "hr_os_arg"
+extern env(name const byte[:], out byte[>..]&) bool = "hr_os_getenv"
+extern run_command(cmd const byte[:]) int = "hr_os_run"
+extern resource_dir(out byte[>..]&) bool = "hr_os_resource_dir"
+resource_dir() byte[>..]:
+	o byte[>..] ~= []; if !resource_dir(o): abort("cannot locate the application resource directory")
+	o
+var argv_text byte[>..] = []
+args() byte[:][>..]:
+	o byte[:][>..] ~= []
+	for i arg_count(): s := argv_text.len; arg(i, argv_text); o.push(argv_text[s..])
+	o
+extern time_ns() int = "hr_os_time_ns"; extern clock_ns() int = "hr_os_clock_ns"; extern sleep_ms(ms int) = "hr_os_sleep_ms"
+time() real: time_ns() / 1000000000.0
+clock() real: clock_ns() / 1000000000.0
+sleep(seconds real): sleep_ms((seconds * 1000.0) as! int)
+extern random_seed() uint = "hr_os_random_u64"

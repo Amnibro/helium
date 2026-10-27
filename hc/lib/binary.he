@@ -1,0 +1,26 @@
+namespace binary
+use std
+range_ok(data const byte[:], at int, size int) bool: s := at as! uint; s <= data.len as uint && size as! uint <= data.len as uint - s
+le(data const byte[:], at int, n int) uint:
+	v uint ~= 0; for i n { v |= (data[at + i] as uint) << (8 * i) }
+	v
+read_bytes(data const byte[:], at int, size int) const byte[:], bool: if !range_ok(data, at, size) { return data[..0], false }; return data[at..at + size], true
+read_u16le(data const byte[:], at int) u16, bool: if !range_ok(data, at, 2) { return 0, false }; return le(data, at, 2) as u16, true
+read_i16le(data const byte[:], at int) i16, bool: v, ok := read_u16le(data, at); return v as! i16, ok
+read_u32le(data const byte[:], at int) u32, bool: if !range_ok(data, at, 4) { return 0, false }; return le(data, at, 4) as u32, true
+read_f32le(data const byte[:], at int) f32, bool: b, ok := read_u32le(data, at); return f32_from_bits(b), ok
+extern f32_bits(x f32) u32 = "hr_f32_bits"; extern f32_from_bits(b u32) f32 = "hr_f32_from_bits"
+extern f64_bits(x real) uint = "hr_f64_bits"; extern f64_from_bits(b uint) real = "hr_f64_from_bits"
+read_name(data const byte[:], at int, width int) const byte[:], bool:
+	f, ok := read_bytes(data, at, width); if !ok { return f, false }
+	n ~= 0; while n < f.len && f[n] != 0 { n++ }
+	return f[..n], true
+struct Reader { data const byte[:], pos int }
+reader(data const byte[:]) Reader: Reader{data, 0}
+read_bytes(r Reader&, size int) const byte[:], bool: v, ok := read_bytes(r.data, r.pos, size); if ok { r.pos += size }; return v, ok
+read_u16le(r Reader&) u16, bool: v, ok := read_u16le(r.data, r.pos); if ok { r.pos += 2 }; return v, ok
+read_i16le(r Reader&) i16, bool: v, ok := read_u16le(r); return v as! i16, ok
+read_u32le(r Reader&) u32, bool: v, ok := read_u32le(r.data, r.pos); if ok { r.pos += 4 }; return v, ok
+read_name(r Reader&, width int) const byte[:], bool: v, ok := read_name(r.data, r.pos, width); if ok { r.pos += width }; return v, ok
+skip(r Reader&, size int) bool: if !range_ok(r.data, r.pos, size) { return false }; r.pos += size; true
+subreader(r Reader&, size int) Reader, bool: v, ok := read_bytes(r, size); return reader(v), ok

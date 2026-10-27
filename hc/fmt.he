@@ -112,7 +112,7 @@ recursive fvdecl(n int):
 	if kw: fw(if fl & V_CONST != 0 { "const " } else { if fl & V_VAR != 0 { "var " } else { "let " } })
 	for i x.n: if i > 0 { fw(", ") } if fl & V_GLOBAL != 0 { fnsp(x.c, TK[x.t].f) } qn(kid(n, i))
 	iv := if DROPAS && x.a < 0 && x.n == 1 && x.b >= 0 && fl & (V_BYREF | V_GLOBAL) == 0 && ND[x.b].n == 1 { kid(x.b, 0) } else { -1 }
-	if iv >= 0 && at(iv) >= 0 && ND[iv].k as int != N_AS && TY[at(iv)].k == TY_INT && at(iv) != T_I64 && widens(at(iv), T_I64): fw(" "); fw(tn(at(iv)))
+	if iv >= 0 && fin(iv) >= 0 && ND[iv].k as int != N_AS && TY[fin(iv)].k == TY_INT && fin(iv) != T_I64 && widens(fin(iv), T_I64): fw(" "); fw(tn(fin(iv)))
 	if iv >= 0 && ND[iv].k as int == N_AS && at(iv) == T_I64 && fin(ND[iv].a) >= 0 && widens(fin(ND[iv].a), T_I64): ASOK = true
 	if x.a >= 0: fw(" "); fty(x.a)
 	if x.b >= 0: fw(if fl & V_BYREF != 0 { " .= " } else { if kw { " = " } else { if fl & V_VAR != 0 { " ~= " } else { " := " } } }); flist2(x.b, x.a >= 0 || ASOK);

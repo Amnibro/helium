@@ -1,0 +1,5 @@
+namespace ffi
+extern cstr(p uint, out byte[>..]&) bool = "hr_ffi_cstr"
+extern bytes(p uint, n int, out byte[>..]&) bool = "hr_ffi_bytes"
+cstr(p uint) byte[>..]: o byte[>..] ~= []; cstr(p, o); o
+bytes(p uint, n int) byte[>..]: o byte[>..] ~= []; bytes(p, n, o); o

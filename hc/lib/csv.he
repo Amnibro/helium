@@ -1,0 +1,33 @@
+namespace csv
+use std
+each_record<F>(text const byte[:], sep byte = ',') bool:
+	assert(sep != '"' && sep != '\n' && sep != '\r')
+	fs (const byte[:])[>..] ~= []; p ~= 0; n := text.len
+	while p < n:
+		fs.clear()
+		loop:
+			if p < n && text[p] == '"':
+				p++; s := p
+				loop:
+					if p >= n: return false
+					if text[p] == '"':
+						if p + 1 < n && text[p + 1] == '"': p += 2; continue
+						break
+					p++
+				fs.push(text[s..p]); p++
+				if p + 1 < n && text[p] == '\r' && text[p + 1] == '\n': p++
+				if p < n && text[p] != sep && text[p] != '\n': return false
+			else:
+				s := p
+				while p < n && text[p] != sep && text[p] != '\n' && text[p] != '"': p++
+				if p < n && text[p] == '"': return false
+				fs.push(text[s..if p > s && p < n && text[p] == '\n' && text[p - 1] == '\r' { p - 1 } else { p }])
+			if p >= n: break
+			c := text[p]; p++
+			if c != sep: break
+		F(fs[..])
+	true
+format_field(out byte[>..]&, s byte[:], sep byte = ','):
+	q ~= false; for c s { if c == sep || c == '"' || c == '\n' || c == '\r' { q = true; break } }
+	if !q: out.append(s); return
+	out.push('"'); format_replaced(out, s, "\"", "\"\""); out.push('"')
