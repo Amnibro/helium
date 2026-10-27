@@ -305,13 +305,17 @@ recursive ceval3(n int, ns int) i64, int, bool:
 		if tn0 >= 0 && ND[tn0].k == N_TPRIM:
 			tc := int_storage_of_tok(ND[tn0].op); if tc >= 0: return cwrap(v, tc), tc, ok
 		return v, c, ok
-	if k == N_DOT && nm(x.s) == "len" && ND[x.a].k == N_ID:
-		d := lookup_q(ND[x.a].s, ns, D_GLOBAL)
-		if d < 0: return 0, -1, false
-		g := DC[d].node
-		if ND[g].a >= 0:
-			t := rtype(ND[g].a, ns_of(g)); if TY[t].k == TY_ARR && TY[t].s == A_FIXED as u8: return TY[t].b, -1, true
-		if ND[g].b >= 0:
-			iv := kid(ND[g].b, 0); if ND[iv].k == N_ARR { if ND[iv].b >= 0 { v, c, ok := ceval3(ND[iv].b, ns_of(g)); return v, -1, ok } return ND[iv].n, -1, true } if ND[iv].k == N_STR: return TK[ND[iv].t].w, -1, true
-		return 0, -1, false
+	if k == N_DOT && (nm(x.s) == "len" || nm(x.s) == "cap") && ND[x.a].k == N_ID: v, ok := glen(ND[x.a].s as int, ns, nm(x.s) == "cap"); return v, -1, ok
 	return 0, -1, false
+recursive glen(name int, ns int, cap bool) i64, bool:
+	d := lookup_q(name, ns, D_GLOBAL)
+	if d < 0: return 0, false
+	g := DC[d].node; gs := ns_of(g)
+	if ND[g].a >= 0:
+		t := rtype(ND[g].a, gs); if TY[t].k == TY_ARR && TY[t].s == A_FIXED as u8 { return TY[t].b, true } if TY[t].k == TY_ARR && TY[t].s == A_LIM as u8 && TY[t].b >= 0 && cap { return TY[t].b, true } return 0, false
+	if ND[g].b < 0: return 0, false
+	iv := kid(ND[g].b, 0); ik := ND[iv].k as int
+	if ik == N_ARR: if ND[iv].b >= 0 { v, c, ok := ceval3(ND[iv].b, gs); return v, ok } return ND[iv].n as i64, true
+	if ik == N_STR: return TK[ND[iv].t].w as i64, true
+	if ik == N_ID: return glen(ND[iv].s as int, gs, cap)
+	return 0, false

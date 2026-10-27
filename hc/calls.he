@@ -427,7 +427,7 @@ recursive ck_call(n int, want int) int:
 	if ck_ == N_ID:
 		name := ND[cal].s
 		v0 := find_lv(name)
-		v := if v0 >= 0 && LVS[v0].fl & LV_CFB != 0 { -1 } else { v0 }
+		v := if v0 >= 0 && (LVS[v0].fl & LV_CFB != 0 || LVS[v0].cfn != CFN && block_binding(name) >= 0) { -1 } else { v0 }
 		nf := find_nest(name, n)
 		if v < 0 && nf >= 0: return call_nested(n, nf)
 		if v < 0:
@@ -526,7 +526,7 @@ recursive call_block(n int, inst int) int:
 	if FI_[inst].blk < -1:
 		fnm := -2 - FI_[inst].blk as int
 		sa := AOWN; AOWN = FI_[inst].bown; nf := find_nest(fnm, -1); AOWN = sa
-		if nf >= 0: return call_reinst(n, NESTS[nf].inst)
+		if nf >= 0: return call_nested_v(n, nf, FI_[inst].bown as int)
 		return call_fn(n, fnm, -1, -1)
 	fv := FI_[inst].blk
 	own := FI_[inst].bown
@@ -572,9 +572,10 @@ nrank(i int, s int, an int, skip int) int:
 	if FI_[i].pn != an { return -1 } w ~= 0; for j an { if j != skip { r := arg_rank(DIDX[s + j], ARGW[s + j], ptype_of(i, j)); if r < 0 { return -1 } w = max(w, r) } } w
 nfits(i int, s int, an int, skip int) bool:
 	nrank(i, s, an, skip) >= 0
-recursive call_nested(n int, nf0 int) int:
+recursive call_nested(n int, nf0 int) int: call_nested_v(n, nf0, AOWN)
+recursive call_nested_v(n int, nf0 int, vo int) int:
 	nm0 := NESTS[nf0].name; cs i32[>..<] ~= []; csc i64[>..<] ~= []; for q, qi NESTS:
-		if q.name == nm0 && visible(q.own) && !cs.contains(q.inst): cs.push(q.inst); csc.push(nscore(qi, n))
+		if q.name == nm0 && visible_in(q.own, vo) && !cs.contains(q.inst): sa := AOWN; AOWN = vo; cs.push(q.inst); csc.push(nscore(qi, if vo == sa { n } else { -1 })); AOWN = sa
 	nf ~= nf0
 	if cs.len > 1:
 		s := ck_args(n, 0, -1); an := ARGW.len - s; pick ~= -1; pr ~= 99; ps i64 ~= 0; for c, ci cs:
@@ -848,6 +849,9 @@ recursive slit_infer(n int, sn int) int:
 		if ta >= 0 && ND[ta].k == N_TNAME && ND[ta].n == 0:
 			for g, gi gn:
 				if ND[ta].s == g && args[gi] < 0: v := ND[fi].a; vt := ck(v, -1); args[gi] = (if is_pending(vt) { default_t(v) } else { vt }); SCK.push(v); SCK.push(AOWN)
+		else:
+			if ta >= 0 && args.contains(-1):
+				v := ND[fi].a; vt := ck(v, -1); if !is_pending(vt) { b0 := BINDS.len; for g, gi gn { BINDS.push(Gb{g, args[gi]}) } match_ty(ta, vt, b0); for gi gn.len { if args[gi] < 0 && BINDS[b0 + gi].ty >= 0 { args[gi] = BINDS[b0 + gi].ty } } BINDS.pop_n(BINDS.len - b0); SCK.push(v); SCK.push(AOWN) }
 	SCOPE.pop_n(SCOPE.len - m0); GB.pop_n(GB.len - g0); AOWN = sa
 	for a args:
 		if a < 0: return -1

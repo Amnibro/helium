@@ -11,7 +11,7 @@ var NFS NFn[>..<]
 var NV int; var SB int; var NLB int
 var LOCS i32[>..<]
 var GCB byte[>..<]; var GCS i32[>..<]; var GCN i32[>..<]; var GCP i32[>..<]
-gcread(o int, z int) int, bool: for k GCS.len { s := GCS[k]; if o >= s && o + z <= s + GCN[k] { v ~= 0; for j z { v = v | (GCB[GCP[k] + o - s + j] as int) << 8 * j } return v, true } } return 0, false
+gcread(o int, z int) int, bool: for k GCS.len { s := GCS[k]; if !GESC.contains(s as i32) && o >= s && o + z <= s + GCN[k] { v ~= 0; for j z { v = v | (GCB[GCP[k] + o - s + j] as int) << 8 * j } return v, true } } return 0, false
 var DBG bool
 RT_DIE int ~= -1; RT_OOB int ~= -1; RT_OVF int ~= -1; K_OVFD := 8; RT_NARD int ~= -1; K_NARD := 9; I_BCHK := 34; RT_F2I int ~= -1
 var FK i8[>..<]; var FB i32[>..<]; var FD i64[>..<]; var UC i32[>..<]; var FI i32[>..<]; var FS i8[>..<]

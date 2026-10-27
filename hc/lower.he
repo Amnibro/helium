@@ -268,7 +268,10 @@ recursive lres_len(n int, b int, va int, ca int, cw int, eb int, cap int, nn int
 var MSTK i32[>..<]
 recursive lrefp(c int) int:
 	t := at(c); if t >= 0 && TY[t].k == TY_SLICE { p, q := lsl(c); return p } lrefv(c)
+var GESC i32[>..<]
+recursive gesc(n0 int): n ~= n0; while ND[n].k as int == N_IDX || ND[n].k as int == N_DOT && rk(n) == R_FIELD || ND[n].k as int == N_UN && ND[n].op as int == T_AND { n = ND[n].a as int } if ND[n].k as int == N_ID && rk(n) == R_GLOBAL && !GESC.contains(gslot(rv(n)) as i32): GESC.push(gslot(rv(n)) as i32)
 recursive lrefv(n int) int:
+	gesc(n)
 	fk := TY[fin(n)].k; st := atc(n); sk := if st >= 0 { TY[st].k as int } else { -1 }; if ND[n].k as int == N_UN && ND[n].op as int == T_AND:
 		laddr(ND[n].a)
 	else:
@@ -824,6 +827,7 @@ recursive lcall_to(n int, dst int) int:
 	d
 var PAIR2 int
 recursive largs(args i32[>..<]&, c int, pt int):
+	if TY[pt].k == TY_REF && TY[pt].c < 0 && TY[pt].fl & RF_CONST == 0: gesc(c)
 	if TY[pt].k == TY_REF && TY[pt].c < 0: ck := ND[c].k; args.push((if ck == N_UN && ND[c].op as int == T_AND { laddr(ND[c].a) } else { if (ck == N_IF || ck == N_BLOCK || ck == N_EBLOCK || ck == N_LOOP || ck == N_MATCH) && TY[at(c)].k != TY_REF { q := nv(); ir(I_SLOT, 8, q, -1, -1, slot(8, 8)); lsink(c, q, pt); ldw(q, 0, 3) } else { if TY[fin(c)].k == TY_REF || TY[at(c)].k == TY_REF && ND[c].k as int != N_ID { lx(c) } else { if TY[at(c)].k == TY_REF { ldw(vaddr(c), 0, 3) } else { laddr(c) } } } })); return
 	if is_pair(pt): p, q := lsl(c); args.push(p); args.push(q); return
 	if is_scal(pt): args.push(lx(c)); return

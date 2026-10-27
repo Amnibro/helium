@@ -164,6 +164,7 @@ recursive cval(n int) i64, bool, bool:
 		if o == T_MOD: if b == 0 { return 0, false, false } return (a % b + b) % b, false, true
 		if o == T_SHL { return a << b, false, true } if o == T_SHR: return a >> b, false, true
 		if o == T_AND { return a & b, false, true } if o == T_OR { return a | b, false, true } if o == T_XOR: return a ^ b, false, true
+	if k == N_DOT && ND[x.a].k as int == N_ID && rk(x.a) == R_GLOBAL && (nm(x.s) == "len" || nm(x.s) == "cap"): v, ok := glen(ND[x.a].s as int, ns_of(n), nm(x.s) == "cap"); return v, false, ok
 	if k == N_IF || k == N_BLOCK: return 0, false, false
 	return 0, false, false
 var CONSTV i64[>..]
