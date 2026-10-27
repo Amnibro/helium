@@ -108,7 +108,7 @@ shader_compile(n int, stage int, path const byte[:], src const byte[:], err byte
 		mk byte[>..] ~= []; mk.append("mkdir -p"); q(mk, d[..]); run_command(mk[..])
 		u := random_seed(); sf byte[>..] ~= []; format(sf, d[..], "/", h, "-", u, ".src"); ef byte[>..] ~= []; format(ef, d[..], "/", h, "-", u, ".err"); tb byte[>..] ~= []; format(tb, d[..], "/", h, "-", u, ".tmp")
 		if !write_file(sf[..], src): err.append("cannot write "); err.append(sf[..]); return false
-		cmd byte[>..] ~= []; cmd.append("[ -f"); q(cmd, bf[..]); cmd.append(" ] ||"); q(cmd, exe[..]); format(cmd, " ", stage); q(cmd, path); q(cmd, sf[..]); q(cmd, tb[..]); cmd.append(" 2>"); q(cmd, ef[..]); cmd.append(" && mv"); q(cmd, tb[..]); q(cmd, bf[..])
+		cmd byte[>..] ~= []; cmd.append("[ -f"); q(cmd, bf[..]); cmd.append(" ] || {"); q(cmd, exe[..]); format(cmd, " ", stage); q(cmd, path); q(cmd, sf[..]); q(cmd, tb[..]); cmd.append(" 2>"); q(cmd, ef[..]); cmd.append(" && mv"); q(cmd, tb[..]); q(cmd, bf[..]); cmd.append("; }")
 		ok := run_command(locked(cmd[..], d[..])[..]) == 0; delete_file(sf[..]); delete_file(tb[..])
 		if !ok: read_file(ef[..], err); delete_file(ef[..]); while err.len > 0 && err[err.len - 1] == '\n' { err.pop() } if err.len == 0 { err.append("shader compilation failed") } return false
 		delete_file(ef[..]); if !read_file(bf[..], blob): err.append("cannot read "); err.append(bf[..]); return false
