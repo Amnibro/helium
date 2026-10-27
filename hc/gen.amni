@@ -752,7 +752,9 @@ recursive fn gen_hneg(t int) {
 }
 fn fn_cname_to(b byte[>..<]&, i int) { format(b, "f", i, "_"); let s = FI_[i].name as int; if s >= 0 { for c in nm(s) { b.push(if c == ':' { '_' } else { c }); } } }
 fn fn_cname(i int) { fn_cname_to(O, i); }
+var GDLF i32[>..<];
 fn ext_name(i int) {
+	if dylib_of(i) >= 0 { var seen = false; for f in GDLF { if f as int == i { seen = true; } } if !seen { GDLF.push(i as i32); let rt = FI_[i].ret as int; var sig byte[>..] = []; sig.append("static "); sig.append(if rt < 0 || rt == T_VOID || TY[rt].k == TY_VOID { "void" } else { cn(rt) }); format(sig, " (*hr_dl", i, ")("); let np = ND[FI_[i].node].n as int; for j in np { if j > 0 { sig.append(", "); } sig.append(cn(ptype_of(i, j))); } if np == 0 { sig.append("void"); } sig.append(");\n"); PR.append(sig[..]); } format(O, "hr_dl", i); return; }
 	let node = FI_[i].node as int;
 	let x = ND[node].e as int;
 	if x >= 0 && ND[x].a >= 0 { let s = tok_str(ND[x].a as int); if s.len > 3 && s[0] == 'g' && s[1] == 's' && s[2] == '_' { ow("hr_"); ow(s[3..]); return; } ow(s); return; }
@@ -1887,6 +1889,7 @@ fn gen_program(out byte[>..]&) bool {
 		gen_fn(i);
 		if GERR.len > 0 { return false; }
 	}
+	if GDLF.len > 0 { out.append("#include <dlfcn.h>\n"); }
 	out.append("#include \"hrt.h\"\n");
 	out.append(TF);
 	out.append("#pragma pack(push, 1)\n");
@@ -1897,7 +1900,11 @@ fn gen_program(out byte[>..]&) bool {
 	out.append(TW[..]);
 	out.append(HF[..]);
 	out.append(O[..]);
-	out.append("static void hr_init_globals(void) {\n"); out.append(GI); out.append("}\n");
+	if GDLF.len > 0 { var lb byte[>..] = []; lb.append("static void hr_dl_bind(void) { void *h;\n"); var dn i32[>..] = []; for f in GDLF { let t = dylib_of(f as int); var dup = false; for q in dn { if tok_str(q as int) == tok_str(t) { dup = true; } } if !dup { dn.push(t as i32); } }
+		for t in dn { let nmb = tok_str(t as int); var sp byte[>..] = []; dl_spell(nmb, sp); format(lb, "h = dlopen(\"", sp[..], "\", RTLD_NOW | RTLD_LOCAL); if (!h) { const char *e = dlerror(); hr_flush(); fprintf(stderr, \"helium runtime error: cannot load %s (%s): %s\\n\", \"", nmb, "\", \"", sp[..], "\", e ? e : \"unknown error\"); exit(1); }\n");
+			for f in GDLF { if tok_str(dylib_of(f as int)) == nmb { format(lb, "if (!(*(void **)&hr_dl", f, " = dlsym(h, \"", dl_sym(f as int), "\"))) { hr_flush(); fprintf(stderr, \"helium runtime error: %s (%s) has no symbol %s\\n\", \"", nmb, "\", \"", sp[..], "\", \"", dl_sym(f as int), "\"); exit(1); }\n"); } } }
+		lb.append("}\n"); out.append(lb[..]); }
+	out.append("static void hr_init_globals(void) {\n"); if GDLF.len > 0 { out.append("hr_dl_bind();\n"); } out.append(GI); out.append("}\n");
 	out.append("static void hr_main(void) { ");
 	if mi >= 0 { let rt = FI_[mi].ret as int; if rt >= 0 && TY[rt].k == TY_INT { out.append("hr_flush(); exit((int)"); } O.clear(); fn_cname(mi); out.append(O[..]); out.append("()"); if rt >= 0 && TY[rt].k == TY_INT { out.append(")"); } out.append("; "); }
 	out.append("}\n");

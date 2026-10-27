@@ -17,7 +17,7 @@ fn mov_rr(d int, s int) { if d != s { xrr(0x89, s, d); } }
 fn ld(r int, base int, d int, w int, sx bool) { if w == 8 { xrex(true, r, 0, base); xb(0x8B); } else { if w == 4 { if sx { xrex(true, r, 0, base); xb(0x63); } else { xrex(false, r, 0, base); xb(0x8B); } } else { xrex(true, r, 0, base); xb(0x0F); xb(if w == 1 { if sx { 0xBE } else { 0xB6 } } else { if sx { 0xBF } else { 0xB7 } }); } } xmem(r, base, d); }
 fn st(r int, base int, d int, w int) { if w == 2 { xb(0x66); } if w == 1 { xrexb(r, base); } else { xrex(w == 8, r, 0, base); } xb(if w == 1 { 0x88 } else { 0x89 }); xmem(r, base, d); }
 fn lea(r int, base int, d int) { xrex(true, r, 0, base); xb(0x8D); xmem(r, base, d); }
-fn fs0(r int) { xb(0x64); xrex(true, r, 0, 0); xb(0x8B); xb(((r & 7) << 3) | 4); xb(0x25); x32(0); }
+fn fs0(r int) { xb(0x65); xrex(true, r, 0, 0); xb(0x8B); xb(((r & 7) << 3) | 4); xb(0x25); x32(0); }
 fn lea_g(r int, off int) { if TLSM { fs0(r); if off != 0 { lea(r, r, off); } } else { lea_rip(r, 3, off); } }
 fn lea_rip(r int, k int, to int) { xrex(true, r, 0, 0); xb(0x8D); xb(((r & 7) << 3) | 5); XFIX.push(Fix { XC.len as i32, to as i32, k as u8 }); x32(0); }
 fn alu(op int, d int, s int) { xrr(op, s, d); }

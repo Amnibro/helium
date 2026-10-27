@@ -10,6 +10,17 @@ extern fn sysclone(flags int, sp int, ptid int, ctid int, tls int) int = "!clone
 extern fn xchg(p int, v int) int = "!xchg";
 extern fn callp(f int, a int) int = "!callp";
 extern fn tlsb() int = "!tlsb";
+extern fn ccall0(f int) int = "!cc0";
+extern fn ccall2(f int, a int, b int) int = "!cc2";
+var RT_DLT int; var RT_DLG int; var RT_DLR int; var RT_DLB int;
+fn rt_esz(p int) { var q = p; while mld1(q) != 0 { if RT_EN < 512 { RT_EB[RT_EN] = mld1(q) as! byte; RT_EN += 1; } q += 1; } }
+fn rt_dlx() { rt_es("\n"); rt_flush(); rt_write(2, RT_EB[..RT_EN]); sys3(231, 1, 0, 0); }
+fn rt_dlbind() {
+	let t = RT_DLR + RT_DLT; let nl = mld(t); let nb = mld(t + 8); let g = RT_DLB + RT_DLG; let b0 = t + 16 + 16 * nl;
+	for l in nl { let sp = RT_DLR + mld(t + 16 + 16 * l); let nm = RT_DLR + mld(t + 24 + 16 * l); let h = ccall2(mld(g), sp, 2);
+		if h == 0 { rt_es("helium runtime error: cannot load "); rt_esz(nm); rt_es(" ("); rt_esz(sp); rt_es("): "); let e = ccall0(mld(g + 16)); if e != 0 { rt_esz(e); } else { rt_es("unknown error"); } rt_dlx(); }
+		for k in nb { let q = b0 + 24 * k; if mld(q) == l { let sy = RT_DLR + mld(q + 8); let f = ccall2(mld(g + 8), h, sy); if f == 0 { rt_es("helium runtime error: "); rt_esz(nm); rt_es(" ("); rt_esz(sp); rt_es(") has no symbol "); rt_esz(sy); rt_dlx(); } mst(RT_DLB + mld(q + 16), f); } } }
+}
 struct RtV { b int, n int, top int, fl int, fln int, flc int }
 var RT_RSZ int; var RT_SBUD int;
 var RT_FREE int[4096];
@@ -311,7 +322,7 @@ fn rt_spawn(fnp int, tmain int, pkt int, blk int, contained int) int {
 	mst(r + 40, fnp); mst(r + 48, pkt); mst(r + 56, contained); mst(r + 72, blk); mst(r + 80, mld(blk + 8)); mst(r + 32, 1);
 	let ss = 64 << 20; let st = sys6(9, 0, ss, 3, 0x4022, -1, 0); sys3(10, st, 4096, 0); mst(r + 64, st);
 	let sp = st + ss - 16; mst(sp, tmain); mst(sp + 8, r);
-	if sysclone(0x2D0F00, sp, 0, r + 32, blk) < 0 { rt_abort("could not start a worker", "thread_spawn"); }
+	if sysclone(0x250F00, sp, 0, r + 32, blk) < 0 { rt_abort("could not start a worker", "thread_spawn"); }
 	while mld(r + 96) == 0 { rt_fwait(r + 96, 0); }
 	id
 }

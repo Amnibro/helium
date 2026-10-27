@@ -580,6 +580,22 @@ recursive fn largs(args i32[>..<]&, c int, pt int) {
 	if is_scal(pt) { args.push(lx(c) as i32); return; }
 	let s = slot(tsz(pt), tal(pt)); let d = nv(); ir(I_SLOT, 8, d, -1, -1, s); lstore(d, c, pt); args.push(d as i32);
 }
+var DYN i32[>..<]; var DBL i32[>..<]; var DBF i32[>..<]; var DBS i32[>..<];
+fn dl_spell(nmb const byte[:], sp byte[>..]&) { var leaf = 0; for c, k in nmb { if c == '/' { leaf = k + 1; } } var dot = false; for c in nmb[leaf..] { if c == '.' { dot = true; } } sp.append(nmb[..leaf]); if !dot { sp.append("lib"); } sp.append(nmb[leaf..]); if !dot { sp.append(".so"); } }
+fn dl_sym(i int) const byte[:] { let es = ext_str(i); if es.len > 0 { es } else { nm(FI_[i].name as int) } }
+fn dylib_of(i int) int { let x = ND[FI_[i].node].e as int; if x >= 0 { ND[x].b as int } else { -1 } }
+fn lccall(n int, i int, args i32[>..<]&) int {
+	let lt = dylib_of(i); var l = -1; for k in DYN.len { if tok_str(DYN[k] as int) == tok_str(lt) { l = k; } } if l < 0 { l = DYN.len; DYN.push(lt as i32); }
+	var b = -1; for k in DBF.len { if DBF[k] as int == i { b = k; } } if b < 0 { b = DBF.len; DBL.push(l as i32); DBF.push(i as i32); DBS.push(bss(8, 8) as i32); }
+	let rt = FI_[i].ret as int; var m = 0; var q = 0;
+	for j in ND[FI_[i].node].n as int { let pt = ptype_of(i, j); if is_pair(pt) { q += 2; } else { if isf(pt) { m = m | (1 << q); q++; } else { if is_scal(pt) || TY[pt].k == TY_REF { q++; } else { lerr(n, "passing this type by value to a C function natively"); return imm(0); } } } }
+	if is_agg(rt) || is_pair(rt) { lerr(n, "returning this type from a C function natively"); return imm(0); }
+	if q != args.len || q > 28 { lerr(n, "this C call's arguments natively"); return imm(0); }
+	let vr = rt >= 0 && rt != T_VOID && TY[rt].k != TY_VOID; let rk = if vr && isf(rt) { if wof(rt) == 10 { 1 } else { 2 } } else { 0 };
+	let g = nv(); ir(I_GADDR, 8, g, -1, -1, DBS[b] as int); let p = ldw(g, 0, 3);
+	let s0 = ARGL.len; ARGL.append(args[..]); let d = nv(); irl(I_CALLR, 3, d, s0, args.len, p, -2 - (m | (rk << 28)));
+	if !vr { return imm(0); } let w = wof(rt); if rk == 0 && w != 3 && w < 8 { let e = nv(); ir(I_EXT, w, e, d, -1, 0); return e; } d
+}
 fn ext_str(i int) const byte[:] { let x = ND[FI_[i].node].e as int; if x >= 0 && ND[x].a >= 0 { tok_str(ND[x].a as int) } else { "" } }
 recursive fn lintrinsic(n int, i int, args i32[>..<]&) int {
 	let s = ext_str(i);
@@ -604,6 +620,8 @@ recursive fn lintrinsic(n int, i int, args i32[>..<]&) int {
 	if s.len > 3 && s[..3] == "hr_" { var nmb byte[>..] = []; nmb.append("rt_"); nmb.append(s[3..]); let f = rt_fn(nmb[..]); if f >= 0 { let a = ARGL.len; ARGL.append(args[..]); let rt = FI_[i].ret as int; let d = if rt >= 0 && rt != T_VOID { nv() } else { -1 }; ir(I_CALL, 3, d, a, args.len, f); return if d >= 0 { d } else { imm(0) }; } }
 	if s == "!st8" { stw(args[0] as int, 0, args[1] as int, 3); return imm(0); }
 	if s == "!copy" { ir(I_COPY, 3, args[0] as int, args[1] as int, args[2] as int, 0); return imm(0); }
+	if s.len == 4 && s[..3] == "!cc" { let s0 = ARGL.len; ARGL.append(args[1..]); let d = nv(); irl(I_CALLR, 3, d, s0, args.len - 1, args[0] as int, -2); return d; }
+	if dylib_of(i) >= 0 { return lccall(n, i, args); }
 	lerr(n, "this extern function is not available natively"); imm(0)
 }
 var BHASR bool; var BRECV int;
@@ -761,6 +779,7 @@ var FMTT i32[>..<]; var FMTN i32[>..<]; var FDONE int;
 var EQT i32[>..<]; var EQN i32[>..<]; var EDONE int;
 var HDEF byte[>..<];
 fn hdef(k const byte[:]) int { var i = 0; while i < HDEF.len { var j = i; while HDEF[j] != '\n' { j++; } let l = HDEF[i..j]; if l.len > k.len && l[..k.len] == k && l[k.len] == '=' { var v = 0; for c in l[k.len + 1..] { v = v * 10 + (c - '0') as int; } return v; } i = j + 1; } -1 }
+fn rtsetp(g const byte[:], k int) { let d = lookup(intern(g), -1, D_GLOBAL); if d < 0 { return; } lea_rip(RCX, 3, gslot(d)); lea_rip(RAX, k, 0); st(RAX, RCX, 0, 8); }
 fn rtset(g const byte[:], v int) { if v < 0 { return; } let d = lookup(intern(g), -1, D_GLOBAL); if d < 0 { return; } lea_rip(RCX, 3, gslot(d)); mov_ri(RAX, v); st(RAX, RCX, 0, 8); }
 var TWT i32[>..<]; var TWN i32[>..<]; var TDONE = 0; var TGN = -1;
 fn tw_fn(inst int) int { for i in TWT.len { if TWT[i] as int == inst { return TWN[i] as int; } } let nf = NFS.len; NFS.push(NFn { 0, 0, 0, 0, -1 }); FOFF.push(0); TWT.push(inst as i32); TWN.push(nf as i32); if TGN < 0 { TGN = NFS.len; NFS.push(NFn { 0, 0, 0, 0, -1 }); FOFF.push(0); } nf }
@@ -1100,11 +1119,14 @@ fn lower_program(out byte[>..]&) bool {
 	let rinit = rt_fn("rt_exit"); let rst = rt_fn("rt_start");
 	if !drain() { return false; }
 	let gi = lower_ginit(); lower_tglob(); if !drain() { return false; }
+	let dlb = if DYN.len > 0 { rt_fn("rt_dlbind") } else { -1 }; if dlb >= 0 && !drain() { return false; }
+	var dlt = -1; if dlb >= 0 { var tb byte[>..] = []; eb(tb, DYN.len, 8); eb(tb, DBF.len, 8); var sv int[>..] = []; for lt in DYN { let nmb = tok_str(lt as int); var sp byte[>..] = []; dl_spell(nmb, sp); sp.push(0); var nz byte[>..] = []; nz.append(nmb); nz.push(0); sv.push(rodata(sp[..])); sv.push(rodata(nz[..])); } for o in sv { eb(tb, o, 8); } for k in DBF.len { var sy byte[>..] = []; sy.append(dl_sym(DBF[k] as int)); sy.push(0); eb(tb, DBL[k] as int, 8); eb(tb, rodata(sy[..]), 8); eb(tb, DBS[k] as int, 8); } dlt = rodata(tb[..]); DYNG = bss(24, 8); }
 	if LERR.len > 0 { return false; }
 	let entry = XC.len; var szp = -1;
-	if TLSM { lea_rip(RAX, 3, 0); st(RAX, RAX, 0, 8); mov_ri(RCX, 0); szp = XC.len - 4; st(RCX, RAX, 8, 8); mov_rr(RSI, RAX); mov_ri(RDI, 0x1002); mov_ri(RAX, 158); syscall(); }
+	if TLSM { lea_rip(RAX, 3, 0); st(RAX, RAX, 0, 8); mov_ri(RCX, 0); szp = XC.len - 4; st(RCX, RAX, 8, 8); mov_rr(RSI, RAX); mov_ri(RDI, 0x1001); mov_ri(RAX, 158); syscall(); }
 	let rz = hdef("GS_STACK_RESERVE"); rtset("RT_RSZ", if rz >= 0 { rz & -4096 } else { -1 }); rtset("RT_SBUD", hdef("GS_STACK_BUDGET"));
-	mov_rr(RDI, RSP); call_f(rst); call_f(gi); call_f(rm); mov_ri(RDI, 0); call_f(rinit); ud2();
+	if dlb >= 0 { rtset("RT_DLT", dlt); rtset("RT_DLG", DYNG); rtsetp("RT_DLR", 2); rtsetp("RT_DLB", 3); }
+	mov_rr(RDI, RSP); call_f(rst); if dlb >= 0 { call_f(dlb); } call_f(gi); call_f(rm); mov_ri(RDI, 0); call_f(rinit); ud2();
 	var irw byte[>..] = []; let dump = env("HC_IR", irw);
 	var noi byte[>..] = []; let opt = !env("HC_NOOPT", noi); if opt { optimize_all(); }
 	for f, i in NFS { if dump && f.inst >= 0 && nm(FI_[f.inst].name as int) == irw[..] { ir_dump(i); } if opt { regalloc(i); } else { REGOF.clear(); RUSED.clear(); VZERO.clear(); FK.clear(); XREG.clear(); SVR.clear(); } cg_fn(i); }

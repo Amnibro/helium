@@ -5,16 +5,24 @@ var DA byte[>..<];
 var BSS int;
 var LBL i32[>..<];
 var FOFF i32[>..<];
+var DYNG = -1;
 fn eb(o byte[>..]&, v int, n int) { for i in n { o.push(((v >> (i * 8)) & 255) as! byte); } }
 fn al(v int, a int) int { (v + a - 1) / a * a }
 fn elf_write(entry int) byte[>..] {
-	let hs = 64 + 56 * 2;
+	let dy = DYNG >= 0; let nph = if dy { 5 } else { 2 }; let hs = 64 + 56 * nph;
 	let co = al(hs, 16);
 	let ro = al(co + XC.len, 16);
+	var bo = 0; if dy { RO.resize(al(RO.len, 8)); bo = RO.len; RO.append("/lib64/ld-linux-x86-64.so.2\0\0\0\0\0"); RO.append("\0libc.so.6\0dlopen\0dlsym\0dlerror\0"); RO.resize(RO.len + 96 + 28 + 4 + 72 + 16 * 12); }
 	let rxe = ro + RO.len;
 	let dof = al(rxe, 4096);
 	let dva = EBASE + dof + 4096;
 	let rova = EBASE + ro;
+	if dy { var t byte[>..] = []; let sto = bo + 32; let syo = sto + 32; let ho = syo + 96; let rlo = ho + 32; let dno = rlo + 72;
+		for k in 4 { eb(t, if k == 0 { 0 } else { [11, 18, 24][k - 1] }, 4); eb(t, if k == 0 { 0 } else { 0x12 }, 1); eb(t, 0, 1); eb(t, 0, 2); eb(t, 0, 8); eb(t, 0, 8); }
+		for v in [1, 4, 0, 0, 0, 0, 0, 0] { eb(t, v, 4); }
+		for k in 3 { eb(t, dva + DYNG + 8 * k, 8); eb(t, ((k + 1) << 32) | 6, 8); eb(t, 0, 8); }
+		for v in [1, 1, 4, rova + ho, 5, rova + sto, 6, rova + syo, 10, 32, 11, 24, 7, rova + rlo, 8, 72, 9, 24, 24, 0, 0x6ffffffb, 1, 0, 0] { eb(t, v, 8); }
+		for c, k in t { RO[syo + k] = c; } }
 	for f in XFIX {
 		let at = f.at as int; let k = f.k as int; let to = f.to as int;
 		let tv = if k == 0 { EBASE + co + (LBL[to] as int) } else { if k == 1 { EBASE + co + (FOFF[to] as int) } else { if k == 2 { rova + to } else { dva + to } } };
@@ -22,9 +30,11 @@ fn elf_write(entry int) byte[>..] {
 	}
 	var o byte[>..] = [];
 	o.append("\x7FELF"); eb(o, 2, 1); eb(o, 1, 1); eb(o, 1, 1); eb(o, 0, 9);
-	eb(o, 2, 2); eb(o, 0x3E, 2); eb(o, 1, 4); eb(o, EBASE + co + entry, 8); eb(o, 64, 8); eb(o, 0, 8); eb(o, 0, 4); eb(o, 64, 2); eb(o, 56, 2); eb(o, 2, 2); eb(o, 64, 2); eb(o, 0, 2); eb(o, 0, 2);
+	eb(o, 2, 2); eb(o, 0x3E, 2); eb(o, 1, 4); eb(o, EBASE + co + entry, 8); eb(o, 64, 8); eb(o, 0, 8); eb(o, 0, 4); eb(o, 64, 2); eb(o, 56, 2); eb(o, nph, 2); eb(o, 64, 2); eb(o, 0, 2); eb(o, 0, 2);
+	if dy { eb(o, 6, 4); eb(o, 4, 4); eb(o, 64, 8); eb(o, EBASE + 64, 8); eb(o, EBASE + 64, 8); eb(o, 56 * nph, 8); eb(o, 56 * nph, 8); eb(o, 8, 8); eb(o, 3, 4); eb(o, 4, 4); eb(o, ro + bo, 8); eb(o, rova + bo, 8); eb(o, rova + bo, 8); eb(o, 28, 8); eb(o, 28, 8); eb(o, 1, 8); }
 	eb(o, 1, 4); eb(o, 5, 4); eb(o, 0, 8); eb(o, EBASE, 8); eb(o, EBASE, 8); eb(o, rxe, 8); eb(o, rxe, 8); eb(o, 4096, 8);
 	eb(o, 1, 4); eb(o, 6, 4); eb(o, dof, 8); eb(o, dva, 8); eb(o, dva, 8); eb(o, DA.len, 8); eb(o, DA.len + BSS, 8); eb(o, 4096, 8);
+	if dy { let dno = bo + 32 + 32 + 96 + 32 + 72; eb(o, 2, 4); eb(o, 4, 4); eb(o, ro + dno, 8); eb(o, rova + dno, 8); eb(o, rova + dno, 8); eb(o, 16 * 12, 8); eb(o, 16 * 12, 8); eb(o, 8, 8); }
 	while o.len < co { o.push(0); }
 	o.append(XC[..]);
 	while o.len < ro { o.push(0); }
