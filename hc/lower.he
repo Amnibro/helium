@@ -1049,7 +1049,7 @@ recursive lbuiltin1(n int, b int, dst int, total int) int:
 	if b == B_ASSERT: c := lx(barg(n, 0)); l := nlbl(); ir(I_BNZ, 3, -1, c, -1, l); lp, ln := locsl(n); rtcall("rt_die", [imm(6) as i32, lp as i32, ln as i32]); ir(I_LBL, 3, -1, -1, -1, l); return imm(0)
 	if b == B_EXIT: rtcall("rt_exit", [lx(barg(n, 0)) as i32]); return imm(0)
 	if b == B_ABORT: mp, mn := lsl(barg(n, 0)); lp, ln := locsl(n); rtcall("rt_abort", [mp as i32, mn as i32, lp as i32, ln as i32]); return imm(0)
-	if b == B_COPY: src := barg(n, 0); t := deref(at(src)); if is_vimg(t) { e := TY[t].a; sp, sn := lsl(src); if is_lplace(src) && vlim(t) == 1 && vw(t) > 0 && !is_seq(t) && !needs_drop(e) { r := vmk(sn, ldw(sp, -2 * vw(t) as int, vwc(t)), t); dp, dn := vdat(r, t); ir(I_COPY, 3, dp, sp, bin(B_MUL, 3, sn, imm(tsz(e)), -1), 0); return r } return lvfrom(sp, sn, t) } if is_scal(t) { return lx(src) } dd := if dst >= 0 { dst } else { q := nv(); ir(I_SLOT, 8, q, -1, -1, slot(max(tsz(t), 1), tal(t))); tmp_drop(q, t); q }; if is_res(t) && is_seq(t) { sp, sn := lsl(src); rtcall("rt_sqfrom", [dd as i32, sp as i32, sn as i32, lsqbytes(sp, sn, TY[t].a) as i32]); return dd } if is_res(t) { sp, sn := lsl(src); rtcall("rt_rfrom", [dd as i32, sp as i32, sn as i32, imm(tsz(TY[t].a)) as i32]); return dd } if hvimg(t) || is_fixed(t) || pneeds(t) || TY[t].k == TY_ENUM { ir(I_COPY, 3, dd, laddr(src), imm(tsz(t)), 0); lwalk(1, dd, -1, t); return dd } lerr(n, "copy of this type natively"); return imm(0)
+	if b == B_COPY: src := barg(n, 0); t := deref(at(src)); if is_vimg(t) { e := TY[t].a; sp, sn := lsl(src); if is_lplace(src) && vlim(t) == 1 && vw(t) > 0 && !is_seq(t) && !needs_drop(e) { r := vmk(sn, ldw(sp, -2 * vw(t) as int, vwc(t)), t); dp, dn := vdat(r, t); ir(I_COPY, 3, dp, sp, bin(B_MUL, 3, sn, imm(tsz(e)), -1), 0); return r } return lvfrom(sp, sn, t) } if is_scal(t) { return lx(src) } dd := if dst >= 0 { dst } else { q := nv(); ir(I_SLOT, 8, q, -1, -1, slot(max(tsz(t), 1), tal(t))); tmp_drop(q, t); q }; if lcopy_into(dd, src, t) { return dd } lerr(n, "copy of this type natively"); return imm(0)
 	if b == B_STR: dd := if dst >= 0 { dst } else { q := nv(); ir(I_SLOT, 8, q, -1, -1, slot(48, 8)); tmp_drop(q, at(n)); q }; lzero(dd, 48); old := rtcall("rt_sink_set", [dd as i32]); for i total { lfmt(barg(n, i), true) } rtcall("rt_sink_set", [old as i32]); return dd
 	if b == B_FORMAT:
 		bt := deref(at(barg(n, 0))); ba := if TY[at(barg(n, 0))].k == TY_REF { lptr(barg(n, 0)) } else { laddr(barg(n, 0)) }
@@ -1274,6 +1274,11 @@ kzero(n int) bool:
 	k := ND[n].k; if k == N_FALSE { return true } if k == N_FLT { return flt_bits(tok_text(ND[n].t)) == 0 } v, ok := kint(n); ok && v == 0
 lzero(a int, sz int):
 	if sz > 8 { ir(I_ZERO, 3, a, -1, imm(sz), 0); return } o ~= 0; z := imm(0); while o + 8 <= sz { stw(a, o, z, 3); o += 8 } while o < sz: stw(a, o, z, 4); o += 1
+recursive lcopy_into(dd int, src int, t int) bool:
+	if is_res(t) && is_seq(t): sp, sn := lsl(src); rtcall("rt_sqfrom", [dd as i32, sp as i32, sn as i32, lsqbytes(sp, sn, TY[t].a) as i32]); return true
+	if is_res(t): sp, sn := lsl(src); rtcall("rt_rfrom", [dd as i32, sp as i32, sn as i32, imm(tsz(TY[t].a)) as i32]); return true
+	if hvimg(t) || is_fixed(t) || pneeds(t) || TY[t].k == TY_ENUM: ir(I_COPY, 3, dd, laddr(src), imm(tsz(t)), 0); lwalk(1, dd, -1, t); return true
+	false
 recursive lassign(n int):
 	x := ND[n]; o := x.op; a := x.a; b := x.b
 	if ND[a].k as int == N_LIST:
@@ -1293,6 +1298,7 @@ recursive lassign(n int):
 	if o == T_ASSIGN && is_agg(t) && !is_lplace(b) && has_rel(t) && (ND[b].k as int == N_SLIT || !needs_drop(t)): da := laddr(a); if needs_drop(t) { ldrop(da, t) } lstore(da, b, t); return
 	if o == T_ASSIGN && is_agg(t) && !is_lplace(b): da := laddr(a); tmp := nv(); ir(I_SLOT, 8, tmp, -1, -1, slot(tsz(t), tal(t))); lstore(tmp, b, t); if needs_drop(t) { ldrop(da, t) } ir(I_COPY, 3, da, tmp, imm(tsz(t)), 0); return
 	p := laddr(a)
+	if o == T_ASSIGN && needs_drop(t) && !is_vimg(t) && is_lplace(b) && deref(fin(b)) == t: tmp := nv(); ir(I_SLOT, 8, tmp, -1, -1, slot(max(tsz(t), 1), tal(t))); if lcopy_into(tmp, b, t) { ldrop(p, t); ir(I_COPY, 3, p, tmp, imm(tsz(t)), 0); return }
 	if o == T_ASSIGN: lstore(p, b, t); return
 	if ewagg(t): old := nv(); ir(I_SLOT, 8, old, -1, -1, slot(tsz(t), tal(t))); ir(I_COPY, 3, old, p, imm(tsz(t)), 0); pb, sb := lewop(b, t); lew(o, p, old, pb, sb, t, n); return
 	v := ldw(p, 0, wof(t)); bv := lx(b); tb := fin(b)
@@ -1494,7 +1500,7 @@ lower_program(out byte[>..]&) bool:
 	if LERR.len > 0: return false
 	entry := XC.len; szp ~= -1
 	if TLSM: lea_rip(RAX, 3, 0); st(RAX, RAX, 0, 8); mov_ri(RCX, 0); szp = XC.len - 4; st(RCX, RAX, 8, 8); mov_rr(RSI, RAX); mov_ri(RDI, 0x1001); mov_ri(RAX, 158); syscall()
-	rz := hdef("GS_STACK_RESERVE"); rtset("RT_RSZ", if rz >= 0 { rz & -4096 } else { -1 }); rtset("RT_SBUD", hdef("GS_STACK_BUDGET"))
+	rz := hdef("GS_STACK_RESERVE"); rtset("RT_RSZ", if rz >= 0 { rz & -4096 } else { -1 }); rtset("RT_SBUD", hdef("GS_STACK_BUDGET")); rtset("RT_DBG", if DBG { 1 } else { 0 })
 	if dlb >= 0: rtset("RT_DLT", dlt); rtset("RT_DLG", DYNG); rtsetp("RT_DLR", 2); rtsetp("RT_DLB", 3)
 	mov_rr(RDI, RSP); lea_rip(RSI, 1, rsg); call_f(rst); mov_rr(RSP, RAX); if dlb >= 0 { call_f(dlb) } call_f(gi); call_f(rm); mov_ri(RDI, 0); call_f(rinit); ud2()
 	irw byte[>..] ~= []; dump := env("HC_IR", irw)

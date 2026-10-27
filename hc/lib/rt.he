@@ -28,6 +28,7 @@ var RT_NFREE int
 var RT_OUT RtV; var RT_SINK int
 extern vptr(v RtV&) int = "!ptr"
 var RT_EB byte[512]
+var RT_DBG int
 var RT_EN int
 rt_write(fd int, s const byte[:]): o ~= 0; while o < s.len: w := sys3(1, fd, ptr(s[o..]), s.len - o); if w <= 0 { return } o += w
 rt_flush(): if RT_OUT.n == 0 { return } if RT_SH != 0 { rt_lock(RT_SH) } o ~= 0; while o < RT_OUT.n { w := sys3(1, 1, RT_OUT.b + o, RT_OUT.n - o); if w <= 0 { break } o += w } RT_OUT.n = 0; if RT_SH != 0: rt_unlock(RT_SH);
@@ -60,7 +61,7 @@ rt_nard(v int, c int, loc const byte[:]):
 rt_oob(i int, n int, loc const byte[:]): rt_es("helium runtime error: index "); rt_ei(i); rt_es(" out of bounds (length "); rt_ei(n); rt_es(")"); rt_fail(loc);
 rt_take() int: if RT_NFREE > 0 { RT_NFREE -= 1; return RT_FREE[RT_NFREE] } rt_map()
 rt_map() int: p := sys6(9, 0, RT_RSZ + 65536, 3, 0x4022, -1, 0); if p < 0 && p > -4096 { rt_es("helium runtime error: out of address space\n"); rt_write(2, RT_EB[..RT_EN]); sys3(231, 1, 0, 0) } sys3(10, p + RT_RSZ, 65536, 0); p
-rt_give(b int, used int): if b == 0 { return } if used > 1 << 20 { sys3(28, b + 65536, used - 65536 + 4095 & -4096, 4) } if RT_NFREE < 4096: RT_FREE[RT_NFREE] = b; RT_NFREE += 1 else: sys3(11, b, RT_RSZ + 65536, 0);
+rt_give(b int, used int): if b == 0 { return } if RT_DBG > 0 { for q RT_NFREE { if RT_FREE[q] == b { rt_es("helium runtime error: a region was released twice"); rt_dlx() } } } if used > 1 << 20 { sys3(28, b + 65536, used - 65536 + 4095 & -4096, 4) } if RT_NFREE < 4096: RT_FREE[RT_NFREE] = b; RT_NFREE += 1 else: sys3(11, b, RT_RSZ + 65536, 0);
 rt_grow(va int, k int, esz int) int: b ~= mld(va); if b == 0 { b = rt_take(); mst(va, b) } n := mld(va + 8); mst(va + 8, n + k); if (n + k) * esz > RT_RSZ { rt_die(5, "push") } b + n * esz
 rt_rdrop(v RtV&): rt_give(v.b, max(v.n * 64, v.top)); rt_give(v.fl, v.fln * 16); v.b = 0; v.n = 0; v.top = 0; v.fl = 0; v.fln = 0; v.flc = 0
 rt_rfrom(v RtV&, p int, n int, esz int): v.b = 0; v.n = 0; v.top = 0; v.fl = 0; v.fln = 0; v.flc = 0; if n > 0: d := rt_grow(vptr(v), n, esz); mcopy(d, p, n * esz);

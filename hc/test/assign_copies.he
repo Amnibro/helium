@@ -1,0 +1,26 @@
+cv(s i32[>..]&, f bool) int:
+	cur i32[>..] ~= []; for r s { cur.push(r) }
+	if f:
+		nx i32[>..] ~= []; for r cur { nx.push(r) } cur = nx
+	cur.len
+main():
+	h ~= 0
+	for k 8:
+		s i32[>..] ~= [1, 2]
+		h += cv(s, k % 2 == 0)
+	print(h)
+	a i32[>..] ~= [1]
+	b i32[>..] ~= [2, 3]
+	a = b
+	b.push(9)
+	print(a, " ", b)
+	if a.len > 0:
+		c i32[>..] ~= [4]
+		a = c
+		c.push(5)
+		print(a, " ", c)
+	w byte[>..][>..] ~= [copy("x")]
+	v byte[>..][>..] ~= [copy("y"), copy("z")]
+	w = v
+	v[0].push('!')
+	print(w, " ", v)
