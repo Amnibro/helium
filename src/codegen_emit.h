@@ -943,6 +943,7 @@ inline void CodeGen::EmitExports() {
         auto ret = sp->rets.empty() ? string("void")
                    : returnslice ? string("const uint8_t *") : CT(sp->rets[0]);
         Append(exportprotos, ret, " ", sf->cname, "(", params, ");\n");
+        exportnames.push_back(sf->cname);
         Append(code, ret, " ", sf->cname, "(", params, ") {\n"
                      "    if (!gs_program_initialized)\n"
                      "        gs_panic(\"goose_init must be called before exported functions\");\n");
