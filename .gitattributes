@@ -7,3 +7,6 @@
 
 # Checks that a """ string's line breaks come out as \n from a CRLF file.
 test/syntax/raw_strings_crlf.goose -text
+
+hc/seed/** linguist-generated
+bench/** linguist-vendored
