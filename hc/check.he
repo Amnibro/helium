@@ -266,7 +266,7 @@ recursive default_t(n int) int:
 		if x.a >= 0: e = default_t(x.a); cnt, u0, ok := cval(x.b); conv(x.b, T_I64); a := t_arr(e, A_FIXED, cnt, -1); set_t(n, a); return a
 		for i x.n:
 			c := kid(n, i); ct := at(c); if !is_pending(ct): e = if e >= 0 && e != ct && (TY[e].k == TY_VARIANT || TY[e].k == TY_ENUM) && (TY[ct].k == TY_VARIANT || TY[ct].k == TY_ENUM) && TY[e].a == TY[ct].a { t_enum(TY[e].a, TY[e].fl & 1 != 0 && TY[e].k == TY_ENUM) } else { ct }
-		if e < 0 && x.n > 0: e = default_t(kid(n, 0))
+		if e < 0 && x.n > 0: e = default_t(kid(n, 0)); if TY[e].k == TY_ARR && TY[e].s as int == A_FIXED && !is_fixed(TY[e].a as int) { e = t_arr(TY[e].a as int, A_VAR, -1, 6) }
 		if e < 0: cerr(n, "an empty [] has no element type here"); return T_ERRT
 		for i x.n: conv(kid(n, i), e)
 		a := t_arr(e, A_FIXED, x.n, -1)

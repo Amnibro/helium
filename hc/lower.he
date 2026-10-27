@@ -355,13 +355,17 @@ recursive lwalk(m int, a int, bf int, t int):
 			si := vsi(ei, i); if si >= 0 && wneed(m, t_struct(si)): l := nlbl(); ir(I_BZ, 3, -1, lcmp(tg, imm(i), CC_E), -1, l); lwalk(m, addi(a, epoff(ei)), bf, t_struct(si)); ir(I_LBL, 3, -1, -1, -1, l)
 lvsz(p int, e int) int:
 	rtcall("rt_vsz", [p as i32, imm(vw(e) as int) as i32, imm(vlim(e)) as i32, imm(tsz(TY[e].a)) as i32])
+recursive lseqsz(p int, e int) int:
+	base, c := vdat(p, e); cs := nv(); ir(I_SLOT, 8, cs, -1, -1, slot(8, 8)); stw(cs, 0, base, 3)
+	i, lt, le := lloop(c); q := ldw(cs, 0, 3); stw(cs, 0, bin(B_ADD, 3, q, lunflat(-1, q, TY[e].a as int), -1), 3); lloop_end(i, lt, le)
+	bin(B_SUB, 3, ldw(cs, 0, 3), p, -1)
 recursive lunflat(d int, p int, e int) int:
-	if is_seq(e): lerr(-1, "nested arrays of variable-size elements natively"); return imm(0)
+	if is_seq(e): if d >= 0 { stw(d, 0, p, 3) } return lseqsz(p, e)
 	if is_vimg(e): if d >= 0 { stw(d, 0, p, 3) } return lvsz(p, e)
 	if is_vst(e): si := TY[e].a as int; o ~= p; for j STI[si].fnum { f := SFI[STI[si].f0 as int + j]; if f.ty < 0 { o = addi(o, max(f.padn as int, 0)); continue } o = bin(B_ADD, 3, o, lunflat(if d >= 0 { addi(d, foff(si, j)) } else { -1 }, o, f.ty as int), -1) } return bin(B_SUB, 3, o, p, -1)
 	if d >= 0 { ir(I_COPY, 3, d, p, imm(tsz(e)), 0) } imm(tsz(e))
 recursive lflat(o int, s int, e int) int:
-	if is_seq(e): lerr(-1, "nested arrays of variable-size elements natively"); return imm(0)
+	if is_seq(e): q := ldw(s, 0, 3); z := lseqsz(q, e); if o >= 0 { ir(I_COPY, 3, o, q, z, 0) } return z
 	if is_vimg(e): q := ldw(s, 0, 3); z := lvsz(q, e); if o >= 0 { ir(I_COPY, 3, o, q, z, 0) } return z
 	if is_vst(e): si := TY[e].a as int; c ~= imm(0); for j STI[si].fnum { f := SFI[STI[si].f0 as int + j]; oc := if o >= 0 { bin(B_ADD, 3, o, c, -1) } else { -1 }; if f.ty < 0 { pn := max(f.padn as int, 0); if o >= 0 && pn > 0 { lzero(oc, pn) } c = addi(c, pn); continue } c = bin(B_ADD, 3, c, lflat(oc, addi(s, foff(si, j)), f.ty as int), -1) } return c
 	if o >= 0 { ir(I_COPY, 3, o, s, imm(tsz(e)), 0) } imm(tsz(e))
