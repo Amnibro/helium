@@ -893,6 +893,7 @@ recursive ck_slit(n int, want int) int:
 		if f.ty < 0: continue
 		gn, gi := sl_given(n, j); given := gn >= 0
 		if !given && f.def >= 0: sa := AOWN; AOWN = GLOBI; ck(f.def as int, f.ty as int); conv(f.def as int, f.ty as int); AOWN = sa
+		if !given && f.def < 0: ck_defs(f.ty as int)
 		if !given && f.def < 0 && x.fl & 1 == 0 && !is_opt(f.ty as int): m byte[>..] ~= []; format(m, "missing field ", nm(f.name as int), " in ", tn(t)); cerr(n, m)
 	set_r(n, R_CTOR, si)
 	set_t(n, t)

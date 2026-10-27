@@ -553,10 +553,11 @@ recursive gslit(n int):
 		f := SFI[f0 + j]
 		if f.ty < 0: continue
 		given, gi := sl_given(n, j)
-		if given < 0 && f.def < 0: continue
+		if given < 0 && f.def < 0 && !has_def(f.ty): continue
 		ow("."); fname_into(O, f.name); ow(" = ")
 		if is_rel(f.ty): if given >= 0 && ND[ND[given].a].k as int != N_NULL { if RELM { RELQ.push(j as i32); RELQ.push(given); } else { gerr(given, "a relative reference built inside a literal needs the literal placed by push"); } } ow("0, "); any = true; continue
 		if given >= 0: v := ND[given].a; sa := AOWN; AOWN = gi; if is_res(f.ty) || ownsd(f.ty) { gxo(v); } else { gx(v); } AOWN = sa
+		else if f.def < 0: gdefault(f.ty)
 		else: sa := AOWN; AOWN = GLOBI; gx(f.def); AOWN = sa
 		ow(", "); any = true
 	if !any: ow("0")
