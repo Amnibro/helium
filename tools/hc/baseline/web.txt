@@ -1,3 +1,28 @@
+samples/01_tour.amni
+samples/02_memory.amni
+samples/03_strings.amni
+samples/04_errors.amni
+samples/05_shapes.amni
+samples/06_functions.amni
+samples/07_sieve.amni
+samples/08_bignum.amni
+samples/09_sorting.amni
+samples/10_sudoku.amni
+samples/11_maze.amni
+samples/12_huffman.amni
+samples/13_linked_list.amni
+samples/14_bst.amni
+samples/15_word_freq.amni
+samples/16_records.amni
+samples/17_calc.amni
+samples/18_json.amni
+samples/19_vm.amni
+samples/20_life.amni
+samples/21_raytrace.amni
+samples/22_image_filters.amni
+samples/23_mandelbrot_threads.amni
+samples/25_serialize.amni
+samples/26_file_tree.amni
 test/audio/audio_errors.amni
 test/audio/audio_mixer.amni
 test/codegen/adt_adaptation.amni
@@ -12,6 +37,7 @@ test/codegen/array_length_overflow_runtime.amni
 test/codegen/bound_type_abort.amni
 test/codegen/byte_run_equality.amni
 test/codegen/bytes_value_equality.amni
+test/codegen/call_array_adaptation.amni
 test/codegen/call_array_capacity.amni
 test/codegen/cnames.amni
 test/codegen/codegen_exec.amni
@@ -28,6 +54,7 @@ test/codegen/discarded_resizable_bounds.amni
 test/codegen/discarded_resizable_results.amni
 test/codegen/dispatch_evaluation_order.amni
 test/codegen/dispatch_resizable.amni
+test/codegen/dispatch_result_prefix.amni
 test/codegen/diverging_unreachable_values.amni
 test/codegen/elementwise_compound.amni
 test/codegen/elementwise_negate.amni
@@ -35,6 +62,7 @@ test/codegen/elementwise_scalar.amni
 test/codegen/embed_file.amni
 test/codegen/empty_slices.amni
 test/codegen/evaluation_order.amni
+test/codegen/exit_value_destination.amni
 test/codegen/export.amni
 test/codegen/fat_held.amni
 test/codegen/fat_optional.amni
@@ -133,6 +161,7 @@ test/codegen/temporary_stack_base.amni
 test/codegen/variable_adt_field_tag.amni
 test/codegen/variable_prefix_frame_tail.amni
 test/codegen/variant_constant_scrutinee.amni
+test/codegen/varint_elements.amni
 test/codegen/view_aliases.amni
 test/codegen/wider_slot_operations.amni
 test/codegen/zero_length_values.amni
@@ -261,6 +290,7 @@ test/lifetimes/slice_ref_slots.amni
 test/lifetimes/slice_ref_slot_writes.amni
 test/lifetimes/slice_ref_stores.amni
 test/lifetimes/slice_ref_views.amni
+test/lifetimes/static_table_reads.amni
 test/lifetimes/static_view_readbacks.amni
 test/lifetimes/store_inexact_roots.amni
 test/lifetimes/store_reached_types.amni
@@ -271,6 +301,7 @@ test/lifetimes/tree_copied_from_struct.amni
 test/lifetimes/tree_in_struct_rerun.amni
 test/lifetimes/unreached_param_classes.amni
 test/lifetimes/whole_assign_apart.amni
+test/lut/lut_tables.amni
 test/optimizer/assert_ufcs.amni
 test/optimizer/basecase_argument_lifetime.amni
 test/optimizer/basecase_copied_shrink.amni
@@ -450,6 +481,7 @@ test/storage/relative_block_results.amni
 test/storage/relative_copy_forms.amni
 test/storage/relative_default_fields.amni
 test/storage/relative_defaults.amni
+test/storage/relative_destination_results.amni
 test/storage/relative_elements.amni
 test/storage/relative_elements_u8.amni
 test/storage/relative_known_null.amni
@@ -457,6 +489,9 @@ test/storage/relative_named_results.amni
 test/storage/relative_store_facts.amni
 test/storage/reloff_u16.amni
 test/storage/resizable_adt_payload_links.amni
+test/storage/self_relative_adt_payloads.amni
+test/storage/serialize.amni
+test/storage/serialize_canonical.amni
 test/storage/serialize_offset_overflow.amni
 test/storage/unreached_pool_links.amni
 test/syntax/control_expression_dump.amni
@@ -533,6 +568,7 @@ test/typing/const_shallow_paths.amni
 test/typing/const_struct_slots.amni
 test/typing/const_types.amni
 test/typing/const_var_assign.amni
+test/typing/contextual_generic_floats.amni
 test/typing/copy_ufcs.amni
 test/typing/cycle_unreached_member_run.amni
 test/typing/dispatch_result_diverging_case.amni
@@ -594,6 +630,7 @@ test/typing/return_from_cycle.amni
 test/typing/return_locals_after_calls.amni
 test/typing/return_recursion_guarantees.amni
 test/typing/return_recursion_prebind.amni
+test/typing/self_constructing_defaults.amni
 test/typing/slice_destinations.amni
 test/typing/struct_literal_default_inference.amni
 test/typing/typecheck.amni

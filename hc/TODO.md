@@ -100,6 +100,12 @@ The native corpus passes completely. What is left:
 - **Driver:** done (see the status table). Not carried over from Goose: the TinyCC JIT, C toolchain selection (`--cc`, `toolchain`), `--standalone`, `--multi-test` and the compiler-debugging dumps beyond `--tokens`.
 - **Web target:** done (see the status table). Left: threads in the browser need a cross-origin isolated page (COOP/COEP) and a worker host; `gfx`/`ui` on WebGL or WebGPU; the 64 MiB main shadow stack could shrink for small apps; an HTML page beside the host.
 - **LSP:** done for the features above. Left: semantic tokens, code lenses, call hierarchy, selection ranges, recovery from parse errors beyond member completion, and a VS Code extension for `.he` (the one in `vscode/` is Goose's and starts `goose lsp`).
+- **Mail-client libraries** (planned; another session will likely build them, so check git log before starting one):
+  - Sockets and TLS: TCP client and server, non-blocking I/O, certificate verification.
+  - IMAP and SMTP clients (STARTTLS, AUTH, IDLE).
+  - HTTP server.
+  - SQLite (database file format and queries).
+  - HTML and MIME: parsing, multipart, quoted-printable, base64 and charset decoding, sanitized rendering.
 - **More targets:**
   - arm64 code generation.
   - Mach-O for the Mac and iOS (Waystone, TOS Learn).
