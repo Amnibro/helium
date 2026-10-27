@@ -292,12 +292,12 @@ unify(n int, a int, b int) int:
 	if kb == TY_STRLIT || kb == TY_ARRLIT || kb == TY_NULL: conv(b, da); return da
 	if ka == TY_ILIT: conv(a, db); if tb != db { conv(b, db) } return db
 	if kb == TY_ILIT: conv(b, da); if ta != da { conv(a, da) } return da
-	if is_lp(a) && !is_lp(b) && (kb == TY_INT || kb == TY_FLT) && !(ka == TY_FLT && kb == TY_INT): conv(a, db); return db
-	if is_lp(b) && !is_lp(a) && (ka == TY_INT || ka == TY_FLT) && !(kb == TY_FLT && ka == TY_INT): conv(b, da); return da
+	if is_lp(a) && !is_lp(b) && (kb == TY_INT || kb == TY_FLT) && !(ka == TY_FLT && kb == TY_INT): conv(a, db); if tb != db { cvx(b, db) } return db
+	if is_lp(b) && !is_lp(a) && (ka == TY_INT || ka == TY_FLT) && !(kb == TY_FLT && ka == TY_INT): conv(b, da); if ta != da { cvx(a, da) } return da
 	if ka == TY_FLIT:
-		if kb == TY_FLT { conv(a, db); return db } if kb == TY_INT || kb == TY_VARINT: return T_FLIT
+		if kb == TY_FLT { conv(a, db); if tb != db { cvx(b, db) } return db } if kb == TY_INT || kb == TY_VARINT: return T_FLIT
 	if kb == TY_FLIT:
-		if ka == TY_FLT { conv(b, da); return da } if ka == TY_INT || ka == TY_VARINT: return T_FLIT
+		if ka == TY_FLT { conv(b, da); if ta != da { cvx(a, da) } return da } if ka == TY_INT || ka == TY_VARINT: return T_FLIT
 	if da == db: if ta != da { cvx(a, da) } if tb != db { cvx(b, db) } return da
 	if widens(da, db) && !(ka == TY_FLT && kb == TY_INT): cvx(a, db); if tb != db { cvx(b, db) } return db
 	if widens(db, da) && !(kb == TY_FLT && ka == TY_INT): cvx(b, da); if ta != da { cvx(a, da) } return da
