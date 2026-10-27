@@ -204,7 +204,7 @@ cg_fn(fi int):
 					sw := cm && (kc(a) && !kc(b) || gr(d) >= 0 && gr(d) == gr(b) && gr(a) != gr(d)); a1 := if sw { b } else { a }; b1 := if sw { a } else { b }
 					bi := kc(b1) && i32ok(FD[b1] as int) && !dv; bv := if bi { FD[b1] as int } else { 0 }
 					R := if dv || DBG && c <= B_MUL && x.l >= 0 || gr(d) < 0 || gr(d) == gr(b1) && !bi && gr(a1) != gr(d) { RAX } else { gr(d) }; sh := c == B_SHL || c == B_SAR || c == B_SHR
-					B := if bi { -1 } else { if sh || dv { ldv(RCX, b1); RCX } else { srcr(b1, RCX) } }; ldv(R, a1)
+					B := if bi { -1 } else { if sh || dv { if !dv || !kc(b1) { ldv(RCX, b1) } RCX } else { srcr(b1, RCX) } }; ldv(R, a1)
 					if c == B_ADD { if bi { alu_ri(0, R, bv); } else { alu(0x01, R, B); } } if c == B_SUB { if bi { alu_ri(5, R, bv); } else { alu(0x29, R, B); } } if c == B_MUL:
 						if bi: imul_ri(R, R, bv) else: imul(R, B)
 					if c == B_AND { if bi { alu_ri(4, R, bv); } else { alu(0x21, R, B); } } if c == B_OR { if bi { alu_ri(1, R, bv); } else { alu(0x09, R, B); } } if c == B_XOR:
@@ -216,6 +216,7 @@ cg_fn(fi int):
 						if wsz(w) == 8: jcc_l(CC_O, tk) else: mov_rr(RDX, R); ext_r(RDX, w); alu(0x39, RDX, R); jcc_l(CC_NE, tk)
 					if dv && kc(b1) && cdivk(c, FD[b1] as int): dv = false
 					if dv:
+						if kc(b1): ldv(RCX, b1)
 						if x.l >= 0: test_rr(RCX, RCX); jcc_l(CC_E, trap_to(K_DIV0, x.l, traps))
 						if c == B_DIV || c == B_MOD:
 							lnorm := nlbl(); ldone := nlbl(); mov_ri(RDX, -1); alu(0x39, RCX, RDX); jcc_l(CC_NE, lnorm)

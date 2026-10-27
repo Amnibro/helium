@@ -1473,6 +1473,15 @@ lower_ginit() int:
 	i0 := IR.len; ginit_body()
 	NFS[nf].i0 = i0; NFS[nf].i1 = IR.len; NFS[nf].nv = NV; NFS[nf].sb = SB
 	nf
+gtag():
+	ko int[>..] ~= []
+	for o, d GOFF:
+		if o < 0 || d >= DC.len || GESC.contains(o as i32): continue
+		x := ND[DC[d].node]; t := GLT[d]; if x.fl & V_VAR == 0 && x.b >= 0 && t >= 0 && !mut_hook(t) && !needs_drop(t) && !is_res(t) && !is_vimg(t) && TY[t].k != TY_REF: ko.push(o as int)
+	if ko.len == 0: return
+	sort(ko[..])
+	for f NFS:
+		if f.inst < 0 { continue } for i (f.i0 as int)..f.i1 as int: if IR[i].op as int == I_GADDR { k, hit := binary_search(ko[..], IR[i].c as int); if hit { IR[i].l = -4 } }
 ginit_body():
 	NV = 0; SB = 0; LSLOT.clear()
 	RETV = nv(); RETV2 = nv(); RETL = nlbl()
@@ -1507,7 +1516,7 @@ lower_program(out byte[>..]&) bool:
 	if dlb >= 0: rtset("RT_DLT", dlt); rtset("RT_DLG", DYNG); rtsetp("RT_DLR", 2); rtsetp("RT_DLB", 3)
 	mov_rr(RDI, RSP); lea_rip(RSI, 1, rsg); call_f(rst); mov_rr(RSP, RAX); if dlb >= 0 { call_f(dlb) } call_f(gi); call_f(rm); mov_ri(RDI, 0); call_f(rinit); ud2()
 	irw byte[>..] ~= []; dump := env("HC_IR", irw)
-	noi byte[>..] ~= []; opt := !env("HC_NOOPT", noi); if opt: optimize_all(); vec_all()
+	noi byte[>..] ~= []; opt := !env("HC_NOOPT", noi); if opt: gtag(); optimize_all(); vec_all()
 	for f, i NFS: if dump && f.inst >= 0 && nm(FI_[f.inst].name) == irw[..] { ir_dump(i) } if opt { regalloc(i); } else { REGOF.clear(); RUSED.clear(); VZERO.clear(); FK.clear(); XREG.clear(); SVR.clear(); } cg_fn(i)
 	dbg byte[>..] ~= []; if env("HC_NDEBUG", dbg):
 		for f, i NFS: print(if f.inst >= 0 { nm(FI_[f.inst].name) } else { "<init>" }, " ", 0x400000 + 176 + FOFF[i] as int, " nv ", f.nv, " sb ", f.sb)
