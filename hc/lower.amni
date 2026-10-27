@@ -386,6 +386,7 @@ recursive fn lx1(n int) int {
 	if TY[t].k == TY_ENUM && TY[at(n)].k == TY_VARIANT { return imm(TY[at(n)].c as int); }
 	if k == N_TRUE { return imm(1); } if k == N_FALSE { return imm(0); } if k == N_NULL { return imm(0); }
 	if k == N_ID && rk(n) == R_GLOBAL { let cv, ok = gconst(rv(n), at(n)); if ok { return imm(cv); } }
+	if k == N_ID && rk(n) == R_LOCAL && UNRV.len > 0 { for j in UNRV.len { if UNRV[j] as int == rv(n) && TY[t].k == TY_INT { return imm(cwrap(UNRK[j] as i64, TY[t].s as int)); } } }
 	if k == N_ID || k == N_DOT && rk(n) == R_FIELD || k == N_IDX || k == N_UN && x.op as int == T_MUL {
 		let st = at(n);
 		if TY[t].k == TY_REF && TY[t].c < 0 && TY[st].k != TY_REF && TY[st].k != TY_NULL { return laddr(n); }
@@ -937,15 +938,24 @@ recursive fn nsz(n int, lim int) int {
 }
 fn ifbits(v i64, u bool, w int) int { let neg = v < 0 && !u; var tb byte[..24] = []; format(tb, if neg { 0 - (v as! u64) } else { v as! u64 }); let b = flt_bits(tb[..]); let r = if w == 10 { d2f_bits(b) } else { b }; (if neg { r | (if w == 10 { 0x80000000 } else { 0x8000000000000000 }) } else { r }) as! int }
 recursive fn klit(n int) bool { let x = ND[n]; let k = x.k as int; if k == N_INT { return true; } if k == N_ID { if rk(n) != R_GLOBAL { return false; } let cv, ok = gconst(rv(n), at(n)); return ok || const_of(rv(n)) >= 0; } if k == N_UN || k == N_AS { return x.a > n && klit(x.a as int); } if k == N_BIN { return x.a > n && x.b > n && klit(x.a as int) && klit(x.b as int); } false }
-fn kint(n int) int, bool { if !klit(n) || !all_int(n) { return 0, false; } let v, ok = ceval(n, ns_of(n)); return v as int, ok; }
+fn kint(n int) int, bool { if ND[n].k as int == N_ID && rk(n) == R_CONST { let v, u, ok = cval(n); return v as int, ok; } if !klit(n) || !all_int(n) { return 0, false; } let v, ok = ceval(n, ns_of(n)); return v as int, ok; }
+fn lzfill(bk int, v int, s0 int, e1 int) bool {
+	if ND[bk].k as int != N_BLOCK || ND[bk].n != 1 { return false; } let st = kid(bk, 0); let y = ND[st]; if y.k as int != N_ASSIGN || y.op as int != T_ASSIGN || ND[y.a].k as int != N_IDX { return false; }
+	let ix = ND[y.a]; let bs = ix.a as int; let iv = ix.b as int; if ND[iv].k as int != N_ID || rk(iv) != R_LOCAL || rv(iv) != v || !(ND[bs].k as int == N_ID && (rk(bs) == R_LOCAL || rk(bs) == R_GLOBAL)) { return false; }
+	let d = deref(at(bs)); if TY[at(bs)].k == TY_REF || TY[d].k != TY_ARR || !is_fix(d) || (TY[d].b as int) < e1 || s0 < 0 { return false; } let e = TY[d].a as int; if !is_scal(e) || is_vimg(e) || TY[e].k == TY_REF { return false; }
+	let r = y.b as int; let rk0 = ND[r].k as int; let kz = if rk0 == N_INT { let c, ok = kint(r); ok && c == 0 } else { false }; let z = rk0 == N_FALSE || kz || rk0 == N_FLT && flt_bits(tok_text(ND[r].t as int)) == 0; if !z { return false; }
+	let es = tsz(e); ir(I_ZERO, 3, bin(B_ADD, 3, laddr(bs), imm(s0 * es), -1), -1, imm((e1 - s0) * es), 0); true
+}
+var UNRV i32[>..<]; var UNRK int[>..<];
 recursive fn lfor(n int) {
 	let x = ND[n]; let v = rv(n); let m = ax(n);
 	if (m & 3) != 0 { lfor_arr(n); return; }
 	var s0 = 0; var sk = true; if x.b >= 0 { let a0, a1 = kint(x.a as int); s0 = a0; sk = a1; } let e1, ek = kint(if x.b >= 0 { x.b as int } else { x.a as int }); let tn = e1 - s0;
+	if sk && ek && tn >= 4 && x.c < 0 && lzfill(x.d as int, v, s0, e1) { return; }
 	var nu byte[>..] = []; if sk && ek && tn >= 0 && tn <= 16 && !env("HC_NOUNROLL", nu) && nsz(x.d as int, 400 / max(tn, 1)) <= 400 / max(tn, 1) {
 		let l1 = nlbl(); LOOPH.push(DROPS.len as i32); LCH.push(DROPS.len as i32); LBRK.push(l1 as i32); LCNT.push(-1); LRV.push(-1);
 		let iv = if x.c >= 0 { m >> 2 } else { -1 };
-		for j in tn { let lc = nlbl(); LCNT[LCNT.len - 1] = lc as i32; let kv = imm(s0 + j); let va = nv(); ir(I_SLOT, 8, va, -1, -1, lslot(v)); stw(va, 0, kv, wof(LVS[v].ty as int)); if iv >= 0 { let ia = nv(); ir(I_SLOT, 8, ia, -1, -1, lslot(iv)); stw(ia, 0, kv, 3); } lblk(x.d as int, -1); ir(I_LBL, 3, -1, -1, -1, lc); }
+		for j in tn { let lc = nlbl(); LCNT[LCNT.len - 1] = lc as i32; let kv = imm(s0 + j); let va = nv(); ir(I_SLOT, 8, va, -1, -1, lslot(v)); stw(va, 0, kv, wof(LVS[v].ty as int)); if iv >= 0 { let ia = nv(); ir(I_SLOT, 8, ia, -1, -1, lslot(iv)); stw(ia, 0, kv, 3); } UNRV.push(v as i32); UNRK.push(s0 + j); lblk(x.d as int, -1); UNRV.pop(); UNRK.pop(); ir(I_LBL, 3, -1, -1, -1, lc); }
 		ir(I_LBL, 3, -1, -1, -1, l1); LOOPH.pop(); LCH.pop(); LBRK.pop(); LCNT.pop(); LRV.pop(); return;
 	}
 	let s = if x.b >= 0 { lx(x.a as int) } else { imm(0) }; let e0 = if x.b >= 0 { lx(x.b as int) } else { lx(x.a as int) };
