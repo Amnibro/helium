@@ -21,6 +21,7 @@ extern fn flush_stdout() = "hr_os_flush_stdout";
 extern fn arg_count() int = "hr_os_arg_count";
 extern fn arg(i int, out byte[>..]&) = "hr_os_arg";            // appends argument i (0 = the program)
 extern fn env(name const byte[:], out byte[>..]&) bool = "hr_os_getenv";
+extern fn run_command(cmd const byte[:]) int = "hr_os_run";      // through /bin/sh -c; the exit status, -1 if it could not start
 extern fn resource_dir(out byte[>..]&) bool = "hr_os_resource_dir";
 fn resource_dir() byte[>..] {
 	var out byte[>..] = [];

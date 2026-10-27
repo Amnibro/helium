@@ -213,6 +213,15 @@ fn rt_os_read_stdin(out int) { rt_flush(); while RT_IP < RT_IN { let d = rt_grow
 fn rt_os_write_stdout(s const byte[:]) { rt_appto(vptr(RT_OUT), ptr(s), s.len); if RT_OUT.n > 65536 { rt_flush(); } }
 fn rt_os_write_stderr(s const byte[:]) { rt_flush(); rt_write(2, s); }
 fn rt_os_flush_stdout() { rt_flush(); }
+var RT_WS int[1];
+fn rt_os_run(cmd const byte[:]) int {
+	rt_flush(); let sz = cmd.len + 64; let m = sys6(9, 0, sz, 3, 0x22, -1, 0); if m < 0 && m > -4096 { return -1; }
+	for c, i in "/bin/sh" { mst1(m + i, c as int); } mst1(m + 8, 45); mst1(m + 9, 99); for c, i in cmd { mst1(m + 48 + i, c as int); }
+	mst(m + 16, m); mst(m + 24, m + 8); mst(m + 32, m + 48); mst(m + 40, 0);
+	let pid = sys3(57, 0, 0, 0); if pid == 0 { sys3(59, m, m + 16, RT_SP + 8 + 8 * (mld(RT_SP) + 1)); sys3(60, 127, 0, 0); }
+	var r = -1; if pid > 0 { loop { let w = sys6(61, pid, iptr(RT_WS[..]), 0, 0, 0, 0); if w == pid { let st = RT_WS[0]; r = if (st & 127) == 0 { (st >> 8) & 255 } else { 128 + (st & 127) }; break; } if w != -4 { break; } } }
+	sys3(11, m, sz, 0); r
+}
 fn rt_os_time_ns() int { sys3(228, 0, iptr(RT_TS[..]), 0); RT_TS[0] * 1000000000 + RT_TS[1] }
 fn rt_os_clock_ns() int { sys3(228, 1, iptr(RT_TS[..]), 0); RT_TS[0] * 1000000000 + RT_TS[1] }
 fn rt_os_sleep_ms(ms int) { RT_TS[0] = ms / 1000; RT_TS[1] = (ms % 1000) * 1000000; sys3(35, iptr(RT_TS[..]), 0, 0); }

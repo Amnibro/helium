@@ -24,7 +24,8 @@ def run(f):
     if p.returncode != 0:
         m = [l for l in p.stderr.decode(errors="replace").split("\n") if "error" in l]
         return f, "cc", (m[0] if m else p.stderr.decode()[:200])[:220]
-    try: p = subprocess.run([str(x)], capture_output=True, timeout=20, stdin=open(sin, "rb") if sin else subprocess.DEVNULL, cwd=str(R / ("samples" if f.parent.name == "samples" else "test")))
+    if os.environ.get("HC_GPU") != "1" and re.search(r"\b(gfx|ui)::open", f.read_text(errors="replace")): return f, "gpu", "compiled; not run, it opens a GPU device (HC_GPU=1 runs it)"
+    try: p = subprocess.run([str(x)], capture_output=True, timeout=20, stdin=open(sin, "rb") if sin else subprocess.DEVNULL, cwd=str(R / "samples" if f.parent.name == "samples" else R))
     except subprocess.TimeoutExpired: return f, "run", "timeout"
     want = norm(exp.read_bytes()).rstrip(b"\n"); got = norm(p.stdout).rstrip(b"\n")
     if got != want:
@@ -42,7 +43,7 @@ with cf.ThreadPoolExecutor(16) as ex:
 tot = sum(len(v) for v in res.values())
 print(" ".join(f"{k}={len(v)}" for k, v in sorted(res.items())), f"total={tot}")
 with open(W / "report.txt", "w") as o:
-    for k in ("check", "native", "cc", "out", "exit", "run", "pass"):
+    for k in ("check", "native", "cc", "out", "exit", "run", "gpu", "pass"):
         for f, m in res.get(k, []): o.write(f"{k}\t{f.relative_to(S)}\t{m}\n")
 msgs = collections.Counter(re.sub(r"^\S+:\d+: ", "", m)[:70] for k in ("check", "native") for f, m in res.get(k, []))
 for m, c in msgs.most_common(25): print(c, m)

@@ -64,7 +64,27 @@ fn cvt_u2f(w int) { let l1 = nlbl(); let l2 = nlbl(); sse(0, false, 0x57, 0, 0);
 fn ext_r(r int, w int) { let z = wsz(w); if z == 8 { return; } if z == 4 && !wsg(w) { xrex(false, r, 0, r); xb(0x8B); xb(0xC0 | ((r & 7) << 3) | (r & 7)); return; } xrex(true, r, 0, r); if z == 4 { xb(0x63); } else { xb(0x0F); xb(if z == 1 { if wsg(w) { 0xBE } else { 0xB6 } } else { if wsg(w) { 0xBF } else { 0xB7 } }); } xb(0xC0 | ((r & 7) << 3) | (r & 7)); }
 fn trap_to(k int, l int, tl i32[>..<]&) int { trap_ab(k, l, -1, -1, tl) }
 fn trap_ab(k int, l int, a int, b int, tl i32[>..<]&) int { let lb = nlbl(); tl.push(lb as i32); tl.push(k as i32); tl.push(l as i32); tl.push(a as i32); tl.push(b as i32); lb }
+fn cg_ccx(a int, n int, c int, x0 int) {
+	let rk = CCK[x0] as int; let rc = CCK[x0 + 1] as int; let na = if rk == 3 { n - 1 } else { n };
+	var ni = 0; var nf = 0; var pl i32[>..] = []; var sk i32[>..] = [];
+	for j in na { let v = ARGL[a + j]; let kw = CCK[x0 + 2 + j] as int; let k = kw & 15;
+		if k == 3 { let v2 = ARGL[a + j + 1]; if ni < 5 { pl.push(v); pl.push(-1); pl.push(ni as i32); pl.push(v2); pl.push(-1); pl.push((ni + 1) as i32); ni += 2; } else { sk.push(v); sk.push(-1); sk.push(v2); sk.push(-1); } }
+		if k == 0 { if ni < 6 { pl.push(v); pl.push(-1); pl.push(ni as i32); ni++; } else { sk.push(v); sk.push(-1); } }
+		if k == 1 { if nf < 8 { pl.push(v); pl.push(-1); pl.push((8 + nf) as i32); nf++; } else { sk.push(v); sk.push(-1); } }
+		if k == 2 { let sz = kw >> 8; let cl = (kw >> 4) & 15; let ne = if (cl & 4) != 0 { 2 } else { 1 }; var kf = 0; for e in ne { if ((cl >> e) & 1) != 0 { kf++; } }
+			if (cl & 8) == 0 && ni + ne - kf <= 6 && nf + kf <= 8 { for e in ne { pl.push(v); pl.push((8 * e) as i32); if ((cl >> e) & 1) != 0 { pl.push((8 + nf) as i32); nf++; } else { pl.push(ni as i32); ni++; } } }
+			else { for w in (sz + 7) / 8 { sk.push(v); sk.push((8 * w) as i32); } } } }
+	let nw = sk.len / 2; let pd = nw & 1; if pd == 1 { sub_rsp(8); }
+	var k = nw - 1; while k >= 0 { let v = sk[2 * k] as int; let o = sk[2 * k + 1] as int; if o < 0 { ldv(RAX, v); } else { ldv(R11, v); ld(RAX, R11, o, 8, false); } push_r(RAX); k--; }
+	var q = 0; while q < pl.len { let v = pl[q] as int; let o = pl[q + 1] as int; let dr = pl[q + 2] as int; let r = if dr >= 8 { RAX } else { ARGR[dr] };
+		if o < 0 { ldv(r, v); } else { ldv(R11, v); ld(r, R11, o, 8, false); } if dr >= 8 { sse(0x66, true, 0x6E, dr - 8, RAX); } q += 3; }
+	ldv(R11, c); mov_ri(RAX, nf); call_r(R11);
+	if nw + pd > 0 { add_rsp(8 * (nw + pd)); }
+	if rk == 1 { sse(0x66, false, 0x7E, 0, RAX); } if rk == 2 { sse(0x66, true, 0x7E, 0, RAX); }
+	if rk == 3 { ldv(R11, ARGL[a + n - 1] as int); var gi = 0; var xi = 0; for e in (if (rc & 4) != 0 { 2 } else { 1 }) { if ((rc >> e) & 1) != 0 { ssem(0x66, false, 0xD6, xi, R11, 8 * e); xi++; } else { st(if gi == 0 { RAX } else { RDX }, R11, 8 * e, 8); gi++; } } }
+}
 fn cg_ccall(a int, n int, c int, m int) {
+	if (m & (1 << 30)) != 0 { cg_ccx(a, n, c, m & 0x3FFFFFFF); return; }
 	var ni = 0; var nf = 0; var sk i32[>..] = [];
 	for j in n { if ((m >> j) & 1) != 0 { if nf < 8 { nf++; } else { sk.push(j as i32); } } else { if ni < 6 { ni++; } else { sk.push(j as i32); } } }
 	let pd = sk.len & 1; if pd == 1 { sub_rsp(8); }

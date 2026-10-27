@@ -1,7 +1,8 @@
 import check;
+import pkg;
 let B_PRINT = 1; let B_STR = 2; let B_FORMAT = 3; let B_ASSERT = 4; let B_ABORT = 5; let B_EXIT = 6; let B_COPY = 7; let B_DEFAULT = 8; let B_LEN = 9;
 let B_PUSH = 20; let B_APPEND = 21; let B_POP = 22; let B_POPN = 23; let B_RESIZE = 24; let B_CLEAR = 25; let B_INDEXOF = 26; let B_CAP = 27;
-let B_TOBYTES = 30; let B_BYTESOF = 31; let B_FROMBYTES = 32; let B_EMBED = 33;
+let B_TOBYTES = 30; let B_BYTESOF = 31; let B_FROMBYTES = 32; let B_EMBED = 33; let B_EMBEDSH = 48;
 let B_SPAWN = 40; let B_SPAWNC = 41; let B_TWAIT = 42; let B_HWT = 43; let B_QPUT = 44; let B_QGET = 45; let B_QPOLL = 46; let B_QLIMIT = 47;
 let B_ALLOCI = 34; let B_ALLOCR = 35; let B_FREE = 36; let B_ALLOCS = 37; let B_FREES = 38; let B_REALLOCS = 39;
 struct NF { name i32, node i32, inst i32, own i32 }
@@ -20,7 +21,7 @@ var DIDX i32[>..<];
 fn builtin_of(name const byte[:]) int {
 	if name == "print" { return B_PRINT; } if name == "str" { return B_STR; } if name == "format" { return B_FORMAT; } if name == "assert" { return B_ASSERT; }
 	if name == "abort" { return B_ABORT; } if name == "exit" { return B_EXIT; } if name == "copy" { return B_COPY; } if name == "default" { return B_DEFAULT; }
-	if name == "to_bytes" { return B_TOBYTES; } if name == "bytes_of" { return B_BYTESOF; } if name == "from_bytes" { return B_FROMBYTES; } if name == "embed_file" { return B_EMBED; }
+	if name == "to_bytes" { return B_TOBYTES; } if name == "bytes_of" { return B_BYTESOF; } if name == "from_bytes" { return B_FROMBYTES; } if name == "embed_file" { return B_EMBED; } if name == "embed_shader" { return B_EMBEDSH; }
 	if name == "len" { return B_LEN; }
 	if name == "thread_spawn" { return B_SPAWN; } if name == "thread_spawn_contained" { return B_SPAWNC; } if name == "thread_wait" { return B_TWAIT; } if name == "hardware_threads" { return B_HWT; }
 	if name == "qput" { return B_QPUT; } if name == "qget" { return B_QGET; } if name == "qpoll" { return B_QPOLL; } if name == "qlimit" { return B_QLIMIT; }
@@ -110,6 +111,7 @@ recursive fn arg_rank(n int, a int, p int) int {
 	}
 	if ak == TY_FLIT { if pk == TY_FLT { return if TY[p].s == 8 { 1 } else { 2 }; } return -1; }
 	if ak == TY_STRLIT { if pk == TY_SLICE && TY[p].a as int == T_U8 { return 0; } if is_byte_arr(p) { return 2; } return -1; }
+	if ak == TY_ARRLIT && ND[n].k as int != N_ARR { let x = ND[n]; let nk = x.k as int; var w = 0; if nk == N_IF { for b in [x.b, x.c] { if b >= 0 && !ends(b as int) { let r = arg_rank(b as int, at(b as int), p); if r < 0 { return -1; } w = max(w, r); } } return w; } if nk == N_MATCH { for i in x.n { let b = ND[kid(n, i)].b as int; if b >= 0 && !ends(b) { let r = arg_rank(b, at(b), p); if r < 0 { return -1; } w = max(w, r); } } return w; } if (nk == N_BLOCK || nk == N_EBLOCK) && x.a >= 0 { return arg_rank(x.a as int, at(x.a as int), p); } return -1; }
 	if ak == TY_ARRLIT { if pk != TY_ARR && pk != TY_SLICE { return -1; } let x = ND[n]; if x.c >= 0 { return 2; } if x.a >= 0 { return if arg_rank(x.a as int, at(x.a as int), TY[p].a as int) < 0 { -1 } else { 2 }; } for i in x.n { if arg_rank(kid(n, i), at(kid(n, i)), TY[p].a as int) < 0 { return -1; } } return 2; }
 	if ak == TY_NULL { if pk == TY_REF && (TY[p].fl & RF_OPT) != 0 { return 0; } return -1; }
 	if pk == TY_REF && (TY[p].fl & RF_OPT) != 0 && TY[p].a as int == a { return 0; }
@@ -353,7 +355,7 @@ recursive fn ck_call(n int, want int) int {
 		let d = deref(ot);
 		let mb = member_of(nm(name));
 		if mb >= 0 && (TY[d].k == TY_ARR || TY[d].k == TY_SLICE) { return ck_builtin(n, mb, obj, want); }
-		if TY[ot].k == TY_ARRLIT || TY[ot].k == TY_ILIT || TY[ot].k == TY_FLIT { default_t(obj); }
+		if TY[ot].k == TY_ARRLIT && !has_fn(name) || TY[ot].k == TY_ILIT || TY[ot].k == TY_FLIT { default_t(obj); }
 		let b = builtin_of(nm(name));
 		if b == B_FORMAT || b == B_TOBYTES || b == B_BYTESOF || b == B_COPY || (b == B_PRINT || b == B_STR || b == B_ASSERT) && !has_fn(name) { return ck_builtin(n, b, obj, want); }
 		set_x(n, 1);
@@ -427,7 +429,7 @@ recursive fn call_block(n int, inst int) int {
 	let own = FI_[inst].bown as int;
 	let s = ck_args(n, 0, -1);
 	let na = ND[n].n as int;
-	for j in na { let c = kid(n, j); if is_pending(at(c)) { ARGW[s + j] = default_t(c) as i32; } else { let ct0 = at(c); ARGW[s + j] = (if ND[c].k as int == N_UN && ND[c].op as int == T_AND { if TY[ct0].k == TY_REF { ct0 } else { t_ref(ct0, 0) } } else { if has_rel(deref(ct0)) { if TY[ct0].k == TY_REF { ct0 } else { t_ref(ct0, 0) } } else { deref_val(ct0) } }) as i32; } }
+	for j in na { let c = kid(n, j); let pa = if (ND[fv].fl & 1) != 0 && j < ND[fv].n as int && ND[kid(fv, j)].a >= 0 { rtype(ND[kid(fv, j)].a as int, ns_of(fv)) } else { -1 }; if is_pending(at(c)) && pa >= 0 { conv(c, pa); ARGW[s + j] = pa as i32; } else { if is_pending(at(c)) { ARGW[s + j] = default_t(c) as i32; } else { let ct0 = at(c); ARGW[s + j] = (if ND[c].k as int == N_UN && ND[c].op as int == T_AND { if TY[ct0].k == TY_REF { ct0 } else { t_ref(ct0, 0) } } else { if has_rel(deref(ct0)) { if TY[ct0].k == TY_REF { ct0 } else { t_ref(ct0, 0) } } else { deref_val(ct0) } }) as i32; } } }
 	var bi = -1;
 	for f, i in FI_ { if f.node as int == fv && f.par as int == own && f.blk == inst as i32 && f.cfn as int == CFN { bi = i; } }
 	if bi < 0 {
@@ -562,6 +564,46 @@ recursive fn call_fn(n int, name int, recv int, want int) int {
 	if rt < 0 { if FI_[inst].st == 1 { var m byte[>..] = []; format(m, "recursive call to ", nm(name), " needs its result type written"); cerr(n, m); } return set_t(n, T_ERRT); }
 	set_t(n, rt)
 }
+fn is_gname(name int) bool { var i = AOWN; while i >= 0 { let f = FI_[i]; for q in (f.g0 as int)..((f.g0 + f.gn) as int) { if GBS[q].name as int == name { return true; } } i = f.par as int; } false }
+recursive fn shlit(a int) int {
+	let k = ND[a].k as int; if k == N_STR { return a; } if k != N_ID { return -1; }
+	let v = ND[a].s as int; if find_lv(v) >= 0 || is_gname(v) { return -1; }
+	let d = lookup(v, ns_of(a), D_GLOBAL); if d < 0 { return -1; } let x = ND[DC[d].node]; if (x.fl & V_VAR) != 0 || x.b < 0 { return -1; }
+	let iv = kid(x.b as int, 0); if ND[iv].k as int == N_STR { iv } else { if ND[iv].k as int == N_ID && iv != a { shlit(iv) } else { -1 } }
+}
+fn has_nl(s const byte[:]) bool { for c in s { if c == '\n' { return true; } } false }
+recursive fn ck_shader(n int, total int, recv int) int {
+	var ls i32[>..] = []; var nmd i32[>..] = [];
+	for i in total { let c = if recv >= 0 { if i == 0 { recv } else { kid(n, i - 1) } } else { kid(n, i) }; let l = shlit(c); if l < 0 { cerr(c, "embed_shader takes string literals, and let or const globals initialized with one"); return set_t(n, T_ERRT); } ls.push(l as i32); nmd.push((if l != c { 1 } else { 0 }) as i32); ck(c, TT_STR); default_t(c); }
+	if ls.len == 0 { cerr(n, "embed_shader takes a shader file's path, or a stage and its source"); return set_t(n, T_ERRT); }
+	let cf = node_file(n); var callf byte[>..] = []; callf.append(nm(FILES[cf].name as int)); var err byte[>..] = []; var m byte[>..] = [];
+	if ls.len == 1 {
+		var v byte[>..] = []; v.append(tok_str(ND[ls[0]].t as int));
+		if has_nl(v[..]) { cerr(n, "embed_shader(\"x.frag\") takes a shader file's path; shader source follows its stage: embed_shader(\"frag\", source)"); return set_t(n, T_ERRT); }
+		var path byte[>..] = []; if v.len > 0 && v[0] == '/' { path.append(v[..]); } else { var sl = -1; for c, i in callf { if c == '/' { sl = i; } } if sl >= 0 { path.append(callf[..sl + 1]); } path.append(v[..]); }
+		let st = if path.len > 5 && path[^5..] == ".vert" { 0 } else { if path.len > 5 && path[^5..] == ".frag" { 1 } else { if path.len > 5 && path[^5..] == ".comp" { 2 } else { -1 } } };
+		if st < 0 { format(m, "embed_shader: cannot tell the shader stage of ", path[..], ": the extension must be .vert, .frag or .comp"); cerr(n, m[..]); return set_t(n, T_ERRT); }
+		var src byte[>..] = []; if !read_file(path[..], src) { format(m, "embed_shader: cannot open shader file: ", path[..]); cerr(n, m[..]); return set_t(n, T_ERRT); }
+		if !shader_compile(n, st, path[..], src[..], err) { format(m, "embed_shader: ", err[..]); cerr(n, m[..]); return set_t(n, T_ERRT); }
+		return set_t(n, TT_STR);
+	}
+	let sn = tok_str(ND[ls[0]].t as int); let st = if sn == "vert" { 0 } else { if sn == "frag" { 1 } else { if sn == "comp" { 2 } else { -1 } } };
+	if st < 0 { format(m, "embed_shader: the stage is \"vert\", \"frag\" or \"comp\", not \"", sn, "\""); cerr(ls[0] as int, m[..]); return set_t(n, T_ERRT); }
+	var src byte[>..] = []; var starts i32[>..] = [];
+	for k in 1..ls.len { if k > 1 { src.push('\n'); } var nl = 1; for c in src { if c == '\n' { nl++; } } starts.push(nl as i32); src.append(tok_str(ND[ls[k]].t as int)); }
+	if shader_compile(n, st, callf[..], src[..], err) { return set_t(n, TT_STR); }
+	var line = 0; var p = callf.len + 1; var at_us = err.len > callf.len && err[..callf.len] == callf[..] && err[callf.len] == ':';
+	if at_us { while p < err.len && err[p] >= '0' && err[p] <= '9' { line = line * 10 + (err[p] - '0') as int; p++; } }
+	let sep = if line > 0 { ": error: " } else { " " }; at_us = at_us && err.len >= p + sep.len && err[p..p + sep.len] == sep;
+	if !at_us { format(m, "embed_shader: ", err[..]); cerr(n, m[..]); return set_t(n, T_ERRT); }
+	let msg = err[p + sep.len..];
+	if line == 0 { format(m, "embed_shader: ", msg); cerr(n, m[..]); return set_t(n, T_ERRT); }
+	var part = 0; for s0, k in starts { if s0 as int <= line { part = k; } }
+	let lit = ls[part + 1] as int; let lv = tok_str(ND[lit].t as int); var at = TK[ND[lit].t].line as int;
+	if has_nl(lv) { var lines = 1; for c in lv { if c == '\n' { lines++; } } at += min(line - starts[part] as int + 1, lines); }
+	format(m, "embed_shader: ", msg); if nmd[part + 1] != 0 { format(m, " (in the shader embedded at ", callf[..], ":", TK[ND[n].t].line, ")"); }
+	cerrl(TK[ND[lit].t].f as int, at, m[..]); set_t(n, T_ERRT)
+}
 recursive fn ck_builtin(n int, b int, recv int, want int) int {
 	let x = ND[n];
 	set_r(n, R_BUILTIN, b);
@@ -602,6 +644,7 @@ recursive fn ck_builtin(n int, b int, recv int, want int) int {
 	if b == B_TOBYTES { let c = arg(0); if recv < 0 { ck(c, -1); } if is_pending(at(c)) { default_t(c); } if total > 1 { ck(arg(1), -1); return set_t(n, T_VOID); } return set_t(n, t_arr(T_U8, A_GROW, -1, -1)); }
 	if b == B_FROMBYTES { let ta = x.c as int; let t = if ta >= 0 { rtype(kid(ta, 0), ns_of(n)) } else { T_ERRT }; ck(arg(0), TT_STR); if is_pending(at(arg(0))) { default_t(arg(0)); } if TY[t].k == TY_ARR { var rs i32[..2] = []; rs.push(t as i32); rs.push(T_BOOL as i32); return set_t(n, tlist(TY_MULTI, rs[..], -1)); } return set_t(n, t); }
 	if b == B_EMBED { ck(arg(0), TT_STR); default_t(arg(0)); return set_t(n, TT_STR); }
+	if b == B_EMBEDSH { return ck_shader(n, total, recv); }
 	if b == B_SPAWN || b == B_SPAWNC { return ck_spawn(n); }
 	if b == B_TWAIT { ck(arg(0), T_I64); conv(arg(0), T_I64); if total > 1 { ck(arg(1), -1); } return set_t(n, T_BOOL); }
 	if b == B_HWT { return set_t(n, T_I64); }

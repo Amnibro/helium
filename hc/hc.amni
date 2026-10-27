@@ -1,5 +1,6 @@
 import os;
 import lower;
+import pkg;
 fn main() {
 	var a byte[>..] = [];
 	var o byte[>..] = [];
@@ -14,6 +15,7 @@ fn main() {
 	if native { let rf = load_import(intern("rt"), 0, -1); if rf < 0 { print(DERR); exit(1); } for d in DC { if d.k as int == D_FN && d.file as int == rf { XROOTS.push(d.name); } } }
 	if !check_program() { print(CERR); exit(1); }
 	if DERR.len > 0 { print(DERR); exit(1); }
+	if !build_packages() { print(PERRS); exit(1); }
 	var c byte[>..] = [];
 	if native { if !lower_program(c) { print(LERR); exit(1); } if !write_file(o, c) || !make_exec(o) { print("cannot write ", o); exit(1); } return; }
 	if !gen_program(c) { print(GERR); exit(1); }

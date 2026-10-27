@@ -11,6 +11,33 @@ var LIBDIR byte[>..];
 var IMPS i32[>..];
 var DERR byte[>..];
 var NS_FILE i32[>..];
+struct Pk { name i32, root i32, key i32, src i32, so i32, mt bool }
+var PKS Pk[>..]; var FPKG i32[>..];
+fn goose_home() byte[>..] { var h byte[>..] = []; if !env("GOOSE_HOME", h) || h.len == 0 { h.clear(); env("HOME", h); h.append("/.goose"); } h }
+fn blessed(name const byte[:]) const byte[:] { if name == "physics" { "physics" } else { if name == "gfx" || name == "audio" || name == "ui" { "gfx" } else { "" } } }
+fn pk_find(name int) int { for k, i in PKS { if k.name as int == name { return i; } } -1 }
+fn pk_add(name int, root const byte[:], key const byte[:], src const byte[:]) int { PKS.push(Pk { name as i32, intern(root) as i32, intern(key) as i32, intern(src) as i32, -1, false }); PKS.len - 1 }
+fn pk_git(name int, src const byte[:]) int {
+	var at = src.len; for c, i in src { if c == '@' { at = i; } }
+	var sl = 0; for c in src[..at] { if c == '/' { sl++; } }
+	var key byte[>..] = []; if sl == 1 { key.append("github.com/"); } key.append(src[..at]); key.push('/'); key.append(src[min(at + 1, src.len)..]);
+	var root byte[>..] = goose_home(); root.append("/pkg/"); root.append(key[..]);
+	pk_add(name, root[..], key[..], src)
+}
+fn pk_of(name int) int {
+	let k = pk_find(name); if k >= 0 { return k; }
+	var b byte[>..] = []; b.append(blessed(nm(name))); if b.len == 0 { return -1; }
+	let pn = intern(b[..]); let k2 = pk_find(pn); if k2 >= 0 { return k2; }
+	var src byte[>..] = []; src.append("aardappel/goose_"); src.append(b[..]); src.append("@v1"); pk_git(pn, src[..])
+}
+fn fdir(f int) byte[>..] { var d byte[>..] = []; d.append(nm(FILES[f].name as int)); var sl = -1; for c, i in d { if c == '/' { sl = i; } } if sl >= 0 { d.resize(sl); } else { d.clear(); d.push('.'); } d }
+fn pk_declare(n int, f int) bool {
+	let name = ND[n].s as int; var src byte[>..] = []; src.append(tok_str(ND[n].a as int));
+	let k = pk_find(name); if k >= 0 { if nm(PKS[k].src as int) != src[..] { var m byte[>..] = []; format(m, "the package ", nm(name), " is declared from both ", nm(PKS[k].src as int), " and ", src[..]); derr(ND[n].t as int, m); return false; } return true; }
+	if src.len > 0 && (src[0] == '.' || src[0] == '/') { var root byte[>..] = []; if src[0] != '/' { root.append(fdir(f)); root.push('/'); } root.append(src[..]); var key byte[>..] = []; format(key, "local/", hash(root[..])); pk_add(name, root[..], key[..], src[..]); return true; }
+	let i = pk_git(name, src[..]); if is_dir(nm(PKS[i].root as int)) { return true; }
+	var m byte[>..] = []; format(m, "the package ", nm(name), " (", src[..], ") is not in ", nm(PKS[i].root as int), "; clone it there, or declare it as import ", nm(name), " from \"<the directory>\";"); derr(ND[n].t as int, m); false
+}
 fn derr(t int, m const byte[:]) { if DERR.len > 0 { return; } let x = TK[max(t, 0)]; DERR.append(nm(FILES[x.f].name)); format(DERR, ":", x.line, ": error: ", m); }
 fn dmap(name int) int { if name < 0 || name >= DMAP.len { -1 } else { DMAP[name] as int } }
 fn dadd(k int, node int, file int, name int) {
@@ -34,13 +61,14 @@ fn collect(file int, t0 int, t1 int) {
 		if k == N_VDECL { dadd(D_GLOBAL, n, file, qual(x.c as int, LS[x.l] as int)); }
 	}
 }
-recursive fn try_load(path const byte[:]) int {
+recursive fn try_load(path const byte[:], pk int) int {
 	let id = intern(path);
 	for f, i in FILES { if f.name as int == id { return i; } }
 	if !file_exists(path) { return -1; }
 	let t0 = TOP.len;
 	if !parse_file(path) { DERR.append(PERR); return -2; }
 	let f = FILES.len - 1;
+	while FPKG.len < FILES.len { FPKG.push(-1); } FPKG[f] = pk as i32;
 	while NS_FILE.len < FILES.len { NS_FILE.push(-1); }
 	NS_FILE[f] = FILENS[FILENS.len - 1];
 	collect(f, t0, TOP.len);
@@ -50,17 +78,21 @@ recursive fn try_load(path const byte[:]) int {
 	let im1 = IMPS.len;
 	let sp = lib_path("std"); let isstd = path == sp[..];
 	if FILES[f].amni && !isstd { if load_import(NAME_STD, f, -1) < 0 { return -2; } }
-	for q in im0..im1 { let n = IMPS[q] as int; if load_import(ND[n].s as int, f, ND[n].t as int) < 0 { return -2; } }
+	if f == 0 { for q in im0..im1 { let n = IMPS[q] as int; if ND[n].a >= 0 && !pk_declare(n, f) { return -2; } } }
+	for q in im0..im1 { let n = IMPS[q] as int; if ND[n].a >= 0 && f != 0 && pk_find(ND[n].s as int) < 0 { var m byte[>..] = []; format(m, nm(FILES[f].name as int), " needs the package ", nm(ND[n].s as int), ": add\n    import ", nm(ND[n].s as int), " from \"", tok_str(ND[n].a as int), "\";\nto ", nm(FILES[0].name as int), " (packages are declared by the root file only)"); derr(ND[n].t as int, m); return -2; } if load_import(ND[n].s as int, f, ND[n].t as int) < 0 { return -2; } }
 	f
 }
+recursive fn try_ext(p const byte[:], pk int) int { var a byte[>..] = []; a.append(p); a.append(".amni"); let r = try_load(a[..], pk); if r != -1 { return r; } a.resize(p.len); a.append(".goose"); try_load(a[..], pk) }
 fn lib_path(name const byte[:]) byte[..1024] { var p byte[..1024] = []; p.append(LIBDIR); p.push('/'); p.append(name); p.append(".amni"); p }
 fn imp_rel(t int) bool { for n in IMPS { if ND[n].t as int == t && ND[n].k == N_IMPORT { return ND[n].fl == 1; } } false }
 recursive fn load_import(name int, from int, t int) int {
 	var p byte[..1024] = [];
 	let rel = t >= 0 && from >= 0 && from < FILES.len && imp_rel(t); let fnm = nm(FILES[from].name as int); var sl = -1; if rel { for c, i in fnm { if c == '/' { sl = i; } } }
-	if sl >= 0 { p.append(fnm[..sl]); } else { p.append(ROOTDIR); } p.push('/'); p.append(nm(name)); p.append(".amni");
-	var r = try_load(p[..]);
-	if r == -1 { let lp = lib_path(nm(name)); r = try_load(lp[..]); }
+	let fp = if from >= 0 && from < FPKG.len { FPKG[from] as int } else { -1 };
+	if sl >= 0 { p.append(fnm[..sl]); } else { if fp >= 0 { p.append(nm(PKS[fp].root as int)); } else { p.append(ROOTDIR); } } p.push('/'); p.append(nm(name));
+	var r = try_ext(p[..], fp);
+	if r == -1 && !rel { var s byte[>..] = []; s.append(nm(name)); var c = s.len; for ch, i in s { if ch == '/' && c == s.len { c = i; } } let pk = pk_of(intern(s[..c])); if pk >= 0 { var q byte[>..] = []; q.append(nm(PKS[pk].root as int)); q.push('/'); q.append(if c < s.len { s[c + 1..] } else { s[..] }); r = try_ext(q[..], pk); } }
+	if r == -1 { let lp = lib_path(nm(name)); r = try_load(lp[..], -1); }
 	if r == -1 { var m byte[>..] = []; format(m, "cannot find module ", nm(name)); derr(t, m); return -2; }
 	r
 }
@@ -69,7 +101,8 @@ fn load_program(root const byte[:]) bool {
 	types_init();
 	var d = root.len; while d > 0 && root[d - 1] != '/' { d--; }
 	ROOTDIR.clear(); ROOTDIR.append(if d > 0 { root[..d - 1] } else { "." });
-	try_load(root) >= 0 && DERR.len == 0
+	var e = root.len; for c, i in root { if c == '.' && i > d { e = i; } } var key byte[>..] = []; format(key, "local/", hash(ROOTDIR[..])); pk_add(intern(root[d..e]), ROOTDIR[..], key[..], ".");
+	try_load(root, 0) >= 0 && DERR.len == 0
 }
 fn gb_find(name int) int { var i = GB.len - 1; while i >= 0 { if GB[i].name as int == name { return GB[i].ty as int; } i--; } -1 }
 fn lookup(name int, ns int, k int) int {

@@ -1,0 +1,120 @@
+import os;
+import decl;
+struct Sv { key i32, val i32 }
+var SCV Sv[>..];
+var PERRS byte[>..];
+fn sc_known(k const byte[:]) bool { for w in ["c_sources", "c_include", "c_defines", "c_flags_cc", "c_flags_msvc", "c_libs", "cmake_target", "cmake_options", "dylibs", "main_thread_only", "exclude", "output"] { if k == w { return true; } for sfx in ["_windows", "_linux", "_macos"] { if k.len == w.len + sfx.len && k[..w.len] == w && k[w.len..] == sfx { return true; } } } false }
+fn sc_base(k const byte[:]) byte[>..] { var b byte[>..] = []; b.append(k); if k.len > 6 && k[^6..] == "_linux" { b.resize(k.len - 6); } b }
+fn sc_vals(k const byte[:]) byte[:][>..] { var r byte[:][>..] = []; for v in SCV { if nm(v.key as int) == k { r.push(nm(v.val as int)); } } r }
+fn sc_parse(path const byte[:], t const byte[:]) bool {
+	var i = 0; var key = -1; var lst = false;
+	fn bad(m const byte[:]) bool { format(PERRS, path, ": ", m); false }
+	loop {
+		while i < t.len && (t[i] == ' ' || t[i] == '\t' || t[i] == '\r' || t[i] == '\n') { i++; }
+		if i + 1 < t.len && t[i] == '/' && t[i + 1] == '/' { while i < t.len && t[i] != '\n' { i++; } continue; }
+		if i >= t.len { return key < 0 || bad("the file ends inside an entry"); }
+		let c = t[i];
+		if key < 0 { let s = i; while i < t.len && (t[i] >= 'a' && t[i] <= 'z' || t[i] >= 'A' && t[i] <= 'Z' || t[i] >= '0' && t[i] <= '9' || t[i] == '_') { i++; } if i == s { return bad("expected a key"); } let k = t[s..i]; if !sc_known(k) { var m byte[>..] = []; format(m, "unknown key ", k, "; the keys are c_sources, c_include, c_defines, c_flags_cc, c_flags_msvc, c_libs, cmake_target, cmake_options, dylibs, main_thread_only, exclude and output"); return bad(m[..]); } let bk = sc_base(k); key = if k.len > 8 && (k[^8..] == "_windows" || k[^6..] == "_macos") { -2 } else { intern(bk[..]) }; while i < t.len && (t[i] == ' ' || t[i] == '\t') { i++; } if i >= t.len || t[i] != '=' { return bad("expected = after a key"); } i++; continue; }
+		if c == ';' && !lst { key = -1; i++; continue; }
+		if c == '[' && !lst { lst = true; i++; continue; }
+		if c == ']' && lst { lst = false; i++; continue; }
+		if c == ',' && lst { i++; continue; }
+		if c == '"' { var v byte[>..] = []; i++; while i < t.len && t[i] != '"' { if t[i] == '\\' && i + 1 < t.len { i++; } v.push(t[i]); i++; } i++; if key >= 0 { SCV.push(Sv { key as i32, intern(v[..]) as i32 }); } continue; }
+		let s = i; while i < t.len && t[i] != ';' && t[i] != ',' && t[i] != ']' && t[i] != ' ' && t[i] != '\n' { i++; } if i == s { return bad("unexpected character"); } if key >= 0 { SCV.push(Sv { key as i32, intern(t[s..i]) as i32 }); }
+	}
+}
+fn q(b byte[>..]&, s const byte[:]) { b.append(" '"); for c in s { if c == '\'' { b.append("'\\''"); } else { b.push(c); } } b.push('\''); }
+fn newer(a const byte[:], t int) bool { let m = file_mtime(a); m < 0 || m > t }
+fn locked(cmd const byte[:], dir const byte[:]) byte[>..] { var b byte[>..] = []; b.append("{ flock 9 && "); b.append(cmd); b.append("; } 9>"); var l byte[>..] = []; l.append(dir); l.append("/build.lock"); q(b, l[..]); b }
+fn run_ok(cmd const byte[:], log const byte[:], what const byte[:], dir const byte[:]) bool {
+	if run_command(locked(cmd, dir)[..]) == 0 { return true; }
+	var lg byte[>..] = []; read_file(log, lg); var nl = 0; var j = lg.len; while j > 0 && nl < 20 { j--; if lg[j] == '\n' { nl++; } }
+	format(PERRS, what, " failed; its log is ", log, "\n", lg[j..]); false
+}
+fn pkg_syms(k int) byte[>..] {
+	var b byte[>..] = []; var ns byte[:][>..] = [];
+	for d in DC { let n = d.node as int; if d.k as int == D_FN && (ND[n].fl & F_EXTERN) != 0 && node_file(n) < FPKG.len && FPKG[node_file(n)] as int == k { let x = ND[n].e as int; if x < 0 || ND[x].b < 0 { let sy = if x >= 0 && ND[x].a >= 0 { tok_str(ND[x].a as int) } else { nm(ND[n].s as int) }; if sy.len > 0 && sy[0] != '!' && !ns.contains(sy) { ns.push(sy); } } } }
+	for sy in ns { format(b, "void ", sy, "(void);\n"); } b.append("__attribute__((used)) void *const hc_syms[] = { 0"); for sy in ns { format(b, ", (void *)", sy); } b.append(" };\n"); b
+}
+fn build_pkg(k int) bool {
+	let name = nm(PKS[k].name as int); var root byte[>..] = []; root.append(nm(PKS[k].root as int));
+	var sc byte[>..] = []; sc.append(root[..]); sc.push('/'); sc.append(name); sc.append(".build");
+	if !file_exists(sc[..]) { return true; }
+	var txt byte[>..] = []; read_file(sc[..], txt); SCV.clear(); if !sc_parse(sc[..], txt[..]) { return false; }
+	for v in sc_vals("main_thread_only") { if v == "true" { PKS[k].mt = true; } }
+	let srcs = sc_vals("c_sources"); let ct = sc_vals("cmake_target");
+	if srcs.len == 0 && ct.len == 0 { return true; }
+	var out byte[>..] = goose_home(); out.append("/build/hc/"); out.append(nm(PKS[k].key as int));
+	var so byte[>..] = []; so.append(out[..]); so.append("/lib"); so.append(name); so.append(".so");
+	let st = file_mtime(so[..]); var stale = st < 0 || newer(sc[..], st);
+	for s in srcs { var p byte[>..] = []; p.append(root[..]); p.push('/'); p.append(s); if newer(p[..], st) { stale = true; } }
+	let sy = pkg_syms(k); var sf byte[>..] = []; sf.append(out[..]); sf.append("/hc_syms.c"); var os byte[>..] = []; read_file(sf[..], os); if ct.len > 0 && os[..] != sy[..] { stale = true; }
+	PKS[k].so = intern(so[..]) as i32;
+	if !stale { return true; }
+	var mk byte[>..] = []; mk.append("mkdir -p"); q(mk, out[..]); if run_command(mk[..]) != 0 { format(PERRS, "cannot make ", out[..]); return false; }
+	var log byte[>..] = []; log.append(out[..]); log.append("/build.log");
+	var cmd byte[>..] = [];
+	if ct.len == 0 {
+		cmd.append("cd"); q(cmd, root[..]); cmd.append(" && nice -n 19 cc -O2 -fPIC -shared -w");
+		for s in sc_vals("c_include") { cmd.append(" -I"); q(cmd, s); }
+		for s in sc_vals("c_defines") { cmd.append(" -D"); q(cmd, s); }
+		for s in sc_vals("c_flags_cc") { q(cmd, s); }
+		for s in srcs { q(cmd, s); }
+		var tmp byte[>..] = []; tmp.append(so[..]); tmp.append(".tmp");
+		cmd.append(" -o"); q(cmd, tmp[..]);
+		for s in sc_vals("c_libs") { cmd.append(" -l"); q(cmd, s); }
+		cmd.append(" -lm >"); q(cmd, log[..]); cmd.append(" 2>&1 && mv"); q(cmd, tmp[..]); q(cmd, so[..]);
+		var what byte[>..] = []; format(what, "building the C part of the package ", name);
+		return run_ok(cmd[..], log[..], what[..], out[..]);
+	}
+	var w byte[>..] = []; format(w, "cmake_minimum_required(VERSION 3.20)\nproject(hc_pkg_", name, " C)\ninclude(CheckLanguage)\ncheck_language(CXX)\nif(CMAKE_CXX_COMPILER)\nenable_language(CXX)\nendif()\nset(CMAKE_POSITION_INDEPENDENT_CODE ON)\nadd_subdirectory(\"", root[..], "\" pkg EXCLUDE_FROM_ALL)\nif(NOT TARGET ", ct[0], ")\nmessage(FATAL_ERROR \"the package ", name, "'s sidecar names the CMake target ", ct[0], ", which ", root[..], "/CMakeLists.txt does not define\")\nendif()\nadd_library(hc_", name, " SHARED \"", out[..], "/hc_syms.c\")\ntarget_link_libraries(hc_", name, " PRIVATE ", ct[0], ")\nset_target_properties(hc_", name, " PROPERTIES OUTPUT_NAME ", name, " LIBRARY_OUTPUT_DIRECTORY \"", out[..], "\")\n");
+	var wd byte[>..] = []; wd.append(out[..]); wd.append("/wrapper"); var wf byte[>..] = []; wf.append(wd[..]); wf.append("/CMakeLists.txt");
+	if os[..] != sy[..] && !write_file(sf[..], sy[..]) { format(PERRS, "cannot write ", sf[..]); return false; }
+	var old byte[>..] = []; read_file(wf[..], old); mk.clear(); mk.append("mkdir -p"); q(mk, wd[..]); run_command(mk[..]); if old[..] != w[..] && !write_file(wf[..], w[..]) { format(PERRS, "cannot write ", wf[..]); return false; }
+	var bd byte[>..] = []; bd.append(out[..]); bd.append("/cmake");
+	cmd.append("command -v cmake >/dev/null || { echo 'cannot find cmake on PATH, needed to build the C part of the package "); cmd.append(name); cmd.append("; install CMake 3.20 or later' >"); q(cmd, log[..]); cmd.append("; exit 1; }; cmake -S"); q(cmd, wd[..]); cmd.append(" -B"); q(cmd, bd[..]); cmd.append(" -DCMAKE_BUILD_TYPE=Release");
+	if run_command("command -v ninja >/dev/null") == 0 { cmd.append(" -G Ninja"); }
+	for s in sc_vals("cmake_options") { cmd.append(" -D"); q(cmd, s); }
+	cmd.append(" >"); q(cmd, log[..]); cmd.append(" 2>&1 && nice -n 19 cmake --build"); q(cmd, bd[..]); cmd.append(" --target hc_"); cmd.append(name); cmd.append(" -j 7 >>"); q(cmd, log[..]); cmd.append(" 2>&1");
+	var what byte[>..] = []; format(what, "building the C part of the package ", name, " (CMake target ", ct[0], ")");
+	run_ok(cmd[..], log[..], what[..], out[..])
+}
+struct Shb { node i32, off i32, n i32 }
+var SHB byte[>..]; var SHN Shb[>..];
+fn shader_blob(n int) const byte[:] { for e in SHN { if e.node as int == n { return SHB[(e.off as int)..((e.off + e.n) as int)]; } } "" }
+fn shader_tool(err byte[>..]&) byte[>..] {
+	var t byte[>..] = goose_home(); t.append("/build/hc/shaderc"); var exe byte[>..] = []; exe.append(t[..]); exe.append("/hc-shaderc");
+	var sd byte[>..] = []; sd.append(LIBDIR[..]); sd.append("/../shaderc"); var sc byte[>..] = []; sc.append(sd[..]); sc.append("/hc_shaderc.c"); var sc2 byte[>..] = []; sc2.append(sd[..]); sc2.append("/shaderc.c");
+	let m = file_mtime(exe[..]); if m >= 0 && !newer(sc[..], m) && !newer(sc2[..], m) { return exe; }
+	var cmd byte[>..] = []; cmd.append("mkdir -p"); q(cmd, t[..]); cmd.append(" && nice -n 19 cc -O2 -w -I"); q(cmd, sd[..]); cmd.append(" -I"); var cs byte[>..] = []; cs.append(LIBDIR[..]); cs.append("/../../third_party/cute_spirv"); q(cmd, cs[..]); q(cmd, sc[..]); cmd.append(" -o"); var tmp byte[>..] = []; tmp.append(exe[..]); tmp.append(".tmp"); q(cmd, tmp[..]); cmd.append(" -lm 2>&1 && mv"); q(cmd, tmp[..]); q(cmd, exe[..]);
+	var mk0 byte[>..] = []; mk0.append("mkdir -p"); q(mk0, t[..]); run_command(mk0[..]);
+	if run_command(locked(cmd[..], t[..])[..]) != 0 { err.append("cannot build the shader compiler from "); err.append(sc[..]); exe.clear(); } exe
+}
+fn shader_compile(n int, stage int, path const byte[:], src const byte[:], err byte[>..]&) bool {
+	var key byte[>..] = []; format(key, stage, "\n", path, "\n"); key.append(src); let h = hash(key[..]);
+	var d byte[>..] = goose_home(); d.append("/build/hc/shaderc/cache"); var bf byte[>..] = []; format(bf, d[..], "/", h, ".blob");
+	var blob byte[>..] = [];
+	if !read_file(bf[..], blob) {
+		let exe = shader_tool(err); if exe.len == 0 { return false; }
+		var mk byte[>..] = []; mk.append("mkdir -p"); q(mk, d[..]); run_command(mk[..]);
+		let u = random_seed(); var sf byte[>..] = []; format(sf, d[..], "/", h, "-", u, ".src"); var ef byte[>..] = []; format(ef, d[..], "/", h, "-", u, ".err"); var tb byte[>..] = []; format(tb, d[..], "/", h, "-", u, ".tmp");
+		if !write_file(sf[..], src) { err.append("cannot write "); err.append(sf[..]); return false; }
+		var cmd byte[>..] = []; cmd.append("[ -f"); q(cmd, bf[..]); cmd.append(" ] ||"); q(cmd, exe[..]); format(cmd, " ", stage); q(cmd, path); q(cmd, sf[..]); q(cmd, tb[..]); cmd.append(" 2>"); q(cmd, ef[..]); cmd.append(" && mv"); q(cmd, tb[..]); q(cmd, bf[..]);
+		let ok = run_command(locked(cmd[..], d[..])[..]) == 0; delete_file(sf[..]); delete_file(tb[..]);
+		if !ok { read_file(ef[..], err); delete_file(ef[..]); while err.len > 0 && err[err.len - 1] == '\n' { err.pop(); } if err.len == 0 { err.append("shader compilation failed"); } return false; }
+		delete_file(ef[..]); if !read_file(bf[..], blob) { err.append("cannot read "); err.append(bf[..]); return false; }
+	}
+	SHN.push(Shb { n as i32, SHB.len as i32, blob.len as i32 }); SHB.append(blob[..]); true
+}
+fn fstem(f int) const byte[:] { let s = nm(FILES[f].name as int); var a = 0; var e = s.len; for c, i in s { if c == '/' { a = i + 1; } } for c, i in s[a..] { if c == '.' { e = a + i; } } s[a..e] }
+fn thread_check() bool {
+	for t, ti in FI_ { if t.node >= 0 && (ND[t.node].fl & F_THREAD) != 0 {
+		var seen i32[>..] = [ti as i32]; var q = 0;
+		while q < seen.len { let cr = seen[q] as int; q++;
+			for e in CEDGES { if e.caller as int == cr && !seen.contains(e.callee) { let c = e.callee as int; seen.push(e.callee);
+				let f = node_file(FI_[c].node as int); let k = if f < FPKG.len { FPKG[f] as int } else { -1 };
+				if is_ext(c) && k >= 0 && PKS[k].mt { var n = -1; let sa = AOWN; AOWN = cr; for x in (FI_[cr].lo as int)..(FI_[cr].hi as int) { if n < 0 && ND[x].k as int == N_CALL && rk(x) == R_FN && rv(x) == c { n = x; } } AOWN = sa;
+					format(PERRS, nm(FILES[node_file(max(n, FI_[c].node as int))].name as int), ":", TK[ND[max(n, FI_[c].node as int)].t].line, ": error: ", fstem(f), " runs on the main thread only: ", nm(FI_[c].name as int), " is reached from thread_fn ", nm(t.name as int)); return false; } } } } } }
+	true
+}
+fn build_packages() bool { for k in PKS.len { if !build_pkg(k) { return false; } } thread_check() }

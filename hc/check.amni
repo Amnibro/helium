@@ -24,6 +24,7 @@ var RETWANT int = -1;
 var LOOPD int;
 var ARGW i32[>..<];
 var ORDER i32[>..];
+fn cerrl(f int, line int, m const byte[:]) { NERR++; if CERR.len > 0 { return; } CERR.append(nm(FILES[f].name)); format(CERR, ":", line, ": error: ", m); }
 fn cerr(n int, m const byte[:]) { NERR++; if CERR.len > 0 { return; } let x = TK[ND[max(n, 0)].t]; CERR.append(nm(FILES[x.f].name)); format(CERR, ":", x.line, ": error: ", m); }
 fn new_inst(node int, lo int, hi int, par int) int {
 	let i = FI_.len;
@@ -244,6 +245,8 @@ recursive fn default_t(n int) int {
 	if k == TY_ILIT { let v, u, ok = cval(n); let d = if ok && u { T_U64 } else { T_I64 }; commit(n, d); return d; }
 	if k == TY_FLIT { commit(n, T_F64); return T_F64; }
 	if k == TY_STRLIT { set_t(n, TT_STR); return TT_STR; }
+	let nk = ND[n].k as int;
+	if k == TY_ARRLIT && (nk == N_IF || nk == N_MATCH || nk == N_BLOCK || nk == N_EBLOCK) { let tl = if nk == N_IF { ND[n].b as int } else { if nk == N_MATCH { ND[kid(n, 0)].b as int } else { ND[n].a as int } }; let d = default_t(tl); conv_tail(n, d); set_t(n, d); return d; }
 	if k == TY_ARRLIT {
 		let x = ND[n];
 		var e = -1;
@@ -303,6 +306,7 @@ recursive fn leaf_type(t int) int {
 	if k == TY_ARR && x.s == A_FIXED as u8 { return leaf_type(x.a as int); }
 	-1
 }
+recursive fn has_flt(n int) bool { if n < 0 { return false; } let k = ND[n].k as int; k == N_FLT || (k == N_BIN || k == N_UN) && (has_flt(ND[n].a as int) || k == N_BIN && has_flt(ND[n].b as int)) }
 recursive fn ck_bin(n int, want int) int {
 	let x = ND[n]; let o = x.op as int;
 	let a = x.a as int; let b = x.b as int;
@@ -319,7 +323,7 @@ recursive fn ck_bin(n int, want int) int {
 	let w = if cmp { -1 } else { want };
 	let ta = ck(a, if ND[a].k as int == N_INT { -1 } else { w });
 	let sh = o == T_SHL || o == T_SHR;
-	let tb = ck(b, if sh { -1 } else { if is_pending(ta) { w } else { deref(ta) } });
+	let tb = ck(b, if sh { -1 } else { if is_pending(ta) { w } else { let d = deref(ta); if TY[d].k == TY_INT && ND[b].k as int == N_BIN && has_flt(b) { if w >= 0 && TY[w].k == TY_FLT { w } else { -1 } } else { d } } });
 	if sh {
 		if TY[tb].k == TY_ILIT { conv(b, T_I64); } else { if TY[deref(tb)].k != TY_INT { cerr(b, "shift count must be an integer"); } }
 		let da = deref(ta);
@@ -688,6 +692,7 @@ recursive fn ck_match(n int, want int) int {
 	if allw { for i in x.n { let b = ND[kid(n, i)].b as int; let bt = at(b); if !ends(b) && !is_pending(bt) && !conv_ok(bt, want, b) { allw = false; } } }
 	if allw { for i in x.n { let b = ND[kid(n, i)].b as int; if !ends(b) { conv(b, want); } } return set_t(n, want); }
 	if is_pending(rt) { for i in x.n { let b = ND[kid(n, i)].b as int; let bt = at(b); if !is_pending(bt) && !ends(b) { rt = bt; } } }
+	if is_pending(rt) && TY[rt].k == TY_ARRLIT && want < 0 { return set_t(n, rt); }
 	if is_pending(rt) { let b = ND[kid(n, 0)].b as int; rt = default_t(b); }
 	for i in x.n { let b = ND[kid(n, i)].b as int; let bt = deref(at(b)); if !ends(b) && !is_pending(bt) && bt != rt && (widens(rt, bt) && !(TY[rt].k == TY_FLT && TY[bt].k == TY_INT) || TY[rt].k == TY_INT && TY[bt].k == TY_FLT) { rt = bt; } }
 	if TY[rt].k == TY_INT && rt != T_I64 && widens(rt, T_I64) { for i in x.n { let b = ND[kid(n, i)].b as int; if !ends(b) && TY[at(b)].k == TY_ILIT { let v, u, ok = cval(b); if ok && !int_fits(v, u, rt) { rt = T_I64; } } } }

@@ -754,7 +754,7 @@ fn fn_cname_to(b byte[>..<]&, i int) { format(b, "f", i, "_"); let s = FI_[i].na
 fn fn_cname(i int) { fn_cname_to(O, i); }
 var GDLF i32[>..<];
 fn ext_name(i int) {
-	if dylib_of(i) >= 0 { var seen = false; for f in GDLF { if f as int == i { seen = true; } } if !seen { GDLF.push(i as i32); let rt = FI_[i].ret as int; var sig byte[>..] = []; sig.append("static "); sig.append(if rt < 0 || rt == T_VOID || TY[rt].k == TY_VOID { "void" } else { cn(rt) }); format(sig, " (*hr_dl", i, ")("); let np = ND[FI_[i].node].n as int; for j in np { if j > 0 { sig.append(", "); } sig.append(cn(ptype_of(i, j))); } if np == 0 { sig.append("void"); } sig.append(");\n"); PR.append(sig[..]); } format(O, "hr_dl", i); return; }
+	if has_dl(i) { var seen = false; for f in GDLF { if f as int == i { seen = true; } } if !seen { GDLF.push(i as i32); let rt = FI_[i].ret as int; var sig byte[>..] = []; sig.append("static "); sig.append(if rt < 0 || rt == T_VOID || TY[rt].k == TY_VOID { "void" } else { cn(rt) }); format(sig, " (*hr_dl", i, ")("); let np = ND[FI_[i].node].n as int; for j in np { if j > 0 { sig.append(", "); } sig.append(cn(ptype_of(i, j))); } if np == 0 { sig.append("void"); } sig.append(");\n"); PR.append(sig[..]); } format(O, "hr_dl", i); return; }
 	let node = FI_[i].node as int;
 	let x = ND[node].e as int;
 	if x >= 0 && ND[x].a >= 0 { let s = tok_str(ND[x].a as int); if s.len > 3 && s[0] == 'g' && s[1] == 's' && s[2] == '_' { ow("hr_"); ow(s[3..]); return; } ow(s); return; }
@@ -1215,6 +1215,7 @@ recursive fn gbuiltin(n int) {
 	}
 	if b == B_TOBYTES { let c = arg(0); let t = deref(fin(c)); ow("hr_rfrom("); if TY[t].k == TY_ARR || TY[t].k == TY_SLICE { let q = nt(); ow("({ hsl _s"); oi(q); ow(" = "); gas(c); format(O, "; (hsl){ _s", q, ".p, _s", q, ".n * (int64_t)sizeof("); ct(TY[t].a as int); ow(") }; })"); } else { ow("((hsl){ (uint8_t*)"); gaddr(c); ow(", sizeof("); ct(t); ow(") })"); } ow(", 1)"); return; }
 	if b == B_EMBED { gembed(n, arg(0)); return; }
+	if b == B_EMBEDSH { let bl = shader_blob(n); ow("hr_str("); cstr_lit(bl); format(O, ", ", bl.len, ")"); return; }
 	if b == B_SPAWN || b == B_SPAWNC { gspawn(n, b == B_SPAWNC); return; }
 	if b == B_TWAIT { ow("hr_thread_wait("); gx(arg(0)); ow(", "); if total > 1 { let m = arg(1); if TY[at(m)].k == TY_REF { gx0(m); } else { gaddr(m); } } else { ow("0"); } ow(", "); wloc(n); ow(")"); return; }
 	if b == B_HWT { ow("hr_hardware_threads()"); return; }
@@ -1899,9 +1900,9 @@ fn gen_program(out byte[>..]&) bool {
 	out.append(TW[..]);
 	out.append(HF[..]);
 	out.append(O[..]);
-	if GDLF.len > 0 { var lb byte[>..] = []; lb.append("static void hr_dl_bind(void) { void *h;\n"); var dn i32[>..] = []; for f in GDLF { let t = dylib_of(f as int); var dup = false; for q in dn { if tok_str(q as int) == tok_str(t) { dup = true; } } if !dup { dn.push(t as i32); } }
-		for t in dn { let nmb = tok_str(t as int); var sp byte[>..] = []; dl_spell(nmb, sp); format(lb, "h = dlopen(\"", sp[..], "\", RTLD_NOW | RTLD_LOCAL); if (!h) { const char *e = dlerror(); hr_flush(); fprintf(stderr, \"helium runtime error: cannot load %s (%s): %s\\n\", \"", nmb, "\", \"", sp[..], "\", e ? e : \"unknown error\"); exit(1); }\n");
-			for f in GDLF { if tok_str(dylib_of(f as int)) == nmb { format(lb, "if (!(*(void **)&hr_dl", f, " = dlsym(h, \"", dl_sym(f as int), "\"))) { hr_flush(); fprintf(stderr, \"helium runtime error: %s (%s) has no symbol %s\\n\", \"", nmb, "\", \"", sp[..], "\", \"", dl_sym(f as int), "\"); exit(1); }\n"); } } }
+	if GDLF.len > 0 { var lb byte[>..] = []; lb.append("static void hr_dl_bind(void) { void *h;\n"); var dn i32[>..] = []; for f in GDLF { var dup = false; for q in dn { if dl_lib(q as int) == dl_lib(f as int) { dup = true; } } if !dup { dn.push(f); } }
+		for t in dn { let nmb = dl_lib(t as int); var sp byte[>..] = []; dl_spell(nmb, sp); format(lb, "h = dlopen(\"", sp[..], "\", RTLD_NOW | RTLD_LOCAL); if (!h) { const char *e = dlerror(); hr_flush(); fprintf(stderr, \"helium runtime error: cannot load %s (%s): %s\\n\", \"", nmb, "\", \"", sp[..], "\", e ? e : \"unknown error\"); exit(1); }\n");
+			for f in GDLF { if dl_lib(f as int) == nmb { format(lb, "if (!(*(void **)&hr_dl", f, " = dlsym(h, \"", dl_sym(f as int), "\"))) { hr_flush(); fprintf(stderr, \"helium runtime error: %s (%s) has no symbol %s\\n\", \"", nmb, "\", \"", sp[..], "\", \"", dl_sym(f as int), "\"); exit(1); }\n"); } } }
 		lb.append("}\n"); out.append(lb[..]); }
 	out.append("static void hr_init_globals(void) {\n"); if GDLF.len > 0 { out.append("hr_dl_bind();\n"); } out.append(GI); out.append("}\n");
 	out.append("static void hr_main(void) { ");

@@ -17,6 +17,7 @@
 #include <sys/mman.h>
 #include <sys/stat.h>
 #include <sys/time.h>
+#include <sys/wait.h>
 typedef struct { uint8_t *p; int64_t n; } hsl;
 typedef struct { uint8_t *b; int64_t n; int64_t top; int64_t *fl; int64_t fln, flc; } hrv;
 #ifdef GS_STACK_RESERVE
@@ -389,6 +390,7 @@ static bool hr_wfile(hsl path, hsl data, int flags) {
 	return close(fd) == 0;
 }
 static bool hr_os_write_file(hsl p, hsl d) { return hr_wfile(p, d, O_TRUNC); }
+static int64_t hr_os_run(hsl c) { hr_flush(); char *b = malloc((size_t)c.n + 1); if (!b) return -1; memcpy(b, c.p, (size_t)c.n); b[c.n] = 0; int st = system(b); free(b); return st < 0 ? -1 : WIFEXITED(st) ? WEXITSTATUS(st) : 128 + WTERMSIG(st); }
 static bool hr_os_make_exec(hsl p) { char b[4096]; if (p.n >= 4096) return false; memcpy(b, p.p, (size_t)p.n); b[p.n] = 0; return chmod(b, 0755) == 0; }
 static bool hr_os_append_file(hsl p, hsl d) { return hr_wfile(p, d, O_APPEND); }
 static bool hr_os_write_file_atomic(hsl p, hsl d) {
