@@ -170,6 +170,8 @@ rt_appto(va int, p int, n int): if n > 0: d := rt_grow(va, n, 1); mcopy(d, p, n)
 rt_path(s const byte[:], b byte[4096]&) int: if s.len >= 4095 { return 0 } for i s.len { if s[i] == 0 { return 0 } b[i] = s[i] } b[s.len] = 0; ptr(b[..])
 rt_os_arg_count() int: mld(RT_SP)
 rt_os_arg(i int, out int): if i >= 0 && i < mld(RT_SP): p := mld(RT_SP + 8 + 8 * i); rt_appto(out, p, rt_cstr(p));
+rt_ffi_cstr(p int, out int) bool: if p == 0 { return false } rt_appto(out, p, rt_cstr(p)); true
+rt_ffi_bytes(p int, n int, out int) bool: if p == 0 || n < 0 { return false } rt_appto(out, p, n); true
 rt_os_getenv(name const byte[:], out int) bool:
 	e ~= RT_SP + 8 + 8 * (mld(RT_SP) + 1)
 	while mld(e) != 0: p := mld(e); ok ~= true; for i name.len { if ok && mld1(p + i) != name[i] as int { ok = false } } if ok && mld1(p + name.len) == 61 { v := p + name.len + 1; rt_appto(out, v, rt_cstr(v)); return true } e += 8

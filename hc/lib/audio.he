@@ -1,0 +1,118 @@
+namespace audio
+use std
+use ffi
+extern fmod(x real, y real) real
+MAX_SOUNDS := 256 as i32
+MAX_VOICES := 64 as i32
+struct Sound { id uint }
+struct Voice { id uint }
+struct Snd { id uint, pcm f32[>..], frames int, rate int, ch int }
+struct Vc { id uint, snd int, pos real, vol f32, pan f32, pitch f32, lp bool, end int }
+struct Spec { format i32, channels i32, freq i32 }
+extern "libSDL3.so.0" {
+	sdl_init(flags u32) bool = "SDL_InitSubSystem";
+	sdl_quit(flags u32) = "SDL_QuitSubSystem";
+	sdl_open(dev u32, spec Spec&, cb uint, ud uint) uint = "SDL_OpenAudioDeviceStream";
+	sdl_resume(s uint) bool = "SDL_ResumeAudioStreamDevice";
+	sdl_destroy(s uint) = "SDL_DestroyAudioStream";
+	sdl_put(s uint, data const byte[:]) bool = "SDL_PutAudioStreamData";
+	sdl_queued(s uint) i32 = "SDL_GetAudioStreamQueued";
+	sdl_error() uint = "SDL_GetError";
+}
+var OPEN = false
+var OFFLINE = false
+var RATE = 0
+var STREAM uint = 0
+var NEXT uint = 0
+var SND Snd[>..] = []
+var VC Vc[>..] = []
+var ERR byte[>..] = []
+var BUF f32[>..] = []
+var PUT = 0
+fail(m const byte[:]) bool: ERR.clear(); ERR.append(m); false
+sdl_fail() bool: fail(ffi::cstr(sdl_error())[..])
+okrate(r int) bool: r >= 8000 && r <= 192000
+okpar(v f32, p f32, q f32) bool: v >= 0.0 && v <= 1.0 && p >= -1.0 && p <= 1.0 && q >= 0.125 && q <= 8.0 || fail("volume must be 0..1, pan -1..1, and pitch 0.125..8 (all finite)")
+nid() uint: if NEXT == 0xFFFFFFFFFFFFFFFF { fail("audio handle ids exhausted"); return 0 } NEXT += 1; NEXT
+slots():
+	while SND.len < MAX_SOUNDS: SND.push(Snd{0, [], 0, 0, 0})
+	while VC.len < MAX_VOICES: VC.push(Vc{0, 0, 0.0, 0.0, 0.0, 0.0, false, -1})
+find_sound(h Sound) int:
+	for s, i SND: if h.id != 0 && s.id == h.id { return i }
+	fail("a sound that is null, released, or was never created"); -1
+find_voice(h Voice) int:
+	for v, i VC: if h.id != 0 && v.id == h.id { return i }
+	-1
+mix(out f32[:]):
+	for i out.len: out[i] = 0.0
+	n := out.len / 2
+	for vi VC.len:
+		if VC[vi].id == 0 || VC[vi].end >= 0: continue
+		let v .= VC[vi]; let s .= SND[v.snd]; c := s.ch
+		step := s.rate as real / RATE as real * v.pitch as real
+		l := v.vol * (if v.pan > 0.0 { 1.0 - v.pan } else { 1.0 }); r := v.vol * (if v.pan < 0.0 { 1.0 + v.pan } else { 1.0 })
+		for f n:
+			a := v.pos as int; b ~= a + 1; if b == s.frames { b = if v.lp { 0 } else { a } }
+			fr := (v.pos - a as real) as f32; l0 := s.pcm[a * c]; l1 := s.pcm[b * c]; r0 := s.pcm[a * c + c - 1]; r1 := s.pcm[b * c + c - 1]
+			out[f * 2] += (l0 + (l1 - l0) * fr) * l; out[f * 2 + 1] += (r0 + (r1 - r0) * fr) * r
+			v.pos += step
+			if v.pos >= s.frames as real: if v.lp { v.pos = fmod(v.pos, s.frames as real) } else { if OFFLINE { v.id = 0 } else { v.end = PUT + f + 1 } break }
+	for i out.len: x := out[i]; out[i] = if x > 1.0 { 1.0 } else { if x < -1.0 { -1.0 } else { x } }
+pump():
+	if STREAM == 0: return
+	q := sdl_queued(STREAM) as int / 8; for vi VC.len { if VC[vi].end >= 0 && PUT - q >= VC[vi].end { VC[vi].id = 0; VC[vi].end = -1 } }
+	n := RATE / 20 - q; if n <= 0: return
+	BUF.resize(n * 2, 0.0); mix(BUF[..]); PUT += n; if !sdl_put(STREAM, bytes_of(BUF[..])) { sdl_fail() }
+available() bool: true
+open_raw(sample_rate int, offline bool) bool:
+	if OPEN: return fail("audio is already open; close it before opening again")
+	if !okrate(sample_rate): return fail("sample rate must be 8000..192000 Hz")
+	RATE = sample_rate; OFFLINE = offline; slots()
+	if offline: OPEN = true; return true
+	if !sdl_init(0x10): return sdl_fail()
+	sp := Spec{0x8120, 2, sample_rate as i32}; STREAM = sdl_open(0xFFFFFFFF, sp, 0, 0)
+	if STREAM == 0: sdl_fail(); sdl_quit(0x10); return false
+	OPEN = true
+	if !sdl_resume(STREAM): sdl_fail(); close(); return false
+	pump(); true
+open(sample_rate int = 48000) bool: open_raw(sample_rate, false)
+open_offline(sample_rate int = 48000) bool: open_raw(sample_rate, true)
+close():
+	if STREAM != 0: sdl_destroy(STREAM); STREAM = 0; sdl_quit(0x10)
+	SND.clear(); VC.clear(); slots(); OPEN = false
+error_into(out byte[:]) int:
+	for i min(ERR.len, out.len): out[i] = ERR[i]
+	ERR.len
+error() byte[>..]: t byte[>..] ~= []; t.append(ERR[..min(ERR.len, 1024)]); t
+create_sound_raw(samples const f32[:], sample_rate int, channels int) Sound:
+	if !OPEN: fail("audio is not open"); return Sound{0}
+	if !okrate(sample_rate): fail("sample rate must be 8000..192000 Hz"); return Sound{0}
+	if channels != 1 && channels != 2: fail("a sound must have one or two channels"); return Sound{0}
+	if samples.len <= 0 || samples.len % channels != 0: fail("PCM must contain nonempty complete frames of mono or stereo samples"); return Sound{0}
+	k ~= -1; for s, i SND: if s.id == 0 && k < 0 { k = i }
+	if k < 0: fail("all 256 sound slots are in use"); return Sound{0}
+	for x samples: if !(x >= -1.0 && x <= 1.0) { fail("PCM samples must be finite and within [-1, 1]"); return Sound{0} }
+	id := nid(); if id != 0 { SND[k] = Snd{id, copy(samples), samples.len / channels, sample_rate, channels} } pump(); Sound{id}
+create_sound(samples const f32[:], sample_rate int = 48000, channels int = 1) Sound: create_sound_raw(samples, sample_rate, channels)
+release_sound(sound Sound) bool:
+	if sound.id == 0: return true
+	k := find_sound(sound); if k < 0: return false
+	for vi VC.len: if VC[vi].id != 0 && VC[vi].snd == k { VC[vi].id = 0; VC[vi].end = -1 }
+	SND[k] = Snd{0, [], 0, 0, 0}; pump(); true
+play_raw(sound Sound, volume f32, pan f32, pitch f32, looping bool) Voice:
+	k := find_sound(sound); if k < 0 || !okpar(volume, pan, pitch): return Voice{0}
+	j ~= -1; for v, i VC: if v.id == 0 && j < 0 { j = i }
+	if j < 0: fail("all 64 voice slots are playing"); return Voice{0}
+	id := nid(); if id != 0 { VC[j] = Vc{id, k, 0.0, volume, pan, pitch, looping, -1} } pump(); Voice{id}
+play(sound Sound, volume f32 = 1.0, pan f32 = 0.0, pitch f32 = 1.0, looping bool = false) Voice: play_raw(sound, volume, pan, pitch, looping)
+playing(voice Voice) bool: pump(); find_voice(voice) >= 0
+stop(voice Voice): k := find_voice(voice); if k >= 0 { VC[k].id = 0; VC[k].end = -1 }
+stop_all(): for vi VC.len { VC[vi].id = 0; VC[vi].end = -1 }
+set_voice(voice Voice, volume f32, pan f32, pitch f32) bool:
+	k := find_voice(voice); if k < 0: return fail("voice is no longer playing")
+	if !okpar(volume, pan, pitch): return false
+	VC[k].vol = volume; VC[k].pan = pan; VC[k].pitch = pitch; pump(); true
+render(out f32[:]) bool:
+	if !OPEN || !OFFLINE: return fail("render requires an offline mixer")
+	if out.len % 2 != 0: return fail("render requires complete stereo frames")
+	mix(out); true

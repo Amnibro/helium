@@ -1275,7 +1275,8 @@ kzero(n int) bool:
 lzero(a int, sz int):
 	if sz > 8 { ir(I_ZERO, 3, a, -1, imm(sz), 0); return } o ~= 0; z := imm(0); while o + 8 <= sz { stw(a, o, z, 3); o += 8 } while o < sz: stw(a, o, z, 4); o += 1
 recursive lcopy_into(dd int, src int, t int) bool:
-	if is_res(t) && is_seq(t): sp, sn := lsl(src); rtcall("rt_sqfrom", [dd as i32, sp as i32, sn as i32, lsqbytes(sp, sn, TY[t].a) as i32]); return true
+	if TY[t].k == TY_SLICE && !is_seq(t): sp, sn := lsl(src); rtcall("rt_rfrom", [dd as i32, sp as i32, sn as i32, imm(tsz(TY[t].a)) as i32]); return true
+	if (is_res(t) || TY[t].k == TY_SLICE) && is_seq(t): sp, sn := lsl(src); rtcall("rt_sqfrom", [dd as i32, sp as i32, sn as i32, lsqbytes(sp, sn, TY[t].a) as i32]); return true
 	if is_res(t): sp, sn := lsl(src); rtcall("rt_rfrom", [dd as i32, sp as i32, sn as i32, imm(tsz(TY[t].a)) as i32]); return true
 	if hvimg(t) || is_fixed(t) || pneeds(t) || TY[t].k == TY_ENUM: ir(I_COPY, 3, dd, laddr(src), imm(tsz(t)), 0); lwalk(1, dd, -1, t); return true
 	false

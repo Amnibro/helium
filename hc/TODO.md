@@ -1,6 +1,6 @@
 # hc: what's left
 
-Status as of 2026-10-27 (gate 64).
+Status as of 2026-10-27 (gate 65).
 
 ## Where things stand
 
@@ -12,7 +12,9 @@ Status as of 2026-10-27 (gate 64).
 | Corpus, C path | 539 / 645 pass |
 | hc's own tests | `hc/test/*.he` with `.out` files; `tools/hc/hetest.sh <hc>` runs each one through the C path, `--native` and `--native --debug` |
 | Pom-Pom Grove sim | garden, race, mini, load traces bit-identical on both paths |
-| Still on the Goose C++ compiler | Pomling, Waystone and Amni Prayer (web target); everything with gfx, ui, physics or audio; LSP; shader compilation |
+| Own modules replacing Goose packages | `audio` (hc/lib/audio.he on SDL3: the same mixer, bit-identical to goose_gfx offline and live). `gfx`, `ui` and `physics` still load the goose_gfx/goose_physics packages |
+| Full apps | Pom-Pom Grove (`pomling.amni`, gfx + ui) compiles with hc on both paths; it is not run here, since it opens the GPU |
+| Still on the Goose C++ compiler | Pomling, Waystone and Amni Prayer (web target); LSP; shader compilation |
 
 ## 0. The `.he` syntax
 

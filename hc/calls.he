@@ -138,7 +138,7 @@ recursive arg_rank(n int, a int, p int) int:
 	if ak == TY_SLICE && pk == TY_SLICE && TY[a].a == TY[p].a: return 0
 	if ak == TY_MULTI && pk != TY_MULTI && TY[a].n > 0 && ND[n].k as int == N_CALL: return arg_rank(n, TYL[TY[a].l] as int, p)
 	if pk == TY_ERR || ak == TY_ERR: return 0
-	if pk == TY_REF && TY[p].c < 0 && TY[p].fl & RF_OPT == 0: tgt := TY[p].a; if deref(a) == tgt { return 0 } if ak == TY_ILIT || ak == TY_FLIT { return arg_rank(n, a, tgt) } return -1
+	if pk == TY_REF && TY[p].c < 0 && TY[p].fl & RF_OPT == 0: tgt := TY[p].a; if deref(a) == tgt { return 0 } if ak == TY_ILIT || ak == TY_FLIT { r := arg_rank(n, a, tgt); return if r >= 0 { r + 1 } else { r } } return -1
 	if ak == TY_REF && TY[a].c < 0: d := TY[a].a; if d == p { return 0 } if pk == TY_REF && TY[p].fl & RF_OPT != 0 && TY[p].a == TY[a].a { return 0 } return arg_rank(n, d, p)
 	if ak == TY_ILIT:
 		v, u, ok := cval(n)

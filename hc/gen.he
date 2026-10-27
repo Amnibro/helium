@@ -367,8 +367,8 @@ recursive garith(o int, t0 int, a int, b int, tv int, loc int):
 	lk := leaf_kind(t)
 	if lk >= 4:
 		ta := if a >= 0 { fin(a) } else { t }; tb := if b >= 0 { fin(b) } else { t }
-		if ta != t: if o != T_MUL { ow("hopl"); oi(t); ow("_"); oi(o); ow("("); gopnd(a, tv); ow(", "); gopnd(b, tv); ow(")"); gen_hop(t, o, ta, true); return } ow("hop"); oi(t); ow("_"); oi(o); ow("("); gopnd(b, tv); ow(", "); gopnd(a, tv); ow(")"); gen_hop(t, o, ta, false); return
-		ow("hop"); oi(t); ow("_"); oi(o); ow("("); gopnd(a, tv); ow(", "); gopnd(b, tv); ow(")"); gen_hop(t, o, tb, false); return
+		if ta != t: if o != T_MUL { ow("hopl"); oi(t); ow("_"); oi(o); ow("("); gopnd(a, tv); ow(", "); gopnd(b, tv); ow(")"); gen_hop(t, o, ta, true); return } ow("hops"); oi(t); ow("_"); oi(o); ow("("); gopnd(b, tv); ow(", "); gopnd(a, tv); ow(")"); gen_hop(t, o, ta, false); return
+		ow(if tb != t { "hops" } else { "hop" }); oi(t); ow("_"); oi(o); ow("("); gopnd(a, tv); ow(", "); gopnd(b, tv); ow(")"); gen_hop(t, o, tb, false); return
 	if k == TY_FLT: if o == T_MOD { ow(if TY[t].s == 4 { "fmodf(" } else { "fmod(" }); gopnd(a, tv); ow(", "); gopnd(b, tv); ow(")"); return } ow("(("); ct(t); ow(")("); gopnd(a, tv); ow(" "); ow(ar_op(o)); ow(" "); gopnd(b, tv); ow("))"); return
 	if k == TY_BOOL: ow("(("); gopnd(a, tv); ow(") "); ow(ar_op(o)); ow(" ("); gopnd(b, tv); ow("))"); return
 	sg := k == TY_INT && is_signed(t)
@@ -738,7 +738,7 @@ recursive gen_hop(t int, o int, bt int, sl bool):
 	lt := leaf_type(t)
 	sc := if sl { 2 } else { if bt != t { 1 } else { 0 } }
 	sig byte[..256] ~= []
-	format(sig, "static "); sig.append(cn(t)); format(sig, if sl { " hopl" } else { " hop" }, t, "_", o, "(")
+	format(sig, "static "); sig.append(cn(t)); format(sig, if sl { " hopl" } else { if sc == 1 { " hops" } else { " hop" } }, t, "_", o, "(")
 	sig.append(cn(if sl { bt } else { t })); sig.append(" a, "); sig.append(cn(if sc == 1 { bt } else { t })); sig.append(" b)")
 	PR.append(sig[..]); PR.append(";\n")
 	HF.append(sig[..]); hh(" { "); HF.append(cn(t)); hh(" r; ")
