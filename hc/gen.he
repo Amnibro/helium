@@ -77,6 +77,24 @@ recursive gen_vz(t int):
 	for i STI[si].fnum: f := SFI[f0 + i]; if f.ty < 0 { format(HF, "q += ", max(f.padn, 0), "; "); continue } e byte[..512] ~= []; vz_into(e, f.ty, "q"); format(HF, "q += ", e[..], "; ")
 	hh("return q - p; }\n");
 var VZS i8[>..]
+var HDD i8[>..]
+dropk(t int) int:
+	if t < 0 || TY[t].k == TY_REF || !needs_drop(t): return 0
+	if is_res(t): return if !is_seq(t) && !is_vimg(t) && needs_drop(TY[t].a as int) && deep_ok(t) { 2 } else { 1 }
+	if ownsd(t) { 2 } else { 0 }
+recursive dcall(b byte[>..<]&, t int, p const byte[:]): if dropk(t) == 1 { format(b, "hr_rdrop(", p, "); ") } else { gen_drop(t); format(b, "hd", t, "(", p, "); ") }
+recursive gen_drop(t int):
+	while HDD.len < TY.len: HDD.push(0)
+	if HDD[t] != 0: return
+	HDD[t] = 1; cbody(t); b byte[>..<] ~= []
+	if is_res(t): e := TY[t].a as int; cbody(e); b.append("if (p->b) for (int64_t k = 0; k < p->n; k++) { "); d byte[>..<] ~= []; format(d, "((", cn(e), "*)p->b) + k"); dcall(b, e, d[..]); b.append("} hr_rdrop(p); ")
+	else if TY[t].k == TY_STRUCT: si := TY[t].a; for j STI[si].fnum { f := SFI[STI[si].f0 as int + j]; if dropk(f.ty) > 0 { d byte[>..<] ~= []; d.append("&p->"); fname_into(d, f.name as int); dcall(b, f.ty, d[..]) } }
+	else: format(b, "for (int64_t k = 0; k < ", TY[t].b, "; k++) { "); dcall(b, TY[t].a as int, "&p->e[k]"); b.append("} ")
+	sig byte[..128] ~= []; format(sig, "static void hd", t, "("); sig.append(cn(t)); sig.append(" *p)")
+	PR.append(sig[..]); PR.append(";\n"); HF.append(sig[..]); HF.append(" { "); HF.append(b[..]); HF.append("}\n")
+odrop(e int, ptr const byte[:]): b byte[>..<] ~= []; dcall(b, e, ptr); O.append(b[..])
+drop_range(e int, p int, lo const byte[:]): if dropk(e) > 0 { format(O, "for (int64_t _j = ", lo, "; _j < _v", p, "->n; _j++) { "); d byte[>..<] ~= []; d.append("(("); d.append(cn(e)); format(d, "*)_v", p, "->b) + _j"); odrop(e, d[..]); ow("} ") }
+cleanup_of(t int): k := dropk(t); if k == 1 { ow(" __attribute__((cleanup(hr_rdrop)))") } else if k == 2 { gen_drop(t); format(O, " __attribute__((cleanup(hd", t, ")))") }
 recursive gen_vzs(t int):
 	while VZS.len < TY.len: VZS.push(0)
 	if VZS[t] != 0: return
@@ -274,9 +292,11 @@ recursive gxo(n int):
 	c := cv(n); t := at(n)
 	if c >= 0 && c != t && TY[t].k == TY_REF && deref(t) == c && !is_vimg(c):
 		if is_res(c) && is_seq(c): ow("hr_rdup_var(*"); gx0(n); ow(")"); return
+		if is_res(c) && dropk(c) == 2: p := nt(); ow("({ "); ct(c); format(O, " _d", p, " = *"); gx0(n); ow("; "); d byte[>..<] ~= []; format(d, "_d", p); gdeep(c, d[..]); format(O, "_d", p, "; })"); return
 		if is_res(c): ow("hr_rdup(*"); gx0(n); ow(", "); esz(TY[c].a as int); ow(")"); return
 		if ownsd(c): p := nt(); ow("({ "); ct(c); format(O, " _d", p, " = *"); gx0(n); ow("; "); d byte[>..<] ~= []; format(d, "_d", p); gdeep(c, d[..]); format(O, "_d", p, "; })"); return
 	if c >= 0 && c != t: if is_res(c) { gcv(n, t, c); return } gx(n); return
+	if is_res(t) && is_place(n) && dropk(t) == 2: p := nt(); ow("({ "); ct(t); format(O, " _d", p, " = "); gx0(n); ow("; "); d byte[>..<] ~= []; format(d, "_d", p); gdeep(t, d[..]); format(O, "_d", p, "; })"); return
 	if is_res(t) && is_place(n): ow("hr_rdup("); gx0(n); ow(", "); esz(TY[t].a); ow(")"); return
 	if ownsd(t) && is_place(n): p := nt(); ow("({ "); ct(t); format(O, " _d", p, " = "); gx0(n); ow("; "); d byte[>..<] ~= []; format(d, "_d", p); gdeep(t, d[..]); format(O, "_d", p, "; })"); return
 	gx0(n);
@@ -946,7 +966,7 @@ recursive gcall_arg(n int, inst int, recv int, j int, decl bool, q int):
 	if TY[pt].k == TY_REF && TY[pt].c < 0:
 		if TY[ct0].k == TY_REF || TY[ct0].k == TY_NULL: gx(c) else: gaddr(c)
 	else:
-		if is_res(pt): gxo(c)
+		if is_res(pt) || ownsd(pt): gxo(c)
 		else:
 			if TY[pt].k == TY_SLICE: gas(c) else: gx(c)
 	if decl: ow("; ");
@@ -968,7 +988,7 @@ recursive gblkcall(n int):
 	for i ND[body].n: gstmt(kid(body, i))
 	tl := if dead(ND[body].a) { -1 } else { ND[body].a as int }
 	if tl >= 0:
-		if FI_[bi].ret != T_VOID && !ends(tl): if is_res(FI_[bi].ret) { gxo(tl); } else { gx(tl); } ow("; ") else: gstmt(tl)
+		if FI_[bi].ret != T_VOID && !ends(tl): if dropk(FI_[bi].ret) > 0 { gxo(tl); } else { gx(tl); } ow("; ") else: gstmt(tl)
 	AOWN = sa
 	ow(" })");
 recursive grecv_ptr(r int):
@@ -1234,7 +1254,7 @@ recursive gspawn(n int, contained bool):
 		if TY[pt].k == TY_REF && TY[pt].c < 0:
 			if TY[fin(c)].k == TY_REF || TY[fin(c)].k == TY_NULL: gx(c) else: gaddr(c)
 		else:
-			if is_res(pt): gxo(c)
+			if is_res(pt) || ownsd(pt): gxo(c)
 			else:
 				if TY[pt].k == TY_SLICE: gas(c) else: gx(c)
 		ow("; ")
@@ -1400,13 +1420,13 @@ recursive gbuiltin0(n int):
 	if b == B_FREES: format(O, "hsl _s", p, " = "); gas(arg(1)); format(O, "; if (_s", p, ".n) hr_span_free(_v", p, ", hr_span_idx(_v", p, ", _s", p, ", sizeof("); ct(e); ow("), "); wloc(n); format(O, "), _s", p, ".n); })"); return
 	if b == B_REALLOCS: format(O, "hsl _s", p, " = "); gas(arg(1)); format(O, "; int64_t _k", p, " = "); gx(arg(2)); format(O, "; hr_span_realloc(_v", p, ", _s", p, ", _k", p, ", sizeof("); ct(e); ow("), "); wloc(n); ow("); })"); return
 	if b == B_PUSH: ct(e); ow(" _x"); oi(p); ow(" = "); gxo(arg(1)); ow("; "); ct(e); ow(" *_p"); oi(p); ow(" = ("); ct(e); format(O, "*)hr_grow(_v", p, ", 1, sizeof _x", p, "); *_p", p, " = _x", p, "; _p", p, "; })"); return
-	if b == B_APPEND: format(O, "hsl _s", p, " = "); gas(arg(1)); format(O, "; hr_append(_v", p, ", _s", p, ".p, _s", p, ".n, sizeof("); ct(e); ow(")); })"); return
+	if b == B_APPEND: format(O, "hsl _s", p, " = "); gas(arg(1)); format(O, "; hr_append(_v", p, ", _s", p, ".p, _s", p, ".n, sizeof("); ct(e); ow(")); "); if needs_drop(e) && !is_vimg(e) { format(O, "for (int64_t _j = _v", p, "->n - _s", p, ".n; _j < _v", p, "->n; _j++) { "); d byte[>..<] ~= []; format(d, "((", cn(e), "*)_v", p, "->b)[_j]"); gdeep(e, d[..]); ow("} ") } ow("})"); return
 	if b == B_POP && is_rel(e): format(O, "if (!_v", p, "->n) hr_die(\"pop of an empty array\", "); wloc(n); ow("); "); rdec_pre(e, n); ow("(("); ct(e); format(O, "*)_v", p, "->b)[--_v", p, "->n]"); rdec_post(e); ow("; })"); return
 	if b == B_POP: format(O, "if (!_v", p, "->n) hr_die(\"pop of an empty array\", "); wloc(n); format(O, "); (("); ct(e); format(O, "*)_v", p, "->b)[--_v", p, "->n]; })"); return
-	if b == B_POPN: format(O, "int64_t _k", p, " = "); gx(arg(1)); format(O, "; if (_k", p, " < 0 || _k", p, " > _v", p, "->n) hr_die(\"pop_n past the length\", "); wloc(n); format(O, "); _v", p, "->n -= _k", p, "; })"); return
-	if b == B_CLEAR: format(O, "_v", p, "->n = 0; })"); return
+	if b == B_POPN: format(O, "int64_t _k", p, " = "); gx(arg(1)); format(O, "; if (_k", p, " < 0 || _k", p, " > _v", p, "->n) hr_die(\"pop_n past the length\", "); wloc(n); ow("); "); lo byte[..64] ~= []; format(lo, "_v", p, "->n - _k", p); drop_range(e, p, lo[..]); format(O, "_v", p, "->n -= _k", p, "; })"); return
+	if b == B_CLEAR: drop_range(e, p, "0"); format(O, "_v", p, "->n = 0; })"); return
 	if b == B_RESIZE:
-		format(O, "int64_t _k", p, " = "); gx(arg(1)); format(O, "; if (_k", p, " < 0) hr_die(\"resize to a negative length\", "); wloc(n); ow("); ")
+		format(O, "int64_t _k", p, " = "); gx(arg(1)); format(O, "; if (_k", p, " < 0) hr_die(\"resize to a negative length\", "); wloc(n); ow("); "); lo byte[..64] ~= []; format(lo, "_k", p); drop_range(e, p, lo[..])
 		if total > 2: ct(e); ow(" _x"); oi(p); ow(" = "); gx(arg(2)); format(O, "; int64_t _o", p, " = _v", p, "->n; hr_resize(_v", p, ", _k", p, ", sizeof _x", p, "); for (int64_t _j = _o", p, "; _j < _k", p, "; _j++) (("); ct(e); format(O, "*)_v", p, "->b)[_j] = _x", p, "; })"); return
 		format(O, "hr_resize(_v", p, ", _k", p, ", sizeof("); ct(e); ow(")); })"); return
 	if b == B_INDEXOF: ct(e); ow(" _x"); oi(p); ow(" = "); gx(arg(1)); format(O, "; int64_t _r", p, " = -1; for (int64_t _j = 0; _j < _v", p, "->n; _j++) if ("); heq_val_r(e, p); format(O, ") { _r", p, " = _j; break; } _r", p, "; })"); return
@@ -1522,7 +1542,7 @@ recursive gtail(tl int, res int):
 		ow("_r"); oi(res); ow(" = ")
 		if is_ares(res): garef(tl)
 		else:
-			if is_res(fin(tl)): gxo(tl) else: gx(tl)
+			if dropk(fin(tl)) > 0: gxo(tl) else: gx(tl)
 		ow("; ")
 		return
 	gstmt(tl);
@@ -1702,7 +1722,7 @@ recursive gvdecl(n int):
 	if is_rel(t): ow("0; "); grel_st_open(t); lv_name(v); grel_st_close(t, init); ow(" "); return
 	if TY[t].k == TY_STRUCT && !is_vst(t) && has_relq(init) && !lv_isptr(v): ow("{0}; "); grel_at(init, -1, v); ow(" "); return
 	if TY[t].k == TY_REF: it := fin(init); if TY[it].k == TY_REF || TY[it].k == TY_NULL { gx(init); } else { gaddr(init); } ow("; "); return
-	if is_res(t): gxo(init); ow("; "); return
+	if is_res(t) || ownsd(t): gxo(init); ow("; "); return
 	it := at(init)
 	if TY[it].k == TY_MULTI: if TY[fin(init)].k == TY_MULTI { gx(init); ow(".r0; "); } else { gx(init); ow("; "); } return
 	gx(init); ow("; ");
@@ -1711,7 +1731,7 @@ decl_lv(v int):
 	ct(t); ow(" ")
 	if lv_isptr(v): ow("*")
 	lv_name(v)
-	if is_res(t) && !lv_isptr(v): ow(" __attribute__((cleanup(hr_rdrop)))");
+	if !lv_isptr(v): cleanup_of(t)
 recursive gassign(n int):
 	x := ND[n]
 	o := x.op
@@ -1741,6 +1761,7 @@ recursive gassign(n int):
 		ow(";")
 		return
 	if o == T_ASSIGN || o == T_DOTASSIGN:
+		if dropk(d) == 2: gen_drop(d); q := nt(); ow("{ "); ct(d); format(O, " _n", q, " = "); gxo(x.b); ow("; "); ct(d); format(O, " *_t", q, " = "); if TY[tt].k == TY_REF { gx0(a); } else { ow("&("); gx(a); ow(")"); } format(O, "; hd", d, "(_t", q, "); *_t", q, " = _n", q, "; }"); return
 		if is_res(d): ow("hr_rset("); if TY[tt].k == TY_REF { gx0(a); } else { ow("&("); gx(a); ow(")"); } ow(", "); gxo(x.b); ow(");"); return
 		if TY[tt].k == TY_REF && TY[at(x.b)].k != TY_REF && TY[fin(x.b)].k != TY_REF && TY[at(x.b)].k != TY_NULL: ow("*"); gx0(a); ow(" = "); gx(x.b); ow(";"); return
 		if o == T_ASSIGN && TY[tt].k == TY_REF && TY[tt].fl & RF_OPT == 0 && TY[tt].c < 0 && TY[at(x.b)].k == TY_REF: ow("*"); gx0(a); ow(" = "); gx(x.b); ow(";"); return
@@ -1799,7 +1820,7 @@ movable_local(c int) bool:
 dup_later(n int, i int) bool:
 	c := kid(n, i); if ND[c].k as int != N_ID || rk(c) != R_LOCAL { return false } for j i + 1..ND[n].n as int { d := kid(n, j); if ND[d].k as int == N_ID && rk(d) == R_LOCAL && rv(d) == rv(c) { return true } } false
 recursive gmove(c int):
-	if movable_local(c): v := rv(c); p := nt(); ow("({ hrv _mv"); oi(p); ow(" = "); lv_name(v); ow("; "); lv_name(v); ow(".b = 0; "); lv_name(v); format(O, ".n = 0; _mv", p, "; })"); return
+	if movable_local(c): v := rv(c); p := nt(); ow("({ "); ct(LVS[v].ty); ow(" _mv"); oi(p); ow(" = "); lv_name(v); ow("; memset(&"); lv_name(v); ow(", 0, sizeof "); lv_name(v); format(O, "); _mv", p, "; })"); return
 	gxo(c);
 recursive gret(n int):
 	x := ND[n]
@@ -1807,18 +1828,18 @@ recursive gret(n int):
 	if lt >= 0 && lt != GCF:
 		rt0 := FI_[lt].ret
 		ow("{ ")
-		if x.n > 1: format(O, "_lrv", lrkey(lt), " = ("); ct(rt0); ow("){ "); for i x.n { if i > 0 { ow(", ") } c := kid(n, i); if is_res(fin(c)) { if dup_later(n, i) { gxo(c); } else { gmove(c); } } else { gx(c); } } ow(" }; ")
+		if x.n > 1: format(O, "_lrv", lrkey(lt), " = ("); ct(rt0); ow("){ "); for i x.n { if i > 0 { ow(", ") } c := kid(n, i); if dropk(fin(c)) > 0 { if dup_later(n, i) { gxo(c); } else { gmove(c); } } else { gx(c); } } ow(" }; ")
 		else:
-			if x.n == 1: format(O, "_lrv", lrkey(lt), " = "); c := kid(n, 0); if is_res(rt0) { gmove(c); } else { gx(c); } ow("; ")
+			if x.n == 1: format(O, "_lrv", lrkey(lt), " = "); c := kid(n, 0); if dropk(rt0) > 0 { gmove(c); } else { gx(c); } ow("; ")
 		format(O, "hr_lr = ", lrkey(lt) + 1, "; "); gdummy(); ow(" }")
 		return
 	if x.n == 0: ow("return;"); return
 	f := if lt >= 0 { lt } else { ret_fn() }
 	rt := FI_[f].ret
-	if x.n > 1: ow("return ("); ct(rt); ow("){ "); for i x.n { if i > 0 { ow(", ") } c := kid(n, i); if is_res(fin(c)) { if dup_later(n, i) { gxo(c); } else { gmove(c); } } else { gx(c); } } ow(" };"); return
+	if x.n > 1: ow("return ("); ct(rt); ow("){ "); for i x.n { if i > 0 { ow(", ") } c := kid(n, i); if dropk(fin(c)) > 0 { if dup_later(n, i) { gxo(c); } else { gmove(c); } } else { gx(c); } } ow(" };"); return
 	c := kid(n, 0)
 	if is_vval(rt): gvret(c, rt); return
-	ow("return "); if is_res(rt) { gmove(c); } else { gx(c); } ow(";");
+	ow("return "); if dropk(rt) > 0 { gmove(c); } else { gx(c); } ow(";");
 recursive gvret(c int, rt int):
 	if is_vimg(rt) && !vok(c, rt): return
 	DSU++
@@ -1879,7 +1900,7 @@ recursive gbreak(n int):
 	r := LRES[LRES.len - 1]
 	ow("{ ")
 	if x.a >= 0:
-		if r >= 0: ow("_r"); oi(r); ow(" = "); if is_ares(r) { garef(x.a); } else { if is_res(fin(x.a)) { gxo(x.a); } else { gx(x.a); } } ow("; ") else: ow("(void)("); gx(x.a); ow("); ")
+		if r >= 0: ow("_r"); oi(r); ow(" = "); if is_ares(r) { garef(x.a); } else { if dropk(fin(x.a)) > 0 { gxo(x.a); } else { gx(x.a); } } ow("; ") else: ow("(void)("); gx(x.a); ow("); ")
 	format(O, "goto _bk", l, "; }");
 recursive gstmt(n int):
 	if n < 0 || dead(n): return
@@ -1899,6 +1920,7 @@ recursive gstmt1(n int):
 	x := ND[n]
 	k := x.k
 	if k == N_ASSIGN: gassign(n); return
+	if k == N_CALL && rk(n) == R_BUILTIN && rv(n) == B_POP: pr := if ax(n) == 1 { ND[x.a].a as int } else { kid(n, 0) }; d := if pr >= 0 && at(pr) >= 0 { deref(at(pr)) } else { -1 }; if d >= 0 && is_res(d) && dropk(TY[d].a as int) > 0 { e := TY[d].a as int; ow("{ "); ct(e); ow(" _pd = "); gx(n); ow("; "); odrop(e, "&_pd"); ow("}"); return }
 	if k == N_INCDEC: a := x.a; tt := at(a); dt := deref(tt); if TY[dt].k == TY_INT && is_signed(dt) { ow("HR_SINC("); ct(dt); ow(", "); if TY[tt].k == TY_REF { gx0(a); } else { ow("&("); gx(a); ow(")"); } ow(if x.op as int == T_INC { ", 1, " } else { ", -1, " }); wloc(n); ow(");"); return } if TY[tt].k == TY_REF { ow("(*"); gx0(a); ow(")"); } else { gx(a); } ow(if x.op as int == T_INC { "++;" } else { "--;" }); return
 	if k == N_FN: return
 	if k == N_IF: gif(n, -1); return
@@ -1928,7 +1950,7 @@ gsig(i int):
 		if !first: ow(", ")
 		first = false
 		t := ptype_of(i, j)
-		ct(t); ow(" "); lv_name(v); if is_res(t): ow("_in")
+		ct(t); ow(" "); lv_name(v); if dropk(t) > 0: ow("_in")
 	AOWN = sa
 	for cp CAPS:
 		if cp.inst == i: if !first { ow(", ") } first = false; v := cp.lv; ct(LVS[v].ty); ow(if lv_isptr(v) { " **c" } else { " *c" }); oi(v)
@@ -1961,7 +1983,7 @@ gen_fn(i int):
 	ow(" {\n")
 	fsp := O.len; du0 := DSU
 	for j ND[node].n:
-		p := kid(node, j); v := rv(p); if is_res(ptype_of(i, j)): ow("hrv "); lv_name(v); ow(" __attribute__((cleanup(hr_rdrop))) = "); lv_name(v); ow("_in;\n")
+		p := kid(node, j); v := rv(p); pt := ptype_of(i, j); if dropk(pt) > 0: ct(pt); ow(" "); lv_name(v); cleanup_of(pt); ow(" = "); lv_name(v); ow("_in;\n")
 	body := ND[node].c
 	rt := FI_[i].ret
 	tl := if dead(ND[body].a) { -1 } else { ND[body].a as int }
@@ -1972,7 +1994,7 @@ gen_fn(i int):
 			if is_vval(rt): gvret(tl, rt); ow("\n")
 			else:
 				if TY[rt].k == TY_MULTI && ND[tl].k == N_CALL: ow("return "); gx(tl); ow(";\n")
-				else: ow("return "); if is_res(rt) { gmove(tl); } else { gx(tl); } ow(";\n")
+				else: ow("return "); if dropk(rt) > 0 { gmove(tl); } else { gx(tl); } ow(";\n")
 			if TDS.len > td: SCR.clear(); SCR.append(O[sp..]); O.resize(sp); ow("{ "); O.append(TDS[td..]); TDS.resize(td); O.append(SCR[..]); ow("}\n")
 		else: gstmt(tl)
 	ow("}\n")
@@ -1999,7 +2021,7 @@ gen_program(out byte[>..]&) bool:
 			if is_rel(t): grel_st_open(t); format(O, "g", di); grel_st_close(t, iv); ow("\n")
 			else:
 				format(O, "g", di, " = ")
-				if is_res(t): gxo(iv) else: gx(iv)
+				if dropk(t) > 0: gxo(iv) else: gx(iv)
 				ow(";\n")
 			if TDS.len > 0: SCR.clear(); SCR.append(O[sp..]); O.resize(sp); ow("{ "); O.append(TDS[..]); TDS.clear(); O.append(SCR[..]); ow("}\n")
 			GI.append(O[sp..]); O.resize(sp)
