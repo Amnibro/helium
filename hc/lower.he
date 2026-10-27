@@ -945,7 +945,7 @@ barg(n int, i int) int:
 		kid(n, i)
 lgrow(va int, k int, es int) int:
 	rz := hdef("GS_STACK_RESERVE"); lim := (if rz >= 0 { rz & -4096 } else { 1 << 34 }) / max(es, 1); b := ldw(va, 0, 3); n := ldw(va, 8, 3); nn := bin(B_ADD, 3, n, k, -1); p := nv(); ls := nlbl(); le := nlbl()
-	ir(I_BZ, 3, -1, b, -1, ls); ir(I_BZ, 3, -1, lcmp(nn, imm(lim), CC_LE), -1, ls); stw(va, 8, nn, 3); ir(I_MOV, 3, p, bin(B_ADD, 3, b, bin(B_MUL, 3, n, imm(es), -1), -1), -1, 0); ir(I_JMP, 3, -1, -1, -1, le)
+	ir(I_BZ, 3, -1, b, -1, ls); ir(I_BZ, 3, -1, if WEB { lcmp(bin(B_MUL, 3, nn, imm(es), -1), ldw(b, -8, 3), CC_LE) } else { lcmp(nn, imm(lim), CC_LE) }, -1, ls); stw(va, 8, nn, 3); ir(I_MOV, 3, p, bin(B_ADD, 3, b, bin(B_MUL, 3, n, imm(es), -1), -1), -1, 0); ir(I_JMP, 3, -1, -1, -1, le)
 	ir(I_LBL, 3, -1, -1, -1, ls); ir(I_MOV, 3, p, rtcall("rt_grow", [va as i32, k as i32, imm(es) as i32]), -1, 0); ir(I_LBL, 3, -1, -1, -1, le); p
 rtcall(name const byte[:], args i32[:]) int:
 	s0 := ARGL.len; ARGL.append(args); d := nv(); ir(I_CALL, 3, d, s0, args.len, rt_fn(name)); d
@@ -1113,6 +1113,7 @@ is_pscal(d int) bool:
 var FMTT i32[>..<]; var FMTN i32[>..<]; var FDONE int
 var EQT i32[>..<]; var EQN i32[>..<]; var EDONE int
 var HDEF byte[>..<]
+var WEB bool
 hdef(k const byte[:]) int:
 	i ~= 0; while i < HDEF.len { j ~= i; while HDEF[j] != '\n' { j++ } l := HDEF[i..j]; if l.len > k.len && l[..k.len] == k && l[k.len] == '=' { v ~= 0; for c l[k.len + 1..] { v = v * 10 + (c - '0') } return v } i = j + 1 } -1
 rtsetp(g const byte[:], k int): d := lookup(intern(g), -1, D_GLOBAL); if d < 0 { return } lea_rip(RCX, 3, gslot(d)); lea_rip(RAX, k, 0); st(RAX, RCX, 0, 8);

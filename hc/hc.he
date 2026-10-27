@@ -3,6 +3,7 @@ use lower
 use pkg
 use fmt
 use lsp
+use wasm
 USAGE := "usage: hc <command> file [options] [-- program args...]\n       hc file [options] [-- program args...]\n\ncommands:\n  run        compile natively into the cache and run the program (hc file does too)\n  build      build an executable: -o out (native), or -o out.c for C\n  check      parse and typecheck only\n  version    print the version\n  help       print this\n\noptions:\n  -o path    output for build (default: the file's name without its extension)\n  --debug    overflow, range and tag checks naming the source line\n  -DNAME=V   a runtime define\n  --c        build C instead of a native executable\n\nenvironment: HC_LIB (library directory; default: lib beside hc, then hc/lib)"
 VERSION := "hc 0.7 (Helium)"
 setlib():
@@ -19,6 +20,7 @@ compile(a const byte[:], o const byte[:], native bool, chk bool) bool:
 	if chk: return true
 	if !build_packages(): print(PERRS); return false
 	c byte[>..] ~= []
+	if WEB: if !wasm_program(c) { print(LERR); return false } if !write_file(o, c) { print("cannot write ", o); return false } return true
 	if native: if !lower_program(c) { print(LERR); return false } if !write_file(o, c) || !make_exec(o) { print("cannot write ", o); return false } return true
 	if !gen_program(c): print(GERR); return false
 	if !write_file(o, c): print("cannot write ", o); return false
@@ -52,12 +54,14 @@ main():
 		if m[..] == "--native": native = true; continue
 		if m[..] == "--c": native = false; continue
 		if m[..] == "--debug": DBG = true; continue
+		if m[..] == "--web": WEB = true; native = true; continue
 		if m[..] == "-o" && i < arg_count(): out.clear(); arg(i, out); i += 1; continue
 		if m.len > 2 && m[0] == '-' && m[1] == 'D': HDEF.append(m[2..]); HDEF.push('\n'); continue
 		if m.len > 2 && m[0] == '-' && m[1] == 'O': continue
 		if cmd == 2: shq(pa, m[..]); continue
 		print("hc: unknown option ", m[..]); exit(2)
 	setlib()
+	if WEB && hdef("GS_STACK_RESERVE") < 0: HDEF.append("GS_STACK_RESERVE=33554432\n")
 	if cmd == 3: exit(if compile(src[..], "", true, true) { 0 } else { 1 })
 	if cmd == 1 && out.len == 0: out.append(stem(src[..]))
 	if cmd == 1 && out.len > 2 && out[^2..] == ".c": native = false
