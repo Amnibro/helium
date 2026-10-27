@@ -39,14 +39,21 @@ fn user_fn_n(name int, k int) bool { var d = dmap(name); while d >= 0 { if DC[d]
 fn has_fn(name int) bool { var d = dmap(name); while d >= 0 { if DC[d].k as int == D_FN { return true; } d = DC[d].next as int; } false }
 fn find_nest(name int) int { var i = NESTS.len - 1; while i >= 0 { if NESTS[i].name as int == name && visible(NESTS[i].own as int) { return i; } i--; } -1 }
 recursive fn decl_nested(n int) {
+	if ND[n].d >= 0 { ngen_decl(n); return; }
 	var i = -1;
 	for f in NESTS { if f.node as int == n && f.own as int == AOWN { i = f.inst as int; } }
 	if i < 0 { i = new_inst(n, n, NEND[n] as int, AOWN); NESTS.push(NF { ND[n].s, n as i32, i as i32, AOWN as i32 }); sig_inst(i); }
-	check_inst(i);
+	let e0 = CERR.len; let ne = NERR; check_inst(i);
+	if NERR > ne && e0 == 0 { var m byte[>..] = []; m.append(CERR[..]); CERR.clear(); NERR = ne; DEFE.push(i as i32); DEFM.push(intern(m[..]) as i32); }
 }
+var DEFE i32[>..<]; var DEFM i32[>..<];
+fn defer_err(i int) { for e, k in DEFE { if e as int == i { NERR++; if CERR.len == 0 { CERR.append(nm(DEFM[k] as int)); } } } }
+var NGD i32[>..<]; var NGO i32[>..<];
+fn ngen_decl(c int) { for k in NGD.len { if DC[NGD[k]].node as int == c && NGO[k] as int == AOWN { return; } } dadd(D_FN, c, node_file(c), ND[c].s as int); NGD.push((DC.len - 1) as i32); NGO.push(AOWN as i32); }
+fn ngok(d int) bool { for k in NGD.len { if NGD[k] as int == d { return visible(NGO[k] as int); } } true }
 recursive fn pre_decl_block_fns(b int) int {
 	let m = NESTS.len;
-	for q in ND[b].n { let c = kid(b, q); if ND[c].k as int == N_FN { let i = new_inst(c, c, NEND[c] as int, AOWN); NESTS.push(NF { ND[c].s, c as i32, i as i32, AOWN as i32 }); sig_inst(i); } }
+	for q in ND[b].n { let c = kid(b, q); if ND[c].k as int == N_FN && ND[c].d >= 0 { ngen_decl(c); continue; } if ND[c].k as int == N_FN { let i = new_inst(c, c, NEND[c] as int, AOWN); NESTS.push(NF { ND[c].s, c as i32, i as i32, AOWN as i32 }); sig_inst(i); } }
 	m
 }
 fn pop_block_fns(m int) { if NESTS.len > m { NESTS.pop_n(NESTS.len - m); } }
@@ -254,11 +261,11 @@ recursive fn get_inst(node int, b0 int, bn int, blk int, bown int) int {
 }
 fn cands_add(name int, ns int) {
 	let a, b = split_q(name);
-	if a >= 0 { var d = dmap(name); while d >= 0 { if DC[d].k as int == D_FN { CANDS.push(d as i32); } d = DC[d].next as int; } return; }
-	if a == -2 { var d = dmap(b); while d >= 0 { if DC[d].k as int == D_FN { CANDS.push(d as i32); } d = DC[d].next as int; } return; }
-	if ns >= 0 { var d = dmap(qual(ns, name)); while d >= 0 { if DC[d].k as int == D_FN { CANDS.push(d as i32); } d = DC[d].next as int; } }
+	if a >= 0 { var d = dmap(name); while d >= 0 { if DC[d].k as int == D_FN { if ngok(d) { CANDS.push(d as i32); } } d = DC[d].next as int; } return; }
+	if a == -2 { var d = dmap(b); while d >= 0 { if DC[d].k as int == D_FN { if ngok(d) { CANDS.push(d as i32); } } d = DC[d].next as int; } return; }
+	if ns >= 0 { var d = dmap(qual(ns, name)); while d >= 0 { if DC[d].k as int == D_FN { if ngok(d) { CANDS.push(d as i32); } } d = DC[d].next as int; } }
 	var d = dmap(name);
-	while d >= 0 { if DC[d].k as int == D_FN { CANDS.push(d as i32); } d = DC[d].next as int; }
+	while d >= 0 { if DC[d].k as int == D_FN { if ngok(d) { CANDS.push(d as i32); } } d = DC[d].next as int; }
 }
 fn is_std_node(node int) bool { let f = node_file(node); let sp = lib_path("std"); nm(FILES[f].name) == sp[..] }
 recursive fn resolve(n int, name int, ns int, a0 int, an int, blk int, tyargs int, report bool) int, int, int {
@@ -333,7 +340,8 @@ recursive fn ck_call(n int, want int) int {
 	let ck_ = ND[cal].k as int;
 	if ck_ == N_ID {
 		let name = ND[cal].s as int;
-		let v = find_lv(name);
+		let v0 = find_lv(name);
+		let v = if v0 >= 0 && (LVS[v0].fl & LV_CFB) != 0 { -1 } else { v0 };
 		let nf = find_nest(name);
 		if v < 0 && nf >= 0 { return call_nested(n, nf); }
 		if v < 0 {
@@ -418,6 +426,7 @@ fn block_binding(name int) int {
 	}
 	-1
 }
+var BAH int[>..<];
 recursive fn call_block(n int, inst int) int {
 	if FI_[inst].blk < -1 {
 		let fnm = -2 - FI_[inst].blk as int;
@@ -430,10 +439,11 @@ recursive fn call_block(n int, inst int) int {
 	let s = ck_args(n, 0, -1);
 	let na = ND[n].n as int;
 	for j in na { let c = kid(n, j); let pa = if (ND[fv].fl & 1) != 0 && j < ND[fv].n as int && ND[kid(fv, j)].a >= 0 { rtype(ND[kid(fv, j)].a as int, ns_of(fv)) } else { -1 }; if is_pending(at(c)) && pa >= 0 { conv(c, pa); ARGW[s + j] = pa as i32; } else { if is_pending(at(c)) { ARGW[s + j] = default_t(c) as i32; } else { let ct0 = at(c); ARGW[s + j] = (if ND[c].k as int == N_UN && ND[c].op as int == T_AND { if TY[ct0].k == TY_REF { ct0 } else { t_ref(ct0, 0) } } else { if has_rel(deref(ct0)) { if TY[ct0].k == TY_REF { ct0 } else { t_ref(ct0, 0) } } else { deref_val(ct0) } }) as i32; } } }
-	var bi = -1;
-	for f, i in FI_ { if f.node as int == fv && f.par as int == own && f.blk == inst as i32 && f.cfn as int == CFN { bi = i; } }
+	var bi = -1; var ah = na;
+	for j in na { ah = ah * 1000003 + ARGW[s + j] as int; }
+	for f, i in FI_ { if f.node as int == fv && f.par as int == own && f.blk == inst as i32 && f.cfn as int == CFN && i < BAH.len && BAH[i] == ah { bi = i; } }
 	if bi < 0 {
-		bi = new_inst(fv, fv, NEND[fv] as int, own);
+		bi = new_inst(fv, fv, NEND[fv] as int, own); while BAH.len <= bi { BAH.push(0); } BAH[bi] = ah;
 		FI_[bi].blk = inst as i32; FI_[bi].bown = own as i32;
 		FI_[bi].cfn = CFN as i32;
 		var lpm = 0;
@@ -467,7 +477,7 @@ recursive fn call_nested(n int, nf0 int) int {
 		if pick < 0 { for j in an { let d = deref(ARGW[s + j] as int); if pick < 0 && TY[d].k == TY_ENUM { let ei = TY[d].a as int; var ins i32[>..<] = []; for vi in ENI[ei].vnum { var f = -1; for c in cs { let pt = deref(ptype_of(c as int, j)); if f < 0 && FI_[c].pn as int == an && TY[pt].k == TY_VARIANT && TY[pt].a as int == ei && TY[pt].c as int == vi && nfits(c as int, s, an, j) { f = c as int; } } if f >= 0 { ins.push(f as i32); } }
 			if ins.len == ENI[ei].vnum as int && ins.len > 0 { let i0 = ins[0] as int; for k in an { if k != j { conv(DIDX[s + k] as int, ptype_of(i0, k)); } } pop_args(s); let d0 = DSPL.len; DSPL.push(j as i32); DSPL.append(ins[..]); for c in ins { note_caps_of(c as int); note_edge(c as int); } set_r(n, R_CASE, d0); return set_t(n, if FI_[i0].ret >= 0 { FI_[i0].ret as int } else { T_VOID }); } } } }
 		pop_args(s); if pick >= 0 { for q, qi in NESTS { if q.inst as int == pick { nf = qi; } } } }
-	let i = NESTS[nf].inst as int;
+	let i = NESTS[nf].inst as int; defer_err(i);
 	let s = ck_args(n, 0, -1);
 	for j in ND[n].n { let c = kid(n, j); if j < FI_[i].pn as int { conv(c, ptype_of(i, j)); } }
 	pop_args(s);
@@ -673,6 +683,19 @@ recursive fn ck_builtin(n int, b int, recv int, want int) int {
 	if b == B_FREES || b == B_REALLOCS { let c = arg(1); ck(c, t_slice(e, true)); conv(c, t_slice(e, true)); if b == B_FREES { return set_t(n, T_VOID); } ck(arg(2), T_I64); conv(arg(2), T_I64); return set_t(n, t_slice(e, false)); }
 	set_t(n, T_ERRT)
 }
+var SCK i32[>..<];
+fn sck_has(v int) bool { var k = 0; while k < SCK.len { if SCK[k] as int == v && SCK[k + 1] as int == AOWN { return true; } k += 2; } false }
+recursive fn slit_infer(n int, sn int) int {
+	var gn i32[..16] = []; gen_names(ND[sn].d as int, gn); var args i32[..16] = []; for g in gn { args.push(-1); }
+	let items = flat_items(n); let sa = AOWN; let m0 = SCOPE.len; let g0 = GB.len; let named = items.len > 0 && ND[items[0]].s >= 0; var fpos = 0; var k = 0;
+	while k < items.len { let fi = items[k] as int; let inst = items[k + 1] as int; k += 2; SCOPE.pop_n(SCOPE.len - m0); GB.pop_n(GB.len - g0); AOWN = sa; if inst != sa { cf_chain(inst, sa); }
+		var fd = -1; if named { let fnm = cf_acc(ND[fi].s as int); for q in ND[sn].n { let f = kid(sn, q); if (ND[f].fl & 4) == 0 && ND[f].s as int == fnm { fd = f; } } } else { var c = 0; for q in ND[sn].n { let f = kid(sn, q); if (ND[f].fl & 4) == 0 { if c == fpos { fd = f; } c++; } } fpos++; }
+		if fd < 0 { continue; } let ta = ND[fd].a as int;
+		if ta >= 0 && ND[ta].k == N_TNAME && ND[ta].n == 0 { for g, gi in gn { if ND[ta].s == g && args[gi] < 0 { let v = ND[fi].a as int; let vt = ck(v, -1); args[gi] = (if is_pending(vt) { default_t(v) } else { vt }) as i32; SCK.push(v as i32); SCK.push(AOWN as i32); } } } }
+	SCOPE.pop_n(SCOPE.len - m0); GB.pop_n(GB.len - g0); AOWN = sa;
+	for a in args { if a < 0 { return -1; } }
+	t_struct(inst_struct(sn, args[..]))
+}
 recursive fn ck_slit(n int, want int) int {
 	let x = ND[n];
 	let tnode = x.a as int;
@@ -680,32 +703,33 @@ recursive fn ck_slit(n int, want int) int {
 	var t = -1;
 	if ND[tnode].k == N_TNAME && ND[tnode].n == 0 && gb_find(ND[tnode].s as int) < 0 {
 		let d = lookup_q(ND[tnode].s as int, ns, D_STRUCT);
-		if d >= 0 && ND[DC[d].node].d >= 0 { if want >= 0 && TY[want].k == TY_STRUCT && STI[TY[want].a].node == DC[d].node { t = want; } }
+		if d >= 0 && ND[DC[d].node].d >= 0 { if want >= 0 && TY[want].k == TY_STRUCT && STI[TY[want].a].node == DC[d].node { t = want; } else { t = slit_infer(n, DC[d].node as int); } }
 	}
 	if t < 0 { t = rtype(tnode, ns); }
 	var si = -1;
 	if TY[t].k == TY_STRUCT { si = TY[t].a as int; }
 	if TY[t].k == TY_VARIANT { si = ENV[(ENI[TY[t].a].v0 as int) + (TY[t].c as int)].si as int; }
 	if si < 0 { if TY[t].k != TY_ERR { cerr(n, "not a struct type"); } return set_t(n, T_ERRT); }
-	for i in x.n { if ND[kid(n, i)].k as int == N_CFOR { cerr(kid(n, i), "const for is not supported by the self-hosted compiler yet"); return set_t(n, T_ERRT); } }
 	let nf = STI[si].fnum as int;
-	let named = x.n > 0 && ND[kid(n, 0)].s >= 0;
-	var fpos = 0;
-	for i in x.n {
-		let fi = kid(n, i);
+	let items = flat_items(n); let sa = AOWN; let m0 = SCOPE.len; let g0 = GB.len;
+	let named = items.len > 0 && ND[items[0]].s >= 0;
+	var fpos = 0; var k = 0;
+	while k < items.len {
+		let fi = items[k] as int; let inst = items[k + 1] as int; k += 2;
+		SCOPE.pop_n(SCOPE.len - m0); GB.pop_n(GB.len - g0); AOWN = sa; if inst != sa { cf_chain(inst, sa); }
 		var idx = -1;
-		if named { idx = sfield(si, ND[fi].s as int); if idx < 0 { var m byte[>..] = []; format(m, "no field ", nm(ND[fi].s as int), " in ", tn(t)); cerr(fi, m); continue; } }
+		if named { idx = sfield(si, cf_acc(ND[fi].s as int)); if idx < 0 { var m byte[>..] = []; format(m, "no field ", nm(cf_acc(ND[fi].s as int)), " in ", tn(t)); cerr(fi, m); continue; } }
 		else { while fpos < nf && SFI[(STI[si].f0 as int) + fpos].ty < 0 { fpos++; } idx = fpos; fpos++; if idx >= nf { cerr(fi, "too many initializers"); continue; } }
 		let ft = SFI[(STI[si].f0 as int) + idx].ty as int;
 		set_r(fi, R_FIELD, idx);
 		let v = ND[fi].a as int;
-		ck(v, ft); conv(v, ft);
+		if !sck_has(v) { ck(v, ft); } conv(v, ft);
 	}
+	SCOPE.pop_n(SCOPE.len - m0); GB.pop_n(GB.len - g0); AOWN = sa;
 	for j in nf {
 		let f = SFI[(STI[si].f0 as int) + j];
 		if f.ty < 0 { continue; }
-		var given = false;
-		for i in x.n { if rv(kid(n, i)) == j { given = true; } }
+		let gn, gi = sl_given(n, j); let given = gn >= 0;
 		if !given && f.def >= 0 { let sa = AOWN; AOWN = GLOBI; ck(f.def as int, f.ty as int); conv(f.def as int, f.ty as int); AOWN = sa; }
 		if !given && f.def < 0 && (x.fl & 1) == 0 && !is_opt(f.ty as int) { var m byte[>..] = []; format(m, "missing field ", nm(f.name as int), " in ", tn(t)); cerr(n, m); }
 	}

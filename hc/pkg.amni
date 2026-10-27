@@ -34,7 +34,7 @@ fn run_ok(cmd const byte[:], log const byte[:], what const byte[:], dir const by
 fn pkg_syms(k int) byte[>..] {
 	var b byte[>..] = []; var ns byte[:][>..] = [];
 	for d in DC { let n = d.node as int; if d.k as int == D_FN && (ND[n].fl & F_EXTERN) != 0 && node_file(n) < FPKG.len && FPKG[node_file(n)] as int == k { let x = ND[n].e as int; if x < 0 || ND[x].b < 0 { let sy = if x >= 0 && ND[x].a >= 0 { tok_str(ND[x].a as int) } else { nm(ND[n].s as int) }; if sy.len > 0 && sy[0] != '!' && !ns.contains(sy) { ns.push(sy); } } } }
-	for sy in ns { format(b, "void ", sy, "(void);\n"); } b.append("__attribute__((used)) void *const hc_syms[] = { 0"); for sy in ns { format(b, ", (void *)", sy); } b.append(" };\n"); b
+	for sy in ns { format(b, sy, "\n"); } b
 }
 fn build_pkg(k int) bool {
 	let name = nm(PKS[k].name as int); var root byte[>..] = []; root.append(nm(PKS[k].root as int));
@@ -48,7 +48,7 @@ fn build_pkg(k int) bool {
 	var so byte[>..] = []; so.append(out[..]); so.append("/lib"); so.append(name); so.append(".so");
 	let st = file_mtime(so[..]); var stale = st < 0 || newer(sc[..], st);
 	for s in srcs { var p byte[>..] = []; p.append(root[..]); p.push('/'); p.append(s); if newer(p[..], st) { stale = true; } }
-	let sy = pkg_syms(k); var sf byte[>..] = []; sf.append(out[..]); sf.append("/hc_syms.c"); var os byte[>..] = []; read_file(sf[..], os); if ct.len > 0 && os[..] != sy[..] { stale = true; }
+	var sl byte[>..] = []; sl.append(out[..]); sl.append("/hc_syms.list"); var os byte[>..] = []; read_file(sl[..], os); let sy = pkg_syms(k); let mst = stale; var p0 = 0; for c, ci in sy { if c == '\n' { var hit = false; var q0 = 0; for d, di in os { if d == '\n' { if os[q0..di] == sy[p0..ci] { hit = true; } q0 = di + 1; } } if !hit && ct.len > 0 { stale = true; } p0 = ci + 1; } }
 	PKS[k].so = intern(so[..]) as i32;
 	if !stale { return true; }
 	var mk byte[>..] = []; mk.append("mkdir -p"); q(mk, out[..]); if run_command(mk[..]) != 0 { format(PERRS, "cannot make ", out[..]); return false; }
@@ -67,15 +67,17 @@ fn build_pkg(k int) bool {
 		var what byte[>..] = []; format(what, "building the C part of the package ", name);
 		return run_ok(cmd[..], log[..], what[..], out[..]);
 	}
-	var w byte[>..] = []; format(w, "cmake_minimum_required(VERSION 3.20)\nproject(hc_pkg_", name, " C)\ninclude(CheckLanguage)\ncheck_language(CXX)\nif(CMAKE_CXX_COMPILER)\nenable_language(CXX)\nendif()\nset(CMAKE_POSITION_INDEPENDENT_CODE ON)\nadd_subdirectory(\"", root[..], "\" pkg EXCLUDE_FROM_ALL)\nif(NOT TARGET ", ct[0], ")\nmessage(FATAL_ERROR \"the package ", name, "'s sidecar names the CMake target ", ct[0], ", which ", root[..], "/CMakeLists.txt does not define\")\nendif()\nadd_library(hc_", name, " SHARED \"", out[..], "/hc_syms.c\")\ntarget_link_libraries(hc_", name, " PRIVATE ", ct[0], ")\nset_target_properties(hc_", name, " PROPERTIES OUTPUT_NAME ", name, " LIBRARY_OUTPUT_DIRECTORY \"", out[..], "\")\n");
+	var w byte[>..] = []; format(w, "cmake_minimum_required(VERSION 3.20)\nproject(hc_pkg_", name, " C)\ninclude(CheckLanguage)\ncheck_language(CXX)\nif(CMAKE_CXX_COMPILER)\nenable_language(CXX)\nendif()\nset(CMAKE_POSITION_INDEPENDENT_CODE ON)\nadd_subdirectory(\"", root[..], "\" pkg EXCLUDE_FROM_ALL)\nif(NOT TARGET ", ct[0], ")\nmessage(FATAL_ERROR \"the package ", name, "'s sidecar names the CMake target ", ct[0], ", which ", root[..], "/CMakeLists.txt does not define\")\nendif()\nadd_library(hc_", name, " SHARED \"", out[..], "/hc_syms.c\")\ntarget_link_libraries(hc_", name, " PRIVATE ", ct[0], ")\nset_target_properties(hc_", name, " PROPERTIES OUTPUT_NAME ", name, " LIBRARY_OUTPUT_DIRECTORY \"", out[..], "/stage\")\n");
 	var wd byte[>..] = []; wd.append(out[..]); wd.append("/wrapper"); var wf byte[>..] = []; wf.append(wd[..]); wf.append("/CMakeLists.txt");
-	if os[..] != sy[..] && !write_file(sf[..], sy[..]) { format(PERRS, "cannot write ", sf[..]); return false; }
+	var mf byte[>..] = []; format(mf, sl[..], ".", random_seed(), ".mine"); if !write_file(mf[..], sy[..]) { format(PERRS, "cannot write ", mf[..]); return false; }
 	var old byte[>..] = []; read_file(wf[..], old); mk.clear(); mk.append("mkdir -p"); q(mk, wd[..]); run_command(mk[..]); if old[..] != w[..] && !write_file(wf[..], w[..]) { format(PERRS, "cannot write ", wf[..]); return false; }
 	var bd byte[>..] = []; bd.append(out[..]); bd.append("/cmake");
+	var sc0 byte[>..] = []; sc0.append(out[..]); sc0.append("/hc_syms.c"); var nf byte[>..] = []; nf.append(sl[..]); nf.append(".new");
+	cmd.append("touch"); q(cmd, sl[..]); cmd.append(" && sort -u"); q(cmd, sl[..]); q(cmd, mf[..]); cmd.append(" >"); q(cmd, nf[..]); cmd.append("; rm -f"); q(cmd, mf[..]); cmd.append("; if [ "); cmd.append(if mst { "1" } else { "0" }); cmd.append(" = 0 ] && cmp -s"); q(cmd, nf[..]); q(cmd, sl[..]); cmd.append(" && [ -f"); q(cmd, so[..]); cmd.append(" ]; then rm -f"); q(cmd, nf[..]); cmd.append("; exit 0; fi; mv"); q(cmd, nf[..]); q(cmd, sl[..]); cmd.append(" && awk '{ print \"void \" $0 \"(void);\"; s = s \", (void *)\" $0 } END { print \"__attribute__((used)) void *const hc_syms[] = { 0\" s \" };\" }'"); q(cmd, sl[..]); cmd.append(" >"); q(cmd, sc0[..]); cmd.append(" || exit 1; ");
 	cmd.append("command -v cmake >/dev/null || { echo 'cannot find cmake on PATH, needed to build the C part of the package "); cmd.append(name); cmd.append("; install CMake 3.20 or later' >"); q(cmd, log[..]); cmd.append("; exit 1; }; cmake -S"); q(cmd, wd[..]); cmd.append(" -B"); q(cmd, bd[..]); cmd.append(" -DCMAKE_BUILD_TYPE=Release");
 	if run_command("command -v ninja >/dev/null") == 0 { cmd.append(" -G Ninja"); }
 	for s in sc_vals("cmake_options") { cmd.append(" -D"); q(cmd, s); }
-	cmd.append(" >"); q(cmd, log[..]); cmd.append(" 2>&1 && nice -n 19 cmake --build"); q(cmd, bd[..]); cmd.append(" --target hc_"); cmd.append(name); cmd.append(" -j 7 >>"); q(cmd, log[..]); cmd.append(" 2>&1");
+	cmd.append(" >"); q(cmd, log[..]); cmd.append(" 2>&1 && nice -n 19 cmake --build"); q(cmd, bd[..]); cmd.append(" --target hc_"); cmd.append(name); cmd.append(" -j 7 >>"); q(cmd, log[..]); cmd.append(" 2>&1 && cp"); var stg byte[>..] = []; stg.append(out[..]); stg.append("/stage/lib"); stg.append(name); stg.append(".so"); q(cmd, stg[..]); var tmp byte[>..] = []; tmp.append(so[..]); tmp.append(".tmp"); q(cmd, tmp[..]); cmd.append(" && mv"); q(cmd, tmp[..]); q(cmd, so[..]);
 	var what byte[>..] = []; format(what, "building the C part of the package ", name, " (CMake target ", ct[0], ")");
 	run_ok(cmd[..], log[..], what[..], out[..])
 }

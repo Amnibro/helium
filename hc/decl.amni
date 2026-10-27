@@ -240,6 +240,7 @@ recursive fn ceval3(n int, ns int) i64, int, bool {
 	let x = ND[n];
 	let k = x.k as int;
 	if k == N_INT { return TK[x.t].v, if TK[x.t].uns { 7 } else { -1 }, true; }
+	if k == N_ID && CFBS.len > 0 { let v = find_lv(x.s as int); if v >= 0 && (LVS[v].fl & LV_CFB) != 0 { let c = CFBS[LVS[v].node]; if c.k != 0 { return 0, -1, false; } let sa = AOWN; AOWN = c.b as int; let r, u, ok = cval(c.a as int); AOWN = sa; return r, if u { 7 } else { -1 }, ok; } }
 	if k == N_UN {
 		let v, c, ok = ceval3(x.a as int, ns);
 		if x.op as int == T_MINUS { let c2 = if c == 7 && ND[x.a].k == N_INT { -1 } else { c }; return cwrap(0 - v, c2), c2, ok; }

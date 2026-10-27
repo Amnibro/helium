@@ -441,6 +441,7 @@ recursive fn pcfor(mode int) int {
 	ND[cf].fl = mode as u16;
 	if mode == 1 { let il = mk(N_LIST, P); pinits(il, true); ND[cf].c = il as i32; }
 	else { if mode == 2 { ex(T_LC, "const for arms"); let al = mk(N_LIST, P); parms(al); ex(T_RC, "const for arms"); ND[cf].c = al as i32; } else { { let q_ = pblock("const for body"); ND[cf].c = q_ as i32; } } }
+	ND[cf].d = ND.len as i32;
 	cf
 }
 fn pinits(n int, frag bool) {

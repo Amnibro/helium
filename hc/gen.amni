@@ -227,6 +227,7 @@ fn oint(v i64, uns bool, t int) {
 	format(O, v, "LL)");
 }
 recursive fn gx(n int) {
+	if ND[n].k as int == N_ID && rk(n) == R_CFB && CFBS[rv(n)].k == 0 { let c = CFBS[rv(n)]; let ft = fin(n); let sa = AOWN; AOWN = c.b as int; let e = c.a as int; let o = cv(e); set_cv(e, ft); gx(e); set_cv(e, o); AOWN = sa; return; }
 	let c = cv(n); let t = at(n);
 	if c < 0 || c == t { gx1(n); return; }
 	gcv(n, t, c);
@@ -511,12 +512,11 @@ recursive fn gslit(n int) {
 	for j in STI[si].fnum {
 		let f = SFI[f0 + j];
 		if f.ty < 0 { continue; }
-		var given = -1;
-		for i in x.n { if rv(kid(n, i)) == j { given = kid(n, i); } }
+		let given, gi = sl_given(n, j);
 		if given < 0 && f.def < 0 { continue; }
 		ow("."); fname_into(O, f.name as int); ow(" = ");
 		if is_rel(f.ty as int) { if given >= 0 && ND[ND[given].a].k as int != N_NULL { if RELM { RELQ.push(j as i32); RELQ.push(given as i32); } else { gerr(given, "a relative reference built inside a literal needs the literal placed by push"); } } ow("0, "); any = true; continue; }
-		if given >= 0 { let v = ND[given].a as int; if is_res(f.ty as int) { gxo(v); } else { gx(v); } }
+		if given >= 0 { let v = ND[given].a as int; let sa = AOWN; AOWN = gi; if is_res(f.ty as int) { gxo(v); } else { gx(v); } AOWN = sa; }
 		else { let sa = AOWN; AOWN = GLOBI; gx(f.def as int); AOWN = sa; }
 		ow(", "); any = true;
 	}
@@ -553,8 +553,9 @@ recursive fn gfmt(o const byte[:], n int, t int, top bool) {
 	if k == TY_BOOL { ow("hr_fc("); ow(o); ow(", ("); if d != t { ow("*"); } gx(n); ow(") ? \"true\" : \"false\")"); return; }
 	if TY[t].k == TY_REF && (TY[t].fl & RF_OPT) != 0 && TY[t].c < 0 && !(k == TY_ARR && !is_fix(d) && !is_lim(d) || k == TY_SLICE) { let p = nt(); ow("({ "); ct(t); format(O, " _q", p, " = "); gx(n); format(O, "; if (_q", p, ") hf", d, "(", o, ", *_q", p, "); else hr_fc(", o, ", \"null\"); })"); gen_hf(d); return; }
 	ow("hf"); oi(d); ow("("); ow(o); ow(", ");
-	if d != t { ow("*"); }
-	if k == TY_ARR && !is_fix(d) && !is_lim(d) || k == TY_SLICE { gsl(n, t); } else { gx(n); }
+	let usl = k == TY_ARR && !is_fix(d) && !is_lim(d) || k == TY_SLICE;
+	if d != t && !usl { ow("*"); }
+	if usl { gsl(n, t); } else { gx(n); }
 	ow(")");
 	gen_hf(d);
 }
@@ -909,7 +910,7 @@ recursive fn grecv_ptr(r int) {
 	if is_place(r) { ow("&("); gx0(r); ow(")"); return; }
 	let k = tmp(t, is_res(t)); ow("("); ot(k); ow(" = "); gxo(r); ow(", &"); ot(k); ow(")");
 }
-recursive fn has_relq(c int) bool { if ND[c].k as int != N_SLIT || (cv(c) >= 0 && cv(c) != at(c)) { return false; } let si = rv(c); if si < 0 { return false; } let f0 = STI[si].f0 as int; for i in ND[c].n { let k = kid(c, i); let f = SFI[f0 + rv(k)]; if f.ty >= 0 && is_rel(f.ty as int) && ND[ND[k].a].k as int != N_NULL { return true; } } false }
+recursive fn has_relq(c int) bool { if ND[c].k as int != N_SLIT || (cv(c) >= 0 && cv(c) != at(c)) { return false; } let si = rv(c); if si < 0 { return false; } let f0 = STI[si].f0 as int; for j in STI[si].fnum { let f = SFI[f0 + j]; if f.ty >= 0 && is_rel(f.ty as int) { let g, gi = sl_given(c, j); if g >= 0 && ND[ND[g].a].k as int != N_NULL { return true; } } } false }
 recursive fn relpush(n int, recv int, c int, e int, p int, lim bool) bool {
 	if !has_relq(c) { return false; }
 	let rt = deref(at(recv));
@@ -1331,9 +1332,12 @@ recursive fn heq_pre(t int) { if !scalar_ty(t) { gen_heq(t); } }
 fn heq_val_o(e int, p int) { var a byte[..64] = []; var b byte[..64] = []; format(a, "_v", p, "->e[_j]"); format(b, "_x", p); heq_o(e, a[..], b[..]); }
 fn heq_val_s(e int, p int) { var a byte[..128] = []; var b byte[..64] = []; a.append("(("); a.append(cn(e)); format(a, "*)_v", p, ".p)[_j]"); format(b, "_x", p); heq_o(e, a[..], b[..]); }
 fn heq_val_r(e int, p int) { var a byte[..128] = []; var b byte[..64] = []; a.append("(("); a.append(cn(e)); format(a, "*)_v", p, "->b)[_j]"); format(b, "_x", p); heq_o(e, a[..], b[..]); }
+fn gvariant(n int) { if TY[at(n)].k == TY_VARIANT { let t = at(n); let v = ENV[(ENI[TY[t].a].v0 as int) + (TY[t].c as int)]; if v.si >= 0 { ow("(("); ct(t); ow("){0})"); } else { ow("((hr_unit)0)"); } return; } let t = at(n); let p = nt(); ow("({ "); ct(t); ow(" _t"); oi(p); format(O, "; memset(&_t", p, ", 0, sizeof _t", p, "); _t", p, ".tag = ", rv(n), "; _t", p, "; })"); }
 recursive fn gx0(n int) {
 	let x = ND[n];
 	let k = x.k as int;
+	if k == N_ID && rk(n) == R_VARIANT { gvariant(n); return; }
+	if k == N_ID && rk(n) == R_CFB { let c = CFBS[rv(n)]; if c.k == 1 { let s = nm(c.a as int); ow("hr_str("); cstr_lit(s); format(O, ", ", s.len, ")"); return; } let sa = AOWN; AOWN = c.b as int; gx(c.a as int); AOWN = sa; return; }
 	if k == N_INT { oint(TK[x.t].v, TK[x.t].uns, fin_lit(n)); return; }
 	if k == N_FLT { let t = fin_lit(n); ow("(("); ct(if TY[t].k == TY_FLT { t } else { T_F64 }); ow(")"); ow(tok_text(x.t as int)); ow(")"); return; }
 	if k == N_STR { gstr(n); return; }
@@ -1353,8 +1357,7 @@ recursive fn gx0(n int) {
 	if k == N_DOT {
 		let r = rk(n);
 		let a = x.a as int;
-		if r == R_VARIANT && TY[at(n)].k == TY_VARIANT { let t = at(n); let v = ENV[(ENI[TY[t].a].v0 as int) + (TY[t].c as int)]; if v.si >= 0 { ow("(("); ct(t); ow("){0})"); } else { ow("((hr_unit)0)"); } return; }
-		if r == R_VARIANT { let t = at(n); let p = nt(); ow("({ "); ct(t); ow(" _t"); oi(p); format(O, "; memset(&_t", p, ", 0, sizeof _t", p, "); _t", p, ".tag = ", rv(n), "; _t", p, "; })"); return; }
+		if r == R_VARIANT { gvariant(n); return; }
 		if r == R_MEMBER {
 			let d = deref(at(a));
 			if is_vimg(d) { if rv(n) == 2 { ow("((int64_t)hr_vget("); } else { ow("(hr_vsl("); } if TY[at(a)].k == TY_REF { gx0(a); } else { gx(a); } if rv(n) == 2 { format(O, ", ", vw(d), "))"); } else { vargs(d); ow(").n)"); } return; }
@@ -1525,16 +1528,16 @@ recursive fn gfor(n int) {
 recursive fn gmatch(n int, res int) {
 	let x = ND[n];
 	let a = x.a as int;
-	let st = at(a);
+	let st = fin(a);
 	let d = deref(st);
 	let p = nt();
 	let isenum = TY[d].k == TY_ENUM;
 	ow("{ ");
 	if isenum { ct(d); ow(" *_m"); oi(p); ow(" = "); if TY[st].k == TY_REF { gx0(a); } else { if is_place(a) { ow("&("); gx(a); ow(")"); } else { let k0 = tmp(d, false); ow("("); ot(k0); ow(" = "); gxo(a); ow(", &"); ot(k0); ow(")"); } } ow("; "); }
 	else { ct(d); ow(" _m"); oi(p); ow(" = "); gx(a); ow("; "); }
-	var first = true;
-	for i in x.n {
-		let arm = kid(n, i);
+	var first = true; let ai = flat0(n); let sa = AOWN;
+	for i in ai.len / 2 {
+		AOWN = ai[2 * i + 1] as int; let arm = ai[2 * i] as int;
 		let ar = ND[arm];
 		if !first { ow(" else "); }
 		first = false;
@@ -1561,12 +1564,12 @@ recursive fn gmatch(n int, res int) {
 			let has = vv.si >= 0 && !STI[vv.si].zero;
 			ct(lt); ow(" "); lv_name(v); ow(" = ");
 			if TY[lt].k == TY_REF { if has { format(O, "&_m", p, "->u.v", vi, "; "); } else { ow("0; "); } }
-			else { if has { format(O, "_m", p, "->u.v", vi, "; "); } else { ow("0; "); } }
+			else { if has { format(O, "_m", p, "->u.v", vi, "; "); } else { ow("{0}; "); } }
 		}
 		gblk(ar.b as int, res, false);
 		ow(" }");
 	}
-	ow(" }");
+	AOWN = sa; ow(" }");
 }
 fn gmatch_dummy() {}
 recursive fn gvdecl(n int) {
@@ -1740,23 +1743,23 @@ recursive fn gvst(si int, n int) {
 	let p = nt();
 	let f0 = STI[si].f0 as int;
 	ow("({ ");
-	for j in STI[si].fnum { let f = SFI[f0 + j]; if f.ty >= 0 && !is_fixed(f.ty as int) && !is_vval(f.ty as int) { var g = -1; if n >= 0 { for i in ND[n].n { if rv(kid(n, i)) == j { g = kid(n, i); } } } if g >= 0 { ct(f.ty as int); format(O, " _h", p, "_", j, " = "); gx(ND[g].a as int); ow("; "); } } }
+	for j in STI[si].fnum { let f = SFI[f0 + j]; if f.ty >= 0 && !is_fixed(f.ty as int) && !is_vval(f.ty as int) { var g = -1; var gi = AOWN; if n >= 0 { let g1, gi1 = sl_given(n, j); g = g1; gi = gi1; } if g >= 0 { ct(f.ty as int); format(O, " _h", p, "_", j, " = "); let sa = AOWN; AOWN = gi; gx(ND[g].a as int); AOWN = sa; ow("; "); } } }
 	format(O, "int64_t _b", p, " = hr_ds.n, _c", p, "; (void)_c", p, "; ");
 	for j in STI[si].fnum {
 		let f = SFI[f0 + j];
 		if f.ty < 0 { if f.padn > 0 { format(O, "memset(hr_grow(&hr_ds, ", f.padn, ", 1), 0, ", f.padn, "); "); } continue; }
 		let ft = f.ty as int;
-		var given = -1;
-		if n >= 0 { for i in ND[n].n { if rv(kid(n, i)) == j { given = kid(n, i); } } }
+		var given = -1; var gi = AOWN;
+		if n >= 0 { let g1, gi1 = sl_given(n, j); given = g1; gi = gi1; }
 		format(O, "_c", p, " = hr_ds.n; { ");
 		if is_vval(ft) {
 			ow("uint8_t *_f = ");
-			if given >= 0 { gx(ND[given].a as int); } else { if f.def >= 0 { let sa = AOWN; AOWN = GLOBI; gx(f.def as int); AOWN = sa; } else { gvdef(ft); } }
+			if given >= 0 { { let sa1 = AOWN; AOWN = gi; gx(ND[given].a as int); AOWN = sa1; }; } else { if f.def >= 0 { let sa = AOWN; AOWN = GLOBI; gx(f.def as int); AOWN = sa; } else { gvdef(ft); } }
 			var e byte[..512] = []; vz_into(e, ft, "_f");
 			format(O, "; hr_vplace(_c", p, ", _f, ", e[..], "); } ");
 		} else {
 			ct(ft); ow(" _v");
-			if given >= 0 && !is_fixed(ft) { format(O, " = _h", p, "_", j, "; "); } else { if given >= 0 { ow(" = "); gx(ND[given].a as int); ow("; "); } else { if f.def >= 0 { ow(" = "); let sa = AOWN; AOWN = GLOBI; gx(f.def as int); AOWN = sa; ow("; "); } else { ow("; memset(&_v, 0, sizeof _v); "); } } }
+			if given >= 0 && !is_fixed(ft) { format(O, " = _h", p, "_", j, "; "); } else { if given >= 0 { ow(" = "); { let sa1 = AOWN; AOWN = gi; gx(ND[given].a as int); AOWN = sa1; }; ow("; "); } else { if f.def >= 0 { ow(" = "); let sa = AOWN; AOWN = GLOBI; gx(f.def as int); AOWN = sa; ow("; "); } else { ow("; memset(&_v, 0, sizeof _v); "); } } }
 			format(O, "hr_ds.n = _c", p, "; memcpy(hr_grow(&hr_ds, sizeof _v, 1), &_v, sizeof _v); } ");
 		}
 	}
@@ -1803,7 +1806,7 @@ recursive fn gstmt1(n int) {
 	if k == N_RET { gret(n); return; }
 	if k == N_BREAK { gbreak(n); return; }
 	if k == N_CONT { ow("continue;"); return; }
-	if k == N_CFOR { gerr(n, "const for is not supported by the self-hosted compiler yet"); return; }
+	if k == N_CFOR { let sa = AOWN; for inst in cf_insts(n) { AOWN = inst as int; ow("{ "); gstmt(ND[n].c as int); ow(" }"); AOWN = sa; } return; }
 	if owned(n) { ow("hr_rgive("); gx0(n); ow(");"); return; }
 	ow("(void)("); gx(n); ow(");");
 }
@@ -1884,7 +1887,7 @@ fn gen_program(out byte[>..]&) bool {
 	for f, i in FI_ {
 		if f.node < 0 || f.st != 2 { continue; }
 		let node = f.node as int;
-		if ND[node].k != N_FN || (ND[node].fl & F_EXTERN) != 0 { continue; }
+		if ND[node].k != N_FN || (ND[node].fl & F_EXTERN) != 0 || DEFE.contains(i as i32) { continue; }
 		if f.par < 0 && nm(f.name as int) == "main" { mi = i; }
 		gen_fn(i);
 		if GERR.len > 0 { return false; }

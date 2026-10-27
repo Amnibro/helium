@@ -1,6 +1,6 @@
 import decl;
-let R_NONE = 0; let R_LOCAL = 1; let R_GLOBAL = 2; let R_FN = 3; let R_BUILTIN = 4; let R_FIELD = 5; let R_CONST = 6; let R_VARIANT = 7; let R_MEMBER = 8; let R_CTOR = 9; let R_BLOCK = 10; let R_UFCS = 11; let R_VCTOR = 12; let R_FCONST = 13; let R_CASE = 14;
-let LV_LIT = 128; let LPN = -7; let LV_VAR = 1; let LV_CONST = 2; let LV_PARAM = 4; let LV_REF = 8; let LV_FOR = 16; let LV_BLKP = 32; let LV_FLET = 64;
+let R_NONE = 0; let R_LOCAL = 1; let R_GLOBAL = 2; let R_FN = 3; let R_BUILTIN = 4; let R_FIELD = 5; let R_CONST = 6; let R_VARIANT = 7; let R_MEMBER = 8; let R_CTOR = 9; let R_BLOCK = 10; let R_UFCS = 11; let R_VCTOR = 12; let R_FCONST = 13; let R_CASE = 14; let R_CFB = 15;
+let LV_LIT = 128; let LPN = -7; let LV_VAR = 1; let LV_CONST = 2; let LV_PARAM = 4; let LV_REF = 8; let LV_FOR = 16; let LV_BLKP = 32; let LV_FLET = 64; let LV_CFB = 256;
 let IS_DONE = 2;
 struct FnI { node i32, lo i32, hi i32, ab i32, par i32, cfn i32, g0 i32, gn i32, ret i32, p0 i32, pn i32, st u8, lr bool, blk i32, bown i32, name i32, fl u16, rinf bool, tg bool, nc bool }
 struct LV { name i32, ty i32, fl u16, cfn i32, own i32, node i32, cnt i32 }
@@ -143,6 +143,7 @@ recursive fn cval(n int) i64, bool, bool {
 	if k == N_INT { return TK[x.t].v, TK[x.t].uns, true; }
 	if k == N_UN { let v, u, ok = cval(x.a as int); if !ok { return 0, false, false; } if x.op as int == T_MINUS { if v == -9223372036854775807 - 1 && ND[x.a].k as int != N_INT { return 0, false, false; } return -v, false, true; } if x.op as int == T_BITNOT { return ~v, false, true; } return 0, false, false; }
 	if k == N_ID && rk(n) == R_CONST { let iv = cinit(n); return CONSTV[rv(n)], ND[iv].k as int == N_INT && TK[ND[iv].t].uns, true; }
+	if k == N_ID && rk(n) == R_CFB { let c = CFBS[rv(n)]; if c.k != 0 { return 0, false, false; } let sa = AOWN; AOWN = c.b as int; let v, u, ok = cval(c.a as int); AOWN = sa; return v, u, ok; }
 	if k == N_BIN {
 		let a, ua, oa = cval(x.a as int); let b, ub, ob = cval(x.b as int);
 		if !oa || !ob { return 0, false, false; }
@@ -162,7 +163,7 @@ recursive fn conv_tail(n int, t int) {
 	let x = ND[n]; let k = x.k as int;
 	if k == N_BLOCK || k == N_EBLOCK { if x.a >= 0 && !ends(x.a as int) { conv(x.a as int, t); } return; }
 	if k == N_IF { if !ends(x.b as int) { conv(x.b as int, t); } if x.c >= 0 && !ends(x.c as int) { conv(x.c as int, t); } return; }
-	if k == N_MATCH { for i in x.n { let b = ND[kid(n, i)].b as int; if b >= 0 && !ends(b) { conv(b, t); } } }
+	if k == N_MATCH { let ai = flat0(n); let sa = AOWN; for i in ai.len / 2 { AOWN = ai[2 * i + 1] as int; let b = ND[ai[2 * i]].b as int; if b >= 0 && !ends(b) { conv(b, t); } } AOWN = sa; }
 }
 recursive fn errleaf(t int) bool { if t == T_ERRT { return true; } let x = TY[t]; if x.k == TY_STRUCT { for i in STI[x.a].fnum { let ft = SFI[(STI[x.a].f0 as int) + i].ty as int; if ft >= 0 && errleaf(ft) { return true; } } } x.k == TY_ARR && x.s == A_FIXED as u8 && errleaf(x.a as int) }
 recursive fn conv(n int, t int) bool {
@@ -229,7 +230,7 @@ recursive fn commit(n int, t int) {
 	if k == N_IF { commit(x.b as int, t); if x.c >= 0 { commit(x.c as int, t); } return; }
 	if k == N_BLOCK { if x.a >= 0 { commit(x.a as int, t); } return; }
 	if k == N_EBLOCK { commit(x.a as int, t); return; }
-	if k == N_MATCH { for i in x.n { commit(ND[kid(n, i)].b as int, t); } return; }
+	if k == N_MATCH { let ai = flat0(n); let sa = AOWN; for i in ai.len / 2 { AOWN = ai[2 * i + 1] as int; commit(ND[ai[2 * i]].b as int, t); } AOWN = sa; return; }
 	if k == N_ARR {
 		let e = if TY[t].k == TY_ARR || TY[t].k == TY_SLICE { TY[t].a as int } else { T_ERRT };
 		if x.a >= 0 { conv(x.a as int, e); conv(x.b as int, T_I64); }
@@ -375,6 +376,7 @@ fn deref_place(t int) int { if TY[t].k == TY_REF && TY[t].c < 0 { TY[t].a as int
 recursive fn ck_id(n int, want int) int {
 	let name = ND[n].s as int;
 	let v = find_lv(name);
+	if v >= 0 && (LVS[v].fl & LV_CFB) != 0 { let b = LVS[v].node as int; set_r(n, R_CFB, b); let c = CFBS[b]; if c.k == 2 { cerr(n, "a field accessor is written in a member access or an initializer label"); return set_t(n, T_ERRT); } let t = cf_ty(b); if want >= 0 && is_pending(t) && (TY[want].k == TY_INT || TY[want].k == TY_FLT) { set_t(n, t); conv(n, want); return want; } return set_t(n, t); }
 	if v >= 0 { set_r(n, R_LOCAL, v); note_cap(v); return set_t(n, if (LVS[v].fl & LV_FLET) != 0 { T_FLIT } else { decode_rel(LVS[v].ty as int) }); }
 	let ns = ns_of(n);
 	if find_nest(name) >= 0 || block_binding(name) >= 0 { set_x(n, -1); return set_t(n, T_FNV); }
@@ -390,6 +392,7 @@ recursive fn ck_id(n int, want int) int {
 	d = lookup_q(name, ns, D_FN);
 	if d >= 0 { set_r(n, R_FN, d); set_x(n, -1); return set_t(n, T_FNV); }
 	if find_nest(name) >= 0 || block_binding(name) >= 0 { set_x(n, -1); return set_t(n, T_FNV); }
+	let gvt = gb_find(name); if gvt >= 0 && TY[gvt].k == TY_VARIANT { let vs0 = ENV[(ENI[TY[gvt].a].v0 as int) + (TY[gvt].c as int)].si as int; if vs0 >= 0 && STI[vs0].fnum > 0 { cerr(n, "a variant with a payload is constructed with { }"); return set_t(n, T_ERRT); } set_r(n, R_VARIANT, TY[gvt].c as int); return set_t(n, gvt); }
 	var m byte[>..] = []; format(m, "unknown name: ", nm(name)); cerr(n, m);
 	set_t(n, T_ERRT)
 }
@@ -462,7 +465,7 @@ fn decode_rel(ft int) int { if ft >= 0 && TY[ft].k == TY_REF && TY[ft].c >= 0 { 
 recursive fn ck_dot(n int, want int) int {
 	let x = ND[n];
 	let a = x.a as int;
-	let name = x.s as int;
+	let name = cf_acc(x.s as int);
 	if ND[a].k == N_ID && find_lv(ND[a].s as int) < 0 {
 		let ns = ns_of(a);
 		let de = lookup_q(ND[a].s as int, ns, D_ENUM);
@@ -556,7 +559,7 @@ recursive fn ends(n int) bool {
 	if k == N_CALL && ND[ND[n].a].k == N_ID { let s = nm(ND[ND[n].a].s as int); if s == "abort" || s == "exit" { return true; } }
 	if k == N_CALL { let r = rk(n); if (r == R_FN || r == R_BLOCK) && rv(n) >= 0 && FI_[rv(n)].nc { return true; } if r == R_CASE { let d0 = rv(n); let i0 = DSPL[d0 + 1] as int; let pt = deref(ptype_of(i0, DSPL[d0] as int)); var all = TY[pt].k == TY_VARIANT || TY[pt].k == TY_ENUM; if all { for vi in ENI[TY[pt].a].vnum { if !FI_[DSPL[d0 + 1 + vi]].nc { all = false; } } } return all; } }
 	if k == N_BLOCK { if AD[aix(n)] == 2 { return true; } if ND[n].a >= 0 { return ends(ND[n].a as int); } if ND[n].n > 0 { return ends(kid(n, (ND[n].n as int) - 1)); } return false; }
-	if k == N_MATCH { if ND[n].n == 0 { return false; } for i in ND[n].n { let b = ND[kid(n, i)].b as int; if b < 0 || !ends(b) { return false; } } return true; }
+	if k == N_MATCH { let ai = flat0(n); if ai.len == 0 { return false; } let sa = AOWN; for i in ai.len / 2 { AOWN = ai[2 * i + 1] as int; let b = ND[ai[2 * i]].b as int; if b < 0 || !ends(b) { AOWN = sa; return false; } } AOWN = sa; return true; }
 	if k == N_IF { return ND[n].c >= 0 && ends(ND[n].b as int) && ends(ND[n].c as int); }
 	if k == N_LOOP { return !has_break(ND[n].a as int); }
 	false
@@ -662,9 +665,10 @@ recursive fn ck_match(n int, want int) int {
 	let d = deref(st);
 	var rt = -1;
 	var allv = true;
-	for i in x.n {
-		let arm = kid(n, i);
-		let m = SCOPE.len;
+	let ai = flat_items(n); let sa = AOWN; let na = ai.len / 2;
+	for i in na {
+		let arm = ai[2 * i] as int;
+		let m = SCOPE.len; let g0 = GB.len; AOWN = sa; cf_chain(ai[2 * i + 1] as int, sa);
 		let ax0 = ND[arm];
 		if (ax0.fl & 1) == 0 {
 			for j in ax0.n {
@@ -674,6 +678,7 @@ recursive fn ck_match(n int, want int) int {
 					let ei = TY[d].a as int;
 					var found = -1;
 					for q in ENI[ei].vnum { if ENV[(ENI[ei].v0 as int) + q].name == ND[lo].s { found = q; } }
+					if found < 0 { let gt = gb_find(ND[lo].s as int); if gt >= 0 && TY[gt].k == TY_VARIANT && TY[gt].a as int == ei { found = TY[gt].c as int; } }
 					if found < 0 { var mm byte[>..] = []; format(mm, "no variant ", nm(ND[lo].s as int), " in ", tn(d)); cerr(lo, mm); }
 					set_r(lo, R_VARIANT, found); set_t(lo, d);
 					if ax0.s >= 0 && found >= 0 { let vt = t_variant(ei, found); let byr = (ax0.fl & 2) != 0 || is_bytes(vt); let v = add_lv(ax0.s as int, if byr { t_ref(vt, 0) } else { vt }, if byr { LV_REF } else { 0 }, arm); set_r(arm, R_LOCAL, v); }
@@ -684,20 +689,20 @@ recursive fn ck_match(n int, want int) int {
 			}
 		}
 		let bt = ck(ax0.b as int, want);
-		SCOPE.pop_n(SCOPE.len - m);
+		SCOPE.pop_n(SCOPE.len - m); GB.pop_n(GB.len - g0); AOWN = sa;
 		if bt == T_VOID { if !ends(ax0.b as int) { allv = false; } } else { if !ends(ax0.b as int) { if rt < 0 || is_pending(rt) { rt = bt; } } }
 	}
-	if !allv || rt < 0 { return set_t(n, T_VOID); }
+	AOWN = sa; if !allv || rt < 0 { return set_t(n, T_VOID); }
 	var allw = want >= 0 && want != T_VOID;
-	if allw { for i in x.n { let b = ND[kid(n, i)].b as int; let bt = at(b); if !ends(b) && !is_pending(bt) && !conv_ok(bt, want, b) { allw = false; } } }
-	if allw { for i in x.n { let b = ND[kid(n, i)].b as int; if !ends(b) { conv(b, want); } } return set_t(n, want); }
-	if is_pending(rt) { for i in x.n { let b = ND[kid(n, i)].b as int; let bt = at(b); if !is_pending(bt) && !ends(b) { rt = bt; } } }
-	if is_pending(rt) && TY[rt].k == TY_ARRLIT && want < 0 { return set_t(n, rt); }
-	if is_pending(rt) { let b = ND[kid(n, 0)].b as int; rt = default_t(b); }
-	for i in x.n { let b = ND[kid(n, i)].b as int; let bt = deref(at(b)); if !ends(b) && !is_pending(bt) && bt != rt && (widens(rt, bt) && !(TY[rt].k == TY_FLT && TY[bt].k == TY_INT) || TY[rt].k == TY_INT && TY[bt].k == TY_FLT) { rt = bt; } }
-	if TY[rt].k == TY_INT && rt != T_I64 && widens(rt, T_I64) { for i in x.n { let b = ND[kid(n, i)].b as int; if !ends(b) && TY[at(b)].k == TY_ILIT { let v, u, ok = cval(b); if ok && !int_fits(v, u, rt) { rt = T_I64; } } } }
-	for i in x.n { let b = ND[kid(n, i)].b as int; if !ends(b) { conv(b, rt); } }
-	set_t(n, rt)
+	if allw { for i in na { AOWN = ai[2 * i + 1] as int; let b = ND[ai[2 * i]].b as int; let bt = at(b); if !ends(b) && !is_pending(bt) && !conv_ok(bt, want, b) { allw = false; } } }
+	if allw { for i in na { AOWN = ai[2 * i + 1] as int; let b = ND[ai[2 * i]].b as int; if !ends(b) { conv(b, want); } } AOWN = sa; return set_t(n, want); }
+	if is_pending(rt) { for i in na { AOWN = ai[2 * i + 1] as int; let b = ND[ai[2 * i]].b as int; let bt = at(b); if !is_pending(bt) && !ends(b) { rt = bt; } } }
+	AOWN = sa; if is_pending(rt) && TY[rt].k == TY_ARRLIT && want < 0 { return set_t(n, rt); }
+	if is_pending(rt) { AOWN = ai[1] as int; let b = ND[ai[0]].b as int; rt = default_t(b); AOWN = sa; }
+	for i in na { AOWN = ai[2 * i + 1] as int; let b = ND[ai[2 * i]].b as int; let bt = deref(at(b)); if !ends(b) && !is_pending(bt) && bt != rt && (widens(rt, bt) && !(TY[rt].k == TY_FLT && TY[bt].k == TY_INT) || TY[rt].k == TY_INT && TY[bt].k == TY_FLT) { rt = bt; } }
+	if TY[rt].k == TY_INT && rt != T_I64 && widens(rt, T_I64) { for i in na { AOWN = ai[2 * i + 1] as int; let b = ND[ai[2 * i]].b as int; if !ends(b) && TY[at(b)].k == TY_ILIT { let v, u, ok = cval(b); if ok && !int_fits(v, u, rt) { rt = T_I64; } } } }
+	for i in na { AOWN = ai[2 * i + 1] as int; let b = ND[ai[2 * i]].b as int; if !ends(b) { conv(b, rt); } }
+	AOWN = sa; set_t(n, rt)
 }
 fn find_from_fn(name int) int {
 	var i = AOWN; let d = if CFN >= 0 && FI_[CFN].node >= 0 { lookup_q(name, ns_of(FI_[CFN].node as int), D_FN) } else { -1 }; let dn = if d >= 0 { ns_of(DC[d].node as int) } else { -1 };
@@ -724,6 +729,49 @@ recursive fn ck_ret(n int) int {
 	let c = kid(n, 0);
 	if rt < 0 { ck(c, -1); let t = ref_res(c, default_t(c)); FI_[f].ret = t as i32; if TY[t].k == TY_REF { conv(c, t); } return set_t(n, T_VOID); }
 	ck(c, rt); conv(c, rt);
+	set_t(n, T_VOID)
+}
+struct Cfb { k i32, a i32, b i32, c i32 }
+struct Cfx { node i32, own i32, inst i32 }
+struct Cfe { inst i32, name i32, cfb i32 }
+var CFBS Cfb[>..<]; var CFX Cfx[>..<]; var CFE Cfe[>..<];
+fn cf_insts(n int) i32[>..] { var r i32[>..] = []; for e in CFX { if e.node as int == n && e.own as int == AOWN { r.push(e.inst); } } r }
+fn cfb(k int, a int, b int, c int) int { CFBS.push(Cfb { k as i32, a as i32, b as i32, c as i32 }); CFBS.len - 1 }
+recursive fn cf_expand(cf int) bool {
+	for e in CFX { if e.node as int == cf && e.own as int == AOWN { return true; } }
+	for e in CFX { if e.node as int == cf && e.own as int == -2 - AOWN { return true; } }
+	let x = ND[cf]; let op = x.op as int; let bl = x.a as int; let nb = ND[bl].n as int; let src = x.b as int; let ns = ns_of(cf);
+	let need = if op == 2 || op == 3 { 2 } else { 1 };
+	if nb != need { cerr(cf, if need == 2 { "fields<T> and variants<E> bind two names, as in const for <N, A>" } else { "types<...> and [constants] bind one name, as in const for <C>" }); return false; }
+	let n0 = kid(bl, 0); let n1 = if nb > 1 { kid(bl, 1) } else { -1 };
+	var ents i32[>..] = [];
+	if op == 1 { for i in ND[src].n { let e = kid(src, i); ck(e, -1); ents.push(n0 as i32); ents.push(cfb(0, e, AOWN, 0) as i32); } }
+	if op == 4 { for i in ND[src].n { let t = rtype(kid(src, i), ns); ents.push(n0 as i32); ents.push(t as i32); } }
+	if op == 2 { let t = deref(rtype(kid(src, 0), ns)); let si = if TY[t].k == TY_STRUCT { TY[t].a as int } else { if TY[t].k == TY_VARIANT { ENV[(ENI[TY[t].a].v0 as int) + (TY[t].c as int)].si as int } else { -2 } };
+		if si == -2 { if TY[t].k != TY_ERR { cerr(cf, if TY[t].k == TY_ENUM { "fields<T> takes a struct or variant type; an ADT's variants are visited with variants<E>" } else { "fields<T> takes a struct or variant type" }); } return false; }
+		if si >= 0 { for j in STI[si].fnum { let f = SFI[(STI[si].f0 as int) + j]; if f.ty >= 0 { ents.push(n0 as i32); ents.push(cfb(1, f.name as int, 0, 0) as i32); ents.push(n1 as i32); ents.push(cfb(2, si, j, f.name as int) as i32); } } } }
+	if op == 3 { let t = deref(rtype(kid(src, 0), ns)); if TY[t].k != TY_ENUM { if TY[t].k != TY_ERR { cerr(cf, "variants<E> takes an ADT"); } return false; } let ei = TY[t].a as int;
+		for vi in ENI[ei].vnum { ents.push(n0 as i32); ents.push(cfb(1, ENV[(ENI[ei].v0 as int) + vi].name as int, 0, 0) as i32); ents.push(n1 as i32); ents.push(t_variant(ei, vi) as i32); } }
+	let per = need * 2; var q = 0;
+	if ents.len == 0 { CFX.push(Cfx { cf as i32, (-2 - AOWN) as i32, -1 }); return true; }
+	while q < ents.len {
+		let inst = new_inst(cf, x.c as int, x.d as int, AOWN); FI_[inst].cfn = FI_[AOWN].cfn; FI_[inst].st = 2; FI_[inst].name = -1; FI_[inst].g0 = GBS.len as i32;
+		var gn = 0; for b in need { let nm1 = ents[q + 2 * b] as int; let v = ents[q + 2 * b + 1] as int; if op == 4 || op == 3 && b == 1 { GBS.push(Gb { nm1 as i32, v as i32 }); gn++; } else { CFE.push(Cfe { inst as i32, nm1 as i32, v as i32 }); } }
+		FI_[inst].gn = gn as i32; CFX.push(Cfx { cf as i32, AOWN as i32, inst as i32 }); q += per;
+	}
+	true
+}
+fn cf_ty(b int) int { let c = CFBS[b]; if c.k == 0 { let sa = AOWN; AOWN = c.b as int; let t = at(c.a as int); AOWN = sa; t } else { if c.k == 1 { TT_STR } else { T_VOID } } }
+fn cf_bind(inst int) { AOWN = inst; for e in CFE { if e.inst as int == inst { add_lv(e.name as int, cf_ty(e.cfb as int), LV_CFB, e.cfb as int); } } for j in FI_[inst].gn { GB.push(GBS[(FI_[inst].g0 as int) + j]); } }
+fn cf_acc(name int) int { let v = find_lv(name); if v >= 0 && (LVS[v].fl & LV_CFB) != 0 && CFBS[LVS[v].node].k == 2 { CFBS[LVS[v].node].c as int } else { name } }
+recursive fn flat_into(n int, r i32[>..]&, bind bool) { for i in ND[n].n { let c = kid(n, i); if ND[c].k as int == N_CFOR { if !bind || cf_expand(c) { for inst in cf_insts(c) { let sa = AOWN; let m = SCOPE.len; let g = GB.len; if bind { cf_bind(inst as int); } else { AOWN = inst as int; } flat_into(ND[c].c as int, r, bind); SCOPE.pop_n(SCOPE.len - m); GB.pop_n(GB.len - g); AOWN = sa; } } } else { r.push(c as i32); r.push(AOWN as i32); } } }
+recursive fn flat_items(n int) i32[>..] { var r i32[>..] = []; flat_into(n, r, true); r }
+recursive fn flat0(n int) i32[>..] { var r i32[>..] = []; flat_into(n, r, false); r }
+recursive fn cf_chain(inst int, base int) { if inst == base || inst < 0 { return; } cf_chain(FI_[inst].par as int, base); cf_bind(inst); }
+recursive fn sl_given(n int, j int) int, int { let sa = AOWN; let it = flat_items(n); var k = 0; while k < it.len { AOWN = it[k + 1] as int; if rv(it[k] as int) == j { let r = it[k] as int; let ri = it[k + 1] as int; AOWN = sa; return r, ri; } k += 2; } AOWN = sa; return -1, -1; }
+recursive fn ck_cfor(n int) int {
+	let sa = AOWN; if !cf_expand(n) { return set_t(n, T_VOID); }
+	for inst in cf_insts(n) { let m = SCOPE.len; let g = GB.len; let ld = LOOPD; let bt = BRK_T.len; cf_bind(inst as int); LOOPD = 0; ck(ND[n].c as int, -1); LOOPD = ld; while BRK_T.len > bt { BRK_T.pop(); } SCOPE.pop_n(SCOPE.len - m); GB.pop_n(GB.len - g); AOWN = sa; }
 	set_t(n, T_VOID)
 }
 fn ret_fn() int { var i = AOWN; while i >= 0 { if FI_[i].node >= 0 && ND[FI_[i].node].k == N_FN { return i; } i = FI_[i].par as int; } -1 }
@@ -756,6 +804,7 @@ recursive fn ck(n int, want int) int {
 	if k == N_AS { return ck_as(n, want); }
 	if k == N_ARR { return ck_arr(n, want); }
 	if k == N_BLOCK { return ck_block(n, want); }
+	if k == N_CFOR { return ck_cfor(n); }
 	if k == N_EBLOCK { BRK_T.push(if want >= 0 && want != T_VOID { want as i32 } else { -1 }); let bt = ck(x.a as int, want); let t = BRK_T.pop() as int; if bt != T_VOID && !is_pending(bt) { return set_t(n, bt); } if t >= 0 { if bt != T_VOID { conv(x.a as int, t); } return set_t(n, t); } return set_t(n, bt); }
 	if k == N_IF { return ck_if(n, want); }
 	if k == N_WHILE { return ck_while(n); }
