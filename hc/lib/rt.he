@@ -65,9 +65,11 @@ rt_tsz() int: r := (1 << 32) - RT_TEND; if r >= 1 << 31 { return RT_RSZ } z ~= 1
 rt_map() int:
 	z := if RT_TIER != 0 { rt_tsz() } else { RT_RSZ }; h := if RT_TIER != 0 { 65536 } else { 0 }
 	p := sys6(9, 0, z + 65536 + h, 3, 0x4022, -1, 0); if p < 0 && p > -4096 { rt_es("helium runtime error: out of address space\n"); rt_write(2, RT_EB[..RT_EN]); sys3(231, 1, 0, 0) } sys3(10, p + h + z, 65536, 0)
-	if RT_TIER != 0 { RT_TEND = p + h + z + 65536; mst(p + h - 8, z) } p + h
+	if RT_TIER != 0 { RT_TEND = max(RT_TEND, p + h + z + 65536); mst(p + h - 8, z) } p + h
 rt_lim(b int) int: if RT_TIER != 0 { mld(b - 8) } else { RT_RSZ }
-rt_give(b int, used int): if b == 0 { return } if RT_DBG > 0 { for q RT_NFREE { if RT_FREE[q] == b { rt_es("helium runtime error: a region was released twice"); rt_dlx() } } } if used > 1 << 20 { sys3(28, b + 65536, min(used, rt_lim(b)) - 65536 + 4095 & -4096, 4) } if RT_NFREE < 4096: RT_FREE[RT_NFREE] = b; RT_NFREE += 1 else: sys3(11, b, RT_RSZ + 65536, 0);
+rt_unmap(b int): h := if RT_TIER != 0 { 65536 } else { 0 }; sys3(11, b - h, rt_lim(b) + 65536 + h, 0);
+rt_tss() int: if RT_TIER == 0 { return 64 << 20 } r := (1 << 32) - RT_TEND; z ~= 1 << 20; while z * 512 <= r && z < 16 << 20 { z *= 2 } z
+rt_give(b int, used int): if b == 0 { return } if RT_DBG > 0 { for q RT_NFREE { if RT_FREE[q] == b { rt_es("helium runtime error: a region was released twice"); rt_dlx() } } } if used > 1 << 20 { sys3(28, b + 65536, min(used, rt_lim(b)) - 65536 + 4095 & -4096, 4) } if RT_NFREE < 4096: RT_FREE[RT_NFREE] = b; RT_NFREE += 1 else: rt_unmap(b);
 rt_grow(va int, k int, esz int) int: b ~= mld(va); if b == 0 { b = rt_take(); mst(va, b) } n := mld(va + 8); mst(va + 8, n + k); if (n + k) * esz > rt_lim(b) { rt_die(5, "push") } b + n * esz
 rt_rdrop(v RtV&): rt_give(v.b, max(v.n * 64, v.top)); rt_give(v.fl, v.fln * 16); v.b = 0; v.n = 0; v.top = 0; v.fl = 0; v.fln = 0; v.flc = 0
 rt_rfrom(v RtV&, p int, n int, esz int): v.b = 0; v.n = 0; v.top = 0; v.fl = 0; v.fln = 0; v.flc = 0; if n > 0: d := rt_grow(vptr(v), n, esz); mcopy(d, p, n * esz);
@@ -189,7 +191,8 @@ rt_os_getenv(name const byte[:], out int) bool:
 rt_os_read_file(path const byte[:], out int) bool:
 	c := rt_path(path, RT_PB); if c == 0 { return false } fd := sys3(2, c, 0, 0); if fd < 0: return false
 	if sys3(5, fd, ptr(RT_ST[..]), 0) == 0 && RT_ST[25] & 0xF0 == 0x40: sys3(3, fd, 0, 0); return false
-	loop: d := rt_grow(out, 1 << 20, 1); r := sys3(0, fd, d, 1 << 20); mst(out + 8, mld(out + 8) - (1 << 20) + max(r, 0)); if r < 0 { sys3(3, fd, 0, 0); return false } if r == 0: break
+	ch := if RT_TIER != 0 && sys3(5, fd, ptr(RT_ST[..]), 0) == 0 { min(max(mld(ptr(RT_ST[48..])) + 1, 4096), 1 << 20) } else { 1 << 20 }
+	loop: d := rt_grow(out, ch, 1); r := sys3(0, fd, d, ch); mst(out + 8, mld(out + 8) - ch + max(r, 0)); if r < 0 { sys3(3, fd, 0, 0); return false } if r == 0: break
 	sys3(3, fd, 0, 0); true
 rt_wfile(c int, data const byte[:], flags int) bool: if c == 0 { return false } fd := sys3(2, c, 0x41 | flags, 420); if fd < 0 { return false } o ~= 0; while o < data.len { w := sys3(1, fd, ptr(data[o..]), data.len - o); if w <= 0 { sys3(3, fd, 0, 0); return false } o += w } sys3(3, fd, 0, 0) == 0
 rt_os_write_file(p const byte[:], d const byte[:]) bool: rt_wfile(rt_path(p, RT_PB), d, 0x200)
@@ -339,7 +342,7 @@ rt_spawn(fnp int, tmain int, pkt int, blk int, contained int) int:
 	rt_lock(RT_SH + 8); id := mld(RT_SH + 16); mst(RT_SH + 16, id + 1); rt_unlock(RT_SH + 8)
 	r := mld(RT_SH + 24) + id * 128
 	mst(r + 40, fnp); mst(r + 48, pkt); mst(r + 56, contained); mst(r + 72, blk); mst(r + 80, mld(blk + 8)); mst(r + 32, 1)
-	ss := 64 << 20; st := sys6(9, 0, ss, 3, 0x4022, -1, 0); sys3(10, st, 4096, 0); mst(r + 64, st)
+	ss := rt_tss(); st := sys6(9, 0, ss, 3, 0x4022, -1, 0); sys3(10, st, 4096, 0); mst(r + 64, st); mst(r + 104, ss); if RT_TIER != 0 { RT_TEND = max(RT_TEND, st + ss) }
 	sp := st + ss - 16; mst(sp, tmain); mst(sp + 8, r)
 	if sysclone(0x250F00, sp, 0, r + 32, blk) < 0: rt_abort("could not start a worker", "thread_spawn")
 	while mld(r + 96) == 0: rt_fwait(r + 96, 0)
@@ -352,8 +355,8 @@ rt_tmain(r int):
 rt_tdone(ab int):
 	rt_flush()
 	r := RT_REC; mst(r + 8, ab)
-	if RT_DS.b != 0 { sys3(11, RT_DS.b, RT_RSZ + 65536, 0) } if RT_OUT.b != 0: sys3(11, RT_OUT.b, RT_RSZ + 65536, 0)
-	for i RT_NFREE: sys3(11, RT_FREE[i], RT_RSZ + 65536, 0)
+	if RT_DS.b != 0 { rt_unmap(RT_DS.b) } if RT_OUT.b != 0: rt_unmap(RT_OUT.b)
+	for i RT_NFREE: rt_unmap(RT_FREE[i])
 	RT_NFREE = 0; mst(r, 1); rt_fwake(r);
 rt_tabort():
 	k := 22; n := max(RT_EN - k - 1, 0); p := sys6(9, 0, n + 8, 3, 0x22, -1, 0); mcopy(p, ptr(RT_EB[k..]), n)
@@ -367,7 +370,7 @@ rt_twait(id int, mv int, loc const byte[:]) bool:
 	while mld(r) == 0: rt_fwait(r, 0)
 	ok := mld(r + 8) == 0
 	if mv != 0 && mld(r + 16) != 0: k := mld(r + 24); if k > 0 { mcopy(rt_grow(mv, k, 1), mld(r + 16), k) } mst(r + 16, 0)
-	if xchg(r + 88, 1) == 0: loop { c := mld(r + 32) & 0xFFFFFFFF; if c == 0 { break } sys6(202, r + 32, 0, c, 0, 0, 0) } sys3(11, mld(r + 64), 64 << 20, 0); sys3(11, mld(r + 72), mld(r + 80), 0)
+	if xchg(r + 88, 1) == 0: loop { c := mld(r + 32) & 0xFFFFFFFF; if c == 0 { break } sys6(202, r + 32, 0, c, 0, 0, 0) } sys3(11, mld(r + 64), mld(r + 104), 0); sys3(11, mld(r + 72), mld(r + 80), 0)
 	ok
 rt_qapv(bf int, p int, z int): if z < 0 { mcopy(rt_grow(bf, -z, 1), p, -z); return } d := rt_grow(bf, z + 8, 1); mst(d, z); mcopy(d + 8, p, z);
 rt_tgo(r int): mst(r + 96, 1); rt_fwake(r + 96);
