@@ -795,7 +795,7 @@ recursive fn ck_vdecl(n int) {
 	let fl = x.fl as int;
 	let ns = ns_of(n);
 	let byref = (fl & V_BYREF) != 0;
-	var dt = if x.a >= 0 { rtype(x.a as int, ns) } else { -1 };
+	var dt = if x.a >= 0 { rtype(x.a as int, ns) } else { -1 }; if x.a >= 0 && ND[x.a].k as int == N_TNAME && ND[x.a].n == 0 && gb_find(ND[x.a].s as int) >= 0 { dt = decode_rel(dt); }
 	var lf = (if (fl & V_VAR) != 0 { LV_VAR } else { 0 }) | (if (fl & V_CONST) != 0 { LV_CONST } else { 0 }) | (if byref { LV_REF } else { 0 });
 	if x.n > 1 {
 		if x.b < 0 { cerr(n, "several names need a call's results"); return; }

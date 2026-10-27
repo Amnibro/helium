@@ -272,7 +272,8 @@ fn rt_sqfrom(v RtV&, p int, n int, z int) { v.b = 0; v.n = 0; v.top = 0; v.fl = 
 fn rt_rinit(v RtV&) { if v.b == 0 { v.b = rt_take(); } }
 fn rt_flp(v RtV&) int { if v.fl == 0 { v.fl = rt_take(); } v.fl }
 fn rt_zero(p int, n int) { var o = 0; while o + 8 <= n { mst(p + o, 0); o += 8; } while o < n { mst1(p + o, 0); o += 1; } }
-fn rt_pclaim(v RtV&, esz int) int { rt_rinit(v); if v.fln > 0 { v.fln -= 1; return mld(v.fl + 8 * v.fln); } let i = v.n; rt_grow(vptr(v), 1, esz); i }
+fn rt_pslot(v RtV&, esz int) int { rt_rinit(v); if v.fln > 0 { v.fln -= 1; return mld(v.fl + 8 * v.fln); } let i = v.n; rt_grow(vptr(v), 1, esz); v.n -= 1; i }
+fn rt_pcommit(v RtV&, i int) { if i == v.n { v.n += 1; } }
 fn rt_pfree(v RtV&, i int, loc const byte[:]) { if (i as! u64) >= (v.n as! u64) { rt_oob(i, v.n, loc); } let f = rt_flp(v); mst(f + 8 * v.fln, i); v.fln += 1; }
 fn rt_flmv(f int, d int, s int, k int) { if d < s { for j in k { mst(f + 8 * (d + j), mld(f + 8 * (s + j))); } } else { var j = k - 1; while j >= 0 { mst(f + 8 * (d + j), mld(f + 8 * (s + j))); j -= 1; } } }
 fn rt_sfree(v RtV&, idx int, len int) {
