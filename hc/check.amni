@@ -265,6 +265,7 @@ fn unify(n int, a int, b int) int {
 	if (ka == TY_ILIT || ka == TY_FLIT) && kb == TY_FLIT { return T_FLIT; }
 	if ka == TY_FLIT && kb == TY_ILIT { return T_FLIT; }
 	if ka == TY_STRLIT && kb == TY_STRLIT { set_t(a, TT_STR); set_t(b, TT_STR); return TT_STR; }
+	if ka == TY_STRLIT && kb == TY_ARR && TY[db].a as int == T_U8 || kb == TY_STRLIT && ka == TY_ARR && TY[da].a as int == T_U8 { let st = t_slice(T_U8, false); conv(a, st); conv(b, st); return st; }
 	if ka == TY_STRLIT || ka == TY_ARRLIT || ka == TY_NULL { conv(a, db); return db; }
 	if kb == TY_STRLIT || kb == TY_ARRLIT || kb == TY_NULL { conv(b, da); return da; }
 	if ka == TY_ILIT { conv(a, db); if tb != db { conv(b, db); } return db; }
@@ -434,6 +435,7 @@ recursive fn global_type(d int) int {
 fn ORD_HAS(d int) bool { for o in ORDER { if o as int == d { return true; } } false }
 fn place_ok(n int) bool { let k = ND[n].k as int; k == N_ID || k == N_DOT || k == N_IDX || (k == N_UN && ND[n].op as int == T_MUL) }
 var HRELC i8[>..];
+recursive fn srel(si int) bool { for i in STI[si].fnum { let ft = SFI[(STI[si].f0 as int) + i].ty as int; if ft >= 0 && ((TY[ft].k == TY_REF && TY[ft].c >= 0) || has_rel(ft)) { return true; } } false }
 recursive fn has_rel(t int) bool {
 	if t < 0 { return false; }
 	while HRELC.len < TY.len { HRELC.push(-1); }
@@ -441,7 +443,8 @@ recursive fn has_rel(t int) bool {
 	HRELC[t] = 0;
 	let x = TY[t]; let k = x.k as int;
 	var r = false;
-	if k == TY_STRUCT { let si = x.a as int; for i in STI[si].fnum { let ft = SFI[(STI[si].f0 as int) + i].ty as int; if ft >= 0 && ((TY[ft].k == TY_REF && TY[ft].c >= 0) || has_rel(ft)) { r = true; } } }
+	if k == TY_STRUCT { r = srel(x.a as int); }
+	if k == TY_ENUM || k == TY_VARIANT { let ei = x.a as int; for i in ENI[ei].vnum { let si = ENV[(ENI[ei].v0 as int) + i].si as int; if (k == TY_ENUM || i == x.c as int) && si >= 0 && srel(si) { r = true; } } }
 	if k == TY_ARR && x.s as int == A_FIXED { r = has_rel(x.a as int); }
 	while HRELC.len < TY.len { HRELC.push(-1); }
 	HRELC[t] = if r { 1 } else { 0 };

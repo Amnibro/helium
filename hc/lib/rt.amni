@@ -168,7 +168,7 @@ fn rt_segv(sig int, info int, ctx int) { let a = mld(info + 16); if a >= RT_SGL 
 fn rt_start(sp int, h int) int { RT_SP = sp; if RT_RSZ == 0 { RT_RSZ = 1 << 34; } if RT_SBUD == 0 { RT_SBUD = 1 << 46; } let st = sys6(9, 0, 1 << 30, 3, 0x4022, -1, 0); if st < 0 && st > -4096 { return sp; } sys3(10, st, 1 << 24, 0); RT_SGL = st; RT_SGH = st + (1 << 24); let al = sys6(9, 0, 1 << 17, 3, 0x22, -1, 0); if al > 0 { RT_ALT = al; mst(al, al + 4096); mst(al + 8, 0); mst(al + 16, (1 << 17) - 4096); sys3(131, al, 0, 0); mst(al, h); mst(al + 8, 0x4C000004); mst(al + 16, h); mst(al + 24, 0); sys6(13, 11, al, 0, 8, 0, 0); } st + (1 << 30) - 64 }
 fn rt_cstr(p int) int { var n = 0; while mld1(p + n) != 0 { n += 1; } n }
 fn rt_appto(va int, p int, n int) { if n > 0 { let d = rt_grow(va, n, 1); mcopy(d, p, n); } }
-fn rt_path(s const byte[:], b byte[4096]&) int { if s.len >= 4095 { return 0; } for i in s.len { b[i] = s[i]; } b[s.len] = 0; ptr(b[..]) }
+fn rt_path(s const byte[:], b byte[4096]&) int { if s.len >= 4095 { return 0; } for i in s.len { if s[i] == 0 { return 0; } b[i] = s[i]; } b[s.len] = 0; ptr(b[..]) }
 fn rt_os_arg_count() int { mld(RT_SP) }
 fn rt_os_arg(i int, out int) { if i >= 0 && i < mld(RT_SP) { let p = mld(RT_SP + 8 + 8 * i); rt_appto(out, p, rt_cstr(p)); } }
 fn rt_os_getenv(name const byte[:], out int) bool {
@@ -186,7 +186,7 @@ fn rt_wfile(c int, data const byte[:], flags int) bool { if c == 0 { return fals
 fn rt_os_write_file(p const byte[:], d const byte[:]) bool { rt_wfile(rt_path(p, RT_PB), d, 0x200) }
 fn rt_os_append_file(p const byte[:], d const byte[:]) bool { rt_wfile(rt_path(p, RT_PB), d, 0x400) }
 fn rt_os_make_exec(p const byte[:]) bool { let c = rt_path(p, RT_PB); c != 0 && sys3(90, c, 493, 0) == 0 }
-fn rt_os_write_file_atomic(p const byte[:], d const byte[:]) bool { if p.len > 500 { return rt_os_write_file(p, d); } let c = rt_path(p, RT_PB); for i in 5 { RT_PB2[i] = 0; } for i in p.len { RT_PB2[i] = p[i]; } let tl = ".tmp~"; for i in 5 { RT_PB2[p.len + i] = tl[i]; } RT_PB2[p.len + 5] = 0; if !rt_wfile(ptr(RT_PB2[..]), d, 0x200) { return false; } sys3(82, ptr(RT_PB2[..]), c, 0) == 0 }
+fn rt_os_write_file_atomic(p const byte[:], d const byte[:]) bool { if p.len > 500 { return rt_os_write_file(p, d); } let c = rt_path(p, RT_PB); if c == 0 { return false; } for i in 5 { RT_PB2[i] = 0; } for i in p.len { RT_PB2[i] = p[i]; } let tl = ".tmp~"; for i in 5 { RT_PB2[p.len + i] = tl[i]; } RT_PB2[p.len + 5] = 0; if !rt_wfile(ptr(RT_PB2[..]), d, 0x200) { return false; } if sys3(82, ptr(RT_PB2[..]), c, 0) == 0 { return true; } sys3(87, ptr(RT_PB2[..]), 0, 0); false }
 fn rt_stat(p const byte[:]) int { let c = rt_path(p, RT_PB); if c == 0 { return -1; } if sys3(4, c, ptr(RT_ST[..]), 0) != 0 { return -1; } (RT_ST[25] & 0xF0) as int }
 fn rt_os_file_exists(p const byte[:]) bool { let m = rt_stat(p); m >= 0 && m != 0x40 }
 fn rt_os_is_dir(p const byte[:]) bool { rt_stat(p) == 0x40 }
@@ -194,11 +194,12 @@ fn rt_os_file_mtime(p const byte[:]) int { if rt_stat(p) < 0 { return -1; } mld(
 fn rt_os_remove_file(p const byte[:]) bool { let c = rt_path(p, RT_PB); c != 0 && sys3(87, c, 0, 0) == 0 }
 fn rt_os_remove_dir(p const byte[:]) bool { let c = rt_path(p, RT_PB); c != 0 && sys3(84, c, 0, 0) == 0 }
 fn rt_os_rename_file(a const byte[:], b const byte[:]) bool { let x = rt_path(a, RT_PB); let y = rt_path(b, RT_PB2); x != 0 && y != 0 && sys3(82, x, y, 0) == 0 }
-fn rt_os_make_dir(p const byte[:]) bool { let c = rt_path(p, RT_PB); if c == 0 { return false; } let r = sys3(83, c, 493, 0); r == 0 || r == -17 }
+fn rt_os_make_dir(p const byte[:]) bool { let c = rt_path(p, RT_PB); if c == 0 { return false; } let r = sys3(83, c, 493, 0); r == 0 || r == -17 && rt_os_is_dir(p) }
+fn rt_nlin(s const byte[:]) bool { for ch in s { if ch == 10 { return true; } } false }
 fn rt_os_list_dir(p const byte[:], out int) bool {
 	let c = rt_path(p, RT_PB); if c == 0 { return false; } let fd = sys3(2, c, 0x10000, 0); if fd < 0 { return false; }
 	var nb byte[>..] = []; var offs int[>..] = []; var buf byte[32768];
-	loop { let r = sys3(217, fd, ptr(buf[..]), 32768); if r <= 0 { break; } var o = 0; while o < r { let rl = buf[o + 16] as int | (buf[o + 17] as int) << 8; let np = ptr(buf[(o + 19)..]); let ln = rt_cstr(np); let nm = buf[(o + 19)..(o + 19 + ln)]; if !(nm == "." || nm == "..") { offs.push(nb.len); offs.push(ln); nb.append(nm); } o += rl; } }
+	loop { let r = sys3(217, fd, ptr(buf[..]), 32768); if r <= 0 { break; } var o = 0; while o < r { let rl = buf[o + 16] as int | (buf[o + 17] as int) << 8; let np = ptr(buf[(o + 19)..]); let ln = rt_cstr(np); let nm = buf[(o + 19)..(o + 19 + ln)]; if !(nm == "." || nm == ".." || rt_nlin(nm)) { offs.push(nb.len); offs.push(ln); nb.append(nm); } o += rl; } }
 	sys3(3, fd, 0, 0);
 	let k = offs.len / 2; var ix int[>..] = []; for i in k { ix.push(i); }
 	for i in 1..k { var j = i; while j > 0 && rt_lt(nb[offs[2 * ix[j]]..offs[2 * ix[j]] + offs[2 * ix[j] + 1]], nb[offs[2 * ix[j - 1]]..offs[2 * ix[j - 1]] + offs[2 * ix[j - 1] + 1]]) { let t = ix[j]; ix[j] = ix[j - 1]; ix[j - 1] = t; j -= 1; } }

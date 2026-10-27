@@ -219,7 +219,7 @@ fn cstr_lit(s const byte[:]) {
 }
 fn oint(v i64, uns bool, t int) {
 	let k = TY[t].k as int;
-	if k == TY_FLT { ow("(("); ct(t); ow(")"); if uns { format(O, v as! u64, ".0"); } else { format(O, v, ".0"); } ow(")"); return; }
+	if k == TY_FLT { ow("(("); ct(t); ow(")"); if uns { format(O, v as! u64, "ULL"); } else { if v == -9223372036854775807 - 1 { ow("(-9223372036854775807LL - 1)"); } else { format(O, v, "LL"); } } ow(")"); return; }
 	if k == TY_BOOL { ow(if v != 0 { "true" } else { "false" }); return; }
 	ow("(("); ct(if k == TY_INT { t } else { T_I64 }); ow(")");
 	if uns { format(O, v as! u64, "ULL)"); return; }
@@ -1357,8 +1357,7 @@ recursive fn gx0(n int) {
 		if r == R_MEMBER {
 			let d = deref(at(a));
 			if is_vimg(d) { if rv(n) == 2 { ow("((int64_t)hr_vget("); } else { ow("(hr_vsl("); } if TY[at(a)].k == TY_REF { gx0(a); } else { gx(a); } if rv(n) == 2 { format(O, ", ", vw(d), "))"); } else { vargs(d); ow(").n)"); } return; }
-			if rv(n) == 2 { format(O, "((int64_t)", TY[d].b, ")"); return; }
-			if is_fix(d) { format(O, "((int64_t)", TY[d].b, ")"); return; }
+			if rv(n) == 2 || is_fix(d) { if has_call(a) { ow("((void)("); gx(a); ow("), "); } format(O, "((int64_t)", TY[d].b, ")"); if has_call(a) { ow(")"); } return; }
 			if is_lim(d) { ow("((int64_t)("); if TY[at(a)].k == TY_REF { gx0(a); ow(")->n)"); } else { gx(a); ow(").n)"); } return; }
 			if TY[at(a)].k == TY_REF { ow("(("); gx0(a); ow(")->n)"); return; }
 			ow("("); gx(a); ow(").n"); return;

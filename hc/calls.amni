@@ -353,6 +353,7 @@ fn is_grow(t int) bool { TY[t].s as int == A_GROW || TY[t].s as int == A_GS }
 var HOOK i32[>..];
 var HOOKW u8[>..];
 var NAME_FORMAT int = -1;
+recursive fn hook_res(k int, ei int, ns int, s int) int, int, int { let f1, b1, n1 = resolve(0, NAME_FORMAT, ns, s, 2, -1, -1, false); if f1 >= 0 || k != TY_VARIANT { return f1, b1, n1; } BINDS.pop_n(BINDS.len - b1); ARGW[s + 1] = t_enum(ei, false) as i32; resolve(0, NAME_FORMAT, ns, s, 2, -1, -1, false) }
 recursive fn hook_of(t int) int {
 	while HOOK.len < TY.len { HOOK.push(-2); HOOKW.push(0); }
 	if HOOK[t] != -2 { return HOOK[t] as int; }
@@ -363,8 +364,8 @@ recursive fn hook_of(t int) int {
 	if NAME_FORMAT < 0 { NAME_FORMAT = intern("format"); }
 	let s = ARGW.len;
 	ARGW.push(t_ref(t_arr(T_U8, A_GROW, -1, -1), 0) as i32); DIDX.push(0);
-	ARGW.push((if k == TY_VARIANT { t_enum(TY[t].a as int, false) } else { t }) as i32); DIDX.push(0);
-	let fnode, b0, bn = resolve(0, NAME_FORMAT, if node >= 0 { ns_of(node) } else { -1 }, s, 2, -1, -1, false);
+	ARGW.push(t as i32); DIDX.push(0);
+	let fnode, b0, bn = hook_res(k, TY[t].a as int, if node >= 0 { ns_of(node) } else { -1 }, s);
 	pop_args(s);
 	if fnode < 0 || ND[fnode].n != 2 || is_std_node(fnode) { BINDS.pop_n(BINDS.len - b0); return -1; }
 	let sa = AOWN; let sc = CFN; AOWN = GLOBI; CFN = GLOBI;
@@ -422,7 +423,7 @@ recursive fn call_block(n int, inst int) int {
 		let sa = AOWN; let sm = SCOPE.len; let bt = BRK_T.len; let ld = LOOPD;
 		AOWN = bi; LOOPD = 0;
 		let np = ND[fv].n as int;
-		if (ND[fv].fl & 1) != 0 { for j in np { let p = kid(fv, j); let pt0 = if j < na { ARGW[s + j] as int } else { T_ERRT }; let at0 = if ND[p].a >= 0 { rtype(ND[p].a as int, ns_of(fv)) } else { -1 }; let pt = if at0 >= 0 && TY[at0].k == TY_REF { at0 } else { if at0 < 0 && j < na { bref(s + j) } else { pt0 } }; let v = add_lv(ND[p].s as int, pt, LV_BLKP | (if ((lpm >> j) & 1) != 0 { LV_LIT } else { 0 }), p); set_r(p, R_LOCAL, v); } }
+		if (ND[fv].fl & 1) != 0 { for j in np { let p = kid(fv, j); let pt0 = if j < na { ARGW[s + j] as int } else { T_ERRT }; let at0 = if ND[p].a >= 0 { rtype(ND[p].a as int, ns_of(fv)) } else { -1 }; let pt = if at0 >= 0 { if TY[at0].k != TY_REF && j < na && TY[at0].k == TY_SLICE { conv(kid(n, j), at0); } if TY[at0].k == TY_REF || TY[at0].k == TY_SLICE { at0 } else { pt0 } } else { if j < na { bref(s + j) } else { pt0 } }; let v = add_lv(ND[p].s as int, pt, LV_BLKP | (if ((lpm >> j) & 1) != 0 { LV_LIT } else { 0 }), p); set_r(p, R_LOCAL, v); } }
 		else { if na >= 1 { let v = add_lv(intern("it"), bref(s), LV_BLKP | (if (lpm & 1) != 0 { LV_LIT } else { 0 }), fv); set_r(fv, R_LOCAL, v); } }
 		let body = ND[fv].a as int;
 		let bt0 = ck(body, -1);

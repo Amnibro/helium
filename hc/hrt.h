@@ -371,7 +371,7 @@ static __attribute__((noreturn)) void hr_exit(int64_t c) { hr_flush(); exit((int
 static void hr_assert_fail(const char *loc) { hr_die("assert failed", loc); }
 static int64_t hr_os_arg_count(void) { return hr_argc; }
 static void hr_os_arg(int64_t i, hrv *out) { if (i >= 0 && i < hr_argc) hr_append(out, hr_argv[i], (int64_t)strlen(hr_argv[i]), 1); }
-static char *hr_cstr(hsl s, char *buf, int64_t cap) { char *c = s.n < cap ? buf : malloc((size_t)s.n + 1); memcpy(c, s.p, (size_t)s.n); c[s.n] = 0; return c; }
+static char *hr_cstr(hsl s, char *buf, int64_t cap) { char *c = s.n < cap ? buf : malloc((size_t)s.n + 1); memcpy(c, s.p, (size_t)s.n); c[s.n] = 0; if (s.n >= 4095 || memchr(s.p, 0, (size_t)s.n)) c[0] = 0; return c; }
 #define HR_CS(name, s) char name##_b[512]; char *name = hr_cstr(s, name##_b, 512)
 #define HR_CSF(name) if (name != name##_b) free(name)
 static bool hr_os_getenv(hsl n, hrv *out) { HR_CS(c, n); char *v = getenv(c); HR_CSF(c); if (!v) return false; hr_append(out, v, (int64_t)strlen(v), 1); return true; }
@@ -392,10 +392,10 @@ static bool hr_os_write_file(hsl p, hsl d) { return hr_wfile(p, d, O_TRUNC); }
 static bool hr_os_make_exec(hsl p) { char b[4096]; if (p.n >= 4096) return false; memcpy(b, p.p, (size_t)p.n); b[p.n] = 0; return chmod(b, 0755) == 0; }
 static bool hr_os_append_file(hsl p, hsl d) { return hr_wfile(p, d, O_APPEND); }
 static bool hr_os_write_file_atomic(hsl p, hsl d) {
-	char tb[600]; if (p.n > 500) return hr_wfile(p, d, O_TRUNC);
+	char tb[600]; if (p.n >= 4095 || memchr(p.p, 0, (size_t)p.n)) return false; if (p.n > 500) return hr_wfile(p, d, O_TRUNC);
 	memcpy(tb, p.p, (size_t)p.n); memcpy(tb + p.n, ".tmp~", 6);
 	if (!hr_wfile((hsl){ (uint8_t *)tb, p.n + 5 }, d, O_TRUNC)) return false;
-	HR_CS(c, p); bool ok = rename(tb, c) == 0; HR_CSF(c); return ok;
+	HR_CS(c, p); bool ok = rename(tb, c) == 0; HR_CSF(c); if (!ok) unlink(tb); return ok;
 }
 static bool hr_os_file_exists(hsl p) { HR_CS(c, p); struct stat st; bool r = stat(c, &st) == 0 && !S_ISDIR(st.st_mode); HR_CSF(c); return r; }
 static bool hr_os_is_dir(hsl p) { HR_CS(c, p); struct stat st; bool r = stat(c, &st) == 0 && S_ISDIR(st.st_mode); HR_CSF(c); return r; }
@@ -403,13 +403,13 @@ static int64_t hr_os_file_mtime(hsl p) { HR_CS(c, p); struct stat st; int64_t r 
 static bool hr_os_remove_file(hsl p) { HR_CS(c, p); bool r = unlink(c) == 0; HR_CSF(c); return r; }
 static bool hr_os_remove_dir(hsl p) { HR_CS(c, p); bool r = rmdir(c) == 0; HR_CSF(c); return r; }
 static bool hr_os_rename_file(hsl a, hsl b) { HR_CS(x, a); HR_CS(y, b); bool r = rename(x, y) == 0; HR_CSF(x); HR_CSF(y); return r; }
-static bool hr_os_make_dir(hsl p) { HR_CS(c, p); bool r = mkdir(c, 0755) == 0 || errno == EEXIST; HR_CSF(c); return r; }
+static bool hr_os_make_dir(hsl p) { HR_CS(c, p); struct stat st; bool r = mkdir(c, 0755) == 0 || errno == EEXIST && !stat(c, &st) && S_ISDIR(st.st_mode); HR_CSF(c); return r; }
 static int hr_cmpstr(const void *a, const void *b) { return strcmp(*(char *const *)a, *(char *const *)b); }
 static bool hr_os_list_dir(hsl p, hrv *out) {
 	HR_CS(c, p); DIR *d = opendir(c); HR_CSF(c);
 	if (!d) return false;
 	char **names = 0; int64_t n = 0, cap = 0; struct dirent *e;
-	while ((e = readdir(d))) { if (!strcmp(e->d_name, ".") || !strcmp(e->d_name, "..")) continue; if (n == cap) { cap = cap ? cap * 2 : 32; names = realloc(names, (size_t)cap * sizeof *names); } names[n++] = strdup(e->d_name); }
+	while ((e = readdir(d))) { if (!strcmp(e->d_name, ".") || !strcmp(e->d_name, "..") || strchr(e->d_name, '\n')) continue; if (n == cap) { cap = cap ? cap * 2 : 32; names = realloc(names, (size_t)cap * sizeof *names); } names[n++] = strdup(e->d_name); }
 	closedir(d);
 	qsort(names, (size_t)n, sizeof *names, hr_cmpstr);
 	for (int64_t i = 0; i < n; i++) { hr_append(out, names[i], (int64_t)strlen(names[i]), 1); hr_fb(out, '\n'); free(names[i]); }
