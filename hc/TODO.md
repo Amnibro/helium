@@ -1,6 +1,6 @@
 # hc: what's left
 
-Status as of 2026-10-27 (gate 63).
+Status as of 2026-10-27 (gate 64).
 
 ## Where things stand
 
@@ -8,7 +8,7 @@ Status as of 2026-10-27 (gate 63).
 |---|---|
 | hc source | `hc/*.he` and `hc/lib/*.he`, all in the `.he` syntax below; the library was rewritten from scratch, and `json`/`regex` were fuzzed against the old one |
 | Self-host | hc builds itself natively, reaches a fixpoint, and emits the same C as the clang-built hc (`hc/bootstrap.sh` checks both) |
-| Corpus, native (`--native`) | 624 / 645 pass |
+| Corpus, native (`--native`) | 625 / 645 pass |
 | Corpus, C path | 539 / 645 pass |
 | hc's own tests | `hc/test/*.he` with `.out` files; `tools/hc/hetest.sh <hc>` runs each one through the C path, `--native` and `--native --debug` |
 | Pom-Pom Grove sim | garden, race, mini, load traces bit-identical on both paths |

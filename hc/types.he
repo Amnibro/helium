@@ -43,7 +43,7 @@ t_int(s int) int:
 t_arr(e int, ak int, size i64, ls int) int:
 	tmk(Ty{k: TY_ARR as u8, s: ak, a: e, c: ls, b: size, ..})
 t_slice(e int, cq bool) int:
-	tmk(Ty{k: TY_SLICE as u8, a: e, c: -1, ..})
+	tmk(Ty{k: TY_SLICE as u8, a: e, c: -1, fl: if cq { 1 } else { 0 }, ..})
 t_ref(e int, fl int) int:
 	if e >= 0 && TY[e].k == TY_REF && TY[e].c < 0: return if fl & RF_OPT != 0 && TY[e].fl & RF_OPT == 0 { t_ref(TY[e].a as int, RF_OPT) } else { e }
 	tmk(Ty{k: TY_REF as u8, fl: fl & RF_OPT, a: e, c: -1, ..})
