@@ -50,6 +50,13 @@ rt_eu(u u64): var b byte[24]; i := rt_digits(b, u); rt_es(b[i..]);
 rt_ei(v int): u ~= v as! u64; if v < 0 { rt_es("-"); u = 0 - u } rt_eu(u);
 rt_fail(loc const byte[:]): if RT_PD > 0 && RT_PLS <= RT_OUT.n { RT_OUT.n = RT_PLS } rt_es(" ("); rt_es(loc); rt_es(")\n"); if RT_TID >= 0 && mld(RT_REC + 56) != 0 { rt_tabort() } rt_flush(); rt_write(2, RT_EB[..RT_EN]); sys3(231, 1, 0, 0);
 rt_die(k int, loc const byte[:]): rt_es("helium runtime error: "); if k == 1 { rt_es("integer overflow") } if k == 2 { rt_es("division by zero") } if k == 4 { rt_es("cast changes the value") } if k == 5 { rt_es("array grew past 16 GiB") } if k == 6 { rt_es("assert failed") } if k == 7 { rt_es("division overflow") } rt_fail(loc);
+rt_ovfd(a int, b int, k int, loc const byte[:]):
+	w := k >> 8; sg := w & 12 == 0; z := 8 << (w & 3); m := if z == 64 { -1 } else { (1 << z) - 1 }
+	rt_es("helium runtime error: integer overflow (debug): "); if sg { rt_ei(a) } else { rt_eu((a & m) as! u64) }; rt_es(if k & 255 == 0 { " + " } else if k & 255 == 1 { " - " } else { " * " }); if sg { rt_ei(b) } else { rt_eu((b & m) as! u64) }
+	rt_es(if sg { " at i" } else { " at u" }); rt_ei(z); rt_fail(loc)
+rt_nard(v int, c int, loc const byte[:]):
+	w := c >> 8; rt_es("helium runtime error: as conversion out of range (debug): "); if c & 4 != 0 { rt_ei(v) } else { rt_eu(v as! u64) }
+	rt_es(if w & 12 == 0 { " as i" } else { " as u" }); rt_ei(8 << (w & 3)); rt_fail(loc)
 rt_oob(i int, n int, loc const byte[:]): rt_es("helium runtime error: index "); rt_ei(i); rt_es(" out of bounds (length "); rt_ei(n); rt_es(")"); rt_fail(loc);
 rt_take() int: if RT_NFREE > 0 { RT_NFREE -= 1; return RT_FREE[RT_NFREE] } rt_map()
 rt_map() int: p := sys6(9, 0, RT_RSZ + 65536, 3, 0x4022, -1, 0); if p < 0 && p > -4096 { rt_es("helium runtime error: out of address space\n"); rt_write(2, RT_EB[..RT_EN]); sys3(231, 1, 0, 0) } sys3(10, p + RT_RSZ, 65536, 0); p

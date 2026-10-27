@@ -1,15 +1,15 @@
 # hc: what's left
 
-Status as of 2026-10-27, `main` at `a9c76f94`.
+Status as of 2026-10-27 (gate 51).
 
 ## Where things stand
 
 | | Now |
 |---|---|
-| hc source | `hc/*.he` (the `.he` syntax below); `hc/lib/*.amni` still in the old syntax |
+| hc source | `hc/*.he` and `hc/lib/*.he`, all in the `.he` syntax below; the library was rewritten from scratch, and `json`/`regex` were fuzzed against the old one |
 | Self-host | hc builds itself natively, reaches a fixpoint, and emits the same C as the clang-built hc (`hc/bootstrap.sh` checks both) |
-| Corpus, native (`--native`) | 584 / 646 pass |
-| Corpus, C path | 503 / 646 pass |
+| Corpus, native (`--native`) | 595 / 646 pass |
+| Corpus, C path | 509 / 646 pass |
 | Pom-Pom Grove sim | garden, race, mini, load traces bit-identical on both paths |
 | Still on the Goose C++ compiler | Pomling, Waystone and Amni Prayer (web target); everything with gfx, ui, physics or audio; LSP; shader compilation |
 
@@ -28,7 +28,7 @@ Converters:
 
 - `hc --to-he in.amni out.he`: syntax only. Safe only for code without narrow untyped locals, since `.he` widens those.
 - `HC_OLDLOC=1 hc --slim prog file out.he [keep]`: checks the whole program under the old rules, then prints `file` with types. It drops casts that the new rules make redundant and spells out narrow local types the old code relied on.
-- The oracle (`slim.py` in the session scratchpad; worth moving into `tools/hc/`) compares the C of the old and new sources after canonical renaming. Any function whose C changes keeps its casts. On hc it kept 57 of about 950 functions.
+- The oracle (`tools/hc/slim.py`) compares the C of the old and new sources after canonical renaming. Any function whose C changes keeps its casts. On hc it kept 57 of about 950 functions.
 
 o200k token counts: hc 243,964 (`.amni`) → 228,365 (`.he`, slimmed), −6.4%. Corpus, syntax only: −10.6% code tokens.
 

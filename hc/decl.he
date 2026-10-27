@@ -152,8 +152,9 @@ lookup_q(q int, ns int, k int) int:
 	if a == -2: return lookup(b, -1, k)
 	if a >= 0: d ~= dmap(q); while d >= 0 { if DC[d].k == k { return d } d = DC[d].next } return -1
 	lookup(b, ns, k)
-ns_of(n int) int:
-	file_ns(node_file(n))
+NSOV ~= -1
+ns_of(n int) int: if NSOV >= 0 { NSOV } else { file_ns(node_file(n)) }
+decl_ns(node int) int: if ND[node].a >= 0 { ND[node].a as int } else { file_ns(node_file(node)) }
 recursive rtype(n int, ns int) int:
 	if n < 0: return T_VOID
 	x := ND[n]

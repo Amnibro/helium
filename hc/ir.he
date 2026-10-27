@@ -13,7 +13,7 @@ var LOCS i32[>..<]
 var GCB byte[>..<]; var GCS i32[>..<]; var GCN i32[>..<]; var GCP i32[>..<]
 gcread(o int, z int) int, bool: for k GCS.len { s := GCS[k]; if o >= s && o + z <= s + GCN[k] { v ~= 0; for j z { v = v | (GCB[GCP[k] + o - s + j] as int) << 8 * j } return v, true } } return 0, false
 var DBG bool
-RT_DIE int ~= -1; RT_OOB int ~= -1; I_BCHK := 34; RT_F2I int ~= -1
+RT_DIE int ~= -1; RT_OOB int ~= -1; RT_OVF int ~= -1; K_OVFD := 8; RT_NARD int ~= -1; K_NARD := 9; I_BCHK := 34; RT_F2I int ~= -1
 var FK i8[>..<]; var FB i32[>..<]; var FD i64[>..<]; var UC i32[>..<]; var FI i32[>..<]; var FS i8[>..<]
 kc(v int) bool:
 	v >= 0 && v < FK.len && FK[v] == 1
@@ -201,7 +201,7 @@ cg_fn(fi int):
 					dv := c == B_DIV || c == B_MOD || c == B_UDIV || c == B_UMOD; cm := c == B_ADD || c == B_MUL || c == B_AND || c == B_OR || c == B_XOR
 					sw := cm && (kc(a) && !kc(b) || gr(d) >= 0 && gr(d) == gr(b) && gr(a) != gr(d)); a1 := if sw { b } else { a }; b1 := if sw { a } else { b }
 					bi := kc(b1) && i32ok(FD[b1] as int) && !dv; bv := if bi { FD[b1] as int } else { 0 }
-					R := if dv || gr(d) < 0 || gr(d) == gr(b1) && !bi && gr(a1) != gr(d) { RAX } else { gr(d) }; sh := c == B_SHL || c == B_SAR || c == B_SHR
+					R := if dv || DBG && c <= B_MUL && x.l >= 0 || gr(d) < 0 || gr(d) == gr(b1) && !bi && gr(a1) != gr(d) { RAX } else { gr(d) }; sh := c == B_SHL || c == B_SAR || c == B_SHR
 					B := if bi { -1 } else { if sh || dv { ldv(RCX, b1); RCX } else { srcr(b1, RCX) } }; ldv(R, a1)
 					if c == B_ADD { if bi { alu_ri(0, R, bv); } else { alu(0x01, R, B); } } if c == B_SUB { if bi { alu_ri(5, R, bv); } else { alu(0x29, R, B); } } if c == B_MUL:
 						if bi: imul_ri(R, R, bv) else: imul(R, B)
@@ -210,7 +210,8 @@ cg_fn(fi int):
 					if c == B_SHL { if bi { sh_ri(4, R, bv); } else { shcl(4, R); } } if c == B_SAR { if bi { sh_ri(7, R, bv); } else { shcl(7, R); } } if c == B_SHR:
 						if bi: sh_ri(5, R, bv) else: shcl(5, R)
 					if c >= B_ADD && c <= B_MUL && x.l >= 0:
-						if wsz(w) == 8: jcc_l(CC_O, trap_to(K_OVF, x.l, traps)) else: mov_rr(RDX, R); ext_r(RDX, w); alu(0x39, RDX, R); jcc_l(CC_NE, trap_to(K_OVF, x.l, traps))
+						tk := if DBG { trap_ab(K_OVFD | c << 8 | w << 16, x.l, a1, b1, traps) } else { trap_to(K_OVF, x.l, traps) }
+						if wsz(w) == 8: jcc_l(CC_O, tk) else: mov_rr(RDX, R); ext_r(RDX, w); alu(0x39, RDX, R); jcc_l(CC_NE, tk)
 					if c == B_DIV || c == B_MOD || c == B_UDIV || c == B_UMOD:
 						if x.l >= 0: test_rr(RCX, RCX); jcc_l(CC_E, trap_to(K_DIV0, x.l, traps))
 						if c == B_DIV || c == B_MOD:
@@ -234,7 +235,8 @@ cg_fn(fi int):
 								if op == I_BCHK: A := srcr(a, RAX); if kc(b) && i32ok(FD[b] as int) { alu_ri(7, A, FD[b] as int); } else { alu(0x39, A, srcr(b, RCX)); } jcc_l(CC_AE, trap_ab(K_OOB, x.l, a, b, traps))
 								else:
 									if op == I_CHK:
-										ldv(RAX, a); mov_rr(RDX, RAX); ext_r(RDX, w); alu(0x39, RDX, RAX); jcc_l(CC_NE, trap_to(K_NARROW, x.l, traps)); if d >= 0: stv(RAX, d)
+										ldv(RAX, a); tk := if x.c != 0 { trap_ab(K_NARD | (x.c as int) << 8, x.l, a, -1, traps) } else { trap_to(K_NARROW, x.l, traps) }
+										if x.c & 2 != 0 { jmp_l(tk) } else { mov_rr(RDX, RAX); ext_r(RDX, w); alu(0x39, RDX, RAX); jcc_l(CC_NE, tk) }; if d >= 0: stv(RAX, d)
 									else:
 										if op == I_LBL: bind(c); j ~= i + 1; while j < f.i1 && IR[j].op as int == I_NOP { j++ } HPEND = if c < HDC.len && j < f.i1 && IR[j].op as int == I_CMP && IR[j].d >= 0 && fusable(j, IR[j].d, f.i1) { HDC[c] = j; c as int } else { -1 }
 										else:
@@ -327,5 +329,5 @@ cg_fn(fi int):
 																																ldv(RDI, d); ldv(RSI, a); if kc(b) && FD[b] <= 256: mvblk(FD[b] as int, false) else: ldv(RCX, b); xb(0xF3); xb(0xA4)
 	epi()
 	j ~= 0
-	while j < traps.len: bind(traps[j]); l := traps[j + 2]; if traps[j + 1] as int == K_OOB { ldv(RAX, traps[j + 3]); ldv(RSI, traps[j + 4]); mov_rr(RDI, RAX); lea_rip(RDX, 2, LOCS[2 * l]); mov_ri(RCX, LOCS[2 * l + 1]); call_f(RT_OOB); } else { mov_ri(RDI, traps[j + 1]); lea_rip(RSI, 2, LOCS[2 * l]); mov_ri(RDX, LOCS[2 * l + 1]); call_f(RT_DIE); } j += 5
+	while j < traps.len: bind(traps[j]); l := traps[j + 2]; if traps[j + 1] as int == K_OOB { ldv(RAX, traps[j + 3]); ldv(RSI, traps[j + 4]); mov_rr(RDI, RAX); lea_rip(RDX, 2, LOCS[2 * l]); mov_ri(RCX, LOCS[2 * l + 1]); call_f(RT_OOB); } else if traps[j + 1] & 255 == K_NARD { ldv(RDI, traps[j + 3]); mov_ri(RSI, traps[j + 1] >> 8); lea_rip(RDX, 2, LOCS[2 * l]); mov_ri(RCX, LOCS[2 * l + 1]); call_f(RT_NARD); } else if traps[j + 1] & 255 == K_OVFD { ldv(RAX, traps[j + 3]); ldv(RSI, traps[j + 4]); mov_rr(RDI, RAX); mov_ri(RDX, traps[j + 1] >> 8); lea_rip(RCX, 2, LOCS[2 * l]); mov_ri(R8, LOCS[2 * l + 1]); call_f(RT_OVF); } else { mov_ri(RDI, traps[j + 1]); lea_rip(RSI, 2, LOCS[2 * l]); mov_ri(RDX, LOCS[2 * l + 1]); call_f(RT_DIE); } j += 5
 shl_imm(r int, v int): xrex(true, 0, 0, r); xb(0xC1); xb(0xE0 | r & 7); xb(v);

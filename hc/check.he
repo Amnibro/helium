@@ -226,6 +226,7 @@ recursive commit(n int, t int):
 	if n < 0: return
 	x := ND[n]; k := x.k
 	f := at(n)
+	if k == N_BIN && (x.op == T_SHL || x.op == T_SHR) && t >= 0 && TY[t].k == TY_FLT && f >= 0 && is_pending(f): commit(n, T_I64); set_cv(n, t); return
 	if f >= 0 && !is_pending(f): if f != t && conv_ok(f, t, n) { set_cv(n, t) } return
 	set_t(n, t)
 	if k == N_UN: commit(x.a, t); return
@@ -325,8 +326,9 @@ recursive ck_bin(n int, want int) int:
 	if o == T_DOTEQ || o == T_DOTNEQ: ck(a, -1); ck(b, -1); return set_t(n, T_BOOL)
 	cmp := o == T_EQ || o == T_NEQ || o == T_LT || o == T_GT || o == T_LTEQ || o == T_GTEQ
 	w := if cmp { -1 } else { want }
-	ta := ck(a, if ND[a].k as int == N_INT { -1 } else { w })
+	ta ~= ck(a, if ND[a].k as int == N_INT { -1 } else { w })
 	sh := o == T_SHL || o == T_SHR
+	if cmp && ND[a].k as int == N_ARR && ND[b].k as int == N_ARR && is_pending(ta): ta = default_t(a)
 	tb := ck(b, if sh { -1 } else { if is_pending(ta) { w } else { d := deref(ta); if TY[d].k == TY_INT && ND[b].k as int == N_BIN && has_flt(b) { if w >= 0 && TY[w].k == TY_FLT { w } else { -1 } } else { d } } })
 	if sh:
 		if TY[tb].k == TY_ILIT: conv(b, T_I64)
@@ -366,7 +368,8 @@ ck_un(n int, want int) int:
 	a := x.a
 	if o == T_NOT: ck(a, T_BOOL); conv(a, T_BOOL); return set_t(n, T_BOOL)
 	if o == T_AND: t := ck(a, if want >= 0 && TY[want].k == TY_REF { TY[want].a as int } else { -1 }); if is_pending(t) { default_t(a) } set_x(n, 1); return set_t(n, at(a))
-	t := ck(a, if ND[a].k as int == N_INT || ND[a].k as int == N_FLT { -1 } else { want })
+	t ~= ck(a, if ND[a].k as int == N_INT || ND[a].k as int == N_FLT { -1 } else { want })
+	if ND[a].k as int == N_ARR && is_pending(t): t = default_t(a)
 	d := deref(t)
 	if t != d: set_cv(a, d)
 	if o == T_MINUS && TY[d].k == TY_INT && !is_signed(d): cerr(n, "unary - of an unsigned integer")

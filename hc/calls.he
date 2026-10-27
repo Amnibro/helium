@@ -199,17 +199,18 @@ ptype_of(i int, j int) int:
 recursive rets_to(node int, f int, inner bool) bool:
 	j ~= node + 1; e := NEND[node]
 	while j < e { x := ND[j]; k := x.k; if k == N_FN { if rets_to(j, f, true) { return true } j = NEND[j]; continue } if k == N_RET && (x.s == f || x.s < 0 && !inner) { return true } j += 1 } false
-recursive check_inst(i int):
+recursive check_inst(i int): sv := NSOV; NSOV = -1; check_inst0(i); NSOV = sv
+recursive check_inst0(i int):
 	if FI_[i].st != 0: return
 	node := FI_[i].node
 	FI_[i].st = 1
-	if ND[node].fl & F_EXTERN != 0: sa0 := AOWN; sc0 := CFN; AOWN = i; CFN = i; for j ND[node].n { p := kid(node, j); if ND[p].b >= 0 { pt := ptype_of(i, j); ck(ND[p].b, pt); conv(ND[p].b, pt) } } AOWN = sa0; CFN = sc0; FI_[i].st = 2; return
+	if ND[node].fl & F_EXTERN != 0: sa0 := AOWN; sc0 := CFN; AOWN = i; CFN = i; for j ND[node].n { p := kid(node, j); if ND[p].b >= 0 { pt := ptype_of(i, j); NSOV = decl_ns(node); ck(ND[p].b, pt); NSOV = -1; conv(ND[p].b, pt) } } AOWN = sa0; CFN = sc0; FI_[i].st = 2; return
 	sa := AOWN; sc := CFN; sm := SCOPE.len; ld := LOOPD; bt := BRK_T.len; nm0 := NESTS.len
 	AOWN = i; CFN = i; LOOPD = 0
 	g0 := GB.len
 	for j FI_[i].gn: GB.push(GBS[FI_[i].g0 as int + j])
 	for j ND[node].n:
-		p := kid(node, j); if ND[p].b >= 0: pt := ptype_of(i, j); ck(ND[p].b, pt); conv(ND[p].b, pt)
+		p := kid(node, j); if ND[p].b >= 0: pt := ptype_of(i, j); NSOV = decl_ns(node); ck(ND[p].b, pt); NSOV = -1; conv(ND[p].b, pt)
 	lm ~= 0
 	for j FI_[i].gn:
 		g := GBS[FI_[i].g0 as int + j]; if g.name as int == LPN: lm = g.ty
@@ -567,7 +568,17 @@ recursive call_reinst(n int, i0 int) int:
 	nd := FI_[i0].node as int; i := new_inst(nd, nd, NEND[nd] as int, FI_[i0].par as int); sig_inst(i); FI_[i].bown = AOWN as i32; RINS.push(i0 as i32); RINS.push(AOWN as i32); RINS.push(i as i32)
 	sa := AOWN; check_inst(i); AOWN = sa
 	call_inst(n, i)
+var EXPN i32[>..]
+exp_sym(node int) const byte[:]: e := ND[node].e; if e >= 0 && ND[e].a >= 0 { tok_str(ND[e].a) } else { nm(ND[node].s) }
+exp_of(i int) int:
+	nd := FI_[i].node as int
+	if EXPN.len == 0 || nd < 0 || ND[nd].fl & F_EXTERN == 0: return -1
+	s := exp_sym(nd)
+	for x EXPN { if exp_sym(x) == s { return get_inst(x, BINDS.len, 0, -1, -1) } }
+	-1
 recursive call_inst(n int, i int) int:
+	x := exp_of(i)
+	if x >= 0: return call_inst(n, x)
 	defer_err(i)
 	s := ck_args(n, 0, -1)
 	for j ND[n].n:
@@ -657,8 +668,9 @@ recursive call_fn(n int, name int, recv int, want int) int:
 	if an > np0: ntya := if ND[n].c >= 0 { ND[ND[n].c].n as int } else { 0 }; for k an - np0 { fnm := ND[DIDX[s + np0 + k]].s; bg2 := block_binding(fnm); XBS.push(xcall(fnode, ntya, k)); XBS.push((if bg2 >= 0 { FI_[bg2].blk as int } else { -2 - fnm })); XBS.push((if bg2 >= 0 { FI_[bg2].bown as int } else { AOWN })) } while FNA.len <= n { FNA.push(0) } FNA[n] = fna(n) + an - np0; an = np0
 	lm := lit_mask(fnode, s, an)
 	if lm != 0: BINDS.push(Gb{LPN as i32, lm})
-	inst := get_inst(fnode, b0, BINDS.len - b0, blk, bown)
+	inst ~= get_inst(fnode, b0, BINDS.len - b0, blk, bown)
 	BINDS.pop_n(BINDS.len - b0)
+	ex := exp_of(inst); if ex >= 0 { inst = ex }
 	for j an:
 		c := DIDX[s + j]; pt := ptype_of(inst, j); if pt >= 0 && TY[pt].k == TY_REF && TY[pt].fl & RF_OPT == 0 && TY[pt].c < 0:
 			if is_pending(at(c)): conv(c, TY[pt].a)
@@ -858,7 +870,9 @@ check_program() bool:
 	if md < 0: cerr(0, "no main function"); return false
 	for d, i DC:
 		if d.k as int == D_GLOBAL && d.file == 0: global_type(i)
+	for d DC: if d.k as int == D_FN && ND[d.node].fl & F_EXPORT != 0 && ND[d.node].d < 0 { EXPN.push(d.node) }
 	mi := get_inst(DC[md].node, BINDS.len, 0, -1, -1)
+	for x EXPN: get_inst(x, BINDS.len, 0, -1, -1)
 	for r XROOTS:
 		d := lookup(r, -1, D_FN); if d >= 0: get_inst(DC[d].node, BINDS.len, 0, -1, -1)
 	for d, i DC:

@@ -1303,6 +1303,8 @@ recursive gbuiltin(n int):
 		if !(is_res(t) || is_vimg(t) && vlim(t) == 0): gerr(n, "from_bytes builds a resizable array or a T[] (§12)"); return
 		vf_need(n, e)
 		format(O, "({ hsl _s", p, " = "); gas(arg(0)); format(O, "; int64_t _n", p, " = -1; const uint8_t *_q", p, " = hr_uleb_rd(_s", p, ", &_n", p, "); int64_t _c", p, " = _q", p, " && _n", p, " == _s", p, ".p + _s", p, ".n - _q", p, " ? vf", e, "(_q", p, ", _n", p, ") : -1; ")
+		fx := fb_idx(n); gd := fx >> 1
+		if fx >= 0 && (is_res(GLT[gd]) || is_fix(GLT[gd])): format(O, "for (int64_t _i", p, " = 0; _i", p, " < _c", p, "; _i", p, "++) { "); ct(e); format(O, " _v; memcpy(&_v, _q", p, " + _i", p, " * sizeof _v, sizeof _v); if (!((uint64_t)_v ", if fx & 1 != 0 { "<=" } else { "<" }, " (uint64_t)"); if is_res(GLT[gd]) { format(O, "g", gd, ".n") } else { format(O, TY[GLT[gd]].b as int) }; format(O, ")) { _c", p, " = -1; break; } } ")
 		ct(mt); format(O, " _m", p, "; memset(&_m", p, ", 0, sizeof _m", p, "); ")
 		if is_res(t): format(O, "if (_c", p, " >= 0) _m", p, ".r0 = hr_rfrom((hsl){ (uint8_t*)_q", p, ", _c", p, " }, sizeof("); ct(e); ow(")); ")
 		else: DSU++; format(O, "_m", p, ".r0 = _c", p, " >= 0 ? hr_vfrom((hsl){ (uint8_t*)_q", p, ", _c", p, " }"); vargs(t); ow(", sizeof("); ct(e); format(O, ")) : hr_vmk(0, 0"); vargs(t); ow(", sizeof("); ct(e); ow(")); ")
@@ -1375,17 +1377,17 @@ recursive gbuiltin(n int):
 		format(O, "hr_resize(_v", p, ", _k", p, ", sizeof("); ct(e); ow(")); })"); return
 	if b == B_INDEXOF: ct(e); ow(" _x"); oi(p); ow(" = "); gx(arg(1)); format(O, "; int64_t _r", p, " = -1; for (int64_t _j = 0; _j < _v", p, "->n; _j++) if ("); heq_val_r(e, p); format(O, ") { _r", p, " = _j; break; } _r", p, "; })"); return
 	gerr(n, "unsupported array operation");
-gembed(n int, a int):
-	if ND[a].k != N_STR: gerr(n, "embed_file needs a string literal path"); return
-	f := FILES[TK[ND[n].t].f].name
-	p byte[..4096] ~= []
-	sl ~= -1
-	for c, i nm(f):
-		if c == '/': sl = i
-	if sl >= 0: p.append(nm(f)[..sl + 1])
+embed_read(n int, a0 int, emb byte[>..]&) const byte[:]:
+	a ~= a0
+	if ND[a].k as int == N_ID && rk(a) == R_GLOBAL: g := DC[rv(a)].node; if ND[g].b >= 0 { a = kid(ND[g].b, 0) }
+	if ND[a].k as int != N_STR: return "embed_file needs a string literal path"
+	f := nm(FILES[TK[ND[n].t].f].name); p byte[..4096] ~= []; sl ~= -1; for c, i f { if c == '/' { sl = i } }
+	if sl >= 0: p.append(f[..sl + 1])
 	p.append(tok_str(ND[a].t))
-	emb byte[>..] ~= []
-	if !read_file(p[..], emb): gerr(n, "embed_file cannot read its file"); return
+	if read_file(p[..], emb) { "" } else { "embed_file cannot read its file" }
+gembed(n int, a int):
+	emb byte[>..] ~= []; e := embed_read(n, a, emb)
+	if e.len > 0: gerr(n, e); return
 	ow("hr_str("); cstr_lit(emb[..]); format(O, ", ", emb.len, ")");
 heq_o(e int, a const byte[:], b const byte[:]): heq_pre(e); s0 := HF.len; heq_val(e, a, b); O.append(HF[s0..]); HF.resize(s0);
 scalar_ty(t int) bool:
@@ -1895,6 +1897,23 @@ gsig(i int):
 		if cp.inst == i: if !first { ow(", ") } first = false; v := cp.lv; ct(LVS[v].ty); ow(if lv_isptr(v) { " **c" } else { " *c" }); oi(v)
 	if first: ow("void")
 	ow(")");
+TIXNS ~= -1
+recursive tidx_node(t int, ns int) int:
+	if t < 0 { return -1 } k := ND[t].k; if k == N_TIDX { TIXNS = ns; return t } if k == N_TCONST { return tidx_node(ND[t].a, ns) } if k == N_TNAME && ND[t].n == 0 { d := lookup_q(ND[t].s, ns, D_ALIAS); if d >= 0 { an := DC[d].node; return tidx_node(ND[an].b, ns_of(an)) } } -1
+fb_idx(n int) int:
+	c := ND[n].c; if c < 0 || ND[c].n == 0 { return -1 }
+	ta := kid(c, 0); if ND[ta].k as int != N_TARR { return -1 }
+	ix := tidx_node(ND[ta].a as int, ns_of(n)); if ix < 0 { return -1 }
+	lookup_q(ND[ix].s, TIXNS, D_GLOBAL) * 2 + (if ND[ix].fl == 1 { 1 } else { 0 })
+gexp(i int):
+	rt := FI_[i].ret; node := FI_[i].node; np := ND[node].n
+	if rt < 0 || rt == T_VOID { ow("void") } else { ct(rt) }
+	ow(" "); ow(exp_sym(node)); ow("(")
+	for j np { if j > 0 { ow(", ") }; ct(ptype_of(i, j)); format(O, " a", j) }
+	if np == 0: ow("void")
+	ow(") { "); if rt >= 0 && rt != T_VOID { ow("return ") }; fn_cname(i); ow("(")
+	for j np { if j > 0 { ow(", ") }; format(O, "a", j) }
+	ow("); }\n")
 gen_fn(i int):
 	node := FI_[i].node
 	AOWN = i; GCF = i
@@ -1958,6 +1977,7 @@ gen_program(out byte[>..]&) bool:
 		if f.par < 0 && nm(f.name as int) == "main": mi = i
 		gen_fn(i)
 		if GERR.len > 0: return false
+		if ND[node].fl & F_EXPORT != 0 && f.par < 0: gexp(i)
 	if GDLF.len > 0: out.append("#include <dlfcn.h>\n")
 	out.append("#include \"hrt.h\"\n")
 	out.append(TF)

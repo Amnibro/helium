@@ -159,7 +159,7 @@ recursive tsize(t int) i64:
 	if k == TY_REF: if x.c >= 0 { return isz(x.c as int) } return 8
 	if k == TY_SLICE: return 16
 	if k == TY_STRUCT: si_layout(x.a as int); return STI[x.a].size
-	if k == TY_VARIANT: ei_layout(x.a as int); v := ENV[ENI[x.a].v0 as int + x.c as int]; return v.size
+	if k == TY_VARIANT: ei_layout(x.a as int); v := ENV[ENI[x.a].v0 as int + x.c as int]; if v.si < 0 { return 0 } si_layout(v.si as int); return if STI[v.si].zero { 0 } else { STI[v.si].size }
 	if k == TY_ENUM: ei_layout(x.a as int); return ENI[x.a].size
 	if k == TY_ARR:
 		a := x.s as int; if a == A_FIXED { return max(x.b, 1) * tsize(x.a as int) } if a == A_LIM: return isz(x.c as int) + max(x.b, 1) * tsize(x.a as int)
