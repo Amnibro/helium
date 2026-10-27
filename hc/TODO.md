@@ -128,7 +128,14 @@ Lower priority, since the C path is the oracle and not the product. It still mat
 - **Race branch misses** are about 2x clang's.
 - **Bounds checks inside loops:** the range analysis covers constant lengths only. Extend it to loop induction variables vs `len`.
 - **Register allocation:** linear scan with heavy spilling in large functions like `main`. Splitting live ranges or graph coloring would help in hot loops.
-- **No vectorization** (SSE/AVX) anywhere yet.
+- **Vectorization (`vec.he`, SSE2):** innermost counted integer loops become `I_VLOOP` kernels. Supported:
+  - Unit-stride loads and stores on resizable arrays.
+  - Add, sub, and, or, xor, multiply (16-bit lanes and narrower), and shifts by constants.
+  - Widening and narrowing between 8-, 16-, 32- and 64-bit lanes.
+  - One `int` reduction (`+= -= ^= |= &=`) per loop.
+  - Runtime guards for bounds and aliasing, with the scalar loop kept as the tail.
+  - `HC_NOVEC=1` turns it off.
+  - Blur runs 9x faster. Not yet supported: floats, conditionals (select), gathers, AVX2, and strided or struct-of-arrays access.
 - **Inlining heuristics:** size limits are hand-tuned with no profile feedback.
 - **Compile time:** hc self-compile is ~300 ms, up from ~206 ms before the optimizer passes. Main costs: two value-numbering passes, LICM, rebuilding IR after strength reduction.
 

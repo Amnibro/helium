@@ -1,19 +1,19 @@
 use ir
-ONAMES := ["", "imm", "mov", "bin", "cmp", "un", "lbl", "jmp", "bz", "bnz", "call", "ret", "ld", "st", "slot", "gaddr", "raddr", "param", "sys", "ext", "chk", "copy", "faddr", "callr", "ret2", "res2", "fbin", "fcmp", "cvt", "fun", "zero", "dss", "dsr", "nop", "bchk"]
+ONAMES := ["", "imm", "mov", "bin", "cmp", "un", "lbl", "jmp", "bz", "bnz", "call", "ret", "ld", "st", "slot", "gaddr", "raddr", "param", "sys", "ext", "chk", "copy", "faddr", "callr", "ret2", "res2", "fbin", "fcmp", "cvt", "fun", "zero", "dss", "dsr", "nop", "bchk", "vloop"]
 ir_dump(fi int):
 	f := NFS[fi]
 	for i (f.i0 as int)..f.i1 as int:
 		x := IR[i]; op := x.op
 		b byte[>..] ~= []; format(b, i, ": ", ONAMES[op], " w", x.w, " d", x.d, " a", x.a, " b", x.b, " c", x.c)
 		if x.l >= 0: format(b, " l", x.l)
-		if op == I_CALL || op == I_CALLR || op == I_SYS: b.append(" ["); for j x.b { if j > 0 { b.push(' ') } format(b, ARGL[x.a as int + j]) } b.push(']')
+		if op == I_CALL || op == I_CALLR || op == I_SYS || op == I_VLOOP: b.append(" ["); for j x.b { if j > 0 { b.push(' ') } format(b, ARGL[x.a as int + j]) } b.push(']')
 		print(b)
 var OU i32[>..<]; var OD i32[>..<]
 usesb(op int) bool:
 	op == I_BIN || op == I_CMP || op == I_FBIN || op == I_FCMP || op == I_FUN || op == I_BCHK
 opnds(i int):
 	OU.clear(); OD.clear(); x := IR[i]; op := x.op; d := x.d; a := x.a; b := x.b
-	if op == I_CALL || op == I_CALLR || op == I_SYS: for j b { OU.push(ARGL[a + j]) } if op == I_CALLR { OU.push(x.c) } if d >= 0 { OD.push(d) } if op == I_CALL && x.l >= 0 { OD.push(x.l) } return
+	if op == I_CALL || op == I_CALLR || op == I_SYS || op == I_VLOOP: for j b { OU.push(ARGL[a + j]) } if op == I_CALLR { OU.push(x.c) } if d >= 0 { OD.push(d) } if op == I_CALL && x.l >= 0 { OD.push(x.l) } return
 	if op == I_ZERO || op == I_COPY || op == I_ST || op == I_RET || op == I_BZ || op == I_BNZ: if op == I_ZERO || op == I_COPY { OU.push(d) } if a >= 0 && op != I_ZERO { OU.push(a) } if b >= 0 { OU.push(b) } return
 	if op == I_LBL || op == I_JMP || op == I_DSS || op == I_DSR || op == I_NOP: return
 	if a >= 0 && op != I_IMM && op != I_SLOT && op != I_GADDR && op != I_RADDR && op != I_FADDR && op != I_PARAM: OU.push(a)
@@ -175,7 +175,7 @@ regalloc(fi int):
 	ncall i32[>..<] ~= []; ncall.resize(n + 1, 0); nst i32[>..<] ~= []; nst.resize(n + 1, 0); agv i8[>..<] ~= []; agv.resize(nv, 0)
 	ga i32[>..<] ~= []; ga.resize(n + 1, 0); gb i32[>..<] ~= []; gb.resize(n + 1, 0)
 	for i i0..i1:
-		x := IR[i]; op := x.op as int; w := x.w as int; p := i - i0; isc := op == I_CALL || op == I_CALLR || op == I_SYS || op == I_CVT && x.c == 5; ncall[p + 1] = ncall[p] + (if isc || op == I_PARAM { 1 } else { 0 }); nst[p + 1] = nst[p] + (if op == I_PARAM || op == I_CVT && x.c == 5 { 1 } else { 0 }); if op == I_CALL || op == I_CALLR || op == I_SYS:
+		x := IR[i]; op := x.op as int; w := x.w as int; p := i - i0; isc := op == I_CALL || op == I_CALLR || op == I_SYS || op == I_VLOOP || op == I_CVT && x.c == 5; ncall[p + 1] = ncall[p] + (if isc || op == I_PARAM { 1 } else { 0 }); nst[p + 1] = nst[p] + (if op == I_PARAM || op == I_CVT && x.c == 5 { 1 } else { 0 }); if op == I_CALL || op == I_CALLR || op == I_SYS || op == I_VLOOP:
 			for q x.b { u := ARGL[x.a as int + q] as int; if u >= 0 && u < nv { agv[u] = 1; if FK[u] == 6 || FK[u] == 7 { agv[FB[u]] = 1; if FK[u] == 7 { agv[FI[u]] = 1 } } } } if op == I_CALLR && x.c >= 0 && x.c < nv as i64: agv[x.c] = 1
 		ga[p + 1] = ga[p] + (if op == I_COPY || op == I_ZERO { 1 } else { 0 }); gb[p + 1] = gb[p] + (if op == I_FUN && x.c == 5 { 1 } else { 0 })
 		d := x.d as int; if d < 0 || op == I_ZERO || op == I_COPY || op == I_ST: continue
@@ -270,7 +270,7 @@ subst(i int, rp i32[>..<]&):
 			rp[v]
 		else:
 			v
-	if op == I_CALL || op == I_CALLR || op == I_SYS: for j x.b { ARGL[x.a as int + j] = r(ARGL[x.a as int + j]) } if op == I_CALLR { x.c = r(x.c) } IR[i] = x; return
+	if op == I_CALL || op == I_CALLR || op == I_SYS || op == I_VLOOP: for j x.b { ARGL[x.a as int + j] = r(ARGL[x.a as int + j]) } if op == I_CALLR { x.c = r(x.c) } IR[i] = x; return
 	if op == I_LBL || op == I_JMP || op == I_DSS || op == I_DSR || op == I_NOP || op == I_IMM || op == I_SLOT || op == I_GADDR || op == I_RADDR || op == I_FADDR || op == I_PARAM: return
 	if op == I_ZERO || op == I_COPY: x.d = r(x.d)
 	if op != I_ZERO: x.a = r(x.a)
@@ -516,7 +516,7 @@ lvn(fi int):
 	step(i int):
 		x := IR[i]; op := x.op as int; if op == I_NOP || op == I_LBL: return
 		if (op == I_BZ || op == I_BNZ) && x.w == 3 && x.a >= 0: p := bslot(vof(x.a as int) as i64); if hv[3 * p] == 1 { tk := op == I_BZ == (hv[3 * p + 1] == 0); IR[i] = if tk { Ir{I_JMP as u8, 3, -1, -1, -1, x.c, -1} } else { Ir{I_NOP as u8, 3, -1, -1, -1, 0, -1} } } return
-		if op == I_ST || op == I_COPY || op == I_ZERO || op == I_CALL || op == I_CALLR || op == I_SYS || op == I_DSS || op == I_DSR || op == I_CVT && x.c == 5: memc++; mem = memc
+		if op == I_ST || op == I_COPY || op == I_ZERO || op == I_CALL || op == I_CALLR || op == I_SYS || op == I_VLOOP || op == I_DSS || op == I_DSR || op == I_CVT && x.c == 5: memc++; mem = memc
 		if op == I_ST && x.a >= 0 && x.b >= 0:
 			k0 := (I_LD | (x.w as int) << 8) as i64; k1 := vof(x.a as int) as i64; k2 := -(1) as i64; k3 := x.c ^ (mem as i64) << 40; h ~= ((k0 * 31 + k1) * 1000003 + k2 * 7919 + k3 * 131) as! u64; h = (h ^ h >> 29) * 0x9E3779B97F4A7C15; p ~= ((h >> 20) % hs as u64) as int
 			while hv[3 * p] == 1 && !(hk[4 * p] == k0 && hk[4 * p + 1] == k1 && hk[4 * p + 2] == k2 && hk[4 * p + 3] == k3) { p = (p + 1) % hs } hput(p, k0, k1, k2, k3, vof(x.b as int), x.b as int); return

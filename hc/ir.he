@@ -13,7 +13,9 @@ var LOCS i32[>..<]
 var GCB byte[>..<]; var GCS i32[>..<]; var GCN i32[>..<]; var GCP i32[>..<]
 gcread(o int, z int) int, bool: for k GCS.len { s := GCS[k]; if o >= s && o + z <= s + GCN[k] { v ~= 0; for j z { v = v | (GCB[GCP[k] + o - s + j] as int) << 8 * j } return v, true } } return 0, false
 var DBG bool
-RT_DIE int ~= -1; RT_OOB int ~= -1; RT_OVF int ~= -1; K_OVFD := 8; RT_NARD int ~= -1; K_NARD := 9; I_BCHK := 34; RT_F2I int ~= -1
+RT_DIE int ~= -1; RT_OOB int ~= -1; RT_OVF int ~= -1; K_OVFD := 8; RT_NARD int ~= -1; K_NARD := 9; I_BCHK := 34; RT_F2I int ~= -1; I_VLOOP := 35
+var VKB byte[>..<]; var VKO i32[>..<]; var VKL i32[>..<]
+cg_vloop(a int, b int, c int): for j b { ldv(RAX, ARGL[a + j]); push_r(RAX) } for q VKL[c] { xb(VKB[VKO[c] + q] as int) }
 var FK i8[>..<]; var FB i32[>..<]; var FD i64[>..<]; var UC i32[>..<]; var FI i32[>..<]; var FS i8[>..<]
 kc(v int) bool:
 	v >= 0 && v < FK.len && FK[v] == 1
@@ -248,10 +250,10 @@ cg_fn(fi int):
 												if op == I_BZ || op == I_BNZ:
 													if FUSEC >= 0: jcc_l(if op == I_BZ { FUSEC ^ 1 } else { FUSEC }, c); if HPEND >= 0 && HDC[HPEND] == LCMP { lb := nlbl(); bind(lb); HDB[HPEND] = lb; HDX[HPEND] = c; HDK[HPEND] = (if op == I_BZ { FUSEC } else { FUSEC ^ 1 }) } HPEND = -1; FUSEC = -1 else: A := srcr(a, RAX); test_rr(A, A); jcc_l(if op == I_BZ { CC_E } else { CC_NE }, c)
 												else:
-													if op == I_CALL || op == I_CALLR || op == I_SYS:
+													if op == I_CALL || op == I_CALLR || op == I_SYS || op == I_VLOOP:
 														for r, k SVR:
 															if SVS[k] < (i as i32) && SVE[k] > i as i32: st(r, RBP, rcs(r), 8)
-														if op == I_CALLR && x.l < -1: cg_ccall(a, b, c, -2 - x.l as int)
+														if op == I_VLOOP || op == I_CALLR && x.l < -1: if op == I_VLOOP { cg_vloop(a, b, c) } else { cg_ccall(a, b, c, -2 - x.l as int) }
 														else:
 															n := b; st0 := if n > 6 && op != I_SYS { n - 6 } else { 0 }; pdn := st0 & 1
 															if pdn == 1: sub_rsp(8)
