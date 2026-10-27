@@ -5,7 +5,7 @@ var VLW i8[>..<]; var VLS i8[>..<]; var VLT i32[>..<]; var VUM i32[>..<]; var VD
 var VOS VOp[>..<]; var VQK i32[>..<]; var VPR Ir[>..<]; VNV ~= 0; VBAD ~= false
 var VGC i64[>..<]; var VGS i32[>..<]; var VGM i64[>..<]; var VGN i8[>..<]; var VGR i32[>..<]; var VGL i64[>..<]; var VGH i64[>..<]; var VGT i32[>..<]
 var VUT i32[>..<]; var VUK i64[>..<]; var VUC i8[>..<]; var VUB i8[>..<]; var VUR i32[>..<]
-var VXF i8[>..<]; var VRR i32[>..<]; var VRN i8[>..<]; var VTK i8[>..<]; VZR ~= -1; VMK ~= -1; VVF ~= 16; VRD ~= -1; VRC ~= 0; VRQ ~= -1
+var VXF i8[>..<]; var VCA i32[>..<]; var VCB i32[>..<]; var VIN Ir[>..<]; var VAT i32[>..<]; var VRR i32[>..<]; var VRN i8[>..<]; var VTK i8[>..<]; VZR ~= -1; VMK ~= -1; VVF ~= 16; VRD ~= -1; VRC ~= 0; VRQ ~= -1
 VGREG := [6, 7, 8, 9, 10, 11, 0]
 vlg(w int) int:
 	if w == 1:
@@ -85,11 +85,14 @@ vxf(r int): VXF[r] = 1;
 vmvx(d int, s int):
 	if d != s: sse(0x66, false, 0x6F, d, s);
 vshi(w int, e int, x int, k int): sse(0x66, false, if w == 2 { 0x71 } else { if w == 4 { 0x72 } else { 0x73 } }, e, x); xb(k);
+vcsw():
+	VCA.clear(); for r VCB { VCA.push(r) } VCB.clear()
+vcown():
+	for r VCA { t := vxa(); vmvx(t, r as int); VCB.push(t as i32) } vcsw()
 vcvt(s i32[>..]&, w0 int, sg bool, w1 int, o i32[>..]&):
-	cur i32[>..] ~= []; for r s { cur.push(r) } own ~= false; w ~= w0
+	VCA.clear(); VCB.clear(); for r s { VCA.push(r) } own ~= false; w ~= w0
 	while w < w1:
-		nx i32[>..] ~= []
-		for r cur:
+		for r VCA:
 			lo := vxa(); hi := vxa(); vmvx(lo, r as int); vmvx(hi, r as int)
 			if sg && w == 4:
 				t := vxa(); vmvx(t, r as int); vshi(4, 4, t, 31); sse(0x66, false, 0x62, lo, t); sse(0x66, false, 0x6A, hi, t); vxf(t)
@@ -97,27 +100,24 @@ vcvt(s i32[>..]&, w0 int, sg bool, w1 int, o i32[>..]&):
 				if sg:
 					sse(0x66, false, if w == 1 { 0x60 } else { 0x61 }, lo, lo); sse(0x66, false, if w == 1 { 0x68 } else { 0x69 }, hi, hi); vshi(2 * w, 4, lo, 8 * w); vshi(2 * w, 4, hi, 8 * w)
 				else: sse(0x66, false, if w == 1 { 0x60 } else { if w == 2 { 0x61 } else { 0x62 } }, lo, VZR); sse(0x66, false, if w == 1 { 0x68 } else { if w == 2 { 0x69 } else { 0x6A } }, hi, VZR)
-			nx.push(lo as i32); nx.push(hi as i32)
+			VCB.push(lo as i32); VCB.push(hi as i32)
 		if own:
-			for r cur: vxf(r as int)
-		cur = nx; own = true; w = w * 2
-	if w > w1 && !own:
-		nx i32[>..] ~= []; for r cur { t := vxa(); vmvx(t, r as int); nx.push(t as i32) } cur = nx; own = true
+			for r VCA: vxf(r as int)
+		vcsw(); own = true; w = w * 2
+	if w > w1 && !own: vcown(); own = true
 	while w > w1:
-		nx i32[>..] ~= []
-		for p cur.len / 2:
-			a := cur[2 * p] as int; b := cur[2 * p + 1] as int
+		for p VCA.len / 2:
+			a := VCA[2 * p] as int; b := VCA[2 * p + 1] as int
 			if w == 2:
 				sse(0x66, false, 0xDB, a, VMK); sse(0x66, false, 0xDB, b, VMK); sse(0x66, false, 0x67, a, b)
 			else:
 				if w == 4:
 					vshi(4, 6, a, 16); vshi(4, 4, a, 16); vshi(4, 6, b, 16); vshi(4, 4, b, 16); sse(0x66, false, 0x6B, a, b)
 				else: sse(0x66, false, 0x70, a, a); xb(8); sse(0x66, false, 0x70, b, b); xb(8); sse(0x66, false, 0x6C, a, b)
-			nx.push(a as i32); vxf(b)
-		cur = nx; w = w / 2
-	if !own:
-		nx i32[>..] ~= []; for r cur { t := vxa(); vmvx(t, r as int); nx.push(t as i32) } cur = nx
-	o.clear(); for r cur { o.push(r) }
+			VCB.push(a as i32); vxf(b)
+		vcsw(); w = w / 2
+	if !own: vcown()
+	o.clear(); for r VCA { o.push(r) }
 vgetm(v int, w int, t int, o i32[>..]&):
 	o.clear(); p := VVF * w / 16
 	if v <= -2: u := -2 - v; for z p { r := vxa(); vmvx(r, VUR[4 * u + vlg(w)] as int); o.push(r as i32) } return
@@ -191,18 +191,16 @@ vasm(mk bool) bool:
 	if VRD >= 0 && !VBAD: cb := if VRC == B_SUB { B_ADD } else { VRC }; for p 1..ra.len { sse(0x66, false, vopc(cb, 3), ra[0] as int, ra[p] as int) } sse(0x66, false, 0x70, VZR, ra[0] as int); xb(0x4E); sse(0x66, false, vopc(cb, 3), ra[0] as int, VZR); sse(0x66, true, 0x7E, ra[0] as int, RAX)
 	if VBAD: XC.resize(n0); return false
 	VKO.push(VKB.len as i32); for q n0..XC.len { VKB.push(XC[q]) } VKL.push((XC.len - n0) as i32); XC.resize(n0); true
-vec_loop(fi int, h int, j int, ins Ir[>..]&, at i32[>..]&) bool:
+vskip(p int, lim int, dir int) int:
+	q ~= p; while (if dir > 0 { q < lim } else { q > lim }) && IR[q].op as int == I_NOP { q += dir } q
+vec_loop(fi int, h int, j int) bool:
 	f := NFS[fi]; i0 := f.i0 as int; i1 := f.i1 as int
-	nx(p int) int:
-		q ~= p; while q < i1 && IR[q].op as int == I_NOP { q++ } q
-	pv(p int) int:
-		q ~= p; while q > i0 && IR[q].op as int == I_NOP { q-- } q
-	k ~= nx(h + 1)
-	while k < j && IR[k].op as int == I_LD && IR[k].l == -3 && IR[k].w == 3: k = nx(k + 1)
+	k ~= vskip(h + 1, i1, 1)
+	while k < j && IR[k].op as int == I_LD && IR[k].l == -3 && IR[k].w == 3: k = vskip(k + 1, i1, 1)
 	x := IR[k]; if x.op as int != I_CMP || x.c != CC_L as i64 || x.w != 3: return false
-	cnd := x.d as int; iv := x.a as int; bnd := x.b as int; k2 := nx(k + 1); y := IR[k2]; if y.op as int != I_BZ || y.a as int != cnd: return false
-	ex := y.c as int; e := nx(j + 1); if e >= i1 || IR[e].op as int != I_LBL || IR[e].c as int != ex: return false
-	ic := pv(j - 1); z := IR[ic]; if z.op as int != I_BIN || z.c != B_ADD as i64 || z.d as int != iv || z.a as int != iv || z.l >= 0 || z.w != 3: return false
+	cnd := x.d as int; iv := x.a as int; bnd := x.b as int; k2 := vskip(k + 1, i1, 1); y := IR[k2]; if y.op as int != I_BZ || y.a as int != cnd: return false
+	ex := y.c as int; e := vskip(j + 1, i1, 1); if e >= i1 || IR[e].op as int != I_LBL || IR[e].c as int != ex: return false
+	ic := vskip(j - 1, i0, -1); z := IR[ic]; if z.op as int != I_BIN || z.c != B_ADD as i64 || z.d as int != iv || z.a as int != iv || z.l >= 0 || z.w != 3: return false
 	one := z.b as int; if one < 0 || VND[one] != 1 || VDP[one] < 0 || IR[VDP[one]].op as int != I_IMM || IR[VDP[one]].c != 1: return false
 	if VND[cnd] != 1: return false
 	for q i0..i1:
@@ -303,7 +301,7 @@ vec_loop(fi int, h int, j int, ins Ir[>..]&, at i32[>..]&) bool:
 	a0 := ARGL.len; ARGL.push(cnt as i32); for p pg { ARGL.push(p) } for u VUT.len { if VUC[u] == 0 { ARGL.push(vum(VUT[u] as int) as i32) } }
 	if VBAD: ARGL.resize(a0); return false
 	rv := if VRD >= 0 { vpnv() } else { -1 }; VPR.push(Ir{I_VLOOP as u8, 3, rv as i32, a0 as i32, (ARGL.len - a0) as i32, kid as i64, -1}); if VRD >= 0 { VPR.push(Ir{I_BIN as u8, 3, VRD as i32, VRD as i32, rv as i32, (if VRC == B_SUB { B_ADD } else { VRC }) as i64, -1}) } VPR.push(Ir{I_BIN as u8, 3, iv as i32, iv as i32, cnt as i32, B_ADD as i64, -1}); VPR.push(Ir{I_LBL as u8, 3, -1, -1, -1, sk as i64, -1})
-	for r VPR { ins.push(r) } at.push(h as i32); at.push(VPR.len as i32); true
+	for r VPR { VIN.push(r) } VAT.push(h as i32); VAT.push(VPR.len as i32); true
 vec_fn(fi int):
 	f := NFS[fi]; i0 := f.i0 as int; i1 := f.i1 as int; VNV = f.nv as int
 	VND.clear(); VND.resize(VNV, 0); VDP.clear(); VDP.resize(VNV, -1)
@@ -312,14 +310,14 @@ vec_fn(fi int):
 	lp i32[>..] ~= []; lp.resize(LBL.len, -1)
 	for i i0..i1:
 		if IR[i].op as int == I_LBL: lp[IR[i].c] = i as i32
-	ins Ir[>..] ~= []; at i32[>..] ~= []
+	VIN.clear(); VAT.clear()
 	for j i0..i1:
 		if IR[j].op as int != I_JMP { continue } c := IR[j].c as int; if c < 0 || c >= lp.len { continue } h := lp[c] as int; if h < i0 || h >= j: continue
-		vec_loop(fi, h, j, ins, at)
-	if at.len == 0: return
+		vec_loop(fi, h, j)
+	if VAT.len == 0: return
 	ni0 := IR.len; q ~= 0; o ~= 0
 	for i i0..i1:
-		while q < at.len && at[q] as int == i { for z at[q + 1] as int { IR.push(ins[o + z]) } o += at[q + 1] as int; q += 2 } IR.push(IR[i])
+		while q < VAT.len && VAT[q] as int == i { for z VAT[q + 1] as int { x := VIN[o + z]; IR.push(x) } o += VAT[q + 1] as int; q += 2 } x := IR[i]; IR.push(x)
 	NFS[fi].i0 = ni0 as i32; NFS[fi].i1 = IR.len as i32; NFS[fi].nv = VNV as i32
 vec_all():
 	nb byte[>..] ~= []; if env("HC_NOVEC", nb): return

@@ -21,19 +21,21 @@ def prog(seed):
     r=random.Random(seed);ks=[];N=r.choice([64,100,257,1000,4099])
     L=['xs_next(x uint) uint:\n\tv ~= x\n\tv ^= v << 13\n\tv ^= v >> 7\n\tv ^= v << 17\n\tv']
     for k in range(r.randint(3,7)):
-        td,ta,tb=r.choice(T),r.choice(T),r.choice(T);od=r.choice([0,0,1,2,-1,4]);arrs=[('a',ta),('b',tb),('d',td)];tw=r.random()<0.2;mode=r.choice(['st','st','red','fe','last']);ks.append((td,ta,tb,tw and mode in('st','last')))
+        td,ta,tb=r.choice(T),r.choice(T),r.choice(T);od=r.choice([0,0,1,2,-1,4]);arrs=[('a',ta),('b',tb),('d',td)];tw=r.random()<0.2;mode=r.choice(['st','st','red','fe','last','glob']);ks.append((td,ta,tb,tw and mode in('st','last')))
         L.append(f'k{k}(d {td}[>..]&, a {ta}[>..]&, b {tb}[>..]&, u int, lo int, hi int) int:')
         if mode=='fe':
             L+=[f'\tt ~= {r.randint(-1000,1000)}','\tfor v a:',f'\t\tt {r.choice(OPS)} {ex(r,"int",r.randint(0,3),arrs[:2],0,True).replace("[x ","[0 ")}','\tt'];continue
         if mode=='red':
             L+=[f'\tt ~= {r.randint(-1000,1000)}','\tfor x lo..hi:',f'\t\tt {r.choice(OPS)} ({ex(r,r.choice(T),r.randint(1,3),arrs,od)} as! int)']+([f'\t\td[x + {od+2}] = {ex(r,td,2,arrs,od)}'] if r.random()<0.3 else [])+['\tt'];continue
+        if mode=='glob':
+            L+=['\tt ~= 0','\tfor x lo..hi:',f'\t\tG_{td}[x + {od+1}] = {ex(r,td,r.randint(1,3),arrs+[("G_"+td,td)],od)}','\tt'];continue
         ix=(lambda o:f'y * 16 + x + {o}' if o>=0 else f'y * 16 + x - {-o}') if tw else (lambda o:f'x + {o}' if o>=0 else f'x - {-o}');ind='\t\t\t' if tw else '\t\t';fx=lambda s:s.replace('[x ','[y * 16 + x ') if tw else s
         L+=['\tt ~= 0']+(['\tfor y 1..4:','\t\tfor x lo..hi:'] if tw else ['\tfor x lo..hi:'])+[f'{ind}d[{ix(od)}] = {fx(ex(r,td,r.randint(1,4),arrs,od))}']
         if r.random()<0.25: L.append(f'{ind}b[{ix(r.choice([0,1,3]))}] = {fx(ex(r,tb,r.randint(1,3),arrs,od))}')
         if mode=='last': L.append(f'{ind}t = {fx(ex(r,"int",2,arrs,od))}')
         L.append('\tt')
-    for t in T: L.append(f'hs_{t}(v {t}[>..]&) int:\n\th ~= 0\n\tfor q v: h = h * 31 + q as! int\n\th')
-    L+=['main():',f'\tr uint ~= {seed * 2654435761 % (1<<40) + 1}']
+    for t in T: L+=[f'hs_{t}(v {t}[>..]&) int:\n\th ~= 0\n\tfor q v: h = h * 31 + q as! int\n\th',f'hg_{t}(v {t}[>..<]&) int:\n\th ~= 0\n\tfor q v: h = h * 31 + q as! int\n\th']
+    L+=[f'var G_{t} {t}[>..<]' for t in T]+['main():',f'\tr uint ~= {seed * 2654435761 % (1<<40) + 1}']+[f'\tG_{t}.resize({N}, 0)' for t in T]
     for t in T:
         for j in range(2): L+=[f'\t{t}{j} {t}[>..] ~= []',f'\tfor i {N}:\n\t\tr = xs_next(r)\n\t\t{t}{j}.push(r as! {t})']
     for k,(td,ta,tb,tw) in enumerate(ks):
@@ -41,7 +43,7 @@ def prog(seed):
             mx=N-24-(64 if tw else 0);lo=r.choice([3,4,5,9,17]) if r.random()>0.03 else r.randint(0,2);hi=r.choice([lo,lo+1,lo+7,lo+15,lo+16,lo+17,lo+33,mx,mx-1,mx-r.randint(0,40)])
             hi=max(lo,N+r.randint(0,40) if r.random()<0.012 else hi);dn=f'{td}0';an=f'{ta}{r.randint(0,1)}';bn=f'{tb}{r.randint(0,1)}'
             an=dn if r.random()<0.3 and ta==td else an;bn=dn if r.random()<0.2 and tb==td else bn;bn=an if r.random()<0.15 and tb==ta else bn
-            L+=[f'\trr := k{k}({dn}, {an}, {bn}, {r.randint(-300,70000)}, {lo}, {hi})',f'\tprint(rr, " ", hs_{td}({dn}), " ", hs_{tb}({tb}0), " ", hs_{tb}({tb}1))']
+            L+=[f'\trr := k{k}({dn}, {an}, {bn}, {r.randint(-300,70000)}, {lo}, {hi})',f'\tprint(rr, " ", hs_{td}({dn}), " ", hs_{tb}({tb}0), " ", hs_{tb}({tb}1), " ", hg_{td}(G_{td}))']
     return '\n'.join(L)+'\n'
 def one(seed):
     with tempfile.TemporaryDirectory() as w:
