@@ -152,6 +152,11 @@ lookup_q(q int, ns int, k int) int:
 	if a == -2: return lookup(b, -1, k)
 	if a >= 0: d ~= dmap(q); while d >= 0 { if DC[d].k == k { return d } d = DC[d].next } return -1
 	lookup(b, ns, k)
+lookup_ty(q int, ns int) int:
+	a, b := split_q(q)
+	if a == -1 && ns >= 0: for k [D_STRUCT, D_ENUM, D_ALIAS] { d ~= dmap(qual(ns, b)); while d >= 0 { if DC[d].k as int == k { return d } d = DC[d].next } }
+	for k [D_STRUCT, D_ENUM, D_ALIAS] { d := lookup_q(q, if a == -1 { -1 } else { ns }, k); if d >= 0 { return d } }
+	-1
 NSOV ~= -1
 ns_of(n int) int: if NSOV >= 0 { NSOV } else { file_ns(node_file(n)) }
 decl_ns(node int) int: if ND[node].a >= 0 { ND[node].a as int } else { file_ns(node_file(node)) }
@@ -194,12 +199,10 @@ recursive rtype(n int, ns int) int:
 			g := gb_find(name); if g >= 0: return g
 		args i32[..16] ~= []
 		for i x.n: at0 := rtype(kid(n, i), ns); args.push(at0 as i32)
-		d ~= lookup_q(name, ns, D_STRUCT)
-		if d >= 0: return t_struct(inst_struct(DC[d].node as int, args[..]))
-		d = lookup_q(name, ns, D_ENUM)
-		if d >= 0: return t_enum(inst_enum(DC[d].node as int, args[..]), x.fl & 1 != 0)
-		d = lookup_q(name, ns, D_ALIAS)
-		if d >= 0: an := DC[d].node as int; return rtype(ND[an].b as int, ns_of(an))
+		d := lookup_ty(name, ns); dk := if d >= 0 { DC[d].k as int } else { -1 }
+		if dk == D_STRUCT: return t_struct(inst_struct(DC[d].node as int, args[..]))
+		if dk == D_ENUM: return t_enum(inst_enum(DC[d].node as int, args[..]), x.fl & 1 != 0)
+		if dk == D_ALIAS: an := DC[d].node as int; return rtype(ND[an].b as int, ns_of(an))
 		m byte[>..] ~= []; format(m, "unknown type ", nm(name)); derr(x.t as int, m)
 		return T_ERRT
 	derr(x.t as int, "bad type")

@@ -967,7 +967,9 @@ recursive lvc(n int, t int, e int, q int, b0 int, nb int, esz int, lf int):
 recursive lbuiltin_to(n int, b int, dst int) int:
 	x := ND[n]; hasr := ax(n) == 1; sr := BHASR; sv := BRECV
 	BHASR = hasr; BRECV = if hasr { ND[x.a].a as int } else { if ax(n) == 2 { kid(n, 0) } else { -1 } }
-	r := lbuiltin1(n, b, dst, x.n as int + (if hasr { 1 } else { 0 }))
+	r0 := lbuiltin1(n, b, dst, x.n as int + (if hasr { 1 } else { 0 }))
+	e := if b == B_PUSH || b == B_ALLOCR { TY[deref(at(barg(n, 0)))].a as int } else { -1 }
+	r := if e >= 0 && TY[e].k == TY_REF { if TY[e].c >= 0 { rel_load(r0, e) } else { ldw(r0, 0, 3) } } else { r0 }
 	BHASR = sr; BRECV = sv; r
 recursive lbuiltin1(n int, b int, dst int, total int) int:
 	if b == B_EMBEDSH: bl := shader_blob(n); r := nv(); ir(I_RADDR, 8, r, -1, -1, rodata(bl)); PAIR2 = imm(bl.len); return r
@@ -1339,7 +1341,7 @@ recursive lfor_seq(n int):
 recursive lfor_arr(n int):
 	x := ND[n]; v := rv(n); m := ax(n); a := x.a; bt := at(a); d := deref(bt); e := TY[d].a; es := tsz(e)
 	if sq(d): lfor_seq(n); return
-	byref := x.fl & 1 != 0 || TY[LVS[v].ty].k == TY_REF && TY[e].k != TY_REF
+	byref := x.fl & 1 != 0 && !(TY[e].k == TY_REF && TY[e].c < 0) || TY[LVS[v].ty].k == TY_REF && TY[e].k != TY_REF
 	rf := TY[bt].k == TY_REF; rm := if is_res(d) { if rf && pure_path(a) { 1 } else { 2 } } else { if is_lim(d) && !is_vimg(d) && (rf || is_place(a)) { 3 } else { if TY[d].k != TY_SLICE && rf && pure_path(a) { 4 } else { if TY[d].k == TY_SLICE && (rf || is_place(a)) { 5 } else { 0 } } } }
 	w := if rm == 2 || rm == 3 || rm == 5 { laddr(a) } else { -1 }; p0 ~= -1; n0 ~= -1; if rm == 0:
 		if is_fix(d) && is_seq(d): p0 = if is_lplace(a) || rf { laddr(a) } else { ltmp(a, d) }; n0 = imm(TY[d].b as int) else: pp, ll := lsl(a); p0 = pp; n0 = ll
