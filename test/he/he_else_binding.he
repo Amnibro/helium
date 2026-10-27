@@ -1,0 +1,7 @@
+# .he: an inline else closes the inline block it follows; a braced else stays with its braced if
+f(i int, n int) int:
+	x ~= 0
+	if i < n: x = if i < n / 2 { i } else { n - i } else: x = -1
+	if i > 0: if i > 2: x += 100 else: x += 10
+	x
+main(): print(f(1, 10), " ", f(7, 10), " ", f(3, 10), " ", f(12, 10))

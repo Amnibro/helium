@@ -27,8 +27,8 @@ elf_write(entry int) byte[>..]:
 		for v [1, 1, 4, rova + ho, 5, rova + sto, 6, rova + syo, 10, 32, 11, 24, 7, rova + rlo, 8, 72, 9, 24, 24, 0, 0x6ffffffb, 1, 0, 0]: eb(t, v, 8)
 		for c, k t: RO[syo + k] = c
 	for f XFIX:
-		at := f.at as int; k := f.k as int; to := f.to as int
-		tv := if k == 0 { EBASE + co + LBL[to] as int } else { if k == 1 { EBASE + co + FOFF[to] as int } else { if k == 2 { rova + to } else { dva + to } } }
+		at := f.at; k := f.k; to := f.to
+		tv := if k == 0 { EBASE + co + LBL[to] } else { if k == 1 { EBASE + co + FOFF[to] } else { if k == 2 { rova + to } else { dva + to } } }
 		put32(at, tv - (EBASE + co + at + 4))
 	o byte[>..] ~= []
 	o.append("\x7FELF"); eb(o, 2, 1); eb(o, 1, 1); eb(o, 1, 1); eb(o, 0, 9)

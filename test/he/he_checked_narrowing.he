@@ -1,0 +1,9 @@
+# .he: an int converts to a narrower field or typed local implicitly; debug builds check it fits, as `as` does
+struct P { a i32, b u8 }
+main():
+	n ~= 300
+	p ~= P{1, 2}
+	p.a = n * 2
+	p.b = n - 100
+	x i32 := n + 7
+	print(p.a, " ", p.b, " ", x)

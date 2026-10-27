@@ -27,22 +27,22 @@ var FILES File[>..]
 var TK Tok[>..]
 var LERR byte[>..]
 nm(id int) const byte[:]:
-	x := NM[id]; NAMES[(x.s as int)..(x.s + x.n) as int]
+	x := NM[id]; NAMES[(x.s as int)..x.s + x.n]
 hash(s const byte[:]) u64:
-	h u64 ~= 1469598103934665603; for c s { h = (h ^ c as u64) * 1099511628211; }; h
+	h u64 ~= 1469598103934665603; for c s { h = (h ^ c) * 1099511628211 } h
 intern(s const byte[:]) int:
 	if NH.len == 0: NH.resize(1 << 16, -1)
 	if NM.len * 2 >= NH.len:
 		n := NH.len * 2
 		NH.clear(); NH.resize(n, -1)
-		for x, i NM: j ~= (hash(NAMES[(x.s as int)..(x.s + x.n) as int]) as int) & n - 1; while NH[j] >= 0 { j = j + 1 & n - 1; }; NH[j] = i as i32
+		for x, i NM: j ~= (hash(NAMES[(x.s as int)..x.s + x.n]) as int) & n - 1; while NH[j] >= 0 { j = j + 1 & n - 1 } NH[j] = i
 	m := NH.len - 1
 	j ~= (hash(s) as int) & m
-	while NH[j] >= 0: if nm(NH[j]) == s { return NH[j]; }; j = j + 1 & m
+	while NH[j] >= 0: if nm(NH[j]) == s { return NH[j] } j = j + 1 & m
 	id := NM.len
-	NM.push(Name{NAMES.len as i32, s.len as i32})
+	NM.push(Name{NAMES.len, s.len})
 	NAMES.append(s)
-	NH[j] = id as i32
+	NH[j] = id
 	id
 lex_init():
 	if NM.len == 0:
@@ -59,18 +59,18 @@ hexv(c byte) int:
 	else:
 		((c | 0x20) - 'a') as int + 10
 lerr(f int, line int, m const byte[:]) bool:
-	if LERR.len == 0 { LERR.append(nm(FILES[f].name)); format(LERR, ":", line, ": error: ", m); }; false
+	if LERR.len == 0 { LERR.append(nm(FILES[f].name)); format(LERR, ":", line, ": error: ", m) } false
 esc(p int&, f int, line int) int:
-	c := SRC[p]; p++
-	if c != '\\': return c as int
-	e := SRC[p]; p++
-	if e == 'n' { return 10; }; if e == 't' { return 9; }; if e == 'r' { return 13; }; if e == '0': return 0
-	if e == '\\' || e == '"' || e == '\'': return e as int
+	c u8 := SRC[p]; p++
+	if c != '\\': return c
+	e u8 := SRC[p]; p++
+	if e == 'n' { return 10 } if e == 't' { return 9 } if e == 'r' { return 13 } if e == '0': return 0
+	if e == '\\' || e == '"' || e == '\'': return e
 	if e == 'x' && hexd(SRC[p]) && hexd(SRC[p + 1]): v := hexv(SRC[p]) * 16 + hexv(SRC[p + 1]); p += 2; return v
 	lerr(f, line, "unknown escape sequence")
 	-1
 lay_else(p0 int) bool:
-	p ~= p0; d ~= 0; loop { c := SRC[p]; if c == 0 || c == '\n' || c == '#' { return false; }; if c == '"' || c == '\'' { p++; while SRC[p] != c && SRC[p] != 0 && SRC[p] != '\n' { if SRC[p] == '\\' { p++; }; p++; } }; if c == '(' || c == '[' { d++; }; if c == ')' || c == ']' { d--; }; if d == 0 && c == '{' { return false; }; if d == 0 && c == ':' && SRC[p + 1] != ':' { return true; }; if d == 0 && c == ':' { p++; }; p++; }; false
+	p ~= p0; d ~= 0; loop { c u8 := SRC[p]; if c == 0 || c == '\n' || c == '#' { return false } if c == '"' || c == '\'' { p++; while SRC[p] != c && SRC[p] != 0 && SRC[p] != '\n' { if SRC[p] == '\\' { p++ } p++ } } if c == '(' || c == '[' { d++ } if c == ')' || c == ']' { d-- } if d == 0 && c == '{' { return false } if d == 0 && c == ':' && SRC[p + 1] != ':' { return true } if d == 0 && c == ':' { p++ } p++ } false
 lex_file(path const byte[:]) bool:
 	lex_init()
 	body byte[>..] ~= []
@@ -79,40 +79,40 @@ lex_file(path const byte[:]) bool:
 	base := SRC.len
 	skip := if body.len >= 3 && body[0] == 0xEF && body[1] == 0xBB && body[2] == 0xBF { 3 } else { 0 }
 	SRC.append(body[skip..]); SRC.push(0); SRC.push(0); SRC.push(0); SRC.push(0)
-	FILES.push(File{base as i32, (body.len - skip) as i32, intern(path) as i32, path.len > 5 && path[^5..] == ".amni" || path.len > 3 && path[^3..] == ".he", path.len > 3 && path[^3..] == ".he"})
+	FILES.push(File{base, body.len - skip, intern(path), path.len > 5 && path[^5..] == ".amni" || path.len > 3 && path[^3..] == ".he", path.len > 3 && path[^3..] == ".he"})
 	amni := FILES[f].amni; he := FILES[f].he; t0 := TK.len
 	dep ~= 0; ind i32[>..] ~= [0]; inl ~= 0; ss ~= TK.len; nl ~= false; col ~= 0
 	p ~= base
 	line ~= 1
 	put(k int, s int, e int):
-		TK.push(Tok{k: k as u8, f: f as u16, line: line as i32, s: s as i32, n: (e - s) as i32, ..}); kk := k; if kk == T_SEMI || kk == T_LC || kk == T_RC || kk == T_FAT: ss = TK.len
-	lay(k int, s int): put(k, s, s); TK[TK.len - 1].lay = true
-	ins(k int, s int): TK.push(TK[TK.len - 1]); i ~= TK.len - 2; while i > ss { TK[i] = TK[i - 1]; i--; }; TK[ss] = Tok{k: k as u8, f: f as u16, line: line as i32, s: s as i32, n: 0, lay: true, ..}
+		TK.push(Tok{k: k, f: f, line: line, s: s, n: e - s, ..}); kk := k; if kk == T_SEMI || kk == T_LC || kk == T_RC || kk == T_FAT: ss = TK.len
+	lay(k int, s int): put(k, s, s); TK[TK.len - 1].lay = true; if TK.len > 1: TK[TK.len - 1].line = TK[TK.len - 2].line
+	ins(k int, s int): TK.push(TK[TK.len - 1]); i ~= TK.len - 2; while i > ss { TK[i] = TK[i - 1]; i-- } TK[ss] = Tok{k: k, f: f, line: line, s: s, n: 0, lay: true, ..}
 	loop:
-		c ~= SRC[p]
-		while c == ' ' || c == '\t' || c == '\r' || c == '\n': if c == '\n' { line++; nl = true; col = 0; } else { col++; }; p++; c = SRC[p]
-		if c == '/' && SRC[p + 1] == '/' && !he: while SRC[p] != '\n' && SRC[p] != 0 { p++; }; continue
-		if c == '#' && he: while SRC[p] != '\n' && SRC[p] != 0 { p++; }; continue
+		c u8 ~= SRC[p]
+		while c == ' ' || c == '\t' || c == '\r' || c == '\n': if c == '\n' { line++; nl = true; col = 0 } else { col++ } p++; c = SRC[p]
+		if c == '/' && SRC[p + 1] == '/' && !he: while SRC[p] != '\n' && SRC[p] != 0 { p++ } continue
+		if c == '#' && he: while SRC[p] != '\n' && SRC[p] != 0 { p++ } continue
 		if he && dep == 0 && (nl || c == 0) && TK.len > t0:
 			nl = false
 			while inl > 0: lay(T_RC, p); inl--
-			lt := TK.len - 1; top := ind[ind.len - 1] as int
+			lt := TK.len - 1; top := ind[ind.len - 1]
 			isel := c == 'e' && SRC[p + 1] == 'l' && SRC[p + 2] == 's' && SRC[p + 3] == 'e' && !idc(SRC[p + 4])
-			if TK[lt].k as int == T_COLON && TK[lt].lay: if c == 0 || col <= top { return lerr(f, line, "expected an indented block after ':'"); }; TK[lt].k = T_LC as u8; ind.push(col as i32); ss = TK.len
+			if TK[lt].k as int == T_COLON && TK[lt].lay: if c == 0 || col <= top { return lerr(f, line, "expected an indented block after ':'") } TK[lt].k = T_LC as u8; ind.push(col); ss = TK.len
 			else:
 				cl := if c == 0 { 0 } else { col }
 				if cl > top: return lerr(f, line, "unexpected indentation")
-				while cl < ind[ind.len - 1] as int: lay(T_RC, p); ind.pop()
-				if cl != ind[ind.len - 1] as int: return lerr(f, line, "this line's indentation matches no enclosing block")
-				lk := TK[TK.len - 1].k as int
+				while cl < ind[ind.len - 1]: lay(T_RC, p); ind.pop()
+				if cl != ind[ind.len - 1]: return lerr(f, line, "this line's indentation matches no enclosing block")
+				lk := TK[TK.len - 1].k
 				if !isel && lk != T_SEMI && lk != T_LC: lay(T_SEMI, p)
 		nl = false
 		if c == '/' && SRC[p + 1] == '*':
 			p += 2; nest ~= 1
-			while nest > 0: d := SRC[p]; if d == 0 { return lerr(f, line, "unterminated /* comment"); }; if d == '\n' { line++; }; if d == '*' && SRC[p + 1] == '/' { nest--; p++; } else { if d == '/' && SRC[p + 1] == '*' { nest++; p++; } }; p++
+			while nest > 0: d u8 := SRC[p]; if d == 0 { return lerr(f, line, "unterminated /* comment") } if d == '\n' { line++ } if d == '*' && SRC[p + 1] == '/' { nest--; p++ } else { if d == '/' && SRC[p + 1] == '*' { nest++; p++ } } p++
 			continue
 		s := p
-		n1 := SRC[p + 1]; n2 := SRC[p + 2]
+		n1 u8 := SRC[p + 1]; n2 u8 := SRC[p + 2]
 		if c == 0: put(T_EOF, s, s); return true
 		if dig(c):
 			if c == '0' && (n1 == 'x' || n1 == 'X'):
@@ -121,7 +121,7 @@ lex_file(path const byte[:]) bool:
 				if SRC[p] == '.' && hexd(SRC[p + 1]):
 					hf = true; p++; while hexd(SRC[p]): p++
 				if SRC[p] == 'p' || SRC[p] == 'P':
-					hf = true; p++; if SRC[p] == '+' || SRC[p] == '-' { p++; }; while dig(SRC[p]): p++
+					hf = true; p++; if SRC[p] == '+' || SRC[p] == '-' { p++ } while dig(SRC[p]): p++
 				if hf: put(T_FLT, s, p); continue
 				if p - ds > 16: return lerr(f, line, "hex literal too large for 64 bits")
 				v u64 ~= 0; for q ds..p: v = v << 4 | hexv(SRC[q]) as u64
@@ -134,7 +134,7 @@ lex_file(path const byte[:]) bool:
 				fl = true; p += 2; while dig(SRC[p]): p++
 			if fl: put(T_FLT, s, p); continue
 			v u64 ~= 0
-			for q s..p: d := (SRC[q] - '0') as u64; if v > (18446744073709551615 - d) / 10 { return lerr(f, line, "integer literal too large for 64 bits"); }; v = v * 10 + d
+			for q s..p: d := (SRC[q] - '0') as u64; if v > (18446744073709551615 - d) / 10 { return lerr(f, line, "integer literal too large for 64 bits") } v = v * 10 + d
 			put(T_INT, s, p); TK[TK.len - 1].v = v as! i64; TK[TK.len - 1].uns = v > 9223372036854775807; continue
 		if idc(c):
 			while idc(SRC[p]): p++
@@ -157,13 +157,13 @@ lex_file(path const byte[:]) bool:
 				p += 3
 				q ~= p; while SRC[q] == ' ' || SRC[q] == '\t' || SRC[q] == '\r': q++
 				if SRC[q] != '\n':
-					while !(SRC[p] == '"' && SRC[p + 1] == '"' && SRC[p + 2] == '"'): if SRC[p] == 0 || SRC[p] == '\n' { return lerr(f, line, "unterminated \"\"\" string"); }; STRS.push(SRC[p]); p++
+					while !(SRC[p] == '"' && SRC[p + 1] == '"' && SRC[p + 2] == '"'): if SRC[p] == 0 || SRC[p] == '\n' { return lerr(f, line, "unterminated \"\"\" string") } STRS.push(SRC[p]); p++
 					p += 3
 				else:
 					ml = true
 					first := q + 1
 					close ~= first
-					while !(SRC[close] == '"' && SRC[close + 1] == '"' && SRC[close + 2] == '"'): if SRC[close] == 0 { return lerr(f, line, "unterminated \"\"\" string"); }; close++
+					while !(SRC[close] == '"' && SRC[close + 1] == '"' && SRC[close + 2] == '"'): if SRC[close] == 0 { return lerr(f, line, "unterminated \"\"\" string") } close++
 					cs ~= close; while cs > first && SRC[cs - 1] != '\n': cs--
 					mg := close - cs
 					for q2 cs..close:
@@ -186,15 +186,15 @@ lex_file(path const byte[:]) bool:
 					p = close + 3
 			else:
 				p++
-				while SRC[p] != '"': if SRC[p] == '\n' || SRC[p] == 0 { return lerr(f, line, "unterminated string literal"); }; v := esc(p, f, line); if v < 0 { return false; }; STRS.push(v as! byte)
+				while SRC[p] != '"': if SRC[p] == '\n' || SRC[p] == 0 { return lerr(f, line, "unterminated string literal") } v := esc(p, f, line); if v < 0 { return false } STRS.push(v as! byte)
 				p++
-			put(T_STR, s, p); TK[TK.len - 1].v = ss; TK[TK.len - 1].w = (STRS.len - ss) as i32; TK[TK.len - 1].ml = ml
+			put(T_STR, s, p); TK[TK.len - 1].v = ss; TK[TK.len - 1].w = STRS.len - ss; TK[TK.len - 1].ml = ml
 			continue
 		p++
 		k ~= -1
 		if he && (c == ':' && n1 == '=' || c == '~' && n1 == '='): ins(if c == ':' { K_LET } else { K_VAR }, s); p++; put(T_ASSIGN, s, p); continue
-		if he && dep == 0 && c == ':' && n1 != ':': q ~= p; while SRC[q] == ' ' || SRC[q] == '\t' || SRC[q] == '\r' { q++; }; if SRC[q] == '\n' || SRC[q] == 0 || SRC[q] == '#' { put(T_COLON, s, p); TK[TK.len - 1].lay = true; } else { lay(T_LC, s); inl++; }; continue
-		if c == '(' || c == '[' || c == '{' { dep++; }; if (c == ')' || c == ']' || c == '}') && dep > 0: dep--
+		if he && dep == 0 && c == ':' && n1 != ':': q ~= p; while SRC[q] == ' ' || SRC[q] == '\t' || SRC[q] == '\r' { q++ } if SRC[q] == '\n' || SRC[q] == 0 || SRC[q] == '#' { put(T_COLON, s, p); TK[TK.len - 1].lay = true } else { lay(T_LC, s); inl++ } continue
+		if c == '(' || c == '[' || c == '{' { dep++ } if (c == ')' || c == ']' || c == '}') && dep > 0: dep--
 		if c == '(': k = T_LP
 		else:
 			if c == ')': k = T_RP
@@ -272,6 +272,6 @@ lex_file(path const byte[:]) bool:
 		put(k, s, p)
 	true
 tok_text(t int) const byte[:]:
-	x := TK[t]; SRC[(x.s as int)..(x.s + x.n) as int]
+	x := TK[t]; SRC[(x.s as int)..x.s + x.n]
 tok_str(t int) const byte[:]:
-	x := TK[t]; STRS[(x.v as int)..x.v as int + x.w as int]
+	x := TK[t]; STRS[(x.v as int)..x.v as int + x.w]

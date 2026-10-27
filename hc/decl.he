@@ -14,7 +14,7 @@ var NS_FILE i32[>..]
 struct Pk { name i32, root i32, key i32, src i32, so i32, mt bool }
 var PKS Pk[>..]; var FPKG i32[>..]
 goose_home() byte[>..]:
-	h byte[>..] ~= []; if !env("GOOSE_HOME", h) || h.len == 0 { h.clear(); env("HOME", h); h.append("/.goose"); }; h
+	h byte[>..] ~= []; if !env("GOOSE_HOME", h) || h.len == 0 { h.clear(); env("HOME", h); h.append("/.goose") } h
 blessed(name const byte[:]) const byte[:]:
 	if name == "physics":
 		"physics"
@@ -24,15 +24,15 @@ blessed(name const byte[:]) const byte[:]:
 		else:
 			""
 pk_find(name int) int:
-	for k, i PKS { if k.name as int == name { return i; } }; -1
+	for k, i PKS { if k.name == name { return i } } -1
 pk_add(name int, root const byte[:], key const byte[:], src const byte[:]) int:
-	PKS.push(Pk{name as i32, intern(root) as i32, intern(key) as i32, intern(src) as i32, -1, false}); PKS.len - 1
+	PKS.push(Pk{name, intern(root), intern(key), intern(src), -1, false}); PKS.len - 1
 pk_git(name int, src const byte[:]) int:
 	at ~= src.len; for c, i src:
 		if c == '@': at = i
 	sl ~= 0; for c src[..at]:
 		if c == '/': sl++
-	key byte[>..] ~= []; if sl == 1 { key.append("github.com/"); }; key.append(src[..at]); key.push('/'); key.append(src[min(at + 1, src.len)..])
+	key byte[>..] ~= []; if sl == 1 { key.append("github.com/") } key.append(src[..at]); key.push('/'); key.append(src[min(at + 1, src.len)..])
 	root byte[>..] ~= goose_home(); root.append("/pkg/"); root.append(key[..])
 	pk_add(name, root[..], key[..], src)
 pk_of(name int) int:
@@ -41,14 +41,14 @@ pk_of(name int) int:
 	pn := intern(b[..]); k2 := pk_find(pn); if k2 >= 0: return k2
 	src byte[>..] ~= []; src.append("aardappel/goose_"); src.append(b[..]); src.append("@v1"); pk_git(pn, src[..])
 fdir(f int) byte[>..]:
-	d byte[>..] ~= []; d.append(nm(FILES[f].name as int)); sl ~= -1; for c, i d { if c == '/' { sl = i; } }; if sl >= 0 { d.resize(sl); } else { d.clear(); d.push('.'); }; d
+	d byte[>..] ~= []; d.append(nm(FILES[f].name)); sl ~= -1; for c, i d { if c == '/' { sl = i } } if sl >= 0 { d.resize(sl); } else { d.clear(); d.push('.'); } d
 pk_declare(n int, f int) bool:
-	name := ND[n].s as int; src byte[>..] ~= []; src.append(tok_str(ND[n].a as int))
-	k := pk_find(name); if k >= 0: if nm(PKS[k].src as int) != src[..] { m byte[>..] ~= []; format(m, "the package ", nm(name), " is declared from both ", nm(PKS[k].src as int), " and ", src[..]); derr(ND[n].t as int, m); return false; }; return true
-	if src.len > 0 && (src[0] == '.' || src[0] == '/'): root byte[>..] ~= []; if src[0] != '/' { root.append(fdir(f)); root.push('/'); }; root.append(src[..]); key byte[>..] ~= []; format(key, "local/", hash(root[..])); pk_add(name, root[..], key[..], src[..]); return true
-	i := pk_git(name, src[..]); if is_dir(nm(PKS[i].root as int)): return true
-	m byte[>..] ~= []; format(m, "the package ", nm(name), " (", src[..], ") is not in ", nm(PKS[i].root as int), "; clone it there, or declare it as import ", nm(name), " from \"<the directory>\";"); derr(ND[n].t as int, m); false
-derr(t int, m const byte[:]): if DERR.len > 0 { return; }; x := TK[max(t, 0)]; DERR.append(nm(FILES[x.f].name)); format(DERR, ":", x.line, ": error: ", m);
+	name := ND[n].s; src byte[>..] ~= []; src.append(tok_str(ND[n].a))
+	k := pk_find(name); if k >= 0: if nm(PKS[k].src) != src[..] { m byte[>..] ~= []; format(m, "the package ", nm(name), " is declared from both ", nm(PKS[k].src), " and ", src[..]); derr(ND[n].t, m); return false } return true
+	if src.len > 0 && (src[0] == '.' || src[0] == '/'): root byte[>..] ~= []; if src[0] != '/' { root.append(fdir(f)); root.push('/') } root.append(src[..]); key byte[>..] ~= []; format(key, "local/", hash(root[..])); pk_add(name, root[..], key[..], src[..]); return true
+	i := pk_git(name, src[..]); if is_dir(nm(PKS[i].root)): return true
+	m byte[>..] ~= []; format(m, "the package ", nm(name), " (", src[..], ") is not in ", nm(PKS[i].root), "; clone it there, or declare it as import ", nm(name), " from \"<the directory>\";"); derr(ND[n].t, m); false
+derr(t int, m const byte[:]): if DERR.len > 0 { return } x := TK[max(t, 0)]; DERR.append(nm(FILES[x.f].name)); format(DERR, ":", x.line, ": error: ", m);
 dmap(name int) int:
 	if name < 0 || name >= DMAP.len:
 		-1
@@ -57,8 +57,8 @@ dmap(name int) int:
 dadd(k int, node int, file int, name int):
 	while DMAP.len <= name: DMAP.push(-1)
 	i := DC.len
-	DC.push(Dc{k as u8, node as i32, file as i32, DMAP[name], name as i32})
-	DMAP[name] = i as i32
+	DC.push(Dc{k, node, file, DMAP[name], name})
+	DMAP[name] = i
 qual(ns int, name int) int:
 	if ns < 0:
 		name
@@ -73,24 +73,24 @@ file_ns(f int) int:
 		-1
 collect(file int, t0 int, t1 int):
 	for i t0..t1:
-		n := TOP[i] as int
+		n := TOP[i]
 		x := ND[n]
-		k := x.k as int
-		if k == N_STRUCT: dadd(D_STRUCT, n, file, qual(x.a as int, x.s as int))
-		if k == N_ENUM: dadd(D_ENUM, n, file, qual(x.a as int, x.s as int))
-		if k == N_ALIAS: dadd(D_ALIAS, n, file, qual(x.a as int, x.s as int))
+		k := x.k
+		if k == N_STRUCT: dadd(D_STRUCT, n, file, qual(x.a, x.s))
+		if k == N_ENUM: dadd(D_ENUM, n, file, qual(x.a, x.s))
+		if k == N_ALIAS: dadd(D_ALIAS, n, file, qual(x.a, x.s))
 		if k == N_FN:
-			if !(nm(x.s as int) == "main" && file != 0): dadd(D_FN, n, file, qual(x.a as int, x.s as int))
-		if k == N_VDECL: dadd(D_GLOBAL, n, file, qual(x.c as int, LS[x.l] as int))
+			if !(nm(x.s) == "main" && file != 0): dadd(D_FN, n, file, qual(x.a, x.s))
+		if k == N_VDECL: dadd(D_GLOBAL, n, file, qual(x.c, LS[x.l]))
 recursive try_load(path const byte[:], pk int) int:
 	id := intern(path)
 	for f, i FILES:
-		if f.name as int == id: return i
+		if f.name == id: return i
 	if !file_exists(path): return -1
 	t0 := TOP.len
 	if !parse_file(path): DERR.append(PERR); return -2
 	f := FILES.len - 1
-	while FPKG.len < FILES.len { FPKG.push(-1); }; FPKG[f] = pk as i32
+	while FPKG.len < FILES.len { FPKG.push(-1) } FPKG[f] = pk
 	while NS_FILE.len < FILES.len: NS_FILE.push(-1)
 	NS_FILE[f] = FILENS[FILENS.len - 1]
 	collect(f, t0, TOP.len)
@@ -104,26 +104,26 @@ recursive try_load(path const byte[:], pk int) int:
 		if load_import(NAME_STD, f, -1) < 0: return -2
 	if f == 0:
 		for q im0..im1:
-			n := IMPS[q] as int; if ND[n].a >= 0 && !pk_declare(n, f): return -2
+			n := IMPS[q]; if ND[n].a >= 0 && !pk_declare(n, f): return -2
 	for q im0..im1:
-		n := IMPS[q] as int; if ND[n].a >= 0 && f != 0 && pk_find(ND[n].s as int) < 0 { m byte[>..] ~= []; format(m, nm(FILES[f].name as int), " needs the package ", nm(ND[n].s as int), ": add\n    import ", nm(ND[n].s as int), " from \"", tok_str(ND[n].a as int), "\";\nto ", nm(FILES[0].name as int), " (packages are declared by the root file only)"); derr(ND[n].t as int, m); return -2; }; if load_import(ND[n].s as int, f, ND[n].t as int) < 0: return -2
+		n := IMPS[q]; if ND[n].a >= 0 && f != 0 && pk_find(ND[n].s) < 0 { m byte[>..] ~= []; format(m, nm(FILES[f].name), " needs the package ", nm(ND[n].s), ": add\n    import ", nm(ND[n].s), " from \"", tok_str(ND[n].a), "\";\nto ", nm(FILES[0].name), " (packages are declared by the root file only)"); derr(ND[n].t, m); return -2 } if load_import(ND[n].s, f, ND[n].t) < 0: return -2
 	f
 recursive try_ext(p const byte[:], pk int) int:
-	a byte[>..] ~= []; a.append(p); a.append(".he"); r0 := try_load(a[..], pk); if r0 != -1 { return r0; }; a.resize(p.len); a.append(".amni"); r := try_load(a[..], pk); if r != -1 { return r; }; a.resize(p.len); a.append(".goose"); try_load(a[..], pk)
+	a byte[>..] ~= []; a.append(p); a.append(".he"); r0 := try_load(a[..], pk); if r0 != -1 { return r0 } a.resize(p.len); a.append(".amni"); r := try_load(a[..], pk); if r != -1 { return r } a.resize(p.len); a.append(".goose"); try_load(a[..], pk)
 lib_path(name const byte[:]) byte[..1024]:
 	p byte[..1024] ~= []; p.append(LIBDIR); p.push('/'); p.append(name); p.append(".amni"); p
 imp_rel(t int) bool:
-	for n IMPS { if ND[n].t as int == t && ND[n].k == N_IMPORT { return ND[n].fl == 1; } }; false
+	for n IMPS { if ND[n].t == t && ND[n].k == N_IMPORT { return ND[n].fl == 1 } } false
 recursive load_import(name int, from int, t int) int:
 	p byte[..1024] ~= []
-	rel := t >= 0 && from >= 0 && from < FILES.len && imp_rel(t); fnm := nm(FILES[from].name as int); sl ~= -1; if rel:
+	rel := t >= 0 && from >= 0 && from < FILES.len && imp_rel(t); fnm := nm(FILES[from].name); sl ~= -1; if rel:
 		for c, i fnm:
 			if c == '/': sl = i
 	fp := if from >= 0 && from < FPKG.len { FPKG[from] as int } else { -1 }
-	if sl >= 0 { p.append(fnm[..sl]); } else { if fp >= 0 { p.append(nm(PKS[fp].root as int)); } else { p.append(ROOTDIR); } }; p.push('/'); p.append(nm(name))
+	if sl >= 0 { p.append(fnm[..sl]); } else { if fp >= 0 { p.append(nm(PKS[fp].root)); } else { p.append(ROOTDIR); } } p.push('/'); p.append(nm(name))
 	r ~= try_ext(p[..], fp)
 	if r == -1 && !rel:
-		s byte[>..] ~= []; s.append(nm(name)); c ~= s.len; for ch, i s { if ch == '/' && c == s.len { c = i; } }; pk := pk_of(intern(s[..c])); if pk >= 0: q byte[>..] ~= []; q.append(nm(PKS[pk].root as int)); q.push('/'); q.append(if c < s.len { s[c + 1..] } else { s[..] }); r = try_ext(q[..], pk)
+		s byte[>..] ~= []; s.append(nm(name)); c ~= s.len; for ch, i s { if ch == '/' && c == s.len { c = i } } pk := pk_of(intern(s[..c])); if pk >= 0: q byte[>..] ~= []; q.append(nm(PKS[pk].root)); q.push('/'); q.append(if c < s.len { s[c + 1..] } else { s[..] }); r = try_ext(q[..], pk)
 	if r == -1: lp := lib_path(nm(name)); r = try_load(lp[..], -1)
 	if r == -1: m byte[>..] ~= []; format(m, "cannot find module ", nm(name)); derr(t, m); return -2
 	r
@@ -132,25 +132,25 @@ load_program(root const byte[:]) bool:
 	types_init()
 	d ~= root.len; while d > 0 && root[d - 1] != '/': d--
 	ROOTDIR.clear(); ROOTDIR.append(if d > 0 { root[..d - 1] } else { "." })
-	e ~= root.len; for c, i root { if c == '.' && i > d { e = i; } }; key byte[>..] ~= []; format(key, "local/", hash(ROOTDIR[..])); pk_add(intern(root[d..e]), ROOTDIR[..], key[..], ".")
+	e ~= root.len; for c, i root { if c == '.' && i > d { e = i } } key byte[>..] ~= []; format(key, "local/", hash(ROOTDIR[..])); pk_add(intern(root[d..e]), ROOTDIR[..], key[..], ".")
 	try_load(root, 0) >= 0 && DERR.len == 0
 gb_find(name int) int:
-	i ~= GB.len - 1; while i >= 0 { if GB[i].name as int == name { return GB[i].ty as int; }; i--; }; -1
+	i ~= GB.len - 1; while i >= 0 { if GB[i].name == name { return GB[i].ty } i-- } -1
 lookup(name int, ns int, k int) int:
 	if ns >= 0:
-		d ~= dmap(qual(ns, name)); while d >= 0: if DC[d].k as int == k { return d; }; d = DC[d].next as int
+		d ~= dmap(qual(ns, name)); while d >= 0: if DC[d].k == k { return d } d = DC[d].next
 	d ~= dmap(name)
-	while d >= 0: if DC[d].k as int == k { return d; }; d = DC[d].next as int
+	while d >= 0: if DC[d].k == k { return d } d = DC[d].next
 	-1
 split_q(q int) int, int:
 	s := nm(q)
 	for i s.len:
-		if s[i] == ':' && i + 1 < s.len && s[i + 1] == ':': if i == 0 { return -2, intern(s[2..]); }; return intern(s[..i]), intern(s[i + 2..])
+		if s[i] == ':' && i + 1 < s.len && s[i + 1] == ':': if i == 0 { return -2, intern(s[2..]) } return intern(s[..i]), intern(s[i + 2..])
 	return -1, q
 lookup_q(q int, ns int, k int) int:
 	a, b := split_q(q)
 	if a == -2: return lookup(b, -1, k)
-	if a >= 0: d ~= dmap(q); while d >= 0 { if DC[d].k as int == k { return d; }; d = DC[d].next as int; }; return -1
+	if a >= 0: d ~= dmap(q); while d >= 0 { if DC[d].k == k { return d } d = DC[d].next } return -1
 	lookup(b, ns, k)
 ns_of(n int) int:
 	file_ns(node_file(n))
@@ -169,13 +169,13 @@ recursive rtype(n int, ns int) int:
 			w := if x.c as int == K_VARINT { 8 } else { int_storage_of_tok(x.c as int) }
 			pd := if x.s >= 0 { lookup_q(x.s as int, ns, D_GLOBAL) } else { -1 }
 			return t_rel(e, fl, w, pd as i64)
-		if TY[e].k == TY_REF && TY[e].c < 0: if fl & 2 != 0 { return t_ref(TY[e].a as int, TY[e].fl as int | 2); }; return e
+		if TY[e].k == TY_REF && TY[e].c < 0: if fl & 2 != 0 { return t_ref(TY[e].a as int, TY[e].fl as int | 2) } return e
 		return t_ref(e, fl)
 	if k == N_TARR:
 		e := rtype(x.a as int, ns)
 		a := x.op as int
-		if a == A_FIXED: v, ok := ceval(x.b as int, ns); if !ok { derr(x.t as int, "array size must be a constant"); }; return t_arr(e, A_FIXED, v, -1)
-		if a == A_LIM: if x.b < 0 { return t_arr(e, A_LIM, -1, 6); }; v, ok := ceval(x.b as int, ns); if !ok { derr(x.t as int, "capacity must be a constant"); }; return t_arr(e, A_LIM, v, lim_lenstore(v))
+		if a == A_FIXED: v, ok := ceval(x.b as int, ns); if !ok { derr(x.t as int, "array size must be a constant") } return t_arr(e, A_FIXED, v, -1)
+		if a == A_LIM: if x.b < 0 { return t_arr(e, A_LIM, -1, 6) } v, ok := ceval(x.b as int, ns); if !ok { derr(x.t as int, "capacity must be a constant") } return t_arr(e, A_LIM, v, lim_lenstore(v))
 		if a == A_VAR: ls := if x.c < 0 { 6 } else { if x.c as int == K_VARINT { 8 } else { int_storage_of_tok(x.c as int) } }; return t_arr(e, A_VAR, -1, ls)
 		return t_arr(e, a, -1, -1)
 	if k == N_TVAR:
@@ -208,17 +208,17 @@ gen_names(gl int, out i32[..16]&):
 		for i ND[gl].n: out.push(ND[kid(gl, i)].s)
 recursive inst_struct(node int, args i32[:]) int:
 	for s, i STI:
-		if s.node as int == node && s.tn as int == args.len:
-			same ~= true; for j args.len { if TYL[s.ta as int + j] != args[j] { same = false; } }; if same: return i
+		if s.node == node && s.tn == args.len:
+			same ~= true; for j args.len { if TYL[s.ta + j] != args[j] { same = false } } if same: return i
 	ta := TYL.len; TYL.append(args)
 	si := STI.len
-	STI.push(SI{node: node as i32, ta: ta as i32, tn: args.len as i32, f0: SFI.len as i32, fnum: 0, name: ND[node].s, ..})
-	gn i32[..16] ~= []; gen_names(ND[node].d as int, gn)
-	if gn.len != args.len: derr(ND[node].t as int, "wrong number of type arguments")
+	STI.push(SI{node: node, ta: ta, tn: args.len, f0: SFI.len, fnum: 0, name: ND[node].s, ..})
+	gn i32[..16] ~= []; gen_names(ND[node].d, gn)
+	if gn.len != args.len: derr(ND[node].t, "wrong number of type arguments")
 	g0 := GB.len
 	for i min(gn.len, args.len): GB.push(Gb{gn[i], args[i]})
 	f0 := fields_into(node, ns_of(node))
-	STI[si].f0 = f0 as i32; STI[si].fnum = (SFI.len - f0) as i32
+	STI[si].f0 = f0; STI[si].fnum = SFI.len - f0
 	GB.pop_n(GB.len - g0)
 	si
 recursive fields_into(node int, ns int) int:
@@ -227,32 +227,32 @@ recursive fields_into(node int, ns int) int:
 		f := kid(node, i)
 		x := ND[f]
 		if x.fl & 4 != 0: buf.push(FI{name: -1, ty: -1, def: -1, fl: x.fl, padn: x.c, off: 0}); continue
-		ft := rtype(x.a as int, ns)
-		buf.push(FI{name: x.s, ty: ft as i32, def: x.b, fl: x.fl, padn: 0, off: 0})
+		ft := rtype(x.a, ns)
+		buf.push(FI{name: x.s, ty: ft, def: x.b, fl: x.fl, padn: 0, off: 0})
 	f0 := SFI.len
 	SFI.append(buf[..])
 	f0
 recursive inst_enum(node int, args i32[:]) int:
 	for s, i ENI:
-		if s.node as int == node && s.tn as int == args.len:
-			same ~= true; for j args.len { if TYL[s.ta as int + j] != args[j] { same = false; } }; if same: return i
+		if s.node == node && s.tn == args.len:
+			same ~= true; for j args.len { if TYL[s.ta + j] != args[j] { same = false } } if same: return i
 	ta := TYL.len; TYL.append(args)
 	ei := ENI.len
-	nv := ND[node].n as int
-	ENI.push(EI{node: node as i32, ta: ta as i32, tn: args.len as i32, v0: ENV.len as i32, vnum: nv as i32, name: ND[node].s, ..})
+	nv := ND[node].n
+	ENI.push(EI{node: node, ta: ta, tn: args.len, v0: ENV.len, vnum: nv, name: ND[node].s, ..})
 	v0 := ENV.len
 	for i nv: v := kid(node, i); ENV.push(VI{name: ND[v].s, f0: 0, fnum: 0, si: -1, size: 0, haspay: ND[v].fl & 1 != 0})
-	gn i32[..16] ~= []; gen_names(ND[node].d as int, gn)
+	gn i32[..16] ~= []; gen_names(ND[node].d, gn)
 	g0 := GB.len
 	for i min(gn.len, args.len): GB.push(Gb{gn[i], args[i]})
 	ns := ns_of(node)
 	for i nv:
 		v := kid(node, i)
 		si := STI.len
-		STI.push(SI{node: v as i32, ta: ta as i32, tn: args.len as i32, f0: SFI.len as i32, fnum: 0, name: ND[v].s, ..})
+		STI.push(SI{node: v, ta: ta, tn: args.len, f0: SFI.len, fnum: 0, name: ND[v].s, ..})
 		f0 := fields_into(v, ns)
-		STI[si].f0 = f0 as i32; STI[si].fnum = (SFI.len - f0) as i32
-		ENV[v0 + i].si = si as i32
+		STI[si].f0 = f0; STI[si].fnum = SFI.len - f0
+		ENV[v0 + i].si = si
 	GB.pop_n(GB.len - g0)
 	ei
 cwrap(v i64, c int) i64:
@@ -265,49 +265,49 @@ ceval(n int, ns int) i64, bool: v, c, ok := ceval3(n, ns); return v, ok
 recursive ceval3(n int, ns int) i64, int, bool:
 	if n < 0: return 0, -1, false
 	x := ND[n]
-	k := x.k as int
+	k := x.k
 	if k == N_INT: return TK[x.t].v, if TK[x.t].uns { 7 } else { -1 }, true
 	if k == N_ID && CFBS.len > 0:
-		v := find_lv(x.s as int); if v >= 0 && LVS[v].fl & LV_CFB != 0: c := CFBS[LVS[v].node]; if c.k != 0 { return 0, -1, false; }; sa := AOWN; AOWN = c.b as int; r, u, ok := cval(c.a as int); AOWN = sa; return r, if u { 7 } else { -1 }, ok
+		v := find_lv(x.s); if v >= 0 && LVS[v].fl & LV_CFB != 0: c := CFBS[LVS[v].node]; if c.k != 0 { return 0, -1, false } sa := AOWN; AOWN = c.b; r, u, ok := cval(c.a); AOWN = sa; return r, if u { 7 } else { -1 }, ok
 	if k == N_UN:
-		v, c, ok := ceval3(x.a as int, ns)
+		v, c, ok := ceval3(x.a, ns)
 		if x.op as int == T_MINUS: c2 := if c == 7 && ND[x.a].k == N_INT { -1 } else { c }; return cwrap(0 - v, c2), c2, ok
 		if x.op as int == T_BITNOT: return cwrap(~v, c), c, ok
 		return 0, -1, false
 	if k == N_BIN:
-		a, ca, oa := ceval3(x.a as int, ns)
-		b, cb, ob := ceval3(x.b as int, ns)
+		a, ca, oa := ceval3(x.a, ns)
+		b, cb, ob := ceval3(x.b, ns)
 		if !oa || !ob: return 0, -1, false
-		o := x.op as int
+		o := x.op
 		c := if o == T_SHL || o == T_SHR { ca } else { if ca >= 0 { ca } else { cb } }
 		un := c >= 4
 		ua := a as! u64; ub := b as! u64
 		sh := if c >= 0 { ((8 << (c & 3) as i64) - 1) as u64 } else { 63 }
-		if o == T_PLUS { return cwrap(a + b, c), c, true; }; if o == T_MINUS { return cwrap(a - b, c), c, true; }; if o == T_MUL: return cwrap(a * b, c), c, true
-		if o == T_DIV: if b == 0 { return 0, -1, false; }; if un { return cwrap((ua / ub) as! i64, c), c, true; }; if b == -1 { return cwrap(0 - a, c), c, true; }; return cwrap(a / b, c), c, true
-		if o == T_MOD: if b == 0 { return 0, -1, false; }; if un { return cwrap((ua % ub) as! i64, c), c, true; }; if b == -1 || b == 1 { return 0, c, true; }; r := a % b; return cwrap(if r < 0 { if b < 0 { r - b } else { r + b } } else { r }, c), c, true
+		if o == T_PLUS { return cwrap(a + b, c), c, true } if o == T_MINUS { return cwrap(a - b, c), c, true } if o == T_MUL: return cwrap(a * b, c), c, true
+		if o == T_DIV: if b == 0 { return 0, -1, false } if un { return cwrap((ua / ub) as! i64, c), c, true } if b == -1 { return cwrap(0 - a, c), c, true } return cwrap(a / b, c), c, true
+		if o == T_MOD: if b == 0 { return 0, -1, false } if un { return cwrap((ua % ub) as! i64, c), c, true } if b == -1 || b == 1 { return 0, c, true } r := a % b; return cwrap(if r < 0 { if b < 0 { r - b } else { r + b } } else { r }, c), c, true
 		if o == T_SHL: return cwrap(a << (ub & sh), c), c, true
-		if o == T_SHR: if un { w := if c >= 0 && c & 3 != 3 { (a as! u64) & (1 << sh + 1) - 1 } else { ua }; return cwrap((w >> (ub & sh)) as! i64, c), c, true; }; return cwrap(a >> (ub & sh), c), c, true
-		if o == T_AND { return cwrap(a & b, c), c, true; }; if o == T_OR { return cwrap(a | b, c), c, true; }; if o == T_XOR: return cwrap(a ^ b, c), c, true
+		if o == T_SHR: if un { w := if c >= 0 && c & 3 != 3 { (a as! u64) & (1 << sh + 1) - 1 } else { ua }; return cwrap((w >> (ub & sh)) as! i64, c), c, true } return cwrap(a >> (ub & sh), c), c, true
+		if o == T_AND { return cwrap(a & b, c), c, true } if o == T_OR { return cwrap(a | b, c), c, true } if o == T_XOR: return cwrap(a ^ b, c), c, true
 		return 0, -1, false
-	if k == N_AS: v, c, ok := ceval3(x.a as int, ns); tn0 := x.b as int; if ND[tn0].k == N_TPRIM { tc := int_storage_of_tok(ND[tn0].op as int); if tc >= 0 { return cwrap(v, tc), tc, ok; } }; return v, c, ok
+	if k == N_AS: v, c, ok := ceval3(x.a, ns); tn0 := x.b; if ND[tn0].k == N_TPRIM { tc := int_storage_of_tok(ND[tn0].op); if tc >= 0 { return cwrap(v, tc), tc, ok } } return v, c, ok
 	if k == N_ID:
-		d := lookup_q(x.s as int, ns, D_GLOBAL)
+		d := lookup_q(x.s, ns, D_GLOBAL)
 		if d < 0: return 0, -1, false
-		g := DC[d].node as int
+		g := DC[d].node
 		if ND[g].fl & V_VAR != 0 || ND[g].b < 0: return 0, -1, false
-		v, c, ok := ceval3(kid(ND[g].b as int, 0), ns_of(g))
-		tn0 := ND[g].a as int
+		v, c, ok := ceval3(kid(ND[g].b, 0), ns_of(g))
+		tn0 := ND[g].a
 		if tn0 >= 0 && ND[tn0].k == N_TPRIM:
-			tc := int_storage_of_tok(ND[tn0].op as int); if tc >= 0: return cwrap(v, tc), tc, ok
+			tc := int_storage_of_tok(ND[tn0].op); if tc >= 0: return cwrap(v, tc), tc, ok
 		return v, c, ok
-	if k == N_DOT && nm(x.s as int) == "len" && ND[x.a].k == N_ID:
-		d := lookup_q(ND[x.a].s as int, ns, D_GLOBAL)
+	if k == N_DOT && nm(x.s) == "len" && ND[x.a].k == N_ID:
+		d := lookup_q(ND[x.a].s, ns, D_GLOBAL)
 		if d < 0: return 0, -1, false
-		g := DC[d].node as int
+		g := DC[d].node
 		if ND[g].a >= 0:
-			t := rtype(ND[g].a as int, ns_of(g)); if TY[t].k == TY_ARR && TY[t].s == A_FIXED as u8: return TY[t].b, -1, true
+			t := rtype(ND[g].a, ns_of(g)); if TY[t].k == TY_ARR && TY[t].s == A_FIXED as u8: return TY[t].b, -1, true
 		if ND[g].b >= 0:
-			iv := kid(ND[g].b as int, 0); if ND[iv].k == N_ARR { if ND[iv].b >= 0 { v, c, ok := ceval3(ND[iv].b as int, ns_of(g)); return v, -1, ok; }; return ND[iv].n as i64, -1, true; }; if ND[iv].k == N_STR: return TK[ND[iv].t].w as i64, -1, true
+			iv := kid(ND[g].b, 0); if ND[iv].k == N_ARR { if ND[iv].b >= 0 { v, c, ok := ceval3(ND[iv].b, ns_of(g)); return v, -1, ok } return ND[iv].n, -1, true } if ND[iv].k == N_STR: return TK[ND[iv].t].w, -1, true
 		return 0, -1, false
 	return 0, -1, false
