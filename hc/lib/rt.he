@@ -270,6 +270,12 @@ rt_frexp(b u64, ep int) u64:
 	b & ((1) as u64) << 63 | ((1022) as u64) << 52 | m
 var RT_DS RtV
 rt_ulen(v int) int: k ~= 1; x ~= v as! u64; while x >= 128 { x = x >> 7; k += 1 } k
+rt_uput(p int, v int) int: x ~= v as! u64; k ~= 0; loop: b := (x & 127) as int; x = x >> 7; mst1(p + k, if x != 0 { b | 128 } else { b }); k += 1; if x == 0 { return k }
+rt_zz(v int) int: v << 1 ^ v >> 63
+rt_zput(p int, v int) int: rt_uput(p, rt_zz(v))
+rt_zlen(v int) int: rt_ulen(rt_zz(v))
+rt_zget(p int) int: u := rt_uget(p); ((u as! u64) >> 1) as! int ^ -(u & 1)
+rt_usz(p int) int: k ~= 1; while mld1(p + k - 1) >= 128 { k += 1 } k
 rt_uget(p int) int: r ~= 0; sh ~= 0; q ~= p; loop: b := mld1(q); q += 1; r = r | (b & 127) << sh; if b < 128 { return r } sh += 7
 rt_vput(p int, w int, v int): if w == 8 { mst(p, v); return } for i w: mst1(p + i, v >> i * 8 & 255)
 rt_vget(p int, w int) int: if w == 0 { return rt_uget(p) } if w == 8 { return mld(p) } r ~= 0; for i w { r = r | mld1(p + i) << i * 8 } r
@@ -281,12 +287,17 @@ rt_vmk(n int, cap int, w int, lim int, esz int) int:
 	if w == 0: v ~= n; q ~= p; loop { b := v & 127; v = v >> 7; mst1(q, if v != 0 { b | 128 } else { b }); q += 1; if v == 0 { break } } else: if lim != 0: rt_vput(p, w, cap); rt_vput(p + w, w, n); else: rt_vput(p, w, n);
 	p
 rt_vfrom(sp int, sn int, w int, lim int, esz int) int: p := rt_vmk(sn, sn, w, lim, esz); mcopy(p + rt_vhd(p, w, lim), sp, sn * esz); p
-rt_vsz(p int, w int, lim int, esz int) int: rt_vhd(p, w, lim) + rt_vget(p + (if lim != 0 { w } else { 0 }), w) * esz
+rt_vsz(p int, w int, lim int, esz int) int: rt_vhd(p, w, lim) + rt_vget(p, w) * esz
 rt_vret(p int, m int, w int, lim int, esz int) int: rt_vretz(p, m, rt_vsz(p, w, lim, esz))
 rt_vretz(p int, m int, sz int) int: if RT_DS.b == 0 { RT_DS.b = rt_take() } d := RT_DS.b + m; if d != p { mcopy(d, p, sz) } RT_DS.n = m + sz; d
 rt_vfromz(p int, n int, z int, w int, lim int) int: h := rt_vmk(n, n, w, lim, 0); mcopy(rt_grow(vptr(RT_DS), z, 1), p, z); h
 rt_dsn() int: RT_DS.n
 rt_dsput(z int) int: rt_grow(vptr(RT_DS), z, 1)
+rt_bmnew(n int) int: z := (n + 7) / 8 + 1; p := rt_dsput(z); for i z { mst1(p + i, 0) } p
+rt_bmset(b int, o int): mst1(b + (o >> 3), mld1(b + (o >> 3)) | 1 << (o & 7))
+rt_bmget(b int, o int) int: mld1(b + (o >> 3)) >> (o & 7) & 1
+rt_lchk(p int, e int) int: k ~= 0; loop: if p + k >= e || k >= 10 { return -1 } b := mld1(p + k); k += 1; if b < 128 { return if k > 1 && b == 0 || k == 10 && b > 1 { -1 } else { k } }
+rt_vchk(p int, e int, w int, lim int) int: if w == 0 { return rt_lchk(p, e) } h := w * (lim + 1); if p + h > e { return -1 } if lim != 0 && rt_vget(p + w, w) > rt_vget(p, w) { return -1 } h
 rt_dsplace(c int, p int, z int): d := RT_DS.b + c; if d != p { mcopy(d, p, z) } RT_DS.n = c + z
 rt_sqput(v RtV&, z int) int: rt_rinit(v); if v.top + z > rt_lim(v.b) { rt_die(5, "push") } d := v.b + v.top; v.top += z; v.n += 1; d
 rt_sqapp(v RtV&, p int, n int, z int): if z > 0 { rt_rinit(v); if v.top + z > rt_lim(v.b) { rt_die(5, "append") } mcopy(v.b + v.top, p, z) } v.top += z; v.n += n
@@ -330,7 +341,7 @@ rt_sreal(v RtV&, p int, n int, k int, esz int, loc const byte[:]) int:
 			if e + ln == v.n: rt_flmv(f, 2 * i, 2 * i + 2, 2 * (v.fln - i - 1)); v.fln -= 1; rt_grow(vptr(v), d - ln, esz); rt_zero(v.b + e * esz, d * esz); return idx
 			break
 	t := rt_take(); mcopy(t, p, n * esz); rt_sfree(v, idx, n); r := rt_stake(v, k, esz, loc); mcopy(v.b + r * esz, t, n * esz); rt_give(t, n * esz); r
-rt_tobytes(o int, p int, n int): v ~= n as! u64; loop { b := (v & 127) as int; v = v >> 7; mst1(rt_grow(o, 1, 1), if v != 0 { b | 128 } else { b }); if v == 0 { break } } rt_appto(o, p, n);
+rt_tobytes(o int, p int, n int): rt_uput(rt_grow(o, rt_ulen(n), 1), n); rt_appto(o, p, n);
 rt_fbhdr(p int, n int, esz int) int: r u64 ~= 0; sh ~= 0; i ~= 0; while i < n && sh < 64 { b := mld1(p + i); r = r | ((b & 127) as! u64) << sh as u64; if b & 128 == 0 { v := r as! int; if v < 0 || i > 0 && b == 0 || v != n - i - 1 || v % esz != 0 { return -1 } return v / esz } i += 1; sh += 7 } -1
 var RT_SH int; RT_TID ~= -1; var RT_REC int
 rt_fwait(a int, v int): sys6(202, a, 128, v, 0, 0, 0);

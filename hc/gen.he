@@ -582,7 +582,7 @@ recursive gslit(n int):
 		if is_rel(f.ty): if given >= 0 && ND[ND[given].a].k as int != N_NULL { if RELM { RELQ.push(j as i32); RELQ.push(given); } else { gerr(given, "a relative reference built inside a literal needs the literal placed by push"); } } ow("0, "); any = true; continue
 		if given >= 0: v := ND[given].a; sa := AOWN; AOWN = gi; if is_res(f.ty) || ownsd(f.ty) { gxo(v); } else { gx(v); } AOWN = sa
 		else if f.def < 0: gdefault(f.ty)
-		else: sa := AOWN; AOWN = GLOBI; gx(f.def); AOWN = sa
+		else: sa := AOWN; AOWN = sdinst(si); gx(f.def); AOWN = sa
 		ow(", "); any = true
 	if !any: ow("0")
 	ow("})");
@@ -602,7 +602,7 @@ recursive gdefault(t int):
 	k := TY[t].k
 	if k == TY_ENUM || k == TY_ARR: p := nt(); ow("({ "); ct(t); format(O, " _d", p, "; memset(&_d", p, ", 0, sizeof _d", p, "); "); if k == TY_ENUM { format(O, "_d", p, ".u.v0 = "); gdefault(t_variant(TY[t].a, 0)); ow("; "); } else { format(O, "for (int64_t _i", p, " = 0; _i", p, " < ", TY[t].b, "; _i", p, "++) _d", p, ".e[_i", p, "] = "); gdefault(TY[t].a); ow("; "); } format(O, "_d", p, "; })"); return
 	si := dsi(t); ow("(("); ct(t); ow("){ "); any ~= false
-	for j STI[si].fnum: f := SFI[STI[si].f0 as int + j]; if f.ty < 0 || f.def < 0 && !has_def(f.ty) { continue } ow("."); fname_into(O, f.name); ow(" = "); if f.def >= 0 { sa := AOWN; AOWN = GLOBI; gx(f.def); AOWN = sa } else { gdefault(f.ty); } ow(", "); any = true
+	for j STI[si].fnum: f := SFI[STI[si].f0 as int + j]; if f.ty < 0 || f.def < 0 && !has_def(f.ty) { continue } ow("."); fname_into(O, f.name); ow(" = "); if f.def >= 0 { sa := AOWN; AOWN = sdinst(si); gx(f.def); AOWN = sa } else { gdefault(f.ty); } ow(", "); any = true
 	ow(if any { "})" } else { "0})" });
 recursive gfmt(o const byte[:], n int, t int, top bool):
 	d := deref(t)
@@ -1881,7 +1881,7 @@ recursive gvst(si int, n int):
 			ow("uint8_t *_f = ")
 			if given >= 0: { sa1 := AOWN; AOWN = gi; gx(ND[given].a); AOWN = sa1 }
 			else:
-				if f.def >= 0: sa := AOWN; AOWN = GLOBI; gx(f.def); AOWN = sa else: gvdef(ft)
+				if f.def >= 0: sa := AOWN; AOWN = sdinst(si); gx(f.def); AOWN = sa else: gvdef(ft)
 			e byte[..512] ~= []; vz_into(e, ft, "_f")
 			format(O, "; hr_vplace(_c", p, ", _f, ", e[..], "); } ")
 		else:
@@ -1890,7 +1890,7 @@ recursive gvst(si int, n int):
 			else:
 				if given >= 0: ow(" = "); { sa1 := AOWN; AOWN = gi; gx(ND[given].a); AOWN = sa1 }; ow("; ")
 				else:
-					if f.def >= 0: ow(" = "); sa := AOWN; AOWN = GLOBI; gx(f.def); AOWN = sa; ow("; ") else: ow("; memset(&_v, 0, sizeof _v); ")
+					if f.def >= 0: ow(" = "); sa := AOWN; AOWN = sdinst(si); gx(f.def); AOWN = sa; ow("; ") else: ow("; memset(&_v, 0, sizeof _v); ")
 			format(O, "hr_ds.n = _c", p, "; memcpy(hr_grow(&hr_ds, sizeof _v, 1), &_v, sizeof _v); } ")
 	format(O, "hr_rinit(&hr_ds); hr_ds.b + _b", p, "; })");
 recursive gbreak(n int):

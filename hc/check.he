@@ -28,6 +28,11 @@ var ARGW i32[>..<]
 var ORDER i32[>..]
 cerrl(f int, line int, m const byte[:]): NERR++; if LSPM { CALL.append(nm(FILES[f].name)); format(CALL, ":", line, ": error: ", m, "\n") } if CERR.len > 0 { return } CERR.append(nm(FILES[f].name)); format(CERR, ":", line, ": error: ", m);
 cerr(n int, m const byte[:]): NERR++; x := TK[ND[max(n, 0)].t]; if LSPM { CALL.append(nm(FILES[x.f].name)); format(CALL, ":", x.line, ": error: ", m, "\n") } if CERR.len > 0 { return } CERR.append(nm(FILES[x.f].name)); format(CERR, ":", x.line, ": error: ", m);
+var SDI i32[>..]
+sdinst(si int) int:
+	if STI[si].tn == 0 { return GLOBI } while SDI.len <= si { SDI.push(-1) } if SDI[si] >= 0 { return SDI[si] as int } nd := STI[si].node as int; i := new_inst(-1, nd, NEND[nd] as int, GLOBI); FI_[i].st = 3; FI_[i].g0 = GBS.len as i32; gn i32[..16] ~= []; gen_names(ND[nd].d, gn); for j gn.len { GBS.push(Gb{gn[j], TYL[STI[si].ta as int + j]}) } FI_[i].gn = gn.len as i32; SDI[si] = i as i32; i
+dpush(i int) int:
+	g0 := GB.len; for j FI_[i].gn { GB.push(GBS[FI_[i].g0 as int + j]) } g0
 new_inst(node int, lo int, hi int, par int) int:
 	i := FI_.len
 	FI_.push(FnI{node: node, lo: lo, hi: hi, ab: AT.len, par: par, cfn: i, g0: GBS.len, gn: 0, ret: -1, p0: 0, pn: 0, st: 0, blk: -1, bown: -1, name: if node >= 0 { ND[node].s } else { -1 }, ..})
@@ -474,7 +479,7 @@ recursive has_rel(t int) bool:
 	if k == TY_ENUM || k == TY_VARIANT:
 		ei := x.a; for i ENI[ei].vnum:
 			si := ENV[ENI[ei].v0 as int + i].si; if (k == TY_ENUM || i == x.c as int) && si >= 0 && srel(si): r = true
-	if k == TY_ARR && x.s as int == A_FIXED: r = has_rel(x.a)
+	if k == TY_ARR && (x.s as int == A_FIXED || x.s as int == A_LIM): r = TY[x.a].k == TY_REF && TY[x.a].c >= 0 || has_rel(x.a)
 	while HRELC.len < TY.len: HRELC.push(-1)
 	HRELC[t] = if r { 1 } else { 0 }
 	r

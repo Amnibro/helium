@@ -461,7 +461,7 @@ recursive ck_call(n int, want int) int:
 recursive ck_defs(t int):
 	if t < 0 { return } k := TY[t].k as int; if k == TY_ENUM { if ENI[TY[t].a].vnum > 0 { ck_defs(t_variant(TY[t].a as int, 0)) } return } if k == TY_ARR { ck_defs(TY[t].a as int); return } si := if k == TY_STRUCT { TY[t].a as int } else { if k == TY_VARIANT { ENV[ENI[TY[t].a].v0 as int + TY[t].c as int].si as int } else { -1 } }; if si < 0 { return } for j STI[si].fnum:
 		f := SFI[STI[si].f0 as int + j]; if f.ty < 0 { continue } if f.def >= 0:
-			if at(f.def as int) < 0: sa := AOWN; AOWN = GLOBI; ck(f.def as int, f.ty as int); conv(f.def as int, f.ty as int); AOWN = sa
+			if at(f.def as int) < 0: sa := AOWN; AOWN = sdinst(si); g0 := dpush(AOWN); ck(f.def as int, f.ty as int); conv(f.def as int, f.ty as int); GB.pop_n(GB.len - g0); AOWN = sa
 		else: ck_defs(f.ty as int)
 recursive user_format(n int) bool:
 	if ND[n].n == 0 { return false } t := deref(ck(kid(n, 0), -1)); if pend_local(kid(n, 0)) { return false } !(TY[t].k == TY_ARR && TY[t].a == T_U8 && (is_grow(t) || TY[t].s as int == A_LIM))
@@ -674,6 +674,25 @@ recursive ck_spawn(n int) int:
 	note_edge(inst)
 	TSP.push(n); TSP.push(AOWN); TSP.push(inst)
 	set_t(n, T_I64)
+var CFEL i8[>..]
+recursive cf_try(n int, fnode int, s int, an int, b0 int, bn int, blk int, want int, name int) int, int, int:
+	r := ND[fnode].b; gl := gen_list(fnode); ty := ND[n].c
+	if ND[fnode].fl & F_EXTERN != 0 || r < 0 || ND[r].n != 1 || gl < 0: return fnode, b0, bn
+	rt := kid(r, 0); if ND[rt].k as int != N_TNAME || ND[rt].n != 0: return fnode, b0, bn
+	g := ND[rt].s; gi ~= -1; for j ND[gl].n { if ND[kid(gl, j)].s == g { gi = j } } bi ~= -1; for q b0..b0 + bn { if BINDS[q].name == g { bi = q } }
+	if gi < 0 || ty >= 0 && gi < ND[ty].n as int || bi < 0 || BINDS[bi].ty as int != T_F64: return fnode, b0, bn
+	js i32[>..<] ~= []; ot i32[>..<] ~= []
+	for j min(an, ND[fnode].n as int):
+		pa := ND[kid(fnode, j)].a; if pa < 0 || ND[pa].k as int != N_TNAME || ND[pa].s != g { continue } if ND[pa].n != 0 { return fnode, b0, bn } c := DIDX[s + j] as int; while CFEL.len < ND.len { CFEL.push(0) }
+		if !is_pending(ARGW[s + j] as int) && CFEL[c] == 0 { return fnode, b0, bn } js.push(j as i32); ot.push(ARGW[s + j])
+	if js.len == 0: return fnode, b0, bn
+	for j js: ARGW[s + j] = T_F32 as i32
+	f2, c0, cn0 := resolve(n, name, ns_of(n), s, an, blk, ty, false); same ~= f2 == fnode && cn0 == bn; if same { for q bn { u := BINDS[c0 + q]; v := BINDS[b0 + q]; if u.name != v.name || u.ty != v.ty && !(b0 + q == bi && u.ty as int == T_F32) { same = false } } } BINDS.pop_n(BINDS.len - c0)
+	if same: while CFEL.len < ND.len { CFEL.push(0) } CFEL[n] = 1
+	if !same || want != T_F32: for j, i js { ARGW[s + j] = ot[i] } return fnode, b0, bn
+	BINDS.pop_n(BINDS.len - b0); f3, b3, n3 := resolve(n, name, ns_of(n), s, an, blk, ty, true)
+	for j, i js { c := DIDX[s + j] as int; if is_pending(ot[i] as int) { ARGW[s + j] = ot[i] } else { ck(c, T_F32); ARGW[s + j] = T_F32 as i32 } }
+	return f3, b3, n3
 recursive call_fn(n int, name int, recv int, want int) int:
 	isst := n == STMTN || want == T_VOID
 	s := ck_args(n, 0, recv)
@@ -689,6 +708,7 @@ recursive call_fn(n int, name int, recv int, want int) int:
 		if f2 >= 0: an--; blk = eb; bown = if bg >= 0 { FI_[bg].bown as int } else { AOWN }; while FNA.len <= n { FNA.push(0) } FNA[n] = 1
 	fnode0, b0, bn := resolve(n, name, ns_of(n), s, an, blk, ND[n].c, true)
 	fnode ~= fnode0
+	if fnode >= 0: fnode, b0, bn = cf_try(n, fnode, s, an, b0, bn, blk, want, name)
 	if fnode >= 0 && case_better(n, name, s, an, blk, fnode, LRANK): BINDS.pop_n(BINDS.len - b0); dr := try_case(n, name, s, an, blk, bown); if dr >= 0 { pop_args(s); return dr } fnode, b0, bn = resolve(n, name, ns_of(n), s, an, blk, ND[n].c, true)
 	if fnode < 0:
 		BINDS.pop_n(BINDS.len - b0); dr := try_case(n, name, s, an, blk, bown); if dr >= 0: pop_args(s); return dr
@@ -893,7 +913,7 @@ recursive ck_slit(n int, want int) int:
 		f := SFI[STI[si].f0 as int + j]
 		if f.ty < 0: continue
 		gn, gi := sl_given(n, j); given := gn >= 0
-		if !given && f.def >= 0: sa := AOWN; AOWN = GLOBI; ck(f.def as int, f.ty as int); conv(f.def as int, f.ty as int); AOWN = sa
+		if !given && f.def >= 0: sa := AOWN; AOWN = sdinst(si); g0 := dpush(AOWN); ck(f.def as int, f.ty as int); conv(f.def as int, f.ty as int); GB.pop_n(GB.len - g0); AOWN = sa
 		if !given && f.def < 0: ck_defs(f.ty as int)
 		if !given && f.def < 0 && x.fl & 1 == 0 && !is_opt(f.ty as int): m byte[>..] ~= []; format(m, "missing field ", nm(f.name as int), " in ", tn(t)); cerr(n, m)
 	set_r(n, R_CTOR, si)

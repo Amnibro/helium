@@ -637,7 +637,7 @@ pstruct() int:
 	{ q_ := pgenerics(); ND[n].d = q_ }
 	ex(T_LC, "struct declaration")
 	pfields(n, "struct body")
-	ex(T_RC, "struct declaration")
+	ex(T_RC, "struct declaration"); set_end(n)
 	n
 penum() int:
 	st := P; nx()
