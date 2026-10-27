@@ -141,7 +141,9 @@ Lower priority, since the C path is the oracle and not the product. It still mat
   - Runtime guards for bounds and aliasing, with the scalar loop kept as the tail.
   - `HC_NOVEC=1` turns it off.
   - Gate any change to it with `python3 tools/hc/vecfuzz.py <hc> [count] [first seed]`. It runs random loop programs with and without `HC_NOVEC` and compares exit codes and output. Run it with both the C-built `hc` and the natively built `hcn`: the native one runs `vec.he` as native code. In October 2026 that exposed a native double release that the C-built compiler hid.
+  - Stores may go through row slices (a data pointer plus a loop-invariant offset), so `bench/goose/blur_rows.goose` vectorizes too.
   - Blur runs 9x faster. Not yet supported: floats, conditionals (select), gathers, AVX2, and strided or struct-of-arrays access.
+- **Division by constants:** native `/` and `%` with a constant divisor use multiply-high sequences (Granlund–Montgomery), power-of-two shifts and masks, keeping truncating `/` and Euclidean `%`. Divisors with magnitude of at least 2^62 still use `div`. Check changes with `python3 tools/hc/divcheck.py <seed> <hc>`: it covers every integer type and edge divisors, native against C. `push` went from 2.8x clang's cycles to 1.5x, since every bench rng calls `xs_mod`.
 - **Inlining heuristics:** size limits are hand-tuned with no profile feedback.
 - **Compile time:** hc self-compile is ~300 ms, up from ~206 ms before the optimizer passes. Main costs: two value-numbering passes, LICM, rebuilding IR after strength reduction.
 

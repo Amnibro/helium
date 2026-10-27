@@ -200,7 +200,7 @@ cg_fn(fi int):
 						if gr(d) >= 0: ldv(gr(d), a) else: ldv(RAX, a); stv(RAX, d)
 			else:
 				if op == I_BIN:
-					dv := c == B_DIV || c == B_MOD || c == B_UDIV || c == B_UMOD; cm := c == B_ADD || c == B_MUL || c == B_AND || c == B_OR || c == B_XOR
+					dv ~= c == B_DIV || c == B_MOD || c == B_UDIV || c == B_UMOD; cm := c == B_ADD || c == B_MUL || c == B_AND || c == B_OR || c == B_XOR
 					sw := cm && (kc(a) && !kc(b) || gr(d) >= 0 && gr(d) == gr(b) && gr(a) != gr(d)); a1 := if sw { b } else { a }; b1 := if sw { a } else { b }
 					bi := kc(b1) && i32ok(FD[b1] as int) && !dv; bv := if bi { FD[b1] as int } else { 0 }
 					R := if dv || DBG && c <= B_MUL && x.l >= 0 || gr(d) < 0 || gr(d) == gr(b1) && !bi && gr(a1) != gr(d) { RAX } else { gr(d) }; sh := c == B_SHL || c == B_SAR || c == B_SHR
@@ -214,7 +214,8 @@ cg_fn(fi int):
 					if c >= B_ADD && c <= B_MUL && x.l >= 0:
 						tk := if DBG { trap_ab(K_OVFD | c << 8 | w << 16, x.l, a1, b1, traps) } else { trap_to(K_OVF, x.l, traps) }
 						if wsz(w) == 8: jcc_l(CC_O, tk) else: mov_rr(RDX, R); ext_r(RDX, w); alu(0x39, RDX, R); jcc_l(CC_NE, tk)
-					if c == B_DIV || c == B_MOD || c == B_UDIV || c == B_UMOD:
+					if dv && kc(b1) && cdivk(c, FD[b1] as int): dv = false
+					if dv:
 						if x.l >= 0: test_rr(RCX, RCX); jcc_l(CC_E, trap_to(K_DIV0, x.l, traps))
 						if c == B_DIV || c == B_MOD:
 							lnorm := nlbl(); ldone := nlbl(); mov_ri(RDX, -1); alu(0x39, RCX, RDX); jcc_l(CC_NE, lnorm)
@@ -333,3 +334,28 @@ cg_fn(fi int):
 	j ~= 0
 	while j < traps.len: bind(traps[j]); l := traps[j + 2]; if traps[j + 1] as int == K_OOB { ldv(RAX, traps[j + 3]); ldv(RSI, traps[j + 4]); mov_rr(RDI, RAX); lea_rip(RDX, 2, LOCS[2 * l]); mov_ri(RCX, LOCS[2 * l + 1]); call_f(RT_OOB); } else if traps[j + 1] & 255 == K_NARD { ldv(RDI, traps[j + 3]); mov_ri(RSI, traps[j + 1] >> 8); lea_rip(RDX, 2, LOCS[2 * l]); mov_ri(RCX, LOCS[2 * l + 1]); call_f(RT_NARD); } else if traps[j + 1] & 255 == K_OVFD { ldv(RAX, traps[j + 3]); ldv(RSI, traps[j + 4]); mov_rr(RDI, RAX); mov_ri(RDX, traps[j + 1] >> 8); lea_rip(RCX, 2, LOCS[2 * l]); mov_ri(R8, LOCS[2 * l + 1]); call_f(RT_OVF); } else { mov_ri(RDI, traps[j + 1]); lea_rip(RSI, 2, LOCS[2 * l]); mov_ri(RDX, LOCS[2 * l + 1]); call_f(RT_DIE); } j += 5
 shl_imm(r int, v int): xrex(true, 0, 0, r); xb(0xC1); xb(0xE0 | r & 7); xb(v);
+umagic(r0 uint, d uint) uint:
+	r ~= r0; q uint ~= 0
+	for k 64: t := r >> 63; r = r << 1; q = q << 1; if t != 0 || r >= d { r = if t != 0 { r + (~d + 1) } else { r - d }; q = q | 1 }
+	q
+mulk(r int, v int): if i32ok(v) { imul_ri(r, r, v) } else { mov_ri(RDX, v); imul(r, RDX) }
+andk(r int, v int): if v >= 0 && v < 1 << 31 { alu_ri(4, r, v) } else { mov_ri(RDX, v); alu(0x21, r, RDX) }
+cdivk(c int, v int) bool:
+	if c == B_UDIV || c == B_UMOD:
+		d := v as! uint; if d == 0: return false
+		l ~= 0; while l < 64 && (1 as uint) << l < d: l++
+		if d & (d - 1) == 0: if c == B_UMOD { andk(RAX, (d - 1) as! int) } else { if l > 0 { sh_ri(5, RAX, l) } } return true
+		m := umagic(if l == 64 { ~d + 1 } else { ((1 as uint) << l) - d }, d) + 1; mov_rr(RCX, RAX); mov_ri(RDX, m as! int); grp3(4, RDX); mov_rr(RAX, RCX); alu(0x29, RAX, RDX); sh_ri(5, RAX, 1); alu(0x01, RAX, RDX); sh_ri(5, RAX, l - 1)
+		if c == B_UMOD: mulk(RAX, v); alu(0x29, RCX, RAX); mov_rr(RAX, RCX)
+		return true
+	if v == 0 || v == -1 || v == -(1 << 62) * 2: return false
+	a := if v < 0 { -v } else { v }
+	if a >= 1 << 62: return false
+	if a == 1: if c == B_MOD { alu(0x31, RAX, RAX) } else { if v < 0 { grp3(3, RAX) } } return true
+	l ~= 0; while (1 << l) < a: l++
+	if a & (a - 1) == 0:
+		if c == B_MOD: andk(RAX, a - 1); return true
+		mov_rr(RDX, RAX); sh_ri(7, RDX, 63); sh_ri(5, RDX, 64 - l); alu(0x01, RAX, RDX); sh_ri(7, RAX, l); if v < 0 { grp3(3, RAX) } return true
+	m := umagic((1 as uint) << (l - 1), a as! uint) + 1; mov_rr(RCX, RAX); mov_ri(RDX, m as! int); grp3(5, RDX); alu(0x01, RDX, RCX); sh_ri(7, RDX, l - 1); mov_rr(RAX, RCX); sh_ri(7, RAX, 63); alu(0x29, RDX, RAX); mov_rr(RAX, RDX); if v < 0 { grp3(3, RAX) }
+	if c == B_MOD: mulk(RAX, v); alu(0x29, RCX, RAX); mov_rr(RAX, RCX); sh_ri(7, RAX, 63); andk(RAX, a); alu(0x01, RAX, RCX)
+	true
