@@ -64,6 +64,9 @@ vgsame(g int, v int) bool:
 	n ~= 0; for k VAN[v] as int:
 		if VAM[3 * v + k] == 0 { continue } n++; hit ~= false; for z VGN[g] as int { if VGS[3 * g + z] == VAS[3 * v + k] && VGM[3 * g + z] == VAM[3 * v + k] { hit = true } } if !hit: return false
 	n == VGN[g] as int
+recursive vdptr(s int, n int) bool:
+	if s < 0 || n == 0 || VDP[s] < 0: return false
+	x := IR[VDP[s]]; op := x.op as int; if op == I_LD { return x.l == -3 && x.c == 0 && x.w == 3 } VND[s] == 1 && op == I_BIN && x.c == B_ADD as i64 && x.w == 3 && (vdptr(x.a as int, n - 1) || vdptr(x.b as int, n - 1))
 vgrp(v int) int:
 	for g VGC.len:
 		if vgsame(g, v): VGL[g] = min(VGL[g], VAX[v]); VGH[g] = max(VGH[g], VAX[v]); return g
@@ -234,7 +237,7 @@ vec_loop(fi int, h int, j int) bool:
 		if op == I_ST:
 			vav(a); if b >= 0 && !vln(b) { vav(b) } if w & 8 != 0 || !vaf(a) || VAC[a] != wsz(w) as i64 || VAX[a] < -(1 << 40) || VAX[a] > 1 << 40: return false
 			vb := if vln(b) { b } else { if vun(b) { vuref(b, wsz(w)) } else { -1 } }; if vb == -1: return false
-			g := vgrp(a); hp ~= false; for z VGN[g] as int { s := VGS[3 * g + z] as int; if VDP[s] >= 0 && IR[VDP[s]].op as int == I_LD && IR[VDP[s]].l == -3 && IR[VDP[s]].c == 0 && VGM[3 * g + z] == 1 { hp = true } } if !hp || VGT[g] >= 0: return false
+			g := vgrp(a); hp ~= false; for z VGN[g] as int { s := VGS[3 * g + z] as int; if VDP[s] >= 0 && vdptr(s, 7) && VGM[3 * g + z] == 1 { hp = true } } if !hp || VGT[g] >= 0: return false
 			VGT[g] = VOS.len as i32; VOS.push(VOp{2, wsz(w) as u8, 0, -1, vb as i32, -1, g as i32, 0, VAX[a]}); continue
 		if op == I_BIN:
 			if x.l >= 0: return false
