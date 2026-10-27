@@ -152,6 +152,11 @@ lookup_q(q int, ns int, k int) int:
 	if a == -2: return lookup(b, -1, k)
 	if a >= 0: d ~= dmap(q); while d >= 0 { if DC[d].k == k { return d } d = DC[d].next } return -1
 	lookup(b, ns, k)
+lookup_ty(q int, ns int) int:
+	a, b := split_q(q)
+	if a == -1 && ns >= 0: for k [D_STRUCT, D_ENUM, D_ALIAS] { d ~= dmap(qual(ns, b)); while d >= 0 { if DC[d].k as int == k { return d } d = DC[d].next } }
+	for k [D_STRUCT, D_ENUM, D_ALIAS] { d := lookup_q(q, if a == -1 { -1 } else { ns }, k); if d >= 0 { return d } }
+	-1
 NSOV ~= -1
 ns_of(n int) int: if NSOV >= 0 { NSOV } else { file_ns(node_file(n)) }
 decl_ns(node int) int: if ND[node].a >= 0 { ND[node].a as int } else { file_ns(node_file(node)) }
@@ -170,7 +175,7 @@ recursive rtype(n int, ns int) int:
 			w := if x.c as int == K_VARINT { 8 } else { int_storage_of_tok(x.c as int) }
 			pd := if x.s >= 0 { lookup_q(x.s as int, ns, D_GLOBAL) } else { -1 }
 			return t_rel(e, fl, w, pd as i64)
-		if TY[e].k == TY_REF && TY[e].c < 0: if fl & 2 != 0 { return t_ref(TY[e].a as int, TY[e].fl as int | 2) } return e
+		if TY[e].k == TY_REF: if fl & 2 != 0 { return t_ref(TY[e].a as int, TY[e].fl as int | 2) } return if TY[e].c < 0 { e } else { t_ref(TY[e].a as int, TY[e].fl as int) }
 		return t_ref(e, fl)
 	if k == N_TARR:
 		e := rtype(x.a as int, ns)
@@ -194,12 +199,10 @@ recursive rtype(n int, ns int) int:
 			g := gb_find(name); if g >= 0: return g
 		args i32[..16] ~= []
 		for i x.n: at0 := rtype(kid(n, i), ns); args.push(at0 as i32)
-		d ~= lookup_q(name, ns, D_STRUCT)
-		if d >= 0: return t_struct(inst_struct(DC[d].node as int, args[..]))
-		d = lookup_q(name, ns, D_ENUM)
-		if d >= 0: return t_enum(inst_enum(DC[d].node as int, args[..]), x.fl & 1 != 0)
-		d = lookup_q(name, ns, D_ALIAS)
-		if d >= 0: an := DC[d].node as int; return rtype(ND[an].b as int, ns_of(an))
+		d := lookup_ty(name, ns); dk := if d >= 0 { DC[d].k as int } else { -1 }
+		if dk == D_STRUCT: return t_struct(inst_struct(DC[d].node as int, args[..]))
+		if dk == D_ENUM: return t_enum(inst_enum(DC[d].node as int, args[..]), x.fl & 1 != 0)
+		if dk == D_ALIAS: an := DC[d].node as int; return rtype(ND[an].b as int, ns_of(an))
 		m byte[>..] ~= []; format(m, "unknown type ", nm(name)); derr(x.t as int, m)
 		return T_ERRT
 	derr(x.t as int, "bad type")
@@ -302,13 +305,17 @@ recursive ceval3(n int, ns int) i64, int, bool:
 		if tn0 >= 0 && ND[tn0].k == N_TPRIM:
 			tc := int_storage_of_tok(ND[tn0].op); if tc >= 0: return cwrap(v, tc), tc, ok
 		return v, c, ok
-	if k == N_DOT && nm(x.s) == "len" && ND[x.a].k == N_ID:
-		d := lookup_q(ND[x.a].s, ns, D_GLOBAL)
-		if d < 0: return 0, -1, false
-		g := DC[d].node
-		if ND[g].a >= 0:
-			t := rtype(ND[g].a, ns_of(g)); if TY[t].k == TY_ARR && TY[t].s == A_FIXED as u8: return TY[t].b, -1, true
-		if ND[g].b >= 0:
-			iv := kid(ND[g].b, 0); if ND[iv].k == N_ARR { if ND[iv].b >= 0 { v, c, ok := ceval3(ND[iv].b, ns_of(g)); return v, -1, ok } return ND[iv].n, -1, true } if ND[iv].k == N_STR: return TK[ND[iv].t].w, -1, true
-		return 0, -1, false
+	if k == N_DOT && (nm(x.s) == "len" || nm(x.s) == "cap") && ND[x.a].k == N_ID: v, ok := glen(ND[x.a].s as int, ns, nm(x.s) == "cap"); return v, -1, ok
 	return 0, -1, false
+recursive glen(name int, ns int, cap bool) i64, bool:
+	d := lookup_q(name, ns, D_GLOBAL)
+	if d < 0: return 0, false
+	g := DC[d].node; gs := ns_of(g)
+	if ND[g].a >= 0:
+		t := rtype(ND[g].a, gs); if TY[t].k == TY_ARR && TY[t].s == A_FIXED as u8 { return TY[t].b, true } if TY[t].k == TY_ARR && TY[t].s == A_LIM as u8 && TY[t].b >= 0 && cap { return TY[t].b, true } return 0, false
+	if ND[g].b < 0: return 0, false
+	iv := kid(ND[g].b, 0); ik := ND[iv].k as int
+	if ik == N_ARR: if ND[iv].b >= 0 { v, c, ok := ceval3(ND[iv].b, gs); return v, ok } return ND[iv].n as i64, true
+	if ik == N_STR: return TK[ND[iv].t].w as i64, true
+	if ik == N_ID: return glen(ND[iv].s as int, gs, cap)
+	return 0, false

@@ -86,19 +86,21 @@ lslot(v int) int:
 gslot(d int) int:
 	while GOFF.len < GLT.len { GOFF.push(-1) } if GOFF[d] < 0 { t := GLT[d]; BSS = al(BSS, tal(t)); GOFF[d] = BSS; BSS += tsz(t) } GOFF[d] as int
 var CAPSL i32[>..<]
-CURI ~= -1; LRF ~= -1; var LRVO i32[>..<]
+CURI ~= -1; LRF ~= -1; var LRVO i32[>..<]; var LRDO i32[>..<]
 bss(sz int, a int) int:
 	BSS = al(BSS, max(a, 1)); o := BSS; BSS += max(sz, 1); o
 lrflag() int:
 	if LRF < 0 { LRF = bss(8, 8) } d := nv(); ir(I_GADDR, 8, d, -1, -1, LRF); d
 lrval(f0 int) int:
 	f := lrkey(f0); while LRVO.len <= f { LRVO.push(-1) } rt := FI_[f0].ret; if LRVO[f] < 0 { LRVO[f] = bss(if rt >= 0 && rt != T_VOID { tsz(rt) } else { 8 }, if rt >= 0 && rt != T_VOID { tal(rt) } else { 8 }) } d := nv(); ir(I_GADDR, 8, d, -1, -1, LRVO[f]); d
+lrrel(f0 int) bool: rt := FI_[f0].ret as int; rt >= 0 && is_agg(rt) && has_rel(rt)
+lrdst(f0 int) int: f := lrkey(f0); while LRDO.len <= f { LRDO.push(-1) } if LRDO[f] < 0 { LRDO[f] = bss(8, 8) } d := nv(); ir(I_GADDR, 8, d, -1, -1, LRDO[f]); d
 lrcheck():
 	fl := ldw(lrflag(), 0, 3); lok := nlbl(); ir(I_BZ, 3, -1, fl, -1, lok)
 	if CURI >= 0 && lrtg(CURI):
 		lno := nlbl(); ir(I_BZ, 3, -1, lcmp(fl, imm(lrkey(CURI) + 1), CC_E), -1, lno); stw(lrflag(), 0, imm(0), 3); rt := FI_[CURI].ret; va := lrval(CURI)
 		if rt >= 0 && rt != T_VOID:
-			if is_agg(rt): ir(I_COPY, 3, RETV, va, imm(tsz(rt)), 0)
+			if is_agg(rt) && !lrrel(CURI): ir(I_COPY, 3, RETV, va, imm(tsz(rt)), 0)
 			else:
 				if is_pair(rt): ir(I_MOV, 3, RETV, ldw(va, 0, 3), -1, 0); ir(I_MOV, 3, RETV2, ldw(va, 8, 3), -1, 0) else: ir(I_MOV, 3, RETV, ldw(va, 0, wof(rt)), -1, 0)
 		drop_to(0); ir(I_JMP, 3, -1, -1, -1, RETL); ir(I_LBL, 3, -1, -1, -1, lno)
@@ -200,7 +202,7 @@ recursive lsl(n int) int, int:
 	d := deref(t)
 	if k == N_SLICE: return lslice(n)
 	if is_vimg(d) && k != N_STR && k != N_ARR: return vdat(vptr_of(n), d)
-	if k == N_CALL: d := lcall(n); ct := atc(n); if TY[ct].k == TY_MULTI { return ldw(d, 0, 3), ldw(d, 8, 3) } dct := deref(ct); if rk(n) == R_BLOCK && TY[dct].k == TY_ARR && is_fix(dct) && !is_vimg(dct) { q := nv(); ir(I_SLOT, 8, q, -1, -1, slot(tsz(dct), tal(dct))); ir(I_COPY, 3, q, d, imm(tsz(dct)), 0); return lsl_at(q, dct) } if is_agg(ct) || TY[ct].k == TY_REF && TY[ct].c < 0 && (TY[deref(ct)].k == TY_ARR || TY[deref(ct)].k == TY_SLICE) { return lsl_at(d, deref(ct)) } return d, PAIR2
+	if k == N_CALL: d := lcall(n); ct := atc(n); if TY[ct].k == TY_MULTI { m0 := deref(mel(ct, 0)); if TY[m0].k == TY_ARR && is_fix(m0) && !is_vimg(m0) { return d, imm(TY[m0].b as int) } return ldw(d, 0, 3), ldw(d, 8, 3) } dct := deref(ct); if rk(n) == R_BLOCK && TY[dct].k == TY_ARR && is_fix(dct) && !is_vimg(dct) { q := nv(); ir(I_SLOT, 8, q, -1, -1, slot(tsz(dct), tal(dct))); ir(I_COPY, 3, q, d, imm(tsz(dct)), 0); return lsl_at(q, dct) } if is_agg(ct) || TY[ct].k == TY_REF && TY[ct].c < 0 && (TY[deref(ct)].k == TY_ARR || TY[deref(ct)].k == TY_SLICE) { return lsl_at(d, deref(ct)) } return d, PAIR2
 	if (k == N_IF || k == N_BLOCK || k == N_EBLOCK || k == N_LOOP || k == N_MATCH) && TY[t].k == TY_REF && TY[deref(t)].k == TY_ARR && !is_vimg(deref(t)) && !is_seq(deref(t)): a := nv(); ir(I_SLOT, 8, a, -1, -1, slot(16, 8)); lsink(n, a, t_slice(TY[deref(t)].a, false)); return ldw(a, 0, 3), ldw(a, 8, 3)
 	if (k == N_IF || k == N_BLOCK || k == N_EBLOCK || k == N_LOOP || k == N_MATCH) && TY[t].k == TY_ARR && !is_vimg(t): q := nv(); ir(I_SLOT, 8, q, -1, -1, slot(tsz(t), tal(t))); lsink(n, q, t); tmp_drop(q, t); return lsl_at(q, t)
 	if k == N_IF || k == N_BLOCK || k == N_EBLOCK || k == N_LOOP || k == N_MATCH: a := nv(); ir(I_SLOT, 8, a, -1, -1, slot(16, 8)); lsink(n, a, if TY[t].k == TY_STRLIT { TT_STR } else { t }); return ldw(a, 0, 3), ldw(a, 8, 3)
@@ -269,7 +271,10 @@ recursive lres_len(n int, b int, va int, ca int, cw int, eb int, cap int, nn int
 var MSTK i32[>..<]
 recursive lrefp(c int) int:
 	t := at(c); if t >= 0 && TY[t].k == TY_SLICE { p, q := lsl(c); return p } lrefv(c)
+var GESC i32[>..<]
+recursive gesc(n0 int): n ~= n0; while ND[n].k as int == N_IDX || ND[n].k as int == N_DOT && rk(n) == R_FIELD || ND[n].k as int == N_UN && ND[n].op as int == T_AND { n = ND[n].a as int } if ND[n].k as int == N_ID && rk(n) == R_GLOBAL && !GESC.contains(gslot(rv(n)) as i32): GESC.push(gslot(rv(n)) as i32)
 recursive lrefv(n int) int:
+	gesc(n)
 	fk := TY[fin(n)].k; st := atc(n); sk := if st >= 0 { TY[st].k as int } else { -1 }; if ND[n].k as int == N_UN && ND[n].op as int == T_AND:
 		laddr(ND[n].a)
 	else:
@@ -353,13 +358,17 @@ recursive lwalk(m int, a int, bf int, t int):
 			si := vsi(ei, i); if si >= 0 && wneed(m, t_struct(si)): l := nlbl(); ir(I_BZ, 3, -1, lcmp(tg, imm(i), CC_E), -1, l); lwalk(m, addi(a, epoff(ei)), bf, t_struct(si)); ir(I_LBL, 3, -1, -1, -1, l)
 lvsz(p int, e int) int:
 	rtcall("rt_vsz", [p as i32, imm(vw(e) as int) as i32, imm(vlim(e)) as i32, imm(tsz(TY[e].a)) as i32])
+recursive lseqsz(p int, e int) int:
+	base, c := vdat(p, e); cs := nv(); ir(I_SLOT, 8, cs, -1, -1, slot(8, 8)); stw(cs, 0, base, 3)
+	i, lt, le := lloop(c); q := ldw(cs, 0, 3); stw(cs, 0, bin(B_ADD, 3, q, lunflat(-1, q, TY[e].a as int), -1), 3); lloop_end(i, lt, le)
+	bin(B_SUB, 3, ldw(cs, 0, 3), p, -1)
 recursive lunflat(d int, p int, e int) int:
-	if is_seq(e): lerr(-1, "nested arrays of variable-size elements natively"); return imm(0)
+	if is_seq(e): if d >= 0 { stw(d, 0, p, 3) } return lseqsz(p, e)
 	if is_vimg(e): if d >= 0 { stw(d, 0, p, 3) } return lvsz(p, e)
 	if is_vst(e): si := TY[e].a as int; o ~= p; for j STI[si].fnum { f := SFI[STI[si].f0 as int + j]; if f.ty < 0 { o = addi(o, max(f.padn as int, 0)); continue } o = bin(B_ADD, 3, o, lunflat(if d >= 0 { addi(d, foff(si, j)) } else { -1 }, o, f.ty as int), -1) } return bin(B_SUB, 3, o, p, -1)
 	if d >= 0 { ir(I_COPY, 3, d, p, imm(tsz(e)), 0) } imm(tsz(e))
 recursive lflat(o int, s int, e int) int:
-	if is_seq(e): lerr(-1, "nested arrays of variable-size elements natively"); return imm(0)
+	if is_seq(e): q := ldw(s, 0, 3); z := lseqsz(q, e); if o >= 0 { ir(I_COPY, 3, o, q, z, 0) } return z
 	if is_vimg(e): q := ldw(s, 0, 3); z := lvsz(q, e); if o >= 0 { ir(I_COPY, 3, o, q, z, 0) } return z
 	if is_vst(e): si := TY[e].a as int; c ~= imm(0); for j STI[si].fnum { f := SFI[STI[si].f0 as int + j]; oc := if o >= 0 { bin(B_ADD, 3, o, c, -1) } else { -1 }; if f.ty < 0 { pn := max(f.padn as int, 0); if o >= 0 && pn > 0 { lzero(oc, pn) } c = addi(c, pn); continue } c = bin(B_ADD, 3, c, lflat(oc, addi(s, foff(si, j)), f.ty as int), -1) } return c
 	if o >= 0 { ir(I_COPY, 3, o, s, imm(tsz(e)), 0) } imm(tsz(e))
@@ -438,14 +447,19 @@ recursive lconv_arr(addr int, n int, t int):
 recursive lslit(addr int, n int, t int):
 	si := rv(n)
 	if TY[t].k == TY_ENUM: ei := TY[t].a; lzero(addr, tsz(t)); for i ENI[ei].vnum { if ENV[ENI[ei].v0 as int + i].si == si { stw(addr, 0, imm(i), wof(t)); SELFN = addr; lslit(addi(addr, epoff(ei)), n, t_variant(ei, i)) } } return
-	lzero(addr, tsz(t)); SELFS.push((if SELFN >= 0 { SELFN } else { addr })); SELFN = -1
+	fx := STI[si].cls as int == CL_FIXED && !is_vimg(t); cur i64 ~= 0
+	if !fx: lzero(addr, tsz(t))
+	SELFS.push((if SELFN >= 0 { SELFN } else { addr })); SELFN = -1
 	for j STI[si].fnum:
-		f := SFI[STI[si].f0 as int + j]; ft := f.ty; if ft < 0 { continue } g, gi := sl_given(n, j); fa := addi(addr, foff(si, j))
+		f := SFI[STI[si].f0 as int + j]; ft := f.ty; if ft < 0 { continue } g, gi := sl_given(n, j); fo := foff(si, j); fa := addi(addr, fo)
+		if fx && fo > cur: lzero(addi(addr, cur), fo - cur)
+		if fx: cur = fo + tsz(ft)
 		if g >= 0: sa := AOWN; AOWN = gi; lstore(fa, ND[g].a, ft); AOWN = sa
 		else:
 			if f.def >= 0: ldefv(fa, f.def, ft)
 			else:
-				if ndef(ft): ldefault(fa, ft)
+				if ndef(ft) { ldefault(fa, ft) } else { if fx { lzero(fa, tsz(ft)) } }
+	if fx && tsz(t) > cur: lzero(addi(addr, cur), tsz(t) - cur)
 	SELFS.pop();
 var SELFS i32[>..<]; SELFN ~= -1
 recursive lfill(base int, c int, e int, fv int): es := tsz(e); kv := nv(); ir(I_MOV, 3, kv, imm(0), -1, 0); l0 := nlbl(); l1 := nlbl(); ir(I_LBL, 3, -1, -1, -1, l0); ir(I_BZ, 3, -1, lcmp(kv, c, CC_L), -1, l1); ir(I_COPY, 3, bin(B_ADD, 3, base, bin(B_MUL, 3, kv, imm(es), -1), -1), fv, imm(es), 0); ir(I_MOV, 3, kv, bin(B_ADD, 3, kv, imm(1), -1), -1, 0); ir(I_JMP, 3, -1, -1, -1, l0); ir(I_LBL, 3, -1, -1, -1, l1);
@@ -561,14 +575,14 @@ atn(n int) int:
 		if TY[t].k == TY_FLIT:
 			T_F64
 		else:
-			t
+			if TY[t].k == TY_MULTI && ND[n].k as int == N_CALL { mel(t, 0) } else { t }
 isf(t int) bool:
 	t >= 0 && (TY[t].k == TY_FLT || TY[t].k == TY_FLIT)
 cvt(v int, k int, w int) int:
 	d := nv(); ir(I_CVT, w, d, v, -1, k); d
 fconv(v int, st int, t int) int:
 	if st < 0 || t < 0 || !isf(t): return v
-	if !isf(st): if TY[st].k != TY_INT && TY[st].k != TY_ILIT { return v } return cvt(v, if TY[st].k == TY_INT && !is_signed(st) && wsz(wof(st)) == 8 { 2 } else { 1 }, wof(t))
+	if !isf(st): if TY[st].k != TY_INT && TY[st].k != TY_ILIT && TY[st].k != TY_VARINT { return v } return cvt(v, if TY[st].k == TY_INT && !is_signed(st) && wsz(wof(st)) == 8 { 2 } else { 1 }, wof(t))
 	if wof(st) == wof(t): return v
 	cvt(v, if wof(t) == 11 { 3 } else { 4 }, wof(t))
 recursive lx(n int) int:
@@ -820,6 +834,7 @@ recursive lcall_to(n int, dst int) int:
 	d
 var PAIR2 int
 recursive largs(args i32[>..<]&, c int, pt int):
+	if TY[pt].k == TY_REF && TY[pt].c < 0 && TY[pt].fl & RF_CONST == 0: gesc(c)
 	if TY[pt].k == TY_REF && TY[pt].c < 0: ck := ND[c].k; args.push((if ck == N_UN && ND[c].op as int == T_AND { laddr(ND[c].a) } else { if (ck == N_IF || ck == N_BLOCK || ck == N_EBLOCK || ck == N_LOOP || ck == N_MATCH) && TY[at(c)].k != TY_REF { q := nv(); ir(I_SLOT, 8, q, -1, -1, slot(8, 8)); lsink(c, q, pt); ldw(q, 0, 3) } else { if TY[fin(c)].k == TY_REF || TY[at(c)].k == TY_REF && ND[c].k as int != N_ID { lx(c) } else { if TY[at(c)].k == TY_REF { ldw(vaddr(c), 0, 3) } else { laddr(c) } } } })); return
 	if is_pair(pt): p, q := lsl(c); args.push(p); args.push(q); return
 	if is_scal(pt): args.push(lx(c)); return
@@ -963,7 +978,9 @@ recursive lvc(n int, t int, e int, q int, b0 int, nb int, esz int, lf int):
 recursive lbuiltin_to(n int, b int, dst int) int:
 	x := ND[n]; hasr := ax(n) == 1; sr := BHASR; sv := BRECV
 	BHASR = hasr; BRECV = if hasr { ND[x.a].a as int } else { if ax(n) == 2 { kid(n, 0) } else { -1 } }
-	r := lbuiltin1(n, b, dst, x.n as int + (if hasr { 1 } else { 0 }))
+	r0 := lbuiltin1(n, b, dst, x.n as int + (if hasr { 1 } else { 0 }))
+	e := if b == B_PUSH || b == B_ALLOCR { TY[deref(at(barg(n, 0)))].a as int } else { -1 }
+	r := if e >= 0 && TY[e].k == TY_REF { if TY[e].c >= 0 { rel_load(r0, e) } else { ldw(r0, 0, 3) } } else { r0 }
 	BHASR = sr; BRECV = sv; r
 recursive lbuiltin1(n int, b int, dst int, total int) int:
 	if b == B_EMBEDSH: bl := shader_blob(n); r := nv(); ir(I_RADDR, 8, r, -1, -1, rodata(bl)); PAIR2 = imm(bl.len); return r
@@ -1217,7 +1234,7 @@ recursive lstmt1(n int):
 	if k == N_BLOCK: lblk(n, -1); return
 	if k == N_CFOR: sa := AOWN; for inst cf_insts(n) { AOWN = inst as int; lstmt(ND[n].c as int); AOWN = sa } return
 	if k == N_RET && ax(n) >= 0 && ax(n) != CURI:
-		lt := ax(n); rt0 := FI_[lt].ret as int; va := lrval(lt)
+		lt := ax(n); rt0 := FI_[lt].ret as int; va := if lrrel(lt) { ldw(lrdst(lt), 0, 3) } else { lrval(lt) }
 		if x.n > 1:
 			for i x.n: c := kid(n, i); lstore(addi(va, moff(rt0, i)), c, mel(rt0, i)); lmove_src(c)
 		else:
@@ -1225,7 +1242,7 @@ recursive lstmt1(n int):
 		stw(lrflag(), 0, imm(lrkey(lt) + 1), 3); drop_to(0); ir(I_JMP, 3, -1, -1, -1, RETL); return
 	if k == N_RET && x.n > 1: rt := FI_[CUR].ret as int; for i x.n { c := kid(n, i); et := mel(rt, i); dup ~= false; for j i + 1..x.n { c2 := kid(n, j); if ND[c].k as int == N_ID && ND[c2].k as int == N_ID && rk(c) == R_LOCAL && rk(c2) == R_LOCAL && rv(c) == rv(c2) { dup = true } } if dup && is_res(et) && deref(at(c)) == et { sp, sn := lsl(c); if is_seq(et) { rtcall("rt_sqfrom", [addi(RETV, moff(rt, i)) as i32, sp as i32, sn as i32, lsqbytes(sp, sn, TY[et].a as int) as i32]); } else { rtcall("rt_rfrom", [addi(RETV, moff(rt, i)) as i32, sp as i32, sn as i32, imm(tsz(TY[et].a as int)) as i32]); } } else { lstore(addi(RETV, moff(rt, i)), c, et); if !dup { lmove_src(c) } } } drop_ret(); ir(I_JMP, 3, -1, -1, -1, RETL); return
 	if k == N_RET: if x.n > 0 { c := kid(n, 0); lret(c); } else { drop_to(0); ir(I_JMP, 3, -1, -1, -1, RETL); } return
-	if k == N_BREAK: if x.a >= 0 && LRV[LRV.len - 1] == -2 { sinkv(x.a as int) } if x.a >= 0 && LRV[LRV.len - 1] == -1 { lstmt(x.a as int) } if x.a >= 0 && LRV[LRV.len - 1] >= 0 { ir(I_MOV, 3, LRV[LRV.len - 1] as int, lx(x.a as int), -1, 0) } drop_to(LOOPH[LOOPH.len - 1] as int); ir(I_JMP, 3, -1, -1, -1, LBRK[LBRK.len - 1] as int); return
+	if k == N_BREAK: if x.a >= 0 && LRV[LRV.len - 1] == -2 { sinkv(x.a as int) } if x.a >= 0 && LRV[LRV.len - 1] == -1 { lstmt(x.a as int) } if x.a >= 0 && LRV[LRV.len - 1] >= 0 { ir(I_MOV, 3, LRV[LRV.len - 1] as int, ltail(x.a as int), -1, 0) } drop_to(LOOPH[LOOPH.len - 1] as int); ir(I_JMP, 3, -1, -1, -1, LBRK[LBRK.len - 1] as int); return
 	if k == N_CONT: drop_to(LCH[LCH.len - 1] as int); ir(I_JMP, 3, -1, -1, -1, LCNT[LCNT.len - 1] as int); return
 	lx(n);
 recursive lret(c int):
@@ -1272,7 +1289,7 @@ recursive lassign(n int):
 	o := if o == T_DOTASSIGN { T_ASSIGN } else { o }
 	if o == T_ASSIGN && is_vimg(t) && vlim(t) == 1 && vw(t) > 0 && !sq(t):
 		e := TY[t].a; if !needs_drop(e) && !is_rel(e) && !has_rel(e): da := laddr(a); img := ldw(da, 0, 3); p, q := lsl(b); dp, ln := vdat(img, t); lguard(n, lcmp(q, ldw(img, 0, vwc(t)), CC_LE), "limited array capacity exceeded"); ir(I_COPY, 3, dp, p, bin(B_MUL, 3, q, imm(tsz(e)), -1), 0); stw(img, vw(t) as int, q, vwc(t)); return
-	if o == T_ASSIGN && is_agg(t) && !is_lplace(b) && has_rel(t) && ND[b].k as int == N_SLIT: da := laddr(a); if needs_drop(t) { ldrop(da, t) } lstore(da, b, t); return
+	if o == T_ASSIGN && is_agg(t) && !is_lplace(b) && has_rel(t) && (ND[b].k as int == N_SLIT || !needs_drop(t)): da := laddr(a); if needs_drop(t) { ldrop(da, t) } lstore(da, b, t); return
 	if o == T_ASSIGN && is_agg(t) && !is_lplace(b): da := laddr(a); tmp := nv(); ir(I_SLOT, 8, tmp, -1, -1, slot(tsz(t), tal(t))); lstore(tmp, b, t); if needs_drop(t) { ldrop(da, t) } ir(I_COPY, 3, da, tmp, imm(tsz(t)), 0); return
 	p := laddr(a)
 	if o == T_ASSIGN: lstore(p, b, t); return
@@ -1335,7 +1352,7 @@ recursive lfor_seq(n int):
 recursive lfor_arr(n int):
 	x := ND[n]; v := rv(n); m := ax(n); a := x.a; bt := at(a); d := deref(bt); e := TY[d].a; es := tsz(e)
 	if sq(d): lfor_seq(n); return
-	byref := x.fl & 1 != 0 || TY[LVS[v].ty].k == TY_REF && TY[e].k != TY_REF
+	byref := x.fl & 1 != 0 && TY[e].k != TY_REF || TY[LVS[v].ty].k == TY_REF && TY[e].k != TY_REF
 	rf := TY[bt].k == TY_REF; rm := if is_res(d) { if rf && pure_path(a) { 1 } else { 2 } } else { if is_lim(d) && !is_vimg(d) && (rf || is_place(a)) { 3 } else { if TY[d].k != TY_SLICE && rf && pure_path(a) { 4 } else { if TY[d].k == TY_SLICE && (rf || is_place(a)) { 5 } else { 0 } } } }
 	w := if rm == 2 || rm == 3 || rm == 5 { laddr(a) } else { -1 }; p0 ~= -1; n0 ~= -1; if rm == 0:
 		if is_fix(d) && is_seq(d): p0 = if is_lplace(a) || rf { laddr(a) } else { ltmp(a, d) }; n0 = imm(TY[d].b as int) else: pp, ll := lsl(a); p0 = pp; n0 = ll
@@ -1382,6 +1399,7 @@ lower_fn(i int):
 			qi++; if is_scal(pt) || TY[pt].k == TY_REF: stw(sa, 0, q, if TY[pt].k == TY_REF { 3 } else { wof(pt) }) else: ir(I_COPY, 3, sa, q, imm(tsz(pt)), 0); own_drop(sa, pt)
 	RETV = nv(); RETV2 = nv(); RETL = nlbl()
 	if sret: ir(I_MOV, 3, RETV, sp, -1, 0)
+	lrs := if sret && lrtg(i) && lrrel(i) { q := nv(); ir(I_SLOT, 8, q, -1, -1, slot(8, 8)); da := lrdst(i); stw(q, 0, ldw(da, 0, 3), 3); stw(da, 0, RETV, 3); q } else { -1 }
 	FZP = IR.len; FZL = 1 << 40; FZH = -1; BRD = 0; SBRD = 0; for _ 3: ir(I_NOP, 3, -1, -1, -1, 0)
 	KEEPDS = rt >= 0 && is_agg(rt) && !is_vimg(rt) && hvimg(rt)
 	fm := newmark(); MSTK.push(fm); ir(I_DSS, 3, -1, fm, -1, 0); if rt >= 0 && is_vimg(rt): mark_use(fm)
@@ -1403,6 +1421,7 @@ lower_fn(i int):
 				if !KEEPDS: ir(I_DSR, 3, -1, fm, -1, 0)
 	if rt >= 0 && is_vimg(rt) { ir(I_JMP, 3, -1, -1, -1, ld); ir(I_LBL, 3, -1, -1, -1, lz); ir(I_DSR, 3, -1, fm, -1, 0); ir(I_LBL, 3, -1, -1, -1, ld) } KEEPDS = false
 	MSTK.pop()
+	if lrs >= 0: stw(lrdst(i), 0, ldw(lrs, 0, 3), 3)
 	ir(I_RET, 3, -1, if rt >= 0 && rt != T_VOID { RETV } else { -1 }, if rt >= 0 && is_pair(rt) { RETV2 } else { -1 }, 0)
 	NFS[nf].i0 = i0; NFS[nf].i1 = IR.len; NFS[nf].nv = NV; NFS[nf].sb = SB
 alike(t int) bool:

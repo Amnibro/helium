@@ -108,6 +108,8 @@ bref(q int) int:
 		a
 upname(p int) int:
 	s byte[>..] ~= []; s.push('$'); s.append(nm(ND[p].s)); intern(s)
+MEX ~= false
+recursive mty_ex(tn int, t int, g0 int): sv := MEX; MEX = true; match_ty(tn, t, g0); MEX = sv
 recursive match_ty(tn0 int, t0 int, g0 int) bool:
 	if tn0 < 0: return true
 	x := ND[tn0]; k := x.k
@@ -115,23 +117,25 @@ recursive match_ty(tn0 int, t0 int, g0 int) bool:
 	if k == N_TNAME:
 		if x.n == 0:
 			for i g0..BINDS.len:
-				if BINDS[i].name == x.s: if BINDS[i].ty < 0 { BINDS[i].ty = (if AMPA && TY[t0].k == TY_REF { t0 } else { deref_val(t) }) } return true
+				if BINDS[i].name == x.s: if BINDS[i].ty < 0 { BINDS[i].ty = (if MEX || AMPA && TY[t0].k == TY_REF { t0 } else { deref_val(t) }) } return true
 			return true
 		if TY[t].k == TY_STRUCT:
 			si := TY[t].a; if STI[si].tn == x.n:
-				for i x.n: match_ty(kid(tn0, i), TYL[STI[si].ta as int + i], g0)
-		if TY[t].k == TY_ENUM:
+				for i x.n: mty_ex(kid(tn0, i), TYL[STI[si].ta as int + i], g0)
+		if TY[t].k == TY_ENUM || TY[t].k == TY_VARIANT:
 			ei := TY[t].a; if ENI[ei].tn == x.n:
-				for i x.n: match_ty(kid(tn0, i), TYL[ENI[ei].ta as int + i], g0)
+				for i x.n: mty_ex(kid(tn0, i), TYL[ENI[ei].ta as int + i], g0)
 		return true
 	if k == N_TARR || k == N_TSLICE: if TY[t].k == TY_ARR || TY[t].k == TY_SLICE { et := TY[t].a; en := ND[x.a]; if en.k as int == N_TNAME && en.n == 0 && TY[et].k == TY_REF { for i g0..BINDS.len { if BINDS[i].name == en.s { if BINDS[i].ty < 0 { BINDS[i].ty = et } return true } } } return match_ty(x.a, et, g0) } if TY[t].k == TY_STRLIT { return match_ty(x.a, T_U8, g0) } return true
 	if k == N_TREF: if TY[t0].k == TY_REF { return match_ty(x.a, TY[t0].a, g0) } return match_ty(x.a, t, g0)
 	if k == N_TCONST: return match_ty(x.a, t0, g0)
+	if k == N_TVAR && TY[t].k == TY_VARIANT: return match_ty(x.a, t_enum(TY[t].a as int, false), g0)
 	true
 recursive arg_rank(n int, a int, p int) int:
 	if p < 0: return 1
 	if a == p: return 0
 	ak := TY[a].k; pk := TY[p].k
+	if ak == TY_MULTI && pk != TY_MULTI && TY[a].n > 0 && ND[n].k as int == N_CALL: return arg_rank(n, TYL[TY[a].l] as int, p)
 	if pk == TY_ERR || ak == TY_ERR: return 0
 	if pk == TY_REF && TY[p].c < 0 && TY[p].fl & RF_OPT == 0: tgt := TY[p].a; if deref(a) == tgt { return 0 } if ak == TY_ILIT || ak == TY_FLIT { return arg_rank(n, a, tgt) } return -1
 	if ak == TY_REF && TY[a].c < 0: d := TY[a].a; if d == p { return 0 } if pk == TY_REF && TY[p].fl & RF_OPT != 0 && TY[p].a == TY[a].a { return 0 } return arg_rank(n, d, p)
@@ -144,10 +148,11 @@ recursive arg_rank(n int, a int, p int) int:
 	if ak == TY_FLIT: if pk == TY_FLT { return if TY[p].s == 8 { 1 } else { 2 } } return -1
 	if ak == TY_STRLIT: if pk == TY_SLICE && TY[p].a == T_U8 { return 0 } if is_byte_arr(p) { return 2 } return -1
 	if ak == TY_ARRLIT && ND[n].k as int != N_ARR: x := ND[n]; nk := x.k; w ~= 0; if nk == N_IF { for b [x.b, x.c] { if b >= 0 && !ends(b) { r := arg_rank(b, at(b), p); if r < 0 { return -1 } w = max(w, r) } } return w } if nk == N_MATCH { for i x.n { b := ND[kid(n, i)].b; if b >= 0 && !ends(b) { r := arg_rank(b, at(b), p); if r < 0 { return -1 } w = max(w, r) } } return w } if (nk == N_BLOCK || nk == N_EBLOCK) && x.a >= 0 { return arg_rank(x.a, at(x.a), p) } return -1
-	if ak == TY_ARRLIT: if pk != TY_ARR && pk != TY_SLICE { return -1 } x := ND[n]; if x.c >= 0 { return 2 } if x.a >= 0 { return if arg_rank(x.a, at(x.a), TY[p].a) < 0 { -1 } else { 2 } } for i x.n { if arg_rank(kid(n, i), at(kid(n, i)), TY[p].a) < 0 { return -1 } } return 2
+	if ak == TY_ARRLIT: if pk != TY_ARR && pk != TY_SLICE { return -1 } x := ND[n]; if x.c >= 0 { return 2 } if x.a >= 0 { return if arg_rank(x.a, at(x.a), TY[p].a) < 0 { -1 } else { 2 } } w ~= 1; for i x.n { r := arg_rank(kid(n, i), at(kid(n, i)), TY[p].a); if r < 0 { return -1 } if r > 1 { w = 2 } } return if x.n > 0 && pk == TY_ARR && TY[p].s as int == A_FIXED && TY[p].b == x.n { w } else { 2 }
 	if ak == TY_NULL: if pk == TY_REF && TY[p].fl & RF_OPT != 0 { return 0 } return -1
 	if pk == TY_REF && TY[p].fl & RF_OPT != 0 && TY[p].a == a: return 0
-	if ak == TY_INT && pk == TY_FLT: return 3
+	if (ak == TY_INT || ak == TY_VARINT) && pk == TY_FLT: return 3
+	if pk == TY_ARR && TY[p].s as int == A_LIM && (ak == TY_ARR || ak == TY_SLICE) && TY[a].a == TY[p].a && conv_ok(a, p, n): return 2
 	if widens(a, p): return 2
 	if pk == TY_SLICE && (ak == TY_ARR || ak == TY_SLICE) && TY[a].a == TY[p].a: return 2
 	if pk == TY_ENUM && ak == TY_VARIANT && TY[a].a == TY[p].a: return 2
@@ -155,7 +160,7 @@ recursive arg_rank(n int, a int, p int) int:
 	-1
 recursive sig_inst(i int):
 	node := FI_[i].node
-	ns := ns_of(node)
+	ns := decl_ns(node)
 	g0 := GB.len
 	for j FI_[i].gn: GB.push(GBS[FI_[i].g0 as int + j])
 	p0 := TYL.len
@@ -301,6 +306,9 @@ cands_add(name int, ns int):
 	while d >= 0: if DC[d].k as int == D_FN { if ngok(d) { CANDS.push(d) } } d = DC[d].next
 is_std_node(node int) bool:
 	f := node_file(node); sp := lib_path("std"); nm(FILES[f].name) == sp[..]
+fl_peer(fnode int, a0 int, ap int, j int) bool:
+	pa := ND[kid(fnode, j)].a; if pa < 0 || ND[pa].n != 0: return false
+	for k ap { qa := ND[kid(fnode, k)].a; if k != j && qa >= 0 && ND[qa].k == ND[pa].k && ND[qa].s == ND[pa].s && ND[qa].n == 0 && TY[ARGW[a0 + k]].k == TY_FLIT { return true } } false
 recursive resolve(n int, name int, ns int, a0 int, an int, blk int, tyargs int, report bool) int, int, int:
 	c0 := CANDS.len
 	cands_add(name, ns)
@@ -323,7 +331,7 @@ recursive resolve(n int, name int, ns int, a0 int, an int, blk int, tyargs int, 
 		gl := gen_list(fnode)
 		if gl >= 0:
 			for j ND[gl].n: BINDS.push(Gb{ND[kid(gl, j)].s, -1})
-		for j np: imp_tv(ND[kid(fnode, j)].a as int, ns_of(fnode), b0)
+		for j np: imp_tv(ND[kid(fnode, j)].a as int, decl_ns(fnode), b0)
 		for j np:
 			p := kid(fnode, j); if ND[p].a < 0: BINDS.push(Gb{upname(p) as i32, -1})
 		if tyargs >= 0:
@@ -331,7 +339,7 @@ recursive resolve(n int, name int, ns int, a0 int, an int, blk int, tyargs int, 
 		for j ap: p := kid(fnode, j); a := ARGW[a0 + j] as int; AMPA = is_amp(DIDX[a0 + j] as int) && TY[a].k == TY_REF; if !is_pending(a) { if ND[p].a >= 0 { match_ty(ND[p].a as int, a, b0); } else { for q b0..BINDS.len { if BINDS[q].name as int == upname(p) && BINDS[q].ty < 0 { BINDS[q].ty = (if AMPA || TY[a].k == TY_REF && has_rel(deref(a)) { a } else { dv := deref_val(a); if TY[dv].k != TY_SLICE && !is_fixed(dv) && names_store(DIDX[a0 + j] as int) { t_ref(dv, 0) } else { dv } }) as i32 } } } } AMPA = false
 		for j ap:
 			p := kid(fnode, j); a := ARGW[a0 + j] as int; if is_pending(a):
-				dt := if TY[a].k == TY_ARRLIT { arrlit_default(DIDX[a0 + j] as int) } else { pend_default(a) }; if ND[p].a >= 0: match_ty(ND[p].a as int, dt, b0)
+				dt := if TY[a].k == TY_ARRLIT { arrlit_default(DIDX[a0 + j] as int) } else { if TY[a].k == TY_ILIT && fl_peer(fnode, a0, ap, j) { T_F64 } else { pend_default(a) } }; if ND[p].a >= 0: match_ty(ND[p].a as int, dt, b0)
 				else:
 					for q b0..BINDS.len:
 						if BINDS[q].name as int == upname(p) && BINDS[q].ty < 0: BINDS[q].ty = dt as i32
@@ -345,7 +353,7 @@ recursive resolve(n int, name int, ns int, a0 int, an int, blk int, tyargs int, 
 		if !ok: BINDS.pop_n(BINDS.len - b0); continue
 		g0 := GB.len
 		for q b0..BINDS.len: GB.push(BINDS[q])
-		fns := ns_of(fnode)
+		fns := decl_ns(fnode)
 		worst ~= 0
 		for j ap:
 			p := kid(fnode, j)
@@ -367,7 +375,16 @@ recursive resolve(n int, name int, ns int, a0 int, an int, blk int, tyargs int, 
 	if bestb0 > nb0:
 		for q 0..bestbn: BINDS[nb0 + q] = BINDS[bestb0 + q]
 	BINDS.pop_n(BINDS.len - nb0 - bestbn)
+	LRANK = bestr
 	return best, nb0, bestbn
+LRANK ~= 0
+recursive case_better(n int, name int, s int, an int, blk int, f0 int, r0 int) bool:
+	if r0 < 2: return false
+	for j an:
+		a0 := ARGW[s + j]; d := deref(a0); if TY[d].k != TY_ENUM { continue } ei := TY[d].a; ok ~= ENI[ei].vnum > 0; rc ~= 0
+		for vi ENI[ei].vnum { if ok { ARGW[s + j] = t_variant(ei, vi) as i32; f, b0, bn := resolve(n, name, ns_of(n), s, an, blk, ND[n].c, false); BINDS.pop_n(BINDS.len - b0); if f < 0 || f == f0 { ok = false } else { rc = max(rc, LRANK) } } }
+		ARGW[s + j] = a0; if ok && rc < r0: return true
+	false
 untyped_any(f int) bool:
 	for j ND[f].n { if ND[kid(f, j)].a < 0 { return true } } false
 var AMPA bool
@@ -410,14 +427,14 @@ recursive ck_call(n int, want int) int:
 	if ck_ == N_ID:
 		name := ND[cal].s
 		v0 := find_lv(name)
-		v := if v0 >= 0 && LVS[v0].fl & LV_CFB != 0 { -1 } else { v0 }
+		v := if v0 >= 0 && (LVS[v0].fl & LV_CFB != 0 || LVS[v0].cfn != CFN && block_binding(name) >= 0) { -1 } else { v0 }
 		nf := find_nest(name, n)
 		if v < 0 && nf >= 0: return call_nested(n, nf)
 		if v < 0:
 			bg := block_binding(name)
 			if bg >= 0: return call_block(n, bg)
 			b := builtin_of(nm(name))
-			if b >= 0 && !(b == B_FORMAT && user_format(n)) && !(b != B_FORMAT && b != B_PRINT && b != B_STR && user_fn_n(name, ND[n].n)): return ck_builtin(n, b, -1, want)
+			if b >= 0 && !(b == B_FORMAT && user_format(n)) && !(b == B_STR && user_str(n, name)) && !(b != B_FORMAT && b != B_PRINT && b != B_STR && user_fn_n(name, ND[n].n)): return ck_builtin(n, b, -1, want)
 			mb := member_of(nm(name))
 			if mb >= 0 && ND[n].n > 0 && !has_fn(name):
 				r0 := kid(n, 0); t0 := ck(r0, -1); d0 := deref(t0); if TY[d0].k == TY_ARR || TY[d0].k == TY_SLICE: FREEM = true; return ck_builtin(n, mb, r0, want)
@@ -447,6 +464,11 @@ recursive ck_defs(t int):
 		else: ck_defs(f.ty as int)
 recursive user_format(n int) bool:
 	if ND[n].n == 0 { return false } t := deref(ck(kid(n, 0), -1)); if pend_local(kid(n, 0)) { return false } !(TY[t].k == TY_ARR && TY[t].a == T_U8 && (is_grow(t) || TY[t].s as int == A_LIM))
+recursive user_str(n int, name int) bool:
+	if ND[n].n != 1 || !user_fn_n(name, 1): return false
+	s := ck_args(n, 0, -1); f, b0, bn := resolve(n, name, ns_of(n), s, 1, -1, -1, false); r ~= -1
+	if f >= 0 && !is_std_node(f) && ND[kid(f, 0)].a >= 0: r = arg_rank(kid(n, 0), ARGW[s] as int, rtype(ND[kid(f, 0)].a as int, ns_of(f)))
+	BINDS.pop_n(BINDS.len - b0); pop_args(s); r >= 0 && r <= 2
 is_grow(t int) bool:
 	TY[t].s as int == A_GROW || TY[t].s as int == A_GS
 var HOOK i32[>..]
@@ -504,7 +526,7 @@ recursive call_block(n int, inst int) int:
 	if FI_[inst].blk < -1:
 		fnm := -2 - FI_[inst].blk as int
 		sa := AOWN; AOWN = FI_[inst].bown; nf := find_nest(fnm, -1); AOWN = sa
-		if nf >= 0: return call_reinst(n, NESTS[nf].inst)
+		if nf >= 0: return call_nested_v(n, nf, FI_[inst].bown as int)
 		return call_fn(n, fnm, -1, -1)
 	fv := FI_[inst].blk
 	own := FI_[inst].bown
@@ -550,9 +572,10 @@ nrank(i int, s int, an int, skip int) int:
 	if FI_[i].pn != an { return -1 } w ~= 0; for j an { if j != skip { r := arg_rank(DIDX[s + j], ARGW[s + j], ptype_of(i, j)); if r < 0 { return -1 } w = max(w, r) } } w
 nfits(i int, s int, an int, skip int) bool:
 	nrank(i, s, an, skip) >= 0
-recursive call_nested(n int, nf0 int) int:
+recursive call_nested(n int, nf0 int) int: call_nested_v(n, nf0, AOWN)
+recursive call_nested_v(n int, nf0 int, vo int) int:
 	nm0 := NESTS[nf0].name; cs i32[>..<] ~= []; csc i64[>..<] ~= []; for q, qi NESTS:
-		if q.name == nm0 && visible(q.own) && !cs.contains(q.inst): cs.push(q.inst); csc.push(nscore(qi, n))
+		if q.name == nm0 && visible_in(q.own, vo) && !cs.contains(q.inst): sa := AOWN; AOWN = vo; cs.push(q.inst); csc.push(nscore(qi, if vo == sa { n } else { -1 })); AOWN = sa
 	nf ~= nf0
 	if cs.len > 1:
 		s := ck_args(n, 0, -1); an := ARGW.len - s; pick ~= -1; pr ~= 99; ps i64 ~= 0; for c, ci cs:
@@ -605,6 +628,11 @@ recursive case_inst(n int, name int, s int, an int, j int, t int, blk int, bown 
 	inst := if fnode >= 0 { get_inst(fnode, b0, bn, blk, if blk >= 0 { bown } else { AOWN }) } else { -1 }
 	BINDS.pop_n(BINDS.len - b0)
 	inst
+elref(e int) int: if TY[e].k == TY_REF && TY[e].c >= 0 { t_ref(TY[e].a as int, TY[e].fl as int) } else { t_ref(e, 0) }
+recursive conv_arg(c int, pt int):
+	if pt < 0 || TY[pt].k != TY_REF || TY[pt].fl & RF_OPT != 0 || TY[pt].c >= 0: conv(c, pt); return
+	if is_pending(at(c)): conv(c, TY[pt].a); return
+	k := ND[c].k; if (k == N_BLOCK || k == N_IF || k == N_MATCH) && deref(at(c)) == TY[pt].a && tail_place(c): conv_tail(c, pt); set_t(c, pt)
 recursive try_case(n int, name int, s int, an int, blk int, bown int) int:
 	for j an:
 		a0 := ARGW[s + j]; d := deref(a0)
@@ -621,11 +649,7 @@ recursive try_case(n int, name int, s int, an int, blk int, bown int) int:
 		rt ~= -1; for vi vn:
 			r := FI_[DSPL[d0 + 1 + vi]].ret; if rt < 0: rt = r
 		for vi vn: i := DSPL[d0 + 1 + vi]; if FI_[i].ret >= 0 && FI_[i].ret != rt { cerr(n, "case functions must agree on their result type") } note_caps_of(i); note_edge(i)
-		for k an:
-			if k != j:
-				c := DIDX[s + k]; pt := ptype_of(i0, k); if pt >= 0 && TY[pt].k == TY_REF && TY[pt].fl & RF_OPT == 0 && TY[pt].c < 0:
-					if is_pending(at(c)): conv(c, TY[pt].a)
-				else: conv(c, pt)
+		for k an { if k != j { conv_arg(DIDX[s + k] as int, ptype_of(i0, k)) } }
 		set_r(n, R_CASE, d0)
 		if rt < 0: cerr(n, "a case function called here needs its result type written"); return set_t(n, T_ERRT)
 		return set_t(n, rt)
@@ -661,7 +685,9 @@ recursive call_fn(n int, name int, recv int, want int) int:
 		f2, c0, cn0 := resolve(n, name, ns_of(n), s, an - 1, eb, ND[n].c, false)
 		BINDS.pop_n(BINDS.len - c0)
 		if f2 >= 0: an--; blk = eb; bown = if bg >= 0 { FI_[bg].bown as int } else { AOWN }; while FNA.len <= n { FNA.push(0) } FNA[n] = 1
-	fnode, b0, bn := resolve(n, name, ns_of(n), s, an, blk, ND[n].c, true)
+	fnode0, b0, bn := resolve(n, name, ns_of(n), s, an, blk, ND[n].c, true)
+	fnode ~= fnode0
+	if fnode >= 0 && case_better(n, name, s, an, blk, fnode, LRANK): BINDS.pop_n(BINDS.len - b0); dr := try_case(n, name, s, an, blk, bown); if dr >= 0 { pop_args(s); return dr } fnode, b0, bn = resolve(n, name, ns_of(n), s, an, blk, ND[n].c, true)
 	if fnode < 0:
 		BINDS.pop_n(BINDS.len - b0); dr := try_case(n, name, s, an, blk, bown); if dr >= 0: pop_args(s); return dr
 	if fnode < 0:
@@ -679,10 +705,7 @@ recursive call_fn(n int, name int, recv int, want int) int:
 	inst ~= get_inst(fnode, b0, BINDS.len - b0, blk, bown)
 	BINDS.pop_n(BINDS.len - b0)
 	ex := exp_of(inst); if ex >= 0 { inst = ex }
-	for j an:
-		c := DIDX[s + j]; pt := ptype_of(inst, j); if pt >= 0 && TY[pt].k == TY_REF && TY[pt].fl & RF_OPT == 0 && TY[pt].c < 0:
-			if is_pending(at(c)): conv(c, TY[pt].a)
-		else: conv(c, pt)
+	for j an: conv_arg(DIDX[s + j] as int, ptype_of(inst, j))
 	pop_args(s)
 	note_caps_of(inst); note_edge(inst)
 	set_r(n, R_FN, inst)
@@ -799,14 +822,14 @@ recursive ck_builtin(n int, b int, recv int, want int) int:
 			c := arg(1); ct0 := ck(c, -1); ck0 := TY[ct0].k; e2 := if b == B_APPEND { if ck0 == TY_STRLIT { T_U8 } else { if ck0 == TY_ARRLIT { if ND[c].n > 0 { default_t(kid(c, 0)) } else { T_ERRT } } else { TY[deref(ct0)].a as int } } } else { if ck0 == TY_STRLIT { t_arr(T_U8, A_VAR, -1, 6) } else { if is_pending(ct0) { default_t(c) } else { deref_val(ct0) } } }; if e2 != T_ERRT: complete(r, e2)
 	rt := deref(at(r))
 	e := TY[rt].a
-	if b == B_PUSH: if total != 2 { cerr(n, "push takes one value"); return set_t(n, T_ERRT) } c := arg(1); ck(c, e); conv(c, e); return set_t(n, t_ref(e, 0))
+	if b == B_PUSH: if total != 2 { cerr(n, "push takes one value"); return set_t(n, T_ERRT) } c := arg(1); ck(c, e); conv(c, e); return set_t(n, elref(e))
 	if b == B_APPEND: c := arg(1); t := ck(c, t_slice(e, true)); if TY[t].k == TY_STRLIT { set_t(c, TT_STR); } else { if TY[t].k == TY_ARRLIT { conv(c, t_arr(e, A_GROW, -1, -1)); } else { dt := deref(t); if (TY[dt].k == TY_ARR || TY[dt].k == TY_SLICE) && TY[dt].a != e { cerr(c, "append of a different element type") } } } return set_t(n, T_VOID)
 	if b == B_POP: return set_t(n, decode_rel(e))
 	if b == B_POPN: ck(arg(1), T_I64); conv(arg(1), T_I64); return set_t(n, T_VOID)
 	if b == B_RESIZE: ck(arg(1), T_I64); conv(arg(1), T_I64); if total > 2 { ck(arg(2), e); conv(arg(2), e) } return set_t(n, T_VOID)
 	if b == B_CLEAR: return set_t(n, T_VOID)
 	if b == B_INDEXOF: c := arg(1); ck(c, t_ref(e, 0)); conv(c, t_ref(e, 0)); return set_t(n, T_I64)
-	if b == B_ALLOCI || b == B_ALLOCR: c := arg(1); ck(c, e); conv(c, e); return set_t(n, if b == B_ALLOCI { T_I64 } else { t_ref(e, 0) })
+	if b == B_ALLOCI || b == B_ALLOCR: c := arg(1); ck(c, e); conv(c, e); return set_t(n, if b == B_ALLOCI { T_I64 } else { elref(e) })
 	if b == B_FREE || b == B_ALLOCS: fa := deref(ck(arg(1), T_I64)); if TY[fa].k == TY_INT && fa != T_I64 { set_cv(arg(1), T_I64) } else { conv(arg(1), T_I64) }; if b == B_ALLOCS { ck_defs(e) } return set_t(n, if b == B_FREE { T_VOID } else { t_slice(e, false) })
 	if b == B_FREES || b == B_REALLOCS: c := arg(1); ck(c, t_slice(e, true)); conv(c, t_slice(e, true)); if b == B_FREES { return set_t(n, T_VOID) } ck(arg(2), T_I64); conv(arg(2), T_I64); return set_t(n, t_slice(e, false))
 	set_t(n, T_ERRT)
@@ -826,6 +849,9 @@ recursive slit_infer(n int, sn int) int:
 		if ta >= 0 && ND[ta].k == N_TNAME && ND[ta].n == 0:
 			for g, gi gn:
 				if ND[ta].s == g && args[gi] < 0: v := ND[fi].a; vt := ck(v, -1); args[gi] = (if is_pending(vt) { default_t(v) } else { vt }); SCK.push(v); SCK.push(AOWN)
+		else:
+			if ta >= 0 && args.contains(-1):
+				v := ND[fi].a; vt := ck(v, -1); if !is_pending(vt) { b0 := BINDS.len; for g, gi gn { BINDS.push(Gb{g, args[gi]}) } match_ty(ta, vt, b0); for gi gn.len { if args[gi] < 0 && BINDS[b0 + gi].ty >= 0 { args[gi] = BINDS[b0 + gi].ty } } BINDS.pop_n(BINDS.len - b0); SCK.push(v); SCK.push(AOWN) }
 	SCOPE.pop_n(SCOPE.len - m0); GB.pop_n(GB.len - g0); AOWN = sa
 	for a args:
 		if a < 0: return -1
@@ -881,8 +907,7 @@ check_program() bool:
 	for d DC: if d.k as int == D_FN && ND[d.node].fl & F_EXPORT != 0 && ND[d.node].d < 0 { EXPN.push(d.node) }
 	mi := get_inst(DC[md].node, BINDS.len, 0, -1, -1)
 	for x EXPN: get_inst(x, BINDS.len, 0, -1, -1)
-	for r XROOTS:
-		d := lookup(r, -1, D_FN); if d >= 0: get_inst(DC[d].node, BINDS.len, 0, -1, -1)
+	for d XROOTS: get_inst(DC[d].node, BINDS.len, 0, -1, -1)
 	for d, i DC:
 		if d.k as int == D_GLOBAL: global_type(i)
 	propagate_calls()

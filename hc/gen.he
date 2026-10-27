@@ -323,7 +323,7 @@ recursive gas(n int):
 recursive gcv(n int, f int, t int):
 	if f == t: gx1(n); return
 	fk := TY[f].k; tk0 := TY[t].k
-	if fk == TY_MULTI && tk0 != TY_MULTI: ow("(("); ct(t); ow(")("); gx1(n); ow(").r0)"); return
+	if fk == TY_MULTI && tk0 != TY_MULTI: R0N = n; gcv(n, TYL[TY[f].l] as int, t); R0N = -1; return
 	if tk0 == TY_BOOL && fk == TY_REF && TY[f].fl & RF_OPT != 0: ow("(("); gx1(n); ow(") != 0)"); return
 	if fk == TY_REF && TY[f].c < 0 && tk0 != TY_REF:
 		m := TY[f].a
@@ -1229,6 +1229,12 @@ recursive has_call(n int) bool:
 	if k == N_SLIT || k == N_ARR: for i x.n { if has_call(kid(n, i)) { return true } } return k == N_ARR && has_call(x.a)
 	false
 recursive gbuiltin(n int):
+	x := ND[n]; b := rv(n); rc := if ax(n) == 1 { ND[x.a].a as int } else { if ax(n) == 2 { kid(n, 0) } else { -1 } }
+	e := if (b == B_PUSH || b == B_ALLOCR) && rc >= 0 { TY[deref(at(rc))].a as int } else { -1 }
+	if e < 0 || TY[e].k != TY_REF: gbuiltin0(n); return
+	if is_rel(e): rdec_pre_t(e, at(n)); ow("*"); gbuiltin0(n); rdec_post(e); return
+	ow("(*"); gbuiltin0(n); ow(")")
+recursive gbuiltin0(n int):
 	x := ND[n]
 	b := rv(n)
 	hasr := ax(n) == 1
@@ -1402,7 +1408,9 @@ heq_val_o(e int, p int): a byte[..64] ~= []; b byte[..64] ~= []; format(a, "_v",
 heq_val_s(e int, p int): a byte[..128] ~= []; b byte[..64] ~= []; a.append("(("); a.append(cn(e)); format(a, "*)_v", p, ".p)[_j]"); format(b, "_x", p); heq_o(e, a[..], b[..]);
 heq_val_r(e int, p int): a byte[..128] ~= []; b byte[..64] ~= []; a.append("(("); a.append(cn(e)); format(a, "*)_v", p, "->b)[_j]"); format(b, "_x", p); heq_o(e, a[..], b[..]);
 gvariant(n int): if TY[at(n)].k == TY_VARIANT { t := at(n); v := ENV[ENI[TY[t].a].v0 as int + TY[t].c as int]; if v.si >= 0 { ow("(("); ct(t); ow("){0})"); } else { ow("((hr_unit)0)"); } return } t := at(n); p := nt(); ow("({ "); ct(t); ow(" _t"); oi(p); format(O, "; memset(&_t", p, ", 0, sizeof _t", p, "); _t", p, ".tag = ", rv(n), "; _t", p, "; })");
+R0N ~= -1
 recursive gx0(n int):
+	if n == R0N: R0N = -1; ow("("); gx0(n); ow(").r0"); return
 	x := ND[n]
 	k := x.k
 	if k == N_ID && rk(n) == R_VARIANT: gvariant(n); return
@@ -1563,7 +1571,7 @@ recursive gfor(n int):
 	bt := at(a)
 	d := deref(bt)
 	e := TY[d].a
-	byref := x.fl & 1 != 0
+	byref := x.fl & 1 != 0 && TY[e].k != TY_REF
 	if is_seq(d):
 		vpre_e(e)
 		qn byte[..32] ~= []; format(qn, "_q", p)
