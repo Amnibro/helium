@@ -12,7 +12,7 @@ Status as of 2026-10-27 (gate 76).
 | Corpus, C path | 541 / 645 pass in the difftest (which runs no GPU); the 10 gfx and ui tests also pass on the C path on lavapipe |
 | hc's own tests | `hc/test/*.he` with `.out` files; `tools/hc/hetest.sh <hc>` runs each one through the C path, `--native` and `--native --debug` |
 | Pom-Pom Grove sim | garden, race, mini, load traces bit-identical on both paths |
-| Own modules replacing Goose packages | `audio` (hc/lib/audio.he on SDL3: the same mixer, bit-identical to goose_gfx offline and live). `gfx` (hc/lib/gfx.he straight on SDL3's GPU API, no C layer: the same checks and messages; every SDL struct's layout is checked field by field against the C compiler's). `ui` (hc/lib/ui.he: Nuklear ported line by line to `.he`, with its own TrueType loader hc/lib/ttf.he; the same checks and misuse messages, all 12 ui tests pass, and canvas output matches the C build command for command). Only `physics` (box3d) still loads a Goose package (goose_physics); inside a package, `import gfx` resolves to hc/lib. Modules that must stay on the main thread declare `MAIN_THREAD := true`, and the thread check rejects a `thread_fn` that reaches their state |
+| Own modules replacing Goose packages | `audio` (hc/lib/audio.he on SDL3: the same mixer, bit-identical to goose_gfx offline and live). `gfx` (hc/lib/gfx.he straight on SDL3's GPU API, no C layer: the same checks and messages; every SDL struct's layout is checked field by field against the C compiler's). `ui` (hc/lib/ui.he: Nuklear ported line by line to `.he`, with its own TrueType loader hc/lib/ttf.he; the same checks and misuse messages, all 12 ui tests pass, and canvas output matches the C build command for command). `physics` (hc/lib/physics.he over hc/lib/physics_engine.he: Box3D ported to `.he`, the full API with joints, queries, events, recording and replay; all 9 physics tests pass on both backends). No Goose package is loaded any more; inside a package, `import gfx` resolves to hc/lib. Modules that must stay on the main thread declare `MAIN_THREAD := true`, and the thread check rejects a `thread_fn` that reaches their state |
 | Full apps | Pom-Pom Grove (`pomling.amni`, gfx + ui) and Waystone (`play.amni`, gfx + ui + audio + C sources) compile natively with hc. On lavapipe, Pom-Pom Grove built by hc with our gfx renders pixel-identical to the Goose build: test_creature, test_render and the app's scripted HUD and menu shots exactly, test_world and test_garden within 1 level on 2 and 4 pixels (libm rounding, as before). With our ui too: Pom-Pom Grove's HUD and menu shots and Waystone's title, lobby, shop, memoir, in-run and HUD screens are 0-pixel-diff vs Goose's ui |
 | Driver | `hc build file [-o out]`, `hc run file [-- args]` (native, cached under ~/.cache/hc), `hc check`, `hc version`, `hc help`; `hc file` runs; `hc in out [--native]` still works. The library is HC_LIB, else `lib` beside the executable |
 | Waystone parity | `HELIUM=hc tools/parity.sh`: 193 of 193 traces identical to the JS original |
@@ -169,7 +169,7 @@ Lower priority, since the C path is the oracle and not the product. It still mat
 - **Shaders (both paths agreed):**
   - Our own shader compiler from the Helium shader subset to SPIR-V for Vulkan, plus GLSL text for WebGL.
   - Replaces `src/shaderc.c` and `src/amni_gpu.h`, plus `embed_shader` / `lut fn` GPU tables.
-- **`physics`:** today `goose_physics` (~1.7k Goose lines, a 4k-line C layer and box3d, ~52k lines of C). Port box3d to `.he` the way Nuklear was ported, against the 9 physics corpus tests. Neither Pom-Pom Grove nor Waystone uses it.
+- **`physics`:** done (hc/lib/physics.he, hc/lib/physics_engine.he). Left: starting a recording on a non-empty world, recording queries.
 - **`ui`:** done: hc/lib/ui.he (Nuklear under its public-domain option, no C layer) and hc/lib/ttf.he (TrueType outlines, rasterizing, rect packing). ProggyClean is still the built-in default font; ttf.he reads `glyf` outlines only, so CFF (`.otf`) fonts are not loaded yet.
 - **Pom-Pom Grove app** (`eng/`, `app/`, `pomling.amni`): builds only with Goose today. It moves once gfx and shaders exist.
 - **Driver features in `src/main.cpp` that hc lacks:**
@@ -198,7 +198,7 @@ Lower priority, since the C path is the oracle and not the product. It still mat
 1. Native dynamic linking and the C ABI (1.4). This unblocks externs, Vulkan and SDL3.
 2. Pool-relative references and the aliasing output bugs (1.3).
 3. Checker gaps, biggest groups first: overloads, `const for`, generics (1.2).
-4. `gfx` on SDL3 (done), `ui` (done), then `physics`, the shader compiler, then the Pom-Pom Grove app on hc.
+4. `gfx` on SDL3 (done), `ui` (done), `physics` (done), then the shader compiler, then the Pom-Pom Grove app on hc.
 5. Performance passes alongside: `separate`, `reachable`, BLAKE3, bounds checks in loops.
 6. Driver features, packages, web target, LSP.
 7. arm64 and Mach-O.
