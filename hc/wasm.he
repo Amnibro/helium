@@ -70,6 +70,17 @@ wtrap(k int, l int, a int, b int):
 	if k == K_OOB { lg(a); lg(b); wlocs(l); wcall(RT_OOB, 4) } else if k & 255 == K_NARD { lg(a); i64c(k >> 8); wlocs(l); wcall(RT_NARD, 4) } else if k & 255 == K_OVFD { lg(a); lg(b); i64c(k >> 8); wlocs(l); wcall(RT_OVF, 5) } else { i64c(k); wlocs(l); wcall(RT_DIE, 3) }
 	wb(0x00)
 wif(): wb(0x04); wb(0x40)
+wx(k int): if k == 2 { wb(0xBF) } else if k == 3 { wb(0xA7); wb(0xBE); wb(0xBB) } else if k != 1 { wb(0xA7) }
+wi(k int): if k == 0 { wb(0xAC) } else if k == 2 { wb(0xBD) } else if k == 3 { wb(0xB6); wb(0xBC); wb(0xAD) } else if k != 1 { wb(0xAD) }
+wty(o byte[>..<]&, k int): o.push(if k == 1 { 0x7E } else if k == 2 || k == 3 { 0x7C } else { 0x7F })
+wimc(k int, a int, b int, d int):
+	s := WIMS[k] as int; for j b { lg(ARGL[a + j] as int); wx(WIMK[s + j] as int) }
+	wb(0x10); ul(WO, 1 + k); r := WIMR[k] as int
+	if r < 0 { if d >= 0 { i64c(0); lst(d) } } else { wi(r); if d >= 0 { lst(d) } else { wb(0x1A) } }
+var WEXI i32[>..<]; var WEXF i32[>..<]; var WEXK i8[>..<]; var WEXS i32[>..<]; var WEXR i8[>..<]
+wexk(i int) int:
+	k0 := WEXK.len; WEXS.push(WEXK.len as i32); for j ND[FI_[i].node].n as int { pt := ptype_of(i, j); if is_pair(pt) { WEXK.push(4); WEXK.push(4) } else { WEXK.push(wkind(pt) as i8) } }
+	rt := FI_[i].ret as int; vr := rt >= 0 && rt != T_VOID && TY[rt].k != TY_VOID; if vr && (is_agg(rt) || is_pair(rt)) { WEXK.resize(k0); WEXS.pop(); return -1 } WEXR.push(if vr { wkind(rt) as i8 } else { -1 }); WEXK.len - k0
 wgad(c int): if TLSM { wb(0x23); ul(WO, 1); i64c(c); wb(0x7C) } else { i64c(WGB + c) }
 var WSD int[>..<]; var WSB byte[>..<]; var WSL int[>..<]
 wseg(dst int, b const byte[:]): WSD.push(dst); WSL.push(b.len); WSB.append(b)
@@ -133,6 +144,7 @@ wins(i int):
 		wmem(if z == 3 { 0x29 } else if z == 2 { if sg { 0x34 } else { 0x35 } } else if z == 1 { if sg { 0x32 } else { 0x33 } } else { if sg { 0x30 } else { 0x31 } }, z, o); lst(d); return
 	if op == I_ST: z := w & 3; o := waddr(a, c as int); lg(b); wmem([0x3C, 0x3D, 0x3E, 0x37][z], z, o); return
 	if op == I_CALL:
+		if c < -1: wimc(-2 - c as int, a, b, d); return
 		if c < 0: wb(0x00); return
 		for k b: lg(ARGL[a + k] as int)
 		wcall(c as int, b); if l >= 0 { lst(l) } else { wb(0x1A) } if d >= 0 { lst(d) } else { wb(0x1A) } return
@@ -266,7 +278,9 @@ wasm_program(out byte[>..]&) bool:
 	md := lookup(intern("main"), -1, D_FN); mi ~= -1
 	for f, i FI_: if f.node == DC[md].node && f.par < 0 && f.st == 2 { mi = i }
 	RT_DIE = rt_fn("rt_die"); RT_OOB = rt_fn("rt_oob"); RT_OVF = rt_fn("rt_ovfd"); RT_NARD = rt_fn("rt_nard"); RT_F2I = rt_fn("rt_f2i")
-	rm := nf_of(mi); rx := rt_fn("rt_exit"); RT_SOVF = rt_fn("rt_sovf")
+	rm := nf_of(mi); rx := rt_fn("rt_exit"); RT_SOVF = rt_fn("rt_sovf"); rfl := rt_fn("rt_flush"); rgw := rt_fn("rt_grow")
+	WEXI.clear(); WEXF.clear(); WEXK.clear(); WEXS.clear(); WEXR.clear(); WIMF.clear(); WIMS.clear(); WIMK.clear(); WIMR.clear()
+	for x EXPN: for f, i FI_ { if f.node == x && f.st == 2 && wexk(i) >= 0 { WEXI.push(i as i32); WEXF.push(nf_of(i) as i32) } }
 	if !drain(): return false
 	gi := lower_ginit(); lower_tglob(); if !drain(): return false
 	if LERR.len > 0: return false
@@ -275,40 +289,55 @@ wasm_program(out byte[>..]&) bool:
 	for f, k NFS: for i (f.i0 as int)..(f.i1 as int) { x := IR[i]; if x.op as int == I_PARAM && x.c + 1 > WARI[k] { WARI[k] = (x.c + 1) as i32 } }
 	for f NFS: for i (f.i0 as int)..(f.i1 as int) { x := IR[i]; if x.op as int == I_CALL && x.c >= 0 && x.b > WARI[x.c] { WARI[x.c] = x.b } }
 	for t, j [RT_DIE, RT_OOB, RT_OVF, RT_NARD, RT_F2I]: if t >= 0 { WARI[t] = max(WARI[t] as int, [3, 4, 5, 4, 1][j]) as i32 }
+	for e, q WEXF: WARI[e] = max(WARI[e] as int, (if q + 1 < WEXS.len { WEXS[q + 1] as int } else { WEXK.len }) - WEXS[q] as int) as i32
+	WIMP = 1 + WIMF.len; ne := WEXF.len
 	mxa ~= 7; for a WARI { mxa = max(mxa, a as int) } for f NFS { for i (f.i0 as int)..(f.i1 as int) { if IR[i].op as int == I_CALLR { mxa = max(mxa, IR[i].b as int) } } }
 	mv ~= 0; for f NFS { mv = max(mv, f.nv as int) } VMAP.clear(); VMAP.resize(mv + 1, -1); VUSED.clear()
 	ml ~= 0; for x IR { o := x.op as int; if (o == I_LBL || o == I_JMP || o == I_BZ || o == I_BNZ) && x.c > ml { ml = x.c as int } } WLB.clear(); WLB.resize(ml + 1, -1); WLP.clear(); WLP.resize(ml + 1, 2147483647); for x, i IR { if x.op as int == I_LBL { WLP[x.c] = i as i32 } }
 	WGB = al(WRO + RO.len, 16); WSLO = al(WGB + BSS + 16, 16); stk := WSLO + (64 << 20); pages := (stk + 65535) / 65536
 	m byte[>..<] ~= []; m.append("\0asm"); m.push(1); m.push(0); m.push(0); m.push(0)
-	t byte[>..<] ~= []; ul(t, mxa + 2)
+	t byte[>..<] ~= []; ul(t, mxa + 3 + WIMF.len + ne)
 	for a mxa + 1: t.push(0x60); ul(t, a); for k a { t.push(0x7E) } ul(t, 2); t.push(0x7E); t.push(0x7E)
-	t.push(0x60); ul(t, 7); for k 7 { t.push(0x7E) } ul(t, 1); t.push(0x7E); wsec(m, 1, t)
+	t.push(0x60); ul(t, 7); for k 7 { t.push(0x7E) } ul(t, 1); t.push(0x7E)
+	for k WIMF.len: e := if k + 1 < WIMS.len { WIMS[k + 1] as int } else { WIMK.len }; t.push(0x60); ul(t, e - WIMS[k] as int); for j (WIMS[k] as int)..e { wty(t, WIMK[j] as int) } if WIMR[k] < 0 { ul(t, 0) } else { ul(t, 1); wty(t, WIMR[k] as int) }
+	for k ne: e := if k + 1 < WEXS.len { WEXS[k + 1] as int } else { WEXK.len }; t.push(0x60); ul(t, e - WEXS[k] as int); for j (WEXS[k] as int)..e { wty(t, WEXK[j] as int) } if WEXR[k] < 0 { ul(t, 0) } else { ul(t, 1); wty(t, WEXR[k] as int) }
+	t.push(0x60); ul(t, 2); t.push(0x7F); t.push(0x7F); ul(t, 1); t.push(0x7F); wsec(m, 1, t)
 	sh := TLSM
 	WSD.clear(); WSB.clear(); WSL.clear(); wseg(WRO, RO[..]); rz := hdef("GS_STACK_RESERVE")
 	for g ["RT_RSZ", "RT_SBUD", "RT_DBG", "RT_TIER", "RT_TEND"]: v := if g == "RT_TIER" { 1 } else if g == "RT_TEND" { pages * 65536 } else if g == "RT_RSZ" { if rz >= 0 { rz & -4096 } else { 1 << 25 } } else if g == "RT_SBUD" { sb := hdef("GS_STACK_BUDGET"); if sb > 0 { sb } else { 1 << 32 } } else { if DBG { 1 } else { 0 } }; if v > 0 { wgset(g, v) }
-	t.clear(); ul(t, 2); wstr(t, "env"); wstr(t, "sys"); t.push(0); ul(t, mxa + 1); wstr(t, "env"); wstr(t, "memory"); t.push(2); t.push(if sh { 3 } else { 1 }); ul(t, pages); ul(t, 65536); wsec(m, 2, t)
-	t.clear(); ul(t, n + 2); for k n { ul(t, WARI[k] as int) } ul(t, 1); ul(t, 2); wsec(m, 3, t)
+	t.clear(); ul(t, 2 + WIMF.len); wstr(t, "env"); wstr(t, "sys"); t.push(0); ul(t, mxa + 1)
+	for k WIMF.len: wstr(t, "env"); x := ext_str(WIMF[k] as int); wstr(t, if x.len > 0 { x } else { nm(FI_[WIMF[k]].name) }); t.push(0); ul(t, mxa + 2 + k)
+	wstr(t, "env"); wstr(t, "memory"); t.push(2); t.push(if sh { 3 } else { 1 }); ul(t, pages); ul(t, 65536); wsec(m, 2, t)
+	t.clear(); ul(t, n + 3 + ne); for k n { ul(t, WARI[k] as int) } ul(t, 1); ul(t, 2); for k ne { ul(t, mxa + 2 + WIMF.len + k) } ul(t, mxa + 2 + WIMF.len + ne); wsec(m, 3, t)
 	t.clear(); ul(t, 1); t.push(0x70); t.push(0); ul(t, n); wsec(m, 4, t)
 	t.clear(); ul(t, 3); for v [stk, WGB, WSLO] { t.push(0x7E); t.push(1); t.push(0x42); sl(t, v); t.push(0x0B) } wsec(m, 6, t)
-	t.clear(); ul(t, 4); wstr(t, "memory"); t.push(2); ul(t, 0); wstr(t, "he_start"); t.push(0); ul(t, WIMP + n); wstr(t, "he_thread"); t.push(0); ul(t, WIMP + n + 1); wstr(t, "he_sovf"); t.push(0); ul(t, WIMP + RT_SOVF); wsec(m, 7, t)
+	t.clear(); ul(t, 5 + ne); for k ne { wstr(t, exp_sym(FI_[WEXI[k]].node as int)); t.push(0); ul(t, WIMP + n + 2 + k) } wstr(t, "he_grow"); t.push(0); ul(t, WIMP + n + 2 + ne); wstr(t, "memory"); t.push(2); ul(t, 0); wstr(t, "he_start"); t.push(0); ul(t, WIMP + n); wstr(t, "he_thread"); t.push(0); ul(t, WIMP + n + 1); wstr(t, "he_sovf"); t.push(0); ul(t, WIMP + RT_SOVF); wsec(m, 7, t)
 	t.clear(); ul(t, 1); t.push(0); t.push(0x41); sl(t, 0); t.push(0x0B); ul(t, n); for k n { ul(t, WIMP + k) } wsec(m, 9, t)
 	t.clear(); ul(t, WSD.len); wsec(m, 12, t)
 	irw byte[>..] ~= []; dump := env("HC_IR", irw)
-	c byte[>..<] ~= []; ul(c, n + 2)
+	c byte[>..<] ~= []; ul(c, n + 3 + ne)
 	for k n: if dump && NFS[k].inst >= 0 && nm(FI_[NFS[k].inst].name) == irw[..] { ir_dump(k) } wfn(k, c)
 	WO.clear(); ul(WO, 0); WAR = 0
 	for k WSD.len: wb(0x41); sl(WO, WSD[k]); wb(0x41); sl(WO, 0); wb(0x41); sl(WO, WSL[k]); wb(0xFC); ul(WO, 8); ul(WO, k); wb(0); wb(0xFC); ul(WO, 9); ul(WO, k)
 	if sh: i64c(WGB); wb(0xA7); i64c(WGB); wmem(0x37, 3, 0); i64c(WGB); wb(0xA7); i64c(BSS); wmem(0x37, 3, 8)
 	ks := lookup(intern("RT_SP"), -1, D_GLOBAL); if ks >= 0 && ks < GOFF.len && GOFF[ks] >= 0 { i64c(WGB + gslot(ks)); wb(0xA7); wb(0x20); ul(WO, 0); wmem(0x37, 3, 0) }
-	wcall(gi, 0); wb(0x1A); wb(0x1A); wcall(rm, 0); wb(0x1A); wb(0x1A); if rx >= 0 { i64c(0); wcall(rx, 1); wb(0x1A); wb(0x1A) } i64c(0); i64c(0); wb(0x0B)
+	wcall(gi, 0); wb(0x1A); wb(0x1A); wcall(rm, 0); wb(0x1A); wb(0x1A); if ne > 0 { if rfl >= 0 { wcall(rfl, 0); wb(0x1A); wb(0x1A) } } else if rx >= 0 { i64c(0); wcall(rx, 1); wb(0x1A); wb(0x1A) } i64c(0); i64c(0); wb(0x0B)
 	ul(c, WO.len); c.append(WO[..])
 	WO.clear(); ul(WO, 0)
 	wb(0x20); ul(WO, 0); wb(0x24); ul(WO, 0); wb(0x20); ul(WO, 1); wb(0x24); ul(WO, 1); wb(0x20); ul(WO, 0); wb(0xA7); wmem(0x29, 3, 8); wb(0xA7); wmem(0x29, 3, 64); i64c(4096); wb(0x7C); wb(0x24); ul(WO, 2)
 	wb(0x20); ul(WO, 0); wb(0xA7); wmem(0x29, 3, 8); wb(0x20); ul(WO, 0); wb(0xA7); wmem(0x29, 3, 0); wb(0xA7); wb(0x11); ul(WO, 1); ul(WO, 0); wb(0x1A); wb(0x1A); i64c(0); i64c(0); wb(0x0B)
-	ul(c, WO.len); c.append(WO[..]); wsec(m, 10, c)
+	ul(c, WO.len); c.append(WO[..])
+	for k ne:
+		WO.clear(); ul(WO, 0); e := if k + 1 < WEXS.len { WEXS[k + 1] as int } else { WEXK.len }; nf := WEXF[k] as int; WAR = 0
+		for j (WEXS[k] as int)..e: wb(0x20); ul(WO, j - WEXS[k] as int); wi(WEXK[j] as int)
+		wcall(nf, e - WEXS[k] as int); wb(0x1A); if WEXR[k] < 0 { wb(0x1A) } else { wx(WEXR[k] as int) } if rfl >= 0 { wcall(rfl, 0); wb(0x1A); wb(0x1A) } wb(0x0B)
+		ul(c, WO.len); c.append(WO[..])
+	WO.clear(); ul(WO, 0); WAR = 0; wb(0x20); ul(WO, 0); wb(0xAD); wb(0x20); ul(WO, 1); wb(0xAD); i64c(1); wcall(rgw, 3); wb(0x1A); wb(0xA7); wb(0x0B); ul(c, WO.len); c.append(WO[..])
+	wsec(m, 10, c)
 	d byte[>..<] ~= []; ul(d, WSD.len); o ~= 0; for k WSD.len { d.push(1); ul(d, WSL[k]); d.append(WSB[o..o + WSL[k]]); o += WSL[k] } wsec(m, 11, d)
 	t.clear(); wstr(t, "he.mem"); for q 4 { t.push((pages >> q * 8 & 255) as byte) } t.push(if sh { 1 } else { 0 }); wsec(m, 0, t)
-	t.clear(); wstr(t, "name"); s1 byte[>..<] ~= []; ul(s1, n + 3); ul(s1, 0); wstr(s1, "sys")
+	t.clear(); wstr(t, "name"); s1 byte[>..<] ~= []; ul(s1, n + 3 + WIMF.len); ul(s1, 0); wstr(s1, "sys")
+	for k WIMF.len: ul(s1, 1 + k); x := ext_str(WIMF[k] as int); wstr(s1, if x.len > 0 { x } else { nm(FI_[WIMF[k]].name) })
 	for f, k NFS: ul(s1, WIMP + k); wstr(s1, if f.inst >= 0 { nm(FI_[f.inst].name) } else { "<init>" })
 	ul(s1, WIMP + n); wstr(s1, "he_start"); ul(s1, WIMP + n + 1); wstr(s1, "he_thread")
 	t.push(1); ul(t, s1.len); t.append(s1[..]); wsec(m, 0, t)

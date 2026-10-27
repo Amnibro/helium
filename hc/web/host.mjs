@@ -79,7 +79,7 @@ const sys = (n, a, b, c, d, e, f) => {
     default: return -38n;
   }
 };
-const instance = await WebAssembly.instantiate(mod, { env: { sys, memory: mem } });
+const instance = await WebAssembly.instantiate(mod, { env: new Proxy({ sys, memory: mem }, { get: (t, k) => t[k] || (() => { fs.writeSync(2, `helium runtime error: ${String(k)} is not available on this host\n`); exitAll(1); }) }) });
 const X = instance.exports;
 const run = f => { try { f(); return 0; } catch (e) { if (e instanceof RangeError && /call stack/.test(e.message)) { try { X.he_sovf(); } catch (e2) { e = e2; } } if (e && e.helium_exit !== undefined) return e.helium_exit; if (e && e.helium_thread_exit !== undefined) return 0; fs.writeSync(2, 'wasm trap: ' + (e && e.stack || e) + '\n'); if (shared) { Atomics.store(C32, 2, 135); } return 134; } };
 if (isMainThread) {

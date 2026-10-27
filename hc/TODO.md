@@ -18,7 +18,8 @@ Status as of 2026-10-27 (gate 90).
 | Waystone parity | `HELIUM=hc tools/parity.sh`: 193 of 193 traces identical to the JS original |
 | Shaders | `hc/shaderc.he` compiles GLSL to SPIR-V, MSL and HLSL inside hc (no C tool, no cache). It began as a port of cute_spirv and is byte-identical to it on 2698 real and mutated shaders; since then it emits valid SPIR-V where the original did not (sampler parameters, whole-struct buffer stores, `refract`), and every corpus module passes `spirv-val` |
 | Language server | `hc lsp` (hc/lsp.he): diagnostics as you type (every error, not just the first), hover, definition, references, rename, document and workspace symbols, completion (scope, and members after `.` on a line that does not parse yet), signature help, inlay type hints, folding. Each request is answered by `hc --query` in a child process over the open buffers. `tools/hc/lsptest.py` runs the fixtures in hc/test/lsp |
-| Still on the Goose C++ compiler | Pomling, Waystone and Amni Prayer (web target) |
+| Web target | `hc file out.wasm --web` emits WebAssembly from hc's own optimized IR (hc/wasm.he): structured control flow, interval-colored locals, a checked shadow stack, threads on workers over shared memory, regions in tiers so hundreds fit in 4 GiB. Externs become JS imports and `export` functions become JS-typed exports. Hosts: hc/web/host.mjs (node: files, threads, futexes) and hc/web/web.js (browser: DOM, events, fetch, storage, WebGL 2, JS interop). The corpus runs as WebAssembly 619/645 (the rest open a GPU, link C libraries, or assume native's 16 GiB regions). Amni Prayer builds with hc and renders the same as the Goose build |
+| Still on the Goose C++ compiler | Pomling and Waystone (shipping builds) |
 
 ## 0. The `.he` syntax
 
@@ -39,7 +40,7 @@ Converters:
 
 o200k token counts: hc 243,964 (`.amni`) → 228,365 (`.he`, slimmed), −6.4%. Corpus, syntax only: −10.6% code tokens.
 
-Projects still on `.amni`, because they build with the Goose toolchain: Pomling and Waystone (their parity suites must pass on hc first), and Amni Prayer (needs hc's web target).
+Projects still on `.amni`, because they build with the Goose toolchain: Pomling and Waystone (their parity suites must pass on hc first), and Amni Prayer (now builds with hc; the site still ships the Goose build).
 
 ## 1. Correctness gaps in the corpus
 
@@ -176,7 +177,7 @@ Lower priority, since the C path is the oracle and not the product. It still mat
 - **Driver features in `src/main.cpp` that hc lacks:**
   - hc has `--native` and `--debug` only.
   - Missing: build files and `helium build`, packages (`--update`, `--refresh`, `--offline`), cached and JIT runs, `--check`, `--dump`/`--tokens`/`--parse`, `--stack-reserve`, `--multi-test`, `--standalone`, `--compile-shader`.
-- **Web target:** `main` has `--web` through clang + WASI. hc needs its own wasm32 emitter plus `web`, `webgl` and `web.js` in `hc/lib`; those are the only stdlib modules hc lacks.
+- **Web target:** done (see the status table). Left: threads in the browser need a cross-origin isolated page (COOP/COEP) and a worker host; `gfx`/`ui` on WebGL or WebGPU; the 64 MiB main shadow stack could shrink for small apps; a `hc build --web` that also writes the host and an HTML page.
 - **LSP:** done for the features above. Left: semantic tokens, code lenses, call hierarchy, selection ranges, recovery from parse errors beyond member completion, and a VS Code extension for `.he` (the one in `vscode/` is Goose's and starts `goose lsp`).
 - **More targets:**
   - arm64 code generation.

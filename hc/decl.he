@@ -121,7 +121,7 @@ recursive load_import(name int, from int, t int) int:
 			if c == '/': sl = i
 	fp := if from >= 0 && from < FPKG.len { FPKG[from] as int } else { -1 }
 	if sl >= 0 { p.append(fnm[..sl]); } else { if fp >= 0 { p.append(nm(PKS[fp].root)); } else { p.append(ROOTDIR); } } p.push('/'); p.append(nm(name))
-	bl := !rel && blessed(nm(name)).len > 0; lb := lib_path(nm(name)); r ~= if bl && fp >= 0 && file_exists(lb[..]) { try_load(lb[..], -1) } else { -1 }
+	bl := !rel && blessed(nm(name)).len > 0; lb := lib_path(nm(name)); lo := fp >= 0 && nm(PKS[fp].key).len > 6 && nm(PKS[fp].key)[..6] == "local/"; r ~= if bl && fp >= 0 && !lo && file_exists(lb[..]) { try_load(lb[..], -1) } else { -1 }
 	if r == -1: r = try_ext(p[..], fp)
 	if r == -1 && bl && file_exists(lb[..]): r = try_load(lb[..], -1)
 	if r == -1 && !rel:

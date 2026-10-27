@@ -901,6 +901,14 @@ lccall(n int, i int, args i32[>..<]&) int:
 	if rp: PAIR2 = ldw(tmp, 8, 3); return ldw(tmp, 0, 3)
 	if ra: if tmp >= 0 { ir(I_COPY, 3, sd, tmp, imm(tsz(rt)), 0) } return sd
 	if !vr { return imm(0) } w := wof(rt); rk := CCK[x0] as int; if rk == 0 && w != 3 && w < 8 { e := nv(); ir(I_EXT, w, e, d, -1, 0); return e } d
+var WIMF i32[>..<]; var WIMS i32[>..<]; var WIMK i8[>..<]; var WIMR i8[>..<]
+wkind(pt int) int: if TY[pt].k == TY_REF { 4 } else if isf(pt) { if wof(pt) == 10 { 3 } else { 2 } } else if is_scal(pt) && tsz(pt) == 8 { 1 } else if is_scal(pt) && wof(pt) & 4 != 0 { 5 } else if is_scal(pt) { 0 } else { 4 }
+lwebcall(n int, i int, args i32[>..<]&) int:
+	k ~= -1; for f, q WIMF { if f == i { k = q } }
+	rt := FI_[i].ret as int; vr := rt >= 0 && rt != T_VOID && TY[rt].k != TY_VOID
+	if vr && (is_agg(rt) || is_pair(rt)): lerr(n, "this web import's result"); return imm(0)
+	if k < 0: k = WIMF.len; WIMF.push(i as i32); WIMS.push(WIMK.len as i32); for j ND[FI_[i].node].n as int { pt := ptype_of(i, j); if is_pair(pt) { WIMK.push(4); WIMK.push(4) } else { WIMK.push(wkind(pt) as i8) } } WIMR.push(if vr { wkind(rt) as i8 } else { -1 })
+	s0 := ARGL.len; ARGL.append(args[..]); d := if vr { nv() } else { -1 }; ir(I_CALL, 3, d, s0, args.len, -2 - k); if vr { d } else { imm(0) }
 ext_str(i int) const byte[:]:
 	x := ND[FI_[i].node].e; if x >= 0 && ND[x].a >= 0:
 		tok_str(ND[x].a)
@@ -926,9 +934,10 @@ recursive lintrinsic(n int, i int, args i32[>..<]&) int:
 	if mc > 0: w := wof(FI_[i].ret); d := nv(); irl(I_FUN, w, d, args[0], if mc == 6 { args[1] as int } else { -1 }, mc, if mc == 6 { args[2] as int } else { -1 }); return d
 	if s == "!ld1": return ldw(args[0], 0, 4)
 	if s == "!st1": stw(args[0], 0, args[1], 0); return imm(0)
-	if pkg_so(i) >= 0: return lccall(n, i, args)
+	if pkg_so(i) >= 0 && !WEB: return lccall(n, i, args)
 	if s.len > 3 && (s[..3] == "hr_" || s[..3] == "gs_"):
 		nmb byte[>..] ~= []; nmb.append("rt_"); nmb.append(s[3..]); f := rt_fn(nmb[..]); if f >= 0: a := ARGL.len; ARGL.append(args[..]); rt := FI_[i].ret; d := if rt >= 0 && rt != T_VOID { nv() } else { -1 }; ir(I_CALL, 3, d, a, args.len, f); return if d >= 0 { d } else { imm(0) }
+	if WEB && (s.len == 0 || s[0] != '!'): return lwebcall(n, i, args)
 	if s == "!st8": stw(args[0], 0, args[1], 3); return imm(0)
 	if s == "!copy": ir(I_COPY, 3, args[0], args[1], args[2], 0); return imm(0)
 	if s.len == 4 && s[..3] == "!cc": s0 := ARGL.len; ARGL.append(args[1..]); d := nv(); irl(I_CALLR, 3, d, s0, args.len - 1, args[0], -2); return d
