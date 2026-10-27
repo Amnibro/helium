@@ -229,7 +229,7 @@ fn same_binds(i int, b0 int, bn int) bool {
 }
 recursive fn get_inst(node int, b0 int, bn int, blk int, bown int) int {
 	let par = if (ND[node].fl & F_NESTED) != 0 { AOWN } else { -1 };
-	if blk < 0 { for f, i in FI_ { if f.node as int == node && f.blk as int == blk && (blk == -1 || f.bown as int == bown) && f.par as int == par && same_binds(i, b0, bn) { return i; } } }
+	for f, i in FI_ { if f.node as int == node && f.blk as int == blk && (blk == -1 || f.bown as int == bown) && f.par as int == par && same_binds(i, b0, bn) { return i; } }
 	let i = new_inst(node, node, NEND[node] as int, par);
 	FI_[i].g0 = GBS.len as i32;
 	for j in bn { GBS.push(BINDS[b0 + j]); }
@@ -451,26 +451,26 @@ recursive fn call_nested(n int, nf int) int {
 fn note_caps_of(i int) {
 	for c in CAPS { if c.inst as int == i { let v = c.lv as int; if LVS[v].cfn as int != CFN { note_cap(v); } } }
 }
-recursive fn case_inst(n int, name int, s int, an int, j int, t int) int {
+recursive fn case_inst(n int, name int, s int, an int, j int, t int, blk int, bown int) int {
 	ARGW[s + j] = t as i32;
-	let fnode, b0, bn = resolve(n, name, ns_of(n), s, an, -1, ND[n].c as int, false);
-	let inst = if fnode >= 0 { get_inst(fnode, b0, bn, -1, AOWN) } else { -1 };
+	let fnode, b0, bn = resolve(n, name, ns_of(n), s, an, blk, ND[n].c as int, false);
+	let inst = if fnode >= 0 { get_inst(fnode, b0, bn, blk, if blk >= 0 { bown } else { AOWN }) } else { -1 };
 	BINDS.pop_n(BINDS.len - b0);
 	inst
 }
-recursive fn try_case(n int, name int, s int, an int) int {
+recursive fn try_case(n int, name int, s int, an int, blk int, bown int) int {
 	for j in an {
 		let a0 = ARGW[s + j] as int; let d = deref(a0);
 		if TY[d].k != TY_ENUM { continue; }
 		let ei = TY[d].a as int; let vn = ENI[ei].vnum as int;
-		let d0 = DSPL.len; DSPL.push(j as i32);
-		var ok = vn > 0;
-		for vi in vn { if ok { let vt = t_variant(ei, vi); var inst = case_inst(n, name, s, an, j, vt); if inst < 0 { inst = case_inst(n, name, s, an, j, t_ref(vt, 0)); } if inst < 0 { ok = false; } else { DSPL.push(inst as i32); } } }
+		var ok = vn > 0; var ins i32[>..<] = [];
+		for vi in vn { if ok { let vt = t_variant(ei, vi); var inst = case_inst(n, name, s, an, j, vt, blk, bown); if inst < 0 { inst = case_inst(n, name, s, an, j, t_ref(vt, 0), blk, bown); } if inst < 0 { ok = false; } else { ins.push(inst as i32); } } }
 		ARGW[s + j] = a0 as i32;
-		if !ok { DSPL.pop_n(DSPL.len - d0); continue; }
+		if !ok { continue; }
+		let d0 = DSPL.len; DSPL.push(j as i32); DSPL.append(ins[..]);
 		let i0 = DSPL[d0 + 1] as int;
-		let rt = FI_[i0].ret as int;
-		for vi in vn { let i = DSPL[d0 + 1 + vi] as int; if FI_[i].ret as int != rt { cerr(n, "case functions must agree on their result type"); } note_caps_of(i); note_edge(i); }
+		var rt = -1; for vi in vn { let r = FI_[DSPL[d0 + 1 + vi]].ret as int; if rt < 0 { rt = r; } }
+		for vi in vn { let i = DSPL[d0 + 1 + vi] as int; if FI_[i].ret >= 0 && FI_[i].ret as int != rt { cerr(n, "case functions must agree on their result type"); } note_caps_of(i); note_edge(i); }
 		for k in an { if k != j { let c = DIDX[s + k] as int; let pt = ptype_of(i0, k); if pt >= 0 && TY[pt].k == TY_REF && (TY[pt].fl & RF_OPT) == 0 && TY[pt].c < 0 { if is_pending(at(c)) { conv(c, TY[pt].a as int); } } else { conv(c, pt); } } }
 		set_r(n, R_CASE, d0);
 		if rt < 0 { cerr(n, "a case function called here needs its result type written"); return set_t(n, T_ERRT); }
@@ -512,7 +512,7 @@ recursive fn call_fn(n int, name int, recv int, want int) int {
 		if f2 >= 0 { an--; blk = eb; bown = if bg >= 0 { FI_[bg].bown as int } else { AOWN }; while FNA.len <= n { FNA.push(0); } FNA[n] = 1; }
 	}
 	let fnode, b0, bn = resolve(n, name, ns_of(n), s, an, blk, ND[n].c as int, true);
-	if fnode < 0 && blk < 0 { BINDS.pop_n(BINDS.len - b0); let dr = try_case(n, name, s, an); if dr >= 0 { pop_args(s); return dr; } }
+	if fnode < 0 { BINDS.pop_n(BINDS.len - b0); let dr = try_case(n, name, s, an, blk, bown); if dr >= 0 { pop_args(s); return dr; } }
 	if fnode < 0 {
 		var m byte[>..] = []; format(m, "no function ", nm(name), " matches (");
 		for j in an { if j > 0 { m.append(", "); } m.append(tn(ARGW[s + j] as int)); }

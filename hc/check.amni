@@ -690,6 +690,7 @@ fn find_from_fn(name int) int {
 	var i = AOWN; let d = if CFN >= 0 && FI_[CFN].node >= 0 { lookup_q(name, ns_of(FI_[CFN].node as int), D_FN) } else { -1 }; let dn = if d >= 0 { ns_of(DC[d].node as int) } else { -1 };
 	while i >= 0 {
 		if FI_[i].node >= 0 && ND[FI_[i].node].k == N_FN && FI_[i].name as int == name && (dn < 0 || ns_of(FI_[i].node as int) == dn) { return i; }
+		if FI_[i].node >= 0 && ND[FI_[i].node].k != N_FN && FI_[i].blk >= 0 { let c = FI_[i].blk as int; if FI_[c].node >= 0 && ND[FI_[c].node].k == N_FN && FI_[c].name as int == name { return c; } }
 		i = if FI_[i].bown >= 0 { FI_[i].bown as int } else { FI_[i].par as int };
 	}
 	-1

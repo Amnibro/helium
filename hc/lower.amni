@@ -628,7 +628,7 @@ recursive fn lintrinsic(n int, i int, args i32[>..<]&) int {
 	if mc > 0 { let w = wof(FI_[i].ret as int); let d = nv(); irl(I_FUN, w, d, args[0] as int, if mc == 6 { args[1] as int } else { -1 }, mc, if mc == 6 { args[2] as int } else { -1 }); return d; }
 	if s == "!ld1" { return ldw(args[0] as int, 0, 4); }
 	if s == "!st1" { stw(args[0] as int, 0, args[1] as int, 0); return imm(0); }
-	if s.len > 3 && s[..3] == "hr_" { var nmb byte[>..] = []; nmb.append("rt_"); nmb.append(s[3..]); let f = rt_fn(nmb[..]); if f >= 0 { let a = ARGL.len; ARGL.append(args[..]); let rt = FI_[i].ret as int; let d = if rt >= 0 && rt != T_VOID { nv() } else { -1 }; ir(I_CALL, 3, d, a, args.len, f); return if d >= 0 { d } else { imm(0) }; } }
+	if s.len > 3 && (s[..3] == "hr_" || s[..3] == "gs_") { var nmb byte[>..] = []; nmb.append("rt_"); nmb.append(s[3..]); let f = rt_fn(nmb[..]); if f >= 0 { let a = ARGL.len; ARGL.append(args[..]); let rt = FI_[i].ret as int; let d = if rt >= 0 && rt != T_VOID { nv() } else { -1 }; ir(I_CALL, 3, d, a, args.len, f); return if d >= 0 { d } else { imm(0) }; } }
 	if s == "!st8" { stw(args[0] as int, 0, args[1] as int, 3); return imm(0); }
 	if s == "!copy" { ir(I_COPY, 3, args[0] as int, args[1] as int, args[2] as int, 0); return imm(0); }
 	if s.len == 4 && s[..3] == "!cc" { let s0 = ARGL.len; ARGL.append(args[1..]); let d = nv(); irl(I_CALLR, 3, d, s0, args.len - 1, args[0] as int, -2); return d; }
@@ -638,7 +638,7 @@ recursive fn lintrinsic(n int, i int, args i32[>..<]&) int {
 var BHASR bool; var BRECV int;
 fn barg(n int, i int) int { if BHASR { if i == 0 { BRECV } else { kid(n, i - 1) } } else { kid(n, i) } }
 fn lgrow(va int, k int, es int) int {
-	let rz = hdef("GS_STACK_RESERVE"); let lim = (if rz >= 0 { rz & -4096 } else { 1 << 34 }) / es; let b = ldw(va, 0, 3); let n = ldw(va, 8, 3); let nn = bin(B_ADD, 3, n, k, -1); let p = nv(); let ls = nlbl(); let le = nlbl();
+	let rz = hdef("GS_STACK_RESERVE"); let lim = (if rz >= 0 { rz & -4096 } else { 1 << 34 }) / max(es, 1); let b = ldw(va, 0, 3); let n = ldw(va, 8, 3); let nn = bin(B_ADD, 3, n, k, -1); let p = nv(); let ls = nlbl(); let le = nlbl();
 	ir(I_BZ, 3, -1, b, -1, ls); ir(I_BZ, 3, -1, lcmp(nn, imm(lim), CC_LE), -1, ls); stw(va, 8, nn, 3); ir(I_MOV, 3, p, bin(B_ADD, 3, b, bin(B_MUL, 3, n, imm(es), -1), -1), -1, 0); ir(I_JMP, 3, -1, -1, -1, le);
 	ir(I_LBL, 3, -1, -1, -1, ls); ir(I_MOV, 3, p, rtcall("rt_grow", [va as i32, k as i32, imm(es) as i32]), -1, 0); ir(I_LBL, 3, -1, -1, -1, le); p
 }
