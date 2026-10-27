@@ -135,6 +135,7 @@ Lower priority, since the C path is the oracle and not the product. It still mat
   - One `int` reduction (`+= -= ^= |= &=`) per loop.
   - Runtime guards for bounds and aliasing, with the scalar loop kept as the tail.
   - `HC_NOVEC=1` turns it off.
+  - Gate any change to it with `python3 tools/hc/vecfuzz.py <hc> [count] [first seed]`. It runs random loop programs with and without `HC_NOVEC` and compares exit codes and output.
   - Blur runs 9x faster. Not yet supported: floats, conditionals (select), gathers, AVX2, and strided or struct-of-arrays access.
 - **Inlining heuristics:** size limits are hand-tuned with no profile feedback.
 - **Compile time:** hc self-compile is ~300 ms, up from ~206 ms before the optimizer passes. Main costs: two value-numbering passes, LICM, rebuilding IR after strength reduction.
