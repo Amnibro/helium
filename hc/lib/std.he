@@ -392,7 +392,7 @@ utf8_cont(s byte[:], i int) int: s[i] & 0x3F
 each_utf8<F>(s byte[:]):
 	i ~= 0
 	while i < s.len:
-		b := s[i]; cp ~= 0xFFFD; n ~= 1
+		b := s[i] as int; cp ~= 0xFFFD; n ~= 1
 		if b < 0x80 { cp = b } else if b >= 0xC0 && b < 0xE0 && i + 1 < s.len { cp = (b & 0x1F) << 6 | utf8_cont(s, i + 1); n = 2 } else if b >= 0xE0 && b < 0xF0 && i + 2 < s.len { cp = (b & 0x0F) << 12 | utf8_cont(s, i + 1) << 6 | utf8_cont(s, i + 2); n = 3 } else if b >= 0xF0 && b < 0xF8 && i + 3 < s.len { cp = (b & 0x07) << 18 | utf8_cont(s, i + 1) << 12 | utf8_cont(s, i + 2) << 6 | utf8_cont(s, i + 3); n = 4 }
 		F(cp); i += n
 push_utf8(out byte[>..]&, cp int):

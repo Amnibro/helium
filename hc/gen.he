@@ -323,6 +323,7 @@ recursive gas(n int):
 recursive gcv(n int, f int, t int):
 	if f == t: gx1(n); return
 	fk := TY[f].k; tk0 := TY[t].k
+	if fk == TY_MULTI && tk0 != TY_MULTI: ow("(("); ct(t); ow(")("); gx1(n); ow(").r0)"); return
 	if tk0 == TY_BOOL && fk == TY_REF && TY[f].fl & RF_OPT != 0: ow("(("); gx1(n); ow(") != 0)"); return
 	if fk == TY_REF && TY[f].c < 0 && tk0 != TY_REF:
 		m := TY[f].a
@@ -1276,7 +1277,10 @@ recursive gbuiltin(n int):
 	if b == B_BYTESOF: c := arg(0); t := deref(fin(c)); if TY[t].k == TY_ARR || TY[t].k == TY_SLICE { q := nt(); ow("({ hsl _s"); oi(q); ow(" = "); gas(c); format(O, "; (hsl){ _s", q, ".p, _s", q, ".n * (int64_t)sizeof("); ct(TY[t].a as int); ow(") }; })"); return } ow("((hsl){ (uint8_t*)"); gaddr(c); ow(", sizeof("); ct(t); ow(") })"); return
 	if b == B_TOBYTES && TY[deref(fin(arg(0)))].k == TY_ARR || b == B_TOBYTES && TY[deref(fin(arg(0)))].k == TY_SLICE:
 		c := arg(0)
-		if total > 1: o := arg(1); ot0 := deref(at(o)); if !is_res(ot0) { gerr(n, "to_bytes into a limited array is not supported by the self-hosted compiler yet"); return } ow("hr_tobytes("); if TY[at(o)].k == TY_REF { gx0(o); } else { gaddr(o); } ow(", "); gpayload(n, c); ow(")"); return
+		if total > 1 && is_lim(deref(at(arg(1)))):
+			o := arg(1); lt := deref(at(o)); ow("({ "); ct(lt); format(O, " *_l", p, " = "); if TY[at(o)].k == TY_REF { gx0(o); } else { gaddr(o); } format(O, "; hrv _o", p, " __attribute__((cleanup(hr_rdrop))) = {0}; hr_tobytes(&_o", p, ", "); gpayload(n, c); ow("); ")
+			format(O, "if (_l", p, "->n + _o", p, ".n > ", TY[lt].b, ") hr_die(\"to_bytes past a limited array's capacity\", "); wloc(n); format(O, "); memcpy(_l", p, "->e + _l", p, "->n, _o", p, ".b, (size_t)_o", p, ".n); _l", p, "->n += _o", p, ".n; })"); return
+		if total > 1: o := arg(1); ot0 := deref(at(o)); if !is_res(ot0) { gerr(n, "to_bytes into this array is not supported by the self-hosted compiler yet"); return } ow("hr_tobytes("); if TY[at(o)].k == TY_REF { gx0(o); } else { gaddr(o); } ow(", "); gpayload(n, c); ow(")"); return
 		format(O, "({ hrv _o", p, " = {0}; hr_tobytes(&_o", p, ", "); gpayload(n, c); format(O, "); _o", p, "; })"); return
 	if b == B_TOBYTES: c := arg(0); t := deref(fin(c)); ow("hr_rfrom("); if TY[t].k == TY_ARR || TY[t].k == TY_SLICE { q := nt(); ow("({ hsl _s"); oi(q); ow(" = "); gas(c); format(O, "; (hsl){ _s", q, ".p, _s", q, ".n * (int64_t)sizeof("); ct(TY[t].a as int); ow(") }; })"); } else { ow("((hsl){ (uint8_t*)"); gaddr(c); ow(", sizeof("); ct(t); ow(") })"); } ow(", 1)"); return
 	if b == B_EMBED: gembed(n, arg(0)); return
@@ -1668,7 +1672,7 @@ recursive gvdecl(n int):
 	if TY[t].k == TY_REF: it := fin(init); if TY[it].k == TY_REF || TY[it].k == TY_NULL { gx(init); } else { gaddr(init); } ow("; "); return
 	if is_res(t): gxo(init); ow("; "); return
 	it := at(init)
-	if TY[it].k == TY_MULTI: gx(init); format(O, ".r0; "); return
+	if TY[it].k == TY_MULTI: if TY[fin(init)].k == TY_MULTI { gx(init); ow(".r0; "); } else { gx(init); ow("; "); } return
 	gx(init); ow("; ");
 decl_lv(v int):
 	t := LVS[v].ty
@@ -1707,6 +1711,7 @@ recursive gassign(n int):
 	if o == T_ASSIGN || o == T_DOTASSIGN:
 		if is_res(d): ow("hr_rset("); if TY[tt].k == TY_REF { gx0(a); } else { ow("&("); gx(a); ow(")"); } ow(", "); gxo(x.b); ow(");"); return
 		if TY[tt].k == TY_REF && TY[at(x.b)].k != TY_REF && TY[fin(x.b)].k != TY_REF && TY[at(x.b)].k != TY_NULL: ow("*"); gx0(a); ow(" = "); gx(x.b); ow(";"); return
+		if o == T_ASSIGN && TY[tt].k == TY_REF && TY[tt].fl & RF_OPT == 0 && TY[tt].c < 0 && TY[at(x.b)].k == TY_REF: ow("*"); gx0(a); ow(" = "); gx(x.b); ow(";"); return
 		if ND[a].k == N_ID: gx(a); ow(" = "); gx(x.b); ow(";"); return
 		q := nt()
 		ow("{ "); ct(d); ow(" *_t"); oi(q); ow(" = &("); gx(a); ow("); *_t"); oi(q); ow(" = "); gx(x.b); ow("; }")

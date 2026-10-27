@@ -146,6 +146,7 @@ recursive bn_ad(n int) bool:
 	x := ND[n]; k := x.k
 	if k == N_UN && x.op as int == T_BITNOT: v, u, ok := cval(x.a); return ok && v >= 0
 	if k == N_ID && rk(n) == R_CONST: iv := cinit(n); if ND[iv].k as int != N_UN || ND[iv].op as int != T_BITNOT { return false } v, ok := ceval(ND[iv].a, ns_of(DC[CONSTD[rv(n)]].node)); return ok && v >= 0
+	if k == N_ID && rk(n) == R_CFB && CFBS[rv(n)].k == 0: c := CFBS[rv(n)]; sa := AOWN; AOWN = c.b; r := bn_ad(c.a); AOWN = sa; return r
 	false
 recursive cval(n int) i64, bool, bool:
 	if n < 0: return 0, false, false
@@ -208,6 +209,7 @@ conv_ok(f int, t int, n int) bool:
 	a := TY[f]; b := TY[t]
 	if widens(f, t): return true
 	if b.k == TY_BOOL && a.k == TY_REF && a.fl & RF_OPT != 0: return true
+	if a.k == TY_MULTI && b.k != TY_MULTI && a.n > 0 && ND[n].k as int == N_CALL: return TYL[a.l] as int == t || widens(TYL[a.l] as int, t)
 	if b.k == TY_SLICE && (a.k == TY_ARR || a.k == TY_SLICE) && a.a == b.a: return true
 	if b.k == TY_SLICE && a.k == TY_STRLIT && b.a == T_U8: return true
 	if b.k == TY_REF && a.k == TY_REF && (b.fl & RF_OPT != 0 || a.fl & RF_OPT == 0):
@@ -268,8 +270,11 @@ recursive default_t(n int) int:
 		return a
 	t
 recursive cvx(n int, t int): k := ND[n].k; if k == N_BLOCK || k == N_EBLOCK || k == N_IF || k == N_MATCH { conv_tail(n, t); set_t(n, t); return } set_cv(n, t);
+m1(n int, t int) int:
+	if t < 0 || TY[t].k != TY_MULTI || ND[n].k as int != N_CALL || TY[t].n == 0: return t
+	f := TYL[TY[t].l] as int; set_cv(n, f); f
 unify(n int, a int, b int) int:
-	ta := at(a); tb := at(b)
+	ta := m1(a, at(a)); tb := m1(b, at(b))
 	if ta < 0 || tb < 0: return T_ERRT
 	da := deref(ta); db := deref(tb)
 	ka := TY[da].k; kb := TY[db].k
@@ -326,10 +331,10 @@ recursive ck_bin(n int, want int) int:
 	if o == T_DOTEQ || o == T_DOTNEQ: ck(a, -1); ck(b, -1); return set_t(n, T_BOOL)
 	cmp := o == T_EQ || o == T_NEQ || o == T_LT || o == T_GT || o == T_LTEQ || o == T_GTEQ
 	w := if cmp { -1 } else { want }
-	ta ~= ck(a, if ND[a].k as int == N_INT { -1 } else { w })
+	ta ~= m1(a, ck(a, if ND[a].k as int == N_INT { -1 } else { w }))
 	sh := o == T_SHL || o == T_SHR
 	if cmp && ND[a].k as int == N_ARR && ND[b].k as int == N_ARR && is_pending(ta): ta = default_t(a)
-	tb := ck(b, if sh { -1 } else { if is_pending(ta) { w } else { d := deref(ta); if TY[d].k == TY_INT && ND[b].k as int == N_BIN && has_flt(b) { if w >= 0 && TY[w].k == TY_FLT { w } else { -1 } } else { d } } })
+	tb := m1(b, ck(b, if sh { -1 } else { if is_pending(ta) { w } else { d := deref(ta); if TY[d].k == TY_INT && ND[b].k as int == N_BIN && has_flt(b) { if w >= 0 && TY[w].k == TY_FLT { w } else { -1 } } else { d } } }))
 	if sh:
 		if TY[tb].k == TY_ILIT: conv(b, T_I64)
 		else:
@@ -385,7 +390,7 @@ recursive ck_id(n int, want int) int:
 	if v >= 0 && LVS[v].fl & LV_CFB != 0: b := LVS[v].node as int; set_r(n, R_CFB, b); c := CFBS[b]; if c.k == 2 { cerr(n, "a field accessor is written in a member access or an initializer label"); return set_t(n, T_ERRT) } t := cf_ty(b); if want >= 0 && is_pending(t) && (TY[want].k == TY_INT || TY[want].k == TY_FLT) { set_t(n, t); conv(n, want); return want } return set_t(n, t)
 	if v >= 0: set_r(n, R_LOCAL, v); note_cap(v); return set_t(n, if LVS[v].fl & LV_FLET != 0 { T_FLIT } else { decode_rel(LVS[v].ty as int) })
 	ns := ns_of(n)
-	if find_nest(name) >= 0 || block_binding(name) >= 0: set_x(n, -1); return set_t(n, T_FNV)
+	if find_nest(name, n) >= 0 || block_binding(name) >= 0: set_x(n, -1); return set_t(n, T_FNV)
 	d ~= lookup_q(name, ns, D_GLOBAL)
 	if d >= 0:
 		g := DC[d].node as int
@@ -396,7 +401,7 @@ recursive ck_id(n int, want int) int:
 		return set_t(n, if GLST[d] == 7 { T_FLIT } else { decode_rel(gt) })
 	d = lookup_q(name, ns, D_FN)
 	if d >= 0: set_r(n, R_FN, d); set_x(n, -1); return set_t(n, T_FNV)
-	if find_nest(name) >= 0 || block_binding(name) >= 0: set_x(n, -1); return set_t(n, T_FNV)
+	if find_nest(name, n) >= 0 || block_binding(name) >= 0: set_x(n, -1); return set_t(n, T_FNV)
 	gvt := gb_find(name); if gvt >= 0 && TY[gvt].k == TY_VARIANT: vs0 := ENV[ENI[TY[gvt].a].v0 as int + TY[gvt].c as int].si as int; if vs0 >= 0 && STI[vs0].fnum > 0 { cerr(n, "a variant with a payload is constructed with { }"); return set_t(n, T_ERRT) } set_r(n, R_VARIANT, TY[gvt].c as int); return set_t(n, gvt)
 	m byte[>..] ~= []; format(m, "unknown name: ", nm(name)); cerr(n, m)
 	set_t(n, T_ERRT)
