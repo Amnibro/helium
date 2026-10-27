@@ -16,10 +16,22 @@ M.append('\tvs uint[>..] ~= []')
 for v in vals: M.append(f'\tvs.push({v})')
 M.append('\th ~= 0 as uint')
 for t,i in fs: M.append(f'\tfor v vs: x := v as! {t}; h = h * 31 + (q_{t}_{i}(x) as! uint); h = h * 37 + (m_{t}_{i}(x) as! uint)\n\tprint(str("{t} {i} ", h))')
+def ex(dd):
+    if dd<=0 or r.random()<0.3: return r.choice(['i','(i - 37)','(bs[i & 63] as int)','(sb[i & 63] as int)','(i & 255)','(i >> 3)','(i % 13)','(-i)','y','j','(((i as uint) >> 58) as int)','(((i as uint) * 11400714819323198485 >> 1) as! int)','(((i as uint) * 15183679541453049859 >> 3) as! int)','((((i as uint) + 9) * 13787848793156543929 >> 1) as! int)','(((18446744073709551615 - (i as uint)) >> 1) as! int)',str(r.choice([0,5,-5,1000,-1000,77]))])
+    o=r.choice(['+','-','*','&','|','^','%','/']);k=r.choice([3,7,10,64,97,1000,-7])
+    return f'({ex(dd-1)} {o} {k})' if o in '*%/' else f'({ex(dd-1)} {o} {ex(dd-1)})'
+NG=40;L.append('var bs byte[>..<]\nvar sb i8[>..<]')
+for g in range(NG):
+    KS=[2,3,7,10,64,97,100,1000,65536,1000003,1000000000039,(1<<40)+15,(1<<61)+1,(1<<62)-1,(1<<62)+3];k1,k2=r.choice(KS),r.choice(KS)
+    L+=[f'g{g}(lo int, hi int) uint:','\th ~= 0 as uint; j ~= 0; y ~= 0',f'\tfor i lo..hi:',f'\t\ty = if i % {r.choice([2,3,5])} == 0 {{ y - {r.randint(1,90)} }} else {{ y + {r.randint(0,9)} }}',f'\t\tx := {ex(3)}',f'\t\th = h * 31 + ((x / {k1}) as! uint); h = h * 37 + ((x % {k2}) as! uint); j += {r.randint(1,3)}','\th']
+for wi,(cc,kk) in enumerate([(cc,kk) for cc in (1,5,77,1000) for kk in (3,7,97,1000003)]):
+    L+=[f'w{wi}(lo int, hi int) uint:','\th ~= 0 as uint',f'\tfor i lo..hi:',f'\t\tx := (((18446744073709551615 - (i as uint)) >> 1) as! int) + {cc}',f'\t\th = h * 31 + ((x / {kk}) as! uint); h = h * 37 + ((x % {kk}) as! uint)','\th'];M.append(f'\tprint(str("w{wi} ", w{wi}(0, 2100), " ", w{wi}(-5, 5)))')
+M.insert(1,'\tfor q 64:\n\t\tbs.push((q * 37 + 11) as! byte)\n\t\tsb.push((q * 41 - 120) as! i8)')
+for g in range(NG): M.append(f'\tprint(str("g{g} ", g{g}(0, 500), " ", g{g}(-60, 90), " ", g{g}(7, 8)))')
 R=pathlib.Path(__file__).resolve().parents[2];HC=sys.argv[2];env=dict(os.environ,HC_LIB=str(R/'hc'/'lib'))
 with tempfile.TemporaryDirectory() as w:
     (pathlib.Path(w)/'d.he').write_text('\n'.join(L+M)+'\n');o=[]
     for a in (['d.he','n','--native'],['d.he','d.c']): subprocess.run([HC]+a,cwd=w,env=env,check=True)
     subprocess.run(['clang','-O1','-fwrapv','-w','-I',str(R/'hc'),'d.c','-o','c','-lm'],cwd=w,check=True)
     for x in ('./n','./c'): o.append(subprocess.run([x],cwd=w,capture_output=True).stdout)
-    print(f'{len(fs)} type/divisor pairs, native and C', 'match' if o[0]==o[1] else 'DIFFER');sys.exit(0 if o[0]==o[1] else 1)
+    print(f'{len(fs)} type/divisor pairs, {NG} sign-mixed kernels, native and C', 'match' if o[0]==o[1] else 'DIFFER');sys.exit(0 if o[0]==o[1] else 1)

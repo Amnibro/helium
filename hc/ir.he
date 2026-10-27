@@ -199,11 +199,14 @@ cg_fn(fi int):
 					else:
 						if gr(d) >= 0: ldv(gr(d), a) else: ldv(RAX, a); stv(RAX, d)
 			else:
-				if op == I_BIN:
+				if op == I_BIN && c == B_ADD && (fk(a) == 9 || fk(b) == 9):
+					t := if fk(b) == 9 { b } else { a }; o := if t == b { a } else { b }; R := if gr(d) >= 0 { gr(d) } else { RAX }
+					I ~= gr(FI[t]); if I < 0 || I == R { ldv(RCX, FI[t]); I = RCX } ldv(R, o); SIBM = true; SIBI = I; SIBS = FS[t]; lea(R, R, 0); if R != gr(d) { stv(R, d) }
+				if op == I_BIN && !(c == B_ADD && (fk(a) == 9 || fk(b) == 9)):
 					dv ~= c == B_DIV || c == B_MOD || c == B_UDIV || c == B_UMOD; cm := c == B_ADD || c == B_MUL || c == B_AND || c == B_OR || c == B_XOR
 					sw := cm && (kc(a) && !kc(b) || gr(d) >= 0 && gr(d) == gr(b) && gr(a) != gr(d)); a1 := if sw { b } else { a }; b1 := if sw { a } else { b }
 					bi := kc(b1) && i32ok(FD[b1] as int) && !dv; bv := if bi { FD[b1] as int } else { 0 }
-					p2 := dv && kc(b1) && cpw(c, FD[b1] as int); R := if dv && !p2 || DBG && c <= B_MUL && x.l >= 0 || gr(d) < 0 || gr(d) == gr(b1) && !bi && gr(a1) != gr(d) { RAX } else { gr(d) }; sh := c == B_SHL || c == B_SAR || c == B_SHR
+					ud := dv && kc(b1) && cdk(c, FD[b1] as int); R := if dv && !ud || DBG && c <= B_MUL && x.l >= 0 || gr(d) < 0 || gr(d) == gr(b1) && !bi && gr(a1) != gr(d) { RAX } else { gr(d) }; sh := c == B_SHL || c == B_SAR || c == B_SHR
 					B := if bi { -1 } else { if sh || dv { if !dv || !kc(b1) { ldv(RCX, b1) } RCX } else { srcr(b1, RCX) } }; ldv(R, a1)
 					if c == B_ADD { if bi { alu_ri(0, R, bv); } else { alu(0x01, R, B); } } if c == B_SUB { if bi { alu_ri(5, R, bv); } else { alu(0x29, R, B); } } if c == B_MUL:
 						if bi: imul_ri(R, R, bv) else: imul(R, B)
@@ -214,7 +217,7 @@ cg_fn(fi int):
 					if c >= B_ADD && c <= B_MUL && x.l >= 0:
 						tk := if DBG { trap_ab(K_OVFD | c << 8 | w << 16, x.l, a1, b1, traps) } else { trap_to(K_OVF, x.l, traps) }
 						if wsz(w) == 8: jcc_l(CC_O, tk) else: mov_rr(RDX, R); ext_r(RDX, w); alu(0x39, RDX, R); jcc_l(CC_NE, tk)
-					if dv && kc(b1) && cdivk(c, FD[b1] as int, R): dv = false
+					if dv && kc(b1) && cdivk(c, FD[b1] as int, R, x.l == -7): dv = false
 					if dv:
 						if kc(b1): ldv(RCX, b1)
 						if x.l >= 0: test_rr(RCX, RCX); jcc_l(CC_E, trap_to(K_DIV0, x.l, traps))
@@ -346,20 +349,20 @@ cmul(d uint, e int) uint, int, bool:
 	return hl, sh, hh == 0
 mulk(r int, v int): if i32ok(v) { imul_ri(r, r, v) } else { mov_ri(RDX, v); imul(r, RDX) }
 andk(r int, v int): if v >= 0 && v < 1 << 31 { alu_ri(4, r, v) } else { mov_ri(RDX, v); alu(0x21, r, RDX) }
-cpw(c int, v int) bool:
-	if c == B_UDIV || c == B_UMOD { d := v as! uint; return d != 0 && d & (d - 1) == 0 } if v == 0 || v == -1 || v <= -(1 << 62) || v >= 1 << 62 { return false } a := if v < 0 { -v } else { v }; a & (a - 1) == 0
-cdivk(c int, v int, R int) bool:
+cdk(c int, v int) bool: if c == B_UDIV || c == B_UMOD { v != 0 } else { v != 0 && v != -1 && v > -(1 << 62) && v < 1 << 62 }
+cdivk(c int, v int, R int, nn bool) bool:
 	if c == B_UDIV || c == B_UMOD:
 		d := v as! uint; if d == 0: return false
 		l ~= 0; while l < 64 && (1 as uint) << l < d: l++
 		if d & (d - 1) == 0: if c == B_UMOD { andk(R, (d - 1) as! int) } else { if l > 0 { sh_ri(5, R, l) } } return true
-		mov_rr(RCX, RAX); m ~= 0 as uint; sh ~= 0; ok ~= false; e ~= 0; while (d >> e) & 1 == 0: e++
-		if l < 64: m1, s1, k1 := cmul(d, 0); m = m1; sh = s1; ok = k1
-		if l < 64 && ok: mov_ri(RDX, m as! int); grp3(4, RDX); mov_rr(RAX, RDX); if sh > 0 { sh_ri(5, RAX, sh) }
+		W := if R == RAX { RCX } else { R }; mov_rr(W, R); m ~= 0 as uint; sh ~= 0; ok ~= false; e ~= 0; Q ~= RDX; while (d >> e) & 1 == 0: e++
+		if l < 64: m1, s1, k1 := cmul(d, if nn && l < 63 { 1 } else { 0 }); m = m1; sh = s1; ok = k1
+		if l < 64 && ok: mov_rr(RAX, W); mov_ri(RDX, m as! int); grp3(4, RDX); if sh > 0 { sh_ri(5, RDX, sh) }
 		else:
-			if l < 64 && e > 0: m2, s2, ok2 := cmul(d >> e, e); sh_ri(5, RAX, e); mov_ri(RDX, m2 as! int); grp3(4, RDX); mov_rr(RAX, RDX); if s2 > 0 { sh_ri(5, RAX, s2) }
-			else: m0, r0 := umagic(if l == 64 { ~d + 1 } else { ((1 as uint) << l) - d }, d); mov_ri(RDX, (m0 + 1) as! int); grp3(4, RDX); mov_rr(RAX, RCX); alu(0x29, RAX, RDX); sh_ri(5, RAX, 1); alu(0x01, RAX, RDX); sh_ri(5, RAX, l - 1)
-		if c == B_UMOD: mulk(RAX, v); alu(0x29, RCX, RAX); mov_rr(RAX, RCX)
+			if l < 64 && e > 0: m2, s2, ok2 := cmul(d >> e, e); mov_rr(RAX, W); sh_ri(5, RAX, e); mov_ri(RDX, m2 as! int); grp3(4, RDX); if s2 > 0 { sh_ri(5, RDX, s2) }
+			else: m0, r0 := umagic(if l == 64 { ~d + 1 } else { ((1 as uint) << l) - d }, d); mov_rr(RAX, W); mov_ri(RDX, (m0 + 1) as! int); grp3(4, RDX); mov_rr(RAX, W); alu(0x29, RAX, RDX); sh_ri(5, RAX, 1); alu(0x01, RAX, RDX); sh_ri(5, RAX, l - 1); Q = RAX
+		if c == B_UMOD { if Q == RDX && !i32ok(v) { mov_rr(RAX, RDX); Q = RAX } mulk(Q, v); alu(0x29, W, Q) } else { mov_rr(W, Q) }
+		mov_rr(R, W)
 		return true
 	if v == 0 || v == -1 || v == -(1 << 62) * 2: return false
 	a := if v < 0 { -v } else { v }
@@ -369,6 +372,7 @@ cdivk(c int, v int, R int) bool:
 	if a & (a - 1) == 0:
 		if c == B_MOD: andk(R, a - 1); return true
 		mov_rr(RDX, R); sh_ri(7, RDX, 63); sh_ri(5, RDX, 64 - l); alu(0x01, R, RDX); sh_ri(7, R, l); if v < 0 { grp3(3, R) } return true
-	m0, r0 := umagic((1 as uint) << (l - 1), a as! uint); m := m0 + 1; mov_rr(RCX, RAX); mov_ri(RDX, m as! int); grp3(5, RDX); alu(0x01, RDX, RCX); sh_ri(7, RDX, l - 1); mov_rr(RAX, RCX); sh_ri(7, RAX, 63); alu(0x29, RDX, RAX); mov_rr(RAX, RDX); if v < 0 { grp3(3, RAX) }
-	if c == B_MOD: mulk(RAX, v); alu(0x29, RCX, RAX); mov_rr(RAX, RCX); sh_ri(7, RAX, 63); andk(RAX, a); alu(0x01, RAX, RCX)
+	m0, r0 := umagic((1 as uint) << (l - 1), a as! uint); m := m0 + 1; W := if R == RAX { RCX } else { R }; mov_rr(W, R); mov_rr(RAX, W); mov_ri(RDX, m as! int); grp3(5, RDX); alu(0x01, RDX, W); sh_ri(7, RDX, l - 1); mov_rr(RAX, W); sh_ri(7, RAX, 63); alu(0x29, RDX, RAX); if v < 0 { grp3(3, RDX) }
+	if c == B_MOD { mov_rr(RAX, RDX); mulk(RAX, v); alu(0x29, W, RAX); mov_rr(RAX, W); sh_ri(7, RAX, 63); andk(RAX, a); alu(0x01, W, RAX) } else { mov_rr(W, RDX) }
+	mov_rr(R, W)
 	true

@@ -1,0 +1,24 @@
+f(u uint) int:
+	x := (u >> 1) as! int
+	y := x + 5
+	y % 7
+g(u uint) int:
+	x := (u >> 1) as! int
+	(x + 9) / 10
+loops(lo int, hi int) int:
+	s ~= 0
+	for i lo..hi: s = (s * 3 + i % 97 + i / 13) % 1000003
+	j ~= hi
+	while j > lo { s = (s * 5 + j % 11) % 1000003; j -= 1 }
+	k ~= lo
+	while k < hi { s = s ^ (k / 7); k += 1 }
+	s % 1000003
+masks(u uint) int:
+	a := (u & 4294967295) as! int
+	b := (a + 77) % 1000
+	c := ((u >> 3) as! int + 1) / 3
+	b * 1000 + c % 1000
+main():
+	print(str(f(1000), " ", g(17), " ", f(4611686018427387904), " ", g(9223372036854775807)))
+	print(str(loops(0, 300), " ", loops(-40, 40), " ", loops(-300, -10)))
+	print(str(masks(18446744073709551615), " ", masks(123456789), " ", masks(9223372036854775808)))
