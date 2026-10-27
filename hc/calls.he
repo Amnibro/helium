@@ -561,6 +561,8 @@ recursive call_nested(n int, nf0 int) int:
 var RINS i32[>..<]
 recursive call_reinst(n int, i0 int) int:
 	if !DEFE.contains(i0 as i32): return call_inst(n, i0)
+	nd0 := FI_[i0].node as int; o ~= AOWN
+	while o >= 0: if FI_[o].node as int == nd0 { return call_inst(n, o) }; o = if FI_[o].bown >= 0 { FI_[o].bown as int } else { FI_[o].par as int }
 	k ~= 0; while k < RINS.len: if RINS[k] as int == i0 && RINS[k + 1] as int == AOWN { return call_inst(n, RINS[k + 2] as int) } k += 3
 	nd := FI_[i0].node as int; i := new_inst(nd, nd, NEND[nd] as int, FI_[i0].par as int); sig_inst(i); FI_[i].bown = AOWN as i32; RINS.push(i0 as i32); RINS.push(AOWN as i32); RINS.push(i as i32)
 	sa := AOWN; check_inst(i); AOWN = sa

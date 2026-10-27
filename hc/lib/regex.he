@@ -1,0 +1,389 @@
+namespace regex
+use std
+use dictionary
+MAX_STATES := 10000
+MAX_WORK := 50000000
+MAX_INSTS := 10000
+MAX_PREFIX := 8
+MAX_REPEAT := 1000
+enum Node { Empty, Bytes { set i32 }, Cat { first i32, second i32 }, Alt { first i32, second i32 }, Repeat { sub i32, min i32, max i32, greedy bool }, Group { sub i32, index i32 } }
+enum Inst { Byte { set i32, next i32 }, Split { first i32, second i32 }, Save { slot i32, next i32 }, Match }
+struct Dfa { start i32, match_end i32, special i32, trans i32[] }
+enum Skip { Scan, Prefix, Inner }
+struct Prefilter { len int, at1 int, at2 int, set1 ByteSet, set2 ByteSet }
+struct Place { start int, start_back bool, end int, end_back bool }
+struct Regex { groups int, nullable bool, placed bool, entry i32, classes byte[256], skip Skip, filter Prefilter, inner ByteSet, fwd Dfa, rev Dfa, before Dfa, places Place[], prog Inst[], sets bool[256][] }
+add_range(s bool[256]&, lo int, hi int): for b lo..hi + 1 { s[b] = true }
+is_letter(b int) bool: b >= 'a' && b <= 'z' || b >= 'A' && b <= 'Z'
+fold_case(s bool[256]&): for b 65..91 { if s[b] || s[b + 32] { s[b] = true; s[b + 32] = true } }
+add_perl_class(s bool[256]&, c int) bool:
+	t bool[256] ~= [false; 256]; lc := if c >= 'A' && c <= 'Z' { c + 32 } else { c }
+	if lc == 'd' { add_range(t, '0', '9') } else if lc == 'w' { add_range(t, 'a', 'z'); add_range(t, 'A', 'Z'); add_range(t, '0', '9'); t['_'] = true } else if lc == 's' { add_range(t, '\t', '\r'); t[' '] = true } else { return false }
+	ng := c != lc; for b 256 { if t[b] != ng { s[b] = true } }
+	true
+escaped_byte(c int) int: if c == 'n' { '\n' } else if c == 't' { '\t' } else if c == 'r' { '\r' } else if c == 'f' { 0x0c } else if c == 'v' { 0x0b } else if c >= 0x21 && c < 0x7f && !is_letter(c) && !(c >= '0' && c <= '9') { c } else { -1 }
+hex_value(c int) int: if c >= '0' && c <= '9' { c - '0' } else if c >= 'a' && c <= 'f' { c - 'a' + 10 } else if c >= 'A' && c <= 'F' { c - 'A' + 10 } else { -1 }
+compile(pattern byte[:]) Regex: err byte[>..] ~= []; build(pattern, err, true)
+compile(pattern byte[:], err byte[>..]&) Regex: build(pattern, err, false)
+no_place() Place: Place{-1, false, -1, false}
+dead() Dfa: Dfa{0, 1, 1, [0]}
+no_filter() Prefilter: n := byte_set([false; 256]); Prefilter{0, 0, 0, n, n}
+nothing() Regex: Regex{1, false, false, 0, [0; 256], Skip.Scan, no_filter(), byte_set([false; 256]), dead(), dead(), dead(), [], [Inst.Match], []}
+build(pattern byte[:], err byte[>..]&, aborts bool) Regex:
+	nodes Node[>..] ~= []; sets bool[256][>..] ~= []; pos ~= 0; fold ~= false; dot_nl ~= false; groups ~= 1
+	stop(message byte[:]) i32:
+		if aborts: abort(message)
+		err.append(message); return nothing() from build
+	fail_at(what byte[:], at int) i32: stop(str("regex: ", what, " at offset ", at, " in ", pattern))
+	fail(what byte[:]) i32: fail_at(what, pos)
+	add(n Node) i32: nodes.push(n); (nodes.len - 1) as i32
+	add_bytes(s bool[256]) i32: sets.push(s); add(Node.Bytes{(sets.len - 1) as i32})
+	more() bool: pos < pattern.len
+	literal(c int) i32: s bool[256] ~= [false; 256]; s[c] = true; if fold { fold_case(s) }; add_bytes(s)
+	number() i32:
+		st := pos; v ~= 0
+		while more() && pattern[pos] >= '0' && pattern[pos] <= '9':
+			v = v * 10 + (pattern[pos] - '0')
+			if v > MAX_REPEAT: return fail("repetition count too large")
+			pos += 1
+		if pos <= st: return fail("expected a repetition count")
+		v as i32
+	escape_byte() byte:
+		at := pos - 1
+		if !more(): return fail_at("trailing backslash", at) as! byte
+		c := pattern[pos]; pos += 1
+		if c == 'x':
+			if pos + 2 > pattern.len || hex_value(pattern[pos]) < 0 || hex_value(pattern[pos + 1]) < 0: return fail_at("bad \\x escape", at) as! byte
+			v := hex_value(pattern[pos]) * 16 + hex_value(pattern[pos + 1]); pos += 2; return v as byte
+		b := escaped_byte(c)
+		if b < 0: return fail_at("unsupported escape", at) as! byte
+		b as byte
+	class() i32:
+		s bool[256] ~= [false; 256]; ng ~= false
+		if more() && pattern[pos] == '^': ng = true; pos += 1
+		first ~= true
+		loop:
+			if !more(): return fail("unclosed class")
+			c := pattern[pos]
+			if c == ']' && !first: pos += 1; break
+			first = false
+			if c == '[': return fail("nested classes are not supported")
+			if (c == '&' || c == '-' || c == '~') && pos + 1 < pattern.len && pattern[pos + 1] == c: return fail("class set operations are not supported")
+			pos += 1; lo ~= c
+			if c == '\\':
+				if more() && add_perl_class(s, pattern[pos]): pos += 1; continue
+				lo = escape_byte()
+			if pos + 1 < pattern.len && pattern[pos] == '-' && pattern[pos + 1] != ']':
+				pos += 1
+				if pattern[pos] == '-': return fail("class set operations are not supported")
+				hi ~= pattern[pos]; pos += 1
+				if hi == '\\': hi = escape_byte()
+				if hi < lo: return fail("bad class range")
+				add_range(s, lo, hi)
+			else: s[lo] = true
+		if fold: fold_case(s)
+		if ng: for &x s { x = !x }
+		add_bytes(s)
+	escape() i32:
+		s bool[256] ~= [false; 256]
+		if more() && add_perl_class(s, pattern[pos]): pos += 1; return add_bytes(s)
+		literal(escape_byte())
+	recursive group() i32:
+		of := fold; od := dot_nl; ix ~= -1
+		if more() && pattern[pos] == '?':
+			pos += 1
+			if more() && (pattern[pos] == '<' || pattern[pos] == 'P'):
+				while more() && pattern[pos] != '>': pos += 1
+				if !more(): return fail("unclosed group name")
+				pos += 1; ix = groups; groups += 1
+			else:
+				on ~= true
+				loop:
+					if !more(): return fail("unclosed group")
+					c := pattern[pos]; pos += 1
+					if c == ')': return add(Node.Empty)
+					if c == ':': break
+					if c == '-' { on = false } else if c == 'i' { fold = on } else if c == 's' { dot_nl = on } else { return fail_at("unsupported flag", pos - 1) }
+		else: ix = groups; groups += 1
+		body := parse_alt()
+		if !more() || pattern[pos] != ')': return fail("unclosed group")
+		pos += 1; fold = of; dot_nl = od
+		if ix < 0 { body } else { add(Node.Group{body, ix as i32}) }
+	recursive parse_atom() i32:
+		c := pattern[pos]
+		if c == '*' || c == '+' || c == '?' || c == '{': return fail("nothing to repeat")
+		if c == '^' || c == '$': return fail("anchors are not supported")
+		pos += 1
+		if c == '(': return group()
+		if c == '[': return class()
+		if c == '\\': return escape()
+		if c == '.': s bool[256] ~= [true; 256]; if !dot_nl { s['\n'] = false }; return add_bytes(s)
+		literal(c)
+	recursive parse_repeat() i32:
+		sub ~= parse_atom()
+		while more():
+			c := pattern[pos]; mn i32 ~= 0; mx i32 ~= -1
+			if c == '*' { pos += 1 } else if c == '+' { mn = 1; pos += 1 } else if c == '?' { mx = 1; pos += 1 } else if c == '{':
+				pos += 1; mn = number(); mx = mn
+				if more() && pattern[pos] == ',': pos += 1; mx = if more() && pattern[pos] == '}' { -1 } else { number() }
+				if !more() || pattern[pos] != '}': return fail("unclosed repetition")
+				if mx >= 0 && mx < mn: return fail("bad repetition range")
+				pos += 1
+			else: break
+			gr ~= true; if more() && pattern[pos] == '?' { gr = false; pos += 1 }
+			sub = add(Node.Repeat{sub, mn, mx, gr})
+		sub
+	recursive parse_cat() i32:
+		seq ~= -1
+		while more() && pattern[pos] != '|' && pattern[pos] != ')': it := parse_repeat(); seq = if seq < 0 { it } else { add(Node.Cat{seq as i32, it}) }
+		if seq < 0 { add(Node.Empty) } else { seq as i32 }
+	recursive parse_alt() i32:
+		a := parse_cat()
+		if more() && pattern[pos] == '|': pos += 1; b := parse_alt(); return add(Node.Alt{a, b})
+		a
+	push(prog Inst[>..]&, i Inst) i32:
+		if prog.len >= MAX_INSTS: stop(str("regex: the pattern is too large: ", pattern))
+		prog.push(i); (prog.len - 1) as i32
+	choice(gr bool, body i32, ex i32) Inst: if gr { Inst.Split{body, ex} } else { Inst.Split{ex, body} }
+	recursive nullable(n i32) bool:
+		match nodes[n]:
+			Empty => true
+			Bytes => false
+			Cat c => nullable(c.first) && nullable(c.second)
+			Alt a => nullable(a.first) || nullable(a.second)
+			Group g => nullable(g.sub)
+			Repeat r => r.min == 0 || nullable(r.sub)
+	recursive emit(prog Inst[>..]&, n i32, next i32, rv bool) i32:
+		match nodes[n]:
+			Empty => { return next }
+			Bytes b => { return push(prog, Inst.Byte{b.set, next}) }
+			Cat c => { if rv { return emit(prog, c.second, emit(prog, c.first, next, rv), rv) }; return emit(prog, c.first, emit(prog, c.second, next, rv), rv) }
+			Alt a => { x := emit(prog, a.first, next, rv); y := emit(prog, a.second, next, rv); return push(prog, Inst.Split{x, y}) }
+			Group g => { if rv { return emit(prog, g.sub, next, rv) }; cl := push(prog, Inst.Save{2 * g.index + 1, next}); bd := emit(prog, g.sub, cl, rv); return push(prog, Inst.Save{2 * g.index, bd}) }
+			Repeat r => { t ~= next; if r.max >= 0 { for k r.max - r.min { t = push(prog, choice(r.greedy, emit(prog, r.sub, t, rv), next)) }; for k r.min { t = emit(prog, r.sub, t, rv) }; return t }; hd := push(prog, Inst.Match); bd := emit(prog, r.sub, hd, rv); prog[hd] = choice(r.greedy, bd, next); if r.min == 0 { if nullable(r.sub) { return push(prog, choice(r.greedy, bd, next)) }; return hd }; t = bd; for k r.min - 1 { t = emit(prog, r.sub, t, rv) }; return t }
+	recursive fixed_len(n i32) int:
+		match nodes[n]:
+			Empty => 0
+			Bytes => 1
+			Cat c => { a := fixed_len(c.first); b := fixed_len(c.second); if a < 0 || b < 0 { -1 } else { a + b } }
+			Alt a => { x := fixed_len(a.first); if x == fixed_len(a.second) { x } else { -1 } }
+			Repeat r => { x := fixed_len(r.sub); if r.min == r.max && x >= 0 { x * r.min } else { -1 } }
+			Group g => fixed_len(g.sub)
+	recursive alphabet(n i32, s bool[256]&):
+		match nodes[n]:
+			Empty => {}
+			Bytes b => { for c 256 { if sets[b.set][c] { s[c] = true } } }
+			Cat c => { alphabet(c.first, s); alphabet(c.second, s) }
+			Alt a => { alphabet(a.first, s); alphabet(a.second, s) }
+			Repeat r => { if r.max != 0 { alphabet(r.sub, s) } }
+			Group g => { alphabet(g.sub, s) }
+	recursive first_bytes(n i32, s bool[256]&) bool:
+		match nodes[n]:
+			Empty => true
+			Bytes b => { for c 256 { if sets[b.set][c] { s[c] = true } }; false }
+			Cat c => if first_bytes(c.first, s) { first_bytes(c.second, s) } else { false }
+			Alt a => { x := first_bytes(a.first, s); y := first_bytes(a.second, s); x || y }
+			Repeat r => { if r.max == 0 { return true }; e := first_bytes(r.sub, s); e || r.min == 0 }
+			Group g => first_bytes(g.sub, s)
+	recursive flatten(n i32, out i32[>..]&):
+		match nodes[n]:
+			Cat c => { flatten(c.first, out); flatten(c.second, out) }
+			_ => { out.push(n) }
+	recursive place(n i32, hd int, tl int, places Place[>..]&):
+		match nodes[n]:
+			Cat c => { a := fixed_len(c.first); b := fixed_len(c.second); place(c.first, hd, if tl >= 0 && b >= 0 { tl + b } else { -1 }, places); place(c.second, if hd >= 0 && a >= 0 { hd + a } else { -1 }, tl, places) }
+			Group g => { ln := fixed_len(g.sub); p ~= no_place(); if hd >= 0 { p.start = hd } else if tl >= 0 && ln >= 0 { p.start = tl + ln; p.start_back = true }; if tl >= 0 { p.end = tl; p.end_back = true } else if hd >= 0 && ln >= 0 { p.end = hd + ln }; places[g.index] = p; place(g.sub, hd, tl, places) }
+			_ => {}
+	root := parse_alt()
+	if more(): fail("unmatched )")
+	prog Inst[>..] ~= []; rprog Inst[>..] ~= []
+	top := add(Node.Group{root, 0})
+	entry i32 := emit(prog, top, push(prog, Inst.Match), false); rentry i32 := emit(rprog, root, push(rprog, Inst.Match), true)
+	sets.push([true; 256])
+	head i32 := push(prog, Inst.Match); any := push(prog, Inst.Byte{(sets.len - 1) as i32, head}); prog[head] = Inst.Split{entry, any}
+	prefix := prefix_sets(prog, sets, entry); filter, fshare := choose_filter(prefix)
+	items i32[>..] ~= []; flatten(root, items)
+	inner bool[256] ~= [false; 256]; ishare ~= 1.0; iat ~= -1
+	for t 1..items.len:
+		bf bool[256] ~= [false; 256]; for k t { alphabet(items[k], bf) }
+		st bool[256] ~= [false; 256]; em ~= true
+		for k t..items.len { if !first_bytes(items[k], st) { em = false; break } }
+		sh ~= 0.0; dj ~= !em
+		for c 256 { if st[c] { sh += frequency(c as byte) / 100.0; if bf[c] { dj = false } } }
+		if dj && sh < ishare: inner = st; ishare = sh; iat = t
+	skip ~= Skip.Scan; bprog Inst[>..] ~= []; bentry i32 ~= push(bprog, Inst.Match)
+	if prefix.len > 0 && iat > 0 && ishare < 0.1 && ishare * 4.0 < fshare:
+		skip = Skip.Inner; part ~= items[0]
+		for k 1..iat: part = add(Node.Cat{part, items[k]})
+		bentry = emit(bprog, part, bentry, true)
+	else if fshare < 0.1: skip = Skip.Prefix
+	places Place[>..] ~= []; places.resize(groups, no_place()); place(top, 0, 0, places)
+	placed ~= true; for p places { if p.start < 0 || p.end < 0 { placed = false } }
+	classes := byte_classes(sets); scans := skip != Skip.Scan; big ~= false
+	re := Regex{groups, prefix.len == 0, placed, entry, classes, skip, filter, byte_set(inner), build_dfa(prog, sets, classes, head, true, scans, big), build_dfa(rprog, sets, classes, rentry, false, false, big), build_dfa(bprog, sets, classes, bentry, false, false, big), copy(places), copy(prog), copy(sets)}
+	if big: stop(str("regex: the pattern's DFA would be too large: ", pattern))
+	re
+prefix_sets(prog Inst[:], sets bool[256][:], entry i32) bool[256][>..]:
+	out bool[256][>..] ~= []; front i32[>..] ~= []; next i32[>..] ~= []; seen i32[>..] ~= []; seen.resize(prog.len, -1); round i32 ~= 0; stack i32[>..<] ~= []
+	reach(pc0 i32) bool:
+		hit ~= false; stack.push(pc0)
+		while stack.len > 0:
+			pc := stack.pop()
+			if seen[pc] == round: continue
+			seen[pc] = round
+			match prog[pc]:
+				Byte => next.push(pc)
+				Split sp => { stack.push(sp.second); stack.push(sp.first) }
+				Save sv => stack.push(sv.next)
+				Match => { hit = true }
+		hit
+	if reach(entry): return out
+	while out.len < MAX_PREFIX:
+		front.clear(); front.append(next); next.clear(); round += 1
+		s bool[256] ~= [false; 256]; hit ~= false
+		for pc front:
+			match prog[pc]:
+				Byte b => { for c 256 { if sets[b.set][c] { s[c] = true } }; if reach(b.next) { hit = true } }
+				_ => {}
+		out.push(s)
+		if hit: break
+	out
+frequency(b byte) real: if b == ' ' { 15.0 } else if b >= 'a' && b <= 'z' { if position("etaoinsrhl", b) >= 0 { 5.0 } else { 1.0 } } else if b >= '0' && b <= '9' { 2.0 } else if b >= 'A' && b <= 'Z' { 0.5 } else if b == '\n' || position(".,-/:;\"'()=_", b) >= 0 { 1.0 } else if b > ' ' && b < 0x7f { 0.2 } else { 0.05 }
+choose_filter(prefix bool[256][:]) Prefilter, real:
+	sh real[>..] ~= []
+	for &s prefix: f ~= 0.0; for b 256 { if s[b] { f += frequency(b as byte) } }; sh.push(f / 100.0)
+	best ~= 1.0; a1 ~= 0; a2 ~= 0
+	for j prefix.len: for k j..prefix.len { p := if j == k { sh[j] } else { sh[j] * sh[k] }; if p < best { best = p; a1 = j; a2 = k } }
+	if prefix.len == 0: return no_filter(), 1.0
+	return Prefilter{prefix.len, a1, a2, byte_set(prefix[a1]), byte_set(prefix[a2])}, best
+byte_classes(sets bool[256][:]) byte[256]:
+	cl byte[256] ~= [0; 256]
+	for &s sets:
+		sp i32[512] ~= [-1; 512]; n i32 ~= 0
+		for b 256: k := (cl[b] as int) * 2 + (if s[b] { 1 } else { 0 }); if sp[k] < 0 { sp[k] = n; n += 1 }; cl[b] = sp[k] as byte
+	cl
+build_dfa(prog Inst[:], sets bool[256][:], classes byte[256], start_pc i32, leftmost bool, skip_start bool, big bool&) Dfa:
+	reps byte[>..] ~= []; for b 256 { if classes[b] == reps.len { reps.push(b as byte) } }
+	stride := reps.len; lists i32[>..] ~= []; bounds int[>..] ~= [0]; matching bool[>..] ~= []; keys byte[>..] ~= []; index ~= dictionary<const byte[:], i32>{}
+	trans i32[>..] ~= []; list i32[>..] ~= []; hit ~= false; probe byte[>..] ~= []; seen i32[>..] ~= []; seen.resize(prog.len, -1); round i32 ~= 0; stack i32[>..<] ~= []
+	follow(pc0 i32) bool:
+		stack.push(pc0)
+		while stack.len > 0:
+			pc := stack.pop()
+			if seen[pc] == round: continue
+			seen[pc] = round
+			match prog[pc]:
+				Byte => list.push(pc)
+				Split sp => { stack.push(sp.second); stack.push(sp.first) }
+				Save sv => stack.push(sv.next)
+				Match => { hit = true; if leftmost { stack.clear(); return true } }
+		false
+	intern() i32:
+		probe.clear(); for pc list { format_uleb(probe, pc) }; probe.push(if hit { 1 } else { 0 })
+		kn := index.get(probe)
+		if kn: return kn
+		id := matching.len as i32; k := keys.len; keys.append(probe); index.insert(keys[k..], id)
+		lists.append(list); bounds.push(lists.len); matching.push(hit)
+		if matching.len > MAX_STATES || lists.len * stride > MAX_WORK: big = true; return dead() from build_dfa
+		id
+	begin(): list.clear(); hit = false; round += 1
+	begin(); intern(); begin(); follow(start_pc)
+	start := intern(); k ~= 0
+	while k < matching.len:
+		for c stride:
+			begin()
+			for at bounds[k]..bounds[k + 1]:
+				match prog[lists[at]]:
+					Byte b => if sets[b.set][reps[c]] && follow(b.next) { break }
+					_ => {}
+			trans.push(intern())
+		k += 1
+	order i32[>..] ~= [0]; for s 1..matching.len { if matching[s] { order.push(s as i32) } }
+	me := order.len; ss := skip_start && !matching[start]
+	if ss: order.push(start)
+	sp := order.len
+	for s 1..matching.len: if !matching[s] && !(ss && s == start) { order.push(s as i32) }
+	num i32[>..] ~= []; num.resize(order.len, 0); for o, n order { num[o] = n as i32 }
+	w := stride as i32; tb i32[>..] ~= []
+	for o order: for c stride { tb.push(num[trans[o * stride + c]] * w) }
+	Dfa{num[start] * w, (me as i32) * w, (sp as i32) * w, copy(tb)}
+skip_prefix(f Prefilter&, text byte[:], i int) int:
+	fits := text.len - f.len + 1; assert(i >= 0)
+	if i >= fits: return text.len
+	p := if f.at1 == f.at2 { find_any(text[i + f.at1..fits + f.at1], f.set1) } else { find_pair(text[i + f.at1..fits + f.at2], f.set1, f.at2 - f.at1, f.set2) }
+	if p >= 0 { i + p } else { text.len }
+skip_inner(re Regex&, text byte[:], i int) int:
+	assert(i >= 0); lo ~= i; q ~= i
+	while q < text.len:
+		k := find_any(text[q..], re.inner)
+		if k < 0: break
+		q += k; s := scan_back(re, re.before, text, lo, q)
+		if s >= 0: return s
+		q += 1; lo = q
+	text.len
+resume(re Regex&, text byte[:], i int) int:
+	match re.skip:
+		Prefix => skip_prefix(re.filter, text, i)
+		Inner => skip_inner(re, text, i)
+		Scan => i
+find_end(re Regex&, text byte[:], at int) int:
+	tr := re.fwd.trans; sp := re.fwd.special; s ~= re.fwd.start; last ~= if re.nullable { at } else { -1 }; i ~= resume(re, text, at)
+	while i < text.len:
+		s = tr[s + re.classes[text[i]]]; i += 1
+		if s < sp: if s >= re.fwd.match_end { i = resume(re, text, i) } else if s == 0 { return last } else { last = i }
+	last
+scan_back(re Regex&, d Dfa&, text byte[:], lo int, end int) int:
+	tr := d.trans; me := d.match_end; s ~= d.start; first ~= if s < me { end } else { -1 }
+	assert(lo >= 0 && end <= text.len); i ~= end
+	while i > lo:
+		s = tr[s + re.classes[text[i - 1]]]; i -= 1
+		if s < me: if s == 0 { break }; first = i
+	first
+find_start(re Regex&, text byte[:], at int, end int) int: scan_back(re, re.rev, text, at, end)
+find(re Regex&, text byte[:]) int, int:
+	e := find_end(re, text, 0)
+	if e < 0: return -1, -1
+	return find_start(re, text, 0, e), e
+matches(re Regex&, text byte[:]) bool: find_end(re, text, 0) >= 0
+each_match<F>(re Regex&, text byte[:]):
+	at ~= 0; le ~= -1
+	while at <= text.len:
+		e ~= find_end(re, text, at)
+		if e < 0: break
+		s ~= find_start(re, text, at, e)
+		if s == e && e == le:
+			if at == text.len: break
+			e = find_end(re, text, at + 1)
+			if e < 0: break
+			s = find_start(re, text, at + 1, e)
+		F(s, e); at = e; le = e
+count(re Regex&, text byte[:]) int:
+	n ~= 0
+	if re.nullable: each_match(re, text) { s, e => n += 1 }; return n
+	at ~= 0
+	loop:
+		e := find_end(re, text, at)
+		if e < 0: break
+		n += 1; at = e
+	n
+struct Captures { text const byte[:], slots const int[:] }
+group(c Captures, k int) const byte[:]: s := c.slots[2 * k]; if s < 0 { c.text[0..0] } else { c.text[s..c.slots[2 * k + 1]] }
+enum Frame { Explore { pc i32, at int }, Restore { slot i32, old int } }
+backtrack(re Regex&, text byte[:], start int, end int, slots int[:], visited bool[>..]&):
+	prog := re.prog; sets := re.sets; w := end - start + 1; need := prog.len * w
+	if visited.len < need: visited.resize(need, false)
+	fill(visited[..need], false); stack Frame[>..<] ~= []; fill(slots, -1); stack.push(Frame.Explore{re.entry, start})
+	while stack.len > 0:
+		match stack.pop():
+			Restore r => { slots[r.slot] = r.old }
+			Explore x => { pc ~= x.pc; i ~= x.at; loop { k := pc * w + (i - start); if visited[k] { break }; visited[k] = true; match prog[pc] { Byte b => { if i >= end || !sets[b.set][text[i]] { break }; pc = b.next; i += 1 }, Split sp => { stack.push(Frame.Explore{sp.second, i}); pc = sp.first }, Save sv => { stack.push(Frame.Restore{sv.slot, slots[sv.slot]}); slots[sv.slot] = i; pc = sv.next }, Match => { return } } } }
+captures(re Regex&, text byte[:], start int, end int, slots int[:], visited bool[>..]&):
+	if !re.placed: backtrack(re, text, start, end, slots, visited); return
+	for &p, k re.places: slots[2 * k] = if p.start_back { end - p.start } else { start + p.start }; slots[2 * k + 1] = if p.end_back { end - p.end } else { start + p.end }
+each_captures<F>(re Regex&, text byte[:]):
+	slots int[>..] ~= []; slots.resize(2 * re.groups, -1); visited bool[>..] ~= []
+	each_match(re, text) { s, e => captures(re, text, s, e, slots, visited); F(Captures{text, slots}) }
+format_replaced<F>(out byte[>..]&, re Regex&, text byte[:]):
+	last ~= 0
+	each_captures(re, text) { caps => out.append(text[last..caps.slots[0]]); out.append(F(caps)); last = caps.slots[1] }
+	out.append(text[last..])
