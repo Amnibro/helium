@@ -1,5 +1,8 @@
 namespace ffi
 extern cstr(p uint, out byte[>..]&) bool = "hr_ffi_cstr"
 extern bytes(p uint, n int, out byte[>..]&) bool = "hr_ffi_bytes"
+extern ptr(s const byte[:]) uint = "hr_ffi_ptr"
+extern write(p uint, s const byte[:]) = "hr_ffi_write"
+extern read(p uint, o byte[:]) = "hr_ffi_read"
 cstr(p uint) byte[>..]: o byte[>..] ~= []; cstr(p, o); o
 bytes(p uint, n int) byte[>..]: o byte[>..] ~= []; bytes(p, n, o); o

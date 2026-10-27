@@ -503,6 +503,9 @@ static int64_t hr_find_any(hsl s, const void *set) { const bool *m = set; for (i
 static int64_t hr_find_pair(hsl s, const void *a, int64_t d, const void *b) { const bool *x = a, *y = b; for (int64_t i = 0; i + d < s.n; i++) if (x[s.p[i]] && y[s.p[i + d]]) return i; return -1; }
 static bool hr_ffi_cstr(uint64_t p, hrv *out) { if (!p) return false; hr_append(out, (const void *)(uintptr_t)p, (int64_t)strlen((const char *)(uintptr_t)p), 1); return true; }
 static bool hr_ffi_bytes(uint64_t p, int64_t n, hrv *out) { if (!p || n < 0) return false; hr_append(out, (const void *)(uintptr_t)p, n, 1); return true; }
+static uint64_t hr_ffi_ptr(hsl s) { return (uint64_t)(uintptr_t)s.p; }
+static void hr_ffi_write(uint64_t p, hsl s) { if (p && s.n > 0) memcpy((void *)(uintptr_t)p, s.p, (size_t)s.n); }
+static void hr_ffi_read(uint64_t p, hsl o) { if (p && o.n > 0) memcpy(o.p, (const void *)(uintptr_t)p, (size_t)o.n); }
 typedef struct hr_qmsg { struct hr_qmsg *next; int64_t sz; uint8_t d[]; } hr_qmsg;
 typedef struct { pthread_mutex_t mu; pthread_cond_t cv, cv_put; hr_qmsg *head, *tail; int64_t count, limit; bool init, closed; } hr_queue;
 static pthread_mutex_t hr_qinit_mu = PTHREAD_MUTEX_INITIALIZER;

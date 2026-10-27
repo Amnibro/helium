@@ -1,0 +1,1074 @@
+namespace gfx
+use std
+use vec
+use math
+use os
+use ffi
+WINDOW_RESIZABLE := 1 as i32; WINDOW_HIDDEN := 2 as i32; WINDOW_FULLSCREEN := 4 as i32; NO_VSYNC := 16 as i32; DEBUG := 32 as i32
+VERTEX := 0 as i32; FRAGMENT := 1 as i32; COMPUTE := 2 as i32
+BUFFER_VERTEX := 1 as i32; BUFFER_INDEX := 2 as i32; BUFFER_INDIRECT := 4 as i32; BUFFER_STORAGE := 8 as i32; BUFFER_COMPUTE_READ := 16 as i32; BUFFER_COMPUTE_WRITE := 32 as i32
+TEXTURE_2D := 0 as i32; TEXTURE_2D_ARRAY := 1 as i32; TEXTURE_3D := 2 as i32; TEXTURE_CUBE := 3 as i32
+SAMPLED := 1 as i32; COLOR_TARGET := 2 as i32; DEPTH_TARGET := 4 as i32; STORAGE_READ := 8 as i32; COMPUTE_READ := 16 as i32; COMPUTE_WRITE := 32 as i32; COMPUTE_READ_WRITE := 64 as i32
+RGBA8 := 1 as i32; BGRA8 := 2 as i32; RGBA8_SRGB := 3 as i32; R8 := 4 as i32; RG8 := 5 as i32; RGBA16F := 6 as i32; RGBA32F := 7 as i32; R16F := 8 as i32; RG16F := 9 as i32; R32F := 10 as i32
+RG32F := 11 as i32; R32UI := 12 as i32; RGBA8UI := 13 as i32; RGB10A2 := 14 as i32; RG11B10F := 15 as i32; DEPTH16 := 16 as i32; DEPTH24 := 17 as i32; DEPTH32F := 18 as i32; DEPTH24_STENCIL8 := 19 as i32; DEPTH := 20 as i32
+NEAREST := 0 as i32; LINEAR := 1 as i32; REPEAT := 0 as i32; MIRROR := 1 as i32; CLAMP := 2 as i32
+COMPARE_NEVER := 1 as i32; COMPARE_LESS := 2 as i32; COMPARE_EQUAL := 3 as i32; COMPARE_LESS_EQUAL := 4 as i32; COMPARE_GREATER := 5 as i32; COMPARE_NOT_EQUAL := 6 as i32; COMPARE_GREATER_EQUAL := 7 as i32; COMPARE_ALWAYS := 8 as i32
+TRIANGLES := 0 as i32; TRIANGLE_STRIP := 1 as i32; LINES := 2 as i32; LINE_STRIP := 3 as i32; POINTS := 4 as i32
+CULL_NONE := 0 as i32; CULL_FRONT := 1 as i32; CULL_BACK := 2 as i32
+BLEND_NONE := 0 as i32; BLEND_ALPHA := 1 as i32; BLEND_ADD := 2 as i32; BLEND_PREMULTIPLIED := 3 as i32; BLEND_MULTIPLY := 4 as i32
+VERTEX_FLOAT := 1 as u8; VERTEX_FLOAT2 := 2 as u8; VERTEX_FLOAT3 := 3 as u8; VERTEX_FLOAT4 := 4 as u8; VERTEX_INT := 5 as u8; VERTEX_INT2 := 6 as u8; VERTEX_INT3 := 7 as u8; VERTEX_INT4 := 8 as u8
+VERTEX_UINT := 9 as u8; VERTEX_UINT2 := 10 as u8; VERTEX_UINT3 := 11 as u8; VERTEX_UINT4 := 12 as u8; VERTEX_UBYTE4_NORM := 13 as u8; VERTEX_BYTE4_NORM := 14 as u8; VERTEX_UBYTE4 := 15 as u8
+VERTEX_SHORT2 := 16 as u8; VERTEX_SHORT4 := 17 as u8; VERTEX_USHORT2_NORM := 18 as u8; VERTEX_USHORT4_NORM := 19 as u8; VERTEX_HALF2 := 20 as u8; VERTEX_HALF4 := 21 as u8
+LOAD_MIPS := 1 as i32; LOAD_SRGB := 2 as i32
+MOUSE_LEFT := 1 as i32; MOUSE_MIDDLE := 2 as i32; MOUSE_RIGHT := 3 as i32; MOUSE_X1 := 4 as i32; MOUSE_X2 := 5 as i32
+EVENT_KEY := 1 as i32; EVENT_TEXT := 2 as i32; EVENT_MOUSE_MOTION := 3 as i32; EVENT_MOUSE_BUTTON := 4 as i32; EVENT_MOUSE_WHEEL := 5 as i32; EVENT_FOCUS_GAINED := 6 as i32; EVENT_FOCUS_LOST := 7 as i32
+MOD_SHIFT := 1 as i32; MOD_CTRL := 2 as i32; MOD_ALT := 4 as i32; MOD_GUI := 8 as i32
+struct Buffer { id u32 }
+struct Texture { id u32 }
+struct Sampler { id u32 }
+struct Pipeline { id u32 }
+struct ComputePipeline { id u32 }
+struct TextureDesc { kind i32 = 0, format i32 = 1, usage i32 = 1, width i32, height i32, depth i32 = 1, mips i32 = 1, samples i32 = 1 }
+struct Region { mip i32 = 0, layer i32 = 0, x i32 = 0, y i32 = 0, z i32 = 0, w i32 = 0, h i32 = 0, d i32 = 0 }
+struct SamplerDesc { min_filter i32 = 1, mag_filter i32 = 1, mip_filter i32 = 1, wrap_u i32 = 0, wrap_v i32 = 0, wrap_w i32 = 0, max_anisotropy f32 = 1.0, compare i32 = 0 }
+struct PipelineDesc { primitive i32 = 0, cull i32 = 0, clockwise bool = false, wireframe bool = false, depth_test bool = false, depth_write bool = false, depth_compare i32 = 2, blend i32 = 0, instance_location i32 = -1, depth_bias f32 = 0.0, depth_bias_slope f32 = 0.0, formats u8[16] = [0; 16] }
+struct Event { kind i32, scancode i32, keycode i32, mods i32, down bool, repeat bool, button i32, clicks i32, codepoint u32, x f32, y f32 }
+struct PassDesc { color Texture[4] = [Texture{0}; 4], resolve Texture[4] = [Texture{0}; 4], depth Texture = Texture{0}, layer i32 = 0, mip i32 = 0, clear_color bool = true, clear_depth bool = true, color_value float4 = float4{0.0, 0.0, 0.0, 1.0}, depth_value f32 = 1.0 }
+struct mat4 { c0 float4, c1 float4, c2 float4, c3 float4 }
+mat4_identity := mat4{float4{1.0, 0.0, 0.0, 0.0}, float4{0.0, 1.0, 0.0, 0.0}, float4{0.0, 0.0, 1.0, 0.0}, float4{0.0, 0.0, 0.0, 1.0}}
+struct CTex { ty i32, fmt i32, usage u32, w u32, h u32, lcd u32, lv u32, sc i32, props u32 }
+struct CCol { tex uint, mip u32, layer u32, r f32, g f32, b f32, a f32, load i32, store i32, rtex uint, rmip u32, rlayer u32, cyc bool, cycr bool, pad 6 }
+struct CDep { tex uint, cd f32, load i32, store i32, sload i32, sstore i32, cyc bool, cs u8, mip u8, layer u8 }
+struct CBlit { stex uint, smip u32, slay u32, sx u32, sy u32, sw u32, sh u32, dtex uint, dmip u32, dlay u32, dx u32, dy u32, dw u32, dh u32, load i32, r f32, g f32, b f32, a f32, flip i32, filter i32, cyc bool, pad 3 }
+struct CInfo3 { usage u32, size u32, props u32 }
+struct CLoc { tb uint, off u32, pad 4 }
+struct CBReg { buf uint, off u32, size u32 }
+struct CTTI { tb uint, off u32, ppr u32, rpl u32, pad 4 }
+struct CTReg { tex uint, mip u32, layer u32, x u32, y u32, z u32, w u32, h u32, d u32 }
+struct CSmp { minf i32, magf i32, mipm i32, au i32, av i32, aw i32, bias f32, an f32, cmp i32, minl f32, maxl f32, ean bool, ecmp bool, pad 2, props u32 }
+struct CSh { size uint, code uint, entry uint, fmt u32, stage i32, nsmp u32, nst u32, nsb u32, nub u32, props u32, pad 4 }
+struct CVB { slot u32, pitch u32, rate i32, step u32 }
+struct CVA { loc u32, slot u32, fmt i32, off u32 }
+struct CCTD { fmt i32, sc i32, dc i32, cop i32, sa i32, da i32, aop i32, wm u8, eb bool, ewm bool, pad 5 }
+struct CGP { vs uint, fs uint, vbd uint, nvb u32, pad 4, va uint, nva u32, pad 4, prim i32, fill i32, cull i32, ff i32, dbc f32, dbcl f32, dbs f32, edb bool, edc bool, pad 2, sc i32, smask u32, emask bool, pad 3, dcmp i32, pad 32, cmask u8, wmask u8, edt bool, edw bool, est bool, pad 3, ctd uint, nct u32, dsf i32, hds bool, pad 7, props u32, pad 4 }
+struct CCP { size uint, code uint, entry uint, fmt u32, nsmp u32, nrost u32, nrosb u32, nrwst u32, nrwsb u32, nub u32, tx u32, ty u32, tz u32, props u32, pad 4 }
+struct CVP { x f32, y f32, w f32, h f32, mn f32, mx f32 }
+struct CRect { x i32, y i32, w i32, h i32 }
+struct CBB { buf uint, off u32, pad 4 }
+struct CTSB { tex uint, smp uint }
+struct CSBRW { buf uint, cyc bool, pad 7 }
+struct CSTRW { tex uint, mip u32, layer u32, cyc bool, pad 7 }
+struct Tab { what byte[>..], gens int[>..], live bool[>..], fr int[>..] }
+struct Info { stage int, nsmp int, nstro int, nstrw int, nsbro int, nsbrw int, nub int, usz int[4], ls int[3], nin int, inl int[16], inty int[16], so int, ss int, mo int, ms int }
+struct Shd { hash uint, size int, sh uint, info Info }
+struct Tg { nc int, c int[4], d int, hd bool, sc int }
+struct BufS { buf uint, size int, usage int }
+struct TexS { tex uint, d TextureDesc, fmt int, usage int }
+struct PipS { vs int, fs int, desc PipelineDesc, attrs CVA[>..], vbufs CVB[>..], vmask int, vt Tg[>..], vp uint[>..] }
+struct CmpS { p uint, info Info }
+extern fbits(b u32) f32 = "hr_f32_from_bits"
+extern f32b(x f32) u32 = "hr_f32_bits"
+extern "libSDL3.so.0" {
+	s_init(f u32) bool = "SDL_InitSubSystem";
+	s_quit(f u32) = "SDL_QuitSubSystem";
+	s_hint(n uint, v uint) bool = "SDL_SetHint";
+	s_rhint(n uint) bool = "SDL_ResetHint";
+	s_err() uint = "SDL_GetError";
+	s_mkdev(f u32, dbg bool, name uint) uint = "SDL_CreateGPUDevice";
+	s_fmts(d uint) u32 = "SDL_GetGPUShaderFormats";
+	s_drv(d uint) uint = "SDL_GetGPUDeviceDriver";
+	s_rmdev(d uint) = "SDL_DestroyGPUDevice";
+	s_mkwin(t uint, w i32, h i32, f uint) uint = "SDL_CreateWindow";
+	s_claim(d uint, w uint) bool = "SDL_ClaimWindowForGPUDevice";
+	s_unclaim(d uint, w uint) = "SDL_ReleaseWindowFromGPUDevice";
+	s_rmwin(w uint) = "SDL_DestroyWindow";
+	s_pmok(d uint, w uint, m i32) bool = "SDL_WindowSupportsGPUPresentMode";
+	s_swp(d uint, w uint, c i32, m i32) bool = "SDL_SetGPUSwapchainParameters";
+	s_wsz(w uint, a uint, b uint) bool = "SDL_GetWindowSize";
+	s_wpsz(w uint, a uint, b uint) bool = "SDL_GetWindowSizeInPixels";
+	s_wpos(w uint, a uint, b uint) bool = "SDL_GetWindowPosition";
+	s_wflags(w uint) uint = "SDL_GetWindowFlags";
+	s_wid(w uint) u32 = "SDL_GetWindowID";
+	s_wtitle(w uint, t uint) bool = "SDL_SetWindowTitle";
+	s_mfocus() uint = "SDL_GetMouseFocus";
+	s_vdrv() uint = "SDL_GetCurrentVideoDriver";
+	s_gmouse(x uint, y uint) u32 = "SDL_GetGlobalMouseState";
+	s_showc() bool = "SDL_ShowCursor";
+	s_hidec() bool = "SDL_HideCursor";
+	s_relm(w uint, on bool) bool = "SDL_SetWindowRelativeMouseMode";
+	s_flushev(t u32) = "SDL_FlushEvent";
+	s_poll(e uint) bool = "SDL_PollEvent";
+	s_push(e uint) bool = "SDL_PushEvent";
+	s_regev(n i32) u32 = "SDL_RegisterEvents";
+	s_ns() uint = "SDL_GetTicksNS";
+	s_tstart(w uint) bool = "SDL_StartTextInput";
+	s_tstop(w uint) bool = "SDL_StopTextInput";
+	s_step(p uint, n uint) u32 = "SDL_StepUTF8";
+	s_scn(n uint) i32 = "SDL_GetScancodeFromName";
+	s_scname(sc i32) uint = "SDL_GetScancodeName";
+	s_key(sc i32, m u16, ev bool) u32 = "SDL_GetKeyFromScancode";
+	s_clip() uint = "SDL_GetClipboardText";
+	s_setclip(t uint) bool = "SDL_SetClipboardText";
+	s_free(p uint) = "SDL_free";
+	s_acq(d uint) uint = "SDL_AcquireGPUCommandBuffer";
+	s_submit(c uint) bool = "SDL_SubmitGPUCommandBuffer";
+	s_submitf(c uint) uint = "SDL_SubmitGPUCommandBufferAndAcquireFence";
+	s_cancel(c uint) bool = "SDL_CancelGPUCommandBuffer";
+	s_waitf(d uint, all bool, f uint, n u32) bool = "SDL_WaitForGPUFences";
+	s_relf(d uint, f uint) = "SDL_ReleaseGPUFence";
+	s_idle(d uint) bool = "SDL_WaitForGPUIdle";
+	s_mktex(d uint, ci uint) uint = "SDL_CreateGPUTexture";
+	s_rmtex(d uint, t uint) = "SDL_ReleaseGPUTexture";
+	s_texok(d uint, f i32, t i32, u u32) bool = "SDL_GPUTextureSupportsFormat";
+	s_bsz(f i32) u32 = "SDL_GPUTextureFormatTexelBlockSize";
+	s_bpass(c uint, ct uint, n u32, dt uint) uint = "SDL_BeginGPURenderPass";
+	s_epass(p uint) = "SDL_EndGPURenderPass";
+	s_swap(c uint, w uint, t uint, sw uint, sh uint) bool = "SDL_WaitAndAcquireGPUSwapchainTexture";
+	s_blit(c uint, bi uint) = "SDL_BlitGPUTexture";
+	s_mktb(d uint, ci uint) uint = "SDL_CreateGPUTransferBuffer";
+	s_rmtb(d uint, t uint) = "SDL_ReleaseGPUTransferBuffer";
+	s_map(d uint, t uint, cyc bool) uint = "SDL_MapGPUTransferBuffer";
+	s_unmap(d uint, t uint) = "SDL_UnmapGPUTransferBuffer";
+	s_bcopy(c uint) uint = "SDL_BeginGPUCopyPass";
+	s_ecopy(p uint) = "SDL_EndGPUCopyPass";
+	s_upb(p uint, src uint, dst uint, cyc bool) = "SDL_UploadToGPUBuffer";
+	s_dnb(p uint, src uint, dst uint) = "SDL_DownloadFromGPUBuffer";
+	s_upt(p uint, src uint, dst uint, cyc bool) = "SDL_UploadToGPUTexture";
+	s_dnt(p uint, src uint, dst uint) = "SDL_DownloadFromGPUTexture";
+	s_mkbuf(d uint, ci uint) uint = "SDL_CreateGPUBuffer";
+	s_rmbuf(d uint, b uint) = "SDL_ReleaseGPUBuffer";
+	s_mips(c uint, t uint) = "SDL_GenerateMipmapsForGPUTexture";
+	s_mksmp(d uint, ci uint) uint = "SDL_CreateGPUSampler";
+	s_rmsmp(d uint, s uint) = "SDL_ReleaseGPUSampler";
+	s_mksh(d uint, ci uint) uint = "SDL_CreateGPUShader";
+	s_rmsh(d uint, s uint) = "SDL_ReleaseGPUShader";
+	s_mkgp(d uint, ci uint) uint = "SDL_CreateGPUGraphicsPipeline";
+	s_rmgp(d uint, p uint) = "SDL_ReleaseGPUGraphicsPipeline";
+	s_mkcp(d uint, ci uint) uint = "SDL_CreateGPUComputePipeline";
+	s_rmcp(d uint, p uint) = "SDL_ReleaseGPUComputePipeline";
+	s_bgp(p uint, g uint) = "SDL_BindGPUGraphicsPipeline";
+	s_vp(p uint, v uint) = "SDL_SetGPUViewport";
+	s_sc(p uint, r uint) = "SDL_SetGPUScissor";
+	s_bvb(p uint, s u32, b uint, n u32) = "SDL_BindGPUVertexBuffers";
+	s_bib(p uint, b uint, sz i32) = "SDL_BindGPUIndexBuffer";
+	s_bvs(p uint, s u32, b uint, n u32) = "SDL_BindGPUVertexSamplers";
+	s_bfs(p uint, s u32, b uint, n u32) = "SDL_BindGPUFragmentSamplers";
+	s_bcs(p uint, s u32, b uint, n u32) = "SDL_BindGPUComputeSamplers";
+	s_bvst(p uint, s u32, b uint, n u32) = "SDL_BindGPUVertexStorageTextures";
+	s_bfst(p uint, s u32, b uint, n u32) = "SDL_BindGPUFragmentStorageTextures";
+	s_bcst(p uint, s u32, b uint, n u32) = "SDL_BindGPUComputeStorageTextures";
+	s_bvsb(p uint, s u32, b uint, n u32) = "SDL_BindGPUVertexStorageBuffers";
+	s_bfsb(p uint, s u32, b uint, n u32) = "SDL_BindGPUFragmentStorageBuffers";
+	s_bcsb(p uint, s u32, b uint, n u32) = "SDL_BindGPUComputeStorageBuffers";
+	s_vu(c uint, s u32, d uint, n u32) = "SDL_PushGPUVertexUniformData";
+	s_fu(c uint, s u32, d uint, n u32) = "SDL_PushGPUFragmentUniformData";
+	s_cu(c uint, s u32, d uint, n u32) = "SDL_PushGPUComputeUniformData";
+	s_draw(p uint, nv u32, ni u32, fv u32, fi u32) = "SDL_DrawGPUPrimitives";
+	s_drawi(p uint, nx u32, ni u32, fx u32, vo i32, fi u32) = "SDL_DrawGPUIndexedPrimitives";
+	s_bcomp(c uint, t uint, nt u32, b uint, nb u32) uint = "SDL_BeginGPUComputePass";
+	s_ecomp(p uint) = "SDL_EndGPUComputePass";
+	s_bcp(p uint, cp uint) = "SDL_BindGPUComputePipeline";
+	s_disp(p uint, x u32, y u32, z u32) = "SDL_DispatchGPUCompute";
+	s_mksurf(w i32, h i32, f u32, px uint, pitch i32) uint = "SDL_CreateSurfaceFrom";
+	s_savepng(s uint, path uint) bool = "SDL_SavePNG";
+	s_loadpng(path uint) uint = "SDL_LoadPNG";
+	s_loadbmp(path uint) uint = "SDL_LoadBMP";
+	s_conv(s uint, f u32) uint = "SDL_ConvertSurface";
+	s_rmsurf(s uint) = "SDL_DestroySurface";
+}
+var DEV uint = 0
+var WIN uint = 0
+var VIDI = false
+var SHF u32 = 0
+var FLAGS = 0
+var SCR = Texture{0}
+var SCRD = Texture{0}
+var SW = 0
+var SH = 0
+var CMD uint = 0
+var PASS uint = 0
+var CPASS uint = 0
+var TG = Tg{0, [0; 4], 0, false, 0}
+var PIPE = -1
+var COMP = -1
+var SB int[>..] = [0, 0, 0]
+var TB int[>..] = [0, 0, 0]
+var BB int[>..] = [0, 0, 0]
+var UP int[>..] = [0, 0, 0]
+var VBB = 0
+var IXB = false
+var CRT = 0
+var CRB = 0
+var QUIT = false
+var KEYS bool[>..] = []
+var PK bool[>..] = []
+var RK bool[>..] = []
+var BTN = 0
+var PBTN = 0
+var RBTN = 0
+var MX f32 = 0.0
+var MY f32 = 0.0
+var MDX f32 = 0.0
+var MDY f32 = 0.0
+var WHEEL f32 = 0.0
+var MIN = false
+var FOC = false
+var MREL = false
+var CURV = false
+var CLK int[>..] = []
+var WW = 0
+var WH = 0
+var WPW = 0
+var WPH = 0
+var EVS Event[>..] = []
+var INJ byte[>..][>..] = []
+var INJEV u32 = 0
+var CLIP byte[>..] = []
+var START uint = 0
+var LAST uint = 0
+var DELTA real = 0.0
+var FRAMES = 0
+var OPENS = 0
+var ERR byte[>..] = []
+var MIS = 0
+var TBUF = Tab{[], [], [], []}
+var TTEX = Tab{[], [], [], []}
+var TSMP = Tab{[], [], [], []}
+var TPIP = Tab{[], [], [], []}
+var TCMP = Tab{[], [], [], []}
+var BUFS BufS[>..] = []
+var TEXS TexS[>..] = []
+var SMPS uint[>..] = []
+var PIPS PipS[>..] = []
+var CMPS CmpS[>..] = []
+var SHS Shd[>..] = []
+var CZ byte[>..] = []
+var EVB byte[>..] = []
+var EVW byte[>..] = []
+var I4 i32[>..] = [0, 0, 0, 0]
+var F2 f32[>..] = [0.0, 0.0]
+var U8S uint[>..] = [0, 0, 0, 0]
+VF := [0, 9, 10, 11, 12, 1, 2, 3, 4, 5, 6, 7, 8, 20, 18, 16, 21, 22, 27, 28, 29, 30]
+VSZ := [0, 4, 8, 12, 16, 4, 8, 12, 16, 4, 8, 12, 16, 4, 4, 4, 4, 8, 4, 8, 4, 8]
+VK := "_ffffiiiiuuuuffuiiffff"
+TFMT := [0, 4, 12, 52, 2, 3, 29, 32, 27, 28, 30, 31, 40, 36, 8, 33, 58, 59, 60, 61]
+ALN := [226, 226, 230, 230, 227, 227, 227, 231, 231, 231, 101]
+ALS := ["Left Alt", "Left Option", "Right Alt", "Right Option", "Left GUI", "Left Command", "Left Windows", "Right GUI", "Right Command", "Right Windows", "Application"]
+pp<T>(x T&) uint: ffi::ptr(bytes_of(x))
+p4(k int) uint: ffi::ptr(bytes_of(I4[..])) + (4 * k) as uint
+pu(k int) uint: ffi::ptr(bytes_of(U8S[..])) + (8 * k) as uint
+put<T>(a T[>..]&, i int, v T): if i == a.len { a.push(v) } else { a[i] = v }
+u8at(b const byte[:], o int) int: b[o] as int
+u16at(b const byte[:], o int) int: b[o] as int | (b[o + 1] as int) << 8
+u32at(b const byte[:], o int) int: u16at(b, o) | u16at(b, o + 2) << 16
+i32at(b const byte[:], o int) int: (u32at(b, o) as u32) as i32 as int
+u64at(b const byte[:], o int) uint: u32at(b, o) as uint | (u32at(b, o + 4) as uint) << 32
+f32at(b const byte[:], o int) f32: fbits(u32at(b, o) as u32)
+w32(b byte[>..]&, o int, v int): for k 4 { b[o + k] = ((v >> (8 * k)) & 255) as byte }
+w64(b byte[>..]&, o int, v uint): w32(b, o, (v & 0xFFFFFFFF) as int); w32(b, o + 4, (v >> 32) as int)
+cz(s const byte[:], cap int) uint: CZ.clear(); CZ.append(s[..min(s.len, cap - 1)]); CZ.push(0); ffi::ptr(CZ[..])
+sdlerr() byte[>..]: ffi::cstr(s_err())
+ieq(a const byte[:], b const byte[:]) bool:
+	if a.len != b.len: return false
+	for i a.len: x := if a[i] >= 'A' && a[i] <= 'Z' { a[i] + 32 } else { a[i] }; y := if b[i] >= 'A' && b[i] <= 'Z' { b[i] + 32 } else { b[i] }; if x != y { return false }
+	true
+atoi(s const byte[:]) int:
+	i ~= 0; while i < s.len && (s[i] == ' ' || s[i] >= 9 && s[i] <= 13): i += 1
+	neg := i < s.len && s[i] == '-'; if i < s.len && (s[i] == '-' || s[i] == '+'): i += 1
+	v ~= 0; while i < s.len && s[i] >= '0' && s[i] <= '9': v = v * 10 + (s[i] - '0') as int; i += 1
+	if neg { -v } else { v }
+fail(m const byte[:]) bool: ERR.clear(); ERR.append(m); false
+misuse(m const byte[:]) bool:
+	ERR.clear(); ERR.append(m); MIS += 1
+	if MIS <= 8: write_stderr(str("gfx: ", m, "\n"))
+	false
+sdl_fail(what const byte[:]) bool: fail(str(what, ": ", sdlerr()))
+need(what const byte[:]) bool: DEV != 0 || misuse(str(what, ": gfx is not open (call gfx::open or gfx::open_headless first)"))
+error_into(out byte[:]) int:
+	for i min(ERR.len, out.len): out[i] = ERR[i]
+	ERR.len
+error() byte[>..]: t byte[>..] ~= []; t.append(ERR[..min(ERR.len, 1024)]); t
+misuse_count() int: MIS
+check(): if MIS > 0 { abort(str("gfx: ", error())) }
+ix(id u32) int: (id & 0xFFFFF) as int
+tadd(t Tab&) u32:
+	i ~= 0
+	if t.fr.len > 0 { i = t.fr[t.fr.len - 1]; t.fr.resize(t.fr.len - 1, 0) } else { i = t.gens.len; t.gens.push(0); t.live.push(false) }
+	t.gens[i] = t.gens[i] % 4095 + 1; t.live[i] = true; (t.gens[i] << 20 | i) as u32
+tfind(t Tab&, id u32) int: i := ix(id); if id == 0 || i >= t.gens.len || !t.live[i] || t.gens[i] != (id >> 20) as int { -1 } else { i }
+tget(t Tab&, id u32) int:
+	i := tfind(t, id)
+	if i < 0: misuse(if id == 0 { str("a null ", t.what, " handle") } else { str("a ", t.what, " handle that was released, or never created") })
+	i
+trem(t Tab&, id u32): i := tfind(t, id); if i >= 0 { t.live[i] = false; t.fr.push(i) }
+tclear(t Tab&, what const byte[:]): t.what.clear(); t.what.append(what); t.gens.clear(); t.live.clear(); t.fr.clear()
+tslot(t Texture) int: tget(TTEX, t.id)
+bslot(b Buffer) int: tget(TBUF, b.id)
+reset():
+	DEV = 0; WIN = 0; VIDI = false; SHF = 0; FLAGS = 0; SCR = Texture{0}; SCRD = Texture{0}; SW = 0; SH = 0; CMD = 0; PASS = 0; CPASS = 0; TG = Tg{0, [0; 4], 0, false, 0}; PIPE = -1; COMP = -1
+	for k 3 { SB[k] = 0; TB[k] = 0; BB[k] = 0; UP[k] = 0 } VBB = 0; IXB = false; CRT = 0; CRB = 0; QUIT = false; BTN = 0; PBTN = 0; RBTN = 0
+	KEYS.clear(); PK.clear(); RK.clear(); KEYS.resize(512, false); PK.resize(512, false); RK.resize(512, false); CLK.clear(); CLK.resize(32, 0)
+	MX = 0.0; MY = 0.0; MDX = 0.0; MDY = 0.0; WHEEL = 0.0; MIN = false; FOC = false; MREL = false; CURV = false; WW = 0; WH = 0; WPW = 0; WPH = 0
+	EVS.clear(); INJ.clear(); INJEV = 0; CLIP.clear(); START = 0; LAST = 0; DELTA = 0.0; FRAMES = 0
+	tclear(TBUF, "buffer"); tclear(TTEX, "texture"); tclear(TSMP, "sampler"); tclear(TPIP, "pipeline"); tclear(TCMP, "compute pipeline")
+	BUFS.clear(); TEXS.clear(); SMPS.clear(); PIPS.clear(); CMPS.clear(); SHS.clear(); EVB.clear(); EVB.resize(128, 0); EVW.clear(); EVW.resize(128, 0)
+cmd() uint:
+	if CMD == 0:
+		CMD = s_acq(DEV)
+		if CMD == 0: sdl_fail("acquiring a command buffer")
+		for k 3 { UP[k] = 0 }
+	CMD
+submit() bool:
+	if CMD == 0: return true
+	c := CMD; CMD = 0; s_submit(c) || sdl_fail("submitting commands")
+finish() bool:
+	c := cmd(); if c == 0: return false
+	CMD = 0; f := s_submitf(c)
+	if f == 0: return sdl_fail("submitting commands")
+	U8S[3] = f; ok := s_waitf(DEV, true, pu(3), 1); s_relf(DEV, f); ok || sdl_fail("waiting for the GPU")
+flush_raw():
+	if !need("flush"): return
+	if PASS != 0 || CPASS != 0: misuse("flush inside a pass: end the pass first"); return
+	finish()
+flush(): flush_raw(); check()
+texfmt(f int) int:
+	if f == 20: return if DEV != 0 && s_texok(DEV, 60, 0, 5) { 60 } else { 59 }
+	if f >= 1 && f < 20 { TFMT[f] } else { -1 }
+isdepth(f int) bool: f >= 58 && f <= 62
+stage_name(s int) byte[>..]: copy(if s == 0 { "vertex" } else { if s == 1 { "fragment" } else { "compute" } })
+pname() byte[>..]: copy(if PASS != 0 { "render" } else { "compute" })
+scrtex(h Texture&, fmt int, usage int, gf int, w int, hh int) bool:
+	ci ~= CTex{0, fmt as i32, usage as u32, w as u32, hh as u32, 1, 1, 0, 0}
+	tex := s_mktex(DEV, pp(ci))
+	if tex == 0: return sdl_fail("creating the screen")
+	i ~= tfind(TTEX, h.id)
+	if i >= 0 { s_rmtex(DEV, TEXS[i].tex) } else { h.id = tadd(TTEX); i = ix(h.id) }
+	put(TEXS, i, TexS{tex, TextureDesc{0, gf as i32, usage as i32, w as i32, hh as i32, 1, 1, 1}, fmt, usage}); true
+create_screen(w0 int, h0 int) bool:
+	w := max(w0, 1); h := max(h0, 1)
+	if !scrtex(SCR, 4, 3, 1, w, h) || !scrtex(SCRD, texfmt(20), 4, 20, w, h): return false
+	SW = w; SH = h; c := cmd()
+	if c == 0: return false
+	ct ~= CCol{TEXS[ix(SCR.id)].tex, 0, 0, 0.0, 0.0, 0.0, 1.0, 1, 0, 0, 0, 0, false, false}
+	dt ~= CDep{TEXS[ix(SCRD.id)].tex, 1.0, 1, 0, 1, 0, false, 0, 0, 0}
+	p := s_bpass(c, pp(ct), 1, pp(dt)); if p != 0 { s_epass(p) } true
+screen() Texture: need("screen"); SCR
+screen_depth() Texture: need("screen_depth"); SCRD
+screen_size() int2: int2{SW as i32, SH as i32}
+available() bool: true
+update_input_scale():
+	if WIN == 0 || !s_wsz(WIN, p4(0), p4(1)) || !s_wpsz(WIN, p4(2), p4(3)): return
+	if I4[0] <= 0 || I4[1] <= 0 || I4[2] <= 0 || I4[3] <= 0: return
+	WW = I4[0] as int; WH = I4[1] as int; WPW = I4[2] as int; WPH = I4[3] as int
+topx(v f32, px int, sz int) f32: (v as real * px as real / sz as real) as f32
+seed_mouse():
+	MIN = s_mfocus() == WIN; d := s_vdrv()
+	if d != 0 && ffi::cstr(d) == "wayland": return
+	F2[0] = 0.0; F2[1] = 0.0; I4[0] = 0; I4[1] = 0; s_gmouse(ffi::ptr(bytes_of(F2[..])), ffi::ptr(bytes_of(F2[..])) + 4)
+	if !s_wpos(WIN, p4(0), p4(1)): return
+	MX = topx(F2[0] - I4[0] as f32, WPW, WW); MY = topx(F2[1] - I4[1] as f32, WPH, WH)
+start(win0 bool, title const byte[:], width int, height int, flags int) bool:
+	if DEV != 0: return misuse("gfx is already open: close() it first")
+	windowed ~= win0; hv byte[>..] ~= []
+	if env("GOOSE_GFX_HEADLESS", hv) && atoi(hv[..]) != 0: windowed = false
+	if width < 1 || height < 1 || width > 16384 || height > 16384: return misuse(str("a screen of ", width, " x ", height, " pixels"))
+	reset(); ERR.clear(); FLAGS = flags
+	s_hint(ffi::ptr("SDL_ASSERT\0"), ffi::ptr("ignore\0")); s_hint(ffi::ptr("SDL_APP_NAME\0"), ffi::ptr("Goose\0"))
+	if !s_init(32):
+		if windowed: return sdl_fail("initializing SDL video")
+		s_hint(ffi::ptr("SDL_VIDEO_DRIVER\0"), ffi::ptr("offscreen\0")); ok := s_init(32); s_rhint(ffi::ptr("SDL_VIDEO_DRIVER\0"))
+		if !ok: return sdl_fail("initializing SDL video")
+	VIDI = true; debug ~= flags & 32 != 0; dv byte[>..] ~= []
+	if env("GOOSE_GFX_DEBUG", dv): debug = atoi(dv[..]) != 0
+	DEV = s_mkdev(18, debug, 0)
+	if DEV == 0: fail(str("no GPU device: ", sdlerr())); close_raw(); return false
+	have := s_fmts(DEV); SHF = if have & 2 != 0 { 2 } else { if have & 4 != 0 { 4 } else { 16 } }
+	pw ~= width; ph ~= height; WW = 1; WH = 1; WPW = 1; WPH = 1
+	if windowed:
+		wf := 8192 | (if flags & 1 != 0 { 32 } else { 0 }) | (if flags & 2 != 0 { 8 } else { 0 }) | (if flags & 4 != 0 { 1 } else { 0 })
+		WIN = s_mkwin(cz(title, 512), width as i32, height as i32, wf as uint)
+		if WIN == 0 || !s_claim(DEV, WIN): sdl_fail("creating the window"); close_raw(); return false
+		if flags & 16 != 0: for m [2, 1] { if s_pmok(DEV, WIN, m as i32) { s_swp(DEV, WIN, 0, m as i32); break } }
+		s_wpsz(WIN, p4(0), p4(1)); pw = I4[0] as int; ph = I4[1] as int; update_input_scale(); seed_mouse()
+	FOC = WIN == 0 || s_wflags(WIN) & 512 != 0; CURV = true
+	if WIN != 0: s_showc()
+	if !create_screen(pw, ph): why := copy(ERR); close_raw(); ERR = why; return false
+	START = s_ns(); LAST = START; INJEV = s_regev(1); OPENS += 1; true
+open(title const byte[:], width int, height int, flags int = 0) bool: start(true, title, width, height, flags)
+open_headless(width int, height int, flags int = 0) bool: start(false, "", width, height, flags)
+close_raw():
+	if DEV != 0:
+		if PASS != 0 { s_epass(PASS) } if CPASS != 0 { s_ecomp(CPASS) } PASS = 0; CPASS = 0; submit(); s_idle(DEV); release_pipelines(); release_resources()
+		if WIN != 0 { s_unclaim(DEV, WIN) } s_rmdev(DEV)
+	if WIN != 0: s_relm(WIN, false); s_showc(); s_rmwin(WIN)
+	if VIDI: s_quit(32)
+	reset()
+close(): check(); close_raw()
+driver() byte[>..]:
+	if DEV == 0: return []
+	d := s_drv(DEV); n byte[>..] ~= if d != 0 { ffi::cstr(d) } else { [] }; n.resize(min(n.len, 64), 0); n
+set_title(title const byte[:]): if WIN != 0 { s_wtitle(WIN, cz(title, 512)) }
+quit(): QUIT = true
+present():
+	c := cmd(); if c == 0: return
+	U8S[0] = 0; I4[0] = 0; I4[1] = 0
+	if !s_swap(c, WIN, pu(0), p4(0), p4(1)): sdl_fail("acquiring the window's image"); return
+	sw := I4[0] as u32; sh := I4[1] as u32; sw0 := U8S[0]
+	if sw0 == 0: return
+	bi ~= CBlit{TEXS[ix(SCR.id)].tex, 0, 0, 0, 0, SW as u32, SH as u32, sw0, 0, 0, 0, 0, sw, sh, 2, 0.0, 0.0, 0.0, 0.0, 0, if sw == SW as u32 && sh == SH as u32 { 0 } else { 1 }, false}
+	s_blit(c, pp(bi))
+ev(kind int) int: EVS.push(Event{kind as i32, 0, 0, 0, false, false, 0, 0, 0, 0.0, 0.0}); EVS.len - 1
+mods() i32: ((if KEYS[225] || KEYS[229] { 1 } else { 0 }) | (if KEYS[224] || KEYS[228] { 2 } else { 0 }) | (if KEYS[226] || KEYS[230] { 4 } else { 0 }) | (if KEYS[227] || KEYS[231] { 8 } else { 0 })) as i32
+text_events(p uint):
+	if p == 0: return
+	U8S[1] = p
+	while true: cp := s_step(pu(1), 0); if cp == 0 { break } k := ev(2); EVS[k].codepoint = cp
+key_event(sc int, key int, down bool, rep bool):
+	if sc > 0 && sc < 512: if down && !KEYS[sc] { PK[sc] = true } if !down && KEYS[sc] { RK[sc] = true } KEYS[sc] = down
+	k := ev(1); EVS[k].scancode = sc as i32; EVS[k].keycode = key as i32; EVS[k].mods = mods(); EVS[k].down = down; EVS[k].repeat = rep
+button_event(b int, down bool, clicks int):
+	if b > 0 && b < 32: bit := 1 << b; if down && BTN & bit == 0 { PBTN |= bit } if !down && BTN & bit != 0 { RBTN |= bit } BTN = if down { BTN | bit } else { BTN & ~bit }; if down { CLK[b] = clicks & 255 }
+	k := ev(4); EVS[k].button = b as i32; EVS[k].clicks = clicks as i32; EVS[k].down = down; EVS[k].x = MX; EVS[k].y = MY
+focus(f bool):
+	if FOC == f: return
+	FOC = f
+	if !f:
+		set_mouse_relative(false); set_cursor_visible(true)
+		for sc 1..512: if KEYS[sc] { key_event(sc, s_key(sc as i32, 0, false) as int, false, false) }
+		for b 1..32: if BTN & (1 << b) != 0 { button_event(b, false, CLK[b]) }
+		MDX = 0.0; MDY = 0.0; WHEEL = 0.0
+	else:
+		if WIN != 0: seed_mouse()
+	ev(if f { 6 } else { 7 })
+frame_raw() bool:
+	if !need("frame"): return false
+	if PASS != 0 || CPASS != 0: misuse(str("frame() inside a ", pname(), " pass: end the pass first")); return false
+	if WIN != 0 && FRAMES > 0: present()
+	submit(); for k 512 { PK[k] = false; RK[k] = false } PBTN = 0; RBTN = 0; MDX = 0.0; MDY = 0.0; WHEEL = 0.0; EVS.clear(); resized ~= false; ep := ffi::ptr(EVB[..])
+	while s_poll(ep):
+		t := u32at(EVB[..], 0)
+		if t == 256 || t == 528: QUIT = true; continue
+		if t == 768 || t == 769: if FOC { key_event(u32at(EVB[..], 24), u32at(EVB[..], 28), EVB[36] != 0, EVB[37] != 0) } continue
+		if t == 771: if FOC { text_events(u64at(EVB[..], 24)) } continue
+		if t == 1024:
+			if !FOC: continue
+			inj := u32at(EVB[..], 20) == 0xFFFFFFF0; pw := if inj { 1 } else { WPW }; w := if inj { 1 } else { WW }; ph := if inj { 1 } else { WPH }; h := if inj { 1 } else { WH }
+			MX = topx(f32at(EVB[..], 28), pw, w); MY = topx(f32at(EVB[..], 32), ph, h)
+			if inj: MIN = MX >= 0.0 && MY >= 0.0 && MX < SW as f32 && MY < SH as f32
+			MDX += topx(f32at(EVB[..], 36), pw, w); MDY += topx(f32at(EVB[..], 40), ph, h); k := ev(3); EVS[k].x = MX; EVS[k].y = MY; continue
+		if t == 1025 || t == 1026:
+			if !FOC: continue
+			inj := u32at(EVB[..], 20) == 0xFFFFFFF0; fx := f32at(EVB[..], 28); fy := f32at(EVB[..], 32)
+			MX = if inj { fx } else { topx(fx, WPW, WW) }; MY = if inj { fy } else { topx(fy, WPH, WH) }; button_event(u8at(EVB[..], 24), EVB[25] != 0, u8at(EVB[..], 26)); continue
+		if t == 1027:
+			if !FOC: continue
+			WHEEL += f32at(EVB[..], 28); k := ev(5); EVS[k].x = f32at(EVB[..], 24); EVS[k].y = f32at(EVB[..], 28); continue
+		if t == 524 || t == 525: MIN = t == 524; continue
+		if t == 526 || t == 527: if u32at(EVB[..], 16) as u32 == (if WIN != 0 { s_wid(WIN) } else { 0 }) { focus(t == 526) } continue
+		if t == 518: update_input_scale(); continue
+		if t == 519: update_input_scale(); resized = true; continue
+		if INJEV != 0 && t == INJEV as int:
+			code := i32at(EVB[..], 20)
+			if code >= 0 && code < INJ.len: if FOC { text_events(ffi::ptr(INJ[code][..])) } INJ[code].clear()
+	INJ.clear()
+	if resized && WIN != 0: s_wpsz(WIN, p4(0), p4(1)); w := I4[0] as int; h := I4[1] as int; if w > 0 && h > 0 && (w != SW || h != SH) { create_screen(w, h) }
+	now := s_ns(); DELTA = (now - LAST) as real / 1e9; LAST = now; FRAMES += 1; !QUIT
+frame() bool: running := frame_raw(); check(); running
+time() real: if DEV != 0 { (s_ns() - START) as real / 1e9 } else { 0.0 }
+delta_time() real: DELTA
+frame_count() int: FRAMES
+open_count() int: OPENS
+find_scancode(name const byte[:]) int:
+	n := name[..min(name.len, 63)]; sc ~= s_scn(cz(n, 64)) as int
+	if sc == 0: for a, i ALS { if ieq(n, a) { sc = ALN[i]; break } }
+	sc
+scancode_of(name const byte[:]) int:
+	sc := find_scancode(name)
+	if sc == 0: misuse(str("no key is called '", name[..min(name.len, 63)], "'"))
+	sc
+key_down(name const byte[:]) bool: sc := scancode_of(name); sc != 0 && KEYS[sc]
+key_pressed(name const byte[:]) bool: sc := scancode_of(name); sc != 0 && PK[sc]
+key_released(name const byte[:]) bool: sc := scancode_of(name); sc != 0 && RK[sc]
+btn(b int) int:
+	if b < 1 || b > 31: misuse(str("no mouse button ", b)); return 0
+	1 << b
+mouse_down(b int) bool: BTN & btn(b) != 0
+mouse_pressed(b int) bool: PBTN & btn(b) != 0
+mouse_released(b int) bool: RBTN & btn(b) != 0
+mouse_pos() float2: float2{MX, MY}
+mouse_delta() float2: float2{MDX, MDY}
+mouse_wheel() f32: WHEEL
+mouse_in_window() bool: MIN
+focused() bool: FOC
+mouse_relative() bool: MREL
+cursor_visible() bool: CURV && !MREL
+set_mouse_relative(on bool) bool:
+	if !need("set_mouse_relative"): return false
+	if on && !FOC: return fail("set_mouse_relative: the window is not focused")
+	if MREL == on: return true
+	if WIN != 0:
+		if !s_relm(WIN, on): return sdl_fail("set_mouse_relative")
+		if on || !CURV { s_hidec() } else { s_showc() }
+	MREL = on; s_flushev(1024); MDX = 0.0; MDY = 0.0; true
+set_cursor_visible(visible bool) bool:
+	if !need("set_cursor_visible"): return false
+	if !visible && !FOC: return fail("set_cursor_visible: the window is not focused")
+	if WIN != 0 && !MREL: if !(if visible { s_showc() } else { s_hidec() }) { return sdl_fail("set_cursor_visible") }
+	CURV = visible; true
+evw(t int): for k 128 { EVW[k] = 0 } w32(EVW, 0, t); w64(EVW, 8, s_ns())
+inject_focus(f bool) bool:
+	if !need("inject_focus"): return false
+	evw(if f { 526 } else { 527 }); w32(EVW, 16, if WIN != 0 { s_wid(WIN) as int } else { 0 }); s_push(ffi::ptr(EVW[..]))
+inject_key(name const byte[:], down bool) bool:
+	if !need("inject_key"): return false
+	sc := scancode_of(name)
+	if sc == 0: return false
+	evw(if down { 768 } else { 769 }); w32(EVW, 24, sc); w32(EVW, 28, s_key(sc as i32, 0, false) as int); EVW[36] = if down { 1 } else { 0 }; s_push(ffi::ptr(EVW[..]))
+inject_mouse(x f32, y f32, button int, down bool):
+	if !need("inject_mouse"): return
+	evw(1024); w32(EVW, 20, 0xFFFFFFF0); w32(EVW, 28, f32b(x) as int); w32(EVW, 32, f32b(y) as int); w32(EVW, 36, f32b(x - MX) as int); w32(EVW, 40, f32b(y - MY) as int); s_push(ffi::ptr(EVW[..]))
+	if button != 0:
+		if btn(button) == 0: return
+		evw(if down { 1025 } else { 1026 }); w32(EVW, 20, 0xFFFFFFF0); EVW[24] = button as byte; EVW[25] = if down { 1 } else { 0 }; EVW[26] = 1; w32(EVW, 28, f32b(x) as int); w32(EVW, 32, f32b(y) as int); s_push(ffi::ptr(EVW[..]))
+events_into(out Event[:]) int:
+	for i min(EVS.len, out.len): out[i] = EVS[i]
+	EVS.len
+events() Event[>..]: o Event[>..] ~= []; o.append(EVS[..]); o
+text_input(on bool):
+	if !need("text_input") || WIN == 0: return
+	if on { s_tstart(WIN) } else { s_tstop(WIN) }
+inject_text(text const byte[:]) bool:
+	if !need("inject_text"): return false
+	if INJEV == 0: return fail("inject_text: SDL has no user event left")
+	c byte[>..] ~= []; c.append(text); c.push(0); INJ.push(c); evw(INJEV as int); w32(EVW, 20, INJ.len - 1); s_push(ffi::ptr(EVW[..]))
+scancode(name const byte[:]) int: find_scancode(name)
+key_name(sc int) byte[>..]:
+	if sc < 0 || sc >= 512: misuse(str("key_name: no scancode ", sc)); return []
+	ffi::cstr(s_scname(sc as i32))
+clipboard() byte[>..]:
+	if !need("clipboard"): return []
+	if WIN == 0: return copy(CLIP)
+	p := s_clip(); r := if p != 0 { ffi::cstr(p) } else { [] }; s_free(p); r
+set_clipboard(text const byte[:]) bool:
+	if !need("set_clipboard"): return false
+	n ~= 0; while n < text.len && text[n] != 0: n += 1
+	if WIN == 0: CLIP.clear(); CLIP.append(text[..n]); return true
+	s_setclip(cz(text, text.len + 1)) || sdl_fail("set_clipboard")
+transfer(size int, up bool) uint:
+	ci ~= CInfo3{if up { 0 } else { 1 }, size as u32, 0}; tb := s_mktb(DEV, pp(ci))
+	if tb == 0: sdl_fail("creating a transfer buffer")
+	tb
+copy_cmd(fresh bool, what const byte[:]) uint:
+	if fresh: c := s_acq(DEV); if c == 0 { sdl_fail("acquiring a command buffer") } return c
+	if PASS != 0 || CPASS != 0: misuse(str(what, " inside a ", pname(), " pass: copies happen between passes")); return 0
+	cmd()
+copy_done(c uint, fresh bool) bool: !fresh || s_submit(c) || sdl_fail("submitting an upload")
+upload_buffer(buf uint, off int, data const byte[:], zeros int, fresh bool, cyc bool, what const byte[:]) bool:
+	total := data.len + zeros
+	if total == 0: return true
+	c := copy_cmd(fresh, what)
+	if c == 0: return false
+	tb := transfer(total, true)
+	if tb == 0: if fresh { s_cancel(c) } return false
+	p := s_map(DEV, tb, false); ffi::write(p, data)
+	if zeros > 0: z byte[>..] ~= []; z.resize(zeros, 0); ffi::write(p + data.len as uint, z[..])
+	s_unmap(DEV, tb); cp := s_bcopy(c); src ~= CLoc{tb, 0}; dst ~= CBReg{buf, off as u32, total as u32}; s_upb(cp, pp(src), pp(dst), cyc); s_ecopy(cp); s_rmtb(DEV, tb); copy_done(c, fresh)
+buffer(usage int, size int, data const byte[:]) Buffer:
+	h ~= Buffer{0}
+	if !need("buffer"): return h
+	sz := max(size, data.len)
+	if sz <= 0 || sz > 0x7fffffff: misuse(str("a buffer of ", sz, " bytes")); return h
+	if usage == 0 || usage & ~63 != 0: misuse(str("buffer usage ", usage, " is not a combination of the BUFFER_ flags")); return h
+	ci ~= CInfo3{usage as u32, sz as u32, 0}; b := s_mkbuf(DEV, pp(ci))
+	if b == 0: sdl_fail("creating a buffer"); return h
+	if !upload_buffer(b, 0, data, sz - data.len, true, false, "buffer"): s_rmbuf(DEV, b); return h
+	h.id = tadd(TBUF); put(BUFS, ix(h.id), BufS{b, sz, usage}); h
+buffer(usage int, data const byte[:]) Buffer: buffer(usage, data.len, data)
+vertex_buffer(data const byte[:]) Buffer: buffer(1, data.len, data)
+index_buffer(data const byte[:]) Buffer: buffer(2, data.len, data)
+update_buffer(b Buffer, offset int, data const byte[:]) bool:
+	if !need("update_buffer"): return false
+	i := bslot(b)
+	if i < 0: return false
+	s := BUFS[i]
+	if offset < 0 || offset + data.len > s.size: return misuse(str("update_buffer: ", data.len, " bytes at ", offset, " do not fit a buffer of ", s.size))
+	upload_buffer(s.buf, offset, data, 0, false, offset == 0 && data.len == s.size, "update_buffer")
+update_buffer(b Buffer, data const byte[:]) bool: update_buffer(b, 0, data)
+read_buffer_into(b Buffer, offset int, out byte[:]) bool:
+	if !need("read_buffer"): return false
+	i := bslot(b)
+	if i < 0: return false
+	s := BUFS[i]
+	if offset < 0 || offset + out.len > s.size: return misuse(str("read_buffer: ", out.len, " bytes at ", offset, " are not all in a buffer of ", s.size))
+	if out.len == 0: return true
+	c := copy_cmd(false, "read_buffer")
+	if c == 0: return false
+	tb := transfer(out.len, false)
+	if tb == 0: return false
+	cp := s_bcopy(c); src ~= CBReg{s.buf, offset as u32, out.len as u32}; dst ~= CLoc{tb, 0}; s_dnb(cp, pp(src), pp(dst)); s_ecopy(cp); ok := finish()
+	if ok: p := s_map(DEV, tb, false); ffi::read(p, out); s_unmap(DEV, tb)
+	s_rmtb(DEV, tb); ok
+read_buffer(b Buffer, offset int, out byte[:]) bool: ok := read_buffer_into(b, offset, out); check(); ok
+read_buffer<T>(b Buffer, out T[>..]&, count int) bool: raw byte[>..] ~= []; raw.resize(count * elem_size(out), 0); ok := read_buffer(b, 0, raw[..]); append_as(raw[..], out); ok
+buffer_size(b Buffer) int: i := bslot(b); if i < 0 { 0 } else { BUFS[i].size }
+release(b Buffer):
+	if !need("release_buffer"): return
+	i := bslot(b)
+	if i < 0: return
+	s_rmbuf(DEV, BUFS[i].buf); trem(TBUF, b.id)
+mipsz(s int, m int) int: max(s >> m, 1)
+nsamp(n int) int: if n == 2 { 1 } else { if n == 4 { 2 } else { if n == 8 { 3 } else { 0 } } }
+create_texture(desc TextureDesc) Texture:
+	h ~= Texture{0}
+	if !need("texture"): return h
+	fmt := texfmt(desc.format as int); kind := desc.kind as int; w := desc.width as int; ht := desc.height as int; dp ~= desc.depth as int; sm ~= desc.samples as int; mips ~= desc.mips as int
+	if fmt < 0: misuse(str("texture format ", desc.format, " is not one of gfx's formats")); return h
+	if kind < 0 || kind > 3: misuse(str("texture kind ", desc.kind, " is not one of TEXTURE_2D, _2D_ARRAY, _3D or _CUBE")); return h
+	if w < 1 || ht < 1 || w > 16384 || ht > 16384: misuse(str("a texture of ", w, " x ", ht)); return h
+	if kind == 3 && w != ht: misuse(str("a cube texture must be square, not ", w, " x ", ht)); return h
+	if kind == 0 || kind == 3: dp = 1
+	if dp < 1 || dp > 2048: misuse(str("a texture ", if kind == 2 { "depth" } else { "layer count" }, " of ", dp)); return h
+	if sm != 2 && sm != 4 && sm != 8: sm = 1
+	largest := max(max(w, ht), if kind == 2 { dp } else { 0 }); chain ~= 1
+	while largest >> chain != 0: chain += 1
+	if mips <= 0 || mips > chain: mips = chain
+	usage ~= (desc.usage as u32) as int
+	if usage == 0 || usage & ~127 != 0: misuse(str("texture usage ", desc.usage, " is not a combination of the usage flags")); return h
+	dep := isdepth(fmt)
+	if dep != (usage & 4 != 0): misuse(if dep { "a depth format needs DEPTH_TARGET usage" } else { "DEPTH_TARGET usage needs a depth format" }); return h
+	if sm > 1 && (kind != 0 || mips != 1 || usage & ~6 != 0): misuse("a multisampled texture is a 2D target with one mip, drawn into and resolved, not sampled or stored to"); return h
+	if mips > 1 && usage & 1 != 0 && !dep: usage |= 2
+	if !s_texok(DEV, fmt as i32, kind as i32, usage as u32): fail(str("this device does not support texture format ", desc.format, " with usage ", usage)); return h
+	ci ~= CTex{kind as i32, fmt as i32, usage as u32, w as u32, ht as u32, (if kind == 3 { 6 } else { dp }) as u32, mips as u32, nsamp(sm) as i32, 0}
+	tex := s_mktex(DEV, pp(ci))
+	if tex == 0: sdl_fail("creating a texture"); return h
+	h.id = tadd(TTEX); put(TEXS, ix(h.id), TexS{tex, TextureDesc{kind as i32, desc.format, usage as i32, w as i32, ht as i32, dp as i32, mips as i32, sm as i32}, fmt, usage}); h
+texture(desc TextureDesc) Texture: create_texture(desc)
+texture2d(width int, height int, format i32, usage i32) Texture: texture(TextureDesc{format: format, usage: usage, width: width as i32, height: height as i32})
+texture2d(width int, height int) Texture: texture2d(width, height, 1, 1)
+render_target(width int, height int, format i32) Texture: texture2d(width, height, format, 3)
+depth_target(width int, height int) Texture: texture2d(width, height, 20, 5)
+texture3d(width int, height int, depth int, format i32, usage i32) Texture: texture(TextureDesc{kind: 2, format: format, usage: usage, width: width as i32, height: height as i32, depth: depth as i32})
+texture_cube(size int, format i32, usage i32) Texture: texture(TextureDesc{kind: 3, format: format, usage: usage, width: size as i32, height: size as i32})
+texture_array(width int, height int, layers int, format i32, usage i32) Texture: texture(TextureDesc{kind: 1, format: format, usage: usage, width: width as i32, height: height as i32, depth: layers as i32})
+region(s TexS&, r const Region&, o CTReg&, what const byte[:]) bool:
+	kind := s.d.kind as int; mips := s.d.mips as int; mip := r.mip as int; lay := r.layer as int
+	if mip < 0 || mip >= mips: return misuse(str(what, ": mip ", mip, " of a texture with ", mips))
+	layers := if kind == 3 { 6 } else { if kind == 1 { s.d.depth as int } else { 1 } }
+	if lay < 0 || lay >= layers: return misuse(str(what, ": layer ", lay, " of a texture with ", layers))
+	mw := mipsz(s.d.width as int, mip); mh := mipsz(s.d.height as int, mip); md := if kind == 2 { mipsz(s.d.depth as int, mip) } else { 1 }
+	o = CTReg{s.tex, mip as u32, lay as u32, 0, 0, 0, mw as u32, mh as u32, md as u32}
+	if r.w == 0: return true
+	x := r.x as int; y := r.y as int; z := r.z as int; w := r.w as int; h := if r.h != 0 { r.h as int } else { 1 }; dd := if r.d != 0 { r.d as int } else { 1 }
+	if x < 0 || y < 0 || z < 0 || w < 0 || h < 0 || dd < 0 || x + w > mw || y + h > mh || z + dd > md: return misuse(str(what, ": region ", x, ",", y, ",", z, " + ", w, " x ", h, " x ", dd, " is outside the ", mw, " x ", mh, " x ", md, " mip"))
+	o = CTReg{s.tex, mip as u32, lay as u32, x as u32, y as u32, z as u32, w as u32, h as u32, dd as u32}; true
+texbytes(s TexS&, o CTReg&, n int, what const byte[:]) bool:
+	want := s_bsz(s.fmt as i32) as int * o.w as int * o.h as int * o.d as int
+	n == want || misuse(str(what, ": ", n, " bytes for a ", o.w, " x ", o.h, " x ", o.d, " region of ", want))
+upload_texture(o CTReg&, data const byte[:], fresh bool, what const byte[:]) bool:
+	c := copy_cmd(fresh, what)
+	if c == 0: return false
+	tb := transfer(data.len, true)
+	if tb == 0: if fresh { s_cancel(c) } return false
+	p := s_map(DEV, tb, false); ffi::write(p, data); s_unmap(DEV, tb); cp := s_bcopy(c); src ~= CTTI{tb, 0, o.w, o.h}; s_upt(cp, pp(src), pp(o), false); s_ecopy(cp); s_rmtb(DEV, tb); copy_done(c, fresh)
+update_texture_region(t Texture, rg const Region&, data const byte[:]) bool:
+	if !need("update_texture"): return false
+	i := tslot(t)
+	if i < 0: return false
+	if TEXS[i].d.samples > 1: return misuse("update_texture: a multisampled texture")
+	o ~= CTReg{0, 0, 0, 0, 0, 0, 0, 0, 0}
+	if !region(TEXS[i], rg, o, "update_texture") || !texbytes(TEXS[i], o, data.len, "update_texture"): return false
+	upload_texture(o, data, false, "update_texture")
+update_texture(t Texture, rg Region, data const byte[:]) bool: update_texture_region(t, rg, data)
+update_texture(t Texture, data const byte[:]) bool: update_texture(t, Region{}, data)
+download_texture(o CTReg&, out byte[:], what const byte[:]) bool:
+	c := copy_cmd(false, what)
+	if c == 0: return false
+	tb := transfer(out.len, false)
+	if tb == 0: return false
+	cp := s_bcopy(c); dst ~= CTTI{tb, 0, o.w, o.h}; s_dnt(cp, pp(o), pp(dst)); s_ecopy(cp); ok := finish()
+	if ok: p := s_map(DEV, tb, false); ffi::read(p, out); s_unmap(DEV, tb)
+	s_rmtb(DEV, tb); ok
+readable(s TexS&, what const byte[:]) bool:
+	if s.d.samples > 1: return misuse(str(what, ": a multisampled texture; read the texture it resolves to"))
+	!isdepth(s.fmt) || misuse(str(what, ": a depth texture cannot be read back"))
+read_texture_into(t Texture, rg const Region&, out byte[:]) bool:
+	if !need("read_texture"): return false
+	i := tslot(t)
+	if i < 0 || !readable(TEXS[i], "read_texture"): return false
+	o ~= CTReg{0, 0, 0, 0, 0, 0, 0, 0, 0}
+	if !region(TEXS[i], rg, o, "read_texture") || !texbytes(TEXS[i], o, out.len, "read_texture"): return false
+	download_texture(o, out, "read_texture")
+read_texture(t Texture, rg Region, out byte[:]) bool: ok := read_texture_into(t, rg, out); check(); ok
+read_texture<T>(t Texture, out T[>..]&) bool:
+	info := texture_info(t); raw byte[>..] ~= []; raw.resize(texel_size(info.format) * info.width as int * info.height as int * (if info.kind == 2 { info.depth as int } else { 1 }), 0)
+	ok := read_texture(t, Region{}, raw[..]); append_as(raw[..], out); ok
+read_pixels(t Texture) byte[>..]: px byte[>..] ~= []; read_texture(t, px); px
+save_png_raw(t Texture, path const byte[:]) bool:
+	if !need("save_png"): return false
+	i := tslot(t)
+	if i < 0 || !readable(TEXS[i], "save_png"): return false
+	f := TEXS[i].fmt; pf := if f == 4 || f == 52 { 376840196 } else { if f == 12 { 372645892 } else { 0 } }
+	if pf == 0: return misuse("save_png: only an RGBA8, RGBA8_SRGB or BGRA8 texture")
+	o ~= CTReg{0, 0, 0, 0, 0, 0, 0, 0, 0}
+	if !region(TEXS[i], Region{}, o, "save_png"): return false
+	w := o.w as int; h := o.h as int; px byte[>..] ~= []; px.resize(w * h * 4, 0); ok ~= download_texture(o, px[..], "save_png")
+	if ok && t.id == SCR.id: k ~= 3; while k < px.len { px[k] = 255; k += 4 }
+	if ok: surf := s_mksurf(w as i32, h as i32, pf as u32, ffi::ptr(px[..]), (w * 4) as i32); ok = surf != 0 && s_savepng(surf, cz(path, 1024)); if !ok { sdl_fail("save_png") } s_rmsurf(surf)
+	ok
+save_png(t Texture, path const byte[:]) bool: ok := save_png_raw(t, path); check(); ok
+screenshot(path const byte[:]) bool: save_png(screen(), path)
+load_texture(path const byte[:], flags int) Texture:
+	h ~= Texture{0}
+	if !need("load_texture"): return h
+	n := min(path.len, 1023); p := cz(path, 1024); ld := if n >= 4 && ieq(path[n - 4..n], ".bmp") { s_loadbmp(p) } else { s_loadpng(p) }
+	if ld == 0: fail(str("cannot load ", path[..n], ": ", sdlerr())); return h
+	rgba := s_conv(ld, 376840196); s_rmsurf(ld)
+	if rgba == 0: sdl_fail("converting an image"); return h
+	hd := ffi::bytes(rgba, 32); w := i32at(hd[..], 8); ht := i32at(hd[..], 12); pitch := i32at(hd[..], 16)
+	h = create_texture(TextureDesc{0, if flags & 2 != 0 { 3 } else { 1 }, 1, w as i32, ht as i32, 1, if flags & 1 != 0 { 0 } else { 1 }, 1}); i := tfind(TTEX, h.id)
+	if i >= 0:
+		all := ffi::bytes(u64at(hd[..], 24), pitch * ht); tight byte[>..] ~= []
+		for y ht: tight.append(all[y * pitch..y * pitch + w * 4])
+		o ~= CTReg{0, 0, 0, 0, 0, 0, 0, 0, 0}; region(TEXS[i], Region{}, o, "load_texture"); ok := upload_texture(o, tight[..], true, "load_texture")
+		if ok && TEXS[i].d.mips > 1: c := s_acq(DEV); if c != 0 { s_mips(c, TEXS[i].tex); s_submit(c) }
+		if !ok: release(h); h.id = 0
+	s_rmsurf(rgba); h
+generate_mips(t Texture):
+	if !need("generate_mips"): return
+	i := tslot(t)
+	if i < 0: return
+	if TEXS[i].d.mips < 2 || TEXS[i].usage & 1 == 0: misuse("generate_mips: a sampled texture with more than one mip"); return
+	c := copy_cmd(false, "generate_mips"); if c != 0 { s_mips(c, TEXS[i].tex) }
+texture_info(t Texture) TextureDesc: i := tfind(TTEX, t.id); if i < 0 { TextureDesc{width: 0, height: 0} } else { TEXS[i].d }
+release(t Texture):
+	if !need("release_texture"): return
+	if t.id == SCR.id || t.id == SCRD.id: misuse("release_texture: the screen belongs to gfx"); return
+	i := tslot(t)
+	if i < 0: return
+	s_rmtex(DEV, TEXS[i].tex); trem(TTEX, t.id)
+texel_size(format i32) int:
+	if format == 4: return 1
+	if format == 5 || format == 8 || format == 16: return 2
+	if format == 6 || format == 11: return 8
+	if format == 7: return 16
+	4
+create_sampler(d SamplerDesc) Sampler:
+	h ~= Sampler{0}
+	if !need("sampler"): return h
+	if (d.min_filter as u32) > 1 || (d.mag_filter as u32) > 1 || (d.mip_filter as u32) > 1 || (d.wrap_u as u32) > 2 || (d.wrap_v as u32) > 2 || (d.wrap_w as u32) > 2 || (d.compare as u32) > 8: misuse("a sampler with filters, wraps or a compare that are not gfx's constants"); return h
+	ci ~= CSmp{d.min_filter, d.mag_filter, d.mip_filter, d.wrap_u, d.wrap_v, d.wrap_w, 0.0, d.max_anisotropy, d.compare, 0.0, 1000.0, d.max_anisotropy > 1.0, d.compare != 0, 0}; s := s_mksmp(DEV, pp(ci))
+	if s == 0: sdl_fail("creating a sampler"); return h
+	h.id = tadd(TSMP); put(SMPS, ix(h.id), s); h
+sampler(desc SamplerDesc) Sampler: create_sampler(desc)
+sampler(filter i32, wrap i32) Sampler: sampler(SamplerDesc{min_filter: filter, mag_filter: filter, mip_filter: filter, wrap_u: wrap, wrap_v: wrap, wrap_w: wrap})
+shadow_sampler() Sampler: sampler(SamplerDesc{wrap_u: 2, wrap_v: 2, wrap_w: 2, compare: 4})
+release(s Sampler):
+	if !need("release_sampler"): return
+	i := tget(TSMP, s.id)
+	if i < 0: return
+	s_rmsmp(DEV, SMPS[i]); trem(TSMP, s.id)
+read_blob(b const byte[:], o Info&) bool:
+	if b.len < 56 || b[..4] != "GSHD": return misuse("not a shader: pass what embed_shader returns")
+	ver := u16at(b, 4)
+	if ver != 1: return misuse(str("a shader blob of version ", ver, ", where this gfx reads version 1"))
+	o.stage = b[6] as int; o.nin = b[7] as int; for k 3 { o.ls[k] = u32at(b, 8 + 4 * k) }
+	o.nsmp = u16at(b, 20); o.nstro = u16at(b, 22); o.nstrw = u16at(b, 24); o.nsbro = u16at(b, 26); o.nsbrw = u16at(b, 28); o.nub = u16at(b, 30)
+	o.so = u32at(b, 32); o.ss = u32at(b, 36); o.mo = u32at(b, 40); o.ms = u32at(b, 44); ho := u32at(b, 48); hs := u32at(b, 52)
+	if o.stage > 2 || o.nub > 4 || o.nin > 16 || o.so + o.ss > b.len || o.mo + o.ms >= b.len || ho + hs >= b.len: return misuse("a damaged shader blob")
+	p ~= 56; for k o.nub { o.usz[k] = u32at(b, p); p += 4 }
+	for k o.nin: o.inl[k] = b[p] as int; o.inty[k] = b[p + 1] as int; p += 2
+	true
+shader_code(b const byte[:], o Info&, code byte[>..]&) byte[:]:
+	if SHF == 2: code.append(b[o.so..o.so + o.ss]); return "main\0"
+	if SHF == 16: code.append(b[o.mo..o.mo + o.ms + 1]); return "main0\0"
+	misuse("no shader format this device takes"); ""
+fnv(b const byte[:]) uint:
+	h ~= 0xcbf29ce484222325 as uint
+	for x b: h = (h ^ x as uint) * 0x100000001b3
+	h
+get_shader(b const byte[:], stage int) int:
+	o ~= default<Info>()
+	if !read_blob(b, o): return -1
+	if o.stage != stage: misuse(str("a ", stage_name(o.stage), " shader where a ", stage_name(stage), " shader goes")); return -1
+	hs := fnv(b)
+	for s, i SHS: if s.hash == hs && s.size == b.len { return i }
+	code byte[>..] ~= []; en := shader_code(b, o, code)
+	if en.len == 0: return -1
+	ci ~= CSh{code.len as uint, ffi::ptr(code[..]), ffi::ptr(en), SHF, if stage == 0 { 0 } else { 1 }, o.nsmp as u32, o.nstro as u32, o.nsbro as u32, o.nub as u32, 0}; sh := s_mksh(DEV, pp(ci))
+	if sh == 0: misuse(str("creating a ", stage_name(stage), " shader: ", sdlerr())); return -1
+	SHS.push(Shd{hs, b.len, sh, o}); SHS.len - 1
+infmt(t int) int: if t == 3 { 1 } else { if t == 6 { 2 } else { if t == 9 { 3 } else { if t == 12 { 4 } else { if t == 1 || t == 4 || t == 7 || t == 10 { (t + 2) / 3 + 4 } else { if t == 2 || t == 5 || t == 8 || t == 11 { (t + 1) / 3 + 8 } else { 0 } } } } } }
+inkind(t int) byte: if t == 1 || t == 4 || t == 7 || t == 10 { 'i' } else { if t == 2 || t == 5 || t == 8 || t == 11 { 'u' } else { 'f' } }
+vertex_layout(p PipS&) bool:
+	info := SHS[p.vs].info; n := info.nin; loc int[>..] ~= []; ty int[>..] ~= []
+	for k n: loc.push(info.inl[k]); ty.push(info.inty[k])
+	for i 1..n: j ~= i; while j > 0 && loc[j - 1] > loc[j] { t := loc[j]; loc[j] = loc[j - 1]; loc[j - 1] = t; u := ty[j]; ty[j] = ty[j - 1]; ty[j - 1] = u; j -= 1 }
+	off int[>..] ~= [0, 0]; il := p.desc.instance_location as int
+	for i n:
+		l := loc[i]; slot := if il >= 0 && l >= il { 1 } else { 0 }; cols := if ty[i] == 13 { 4 } else { 1 }; f ~= if cols == 4 { 4 } else { infmt(ty[i]) }; ov := if l < 16 { p.desc.formats[l] as int } else { 0 }
+		if ov != 0:
+			if cols == 4 || ov > 21 || VK[ov] != inkind(ty[i]): return misuse(str("PipelineDesc.formats[", l, "]: format ", ov, " cannot feed the vertex shader's input at location ", l))
+			f = ov
+		for c cols: p.attrs.push(CVA{(l + c) as u32, slot as u32, VF[f] as i32, off[slot] as u32}); off[slot] += VSZ[f]
+	for slot 2: if off[slot] != 0 { p.vbufs.push(CVB{slot as u32, off[slot] as u32, slot as i32, 0}); p.vmask |= 1 << slot }
+	true
+cctd(fmt int, mode int) CCTD:
+	f := if mode == 1 { [7, 8, 2, 8] } else { if mode == 2 { [7, 2, 1, 2] } else { if mode == 3 { [2, 8, 2, 8] } else { if mode == 4 { [5, 1, 1, 2] } else { [0, 0, 0, 0] } } } }
+	CCTD{fmt as i32, f[0] as i32, f[1] as i32, 1, f[2] as i32, f[3] as i32, 1, 0, mode != 0, false}
+teq(a Tg&, b Tg&) bool: a.nc == b.nc && a.c[0] == b.c[0] && a.c[1] == b.c[1] && a.c[2] == b.c[2] && a.c[3] == b.c[3] && a.d == b.d && a.hd == b.hd && a.sc == b.sc
+pipeline_for(pi int) uint:
+	let p .= PIPS[pi]
+	for t, k p.vt: if teq(t, TG) { return p.vp[k] }
+	if p.vt.len == 8: misuse("a pipeline drawn into more than 8 different combinations of target formats"); return 0
+	d := p.desc; cols CCTD[>..] ~= []
+	for i TG.nc: cols.push(cctd(TG.c[i], d.blend as int))
+	ci ~= CGP{SHS[p.vs].sh, SHS[p.fs].sh, ffi::ptr(bytes_of(p.vbufs[..])), p.vbufs.len as u32, ffi::ptr(bytes_of(p.attrs[..])), p.attrs.len as u32, d.primitive, if d.wireframe { 1 } else { 0 }, d.cull, if d.clockwise { 1 } else { 0 }, d.depth_bias, 0.0, d.depth_bias_slope, d.depth_bias != 0.0 || d.depth_bias_slope != 0.0, true, TG.sc as i32, 0, false, if d.depth_compare != 0 { d.depth_compare } else { 2 }, 0, 0, d.depth_test && TG.hd, d.depth_write && TG.hd, false, ffi::ptr(bytes_of(cols[..])), TG.nc as u32, TG.d as i32, TG.hd, 0}
+	gp := s_mkgp(DEV, pp(ci))
+	if gp == 0: misuse(str("creating a pipeline: ", sdlerr())); return 0
+	p.vt.push(TG); p.vp.push(gp); gp
+create_pipeline(vs const byte[:], fs const byte[:], d const PipelineDesc&) Pipeline:
+	h ~= Pipeline{0}
+	if !need("pipeline"): return h
+	if (d.primitive as u32) > 4 || (d.cull as u32) > 2 || (d.blend as u32) > 4 || (d.depth_compare as u32) > 8 || d.instance_location > 15: misuse("a PipelineDesc with a primitive, cull, blend or compare that is not one of gfx's constants"); return h
+	v := get_shader(vs, 0); f := if v >= 0 { get_shader(fs, 1) } else { -1 }
+	if f < 0: return h
+	h.id = tadd(TPIP); i := ix(h.id); put(PIPS, i, PipS{v, f, d, [], [], 0, [], []})
+	if !vertex_layout(PIPS[i]): trem(TPIP, h.id); h.id = 0
+	h
+pipeline(vs const byte[:], fs const byte[:], desc PipelineDesc) Pipeline: create_pipeline(vs, fs, desc)
+pipeline(vs const byte[:], fs const byte[:]) Pipeline: pipeline(vs, fs, PipelineDesc{})
+free_pipeline(i int): for gp PIPS[i].vp { s_rmgp(DEV, gp) } PIPS[i].vt.clear(); PIPS[i].vp.clear()
+release(p Pipeline):
+	if !need("release_pipeline"): return
+	i := tget(TPIP, p.id)
+	if i < 0: return
+	if PIPE == i { PIPE = -1 } free_pipeline(i); trem(TPIP, p.id)
+compute_pipeline(cs const byte[:]) ComputePipeline:
+	h ~= ComputePipeline{0}
+	if !need("compute_pipeline"): return h
+	o ~= default<Info>()
+	if !read_blob(cs, o): return h
+	if o.stage != 2: misuse(str("a ", stage_name(o.stage), " shader where a compute shader goes")); return h
+	code byte[>..] ~= []; en := shader_code(cs, o, code)
+	if en.len == 0: return h
+	ci ~= CCP{code.len as uint, ffi::ptr(code[..]), ffi::ptr(en), SHF, o.nsmp as u32, o.nstro as u32, o.nsbro as u32, o.nstrw as u32, o.nsbrw as u32, o.nub as u32, max(o.ls[0], 1) as u32, max(o.ls[1], 1) as u32, max(o.ls[2], 1) as u32, 0}; cp := s_mkcp(DEV, pp(ci))
+	if cp == 0: misuse(str("creating a compute pipeline: ", sdlerr())); return h
+	h.id = tadd(TCMP); put(CMPS, ix(h.id), CmpS{cp, o}); h
+release(p ComputePipeline):
+	if !need("release_compute_pipeline"): return
+	i := tget(TCMP, p.id)
+	if i < 0: return
+	if COMP == i { COMP = -1 } s_rmcp(DEV, CMPS[i].p); trem(TCMP, p.id)
+release_pipelines():
+	for i TPIP.live.len: if TPIP.live[i] { free_pipeline(i) }
+	for i TCMP.live.len: if TCMP.live[i] { s_rmcp(DEV, CMPS[i].p) }
+	for s SHS: s_rmsh(DEV, s.sh)
+	tclear(TPIP, "pipeline"); tclear(TCMP, "compute pipeline"); PIPS.clear(); CMPS.clear(); SHS.clear()
+release_resources():
+	for i TBUF.live.len: if TBUF.live[i] { s_rmbuf(DEV, BUFS[i].buf) }
+	for i TTEX.live.len: if TTEX.live[i] { s_rmtex(DEV, TEXS[i].tex) }
+	for i TSMP.live.len: if TSMP.live[i] { s_rmsmp(DEV, SMPS[i]) }
+	tclear(TBUF, "buffer"); tclear(TTEX, "texture"); tclear(TSMP, "sampler"); BUFS.clear(); TEXS.clear(); SMPS.clear()
+reset_bindings(): for k 3 { SB[k] = 0; TB[k] = 0; BB[k] = 0 } VBB = 0; IXB = false
+begin_pass_desc(d const PassDesc&) bool:
+	if !need("begin_pass"): return false
+	if PASS != 0 || CPASS != 0: return misuse(str("begin_pass inside a ", pname(), " pass: end it first"))
+	cts CCol[>..] ~= []; t ~= Tg{0, [0; 4], 0, false, 0}; samples ~= 0; w ~= 0; h ~= 0; mip := d.mip as int; lay := d.layer as int
+	for i 4:
+		if d.color[i].id == 0: break
+		k := tslot(d.color[i])
+		if k < 0: return false
+		let s .= TEXS[k]
+		if s.usage & 2 == 0: return misuse(str("begin_pass: color target ", i, " was not created with COLOR_TARGET"))
+		layers := if s.d.kind == 3 { 6 } else { if s.d.kind == 0 { 1 } else { s.d.depth as int } }
+		if mip < 0 || mip >= s.d.mips as int || lay < 0 || lay >= layers: return misuse(str("begin_pass: color target ", i, " has no mip ", mip, ", layer ", lay))
+		tw := max(s.d.width as int >> mip, 1); th := max(s.d.height as int >> mip, 1)
+		if i > 0 && (tw != w || th != h || s.d.samples as int != samples): return misuse("begin_pass: the color targets differ in size or sample count")
+		w = tw; h = th; samples = s.d.samples as int
+		c ~= CCol{s.tex, mip as u32, lay as u32, d.color_value.x, d.color_value.y, d.color_value.z, d.color_value.w, if d.clear_color { 1 } else { 0 }, 0, 0, 0, 0, d.clear_color, false}
+		if d.resolve[i].id != 0:
+			rk := tslot(d.resolve[i])
+			if rk < 0: return false
+			let r .= TEXS[rk]
+			if s.d.samples < 2 || r.d.samples != 1 || r.fmt != s.fmt || r.d.width != s.d.width || r.d.height != s.d.height: return misuse(str("begin_pass: resolve target ", i, " must be a single-sample texture of the multisampled target's size and format"))
+			c.rtex = r.tex; c.store = 3
+		cts.push(c); t.c[i] = s.fmt; t.nc = i + 1
+	dt ~= CDep{0, 0.0, 0, 0, 0, 0, false, 0, 0, 0}
+	if d.depth.id != 0:
+		k := tslot(d.depth)
+		if k < 0: return false
+		let s .= TEXS[k]
+		if s.usage & 4 == 0: return misuse("begin_pass: the depth target was not created with DEPTH_TARGET")
+		if t.nc > 0 && (s.d.width as int != w || s.d.height as int != h || s.d.samples as int != samples): return misuse(str("begin_pass: the depth target is ", s.d.width, " x ", s.d.height, " with ", s.d.samples, " sample(s), the color targets ", w, " x ", h, " with ", samples))
+		w = s.d.width as int; h = s.d.height as int; samples = s.d.samples as int
+		dt = CDep{s.tex, d.depth_value, if d.clear_depth { 1 } else { 0 }, 0, 1, 0, d.clear_depth, 0, 0, 0}; t.hd = true; t.d = s.fmt
+	if t.nc == 0 && !t.hd: return misuse("begin_pass with no targets")
+	t.sc = nsamp(samples); c := cmd()
+	if c == 0: return false
+	PASS = s_bpass(c, if cts.len > 0 { ffi::ptr(bytes_of(cts[..])) } else { 0 }, t.nc as u32, if t.hd { pp(dt) } else { 0 })
+	if PASS == 0: return sdl_fail("beginning a render pass")
+	TG = t; PIPE = -1; reset_bindings(); vp ~= CVP{0.0, 0.0, w as f32, h as f32, 0.0, 1.0}; s_vp(PASS, pp(vp)); r ~= CRect{0, 0, w as i32, h as i32}; s_sc(PASS, pp(r)); true
+begin_pass(desc PassDesc) bool: begin_pass_desc(desc)
+begin_pass(target Texture, depth Texture, clear float4) bool: d ~= PassDesc{depth: depth, color_value: clear}; d.color[0] = target; begin_pass_desc(d)
+begin_screen(clear float4) bool: begin_pass(screen(), screen_depth(), clear)
+end_pass():
+	if PASS == 0: misuse("end_pass with no render pass begun"); return
+	s_epass(PASS); PASS = 0; PIPE = -1
+bind(p Pipeline):
+	if PASS == 0: misuse("bind_pipeline outside a render pass"); return
+	i := tget(TPIP, p.id)
+	if i < 0: return
+	if (PIPS[i].desc.depth_test || PIPS[i].desc.depth_write) && !TG.hd: misuse("bind_pipeline: the pipeline tests or writes depth, and the pass has no depth target"); return
+	gp := pipeline_for(i)
+	if gp == 0: return
+	s_bgp(PASS, gp); PIPE = i
+bind_vertex_buffer(slot int, b Buffer, offset int):
+	if PASS == 0: misuse("bind_vertex_buffer outside a render pass"); return
+	k := bslot(b)
+	if k < 0: return
+	s := BUFS[k]
+	if slot < 0 || slot > 1 || offset < 0 || offset >= s.size || s.usage & 1 == 0: misuse(str("bind_vertex_buffer: slot ", slot, " (0, or 1 for instances), offset ", offset, ", of a BUFFER_VERTEX buffer")); return
+	bb ~= CBB{s.buf, offset as u32}; s_bvb(PASS, slot as u32, pp(bb), 1); VBB |= 1 << slot
+bind_vertex_buffer(b Buffer): bind_vertex_buffer(0, b, 0)
+bind_index_buffer(b Buffer, index_size int, offset int):
+	if PASS == 0: misuse("bind_index_buffer outside a render pass"); return
+	k := bslot(b)
+	if k < 0: return
+	s := BUFS[k]
+	if index_size != 2 && index_size != 4 || offset < 0 || offset >= s.size || s.usage & 2 == 0: misuse(str("bind_index_buffer: indices of 2 or 4 bytes, not ", index_size, ", from a BUFFER_INDEX buffer")); return
+	bb ~= CBB{s.buf, offset as u32}; s_bib(PASS, pp(bb), if index_size == 2 { 0 } else { 1 }); IXB = true
+bind_index_buffer(b Buffer, index_size int): bind_index_buffer(b, index_size, 0)
+stage_pass(stage int, slot int, what const byte[:]) bool:
+	if stage < 0 || stage > 2: return misuse(str(what, ": stage ", stage, " is not VERTEX, FRAGMENT or COMPUTE"))
+	if slot < 0 || slot > 31: return misuse(str(what, ": slot ", slot))
+	if (if stage == 2 { CPASS == 0 } else { PASS == 0 }): return misuse(str(what, " for the ", stage_name(stage), " stage outside a ", if stage == 2 { "compute" } else { "render" }, " pass"))
+	true
+bind_texture(stage int, slot int, t Texture, s Sampler):
+	if !stage_pass(stage, slot, "bind_texture"): return
+	k := tslot(t); q := tget(TSMP, s.id)
+	if k < 0 || q < 0: return
+	if TEXS[k].usage & 1 == 0: misuse("bind_texture: the texture was not created SAMPLED"); return
+	b ~= CTSB{TEXS[k].tex, SMPS[q]}; p := pp(b)
+	if stage == 0 { s_bvs(PASS, slot as u32, p, 1) } else { if stage == 1 { s_bfs(PASS, slot as u32, p, 1) } else { s_bcs(CPASS, slot as u32, p, 1) } }
+	SB[stage] |= 1 << slot
+bind_storage_texture(stage int, slot int, t Texture):
+	if !stage_pass(stage, slot, "bind_storage_texture"): return
+	k := tslot(t)
+	if k < 0: return
+	if TEXS[k].usage & (if stage == 2 { 16 } else { 8 }) == 0: misuse(str("bind_storage_texture: the texture was not created ", if stage == 2 { "COMPUTE_READ" } else { "STORAGE_READ" })); return
+	U8S[2] = TEXS[k].tex; p := pu(2)
+	if stage == 0 { s_bvst(PASS, slot as u32, p, 1) } else { if stage == 1 { s_bfst(PASS, slot as u32, p, 1) } else { s_bcst(CPASS, slot as u32, p, 1) } }
+	TB[stage] |= 1 << slot
+bind_storage_buffer(stage int, slot int, b Buffer):
+	if !stage_pass(stage, slot, "bind_storage_buffer"): return
+	k := bslot(b)
+	if k < 0: return
+	if BUFS[k].usage & (if stage == 2 { 16 } else { 8 }) == 0: misuse(str("bind_storage_buffer: the buffer was not created ", if stage == 2 { "BUFFER_COMPUTE_READ" } else { "BUFFER_STORAGE" })); return
+	U8S[2] = BUFS[k].buf; p := pu(2)
+	if stage == 0 { s_bvsb(PASS, slot as u32, p, 1) } else { if stage == 1 { s_bfsb(PASS, slot as u32, p, 1) } else { s_bcsb(CPASS, slot as u32, p, 1) } }
+	BB[stage] |= 1 << slot
+bound_info(stage int, o Info&) bool:
+	if stage == 2: if COMP < 0 { return false } o = CMPS[COMP].info; return true
+	if PIPE < 0: return false
+	o = SHS[if stage == 0 { PIPS[PIPE].vs } else { PIPS[PIPE].fs }].info; true
+push_uniforms(stage int, slot int, data const byte[:]):
+	if !need("push_uniforms"): return
+	if stage < 0 || stage > 2 || slot < 0 || slot > 3: misuse(str("push_uniforms: stage ", stage, ", slot ", slot, " (0 to 3)")); return
+	if data.len <= 0 || data.len > 32768: misuse(str("push_uniforms: ", data.len, " bytes (1 to 32768)")); return
+	o ~= default<Info>()
+	if bound_info(stage, o) && slot < o.nub && o.usz[slot] != data.len: misuse(str("push_uniforms: the ", stage_name(stage), " shader's uniform block ", slot, " is ", o.usz[slot], " bytes by std140, and ", data.len, " were pushed")); return
+	c := cmd()
+	if c == 0: return
+	p := ffi::ptr(data); n := data.len as u32
+	if stage == 0 { s_vu(c, slot as u32, p, n) } else { if stage == 1 { s_fu(c, slot as u32, p, n) } else { s_cu(c, slot as u32, p, n) } }
+	UP[stage] |= 1 << slot
+uniforms<T>(stage int, slot int, u T): push_uniforms(stage, slot, bytes_of(u))
+viewport(x f32, y f32, w f32, h f32):
+	if PASS == 0: misuse("viewport outside a render pass"); return
+	vp ~= CVP{x, y, w, h, 0.0, 1.0}; s_vp(PASS, pp(vp))
+scissor(x int, y int, w int, h int):
+	if PASS == 0: misuse("scissor outside a render pass"); return
+	r ~= CRect{x as i32, y as i32, w as i32, h as i32}; s_sc(PASS, pp(r))
+sr(what const byte[:], stage int, count int, bound int, kind const byte[:], how const byte[:]) bool:
+	for slot count: if bound & (1 << slot) == 0 { return misuse(str(what, ": the ", stage_name(stage), " shader reads ", kind, " ", slot, ", which no ", how, " gave it")) }
+	true
+stage_ready(stage int, o Info&, what const byte[:]) bool: sr(what, stage, o.nsmp, SB[stage], "sampler", "bind_texture") && sr(what, stage, o.nstro, TB[stage], "storage texture", "bind_storage_texture") && sr(what, stage, o.nsbro, BB[stage], "storage buffer", "bind_storage_buffer") && sr(what, stage, o.nub, UP[stage], "uniform block", "push_uniforms")
+ready_to_draw(what const byte[:]) bool:
+	if PASS == 0: return misuse(str(what, " outside a render pass"))
+	if PIPE < 0: return misuse(str(what, " with no pipeline bound"))
+	missing := PIPS[PIPE].vmask & ~VBB
+	if missing != 0: return misuse(str(what, ": the pipeline reads vertex buffer ", if missing & 1 != 0 { 0 } else { 1 }, ", which is not bound"))
+	stage_ready(0, SHS[PIPS[PIPE].vs].info, what) && stage_ready(1, SHS[PIPS[PIPE].fs].info, what)
+draw(vertices int, instances int, first_vertex int, first_instance int):
+	if !ready_to_draw("draw"): return
+	if vertices < 0 || instances < 0 || first_vertex < 0 || first_instance < 0: misuse("draw: a negative count"); return
+	s_draw(PASS, vertices as u32, instances as u32, first_vertex as u32, first_instance as u32)
+draw(vertices int): draw(vertices, 1, 0, 0)
+draw_instanced(vertices int, instances int): draw(vertices, instances, 0, 0)
+draw_indexed(indices int, instances int, first_index int, vertex_offset int, first_instance int):
+	if !ready_to_draw("draw_indexed"): return
+	if !IXB: misuse("draw_indexed with no index buffer bound"); return
+	if indices < 0 || instances < 0 || first_index < 0 || first_instance < 0: misuse("draw_indexed: a negative count"); return
+	s_drawi(PASS, indices as u32, instances as u32, first_index as u32, vertex_offset as i32, first_instance as u32)
+draw_indexed(indices int): draw_indexed(indices, 1, 0, 0, 0)
+draw_indexed_instanced(indices int, instances int): draw_indexed(indices, instances, 0, 0, 0)
+begin_compute(rwb const Buffer[:], rwt const Texture[:]) bool:
+	if !need("begin_compute"): return false
+	if PASS != 0 || CPASS != 0: return misuse(str("begin_compute inside a ", pname(), " pass: end it first"))
+	if rwb.len > 8 || rwt.len > 8: return misuse("begin_compute: at most 8 read-write buffers and 8 textures")
+	bb CSBRW[>..] ~= []; tb CSTRW[>..] ~= []
+	for b, i rwb:
+		k := bslot(b)
+		if k < 0: return false
+		if BUFS[k].usage & 32 == 0: return misuse(str("begin_compute: read-write buffer ", i, " was not created BUFFER_COMPUTE_WRITE"))
+		bb.push(CSBRW{BUFS[k].buf, false})
+	for t, i rwt:
+		k := tslot(t)
+		if k < 0: return false
+		if TEXS[k].usage & 96 == 0: return misuse(str("begin_compute: read-write texture ", i, " was not created COMPUTE_WRITE or COMPUTE_READ_WRITE"))
+		tb.push(CSTRW{TEXS[k].tex, 0, 0, false})
+	c := cmd()
+	if c == 0: return false
+	CPASS = s_bcomp(c, if tb.len > 0 { ffi::ptr(bytes_of(tb[..])) } else { 0 }, tb.len as u32, if bb.len > 0 { ffi::ptr(bytes_of(bb[..])) } else { 0 }, bb.len as u32)
+	if CPASS == 0: return sdl_fail("beginning a compute pass")
+	COMP = -1; CRB = rwb.len; CRT = rwt.len; SB[2] = 0; TB[2] = 0; BB[2] = 0; true
+begin_compute(rwb const Buffer[:]) bool: none Texture[>..] ~= []; begin_compute(rwb, none[..])
+end_compute():
+	if CPASS == 0: misuse("end_compute with no compute pass begun"); return
+	s_ecomp(CPASS); CPASS = 0; COMP = -1
+bind(p ComputePipeline):
+	if CPASS == 0: misuse("bind_compute_pipeline outside a compute pass"); return
+	i := tget(TCMP, p.id)
+	if i < 0: return
+	o := CMPS[i].info
+	if o.nsbrw != CRB || o.nstrw != CRT: misuse(str("bind_compute_pipeline: the shader writes ", o.nsbrw, " buffer(s) and ", o.nstrw, " texture(s), and begin_compute was given ", CRB, " and ", CRT)); return
+	s_bcp(CPASS, CMPS[i].p); COMP = i
+dispatch(x int, y int, z int):
+	if CPASS == 0: misuse("dispatch outside a compute pass"); return
+	if COMP < 0: misuse("dispatch with no compute pipeline bound"); return
+	if x < 0 || y < 0 || z < 0: misuse("dispatch: a negative group count"); return
+	if !stage_ready(2, CMPS[COMP].info, "dispatch"): return
+	s_disp(CPASS, x as u32, y as u32, z as u32)
+row(m mat4, i int) float4:
+	if i == 0: return float4{m.c0.x, m.c1.x, m.c2.x, m.c3.x}
+	if i == 1: return float4{m.c0.y, m.c1.y, m.c2.y, m.c3.y}
+	if i == 2: return float4{m.c0.z, m.c1.z, m.c2.z, m.c3.z}
+	float4{m.c0.w, m.c1.w, m.c2.w, m.c3.w}
+mul(m mat4, v float4) float4: float4{dot(row(m, 0), v), dot(row(m, 1), v), dot(row(m, 2), v), dot(row(m, 3), v)}
+mul(a mat4, b mat4) mat4: mat4{mul(a, b.c0), mul(a, b.c1), mul(a, b.c2), mul(a, b.c3)}
+translate(t float3) mat4: m ~= mat4_identity; m.c3 = float4{t.x, t.y, t.z, 1.0}; m
+scale(s float3) mat4: mat4{float4{s.x, 0.0, 0.0, 0.0}, float4{0.0, s.y, 0.0, 0.0}, float4{0.0, 0.0, s.z, 0.0}, float4{0.0, 0.0, 0.0, 1.0}}
+rotate(axis float3, angle f32) mat4:
+	a := normalize(axis); c := cos(angle); s := sin(angle); k := 1.0 - c
+	mat4{float4{c + a.x * a.x * k, a.y * a.x * k + a.z * s, a.z * a.x * k - a.y * s, 0.0}, float4{a.x * a.y * k - a.z * s, c + a.y * a.y * k, a.z * a.y * k + a.x * s, 0.0}, float4{a.x * a.z * k + a.y * s, a.y * a.z * k - a.x * s, c + a.z * a.z * k, 0.0}, float4{0.0, 0.0, 0.0, 1.0}}
+perspective(fovy f32, aspect f32, near f32, far f32) mat4: f := 1.0 / tan(fovy * 0.5); mat4{float4{f / aspect, 0.0, 0.0, 0.0}, float4{0.0, f, 0.0, 0.0}, float4{0.0, 0.0, far / (near - far), -1.0}, float4{0.0, 0.0, near * far / (near - far), 0.0}}
+ortho(left f32, right f32, bottom f32, top f32, near f32, far f32) mat4: mat4{float4{2.0 / (right - left), 0.0, 0.0, 0.0}, float4{0.0, 2.0 / (top - bottom), 0.0, 0.0}, float4{0.0, 0.0, 1.0 / (near - far), 0.0}, float4{(left + right) / (left - right), (top + bottom) / (bottom - top), near / (near - far), 1.0}}
+look_at(eye float3, target float3, up float3) mat4:
+	f := normalize(target - eye); s := normalize(cross(f, up)); u := cross(s, f)
+	mat4{float4{s.x, u.x, -f.x, 0.0}, float4{s.y, u.y, -f.y, 0.0}, float4{s.z, u.z, -f.z, 0.0}, float4{-dot(s, eye), -dot(u, eye), dot(f, eye), 1.0}}
+elem_size<T>(xs T[>..]&) int: one := default<T>(); bytes_of(one).len
+append_as<T>(raw const byte[:], out T[>..]&):
+	image byte[>..] ~= []; n ~= raw.len as uint
+	while true: low := (n & 127) as byte; n >>= 7; if n == 0 { image.push(low); break } image.push(low | 128)
+	image.append(raw); elems, ok := from_bytes<T[>..]>(image[..]); assert(ok); out.append(elems[..])

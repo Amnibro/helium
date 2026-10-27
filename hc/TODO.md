@@ -1,6 +1,6 @@
 # hc: what's left
 
-Status as of 2026-10-27 (gate 68).
+Status as of 2026-10-27 (gate 69).
 
 ## Where things stand
 
@@ -9,11 +9,11 @@ Status as of 2026-10-27 (gate 68).
 | hc source | `hc/*.he` and `hc/lib/*.he`, all in the `.he` syntax below; the library was rewritten from scratch, and `json`/`regex` were fuzzed against the old one |
 | Self-host | hc builds itself natively, reaches a fixpoint, and emits the same C as the clang-built hc (`hc/bootstrap.sh` checks both) |
 | Corpus, native (`--native`) | 635 / 645 pass, the gfx and ui tests included (run on lavapipe, a CPU Vulkan driver: `VK_DRIVER_FILES=<lvp_icd.json> SDL_VIDEO_DRIVER=offscreen HC_GPU=1`) |
-| Corpus, C path | 539 / 645 pass |
+| Corpus, C path | 539 / 645 pass in the difftest (which runs no GPU); the 10 gfx and ui tests also pass on the C path on lavapipe |
 | hc's own tests | `hc/test/*.he` with `.out` files; `tools/hc/hetest.sh <hc>` runs each one through the C path, `--native` and `--native --debug` |
 | Pom-Pom Grove sim | garden, race, mini, load traces bit-identical on both paths |
-| Own modules replacing Goose packages | `audio` (hc/lib/audio.he on SDL3: the same mixer, bit-identical to goose_gfx offline and live). `gfx`, `ui` and `physics` still load the goose_gfx/goose_physics packages |
-| Full apps | Pom-Pom Grove (`pomling.amni`, gfx + ui) and Waystone (`play.amni`, gfx + ui + audio + C sources) compile natively with hc; they are not run here, since they open the GPU |
+| Own modules replacing Goose packages | `audio` (hc/lib/audio.he on SDL3: the same mixer, bit-identical to goose_gfx offline and live). `gfx` (hc/lib/gfx.he straight on SDL3's GPU API, no C layer: the same checks and messages; every SDL struct's layout is checked field by field against the C compiler's). `ui` (Nuklear) and `physics` (box3d) still load the goose_gfx/goose_physics packages; inside a package, `import gfx` now resolves to hc/lib |
+| Full apps | Pom-Pom Grove (`pomling.amni`, gfx + ui) and Waystone (`play.amni`, gfx + ui + audio + C sources) compile natively with hc. On lavapipe, Pom-Pom Grove built by hc with our gfx renders pixel-identical to the Goose build: test_creature, test_render and the app's scripted HUD and menu shots exactly, test_world and test_garden within 1 level on 2 and 4 pixels (libm rounding, as before) |
 | Driver | `hc build file [-o out]`, `hc run file [-- args]` (native, cached under ~/.cache/hc), `hc check`, `hc version`, `hc help`; `hc file` runs; `hc in out [--native]` still works. The library is HC_LIB, else `lib` beside the executable |
 | Waystone parity | `HELIUM=hc tools/parity.sh`: 193 of 193 traces identical to the JS original |
 | Still on the Goose C++ compiler | Pomling, Waystone and Amni Prayer (web target); LSP; shader compilation |
@@ -147,15 +147,15 @@ Lower priority, since the C path is the oracle and not the product. It still mat
 
 ## 3. Own everything (replacing Goose and third-party C)
 
-- **Graphics (`gfx`):** today this is the `goose_gfx` package (~3.9k Goose lines plus vendored C).
-  - Replace it with our own Vulkan + SDL3 bindings written in Helium.
-  - Needs native dynamic linking (1.4) first.
-  - The Pom-Pom Grove frontend uses 43 `gfx::` functions, which sets the minimum API.
+- **Graphics (`gfx`):** done: hc/lib/gfx.he, the whole goose_gfx API on SDL3's GPU API (dlopened libSDL3), with the C layer's checks and misuse messages.
 - **Shaders (both paths agreed):**
   - Our own shader compiler from the Helium shader subset to SPIR-V for Vulkan, plus GLSL text for WebGL.
   - Replaces `src/shaderc.c` and `src/amni_gpu.h`, plus `embed_shader` / `lut fn` GPU tables.
 - **`physics`:** today `goose_physics` (~1.7k Goose lines plus vendored C). Write our own in Helium.
-- **`ui`** and **`audio`:** our own modules in Helium (audio on raw ALSA/PipeWire or through SDL3).
+- **`ui`:** today Nuklear (31k lines of C) behind a 6k-line C layer; ui.goose is 1:1 with Nuklear (341 `nk_` functions). Port Nuklear to Helium under its public-domain option (no credits line), in two phases:
+  - Canvas first, which is all Pom-Pom Grove and Waystone use: windows as canvases, the command buffer, font atlases (stb_truetype rasterizing and stb_rect_pack, ProggyClean built in), text width and glyphs, `convert` (anti-aliased tessellation) and the gfx renderer.
+  - Then the widgets, layout, style and text editor that the 9 ui corpus tests use.
+  - Check it against goose_gfx by diffing `commands`, `vertices` and `indices`, then pixels. hc/lib/ui.he goes in only when both phases match, since it takes over every `import ui`.
 - **Pom-Pom Grove app** (`eng/`, `app/`, `pomling.amni`): builds only with Goose today. It moves once gfx and shaders exist.
 - **Driver features in `src/main.cpp` that hc lacks:**
   - hc has `--native` and `--debug` only.
@@ -183,7 +183,7 @@ Lower priority, since the C path is the oracle and not the product. It still mat
 1. Native dynamic linking and the C ABI (1.4). This unblocks externs, Vulkan and SDL3.
 2. Pool-relative references and the aliasing output bugs (1.3).
 3. Checker gaps, biggest groups first: overloads, `const for`, generics (1.2).
-4. `gfx` on Vulkan + SDL3, then the shader compiler, then the Pom-Pom Grove app on hc.
+4. `gfx` on SDL3 (done), then `ui`, then the shader compiler, then the Pom-Pom Grove app on hc.
 5. Performance passes alongside: `separate`, `reachable`, BLAKE3, bounds checks in loops.
 6. Driver features, packages, web target, LSP.
 7. arm64 and Mach-O.

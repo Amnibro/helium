@@ -1,0 +1,13 @@
+use std
+use os
+var G byte[>..][>..] = []
+main():
+	for t ["hi", "!", "xyz"]: c byte[>..] ~= []; c.append(t); G.push(c)
+	L byte[>..][>..] ~= []
+	for t ["ab", "c"]: d byte[>..] ~= []; d.append(t); L.push(d); d.clear(); d.append("zz")
+	M byte[>..][>..] ~= []
+	for t ["de", "f"]: M.push(copy(t))
+	for x G: write_stdout(x[..]); write_stdout("|")
+	for x L: write_stdout(x[..]); write_stdout("|")
+	for x M: write_stdout(x[..]); write_stdout("|")
+	write_stdout("\n")

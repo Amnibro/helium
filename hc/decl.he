@@ -121,8 +121,9 @@ recursive load_import(name int, from int, t int) int:
 			if c == '/': sl = i
 	fp := if from >= 0 && from < FPKG.len { FPKG[from] as int } else { -1 }
 	if sl >= 0 { p.append(fnm[..sl]); } else { if fp >= 0 { p.append(nm(PKS[fp].root)); } else { p.append(ROOTDIR); } } p.push('/'); p.append(nm(name))
-	r ~= try_ext(p[..], fp)
-	if r == -1 && !rel && blessed(nm(name)).len > 0: lp := lib_path(nm(name)); if file_exists(lp[..]) { r = try_load(lp[..], -1) }
+	bl := !rel && blessed(nm(name)).len > 0; lb := lib_path(nm(name)); r ~= if bl && fp >= 0 && file_exists(lb[..]) { try_load(lb[..], -1) } else { -1 }
+	if r == -1: r = try_ext(p[..], fp)
+	if r == -1 && bl && file_exists(lb[..]): r = try_load(lb[..], -1)
 	if r == -1 && !rel:
 		s byte[>..] ~= []; s.append(nm(name)); c ~= s.len; for ch, i s { if ch == '/' && c == s.len { c = i } } pk := pk_of(intern(s[..c])); if pk >= 0: q byte[>..] ~= []; q.append(nm(PKS[pk].root)); q.push('/'); q.append(if c < s.len { s[c + 1..] } else { s[..] }); r = try_ext(q[..], pk)
 	if r == -1: lp := lib_path(nm(name)); r = try_load(lp[..], -1)
