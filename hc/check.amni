@@ -2,7 +2,7 @@ import decl;
 let R_NONE = 0; let R_LOCAL = 1; let R_GLOBAL = 2; let R_FN = 3; let R_BUILTIN = 4; let R_FIELD = 5; let R_CONST = 6; let R_VARIANT = 7; let R_MEMBER = 8; let R_CTOR = 9; let R_BLOCK = 10; let R_UFCS = 11; let R_VCTOR = 12; let R_FCONST = 13; let R_CASE = 14;
 let LV_LIT = 128; let LPN = -7; let LV_VAR = 1; let LV_CONST = 2; let LV_PARAM = 4; let LV_REF = 8; let LV_FOR = 16; let LV_BLKP = 32; let LV_FLET = 64;
 let IS_DONE = 2;
-struct FnI { node i32, lo i32, hi i32, ab i32, par i32, cfn i32, g0 i32, gn i32, ret i32, p0 i32, pn i32, st u8, lr bool, blk i32, bown i32, name i32, fl u16, rinf bool, tg bool }
+struct FnI { node i32, lo i32, hi i32, ab i32, par i32, cfn i32, g0 i32, gn i32, ret i32, p0 i32, pn i32, st u8, lr bool, blk i32, bown i32, name i32, fl u16, rinf bool, tg bool, nc bool }
 struct LV { name i32, ty i32, fl u16, cfn i32, own i32, node i32, cnt i32 }
 struct Cap { inst i32, lv i32 }
 struct CEdge { caller i32, callee i32 }
@@ -13,7 +13,7 @@ var NAR i32[>..<];
 var CAPS Cap[>..];
 var CEDGES CEdge[>..];
 var GBS Gb[>..];
-var AT i32[>..]; var AC i32[>..]; var AK u8[>..]; var AV i32[>..]; var AX i32[>..];
+var AT i32[>..]; var AC i32[>..]; var AK u8[>..]; var AV i32[>..]; var AX i32[>..]; var AD u8[>..];
 var CI int = -1;
 var AOWN int = -1;
 var CFN int = -1;
@@ -29,7 +29,7 @@ fn new_inst(node int, lo int, hi int, par int) int {
 	let i = FI_.len;
 	FI_.push(FnI { node: node as i32, lo: lo as i32, hi: hi as i32, ab: AT.len as i32, par: par as i32, cfn: i as i32, g0: GBS.len as i32, gn: 0, ret: -1, p0: 0, pn: 0, st: 0, blk: -1, bown: -1, name: if node >= 0 { ND[node].s } else { -1 }, .. });
 	let n = hi - lo;
-	AT.resize(AT.len + n, -1); AC.resize(AC.len + n, -1); AK.resize(AK.len + n, 0); AV.resize(AV.len + n, -1); AX.resize(AX.len + n, -1);
+	AT.resize(AT.len + n, -1); AC.resize(AC.len + n, -1); AK.resize(AK.len + n, 0); AV.resize(AV.len + n, -1); AX.resize(AX.len + n, -1); AD.resize(AD.len + n, 0);
 	i
 }
 fn aix(n int) int {
@@ -39,6 +39,10 @@ fn aix(n int) int {
 	(g.ab as int) + n
 }
 fn at(n int) int { AT[aix(n)] as int }
+fn dead(n int) bool { n >= 0 && AD[aix(n)] == 1 }
+var LRK i32[>..<];
+fn lrkey(i int) int { let nd = FI_[i].node; let r = FI_[i].ret; var k = 0; while k < LRK.len { if LRK[k] == nd && LRK[k + 1] == r { return k / 2; } k += 2; } LRK.push(nd); LRK.push(r); LRK.len / 2 - 1 }
+fn lrtg(i int) bool { if FI_[i].tg { return true; } for f in FI_ { if f.tg && f.node == FI_[i].node && f.ret == FI_[i].ret { return true; } } false }
 fn set_t(n int, t int) int { AT[aix(n)] = t as i32; t }
 fn set_r(n int, k int, v int) { let i = aix(n); AK[i] = k as u8; AV[i] = v as i32; }
 fn rk(n int) int { AK[aix(n)] as int }
@@ -244,7 +248,7 @@ recursive fn default_t(n int) int {
 		let x = ND[n];
 		var e = -1;
 		if x.a >= 0 { e = default_t(x.a as int); let cnt, u0, ok = cval(x.b as int); conv(x.b as int, T_I64); let a = t_arr(e, A_FIXED, cnt, -1); set_t(n, a); return a; }
-		for i in x.n { let c = kid(n, i); let ct = at(c); if !is_pending(ct) { e = ct; } }
+		for i in x.n { let c = kid(n, i); let ct = at(c); if !is_pending(ct) { e = if e >= 0 && e != ct && (TY[e].k == TY_VARIANT || TY[e].k == TY_ENUM) && (TY[ct].k == TY_VARIANT || TY[ct].k == TY_ENUM) && TY[e].a == TY[ct].a { t_enum(TY[e].a as int, (TY[e].fl & 1) != 0 && TY[e].k == TY_ENUM) } else { ct }; } }
 		if e < 0 && x.n > 0 { e = default_t(kid(n, 0)); }
 		if e < 0 { cerr(n, "an empty [] has no element type here"); return T_ERRT; }
 		for i in x.n { conv(kid(n, i), e); }
@@ -425,7 +429,7 @@ recursive fn global_type(d int) int {
 		t = default_t(iv);
 		if TY[it0].k == TY_FLIT && (x.fl & V_VAR) == 0 { GLST[d] = 7; }
 		if TY[t].k == TY_STRLIT { t = TT_STR; }
-		if TY[t].k == TY_VARIANT && (ND[iv].k == N_DOT || ND[iv].k == N_SLIT) && (x.fl & V_VAR) != 0 { t = t_enum(TY[t].a as int, false); set_cv(iv, t); }
+		if TY[t].k == TY_VARIANT && ND[iv].k == N_DOT && (x.fl & V_VAR) != 0 { t = t_enum(TY[t].a as int, false); set_cv(iv, t); }
 		GLT[d] = t as i32;
 	}
 	if !ORD_HAS(d) { ORDER.push(d as i32); }
@@ -531,9 +535,11 @@ recursive fn ck_block(n int, want int) int {
 	let m = SCOPE.len;
 	let nm0 = NAR.len;
 	let nf0 = pre_decl_block_fns(n);
-	for i in x.n { cstmt(kid(n, i)); }
+	var dd = false;
+	for i in x.n { let c = kid(n, i); if dd { AD[aix(c)] = 1; } else { cstmt(c); if ends(c) { dd = true; } } }
 	var t = T_VOID;
-	if x.a >= 0 { t = ck(x.a as int, want); }
+	if x.a >= 0 { if dd { AD[aix(x.a as int)] = 1; } else { t = ck(x.a as int, want); } }
+	if dd { AD[aix(n)] = 2; }
 	pop_block_fns(nf0);
 	narrow_pop(nm0);
 	SCOPE.pop_n(SCOPE.len - m);
@@ -544,7 +550,9 @@ recursive fn ends(n int) bool {
 	let k = ND[n].k as int;
 	if k == N_RET || k == N_BREAK || k == N_CONT { return true; }
 	if k == N_CALL && ND[ND[n].a].k == N_ID { let s = nm(ND[ND[n].a].s as int); if s == "abort" || s == "exit" { return true; } }
-	if k == N_BLOCK { if ND[n].a >= 0 { return ends(ND[n].a as int); } if ND[n].n > 0 { return ends(kid(n, (ND[n].n as int) - 1)); } return false; }
+	if k == N_CALL { let r = rk(n); if (r == R_FN || r == R_BLOCK) && rv(n) >= 0 && FI_[rv(n)].nc { return true; } if r == R_CASE { let d0 = rv(n); let i0 = DSPL[d0 + 1] as int; let pt = deref(ptype_of(i0, DSPL[d0] as int)); var all = TY[pt].k == TY_VARIANT || TY[pt].k == TY_ENUM; if all { for vi in ENI[TY[pt].a].vnum { if !FI_[DSPL[d0 + 1 + vi]].nc { all = false; } } } return all; } }
+	if k == N_BLOCK { if AD[aix(n)] == 2 { return true; } if ND[n].a >= 0 { return ends(ND[n].a as int); } if ND[n].n > 0 { return ends(kid(n, (ND[n].n as int) - 1)); } return false; }
+	if k == N_MATCH { if ND[n].n == 0 { return false; } for i in ND[n].n { let b = ND[kid(n, i)].b as int; if b < 0 || !ends(b) { return false; } } return true; }
 	if k == N_IF { return ND[n].c >= 0 && ends(ND[n].b as int) && ends(ND[n].c as int); }
 	if k == N_LOOP { return !has_break(ND[n].a as int); }
 	false
@@ -823,7 +831,7 @@ recursive fn ck_vdecl(n int) {
 				if TY[it].k == TY_FLIT && (lf & (LV_VAR | LV_REF)) == 0 { lf = lf | LV_FLET; }
 				t = default_t(init);
 				if TY[t].k == TY_MULTI { t = TYL[TY[t].l] as int; }
-				if TY[t].k == TY_VARIANT && (ND[init].k == N_DOT || ND[init].k == N_SLIT) && (lf & LV_VAR) != 0 { t = t_enum(TY[t].a as int, false); set_cv(init, t); }
+				if TY[t].k == TY_VARIANT && ND[init].k == N_DOT && (lf & LV_VAR) != 0 { t = t_enum(TY[t].a as int, false); set_cv(init, t); }
 				if byref || (ND[init].k == N_UN && ND[init].op as int == T_AND) { if TY[t].k != TY_REF { t = t_ref(t, 0); } }
 				else { if TY[t].k == TY_REF && TY[t].c < 0 && (TY[t].fl & RF_OPT) == 0 && (is_fixed(TY[t].a as int) || TY[TY[t].a].k == TY_VARINT) && !has_rel(TY[t].a as int) { t = TY[t].a as int; set_cv(init, t); } else { if TY[t].k != TY_REF && TY[t].k != TY_SLICE && TY[t].k != TY_VARINT && !is_fixed(t) && names_store(init) { t = t_ref(t, 0); } } }
 			}

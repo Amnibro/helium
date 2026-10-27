@@ -65,10 +65,10 @@ var CAPSL i32[>..<];
 var CURI = -1; var LRF = -1; var LRVO i32[>..<];
 fn bss(sz int, a int) int { BSS = al(BSS, max(a, 1)); let o = BSS; BSS += max(sz, 1); o }
 fn lrflag() int { if LRF < 0 { LRF = bss(8, 8); } let d = nv(); ir(I_GADDR, 8, d, -1, -1, LRF); d }
-fn lrval(f int) int { while LRVO.len < FI_.len { LRVO.push(-1); } let rt = FI_[f].ret as int; if LRVO[f] < 0 { LRVO[f] = bss(if rt >= 0 && rt != T_VOID { tsz(rt) } else { 8 }, if rt >= 0 && rt != T_VOID { tal(rt) } else { 8 }) as i32; } let d = nv(); ir(I_GADDR, 8, d, -1, -1, LRVO[f] as int); d }
+fn lrval(f0 int) int { let f = lrkey(f0); while LRVO.len <= f { LRVO.push(-1); } let rt = FI_[f0].ret as int; if LRVO[f] < 0 { LRVO[f] = bss(if rt >= 0 && rt != T_VOID { tsz(rt) } else { 8 }, if rt >= 0 && rt != T_VOID { tal(rt) } else { 8 }) as i32; } let d = nv(); ir(I_GADDR, 8, d, -1, -1, LRVO[f] as int); d }
 fn lrcheck() {
 	let fl = ldw(lrflag(), 0, 3); let lok = nlbl(); ir(I_BZ, 3, -1, fl, -1, lok);
-	if CURI >= 0 && FI_[CURI].tg { let lno = nlbl(); ir(I_BZ, 3, -1, lcmp(fl, imm(CURI + 1), CC_E), -1, lno); stw(lrflag(), 0, imm(0), 3); let rt = FI_[CURI].ret as int; let va = lrval(CURI);
+	if CURI >= 0 && lrtg(CURI) { let lno = nlbl(); ir(I_BZ, 3, -1, lcmp(fl, imm(lrkey(CURI) + 1), CC_E), -1, lno); stw(lrflag(), 0, imm(0), 3); let rt = FI_[CURI].ret as int; let va = lrval(CURI);
 		if rt >= 0 && rt != T_VOID { if is_agg(rt) { ir(I_COPY, 3, RETV, va, imm(tsz(rt)), 0); } else { if is_pair(rt) { ir(I_MOV, 3, RETV, ldw(va, 0, 3), -1, 0); ir(I_MOV, 3, RETV2, ldw(va, 8, 3), -1, 0); } else { ir(I_MOV, 3, RETV, ldw(va, 0, wof(rt)), -1, 0); } } }
 		drop_to(0); ir(I_JMP, 3, -1, -1, -1, RETL); ir(I_LBL, 3, -1, -1, -1, lno); }
 	drop_to(0); ir(I_JMP, 3, -1, -1, -1, RETL); ir(I_LBL, 3, -1, -1, -1, lok);
@@ -509,7 +509,7 @@ recursive fn lblk(b int, d int) {
 	let h = DROPS.len;
 	let bm = if !is_vval(fin(b)) && !is_vval(at(b)) { let m = newmark(); ir(I_DSS, 3, -1, m, -1, 0); MSTK.push(m as i32); DROPS.push(m as i32); DROPS.push(-2); m } else { -1 };
 	let lt = LTREF; LTREF = false; for i in x.n { lstmt(kid(b, i)); } LTREF = lt;
-	if x.a >= 0 { let tl = x.a as int; if d == -2 && !ends(tl) && at(tl) != T_VOID { sinkv(tl); } else { if d >= 0 && !ends(tl) && at(tl) != T_VOID { ir(I_MOV, 3, d, ltail(tl), -1, 0); } else { lstmt(tl); } } }
+	if x.a >= 0 && !dead(x.a as int) { let tl = x.a as int; if d == -2 && !ends(tl) && at(tl) != T_VOID { sinkv(tl); } else { if d >= 0 && !ends(tl) && at(tl) != T_VOID { ir(I_MOV, 3, d, ltail(tl), -1, 0); } else { lstmt(tl); } } }
 	drop_to(h); DROPS.resize(h); if bm >= 0 { MSTK.pop(); }
 }
 recursive fn lcall(n int) int { lcall_to(n, -1) }
@@ -553,7 +553,7 @@ recursive fn lblkcall(n int, dst int) int {
 	let body = ND[fv].a as int; let rt = FI_[bi].ret as int;
 	let h = DROPS.len;
 	for i in ND[body].n { lstmt(kid(body, i)); }
-	let tl = ND[body].a as int; var r = imm(0);
+	let tl = if dead(ND[body].a as int) { -1 } else { ND[body].a as int }; var r = imm(0);
 	if tl >= 0 { if rt >= 0 && rt != T_VOID && !ends(tl) { if is_agg(rt) { let q = if dst >= 0 { dst } else { let q2 = nv(); ir(I_SLOT, 8, q2, -1, -1, slot(tsz(rt), tal(rt))); tmp_drop(q2, rt); q2 }; lstore(q, tl, rt); lmove_src(tl); r = q; } else { if is_pair(rt) { let p, q = lsl(tl); r = p; PAIR2 = q; } else { r = lx(tl); } } } else { lstmt(tl); } }
 	drop_to(h); DROPS.resize(h);
 	AOWN = sa; r
@@ -889,7 +889,7 @@ recursive fn lfmt(c int, top bool) {
 	let s0 = ARGL.len; ARGL.push(a as i32); ir(I_CALL, 3, -1, s0, 1, fmt_fn(d));
 }
 recursive fn lstmt(n int) {
-	if LERR.len > 0 { return; }
+	if LERR.len > 0 || dead(n) { return; }
 	let th = STMP.len; let sb = SBRD; SBRD = BRD; lstmt1(n); SBRD = sb; var i = STMP.len; while i > th { i -= 2; ldrop(tmpa(STMP[i] as int), STMP[i + 1] as int); } STMP.resize(th);
 }
 var LTR = -1;
@@ -907,7 +907,7 @@ recursive fn lstmt1(n int) {
 	if k == N_BLOCK { lblk(n, -1); return; }
 	if k == N_RET && ax(n) >= 0 && ax(n) != CURI { let lt = ax(n); let rt0 = FI_[lt].ret as int; let va = lrval(lt);
 		if x.n > 1 { for i in x.n { let c = kid(n, i); lstore(addi(va, moff(rt0, i)), c, mel(rt0, i)); lmove_src(c); } } else { if x.n == 1 { let c = kid(n, 0); lstore(va, c, rt0); lmove_src(c); } }
-		stw(lrflag(), 0, imm(lt + 1), 3); drop_to(0); ir(I_JMP, 3, -1, -1, -1, RETL); return; }
+		stw(lrflag(), 0, imm(lrkey(lt) + 1), 3); drop_to(0); ir(I_JMP, 3, -1, -1, -1, RETL); return; }
 	if k == N_RET && x.n > 1 { let rt = FI_[CUR].ret as int; for i in x.n { let c = kid(n, i); let et = mel(rt, i); var dup = false; for j in i + 1..x.n { let c2 = kid(n, j); if ND[c].k as int == N_ID && ND[c2].k as int == N_ID && rk(c) == R_LOCAL && rk(c2) == R_LOCAL && rv(c) == rv(c2) { dup = true; } } if dup && is_res(et) && deref(at(c)) == et { let sp, sn = lsl(c); if is_seq(et) { rtcall("rt_sqfrom", [addi(RETV, moff(rt, i)) as i32, sp as i32, sn as i32, lsqbytes(sp, sn, TY[et].a as int) as i32]); } else { rtcall("rt_rfrom", [addi(RETV, moff(rt, i)) as i32, sp as i32, sn as i32, imm(tsz(TY[et].a as int)) as i32]); } } else { lstore(addi(RETV, moff(rt, i)), c, et); if !dup { lmove_src(c); } } } drop_ret(); ir(I_JMP, 3, -1, -1, -1, RETL); return; }
 	if k == N_RET { if x.n > 0 { let c = kid(n, 0); lret(c); } else { drop_to(0); ir(I_JMP, 3, -1, -1, -1, RETL); } return; }
 	if k == N_BREAK { if x.a >= 0 && LRV[LRV.len - 1] == -2 { sinkv(x.a as int); } if x.a >= 0 && LRV[LRV.len - 1] == -1 { lstmt(x.a as int); } if x.a >= 0 && LRV[LRV.len - 1] >= 0 { ir(I_MOV, 3, LRV[LRV.len - 1] as int, lx(x.a as int), -1, 0); } drop_to(LOOPH[LOOPH.len - 1] as int); ir(I_JMP, 3, -1, -1, -1, LBRK[LBRK.len - 1] as int); return; }
@@ -1065,7 +1065,7 @@ fn lower_fn(i int) {
 	let fm = newmark(); MSTK.push(fm as i32); ir(I_DSS, 3, -1, fm, -1, 0); if rt >= 0 && is_vimg(rt) { mark_use(fm); }
 	let body = ND[node].c as int;
 	for q in ND[body].n { lstmt(kid(body, q)); }
-	let tl = ND[body].a as int;
+	let tl = if dead(ND[body].a as int) { -1 } else { ND[body].a as int };
 	if tl >= 0 { if rt >= 0 && rt != T_VOID && at(tl) != T_VOID && !ends(tl) { lret(tl); } else { lstmt(tl); } }
 	drop_to(0); DROPS.clear();
 	if FZH > FZL { let za = nv(); let zn = nv(); IR[FZP] = Ir { I_SLOT as u8, 8, za as i32, -1, -1, FZL as i64, -1 }; IR[FZP + 1] = Ir { I_IMM as u8, 8, zn as i32, -1, -1, (FZH - FZL) as i64, -1 }; IR[FZP + 2] = Ir { I_ZERO as u8, 3, za as i32, -1, zn as i32, 0, -1 }; } FZP = -1;
