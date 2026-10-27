@@ -122,6 +122,8 @@ Projects still on `.amni`, because they build with the Goose toolchain: Pomling 
 
 Lower priority, since the C path is the oracle and not the product. It still matters because every native result is checked against it.
 
+- An `if` expression yielding `null` or a pool element into a pool-relative field (`Link{to: if c { null } else { cells[i] }}` with `to Cell&<u16 in cells>?`) emits an assignment of `void*`/the struct to the `int16_t` storage, so clang rejects it. Not in the corpus; `hc/test/relref_guard.he` builds its links with statements instead.
+
 ## 2. Performance (native vs clang)
 
 - **Work in progress, uncommitted:** a zero-fill idiom (`for i in N { a[i] = 0 }` becomes one `ZERO`) in `lower.amni`. It never fires yet; `lzfill` isn't being reached from `lfor`.
@@ -139,14 +141,17 @@ Lower priority, since the C path is the oracle and not the product. It still mat
   - Add, sub, and, or, xor, multiply (16-bit lanes and narrower), and shifts by constants.
   - Widening and narrowing between 8-, 16-, 32- and 64-bit lanes.
   - One `int` reduction (`+= -= ^= |= &=`) per loop.
+  - `f32`/`f64` lanes: loads, stores, copies, uniform broadcasts and `+ - * /` as packed SSE ops, one op per scalar op with no FMA, so results are bit-identical to the scalar loop. Float reductions, compares, selects and int/float conversions are rejected, since a reduction would change the summation order.
+  - Kernels whose narrowest lane is 4 bytes or wider process two registers per value per iteration, falling back to one when XMM registers run out. A 400x400 f64 matmul (`cij += aik * bk[j]`) runs at clang's speed.
   - Runtime guards for bounds and aliasing, with the scalar loop kept as the tail.
   - `HC_NOVEC=1` turns it off.
   - Gate any change to it with `python3 tools/hc/vecfuzz.py <hc> [count] [first seed]`. It runs random loop programs with and without `HC_NOVEC` and compares exit codes and output. Run it with both the C-built `hc` and the natively built `hcn`: the native one runs `vec.he` as native code. In October 2026 that exposed a native double release that the C-built compiler hid.
   - Stores may go through row slices (a data pointer plus a loop-invariant offset), so `bench/goose/blur_rows.goose` vectorizes too.
-  - Blur runs 9x faster. Not yet supported: floats, conditionals (select), gathers, AVX2, and strided or struct-of-arrays access.
+  - Blur runs 9x faster. Not yet supported: float reductions and conversions, conditionals (select, e.g. the audio mixer's clamp), gathers, AVX2, and strided or struct-of-arrays access. vecfuzz's `flt` mode covers floats, including inf and NaN from division by zero.
 - **Byte gathers:** a counted loop `for k n { v |= (s[i + k] as uint) << (8 * k) }` with n of 2, 4 or 8 (after inlining) becomes one guarded n-byte load. When `i` or `n` falls out of bounds, the original loop runs and traps at the same index (`vlc_loop` in `vec.he`). It covers `std.hash` and `binary.le`. A literal `for k 8` is unrolled during lowering and is not combined yet.
 - **Memory forwarding (`lvn`):** addresses are canonicalized to a root base plus constant offset. A store only invalidates earlier loads and stores of the same base whose bytes overlap it, so struct field updates through one reference forward their values. Loads from immutable non-escaping `let` globals (`GADDR` tagged `l = -4` by `gtag`) ignore stores, and LICM hoists them. LICM also hoists loads from globals and stack slots out of loops that contain no stores or calls. `tools/hc/optfuzz.py <hc> [n] [seed]` fuzzes aliasing references, globals and calls, native optimized against `HC_NOOPT` and the C path.
 - Data-stack scope markers (`dss`/`dsr`) only move the data-stack top, so LVN gives loads rooted in globals and stack slots their own epoch (`mg`). Markers bump only that epoch, and loads through references and heap pointers survive them.
+- Optional relative references: decoding `n.l` yields `p = d != 0 ? base + d : 0`. `rnz` (opt.he) rewrites `p != null` tests to `d != 0`. When every other use of `p` lies in the region reached only through the nonzero edge of such a test, it also drops the `p = 0` arm, so `guard l else {...}` costs a load, an add and a branch (bintrees -5%, tree -9% instructions).
 - **Division by constants:** native `/` and `%` with a constant divisor use multiply-high sequences (Granlund–Montgomery), power-of-two shifts and masks, keeping truncating `/` and Euclidean `%`. Unsigned divisors pick the tightest multiplier (multiply and shift, or pre-shift for even divisors) before the add-fixup form. Power-of-two cases work in any register. Divisors with magnitude of at least 2^62 still use `div`. Check changes with `python3 tools/hc/divcheck.py <seed> <hc>`: it covers every integer type and edge divisors, native against C. `push` went from 2.8x clang's cycles to 1.5x, since every bench rng calls `xs_mod`.
 - **Inlining heuristics:** size limits are hand-tuned with no profile feedback.
 - **Compile time:** hc self-compile is ~300 ms, up from ~206 ms before the optimizer passes. Main costs: two value-numbering passes, LICM, rebuilding IR after strength reduction.

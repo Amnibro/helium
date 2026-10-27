@@ -181,10 +181,11 @@ vasm(mk bool) bool:
 			if c == B_SHL || c == B_SHR || c == B_SAR:
 				vgetm(a, cw, t, aa); for r aa { vshi(cw, if c == B_SHL { 6 } else { if c == B_SAR { 4 } else { 2 } }, r as int, o.y as int) }
 			else:
-				if a <= -2 && b >= 0 && c != B_SUB: s := a; a = b; b = s
+				fp := c & 256 != 0; c0 := c & 255
+				if a <= -2 && b >= 0 && (c0 == B_ADD || c0 == B_MUL || c0 == B_AND || c0 == B_OR || c0 == B_XOR): s := a; a = b; b = s
 				vgetm(a, cw, t, aa); vgetr(b, cw, bb, tm); l := vlg(cw)
-				opc := vopc(c, l)
-				for r, p aa { sse(0x66, false, opc, r as int, bb[p] as int) }
+				opc := if fp { if c0 == B_ADD { 0x58 } else { if c0 == B_SUB { 0x5C } else { if c0 == B_MUL { 0x59 } else { 0x5E } } } } else { vopc(c, l) }
+				for r, p aa { sse(if fp && cw == 4 { 0 } else { 0x66 }, false, opc, r as int, bb[p] as int) }
 			if cw != w:
 				vcvt(aa, cw, false, w, rr); for r aa { vxf(r as int) } vput(d, rr)
 			else: vput(d, aa)
@@ -230,18 +231,27 @@ vec_loop(fi int, h int, j int) bool:
 		if op == I_IMM: vaset(d, 0, x.c as int); vmat(q); continue
 		if op == I_BCHK: vav(a); vav(b); if !vaf(a) || !vun(b) || VAC[a] < -8 || VAC[a] > 8 { return false } VQK.push(q as i32); continue
 		if op == I_LD:
-			vav(a); if !vaf(a) || w & 8 != 0: return false
+			vav(a); if !vaf(a): return false
 			if VAC[a] == 0: if x.l != -3 || w != 3 { return false } vaset(d, 0, 0); vaadd(d, d, 1); vmat(q); continue
 			if VAC[a] != wsz(w) as i64 || VAX[a] < -(1 << 40) || VAX[a] > 1 << 40: return false
-			VAK[d] = 3; VLW[d] = wsz(w) as i8; VLS[d] = if wsg(w) { 1 } else { 0 }; VOS.push(VOp{1, wsz(w) as u8, VLS[d] as u8, d as i32, -1, -1, vgrp(a) as i32, 0, VAX[a]}); continue
+			VAK[d] = 3; VLW[d] = wsz(w) as i8; VLS[d] = if w & 8 != 0 { 2 } else { if wsg(w) { 1 } else { 0 } }; VOS.push(VOp{1, wsz(w) as u8, VLS[d] as u8, d as i32, -1, -1, vgrp(a) as i32, 0, VAX[a]}); continue
 		if op == I_ST:
-			vav(a); if b >= 0 && !vln(b) { vav(b) } if w & 8 != 0 || !vaf(a) || VAC[a] != wsz(w) as i64 || VAX[a] < -(1 << 40) || VAX[a] > 1 << 40: return false
-			vb := if vln(b) { b } else { if vun(b) { vuref(b, wsz(w)) } else { -1 } }; if vb == -1: return false
+			vav(a); if b >= 0 && !vln(b) { vav(b) } if !vaf(a) || VAC[a] != wsz(w) as i64 || VAX[a] < -(1 << 40) || VAX[a] > 1 << 40: return false
+			vb := if vln(b) { b } else { if vun(b) { vuref(b, wsz(w)) } else { -1 } }; if vb == -1 || vb >= 0 && (VLS[vb] == 2) != (w & 8 != 0) || vb >= 0 && w & 8 != 0 && VLW[vb] as int != wsz(w): return false
 			g := vgrp(a); hp ~= false; for z VGN[g] as int { s := VGS[3 * g + z] as int; if VDP[s] >= 0 && vdptr(s, 7) && VGM[3 * g + z] == 1 { hp = true } } if !hp || VGT[g] >= 0: return false
 			VGT[g] = VOS.len as i32; VOS.push(VOp{2, wsz(w) as u8, 0, -1, vb as i32, -1, g as i32, 0, VAX[a]}); continue
+		if op == I_FBIN:
+			c := x.c as int; fw := wsz(w); if w & 8 == 0 || c != B_ADD && c != B_SUB && c != B_MUL && c != B_DIV: return false
+			if !vln(a) { vav(a) } if !vln(b) { vav(b) }
+			if vun(a) && vun(b): vaset(d, 0, 0); vaadd(d, d, 1); vmat(q); continue
+			ea ~= a; eb ~= b
+			if vln(a) { if VLS[a] != 2 || VLW[a] as int != fw { return false } } else { if !vun(a) { return false } ea = vuref(a, fw) }
+			if vln(b) { if VLS[b] != 2 || VLW[b] as int != fw { return false } } else { if !vun(b) { return false } eb = vuref(b, fw) }
+			VAK[d] = 3; VLW[d] = fw as i8; VLS[d] = 2; VOS.push(VOp{3, fw as u8, fw as u8, d as i32, ea as i32, eb as i32, -1, (c | 256) as i64, 0}); continue
 		if op == I_BIN:
 			if x.l >= 0: return false
 			if !vln(a) { vav(a) } if !vln(b) { vav(b) } c := x.c as int
+			if vln(a) && VLS[a] == 2 || vln(b) && VLS[b] == 2: return false
 			if vaf(a) && vaf(b):
 				vaset(d, 0, 0)
 				if c == B_ADD { vacp(d, a, 1); vacp(d, b, 1) } else { if c == B_SUB { vacp(d, a, 1); vacp(d, b, -1) } else { if c == B_MUL && vcn(b) { vacp(d, a, VAX[b] as int) } else { if c == B_MUL && vcn(a) { vacp(d, b, VAX[a] as int) } else { if c == B_SHL && vcn(b) && VAX[b] >= 0 && VAX[b] < 31 { vacp(d, a, 1 << VAX[b] as int) } else { if vun(a) && vun(b) { vaadd(d, d, 1) } else { return false } } } } } }
@@ -266,8 +276,8 @@ vec_loop(fi int, h int, j int) bool:
 				if op == I_MOV || w == 3: vaset(d, 0, 0); vacp(d, a, 1); if VAC[d] == 0 { vmat(q) } continue
 				if !vun(a): return false
 				vaset(d, 0, 0); vaadd(d, d, 1); vmat(q); continue
-			if !vln(a) || w & 8 != 0: return false
-			ww := if op == I_MOV { VLW[a] as int } else { wsz(w) }; sg := if op == I_MOV { VLS[a] } else { if wsg(w) { 1 } else { 0 } }
+			if !vln(a) || (w & 8 != 0) != (VLS[a] == 2) && op != I_MOV || w & 8 != 0 && wsz(w) != VLW[a] as int: return false
+			ww := if op == I_MOV { VLW[a] as int } else { wsz(w) }; sg := if op == I_MOV || VLS[a] == 2 { VLS[a] } else { if wsg(w) { 1 } else { 0 } }
 			VAK[d] = 3; VLW[d] = ww as i8; VLS[d] = sg as i8; VOS.push(VOp{4, ww as u8, sg as u8, d as i32, a as i32, -1, -1, 0, 0}); continue
 		return false
 	if VBAD || VOS.len == 0 || VGC.len > VGREG.len: return false
@@ -282,13 +292,14 @@ vec_loop(fi int, h int, j int) bool:
 		if VUB[k] != 0: mn = min(mn, 1 << (k % 4)); mx = max(mx, 1 << (k % 4))
 	if mx / mn > 4: return false
 	mk = mn == 1 && mx >= 2
-	VVF = 16 / mn
+	VVF = if mn >= 4 && mx / mn <= 2 { 32 / mn } else { 16 / mn }
 	for g VGC.len:
 		if VGT[g] < 0 { continue } sd := VOS[VGT[g]].y
 		for o, t VOS: if o.k as int == 1 && o.g as int == g && (t > VGT[g] as int || o.y < sd): return false
 	for o, t VOS:
 		if o.d >= 0 && VLT[o.d] < 0 { VLT[o.d] = -1 } if o.a >= 0 { VLT[o.a] = t as i32 } if o.b >= 0: VLT[o.b] = t as i32
-	kid := VKO.len; if !vasm(mk): return false
+	kid := VKO.len
+	if !vasm(mk): if VVF == 16 / mn { return false } VVF = 16 / mn; if !vasm(mk) { return false }
 	trip := vpbn(B_SUB, vum(bnd), iv); ok ~= vpcm(trip, vpim(VVF), CC_G); ok = vpbn(B_AND, ok, vpcm(trip, vpim(1 << 40), CC_L)); tm := vpbn(B_SUB, trip, vpim(1)); last := vpbn(B_ADD, iv, tm)
 	for q VQK:
 		ix := IR[q].a as int; lo ~= vaev(ix, iv, true); hi ~= vaev(ix, last, true); if VAC[ix] < 0 { s := lo; lo = hi; hi = s } ln := vum(IR[q].b as int)

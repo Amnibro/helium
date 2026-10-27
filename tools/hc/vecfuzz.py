@@ -21,12 +21,22 @@ def prog(seed):
     r=random.Random(seed);ks=[];N=r.choice([64,100,257,1000,4099])
     L=['xs_next(x uint) uint:\n\tv ~= x\n\tv ^= v << 13\n\tv ^= v >> 7\n\tv ^= v << 17\n\tv']
     for k in range(r.randint(3,7)):
-        td,ta,tb=r.choice(T),r.choice(T),r.choice(T);od=r.choice([0,0,1,2,-1,4]);arrs=[('a',ta),('b',tb),('d',td)];tw=r.random()<0.2;mode=r.choice(['st','st','red','fe','last','glob','sl','sl','gat','gat']);ta='u8' if mode=='gat' and r.random()<0.8 else ta;arrs[0]=('a',ta);ks.append((td,ta,tb,tw and mode in('st','last')))
+        td,ta,tb=r.choice(T),r.choice(T),r.choice(T);od=r.choice([0,0,1,2,-1,4]);arrs=[('a',ta),('b',tb),('d',td)];tw=r.random()<0.2;mode=r.choice(['st','st','red','fe','last','glob','sl','sl','gat','gat','flt','flt','flt']);ta='u8' if mode=='gat' and r.random()<0.8 else ta;arrs[0]=('a',ta);ks.append((td,ta,tb,tw and mode in('st','last')))
         L.append(f'k{k}(d {td}[>..]&, a {ta}[>..]&, b {tb}[>..]&, u int, lo int, hi int) int:')
         if mode=='fe':
             L+=[f'\tt ~= {r.randint(-1000,1000)}','\tfor v a:',f'\t\tt {r.choice(OPS)} {ex(r,"int",r.randint(0,3),arrs[:2],0,True).replace("[x ","[0 ")}','\tt'];continue
         if mode=='red':
             L+=[f'\tt ~= {r.randint(-1000,1000)}','\tfor x lo..hi:',f'\t\tt {r.choice(OPS)} ({ex(r,r.choice(T),r.randint(1,3),arrs,od)} as! int)']+([f'\t\td[x + {od+2}] = {ex(r,td,2,arrs,od)}'] if r.random()<0.3 else [])+['\tt'];continue
+        if mode=='flt':
+            ft=r.choice(['f32','f64']);fl=lambda o:f'x + {o}' if o>=0 else f'x - {-o}'
+            def fe(dd):
+                if dd<=0 or r.random()<0.25:
+                    k=r.random()
+                    if k<0.6: return f'F{r.choice("AAABD")}_{ft}[{fl(r.choice([0,0,1,2,-1,3,od]))}]'
+                    if k<0.8: return f'({r.choice(["1.5","0.25","-3.0","7.0","0.0"])} as {ft})'
+                    return f'(u as {ft})'
+                return f'({fe(dd-1)} {r.choice(["+","+","-","*","*","/"])} {fe(dd-1)})'
+            L+=['\tfor x lo..hi:',f'\t\tF{r.choice("DDDA")}_{ft}[{fl(od+1)}] = {fe(r.randint(1,4))}']+([f'\t\tFB_{ft}[{fl(od+2)}] = {fe(2)}'] if r.random()<0.2 else [])+['\t0'];continue
         if mode=='gat':
             g=r.choice([2,4,8,8,3]);o=r.choice([0,0,1,5,-1]);ix=f'x + {o} + k' if o>=0 else f'x - {-o} + k'
             L+=['\tt ~= 0','\tfor x lo..hi:',f'\t\tv uint ~= {r.randint(0,3)}',f'\t\tfor k {g}: v |= (a[{ix}] as{r.choice(["","","!"])} uint) << (8 * k)',f'\t\tt = t * 31 + (v as! int)']+([f'\t\td[x + {od+1}] = {ex(r,td,1,arrs,od)}'] if r.random()<0.3 else [])+['\tt'];continue
@@ -41,7 +51,8 @@ def prog(seed):
         if mode=='last': L.append(f'{ind}t = {fx(ex(r,"int",2,arrs,od))}')
         L.append('\tt')
     for t in T: L+=[f'hs_{t}(v {t}[>..]&) int:\n\th ~= 0\n\tfor q v: h = h * 31 + q as! int\n\th',f'hg_{t}(v {t}[>..<]&) int:\n\th ~= 0\n\tfor q v: h = h * 31 + q as! int\n\th']
-    L+=[f'var G_{t} {t}[>..<]' for t in T]+['main():',f'\tr uint ~= {seed * 2654435761 % (1<<40) + 1}']+[f'\tG_{t}.resize({N}, 0)' for t in T]
+    L+=[f'var F{c}_{t} {t}[>..<]' for c in 'ABD' for t in ('f32','f64')]+[f'hf_{t}(v {t}[>..<]&) int:\n\th ~= 0\n\tfor q v:\n\t\ts := str(q)\n\t\tfor c s: h = h * 31 + c as int\n\th' for t in ('f32','f64')]
+    L+=[f'var G_{t} {t}[>..<]' for t in T]+['main():',f'\tr uint ~= {seed * 2654435761 % (1<<40) + 1}']+[f'\tG_{t}.resize({N}, 0)' for t in T]+[f'\tfor i {N}:\n\t\tr = xs_next(r)\n\t\tF{c}_{t}.push(((r % 41) as {t}) * 0.375 - 3.0)' for c in 'ABD' for t in ('f32','f64')]
     for t in T:
         for j in range(2): L+=[f'\t{t}{j} {t}[>..] ~= []',f'\tfor i {N}:\n\t\tr = xs_next(r)\n\t\t{t}{j}.push(r as! {t})']
     for k,(td,ta,tb,tw) in enumerate(ks):
@@ -49,7 +60,7 @@ def prog(seed):
             mx=N-24-(64 if tw else 0);lo=r.choice([3,4,5,9,17]) if r.random()>0.03 else r.randint(0,2);hi=r.choice([lo,lo+1,lo+7,lo+15,lo+16,lo+17,lo+33,mx,mx-1,mx-r.randint(0,40)])
             hi=max(lo,N+r.randint(0,40) if r.random()<0.012 else hi);dn=f'{td}0';an=f'{ta}{r.randint(0,1)}';bn=f'{tb}{r.randint(0,1)}'
             an=dn if r.random()<0.3 and ta==td else an;bn=dn if r.random()<0.2 and tb==td else bn;bn=an if r.random()<0.15 and tb==ta else bn
-            L+=[f'\trr := k{k}({dn}, {an}, {bn}, {r.randint(-300,70000)}, {lo}, {hi})',f'\tprint(rr, " ", hs_{td}({dn}), " ", hs_{tb}({tb}0), " ", hs_{tb}({tb}1), " ", hg_{td}(G_{td}))']
+            L+=[f'\trr := k{k}({dn}, {an}, {bn}, {r.randint(-300,70000)}, {lo}, {hi})',f'\tprint(rr, " ", hs_{td}({dn}), " ", hs_{tb}({tb}0), " ", hs_{tb}({tb}1), " ", hg_{td}(G_{td}), " ", hf_f32(FD_f32), " ", hf_f64(FD_f64), " ", hf_f32(FB_f32), " ", hf_f64(FB_f64), " ", hf_f32(FA_f32), " ", hf_f64(FA_f64))']
     return '\n'.join(L)+'\n'
 def one(seed):
     with tempfile.TemporaryDirectory() as w:

@@ -410,7 +410,7 @@ rel_load(q int, t int) int:
 	opt := TY[t].fl & RF_OPT != 0; pool := relpool(t) >= 0
 	d := ldw(q, 0, if pool { rw(t) | 4 } else { rw(t) }); r := nv()
 	ir(I_MOV, 3, r, if pool { bin(B_SUB, 3, bin(B_ADD, 3, rpool_base(t), d, -1), imm(1), -1) } else { bin(B_ADD, 3, q, d, -1) }, -1, 0)
-	if opt || pool: l := nlbl(); ir(I_BNZ, 3, -1, d, -1, l); ir(I_MOV, 3, r, imm(0), -1, 0); ir(I_LBL, 3, -1, -1, -1, l)
+	if opt || pool: l := nlbl(); irl(I_BNZ, 3, -1, d, -1, l, -6); ir(I_MOV, 3, r, imm(0), -1, 0); ir(I_LBL, 3, -1, -1, -1, l)
 	r
 sdie(m const byte[:]): mp := nv(); ir(I_RADDR, 8, mp, -1, -1, rodata(m)); lp := nv(); ir(I_RADDR, 8, lp, -1, -1, rodata("store")); rtcall("rt_abort", [mp as i32, imm(m.len) as i32, lp as i32, imm(5) as i32]);
 sguard(ok int, m const byte[:]): l := nlbl(); ir(I_BNZ, 3, -1, ok, -1, l); sdie(m); ir(I_LBL, 3, -1, -1, -1, l);
@@ -1296,7 +1296,7 @@ recursive lassign(n int):
 		return
 	tt := at(a); t := deref(tt)
 	if (o == T_DOTASSIGN || o == T_ASSIGN) && rel_of(a) >= 0: q := rel_slot(a); rel_store(q, lrefv(b), rel_of(a)); return
-	if o == T_DOTASSIGN && TY[tt].k == TY_REF: ra := if ND[a].k as int == N_ID { vaddr(a) } else { laddr0(a) }; stw(ra, 0, lrefv(b), 3); return
+	if TY[tt].k == TY_REF && (o == T_DOTASSIGN || o == T_ASSIGN && TY[tt].fl & RF_OPT != 0 && (TY[at(b)].k == TY_REF || TY[fin(b)].k == TY_REF || TY[at(b)].k == TY_NULL)): ra := if ND[a].k as int == N_ID { vaddr(a) } else { laddr0(a) }; stw(ra, 0, lrefv(b), 3); return
 	o := if o == T_DOTASSIGN { T_ASSIGN } else { o }
 	if o == T_ASSIGN && is_vimg(t) && vlim(t) == 1 && vw(t) > 0 && !sq(t):
 		e := TY[t].a; if !needs_drop(e) && !is_rel(e) && !has_rel(e): da := laddr(a); img := ldw(da, 0, 3); p, q := lsl(b); dp, ln := vdat(img, t); lguard(n, lcmp(q, ldw(img, 0, vwc(t)), CC_LE), "limited array capacity exceeded"); ir(I_COPY, 3, dp, p, bin(B_MUL, 3, q, imm(tsz(e)), -1), 0); stw(img, vw(t) as int, q, vwc(t)); return
