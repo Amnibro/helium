@@ -1,18 +1,38 @@
 # hc: what's left
 
-Status as of 2026-10-26, `main` at `30de79ef` (hc merged in from `selfhost`).
+Status as of 2026-10-27, `main` at `a9c76f94`.
 
 ## Where things stand
 
 | | Now |
 |---|---|
-| hc source | ~7.3k lines of Helium in `hc/*.amni` + `hc/lib/*.amni` |
+| hc source | `hc/*.he` (the `.he` syntax below); `hc/lib/*.amni` still in the old syntax |
 | Self-host | hc builds itself natively, reaches a fixpoint, and emits the same C as the clang-built hc (`hc/bootstrap.sh` checks both) |
-| Corpus, native (`--native`) | 478 / 641 pass (106 check, 39 output, 18 native-only) |
-| Corpus, C path | 439 / 641 pass (124 check, 32 output, 46 C compile) |
+| Corpus, native (`--native`) | 584 / 646 pass |
+| Corpus, C path | 503 / 646 pass |
 | Pom-Pom Grove sim | garden, race, mini, load traces bit-identical on both paths |
-| Speed vs clang -O2 (same program) | garden 0.89 s vs 0.61 s, race 0.61 s vs 0.42 s (~1.45x) |
-| Still on the Goose C++ compiler | everything with gfx, ui, physics or audio; the web target; LSP; packages; shader compilation |
+| Still on the Goose C++ compiler | Pomling, Waystone and Amni Prayer (web target); everything with gfx, ui, physics or audio; LSP; shader compilation |
+
+## 0. The `.he` syntax
+
+`.he` files parse with layout; `.amni` files parse exactly as before.
+
+- Blocks: `:` then an indented block, or `: a; b` to the end of the line. Braces still work and switch layout off inside them.
+- An inline `else` closes the inline block it follows only when its own branch uses layout (`else:` or `else if c:`); `else {` stays with a braced `if`.
+- No `;` at line ends; `x := e` declares, `x ~= e` declares a variable; `fn` is optional; `for i xs` and `for x T in xs`; `use m`; `#` comments.
+- A statement-position block discards its tail value. A function with no result type still infers it from its tail, so end such bodies with `;` when the tail is not the result.
+- An untyped local whose initializer is a narrower integer (not a cast) is `int`.
+- An int converts implicitly to a narrower int at assignments, typed declarations, returns and fields; debug builds check that it fits, exactly like `as`. Arguments still need a cast (overload matching does not narrow).
+
+Converters:
+
+- `hc --to-he in.amni out.he`: syntax only. Safe only for code without narrow untyped locals, since `.he` widens those.
+- `HC_OLDLOC=1 hc --slim prog file out.he [keep]`: checks the whole program under the old rules, then prints `file` with types. It drops casts that the new rules make redundant and spells out narrow local types the old code relied on.
+- The oracle (`slim.py` in the session scratchpad; worth moving into `tools/hc/`) compares the C of the old and new sources after canonical renaming. Any function whose C changes keeps its casts. On hc it kept 57 of about 950 functions.
+
+o200k token counts: hc 243,964 (`.amni`) → 228,365 (`.he`, slimmed), −6.4%. Corpus, syntax only: −10.6% code tokens.
+
+Projects still on `.amni`, because they build with the Goose toolchain: Pomling and Waystone (their parity suites must pass on hc first), and Amni Prayer (needs hc's web target).
 
 ## 1. Correctness gaps in the corpus
 
