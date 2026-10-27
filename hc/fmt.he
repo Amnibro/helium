@@ -1,0 +1,223 @@
+use parse
+var FO byte[>..]; FOL ~= 0; NSLP ~= false
+fw(s const byte[:]): FO.append(s);
+ft(n int): fw(tok_text(ND[n].t as int));
+tabs(d int):
+	for i d: FO.push('\t')
+qn(id int): fw(nm(id));
+recursive tconst(n int) bool:
+	k := ND[n].k as int; if k == N_TCONST { return true; }; if (k == N_TSLICE || k == N_TREF) && ND[n].fl & 1 != 0 { return true; }; if k == N_TARR || k == N_TSLICE || k == N_TREF || k == N_TVAR { return tconst(ND[n].a as int); }; false
+recursive ftyw(n int):
+	if tconst(n): fw("("); fty(n); fw(")"); else: fty(n);
+recursive fty(n int):
+	x := ND[n]; k := x.k as int
+	if k == N_TPRIM: ft(n); return
+	if k == N_TNAME: qn(x.s as int); if x.n > 0 { fw("<"); for i x.n { if i > 0 { fw(", "); }; fty(kid(n, i)); }; fw(">"); }; if x.fl & 1 != 0 { fw(".."); }; return
+	if k == N_TCONST: fw("const "); fty(x.a as int); return
+	if k == N_TSLICE: if x.fl & 1 != 0 { fw("const "); ftyw(x.a as int); } else { fty(x.a as int); }; fw("[:]"); return
+	if k == N_TREF: if x.fl & 1 != 0 { fw("const "); ftyw(x.a as int); } else { fty(x.a as int); }; if x.fl & 2 == 0 || x.c > 0 { fw("&"); }; if x.c > 0 { fw("<"); fw(nm(x.c as int - T_KW)); if x.s >= 0 { fw(" in "); qn(x.s as int); }; fw(">"); }; if x.fl & 2 != 0 { fw("?"); }; return
+	if k == N_TARR:
+		fty(x.a as int); o := x.op as int
+		if o == A_FIXED: fw("["); fx(x.b as int, 0, true); fw("]"); return
+		if o == A_LIM: fw("[.."); if x.b >= 0 { fx(x.b as int, 0, true); }; fw("]"); return
+		if o == A_GROW: fw("[>..]"); return
+		if o == A_GS: fw("[>..<]"); return
+		if x.c >= 0: fw("["); fw(nm(x.c as int - T_KW)); fw("]"); return
+		fw("[]"); return
+	if k == N_TVAR: fty(x.a as int); fw("."); qn(x.s as int); return
+	if k == N_TIDX: ft(n); fw(if x.fl & 1 != 0 { " upto " } else { " in " }); qn(x.s as int); return
+	if k == N_TFN: fw("fn"); if x.fl & 1 != 0 { fw("("); for i x.n { if i > 0 { fw(", "); }; fty(kid(n, i)); }; fw(")"); if x.b >= 0 { r := x.b as int; fw(" -> "); if ND[r].n != 1 { fw("("); }; for i ND[r].n { if i > 0 { fw(", "); }; fty(kid(r, i)); }; if ND[r].n != 1 { fw(")"); } } }; return
+	fw("?type?");
+bprec(n int) int:
+	k := ND[n].k as int; if k == N_INT || k == N_FLT { return 11; }; if k == N_BIN { return binprec(TK[ND[n].t].k as int); }; if k == N_UN || k == N_AS { return 11; }; if k == N_BLOCK || k == N_IF || k == N_MATCH || k == N_EBLOCK || k == N_LOOP || k == N_WHILE || k == N_FOR || k == N_FUNVAL || k == N_RET || k == N_BREAK { return -1; }; 12
+recursive fxp(n int, p int, inb bool):
+	if bprec(n) < p: sf := FOL; sn := NSLP; FOL = 0; NSLP = false; fw("("); fx(n, 0, true); fw(")"); FOL = sf; NSLP = sn else: fx(n, p, inb);
+recursive flist(n int): sf := FOL; sn := NSLP; FOL = 0; NSLP = false; for i ND[n].n { if i > 0 { fw(", "); }; fx(kid(n, i), 0, true); }; FOL = sf; NSLP = sn
+fsub(n int): sf := FOL; sn := NSLP; FOL = 0; NSLP = false; fx(n, 0, true); FOL = sf; NSLP = sn
+fscr(n int): sf := FOL; sn := NSLP; FOL = 0; NSLP = true; fx(n, 0, true); FOL = sf; NSLP = sn
+recursive fbitems(b int):
+	x := ND[b]; for i x.n { c := kid(b, i); fw(" "); fstmt1(c, true); fw(";"); if ND[c].k as int == N_IF && ND[c].fl == 1 { fbitems(ND[c].b as int); } }; if x.a >= 0:
+		t := x.a as int; fw(" "); fstmt1(t, true); if ND[t].k as int == N_IF && ND[t].fl == 1: fw(";"); fbitems(ND[t].b as int);
+recursive fbrace(b int): fw("{"); fbitems(b); fw(" }");
+recursive fx(n int, p int, inb bool):
+	x := ND[n]; k := x.k as int
+	if k == N_INT || k == N_FLT || k == N_STR || k == N_TRUE || k == N_FALSE || k == N_NULL || k == N_SELF: ft(n); return
+	if k == N_ID: qn(x.s as int); return
+	if k == N_BIN: q := bprec(n); sf := FOL; FOL = TK[x.t].k as int; fxp(x.a as int, q, true); FOL = sf; fw(" "); ft(n); fw(" "); fxp(x.b as int, q + 1, true); return
+	if k == N_UN: ft(n); a := x.a as int; if ND[a].k as int == N_UN && tok_text(ND[a].t as int)[0] == tok_text(x.t as int)[0] { fw("("); fsub(a); fw(")"); } else { fxp(a, 11, true); }; return
+	if k == N_CALL: fxp(x.a as int, 12, true); if x.c >= 0 { fw("<"); for i ND[x.c].n { if i > 0 { fw(", "); }; fty(kid(x.c as int, i)); }; fw(">"); }; fw("("); flist(n); fw(")"); if x.b >= 0 { fw(" "); ffv(x.b as int); }; return
+	if k == N_IDX: fxp(x.a as int, 12, true); fw("["); fsub(x.b as int); fw("]"); return
+	if k == N_SLICE: fxp(x.a as int, 12, true); fw("["); if x.fl & 1 != 0 { fw("^"); }; if x.b >= 0 { sn := NSLP; NSLP = false; sf := FOL; FOL = T_DOTDOT; fx(x.b as int, 0, true); FOL = sf; NSLP = sn; }; fw(".."); if x.fl & 2 != 0 { fw("^"); }; if x.c >= 0 { fsub(x.c as int); }; fw("]"); return
+	if k == N_DOT: fxp(x.a as int, 12, true); fw("."); qn(x.s as int); return
+	if k == N_AS: w := FOL == T_AND || FOL == T_LT || FOL == T_SHL || FOL == T_LTEQ || FOL == T_DOTDOT || FOL == T_QUEST || FOL == T_ANDEQ || FOL == T_ANDAND; if w { fw("("); }; sf := FOL; FOL = 0; fxp(x.a as int, 12, true); FOL = sf; fw(if x.fl & 1 != 0 { " as! " } else { " as " }); fty(x.b as int); if w { fw(")"); }; return
+	if k == N_ARR: fw("["); if x.c >= 0 { fw(".."); fsub(x.c as int); } else { if x.a >= 0 { fsub(x.a as int); fw("; "); fsub(x.b as int); } else { flist(n); } }; fw("]"); return
+	if k == N_SLIT: if NSLP { fw("("); NSLP = false; fslit(n); NSLP = true; fw(")"); } else { fslit(n); }; return
+	if k == N_FUNVAL: ffv(n); return
+	if k == N_IF: fw("if "); fscr(x.a as int); fw(" "); fbrace(x.b as int); if x.c >= 0 { fw(" else "); if ND[x.c].k as int == N_IF { fx(x.c as int, 0, true); } else { fbrace(x.c as int); } }; return
+	if k == N_MATCH: fw("match "); fscr(x.a as int); fw(" { "); for i x.n { if i > 0 { fw(", "); }; farm(kid(n, i), -1); }; fw(" }"); return
+	if k == N_EBLOCK: fw("block "); fbrace(x.a as int); return
+	if k == N_BLOCK: fbrace(n); return
+	if k == N_LOOP: fw("loop "); fbrace(x.a as int); return
+	if k == N_WHILE: fw("while "); fscr(x.a as int); fw(" "); fbrace(x.b as int); return
+	if k == N_FOR: fforh(n); fw(" "); fbrace(x.d as int); return
+	if k == N_RET: fret(n); return
+	if k == N_BREAK: fw("break"); if x.a >= 0 { fw(" "); fx(x.a as int, 0, true); }; return
+	if k == N_CONT: fw("continue"); return
+	if k == N_CFOR: fcfor(n, -1); return
+	fw("?expr?");
+recursive fret(n int):
+	x := ND[n]; fw("return"); if x.n > 0 { fw(" "); flist(n); }; if x.s >= 0: fw(" from "); qn(x.s as int);
+recursive fforh(n int): x := ND[n]; fw("for "); if x.fl & 1 != 0 { fw("&"); }; qn(x.s as int); typed ~= false; if x.l >= 0 { fw(" "); fty(x.l as int); typed = true; }; if x.c >= 0 { fw(", "); qn(x.c as int); if x.n >= 0 { fw(" "); fty(x.n as int); typed = true; } }; fw(if typed { " in " } else { " " }); sn := NSLP; NSLP = true; sf := FOL; FOL = if x.b >= 0 { T_DOTDOT } else { 0 }; fx(x.a as int, 0, true); FOL = 0; if x.b >= 0 { fw(".."); fx(x.b as int, 0, true); }; FOL = sf; NSLP = sn
+recursive fslit(n int): x := ND[n]; fty(x.a as int); fw("{"); for i x.n { if i > 0 { fw(", "); }; fi := kid(n, i); if ND[fi].k as int == N_CFOR { fcfor(fi, -1); continue; }; if ND[fi].s >= 0 { qn(ND[fi].s as int); fw(": "); }; fx(ND[fi].a as int, 0, true); }; if x.fl & 1 != 0 { if x.n > 0 { fw(", "); }; fw(".."); }; fw("}");
+recursive ffv(n int): x := ND[n]; fw("{"); if x.fl & 1 != 0 { fw(" "); for i x.n { if i > 0 { fw(", "); }; p := kid(n, i); if ND[p].fl & 1 != 0 { fw("var "); }; qn(ND[p].s as int); if ND[p].a >= 0 { fw(": "); fty(ND[p].a as int); } }; fw(" =>"); }; fbitems(x.a as int); fw(" }");
+recursive fpat(it int):
+	lo := ND[it].a as int; fx(lo, 0, true); if ND[it].b >= 0: fw(".."); fx(ND[it].b as int, 0, true);
+recursive farm(a int, d int):
+	x := ND[a]
+	if x.k as int == N_CFOR: fcfor(a, -1); return
+	if x.fl & 1 != 0: fw("_")
+	else:
+		for i x.n { if i > 0 { fw(", "); }; fpat(kid(a, i)); }; if x.s >= 0: fw(if x.fl & 2 != 0 { " &" } else { " " }); qn(x.s as int)
+	fw(" => "); fx(x.b as int, 0, true);
+recursive fcfor(n int, d int):
+	x := ND[n]; nb := x.a as int; src := x.b as int; m := x.fl as int
+	fw("const for <"); for i ND[nb].n { if i > 0 { fw(", "); }; qn(kid(nb, i)); }; fw("> in ")
+	o := x.op as int
+	if o == 1: fw("["); flist(src); fw("]") else: fw(if o == 2 { "fields" } else { if o == 3 { "variants" } else { "types" } }); fw("<"); for i ND[src].n { if i > 0 { fw(", "); }; fty(kid(src, i)); }; fw(">")
+	c := x.c as int
+	if m == 1: fw(" {"); for i ND[c].n { if i > 0 { fw(","); }; fw(" "); fi := kid(c, i); if ND[fi].k as int == N_CFOR { fcfor(fi, -1); continue; }; if ND[fi].s >= 0 { qn(ND[fi].s as int); fw(": "); }; fx(ND[fi].a as int, 0, true); }; fw(", }"); return
+	if m == 2: fw(" { "); for i ND[c].n { if i > 0 { fw(", "); }; farm(kid(c, i), -1); }; fw(", }"); return
+	if d < 0: fw(" "); fbrace(c); return
+fnsp(a int, f int):
+	fns := FILENS[f] as int; if a != fns: if a >= 0 { qn(a); }; fw("::");
+vflags(fl int) const byte[:]:
+	if fl & V_REUSE != 0 { return if fl & V_REUSE_SL != 0 { "reusable[] " } else { "reusable " }; }; ""
+recursive fvdecl(n int):
+	x := ND[n]; fl := x.fl as int; kw := fl & V_CONST != 0 || fl & V_BYREF != 0 || fl & V_REUSE != 0 || x.b < 0
+	fw(vflags(fl))
+	if kw: fw(if fl & V_CONST != 0 { "const " } else { if fl & V_VAR != 0 { "var " } else { "let " } })
+	for i x.n: if i > 0 { fw(", "); }; if fl & V_GLOBAL != 0 { fnsp(x.c as int, TK[x.t].f as int); }; qn(kid(n, i))
+	if x.a >= 0: fw(" "); fty(x.a as int)
+	if x.b >= 0: fw(if fl & V_BYREF != 0 { " .= " } else { if kw { " = " } else { if fl & V_VAR != 0 { " ~= " } else { " := " } } }); flist(x.b as int);
+is_stmtk(k int) bool:
+	k == N_VDECL || k == N_ASSIGN || k == N_INCDEC || k == N_FN
+recursive fstmt1(n int, inb bool):
+	x := ND[n]; k := x.k as int
+	if k == N_VDECL: fvdecl(n); return
+	if k == N_ASSIGN: if x.op as int == T_COMMA { flist(x.a as int); fw(" = "); } else { fx(x.a as int, 0, true); fw(" "); ft(n); fw(" "); }; fx(x.b as int, 0, true); return
+	if k == N_INCDEC: fx(x.a as int, 12, true); ft(n); return
+	if k == N_FN: ffn(n, -1); return
+	if k == N_IF && x.fl == 1: fw("guard "); fx(x.a as int, 0, true); if x.c >= 0 { fw(" else "); fbrace(x.c as int); }; return
+	fx(n, 0, inb);
+blockish(n int) bool:
+	k := ND[n].k as int; k == N_IF && ND[n].fl != 1 || k == N_WHILE || k == N_FOR || k == N_LOOP || k == N_MATCH || k == N_EBLOCK || k == N_CFOR && ND[n].fl == 0 || k == N_FN
+isguard(n int) bool:
+	ND[n].k as int == N_IF && ND[n].fl == 1
+recursive sline(n int) int:
+	x := ND[n]; k := x.k as int; if k == N_ASSIGN && x.op as int == T_COMMA && ND[x.a].n > 0 { return sline(kid(x.a as int, 0)); }; if (k == N_ASSIGN || k == N_INCDEC || k == N_BIN || k == N_CALL || k == N_IDX || k == N_DOT || k == N_AS || k == N_SLICE) && x.a >= 0 { return min(sline(x.a as int), TK[x.t].line as int); }; TK[x.t].line as int
+oneline(b int) bool:
+	b < BEND.len && BEND[b] >= 0 && TK[BEND[b]].line == TK[ND[b].t].line
+recursive bitems(b int, r i32[>..]&) bool:
+	x := ND[b]; for i x.n: r.push(kid(b, i) as i32)
+	if x.a < 0: return x.n > 0 && isguard(kid(b, x.n - 1)) && bitems(ND[kid(b, x.n - 1)].b as int, r)
+	t := x.a as int; r.push(t as i32); if isguard(t) { return bitems(ND[t].b as int, r); }; true
+SEMB ~= -1; var SEMS i32[>..]
+semprop(b int, c int):
+	if b != SEMB && !SEMS.contains(b as i32) { return; }; k := ND[c].k as int; if k == N_EBLOCK { SEMS.push(ND[c].a); }; if k != N_IF || ND[c].fl == 1 { return; }; SEMS.push(ND[c].b); e ~= ND[c].c as int; while e >= 0:
+		if ND[e].k as int == N_IF && ND[e].fl != 1: SEMS.push(ND[e].b); e = ND[e].c as int else: SEMS.push(e as i32); e = -1
+needsemi(b int, c int, tail bool) bool:
+	k := ND[c].k as int; (b == SEMB || SEMS.contains(b as i32)) && !tail && !is_stmtk(k) && !isguard(c) && k != N_RET && k != N_BREAK && k != N_CONT
+recursive fob(b int, d int):
+	if oneline(b): fw(": "); finl(b, false); fw("\n"); else: fw(":\n"); fblk(b, d + 1);
+recursive finl(b int, cl bool):
+	r i32[>..] ~= []; tl := bitems(b, r)
+	if r.len == 0: fw(";"); return
+	for i r.len:
+		c := r[i] as int; last := i == r.len - 1; ns := last && needsemi(b, c, tl); if last: semprop(b, c)
+		if !last || cl || ns && blockish(c): fstmt1(c, true); fw(if last { if ns { ";" } else { "" } } else { "; " })
+		else:
+			fopen(c, -1); if ns: fw(";")
+chain1(n int) bool:
+	if !oneline(ND[n].b as int) { return false; }; l := TK[ND[n].t].line; e ~= ND[n].c as int; while e >= 0 { if ND[e].k as int == N_IF && ND[e].fl != 1 { if !oneline(ND[e].b as int) || TK[ND[e].t].line != l { return false; }; e = ND[e].c as int; } else { return oneline(e) && TK[ND[e].t].line == l; } }; true
+recursive finlif(n int):
+	fw("if "); fscr(ND[n].a as int); fw(": "); finl(ND[n].b as int, ND[n].c >= 0); e ~= ND[n].c as int
+	while e >= 0:
+		if ND[e].k as int == N_IF && ND[e].fl != 1: fw(" else if "); fscr(ND[e].a as int); fw(": "); finl(ND[e].b as int, ND[e].c >= 0); e = ND[e].c as int else: fw(" else: "); finl(e, false); e = -1
+recursive fopen(n int, d int):
+	x := ND[n]; k := x.k as int; il := d < 0
+	if k == N_IF && x.fl != 1:
+		if il || chain1(n): finlif(n); if !il { fw("\n"); }; return
+		fw("if "); fscr(x.a as int); fob(x.b as int, d); e ~= x.c as int
+		while e >= 0:
+			tabs(d); if ND[e].k as int == N_IF && ND[e].fl != 1: fw("else if "); fscr(ND[e].a as int); fob(ND[e].b as int, d); e = ND[e].c as int else: fw("else"); fob(e, d); e = -1
+		return
+	bb := if k == N_WHILE { x.b as int } else { if k == N_FOR { x.d as int } else { if k == N_LOOP || k == N_EBLOCK { x.a as int } else { if k == N_FN { x.c as int } else { if k == N_CFOR && x.fl == 0 { x.c as int } else { -1 } } } } }
+	if k == N_WHILE: fw("while "); fscr(x.a as int)
+	if k == N_FOR: fforh(n)
+	if k == N_LOOP: fw("loop")
+	if k == N_EBLOCK: fw("block")
+	if k == N_CFOR && x.fl == 0: fcfor(n, 0)
+	if k == N_FN: fl := x.fl as int; if fl & F_EXTERN != 0 { ffn(n, -1); if !il { fw("\n"); }; return; }; if fl & F_EXPORT != 0 { e := x.e as int; fw("export "); if ND[e].a >= 0 { fw(tok_text(ND[e].a as int)); fw(" "); } }; fmods(fl); fsig(n)
+	sv := SEMB; if k == N_FN: SEMB = if x.b < 0 { bb } else { -1 }
+	if bb >= 0: if il { fw(": "); finl(bb, false); } else { fob(bb, d); }; SEMB = sv; return
+	if k == N_MATCH: fw("match "); fscr(x.a as int); if il || x.n == 0 { fw(": "); for i x.n { if i > 0 { fw(", "); }; farm(kid(n, i), -1); }; if x.n == 0 { fw(";"); }; if !il { fw("\n"); }; return; }; fw(":\n"); for i x.n { tabs(d + 1); farm(kid(n, i), d + 1); fw("\n"); }; return
+	fstmt1(n, false); if !il: fw("\n");
+recursive fblk(b int, d int):
+	r i32[>..] ~= []; tl := bitems(b, r)
+	if r.len == 0: tabs(d); fw(";\n"); return
+	i ~= 0
+	while i < r.len:
+		tabs(d); ln := sline(r[i] as int)
+		loop:
+			c := r[i] as int; last := i == r.len - 1; jn := !last && sline(r[i + 1] as int) == ln; ns := last && needsemi(b, c, tl); if last: semprop(b, c)
+			i++
+			if jn: fstmt1(c, true); fw("; "); continue
+			if ns && blockish(c): fstmt1(c, true); fw(";\n"); break
+			if ns: fstmt1(c, false); fw(";\n"); break
+			fopen(c, d); break
+fmods(fl int):
+	if fl & F_LUT != 0 { fw("lut "); }; if fl & F_CHECKFREE != 0 { fw("checkfree "); }; if fl & F_SIMD != 0 { fw("simd "); }; if fl & F_INLINE != 0 { fw("inline "); }; if fl & F_REC != 0 { fw("recursive "); }; if fl & F_THREAD != 0: fw("thread_fn ");
+recursive fsig(n int):
+	x := ND[n]
+	if ND[n].fl & F_NESTED == 0: fnsp(x.a as int, TK[x.t].f as int)
+	qn(x.s as int)
+	if x.d >= 0: fw("<"); for i ND[x.d].n { if i > 0 { fw(", "); }; g := kid(x.d as int, i); qn(ND[g].s as int); if ND[g].a >= 0 { fw(" "); fty(ND[g].a as int); } }; fw(">")
+	fw("("); for i x.n { if i > 0 { fw(", "); }; p := kid(n, i); if ND[p].fl & 1 != 0 { fw("var "); }; qn(ND[p].s as int); if ND[p].a >= 0 { fw(" "); fty(ND[p].a as int); }; if ND[p].b >= 0 { fw(" = "); fx(ND[p].b as int, 0, true); } }; fw(")")
+	if x.b >= 0:
+		r := x.b as int; fw(" "); for i ND[r].n: if i > 0 { fw(", "); }; fty(kid(r, i))
+recursive ffn(n int, d int):
+	x := ND[n]; fl := x.fl as int
+	if fl & F_EXTERN != 0: e := x.e as int; fw("extern "); fmods(fl); fsig(n); if ND[e].a >= 0 { fw(" = "); fw(tok_text(ND[e].a as int)); }; if d >= 0 { fw("\n"); }; return
+	if fl & F_EXPORT != 0:
+		e := x.e as int; fw("export "); if ND[e].a >= 0: fw(tok_text(ND[e].a as int)); fw(" ")
+	fmods(fl)
+	if d < 0: fw("fn "); fsig(n); fw(" "); fbrace(x.c as int); return
+	sv := SEMB; SEMB = if x.b < 0 { x.c as int } else { -1 }; fsig(n); fob(x.c as int, d); SEMB = sv
+recursive ffields(n int):
+	for i ND[n].n:
+		if i > 0 { fw(", "); }; f := kid(n, i); fl := ND[f].fl as int; if fl == 4 { fw("pad"); if ND[f].c > 0 { format(FO, " ", ND[f].c); }; continue; }; if fl == 3 { fw("const "); }; if fl == 1 { fw("let "); }; qn(ND[f].s as int); fw(" "); fty(ND[f].a as int); if ND[f].b >= 0: fw(" = "); fx(ND[f].b as int, 0, true)
+fgens(g int):
+	if g >= 0: fw("<"); for i ND[g].n { if i > 0 { fw(", "); }; q := kid(g, i); qn(ND[q].s as int); if ND[q].a >= 0 { fw(" "); fty(ND[q].a as int); } }; fw(">");
+fnsq(n int): fnsp(ND[n].a as int, TK[ND[n].t].f as int);
+recursive ftop(n int, cl bool):
+	x := ND[n]; k := x.k as int
+	if k == N_FN: if x.fl & F_EXTERN != 0 && x.e >= 0 && ND[x.e].b >= 0 { fw("extern "); fw(tok_text(ND[x.e].b as int)); fw(" { "); fmods(x.fl as int); fw("fn "); fsig(n); if ND[x.e].a >= 0 { fw(" = "); fw(tok_text(ND[x.e].a as int)); }; fw("; }"); if !cl { fw("\n"); }; return; }; ffn(n, if cl { -1 } else { 0 }); return
+	if k == N_STRUCT: fw("struct "); fnsq(n); qn(x.s as int); fgens(x.d as int); fw(" { "); ffields(n); fw(" }"); if !cl { fw("\n"); }; return
+	if k == N_ENUM: fw("enum "); fnsq(n); qn(x.s as int); fgens(x.d as int); fw(" { "); for i x.n { if i > 0 { fw(", "); }; v := kid(n, i); qn(ND[v].s as int); if ND[v].fl & 1 != 0 { fw(" { "); ffields(v); fw(" }"); } }; fw(" }"); if !cl { fw("\n"); }; return
+	if k == N_ALIAS: fw("type "); fnsq(n); qn(x.s as int); fw(" = "); fty(x.b as int); if !cl { fw("\n"); }; return
+	if k == N_IMPORT: fw("use "); if x.fl & 1 != 0 { fw("."); }; for c nm(x.s as int) { FO.push(if c == '/' { '.' } else { c }); }; if x.a >= 0 { fw(" from "); fw(tok_text(x.a as int)); }; if !cl { fw("\n"); }; return
+	if k == N_VDECL: fvdecl(n); if !cl { fw("\n"); }; return
+	fw("?top?\n");
+to_he(path const byte[:], out const byte[:]) bool:
+	t0 := TK.len; n0 := TOP.len; f := FILES.len
+	KEEPEND = true
+	if !parse_file(path): print(PERR); return false
+	FO.clear()
+	src := SRC[(FILES[f].s as int)..(FILES[f].s + FILES[f].n) as int]
+	i ~= 0
+	while i < src.len && src[i] == '/' && i + 1 < src.len && src[i + 1] == '/':
+		e ~= i; while e < src.len && src[e] != '\n' { e++; }; fw("#"); fw(src[i + 2..e]); fw("\n"); i = e + 1; while i < src.len && (src[i] == '\n' || src[i] == ' ' || src[i] == '\t' || src[i] == '\r'): i++
+	if FILENS[FILENS.len - 1] >= 0: fw("namespace "); qn(FILENS[FILENS.len - 1] as int); fw("\n")
+	for j n0..TOP.len:
+		c := TOP[j] as int; jn := j + 1 < TOP.len && TK[ND[TOP[j + 1]].t].line == TK[ND[c].t].line; ftop(c, jn); if jn: fw("; ")
+	write_file(out, FO[..])
