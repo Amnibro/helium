@@ -15,13 +15,17 @@ extern ccall2(f int, a int, b int) int = "!cc2"
 var RT_DLT int; var RT_DLG int; var RT_DLR int; var RT_DLB int
 rt_esz(p int): q ~= p; while mld1(q) != 0: if RT_EN < 512 { RT_EB[RT_EN] = mld1(q) as! byte; RT_EN += 1 } q += 1
 rt_dlx(): rt_es("\n"); rt_flush(); rt_write(2, RT_EB[..RT_EN]); sys3(231, 1, 0, 0);
+var RT_DLM int
+rt_dlmiss() int: if RT_DLM == 0 { p := sys6(9, 0, 4096, 3, 0x22, -1, 0); mst(p, -0x3C000000003F38B8); sys3(10, p, 4096, 5); RT_DLM = p } RT_DLM
+rt_dlopt(nm int) bool: n ~= 0; while mld1(nm + n) != 0 { n += 1 } n > 0 && mld1(nm + n - 1) == 63
 rt_dlbind():
 	t := RT_DLR + RT_DLT; nl := mld(t); nb := mld(t + 8); g := RT_DLB + RT_DLG; b0 := t + 16 + 16 * nl
 	for l nl: ccall2(mld(g), RT_DLR + mld(t + 16 + 16 * l), 0x101)
 	for l nl:
 		sp := RT_DLR + mld(t + 16 + 16 * l); nm := RT_DLR + mld(t + 24 + 16 * l); h := ccall2(mld(g), sp, 0x102)
+		op := rt_dlopt(nm); if h == 0 && op: for k nb { q := b0 + 24 * k; if mld(q) == l { mst(RT_DLB + mld(q + 16), rt_dlmiss()) } } continue
 		if h == 0: rt_es("helium runtime error: cannot load "); rt_esz(nm); rt_es(" ("); rt_esz(sp); rt_es("): "); e := ccall0(mld(g + 16)); if e != 0 { rt_esz(e); } else { rt_es("unknown error"); } rt_dlx()
-		for k nb: q := b0 + 24 * k; if mld(q) == l: sy := RT_DLR + mld(q + 8); f := ccall2(mld(g + 8), h, sy); if f == 0 { rt_es("helium runtime error: "); rt_esz(nm); rt_es(" ("); rt_esz(sp); rt_es(") has no symbol "); rt_esz(sy); rt_dlx() } mst(RT_DLB + mld(q + 16), f)
+		for k nb: q := b0 + 24 * k; if mld(q) == l: sy := RT_DLR + mld(q + 8); f := ccall2(mld(g + 8), h, sy); if f == 0 && op { f = rt_dlmiss() } if f == 0 { rt_es("helium runtime error: "); rt_esz(nm); rt_es(" ("); rt_esz(sp); rt_es(") has no symbol "); rt_esz(sy); rt_dlx() } mst(RT_DLB + mld(q + 16), f)
 struct RtV { b int, n int, top int, fl int, fln int, flc int }
 var RT_RSZ int; var RT_SBUD int; var RT_TIER int; var RT_TEND int
 var RT_FREE int[4096]

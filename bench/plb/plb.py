@@ -39,15 +39,13 @@ import yaml
 HERE = Path(__file__).resolve().parent
 REPO = HERE.parent.parent
 BUILD = HERE / "build"
-sys.path.insert(0, str(REPO / "scripts"))
-import toolchain as tc  # noqa: E402
 
 IS_WINDOWS = os.name == "nt"
 # What a program's runtime links besides libm and threads: dlopen, in libdl on
 # Linux before glibc 2.34.
 GOOSE_LIBS = ["-ldl"] if sys.platform.startswith("linux") else []
 EXE = ".exe" if IS_WINDOWS else ""
-LANGS = ["goose", "rust", "c", "cpp"]
+LANGS = ["helium", "goose", "rust", "c", "cpp"]
 
 # PLB's include/c/app.rsp and include/cpp/app.rsp, without -pipe and -Wall.
 CFLAGS = ["-O3", "-fomit-frame-pointer", "-march=broadwell", "-w"] + \
@@ -85,11 +83,11 @@ def problems():
 
 def lang_sources(lang):
     """{problem: [source file names]} for one language."""
-    if lang == "goose":
+    if lang in ("helium", "goose"):
         out = {}
         for d in sorted(HERE.iterdir()):
             if d.is_dir() and d.name != "build":
-                srcs = sorted(f.name for f in d.glob("*.goose"))
+                srcs = sorted(f.name for f in d.glob("*.amni"))
                 if srcs:
                     out[d.name] = srcs
         return out
@@ -131,11 +129,44 @@ def openmp_libs():
 
 
 def goose_exe():
-    for sub in ("Release", "", "RelWithDebInfo", "Debug"):
-        p = REPO / "build" / sub / ("goose" + EXE)
-        if p.exists():
-            return p
-    sys.exit("no goose binary under build/")
+    for p in (os.environ.get("GOOSE"), REPO.parent / "goose" / "build" / "helium"):
+        if p and Path(p).exists():
+            return Path(p)
+    sys.exit("no Goose binary: set $GOOSE")
+
+
+def hc_exe():
+    for p in (os.environ.get("HC"), REPO / "build" / "hcn"):
+        if p and Path(p).exists():
+            return Path(p)
+    sys.exit("no hc binary: run hc/bootstrap.sh or set $HC")
+
+
+class Measured:
+    def __init__(self, ms, peak, code):
+        self.ms, self.peak, self.code = ms, peak, code
+
+
+def run_measured(exe, args=(), *, stdin_path=None):
+    """Run `exe` once: wall time, peak RSS from wait4, exit code. Output goes
+    to <exe>.stdout and <exe>.stderr."""
+    exe = Path(exe)
+    outf, errf = exe.parent / (exe.name + ".stdout"), exe.parent / (exe.name + ".stderr")
+    actions = [(os.POSIX_SPAWN_OPEN, 1, str(outf), os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o644),
+               (os.POSIX_SPAWN_OPEN, 2, str(errf), os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o644),
+               (os.POSIX_SPAWN_OPEN, 0, str(stdin_path) if stdin_path else os.devnull, os.O_RDONLY, 0)]
+    start = time.perf_counter()
+    pid = os.posix_spawn(str(exe), [str(exe)] + [str(a) for a in args], dict(os.environ), file_actions=actions)
+    _, status, ru = os.wait4(pid, 0)
+    ms = (time.perf_counter() - start) * 1000.0
+    m = Measured(ms, ru.ru_maxrss * 1024, os.waitstatus_to_exitcode(status)); m.err = errf.read_text(errors="replace"); return m
+
+
+def build_helium(problem, src, args):
+    exe = exe_path("helium", problem, src)
+    exe.parent.mkdir(parents=True, exist_ok=True)
+    env = dict(os.environ, HC_LIB=os.environ.get("HC_LIB", str(REPO / "hc" / "lib")))
+    return run([args.hc or hc_exe(), HERE / problem / src, exe, "--native", *args.hc_flags.split()], env=env)
 
 
 def run(argv, cwd=None, env=None):
@@ -241,7 +272,9 @@ def cmd_build(args):
                 if args.variants and Path(src).stem not in args.variants:
                     continue
                 t0 = time.time()
-                if lang == "goose":
+                if lang == "helium":
+                    ok, out = build_helium(problem, src, args)
+                elif lang == "goose":
                     ok, out = build_goose(problem, src, args)
                 elif lang == "rust":
                     ok, out = build_rust(problem, src, args)
@@ -321,7 +354,7 @@ def cmd_test(args):
     for lang, problem, src, exe, cfg in built_programs(args):
         for t in cfg.get("unittests", []):
             expected = (ALGO / problem / t["output"]).read_text(errors="replace")
-            r = tc.run_measured(exe, argv_for(cfg, t["input"]))
+            r = run_measured(exe, argv_for(cfg, t["input"]))
             got = (exe.parent / (exe.name + ".stdout")).read_text(errors="replace")
             ok = r.code == 0 and got.rstrip() == expected.rstrip()
             failed += not ok
@@ -364,10 +397,10 @@ def cmd_bench(args):
             mine = [p for p in progs if p[1] == problem]
             best = {}
             for p in mine:   # warm-up: a fresh executable is scanned on first run
-                tc.run_measured(p[3], argv)
+                run_measured(p[3], argv)
             for rep in range(args.reps):
                 for lang, _, src, exe, _ in mine:
-                    r = tc.run_measured(exe, argv)
+                    r = run_measured(exe, argv)
                     key = f"{lang}/{src}"
                     if r.code != 0:
                         best[key] = None
@@ -467,9 +500,11 @@ def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("cmd", choices=["build", "test", "bench", "report"])
     ap.add_argument("problems", nargs="?", default="", help="comma-separated problems (default all)")
-    ap.add_argument("--langs", default=None, help="comma-separated: goose,rust,c,cpp")
+    ap.add_argument("--langs", default=None, help="comma-separated: helium,goose,rust,c,cpp")
     ap.add_argument("--variants", default="", help="comma-separated source stems, e.g. 1,2-m")
-    ap.add_argument("--goose", help="the goose compiler to use instead of this checkout's build")
+    ap.add_argument("--hc", help="the hc compiler (default $HC or build/hcn)")
+    ap.add_argument("--hc-flags", default="")
+    ap.add_argument("--goose", help="the old Goose compiler (default $GOOSE or ../goose/build/helium)")
     ap.add_argument("--goose-flags", default="")
     ap.add_argument("--cflags", default="")
     ap.add_argument("--reps", type=int, default=3)
@@ -481,7 +516,7 @@ def main():
     args = ap.parse_args()
     args.problems = [p for p in args.problems.split(",") if p]
     args.variants = [v for v in args.variants.split(",") if v]
-    default_langs = ["goose"] if args.cmd in ("build", "test") else LANGS
+    default_langs = ["helium"] if args.cmd in ("build", "test") else LANGS
     args.langs = args.langs.split(",") if args.langs else default_langs
     BUILD.mkdir(parents=True, exist_ok=True)
     if args.cmd in ("test", "bench") and args.cpus != "all":

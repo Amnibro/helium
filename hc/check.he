@@ -780,11 +780,11 @@ recursive ck_ret(n int) int:
 	if rt >= 0 && TY[rt].k == TY_MULTI && x.n == 1: c := kid(n, 0); ck(c, rt); return set_t(n, T_VOID)
 	if x.n > 1:
 		if rt < 0: ts i32[..64] ~= []; for i x.n { ck(kid(n, i), -1); dt0 := default_t(kid(n, i)); ts.push(dt0) } FI_[f].ret = tlist(TY_MULTI, ts[..], -1); return set_t(n, T_VOID)
-		for i x.n: et := if TY[rt].k == TY_MULTI && i < TY[rt].n as int { TYL[TY[rt].l as int + i] as int } else { T_ERRT }; ck(kid(n, i), et); conv(kid(n, i), et)
+		for i x.n: et := if TY[rt].k == TY_MULTI && i < TY[rt].n as int { TYL[TY[rt].l as int + i] as int } else { T_ERRT }; ck(kid(n, i), et); conv(kid(n, i), et); ret_esc(kid(n, i), et)
 		return set_t(n, T_VOID)
 	c := kid(n, 0)
 	if rt < 0: ck(c, -1); t := ref_res(c, default_t(c)); FI_[f].ret = t; if TY[t].k == TY_REF { conv(c, t) } return set_t(n, T_VOID)
-	ck(c, rt); conv(c, rt)
+	ck(c, rt); conv(c, rt); ret_esc(c, rt)
 	set_t(n, T_VOID)
 struct Cfb { k i32, a i32, b i32, c i32 }
 struct Cfx { node i32, own i32, inst i32 }
@@ -955,6 +955,14 @@ recursive names_store(n int) bool:
 	if k == N_DOT: return rk(n) == R_FIELD && (names_store(x.a) || TY[at(x.a)].k == TY_REF)
 	if k == N_IDX: bt := at(x.a); return TY[deref(bt)].k == TY_SLICE || names_store(x.a) || TY[bt].k == TY_REF
 	false
+recursive st_dies(n int) bool:
+	k := ND[n].k as int; if k == N_DOT || k == N_IDX { return st_dies(ND[n].a as int) } if k != N_ID || rk(n) != R_LOCAL { return false }
+	v := LVS[rv(n)]; if v.cfn != CFN || v.fl & LV_PARAM != 0 { return false } if TY[v.ty].k != TY_REF { return true }
+	v.fl & LV_REF == 0 && ND[v.node].k as int == N_VDECL && ND[v.node].b >= 0 && st_dies(kid(ND[v.node].b as int, 0))
+ret_esc(c int, et int):
+	if et < 0 || ND[c].k as int != N_ID || rk(c) != R_LOCAL || TY[et].k == TY_REF || TY[et].k == TY_SLICE || is_fixed(et): return
+	v := LVS[rv(c)]; if TY[v.ty].k != TY_REF || is_fixed(TY[v.ty].a as int) || !st_dies(c): return
+	m byte[>..] ~= []; w := nm(v.name); format(m, w, " is not fixed-size and is not copied implicitly (§4.1), and its storage does not outlive this function: return copy(", w, ")"); cerr(c, m[..]);
 OLDLOC ~= false
 in_generic() bool:
 	i ~= AOWN; while i >= 0 { d := FI_[i].node as int; if d >= 0 && ND[d].k as int == N_FN && ND[d].d >= 0 { return true }; i = FI_[i].par as int }

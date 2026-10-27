@@ -1,0 +1,24 @@
+// Each worker gets its own copy of a byte[] argument, even when the caller's
+// temporary for it is reused by the next spawn and the caller keeps working.
+import std;
+import os;
+thread_fn sum(p: byte[], id: int) {
+	sleep_ms(50);
+	var s = 0;
+	for c in p { s += c as int; }
+	qput(s * 10 + id);
+}
+fn main() {
+	var c byte[>..] = [];
+	for i in 1000 { c.push(1); }
+	var ids int[>..] = [];
+	for k in 3 { c[0] = (k + 1) as byte; ids.push(thread_spawn(sum, copy(c), k)); }
+	for i in 1000 { c[i] = 7; }
+	var junk byte[>..] = [];
+	for i in 100000 { junk.push(9); }
+	for i in ids { thread_wait(i); }
+	var r int[>..] = [];
+	for k in 3 { r.push(qget<int>()); }
+	sort(r);
+	print(r[0], " ", r[1], " ", r[2]);
+}

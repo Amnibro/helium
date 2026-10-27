@@ -1,0 +1,23 @@
+import std;
+fn helper(a int, b int) int { if a < b { return b - a; } a % 7 + b }
+lut fn sdiv(a i8, b i8) int { if b == 0 { return -1; } (a / b) as int * 1000 + (a % b) as int }
+lut fn wrapmul(a i16) i16 { a * 300 }
+lut fn bits(x u16) u32 { var r u32 = 0; var k = 0; while k < 16 { if (x >> k) & 1 != 0 { r += 1; } k++; } r * 0x9E37 + (x as u32 << 3) }
+lut fn isprime(n u16) bool { if n < 2 { return false; } var d = 2; while d * d <= n { if n % d == 0 { return false; } d++; } true }
+lut fn mixed(a u8, b i8, c bool) int { let s = if c { helper(a, b) } else { -helper(b, a) }; min(max(s, -50), 300) + abs(b) * 3 + clamp(a, 10, 20) }
+lut fn loops(n u16) int { var t = 0; for i in n % 97 { if i % 5 == 3 { continue; } if i > 60 { break; } t += i * i - (n >> 4); } t ^ (n << 2) }
+lut fn neg(a i16) int { -(a as int) * 3 >> 1 }
+fn main() {
+	var h = 0;
+	for a in 256 { for b in 256 { h = h * 31 + sdiv(a as! i8, b as! i8); } }
+	print("sdiv ", h);
+	h = 0; for a in 65536 { h = h * 31 + wrapmul(a as! i16); } print("wrapmul ", h);
+	h = 0; for a in 65536 { h = h * 31 + bits(a as u16) as int; } print("bits ", h);
+	h = 0; for a in 65536 { if isprime(a as u16) { h++; } } print("primes ", h);
+	h = 0; for a in 256 { for b in 256 { for c in 2 { h = h * 31 + mixed(a as u8, b as! i8, c == 1); } } } print("mixed ", h);
+	h = 0; for a in 65536 { h = h * 31 + loops(a as u16); } print("loops ", h);
+	h = 0; for a in 65536 { h = h * 31 + neg(a as! i16); } print("neg ", h);
+	extra();
+}
+lut fn slow(n u16) int { var c = 0; for i in (n as int) * 3 { c += i & 1; } c }
+fn extra() { var h = 0; for a in 65536 { h = h * 31 + slow(a as u16); } print("slow ", h); }

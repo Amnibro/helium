@@ -1,0 +1,7 @@
+// error: l is not fixed-size and is not copied implicitly (§4.1)
+// `var l = l0` binds l by reference to l0, whose storage ends with the function,
+// so returning l would hand back storage that is already released.
+import std;
+fn mk(s byte[:]) byte[>..] { var o byte[>..] = []; o.append(s); o }
+fn ex() byte[>..] { let l0 = mk("ab"); var l = l0; l.append("cd"); l }
+fn main() { let e = ex(); print(e); }

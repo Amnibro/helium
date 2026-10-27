@@ -30,7 +30,7 @@ tmk(t Ty) int:
 		n := TYH.len * 2; TYH.clear(); TYH.resize(n, -1)
 		for x, i TY: j ~= (th(x) as int) & n - 1; while TYH[j] >= 0 { j = j + 1 & n - 1 } TYH[j] = i
 	m := TYH.len - 1
-	j ~= (th(t) as int) & m
+	j ~= (th(t) as! int) & m
 	while TYH[j] >= 0: if teq(TY[TYH[j]], t) { return TYH[j] } j = j + 1 & m
 	TY.push(t); TYH[j] = TY.len - 1
 	TY.len - 1

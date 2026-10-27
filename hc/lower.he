@@ -906,8 +906,8 @@ recursive largs(args i32[>..<]&, c int, pt int):
 	if is_scal(pt): args.push(lx(c)); return
 	s := slot(tsz(pt), tal(pt)); d := nv(); ir(I_SLOT, 8, d, -1, -1, s); lstore_own(d, c, pt); args.push(d);
 var CCK i32[>..<]; var DYN i32[>..<]; var DBL i32[>..<]; var DBF i32[>..<]; var DBS i32[>..<]
-dl_spell(nmb const byte[:], sp byte[>..]&):
-	leaf ~= 0; for c, k nmb { if c == '/' { leaf = k + 1 } } dot ~= false; for c nmb[leaf..] { if c == '.' { dot = true } } sp.append(nmb[..leaf]); if !dot { sp.append("lib") } sp.append(nmb[leaf..]); if !dot: sp.append(".so");
+dl_spell(n0 const byte[:], sp byte[>..]&):
+	nmb := if n0.len > 0 && n0[n0.len - 1] == '?' { n0[..n0.len - 1] } else { n0 }; leaf ~= 0; for c, k nmb { if c == '/' { leaf = k + 1 } } dot ~= false; for c nmb[leaf..] { if c == '.' { dot = true } } sp.append(nmb[..leaf]); if !dot { sp.append("lib") } sp.append(nmb[leaf..]); if !dot: sp.append(".so");
 dl_sym(i int) const byte[:]:
 	es := ext_str(i); if es.len > 0:
 		es
@@ -1228,7 +1228,7 @@ recursive lower_tw(k int):
 	args i32[>..<] ~= []; rt := FI_[inst].ret
 	if rt >= 0 && is_agg(rt): q := nv(); ir(I_SLOT, 8, q, -1, -1, slot(tsz(rt), tal(rt))); args.push(q)
 	w ~= 0
-	for j ND[FI_[inst].node].n as int: pt := ptype_of(inst, j); if is_pair(pt) { args.push(ldw(pk, 8 * w, 3)); args.push(ldw(pk, 8 * w + 8, 3)); w += 2; continue } v := ldw(pk, 8 * w, 3); w++; if is_scal(pt) || TY[pt].k == TY_REF { args.push(v); continue } d := nv(); ir(I_SLOT, 8, d, -1, -1, slot(tsz(pt), tal(pt))); ir(I_COPY, 3, d, v, imm(tsz(pt)), 0); lwalk(0, d, -1, pt); args.push(d)
+	for j ND[FI_[inst].node].n as int: pt := ptype_of(inst, j); if is_pair(pt) { args.push(ldw(pk, 8 * w, 3)); args.push(ldw(pk, 8 * w + 8, 3)); w += 2; continue } v := ldw(pk, 8 * w, 3); w++; vi := is_vimg(pt); if !vi && is_scal(pt) || TY[pt].k == TY_REF { args.push(v); continue } d := nv(); ir(I_SLOT, 8, d, -1, -1, slot(tsz(pt), tal(pt))); if vi { stw(d, 0, v, 3) } else { ir(I_COPY, 3, d, v, imm(tsz(pt)), 0) } lwalk(0, d, -1, pt); args.push(if vi { ldw(d, 0, 3) } else { d })
 	ir(I_CALL, 3, -1, ARGL.len, 0, TGN); rtcall("rt_tgo", [r as i32])
 	s := ARGL.len; ARGL.append(args[..]); ir(I_CALL, 3, -1, s, args.len, nf_of(inst))
 	lsyn_end(TWN[k], i0);

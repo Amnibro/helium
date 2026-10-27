@@ -1,0 +1,2 @@
+const_for_typed_constant.amni
+return_local_reference_copy.amni

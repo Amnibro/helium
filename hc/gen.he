@@ -2049,13 +2049,13 @@ gen_program(out byte[>..]&) bool:
 	out.append(HF[..])
 	out.append(O[..])
 	if GDLF.len > 0:
-		lb byte[>..] ~= []; lb.append("static void hr_dl_bind(void) { void *h;\n"); dn i32[>..] ~= []; for f GDLF:
+		lb byte[>..] ~= []; lb.append("static int64_t hr_dlmiss(void) { return -1; }\nstatic void hr_dl_bind(void) { void *h;\n"); dn i32[>..] ~= []; for f GDLF:
 			dup ~= false; for q dn { if dl_lib(q as int) == dl_lib(f as int) { dup = true } } if !dup: dn.push(f)
 		for t dn: sp byte[>..] ~= []; dl_spell(dl_lib(t as int), sp); format(lb, "dlopen(\"", sp[..], "\", RTLD_LAZY | RTLD_GLOBAL);\n")
 		for t dn:
-			nmb := dl_lib(t as int); sp byte[>..] ~= []; dl_spell(nmb, sp); format(lb, "h = dlopen(\"", sp[..], "\", RTLD_NOW | RTLD_GLOBAL); if (!h) { const char *e = dlerror(); hr_flush(); fprintf(stderr, \"helium runtime error: cannot load %s (%s): %s\\n\", \"", nmb, "\", \"", sp[..], "\", e ? e : \"unknown error\"); exit(1); }\n")
+			nmb := dl_lib(t as int); sp byte[>..] ~= []; dl_spell(nmb, sp); op := nmb.len > 0 && nmb[nmb.len - 1] == '?'; format(lb, "h = dlopen(\"", sp[..], "\", RTLD_NOW | RTLD_GLOBAL); if (!h && !", if op { "1" } else { "0" }, ") { const char *e = dlerror(); hr_flush(); fprintf(stderr, \"helium runtime error: cannot load %s (%s): %s\\n\", \"", nmb, "\", \"", sp[..], "\", e ? e : \"unknown error\"); exit(1); }\n")
 			for f GDLF:
-				if dl_lib(f as int) == nmb: format(lb, "if (!(*(void **)&hr_dl", f, " = dlsym(h, \"", dl_sym(f as int), "\"))) { hr_flush(); fprintf(stderr, \"helium runtime error: %s (%s) has no symbol %s\\n\", \"", nmb, "\", \"", sp[..], "\", \"", dl_sym(f as int), "\"); exit(1); }\n")
+				if dl_lib(f as int) == nmb: format(lb, "if (!(*(void **)&hr_dl", f, " = h ? dlsym(h, \"", dl_sym(f as int), "\") : 0) && ", if op { str("(*(void **)&hr_dl", f, " = (void *)hr_dlmiss) && 0") } else { "1" }, ") { hr_flush(); fprintf(stderr, \"helium runtime error: %s (%s) has no symbol %s\\n\", \"", nmb, "\", \"", sp[..], "\", \"", dl_sym(f as int), "\"); exit(1); }\n")
 		lb.append("}\n"); out.append(lb[..])
 	out.append("static void hr_init_globals(void) {\n"); if GDLF.len > 0 { out.append("hr_dl_bind();\n") } out.append(GI); out.append("}\n")
 	out.append("static void hr_main(void) { ")

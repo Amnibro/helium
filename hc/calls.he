@@ -158,7 +158,7 @@ recursive arg_rank(n int, a int, p int) int:
 	if pk == TY_SLICE && (ak == TY_ARR || ak == TY_SLICE) && TY[a].a == TY[p].a: return 2
 	if pk == TY_ENUM && ak == TY_VARIANT && TY[a].a == TY[p].a: return 2
 	if pk == TY_ENUM && ak == TY_ENUM && TY[a].a == TY[p].a: return 2
-	if pk == TY_ARR && (ak == TY_ARR || ak == TY_SLICE) && TY[a].a == TY[p].a && is_construct(n): return 2
+	if pk == TY_ARR && (ak == TY_ARR || ak == TY_SLICE) && TY[a].a == TY[p].a && (ak == TY_SLICE || is_construct(n)): return 2
 	-1
 recursive sig_inst(i int):
 	node := FI_[i].node
@@ -233,14 +233,14 @@ recursive check_inst0(i int):
 	FI_[i].nc = ends(body) && !rets_to(node, FI_[i].name, false)
 	tail := ND[body].a
 	if rt >= 0:
-		if tail >= 0 && rt != T_VOID && t != T_VOID && !ends(tail): conv(tail, rt)
+		if tail >= 0 && rt != T_VOID && t != T_VOID && !ends(tail): conv(tail, rt); ret_esc(tail, rt)
 	else:
 		if FI_[i].ret < 0:
 			if tail >= 0 && t != T_VOID:
 				rr := ref_res(tail, default_t(tail)); FI_[i].ret = rr; if TY[rr].k == TY_REF: conv(tail, rr)
 			else: FI_[i].ret = T_VOID
 		else:
-			if tail >= 0 && t != T_VOID && FI_[i].ret != T_VOID: conv(tail, FI_[i].ret)
+			if tail >= 0 && t != T_VOID && FI_[i].ret != T_VOID: conv(tail, FI_[i].ret); ret_esc(tail, FI_[i].ret)
 	GB.pop_n(GB.len - g0)
 	SCOPE.pop_n(SCOPE.len - sm); NESTS.pop_n(NESTS.len - nm0)
 	while BRK_T.len > bt: BRK_T.pop()

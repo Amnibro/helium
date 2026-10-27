@@ -303,7 +303,7 @@ lex_next() Tok:
 			t.k = TK_FLT; t.fv = c_strtod(s, st); p += 1
 		else:
 			v, e := c_strtoull(s, st); t.iv = v
-			if ch(s, p) == 'u' || ch(s, p) == 'U' { p += 1; t.k = TK_UINT } else { t.k = TK_INT }
+			if ch(s, p) == 'u' || ch(s, p) == 'U' { p += 1; t.k = TK_UINT } else { t.k = TK_INT } if ch(s, p) == 'l' || ch(s, p) == 'L' { p += 1; t.p = 64 }
 		LP = p; return t
 	t.k = TK_P; p += 1; c2 := ch(s, p)
 	if c == '<': t.p = if c2 == '<' { p += 1; if ch(s, p) == '=' { p += 1; P_SHLA } else { P_SHL } } else if c2 == '=' { p += 1; P_LE } else { '<' }
@@ -604,8 +604,8 @@ sid(s const byte[:]) int:
 	if SNH.len == 0: SNH.resize(1 << 10, -1)
 	if SNM.len * 2 >= SNH.len:
 		n := SNH.len * 2; SNH.clear(); SNH.resize(n, -1)
-		for x, i SNM: j ~= (shash(SNB[x.s..x.s + x.n]) as int) & n - 1; while SNH[j] >= 0 { j = j + 1 & n - 1 } SNH[j] = i
-	m := SNH.len - 1; j ~= (shash(s) as int) & m
+		for x, i SNM: j ~= (shash(SNB[x.s..x.s + x.n]) as! int) & n - 1; while SNH[j] >= 0 { j = j + 1 & n - 1 } SNH[j] = i
+	m := SNH.len - 1; j ~= (shash(s) as! int) & m
 	while SNH[j] >= 0: if snm(SNH[j]) == s { return SNH[j] } j = j + 1 & m
 	id := SNM.len; SNM.push(Snm{SNB.len, s.len}); SNB.append(s); SNH[j] = id; id
 dgi<K>(d dictionary<K, int>&, k K) int: i := dat(d, k); if i < 0 { -1 } else { d.slots[i].val }
@@ -682,6 +682,10 @@ var STAGE = 0
 var TVOID = 0
 var TBOOL = 0
 var TINT = 0
+var TI64 = 0
+var TU64 = 0
+var NEEDI64 = false
+var C64IDS = dictionary<u64, int>{..}
 var TUINT = 0
 var TFLOAT = 0
 var TVEC = [0, 0, 0]
@@ -752,12 +756,12 @@ nameid(id int, n const byte[:]): emitstr(SNAMES, SOP_NAME, [id], n)
 recursive tyid(t int) int:
 	f := dgi(TYIDS, t); if f >= 0: return f
 	id := nid(); y := TY[t]
-	if y.k == T_VOID { emit1(SGLOB, SOP_TYPEVOID, id) } else if y.k == T_BOOL { emit1(SGLOB, SOP_TYPEBOOL, id) } else if y.k == T_INT { emit3(SGLOB, SOP_TYPEINT, id, 32, 1) } else if y.k == T_UINT { emit3(SGLOB, SOP_TYPEINT, id, 32, 0) } else if y.k == T_FLOAT { emit2(SGLOB, SOP_TYPEFLOAT, id, 32) }
+	if y.k == T_VOID { emit1(SGLOB, SOP_TYPEVOID, id) } else if y.k == T_BOOL { emit1(SGLOB, SOP_TYPEBOOL, id) } else if y.k == T_INT || y.k == T_UINT { if y.rows == 64 { NEEDI64 = true } emit3(SGLOB, SOP_TYPEINT, id, if y.rows == 64 { 64 } else { 32 }, if y.k == T_INT { 1 } else { 0 }) } else if y.k == T_FLOAT { emit2(SGLOB, SOP_TYPEFLOAT, id, 32) }
 	if y.k == T_VEC:
 		e := tyid(y.el); emit3(SGLOB, SOP_TYPEVECTOR, id, e, y.cols)
 	else if y.k == T_ARR && y.cols == -1:
 		e := tyid(y.el); emit2(SGLOB, SOP_TYPERUNTIMEARRAY, id, e); ey := TY[y.el]
-		emit3(SDECOS, SOP_DECORATE, id, DEC_ARRAYSTRIDE, if ey.k == T_VEC { if ey.cols == 2 { 8 } else { 16 } } else { 4 })
+		emit3(SDECOS, SOP_DECORATE, id, DEC_ARRAYSTRIDE, if ey.k == T_VEC { if ey.cols == 2 { 8 } else { 16 } } else if ey.rows == 64 { 8 } else { 4 })
 	else if y.k == T_ARR:
 		e := tyid(y.el); l := cscalar(TUINT, y.cols as! u32); emit3(SGLOB, SOP_TYPEARRAY, id, e, l)
 	else if y.k == T_STRUCT:
@@ -782,6 +786,9 @@ cscalar(t int, bits u32) int:
 	id := nid()
 	if TY[t].k == T_BOOL { emit2(SGLOB, if bits != 0 { SOP_CONSTANTTRUE } else { SOP_CONSTANTFALSE }, tid, id) } else { emit3(SGLOB, SOP_CONSTANT, tid, id, bits as int) }
 	insert(CONSTIDS, key, id); id
+c64(t int, v u64) int:
+	tid := tyid(t); key := v ^ (t as u64) * 0x9E3779B97F4A7C15; f := dgi(C64IDS, key); if f >= 0: return f
+	id := nid(); emitw(SGLOB, SOP_CONSTANT, [tid, id, (v & 0xFFFFFFFF) as! int, (v >> 32) as! int]); insert(C64IDS, key, id); id
 cfloat(f f32) int: cscalar(TFLOAT, binary::f32_bits(f))
 cint(v int) int: cscalar(TINT, v as! u32)
 cuint(v int) int: cscalar(TUINT, v as! u32)
@@ -859,7 +866,7 @@ recursive pprimary() int:
 	line := TOK.line
 	if accp('('): e := pexpr(); expp(')'); return e
 	if TOK.k == TK_FLT: e := nex(E_FLT, line); EX[e].fv = TOK.fv; adv(); return e
-	if TOK.k == TK_INT || TOK.k == TK_UINT: e := nex(if TOK.k == TK_INT { E_INT } else { E_UINT }, line); EX[e].iv = TOK.iv; adv(); return e
+	if TOK.k == TK_INT || TOK.k == TK_UINT: e := nex(if TOK.k == TK_INT { E_INT } else { E_UINT }, line); EX[e].iv = TOK.iv; EX[e].op = TOK.p; adv(); return e
 	if TOK.k == TK_ID:
 		n := TOK.id; s := snm(n)
 		if s == "true" || s == "false": e := nex(E_BOOL, line); EX[e].bv = s == "true"; adv(); return e
@@ -1017,8 +1024,8 @@ tyname(t int) const byte[:]:
 	y := TY[t]; k := y.k; c := y.cols
 	if k == T_VOID: return "void"
 	if k == T_BOOL: return "bool"
-	if k == T_INT: return "int"
-	if k == T_UINT: return "uint"
+	if k == T_INT: return if TY[t].rows == 64 { "int64_t" } else { "int" }
+	if k == T_UINT: return if TY[t].rows == 64 { "uint64_t" } else { "uint" }
 	if k == T_FLOAT: return "float"
 	if k == T_SAMP: return if c == SD_CUBE { "samplerCube" } else if c == SD_3D { "sampler3D" } else if c == SD_2DA { "sampler2DArray" } else if c == SD_2DS { "sampler2DShadow" } else if c == SD_CUBES { "samplerCubeShadow" } else if c == SD_2DAS { "sampler2DArrayShadow" } else if y.el >= 0 && TY[y.el].k == T_UINT { "usampler2D" } else { "sampler2D" }
 	if k == T_ARR: return "array"
@@ -1032,11 +1039,13 @@ tyname(t int) const byte[:]:
 		if ek == T_UINT: return if c == 2 { "uvec2" } else if c == 3 { "uvec3" } else { "uvec4" }
 		return if c == 2 { "bvec2" } else if c == 3 { "bvec3" } else { "bvec4" }
 	"?"
-prank(t int) int: k := TY[t].k; if k == T_INT { 1 } else if k == T_UINT { 2 } else if k == T_FLOAT { 3 } else { 0 }
+prank(t int) int: k := TY[t].k; w := TY[t].rows == 64; if k == T_INT { if w { 3 } else { 1 } } else if k == T_UINT { if w { 4 } else { 2 } } else if k == T_FLOAT { 5 } else { 0 }
 convert(id int, from int, to int, line int) int:
 	if from == to: return id
 	fk := TY[elty(from)].k; tk := TY[elty(to)].k
 	if ncomp(from) != ncomp(to): serr(line, str("cannot convert '", tyname(from), "' to '", tyname(to), "'"))
+	fw := TY[elty(from)].rows == 64; tw := TY[elty(to)].rows == 64
+	if (fk == T_INT || fk == T_UINT) && (tk == T_INT || tk == T_UINT) && fw != tw: r := nid(); t := tyid(to); if fk == T_UINT && tk == T_INT { u := if tw { TU64 } else { TUINT }; q := nid(); emit3(SBODY, 113, tyid(u), q, id); emit3(SBODY, SOP_BITCAST, t, r, q) } else { emit3(SBODY, if fk == T_INT { 114 } else { 113 }, t, r, id) } return r
 	if fk == tk: return id
 	op := if fk == T_INT && tk == T_FLOAT { SOP_CONVERTSTOF } else if fk == T_UINT && tk == T_FLOAT { SOP_CONVERTUTOF } else if fk == T_INT && tk == T_UINT || fk == T_UINT && tk == T_INT { SOP_BITCAST } else if fk == T_FLOAT && tk == T_INT { SOP_CONVERTFTOS } else if fk == T_FLOAT && tk == T_UINT { SOP_CONVERTFTOU } else { 0 }
 	if op == 0: serr(line, str("cannot convert '", tyname(from), "' to '", tyname(to), "'"))
@@ -1317,7 +1326,7 @@ genintrin(e int, ii int) Val:
 	tc ~= 1; for t tys { if ncomp(t) > tc { tc = ncomp(t) } }
 	ai ~= f.ops != 0; for t tys { kk := TY[elty(t)].k; if kk != T_INT && kk != T_UINT { ai = false } }
 	el ~= TFLOAT; inst ~= f.op
-	if ai: au ~= false; for t tys { if TY[elty(t)].k == T_UINT { au = true } } el = if au { TUINT } else { TINT }; inst = if au { f.opu } else { f.ops }
+	if ai: au ~= false; w6 ~= false; for t tys { if TY[elty(t)].k == T_UINT { au = true } if TY[elty(t)].rows == 64 { w6 = true } } el = if au { if w6 { TU64 } else { TUINT } } else { if w6 { TI64 } else { TINT } }; inst = if au { f.opu } else { f.ops }
 	tg := vecty(el, tc)
 	for i argc:
 		ft := vecty(el, ncomp(tys[i]))
@@ -1451,8 +1460,8 @@ arrlen(sid0 int, mi int) Val:
 recursive genexpr1(e int) Val:
 	x := EX[e]; k := x.k; line := x.line
 	if k == E_FLT: return rv(TFLOAT, cfloat(x.fv as f32))
-	if k == E_INT: return rv(TINT, cint((x.iv as! i32) as int))
-	if k == E_UINT: return rv(TUINT, cuint((x.iv as! u32) as int))
+	if k == E_INT: return if x.op == 64 { rv(TI64, c64(TI64, x.iv)) } else { rv(TINT, cint((x.iv as! i32) as int)) }
+	if k == E_UINT: return if x.op == 64 { rv(TU64, c64(TU64, x.iv)) } else { rv(TUINT, cuint((x.iv as! u32) as int)) }
 	if k == E_BOOL: return rv(TBOOL, cscalar(TBOOL, if x.bv { 1 } else { 0 }))
 	if k == E_REF: return genref(e)
 	if k == E_MEM: return genmember(e)
@@ -1659,14 +1668,14 @@ genfunc(ret int, name int, pty int[>..], pnm int[>..], pq int[>..], body int, li
 	d := recdecl(D_FUNC, line); DC[d].ty = ret; DC[d].name = name; DC[d].pty.append(pty[..]); DC[d].pnm.append(pnm[..]); DC[d].pq.append(pq[..]); DC[d].body = body
 recursive std140(t int, line int) int, int:
 	y := TY[t]
-	if y.k == T_FLOAT || y.k == T_INT || y.k == T_UINT: return 4, 4
+	if y.k == T_FLOAT || y.k == T_INT || y.k == T_UINT: return if y.rows == 64 { 8 } else { 4 }, if y.rows == 64 { 8 } else { 4 }
 	if y.k == T_VEC: return if y.cols == 2 { 8 } else { 16 }, if y.cols == 2 { 8 } else if y.cols == 3 { 12 } else { 16 }
 	if y.k == T_MAT: return 16, y.cols * 16
 	if y.k == T_ARR: a, s := std140(y.el, line); return 16, s * y.cols
 	serr(line, str("type '", tyname(t), "' is not supported in uniform blocks yet")); return 0, 0
 recursive std430(t int, line int) int, int:
 	y := TY[t]
-	if y.k == T_FLOAT || y.k == T_INT || y.k == T_UINT: return 4, 4
+	if y.k == T_FLOAT || y.k == T_INT || y.k == T_UINT: return if y.rows == 64 { 8 } else { 4 }, if y.rows == 64 { 8 } else { 4 }
 	if y.k == T_VEC: return if y.cols == 2 { 8 } else { 16 }, if y.cols == 2 { 8 } else if y.cols == 3 { 12 } else { 16 }
 	if y.k == T_STRUCT:
 		ma ~= 4; off ~= 0
@@ -1910,7 +1919,7 @@ inittypes():
 	TVOID = nty(Ty{T_VOID}); TBOOL = nty(Ty{T_BOOL}); TINT = nty(Ty{T_INT}); TUINT = nty(Ty{T_UINT}); TFLOAT = nty(Ty{T_FLOAT})
 	for i 3: TVEC[i] = nty(Ty{T_VEC, TFLOAT, i + 2}); TIVEC[i] = nty(Ty{T_VEC, TINT, i + 2}); TUVEC[i] = nty(Ty{T_VEC, TUINT, i + 2}); TBVEC[i] = nty(Ty{T_VEC, TBOOL, i + 2}); TMAT[i] = nty(Ty{T_MAT, TFLOAT, i + 2, i + 2})
 	TSAMP = nty(Ty{T_SAMP, TFLOAT, SD_2D}); TUSAMP = nty(Ty{T_SAMP, TUINT, SD_2D}); TSCUBE = nty(Ty{T_SAMP, TFLOAT, SD_CUBE}); TS3D = nty(Ty{T_SAMP, TFLOAT, SD_3D}); TS2DA = nty(Ty{T_SAMP, TFLOAT, SD_2DA}); TS2DS = nty(Ty{T_SAMP, TFLOAT, SD_2DS}); TSCUBES = nty(Ty{T_SAMP, TFLOAT, SD_CUBES}); TS2DAS = nty(Ty{T_SAMP, TFLOAT, SD_2DAS})
-	regty("bool", TBOOL); regty("int", TINT); regty("uint", TUINT); regty("float", TFLOAT)
+	TI64 = nty(Ty{T_INT, -1, 0, 64}); TU64 = nty(Ty{T_UINT, -1, 0, 64}); regty("bool", TBOOL); regty("int", TINT); regty("uint", TUINT); regty("float", TFLOAT); regty("int64_t", TI64); regty("uint64_t", TU64)
 	for p, i ["vec", "ivec", "uvec", "bvec"]: for j 3 { n byte[>..] ~= []; n.append(p); n.push(('2' + j) as byte); regty(n[..], [TVEC[j], TIVEC[j], TUVEC[j], TBVEC[j]][i]) }
 	regty("sampler2D", TSAMP); regty("usampler2D", TUSAMP); regty("samplerCube", TSCUBE); regty("sampler3D", TS3D); regty("sampler2DArray", TS2DA); regty("sampler2DShadow", TS2DS); regty("samplerCubeShadow", TSCUBES); regty("sampler2DArrayShadow", TS2DAS)
 	regty("mat2", TMAT[0]); regty("mat3", TMAT[1]); regty("mat4", TMAT[2]); regty("image2D", nty(Ty{T_IMG, -1, -1}))
@@ -1924,6 +1933,7 @@ assemble() u32[>..]:
 	m u32[>..] ~= [0x07230203 as u32, 0x00010300 as u32, 0 as u32, NEXTID as! u32, 0 as u32]; emit1(m, SOP_CAPABILITY, 1)
 	if NEEDIQ: emit1(m, SOP_CAPABILITY, 50)
 	if NEEDEF: emit1(m, SOP_CAPABILITY, 49)
+	if NEEDI64: emit1(m, SOP_CAPABILITY, 11)
 	emitstr(m, SOP_EXTINSTIMPORT, [GLSLEXT], "GLSL.std.450"); emit2(m, SOP_MEMORYMODEL, 0, 1)
 	w u32[>..] ~= [(if STAGE == ST_FRAG { 4 } else if STAGE == ST_COMP { 5 } else { 0 }) as! u32, ENTRYF as! u32]; pushstr(w, "main"); w.append(SIFACE[..])
 	m.push(((w.len + 1) << 16 | SOP_ENTRYPOINT) as! u32); m.append(w[..])
@@ -1931,7 +1941,7 @@ assemble() u32[>..]:
 	m.append(SNAMES[..]); m.append(SDECOS[..]); m.append(SGLOB[..]); m.append(SFUNCS[..]); m
 reset():
 	SNB.clear(); SNM.clear(); SNH.clear(); TY.clear(); EX.clear(); ST.clear(); GRP.clear(); DC.clear(); SY.clear(); DECLS.clear(); INS.clear(); INIX = dictionary<int, int>{..}
-	TYNAMES = dictionary<int, int>{..}; ARRTY = dictionary<u64, int>{..}; IMGTY = dictionary<int, int>{..}; TYIDS = dictionary<int, int>{..}; PTRIDS = dictionary<u64, int>{..}; CONSTIDS = dictionary<u64, int>{..}; FNTYIDS = dictionary<u64, int>{..}
+	TYNAMES = dictionary<int, int>{..}; ARRTY = dictionary<u64, int>{..}; IMGTY = dictionary<int, int>{..}; TYIDS = dictionary<int, int>{..}; PTRIDS = dictionary<u64, int>{..}; CONSTIDS = dictionary<u64, int>{..}; C64IDS = dictionary<u64, int>{..}; NEEDI64 = false; FNTYIDS = dictionary<u64, int>{..}
 	LAIDS = dictionary<int, int>{..}; LAIDA = dictionary<int, int>{..}; LAIDE = dictionary<int, int>{..}; SAMPIMG = dictionary<int, int>{..}; SCD = dictionary<u64, int>{..}; FNS = dictionary<int, int>{..}
 	SNAMES.clear(); SDECOS.clear(); SGLOB.clear(); SFUNCS.clear(); SBODY.clear(); SLOCALS.clear(); SIFACE.clear(); SCN.clear(); SCM.clear(); SFILES.clear(); AHEAD.clear()
 	RSAMP.clear(); RIMG.clear(); RBUF.clear(); RBLK.clear(); RMEM.clear(); RINP.clear(); ERRM.clear(); MSLO.clear(); HLSLO.clear()
@@ -2004,8 +2014,8 @@ hlslty(t int) const byte[:]:
 	y := TY[t]; k := y.k; c := y.cols
 	if k == T_VOID: return "void"
 	if k == T_BOOL: return "bool"
-	if k == T_INT: return "int"
-	if k == T_UINT: return "uint"
+	if k == T_INT: return if TY[t].rows == 64 { "int64_t" } else { "int" }
+	if k == T_UINT: return if TY[t].rows == 64 { "uint64_t" } else { "uint" }
 	if k == T_FLOAT: return "float"
 	if k == T_STRUCT: return snm(y.name)
 	if k == T_MAT: return if c == 2 { "float2x2" } else if c == 3 { "float3x3" } else { "float4x4" }

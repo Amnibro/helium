@@ -47,9 +47,9 @@ Projects still on `.amni`, because they build with the Goose toolchain: Pomling 
 
 The native corpus passes completely. What is left:
 
-- **`lut fn`:** CPU tables done in `.amni` files (lex.he `lut_desugar`, the fork's rewrite: sparse 4096-entry tiles, `~/.goose/lut/<name>-<hash>.lut` saved when `main` returns, same file bytes as the fork). Left: `.he` files (a `lut fn` there is still a plain function) and the GPU fill for integer bodies.
+- **`lut fn`:** done in `.amni` files: CPU tables (lex.he `lut_desugar`) and the GPU fill (hc/lutglsl.he writes GLSL, our shaderc compiles it with int64, hc/lib/lutgpu.he runs it through Vulkan from an optional `extern "libvulkan.so.1?"`). `tools/hc/luttest.sh` checks GPU tables against the CPU. Left: `.he` files (a `lut fn` there is still a plain function).
 - **C path** (101 tests): it lags native on variable-mode ADTs, varint values and serialization, contextual generic floats and the newer native fixes. An `if` expression yielding `null` or a pool element into a pool-relative field emits an assignment clang rejects (`hc/test/relref_guard.he` builds its links with statements instead).
-- **Rejection parity:** the 1954 `test/errors_tc` programs carry Goose's expected diagnostics (`.stderr`); hc accepts some programs Goose rejects and words its errors differently. The difftest skips them.
+- **Rejection parity:** `python3 tools/hc/errtest.py <hc>` runs the 1937 `test/errors_tc` programs, each of which Goose rejects with the diagnostic in its `// error:` line. hc (2026-10-27): 2 match, 162 rejected with other wording, 1753 accepted, 20 crash (cyclic constants, field and parameter defaults, growing types, polymorphic recursion recurse until the stack runs out). Accepting is not harmless: `var l = l0; return l` compiled to a use-after-free until hc gained Goose's return check. `tools/hc/baseline/err.txt` holds the matching files; CI fails if one stops matching.
 
 ## 2. Performance (native vs clang)
 
@@ -93,7 +93,7 @@ The native corpus passes completely. What is left:
 ## 3. Own everything (replacing Goose and third-party C)
 
 - **Graphics (`gfx`):** done: hc/lib/gfx.he, the whole goose_gfx API on SDL3's GPU API (dlopened libSDL3), with the C layer's checks and misuse messages.
-- **Shaders:** done (hc/shaderc.he). Left: the MSL and HLSL banners still name cute_spirv. The Helium-subset GPU language (`lut fn` GPU fills, `embed_shader` GPU tables) is not ported; no app uses it.
+- **Shaders:** done (hc/shaderc.he). Left: the MSL and HLSL banners still name cute_spirv. `lut fn` GPU fills are ported (64-bit ints added to shaderc); the Helium-subset GPU language for `embed_shader` tables is not; no app uses it.
 - **`physics`:** done (hc/lib/physics.he, hc/lib/physics_engine.he). Left: starting a recording on a non-empty world, recording queries.
 - **`ui`:** done: hc/lib/ui.he (Nuklear under its public-domain option, no C layer) and hc/lib/ttf.he (TrueType outlines, rasterizing, rect packing). ProggyClean is still the built-in default font; ttf.he reads `glyf` outlines only, so CFF (`.otf`) fonts are not loaded yet.
 - **Pom-Pom Grove app** (`eng/`, `app/`, `pomling.amni`): builds only with Goose today. It moves once gfx and shaders exist.
@@ -121,8 +121,9 @@ The native corpus passes completely. What is left:
 
 ## Suggested order
 
-1. `lut fn` in `.he` files and its GPU fill.
-2. Performance passes: `separate`, `reachable`, BLAKE3, bounds checks in loops.
-3. Editor support for `.he` and `.amni` on `hc lsp`.
-4. arm64 and Mach-O.
-5. A native seed so a fresh build needs no C compiler.
+1. Rejection parity: the 20 crashes first, then Goose's §4.1 copy and lifetime checks (the accepted programs that miscompile).
+2. `lut fn` in `.he` files.
+3. Performance passes: `separate`, `reachable`, BLAKE3, bounds checks in loops.
+4. Editor support for `.he` and `.amni` on `hc lsp`.
+5. arm64 and Mach-O.
+6. A native seed so a fresh build needs no C compiler.

@@ -1,4 +1,5 @@
 use os
+use lutglsl
 T_EOF := 0; T_IDENT := 1; T_INT := 2; T_FLT := 3; T_STR := 4
 T_LP := 5; T_RP := 6; T_LB := 7; T_RB := 8; T_LC := 9; T_RC := 10; T_COMMA := 11; T_SEMI := 12; T_COLON := 13; T_QUEST := 14; T_CC := 15
 T_DOT := 16; T_DOTDOT := 17; T_DOTASSIGN := 18; T_DOTEQ := 19; T_DOTNEQ := 20
@@ -40,7 +41,7 @@ intern(s const byte[:]) int:
 		NH.clear(); NH.resize(n, -1)
 		for x, i NM: j ~= (hash(NAMES[(x.s as int)..x.s + x.n]) as int) & n - 1; while NH[j] >= 0 { j = j + 1 & n - 1 } NH[j] = i
 	m := NH.len - 1
-	j ~= (hash(s) as int) & m
+	j ~= (hash(s) as! int) & m
 	while NH[j] >= 0: if nm(NH[j]) == s { return NH[j] } j = j + 1 & m
 	id := NM.len
 	NM.push(Name{NAMES.len, s.len})
@@ -291,7 +292,7 @@ lut_bits(t const byte[:]) int:
 lut_err(src const byte[:], path const byte[:], at int, m const byte[:]) bool:
 	ln ~= 1; for c src[..at] { if c == '\n' { ln++ } } format(LERR, path, ":", ln, ": error: ", m); false
 lut_desugar(src const byte[:], path const byte[:], root bool, out byte[>..]&) bool:
-	out.append(src); gen byte[>..] ~= []; sv byte[>..] ~= []; pos ~= 0; sh ~= 0
+	out.append(src); gen byte[>..] ~= []; sv byte[>..] ~= []; pos ~= 0; sh ~= 0; gpu ~= false
 	loop:
 		at := lut_find(src, "lut fn ", pos); if at < 0: break
 		pos = at + 7; ls ~= at; while ls > 0 && src[ls - 1] != '\n' { ls-- } if lut_trim(src[ls..at]).len > 0: continue
@@ -316,9 +317,22 @@ lut_desugar(src const byte[:], path const byte[:], root bool, out byte[>..]&) bo
 			if args.len > 0 { args.append(", "); sig.append(", ") } args.append(x); format(sig, x, " ", pt[i])
 			format(wid, "let lut__", x, " int = "); if pt[i] == "bool" { format(wid, "if ", x, " { 1 } else { 0 }") } else if pt[i] == "i8" { format(wid, x, " as! u8") } else if pt[i] == "i16" { format(wid, x, " as! u16") } else { wid.append(x) } wid.append(";\n\t")
 		n byte[>..] ~= []; format(n, name, "__lut"); a := at + sh; t byte[>..] ~= []; t.append(out[..a]); format(t, "fn ", n); t.append(out[a + lp - at..]); out.clear(); out.append(t[..]); sh += n.len + 3 - (lp - at)
+		fill byte[>..] ~= []
+		if bits >= 10 && bits <= 20 && LG_ON:
+			gl byte[>..] ~= []; nn := 1 << bits; why byte[>..] ~= []; w u32[>..] ~= []; lg ~= false; lv byte[>..] ~= []; lg = env("HELIUM_GPU_LOG", lv) && lv.len > 0
+			if !lut_glsl(src, name, pn[..], pt[..], pb[..], ret, nn, gl) { why.append(LGWHY[..]) } else if !shc::cspv(gl[..], 2, w) { format(why, "our shader compiler rejected it: ", shc::ERRM) }
+			if gl.len > 0 && lv[..] == "2": write_file(str(name, ".comp")[..], gl[..])
+			if why.len > 0 && lg: write_stderr(str("lut fn ", name, " stays on the CPU: ", why, "\n"))
+			if why.len == 0:
+				if lg: write_stderr(str("lut fn ", name, " can fill on the GPU\n"))
+				format(gen, "let ", n, "_spv byte[", w.len * 4, "] = ["); for x, i w { for q 4 { if i + q > 0 { gen.append(", ") } format(gen, (x >> (q * 8) as u32) & 255) } } gen.append("];\n"); format(gen, "var ", n, "_probe ", ret, "[>..];\n"); gpu = true
+				cv byte[>..] ~= []; if ret == "bool" { cv.append("lut__x != 0") } else if ret == "uint" || ret == "u64" { cv.append("lut__x") } else { format(cv, "lut__x as! ", ret) }
+				pa byte[>..] ~= []; ps ~= bits; for x, i pn { ps -= pb[i]; raw byte[>..] ~= []; format(raw, "((lut__e >> ", ps, ") & ", (1 << pb[i]) - 1, ")"); if i > 0 { pa.append(", ") } if pt[i] == "bool" { format(pa, raw, " != 0") } else { format(pa, raw, " as! ", pt[i]) } }
+				format(fill, "\t", n, "_probe.resize(64, default<", ret, ">());\n\tlet lut__p0 = clock_ns();\n\tfor q in 64 { let lut__e = q * ", nn / 64, "; ", n, "_probe[q] = ", n, "(", pa, "); }\n\tvar lut__g byte[>..] = [];\n\tif lutgpu::fill(", n, "_spv, lut__g, ", nn, ", (clock_ns() - lut__p0) * ", nn / 64, ") {\n\t\tfor q in ", tiles, " { ", n, "_t.push(q as i32); }\n\t\t", n, "_v.resize(", nn, ", default<", ret, ">());\n\t\t", n, "_s.resize(", tiles * words, ", 0);\n")
+				format(fill, "\t\tfor e in ", nn, " {\n\t\t\tif lut__g[", nn * 8, " + e * 4] == 0 {\n\t\t\t\tvar lut__x uint = 0;\n\t\t\t\tfor q in 8 { let lut__gb uint = lut__g[e * 8 + q]; lut__x |= lut__gb << (q * 8); }\n\t\t\t\t", n, "_v[e] = ", cv, ";\n\t\t\t\t", n, "_s[e >> 6] |= 1 << (e & 63);\n\t\t\t}\n\t\t}\n\t\t", n, "_dirty = true;\n\t\treturn;\n\t}\n")
 		format(gen, "var ", n, "_t i32[>..];\nvar ", n, "_v ", ret, "[>..];\nvar ", n, "_s u64[>..];\nvar ", n, "_live = false;\nvar ", n, "_dirty = false;\n")
 		format(gen, "fn ", n, "_path() byte[>..] { var p byte[>..] = []; if !env(\"HOME\", p) { p.append(\".\"); } format(p, \"/.goose\"); make_dir(p); format(p, \"/lut\"); make_dir(p); format(p, \"/", name, "-", hex, ".lut\"); p }\n")
-		format(gen, "fn ", n, "_load() {\n\t", n, "_live = true;\n\tvar img byte[>..] = [];\n\tif read_file(", n, "_path(), img) {\n\t\tlet a, an = parse_uleb(img);\n\t\tlet b, bn = parse_uleb(img[an + a..]);\n\t\tlet t, tok = from_bytes<i32[>..]>(img[..an + a]);\n\t\tlet v, vok = from_bytes<", ret, "[>..]>(img[an + a..an + a + bn + b]);\n\t\tlet s, sok = from_bytes<u64[>..]>(img[an + a + bn + b..]);\n\t\tif tok && vok && sok && t.len == ", tiles, " { ", n, "_t.append(t); ", n, "_v.append(v); ", n, "_s.append(s); return; }\n\t}\n\t", n, "_t.resize(", tiles, ", -1);\n}\n")
+		format(gen, "fn ", n, "_load() {\n\t", n, "_live = true;\n\tvar img byte[>..] = [];\n\tif read_file(", n, "_path(), img) {\n\t\tlet a, an = parse_uleb(img);\n\t\tlet b, bn = parse_uleb(img[an + a..]);\n\t\tlet t, tok = from_bytes<i32[>..]>(img[..an + a]);\n\t\tlet v, vok = from_bytes<", ret, "[>..]>(img[an + a..an + a + bn + b]);\n\t\tlet s, sok = from_bytes<u64[>..]>(img[an + a + bn + b..]);\n\t\tif tok && vok && sok && t.len == ", tiles, " { ", n, "_t.append(t); ", n, "_v.append(v); ", n, "_s.append(s); return; }\n\t}\n", fill, "\t", n, "_t.resize(", tiles, ", -1);\n}\n")
 		format(gen, "fn ", n, "_save() { if ", n, "_dirty { var img byte[>..] = []; to_bytes(", n, "_t, img); to_bytes(", n, "_v, img); to_bytes(", n, "_s, img); write_file(", n, "_path(), img); ", n, "_dirty = false; } }\n")
 		format(gen, "fn ", name, "(", sig, ") ", ret, " {\n\tif !", n, "_live { ", n, "_load(); }\n\t", wid, "let lut__k = ", key, ";\n\tvar lut__b = ", n, "_t[lut__k >> ", tb, "];\n\tif lut__b < 0 { lut__b = (", n, "_v.len >> ", tb, ") as i32; ", n, "_t[lut__k >> ", tb, "] = lut__b; let lut__vl = ", n, "_v.len + ", tsz, "; let lut__sl = ", n, "_s.len + ", words, "; ", n, "_v.resize(lut__vl, default<", ret, ">()); ", n, "_s.resize(lut__sl, 0); }\n")
 		format(gen, "\tlet lut__j = ((lut__b as int) << ", tb, ") | (lut__k & ", tsz - 1, ");\n\tif (", n, "_s[lut__j >> 6] >> (lut__j & 63)) & 1 == 0 { ", n, "_v[lut__j] = ", n, "(", args, "); ", n, "_s[lut__j >> 6] |= 1 << (lut__j & 63); ", n, "_dirty = true; }\n\t", n, "_v[lut__j]\n}\n")
@@ -327,4 +341,4 @@ lut_desugar(src const byte[:], path const byte[:], root bool, out byte[>..]&) bo
 	if root:
 		mi ~= lut_find(out[..], "\nfn main(", 0); if out.len >= 8 && out[..8] == "fn main(" { mi = 0 } else if mi >= 0 { mi++ }
 		if mi >= 0: t byte[>..] ~= []; t.append(out[..mi]); t.append("fn main__lut("); t.append(out[mi + 8..]); out.clear(); out.append(t[..]); format(gen, "fn main() { main__lut(); ", sv, "}\n")
-	out.append("\nimport os;\n"); out.append(gen[..]); true
+	out.append(if gpu { "\nimport os;\nimport lutgpu;\n" } else { "\nimport os;\n" }); out.append(gen[..]); true

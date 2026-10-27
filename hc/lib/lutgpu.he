@@ -1,0 +1,140 @@
+namespace lutgpu
+use std
+use os
+use ffi
+extern "libvulkan.so.1?" {
+	vk_ci(ci uint, a uint, o uint) i32 = "vkCreateInstance";
+	vk_epd(i uint, n uint, o uint) i32 = "vkEnumeratePhysicalDevices";
+	vk_gpp(p uint, o uint) = "vkGetPhysicalDeviceProperties";
+	vk_gpf(p uint, o uint) = "vkGetPhysicalDeviceFeatures";
+	vk_gqf(p uint, n uint, o uint) = "vkGetPhysicalDeviceQueueFamilyProperties";
+	vk_gmp(p uint, o uint) = "vkGetPhysicalDeviceMemoryProperties";
+	vk_cd(p uint, ci uint, a uint, o uint) i32 = "vkCreateDevice";
+	vk_gdq(d uint, f u32, i u32, o uint) = "vkGetDeviceQueue";
+	vk_cb(d uint, ci uint, a uint, o uint) i32 = "vkCreateBuffer";
+	vk_db(d uint, b uint, a uint) = "vkDestroyBuffer";
+	vk_bmr(d uint, b uint, o uint) = "vkGetBufferMemoryRequirements";
+	vk_am(d uint, ci uint, a uint, o uint) i32 = "vkAllocateMemory";
+	vk_fm(d uint, m uint, a uint) = "vkFreeMemory";
+	vk_bbm(d uint, b uint, m uint, off uint) i32 = "vkBindBufferMemory";
+	vk_mm(d uint, m uint, off uint, sz uint, f u32, o uint) i32 = "vkMapMemory";
+	vk_csm(d uint, ci uint, a uint, o uint) i32 = "vkCreateShaderModule";
+	vk_dsm(d uint, m uint, a uint) = "vkDestroyShaderModule";
+	vk_cdsl(d uint, ci uint, a uint, o uint) i32 = "vkCreateDescriptorSetLayout";
+	vk_ddsl(d uint, l uint, a uint) = "vkDestroyDescriptorSetLayout";
+	vk_cpl(d uint, ci uint, a uint, o uint) i32 = "vkCreatePipelineLayout";
+	vk_dpl(d uint, l uint, a uint) = "vkDestroyPipelineLayout";
+	vk_ccp(d uint, c uint, n u32, ci uint, a uint, o uint) i32 = "vkCreateComputePipelines";
+	vk_dp(d uint, p uint, a uint) = "vkDestroyPipeline";
+	vk_cdp(d uint, ci uint, a uint, o uint) i32 = "vkCreateDescriptorPool";
+	vk_ddp(d uint, p uint, a uint) = "vkDestroyDescriptorPool";
+	vk_ads(d uint, ci uint, o uint) i32 = "vkAllocateDescriptorSets";
+	vk_uds(d uint, n u32, w uint, c u32, cp uint) = "vkUpdateDescriptorSets";
+	vk_ccpool(d uint, ci uint, a uint, o uint) i32 = "vkCreateCommandPool";
+	vk_dcpool(d uint, p uint, a uint) = "vkDestroyCommandPool";
+	vk_acb(d uint, ci uint, o uint) i32 = "vkAllocateCommandBuffers";
+	vk_bcb(c uint, bi uint) i32 = "vkBeginCommandBuffer";
+	vk_ecb(c uint) i32 = "vkEndCommandBuffer";
+	vk_rcb(c uint, f u32) i32 = "vkResetCommandBuffer";
+	vk_cbp(c uint, bp u32, p uint) = "vkCmdBindPipeline";
+	vk_cbds(c uint, bp u32, l uint, first u32, n u32, s uint, dn u32, d uint) = "vkCmdBindDescriptorSets";
+	vk_cdb(c uint, bx u32, by u32, bz u32, x u32, y u32, z u32) = "vkCmdDispatchBase";
+	vk_qs(q uint, n u32, s uint, f uint) i32 = "vkQueueSubmit";
+	vk_qwi(q uint) i32 = "vkQueueWaitIdle";
+}
+extern "libc.so.6" {
+	c_setenv(n uint, v uint, o i32) i32 = "setenv";
+}
+var STATE = 0
+var INST uint = 0
+var PHYS uint = 0
+var DEV uint = 0
+var QUEUE uint = 0
+var QFAM = 0
+var MEMP byte[>..]
+var LOG = false
+p32(b byte[>..]&, o int, v int): for k 4 { b[o + k] = ((v >> (k * 8)) & 255) as! byte }
+p64(b byte[>..]&, o int, v uint): for k 8 { b[o + k] = ((v >> (k * 8) as uint) & 255) as! byte }
+g32(b const byte[:], o int) int: v ~= 0; for k 4 { v |= (b[o + k] as int) << (k * 8) } v
+g64(b const byte[:], o int) uint: v uint ~= 0; for k 8 { v |= (b[o + k] as uint) << (k * 8) as uint } v
+zb(n int) byte[>..]: b byte[>..] ~= []; b.resize(n, 0); b
+pt(b const byte[:]) uint: ffi::ptr(b)
+init() bool:
+	if STATE != 0: return STATE == 1
+	STATE = 2; want byte[>..] ~= []; env("HELIUM_GPU", want); LOG = env_set("HELIUM_GPU_LOG"); if want[..] == "off": return false
+	c_setenv(pt("MESA_VK_IGNORE_CONFORMANCE_WARNING\0"), pt("1\0"), 0); nm := "helium\0"; app := zb(48); p64(app, 16, pt(nm)); p32(app, 24, 1); p64(app, 32, pt(nm)); p32(app, 40, 1); p32(app, 44, 1 << 22 | 1 << 12)
+	ici := zb(64); p32(ici, 0, 1); p64(ici, 24, pt(app[..])); o := zb(8)
+	if vk_ci(pt(ici[..]), 0, pt(o[..])) != 0: return false
+	INST = g64(o[..], 0); nd := zb(8); p32(nd, 0, 16); ds := zb(128)
+	if vk_epd(INST, pt(nd[..]), pt(ds[..])) < 0: return false
+	pref := if want[..] == "discrete" || want[..] == "dgpu" { 2 } else { 1 }; pick ~= -1; pty ~= -1
+	for i g32(nd[..], 0):
+		pd := g64(ds[..], i * 8); pp := zb(1024); ff := zb(256); vk_gpp(pd, pt(pp[..])); vk_gpf(pd, pt(ff[..])); ty := g32(pp[..], 16)
+		if g32(ff[..], 160) == 0 || g32(ff[..], 0) == 0 || ty == 4: continue
+		if pick < 0 || ty == pref && pty != pref: pick = i; pty = ty
+	if pick < 0: return false
+	PHYS = g64(ds[..], pick * 8); nq := zb(8); p32(nq, 0, 16); qf := zb(24 * 16); vk_gqf(PHYS, pt(nq[..]), pt(qf[..])); QFAM = -1
+	for i g32(nq[..], 0): if QFAM < 0 && g32(qf[..], i * 24) & 2 != 0 { QFAM = i }
+	if QFAM < 0: return false
+	pr := zb(4); p32(pr, 0, 0x3F800000); qci := zb(40); p32(qci, 0, 2); p32(qci, 20, QFAM); p32(qci, 24, 1); p64(qci, 32, pt(pr[..]))
+	en := zb(224); p32(en, 0, 1); p32(en, 160, 1); dci := zb(72); p32(dci, 0, 3); p32(dci, 20, 1); p64(dci, 24, pt(qci[..])); p64(dci, 64, pt(en[..]))
+	if vk_cd(PHYS, pt(dci[..]), 0, pt(o[..])) != 0: return false
+	DEV = g64(o[..], 0); MEMP = zb(520); vk_gmp(PHYS, pt(MEMP[..])); vk_gdq(DEV, QFAM as u32, 0, pt(o[..])); QUEUE = g64(o[..], 0)
+	if LOG: pp := zb(1024); vk_gpp(PHYS, pt(pp[..])); write_stderr(str("lut gpu device: ", ffi::cstr(pt(pp[..]) + 20), "\n"))
+	STATE = 1; true
+env_set(n const byte[:]) bool: v byte[>..] ~= []; env(n, v) && v.len > 0
+buffer(size int, b byte[>..]&, m byte[>..]&, mp byte[>..]&) bool:
+	bci := zb(56); p32(bci, 0, 12); p64(bci, 24, size as uint); p32(bci, 32, 0x20); o := zb(8)
+	if vk_cb(DEV, pt(bci[..]), 0, pt(o[..])) != 0: return false
+	p64(b, 0, g64(o[..], 0)); rq := zb(24); vk_bmr(DEV, g64(o[..], 0), pt(rq[..])); bits := g32(rq[..], 16); t ~= -1
+	for i g32(MEMP[..], 0): if t < 0 && bits & (1 << i) != 0 && g32(MEMP[..], 4 + i * 8) & 6 == 6 { t = i }
+	if t < 0: return false
+	mai := zb(32); p32(mai, 0, 5); p64(mai, 16, g64(rq[..], 0)); p32(mai, 24, t)
+	if vk_am(DEV, pt(mai[..]), 0, pt(o[..])) != 0: return false
+	p64(m, 0, g64(o[..], 0)); vk_bbm(DEV, g64(b[..], 0), g64(m[..], 0), 0) == 0 && vk_mm(DEV, g64(m[..], 0), 0, size as uint, 0, pt(mp[..])) == 0
+fill(spv const byte[:], out byte[>..]&, n int, cpu_ns int) bool:
+	mn byte[>..] ~= []; ms := if env("HELIUM_GPU_MIN_MS", mn) { v, ok := parse_int(mn[..]); if ok { v } else { 30 } } else { 30 }
+	if cpu_ns < ms * 1000000 || n <= 0 || spv.len < 20 || spv.len & 3 != 0: return false
+	t0 := clock(); if !init(): return false
+	t1 := clock(); vb := zb(8); vm := zb(8); vp := zb(8); fb := zb(8); fm := zb(8); fp := zb(8); o := zb(8)
+	sm ~= 0 as uint; dsl ~= 0 as uint; e0 ~= 0 as uint; pl ~= 0 as uint; pipe ~= 0 as uint; dp ~= 0 as uint; cp ~= 0 as uint; ok ~= false
+	loop:
+		if !buffer(n * 8, vb, vm, vp) || !buffer(n * 4, fb, fm, fp): break
+		sc byte[>..] ~= []; sc.append(spv); smi := zb(40); p32(smi, 0, 16); p64(smi, 24, spv.len as uint); p64(smi, 32, pt(sc[..])); if vk_csm(DEV, pt(smi[..]), 0, pt(o[..])) != 0 { break } sm = g64(o[..], 0)
+		bd := zb(48); for k 2 { p32(bd, k * 24, k); p32(bd, k * 24 + 4, 7); p32(bd, k * 24 + 8, 1); p32(bd, k * 24 + 12, 0x20) }
+		dli := zb(32); p32(dli, 0, 32); if vk_cdsl(DEV, pt(dli[..]), 0, pt(o[..])) != 0 { break } e0 = g64(o[..], 0)
+		p32(dli, 20, 2); p64(dli, 24, pt(bd[..])); if vk_cdsl(DEV, pt(dli[..]), 0, pt(o[..])) != 0 { break } dsl = g64(o[..], 0)
+		sls := zb(16); p64(sls, 0, e0); p64(sls, 8, dsl); pli := zb(48); p32(pli, 0, 30); p32(pli, 20, 2); p64(pli, 24, pt(sls[..]))
+		if vk_cpl(DEV, pt(pli[..]), 0, pt(o[..])) != 0 { break } pl = g64(o[..], 0)
+		en := "main\0"; cpi := zb(96); p32(cpi, 0, 29); p32(cpi, 16, 0x10); p32(cpi, 24, 18); p32(cpi, 44, 0x20); p64(cpi, 48, sm); p64(cpi, 56, pt(en)); p64(cpi, 96 - 24, pl); p32(cpi, 88, -1)
+		if vk_ccp(DEV, 0, 1, pt(cpi[..]), 0, pt(o[..])) != 0 { break } pipe = g64(o[..], 0)
+		ps := zb(8); p32(ps, 0, 7); p32(ps, 4, 2); dpi := zb(40); p32(dpi, 0, 33); p32(dpi, 20, 1); p32(dpi, 24, 1); p64(dpi, 32, pt(ps[..]))
+		if vk_cdp(DEV, pt(dpi[..]), 0, pt(o[..])) != 0 { break } dp = g64(o[..], 0)
+		sl := zb(8); p64(sl, 0, dsl); dai := zb(40); p32(dai, 0, 34); p64(dai, 16, dp); p32(dai, 24, 1); p64(dai, 32, pt(sl[..]))
+		if vk_ads(DEV, pt(dai[..]), pt(o[..])) != 0 { break } ds := g64(o[..], 0)
+		bi := zb(48); p64(bi, 0, g64(vb[..], 0)); p64(bi, 16, 0xFFFFFFFFFFFFFFFF); p64(bi, 24, g64(fb[..], 0)); p64(bi, 40, 0xFFFFFFFFFFFFFFFF)
+		w := zb(128); for k 2 { p32(w, k * 64, 35); p64(w, k * 64 + 16, ds); p32(w, k * 64 + 24, k); p32(w, k * 64 + 32, 1); p32(w, k * 64 + 36, 7); p64(w, k * 64 + 48, pt(bi[..]) + (k * 24) as uint) }
+		vk_uds(DEV, 2, pt(w[..]), 0, 0)
+		cpci := zb(24); p32(cpci, 0, 39); p32(cpci, 16, 2); p32(cpci, 20, QFAM); if vk_ccpool(DEV, pt(cpci[..]), 0, pt(o[..])) != 0 { break } cp = g64(o[..], 0)
+		cbi := zb(32); p32(cbi, 0, 40); p64(cbi, 16, cp); p32(cbi, 28, 1); if vk_acb(DEV, pt(cbi[..]), pt(o[..])) != 0 { break } cb := g64(o[..], 0)
+		cbl := zb(8); p64(cbl, 0, cb); dl := zb(8); p64(dl, 0, ds); bgi := zb(32); p32(bgi, 0, 42); p32(bgi, 16, 1); si := zb(72); p32(si, 0, 4); p32(si, 40, 1); p64(si, 48, pt(cbl[..]))
+		t2 := clock(); good ~= true; base ~= 0
+		while base < n && good:
+			cnt := min(n - base, 16384); vk_rcb(cb, 0)
+			if vk_bcb(cb, pt(bgi[..])) != 0 { good = false; break }
+			vk_cbp(cb, 1, pipe); vk_cbds(cb, 1, pl, 1, 1, pt(dl[..]), 0, 0); vk_cdb(cb, (base / 64) as u32, 0, 0, ((cnt + 63) / 64) as u32, 1, 1)
+			good = vk_ecb(cb) == 0 && vk_qs(QUEUE, 1, pt(si[..]), 0) == 0 && vk_qwi(QUEUE) == 0; base += 16384
+		if !good: break
+		va := g64(vp[..], 0); fa := g64(fp[..], 0); out.append(ffi::bytes(va, n * 8)[..]); out.append(ffi::bytes(fa, n * 4)[..]); ok = true
+		if LOG: nf ~= 0; fl := ffi::bytes(fa, n * 4); for i n { if g32(fl[..], i * 4) != 0 { nf++ } } write_stderr(str("gpu fill ", n, " entries (", nf, " left to the CPU): device ", ((t1 - t0) * 1000.0) as! int, " ms, pipeline ", ((t2 - t1) * 1000.0) as! int, " ms, run ", ((clock() - t2) * 1000.0) as! int, " ms\n"))
+		break
+	if cp != 0: vk_dcpool(DEV, cp, 0)
+	if dp != 0: vk_ddp(DEV, dp, 0)
+	if pipe != 0: vk_dp(DEV, pipe, 0)
+	if pl != 0: vk_dpl(DEV, pl, 0)
+	if dsl != 0: vk_ddsl(DEV, dsl, 0)
+	if e0 != 0: vk_ddsl(DEV, e0, 0)
+	if sm != 0: vk_dsm(DEV, sm, 0)
+	for b [g64(vb[..], 0), g64(fb[..], 0)]: if b != 0 { vk_db(DEV, b, 0) }
+	for m [g64(vm[..], 0), g64(fm[..], 0)]: if m != 0 { vk_fm(DEV, m, 0) }
+	ok
