@@ -229,7 +229,7 @@ recursive fn commit(n int, t int) {
 		let e = if TY[t].k == TY_ARR || TY[t].k == TY_SLICE { TY[t].a as int } else { T_ERRT };
 		if x.a >= 0 { conv(x.a as int, e); conv(x.b as int, T_I64); }
 		for i in x.n { conv(kid(n, i), e); }
-		if TY[t].k == TY_SLICE { set_t(n, t_arr(e, A_FIXED, x.n as i64, -1)); set_cv(n, t); }
+		if TY[t].k == TY_SLICE { let cnt, u0, ok = cval(x.b as int); set_t(n, t_arr(e, A_FIXED, if x.a >= 0 { cnt } else { x.n as i64 }, -1)); set_cv(n, t); }
 		return;
 	}
 }
@@ -684,9 +684,9 @@ recursive fn ck_match(n int, want int) int {
 	set_t(n, rt)
 }
 fn find_from_fn(name int) int {
-	var i = AOWN;
+	var i = AOWN; let d = if CFN >= 0 && FI_[CFN].node >= 0 { lookup_q(name, ns_of(FI_[CFN].node as int), D_FN) } else { -1 }; let dn = if d >= 0 { ns_of(DC[d].node as int) } else { -1 };
 	while i >= 0 {
-		if FI_[i].node >= 0 && ND[FI_[i].node].k == N_FN && FI_[i].name as int == name { return i; }
+		if FI_[i].node >= 0 && ND[FI_[i].node].k == N_FN && FI_[i].name as int == name && (dn < 0 || ns_of(FI_[i].node as int) == dn) { return i; }
 		i = if FI_[i].bown >= 0 { FI_[i].bown as int } else { FI_[i].par as int };
 	}
 	-1

@@ -30,10 +30,11 @@ static int hr_argc; static char **hr_argv;
 static __thread uint8_t **hr_free; static __thread int64_t hr_nfree, hr_cfree;
 static __thread uint8_t *hr_vbase, *hr_vtop;
 static __thread hrv hr_ob;
+static __thread int64_t hr_pls, hr_pd;
 static __thread int hr_lr;
 static void hr_flush(void);
 static __thread jmp_buf *hr_cjb; static __thread char *hr_cmsg; static __thread int64_t hr_tid = -1; static int hr_mt;
-static __attribute__((noreturn, cold)) void hr_die(const char *m, const char *loc) { if (hr_cjb) { size_t k = strlen(m) + strlen(loc) + 4; hr_cmsg = malloc(k); snprintf(hr_cmsg, k, "%s (%s)", m, loc); longjmp(*hr_cjb, 1); } hr_flush(); fprintf(stderr, "helium runtime error: %s (%s)\n", m, loc); exit(1); }
+static __attribute__((noreturn, cold)) void hr_die(const char *m, const char *loc) { if (hr_pd > 0 && hr_pls <= hr_ob.n) hr_ob.n = hr_pls; hr_pd = 0; if (hr_cjb) { size_t k = strlen(m) + strlen(loc) + 4; hr_cmsg = malloc(k); snprintf(hr_cmsg, k, "%s (%s)", m, loc); longjmp(*hr_cjb, 1); } hr_flush(); fprintf(stderr, "helium runtime error: %s (%s)\n", m, loc); exit(1); }
 static inline int64_t hr_rget(void *q, int sz) { return sz == 1 ? *(int8_t*)q : sz == 2 ? *(int16_t*)q : sz == 4 ? *(int32_t*)q : *(int64_t*)q; }
 static inline void *hr_rldv(void *q, int sz, int opt) { int64_t d = hr_rget(q, sz); return opt && !d ? (void*)0 : (void*)((char*)q + d); }
 static inline void hr_rstv(void *q, int sz, void *p, int opt) { int64_t d = p ? (char*)p - (char*)q : 0; if (p && opt && d == 0) hr_die("a relative reference would encode as null", "store"); if (sz < 8 && (d < -(1LL << (sz * 8 - 1)) || d >= (1LL << (sz * 8 - 1)))) hr_die("relative reference offset out of range", "store"); if (sz == 1) *(int8_t*)q = (int8_t)d; else if (sz == 2) *(int16_t*)q = (int16_t)d; else if (sz == 4) *(int32_t*)q = (int32_t)d; else *(int64_t*)q = d; }
@@ -360,12 +361,14 @@ static inline void hr_fd(hrv *o, double v) { hr_fflt(o, v, 0); }
 static inline void hr_ff(hrv *o, float v) { hr_fflt(o, v, 1); }
 static void hr_fq(hrv *o, hsl s) { hr_fb(o, '"'); hr_fs(o, s); hr_fb(o, '"'); }
 static inline void hr_println(void) { hr_fb(&hr_ob, '\n'); if (hr_ob.n > 65536 || hr_mt) hr_flush(); }
+static inline void hr_pb(void) { hr_pls = hr_ob.n; hr_pd = 1; }
+static inline void hr_pe(void) { hr_println(); hr_pd = 0; }
 static inline int64_t hr_mod(int64_t a, int64_t b) { int64_t r = a % b; return r < 0 ? (b < 0 ? r - b : r + b) : r; }
 static inline int64_t hr_div(int64_t a, int64_t b) { return a / b; }
 static inline uint64_t hr_umod(uint64_t a, uint64_t b) { return a % b; }
 static __attribute__((noreturn)) void hr_abort(hsl m, const char *loc) { char *s = malloc((size_t)m.n + 1); memcpy(s, m.p, (size_t)m.n); s[m.n] = 0; hr_die(s, loc); }
 static __attribute__((noreturn)) void hr_exit(int64_t c) { hr_flush(); exit((int)c); }
-static void hr_assert_fail(const char *loc) { hr_die("assertion failed", loc); }
+static void hr_assert_fail(const char *loc) { hr_die("assert failed", loc); }
 static int64_t hr_os_arg_count(void) { return hr_argc; }
 static void hr_os_arg(int64_t i, hrv *out) { if (i >= 0 && i < hr_argc) hr_append(out, hr_argv[i], (int64_t)strlen(hr_argv[i]), 1); }
 static char *hr_cstr(hsl s, char *buf, int64_t cap) { char *c = s.n < cap ? buf : malloc((size_t)s.n + 1); memcpy(c, s.p, (size_t)s.n); c[s.n] = 0; return c; }
@@ -597,7 +600,7 @@ static bool hr_thread_wait(int64_t id, hrv *msg, const char *loc) {
 	pthread_mutex_lock(&hr_tmu);
 	int64_t n = hr_ntr;
 	pthread_mutex_unlock(&hr_tmu);
-	if (id < 0 || id >= n) hr_die("thread_wait of an id no thread_spawn returned", loc);
+	if (id < 0 || id >= n) hr_die("thread_wait on an unknown thread id", loc);
 	if (id == hr_tid) hr_die("a worker cannot wait for itself", loc);
 	hr_flush();
 	pthread_mutex_lock(&hr_tmu);

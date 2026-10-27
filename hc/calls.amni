@@ -598,7 +598,7 @@ recursive fn ck_builtin(n int, b int, recv int, want int) int {
 	if b == B_CLEAR { return set_t(n, T_VOID); }
 	if b == B_INDEXOF { let c = arg(1); ck(c, t_ref(e, 0)); conv(c, t_ref(e, 0)); return set_t(n, T_I64); }
 	if b == B_ALLOCI || b == B_ALLOCR { let c = arg(1); ck(c, e); conv(c, e); return set_t(n, if b == B_ALLOCI { T_I64 } else { t_ref(e, 0) }); }
-	if b == B_FREE || b == B_ALLOCS { ck(arg(1), T_I64); conv(arg(1), T_I64); return set_t(n, if b == B_FREE { T_VOID } else { t_slice(e, false) }); }
+	if b == B_FREE || b == B_ALLOCS { ck(arg(1), T_I64); conv(arg(1), T_I64); if b == B_ALLOCS { ck_defs(e); } return set_t(n, if b == B_FREE { T_VOID } else { t_slice(e, false) }); }
 	if b == B_FREES || b == B_REALLOCS { let c = arg(1); ck(c, t_slice(e, true)); conv(c, t_slice(e, true)); if b == B_FREES { return set_t(n, T_VOID); } ck(arg(2), T_I64); conv(arg(2), T_I64); return set_t(n, t_slice(e, false)); }
 	set_t(n, T_ERRT)
 }

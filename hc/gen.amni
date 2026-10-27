@@ -921,7 +921,7 @@ recursive fn relpush(n int, recv int, c int, e int, p int, lim bool) bool {
 	RELM = sm;
 	grel_targets(q0, p);
 	ct(e); format(O, " *_p", p, " = ");
-	if lim { format(O, "&_v", p, "->e[_v", p, "->n]; if (_v", p, "->n >= ", TY[rt].b, ") hr_die(\"push past a limited array's capacity\", "); wloc(n); format(O, "); _v", p, "->n++; "); }
+	if lim { format(O, "&_v", p, "->e[_v", p, "->n]; if (_v", p, "->n >= ", TY[rt].b, ") hr_die(\"limited array capacity exceeded\", "); wloc(n); format(O, "); _v", p, "->n++; "); }
 	else { ow("("); ct(e); format(O, "*)hr_grow(_v", p, ", 1, sizeof _x", p, "); "); }
 	format(O, "*_p", p, " = _x", p, "; ");
 	grel_fix(f0, q0, p);
@@ -1188,7 +1188,7 @@ recursive fn gbuiltin(n int) {
 		format(O, "hr_seqpush(_v", p, ", _x", p, ", ", ez[..], "); })");
 		return;
 	} }
-	if b == B_PRINT { var hc_ = false; for i in total { if has_call(arg(i)) { hc_ = true; } } if hc_ { ow("({ hrv _o"); oi(p); ow(" __attribute__((cleanup(hr_rdrop))) = {0}; "); var nmo byte[..32] = []; format(nmo, "&_o", p); for i in total { let c = arg(i); gfmt(nmo[..], c, fin(c), true); ow("; "); } ow("hr_fs(&hr_ob, hr_sl(_o"); oi(p); ow(")); hr_println(); })"); return; } ow("({ "); for i in total { let c = arg(i); gfmt("&hr_ob", c, fin(c), true); ow("; "); } ow("hr_println(); })"); return; }
+	if b == B_PRINT { var hc_ = false; for i in total { if has_call(arg(i)) { hc_ = true; } } if hc_ { ow("({ hrv _o"); oi(p); ow(" __attribute__((cleanup(hr_rdrop))) = {0}; "); var nmo byte[..32] = []; format(nmo, "&_o", p); for i in total { let c = arg(i); gfmt(nmo[..], c, fin(c), true); ow("; "); } ow("hr_fs(&hr_ob, hr_sl(_o"); oi(p); ow(")); hr_println(); })"); return; } ow("({ hr_pb(); "); for i in total { let c = arg(i); gfmt("&hr_ob", c, fin(c), true); ow("; "); } ow("hr_pe(); })"); return; }
 	if b == B_STR { ow("({ hrv _o"); oi(p); ow(" = {0}; "); var nmo byte[..32] = []; format(nmo, "&_o", p); for i in total { let c = arg(i); gfmt(nmo[..], c, fin(c), true); ow("; "); } ow("_o"); oi(p); ow("; })"); return; }
 	if b == B_FORMAT && is_lim(deref(at(arg(0)))) {
 		let lt = deref(at(arg(0)));
@@ -1259,7 +1259,7 @@ recursive fn gbuiltin(n int) {
 		if b == B_APPEND { format(O, "hsl _s", p, " = "); gas(arg(1)); ow("; "); }
 		if b == B_POPN || b == B_RESIZE { format(O, "int64_t _k", p, " = "); gx(arg(1)); ow("; "); }
 		format(O, "int64_t _n", p, " = hr_vget(_v", p, " + ", w, ", ", w, "), _c", p, " = hr_vget(_v", p, ", ", w, "); (void)_c", p, "; "); ct(e); format(O, " *_e", p, " = ("); ct(e); format(O, "*)(_v", p, " + ", 2 * w, "); ");
-		if b == B_PUSH { format(O, "if (_n", p, " >= _c", p, ") hr_die(\"push past a limited array's capacity\", "); wloc(n); format(O, "); _e", p, "[_n", p, "] = _x", p, "; hr_vput(_v", p, " + ", w, ", ", w, ", _n", p, " + 1); &_e", p, "[_n", p, "]; })"); return; }
+		if b == B_PUSH { format(O, "if (_n", p, " >= _c", p, ") hr_die(\"limited array capacity exceeded\", "); wloc(n); format(O, "); _e", p, "[_n", p, "] = _x", p, "; hr_vput(_v", p, " + ", w, ", ", w, ", _n", p, " + 1); &_e", p, "[_n", p, "]; })"); return; }
 		if b == B_APPEND { format(O, "if (_n", p, " + _s", p, ".n > _c", p, ") hr_die(\"append past a limited array's capacity\", "); wloc(n); format(O, "); memmove(_e", p, " + _n", p, ", _s", p, ".p, (size_t)_s", p, ".n * sizeof _e", p, "[0]); hr_vput(_v", p, " + ", w, ", ", w, ", _n", p, " + _s", p, ".n); })"); return; }
 		if b == B_POP { format(O, "if (!_n", p, ") hr_die(\"pop of an empty array\", "); wloc(n); format(O, "); hr_vput(_v", p, " + ", w, ", ", w, ", _n", p, " - 1); "); rdec_pre(e, n); format(O, "_e", p, "[_n", p, " - 1]"); rdec_post(e); ow("; })"); return; }
 		if b == B_POPN { format(O, "if (_k", p, " < 0 || _k", p, " > _n", p, ") hr_die(\"pop_n past the length\", "); wloc(n); format(O, "); hr_vput(_v", p, " + ", w, ", ", w, ", _n", p, " - _k", p, "); })"); return; }
@@ -1275,8 +1275,8 @@ recursive fn gbuiltin(n int) {
 	if is_lim(rt) {
 		if b == B_PUSH && relpush(n, recv, arg(1), e, p, true) { return; }
 		ow("({ "); ct(rt); ow(" *_v"); oi(p); ow(" = "); grecv_ptr(recv); ow("; ");
-		if b == B_PUSH && is_rel(e) { format(O, "if (_v", p, "->n >= ", TY[rt].b, ") hr_die(\"push past a limited array's capacity\", "); wloc(n); ow("); "); grel_st_open(e); format(O, "_v", p, "->e[_v", p, "->n]"); grel_st_close(e, arg(1)); format(O, " &_v", p, "->e[_v", p, "->n++]; })"); return; }
-		if b == B_PUSH { ct(e); ow(" _x"); oi(p); ow(" = "); gx(arg(1)); format(O, "; if (_v", p, "->n >= ", TY[rt].b, ") hr_die(\"push past a limited array's capacity\", "); wloc(n); format(O, "); _v", p, "->e[_v", p, "->n] = _x", p, "; &_v", p, "->e[_v", p, "->n++]; })"); return; }
+		if b == B_PUSH && is_rel(e) { format(O, "if (_v", p, "->n >= ", TY[rt].b, ") hr_die(\"limited array capacity exceeded\", "); wloc(n); ow("); "); grel_st_open(e); format(O, "_v", p, "->e[_v", p, "->n]"); grel_st_close(e, arg(1)); format(O, " &_v", p, "->e[_v", p, "->n++]; })"); return; }
+		if b == B_PUSH { ct(e); ow(" _x"); oi(p); ow(" = "); gx(arg(1)); format(O, "; if (_v", p, "->n >= ", TY[rt].b, ") hr_die(\"limited array capacity exceeded\", "); wloc(n); format(O, "); _v", p, "->e[_v", p, "->n] = _x", p, "; &_v", p, "->e[_v", p, "->n++]; })"); return; }
 		if b == B_APPEND { format(O, "hsl _s", p, " = "); gas(arg(1)); format(O, "; if (_v", p, "->n + _s", p, ".n > ", TY[rt].b, ") hr_die(\"append past a limited array's capacity\", "); wloc(n); format(O, "); memmove(_v", p, "->e + _v", p, "->n, _s", p, ".p, (size_t)_s", p, ".n * sizeof _v", p, "->e[0]); _v", p, "->n += _s", p, ".n; })"); return; }
 		if b == B_POP { format(O, "if (!_v", p, "->n) hr_die(\"pop of an empty array\", "); wloc(n); ow("); "); rdec_pre(e, n); format(O, "_v", p, "->e[--_v", p, "->n]"); rdec_post(e); ow("; })"); return; }
 		if b == B_POPN { format(O, "int64_t _k", p, " = "); gx(arg(1)); format(O, "; if (_k", p, " < 0 || _k", p, " > _v", p, "->n) hr_die(\"pop_n past the length\", "); wloc(n); format(O, "); _v", p, "->n -= _k", p, "; })"); return; }
