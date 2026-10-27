@@ -16149,9 +16149,9 @@ g1252 = gi_4451;
 (void)(f567_lstore_own(fa_4453, ((int64_t)(((*({ hrv *_t20175 = &(g1626); int64_t _i20175 = g_4450; (S5*)_t20175->b + hr_ix(_i20175, _t20175->n, "/home/anmire/ai/amni-lang/helium-self/hc/lower.he:457"); }))).a_)), ft_4449));
 g1252 = sa_4454;
  } else { if ((((f_4448).def_) >= (((int32_t)0LL)))) { (void)(f634_ldefv(fa_4453, ((int64_t)((f_4448).def_)), ft_4449));
- } else { if (f630_ndef(ft_4449)) { (void)(f633_ldefault(fa_4453, ft_4449));
- } else { if (fx_4445) { (void)(({ int64_t _o20180_0 = fa_4453; f555_lzero(_o20180_0, f484_tsz(ft_4449)); }));
+ } else { if (fx_4445) { (void)(({ int64_t _o20178_0 = fa_4453; f555_lzero(_o20178_0, f484_tsz(ft_4449)); }));
  }
+if (f630_ndef(ft_4449)) { (void)(f633_ldefault(fa_4453, ft_4449));
  }
  }
  }

@@ -1,0 +1,10 @@
+use std
+struct In { a i32 = 7, b i32, c f32, d byte[24] }
+struct Out { x In, y i32, z In }
+main():
+	for i 3:
+		o ~= Out{..}
+		t ~= 0
+		for j 24: t += o.x.d[j] as int + o.z.d[j] as int
+		print(str(o.x.a, " ", o.x.b, " ", o.x.c, " ", o.z.a, " ", o.z.b, " ", o.y, " ", t))
+		o.x.b = 99; o.z.c = 2.5; o.x.d[3] = 4; o.z.b = 5; o.x.a = 1

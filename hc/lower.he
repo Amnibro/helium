@@ -458,7 +458,7 @@ recursive lslit(addr int, n int, t int):
 		else:
 			if f.def >= 0: ldefv(fa, f.def, ft)
 			else:
-				if ndef(ft) { ldefault(fa, ft) } else { if fx { lzero(fa, tsz(ft)) } }
+				if fx { lzero(fa, tsz(ft)) } if ndef(ft) { ldefault(fa, ft) }
 	if fx && tsz(t) > cur: lzero(addi(addr, cur), tsz(t) - cur)
 	SELFS.pop();
 var SELFS i32[>..<]; SELFN ~= -1
