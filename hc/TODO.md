@@ -51,6 +51,7 @@ Projects still on `.amni`, because they build with the Goose toolchain: Pomling 
 
 ### 1.2 Checker gaps (73 tests, same on both backends)
 
+- **Implicit copies of resizable values (§4.1), not in the corpus:** `g(x)` with `g(o H)` and `x` a variable of a struct holding a `[>..]` array, and `h ~= o; ...; h` returned by value, compile without the error §4.1 asks for (`copy(x)`), and the native build then reads freed memory. Make both an error that suggests `copy(x)`.
 - **Overload resolution** (17 tests, "no function X matches"):
   - array adaptation at calls: `call_array_adaptation`, `limited_array_adaptation`, `literal_array_arguments`
   - nested overloads, typeless argument order, member parameters
