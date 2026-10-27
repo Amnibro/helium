@@ -85,19 +85,21 @@ lslot(v int) int:
 gslot(d int) int:
 	while GOFF.len < GLT.len { GOFF.push(-1) } if GOFF[d] < 0 { t := GLT[d]; BSS = al(BSS, tal(t)); GOFF[d] = BSS; BSS += tsz(t) } GOFF[d] as int
 var CAPSL i32[>..<]
-CURI ~= -1; LRF ~= -1; var LRVO i32[>..<]
+CURI ~= -1; LRF ~= -1; var LRVO i32[>..<]; var LRDO i32[>..<]
 bss(sz int, a int) int:
 	BSS = al(BSS, max(a, 1)); o := BSS; BSS += max(sz, 1); o
 lrflag() int:
 	if LRF < 0 { LRF = bss(8, 8) } d := nv(); ir(I_GADDR, 8, d, -1, -1, LRF); d
 lrval(f0 int) int:
 	f := lrkey(f0); while LRVO.len <= f { LRVO.push(-1) } rt := FI_[f0].ret; if LRVO[f] < 0 { LRVO[f] = bss(if rt >= 0 && rt != T_VOID { tsz(rt) } else { 8 }, if rt >= 0 && rt != T_VOID { tal(rt) } else { 8 }) } d := nv(); ir(I_GADDR, 8, d, -1, -1, LRVO[f]); d
+lrrel(f0 int) bool: rt := FI_[f0].ret as int; rt >= 0 && is_agg(rt) && has_rel(rt)
+lrdst(f0 int) int: f := lrkey(f0); while LRDO.len <= f { LRDO.push(-1) } if LRDO[f] < 0 { LRDO[f] = bss(8, 8) } d := nv(); ir(I_GADDR, 8, d, -1, -1, LRDO[f]); d
 lrcheck():
 	fl := ldw(lrflag(), 0, 3); lok := nlbl(); ir(I_BZ, 3, -1, fl, -1, lok)
 	if CURI >= 0 && lrtg(CURI):
 		lno := nlbl(); ir(I_BZ, 3, -1, lcmp(fl, imm(lrkey(CURI) + 1), CC_E), -1, lno); stw(lrflag(), 0, imm(0), 3); rt := FI_[CURI].ret; va := lrval(CURI)
 		if rt >= 0 && rt != T_VOID:
-			if is_agg(rt): ir(I_COPY, 3, RETV, va, imm(tsz(rt)), 0)
+			if is_agg(rt) && !lrrel(CURI): ir(I_COPY, 3, RETV, va, imm(tsz(rt)), 0)
 			else:
 				if is_pair(rt): ir(I_MOV, 3, RETV, ldw(va, 0, 3), -1, 0); ir(I_MOV, 3, RETV2, ldw(va, 8, 3), -1, 0) else: ir(I_MOV, 3, RETV, ldw(va, 0, wof(rt)), -1, 0)
 		drop_to(0); ir(I_JMP, 3, -1, -1, -1, RETL); ir(I_LBL, 3, -1, -1, -1, lno)
@@ -197,7 +199,7 @@ recursive lsl(n int) int, int:
 	d := deref(t)
 	if k == N_SLICE: return lslice(n)
 	if is_vimg(d) && k != N_STR && k != N_ARR: return vdat(vptr_of(n), d)
-	if k == N_CALL: d := lcall(n); ct := atc(n); if TY[ct].k == TY_MULTI { return ldw(d, 0, 3), ldw(d, 8, 3) } dct := deref(ct); if rk(n) == R_BLOCK && TY[dct].k == TY_ARR && is_fix(dct) && !is_vimg(dct) { q := nv(); ir(I_SLOT, 8, q, -1, -1, slot(tsz(dct), tal(dct))); ir(I_COPY, 3, q, d, imm(tsz(dct)), 0); return lsl_at(q, dct) } if is_agg(ct) || TY[ct].k == TY_REF && TY[ct].c < 0 && (TY[deref(ct)].k == TY_ARR || TY[deref(ct)].k == TY_SLICE) { return lsl_at(d, deref(ct)) } return d, PAIR2
+	if k == N_CALL: d := lcall(n); ct := atc(n); if TY[ct].k == TY_MULTI { m0 := deref(mel(ct, 0)); if TY[m0].k == TY_ARR && is_fix(m0) && !is_vimg(m0) { return d, imm(TY[m0].b as int) } return ldw(d, 0, 3), ldw(d, 8, 3) } dct := deref(ct); if rk(n) == R_BLOCK && TY[dct].k == TY_ARR && is_fix(dct) && !is_vimg(dct) { q := nv(); ir(I_SLOT, 8, q, -1, -1, slot(tsz(dct), tal(dct))); ir(I_COPY, 3, q, d, imm(tsz(dct)), 0); return lsl_at(q, dct) } if is_agg(ct) || TY[ct].k == TY_REF && TY[ct].c < 0 && (TY[deref(ct)].k == TY_ARR || TY[deref(ct)].k == TY_SLICE) { return lsl_at(d, deref(ct)) } return d, PAIR2
 	if (k == N_IF || k == N_BLOCK || k == N_EBLOCK || k == N_LOOP || k == N_MATCH) && TY[t].k == TY_REF && TY[deref(t)].k == TY_ARR && !is_vimg(deref(t)) && !is_seq(deref(t)): a := nv(); ir(I_SLOT, 8, a, -1, -1, slot(16, 8)); lsink(n, a, t_slice(TY[deref(t)].a, false)); return ldw(a, 0, 3), ldw(a, 8, 3)
 	if (k == N_IF || k == N_BLOCK || k == N_EBLOCK || k == N_LOOP || k == N_MATCH) && TY[t].k == TY_ARR && !is_vimg(t): q := nv(); ir(I_SLOT, 8, q, -1, -1, slot(tsz(t), tal(t))); lsink(n, q, t); tmp_drop(q, t); return lsl_at(q, t)
 	if k == N_IF || k == N_BLOCK || k == N_EBLOCK || k == N_LOOP || k == N_MATCH: a := nv(); ir(I_SLOT, 8, a, -1, -1, slot(16, 8)); lsink(n, a, if TY[t].k == TY_STRLIT { TT_STR } else { t }); return ldw(a, 0, 3), ldw(a, 8, 3)
@@ -558,14 +560,14 @@ atn(n int) int:
 		if TY[t].k == TY_FLIT:
 			T_F64
 		else:
-			t
+			if TY[t].k == TY_MULTI && ND[n].k as int == N_CALL { mel(t, 0) } else { t }
 isf(t int) bool:
 	t >= 0 && (TY[t].k == TY_FLT || TY[t].k == TY_FLIT)
 cvt(v int, k int, w int) int:
 	d := nv(); ir(I_CVT, w, d, v, -1, k); d
 fconv(v int, st int, t int) int:
 	if st < 0 || t < 0 || !isf(t): return v
-	if !isf(st): if TY[st].k != TY_INT && TY[st].k != TY_ILIT { return v } return cvt(v, if TY[st].k == TY_INT && !is_signed(st) && wsz(wof(st)) == 8 { 2 } else { 1 }, wof(t))
+	if !isf(st): if TY[st].k != TY_INT && TY[st].k != TY_ILIT && TY[st].k != TY_VARINT { return v } return cvt(v, if TY[st].k == TY_INT && !is_signed(st) && wsz(wof(st)) == 8 { 2 } else { 1 }, wof(t))
 	if wof(st) == wof(t): return v
 	cvt(v, if wof(t) == 11 { 3 } else { 4 }, wof(t))
 recursive lx(n int) int:
@@ -1214,7 +1216,7 @@ recursive lstmt1(n int):
 	if k == N_BLOCK: lblk(n, -1); return
 	if k == N_CFOR: sa := AOWN; for inst cf_insts(n) { AOWN = inst as int; lstmt(ND[n].c as int); AOWN = sa } return
 	if k == N_RET && ax(n) >= 0 && ax(n) != CURI:
-		lt := ax(n); rt0 := FI_[lt].ret as int; va := lrval(lt)
+		lt := ax(n); rt0 := FI_[lt].ret as int; va := if lrrel(lt) { ldw(lrdst(lt), 0, 3) } else { lrval(lt) }
 		if x.n > 1:
 			for i x.n: c := kid(n, i); lstore(addi(va, moff(rt0, i)), c, mel(rt0, i)); lmove_src(c)
 		else:
@@ -1269,7 +1271,7 @@ recursive lassign(n int):
 	o := if o == T_DOTASSIGN { T_ASSIGN } else { o }
 	if o == T_ASSIGN && is_vimg(t) && vlim(t) == 1 && vw(t) > 0 && !sq(t):
 		e := TY[t].a; if !needs_drop(e) && !is_rel(e) && !has_rel(e): da := laddr(a); img := ldw(da, 0, 3); p, q := lsl(b); dp, ln := vdat(img, t); lguard(n, lcmp(q, ldw(img, 0, vwc(t)), CC_LE), "limited array capacity exceeded"); ir(I_COPY, 3, dp, p, bin(B_MUL, 3, q, imm(tsz(e)), -1), 0); stw(img, vw(t) as int, q, vwc(t)); return
-	if o == T_ASSIGN && is_agg(t) && !is_lplace(b) && has_rel(t) && ND[b].k as int == N_SLIT: da := laddr(a); if needs_drop(t) { ldrop(da, t) } lstore(da, b, t); return
+	if o == T_ASSIGN && is_agg(t) && !is_lplace(b) && has_rel(t) && (ND[b].k as int == N_SLIT || !needs_drop(t)): da := laddr(a); if needs_drop(t) { ldrop(da, t) } lstore(da, b, t); return
 	if o == T_ASSIGN && is_agg(t) && !is_lplace(b): da := laddr(a); tmp := nv(); ir(I_SLOT, 8, tmp, -1, -1, slot(tsz(t), tal(t))); lstore(tmp, b, t); if needs_drop(t) { ldrop(da, t) } ir(I_COPY, 3, da, tmp, imm(tsz(t)), 0); return
 	p := laddr(a)
 	if o == T_ASSIGN: lstore(p, b, t); return
@@ -1379,6 +1381,7 @@ lower_fn(i int):
 			qi++; if is_scal(pt) || TY[pt].k == TY_REF: stw(sa, 0, q, if TY[pt].k == TY_REF { 3 } else { wof(pt) }) else: ir(I_COPY, 3, sa, q, imm(tsz(pt)), 0); own_drop(sa, pt)
 	RETV = nv(); RETV2 = nv(); RETL = nlbl()
 	if sret: ir(I_MOV, 3, RETV, sp, -1, 0)
+	lrs := if sret && lrtg(i) && lrrel(i) { q := nv(); ir(I_SLOT, 8, q, -1, -1, slot(8, 8)); da := lrdst(i); stw(q, 0, ldw(da, 0, 3), 3); stw(da, 0, RETV, 3); q } else { -1 }
 	FZP = IR.len; FZL = 1 << 40; FZH = -1; BRD = 0; SBRD = 0; for _ 3: ir(I_NOP, 3, -1, -1, -1, 0)
 	KEEPDS = rt >= 0 && is_agg(rt) && !is_vimg(rt) && hvimg(rt)
 	fm := newmark(); MSTK.push(fm); ir(I_DSS, 3, -1, fm, -1, 0); if rt >= 0 && is_vimg(rt): mark_use(fm)
@@ -1400,6 +1403,7 @@ lower_fn(i int):
 				if !KEEPDS: ir(I_DSR, 3, -1, fm, -1, 0)
 	if rt >= 0 && is_vimg(rt) { ir(I_JMP, 3, -1, -1, -1, ld); ir(I_LBL, 3, -1, -1, -1, lz); ir(I_DSR, 3, -1, fm, -1, 0); ir(I_LBL, 3, -1, -1, -1, ld) } KEEPDS = false
 	MSTK.pop()
+	if lrs >= 0: stw(lrdst(i), 0, ldw(lrs, 0, 3), 3)
 	ir(I_RET, 3, -1, if rt >= 0 && rt != T_VOID { RETV } else { -1 }, if rt >= 0 && is_pair(rt) { RETV2 } else { -1 }, 0)
 	NFS[nf].i0 = i0; NFS[nf].i1 = IR.len; NFS[nf].nv = NV; NFS[nf].sb = SB
 alike(t int) bool:

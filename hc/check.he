@@ -126,7 +126,7 @@ widens(f int, t int) bool:
 	if f == t: return true
 	a := TY[f]; b := TY[t]
 	if a.k == TY_INT && b.k == TY_INT: fs := is_signed(f); ts := is_signed(t); if fs == ts { return ibits(t) > ibits(f) } return !fs && ts && ibits(t) > ibits(f)
-	if a.k == TY_INT && b.k == TY_FLT: return true
+	if (a.k == TY_INT || a.k == TY_VARINT) && b.k == TY_FLT: return true
 	if a.k == TY_FLT && b.k == TY_FLT: return b.s > a.s
 	if a.k == TY_INT && b.k == TY_VARINT: return !(ibits(f) == 64 && !is_signed(f))
 	if a.k == TY_VARINT && b.k == TY_INT: return t == T_I64
@@ -170,9 +170,10 @@ var CONSTV i64[>..]
 var CONSTD i32[>..]
 recursive conv_tail(n int, t int):
 	x := ND[n]; k := x.k
-	if k == N_BLOCK || k == N_EBLOCK: if x.a >= 0 && !ends(x.a) { conv(x.a, t) } return
+	if k == N_BLOCK || k == N_EBLOCK: if x.a >= 0 && !ends(x.a) { conv(x.a, t) } if k == N_EBLOCK { conv_breaks(x.a, t) } return
 	if k == N_IF: if !ends(x.b) { conv(x.b, t) } if x.c >= 0 && !ends(x.c) { conv(x.c, t) } return
 	if k == N_MATCH: ai := flat0(n); sa := AOWN; for i ai.len / 2 { AOWN = ai[2 * i + 1]; b := ND[ai[2 * i]].b; if b >= 0 && !ends(b) { conv(b, t) } } AOWN = sa
+	if k == N_LOOP: conv_breaks(x.a, t)
 recursive errleaf(t int) bool:
 	if t == T_ERRT { return true } x := TY[t]; if x.k == TY_STRUCT { for i STI[x.a].fnum { ft := SFI[STI[x.a].f0 as int + i].ty; if ft >= 0 && errleaf(ft) { return true } } } x.k == TY_ARR && x.s == (A_FIXED as u8) && errleaf(x.a)
 recursive conv(n int, t int) bool:
@@ -209,7 +210,7 @@ conv_ok(f int, t int, n int) bool:
 	a := TY[f]; b := TY[t]
 	if widens(f, t): return true
 	if b.k == TY_BOOL && a.k == TY_REF && a.fl & RF_OPT != 0: return true
-	if a.k == TY_MULTI && b.k != TY_MULTI && a.n > 0 && ND[n].k as int == N_CALL: return TYL[a.l] as int == t || widens(TYL[a.l] as int, t)
+	if a.k == TY_MULTI && b.k != TY_MULTI && a.n > 0 && ND[n].k as int == N_CALL: return conv_ok(TYL[a.l] as int, t, n)
 	if b.k == TY_SLICE && (a.k == TY_ARR || a.k == TY_SLICE) && a.a == b.a: return true
 	if b.k == TY_SLICE && a.k == TY_STRLIT && b.a == T_U8: return true
 	if b.k == TY_REF && a.k == TY_REF && (b.fl & RF_OPT != 0 || a.fl & RF_OPT == 0):
@@ -229,7 +230,7 @@ recursive commit(n int, t int):
 	x := ND[n]; k := x.k
 	f := at(n)
 	if k == N_BIN && (x.op == T_SHL || x.op == T_SHR) && t >= 0 && TY[t].k == TY_FLT && f >= 0 && is_pending(f): commit(n, T_I64); set_cv(n, t); return
-	if f >= 0 && !is_pending(f): if f != t && conv_ok(f, t, n) { set_cv(n, t) } return
+	if f >= 0 && !is_pending(f): if f != t && conv_ok(f, t, n) { cvx(n, t) } return
 	set_t(n, t)
 	if k == N_UN: commit(x.a, t); return
 	if k == N_BIN:
@@ -239,7 +240,8 @@ recursive commit(n int, t int):
 		return
 	if k == N_IF: commit(x.b, t); if x.c >= 0 { commit(x.c, t) } return
 	if k == N_BLOCK: if x.a >= 0 { commit(x.a, t) } return
-	if k == N_EBLOCK: commit(x.a, t); return
+	if k == N_EBLOCK: commit(x.a, t); conv_breaks(x.a, t); return
+	if k == N_LOOP: conv_breaks(x.a, t); return
 	if k == N_MATCH: ai := flat0(n); sa := AOWN; for i ai.len / 2 { AOWN = ai[2 * i + 1]; commit(ND[ai[2 * i]].b, t) } AOWN = sa; return
 	if k == N_ARR:
 		e := if TY[t].k == TY_ARR || TY[t].k == TY_SLICE { TY[t].a as int } else { T_ERRT }
@@ -269,7 +271,7 @@ recursive default_t(n int) int:
 		set_t(n, a)
 		return a
 	t
-recursive cvx(n int, t int): k := ND[n].k; if k == N_BLOCK || k == N_EBLOCK || k == N_IF || k == N_MATCH { conv_tail(n, t); set_t(n, t); return } set_cv(n, t);
+recursive cvx(n int, t int): k := ND[n].k; if k == N_BLOCK || k == N_EBLOCK || k == N_IF || k == N_MATCH || k == N_LOOP && at(n) == T_FLIT { conv_tail(n, t); set_t(n, t); return } set_cv(n, t);
 m1(n int, t int) int:
 	if t < 0 || TY[t].k != TY_MULTI || ND[n].k as int != N_CALL || TY[t].n == 0: return t
 	f := TYL[TY[t].l] as int; set_cv(n, f); f
@@ -291,9 +293,9 @@ unify(n int, a int, b int) int:
 	if is_lp(a) && !is_lp(b) && (kb == TY_INT || kb == TY_FLT) && !(ka == TY_FLT && kb == TY_INT): conv(a, db); return db
 	if is_lp(b) && !is_lp(a) && (ka == TY_INT || ka == TY_FLT) && !(kb == TY_FLT && ka == TY_INT): conv(b, da); return da
 	if ka == TY_FLIT:
-		if kb == TY_FLT { conv(a, db); return db } if kb == TY_INT: return T_FLIT
+		if kb == TY_FLT { conv(a, db); return db } if kb == TY_INT || kb == TY_VARINT: return T_FLIT
 	if kb == TY_FLIT:
-		if ka == TY_FLT { conv(b, da); return da } if ka == TY_INT: return T_FLIT
+		if ka == TY_FLT { conv(b, da); return da } if ka == TY_INT || ka == TY_VARINT: return T_FLIT
 	if da == db: if ta != da { cvx(a, da) } if tb != db { cvx(b, db) } return da
 	if widens(da, db) && !(ka == TY_FLT && kb == TY_INT): cvx(a, db); if tb != db { cvx(b, db) } return db
 	if widens(db, da) && !(kb == TY_FLT && ka == TY_INT): cvx(b, da); if ta != da { cvx(a, da) } return da
@@ -641,8 +643,20 @@ recursive ck_loop(n int, want int) int:
 	LOOPD++
 	ck(ND[n].a, T_VOID)
 	LOOPD--
-	t := BRK_T.pop()
+	t ~= BRK_T.pop()
+	if t >= 0 && TY[t].k == TY_ILIT: t = T_I64
+	if t >= 0 && (!is_pending(t) || want >= 0 && TY[want].k == TY_FLT): t = if is_pending(t) { want } else { t }; conv_breaks(ND[n].a, t)
 	set_t(n, if t < 0 { T_VOID } else { t })
+recursive conv_breaks(n int, t int):
+	if n < 0: return
+	x := ND[n]; k := x.k
+	if k == N_BREAK: if x.a >= 0 { conv(x.a, t) } return
+	if k == N_WHILE || k == N_LOOP || k == N_FOR || k == N_FN || k == N_FUNVAL || k == N_EBLOCK || k >= 40 && k < 50: return
+	if k == N_VDECL: conv_breaks(x.b, t); return
+	if k == N_CALL: conv_breaks(x.a, t); for i x.n { conv_breaks(kid(n, i), t) } return
+	conv_breaks(x.a, t); conv_breaks(x.b, t); conv_breaks(x.c, t); conv_breaks(x.d, t)
+	if k == N_BLOCK || k == N_MATCH || k == N_LIST || k == N_ARR || k == N_SLIT || k == N_RET:
+		for i x.n: c := kid(n, i); conv_breaks(c, t); if k == N_MATCH { conv_breaks(ND[c].b, t) }
 recursive ck_for(n int) int:
 	x := ND[n]
 	m := SCOPE.len
@@ -720,6 +734,7 @@ recursive ck_match(n int, want int) int:
 		for i na:
 			AOWN = ai[2 * i + 1]; b := ND[ai[2 * i]].b; bt := at(b); if !is_pending(bt) && !ends(b): rt = bt
 	AOWN = sa; if is_pending(rt) && TY[rt].k == TY_ARRLIT && want < 0: return set_t(n, rt)
+	if is_pending(rt) && want < 0: fl ~= false; for i na { AOWN = ai[2 * i + 1]; b := ND[ai[2 * i]].b; if !ends(b) && TY[at(b)].k == TY_FLIT { fl = true } } AOWN = sa; if fl { return set_t(n, T_FLIT) }
 	if is_pending(rt): AOWN = ai[1]; b := ND[ai[0]].b; rt = default_t(b); AOWN = sa
 	for i na:
 		AOWN = ai[2 * i + 1]; b := ND[ai[2 * i]].b; bt := deref(at(b)); if !ends(b) && !is_pending(bt) && bt != rt && (widens(rt, bt) && !(TY[rt].k == TY_FLT && TY[bt].k == TY_INT) || TY[rt].k == TY_INT && TY[bt].k == TY_FLT): rt = bt
@@ -834,7 +849,7 @@ recursive ck_break(n int) int:
 		if BRK_T.len == 0: cerr(n, "break with a value outside loop or block"); return T_VOID
 		w := BRK_T[BRK_T.len - 1]
 		t := ck(x.a, if w >= 0 { w } else { -1 })
-		if w < 0: BRK_T[BRK_T.len - 1] = default_t(x.a) else: conv(x.a, w)
+		if w < 0 || is_pending(w): BRK_T[BRK_T.len - 1] = if TY[t].k == TY_FLIT || w >= 0 && TY[w].k == TY_FLIT && TY[t].k == TY_ILIT { T_FLIT } else { if TY[t].k == TY_ILIT && w < 0 { T_ILIT } else { if is_pending(t) { default_t(x.a) } else { t } } } else: conv(x.a, w)
 	set_t(n, T_VOID)
 recursive ck(n int, want int) int:
 	if n < 0: return T_VOID
@@ -856,7 +871,7 @@ recursive ck(n int, want int) int:
 	if k == N_ARR: return ck_arr(n, want)
 	if k == N_BLOCK: return ck_block(n, want)
 	if k == N_CFOR: return ck_cfor(n)
-	if k == N_EBLOCK: BRK_T.push(if want >= 0 && want != T_VOID { want as i32 } else { -1 }); bt := ck(x.a, want); t := BRK_T.pop(); if bt != T_VOID && !is_pending(bt) { return set_t(n, bt) } if t >= 0 { if bt != T_VOID { conv(x.a, t) } return set_t(n, t) } return set_t(n, bt)
+	if k == N_EBLOCK: BRK_T.push(if want >= 0 && want != T_VOID { want as i32 } else { -1 }); bt := ck(x.a, want); t ~= BRK_T.pop(); if t >= 0 && bt >= 0 && is_pending(t) && is_pending(bt) && (TY[t].k == TY_FLIT || TY[bt].k == TY_FLIT) { t = T_FLIT } if bt != T_VOID && !is_pending(bt) { conv_breaks(x.a, bt); return set_t(n, bt) } if t >= 0 { if bt != T_VOID { conv(x.a, t) } if !is_pending(t) { conv_breaks(x.a, t) } return set_t(n, t) } return set_t(n, bt)
 	if k == N_IF: return ck_if(n, want)
 	if k == N_WHILE: return ck_while(n)
 	if k == N_LOOP: return ck_loop(n, want)

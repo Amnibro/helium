@@ -323,7 +323,7 @@ recursive gas(n int):
 recursive gcv(n int, f int, t int):
 	if f == t: gx1(n); return
 	fk := TY[f].k; tk0 := TY[t].k
-	if fk == TY_MULTI && tk0 != TY_MULTI: ow("(("); ct(t); ow(")("); gx1(n); ow(").r0)"); return
+	if fk == TY_MULTI && tk0 != TY_MULTI: R0N = n; gcv(n, TYL[TY[f].l] as int, t); R0N = -1; return
 	if tk0 == TY_BOOL && fk == TY_REF && TY[f].fl & RF_OPT != 0: ow("(("); gx1(n); ow(") != 0)"); return
 	if fk == TY_REF && TY[f].c < 0 && tk0 != TY_REF:
 		m := TY[f].a
@@ -1402,7 +1402,9 @@ heq_val_o(e int, p int): a byte[..64] ~= []; b byte[..64] ~= []; format(a, "_v",
 heq_val_s(e int, p int): a byte[..128] ~= []; b byte[..64] ~= []; a.append("(("); a.append(cn(e)); format(a, "*)_v", p, ".p)[_j]"); format(b, "_x", p); heq_o(e, a[..], b[..]);
 heq_val_r(e int, p int): a byte[..128] ~= []; b byte[..64] ~= []; a.append("(("); a.append(cn(e)); format(a, "*)_v", p, "->b)[_j]"); format(b, "_x", p); heq_o(e, a[..], b[..]);
 gvariant(n int): if TY[at(n)].k == TY_VARIANT { t := at(n); v := ENV[ENI[TY[t].a].v0 as int + TY[t].c as int]; if v.si >= 0 { ow("(("); ct(t); ow("){0})"); } else { ow("((hr_unit)0)"); } return } t := at(n); p := nt(); ow("({ "); ct(t); ow(" _t"); oi(p); format(O, "; memset(&_t", p, ", 0, sizeof _t", p, "); _t", p, ".tag = ", rv(n), "; _t", p, "; })");
+R0N ~= -1
 recursive gx0(n int):
+	if n == R0N: R0N = -1; ow("("); gx0(n); ow(").r0"); return
 	x := ND[n]
 	k := x.k
 	if k == N_ID && rk(n) == R_VARIANT: gvariant(n); return
