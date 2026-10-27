@@ -1,0 +1,12 @@
+// A namespaced global variable sharing its leaf name with global functions:
+// a call in the namespace names those functions (§11.1).
+namespace tally;
+import std;
+
+var count int = 0;
+var last int = -1;
+
+fn add(xs int[:]) {
+	count += count(xs) { it > 0 };
+	last = last(xs);
+}

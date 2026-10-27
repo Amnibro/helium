@@ -1,0 +1,2 @@
+namespace col;
+fn code() int { 1 }

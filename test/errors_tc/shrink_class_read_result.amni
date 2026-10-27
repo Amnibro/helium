@@ -1,0 +1,17 @@
+// error: cannot call emit: it shrinks buf while w is still used, and w may refer into buf
+// first returns a view it read out of the elements its parameter views,
+// which words views, and names holds a view of buf there (§5.1).
+fn first(ws (const byte[:])[:]) const byte[:] { return ws[0]; }
+fn emit(out byte[>..]&, words (const byte[:])[:]) {
+	let w = first(words);
+	out.clear();
+	out.append("ZZZZZZZZ");
+	print(w);
+}
+fn main() {
+	var buf byte[>..] = [];
+	buf.append("abc");
+	var names (const byte[:])[>..] = [];
+	names.push(buf[..]);
+	emit(buf, names[..]);
+}

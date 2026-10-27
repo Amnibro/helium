@@ -1,0 +1,22 @@
+// error: cannot call format, which shrinks G: print runs it in the middle of rendering h, which may refer into G (§5.2)
+// A reference to a whole resizable ADT may be stored, and G's grow-shrink
+// tail does not keep one read out of h.r from leading to it: the payload
+// is rendered where h.r points (§3.7, §4.4, §5.2).
+struct A { v int }
+struct Q { x int, y int }
+enum R {
+	Big { a A, q Q&, items int[>..<] },
+	Small { w int, h int, k int },
+}
+struct H { n int, r R..& }
+var q1 = Q { x: 1, y: 2 };
+var G R.. = R.Small { w: 0, h: 0, k: 0 };
+fn format(out byte[>..]&, a A) {
+	G = R.Small { w: 4096, h: 100000, k: 3 };
+	format(out, a.v);
+}
+fn main() {
+	G = R.Big { a: A { v: 5 }, q: q1, items: [1, 2] };
+	let h = H { n: 1, r: G };
+	print(h);
+}

@@ -1,0 +1,12 @@
+// error: returning a reference rooted in a, which dies with this function
+struct Empty { count int }
+struct Holder { bytes const byte[:], empty Empty }
+fn wrap(a int[>..]&) Holder {
+	return Holder { a.bytes_of(), Empty { 0 } };
+}
+fn bad() const byte[:] {
+	var a int[>..] = [42];
+	let h = wrap(a);
+	return h.bytes;
+}
+fn main() { print(bad()); }

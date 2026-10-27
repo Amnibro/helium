@@ -1,0 +1,11 @@
+// error: cannot call drop, which shrinks a while w is still used: it may hold a reference or slice into it
+// A literal's later fields are built after the one that clears the array
+// (§5.1).
+fn drop(a int[>..]&) int { a.clear(); return 0; }
+struct U { n int, s const int[:] }
+fn main() {
+	var a int[>..] = [1, 2];
+	let w = a[..];
+	let u = U { n: drop(a), s: w };
+	print(u.s);
+}

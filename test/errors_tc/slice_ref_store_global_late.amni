@@ -1,0 +1,25 @@
+// error: cannot clear bs: global gs may hold a reference into it, stored at
+// use stores through the reference GH holds, which setup, checked after use,
+// points at gs's slot: any global slice variable is what such a reference
+// may name, whenever the reference to it is made (§3.8, §5.1).
+struct H { r byte[:]& }
+var arr byte[>..] = [];
+var bs byte[>..] = [];
+var gs byte[:] = arr[..];
+var other byte[:] = arr[..];
+var GH = H { r: other };
+fn use() { GH.r = bs[..]; }
+fn setup() { GH.r .= gs; }
+fn clearbs() {
+	bs.clear();
+	bs.append("QQQ");
+}
+fn main() {
+	arr.append("ab");
+	bs.append("xyz");
+	use();
+	setup();
+	use();
+	clearbs();
+	print(gs);
+}

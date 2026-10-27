@@ -754,7 +754,7 @@ sred(fi int):
 			pk ~= -1; for q k + 1..pi { z := IR[q]; if z.op as int == I_BIN && z.c == B_ADD && z.l < 0 && z.w == 3 && (z.a as int == t || z.b as int == t) { pk = q; break } } if pk < 0: continue
 			z := IR[pk]; bs := if z.a as int == t { z.b as int } else { z.a as int }; if bs < 0 || nd[bs] != 1 || dp[bs] >= h as i32: continue
 			pd := z.d as int; if pd < 0 || nd[pd] != 1: continue
-			st := kimm(IR[pi].b as int) * cm; q := nv; t0 := nv + 1; cv := nv + 2; kv := nv + 3; nv += 4; used[iv] = 1
+			st := kimm(IR[pi].b as int) * cm; q := nv; t0 := nv + 1; cv := nv + 2; kv := nv + 3; nv += 4; used[iv] = 1; nd.resize(nv, 0); dp.resize(nv, -1); uc.resize(nv, 0); used.resize(nv, 0)
 			pre.push(h as i32); prn.push(4); ins.push(Ir{I_IMM as u8, 8, cv as i32, -1, -1, cm as i64, -1}); ins.push(Ir{I_BIN as u8, 3, t0 as i32, iv as i32, cv as i32, B_MUL as i64, -1}); ins.push(Ir{I_BIN as u8, 3, q as i32, bs as i32, t0 as i32, B_ADD as i64, -1}); ins.push(Ir{I_IMM as u8, 8, kv as i32, -1, -1, st as i64, -1})
 			pre.push((pi + 1) as i32); prn.push(1); ins.push(Ir{I_BIN as u8, 3, q as i32, q as i32, kv as i32, B_ADD as i64, -1})
 			IR[pk] = Ir{I_MOV as u8, 3, pd as i32, q as i32, -1, 0, -1}; IR[k].op = I_NOP as u8

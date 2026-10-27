@@ -1,0 +1,4 @@
+// error: reordering may cross a side effect, runtime check, or nonlocal exit
+struct Pair { a int, b int }
+fn make(x int) Pair { Pair { b: x + 1, a: x } }
+fn main() { print(make(1)); }

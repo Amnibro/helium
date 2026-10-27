@@ -1,0 +1,12 @@
+// error: cannot write through this reference: non-writable provenance
+// A by-value `match` binding is a copy, never written (§6.5), and so are its
+// fields: a format hook taking one by reference (§3.7) gets a read-only
+// reference.
+enum E { A { s byte[:] }, B { k int } }
+var buf byte[>..] = [];
+fn format(out byte[>..]&, p byte[:]&) { out.append("Q"); p = buf[1..]; }
+fn main() {
+	buf.append("xyz");
+	let e E = E.A { s: buf[..] };
+	match e { A a => { print(a.s); }, B b => {} }
+}

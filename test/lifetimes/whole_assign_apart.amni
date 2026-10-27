@@ -1,0 +1,66 @@
+// Whole assignments whose right-hand side leaves the array it replaces
+// alone (§4.4): its length read first, other arrays, a slice parameter,
+// the fields of the value holding it that are not rebuilt, and a rebind of
+// a reference to it.
+var G byte[>..] = [];
+var H byte[>..] = [];
+struct Text { font int, size byte[2], chars byte[>..] }
+struct Bag { tag int, items int[>..<] }
+fn letters(n int) byte[>..] {
+	var out byte[>..] = [];
+	for i in 0..n { out.push(97 + i as byte); }
+	return out;
+}
+fn collect(s byte[:]) byte[>..] {
+	var out byte[>..] = [];
+	out.append(s);
+	return out;
+}
+fn from_h() byte[>..] { return copy(H); }
+fn set_g(s byte[:]) { G = collect(s); }
+fn refill(b Bag&) { b.items = [b.tag, b.tag + 1]; }
+fn replace(x int[>..<]&, y int[>..<]&) { x = copy(y); }
+fn fresh(tag int) Bag { return Bag { tag: tag, items: [tag, tag] }; }
+fn main() {
+	G.append("abcd");
+	let n = G.len;
+	G = letters(n + 1);
+	print(G);
+	H.append("xyz");
+	G = from_h();
+	print(G);
+	set_g(H[1..]);
+	print(G);
+	var x byte[>..] = [];
+	var y byte[>..] = [];
+	y.append("hello");
+	x = copy(y);
+	print(x);
+	fn from_y() byte[>..] { return collect(y[1..]); }
+	x = from_y();
+	print(x);
+	var t = Text { font: 3, size: [1, 2], chars: [] };
+	t.chars = letters(t.font);
+	print(t.chars);
+	t.chars = letters(t.size[1]);
+	print(t.chars);
+	var b = Bag { tag: 5, items: [1] };
+	refill(b);
+	print(b.items);
+	let tag = b.tag + 1;
+	b = fresh(tag);
+	print(b.tag, " ", b.items);
+	var p int[>..<] = [1];
+	var q int[>..<] = [2, 3];
+	replace(p, q);
+	print(p, " ", q);
+	var ga int[>..<] = [1, 2];
+	var gb int[>..<] = [3, 4];
+	var r .= ga;
+	fn retarget() int[>..<] {
+		r .= gb;
+		return [7, 8, 9];
+	}
+	r = retarget();
+	print(ga, " ", gb, " ", r);
+}

@@ -1,0 +1,14 @@
+// A cached body owns its locals at every call depth. Rechecking a deeper
+// loop must not store each new temporary into its earlier local holder.
+import std;
+struct Reader { text const byte[:] }
+fn length(text const byte[:]) int {
+	var r = Reader { text: text };
+	return r.text.len;
+}
+fn deep() { for i in 0..3 { print(length(str(i))); } }
+fn main() {
+	var value int = 42;
+	print(length(str(value)));
+	deep();
+}

@@ -1,0 +1,21 @@
+// A long-distance return through a recursion cycle whose intermediate
+// function was checked before the `return ... from` statement.
+fn g(x int, n int) int {
+	walk(n);
+	return x;
+}
+recursive fn walk(n int) {
+	if n > 0 {
+		mid(n);
+		return;
+	}
+	return 42 from g;
+}
+recursive fn mid(n int) {
+	walk(n - 1);
+	print("mid after walk");
+}
+fn main() {
+	print(g(1, 0));
+	print(g(1, 1));
+}

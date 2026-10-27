@@ -1,0 +1,23 @@
+// error: variable mode (..) requires an ADT type, not i64
+// error: variable mode (..) requires an ADT type, not i64
+// error: struct Pair takes 1 type argument(s), 2 given
+// A struct or enum instance whose build an error cut short is not used
+// again (docs/design/language_server.md §5 D2): a later root that names it
+// ends silently, as a consequence of the error reported, rather than
+// finding it half built, and a global of its type stays unassigned. The
+// errors are S<i64>'s, E<i64>'s, and first's Pair<i64, i64>'s.
+struct S<T> { x T.., y int }
+enum E<T> { A { x T.. }, B { y int } }
+struct Pair<T> { a T }
+
+var s1 S<int>&? = null;
+var s2 S<int>&? = null;
+var e1 E<int>&? = null;
+var e2 E<int>&? = null;
+
+fn first(p Pair<int, int>&) int { 1 }
+fn again(p Pair<int, int>&) int { p.a }
+
+fn main() {
+	if s2 { print(s2.y); }
+}

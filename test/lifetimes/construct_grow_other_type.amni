@@ -1,0 +1,34 @@
+// Growth of a resizable array of another type while an element is built in
+// place (§1.3(4)): a stack holds one resizable, and resizables are never
+// elements (§3.4), so the array grown is not the one built in, though its
+// root is inexact (§5.1) and may be any array of its own type. Grown through
+// a reference parameter, through a struct's tail, through a by-value
+// holder's reference, and while the new contents of a whole assignment are
+// built.
+struct Log { n int, items int[>..] }
+struct H { r int[>..]& }
+fn mk(scratch byte[>..]&) byte[] { scratch.push('a'); return "x"; }
+fn note(l Log&) byte[] { l.items.push(l.n); return "y"; }
+fn held(h H) byte[] { h.r.push(5); return "z"; }
+fn count(scratch byte[>..]&) int { scratch.push('b'); return scratch.len; }
+fn push_one(v byte[][>..]&, scratch byte[>..]&) { v.push(mk(scratch)); }
+fn push_log(v byte[][>..]&, l Log&) { v.push(note(l)); }
+fn push_held(v byte[][>..]&, h H) { v.push(held(h)); }
+fn reset(l Log&, scratch byte[>..]&) { l = Log { n: count(scratch), items: [] }; }
+var first byte[>..] = [];
+var spill byte[>..] = [];
+var la = Log { n: 1, items: [] };
+var lb = Log { n: 2, items: [] };
+fn main() {
+	var v byte[][>..] = [];
+	let c = v.len == 0;
+	push_one(v, if c { first } else { spill });
+	push_log(v, if c { la } else { lb });
+	var xs int[>..] = [];
+	var ys int[>..] = [];
+	push_held(v, H { r: if c { xs } else { ys } });
+	for s in v { print(s); }
+	print(first.len, " ", spill.len, " ", la.items, " ", lb.items, " ", xs, " ", ys);
+	reset(la, if c { first } else { spill });
+	print(la.n, " ", la.items.len, " ", first.len);
+}

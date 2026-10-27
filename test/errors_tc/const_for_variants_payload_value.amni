@@ -1,0 +1,4 @@
+// error: which has a payload: construct it with V { ... }
+enum Shape { Circle { r int }, Rect { w int, h int }, Dot }
+fn f<E>() int { var n = 0; const for <N, V> in variants<E> { let x E = V; n++; } n }
+fn main() { print(f<Shape>()); }

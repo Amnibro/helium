@@ -157,6 +157,7 @@ recursive arg_rank(n int, a int, p int) int:
 	if widens(a, p): return 2
 	if pk == TY_SLICE && (ak == TY_ARR || ak == TY_SLICE) && TY[a].a == TY[p].a: return 2
 	if pk == TY_ENUM && ak == TY_VARIANT && TY[a].a == TY[p].a: return 2
+	if pk == TY_ENUM && ak == TY_ENUM && TY[a].a == TY[p].a: return 2
 	if pk == TY_ARR && (ak == TY_ARR || ak == TY_SLICE) && TY[a].a == TY[p].a && is_construct(n): return 2
 	-1
 recursive sig_inst(i int):

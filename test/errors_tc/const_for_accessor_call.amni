@@ -1,0 +1,6 @@
+// error: const for field accessor is not callable
+struct S { push int }
+fn main() {
+	var a int[>..] = [];
+	const for <N, A> in fields<S> { a.A(1); }
+}

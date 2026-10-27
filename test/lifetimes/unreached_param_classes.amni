@@ -1,0 +1,25 @@
+// A function no call reaches is still checked, as if the global initializers
+// called it with a global of its own for each reference, slice or holder
+// parameter: the arrays behind them are arrays the body may shrink, apart
+// from each other, and their references may be stored wherever a global's
+// may, inside a recursive cycle too. Nothing here calls any of these.
+struct Box { r int& }
+struct Held { xs int[>..]& }
+struct Row { xs int[] }
+var keep Box[>..] = [];
+var names (const byte[:])[>..] = [];
+
+fn drop_all(a int[>..]&) { a.clear(); }
+fn drop_held(h Held) { let xs .= h.xs; xs.clear(); }
+fn drop_other(a int[>..]&, b int[>..]&) { let r = &b[0]; a.clear(); print(r); }
+fn refill(a int[>..]&, src const int[:]) { a.clear(); for x in src { a.push(x); } }
+recursive fn drain(a int[>..]&, n int) { if n > 0 { a.pop(); drain(a, n - 1); } }
+fn remember(r int&) { keep.push(Box { r: r }); }
+fn register(n const byte[:]) { names.push(n); }
+recursive fn remember_all(r int&, n int) {
+	if n > 0 { keep.push(Box { r: r }); remember_all(r, n - 1); }
+}
+fn counted(b int[>..]&) int[] { b.push(1); return [1, 2]; }
+fn add_row(rows Row[>..]&, b int[>..]&) { rows.push(Row { xs: counted(b) }); }
+
+fn main() { print(keep.len, " ", names.len); }

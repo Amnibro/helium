@@ -1,0 +1,44 @@
+// runtime-debug: rechecking arguments must preserve effects before an exit.
+import exception;
+
+fn stop() int { exception::throw("stopped"); }
+fn take(a int, b int) { assert(false); }
+fn ref_take(a int&, b int) { assert(false); }
+fn slice_take(a const byte[:], b int) { assert(false); }
+fn default_take(a int, b int = stop()) { assert(false); }
+enum Choice { A, B }
+fn dispatch(c Choice.A, a int, b int) { assert(false); }
+fn dispatch(c Choice.B, a int, b int) { assert(false); }
+fn print(n bool) { assert(false); }
+
+fn main() {
+	var before = 0;
+	var caught = 0;
+	var x = 42;
+	fn mark() { before += 1; }
+	fn catcher(e const byte[:]) { assert(e == "stopped"); caught += 1; }
+	fn direct() { take(if true { mark(); 42 } else { 0 }, stop()); }
+	fn receiver() { (if true { mark(); 42 } else { 0 }).take(stop()); }
+	fn reference() { ref_take(if true { mark(); x } else { x }, stop()); }
+	fn slice() { slice_take(if true { mark(); "yes" } else { "no" }, stop()); }
+	fn defaults() { default_take(if true { mark(); 42 } else { 0 }); }
+	fn dispatched(c Choice) {
+		dispatch(c, if true { mark(); 42 } else { 0 }, stop());
+	}
+	fn case_a() { dispatched(Choice.A); }
+	fn case_b() { dispatched(Choice.B); }
+	fn invoke<F>() { F(if true { mark(); 42 } else { 0 }, stop()); }
+	fn callback() { invoke() { a: int, b: int => assert(false); }; }
+	fn fallback() { print(if true { mark(); 42 } else { 0 }, stop()); }
+	exception::try<const byte[:]>(direct, catcher);
+	exception::try<const byte[:]>(receiver, catcher);
+	exception::try<const byte[:]>(reference, catcher);
+	exception::try<const byte[:]>(slice, catcher);
+	exception::try<const byte[:]>(defaults, catcher);
+	exception::try<const byte[:]>(case_a, catcher);
+	exception::try<const byte[:]>(case_b, catcher);
+	exception::try<const byte[:]>(callback, catcher);
+	exception::try<const byte[:]>(fallback, catcher);
+	assert(before == 9 && caught == 9);
+	print("never-return argument tests passed");
+}

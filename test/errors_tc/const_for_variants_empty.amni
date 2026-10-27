@@ -1,0 +1,5 @@
+// error: match has no arms: its const for generated none
+enum Shape { Circle { r int }, Rect { w int, h int }, Dot }
+enum Never {}
+fn f(n Never) int { match n { const for <N, V> in variants<Never> { V => 1, } } }
+fn main() { print(1); }

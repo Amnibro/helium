@@ -1,0 +1,117 @@
+// bce: a growth of the array a reference parameter names may be a growth of
+// any global array, so it bumps the length of each; carrying those lengths
+// over must not crowd this body's own facts out of the table. The program
+// has more global arrays than the table has room for facts.
+fn escaped(out byte[>..]&, s byte[:]) {
+	var start = 0;
+	for c, i in s {
+		if c != '"' { continue; }
+		out.append(s[start..i]);
+		start = i + 1;
+		out.push('\\');
+		out.push(c);
+	}
+	out.append(s[start..]);                           // bce:elide
+}
+
+var g0 byte[>..]; var g1 byte[>..]; var g2 byte[>..]; var g3 byte[>..]; var g4 byte[>..]; var g5 byte[>..]; var g6 byte[>..]; var g7 byte[>..];
+var g8 byte[>..]; var g9 byte[>..]; var g10 byte[>..]; var g11 byte[>..]; var g12 byte[>..]; var g13 byte[>..]; var g14 byte[>..]; var g15 byte[>..];
+var g16 byte[>..]; var g17 byte[>..]; var g18 byte[>..]; var g19 byte[>..]; var g20 byte[>..]; var g21 byte[>..]; var g22 byte[>..]; var g23 byte[>..];
+var g24 byte[>..]; var g25 byte[>..]; var g26 byte[>..]; var g27 byte[>..]; var g28 byte[>..]; var g29 byte[>..]; var g30 byte[>..]; var g31 byte[>..];
+var g32 byte[>..]; var g33 byte[>..]; var g34 byte[>..]; var g35 byte[>..]; var g36 byte[>..]; var g37 byte[>..]; var g38 byte[>..]; var g39 byte[>..];
+var g40 byte[>..]; var g41 byte[>..]; var g42 byte[>..]; var g43 byte[>..]; var g44 byte[>..]; var g45 byte[>..]; var g46 byte[>..]; var g47 byte[>..];
+var g48 byte[>..]; var g49 byte[>..]; var g50 byte[>..]; var g51 byte[>..]; var g52 byte[>..]; var g53 byte[>..]; var g54 byte[>..]; var g55 byte[>..];
+var g56 byte[>..]; var g57 byte[>..]; var g58 byte[>..]; var g59 byte[>..]; var g60 byte[>..]; var g61 byte[>..]; var g62 byte[>..]; var g63 byte[>..];
+var g64 byte[>..]; var g65 byte[>..]; var g66 byte[>..]; var g67 byte[>..]; var g68 byte[>..]; var g69 byte[>..]; var g70 byte[>..]; var g71 byte[>..];
+var g72 byte[>..]; var g73 byte[>..]; var g74 byte[>..]; var g75 byte[>..]; var g76 byte[>..]; var g77 byte[>..]; var g78 byte[>..]; var g79 byte[>..];
+var g80 byte[>..]; var g81 byte[>..]; var g82 byte[>..]; var g83 byte[>..]; var g84 byte[>..]; var g85 byte[>..]; var g86 byte[>..]; var g87 byte[>..];
+var g88 byte[>..]; var g89 byte[>..]; var g90 byte[>..]; var g91 byte[>..]; var g92 byte[>..]; var g93 byte[>..]; var g94 byte[>..]; var g95 byte[>..];
+var g96 byte[>..]; var g97 byte[>..]; var g98 byte[>..]; var g99 byte[>..]; var g100 byte[>..]; var g101 byte[>..]; var g102 byte[>..]; var g103 byte[>..];
+var g104 byte[>..]; var g105 byte[>..]; var g106 byte[>..]; var g107 byte[>..]; var g108 byte[>..]; var g109 byte[>..]; var g110 byte[>..]; var g111 byte[>..];
+var g112 byte[>..]; var g113 byte[>..]; var g114 byte[>..]; var g115 byte[>..]; var g116 byte[>..]; var g117 byte[>..]; var g118 byte[>..]; var g119 byte[>..];
+var g120 byte[>..]; var g121 byte[>..]; var g122 byte[>..]; var g123 byte[>..]; var g124 byte[>..]; var g125 byte[>..]; var g126 byte[>..]; var g127 byte[>..];
+var g128 byte[>..]; var g129 byte[>..]; var g130 byte[>..]; var g131 byte[>..]; var g132 byte[>..]; var g133 byte[>..]; var g134 byte[>..]; var g135 byte[>..];
+var g136 byte[>..]; var g137 byte[>..]; var g138 byte[>..]; var g139 byte[>..]; var g140 byte[>..]; var g141 byte[>..]; var g142 byte[>..]; var g143 byte[>..];
+var g144 byte[>..]; var g145 byte[>..]; var g146 byte[>..]; var g147 byte[>..]; var g148 byte[>..]; var g149 byte[>..]; var g150 byte[>..]; var g151 byte[>..];
+var g152 byte[>..]; var g153 byte[>..]; var g154 byte[>..]; var g155 byte[>..]; var g156 byte[>..]; var g157 byte[>..]; var g158 byte[>..]; var g159 byte[>..];
+var g160 byte[>..]; var g161 byte[>..]; var g162 byte[>..]; var g163 byte[>..]; var g164 byte[>..]; var g165 byte[>..]; var g166 byte[>..]; var g167 byte[>..];
+var g168 byte[>..]; var g169 byte[>..]; var g170 byte[>..]; var g171 byte[>..]; var g172 byte[>..]; var g173 byte[>..]; var g174 byte[>..]; var g175 byte[>..];
+var g176 byte[>..]; var g177 byte[>..]; var g178 byte[>..]; var g179 byte[>..]; var g180 byte[>..]; var g181 byte[>..]; var g182 byte[>..]; var g183 byte[>..];
+var g184 byte[>..]; var g185 byte[>..]; var g186 byte[>..]; var g187 byte[>..]; var g188 byte[>..]; var g189 byte[>..]; var g190 byte[>..]; var g191 byte[>..];
+var g192 byte[>..]; var g193 byte[>..]; var g194 byte[>..]; var g195 byte[>..]; var g196 byte[>..]; var g197 byte[>..]; var g198 byte[>..]; var g199 byte[>..];
+var g200 byte[>..]; var g201 byte[>..]; var g202 byte[>..]; var g203 byte[>..]; var g204 byte[>..]; var g205 byte[>..]; var g206 byte[>..]; var g207 byte[>..];
+var g208 byte[>..]; var g209 byte[>..]; var g210 byte[>..]; var g211 byte[>..]; var g212 byte[>..]; var g213 byte[>..]; var g214 byte[>..]; var g215 byte[>..];
+var g216 byte[>..]; var g217 byte[>..]; var g218 byte[>..]; var g219 byte[>..]; var g220 byte[>..]; var g221 byte[>..]; var g222 byte[>..]; var g223 byte[>..];
+var g224 byte[>..]; var g225 byte[>..]; var g226 byte[>..]; var g227 byte[>..]; var g228 byte[>..]; var g229 byte[>..]; var g230 byte[>..]; var g231 byte[>..];
+var g232 byte[>..]; var g233 byte[>..]; var g234 byte[>..]; var g235 byte[>..]; var g236 byte[>..]; var g237 byte[>..]; var g238 byte[>..]; var g239 byte[>..];
+
+fn spread() int {
+	var t = 0;
+	g0.push(0); g1.push(1); g2.push(2); g3.push(3); g4.push(4); g5.push(5); g6.push(6); g7.push(7);
+	t += g0[0]; t += g1[0]; t += g2[0]; t += g3[0]; t += g4[0]; t += g5[0]; t += g6[0]; t += g7[0];
+	g8.push(8); g9.push(9); g10.push(10); g11.push(11); g12.push(12); g13.push(13); g14.push(14); g15.push(15);
+	t += g8[0]; t += g9[0]; t += g10[0]; t += g11[0]; t += g12[0]; t += g13[0]; t += g14[0]; t += g15[0];
+	g16.push(16); g17.push(17); g18.push(18); g19.push(19); g20.push(20); g21.push(21); g22.push(22); g23.push(23);
+	t += g16[0]; t += g17[0]; t += g18[0]; t += g19[0]; t += g20[0]; t += g21[0]; t += g22[0]; t += g23[0];
+	g24.push(24); g25.push(25); g26.push(26); g27.push(27); g28.push(28); g29.push(29); g30.push(30); g31.push(31);
+	t += g24[0]; t += g25[0]; t += g26[0]; t += g27[0]; t += g28[0]; t += g29[0]; t += g30[0]; t += g31[0];
+	g32.push(32); g33.push(33); g34.push(34); g35.push(35); g36.push(36); g37.push(37); g38.push(38); g39.push(39);
+	t += g32[0]; t += g33[0]; t += g34[0]; t += g35[0]; t += g36[0]; t += g37[0]; t += g38[0]; t += g39[0];
+	g40.push(40); g41.push(41); g42.push(42); g43.push(43); g44.push(44); g45.push(45); g46.push(46); g47.push(47);
+	t += g40[0]; t += g41[0]; t += g42[0]; t += g43[0]; t += g44[0]; t += g45[0]; t += g46[0]; t += g47[0];
+	g48.push(48); g49.push(49); g50.push(50); g51.push(51); g52.push(52); g53.push(53); g54.push(54); g55.push(55);
+	t += g48[0]; t += g49[0]; t += g50[0]; t += g51[0]; t += g52[0]; t += g53[0]; t += g54[0]; t += g55[0];
+	g56.push(56); g57.push(57); g58.push(58); g59.push(59); g60.push(60); g61.push(61); g62.push(62); g63.push(63);
+	t += g56[0]; t += g57[0]; t += g58[0]; t += g59[0]; t += g60[0]; t += g61[0]; t += g62[0]; t += g63[0];
+	g64.push(64); g65.push(65); g66.push(66); g67.push(67); g68.push(68); g69.push(69); g70.push(70); g71.push(71);
+	t += g64[0]; t += g65[0]; t += g66[0]; t += g67[0]; t += g68[0]; t += g69[0]; t += g70[0]; t += g71[0];
+	g72.push(72); g73.push(73); g74.push(74); g75.push(75); g76.push(76); g77.push(77); g78.push(78); g79.push(79);
+	t += g72[0]; t += g73[0]; t += g74[0]; t += g75[0]; t += g76[0]; t += g77[0]; t += g78[0]; t += g79[0];
+	g80.push(80); g81.push(81); g82.push(82); g83.push(83); g84.push(84); g85.push(85); g86.push(86); g87.push(87);
+	t += g80[0]; t += g81[0]; t += g82[0]; t += g83[0]; t += g84[0]; t += g85[0]; t += g86[0]; t += g87[0];
+	g88.push(88); g89.push(89); g90.push(90); g91.push(91); g92.push(92); g93.push(93); g94.push(94); g95.push(95);
+	t += g88[0]; t += g89[0]; t += g90[0]; t += g91[0]; t += g92[0]; t += g93[0]; t += g94[0]; t += g95[0];
+	g96.push(96); g97.push(97); g98.push(98); g99.push(99); g100.push(100); g101.push(101); g102.push(102); g103.push(103);
+	t += g96[0]; t += g97[0]; t += g98[0]; t += g99[0]; t += g100[0]; t += g101[0]; t += g102[0]; t += g103[0];
+	g104.push(104); g105.push(105); g106.push(106); g107.push(107); g108.push(108); g109.push(109); g110.push(110); g111.push(111);
+	t += g104[0]; t += g105[0]; t += g106[0]; t += g107[0]; t += g108[0]; t += g109[0]; t += g110[0]; t += g111[0];
+	g112.push(112); g113.push(113); g114.push(114); g115.push(115); g116.push(116); g117.push(117); g118.push(118); g119.push(119);
+	t += g112[0]; t += g113[0]; t += g114[0]; t += g115[0]; t += g116[0]; t += g117[0]; t += g118[0]; t += g119[0];
+	g120.push(120); g121.push(121); g122.push(122); g123.push(123); g124.push(124); g125.push(125); g126.push(126); g127.push(127);
+	t += g120[0]; t += g121[0]; t += g122[0]; t += g123[0]; t += g124[0]; t += g125[0]; t += g126[0]; t += g127[0];
+	g128.push(128); g129.push(129); g130.push(130); g131.push(131); g132.push(132); g133.push(133); g134.push(134); g135.push(135);
+	t += g128[0]; t += g129[0]; t += g130[0]; t += g131[0]; t += g132[0]; t += g133[0]; t += g134[0]; t += g135[0];
+	g136.push(136); g137.push(137); g138.push(138); g139.push(139); g140.push(140); g141.push(141); g142.push(142); g143.push(143);
+	t += g136[0]; t += g137[0]; t += g138[0]; t += g139[0]; t += g140[0]; t += g141[0]; t += g142[0]; t += g143[0];
+	g144.push(144); g145.push(145); g146.push(146); g147.push(147); g148.push(148); g149.push(149); g150.push(150); g151.push(151);
+	t += g144[0]; t += g145[0]; t += g146[0]; t += g147[0]; t += g148[0]; t += g149[0]; t += g150[0]; t += g151[0];
+	g152.push(152); g153.push(153); g154.push(154); g155.push(155); g156.push(156); g157.push(157); g158.push(158); g159.push(159);
+	t += g152[0]; t += g153[0]; t += g154[0]; t += g155[0]; t += g156[0]; t += g157[0]; t += g158[0]; t += g159[0];
+	g160.push(160); g161.push(161); g162.push(162); g163.push(163); g164.push(164); g165.push(165); g166.push(166); g167.push(167);
+	t += g160[0]; t += g161[0]; t += g162[0]; t += g163[0]; t += g164[0]; t += g165[0]; t += g166[0]; t += g167[0];
+	g168.push(168); g169.push(169); g170.push(170); g171.push(171); g172.push(172); g173.push(173); g174.push(174); g175.push(175);
+	t += g168[0]; t += g169[0]; t += g170[0]; t += g171[0]; t += g172[0]; t += g173[0]; t += g174[0]; t += g175[0];
+	g176.push(176); g177.push(177); g178.push(178); g179.push(179); g180.push(180); g181.push(181); g182.push(182); g183.push(183);
+	t += g176[0]; t += g177[0]; t += g178[0]; t += g179[0]; t += g180[0]; t += g181[0]; t += g182[0]; t += g183[0];
+	g184.push(184); g185.push(185); g186.push(186); g187.push(187); g188.push(188); g189.push(189); g190.push(190); g191.push(191);
+	t += g184[0]; t += g185[0]; t += g186[0]; t += g187[0]; t += g188[0]; t += g189[0]; t += g190[0]; t += g191[0];
+	g192.push(192); g193.push(193); g194.push(194); g195.push(195); g196.push(196); g197.push(197); g198.push(198); g199.push(199);
+	t += g192[0]; t += g193[0]; t += g194[0]; t += g195[0]; t += g196[0]; t += g197[0]; t += g198[0]; t += g199[0];
+	g200.push(0); g201.push(1); g202.push(2); g203.push(3); g204.push(4); g205.push(5); g206.push(6); g207.push(7);
+	t += g200[0]; t += g201[0]; t += g202[0]; t += g203[0]; t += g204[0]; t += g205[0]; t += g206[0]; t += g207[0];
+	g208.push(8); g209.push(9); g210.push(10); g211.push(11); g212.push(12); g213.push(13); g214.push(14); g215.push(15);
+	t += g208[0]; t += g209[0]; t += g210[0]; t += g211[0]; t += g212[0]; t += g213[0]; t += g214[0]; t += g215[0];
+	g216.push(16); g217.push(17); g218.push(18); g219.push(19); g220.push(20); g221.push(21); g222.push(22); g223.push(23);
+	t += g216[0]; t += g217[0]; t += g218[0]; t += g219[0]; t += g220[0]; t += g221[0]; t += g222[0]; t += g223[0];
+	g224.push(24); g225.push(25); g226.push(26); g227.push(27); g228.push(28); g229.push(29); g230.push(30); g231.push(31);
+	t += g224[0]; t += g225[0]; t += g226[0]; t += g227[0]; t += g228[0]; t += g229[0]; t += g230[0]; t += g231[0];
+	g232.push(32); g233.push(33); g234.push(34); g235.push(35); g236.push(36); g237.push(37); g238.push(38); g239.push(39);
+	t += g232[0]; t += g233[0]; t += g234[0]; t += g235[0]; t += g236[0]; t += g237[0]; t += g238[0]; t += g239[0];
+	return t;
+}
+
+fn main() {
+	var out byte[>..] = [];
+	escaped(out, "a\"b\"c");
+	print(out, " ", spread());
+}

@@ -26,11 +26,10 @@ sc_parse(path const byte[:], t const byte[:]) bool:
 		if c == ',' && lst: i++; continue
 		if c == '"': v byte[>..] ~= []; i++; while i < t.len && t[i] != '"' { if t[i] == '\\' && i + 1 < t.len { i++ } v.push(t[i]); i++ } i++; if key >= 0 { SCV.push(Sv{key, intern(v[..])}) } continue
 		s := i; while i < t.len && t[i] != ';' && t[i] != ',' && t[i] != ']' && t[i] != ' ' && t[i] != '\n' { i++ } if i == s { return bad("unexpected character") } if key >= 0: SCV.push(Sv{key, intern(t[s..i])})
-q(b byte[>..]&, s const byte[:]): b.append(" '"); for c s { if c == '\'' { b.append("'\\''"); } else { b.push(c); } } b.push('\'');
 newer(a const byte[:], t int) bool:
 	m := file_mtime(a); m < 0 || m > t
 locked(cmd const byte[:], dir const byte[:]) byte[>..]:
-	b byte[>..] ~= []; b.append("{ flock 9 && "); b.append(cmd); b.append("; } 9>"); l byte[>..] ~= []; l.append(dir); l.append("/build.lock"); q(b, l[..]); b
+	b byte[>..] ~= []; b.append("{ flock 9 && "); b.append(cmd); b.append("; } 9>"); l byte[>..] ~= []; l.append(dir); l.append("/build.lock"); shq(b, l[..]); b
 run_ok(cmd const byte[:], log const byte[:], what const byte[:], dir const byte[:]) bool:
 	if run_command(locked(cmd, dir)[..]) == 0: return true
 	lg byte[>..] ~= []; read_file(log, lg); nl ~= 0; j ~= lg.len; while j > 0 && nl < 20:
@@ -43,10 +42,36 @@ pkg_syms(k int) byte[>..]:
 			x := ND[n].e; if x < 0 || ND[x].b < 0:
 				sy := if x >= 0 && ND[x].a >= 0 { tok_str(ND[x].a) } else { nm(ND[n].s) }; if sy.len > 0 && sy[0] != '!' && !ns.contains(sy): ns.push(sy)
 	for sy ns { format(b, sy, "\n") } b
+var HINC byte[>..]
+cty(t int, o byte[>..]&) bool:
+	k := TY[t].k; if k == TY_BOOL { o.append("bool") } else if k == TY_INT { format(o, if TY[t].s < 4 { "int" } else { "uint" }, 8 << (TY[t].s & 3), "_t") } else if k == TY_FLT { o.append(if TY[t].s == 4 { "float" } else { "double" }) } else if k == TY_STRUCT { format(o, nm(STI[TY[t].a].name), "_g") } else if k == TY_REF { o.append("void *") } else { return false } true
+c_prelude(o byte[>..]&):
+	rz := hdef("GS_STACK_RESERVE"); format(o, "#include <stdint.h>\n#include <stdbool.h>\n#include <string.h>\n#include <stdlib.h>\n#include <sys/mman.h>\n#define HC_RSZ ((int64_t)", if rz >= 0 { rz & -4096 } else { 1 << 31 }, ")\ntypedef void *gs_rref;\n")
+	for e ["i8", "i16", "i32", "i64", "u8", "u16", "u32", "u64"]: format(o, "typedef struct { ", if e[0] == 'i' { "int" } else { "uint" }, e[1..], "_t *data; int64_t len; } sl_", e, ";\n")
+	o.append("typedef struct { float *data; int64_t len; } sl_f32;\ntypedef struct { double *data; int64_t len; } sl_f64;\ntypedef struct { bool *data; int64_t len; } sl_bool;\n")
+	o.append("static void gs_bld_append(gs_rref r, const void *p, int64_t n) { uint8_t **b = (uint8_t **)r; int64_t *l = (int64_t *)r + 1; if (!*b) { uint8_t *m = mmap(0, HC_RSZ + 65536, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS | MAP_NORESERVE, -1, 0); if (m == MAP_FAILED) abort(); mprotect(m + HC_RSZ, 65536, PROT_NONE); *b = m; } if (*l + n > HC_RSZ) abort(); memcpy(*b + *l, p, n); *l += n; }\n")
+	sn i32[>..<] ~= []; for x STI:
+		if x.tn != 0 || x.size <= 0 || node_file(x.node as int) >= FPKG.len || FPKG[node_file(x.node as int)] != 0 || sn.contains(x.name): continue
+		sn.push(x.name)
+		format(o, "typedef struct { "); off ~= 0
+		for j x.fnum:
+			f := SFI[x.f0 as int + j]; ft := f.ty as int; if f.off > off: format(o, "uint8_t _p", j, "[", f.off - off, "]; ")
+			ar := TY[ft].k == TY_ARR && is_fix(ft); e := if ar { TY[ft].a as int } else { ft }; m := o.len; if cty(e, o) { format(o, " ", nm(f.name), "_g"); if ar { format(o, "[", TY[ft].b, "]") } } else { o.resize(m, 0); format(o, "uint8_t ", nm(f.name), "_g[", tsz(ft), "]") } o.append("; "); off = f.off + tsz(ft)
+		if x.size > off: format(o, "uint8_t _pe[", x.size - off, "]; ")
+		format(o, "} ", nm(x.name), "_g;\n")
+build_wrap(k int) bool:
+	name := nm(PKS[k].name); out byte[>..] ~= goose_home(); out.append("/build/hc/"); out.append(nm(PKS[k].key)); so byte[>..] ~= []; format(so, out[..], "/lib", name, ".so"); wc byte[>..] ~= []; format(wc, out[..], "/hc_include.c"); log byte[>..] ~= []; format(log, out[..], "/build.log")
+	w byte[>..] ~= []; c_prelude(w); st := file_mtime(so[..]); stale ~= st < 0; p0 ~= 0; for c, i HINC { if c == '\n' { format(w, "#include \"", HINC[p0..i], "\"\n"); if newer(HINC[p0..i], st) { stale = true } p0 = i + 1 } }
+	PKS[k].so = intern(so[..]); old byte[>..] ~= []; read_file(wc[..], old); if !stale && old[..] == w[..]: return true
+	mk byte[>..] ~= []; mk.append("mkdir -p"); shq(mk, out[..]); if run_command(mk[..]) != 0 || !write_file(wc[..], w[..]): format(PERRS, "cannot write ", wc[..]); return false
+	ob byte[>..] ~= []; format(ob, so[..], ".o"); tmp byte[>..] ~= []; format(tmp, so[..], ".tmp"); cmd byte[>..] ~= []; cmd.append("( nice -n 19 cc -O2 -fPIC -fkeep-static-functions -w -I. -I"); shq(cmd, nm(PKS[k].root)); cmd.append(" -c"); shq(cmd, wc[..]); cmd.append(" -o"); shq(cmd, ob[..]); cmd.append(" && objcopy")
+	sy := pkg_syms(0); p0 = 0; for c, i sy { if c == '\n' { g byte[>..] ~= []; format(g, "--globalize-symbol=", sy[p0..i]); shq(cmd, g[..]); p0 = i + 1 } }
+	shq(cmd, ob[..]); cmd.append(" && cc -shared"); shq(cmd, ob[..]); cmd.append(" -o"); shq(cmd, tmp[..]); cmd.append(" -lm ) >"); shq(cmd, log[..]); cmd.append(" 2>&1 && mv"); shq(cmd, tmp[..]); shq(cmd, so[..])
+	run_ok(cmd[..], log[..], "building the C the program includes", out[..])
 build_pkg(k int) bool:
 	name := nm(PKS[k].name); root byte[>..] ~= []; root.append(nm(PKS[k].root))
 	sc byte[>..] ~= []; sc.append(root[..]); sc.push('/'); sc.append(name); sc.append(".build")
-	if !file_exists(sc[..]): return true
+	if !file_exists(sc[..]): return k != 0 || HINC.len == 0 || build_wrap(k)
 	txt byte[>..] ~= []; read_file(sc[..], txt); SCV.clear(); if !sc_parse(sc[..], txt[..]): return false
 	for v sc_vals("main_thread_only"):
 		if v == "true": PKS[k].mt = true
@@ -61,32 +86,32 @@ build_pkg(k int) bool:
 		if c == '\n': hit ~= false; q0 ~= 0; for d, di os { if d == '\n' { if os[q0..di] == sy[p0..ci] { hit = true } q0 = di + 1 } } if !hit && ct.len > 0 { stale = true } p0 = ci + 1
 	PKS[k].so = intern(so[..])
 	if !stale: return true
-	mk byte[>..] ~= []; mk.append("mkdir -p"); q(mk, out[..]); if run_command(mk[..]) != 0: format(PERRS, "cannot make ", out[..]); return false
+	mk byte[>..] ~= []; mk.append("mkdir -p"); shq(mk, out[..]); if run_command(mk[..]) != 0: format(PERRS, "cannot make ", out[..]); return false
 	log byte[>..] ~= []; log.append(out[..]); log.append("/build.log")
 	cmd byte[>..] ~= []
 	if ct.len == 0:
-		cmd.append("cd"); q(cmd, root[..]); cmd.append(" && nice -n 19 cc -O2 -fPIC -shared -w")
-		for s sc_vals("c_include"): cmd.append(" -I"); q(cmd, s)
-		for s sc_vals("c_defines"): cmd.append(" -D"); q(cmd, s)
-		for s sc_vals("c_flags_cc"): q(cmd, s)
-		for s srcs: q(cmd, s)
+		cmd.append("cd"); shq(cmd, root[..]); cmd.append(" && nice -n 19 cc -O2 -fPIC -shared -w")
+		for s sc_vals("c_include"): cmd.append(" -I"); shq(cmd, s)
+		for s sc_vals("c_defines"): cmd.append(" -D"); shq(cmd, s)
+		for s sc_vals("c_flags_cc"): shq(cmd, s)
+		for s srcs: shq(cmd, s)
 		tmp byte[>..] ~= []; tmp.append(so[..]); tmp.append(".tmp")
-		cmd.append(" -o"); q(cmd, tmp[..])
-		for s sc_vals("c_libs"): cmd.append(" -l"); q(cmd, s)
-		cmd.append(" -lm >"); q(cmd, log[..]); cmd.append(" 2>&1 && mv"); q(cmd, tmp[..]); q(cmd, so[..])
+		cmd.append(" -o"); shq(cmd, tmp[..])
+		for s sc_vals("c_libs"): cmd.append(" -l"); shq(cmd, s)
+		cmd.append(" -lm >"); shq(cmd, log[..]); cmd.append(" 2>&1 && mv"); shq(cmd, tmp[..]); shq(cmd, so[..])
 		what byte[>..] ~= []; format(what, "building the C part of the package ", name)
 		return run_ok(cmd[..], log[..], what[..], out[..])
 	w byte[>..] ~= []; format(w, "cmake_minimum_required(VERSION 3.20)\nproject(hc_pkg_", name, " C)\ninclude(CheckLanguage)\ncheck_language(CXX)\nif(CMAKE_CXX_COMPILER)\nenable_language(CXX)\nendif()\nset(CMAKE_POSITION_INDEPENDENT_CODE ON)\nadd_subdirectory(\"", root[..], "\" pkg EXCLUDE_FROM_ALL)\nif(NOT TARGET ", ct[0], ")\nmessage(FATAL_ERROR \"the package ", name, "'s sidecar names the CMake target ", ct[0], ", which ", root[..], "/CMakeLists.txt does not define\")\nendif()\nadd_library(hc_", name, " SHARED \"", out[..], "/hc_syms.c\")\ntarget_link_libraries(hc_", name, " PRIVATE ", ct[0], ")\nset_target_properties(hc_", name, " PROPERTIES OUTPUT_NAME ", name, " LIBRARY_OUTPUT_DIRECTORY \"", out[..], "/stage\")\n")
 	wd byte[>..] ~= []; wd.append(out[..]); wd.append("/wrapper"); wf byte[>..] ~= []; wf.append(wd[..]); wf.append("/CMakeLists.txt")
 	mf byte[>..] ~= []; format(mf, sl[..], ".", random_seed(), ".mine"); if !write_file(mf[..], sy[..]): format(PERRS, "cannot write ", mf[..]); return false
-	old byte[>..] ~= []; read_file(wf[..], old); mk.clear(); mk.append("mkdir -p"); q(mk, wd[..]); run_command(mk[..]); if old[..] != w[..] && !write_file(wf[..], w[..]): format(PERRS, "cannot write ", wf[..]); return false
+	old byte[>..] ~= []; read_file(wf[..], old); mk.clear(); mk.append("mkdir -p"); shq(mk, wd[..]); run_command(mk[..]); if old[..] != w[..] && !write_file(wf[..], w[..]): format(PERRS, "cannot write ", wf[..]); return false
 	bd byte[>..] ~= []; bd.append(out[..]); bd.append("/cmake")
 	sc0 byte[>..] ~= []; sc0.append(out[..]); sc0.append("/hc_syms.c"); nf byte[>..] ~= []; nf.append(sl[..]); nf.append(".new")
-	cmd.append("touch"); q(cmd, sl[..]); cmd.append(" && sort -u"); q(cmd, sl[..]); q(cmd, mf[..]); cmd.append(" >"); q(cmd, nf[..]); cmd.append("; rm -f"); q(cmd, mf[..]); cmd.append("; if [ "); cmd.append(if mst { "1" } else { "0" }); cmd.append(" = 0 ] && cmp -s"); q(cmd, nf[..]); q(cmd, sl[..]); cmd.append(" && [ -f"); q(cmd, so[..]); cmd.append(" ]; then rm -f"); q(cmd, nf[..]); cmd.append("; exit 0; fi; mv"); q(cmd, nf[..]); q(cmd, sl[..]); cmd.append(" && awk '{ print \"void \" $0 \"(void);\"; s = s \", (void *)\" $0 } END { print \"__attribute__((used)) void *const hc_syms[] = { 0\" s \" };\" }'"); q(cmd, sl[..]); cmd.append(" >"); q(cmd, sc0[..]); cmd.append(" || exit 1; ")
-	cmd.append("command -v cmake >/dev/null || { echo 'cannot find cmake on PATH, needed to build the C part of the package "); cmd.append(name); cmd.append("; install CMake 3.20 or later' >"); q(cmd, log[..]); cmd.append("; exit 1; }; cmake -S"); q(cmd, wd[..]); cmd.append(" -B"); q(cmd, bd[..]); cmd.append(" -DCMAKE_BUILD_TYPE=Release")
+	cmd.append("touch"); shq(cmd, sl[..]); cmd.append(" && sort -u"); shq(cmd, sl[..]); shq(cmd, mf[..]); cmd.append(" >"); shq(cmd, nf[..]); cmd.append("; rm -f"); shq(cmd, mf[..]); cmd.append("; if [ "); cmd.append(if mst { "1" } else { "0" }); cmd.append(" = 0 ] && cmp -s"); shq(cmd, nf[..]); shq(cmd, sl[..]); cmd.append(" && [ -f"); shq(cmd, so[..]); cmd.append(" ]; then rm -f"); shq(cmd, nf[..]); cmd.append("; exit 0; fi; mv"); shq(cmd, nf[..]); shq(cmd, sl[..]); cmd.append(" && awk '{ print \"void \" $0 \"(void);\"; s = s \", (void *)\" $0 } END { print \"__attribute__((used)) void *const hc_syms[] = { 0\" s \" };\" }'"); shq(cmd, sl[..]); cmd.append(" >"); shq(cmd, sc0[..]); cmd.append(" || exit 1; ")
+	cmd.append("command -v cmake >/dev/null || { echo 'cannot find cmake on PATH, needed to build the C part of the package "); cmd.append(name); cmd.append("; install CMake 3.20 or later' >"); shq(cmd, log[..]); cmd.append("; exit 1; }; cmake -S"); shq(cmd, wd[..]); cmd.append(" -B"); shq(cmd, bd[..]); cmd.append(" -DCMAKE_BUILD_TYPE=Release")
 	if run_command("command -v ninja >/dev/null") == 0: cmd.append(" -G Ninja")
-	for s sc_vals("cmake_options"): cmd.append(" -D"); q(cmd, s)
-	cmd.append(" >"); q(cmd, log[..]); cmd.append(" 2>&1 && nice -n 19 cmake --build"); q(cmd, bd[..]); cmd.append(" --target hc_"); cmd.append(name); cmd.append(" -j 7 >>"); q(cmd, log[..]); cmd.append(" 2>&1 && cp"); stg byte[>..] ~= []; stg.append(out[..]); stg.append("/stage/lib"); stg.append(name); stg.append(".so"); q(cmd, stg[..]); tmp byte[>..] ~= []; tmp.append(so[..]); tmp.append(".tmp"); q(cmd, tmp[..]); cmd.append(" && mv"); q(cmd, tmp[..]); q(cmd, so[..])
+	for s sc_vals("cmake_options"): cmd.append(" -D"); shq(cmd, s)
+	cmd.append(" >"); shq(cmd, log[..]); cmd.append(" 2>&1 && nice -n 19 cmake --build"); shq(cmd, bd[..]); cmd.append(" --target hc_"); cmd.append(name); cmd.append(" -j 7 >>"); shq(cmd, log[..]); cmd.append(" 2>&1 && cp"); stg byte[>..] ~= []; stg.append(out[..]); stg.append("/stage/lib"); stg.append(name); stg.append(".so"); shq(cmd, stg[..]); tmp byte[>..] ~= []; tmp.append(so[..]); tmp.append(".tmp"); shq(cmd, tmp[..]); cmd.append(" && mv"); shq(cmd, tmp[..]); shq(cmd, so[..])
 	what byte[>..] ~= []; format(what, "building the C part of the package ", name, " (CMake target ", ct[0], ")")
 	run_ok(cmd[..], log[..], what[..], out[..])
 struct Shb { node i32, off i32, n i32 }

@@ -1,0 +1,18 @@
+// error: cannot clear b while r is still used: it may hold a reference or slice into it
+// put stores o into the slot f's parameter names: the load after the call
+// may view b (§9.2), which the clear frees under r (§5.1).
+fn put(q byte[:]&, o byte[:]) { q = o; }
+fn f(p byte[:]&, o byte[:]) byte[:] {
+	put(p, o);
+	return p[0..1];
+}
+fn main() {
+	var a byte[>..] = [];
+	a.append("abc");
+	var b byte[>..] = [];
+	b.append("xyz");
+	var s = a[..];
+	let r = f(s, b[..]);
+	b.clear();
+	print(r);
+}

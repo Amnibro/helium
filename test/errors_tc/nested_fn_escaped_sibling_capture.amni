@@ -1,0 +1,12 @@
+// error: a function value must be a function name or block literal
+// Computed function values are rejected before their captures can escape.
+fn apply<F>(n int) int { F(n) }
+fn main() {
+	print(apply(5, block {
+		fn h(x int) int { x + g() }
+		let k = 7;
+		fn g() int { k }
+		let y = h(1);
+		break h;
+	}));
+}

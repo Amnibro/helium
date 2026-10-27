@@ -1,0 +1,14 @@
+// error: storing a reference rooted at v, which does not outlive the destination
+// A `.len` is no storage: print renders it from a temporary, which a format
+// hook taking it by reference is given (§3.7), and which a reference the
+// hook keeps outlives.
+var arr int[>..] = [1, 2, 3];
+var keep (const int&)? = null;
+fn format(out byte[>..]&, v const int&) { keep .= v; out.append("k"); }
+fn main() {
+	print(arr.len);
+	if keep != null {
+		let y int = keep;
+		print(y == 3);
+	}
+}

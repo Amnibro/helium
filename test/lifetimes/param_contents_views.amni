@@ -1,0 +1,116 @@
+// The elements a slice parameter views, and the holder a reference
+// parameter names, hold what the caller stored there: a shrink in the
+// callee leaves them to each call, which judges them by its record of the
+// argument's storage (§5.1). Here none of them views the array shrunk.
+struct H { s const byte[:] }
+var TABLE (const byte[:])[>..] = [];
+
+fn emit(out byte[>..]&, words (const byte[:])[:]) {
+	out.clear();
+	for w in words { out.append(w); }
+}
+fn emit_ref(out byte[>..]&, words (const byte[:])[>..]&) {
+	out.clear();
+	for w in words { out.append(w); }
+}
+// emit's pair passes through mid to its callers.
+fn mid(out byte[>..]&, words (const byte[:])[:]) {
+	emit(out, words);
+	print(words[0]);
+}
+// A view of b stored into words' elements: the call gives a and b apart.
+fn store_other(a byte[>..]&, b byte[>..]&, words (const byte[:])[:]) {
+	words[0] = b[..];
+	a.clear();
+	a.append("def");
+	print(words[0], " ", a);
+}
+fn holder(a byte[>..]&, h H&) {
+	a.clear();
+	a.append("ghi");
+	print(h.s, " ", a);
+}
+fn mk(a byte[>..]&) (const byte[:])[] { [a[..], "q"] }
+// The slice in ws's slot views names.
+fn through_slot(out byte[>..]&, ws ((const byte[:])[:])&) {
+	out.clear();
+	for w in ws { out.append(w); }
+}
+fn emit_holders(out byte[>..]&, hs H[:]) {
+	out.clear();
+	for x in hs { out.append(x.s); }
+}
+// words' elements view arrays whose elements hold text.
+fn emit_nested(out byte[>..]&, words ((const byte[:])[:])[:]) {
+	out.clear();
+	for ws in words { for w in ws { out.append(w); } }
+}
+fn clr(a byte[>..]&) int {
+	a.clear();
+	a.append("mno");
+	return 0;
+}
+fn show(v (const byte[:])[:], n int) { print(v[0], " ", n); }
+fn held(out byte[>..]&, words (const byte[:])[:]) {
+	show(words, clr(out));
+}
+fn nested(out byte[>..]&, words (const byte[:])[:]) {
+	fn g() {
+		out.clear();
+		out.append(words[1]);
+	}
+	g();
+}
+recursive fn walk(a byte[>..]&, v (const byte[:])[:], w (const byte[:])[:], n int) {
+	if n == 0 {
+		a.clear();
+		a.append("jkl");
+		return;
+	}
+	walk(a, w, v, n - 1);
+	print(v[0]);
+}
+
+fn main() {
+	var buf byte[>..] = [];
+	buf.append("abc");
+	var names (const byte[:])[>..] = [];
+	names.push("x");
+	names.push("y");
+	emit(buf, names[..]);
+	print(buf);
+	emit(buf, ["p", "q"]);
+	print(buf);
+	emit_ref(buf, names);
+	print(buf);
+	mid(buf, names[..]);
+	print(buf);
+	var other byte[>..] = [];
+	other.append("zz");
+	emit(buf, mk(other));
+	print(buf);
+	store_other(buf, other, names[..]);
+	var h = H { s: other[..] };
+	holder(buf, h);
+	var s = names[..];
+	through_slot(buf, s);
+	print(buf);
+	held(buf, names[..]);
+	nested(buf, names[..]);
+	print(buf);
+	var hl H[>..] = [];
+	hl.push(H { s: other[..] });
+	emit_holders(buf, hl[..]);
+	print(buf);
+	var outer ((const byte[:])[:])[>..] = [];
+	outer.push(names[..]);
+	emit_nested(buf, outer[..]);
+	print(buf);
+	TABLE.push("t");
+	emit(buf, TABLE[..]);
+	print(buf);
+	var tt (const byte[:])[>..] = [];
+	tt.push("r");
+	walk(buf, names[..], tt[..], 2);
+	print(buf);
+}

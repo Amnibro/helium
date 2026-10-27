@@ -1,0 +1,18 @@
+// error: cannot call mid: it shrinks buf while words is still used, and words may refer into buf
+// mid hands its own parameters on: the pair reaches main, where names'
+// element views buf (§5.1).
+fn emit(out byte[>..]&, words (byte[:])[:]) {
+	out.clear();
+	out.append("ZZZZZZZZ");
+	print(words[0]);
+}
+fn mid(out byte[>..]&, words (byte[:])[:]) {
+	emit(out, words);
+}
+fn main() {
+	var buf byte[>..] = [];
+	buf.append("abc");
+	var names (byte[:])[>..] = [];
+	names.push(buf[..]);
+	mid(buf, names[..]);
+}

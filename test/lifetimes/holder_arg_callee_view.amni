@@ -1,0 +1,15 @@
+// A reference holder filled with a local array cannot refer to a same-typed
+// global, so a live view of that global survives replacement through it.
+var cfg byte[>..] = ['c', 'f', 'g'];
+struct S { text byte[>..]&, refs (int&)[>..] }
+fn prepare(s S&) {
+	let v const byte[:] = cfg[..];
+	s.text = ['x'];
+	print(v);
+	assert(s.text.len == 1 && s.text[0] == 120);
+}
+fn main() {
+	var text byte[>..] = [];
+	var s = S { text: text, refs: [] };
+	prepare(s);
+}

@@ -1,0 +1,9 @@
+// error: reordering may cross a side effect, runtime check, or nonlocal exit
+// Checking a callee includes capacity checks on its local bindings.
+struct Pair { a int, b int }
+fn length(bytes const byte[:]) int {
+	let local byte[..2] = bytes;
+	local.len
+}
+fn make(bytes const byte[:]) Pair { Pair { b: length(bytes), a: 0 } }
+fn main() { print(make("too long")); }

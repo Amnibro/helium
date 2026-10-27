@@ -1,0 +1,16 @@
+// error: cannot clear out while w is still used
+// emit itself stored a view of out where it reads w from (§5.1).
+fn emit(out byte[>..]&, words (const byte[:])[:]) {
+	words[0] = out[..];
+	let w = words[0];
+	out.clear();
+	out.append("ZZZZZZZZ");
+	print(w);
+}
+fn main() {
+	var buf byte[>..] = [];
+	buf.append("abc");
+	var names (const byte[:])[>..] = [];
+	names.push("x");
+	emit(buf, names[..]);
+}

@@ -1,0 +1,25 @@
+recursive fn readonly(r int&, depth int) const int& {
+	if depth > 0 { return readonly(r, depth - 1); }
+	let c const int& = r;
+	return c;
+}
+// pick is part of walk's cycle, but no back edge uses pick's result while
+// its returns are being checked, so they may differ in writability.
+recursive fn walk(r int&, d int) int {
+	if d <= 0 { return r; }
+	let v .= pick(r, d);
+	return v;
+}
+fn pick(r int&, d int) int& {
+	let n = walk(r, d - 1);
+	if n > 100 { return r; }
+	let c const int& = r;
+	return c;
+}
+fn main() {
+	var n = 7;
+	let x .= readonly(n, 2);
+	print(x);
+	var m = 5;
+	print(walk(m, 3));
+}

@@ -237,7 +237,7 @@ recursive lstore(addr int, n int, t int):
 	st0 ~= deref(atc(n)); if TY[st0].k == TY_MULTI && TY[t].k != TY_MULTI { st0 = deref(mel(st0, 0)) } sk := TY[st0].k
 	if TY[t].k == TY_ARR && st0 != t && (sk == TY_SLICE || sk == TY_STRLIT || sk == TY_ARR) && k != N_ARR && k != N_STR: lconv_arr(addr, n, t); return
 	if TY[t].k == TY_ENUM && sk == TY_VARIANT: ei := TY[t].a; vi := TY[st0].c; lzero(addr, tsz(t)); stw(addr, 0, imm(vi), wof(t)); if vsi(ei, vi) >= 0 { if TY[at(n)].k == TY_REF && !is_lplace(n) { ir(I_COPY, 3, addi(addr, epoff(ei)), if ND[n].k as int == N_CALL { lcall(n) } else { lptr(n) }, imm(tsz(st0)), 0); } else { lstore(addi(addr, epoff(ei)), n, st0); } } return
-	if is_lplace(n) || TY[at(n)].k == TY_REF: sa := if is_lplace(n) { laddr(n) } else { if ND[n].k as int == N_CALL { lcall(n) } else { lptr(n) } }; ir(I_COPY, 3, addr, if !is_lplace(n) { lunv(sa, t) } else { sa }, imm(tsz(t)), 0); return
+	if is_lplace(n) || TY[at(n)].k == TY_REF: sa := if is_lplace(n) { laddr(n) } else { if ND[n].k as int == N_CALL { lcall(n) } else { lptr(n) } }; ir(I_COPY, 3, addr, lunv(sa, t), imm(tsz(t)), 0); return
 	if k == N_SLIT: lslit(addr, n, t); return
 	if k == N_ARR: larr(addr, n, t); return
 	if k == N_UN && ND[n].op as int == T_AND: ir(I_COPY, 3, addr, laddr(ND[n].a), imm(tsz(t)), 0); return
@@ -421,10 +421,10 @@ recursive lefl(d int, p int, e int, un bool) int:
 		si := vsi(ei, i); if si >= 0: ln := nlbl(); ir(I_BZ, 3, -1, lcmp(tg, imm(i), CC_E), -1, ln); dd := if d >= 0 { addi(d, tz) } else { -1 }; fb := FLB; if fb >= 0 { FLB = addi(fb, tz) } ir(I_MOV, 3, r, addi(if un { lunflat(dd, addi(p, tz), t_struct(si)) } else { lflat(dd, addi(p, tz), t_struct(si)) }, tz), -1, 0); FLB = fb; ir(I_JMP, 3, -1, -1, -1, le); ir(I_LBL, 3, -1, -1, -1, ln)
 	ir(I_LBL, 3, -1, -1, -1, le); r
 recursive lfa(n int) int:
-	x := ND[n]; bt := at(x.a); d := deref(bt); si := ssi(d); b := if TY[bt].k == TY_REF { lptr(x.a) } else { laddr(x.a) }; if TY[bt].k != TY_REF || !lvst(t_struct(si)) { return addi(b, foff(si, rv(n))) }
+	x := ND[n]; bt := at(x.a); d := deref(bt); si := ssi(d); b := if TY[bt].k == TY_REF { lptr(x.a) } else { laddr(x.a) }; if !lvst(t_struct(si)) { return addi(b, foff(si, rv(n))) }
 	r := nv(); lu := nlbl(); le := nlbl(); ir(I_BZ, 3, -1, bin(B_AND, 3, b, imm(1 << 62), -1), -1, lu)
 	o ~= lmk(b, d); f0 := STI[si].f0 as int; for j rv(n) { f := SFI[f0 + j]; o = if f.ty < 0 { addi(o, max(f.padn as int, 0)) } else { bin(B_ADD, 3, o, lunflat(-1, o, f.ty as int), -1) } }
-	ft := SFI[f0 + rv(n)].ty as int; if fvar(ft) { q := nv(); ir(I_SLOT, 8, q, -1, -1, slot(max(tsz(ft), 8), max(tal(ft), 8))); lunflat(q, o, ft); o = q } ir(I_MOV, 3, r, o, -1, 0); ir(I_JMP, 3, -1, -1, -1, le)
+	ft := SFI[f0 + rv(n)].ty as int; if hvs(ft) && TY[ft].k == TY_ENUM { o = ltag(o) } else if fvar(ft) && !flsame(ft) { q := nv(); ir(I_SLOT, 8, q, -1, -1, slot(max(tsz(ft), 8), max(tal(ft), 8))); lunflat(q, o, ft); o = q } ir(I_MOV, 3, r, o, -1, 0); ir(I_JMP, 3, -1, -1, -1, le)
 	ir(I_LBL, 3, -1, -1, -1, lu); ir(I_MOV, 3, r, addi(b, foff(si, rv(n))), -1, 0); ir(I_LBL, 3, -1, -1, -1, le); r
 lsqof(a int, cnt int, e int) int:
 	es := tsz(e); z ~= imm(0); dsuse(); b0 := rtcall("rt_dsput", [imm(0) as i32]); for i cnt { FLB = bin(B_ADD, 3, b0, z, -1); z = bin(B_ADD, 3, z, lflat(-1, addi(a, i * es), e), -1) } FLB = -1; o := rtcall("rt_dsput", [z as i32]); c ~= o; for i cnt { c = bin(B_ADD, 3, c, lflat(c, addi(a, i * es), e), -1) } o
@@ -834,7 +834,7 @@ recursive lcase(n int, dst int) int:
 			pt := ptype_of(i, j)
 			if j >= na: sa := AOWN; AOWN = i; CFBD += 1; largs(args, ND[kid(FI_[i].node as int, j)].b as int, pt); CFBD -= 1; AOWN = sa; continue
 			if j != j0: for k (po[j] as int)..po[j + 1] as int { args.push(pre[k]) } continue
-			vt := deref(pt); si := vsi(ei, vi); pa := if si >= 0 { addi(if hvs(vt) { m } else { lmk(m, et) }, epoff(ei)) } else { q := nv(); ir(I_SLOT, 8, q, -1, -1, slot(max(tsz(vt), 1), tal(vt))); lzero(q, max(tsz(vt), 1)); q }
+			vt := deref(pt); si := vsi(ei, vi); pa := if TY[vt].k == TY_ENUM { if hvs(vt) { m } else { lmk(m, et) } } else if si >= 0 { addi(if hvs(vt) { m } else { lmk(m, et) }, epoff(ei)) } else { q := nv(); ir(I_SLOT, 8, q, -1, -1, slot(max(tsz(vt), 1), tal(vt))); lzero(q, max(tsz(vt), 1)); q }
 			if TY[pt].k == TY_REF || si < 0: args.push(pa as i32) else: q := nv(); ir(I_SLOT, 8, q, -1, -1, slot(tsz(vt), tal(vt))); ir(I_COPY, 3, q, lunv(pa, vt), imm(tsz(vt)), 0); args.push(q as i32)
 		for cp CAPS:
 			if cp.inst as int == i: args.push(lvaddr(cp.lv as int) as i32)
@@ -1014,7 +1014,7 @@ barg(n int, i int) int:
 	else:
 		kid(n, i)
 lgrow(va int, k int, es int) int:
-	rz := hdef("GS_STACK_RESERVE"); lim := (if rz >= 0 { rz & -4096 } else { 1 << 34 }) / max(es, 1); b := ldw(va, 0, 3); n := ldw(va, 8, 3); nn := bin(B_ADD, 3, n, k, -1); p := nv(); ls := nlbl(); le := nlbl()
+	rz := hdef("GS_STACK_RESERVE"); lim := (if rz >= 0 { rz & -4096 } else { 1 << 31 }) / max(es, 1); b := ldw(va, 0, 3); n := ldw(va, 8, 3); nn := bin(B_ADD, 3, n, k, -1); p := nv(); ls := nlbl(); le := nlbl()
 	ir(I_BZ, 3, -1, b, -1, ls); ir(I_BZ, 3, -1, if WEB { lcmp(bin(B_MUL, 3, nn, imm(es), -1), ldw(b, -8, 3), CC_LE) } else { lcmp(nn, imm(lim), CC_LE) }, -1, ls); stw(va, 8, nn, 3); ir(I_MOV, 3, p, bin(B_ADD, 3, b, bin(B_MUL, 3, n, imm(es), -1), -1), -1, 0); ir(I_JMP, 3, -1, -1, -1, le)
 	ir(I_LBL, 3, -1, -1, -1, ls); ir(I_MOV, 3, p, rtcall("rt_grow", [va as i32, k as i32, imm(es) as i32]), -1, 0); ir(I_LBL, 3, -1, -1, -1, le); p
 rtcall(name const byte[:], args i32[:]) int:
@@ -1145,7 +1145,7 @@ recursive lbuiltin1(n int, b int, dst int, total int) int:
 	if b == B_DEFAULT: t := at(n); if is_scal(t) { return imm(0) } if is_pair(t) && dst < 0 { PAIR2 = imm(0); return imm(0) } dd := if dst >= 0 { dst } else { q := nv(); ir(I_SLOT, 8, q, -1, -1, slot(tsz(t), tal(t))); tmp_drop(q, t); q }; lzero(dd, tsz(t)); ldefault(dd, t); return dd
 	if b == B_BYTESOF: c := barg(n, 0); t := deref(fin(c)); if TY[t].k == TY_ARR || TY[t].k == TY_SLICE || TY[t].k == TY_STRLIT { p, q := lsl(c); PAIR2 = if TY[t].k == TY_STRLIT { q } else { lbcnt(p, q, t) }; return p } PAIR2 = imm(tsz(t)); return lrefv(c)
 	if b == B_INDEXOF: rc := barg(n, 0); d := deref(at(rc)); es := tsz(TY[d].a); p, q := lsl(rc); r := lx(barg(n, 1)); return bin(B_DIV, 3, bin(B_SUB, 3, r, p, -1), imm(max(es, 1)), -1)
-	if b == B_CAP: d := deref(at(barg(n, 0))); if is_fix(d) || is_lim(d) { return imm(TY[d].b as int) } if is_vimg(d) && vw(d) != 0 { return ldw(vptr_of(barg(n, 0)), 0, vwc(d)) } return imm((1 << 34) / max(tsz(TY[d].a), 1))
+	if b == B_CAP: d := deref(at(barg(n, 0))); if is_fix(d) || is_lim(d) { return imm(TY[d].b as int) } if is_vimg(d) && vw(d) != 0 { return ldw(vptr_of(barg(n, 0)), 0, vwc(d)) } return imm((1 << 31) / max(tsz(TY[d].a), 1))
 	if b == B_ASSERT: c := lx(barg(n, 0)); l := nlbl(); ir(I_BNZ, 3, -1, c, -1, l); lp, ln := locsl(n); rtcall("rt_die", [imm(6) as i32, lp as i32, ln as i32]); ir(I_LBL, 3, -1, -1, -1, l); return imm(0)
 	if b == B_EXIT: rtcall("rt_exit", [lx(barg(n, 0)) as i32]); return imm(0)
 	if b == B_ABORT: mp, mn := lsl(barg(n, 0)); lp, ln := locsl(n); rtcall("rt_abort", [mp as i32, mn as i32, lp as i32, ln as i32]); return imm(0)

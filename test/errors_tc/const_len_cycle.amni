@@ -1,0 +1,5 @@
+// error: cycle in constant initializer: b
+let a int[b.len] = [1];
+let b int[a.len] = [1];
+
+fn main() { print(a, b); }

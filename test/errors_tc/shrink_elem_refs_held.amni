@@ -1,0 +1,18 @@
+// error: cannot call clr, which shrinks a: ss[..], evaluated earlier in the statement, may still refer into a
+// show is handed ss[..] before clr runs, and reads the elements' views of
+// a after it (§5.1).
+fn clr(a byte[>..]&) int {
+	a.clear();
+	a.append("ZZZZZZZZ");
+	return 0;
+}
+fn show(v (byte[:])[:], n int) {
+	print(v[0]);
+}
+fn main() {
+	var a byte[>..] = [];
+	a.append("abc");
+	var ss (byte[:])[>..] = [];
+	ss.push(a[..]);
+	show(ss[..], clr(a));
+}

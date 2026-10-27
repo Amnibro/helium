@@ -1,0 +1,14 @@
+// A named variable-size local is built at the destination it is returned in.
+fn one() byte[] { let s byte[] = "fgh"; return s; }
+fn two_diff() byte[], byte[] { let s byte[] = "fgh"; let t byte[] = "ij"; return s, t; }
+fn two_first() byte[], int { let s byte[] = "fgh"; return s, 5; }
+fn two_same() byte[], byte[] { let s byte[] = "fgh"; return s, s; }
+fn main() {
+	print(one());
+	let a, b = two_diff();
+	print(a, " ", b);
+	let c, n = two_first();
+	print(c, " ", n);
+	let d, e = two_same();
+	print(d, " ", e);
+}

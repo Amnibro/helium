@@ -1,0 +1,17 @@
+// error: cannot call emit: it shrinks buf while h is still used, and h may refer into buf
+// h is a copy of p, whose words view names' elements, and one views buf
+// (§5.1).
+struct P { words (const byte[:])[:] }
+fn emit(out byte[>..]&, p P) {
+	let h = p;
+	out.clear();
+	out.append("ZZZZZZZZ");
+	print(h.words[0]);
+}
+fn main() {
+	var buf byte[>..] = [];
+	buf.append("abc");
+	var names (const byte[:])[>..] = [];
+	names.push(buf[..]);
+	emit(buf, P { words: names[..] });
+}

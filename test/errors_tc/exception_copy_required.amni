@@ -1,0 +1,7 @@
+// error: is not fixed-size and is not copied implicitly
+import exception;
+fn fail() {
+	let text byte[] = "owned";
+	exception::throw(text);
+}
+fn main() { exception::try<byte[]>(fail); }

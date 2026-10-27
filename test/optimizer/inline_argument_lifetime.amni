@@ -1,0 +1,38 @@
+// runtime-debug: inlining must keep temporary argument storage alive through
+// the caller's statement, including views returned to another argument list.
+
+fn make_a() byte[>..] {
+	var result byte[>..] = "abc";
+	return result;
+}
+
+fn make_b() byte[>..] {
+	var result byte[>..] = "XYZ";
+	return result;
+}
+
+fn consume(s byte[:]) {
+	var overwrite byte[>..] = "XYZ";
+	print(s);
+	print(overwrite);
+}
+
+fn identity(s byte[:]) byte[:] { s }
+
+fn consume_pair(s byte[:], other byte[:]) {
+	print(s);
+	print(other);
+}
+
+fn inspect_image(b byte[:]) {
+	print(b[0]);
+	var decoded, ok = from_bytes<byte[>..]>(b);
+	print(ok, " ", b[0], " ", decoded[0]);
+}
+
+fn main() {
+	consume(make_a()[..]);
+	consume_pair(identity(make_a()[..]), make_b()[..]);
+	var bytes byte[>..] = [11, 22, 33];
+	inspect_image(bytes.to_bytes());
+}

@@ -1,0 +1,39 @@
+// Namespace priority applies across all type declaration kinds (§11.1).
+struct AliasOverStruct { value int }
+struct EnumOverStruct { value int }
+enum AliasOverEnum { Value { value int } }
+enum StructOverEnum { Value { value int } }
+type StructOverAlias = int;
+type EnumOverAlias = int;
+struct Fallback { value int }
+
+type local::AliasOverStruct = int;
+enum local::EnumOverStruct { Value { value int } }
+type local::AliasOverEnum = int;
+struct local::StructOverEnum { value int }
+struct local::StructOverAlias { value int }
+enum local::EnumOverAlias { Value { value int } }
+
+fn local::alias_struct(value AliasOverStruct) AliasOverStruct { value }
+fn local::enum_struct(value EnumOverStruct) int {
+	match value { Value v => v.value }
+}
+fn local::alias_enum(value AliasOverEnum) AliasOverEnum { value }
+fn local::struct_enum(value StructOverEnum) int { value.value }
+fn local::struct_alias(value StructOverAlias) int { value.value }
+fn local::enum_alias(value EnumOverAlias) int {
+	match value { Value v => v.value }
+}
+fn local::explicit_global(value ::AliasOverStruct) int { value.value }
+fn local::fallback(value Fallback) int { value.value }
+
+fn main() {
+	print(local::alias_struct(1), " ",
+		  local::enum_struct(local::EnumOverStruct.Value { 2 }), " ",
+		  local::alias_enum(3), " ",
+		  local::struct_enum(local::StructOverEnum { 4 }), " ",
+		  local::struct_alias(local::StructOverAlias { 5 }), " ",
+		  local::enum_alias(local::EnumOverAlias.Value { 6 }), " ",
+		  local::explicit_global(AliasOverStruct { 7 }), " ",
+		  local::fallback(Fallback { 8 }));
+}

@@ -3,10 +3,11 @@ R = pathlib.Path(__file__).resolve().parents[2]
 S = pathlib.Path(sys.argv[1]); HC = sys.argv[2]; W = pathlib.Path(sys.argv[3]); W.mkdir(parents=True, exist_ok=True)
 flt = sys.argv[4] if len(sys.argv) > 4 else ""
 def exp_for(f):
-    if f.parent.name == "samples": d = R / "samples" / "expected"; i = R / "samples" / "data" / (f.stem + ".stdin")
+    st = f.stem.split("_", 1)[1] if f.parent.name == "samples" and f.stem[:2].isdigit() else f.stem
+    if f.parent.name == "samples": d = R / "samples" / "expected"; i = R / "samples" / "data" / (st + ".stdin")
     else: d = R / "test" / "expected"; i = None
-    o = d / (f.stem + ".out")
-    return (o if o.exists() else None), (i if i and i.exists() else None), (d / (f.stem + ".aborts")).exists()
+    o = d / (st + ".out")
+    return (o if o.exists() else None), (i if i and i.exists() else None), (d / (st + ".aborts")).exists()
 def norm(b): return b.replace(b"\r\n", b"\n")
 def run(f):
     exp, sin, ab = exp_for(f)
@@ -19,7 +20,8 @@ def run(f):
     if "--tokens`" in f.read_text(errors="replace").split("\n")[0]:
         p = subprocess.run([HC, "--tokens", str(f)], capture_output=True, timeout=30, env=env)
         return f, ("pass" if p.returncode == 0 and norm(p.stdout) == norm(exp.read_bytes()) else "out"), ""
-    try: p = subprocess.run([HC, str(f), str(x if nat else c)] + (["--native", *defs] if nat else []) + (["--debug"] if dbg else []), capture_output=True, timeout=30, env=env)
+    sp = f.parent.name == "samples"; fl = R / "samples" / "data" / ((f.stem.split("_", 1)[1] if f.stem[:2].isdigit() else f.stem) + ".flags")
+    try: p = subprocess.run([str(pathlib.Path(HC).resolve()) if "/" in HC else HC, str(f.resolve()), str((x if nat else c).resolve())] + (["--native", *defs] if nat else []) + (["--debug"] if dbg else []) + (fl.read_text().split() if sp and fl.exists() else []), capture_output=True, timeout=30, env=env, cwd=str(R / "samples") if sp else None)
     except subprocess.TimeoutExpired: return f, "check", "timeout"
     if p.returncode != 0: return f, ("native" if nat and b"native backend" in p.stdout + p.stderr else "check"), (p.stdout + p.stderr).decode(errors="replace").strip().split("\n")[0][:220]
     if nat: c.write_text("")
@@ -28,7 +30,8 @@ def run(f):
         m = [l for l in p.stderr.decode(errors="replace").split("\n") if "error" in l]
         return f, "cc", (m[0] if m else p.stderr.decode()[:200])[:220]
     if os.environ.get("HC_GPU") != "1" and re.search(r"\b(gfx|ui)::open", f.read_text(errors="replace")): return f, "gpu", "compiled; not run, it opens a GPU device (HC_GPU=1 runs it)"
-    try: p = subprocess.run([str(x)], capture_output=True, timeout=20, stdin=open(sin, "rb") if sin else subprocess.DEVNULL, cwd=str(R / "samples" if f.parent.name == "samples" else R))
+    ag = R / "samples" / "data" / ((f.stem.split("_", 1)[1] if f.stem[:2].isdigit() else f.stem) + ".args")
+    try: p = subprocess.run([str(x), *(ag.read_text().split() if f.parent.name == "samples" and ag.exists() else [])], capture_output=True, timeout=20, stdin=open(sin, "rb") if sin else subprocess.DEVNULL, cwd=str(R / "samples" if f.parent.name == "samples" else R))
     except subprocess.TimeoutExpired: return f, "run", "timeout"
     want = norm(exp.read_bytes()).rstrip(b"\n"); got = norm(p.stdout).rstrip(b"\n")
     if got != want:
@@ -38,7 +41,7 @@ def run(f):
     if ab != (p.returncode != 0): return f, "exit", f"exit {p.returncode} {p.stderr.decode(errors='replace')[:120]}"
     x.unlink(); c.unlink()
     return f, "pass", ""
-files = sorted(f for f in [*S.rglob("*.amni"), *S.rglob("*.he")] if flt in str(f))
+files = sorted(f for d in ("test", "samples") for e in ("*.amni", "*.he") for f in (S / d).rglob(e) if flt in str(f))
 res = collections.defaultdict(list)
 with cf.ThreadPoolExecutor(16) as ex:
     for r in ex.map(run, files):

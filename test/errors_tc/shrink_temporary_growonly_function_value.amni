@@ -1,0 +1,11 @@
+// error: cannot call run, which shrinks a: a[0], evaluated earlier in the statement
+// error: may still refer into a
+// The block run calls clears the caller's array, whose element the enclosing
+// call still holds: the shrink is run's, at its call (§5.1).
+fn drop(a int[>..]&) int { a.clear(); return 0; }
+fn use(r int&, n int) int { return r + n; }
+fn run<F>() int { return F(); }
+fn main() {
+	var a int[>..] = [1, 2];
+	print(use(a[0], run() { drop(a) }));
+}

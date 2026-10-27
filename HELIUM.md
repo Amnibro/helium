@@ -1,13 +1,12 @@
 # Helium
 
-Helium is Goose (github.com/aardappel/goose) with a leaner surface for LLMs. Its source files are `.amni`. A `.amni` file differs from a `.goose` file in four ways, and is the same language otherwise:
+Helium's source files are `.amni` (this page) or `.he` (the same language with layout instead of braces, see `hc/TODO.md` §0). Coming from Goose (github.com/aardappel/goose), a `.amni` file differs from a `.goose` file in three ways:
 
 - Word types: `int`=i64, `uint`=u64, `byte`=u8, `real`=f64. The others stay: `i8 i16 i32 u16 u32 f32 bool varint`.
 - No `:` before a type in declarations and no `->` before results: `fn f(a int, b real) int, bool`, `struct P { x real, y real }`, `var n int = 0`. Literals and named arguments keep `:` (`P { x: 1.0, y: 2.0 }`).
 - `import std;` is implicit. Other modules are imported: `import dictionary;`, `import os;`, `import math;`.
-- The `helium` command prints only the program's output and errors (`-v` shows compiler progress).
 
-Run: `helium file.amni` (native through the system C compiler, cached; TinyCC in-process when there is none, or with `--jit`). `helium check file.amni` typechecks. `helium build file.amni` makes an executable. `goose2amni.py` converts Goose source.
+Run: `hc file.amni` (native, cached). `hc check file.amni` typechecks. `hc build file.amni` makes an executable (`-o out.c` writes C, `--web` WebAssembly). `tools/amni/goose2amni.py` converts Goose source.
 
 ## Core
 
@@ -221,6 +220,7 @@ fn main() { print(fast_steps(27), " ", fast_steps(27)); }
 - Each entry is computed on its first call and then looked up. The table is sparse: 4096-entry tiles exist only once something in them is asked for, so an unvisited range costs nothing.
 - Tables in the root file are saved to `~/.goose/lut/<name>-<hash>.lut` when `main` returns and loaded on first use, so a later run starts with every entry already computed. Editing the function changes the hash.
 - The body must be pure: same inputs, same result, no output.
+- `lut fn` works in `.amni` files; hc fills tables on the CPU (the GPU fill below is not in hc yet).
 - A table of 10 to 20 bits whose body is integer code (ints, bools, `if`, loops, calls, `min`/`max`/`abs`/`clamp`) can fill on the GPU. On its first run the program times 64 sample entries; when a whole CPU fill would take over 30 ms, the GPU computes every entry at once. An entry the GPU cannot finish (division by zero, a very long loop) stays unset and is computed on the CPU when first used, so results never change. `HELIUM_GPU=off` keeps everything on the CPU, `HELIUM_GPU=discrete` prefers the discrete GPU over the integrated one, `HELIUM_GPU_MIN_MS` sets the 30 ms bar, and `HELIUM_GPU_LOG=1` reports what ran where.
 
 ## Program, modules, threads
@@ -228,7 +228,7 @@ fn main() { print(fast_steps(27), " ", fast_steps(27)); }
 - One root file; `import a.b;` loads `a/b.amni` (or `.goose`) relative to the root, then the standard library. `namespace geo;` scopes a file: `geo::Pt`. `fn main()` in the root is the entry.
 - Globals: `var log byte[>..];` starts empty; `let SIZE = 16;` is a named constant usable as an array size.
 - `fn format(out byte[>..]&, p Point) { format(out, "(", p.x, ",", p.y, ")"); }` customizes how a type prints.
-- Threads share nothing: `thread_fn worker() { let j = qget<Job>(); qput(Result { ... }); }`, `thread_spawn(worker)`, `thread_wait(id)`. Only flat (reference-free) values cross queues. Threads need `helium build`.
+- Threads share nothing: `thread_fn worker() { let j = qget<Job>(); qput(Result { ... }); }`, `thread_spawn(worker)`, `thread_wait(id)`. Only flat (reference-free) values cross queues.
 - `assert(c)`, `abort(msg)`, `exit(code)`. `copy(x)`, `default<T>()`, `to_bytes(a)`, `from_bytes<T[>..]>(b)`, `bytes_of(a)`, `embed_file("path")`.
 - `extern fn hypot(x real, y real) real;` binds C; `extern "SDL2" { fn SDL_Quit(); }` binds a shared library.
 
@@ -244,7 +244,7 @@ fn main() { print(fast_steps(27), " ", fast_steps(27)); }
 
 ## Web
 
-`helium build --web app.amni` writes `app.wasm` and the `helium.js` host beside it (`-o` names the `.wasm`; clang and the WASI sysroot, fetched once into `~/.goose/toolchains`). A page starts it with `<script type="module">import {start} from './helium.js'; start({wasm: 'app.wasm'});</script>`. `main` runs once and globals stay alive; the host then calls the program's `export fn he_frame(t real)` every animation frame after `web::frames(true)`, and `export fn he_event(tag i32, kind i32)` for each listener, timer, fetch and JS result, by the tag the program gave (`kind` is `web::EV_DOM`, `EV_TIMER`, `EV_FETCH`, `EV_PROGRESS`, `EV_JS`, `EV_CALLBACK`).
+`hc build --web app.amni -o app.wasm` writes `app.wasm` and the `helium.js` host beside it. A page starts it with `<script type="module">import {start} from './helium.js'; start({wasm: 'app.wasm'});</script>`. `main` runs once and globals stay alive; the host then calls the program's `export fn he_frame(t real)` every animation frame after `web::frames(true)`, and `export fn he_event(tag i32, kind i32)` for each listener, timer, fetch and JS result, by the tag the program gave (`kind` is `web::EV_DOM`, `EV_TIMER`, `EV_FETCH`, `EV_PROGRESS`, `EV_JS`, `EV_CALLBACK`).
 
 - `import web;` (`web::`): elements are `i32` handles: `el(id) query(h, sel) query_all list_at create append insert_before remove clear text html attr get_attr style cls has_cls prop prop_num get_prop get_num call scroll_into rect listen(h, "click", TAG, flags)`; event fields while `he_event` runs: `ev_x ev_y ev_dx ev_dy ev_button ev_buttons ev_mods ev_key(out) ev_value(out) ev_touches ev_touch_x ev_target ev_prevent ev_id ev_status`; `fetch(url, TAG)` / `request(...)` then `fetch_take(ev_id(), out)`; `timer(ms, TAG)`, `now`, `win_w win_h dpr param(name, out) store_get store_set log`; `js_import js_call js_result` for other JS libraries.
 - `import webgl;` (`gl::`): WebGL2 on a canvas handle: `init(canvas, aa, alpha) create_shader shader_source compile_shader create_program link_program uniform_loc uniform1f uniform_mat4 create_buffer buffer_data(target, bytes_of(xs), usage) create_vao attrib_ptr draw_arrays`, and the GL constants.

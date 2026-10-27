@@ -1,0 +1,10 @@
+// error: storing a reference rooted at text, which does not outlive the destination
+import std;
+struct Holder {text const byte[:]}
+fn apply<F>(text const byte[:]) {F(text);}
+fn relay<F>(text const byte[:]) {apply(text,F);}
+fn main() {
+	var data byte[>..]=[];data.append("kept");var holder=Holder {text:""};
+	fn store(text const byte[:]) {holder.text=text;}
+	apply(data[..],store);relay(str(7),store);print(holder.text);
+}

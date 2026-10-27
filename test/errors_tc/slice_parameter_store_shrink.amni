@@ -1,0 +1,10 @@
+// error: cannot clear
+struct Holder { p int? }
+fn save(xs Holder[:], p int&) { xs[0].p .= p; }
+fn main() {
+	var data int[>..] = [42];
+	var holders Holder[1] = [Holder {}];
+	save(holders, data[0]);
+	data.clear();
+	if holders[0].p { print(holders[0].p); }
+}

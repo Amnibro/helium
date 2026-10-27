@@ -11,7 +11,7 @@ var LIBDIR byte[>..]
 var IMPS i32[>..]
 var DERR byte[>..]
 var NS_FILE i32[>..]
-struct Pk { name i32, root i32, key i32, src i32, so i32, mt bool }
+struct Pk { name i32, root i32, key i32, src i32, so i32, mt bool, tk i32 }
 var PKS Pk[>..]; var FPKG i32[>..]
 goose_home() byte[>..]:
 	h byte[>..] ~= []; if !env("GOOSE_HOME", h) || h.len == 0 { h.clear(); env("HOME", h); h.append("/.goose") } h
@@ -26,28 +26,50 @@ blessed(name const byte[:]) const byte[:]:
 pk_find(name int) int:
 	for k, i PKS { if k.name == name { return i } } -1
 pk_add(name int, root const byte[:], key const byte[:], src const byte[:]) int:
-	PKS.push(Pk{name, intern(root), intern(key), intern(src), -1, false}); PKS.len - 1
+	PKS.push(Pk{name, intern(root), intern(key), intern(src), -1, false, -1}); PKS.len - 1
+PKF ~= 0
+shq(b byte[>..]&, s const byte[:]): b.append(" '"); for c s { if c == '\'' { b.append("'\\''") } else { b.push(c) } } b.push('\'')
+hx8(s const byte[:]) byte[>..]: h u64 ~= 14695981039346656037; for c s { h = (h ^ c) * 1099511628211 } o byte[>..] ~= []; for i 8 { d := ((h >> ((60 - i * 4) as u64)) & 15) as int; o.push((if d < 10 { '0' as int + d } else { 'a' as int + d - 10 }) as byte) } o
+iscommit(r const byte[:]) bool: ok ~= r.len >= 7 && r.len <= 40; for c r { if !(c >= '0' && c <= '9' || c >= 'a' && c <= 'f' || c >= 'A' && c <= 'F') { ok = false } } ok
+gsrc(src const byte[:], url byte[>..]&, ref byte[>..]&) bool:
+	at ~= -1; for c, i src { if c == '@' { at = i } } if at <= 0: return false
+	for c src[at..] { if c == ':' { return false } } ref.append(src[at + 1..]); rp := src[..at]; sl ~= 0; sch ~= false; for c, i rp { if c == '/' { sl++ } if c == '@' || c == ':' && i + 2 < rp.len && rp[i + 1] == '/' && rp[i + 2] == '/' { sch = true } }
+	if sch { url.append(rp) } else { if sl == 1 { url.append("https://github.com/"); url.append(rp) } else { if sl >= 2 { url.append("https://"); url.append(rp) } } } url.len > 0 && ref.len > 0
 pk_git(name int, src const byte[:]) int:
-	at ~= src.len; for c, i src:
-		if c == '@': at = i
-	sl ~= 0; for c src[..at]:
-		if c == '/': sl++
-	key byte[>..] ~= []; if sl == 1 { key.append("github.com/") } key.append(src[..at]); key.push('/'); key.append(src[min(at + 1, src.len)..])
+	url byte[>..] ~= []; ref byte[>..] ~= []; if !gsrc(src, url, ref): return -1
+	k ~= 0; for c, i url { if c == ':' && i + 2 < url.len && url[i + 1] == '/' && url[i + 2] == '/' && k == 0 { k = i + 3 } } e ~= url.len; while e > k && url[e - 1] == '/' { e-- } if e - k > 4 && url[e - 4..e] == ".git" { e -= 4 }
+	key byte[>..] ~= []; key.append(url[k..e]); sf ~= key.len > 0 && key[0] != '/'; sl ~= 0; for c key { if c == '/' { sl++ } if !(c >= 'a' && c <= 'z' || c >= 'A' && c <= 'Z' || c >= '0' && c <= '9' || c == '.' || c == '_' || c == '-' || c == '/') { sf = false } }
+	if !sf || sl != 2: r0 ~= 0; for c, i key { if c == '/' { r0 = i + 1 } } rp byte[>..] ~= []; for c key[r0..] { rp.push(if c >= 'a' && c <= 'z' || c >= 'A' && c <= 'Z' || c >= '0' && c <= '9' || c == '.' || c == '_' || c == '-' { c } else { '_' }) } key.clear(); key.append(if rp.len == 0 { "repo" } else { rp[..] }); key.push('-'); key.append(hx8(url[..])[..])
+	key.push('/'); for c, i ref { if !iscommit(ref[..]) || i < 12 { key.push(if c == '/' || c == '\\' { '_' } else { c }) } }
 	root byte[>..] ~= goose_home(); root.append("/pkg/"); root.append(key[..])
 	pk_add(name, root[..], key[..], src)
-pk_of(name int) int:
-	k := pk_find(name); if k >= 0: return k
-	b byte[>..] ~= []; b.append(blessed(nm(name))); if b.len == 0: return -1
-	pn := intern(b[..]); k2 := pk_find(pn); if k2 >= 0: return k2
-	src byte[>..] ~= []; src.append("aardappel/goose_"); src.append(b[..]); src.append("@v1"); pk_git(pn, src[..])
+pk_fetch(i int, pt int) bool:
+	src := nm(PKS[i].src); dir := nm(PKS[i].root); nmn := nm(PKS[i].name); url byte[>..] ~= []; ref byte[>..] ~= []; gsrc(src, url, ref); cm := iscommit(ref[..]); up := PKF == 2 && !cm
+	if is_dir(dir) && !up: return true
+	if PKF == 0: m byte[>..] ~= []; format(m, "the package ", nmn, " from ", src, " is not fetched, and --offline fetches nothing: `hc fetch` fetches it"); derr(pt, m); return false
+	t byte[>..] ~= []; format(t, dir, ".tmp"); lg byte[>..] ~= []; format(lg, dir, ".log"); par byte[>..] ~= []; par.append(dir); while par.len > 0 && par[par.len - 1] != '/' { par.pop() }
+	g byte[>..] ~= []; g.append("git -C"); shq(g, t[..]); gd byte[>..] ~= []; gd.append("git -C"); shq(gd, dir)
+	b byte[>..] ~= []; b.append("if [ -d"); shq(b, dir); b.append(" ]; then ")
+	if up { format(b, "echo \"updating the package ", nmn, " from ", src, "\" >&2; ", gd[..], " fetch -q --no-progress --depth 1"); shq(b, url[..]); shq(b, ref[..]); format(b, " && ", gd[..], " checkout -q --detach FETCH_HEAD && ", gd[..], " submodule update -q --init --recursive --depth 1") } else { b.append("true") }
+	format(b, "; else echo \"fetching the package ", nmn, " from ", src, "\" >&2; rm -rf"); shq(b, t[..]); b.append(" && { ")
+	if cm { b.append("git init -q"); shq(b, t[..]); format(b, " && ", g[..], " fetch -q --no-progress --depth 1"); shq(b, url[..]); shq(b, ref[..]); format(b, " && ", g[..], " checkout -q --detach FETCH_HEAD && ", g[..], " submodule update -q --init --recursive --depth 1") } else { b.append("git clone -q --no-progress --depth 1 --branch"); shq(b, ref[..]); b.append(" --recurse-submodules --shallow-submodules"); shq(b, url[..]); shq(b, t[..]) }
+	b.append(" && mv"); shq(b, t[..]); shq(b, dir); b.append("; } || { rm -rf"); shq(b, t[..]); b.append("; exit 1; }; fi")
+	c byte[>..] ~= []; c.append("mkdir -p"); shq(c, par[..]); c.append(" && { flock 9 && sh -c"); shq(c, b[..]); c.append(" 2>&1 >/dev/null | grep -v '^Cloning\\|^warning: \\|^hint:' >&2; [ ${PIPESTATUS[0]} -eq 0 ] || exit 1; } 9>"); shq(c, dir); c.append(".lock"); w byte[>..] ~= []; w.append("bash -c"); shq(w, c[..])
+	if run_command(w[..]) == 0 && is_dir(dir): return true
+	m byte[>..] ~= []; format(m, "cannot fetch the package ", nmn, " from ", src); derr(pt, m); false
 fdir(f int) byte[>..]:
 	d byte[>..] ~= []; d.append(nm(FILES[f].name)); sl ~= -1; for c, i d { if c == '/' { sl = i } } if sl >= 0 { d.resize(sl); } else { d.clear(); d.push('.'); } d
+pk_same(n int, f int, k int) bool:
+	src := tok_str(ND[n].a); if nm(PKS[k].src) == src: return true
+	u0 byte[>..] ~= []; r0 byte[>..] ~= []; u1 byte[>..] ~= []; r1 byte[>..] ~= []; g0 := gsrc(nm(PKS[k].src), u0, r0); g1 := gsrc(src, u1, r1); x := TK[max(ND[n].t, 0)]; y := TK[max(PKS[k].tk, 0)]; who := if f != 0 && FPKG[f] >= 0 { nm(PKS[FPKG[f]].name) } else { nm(FILES[f].name) }
+	if !g0 && !g1: return true
+	if g0 && g1 && u0[..] == u1[..] && f != 0: w byte[>..] ~= []; format(w, nm(FILES[x.f].name), ":", x.line, ": warning: ", who, " needs the package ", nm(ND[n].s), " at ", r1[..], ", which ", nm(FILES[y.f].name), ":", y.line, " declares at ", r0[..], "\n"); write_stderr(w[..]); return true
+	m byte[>..] ~= []; if f != 0 { format(m, who, " needs the package ", nm(ND[n].s), " from ", src, ", which ", nm(FILES[y.f].name), ":", y.line, " declared from a different source, ", nm(PKS[k].src)) } else { format(m, "the package ", nm(ND[n].s), " is declared from both ", nm(PKS[k].src), " and ", src) } derr(ND[n].t, m); false
 pk_declare(n int, f int) bool:
 	name := ND[n].s; src byte[>..] ~= []; src.append(tok_str(ND[n].a))
-	k := pk_find(name); if k >= 0: if nm(PKS[k].src) != src[..] { m byte[>..] ~= []; format(m, "the package ", nm(name), " is declared from both ", nm(PKS[k].src), " and ", src[..]); derr(ND[n].t, m); return false } return true
+	k := pk_find(name); if k >= 0: return pk_same(n, f, k)
 	if src.len > 0 && (src[0] == '.' || src[0] == '/'): root byte[>..] ~= []; if src[0] != '/' { root.append(fdir(f)); root.push('/') } root.append(src[..]); key byte[>..] ~= []; format(key, "local/", hash(root[..])); pk_add(name, root[..], key[..], src[..]); return true
-	i := pk_git(name, src[..]); if is_dir(nm(PKS[i].root)): return true
-	m byte[>..] ~= []; format(m, "the package ", nm(name), " (", src[..], ") is not in ", nm(PKS[i].root), "; clone it there, or declare it as import ", nm(name), " from \"<the directory>\";"); derr(ND[n].t, m); false
+	i := pk_git(name, src[..]); if i < 0 { m byte[>..] ~= []; format(m, "the git source ", src[..], " is not owner/repo@ref, host/owner/repo@ref or a URL with @ref"); derr(ND[n].t, m); return false } PKS[i].tk = ND[n].t; pk_fetch(i, ND[n].t)
 derr(t int, m const byte[:]): if DERR.len > 0 { return } x := TK[max(t, 0)]; DERR.append(nm(FILES[x.f].name)); format(DERR, ":", x.line, ": error: ", m);
 dmap(name int) int:
 	if name < 0 || name >= DMAP.len:
@@ -106,7 +128,8 @@ recursive try_load(path const byte[:], pk int) int:
 		for q im0..im1:
 			n := IMPS[q]; if ND[n].a >= 0 && !pk_declare(n, f): return -2
 	for q im0..im1:
-		n := IMPS[q]; if ND[n].a >= 0 && f != 0 && pk_find(ND[n].s) < 0 { m byte[>..] ~= []; format(m, nm(FILES[f].name), " needs the package ", nm(ND[n].s), ": add\n    import ", nm(ND[n].s), " from \"", tok_str(ND[n].a), "\";\nto ", nm(FILES[0].name), " (packages are declared by the root file only)"); derr(ND[n].t, m); return -2 } if load_import(ND[n].s, f, ND[n].t) < 0: return -2
+		n := IMPS[q]; if ND[n].a >= 0 && f != 0 && pk_find(ND[n].s) >= 0 && !pk_same(n, f, pk_find(ND[n].s)): return -2
+		if ND[n].a >= 0 && f != 0 && pk_find(ND[n].s) < 0 { m byte[>..] ~= []; format(m, nm(FILES[f].name), " needs the package ", nm(ND[n].s), ": add\n    import ", nm(ND[n].s), " from \"", tok_str(ND[n].a), "\";\nto ", nm(FILES[0].name), " (packages are declared by the root file only)"); derr(ND[n].t, m); return -2 } if load_import(ND[n].s, f, ND[n].t) < 0: return -2
 	f
 recursive try_ext(p const byte[:], pk int) int:
 	a byte[>..] ~= []; a.append(p); a.append(".he"); r0 := try_load(a[..], pk); if r0 != -1 { return r0 } a.resize(p.len); a.append(".amni"); r := try_load(a[..], pk); if r != -1 { return r } a.resize(p.len); a.append(".goose"); try_load(a[..], pk)
@@ -125,7 +148,7 @@ recursive load_import(name int, from int, t int) int:
 	if r == -1: r = try_ext(p[..], fp)
 	if r == -1 && bl && file_exists(lb[..]): r = try_load(lb[..], -1)
 	if r == -1 && !rel:
-		s byte[>..] ~= []; s.append(nm(name)); c ~= s.len; for ch, i s { if ch == '/' && c == s.len { c = i } } pk := pk_of(intern(s[..c])); if pk >= 0: q byte[>..] ~= []; q.append(nm(PKS[pk].root)); q.push('/'); q.append(if c < s.len { s[c + 1..] } else { s[..] }); r = try_ext(q[..], pk)
+		s byte[>..] ~= []; s.append(nm(name)); c ~= s.len; for ch, i s { if ch == '/' && c == s.len { c = i } } pk := pk_find(intern(s[..c])); if pk >= 0: q byte[>..] ~= []; q.append(nm(PKS[pk].root)); q.push('/'); q.append(if c < s.len { s[c + 1..] } else { s[..] }); r = try_ext(q[..], pk)
 	if r == -1: lp := lib_path(nm(name)); r = try_load(lp[..], -1)
 	if r == -1: m byte[>..] ~= []; format(m, "cannot find module ", nm(name)); derr(t, m); return -2
 	r

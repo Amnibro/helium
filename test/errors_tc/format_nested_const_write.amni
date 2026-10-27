@@ -1,0 +1,5 @@
+// error: read-only
+struct S { x int }
+struct Both { a S, b S }
+fn format(out byte[>..]&, v S&) { v.x = 99; format(out, v.x); }
+fn main() { const b = Both { S { 1 }, S { 2 } }; print(b); }

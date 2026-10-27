@@ -1,0 +1,164 @@
+// Division and remainder by a variable a loop cannot change (§6.2) run as a
+// multiply by a number computed before the loop: every unsigned width,
+// signed operands the analysis knows to be nonnegative, divisors of every
+// shape (one, powers of two, odd, near the top of the range), nested loops
+// sharing one divisor, a divisor bound in an outer loop's body, a parameter
+// a tail call rebinds, fields of a struct and conversions of them, a `var`
+// the loop leaves alone, values that do change through a reference or an
+// assignment, and a zero divisor, which aborts at its division only when a
+// division runs.
+import std;
+
+fn mix(x uint) uint { return (x ^ (x >> 29)) * 0xBF58476D1CE4E5B9; }
+
+// A checksum of x / d and x % d over values spread across the range.
+fn sweep64(d uint) uint {
+	var s uint = 0;
+	var x uint = 12345;
+	for i in 2000 {
+		x = mix(x + i as! uint);
+		s = s * 31 + x / d + (x % d) * 7;
+		s = s * 31 + (x >> 40) / d + (x >> 40) % d;
+	}
+	s += 0xFFFFFFFFFFFFFFFF / d + 0xFFFFFFFFFFFFFFFF % d;
+	return s;
+}
+
+fn sweep32(d u32) u32 {
+	var s u32 = 0;
+	var x uint = 777;
+	for i in 1000 {
+		x = mix(x + i as! uint);
+		let v = (x >> 32) as! u32;
+		s = s * 31 + v / d + v % d;
+	}
+	return s;
+}
+
+fn sweep8(d byte) u32 {
+	var s u32 = 0;
+	for v: byte in 0..256 { s = s * 7 + (v / d) + (v % d); }
+	return s;
+}
+
+// Signed, with both operands known nonnegative.
+fn sweep_signed(n int, d int) int {
+	var s = 0;
+	if d >= 1 {
+		for i in n { s += i / d + i % d; }
+	}
+	return s;
+}
+
+// One divisor in an inner loop and an outer one; another bound per outer
+// iteration.
+fn nested(n uint) uint {
+	var s uint = 0;
+	for i in 20 {
+		let e = (i + 3) as! uint;
+		for j in 50 { s += (j as! uint * 7919) / n + (j as! uint * 104729) % e; }
+		s += (i as! uint * 1000003) % n;
+	}
+	return s;
+}
+
+// A loop's own binders change every iteration: no divisor of its.
+fn own_binder(n uint) uint {
+	var s uint = 0;
+	for d: uint in 1..n { s += 1000003 / d + 1000003 % d; }
+	let xs uint[] = [3, 5, 7];
+	for d, i in xs { s += 100 / d + (i as! uint + 50) % d; }
+	return s;
+}
+
+// Tail-recursion elimination turns the self-call into a loop that assigns
+// the parameters each round, the divisor among them.
+recursive fn leading(n uint, base uint) uint {
+	let q = n / base;
+	if q == 0 { return n; }
+	return leading(q, base + 1);
+}
+
+struct Model { total i32, scale int, width u32 }
+struct Coder { model Model, shift i8 }
+
+// Fields of a struct nothing makes a reference to are as fixed as a
+// variable, converted or not. A conversion that would fail leaves the
+// division to fail when one runs, and none does where the loop runs none.
+fn by_fields(c Coder, n int) uint {
+	var s uint = 0;
+	for i in n {
+		let x = i as uint * 2654435761;
+		s = s * 31 + x / (c.model.total as uint) + x % (c.model.scale as uint);
+		s = s * 31 + (x >> 3) / (c.shift as! uint) + (x as! u32) % c.model.width;
+	}
+	return s;
+}
+
+// A `var` written before and after the loop, but not in it.
+fn var_divisor(n int, k uint) uint {
+	var d uint = 1;
+	if k > 3 { d = k; }
+	var s uint = 0;
+	for i in n { s = s * 31 + (i as uint * 7919) / d + (i as uint) % d; }
+	d += 1;
+	return s + d;
+}
+
+fn bump(x uint&) { x += 1; }
+
+// A `let` written through a reference, in the loop or by one made before
+// it, and fields a loop assigns or writes through a reference, change from
+// one division to the next.
+fn changing(n int) uint {
+	var s uint = 0;
+	let a uint = 5;
+	for i in n {
+		s = s * 31 + 1000 / a;
+		bump(a);
+	}
+	let b uint = 5;
+	let r = &b;
+	for i in n {
+		s = s * 31 + 1000 / b;
+		r += 2;
+	}
+	var m = Model { total: 4, scale: 0, width: 9 };
+	for i in n {
+		s = s * 31 + 1000000 / m.width;
+		m.width += 1;
+	}
+	let t = Model { total: 4, scale: 0, width: 9 };
+	let rw = &t.width;
+	for i in n {
+		s = s * 31 + 1000000 / t.width;
+		rw += 3;
+	}
+	return s;
+}
+
+fn by_zero(d uint, runs int) uint {
+	var s uint = 0;
+	for i in runs { s += 100 / d; }
+	return s;
+}
+
+fn main() {
+	let divisors uint[] = [1, 2, 3, 5, 7, 10, 16, 25, 60, 641, 1000, 4096, 65537, 1000000007,
+						   0x80000000, 0xFFFFFFFF, 0x100000001, 6700417 * 641,
+						   0x7FFFFFFFFFFFFFFF, 0x8000000000000000, 0xFFFFFFFFFFFFFFFE,
+						   0xFFFFFFFFFFFFFFFF];
+	for d in divisors { print(d, " ", sweep64(d)); }
+	let d32 u32[] = [1, 3, 7, 255, 65536, 2147483648, 4294967295];
+	for d in d32 { print(d, " ", sweep32(d)); }
+	print(sweep8(1), " ", sweep8(3), " ", sweep8(128), " ", sweep8(255));
+	print(sweep_signed(1000, 1), " ", sweep_signed(1000, 9), " ", sweep_signed(1000, 0));
+	print(nested(13), " ", nested(1), " ", nested(1 << 20));
+	print(own_binder(100), " ", by_zero(0, 0), " ", by_zero(7, 3));
+	print(leading(1000000, 2), " ", leading(255, 16), " ", leading(1000000000000000000, 3));
+	let coder = Coder { model: Model { total: 1000, scale: 97, width: 641 }, shift: 5 };
+	let broken = Coder { model: Model { total: -3, scale: -1, width: 0 }, shift: 0 };
+	print(by_fields(coder, 300), " ", by_fields(broken, 0));
+	print(var_divisor(100, 2), " ", var_divisor(100, 13), " ", changing(10));
+	print(by_zero(0, 1));
+}

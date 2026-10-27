@@ -1,0 +1,6 @@
+// error: reordering may cross a side effect, runtime check, or nonlocal exit
+// A pure callee still checks the adaptation of its argument.
+struct Pair { a int, b int }
+fn length(bytes byte[..2]) int { bytes.len }
+fn make(bytes const byte[:]) Pair { Pair { b: length(bytes), a: 0 } }
+fn main() { print(make("too long")); }

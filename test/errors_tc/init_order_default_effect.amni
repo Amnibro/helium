@@ -1,0 +1,8 @@
+// error: reordering may cross a side effect, runtime check, or nonlocal exit
+var state = 0;
+fn effect() int { state++; state }
+struct Triple { a int, b int = effect(), c int }
+fn main() {
+	let t = Triple { c: state, a: 0 };
+	print(t);
+}

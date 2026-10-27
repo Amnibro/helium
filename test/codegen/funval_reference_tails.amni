@@ -1,0 +1,83 @@
+// runtime-debug: a function value's call gives a copy of its body's value
+// (§4.1, §7.6), and a body whose value is a call returning a reference
+// gives that reference's pointee (§3.8), also where the call is inlined
+// (-O2) and its `return` delivers the reference itself: slice, struct,
+// fixed array and scalar pointees, a varint field's among them, read by a
+// field, an operator, an index, a render, a binding, an argument and a
+// return, and as what an `if` or a `match` chooses, a `loop` breaks with
+// or another function value's call gives.
+struct P { x int, y int }
+struct V { n varint, w i32 }
+enum Pick { First, Second }
+
+var text byte[>..] = [];
+var gs byte[:] = text[..];
+var gt byte[:] = text[..];
+var gp = P { 3, 4 };
+var gf int[3] = [7, 8, 9];
+var gi int = 5;
+var gu byte = 200;
+var gd real = 2.5;
+var gb = false;
+var gv = V { 300, 6 };
+
+fn get_s() byte[:]& { gs }
+fn get_t() byte[:]& { gt }
+fn get_p() P& { gp }
+fn get_f() int[3]& { gf }
+fn get_i() int& { gi }
+fn get_u() byte& { gu }
+fn get_d() real& { gd }
+fn get_b() bool& { gb }
+fn get_n() varint& { gv.n }
+fn at(xs int[3]&, i int) int& { xs[i] }
+
+fn length<F>() int { return F().len; }
+fn show<F>() { print(F()); }
+fn bound<F>() int { let x = F(); return x.len * 1000 + x[1] as int; }
+fn count(s byte[:]) int { return s.len; }
+fn passed<F>() int { return count(F()); }
+fn given<F>() byte[:] { return F(); }
+fn field<F>() int { return F().y; }
+fn fields<F>() int { let q = F(); return q.x * 10 + q.y; }
+fn second<F>() int { return F()[1]; }
+fn plus<F>() int { return F() + 1; }
+fn widened<F>() int { return F() as int + 1; }
+fn doubled<F>() real { return F() * 2.0; }
+fn which<F>() int { return if F() { 1 } else { 2 }; }
+
+fn main() {
+	text.append("abcdef");
+	gs = text[..];
+	gt = text[2..];
+
+	// Slices.
+	print(length() { get_s() }, " ", passed() { get_t() }, " ", bound() { get_s() });
+														// 6 4 6098
+	show() { get_t() };                                 // cdef
+	print(given() { get_s() }.len, " ", given() { get_t() });   // 6 cdef
+
+	// Structs and fixed arrays.
+	print(field() { get_p() }, " ", fields() { get_p() }, " ", second() { get_f() });
+														// 4 34 8
+	show() { get_p() };                                 // P { 3, 4 }
+	show() { get_f() };                                 // [7, 8, 9]
+
+	// Scalars.
+	print(plus() { get_i() }, " ", widened() { get_u() }, " ", doubled() { get_d() },
+		  " ", which() { get_b() }, " ", plus() { get_n() }, " ", plus() { at(gf, 2) });
+														// 6 201 5.0 2 301 10
+	show() { get_i() };                                 // 5
+
+	// Chosen by a construct, or given by another function value.
+	var pick = Pick.First;
+	var first = true;
+	for k in 2 {
+		print(length() { if first { get_s() } else { get_t() } }, " ",
+			  length() { match pick { First => get_s(), Second => get_t() } }, " ",
+			  length() { loop { if first { break get_s(); } break get_t(); } }, " ",
+			  length() { given() { get_t() } });
+		pick = Pick.Second;
+		first = false;
+	}                                                   // 6 6 6 4, 4 4 4 4
+}

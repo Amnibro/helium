@@ -1,0 +1,29 @@
+// `!=` bounds nothing alone, but against a side the facts already order it
+// is strict: past `if xs.len == 0 { return; }` the length is at least one.
+import std;
+
+fn ends(xs int[:]) int {
+	if xs.len == 0 { return 0; }
+	return xs[xs.len - 1] - xs[0];                 // bce:elide
+}
+
+fn before(xs int[:], k int) int {
+	if k >= 0 && k < xs.len {
+		if k != 0 { return xs[k - 1]; }            // bce:elide
+	}
+	return -1;
+}
+
+// k may be negative, so k != 0 says nothing about k - 1.
+fn before_any(xs int[:], k int) int {
+	if k < xs.len && k != 0 { return xs[k - 1]; }  // bce:keep
+	return -1;
+}
+
+fn main() {
+	var xs int[>..] = [4, 8, 15, 16, 23, 42];
+	var none int[>..] = [];
+	print(ends(xs), " ", ends(none));
+	let k = xs[0] - 4;
+	print(before(xs, k), " ", before(xs, k + 3), " ", before_any(xs, k + 5), " ", before_any(xs, k));
+}

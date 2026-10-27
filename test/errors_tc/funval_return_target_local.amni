@@ -1,0 +1,13 @@
+// error: returning a reference rooted in loc, which dies with this function
+// What the function calling the block hands it is rooted where that call's
+// argument is: here a local of the function the block returns from.
+var G int = 7;
+fn each_elem<F>(xs int[:]) { for i in xs.len { F(&xs[i]); } }
+fn outer() int& {
+	var loc int[3] = [1, 2, 3];
+	each_elem(loc) { x: int& => return x; };
+	return G;
+}
+fn main() {
+	print(outer() + 1);
+}

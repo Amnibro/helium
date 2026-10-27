@@ -1,0 +1,7 @@
+struct Show { x int }
+var data int[>..<] = [42];
+fn format(out byte[>..]&, v Show&) { data.clear(); format(out, v.x); }
+fn main() {
+	let s = Show { 1 };
+	if data.len > 0 { print(s, data[0]); }
+}

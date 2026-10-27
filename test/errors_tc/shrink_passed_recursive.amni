@@ -1,0 +1,19 @@
+// error: cannot call b: it shrinks G while t is still used, and t may refer into G
+// b is still being checked when a calls it back, and shrinks G only after
+// that call: the call is checked again once the cycle is (§5.1, §7.8).
+var G byte[>..] = [];
+recursive fn a(s byte[:], n int) {
+	if n > 0 { b(G[..], n - 1); }
+}
+recursive fn b(t byte[:], n int) {
+	a(t, n);
+	G.clear();
+	G.append("zz");
+	print(t);
+}
+fn main() {
+	G.append("abcd");
+	var local byte[>..] = [];
+	local.append("q");
+	b(local[..], 1);
+}

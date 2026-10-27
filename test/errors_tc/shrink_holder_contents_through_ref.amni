@@ -1,0 +1,22 @@
+// error: cannot call mid: it shrinks buf while q is still used, and q may refer into buf
+// emit leaves what q's holder holds to mid, where hq holds mid's words:
+// mid leaves what those view to main, where names' element views buf
+// (§5.1).
+struct P { words (const byte[:])[:] }
+struct Q { p P }
+fn emit(out byte[>..]&, q Q&) {
+	out.clear();
+	out.append("ZZZZZZZZ");
+	print(q.p.words[0]);
+}
+fn mid(out byte[>..]&, words (const byte[:])[:]) {
+	var hq = Q { p: P { words: words } };
+	emit(out, hq);
+}
+fn main() {
+	var buf byte[>..] = [];
+	buf.append("abc");
+	var names (const byte[:])[>..] = [];
+	names.push(buf[..]);
+	mid(buf, names[..]);
+}

@@ -1,0 +1,16 @@
+// error: cannot call render in the value assigned to G: render uses G
+// Any case function the dispatch may run counts (§8.2).
+enum Shape { Circle { r int }, Square { s int } }
+var G byte[>..] = [];
+fn render(c Shape.Circle) byte[>..] { return [65]; }
+fn render(q Shape.Square) byte[>..] {
+	var o byte[>..] = [];
+	for x in G { o.push(x); }
+	return o;
+}
+fn main() {
+	G.append("abc");
+	let s Shape = Shape.Circle { r: 1 };
+	G = render(s);
+	print(G);
+}

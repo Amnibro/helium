@@ -1,0 +1,22 @@
+// Defaults that shrink a global array, directly or through a call, beside
+// a global a default gives a view of another array only, and a let save
+// path: judged against the other globals as shrinks written at the call are
+// (§5.1, §7.1).
+struct B { name byte[..8], v int }
+struct H { s const byte[:] }
+var bs B[>..] = [];
+var cs B[>..] = [];
+var G = H { s: "" };
+let PATH = "x.save";
+fn drop_last() int { bs.pop(); bs.len }
+fn count(n int = drop_last()) int { n }
+fn take(n int = bs.pop().v) int { n }
+fn keep(v const byte[:] = cs[0].name[..]) { G.s = v; }
+fn main() {
+	cs.push(B { name: "c", v: 9 });
+	bs.push(B { name: "a", v: 1 });
+	bs.push(B { name: "b", v: 2 });
+	bs.push(B { name: "d", v: 4 });
+	keep();
+	print(take(), " ", count(), " ", count(bs.len), " ", G.s, " ", PATH);
+}

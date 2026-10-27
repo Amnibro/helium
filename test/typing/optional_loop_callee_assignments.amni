@@ -1,0 +1,13 @@
+// A plain assignment writes through a reference and leaves its nullness
+// alone; a callee's local of the same name is not the loop's optional.
+var n = 41;
+var gcur int? = null;
+fn helper() int { var cur = 0; cur = 5; return cur; }
+fn ghelper() int { var gcur = 0; gcur = 5; return gcur; }
+fn main() {
+	var cur int? = n;
+	assert(cur);
+	for i in 2 { print(cur + helper()); }
+	gcur .= n;
+	for i in 2 { print(gcur + ghelper()); }
+}

@@ -1,0 +1,19 @@
+// error: cannot call f: it shrinks buf while words is still used, and words may refer into buf
+// show is handed words before clr clears out, and reads its element after
+// (§5.1).
+fn clr(a byte[>..]&) int {
+	a.clear();
+	a.append("ZZZZZZZZ");
+	return 0;
+}
+fn show(v (byte[:])[:], n int) { print(v[0]); }
+fn f(out byte[>..]&, words (byte[:])[:]) {
+	show(words, clr(out));
+}
+fn main() {
+	var buf byte[>..] = [];
+	buf.append("abc");
+	var names (byte[:])[>..] = [];
+	names.push(buf[..]);
+	f(buf, names[..]);
+}

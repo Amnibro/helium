@@ -23,7 +23,7 @@ typedef struct { uint8_t *b; int64_t n; int64_t top; int64_t *fl; int64_t fln, f
 #ifdef GS_STACK_RESERVE
 #define HR_RSZ ((int64_t)(GS_STACK_RESERVE) & ~(int64_t)4095)
 #else
-#define HR_RSZ ((int64_t)1 << 34)
+#define HR_RSZ ((int64_t)1 << 31)
 #endif
 #define HR_LIKELY(x) __builtin_expect(!!(x), 1)
 #define HR_UNLIKELY(x) __builtin_expect(!!(x), 0)

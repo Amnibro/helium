@@ -8,7 +8,7 @@ atlas valid true, baked false, fonts 0
 read the font file true (true); fonts valid true true true true true; merged into the first true
 fonts in order: 5 true true true true true; each in the atlas true
 missing file: handle 0, error 'cannot open font file no_such_font.ttf'
-not a font: handle 0, error 'test/ui/ui_fonts.goose is not a TrueType or OpenType font'; misuses 0
+not a font: handle 0, error 'test/ui/ui_fonts.amni is not a TrueType or OpenType font'; misuses 0
 baked true: 1024 wide, true high, 524288 bytes = w x h x 4 true
 opaque texels true; all white true
 font 13.00 high: ascent 9.50, descent -3.50, 235 glyphs, fallback 63; 'Goose' 35.00 wide

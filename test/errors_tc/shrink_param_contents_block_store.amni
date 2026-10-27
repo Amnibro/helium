@@ -1,0 +1,16 @@
+// error: cannot call each: it shrinks buf while words is still used, and words may refer into buf
+// The block each runs stores a view of buf into names while each is
+// checked, before the call judges what names holds (§5.1).
+fn each<F>(out byte[>..]&, words (const byte[:])[:]) {
+	F();
+	out.clear();
+	out.append("ZZZZZZZZ");
+	print(words[0]);
+}
+fn main() {
+	var buf byte[>..] = [];
+	buf.append("abc");
+	var names (const byte[:])[>..] = [];
+	names.push("x");
+	each(buf, names[..]) { names[0] = buf[..]; };
+}

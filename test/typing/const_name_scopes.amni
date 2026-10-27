@@ -1,0 +1,54 @@
+// A name in a size, a capacity or a fill count is the global constant
+// wherever no local of the name hides it (§3.3, §11.1). Every size here is
+// the global K's 3, though main, filled and the block have locals or
+// parameters named K by the time they run: an alias's sizes, a field's type
+// and default and a type bound to a type parameter name what they name
+// where they are written, a parameter default names what a top-level
+// declaration would (§7.1), a local declared after a size or a nested
+// function is not in scope there, and `::K` names the global past a local.
+let K = 3;
+type Three = int[K];
+type Holder = P<int[..K]>;
+
+struct P<T> { a T }
+struct W<T> { s byte[], t T }
+struct Q { a int[K], b int[3] = [7; K] }
+struct R { p P<int[K]> }
+struct X { w W<int[K]> }
+
+// T is bound to a type written in main, before main's K: the `..` fills a
+// with a default<T>() made here, where K is a local.
+fn filled<T>() int {
+	let K = 5;
+	let p = P<T> { .. };
+	p.a.len + K - 5
+}
+
+fn deflt(a int[3] = [1; K]) int { a[0] + a.len }
+
+fn apply<F>(x int) int { F(x) }
+
+fn main() {
+	var early int[K] = [0; K];
+	let viafilled = filled<int[K]>();
+	fn declared(a int[K]) int[..K] {
+		let b int[K] = a;
+		[b[0], b.len]
+	}
+	let K = 5;
+	var three Three = [1, 2, 3];
+	var held Holder = P<int[..::K]> { a: [] };
+	let q = Q { .. };
+	let r = R { .. };
+	let x = X { .. };
+	var qualified int[::K] = [9; ::K];
+	let viablock = apply(K) { k: int =>
+		let a int[::K] = [k; ::K];
+		a.len + a[0]
+	};
+	let d = declared([4, 5, 6]);
+	print(early.len, " ", three.len, " ", held.a.cap, " ", q.a.len, " ", q.b.len);
+	print(r.p.a.len, " ", x.w.t.len, " ", qualified.len, " ", viafilled, " ", deflt());
+	print(d.len, " ", d.cap, " ", d[0], " ", viablock, " ", K);
+	print(match 3 { ::K => "global K", _ => "other" });
+}

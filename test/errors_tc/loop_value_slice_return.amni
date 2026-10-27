@@ -1,0 +1,5 @@
+// error: returning a reference into a temporary
+// A loop's value is a copy of what its break names (§9.2).
+var g int[3] = [1, 2, 3];
+fn pick() const int[:] { (loop { break g; })[..] }
+fn main() { print(pick()[0]); }

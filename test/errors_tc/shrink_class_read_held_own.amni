@@ -1,0 +1,19 @@
+// error: cannot call clr, which shrinks out: words[0], evaluated earlier in the statement, may still refer into out
+// emit stored a view of out where the held view is read from (§5.1).
+fn clr(out byte[>..]&) int {
+	out.clear();
+	out.append("ZZZZZZZZ");
+	return 0;
+}
+fn show(w const byte[:], n int) { print(w, " ", n); }
+fn emit(out byte[>..]&, words (const byte[:])[:]) {
+	words[0] = out[..];
+	show(words[0], clr(out));
+}
+fn main() {
+	var buf byte[>..] = [];
+	buf.append("abc");
+	var names (const byte[:])[>..] = [];
+	names.push("x");
+	emit(buf, names[..]);
+}

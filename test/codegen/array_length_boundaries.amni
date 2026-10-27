@@ -1,0 +1,12 @@
+struct Packet { bytes byte[byte], tail int }
+fn make(n int) byte[] {
+	var out byte[>..] = [];
+	for i in n { out.push(1); }
+	return out;
+}
+fn main() {
+	let p = Packet { bytes: [1; 255], tail: 42 };
+	let q byte[byte] = make(255);
+	let r byte[u16] = make(256);
+	print(p.bytes.len, " ", p.tail, " ", q.len, " ", r.len);
+}

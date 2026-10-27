@@ -1,0 +1,16 @@
+// error: cannot call f: it shrinks buf while h is still used, and h may refer into buf
+// h was popped off the caller's array, whose element views buf (§5.1).
+struct H { s const byte[:] }
+fn f(out byte[>..]&, hs H[>..]&) {
+	let h = hs.pop();
+	out.clear();
+	out.append("ZZZZZZZZ");
+	print(h.s);
+}
+fn main() {
+	var buf byte[>..] = [];
+	buf.append("abc");
+	var hs H[>..] = [];
+	hs.push(H { s: buf[..] });
+	f(buf, hs);
+}

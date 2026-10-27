@@ -1,0 +1,16 @@
+// error: cannot clear out while p is still used: a reference to a slice that may point into it was stored there
+// f itself stores a view of out into the elements p's words view (§5.1).
+struct P { words (const byte[:])[:] }
+fn f(out byte[>..]&, p P) {
+	p.words[0] = out[..];
+	out.clear();
+	out.append("ZZZZZZZZ");
+	print(p.words[0]);
+}
+fn main() {
+	var buf byte[>..] = [];
+	buf.append("abc");
+	var names (const byte[:])[>..] = [];
+	names.push("x");
+	f(buf, P { words: names[..] });
+}

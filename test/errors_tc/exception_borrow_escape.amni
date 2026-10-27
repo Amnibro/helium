@@ -1,0 +1,8 @@
+// error: a long-distance return may only carry references to globals or static data
+import exception;
+fn fail() {
+	var scratch byte[>..] = [];
+	scratch.push('x');
+	exception::throw(scratch[..]);
+}
+fn main() { exception::try<byte[:]>(fail); }

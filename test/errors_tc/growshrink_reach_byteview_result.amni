@@ -1,0 +1,18 @@
+// error: storing a reference into mine, which holds a grow-shrink array: such a reference lives in a variable, is passed down or returned, and is never stored (§5.2)
+// bytes returns the bytes of the array t.a leads to, which no slot has
+// held; from main it is bounded by tops, whose references lead to mine
+// (§5.2).
+struct Cell { v int }
+struct Top { a Cell[>..<]& }
+struct Keep { v const byte[:] }
+fn bytes(t Top&) const byte[:] { t.a.bytes_of() }
+fn main() {
+	var mine Cell[>..<] = [Cell { v: 1 }];
+	var tops Top[>..] = [];
+	tops.push(Top { a: mine });
+	var keep Keep[>..] = [];
+	keep.push(Keep { v: bytes(tops[0]) });
+	mine.clear();
+	mine.push(Cell { v: 99 });
+	print(keep[0].v);
+}

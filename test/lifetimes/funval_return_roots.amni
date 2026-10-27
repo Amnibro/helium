@@ -1,0 +1,83 @@
+// A block's return out of the functions it is handed to (§7.6, §7.9) gives
+// the function it returns from what returning out of each of those calls
+// would: a reference the calls hand the block points where their arguments
+// did. So it may carry references rooted at that function's parameters,
+// which its callers map onto their arguments, at a variable of the function
+// it is nested in, or at a global. The rejected shapes are
+// errors_tc/funval_return_*.
+var G int = 7;
+
+fn apply<F>(n int) int { F(n); return 0; }
+fn each<F>(n int) { for i in n { F(i); } }
+fn each_elem<F>(xs int[:]) { for i in xs.len { F(&xs[i]); } }
+fn each_via<F>(xs int[:]) { each_elem(xs) { y: int& => F(y); }; }
+
+// Rooted at pick's parameter: the caller's array.
+fn pick(xs int[:], k int) int& {
+	apply(k) { i => return xs[i]; };
+	return xs[0];
+}
+
+// Through an iterating function, or a global where nothing is found.
+fn first_above(xs int[:], limit int) int& {
+	each(xs.len) { if xs[it] > limit { return xs[it]; } };
+	return G;
+}
+
+// The element each_elem hands the block, and the one each_via hands it from
+// each_elem's: both point into xs.
+fn first_even(xs int[:]) int& {
+	each_elem(xs) { x: int& => if x % 2 == 0 { return x; } };
+	return G;
+}
+fn last_below(xs int[:], limit int) int& {
+	var found int = -1;
+	each_via(xs) { x: int& => if x < limit { found = x; } };
+	each_via(xs) { x: int& => if x == found { return x; } };
+	return G;
+}
+
+// A holder whose slice is rooted at the parameter.
+struct Tail { s int[:] }
+fn tail_from(xs int[:], k int) Tail {
+	apply(k) { i => return Tail { s: xs[i..] }; };
+	return Tail { s: xs };
+}
+
+// The function the block is handed to is the target: its own parameter.
+fn search<F>(xs int[:]) int& { F(xs); return xs[0]; }
+
+// A variable of the function the target is nested in outlives the target.
+fn outer() int {
+	var local = [10, 20, 30];
+	fn inner(k int) int& {
+		apply(k) { i => return local[i]; };
+		return local[0];
+	}
+	let r int& = inner(2);
+	r = r + 3;
+	return local[2];
+}
+
+fn main() {
+	var a int[>..] = [5, 6, 7, 8];
+	let r int& = pick(a, 2);
+	print(r);
+	r = 70;
+	print(a[2]);
+	let f int& = first_above(a, 6);
+	print(f);
+	print(first_above(a, 100));
+	let e int& = first_even(a);
+	e = 60;
+	print(a[1]);
+	let l int& = last_below(a, 60);
+	l = 50;
+	print(a[3]);
+	let t = tail_from(a, 1);
+	print(t.s.len);
+	print(t.s[1]);
+	let s int& = search(a) { v => return v[3] from search; };
+	print(s);
+	print(outer());
+}

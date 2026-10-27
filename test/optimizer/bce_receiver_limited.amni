@@ -1,0 +1,10 @@
+// runtime-debug: a push grows the limited array its receiver named before the argument rebound it.
+fn main() {
+	var a int[..4] = [1];
+	var b int[..4] = [];
+	var r .= a;
+	fn change() int { r .= b; return 9; }
+	r.push(change());
+	print(a, " ", r.len);
+	print(r[0]); // bce:keep
+}

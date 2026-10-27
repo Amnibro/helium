@@ -1,0 +1,16 @@
+// error: cannot use s.other in the value assigned to s.r
+// Two reference fields of one type may refer to one array (§4.4).
+fn twice(xs const byte[:]) byte[>..<] {
+	var r byte[>..<] = [];
+	r.append(xs);
+	r.append(xs);
+	return r;
+}
+struct D { n int, r byte[>..<]&, other byte[>..<]& }
+fn run(s D&) { s.r = twice(s.other); }
+fn main() {
+	var x byte[>..<] = [1];
+	var d = D { n: 0, r: x, other: x };
+	run(d);
+	print(x);
+}

@@ -1,0 +1,38 @@
+import std;
+enum Choice { A, B }
+fn first() int { print("first"); 3 }
+fn choose(a bool) Choice { print("choice"); if a { Choice.A {} } else { Choice.B {} } }
+fn last() int { print("last"); 7 }
+fn use(a int, c Choice.A, b int) { print(a, " A ", b); }
+fn use(a int, c Choice.B, b int) { print(a, " B ", b); }
+enum Message { A { n int }, B { s byte[] } }
+fn payload(m Message.A, b int) { print(m.n); }
+fn payload(m Message.B, b int) { print(m.s); }
+fn main() {
+	use(first(), choose(true), last());
+	use(first(), choose(false), last());
+	var n = 1;
+	fn change() Choice { n = 9; Choice.A {} }
+	use(n, change(), n);
+	var c Choice = Choice.A {};
+	fn change_tag() int { c = Choice.B {}; 4 }
+	use(3, c, change_tag());
+	c = Choice.A {};
+	var r .= c;
+	use(3, r, change_tag());
+	var m Message.. = Message.A { n: 1 };
+	fn change_payload() int {
+		match &m { A &a => { a.n = 9; }, B b => {} }
+		return 0;
+	}
+	payload(m, change_payload());
+	var m2 Message.. = Message.A { n: 2 };
+	var mr .= m2;
+	fn change_reference_payload() int {
+		match &m2 { A &a => { a.n = 10; }, B b => {} }
+		return 0;
+	}
+	payload(mr, change_reference_payload());
+	var text Message.. = Message.B { s: "copied" };
+	payload(text, 0);
+}

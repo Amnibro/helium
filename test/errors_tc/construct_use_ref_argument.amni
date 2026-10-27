@@ -1,0 +1,14 @@
+// error: cannot use w in the value assigned to w: that value is built over the old contents of w
+// The array handed by reference to the function building its new contents.
+fn mk6(v byte[>..]&) byte[>..] {
+	var out byte[>..] = [];
+	for x in v { out.push(x + 1); }
+	for x in v { out.push(x + 2); }
+	return out;
+}
+fn main() {
+	var w byte[>..] = [];
+	w.append("abcdefgh");
+	w = mk6(w);
+	print(w);
+}

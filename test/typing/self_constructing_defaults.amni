@@ -1,0 +1,50 @@
+// Defaults that construct their own type or call their own function, and
+// still take no default of theirs again before a function body (§3.2, §7.1):
+// another type's defaults, default<T>() of another type, nested literals, one
+// default taken twice side by side, the own type with the field written, a
+// larger instantiation with the field written, and two types whose defaults
+// meet with one of them written. Through the body of a top-level function,
+// or of a function declared in one, the chain is a recursion (§7.8), here
+// ending when a global says so.
+var level = 0;
+var depth = 0;
+
+struct Inner { v int = 7, w int[2] = [1, 2] }
+struct Outer {
+	i Inner = Inner { .. },
+	j int = default<Inner>().v + 1,
+	k int = Inner { v: 3, .. }.v + Inner { .. }.w[1],
+}
+
+struct Own { a int = 1, d int = Own { d: 5, .. }.a + 10 }
+
+struct Grow<T> { v T[] = [], d int = Grow<T[]> { d: 2, .. }.v.len + 20 }
+
+struct Ping { a int = 1, p int = Pong { .. }.q }
+struct Pong { q int = Ping { p: 30, .. }.a + 100 }
+
+struct Nest { d int = nest() }
+recursive fn nest() int {
+	fn again() int { Nest { .. }.d + 1 }
+	if level >= 3 { return 0; }
+	level += 1;
+	return again();
+}
+
+fn count(k int = below()) int { k }
+recursive fn below() int {
+	if depth >= 4 { return 0; }
+	depth += 1;
+	return count() + 1;
+}
+
+fn main() {
+	let o = Outer { .. };
+	print(o.i.v, " ", o.i.w[0], " ", o.j, " ", o.k);
+	print(Own { .. }.d);
+	print(Grow<int> { .. }.d);
+	print(Ping { .. }.p);
+	let n = Nest { .. };
+	print(n.d, " ", level);
+	print(count(), " ", depth);
+}

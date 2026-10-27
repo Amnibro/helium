@@ -1,0 +1,18 @@
+// error: cannot call f: it shrinks buf while h is still used, and h may refer into buf
+// h holds the slice in ws's slot, which views names, and names' element
+// views buf: the call maps the slice's class to what s held (§5.1).
+struct P { words (const byte[:])[:] }
+fn f(out byte[>..]&, ws ((const byte[:])[:])&) {
+	let h = P { words: ws };
+	out.clear();
+	out.append("ZZZZZZZZ");
+	print(h.words[0]);
+}
+fn main() {
+	var buf byte[>..] = [];
+	buf.append("abc");
+	var names (const byte[:])[>..] = [];
+	names.push(buf[..]);
+	var s = names[..];
+	f(buf, s);
+}

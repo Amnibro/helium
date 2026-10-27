@@ -79,6 +79,7 @@ lex_file(path const byte[:]) bool:
 	body byte[>..] ~= []
 	ov ~= -1; for o, i OVS { if OVB[o.p0..o.p1] == path { ov = i } }
 	if ov >= 0 { body.append(OVB[OVS[ov].t0..OVS[ov].t1]) } else if !read_file(path, body) { LERR.append("cannot read "); LERR.append(path); return false }
+	if path.len > 5 && path[^5..] == ".amni" && lut_find(body[..], "lut fn ", 0) >= 0: lb byte[>..] ~= []; if !lut_desugar(body[..], path, FILES.len == 0, lb) { return false } body.clear(); body.append(lb[..])
 	f := FILES.len
 	base := SRC.len
 	skip := if body.len >= 3 && body[0] == 0xEF && body[1] == 0xBB && body[2] == 0xBF { 3 } else { 0 }
@@ -279,3 +280,51 @@ tok_text(t int) const byte[:]:
 	x := TK[t]; SRC[(x.s as int)..x.s + x.n]
 tok_str(t int) const byte[:]:
 	x := TK[t]; STRS[(x.v as int)..x.v as int + x.w]
+lut_find(s const byte[:], w const byte[:], p0 int) int:
+	i ~= p0; while i + w.len <= s.len { if s[i..i + w.len] == w { return i } i++ } -1
+lut_ws(c byte) bool:
+	c == ' ' || c == '\t' || c == '\r' || c == '\n'
+lut_trim(s const byte[:]) const byte[:]:
+	b ~= 0; e ~= s.len; while b < e && lut_ws(s[b]) { b++ } while e > b && lut_ws(s[e - 1]) { e-- } s[b..e]
+lut_bits(t const byte[:]) int:
+	if t == "bool" { 1 } else if t == "byte" || t == "u8" || t == "i8" { 8 } else if t == "u16" || t == "i16" { 16 } else { 0 }
+lut_err(src const byte[:], path const byte[:], at int, m const byte[:]) bool:
+	ln ~= 1; for c src[..at] { if c == '\n' { ln++ } } format(LERR, path, ":", ln, ": error: ", m); false
+lut_desugar(src const byte[:], path const byte[:], root bool, out byte[>..]&) bool:
+	out.append(src); gen byte[>..] ~= []; sv byte[>..] ~= []; pos ~= 0; sh ~= 0
+	loop:
+		at := lut_find(src, "lut fn ", pos); if at < 0: break
+		pos = at + 7; ls ~= at; while ls > 0 && src[ls - 1] != '\n' { ls-- } if lut_trim(src[ls..at]).len > 0: continue
+		lp := lut_find(src, "(", at); rp := if lp >= 0 { lut_find(src, ")", lp) } else { -1 }; lb := if rp >= 0 { lut_find(src, "{", rp) } else { -1 }
+		if lb < 0: return lut_err(src, path, at, "malformed lut fn")
+		name := lut_trim(src[at + 7..lp]); r0 := lut_trim(src[rp + 1..lb]); ret := if r0.len >= 2 && r0[..2] == "->" { lut_trim(r0[2..]) } else { r0 }; m byte[>..] ~= []
+		if ret.len == 0: format(m, "lut fn ", name, " needs a written result type"); return lut_err(src, path, at, m[..])
+		d ~= 0; e ~= lb; while e < src.len { if src[e] == '{' { d++ } else if src[e] == '}' { d--; if d == 0 { break } } e++ }
+		pn const byte[:][>..] ~= []; pt const byte[:][>..] ~= []; pb int[>..] ~= []; bits ~= 0; pl := src[lp + 1..rp]; s ~= 0
+		while s <= pl.len:
+			c ~= lut_find(pl, ",", s); if c < 0 { c = pl.len } one := lut_trim(pl[s..c]); s = c + 1; if one.len == 0: continue
+			sp ~= 0; while sp < one.len && one[sp] != ' ' && one[sp] != ':' { sp++ } q ~= sp; while q < one.len && (one[q] == ' ' || one[q] == ':') { q++ }
+			nm0 := lut_trim(one[..sp]); ty := lut_trim(one[q..]); b := lut_bits(ty)
+			if b == 0: format(m, "lut fn ", name, ": parameter ", nm0, " has type ", if ty.len == 0 { "(none)" } else { ty }, "; a lut fn takes byte, i8, u8, i16, u16 or bool parameters"); return lut_err(src, path, at, m[..])
+			bits += b; pn.push(nm0); pt.push(ty); pb.push(b)
+		if pn.len == 0 || bits > 24: format(m, "lut fn ", name, " has ", bits, " bits of input; a lut fn takes 1 to 24"); return lut_err(src, path, at, m[..])
+		h u64 ~= 14695981039346656037; for c src[at..min(e + 1, src.len)] { h = (h ^ c) * 1099511628211 } hd byte[>..] ~= []; format(hd, h); hex := hx8(hd[..])
+		tb := min(bits, 12); tiles := 1 << (bits - tb); tsz := 1 << tb; words := max(tsz / 64, 1)
+		key byte[>..] ~= []; args byte[>..] ~= []; sig byte[>..] ~= []; wid byte[>..] ~= []; k ~= bits
+		for x, i pn:
+			k -= pb[i]; if key.len > 0 { key.append(" | ") } if k != 0 { format(key, "(lut__", x, " << ", k, ")") } else { format(key, "lut__", x) }
+			if args.len > 0 { args.append(", "); sig.append(", ") } args.append(x); format(sig, x, " ", pt[i])
+			format(wid, "let lut__", x, " int = "); if pt[i] == "bool" { format(wid, "if ", x, " { 1 } else { 0 }") } else if pt[i] == "i8" { format(wid, x, " as! u8") } else if pt[i] == "i16" { format(wid, x, " as! u16") } else { wid.append(x) } wid.append(";\n\t")
+		n byte[>..] ~= []; format(n, name, "__lut"); a := at + sh; t byte[>..] ~= []; t.append(out[..a]); format(t, "fn ", n); t.append(out[a + lp - at..]); out.clear(); out.append(t[..]); sh += n.len + 3 - (lp - at)
+		format(gen, "var ", n, "_t i32[>..];\nvar ", n, "_v ", ret, "[>..];\nvar ", n, "_s u64[>..];\nvar ", n, "_live = false;\nvar ", n, "_dirty = false;\n")
+		format(gen, "fn ", n, "_path() byte[>..] { var p byte[>..] = []; if !env(\"HOME\", p) { p.append(\".\"); } format(p, \"/.goose\"); make_dir(p); format(p, \"/lut\"); make_dir(p); format(p, \"/", name, "-", hex, ".lut\"); p }\n")
+		format(gen, "fn ", n, "_load() {\n\t", n, "_live = true;\n\tvar img byte[>..] = [];\n\tif read_file(", n, "_path(), img) {\n\t\tlet a, an = parse_uleb(img);\n\t\tlet b, bn = parse_uleb(img[an + a..]);\n\t\tlet t, tok = from_bytes<i32[>..]>(img[..an + a]);\n\t\tlet v, vok = from_bytes<", ret, "[>..]>(img[an + a..an + a + bn + b]);\n\t\tlet s, sok = from_bytes<u64[>..]>(img[an + a + bn + b..]);\n\t\tif tok && vok && sok && t.len == ", tiles, " { ", n, "_t.append(t); ", n, "_v.append(v); ", n, "_s.append(s); return; }\n\t}\n\t", n, "_t.resize(", tiles, ", -1);\n}\n")
+		format(gen, "fn ", n, "_save() { if ", n, "_dirty { var img byte[>..] = []; to_bytes(", n, "_t, img); to_bytes(", n, "_v, img); to_bytes(", n, "_s, img); write_file(", n, "_path(), img); ", n, "_dirty = false; } }\n")
+		format(gen, "fn ", name, "(", sig, ") ", ret, " {\n\tif !", n, "_live { ", n, "_load(); }\n\t", wid, "let lut__k = ", key, ";\n\tvar lut__b = ", n, "_t[lut__k >> ", tb, "];\n\tif lut__b < 0 { lut__b = (", n, "_v.len >> ", tb, ") as i32; ", n, "_t[lut__k >> ", tb, "] = lut__b; let lut__vl = ", n, "_v.len + ", tsz, "; let lut__sl = ", n, "_s.len + ", words, "; ", n, "_v.resize(lut__vl, default<", ret, ">()); ", n, "_s.resize(lut__sl, 0); }\n")
+		format(gen, "\tlet lut__j = ((lut__b as int) << ", tb, ") | (lut__k & ", tsz - 1, ");\n\tif (", n, "_s[lut__j >> 6] >> (lut__j & 63)) & 1 == 0 { ", n, "_v[lut__j] = ", n, "(", args, "); ", n, "_s[lut__j >> 6] |= 1 << (lut__j & 63); ", n, "_dirty = true; }\n\t", n, "_v[lut__j]\n}\n")
+		format(sv, n, "_save(); "); pos = e
+	if gen.len == 0: return true
+	if root:
+		mi ~= lut_find(out[..], "\nfn main(", 0); if out.len >= 8 && out[..8] == "fn main(" { mi = 0 } else if mi >= 0 { mi++ }
+		if mi >= 0: t byte[>..] ~= []; t.append(out[..mi]); t.append("fn main__lut("); t.append(out[mi + 8..]); out.clear(); out.append(t[..]); format(gen, "fn main() { main__lut(); ", sv, "}\n")
+	out.append("\nimport os;\n"); out.append(gen[..]); true

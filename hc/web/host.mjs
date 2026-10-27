@@ -94,7 +94,7 @@ if (isMainThread) {
 } else {
   const st = new Int32Array(boot.st), t = new BigInt64Array(boot.st);
   for (;;) {
-    while (Atomics.load(st, 0) !== 1) Atomics.wait(st, 0, Atomics.load(st, 0));
+    for (let v; (v = Atomics.load(st, 0)) !== 1;) Atomics.wait(st, 0, v);
     const ctid = N(t[2]); const code = run(() => X.he_thread(t[1], t[3]));
     sync(); if (code !== 0 && !Atomics.load(C32, 2)) Atomics.store(C32, 2, code + 1);
     Atomics.store(i32, ctid >> 2, 0); Atomics.notify(i32, ctid >> 2);

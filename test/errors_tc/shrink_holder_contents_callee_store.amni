@@ -1,0 +1,19 @@
+// error: cannot clear out while h is still used: a reference to a slice that may point into it was stored there
+// put stores a view of out into the elements words views, which h holds
+// (§5.1).
+struct P { words (const byte[:])[:] }
+fn put(ws (const byte[:])[:], s const byte[:]) { ws[0] = s; }
+fn f(out byte[>..]&, words (const byte[:])[:]) {
+	let h = P { words: words };
+	put(words, out[..]);
+	out.clear();
+	out.append("ZZZZZZZZ");
+	print(h.words[0]);
+}
+fn main() {
+	var buf byte[>..] = [];
+	buf.append("abc");
+	var names (const byte[:])[>..] = [];
+	names.push("x");
+	f(buf, names[..]);
+}

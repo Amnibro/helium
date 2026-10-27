@@ -1,0 +1,15 @@
+fn block_view(a int[:]) int[:] { block { break a; } }
+fn loop_view(a int[:]) int[:] { loop { break a; } }
+fn choose(a int[:], first bool) int[:] {
+	block { if first { break a; } a }
+}
+fn main() {
+	var a int[2] = [42, 43];
+	let x = block_view(a[..]);
+	let y = loop_view(a[..]);
+	x[0] = 44;
+	print(y[0]);
+	print(choose(a[..], false)[1]);
+	let n = block { if a[0] == 44 { break 7; } 9 };
+	print(n);
+}

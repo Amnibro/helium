@@ -1,0 +1,18 @@
+// error: cannot call f: it shrinks buf while p is still used, and p may refer into buf
+// pp's words view names, into whose element main stores a view of buf
+// after making pp (§5.1).
+struct P { words (const byte[:])[:] }
+fn f(out byte[>..]&, p P) {
+	out.clear();
+	out.append("ZZZZZZZZ");
+	print(p.words[0]);
+}
+fn main() {
+	var buf byte[>..] = [];
+	buf.append("abc");
+	var names (const byte[:])[>..] = [];
+	names.push("x");
+	let pp = P { words: names[..] };
+	names[0] = buf[..];
+	f(buf, pp);
+}

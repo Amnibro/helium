@@ -4,7 +4,7 @@ use pkg
 use fmt
 use lsp
 use wasm
-USAGE := "usage: hc <command> file [options] [-- program args...]\n       hc file [options] [-- program args...]\n\ncommands:\n  run        compile natively into the cache and run the program (hc file does too)\n  build      build an executable: -o out (native), or -o out.c for C\n  check      parse and typecheck only\n  version    print the version\n  help       print this\n\noptions:\n  -o path    output for build (default: the file's name without its extension)\n  --debug    overflow, range and tag checks naming the source line\n  -DNAME=V   a runtime define\n  --c        build C instead of a native executable\n\nenvironment: HC_LIB (library directory; default: lib beside hc, then hc/lib)"
+USAGE := "usage: hc <command> file [options] [-- program args...]\n       hc file [options] [-- program args...]\n\ncommands:\n  run        compile natively into the cache and run the program (hc file does too)\n  build      build an executable: -o out (native), or -o out.c for C\n  check      parse and typecheck only\n  fetch      clone the git packages the program declares (--update re-fetches tags and branches)\n  version    print the version\n  help       print this\n\noptions:\n  -o path    output for build (default: the file's name without its extension)\n  --debug    overflow, range and tag checks naming the source line\n  -DNAME=V   a runtime define\n  --offline  fetch no packages: one not in the cache is an error\n  --include file.h   C the program's extern functions come from, built with cc into a shared library\n  --c        build C instead of a native executable\n\nenvironment: HC_LIB (library directory; default: lib beside hc, then hc/lib)"
 VERSION := "hc 0.7 (Helium)"
 setlib():
 	lib byte[>..] ~= []; if env("HC_LIB", lib): LIBDIR.append(lib); return
@@ -20,10 +20,15 @@ compile(a const byte[:], o const byte[:], native bool, chk bool) bool:
 	if chk: return true
 	if !build_packages(): print(PERRS); return false
 	c byte[>..] ~= []
-	if WEB: if !wasm_program(c) { print(LERR); return false } if !write_file(o, c) { print("cannot write ", o); return false } return true
+	if WEB: if !wasm_program(c) { print(LERR); return false } if !write_file(o, c) { print("cannot write ", o); return false } return web_host(o)
 	if native: if !lower_program(c) { print(LERR); return false } if !write_file(o, c) || !make_exec(o) { print("cannot write ", o); return false } return true
 	if !gen_program(c): print(GERR); return false
 	if !write_file(o, c): print("cannot write ", o); return false
+	true
+web_host(o const byte[:]) bool:
+	h byte[>..] ~= []; format(h, LIBDIR, "/../web/web.js"); js byte[>..] ~= []; if !read_file(h[..], js): return true
+	d ~= o.len; while d > 0 && o[d - 1] != '/' { d-- } p byte[>..] ~= []; p.append(o[..d]); p.append("helium.js"); old byte[>..] ~= []; if read_file(p[..], old) && old[..] == js[..]: return true
+	if !write_file(p[..], js[..]): print("cannot write ", p[..]); return false
 	true
 argv0() byte[>..]: z byte[>..] ~= []; arg(0, z); z
 stem(f const byte[:]) byte[>..]: d ~= 0; e ~= f.len; for c, i f { if c == '/' { d = i + 1 } } for c, i f { if c == '.' && i > d { e = i } } o byte[>..] ~= []; o.append(f[d..e]); o
@@ -42,10 +47,9 @@ main():
 	if a[..] == "--query": t byte[>..] ~= []; arg(3, t); setlib(); exit(qmain(o[..], t[..]))
 	if a[..] == "--tokens": parse_init(); exit(if dump_tokens(o[..]) { 0 } else { 1 })
 	cmd ~= 0; src byte[>..] ~= []; out byte[>..] ~= []; native ~= true; pa byte[>..] ~= []; i0 ~= 2
-	if a[..] == "build" || a[..] == "run" || a[..] == "check": cmd = if a[..] == "build" { 1 } else { if a[..] == "run" { 2 } else { 3 } }; src.append(o[..]); i0 = 3
+	if a[..] == "build" || a[..] == "run" || a[..] == "check" || a[..] == "fetch": cmd = if a[..] == "build" { 1 } else { if a[..] == "run" { 2 } else { if a[..] == "check" { 3 } else { 5 } } }
 	else:
 		if o.len > 0 && o[0] != '-': src.append(a[..]); out.append(o[..]); native = false; i0 = 3; cmd = 4 else: src.append(a[..]); cmd = 2
-	if src.len == 0: print(USAGE); exit(2)
 	rest ~= false; i ~= i0
 	while i < arg_count():
 		m byte[>..] ~= []; arg(i, m); i += 1
@@ -54,14 +58,21 @@ main():
 		if m[..] == "--native": native = true; continue
 		if m[..] == "--c": native = false; continue
 		if m[..] == "--debug": DBG = true; continue
+		if m[..] == "--update" && cmd == 5: PKF = 2; continue
+		if m[..] == "--offline": PKF = -1; continue
 		if m[..] == "--web": WEB = true; native = true; continue
 		if m[..] == "-o" && i < arg_count(): out.clear(); arg(i, out); i += 1; continue
+		if m[..] == "--include" && i < arg_count(): h byte[>..] ~= []; arg(i, h); HINC.append(h[..]); HINC.push('\n'); i += 1; continue
 		if m.len > 2 && m[0] == '-' && m[1] == 'D': HDEF.append(m[2..]); HDEF.push('\n'); continue
 		if m.len > 2 && m[0] == '-' && m[1] == 'O': continue
+		if src.len == 0 && (m.len == 0 || m[0] != '-'): src.append(m[..]); continue
 		if cmd == 2: shq(pa, m[..]); continue
 		print("hc: unknown option ", m[..]); exit(2)
+	if src.len == 0: print(USAGE); exit(2)
 	setlib()
 	if WEB && hdef("GS_STACK_RESERVE") < 0: HDEF.append("GS_STACK_RESERVE=33554432\n")
+	PKF = if PKF < 0 { 0 } else { max(PKF, 1) }
+	if cmd == 5: exit(if load_program(src[..]) { 0 } else { print(DERR); 1 })
 	if cmd == 3: exit(if compile(src[..], "", true, true) { 0 } else { 1 })
 	if cmd == 1 && out.len == 0: out.append(stem(src[..]))
 	if cmd == 1 && out.len > 2 && out[^2..] == ".c": native = false

@@ -1,0 +1,8 @@
+// error: storing a reference into a, which holds a grow-shrink array: such a reference lives in a variable, is passed down or returned, and is never stored
+struct Holder { bytes const byte[:] }
+fn main() {
+ var a int[>..<] = [42];
+ let b = Holder { a.bytes_of() };
+ a.clear();
+ print(b.bytes);
+}

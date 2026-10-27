@@ -1,0 +1,6 @@
+// error: reordering may cross a side effect, runtime check, or nonlocal exit
+// Returning a read can check the result's capacity, before the caller reads len.
+struct Pair { a int, b int }
+fn limited(bytes const byte[:]) byte[..2] { return bytes; }
+fn make(bytes const byte[:]) Pair { Pair { b: limited(bytes).len, a: 0 } }
+fn main() { print(make("too long")); }

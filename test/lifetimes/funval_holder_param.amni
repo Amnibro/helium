@@ -1,0 +1,31 @@
+// A holder passed by value to a function value holds what the argument
+// held, as a holder variable bound from it would (§9.5): a reference read
+// out of it is rooted at the array the caller stored there, not at
+// whichever globals of its type the program happens to declare.
+struct Cx { scratch byte[>..]& }
+
+fn mk(scratch byte[>..]&) byte[] { scratch.push('a'); return "x"; }
+
+fn push_one(v byte[][>..]&, scratch byte[>..]&) { v.push(mk(scratch)); }
+
+fn with_cx<H>() {
+	var scratch byte[>..] = [];
+	var cx = Cx { scratch: scratch };
+	H(cx);
+	print(scratch.len);
+}
+
+var first byte[>..] = [];
+var spill byte[>..] = [];
+
+fn main() {
+	with_cx() { cx =>
+		var v byte[][>..] = [];
+		push_one(v, cx.scratch);
+		push_one(v, cx.scratch);
+		for e in v { print(e); }
+	};
+	first.push('f');
+	spill.push('s');
+	print(first.len + spill.len);
+}

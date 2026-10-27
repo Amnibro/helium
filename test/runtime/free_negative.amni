@@ -1,0 +1,7 @@
+// runtime-debug: negative indices abort before entering the freelist.
+fn bad_index() int { print("index evaluated"); return -1; }
+fn main() {
+	reusable var pool int[>..] = [1];
+	pool.free(bad_index());
+	print("unreachable");
+}

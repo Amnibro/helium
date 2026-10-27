@@ -1,0 +1,19 @@
+// runtime-define: GS_STACK_STATS=1
+// Under GS_STACK_STATS a thread program reports on stderr, as it ends, the
+// data stacks and regions it took: the stacks only ever grow, so their
+// count at the end is the most it had. The program's own output is as
+// without it.
+
+fn longest(parts byte[>..]&, extra byte[]) int {
+	var joined byte[>..] = [];
+	joined.append(parts[..]);
+	joined.append(extra);
+	return joined.len;
+}
+
+fn main() {
+	var parts byte[>..] = [];
+	parts.append("goose");
+	print(longest(parts, "!"));         // 6
+	print(str(42).len);                 // 2
+}

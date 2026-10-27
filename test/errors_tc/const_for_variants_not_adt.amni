@@ -1,0 +1,3 @@
+// error: variants requires a concrete ADT type, got i64
+enum Shape { Circle { r int }, Rect { w int, h int }, Dot }
+fn main() { const for <N, V> in variants<int> { print(N); } }

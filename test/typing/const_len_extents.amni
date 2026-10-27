@@ -1,0 +1,67 @@
+// A global's `.len`, and `.cap`, is a constant a size, capacity or fill
+// count may use where its declaration fixes it (§3.3): by its written fixed
+// or limited array type, or by the array, fill or string literal, or other
+// such global, it is initialized to; a `var`'s where its type fixes it too.
+// Elsewhere it is an i64 like any other `.len`.
+const table = [10, 20, 30, 40];
+let typed int[3] = [1, 2, 3];
+let room int[..6] = [1];
+let filled = [0; typed.len + 2];
+let name = "goose";
+let copied = typed;
+let twice = table.len * 2;
+const words = ["a", "bc", "def"];
+// An array literal gives plain the type i64[3], whose length no reference
+// can change.
+let plain = [4, 5, 6];
+// Nor can an assignment change a var's whose type fixes it; a size taking
+// it before the declaration is checked is checked there.
+let early int[slots.len + tally.len] = [1, 2, 3, 4, 5];
+var slots = [0, 0];
+var tally int[3];
+var pads = [0; slots.len];
+var again = slots;
+var shelf int[..4] = [];
+var shelved = shelf;
+
+struct Row { cells int[table.len], spare int[..room.cap] }
+struct Pair<T> { a T[words.len], b T[..copied.len] }
+struct Bin { items int[slots.len + again.len], extra int[..shelved.cap] }
+
+fn total(xs int[table.len]) int {
+	var s = 0;
+	for x in xs { s += x; }
+	return s;
+}
+
+// Its written type fixes typed's length, which no reference can change, as
+// plain's does.
+fn bump(r int[3]&) { r[0] += 10; }
+
+fn main() {
+	bump(typed);
+	let a int[typed.len] = [7, 8, 9];
+	var b int[..table.len + room.cap] = [];
+	b.push(1);
+	let c = [5; filled.len];
+	let d byte[name.len] = "geese";
+	let e int[twice] = [0, 0, 0, 0, 0, 0, 0, 0];
+	var counts int[words.len] = [0, 0, 0];
+	counts[2] += 1;
+	let row = Row { [1, 2, 3, 4], [5] };
+	let pair = Pair<int> { [1, 2, 3], [4] };
+	let four int = 4;
+	let m = match four { twice => "twice", 4 => "four", _ => "other" };
+	print(a, " ", b.cap, " ", c, " ", d, " ", e.len, " ", counts);
+	print(row, " ", row.spare.cap, " ", pair, " ", pair.b.cap, " ", m);
+	print(total(table), " ", typed, " ", table.len + copied.len);
+	bump(plain);
+	let f int[plain.len] = [0, 0, 0];
+	bump(plain);
+	slots = [9, 9];
+	slots[1] += 1;
+	var g int[slots.len + pads.len + again.len] = [0; 6];
+	g[0] = tally.len;
+	let bin = Bin { [1, 2, 3, 4], [5] };
+	print(f, " ", plain, " ", early, " ", g, " ", bin, " ", bin.extra.cap, " ", slots);
+}

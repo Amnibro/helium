@@ -1,0 +1,8 @@
+// error: variable R may be used before it is assigned: globals initialize in declaration order
+// A function that A's initializer calls rebinds the reference global R,
+// whose initializer runs after A's (§11.1).
+var X int = 1;
+var A int = f();
+var R int& = &X;
+fn f() int { R .= &X; return 1; }
+fn main() { print(A, R); }

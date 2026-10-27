@@ -1,0 +1,55 @@
+// Arrays and slices of every kind constructing a static-capacity limited
+// array (§4.2) from sources that are not plain variables -- call results,
+// str(), slice expressions, copies, reference-returning calls -- in every
+// position: a local, an argument, a field of a fixed and of a variable-size
+// struct, an assignment, a return, a branch.
+fn mk() byte[>..] { var r byte[>..] = []; r.push('h'); r.push('i'); return r; }
+fn mk2() byte[] { return "yo"; }
+fn pick(a byte[>..]&) byte[>..]& { return a; }
+fn take(s byte[..16]) int { return s.len; }
+fn wrap() byte[..16] { return mk(); }
+fn wrap2() byte[..16] { return str("w", 2); }
+struct Named { name byte[..16] }
+struct Rec { tag byte[], s byte[..8], after int }
+fn main() {
+	let a byte[..16] = mk();
+	print(a.len, " ", a);
+	let b byte[..16] = mk2();
+	print(b.len, " ", b);
+	let c byte[..16] = str("ab", 1);
+	print(c.len, " ", c);
+	print(take(mk()), " ", take(str("xyz")), " ", take(mk2()));
+	let n = Named { name: str("x", 42) };
+	print(n.name.len, " ", n.name);
+	var g byte[>..] = [];
+	g.push('a'); g.push('b'); g.push('c');
+	let d byte[..16] = g[..];
+	print(d.len, " ", d);
+	let e byte[..16] = g[1..3];
+	print(e);
+	print(take(g[..]), " ", take(g), " ", take(g[..2]));
+	let r = Rec { tag: "t", s: mk(), after: 77 };
+	print(r.s.len, " ", r.s, " ", r.after);
+	let r2 = Rec { tag: "t", s: g[1..], after: 78 };
+	print(r2.s, " ", r2.after);
+	let r3 = Rec { tag: "t", s: mk2(), after: 79 };
+	print(r3.s, " ", r3.after);
+	var s byte[..16] = [];
+	s = mk();
+	print(s.len, " ", s);
+	s = g[..];
+	print(s);
+	let f byte[3] = ['p', 'q', 'r'];
+	let h byte[..16] = f;
+	print(h.len, " ", h);
+	let k byte[..4] = "kl";
+	let m byte[..16] = k;
+	print(m.len, " ", m);
+	let cp byte[..16] = copy(g);
+	print(cp);
+	let p byte[..16] = pick(g);
+	print(p);
+	print(wrap(), " ", wrap2());
+	let q byte[..16] = if g.len > 2 { mk() } else { mk2() };
+	print(q);
+}

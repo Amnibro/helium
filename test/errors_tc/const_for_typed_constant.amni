@@ -1,0 +1,4 @@
+// error: i64
+// error: u8
+const WIDE: int = 1;
+fn main() { const for <C> in [WIDE] { let n byte = C; print(n); } }

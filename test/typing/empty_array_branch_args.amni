@@ -1,0 +1,17 @@
+// A construct whose branches are all [] is literal-like, as a lone [] is
+// (§6.4): an argument's first check, made before its parameter's type is
+// known, leaves the element type open, and the parameter it is passed to, or
+// whose default it is, gives it one (§4.2).
+fn count(xs int[]) int { xs.len }
+fn room(xs byte[..4]) int { xs.cap - xs.len }
+fn size<T>(xs T) int { xs.len }
+fn none(xs int[] = if true { [] } else { [] }) int { xs.len }
+
+fn main() {
+	let c = true;
+	print(count(if c { [] } else { [] }));                     // 0
+	print(room(match 2 { 1 => [], _ => [] }));                 // 4
+	print(size<byte[]>(if c { [] } else { [] }));                // 0
+	print((if !c { [] } else { { [] } }).count());             // 0
+	print(none());                                             // 0
+}

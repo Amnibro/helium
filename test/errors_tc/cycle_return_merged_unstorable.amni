@@ -1,0 +1,24 @@
+// error: storing a reference rooted at loc, which does not outlive the destination
+// The back edge's result may be b, or `a`, which that back edge passed its
+// own local for (§7.8): it may not be kept in the global kept.
+var G byte[>..] = "ggg";
+var G2 byte[>..] = "hhh";
+var base byte[1] = [48];
+var kept byte[:] = base[..];
+
+recursive fn f(a byte[:], b byte[:], n int) byte[:] {
+	if n == 0 { return b; }
+	var loc byte[3] = [108, 111, 99];
+	let res = f(loc[..], if n > 5 { G[..] } else { G2[..] }, n - 1);
+	kept = res;
+	return if a.len > 3 { b } else { a };
+}
+
+fn main() {
+	var x byte[>..] = "xxxxxxx";
+	{
+		var y byte[>..] = "yy";
+		print(f(x[..], y[..], 2));
+	}
+	print(kept);
+}

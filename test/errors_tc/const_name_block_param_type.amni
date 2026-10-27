@@ -1,0 +1,11 @@
+// error: array size K names a local variable, not a constant
+// A block's parameter types are written where the block is, in main's
+// scope (§3.3, §7.6).
+let K = 3;
+
+fn apply<F>(x int[3]) int { F(x) }
+
+fn main() {
+	let K = 5;
+	print(apply([1, 2, 3]) { v: int[K] => v.len });
+}

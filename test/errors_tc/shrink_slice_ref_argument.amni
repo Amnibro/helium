@@ -1,0 +1,14 @@
+// error: cannot call h, which shrinks gs: s, evaluated earlier in the statement
+// error: may still refer into gs
+// g's first argument, a reference to a slice of gs, is live while its
+// second argument clears gs (§5.2).
+fn g(p int[:]&, n int) { print(p[0] + n); }
+fn h(gs int[>..<]&) int {
+	gs.clear();
+	return 0;
+}
+fn main() {
+	var gs int[>..<] = [42];
+	var s = gs[..];
+	g(s, h(gs));
+}

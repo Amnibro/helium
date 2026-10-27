@@ -1,0 +1,15 @@
+// error: cannot call format, which shrinks G while s (bound at
+// And in format, whose receiver comes before every argument rendered into it
+// (§3.7, §5.2).
+struct T { n int }
+var G int[>..<] = [1, 2, 3];
+fn format(out byte[>..]&, t T) {
+	G.clear();
+	out.append("T");
+}
+fn main() {
+	var b byte[>..] = [];
+	let s = G[..];
+	b.format(T { 1 }, " ", s);
+	print(b);
+}

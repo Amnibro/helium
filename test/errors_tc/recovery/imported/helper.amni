@@ -1,0 +1,5 @@
+// Imported by ../imports.goose, which it imports back.
+import imports;
+import also_not_there;
+fn twice(x int) int { x * 2 }
+fn thrice(x x int) int { x * 3 }

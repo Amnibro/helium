@@ -1,0 +1,3 @@
+// error: array length 256 exceeds storage range
+struct Packet { bytes byte[byte], tail int }
+fn main() { let p = Packet { bytes: [1; 256], tail: 42 }; }

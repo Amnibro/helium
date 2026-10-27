@@ -1,0 +1,11 @@
+// error: k (declared at
+// error: is called before its declaration is reached
+// A function declared in a global initializer may call one declared further
+// on in its block, but only once that declaration is reached (§7.5).
+let g = block {
+	fn h() int { k() }
+	let a = h();
+	fn k() int { 2 }
+	a
+};
+fn main() { print(g); }

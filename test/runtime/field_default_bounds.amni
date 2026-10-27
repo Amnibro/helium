@@ -1,0 +1,9 @@
+var data int[>..<] = [42];
+fn zap() int { data.clear(); 0 }
+struct S { x int = zap() }
+fn main() {
+	if data.len > 0 {
+		let s = S {};
+		print(data[0]);
+	}
+}

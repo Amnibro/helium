@@ -1,0 +1,17 @@
+// error: cannot clear GARR while r is still used
+// Each round of walk's cycle records its returns anew: the block's return out
+// of apply is checked again in each, not left out of the rounds after the
+// first, so walk's result may point into GARR.
+var GARR int[>..] = [1, 2, 3];
+var G int = 7;
+fn apply<F>() int { F(0); return 0; }
+recursive fn walk(n int, xs int[>..]&) int& {
+	if n > 0 { walk(n - 1, xs); }
+	if n == 0 { apply() { k => return xs[k]; }; }
+	return G;
+}
+fn main() {
+	let r int& = walk(0, GARR);
+	GARR.clear();
+	print(r);
+}

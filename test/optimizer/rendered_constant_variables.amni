@@ -1,0 +1,71 @@
+// A format overload taking a variable by reference is handed the variable
+// (§3.7), one initialized with a constant and never assigned included, which
+// the optimizer would otherwise read as that constant wherever it is named:
+// what the overload keeps points at the variable after the function that
+// printed it returns, and what it writes there the variable holds, at every
+// optimization level.
+let K i32 = 7;
+const C: i32 = 8;
+var keep (const i32&)? = null;
+fn format(out byte[>..]&, v const i32&) {
+	keep .= v;
+	out.append("k");
+}
+
+var gk int = 5;
+let gl int = 5;
+fn format(out byte[>..]&, v int&) {
+	v += 1;
+	out.append("w");
+}
+
+// Overwrites the frame the function before it printed from.
+fn clobber(x int) int {
+	var arr int[64] = [x; 64];
+	var s int = 0;
+	for i in 0..64 { s += arr[i]; }
+	s
+}
+
+fn show_k() { print(K); }
+fn show_c() byte[>..] { str(C) }
+fn bump(x int) {
+	print(x);
+	print(x == 6);
+}
+
+fn main() {
+	show_k();
+	let z = clobber(99);
+	if keep != null {
+		let y i32 = keep;
+		print(y == 7, " ", z == 6336);
+	}
+	let s = show_c();
+	let z2 = clobber(98);
+	if keep != null {
+		let y i32 = keep;
+		print(s, " ", y == 8, " ", z2 == 6272);
+	}
+	print(gk);
+	print(gk == 6);
+	print(gl);
+	print(gl == 6);
+	var k int = 5;
+	print(k);
+	print(k == 6);
+	let lk int = 5;
+	print(lk);
+	print(lk == 6);
+	var sk int = 5;
+	let t = str(sk);
+	print(t, " ", sk == 6);
+	var fk int = 5;
+	var b byte[>..] = [];
+	format(b, fk, ".");
+	print(b, " ", fk == 6);
+	var uk int = 5;
+	uk.print();
+	print(uk == 6);
+	bump(5);
+}

@@ -1,0 +1,9 @@
+// error: the default of parameter b of f names bonus, a nested function
+// Around f's declaration `bonus` is the nested function, so the default does
+// not quietly call the top-level one of that name either (§7.1).
+fn bonus() int { 1 }
+fn main() {
+	fn bonus() int { 2 }
+	fn f(a int, b int = bonus()) int { a + b }
+	print(f(1));
+}

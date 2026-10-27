@@ -1,0 +1,18 @@
+// error: cannot call step, which shrinks first: xs[0], evaluated earlier in the statement
+// error: may still refer into first
+//
+// Both captures share a root; seeing its scalar alias must not hide the array.
+fn read(r int&, unused int) int { return r; }
+// Both captures share a root; seeing its scalar alias must not hide the array.
+fn outer(first int&, xs int[>..<]&) {
+	recursive fn step(n int) int {
+		if n > 0 { return read(xs[0], step(n - 1)); }
+		xs.pop();
+		return 0;
+	}
+	print(step(1));
+}
+fn main() {
+	var xs int[>..<] = [1, 2];
+	outer(xs[0], xs);
+}

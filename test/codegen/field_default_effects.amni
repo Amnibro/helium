@@ -1,0 +1,19 @@
+var count int = 0;
+let seed int = 10;
+fn tick() int { count++; count }
+struct S<T> { first int = tick(), middle int, last int = seed }
+struct D { n int = tick() }
+enum E { One { n int = tick() }, Two }
+fn main() {
+	let seed = 99;
+	fn tick() int { 999 }
+	let a = S<byte> { middle: ::tick() };
+	let b = S<byte> { middle: ::tick() };
+	print(a, " ", b);
+	let ds = default<D[2]>();
+	let e = default<E>();
+	print(ds, " ", e);
+	reusable[] var pool D[>..] = [];
+	let run = pool.alloc_slice(2);
+	print(run, " ", count);
+}

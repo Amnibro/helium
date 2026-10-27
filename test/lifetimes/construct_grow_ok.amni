@@ -1,0 +1,28 @@
+// Growth of other arrays while a value is built in place (§1.3(4)):
+// distinct locals, distinct parameter classes, a callee's own local, and
+// the new contents of a whole assignment built from another array.
+fn mk(b int[>..]&) int[>..] { b.push(9); return [1, 2]; }
+fn own() int[>..] { var r int[>..] = []; r.push(7); r.push(8); return r; }
+fn f(x int[>..]&, y int[>..]&) { x.append(mk(y)); }
+fn tag(b byte[][>..]&) byte[] { b.push("t"); return "u"; }
+fn bump(b int[>..]&) int[>..] {
+	var r int[>..] = [];
+	for v in b { r.push(v + 1); }
+	return r;
+}
+fn main() {
+	var a int[>..] = [];
+	var b int[>..] = [];
+	a.append(mk(b));
+	print(a, " ", b);
+	a.append(own());
+	print(a);
+	f(a, b);
+	print(a, " ", b);
+	var s byte[][>..] = [];
+	var t byte[][>..] = [];
+	s.push(tag(t));
+	print(s.len, " ", t.len);
+	a = bump(b);
+	print(a);
+}

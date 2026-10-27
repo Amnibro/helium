@@ -1,0 +1,19 @@
+// error: cannot clear out while w is still used
+// w was read out of a slice itself read out of the elements wss views:
+// that slice only bounds the elements w lies in (§5.1).
+fn emit(out byte[>..]&, wss ((const byte[:])[:])[:]) {
+	let ws = wss[0];
+	let w = ws[0];
+	out.clear();
+	out.append("ZZZZZZZZ");
+	print(w);
+}
+fn main() {
+	var buf byte[>..] = [];
+	buf.append("abc");
+	var names (const byte[:])[>..] = [];
+	names.push(buf[..]);
+	var outer ((const byte[:])[:])[>..] = [];
+	outer.push(names[..]);
+	emit(buf, outer[..]);
+}

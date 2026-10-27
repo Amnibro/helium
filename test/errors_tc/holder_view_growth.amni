@@ -1,0 +1,11 @@
+// error: cannot call make, which grows words: the element pushed into words is still under construction
+struct Cache { words byte[][>..]& }
+fn make(cache Cache&) byte[] {
+	cache.words.push("nested");
+	return "outer";
+}
+fn main() {
+	var words byte[][>..] = [];
+	var cache = Cache { words: words };
+	words.push(make(cache));
+}

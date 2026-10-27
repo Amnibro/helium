@@ -1,0 +1,34 @@
+// Zero-length arrays are values of their own (§3.4): built from [] and from
+// fills, copied, passed, returned, chosen by branches, compared, sliced and
+// printed. C gives each one element nothing writes, so the temporary a
+// literal is built in starts zeroed rather than copied out uninitialized;
+// no output can show that slot, only MSVC's C4700 or clang's
+// -Wuninitialized on the generated C.
+var calls = 0;
+fn tick() int { calls++; return calls; }
+
+var g int[0] = [];
+var h byte[..0] = [];
+
+fn none() int[0] { [] }
+fn same(a int[0]) int[0] { a }
+fn pick(c bool) real[0] { if c { [] } else { [tick(); 0] } }
+fn lens(a int[0]&, b int[..0]) int { a.len + b.len + b.cap }
+fn view(s int[:]) int { s.len }
+
+fn main() {
+	let e int[0] = [];
+	let f int[0] = [tick(); 0];
+	let c = e;
+	var v = none();
+	v = same(c);
+	let d = default<int[0]>();
+	let l int[..0] = [];
+	print(e.len, " ", f.len, " ", c.len, " ", v.len, " ", d.len, " ", l.len, " ", l.cap,
+		  " calls ", calls);
+	print(e == f, " ", same(e) == none(), " ", v == d, " ", lens(e, l), " ", view(e),
+		  " ", view(f));
+	print(pick(true).len, " ", pick(false).len, " calls ", calls, " ", g.len, " ", h.cap);
+	print(e, " ", l, " ", pick(true));
+	for x in e { print(x); }
+}

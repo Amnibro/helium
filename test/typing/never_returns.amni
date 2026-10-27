@@ -1,0 +1,100 @@
+// runtime-debug: inferred completion across calls, callbacks and dispatch.
+import exception;
+
+fn stop() { exception::throw("stopped"); }
+fn relay() { stop(); }
+fn value() int { relay(); }
+fn tail_value() int { relay() }
+fn invoke<F>() { F(); }
+fn callback_value() int { invoke(stop); }
+
+fn choose(ok bool) int { if ok { 42 } else { stop(); } }
+fn assigned(ok bool) int {
+	let n int;
+	if ok { n = 42; } else { stop(); }
+	return n;
+}
+fn narrowed(n int?) int {
+	guard n else { stop(); }
+	return n;
+}
+
+enum Choice { A, B }
+fn visit(c Choice.A) { stop(); }
+fn visit(c Choice.B) { stop(); }
+fn dispatched(c Choice) int { visit(c); }
+fn mixed(c Choice.A) { abort("stopped"); }
+fn mixed(c Choice.B) {}
+fn mixed_value(c Choice) int { mixed(c); return 42; }
+
+// The explicit stop proves noncompletion even with conservative back edges.
+recursive fn descend(n int) {
+	if n > 0 { descend(n - 1); }
+	stop();
+}
+fn recursive_value() int { descend(4); }
+
+// Returning to this body resumes its caller, including on a cached call.
+fn own_exit() int {
+	fn done() { return 42 from own_exit; }
+	done();
+}
+fn lexical_exit() int { invoke() { return 42; }; }
+
+// Unresolved recursion must keep its continuation live during checking.
+recursive fn count(n int) int {
+	if n == 0 { return 0; }
+	let rest = count(n - 1);
+	return rest + (if n > 0 { 1 } else { 2 });
+}
+recursive fn left(n int) int { right(n) }
+recursive fn right(n int) int {
+	if n == 0 { return 42; }
+	return left(n - 1);
+}
+
+// Builtin termination propagates too; these functions are checked standalone.
+fn abort_relay() { abort("stopped"); }
+fn abort_value() int { abort_relay(); }
+fn exit_relay() { exit(0); }
+fn exit_value() int { exit_relay(); }
+fn spin() { loop {} }
+fn spin_value() int { spin(); }
+
+fn main() {
+	var caught = 0;
+	fn catcher(e const byte[:]) { assert(e == "stopped"); caught += 1; }
+	exception::try<const byte[:]>(value, catcher);
+	exception::try<const byte[:]>(tail_value, catcher);
+	exception::try<const byte[:]>(callback_value, catcher);
+	fn alternatives() {
+		assert(choose(true) == 42);
+		assert(assigned(true) == 42);
+		var n = 42;
+		assert(narrowed(n) == 42);
+		choose(false);
+	}
+	exception::try<const byte[:]>(alternatives, catcher);
+	fn unassigned() { assigned(false); }
+	fn null_value() { narrowed(null); }
+	fn case_a() { dispatched(Choice.A); }
+	fn case_b() { dispatched(Choice.B); }
+	exception::try<const byte[:]>(unassigned, catcher);
+	exception::try<const byte[:]>(null_value, catcher);
+	exception::try<const byte[:]>(case_a, catcher);
+	exception::try<const byte[:]>(case_b, catcher);
+	exception::try<const byte[:]>(recursive_value, catcher);
+	assert(caught == 9);
+	assert(mixed_value(Choice.B) == 42);
+	assert(own_exit() == 42 && own_exit() == 42);
+	assert(lexical_exit() == 42);
+	assert(count(4) == 4 && left(4) == 42);
+
+	// Completion belongs to the specialization, including its callback.
+	var ran = 0;
+	fn success() { ran += 1; }
+	invoke(success);
+	invoke(success);
+	assert(ran == 2);
+	print("never-return tests passed");
+}

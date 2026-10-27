@@ -5,7 +5,4 @@ samples/*.ppm
 samples/*.pgm
 samples/*.png
 __pycache__
-samples_amni/*.ppm
-samples_amni/*.pgm
-samples_amni/*.png
-samples_amni/*.gsx
+samples/*.gsx

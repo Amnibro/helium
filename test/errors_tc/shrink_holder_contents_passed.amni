@@ -1,0 +1,19 @@
+// error: cannot call mid: it shrinks buf while p is still used, and p may refer into buf
+// emit's pair about what p's class holds passes through mid, which reads p
+// after the call, to main, where names' element views buf (§5.1).
+struct P { words (const byte[:])[:] }
+fn emit(out byte[>..]&, p P) {
+	out.clear();
+	out.append("ZZZZZZZZ");
+}
+fn mid(out byte[>..]&, p P) {
+	emit(out, p);
+	print(p.words[0]);
+}
+fn main() {
+	var buf byte[>..] = [];
+	buf.append("abc");
+	var names (const byte[:])[>..] = [];
+	names.push(buf[..]);
+	mid(buf, P { words: names[..] });
+}

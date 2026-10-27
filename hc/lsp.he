@@ -1,6 +1,5 @@
 use calls
 use os
-shq(b byte[>..]&, s const byte[:]): b.append(" '"); for c s { if c == '\'' { b.append("'\\''") } else { b.push(c) } } b.push('\'')
 struct Doc { uri byte[>..] = [], path byte[>..] = [], text byte[>..] = [] }
 var DOCS Doc[>..]
 var LQD byte[>..]

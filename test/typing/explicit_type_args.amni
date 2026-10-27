@@ -1,0 +1,67 @@
+// Explicit type arguments for type variables no parameter mentions (§7.7):
+// each distinct list is its own specialization, however the call reaches it.
+enum Shape { Circle { r int }, Square { s int } }
+
+// T appears only in the body.
+fn size<T>() int {
+	let one T[1] = [default<T>()];
+	bytes_of(one).len
+}
+// Passed on explicitly, as is, and inside a larger type.
+fn wrap<T>(n int) int { size<T>() * n }
+fn doubled<T>() int { wrap<T[2]>(1) }
+
+// T appears only in the result type.
+fn zero<T>() T { default<T>() }
+fn filled<T>(n int) T[>..] {
+	var xs T[>..] = [];
+	for i in 0..n { xs.push(default<T>()); }
+	return xs;
+}
+
+// A leading explicit list, the rest inferred. Both calls of `both` in main
+// bind A to i32 and B to f64, only in a different order.
+fn pair_size<T, U>(u U) int { size<T>() * 100 + size<U>() }
+fn both<A, B>(b B, a A) int { size<A>() * 100 + size<B>() }
+
+// A back edge with the same argument reuses the specialization in progress.
+recursive fn countdown<T>(n int) int {
+	if n == 0 { return 0; }
+	size<T>() + countdown<T>(n - 1)
+}
+
+// A nested function's own type variable beside the enclosing one.
+fn nested<T>() int {
+	fn inner<U>() int { size<U>() * 100 + size<T>() }
+	inner<byte>() + inner<int>()
+}
+
+// Case functions dispatched with an explicit list.
+fn area<T>(c Shape.Circle) int { size<T>() }
+fn area<T>(s Shape.Square) int { size<T>() * 10 }
+
+// A named function value called with an explicit list.
+fn apply<F>(n int) int { F<u16>() * n }
+
+fn main() {
+	print(size<byte>(), " ", size<real>(), " ", size<i32>());
+	print(wrap<byte>(10), " ", wrap<real>(10));
+	print(doubled<byte>(), " ", doubled<real>());
+	let a byte = zero<byte>();
+	let b real = zero<real>();
+	print(a, " ", b + 0.5);
+	let bytes = filled<byte>(3);
+	let floats = filled<real>(2);
+	print(bytes.len, " ", bytes_of(bytes).len, " ", floats.len, " ", bytes_of(floats).len);
+	let x = 1.5;
+	print(pair_size<byte>(x), " ", pair_size<real>(x));
+	let y i32 = 7;
+	print(both<i32>(x, y), " ", both(x, y));
+	print(countdown<i32>(3), " ", countdown<byte>(3));
+	print(nested<i32>(), " ", nested<u16>());
+	var sh Shape = Shape.Circle { r: 1 };
+	print(area<byte>(sh), " ", area<real>(sh));
+	sh = Shape.Square { s: 2 };
+	print(area<byte>(sh), " ", area<real>(sh));
+	print(apply(3, size));
+}

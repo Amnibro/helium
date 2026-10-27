@@ -1,0 +1,15 @@
+// error: cannot call f: it shrinks buf while h is still used, and h may refer into buf
+// h is a copy of the holder r names, which views buf (§5.1).
+struct H { s const byte[:] }
+fn f(out byte[>..]&, r H&) {
+	let h H = r;
+	out.clear();
+	out.append("ZZZZZZZZ");
+	print(h.s);
+}
+fn main() {
+	var buf byte[>..] = [];
+	buf.append("abc");
+	var hh = H { s: buf[..] };
+	f(buf, hh);
+}

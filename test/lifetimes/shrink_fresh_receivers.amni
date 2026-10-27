@@ -1,0 +1,15 @@
+fn make() int[2] { return [1, 2]; }
+fn main() {
+	var indices int[>..<] = [0];
+	print(make()[indices.pop()]);
+	var lengths int[>..<] = [1];
+	print(make()[..lengths.pop()]);
+	var xs int[>..<] = [0];
+	var other int[2] = [1, 2];
+	fn replace() int[:] { xs.pop(); return other[..]; }
+	print(make() == replace());
+	// A resizable receiver's header remains alive while its contents change.
+	var items int[>..<] = [3, 4];
+	items.push(items.pop());
+	print(items);
+}

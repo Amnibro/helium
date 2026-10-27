@@ -1,0 +1,13 @@
+enum Item<T> { Some { value T }, None }
+type Payload = Item<int>.Some;
+type AnotherPayload = Payload;
+type ConstPayload = const Item<int>.Some;
+
+fn value<T>(p Item<T>.Some) T { p.value }
+
+fn main() {
+	let a Payload = Item<int>.Some { value: 7 };
+	let b AnotherPayload = Item<int>.Some { value: 9 };
+	let c Item<int>.Some = Item<int>.Some { value: 11 };
+	print(value(a), value(b), value(c));
+}

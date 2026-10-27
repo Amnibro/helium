@@ -1,0 +1,8 @@
+// error: expected a value of type Maybe<i64>, got Other<i64>.None
+enum Maybe<T> { None, Some { value T } }
+enum Other<T> { None }
+fn wrong() Maybe<int> {
+	let absent = Other<int>.None {};
+	return absent;
+}
+fn main() { print(wrong()); }

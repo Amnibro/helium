@@ -1,0 +1,4 @@
+// error: reordering may cross a side effect
+struct S { x int, y int }
+fn effect() int { print("effect"); 1 }
+fn main() { print(S { y: effect(), const for <C> in [1] { x: effect(), } }); }

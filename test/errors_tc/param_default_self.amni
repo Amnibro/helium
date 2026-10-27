@@ -1,0 +1,4 @@
+// error: the default of parameter a of f leads to this call, which takes it again
+// Evaluating the default would take it again without end (§7.1).
+fn f(a int = f()) int { a }
+fn main() { print(f()); }

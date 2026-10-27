@@ -1,0 +1,18 @@
+// error: cannot pop pp.y while s
+// error: is still used: it may refer into pp.y
+// pp.y is read back out of the caller's storage behind pp, which only bounds
+// the array it points at, so the rule for that array's elements applies,
+// whatever pp's own type can hold (§5.2).
+struct P { x int[>..<]&, y int[>..<]& }
+fn f(pp P&) int {
+	let s = pp.y[..];
+	pp.y.pop();
+	pp.y.push(77);
+	s[1]
+}
+fn main() {
+	var a int[>..<] = [1, 2, 3];
+	var b int[>..<] = [4, 5];
+	var p = P { x: a, y: b };
+	print(f(p));
+}

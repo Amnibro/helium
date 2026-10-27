@@ -1,0 +1,40 @@
+// runtime-debug: globals are declared like locals (§11.1), so an
+// initializer's value is read as the global's type asks, also where the
+// call it makes is inlined (-O2) and the callee's `return` delivers the
+// call's own result: a reference result read as its pointee (§3.8) -- a
+// slice, a struct, a scalar, a varint field -- and a slice copied into a
+// static-capacity limited array (§4.2); called directly, chosen by an `if`
+// or a `block`, or given by a function value's call.
+struct P { x int, y int }
+struct V { n varint, w i32 }
+
+var word byte[>..] = [119, 111, 114, 100];
+var gw byte[:] = word[..];
+var gp = P { 3, 4 };
+var gi int = 5;
+var gj int = 9;
+var gv = V { 300, 6 };
+
+fn get_w() byte[:]& { gw }
+fn get_p() P& { gp }
+fn get_i() int& { gi }
+fn get_j() int& { gj }
+fn get_n() varint& { gv.n }
+fn part() byte[:] { return gw[1..]; }
+fn given<F>() byte[:] { return F(); }
+fn plus<F>() int { return F() + 1; }
+
+var w2 byte[:] = get_w();
+var p2 P = get_p();
+var i2 int = get_i();
+var n2 int = get_n();
+var l2 byte[..8] = part();
+var c2 int = if gi > gj { get_i() } else { get_j() };
+var b2 int = block { if gi < gj { break get_i(); } break get_j(); };
+var w3 byte[:] = given() { get_w() };
+var i3 int = plus() { get_i() };
+
+fn main() {
+	print(w2, " ", p2, " ", i2, " ", n2, " ", l2);     // word P { 3, 4 } 5 300 ord
+	print(c2, " ", b2, " ", w3, " ", i3);               // 9 5 word 6
+}

@@ -1,0 +1,13 @@
+// error: cannot write through this reference: non-writable provenance
+// An element reached through a `const T&` is not written (§9.5): bound by
+// reference, as `&a[0]` of it is, it is a read-only reference.
+var buf byte[>..] = [];
+fn set(q byte[:]&) { q = buf[1..]; }
+fn h(a const (byte[:][>..])&) { set(a[0]); }
+fn main() {
+	buf.append("xyz");
+	var arr byte[:][>..] = [];
+	arr.push(buf[..]);
+	h(arr);
+	print(arr[0]);
+}

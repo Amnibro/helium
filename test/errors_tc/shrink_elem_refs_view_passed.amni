@@ -1,0 +1,17 @@
+// error: cannot call mid: it shrinks buf while ws is still used, and ws may refer into buf
+// mid passes its slot on to f, which clears out and reads what the slot's
+// slice views: main's s views names, whose element views buf (§5.1).
+fn f(out byte[>..]&, ws ((byte[:])[:])&) {
+	out.clear();
+	out.append("ZZZZZZZZ");
+	print(ws[0]);
+}
+fn mid(out byte[>..]&, ws ((byte[:])[:])&) { f(out, ws); }
+fn main() {
+	var buf byte[>..] = [];
+	buf.append("abc");
+	var names (byte[:])[>..] = [];
+	names.push(buf[..]);
+	var s = names[..];
+	mid(buf, s);
+}

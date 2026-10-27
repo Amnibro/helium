@@ -1,0 +1,17 @@
+// error: storing a reference rooted at s, which does not outlive the destination
+// keep may store a global's slice in a global, not a local's: the
+// specialization checked for gtext does not serve inner's call.
+struct H { s const byte[:] }
+var gh H[>..] = [];
+let gtext byte[] = "global";
+fn keep(s const byte[:]) { gh.push(H { s: s }); }
+fn inner() {
+	var y byte[>..] = [];
+	for i in 18 { y.push('a' + i as byte); }
+	keep(y[..]);
+}
+fn main() {
+	keep(gtext[..]);
+	inner();
+	print(gh[1].s);
+}

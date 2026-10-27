@@ -1,0 +1,14 @@
+// error: cannot call emit: it shrinks buf while words is still used, and words may refer into buf
+// mk's result holds a view of buf, which emit clears before it reads the
+// element (§5.1).
+fn mk(a byte[>..]&) (const byte[:])[] { [a[..], "q"] }
+fn emit(out byte[>..]&, words (const byte[:])[:]) {
+	out.clear();
+	out.append("ZZZZZZZZ");
+	print(words[0]);
+}
+fn main() {
+	var buf byte[>..] = [];
+	buf.append("abc");
+	emit(buf, mk(buf));
+}

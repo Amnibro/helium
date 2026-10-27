@@ -1,0 +1,19 @@
+// error: cannot clear b while r is still used: it may hold a reference or slice into it
+// k's reference names the slot p does, main's s: the store through it puts
+// b's slice there (§9.2), so r may view b, which the clear frees (§5.1).
+struct K { r byte[:]& }
+fn f(p byte[:]&, k K, o byte[:]) byte[:] {
+	k.r = o;
+	return p[0..1];
+}
+fn main() {
+	var a byte[>..] = [];
+	a.append("abc");
+	var b byte[>..] = [];
+	b.append("xyz");
+	var s = a[..];
+	let k = K { r: s };
+	let r = f(s, k, b[..]);
+	b.clear();
+	print(r);
+}

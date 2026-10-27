@@ -1,0 +1,4 @@
+// error: const for accessor belongs to Left, not Right
+struct Left { x int }
+struct Right { x int }
+fn main() { print(Right { const for <N, A> in fields<Left> { A: 1, } }); }

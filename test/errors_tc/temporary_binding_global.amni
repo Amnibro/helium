@@ -1,0 +1,6 @@
+// error: binding g to a slice rooted at a temporary, which does not outlive it
+// A global initializer's temporaries end with it too.
+fn mk() byte[] { "hello" }
+fn id(xs const byte[:]) const byte[:] { xs }
+let g = id(mk());
+fn main() { print(g); }

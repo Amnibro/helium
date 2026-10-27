@@ -1,0 +1,4 @@
+// error: a function value must be a function name or block literal
+fn inc(x int) int { x + 1 }
+fn apply<F>(x int) int { F(x) }
+fn main() { print(apply(5, loop { print("effect"); break inc; })); }

@@ -1,0 +1,17 @@
+// error: cannot call emit: it shrinks buf while words is still used, and words may refer into buf
+// words' element views names2, whose element views buf: the call follows
+// names' record on to names2's (§5.1).
+fn emit(out byte[>..]&, words ((const byte[:])[:])[:]) {
+	out.clear();
+	out.append("ZZZZZZZZ");
+	print(words[0][0]);
+}
+fn main() {
+	var buf byte[>..] = [];
+	buf.append("abc");
+	var names2 (const byte[:])[>..] = [];
+	names2.push(buf[..]);
+	var names ((const byte[:])[:])[>..] = [];
+	names.push(names2[..]);
+	emit(buf, names[..]);
+}

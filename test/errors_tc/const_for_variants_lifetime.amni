@@ -1,0 +1,7 @@
+// error: returning a reference rooted in local, which dies with this function
+enum Shape { Circle { r int }, Rect { w int, h int }, Dot }
+enum E { A { x int }, B { y int } }
+fn one(c E.A&) int& { c.x }
+fn one(c E.B&) int& { c.y }
+fn leak<T>(proto T&) int& { var local T = copy(proto); match local { const for <N, V> in variants<T> { V &c => one(c), } } }
+fn main() { let p E.. = E.A { x: 1 }; print(leak(p)); }
