@@ -71,6 +71,7 @@ fn lrcheck() {
 	if CURI >= 0 && lrtg(CURI) { let lno = nlbl(); ir(I_BZ, 3, -1, lcmp(fl, imm(lrkey(CURI) + 1), CC_E), -1, lno); stw(lrflag(), 0, imm(0), 3); let rt = FI_[CURI].ret as int; let va = lrval(CURI);
 		if rt >= 0 && rt != T_VOID { if is_agg(rt) { ir(I_COPY, 3, RETV, va, imm(tsz(rt)), 0); } else { if is_pair(rt) { ir(I_MOV, 3, RETV, ldw(va, 0, 3), -1, 0); ir(I_MOV, 3, RETV2, ldw(va, 8, 3), -1, 0); } else { ir(I_MOV, 3, RETV, ldw(va, 0, wof(rt)), -1, 0); } } }
 		drop_to(0); ir(I_JMP, 3, -1, -1, -1, RETL); ir(I_LBL, 3, -1, -1, -1, lno); }
+	let rt0 = if CURI >= 0 { FI_[CURI].ret as int } else { -1 }; if rt0 >= 0 && is_vimg(rt0) { ir(I_MOV, 3, RETV, imm(0), -1, 0); }
 	drop_to(0); ir(I_JMP, 3, -1, -1, -1, RETL); ir(I_LBL, 3, -1, -1, -1, lok);
 }
 fn lvaddr(v int) int { let d = nv(); if LVS[v].cfn as int != CUR { while CAPSL.len < LVS.len { CAPSL.push(-1); } if CAPSL[v] < 0 { lerr(-1, "captured variable without a capture slot"); return d; } ir(I_SLOT, 8, d, -1, -1, CAPSL[v] as int); return ldw(d, 0, 3); } ir(I_SLOT, 8, d, -1, -1, lslot(v)); d }
@@ -202,7 +203,7 @@ recursive fn lstore(addr int, n int, t int) {
 	if k == N_CALL { lcall_to(n, addr); return; }
 	if (k == N_DOT || k == N_ID) && rk(n) == R_VARIANT { lzero(addr, tsz(t)); if TY[t].k == TY_ENUM { stw(addr, 0, imm(rv(n)), wof(t)); } return; }
 	if k == N_IF || k == N_BLOCK || k == N_EBLOCK || k == N_LOOP || k == N_MATCH { lsink(n, addr, t); return; }
-	if ewagg(t) && (k == N_BIN || k == N_UN && ND[n].op as int == T_MINUS) { let pa, sa = lewop(ND[n].a as int, t); if k == N_UN { lew(-1, addr, pa, -1, -1, t, n); return; } let pb, sb = lewop(ND[n].b as int, t); lew(ND[n].op as int, addr, pa, pb, if sa >= 0 { sa } else { sb }, t, n); return; }
+	if ewagg(t) && (k == N_BIN || k == N_UN && ND[n].op as int == T_MINUS) { let pa0, sa = lewop(ND[n].a as int, t); let ca = deref(fin(ND[n].a as int)); let pa = if pa0 >= 0 && k == N_BIN && impure(ND[n].b as int) { let c = nv(); ir(I_SLOT, 8, c, -1, -1, slot(tsz(ca), tal(ca))); ir(I_COPY, 3, c, pa0, imm(tsz(ca)), 0); c } else { pa0 }; if k == N_UN { lew(-1, addr, pa, -1, -1, t, n); return; } let pb, sb = lewop(ND[n].b as int, t); lew(ND[n].op as int, addr, pa, pb, if sa >= 0 { sa } else { sb }, t, n); return; }
 	var m byte[>..] = []; format(m, "constructing a value (kind ", k, ", resolved ", rk(n), ", type kind ", TY[t].k, ")"); lerr(n, m[..]);
 }
 recursive fn is_lplace(n int) bool { let k = ND[n].k as int; if k == N_ID { let r = rk(n); return r == R_LOCAL || r == R_GLOBAL; } if k == N_DOT { return rk(n) == R_FIELD; } k == N_IDX || k == N_UN && ND[n].op as int == T_MUL }
@@ -254,9 +255,10 @@ fn wneed(m int, t int) bool { if m == 0 { hvimg(t) } else { pneeds(t) } }
 recursive fn lwalk(m int, a int, bf int, t int) {
 	if !wneed(m, t) { return; }
 	if is_vimg(t) {
-		if m <= 1 { let p, c = vdat(ldw(a, 0, 3), t); stw(a, 0, lvfrom(p, c, t), 3); return; }
-		if m == 2 { let p = ldw(a, 0, 3); rtcall("rt_qapv", [bf as i32, p as i32, lvsz(p, t) as i32]); return; }
-		let c = ldw(bf, 0, 3); stw(a, 0, addi(c, 8), 3); stw(bf, 0, bin(B_ADD, 3, addi(c, 8), ldw(c, 0, 3), -1), 3); return;
+		let e = TY[t].a as int; let ew = !is_seq(t) && wneed(m, e);
+		if m <= 1 { let p, c = vdat(ldw(a, 0, 3), t); stw(a, 0, lvfrom(p, c, t), 3); } else { if m == 2 { let p = ldw(a, 0, 3); rtcall("rt_qapv", [bf as i32, p as i32, lvsz(p, t) as i32]); } else { let c = ldw(bf, 0, 3); stw(a, 0, addi(c, 8), 3); stw(bf, 0, bin(B_ADD, 3, addi(c, 8), ldw(c, 0, 3), -1), 3); } }
+		if ew { let p, c = vdat(ldw(a, 0, 3), t); let i, lt, le = lloop(c); lwalk(m, bin(B_ADD, 3, p, bin(B_MUL, 3, i, imm(tsz(e)), -1), -1), bf, e); lloop_end(i, lt, le); }
+		return;
 	}
 	if is_res(t) {
 		if m == 0 { return; }
@@ -1103,7 +1105,9 @@ fn lower_fn(i int) {
 	drop_to(0); DROPS.clear();
 	if FZH > FZL { let za = nv(); let zn = nv(); IR[FZP] = Ir { I_SLOT as u8, 8, za as i32, -1, -1, FZL as i64, -1 }; IR[FZP + 1] = Ir { I_IMM as u8, 8, zn as i32, -1, -1, (FZH - FZL) as i64, -1 }; IR[FZP + 2] = Ir { I_ZERO as u8, 3, za as i32, -1, zn as i32, 0, -1 }; } FZP = -1;
 	ir(I_LBL, 3, -1, -1, -1, RETL);
-	if rt >= 0 && is_vimg(rt) && is_seq(rt) { let ma = nv(); ir(I_SLOT, 8, ma, -1, -1, MSLOT[fm] as int); let dp, dc = vdat(RETV, rt); let z = bin(B_ADD, 3, bin(B_SUB, 3, dp, RETV, -1), lsqbytes(dp, dc, TY[rt].a as int), -1); ir(I_MOV, 3, RETV, rtcall("rt_vretz", [RETV as i32, ldw(ma, 0, 3) as i32, z as i32]), -1, 0); } else { if rt >= 0 && is_vimg(rt) { let ma = nv(); ir(I_SLOT, 8, ma, -1, -1, MSLOT[fm] as int); ir(I_MOV, 3, RETV, rtcall("rt_vret", [RETV as i32, ldw(ma, 0, 3) as i32, imm(vw(rt) as int) as i32, imm(vlim(rt)) as i32, imm(tsz(TY[rt].a as int)) as i32]), -1, 0); } else { if !KEEPDS { ir(I_DSR, 3, -1, fm, -1, 0); } } } KEEPDS = false;
+	let lz = nlbl(); let ld = nlbl(); if rt >= 0 && is_vimg(rt) { ir(I_BZ, 3, -1, RETV, -1, lz); }
+	if rt >= 0 && is_vimg(rt) && is_seq(rt) { let ma = nv(); ir(I_SLOT, 8, ma, -1, -1, MSLOT[fm] as int); let dp, dc = vdat(RETV, rt); let z = bin(B_ADD, 3, bin(B_SUB, 3, dp, RETV, -1), lsqbytes(dp, dc, TY[rt].a as int), -1); ir(I_MOV, 3, RETV, rtcall("rt_vretz", [RETV as i32, ldw(ma, 0, 3) as i32, z as i32]), -1, 0); } else { if rt >= 0 && is_vimg(rt) && wneed(0, TY[rt].a as int) { let s0 = nv(); ir(I_SLOT, 8, s0, -1, -1, slot(8, 8)); stw(s0, 0, RETV, 3); let bf = nv(); ir(I_SLOT, 8, bf, -1, -1, slot(48, 8)); lzero(bf, 48); rtcall("rt_qapv", [bf as i32, s0 as i32, imm(-8) as i32]); lwalk(2, s0, bf, rt); ir(I_DSR, 3, -1, fm, -1, 0); let z = ldw(bf, 8, 3); let c0 = rtcall("rt_dsput", [z as i32]); ir(I_COPY, 3, c0, ldw(bf, 0, 3), z, 0); let h = nv(); ir(I_SLOT, 8, h, -1, -1, slot(16, 8)); stw(h, 0, addi(c0, 8), 3); stw(s0, 0, ldw(c0, 0, 3), 3); lwalk(3, s0, h, rt); rtcall("rt_rdrop", [bf as i32]); ir(I_MOV, 3, RETV, ldw(s0, 0, 3), -1, 0); } else { if rt >= 0 && is_vimg(rt) { let ma = nv(); ir(I_SLOT, 8, ma, -1, -1, MSLOT[fm] as int); ir(I_MOV, 3, RETV, rtcall("rt_vret", [RETV as i32, ldw(ma, 0, 3) as i32, imm(vw(rt) as int) as i32, imm(vlim(rt)) as i32, imm(tsz(TY[rt].a as int)) as i32]), -1, 0); } else { if !KEEPDS { ir(I_DSR, 3, -1, fm, -1, 0); } } } }
+	if rt >= 0 && is_vimg(rt) { ir(I_JMP, 3, -1, -1, -1, ld); ir(I_LBL, 3, -1, -1, -1, lz); ir(I_DSR, 3, -1, fm, -1, 0); ir(I_LBL, 3, -1, -1, -1, ld); } KEEPDS = false;
 	MSTK.pop();
 	ir(I_RET, 3, -1, if rt >= 0 && rt != T_VOID { RETV } else { -1 }, if rt >= 0 && is_pair(rt) { RETV2 } else { -1 }, 0);
 	NFS[nf].i0 = i0 as i32; NFS[nf].i1 = IR.len as i32; NFS[nf].nv = NV as i32; NFS[nf].sb = SB as i32;

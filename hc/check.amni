@@ -2,7 +2,7 @@ import decl;
 let R_NONE = 0; let R_LOCAL = 1; let R_GLOBAL = 2; let R_FN = 3; let R_BUILTIN = 4; let R_FIELD = 5; let R_CONST = 6; let R_VARIANT = 7; let R_MEMBER = 8; let R_CTOR = 9; let R_BLOCK = 10; let R_UFCS = 11; let R_VCTOR = 12; let R_FCONST = 13; let R_CASE = 14; let R_CFB = 15;
 let LV_LIT = 128; let LPN = -7; let LV_VAR = 1; let LV_CONST = 2; let LV_PARAM = 4; let LV_REF = 8; let LV_FOR = 16; let LV_BLKP = 32; let LV_FLET = 64; let LV_CFB = 256;
 let IS_DONE = 2;
-struct FnI { node i32, lo i32, hi i32, ab i32, par i32, cfn i32, g0 i32, gn i32, ret i32, p0 i32, pn i32, st u8, lr bool, blk i32, bown i32, name i32, fl u16, rinf bool, tg bool, nc bool }
+struct FnI { node i32, lo i32, hi i32, ab i32, par i32, cfn i32, g0 i32, gn i32, ret i32, p0 i32, pn i32, st u8, lr bool, blk i32, bown i32, name i32, fl u16, rinf bool, tg bool, nc bool, dy bool }
 struct LV { name i32, ty i32, fl u16, cfn i32, own i32, node i32, cnt i32 }
 struct Cap { inst i32, lv i32 }
 struct CEdge { caller i32, callee i32 }
@@ -79,8 +79,11 @@ fn note_cap(v int) {
 		a = FI_[a].par as int;
 	}
 }
+var DYT i32[>..<];
+fn dyt_add(i int, t int) { var k = 0; while k < DYT.len { if DYT[k] as int == i && DYT[k + 1] as int == t { return; } k += 2; } DYT.push(i as i32); DYT.push(t as i32); FI_[i].dy = true; }
 fn note_edge(callee int) {
 	if CFN < 0 || callee < 0 || CFN == callee { return; }
+	if FI_[callee].dy { var k = 0; let n0 = DYT.len; while k < n0 { if DYT[k] as int == callee && DYT[k + 1] as int != CFN && !is_lex_anc(DYT[k + 1] as int, CFN) { dyt_add(CFN, DYT[k + 1] as int); } k += 2; } }
 	for e in CEDGES { if e.caller as int == CFN && e.callee as int == callee { return; } }
 	CEDGES.push(CEdge { CFN as i32, callee as i32 });
 }
@@ -717,7 +720,7 @@ recursive fn ck_ret(n int) int {
 	let x = ND[n];
 	let f = if x.s >= 0 { find_from_fn(x.s as int) } else { ret_fn() };
 	if f < 0 { cerr(n, "return outside a function"); return T_VOID; }
-	if f != CFN { FI_[CFN].lr = true; FI_[f].tg = true; set_x(n, f); } else { set_x(n, -1); }
+	if f != CFN { FI_[CFN].lr = true; FI_[f].tg = true; set_x(n, f); dyt_add(CFN, f); } else { set_x(n, -1); }
 	let rt = FI_[f].ret as int;
 	if x.n == 0 { if rt >= 0 && rt != T_VOID && !FI_[f].rinf { cerr(n, "return needs a value"); } if rt < 0 { FI_[f].ret = T_VOID as i32; } return set_t(n, T_VOID); }
 	if rt >= 0 && TY[rt].k == TY_MULTI && x.n == 1 { let c = kid(n, 0); ck(c, rt); return set_t(n, T_VOID); }
@@ -774,6 +777,7 @@ recursive fn ck_cfor(n int) int {
 	for inst in cf_insts(n) { let m = SCOPE.len; let g = GB.len; let ld = LOOPD; let bt = BRK_T.len; cf_bind(inst as int); LOOPD = 0; ck(ND[n].c as int, -1); LOOPD = ld; while BRK_T.len > bt { BRK_T.pop(); } SCOPE.pop_n(SCOPE.len - m); GB.pop_n(GB.len - g); AOWN = sa; }
 	set_t(n, T_VOID)
 }
+fn is_lex_anc(t int, i int) bool { var j = FI_[i].par as int; while j >= 0 { if j == t { return true; } j = FI_[j].par as int; } false }
 fn ret_fn() int { var i = AOWN; while i >= 0 { if FI_[i].node >= 0 && ND[FI_[i].node].k == N_FN { return i; } i = FI_[i].par as int; } -1 }
 recursive fn ck_break(n int) int {
 	let x = ND[n];

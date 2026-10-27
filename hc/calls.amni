@@ -43,8 +43,8 @@ recursive fn decl_nested(n int) {
 	var i = -1;
 	for f in NESTS { if f.node as int == n && f.own as int == AOWN { i = f.inst as int; } }
 	if i < 0 { i = new_inst(n, n, NEND[n] as int, AOWN); NESTS.push(NF { ND[n].s, n as i32, i as i32, AOWN as i32 }); sig_inst(i); }
-	let e0 = CERR.len; let ne = NERR; check_inst(i);
-	if NERR > ne && e0 == 0 { var m byte[>..] = []; m.append(CERR[..]); CERR.clear(); NERR = ne; DEFE.push(i as i32); DEFM.push(intern(m[..]) as i32); }
+	let e0 = CERR.len; let ne = NERR; let f0 = FI_.len; check_inst(i);
+	if NERR > ne && e0 == 0 { var m byte[>..] = []; m.append(CERR[..]); CERR.clear(); NERR = ne; let mi = intern(m[..]); DEFE.push(i as i32); DEFM.push(mi as i32); for j in f0..FI_.len { DEFE.push(j as i32); DEFM.push(mi as i32); } }
 }
 var DEFE i32[>..<]; var DEFM i32[>..<];
 fn defer_err(i int) { for e, k in DEFE { if e as int == i { NERR++; if CERR.len == 0 { CERR.append(nm(DEFM[k] as int)); } } } }
@@ -245,10 +245,11 @@ fn same_binds(i int, b0 int, bn int) bool {
 	for j in bn { if GBS[(FI_[i].g0 as int) + j].ty != BINDS[b0 + j].ty || GBS[(FI_[i].g0 as int) + j].name != BINDS[b0 + j].name { return false; } }
 	true
 }
+fn on_chain(i int, b int) bool { var j = b; while j >= 0 { if j == i { return true; } j = if FI_[j].bown >= 0 { FI_[j].bown as int } else { FI_[j].par as int }; } false }
 recursive fn get_inst(node int, b0 int, bn int, blk int, bown int) int {
 	let par = if (ND[node].fl & F_NESTED) != 0 { AOWN } else { -1 };
 	var xb i32[>..<] = []; xb.append(XBS[..]); XBS.clear();
-	for f, i in FI_ { if f.node as int == node && f.blk as int == blk && (blk == -1 || f.bown as int == bown) && f.par as int == par && same_binds(i, b0, bn) && xb_same(i, xb[..]) { return i; } }
+	for f, i in FI_ { if f.node as int == node && f.blk as int == blk && (blk == -1 && (!f.dy || on_chain(i, bown)) || f.bown as int == bown) && f.par as int == par && same_binds(i, b0, bn) && xb_same(i, xb[..]) && !DEFE.contains(i as i32) { return i; } }
 	let i = new_inst(node, node, NEND[node] as int, par);
 	FI_[i].g0 = GBS.len as i32;
 	for j in bn { GBS.push(BINDS[b0 + j]); }
@@ -431,7 +432,7 @@ recursive fn call_block(n int, inst int) int {
 	if FI_[inst].blk < -1 {
 		let fnm = -2 - FI_[inst].blk as int;
 		let sa = AOWN; AOWN = FI_[inst].bown as int; let nf = find_nest(fnm); AOWN = sa;
-		if nf >= 0 { return call_nested(n, nf); }
+		if nf >= 0 { return call_reinst(n, NESTS[nf].inst as int); }
 		return call_fn(n, fnm, -1, -1);
 	}
 	let fv = FI_[inst].blk as int;
@@ -477,7 +478,18 @@ recursive fn call_nested(n int, nf0 int) int {
 		if pick < 0 { for j in an { let d = deref(ARGW[s + j] as int); if pick < 0 && TY[d].k == TY_ENUM { let ei = TY[d].a as int; var ins i32[>..<] = []; for vi in ENI[ei].vnum { var f = -1; for c in cs { let pt = deref(ptype_of(c as int, j)); if f < 0 && FI_[c].pn as int == an && TY[pt].k == TY_VARIANT && TY[pt].a as int == ei && TY[pt].c as int == vi && nfits(c as int, s, an, j) { f = c as int; } } if f >= 0 { ins.push(f as i32); } }
 			if ins.len == ENI[ei].vnum as int && ins.len > 0 { let i0 = ins[0] as int; for k in an { if k != j { conv(DIDX[s + k] as int, ptype_of(i0, k)); } } pop_args(s); let d0 = DSPL.len; DSPL.push(j as i32); DSPL.append(ins[..]); for c in ins { note_caps_of(c as int); note_edge(c as int); } set_r(n, R_CASE, d0); return set_t(n, if FI_[i0].ret >= 0 { FI_[i0].ret as int } else { T_VOID }); } } } }
 		pop_args(s); if pick >= 0 { for q, qi in NESTS { if q.inst as int == pick { nf = qi; } } } }
-	let i = NESTS[nf].inst as int; defer_err(i);
+	call_reinst(n, NESTS[nf].inst as int)
+}
+var RINS i32[>..<];
+recursive fn call_reinst(n int, i0 int) int {
+	if !DEFE.contains(i0 as i32) { return call_inst(n, i0); }
+	var k = 0; while k < RINS.len { if RINS[k] as int == i0 && RINS[k + 1] as int == AOWN { return call_inst(n, RINS[k + 2] as int); } k += 3; }
+	let nd = FI_[i0].node as int; let i = new_inst(nd, nd, NEND[nd] as int, FI_[i0].par as int); sig_inst(i); FI_[i].bown = AOWN as i32; RINS.push(i0 as i32); RINS.push(AOWN as i32); RINS.push(i as i32);
+	let sa = AOWN; check_inst(i); AOWN = sa;
+	call_inst(n, i)
+}
+recursive fn call_inst(n int, i int) int {
+	defer_err(i);
 	let s = ck_args(n, 0, -1);
 	for j in ND[n].n { let c = kid(n, j); if j < FI_[i].pn as int { conv(c, ptype_of(i, j)); } }
 	pop_args(s);
