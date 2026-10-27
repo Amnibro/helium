@@ -17,12 +17,26 @@ def ex(r,t,d,arrs,od,fe=False):
     if k<0.4: return f'({e(r.choice(T))} as! {t})'
     if k<0.48: return f'({e(t)} * {r.choice([2,4,8,3,5,16,7])})'
     return f'({e(t)} {r.choice(["+","+","-","*","&","|","^"])} {e(t)})'
+def cond(r,d,bs):
+    if d<=0 or r.random()<0.3:
+        k=r.random()
+        if k<0.25: return r.choice(bs) if r.random()<0.7 else '!'+r.choice(bs)
+        v=lambda:r.choice(['p','q','c','h','lo',f'({r.randint(0,9)} as uint)','(x as! uint)'])
+        return f'{v()} {r.choice(["<","<=",">",">=","==","!="])} {v()}'
+    return f'({cond(r,d-1,bs)} {r.choice(["&&","||"])} {cond(r,d-1,bs)})'
+def brk(r,od):
+    bs=['f','g'];C=lambda:cond(r,r.randint(0,3),bs);L=['\tt ~= 0','\tc uint ~= 0','\th uint ~= 0','\tf ~= false','\tg ~= true','\tfor x lo..hi:',f'\t\tp := a[x + {r.choice([0,1,2,3])}] as! uint',f'\t\tq := b[x + {r.choice([0,1,2,od+2])}] as! uint','\t\tlo ~= p * q']
+    for _ in range(r.randint(3,9)):
+        k=r.randint(0,10);v=r.choice(['c','h'])
+        L.append({0:lambda:f'\t\tif {C()} {{ {v}++ }}',1:lambda:f'\t\tif {C()} {{ {v}-- }}',2:lambda:f'\t\tt += if {C()} {{ 1 }} else {{ 0 }}',3:lambda:f'\t\t{v} = if {C()} {{ {v} + 1 }} else {{ {v} }}',4:lambda:f'\t\t{v} = if {C()} {{ {v} }} else {{ {v} - 1 }}',5:lambda:f'\t\t{r.choice(bs)} = {C()}',6:lambda:f'\t\tg = {C()} || (g && {C()})',7:lambda:f'\t\tif {C()} {{ f = true; {v} += 1 }}',8:lambda:'\t\th = mh(p, q + c)\n\t\tlo += c\n\t\tif lo < c { h++ }\n\t\tc = h',9:lambda:f'\t\tif {C()} {{ continue }}',10:lambda:f'\t\tc = if lo < c {{ h + 1 }} else {{ h }}'}[k]())
+    return L+['\t\tt = t * 31 + (c as! int) + (h as! int) * 7 + (lo as! int) + (if f { 3 } else { 0 }) + (if g { 5 } else { 0 })','\tt']
 def prog(seed):
     r=random.Random(seed);ks=[];N=r.choice([64,100,257,1000,4099])
-    L=['xs_next(x uint) uint:\n\tv ~= x\n\tv ^= v << 13\n\tv ^= v >> 7\n\tv ^= v << 17\n\tv']
+    L=['mh(a uint, b uint) uint:\n\tal := a & 0xffffffff; ah := a >> 32; bl := b & 0xffffffff; bh := b >> 32\n\tll := al * bl; lh := al * bh; hl := ah * bl; hh := ah * bh\n\tmid := (ll >> 32) + (lh & 0xffffffff) + (hl & 0xffffffff)\n\thh + (lh >> 32) + (hl >> 32) + (mid >> 32)','xs_next(x uint) uint:\n\tv ~= x\n\tv ^= v << 13\n\tv ^= v >> 7\n\tv ^= v << 17\n\tv']
     for k in range(r.randint(3,7)):
-        td,ta,tb=r.choice(T),r.choice(T),r.choice(T);od=r.choice([0,0,1,2,-1,4]);arrs=[('a',ta),('b',tb),('d',td)];tw=r.random()<0.2;mode=r.choice(['st','st','red','fe','last','glob','sl','sl','gat','gat','flt','flt','flt']);ta='u8' if mode=='gat' and r.random()<0.8 else ta;arrs[0]=('a',ta);ks.append((td,ta,tb,tw and mode in('st','last')))
+        td,ta,tb=r.choice(T),r.choice(T),r.choice(T);od=r.choice([0,0,1,2,-1,4]);arrs=[('a',ta),('b',tb),('d',td)];tw=r.random()<0.2;mode=r.choice(['st','st','red','fe','last','glob','sl','sl','gat','gat','flt','flt','flt','br','br','br']);ta='u8' if mode=='gat' and r.random()<0.8 else ta;arrs[0]=('a',ta);ks.append((td,ta,tb,tw and mode in('st','last')))
         L.append(f'k{k}(d {td}[>..]&, a {ta}[>..]&, b {tb}[>..]&, u int, lo int, hi int) int:')
+        if mode=='br': L+=brk(r,od);continue
         if mode=='fe':
             L+=[f'\tt ~= {r.randint(-1000,1000)}','\tfor v a:',f'\t\tt {r.choice(OPS)} {ex(r,"int",r.randint(0,3),arrs[:2],0,True).replace("[x ","[0 ")}','\tt'];continue
         if mode=='red':
@@ -65,7 +79,7 @@ def prog(seed):
 def one(seed):
     with tempfile.TemporaryDirectory() as w:
         (pathlib.Path(w)/'p.he').write_text(prog(seed));env=dict(os.environ,HC_LIB=str(R/'hc'/'lib'));out=[]
-        for tag,e in (('s',dict(env,HC_NOVEC='1')),('v',env)):
+        for tag,e in (('s',dict(env,HC_NOVEC='1',HC_NOBR='1')),('v',env)):
             c=subprocess.run([HC,'p.he','p'+tag,'--native'],cwd=w,env=e,capture_output=True,timeout=60)
             if c.returncode: return seed,'compile',(c.stdout+c.stderr).decode(errors='replace')[:200]
             try: x=subprocess.run(['./p'+tag],cwd=w,capture_output=True,timeout=30);out.append((x.returncode,x.stdout))
@@ -76,4 +90,4 @@ if __name__=='__main__':
     with cf.ThreadPoolExecutor(max(1,(os.cpu_count() or 2)//2)) as pool:
         for seed,st,msg in pool.map(one,range(S0,S0+N)):
             if st!='ok': bad+=1;print(seed,st,msg)
-    print(f'{N-bad}/{N} programs match with and without HC_NOVEC');sys.exit(1 if bad else 0)
+    print(f'{N-bad}/{N} programs match with and without HC_NOVEC/HC_NOBR');sys.exit(1 if bad else 0)

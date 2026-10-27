@@ -249,7 +249,7 @@ vec_loop(fi int, h int, j int) bool:
 			if vln(b) { if VLS[b] != 2 || VLW[b] as int != fw { return false } } else { if !vun(b) { return false } eb = vuref(b, fw) }
 			VAK[d] = 3; VLW[d] = fw as i8; VLS[d] = 2; VOS.push(VOp{3, fw as u8, fw as u8, d as i32, ea as i32, eb as i32, -1, (c | 256) as i64, 0}); continue
 		if op == I_BIN:
-			if x.l >= 0: return false
+			if x.l >= 0 || x.c == B_UMULH as i64: return false
 			if !vln(a) { vav(a) } if !vln(b) { vav(b) } c := x.c as int
 			if vln(a) && VLS[a] == 2 || vln(b) && VLS[b] == 2: return false
 			if vaf(a) && vaf(b):

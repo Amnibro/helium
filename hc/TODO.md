@@ -49,7 +49,7 @@ The native corpus passes completely. What is left:
 
 - **`lut fn`:** done in `.amni` files: CPU tables (lex.he `lut_desugar`) and the GPU fill (hc/lutglsl.he writes GLSL, our shaderc compiles it with int64, hc/lib/lutgpu.he runs it through Vulkan from an optional `extern "libvulkan.so.1?"`). `tools/hc/luttest.sh` checks GPU tables against the CPU. Left: `.he` files (a `lut fn` there is still a plain function).
 - **C path** (101 tests): it lags native on variable-mode ADTs, varint values and serialization, contextual generic floats and the newer native fixes. An `if` expression yielding `null` or a pool element into a pool-relative field emits an assignment clang rejects (`hc/test/relref_guard.he` builds its links with statements instead).
-- **Rejection parity:** `python3 tools/hc/errtest.py <hc>` runs the 1937 `test/errors_tc` programs, each of which Goose rejects with the diagnostic in its `// error:` line. hc (2026-10-27): 2 match, 162 rejected with other wording, 1753 accepted, 20 crash (cyclic constants, field and parameter defaults, growing types, polymorphic recursion recurse until the stack runs out). Accepting is not harmless: `var l = l0; return l` compiled to a use-after-free until hc gained Goose's return check. `tools/hc/baseline/err.txt` holds the matching files; CI fails if one stops matching.
+- **Rejection parity:** `python3 tools/hc/errtest.py <hc>` runs the 1937 `test/errors_tc` programs, each of which Goose rejects with the diagnostic in its `// error:` line. hc (2026-10-27): 26 match, 160 rejected with other wording, 1751 accepted, 0 crash (was 2 match and 20 crash that morning). All 20 now stop with Goose's diagnostic: cycles in constants, field defaults and parameter defaults (each is re-checked under a stack of the defaults in progress), generic types and recursive specializations capped at 16 in a chain, `const for` expansion capped at 100000 generated nodes. Accepting is not harmless: `var l = l0; return l` compiled to a use-after-free until hc gained Goose's return check. `tools/hc/baseline/err.txt` holds the matching files; CI fails if one stops matching.
 
 ## 2. Performance (native vs clang)
 
@@ -121,7 +121,7 @@ The native corpus passes completely. What is left:
 
 ## Suggested order
 
-1. Rejection parity: the 20 crashes first, then Goose's §4.1 copy and lifetime checks (the accepted programs that miscompile).
+1. Rejection parity: Goose's §4.1 copy and lifetime checks (the accepted programs that miscompile).
 2. `lut fn` in `.he` files.
 3. Performance passes: `separate`, `reachable`, BLAKE3, bounds checks in loops.
 4. Editor support for `.he` and `.amni` on `hc lsp`.

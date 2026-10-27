@@ -539,6 +539,7 @@ test/threads/qlimit_zero.amni
 test/threads/qpoll_zero_padded.amni
 test/threads/queue_bounds.amni
 test/threads/queue_producers.amni
+test/threads/thread_array_copy.amni
 test/threads/thread_cap.amni
 test/threads/thread_const_globals.amni
 test/threads/thread_contained.amni
@@ -652,6 +653,7 @@ test/typing/return_recursion_guarantees.amni
 test/typing/return_recursion_prebind.amni
 test/typing/self_constructing_defaults.amni
 test/typing/slice_destinations.amni
+test/typing/slice_to_array_param.amni
 test/typing/struct_literal_default_inference.amni
 test/typing/typecheck.amni
 test/typing/typed_loop_binders.amni

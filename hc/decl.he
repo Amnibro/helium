@@ -235,6 +235,11 @@ recursive rtype(n int, ns int) int:
 gen_names(gl int, out i32[..16]&):
 	if gl >= 0:
 		for i ND[gl].n: out.push(ND[kid(gl, i)].s)
+var ISI i32[>..]
+inode(t int) int: if TY[t].k == TY_STRUCT { STI[TY[t].a].node as int } else { ENI[TY[t].a].node as int }
+ichain(node int, t int) bool:
+	ISI.push(t as i32); ch i32[..17] ~= []; for q ISI { if inode(q) == node && ch.len < 17 { ch.push(q) } } if ch.len <= 16: return false
+	m byte[>..] ~= []; format(m, "instantiating ", ty_name(t), " would chain more than 16 instantiations of ", nm(ND[node].s), ", each needed by the one before ("); for q ch[..3] { format(m, ty_name(q), ", ") } m.append("...)"); derr(ND[node].t, m[..]); true
 recursive inst_struct(node int, args i32[:]) int:
 	for s, i STI:
 		if s.node == node && s.tn == args.len:
@@ -246,8 +251,9 @@ recursive inst_struct(node int, args i32[:]) int:
 	if gn.len != args.len: derr(ND[node].t, "wrong number of type arguments")
 	g0 := GB.len
 	for i min(gn.len, args.len): GB.push(Gb{gn[i], args[i]})
-	f0 := fields_into(node, ns_of(node))
-	STI[si].f0 = f0; STI[si].fnum = SFI.len - f0
+	deep := ichain(node, t_struct(si))
+	f0 := if deep { SFI.len } else { fields_into(node, ns_of(node)) }
+	ISI.pop(); STI[si].f0 = f0; STI[si].fnum = SFI.len - f0
 	GB.pop_n(GB.len - g0)
 	si
 recursive fields_into(node int, ns int) int:
@@ -274,15 +280,15 @@ recursive inst_enum(node int, args i32[:]) int:
 	gn i32[..16] ~= []; gen_names(ND[node].d, gn)
 	g0 := GB.len
 	for i min(gn.len, args.len): GB.push(Gb{gn[i], args[i]})
-	ns := ns_of(node)
+	ns := ns_of(node); deep := ichain(node, t_enum(ei, false))
 	for i nv:
 		v := kid(node, i)
 		si := STI.len
 		STI.push(SI{node: v, ta: ta, tn: args.len, f0: SFI.len, fnum: 0, name: ND[v].s, ..})
-		f0 := fields_into(v, ns)
+		f0 := if deep { SFI.len } else { fields_into(v, ns) }
 		STI[si].f0 = f0; STI[si].fnum = SFI.len - f0
 		ENV[v0 + i].si = si
-	GB.pop_n(GB.len - g0)
+	ISI.pop(); GB.pop_n(GB.len - g0)
 	ei
 cwrap(v i64, c int) i64:
 	if c < 0 || c & 3 == 3: return v
@@ -291,6 +297,9 @@ cwrap(v i64, c int) i64:
 	if c < 4 && u >= 1 << (b - 1) as u64: return u as! i64 - (1 << b)
 	u as! i64
 ceval(n int, ns int) i64, bool: v, c, ok := ceval3(n, ns); return v, ok
+var CEV i32[>..]
+cev_cyc(d int, name int, t int) bool:
+	for q CEV { if q == d { m byte[>..] ~= []; format(m, "cycle in constant initializer: ", nm(name)); derr(t, m[..]); return true } } false
 recursive ceval3(n int, ns int) i64, int, bool:
 	if n < 0: return 0, -1, false
 	x := ND[n]
@@ -325,7 +334,8 @@ recursive ceval3(n int, ns int) i64, int, bool:
 		if d < 0: return 0, -1, false
 		g := DC[d].node
 		if ND[g].fl & V_VAR != 0 || ND[g].b < 0: return 0, -1, false
-		v, c, ok := ceval3(kid(ND[g].b, 0), ns_of(g))
+		if cev_cyc(d, x.s as int, x.t as int): return 0, -1, false
+		CEV.push(d as i32); v, c, ok := ceval3(kid(ND[g].b, 0), ns_of(g)); CEV.pop()
 		tn0 := ND[g].a
 		if tn0 >= 0 && ND[tn0].k == N_TPRIM:
 			tc := int_storage_of_tok(ND[tn0].op); if tc >= 0: return cwrap(v, tc), tc, ok
@@ -335,6 +345,9 @@ recursive ceval3(n int, ns int) i64, int, bool:
 recursive glen(name int, ns int, cap bool) i64, bool:
 	d := lookup_q(name, ns, D_GLOBAL)
 	if d < 0: return 0, false
+	if cev_cyc(d, name, ND[DC[d].node].t as int): return 0, false
+	CEV.push(d as i32); v, ok := glen_d(d, cap); CEV.pop(); return v, ok
+recursive glen_d(d int, cap bool) i64, bool:
 	g := DC[d].node; gs := ns_of(g)
 	if ND[g].a >= 0:
 		t := rtype(ND[g].a, gs); if TY[t].k == TY_ARR && TY[t].s == A_FIXED as u8 { return TY[t].b, true } if TY[t].k == TY_ARR && TY[t].s == A_LIM as u8 && TY[t].b >= 0 && cap { return TY[t].b, true } return 0, false

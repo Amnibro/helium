@@ -211,7 +211,18 @@ ptype_of(i int, j int) int:
 recursive rets_to(node int, f int, inner bool) bool:
 	j ~= node + 1; e := NEND[node]
 	while j < e { x := ND[j]; k := x.k; if k == N_FN { if rets_to(j, f, true) { return true } j = NEND[j]; continue } if k == N_RET && (x.s == f || x.s < 0 && !inner) { return true } j += 1 } false
-recursive check_inst(i int): sv := NSOV; NSOV = -1; check_inst0(i); NSOV = sv
+var CIS i32[>..]
+recursive tmentions(t int, g int) bool:
+	if t < 0: return false
+	k := ND[t].k as int; if k == N_TNAME { if ND[t].s == g { return true } for j ND[t].n { if tmentions(kid(t, j), g) { return true } } return false } if k == N_TARR || k == N_TSLICE || k == N_TREF || k == N_TVAR || k == N_TCONST || k == N_TIDX { return tmentions(ND[t].a as int, g) } false
+recursive check_inst(i int):
+	if FI_[i].st != 0: return
+	nd := FI_[i].node; dn ~= 0; for q CIS { if FI_[q].node == nd { dn++ } }
+	if dn >= 16:
+		m byte[>..] ~= []; format(m, "instantiating ", nm(FI_[i].name)); ex ~= 0
+		for j FI_[i].gn: g := GBS[FI_[i].g0 as int + j]; ok ~= false; for q ND[nd].n { if tmentions(ND[kid(nd, q)].a as int, g.name as int) { ok = true } } if !ok { m.append(if ex == 0 { "<" } else { ", " }); format(m, nm(g.name), " = ", ty_name(g.ty)); ex++ }
+		if ex > 0 { m.append(">") } m.append("("); for j ND[nd].n { if j > 0 { m.append(", ") } m.append(ty_name(ptype_of(i, j))) } format(m, ") would put more than 16 specializations of ", nm(FI_[i].name), " in progress on this call path"); cerr(nd, m[..]); FI_[i].st = 2; return
+	CIS.push(i as i32); sv := NSOV; NSOV = -1; fb := FDB; pb := PDB; db := DOB; if !in_def(i) { FDB = FDS.len; PDB = PDS.len; DOB = DOS.len } check_inst0(i); FDB = fb; PDB = pb; DOB = db; NSOV = sv; CIS.pop()
 recursive check_inst0(i int):
 	if FI_[i].st != 0: return
 	node := FI_[i].node
@@ -459,10 +470,34 @@ recursive ck_call(n int, want int) int:
 		return call_fn(n, name, obj, want)
 	cerr(n, "this call's callee is not supported yet")
 	set_t(n, T_ERRT)
+var FDS i32[>..]
+var PDS i32[>..]
+var FDB = 0
+var PDB = 0
+var DOS i32[>..]
+var DOB = 0
+recursive in_def(i int) bool:
+	p ~= FI_[i].par as int; while p >= 0 { for q DOS[DOB..] { if q == p { return true } } if FI_[p].blk >= 0 && FI_[p].bown >= 0 && FI_[p].bown != p && in_def0(FI_[p].bown as int) { return true } p = FI_[p].par as int } FI_[i].blk >= 0 && FI_[i].bown >= 0 && FI_[i].bown != i && in_def0(FI_[i].bown as int)
+recursive in_def0(b int) bool:
+	for q DOS[DOB..] { if q == b { return true } } in_def(b)
+recursive ck_pdef(i int, an int, n int):
+	nd := FI_[i].node
+	for j an..(ND[nd].n as int):
+		p := kid(nd, j); if ND[p].b < 0: continue
+		k ~= PDB; while k < PDS.len { if PDS[k] == nd && PDS[k + 1] == j { m byte[>..] ~= []; format(m, "the default of parameter ", nm(ND[p].s), " of ", nm(FI_[i].name), " leads to this call, which takes it again"); cerr(n, m[..]); return } k += 2 }
+		PDS.push(nd as i32); PDS.push(j as i32); DOS.push(i as i32); sa := AOWN; sc := CFN; AOWN = i; CFN = i; g0 := dpush(i); pt := ptype_of(i, j); NSOV = decl_ns(nd); ck(ND[p].b, pt); NSOV = -1; conv(ND[p].b, pt); GB.pop_n(GB.len - g0); AOWN = sa; CFN = sc; PDS.pop_n(2); DOS.pop()
+stname(si int) byte[>..]:
+	o byte[>..] ~= []; for e, ei ENI { for q e.vnum { if ENV[e.v0 as int + q].si == si { format(o, tn(t_enum(ei, false)), ".", nm(ENV[e.v0 as int + q].name as int)); return o } } } o.append(tn(t_struct(si))); o
+recursive ck_fdef(si int, j int, n int):
+	f := SFI[STI[si].f0 as int + j]; nd := STI[si].node; k ~= FDB
+	while k < FDS.len:
+		if STI[FDS[k]].node == nd && FDS[k + 1] == j: m byte[>..] ~= []; format(m, "the default of field ", nm(f.name as int), " of ", stname(FDS[k] as int), " leads to this construction of ", stname(si), ", which takes it again"); cerr(n, m[..]); return
+		k += 2
+	FDS.push(si as i32); FDS.push(j as i32); sa := AOWN; AOWN = sdinst(si); DOS.push(AOWN as i32); g0 := dpush(AOWN); ck(f.def as int, f.ty as int); conv(f.def as int, f.ty as int); GB.pop_n(GB.len - g0); AOWN = sa; FDS.pop_n(2); DOS.pop()
 recursive ck_defs(t int):
 	if t < 0 { return } k := TY[t].k as int; if k == TY_ENUM { if ENI[TY[t].a].vnum > 0 { ck_defs(t_variant(TY[t].a as int, 0)) } return } if k == TY_ARR { ck_defs(TY[t].a as int); return } si := if k == TY_STRUCT { TY[t].a as int } else { if k == TY_VARIANT { ENV[ENI[TY[t].a].v0 as int + TY[t].c as int].si as int } else { -1 } }; if si < 0 { return } for j STI[si].fnum:
 		f := SFI[STI[si].f0 as int + j]; if f.ty < 0 { continue } if f.def >= 0:
-			if at(f.def as int) < 0: sa := AOWN; AOWN = sdinst(si); g0 := dpush(AOWN); ck(f.def as int, f.ty as int); conv(f.def as int, f.ty as int); GB.pop_n(GB.len - g0); AOWN = sa
+			if at(f.def as int) < 0: ck_fdef(si, j, f.def as int)
 		else: ck_defs(f.ty as int)
 recursive user_format(n int) bool:
 	if ND[n].n == 0 { return false } t := deref(ck(kid(n, 0), -1)); if pend_local(kid(n, 0)) { return false } !(TY[t].k == TY_ARR && TY[t].a == T_U8 && (is_grow(t) || TY[t].s as int == A_LIM))
@@ -731,7 +766,7 @@ recursive call_fn(n int, name int, recv int, want int) int:
 	for j an: conv_arg(DIDX[s + j] as int, ptype_of(inst, j))
 	pop_args(s)
 	note_caps_of(inst); note_edge(inst)
-	set_r(n, R_FN, inst)
+	set_r(n, R_FN, inst); ck_pdef(inst, an, n)
 	rt := FI_[inst].ret
 	if rt < 0 && FI_[inst].st == 1 && isst: return set_t(n, T_VOID)
 	if rt < 0: if FI_[inst].st == 1 { m byte[>..] ~= []; format(m, "recursive call to ", nm(name), " needs its result type written"); cerr(n, m) } return set_t(n, T_ERRT)
@@ -896,6 +931,7 @@ recursive ck_slit(n int, want int) int:
 	nf := STI[si].fnum as int
 	items := flat_items(n); sa := AOWN; m0 := SCOPE.len; g0 := GB.len
 	named := items.len > 0 && ND[items[0]].s >= 0
+	q ~= 0; while q < items.len { if (ND[items[q]].s >= 0) != named { cerr(n, "struct literal mixes named and positional initializers"); return set_t(n, T_ERRT) } q += 2 }
 	fpos ~= 0; k ~= 0
 	while k < items.len:
 		fi := items[k] as int; inst := items[k + 1] as int; k += 2
@@ -914,7 +950,7 @@ recursive ck_slit(n int, want int) int:
 		f := SFI[STI[si].f0 as int + j]
 		if f.ty < 0: continue
 		gn, gi := sl_given(n, j); given := gn >= 0
-		if !given && f.def >= 0: sa := AOWN; AOWN = sdinst(si); g0 := dpush(AOWN); ck(f.def as int, f.ty as int); conv(f.def as int, f.ty as int); GB.pop_n(GB.len - g0); AOWN = sa
+		if !given && f.def >= 0: ck_fdef(si, j, n)
 		if !given && f.def < 0: ck_defs(f.ty as int)
 		if !given && f.def < 0 && x.fl & 1 == 0 && !is_opt(f.ty as int): m byte[>..] ~= []; format(m, "missing field ", nm(f.name as int), " in ", tn(t)); cerr(n, m)
 	set_r(n, R_CTOR, si)

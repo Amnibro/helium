@@ -449,7 +449,7 @@ recursive global_type(d int) int:
 	if x.a >= 0:
 		t = rtype(x.a, ns_of(g)); GLT[d] = t; if x.b >= 0: iv := kid(x.b, 0); ck(iv, decode_rel(t)); conv(iv, decode_rel(t)) else: ck_defs(t)
 	else:
-		if GLST[d] == 1: cerr(g, "global initializer depends on itself"); AOWN = saved; CFN = sc; return T_ERRT
+		if GLST[d] == 1: m byte[>..] ~= []; format(m, "cycle in constant initializer: ", nm(DC[d].name)); cerr(g, m[..]); AOWN = saved; CFN = sc; return T_ERRT
 		GLST[d] = 1
 		iv := kid(x.b, 0)
 		it0 := ck(iv, -1)
@@ -773,7 +773,7 @@ find_from_fn(name int) int:
 recursive ck_ret(n int) int:
 	x := ND[n]
 	f := if x.s >= 0 { find_from_fn(x.s) } else { ret_fn() }
-	if f < 0: cerr(n, "return outside a function"); return T_VOID
+	if f < 0: cerr(n, "return outside of a function"); return T_VOID
 	if f != CFN: FI_[CFN].lr = true; FI_[f].tg = true; set_x(n, f); dyt_add(CFN, f) else: set_x(n, -1)
 	rt := FI_[f].ret
 	if x.n == 0: if rt >= 0 && rt != T_VOID && !FI_[f].rinf { cerr(n, "return needs a value") } if rt < 0 { FI_[f].ret = T_VOID } return set_t(n, T_VOID)
@@ -794,6 +794,7 @@ cf_insts(n int) i32[>..]:
 	r i32[>..] ~= []; for e CFX { if e.node == n && e.own == AOWN { r.push(e.inst) } } r
 cfb(k int, a int, b int, c int) int:
 	CFBS.push(Cfb{k, a, b, c}); CFBS.len - 1
+var CFGN = 0
 recursive cf_expand(cf int) bool:
 	for e CFX:
 		if e.node as int == cf && e.own as int == AOWN: return true
@@ -819,6 +820,7 @@ recursive cf_expand(cf int) bool:
 		for vi ENI[ei].vnum: ents.push(n0 as i32); ents.push(cfb(1, ENV[ENI[ei].v0 as int + vi].name as int, 0, 0) as i32); ents.push(n1 as i32); ents.push(t_variant(ei, vi) as i32)
 	per := need * 2; q ~= 0
 	if ents.len == 0: CFX.push(Cfx{cf as i32, (-2 - AOWN) as i32, -1}); return true
+	CFGN += ents.len / per * (x.d - x.c) as int; if CFGN > 100000: cerr(cf, "const for expansion exceeds 100000 generated nodes"); return false
 	while q < ents.len:
 		inst := new_inst(cf, x.c as int, x.d as int, AOWN); FI_[inst].cfn = FI_[AOWN].cfn; FI_[inst].st = 2; FI_[inst].name = -1; FI_[inst].g0 = GBS.len as i32
 		gn ~= 0; for b need:

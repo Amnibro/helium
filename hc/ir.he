@@ -1,7 +1,7 @@
 use elf
 I_IMM := 1; I_MOV := 2; I_BIN := 3; I_CMP := 4; I_UN := 5; I_LBL := 6; I_JMP := 7; I_BZ := 8; I_BNZ := 9; I_CALL := 10; I_RET := 11
 I_LD := 12; I_ST := 13; I_SLOT := 14; I_GADDR := 15; I_RADDR := 16; I_PARAM := 17; I_SYS := 18; I_EXT := 19; I_CHK := 20; I_COPY := 21; I_FADDR := 22; I_CALLR := 23; I_RET2 := 24; I_RES2 := 25; I_FBIN := 26; I_FCMP := 27; I_CVT := 28; I_FUN := 29; I_ZERO := 30; I_DSS := 31; I_DSR := 32; I_NOP := 33
-B_ADD := 0; B_SUB := 1; B_MUL := 2; B_DIV := 3; B_MOD := 4; B_AND := 5; B_OR := 6; B_XOR := 7; B_SHL := 8; B_SAR := 9; B_SHR := 10; B_UDIV := 11; B_UMOD := 12
+B_ADD := 0; B_SUB := 1; B_MUL := 2; B_DIV := 3; B_MOD := 4; B_AND := 5; B_OR := 6; B_XOR := 7; B_SHL := 8; B_SAR := 9; B_SHR := 10; B_UDIV := 11; B_UMOD := 12; B_UMULH := 13
 K_OVF := 1; K_DIV0 := 2; K_OOB := 3; K_NARROW := 4; K_DOVF := 7
 struct Ir { op u8, w u8, d i32, a i32, b i32, c i64, l i32 }
 struct NFn { i0 i32, i1 i32, nv i32, sb i32, inst i32 }
@@ -202,7 +202,8 @@ cg_fn(fi int):
 				if op == I_BIN && c == B_ADD && (fk(a) == 9 || fk(b) == 9):
 					t := if fk(b) == 9 { b } else { a }; o := if t == b { a } else { b }; R := if gr(d) >= 0 { gr(d) } else { RAX }
 					I ~= gr(FI[t]); if I < 0 || I == R { ldv(RCX, FI[t]); I = RCX } ldv(R, o); SIBM = true; SIBI = I; SIBS = FS[t]; lea(R, R, 0); if R != gr(d) { stv(R, d) }
-				if op == I_BIN && !(c == B_ADD && (fk(a) == 9 || fk(b) == 9)):
+				if op == I_BIN && c == B_UMULH: ldv(RAX, a); ldv(RCX, b); grp3(4, RCX); mov_rr(RAX, RDX); fin(RAX, d)
+				if op == I_BIN && c != B_UMULH && !(c == B_ADD && (fk(a) == 9 || fk(b) == 9)):
 					dv ~= c == B_DIV || c == B_MOD || c == B_UDIV || c == B_UMOD; cm := c == B_ADD || c == B_MUL || c == B_AND || c == B_OR || c == B_XOR
 					sw := cm && (kc(a) && !kc(b) || gr(d) >= 0 && gr(d) == gr(b) && gr(a) != gr(d)); a1 := if sw { b } else { a }; b1 := if sw { a } else { b }
 					bi := kc(b1) && i32ok(FD[b1] as int) && !dv; bv := if bi { FD[b1] as int } else { 0 }

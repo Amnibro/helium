@@ -24,6 +24,7 @@ Programs are built the way PLB builds C (`clang -O3 -march=broadwell
 """
 
 import argparse
+import gzip
 import json
 import os
 import re
@@ -51,7 +52,7 @@ LANGS = ["helium", "goose", "rust", "c", "cpp"]
 CFLAGS = ["-O3", "-fomit-frame-pointer", "-march=broadwell", "-w"] + \
     (["-fstrict-aliasing"] if IS_WINDOWS else [])
 CXXFLAGS = CFLAGS + ["-std=c++20"]
-OPENMP = ["-fopenmp"]
+OPENMP = ["-fopenmp"] if IS_WINDOWS or list(Path("/usr/lib").glob("libomp.so*")) else ["-fopenmp=libgomp"]
 GOOSE_FLAGS = ["-O2"]
 # The references are built for broadwell, and PLB's machines have no AVX-512,
 # so `simd fn` versions stop at AVX2 unless --cflags=-DGS_SIMD=2 asks for more.
@@ -155,11 +156,47 @@ def run_measured(exe, args=(), *, stdin_path=None):
     actions = [(os.POSIX_SPAWN_OPEN, 1, str(outf), os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o644),
                (os.POSIX_SPAWN_OPEN, 2, str(errf), os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o644),
                (os.POSIX_SPAWN_OPEN, 0, str(stdin_path) if stdin_path else os.devnull, os.O_RDONLY, 0)]
-    start = time.perf_counter()
-    pid = os.posix_spawn(str(exe), [str(exe)] + [str(a) for a in args], dict(os.environ), file_actions=actions)
-    _, status, ru = os.wait4(pid, 0)
-    ms = (time.perf_counter() - start) * 1000.0
-    m = Measured(ms, ru.ru_maxrss * 1024, os.waitstatus_to_exitcode(status)); m.err = errf.read_text(errors="replace"); return m
+    rf = exe.parent / (exe.name + ".rusage")
+    pid = os.posix_spawn(str(mrun()), [str(mrun()), str(rf), str(exe)] + [str(a) for a in args], dict(os.environ), file_actions=actions)
+    _, status, _ = os.wait4(pid, 0)
+    ns, kb, code = (int(v) for v in rf.read_text().split())
+    m = Measured(ns / 1e6, kb * 1024, code); m.err = errf.read_text(errors="replace"); return m
+
+
+MRUN_C = r"""
+#include <stdio.h>
+#include <time.h>
+#include <unistd.h>
+#include <sys/resource.h>
+#include <sys/wait.h>
+int main(int argc, char **argv) {
+    struct timespec a, b; struct rusage ru; int st;
+    clock_gettime(CLOCK_MONOTONIC, &a);
+    pid_t p = fork();
+    if (p == 0) { execv(argv[2], argv + 2); _exit(127); }
+    wait4(p, &st, 0, &ru);
+    clock_gettime(CLOCK_MONOTONIC, &b);
+    FILE *f = fopen(argv[1], "w");
+    fprintf(f, "%lld %ld %d\n", (long long)(b.tv_sec - a.tv_sec) * 1000000000LL + (b.tv_nsec - a.tv_nsec), ru.ru_maxrss,
+            WIFEXITED(st) ? WEXITSTATUS(st) : 128 + WTERMSIG(st));
+    fclose(f);
+    return 0;
+}
+"""
+
+
+def mrun():
+    """A small runner that forks and execs a program, then reports its own
+    child's wall time, peak RSS and exit code: measured from Python directly,
+    the peak would include the interpreter's pages that the spawn copied."""
+    exe = BUILD / "mrun"
+    if not exe.exists():
+        src = BUILD / "mrun.c"
+        src.write_text(MRUN_C)
+        ok, out = run([clang_tools()[0], "-O2", src, "-o", exe])
+        if not ok:
+            sys.exit(out)
+    return exe
 
 
 def build_helium(problem, src, args):
@@ -243,7 +280,8 @@ def rust_project():
     if not (proj / "Cargo.toml").exists() or (proj / "Cargo.toml").read_text() != text:
         (proj / "Cargo.toml").write_text(text)
     tc_file = PLB / "bench" / "include" / "rust" / "rust-toolchain.toml"
-    shutil.copy(tc_file, proj / "rust-toolchain.toml")
+    if shutil.which("rustup"):
+        shutil.copy(tc_file, proj / "rust-toolchain.toml")
     return proj
 
 
@@ -443,7 +481,7 @@ MT_MARKS = re.compile(r"#pragma omp|rayon::|\.par_\w+|into_par_iter|thread::spaw
 def multithreaded(lang, problem, src):
     if re.search(r"-\w*m$", Path(src).stem):
         return True
-    path = HERE / problem / src if lang == "goose" else ALGO / problem / src
+    path = HERE / problem / src if lang in ("helium", "goose") else ALGO / problem / src
     return bool(MT_MARKS.search(path.read_text(errors="replace")))
 
 
@@ -459,9 +497,9 @@ def best_rows(problem, rows, langs, last):
 
 def markdown(problems_):
     """One row per input: the fastest program of each language, single- and
-    multithreaded, and Goose's speed relative to the fastest other one (above
-    1 means Goose is faster)."""
-    groups = [("goose", "Goose"), ("rust", "Rust"), (("c", "cpp"), "C/C++")]
+    multithreaded, and Helium's speed relative to the fastest other one (above
+    1 means Helium is faster)."""
+    groups = [("helium", "Helium"), ("goose", "Goose"), ("rust", "Rust"), (("c", "cpp"), "C/C++")]
     print("| problem | input | " + " | ".join(n for _, n in groups) + " | ratio | " +
           " | ".join(f"{n} -m" for _, n in groups) + " | ratio -m |")
     print("|---|---|" + "---:|" * (2 * len(groups) + 2))
@@ -481,9 +519,48 @@ def markdown(problems_):
                 for f in found:
                     cells.append(f"{f[0]:.0f} <sub>{Path(f[2].split('/', 1)[1]).stem} {fmt_mb(f[1])}M</sub>"
                                  if f else "-")
-                others = [f[0] for f in found[1:] if f]
+                others = [f[0] for f in found[2:] if f]
                 cells.append(f"{min(others) / found[0][0]:.2f}" if found[0] and others else "-")
             print(f"| {problem} | {inp} | " + " | ".join(cells) + " |")
+
+
+TOKEN = re.compile(r'[A-Za-z_][A-Za-z0-9_]*|\d[\w.]*|"(?:\\.|[^"\\\n])*"|\'(?:\\.|[^\'\\\n])*\'|\S')
+COMMENT = re.compile(r'//[^\n]*|/\*.*?\*/', re.S)
+
+
+def source_cost(path):
+    """Bytes, gzip bytes and lexical tokens (identifiers, numbers, strings,
+    punctuation) of a source with its comments removed."""
+    text = COMMENT.sub("", path.read_text(errors="replace"))
+    data = text.encode()
+    return len(data), len(gzip.compress(data, 9)), len(TOKEN.findall(text))
+
+
+def cmd_cost(args):
+    """Compile time (a timed rebuild), binary size and source size of every
+    built program, saved to build/cost.json."""
+    out, builders = {}, {"helium": build_helium, "goose": build_goose, "rust": build_rust}
+    for lang in args.langs:
+        for problem, srcs in sorted(lang_sources(lang).items()):
+            if args.problems and problem not in args.problems:
+                continue
+            for src in srcs:
+                exe = exe_path(lang, problem, src)
+                if not exe.exists() or (args.variants and Path(src).stem not in args.variants):
+                    continue
+                if lang == "rust":
+                    (rust_project() / "src" / "bin" / f"{problem.replace('-', '_')}_{Path(src).stem.replace('-', '_')}.rs").touch()
+                t0 = time.perf_counter()
+                ok, _ = (builders[lang](problem, src, args) if lang in builders else build_c(lang, problem, src, args))
+                ms = (time.perf_counter() - t0) * 1000.0
+                path = (HERE if lang in ("helium", "goose") else ALGO) / problem / src
+                b, z, t = source_cost(path)
+                out[f"{lang}/{problem}/{src}"] = dict(ok=ok, compile_ms=round(ms), size=exe.stat().st_size, src_bytes=b, src_gzip=z, src_tokens=t)
+                print(f"{lang:6} {problem}/{src}: {ms:7.0f} ms  {exe.stat().st_size:9} B  {t:6} tokens")
+    f = BUILD / "cost.json"
+    old = json.loads(f.read_text()) if f.exists() else {}
+    old.update(out)
+    f.write_text(json.dumps(old, indent=1))
 
 
 def cmd_report(args):
@@ -498,7 +575,7 @@ def cmd_report(args):
 
 def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument("cmd", choices=["build", "test", "bench", "report"])
+    ap.add_argument("cmd", choices=["build", "test", "bench", "report", "cost"])
     ap.add_argument("problems", nargs="?", default="", help="comma-separated problems (default all)")
     ap.add_argument("--langs", default=None, help="comma-separated: helium,goose,rust,c,cpp")
     ap.add_argument("--variants", default="", help="comma-separated source stems, e.g. 1,2-m")
@@ -524,7 +601,7 @@ def main():
     _, ompdir = openmp_libs()
     if ompdir:   # the OpenMP runtime DLL, for the C and C++ programs that use it
         os.environ["PATH"] = str(ompdir) + os.pathsep + os.environ["PATH"]
-    {"build": cmd_build, "test": cmd_test, "bench": cmd_bench, "report": cmd_report}[args.cmd](args)
+    {"build": cmd_build, "test": cmd_test, "bench": cmd_bench, "report": cmd_report, "cost": cmd_cost}[args.cmd](args)
 
 
 if __name__ == "__main__":
