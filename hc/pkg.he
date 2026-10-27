@@ -16,9 +16,9 @@ sc_parse(path const byte[:], t const byte[:]) bool:
 	loop:
 		while i < t.len && (t[i] == ' ' || t[i] == '\t' || t[i] == '\r' || t[i] == '\n'): i++
 		if i + 1 < t.len && t[i] == '/' && t[i + 1] == '/': while i < t.len && t[i] != '\n' { i++ } continue
-		if i >= t.len: return key < 0 || bad("the file ends inside an entry")
+		if i >= t.len: return key == -1 || bad("the file ends inside an entry")
 		c u8 := t[i]
-		if key < 0: s := i; while i < t.len && (t[i] >= 'a' && t[i] <= 'z' || t[i] >= 'A' && t[i] <= 'Z' || t[i] >= '0' && t[i] <= '9' || t[i] == '_') { i++ } if i == s { return bad("expected a key") } k := t[s..i]; if !sc_known(k) { m byte[>..] ~= []; format(m, "unknown key ", k, "; the keys are c_sources, c_include, c_defines, c_flags_cc, c_flags_msvc, c_libs, cmake_target, cmake_options, dylibs, main_thread_only, exclude and output"); return bad(m[..]) } bk := sc_base(k); key = if k.len > 8 && (k[^8..] == "_windows" || k[^6..] == "_macos") { -2 } else { intern(bk[..]) }; while i < t.len && (t[i] == ' ' || t[i] == '\t') { i++ } if i >= t.len || t[i] != '=' { return bad("expected = after a key") } i++; continue
+		if key == -1: s := i; while i < t.len && (t[i] >= 'a' && t[i] <= 'z' || t[i] >= 'A' && t[i] <= 'Z' || t[i] >= '0' && t[i] <= '9' || t[i] == '_') { i++ } if i == s { return bad("expected a key") } k := t[s..i]; if !sc_known(k) { m byte[>..] ~= []; format(m, "unknown key ", k, "; the keys are c_sources, c_include, c_defines, c_flags_cc, c_flags_msvc, c_libs, cmake_target, cmake_options, dylibs, main_thread_only, exclude and output"); return bad(m[..]) } bk := sc_base(k); key = if k.len > 8 && (k[^8..] == "_windows" || k[^6..] == "_macos") { -2 } else { intern(bk[..]) }; while i < t.len && (t[i] == ' ' || t[i] == '\t') { i++ } if i >= t.len || t[i] != '=' { return bad("expected = after a key") } i++; continue
 		if c == ';' && !lst: key = -1; i++; continue
 		if c == '[' && !lst: lst = true; i++; continue
 		if c == ']' && lst: lst = false; i++; continue

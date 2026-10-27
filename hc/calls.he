@@ -313,8 +313,8 @@ fl_peer(fnode int, a0 int, ap int, j int) bool:
 recursive resolve(n int, name int, ns int, a0 int, an int, blk int, tyargs int, report bool) int, int, int:
 	c0 := CANDS.len
 	cands_add(name, ns)
-	best ~= -1; bestr ~= 99; bestb0 ~= -1; bestbn ~= 0; tie ~= false; bestuser ~= false; bestgen ~= false
-	nb0 := BINDS.len
+	best ~= -1; bestr ~= 99; bestb0 ~= -1; bestbn ~= 0; tie ~= false; bestuser ~= false; bestgen ~= false; bestloc ~= false
+	nb0 := BINDS.len; cns := if n >= 0 { ns_of(n) } else { -1 }
 	for ci c0..CANDS.len:
 		fnode := DC[CANDS[ci]].node as int
 		np := ND[fnode].n as int
@@ -366,10 +366,10 @@ recursive resolve(n int, name int, ns int, a0 int, an int, blk int, tyargs int, 
 		gen := gl >= 0 || np > 0 && untyped_any(fnode)
 		if worst < 2 && gen: worst = max(worst, 1)
 		if worst == 99: BINDS.pop_n(BINDS.len - b0); continue
-		user := !is_std_node(fnode)
-		if worst < bestr || worst == bestr && user && !bestuser || worst == bestr && user == bestuser && !gen && bestgen: best = fnode; bestr = worst; bestb0 = b0; bestbn = BINDS.len - b0; tie = false; bestuser = user; bestgen = gen
+		user := !is_std_node(fnode); loc := cns >= 0 && fns == cns
+		if worst < bestr || worst == bestr && user && !bestuser || worst == bestr && user == bestuser && loc && !bestloc || worst == bestr && user == bestuser && loc == bestloc && !gen && bestgen: best = fnode; bestr = worst; bestb0 = b0; bestbn = BINDS.len - b0; tie = false; bestuser = user; bestgen = gen; bestloc = loc
 		else:
-			if worst == bestr && user == bestuser && gen == bestgen && (ND[best].fl & F_EXTERN == 0 || ND[fnode].fl & F_EXTERN == 0): tie = true
+			if worst == bestr && user == bestuser && loc == bestloc && gen == bestgen && (ND[best].fl & F_EXTERN == 0 || ND[fnode].fl & F_EXTERN == 0): tie = true
 	CANDS.pop_n(CANDS.len - c0)
 	if best < 0: BINDS.pop_n(BINDS.len - nb0); return -1, nb0, 0
 	if tie && report: m byte[>..] ~= []; format(m, "ambiguous call to ", nm(name)); cerr(n, m)
