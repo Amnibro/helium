@@ -806,6 +806,9 @@ load(v Val) int:
 	for i v.swn: w.push(swi(v, i))
 	emitw(SBODY, SOP_VECTORSHUFFLE, w[..]); res
 store(d Val, src int, line int):
+	if d.k == V_PTR && d.lt != 0 && TY[d.ty].k == T_STRUCT:
+		for ft, i TY[d.ty].fty: fv := nid(); ftid := tyid(ft); emit4(SBODY, SOP_COMPOSITEEXTRACT, ftid, fv, src, i); fp := nid(); pt := ptrid(ft, d.st); ci := cint(i); emit4(SBODY, SOP_ACCESSCHAIN, pt, fp, d.id, ci); emit2(SBODY, SOP_STORE, fp, fv)
+		return
 	if d.k == V_PTR: emit2(SBODY, SOP_STORE, d.id, src); return
 	if d.k != V_SW: serr(line, "cannot assign to this expression")
 	bt := tyid(d.bt); old := nid(); emit3(SBODY, SOP_LOAD, bt, old, d.id); nv ~= 0
@@ -1320,7 +1323,9 @@ genintrin(e int, ii int) Val:
 		ft := vecty(el, ncomp(tys[i]))
 		if !implconv(tys[i], ft) && !(TY[elty(tys[i])].k == T_UINT && TY[el].k == T_INT): serr(line, str("invalid argument type '", tyname(tys[i]), "' in call to '", fnn, "'"))
 		EX[a[i]].want = ft; ids[i] = convert(ids[i], tys[i], ft, line); tys[i] = ft
-		if ncomp(tys[i]) == 1 && tc > 1:
+		if inst == G_REFRACT && i == 2:
+			if ncomp(tys[i]) != 1: serr(line, "refract() eta must be a float")
+		else if ncomp(tys[i]) == 1 && tc > 1:
 			sv, stt := splat(ids[i], el, tc); ids[i] = sv; tys[i] = stt
 		else if ncomp(tys[i]) != tc:
 			serr(line, str("vector size mismatch in call to '", fnn, "'"))
@@ -1430,6 +1435,9 @@ gencall(e int) Val:
 				tmp := nid(); pt := ptrid(SY[ch].params[i], SC_FUNCTION); emit3(SLOCALS, SOP_VARIABLE, pt, tmp, SC_FUNCTION)
 				if q == 2: cur := load(vals[i]); emit2(SBODY, SOP_STORE, tmp, cur)
 				cot.push(tmp); coa.push(i); w.push(tmp)
+			else if opq(SY[ch].params[i]):
+				if vals[i].k != V_PTR: serr(line, str("argument ", i + 1, " of '", snm(n), "' must be a sampler or image variable"))
+				w.push(vals[i].id)
 			else:
 				id := load(vals[i]); EX[x.args[i]].want = SY[ch].params[i]; w.push(convert(id, vals[i].ty, SY[ch].params[i], line))
 		emitw(SBODY, SOP_FUNCTIONCALL, w[..])
@@ -1615,9 +1623,10 @@ var RBLK RBlk[>..]
 var RMEM RMem[>..]
 var RINP RIn[>..]
 recdecl(k int, line int) int: DC.push(Dc{k, line}); DECLS.push(DC.len - 1); DC.len - 1
+opq(t int) bool: TY[t].k == T_SAMP || TY[t].k == T_IMG
 fntyid(ret int, pty const int[:], pq const int[:]) int:
 	rt := tyid(ret); pt int[>..] ~= []
-	for t, i pty: pt.push(if pq[i] != 0 { ptrid(t, SC_FUNCTION) } else { tyid(t) })
+	for t, i pty: pt.push(if pq[i] != 0 { ptrid(t, SC_FUNCTION) } else if opq(t) { ptrid(t, SC_UNIFORMCONSTANT) } else { tyid(t) })
 	h u64 ~= 0xcbf29ce484222325; h = (h ^ rt as u64) * 1099511628211
 	for p pt: h = (h ^ p as u64) * 1099511628211
 	f := dgi(FNTYIDS, h); if f >= 0: return f
@@ -1634,13 +1643,13 @@ genfunc(ret int, name int, pty int[>..], pnm int[>..], pq int[>..], body int, li
 	sb := copy(SBODY); sl := copy(SLOCALS); SBODY.clear(); SLOCALS.clear(); BTERM = false; scr := CURRT; CURRT = ret; shr := FHASRET; FHASRET = false
 	pushsc()
 	for t, i pty:
-		if pq[i] != 0: nameid(pids[i], snm(pnm[i])); addsym(pnm[i], SY_VAR, t, pids[i], SC_FUNCTION, line); continue
+		if pq[i] != 0 || opq(t): nameid(pids[i], snm(pnm[i])); addsym(pnm[i], SY_VAR, t, pids[i], if opq(t) { SC_UNIFORMCONSTANT } else { SC_FUNCTION }, line); continue
 		vr := nid(); pt := ptrid(t, SC_FUNCTION); emit3(SLOCALS, SOP_VARIABLE, pt, vr, SC_FUNCTION); emit2(SBODY, SOP_STORE, vr, pids[i]); nameid(vr, snm(pnm[i])); addsym(pnm[i], SY_VAR, t, vr, SC_FUNCTION, line)
 	genstmt(body); popsc()
 	if !BTERM:
 		if ret == TVOID { emit0(SBODY, SOP_RETURN) } else if FHASRET { emit0(SBODY, SOP_UNREACHABLE) } else { serr(line, str("function '", snm(name), "' is missing a return statement")) }
 	emit4(SFUNCS, SOP_FUNCTION, rtid, fid, 0, ftid)
-	for t, i pty: ptd := if pq[i] != 0 { ptrid(t, SC_FUNCTION) } else { tyid(t) }; emit2(SFUNCS, SOP_FUNCTIONPARAMETER, ptd, pids[i])
+	for t, i pty: ptd := if pq[i] != 0 { ptrid(t, SC_FUNCTION) } else if opq(t) { ptrid(t, SC_UNIFORMCONSTANT) } else { tyid(t) }; emit2(SFUNCS, SOP_FUNCTIONPARAMETER, ptd, pids[i])
 	emit1(SFUNCS, SOP_LABEL, nid()); SFUNCS.append(SLOCALS[..]); SFUNCS.append(SBODY[..]); emit0(SFUNCS, SOP_FUNCTIONEND)
 	SBODY.clear(); SBODY.append(sb[..]); SLOCALS.clear(); SLOCALS.append(sl[..]); CURRT = scr; FHASRET = shr
 	SY.push(Sym{SY_FUNC, name, ret, fid, 0}); s := SY.len - 1; SY[s].params.append(pty[..]); SY[s].pq.append(pq[..]); SY[s].nxo = head; insert(FNS, name, s)
