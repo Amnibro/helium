@@ -1,6 +1,7 @@
 namespace audio
 use std
 use ffi
+MAIN_THREAD := true
 extern fmod(x real, y real) real
 MAX_SOUNDS := 256 as i32
 MAX_VOICES := 64 as i32

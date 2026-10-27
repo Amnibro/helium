@@ -1,0 +1,308 @@
+namespace ttf
+use std
+use math
+struct Info { d byte[>..], loca int = 0, head int = 0, glyf int = 0, hhea int = 0, hmtx int = 0, imap int = 0, ngl int = 0, ilf int = 0 }
+struct V { t int, x int, y int, cx int, cy int }
+struct Pt { x f32, y f32 }
+struct E { x0 f32, y0 f32, x1 f32, y1 f32, inv bool }
+struct A { nx int, fx f32, fdx f32, fdy f32, dir f32, sy f32, ey f32 }
+struct B4 { x0 int, y0 int, x1 int, y1 int }
+struct Rc { w int = 0, h int = 0, x int = 0, y int = 0, p bool = false }
+struct Nd { x int, y int, nx int }
+struct Pk { nd Nd[>..], fh int = 0, ah int = 0, w int = 0, h int = 0, al int = 1 }
+struct PC { x0 int = 0, y0 int = 0, x1 int = 0, y1 int = 0, xoff f32 = 0.0, yoff f32 = 0.0, xadv f32 = 0.0, xoff2 f32 = 0.0, yoff2 f32 = 0.0 }
+struct Range { size f32, first int, n int, ho int = 1, vo int = 1, cd int = 0 }
+struct Ctx { pk Pk, px byte[>..], w int, h int, stride int, pd int, ho int = 1, vo int = 1 }
+MAXV := 0x7fffffff
+ru16(d const byte[:], o int) int: (d[o] as int) << 8 | d[o + 1] as int
+w16(v int) int: ((v + 32768) & 0xFFFF) - 32768
+rs16(d const byte[:], o int) int: w16(ru16(d, o))
+ru32(d const byte[:], o int) int: ru16(d, o) << 16 | ru16(d, o + 2)
+find_table(d const byte[:], tag const byte[:]) int:
+	for i ru16(d, 4): l := 12 + 16 * i; if d[l] == tag[0] && d[l + 1] == tag[1] && d[l + 2] == tag[2] && d[l + 3] == tag[3] { return ru32(d, l + 8) }
+	0
+init(f Info&) bool:
+	d := f.d[..]; cm := find_table(d, "cmap"); f.loca = find_table(d, "loca"); f.head = find_table(d, "head"); f.glyf = find_table(d, "glyf"); f.hhea = find_table(d, "hhea"); f.hmtx = find_table(d, "hmtx")
+	if cm == 0 || f.head == 0 || f.hhea == 0 || f.hmtx == 0 || f.glyf == 0 || f.loca == 0: return false
+	t := find_table(d, "maxp"); f.ngl = if t != 0 { ru16(d, t + 4) } else { 0xffff }; f.imap = 0
+	for i ru16(d, cm + 2):
+		er := cm + 4 + 8 * i; p := ru16(d, er)
+		if p == 3 { e := ru16(d, er + 2); if e == 1 || e == 10 { f.imap = cm + ru32(d, er + 4) } } else if p == 0 { f.imap = cm + ru32(d, er + 4) }
+	if f.imap == 0: return false
+	f.ilf = ru16(d, f.head + 50); true
+glyph_index(f Info&, cp int) int:
+	d := f.d[..]; m := f.imap; fm := ru16(d, m)
+	if fm == 0: return if cp < ru16(d, m + 2) - 6 { d[m + 6 + cp] as int } else { 0 }
+	if fm == 6: first := ru16(d, m + 6); cnt := ru16(d, m + 8); return if cp >= first && cp < first + cnt { ru16(d, m + 10 + (cp - first) * 2) } else { 0 }
+	if fm == 4:
+		if cp > 0xffff: return 0
+		seg := ru16(d, m + 6) >> 1; sr ~= ru16(d, m + 8) >> 1; es ~= ru16(d, m + 10); rs := ru16(d, m + 12) >> 1; ec := m + 14; s ~= ec
+		if cp >= ru16(d, s + rs * 2): s += rs * 2
+		s -= 2
+		while es != 0: sr >>= 1; if cp > ru16(d, s + sr * 2) { s += sr * 2 } es -= 1
+		s += 2; it := ((s - ec) >> 1) & 0xFFFF; st := ru16(d, m + 14 + seg * 2 + 2 + 2 * it); la := ru16(d, ec + 2 * it)
+		if cp < st || cp > la: return 0
+		off := ru16(d, m + 14 + seg * 6 + 2 + 2 * it)
+		if off == 0: return (cp + rs16(d, m + 14 + seg * 4 + 2 + 2 * it)) & 0xFFFF
+		return ru16(d, off + (cp - st) * 2 + m + 14 + seg * 6 + 2 + 2 * it)
+	if fm == 12 || fm == 13:
+		lo ~= 0; hi ~= ru32(d, m + 12)
+		while lo < hi:
+			mid := lo + ((hi - lo) >> 1); sc := ru32(d, m + 16 + mid * 12); ecp := ru32(d, m + 16 + mid * 12 + 4)
+			if cp < sc { hi = mid } else if cp > ecp { lo = mid + 1 } else { sg := ru32(d, m + 16 + mid * 12 + 8); return if fm == 12 { sg + cp - sc } else { sg } }
+	0
+gofs(f Info&, g int) int:
+	if g >= f.ngl || f.ilf >= 2: return -1
+	d := f.d[..]; g1 := if f.ilf == 0 { f.glyf + ru16(d, f.loca + g * 2) * 2 } else { f.glyf + ru32(d, f.loca + g * 4) }; g2 := if f.ilf == 0 { f.glyf + ru16(d, f.loca + g * 2 + 2) * 2 } else { f.glyf + ru32(d, f.loca + g * 4 + 4) }
+	if g1 == g2 { -1 } else { g1 }
+gbox(f Info&, g int, b B4&) bool:
+	o := gofs(f, g); if o < 0: return false
+	d := f.d[..]; b = B4{rs16(d, o + 2), rs16(d, o + 4), rs16(d, o + 6), rs16(d, o + 8)}; true
+hmetrics(f Info&, g int) int2:
+	d := f.d[..]; nl := ru16(d, f.hhea + 34)
+	if g < nl { int2{rs16(d, f.hmtx + 4 * g) as i32, rs16(d, f.hmtx + 4 * g + 2) as i32} } else { int2{rs16(d, f.hmtx + 4 * (nl - 1)) as i32, rs16(d, f.hmtx + 4 * nl + 2 * (g - nl)) as i32} }
+vmetrics(f Info&) int2: d := f.d[..]; int2{rs16(d, f.hhea + 4) as i32, rs16(d, f.hhea + 6) as i32}
+scale_for(f Info&, h f32) f32: d := f.d[..]; h / (rs16(d, f.hhea + 4) - rs16(d, f.hhea + 6)) as f32
+sv(vs V[>..]&, k int, t int, x int, y int, cx int, cy int): vs[k] = V{t, w16(x), w16(y), w16(cx), w16(cy)}
+close(vs V[>..]&, n int, wo bool, so bool, sx int, sy int, scx int, scy int, cx int, cy int) int:
+	k ~= n
+	if so { if wo { sv(vs, k, 3, (cx + scx) >> 1, (cy + scy) >> 1, cx, cy); k += 1 } sv(vs, k, 3, sx, sy, scx, scy) } else { if wo { sv(vs, k, 3, sx, sy, cx, cy) } else { sv(vs, k, 2, sx, sy, 0, 0) } }
+	k + 1
+xf(m f32, a f32, b f32, c f32, x int, y int) int: w16((m * (a * x as f32 + b * y as f32 + c)) as int)
+shape(f Info&, g int) V[>..]:
+	vs V[>..] ~= []; o := gofs(f, g)
+	if o < 0: return vs
+	d := f.d[..]; nc := rs16(d, o)
+	if nc > 0:
+		ep := o + 10; ins := ru16(d, o + 10 + nc * 2); p ~= o + 10 + nc * 2 + 2 + ins; n := 1 + ru16(d, ep + nc * 2 - 2); m := n + 2 * nc
+		vs.resize(m, V{0, 0, 0, 0, 0}); off := m - n; fl ~= 0; fc ~= 0
+		for i n:
+			if fc == 0 { fl = d[p] as int; p += 1; if fl & 8 != 0 { fc = d[p] as int; p += 1 } } else { fc -= 1 }
+			vs[off + i].t = fl
+		x ~= 0
+		for i n:
+			fl = vs[off + i].t
+			if fl & 2 != 0 { dx := d[p] as int; p += 1; x += if fl & 16 != 0 { dx } else { -dx } } else if fl & 16 == 0 { x = x + rs16(d, p); p += 2 }
+			vs[off + i].x = w16(x)
+		y ~= 0
+		for i n:
+			fl = vs[off + i].t
+			if fl & 4 != 0 { dy := d[p] as int; p += 1; y += if fl & 32 != 0 { dy } else { -dy } } else if fl & 32 == 0 { y = y + rs16(d, p); p += 2 }
+			vs[off + i].y = w16(y)
+		nv ~= 0; sx ~= 0; sy ~= 0; cx ~= 0; cy ~= 0; scx ~= 0; scy ~= 0; wo ~= false; so ~= false; nm ~= 0; j ~= 0; i ~= 0
+		while i < n:
+			fl = vs[off + i].t; x = vs[off + i].x; y = vs[off + i].y
+			if nm == i:
+				if i != 0: nv = close(vs, nv, wo, so, sx, sy, scx, scy, cx, cy)
+				so = fl & 1 == 0
+				if so { scx = x; scy = y; if vs[off + i + 1].t & 1 == 0 { sx = (x + vs[off + i + 1].x) >> 1; sy = (y + vs[off + i + 1].y) >> 1 } else { sx = vs[off + i + 1].x; sy = vs[off + i + 1].y; i += 1 } } else { sx = x; sy = y }
+				sv(vs, nv, 1, sx, sy, 0, 0); nv += 1; wo = false; nm = 1 + ru16(d, ep + j * 2); j += 1
+			else if fl & 1 == 0:
+				if wo: sv(vs, nv, 3, (cx + x) >> 1, (cy + y) >> 1, cx, cy); nv += 1
+				cx = x; cy = y; wo = true
+			else:
+				if wo { sv(vs, nv, 3, x, y, cx, cy) } else { sv(vs, nv, 2, x, y, 0, 0) }
+				nv += 1; wo = false
+			i += 1
+		nv = close(vs, nv, wo, so, sx, sy, scx, scy, cx, cy); vs.resize(nv, V{0, 0, 0, 0, 0})
+	else if nc < 0:
+		more ~= true; c ~= o + 10
+		while more:
+			fl := ru16(d, c); gi := ru16(d, c + 2); c += 4; m0 f32 ~= 1.0; m1 f32 ~= 0.0; m2 f32 ~= 0.0; m3 f32 ~= 1.0; m4 f32 ~= 0.0; m5 f32 ~= 0.0
+			if fl & 2 != 0: if fl & 1 != 0 { m4 = rs16(d, c) as f32; m5 = rs16(d, c + 2) as f32; c += 4 } else { m4 = ((d[c] as int ^ 128) - 128) as f32; m5 = ((d[c + 1] as int ^ 128) - 128) as f32; c += 2 }
+			if fl & 8 != 0 { m0 = rs16(d, c) as f32 / 16384.0; m3 = m0; c += 2 } else if fl & 64 != 0 { m0 = rs16(d, c) as f32 / 16384.0; m3 = rs16(d, c + 2) as f32 / 16384.0; c += 4 } else if fl & 128 != 0 { m0 = rs16(d, c) as f32 / 16384.0; m1 = rs16(d, c + 2) as f32 / 16384.0; m2 = rs16(d, c + 4) as f32 / 16384.0; m3 = rs16(d, c + 6) as f32 / 16384.0; c += 8 }
+			mm := sqrt(m0 * m0 + m1 * m1); nn := sqrt(m2 * m2 + m3 * m3); cv ~= shape(f, gi)
+			for k cv.len: v := cv[k]; cv[k] = V{v.t, xf(mm, m0, m2, m4, v.x, v.y), xf(nn, m1, m3, m5, v.x, v.y), xf(mm, m0, m2, m4, v.cx, v.cy), xf(nn, m1, m3, m5, v.cx, v.cy)}
+			vs.append(cv[..]); more = fl & 32 != 0
+	vs
+bbox(f Info&, g int, sx f32, sy f32, hx f32, hy f32) B4:
+	r ~= B4{0, 0, 0, 0}
+	if !gbox(f, g, r): return B4{0, 0, 0, 0}
+	B4{floor(r.x0 as f32 * sx + hx) as int, floor((-r.y1) as f32 * sy + hy) as int, ceil(r.x1 as f32 * sx + hx) as int, ceil((-r.y0) as f32 * sy + hy) as int}
+curve(ps Pt[>..]&, x0 f32, y0 f32, x1 f32, y1 f32, x2 f32, y2 f32, fs f32, n int):
+	mx := (x0 + 2.0 * x1 + x2) / 4.0; my := (y0 + 2.0 * y1 + y2) / 4.0; dx := (x0 + x2) / 2.0 - mx; dy := (y0 + y2) / 2.0 - my
+	if n > 16: return
+	if dx * dx + dy * dy > fs { curve(ps, x0, y0, (x0 + x1) / 2.0, (y0 + y1) / 2.0, mx, my, fs, n + 1); curve(ps, mx, my, (x1 + x2) / 2.0, (y1 + y2) / 2.0, x2, y2, fs, n + 1) } else { ps.push(Pt{x2, y2}) }
+lt(a E, b E) bool: a.y0 < b.y0
+qs(e E[>..]&, b0 int, n0 int):
+	b ~= b0; n ~= n0
+	while n > 12:
+		m := n >> 1; c01 := lt(e[b], e[b + m]); c12 := lt(e[b + m], e[b + n - 1])
+		if c01 != c12: z := if lt(e[b], e[b + n - 1]) == c12 { 0 } else { n - 1 }; t := e[b + z]; e[b + z] = e[b + m]; e[b + m] = t
+		t := e[b]; e[b] = e[b + m]; e[b + m] = t; i ~= 1; j ~= n - 1
+		loop:
+			while lt(e[b + i], e[b]): i += 1
+			while lt(e[b], e[b + j]): j -= 1
+			if i >= j: break
+			u := e[b + i]; e[b + i] = e[b + j]; e[b + j] = u; i += 1; j -= 1
+		if j < n - i { qs(e, b, j); b = b + i; n = n - i } else { qs(e, b + i, n - i); n = j }
+sort_edges(e E[>..]&, n int):
+	qs(e, 0, n)
+	for i 1..n: t := e[i]; j ~= i; while j > 0 && lt(t, e[j - 1]) { e[j] = e[j - 1]; j -= 1 } if i != j { e[j] = t }
+clip(s f32[>..]&, bo int, x int, e A&, x0i f32, y0i f32, x1i f32, y1i f32):
+	x0 ~= x0i; y0 ~= y0i; x1 ~= x1i; y1 ~= y1i
+	if y0 == y1 || y0 > e.ey || y1 < e.sy: return
+	if y0 < e.sy: x0 += (x1 - x0) * (e.sy - y0) / (y1 - y0); y0 = e.sy
+	if y1 > e.ey: x1 += (x1 - x0) * (e.ey - y1) / (y1 - y0); y1 = e.ey
+	fx := x as f32; gx := (x + 1) as f32
+	if x0 <= fx && x1 <= fx { s[bo + x] += e.dir * (y1 - y0) } else if !(x0 >= gx && x1 >= gx) { s[bo + x] += e.dir * (y1 - y0) * (1.0 - ((x0 - fx) + (x1 - fx)) / 2.0) }
+trap(h f32, tx0 f32, tx1 f32, bx0 f32, bx1 f32) f32: ((tx1 - tx0) + (bx1 - bx0)) / 2.0 * h
+fill(s f32[>..]&, s2 f32[>..]&, len int, aa A[>..]&, head int, yt f32):
+	yb := yt + 1.0; k ~= head; lf := len as f32
+	while k >= 0:
+		let e .= aa[k]
+		if e.fdx == 0.0:
+			x0 := e.fx
+			if x0 < lf: if x0 >= 0.0 { clip(s, 0, x0 as int, e, x0, yt, x0, yb); clip(s2, 0, x0 as int + 1, e, x0, yt, x0, yb) } else { clip(s2, 0, 0, e, x0, yt, x0, yb) }
+		else:
+			x0 ~= e.fx; dx ~= e.fdx; xb ~= x0 + dx; dy ~= e.fdy; xt ~= 0.0 as f32; xbo ~= 0.0 as f32; sy0 ~= 0.0 as f32; sy1 ~= 0.0 as f32
+			if e.sy > yt { xt = x0 + dx * (e.sy - yt); sy0 = e.sy } else { xt = x0; sy0 = yt }
+			if e.ey < yb { xbo = x0 + dx * (e.ey - yt); sy1 = e.ey } else { xbo = xb; sy1 = yb }
+			if xt >= 0.0 && xbo >= 0.0 && xt < lf && xbo < lf:
+				if xt as int == xbo as int:
+					x := xt as int; h := (sy1 - sy0) * e.dir; s[x] += trap(h, xt, x as f32 + 1.0, xbo, x as f32 + 1.0); s2[1 + x] += h
+				else:
+					if xt > xbo: sy0 = yb - (sy0 - yt); sy1 = yb - (sy1 - yt); t := sy0; sy0 = sy1; sy1 = t; t2 := xbo; xbo = xt; xt = t2; dx = -dx; dy = -dy; t3 := x0; x0 = xb; xb = t3
+					x1 := xt as int; x2 := xbo as int; yc ~= yt + dy * ((x1 + 1) as f32 - x0); yf ~= yt + dy * (x2 as f32 - x0)
+					if yc > yb: yc = yb
+					sg := e.dir; ar ~= sg * (yc - sy0); s[x1] += ar * ((x1 + 1) as f32 - xt) / 2.0
+					if yf > yb: yf = yb; dy = (yf - yc) / (x2 - (x1 + 1)) as f32
+					st := sg * dy * 1.0
+					for x (x1 + 1)..x2: s[x] += ar + st / 2.0; ar += st
+					s[x2] += ar + sg * trap(sy1 - yf, x2 as f32, x2 as f32 + 1.0, xbo, x2 as f32 + 1.0); s2[1 + x2] += sg * (sy1 - sy0)
+			else:
+				for x len:
+					y0 := yt; x1 := x as f32; x2 := (x + 1) as f32; x3 := xb; y3 := yb; y1 := (x as f32 - x0) / dx + yt; y2 := ((x + 1) as f32 - x0) / dx + yt
+					if x0 < x1 && x3 > x2 { clip(s, 0, x, e, x0, y0, x1, y1); clip(s, 0, x, e, x1, y1, x2, y2); clip(s, 0, x, e, x2, y2, x3, y3) } else if x3 < x1 && x0 > x2 { clip(s, 0, x, e, x0, y0, x2, y2); clip(s, 0, x, e, x2, y2, x1, y1); clip(s, 0, x, e, x1, y1, x3, y3) } else if x0 < x1 && x3 > x1 { clip(s, 0, x, e, x0, y0, x1, y1); clip(s, 0, x, e, x1, y1, x3, y3) } else if x3 < x1 && x0 > x1 { clip(s, 0, x, e, x0, y0, x1, y1); clip(s, 0, x, e, x1, y1, x3, y3) } else if x0 < x2 && x3 > x2 { clip(s, 0, x, e, x0, y0, x2, y2); clip(s, 0, x, e, x2, y2, x3, y3) } else if x3 < x2 && x0 > x2 { clip(s, 0, x, e, x0, y0, x2, y2); clip(s, 0, x, e, x2, y2, x3, y3) } else { clip(s, 0, x, e, x0, y0, x3, y3) }
+		k = e.nx
+raster_sorted(px byte[>..]&, base int, w int, h int, stride int, e E[>..]&, n int, ox int, oy int):
+	aa A[>..] ~= []; head ~= -1; s f32[>..] ~= []; s2 f32[>..] ~= []; s.resize(w, 0.0); s2.resize(w + 1, 0.0); y ~= oy; j ~= 0; ei ~= 0
+	e[n].y0 = (oy + h) as f32 + 1.0
+	while j < h:
+		yt := y as f32 + 0.0; yb := y as f32 + 1.0
+		for i w: s[i] = 0.0
+		for i w + 1: s2[i] = 0.0
+		pv ~= -1; k ~= head
+		while k >= 0: nx := aa[k].nx; if aa[k].ey <= yt { if pv < 0 { head = nx } else { aa[pv].nx = nx } } else { pv = k } k = nx
+		while e[ei].y0 <= yb:
+			if e[ei].y0 != e[ei].y1:
+				let q .= e[ei]; dxdy := (q.x1 - q.x0) / (q.y1 - q.y0); fx := q.x0 + dxdy * (yt - q.y0) - ox as f32
+				z ~= A{head, fx, dxdy, if dxdy != 0.0 { 1.0 / dxdy } else { 0.0 }, if q.inv { 1.0 } else { -1.0 }, q.y0, q.y1}
+				if j == 0 && oy != 0 && z.ey < yt: z.ey = yt
+				aa.push(z); head = aa.len - 1
+			ei += 1
+		if head >= 0: fill(s, s2, w, aa, head, yt)
+		sum ~= 0.0 as f32
+		for i w: sum += s2[i]; kk := abs(s[i] + sum) * 255.0 + 0.5; m := kk as int; px[base + j * stride + i] = (if m > 255 { 255 } else { m }) as byte
+		k = head
+		while k >= 0: aa[k].fx += aa[k].fdx; k = aa[k].nx
+		y += 1; j += 1
+raster(px byte[>..]&, base int, w int, h int, stride int, vs V[:], sx f32, sy f32, hx f32, hy f32, ox int, oy int):
+	sc := if sx > sy { sy } else { sx }; fl := 0.35 / sc; fs := fl * fl; ps Pt[>..] ~= []; wc int[>..] ~= []; st ~= 0; cn ~= -1; x ~= 0.0 as f32; y ~= 0.0 as f32
+	nm ~= 0; for v vs { if v.t == 1 { nm += 1 } }
+	if nm == 0: return
+	for v vs:
+		if v.t == 1 { if cn >= 0 { wc.push(ps.len - st) } cn += 1; st = ps.len; x = v.x as f32; y = v.y as f32; ps.push(Pt{x, y}) } else if v.t == 2 { x = v.x as f32; y = v.y as f32; ps.push(Pt{x, y}) } else if v.t == 3 { curve(ps, x, y, v.cx as f32, v.cy as f32, v.x as f32, v.y as f32, fs, 0); x = v.x as f32; y = v.y as f32 }
+	wc.push(ps.len - st)
+	e E[>..] ~= []; m ~= 0; ysi := -sy
+	for c wc:
+		j ~= c - 1
+		for k c:
+			if ps[m + j].y != ps[m + k].y:
+				a ~= k; b ~= j; iv ~= false
+				if ps[m + j].y > ps[m + k].y: iv = true; a = j; b = k
+				e.push(E{ps[m + a].x * sx + hx, (ps[m + a].y * ysi + hy) * 1.0, ps[m + b].x * sx + hx, (ps[m + b].y * ysi + hy) * 1.0, iv})
+			j = k
+		m += c
+	n := e.len; e.push(E{0.0, 0.0, 0.0, 0.0, false}); sort_edges(e, n); raster_sorted(px, base, w, h, stride, e, n, ox, oy)
+glyph_bitmap(f Info&, px byte[>..]&, base int, w int, h int, stride int, sx f32, sy f32, g int):
+	vs := shape(f, g); b := bbox(f, g, sx, sy, 0.0, 0.0)
+	if w != 0 && h != 0: raster(px, base, w, h, stride, vs[..], sx, sy, 0.0, 0.0, b.x0, b.y0)
+hpre(px byte[>..]&, base int, w int, h int, stride int, kw int):
+	bf byte[8] ~= [0; 8]; sw := w - kw
+	for j h:
+		r := base + j * stride; for q kw { bf[q] = 0 } tot ~= 0; i ~= 0
+		while i <= sw: tot += px[r + i] as int - bf[i & 7] as int; bf[(i + kw) & 7] = px[r + i]; px[r + i] = (tot / kw) as byte; i += 1
+		while i < w: tot -= bf[i & 7] as int; px[r + i] = (tot / kw) as byte; i += 1
+vpre(px byte[>..]&, base int, w int, h int, stride int, kw int):
+	bf byte[8] ~= [0; 8]; sh := h - kw
+	for j w:
+		r := base + j; for q kw { bf[q] = 0 } tot ~= 0; i ~= 0
+		while i <= sh: tot += px[r + i * stride] as int - bf[i & 7] as int; bf[(i + kw) & 7] = px[r + i * stride]; px[r + i * stride] = (tot / kw) as byte; i += 1
+		while i < h: tot -= bf[i & 7] as int; px[r + i * stride] = (tot / kw) as byte; i += 1
+oshift(o int) f32: if o == 0 { 0.0 } else { (-(o - 1)) as f32 / (2.0 * o as f32) }
+pinit(c Pk&, w int, h int, nn int):
+	c.nd.clear()
+	for i nn: c.nd.push(Nd{0, 0, if i < nn - 1 { i + 1 } else { -1 }})
+	c.nd.push(Nd{0, 0, nn + 1}); c.nd.push(Nd{w, 1 << 30, -1}); c.fh = 0; c.ah = nn; c.w = w; c.h = h; c.al = (w + nn - 1) / nn
+at(c Pk&, pv int) int: if pv == -2 { c.ah } else { c.nd[pv].nx }
+setl(c Pk&, pv int, v int): if pv == -2 { c.ah = v } else { c.nd[pv].nx = v }
+packone(c Pk&, w0 int, h int) int2:
+	w ~= w0 + c.al - 1; w -= w % c.al
+	if w > c.w || h > c.h: return int2{-1, -1}
+	nd ~= c.ah; pv ~= -2; best ~= -3; by ~= 1 << 30
+	while c.nd[nd].x + w <= c.w:
+		x1 := c.nd[nd].x + w; q ~= nd; my ~= 0
+		while c.nd[q].x < x1: if c.nd[q].y > my { my = c.nd[q].y } q = c.nd[q].nx
+		if my < by: by = my; best = pv
+		pv = nd; nd = c.nd[nd].nx
+	if best == -3 || by + h > c.h || c.fh < 0: return int2{-1, -1}
+	bx := c.nd[at(c, best)].x; node := c.fh; c.nd[node].x = bx; c.nd[node].y = by + h; c.fh = c.nd[node].nx; cur ~= at(c, best)
+	if c.nd[cur].x < bx { nx := c.nd[cur].nx; c.nd[cur].nx = node; cur = nx } else { setl(c, best, node) }
+	while c.nd[cur].nx >= 0 && c.nd[c.nd[cur].nx].x <= bx + w0: nx := c.nd[cur].nx; c.nd[cur].nx = c.fh; c.fh = cur; cur = nx
+	c.nd[node].nx = cur
+	if c.nd[cur].x < bx + w0: c.nd[cur].x = bx + w0
+	int2{bx as i32, by as i32}
+hcmp(rs Rc[>..]&, a int, b int) bool: p := rs[a]; q := rs[b]; p.h > q.h || p.h == q.h && p.w > q.w
+msort(rs Rc[>..]&, ix int[>..]&, t int[>..]&, lo int, n int):
+	if n <= 1: return
+	n1 := n / 2; msort(rs, ix, t, lo, n1); msort(rs, ix, t, lo + n1, n - n1); i ~= lo; j ~= lo + n1; k ~= 0
+	while i < lo + n1 && j < lo + n: if hcmp(rs, ix[j], ix[i]) { t[k] = ix[j]; j += 1 } else { t[k] = ix[i]; i += 1 } k += 1
+	while i < lo + n1: t[k] = ix[i]; i += 1; k += 1
+	for q k: ix[lo + q] = t[q]
+pack_rects(c Pk&, rs Rc[>..]&, lo int, n int):
+	ix int[>..] ~= []; t int[>..] ~= []
+	for i n: ix.push(lo + i); t.push(0)
+	msort(rs, ix, t, 0, n)
+	for i n:
+		let r .= rs[ix[i]]
+		if r.w == 0 || r.h == 0 { r.x = 0; r.y = 0 } else { p := packone(c, r.w, r.h); if p.x < 0 { r.x = MAXV; r.y = MAXV } else { r.x = p.x as int; r.y = p.y as int } }
+	for i n: let r .= rs[lo + i]; r.p = !(r.x == MAXV && r.y == MAXV)
+begin(s Ctx&, w int, h int, pa int):
+	pinit(s.pk, w - pa, h - pa, w - pa); s.w = w; s.h = h; s.pd = pa; s.stride = w; s.ho = 1; s.vo = 1; s.px.clear()
+oversample(s Ctx&, h int, v int): if h <= 8 { s.ho = h } if v <= 8 { s.vo = v }
+scale_of(f Info&, fh f32) f32: if fh > 0.0 { scale_for(f, fh) } else { -fh / ru16(f.d[..], f.head + 18) as f32 }
+gather(s Ctx&, f Info&, rg Range[>..]&, rlo int, nr int, rs Rc[>..]&, lo int) int:
+	k ~= 0; miss ~= false
+	for i nr:
+		let r .= rg[rlo + i]; sc := scale_of(f, r.size); r.ho = s.ho; r.vo = s.vo
+		for j r.n:
+			g := glyph_index(f, r.first + j)
+			if g == 0 && miss { rs[lo + k].w = 0; rs[lo + k].h = 0 } else { b := bbox(f, g, sc * s.ho as f32, sc * s.vo as f32, 0.0, 0.0); rs[lo + k].w = b.x1 - b.x0 + s.pd + s.ho - 1; rs[lo + k].h = b.y1 - b.y0 + s.pd + s.vo - 1; if g == 0 { miss = true } }
+			k += 1
+	k
+extern bits_f(b u32) f32 = "hr_f32_from_bits"
+rword(rs Rc[>..]&, o int) u32:
+	ri := o / 24; fi := (o % 24) / 4; if ri >= rs.len { return 0 } q := rs[ri]
+	(if fi == 1 { q.w } else if fi == 2 { q.h } else if fi == 3 { q.x } else if fi == 4 { q.y } else if fi == 5 { if q.p { 1 } else { 0 } } else { 0 }) as! u32
+pc_at(cd PC[>..]&, rs Rc[>..]&, i int) PC:
+	if i < cd.len: return cd[i]
+	o := (i - cd.len) * 28; a := rword(rs, o); b := rword(rs, o + 4)
+	PC{(a & 0xffff) as int, (a >> 16) as int, (b & 0xffff) as int, (b >> 16) as int, bits_f(rword(rs, o + 8)), bits_f(rword(rs, o + 12)), bits_f(rword(rs, o + 16)), bits_f(rword(rs, o + 20)), bits_f(rword(rs, o + 24))}
+render(s Ctx&, f Info&, rg Range[>..]&, rlo int, nr int, rs Rc[>..]&, lo int, cd PC[>..]&) bool:
+	k ~= 0; mg ~= -1; ok ~= true; oh := s.ho; ov := s.vo
+	for i nr:
+		let r .= rg[rlo + i]; sc := scale_of(f, r.size); s.ho = r.ho; s.vo = r.vo; rh := 1.0 / s.ho as f32; rv := 1.0 / s.vo as f32; sbx := oshift(s.ho); sby := oshift(s.vo)
+		for j r.n:
+			let q .= rs[lo + k]
+			if q.p && q.w != 0 && q.h != 0:
+				g := glyph_index(f, r.first + j); q.x += s.pd; q.y += s.pd; q.w -= s.pd; q.h -= s.pd; am := hmetrics(f, g); b := bbox(f, g, sc * s.ho as f32, sc * s.vo as f32, 0.0, 0.0); base := q.x + q.y * s.stride
+				glyph_bitmap(f, s.px, base, q.w - s.ho + 1, q.h - s.vo + 1, s.stride, sc * s.ho as f32, sc * s.vo as f32, g)
+				if s.ho > 1: hpre(s.px, base, q.w, q.h, s.stride, s.ho)
+				if s.vo > 1: vpre(s.px, base, q.w, q.h, s.stride, s.vo)
+				cd[r.cd + j] = PC{w16(q.x), w16(q.y), w16(q.x + q.w), w16(q.y + q.h), b.x0 as f32 * rh + sbx, b.y0 as f32 * rv + sby, sc * am.x as f32, (b.x0 + q.w) as f32 * rh + sbx, (b.y0 + q.h) as f32 * rv + sby}
+				if g == 0: mg = j
+			else if q.p && q.w == 0 && q.h == 0 && mg >= 0: cd[r.cd + j] = pc_at(cd, rs, r.cd + mg)
+			else: ok = false
+			k += 1
+	s.ho = oh; s.vo = ov; ok

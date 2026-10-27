@@ -115,19 +115,30 @@ shader_compile(n int, stage int, path const byte[:], src const byte[:], err byte
 	SHN.push(Shb{n, SHB.len, blob.len}); SHB.append(blob[..]); true
 fstem(f int) const byte[:]:
 	s := nm(FILES[f].name); a ~= 0; e ~= s.len; for c, i s { if c == '/' { a = i + 1 } } for c, i s[a..] { if c == '.' { e = a + i } } s[a..e]
+mt_mark(d Dc) bool: n := nm(d.name); d.k as int == D_GLOBAL && n.len >= 11 && n[n.len - 11..] == "MAIN_THREAD"
+mt_fn(c int, mtf bool[>..]&) bool:
+	f := node_file(FI_[c].node); if is_ext(c) || f >= mtf.len || !mtf[f]: return false
+	r ~= false; sa := AOWN; AOWN = c
+	for x (FI_[c].lo as int)..FI_[c].hi as int: if !r && ND[x].k as int == N_ID && rk(x) == R_GLOBAL { r = ND[DC[rv(x)].node].fl & V_VAR != 0 }
+	AOWN = sa; r
 thread_check() bool:
+	mtf bool[>..] ~= []
+	for d DC: if mt_mark(d) { while mtf.len <= d.file { mtf.push(false) } mtf[d.file] = true }
 	for t, ti FI_:
 		if t.node >= 0 && ND[t.node].fl & F_THREAD != 0:
-			seen i32[>..] ~= [ti as i32]; q ~= 0
+			seen i32[>..] ~= [ti as i32]; par i32[>..] ~= [-1]; q ~= 0
 			while q < seen.len:
 				cr := seen[q]; q++
 				for e CEDGES:
 					if e.caller == cr && !seen.contains(e.callee):
-						c := e.callee; seen.push(e.callee)
+						c := e.callee; seen.push(e.callee); par.push((q - 1) as i32)
 						f := node_file(FI_[c].node); k := if f < FPKG.len { FPKG[f] as int } else { -1 }
-						if is_ext(c) && k >= 0 && PKS[k].mt:
-							n ~= -1; sa := AOWN; AOWN = cr; for x (FI_[cr].lo as int)..FI_[cr].hi as int { if n < 0 && ND[x].k as int == N_CALL && rk(x) == R_FN && rv(x) == c { n = x } } AOWN = sa
-							format(PERRS, nm(FILES[node_file(max(n, FI_[c].node))].name), ":", TK[ND[max(n, FI_[c].node)].t].line, ": error: ", fstem(f), " runs on the main thread only: ", nm(FI_[c].name), " is reached from thread_fn ", nm(t.name)); return false
+						if is_ext(c) && k >= 0 && PKS[k].mt || mt_fn(c, mtf):
+							j ~= seen.len - 1
+							while par[j] >= 0 && node_file(FI_[seen[par[j]]].node) == f: j = par[j]
+							b := seen[j] as int; a := seen[par[j]] as int; n ~= -1; sa := AOWN; AOWN = a
+							for x (FI_[a].lo as int)..FI_[a].hi as int { if n < 0 && ND[x].k as int == N_CALL && rk(x) == R_FN && rv(x) == b { n = x } }
+							AOWN = sa; m := if n >= 0 { n } else { FI_[b].node as int }; format(PERRS, nm(FILES[node_file(m)].name), ":", TK[ND[m].t].line, ": error: ", fstem(f), " runs on the main thread only: ", nm(FI_[b].name), " is reached from thread_fn ", nm(t.name)); return false
 	true
 build_packages() bool:
 	for k PKS.len { if !build_pkg(k) { return false } } thread_check()

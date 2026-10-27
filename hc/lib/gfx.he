@@ -4,6 +4,7 @@ use vec
 use math
 use os
 use ffi
+MAIN_THREAD := true
 WINDOW_RESIZABLE := 1 as i32; WINDOW_HIDDEN := 2 as i32; WINDOW_FULLSCREEN := 4 as i32; NO_VSYNC := 16 as i32; DEBUG := 32 as i32
 VERTEX := 0 as i32; FRAGMENT := 1 as i32; COMPUTE := 2 as i32
 BUFFER_VERTEX := 1 as i32; BUFFER_INDEX := 2 as i32; BUFFER_INDIRECT := 4 as i32; BUFFER_STORAGE := 8 as i32; BUFFER_COMPUTE_READ := 16 as i32; BUFFER_COMPUTE_WRITE := 32 as i32
