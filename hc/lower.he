@@ -489,7 +489,8 @@ rel_store(q int, p0 int, t int):
 	ir(I_MOV, 3, d, imm(0), -1, 0); l := nlbl(); ir(I_BZ, 3, -1, p, -1, l); ir(I_MOV, 3, d, bin(B_SUB, 3, p, q, -1), -1, 0)
 	if opt: sguard(lcmp(d, imm(0), CC_NE), "a relative reference would encode as null")
 	ir(I_LBL, 3, -1, -1, -1, l)
-	if sz < 8: lim := 1 << sz * 8 - 1; sguard(lcmp(bin(B_ADD, 3, d, imm(lim), -1), imm(2 * lim), CC_B), "relative reference offset out of range")
+	nsx byte[>..] ~= []; if sz < 8 && (sz == 3 || env("HC_NOSX", nsx)): lim := 1 << sz * 8 - 1; sguard(lcmp(bin(B_ADD, 3, d, imm(lim), -1), imm(2 * lim), CC_B), "relative reference offset out of range")
+	if sz < 8 && sz != 3 && !env("HC_NOSX", nsx): e := nv(); ir(I_EXT, if sz == 4 { 2 } else { if sz == 2 { 1 } else { 0 } }, e, d, -1, 0); sguard(lcmp(e, d, CC_E), "relative reference offset out of range")
 	stw(q, 0, d, rw(t));
 rel_of(n int) int:
 	k := ND[n].k; if k == N_ID && rk(n) == R_LOCAL { lt := LVS[rv(n)].ty; return if is_rel(lt) { lt } else { -1 } } if k == N_ID && rk(n) == R_GLOBAL { lt := GLT[rv(n)]; return if is_rel(lt) { lt } else { -1 } } if k == N_IDX || k == N_DOT && rk(n) == R_FIELD { return rel_field(n) } -1
