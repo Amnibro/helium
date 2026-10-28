@@ -464,7 +464,7 @@ rpool_base(t int) int:
 rel_load(q int, t int) int:
 	opt := TY[t].fl & RF_OPT != 0; pool := relpool(t) >= 0
 	d := ldw(q, 0, if pool { rw(t) | 4 } else { rw(t) }); r := nv()
-	ir(I_MOV, 3, r, if pool { bin(B_SUB, 3, bin(B_ADD, 3, rpool_base(t), d, -1), imm(1), -1) } else { bin(B_ADD, 3, q, d, -1) }, -1, 0); if hvs(TY[t].a as int) { ir(I_MOV, 3, r, ltag(r), -1, 0) }
+	ir(I_MOV, 3, r, if pool { bin(B_ADD, 3, bin(B_ADD, 3, rpool_base(t), imm(-1), -1), d, -1) } else { bin(B_ADD, 3, q, d, -1) }, -1, 0); if hvs(TY[t].a as int) { ir(I_MOV, 3, r, ltag(r), -1, 0) }
 	if opt || pool: l := nlbl(); irl(I_BNZ, 3, -1, d, -1, l, -6); ir(I_MOV, 3, r, imm(0), -1, 0); ir(I_LBL, 3, -1, -1, -1, l)
 	if pool && !hvs(TY[t].a as int) { RPV.push(r as i32); RPV.push(d as i32); RPV.push(t as i32) }
 	r
@@ -1150,7 +1150,7 @@ recursive lbuiltin1(n int, b int, dst int, total int) int:
 		lerr(n, "this array operation natively"); return imm(0)
 	if b == B_DEFAULT: t := at(n); if is_scal(t) { return imm(0) } if is_pair(t) && dst < 0 { PAIR2 = imm(0); return imm(0) } dd := if dst >= 0 { dst } else { q := nv(); ir(I_SLOT, 8, q, -1, -1, slot(tsz(t), tal(t))); tmp_drop(q, t); q }; lzero(dd, tsz(t)); ldefault(dd, t); return dd
 	if b == B_BYTESOF: c := barg(n, 0); t := deref(fin(c)); if TY[t].k == TY_ARR || TY[t].k == TY_SLICE || TY[t].k == TY_STRLIT { p, q := lsl(c); PAIR2 = if TY[t].k == TY_STRLIT { q } else { lbcnt(p, q, t) }; return p } PAIR2 = imm(tsz(t)); return lrefv(c)
-	if b == B_INDEXOF: rc := barg(n, 0); d := deref(at(rc)); es := tsz(TY[d].a); p, q := lsl(rc); r := lx(barg(n, 1)); return bin(B_DIV, 3, bin(B_SUB, 3, r, p, -1), imm(max(es, 1)), -1)
+	if b == B_INDEXOF: rc := barg(n, 0); d := deref(at(rc)); es := tsz(TY[d].a); p, q := lsl(rc); r := lx(barg(n, 1)); x := bin(B_SUB, 3, r, p, -1); nq byte[>..] ~= []; if es <= 1 || env("HC_NOXD", nq) { return bin(B_DIV, 3, x, imm(max(es, 1)), -1) } tz ~= 0; o ~= es; while o & 1 == 0 { o >>= 1; tz++ } iv ~= o; for k 7 { iv = iv * (2 - o * iv) } y := if tz > 0 { bin(B_SAR, 3, x, imm(tz), -1) } else { x }; return if o == 1 { y } else { bin(B_MUL, 3, y, imm(iv), -1) }
 	if b == B_CAP: d := deref(at(barg(n, 0))); if is_fix(d) || is_lim(d) { return imm(TY[d].b as int) } if is_vimg(d) && vw(d) != 0 { return ldw(vptr_of(barg(n, 0)), 0, vwc(d)) } return imm((1 << 31) / max(tsz(TY[d].a), 1))
 	if b == B_ASSERT: c := lx(barg(n, 0)); l := nlbl(); ir(I_BNZ, 3, -1, c, -1, l); lp, ln := locsl(n); rtcall("rt_die", [imm(6) as i32, lp as i32, ln as i32]); ir(I_LBL, 3, -1, -1, -1, l); return imm(0)
 	if b == B_EXIT: rtcall("rt_exit", [lx(barg(n, 0)) as i32]); return imm(0)

@@ -71,7 +71,8 @@ lscan(ord i32[>..<]&, st i32[>..<]&, en i32[>..<]&, wt i32[>..<]&, regs int[:], 
 		k ~= 0; while k < act.len:
 			a := act[k]; if en[a] < st[v]: free.push(rof[a]); act[k] = act[act.len - 1]; act.pop() else: k++
 		bm := if v < bad.len { bad[v] as int } else { 0 }
-		h := hn[v]; if h >= 0 && rof[h] >= 0 && en[h] == st[v] && rgrp(rof[h]) & bm == 0:
+		h := hn[v]; cf ~= false; if bm & 8 != 0 && !NOHC && h >= 0 && rof[h] >= 0 && rgrp(rof[h]) != 0 { for r free { if rgrp(r) == 0 { cf = true } } }
+		if h >= 0 && !cf && rof[h] >= 0 && en[h] == st[v] && rgrp(rof[h]) & bm == 0:
 			hk ~= -1; for a, q act { if a == h { hk = q } } if hk >= 0: rof[v] = rof[h]; act[hk] = v; continue
 		fi ~= -1; pc := bm & 8 != 0; for r, q free:
 			g := rgrp(r); if g & bm == 0 && (fi < 0 || (if pc { g == 0 && rgrp(free[fi]) != 0 } else { g != 0 && rgrp(free[fi]) == 0 })): fi = q
@@ -146,7 +147,9 @@ regalloc(fi int):
 	for i i0..i1:
 		opnds(i); for d OD { nd[d] += 1 } x := IR[i]; o := x.op as int
 		for u OU: UC[u] += 1; if !((o == I_LD || o == I_ST && x.b != u) && x.a == u || o == I_BIN && x.c == B_ADD && x.a == u && x.b != u) { nau[u] += 1 }
-	dn i8[>..<] ~= []; dn.resize(nv, 0)
+	dn i8[>..<] ~= []; dn.resize(nv, 0); lu i32[>..<] ~= []; lu.resize(nv, -1); pk i32[>..<] ~= []; pk.resize(n + 1, 0); nfx byte[>..] ~= []; fxk := !env("HC_NOFX", nfx)
+	for i i0..i1 { opnds(i); for u OU { lu[u] = (i - i0) as i32 } o := IR[i].op as int; pk[i - i0 + 1] = pk[i - i0] + (if o == I_CALL || o == I_CALLR || o == I_SYS || o == I_VLOOP { 1 } else { 0 }) }
+	xc(i int, d int, a int, b int) bool: fxk && lu[d] > (i - i0) as i32 && pk[lu[d] as int] - pk[i - i0 + 1] > 0 && (a >= 0 && lu[a] < lu[d] || b >= 0 && lu[b] < lu[d])
 	fu i32[>..<] ~= []; fu.resize(nv, 0); mxd i32[>..<] ~= []; mxd.resize(nv, 0); nsd byte[>..] ~= []; sdk := !env("HC_NOSD", nsd)
 	for i i0..i1 { opnds(i); x := IR[i]; o := x.op as int; for u OU { if !((o == I_LD || o == I_ST && x.b != u) && x.a == u) { mxd[u] = max(mxd[u] as int, dep[i - i0] as int) as i32 } } }
 	scl(t int, m bool) int:
@@ -188,7 +191,7 @@ regalloc(fi int):
 	sib(d int, bs int, t int, i int) bool:
 		s ~= scl(t, !NOMS); ix ~= if s >= 0 { IR[di[t]].a as int } else { -1 }; sp := if s >= 0 { di[t] as int } else { i }
 		if s < 0 && t >= 0 && FK[t] == 0 && dn[t] != 0 && t != d: s = 0; ix = t
-		if sdk && mxd[d] > dep[i - i0]: return false
+		if sdk && mxd[d] > dep[i - i0] || s == 0 && xc(i, d, bs, ix): return false
 		if s < 0 || bs < 0 || bs == d || dn[bs] == 0 || !(FK[bs] == 0 && nd[bs] == 1 || FK[bs] >= 2 && FK[bs] <= 4 || FK[bs] == 6) || nd[ix] != 1 && !win(sp, i, d, ix) { return false }
 		FK[d] = 7; FB[d] = if FK[bs] == 6 { FB[bs] } else { bs as i32 }; FI[d] = ix as i32; FS[d] = s as i8; FD[d] = if FK[bs] == 6 { FD[bs] } else { 0 }; if ix != t { if UC[t] == 1 { FK[t] = 8 } else { fu[t] += 1 } } true
 	for i i0..i1:
@@ -284,6 +287,16 @@ regalloc(fi int):
 		if rgrp(r) != 0 { continue } u ~= false; for g REGOF { if g == r as i32 { u = true } } for g CGRG { if g == r as i32 { u = true } } if u: RUSED.push(r as i32)
 isize(fi int) int:
 	f := NFS[fi]; n ~= 0; for i (f.i0 as int)..f.i1 as int { op := IR[i].op; if op != I_NOP && op != I_LBL { n++ } } n
+cpld(fi int):
+	f := NFS[fi]; i0 := f.i0 as int; i1 := f.i1 as int; nv ~= f.nv as int
+	nd i32[>..<] ~= []; nd.resize(nv, 0); dp i32[>..<] ~= []; dp.resize(nv, -1); for i i0..i1 { opnds(i); for d OD { nd[d] += 1; dp[d] = i as i32 } }
+	kw(v int) int: if v < 0 || nd[v] != 1 || dp[v] < 0 || IR[dp[v]].op as int != I_IMM { return -1 } c := IR[dp[v]].c; if c == 8 { 3 } else { if c == 4 { 2 } else { if c == 2 { 1 } else { if c == 1 { 0 } else { -1 } } } }
+	hit ~= false; for i i0..i1 { x := IR[i]; if x.op as int == I_COPY && x.d >= 0 && x.a >= 0 && x.d != x.a && kw(x.b as int) >= 0 { hit = true } } if !hit: return
+	ni0 := IR.len
+	for i i0..i1:
+		x := IR[i]; w := if x.op as int == I_COPY && x.d >= 0 && x.a >= 0 && x.d != x.a { kw(x.b as int) } else { -1 }
+		if w < 0 { IR.push(x); continue } t := nv; nv++; IR.push(Ir{I_LD as u8, w as u8, t as i32, x.a, -1, 0, -1}); IR.push(Ir{I_ST as u8, w as u8, -1, x.d, t as i32, 0, -1})
+	NFS[fi].i0 = ni0 as i32; NFS[fi].i1 = IR.len as i32; NFS[fi].nv = nv as i32
 inline_into(fi int, fsz i32[>..<]&, mx int):
 	f := NFS[fi]; ni0 := IR.len; nv ~= f.nv; sb ~= f.sb; lm i32[>..<] ~= []
 	kn i8[>..<] ~= []; kn.resize(nv, 0); for i (f.i0 as int)..f.i1 as int:
@@ -331,10 +344,10 @@ NOCI ~= false
 NOLC ~= false
 NOMS ~= false
 NOSI ~= false
-SIM ~= false; NOCF2 ~= false; NOTR ~= false; NOBT ~= false; NOJK ~= false; NOTB ~= false; NONR ~= false; NOMB2 ~= false; NOVC ~= false; NOCH ~= false
+SIM ~= false; NOCF2 ~= false; NOTR ~= false; NOBT ~= false; NOJK ~= false; NOTB ~= false; NONR ~= false; NOMB2 ~= false; NOVC ~= false; NOCH ~= false; NOHC ~= false
 var NCS i32[>..<]
 optimize_all():
-	nlc byte[>..] ~= []; NOLC = env("HC_NOLC", nlc); NOMS = env("HC_NOMS", nlc); NOSI = env("HC_NOSI", nlc); NOCF2 = env("HC_NOFI", nlc); NOTR = env("HC_NOTR", nlc); NOBT = env("HC_NOBT", nlc); NOJK = env("HC_NOJK", nlc); NOTB = env("HC_NOTB", nlc); NONR = env("HC_NONR", nlc); NOMB2 = env("HC_NOMB2", nlc); NOVC = env("HC_NOVC", nlc); NOCH = env("HC_NOCH", nlc)
+	nlc byte[>..] ~= []; NOLC = env("HC_NOLC", nlc); NOMS = env("HC_NOMS", nlc); NOSI = env("HC_NOSI", nlc); NOCF2 = env("HC_NOFI", nlc); NOTR = env("HC_NOTR", nlc); NOBT = env("HC_NOBT", nlc); NOJK = env("HC_NOJK", nlc); NOTB = env("HC_NOTB", nlc); NONR = env("HC_NONR", nlc); NOMB2 = env("HC_NOMB2", nlc); NOVC = env("HC_NOVC", nlc); NOCH = env("HC_NOCH", nlc); NOHC = env("HC_NOHC", nlc)
 	il0 byte[>..] ~= []; if env("HC_ILC", il0) { v, ok := parse_int(il0[..]); ILC = v } NOCI = env("HC_NOCI", il0)
 	lim byte[>..] ~= []; mx := if env("HC_INL", lim) { v, ok := parse_int(lim[..]); v } else { 100 }
 	noi byte[>..] ~= []; inl := !env("HC_NOINL", noi)
@@ -353,7 +366,7 @@ optimize_all():
 	for fi order:
 		for rp 2:
 			if rp == 1 && !WEB && !NOTR { tre(fi) } sc ~= false; if rp == 1 { for i (NFS[fi].i0 as int)..NFS[fi].i1 as int { if IR[i].op as int == I_CALL && IR[i].c == fi as i64 { sc = true } } } if rp == 1 && !(inl && sc && !NOSI && !WEB && isize(fi) <= 128) { break } SIM = rp == 1
-			if inl { inline_into(fi, fsz, mx) } tk(0); mem2reg(fi); tk(1); if we { webs(fi) } copyprop(fi); tk(2); constfold(fi); tk(3); sra(fi); cpfwd(fi); tk(4); if we { webs(fi) } copyprop(fi); tk(2); constfold(fi); tk(3); lvn(fi); tk(5); copyprop(fi); cpfwd(fi); copyprop(fi); constfold(fi); copyprop(fi); jthread(fi); lvn(fi); copyprop(fi); rnz(fi); udv(fi); if !env("HC_NOBR", noi) { umh(fi); scf(fi); ifc(fi); bset(fi) } if we { webs(fi); copyprop(fi); constfold(fi); copyprop(fi) } licm(fi); lvn(fi); copyprop(fi); if !env("HC_NOSR", noi) { fuse(fi); sred(fi); copyprop(fi) } tk(2); deadcode(fi); tk(6); if inl: fsz[fi] = isize(fi)
+			if inl { inline_into(fi, fsz, mx) } if !env("HC_NOCPL", noi) { cpld(fi) } tk(0); mem2reg(fi); tk(1); if we { webs(fi) } copyprop(fi); tk(2); constfold(fi); tk(3); sra(fi); cpfwd(fi); tk(4); if we { webs(fi) } copyprop(fi); tk(2); constfold(fi); tk(3); lvn(fi); tk(5); copyprop(fi); cpfwd(fi); copyprop(fi); constfold(fi); copyprop(fi); jthread(fi); lvn(fi); copyprop(fi); rnz(fi); udv(fi); if !env("HC_NOBR", noi) { umh(fi); scf(fi); ifc(fi); bset(fi) } if we { webs(fi); copyprop(fi); constfold(fi); copyprop(fi) } licm(fi); lvn(fi); copyprop(fi); if !env("HC_NOSR", noi) { fuse(fi); sred(fi); copyprop(fi) } tk(2); deadcode(fi); tk(6); if inl: fsz[fi] = isize(fi)
 	pe byte[>..] ~= []; if env("HC_PT", pe):
 		for v, k pt: print(k, " ", v / 1000000, "ms\n")
 tre(fi int):
