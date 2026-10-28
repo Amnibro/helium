@@ -6,7 +6,7 @@ var VLW i8[>..<]; var VLS i8[>..<]; var VLT i32[>..<]; var VUM i32[>..<]; var VD
 var VFC i32[>..<]; var VOS VOp[>..<]; var VQK i32[>..<]; var VPR Ir[>..<]; VNV ~= 0; VBAD ~= false
 var VGC i64[>..<]; var VGS i32[>..<]; var VGM i64[>..<]; var VGN i8[>..<]; var VGR i32[>..<]; var VGL i64[>..<]; var VGH i64[>..<]; var VGT i32[>..<]
 var VUT i32[>..<]; var VUK i64[>..<]; var VUC i8[>..<]; var VUB i8[>..<]; var VUR i32[>..<]
-var VXF i8[>..<]; var VCA i32[>..<]; var VCB i32[>..<]; var VIN Ir[>..<]; var VAT i32[>..<]; var VRR i32[>..<]; var VRN i8[>..<]; var VTK i8[>..<]; VZR ~= -1; VMK ~= -1; VVF ~= 16; VRD ~= -1; VRC ~= 0; VRQ ~= -1
+var VXF i8[>..<]; var VCA i32[>..<]; var VCB i32[>..<]; var VIN Ir[>..<]; var VAT i32[>..<]; var VRR i32[>..<]; var VRN i8[>..<]; var VTK i8[>..<]; VZR ~= -1; VMK ~= -1; VVF ~= 16; VRD ~= -1; VBK ~= -1 as i64; VNRW ~= 0; VNRS ~= -1; VNNG ~= false; VNSK i8[>..<] ~= []; VRC ~= 0; VRQ ~= -1
 VGREG := [6, 7, 8, 9, 10, 11, 0]
 vlg(w int) int:
 	if w == 1:
@@ -155,6 +155,7 @@ vput(d int, o i32[>..]&):
 	if VLT[d] < 0:
 		for r o: vxf(r as int)
 vbc(w int, x int):
+	if w == 4 && !VEXM && !env("HC_NOVBC", VNB) { sse(0x66, false, 0x6E, x, RAX); sse(0x66, false, 0x70, x, x); xb(0); return }
 	if w == 1 { xb(0x0F); xb(0xB6); xb(0xC0); mov_ri(RDX, 0x0101010101010101); imul(RAX, RDX) } if w == 2 { xb(0x0F); xb(0xB7); xb(0xC0); mov_ri(RDX, 0x0001000100010001); imul(RAX, RDX) } if w == 4: xb(0x89); xb(0xC0); mov_rr(RDX, RAX); sh_ri(4, RDX, 32); alu(0x09, RAX, RDX)
 	if VEXM { VEXL = 0; vexp(0x66, true, x, RAX, 0, 1); xb(0x6E); xb(0xC0 | (x & 7) << 3); VEXL = 1; vexp(0x66, false, x, x, 0, 2); xb(0x59); xb(0xC0 | (x & 7) << 3 | x & 7); return } sse(0x66, true, 0x6E, x, RAX); sse(0x66, false, 0x6C, x, x)
 vopc(c int, l int) int:
@@ -173,16 +174,22 @@ vasm(mk bool) bool:
 	VUR.clear(); VUR.resize(VUB.len, -1); for k VUB.len { if VUB[k] != 0 { VUR[k] = vxa() as i32 } } if VBAD: return false
 	n0 := XC.len
 	for q VUT.len:
-		u := VUT.len - 1 - q; if VUC[u] != 0 { continue } pop_r(RAX); mov_rr(RSI, RAX); for z 4: if VUB[4 * u + z] != 0 { mov_rr(RAX, RSI); vbc(1 << z, VUR[4 * u + z] as int) }
+		u := VUT.len - 1 - q; if VUC[u] != 0 { continue } pop_r(RAX); nb ~= 0; for z 4 { if VUB[4 * u + z] != 0 { nb++ } } if nb > 1 || env("HC_NOVG", VNB) { mov_rr(RSI, RAX) } for z 4: if VUB[4 * u + z] != 0 { if nb > 1 || env("HC_NOVG", VNB) { mov_rr(RAX, RSI) } vbc(1 << z, VUR[4 * u + z] as int) }
 	for u VUT.len:
 		if VUC[u] == 0 { continue } for z 4: if VUB[4 * u + z] != 0 { mov_ri(RAX, VUK[u] as int); vbc(1 << z, VUR[4 * u + z] as int) }
 	sse(0x66, false, 0xEF, VZR, VZR); if VMK >= 0 { mov_ri(RAX, 0x00FF00FF00FF00FF); sse(0x66, true, 0x6E, VMK, RAX); sse(0x66, false, 0x6C, VMK, VMK) }
-	ra i32[>..] ~= []; if VRD >= 0: for p VVF / 2 { r := vxa(); sse(0x66, false, if VRC == B_AND { 0x76 } else { 0xEF }, r, r); ra.push(r as i32) }
+	VNRW = 0; VNRS = -1; VNNG = false; VNSK.clear(); VNSK.resize(VOS.len, 0)
+	nu(v i32) int: c ~= 0; for y VOS { if y.a == v || y.b == v && y.k != 1 && y.k != 2 { c++ } } c
+	if VRD >= 0 && VRC == B_ADD && !VEXM && VBK > 0 && VBK < 1 << 20 && !env("HC_NOVNR", VNB):
+		for o VOS: if o.k == 5 { sv ~= o.a; for z 4 { f ~= -1; for y, i VOS { if y.d == sv && y.k != 5 { f = i } } if f < 0 || nu(sv) != 1 { break } y := VOS[f]; if y.k == 6 { if y.w == 4 && y.x & 1024 == 0 { VNRW = 4; VNRS = y.d as int } break } if y.k == 4 { VNSK[f] = 1; sv = y.a } else { break } } }
+		if VNRW == 0: for q VNSK.len { VNSK[q] = 0 }
+	ra i32[>..] ~= []; if VRD >= 0: for p (if VNRW > 0 { VVF * VNRW / vbw() } else { VVF / 2 }) { r := vxa(); sse(0x66, false, if VRC == B_AND { 0x76 } else { 0xEF }, r, r); ra.push(r as i32) }
 	for q VGC.len { pop_r(VGREG[VGC.len - 1 - q] as int) } pop_r(RDX); alu(0x31, RCX, RCX)
 	top := XC.len; aa i32[>..] ~= []; bb i32[>..] ~= []; tm i32[>..] ~= []; rr i32[>..] ~= []
 	for o, t VOS:
 		if VBAD: break
 		k := o.k as int; w := o.w as int; d := o.d as int; tm.clear()
+		if VNSK[t] != 0: continue
 		if k == 1:
 			aa.clear(); for p VVF * w / vbw() { r := vxa(); vmem(0x6F, r, o.g as int, w, o.y as int + vbw() * p); aa.push(r as i32) } vput(d, aa)
 		if k == 2:
@@ -199,10 +206,10 @@ vasm(mk bool) bool:
 			vgetm(p0, w, t, aa); vgetr(p1, w, bb, tm); rr.clear()
 			for r, p aa:
 				sse(0x66, false, (if c == CC_E || c == CC_NE { 0x74 } else { 0x64 }) + l, r as int, bb[p] as int); z := vxa()
-				if ng { sse(0x66, false, 0x76, z, z); sse(0x66, false, vopc(B_SUB, l), r as int, z); vxf(z); rr.push(r) } else { vmvx(z, VZR); sse(0x66, false, vopc(B_SUB, l), z, r as int); vxf(r as int); rr.push(z as i32) }
+				if VNRW > 0 && d == VNRS { VNNG = ng; vxf(z); rr.push(r) } else if ng { sse(0x66, false, 0x76, z, z); sse(0x66, false, vopc(B_SUB, l), r as int, z); vxf(z); rr.push(r) } else { vmvx(z, VZR); sse(0x66, false, vopc(B_SUB, l), z, r as int); vxf(r as int); rr.push(z as i32) }
 			vput(d, rr); vfop(o.a as int, t); vfop(o.b as int, t)
 		if k == 5:
-			vgetr(o.a as int, 8, aa, tm); for r, p aa { sse(0x66, false, vopc(o.x as int, 3), ra[p] as int, r as int) } vfop(o.a as int, t)
+			rw := if VNRW > 0 { VNRW } else { 8 }; vgetr(if VNRW > 0 { VNRS } else { o.a as int }, rw, aa, tm); for r, p aa { sse(0x66, false, if VNRW > 0 { if VNNG { 0xFE } else { 0xFA } } else { vopc(o.x as int, vlg(rw)) }, ra[p] as int, r as int) } vfop(if VNRW > 0 { VNRS } else { o.a as int }, t)
 		if k == 3:
 			c := o.x as int; a ~= o.a as int; b ~= o.b as int
 			cw := o.s as int
@@ -219,8 +226,9 @@ vasm(mk bool) bool:
 			else: vput(d, aa)
 			vfop(o.a as int, t); vfop(o.b as int, t)
 		for r tm: vxf(r as int)
-	alu_ri(0, RCX, VVF); alu(0x39, RCX, RDX); xb(0x0F); xb(0x8C); x32(top - (XC.len + 4))
-	if VRD >= 0 && !VBAD: cb := if VRC == B_SUB { B_ADD } else { VRC }; for p 1..ra.len { sse(0x66, false, vopc(cb, 3), ra[0] as int, ra[p] as int) } sse(0x66, false, 0x70, VZR, ra[0] as int); xb(0x4E); sse(0x66, false, vopc(cb, 3), ra[0] as int, VZR); sse(0x66, true, 0x7E, ra[0] as int, RAX)
+	if !(VBK >= VVF as i64 && VBK < 2 * VVF as i64 && !env("HC_NOVG", VNB)) { alu_ri(0, RCX, VVF); alu(0x39, RCX, RDX); xb(0x0F); xb(0x8C); x32(top - (XC.len + 4)) }
+	if VRD >= 0 && !VBAD && VNRW > 0: for p 1..ra.len { sse(0x66, false, 0xFE, ra[0] as int, ra[p] as int) } sse(0x66, false, 0x70, VZR, ra[0] as int); xb(0x4E); sse(0x66, false, 0xFE, ra[0] as int, VZR); sse(0x66, false, 0x70, VZR, ra[0] as int); xb(0xB1); sse(0x66, false, 0xFE, ra[0] as int, VZR); sse(0x66, false, 0x7E, ra[0] as int, RAX); if VNNG { xb(0x48); xb(0x63); xb(0xC0); alu(0x01, RAX, RDX) }
+	if VRD >= 0 && !VBAD && VNRW == 0: cb := if VRC == B_SUB { B_ADD } else { VRC }; for p 1..ra.len { sse(0x66, false, vopc(cb, 3), ra[0] as int, ra[p] as int) } sse(0x66, false, 0x70, VZR, ra[0] as int); xb(0x4E); sse(0x66, false, vopc(cb, 3), ra[0] as int, VZR); sse(0x66, true, 0x7E, ra[0] as int, RAX)
 	if VEXM { xb(0xC5); xb(0xF8); xb(0x77) }
 	if VBAD || VXBAD: XC.resize(n0); return false
 	VKA.push(0); VKO.push(VKB.len as i32); for q n0..XC.len { VKB.push(XC[q]) } VKL.push((XC.len - n0) as i32); XC.resize(n0); true
@@ -231,7 +239,10 @@ vec_loop(fi int, h int, j int) bool:
 	k ~= vskip(h + 1, i1, 1)
 	while k < j && IR[k].op as int == I_LD && IR[k].l == -3 && IR[k].w == 3: k = vskip(k + 1, i1, 1)
 	x := IR[k]; if x.op as int != I_CMP || x.c != CC_L as i64 || x.w != 3: return false
-	cnd := x.d as int; iv := x.a as int; bnd := x.b as int; k2 := vskip(k + 1, i1, 1); y := IR[k2]; if y.op as int != I_BZ || y.a as int != cnd: return false
+	cnd := x.d as int; iv := x.a as int; bnd := x.b as int; VBK = -1
+	vk(v0 int) i64: v ~= v0; for z 4 { if v < 0 || VND[v] != 1 || VDP[v] < 0 { return -1 } y := IR[VDP[v]]; if y.op as int == I_IMM { return y.c } if y.op as int != I_MOV { return -1 } v = y.a as int } -1
+	bk := vk(bnd); q0 ~= h - 1; while bk >= 0 && q0 >= i0 { y := IR[q0]; o := y.op as int; if o == I_LBL || o == I_JMP || o == I_BZ || o == I_BNZ || o == I_CALL { break } if y.d as int == iv { st := if o == I_IMM { y.c } else { if o == I_MOV { vk(y.a as int) } else { -1 } }; if st >= 0 && st <= bk { VBK = bk - st } break } q0-- }
+ k2 := vskip(k + 1, i1, 1); y := IR[k2]; if y.op as int != I_BZ || y.a as int != cnd: return false
 	ex := y.c as int; e := vskip(j + 1, i1, 1); if e >= i1 || IR[e].op as int != I_LBL || IR[e].c as int != ex: return false
 	ic := vskip(j - 1, i0, -1); z := IR[ic]; if z.op as int != I_BIN || z.c != B_ADD as i64 || z.d as int != iv || z.a as int != iv || z.l >= 0 || z.w != 3: return false
 	one := z.b as int; if one < 0 || VND[one] != 1 || VDP[one] < 0 || IR[VDP[one]].op as int != I_IMM || IR[VDP[one]].c != 1: return false
@@ -373,7 +384,7 @@ vec_loop(fi int, h int, j int) bool:
 	a0 := ARGL.len; ARGL.push(cnt as i32); for p pg { ARGL.push(p) } for u VUT.len { if VUC[u] == 0 { ARGL.push(vum(VUT[u] as int) as i32) } }
 	if VBAD: ARGL.resize(a0); return false
 	for p hz { VPR.push(IR[p]) }
-	rv := if VRD >= 0 { vpnv() } else { -1 }; VPR.push(Ir{I_VLOOP as u8, 3, rv as i32, a0 as i32, (ARGL.len - a0) as i32, kid as i64, -1}); if VRD >= 0 { VPR.push(Ir{I_BIN as u8, 3, VRD as i32, VRD as i32, rv as i32, (if VRC == B_SUB { B_ADD } else { VRC }) as i64, -1}) } VPR.push(Ir{I_BIN as u8, 3, iv as i32, iv as i32, cnt as i32, B_ADD as i64, -1}); VPR.push(Ir{I_LBL as u8, 3, -1, -1, -1, sk as i64, -1})
+	rv := if VRD >= 0 { vpnv() } else { -1 }; VPR.push(Ir{I_VLOOP as u8, 3, rv as i32, a0 as i32, (ARGL.len - a0) as i32, kid as i64, -1}); if VRD >= 0 { VPR.push(Ir{I_BIN as u8, 3, VRD as i32, VRD as i32, rv as i32, (if VRC == B_SUB { B_ADD } else { VRC }) as i64, -1}) } VPR.push(Ir{I_BIN as u8, 3, iv as i32, iv as i32, cnt as i32, B_ADD as i64, -1}); if !lo && VBK > 0 && VBK % VVF as i64 == 0 && !env("HC_NOVG", VNB) { VPR.push(Ir{I_JMP as u8, 3, -1, -1, -1, ex as i64, -1}) } VPR.push(Ir{I_LBL as u8, 3, -1, -1, -1, sk as i64, -1})
 	for r VPR { VIN.push(r) } VAT.push(h as i32); VAT.push(VPR.len as i32); true
 vkon(v int) int:
 	if v < 0 || VND[v] != 1 || VDP[v] < 0 || IR[VDP[v]].op as int != I_IMM: return -(1 << 62)

@@ -21,7 +21,7 @@ v3fb(c int, a int, b int, xd int, w int):
 	if kf(b) { rc := if c == B_DIV { rcp2(FD[b] as int, w) } else { -1 }; fpool(if rc >= 0 { rc } else { FD[b] as int }, w); vexp(fpx(w), false, xd, RBP, A, 1); xb(if rc >= 0 { 0x59 } else { fo }); xmem(xd, RBP, 0) } else { if spl(b) { vexp(fpx(w), false, xd, RBP, A, 1); xb(fo); xmem(xd, RBP, vo(b)) } else { B := if xg(b) >= 0 { xg(b) } else { ldx(1, b, w); 1 }; vexp(fpx(w), false, xd, B, A, 1); xb(fo); xb(0xC0 | (xd & 7) << 3 | B & 7) } }
 	VEXL = 1
 vkput(c int): for q VKL[c] { xb(VKB[VKO[c] + q] as int) }
-cg_vloop(a int, b int, c int): for j b { ldv(RAX, ARGL[a + j]); push_r(RAX) } if VKA[c] != 0 && V3 { vkput(c + 1); return } if VKA[c] != 0 && AVXG >= 0 { lea_g(RAX, AVXG); xb(0x48); xb(0x83); xb(0x38); xb(0); xb(0x0F); xb(0x84); x32(VKL[c + 1] as int + 5); vkput(c + 1); xb(0xE9); x32(VKL[c] as int) } vkput(c)
+cg_vloop(a int, b int, c int): for j b { v := ARGL[a + j] as int; if NOVG { ldv(RAX, v); push_r(RAX) } else if gr(v) >= 0 { push_r(gr(v)) } else if kc(v) && i32ok(FD[v] as int) { xb(0x68); x32(FD[v] as int) } else if spl(v) { xrex(false, 0, 0, RBP); xb(0xFF); xmem(6, RBP, vo(v)) } else { ldv(RAX, v); push_r(RAX) } } if VKA[c] != 0 && V3 { vkput(c + 1); return } if VKA[c] != 0 && AVXG >= 0 { lea_g(RAX, AVXG); xb(0x48); xb(0x83); xb(0x38); xb(0); xb(0x0F); xb(0x84); x32(VKL[c + 1] as int + 5); vkput(c + 1); xb(0xE9); x32(VKL[c] as int) } vkput(c)
 var FK i8[>..<]; var FB i32[>..<]; var FD i64[>..<]; var UC i32[>..<]; var FI i32[>..<]; var FS i8[>..<]
 kc(v int) bool:
 	v >= 0 && v < FK.len && FK[v] == 1
@@ -63,6 +63,14 @@ imm(v int) int:
 rodata(s const byte[:]) int:
 	RO.resize(al(RO.len, 8)); o := RO.len; RO.append(s); o
 var CSBA int
+var FRL bool
+NOMXM ~= false; RDXV ~= -1; RDXI ~= -1; NOVG ~= false
+rdxok(s int, e int) bool:
+	for q (s + 1)..e:
+		y := IR[q]; o := y.op as int; ko := y.b < 0 || !kc(y.b as int) || i32ok(FD[y.b] as int)
+		ok := o == I_NOP || o == I_MOV && y.w & 8 == 0 || o == I_BIN && y.l < 0 && y.w & 8 == 0 && (y.c == B_ADD as i64 || y.c == B_SUB as i64 || y.c == B_OR as i64 || y.c == B_XOR as i64) && ko || o == I_CMP && y.w & 8 == 0 && ko && (y.c == CC_B as i64 || y.c == CC_AE as i64 || y.c == CC_E as i64 || y.c == CC_NE as i64 || y.c == CC_BE as i64 || y.c == CC_A as i64 || y.c == CC_L as i64 || y.c == CC_GE as i64 || y.c == CC_LE as i64 || y.c == CC_G as i64)
+		if !ok || y.d as int == RDXV: return false
+	true
 vo(v int) int:
 	-8 * (VSI[v] as int + 1) - CSBA
 i32ok(v int) bool:
@@ -166,7 +174,7 @@ rso(k int) int:
 	-CSBA - 8 * CNV - 8 * (k + 1)
 rcs(r int) int:
 	-CSBA - 8 * CNV - 8 * RUSED.len - 8 * (r - 5)
-epi(): for r, k RUSED { ld(r, RBP, rso(k), 8, false) } leave(); ret();
+epi(): u := UFS; if FRL { if RUSED.len % 2 == 0 { alu_ri(0, RSP, 8) } k ~= RUSED.len - 1; while k >= 0 { pop_r(RUSED[k] as int); k-- } ret(); return } for r, k RUSED { ld(r, RBP, rso(k), 8, false) } UFS = u; leave(); ret();
 wsz(w int) int:
 	1 << (w & 3)
 wsg(w int) bool:
@@ -236,12 +244,14 @@ cg_ccall(a int, n int, c int, m int):
 	if sk.len + pd > 0: add_rsp(8 * (sk.len + pd))
 	rk := m >> 28 & 3; if rk == 1 { sse(0x66, false, 0x7E, 0, RAX) } if rk == 2: sse(0x66, true, 0x7E, 0, RAX);
 cg_fn2(fi int):
-	x0 := XC.len; f0 := XFIX.len; LPS.clear(); LPE.clear(); LNEED.clear(); cg_fn(fi)
+	x0 := XC.len; f0 := XFIX.len; LPS.clear(); LPE.clear(); LNEED.clear(); FRF = false; ka := VKA.len; ko := VKO.len; kb := VKB.len; kl := VKL.len; cg_fn(fi)
+	rr(): XC.resize(x0); XFIX.resize(f0); LPS.clear(); LPE.clear(); VKA.resize(ka, 0); VKO.resize(ko, 0); VKB.resize(kb, 0); VKL.resize(kl, 0); cg_fn(fi)
+	nfl byte[>..] ~= []; if !UFS && !env("HC_NOFL", nfl): FRF = true; rr(); if UFS { FRF = false; rr() }
 	if NOA32: return
 	for it 3:
 		nd ~= false; while LNEED.len < LPS.len { LNEED.push(0) } for k LPS.len { s := LPS[k] as int; e := LPE[k] as int; if s >= 0 && e > s && e - s <= 256 && LNEED[k] == 0 && (e - 1) / 64 - s / 64 + 1 > (e - s + 63) / 64 { LNEED[k] = (e - s) as i32; nd = true } }
 		if !nd: return
-		XC.resize(x0); XFIX.resize(f0); LPS.clear(); LPE.clear(); cg_fn(fi)
+		rr(); if FRF && UFS { FRF = false; rr() }
 cg_fn(fi int):
 	f := NFS[fi]
 	pad16(16); FOFF[fi] = XC.len; LHD.clear(); LHD.resize(LBL.len, 0); lps i32[>..<] ~= []; lps.resize(LBL.len, -1)
@@ -251,11 +261,13 @@ cg_fn(fi int):
 	NFS[fi].sb = sba; CSBA = sba
 	VSI.clear(); VSI.resize(f.nv, -1); CNV = 0; for i (f.i0 as int)..f.i1 as int:
 		opnds(i); for v OU { if v >= 0 && v < f.nv as int && VSI[v] < 0 && fk(v) == 0 && gr(v) < 0 && xg(v) < 0 { VSI[v] = CNV; CNV++ } } for v OD { if v >= 0 && v < f.nv as int && VSI[v] < 0 && fk(v) == 0 && gr(v) < 0 && xg(v) < 0 { VSI[v] = CNV; CNV++ } }
-	push_r(RBP); mov_rr(RBP, RSP); sub_rsp(al(sba + 8 * CNV + 8 * RUSED.len + (if SVR.len > 0 { 48 } else { 0 }) + 16, 64) - 16); for r, k RUSED: st(r, RBP, rso(k), 8)
-	nz byte[>..] ~= []; NOFC = env("HC_NOFC", nz); NOMX = env("HC_NOMX", nz); NOBA = env("HC_NOBA", nz); NOA32 = env("HC_NOA32", nz); NOSI = env("HC_NOSTI", nz); NOSB = env("HC_NOSTB", nz); NOLE = env("HC_NOLEA", nz); NORW = env("HC_NORW", nz); NO32 = env("HC_NO32", nz); NOMB = env("HC_NOMB", nz); NOXS = env("HC_NOXS", nz); NOAE = env("HC_NOAE", nz); LPI = -1; LAX = -1; if sba > 0 && env("HC_ZFRAME", nz): lea(R11, RBP, -sba); alu(0x31, RAX, RAX); lz := nlbl(); bind(lz); st(RAX, R11, 0, 8); xrex(true, 0, 0, R11); xb(0x83); xb(0xC0 | R11 & 7); xb(8); alu(0x39, R11, RBP); jcc_l(CC_B, lz)
+	sp6 ~= false; for i (f.i0 as int)..f.i1 as int { if IR[i].op as int == I_PARAM && IR[i].c >= 6 { sp6 = true } }
+	FRL = FRF && SVR.len == 0 && !sp6
+	if FRL { for r RUSED { push_r(r as int) } if RUSED.len % 2 == 0 { sub_rsp(8) } } else { push_r(RBP); mov_rr(RBP, RSP); sub_rsp(al(sba + 8 * CNV + 8 * RUSED.len + (if SVR.len > 0 { 48 } else { 0 }) + 16, 64) - 16); for r, k RUSED { st(r, RBP, rso(k), 8) } } UFS = false
+	nz byte[>..] ~= []; NOFC = env("HC_NOFC", nz); NOMX = env("HC_NOMX", nz); NOBA = env("HC_NOBA", nz); NOA32 = env("HC_NOA32", nz); NOSI = env("HC_NOSTI", nz); NOSB = env("HC_NOSTB", nz); NOLE = env("HC_NOLEA", nz); NOMXM = env("HC_NOMXM", nz); NOVG = env("HC_NOVG", nz); NORW = env("HC_NORW", nz); NO32 = env("HC_NO32", nz); NOMB = env("HC_NOMB", nz); NOXS = env("HC_NOXS", nz); NOAE = env("HC_NOAE", nz); LPI = -1; LAX = -1; if sba > 0 && env("HC_ZFRAME", nz): lea(R11, RBP, -sba); alu(0x31, RAX, RAX); lz := nlbl(); bind(lz); st(RAX, R11, 0, 8); xrex(true, 0, 0, R11); xb(0x83); xb(0xC0 | R11 & 7); xb(8); alu(0x39, R11, RBP); jcc_l(CC_B, lz)
 	if VZERO.len > 0:
 		alu(0x31, RAX, RAX); for v VZERO: stv(RAX, v)
-	traps i32[>..<] ~= []; DEAD = false; FUSEC = -1; HPEND = -1; LCMP = -1; ADCJ = -1; FLV = -1; CGL = -1; CGK = -1; CGX = -1; MXL = -1; NOML = env("HC_NOML", nz); HDC.clear(); HDC.resize(LBL.len, -1); HDB.clear(); HDB.resize(LBL.len, -1); HDX.clear(); HDX.resize(LBL.len, -1); HDK.clear(); HDK.resize(LBL.len, -1)
+	traps i32[>..<] ~= []; RDXV = -1; RDXI = -1; DEAD = false; FUSEC = -1; HPEND = -1; LCMP = -1; ADCJ = -1; FLV = -1; CGL = -1; CGK = -1; CGX = -1; MXL = -1; NOML = env("HC_NOML", nz); HDC.clear(); HDC.resize(LBL.len, -1); HDB.clear(); HDB.resize(LBL.len, -1); HDX.clear(); HDX.resize(LBL.len, -1); HDK.clear(); HDK.resize(LBL.len, -1)
 	for i (f.i0 as int)..f.i1 as int:
 		x := IR[i]; op := x.op; w := x.w; d := x.d; a := x.a; b := x.b; c := x.c
 		if i > f.i0 as int { y := IR[i - 1]; yo := y.op as int; if (yo == I_BZ || yo == I_BNZ || yo == I_JMP) && y.c >= 0 && y.c < LPS.len as i64 && LPS[y.c] >= 0 { LPE[y.c] = XC.len as i32 } }
@@ -289,7 +301,7 @@ cg_fn(fi int):
 					t := if fk(b) == 9 { b } else { a }; o := if t == b { a } else { b }; R := if gr(d) >= 0 { gr(d) } else { RAX }
 					B := gr(o); I ~= gr(FI[t]); if I < 0 || I == R && B < 0 { ldv(RCX, FI[t]); I = RCX } if B < 0 { ldv(R, o) } SIBM = true; SIBI = I; SIBS = FS[t]; lea(R, if B >= 0 { B } else { R }, 0); if R != gr(d) { stv(R, d) }
 				fm := op == I_BIN && c == B_MUL && x.l < 0 && i == UMI + 1 && (a == UMA && b == UMB || a == UMB && b == UMA)
-				if op == I_BIN && i != ADCJ && c == B_UMULH: nx := IR[i + 1]; UMX = V3 && !NOMX && i + 1 < f.i1 as int && nx.op as int == I_BIN && nx.c == B_MUL as i64 && nx.l < 0 && (nx.a as int == a && nx.b as int == b || nx.a as int == b && nx.b as int == a) && nx.d >= 0 && nx.d as int != d; if UMX { ml := MXL >= 0 && (IR[MXL].d as int == a || IR[MXL].d as int == b); ldv(RDX, if ml && IR[MXL].d as int == a { b } else { a }); B := if ml { -1 } else { srcr(b, RCX) }; H := if gr(d) >= 0 { gr(d) } else { RAX }; L := if gr(nx.d as int) >= 0 { gr(nx.d as int) } else { if H == RCX { RAX } else { RCX } }; if ml { mxm(MXL, H, L) } else { bmx(0xF2, H, B, L, 0xF6) } fin(H, d); fin(L, nx.d as int) } else { ldv(RAX, a); grp3(4, srcr(b, RCX)); fin(RDX, d) } UMI = i; UMA = a; UMB = b; MXL = -1
+				if op == I_BIN && i != ADCJ && c == B_UMULH: nx := IR[i + 1]; UMX = V3 && !NOMX && i + 1 < f.i1 as int && nx.op as int == I_BIN && nx.c == B_MUL as i64 && nx.l < 0 && (nx.a as int == a && nx.b as int == b || nx.a as int == b && nx.b as int == a) && nx.d >= 0 && nx.d as int != d; if UMX { ml := MXL >= 0 && (IR[MXL].d as int == a || IR[MXL].d as int == b); rok := !NOMXM && RDXV >= 0 && rdxok(RDXI, i); ru := !ml && rok && (RDXV == a || RDXV == b); sm := !ml && !NOMXM && (ru || spl(a) || spl(b)); sa := if ru { RDXV } else { if sm && spl(a) && !spl(b) { b } else { a } }; sb := if sa == a { b } else { a }; ms := sm && spl(sb); X := if ml && IR[MXL].d as int == a { b } else { if sm { sa } else { a } }; if !(rok && RDXV == X) { ldv(RDX, X) } RDXV = X; RDXI = i + 1; B := if ml || ms { -1 } else { srcr(if sm { sb } else { b }, RCX) }; H := if gr(d) >= 0 { gr(d) } else { RAX }; L := if gr(nx.d as int) >= 0 { gr(nx.d as int) } else { if H == RCX { RAX } else { RCX } }; if ml { mxm(MXL, H, L) } else { if ms { l := VEXL; VEXL = 0; vexp(0xF2, !X32, H, RBP, L, 2); VEXL = l; xb(0xF6); xmem(H, RBP, vo(sb)) } else { bmx(0xF2, H, B, L, 0xF6) } } fin(H, d); fin(L, nx.d as int) } else { ldv(RAX, a); grp3(4, srcr(b, RCX)); fin(RDX, d) } UMI = i; UMA = a; UMB = b; MXL = -1
 				if fm && !UMX: fin(RAX, d)
 				rw := op == I_BIN && i != ADCJ && x.l < 0 && w & 11 == 3 && !NORW && (c == B_ADD || c == B_SUB || c == B_AND || c == B_OR || c == B_XOR) && d >= 0 && gr(d) < 0 && xg(d) < 0 && fk(d) == 0 && a != b && (a == d || c != B_SUB && b == d) && !(c == B_ADD && (fk(a) == 9 || fk(b) == 9))
 				if rw: o := if a == d { b } else { a }; if kc(o) && i32ok(FD[o] as int) { mri(if c == B_ADD { 0 } else { if c == B_SUB { 5 } else { if c == B_AND { 4 } else { if c == B_OR { 1 } else { 6 } } } }, RBP, vo(d), FD[o] as int) } else { mop(if c == B_ADD { 0x01 } else { if c == B_SUB { 0x29 } else { if c == B_AND { 0x21 } else { if c == B_OR { 0x09 } else { 0x31 } } } }, srcr(o, RCX), RBP, vo(d), true) } LSP = -1
