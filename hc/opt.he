@@ -328,7 +328,7 @@ inline_into(fi int, fsz i32[>..<]&, mx int):
 		il ~= ex || !WEB && x.op as int == I_CALL && cal >= 0 && cal < NCS.len && NCS[cal] == 1
 		if il && !ex && !NOCI && fsz[cal] > mx && hlp(cal) && cold(i): il = false
 		cf ~= false; if !ex && !NOCF2 && x.op as int == I_CALL: q ~= i + 1; while q < f.i1 as int { y := IR[q]; o := y.op as int; if o == I_LBL || o == I_JMP || o == I_BZ || o == I_BNZ || o == I_RET || o == I_RET2 { break } if o == I_CALL && nret(y.c) { cf = true; break } q++ }
-		if cf || !ex && !NOKI && x.op as int == I_CALL && cal >= 0 && cal < NFS.len && kr(cal) || !(x.op as int == I_CALL && cal >= 0 && (cal != fi && fsz[cal] >= 0 && !SIM || cal == fi && SIM) && fsz[cal] <= (if il { max(ILC, mx) } else { if SIM { max(min(mx + 40 * nk, 3 * mx), if NOHS { 128 } else { HSL }) } else { min(mx + 40 * nk, 3 * mx) } })): IR.push(x); continue
+		if cf || !ex && !NONI && !WEB && x.op as int == I_CALL && nret(x.c) || !ex && !NOKI && x.op as int == I_CALL && cal >= 0 && cal < NFS.len && kr(cal) || !(x.op as int == I_CALL && cal >= 0 && (cal != fi && fsz[cal] >= 0 && !SIM || cal == fi && SIM) && fsz[cal] <= (if il { max(ILC, mx) } else { if SIM { max(min(mx + 40 * nk, 3 * mx), if NOHS { 128 } else { HSL }) } else { min(mx + 40 * nk, 3 * mx) } })): IR.push(x); continue
 		g := NFS[cal]; vb := nv; nv += g.nv; sbase := al(sb, 32); sb = sbase + g.sb; lend := nlbl()
 		lm.clear(); lm.resize(LBL.len, -1); mm i32[>..<] ~= []; mo i32[>..<] ~= []
 		for j (g.i0 as int)..g.i1 as int:
@@ -351,11 +351,11 @@ ILC ~= 250
 NOCI ~= false
 NOLC ~= false
 NOMS ~= false
-NOSI ~= false; NOHS ~= false; NOKR ~= false; NORA ~= false; HSL ~= 256
+NOSI ~= false; NOHS ~= false; NOKR ~= false; NORA ~= false; NONI ~= false; HSL ~= 256
 SIM ~= false; DWX ~= 4; NOAF ~= false; NOCF2 ~= false; NOTR ~= false; NOBT ~= false; NOJK ~= false; NOTB ~= false; NONR ~= false; NOMB2 ~= false; NOVC ~= false; NOCH ~= false; NOHC ~= false; NOKI ~= false; NOXN ~= false
 var NCS i32[>..<]
 optimize_all():
-	nlc byte[>..] ~= []; NOLC = env("HC_NOLC", nlc); NOMS = env("HC_NOMS", nlc); NOSI = env("HC_NOSI", nlc); NOHS = env("HC_NOHS", nlc); NOKR = env("HC_NOKR", nlc); NORA = env("HC_NORA", nlc); NOCF2 = env("HC_NOFI", nlc); NOTR = env("HC_NOTR", nlc); NOBT = env("HC_NOBT", nlc); NOJK = env("HC_NOJK", nlc); NOTB = env("HC_NOTB", nlc); NONR = env("HC_NONR", nlc); NOMB2 = env("HC_NOMB2", nlc); NOVC = env("HC_NOVC", nlc); NOCH = env("HC_NOCH", nlc); NOHC = env("HC_NOHC", nlc); NOKI = env("HC_NOKI", nlc); NOXN = env("HC_NOXN", nlc); NOAF = env("HC_NOAF", nlc); if env("HC_DWX", nlc) { v, ok := parse_int(nlc[..]); DWX = v }
+	nlc byte[>..] ~= []; NOLC = env("HC_NOLC", nlc); NOMS = env("HC_NOMS", nlc); NOSI = env("HC_NOSI", nlc); NOHS = env("HC_NOHS", nlc); NOKR = env("HC_NOKR", nlc); NORA = env("HC_NORA", nlc); NONI = env("HC_NONI", nlc); NOCF2 = env("HC_NOFI", nlc); NOTR = env("HC_NOTR", nlc); NOBT = env("HC_NOBT", nlc); NOJK = env("HC_NOJK", nlc); NOTB = env("HC_NOTB", nlc); NONR = env("HC_NONR", nlc); NOMB2 = env("HC_NOMB2", nlc); NOVC = env("HC_NOVC", nlc); NOCH = env("HC_NOCH", nlc); NOHC = env("HC_NOHC", nlc); NOKI = env("HC_NOKI", nlc); NOXN = env("HC_NOXN", nlc); NOAF = env("HC_NOAF", nlc); if env("HC_DWX", nlc) { v, ok := parse_int(nlc[..]); DWX = v }
 	il0 byte[>..] ~= []; if env("HC_ILC", il0) { v, ok := parse_int(il0[..]); ILC = v } NOCI = env("HC_NOCI", il0)
 	lim byte[>..] ~= []; mx := if env("HC_INL", lim) { v, ok := parse_int(lim[..]); v } else { 100 }
 	noi byte[>..] ~= []; inl := !env("HC_NOINL", noi)
