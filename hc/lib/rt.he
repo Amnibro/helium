@@ -421,6 +421,7 @@ extern rt_ctz(x u64) int = "hr_ctz"
 rt_z8(y u64) u64: t := (y & 0x7F7F7F7F7F7F7F7F) + 0x7F7F7F7F7F7F7F7F; ~(t | y | 0x7F7F7F7F7F7F7F7F)
 rt_sw(x u64, w int) u64: L := 0x0101010101010101 as u64; rt_z8(x ^ ((w & 255) as u64) * L) | rt_z8(x ^ (((w >> 8) & 255) as u64) * L) | rt_z8(x ^ (((w >> 16) & 255) as u64) * L)
 extern rt_bm16(p int, w int) int = "hr_bm16"
+inline rt_match16(s const byte[:], i int, w int) int: rt_bm16(ptr(s) + i, w)
 rt_bm16s(p int, w int) int: G := 0x0102040810204080 as u64; ((((rt_sw(mld(p) as! u64, w) >> 7) * G) >> 56) | ((((rt_sw(mld(p + 8) as! u64, w) >> 7) * G) >> 56) << 8)) as! int
 rt_bw(m int) int, int: return mld1(m + 258) | (mld1(m + 259) << 8) | (mld1(m + 260) << 16), if mld1(m + 257) != 0 { 0xFFFF } else { 0 }
 rt_find_any(s const byte[:], m int) int: i ~= 0; k := mld1(m + 256); p := ptr(s); if k >= 1 && k <= 3 { w, iv := rt_bw(m); while i + 16 <= s.len { x := rt_bm16(p + i, w) ^ iv; if x != 0 { return i + rt_ctz(x as u64) } i += 16 } } while i < s.len { if mld1(m + s[i] as int) != 0 { return i } i += 1 } -1

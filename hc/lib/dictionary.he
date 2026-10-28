@@ -1,33 +1,36 @@
 use std
 struct dictionary_slot<K, V> { key K, val V, tag u32 }
-struct dictionary<K, V> { count int = 0, slots dictionary_slot<K, V>[>..<] = [] }
+struct dictionary<K, V> { count int = 0, slots dictionary_slot<K, V>[>..<] = [], ctrl byte[>..<] = [] }
 dtag(h uint) u32: (h as! u32) | 2147483648
+dctl(t u32) byte: if t == 0 { 128 } else { ((t >> 24) & 127) as byte }
+dset<K, V>(d dictionary<K, V>&, i int, c byte): d.ctrl[i] = c; if i < 16 { d.ctrl[i + d.slots.len] = c }
 dhome<K>(t int, key K, m int) int: if m >= 2147483648 { (hash(key) & m as uint) as int } else { t & m }
-dfind<K, V>(d dictionary<K, V>&, key K, h uint) int, bool:
-	g := dtag(h); m := d.slots.len - 1; i ~= (h & m as uint) as int
+inline dfind<K, V>(d dictionary<K, V>&, key K, h uint) int:
+	m := d.slots.len - 1; i ~= (h & m as uint) as int; c := ((((h as! u32) >> 24) & 127) as int) * 0x010101; s := d.ctrl[..]
 	loop:
-		t := d.slots[i].tag
-		if t == 0: return i, false
-		if t == g && d.slots[i].key == key: return i, true
-		i = (i + 1) & m
+		e := match16(s, i, 0x808080); x ~= match16(s, i, c); if e != 0 { x &= (e & -e) - 1 }
+		while x != 0: j := (i + ctz(x as! uint)) & m; if d.slots[j].key == key { return j } x &= x - 1
+		if e != 0: return ~((i + ctz(e as! uint)) & m)
+		i = (i + 16) & m
 dat<K, V>(d dictionary<K, V>&, key K) int:
 	if d.count == 0: return -1
-	i, f := dfind(d, key, hash(key)); if f { i } else { -1 }
+	dfind(d, key, hash(key))
 dgrow<K, V>(d dictionary<K, V>&, cap int):
-	old := d.slots.len; d.slots.resize(cap, dictionary_slot<K, V>{default<K>(), default<V>(), 0})
-	if d.count == 0: return
-	m := cap - 1; s ~= 0; while d.slots[s].tag != 0: s++
-	for k 1..old:
-		p := (s + k) % old; t := d.slots[p].tag
-		if t != 0:
-			e := d.slots[p]; d.slots[p].tag = 0; q ~= dhome(t, e.key, m)
-			while d.slots[q].tag != 0: q = (q + 1) & m
-			d.slots[q] = e
+	old := d.slots.len; d.slots.resize(cap, dictionary_slot<K, V>{default<K>(), default<V>(), 0}); d.ctrl.resize(cap + 16, 128)
+	if d.count > 0:
+		m := cap - 1; s ~= 0; while d.slots[s].tag != 0: s++
+		for k 1..old:
+			p := (s + k) % old; t := d.slots[p].tag
+			if t != 0:
+				e := d.slots[p]; d.slots[p].tag = 0; q ~= dhome(t, e.key, m)
+				while d.slots[q].tag != 0: q = (q + 1) & m
+				d.slots[q] = e
+	for i cap + 16 { d.ctrl[i] = dctl(d.slots[i & (cap - 1)].tag) }
 dput<K, V>(d dictionary<K, V>&, key K, v0 V) int, bool:
-	if d.slots.len == 0 { dgrow(d, 8) } else if (d.count + 1) * 3 > d.slots.len * 2 { dgrow(d, d.slots.len * 2) }
-	h := hash(key); i, f := dfind(d, key, h)
-	if !f: d.slots[i] = dictionary_slot<K, V>{key, v0, dtag(h)}; d.count += 1
-	return i, !f
+	if d.slots.len == 0 { dgrow(d, 16) } else if (d.count + 1) * 3 > d.slots.len * 2 { dgrow(d, d.slots.len * 2) }
+	h := hash(key); r := dfind(d, key, h); i := if r >= 0 { r } else { ~r }
+	if r < 0: g := dtag(h); d.slots[i] = dictionary_slot<K, V>{key, v0, g}; dset(d, i, dctl(g)); d.count += 1
+	return i, r < 0
 get<K, V>(d dictionary<K, V>&, key K) V?: i := dat(d, key); if i < 0 { return null }; return d.slots[i].val
 contains<K, V>(d dictionary<K, V>&, key K) bool: dat(d, key) >= 0
 insert<K, V>(d dictionary<K, V>&, key K, val V) bool: i, n := dput(d, key, val); if !n { d.slots[i] = dictionary_slot<K, V>{d.slots[i].key, val, d.slots[i].tag} }; n
@@ -39,8 +42,8 @@ remove<K, V>(d dictionary<K, V>&, key K) bool:
 	loop:
 		j = (j + 1) & m; t := d.slots[j].tag
 		if t == 0: break
-		if ((j - dhome(t, d.slots[j].key, m)) & m) >= ((j - i) & m): d.slots[i] = d.slots[j]; i = j
-	d.slots[i] = dictionary_slot<K, V>{default<K>(), default<V>(), 0}; d.count -= 1; true
-clear<K, V>(d dictionary<K, V>&): for &s d.slots { s.tag = 0 }; d.count = 0
-reserve<K, V>(d dictionary<K, V>&, n int): need := max(next_pow2((n * 3 + 1) / 2), 8); if need > d.slots.len: dgrow(d, need)
+		if ((j - dhome(t, d.slots[j].key, m)) & m) >= ((j - i) & m): d.slots[i] = d.slots[j]; dset(d, i, d.ctrl[j]); i = j
+	d.slots[i] = dictionary_slot<K, V>{default<K>(), default<V>(), 0}; dset(d, i, 128); d.count -= 1; true
+clear<K, V>(d dictionary<K, V>&): for &s d.slots { s.tag = 0 }; for &c d.ctrl { c = 128 }; d.count = 0
+reserve<K, V>(d dictionary<K, V>&, n int): need := max(next_pow2((n * 3 + 1) / 2), 16); if need > d.slots.len: dgrow(d, need)
 each<K, V, F>(d dictionary<K, V>&): for &s d.slots { if s.tag != 0 { F(s.key, &s.val) } }

@@ -307,7 +307,7 @@ build_dfa(prog Inst[:], sets bool[256][:], classes byte[256], start_pc i32, left
 	w := stride as i32; tb i32[>..] ~= []
 	for o order: for c stride { tb.push(num[trans[o * stride + c]] * w) }
 	Dfa{num[start] * w, (me as i32) * w, (sp as i32) * w, copy(tb)}
-skip_prefix(f Prefilter&, text byte[:], i int) int:
+inline skip_prefix(f Prefilter&, text byte[:], i int) int:
 	fits := text.len - f.len + 1; assert(i >= 0)
 	if i >= fits: return text.len
 	p := if f.at1 == f.at2 { find_any(text[i + f.at1..fits + f.at1], f.set1) } else { find_pair(text[i + f.at1..fits + f.at2], f.set1, f.at2 - f.at1, f.set2) }
@@ -330,7 +330,7 @@ find_end(re Regex&, text byte[:], at int) int:
 	tr := re.fwd.trans[..]; cl := re.classes[..]; sp := re.fwd.special; s ~= re.fwd.start; last ~= if re.nullable { at } else { -1 }; i ~= resume(re, text, at)
 	while i < text.len:
 		while i < text.len { s = tr[s + cl[text[i]]]; i += 1; if s < sp { break } }
-		if s < sp: if s >= re.fwd.match_end { i = resume(re, text, i) } else if s == 0 { return last } else { last = i }
+		if s < sp: if s >= re.fwd.match_end { i = if re.skip == Skip.Prefix { skip_prefix(re.filter, text, i) } else { resume(re, text, i) } } else if s == 0 { return last } else { last = i }
 	last
 scan_back(re Regex&, d Dfa&, text byte[:], lo int, end int) int:
 	tr := d.trans[..]; cl := re.classes[..]; me := d.match_end; s ~= d.start; first ~= if s < me { end } else { -1 }

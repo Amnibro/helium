@@ -285,6 +285,11 @@ regalloc(fi int):
 			if rr >= 0: CGLB.push(x.c as i32); CGRG.push(rr as i32); CGIX.push(ic as i32); CGKV.push(kv as i32)
 	for r CREGS:
 		if rgrp(r) != 0 { continue } u ~= false; for g REGOF { if g == r as i32 { u = true } } for g CGRG { if g == r as i32 { u = true } } if u: RUSED.push(r as i32)
+hsize(fi int) int:
+	f := NFS[fi]; i0 := f.i0 as int; cfg(i0, f.i1 as int); nb := CBS.len; h i8[>..<] ~= []; h.resize(nb, 0); z i8[>..<] ~= []; z.resize(nb, 0); q i32[>..] ~= []
+	for b nb { for p (CBS[b] as int)..(CBE[b] as int) + 1 { x := IR[i0 + p]; if x.op as int == I_CALL && nret(x.c) { z[b] = 1 } } o := IR[i0 + CBE[b] as int].op as int; if (o == I_RET || o == I_RET2) && z[b] == 0 { h[b] = 1; q.push(b as i32) } }
+	while q.len > 0 { b := q.pop() as int; for k (CPS[b] as int)..CPS[b + 1] as int { p := CPL[k] as int; if h[p] == 0 && z[p] == 0 { h[p] = 1; q.push(p as i32) } } }
+	n ~= 0; for b nb { if h[b] != 0 { for p (CBS[b] as int)..(CBE[b] as int) + 1 { op := IR[i0 + p].op; if op != I_NOP && op != I_LBL { n++ } } } } n
 isize(fi int) int:
 	f := NFS[fi]; n ~= 0; for i (f.i0 as int)..f.i1 as int { op := IR[i].op; if op != I_NOP && op != I_LBL { n++ } } n
 cpld(fi int):
@@ -322,7 +327,7 @@ inline_into(fi int, fsz i32[>..<]&, mx int):
 		il ~= ex || !WEB && x.op as int == I_CALL && cal >= 0 && cal < NCS.len && NCS[cal] == 1
 		if il && !ex && !NOCI && fsz[cal] > mx && hlp(cal) && cold(i): il = false
 		cf ~= false; if !ex && !NOCF2 && x.op as int == I_CALL: q ~= i + 1; while q < f.i1 as int { y := IR[q]; o := y.op as int; if o == I_LBL || o == I_JMP || o == I_BZ || o == I_BNZ || o == I_RET || o == I_RET2 { break } if o == I_CALL && nret(y.c) { cf = true; break } q++ }
-		if cf || !ex && !NOKI && x.op as int == I_CALL && cal >= 0 && cal < NFS.len && kr(cal) || !(x.op as int == I_CALL && cal >= 0 && (cal != fi && fsz[cal] >= 0 && !SIM || cal == fi && SIM) && fsz[cal] <= (if il { max(ILC, mx) } else { if SIM { max(min(mx + 40 * nk, 3 * mx), 128) } else { min(mx + 40 * nk, 3 * mx) } })): IR.push(x); continue
+		if cf || !ex && !NOKI && x.op as int == I_CALL && cal >= 0 && cal < NFS.len && kr(cal) || !(x.op as int == I_CALL && cal >= 0 && (cal != fi && fsz[cal] >= 0 && !SIM || cal == fi && SIM) && fsz[cal] <= (if il { max(ILC, mx) } else { if SIM { max(min(mx + 40 * nk, 3 * mx), if NOHS { 128 } else { HSL }) } else { min(mx + 40 * nk, 3 * mx) } })): IR.push(x); continue
 		g := NFS[cal]; vb := nv; nv += g.nv; sbase := al(sb, 32); sb = sbase + g.sb; lend := nlbl()
 		lm.clear(); lm.resize(LBL.len, -1); mm i32[>..<] ~= []; mo i32[>..<] ~= []
 		for j (g.i0 as int)..g.i1 as int:
@@ -345,11 +350,11 @@ ILC ~= 250
 NOCI ~= false
 NOLC ~= false
 NOMS ~= false
-NOSI ~= false
+NOSI ~= false; NOHS ~= false; HSL ~= 256
 SIM ~= false; DWX ~= 4; NOAF ~= false; NOCF2 ~= false; NOTR ~= false; NOBT ~= false; NOJK ~= false; NOTB ~= false; NONR ~= false; NOMB2 ~= false; NOVC ~= false; NOCH ~= false; NOHC ~= false; NOKI ~= false; NOXN ~= false
 var NCS i32[>..<]
 optimize_all():
-	nlc byte[>..] ~= []; NOLC = env("HC_NOLC", nlc); NOMS = env("HC_NOMS", nlc); NOSI = env("HC_NOSI", nlc); NOCF2 = env("HC_NOFI", nlc); NOTR = env("HC_NOTR", nlc); NOBT = env("HC_NOBT", nlc); NOJK = env("HC_NOJK", nlc); NOTB = env("HC_NOTB", nlc); NONR = env("HC_NONR", nlc); NOMB2 = env("HC_NOMB2", nlc); NOVC = env("HC_NOVC", nlc); NOCH = env("HC_NOCH", nlc); NOHC = env("HC_NOHC", nlc); NOKI = env("HC_NOKI", nlc); NOXN = env("HC_NOXN", nlc); NOAF = env("HC_NOAF", nlc); if env("HC_DWX", nlc) { v, ok := parse_int(nlc[..]); DWX = v }
+	nlc byte[>..] ~= []; NOLC = env("HC_NOLC", nlc); NOMS = env("HC_NOMS", nlc); NOSI = env("HC_NOSI", nlc); NOHS = env("HC_NOHS", nlc); NOCF2 = env("HC_NOFI", nlc); NOTR = env("HC_NOTR", nlc); NOBT = env("HC_NOBT", nlc); NOJK = env("HC_NOJK", nlc); NOTB = env("HC_NOTB", nlc); NONR = env("HC_NONR", nlc); NOMB2 = env("HC_NOMB2", nlc); NOVC = env("HC_NOVC", nlc); NOCH = env("HC_NOCH", nlc); NOHC = env("HC_NOHC", nlc); NOKI = env("HC_NOKI", nlc); NOXN = env("HC_NOXN", nlc); NOAF = env("HC_NOAF", nlc); if env("HC_DWX", nlc) { v, ok := parse_int(nlc[..]); DWX = v }
 	il0 byte[>..] ~= []; if env("HC_ILC", il0) { v, ok := parse_int(il0[..]); ILC = v } NOCI = env("HC_NOCI", il0)
 	lim byte[>..] ~= []; mx := if env("HC_INL", lim) { v, ok := parse_int(lim[..]); v } else { 100 }
 	noi byte[>..] ~= []; inl := !env("HC_NOINL", noi)
@@ -367,7 +372,7 @@ optimize_all():
 	tk(k int): t := clock_ns(); pt[k] += t - t0; t0 = t
 	for fi order:
 		for rp 2:
-			if rp == 1 && !WEB && !NOTR { tre(fi) } sc ~= false; if rp == 1 { for i (NFS[fi].i0 as int)..NFS[fi].i1 as int { if IR[i].op as int == I_CALL && IR[i].c == fi as i64 { sc = true } } } if rp == 1 && !(inl && sc && !NOSI && !WEB && isize(fi) <= 128) { break } SIM = rp == 1
+			if rp == 1 && !WEB && !NOTR { tre(fi) } sc ~= false; if rp == 1 { for i (NFS[fi].i0 as int)..NFS[fi].i1 as int { if IR[i].op as int == I_CALL && IR[i].c == fi as i64 { sc = true } } } if rp == 1 && !(inl && sc && !NOSI && !WEB && (if NOHS { isize(fi) <= 128 } else { hsize(fi) <= HSL })) { break } SIM = rp == 1; if SIM && !NOHS { fsz[fi] = hsize(fi) as i32 }
 			if inl { inline_into(fi, fsz, mx) } if !env("HC_NOCPL", noi) { cpld(fi) } tk(0); mem2reg(fi); tk(1); if we { webs(fi) } copyprop(fi); tk(2); constfold(fi); tk(3); sra(fi); cpfwd(fi); tk(4); if we { webs(fi) } copyprop(fi); tk(2); constfold(fi); tk(3); lvn(fi); tk(5); copyprop(fi); cpfwd(fi); copyprop(fi); constfold(fi); copyprop(fi); jthread(fi); lvn(fi); copyprop(fi); rnz(fi); udv(fi); if !env("HC_NOBR", noi) { umh(fi); scf(fi); ifc(fi); bset(fi) } if we { webs(fi); copyprop(fi); constfold(fi); copyprop(fi) } licm(fi); lvn(fi); copyprop(fi); if !env("HC_NOSR", noi) { fuse(fi); sred(fi); copyprop(fi) } tk(2); deadcode(fi); tk(6); if inl: fsz[fi] = isize(fi)
 	pe byte[>..] ~= []; if env("HC_PT", pe):
 		for v, k pt: print(k, " ", v / 1000000, "ms\n")
