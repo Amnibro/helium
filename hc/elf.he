@@ -10,9 +10,10 @@ eb(o byte[>..]&, v int, n int):
 	for i n: o.push((v >> i * 8 & 255) as! byte)
 al(v int, a int) int:
 	(v + a - 1) / a * a
+code_off() int: al(64 + 56 * (if DYNG >= 0 { 5 } else { 2 }), 64)
 elf_write(entry int) byte[>..]:
-	dy := DYNG >= 0; nph := if dy { 5 } else { 2 }; hs := 64 + 56 * nph
-	co := al(hs, 16)
+	dy := DYNG >= 0; nph := if dy { 5 } else { 2 }
+	co := code_off()
 	ro := al(co + XC.len, 16)
 	bo ~= 0; if dy: RO.resize(al(RO.len, 8)); bo = RO.len; RO.append("/lib64/ld-linux-x86-64.so.2\0\0\0\0\0"); RO.append("\0libc.so.6\0dlopen\0dlsym\0dlerror\0"); RO.resize(RO.len + 96 + 28 + 4 + 72 + 16 * 12)
 	rxe := ro + RO.len

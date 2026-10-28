@@ -1655,9 +1655,9 @@ lower_program(out byte[>..]&) bool:
 	mov_rr(RDI, RSP); lea_rip(RSI, 1, rsg); call_f(rst); mov_rr(RSP, RAX); if dlb >= 0 { call_f(dlb) } call_f(gi); call_f(rm); mov_ri(RDI, 0); call_f(rinit); ud2()
 	irw byte[>..] ~= []; dump := env("HC_IR", irw)
 	noi byte[>..] ~= []; opt := !env("HC_NOOPT", noi); if opt: gtag(); optimize_all(); vec_all(); rot_all(); NOADC = env("HC_NOADC", noi)
-	for f, i NFS: if dump && f.inst >= 0 && nm(FI_[f.inst].name) == irw[..] { ir_dump(i) } if opt { regalloc(i); } else { REGOF.clear(); RUSED.clear(); VZERO.clear(); FK.clear(); XREG.clear(); SVR.clear(); } cg_fn(i)
+	for f, i NFS: if dump && f.inst >= 0 && nm(FI_[f.inst].name) == irw[..] { ir_dump(i) } if opt { regalloc(i); } else { REGOF.clear(); RUSED.clear(); VZERO.clear(); FK.clear(); XREG.clear(); SVR.clear(); } cg_fn2(i)
 	dbg byte[>..] ~= []; if env("HC_NDEBUG", dbg):
-		for f, i NFS: print(if f.inst >= 0 { nm(FI_[f.inst].name) } else { "<init>" }, " ", 0x400000 + 176 + FOFF[i] as int, " nv ", f.nv, " sb ", f.sb)
+		for f, i NFS: print(if f.inst >= 0 { nm(FI_[f.inst].name) } else { "<init>" }, " ", 0x400000 + code_off() + FOFF[i] as int, " nv ", f.nv, " sb ", f.sb)
 	if szp >= 0: put32(szp, DA.len + BSS)
 	o := elf_write(entry)
 	out.append(o[..])
