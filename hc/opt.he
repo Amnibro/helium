@@ -1403,20 +1403,27 @@ licm(fi int):
 		op := IR[i].op as int; if op == I_JMP || op == I_BZ || op == I_BNZ:
 			h := lp[IR[i].c] as int; if h >= 0 && h < i: ks.push(i - h << 24 | i - i0)
 	sort(ks[..]); ih i8[>..<] ~= []; ih.resize(nv, 0); tmp Ir[>..<] ~= []; hl i32[>..<] ~= []
-	lh := !NOLH; eb i8[>..<] ~= []; eb.resize(nv, 0); for i i0..i1 { y := IR[i]; o := y.op as int; if o == I_LBL || o == I_JMP || o == I_BZ || o == I_BNZ || o == I_RET { break } if o == I_LD && y.l == -3 && y.a >= 0 { eb[y.a] = 1 } }
+	il i8[>..<] ~= []; lh := !NOLH; eb i8[>..<] ~= []; eb.resize(nv, 0); for i i0..i1 { y := IR[i]; o := y.op as int; if o == I_LBL || o == I_JMP || o == I_BZ || o == I_BNZ || o == I_RET { break } if o == I_LD && y.l == -3 && y.a >= 0 { eb[y.a] = 1 } }
 	rsafe(v0 int) bool: v ~= v0; for z 8 { if v < 0 || v >= nv { return false } if eb[v] != 0 { return true } if nd[v] != 1 || dp[v] < 0 { return false } y := IR[dp[v]]; if y.op as int == I_SLOT { return true } kb := y.b as int; if y.op as int != I_BIN || y.c != B_ADD as i64 || y.w != 3 || kb < 0 || nd[kb] != 1 || dp[kb] < 0 || IR[dp[kb]].op as int != I_IMM { return false } v = y.a as int } false
 	sfr(v int, k int) bool: if v < 0 || k == 0 || nd[v] != 1 || dp[v] < 0 { return false } y := IR[dp[v]]; if y.op as int == I_LD && y.b == -2 { return true } y.op as int == I_BIN && y.c == B_ADD as i64 && y.l < 0 && (sfr(y.a as int, k - 1) || sfr(y.b as int, k - 1))
 	for kk ks:
 		j := (kk & 0xFFFFFF) + i0; h := lp[IR[j].c] as int; if h < 0 || h >= j: continue
 		hlb := IR[j].c as int; okl ~= lmn[hlb] > (h as i32) && lmx[hlb] <= j as i32; for k h + 1..j + 1 { if IR[k].op as int == I_LBL { l := IR[k].c as int; if lmn[l] < h as i32 || lmx[l] > j as i32 { okl = false; break } } } if !okl: continue
-		hl.clear(); nw ~= true; ns ~= true; nh ~= lh
+		hl.clear(); nw ~= true; ns ~= true; nh ~= lh; il.clear(); il.resize(j - h + 1, 0); il[j - h] = 1; cg ~= true
+		while cg && !NOLH:
+			cg = false
+			for q2 (j - h):
+				k2 := j - 1 - q2; if il[k2 - h] != 0: continue
+				o := IR[k2].op as int; t := if (o == I_JMP || o == I_BZ || o == I_BNZ) && IR[k2].c >= 0 { lp[IR[k2].c] as int } else { -1 }; ft := o != I_JMP && o != I_RET && o != I_RET2 && !(o == I_CALL && nret(IR[k2].c))
+				if ft && il[k2 + 1 - h] != 0 || t >= h && t <= j && il[t - h] != 0: il[k2 - h] = 1; cg = true
 		ex(k int) bool:
 			q ~= k + 1; while q < j { o := IR[q].op as int; if o == I_LBL || o == I_BZ || o == I_BNZ { return false } if o == I_RET { return true } if o == I_JMP { t := lp[IR[q].c] as int; return t < h || t > j } q++ } false
 		for k h + 1..j:
-			op := IR[k].op as int; if op == I_ST && !ex(k) && !(IR[k].a >= 0 && (sfr(IR[k].a as int, 3) || !NOTB && wsz(IR[k].w as int) < 8 && IR[k].w & 8 == 0)) { nh = false } if op != I_ST && (op == I_COPY || op == I_ZERO || op == I_CALL || op == I_CALLR || op == I_SYS || op == I_VLOOP || op == I_CVT && IR[k].c == 5) && !ex(k) { nh = false } if (op == I_ST || op == I_COPY || op == I_ZERO || op == I_CALL || op == I_CALLR || op == I_SYS || op == I_VLOOP || op == I_CVT && IR[k].c == 5) && !ex(k) { nw = false; ns = false } if (op == I_DSS || op == I_DSR) && !ex(k): nw = false
+			op := IR[k].op as int; if il[k - h] == 0 && !NOLH: continue
+			if op == I_ST && !ex(k) && !(IR[k].a >= 0 && (sfr(IR[k].a as int, 3) || !NOTB && wsz(IR[k].w as int) < 8 && IR[k].w & 8 == 0)) { nh = false } if op != I_ST && (op == I_COPY || op == I_ZERO || op == I_CALL || op == I_CALLR || op == I_SYS || op == I_VLOOP || op == I_CVT && IR[k].c == 5) && !ex(k) { nh = false } if (op == I_ST || op == I_COPY || op == I_ZERO || op == I_CALL || op == I_CALLR || op == I_SYS || op == I_VLOOP || op == I_CVT && IR[k].c == 5) && !ex(k) { nw = false; ns = false } if (op == I_DSS || op == I_DSR) && !ex(k): nw = false
 		fb ~= h + 1; while fb < j { o := IR[fb].op as int; if o == I_BZ || o == I_BNZ || o == I_JMP || o == I_BCHK || o == I_CHK || o == I_RET || o == I_LBL { break } fb++ }
 		for k h + 1..j:
-			x := IR[k]; op := x.op as int; d := x.d as int; if d < 0 || nd[d] != 1: continue
+			x := IR[k]; op := x.op as int; d := x.d as int; if d < 0 || nd[d] != 1 || il[k - h] == 0 && !NOLH: continue
 			pu := op == I_LD && (ginv(x.a as int, nd, dp, nw, ns) || ns && k < fb || nh && x.l == -3 && wsz(x.w as int) == 8 && x.w & 8 == 0 && (k < fb || rsafe(x.a as int))) || op == I_IMM || op == I_SLOT || op == I_GADDR || op == I_RADDR || op == I_FADDR || op == I_MOV || op == I_EXT || op == I_FBIN || op == I_CVT && x.c != 5 || (op == I_BIN || op == I_UN) && x.l < 0 && !(op == I_BIN && (x.c == B_DIV || x.c == B_MOD || x.c == B_UDIV || x.c == B_UMOD))
 			if !pu { continue } opnds(k); inv ~= true; for u OU { if nd[u] != 1 || !(dp[u] < h as i32 || ih[u] != 0) { inv = false } } if !inv { continue } ih[d] = 1; hl.push(k as i32)
 		if hl.len == 0: continue

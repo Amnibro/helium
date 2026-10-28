@@ -1,0 +1,41 @@
+import std;
+fn probe(t uint[>..]&, keys uint[:]) uint {
+	var s uint = 0;
+	for k in keys {
+		var i = (k as int) & (t.len - 1);
+		loop {
+			if t[i] == k { t[i] += 1; break; }
+			if t[i] == 0 {
+				t[i] = k;
+				s += 1;
+				if s * 2 > t.len as uint {
+					var old uint[>..] = [];
+					old.append(t);
+					t.clear();
+					t.resize(old.len * 2, 0);
+					for v in old { guard v != 0; var j = (v as int) & (t.len - 1); while t[j] != 0 { j = (j + 1) & (t.len - 1); } t[j] = v; }
+				}
+				break;
+			}
+			i = (i + 1) & (t.len - 1);
+		}
+	}
+	return s + t.len as uint;
+}
+fn bail(a int[>..]&, n int) int {
+	var s = 0;
+	for k in n {
+		if k == n - 3 { a.push(k); return s + a.len; }
+		s += a.len + a[k % a.len];
+	}
+	return s;
+}
+fn main() {
+	var t uint[>..] = [];
+	t.resize(4, 0);
+	var ks uint[>..] = [];
+	for i in 90 { ks.push((i as uint * 2654435761) % 53 + 1); }
+	print(str("probe ", probe(t, ks[..]), " ", t.len));
+	var a int[>..] = [3, 4];
+	print(str("bail ", bail(a, 20), " ", a.len));
+}
