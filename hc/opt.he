@@ -1716,7 +1716,7 @@ rolf(fi int):
 			IR[i] = Ir{I_BIN as u8, x.w, x.d, IR[p].a, IR[p].b, B_ROL as i64, -1}; IR[p].op = I_NOP as u8; IR[q].op = I_NOP as u8; break
 rot_all():
 	nb byte[>..] ~= []; if WEB || env("HC_NOROT", nb): return
-	nsl byte[>..] ~= []; sl := !env("HC_NOSEL", nsl); wb := !env("HC_NOWB", nsl); for fi NFS.len: bce(fi); rot(fi); if !NORA { rasc(fi) } if wb { webs(fi); copyprop(fi) } if !env("HC_NOCB", nsl) { cbk(fi) } if !env("HC_NOAC", nsl) { adcc(fi) } sinkc(fi); shm(fi); mulp(fi); if sl { selc(fi) } if !env("HC_NOZX", nsl) { zxe(fi); copyprop(fi); if !env("HC_NOZB", nsl) { deadcode(fi) } } if !env("HC_NORL", nsl) { rolf(fi) } if V3 && !env("HC_NOBZ", nsl) { bzh(fi) } if !env("HC_NORC", nsl) { rcp(fi) } if !env("HC_NOBB", nsl) { bsp(fi) } if !env("HC_NOFM", nsl) { fmod(fi) } if !env("HC_NOCD", nsl) { cdup(fi) } if !env("HC_NOSM", nsl) { stmg(fi) } if !env("HC_NOLC2", nsl) { ldcmb(fi) } if !env("HC_NORF", nsl) { rngf(fi) } if !env("HC_NOLB", nsl) { lbce(fi) } if !env("HC_NOBM", nsl) { bmrg(fi) } if !env("HC_NOSC2", nsl) { stcmb(fi) } if !env("HC_NOSC", nsl) { scomp(fi) } if !env("HC_NOLSP", nsl) { lsplit(fi) }
+	nsl byte[>..] ~= []; sl := !env("HC_NOSEL", nsl); wb := !env("HC_NOWB", nsl); for fi NFS.len: bce(fi); rot(fi); if !NORA { rasc(fi) } if wb { webs(fi); copyprop(fi) } if !env("HC_NOCB", nsl) { cbk(fi) } if !env("HC_NOAC", nsl) { adcc(fi) } sinkc(fi); if !env("HC_NOKZ", nsl) { kzs(fi) } shm(fi); mulp(fi); if sl { selc(fi) } if !env("HC_NOZX", nsl) { zxe(fi); copyprop(fi); if !env("HC_NOZB", nsl) { deadcode(fi) } } if !env("HC_NORL", nsl) { rolf(fi) } if V3 && !env("HC_NOBZ", nsl) { bzh(fi) } if !env("HC_NORC", nsl) { rcp(fi) } if !env("HC_NOBB", nsl) { bsp(fi) } if !env("HC_NOFM", nsl) { fmod(fi) } if !env("HC_NOCD", nsl) { cdup(fi) } if !env("HC_NOSM", nsl) { stmg(fi) } if !env("HC_NOLC2", nsl) { ldcmb(fi) } if !env("HC_NORF", nsl) { rngf(fi) } if !env("HC_NOLB", nsl) { lbce(fi) } if !env("HC_NOBM", nsl) { bmrg(fi) } if !env("HC_NOSC2", nsl) { stcmb(fi) } if !env("HC_NOSC", nsl) { scomp(fi) } if !env("HC_NOLSP", nsl) { lsplit(fi) }
 lsplit(fi int):
 	f := NFS[fi]; i0 := f.i0 as int; i1 := f.i1 as int; nv ~= f.nv as int; n0 := nv; n := i1 - i0
 	lp i32[>..<] ~= []; lp.resize(LBL.len, -1); for i i0..i1 { if IR[i].op as int == I_LBL { lp[IR[i].c] = i as i32 } }
@@ -1795,6 +1795,28 @@ mulp(fi int):
 		if fd < 0: continue
 		e := IR[fd].d as int; ok ~= true; for z fd + 1..i { opnds(z); for d OD { if d == x.a as int || d == x.b as int || d == x.d as int || d == e { ok = false } } for u OU { if u == x.d as int || u == e { ok = false } } }
 		if ok: m := IR[fd]; k ~= i; while k > fd + 1 { IR[k] = IR[k - 1]; k-- } IR[fd] = x; IR[fd + 1] = m
+kzs(fi int):
+	f := NFS[fi]; i0 := f.i0 as int; i1 := f.i1 as int; nv := f.nv as int
+	nd i32[>..<] ~= []; nd.resize(nv, 0); dp i32[>..<] ~= []; dp.resize(nv, -1); uc i32[>..<] ~= []; uc.resize(nv, 0); kz i32[>..<] ~= []; kz.resize(nv, 64)
+	for i i0..i1 { opnds(i); for d OD { nd[d] += 1; dp[d] = i as i32 } for u OU { uc[u] += 1 } }
+	for v nv { if nd[v] == 0 { kz[v] = 0 } }
+	ci(v int) int: if v >= 0 && nd[v] == 1 && dp[v] >= 0 && IR[dp[v]].op as int == I_IMM { IR[dp[v]].c as int } else { -1 }
+	tz(c int) int: if c == 0 { return 64 } n ~= 0; while (c >> n) & 1 == 0 { n++ } n
+	ch ~= true
+	while ch:
+		ch = false
+		for i i0..i1:
+			x := IR[i]; o := x.op as int; opnds(i); if OD.len == 0: continue
+			a := x.a as int; b := x.b as int; c := x.c; ka := if a >= 0 && a < nv { kz[a] as int } else { 0 }; kb := if b >= 0 && b < nv { kz[b] as int } else { 0 }; sb := ci(b)
+			v := if o == I_IMM { tz(c as int) } else { if (o == I_MOV || o == I_EXT && x.w & 8 == 0) && x.w & 8 == 0 { ka } else { if o == I_BIN && x.l < 0 && x.w & 8 == 0 { if c == B_SHL as i64 && sb >= 0 && sb < 64 { min(ka + sb, 64) } else { if c == B_MUL as i64 { min(ka + kb, 64) } else { if c == B_AND as i64 { max(ka, kb) } else { if c == B_OR as i64 || c == B_XOR as i64 || c == B_ADD as i64 || c == B_SUB as i64 { min(ka, kb) } else { 0 } } } } } else { 0 } } }
+			for d OD { w := if d == x.d as int { v } else { 0 }; if w < kz[d] { kz[d] = w as i32; ch = true } }
+	for i i0..i1:
+		x := IR[i]; c := x.c; if x.op as int != I_BIN || x.l >= 0 || wsz(x.w as int) != 8 || x.w & 8 != 0 || x.a < 0 || x.b < 0 || x.d < 0 || c != B_SHL as i64 && c != B_MUL as i64: continue
+		k ~= ci(x.b as int); if c == B_MUL as i64 { k = if k > 0 && k & (k - 1) == 0 { tz(k) } else { -1 } } if k < 0 || k > 62: continue
+		t := x.a as int; if nd[t] != 1 || uc[t] != 1 || dp[t] < 0 || dp[t] as int >= i: continue
+		p := dp[t] as int; y := IR[p]; c1 := ci(y.b as int); if y.op as int != I_BIN || y.l >= 0 || wsz(y.w as int) != 8 || y.w & 8 != 0 || y.c != B_SHR as i64 && y.c != B_SAR as i64 || c1 <= 0 || c1 > 62 || y.a < 0 || kz[y.a] < c1: continue
+		xv := y.a as int; ok ~= true; for q (p + 1)..i { opnds(q); for d OD { if d == xv { ok = false } } } if !ok: continue
+		if k >= c1: IR[p] = Ir{I_IMM as u8, 3, t as i32, -1, -1, (1 << (k - c1)) as i64, -1}; IR[i] = Ir{I_BIN as u8, x.w, x.d, xv as i32, t as i32, B_MUL as i64, -1} else: IR[p] = Ir{I_IMM as u8, 3, t as i32, -1, -1, (c1 - k) as i64, -1}; IR[i] = Ir{I_BIN as u8, x.w, x.d, xv as i32, t as i32, y.c, -1}
 shm(fi int):
 	f := NFS[fi]; i0 := f.i0 as int; i1 := f.i1 as int; nv := f.nv as int
 	nd i32[>..<] ~= []; nd.resize(nv, 0); dp i32[>..<] ~= []; dp.resize(nv, -1); uc i32[>..<] ~= []; uc.resize(nv, 0)
