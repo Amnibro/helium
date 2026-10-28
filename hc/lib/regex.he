@@ -10,7 +10,7 @@ enum Node { Empty, Bytes { set i32 }, Cat { first i32, second i32 }, Alt { first
 enum Inst { Byte { set i32, next i32 }, Split { first i32, second i32 }, Save { slot i32, next i32 }, Match }
 struct Dfa { start i32, match_end i32, special i32, trans i32[] }
 enum Skip { Scan, Prefix, Inner }
-struct Prefilter { len int, at1 int, at2 int, set1 ByteSet, set2 ByteSet }
+struct Prefilter { len int, at1 int, at2 int, set1 ByteSet, set2 ByteSet, nk int, kmx int, kat int[8], kw int[8], kiv int[8] }
 struct Place { start int, start_back bool, end int, end_back bool }
 struct Regex { groups int, nullable bool, placed bool, entry i32, classes byte[256], skip Skip, filter Prefilter, inner ByteSet, fwd Dfa, rev Dfa, before Dfa, places Place[], prog Inst[], sets bool[256][] }
 add_range(s bool[256]&, lo int, hi int): for b lo..hi + 1 { s[b] = true }
@@ -27,7 +27,7 @@ compile(pattern byte[:]) Regex: err byte[>..] ~= []; build(pattern, err, true)
 compile(pattern byte[:], err byte[>..]&) Regex: build(pattern, err, false)
 no_place() Place: Place{-1, false, -1, false}
 dead() Dfa: Dfa{0, 1, 1, [0]}
-no_filter() Prefilter: n := byte_set([false; 256]); Prefilter{0, 0, 0, n, n}
+no_filter() Prefilter: n := byte_set([false; 256]); Prefilter{0, 0, 0, n, n, 0, 0, [0; 8], [0; 8], [0; 8]}
 nothing() Regex: Regex{1, false, false, 0, [0; 256], Skip.Scan, no_filter(), byte_set([false; 256]), dead(), dead(), dead(), [], [Inst.Match], []}
 build(pattern byte[:], err byte[>..]&, aborts bool) Regex:
 	nodes Node[>..] ~= []; sets bool[256][>..] ~= []; pos ~= 0; fold ~= false; dot_nl ~= false; groups ~= 1
@@ -255,7 +255,13 @@ choose_filter(prefix bool[256][:]) Prefilter, real:
 	best ~= 1.0; a1 ~= 0; a2 ~= 0
 	for j prefix.len: for k j..prefix.len { p := if j == k { sh[j] } else { sh[j] * sh[k] }; if p < best { best = p; a1 = j; a2 = k } }
 	if prefix.len == 0: return no_filter(), 1.0
-	return Prefilter{prefix.len, a1, a2, byte_set(prefix[a1]), byte_set(prefix[a2])}, best
+	kat int[8] ~= [0; 8]; kw int[8] ~= [0; 8]; kiv int[8] ~= [0; 8]; nk ~= 0; kmx ~= 0; ok bool[8] ~= [false; 8]
+	for j prefix.len: bs := byte_set(prefix[j]); ok[j] = bs.kind >= 1 && bs.kind <= 3 && !bs.invert
+	while nk < 8:
+		b ~= -1; for j prefix.len { if ok[j] && (b < 0 || sh[j] < sh[b]) { b = j } }
+		if b < 0: break
+		ok[b] = false; bs := byte_set(prefix[b]); kat[nk] = b; kmx = max(kmx, b); kw[nk] = bs.bytes[0] as int | (bs.bytes[1] as int << 8) | (bs.bytes[2] as int << 16); nk += 1
+	return Prefilter{prefix.len, a1, a2, byte_set(prefix[a1]), byte_set(prefix[a2]), nk, kmx, kat, kw, kiv}, best
 byte_classes(sets bool[256][:]) byte[256]:
 	cl byte[256] ~= [0; 256]
 	for &s sets:
@@ -310,8 +316,16 @@ build_dfa(prog Inst[:], sets bool[256][:], classes byte[256], start_pc i32, left
 inline skip_prefix(f Prefilter&, text byte[:], i int) int:
 	fits := text.len - f.len + 1; assert(i >= 0)
 	if i >= fits: return text.len
-	p := if f.at1 == f.at2 { find_any(text[i + f.at1..fits + f.at1], f.set1) } else { find_pair(text[i + f.at1..fits + f.at2], f.set1, f.at2 - f.at1, f.set2) }
-	if p >= 0 { i + p } else { text.len }
+	j ~= i
+	if f.nk >= 3:
+		while j + f.kmx + 16 <= text.len:
+			m ~= 0xFFFF; q ~= 0
+			while q < f.nk && m != 0: m &= match16(text, j + f.kat[q], f.kw[q]) ^ f.kiv[q]; q += 1
+			if m != 0: p := j + ctz(m as! uint); return if p < fits { p } else { text.len }
+			j += 16
+		if j >= fits: return text.len
+	p := if f.at1 == f.at2 { find_any(text[j + f.at1..fits + f.at1], f.set1) } else { find_pair(text[j + f.at1..fits + f.at2], f.set1, f.at2 - f.at1, f.set2) }
+	if p >= 0 { j + p } else { text.len }
 skip_inner(re Regex&, text byte[:], i int) int:
 	assert(i >= 0); lo ~= i; q ~= i
 	while q < text.len:
