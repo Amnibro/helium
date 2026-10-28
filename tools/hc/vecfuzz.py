@@ -75,7 +75,7 @@ def prog(seed):
     r=random.Random(seed);ks=[];N=r.choice([64,100,257,1000,4099])
     L=['RONES uint := 0xFFFFFFFFFFFFFFFF']+[f'RT{n} uint[{n}] := ['+', '.join(str((i*0x9E3779B97F4A7C15>>7)&0xFFFFFFFFFFFF) for i in range(n))+']' for n in (16,64,256)]+['mh(a uint, b uint) uint:\n\tal := a & 0xffffffff; ah := a >> 32; bl := b & 0xffffffff; bh := b >> 32\n\tll := al * bl; lh := al * bh; hl := ah * bl; hh := ah * bh\n\tmid := (ll >> 32) + (lh & 0xffffffff) + (hl & 0xffffffff)\n\thh + (lh >> 32) + (hl >> 32) + (mid >> 32)','xs_next(x uint) uint:\n\tv ~= x\n\tv ^= v << 13\n\tv ^= v >> 7\n\tv ^= v << 17\n\tv']
     for k in range(r.randint(3,7)):
-        td,ta,tb=r.choice(T),r.choice(T),r.choice(T);od=r.choice([0,0,1,2,-1,4]);arrs=[('a',ta),('b',tb),('d',td)];tw=r.random()<0.2;mode=r.choice(['st','st','red','fe','last','glob','sl','sl','gat','gat','flt','flt','flt','br','br','br','unr','unr','whl','whl','slt','slt','cmp','cmp','cmp','cmp','stf','stf','cry','cry','rot','rot','rs','rs','lx','lx','lmb','lmb','lmb','lmb2','lmb2','lmb2','lmb3','lmb3','lmb3','lmb3','lmb4','lmb4','lmb4','fib','fib','fib','callx','callx','callx','callx','rng','rng','rng','rng']);td,ta,tb=[r.choice(['int','uint']) for _ in range(3)] if mode in('lmb3','lmb4') else (td,ta,tb);arrs=[('a',ta),('b',tb),('d',td)];ta='u8' if mode=='gat' and r.random()<0.8 else ta;arrs[0]=('a',ta);ks.append((td,ta,tb,tw and mode in('st','last')))
+        td,ta,tb=r.choice(T),r.choice(T),r.choice(T);od=r.choice([0,0,1,2,-1,4]);arrs=[('a',ta),('b',tb),('d',td)];tw=r.random()<0.2;mode=r.choice(['st','st','red','fe','last','glob','sl','sl','gat','gat','flt','flt','flt','br','br','br','unr','unr','whl','whl','slt','slt','cmp','cmp','cmp','cmp','stf','stf','cry','cry','rot','rot','rs','rs','lx','lx','lmb','lmb','lmb','lmb2','lmb2','lmb2','lmb3','lmb3','lmb3','lmb3','lmb4','lmb4','lmb4','fib','fib','fib','callx','callx','callx','callx','rng','rng','rng','rng','rec','rec','rec','cset','cset','cset','cset']);td,ta,tb=[r.choice(['int','uint']) for _ in range(3)] if mode in('lmb3','lmb4') else (td,ta,tb);arrs=[('a',ta),('b',tb),('d',td)];ta='u8' if mode=='gat' and r.random()<0.8 else ta;arrs[0]=('a',ta);ks.append((td,ta,tb,tw and mode in('st','last')))
         L.append(f'k{k}(d {td}[>..]&, a {ta}[>..]&, b {tb}[>..]&, u int, lo int, hi int) int:')
         if mode=='cmp': L+=cmk(r,ta);continue
         if mode=='rot':
@@ -103,6 +103,19 @@ def prog(seed):
             r.shuffle(body);L+=body[:r.randint(2,5)]
             L+=[(f'\t\tif v & 3 == 0 {{ s = v }} else {{ s = ((v ^ t) & {M}) << {K} }}' if ux else r.choice([f'\t\ts = ((v ^ t) & {M}) << {K}',f'\t\ts = (((v >> 5) ^ t) & {M}) << {K}',f'\t\ts = (v & {M}) << {K}']))]
             L+=['\t(t ^ (c as! uint) * 31) as! int'];continue
+        if mode=='cset':
+            lo=r.choice([0,1,9,30,60,100]);sp=r.choice([20,40,63,64,70,120]);cs=sorted(r.sample(range(lo,lo+sp+1),r.randint(3,6)));v='(a[x + 1] as! uint) & '+r.choice(['127','255','63','1023'])
+            pos=' || '.join(f'c == {k}' for k in cs);neg=' && '.join(f'c != {k}' for k in cs);cnd=r.choice([pos,pos,neg,'!('+pos+')'])
+            L+=['\tt ~= 0','\tq ~= 0']
+            kind=r.choice(['wh','if','val','if2'])
+            if kind=='wh': L+=['\tx ~= lo','\twhile x < hi:',f'\t\tc := {v}',f'\t\tif !({cnd}) {{ break }}','\t\tt += (c as! int) * 3 + 1','\t\tx += 1','\tt * 7 + x']
+            elif kind=='if': L+=['\tfor x lo..hi:',f'\t\tc := {v}',f'\t\tif {cnd} {{ t += 1 }} else {{ q ^= c as! int }}','\tt * 1009 + q']
+            elif kind=='if2': L+=['\tfor x lo..hi:',f'\t\tc := {v}',f'\t\tif x > lo + 2 && ({cnd}) {{ t += x }}','\tt']
+            else: L+=['\tfor x lo..hi:',f'\t\tc := {v}',f'\t\tb := {cnd}',f'\t\tt += if b {{ 1 }} else {{ 0 }}','\t\tq += if b { 0 } else { 2 }','\tt * 31 + q']
+            continue
+        if mode=='rec':
+            g=r.choice(['rtj(u, x, x & 7, (x & 7) + (u & 31), u ^ x)','rtj(x, u, 0, x & 31, 3)','rth(x & 15, (x & 15) + (u & 31), u)','rti(u & 7, (u & 7) + (x & 31))','rta(x & 63, u + x)','rtb(x, u, x & 31)','rtb(u & 255, x, (x ^ u) & 15)','rtc(x & 15)','rtd(x & 15, u)','rtd((x ^ u) & 7, x * 7)']);L+=['\tt ~= u','\tfor x lo..min(hi, lo + 30):','\t\tt = t * 31 + '+g,'\tt']
+            continue
         if mode=='fib':
             L+=['\tp0 ~= (u as! uint) | 1','\tp1 ~= 7 as uint','\tp2 ~= 3 as uint','\tfor x lo..hi:']
             L+=[r.choice(['\t\tt := p0 + p1 * 3','\t\tt := p1 ^ (p0 << 1)','\t\tt := p0 * 5 + (x as uint)','\t\tt := p0 - p2'])]+[r.choice(['\t\tp0 = p1','\t\tp0 = p1 + 1','\t\tp2 = p0','\t\tp0 = p2 ^ p1'])]+r.choice([['\t\tp1 = t'],['\t\tp2 = p1','\t\tp1 = t'],['\t\tp1 = t','\t\tp2 = t + p0']])
@@ -179,6 +192,9 @@ def prog(seed):
         if r.random()<0.25: L.append(f'{ind}b[{ix(r.choice([0,1,3]))}] = {fx(ex(r,tb,r.randint(1,3),arrs,od))}')
         if mode=='last': L.append(f'{ind}t = {fx(ex(r,"int",2,arrs,od))}')
         L.append('\tt')
+    L+=['recursive rtj(p int, q int, lo int, hi int, s int) int:\n\tif hi - lo <= 1 { return (lo * 3) ^ s ^ (p - q) }\n\tmid := (lo + hi) / 2\n\treturn rtj(p, q + 1, lo, mid, s + 1) * 2 + rtj(p ^ 1, q, mid, hi, s)']
+    L+=['recursive rth(lo int, hi int, s int) int:\n\tif hi - lo <= 1 { return (lo * 3) ^ s }\n\tmid := (lo + hi) / 2\n\treturn rth(lo, mid, s + 1) * 2 + rth(mid, hi, s)','recursive rti(lo int, hi int) int:\n\tif hi - lo <= 1 { return lo + 5 }\n\tmid := (lo + hi) / 2\n\tt := rti(mid, hi)\n\treturn t * 8 + rti(lo, mid)']
+    L+=['recursive rta(n int, t int) int:\n\tif n <= 0 { return t & 7 }\n\treturn (n ^ t) + rta(n - 1, t * 3 + 1)','recursive rtb(a int, b int, n int) int:\n\tif n <= 0 { return a - b }\n\tif (a & 1) == 0 { return rtb(b, a + n, n - 1) }\n\treturn a + rtb(b + 1, a, n - 1)','recursive rtc(n int) int:\n\tif n < 2 { return n }\n\treturn rtc(n - 1) + rtc(n - 2)','recursive rtd(n int, t int) int:\n\tif n <= 0 { return t }\n\tk := t * 0x5851F42D4C957F2D + n\n\tif (k >> 7) & 3 == 1 { return rtd(n - 1, k) }\n\tif (k >> 7) & 3 == 2 { return 1 + rtd(n - 2, t ^ n) + rtd(n - 1, k & 255) }\n\treturn k + rtd(n - 1, t + 1)']
     L+=['recursive rfa(x int, d int) int:\n\tif d <= 0 { return x ^ 5 }\n\ta := x * 3 + d\n\tb := rfa(a & 4095, d - 1)\n\tc := rfa(b ^ x, d - 2)\n\ta + b * 7 - c + x','recursive rfb(x int, d int) int:\n\tif d <= 0 { return x + 11 }\n\tk := x ^ (d * 13)\n\tm := rfb(k & 2047, d - 1)\n\tif (m & 1) == 0 { return m + k }\n\tn := rfb(m & 1023, d - 2)\n\tk * 3 + n - m']
     for t in T: L+=[f'hs_{t}(v {t}[>..]&) int:\n\th ~= 0\n\tfor q v: h = h * 31 + q as! int\n\th',f'hg_{t}(v {t}[>..<]&) int:\n\th ~= 0\n\tfor q v: h = h * 31 + q as! int\n\th']
     L+=[f'var F{c}_{t} {t}[>..<]' for c in 'ABD' for t in ('f32','f64')]+[f'hf_{t}(v {t}[>..<]&) int:\n\th ~= 0\n\tfor q v:\n\t\ts := str(q)\n\t\tfor c s: h = h * 31 + c as int\n\th' for t in ('f32','f64')]
@@ -195,7 +211,7 @@ def prog(seed):
 def one(seed):
     with tempfile.TemporaryDirectory() as w:
         (pathlib.Path(w)/'p.he').write_text(prog(seed));env=dict(os.environ,HC_LIB=str(R/'hc'/'lib'));out=[]
-        for tag,e in (('s',dict(env,HC_NOVEC='1',HC_NOBR='1',HC_NOROT='1',HC_NOADC='1',HC_NOSEL='1',HC_NOMS='1',HC_NOFC='1',HC_NOLC='1',HC_NOMX='1',HC_NOSI='1',HC_NOCB='1',HC_NORW='1',HC_NO32='1',HC_NOZX='1',HC_NORL='1',HC_NOVMS='1',HC_NOVSO='1',HC_NOLX='1',HC_NOXB='1',HC_NOWB='1',HC_NOXS='1',HC_NOWE='1',HC_NOAC='1',HC_NOBF='1',HC_NOAE='1',HC_NOCF='1',HC_NOML='1',HC_NORC='1',HC_NOXC='1',HC_NOCI='1',HC_NOSC='1',HC_NORB='1',HC_NOBZ='1')),('v',env)):
+        for tag,e in (('s',dict(env,HC_NOVEC='1',HC_NOBR='1',HC_NOROT='1',HC_NOADC='1',HC_NOSEL='1',HC_NOMS='1',HC_NOFC='1',HC_NOLC='1',HC_NOMX='1',HC_NOSI='1',HC_NOCB='1',HC_NORW='1',HC_NO32='1',HC_NOZX='1',HC_NORL='1',HC_NOVMS='1',HC_NOVSO='1',HC_NOLX='1',HC_NOXB='1',HC_NOWB='1',HC_NOXS='1',HC_NOWE='1',HC_NOAC='1',HC_NOBF='1',HC_NOAE='1',HC_NOCF='1',HC_NOML='1',HC_NORC='1',HC_NOXC='1',HC_NOCI='1',HC_NOSC='1',HC_NORB='1',HC_NOBZ='1',HC_NOTR='1',HC_NOFI='1',HC_NOBB='1',HC_NOBT='1')),('v',dict(env,HC_NOSI='1') if seed%3==2 else env)):
             c=subprocess.run([HC,'p.he','p'+tag,'--native']+(['--v3'] if seed%2 else []),cwd=w,env=e,capture_output=True,timeout=60)
             if c.returncode: return seed,'compile',(c.stdout+c.stderr).decode(errors='replace')[:200]
             try: x=subprocess.run(['./p'+tag],cwd=w,capture_output=True,timeout=30);out.append((x.returncode,x.stdout))
