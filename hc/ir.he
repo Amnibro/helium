@@ -14,8 +14,10 @@ var GCB byte[>..<]; var GCS i32[>..<]; var GCN i32[>..<]; var GCP i32[>..<]
 gcread(o int, z int) int, bool: for k GCS.len { s := GCS[k]; if !GESC.contains(s as i32) && o >= s && o + z <= s + GCN[k] { v ~= 0; for j z { v = v | (GCB[GCP[k] + o - s + j] as int) << 8 * j } return v, true } } return 0, false
 var DBG bool
 RT_DIE int ~= -1; RT_OOB int ~= -1; RT_OVF int ~= -1; K_OVFD := 8; RT_NARD int ~= -1; K_NARD := 9; I_BCHK := 34; RT_F2I int ~= -1; I_VLOOP := 35
-var VKB byte[>..<]; var VKO i32[>..<]; var VKL i32[>..<]
-cg_vloop(a int, b int, c int): for j b { ldv(RAX, ARGL[a + j]); push_r(RAX) } for q VKL[c] { xb(VKB[VKO[c] + q] as int) }
+var VKB byte[>..<]; var VKO i32[>..<]; var VKL i32[>..<]; var VKA i8[>..<]
+AVXG ~= -1
+vkput(c int): for q VKL[c] { xb(VKB[VKO[c] + q] as int) }
+cg_vloop(a int, b int, c int): for j b { ldv(RAX, ARGL[a + j]); push_r(RAX) } if VKA[c] != 0 && AVXG >= 0 { lea_g(RAX, AVXG); xb(0x48); xb(0x83); xb(0x38); xb(0); xb(0x0F); xb(0x84); x32(VKL[c + 1] as int + 5); vkput(c + 1); xb(0xE9); x32(VKL[c] as int) } vkput(c)
 var FK i8[>..<]; var FB i32[>..<]; var FD i64[>..<]; var UC i32[>..<]; var FI i32[>..<]; var FS i8[>..<]
 kc(v int) bool:
 	v >= 0 && v < FK.len && FK[v] == 1

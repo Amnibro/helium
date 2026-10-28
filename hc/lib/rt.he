@@ -34,6 +34,7 @@ var RT_OUT RtV; var RT_SINK int
 extern vptr(v RtV&) int = "!ptr"
 var RT_EB byte[512]
 var RT_DBG int
+var RT_AVX2 int
 var RT_EN int
 rt_write(fd int, s const byte[:]): o ~= 0; while o < s.len: w := sys3(1, fd, ptr(s[o..]), s.len - o); if w <= 0 { return } o += w
 rt_flush(): if RT_OUT.n == 0 { return } if RT_SH != 0 { rt_lock(RT_SH) } o ~= 0; while o < RT_OUT.n { w := sys3(1, 1, RT_OUT.b + o, RT_OUT.n - o); if w <= 0 { break } o += w } RT_OUT.n = 0; if RT_SH != 0: rt_unlock(RT_SH);

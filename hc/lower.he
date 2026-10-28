@@ -1436,7 +1436,7 @@ recursive lfor(n int):
 	if m & 3 != 0: lfor_arr(n); return
 	s0 ~= 0; sk ~= true; if x.b >= 0 { a0, a1 := kint(x.a); s0 = a0; sk = a1 } e1, ek := kint(if x.b >= 0 { x.b as int } else { x.a as int }); tn := e1 - s0
 	if sk && ek && tn >= 4 && x.c < 0 && lzfill(x.d, v, s0, e1): return
-	nu byte[>..] ~= []; if sk && ek && tn >= 0 && tn <= 16 && !env("HC_NOUNROLL", nu) && nsz(x.d, 400 / max(tn, 1)) <= 400 / max(tn, 1):
+	nu byte[>..] ~= []; if sk && ek && tn >= 0 && tn <= 16 && (CURI < 0 || FI_[CURI].node < 0 || (ND[FI_[CURI].node].fl as int) & F_SIMD == 0) && !env("HC_NOUNROLL", nu) && nsz(x.d, 400 / max(tn, 1)) <= 400 / max(tn, 1):
 		l1 := nlbl(); LOOPH.push(DROPS.len); LCH.push(DROPS.len); LBRK.push(l1); LCNT.push(-1); LRV.push(-1)
 		iv := if x.c >= 0 { m >> 2 } else { -1 }
 		for j tn: lc := nlbl(); LCNT[LCNT.len - 1] = lc; kv := imm(s0 + j); va := nv(); ir(I_SLOT, 8, va, -1, -1, lslot(v)); stw(va, 0, kv, wof(LVS[v].ty)); if iv >= 0 { ia := nv(); ir(I_SLOT, 8, ia, -1, -1, lslot(iv)); stw(ia, 0, kv, 3) } UNRV.push(v); UNRK.push(s0 + j); lblk(x.d, -1); UNRV.pop(); UNRK.pop(); ir(I_LBL, 3, -1, -1, -1, lc)
@@ -1619,6 +1619,7 @@ lower_program(out byte[>..]&) bool:
 	if TLSM: lea_rip(RAX, 3, 0); st(RAX, RAX, 0, 8); mov_ri(RCX, 0); szp = XC.len - 4; st(RCX, RAX, 8, 8); mov_rr(RSI, RAX); mov_ri(RDI, 0x1001); mov_ri(RAX, 158); syscall()
 	rz := hdef("GS_STACK_RESERVE"); rtset("RT_RSZ", if rz >= 0 { rz & -4096 } else { -1 }); rtset("RT_SBUD", hdef("GS_STACK_BUDGET")); rtset("RT_DBG", if DBG { 1 } else { 0 })
 	if dlb >= 0: rtset("RT_DLT", dlt); rtset("RT_DLG", DYNG); rtsetp("RT_DLR", 2); rtsetp("RT_DLB", 3)
+	ad := lookup(intern("RT_AVX2"), -1, D_GLOBAL); if ad >= 0: AVXG = gslot(ad); for b [0xB8, 1, 0, 0, 0, 0x31, 0xC9, 0x0F, 0xA2, 0x45, 0x31, 0xD2, 0x81, 0xE1, 0, 0, 0, 0x18, 0x81, 0xF9, 0, 0, 0, 0x18, 0x75, 0x21, 0xB8, 7, 0, 0, 0, 0x31, 0xC9, 0x0F, 0xA2, 0xF6, 0xC3, 0x20, 0x74, 0x13, 0x31, 0xC9, 0x0F, 0x01, 0xD0, 0x83, 0xE0, 6, 0x83, 0xF8, 6, 0x75, 6, 0x41, 0xBA, 1, 0, 0, 0] { xb(b) } lea_g(RCX, AVXG); st(R10, RCX, 0, 8)
 	mov_rr(RDI, RSP); lea_rip(RSI, 1, rsg); call_f(rst); mov_rr(RSP, RAX); if dlb >= 0 { call_f(dlb) } call_f(gi); call_f(rm); mov_ri(RDI, 0); call_f(rinit); ud2()
 	irw byte[>..] ~= []; dump := env("HC_IR", irw)
 	noi byte[>..] ~= []; opt := !env("HC_NOOPT", noi); if opt: gtag(); optimize_all(); vec_all(); rot_all(); NOADC = env("HC_NOADC", noi)
