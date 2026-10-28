@@ -253,6 +253,7 @@ vec_loop(fi int, h int, j int) bool:
 	for q h + 1..ic:
 		if q != k && q != k2 { opnds(q); for d OD { VDL[d] = min(VDL[d] as int + 1, 2) as i8 } }
 	vaset(iv, 1, 0)
+	ns ~= 0; nl ~= !env("HC_NOVSO", VNB); for q h + 1..ic { o := IR[q].op as int; if o == I_ST { ns++ } if o == I_LD || o == I_CALL || o == I_CALLR || o == I_SYS || o == I_COPY || o == I_ZERO || o == I_VLOOP || o == I_FUN { nl = false } } nl = nl && ns == 1
 	for q h + 1..ic:
 		if VBAD: return false
 		x := IR[q]; op := x.op as int; d := x.d as int; a := x.a as int; b := x.b as int; w := x.w as int
@@ -273,7 +274,8 @@ vec_loop(fi int, h int, j int) bool:
 		if op == I_ST:
 			vav(a); if b >= 0 && !vln(b) { vav(b) } if !vaf(a) || VAC[a] != wsz(w) as i64 || VAX[a] < -(1 << 40) || VAX[a] > 1 << 40: return false
 			vb := if vln(b) { b } else { if vun(b) { vuref(b, wsz(w)) } else { -1 } }; if vb == -1 || vb >= 0 && (VLS[vb] == 2) != (w & 8 != 0) || vb >= 0 && w & 8 != 0 && VLW[vb] as int != wsz(w): return false
-			g := vgrp(a); hp ~= false; for z VGN[g] as int { s := VGS[3 * g + z] as int; if VDP[s] >= 0 && vdptr(s, 7) && VGM[3 * g + z] == 1 { hp = true } } if !hp || VGT[g] >= 0: return false
+			g := vgrp(a); hp ~= false; for z VGN[g] as int { s := VGS[3 * g + z] as int; if VDP[s] >= 0 && vdptr(s, 7) && VGM[3 * g + z] == 1 { hp = true } } if !hp && !nl: return false
+			if VGT[g] >= 0: so := VOS[VGT[g]]; if env("HC_NOVMS", VNB) || so.y != VAX[a] || so.w as int != wsz(w) { return false } for o2, t2 VOS { if o2.k as int == 1 && o2.g as int == g && t2 > VGT[g] as int { return false } } VOS[VGT[g]] = VOp{0, so.w, 0, -1, -1, -1, so.g, 0, so.y}
 			VGT[g] = VOS.len as i32; VOS.push(VOp{2, wsz(w) as u8, 0, -1, vb as i32, -1, g as i32, 0, VAX[a]}); continue
 		if op == I_FBIN:
 			c := x.c as int; fw := wsz(w); if w & 8 == 0 || c != B_ADD && c != B_SUB && c != B_MUL && c != B_DIV: return false

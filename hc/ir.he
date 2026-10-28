@@ -31,7 +31,8 @@ fk(v int) int:
 	else:
 		0
 mvblk(z int, zero bool):
-	o ~= 0; for s [8, 4, 2, 1]:
+	o ~= 0; nx byte[>..] ~= []; if zero && z >= 16 && !env("HC_NOXB", nx): sse(0x66, false, 0xEF, 0, 0); while z - o >= 16 { ssem(0xF3, false, 0x7F, 0, RDI, o); o += 16 }
+	for s [8, 4, 2, 1]:
 		while z - o >= s: if !zero { ld(RAX, RSI, o, s, false) } st(RAX, RDI, o, s); o += s
 var XREG i32[>..<]; var XW i8[>..<]
 xg(v int) int:
@@ -370,7 +371,7 @@ cg_fn(fi int):
 																														stx(0, d, w)
 																													else:
 																														if op == I_ZERO:
-																															ldv(RDI, d); alu(0x31, RAX, RAX); if kc(b) && FD[b] <= 256: mvblk(FD[b] as int, true) else: ldv(RCX, b); xb(0xF3); xb(0xAA)
+																															ldv(RDI, d); alu(0x31, RAX, RAX); if kc(b) && FD[b] <= 512: mvblk(FD[b] as int, true) else: ldv(RCX, b); xb(0xF3); xb(0xAA)
 																														else:
 																															if op == I_COPY:
 																																ldv(RDI, d); ldv(RSI, a); if kc(b) && FD[b] <= 256: mvblk(FD[b] as int, false) else: ldv(RCX, b); xb(0xF3); xb(0xA4)
