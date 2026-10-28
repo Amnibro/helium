@@ -310,7 +310,7 @@ rt_sqfrom(v RtV&, p int, n int, z int): v.b = 0; v.n = 0; v.top = 0; v.fl = 0; v
 rt_rinit(v RtV&): if v.b == 0: v.b = rt_take()
 rt_flp(v RtV&) int: f ~= v.fl; if f == 0 { f = rt_take(); v.fl = f } f
 rt_zero(p int, n int): o ~= 0; while o + 8 <= n { mst(p + o, 0); o += 8 } while o < n: mst1(p + o, 0); o += 1
-rt_pslot(v RtV&, esz int) int: rt_rinit(v); n := v.fln - 1; if n >= 0 { v.fln = n; return mld(v.fl + 8 * n) } i := v.n; rt_grow(vptr(v), 1, esz); v.n -= 1; i
+rt_pslot(v RtV&, esz int) int: n := v.fln - 1; if n >= 0 { v.fln = n; return mld(v.fl + 8 * n) } i := v.n; b := v.b; if b == 0 || (i + 1) * esz > rt_lim(b) { rt_rinit(v); if (i + 1) * esz > rt_lim(v.b) { rt_die(5, "push") } } i
 rt_pcommit(v RtV&, i int): if i == v.n: v.n += 1
 rt_pfree(v RtV&, i int, loc const byte[:]): if i as! u64 >= v.n as! u64 { rt_oob(i, v.n, loc) } f := rt_flp(v); n := v.fln; mst(f + 8 * n, i); v.fln = n + 1
 rt_flmv(f int, d int, s int, k int): if d < s: for j k { mst(f + 8 * (d + j), mld(f + 8 * (s + j))) } else: j ~= k - 1; while j >= 0: mst(f + 8 * (d + j), mld(f + 8 * (s + j))); j -= 1

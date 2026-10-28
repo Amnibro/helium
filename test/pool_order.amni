@@ -1,0 +1,25 @@
+import std;
+struct P { a int, b int }
+reusable var gp P[>..] = [];
+fn main() {
+	var p P[>..] = [];
+	let i0 = p.alloc_index(P { a: 1, b: 2 });
+	let i1 = p.alloc_index(P { a: 3, b: 4 });
+	p.free(i0);
+	let i2 = p.alloc_index(P { a: 5, b: 6 });
+	print(str("a ", i0, " ", i1, " ", i2, " ", p.len, " ", p[i2].a + p[i1].b));
+	var q P[>..] = [];
+	q.push(P { a: 7, b: 8 });
+	q.push(P { a: 9, b: 10 });
+	q.free(0);
+	let j = q.alloc_index(P { a: 11, b: 12 });
+	let k = q.alloc_index(P { a: 13, b: 14 });
+	print(str("b ", j, " ", k, " ", q.len, " ", q[j].a + q[k].b));
+	var s = 0;
+	for n in 300 {
+		let r P& = gp.alloc_ref(P { a: n, b: n * 2 });
+		s += r.a + r.b;
+		if n % 3 == 0 { gp.free(gp.index_of(r)); }
+	}
+	print(str("c ", s, " ", gp.len));
+}
