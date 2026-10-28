@@ -246,8 +246,32 @@ regalloc(fi int):
 	lscan(go, st, en, wt, CREGS, REGOF, bad, hn)
 	SVR.clear(); SVS.clear(); SVE.clear(); for v nv:
 		if bad[v] & 8 != 0 && REGOF[v] >= 6 && REGOF[v] <= 11 && XREG[v] < 0: SVR.push(REGOF[v]); SVS.push(st[v] + i0 as i32); SVE.push(en[v] + i0 as i32)
+	CGLB.clear(); CGRG.clear(); CGIX.clear(); CGKV.clear(); hadc ~= false; for i i0..i1 { if IR[i].op as int == I_ADC || IR[i].op as int == I_SBB { hadc = true } }
+	ncf byte[>..] ~= []
+	if hadc && !env("HC_NOCF", ncf):
+		nc(k int) bool: y := IR[k]; o := y.op as int; o == I_NOP || y.d >= 0 && FK[y.d] != 0 && (o == I_IMM || o == I_SLOT || o == I_GADDR || o == I_RADDR || o == I_FADDR || o == I_BIN)
+		lr i32[>..<] ~= []; lr.resize(LBL.len, 0); for i i0..i1 { o := IR[i].op as int; if (o == I_JMP || o == I_BZ || o == I_BNZ) && IR[i].c >= 0 { lr[IR[i].c] += 1 } }
+		for j i0..i1:
+			x := IR[j]; if x.op as int != I_JMP || x.c < 0 || lpos[x.c] < 0 || lpos[x.c] as int + i0 >= j || lr[x.c] != 1: continue
+			h := lpos[x.c] as int + i0; q ~= h + 1; while q < j && IR[q].op as int == I_NOP { q++ }
+			cm := IR[q]; if cm.op as int != I_CMP || cm.w != 3 || cm.c != CC_L as i64 && cm.c != CC_B as i64 || cm.d < 0 || UC[cm.d] != 1 || cm.a < 0 || cm.b < 0 || gr(cm.a as int) < 0 || FK[cm.a] != 0: continue
+			bz ~= q + 1; while bz < j && nc(bz) { bz++ } if bz >= j || IR[bz].op as int != I_BZ || IR[bz].a != cm.d: continue
+			iv := cm.a as int; nn := cm.b as int; p ~= -1; ic ~= -1; ok ~= true
+			for k (bz + 1)..j:
+				y := IR[k]; o := y.op as int
+				if o == I_ADC || o == I_SBB: ok = ok && p < 0 && y.c >= 0 && y.c == y.l as i64 && fsafe(y.a as int) && fsafe(y.b as int); p = k; continue
+				if o == I_BIN && y.d as int == iv && y.a as int == iv && y.c == B_ADD as i64 && y.l < 0 && y.w == 3 && y.b >= 0 && FK[y.b] == 1 && FD[y.b] == 1: ok = ok && ic < 0; ic = k; continue
+				if !fneu(y): ok = false; break
+			if !ok || p < 0 || ic < 0: continue
+			kv := IR[p].c as int; if FK[kv] != 0 || XREG[kv] >= 0: continue
+			for k h..(j + 1):
+				opnds(k); for u OU { if u == kv && k != p { ok = false } } for e OD { if e == kv && k != p || e == iv && k != ic || e == nn { ok = false } }
+			if !ok: continue
+			hp := (h - i0) as i32; jp := (j - i0) as i32; rr ~= if REGOF[kv] >= 3 { REGOF[kv] as int } else { -1 }; if !fsafe(nn) || kc(nn) && !i32ok(FD[nn] as int + 1): continue
+			for r CREGS: if rr < 0: fr ~= true; for v nv { if REGOF[v] == r as i32 && st[v] >= 0 && st[v] <= jp && en[v] >= hp { fr = false } } if fr { rr = r }
+			if rr >= 0: CGLB.push(x.c as i32); CGRG.push(rr as i32); CGIX.push(ic as i32); CGKV.push(kv as i32)
 	for r CREGS:
-		if rgrp(r) != 0 { continue } u ~= false; for g REGOF { if g == r as i32 { u = true } } if u: RUSED.push(r as i32)
+		if rgrp(r) != 0 { continue } u ~= false; for g REGOF { if g == r as i32 { u = true } } for g CGRG { if g == r as i32 { u = true } } if u: RUSED.push(r as i32)
 isize(fi int) int:
 	f := NFS[fi]; n ~= 0; for i (f.i0 as int)..f.i1 as int { op := IR[i].op; if op != I_NOP && op != I_LBL { n++ } } n
 inline_into(fi int, fsz i32[>..<]&, mx int):
