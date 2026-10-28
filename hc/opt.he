@@ -251,7 +251,7 @@ regalloc(fi int):
 		if st[v] >= 0: ord[cnt[st[v]]] = v as i32; cnt[st[v]] += 1
 	xo i32[>..<] ~= []; go i32[>..<] ~= []
 	for v ord:
-		if XW[v] != 0 && ncall[en[v]] - ncall[st[v] + 1] <= 0: xo.push(v) else: go.push(v)
+		if XW[v] != 0 && (ncall[en[v]] - ncall[st[v] + 1] <= 0 || pxc && !NOXX && xcr[v] == 0 && nst[en[v] + 1] - nst[st[v]] == 0): xo.push(v) else: go.push(v)
 	bad i8[>..<] ~= []; bad.resize(nv, 0)
 	for v nv: if st[v] < 0 { continue } s0 := st[v] as int; e0 := en[v] as int + 1; cl := nst[e0] - nst[s0] > 0 || agv[v] != 0 && ncall[e0] - ncall[s0] > 0; cx := !cl && e0 > s0 + 2 && ncall[e0 - 1] - ncall[s0 + 1] > 0 && (!pxc || xcr[v] != 0); bad[v] = ((if cl || ga[e0] - ga[s0] > 0 { 1 } else { 0 }) | (if cl || gb[e0] - gb[s0] > 0 { 2 } else { 0 }) | (if cl { 4 } else { 0 }) | (if cx { 8 } else { 0 })) as i8
 	rd := !NORD && !WEB; hz i32[>..<] ~= []; hz.resize(n + 1, 0); if rd { for i i0..i1 { hz[i - i0 + 1] = hz[i - i0] + (if rwl(i) { 0 } else { 1 }) } for v nv { if st[v] >= 0 && (bad[v] & 4 != 0 || hz[en[v] + 1] - hz[st[v]] > 0) { bad[v] = bad[v] | 16 } } }
@@ -374,11 +374,11 @@ ILC ~= 250
 NOCI ~= false
 NOLC ~= false
 NOMS ~= false
-NOSI ~= false; NODMX ~= false; NOBFC ~= false; NOHS ~= false; NOKR ~= false; NORA ~= false; NONI ~= false; NORD ~= false; HSL ~= 256
+NOSI ~= false; NOXX ~= false; NODMX ~= false; NOBFC ~= false; NOHS ~= false; NOKR ~= false; NORA ~= false; NONI ~= false; NORD ~= false; HSL ~= 256
 SIM ~= false; DWX ~= 4; NOAF ~= false; NOCF2 ~= false; NOTR ~= false; NOBT ~= false; NOJK ~= false; NOTB ~= false; NOLH ~= false; NONR ~= false; NOMB2 ~= false; NOVC ~= false; NOCH ~= false; NOHC ~= false; NOKI ~= false; NOXN ~= false
 var NCS i32[>..<]
 optimize_all():
-	nlc byte[>..] ~= []; NOLC = env("HC_NOLC", nlc); NOMS = env("HC_NOMS", nlc); NOSI = env("HC_NOSI", nlc); NOHS = env("HC_NOHS", nlc); NOKR = env("HC_NOKR", nlc); NORA = env("HC_NORA", nlc); NONI = env("HC_NONI", nlc); NORD = env("HC_NORD", nlc); NOCF2 = env("HC_NOFI", nlc); NOTR = env("HC_NOTR", nlc); NOBT = env("HC_NOBT", nlc); NOJK = env("HC_NOJK", nlc); NOTB = env("HC_NOTB", nlc); NODMX = env("HC_NODMX", nlc); NOBFC = env("HC_NOBFC", nlc); NOLH = env("HC_NOLH", nlc); NONR = env("HC_NONR", nlc); NOMB2 = env("HC_NOMB2", nlc); NOVC = env("HC_NOVC", nlc); NOCH = env("HC_NOCH", nlc); NOHC = env("HC_NOHC", nlc); NOKI = env("HC_NOKI", nlc); NOXN = env("HC_NOXN", nlc); NOAF = env("HC_NOAF", nlc); if env("HC_DWX", nlc) { v, ok := parse_int(nlc[..]); DWX = v }
+	nlc byte[>..] ~= []; NOLC = env("HC_NOLC", nlc); NOMS = env("HC_NOMS", nlc); NOSI = env("HC_NOSI", nlc); NOHS = env("HC_NOHS", nlc); NOKR = env("HC_NOKR", nlc); NORA = env("HC_NORA", nlc); NONI = env("HC_NONI", nlc); NORD = env("HC_NORD", nlc); NOCF2 = env("HC_NOFI", nlc); NOTR = env("HC_NOTR", nlc); NOBT = env("HC_NOBT", nlc); NOJK = env("HC_NOJK", nlc); NOTB = env("HC_NOTB", nlc); NODMX = env("HC_NODMX", nlc); NOXX = env("HC_NOXX", nlc); NOBFC = env("HC_NOBFC", nlc); NOLH = env("HC_NOLH", nlc); NONR = env("HC_NONR", nlc); NOMB2 = env("HC_NOMB2", nlc); NOVC = env("HC_NOVC", nlc); NOCH = env("HC_NOCH", nlc); NOHC = env("HC_NOHC", nlc); NOKI = env("HC_NOKI", nlc); NOXN = env("HC_NOXN", nlc); NOAF = env("HC_NOAF", nlc); if env("HC_DWX", nlc) { v, ok := parse_int(nlc[..]); DWX = v }
 	il0 byte[>..] ~= []; if env("HC_ILC", il0) { v, ok := parse_int(il0[..]); ILC = v } NOCI = env("HC_NOCI", il0)
 	lim byte[>..] ~= []; mx := if env("HC_INL", lim) { v, ok := parse_int(lim[..]); v } else { 100 }
 	noi byte[>..] ~= []; inl := !env("HC_NOINL", noi)
