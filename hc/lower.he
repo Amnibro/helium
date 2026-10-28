@@ -1654,7 +1654,7 @@ lower_program(out byte[>..]&) bool:
 	ad := lookup(intern("RT_AVX2"), -1, D_GLOBAL); if ad >= 0: AVXG = gslot(ad); for b [0xB8, 1, 0, 0, 0, 0x31, 0xC9, 0x0F, 0xA2, 0x45, 0x31, 0xD2, 0x81, 0xE1, 0, 0, 0, 0x18, 0x81, 0xF9, 0, 0, 0, 0x18, 0x75, 0x21, 0xB8, 7, 0, 0, 0, 0x31, 0xC9, 0x0F, 0xA2, 0xF6, 0xC3, 0x20, 0x74, 0x13, 0x31, 0xC9, 0x0F, 0x01, 0xD0, 0x83, 0xE0, 6, 0x83, 0xF8, 6, 0x75, 6, 0x41, 0xBA, 1, 0, 0, 0] { xb(b) } lea_g(RCX, AVXG); st(R10, RCX, 0, 8)
 	mov_rr(RDI, RSP); lea_rip(RSI, 1, rsg); call_f(rst); mov_rr(RSP, RAX); if dlb >= 0 { call_f(dlb) } call_f(gi); call_f(rm); mov_ri(RDI, 0); call_f(rinit); ud2()
 	irw byte[>..] ~= []; dump := env("HC_IR", irw)
-	noi byte[>..] ~= []; opt := !env("HC_NOOPT", noi); if opt: gtag(); optimize_all(); vec_all(); rot_all(); NOADC = env("HC_NOADC", noi)
+	noi byte[>..] ~= []; opt := !env("HC_NOOPT", noi); if opt: gtag(); optimize_all(); vec_all(); rot_all(); vjl_all(); NOADC = env("HC_NOADC", noi)
 	for f, i NFS: if dump && f.inst >= 0 && nm(FI_[f.inst].name) == irw[..] { ir_dump(i) } if opt { regalloc(i); } else { REGOF.clear(); RUSED.clear(); VZERO.clear(); FK.clear(); XREG.clear(); SVR.clear(); } cg_fn2(i)
 	dbg byte[>..] ~= []; if env("HC_NDEBUG", dbg):
 		for f, i NFS: print(if f.inst >= 0 { nm(FI_[f.inst].name) } else { "<init>" }, " ", 0x400000 + code_off() + FOFF[i] as int, " nv ", f.nv, " sb ", f.sb)
