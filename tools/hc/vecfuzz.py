@@ -75,7 +75,7 @@ def prog(seed):
     r=random.Random(seed);ks=[];N=r.choice([64,100,257,1000,4099])
     L=['mh(a uint, b uint) uint:\n\tal := a & 0xffffffff; ah := a >> 32; bl := b & 0xffffffff; bh := b >> 32\n\tll := al * bl; lh := al * bh; hl := ah * bl; hh := ah * bh\n\tmid := (ll >> 32) + (lh & 0xffffffff) + (hl & 0xffffffff)\n\thh + (lh >> 32) + (hl >> 32) + (mid >> 32)','xs_next(x uint) uint:\n\tv ~= x\n\tv ^= v << 13\n\tv ^= v >> 7\n\tv ^= v << 17\n\tv']
     for k in range(r.randint(3,7)):
-        td,ta,tb=r.choice(T),r.choice(T),r.choice(T);od=r.choice([0,0,1,2,-1,4]);arrs=[('a',ta),('b',tb),('d',td)];tw=r.random()<0.2;mode=r.choice(['st','st','red','fe','last','glob','sl','sl','gat','gat','flt','flt','flt','br','br','br','unr','unr','whl','whl','slt','slt','cmp','cmp','cmp','cmp','stf','stf','cry','cry','rot','rot','rs','rs','lx','lx','lmb','lmb','lmb','lmb2','lmb2','lmb2','lmb3','lmb3','lmb3','lmb3']);td,ta,tb=[r.choice(['int','uint']) for _ in range(3)] if mode=='lmb3' else (td,ta,tb);arrs=[('a',ta),('b',tb),('d',td)];ta='u8' if mode=='gat' and r.random()<0.8 else ta;arrs[0]=('a',ta);ks.append((td,ta,tb,tw and mode in('st','last')))
+        td,ta,tb=r.choice(T),r.choice(T),r.choice(T);od=r.choice([0,0,1,2,-1,4]);arrs=[('a',ta),('b',tb),('d',td)];tw=r.random()<0.2;mode=r.choice(['st','st','red','fe','last','glob','sl','sl','gat','gat','flt','flt','flt','br','br','br','unr','unr','whl','whl','slt','slt','cmp','cmp','cmp','cmp','stf','stf','cry','cry','rot','rot','rs','rs','lx','lx','lmb','lmb','lmb','lmb2','lmb2','lmb2','lmb3','lmb3','lmb3','lmb3','lmb4','lmb4','lmb4','fib','fib','fib','callx','callx','callx','callx']);td,ta,tb=[r.choice(['int','uint']) for _ in range(3)] if mode in('lmb3','lmb4') else (td,ta,tb);arrs=[('a',ta),('b',tb),('d',td)];ta='u8' if mode=='gat' and r.random()<0.8 else ta;arrs[0]=('a',ta);ks.append((td,ta,tb,tw and mode in('st','last')))
         L.append(f'k{k}(d {td}[>..]&, a {ta}[>..]&, b {tb}[>..]&, u int, lo int, hi int) int:')
         if mode=='cmp': L+=cmk(r,ta);continue
         if mode=='rot':
@@ -88,6 +88,17 @@ def prog(seed):
                 op=r.choice(['<','<','>','<=']) ;L+=[f'\t\ts := {w} + {v}',f'\t\tif s {op} {cmpv} {{ h += {r.choice(["1","1","2"])} }}' if op!='>' else f'\t\tif {cmpv} > s {{ h += 1 }}',('\t\tt = s' if w=='t' and r.random()<0.5 else '\t\tt = t ^ s')]
             L+=['\t(t ^ (h << 7)) as! int'];continue
         if mode=='stf': o1,o2=r.choice([0,1,2]),r.choice([0,0,1,2]);L+=['	t ~= 0','	for x lo..hi:',f'		d[x + {o1}] = (a[x + 2] as! {td}) {r.choice(["+","^","-"])} (u as! {td})',f'		t += (d[x + {o2}] as! int)']+([f'		b[x] = (d[x + {o1}] as! {tb})'] if r.random()<0.4 else [])+['	t'];continue
+        if mode=='lmb4':
+            oa,od2=r.choice([0,0,1,2]),r.choice([0,0,1]);L+=['\tm := (u as! uint) * 0x9E3779B97F4A7C15 | 1','\tc ~= '+r.choice(['0 as uint','(u & 7) as! uint']),f'\taa := a[lo + {oa}..hi + {oa}]',f'\tdd := d[lo + {od2}..hi + {od2}]','\tassert(aa.len == dd.len)','\tfor x dd.len:','\t\tw := aa[x] as! uint','\t\tlo2 ~= w * m','\t\thi2 ~= mh(w, m)','\t\tlo2 += c','\t\tif lo2 < c { hi2 += 1 }']
+            L+=(['\t\ty := (dd[x] as! uint) + lo2','\t\tif y < lo2 { hi2 += 1 }','\t\tdd[x] = y as! '+td] if r.random()<0.6 else ['\t\tdd[x] = lo2 as! '+td])+(['\t\tu ^= w as! int'] if r.random()<0.25 else [])+(['\t\tu += (w >> 3) as! int'] if r.random()<0.1 else [])+['\t\tc = hi2','\t((c * 1000003) as! int) ^ u'];continue
+        if mode=='callx':
+            g=r.choice(['rfa','rfb']);L+=['\tt ~= u','\tq ~= 1']
+            body=r.choice([['\t\tt0 := u + x * 3','\t\tt1 := '+g+'(t0, 3)','\t\tt = t * 3 + t1 + t0'],['\t\tt0 := t ^ x','\t\tt2 := q + 7','\t\tt1 := '+g+'(t0 & 1023, 4)','\t\tq = t2 * 3 + t1','\t\tt += t0 - t2'],['\t\tt0 := x * 5','\t\tif (t0 & 3) == 1 { q += '+g+'(t0, 2) }','\t\tt = t + t0 * q'],['\t\ta0 := t + 1','\t\ta1 := q ^ x','\t\ta2 := a0 * a1','\t\tt1 := '+g+'(a1 & 511, 3)','\t\tt2 := '+g+'(a0 & 255, 2)','\t\tt = a0 + a1 * 3 + a2 + t1 * 7 + t2','\t\tq += a2 & 15']])
+            L+=['\tfor x lo..min(hi, lo + 40):']+body+['\t(t ^ q * 31) & 0xFFFFFFFFFFFF'];continue
+        if mode=='fib':
+            L+=['\tp0 ~= (u as! uint) | 1','\tp1 ~= 7 as uint','\tp2 ~= 3 as uint','\tfor x lo..hi:']
+            L+=[r.choice(['\t\tt := p0 + p1 * 3','\t\tt := p1 ^ (p0 << 1)','\t\tt := p0 * 5 + (x as uint)','\t\tt := p0 - p2'])]+[r.choice(['\t\tp0 = p1','\t\tp0 = p1 + 1','\t\tp2 = p0','\t\tp0 = p2 ^ p1'])]+r.choice([['\t\tp1 = t'],['\t\tp2 = p1','\t\tp1 = t'],['\t\tp1 = t','\t\tp2 = t + p0']])
+            L+=['\t((p0 ^ p1 * 3 ^ p2 * 7) >> 1) as! int'];continue
         if mode=='lmb3':
             sub=r.random()<0.5;ip=r.random()<0.3;nest=r.random()<0.25;oa,ob,od2=r.choice([0,0,1,2]),r.choice([0,0,1,2]),r.choice([0,0,1]);I='\t\t\t' if nest else '\t\t'
             sl=r.random()<0.6;L+=['\tc ~= '+r.choice(['0 as uint','0 as uint','(u & 1) as! uint','1 as uint','(u as! uint) * 3 + 2'])]
@@ -160,6 +171,7 @@ def prog(seed):
         if r.random()<0.25: L.append(f'{ind}b[{ix(r.choice([0,1,3]))}] = {fx(ex(r,tb,r.randint(1,3),arrs,od))}')
         if mode=='last': L.append(f'{ind}t = {fx(ex(r,"int",2,arrs,od))}')
         L.append('\tt')
+    L+=['recursive rfa(x int, d int) int:\n\tif d <= 0 { return x ^ 5 }\n\ta := x * 3 + d\n\tb := rfa(a & 4095, d - 1)\n\tc := rfa(b ^ x, d - 2)\n\ta + b * 7 - c + x','recursive rfb(x int, d int) int:\n\tif d <= 0 { return x + 11 }\n\tk := x ^ (d * 13)\n\tm := rfb(k & 2047, d - 1)\n\tif (m & 1) == 0 { return m + k }\n\tn := rfb(m & 1023, d - 2)\n\tk * 3 + n - m']
     for t in T: L+=[f'hs_{t}(v {t}[>..]&) int:\n\th ~= 0\n\tfor q v: h = h * 31 + q as! int\n\th',f'hg_{t}(v {t}[>..<]&) int:\n\th ~= 0\n\tfor q v: h = h * 31 + q as! int\n\th']
     L+=[f'var F{c}_{t} {t}[>..<]' for c in 'ABD' for t in ('f32','f64')]+[f'hf_{t}(v {t}[>..<]&) int:\n\th ~= 0\n\tfor q v:\n\t\ts := str(q)\n\t\tfor c s: h = h * 31 + c as int\n\th' for t in ('f32','f64')]
     L+=[f'var G_{t} {t}[>..<]' for t in T]+['main():',f'\tr uint ~= {seed * 2654435761 % (1<<40) + 1}']+[f'\tG_{t}.resize({N}, 0)' for t in T]+[f'\tfor i {N}:\n\t\tr = xs_next(r)\n\t\tF{c}_{t}.push(((r % 41) as {t}) * 0.375 - 3.0)' for c in 'ABD' for t in ('f32','f64')]
@@ -175,8 +187,8 @@ def prog(seed):
 def one(seed):
     with tempfile.TemporaryDirectory() as w:
         (pathlib.Path(w)/'p.he').write_text(prog(seed));env=dict(os.environ,HC_LIB=str(R/'hc'/'lib'));out=[]
-        for tag,e in (('s',dict(env,HC_NOVEC='1',HC_NOBR='1',HC_NOROT='1',HC_NOADC='1',HC_NOSEL='1',HC_NOMS='1',HC_NOFC='1',HC_NOLC='1',HC_NOMX='1',HC_NOSI='1',HC_NOCB='1',HC_NORW='1',HC_NO32='1',HC_NOZX='1',HC_NORL='1',HC_NOVMS='1',HC_NOVSO='1',HC_NOLX='1',HC_NOXB='1',HC_NOWB='1',HC_NOXS='1',HC_NOWE='1',HC_NOAC='1',HC_NOBF='1',HC_NOAE='1',HC_NOCF='1')),('v',env)):
-            c=subprocess.run([HC,'p.he','p'+tag,'--native'],cwd=w,env=e,capture_output=True,timeout=60)
+        for tag,e in (('s',dict(env,HC_NOVEC='1',HC_NOBR='1',HC_NOROT='1',HC_NOADC='1',HC_NOSEL='1',HC_NOMS='1',HC_NOFC='1',HC_NOLC='1',HC_NOMX='1',HC_NOSI='1',HC_NOCB='1',HC_NORW='1',HC_NO32='1',HC_NOZX='1',HC_NORL='1',HC_NOVMS='1',HC_NOVSO='1',HC_NOLX='1',HC_NOXB='1',HC_NOWB='1',HC_NOXS='1',HC_NOWE='1',HC_NOAC='1',HC_NOBF='1',HC_NOAE='1',HC_NOCF='1',HC_NOML='1',HC_NORC='1',HC_NOXC='1',HC_NOCI='1')),('v',env)):
+            c=subprocess.run([HC,'p.he','p'+tag,'--native']+(['--v3'] if seed%2 else []),cwd=w,env=e,capture_output=True,timeout=60)
             if c.returncode: return seed,'compile',(c.stdout+c.stderr).decode(errors='replace')[:200]
             try: x=subprocess.run(['./p'+tag],cwd=w,capture_output=True,timeout=30);out.append((x.returncode,x.stdout))
             except subprocess.TimeoutExpired: out.append(('timeout',b''))
