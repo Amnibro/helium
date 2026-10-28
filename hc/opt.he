@@ -246,6 +246,7 @@ regalloc(fi int):
 	hn i32[>..<] ~= []; hn.resize(nv, -1)
 	for i i0..i1:
 		x := IR[i]; op := x.op as int; d := x.d as int; a := x.a as int; if d >= 0 && a >= 0 && nd[d] == 1 && st[d] as int == i - i0 && (op == I_MOV || op == I_EXT || op == I_BIN || op == I_FBIN) && FK[a] == 0 && en[a] as int == i - i0: hn[d] = a as i32
+		if !NOCH && d >= 0 && hn[d] < 0 && nd[d] == 1 && st[d] as int == i - i0 && op == I_BIN && x.l < 0 && (x.c == B_ADD || x.c == B_MUL || x.c == B_AND || x.c == B_OR || x.c == B_XOR) && x.b >= 0 && x.b != x.a && FK[x.b] == 0 && en[x.b] as int == i - i0: hn[d] = x.b
 	lscan(xo, st, en, wt, XREGS, XREG, nob, hn)
 	if xo.len > 0:
 		ing i8[>..<] ~= []; ing.resize(nv, 0); for v go { ing[v] = 1 } nx byte[>..] ~= []; xg2 := env("HC_XGPR", nx); for v xo { if XREG[v] < 0 && xg2 { ing[v] = 1 } } go.clear(); for v ord:
@@ -328,10 +329,10 @@ NOCI ~= false
 NOLC ~= false
 NOMS ~= false
 NOSI ~= false
-SIM ~= false; NOCF2 ~= false; NOTR ~= false; NOBT ~= false; NOJK ~= false; NOTB ~= false; NONR ~= false; NOMB2 ~= false; NOVC ~= false
+SIM ~= false; NOCF2 ~= false; NOTR ~= false; NOBT ~= false; NOJK ~= false; NOTB ~= false; NONR ~= false; NOMB2 ~= false; NOVC ~= false; NOCH ~= false
 var NCS i32[>..<]
 optimize_all():
-	nlc byte[>..] ~= []; NOLC = env("HC_NOLC", nlc); NOMS = env("HC_NOMS", nlc); NOSI = env("HC_NOSI", nlc); NOCF2 = env("HC_NOFI", nlc); NOTR = env("HC_NOTR", nlc); NOBT = env("HC_NOBT", nlc); NOJK = env("HC_NOJK", nlc); NOTB = env("HC_NOTB", nlc); NONR = env("HC_NONR", nlc); NOMB2 = env("HC_NOMB2", nlc); NOVC = env("HC_NOVC", nlc)
+	nlc byte[>..] ~= []; NOLC = env("HC_NOLC", nlc); NOMS = env("HC_NOMS", nlc); NOSI = env("HC_NOSI", nlc); NOCF2 = env("HC_NOFI", nlc); NOTR = env("HC_NOTR", nlc); NOBT = env("HC_NOBT", nlc); NOJK = env("HC_NOJK", nlc); NOTB = env("HC_NOTB", nlc); NONR = env("HC_NONR", nlc); NOMB2 = env("HC_NOMB2", nlc); NOVC = env("HC_NOVC", nlc); NOCH = env("HC_NOCH", nlc)
 	il0 byte[>..] ~= []; if env("HC_ILC", il0) { v, ok := parse_int(il0[..]); ILC = v } NOCI = env("HC_NOCI", il0)
 	lim byte[>..] ~= []; mx := if env("HC_INL", lim) { v, ok := parse_int(lim[..]); v } else { 100 }
 	noi byte[>..] ~= []; inl := !env("HC_NOINL", noi)
