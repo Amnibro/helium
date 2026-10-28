@@ -1225,7 +1225,7 @@ drain() bool:
 	while WDONE < WORK.len || FDONE < FMTT.len || EDONE < EQT.len || TDONE < TWT.len { if WDONE < WORK.len { lower_fn(WORK[WDONE]); WDONE++ } else { if FDONE < FMTT.len { lower_fmt(FDONE); FDONE++ } else { if EDONE < EQT.len { lower_eq(EDONE); EDONE++ } else { lower_tw(TDONE); TDONE++ } } } if LERR.len > 0 { return false } } true
 lsyn_begin() int:
 	CUR = GLOBI; CURI = -1; AOWN = GLOBI; NV = 0; SB = 0; LSLOT.clear(); i0 := IR.len; RETV = nv(); RETV2 = nv(); RETL = nlbl(); RETK = RETL; ir(I_IMM, 3, RETV, -1, -1, 0); i0
-lsyn_end(nf int, i0 int): ir(I_LBL, 3, -1, -1, -1, RETL); ir(I_RET, 3, -1, RETV, -1, 0); NFS[nf].i0 = i0; NFS[nf].i1 = IR.len; NFS[nf].nv = NV; NFS[nf].sb = SB
+lsyn_end(nf int, i0 int): ir(I_LBL, 3, -1, -1, -1, RETL); ir(I_RET, 3, -1, RETV, -1, 0); NFS[nf].i0 = i0; NFS[nf].i1 = IR.len; NFS[nf].nv = NV; NFS[nf].sb = SB; slz(NFS[nf].i0 as int)
 recursive lower_tw(k int):
 	inst := TWT[k]; i0 := lsyn_begin()
 	r := nv(); ir(I_PARAM, 3, r, -1, -1, 0); pk := ldw(r, 48, 3)
@@ -1269,7 +1269,7 @@ lower_eq(fi int):
 			else: kv := nv(); ir(I_MOV, 3, kv, imm(0), -1, 0); l0 := nlbl(); l1 := nlbl(); ir(I_LBL, 3, -1, -1, -1, l0); ir(I_BZ, 3, -1, lcmp(kv, na, CC_L), -1, l1); off := bin(B_MUL, 3, kv, imm(es), -1); ir(I_BZ, 3, -1, leq_a(bin(B_ADD, 3, pa, off, -1), bin(B_ADD, 3, pb, off, -1), e), -1, RETL); ir(I_MOV, 3, kv, bin(B_ADD, 3, kv, imm(1), -1), -1, 0); ir(I_JMP, 3, -1, -1, -1, l0); ir(I_LBL, 3, -1, -1, -1, l1)
 	ir(I_MOV, 3, RETV, imm(1), -1, 0)
 	ir(I_LBL, 3, -1, -1, -1, RETL); ir(I_RET, 3, -1, RETV, -1, 0)
-	NFS[nf].i0 = i0; NFS[nf].i1 = IR.len; NFS[nf].nv = NV; NFS[nf].sb = SB
+	NFS[nf].i0 = i0; NFS[nf].i1 = IR.len; NFS[nf].nv = NV; NFS[nf].sb = SB; slz(NFS[nf].i0 as int)
 fmt_fn(t int) int:
 	for i FMTT.len { if FMTT[i] == t { return FMTN[i] } } nf := NFS.len; NFS.push(NFn{0, 0, 0, 0, -1}); FOFF.push(0); FMTT.push(t); FMTN.push(nf); nf
 VTOP ~= false
@@ -1310,7 +1310,7 @@ lower_fmt(fi int):
 					for j x.n: if j > 0 { rtps(", ", false) } lfmt_a(addi(a, moff(t, j)), mel(t, j))
 				else: m byte[>..] ~= []; m.append("printing "); ty_name_into(t, m); m.append(" natively"); lerr(-1, m[..])
 	ir(I_LBL, 3, -1, -1, -1, RETL); ir(I_RET, 3, -1, -1, -1, 0)
-	NFS[nf].i0 = i0; NFS[nf].i1 = IR.len; NFS[nf].nv = NV; NFS[nf].sb = SB
+	NFS[nf].i0 = i0; NFS[nf].i1 = IR.len; NFS[nf].nv = NV; NFS[nf].sb = SB; slz(NFS[nf].i0 as int)
 recursive lfmt(c int, top bool):
 	t := fin(c); d := deref(t); k := TY[d].k
 	if TY[t].k == TY_REF && TY[t].fl & RF_OPT != 0 && TY[t].c < 0 && !(k == TY_ARR && !is_fix(d) && !is_lim(d) || k == TY_SLICE): q := nv(); ir(I_SLOT, 8, q, -1, -1, slot(8, 8)); stw(q, 0, lx(c), 3); VTOP = true; lfmt_a(q, t); VTOP = false; return
@@ -1570,7 +1570,7 @@ lower_fn(i int):
 	MSTK.pop(); ir(I_LBL, 3, -1, -1, -1, RETK)
 	if lrs >= 0: stw(lrdst(i), 0, ldw(lrs, 0, 3), 3)
 	ir(I_RET, 3, -1, if rt >= 0 && rt != T_VOID { RETV } else { -1 }, if rt >= 0 && is_pair(rt) { RETV2 } else { -1 }, 0)
-	NFS[nf].i0 = i0; NFS[nf].i1 = IR.len; NFS[nf].nv = NV; NFS[nf].sb = SB
+	NFS[nf].i0 = i0; NFS[nf].i1 = IR.len; NFS[nf].nv = NV; NFS[nf].sb = SB; slz(NFS[nf].i0 as int)
 alike(t int) bool:
 	k := TY[t].k; k == TY_ARR || k == TY_SLICE || k == TY_STRLIT
 lconva(d int, sa int, st int, dt int):
@@ -1608,7 +1608,7 @@ lower_ginit() int:
 		fn0 = FMTT.len + EQT.len; seen = greached(); wn = WORK.len; s0 := IR.len; AOWN = GLOBI; CUR = GLOBI; CURI = -1; ginit_body(); IR.resize(s0); if LERR.len > 0 { return nf } if !drain(): return nf
 	AOWN = GLOBI; CUR = GLOBI; CURI = -1
 	i0 := IR.len; ginit_body()
-	NFS[nf].i0 = i0; NFS[nf].i1 = IR.len; NFS[nf].nv = NV; NFS[nf].sb = SB
+	NFS[nf].i0 = i0; NFS[nf].i1 = IR.len; NFS[nf].nv = NV; NFS[nf].sb = SB; slz(NFS[nf].i0 as int)
 	nf
 gtag():
 	ko int[>..] ~= []
