@@ -1,0 +1,26 @@
+// Copying an `in pool` reference between fields of the same pool and width
+// reuses the stored offset. Other widths re-encode it and range-check it, and
+// null stays null. The last copy needs more than a byte and aborts.
+struct Cell { v int }
+var cells Cell[>..] = [];
+struct Ln { v int, nx Cell&<u32 in cells>?, pv Cell&<u32 in cells>?, w16 Cell&<u16 in cells>?, w8 Cell&<byte in cells>? }
+
+fn show(r Cell&?) int {
+	if r { return r.v; }
+	return -1;
+}
+
+fn main() {
+	for i in 50 { cells.push(Cell { v: i * 3 }); }
+	var a = Ln { v: 1, nx: cells[4], pv: null, w16: cells[40], w8: cells[2] };
+	var b = Ln { v: 2, nx: null, pv: cells[9], w16: null, w8: null };
+	b.nx .= a.nx;
+	a.pv .= b.pv;
+	a.nx .= b.w16;
+	print(show(a.nx), " ", show(a.pv), " ", show(b.nx), " ", show(b.pv));
+	b.w16 .= a.w8;
+	b.w8 .= b.pv;
+	print(show(b.w16), " ", show(b.w8));
+	a.w8 .= a.w16;
+	print("unreachable");
+}

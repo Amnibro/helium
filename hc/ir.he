@@ -1,7 +1,7 @@
 use elf
 I_IMM := 1; I_MOV := 2; I_BIN := 3; I_CMP := 4; I_UN := 5; I_LBL := 6; I_JMP := 7; I_BZ := 8; I_BNZ := 9; I_CALL := 10; I_RET := 11
 I_LD := 12; I_ST := 13; I_SLOT := 14; I_GADDR := 15; I_RADDR := 16; I_PARAM := 17; I_SYS := 18; I_EXT := 19; I_CHK := 20; I_COPY := 21; I_FADDR := 22; I_CALLR := 23; I_RET2 := 24; I_RES2 := 25; I_FBIN := 26; I_FCMP := 27; I_CVT := 28; I_FUN := 29; I_ZERO := 30; I_DSS := 31; I_DSR := 32; I_NOP := 33
-B_ADD := 0; B_SUB := 1; B_MUL := 2; B_DIV := 3; B_MOD := 4; B_AND := 5; B_OR := 6; B_XOR := 7; B_SHL := 8; B_SAR := 9; B_SHR := 10; B_UDIV := 11; B_UMOD := 12; B_UMULH := 13; B_ROL := 14; B_BZHI := 15
+B_ADD := 0; B_SUB := 1; B_MUL := 2; B_DIV := 3; B_MOD := 4; B_AND := 5; B_OR := 6; B_XOR := 7; B_SHL := 8; B_SAR := 9; B_SHR := 10; B_UDIV := 11; B_UMOD := 12; B_UMULH := 13; B_ROL := 14; B_BZHI := 15; B_ANDN := 16
 K_OVF := 1; K_DIV0 := 2; K_OOB := 3; K_NARROW := 4; K_DOVF := 7
 struct Ir { op u8, w u8, d i32, a i32, b i32, c i64, l i32 }
 struct NFn { i0 i32, i1 i32, nv i32, sb i32, inst i32 }
@@ -42,8 +42,9 @@ xg(v int) int:
 		-1
 var REGOF i32[>..<]; var RUSED i32[>..<]; var VZERO i32[>..<]; var CNV int; var VSI i32[>..<]
 var MUSE i8[>..<]; var MSLOT i32[>..<]; DSN ~= -1
+var RPV i32[>..<]
 nv() int:
-	NV++; NV - 1
+	if NV == 0 { RPV.clear() } NV++; NV - 1
 loc_id(s const byte[:]) int:
 	LOCS.push(rodata(s)); LOCS.push(s.len); LOCS.len / 2 - 1
 nlbl() int:
@@ -308,14 +309,14 @@ cg_fn(fi int):
 				if op == I_BIN && !rw && i != ADCJ && c != B_UMULH && !fm && !(c == B_ADD && (fk(a) == 9 || fk(b) == 9)):
 					dv ~= c == B_DIV || c == B_MOD || c == B_UDIV || c == B_UMOD; cm := c == B_ADD || c == B_MUL || c == B_AND || c == B_OR || c == B_XOR
 					sw := cm && (kc(a) && !kc(b) || gr(d) >= 0 && gr(d) == gr(b) && gr(a) != gr(d)); a1 := if sw { b } else { a }; b1 := if sw { a } else { b }
-					h32 := w == 6 && x.l < 0 && !NO32 && !dv && (c == B_ROL || c == B_ADD || c == B_SUB || c == B_AND || c == B_OR || c == B_XOR || c == B_MUL || (c == B_SHL || c == B_SHR) && kc(b1) && FD[b1] >= 0 && FD[b1] < 32); bi := kc(b1) && (i32ok(FD[b1] as int) || h32) && !dv; bv := if bi { if h32 { (((FD[b1] as int) & 0xFFFFFFFF) ^ 0x80000000) - 0x80000000 } else { FD[b1] as int } } else { 0 }
+					h32 := w == 6 && x.l < 0 && !NO32 && !dv && c != B_ANDN && (c == B_ROL || c == B_ADD || c == B_SUB || c == B_AND || c == B_OR || c == B_XOR || c == B_MUL || (c == B_SHL || c == B_SHR) && kc(b1) && FD[b1] >= 0 && FD[b1] < 32); bi := kc(b1) && (i32ok(FD[b1] as int) || h32) && !dv && c != B_ANDN; bv := if bi { if h32 { (((FD[b1] as int) & 0xFFFFFFFF) ^ 0x80000000) - 0x80000000 } else { FD[b1] as int } } else { 0 }
 					ud := dv && kc(b1) && cdk(c, FD[b1] as int); R := if dv && !ud || DBG && c <= B_MUL && x.l >= 0 || gr(d) < 0 || gr(d) == gr(b1) && !bi && gr(a1) != gr(d) { RAX } else { gr(d) }; sh := c == B_SHL || c == B_SAR || c == B_SHR
-					bx := V3 && (sh || c == B_BZHI) && !bi; mb := !bi && !sh && !dv && !NOMB && spl(b1) && !(LSP == XC.len && LSV == b1) && (c == B_ADD || c == B_SUB || c == B_AND || c == B_OR || c == B_XOR); B := if bi || mb { -1 } else { if bx { srcr(b1, RCX) } else { if sh || dv { if !dv || !kc(b1) { ldv(RCX, b1) } RCX } else { srcr(b1, RCX) } } }; le := c == B_ADD && (w == 3 || h32) && x.l < 0 && !NOLE && !bx && !mb && gr(d) >= 0 && R == gr(d) && gr(a1) >= 0 && gr(a1) != R && (bi || B >= 0 && B != R); mi := c == B_MUL && bi && x.l < 0 && !(bv > 1 && bv & (bv - 1) == 0) && w & 11 == 3 && !NOLE && !bx && !mb && gr(a1) >= 0 && gr(a1) != R; if mi { imul_ri(R, gr(a1), bv) } else if le { X32 = h32; if bi { lea(R, gr(a1), bv) } else { SIBM = true; SIBI = B; SIBS = 0; lea(R, gr(a1), 0) } X32 = false } else { if !bx { ldv(R, a1) } } X32 = h32
+					bx := V3 && (sh || c == B_BZHI || c == B_ANDN) && !bi; mb := !bi && !sh && !dv && !NOMB && spl(b1) && !(LSP == XC.len && LSV == b1) && (c == B_ADD || c == B_SUB || c == B_AND || c == B_OR || c == B_XOR); B := if bi || mb { -1 } else { if bx { srcr(b1, RCX) } else { if sh || dv { if !dv || !kc(b1) { ldv(RCX, b1) } RCX } else { srcr(b1, RCX) } } }; le := c == B_ADD && (w == 3 || h32) && x.l < 0 && !NOLE && !bx && !mb && gr(d) >= 0 && R == gr(d) && gr(a1) >= 0 && gr(a1) != R && (bi || B >= 0 && B != R); mi := c == B_MUL && bi && x.l < 0 && !(bv > 1 && bv & (bv - 1) == 0) && w & 11 == 3 && !NOLE && !bx && !mb && gr(a1) >= 0 && gr(a1) != R; if mi { imul_ri(R, gr(a1), bv) } else if le { X32 = h32; if bi { lea(R, gr(a1), bv) } else { SIBM = true; SIBI = B; SIBS = 0; lea(R, gr(a1), 0) } X32 = false } else { if !bx { ldv(R, a1) } } X32 = h32
 					if c == B_ADD && !le { if bi { alu_ri(0, R, bv); } else { if mb { mop(0x03, R, RBP, vo(b1), true) } else { alu(0x01, R, B); } } } if c == B_SUB { if bi { alu_ri(5, R, bv); } else { if mb { mop(0x2B, R, RBP, vo(b1), true) } else { alu(0x29, R, B); } } } if c == B_MUL:
 						if bi && x.l < 0 && bv > 1 && bv & (bv - 1) == 0: sh_ri(4, R, lg2(bv)) else: if bi { if !mi { imul_ri(R, R, bv) } } else { imul(R, B) }
 					if c == B_AND { if bi { alu_ri(4, R, bv); } else { if mb { mop(0x23, R, RBP, vo(b1), true) } else { alu(0x21, R, B); } } } if c == B_OR { if bi { alu_ri(1, R, bv); } else { if mb { mop(0x0B, R, RBP, vo(b1), true) } else { alu(0x09, R, B); } } } if c == B_XOR:
 						if bi: alu_ri(6, R, bv) else: if mb { mop(0x33, R, RBP, vo(b1), true) } else { alu(0x31, R, B) }
-					if bx { bmx(if c == B_SHL { 0x66 } else { if c == B_SAR { 0xF3 } else { if c == B_BZHI { 0 } else { 0xF2 } } }, R, srcr(a1, R), B, if c == B_BZHI { 0xF5 } else { 0xF7 }) } else { if c == B_SHL { if bi { sh_ri(4, R, bv); } else { shcl(4, R); } } if c == B_SAR { if bi { sh_ri(7, R, bv); } else { shcl(7, R); } } } if c == B_SHR && !bx:
+					if bx { bmx(if c == B_SHL { 0x66 } else { if c == B_SAR { 0xF3 } else { if c == B_BZHI || c == B_ANDN { 0 } else { 0xF2 } } }, R, srcr(a1, R), B, if c == B_BZHI { 0xF5 } else { if c == B_ANDN { 0xF2 } else { 0xF7 } }) } else { if c == B_SHL { if bi { sh_ri(4, R, bv); } else { shcl(4, R); } } if c == B_SAR { if bi { sh_ri(7, R, bv); } else { shcl(7, R); } } } if c == B_SHR && !bx:
 						if bi: sh_ri(5, R, bv) else: shcl(5, R)
 					if c == B_ROL: sh_ri(0, R, bv)
 					X32 = false
@@ -341,7 +342,7 @@ cg_fn(fi int):
 						if c >= 16: A := srcr(a, RAX); B := srcr(b, RCX); xrex(true, B, 0, A); xb(0x0F); xb(0xA3); xb(0xC0 | (B & 7) << 3 | A & 7); k := if c == 16 { CC_B } else { CC_AE }; LCMP = -1; if fusable(i, d, f.i1) { FUSEC = k } else { r := dstr(d); setcc(k, r); fin(r, d) }
 						else: if !adcu(i, f.i1): cmpab(a, b); LCMP = i; if fusable(i, d, f.i1) { FUSEC = c as int } else { r := dstr(d); setcc(c, r); fin(r, d) }
 					else:
-						if op == I_UN: U := dstr(d); ldv(U, a); if c == 0 { grp3(3, U); if x.l >= 0 { if wsz(w) == 8 { jcc_l(CC_O, trap_to(K_OVF, x.l, traps)); } else { mov_rr(RDX, U); ext_r(RDX, w); alu(0x39, RDX, U); jcc_l(CC_NE, trap_to(K_OVF, x.l, traps)); } } else { ext_r(U, w); } } if c == 1 { grp3(2, U); ext_r(U, w) } if c == 2 { alu_ri(6, U, 1) } fin(U, d)
+						if op == I_UN: U := dstr(d); ldv(U, a); if c == 0 { grp3(3, U); if x.l >= 0 { if wsz(w) == 8 { jcc_l(CC_O, trap_to(K_OVF, x.l, traps)); } else { mov_rr(RDX, U); ext_r(RDX, w); alu(0x39, RDX, U); jcc_l(CC_NE, trap_to(K_OVF, x.l, traps)); } } else { ext_r(U, w); } } if c == 1 { if w == 6 && !NO32 { xrex(false, 0, 0, U); xb(0xF7); xb(0xD0 | U & 7) } else { grp3(2, U); ext_r(U, w) } } if c == 2 { alu_ri(6, U, 1) } fin(U, d)
 						else:
 							if op == I_EXT || op == I_SEL: if op == I_SEL { fv := x.c as int; R := if gr(d) >= 0 && gr(d) != gr(b) && gr(d) != gr(a) { gr(d) } else { RAX }; cc ~= FUSEC; FUSEC = -1; ldv(R, fv); B := srcr(b, RCX); if cc < 0 { A := srcr(a, RDX); test_rr(A, A); cc = CC_NE } cmov(cc, R, B); fin(R, d) } else { r := dstr(d); ldv(r, a); ext_r(r, w); fin(r, d) }
 							else:

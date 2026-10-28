@@ -466,6 +466,7 @@ rel_load(q int, t int) int:
 	d := ldw(q, 0, if pool { rw(t) | 4 } else { rw(t) }); r := nv()
 	ir(I_MOV, 3, r, if pool { bin(B_SUB, 3, bin(B_ADD, 3, rpool_base(t), d, -1), imm(1), -1) } else { bin(B_ADD, 3, q, d, -1) }, -1, 0); if hvs(TY[t].a as int) { ir(I_MOV, 3, r, ltag(r), -1, 0) }
 	if opt || pool: l := nlbl(); irl(I_BNZ, 3, -1, d, -1, l, -6); ir(I_MOV, 3, r, imm(0), -1, 0); ir(I_LBL, 3, -1, -1, -1, l)
+	if pool && !hvs(TY[t].a as int) { RPV.push(r as i32); RPV.push(d as i32); RPV.push(t as i32) }
 	r
 sdie(m const byte[:]): mp := nv(); ir(I_RADDR, 8, mp, -1, -1, rodata(m)); lp := nv(); ir(I_RADDR, 8, lp, -1, -1, rodata("store")); rtcall("rt_abort", [mp as i32, imm(m.len) as i32, lp as i32, imm(5) as i32]);
 sguard(ok int, m const byte[:]): l := nlbl(); ir(I_BNZ, 3, -1, ok, -1, l); sdie(m); ir(I_LBL, 3, -1, -1, -1, l);
@@ -483,6 +484,7 @@ recursive lrfix(p int, e int, b int, fl bool):
 rel_store(q int, p0 int, t int):
 	opt := TY[t].fl & RF_OPT != 0; sz := tsz(t); d := nv(); p := lmk(p0, TY[t].a as int)
 	if RELB >= 0 && relpool(t) < 0 && !isvr(t): ir(I_MOV, 3, d, imm(0), -1, 0); l := nlbl(); ir(I_BZ, 3, -1, p, -1, l); ir(I_MOV, 3, d, bin(B_ADD, 3, bin(B_SUB, 3, p, RELB, -1), imm(1), -1), -1, 0); ir(I_LBL, 3, -1, -1, -1, l); if sz < 8 { sguard(lcmp(bin(B_SHR, 3, d, imm(sz * 8), -1), imm(0), CC_E), "relative reference offset out of range") } stw(q, 0, d, rw(t)); return
+	nq byte[>..] ~= []; if relpool(t) >= 0 && !hvs(TY[t].a as int) && !env("HC_NORP", nq): for k RPV.len / 3 { u := RPV[3 * k + 2] as int; if RPV[3 * k] as int == p0 && TY[u].b == TY[t].b && rw(u) == rw(t) && relpool(u) >= 0 { stw(q, 0, RPV[3 * k + 1] as int, rw(t)); return } }
 	if relpool(t) >= 0: ir(I_MOV, 3, d, imm(0), -1, 0); l := nlbl(); ir(I_BZ, 3, -1, p, -1, l); ir(I_MOV, 3, d, bin(B_ADD, 3, bin(B_SUB, 3, p, rpool_base(t), -1), imm(1), -1), -1, 0); ir(I_LBL, 3, -1, -1, -1, l); if sz < 8 { sguard(lcmp(bin(B_SHR, 3, d, imm(sz * 8), -1), imm(0), CC_E), "pool-relative reference offset out of range") } stw(q, 0, d, rw(t)); return
 	ir(I_MOV, 3, d, imm(0), -1, 0); l := nlbl(); ir(I_BZ, 3, -1, p, -1, l); ir(I_MOV, 3, d, bin(B_SUB, 3, p, q, -1), -1, 0)
 	if opt: sguard(lcmp(d, imm(0), CC_NE), "a relative reference would encode as null")
