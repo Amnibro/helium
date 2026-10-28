@@ -4,7 +4,7 @@ use pkg
 use fmt
 use lsp
 use wasm
-USAGE := "usage: hc <command> file [options] [-- program args...]\n       hc file [options] [-- program args...]\n\ncommands:\n  run        compile natively into the cache and run the program (hc file does too)\n  build      build an executable: -o out (native), or -o out.c for C\n  check      parse and typecheck only\n  fetch      clone the git packages the program declares (--update re-fetches tags and branches)\n  version    print the version\n  help       print this\n\noptions:\n  -o path    output for build (default: the file's name without its extension)\n  --debug    overflow, range and tag checks naming the source line\n  -DNAME=V   a runtime define\n  --offline  fetch no packages: one not in the cache is an error\n  --include file.h   C the program's extern functions come from, built with cc into a shared library\n  --c        build C instead of a native executable\n\nenvironment: HC_LIB (library directory; default: lib beside hc, then hc/lib)"
+USAGE := "usage: hc <command> file [options] [-- program args...]\n       hc file [options] [-- program args...]\n\ncommands:\n  run        compile natively into the cache and run the program (hc file does too)\n  build      build an executable: -o out (native), or -o out.c for C\n  check      parse and typecheck only\n  fetch      clone the git packages the program declares (--update re-fetches tags and branches)\n  version    print the version\n  help       print this\n\noptions:\n  -o path    output for build (default: the file's name without its extension)\n  --debug    overflow, range and tag checks naming the source line\n  -DNAME=V   a runtime define\n  --offline  fetch no packages: one not in the cache is an error\n  --include file.h   C the program's extern functions come from, built with cc into a shared library\n  --c        build C instead of a native executable\n  --v3       target x86-64-v3 (Haswell and later): AVX2 vector code only, three-operand scalar floats\n\nenvironment: HC_LIB (library directory; default: lib beside hc, then hc/lib)"
 VERSION := "hc 0.7 (Helium)"
 setlib():
 	lib byte[>..] ~= []; if env("HC_LIB", lib): LIBDIR.append(lib); return
@@ -59,6 +59,7 @@ main():
 		if m[..] == "--": rest = true; continue
 		if m[..] == "--native": native = true; continue
 		if m[..] == "--c": native = false; continue
+		if m[..] == "--v3": V3 = true; continue
 		if m[..] == "--debug": DBG = true; continue
 		if m[..] == "--update" && cmd == 5: PKF = 2; continue
 		if m[..] == "--offline": PKF = -1; continue

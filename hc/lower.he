@@ -1424,6 +1424,11 @@ ifbits(v i64, u bool, w int) int:
 recursive klit(n int) bool:
 	x := ND[n]; k := x.k; if k == N_INT { return true } if k == N_ID { if rk(n) != R_GLOBAL { return false } cv, ok := gconst(rv(n), at(n)); return ok || const_of(rv(n)) >= 0 } if k == N_UN || k == N_AS { return x.a > n && klit(x.a) } if k == N_BIN { return x.a > n && x.b > n && klit(x.a) && klit(x.b) } false
 kint(n int) int, bool: if ND[n].k as int == N_ID && rk(n) == R_CONST { v, u, ok := cval(n); return v as int, ok } if !klit(n) || !all_int(n) { return 0, false } v, ok := ceval(n, ns_of(n)); return v as int, ok
+recursive kun(n int) int, bool:
+	x := ND[n]; k := x.k as int; o := x.op as int
+	if k == N_ID && rk(n) == R_LOCAL: for j UNRV.len { if UNRV[j] == rv(n) { return UNRK[j], true } } return 0, false
+	if k == N_BIN && (o == T_PLUS || o == T_MINUS || o == T_MUL): a, ka := kun(x.a); b, kb := kun(x.b); return (if o == T_PLUS { a + b } else { if o == T_MINUS { a - b } else { a * b } }), ka && kb
+	kint(n)
 lzfill(bk int, v int, s0 int, e1 int) bool:
 	if ND[bk].k as int != N_BLOCK || ND[bk].n != 1 { return false } st := kid(bk, 0); y := ND[st]; if y.k as int != N_ASSIGN || y.op as int != T_ASSIGN || ND[y.a].k as int != N_IDX: return false
 	ix := ND[y.a]; bs := ix.a; iv := ix.b; if ND[iv].k as int != N_ID || rk(iv) != R_LOCAL || rv(iv) != v || !(ND[bs].k as int == N_ID && (rk(bs) == R_LOCAL || rk(bs) == R_GLOBAL)): return false
@@ -1434,7 +1439,7 @@ var UNRV i32[>..<]; var UNRK int[>..<]
 recursive lfor(n int):
 	x := ND[n]; v := rv(n); m := ax(n)
 	if m & 3 != 0: lfor_arr(n); return
-	s0 ~= 0; sk ~= true; if x.b >= 0 { a0, a1 := kint(x.a); s0 = a0; sk = a1 } e1, ek := kint(if x.b >= 0 { x.b as int } else { x.a as int }); tn := e1 - s0
+	s0 ~= 0; sk ~= true; if x.b >= 0 { a0, a1 := kun(x.a); s0 = a0; sk = a1 } e1, ek := kun(if x.b >= 0 { x.b as int } else { x.a as int }); tn := e1 - s0
 	if sk && ek && tn >= 4 && x.c < 0 && lzfill(x.d, v, s0, e1): return
 	nu byte[>..] ~= []; if sk && ek && tn >= 0 && tn <= 16 && (CURI < 0 || FI_[CURI].node < 0 || (ND[FI_[CURI].node].fl as int) & F_SIMD == 0) && !env("HC_NOUNROLL", nu) && nsz(x.d, 400 / max(tn, 1)) <= 400 / max(tn, 1):
 		l1 := nlbl(); LOOPH.push(DROPS.len); LCH.push(DROPS.len); LBRK.push(l1); LCNT.push(-1); LRV.push(-1)
@@ -1471,6 +1476,14 @@ recursive lfor_arr(n int):
 	rf := TY[bt].k == TY_REF; rm := if is_res(d) { if rf && pure_path(a) { 1 } else { 2 } } else { if is_lim(d) && !is_vimg(d) && (rf || is_place(a)) { 3 } else { if TY[d].k != TY_SLICE && rf && pure_path(a) { 4 } else { if TY[d].k == TY_SLICE && (rf || is_place(a)) { 5 } else { 0 } } } }
 	w := if rm == 2 || rm == 3 || rm == 5 { laddr(a) } else { -1 }; p0 ~= -1; n0 ~= -1; if rm == 0:
 		if is_fix(d) && nseq(d): p0 = if is_lplace(a) || rf { laddr(a) } else { ltmp(a, d) }; n0 = imm(TY[d].b as int) else: pp, ll := lsl(a); p0 = pp; n0 = ll
+	tn := if rm == 0 && is_fix(d) { TY[d].b as int } else { -1 }; nu byte[>..] ~= []
+	if tn >= 1 && tn <= 16 && !is_scal(e) && (CURI < 0 || FI_[CURI].node < 0 || (ND[FI_[CURI].node].fl as int) & F_SIMD == 0) && !env("HC_NOUNROLL", nu) && nsz(x.d, 400 / tn) <= 400 / tn:
+		u1 := nlbl(); LOOPH.push(DROPS.len); LCH.push(DROPS.len); LBRK.push(u1); LCNT.push(-1); LRV.push(-1); iv := if x.c >= 0 { m >> 2 } else { -1 }
+		for j tn:
+			uc := nlbl(); LCNT[LCNT.len - 1] = uc; ea := bin(B_ADD, 3, p0, imm(j * es), -1); lslot(v); LSLOT[v] = -1; va := nv(); ir(I_SLOT, 8, va, -1, -1, lslot(v))
+			if byref { stw(va, 0, ea, 3) } else { if is_rel(e) { stw(va, 0, rel_load(ea, e), 3) } else { ir(I_COPY, 3, va, ea, imm(es), 0) } }
+			if iv >= 0 { ia := nv(); ir(I_SLOT, 8, ia, -1, -1, lslot(iv)); stw(ia, 0, imm(j), 3); UNRV.push(iv); UNRK.push(j) } lblk(x.d, -1); if iv >= 0 { UNRV.pop(); UNRK.pop() } ir(I_LBL, 3, -1, -1, -1, uc)
+		ir(I_LBL, 3, -1, -1, -1, u1); LOOPH.pop(); LCH.pop(); LBRK.pop(); LCNT.pop(); LRV.pop(); return
 	kv := nv(); ir(I_MOV, 3, kv, imm(0), -1, 0)
 	l0 := nlbl(); lc := nlbl(); l1 := nlbl(); LOOPH.push(DROPS.len); LCH.push(DROPS.len); LBRK.push(l1); LCNT.push(lc); LRV.push(-1)
 	ir(I_LBL, 3, -1, -1, -1, l0)

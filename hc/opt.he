@@ -230,7 +230,7 @@ regalloc(fi int):
 		x := IR[i]; op := x.op as int; d := x.d as int; a := x.a as int; if d >= 0 && a >= 0 && nd[d] == 1 && st[d] as int == i - i0 && (op == I_MOV || op == I_EXT || op == I_BIN || op == I_FBIN) && FK[a] == 0 && en[a] as int == i - i0: hn[d] = a as i32
 	lscan(xo, st, en, wt, XREGS, XREG, nob, hn)
 	if xo.len > 0:
-		ing i8[>..<] ~= []; ing.resize(nv, 0); for v go { ing[v] = 1 } for v xo { if XREG[v] < 0 { ing[v] = 1 } } go.clear(); for v ord:
+		ing i8[>..<] ~= []; ing.resize(nv, 0); for v go { ing[v] = 1 } nx byte[>..] ~= []; xg2 := env("HC_XGPR", nx); for v xo { if XREG[v] < 0 && xg2 { ing[v] = 1 } } go.clear(); for v ord:
 			if ing[v] != 0: go.push(v)
 	lscan(go, st, en, wt, CREGS, REGOF, bad, hn)
 	SVR.clear(); SVS.clear(); SVE.clear(); for v nv:
@@ -502,7 +502,7 @@ sra(fi int):
 			e := max(ext[root(s)] as int, csz[s] as int); if so[s + 1] < so[s] + e: bad[root(s)] = 1; bad[root(s + 1)] = 1
 	base i32[>..<] ~= []; base.resize(sb, -1)
 	any ~= false; for s sb:
-		r := root(s); if bad[r] != 0 || cn[r] == 0 || cn[r] > 8: bad[s] = 1 else: base[s] = nv as i32; nv += cn[r] as int; any = true
+		r := root(s); if bad[r] != 0 || cn[r] == 0 || cn[r] > 48: bad[s] = 1 else: base[s] = nv as i32; nv += cn[r] as int; any = true
 	if !any: return
 	fid(s int, o int) int:
 		r := root(s); lo ~= cst[r] as int; hi ~= lo + cn[r] as int; while lo < hi { m := (lo + hi) / 2; if (co[m] as int) < o { lo = m + 1 } else { hi = m } } base[s] as int + lo - cst[r] as int

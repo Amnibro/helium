@@ -12,8 +12,9 @@ directory beside this repository's checkout. Build products go under
 
 Programs are built the way PLB builds C (`clang -O3 -march=broadwell
 -fomit-frame-pointer`), Rust with its Cargo profile (LTO, one codegen unit,
-`-Ctarget-cpu=broadwell`), and the generated Goose C with the C flags, its
-`simd fn`s capped at AVX2 to match.
+`-Ctarget-cpu=broadwell`), the generated Goose C with the C flags, its
+`simd fn`s capped at AVX2 to match, and Helium with `hc --v3` (AVX2 and
+three-operand scalar floats, the same Broadwell level).
 
   python bench/plb/plb.py build                       # every Goose program
   python bench/plb/plb.py build --langs rust,cpp,c    # the reference programs
@@ -580,7 +581,7 @@ def main():
     ap.add_argument("--langs", default=None, help="comma-separated: helium,goose,rust,c,cpp")
     ap.add_argument("--variants", default="", help="comma-separated source stems, e.g. 1,2-m")
     ap.add_argument("--hc", help="the hc compiler (default $HC or build/hcn)")
-    ap.add_argument("--hc-flags", default="")
+    ap.add_argument("--hc-flags", default="--v3")
     ap.add_argument("--goose", help="the old Goose compiler (default $GOOSE or ../goose/build/helium)")
     ap.add_argument("--goose-flags", default="")
     ap.add_argument("--cflags", default="")

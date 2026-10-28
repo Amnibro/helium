@@ -30,13 +30,54 @@ def brk(r,od):
         k=r.randint(0,10);v=r.choice(['c','h'])
         L.append({0:lambda:f'\t\tif {C()} {{ {v}++ }}',1:lambda:f'\t\tif {C()} {{ {v}-- }}',2:lambda:f'\t\tt += if {C()} {{ 1 }} else {{ 0 }}',3:lambda:f'\t\t{v} = if {C()} {{ {v} + 1 }} else {{ {v} }}',4:lambda:f'\t\t{v} = if {C()} {{ {v} }} else {{ {v} - 1 }}',5:lambda:f'\t\t{r.choice(bs)} = {C()}',6:lambda:f'\t\tg = {C()} || (g && {C()})',7:lambda:f'\t\tif {C()} {{ f = true; {v} += 1 }}',8:lambda:'\t\th = mh(p, q + c)\n\t\tlo += c\n\t\tif lo < c { h++ }\n\t\tc = h',9:lambda:f'\t\tif {C()} {{ continue }}',10:lambda:f'\t\tc = if lo < c {{ h + 1 }} else {{ h }}'}[k]())
     return L+['\t\tt = t * 31 + (c as! int) + (h as! int) * 7 + (lo as! int) + (if f { 3 } else { 0 }) + (if g { 5 } else { 0 })','\tt']
+def unk(r):
+    k0=r.randint(0,4);N=k0+r.randint(1,9);nest=r.random()<0.3;ind='\t\t\t' if nest else '\t\t'
+    st=[lambda:f'{ind}t += (a[k + {r.randint(0,5)}] as! int) * {r.randint(1,9)}',lambda:f'{ind}t ^= (k as! int) << {r.randint(0,7)}',lambda:f'{ind}if (b[k + {r.randint(0,3)}] as! int) & 1 == 0: t += k as! int',lambda:f'{ind}d[k + {r.randint(1,4)}] = (t as! int) as! {"{td}"}',lambda:f'{ind}t = t * 3 + (a[{{ k += 0; k }}] as! int)']
+    body=[r.choice(st)() for _ in range(r.randint(1,5))];p=r.randint(0,len(body));body.insert(p,f'{ind}k += 1')
+    if r.random()<0.4: body.insert(r.randint(p+1,len(body)),f'{ind}if t & 3 == 0: continue')
+    L=['\tt ~= 0']+(['\tfor y 2:',f'\t\tk ~= {k0}',f'\t\twhile k < {N}:'] if nest else [f'\tk ~= {k0}',f'\twhile k < {N}:'])
+    return L+[x.replace('\t\t','\t\t\t',1) if nest else x for x in []]+body+['\tt']
+def whk(r,td):
+    c=lambda:r.choice(['t & 7 != 3','t < 100000000','(t ^ (k as! int)) & 1 == 0','k != lo + 3','t >= 0','f','!f'])
+    h=lambda d:c() if d<=0 or r.random()<0.4 else f'({h(d-1)} {r.choice(["&&","||"])} {h(d-1)})'
+    b=r.choice(['k < hi','k < a.len - 8','k + 4 < b.len && k < hi'])
+    L=['\tt ~= 0','\tf ~= false','\tk ~= lo',f'\twhile {b} && {h(2)}:','\t\tt += a[k] as! int',f'\t\tf = t & {r.choice([1,3,5])} == 0']
+    if r.random()<0.5: L.append(f'\t\td[k + 1] = (t as! int) as! {td}')
+    return L+['\t\tk += 1','\tt']
+def slk(r,k):
+    ft=r.choice(['f32','f64']);W=r.choice([4,8,8,12,16,20,32]);P=[f'P{i}' for i in range(r.randint(2,4))];sh=r.random()<0.3;rg=f'1..{W - 1}' if sh else f'{W}'
+    ix=lambda:r.choice(['k','k','k','k','k + 1','k - 1']) if sh else 'k'
+    def fe(dd):
+        if dd<=0 or r.random()<0.3:
+            q=r.random()
+            if q<0.55: return f'{r.choice(P)}[{ix()}]'
+            if q<0.75: return f'({r.choice(["1.5","0.25","-3.0","7.0","0.5"])} as {ft})'
+            return r.choice(['s','(u as '+ft+')'])
+        return f'({fe(dd-1)} {r.choice(["+","+","-","*","*","/"])} {fe(dd-1)})'
+    L=[f'{"simd " if r.random()<0.7 else ""}k{k}(d {{td}}[>..]&, a {{ta}}[>..]&, b {{tb}}[>..]&, u int, lo int, hi int) int:']+[f'\t{q} {ft}[{W}] ~= [0.0; {W}]' for q in P]+['\tlv ~= 0.0 as '+ft,'\tt ~= 0']
+    L+=[f'\tfor k {W}: {q}[k] = (k as {ft}) * ({r.choice(["0.5","1.25","-0.75"])} as {ft}) + (u as {ft}) * (0.001 as {ft})' for q in P]
+    L+=['\tfor x lo..hi:',f'\t\ts := FA_{ft}[x]',f'\t\tfor k {rg}:']+[f'\t\t\t{r.choice(P)}[{"k" if r.random()<0.8 else ix()}] {r.choice(["=","+=","-=","*="])} {fe(r.randint(1,3))}' for _ in range(r.randint(1,4))]
+    if r.random()<0.3: L.append(f'\t\t\tlv = {r.choice(P)}[k]')
+    if r.random()<0.3: L.append(f'\t\td[x] = (({fe(1).replace("[k + 1]","[1]").replace("[k - 1]","[0]").replace("[k]","[0]")}) as! int) as! {{td}}')
+    for q in P+['lv']: L+=[f'\tfor k {W}:' if q!='lv' else '\tif true:',f'\t\tz := str({q + "[k]" if q!="lv" else q})','\t\tfor c z: t = t * 31 + c as int']
+    return L+['\tt']
+def cmk(r,ta):
+    op=lambda:r.choice(['<','<=','>','>=','==','!='])
+    rhs=lambda:r.choice(['(u as! i8) as int','(u as! i16) as int','(u as! i32) as int','u','w','w','3','-2','100','40000','(b[x] as! int)',f'(a[x + {r.choice([0,1,2])}] as! int)'])
+    if r.random()<0.35:
+        W=r.choice([4,8,16,16]);return ['\tt ~= 0',f'\tth i32[{W}] ~= [0x7FFFFFFF; {W}]',f'\tfor q {W}: th[q] = ((q * {r.randint(1,9000)}) as! i32) - {r.randint(0,30000)}','\tfor x lo..hi:','\t\tv := (a[x] as! int) * '+str(r.choice([1,7,-3,1000])),'\t\tr2 := (v as! i32)','\t\tk ~= 0',f'\t\tfor e th: k {r.choice(["+=","-="])} if e {op()} r2 {{ 1 }} else {{ 0 }}','\t\tt = t * 7 + k','\tt']
+    return ['\tt ~= '+str(r.randint(-50,50)),f'\tw := u ^ (u << {r.choice([15,31,33])})','\tfor x lo..hi:',f'\t\tt {r.choice(["+=","+=","-="])} if (a[x] as! int) {op()} {rhs()} {{ 1 }} else {{ 0 }}']+([f'\t\tt += if (b[x] as! int) {op()} {rhs()} {{ 1 }} else {{ 0 }}'] if r.random()<0.3 else [])+['\tt']
 def prog(seed):
     r=random.Random(seed);ks=[];N=r.choice([64,100,257,1000,4099])
     L=['mh(a uint, b uint) uint:\n\tal := a & 0xffffffff; ah := a >> 32; bl := b & 0xffffffff; bh := b >> 32\n\tll := al * bl; lh := al * bh; hl := ah * bl; hh := ah * bh\n\tmid := (ll >> 32) + (lh & 0xffffffff) + (hl & 0xffffffff)\n\thh + (lh >> 32) + (hl >> 32) + (mid >> 32)','xs_next(x uint) uint:\n\tv ~= x\n\tv ^= v << 13\n\tv ^= v >> 7\n\tv ^= v << 17\n\tv']
     for k in range(r.randint(3,7)):
-        td,ta,tb=r.choice(T),r.choice(T),r.choice(T);od=r.choice([0,0,1,2,-1,4]);arrs=[('a',ta),('b',tb),('d',td)];tw=r.random()<0.2;mode=r.choice(['st','st','red','fe','last','glob','sl','sl','gat','gat','flt','flt','flt','br','br','br']);ta='u8' if mode=='gat' and r.random()<0.8 else ta;arrs[0]=('a',ta);ks.append((td,ta,tb,tw and mode in('st','last')))
+        td,ta,tb=r.choice(T),r.choice(T),r.choice(T);od=r.choice([0,0,1,2,-1,4]);arrs=[('a',ta),('b',tb),('d',td)];tw=r.random()<0.2;mode=r.choice(['st','st','red','fe','last','glob','sl','sl','gat','gat','flt','flt','flt','br','br','br','unr','unr','whl','whl','slt','slt','cmp','cmp']);ta='u8' if mode=='gat' and r.random()<0.8 else ta;arrs[0]=('a',ta);ks.append((td,ta,tb,tw and mode in('st','last')))
         L.append(f'k{k}(d {td}[>..]&, a {ta}[>..]&, b {tb}[>..]&, u int, lo int, hi int) int:')
+        if mode=='cmp': L+=cmk(r,ta);continue
+        if mode=='slt': L.pop();L+=[x.replace('{td}',td).replace('{ta}',ta).replace('{tb}',tb) for x in slk(r,k)];continue
         if mode=='br': L+=brk(r,od);continue
+        if mode=='whl': L+=whk(r,td);continue
+        if mode=='unr': L+=[x.replace('{td}',td) for x in unk(r)];continue
         if mode=='fe':
             L+=[f'\tt ~= {r.randint(-1000,1000)}','\tfor v a:',f'\t\tt {r.choice(OPS)} {ex(r,"int",r.randint(0,3),arrs[:2],0,True).replace("[x ","[0 ")}','\tt'];continue
         if mode=='red':
@@ -79,7 +120,7 @@ def prog(seed):
 def one(seed):
     with tempfile.TemporaryDirectory() as w:
         (pathlib.Path(w)/'p.he').write_text(prog(seed));env=dict(os.environ,HC_LIB=str(R/'hc'/'lib'));out=[]
-        for tag,e in (('s',dict(env,HC_NOVEC='1',HC_NOBR='1')),('v',env)):
+        for tag,e in (('s',dict(env,HC_NOVEC='1',HC_NOBR='1',HC_NOROT='1',HC_NOADC='1')),('v',env)):
             c=subprocess.run([HC,'p.he','p'+tag,'--native'],cwd=w,env=e,capture_output=True,timeout=60)
             if c.returncode: return seed,'compile',(c.stdout+c.stderr).decode(errors='replace')[:200]
             try: x=subprocess.run(['./p'+tag],cwd=w,capture_output=True,timeout=30);out.append((x.returncode,x.stdout))
@@ -90,4 +131,4 @@ if __name__=='__main__':
     with cf.ThreadPoolExecutor(max(1,(os.cpu_count() or 2)//2)) as pool:
         for seed,st,msg in pool.map(one,range(S0,S0+N)):
             if st!='ok': bad+=1;print(seed,st,msg)
-    print(f'{N-bad}/{N} programs match with and without HC_NOVEC/HC_NOBR');sys.exit(1 if bad else 0)
+    print(f'{N-bad}/{N} programs match with and without the optional optimizations');sys.exit(1 if bad else 0)
