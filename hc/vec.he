@@ -1,4 +1,5 @@
 use opt
+var VNB byte[>..]
 struct VOp { k u8, w u8, s u8, d i32, a i32, b i32, g i32, x i64, y i64 }
 var VAK i8[>..<]; var VAC i64[>..<]; var VAX i64[>..<]; var VAN i8[>..<]; var VAS i32[>..<]; var VAM i64[>..<]
 var VLW i8[>..<]; var VLS i8[>..<]; var VLT i32[>..<]; var VUM i32[>..<]; var VDL i8[>..<]; var VND i32[>..<]; var VDP i32[>..<]
@@ -267,6 +268,7 @@ vec_loop(fi int, h int, j int) bool:
 			vav(a); if !vaf(a): return false
 			if VAC[a] == 0: if x.l != -3 || w != 3 { return false } vaset(d, 0, 0); vaadd(d, d, 1); vmat(q); continue
 			if VAC[a] != wsz(w) as i64 || VAX[a] < -(1 << 40) || VAX[a] > 1 << 40: return false
+			g1 := vgrp(a); ls := if w & 8 != 0 { 2 } else { if wsg(w) { 1 } else { 0 } }; if VGT[g1] >= 0 && !env("HC_NOVSF", VNB): so := VOS[VGT[g1]]; vb := so.a as int; if so.y == VAX[a] && so.w as int == wsz(w) && vb >= 0 && vln(vb) && VLW[vb] as int == wsz(w) && VLS[vb] as int == ls { VAK[d] = 3; VLW[d] = wsz(w) as i8; VLS[d] = ls as i8; VOS.push(VOp{4, wsz(w) as u8, ls as u8, d as i32, vb as i32, -1, -1, 0, 0}); continue }
 			VAK[d] = 3; VLW[d] = wsz(w) as i8; VLS[d] = if w & 8 != 0 { 2 } else { if wsg(w) { 1 } else { 0 } }; VOS.push(VOp{1, wsz(w) as u8, VLS[d] as u8, d as i32, -1, -1, vgrp(a) as i32, 0, VAX[a]}); continue
 		if op == I_ST:
 			vav(a); if b >= 0 && !vln(b) { vav(b) } if !vaf(a) || VAC[a] != wsz(w) as i64 || VAX[a] < -(1 << 40) || VAX[a] > 1 << 40: return false
