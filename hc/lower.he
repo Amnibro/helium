@@ -460,7 +460,7 @@ rw(t int) int:
 			else:
 				3
 rpool_base(t int) int:
-	g := TY[t].b as int; a := nv(); ir(I_GADDR, 8, a, -1, -1, gslot(g)); ldw(a, 0, 3)
+	g := TY[t].b as int; a := nv(); ir(I_GADDR, 8, a, -1, -1, gslot(g)); ldh(a, 0)
 rel_load(q int, t int) int:
 	opt := TY[t].fl & RF_OPT != 0; pool := relpool(t) >= 0
 	d := ldw(q, 0, if pool { rw(t) | 4 } else { rw(t) }); r := nv()
