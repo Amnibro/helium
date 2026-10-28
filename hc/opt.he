@@ -138,8 +138,9 @@ regalloc(fi int):
 		opnds(i); for d OD { nd[d] += 1 } x := IR[i]; o := x.op as int
 		for u OU: UC[u] += 1; if !((o == I_LD || o == I_ST && x.b != u) && x.a == u || o == I_BIN && x.c == B_ADD && x.a == u && x.b != u) { nau[u] += 1 }
 	dn i8[>..<] ~= []; dn.resize(nv, 0)
-	scl(t int) int:
-		if t < 0 || FK[t] != 0 || nd[t] != 1 || UC[t] != 1 || di[t] < 0 { return -1 } y := IR[di[t]]; k := if y.b >= 0 && FK[y.b] == 1 { FD[y.b] as int } else { -1 }; if y.op as int != I_BIN || y.l >= 0 || y.w != 3 || y.a < 0 || FK[y.a] != 0 || dn[y.a] == 0 { return -1 } if y.c == B_MUL:
+	fu i32[>..<] ~= []; fu.resize(nv, 0)
+	scl(t int, m bool) int:
+		if t < 0 || FK[t] != 0 || nd[t] != 1 || UC[t] != 1 && !m || di[t] < 0 { return -1 } y := IR[di[t]]; k := if y.b >= 0 && FK[y.b] == 1 { FD[y.b] as int } else { -1 }; if y.op as int != I_BIN || y.l >= 0 || y.w != 3 || y.a < 0 || FK[y.a] != 0 || dn[y.a] == 0 { return -1 } if y.c == B_MUL:
 			if k == 1:
 				0
 			else:
@@ -171,14 +172,14 @@ regalloc(fi int):
 			j++
 		false
 	l9(i int, t int, o int) bool:
-		s := scl(t); if s < 0 || FK[o] != 0 || o == t: return false
+		s := scl(t, false); if s < 0 || FK[o] != 0 || o == t: return false
 		ix := IR[di[t]].a as int; for z (di[t] as int + 1)..i { oz := IR[z].op as int; if oz == I_LBL || oz == I_JMP || oz == I_BZ || oz == I_BNZ || oz == I_RET { return false } opnds(z); for e OD { if e == ix { return false } } }
 		FK[t] = 9; FI[t] = ix as i32; FS[t] = s as i8; true
 	sib(d int, bs int, t int, i int) bool:
-		s ~= scl(t); ix ~= if s >= 0 { IR[di[t]].a as int } else { -1 }; sp := if s >= 0 { di[t] as int } else { i }
+		s ~= scl(t, !NOMS); ix ~= if s >= 0 { IR[di[t]].a as int } else { -1 }; sp := if s >= 0 { di[t] as int } else { i }
 		if s < 0 && t >= 0 && FK[t] == 0 && dn[t] != 0 && t != d: s = 0; ix = t
 		if s < 0 || bs < 0 || bs == d || dn[bs] == 0 || !(FK[bs] == 0 && nd[bs] == 1 || FK[bs] >= 2 && FK[bs] <= 4 || FK[bs] == 6) || nd[ix] != 1 && !win(sp, i, d, ix) { return false }
-		FK[d] = 7; FB[d] = if FK[bs] == 6 { FB[bs] } else { bs as i32 }; FI[d] = ix as i32; FS[d] = s as i8; FD[d] = if FK[bs] == 6 { FD[bs] } else { 0 }; if ix != t { FK[t] = 8 } true
+		FK[d] = 7; FB[d] = if FK[bs] == 6 { FB[bs] } else { bs as i32 }; FI[d] = ix as i32; FS[d] = s as i8; FD[d] = if FK[bs] == 6 { FD[bs] } else { 0 }; if ix != t { if UC[t] == 1 { FK[t] = 8 } else { fu[t] += 1 } } true
 	for i i0..i1:
 		x := IR[i]; op := x.op as int; d := x.d as int; if d < 0 { continue } dn[d] = 1
 		a9 := op == I_BIN && x.c == B_ADD && x.l < 0 && x.w == 3 && x.a >= 0 && x.b >= 0 && x.a != x.b
@@ -193,6 +194,7 @@ regalloc(fi int):
 				if FK[a] == 6 || FK[a] == 7: FK[d] = FK[a]; FB[d] = FB[a]; FI[d] = FI[a]; FS[d] = FS[a]; FD[d] = FD[a] + FD[x.b]
 				else:
 					if FK[a] == 0 && nd[a] == 1 && nau[d] < 2: FK[d] = 6; FB[d] = a as i32; FD[d] = FD[x.b]
+	for t nv: if fu[t] > 0 && fu[t] == UC[t] { FK[t] = 8 }
 	for i i0..i1:
 		opnds(i); p := (i - i0) as i32; m := 1 << 3 * min(dep[i - i0] as int, 4)
 		for u0 OU:
@@ -256,7 +258,7 @@ inline_into(fi int, fsz i32[>..<]&, mx int):
 			for q x.b:
 				v := ARGL[x.a as int + q]; if v >= 0 && v < kn.len && kn[v] != 0: nk++
 		il := x.op as int == I_CALL && cal >= 0 && NFS[cal].inst >= 0 && FI_[NFS[cal].inst].node >= 0 && (ND[FI_[NFS[cal].inst].node].fl as int) & F_INLINE != 0 || !WEB && x.op as int == I_CALL && cal >= 0 && cal < NCS.len && NCS[cal] == 1
-		if !(x.op as int == I_CALL && cal >= 0 && cal != fi && fsz[cal] >= 0 && fsz[cal] <= (if il { max(ILC, mx) } else { min(mx + 40 * nk, 3 * mx) })): IR.push(x); continue
+		if !(x.op as int == I_CALL && cal >= 0 && (cal != fi && fsz[cal] >= 0 && !SIM || cal == fi && SIM) && fsz[cal] <= (if il { max(ILC, mx) } else { min(mx + 40 * nk, 3 * mx) })): IR.push(x); continue
 		g := NFS[cal]; vb := nv; nv += g.nv; sbase := al(sb, 32); sb = sbase + g.sb; lend := nlbl()
 		lm.clear(); lm.resize(LBL.len, -1); mm i32[>..<] ~= []; mo i32[>..<] ~= []
 		for j (g.i0 as int)..g.i1 as int:
@@ -277,9 +279,12 @@ inline_into(fi int, fsz i32[>..<]&, mx int):
 	NFS[fi].i0 = ni0; NFS[fi].i1 = IR.len; NFS[fi].nv = nv; NFS[fi].sb = sb
 ILC ~= 250
 NOLC ~= false
+NOMS ~= false
+NOSI ~= false
+SIM ~= false
 var NCS i32[>..<]
 optimize_all():
-	nlc byte[>..] ~= []; NOLC = env("HC_NOLC", nlc)
+	nlc byte[>..] ~= []; NOLC = env("HC_NOLC", nlc); NOMS = env("HC_NOMS", nlc); NOSI = env("HC_NOSI", nlc)
 	il0 byte[>..] ~= []; if env("HC_ILC", il0) { v, ok := parse_int(il0[..]); ILC = v }
 	lim byte[>..] ~= []; mx := if env("HC_INL", lim) { v, ok := parse_int(lim[..]); v } else { 100 }
 	noi byte[>..] ~= []; inl := !env("HC_NOINL", noi)
@@ -296,7 +301,9 @@ optimize_all():
 	pt int[>..] ~= []; pt.resize(12, 0); t0 ~= clock_ns()
 	tk(k int): t := clock_ns(); pt[k] += t - t0; t0 = t
 	for fi order:
-		if inl { inline_into(fi, fsz, mx) } tk(0); mem2reg(fi); tk(1); copyprop(fi); tk(2); constfold(fi); tk(3); sra(fi); cpfwd(fi); tk(4); copyprop(fi); tk(2); constfold(fi); tk(3); lvn(fi); tk(5); copyprop(fi); cpfwd(fi); copyprop(fi); constfold(fi); copyprop(fi); jthread(fi); lvn(fi); copyprop(fi); rnz(fi); udv(fi); if !env("HC_NOBR", noi) { umh(fi); scf(fi); ifc(fi); bset(fi) } licm(fi); lvn(fi); copyprop(fi); if !env("HC_NOSR", noi) { fuse(fi); sred(fi); copyprop(fi) } tk(2); deadcode(fi); tk(6); if inl: fsz[fi] = isize(fi)
+		for rp 2:
+			sc ~= false; if rp == 1 { for i (NFS[fi].i0 as int)..NFS[fi].i1 as int { if IR[i].op as int == I_CALL && IR[i].c == fi as i64 { sc = true } } } if rp == 1 && !(inl && sc && !NOSI && !WEB && isize(fi) <= 80) { break } SIM = rp == 1
+			if inl { inline_into(fi, fsz, mx) } tk(0); mem2reg(fi); tk(1); copyprop(fi); tk(2); constfold(fi); tk(3); sra(fi); cpfwd(fi); tk(4); copyprop(fi); tk(2); constfold(fi); tk(3); lvn(fi); tk(5); copyprop(fi); cpfwd(fi); copyprop(fi); constfold(fi); copyprop(fi); jthread(fi); lvn(fi); copyprop(fi); rnz(fi); udv(fi); if !env("HC_NOBR", noi) { umh(fi); scf(fi); ifc(fi); bset(fi) } licm(fi); lvn(fi); copyprop(fi); if !env("HC_NOSR", noi) { fuse(fi); sred(fi); copyprop(fi) } tk(2); deadcode(fi); tk(6); if inl: fsz[fi] = isize(fi)
 	pe byte[>..] ~= []; if env("HC_PT", pe):
 		for v, k pt: print(k, " ", v / 1000000, "ms\n")
 subst(i int, rp i32[>..<]&):
