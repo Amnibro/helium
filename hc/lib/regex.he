@@ -327,16 +327,16 @@ resume(re Regex&, text byte[:], i int) int:
 		Inner => skip_inner(re, text, i)
 		Scan => i
 find_end(re Regex&, text byte[:], at int) int:
-	tr := re.fwd.trans; sp := re.fwd.special; s ~= re.fwd.start; last ~= if re.nullable { at } else { -1 }; i ~= resume(re, text, at)
+	tr := re.fwd.trans[..]; cl := re.classes[..]; sp := re.fwd.special; s ~= re.fwd.start; last ~= if re.nullable { at } else { -1 }; i ~= resume(re, text, at)
 	while i < text.len:
-		s = tr[s + re.classes[text[i]]]; i += 1
+		while i < text.len { s = tr[s + cl[text[i]]]; i += 1; if s < sp { break } }
 		if s < sp: if s >= re.fwd.match_end { i = resume(re, text, i) } else if s == 0 { return last } else { last = i }
 	last
 scan_back(re Regex&, d Dfa&, text byte[:], lo int, end int) int:
-	tr := d.trans; me := d.match_end; s ~= d.start; first ~= if s < me { end } else { -1 }
+	tr := d.trans[..]; cl := re.classes[..]; me := d.match_end; s ~= d.start; first ~= if s < me { end } else { -1 }
 	assert(lo >= 0 && end <= text.len); i ~= end
 	while i > lo:
-		s = tr[s + re.classes[text[i - 1]]]; i -= 1
+		s = tr[s + cl[text[i - 1]]]; i -= 1
 		if s < me: if s == 0 { break }; first = i
 	first
 find_start(re Regex&, text byte[:], at int, end int) int: scan_back(re, re.rev, text, at, end)

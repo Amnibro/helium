@@ -90,7 +90,7 @@ dstr(d int) int:
 fin(r int, d int):
 	if gr(d) != r: stv(r, d);
 memb(a int, c int) int, int: if gr(a) >= 0 { return gr(a), c } k := fk(a); if k == 7 { b := FB[a]; I := if gr(FI[a]) >= 0 { gr(FI[a]) } else { ldv(RDX, FI[a]); RDX }; B := if gr(b) >= 0 { gr(b) } else { if fk(b) == 2 { RBP } else { ldv(RCX, b); RCX } }; bd := if gr(b) < 0 && fk(b) == 2 { FD[b] as int - CSBA } else { 0 }; SIBM = true; SIBI = I; SIBS = FS[a]; return B, bd + FD[a] as int + c } if k == 2 { return RBP, FD[a] as int - CSBA + c } if k == 3 && TLSM { xb(0x65); FSM = true; FSD = FD[a] as int + c; return RBP, 0 } if k == 3 || k == 4 { RIPM = true; RIPK = if k == 3 { 3 } else { 2 }; RIPT = FD[a] as int + c; return RBP, 0 } if k == 6 && REGOF[FB[a]] >= 0 { return REGOF[FB[a]], FD[a] as int + c } ldv(RCX, a); return RCX, c
-UMI ~= -1; UMA ~= -1; UMB ~= -1; FUSEC ~= -1; DEAD ~= false; var SVR i32[>..<]; var SVS i32[>..<]; var SVE i32[>..<]; var HDC i32[>..<]; var HDB i32[>..<]; var HDX i32[>..<]; var HDK i32[>..<]; HPEND ~= -1; LCMP ~= -1
+LPI ~= -1; LAX ~= -1; LAD ~= -1; LAA ~= -1; LAB ~= -1; NOFC ~= false; UMI ~= -1; UMA ~= -1; UMB ~= -1; FUSEC ~= -1; DEAD ~= false; var SVR i32[>..<]; var SVS i32[>..<]; var SVE i32[>..<]; var HDC i32[>..<]; var HDB i32[>..<]; var HDX i32[>..<]; var HDK i32[>..<]; HPEND ~= -1; LCMP ~= -1
 ADCC ~= -1; ADCJ ~= -1; NOADC ~= false
 adcu(i int, i1 int) bool:
 	if NOADC: return false
@@ -107,13 +107,13 @@ adcu(i int, i1 int) bool:
 adcg(x Ir):
 	y := IR[ADCC]; d := x.d as int; o := if x.b == y.d { x.a as int } else { x.b as int }; cb := y.c == CC_B as i64; p := if cb { y.a as int } else { y.b as int }; q := if cb { y.b as int } else { y.a as int }
 	g := gr(d); R := if g >= 0 && g != gr(p) && g != gr(q) { g } else { RDX }
-	ldv(R, o); cmpab(p, q); alu_ri(if x.c == B_ADD as i64 { 2 } else { 3 }, R, 0); ext_r(R, x.w as int); fin(R, d)
+	if XC.len == LAX && LAD == p && (q == LAA || q == LAB) && fk(o) < 6 && !NOFC { ldv(R, o) } else { ldv(R, o); cmpab(p, q) } alu_ri(if x.c == B_ADD as i64 { 2 } else { 3 }, R, 0); ext_r(R, x.w as int); fin(R, d)
 cmpab(a int, b int):
 	A := srcr(a, RAX); if kc(b) && i32ok(FD[b] as int): alu_ri(7, A, FD[b] as int); else: alu(0x39, A, srcr(b, RCX));
 fusable(i int, d int, i1 int) bool:
 	j ~= i + 1; while j < i1 && (IR[j].op as int == I_NOP || IR[j].d >= 0 && fk(IR[j].d) != 0 && (IR[j].op as int == I_IMM || IR[j].op as int == I_SLOT || IR[j].op as int == I_GADDR || IR[j].op as int == I_RADDR || IR[j].op as int == I_FADDR || IR[j].op as int == I_BIN)) { j++ } j < i1 && (IR[j].op as int == I_BZ || IR[j].op as int == I_BNZ || IR[j].op as int == I_SEL && fk(IR[j].b) < 6 && fk(IR[j].c as int) < 6) && IR[j].a == d && d < UC.len && UC[d] == 1
 LSP ~= -1; LSV ~= -1; LSR ~= -1
-bind(l int): LBL[l] = XC.len; LSP = -1
+bind(l int): LBL[l] = XC.len; LSP = -1; LAX = -1
 var LHD i8[>..<]
 NOPS := [0x90, 0x66, 0x90, 0x0F, 0x1F, 0x00, 0x0F, 0x1F, 0x40, 0x00, 0x0F, 0x1F, 0x44, 0x00, 0x00, 0x66, 0x0F, 0x1F, 0x44, 0x00, 0x00, 0x0F, 0x1F, 0x80, 0x00, 0x00, 0x00, 0x00, 0x0F, 0x1F, 0x84, 0x00, 0x00, 0x00, 0x00, 0x00]
 pad16():
@@ -204,14 +204,16 @@ cg_fn(fi int):
 	VSI.clear(); VSI.resize(f.nv, -1); CNV = 0; for i (f.i0 as int)..f.i1 as int:
 		opnds(i); for v OU { if v >= 0 && v < f.nv as int && VSI[v] < 0 && fk(v) == 0 && gr(v) < 0 && xg(v) < 0 { VSI[v] = CNV; CNV++ } } for v OD { if v >= 0 && v < f.nv as int && VSI[v] < 0 && fk(v) == 0 && gr(v) < 0 && xg(v) < 0 { VSI[v] = CNV; CNV++ } }
 	push_r(RBP); mov_rr(RBP, RSP); sub_rsp(al(sba + 8 * CNV + 8 * RUSED.len + (if SVR.len > 0 { 48 } else { 0 }) + 16, 64) - 16); for r, k RUSED: st(r, RBP, rso(k), 8)
-	nz byte[>..] ~= []; if sba > 0 && env("HC_ZFRAME", nz): lea(R11, RBP, -sba); alu(0x31, RAX, RAX); lz := nlbl(); bind(lz); st(RAX, R11, 0, 8); xrex(true, 0, 0, R11); xb(0x83); xb(0xC0 | R11 & 7); xb(8); alu(0x39, R11, RBP); jcc_l(CC_B, lz)
+	nz byte[>..] ~= []; NOFC = env("HC_NOFC", nz); LPI = -1; LAX = -1; if sba > 0 && env("HC_ZFRAME", nz): lea(R11, RBP, -sba); alu(0x31, RAX, RAX); lz := nlbl(); bind(lz); st(RAX, R11, 0, 8); xrex(true, 0, 0, R11); xb(0x83); xb(0xC0 | R11 & 7); xb(8); alu(0x39, R11, RBP); jcc_l(CC_B, lz)
 	if VZERO.len > 0:
 		alu(0x31, RAX, RAX); for v VZERO: stv(RAX, v)
 	traps i32[>..<] ~= []; DEAD = false; FUSEC = -1; HPEND = -1; LCMP = -1; ADCJ = -1; HDC.clear(); HDC.resize(LBL.len, -1); HDB.clear(); HDB.resize(LBL.len, -1); HDX.clear(); HDX.resize(LBL.len, -1); HDK.clear(); HDK.resize(LBL.len, -1)
 	for i (f.i0 as int)..f.i1 as int:
 		x := IR[i]; op := x.op; w := x.w; d := x.d; a := x.a; b := x.b; c := x.c
+		if LPI >= 0 { y := IR[LPI]; if y.op as int == I_BIN && y.c == B_ADD as i64 && y.l < 0 && wsz(y.w as int) == 8 && y.d >= 0 && fk(y.d as int) == 0 && fk(y.a as int) != 9 && fk(y.b as int) != 9 && LPI != ADCJ && !DEAD { LAX = XC.len; LAD = y.d as int; LAA = y.a as int; LAB = y.b as int } } LPI = -1
 		if (op == I_IMM || op == I_SLOT || op == I_GADDR || op == I_RADDR || op == I_FADDR || op == I_BIN) && d >= 0 && fk(d) != 0: continue
 		if DEAD && op != I_LBL: continue
+		LPI = i
 		if op == I_JMP:
 			j ~= i + 1; while j < f.i1 && (IR[j].op as int == I_NOP || IR[j].op as int == I_LBL && IR[j].c != c) { j++ } if j < f.i1 && IR[j].op as int == I_LBL && IR[j].c == c: DEAD = false; continue
 		if op == I_LBL: DEAD = false
@@ -350,7 +352,7 @@ cg_fn(fi int):
 																											if MUSE[a] != 0:
 																												so := MSLOT[a] - sba; lea_g(RAX, DSN); if op == I_DSS: ld(RCX, RAX, 0, 8, false); st(RCX, RBP, so, 8) else: ld(RCX, RBP, so, 8, false); st(RCX, RAX, 0, 8)
 																										else:
-																											if op == I_FUN && c >= 7: ldv(RCX, a); xb(0xF3); xb(0x48); xb(0x0F); xb(if c == 7 { 0xBD } else { if c == 8 { 0xBC } else { 0xB8 } }); xb(0xC1); stv(RAX, d)
+																											if op == I_FUN && c >= 7: if c == 10 { ldv(RCX, b); xr(1, RCX, 2); sse(0x66, false, 0x60, 1, 1); sse(0x66, false, 0x61, 1, 1); ldv(RAX, a); ssem(0xF3, false, 0x6F, 0, RAX, 0); for k 3 { sse(0x66, false, 0x70, 2, 1); xb(k * 0x55); sse(0x66, false, 0x74, 2, 0); sse(0x66, false, 0xD7, if k == 0 { RDX } else { RCX }, 2); if k > 0 { alu(0x09, RDX, RCX) } } stv(RDX, d) } else { ldv(RCX, a); xb(0xF3); xb(0x48); xb(0x0F); xb(if c == 7 { 0xBD } else { if c == 8 { 0xBC } else { 0xB8 } }); xb(0xC1); stv(RAX, d) }
 																											else:
 																												if op == I_FUN && c >= 1 && c <= 4:
 																													sgl := w & 3 == 2; xd := xg(d); R := if xd >= 0 { xd } else { 0 }; A := if xg(a) >= 0 { xg(a) } else { ldx(R, a, w); R }; if A != R { sse(0, false, 0x57, R, R) } if c == 4 { sse(fpx(w), false, 0x51, R, A); } else { xb(0x66); xrex(false, R, 0, A); xb(0x0F); xb(0x3A); xb(if sgl { 0x0A } else { 0x0B }); xb(0xC0 | (R & 7) << 3 | A & 7); xb(if c == 1 { 9 } else { if c == 2 { 10 } else { 11 } }); } if R != xd: stx(R, d, w)

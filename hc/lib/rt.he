@@ -419,9 +419,12 @@ rt_qlimit(qid int, lim int, loc const byte[:]): if lim <= 0 { rt_abort("a queue 
 
 extern rt_ctz(x u64) int = "hr_ctz"
 rt_z8(y u64) u64: t := (y & 0x7F7F7F7F7F7F7F7F) + 0x7F7F7F7F7F7F7F7F; ~(t | y | 0x7F7F7F7F7F7F7F7F)
-rt_sw(x u64, a int) u64: L := 0x0101010101010101 as u64; (rt_z8(x ^ mld1(a + 258) as u64 * L) | rt_z8(x ^ mld1(a + 259) as u64 * L) | rt_z8(x ^ mld1(a + 260) as u64 * L)) ^ (if mld1(a + 257) != 0 { 0x8080808080808080 as u64 } else { 0 as u64 })
-rt_find_any(s const byte[:], m int) int: i ~= 0; k := mld1(m + 256); p := ptr(s); if k >= 1 && k <= 3 { while i + 8 <= s.len { x := rt_sw(mld(p + i) as! u64, m); if x != 0 { return i + rt_ctz(x) / 8 } i += 8 } } while i < s.len { if mld1(m + s[i] as int) != 0 { return i } i += 1 } -1
-rt_find_pair(s const byte[:], a int, d int, b int) int: i ~= 0; ka := mld1(a + 256); kb := mld1(b + 256); p := ptr(s); if ka >= 1 && ka <= 3 && kb >= 1 && kb <= 3 { while i + d + 8 <= s.len { m := rt_sw(mld(p + i) as! u64, a) & rt_sw(mld(p + i + d) as! u64, b); if m != 0 { return i + rt_ctz(m) / 8 } i += 8 } } while i + d < s.len { if mld1(a + s[i] as int) & mld1(b + s[i + d] as int) != 0 { return i } i += 1 } -1
+rt_sw(x u64, w int) u64: L := 0x0101010101010101 as u64; rt_z8(x ^ ((w & 255) as u64) * L) | rt_z8(x ^ (((w >> 8) & 255) as u64) * L) | rt_z8(x ^ (((w >> 16) & 255) as u64) * L)
+extern rt_bm16(p int, w int) int = "hr_bm16"
+rt_bm16s(p int, w int) int: G := 0x0102040810204080 as u64; ((((rt_sw(mld(p) as! u64, w) >> 7) * G) >> 56) | ((((rt_sw(mld(p + 8) as! u64, w) >> 7) * G) >> 56) << 8)) as! int
+rt_bw(m int) int, int: return mld1(m + 258) | (mld1(m + 259) << 8) | (mld1(m + 260) << 16), if mld1(m + 257) != 0 { 0xFFFF } else { 0 }
+rt_find_any(s const byte[:], m int) int: i ~= 0; k := mld1(m + 256); p := ptr(s); if k >= 1 && k <= 3 { w, iv := rt_bw(m); while i + 16 <= s.len { x := rt_bm16(p + i, w) ^ iv; if x != 0 { return i + rt_ctz(x as u64) } i += 16 } } while i < s.len { if mld1(m + s[i] as int) != 0 { return i } i += 1 } -1
+rt_find_pair(s const byte[:], a int, d int, b int) int: i ~= 0; ka := mld1(a + 256); kb := mld1(b + 256); p := ptr(s); if ka >= 1 && ka <= 3 && kb >= 1 && kb <= 3 { wa, ia := rt_bw(a); wb, ib := rt_bw(b); while i + d + 16 <= s.len { m := (rt_bm16(p + i, wa) ^ ia) & (rt_bm16(p + i + d, wb) ^ ib); if m != 0 { return i + rt_ctz(m as u64) } i += 16 } } while i + d < s.len { if mld1(a + s[i] as int) & mld1(b + s[i + d] as int) != 0 { return i } i += 1 } -1
 extern rt_fma(x real, y real, z real) real = "fma"
 extern rt_clz(x u64) int = "hr_clz"
 extern rt_fsq(x real) real = "hr_sqrt"
