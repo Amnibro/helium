@@ -1,0 +1,12 @@
+import std;
+fn main() {
+	var s = 0;
+	var u uint = 0;
+	for i in 2000 {
+		let x = i * 7919 - 7000000;
+		s += x % 10 + x / 10 + x % 1000 * 3 + (x / 1000) % 7 + x % -7 + x / -7;
+		let y = (i as uint) * 0x9E3779B97F4A7C15;
+		u += y % 100000000 + y / 100000000 + y % 10 + (y / 10) % 3;
+	}
+	print(str(s, " ", u));
+}

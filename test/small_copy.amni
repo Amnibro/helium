@@ -1,0 +1,20 @@
+import std;
+fn main() {
+	var h uint = 0;
+	for n in 41 {
+		var src byte[>..] = [];
+		for i in n { src.push((i * 37 + n) as byte); }
+		var dst byte[>..] = [];
+		dst.push(7);
+		dst.append(src[..]);
+		var z byte[>..] = [];
+		z.resize(n);
+		var sh byte[>..] = [];
+		sh.append(src[..]);
+		if n > 1 { sh[..n - 1] = copy(sh[1..]); }
+		for c in dst { h = h * 31 + c as uint; }
+		for c in z { h = h * 31 + c as uint + 1; }
+		for c in sh { h = h * 31 + c as uint; }
+	}
+	print(str(h));
+}

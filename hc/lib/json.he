@@ -70,24 +70,26 @@ ryu(x real, out byte[:]) int, int:
 		c = vr + (if vr == vm && !vme || ls >= 5 { 1 } else { 0 })
 	n ~= d0 - rm; if c >= U10[n] { n += 1 }
 	put_digits(out[..n], c); return n, n + rm - k
-lay_out(out byte[>..]&, dg byte[:], pt int):
-	n ~= dg.len; while n > 1 && dg[n - 1] == '0' { n -= 1 }
-	d := dg[..n]
-	if pt > 0 && pt < n: out.append(d[..pt]); out.push('.'); out.append(d[pt..]); return
+lay_out(out byte[>..]&, t byte[:], n0 int, pt int):
+	n ~= n0; while n > 1 && t[n] == '0' { n -= 1 }
+	if pt > 0 && pt < n: for i pt { t[i] = t[i + 1] } t[pt] = '.'; out.append(t[..n + 1]); return
+	d := t[1..n + 1]
 	if pt >= n && pt <= 16: out.append(d); for i pt - n { out.push('0') }; out.append(".0")
 	else if pt > -5 && pt <= 0: out.append("0."); for i -pt { out.push('0') }; out.append(d)
 	else: out.push(d[0]); if n > 1 { out.push('.'); out.append(d[1..]) }; out.push('e'); format_int(out, pt - 1)
 format_number(out byte[>..]&, v real):
-	t byte[20] ~= [0; 20]; n, pt := ryu(v, t[..])
-	if n == 0: format_other(out, v); return
-	if v < 0.0: out.push('-')
-	lay_out(out, t[..n], pt)
+	b := out.len; o := if v < 0.0 { 1 } else { 0 }; out.resize(b + o + 21); n, pt := ryu(v, out[b + o + 1..b + o + 21])
+	if n == 0: out.resize(b); format_other(out, v); return
+	if o == 1: out[b] = '-'
+	q := b + o; m ~= n; while m > 1 && out[q + m] == '0' { m -= 1 }
+	if pt > 0 && pt < m: for i pt { out[q + i] = out[q + i + 1] } out[q + pt] = '.'; out.resize(q + m + 1); return
+	t byte[21] ~= [0; 21]; for i n { t[i + 1] = out[q + 1 + i] } out.resize(q); lay_out(out, t[..], n, pt)
 format_other(out byte[>..]&, v real):
 	if v != v || v - v != 0.0: out.append("null"); return
 	if v == 0.0: out.append(if 1.0 / v < 0.0 { "-0.0" } else { "0.0" }); return
-	t byte[17] ~= [0; 17]; n, pt := general_digits(abs(v), t[..])
+	t byte[18] ~= [0; 18]; n, pt := general_digits(abs(v), t[1..])
 	if v < 0.0: out.push('-')
-	lay_out(out, t[..n], pt)
+	lay_out(out, t[..], n, pt)
 general_digits(x real, out byte[:]) int, int:
 	s ~= 15; p ~= x * 1e15
 	while p < 1e14 && s < 22: s += 1; p = x * F10[s]
