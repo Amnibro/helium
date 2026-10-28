@@ -70,7 +70,7 @@ rdxok(s int, e int) bool:
 	for q (s + 1)..e:
 		y := IR[q]; o := y.op as int; ko := y.b < 0 || !kc(y.b as int) || i32ok(FD[y.b] as int)
 		ok := o == I_NOP || o == I_MOV && y.w & 8 == 0 || o == I_BIN && y.l < 0 && y.w & 8 == 0 && (y.c == B_ADD as i64 || y.c == B_SUB as i64 || y.c == B_OR as i64 || y.c == B_XOR as i64) && ko || o == I_CMP && y.w & 8 == 0 && ko && (y.c == CC_B as i64 || y.c == CC_AE as i64 || y.c == CC_E as i64 || y.c == CC_NE as i64 || y.c == CC_BE as i64 || y.c == CC_A as i64 || y.c == CC_L as i64 || y.c == CC_GE as i64 || y.c == CC_LE as i64 || y.c == CC_G as i64)
-		if !ok || y.d as int == RDXV: return false
+		if !ok || y.d as int == RDXV || y.d >= 0 && gr(y.d as int) == RDX: return false
 	true
 vo(v int) int:
 	-8 * (VSI[v] as int + 1) - CSBA
