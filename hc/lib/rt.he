@@ -416,8 +416,12 @@ rt_qget(qid int, ms0 int, cl int, dst int, sz int) bool:
 	if sz >= 0: rt_zero(dst, sz); else: mst(dst, 0); mst(dst + 8, 0);
 	false
 rt_qlimit(qid int, lim int, loc const byte[:]): if lim <= 0 { rt_abort("a queue limit must be positive", loc) } q := rt_q(qid); rt_lock(q); mst(q + 40, lim); rt_unlock(q);
-rt_find_any(s const byte[:], m int) int: for c, i s { if mld1(m + c as int) != 0 { return i } } -1
-rt_find_pair(s const byte[:], a int, d int, b int) int: i ~= 0; while i + d < s.len { if mld1(a + s[i] as int) != 0 && mld1(b + s[i + d] as int) != 0 { return i } i += 1 } -1
+
+extern rt_ctz(x u64) int = "hr_ctz"
+rt_z8(y u64) u64: t := (y & 0x7F7F7F7F7F7F7F7F) + 0x7F7F7F7F7F7F7F7F; ~(t | y | 0x7F7F7F7F7F7F7F7F)
+rt_sw(x u64, a int) u64: L := 0x0101010101010101 as u64; (rt_z8(x ^ mld1(a + 258) as u64 * L) | rt_z8(x ^ mld1(a + 259) as u64 * L) | rt_z8(x ^ mld1(a + 260) as u64 * L)) ^ (if mld1(a + 257) != 0 { 0x8080808080808080 as u64 } else { 0 as u64 })
+rt_find_any(s const byte[:], m int) int: i ~= 0; k := mld1(m + 256); p := ptr(s); if k >= 1 && k <= 3 { while i + 8 <= s.len { x := rt_sw(mld(p + i) as! u64, m); if x != 0 { return i + rt_ctz(x) / 8 } i += 8 } } while i < s.len { if mld1(m + s[i] as int) != 0 { return i } i += 1 } -1
+rt_find_pair(s const byte[:], a int, d int, b int) int: i ~= 0; ka := mld1(a + 256); kb := mld1(b + 256); p := ptr(s); if ka >= 1 && ka <= 3 && kb >= 1 && kb <= 3 { while i + d + 8 <= s.len { m := rt_sw(mld(p + i) as! u64, a) & rt_sw(mld(p + i + d) as! u64, b); if m != 0 { return i + rt_ctz(m) / 8 } i += 8 } } while i + d < s.len { if mld1(a + s[i] as int) & mld1(b + s[i + d] as int) != 0 { return i } i += 1 } -1
 extern rt_fma(x real, y real, z real) real = "fma"
 extern rt_clz(x u64) int = "hr_clz"
 extern rt_fsq(x real) real = "hr_sqrt"

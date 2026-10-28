@@ -64,6 +64,10 @@ def slk(r,k):
 def cmk(r,ta):
     op=lambda:r.choice(['<','<=','>','>=','==','!='])
     rhs=lambda:r.choice(['(u as! i8) as int','(u as! i16) as int','(u as! i32) as int','u','w','w','3','-2','100','40000','(b[x] as! int)',f'(a[x + {r.choice([0,1,2])}] as! int)'])
+    if r.random()<0.3:
+        ft=r.choice(['f32','f64']);fa=lambda:r.choice([f'FA_{ft}[x]',f'FB_{ft}[x + 1]',f'(FA_{ft}[x] / FB_{ft}[x + 2])',f'({r.choice(["0.5","4.0","-1.0","0.0"])} as {ft})',f'(FD_{ft}[x] * FA_{ft}[x])'])
+        if r.random()<0.5: return ['\tfl ~= false','\tfor x lo..hi:',f'\t\tif {fa()} {op()} {fa()} {{ fl = true }}','\tif fl { 1 } else { 0 }']
+        return ['\tt ~= 0','\tfor x lo..hi:',f'\t\tt += if {fa()} {op()} {fa()} {{ 1 }} else {{ 0 }}','\tt']
     if r.random()<0.35:
         W=r.choice([4,8,16,16]);return ['\tt ~= 0',f'\tth i32[{W}] ~= [0x7FFFFFFF; {W}]',f'\tfor q {W}: th[q] = ((q * {r.randint(1,9000)}) as! i32) - {r.randint(0,30000)}','\tfor x lo..hi:','\t\tv := (a[x] as! int) * '+str(r.choice([1,7,-3,1000])),'\t\tr2 := (v as! i32)','\t\tk ~= 0',f'\t\tfor e th: k {r.choice(["+=","-="])} if e {op()} r2 {{ 1 }} else {{ 0 }}','\t\tt = t * 7 + k','\tt']
     return ['\tt ~= '+str(r.randint(-50,50)),f'\tw := u ^ (u << {r.choice([15,31,33])})','\tfor x lo..hi:',f'\t\tt {r.choice(["+=","+=","-="])} if (a[x] as! int) {op()} {rhs()} {{ 1 }} else {{ 0 }}']+([f'\t\tt += if (b[x] as! int) {op()} {rhs()} {{ 1 }} else {{ 0 }}'] if r.random()<0.3 else [])+['\tt']
@@ -71,7 +75,7 @@ def prog(seed):
     r=random.Random(seed);ks=[];N=r.choice([64,100,257,1000,4099])
     L=['mh(a uint, b uint) uint:\n\tal := a & 0xffffffff; ah := a >> 32; bl := b & 0xffffffff; bh := b >> 32\n\tll := al * bl; lh := al * bh; hl := ah * bl; hh := ah * bh\n\tmid := (ll >> 32) + (lh & 0xffffffff) + (hl & 0xffffffff)\n\thh + (lh >> 32) + (hl >> 32) + (mid >> 32)','xs_next(x uint) uint:\n\tv ~= x\n\tv ^= v << 13\n\tv ^= v >> 7\n\tv ^= v << 17\n\tv']
     for k in range(r.randint(3,7)):
-        td,ta,tb=r.choice(T),r.choice(T),r.choice(T);od=r.choice([0,0,1,2,-1,4]);arrs=[('a',ta),('b',tb),('d',td)];tw=r.random()<0.2;mode=r.choice(['st','st','red','fe','last','glob','sl','sl','gat','gat','flt','flt','flt','br','br','br','unr','unr','whl','whl','slt','slt','cmp','cmp']);ta='u8' if mode=='gat' and r.random()<0.8 else ta;arrs[0]=('a',ta);ks.append((td,ta,tb,tw and mode in('st','last')))
+        td,ta,tb=r.choice(T),r.choice(T),r.choice(T);od=r.choice([0,0,1,2,-1,4]);arrs=[('a',ta),('b',tb),('d',td)];tw=r.random()<0.2;mode=r.choice(['st','st','red','fe','last','glob','sl','sl','gat','gat','flt','flt','flt','br','br','br','unr','unr','whl','whl','slt','slt','cmp','cmp','cmp','cmp']);ta='u8' if mode=='gat' and r.random()<0.8 else ta;arrs[0]=('a',ta);ks.append((td,ta,tb,tw and mode in('st','last')))
         L.append(f'k{k}(d {td}[>..]&, a {ta}[>..]&, b {tb}[>..]&, u int, lo int, hi int) int:')
         if mode=='cmp': L+=cmk(r,ta);continue
         if mode=='slt': L.pop();L+=[x.replace('{td}',td).replace('{ta}',ta).replace('{tb}',tb) for x in slk(r,k)];continue
