@@ -1,0 +1,10 @@
+import std;
+fn main() {
+	for v in [-69.5, -1.25, -0.5, 69.5, -123456.75, 98765432.125, -5.0e17] {
+		for p in [2, 9, 17, 20] {
+			var line byte[>..] = [];
+			format_flt(line, v, p);
+			print(line);
+		}
+	}
+}

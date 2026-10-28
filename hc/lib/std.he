@@ -298,6 +298,10 @@ format_flt(out byte[>..]&, v real, decimals int):
 	if v != v || v - v != 0.0: format(out, v); return
 	x ~= v; if x < 0.0 { out.push('-'); x = -x }
 	sc ~= 1.0; for i decimals { sc *= 10.0 }
+	if x * sc >= 9.0e18:
+		if x >= 9.0e18: format(out, x); return
+		dz := if decimals > 18 { 18 } else { decimals }; s2 ~= 1.0; for i dz { s2 *= 10.0 } ip ~= flt_floor(x); g ~= flt_floor((x - ip) * s2 + 0.5); if g >= s2 { g -= s2; ip += 1.0 }
+		format_uint(out, (ip as int) as uint, 10, 0, ' '); if decimals > 0 { out.push('.'); format_uint(out, (g as int) as uint, 10, dz, '0'); for i (decimals - dz) { out.push('0') } } return
 	f ~= flt_floor(x * sc)
 	if decimals <= 22 && f < 4503599627370496.0:
 		if flt_fma(x, sc, -f) < 0.0: f -= 1.0
