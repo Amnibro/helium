@@ -1,0 +1,21 @@
+// An assert of either length proves neither.
+import std;
+fn both(a int[>..]&, b int[>..]&, n int) int {
+	assert(a.len == n || b.len == n);
+	var c = 0;
+	for i in n {
+		let x = a[i] * 3 + c;
+		c = b[i] ^ (x >> 2);
+		a[i] = x;
+		b[i] = c;
+	}
+	return c;
+}
+fn main() {
+	var a int[>..] = [];
+	var b int[>..] = [];
+	for i in 6 { a.push(i); }
+	for i in 4 { b.push(i); }
+	print(both(a, b, 4));
+	print(both(a, b, 6));
+}

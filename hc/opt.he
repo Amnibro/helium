@@ -213,7 +213,7 @@ regalloc(fi int):
 		opnds(i); p := (i - i0) as i32; m := 1 << 3 * min(dep[i - i0] as int, 4)
 		for u0 OU:
 			for q 2: u := if FK[u0] == 9 { if q == 0 { FI[u0] as int } else { -1 } } else { if FK[u0] == 6 || FK[u0] == 7 { if q == 0 { FB[u0] as int } else { if FK[u0] == 7 { FI[u0] as int } else { -1 } } } else { if q == 0 { u0 as int } else { -1 } } }; if u < 0 || FK[u] != 0 { continue } if st[u] < 0 { st[u] = p } en[u] = p; wt[u] += m as i32
-		for d OD: if FK[d] != 0 { continue } if st[d] < 0 { st[d] = p } en[d] = p; wt[d] += m as i32
+		for d OD: if FK[d] != 0 { continue } if st[d] < 0 { st[d] = p } en[d] = p; wt[d] += (if dep[i - i0] > 0 { DWX } else { 1 }) * m as i32
 	for v VZERO: st[v] = 0
 	xcr i8[>..<] ~= []; live(i0, i1, nv, st, en, xcr); nxc byte[>..] ~= []; pxc := !env("HC_NOXC", nxc)
 	XW.clear(); XW.resize(nv, 0); XREG.clear(); XREG.resize(nv, -1)
@@ -309,6 +309,8 @@ inline_into(fi int, fsz i32[>..<]&, mx int):
 			if (o == I_JMP || o == I_BZ || o == I_BNZ) && y.c >= 0 && lq[y.c] >= 0 && lq[y.c] < i as i32:
 				h := lq[y.c] as int; for p (h + 1)..i { z := IR[p]; q := z.op as int; if (q == I_BZ || q == I_BNZ) && z.c >= 0 && lq[z.c] > i as i32 && lq[z.c] <= j as i32 { return true } }
 		false
+	kr(c int) bool:
+		g := NFS[c]; for k (g.i0 as int)..g.i1 as int { if IR[k].op as int == I_FUN && IR[k].c == 10 { return true } } false
 	hlp(c int) bool:
 		g := NFS[c]; for k (g.i0 as int)..g.i1 as int { y := IR[k]; o := y.op as int; if o == I_JMP || o == I_BZ || o == I_BNZ { for q (g.i0 as int)..k { if IR[q].op as int == I_LBL && IR[q].c == y.c { return true } } } } false
 	for i (f.i0 as int)..f.i1 as int:
@@ -320,7 +322,7 @@ inline_into(fi int, fsz i32[>..<]&, mx int):
 		il ~= ex || !WEB && x.op as int == I_CALL && cal >= 0 && cal < NCS.len && NCS[cal] == 1
 		if il && !ex && !NOCI && fsz[cal] > mx && hlp(cal) && cold(i): il = false
 		cf ~= false; if !ex && !NOCF2 && x.op as int == I_CALL: q ~= i + 1; while q < f.i1 as int { y := IR[q]; o := y.op as int; if o == I_LBL || o == I_JMP || o == I_BZ || o == I_BNZ || o == I_RET || o == I_RET2 { break } if o == I_CALL && nret(y.c) { cf = true; break } q++ }
-		if cf || !(x.op as int == I_CALL && cal >= 0 && (cal != fi && fsz[cal] >= 0 && !SIM || cal == fi && SIM) && fsz[cal] <= (if il { max(ILC, mx) } else { if SIM { max(min(mx + 40 * nk, 3 * mx), 128) } else { min(mx + 40 * nk, 3 * mx) } })): IR.push(x); continue
+		if cf || !ex && !NOKI && x.op as int == I_CALL && cal >= 0 && cal < NFS.len && kr(cal) || !(x.op as int == I_CALL && cal >= 0 && (cal != fi && fsz[cal] >= 0 && !SIM || cal == fi && SIM) && fsz[cal] <= (if il { max(ILC, mx) } else { if SIM { max(min(mx + 40 * nk, 3 * mx), 128) } else { min(mx + 40 * nk, 3 * mx) } })): IR.push(x); continue
 		g := NFS[cal]; vb := nv; nv += g.nv; sbase := al(sb, 32); sb = sbase + g.sb; lend := nlbl()
 		lm.clear(); lm.resize(LBL.len, -1); mm i32[>..<] ~= []; mo i32[>..<] ~= []
 		for j (g.i0 as int)..g.i1 as int:
@@ -344,10 +346,10 @@ NOCI ~= false
 NOLC ~= false
 NOMS ~= false
 NOSI ~= false
-SIM ~= false; NOCF2 ~= false; NOTR ~= false; NOBT ~= false; NOJK ~= false; NOTB ~= false; NONR ~= false; NOMB2 ~= false; NOVC ~= false; NOCH ~= false; NOHC ~= false
+SIM ~= false; DWX ~= 4; NOAF ~= false; NOCF2 ~= false; NOTR ~= false; NOBT ~= false; NOJK ~= false; NOTB ~= false; NONR ~= false; NOMB2 ~= false; NOVC ~= false; NOCH ~= false; NOHC ~= false; NOKI ~= false
 var NCS i32[>..<]
 optimize_all():
-	nlc byte[>..] ~= []; NOLC = env("HC_NOLC", nlc); NOMS = env("HC_NOMS", nlc); NOSI = env("HC_NOSI", nlc); NOCF2 = env("HC_NOFI", nlc); NOTR = env("HC_NOTR", nlc); NOBT = env("HC_NOBT", nlc); NOJK = env("HC_NOJK", nlc); NOTB = env("HC_NOTB", nlc); NONR = env("HC_NONR", nlc); NOMB2 = env("HC_NOMB2", nlc); NOVC = env("HC_NOVC", nlc); NOCH = env("HC_NOCH", nlc); NOHC = env("HC_NOHC", nlc)
+	nlc byte[>..] ~= []; NOLC = env("HC_NOLC", nlc); NOMS = env("HC_NOMS", nlc); NOSI = env("HC_NOSI", nlc); NOCF2 = env("HC_NOFI", nlc); NOTR = env("HC_NOTR", nlc); NOBT = env("HC_NOBT", nlc); NOJK = env("HC_NOJK", nlc); NOTB = env("HC_NOTB", nlc); NONR = env("HC_NONR", nlc); NOMB2 = env("HC_NOMB2", nlc); NOVC = env("HC_NOVC", nlc); NOCH = env("HC_NOCH", nlc); NOHC = env("HC_NOHC", nlc); NOKI = env("HC_NOKI", nlc); NOAF = env("HC_NOAF", nlc); if env("HC_DWX", nlc) { v, ok := parse_int(nlc[..]); DWX = v }
 	il0 byte[>..] ~= []; if env("HC_ILC", il0) { v, ok := parse_int(il0[..]); ILC = v } NOCI = env("HC_NOCI", il0)
 	lim byte[>..] ~= []; mx := if env("HC_INL", lim) { v, ok := parse_int(lim[..]); v } else { 100 }
 	noi byte[>..] ~= []; inl := !env("HC_NOINL", noi)
@@ -922,12 +924,12 @@ sra(fi int):
 	for k fk0.len:
 		s := (fk0[k] >> 40) as int; r := root(s); if r != s: fk0[k] = (r as i64) << 40 | fk0[k] & 0xFFFFFFFFFF
 	sort(fk0[..])
-	cs i32[>..<] ~= []; co i32[>..<] ~= []; cw i32[>..<] ~= []; cst i32[>..<] ~= []; cst.resize(sb, 0); cn i32[>..<] ~= []; cn.resize(sb, 0)
+	nmx byte[>..] ~= []; smx := !env("HC_NOSMX", nmx); cmx i8[>..] ~= []; cs i32[>..<] ~= []; co i32[>..<] ~= []; cw i32[>..<] ~= []; cst i32[>..<] ~= []; cst.resize(sb, 0); cn i32[>..<] ~= []; cn.resize(sb, 0)
 	for q fk0:
 		r := (q >> 40) as int; o := (q >> 8 & 0xFFFFFFFF) as int; w := (q & 255) as int; l := cs.len - 1
-		if l >= 0 && cs[l] as int == r && co[l] as int == o: if cw[l] as int != w { bad[r] = 1 } continue
+		if l >= 0 && cs[l] as int == r && co[l] as int == o: if cw[l] as int != w { if smx && (w | cw[l] as int) & 8 == 0 && wsz(w) == wsz(cw[l] as int) { cmx[l] = 1 } else { bad[r] = 1 } } continue
 		if l >= 0 && cs[l] as int == r && co[l] as int + wsz(cw[l] as int) > o: bad[r] = 1
-		if cn[r] == 0 { cst[r] = cs.len as i32 } cn[r] += 1; cs.push(r as i32); co.push(o as i32); cw.push(w as i32)
+		if cn[r] == 0 { cst[r] = cs.len as i32 } cn[r] += 1; cs.push(r as i32); co.push(o as i32); cw.push(w as i32); cmx.push(0)
 	ext i32[>..<] ~= []; ext.resize(sb, 0)
 	for r sb:
 		if cn[r] == 0 || par[r] >= 0 { continue } a := cst[r] as int; b := a + cn[r] as int - 1; ext[r] = co[b] + wsz(cw[b] as int) as i32; if co[a] < 0 || csz[r] >= 0 && ext[r] > csz[r]: bad[r] = 1
@@ -949,7 +951,7 @@ sra(fi int):
 		sd := if x.d >= 0 && (x.d as int) < sbs.len && (op == I_COPY || op == I_ZERO) { sbs[x.d] as int } else { -1 }
 		ga := sa >= 0 && bad[sa] == 0; gd := sd >= 0 && bad[sd] == 0
 		if (op == I_SLOT || op == I_BIN || op == I_MOV || op == I_EXT && x.w == 3) && x.d >= 0 && sbs[x.d] >= 0 && bad[sbs[x.d]] == 0: continue
-		if op == I_LD && ga: IR.push(Ir{I_MOV as u8, x.w, x.d, fid(sa, sof[x.a] as int + x.c as int) as i32, -1, 0, -1}); continue
+		if op == I_LD && ga: fv := fid(sa, sof[x.a] as int + x.c as int); IR.push(Ir{(if cmx[fv - base[sa] as int + cst[root(sa)] as int] != 0 { I_EXT } else { I_MOV }) as u8, x.w, x.d, fv as i32, -1, 0, -1}); continue
 		if op == I_ST && ga: IR.push(Ir{I_EXT as u8, x.w, fid(sa, sof[x.a] as int + x.c as int) as i32, x.b, -1, 0, -1}); continue
 		if (op == I_COPY || op == I_ZERO) && gd: r := root(sd); a := cst[r] as int; for k a..a + cn[r] as int { v i32 := base[sd] + (k - a) as i32; if op == I_ZERO { IR.push(Ir{I_IMM as u8, cw[k] as u8, v, -1, -1, 0, -1}); } else { if ga { IR.push(Ir{I_MOV as u8, cw[k] as u8, v, base[sa] + (k - a) as i32, -1, 0, -1}); } else { IR.push(Ir{I_LD as u8, cw[k] as u8, v, x.a, -1, co[k] as i64, -1}); } } } continue
 		if op == I_COPY && ga: r := root(sa); a := cst[r] as int; for k a..a + cn[r] as int { IR.push(Ir{I_ST as u8, cw[k] as u8, -1, x.d, base[sa] + (k - a) as i32, co[k] as i64, -1}) } continue
@@ -1462,16 +1464,30 @@ bce(fi int):
 			sv ~= true; for z (i + 1)..k { y := IR[z]; o := y.op as int; if (o == I_JMP || o == I_BZ || o == I_BNZ) && (lp[y.c] <= i as i32 || lp[y.c] >= k as i32) || o == I_LBL && (lmn[y.c] <= i as i32 || lmx[y.c] >= k as i32) || o == I_RET || o == I_RET2 { sv = false; break } } if !sv: continue
 			st i32[>..] ~= [x.a]
 			while st.len > 0:
-				v := st.pop() as int; if v < 0 || nd[v] != 1 || dp[v] < 0 || dp[v] >= i as i32: continue
-				y := IR[dp[v]]; if y.op as int == I_CMP && y.c == CC_E as i64 && y.w == 3 { fq.push(rt(y.a as int) as i32); fq.push(rt(y.b as int) as i32); fq.push(k as i32) } if y.op as int == I_BIN && y.c == B_AND as i64 && y.l < 0 { st.push(y.a); st.push(y.b) }
+				v := st.pop() as int; if v < 0 || dp[v] < 0 || dp[v] >= i as i32: continue
+				if nd[v] == 2 && !NOAF:
+					d2 := dp[v] as int; d1 := pv[d2 - i0] as int; if d1 < 0 || IR[d1].op as int != I_MOV || IR[d2].op as int != I_MOV: continue
+					b1 := nx(d1); l2 := nx(d2); if b1 >= d2 || IR[b1].op as int != I_BZ || IR[b1].a != IR[d1].a && IR[b1].a as int != v || l2 >= i1 || IR[l2].op as int != I_LBL || IR[l2].c != IR[b1].c || lc[IR[b1].c] != 1: continue
+					st.push(IR[d1].a); st.push(IR[d2].a); continue
+				if nd[v] != 1: continue
+				y := IR[dp[v]]; if y.op as int == I_CMP && y.c == CC_E as i64 && y.w == 3 { fq.push(rt(y.a as int) as i32); fq.push(rt(y.b as int) as i32); fq.push(k as i32); fq.push(i as i32) } if y.op as int == I_BIN && y.c == B_AND as i64 && y.l < 0 { st.push(y.a); st.push(y.b) }
+	wp i32[>..<] ~= []
+	wq(lo int, hi int) bool: hi > lo && wp[hi - i0] > wp[lo - i0]
+	fev(f int, x int, p int, bi int) bool:
+		if f == x: return f >= 0 && nd[f] == 1 && dp[f] < p as i32
+		if NOAF || f < 0 || x < 0 || nd[f] != 1 || nd[x] != 1 || dp[f] < 0 || dp[x] < 0: return false
+		y := IR[dp[f]]; z := IR[dp[x]]; y.op as int == I_LD && z.op as int == I_LD && y.a >= 0 && z.a >= 0 && rt(y.a as int) == rt(z.a as int) && y.c == z.c && y.w == z.w && dp[f] < bi as i32 && dp[x] > p as i32 && !wq(dp[f] as int + 1, bi) && !wq(p + 1, dp[x] as int)
 	fok(m int, nn int, h int) bool:
 		a := rt(m); b := rt(nn); q ~= 0
 		while q < fq.len:
-			p := fq[q + 2] as int; if (fq[q] as int == a && fq[q + 1] as int == b || fq[q] as int == b && fq[q + 1] as int == a) && p < h && a >= 0 && b >= 0 && nd[a] == 1 && nd[b] == 1 && dp[a] < p as i32 && dp[b] < p as i32:
+			p := fq[q + 2] as int; bi := fq[q + 3] as int; A := fq[q] as int; B := fq[q + 1] as int; if (fev(A, a, p, bi) && fev(B, b, p, bi) || fev(B, a, p, bi) && fev(A, b, p, bi)) && p < h:
 				ok ~= true; for z (p + 1)..(h + 1) { if IR[z].op as int == I_LBL && lmn[IR[z].c] < p as i32 { ok = false } } if ok { return true }
-			q += 3
+			q += 4
 		false
 	imv(v int) int: if v >= 0 && nd[v] == 1 && dp[v] >= 0 && IR[dp[v]].op as int == I_IMM && IR[dp[v]].c >= 0 { return IR[dp[v]].c as int } -1
+	wp.resize(i1 - i0 + 1, 0)
+	for z i0..i1:
+		y := IR[z]; o := y.op as int; wp[z - i0 + 1] = wp[z - i0] + (if o == I_ST || o == I_COPY || o == I_ZERO || o == I_CALL || o == I_CALLR || o == I_SYS || o == I_VLOOP || o == I_CVT && y.c == 5 || (o == I_DSS || o == I_DSR) && MUSE[y.a] != 0 { 1 } else { 0 })
 	nrb byte[>..] ~= []
 	if !env("HC_NORB", nrb):
 		for k i0..i1:
@@ -1491,7 +1507,7 @@ bce(fi int):
 				p := fq[q + 2] as int; A := fq[q] as int; B := fq[q + 1] as int; C := if A == L { imv(B) } else { if B == L { imv(A) } else { -1 } }
 				if C > iv && p <= k && dp[L] < p as i32:
 					ok ~= true; for z (p + 1)..(k + 1) { if IR[z].op as int == I_LBL && lmn[IR[z].c] < p as i32 { ok = false } } if ok { IR[k].op = I_NOP as u8; break }
-				q += 3
+				q += 4
 	for j i0..i1:
 		x := IR[j]; if x.op as int != I_JMP || lc[x.c] != 1: continue
 		h := lp[x.c] as int; if h < i0 || h >= j: continue

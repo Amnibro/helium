@@ -1,0 +1,33 @@
+// Lengths an assert has checked stay known, but only until something changes them.
+import std;
+fn step(a int[>..]&, b int[>..]&, n int) int {
+	assert(a.len == n && b.len == n);
+	var c = 0;
+	for i in n {
+		let x = a[i] * 3 + c;
+		c = b[i] ^ (x >> 2);
+		a[i] = x;
+		b[i] = c;
+	}
+	return c;
+}
+fn shrunk(a int[>..]&, b int[>..]&, n int) int {
+	assert(a.len == n && b.len == n);
+	b.pop();
+	var c = 0;
+	for i in n {
+		let x = a[i] * 3 + c;
+		c = b[i] ^ (x >> 2);
+		a[i] = x;
+		b[i] = c;
+	}
+	return c;
+}
+fn main() {
+	var a int[>..] = [];
+	var b int[>..] = [];
+	for i in 5 { a.push(i + 1); b.push(2 * i); }
+	print(step(a, b, 5));
+	print(a[4], " ", b[4]);
+	print(shrunk(a, b, 5));
+}
