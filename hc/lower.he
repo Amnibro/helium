@@ -145,6 +145,8 @@ ldw(a int, off int, w int) int:
 	d := nv(); ir(I_LD, w, d, a, -1, off); d
 ldh(a int, off int) int:
 	d := ldw(a, off, 3); IR[IR.len - 1].l = -3; d
+ldp(a int, e int) int:
+	d := ldh(a, 0); if is_scal(e) { IR[IR.len - 1].b = -2 } d
 stw(a int, off int, v int, w int): ir(I_ST, w, -1, a, v, off);
 bin(o int, w int, a int, b int, l int) int:
 	d := nv(); irl(I_BIN, w, d, a, b, o, l); d
@@ -177,7 +179,7 @@ recursive lidx(n int) int:
 	else:
 		if is_lim(d) && !sl: len = ldw(b, 0, lcw(d)); base = addi(b, lco(d))
 		else:
-			if is_res(d) && !sl: base = ldh(b, 0); len = ldh(b, 8)
+			if is_res(d) && !sl: base = ldp(b, e); len = ldh(b, 8)
 	irl(I_BCHK, 3, -1, i, len, 0, locs(n))
 	bin(B_ADD, 3, base, bin(B_MUL, 3, i, imm(es), -1), -1)
 boob(ok int, i int, len int, n int): l := nlbl(); ir(I_BNZ, 3, -1, ok, -1, l); s0 := ARGL.len; ARGL.push(i); ARGL.push(len); lc := locs(n); r1 := nv(); ir(I_RADDR, 8, r1, -1, -1, LOCS[2 * lc]); ARGL.push(r1); ARGL.push(imm(LOCS[2 * lc + 1])); ir(I_CALL, 3, -1, s0, 4, rt_fn("rt_oob")); ir(I_LBL, 3, -1, -1, -1, l);
@@ -211,7 +213,7 @@ recursive lsl(n int) int, int:
 	if TY[d].k == TY_SLICE: a := laddr(n); return ldw(a, 0, 3), ldw(a, 8, 3)
 	if is_fix(d): return laddr(n), imm(TY[d].b as int)
 	if is_lim(d): a := laddr(n); return addi(a, lco(d)), ldw(a, 0, lcw(d))
-	if is_res(d): a := laddr(n); return ldh(a, 0), ldh(a, 8)
+	if is_res(d): a := laddr(n); return ldp(a, TY[d].a), ldh(a, 8)
 	m byte[>..] ~= []; format(m, "unsupported slice source ", k, " type kind ", TY[d].k); lerr(n, m[..]); return imm(0), imm(0)
 recursive lslice(n int) int, int:
 	x := ND[n]; a := x.a; if nseq(deref(at(a))) && (x.b >= 0 || x.c >= 0) { lerr(n, "a range of an array of variable-size elements natively") } p, len := lsl(a); es := tsz(TY[deref(at(a))].a)
@@ -1619,7 +1621,7 @@ lower_program(out byte[>..]&) bool:
 	if dlb >= 0: rtset("RT_DLT", dlt); rtset("RT_DLG", DYNG); rtsetp("RT_DLR", 2); rtsetp("RT_DLB", 3)
 	mov_rr(RDI, RSP); lea_rip(RSI, 1, rsg); call_f(rst); mov_rr(RSP, RAX); if dlb >= 0 { call_f(dlb) } call_f(gi); call_f(rm); mov_ri(RDI, 0); call_f(rinit); ud2()
 	irw byte[>..] ~= []; dump := env("HC_IR", irw)
-	noi byte[>..] ~= []; opt := !env("HC_NOOPT", noi); if opt: gtag(); optimize_all(); vec_all()
+	noi byte[>..] ~= []; opt := !env("HC_NOOPT", noi); if opt: gtag(); optimize_all(); vec_all(); rot_all(); NOADC = env("HC_NOADC", noi)
 	for f, i NFS: if dump && f.inst >= 0 && nm(FI_[f.inst].name) == irw[..] { ir_dump(i) } if opt { regalloc(i); } else { REGOF.clear(); RUSED.clear(); VZERO.clear(); FK.clear(); XREG.clear(); SVR.clear(); } cg_fn(i)
 	dbg byte[>..] ~= []; if env("HC_NDEBUG", dbg):
 		for f, i NFS: print(if f.inst >= 0 { nm(FI_[f.inst].name) } else { "<init>" }, " ", 0x400000 + 176 + FOFF[i] as int, " nv ", f.nv, " sb ", f.sb)
