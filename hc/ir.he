@@ -91,12 +91,12 @@ dstr(d int) int:
 fin(r int, d int):
 	if gr(d) != r: stv(r, d);
 memb(a int, c int) int, int: if gr(a) >= 0 { return gr(a), c } k := fk(a); if k == 7 { b := FB[a]; I := if gr(FI[a]) >= 0 { gr(FI[a]) } else { ldv(RDX, FI[a]); RDX }; B := if gr(b) >= 0 { gr(b) } else { if fk(b) == 2 { RBP } else { ldv(RCX, b); RCX } }; bd := if gr(b) < 0 && fk(b) == 2 { FD[b] as int - CSBA } else { 0 }; SIBM = true; SIBI = I; SIBS = FS[a]; return B, bd + FD[a] as int + c } if k == 2 { return RBP, FD[a] as int - CSBA + c } if k == 3 && TLSM { xb(0x65); FSM = true; FSD = FD[a] as int + c; return RBP, 0 } if k == 3 || k == 4 { RIPM = true; RIPK = if k == 3 { 3 } else { 2 }; RIPT = FD[a] as int + c; return RBP, 0 } if k == 6 && REGOF[FB[a]] >= 0 { return REGOF[FB[a]], FD[a] as int + c } ldv(RCX, a); return RCX, c
-LPI ~= -1; LAX ~= -1; LAD ~= -1; LAA ~= -1; LAB ~= -1; NOFC ~= false; UMX ~= false; NOMX ~= false; NOBA ~= false; NORW ~= false; NO32 ~= false; NOMB ~= false; NOXS ~= false; UMI ~= -1; UMA ~= -1; UMB ~= -1; FUSEC ~= -1; DEAD ~= false; var SVR i32[>..<]; var SVS i32[>..<]; var SVE i32[>..<]; var HDC i32[>..<]; var HDB i32[>..<]; var HDX i32[>..<]; var HDK i32[>..<]; HPEND ~= -1; LCMP ~= -1
+LPI ~= -1; LAX ~= -1; LAD ~= -1; LAA ~= -1; LAB ~= -1; NOFC ~= false; UMX ~= false; NOMX ~= false; NOBA ~= false; NORW ~= false; NO32 ~= false; NOMB ~= false; NOXS ~= false; NOAE ~= false; UMI ~= -1; UMA ~= -1; UMB ~= -1; FUSEC ~= -1; DEAD ~= false; var SVR i32[>..<]; var SVS i32[>..<]; var SVE i32[>..<]; var HDC i32[>..<]; var HDB i32[>..<]; var HDX i32[>..<]; var HDK i32[>..<]; HPEND ~= -1; LCMP ~= -1
 ADCC ~= -1; ADCJ ~= -1; NOADC ~= false
 adcu(i int, i1 int) bool:
 	if NOADC: return false
 	x := IR[i]; d := x.d as int
-	if d < 0 || d >= UC.len || UC[d] != 1 || x.w != 3 || x.c != CC_B as i64 && x.c != CC_A as i64 || x.a < 0 || x.b < 0: return false
+	if d < 0 || d >= UC.len || UC[d] != 1 || x.w != 3 || x.c != CC_B as i64 && x.c != CC_A as i64 && (NOAE || x.c != CC_AE as i64 && x.c != CC_BE as i64) || x.a < 0 || x.b < 0: return false
 	j ~= i + 1; n ~= 0
 	while j < i1 && n < 12:
 		y := IR[j]; o := y.op as int
@@ -124,9 +124,9 @@ cgadc(i int, i1 int):
 	if l >= 0 && !el: G := if gr(l) >= 0 { gr(l) } else { RDX }; setcc(CC_B, G); fin(G, l)
 	FLV = if l >= 0 { l } else { -1 }
 adcg(x Ir):
-	y := IR[ADCC]; d := x.d as int; o := if x.b == y.d { x.a as int } else { x.b as int }; cb := y.c == CC_B as i64; p := if cb { y.a as int } else { y.b as int }; q := if cb { y.b as int } else { y.a as int }
+	y := IR[ADCC]; d := x.d as int; o := if x.b == y.d { x.a as int } else { x.b as int }; cb := y.c == CC_B as i64 || y.c == CC_AE as i64; ng := y.c == CC_AE as i64 || y.c == CC_BE as i64; p := if cb { y.a as int } else { y.b as int }; q := if cb { y.b as int } else { y.a as int }
 	g := gr(d); R := if g >= 0 && g != gr(p) && g != gr(q) { g } else { RDX }
-	if XC.len == LAX && LAD == p && (q == LAA || q == LAB) && fk(o) < 6 && !NOFC { ldv(R, o) } else { ldv(R, o); cmpab(p, q) } alu_ri(if x.c == B_ADD as i64 { 2 } else { 3 }, R, 0); ext_r(R, x.w as int); fin(R, d)
+	if XC.len == LAX && LAD == p && (q == LAA || q == LAB) && fk(o) < 6 && !NOFC { ldv(R, o) } else { ldv(R, o); cmpab(p, q) } alu_ri(if (x.c == B_ADD as i64) != ng { 2 } else { 3 }, R, if ng { -1 } else { 0 }); ext_r(R, x.w as int); fin(R, d)
 cmpab(a int, b int):
 	A := srcr(a, RAX); if kc(b) && i32ok(FD[b] as int): alu_ri(7, A, FD[b] as int); else: alu(0x39, A, srcr(b, RCX));
 fusable(i int, d int, i1 int) bool:
@@ -223,7 +223,7 @@ cg_fn(fi int):
 	VSI.clear(); VSI.resize(f.nv, -1); CNV = 0; for i (f.i0 as int)..f.i1 as int:
 		opnds(i); for v OU { if v >= 0 && v < f.nv as int && VSI[v] < 0 && fk(v) == 0 && gr(v) < 0 && xg(v) < 0 { VSI[v] = CNV; CNV++ } } for v OD { if v >= 0 && v < f.nv as int && VSI[v] < 0 && fk(v) == 0 && gr(v) < 0 && xg(v) < 0 { VSI[v] = CNV; CNV++ } }
 	push_r(RBP); mov_rr(RBP, RSP); sub_rsp(al(sba + 8 * CNV + 8 * RUSED.len + (if SVR.len > 0 { 48 } else { 0 }) + 16, 64) - 16); for r, k RUSED: st(r, RBP, rso(k), 8)
-	nz byte[>..] ~= []; NOFC = env("HC_NOFC", nz); NOMX = env("HC_NOMX", nz); NOBA = env("HC_NOBA", nz); NORW = env("HC_NORW", nz); NO32 = env("HC_NO32", nz); NOMB = env("HC_NOMB", nz); NOXS = env("HC_NOXS", nz); LPI = -1; LAX = -1; if sba > 0 && env("HC_ZFRAME", nz): lea(R11, RBP, -sba); alu(0x31, RAX, RAX); lz := nlbl(); bind(lz); st(RAX, R11, 0, 8); xrex(true, 0, 0, R11); xb(0x83); xb(0xC0 | R11 & 7); xb(8); alu(0x39, R11, RBP); jcc_l(CC_B, lz)
+	nz byte[>..] ~= []; NOFC = env("HC_NOFC", nz); NOMX = env("HC_NOMX", nz); NOBA = env("HC_NOBA", nz); NORW = env("HC_NORW", nz); NO32 = env("HC_NO32", nz); NOMB = env("HC_NOMB", nz); NOXS = env("HC_NOXS", nz); NOAE = env("HC_NOAE", nz); LPI = -1; LAX = -1; if sba > 0 && env("HC_ZFRAME", nz): lea(R11, RBP, -sba); alu(0x31, RAX, RAX); lz := nlbl(); bind(lz); st(RAX, R11, 0, 8); xrex(true, 0, 0, R11); xb(0x83); xb(0xC0 | R11 & 7); xb(8); alu(0x39, R11, RBP); jcc_l(CC_B, lz)
 	if VZERO.len > 0:
 		alu(0x31, RAX, RAX); for v VZERO: stv(RAX, v)
 	traps i32[>..<] ~= []; DEAD = false; FUSEC = -1; HPEND = -1; LCMP = -1; ADCJ = -1; FLV = -1; HDC.clear(); HDC.resize(LBL.len, -1); HDB.clear(); HDB.resize(LBL.len, -1); HDX.clear(); HDX.resize(LBL.len, -1); HDK.clear(); HDK.resize(LBL.len, -1)
