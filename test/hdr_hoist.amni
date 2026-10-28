@@ -1,0 +1,50 @@
+import std;
+fn fill(dst uint[>..]&, src uint[:]) uint {
+	var s uint = 0;
+	for i in src.len {
+		dst[i % dst.len] = src[i] * 3;
+		s += dst[(i + 1) % dst.len] + dst.len as uint;
+	}
+	return s;
+}
+fn nest(rows uint[>..][>..]&, n int) uint {
+	var s uint = 0;
+	for k in n {
+		let r = k % rows.len;
+		if rows[r].len > 2 { rows[r].clear(); } else { rows[r].push(k as uint); }
+		s += rows[r].len as uint * 7 + rows.len as uint;
+	}
+	return s;
+}
+fn ints(a int[>..]&, n int) int {
+	var s = 0;
+	for k in n {
+		a[k % a.len] = a.len + k;
+		s += a[(k * 7) % a.len];
+	}
+	return s;
+}
+fn grows(a uint[>..]&, n int) uint {
+	var s uint = 0;
+	for k in n {
+		if k % 5 == 0 { a.push(k as uint); }
+		a[k % a.len] += 1;
+		s += a.len as uint + a[0];
+	}
+	return s;
+}
+fn main() {
+	var d uint[>..] = [];
+	d.resize(7, 1);
+	var src uint[>..] = [];
+	for i in 50 { src.push(i as uint * 0x9E3779B97F4A7C15); }
+	print(str("fill ", fill(d, src[..])));
+	var rows uint[>..][>..] = [];
+	for i in 4 { rows.push([]); }
+	print(str("nest ", nest(rows, 61)));
+	var a int[>..] = [];
+	a.resize(9, 0);
+	print(str("ints ", ints(a, 40)));
+	var g uint[>..] = [5];
+	print(str("grows ", grows(g, 77), " ", g.len));
+}
