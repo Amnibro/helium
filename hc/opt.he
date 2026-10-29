@@ -339,7 +339,7 @@ inline_into(fi int, fsz i32[>..<]&, mx int):
 		false
 	kr(c int) bool:
 		g := NFS[c]; q := if g.inst >= 0 { nm(FI_[g.inst].name) } else { "" }; if !NOKR && (q.len < 3 || q[..3] != "rt_"): return false
-		for k (g.i0 as int)..g.i1 as int { if IR[k].op as int == I_FUN && IR[k].c == 10 { return true } } false
+		for k (g.i0 as int)..g.i1 as int { if IR[k].op as int == I_FUN && (IR[k].c == 10 || IR[k].c == 13 || IR[k].c == 14) { return true } } false
 	hlp(c int) bool:
 		g := NFS[c]; for k (g.i0 as int)..g.i1 as int { y := IR[k]; o := y.op as int; if o == I_JMP || o == I_BZ || o == I_BNZ { for q (g.i0 as int)..k { if IR[q].op as int == I_LBL && IR[q].c == y.c { return true } } } } false
 	for i (f.i0 as int)..f.i1 as int:
@@ -897,7 +897,7 @@ vperm(fi int):
 			if o == I_NOP || o == I_IMM || o == I_MOV && y.w == 3 || o == I_BIN && y.w == 3 && y.l < 0 && y.c == B_ADD as i64: continue
 			if o != I_ST || wsz(y.w as int) != 8 || y.a < 0 || y.b < 0: ok = false; break
 			k ~= -1; for p, z ld { if IR[p].d == y.b { k = z } } if k < 0: ok = false; break
-			A := y.a as int; b0 ~= A; off ~= y.c; if nd[A] == 1 && IR[dp[A]].op as int == I_BIN && IR[dp[A]].c == B_ADD as i64 && kv(IR[dp[A]].b as int) >= 0 { b0 = IR[dp[A]].a as int; off += kv(IR[dp[A]].b as int) }
+			A ~= y.a as int; for z 4 { if nd[A] == 1 && dp[A] >= 0 && IR[dp[A]].op as int == I_MOV && IR[dp[A]].a >= 0 { A = IR[dp[A]].a as int } } b0 ~= A; off ~= y.c; if nd[A] == 1 && IR[dp[A]].op as int == I_BIN && IR[dp[A]].c == B_ADD as i64 && kv(IR[dp[A]].b as int) >= 0 { b0 = IR[dp[A]].a as int; off += kv(IR[dp[A]].b as int) }
 			if B < 0 { B = b0 } if b0 != B || off < 0 || off > 56 || off % 8 != 0 || pm[off / 8] >= 0: ok = false; break
 			pm[off / 8] = lo[k]; sts.push(q as i32 - 1)
 		if !ok || sts.len < 8: continue

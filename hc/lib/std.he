@@ -131,6 +131,9 @@ byte_set(members bool[256]) ByteSet:
 byte_set(bytes byte[:]) ByteSet: m bool[256] ~= [false; 256]; for b bytes { m[b] = true }; byte_set(m)
 extern find_any(s const byte[:], set const ByteSet&) int = "hr_find_any"
 extern match16(s const byte[:], i int, w int) int = "hr_match16"
+extern match32(s const byte[:], i int, w int) int = "hr_match32"
+extern match_set32(s const byte[:], i int, set const ByteSet&) int = "hr_match_set32"
+extern simd256() bool = "hr_simd256"
 extern byte_set_pair(s const byte[:], a const ByteSet&, d int, b const ByteSet&) int = "hr_find_pair"
 find_pair(s byte[:], a const ByteSet&, d int, b const ByteSet&) int: assert(d >= 0); byte_set_pair(s, a, d, b)
 map<T, F>(xs T[:]):

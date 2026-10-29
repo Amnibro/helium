@@ -1,0 +1,25 @@
+import std;
+fn main() {
+	var src byte[>..] = [];
+	for i in 200 { src.push((i * 7 + 3) as byte); }
+	var h = 0;
+	for n in 0..90 {
+		for off in 0..5 {
+			var d byte[>..] = [];
+			d.push(1);
+			d.append(src[off..off + n]);
+			d.push(2);
+			for b in d { h = (h * 31 + b as int) % 1000000007; }
+			guard d.len == n + 2;
+		}
+	}
+	var o byte[>..] = [];
+	for i in 0..64 { o.push(i as byte); }
+	o.append(o[1..3]);
+	o.append(o[5..6]);
+	o.append(o[0..0]);
+	o.append(o[2..40]);
+	o.append(o[0..64]);
+	for b in o { h = (h * 31 + b as int) % 1000000007; }
+	print(h, " ", o.len);
+}

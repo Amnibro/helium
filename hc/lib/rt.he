@@ -424,10 +424,18 @@ rt_z8(y u64) u64: t := (y & 0x7F7F7F7F7F7F7F7F) + 0x7F7F7F7F7F7F7F7F; ~(t | y | 
 rt_sw(x u64, w int) u64: L := 0x0101010101010101 as u64; rt_z8(x ^ ((w & 255) as u64) * L) | rt_z8(x ^ (((w >> 8) & 255) as u64) * L) | rt_z8(x ^ (((w >> 16) & 255) as u64) * L)
 extern rt_bm16(p int, w int) int = "hr_bm16"
 inline rt_match16(s const byte[:], i int, w int) int: rt_bm16(ptr(s) + i, w)
+extern rt_bm32(p int, w int) int = "hr_bm32"
+inline rt_match32(s const byte[:], i int, w int) int: rt_bm32(ptr(s) + i, w)
+rt_bm32s(p int, w int) int: rt_bm16s(p, w) | rt_bm16s(p + 16, w) << 16
+extern rt_bms32(p int, m int) int = "hr_bms32"
+extern rt_simd256() bool = "hr_simd256"
+inline rt_match_set32(s const byte[:], i int, m int) int: rt_bms32(ptr(s) + i, m)
+rt_bms32s(p int, m int) int: r ~= 0; for k 32 { r |= (mld1(m + mld1(p + k)) & 1) << k } r
+inline rt_lo7(m int) bool: mld(m + 277) | mld(m + 285) == 0
 rt_bm16s(p int, w int) int: G := 0x0102040810204080 as u64; ((((rt_sw(mld(p) as! u64, w) >> 7) * G) >> 56) | ((((rt_sw(mld(p + 8) as! u64, w) >> 7) * G) >> 56) << 8)) as! int
-rt_bw(m int) int, int: return mld1(m + 258) | (mld1(m + 259) << 8) | (mld1(m + 260) << 16), if mld1(m + 257) != 0 { 0xFFFF } else { 0 }
-rt_find_any(s const byte[:], m int) int: i ~= 0; k := mld1(m + 256); p := ptr(s); if k >= 1 && k <= 3 { w, iv := rt_bw(m); while i + 16 <= s.len { x := rt_bm16(p + i, w) ^ iv; if x != 0 { return i + rt_ctz(x as u64) } i += 16 } } while i < s.len { if mld1(m + s[i] as int) != 0 { return i } i += 1 } -1
-rt_find_pair(s const byte[:], a int, d int, b int) int: i ~= 0; ka := mld1(a + 256); kb := mld1(b + 256); p := ptr(s); if ka >= 1 && ka <= 3 && kb >= 1 && kb <= 3 { wa, ia := rt_bw(a); wb, ib := rt_bw(b); while i + d + 16 <= s.len { m := (rt_bm16(p + i, wa) ^ ia) & (rt_bm16(p + i + d, wb) ^ ib); if m != 0 { return i + rt_ctz(m as u64) } i += 16 } } while i + d < s.len { if mld1(a + s[i] as int) & mld1(b + s[i + d] as int) != 0 { return i } i += 1 } -1
+rt_bw(m int) int, int: k := mld1(m + 256); return mld1(m + 258) | (mld1(m + 259) << 8) | (mld1(m + 260) << 16) | (if k == 1 { 1 << 24 } else if k == 2 { 1 << 25 } else { 0 }), if mld1(m + 257) != 0 { 0xFFFF } else { 0 }
+rt_find_any(s const byte[:], m int) int: i ~= 0; k := mld1(m + 256); p := ptr(s); if k >= 1 && k <= 3 { w, iv := rt_bw(m); while i + 32 <= s.len { x := rt_bm32(p + i, w) ^ (iv | iv << 16); if x != 0 { return i + rt_ctz(x as u64) } i += 32 } while i + 16 <= s.len { x := rt_bm16(p + i, w) ^ iv; if x != 0 { return i + rt_ctz(x as u64) } i += 16 } } else if rt_simd256() && rt_lo7(m) { while i + 32 <= s.len { x := rt_bms32(p + i, m); if x != 0 { return i + rt_ctz(x as u64) } i += 32 } } while i < s.len { if mld1(m + s[i] as int) != 0 { return i } i += 1 } -1
+rt_find_pair(s const byte[:], a int, d int, b int) int: i ~= 0; ka := mld1(a + 256); kb := mld1(b + 256); p := ptr(s); fa := ka >= 1 && ka <= 3; fb := kb >= 1 && kb <= 3; wa, ia := rt_bw(a); wb, ib := rt_bw(b); if fa && fb { while i + d + 32 <= s.len { m := (rt_bm32(p + i, wa) ^ (ia | ia << 16)) & (rt_bm32(p + i + d, wb) ^ (ib | ib << 16)); if m != 0 { return i + rt_ctz(m as u64) } i += 32 } while i + d + 16 <= s.len { m := (rt_bm16(p + i, wa) ^ ia) & (rt_bm16(p + i + d, wb) ^ ib); if m != 0 { return i + rt_ctz(m as u64) } i += 16 } } else if rt_simd256() && (fa || rt_lo7(a)) && (fb || rt_lo7(b)) { while i + d + 32 <= s.len { m := (if fa { rt_bm32(p + i, wa) ^ (ia | ia << 16) } else { rt_bms32(p + i, a) }) & (if fb { rt_bm32(p + i + d, wb) ^ (ib | ib << 16) } else { rt_bms32(p + i + d, b) }); if m != 0 { return i + rt_ctz(m as u64) } i += 32 } } while i + d < s.len { if mld1(a + s[i] as int) & mld1(b + s[i + d] as int) != 0 { return i } i += 1 } -1
 extern rt_fma(x real, y real, z real) real = "fma"
 extern rt_clz(x u64) int = "hr_clz"
 extern rt_fsq(x real) real = "hr_sqrt"

@@ -1,0 +1,26 @@
+import std;
+import regex;
+fn main() {
+	var t byte[>..] = [];
+	var x = 777;
+	for i in 3000 {
+		x = (x * 1103515245 + 12345) % 2147483648;
+		let r = (x >> 16) % 100;
+		t.push(if r < 90 { "acgt"[r % 4] } else { "NSYB<>|tH"[r % 9] });
+	}
+	let plant = ["agggtaaa", "tttaccct", "tHaN", "WaS", "<<2>>"];
+	for w, k in plant { for c, j in w { t[400 + 517 * k + j] = c; t[2990 - 8 + j] = c; } }
+	let pats = ["agggtaaa|tttaccct", "[cgt]gg|tt[acg]", "a[NSt]|BY", "<[^>]*>", "\\|[^|][^|]*\\|", "tHa[Nt]", "aND|caN|Ha[DS]|WaS", "acg", "c[gt]a", "(ac|gt)+", "a*", "[ag][ct]t[ag]", "a*cg|a*tg", "[ac]*t", "(a|c)*gt|g*t", "c?a+t"];
+	var h = 0;
+	for p in pats {
+		let re = regex::compile(p);
+		var n = 0;
+		regex::each_match(re, t) { s, e =>
+			h = (h * 31 + s * 7 + e) % 1000000007;
+			n += 1;
+		};
+		let fs, fe = regex::find(re, t[1000..]);
+		print(p, " ", n, " ", regex::count(re, t), " ", fs, " ", fe);
+	}
+	print(h);
+}

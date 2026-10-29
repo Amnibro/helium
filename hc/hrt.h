@@ -434,6 +434,9 @@ static int64_t hr_clz(uint64_t x) { return x ? __builtin_clzll(x) : 64; }
 static int64_t hr_ctz(uint64_t x) { return x ? __builtin_ctzll(x) : 64; }
 static int64_t hr_bm16(int64_t p, int64_t w) { const uint8_t *q = (const uint8_t *)(uintptr_t)p; int64_t m = 0; for (int k = 0; k < 16; k++) if (q[k] == (w & 255) || q[k] == ((w >> 8) & 255) || q[k] == ((w >> 16) & 255)) m |= (int64_t)1 << k; return m; }
 static int64_t hr_match16(hsl s, int64_t i, int64_t w) { return hr_bm16((int64_t)(uintptr_t)(s.p + i), w); }
+static int64_t hr_match32(hsl s, int64_t i, int64_t w) { return hr_match16(s, i, w) | (hr_match16(s, i + 16, w) << 16); }
+static int64_t hr_match_set32(hsl s, int64_t i, const void *set) { const bool *m = set; int64_t r = 0; for (int k = 0; k < 32; k++) if (m[s.p[i + k]]) r |= (int64_t)1 << k; return r; }
+static bool hr_simd256(void) { return false; }
 static uint32_t hr_f32_bits(float x) { uint32_t b; memcpy(&b, &x, 4); return b; }
 static float hr_f32_from_bits(uint32_t b) { float x; memcpy(&x, &b, 4); return x; }
 static uint64_t hr_f64_bits(double x) { uint64_t b; memcpy(&b, &x, 8); return b; }

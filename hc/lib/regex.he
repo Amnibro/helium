@@ -10,9 +10,9 @@ enum Node { Empty, Bytes { set i32 }, Cat { first i32, second i32 }, Alt { first
 enum Inst { Byte { set i32, next i32 }, Split { first i32, second i32 }, Save { slot i32, next i32 }, Match }
 struct Dfa { start i32, match_end i32, special i32, trans i32[] }
 enum Skip { Scan, Prefix, Inner }
-struct Prefilter { len int, at1 int, at2 int, set1 ByteSet, set2 ByteSet, nk int, kmx int, kat int[8], kw int[8], kiv int[8] }
+struct Prefilter { len int, at1 int, at2 int, set1 ByteSet, set2 ByteSet, nk int, kmx int, kat int[8], kw int[8], vm bool, m1 int, w1 int, iv1 int, m2 int, w2 int, iv2 int }
 struct Place { start int, start_back bool, end int, end_back bool }
-struct Regex { groups int, nullable bool, placed bool, entry i32, classes byte[256], skip Skip, filter Prefilter, inner ByteSet, fwd Dfa, rev Dfa, before Dfa, places Place[], prog Inst[], sets bool[256][] }
+struct Regex { groups int, nullable bool, placed bool, entry i32, classes byte[256], skip Skip, filter Prefilter, inner ByteSet, fwd Dfa, rev Dfa, before Dfa, places Place[], prog Inst[], sets bool[256][], width int }
 add_range(s bool[256]&, lo int, hi int): for b lo..hi + 1 { s[b] = true }
 is_letter(b int) bool: b >= 'a' && b <= 'z' || b >= 'A' && b <= 'Z'
 fold_case(s bool[256]&): for b 65..91 { if s[b] || s[b + 32] { s[b] = true; s[b + 32] = true } }
@@ -27,8 +27,8 @@ compile(pattern byte[:]) Regex: err byte[>..] ~= []; build(pattern, err, true)
 compile(pattern byte[:], err byte[>..]&) Regex: build(pattern, err, false)
 no_place() Place: Place{-1, false, -1, false}
 dead() Dfa: Dfa{0, 1, 1, [0]}
-no_filter() Prefilter: n := byte_set([false; 256]); Prefilter{0, 0, 0, n, n, 0, 0, [0; 8], [0; 8], [0; 8]}
-nothing() Regex: Regex{1, false, false, 0, [0; 256], Skip.Scan, no_filter(), byte_set([false; 256]), dead(), dead(), dead(), [], [Inst.Match], []}
+no_filter() Prefilter: n := byte_set([false; 256]); Prefilter{0, 0, 0, n, n, 0, 0, [0; 8], [0; 8], false, 0, 0, 0, 0, 0, 0}
+nothing() Regex: Regex{1, false, false, 0, [0; 256], Skip.Scan, no_filter(), byte_set([false; 256]), dead(), dead(), dead(), [], [Inst.Match], [], -1}
 build(pattern byte[:], err byte[>..]&, aborts bool) Regex:
 	nodes Node[>..] ~= []; sets bool[256][>..] ~= []; pos ~= 0; fold ~= false; dot_nl ~= false; groups ~= 1
 	stop(message byte[:]) i32:
@@ -220,7 +220,7 @@ build(pattern byte[:], err byte[>..]&, aborts bool) Regex:
 	places Place[>..] ~= []; places.resize(groups, no_place()); place(top, 0, 0, places)
 	placed ~= true; for p places { if p.start < 0 || p.end < 0 { placed = false } }
 	classes := byte_classes(sets); scans := skip != Skip.Scan; big ~= false
-	re := Regex{groups, prefix.len == 0, placed, entry, classes, skip, filter, byte_set(inner), build_dfa(prog, sets, classes, head, true, scans, big), build_dfa(rprog, sets, classes, rentry, false, false, big), build_dfa(bprog, sets, classes, bentry, false, false, big), copy(places), copy(prog), copy(sets)}
+	re := Regex{groups, prefix.len == 0, placed, entry, classes, skip, filter, byte_set(inner), build_dfa(prog, sets, classes, head, true, scans, big), build_dfa(rprog, sets, classes, rentry, false, false, big), build_dfa(bprog, sets, classes, bentry, false, false, big), copy(places), copy(prog), copy(sets), fixed_len(top)}
 	if big: stop(str("regex: the pattern's DFA would be too large: ", pattern))
 	re
 prefix_sets(prog Inst[:], sets bool[256][:], entry i32) bool[256][>..]:
@@ -255,13 +255,19 @@ choose_filter(prefix bool[256][:]) Prefilter, real:
 	best ~= 1.0; a1 ~= 0; a2 ~= 0
 	for j prefix.len: for k j..prefix.len { p := if j == k { sh[j] } else { sh[j] * sh[k] }; if p < best { best = p; a1 = j; a2 = k } }
 	if prefix.len == 0: return no_filter(), 1.0
-	kat int[8] ~= [0; 8]; kw int[8] ~= [0; 8]; kiv int[8] ~= [0; 8]; nk ~= 0; kmx ~= 0; ok bool[8] ~= [false; 8]
+	kat int[8] ~= [0; 8]; kw int[8] ~= [0; 8]; nk ~= 0; kmx ~= 0; ok bool[8] ~= [false; 8]
 	for j prefix.len: bs := byte_set(prefix[j]); ok[j] = bs.kind >= 1 && bs.kind <= 3 && !bs.invert
 	while nk < 8:
 		b ~= -1; for j prefix.len { if ok[j] && (b < 0 || sh[j] < sh[b]) { b = j } }
 		if b < 0: break
-		ok[b] = false; bs := byte_set(prefix[b]); kat[nk] = b; kmx = max(kmx, b); kw[nk] = bs.bytes[0] as int | (bs.bytes[1] as int << 8) | (bs.bytes[2] as int << 16); nk += 1
-	return Prefilter{prefix.len, a1, a2, byte_set(prefix[a1]), byte_set(prefix[a2]), nk, kmx, kat, kw, kiv}, best
+		ok[b] = false; bs := byte_set(prefix[b]); kat[nk] = b; kmx = max(kmx, b); kw[nk] = kwf(bs); nk += 1
+	s1 := byte_set(prefix[a1]); s2 := byte_set(prefix[a2]); m1, w1, iv1 := vmode(s1); m2, w2, iv2 := vmode(s2)
+	return Prefilter{prefix.len, a1, a2, s1, s2, nk, kmx, kat, kw, simd256() && m1 != 0 && (a1 == a2 || m2 != 0), m1, w1, iv1, m2, w2, iv2}, best
+kwf(s ByteSet&) int: s.bytes[0] as int | (s.bytes[1] as int << 8) | (s.bytes[2] as int << 16) | (if s.kind == 1 { 1 << 24 } else if s.kind == 2 { 1 << 25 } else { 0 })
+vmode(s ByteSet&) int, int, int:
+	if s.kind >= 1 && s.kind <= 3: return 1, kwf(s), if s.invert { 0xFFFFFFFF } else { 0 }
+	hi ~= 0; for b s.hi { hi |= b as int }
+	return (if hi == 0 { 2 } else { 0 }), 0, 0
 byte_classes(sets bool[256][:]) byte[256]:
 	cl byte[256] ~= [0; 256]
 	for &s sets:
@@ -318,11 +324,17 @@ inline skip_prefix(f Prefilter&, text byte[:], i int) int:
 	if i >= fits: return text.len
 	j ~= i
 	if f.nk >= 3:
-		while j + f.kmx + 16 <= text.len:
-			m ~= 0xFFFF; q ~= 0
-			while q < f.nk && m != 0: m &= match16(text, j + f.kat[q], f.kw[q]) ^ f.kiv[q]; q += 1
+		while j + f.kmx + 32 <= text.len:
+			m ~= 0xFFFFFFFF; q ~= 0
+			while q < f.nk && m != 0: m &= match32(text, j + f.kat[q], f.kw[q]); q += 1
 			if m != 0: p := j + ctz(m as! uint); return if p < fits { p } else { text.len }
-			j += 16
+			j += 32
+		if j >= fits: return text.len
+	if f.vm:
+		while j + f.at2 + 32 <= text.len:
+			m := (if f.m1 == 1 { match32(text, j + f.at1, f.w1) ^ f.iv1 } else { match_set32(text, j + f.at1, f.set1) }) & (if f.at1 == f.at2 { 0xFFFFFFFF } else if f.m2 == 1 { match32(text, j + f.at2, f.w2) ^ f.iv2 } else { match_set32(text, j + f.at2, f.set2) })
+			if m != 0: p := j + ctz(m as! uint); return if p < fits { p } else { text.len }
+			j += 32
 		if j >= fits: return text.len
 	p := if f.at1 == f.at2 { find_any(text[j + f.at1..fits + f.at1], f.set1) } else { find_pair(text[j + f.at1..fits + f.at2], f.set1, f.at2 - f.at1, f.set2) }
 	if p >= 0 { j + p } else { text.len }
@@ -340,12 +352,13 @@ resume(re Regex&, text byte[:], i int) int:
 		Prefix => skip_prefix(re.filter, text, i)
 		Inner => skip_inner(re, text, i)
 		Scan => i
-find_end(re Regex&, text byte[:], at int) int:
-	tr := re.fwd.trans[..]; cl := re.classes[..]; sp := re.fwd.special; s ~= re.fwd.start; last ~= if re.nullable { at } else { -1 }; i ~= resume(re, text, at)
+find_end(re Regex&, text byte[:], at int) int: e, lb := find_span(re, text, at); e
+find_span(re Regex&, text byte[:], at int) int, int:
+	tr := re.fwd.trans[..]; cl := re.classes[..]; sp := re.fwd.special; s ~= re.fwd.start; last ~= if re.nullable { at } else { -1 }; i ~= resume(re, text, at); lb ~= if re.nullable { at } else { i }
 	while i < text.len:
 		while i < text.len { s = tr[s + cl[text[i]]]; i += 1; if s < sp { break } }
-		if s < sp: if s >= re.fwd.match_end { i = if re.skip == Skip.Prefix { skip_prefix(re.filter, text, i) } else { resume(re, text, i) } } else if s == 0 { return last } else { last = i }
-	last
+		if s < sp: if s >= re.fwd.match_end { i = if re.skip == Skip.Prefix { skip_prefix(re.filter, text, i) } else { resume(re, text, i) } } else if s == 0 { return last, lb } else { last = i }
+	return last, lb
 scan_back(re Regex&, d Dfa&, text byte[:], lo int, end int) int:
 	tr := d.trans[..]; cl := re.classes[..]; me := d.match_end; s ~= d.start; first ~= if s < me { end } else { -1 }
 	assert(lo >= 0 && end <= text.len); i ~= end
@@ -355,16 +368,16 @@ scan_back(re Regex&, d Dfa&, text byte[:], lo int, end int) int:
 	first
 find_start(re Regex&, text byte[:], at int, end int) int: scan_back(re, re.rev, text, at, end)
 find(re Regex&, text byte[:]) int, int:
-	e := find_end(re, text, 0)
+	e, lb := find_span(re, text, 0)
 	if e < 0: return -1, -1
-	return find_start(re, text, 0, e), e
+	return (if re.width > 0 { e - re.width } else { find_start(re, text, lb, e) }), e
 matches(re Regex&, text byte[:]) bool: find_end(re, text, 0) >= 0
 each_match<F>(re Regex&, text byte[:]):
 	at ~= 0; le ~= -1
 	while at <= text.len:
-		e ~= find_end(re, text, at)
+		e0, lb := find_span(re, text, at); e ~= e0
 		if e < 0: break
-		s ~= find_start(re, text, at, e)
+		s ~= if re.width > 0 { e - re.width } else { find_start(re, text, lb, e) }
 		if s == e && e == le:
 			if at == text.len: break
 			e = find_end(re, text, at + 1)
