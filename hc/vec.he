@@ -8,7 +8,7 @@ var VGC i64[>..<]; var VGS i32[>..<]; var VGM i64[>..<]; var VGN i8[>..<]; var V
 var VUT i32[>..<]; var VUK i64[>..<]; var VUC i8[>..<]; var VUB i8[>..<]; var VUR i32[>..<]
 var VXF i8[>..<]; var VCA i32[>..<]; var VCB i32[>..<]; var VIN Ir[>..<]; var VAT i32[>..<]; var VRR i32[>..<]; var VRN i8[>..<]; var VTK i8[>..<]; VZR ~= -1; VMK ~= -1; VVF ~= 16; VRD ~= -1; VBK ~= -1 as i64; VNRW ~= 0; VNRS ~= -1; VNNG ~= false; VNSK i8[>..<] ~= []; VRC ~= 0; VRQ ~= -1
 VGREG := [6, 7, 8, 9, 10, 11, 0]
-VJM ~= false; var VKJ i32[>..<]; var VGB i32[>..<]; var VGO i64[>..<]; var VGP i8[>..<]; VNP ~= 0
+VJM ~= false; VLST ~= -1 as i64; var VKJ i32[>..<]; var VGB i32[>..<]; var VGO i64[>..<]; var VGP i8[>..<]; VNP ~= 0
 vlg(w int) int:
 	if w == 1:
 		0
@@ -270,9 +270,9 @@ vec_loop(fi int, h int, j int) bool:
 	k ~= vskip(h + 1, i1, 1)
 	while k < j && IR[k].op as int == I_LD && IR[k].l == -3 && IR[k].w == 3: k = vskip(k + 1, i1, 1)
 	x := IR[k]; if x.op as int != I_CMP || x.c != CC_L as i64 || x.w != 3: return false
-	cnd := x.d as int; iv := x.a as int; bnd := x.b as int; VBK = -1
+	cnd := x.d as int; iv := x.a as int; bnd := x.b as int; VBK = -1; VLST = -1
 	vk(v0 int) i64: v ~= v0; for z 4 { if v < 0 || VND[v] != 1 || VDP[v] < 0 { return -1 } y := IR[VDP[v]]; if y.op as int == I_IMM { return y.c } if y.op as int != I_MOV { return -1 } v = y.a as int } -1
-	bk := vk(bnd); q0 ~= h - 1; while bk >= 0 && q0 >= i0 { y := IR[q0]; o := y.op as int; if o == I_LBL || o == I_JMP || o == I_BZ || o == I_BNZ || o == I_CALL { break } if y.d as int == iv { st := if o == I_IMM { y.c } else { if o == I_MOV { vk(y.a as int) } else { -1 } }; if st >= 0 && st <= bk { VBK = bk - st } break } q0-- }
+	bk := vk(bnd); q0 ~= h - 1; while bk >= 0 && q0 >= i0 { y := IR[q0]; o := y.op as int; if o == I_LBL || o == I_JMP || o == I_BZ || o == I_BNZ || o == I_CALL { break } if y.d as int == iv { st := if o == I_IMM { y.c } else { if o == I_MOV { vk(y.a as int) } else { -1 } }; if st >= 0 && st <= bk { VBK = bk - st; VLST = st } break } q0-- }
  k2 := vskip(k + 1, i1, 1); y := IR[k2]; if y.op as int != I_BZ || y.a as int != cnd: return false
 	ex := y.c as int; e := vskip(j + 1, i1, 1); if e >= i1 || IR[e].op as int != I_LBL || IR[e].c as int != ex: return false
 	ic := vskip(j - 1, i0, -1); z := IR[ic]; if z.op as int != I_BIN || z.c != B_ADD as i64 || z.d as int != iv || z.a as int != iv || z.l >= 0 || z.w != 3: return false
@@ -422,7 +422,19 @@ vec_loop(fi int, h int, j int) bool:
 	if VBAD: ARGL.resize(a0); return false
 	for p hz { VPR.push(IR[p]) }
 	rv := if VRD >= 0 { vpnv() } else { -1 }; VPR.push(Ir{I_VLOOP as u8, 3, rv as i32, a0 as i32, (ARGL.len - a0) as i32, kid as i64, -1}); if VRD >= 0 { VPR.push(Ir{I_BIN as u8, 3, VRD as i32, VRD as i32, rv as i32, (if VRC == B_SUB { B_ADD } else { VRC }) as i64, -1}) } VPR.push(Ir{I_BIN as u8, 3, iv as i32, iv as i32, cnt as i32, B_ADD as i64, -1}); if !lo && VBK > 0 && VBK % VVF as i64 == 0 && !env("HC_NOVG", VNB) { VPR.push(Ir{I_JMP as u8, 3, -1, -1, -1, ex as i64, -1}) } VPR.push(Ir{I_LBL as u8, 3, -1, -1, -1, sk as i64, -1})
-	for r VPR { VIN.push(r) } VAT.push(h as i32); VAT.push(VPR.len as i32); true
+	for r VPR { VIN.push(r) } VAT.push(h as i32); VAT.push(VPR.len as i32)
+	if VBK > 0 && VLST == 0 && !env("HC_NOVZD", VNB): for g VGC.len { vzd(g, h, i0) }
+	true
+vzd(g int, h int, i0 int):
+	s := vslg(g); if VGT[g] < 0 || s < 0: return
+	so := VOS[VGT[g]]; L := IR[VDP[s]].l; if so.y != 0 || VGC[g] != so.w as i64 || L <= 0 || VBK * (so.w as i64) < L: return
+	for o VOS { if o.k as int == 1 && o.g as int == g { return } }
+	q ~= h - 1
+	while q >= i0:
+		y := IR[q]; o := y.op as int; d := y.d as int; b := y.b as int
+		if o == I_ZERO && d >= 0 && (d == s || VND[d] == 1 && VDP[d] >= 0 && IR[VDP[d]].op as int == I_MOV && IR[VDP[d]].a as int == s) && b >= 0 && VND[b] == 1 && VDP[b] >= 0 && IR[VDP[b]].op as int == I_IMM && IR[VDP[b]].c == L: IR[q].op = I_NOP as u8; return
+		if o == I_NOP || o == I_IMM || o == I_SLOT || o == I_ZERO || o == I_MOV || o == I_BIN && y.l < 0 { q--; continue }
+		return
 vkon(v int) int:
 	if v < 0 || VND[v] != 1 || VDP[v] < 0 || IR[VDP[v]].op as int != I_IMM: return -(1 << 62)
 	IR[VDP[v]].c as int

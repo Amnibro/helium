@@ -1,0 +1,39 @@
+import std;
+simd fn run(n int) real {
+	var x real[8] = [0.0; 8];
+	for l in 8 { x[l] = (l as real) * 0.5 + 1.0; }
+	var t = 0.0;
+	for s in n {
+		var a real[8] = [0.0; 8];
+		var b real[8] = [0.0; 8];
+		var c real[8] = [0.0; 8];
+		var d real[8] = [0.0; 8];
+		for l in 8 {
+			a[l] = x[l] * 2.0;
+			b[l] = x[l] + 3.0;
+			d[l] = d[l] + x[l];
+		}
+		for l in 7 { c[l] = x[l] - 1.0; }
+		var e real[8] = [0.0; 8];
+		for l in 1..8 { e[l] = x[l] * x[l]; }
+		for l in 8 {
+			x[l] = x[l] * 0.75 + (a[l] - b[l]) * 0.125 + c[l] * 0.0625 + d[l] * 0.03125 + e[l] * 0.001;
+		}
+		for l in 8 { t += a[l] + b[l] + c[l] + d[l] + e[l]; }
+	}
+	return t;
+}
+simd fn ints(n int) int {
+	var acc = 0;
+	for s in n {
+		var k int[8] = [0; 8];
+		for l in 8 { k[l] = l * s + 7; }
+		for l in 8 { acc += k[l]; }
+	}
+	return acc;
+}
+fn main() {
+	print(str(run(1)));
+	print(str(run(77)));
+	print(str(ints(77)));
+}
