@@ -125,7 +125,10 @@ With AVX-512 allowed, the `simd fn` programs go further: nbody/2 79.7 ms at
   and flips two permutations at once for the instruction-level parallelism.
 * **fasta** uses the prescribed linear congruential generator as written,
   and integer thresholds for the cumulative probabilities.
-* **knucleotide/1** counts in a hash table of its own, as C's program does;
+* **knucleotide/1** counts the k of 12 and 18 in a hash table of its own,
+  as C's program does; a k of at most 6 has at most 4096 keys, each counted
+  in a counter of its own indexed by the key. **/1-m** runs the k on four
+  workers, each with a copy of the sequence packed four codes a byte.
   **/2** counts with the stdlib `dictionary`.
 * **lru/1** uses the stdlib `dictionary`; **/2** a table made for the cache.
 * **json-serde** reads into typed records with the stdlib `json` reader and
@@ -156,10 +159,10 @@ With AVX-512 allowed, the `simd fn` programs go further: nbody/2 79.7 ms at
   short literals with a SIMD multi-literal search (Teddy). Rust's `7.rs`
   runs on two threads; forced to one it takes about 255 ms against Goose's
   490.
-* **knucleotide/1-m's memory** (71 MB against Rust's 33 at 2500000, at the
-  same speed): workers share no memory, so each gets a copy of the sequence,
-  and `thread_spawn` copies a growable argument twice (on the spawner's data
-  stack, then into the new thread).
+* **knucleotide/1-m's memory** (39 MB against Rust's 27 at 2500000, 22
+  against 16 at 250000, at the same speed or better): workers share no
+  memory, so each of the four gets its own copy of the packed sequence and
+  its own tables.
 
 ## Limitations found
 

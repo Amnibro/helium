@@ -69,7 +69,8 @@ rt_take() int: if RT_NFREE > 0 { RT_NFREE -= 1; return RT_FREE[RT_NFREE] } rt_ma
 rt_tsz() int: r := (1 << 32) - RT_TEND; if r >= 1 << 31 { return RT_RSZ } z ~= 1 << 18; while z * 512 <= r && z * 2 <= RT_RSZ { z *= 2 } z
 rt_map() int:
 	z := if RT_TIER != 0 { rt_tsz() } else { RT_RSZ }; h := if RT_TIER != 0 { 65536 } else { 0 }
-	p := sys6(9, 0, z + 65536 + h, 3, 0x4022, -1, 0); if p < 0 && p > -4096 { rt_es("helium runtime error: out of address space\n"); rt_write(2, RT_EB[..RT_EN]); sys3(231, 1, 0, 0) } sys3(10, p + h + z, 65536, 0)
+	a := if RT_TIER != 0 { 0 } else { 1 << 21 }; m := sys6(9, 0, z + 65536 + h + a, 3, 0x4022, -1, 0); if m < 0 && m > -4096 { rt_es("helium runtime error: out of address space\n"); rt_write(2, RT_EB[..RT_EN]); sys3(231, 1, 0, 0) }
+	d := if a != 0 { (1 << 20) - (m + h) & a - 1 } else { 0 }; p := m + d; if d != 0 { sys3(11, m, d, 0) } if a - d != 0 { sys3(11, p + h + z + 65536, a - d, 0) } sys3(10, p + h + z, 65536, 0)
 	if RT_TIER != 0 { RT_TEND = max(RT_TEND, p + h + z + 65536); mst(p + h - 8, z) } p + h
 rt_lim(b int) int: if RT_TIER != 0 { mld(b - 8) } else { RT_RSZ }
 rt_unmap(b int): h := if RT_TIER != 0 { 65536 } else { 0 }; sys3(11, b - h, rt_lim(b) + 65536 + h, 0);

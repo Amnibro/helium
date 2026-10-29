@@ -4,10 +4,13 @@
 // codes packed into an integer, counted in a hash table of this program's
 // own, as C's program has: open addressing and linear probing over a
 // power-of-two array of u64 slots, each holding a key and its count, which
-// starts at 16 slots and doubles at half load. Half rather than the usual
-// three quarters, as most lookups then end at the first slot they try,
-// which spares a mispredicted branch on most of the others. (2.goose counts
-// with the library's dictionary instead.)
+// starts with room for every key there can be, up to 2^20 slots, and
+// doubles at half load. Half rather than the usual three quarters, as most
+// lookups then end at the first slot they try, which spares a mispredicted
+// branch on most of the others. A k of at most 6 has few enough keys to
+// count each in a counter of its own, indexed by the key, and its counts go
+// into such a table after. (2.amni counts with the library's dictionary
+// instead.)
 
 import std;
 import os;
@@ -61,10 +64,39 @@ fn grow(slots uint[>..]&) {
 	}
 }
 
+// As count, for a k small enough that every key has a counter of its own,
+// indexed by the key; the counts then go into a table as count makes it.
+fn count_small(seq byte[:], k int) uint[>..] {
+	var counts uint[>..] = [];
+	counts.resize(1 << (2 * k), 0);
+	let key_mask uint = (1 << (2 * k)) - 1;
+	var codes uint = 0;
+	for c in seq[..k - 1] { codes = (codes << 2) | c; }
+	for c in seq[k - 1..] {
+		codes = (codes << 2) | c;
+		counts[(codes & key_mask) as! int] += 1;
+	}
+	var slots uint[>..] = [];
+	slots.resize(2 * counts.len, 0);
+	let mask = slots.len - 1;
+	for n, key in counts {
+		guard n != 0;
+		var i = home(key as uint) & mask;
+		while slots[i] != 0 { i = (i + 1) & mask; }
+		slots[i] = (((key as uint) << 1 | 1) << COUNT_BITS) | n;
+	}
+	return slots;
+}
+
 // The table of the k-nucleotides of seq.
 fn count(seq byte[:], k int) uint[>..] {
+	if k <= 6 { return count_small(seq, k); }
+	// Room for every distinct key there can be at most half full, up to
+	// 2^20 slots: the big tables start near their final size.
+	var cap = 16;
+	while cap < 2 * min(seq.len, 1 << min(2 * k, 19)) { cap *= 2; }
 	var slots uint[>..] = [];
-	slots.resize(16, 0);
+	slots.resize(cap, 0);
 	var used = 0;
 	let key_mask uint = (1 << (2 * k)) - 1;
 	// The codes so far, the last k of them the key: shifting the earlier
