@@ -27,16 +27,16 @@ mul_wide(a uint, b uint) uint, uint:
 	lo := a0 * b0; m1 := a0 * b1; m2 := a1 * b0; c := (lo >> 32) + (m1 & 0xFFFFFFFF) + (m2 & 0xFFFFFFFF)
 	return a1 * b1 + (m1 >> 32) + (m2 >> 32) + (c >> 32), a * b
 DP := "00010203040506070809101112131415161718192021222324252627282930313233343536373839404142434445464748495051525354555657585960616263646566676869707172737475767778798081828384858687888990919293949596979899"
-put_digits(out byte[:], v uint):
+inline put_digits(out byte[:], v uint):
 	x ~= v; i ~= out.len
 	while i >= 8: put8(out, i - 8, x % 100000000); x /= 100000000; i -= 8
 	while i >= 2: r := x % 100; x /= 100; i -= 2; out[i] = DP[2 * r]; out[i + 1] = DP[2 * r + 1]
 	if i == 1: out[0] = ('0' + x) as! byte
-put8(out byte[:], at int, v uint):
+inline put8(out byte[:], at int, v uint):
 	g := (v / 10000) | ((v % 10000) << 32); t := ((g * 10486) >> 20) & 0x0000007F0000007F; h := ((g - 100 * t) << 16) + t
 	d ~= ((h * 103) >> 10) & 0x000F000F000F000F; d += (h - 10 * d) << 8; w := d | 0x3030303030303030
 	for j 8: out[at + j] = (w >> (8 * j)) as! byte
-ryu(x real, out byte[:]) int, int:
+inline ryu(x real, out byte[:]) int, int:
 	b := f64_bits(x); be := ((b >> 52) & 0x7FF) as! int; fr := b & 0xFFFFFFFFFFFFF
 	k := 17 - (((be - 1023) * 78913) >> 18); t := 1077 - be - k
 	if k < 0 || k > 27 || t < 1 || t > 63: return 0, 0
@@ -78,12 +78,13 @@ lay_out(out byte[>..]&, t byte[:], n0 int, pt int):
 	else if pt > -5 && pt <= 0: out.append("0."); for i -pt { out.push('0') }; out.append(d)
 	else: out.push(d[0]); if n > 1 { out.push('.'); out.append(d[1..]) }; out.push('e'); format_int(out, pt - 1)
 format_number(out byte[>..]&, v real):
-	b := out.len; o := if v < 0.0 { 1 } else { 0 }; out.resize(b + o + 21); n, pt := ryu(v, out[b + o + 1..b + o + 21])
-	if n == 0: out.resize(b); format_other(out, v); return
-	if o == 1: out[b] = '-'
-	q := b + o; m ~= n; while m > 1 && out[q + m] == '0' { m -= 1 }
-	if pt > 0 && pt < m: for i pt { out[q + i] = out[q + i + 1] } out[q + pt] = '.'; out.resize(q + m + 1); return
-	t byte[21] ~= [0; 21]; for i n { t[i + 1] = out[q + 1 + i] } out.resize(q); lay_out(out, t[..], n, pt)
+	t byte[24] ~= [0; 24]; n, pt := ryu(v, t[2..22])
+	if n == 0: format_other(out, v); return
+	m ~= n; while m > 1 && t[m + 1] == '0' { m -= 1 }
+	s := if v < 0.0 { 0 } else { 1 }; t[0] = '-'
+	if pt > 0 && pt < m: for i pt { t[i + 1] = t[i + 2] } t[pt + 1] = '.'; out.append(t[s..m + 2]); return
+	if s == 0: out.push('-')
+	lay_out(out, t[1..], n, pt)
 format_other(out byte[>..]&, v real):
 	if v != v || v - v != 0.0: out.append("null"); return
 	if v == 0.0: out.append(if 1.0 / v < 0.0 { "-0.0" } else { "0.0" }); return
