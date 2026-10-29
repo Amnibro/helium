@@ -37,8 +37,11 @@ then capped at AVX2 like the references (`--cflags=-DGS_SIMD=2` lets them use
 AVX-512). Rust uses PLB's Cargo profile and dependencies (LTO, one codegen
 unit, `-Ctarget-cpu=broadwell`). On Windows the C and C++ references get a
 few POSIX shims (`winshim/`); C's nbody/5.c builds with gcc only. Runs are
-pinned (`--cpus`, default 16-31: on the Ryzen 9950X3D these were measured
-on, the core complex without the large L3).
+pinned (`--cpus`, default 8-15,24-31: on the Ryzen 9950X3D these were
+measured on, the core complex without the large L3. Logical CPUs 0-7 and
+16-23 share the 96 MB L3, so the earlier default of 16-31 straddled both
+complexes and let a run land on either, which moved nsieve 12 between
+about 105 and 190 ms).
 
 ## Results
 
@@ -96,6 +99,55 @@ which is slower than glibc's malloc, where PLB runs.
 With AVX-512 allowed, the `simd fn` programs go further: nbody/2 79.7 ms at
 5000000 (against 103 for Rust's fastest), spectral-norm/2 126 ms and 2-m
 39 ms at 8000, mandelbrot/1-m 21 ms at 5000.
+
+## Helium results (Linux)
+
+Wall time in ms, best of three runs, with the program and its peak memory
+under each time. Measured 2026-10-29 under Linux on CPUs 8-15,24-31 of the
+same Ryzen 9950X3D (the core complex without the large L3), Helium built by
+the gate-160 compiler (`--native --v3`), every language re-run in the same
+session (`plb.py report --markdown --last 1`). Single- and multithreaded
+programs are split as in the table above, and "ratio" is the fastest of Rust,
+C and C++ over Helium: above 1 Helium is faster. Goose here is the old Goose
+compiler on the same sources.
+
+| problem | input | Helium | Goose | Rust | C/C++ | ratio | Helium -m | Goose -m | Rust -m | C/C++ -m | ratio -m |
+|---|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|
+| binarytrees | 15 | 10 <sub>1 1.0M</sub> | 9 <sub>1 3.7M</sub> | 77 <sub>4 5.9M</sub> | - | 7.99 | 2 <sub>2-m 4.6M</sub> | 2 <sub>2-m 7.2M</sub> | - | - | - |
+| binarytrees | 18 | 114 <sub>1 11.1M</sub> | 96 <sub>1 15.0M</sub> | 888 <sub>4 33.9M</sub> | - | 7.82 | 19 <sub>2-m 67.8M</sub> | 15 <sub>2-m 68.2M</sub> | - | - | - |
+| coro-prime-sieve | 1000 | 1 <sub>1 2.0M</sub> | 2 <sub>1 2.4M</sub> | 46 <sub>3 4.1M</sub> | - | 38.45 | - | - | 6 <sub>5 3.1M</sub> | - | - |
+| coro-prime-sieve | 4000 | 16 <sub>1 2.0M</sub> | 20 <sub>1 2.4M</sub> | 710 <sub>3 9.1M</sub> | - | 45.45 | - | - | 53 <sub>5 4.9M</sub> | - | - |
+| edigits | 100000 | 14 <sub>1 5.3M</sub> | 13 <sub>1 3.7M</sub> | 15 <sub>2 3.4M</sub> | - | 1.05 | - | - | - | - | - |
+| edigits | 250001 | 51 <sub>1 5.8M</sub> | 46 <sub>1 7.0M</sub> | 55 <sub>2 4.5M</sub> | - | 1.08 | - | - | - | - | - |
+| fannkuch-redux | 10 | 33 <sub>1 0.6M</sub> | 33 <sub>1 2.4M</sub> | 65 <sub>3-i 1.9M</sub> | - | 1.95 | 4 <sub>1-m 2.5M</sub> | 4 <sub>1-m 2.4M</sub> | 6 <sub>3-im 2.0M</sub> | 62 <sub>1-im 4.3M</sub> | 1.28 |
+| fannkuch-redux | 11 | 384 <sub>1 2.0M</sub> | 388 <sub>1 2.1M</sub> | 773 <sub>3-i 1.9M</sub> | - | 2.01 | 43 <sub>1-m 2.5M</sub> | 41 <sub>1-m 2.2M</sub> | 53 <sub>3-im 2.1M</sub> | 740 <sub>1-im 4.4M</sub> | 1.25 |
+| fasta | 250000 | 4 <sub>2 2.0M</sub> | 5 <sub>1 3.1M</sub> | 5 <sub>6 1.9M</sub> | - | 1.18 | 4 <sub>2-m 4.1M</sub> | 5 <sub>1-m 3.7M</sub> | 6 <sub>5c-m 7.1M</sub> | - | 1.41 |
+| fasta | 2500000 | 37 <sub>2 4.0M</sub> | 49 <sub>1 3.1M</sub> | 48 <sub>6 1.9M</sub> | - | 1.28 | 39 <sub>2-m 5.2M</sub> | 46 <sub>1-m 5.5M</sub> | 50 <sub>5c-m 7.3M</sub> | - | 1.29 |
+| helloworld | QwQ | 0 <sub>1 2.0M</sub> | 0 <sub>1 2.2M</sub> | 0 <sub>1 1.9M</sub> | 0 <sub>1 2.2M</sub> | 1.20 | - | - | - | - | - |
+| json-serde | sample 5000 | 14 <sub>1 4.8M</sub> | 12 <sub>1 6.9M</sub> | 11 <sub>5-i 9.9M</sub> | - | 0.81 | - | - | - | - | - |
+| json-serde | canada 15 | 119 <sub>1 49.3M</sub> | 98 <sub>1 50.0M</sub> | 99 <sub>5-i 52.5M</sub> | - | 0.84 | - | - | - | - | - |
+| knucleotide | 250000_in | 12 <sub>1 10.5M</sub> | 18 <sub>1 10.6M</sub> | 21 <sub>8 11.4M</sub> | - | 1.70 | 7 <sub>1-m 17.9M</sub> | 10 <sub>1-m 18.0M</sub> | 8 <sub>8-m 16.4M</sub> | 26 <sub>1 9.1M</sub> | 1.07 |
+| knucleotide | 2500000_in | 92 <sub>1 34.3M</sub> | 130 <sub>1 34.3M</sub> | 163 <sub>8 24.1M</sub> | - | 1.78 | 47 <sub>1-m 35.9M</sub> | 59 <sub>1-m 65.4M</sub> | 48 <sub>8-m 27.5M</sub> | 240 <sub>1 19.6M</sub> | 1.02 |
+| lru | 100 500000 | 4 <sub>2 2.0M</sub> | 6 <sub>2 2.1M</sub> | 13 <sub>0-unsafe 1.9M</sub> | - | 2.93 | - | - | - | - | - |
+| lru | 1000 1000000 | 9 <sub>2 0.5M</sub> | 15 <sub>2 2.2M</sub> | 16 <sub>0-unsafe 1.9M</sub> | - | 1.76 | - | - | - | - | - |
+| lru | 1000 3000000 | 26 <sub>2 0.6M</sub> | 43 <sub>2 2.2M</sub> | 60 <sub>0-unsafe 1.9M</sub> | - | 2.26 | - | - | - | - | - |
+| mandelbrot | 1000 | 6 <sub>1 0.5M</sub> | 6 <sub>1 2.4M</sub> | 7 <sub>8 2.1M</sub> | - | 1.22 | 2 <sub>1-m 0.8M</sub> | 2 <sub>1-m 2.6M</sub> | - | - | - |
+| mandelbrot | 5000 | 133 <sub>1 3.0M</sub> | 127 <sub>1 5.1M</sub> | 161 <sub>8 4.9M</sub> | - | 1.21 | 17 <sub>1-m 3.8M</sub> | 15 <sub>1-m 5.3M</sub> | - | - | - |
+| merkletrees | 15 | 25 <sub>1 4.2M</sub> | 23 <sub>1 6.4M</sub> | 90 <sub>1 9.9M</sub> | - | 3.66 | - | - | - | - | - |
+| merkletrees | 17 | 115 <sub>1 17.0M</sub> | 109 <sub>1 19.2M</sub> | 450 <sub>1 33.9M</sub> | - | 3.91 | - | - | - | - | - |
+| nbody | 500000 | 14 <sub>2 0.5M</sub> | 15 <sub>2 2.1M</sub> | 10 <sub>4-i 1.9M</sub> | 10 <sub>0-i 4.0M</sub> | 0.71 | - | - | - | - | - |
+| nbody | 5000000 | 134 <sub>2 0.6M</sub> | 134 <sub>2 2.1M</sub> | 92 <sub>4-i 1.9M</sub> | 90 <sub>0-i 4.0M</sub> | 0.67 | - | - | - | - | - |
+| nsieve | 10 | 29 <sub>1 9.8M</sub> | 29 <sub>1 11.9M</sub> | 32 <sub>1 11.6M</sub> | 29 <sub>1 11.9M</sub> | 0.98 | - | - | - | - | - |
+| nsieve | 12 | 177 <sub>2 4.8M</sub> | 122 <sub>2 7.1M</sub> | 160 <sub>2 6.9M</sub> | 133 <sub>1 8.7M</sub> | 0.75 | - | - | - | - | - |
+| pidigits | 4000 | 30 <sub>1 0.5M</sub> | 33 <sub>1 2.1M</sub> | 151 <sub>2 2.4M</sub> | - | 4.99 | - | - | - | - | - |
+| pidigits | 8000 | 127 <sub>1 2.0M</sub> | 137 <sub>1 2.4M</sub> | 639 <sub>2 2.6M</sub> | - | 5.03 | - | - | - | - | - |
+| regex-redux | 250000_in | 24 <sub>1 12.0M</sub> | 55 <sub>1 13.3M</sub> | - | - | - | 19 <sub>2-m 21.8M</sub> | 21 <sub>2-m 20.8M</sub> | 24 <sub>7 10.7M</sub> | - | 1.26 |
+| regex-redux | 2500000_in | 211 <sub>1 99.8M</sub> | 512 <sub>1 99.9M</sub> | - | - | - | 205 <sub>2-m 169.7M</sub> | 215 <sub>2-m 171.4M</sub> | 227 <sub>7 76.7M</sub> | - | 1.11 |
+| secp256k1 | 500 | 13 <sub>2 2.0M</sub> | 16 <sub>1 2.2M</sub> | 14 <sub>0 1.9M</sub> | - | 1.08 | - | - | - | - | - |
+| secp256k1 | 2000 | 51 <sub>2 2.0M</sub> | 63 <sub>1 2.1M</sub> | 55 <sub>0 1.9M</sub> | - | 1.08 | - | - | - | - | - |
+| spectral-norm | 2000 | 24 <sub>2 2.0M</sub> | 29 <sub>1 2.2M</sub> | 50 <sub>7 1.9M</sub> | - | 2.13 | 6 <sub>2-m 5.8M</sub> | 5 <sub>2-m 2.4M</sub> | 7 <sub>7-m 2.1M</sub> | 59 <sub>5-im 2.7M</sub> | 1.30 |
+| spectral-norm | 4000 | 93 <sub>2 0.6M</sub> | 115 <sub>1 2.1M</sub> | 200 <sub>7 1.9M</sub> | - | 2.14 | 16 <sub>2-m 3.0M</sub> | 17 <sub>2-m 3.0M</sub> | 27 <sub>7-m 2.3M</sub> | 234 <sub>5-im 2.4M</sub> | 1.65 |
+| spectral-norm | 8000 | 374 <sub>2 2.0M</sub> | 460 <sub>1 2.4M</sub> | 799 <sub>7 2.2M</sub> | - | 2.14 | 56 <sub>2-m 1.2M</sub> | 64 <sub>1-m 5.0M</sub> | 103 <sub>7-m 2.2M</sub> | 938 <sub>5-im 3.0M</sub> | 1.83 |
 
 ## Notes on the programs
 

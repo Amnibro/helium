@@ -496,7 +496,7 @@ def best_rows(problem, rows, langs, last):
     return best
 
 
-def markdown(problems_):
+def markdown(problems_, last=None):
     """One row per input: the fastest program of each language, single- and
     multithreaded, and Helium's speed relative to the fastest other one (above
     1 means Helium is faster)."""
@@ -506,7 +506,7 @@ def markdown(problems_):
     print("|---|---|" + "---:|" * (2 * len(groups) + 2))
     for problem in problems_:
         for inp, rows in load_db(problem).items():
-            best = best_rows(problem, rows, None, None)
+            best = best_rows(problem, rows, None, last)
 
             def pick(langs, mt):
                 cands = [(ms, peak, key) for key, (ms, peak) in best.items()
@@ -567,7 +567,7 @@ def cmd_cost(args):
 def cmd_report(args):
     probs = args.problems or sorted(p.stem for p in (BUILD / "results").glob("*.json"))
     if args.markdown:
-        markdown(probs)
+        markdown(probs, args.last)
         return
     for problem in probs:
         for inp, rows in load_db(problem).items():
@@ -589,8 +589,8 @@ def main():
     ap.add_argument("--input", help="bench only this input of each problem")
     ap.add_argument("--last", type=int, help="report: only the last N measurements per cell")
     ap.add_argument("--markdown", action="store_true", help="report: the summary table of README.md")
-    ap.add_argument("--cpus", default=os.environ.get("BENCH_CPUS", "16-31"),
-                    help="CPUs to pin runs to (default 16-31, the CCD without V-cache on the 9950X3D)")
+    ap.add_argument("--cpus", default=os.environ.get("BENCH_CPUS", "8-15,24-31"),
+                    help="CPUs to pin runs to (default 8-15,24-31, the CCD without V-cache on the 9950X3D)")
     args = ap.parse_args()
     args.problems = [p for p in args.problems.split(",") if p]
     args.variants = [v for v in args.variants.split(",") if v]
