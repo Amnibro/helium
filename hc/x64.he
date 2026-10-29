@@ -26,7 +26,7 @@ mov_rr(d int, s int):
 ld(r int, base int, d int, w int, sx bool): if w == 8 { xrex(true, r, 0, base); xb(0x8B); } else { if w == 4 { if sx { xrex(true, r, 0, base); xb(0x63); } else { xrex(false, r, 0, base); xb(0x8B); } } else { xrex(true, r, 0, base); xb(0x0F); xb(if w == 1 { if sx { 0xBE } else { 0xB6 } } else { if sx { 0xBF } else { 0xB7 } }); } } xmem(r, base, d);
 st(r int, base int, d int, w int): if w == 2 { xb(0x66) } if w == 1 { xrexb(r, base); xb(0x88); xmem(r, base, d) } else { mop(0x89, r, base, d, w == 8) }
 mop(o int, r int, base int, d int, q bool): xrex(q, r, 0, base); xb(o); xmem(r, base, d)
-mri(ext int, base int, d int, v int): xrex(true, 0, 0, base); if v >= -128 && v < 128 { xb(0x83); xmem(ext, base, d); xb(v & 255) } else { xb(0x81); xmem(ext, base, d); x32(v) }
+mri(ext int, base int, d int, v int, q bool = true): xrex(q, 0, 0, base); if v >= -128 && v < 128 { xb(0x83); xmem(ext, base, d); xb(v & 255) } else { xb(0x81); xmem(ext, base, d); x32(v) }
 lea(r int, base int, d int): xrex(true, r, 0, base); xb(0x8D); xmem(r, base, d);
 fs0(r int): xb(0x65); xrex(true, r, 0, 0); xb(0x8B); xb((r & 7) << 3 | 4); xb(0x25); x32(0);
 lea_g(r int, off int):

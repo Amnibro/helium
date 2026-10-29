@@ -347,13 +347,13 @@ skip_inner(re Regex&, text byte[:], i int) int:
 		if s >= 0: return s
 		q += 1; lo = q
 	text.len
-resume(re Regex&, text byte[:], i int) int:
+inline resume(re Regex&, text byte[:], i int) int:
 	match re.skip:
 		Prefix => skip_prefix(re.filter, text, i)
 		Inner => skip_inner(re, text, i)
 		Scan => i
 find_end(re Regex&, text byte[:], at int) int: e, lb := find_span(re, text, at); e
-find_span(re Regex&, text byte[:], at int) int, int:
+inline find_span(re Regex&, text byte[:], at int) int, int:
 	tr := re.fwd.trans[..]; cl := re.classes[..]; sp := re.fwd.special; s ~= re.fwd.start; last ~= if re.nullable { at } else { -1 }; i ~= resume(re, text, at); lb ~= if re.nullable { at } else { i }
 	while i < text.len:
 		while i < text.len { s = tr[s + cl[text[i]]]; i += 1; if s < sp { break } }

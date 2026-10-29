@@ -1,0 +1,23 @@
+import std;
+fn mix(x uint) uint { return x * 6364136223846793005 + 1442695040888963407; }
+fn main() {
+	var x uint = 7;
+	var h u32 = 0;
+	var g uint = 0;
+	var bits u32[>..] = [];
+	bits.resize(64, 0);
+	for i in 4000 {
+		x = mix(x);
+		let v = (x >> 17) as! u32;
+		let k = ((x >> 3) as! int) & 127;
+		let a = v << k;
+		let b = v >> k;
+		let c = (1 as u32) << i;
+		bits[(k >> 1) & 63] |= (1 as u32) << k;
+		h = h * 31 + a + (b ^ c);
+		g = g * 7 + (a as uint) + (b as uint) * 3;
+	}
+	var t u32 = 0;
+	for v in bits { t = t * 17 + v; }
+	print(h, " ", g, " ", t);
+}

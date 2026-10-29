@@ -1,0 +1,26 @@
+import std;
+fn mix(x uint) uint { return x * 6364136223846793005 + 1442695040888963407; }
+fn main() {
+	var x uint = 77;
+	var u u32[>..] = [];
+	u.resize(37, 4000000000);
+	var s i32[>..] = [];
+	s.resize(37, -2000000000);
+	for i in 7000 {
+		x = mix(x);
+		let k = (x >> 40) as! int % 37;
+		let v = (x >> 9) as! u32;
+		let w = (x >> 23) as! i32;
+		let op = (x >> 3) as! int % 7;
+		if op == 0 { u[k] += v; s[k] += w; }
+		else if op == 1 { u[k] -= v; s[k] -= w; }
+		else if op == 2 { u[k] &= v | 3; s[k] &= w | 5; }
+		else if op == 3 { u[k] |= v & 0xF0F0; s[k] |= w & 0x7070; }
+		else if op == 4 { u[k] ^= v; s[k] ^= w; }
+		else if op == 5 { u[k] += 1000; s[k] -= 77; }
+		else { u[k] ^= 0x7FFF0000; s[k] += -1; }
+	}
+	var h uint = 0;
+	for i in 37 { h = h * 1000003 + u[i] as uint + (s[i] as int) as! uint; }
+	print(h);
+}

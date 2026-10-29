@@ -1,0 +1,19 @@
+// An inner loop whose shifted index runs past the end must still stop at
+// the first bad index, after the stores before it.
+var hits int[>..] = [];
+fn fill(words u32[>..]&, n int, step int) {
+	var j = step;
+	while j < n {
+		words[j >> 5] |= (1 as u32) << j;
+		hits.push(j);
+		j += step;
+	}
+}
+fn main() {
+	var words u32[>..] = [];
+	words.resize(4, 0);
+	fill(words, 128, 3);
+	print(words[0], " ", hits.len);
+	fill(words, 200, 5);
+	print("unreachable");
+}
