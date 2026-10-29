@@ -351,6 +351,7 @@ rt_fbhdr(p int, n int, esz int) int: r u64 ~= 0; sh ~= 0; i ~= 0; while i < n &&
 var RT_SH int; RT_TID ~= -1; var RT_REC int
 rt_fwait(a int, v int): sys6(202, a, 128, v, 0, 0, 0);
 rt_fwake(a int): sys6(202, a, 129, 1 << 30, 0, 0, 0);
+rt_swait(a int, v int): k ~= 0; while k < 77 && mld(a) == v { sys3(24, 0, 0, 0); k++ } if mld(a) == v { rt_fwait(a, v) }
 rt_lock(m int): if xchg(m, 1) == 0 { return } while xchg(m, 2) != 0: rt_fwait(m, 2)
 rt_unlock(m int): if xchg(m, 0) == 2: rt_fwake(m);
 rt_tblk() int: if RT_SH == 0 { RT_SH = rt_map(); mst(RT_SH + 24, rt_map()) } rt_flush(); b := tlsb(); sz := mld(b + 8); nb := sys6(9, 0, sz, 3, 0x22, -1, 0); mcopy(nb, b, sz); mst(nb, nb); nb
@@ -358,10 +359,10 @@ rt_spawn(fnp int, tmain int, pkt int, blk int, contained int) int:
 	rt_lock(RT_SH + 8); id := mld(RT_SH + 16); mst(RT_SH + 16, id + 1); rt_unlock(RT_SH + 8)
 	r := mld(RT_SH + 24) + id * 128
 	mst(r + 40, fnp); mst(r + 48, pkt); mst(r + 56, contained); mst(r + 72, blk); mst(r + 80, mld(blk + 8)); mst(r + 32, 1)
-	ss := rt_tss(); st := sys6(9, 0, ss, 3, 0x4022, -1, 0); sys3(10, st, 4096, 0); mst(r + 64, st); mst(r + 104, ss); if RT_TIER != 0 { RT_TEND = max(RT_TEND, st + ss) }
+	ss := rt_tss(); st := sys6(9, 0, ss, 3, 0x24022, -1, 0); sys3(10, st, 4096, 0); mst(r + 64, st); mst(r + 104, ss); if RT_TIER != 0 { RT_TEND = max(RT_TEND, st + ss) }
 	sp := st + ss - 16; mst(sp, tmain); mst(sp + 8, r)
 	if sysclone(0x250F00, sp, 0, r + 32, blk) < 0: rt_abort("could not start a worker", "thread_spawn")
-	while mld(r + 96) == 0: rt_fwait(r + 96, 0)
+	while mld(r + 96) == 0: rt_swait(r + 96, 0)
 	id
 rt_tmain(r int):
 	RT_DS.b = 0; RT_DS.n = 0; RT_DS.top = 0; RT_DS.fl = 0; RT_DS.fln = 0; RT_DS.flc = 0; RT_NFREE = 0; RT_OUT.b = 0; RT_OUT.n = 0; RT_OUT.top = 0; RT_SINK = 0; RT_EN = 0; RT_PD = 0; RT_PLS = 0
@@ -383,7 +384,7 @@ rt_twait(id int, mv int, loc const byte[:]) bool:
 	if id == RT_TID: rt_abort("a worker cannot wait for itself", loc)
 	rt_flush()
 	r := mld(RT_SH + 24) + id * 128
-	while mld(r) == 0: rt_fwait(r, 0)
+	while mld(r) == 0: rt_swait(r, 0)
 	ok := mld(r + 8) == 0
 	if mv != 0 && mld(r + 16) != 0: k := mld(r + 24); if k > 0 { mcopy(rt_grow(mv, k, 1), mld(r + 16), k) } mst(r + 16, 0)
 	if xchg(r + 88, 1) == 0: loop { c := mld(r + 32) & 0xFFFFFFFF; if c == 0 { break } sys6(202, r + 32, 0, c, 0, 0, 0) } sys3(11, mld(r + 64), mld(r + 104), 0); sys3(11, mld(r + 72), mld(r + 80), 0)
@@ -412,7 +413,7 @@ rt_qget(qid int, ms0 int, cl int, dst int, sz int) bool:
 			rt_unlock(q); return true
 		sq := mld(q + 48); rt_unlock(q)
 		if ms == 0: break
-		if ms < 0: rt_fwait(q + 48, sq); else: sys3(228, 1, iptr(RT_TS[..]), 0); now := RT_TS[0] * 1000000000 + RT_TS[1]; if now >= dl { break } rem := dl - now; RT_TS[0] = rem / 1000000000; RT_TS[1] = rem % 1000000000; sys6(202, q + 48, 128, sq, iptr(RT_TS[..]), 0, 0);
+		if ms < 0: rt_swait(q + 48, sq); else: sys3(228, 1, iptr(RT_TS[..]), 0); now := RT_TS[0] * 1000000000 + RT_TS[1]; if now >= dl { break } rem := dl - now; RT_TS[0] = rem / 1000000000; RT_TS[1] = rem % 1000000000; sys6(202, q + 48, 128, sq, iptr(RT_TS[..]), 0, 0);
 	if sz >= 0: rt_zero(dst, sz); else: mst(dst, 0); mst(dst + 8, 0);
 	false
 rt_qlimit(qid int, lim int, loc const byte[:]): if lim <= 0 { rt_abort("a queue limit must be positive", loc) } q := rt_q(qid); rt_lock(q); mst(q + 40, lim); rt_unlock(q);
