@@ -1,0 +1,18 @@
+// A step that can be negative keeps its check: the index goes below zero.
+
+import std;
+import os;
+
+fn fill(v int[>..]&, s int) {
+	var j = 0;
+	while j < v.len { v[j] = j; j += s; }
+}
+
+fn main() {
+	var v int[>..] = [];
+	v.resize(10, 0);
+	fill(v, 3);
+	print(v[9]);
+	fill(v, 4 - arg_count() * 7);
+	print(v[0]);
+}

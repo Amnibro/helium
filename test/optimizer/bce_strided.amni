@@ -1,0 +1,48 @@
+// Loops whose index steps by a value that does not change in the loop: a
+// start and a step that are never negative, bounded by the length being
+// checked, keep every index in range without a check of its own.
+
+import std;
+
+fn sieve(n int) int {
+	var flags bool[>..] = [];
+	flags.resize(n, true);
+	var count = 0;
+	for i in 2..flags.len {
+		if flags[i] {
+			count++;
+			var j = i << 1;
+			while j < flags.len { flags[j] = false; j += i; }
+		}
+	}
+	return count;
+}
+
+fn strided(n int) int {
+	var v int[>..] = [];
+	v.resize(n, 0);
+	for i in 1..40 {
+		var j = i;
+		while j < v.len { v[j] += i; j += i; }
+	}
+	var t = 0;
+	for x, k in v { t += x * (k % 7 + 1); }
+	return t;
+}
+
+fn sums(v int[:]) int {
+	var t = 0;
+	for s in 1..v.len {
+		var j = s + s;
+		while j < v.len { t += v[j]; j += s + 1; }
+	}
+	return t;
+}
+
+fn main() {
+	print(sieve(100000), " ", sieve(2), " ", sieve(3));
+	print(strided(1000), " ", strided(1));
+	var w int[>..] = [];
+	for k in 300 { w.push(k * 3 - 100); }
+	print(sums(w[..]));
+}
