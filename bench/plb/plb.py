@@ -4,7 +4,9 @@ against that repository's own Rust, C and C++ programs.
 
 The Goose programs live here, one directory per problem, named as PLB names
 its sources (`1.goose`, `2-m.goose`: `-m` for multithreaded, `-i` for
-intrinsics). Everything else -- the problem list, the inputs, the expected
+intrinsics, and here `-x` for a step-reduced program, one that gets the
+reference output by other work than the problem's algorithm; the summary
+table leaves those out unless asked with `--bent`). Everything else -- the problem list, the inputs, the expected
 outputs, the data files and the other languages' sources -- is read from a
 PLB checkout: `$PLB`, or a `Programming-Language-Benchmarks` or `PLB`
 directory beside this repository's checkout. Build products go under
@@ -490,17 +492,21 @@ def multithreaded(lang, problem, src):
     return bool(MT_MARKS.search(path.read_text(errors="replace")))
 
 
-def best_rows(problem, rows, langs, last):
+def bent(key):
+    return key.split("/")[0] in ("helium", "goose") and re.search(r"-\w*x\w*$", Path(key.split("/", 1)[1]).stem)
+
+
+def best_rows(problem, rows, langs, last, with_bent=True):
     best = {}
     for key, rs in rows.items():
-        if langs and key.split("/")[0] not in langs:
+        if langs and key.split("/")[0] not in langs or not with_bent and bent(key):
             continue
         rs = rs[-last:] if last else rs
         best[key] = (min(r["ms"] for r in rs), max(r["peak"] for r in rs))
     return best
 
 
-def markdown(problems_, last=None):
+def markdown(problems_, last=None, with_bent=False):
     """One row per input: the fastest program of each language, single- and
     multithreaded, and Helium's speed relative to the fastest other one (above
     1 means Helium is faster)."""
@@ -510,7 +516,7 @@ def markdown(problems_, last=None):
     print("|---|---|" + "---:|" * (2 * len(groups) + 2))
     for problem in problems_:
         for inp, rows in load_db(problem).items():
-            best = best_rows(problem, rows, None, last)
+            best = best_rows(problem, rows, None, last, with_bent)
 
             def pick(langs, mt):
                 cands = [(ms, peak, key) for key, (ms, peak) in best.items()
@@ -571,7 +577,7 @@ def cmd_cost(args):
 def cmd_report(args):
     probs = args.problems or sorted(p.stem for p in (BUILD / "results").glob("*.json"))
     if args.markdown:
-        markdown(probs, args.last)
+        markdown(probs, args.last, args.bent)
         return
     for problem in probs:
         for inp, rows in load_db(problem).items():
@@ -595,6 +601,7 @@ def main():
     ap.add_argument("--input", help="bench only this input of each problem")
     ap.add_argument("--last", type=int, help="report: only the last N measurements per cell")
     ap.add_argument("--markdown", action="store_true", help="report: the summary table of README.md")
+    ap.add_argument("--bent", action="store_true", help="report: let step-reduced (-x) programs into the summary table")
     ap.add_argument("--cpus", default=os.environ.get("BENCH_CPUS", "8-15,24-31"),
                     help="CPUs to pin runs to (default 8-15,24-31, the CCD without V-cache on the 9950X3D)")
     args = ap.parse_args()

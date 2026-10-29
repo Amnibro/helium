@@ -1,0 +1,187 @@
+// Step-reduced, not the problem's algorithm: the generator's numbers are
+// made in another order, the output byte for byte that of 2.amni.
+// 3-x.amni's output on every core. The generator is s -> (3877 s + 29573) mod
+// IM, so n steps of it are one step of the same form, s -> (A s + C) mod IM,
+// and A and C for any n come from squaring the step about log2 n times. A
+// piece of a section, a run of whole lines, can then start from its own first
+// number without the ones before it, so the pieces are made by workers at
+// once, each as 3-x.amni makes lines (60 columns, each stepping a line at a
+// time), and written out in order. The first section, the repeated ALU, is
+// cut into pieces the same way, as each line starts at a known offset of it.
+import std;
+import os;
+import math;
+
+let LINE = 60;
+let PIECE = 4096;      // lines
+let IM = 139968;
+let ALU = "GGCCGGGCGCGGTGGCTCACGCCTGTAATCCCAGCACTTTGGGAGGCCGAGGCGGGCGGATCACCTGAGGTCAGGAGTTCGAGACCAGCCTGGCCAACATGGTGAAACCCCGTCTCTACTAAAAATACAAAAATTAGCCGGGCGTGGTGGCGCGCGCCTGTAATCCCAGCTACTCGGGAGGCTGAGGCAGGAGAATCGCTTGAACCCGGGAGGCGGAGGTTGCAGTGAGCCGAGATCGCGCCACTGCACTCCAGCCTGGGCGACAGAGCGAGACTCCGTCTCAAAAA";
+
+// A and C of n steps of the generator.
+fn jump(n int) uint, uint {
+	var A uint = 1;
+	var C uint = 0;
+	var a uint = 3877;
+	var c uint = 29573;
+	var k = n;
+	while k > 0 {
+		if k & 1 != 0 {
+			A = a * A % IM;
+			C = (a * C + c) % IM;
+		}
+		c = (a * c + c) % IM;
+		a = a * a % IM;
+		k >>= 1;
+	}
+	return A, C;
+}
+
+// The letter of every random number for a distribution: that of the first
+// cumulative probability above r / IM, as 1.amni finds it.
+fn letters(probs real[:], chars byte[:]) byte[] {
+	var table byte[>..] = [];
+	table.resize(IM, 0);
+	var cum = 0.0;
+	var r = 0;
+	for p, i in probs {
+		cum += p;
+		let t = min(ceil(cum * IM) as int, IM);
+		while r < t {
+			table[r] = chars[i];
+			r++;
+		}
+	}
+	return copy(table);
+}
+
+// Lines first .. first + lines of a section of count letters: the repeated
+// ALU when table is empty, else random letters from the generator started
+// at seed at the section's start.
+struct Job { id int, first int, lines int, count int, seed uint, table byte[] }    // id < 0: no more work
+struct Piece { id int, data byte[] }
+
+fn make(job Job&) byte[] {
+	var out byte[>..] = [];
+	let left = min(job.lines * LINE, job.count - job.first * LINE);
+	out.resize(left + (left + LINE - 1) / LINE, '\n');
+	if job.table.len == 0 {
+		var padded byte[>..] = [];
+		padded.append(ALU);
+		padded.append(ALU[..LINE]);
+		var off = job.first * LINE % ALU.len;
+		var at = 0;
+		var k = 0;
+		while k < left {
+			let len = min(LINE, left - k);
+			copy_into(out[at..at + len], padded[off..off + len]);
+			at += len + 1;
+			k += len;
+			off += len;
+			if off >= ALU.len { off -= ALU.len; }
+		}
+		return copy(out);
+	}
+	// Column j holds the number of the current line's column j.
+	let A0, C0 = jump(job.first * LINE + 1);
+	let A1, C1 = jump(1);
+	var col uint[60] = [0; 60];
+	var s = (A0 * job.seed + C0) % IM;
+	for j in LINE {
+		col[j] = s;
+		s = (A1 * s + C1) % IM;
+	}
+	let A, C = jump(LINE);
+	var at = 0;
+	var k = 0;
+	while k < left {
+		let len = min(LINE, left - k);
+		let line = out[at..at + len];
+		for j in len {
+			line[j] = job.table[col[j] as! int];
+		}
+		for j in LINE {
+			col[j] = (A * col[j] + C) % IM;
+		}
+		at += len + 1;
+		k += len;
+	}
+	return copy(out);
+}
+
+thread_fn worker() {
+	loop {
+		let job = qget<Job>();
+		guard job.id >= 0 else { break; }
+		qput(Piece { id: job.id, data: make(job) });
+	}
+}
+
+fn main() {
+	let a = args();
+	var n = 1000;
+	if a.len > 1 { let v, ok = parse_int(a[1]); if ok { n = v; } }
+	let workers = max(1, hardware_threads());
+	var ids int[>..] = [];
+	for w in workers { ids.push(thread_spawn(worker)); }
+	let iub = letters([0.27, 0.12, 0.12, 0.27, 0.02, 0.02, 0.02, 0.02, 0.02, 0.02, 0.02, 0.02, 0.02, 0.02, 0.02], "acgtBDHKMNRSVWY");
+	let sapiens = letters([0.3029549426680, 0.1979883004921, 0.1975473066391, 0.3015094502008], "acgt");
+	let A3, C3 = jump(3 * n);
+	let heads = [">ONE Homo sapiens alu\n", ">TWO IUB ambiguity codes\n", ">THREE Homo sapiens frequency\n"];
+	let counts = [2 * n, 3 * n, 5 * n];
+	let seeds uint[3] = [0, 42, (A3 * 42 + C3) % IM];
+	// Pieces are numbered in output order; a section's head goes before its first.
+	var firsts int[>..] = [];
+	var jobs = 0;
+	for sec in 3 {
+		firsts.push(jobs);
+		let lines = (counts[sec] + LINE - 1) / LINE;
+		var first = 0;
+		while first < lines {
+			let t = if sec == 0 { [] } else { if sec == 1 { iub } else { sapiens } };
+			qput(Job { id: jobs, first: first, lines: min(PIECE, lines - first), count: counts[sec], seed: seeds[sec], table: t });
+			jobs++;
+			first += PIECE;
+		}
+	}
+	// Pieces that come before their turn wait in held, at offs and lens.
+	var held byte[>..] = [];
+	var offs int[>..] = [];
+	offs.resize(jobs, -1);
+	var lens int[>..] = [];
+	lens.resize(jobs, 0);
+	var waiting = 0;
+	var next = 0;
+	var sec = 0;
+	for k in jobs {
+		let p = qget<Piece>();
+		if p.id != next {
+			offs[p.id] = held.len;
+			lens[p.id] = p.data.len;
+			held.append(p.data);
+			waiting++;
+			continue;
+		}
+		while sec < 3 && firsts[sec] == next {
+			write_stdout(heads[sec]);
+			sec++;
+		}
+		write_stdout(p.data);
+		next++;
+		while next < jobs && offs[next] >= 0 {
+			while sec < 3 && firsts[sec] == next {
+				write_stdout(heads[sec]);
+				sec++;
+			}
+			write_stdout(held[offs[next]..offs[next] + lens[next]]);
+			waiting--;
+			next++;
+		}
+		if waiting == 0 { held.clear(); }
+	}
+	while sec < 3 {
+		write_stdout(heads[sec]);
+		sec++;
+	}
+	for w in workers { qput(Job { id: -1, first: 0, lines: 0, count: 0, seed: 0, table: [] }); }
+	for id in ids { thread_wait(id); }
+}
