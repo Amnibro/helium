@@ -14,7 +14,10 @@ Programs are built the way PLB builds C (`clang -O3 -march=broadwell
 -fomit-frame-pointer`), Rust with its Cargo profile (LTO, one codegen unit,
 `-Ctarget-cpu=broadwell`), the generated Goose C with the C flags, its
 `simd fn`s capped at AVX2 to match, and Helium with `hc --v3` (AVX2 and
-three-operand scalar floats, the same Broadwell level).
+three-operand scalar floats, the same Broadwell level). With `--arch native`
+every language is built for this CPU instead: `-march=native` for C, C++ and
+Goose, `-Ctarget-cpu=native` for Rust, and Helium with `hc --v4` when the CPU
+has AVX-512.
 
   python bench/plb/plb.py build                       # every Goose program
   python bench/plb/plb.py build --langs rust,cpp,c    # the reference programs
@@ -602,6 +605,8 @@ def main():
         CXXFLAGS = CFLAGS + ["-std=c++20"]
         GOOSE_CFLAGS = CFLAGS + ["-DGS_SIMD=2"]
         RUST_CPU = "native"
+        if args.hc_flags == "--v3" and "avx512f" in Path("/proc/cpuinfo").read_text():
+            args.hc_flags = "--v4"
     args.problems = [p for p in args.problems.split(",") if p]
     args.variants = [v for v in args.variants.split(",") if v]
     default_langs = ["helium"] if args.cmd in ("build", "test") else LANGS

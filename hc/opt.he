@@ -258,7 +258,7 @@ regalloc(fi int):
 		ga[p + 1] = ga[p] + (if op == I_COPY || op == I_ZERO { 1 } else { 0 }); gb[p + 1] = gb[p] + (if op == I_FUN && x.c == 5 { 1 } else { 0 })
 		d := x.d as int; if d < 0 || op == I_ZERO || op == I_COPY || op == I_ST || op == I_NOP && !NOXN: continue
 		if op == I_FUN && x.c & 255 == 12 && x.l >= 0: l2 := x.l as int; if XW[l2] == 0 { XW[l2] = 11 } else if XW[l2] != 11 { XW[l2] = -1 }
-		fw := if op == I_FBIN || op == I_FUN && (x.c < 7 || x.c & 255 == 12) || op == I_CVT && (x.c == 1 || x.c == 2 || x.c == 7) || (op == I_LD || op == I_MOV || op == I_EXT) && w & 8 != 0 { w } else { if op == I_CVT && x.c == 3 { 11 } else { if op == I_CVT && x.c == 4 { 10 } else { -1 } } }
+		fw := if op == I_FBIN || op == I_FUN && (x.c < 7 || x.c & 255 == 12 || x.c == 15) || op == I_CVT && (x.c == 1 || x.c == 2 || x.c == 7) || (op == I_LD || op == I_MOV || op == I_EXT) && w & 8 != 0 { w } else { if op == I_CVT && x.c == 3 { 11 } else { if op == I_CVT && x.c == 4 { 10 } else { -1 } } }
 		if fw < 0 && (ismov(i) && (w == 3 || w == 11) || op == I_IMM): continue
 		if fw < 0 || XW[d] != 0 && XW[d] as int != fw: XW[d] = -1
 		else:
@@ -958,25 +958,27 @@ vperm(fi int):
 	nd i32[>..<] ~= []; nd.resize(nv, 0); uc i32[>..<] ~= []; uc.resize(nv, 0); dp i32[>..<] ~= []; dp.resize(nv, -1); for i i0..i1 { opnds(i); for d OD { nd[d] += 1; dp[d] = i as i32 } for u OU { uc[u] += 1 } }
 	recursive sl(v int, k int) i64: if v < 0 || k > 7 || nd[v] != 1 { return -1 } y := IR[dp[v]]; if y.op as int == I_SLOT { return y.c } if y.op as int == I_MOV { return sl(y.a as int, k + 1) } -1
 	kv(v int) i64: if v >= 0 && nd[v] == 1 && IR[dp[v]].op as int == I_IMM { IR[dp[v]].c } else { -1 }
+	rt(v0 int, c0 i64) int, i64:
+		v ~= v0; o ~= c0
+		for z 7:
+			if v < 0 || nd[v] != 1 || dp[v] < 0 { break } y := IR[dp[v]]; yo := y.op as int
+			if yo == I_MOV && y.w == 3 && y.a >= 0 { v = y.a as int } else if yo == I_BIN && y.c == B_ADD as i64 && y.l < 0 && kv(y.b as int) >= 0 { o += kv(y.b as int); v = y.a as int } else if yo == I_BIN && y.c == B_ADD as i64 && y.l < 0 && kv(y.a as int) >= 0 { o += kv(y.a as int); v = y.b as int } else { break }
+		return v, o
 	hit ~= false; i ~= i0
 	while i < i1:
-		x := IR[i]; i++; if x.op as int != I_LD || x.c != 0 || wsz(x.w as int) != 8 || x.d < 0 || x.a < 0 || x.l == -3: continue
-		bs := x.a as int; sa := sl(bs, 0); if sa < 0: continue
-		ld i32[>..] ~= []; lo i32[>..] ~= []; ld.push(i as i32 - 1); lo.push(0); q ~= i; ok ~= true
-		while ok && ld.len < 8 && q < i1:
-			y := IR[q]; o := y.op as int; q++; if o == I_NOP { continue } if o != I_LD || y.a as int != bs || y.w != x.w || y.d < 0 || y.c < 8 || y.c > 56 || y.c % 8 != 0 || y.l == -3 { ok = false; break } for c lo { if c as i64 == y.c / 8 { ok = false } } ld.push(q as i32 - 1); lo.push((y.c / 8) as i32)
-		if !ok || ld.len < 8: continue
-		for p ld { if uc[IR[p].d] != 1 { ok = false } } if !ok: continue
-		pm ~= [-1; 8]; sts i32[>..] ~= []; B ~= -1; nn ~= 0
-		while ok && sts.len < 8 && q < i1 && nn < 77:
+		x := IR[i]; i++; if x.op as int != I_LD || wsz(x.w as int) != 8 || x.d < 0 || x.a < 0 || x.l == -3: continue
+		bs, o0 := rt(x.a as int, x.c); sa := sl(bs, 0); if sa < 0: continue
+		ld i32[>..] ~= []; lo i32[>..] ~= []; pm ~= [-1; 8]; sts i32[>..] ~= []; B ~= -1; q ~= i - 1; ok ~= true; nn ~= 0
+		while ok && sts.len < 8 && q < i1 && nn < 160:
 			y := IR[q]; o := y.op as int; q++; nn++
 			if o == I_NOP || o == I_IMM || o == I_MOV && y.w == 3 || o == I_BIN && y.w == 3 && y.l < 0 && y.c == B_ADD as i64: continue
+			if o == I_LD:
+				r, f := rt(y.a as int, y.c); if r != bs || y.w != x.w || y.d < 0 || y.l == -3 || f < 0 || f > 56 || f % 8 != 0 || uc[y.d] != 1 { ok = false; break } for c lo { if c as i64 == f / 8 { ok = false } } ld.push(q as i32 - 1); lo.push((f / 8) as i32); continue
 			if o != I_ST || wsz(y.w as int) != 8 || y.a < 0 || y.b < 0: ok = false; break
 			k ~= -1; for p, z ld { if IR[p].d == y.b { k = z } } if k < 0: ok = false; break
-			A ~= y.a as int; for z 4 { if nd[A] == 1 && dp[A] >= 0 && IR[dp[A]].op as int == I_MOV && IR[dp[A]].a >= 0 { A = IR[dp[A]].a as int } } b0 ~= A; off ~= y.c; if nd[A] == 1 && IR[dp[A]].op as int == I_BIN && IR[dp[A]].c == B_ADD as i64 && kv(IR[dp[A]].b as int) >= 0 { b0 = IR[dp[A]].a as int; off += kv(IR[dp[A]].b as int) }
-			if B < 0 { B = b0 } if b0 != B || off < 0 || off > 56 || off % 8 != 0 || pm[off / 8] >= 0: ok = false; break
+			b0, off := rt(y.a as int, y.c); if B < 0 { B = b0 } if b0 != B || off < 0 || off > 56 || off % 8 != 0 || pm[off / 8] >= 0: ok = false; break
 			pm[off / 8] = lo[k]; sts.push(q as i32 - 1)
-		if !ok || sts.len < 8: continue
+		if !ok || sts.len < 8 || ld.len != 8: continue
 		sb := sl(B, 0); if sb < 0 || sb < sa + 64 && sa < sb + 64: continue
 		pc ~= 1 as i64 << 40; for j 8 { pc = pc | (pm[j] as i64) << (3 * j) }
 		for p ld { IR[p].op = I_NOP as u8 } for p sts { IR[p].op = I_NOP as u8 } IR[sts[7]] = Ir{I_COPY as u8, 3, B as i32, bs as i32, -1, pc, -1}; hit = true; i = q

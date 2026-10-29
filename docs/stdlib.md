@@ -557,6 +557,13 @@ fn radians(deg: f64) -> f64   fn degrees(rad: f64) -> f64
 fn is_nan(x: f64) -> bool     fn is_inf(x: f64) -> bool
 ```
 
+`rsqrt_est(x)`, in both widths, is the processor's estimate of `1/sqrt(x)`,
+within 2^-11 of it: one `rsqrtss` or `rsqrtps` instruction, giving the same
+bits in scalar code and in vectorized loops on one machine (another
+processor may differ in the low bits; the web build returns `1/sqrt(x)`
+exactly). Each Newton step, `r * (1.5 - 0.5 * x * r * r)`, roughly doubles
+the bits that are right.
+
 ## os
 
 A small interface to `src/runtime/runtime_os.h`:

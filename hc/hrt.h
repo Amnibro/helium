@@ -481,6 +481,13 @@ static __attribute__((noreturn, cold)) void hr_castf(const char *loc) { hr_die("
 #define HR_SMOD(T, a, b, loc) ({ T _da = (a), _db = (b); if (HR_UNLIKELY(_db == 0)) hr_die("division by zero", loc); T _dr = _db == -1 ? 0 : (T)(_da % _db); (T)(_dr < 0 ? (_db < 0 ? _dr - _db : _dr + _db) : _dr); })
 #define hr_sqrt sqrt
 #define hr_sqrtf sqrtf
+#if defined(__SSE__)
+#include <xmmintrin.h>
+static inline float hr_rsqrtf_est(float x) { return _mm_cvtss_f32(_mm_rsqrt_ss(_mm_set_ss(x))); }
+#else
+static inline float hr_rsqrtf_est(float x) { return 1.0f / sqrtf(x); }
+#endif
+static inline double hr_rsqrt_est(double x) { return (double)hr_rsqrtf_est((float)x); }
 #define hr_sin sin
 #define hr_sinf sinf
 #define hr_cos cos

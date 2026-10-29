@@ -1,0 +1,30 @@
+// rsqrt_est: the hardware reciprocal square root estimate, within 2^-11 of
+// 1/sqrt(x), and the same bits from the scalar instruction and from a
+// vectorized loop.
+import std;
+import os;
+import math;
+fn main() {
+	var line byte[>..] = [];
+	var xs real[>..] = [];
+	var fs f32[>..] = [];
+	var x = 1.0e-3;
+	for i in 37 { xs.push(x); fs.push(x as f32); x *= 1.77; }
+	var ys real[>..] = [];
+	ys.resize(xs.len, 0.0);
+	for i in xs.len { ys[i] = rsqrt_est(xs[i]); }
+	var gs f32[>..] = [];
+	gs.resize(fs.len, 0.0);
+	for i in fs.len { gs[i] = rsqrt_est(fs[i]); }
+	var worst = 0.0;
+	var same = true;
+	for i in xs.len {
+		let e = abs(ys[i] * sqrt(xs[i]) - 1.0);
+		worst = max(worst, e);
+		let s = rsqrt_est(xs[i]);
+		if s != ys[i] { same = false; }
+		if (gs[i] as real) != ys[i] { same = false; }
+	}
+	format(line, "within 2^-11: ", worst < 1.0 / 2048.0, ", scalar and vector agree: ", same, "\n");
+	print(line);
+}

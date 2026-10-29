@@ -1,4 +1,4 @@
-extern sqrt(x real) real = "hr_sqrt"; extern sqrt(x f32) f32 = "hr_sqrtf"
+extern sqrt(x real) real = "hr_sqrt"; extern sqrt(x f32) f32 = "hr_sqrtf"; extern rsqrt_est(x real) real = "hr_rsqrt_est"; extern rsqrt_est(x f32) f32 = "hr_rsqrtf_est"
 extern sin(x real) real = "hr_sin"; extern sin(x f32) f32 = "hr_sinf"
 extern cos(x real) real = "hr_cos"; extern cos(x f32) f32 = "hr_cosf"
 extern tan(x real) real = "hr_tan"; extern tan(x f32) f32 = "hr_tanf"

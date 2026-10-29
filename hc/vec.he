@@ -142,6 +142,10 @@ vcvt(s i32[>..]&, w0 int, sg bool, w1 int, o i32[>..]&):
 		vcsw(); w = w / 2
 	if !own: vcown()
 	o.clear(); for r VCA { o.push(r) }
+vrsq(cw int, r int):
+	if cw == 4: sse(0, false, 0x52, r, r); return
+	if !VEXM: sse(0x66, false, 0x5A, r, r); sse(0, false, 0x52, r, r); sse(0, false, 0x5A, r, r); return
+	vexp(0x66, false, r, r, 0, 1); xb(0x5A); xb(0xC0 | (r & 7) << 3 | r & 7); l := VEXL; VEXL = 0; vexp(0, false, r, r, 0, 1); xb(0x52); xb(0xC0 | (r & 7) << 3 | r & 7); VEXL = l; vexp(0, false, r, r, 0, 1); xb(0x5A); xb(0xC0 | (r & 7) << 3 | r & 7)
 vgetm(v int, w int, t int, o i32[>..]&):
 	o.clear(); p := VVF * w / vbw()
 	if v <= -2: u := -2 - v; for z p { r := vxa(); vmvx(r, VUR[4 * u + vlg(w)] as int); o.push(r as i32) } return
@@ -173,11 +177,11 @@ vopc(c int, l int) int:
 			if l == 0 { 0xF8 } else { if l == 1 { 0xF9 } else { if l == 2 { 0xFA } else { 0xFB } } }
 		else:
 			if c == B_AND { 0xDB } else { if c == B_OR { 0xEB } else { if c == B_XOR { 0xEF } else { 0xD5 } } }
-vmem(op int, r int, g int, w int, dsp int): SIBM = true; SIBI = RCX; SIBS = vlg(w); ssem(0xF3, false, op, r, VGREG[VGB[g]] as int, dsp + VGO[g] as int);
+vmem(op int, r int, g int, w int, dsp int): p0 := XC.len; SIBM = true; SIBI = RCX; SIBS = vlg(w); ssem(0xF3, false, op, r, VGREG[VGB[g]] as int, dsp + VGO[g] as int); VMP.push((p0 - VN0) as i32); VML.push((XC.len - p0) as i32); VMT.push(if op == 0x6F { 1 } else { 2 }); VMQ.push(VGB[g]); VMD.push((dsp + VGO[g]) as i64); VMR.push(r as i8)
 vbw() int:
 	if EVX { 64 } else { if VEXM { 32 } else { 16 } }
 evok() bool:
-	for o VOS { k := o.k as int; if !(k == 1 && o.w == 8 || k == 2 && o.w == 8 || k == 3 && o.w == 8 && o.s == 8 && (o.x & 256 != 0 || o.x & 512 != 0) || k == 4 && o.w == 8 && (o.a < 0 || VLW[o.a] == 8)) { return false } }
+	for o VOS { k := o.k as int; if !(k == 1 && o.w == 8 || k == 2 && o.w == 8 || k == 3 && o.w == 8 && o.s == 8 && (o.x & 256 != 0 || o.x & 512 != 0 && o.x != 512 | 15) || k == 4 && o.w == 8 && (o.a < 0 || VLW[o.a] == 8)) { return false } }
 	for k VUB.len { if VUB[k] != 0 && k % 4 != 3 { return false } }
 	true
 vasm(mk bool) bool:
@@ -188,7 +192,7 @@ vasm(mk bool) bool:
 		for u VUT.len { if VUC[u] == 0 { zu = if zu == -1 { u } else { -2 } } } if zu < 0 || VNP + 3 > 6 || VUB[4 * zu + 3] == 0 || VUB[4 * zu] != 0 || VUB[4 * zu + 1] != 0 || VUB[4 * zu + 2] != 0: return false
 		for o VOS: if o.k as int == 1 { for o2 VOS { if o2.k as int == 2 && o2.g == o.g && (o2.y != o.y || o2.w != o.w) { return false } } }
 		zb = VGREG[VNP] as int; zp = VGREG[VNP + 1] as int; zn = VGREG[VNP + 2] as int
-	n0 := XC.len
+	n0 := XC.len; VN0 = n0; ms0 := VMP.len
 	for q VUT.len:
 		u := VUT.len - 1 - q; if VUC[u] != 0 { continue } if VJM { pop_r(zn); pop_r(zp); pop_r(zb); sh_ri(4, zp, 3); alu(0x01, zp, zb); sh_ri(4, zn, 3); alu(0x01, zn, zb); continue } pop_r(RAX); nb ~= 0; for z 4 { if VUB[4 * u + z] != 0 { nb++ } } if nb > 1 || env("HC_NOVG", VNB) { mov_rr(RSI, RAX) } for z 4: if VUB[4 * u + z] != 0 { if nb > 1 || env("HC_NOVG", VNB) { mov_rr(RAX, RSI) } vbc(1 << z, VUR[4 * u + z] as int) }
 	for u VUT.len:
@@ -244,7 +248,7 @@ vasm(mk bool) bool:
 			c := o.x as int; a ~= o.a as int; b ~= o.b as int
 			cw := o.s as int
 			if c & 512 != 0:
-				vgetm(a, cw, t, aa); for r aa { sse(if cw == 4 { 0 } else { 0x66 }, false, 0x51, r as int, r as int) }
+				vgetm(a, cw, t, aa); for r aa { if c == 512 | 15 { vrsq(cw, r as int) } else { sse(if cw == 4 { 0 } else { 0x66 }, false, 0x51, r as int, r as int) } }
 			else if c == B_SHL || c == B_SHR || c == B_SAR:
 				vgetm(a, cw, t, aa); for r aa { vshi(cw, if c == B_SHL { 6 } else { if c == B_SAR { 4 } else { 2 } }, r as int, o.y as int) }
 			else:
@@ -265,8 +269,8 @@ vasm(mk bool) bool:
 	if VRD >= 0 && !VBAD && VNRW > 0: for p 1..ra.len { sse(0x66, false, 0xFE, ra[0] as int, ra[p] as int) } sse(0x66, false, 0x70, VZR, ra[0] as int); xb(0x4E); sse(0x66, false, 0xFE, ra[0] as int, VZR); sse(0x66, false, 0x70, VZR, ra[0] as int); xb(0xB1); sse(0x66, false, 0xFE, ra[0] as int, VZR); sse(0x66, false, 0x7E, ra[0] as int, RAX); if VNNG { xb(0x48); xb(0x63); xb(0xC0); alu(0x01, RAX, RDX) }
 	if VRD >= 0 && !VBAD && VNRW == 0: cb := if VRC == B_SUB { B_ADD } else { VRC }; for p 1..ra.len { sse(0x66, false, vopc(cb, 3), ra[0] as int, ra[p] as int) } sse(0x66, false, 0x70, VZR, ra[0] as int); xb(0x4E); sse(0x66, false, vopc(cb, 3), ra[0] as int, VZR); sse(0x66, true, 0x7E, ra[0] as int, RAX)
 	if VEXM { xb(0xC5); xb(0xF8); xb(0x77) }
-	if VBAD || VXBAD: XC.resize(n0); return false
-	VKA.push(0); VKO.push(VKB.len as i32); for q n0..XC.len { VKB.push(XC[q]) } VKL.push((XC.len - n0) as i32); XC.resize(n0); true
+	if VBAD || VXBAD: XC.resize(n0); VMP.resize(ms0); VML.resize(ms0); VMT.resize(ms0); VMQ.resize(ms0); VMD.resize(ms0); VMR.resize(ms0); return false
+	VKMS.push(ms0 as i32); VKME.push(VMP.len as i32); VK1.push(if EVX && !VJM && VRD < 0 && VNRW == 0 && VBK == VVF as i64 && !env("HC_NOVG", VNB) { 1 } else { 0 }); VKA.push(0); VKO.push(VKB.len as i32); for q n0..XC.len { VKB.push(XC[q]) } VKL.push((XC.len - n0) as i32); XC.resize(n0); true
 vskip(p int, lim int, dir int) int:
 	q ~= p; while (if dir > 0 { q < lim } else { q > lim }) && IR[q].op as int == I_NOP { q += dir } q
 vec_loop(fi int, h int, j int) bool:
@@ -354,10 +358,10 @@ vec_loop(fi int, h int, j int) bool:
 				if !vln(a) { if !vun(a) { return false } ea = vuref(a, cw) } if !vln(b) { if !vun(b) { return false } eb = vuref(b, cw) }
 			VAK[d] = 3; VLW[d] = rw as i8; VLS[d] = rs as i8; VOS.push(VOp{3, rw as u8, cw as u8, d as i32, ea as i32, eb as i32, -1, cc as i64, yy}); continue
 		if op == I_FUN:
-			if w & 8 == 0 || x.c != 4 || env("HC_NOVSQ", VNB): return false
+			if w & 8 == 0 || x.c != 4 && x.c != 15 || env("HC_NOVSQ", VNB): return false
 			if !vln(a) { vav(a) } if vun(a): vaset(d, 0, 0); vaadd(d, d, 1); vmat(q); continue
 			if !vln(a) || VLS[a] != 2 || VLW[a] as int != wsz(w): return false
-			VAK[d] = 3; VLW[d] = wsz(w) as i8; VLS[d] = 2; VOS.push(VOp{3, wsz(w) as u8, wsz(w) as u8, d as i32, a as i32, -1, -1, 512 | 4, 0}); continue
+			VAK[d] = 3; VLW[d] = wsz(w) as i8; VLS[d] = 2; VOS.push(VOp{3, wsz(w) as u8, wsz(w) as u8, d as i32, a as i32, -1, -1, 512 | x.c, 0}); continue
 		if op == I_FCMP:
 			fw := wsz(w); if w & 8 == 0 || x.c < 0 || x.c > 5: return false
 			if !vln(a) { vav(a) } if !vln(b) { vav(b) } if !vln(a) && !vln(b): return false

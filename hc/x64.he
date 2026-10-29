@@ -56,10 +56,11 @@ leave(): xb(0xC9);
 syscall(): xb(0x0F); xb(0x05);
 ud2(): xb(0x0F); xb(0x0B);
 VEXM ~= false; VEXL ~= 1; VXBAD ~= false; V3 ~= false; V4 ~= false; EVX ~= false; EVD ~= false
+evx(pfx int, op int, mp int, r int, vv int, rm int, mem bool, dsp int): pp := if pfx == 0x66 { 1 } else { if pfx == 0xF3 { 2 } else { if pfx == 0xF2 { 3 } else { 0 } } }; xb(0x62); xb((if r & 8 == 0 { 0x80 } else { 0 }) | (if mem || rm & 16 == 0 { 0x40 } else { 0 }) | (if rm & 8 == 0 { 0x20 } else { 0 }) | (if r & 16 == 0 { 0x10 } else { 0 }) | mp); xb(0x80 | (15 - (vv & 15)) << 3 | 4 | pp); xb(0x40 | (if vv & 16 == 0 { 8 } else { 0 })); xb(op); if mem { xb(0x80 | (r & 7) << 3 | rm & 7); if rm & 7 == 4 { xb(0x24) } x32(dsp) } else { xb(0xC0 | (r & 7) << 3 | rm & 7) }
 vexok(op int) bool:
 	op == 0x10 || op == 0x11 || op == 0x28 || op == 0x29 || op == 0x6F || op == 0x7F || op >= 0x51 && op <= 0x5F && op != 0x5A && op != 0x5B || op >= 0x71 && op <= 0x76 || op >= 0x64 && op <= 0x66 || op >= 0xD1 && op <= 0xD5 || op >= 0xDA && op <= 0xE5 || op >= 0xE8 && op <= 0xEF || op >= 0xF1 && op <= 0xFE && op != 0xF7 || op == 0xC2
 vexmv(op int) bool:
-	op == 0x10 || op == 0x11 || op == 0x28 || op == 0x29 || op == 0x6F || op == 0x7F || op == 0x51
+	op == 0x10 || op == 0x11 || op == 0x28 || op == 0x29 || op == 0x6F || op == 0x7F || op == 0x51 || op == 0x52
 bmx(pfx int, d int, s int, c int, o int): l := VEXL; VEXL = 0; vexp(pfx, !X32, d, s, c, 2); VEXL = l; xb(o); xb(0xC0 | (d & 7) << 3 | s & 7)
 vexp(pfx int, w bool, r int, b int, vv int, m int):
 	x := if SIBM { SIBI } else { 0 }; pp := if pfx == 0x66 { 1 } else { if pfx == 0xF3 { 2 } else { if pfx == 0xF2 { 3 } else { 0 } } }
