@@ -1,0 +1,21 @@
+import std;
+fn mix(x uint) uint { return x * 6364136223846793005 + 1442695040888963407; }
+fn shift(v byte[>..]&, at int, n int) { for i in n { v[at + i] = v[at + i + 1]; } }
+fn copy_up(d u32[>..]&, s u32[:], n int) { for i in n { d[i] = s[i] + 1; } }
+fn main() {
+	var x uint = 3;
+	var h uint = 0;
+	for n in 0..71 {
+		var v byte[>..] = [];
+		for i in 80 { x = mix(x); v.push((x >> 40) as! byte); }
+		shift(v, 3, n);
+		for b in v { h = h * 131 + b as uint; }
+		var s u32[>..] = [];
+		for i in 75 { x = mix(x); s.push((x >> 20) as! u32); }
+		var d u32[>..] = [];
+		d.resize(75, 0);
+		copy_up(d, s, n);
+		for w in d { h = h * 1000003 + w as uint; }
+	}
+	print(h);
+}

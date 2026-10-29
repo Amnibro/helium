@@ -58,6 +58,7 @@ GOOSE_FLAGS = ["-O2"]
 # The references are built for broadwell, and PLB's machines have no AVX-512,
 # so `simd fn` versions stop at AVX2 unless --cflags=-DGS_SIMD=2 asks for more.
 GOOSE_CFLAGS = CFLAGS + ["-DGS_SIMD=1"]
+RUST_CPU = "broadwell"
 
 
 def find_plb():
@@ -293,7 +294,7 @@ def build_rust(problem, src, args):
     data = (ALGO / problem / src).read_bytes()
     if not dst.exists() or dst.read_bytes() != data:
         dst.write_bytes(data)
-    env = dict(os.environ, RUSTFLAGS="-Ctarget-cpu=broadwell", CARGO_TARGET_DIR=str(proj / "target"))
+    env = dict(os.environ, RUSTFLAGS=f"-Ctarget-cpu={RUST_CPU}", CARGO_TARGET_DIR=str(proj / "target"))
     ok, out = run(["cargo", "build", "--release", "--bin", name], cwd=proj, env=env)
     if not ok:
         return False, out
@@ -585,6 +586,8 @@ def main():
     ap.add_argument("--goose", help="the old Goose compiler (default $GOOSE or ../goose/build/helium)")
     ap.add_argument("--goose-flags", default="")
     ap.add_argument("--cflags", default="")
+    ap.add_argument("--arch", default="broadwell", choices=["broadwell", "native"],
+                    help="broadwell: PLB's flags; native: every language built for this CPU, kept in build-native")
     ap.add_argument("--reps", type=int, default=3)
     ap.add_argument("--input", help="bench only this input of each problem")
     ap.add_argument("--last", type=int, help="report: only the last N measurements per cell")
@@ -592,6 +595,13 @@ def main():
     ap.add_argument("--cpus", default=os.environ.get("BENCH_CPUS", "8-15,24-31"),
                     help="CPUs to pin runs to (default 8-15,24-31, the CCD without V-cache on the 9950X3D)")
     args = ap.parse_args()
+    if args.arch == "native":
+        global BUILD, CFLAGS, CXXFLAGS, GOOSE_CFLAGS, RUST_CPU
+        BUILD = HERE / "build-native"
+        CFLAGS = [f if f != "-march=broadwell" else "-march=native" for f in CFLAGS]
+        CXXFLAGS = CFLAGS + ["-std=c++20"]
+        GOOSE_CFLAGS = CFLAGS + ["-DGS_SIMD=2"]
+        RUST_CPU = "native"
     args.problems = [p for p in args.problems.split(",") if p]
     args.variants = [v for v in args.variants.split(",") if v]
     default_langs = ["helium"] if args.cmd in ("build", "test") else LANGS

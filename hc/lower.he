@@ -7,7 +7,7 @@ var LSLOT i32[>..<]
 var NFI i32[>..<]
 var WORK i32[>..<]
 var LBRK i32[>..<]; var LCNT i32[>..<]
-var LERR byte[>..]
+var LERR byte[>..]; var BCB byte[>..]
 var SOFF i64[>..<]; var SSZ i64[>..<]; var SAL i64[>..<]
 var GOFF i32[>..<]
 var RETV int; var RETL int; var RETK int; var CUR int
@@ -996,6 +996,7 @@ recursive lintrinsic(n int, i int, args i32[>..<]&) int:
 	if s == "!ld8": return ldw(args[0], 0, 3)
 	mn := if s.len > 0 { s } else { nm(FI_[i].name) }
 	if mn == "fabs" || mn == "fabsf": w := wof(FI_[i].ret); iw := if w == 10 { 6 } else { 3 }; q := nv(); ir(I_SLOT, 8, q, -1, -1, slot(8, 8)); stw(q, 0, args[0], w); stw(q, 0, bin(B_AND, 3, ldw(q, 0, iw), imm(if w == 10 { 0x7FFFFFFF } else { 0x7FFFFFFFFFFFFFFF }), -1), iw); return ldw(q, 0, w)
+	if (mn == "hr_f64_bits" || mn == "hr_f64_from_bits") && !WEB && !env("HC_NOBC2", BCB): d := nv(); ir(I_MOV, wof(FI_[i].ret), d, args[0], -1, 0); return d
 	if mn == "hr_f32_bits" || mn == "hr_f32_from_bits" || mn == "hr_f64_bits" || mn == "hr_f64_from_bits": q := nv(); ir(I_SLOT, 8, q, -1, -1, slot(8, 8)); stw(q, 0, args[0], wof(ptype_of(i, 0))); return ldw(q, 0, wof(FI_[i].ret))
 	if mn == "hr_simd256": return imm(if V3 && !WEB { 1 } else { 0 })
 	if mn == "hr_bms32": if WEB || !V3 { return rtcall("rt_bms32s", [args[0], args[1]]) } d := nv(); ir(I_FUN, 3, d, args[0], args[1], 14); return d
@@ -1665,7 +1666,7 @@ lower_program(out byte[>..]&) bool:
 	mov_rr(RDI, RSP); lea_rip(RSI, 1, rsg); call_f(rst); mov_rr(RSP, RAX); if dlb >= 0 { call_f(dlb) } call_f(gi); call_f(rm); mov_ri(RDI, 0); call_f(rinit); ud2()
 	irw byte[>..] ~= []; dump := env("HC_IR", irw)
 	noi byte[>..] ~= []; opt := !env("HC_NOOPT", noi); if opt: gtag(); optimize_all(); vec_all(); rot_all(); vjl_all(); NOADC = env("HC_NOADC", noi)
-	for f, i NFS: if dump && f.inst >= 0 && nm(FI_[f.inst].name) == irw[..] { ir_dump(i) } if opt { vperm(i); regalloc(i); } else { REGOF.clear(); RUSED.clear(); VZERO.clear(); FK.clear(); XREG.clear(); SVR.clear(); } cg_fn2(i)
+	for f, i NFS: if dump && f.inst >= 0 && nm(FI_[f.inst].name) == irw[..] { ir_dump(i) } if opt { vperm(i); regalloc(i); for _ 2 { f0 := NFS[i]; c0 := RCOST; if !NORS && rsplit(i) { regalloc(i); if RCOST * 20 > c0 * 19 || c0 - RCOST < 8 { NFS[i] = f0; regalloc(i); break } } } } else { REGOF.clear(); RUSED.clear(); VZERO.clear(); FK.clear(); XREG.clear(); SVR.clear(); } cg_fn2(i)
 	dbg byte[>..] ~= []; if env("HC_NDEBUG", dbg):
 		for f, i NFS: print(if f.inst >= 0 { nm(FI_[f.inst].name) } else { "<init>" }, " ", 0x400000 + code_off() + FOFF[i] as int, " nv ", f.nv, " sb ", f.sb)
 	if szp >= 0: put32(szp, DA.len + BSS)

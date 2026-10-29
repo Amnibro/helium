@@ -1,0 +1,19 @@
+import std;
+fn mix(x uint) uint { return x * 6364136223846793005 + 1442695040888963407; }
+fn le64(t byte[:], p int) uint {
+	return t[p] as uint | (t[p + 1] as uint) << 8 | (t[p + 2] as uint) << 16 | (t[p + 3] as uint) << 24 | (t[p + 4] as uint) << 32 | (t[p + 5] as uint) << 40 | (t[p + 6] as uint) << 48 | (t[p + 7] as uint) << 56;
+}
+fn le32(t byte[:], p int) u32 {
+	return t[p + 2] as u32 << 16 | t[p] as u32 | (t[p + 3] as u32) << 24 | (t[p + 1] as u32) << 8;
+}
+fn le16(t byte[:], p int) u16 { return t[p] as u16 | (t[p + 1] as u16) << 8; }
+fn gap(t byte[:], p int) uint { return t[p] as uint | (t[p + 2] as uint) << 8 | (t[p + 4] as uint) << 16 | (t[p + 6] as uint) << 24; }
+fn main() {
+	var x uint = 7;
+	var t byte[>..] = [];
+	for i in 77 { x = mix(x); t.push((x >> 33) as! byte); }
+	var h uint = 0;
+	for p in 0..69 { h = h * 1000003 + le64(t, p); h = h * 1000003 + le32(t, p + 1) as uint; h = h * 1000003 + le16(t, p + 7) as uint; h = h * 1000003 + gap(t, p); }
+	print(h);
+	print(le64(t, 69));
+}
