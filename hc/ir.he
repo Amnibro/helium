@@ -72,6 +72,15 @@ rdxok(s int, e int) bool:
 		ok := o == I_NOP || o == I_MOV && y.w & 8 == 0 || o == I_BIN && y.l < 0 && y.w & 8 == 0 && (y.c == B_ADD as i64 || y.c == B_SUB as i64 || y.c == B_OR as i64 || y.c == B_XOR as i64) && ko || o == I_CMP && y.w & 8 == 0 && ko && (y.c == CC_B as i64 || y.c == CC_AE as i64 || y.c == CC_E as i64 || y.c == CC_NE as i64 || y.c == CC_BE as i64 || y.c == CC_A as i64 || y.c == CC_L as i64 || y.c == CC_GE as i64 || y.c == CC_LE as i64 || y.c == CC_G as i64)
 		if !ok || y.d as int == RDXV || y.d >= 0 && gr(y.d as int) == RDX: return false
 	true
+pcopy(d int, a int, c i64):
+	ldv(RDI, d); ldv(RSI, a); l := VEXL; VEXL = 1
+	for h 2:
+		m ~= 0; il ~= 0; ih ~= 0; for j 4 { p := ((c >> (3 * (4 * h + j))) & 7) as int; if p >= 4 { m = m | 1 << j; ih = ih | (p - 4) << (2 * j) } else { il = il | p << (2 * j) } }
+		if m != 15: vexp(0x66, true, 0, RSI, 0, 3); xb(0x01); xmem(0, RSI, 0); xb(il)
+		if m != 0: r := if m == 15 { 0 } else { 1 }; vexp(0x66, true, r, RSI, 0, 3); xb(0x01); xmem(r, RSI, 32); xb(ih)
+		if m != 0 && m != 15: vexp(0x66, false, 0, 1, 0, 3); xb(0x0D); xb(0xC1); xb(m)
+		vexp(0, false, 0, RDI, 0, 1); xb(0x11); xmem(0, RDI, 32 * h)
+	VEXL = l; xb(0xC5); xb(0xF8); xb(0x77)
 vo(v int) int:
 	-8 * (VSI[v] as int + 1) - CSBA
 i32ok(v int) bool:
@@ -512,7 +521,8 @@ cg_fn(fi int):
 																														if op == I_ZERO:
 																															ldv(RDI, d); alu(0x31, RAX, RAX); if kc(b) && FD[b] <= 512: mvblk(FD[b] as int, true) else: ldv(RCX, b); if NOSCP || VEXM { xb(0xF3); xb(0xAA) } else { scpy(true) }
 																														else:
-																															if op == I_COPY:
+																															if op == I_COPY && c >> 40 == 1: pcopy(d, a, c)
+																															else if op == I_COPY:
 																																ldv(RDI, d); ldv(RSI, a); if kc(b) && FD[b] <= 256: mvblk(FD[b] as int, false) else: ldv(RCX, b); if NOSCP || VEXM { xb(0xF3); xb(0xA4) } else { scpy(false) }
 	epi()
 	k ~= 0; while SWE >= 0 && k < SWB.len { bind(SWB[k + 3] as int); swal(true); q := IR[SWB[k + 2]]; if q.a >= 0 { ldv(RAX, q.a as int) } if q.b >= 0 { ldv(RDX, q.b as int) } swal(false); ret(); IR[SWB[k]].c = SWB[k + 1] as i64; k += 4 }

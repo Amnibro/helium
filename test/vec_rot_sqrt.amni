@@ -1,0 +1,58 @@
+import std;
+import math;
+inline fn up1(a real[8]) real[8] { [a[1], a[2], a[3], a[4], a[0], a[5], a[6], a[7]] }
+inline fn dn2(a real[8]) real[8] { [a[3], a[4], a[0], a[1], a[2], a[5], a[6], a[7]] }
+inline fn rev(a int[8]) int[8] { [a[7], a[6], a[5], a[4], a[3], a[2], a[1], a[0]] }
+simd fn run(n int) real {
+	var x real[8] = [0.0; 8];
+	var y real[8] = [0.0; 8];
+	var w real[8] = [0.0; 8];
+	for l in 8 {
+		x[l] = (l as real) + 1.5;
+		y[l] = (l as real) * 0.25 + 2.0;
+		w[l] = 3.0 - (l as real);
+	}
+	var t = 0.0;
+	for s in n {
+		let x1 = up1(x);
+		let y1 = dn2(y);
+		var a real[8] = [0.0; 8];
+		var b real[8] = [0.0; 8];
+		var c real[8] = [0.0; 8];
+		var d real[8] = [0.0; 8];
+		var e real[8] = [0.0; 8];
+		var q real[8] = [0.0; 8];
+		for l in 8 {
+			let d2 = x[l] * x1[l] + y[l] * y1[l];
+			let r = sqrt(d2);
+			a[l] = r;
+			b[l] = 1.0 / (d2 * r);
+			c[l] = x1[l] - y1[l];
+			d[l] = sqrt(w[l]);
+			e[l] = x[l] * 0.5 + y1[l];
+			q[l] = sqrt(x1[l] * y[l]);
+		}
+		let a1 = dn2(a);
+		for l in 8 {
+			x[l] += 0.001 * (a1[l] - b[l]);
+			y[l] += 0.0005 * (c[l] + e[l] - q[l]);
+		}
+		for l in 8 {
+			t += if d[l] == d[l] { d[l] } else { 0.125 };
+		}
+	}
+	var u = 0.0;
+	for l in 8 { u += x[l] * 3.0 + y[l]; }
+	return u + t;
+}
+fn main() {
+	print(str(run(1)));
+	print(str(run(37)));
+	print(str(run(777)));
+	var k int[8] = [0; 8];
+	for l in 8 { k[l] = l * l - 7; }
+	let r = rev(k);
+	var line byte[>..] = [];
+	for l in 8 { line.append(str(r[l], " ")); }
+	print(line);
+}
