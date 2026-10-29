@@ -1,0 +1,37 @@
+// Slices whose end is their start plus a constant: the length is that
+// constant, so the reads inside them need no checks of their own.
+
+import std;
+
+fn word(b byte[:], i int) uint {
+	let d = b[i..i + 8];
+	return (d[0] as uint) | (d[1] as uint) << 8 | (d[2] as uint) << 16 | (d[3] as uint) << 24 | (d[4] as uint) << 32 | (d[5] as uint) << 40 | (d[6] as uint) << 48 | (d[7] as uint) << 56;
+}
+
+fn sum4(v int[:], i int) int {
+	let d = v[i..i + 4];
+	return d[0] + d[1] + d[2] + d[3] + d.len;
+}
+
+fn main() {
+	var b byte[>..] = [];
+	for i in 40 { b.push((i * 37 + 11) as! byte); }
+	var h uint = 0;
+	var i = 0;
+	while i + 8 <= b.len {
+		h = h * 31 + word(b[..], i);
+		i += 3;
+	}
+	print(h);
+	print(word(b[..], b.len - 8));
+	var v int[>..] = [];
+	for k in 10 { v.push(k * k); }
+	var t = 0;
+	for k in 7 { t += sum4(v[..], k); }
+	print(t);
+	let z = 5;
+	print(v[z..z + 0].len, " ", v[z..z + 5].len, " ", v[z..z + 5][4]);
+	var s = 0;
+	for k in v.len - 2 { let w = v[k..k + 2]; s += w[1] - w[0]; }
+	print(s);
+}

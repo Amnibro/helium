@@ -1,18 +1,21 @@
-// 1.goose with the dictionary replaced by an open-addressing table made for
+// 1.amni with the dictionary replaced by an open-addressing table made for
 // the cache: 8-byte slots holding a key and a 4-byte link into the node
 // pool (null for an empty slot), a multiplicative hash, linear probing and
-// backward-shift deletion. Nine lookups in ten miss, and a miss probes to
-// the end of its run, so the table is kept at most a quarter full: 32 KB
-// for 1000 entries. At half full the program takes twice as long.
+// backward-shift deletion. Each node keeps the index of its slot, which the
+// deletion's shifts keep up to date, so evicting the least recently used
+// entry takes no lookup. Nine lookups in ten miss, and a miss probes to the
+// end of its run, so the table is kept at most a sixteenth full: 128 KB for
+// 1000 entries. At a quarter full the program takes twice as long, mostly in
+// branches mispredicted at the ends of runs.
 
 import std;
 import os;
 
-struct Node { key u32, val u32, prev Node&<u32 in pool>, next Node&<u32 in pool> }
+struct Node { key u32, val u32, at u32, prev Node&<u32 in pool>, next Node&<u32 in pool> }
 struct Slot { key u32, node Node&<u32 in pool>? }
 
 reusable var pool Node[>..] = [];
-let head = pool.alloc_index(Node { key: 0, val: 0, prev: self, next: self });
+let head = pool.alloc_index(Node { key: 0, val: 0, at: 0, prev: self, next: self });
 
 struct Lcg { seed u32 }
 
@@ -44,7 +47,7 @@ fn main() {
 	let modular = (size * 10) as u32;
 
 	var bits u32 = 3;
-	while (1 << bits) < 4 * size { bits++; }
+	while (1 << bits) < 16 * size { bits++; }
 	let shift = 32 - bits;
 	var slots Slot[>..] = [];
 	push_n(slots, Slot { key: 0, node: null }, 1 << bits);
@@ -75,6 +78,7 @@ fn main() {
 			if ((j - home(s.key)) & (slots.len - 1)) >= j - i {
 				let hole .= slot(i);
 				hole = s;
+				s.node.at = (i & (slots.len - 1)) as u32;
 				i = j;
 			}
 		}
@@ -96,17 +100,18 @@ fn main() {
 			// The new key goes into the empty slot found for it before the
 			// old one's slot is emptied, which may move it.
 			let lru .= pool[head].next;
-			let old = find(lru.key);
+			let old = lru.at as int;
 			lru.key = key;
 			lru.val = val;
 			unlink(lru);
 			link_last(lru);
 			let s .= slot(at);
 			s = Slot { key: key, node: lru };
+			lru.at = (at & (slots.len - 1)) as u32;
 			remove_at(old);
 			return;
 		}
-		let e .= pool.alloc_ref(Node { key: key, val: val, prev: pool[head], next: pool[head] });
+		let e .= pool.alloc_ref(Node { key: key, val: val, at: (at & (slots.len - 1)) as u32, prev: pool[head], next: pool[head] });
 		link_last(e);
 		let s .= slot(at);
 		s = Slot { key: key, node: e };

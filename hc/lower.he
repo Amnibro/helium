@@ -220,7 +220,11 @@ recursive lslice(n int) int, int:
 	lo0 := if x.b >= 0 { lx(x.b) } else { imm(0) }; hi0 := if x.c >= 0 { lx(x.c) } else { len }
 	lo := if x.fl & 1 != 0 { bin(B_SUB, 3, len, lo0, -1) } else { lo0 }; hi := if x.fl & 2 != 0 { bin(B_SUB, 3, len, hi0, -1) } else { hi0 }
 	o1 := nv(); ir(I_CMP, 3, o1, lo, hi, CC_BE); o2 := nv(); ir(I_CMP, 3, o2, hi, len, CC_BE); ok := bin(B_AND, 3, o1, o2, -1); boob(ok, hi, len, n)
-	return bin(B_ADD, 3, p, bin(B_MUL, 3, lo, imm(es), -1), -1), bin(B_SUB, 3, hi, lo, -1)
+	return bin(B_ADD, 3, p, bin(B_MUL, 3, lo, imm(es), -1), -1), if slcw(x) >= 0 { imm(slcw(x)) } else { bin(B_SUB, 3, hi, lo, -1) }
+slcw(x Node) int:
+	if x.fl != 0 || x.b < 0 || x.c < 0 || ND[x.c].k as int != N_BIN || ND[x.c].op as int != T_PLUS: return -1
+	a := ND[x.c].a; if ND[a].k as int != N_ID || ND[x.b].k as int != N_ID || rk(a) != R_LOCAL || rk(x.b) != R_LOCAL || rv(a) != rv(x.b): return -1
+	k, ok := kint(ND[x.c].b); if ok && k >= 0 { k } else { -1 }
 tok_str_lit(n int) byte[>..]:
 	b byte[>..] ~= []; b.append(tok_str(ND[n].t)); b
 recursive lstore(addr int, n int, t int):

@@ -123,14 +123,19 @@ With AVX-512 allowed, the `simd fn` programs go further: nbody/2 79.7 ms at
   `6-im` does.
 * **fannkuch-redux** keeps a permutation in one u64, a nibble per element,
   and flips two permutations at once for the instruction-level parallelism.
-* **fasta** uses the prescribed linear congruential generator as written,
-  and integer thresholds for the cumulative probabilities.
+* **fasta/1** uses the prescribed linear congruential generator as written,
+  and integer thresholds for the cumulative probabilities. **/2** makes the
+  same numbers with the generator's quotient by IM as a fixed-point multiply
+  (checked exact for every seed), which shortens the chain from one number
+  to the next, and takes each letter from a table of the letter for every
+  random number; **/2-m** is 1-m's split with 2's generator and tables.
 * **knucleotide/1** counts the k of 12 and 18 in a hash table of its own,
   as C's program does; a k of at most 6 has at most 4096 keys, each counted
   in a counter of its own indexed by the key. **/1-m** runs the k on four
   workers, each with a copy of the sequence packed four codes a byte.
   **/2** counts with the stdlib `dictionary`.
-* **lru/1** uses the stdlib `dictionary`; **/2** a table made for the cache.
+* **lru/1** uses the stdlib `dictionary`; **/2** a table made for the cache,
+  a sixteenth full, whose nodes keep their slot so eviction takes no lookup.
 * **json-serde** reads into typed records with the stdlib `json` reader and
   writes with its writer, numbers included, but for the integral values the
   Rust programs' `MyF64` writes as integers.

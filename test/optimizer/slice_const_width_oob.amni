@@ -1,0 +1,16 @@
+// A slice whose end is its start plus a constant is still checked against
+// the array: here it runs past the end.
+
+import std;
+
+fn word(b byte[:], i int) uint {
+	let d = b[i..i + 8];
+	return (d[0] as uint) | (d[7] as uint) << 56;
+}
+
+fn main() {
+	var b byte[>..] = [];
+	for i in 12 { b.push(i as! byte); }
+	print(word(b[..], 4));
+	print(word(b[..], 5));
+}
