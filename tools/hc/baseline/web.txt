@@ -163,6 +163,7 @@ test/codegen/variable_prefix_frame_tail.amni
 test/codegen/variant_constant_scrutinee.amni
 test/codegen/varint_elements.amni
 test/codegen/view_aliases.amni
+test/codegen/vst_field_from_ref.amni
 test/codegen/wider_slot_operations.amni
 test/codegen/zero_length_values.amni
 test/gfx/gfx_shader_sources.amni
