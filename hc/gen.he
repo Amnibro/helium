@@ -1562,6 +1562,8 @@ recursive gblk1(b int, res int, val bool):
 		if res >= 0: gtail(tl, res); return
 		if val && at(tl) != T_VOID && !ends(tl): gx(tl); ow("; "); return
 		gstmt(tl);
+recursive gbr(b int, res int):
+	s := if res >= 0 { brsw(b) } else { -1 }; gblk(b, res, false); if s >= 0 { set_cv(s, -1) }
 recursive gif(n int, res int):
 	x := ND[n]
 	ow("if (")
@@ -1569,9 +1571,9 @@ recursive gif(n int, res int):
 	if m != 0 && m != -1: ow("("); gx0(x.a); ow(") != 0") else: gx(x.a)
 	ow(") { ")
 	if m > 1: v := m & (1 << 30) - 1; ct(LVS[v].ty); ow(if is_vval(LVS[v].ty) { " " } else { " *" }); lv_name(v); ow(" = "); gx0(x.a); ow("; ")
-	gblk(x.b, res, false)
+	gbr(x.b, res)
 	ow(" }")
-	if x.c >= 0: ow(" else { "); if ND[x.c].k == N_IF { gif(x.c, res); } else { gblk(x.c, res, false); } ow(" }");
+	if x.c >= 0: ow(" else { "); if ND[x.c].k == N_IF { gif(x.c, res); } else { gbr(x.c, res); } ow(" }");
 lbl_push(res int) int:
 	l := nt(); LSTK.push(l); LRES.push(res); l
 lbl_pop(l int): LSTK.pop(); LRES.pop(); format(O, " _bk", l, ":; ");
@@ -1581,7 +1583,7 @@ recursive gloop(n int, res int):
 	lbl_pop(l);
 recursive geblock(n int, res int):
 	l := lbl_push(res)
-	ow("{ "); gblk(ND[n].a, res, false); ow(" }")
+	ow("{ "); gbr(ND[n].a, res); ow(" }")
 	lbl_pop(l);
 recursive gwhile(n int):
 	x := ND[n]
@@ -1671,7 +1673,7 @@ recursive gmatch(n int, res int):
 		ar := ND[arm]
 		if !first: ow(" else ")
 		first = false
-		if ar.fl & 1 != 0: ow("{ "); gblk(ar.b, res, false); ow(" }"); continue
+		if ar.fl & 1 != 0: ow("{ "); gbr(ar.b, res); ow(" }"); continue
 		ow("if (")
 		for j ar.n:
 			if j > 0: ow(" || ")
@@ -1696,7 +1698,7 @@ recursive gmatch(n int, res int):
 				if has: format(O, "&_m", p, "->u.v", vi, "; ") else: ow("0; ")
 			else:
 				if has: format(O, "_m", p, "->u.v", vi, "; ") else: ow("{0}; ")
-		gblk(ar.b, res, false)
+		gbr(ar.b, res)
 		ow(" }")
 	AOWN = sa; ow(" }");
 gmatch_dummy(): ;
