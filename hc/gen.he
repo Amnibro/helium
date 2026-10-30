@@ -263,6 +263,7 @@ recursive is_place(n int) bool:
 	if k == N_UN && x.op as int == T_AND: return is_place(x.a)
 	if k == N_CALL && rk(n) == R_BUILTIN && rv(n) == B_PUSH: return true
 	false
+vbp(m int) bool: y := ND[m]; y.k == N_DOT && rk(m) == R_FIELD && is_vst(deref(at(y.a))) && (is_place(y.a) || TY[at(y.a)].k == TY_REF)
 owned(n int) bool:
 	is_res(fin(n)) && !is_place(n)
 cstr_lit(s const byte[:]):
@@ -302,7 +303,7 @@ recursive gxo(n int):
 	gx0(n);
 recursive gaddr(n int):
 	if is_vval(deref(at(n))): gx0(n); return
-	if is_place(n): ow("(&("); gx0(n); ow("))"); return
+	if is_place(n) || ND[n].k == N_IDX && !is_vval(at(n)) && vbp(ND[n].a): ow("(&("); gx0(n); ow("))"); return
 	t := at(n)
 	nk := ND[n].k
 	if (nk == N_IF || nk == N_MATCH || nk == N_EBLOCK || nk == N_LOOP || nk == N_BLOCK) && t != T_VOID && t >= 0 && TY[t].k != TY_REF && !is_res(t): r := nt(); ARES.push(r); ow("({ "); ct(t); ow(" *_r"); oi(r); ow("; "); if nk == N_IF { gif(n, r); } else { if nk == N_MATCH { gmatch(n, r); } else { if nk == N_EBLOCK { geblock(n, r); } else { if nk == N_LOOP { gloop(n, r); } else { gblk(n, r, false); } } } } ARES.pop(); ow(" _r"); oi(r); ow("; })"); return
@@ -832,6 +833,7 @@ fn_cname_to(b byte[>..<]&, i int):
 		for c nm(s): b.push(if c == ':' { '_' } else { c })
 fn_cname(i int): fn_cname_to(O, i);
 var GDLF i32[>..<]
+STC ~= false
 ext_name(i int):
 	if has_dl(i): seen ~= false; for f GDLF { if f == i { seen = true } } if !seen { GDLF.push(i); rt := FI_[i].ret; sig byte[>..] ~= []; sig.append("static "); sig.append(if rt < 0 || rt == T_VOID || TY[rt].k == TY_VOID { "void" } else { cn(rt) }); format(sig, " (*hr_dl", i, ")("); np := ND[FI_[i].node].n; for j np { if j > 0 { sig.append(", ") } sig.append(cn(ptype_of(i, j))) } if np == 0 { sig.append("void") } sig.append(");\n"); PR.append(sig[..]) } format(O, "hr_dl", i); return
 	node := FI_[i].node
@@ -2037,7 +2039,7 @@ gen_program(out byte[>..]&) bool:
 		gen_fn(i)
 		if GERR.len > 0: return false
 		if ND[node].fl & F_EXPORT != 0 && f.par < 0: gexp(i)
-	if GDLF.len > 0: out.append("#include <dlfcn.h>\n")
+	if GDLF.len > 0 && !STC: out.append("#include <dlfcn.h>\n")
 	out.append("#include \"hrt.h\"\n")
 	out.append(TF)
 	out.append("#pragma pack(push, 1)\n")
@@ -2048,7 +2050,10 @@ gen_program(out byte[>..]&) bool:
 	out.append(TW[..])
 	out.append(HF[..])
 	out.append(O[..])
-	if GDLF.len > 0:
+	if GDLF.len > 0 && STC:
+		lb byte[>..] ~= []; lb.append("static int64_t hr_dlmiss(void) { return -1; }\n"); for f GDLF { nmb := dl_lib(f as int); op := nmb.len > 0 && nmb[nmb.len - 1] == '?'; format(lb, "extern void hr_x", f, "(void) __asm__(HR_SYM(\"", dl_sym(f as int), "\"))", if op { " __attribute__((weak))" } else { "" }, ";\n") }
+		lb.append("static void hr_dl_bind(void) {\n"); for f GDLF { format(lb, "*(void **)&hr_dl", f, " = (void *)&hr_x", f, "; if (!*(void **)&hr_dl", f, ") *(void **)&hr_dl", f, " = (void *)hr_dlmiss;\n") } lb.append("}\n"); out.append(lb[..])
+	if GDLF.len > 0 && !STC:
 		lb byte[>..] ~= []; lb.append("static int64_t hr_dlmiss(void) { return -1; }\nstatic void hr_dl_bind(void) { void *h;\n"); dn i32[>..] ~= []; for f GDLF:
 			dup ~= false; for q dn { if dl_lib(q as int) == dl_lib(f as int) { dup = true } } if !dup: dn.push(f)
 		for t dn: sp byte[>..] ~= []; dl_spell(dl_lib(t as int), sp); format(lb, "dlopen(\"", sp[..], "\", RTLD_LAZY | RTLD_GLOBAL);\n")

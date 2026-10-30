@@ -1,0 +1,20 @@
+struct Node { x real, rb real, top real }
+struct World { k int, isl Node[..], aux Node[..], head i32[..], tail i32[..] }
+fn nd(w World&, r int) Node& { if r >= 0 { w.isl[r] } else { w.aux[-r - 1] } }
+fn ndc(w const World&, r int) const Node& { if r >= 0 { w.isl[r] } else { w.aux[-r - 1] } }
+fn grow(n Node&, d real) { n.rb = n.rb + d; n.top = n.top * 2.0; }
+fn main() {
+	var w = World { k: 7, isl: [..8], aux: [..4], head: [..4096], tail: [..16] };
+	w.head.resize(4096, -1 as i32);
+	w.tail.resize(16, 7 as i32);
+	for i in 5 { w.isl.push(Node { x: i as real, rb: 0.0, top: 1.0 }); }
+	for i in 3 { w.aux.push(Node { x: -1.0 - i as real, rb: 0.0, top: 3.0 }); }
+	for i in 5 { nd(w, i).rb = 15.0 + i as real; }
+	for i in 3 { nd(w, -i - 1).rb = 40.0 + i as real; }
+	grow(nd(w, 2), 0.5);
+	grow(nd(w, -2), 0.25);
+	var s = 0.0;
+	for i in 5 { let t = ndc(w, i); s += t.x + t.rb * 3.0 + t.top; }
+	for i in 3 { let t = ndc(w, -i - 1); s += t.x + t.rb * 5.0 + t.top; }
+	print(w.k, " ", w.head.len, " ", w.head[4095], " ", w.tail.len, " ", w.tail[15], " ", w.isl[2].rb, " ", w.aux[1].top, " ", s);
+}
