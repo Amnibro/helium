@@ -4,6 +4,7 @@ use pkg
 use fmt
 use lsp
 use wasm
+use gpuwgsl
 USAGE := "usage: hc <command> file [options] [-- program args...]\n       hc file [options] [-- program args...]\n\ncommands:\n  run        compile natively into the cache and run the program (hc file does too)\n  build      build an executable: -o out (native), or -o out.c for C\n  check      parse and typecheck only\n  fetch      clone the git packages the program declares (--update re-fetches tags and branches)\n  version    print the version\n  help       print this\n\noptions:\n  -o path    output for build (default: the file's name without its extension)\n  --debug    overflow, range and tag checks naming the source line\n  -DNAME=V   a runtime define\n  --offline  fetch no packages: one not in the cache is an error\n  --include file.h   C the program's extern functions come from, built with cc into a shared library\n  --c        build C instead of a native executable\n  --v3       target x86-64-v3 (Haswell and later): AVX2 vector code only, three-operand scalar floats\n\nenvironment: HC_LIB (library directory; default: lib beside hc, then hc/lib)"
 VERSION := "hc 0.7 (Helium)"
 setlib():
@@ -46,6 +47,7 @@ main():
 	if a[..] == "--to-he": t byte[>..] ~= []; arg(3, t); parse_init(); exit(if to_he(o[..], t[..]) { 0 } else { 1 })
 	if a[..] == "lsp": if o[..] == "--probe" { print("hc lsp 0.7"); exit(0) } setlib(); exit(lsp_main(argv0()[..]))
 	if a[..] == "--query": t byte[>..] ~= []; arg(3, t); setlib(); exit(qmain(o[..], t[..]))
+	if a[..] == "--wgsl": t byte[>..] ~= []; arg(3, t); exit(if gpu_wgsl(o[..], t[..]) { 0 } else { 1 })
 	if a[..] == "--tokens": parse_init(); exit(if dump_tokens(o[..]) { 0 } else { 1 })
 	if a[..] == "--spv": src byte[>..] ~= []; read_file(o[..], src); w u32[>..] ~= []; if !shc::cspv(src[..], 2, w) { print(shc::ERRM); exit(1) } b byte[>..] ~= []; for x w { for k 4 { b.push(((x >> (k * 8) as u32) & 255) as! byte) } } q byte[>..] ~= []; arg(3, q); write_file(q[..], b[..]); exit(0)
 	cmd ~= 0; src byte[>..] ~= []; out byte[>..] ~= []; native ~= true; pa byte[>..] ~= []; i0 ~= 2

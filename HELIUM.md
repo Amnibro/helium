@@ -223,6 +223,22 @@ fn main() { print(fast_steps(27), " ", fast_steps(27)); }
 - `lut fn` works in `.amni` files.
 - A table of 10 to 20 bits whose body is integer code (ints, bools, `if`, loops, calls, `min`/`max`/`abs`/`clamp`) can fill on the GPU. On its first run the program times 64 sample entries; when a whole CPU fill would take over 30 ms, the GPU computes every entry at once. An entry the GPU cannot finish (division by zero, a very long loop) stays unset and is computed on the CPU when first used, so results never change. `HELIUM_GPU=off` keeps everything on the CPU, `HELIUM_GPU=discrete` prefers the discrete GPU over the integrated one, `HELIUM_GPU_MIN_MS` sets the 30 ms bar, and `HELIUM_GPU_LOG=1` reports what ran where (`=2` also writes each table's compute shader to `<name>.comp`).
 
+## GPU kernels
+
+`gpu fn` marks a kernel. It compiles as an ordinary function on the CPU, and `hc --wgsl kernels.amni kernels.js` turns every `gpu fn` in the file into WebGPU code:
+
+```amni
+gpu fn saxpy(n u32, count u32, a f32, x const f32[:], y f32[:]) {
+	if n >= count { return; }
+	y[n] = a * x[n] + y[n];
+}
+fn main() { var x = [1.0 as f32, 2.0]; var y = [0.5 as f32, 0.5]; for i in 2 { saxpy(i as u32, 2, 3.0, x, y); } print(y); }
+```
+
+- The first parameter is the invocation index. Scalars (`i32 u32 f32 bool`) form one uniform struct at binding 0, in parameter order. Slices of `i32 u32 f32` are storage buffers at bindings 1, 2, ... (`const` slices are read-only).
+- Bodies use locals, fixed local arrays (`var t f32[3] = [0.0; 3];`), `if while for loop guard`, `if` expressions, casts, `min max clamp abs` and `math` functions (cast their `real` results with `as f32` for the CPU), and calls to plain helper functions with scalar parameters. `int` is 32-bit on the GPU; `%` stays Euclidean.
+- The module exports one object per kernel: `{wg, uniform, buffers, wgsl}`. `hc/web/hgpu.js` builds the pipeline, packs the uniforms and dispatches: `await run(await device(), K.saxpy, count, {count, a}, {x, y})`.
+
 ## Program, modules, threads
 
 - One root file; `import a.b;` loads `a/b.amni` (or `.goose`) relative to the root, then the standard library. `namespace geo;` scopes a file: `geo::Pt`. `fn main()` in the root is the entry.

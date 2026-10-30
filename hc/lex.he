@@ -80,6 +80,7 @@ lex_file(path const byte[:]) bool:
 	body byte[>..] ~= []
 	ov ~= -1; for o, i OVS { if OVB[o.p0..o.p1] == path { ov = i } }
 	if ov >= 0 { body.append(OVB[OVS[ov].t0..OVS[ov].t1]) } else if !read_file(path, body) { LERR.append("cannot read "); LERR.append(path); return false }
+	if path.len > 5 && path[^5..] == ".amni": gp ~= lut_find(body[..], "gpu fn ", 0); while gp >= 0 { if gp == 0 || body[gp - 1] == '\n' || body[gp - 1] == ' ' || body[gp - 1] == '\t' { body[gp] = ' '; body[gp + 1] = ' '; body[gp + 2] = ' ' } gp = lut_find(body[..], "gpu fn ", gp + 7) }
 	if path.len > 5 && path[^5..] == ".amni" && lut_find(body[..], "lut fn ", 0) >= 0: lb byte[>..] ~= []; if !lut_desugar(body[..], path, FILES.len == 0, lb) { return false } body.clear(); body.append(lb[..])
 	f := FILES.len
 	base := SRC.len

@@ -1,0 +1,259 @@
+use std
+use lutglsl
+struct GwFn { name int, p0 int, pn int, ret int, body int, gpu bool }
+var GWWHY byte[>..]
+var GWAT = 0
+var GWF GwFn[>..]
+var GWPN i32[>..]
+var GWPT i32[>..]
+var GWPA i32[>..]
+var GWPC i32[>..]
+var GWDONE i32[>..]
+var GWBUSY i32[>..]
+var GWSN i32[>..]
+var GWST i32[>..]
+var GWSK i32[>..]
+var GWSA i32[>..]
+var GWSC i32[>..]
+var GWFL = 0
+var GWOUT byte[>..]
+var GWCUR = -1
+var GWMOD = false
+GW_NAMES := ["i32", "u32", "f32", "bool", "i32", "f32"]
+gw_no(w const byte[:]): if GWWHY.len == 0 { GWWHY.append(w); GWAT = LGP }
+gw_bad() bool: GWWHY.len > 0
+gw_t() const byte[:]: if LGP >= LGTS.len { gw_no("end of file"); "" } else { lg_tk(LGP) }
+gw_is(s const byte[:]) bool: LGP < LGTS.len && lg_tk(LGP) == s
+gw_eat(s const byte[:]): if !gw_is(s) { gw_no(str("expected ", s, " near ", lg_tk(LGP))) } else { LGP++ }
+gw_ty(t const byte[:]) int:
+	if t == "int" || t == "i64" || t == "i32" || t == "i16" || t == "i8" { 0 } else if t == "uint" || t == "u64" || t == "u32" || t == "u16" || t == "u8" || t == "byte" { 1 } else if t == "f32" || t == "real" || t == "f64" { 2 } else if t == "bool" { 3 } else { -1 }
+gw_name(t int) const byte[:]: if t >= 0 && t < 6 { GW_NAMES[t] } else { "void" }
+gw_lit(l const byte[:], t int) byte[>..]:
+	v byte[>..] ~= []; for c l { if c != '_' { v.push(c) } } fl ~= false; hx := v.len > 1 && v[0] == '0' && (v[1] == 'x' || v[1] == 'X')
+	if !hx: for c v { if c == '.' || c == 'e' || c == 'E' { fl = true } }
+	if v.len > 0 && v[0] == '\'':
+		n ~= -1; if v.len == 3 { n = v[1] as int } else if v.len == 4 && v[1] == '\\' { c := v[2]; n = if c == 'n' { 10 } else if c == 't' { 9 } else if c == 'r' { 13 } else if c == '0' { 0 } else { c as int } }
+		if n < 0: gw_no("char literal"); return v
+		v.clear(); format(v, n)
+	o byte[>..] ~= []
+	if t == 2 || t == 5:
+		if fl { o.append(v[..]) } else { format(o, v, ".0") } if t == 2 { o.push('f') } return o
+	if fl: gw_no("float literal where an integer is needed"); return v
+	o.append(v[..]); if t == 0 { o.push('i') } else if t == 1 { o.push('u') } o
+gw_to(c const byte[:], ty int, t int) byte[>..]:
+	o byte[>..] ~= []
+	if ty == t || t == 4 || t == 5 && ty == 5: o.append(c); return o
+	if ty == 4 || ty == 5: return gw_lit(c, t)
+	if ty == 3 || t == 3: gw_no("bool mixed with numbers"); o.append(c); return o
+	format(o, gw_name(t), "(", c, ")"); o
+gw_unify(a int, b int) int:
+	if a == b { a } else if a == 4 && b == 5 || a == 5 && b == 4 { 5 } else if a == 4 { b } else if b == 4 { a } else if a == 5 { if b == 3 { 3 } else { 2 } } else if b == 5 { if a == 3 { 3 } else { 2 } } else if a == 2 || b == 2 { 2 } else { 0 }
+gw_fix(t int) int: if t == 4 { 0 } else if t == 5 { 2 } else { t }
+gw_local(n const byte[:]) int:
+	i ~= GWSN.len - 1; while i >= GWFL { if lg_tk(GWSN[i] as int) == n { return i } i-- } -1
+gw_ref(i int) byte[>..]:
+	o byte[>..] ~= []; k := GWSK[i] as int; n := lg_tk(GWSN[i] as int)
+	if k == 1 { if GWST[i] == 3 { format(o, "(u.p_", n, " != 0u)") } else { format(o, "u.p_", n) } } else if k == 2 { format(o, "b_", n) } else { format(o, "l_", n) } o
+gw_bin(op const byte[:], a const byte[:], at int, b const byte[:], bt int) byte[>..], int:
+	o byte[>..] ~= []
+	if op == "&&" || op == "||": if at != 3 || bt != 3 { gw_no(str(op, " on non-bool")) } format(o, "(", a, " ", op, " ", b, ")"); return o, 3
+	if at == 3 || bt == 3: if (op == "==" || op == "!=") && at == bt { format(o, "(", a, " ", op, " ", b, ")") } else { gw_no("arithmetic on bool") } return o, 3
+	if op == "<<" || op == ">>":
+		t := if at == 4 { 0 } else { at }; if t == 2 || t == 5 { gw_no("shift of a float") } format(o, "(", gw_to(a, at, t), " ", op, " ", gw_to(b, bt, 1), ")"); return o, t
+	t := gw_unify(at, bt); x := gw_to(a, at, t); y := gw_to(b, bt, t)
+	if op == "==" || op == "!=" || op == "<" || op == "<=" || op == ">" || op == ">=": format(o, "(", x, " ", op, " ", y, ")"); return o, 3
+	if op == "%" && (t == 0 || t == 4): GWMOD = true; format(o, "gw_mod(", gw_to(a, at, 0), ", ", gw_to(b, bt, 0), ")"); return o, 0
+	if (op == "&" || op == "|" || op == "^") && (t == 2 || t == 5): gw_no(str(op, " on a float"))
+	format(o, "(", x, " ", op, " ", y, ")"); return o, t
+recursive gw_expr(mn int) byte[>..], int:
+	l, lt ~= gw_unary()
+	while !gw_bad() && LGP < LGTS.len:
+		o := lg_tk(LGP); pr := lg_prec(o); if pr == 0 || pr < mn: break
+		LGP++; r, rt := gw_expr(pr + 1); n, nt := gw_bin(o, l[..], lt, r[..], rt); l = n; lt = nt
+	return l, lt
+recursive gw_unary() byte[>..], int:
+	o byte[>..] ~= []
+	if gw_is("-"):
+		LGP++; e, t := gw_unary(); if t == 3 { gw_no("- on bool") }
+		if t == 4 || t == 5 { format(o, "-", e) } else if t == 1 { format(o, "(0u - ", e, ")") } else { format(o, "(-", e, ")") } return o, t
+	if gw_is("!"): LGP++; e, t := gw_unary(); if t != 3 { gw_no("! on non-bool") } format(o, "(!", e, ")"); return o, 3
+	if gw_is("~"): LGP++; e, t := gw_unary(); if t == 3 || t == 2 || t == 5 { gw_no("~ on a non-integer") } tt := if t == 4 { 0 } else { t }; format(o, "(~", gw_to(e[..], t, tt), ")"); return o, tt
+	return gw_postfix()
+recursive gw_postfix() byte[>..], int:
+	e, t ~= gw_primary()
+	while !gw_bad() && (gw_is("as") || gw_is("as!")):
+		LGP++; c := gw_ty(gw_t()); LGP++
+		if c < 0 || c == 3 || t == 3: gw_no("cast"); break
+		if t == 4 || t == 5 { if t == 5 && c != 2 { w byte[>..] ~= []; format(w, gw_name(c), "(", gw_lit(e[..], 2), ")"); e = w } else { e = gw_lit(e[..], c) } } else if t != c { w byte[>..] ~= []; format(w, gw_name(c), "(", e, ")"); e = w } t = c
+	return e, t
+recursive gw_ifexpr() byte[>..], int:
+	gw_eat("if"); c, ct := gw_expr(1); if ct != 3 { gw_no("if on non-bool") }
+	gw_eat("{"); a, at := gw_expr(1); gw_eat("}"); gw_eat("else"); b byte[>..] ~= []; bt ~= 0
+	if gw_is("if") { x, xt := gw_ifexpr(); b = x; bt = xt } else { gw_eat("{"); x, xt := gw_expr(1); gw_eat("}"); b = x; bt = xt }
+	t := gw_unify(at, bt); o byte[>..] ~= []; format(o, "select(", gw_to(b[..], bt, t), ", ", gw_to(a[..], at, t), ", ", c, ")"); return o, t
+gw_math(t const byte[:]) int:
+	if t == "min" || t == "max" || t == "clamp" || t == "abs" || t == "sign" { 1 } else if t == "sqrt" || t == "floor" || t == "ceil" || t == "round" || t == "trunc" || t == "exp" || t == "exp2" || t == "log" || t == "log2" || t == "pow" || t == "sin" || t == "cos" || t == "tan" || t == "asin" || t == "acos" || t == "atan" || t == "atan2" || t == "fract" || t == "lerp" || t == "fma" { 2 } else { 0 }
+recursive gw_primary() byte[>..], int:
+	o byte[>..] ~= []; t := gw_t(); if gw_bad(): return o, 0
+	if t == "(": LGP++; e, et := gw_expr(1); gw_eat(")"); return e, et
+	if t == "if": return gw_ifexpr()
+	if t == "true" || t == "false": LGP++; o.append(t); return o, 3
+	if t.len > 0 && (t[0] >= '0' && t[0] <= '9' || t[0] == '\''):
+		LGP++; fl ~= false; hx := t.len > 1 && t[0] == '0' && (t[1] == 'x' || t[1] == 'X'); if !hx { for c t { if c == '.' || c == 'e' || c == 'E' { fl = true } } } o.append(t); return o, if fl { 5 } else { 4 }
+	if t.len == 0 || !(t[0] >= 'a' && t[0] <= 'z' || t[0] >= 'A' && t[0] <= 'Z' || t[0] == '_'): gw_no(str("token ", t)); return o, 0
+	nt := LGP; LGP++
+	if gw_is("("):
+		LGP++; ac byte[>..][>..] ~= []; aty int[>..] ~= []
+		while !gw_bad() && !gw_is(")") && LGP < LGTS.len { e, et := gw_expr(1); ac.push(e); aty.push(et); if gw_is(",") { LGP++ } }
+		LGP++; mk := gw_math(t)
+		if mk > 0:
+			if aty.len == 0: gw_no("builtin without arguments"); return o, 0
+			ty ~= aty[0]; for x aty { ty = gw_unify(ty, x) } if mk == 2 || ty == 5 { ty = 2 } if ty == 4 { ty = 0 } if ty == 3 { gw_no(str(t, " on bool")) }
+			if t == "abs" && ty == 1: return ac[0], 1
+			c byte[>..] ~= []; for x, i ac { if i > 0 { c.append(", ") } c.append(gw_to(x[..], aty[i], ty)[..]) }
+			nm := if t == "lerp" { "mix" } else if t == "atan2" { "atan2" } else { t }; format(o, nm, "(", c, ")"); return o, ty
+		fi := gw_func(t); if fi < 0: return o, 0
+		f := GWF[fi]; if ac.len != f.pn: gw_no(str("call to ", t, " with defaults")); return o, 0
+		format(o, "h_", t, "("); for x, i ac { if i > 0 { o.append(", ") } o.append(gw_to(x[..], aty[i], GWPT[f.p0 + i] as int)[..]) } o.push(')'); return o, f.ret
+	li := gw_local(t); if li < 0: gw_no(str("name ", t)); return o, 0
+	if GWSA[li] >= 0 || GWSK[li] == 2:
+		if gw_is(".") && LGP + 1 < LGTS.len && lg_tk(LGP + 1) == "len":
+			LGP += 2; if GWSK[li] == 2 { format(o, "arrayLength(&b_", t, ")") } else { format(o, GWSA[li], "u") } return o, 1
+		if !gw_is("["): gw_no(str("array ", t, " used without an index")); return o, 0
+		LGP++; ix, it := gw_expr(1); gw_eat("]"); if it == 3 || it == 2 || it == 5 { gw_no("array index must be an integer") }
+		format(o, gw_ref(li), "[", if it == 4 { gw_lit(ix[..], 1) } else { ix }, "]"); return o, GWST[li] as int
+	return gw_ref(li), GWST[li] as int
+gw_find(n const byte[:]) int: for f, i GWF { if lg_tk(f.name) == n { return i } } -1
+gw_push(nt int, ty int, k int, a int, c int = 0): GWSN.push(nt as i32); GWST.push(ty as i32); GWSK.push(k as i32); GWSA.push(a as i32); GWSC.push(c as i32)
+gw_pop(s0 int): GWSN.resize(s0, 0); GWST.resize(s0, 0); GWSK.resize(s0, 0); GWSA.resize(s0, 0); GWSC.resize(s0, 0)
+recursive gw_func(n const byte[:]) int:
+	fi := gw_find(n); if fi < 0: gw_no(str("function ", n)); return -1
+	if GWDONE.contains(fi as i32): return fi
+	if GWBUSY.contains(fi as i32): gw_no(str("recursion through ", n)); return -1
+	f := GWF[fi]; if f.gpu: gw_no(str("call to gpu fn ", n)); return -1
+	GWBUSY.push(fi as i32); sp := LGP; s0 := GWSN.len; cur := GWCUR; GWCUR = f.ret; fl := GWFL; GWFL = s0
+	sig byte[>..] ~= []
+	for k f.pn:
+		pt := GWPT[f.p0 + k] as int; if pt < 0 || GWPA[f.p0 + k] != 0 { gw_no(str(n, ": helper parameters must be i32, u32, f32 or bool")) }
+		gw_push(GWPN[f.p0 + k] as int, pt, 0, -1); if k > 0 { sig.append(", ") } format(sig, "l_", lg_tk(GWPN[f.p0 + k] as int), ": ", gw_name(pt))
+	LGP = f.body; body byte[>..] ~= []; gw_block(body, f.ret >= 0, 1)
+	format(GWOUT, "fn h_", n, "(", sig, ")"); if f.ret >= 0 { format(GWOUT, " -> ", gw_name(f.ret)) } format(GWOUT, " {\n", body)
+	if f.ret >= 0 { format(GWOUT, "    return ", if f.ret == 3 { "false" } else { gw_lit("0", f.ret) }, ";\n") } GWOUT.append("}\n")
+	LGP = sp; gw_pop(s0); GWFL = fl; GWCUR = cur; GWBUSY.pop(); GWDONE.push(fi as i32); fi
+recursive gw_block(o byte[>..]&, tail bool, ind int):
+	gw_eat("{"); s0 := GWSN.len
+	while !gw_bad() && !gw_is("}") && LGP < LGTS.len: gw_stmt(o, tail, ind)
+	LGP++; gw_pop(s0)
+gw_ind(ind int) byte[>..]: ip byte[>..] ~= []; for k ind * 4 { ip.push(' ') } ip
+recursive gw_assign(o byte[>..]&, ind int, lhs const byte[:], ty int):
+	op := lg_tk(LGP); ip := gw_ind(ind)
+	if op == "++" || op == "--": LGP++; gw_eat(";"); format(o, ip, lhs, if op == "++" { " += " } else { " -= " }, gw_lit("1", ty), ";\n"); return
+	if op == "=" || op.len >= 2 && op[op.len - 1] == '=' && op != "==" && op != "!=" && op != "<=" && op != ">=":
+		LGP++; e, et := gw_expr(1); gw_eat(";")
+		if op == "=": format(o, ip, lhs, " = ", gw_to(e[..], et, ty), ";\n"); return
+		v, vt := gw_bin(op[..op.len - 1], lhs, ty, e[..], et); format(o, ip, lhs, " = ", gw_to(v[..], vt, ty), ";\n"); return
+	gw_no(str("expected an assignment near ", op))
+gw_asop(op const byte[:]) bool: op == "++" || op == "--" || op == "=" || op.len >= 2 && op[op.len - 1] == '=' && op != "==" && op != "!=" && op != "<=" && op != ">="
+recursive gw_stmt(o byte[>..]&, tail bool, ind int):
+	ip := gw_ind(ind); t := gw_t(); if gw_bad(): return
+	if t == ";": LGP++; return
+	if t == "let" || t == "var" || t == "const":
+		LGP++; nt := LGP; LGP++; ty ~= -1; an ~= -1; if gw_is(":") { LGP++ }
+		if !gw_is("=") && !gw_is(";"):
+			ty = gw_ty(gw_t()); if ty < 0 { gw_no(str("local type ", gw_t())) } LGP++
+			if gw_is("["): LGP++; n, nn := parse_int(gw_t()); if !nn || n <= 0 { gw_no("local arrays need a fixed size") } an = n; LGP++; gw_eat("]")
+		if an >= 0:
+			gw_eat("="); gw_eat("["); e, et := gw_expr(1); gw_eat(";"); gw_eat(str(an)[..]); gw_eat("]"); gw_eat(";")
+			n := lg_tk(nt); format(o, ip, "var l_", n, ": array<", gw_name(ty), ", ", an, ">;\n"); v := gw_to(e[..], et, ty)
+			if v[..] != gw_lit("0", ty)[..] && v[..] != "false": format(o, ip, "for (var gw_i = 0u; gw_i < ", an, "u; gw_i++) { l_", n, "[gw_i] = ", v, "; }\n")
+			gw_push(nt, ty, 0, an); return
+		if !gw_is("="): gw_no("local without initializer"); return
+		LGP++; e, et := gw_expr(1); gw_eat(";"); if ty < 0 { ty = gw_fix(et) }
+		gw_push(nt, ty, 0, -1); format(o, ip, if t == "var" { "var" } else { "let" }, " l_", lg_tk(nt), ": ", gw_name(ty), " = ", gw_to(e[..], et, ty), ";\n"); return
+	if t == "while":
+		LGP++; c, ct := gw_expr(1); if ct != 3 { gw_no("while on non-bool") } b byte[>..] ~= []; gw_block(b, false, ind + 1); format(o, ip, "while (", c, ") {\n", b, ip, "}\n"); return
+	if t == "loop": LGP++; b byte[>..] ~= []; gw_block(b, false, ind + 1); format(o, ip, "loop {\n", b, ip, "}\n"); return
+	if t == "for":
+		LGP++; nt := LGP; LGP++; if gw_is(",") || gw_is(":") { gw_no("for binding form"); return } gw_eat("in")
+		a, at := gw_expr(1); lo byte[>..] ~= []; lo.append("0"); lt ~= 4; hi ~= a; ht ~= at
+		if gw_is(".."): LGP++; lo = a; lt = at; h, h2 := gw_expr(1); hi = h; ht = h2
+		ty ~= gw_unify(lt, ht); if ty == 4 { ty = 0 } if ty == 3 || ty == 2 || ty == 5 { gw_no("for over a non-integer") }
+		s0 := GWSN.len; gw_push(nt, ty, 0, -1); b byte[>..] ~= []; gw_block(b, false, ind + 1); gw_pop(s0)
+		n := lg_tk(nt); format(o, ip, "{ let l_", n, "_end: ", gw_name(ty), " = ", gw_to(hi[..], ht, ty), "; for (var l_", n, ": ", gw_name(ty), " = ", gw_to(lo[..], lt, ty), "; l_", n, " < l_", n, "_end; l_", n, "++) {\n", b, ip, "} }\n"); return
+	if t == "if":
+		ai := lg_afterif(LGP); last := tail && ai < LGTS.len && lg_tk(ai) == "}"; LGP++; c, ct := gw_expr(1); if ct != 3 { gw_no("if on non-bool") } b byte[>..] ~= []; gw_block(b, last, ind + 1); format(o, ip, "if (", c, ") {\n", b, ip, "}")
+		while !gw_bad() && gw_is("else"):
+			LGP++
+			if gw_is("if") { LGP++; c2, c2t := gw_expr(1); if c2t != 3 { gw_no("if on non-bool") } b2 byte[>..] ~= []; gw_block(b2, last, ind + 1); format(o, " else if (", c2, ") {\n", b2, ip, "}") } else { b2 byte[>..] ~= []; gw_block(b2, last, ind + 1); format(o, " else {\n", b2, ip, "}") }
+		o.push('\n'); return
+	if t == "guard":
+		LGP++; c, ct := gw_expr(1); if ct != 3 { gw_no("guard on non-bool") } gw_eat("else"); b byte[>..] ~= []; gw_block(b, false, ind + 1); format(o, ip, "if (!", c, ") {\n", b, ip, "}\n"); return
+	if t == "return":
+		LGP++
+		if gw_is(";"): LGP++; if GWCUR >= 0 { gw_no("return without a value") } format(o, ip, "return;\n"); return
+		e, et := gw_expr(1); gw_eat(";"); if GWCUR < 0 { gw_no("return with a value from a gpu fn") } format(o, ip, "return ", gw_to(e[..], et, GWCUR), ";\n"); return
+	if t == "break" || t == "continue": LGP++; if !gw_is(";") { gw_no("break with a value"); return } LGP++; format(o, ip, t, ";\n"); return
+	if t == "{": b byte[>..] ~= []; gw_block(b, false, ind + 1); format(o, ip, "{\n", b, ip, "}\n"); return
+	li := gw_local(t); nx ~= LGP + 1
+	if li >= 0 && nx < LGTS.len && lg_tk(nx) == "[": d ~= 0; while nx < LGTS.len { if lg_tk(nx) == "[" { d++ } else if lg_tk(nx) == "]" { d--; if d == 0 { break } } nx++ } nx++
+	if li >= 0 && nx < LGTS.len && gw_asop(lg_tk(nx)):
+		if GWSA[li] >= 0 || GWSK[li] == 2:
+			if GWSC[li] == 1: gw_no(str("writing to const ", t))
+			LGP++; gw_eat("["); ix, it := gw_expr(1); gw_eat("]"); if it == 3 || it == 2 || it == 5 { gw_no("array index must be an integer") }
+			lhs byte[>..] ~= []; format(lhs, gw_ref(li), "[", if it == 4 { gw_lit(ix[..], 1) } else { ix }, "]"); gw_assign(o, ind, lhs[..], GWST[li] as int); return
+		if GWSK[li] == 1: gw_no(str("assignment to parameter ", t)); return
+		LGP++; gw_assign(o, ind, gw_ref(li)[..], GWST[li] as int); return
+	e, et := gw_expr(1)
+	if gw_is("}") && tail && GWCUR >= 0: format(o, ip, "return ", gw_to(e[..], et, GWCUR), ";\n"); return
+	gw_eat(";"); format(o, ip, if et < 0 { "" } else { "_ = " }, e, ";\n")
+gw_scan():
+	GWF.clear(); GWPN.clear(); GWPT.clear(); GWPA.clear(); GWPC.clear()
+	for i LGTS.len:
+		if lg_tk(i) != "fn" || i > 0 && (lg_tk(i - 1) == "extern" || lg_tk(i - 1) == "::") || i + 2 >= LGTS.len || lg_tk(i + 2) != "(": continue
+		j ~= i + 3; f ~= GwFn{i + 1, GWPN.len, 0, -1, -1, i > 0 && lg_tk(i - 1) == "gpu"}
+		while j < LGTS.len && lg_tk(j) != ")":
+			pn := j; j++; if j < LGTS.len && lg_tk(j) == ":" { j++ } t0 := j; while j < LGTS.len && lg_tk(j) != "," && lg_tk(j) != ")" { j++ }
+			cq := j > t0 && lg_tk(t0) == "const"; ts := if cq { t0 + 1 } else { t0 }; ty ~= -1; ar ~= 0
+			if j == ts + 1 { ty = gw_ty(lg_tk(ts)) } else if j == ts + 4 && lg_tk(ts + 1) == "[" && lg_tk(ts + 2) == ":" && lg_tk(ts + 3) == "]" { ty = gw_ty(lg_tk(ts)); ar = 1 }
+			GWPN.push(pn as i32); GWPT.push(ty as i32); GWPA.push(ar as i32); GWPC.push((if cq { 1 } else { 0 }) as i32); f.pn++; if j < LGTS.len && lg_tk(j) == "," { j++ }
+		j++; if j < LGTS.len && lg_tk(j) == "->" { j++ } r0 := j; while j < LGTS.len && lg_tk(j) != "{" && lg_tk(j) != "=" && lg_tk(j) != ";" { j++ }
+		f.ret = if j == r0 + 1 { gw_ty(lg_tk(r0)) } else { -1 }
+		if j < LGTS.len && lg_tk(j) == "{" && gw_find(lg_tk(i + 1)) < 0: f.body = j; GWF.push(f)
+gw_line(src const byte[:]) int: ln ~= 1; if GWAT < LGTS.len { for c src[..(LGTS[GWAT] as int)] { if c == '\n' { ln++ } } } ln
+gw_kernel(fi int, o byte[>..]&, js byte[>..]&) bool:
+	GWWHY.clear(); GWOUT.clear(); GWDONE.clear(); GWBUSY.clear(); gw_pop(0); GWMOD = false; GWCUR = -1; GWFL = 0
+	f := GWF[fi]; n := lg_tk(f.name)
+	if f.pn == 0 || GWPA[f.p0] != 0 || GWPT[f.p0] != 1 && GWPT[f.p0] != 0: gw_no(str("gpu fn ", n, ": the first parameter is the invocation index (u32)")); return false
+	if f.ret >= 0: gw_no(str("gpu fn ", n, " must not return a value")); return false
+	un byte[>..] ~= []; bd byte[>..] ~= []; ju byte[>..] ~= []; jb byte[>..] ~= []; nu ~= 0; nb ~= 0
+	gw_push(GWPN[f.p0] as int, GWPT[f.p0] as int, 0, -1)
+	for k 1..f.pn:
+		pt := GWPT[f.p0 + k] as int; pn := lg_tk(GWPN[f.p0 + k] as int)
+		if pt < 0: gw_no(str("gpu fn ", n, ": parameter ", pn, " must be i32, u32, f32, bool or a slice of i32, u32 or f32")); return false
+		if GWPA[f.p0 + k] != 0:
+			if pt == 3: gw_no(str("gpu fn ", n, ": bool slices are not supported")); return false
+			nb++; ro := GWPC[f.p0 + k] == 1; format(bd, "@group(0) @binding(", nb, ") var<storage, ", if ro { "read" } else { "read_write" }, "> b_", pn, ": array<", gw_name(pt), ">;\n")
+			if jb.len > 0 { jb.push(',') } format(jb, "[\"", pn, "\",\"", gw_name(pt), "\",\"", if ro { "read" } else { "read_write" }, "\"]"); gw_push(GWPN[f.p0 + k] as int, pt, 2, -1, GWPC[f.p0 + k] as int)
+		else:
+			if nu > 0 { un.push(',') } format(un, "p_", pn, ": ", if pt == 3 { "u32" } else { gw_name(pt) }); nu++
+			if ju.len > 0 { ju.push(',') } format(ju, "[\"", pn, "\",\"", if pt == 3 { "bool" } else { gw_name(pt) }, "\"]"); gw_push(GWPN[f.p0 + k] as int, pt, 1, -1)
+	LGP = f.body; body byte[>..] ~= []; gw_block(body, false, 1); if gw_bad(): return false
+	if GWMOD: o.append("fn gw_mod(a: i32, b: i32) -> i32 { if (b == 0) { return 0; } let r = a % b; return select(r, r + abs(b), r < 0); }\n")
+	if nu > 0: format(o, "struct U { ", un, " };\n@group(0) @binding(0) var<uniform> u: U;\n")
+	o.append(bd[..]); o.append(GWOUT[..])
+	ix := lg_tk(GWPN[f.p0] as int)
+	format(o, "@compute @workgroup_size(64) fn main(@builtin(global_invocation_id) gw_g: vec3u, @builtin(num_workgroups) gw_n: vec3u) {\n    let l_", ix, ": ", gw_name(GWPT[f.p0] as int), " = ", if GWPT[f.p0] == 0 { "i32(" } else { "(" }, "gw_g.x + gw_g.y * gw_n.x * 64u);\n", body, "}\n")
+	format(js, "export const ", n, " = {wg: 64, uniform: [", ju, "], buffers: [", jb, "], wgsl: `", o, "`};\n"); true
+gpu_wgsl(path const byte[:], out const byte[:]) bool:
+	src byte[>..] ~= []; if !read_file(path, src): print("cannot read ", path); return false
+	lg_lex(src[..])
+	gw_scan(); js byte[>..] ~= []; nk ~= 0; names byte[>..] ~= []
+	for f, i GWF:
+		if !f.gpu: continue
+		w byte[>..] ~= []
+		if !gw_kernel(i, w, js): print(path, ":", gw_line(src[..]), ": error: ", GWWHY); return false
+		nk++; if names.len > 0 { names.append(", ") } names.append(lg_tk(f.name))
+	if nk == 0: print(path, ": no gpu fn found"); return false
+	format(js, "export default {", names, "};\n")
+	if !write_file(out, js[..]): print("cannot write ", out); return false
+	true
