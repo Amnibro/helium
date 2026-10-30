@@ -1,0 +1,32 @@
+accounts = {}
+rejected = 0
+
+def deposit(name, amt):
+    accounts[name] = accounts.get(name, 0) + amt
+
+def withdraw(name, amt):
+    global rejected
+    if accounts.get(name, 0) >= amt:
+        accounts[name] = accounts.get(name, 0) - amt
+    else:
+        rejected += 1
+
+def transfer(src, dst, amt):
+    global rejected
+    if accounts.get(src, 0) >= amt:
+        accounts[src] -= amt
+        accounts[dst] = accounts.get(dst, 0) + amt
+    else:
+        rejected += 1
+
+deposit("ann", 100)
+deposit("bob", 50)
+withdraw("ann", 30)
+transfer("ann", "bob", 50)
+withdraw("bob", 200)
+deposit("cy", 75)
+transfer("bob", "cy", 60)
+
+for name in sorted(accounts):
+    print(f"{name} {accounts[name]}")
+print(rejected)

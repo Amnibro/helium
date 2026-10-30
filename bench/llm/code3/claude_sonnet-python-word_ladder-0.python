@@ -1,0 +1,16 @@
+from collections import deque
+
+words = "cold cord card ward warm word worm wore core care ware wold".split()
+
+def adj(a, b):
+    return sum(x != y for x, y in zip(a, b)) == 1
+
+dist = {"cold": 1}
+q = deque(["cold"])
+while q:
+    u = q.popleft()
+    for v in words:
+        if v not in dist and adj(u, v):
+            dist[v] = dist[u] + 1
+            q.append(v)
+print(dist["warm"])

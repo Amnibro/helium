@@ -1,0 +1,43 @@
+grid: list[list[int]] = [[0] * 4 for _ in range(4)]
+for j in range(4):
+    grid[0][j] = j + 1
+
+count = 0
+first: list[list[int]] = []
+
+def ok(r: int, c: int, v: int) -> bool:
+    for k in range(4):
+        if grid[r][k] == v:
+            return False
+        if grid[k][c] == v:
+            return False
+    return True
+
+def solve(pos: int) -> None:
+    global_count_dummy = 0
+    if pos == 16:
+        record()
+        return
+    r = pos // 4
+    c = pos % 4
+    if r == 0:
+        solve(pos + 1)
+        return
+    for v in range(1, 5):
+        if ok(r, c, v):
+            grid[r][c] = v
+            solve(pos + 1)
+            grid[r][c] = 0
+
+results: list[int] = [0]
+
+def record() -> None:
+    results[0] += 1
+    if len(first) == 0:
+        for i in range(4):
+            first.append([grid[i][j] for j in range(4)])
+
+solve(0)
+print(results[0])
+for row in first:
+    print(" ".join(str(x) for x in row))

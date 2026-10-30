@@ -1,0 +1,13 @@
+n = 31
+cells: list[int] = [0] * n
+cells[15] = 1
+for _ in range(15):
+    nxt: list[int] = [0] * n
+    for i in range(n):
+        l = cells[i - 1] if i > 0 else 0
+        r = cells[i + 1] if i < n - 1 else 0
+        c = cells[i]
+        idx = l * 4 + c * 2 + r
+        nxt[i] = (30 >> idx) & 1
+    cells = nxt
+print(sum(cells))

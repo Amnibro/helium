@@ -1,0 +1,6 @@
+text = "Four score and seven years ago our fathers brought forth on this continent a new nation conceived in Liberty and dedicated to the proposition that all men are created equal"
+result = ""
+for w in text.split():
+    if len(w) >= 4:
+        result += w[0:1].upper()
+print(result)

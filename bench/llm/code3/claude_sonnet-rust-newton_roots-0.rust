@@ -1,0 +1,13 @@
+fn cbrt_newton(a: f64) -> f64 {
+    let mut x = 1.0_f64;
+    for _ in 0..30 {
+        x = (2.0 * x + a / (x * x)) / 3.0;
+    }
+    x
+}
+
+fn main() {
+    for &a in &[2.0_f64, 10.0, 100.0] {
+        println!("{:.10}", cbrt_newton(a));
+    }
+}

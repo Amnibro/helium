@@ -1,0 +1,14 @@
+use dictionary
+first(xs byte[>..][>..][>..]&) byte[>..][>..]&: xs[0]
+main():
+	r byte[>..][>..][>..] ~= []
+	r.push(["x", "y"])
+	g byte[>..][>..] ~= []
+	g = first(r)
+	g.push("z")
+	d ~= dictionary<byte[>..], byte[>..][>..]> {}
+	d["a"] = ["p"]
+	h byte[>..][>..] ~= []
+	for k in keys(d): h = d[k]
+	h.push("q")
+	print(g, " ", r, " ", h, " ", d["a"])

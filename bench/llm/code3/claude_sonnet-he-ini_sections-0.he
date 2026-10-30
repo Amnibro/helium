@@ -1,0 +1,17 @@
+text = "[db]\nhost=local\nport=5432\n[web]\nport=8080\nworkers=4\n[db]\nuser=admin"
+sections: dict[str, dict[str, str]] = {}
+current = ""
+for line in text.split("\n"):
+    if len(line) == 0:
+        continue
+    if line[0] == '[':
+        current = line[1:len(line) - 1]
+        if current not in sections:
+            sections[current] = {}
+    else:
+        idx = line.find("=")
+        if idx >= 0:
+            sections[current][line[:idx]] = line[idx + 1:]
+for name in sorted(sections.keys()):
+    d = sections[name]
+    print(name + ": " + ",".join(k + "=" + d[k] for k in sorted(d.keys())))

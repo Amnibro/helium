@@ -1,0 +1,15 @@
+fn main() {
+    let items: [usize; 15] = [3, 34, 4, 12, 5, 2, 27, 18, 9, 11, 7, 15, 21, 6, 8];
+    let target = 50usize;
+    let mut dp = vec![0u64; target + 1];
+    dp[0] = 1;
+    for &x in items.iter() {
+        if x > target {
+            continue;
+        }
+        for s in (x..=target).rev() {
+            dp[s] += dp[s - x];
+        }
+    }
+    println!("{}", dp[target]);
+}

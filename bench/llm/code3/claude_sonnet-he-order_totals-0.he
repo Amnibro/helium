@@ -1,0 +1,11 @@
+data = "o1,alice,widget,3,2.50;o2,bob,gadget,1,10.00;o3,alice,gadget,2,10.00;o4,cara,widget,10,2.50;o5,bob,doohickey,4,7.25;o6,cara,gadget,1,10.00"
+totals: dict[str, float] = {}
+for rec in data.split(";"):
+    p = rec.split(",")
+    name = p[1]
+    amt = int(p[3]) * float(p[4])
+    totals[name] = totals.get(name, 0.0) + amt
+rows = list(totals.items())
+rows.sort(key=lambda r: (-r[1], r[0]))
+for r in rows:
+    print(f"{r[0]} {r[1]:.2f}")

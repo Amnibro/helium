@@ -1,0 +1,34 @@
+rows: list[str] = ['11000110', '11001100', '00100001', '00011011', '10000011', '11110000']
+h = len(rows)
+w = len(rows[0])
+seen: list[list[bool]] = [[False for _ in range(w)] for _ in range(h)]
+count = 0
+best = 0
+for r in range(h):
+    for c in range(w):
+        if rows[r][c] == '1' and not seen[r][c]:
+            count += 1
+            size = 0
+            stack: list[tuple[int, int]] = [(r, c)]
+            seen[r][c] = True
+            while len(stack) > 0:
+                y, x = stack.pop()
+                size += 1
+                for d in range(4):
+                    ny = y
+                    nx = x
+                    if d == 0:
+                        ny = y - 1
+                    elif d == 1:
+                        ny = y + 1
+                    elif d == 2:
+                        nx = x - 1
+                    else:
+                        nx = x + 1
+                    if ny >= 0 and ny < h and nx >= 0 and nx < w:
+                        if rows[ny][nx] == '1' and not seen[ny][nx]:
+                            seen[ny][nx] = True
+                            stack.append((ny, nx))
+            if size > best:
+                best = size
+print(count, best)

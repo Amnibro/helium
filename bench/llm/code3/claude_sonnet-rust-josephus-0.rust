@@ -1,0 +1,14 @@
+fn main() {
+    let mut v: Vec<usize> = (1..=41).collect();
+    let mut idx = 0usize;
+    let mut removed = Vec::new();
+    while !v.is_empty() {
+        idx = (idx + 2) % v.len();
+        removed.push(v.remove(idx));
+        if !v.is_empty() {
+            idx %= v.len();
+        }
+    }
+    let n = removed.len();
+    println!("{} {}", removed[n - 2], removed[n - 1]);
+}

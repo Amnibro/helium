@@ -1,0 +1,16 @@
+fn main() {
+    let s = "the quick brown fox jumps over the lazy dog";
+    let out: Vec<String> = s
+        .split_whitespace()
+        .map(|w| {
+            let first = w.chars().next().unwrap();
+            if "aeiou".contains(first) {
+                format!("{}way", w)
+            } else {
+                let idx = w.find(|c: char| "aeiou".contains(c)).unwrap_or(w.len());
+                format!("{}{}ay", &w[idx..], &w[..idx])
+            }
+        })
+        .collect();
+    println!("{}", out.join(" "));
+}

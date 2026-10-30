@@ -1,0 +1,23 @@
+fn main() {
+    let n: u64 = 3000;
+    let mut count: u64 = 0;
+    for c in 1..=n {
+        let c2 = c * c;
+        let mut a = 1u64;
+        while a * a * 2 < c2 {
+            let b2 = c2 - a * a;
+            let mut b = (b2 as f64).sqrt() as u64;
+            while b * b > b2 {
+                b -= 1;
+            }
+            while (b + 1) * (b + 1) <= b2 {
+                b += 1;
+            }
+            if b * b == b2 && a < b {
+                count += 1;
+            }
+            a += 1;
+        }
+    }
+    println!("{}", count);
+}

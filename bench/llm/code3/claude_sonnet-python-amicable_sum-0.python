@@ -1,0 +1,16 @@
+def main():
+    N = 10000
+    # Divisor sums for values up to N (b may exceed N, so compute a bit larger)
+    M = 100000
+    s = [0] * (M + 1)
+    for i in range(1, M // 2 + 1):
+        for j in range(2 * i, M + 1, i):
+            s[j] += i
+    total = 0
+    for a in range(2, N):
+        b = s[a]
+        if b != a and b <= M and s[b] == a:
+            total += a
+    print(total)
+
+main()

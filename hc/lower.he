@@ -253,7 +253,7 @@ recursive lstore(addr int, n int, t int):
 	st0 ~= deref(atc(n)); if TY[st0].k == TY_MULTI && TY[t].k != TY_MULTI { st0 = deref(mel(st0, 0)) } sk := TY[st0].k
 	if TY[t].k == TY_ARR && st0 != t && (sk == TY_SLICE || sk == TY_STRLIT || sk == TY_ARR) && k != N_ARR && k != N_STR: lconv_arr(addr, n, t); return
 	if TY[t].k == TY_ENUM && sk == TY_VARIANT: ei := TY[t].a; vi := TY[st0].c; lzero(addr, tsz(t)); stw(addr, 0, imm(vi), wof(t)); if vsi(ei, vi) >= 0 { if TY[at(n)].k == TY_REF && !is_lplace(n) { ir(I_COPY, 3, addi(addr, epoff(ei)), if ND[n].k as int == N_CALL { lcall(n) } else { lptr(n) }, imm(tsz(st0)), 0); } else { lstore(addi(addr, epoff(ei)), n, st0); } } return
-	if is_lplace(n) || TY[at(n)].k == TY_REF: sa := if is_lplace(n) { laddr(n) } else { if ND[n].k as int == N_CALL { lcall(n) } else { lptr(n) } }; ir(I_COPY, 3, addr, lunv(sa, t), imm(tsz(t)), 0); return
+	if is_lplace(n) || TY[at(n)].k == TY_REF: sa := if is_lplace(n) { laddr(n) } else { if ND[n].k as int == N_CALL { lcall(n) } else { lptr(n) } }; ir(I_COPY, 3, addr, lunv(sa, t), imm(tsz(t)), 0); if !is_lplace(n) && ND[n].k as int == N_CALL && TY[t].k != TY_REF && needs_drop(t) { lwalk(1, addr, -1, t) } return
 	if k == N_SLIT: lslit(addr, n, t); return
 	if k == N_ARR: larr(addr, n, t); return
 	if k == N_UN && ND[n].op as int == T_AND: ir(I_COPY, 3, addr, laddr(ND[n].a), imm(tsz(t)), 0); return

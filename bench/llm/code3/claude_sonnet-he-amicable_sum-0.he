@@ -1,0 +1,23 @@
+N = 10000
+d: list[int] = [0] * N
+for i in range(1, N):
+    for j in range(2 * i, N, i):
+        d[j] += i
+
+def dsum(n: int) -> int:
+    s = 1
+    k = 2
+    while k * k <= n:
+        if n % k == 0:
+            s += k
+            if k * k != n:
+                s += n // k
+        k += 1
+    return s if n > 1 else 0
+
+total = 0
+for a in range(2, N):
+    b = d[a]
+    if b != a and dsum(b) == a:
+        total += a
+print(total)

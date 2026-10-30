@@ -17,7 +17,7 @@ K_BOOL := 89; K_VARINT := 90; K_I8 := 91; K_I16 := 92; K_I32 := 93; K_I64 := 94;
 K_INT := 101; K_UINT := 102; K_BYTE := 103; K_REAL := 104
 NKW := 49
 struct Tok { k u8, ml bool, uns bool, lay bool, f u16, line i32, s i32, n i32, w i32, v i64 }
-struct File { s i32, n i32, name i32, amni bool, he bool }
+struct File { s i32, n i32, name i32, amni bool, he bool, py bool }
 struct Name { s i32, n i32 }
 var SRC byte[>..]
 var NAMES byte[>..]
@@ -75,6 +75,16 @@ esc(p int&, f int, line int) int:
 	-1
 lay_else(p0 int) bool:
 	p ~= p0; d ~= 0; loop { c u8 := SRC[p]; if c == 0 || c == '\n' || c == '#' { return false } if c == '"' || c == '\'' { p++; while SRC[p] != c && SRC[p] != 0 && SRC[p] != '\n' { if SRC[p] == '\\' { p++ } p++ } } if c == '(' || c == '[' { d++ } if c == ')' || c == ']' { d-- } if d == 0 && c == '{' { return false } if d == 0 && c == ':' && SRC[p + 1] != ':' { return true } if d == 0 && c == ':' { p++ } p++ } false
+pyline(t const byte[:]) bool:
+	for w in ["def ", "from ", "class ", "import ", "print(", "for ", "while ", "if ", "@"]: if t.len > w.len && t[..w.len] == w { return true }
+	j ~= 0; while j < t.len && (t[j] >= 'a' && t[j] <= 'z' || t[j] >= 'A' && t[j] <= 'Z' || t[j] >= '0' && t[j] <= '9' || t[j] == '_') { j++ } j > 0 && (t[0] < '0' || t[0] > '9') && j + 2 < t.len && t[j] == ' ' && t[j + 1] == '=' && t[j + 2] == ' '
+pyfile(s const byte[:]) bool:
+	i ~= 0
+	while i < s.len:
+		if (i == 0 || s[i - 1] == '\n') && pyline(s[i..]): return true
+		i += 1
+	false
+pykw(k int) bool: k == K_IMPORT || k == K_IF || k == K_ELSE || k == K_WHILE || k == K_FOR || k == K_IN || k == K_RETURN || k == K_BREAK || k == K_CONTINUE || k == K_AS || k == K_TRUE || k == K_FALSE || k == K_INT || k == K_BOOL
 qend(s const byte[:], j0 int, q byte) int:
 	j ~= j0; while j < s.len && s[j] != q && s[j] != '\n' { if s[j] == '\\' { j += 1 } j += 1 }; if j < s.len && s[j] == q { j + 1 } else { j }
 he_pre(s const byte[:], o byte[>..]&):
@@ -113,7 +123,7 @@ fstr(s const byte[:], j0 int, o byte[>..]&) int:
 	o.push(')')
 	if i < s.len && s[i] == q { i + 1 } else { i }
 fspec(o byte[>..]&, e const byte[:], sp const byte[:]):
-	if sp.len == 0: o.push('('); o.append(e); o.push(')'); return
+	if sp.len == 0: o.append("pyfmt("); o.append(e); o.push(')'); return
 	fl ~= ' ' as byte; al ~= 0 as byte; z ~= false; w ~= -1; pr ~= -1; ty ~= 0 as byte; j ~= 0
 	if sp.len >= 2 && (sp[1] == '<' || sp[1] == '>' || sp[1] == '^'): fl = sp[0]; al = sp[1]; j = 2
 	elif sp[0] == '<' || sp[0] == '>' || sp[0] == '^': al = sp[0]; j = 1
@@ -125,7 +135,7 @@ fspec(o byte[>..]&, e const byte[:], sp const byte[:]):
 	if j < sp.len && sp[j] == '.': j += 1; pr = 0; while j < sp.len && dig(sp[j]) { pr = pr * 10 + (sp[j] - '0'); j += 1 }
 	if j < sp.len: ty = sp[j]
 	v byte[>..] ~= []
-	if ty == 'f' || ty == 'F' || ty == 'e' || ty == 'g' || ty == '%' || ty == 0 && pr >= 0: format(v, "fmt(real(", e, ")", if ty == '%' { " * 100.0" } else { "" }, ", ", if pr >= 0 { pr } else { 6 }, ")"); if ty == '%' { s0 := str("str(", v[..], ", \"%\")"); v.clear(); v.append(s0[..]) }
+	if ty == 'f' || ty == 'F' || ty == 'e' || ty == 'g' || ty == '%' || ty == 0 && pr >= 0: format(v, "fmt(to_real(", e, ")", if ty == '%' { " * 100.0" } else { "" }, ", ", if pr >= 0 { pr } else { 6 }, ")"); if ty == '%' { s0 := str("str(", v[..], ", \"%\")"); v.clear(); v.append(s0[..]) }
 	elif hx && (ty == 'x' || ty == 'b' || ty == 'o'): format(v, if ty == 'x' { "hex(" } else { if ty == 'b' { "bin(" } else { "oct(" } }, e, ")")
 	elif ty == 'x' || ty == 'X' || ty == 'b' || ty == 'o': format(v, if ty == 'X' { "upper(" } else { "" }, "to_base(", e, ", ", if ty == 'b' { 2 } else { if ty == 'o' { 8 } else { 16 } }, ")", if ty == 'X' { ")" } else { "" })
 	else: format(v, "str(", e, ")")
@@ -147,8 +157,8 @@ lex_file(path const byte[:]) bool:
 	base := SRC.len
 	skip := if body.len >= 3 && body[0] == 0xEF && body[1] == 0xBB && body[2] == 0xBF { 3 } else { 0 }
 	SRC.append(body[skip..]); SRC.push(0); SRC.push(0); SRC.push(0); SRC.push(0)
-	FILES.push(File{base, body.len - skip, intern(path), path.len > 5 && path[^5..] == ".amni" || path.len > 3 && path[^3..] == ".he", path.len > 3 && path[^3..] == ".he"})
-	amni := FILES[f].amni; he := FILES[f].he; t0 := TK.len
+	FILES.push(File{base, body.len - skip, intern(path), path.len > 5 && path[^5..] == ".amni" || path.len > 3 && path[^3..] == ".he", path.len > 3 && path[^3..] == ".he", false})
+	amni := FILES[f].amni; he := FILES[f].he; t0 := TK.len; py := he && pyfile(SRC[base..base + FILES[f].n]); FILES[f].py = py
 	dep ~= 0; ind i32[>..] ~= [0]; inl ~= 0; ss ~= TK.len; nl ~= false; col ~= 0
 	p ~= base
 	line ~= 1
@@ -160,7 +170,7 @@ lex_file(path const byte[:]) bool:
 		c u8 ~= SRC[p]
 		while c == ' ' || c == '\t' || c == '\r' || c == '\n': if c == '\n' { line++; nl = true; col = 0 } else { col++ } p++; c = SRC[p]
 		if c == '/' && SRC[p + 1] == '/' && !he: while SRC[p] != '\n' && SRC[p] != 0 { p++ } continue
-		if c == '#' && he: while SRC[p] != '\n' && SRC[p] != 0 { p++ } continue
+		if (c == '#' || c == '@') && he: while SRC[p] != '\n' && SRC[p] != 0 { p++ } continue
 		if he && dep == 0 && (nl || c == 0) && TK.len > t0:
 			nl = false
 			while inl > 0: lay(T_RC, p); inl--
@@ -207,10 +217,10 @@ lex_file(path const byte[:]) bool:
 		if idc(c):
 			while idc(SRC[p]): p++
 			id := intern(SRC[s..p])
-			k ~= if id < NKW { T_KW + id } else { T_IDENT }
+			k ~= if id < NKW && (!py || pykw(T_KW + id)) { T_KW + id } else { T_IDENT }
 			if !amni && k >= K_INT: k = T_IDENT
 			el ~= false
-			if he && k == T_IDENT && p - s <= 4: w := SRC[s..p]; if w == "and" { k = T_ANDAND } else if w == "or" { k = T_OROR } else if w == "not" { k = T_NOT } else if w == "elif" { k = K_ELSE; el = true }
+			if he && k == T_IDENT && p - s <= 5: w := SRC[s..p]; if w == "and" { k = T_ANDAND } else if w == "or" { k = T_OROR } else if w == "not" { k = T_NOT } else if w == "elif" { k = K_ELSE; el = true } else if py && w == "True" { k = K_TRUE } else if py && w == "False" { k = K_FALSE } else if py && w == "pass" { k = T_SEMI }
 			if he && dep == 0 && k == K_ELSE && inl > 0 && lay_else(p): lay(T_RC, s); inl--
 			if he && dep == 0 && ind.len == 1 && TK.len == ss && p - s == 3 && SRC[s..p] == "use" && SRC[p] == ' ': k = K_IMPORT
 			put(k, s, p); TK[TK.len - 1].v = if el { K_ELSE - T_KW } else { id }
@@ -264,7 +274,7 @@ lex_file(path const byte[:]) bool:
 		p++
 		k ~= -1
 		if he && (c == ':' && n1 == '=' || c == '~' && n1 == '='): ins(if c == ':' { K_LET } else { K_VAR }, s); p++; put(T_ASSIGN, s, p); continue
-		if he && dep == 0 && c == ':' && n1 != ':': q ~= p; while SRC[q] == ' ' || SRC[q] == '\t' || SRC[q] == '\r' { q++ } if SRC[q] == '\n' || SRC[q] == 0 || SRC[q] == '#' { put(T_COLON, s, p); TK[TK.len - 1].lay = true } else { lay(T_LC, s); inl++ } continue
+		if he && dep == 0 && c == ':' && n1 != ':' && !(TK.len - ss == 1 && TK[ss].k as int == T_IDENT): q ~= p; while SRC[q] == ' ' || SRC[q] == '\t' || SRC[q] == '\r' { q++ } if SRC[q] == '\n' || SRC[q] == 0 || SRC[q] == '#' { put(T_COLON, s, p); TK[TK.len - 1].lay = true } else { lay(T_LC, s); inl++ } continue
 		if c == '(' || c == '[' || c == '{' { dep++ } if (c == ')' || c == ']' || c == '}') && dep > 0: dep--
 		if c == '(': k = T_LP
 		else:

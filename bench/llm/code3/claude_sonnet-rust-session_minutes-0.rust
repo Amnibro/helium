@@ -1,0 +1,25 @@
+use std::collections::BTreeMap;
+
+fn main() {
+    let log = "09:15 login ann;09:20 login bo;09:41 logout ann;10:02 login cy;10:30 logout bo;11:11 login ann;11:45 logout cy;12:00 logout ann";
+    let mut open: BTreeMap<&str, i32> = BTreeMap::new();
+    let mut total: BTreeMap<&str, i32> = BTreeMap::new();
+    for entry in log.split(';') {
+        let mut p = entry.split_whitespace();
+        let t = p.next().unwrap();
+        let action = p.next().unwrap();
+        let user = p.next().unwrap();
+        let mut hm = t.split(':');
+        let h: i32 = hm.next().unwrap().parse().unwrap();
+        let m: i32 = hm.next().unwrap().parse().unwrap();
+        let mins = h * 60 + m;
+        if action == "login" {
+            open.insert(user, mins);
+        } else if let Some(start) = open.remove(user) {
+            *total.entry(user).or_insert(0) += mins - start;
+        }
+    }
+    for (u, m) in &total {
+        println!("{} {}", u, m);
+    }
+}

@@ -1,0 +1,17 @@
+log = "09:15 login ann;09:20 login bo;09:41 logout ann;10:02 login cy;10:30 logout bo;11:11 login ann;11:45 logout cy;12:00 logout ann"
+
+start: dict[str, int] = {}
+total: dict[str, int] = {}
+for entry in log.split(";"):
+    parts = entry.split(" ")
+    t = parts[0]
+    minutes = int(t[0:2]) * 60 + int(t[3:5])
+    action = parts[1]
+    user = parts[2]
+    if action == "login":
+        start[user] = minutes
+    else:
+        total[user] = total.get(user, 0) + minutes - start[user]
+
+for user in sorted(total.keys()):
+    print(f"{user} {total[user]}")

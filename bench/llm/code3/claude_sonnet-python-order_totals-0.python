@@ -1,0 +1,14 @@
+from decimal import Decimal
+
+data = 'o1,alice,widget,3,2.50;o2,bob,gadget,1,10.00;o3,alice,gadget,2,10.00;o4,cara,widget,10,2.50;o5,bob,doohickey,4,7.25;o6,cara,gadget,1,10.00'
+
+totals = {}
+for rec in data.split(';'):
+    rec = rec.strip()
+    if not rec:
+        continue
+    oid, cust, item, qty, price = [x.strip() for x in rec.split(',')]
+    totals[cust] = totals.get(cust, Decimal(0)) + int(qty) * Decimal(price)
+
+for cust, total in sorted(totals.items(), key=lambda kv: (-kv[1], kv[0])):
+    print(f"{cust} {total:.2f}")

@@ -1,0 +1,15 @@
+fn main() {
+    let n = 100000usize;
+    let mut phi: Vec<u64> = (0..=n as u64).collect();
+    for i in 2..=n {
+        if phi[i] == i as u64 {
+            let mut j = i;
+            while j <= n {
+                phi[j] -= phi[j] / i as u64;
+                j += i;
+            }
+        }
+    }
+    let sum: u64 = phi[1..].iter().sum();
+    println!("{}", sum);
+}

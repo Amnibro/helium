@@ -1,0 +1,32 @@
+import math
+from collections import deque
+LIMIT = 30
+
+def is_prime(n: int) -> bool:
+    return n > 1 and all(n % d != 0 for d in range(2, math.isqrt(n) + 1))
+
+primes = [p for p in range(LIMIT) if is_prime(p)]
+total = 0
+for p in primes:
+    total += p
+if total > 100:
+    label = "big"
+else:
+    label = "small"
+print(total, label, primes[-3:])
+grid = ["S.#", "..#", "#.E"]
+seen: set[tuple[int, int]] = set()
+q: deque[tuple[int, int, int]] = deque()
+q.append((0, 0, 0))
+best = -1
+while len(q) > 0:
+    r, c, d = q.popleft()
+    if grid[r][c] == 'E':
+        best = d
+        break
+    for dr, dc in ((1, 0), (0, 1), (-1, 0), (0, -1)):
+        nr, nc = r + dr, c + dc
+        if 0 <= nr < 3 and 0 <= nc < 3 and grid[nr][nc] != '#' and (nr, nc) not in seen:
+            seen.add((nr, nc))
+            q.append((nr, nc, d + 1))
+print(best, len(set("mississippi")), sorted({"b": 2, "a": 1}.items()))

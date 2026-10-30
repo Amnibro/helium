@@ -855,7 +855,7 @@ recursive ck_builtin(n int, b int, recv int, want int) int:
 		k := TY[d].k
 		if k == TY_SLICE: return set_t(n, t_arr(TY[d].a, A_GROW, -1, -1))
 		return set_t(n, d)
-	if b == B_LEN: c := arg(0); if recv < 0 { ck(c, -1) } if TY[at(c)].k == TY_STRLIT { set_t(c, TT_STR) } return set_t(n, T_I64)
+	if b == B_LEN: c := arg(0); if recv < 0 { ck(c, -1) } if TY[at(c)].k == TY_STRLIT { set_t(c, TT_STR) } dc := deref(at(c)); if TY[dc].k == TY_STRUCT && nm(STI[TY[dc].a].name as int) == "dictionary" { ND[n].k = N_DOT as u8; ND[n].a = c; ND[n].s = intern("count") as i32; return ck(n, -1) } return set_t(n, T_I64)
 	if b == B_BYTESOF: c := arg(0); if recv < 0 { ck(c, -1) } if is_pending(at(c)) { default_t(c) } return set_t(n, TT_STR)
 	if b == B_TOBYTES: c := arg(0); if recv < 0 { ck(c, -1) } if is_pending(at(c)) { default_t(c) } if total > 1 { ck(arg(1), -1); return set_t(n, T_VOID) } return set_t(n, t_arr(T_U8, A_GROW, -1, -1))
 	if b == B_FROMBYTES: ta := x.c; t := if ta >= 0 { rtype(kid(ta, 0), ns_of(n)) } else { T_ERRT }; ck(arg(0), TT_STR); if is_pending(at(arg(0))) { default_t(arg(0)) } if TY[t].k == TY_ARR { rs i32[..2] ~= []; rs.push(t); rs.push(T_BOOL); return set_t(n, tlist(TY_MULTI, rs[..], -1)) } return set_t(n, t)
@@ -915,6 +915,7 @@ recursive slit_infer(n int, sn int) int:
 recursive ck_slit(n int, want int) int:
 	x := ND[n]
 	tnode := x.a as int
+	if tnode < 0: w := if want >= 0 { deref(want) } else { -1 }; if w >= 0 && TY[w].k == TY_STRUCT && x.n == 0 { set_r(n, R_CTOR, TY[w].a as int); return set_t(n, w) } cerr(n, "give the dictionary or set a type, as in counts: dict[str, int] = {}"); return set_t(n, T_ERRT)
 	ns := ns_of(n)
 	t ~= -1
 	if ND[tnode].k == N_TNAME && ND[tnode].n == 0 && gb_find(ND[tnode].s as int) < 0:

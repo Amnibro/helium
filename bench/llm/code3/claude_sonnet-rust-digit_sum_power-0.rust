@@ -1,0 +1,21 @@
+fn main() {
+    let mut best_sum: u32 = 0;
+    let mut best_val: i64 = 0;
+    for a in 1i64..20 {
+        for b in 1u32..20 {
+            if let Some(v) = a.checked_pow(b) {
+                let mut s = 0u32;
+                let mut t = v;
+                while t > 0 {
+                    s += (t % 10) as u32;
+                    t /= 10;
+                }
+                if s > best_sum || (s == best_sum && v < best_val) {
+                    best_sum = s;
+                    best_val = v;
+                }
+            }
+        }
+    }
+    println!("{} {}", best_sum, best_val);
+}

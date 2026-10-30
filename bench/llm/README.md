@@ -5,6 +5,31 @@ primer alone? How many tokens does that cost next to Python and Rust, and how
 fast do the programs run? This directory holds the harness, the 43 tasks,
 every model reply and every generated program, measured 2026-10-29.
 
+## Update 2026-10-30: Helium as typed Python
+
+Helium now also reads typed Python. A `.he` file with Python lines (`def`,
+`import`, top-level statements) is compiled as a typed Python script: type
+hints on function parameters and results, inferred locals, dataclasses,
+tuples, f-strings, comprehensions, `dict`/`set`/`deque`/`Counter`/`heapq`,
+`key=` sorting and Python-style printing. The primer is
+[primers/he5.md](primers/he5.md), 621 tokens, against about 7,000 for the
+earlier HELIUM.md.
+
+Measured on 32 new held-out tasks (`tasks3.py`) written after the dialect was
+finished and never used to tune it. Claude Sonnet 5.5, same harness, one
+repair turn allowed:
+
+| language | first try | after repair | output tokens / task | thinking | code (o200k) | input tokens / task |
+|---|---|---|---|---|---|---|
+| Helium (typed Python, he5) | 32/32 | 32/32 | 227 | 34 | 142 | 1,848 |
+| Python 3 | 32/32 | 32/32 | 212 | 42 | 122 | 980 |
+| Rust | 32/32 | 32/32 | 305 | 36 | 185 | 994 |
+
+Helium output costs 26% less than Rust and 7% more than Python, while running
+at native speed. The extra code tokens over Python are the type hints. The extra
+input is the primer, which a prompt cache serves at cache-read prices. Programs
+and replies are in `code3/` and `results3.jsonl`.
+
 ## Method
 
 - 43 small tasks with one exact expected output each, in nine categories:
@@ -114,6 +139,8 @@ python3 bench/llm/tasks.py                          # writes tasks.json
 python3 bench/llm/run.py claude:haiku,claude:sonnet,claude:opus helium,python,rust all
 python3 bench/llm/retime.py
 python3 bench/llm/report.py                         # the tables above, plus runs.csv
+python3 bench/llm/tasks3.py                         # held-out set for the typed-Python update
+HEP=he5.md TASKS=tasks3.json python3 bench/llm/run.py claude:sonnet he,python,rust all
 ```
 
 `run.py` needs the `claude` CLI signed in and Python's `tiktoken`; it skips

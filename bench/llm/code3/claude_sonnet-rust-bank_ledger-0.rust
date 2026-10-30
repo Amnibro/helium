@@ -1,0 +1,40 @@
+use std::collections::BTreeMap;
+
+fn deposit(m: &mut BTreeMap<String, i64>, n: &str, a: i64) {
+    *m.entry(n.to_string()).or_insert(0) += a;
+}
+
+fn withdraw(m: &mut BTreeMap<String, i64>, n: &str, a: i64, rej: &mut u32) {
+    let b = m.entry(n.to_string()).or_insert(0);
+    if *b >= a {
+        *b -= a;
+    } else {
+        *rej += 1;
+    }
+}
+
+fn transfer(m: &mut BTreeMap<String, i64>, from: &str, to: &str, a: i64, rej: &mut u32) {
+    let b = *m.entry(from.to_string()).or_insert(0);
+    if b >= a {
+        *m.get_mut(from).unwrap() -= a;
+        deposit(m, to, a);
+    } else {
+        *rej += 1;
+    }
+}
+
+fn main() {
+    let mut m: BTreeMap<String, i64> = BTreeMap::new();
+    let mut rej = 0u32;
+    deposit(&mut m, "ann", 100);
+    deposit(&mut m, "bob", 50);
+    withdraw(&mut m, "ann", 30, &mut rej);
+    transfer(&mut m, "ann", "bob", 50, &mut rej);
+    withdraw(&mut m, "bob", 200, &mut rej);
+    deposit(&mut m, "cy", 75);
+    transfer(&mut m, "bob", "cy", 60, &mut rej);
+    for (k, v) in &m {
+        println!("{} {}", k, v);
+    }
+    println!("{}", rej);
+}

@@ -1,0 +1,25 @@
+def evaluate(expr):
+    stack = []
+    for tok in expr.split():
+        if tok in ('+', '-', '*'):
+            b = stack.pop()
+            a = stack.pop()
+            if tok == '+':
+                stack.append(a + b)
+            elif tok == '-':
+                stack.append(a - b)
+            else:
+                stack.append(a * b)
+        else:
+            stack.append(int(tok))
+    return stack[0]
+
+expressions = [
+    '3 4 + 2 *',
+    '5 1 2 + 4 * + 3 -',
+    '2 3 4 * 5 - *',
+    '9 8 7 6 - - -',
+]
+
+for e in expressions:
+    print(evaluate(e))

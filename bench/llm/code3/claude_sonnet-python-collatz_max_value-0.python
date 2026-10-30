@@ -1,0 +1,25 @@
+def main():
+    N = 300000
+    peak = [0] * N
+    peak[1] = 1
+    best_n, best_v = 1, 1
+    for n in range(2, N):
+        x = n
+        m = n
+        while x >= n:
+            if x & 1:
+                x = 3 * x + 1
+            else:
+                x >>= 1
+            if x > m:
+                m = x
+        p = peak[x]
+        if p > m:
+            m = p
+        peak[n] = m
+        if m > best_v:
+            best_v = m
+            best_n = n
+    print(best_n, best_v)
+
+main()

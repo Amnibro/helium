@@ -38,7 +38,7 @@ wvote(fi int):
 		for i (f.i0 as int)..(f.i1 as int):
 			x := IR[i]; if x.op as int == I_MOV && x.a >= 0 && x.d >= 0 && sc[x.d] == 0 && VF[x.a] != 0 { VF[x.d] = 1 }
 wext2(v int, h int, p int) bool:
-	s := VST[v]; e := VEN[v]; if s >= 0 && (s < h && e >= h || s <= p && e > p) && (s > h || e < p) { VST[v] = min(s as int, h) as i32; VEN[v] = max(e as int, p) as i32; return true } false
+	s := VST[v]; e := VEN[v]; if s >= 0 && s <= p && e >= h && (s > h || e < p) { VST[v] = min(s as int, h) as i32; VEN[v] = max(e as int, p) as i32; return true } false
 wcolor(fi int):
 	f := NFS[fi]; i0 := f.i0 as int; nv := f.nv as int; VST.clear(); VST.resize(nv, -1); VEN.clear(); VEN.resize(nv, -1); wvote(fi)
 	us i32[>..<] ~= []; ds i32[>..<] ~= []; lp i32[>..<] ~= []

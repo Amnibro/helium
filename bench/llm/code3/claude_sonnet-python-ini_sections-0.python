@@ -1,0 +1,18 @@
+text = '[db]\nhost=local\nport=5432\n[web]\nport=8080\nworkers=4\n[db]\nuser=admin'
+
+sections = {}
+current = None
+for line in text.split('\n'):
+    line = line.strip()
+    if not line or line.startswith(('#', ';')):
+        continue
+    if line.startswith('[') and line.endswith(']'):
+        current = line[1:-1].strip()
+        sections.setdefault(current, {})
+    elif '=' in line and current is not None:
+        k, v = line.split('=', 1)
+        sections[current][k.strip()] = v.strip()
+
+for name in sorted(sections):
+    items = sections[name]
+    print(name + ': ' + ','.join(f'{k}={items[k]}' for k in sorted(items)))

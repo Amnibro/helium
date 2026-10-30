@@ -1,0 +1,7 @@
+def cbrt_newton(a, x=1.0, iters=30):
+    for _ in range(iters):
+        x = x - (x**3 - a) / (3 * x**2)
+    return x
+
+for n in (2, 10, 100):
+    print(f"{cbrt_newton(n):.10f}")

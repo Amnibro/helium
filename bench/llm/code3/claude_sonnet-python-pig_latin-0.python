@@ -1,0 +1,11 @@
+def pig_latin(word):
+    vowels = "aeiou"
+    if word[0] in vowels:
+        return word + "way"
+    i = 0
+    while i < len(word) and word[i] not in vowels:
+        i += 1
+    return word[i:] + word[:i] + "ay"
+
+sentence = "the quick brown fox jumps over the lazy dog"
+print(" ".join(pig_latin(w) for w in sentence.split()))

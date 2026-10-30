@@ -1,0 +1,15 @@
+res: list[str] = []
+for n in range(1, 61):
+    s = str(n)
+    total = 0
+    seen: set[int] = set()
+    ok = True
+    for c in s:
+        d = ord(c) - 48
+        if d in seen:
+            ok = False
+        seen.add(d)
+        total += d
+    if ok and total % 2 == 1:
+        res.append(s)
+print(",".join(res))

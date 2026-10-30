@@ -1,0 +1,11 @@
+def main():
+    nums = [3, 34, 4, 12, 5, 2, 27, 18, 9, 11, 7, 15, 21, 6, 8]
+    target = 50
+    dp = [0] * (target + 1)
+    dp[0] = 1
+    for n in nums:
+        for s in range(target, n - 1, -1):
+            dp[s] += dp[s - n]
+    print(dp[target])
+
+main()

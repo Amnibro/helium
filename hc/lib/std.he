@@ -171,6 +171,66 @@ fill<T>(xs T[:], v T): for i xs.len { xs[i] .= v }
 copy_into<T>(dst T[:], src T[:]): assert(dst.len == src.len); for i dst.len { dst[i] .= src[i] }
 reverse<T>(xs T[:]): i ~= 0; j ~= xs.len - 1; while i < j { swap_at(xs, i, j); i += 1; j -= 1 }
 extend<T>(xs T[>..]&, ys T[:]): xs.append(ys)
+pyfmt(x int) byte[>..]: str(x)
+pyfmt(x real) byte[>..]: str(x)
+pyfmt(s byte[:]) byte[>..]: str(s)
+pyfmt(c byte) byte[>..]: o byte[>..] ~= []; o.push(c); o
+pyfmt(b bool) byte[>..]: str(if b { "True" } else { "False" })
+pyrepr<T>(x T) byte[>..]: pyfmt(x)
+pyrepr(s byte[:]) byte[>..]: o byte[>..] ~= ['\'']; o.append(s); o.push('\''); o
+pyrepr(s byte[>..]) byte[>..]: pyrepr(s[..])
+pyfmt<T>(xs T[:]) byte[>..]: o byte[>..] ~= ['[']; for x, i in xs { if i > 0 { o.append(", ") } o.append(pyrepr(x)) }; o.push(']'); o
+concat(a byte[:], b byte[:]) byte[>..]: o byte[>..] ~= []; o.append(a); o.append(b); o
+concat(a byte, b byte[:]) byte[>..]: o byte[>..] ~= [a]; o.append(b); o
+concat(a byte[:], b byte) byte[>..]: o byte[>..] ~= []; o.append(a); o.push(b); o
+concat(a byte, b byte) byte[>..]: o byte[>..] ~= [a, b]; o
+struct tuple2<A, B> { f0 A, f1 B }
+struct tuple3<A, B, C> { f0 A, f1 B, f2 C }
+struct tuple4<A, B, C, D> { f0 A, f1 B, f2 C, f3 D }
+hash<A, B>(t tuple2<A, B>) uint: hash_mixw(hash(t.f0), hash(t.f1))
+hash<A, B, C>(t tuple3<A, B, C>) uint: hash_mixw(hash_mixw(hash(t.f0), hash(t.f1)), hash(t.f2))
+hash<A, B, C, D>(t tuple4<A, B, C, D>) uint: hash_mixw(hash_mixw(hash_mixw(hash(t.f0), hash(t.f1)), hash(t.f2)), hash(t.f3))
+tuple_lt<A, B>(a tuple2<A, B>, b tuple2<A, B>) bool: a.f0 < b.f0 || a.f0 == b.f0 && a.f1 < b.f1
+tuple_lt<A, B, C>(a tuple3<A, B, C>, b tuple3<A, B, C>) bool: a.f0 < b.f0 || a.f0 == b.f0 && (a.f1 < b.f1 || a.f1 == b.f1 && a.f2 < b.f2)
+tuple_lt<A, B, C, D>(a tuple4<A, B, C, D>, b tuple4<A, B, C, D>) bool: a.f0 < b.f0 || a.f0 == b.f0 && (a.f1 < b.f1 || a.f1 == b.f1 && (a.f2 < b.f2 || a.f2 == b.f2 && a.f3 < b.f3))
+pyfmt<A, B>(t tuple2<A, B>) byte[>..]: str("(", pyrepr(t.f0), ", ", pyrepr(t.f1), ")")
+pyfmt<A, B, C>(t tuple3<A, B, C>) byte[>..]: str("(", pyrepr(t.f0), ", ", pyrepr(t.f1), ", ", pyrepr(t.f2), ")")
+zip<A, B>(a A[:], b B[:]) tuple2<A, B>[>..]: o tuple2<A, B>[>..] ~= []; for i in 0..min(a.len, b.len) { o.push(tuple2<A, B> { a[i], b[i] }) }; o
+truediv(a int, b int) real: real(a) / real(b)
+truediv(a real, b real) real: a / b
+truediv(a int, b real) real: real(a) / b
+truediv(a real, b int) real: a / real(b)
+truthy(b bool) bool: b
+truthy(x int) bool: x != 0
+truthy(x real) bool: x != 0.0
+truthy<T>(xs T[:]) bool: xs.len > 0
+list<T>(xs T[:]) T[>..]: o T[>..] ~= []; o.append(xs); o
+list(xs const byte[:][:]) byte[>..][>..]: o byte[>..][>..] ~= []; for x in xs { o.push(str(x)) }; o
+pop_at<T>(xs T[>..]&) T: xs.pop()
+pop_at<T>(xs T[>..]&, i int) T: remove_at(xs, i)
+pop_front<T>(xs T[>..]&) T: remove_at(xs, 0)
+push_front<T>(xs T[>..]&, v T): insert_at(xs, 0, v)
+remove_value<T>(xs T[>..]&, v T): i := position(xs, v); if i >= 0 { remove_at(xs, i) }
+ifloor(x real) int: f := flt_floor(x); int(f)
+iceil(x real) int: f := flt_floor(x); int(if f < x { f + 1.0 } else { f })
+pyround(x int) int: x
+pyround(x real) int: f := flt_floor(x); d := x - f; n := int(f); if d > 0.5 || d == 0.5 && n % 2 != 0 { n + 1 } else { n }
+pyround(x real, nd int) real: p ~= 1.0; for i in 0..nd { p *= 10.0 }; real(pyround(x * p)) / p
+pydivmod(a int, b int) tuple2<int, int>: tuple2<int, int> { floor_div(a, b), a - b * floor_div(a, b) }
+min<T>(a T, b T, c T) T: min(min(a, b), c)
+max<T>(a T, b T, c T) T: max(max(a, b), c)
+min<T>(a T, b T, c T, d T) T: min(min(a, b), min(c, d))
+max<T>(a T, b T, c T, d T) T: max(max(a, b), max(c, d))
+contains(s byte[:], c byte) bool: for x in s { if x == c { return true } }; false
+find(s byte[:], t byte[:], start int) int: r := find(s[start..], t); if r < 0 { -1 } else { r + start }
+to_int(s byte[:], base int) int: v ~= 0; for c in trim(s) { d := if c >= '0' && c <= '9' { c - '0' } else { if c >= 'a' && c <= 'z' { c - 'a' + 10 } else { c - 'A' + 10 } }; v = v * base + d }; v
+pow(b int, e int, m int) int: r ~= 1; x ~= b % m; k ~= e; while k > 0 { if k & 1 != 0 { r = r * x % m } x = x * x % m; k >>= 1 }; r
+INF := 1.7976931348623157e308 * 10.0
+EULER := 2.718281828459045
+STR_ascii_lowercase := "abcdefghijklmnopqrstuvwxyz"
+STR_ascii_uppercase := "ABCDEFGHIJKLMNOPQRSTUVWXYZ"
+STR_ascii_letters := "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ"
+STR_digits := "0123456789"
 extend(s byte[>..]&, c int): s.push(c as byte)
 title(s byte[:]) byte[>..]: o byte[>..] ~= []; p ~= false; for c in s { o.push(if isalpha(c) { if p { lower(c) } else { upper(c) } } else { c }); p = isalpha(c) }; o
 capitalize(s byte[:]) byte[>..]: o byte[>..] ~= []; for c, i in s { o.push(if i == 0 { upper(c) } else { lower(c) }) }; o
@@ -277,10 +337,11 @@ stable_sort<T, F>(xs T[:]):
 		ends.resize(w); tt = !tt
 push_n<A, T>(xs A&, v T, n int): for i n { xs.push(v) }
 insert_at<A, T>(xs A&, i int, v T): xs.push(v); j ~= xs.len - 1; while j > i { xs[j] .= xs[j - 1]; j -= 1 }; xs[i] .= v
+elem<T>(xs T[:], i int) T: t T := xs[i]; t
 remove_at<A>(xs A&, i int):
-	v := xs[i]; j ~= i; while j + 1 < xs.len { xs[j] .= xs[j + 1]; j += 1 }
-	xs.pop(); return v
-swap_remove<A>(xs A&, i int): v := xs[i]; xs[i] .= xs[xs.len - 1]; xs.pop(); return v
+	v := elem(xs, i); j ~= i; while j + 1 < xs.len { xs[j] .= xs[j + 1]; j += 1 }
+	xs.resize(xs.len - 1); return v
+swap_remove<A>(xs A&, i int): v := elem(xs, i); xs[i] .= xs[xs.len - 1]; xs.resize(xs.len - 1); return v
 retain<A, F>(xs A&): w ~= 0; for i xs.len { if F(xs[i]) { xs[w] .= xs[i]; w += 1 } }; xs.resize(w)
 dedup<A>(xs A&):
 	if xs.len == 0: return
@@ -303,7 +364,7 @@ sift_down<T, F>(xs T[:], start int):
 		xs[i] .= xs[m]; i = m
 	xs[i] .= x
 heap_pop<A>(xs A&): heap_pop(xs) { a, b => a < b }
-heap_pop<A, F>(xs A&): top := xs[0]; sift_hole(xs) { a, b => F(a, b) }; xs.pop(); return top
+heap_pop<A, F>(xs A&): top := elem(xs, 0); sift_hole(xs) { a, b => F(a, b) }; xs.resize(xs.len - 1); return top
 sift_hole<T, F>(xs T[:]):
 	n := xs.len - 1
 	if n == 0: return
@@ -426,6 +487,7 @@ isalpha(s byte[:]) bool: for c in s { if !isalpha(c) { return false } }; s.len >
 isupper(s byte[:]) bool: u ~= false; for c in s { if islower(c) { return false }; if isupper(c) { u = true } }; u
 islower(s byte[:]) bool: u ~= false; for c in s { if isupper(c) { return false }; if islower(c) { u = true } }; u
 ord(c byte) int: c
+ord(c int) int: c
 ord(s byte[:]) int: s[0]
 chr(n int) byte[>..]: o byte[>..] ~= []; o.push(n as byte); o
 trim_start(s byte[:]) byte[:]: i ~= 0; while i < s.len && is_space(s[i]) { i += 1 }; s[i..]

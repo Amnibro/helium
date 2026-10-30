@@ -1,0 +1,15 @@
+log = "09:15 login ann;09:20 login bo;09:41 logout ann;10:02 login cy;10:30 logout bo;11:11 login ann;11:45 logout cy;12:00 logout ann"
+
+totals = {}
+active = {}
+for entry in log.split(";"):
+    t, action, user = entry.split()
+    h, m = map(int, t.split(":"))
+    mins = h * 60 + m
+    if action == "login":
+        active[user] = mins
+    else:
+        totals[user] = totals.get(user, 0) + mins - active.pop(user)
+
+for user in sorted(totals):
+    print(user, totals[user])

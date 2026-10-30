@@ -1,0 +1,42 @@
+accounts: dict[str, int] = {}
+rejected = 0
+
+def deposit(name: str, amt: int) -> None:
+    accounts[name] = accounts.get(name, 0) + amt
+
+def withdraw(name: str, amt: int) -> bool:
+    bal = accounts.get(name, 0)
+    if bal < amt:
+        return False
+    accounts[name] = bal - amt
+    return True
+
+def transfer(src: str, dst: str, amt: int) -> bool:
+    if not withdraw(src, amt):
+        return False
+    deposit(dst, amt)
+    return True
+
+ops: list[tuple[str, str, str, int]] = [
+    ("deposit", "ann", "", 100),
+    ("deposit", "bob", "", 50),
+    ("withdraw", "ann", "", 30),
+    ("transfer", "ann", "bob", 50),
+    ("withdraw", "bob", "", 200),
+    ("deposit", "cy", "", 75),
+    ("transfer", "bob", "cy", 60),
+]
+
+for op, a, b, amt in ops:
+    if op == "deposit":
+        deposit(a, amt)
+    elif op == "withdraw":
+        if not withdraw(a, amt):
+            rejected += 1
+    else:
+        if not transfer(a, b, amt):
+            rejected += 1
+
+for name in sorted(accounts.keys()):
+    print(f"{name} {accounts[name]}")
+print(rejected)

@@ -1,0 +1,56 @@
+use std::fmt::Write;
+
+fn solve(pos: usize, g: &mut [[u8; 4]; 4], count: &mut u32, first: &mut Option<[[u8; 4]; 4]>) {
+    if pos == 16 {
+        *count += 1;
+        if first.is_none() {
+            *first = Some(*g);
+        }
+        return;
+    }
+    let r = pos / 4;
+    let c = pos % 4;
+    if r == 0 {
+        g[r][c] = (c + 1) as u8;
+        solve(pos + 1, g, count, first);
+        return;
+    }
+    for v in 1..=4u8 {
+        let mut ok = true;
+        for k in 0..c {
+            if g[r][k] == v {
+                ok = false;
+                break;
+            }
+        }
+        if ok {
+            for k in 0..r {
+                if g[k][c] == v {
+                    ok = false;
+                    break;
+                }
+            }
+        }
+        if ok {
+            g[r][c] = v;
+            solve(pos + 1, g, count, first);
+            g[r][c] = 0;
+        }
+    }
+}
+
+fn main() {
+    let mut g = [[0u8; 4]; 4];
+    let mut count = 0u32;
+    let mut first = None;
+    solve(0, &mut g, &mut count, &mut first);
+    let mut out = String::new();
+    writeln!(out, "{}", count).unwrap();
+    if let Some(f) = first {
+        for row in f.iter() {
+            let s: Vec<String> = row.iter().map(|x| x.to_string()).collect();
+            writeln!(out, "{}", s.join(" ")).unwrap();
+        }
+    }
+    print!("{}", out);
+}
