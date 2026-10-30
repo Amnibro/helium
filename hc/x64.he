@@ -23,7 +23,8 @@ mov_ri(r int, v int):
 		if v >= -(1 << 31) && v < 0: xrex(true, 0, 0, r); xb(0xC7); xb(0xC0 | r & 7); x32(v); else: xrex(true, 0, 0, r); xb(0xB8 + (r & 7)); x64v(v);
 mov_rr(d int, s int):
 	if d != s: xrr(0x89, s, d);
-ld(r int, base int, d int, w int, sx bool): if w == 8 { xrex(true, r, 0, base); xb(0x8B); } else { if w == 4 { if sx { xrex(true, r, 0, base); xb(0x63); } else { xrex(false, r, 0, base); xb(0x8B); } } else { xrex(true, r, 0, base); xb(0x0F); xb(if w == 1 { if sx { 0xBE } else { 0xB6 } } else { if sx { 0xBF } else { 0xB7 } }); } } xmem(r, base, d);
+ld(r int, base int, d int, w int, sx bool): LDS = XC.len; LDF = XFIX.len; LDR = r; LDW = w; ld0(r, base, d, w, sx); LDE = XC.len
+ld0(r int, base int, d int, w int, sx bool): if w == 8 { xrex(true, r, 0, base); xb(0x8B); } else { if w == 4 { if sx { xrex(true, r, 0, base); xb(0x63); } else { xrex(false, r, 0, base); xb(0x8B); } } else { xrex(true, r, 0, base); xb(0x0F); xb(if w == 1 { if sx { 0xBE } else { 0xB6 } } else { if sx { 0xBF } else { 0xB7 } }); } } xmem(r, base, d);
 st(r int, base int, d int, w int): if w == 2 { xb(0x66) } if w == 1 { xrexb(r, base); xb(0x88); xmem(r, base, d) } else { mop(0x89, r, base, d, w == 8) }
 mop(o int, r int, base int, d int, q bool): xrex(q, r, 0, base); xb(o); xmem(r, base, d)
 mri(ext int, base int, d int, v int, q bool = true): xrex(q, 0, 0, base); if v >= -128 && v < 128 { xb(0x83); xmem(ext, base, d); xb(v & 255) } else { xb(0x81); xmem(ext, base, d); x32(v) }
