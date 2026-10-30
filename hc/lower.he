@@ -1547,7 +1547,7 @@ lower_fn(i int):
 	pq i32[>..<] ~= []
 	sret := is_agg(rt); sp := nv(); if sret: ir(I_PARAM, 3, sp, -1, -1, 0); pi = 1
 	for j ND[node].n:
-		pt := ptype_of(i, j); for q if is_pair(pt) { 2 } else { 1 }: r := nv(); ir(I_PARAM, 3, r, -1, -1, pi); pi++; pq.push(r)
+		pt := ptype_of(i, j); for q if is_pair(pt) { 2 } else { 1 }: r := nv(); ir(I_PARAM, if !is_pair(pt) && isf(pt) && !env("HC_NOFP", FNKB) { wof(pt) } else { 3 }, r, -1, -1, pi); pi++; pq.push(r)
 	CAPSL.clear(); while CAPSL.len < LVS.len { CAPSL.push(-1) } cq i32[>..<] ~= []
 	for cp CAPS:
 		if cp.inst == i: r := nv(); ir(I_PARAM, 3, r, -1, -1, pi); pi++; cq.push(r); cq.push(cp.lv)
