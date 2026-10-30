@@ -1671,7 +1671,7 @@ lower_program(out byte[>..]&) bool:
 	irw byte[>..] ~= []; dump := env("HC_IR", irw)
 	noi byte[>..] ~= []; opt := !env("HC_NOOPT", noi); if opt: gtag(); optimize_all(); vec_all(); rot_all(); vjl_all(); NOADC = env("HC_NOADC", noi)
 	if !WEB { xabi_prep() }
-	for f, i NFS: if dump && f.inst >= 0 && nm(FI_[f.inst].name) == irw[..] { ir_dump(i) } if opt { vperm(i); regalloc(i); for _ 2 { f0 := NFS[i]; c0 := RCOST; if !NORS && rsplit(i) { regalloc(i); if RCOST * 20 > c0 * 19 || c0 - RCOST < 8 { NFS[i] = f0; regalloc(i); break } } } } else { REGOF.clear(); RUSED.clear(); VZERO.clear(); FK.clear(); XREG.clear(); SVR.clear(); } cg_fn2(i)
+	for f, i NFS: if dump && f.inst >= 0 && nm(FI_[f.inst].name) == irw[..] { ir_dump(i) } if opt { vperm(i); regalloc(i); for _ 2 { f0 := NFS[i]; c0 := RCOST; if !NORS && rsplit(i) { regalloc(i); if RCOST * 20 > c0 * 19 || c0 - RCOST < 8 { NFS[i] = f0; regalloc(i); break } } } } else { REGOF.clear(); RUSED.clear(); VZERO.clear(); FK.clear(); XREG.clear(); SVR.clear(); } if i == 0 { pb byte[>..] ~= []; pn := (if env("HC_PADA", pb) { 64 } else { 0 }) + (if env("HC_PADB", pb) { 128 } else { 0 }); for _ pn { xb(0x90) } } cg_fn2(i)
 	dbg byte[>..] ~= []; if env("HC_NDEBUG", dbg):
 		for f, i NFS: print(if f.inst >= 0 { nm(FI_[f.inst].name) } else { "<init>" }, " ", 0x400000 + code_off() + FOFF[i] as int, " nv ", f.nv, " sb ", f.sb)
 	if szp >= 0: put32(szp, DA.len + BSS)
