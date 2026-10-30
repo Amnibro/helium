@@ -106,8 +106,17 @@ lrcheck():
 		drop_to(0); ir(I_JMP, 3, -1, -1, -1, RETL); ir(I_LBL, 3, -1, -1, -1, lno)
 	rt0 := if CURI >= 0 { FI_[CURI].ret as int } else { -1 }; if rt0 >= 0 && is_vimg(rt0): ir(I_MOV, 3, RETV, imm(0), -1, 0)
 	drop_keep(); ir(I_JMP, 3, -1, -1, -1, RETK); ir(I_LBL, 3, -1, -1, -1, lok);
+var LROM i32[>..<]
+NRMI ~= 0
+ckf(n int) i64, bool:
+	x := ND[n]; k := x.k as int; if k == N_FLT { return flt_bits(tok_text(x.t)) as! i64, true } if k == N_UN && x.op as int == T_MINUS && x.a >= 0 && ND[x.a].k as int == N_FLT { return (flt_bits(tok_text(ND[x.a].t)) ^ (1 as u64) << 63) as! i64, true } return 0, false
+lrom(v int, init int, t int) bool:
+	x := ND[init]; if LVS[v].fl & (LV_VAR | LV_REF | LV_PARAM | LV_FOR | LV_BLKP | LV_CFB) != 0 || TY[t].k != TY_ARR || !is_fix(t) || x.k as int != N_ARR || x.a >= 0 || x.n < 1: return false
+	e := TY[t].a; ek := TY[e].k; if tsz(e) != 8 || x.n * 8 != tsz(t) || ek != TY_INT && ek != TY_FLT: return false
+	b byte[>..] ~= []; for i x.n { c := kid(init, i); fv, fo := ckf(c); iv, iu, io := cval(c); if ek == TY_FLT && !fo || ek == TY_INT && (!io || fo) { return false } w := if ek == TY_FLT { fv } else { iv }; for q 8 { b.push((w >> ((q * 8) as i64) & 255) as! byte) } }
+	while LROM.len <= v { LROM.push(-1) } LROM[v] = rodata(b[..]) as i32; true
 lvaddr(v int) int:
-	d := nv(); if LVS[v].cfn != CUR && CFBD == 0 { while CAPSL.len < LVS.len { CAPSL.push(-1) } if CAPSL[v] < 0 { lerr(-1, "captured variable without a capture slot"); return d } ir(I_SLOT, 8, d, -1, -1, CAPSL[v]); return ldw(d, 0, 3) } ir(I_SLOT, 8, d, -1, -1, lslot(v)); d
+	d := nv(); if v < LROM.len && LROM[v] >= 0 && !(LVS[v].cfn != CUR && CFBD == 0) { ir(I_RADDR, 8, d, -1, -1, LROM[v]); return d } if LVS[v].cfn != CUR && CFBD == 0 { while CAPSL.len < LVS.len { CAPSL.push(-1) } if CAPSL[v] < 0 { lerr(-1, "captured variable without a capture slot"); return d } ir(I_SLOT, 8, d, -1, -1, CAPSL[v]); return ldw(d, 0, 3) } ir(I_SLOT, 8, d, -1, -1, lslot(v)); d
 gctab(d int):
 	g := DC[d].node; x := ND[g]; t := GLT[d]
 	if x.fl & V_VAR != 0 || x.b < 0 || TY[t].k != TY_ARR || !is_fix(t): return
@@ -1392,6 +1401,7 @@ recursive lvdecl(n int):
 	if x.b < 0: lzero(a, tsz(t)); if ndef(t) { ldefault(a, t) } return
 	init := kid(x.b, 0)
 	if TY[t].k == TY_REF && TY[t].c < 0: stw(a, 0, lrefv(init), 3); return
+	if NRMI == 0 { nb byte[>..] ~= []; NRMI = if env("HC_NORM", nb) { 2 } else { 1 } } if NRMI == 1 && lrom(v, init, t): return
 	own := ND[init].k as int == N_ID && rk(init) == R_LOCAL && TY[LVS[rv(init)].ty].k != TY_REF
 	if !(!own && needs_drop(t) && !is_vimg(t) && is_lplace(init) && deref(fin(init)) == t && lcopy_into(a, init, t)) { lstore(a, init, t); lmove_src(init) }
 	own_drop(a, t);

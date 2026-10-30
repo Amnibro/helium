@@ -1,0 +1,23 @@
+import std;
+import os;
+let G real[12] = [1.5, -2.0, 0.25, 3.0, -0.5, 7.0, 1.0, -1.0, 2.5, 0.0, 4.0, -3.5];
+let B byte[16] = [3, 1, 4, 1, 5, 9, 2, 6, 5, 3, 5, 8, 9, 7, 9, 3];
+var W int[40];
+struct P { a int, b real }
+let PS P[4] = [P { a: 1, b: 0.5 }, P { a: 2, b: 1.5 }, P { a: 3, b: 2.5 }, P { a: 4, b: 3.5 }];
+fn main() {
+	let n = args().len;
+	var s = 0.0; var t = 0;
+	for i in 300 {
+		let k = (i * 7 + n) % 12;
+		let j = B[(i + n) & 15] as int;
+		s += G[k] * G[(k + 3) % 12] + G[j % 12];
+		W[(i * 3) % 40] += j + PS[i & 3].a;
+		s += PS[(i >> 2) & 3].b;
+		t += B[j] as int;
+	}
+	for i in 40 { t = t * 31 + W[i]; t &= 0xffffff; }
+	var o byte[>..] = [];
+	format(o, s, " ", t, "\n");
+	print(o);
+}
