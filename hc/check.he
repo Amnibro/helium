@@ -319,6 +319,13 @@ unify(n int, a int, b int) int:
 	if kb == TY_ENUM && ka == TY_VARIANT && TY[da].a == TY[db].a: cvx(a, db); if tb != db { cvx(b, db) } return db
 	m byte[>..] ~= []; format(m, "operands of ", tok_text(ND[n].t), " have no common type: ", tn(da), " and ", tn(db), " (convert one with `as`)"); cerr(n, m)
 	T_ERRT
+pagg(t int) bool: k := TY[t].k; k == TY_STRUCT || k == TY_ARR || k == TY_SLICE
+recursive ewl(t int) int:
+	x := TY[t]; k := x.k
+	if k == TY_INT || k == TY_FLT: return t
+	if k == TY_ARR && x.s == A_FIXED as u8: return ewl(x.a)
+	if k == TY_STRUCT: r ~= -2; for i STI[x.a].fnum { f := SFI[STI[x.a].f0 as int + i]; if f.ty < 0 { continue } l := ewl(f.ty); if l < 0 || r != -2 && r != l { return -1 } r = l } return r
+	-1
 recursive leaf_kind(t int) int:
 	x := TY[t]; k := x.k
 	if k == TY_INT { return 1 } if k == TY_FLT: return 2
@@ -363,9 +370,10 @@ recursive ck_bin(n int, want int) int:
 	la := leaf_kind(da); lb := leaf_kind(db)
 	if (la >= 4 || lb >= 4) && !cmp:
 		if da == db: if ta != da { set_cv(a, da) } if tb != db { set_cv(b, db) } return set_t(n, da)
-		if la >= 4 && (o == T_MUL || o == T_DIV): conv(b, leaf_type(da)); if ta != da { set_cv(a, da) } return set_t(n, da)
-		if lb >= 4 && o == T_MUL: conv(a, leaf_type(db)); if tb != db { set_cv(b, db) } return set_t(n, db)
+		if la >= 4 && (o == T_MUL || o == T_DIV) && (FILES[TK[x.t].f].he || ewl(da) >= 0): conv(b, leaf_type(da)); if ta != da { set_cv(a, da) } return set_t(n, da)
+		if lb >= 4 && o == T_MUL && (FILES[TK[x.t].f].he || ewl(db) >= 0): conv(a, leaf_type(db)); if tb != db { set_cv(b, db) } return set_t(n, db)
 		if lb >= 4 && o == T_DIV: conv(a, leaf_type(db)); if tb != db { set_cv(b, db) } return set_t(n, db)
+	if (o == T_PLUS || o == T_MINUS || o == T_MUL || o == T_DIV || o == T_MOD) && !FILES[TK[x.t].f].he && (pagg(da) || pagg(db)): m byte[>..] ~= []; format(m, "operator ", tname(o), " cannot be applied to ", if TY[da].k == TY_ILIT { tn(T_I64) } else if TY[da].k == TY_FLIT { tn(T_F64) } else { tn(da) }, " and ", if TY[db].k == TY_ILIT { tn(T_I64) } else if TY[db].k == TY_FLIT { tn(T_F64) } else { tn(db) }); cerr(n, m[..]); return set_t(n, T_ERRT)
 	if cmp && (TY[da].k == TY_INT && TY[db].k == TY_INT) && is_signed(da) != is_signed(db) && (ibits(da) == 64 || ibits(db) == 64) && !widens(da, db) && !widens(db, da):
 		set_x(n, 1)
 		return set_t(n, T_BOOL)
@@ -1085,6 +1093,14 @@ recursive ck_assign(n int):
 			if TY[rt].k == TY_REF: conv(x.b, tt); return
 		ck(x.b, d); conv(x.b, d)
 		return
+	if (TY[d].k == TY_STRUCT || TY[d].k == TY_ARR) && !FILES[TK[x.t].f].he && o != T_ASSIGN:
+		m byte[>..] ~= []; bw := o == T_ANDEQ || o == T_OREQ || o == T_XOREQ || o == T_SHLEQ || o == T_SHREQ
+		if bw || leaf_kind(d) < 4: format(m, "operator ", tname(o), " cannot be applied to ", tn(d)); cerr(n, m[..]); return
+		r0 := ck(x.b, -1); dr := deref(r0); kr := TY[dr].k
+		if (o == T_MULEQ || o == T_DIVEQ) && (kr == TY_INT || kr == TY_FLT || kr == TY_ILIT || kr == TY_FLIT) && ewl(d) >= 0: conv(x.b, ewl(d)); return
+		if is_pending(r0) && !(TY[d].k == TY_ARR && ND[x.b].k == N_ARR && ND[x.b].n as int != TY[d].b as int): conv(x.b, d); return
+		if is_pending(r0) || dr != d: format(m, "operator ", tname(o), " cannot be applied to ", tn(d), " and ", if is_pending(r0) { tn(default_t(x.b)) } else { tn(dr) }); cerr(n, m[..]); return
+		conv(x.b, d); return
 	lk := leaf_kind(d)
 	rt := ck(x.b, if lk >= 4 && (o == T_MULEQ || o == T_DIVEQ) || o == T_SHLEQ || o == T_SHREQ { -1 } else { d })
 	if lk >= 4 && (o == T_MULEQ || o == T_DIVEQ) && deref(rt) != d: conv(x.b, leaf_type(d)); return

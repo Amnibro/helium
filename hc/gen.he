@@ -1937,7 +1937,7 @@ recursive gstmt1(n int):
 	x := ND[n]
 	k := x.k
 	if k == N_ASSIGN: gassign(n); return
-	if k == N_CALL && rk(n) == R_BUILTIN && rv(n) == B_POP: pr := if ax(n) == 1 { ND[x.a].a as int } else { kid(n, 0) }; d := if pr >= 0 && at(pr) >= 0 { deref(at(pr)) } else { -1 }; if d >= 0 && is_res(d) && dropk(TY[d].a as int) > 0 { e := TY[d].a as int; ow("{ "); ct(e); ow(" _pd = "); gx(n); ow("; "); odrop(e, "&_pd"); ow("}"); return }
+	if k == N_CALL && rk(n) == R_BUILTIN && rv(n) == B_POP: pr := if ax(n) == 1 { ND[x.a].a as int } else { kid(n, 0) }; d := if pr >= 0 && at(pr) >= 0 { deref(at(pr)) } else { -1 }; if d >= 0 && is_res(d) && dropk(TY[d].a as int) > 0 && !is_res(TY[d].a as int) { e := TY[d].a as int; ow("{ "); ct(e); ow(" _pd = "); gx(n); ow("; "); odrop(e, "&_pd"); ow("}"); return }
 	if k == N_INCDEC: a := x.a; tt := at(a); dt := deref(tt); if TY[dt].k == TY_INT && is_signed(dt) { ow("HR_SINC("); ct(dt); ow(", "); if TY[tt].k == TY_REF { gx0(a); } else { ow("&("); gx(a); ow(")"); } ow(if x.op as int == T_INC { ", 1, " } else { ", -1, " }); wloc(n); ow(");"); return } if TY[tt].k == TY_REF { ow("(*"); gx0(a); ow(")"); } else { gx(a); } ow(if x.op as int == T_INC { "++;" } else { "--;" }); return
 	if k == N_FN: return
 	if k == N_IF: gif(n, -1); return
