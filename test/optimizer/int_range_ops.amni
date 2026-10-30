@@ -1,0 +1,28 @@
+// Narrow integer arithmetic whose value range proves the result fits: the
+// sign extension after it may be dropped. Also a widening of a widening, read
+// after the inner value's variable is reassigned.
+import std;
+import os;
+fn f(a i32, b i32) i32 { let ix = a & 0x7fffffff; let k = (ix >> 20) - 1023; let s = (a >> 31) + 1; k + s + (b & 0xff) }
+fn g(a i16, b i8) i16 { let x = (a >> 4) & 0x3f; let y = (b as i16 >> 2) * 3; (x + y) << 2 }
+fn h(n int) int {
+	var acc = 0;
+	var v0 i32 = (-275565081504 * n) as! i32;
+	var v1 u32 = (-277647170742 * n) as! u32;
+	var v3 i32 = (58080207059 * n) as! i32;
+	for s in 37 {
+		v3 = v0;
+		v0 = ((((v3 >> 4) as! i32) & 1023) ^ v0);
+		v1 = (v3 as! u32) ^ v1;
+		acc = acc * 31 + v0 as int + v1 as int;
+	}
+	acc
+}
+fn main() {
+	let n = args().len;
+	var acc = 0;
+	for i in 3000 { let a = (i * 7919 * n) as! i32 ^ (i << 20) as! i32; acc = acc * 31 + f(a, i as! i32) as int + g(a as! i16, i as! i8) as int; }
+	var o byte[>..] = [];
+	format(o, acc, " ", h(n + 2), "\n");
+	print(o);
+}
