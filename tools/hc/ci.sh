@@ -10,6 +10,7 @@ step native env HC_NATIVE=1 nice -n 19 timeout 2400 python3 tools/hc/difftest.py
 step c nice -n 19 timeout 2400 python3 tools/hc/difftest.py . "$HC_" "$W/c"; base c "$W/c/report.txt" tools/hc/baseline/c.txt
 step web env HCW="$HN" HC_NATIVE=1 nice -n 19 timeout 2400 python3 tools/hc/difftest.py . tools/hc/hcweb.sh "$W/web"; base web "$W/web/report.txt" tools/hc/baseline/web.txt
 step vecfuzz python3 tools/hc/vecfuzz.py "$HN" 600 1
+step vecweb env VFWEB=1 python3 tools/hc/vecfuzz.py "$HN" 140 7001
 step he tools/hc/hetest.sh "$HN"
 step lsp timeout 300 python3 tools/hc/lsptest.py "$HN"
 step webhost tools/hc/webtest.sh "$HN"

@@ -273,6 +273,20 @@ vasm(mk bool) bool:
 	VKMS.push(ms0 as i32); VKME.push(VMP.len as i32); VK1.push(if EVX && !VJM && VRD < 0 && VNRW == 0 && VBK == VVF as i64 && !env("HC_NOVG", VNB) { 1 } else { 0 }); VKA.push(0); VKO.push(VKB.len as i32); for q n0..XC.len { VKB.push(XC[q]) } VKL.push((XC.len - n0) as i32); XC.resize(n0); true
 vskip(p int, lim int, dir int) int:
 	q ~= p; while (if dir > 0 { q < lim } else { q > lim }) && IR[q].op as int == I_NOP { q += dir } q
+var WKS i32[>..<]; var WKN i32[>..<]; var WKO VOp[>..<]; var WKF i32[>..<]; var WKR i32[>..<]; var WKP i32[>..<]; var WKG0 i32[>..<]; var WKGB i32[>..<]; var WKGO i64[>..<]; var WKGC i64[>..<]; var WKU0 i32[>..<]; var WKUC i8[>..<]; var WKUK i64[>..<]
+wvk(mn int) bool:
+	for o VOS:
+		k := o.k as int; w := o.w as int; x := o.x as int; c := x & 255
+		if k == 0: continue
+		if w != mn || k == 6 || k == 4 && VLW[o.a] as int != w || k == 5 && (w != 8 || VLW[o.a] != 8): return false
+		if k == 3:
+			if o.s as int != w || x & 1024 != 0 || o.a >= 0 && VLW[o.a] as int != w || o.b >= 0 && VLW[o.b] as int != w: return false
+			if x & 512 != 0 && (c != 4 || w < 4) || x & 256 != 0 && (w < 4 || c > B_DIV): return false
+			if x & 768 == 0 && !(c == B_ADD || c == B_SUB || c == B_AND || c == B_OR || c == B_XOR || c == B_MUL && w > 1 || c == B_SHL || c == B_SHR || c == B_SAR): return false
+	for k VUB.len: if VUB[k] != 0 && 1 << (k % 4) != mn { return false }
+	WKS.push(WKO.len as i32); for o VOS { WKO.push(o) } WKN.push(VOS.len as i32); WKF.push(VVF as i32); WKR.push(if VRD >= 0 { VRC as i32 } else { -1 }); WKP.push(VNP as i32)
+	WKG0.push(WKGB.len as i32); for g VGC.len { WKGB.push(VGB[g]); WKGO.push(VGO[g]); WKGC.push(VGC[g]) } WKU0.push(WKUC.len as i32); for u VUT.len { WKUC.push(VUC[u]); WKUK.push(VUK[u]) }
+	true
 vec_loop(fi int, h int, j int) bool:
 	f := NFS[fi]; i0 := f.i0 as int; i1 := f.i1 as int
 	k ~= vskip(h + 1, i1, 1)
@@ -405,11 +419,15 @@ vec_loop(fi int, h int, j int) bool:
 		for o, t VOS: if o.k as int == 1 && o.g as int == g && (t > VGT[g] as int && o.y != sd || o.y < sd): return false
 	for o, t VOS:
 		if o.d >= 0 && VLT[o.d] < 0 { VLT[o.d] = -1 } if o.a >= 0 { VLT[o.a] = t as i32 } if o.b >= 0: VLT[o.b] = t as i32
-	kid := VKO.len
-	if !vasm(mk): if VVF == 16 / mn { return false } VVF = 16 / mn; if !vasm(mk) { return false }
-	nx byte[>..] ~= []; dk ~= false; if !mk && VRD < 0 && !env("HC_NOAVX", nx): v0 := VVF; VVF = 2 * v0; VEXM = true; dk = vasm(mk); VEXM = false; if !dk { VVF = v0 } else { VKA[kid] = 1 }
-	VKZ.resize(kid + 1, -1); f5 := if VVF * mn >= 64 { VVF } else { 2 * VVF }; if V4 && dk && !mk && VRD < 0 && evok() && (VBK < 0 || VBK >= f5 as i64) && !env("HC_NOV4", nx): v1 := VVF; zk := VKO.len; VVF = f5; VEXM = true; EVX = true; ez := vasm(mk); EVX = false; VEXM = false; if ez { VKZ[kid] = zk as i32 } else { VVF = v1 }
-	VKJ.resize(VKO.len, -1); if V3 && VRD < 0 && VKZ[kid] < 0 && VBK == VVF as i64 && !env("HC_NOVJ", nx) && !env("HC_NOVG", nx): jk := VKO.len; VEXM = dk; VJM = true; if vasm(mk) { VKJ.resize(VKO.len, -1); VKJ[kid] = jk as i32 } VJM = false; VEXM = false
+	kid ~= VKO.len; nx byte[>..] ~= []
+	if WEB:
+		if mk || mn != mx: return false
+		VVF = 16 / mn; kid = WKS.len; if !wvk(mn) { return false }
+	else:
+		if !vasm(mk): if VVF == 16 / mn { return false } VVF = 16 / mn; if !vasm(mk) { return false }
+		dk ~= false; if !mk && VRD < 0 && !env("HC_NOAVX", nx): v0 := VVF; VVF = 2 * v0; VEXM = true; dk = vasm(mk); VEXM = false; if !dk { VVF = v0 } else { VKA[kid] = 1 }
+		VKZ.resize(kid + 1, -1); f5 := if VVF * mn >= 64 { VVF } else { 2 * VVF }; if V4 && dk && !mk && VRD < 0 && evok() && (VBK < 0 || VBK >= f5 as i64) && !env("HC_NOV4", nx): v1 := VVF; zk := VKO.len; VVF = f5; VEXM = true; EVX = true; ez := vasm(mk); EVX = false; VEXM = false; if ez { VKZ[kid] = zk as i32 } else { VVF = v1 }
+		VKJ.resize(VKO.len, -1); if V3 && VRD < 0 && VKZ[kid] < 0 && VBK == VVF as i64 && !env("HC_NOVJ", nx) && !env("HC_NOVG", nx): jk := VKO.len; VEXM = dk; VJM = true; if vasm(mk) { VKJ.resize(VKO.len, -1); VKJ[kid] = jk as i32 } VJM = false; VEXM = false
 	lv i8[>..<] ~= []; lv.resize(nv, 0); for q k2 + 1..ic { if q != k2 { opnds(q); for d OD { if d as int != iv && d as int != VRD { lv[d] = 1 } } } } lo ~= false
 	hz i32[>..] ~= []; cfg(i0, i1); for v nv { if lv[v] == 1 && !vlive(v, i0, e) { lv[v] = 0 } }
 	for q i0..i1: if q < h || q > j { opnds(q); for u OU { if lv[u] == 1 { p := VDP[u] as int; y := IR[p]; o := y.op as int; ok2 ~= p > k2 && p < ic && (o == I_MOV || o == I_IMM || o == I_EXT && y.w == 3 || o == I_BIN && y.l < 0 && y.c != B_DIV && y.c != B_MOD && y.c != B_UDIV && y.c != B_UMOD); if ok2 { opnds(p); for e OU { if e >= 0 && e < nv && VDP[e] as int > h && VDP[e] as int <= j { ok2 = false } } } if ok2 { lv[u] = 2; hz.push(p as i32) } else { lo = true } } else { if lv[u] != 0 { lo = lo || lv[u] != 2 } } } }

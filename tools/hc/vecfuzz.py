@@ -1,5 +1,5 @@
 import os,random,subprocess,sys,tempfile,concurrent.futures as cf,pathlib
-R=pathlib.Path(__file__).resolve().parents[2];HC=sys.argv[1];N=int(sys.argv[2]) if len(sys.argv)>2 else 500;S0=int(sys.argv[3]) if len(sys.argv)>3 else 1
+R=pathlib.Path(__file__).resolve().parents[2];WEB=os.environ.get('VFWEB');HC=sys.argv[1];N=int(sys.argv[2]) if len(sys.argv)>2 else 500;S0=int(sys.argv[3]) if len(sys.argv)>3 else 1
 T=['u8','i8','u16','i16','u32','i32','int','uint'];B={'u8':8,'i8':8,'u16':16,'i16':16,'u32':32,'i32':32,'int':64,'uint':64};OPS=['+=','+=','-=','^=','|=','&=']
 def leaf(r,t,arrs,od,fe):
     k=r.random()
@@ -359,9 +359,9 @@ def one(seed):
     with tempfile.TemporaryDirectory() as w:
         (pathlib.Path(w)/'p.he').write_text(prog(seed));env=dict(os.environ,HC_LIB=str(R/'hc'/'lib'));out=[]
         for tag,e in (('s',dict(env,HC_NOVEC='1',HC_NOBR='1',HC_NOROT='1',HC_NOADC='1',HC_NOSEL='1',HC_NOMS='1',HC_NOFC='1',HC_NOLC='1',HC_NOMX='1',HC_NOSI='1',HC_NOCB='1',HC_NORW='1',HC_NO32='1',HC_NOZX='1',HC_NORL='1',HC_NOVMS='1',HC_NOVSO='1',HC_NOLX='1',HC_NOXB='1',HC_NOWB='1',HC_NOXS='1',HC_NOWE='1',HC_NOAC='1',HC_NOBF='1',HC_NOAE='1',HC_NOCF='1',HC_NOML='1',HC_NORC='1',HC_NOXC='1',HC_NOCI='1',HC_NOSC='1',HC_NORB='1',HC_NOBZ='1',HC_NOTR='1',HC_NOFI='1',HC_NOBB='1',HC_NOBT='1',HC_NOFM='1',HC_NOMQ='1',HC_NOKF='1',HC_NOHS='1',HC_NOB1='1',HC_NOKR='1',HC_NORA='1',HC_NONI='1',HC_NOSW='1',HC_NOLS='1',HC_NOSX='1',HC_NOFN='1',HC_NOKZ='1',HC_NORD='1',HC_NOPQ='1',HC_NOVQ='1',HC_NOZS='1',HC_NOXR='1',HC_NOCO='1',HC_NORMW='1',HC_NOL3='1',HC_NOLH='1',HC_NOMXD='1',HC_NODC2='1',HC_NODMX='1',HC_NOSCP='1',HC_NOBFC='1',HC_NOXX='1',HC_NOVSQ='1',HC_NOVSB='1',HC_NOVPM='1',HC_NOVZD='1',HC_NOJK='1',HC_NOTB='1',HC_NOA32='1',HC_NOSTI='1',HC_NOMB2='1',HC_NONR='1',HC_NOLEA='1',HC_NOCD='1',HC_NOSM='1',HC_NOLC2='1',HC_NOBM='1',HC_NOSC2='1',HC_NORF='1',HC_NOVC='1',HC_NOCH='1',HC_NOVNR='1',HC_NOVBC='1',HC_NOFL='1',HC_NOMXM='1',HC_NOVG='1',HC_NOLB='1',HC_NOVJ='1',HC_NONDS='1',HC_NOSD='1',HC_NORP='1',HC_NOZB='1',HC_NOCPL='1',HC_NOFX='1',HC_NOHC='1',HC_NOXD='1',HC_NOSMX='1',HC_NOKI='1',HC_NOAR='1',HC_NOAF='1',HC_DWX='1',HC_NOXN='1',HC_NOVF='1')),('v',dict(env,HC_NOSI='1') if seed%3==2 else env)):
-            c=subprocess.run([HC,'p.he','p'+tag,'--native']+(['--v3'] if seed%2 else []),cwd=w,env=e,capture_output=True,timeout=60)
+            c=subprocess.run([HC,'p.he','p'+tag+'.wasm','--web'] if WEB else [HC,'p.he','p'+tag,'--native']+(['--v3'] if seed%2 else []),cwd=w,env=e,capture_output=True,timeout=60)
             if c.returncode: return seed,'compile',(c.stdout+c.stderr).decode(errors='replace')[:200]
-            try: x=subprocess.run(['./p'+tag],cwd=w,capture_output=True,timeout=30);out.append((x.returncode,x.stdout))
+            try: x=subprocess.run(['node',str(R/'hc'/'web'/'host.mjs'),'p'+tag+'.wasm'] if WEB else ['./p'+tag],cwd=w,capture_output=True,timeout=30);out.append((x.returncode,x.stdout))
             except subprocess.TimeoutExpired: out.append(('timeout',b''))
         return seed,('ok' if out[0]==out[1] else 'MISMATCH'),''
 if __name__=='__main__':
