@@ -59,8 +59,33 @@ export async function start(o = {}) {
   const revive = a => Array.isArray(a) ? a.map(revive) : a && typeof a === 'object' ? ('$cb' in a ? (...x) => fire(a.$cb, 6, { json: JSON.stringify(x, (k, v) => typeof v === 'bigint' ? Number(v) : v) }) : '$h' in a ? H[a.$h] : Object.fromEntries(Object.entries(a).map(([k, v]) => [k, revive(v)]))) : a;
   const jsdone = (id, tag, v, err) => { jsres.set(id, err ? { err: String(err && err.message || err) } : jsv(v) ? { json: JSON.stringify(v) } : { h: nh(v) }); fire(tag, 5, { id, status: err ? 0 : 1 }); };
   const path = (o, p) => p.split('.').filter(Boolean).reduce((a, k) => a == null ? a : a[k], o);
+  // hc/lib/net.he: browsers have no raw sockets, so handles are WebSockets; the raw TCP/UDP calls return NOSYS (-38)
+  const socks = new Map(), NOSYS = () => -38n;
+  const sk = h => socks.get(N(h));
+  const net = {
+    hr_net_ws_open: (p, n) => {
+      const id = nid++; let ws; try { ws = new WebSocket(S(p, n)); } catch { return -22n; }
+      const k = { ws, q: [], st: 0, err: 0 }; ws.binaryType = 'arraybuffer'; socks.set(id, k);
+      ws.onopen = () => { k.st = 1; fire(id, 7, { id }); };
+      ws.onmessage = e => { k.q.push(typeof e.data === 'string' ? [1, te.encode(e.data)] : [2, new Uint8Array(e.data)]); fire(id, 7, { id }); };
+      ws.onerror = () => { if (k.st === 0) k.err = -111; };
+      ws.onclose = () => { k.st = 2; fire(id, 7, { id }); };
+      return BigInt(id);
+    },
+    hr_net_ws_send: (h, p, n, bin) => { const k = sk(h); if (!k) return -9n; if (k.st === 0) return -11n; if (k.st === 2) return -107n; k.ws.send(bin ? B(p, n).slice() : S(p, n)); return BigInt(n); },
+    hr_net_ws_recv: (h, r) => { const k = sk(h); if (!k) return -9n; if (k.q.length) { const [t, b] = k.q.shift(); put(r, b); return BigInt(t); } return k.st === 2 ? 0n : -11n; },
+    hr_net_ws_state: h => BigInt(sk(h)?.st ?? 2),
+    hr_net_connected: h => { const k = sk(h); return !k ? -9n : k.st === 1 ? 0n : k.st === 0 ? -11n : BigInt(k.err || -107); },
+    hr_net_close: h => { const k = sk(h); if (!k) return -9n; socks.delete(N(h)); try { k.ws.close(); } catch {} return 0n; },
+    hr_net_send: (h, p, n) => net.hr_net_ws_send(h, p, n, 1),
+    hr_net_poll: (p, n, ms) => { const d = dv(); let c = 0; for (let i = 0; i < n; i++) { const v = d.getBigInt64(p + 8 * i, true), k = sk(v & 0xFFFFFFFFn), w = N(v >> 32n & 0xFFFFn); let e = 0;
+      if (!k) e = 32; else { if ((w & 1) && (k.q.length || k.st === 2)) e |= 1; if ((w & 4) && k.st === 1) e |= 4; if (k.st === 2) e |= 16; if (k.err) e |= 8; }
+      if (e) c++; d.setBigInt64(p + 8 * i, (v & 0xFFFFFFFFFFFFn) | BigInt(e) << 48n, true); } return BigInt(c); },
+    hr_net_listen: NOSYS, hr_net_accept: NOSYS, hr_net_connect: NOSYS, hr_net_recv: NOSYS, hr_net_udp: NOSYS, hr_net_sendto: NOSYS, hr_net_recvfrom: NOSYS,
+    hr_net_nodelay: () => 0n, hr_net_blocking: NOSYS, hr_net_local: NOSYS, hr_net_peer: NOSYS
+  };
   const env = {
-    sys,
+    sys, ...net,
     he_log: (p, n) => console.log(S(p, n)), he_warn: (p, n) => console.warn(S(p, n)), he_error: (p, n) => console.error(S(p, n)),
     he_now: now, he_epoch_ms: () => Date.now(),
     he_frames: on => { frames = !!on; if (frames && !raf) raf = requestAnimationFrame(loop); },

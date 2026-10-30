@@ -1029,7 +1029,7 @@ recursive lintrinsic(n int, i int, args i32[>..<]&) int:
 	if s == "!ld1": return ldw(args[0], 0, 4)
 	if s == "!st1": stw(args[0], 0, args[1], 0); return imm(0)
 	if pkg_so(i) >= 0 && !WEB: return lccall(n, i, args)
-	if s.len > 3 && (s[..3] == "hr_" || s[..3] == "gs_"):
+	if s.len > 3 && (s[..3] == "hr_" || s[..3] == "gs_") && !(WEB && s.len > 7 && s[..7] == "hr_net_"):
 		nmb byte[>..] ~= []; nmb.append("rt_"); nmb.append(s[3..]); f := rt_fn(nmb[..]); if f >= 0: a := ARGL.len; ARGL.append(args[..]); rt := FI_[i].ret; d := if rt >= 0 && rt != T_VOID { nv() } else { -1 }; ir(I_CALL, 3, d, a, args.len, f); return if d >= 0 { d } else { imm(0) }
 	if WEB && (s.len == 0 || s[0] != '!'): return lwebcall(n, i, args)
 	if s == "!st8": stw(args[0], 0, args[1], 3); return imm(0)
