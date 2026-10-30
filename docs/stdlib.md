@@ -684,8 +684,91 @@ it is not promised writable. User-supplied paths, outputs and saves can
 continue to use ordinary file operations and their chosen locations.
 
 `exit(code)` and `abort(msg)` are builtins, since the checker knows they
-diverge. Subprocesses and networking are not in v1; they arrive as
-`extern fn`s when a program needs them.
+diverge. Subprocesses are not in v1; networking is the `net` module below.
+
+## net
+
+Sockets over integer handles: TCP, UDP and a readiness poll, IPv4 only.
+`use net` puts the API in namespace `net` (`hc/lib/net.he`).
+
+```goose
+struct Addr { ip: i64, port: i64 }                  // ip as a u32 in an int, -1 when invalid
+fn addr(host: const u8[:], port: i64) -> Addr       // dotted quad or "localhost"; no DNS
+fn parse_addr(s: const u8[:]) -> Addr, bool         // "host:port"
+fn parse_ip(s: const u8[:]) -> i64, bool
+fn format(out: u8[>..]&, a: Addr)                   // print(a) writes "1.2.3.4:5"
+// TCP
+fn listen(a: Addr, backlog: i64 = 64) -> i64        // SO_REUSEADDR, bound and listening; port 0 = any free port
+fn accept(l: i64) -> i64                            // a new handle or AGAIN
+fn connect(a: Addr) -> i64                          // a handle at once, still connecting
+fn connected(h: i64) -> i64                         // 0 up, AGAIN still connecting, else the -errno it failed with
+fn send(h: i64, data: const u8[:]) -> i64           // bytes taken, maybe fewer than data.len; never SIGPIPE
+fn send_all(h: i64, data: const u8[:]) -> i64       // all of it unless AGAIN (then the count sent) or an error
+fn recv(h: i64, out: u8[>..]&, limit: i64 = 65536) -> i64   // appends; n > 0, 0 = peer closed, AGAIN
+fn nodelay(h: i64, on: bool) -> i64   fn blocking(h: i64, on: bool) -> i64
+fn local_addr(h: i64) -> Addr   fn peer_addr(h: i64) -> Addr   fn local_port(h: i64) -> i64
+fn close(h: i64) -> i64
+// UDP
+fn udp(a: Addr) -> i64                              // bound; port 0 = ephemeral
+fn send_to(h: i64, to: Addr, data: const u8[:]) -> i64
+fn recv_from(h: i64, out: u8[>..]&, from: Addr&) -> i64   // one datagram appended, or AGAIN
+// readiness
+struct Poll { ... }                                 // up to 64 handles; a local, cleared by being declared
+fn add(p: Poll&, h: i64, events: i64, tag: i64 = 0) -> bool   // events: READ | WRITE
+fn wait(p: Poll&, ms: i64) -> i64                   // how many are ready (0 on timeout); ms < 0 waits forever
+fn tag(p: Poll&, i: i64) -> i64   fn events(p: Poll&, i: i64) -> i64   fn handle(p: Poll&, i: i64) -> i64
+fn clear(p: Poll&)
+fn wait_one(h: i64, events: i64, ms: i64) -> i64    // the events that came, 0 on timeout
+// messages over a byte stream
+fn frame(out: u8[>..]&, msg: const u8[:])           // u16 little-endian length, then msg
+fn frame_len(buf: const u8[:]) -> i64               // length of the first whole frame with its header, or 0
+fn error_name(e: i64) -> const u8[:]
+// WebSocket client (web build only for now)
+fn ws_connect(url: const u8[:]) -> i64   fn ws_state(h: i64) -> i64   // CONNECTING, OPEN, CLOSED
+fn ws_send(h: i64, msg: const u8[:], binary: bool) -> i64
+fn ws_recv(h: i64, out: u8[>..]&) -> i64            // TEXT or BINARY for one whole message, AGAIN, 0 when closed
+```
+
+Every socket is non-blocking, so nothing blocks except a `wait` with
+`ms != 0` (or a socket made `blocking(h, true)`). Errors are negative
+numbers in Linux errno numbering on every target: `net::AGAIN` (-11) means
+try again after the next `wait`; also `INPROGRESS INTR BADF ACCES INVAL PIPE
+NOSYS MSGSIZE ADDRINUSE ADDRNOTAVAIL NETUNREACH CONNABORTED CONNRESET NOTCONN
+TIMEDOUT CONNREFUSED HOSTUNREACH`. Readiness bits are `READ WRITE ERR HUP`.
+After `wait` the ready entries come first, in the order they were added, so
+the loop is `for i n: ... net::tag(p, i) ...`. A handle is a plain int, so it
+can go through a queue to another thread. Call these as `net::add(p, ...)`:
+functions of another namespace are not found by the method syntax.
+
+```goose
+use net
+l := net::listen(net::addr("127.0.0.1", 7777))
+loop:
+	var p net::Poll
+	net::add(p, l, net::READ, -1)
+	for c, i in conns: net::add(p, c, net::READ, i);
+	n := net::wait(p, 50)
+	for k n: if net::tag(p, k) == -1 { conns.push(net::accept(l)) } else { ... net::recv(conns[net::tag(p, k)], buf) ... }
+```
+
+Targets: the native build makes Linux system calls directly (x86-64); the C
+build uses POSIX sockets and `poll` (Linux, macOS, Android; no Windows
+yet, as hrt.h has no Windows port). A web build has no raw sockets: there
+`listen`, `connect`, `udp` and the rest return `NOSYS`, and a handle is a
+browser WebSocket from `ws_connect`, which works with `connected`, `send`
+(a binary message), `close` and `Poll`. Its events also arrive as
+`he_event(handle, web::EV_NET)`; a web program polls with `wait(p, 0)` from
+`he_frame` or `he_event`, since the page cannot block. `hc/web/host.mjs`
+(running a web build in node) returns `NOSYS` for everything.
+`samples/32_net_chat.he` and `samples/33_net_echo.he` are the examples;
+`tools/hc/nettest.sh` runs them, and a relay server with two clients, as
+separate processes.
+
+Not yet: name lookup (DNS), IPv6, TLS (put a TLS-terminating proxy in
+front), epoll for thousands of handles, a WebSocket server and native
+WebSocket client (`ws`, in Helium, needs SHA-1), an HTTP/1.1 server and
+client (`http`), and reliable and ordered channels over UDP (`netcode`:
+sequence numbers, acks, resends, fragments) for realtime games.
 
 ## ffi
 
