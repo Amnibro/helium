@@ -1,0 +1,11 @@
+import std;
+import os;
+fn f1(x real) real { abs(x) }
+fn f2(x real) real { max(x, -x) }
+fn main() {
+	let n = args().len as real;
+	var o byte[>..] = [];
+	let v = [-0.0, 0.0, -3.5, 2.25, 0.0 / 0.0, -1.0 / 0.0, 1.0 / 0.0, -5e-324];
+	for x in v { format(o, f1(x * n), " ", f2(x * n), " ", 1.0 / f1(x * n), " ", 1.0 / f2(x * n), "\n"); }
+	print(o);
+}
