@@ -1,0 +1,24 @@
+def shift_text(text, shift):
+    result = []
+    for ch in text:
+        if 'a' <= ch <= 'z':
+            result.append(chr((ord(ch) - ord('a') - shift) % 26 + ord('a')))
+        elif 'A' <= ch <= 'Z':
+            result.append(chr((ord(ch) - ord('A') - shift) % 26 + ord('A')))
+        else:
+            result.append(ch)
+    return ''.join(result)
+
+
+def main():
+    ciphertext = 'Wkh vhfuhw phhwlqj lv dw qrrq'
+    for shift in range(26):
+        candidate = shift_text(ciphertext, shift)
+        words = candidate.lower().split()
+        if 'secret' in words:
+            print(candidate)
+            break
+
+
+if __name__ == '__main__':
+    main()

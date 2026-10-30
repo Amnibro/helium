@@ -1,0 +1,8 @@
+fn main() {
+	for v in [3, 7, 1, 5, 0, 4] {
+		var s byte[>..] = [];
+		format(s, v, ": ");
+		for i in v { s.push('*'); }
+		print(s);
+	}
+}

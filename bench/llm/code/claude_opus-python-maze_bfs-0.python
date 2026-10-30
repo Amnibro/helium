@@ -1,0 +1,42 @@
+from collections import deque
+
+grid = [
+    'S.#.......',
+    '.##.####.#',
+    '....#....#',
+    '#.#.#.##.#',
+    '..#...#..#',
+    '.####.#.##',
+    '......#...',
+    '.######.#.',
+    '........#E',
+]
+
+def main():
+    rows = len(grid)
+    start = end = None
+    for r, row in enumerate(grid):
+        for c, ch in enumerate(row):
+            if ch == 'S':
+                start = (r, c)
+            elif ch == 'E':
+                end = (r, c)
+    if start is None or end is None:
+        print(-1)
+        return
+    dist = {start: 0}
+    q = deque([start])
+    while q:
+        r, c = q.popleft()
+        if (r, c) == end:
+            print(dist[(r, c)])
+            return
+        for dr, dc in ((1, 0), (-1, 0), (0, 1), (0, -1)):
+            nr, nc = r + dr, c + dc
+            if 0 <= nr < rows and 0 <= nc < len(grid[nr]):
+                if grid[nr][nc] != '#' and (nr, nc) not in dist:
+                    dist[(nr, nc)] = dist[(r, c)] + 1
+                    q.append((nr, nc))
+    print(-1)
+
+main()

@@ -1,0 +1,19 @@
+fn is_pal(mut n: u64, base: u64) -> bool {
+    let orig = n;
+    let mut rev = 0u64;
+    while n > 0 {
+        rev = rev * base + n % base;
+        n /= base;
+    }
+    rev == orig
+}
+
+fn main() {
+    let mut sum: u64 = 0;
+    for n in 1..1_000_000u64 {
+        if is_pal(n, 10) && is_pal(n, 2) {
+            sum += n;
+        }
+    }
+    println!("{}", sum);
+}

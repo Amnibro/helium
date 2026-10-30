@@ -1,0 +1,16 @@
+def count_primes_below(n):
+    if n <= 2:
+        return 0
+    sieve = bytearray([1]) * n
+    sieve[0] = 0
+    sieve[1] = 0
+    i = 2
+    while i * i < n:
+        if sieve[i]:
+            start = i * i
+            sieve[start::i] = bytes(len(range(start, n, i)))
+        i += 1
+    return sieve.count(1)
+
+
+print(count_primes_below(20000000))

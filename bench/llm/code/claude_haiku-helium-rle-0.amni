@@ -1,0 +1,16 @@
+fn main() {
+	let s = "aaabccddddde";
+	var out byte[>..] = [];
+	var i = 0;
+	while i < s.len {
+		let c = s[i];
+		var j = i;
+		while j < s.len && s[j] == c {
+			j++;
+		}
+		out.push(c);
+		format(out, j - i);
+		i = j;
+	}
+	print(out);
+}

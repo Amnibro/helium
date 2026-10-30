@@ -1,0 +1,19 @@
+fn gcd(a int, b int) int {
+	var x = a;
+	var y = b;
+	while y != 0 {
+		let t = y;
+		y = x % y;
+		x = t;
+	}
+	x
+}
+
+fn lcm(a int, b int) int {
+	a / gcd(a, b) * b
+}
+
+fn main() {
+	print(gcd(1071, 462), " ", lcm(21, 6));
+	print(gcd(123456789, 987654321));
+}

@@ -1,0 +1,24 @@
+var comp byte[>..];
+
+fn main() {
+	let n = 20000000;
+	let half = n / 2;
+	comp.resize(half, 0);
+	var i = 1;
+	while (2 * i + 1) * (2 * i + 1) < n {
+		if comp[i] == 0 {
+			let p = 2 * i + 1;
+			var j = (p * p) / 2;
+			while j < half {
+				comp[j] = 1;
+				j += p;
+			}
+		}
+		i++;
+	}
+	var count = 1;
+	for k in 1..half {
+		if comp[k] == 0 { count++; }
+	}
+	print(count);
+}

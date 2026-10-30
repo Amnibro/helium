@@ -1,0 +1,19 @@
+fn main() {
+	let fr int[12] = [0, 0, 0, 1, 1, 2, 3, 4, 5, 4, 3, 2];
+	let to int[12] = [1, 2, 5, 2, 3, 3, 4, 5, 4, 6, 6, 5];
+	let w int[12] = [7, 9, 14, 10, 15, 11, 6, 9, 3, 1, 20, 2];
+	var dist int[7] = [1000000; 7];
+	dist[0] = 0;
+	for r in 7 {
+		for i in 12 {
+			let nd = dist[fr[i]] + w[i];
+			if nd < dist[to[i]] { dist[to[i]] = nd; }
+		}
+	}
+	var s byte[>..] = [];
+	for i in 7 {
+		if i > 0 { s.push(' '); }
+		format(s, dist[i]);
+	}
+	print(s);
+}

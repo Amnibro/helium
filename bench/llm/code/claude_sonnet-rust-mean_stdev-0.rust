@@ -1,0 +1,7 @@
+fn main() {
+    let v = [2.0f64, 4.0, 4.0, 4.0, 5.0, 5.0, 7.0, 9.0, 13.0, 21.0];
+    let n = v.len() as f64;
+    let mean = v.iter().sum::<f64>() / n;
+    let var = v.iter().map(|x| (x - mean) * (x - mean)).sum::<f64>() / n;
+    println!("{:.3} {:.3}", mean, var.sqrt());
+}

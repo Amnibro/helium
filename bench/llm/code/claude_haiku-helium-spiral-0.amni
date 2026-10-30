@@ -1,0 +1,51 @@
+fn add(out byte[>..]&, v int) {
+	if out.len > 0 { out.push(' '); }
+	format(out, v);
+}
+
+fn main() {
+	var m int[25] = [0; 25];
+	for i in 25 { m[i] = i + 1; }
+
+	var out byte[>..] = [];
+	var top = 0;
+	var bottom = 4;
+	var left = 0;
+	var right = 4;
+
+	while top <= bottom && left <= right {
+		var c = left;
+		while c <= right {
+			add(out, m[top * 5 + c]);
+			c++;
+		}
+		top++;
+
+		var r = top;
+		while r <= bottom {
+			add(out, m[r * 5 + right]);
+			r++;
+		}
+		right--;
+
+		if top <= bottom {
+			c = right;
+			while c >= left {
+				add(out, m[bottom * 5 + c]);
+				c--;
+			}
+			bottom--;
+		}
+
+		if left <= right {
+			r = bottom;
+			while r >= top {
+				add(out, m[r * 5 + left]);
+				r--;
+			}
+			left++;
+		}
+	}
+
+	print(out);
+}

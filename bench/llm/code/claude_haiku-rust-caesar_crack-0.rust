@@ -1,0 +1,29 @@
+use std::io::{self, Write};
+
+fn decrypt(text: &str, shift: u8) -> String {
+    text.chars()
+        .map(|c| {
+            if c.is_ascii_uppercase() {
+                (((c as u8 - b'A') + 26 - shift) % 26 + b'A') as char
+            } else if c.is_ascii_lowercase() {
+                (((c as u8 - b'a') + 26 - shift) % 26 + b'a') as char
+            } else {
+                c
+            }
+        })
+        .collect()
+}
+
+fn main() {
+    let ciphertext = "Wkh vhfuhw phhwlqj lv dw qrrq";
+    let stdout = io::stdout();
+    let mut out = stdout.lock();
+
+    for shift in 0..26u8 {
+        let plaintext = decrypt(ciphertext, shift);
+        if plaintext.contains("secret") {
+            writeln!(out, "{}", plaintext).unwrap();
+            break;
+        }
+    }
+}

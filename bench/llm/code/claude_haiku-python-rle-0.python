@@ -1,0 +1,4 @@
+import itertools
+
+s = 'aaabccddddde'
+print(''.join(f"{ch}{len(list(group))}" for ch, group in itertools.groupby(s)))

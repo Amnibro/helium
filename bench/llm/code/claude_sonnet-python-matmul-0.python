@@ -1,0 +1,13 @@
+def main():
+    n = 300
+    A = [[(i * j) % 7 for j in range(n)] for i in range(n)]
+    B = [[(i + j) % 5 for j in range(n)] for i in range(n)]
+    # Sum of all entries of C = sum over k of (column sum of A at k) * (row sum of B at k)
+    total = 0
+    for k in range(n):
+        col_a = sum(A[i][k] for i in range(n))
+        row_b = sum(B[k])
+        total += col_a * row_b
+    print(total)
+
+main()

@@ -1,0 +1,52 @@
+fn below_hundred(n: u64) -> String {
+    const ONES: [&str; 20] = [
+        "zero", "one", "two", "three", "four", "five", "six", "seven", "eight", "nine",
+        "ten", "eleven", "twelve", "thirteen", "fourteen", "fifteen", "sixteen",
+        "seventeen", "eighteen", "nineteen",
+    ];
+    const TENS: [&str; 10] = [
+        "", "", "twenty", "thirty", "forty", "fifty", "sixty", "seventy", "eighty", "ninety",
+    ];
+    if n < 20 {
+        ONES[n as usize].to_string()
+    } else if n % 10 == 0 {
+        TENS[(n / 10) as usize].to_string()
+    } else {
+        format!("{}-{}", TENS[(n / 10) as usize], ONES[(n % 10) as usize])
+    }
+}
+
+fn below_thousand(n: u64) -> String {
+    if n < 100 {
+        below_hundred(n)
+    } else if n % 100 == 0 {
+        format!("{} hundred", below_hundred(n / 100))
+    } else {
+        format!("{} hundred {}", below_hundred(n / 100), below_hundred(n % 100))
+    }
+}
+
+fn words(n: u64) -> String {
+    if n == 0 {
+        return "zero".to_string();
+    }
+    let units = [(1_000_000_000u64, "billion"), (1_000_000, "million"), (1_000, "thousand")];
+    let mut parts: Vec<String> = Vec::new();
+    let mut rest = n;
+    for (v, name) in units.iter() {
+        if rest >= *v {
+            parts.push(format!("{} {}", below_thousand(rest / v), name));
+            rest %= v;
+        }
+    }
+    if rest > 0 {
+        parts.push(below_thousand(rest));
+    }
+    parts.join(" ")
+}
+
+fn main() {
+    for n in [1234567u64, 90210, 13, 1000000] {
+        println!("{}", words(n));
+    }
+}

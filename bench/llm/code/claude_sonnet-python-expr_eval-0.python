@@ -1,0 +1,75 @@
+def tokenize(s):
+    tokens = []
+    i = 0
+    while i < len(s):
+        c = s[i]
+        if c.isspace():
+            i += 1
+        elif c.isdigit():
+            j = i
+            while j < len(s) and s[j].isdigit():
+                j += 1
+            tokens.append(int(s[i:j]))
+            i = j
+        elif c in "+-*()":
+            tokens.append(c)
+            i += 1
+        else:
+            raise ValueError("bad char: " + c)
+    return tokens
+
+
+class Parser:
+    def __init__(self, tokens):
+        self.t = tokens
+        self.p = 0
+
+    def peek(self):
+        return self.t[self.p] if self.p < len(self.t) else None
+
+    def next(self):
+        tok = self.peek()
+        self.p += 1
+        return tok
+
+    def expr(self):
+        v = self.term()
+        while self.peek() in ("+", "-"):
+            op = self.next()
+            r = self.term()
+            v = v + r if op == "+" else v - r
+        return v
+
+    def term(self):
+        v = self.factor()
+        while self.peek() == "*":
+            self.next()
+            v *= self.factor()
+        return v
+
+    def factor(self):
+        tok = self.next()
+        if tok == "(":
+            v = self.expr()
+            if self.next() != ")":
+                raise ValueError("expected )")
+            return v
+        if tok == "-":
+            return -self.factor()
+        if tok == "+":
+            return self.factor()
+        if isinstance(tok, int):
+            return tok
+        raise ValueError("unexpected token")
+
+
+def evaluate(s):
+    p = Parser(tokenize(s))
+    v = p.expr()
+    if p.peek() is not None:
+        raise ValueError("trailing tokens")
+    return v
+
+
+for e in ['(1+2)*3-4*(5-6)', '2*(3+4)*(5-1)', '100-2*3*4+(7-10)*2']:
+    print(evaluate(e))

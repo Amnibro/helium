@@ -1,0 +1,31 @@
+fn sq_digits(n int) int {
+	var m = n;
+	var s = 0;
+	while m > 0 {
+		let d = m % 10;
+		s += d * d;
+		m /= 10;
+	}
+	s
+}
+
+fn ends89(n int) bool {
+	var x = n;
+	while x != 1 && x != 89 {
+		x = sq_digits(x);
+	}
+	x == 89
+}
+
+fn main() {
+	var table bool[1000] = [false; 1000];
+	for k in 1..1000 {
+		table[k] = ends89(k);
+	}
+	var count = 0;
+	for n in 1..10000000 {
+		let hit = if n == 1 { false } else if n == 89 { true } else { table[sq_digits(n)] };
+		if hit { count++; }
+	}
+	print(count);
+}

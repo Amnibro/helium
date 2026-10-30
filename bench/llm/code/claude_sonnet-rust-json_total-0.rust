@@ -1,0 +1,137 @@
+use std::fmt::Write;
+
+#[derive(Debug)]
+enum Value {
+    Num(f64),
+    Str(String),
+    Arr(Vec<Value>),
+    Obj(Vec<(String, Value)>),
+    Bool(bool),
+    Null,
+}
+
+struct Parser<'a> {
+    b: &'a [u8],
+    i: usize,
+}
+
+impl<'a> Parser<'a> {
+    fn ws(&mut self) {
+        while self.i < self.b.len() && (self.b[self.i] as char).is_whitespace() {
+            self.i += 1;
+        }
+    }
+
+    fn value(&mut self) -> Value {
+        self.ws();
+        match self.b[self.i] {
+            b'{' => {
+                self.i += 1;
+                let mut v = Vec::new();
+                loop {
+                    self.ws();
+                    if self.b[self.i] == b'}' {
+                        self.i += 1;
+                        break;
+                    }
+                    if self.b[self.i] == b',' {
+                        self.i += 1;
+                        continue;
+                    }
+                    let k = self.string();
+                    self.ws();
+                    self.i += 1; // ':'
+                    let val = self.value();
+                    v.push((k, val));
+                }
+                Value::Obj(v)
+            }
+            b'[' => {
+                self.i += 1;
+                let mut v = Vec::new();
+                loop {
+                    self.ws();
+                    if self.b[self.i] == b']' {
+                        self.i += 1;
+                        break;
+                    }
+                    if self.b[self.i] == b',' {
+                        self.i += 1;
+                        continue;
+                    }
+                    v.push(self.value());
+                }
+                Value::Arr(v)
+            }
+            b'"' => Value::Str(self.string()),
+            b't' => {
+                self.i += 4;
+                Value::Bool(true)
+            }
+            b'f' => {
+                self.i += 5;
+                Value::Bool(false)
+            }
+            b'n' => {
+                self.i += 4;
+                Value::Null
+            }
+            _ => {
+                let s = self.i;
+                while self.i < self.b.len()
+                    && matches!(self.b[self.i], b'0'..=b'9' | b'-' | b'+' | b'.' | b'e' | b'E')
+                {
+                    self.i += 1;
+                }
+                let t = std::str::from_utf8(&self.b[s..self.i]).unwrap();
+                Value::Num(t.parse().unwrap())
+            }
+        }
+    }
+
+    fn string(&mut self) -> String {
+        self.i += 1; // opening quote
+        let mut out = String::new();
+        while self.b[self.i] != b'"' {
+            if self.b[self.i] == b'\\' {
+                self.i += 1;
+                match self.b[self.i] {
+                    b'n' => out.push('\n'),
+                    b't' => out.push('\t'),
+                    b'r' => out.push('\r'),
+                    c => out.push(c as char),
+                }
+            } else {
+                out.push(self.b[self.i] as char);
+            }
+            self.i += 1;
+        }
+        self.i += 1;
+        out
+    }
+}
+
+fn get<'a>(v: &'a Value, key: &str) -> Option<&'a Value> {
+    if let Value::Obj(o) = v {
+        o.iter().find(|(k, _)| k == key).map(|(_, v)| v)
+    } else {
+        None
+    }
+}
+
+fn main() {
+    let doc = r#"{"order": 1042, "items": [{"name": "bolt", "price": 0.25, "qty": 120}, {"name": "nut", "price": 0.1, "qty": 300}, {"name": "gear", "price": 12.5, "qty": 4}, {"name": "spring", "price": 1.75, "qty": 16}]}"#;
+    let mut p = Parser { b: doc.as_bytes(), i: 0 };
+    let root = p.value();
+    let mut total = 0.0f64;
+    if let Some(Value::Arr(items)) = get(&root, "items") {
+        for it in items {
+            if let (Some(Value::Num(pr)), Some(Value::Num(q))) = (get(it, "price"), get(it, "qty")) {
+                total += pr * q;
+            }
+        }
+    }
+    let mut s = String::new();
+    write!(s, "{:.2}", total).unwrap();
+    println!("{}", s);
+}

@@ -1,0 +1,23 @@
+fn main() {
+	let s = "the quick brown fox jumps over the lazy dog";
+	var starts int[>..] = [];
+	var ends int[>..] = [];
+	var i = 0;
+	while i < s.len {
+		while i < s.len && s[i] == ' ' { i += 1; }
+		if i < s.len {
+			let st = i;
+			while i < s.len && s[i] != ' ' { i += 1; }
+			starts.push(st);
+			ends.push(i);
+		}
+	}
+	var out byte[>..] = [];
+	var k = starts.len;
+	while k > 0 {
+		k -= 1;
+		out.append(s[starts[k]..ends[k]]);
+		if k > 0 { out.push(' '); }
+	}
+	print(out);
+}

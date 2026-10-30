@@ -1,0 +1,23 @@
+use std::collections::BTreeMap;
+
+fn main() {
+    let words = ["listen", "silent", "enlist", "google", "gooegl", "cat", "act", "tac", "dog"];
+
+    let mut groups: BTreeMap<String, Vec<String>> = BTreeMap::new();
+    for w in words {
+        let mut chars: Vec<char> = w.chars().collect();
+        chars.sort_unstable();
+        let key: String = chars.into_iter().collect();
+        groups.entry(key).or_default().push(w.to_string());
+    }
+
+    let mut lines: Vec<Vec<String>> = groups.into_values().collect();
+    for g in lines.iter_mut() {
+        g.sort();
+    }
+    lines.sort_by(|a, b| a[0].cmp(&b[0]));
+
+    for g in lines {
+        println!("{}", g.join(" "));
+    }
+}

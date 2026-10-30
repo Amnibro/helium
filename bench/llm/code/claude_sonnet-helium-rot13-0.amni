@@ -1,0 +1,14 @@
+fn main() {
+	let s = "Hello, World! The year is 2026.";
+	var out byte[>..] = [];
+	for c in s {
+		var d = c;
+		if c >= 'a' && c <= 'z' {
+			d = (c - 'a' + 13) % 26 + 'a';
+		} else if c >= 'A' && c <= 'Z' {
+			d = (c - 'A' + 13) % 26 + 'A';
+		}
+		out.push(d);
+	}
+	print(out);
+}

@@ -1,0 +1,16 @@
+import math;
+
+fn main() {
+	let xs real[10] = [2.0, 4.0, 4.0, 4.0, 5.0, 5.0, 7.0, 9.0, 13.0, 21.0];
+	var sum = 0.0;
+	for x in xs { sum += x; }
+	let mean = sum / 10.0;
+	var sq = 0.0;
+	for x in xs { sq += (x - mean) * (x - mean); }
+	let sd = sqrt(sq / 10.0);
+	var out byte[>..] = [];
+	format_flt(out, mean, 3);
+	out.push(' ');
+	format_flt(out, sd, 3);
+	print(out);
+}

@@ -1,0 +1,9 @@
+fn main() {
+	let ws = words("the quick brown fox jumps over the lazy dog");
+	var out byte[>..] = [];
+	for i in ws.len {
+		if i > 0 { out.push(' '); }
+		out.append(ws[ws.len - 1 - i]);
+	}
+	print(out);
+}

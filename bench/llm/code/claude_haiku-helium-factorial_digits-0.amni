@@ -1,0 +1,18 @@
+fn main() {
+	var d int[>..] = [1];
+	for m in 2..101 {
+		var carry = 0;
+		for i in d.len {
+			let v = d[i] * m + carry;
+			d[i] = v % 10;
+			carry = v / 10;
+		}
+		while carry > 0 {
+			d.push(carry % 10);
+			carry /= 10;
+		}
+	}
+	var s = 0;
+	for x in d { s += x; }
+	print(s);
+}

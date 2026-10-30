@@ -1,0 +1,58 @@
+fn prec(op int) int {
+	if op == '*' { 2 } else if op == '+' || op == '-' { 1 } else { 0 }
+}
+
+fn apply(nums int[>..<]&, op int) {
+	let b = nums.pop();
+	let a = nums.pop();
+	var r = 0;
+	if op == '+' { r = a + b; }
+	else if op == '-' { r = a - b; }
+	else { r = a * b; }
+	nums.push(r);
+}
+
+fn eval(s const byte[:]) int {
+	var nums int[>..<] = [];
+	var ops int[>..<] = [];
+	var i = 0;
+	while i < s.len {
+		let c = s[i] as int;
+		if c >= 48 && c <= 57 {
+			var v = 0;
+			while i < s.len && (s[i] as int) >= 48 && (s[i] as int) <= 57 {
+				v = v * 10 + (s[i] as int) - 48;
+				i++;
+			}
+			nums.push(v);
+			continue;
+		}
+		if c == '(' {
+			ops.push(c);
+		} else if c == ')' {
+			while ops.len > 0 && ops[ops.len - 1] != '(' {
+				let op = ops.pop();
+				apply(nums, op);
+			}
+			if ops.len > 0 { let p = ops.pop(); }
+		} else if c == '+' || c == '-' || c == '*' {
+			while ops.len > 0 && ops[ops.len - 1] != '(' && prec(ops[ops.len - 1]) >= prec(c) {
+				let op = ops.pop();
+				apply(nums, op);
+			}
+			ops.push(c);
+		}
+		i++;
+	}
+	while ops.len > 0 {
+		let op = ops.pop();
+		apply(nums, op);
+	}
+	nums.pop()
+}
+
+fn main() {
+	print(eval("(1+2)*3-4*(5-6)"));
+	print(eval("2*(3+4)*(5-1)"));
+	print(eval("100-2*3*4+(7-10)*2"));
+}

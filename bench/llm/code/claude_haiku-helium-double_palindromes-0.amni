@@ -1,0 +1,29 @@
+fn is_pal10(n int) bool {
+	var x = n;
+	var r = 0;
+	while x > 0 {
+		r = r * 10 + x % 10;
+		x /= 10;
+	}
+	r == n
+}
+
+fn is_pal2(n int) bool {
+	var x = n;
+	var r = 0;
+	while x > 0 {
+		r = r * 2 + x % 2;
+		x /= 2;
+	}
+	r == n
+}
+
+fn main() {
+	var total = 0;
+	for n in 1..1000000 {
+		if is_pal10(n) && is_pal2(n) {
+			total += n;
+		}
+	}
+	print(total);
+}

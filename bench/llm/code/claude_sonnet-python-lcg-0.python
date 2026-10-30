@@ -1,0 +1,11 @@
+def main():
+    s = 42
+    count = 0
+    for _ in range(1000000):
+        s = (1103515245 * s + 12345) % 2147483648
+        if s < 1073741824:
+            count += 1
+    print(count)
+    print(s)
+
+main()

@@ -1,0 +1,33 @@
+def sq(n):
+    total = 0
+    while n:
+        n, d = divmod(n, 10)
+        total += d * d
+    return total
+
+
+def ends_at_89(n):
+    if n == 0:
+        return False
+    while n != 1 and n != 89:
+        n = sq(n)
+    return n == 89
+
+
+def main():
+    digits = 7  # numbers below 10^7 have at most 7 digits
+    dist = [0] * (81 * digits + 1)
+    dist[0] = 1
+    for _ in range(digits):
+        new = [0] * len(dist)
+        for s, c in enumerate(dist):
+            if c:
+                for d in range(10):
+                    new[s + d * d] += c
+        dist = new
+
+    count = sum(dist[s] for s in range(1, len(dist)) if ends_at_89(s))
+    print(count)
+
+
+main()

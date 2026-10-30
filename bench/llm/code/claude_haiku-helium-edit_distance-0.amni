@@ -1,0 +1,24 @@
+fn lev(a const byte[:], b const byte[:]) int {
+	let m = a.len;
+	let n = b.len;
+	let w = n + 1;
+	var d int[>..] = [];
+	d.resize((m + 1) * w, 0);
+	for i in m + 1 { d[i * w] = i; }
+	for j in n + 1 { d[j] = j; }
+	for i in m {
+		for j in n {
+			let cost = if a[i] == b[j] { 0 } else { 1 };
+			let del = d[i * w + j + 1] + 1;
+			let ins = d[(i + 1) * w + j] + 1;
+			let sub = d[i * w + j] + cost;
+			d[(i + 1) * w + j + 1] = min(min(del, ins), sub);
+		}
+	}
+	d[m * w + n]
+}
+
+fn main() {
+	print(lev("kitten", "sitting"));
+	print(lev("intention", "execution"));
+}

@@ -1,0 +1,36 @@
+fn step(grid: &[[bool; 8]; 8]) -> [[bool; 8]; 8] {
+    let mut next = [[false; 8]; 8];
+    for r in 0..8 {
+        for c in 0..8 {
+            let mut count = 0;
+            for dr in -1i32..=1 {
+                for dc in -1i32..=1 {
+                    if dr == 0 && dc == 0 {
+                        continue;
+                    }
+                    let nr = r as i32 + dr;
+                    let nc = c as i32 + dc;
+                    if nr >= 0 && nr < 8 && nc >= 0 && nc < 8 && grid[nr as usize][nc as usize] {
+                        count += 1;
+                    }
+                }
+            }
+            next[r][c] = matches!((grid[r][c], count), (true, 2) | (true, 3) | (false, 3));
+        }
+    }
+    next
+}
+
+fn main() {
+    let mut grid = [[false; 8]; 8];
+    for &(r, c) in &[(0, 1), (1, 2), (2, 0), (2, 1), (2, 2)] {
+        grid[r][c] = true;
+    }
+    for _ in 0..4 {
+        grid = step(&grid);
+    }
+    for row in &grid {
+        let line: String = row.iter().map(|&alive| if alive { '#' } else { '.' }).collect();
+        println!("{}", line);
+    }
+}

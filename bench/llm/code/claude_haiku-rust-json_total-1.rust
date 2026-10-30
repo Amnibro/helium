@@ -1,0 +1,154 @@
+#[derive(Debug)]
+enum Value {
+    Null,
+    Bool(bool),
+    Num(String),
+    Str(String),
+    Arr(Vec<Value>),
+    Obj(Vec<(String, Value)>),
+}
+
+struct Parser<'a> {
+    s: &'a [u8],
+    i: usize,
+}
+
+impl<'a> Parser<'a> {
+    fn ws(&mut self) {
+        while self.i < self.s.len() && matches!(self.s[self.i], b' ' | b'\t' | b'\n' | b'\r') {
+            self.i += 1;
+        }
+    }
+
+    fn expect(&mut self, c: u8) {
+        self.ws();
+        assert_eq!(self.s[self.i], c, "unexpected character at {}", self.i);
+        self.i += 1;
+    }
+
+    fn value(&mut self) -> Value {
+        self.ws();
+        match self.s[self.i] {
+            b'{' => {
+                self.i += 1;
+                let mut fields = Vec::new();
+                self.ws();
+                if self.s[self.i] == b'}' {
+                    self.i += 1;
+                    return Value::Obj(fields);
+                }
+                loop {
+                    let key = match self.value() {
+                        Value::Str(s) => s,
+                        _ => panic!("object key must be a string"),
+                    };
+                    self.expect(b':');
+                    let val = self.value();
+                    fields.push((key, val));
+                    self.ws();
+                    match self.s[self.i] {
+                        b',' => self.i += 1,
+                        b'}' => {
+                            self.i += 1;
+                            return Value::Obj(fields);
+                        }
+                        _ => panic!("malformed object at {}", self.i),
+                    }
+                }
+            }
+            b'[' => {
+                self.i += 1;
+                let mut items = Vec::new();
+                self.ws();
+                if self.s[self.i] == b']' {
+                    self.i += 1;
+                    return Value::Arr(items);
+                }
+                loop {
+                    items.push(self.value());
+                    self.ws();
+                    match self.s[self.i] {
+                        b',' => self.i += 1,
+                        b']' => {
+                            self.i += 1;
+                            return Value::Arr(items);
+                        }
+                        _ => panic!("malformed array at {}", self.i),
+                    }
+                }
+            }
+            b'"' => {
+                self.i += 1;
+                let start = self.i;
+                while self.s[self.i] != b'"' {
+                    if self.s[self.i] == b'\\' {
+                        self.i += 1;
+                    }
+                    self.i += 1;
+                }
+                let text = String::from_utf8(self.s[start..self.i].to_vec()).unwrap();
+                self.i += 1;
+                Value::Str(text)
+            }
+            b't' => {
+                self.i += 4;
+                Value::Bool(true)
+            }
+            b'f' => {
+                self.i += 5;
+                Value::Bool(false)
+            }
+            b'n' => {
+                self.i += 4;
+                Value::Null
+            }
+            _ => {
+                let start = self.i;
+                while self.i < self.s.len()
+                    && matches!(self.s[self.i], b'0'..=b'9' | b'-' | b'+' | b'.' | b'e' | b'E')
+                {
+                    self.i += 1;
+                }
+                assert!(self.i > start, "unexpected character at {}", start);
+                Value::Num(String::from_utf8(self.s[start..self.i].to_vec()).unwrap())
+            }
+        }
+    }
+}
+
+fn get<'v>(obj: &'v Value, key: &str) -> Option<&'v Value> {
+    match obj {
+        Value::Obj(fields) => fields.iter().find(|(k, _)| k == key).map(|(_, v)| v),
+        _ => None,
+    }
+}
+
+fn main() {
+    let doc = r#"{"order": 1042, "items": [{"name": "bolt", "price": 0.25, "qty": 120}, {"name": "nut", "price": 0.1, "qty": 300}, {"name": "gear", "price": 12.5, "qty": 4}, {"name": "spring", "price": 1.75, "qty": 16}]}"#;
+
+    let mut parser = Parser { s: doc.as_bytes(), i: 0 };
+    let root = parser.value();
+
+    let items = match get(&root, "items") {
+        Some(Value::Arr(a)) => a,
+        _ => panic!("missing items array"),
+    };
+
+    let mut total = 0.0f64;
+    for item in items {
+        let price = match get(item, "price") {
+            Some(Value::Num(s)) => s.as_str(),
+            _ => continue,
+        };
+        let qty = match get(item, "qty") {
+            Some(Value::Num(s)) => s.as_str(),
+            _ => continue,
+        };
+
+        let p: f64 = price.parse().unwrap();
+        let q: f64 = qty.parse().unwrap();
+        total += p * q;
+    }
+
+    println!("{:.2}", total);
+}

@@ -1,0 +1,5 @@
+fn main() {
+    let sentence = "the quick brown fox jumps over the lazy dog";
+    let reversed: Vec<&str> = sentence.split_whitespace().rev().collect();
+    println!("{}", reversed.join(" "));
+}

@@ -1,0 +1,16 @@
+fn main() {
+    let mut n: u64 = 600851475143;
+    let mut factors: Vec<String> = Vec::new();
+    let mut d: u64 = 2;
+    while d * d <= n {
+        while n % d == 0 {
+            factors.push(d.to_string());
+            n /= d;
+        }
+        d += 1;
+    }
+    if n > 1 {
+        factors.push(n.to_string());
+    }
+    println!("{}", factors.join(" "));
+}

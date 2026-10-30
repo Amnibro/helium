@@ -1,0 +1,24 @@
+N = 8
+live = {(0, 1), (1, 2), (2, 0), (2, 1), (2, 2)}
+
+def step(live):
+    counts = {}
+    for r, c in live:
+        for dr in (-1, 0, 1):
+            for dc in (-1, 0, 1):
+                if dr == 0 and dc == 0:
+                    continue
+                nr, nc = r + dr, c + dc
+                if 0 <= nr < N and 0 <= nc < N:
+                    counts[(nr, nc)] = counts.get((nr, nc), 0) + 1
+    new = set()
+    for cell, n in counts.items():
+        if n == 3 or (n == 2 and cell in live):
+            new.add(cell)
+    return new
+
+for _ in range(4):
+    live = step(live)
+
+for r in range(N):
+    print(''.join('#' if (r, c) in live else '.' for c in range(N)))

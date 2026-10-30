@@ -1,0 +1,31 @@
+use std::io::{self, Write};
+
+// Sakamoto's algorithm: returns 0 = Sunday, 1 = Monday, ..., 6 = Saturday.
+fn day_of_week(mut y: i64, m: i64, d: i64) -> usize {
+    const T: [i64; 12] = [0, 3, 2, 5, 0, 3, 5, 1, 4, 6, 2, 4];
+    if m < 3 {
+        y -= 1;
+    }
+    let w = (y + y / 4 - y / 100 + y / 400 + T[(m - 1) as usize] + d) % 7;
+    w as usize
+}
+
+fn main() {
+    const NAMES: [&str; 7] = [
+        "Sunday",
+        "Monday",
+        "Tuesday",
+        "Wednesday",
+        "Thursday",
+        "Friday",
+        "Saturday",
+    ];
+
+    let dates = [(2026, 10, 29), (2000, 1, 1), (1969, 7, 20)];
+
+    let stdout = io::stdout();
+    let mut out = stdout.lock();
+    for (y, m, d) in dates {
+        writeln!(out, "{}", NAMES[day_of_week(y, m, d)]).unwrap();
+    }
+}

@@ -1,0 +1,12 @@
+fn main() {
+	let s = "abracadabraabracadabra";
+	var count = 0;
+	for i in s.len - 2 {
+		var seen = false;
+		for j in i {
+			if s[j..j + 3] == s[i..i + 3] { seen = true; }
+		}
+		if !seen { count++; }
+	}
+	print(count);
+}

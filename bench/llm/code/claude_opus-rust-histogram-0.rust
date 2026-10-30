@@ -1,0 +1,6 @@
+fn main() {
+    let values = [3usize, 7, 1, 5, 0, 4];
+    for v in values.iter() {
+        println!("{}: {}", v, "*".repeat(*v));
+    }
+}

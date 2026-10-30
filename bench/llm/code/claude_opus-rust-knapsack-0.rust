@@ -1,0 +1,22 @@
+fn main() {
+    let weights = [12usize, 7, 11, 8, 9, 6, 15, 4, 10, 13];
+    let values = [24u64, 13, 23, 15, 16, 12, 30, 7, 19, 25];
+    let capacity = 50usize;
+
+    let mut dp = vec![0u64; capacity + 1];
+    for i in 0..weights.len() {
+        let w = weights[i];
+        let v = values[i];
+        if w > capacity {
+            continue;
+        }
+        for c in (w..=capacity).rev() {
+            let cand = dp[c - w] + v;
+            if cand > dp[c] {
+                dp[c] = cand;
+            }
+        }
+    }
+
+    println!("{}", dp[capacity]);
+}

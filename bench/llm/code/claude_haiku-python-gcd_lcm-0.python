@@ -1,0 +1,4 @@
+import math
+
+print(math.gcd(1071, 462), math.lcm(21, 6))
+print(math.gcd(123456789, 987654321))

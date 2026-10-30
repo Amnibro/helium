@@ -1,0 +1,17 @@
+fn is_pal(n int, base int) bool {
+	var r = 0;
+	var x = n;
+	while x > 0 {
+		r = r * base + x % base;
+		x /= base;
+	}
+	r == n
+}
+
+fn main() {
+	var total = 0;
+	for i in 1..1000000 {
+		if is_pal(i, 10) && is_pal(i, 2) { total += i; }
+	}
+	print(total);
+}

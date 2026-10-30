@@ -1,0 +1,12 @@
+fn main() {
+	let s = "abracadabraabracadabra";
+	var seen int[>..] = [];
+	for i in s.len - 2 {
+		let a = s[i] as int;
+		let b = s[i + 1] as int;
+		let c = s[i + 2] as int;
+		let k = a * 65536 + b * 256 + c;
+		if !contains(seen, k) { seen.push(k); }
+	}
+	print(seen.len);
+}

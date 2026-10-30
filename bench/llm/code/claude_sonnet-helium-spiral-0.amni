@@ -1,0 +1,33 @@
+fn main() {
+	var m int[25] = [0; 25];
+	for i in 25 { m[i] = i + 1; }
+	var seq int[>..] = [];
+	var top = 0;
+	var bot = 4;
+	var left = 0;
+	var right = 4;
+	while top <= bot && left <= right {
+		var c = left;
+		while c <= right { seq.push(m[top * 5 + c]); c++; }
+		top++;
+		var r = top;
+		while r <= bot { seq.push(m[r * 5 + right]); r++; }
+		right--;
+		if top <= bot {
+			var c2 = right;
+			while c2 >= left { seq.push(m[bot * 5 + c2]); c2--; }
+			bot--;
+		}
+		if left <= right {
+			var r2 = bot;
+			while r2 >= top { seq.push(m[r2 * 5 + left]); r2--; }
+			left++;
+		}
+	}
+	var out byte[>..] = [];
+	for x, i in seq {
+		if i > 0 { out.push(' '); }
+		format(out, x);
+	}
+	print(out);
+}

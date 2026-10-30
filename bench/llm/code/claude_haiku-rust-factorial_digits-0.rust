@@ -1,0 +1,29 @@
+fn main() {
+    // Represent the big number in base 1_000_000_000 limbs, least significant first.
+    const BASE: u64 = 1_000_000_000;
+    let mut limbs: Vec<u64> = vec![1];
+
+    for n in 2..=100u64 {
+        let mut carry = 0u64;
+        for limb in limbs.iter_mut() {
+            let cur = *limb * n + carry;
+            *limb = cur % BASE;
+            carry = cur / BASE;
+        }
+        while carry > 0 {
+            limbs.push(carry % BASE);
+            carry /= BASE;
+        }
+    }
+
+    let mut sum: u64 = 0;
+    for limb in &limbs {
+        let mut v = *limb;
+        while v > 0 {
+            sum += v % 10;
+            v /= 10;
+        }
+    }
+
+    println!("{}", sum);
+}
