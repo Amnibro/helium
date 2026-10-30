@@ -4,6 +4,7 @@ use pkg
 use fmt
 use lsp
 use wasm
+use prov
 USAGE := "usage: hc <command> file [options] [-- program args...]\n       hc file [options] [-- program args...]\n\ncommands:\n  run        compile natively into the cache and run the program (hc file does too)\n  build      build an executable: -o out (native), or -o out.c for C\n  check      parse and typecheck only\n  fetch      clone the git packages the program declares (--update re-fetches tags and branches)\n  version    print the version\n  help       print this\n\noptions:\n  -o path    output for build (default: the file's name without its extension)\n  --debug    overflow, range and tag checks naming the source line\n  -DNAME=V   a runtime define\n  --offline  fetch no packages: one not in the cache is an error\n  --include file.h   C the program's extern functions come from, built with cc into a shared library\n  --c        build C instead of a native executable\n  --v3       target x86-64-v3 (Haswell and later): AVX2 vector code only, three-operand scalar floats\n\nenvironment: HC_LIB (library directory; default: lib beside hc, then hc/lib)"
 VERSION := "hc 0.7 (Helium)"
 setlib():
@@ -16,7 +17,7 @@ compile(a const byte[:], o const byte[:], native bool, chk bool) bool:
 	if native:
 		rf := load_import(intern("rt"), 0, -1); if rf < 0 { print(DERR); return false } for d, i DC:
 			if d.k as int == D_FN && d.file == rf: XROOTS.push(i as i32)
-	if !check_program(): print(CERR); return false
+	if !check_program() || !prov_program(): print(CERR); return false
 	if DERR.len > 0: print(DERR); return false
 	if chk: return true
 	if !build_packages(): print(PERRS); return false
