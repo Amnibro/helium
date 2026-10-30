@@ -1,0 +1,7 @@
+// error: missing initializer for field h of W (it has no declared default, and field t has no declared default and T& is a non-optional reference)
+struct T { v int }
+struct H { t T&, w int }
+struct W { h H, k int }
+fn main() {
+	var x = W { k: 1, .. };
+}

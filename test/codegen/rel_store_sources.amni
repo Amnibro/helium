@@ -1,0 +1,62 @@
+// Self-relative references stored from plain references, which are never
+// null, and from optional ones, which may be: struct literals, field
+// assignments, copies of a relative field into another, and links into a
+// reusable pool.
+import std;
+import os;
+struct Node { l Node&<u32>?, r Node&<u32>?, v int }
+struct Leaf { l Leaf&<u32 in leaves>?, r Leaf&<u32 in leaves>?, v int }
+reusable var leaves Leaf[>..] = [];
+recursive fn grow(depth int, v int) Leaf& {
+	if depth == 0 { return leaves.alloc_ref(Leaf { v: v, .. }); }
+	let l Leaf& = grow(depth - 1, v + 1);
+	let r Leaf& = grow(depth - 1, v * 3);
+	return leaves.alloc_ref(Leaf { l: l, r: r, v: v });
+}
+recursive fn total(n Leaf&) int {
+	var s = n.v;
+	let l = n.l;
+	if l { s += total(l); }
+	let r = n.r;
+	if r { s += 5 * total(r); }
+	return s;
+}
+recursive fn make(pool Node[>..]&, depth int, v int) Node& {
+	if depth == 0 { return pool.push(Node { v: v }); }
+	let l Node& = make(pool, depth - 1, v * 2);
+	let r Node& = make(pool, depth - 1, v * 2 + 1);
+	return pool.push(Node { l: l, r: r, v: v });
+}
+recursive fn sum(n Node&) int {
+	return n.v + sl(n) + 3 * sr(n);
+}
+recursive fn sl(n Node&) int {
+	let l = n.l;
+	guard l else { return 0; }
+	return sum(l);
+}
+recursive fn sr(n Node&) int {
+	let r = n.r;
+	guard r else { return 0; }
+	return sum(r);
+}
+fn main() {
+	let k = args().len;
+	var pool Node[>..] = [];
+	let root Node& = make(pool, 6 + k, 1);
+	var o byte[>..] = [];
+	format(o, sum(root), "\n");
+	let a Node& = pool.push(Node { v: 7 });
+	let b Node& = pool.push(Node { v: 9 });
+	var none Node&? = null;
+	if k > 5 { none .= b; }
+	let c Node& = pool.push(Node { v: 5 });
+	a.l .= b;
+	a.r .= none;
+	c.l .= a.l;
+	c.r .= a.r;
+	format(o, sum(a), " ", sum(b), " ", sum(c), "\n");
+	let g Leaf& = grow(4 + k, 2);
+	format(o, total(g), "\n");
+	print(o);
+}

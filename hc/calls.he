@@ -847,7 +847,7 @@ recursive ck_builtin(n int, b int, recv int, want int) int:
 	if b == B_ASSERT: ck(arg(0), T_BOOL); conv(arg(0), T_BOOL); narrow_push(arg(0)); return set_t(n, T_VOID)
 	if b == B_ABORT: t := ck(arg(0), TT_STR); if is_pending(t) { default_t(arg(0)) } return set_t(n, T_VOID)
 	if b == B_EXIT: ck(arg(0), T_I64); conv(arg(0), T_I64); return set_t(n, T_VOID)
-	if b == B_DEFAULT: ta := x.c; if ta < 0 { cerr(n, "default needs a type: default<T>()"); return set_t(n, T_ERRT) } dt := decode_rel(rtype(kid(ta, 0), ns_of(n))); ck_defs(dt); return set_t(n, dt)
+	if b == B_DEFAULT: ta := x.c; if ta < 0 { cerr(n, "default needs a type: default<T>()"); return set_t(n, T_ERRT) } dt := decode_rel(rtype(kid(ta, 0), ns_of(n))); ck_defs(dt); m byte[>..] ~= []; format(m, "default<", tn(dt), ">() does not exist: "); if nzr(dt, m) { cerr(n, m) } return set_t(n, dt)
 	if b == B_COPY:
 		c := arg(0)
 		if recv < 0: ck(c, want)
@@ -953,8 +953,23 @@ recursive ck_slit(n int, want int) int:
 		if !given && f.def >= 0: ck_fdef(si, j, n)
 		if !given && f.def < 0: ck_defs(f.ty as int)
 		if !given && f.def < 0 && x.fl & 1 == 0 && !is_opt(f.ty as int): m byte[>..] ~= []; format(m, "missing field ", nm(f.name as int), " in ", tn(t)); cerr(n, m)
+		if !given && f.def < 0 && x.fl & 1 != 0: m byte[>..] ~= []; format(m, "missing initializer for field ", nm(f.name as int), " of ", tn(t), " (it has no declared default, and "); if nzr(f.ty as int, m) { m.append(")"); cerr(n, m) }
 	set_r(n, R_CTOR, si)
 	set_t(n, t)
+nzr(t int, m byte[>..]&) bool:
+	if t < 0: return false
+	k := TY[t].k as int
+	if k == TY_REF && TY[t].fl & RF_OPT == 0: format(m, tn(t), " is a non-optional reference"); return true
+	if k == TY_ARR && is_fix(t): return nzr(TY[t].a as int, m)
+	if k != TY_STRUCT: return false
+	si := TY[t].a as int
+	for j STI[si].fnum:
+		f := SFI[STI[si].f0 as int + j]
+		if f.ty < 0 || f.def >= 0: continue
+		n0 := m.len; format(m, "field ", nm(f.name as int), " has no declared default and ")
+		if nzr(f.ty as int, m): return true
+		m.resize(n0, 0)
+	false
 var XROOTS i32[>..]
 lib_file(f int) bool: n := nm(FILES[f].name); LIBDIR.len > 0 && n.len > LIBDIR.len && n[..LIBDIR.len] == LIBDIR[..]
 all_typed(f int) bool:

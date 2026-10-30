@@ -107,6 +107,7 @@ lrcheck():
 	rt0 := if CURI >= 0 { FI_[CURI].ret as int } else { -1 }; if rt0 >= 0 && is_vimg(rt0): ir(I_MOV, 3, RETV, imm(0), -1, 0)
 	drop_keep(); ir(I_JMP, 3, -1, -1, -1, RETK); ir(I_LBL, 3, -1, -1, -1, lok);
 var LROM i32[>..<]
+NNI ~= 0
 NRMI ~= 0
 ckf(n int) i64, bool:
 	x := ND[n]; k := x.k as int; if k == N_FLT { return flt_bits(tok_text(x.t)) as! i64, true } if k == N_UN && x.op as int == T_MINUS && x.a >= 0 && ND[x.a].k as int == N_FLT { return (flt_bits(tok_text(ND[x.a].t)) ^ (1 as u64) << 63) as! i64, true } return 0, false
@@ -244,7 +245,7 @@ recursive lstore(addr int, n int, t int):
 		if !is_res(t): lerr(n, "arrays of variable-size elements natively"); return
 		if k == N_ARR: lzero(addr, 48); lsqfill(addr, n, e); return
 		if st0 != t && (TY[st0].k == TY_SLICE || TY[st0].k == TY_ARR): sp, sn := lsl(n); rtcall("rt_sqfrom", [addr as i32, sp as i32, sn as i32, lsqbytes(sp, sn, e) as i32]); return
-	if is_rel(t): rel_store(addr, lrefv(n), t); return
+	if is_rel(t): rel_store(addr, lrefv(n), t, nnref(atc(n))); return
 	if TY[t].k == TY_REF && TY[t].c < 0: stw(addr, 0, lrefv(n), 3); return
 	if is_scal(t): ft := fin(n); if ft >= 0 && TY[ft].k == TY_REF && TY[ft].c < 0 && TY[ft].fl & RF_OPT == 0 && TY[t].k != TY_REF { stw(addr, 0, ldr(lx(n), t), wof(t)); return } stw(addr, 0, lx(n), wof(t)); return
 	if is_pair(t): p, q := lsl(n); stw(addr, 0, p, 3); stw(addr, 8, q, 3); return
@@ -484,7 +485,7 @@ rel_load(q int, t int) int:
 sdie(m const byte[:]): mp := nv(); ir(I_RADDR, 8, mp, -1, -1, rodata(m)); lp := nv(); ir(I_RADDR, 8, lp, -1, -1, rodata("store")); rtcall("rt_abort", [mp as i32, imm(m.len) as i32, lp as i32, imm(5) as i32]);
 sguard(ok int, m const byte[:]): l := nlbl(); ir(I_BNZ, 3, -1, ok, -1, l); sdie(m); ir(I_LBL, 3, -1, -1, -1, l);
 recursive rel_fix(dst int, src int, t int):
-	if is_rel(t): rel_store(dst, rel_load(src, t), t); return
+	if is_rel(t): rel_store(dst, rel_load(src, t), t, TY[t].fl & RF_OPT == 0); return
 	if TY[t].k == TY_STRUCT: si := TY[t].a; f0 := STI[si].f0; for j STI[si].fnum { ft := SFI[f0 + j].ty; if ft >= 0 && (is_rel(ft) || has_rel(ft)) { o := foff(si, j); rel_fix(addi(dst, o), addi(src, o), ft) } } return
 	if TY[t].k == TY_ARR && (is_fix(t) || is_lim(t)):
 		e := TY[t].a; o := if is_lim(t) { lco(t) } else { 0 }; if is_rel(e) || has_rel(e): i, lt, le := lloop(if is_lim(t) { ldw(src, 0, lcw(t)) } else { imm(TY[t].b as int) }); eo := bin(B_ADD, 3, imm(o), bin(B_MUL, 3, i, imm(tsz(e)), -1), -1); rel_fix(bin(B_ADD, 3, dst, eo, -1), bin(B_ADD, 3, src, eo, -1), e); lloop_end(i, lt, le)
@@ -494,12 +495,14 @@ recursive lrfix(p int, e int, b int, fl bool):
 	if is_venum(e): ei := TY[e].a as int; tz := epoff(ei); tg := ldw(p, 0, wof(e)); le := nlbl(); for i ENI[ei].vnum { si := vsi(ei, i); if si >= 0 && has_rel(t_struct(si)) { ln := nlbl(); ir(I_BZ, 3, -1, lcmp(tg, imm(i), CC_E), -1, ln); lrfix(addi(p, tz), t_struct(si), b, fl); ir(I_JMP, 3, -1, -1, -1, le); ir(I_LBL, 3, -1, -1, -1, ln) } } ir(I_LBL, 3, -1, -1, -1, le); return
 	if TY[e].k == TY_ARR && (is_fix(e) || is_lim(e)): el := TY[e].a as int; i, lt, le := lloop(if is_lim(e) { ldw(p, 0, lcw(e)) } else { imm(TY[e].b as int) }); lrfix(bin(B_ADD, 3, addi(p, if is_lim(e) { lco(e) } else { 0 }), bin(B_MUL, 3, i, imm(tsz(el)), -1), -1), el, b, fl); lloop_end(i, lt, le); return
 	if TY[e].k == TY_STRUCT: si := TY[e].a as int; f0 := STI[si].f0 as int; v := fl && lvst(e); o ~= p; for j STI[si].fnum { f := SFI[f0 + j]; if f.ty < 0 { o = addi(o, max(f.padn as int, 0)); continue } ft := f.ty as int; if is_rel(ft) || has_rel(ft) { lrfix(if v { o } else { addi(p, foff(si, j)) }, ft, b, fl) } if v { o = bin(B_ADD, 3, o, lunflat(-1, o, ft), -1) } }
-rel_store(q int, p0 int, t int):
+nnref(st int) bool:
+	if NNI == 0 { nb byte[>..] ~= []; NNI = if env("HC_NONN", nb) { 2 } else { 1 } } NNI == 1 && st >= 0 && TY[st].k == TY_REF && TY[st].c < 0 && TY[st].fl & RF_OPT == 0
+rel_store(q int, p0 int, t int, nn bool = false):
 	opt := TY[t].fl & RF_OPT != 0; sz := tsz(t); d := nv(); p := lmk(p0, TY[t].a as int)
-	if RELB >= 0 && relpool(t) < 0 && !isvr(t): ir(I_MOV, 3, d, imm(0), -1, 0); l := nlbl(); ir(I_BZ, 3, -1, p, -1, l); ir(I_MOV, 3, d, bin(B_ADD, 3, bin(B_SUB, 3, p, RELB, -1), imm(1), -1), -1, 0); ir(I_LBL, 3, -1, -1, -1, l); if sz < 8 { sguard(lcmp(bin(B_SHR, 3, d, imm(sz * 8), -1), imm(0), CC_E), "relative reference offset out of range") } stw(q, 0, d, rw(t)); return
+	if RELB >= 0 && relpool(t) < 0 && !isvr(t): ir(I_MOV, 3, d, imm(0), -1, 0); l := nlbl(); if !nn { ir(I_BZ, 3, -1, p, -1, l) } ir(I_MOV, 3, d, bin(B_ADD, 3, bin(B_SUB, 3, p, RELB, -1), imm(1), -1), -1, 0); ir(I_LBL, 3, -1, -1, -1, l); if sz < 8 { sguard(lcmp(bin(B_SHR, 3, d, imm(sz * 8), -1), imm(0), CC_E), "relative reference offset out of range") } stw(q, 0, d, rw(t)); return
 	nq byte[>..] ~= []; if relpool(t) >= 0 && !hvs(TY[t].a as int) && !env("HC_NORP", nq): for k RPV.len / 3 { u := RPV[3 * k + 2] as int; if RPV[3 * k] as int == p0 && TY[u].b == TY[t].b && rw(u) == rw(t) && relpool(u) >= 0 { stw(q, 0, RPV[3 * k + 1] as int, rw(t)); return } }
-	if relpool(t) >= 0: ir(I_MOV, 3, d, imm(0), -1, 0); l := nlbl(); ir(I_BZ, 3, -1, p, -1, l); ir(I_MOV, 3, d, bin(B_ADD, 3, bin(B_SUB, 3, p, rpool_base(t), -1), imm(1), -1), -1, 0); ir(I_LBL, 3, -1, -1, -1, l); if sz < 8 { sguard(lcmp(bin(B_SHR, 3, d, imm(sz * 8), -1), imm(0), CC_E), "pool-relative reference offset out of range") } stw(q, 0, d, rw(t)); return
-	ir(I_MOV, 3, d, imm(0), -1, 0); l := nlbl(); ir(I_BZ, 3, -1, p, -1, l); ir(I_MOV, 3, d, bin(B_SUB, 3, p, q, -1), -1, 0)
+	if relpool(t) >= 0: ir(I_MOV, 3, d, imm(0), -1, 0); l := nlbl(); if !nn { ir(I_BZ, 3, -1, p, -1, l) } ir(I_MOV, 3, d, bin(B_ADD, 3, bin(B_SUB, 3, p, rpool_base(t), -1), imm(1), -1), -1, 0); ir(I_LBL, 3, -1, -1, -1, l); if sz < 8 { sguard(lcmp(bin(B_SHR, 3, d, imm(sz * 8), -1), imm(0), CC_E), "pool-relative reference offset out of range") } stw(q, 0, d, rw(t)); return
+	ir(I_MOV, 3, d, imm(0), -1, 0); l := nlbl(); if !nn { ir(I_BZ, 3, -1, p, -1, l) } ir(I_MOV, 3, d, bin(B_SUB, 3, p, q, -1), -1, 0)
 	if opt: sguard(lcmp(d, imm(0), CC_NE), "a relative reference would encode as null")
 	ir(I_LBL, 3, -1, -1, -1, l)
 	nsx byte[>..] ~= []; if sz < 8 && (sz == 3 || env("HC_NOSX", nsx)): lim := 1 << sz * 8 - 1; sguard(lcmp(bin(B_ADD, 3, d, imm(lim), -1), imm(2 * lim), CC_B), "relative reference offset out of range")
@@ -1426,7 +1429,7 @@ recursive lassign(n int):
 		for i na: c := kid(a, i); t := deref(at(c)); da := laddr(c); if needs_drop(t) { ldrop(da, t) } ir(I_COPY, 3, da, tv[i], imm(tsz(t)), 0)
 		return
 	tt := at(a); t := deref(tt)
-	if (o == T_DOTASSIGN || o == T_ASSIGN) && rel_of(a) >= 0: q := rel_slot(a); rel_store(q, lrefv(b), rel_of(a)); return
+	if (o == T_DOTASSIGN || o == T_ASSIGN) && rel_of(a) >= 0: q := rel_slot(a); rel_store(q, lrefv(b), rel_of(a), nnref(atc(b))); return
 	if TY[tt].k == TY_REF && (o == T_DOTASSIGN || o == T_ASSIGN && TY[tt].fl & RF_OPT != 0 && (TY[at(b)].k == TY_REF || TY[fin(b)].k == TY_REF || TY[at(b)].k == TY_NULL)): ra := if ND[a].k as int == N_ID { vaddr(a) } else { laddr0(a) }; stw(ra, 0, lrefv(b), 3); return
 	o := if o == T_DOTASSIGN { T_ASSIGN } else { o }
 	if o == T_ASSIGN && is_vimg(t) && vlim(t) == 1 && vw(t) > 0 && !sq(t):

@@ -1,0 +1,59 @@
+# hc-flags: --v3
+# High-half multiplies split by carry tests that fall back to rdx as
+# scratch: the next multiply must not trust rdx to still hold its operand.
+recursive mhx(a uint, b uint) uint:
+	al := a & 0xffffffff
+	ah := a >> 32
+	bl := b & 0xffffffff
+	bh := b >> 32
+	ll := al * bl
+	lh := al * bh
+	hl := ah * bl
+	hh := ah * bh
+	mid := (ll >> 32) + (lh & 0xffffffff) + (hl & 0xffffffff)
+	hh + (lh >> 32) + (hl >> 32) + (mid >> 32)
+k0(d i8[>..]&, a u8[>..]&, b int[>..]&, u int, lo int, hi int) int:
+	t ~= 0 as uint
+	for x lo..hi:
+		q0 := (a[x] as! uint) * 0x9E3779B97F4A7C15
+		q1 := q0 ^ (q0 >> 29) ^ 0x5851F42D4C957F2D
+		q2 := q1 * 0xD6E8FEB86659FD93 + (x as! uint)
+		q3 := q2 ^ (q2 << 17)
+		v ~= q0
+		c ~= 0 as uint
+		lo0 := q2 * v + c
+		hi0 ~= mhx(q2, v)
+		if lo0 < c { hi0++ }
+		c = hi0
+		t = t ^ lo0
+		if c < q2 { c += 1 }
+		c = c & c >> 3
+		if c < q1 { c += 1 }
+		if c < q3 { c += 1 }
+		lo5 := v * v + c
+		hi5 ~= mhx(v, v)
+		if lo5 < c { hi5++ }
+		c = hi5
+		t = t ^ lo5
+		if c < q0 { c += 1 }
+		if c < q2 { c += 1 }
+		lo8 := q0 * q2 + c
+		hi8 ~= mhx(q0, q2)
+		if lo8 < c { hi8++ }
+		c = hi8
+		t = t ^ lo8
+		lo9 := q1 * q1 + c
+		hi9 ~= mhx(q1, q1)
+		if lo9 < c { hi9++ }
+		c = hi9
+		t = t ^ lo9
+		v = v - q1
+		c = c ^ 0xFFFFFFFFFF
+		t = t * 31 + c + v
+	t as! int
+main():
+	a u8[>..] ~= []
+	for i 64: a.push((i * 37 + 11) as! u8)
+	d i8[>..] ~= []
+	b int[>..] ~= []
+	print(k0(d, a, b, 39473, 3, 19), " ", k0(d, a, b, 63727, 5, 39))

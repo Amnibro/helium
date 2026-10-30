@@ -21,7 +21,7 @@ def run(f):
         p = subprocess.run([HC, "--tokens", str(f)], capture_output=True, timeout=30, env=env)
         return f, ("pass" if p.returncode == 0 and norm(p.stdout) == norm(exp.read_bytes()) else "out"), ""
     sp = f.parent.name == "samples"; fl = R / "samples" / "data" / ((f.stem.split("_", 1)[1] if f.stem[:2].isdigit() else f.stem) + ".flags")
-    try: p = subprocess.run([str(pathlib.Path(HC).resolve()) if "/" in HC else HC, str(f.resolve()), str((x if nat else c).resolve())] + (["--native", *defs] if nat else []) + (["--debug"] if dbg else []) + (fl.read_text().split() if sp and fl.exists() else []), capture_output=True, timeout=30, env=env, cwd=str(R / "samples") if sp else None)
+    try: p = subprocess.run([str(pathlib.Path(HC).resolve()) if "/" in HC else HC, str(f.resolve()), str((x if nat else c).resolve())] + (["--native", *defs, *[x for l in f.read_text(errors="replace").split("\n")[:5] if l.startswith(("// hc-flags:", "# hc-flags:")) for x in l.split(":", 1)[1].split()]] if nat else []) + (["--debug"] if dbg else []) + (fl.read_text().split() if sp and fl.exists() else []), capture_output=True, timeout=30, env=env, cwd=str(R / "samples") if sp else None)
     except subprocess.TimeoutExpired: return f, "check", "timeout"
     if p.returncode != 0: return f, ("native" if nat and b"native backend" in p.stdout + p.stderr else "check"), (p.stdout + p.stderr).decode(errors="replace").strip().split("\n")[0][:220]
     if nat: c.write_text("")

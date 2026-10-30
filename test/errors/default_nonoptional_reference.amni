@@ -1,0 +1,6 @@
+// error: default<H>() does not exist: field t has no declared default and T& is a non-optional reference
+struct T { v int }
+struct H { t T&, w int }
+fn main() {
+	let x = default<H>();
+}
