@@ -129,7 +129,13 @@ reads_back(d byte[:], pt int, x real) bool:
 	tx byte[..40] ~= []; tx.append(d); tx.push('e'); format(tx, pt - d.len)
 	scan_number_general(tx, 0).value == x
 is_space(c byte) bool: c == ' ' || c == '\n' || c == '\r' || c == '\t'
-skip_space(text byte[:], pos int) int: p ~= pos; while p < text.len && is_space(text[p]) { p += 1 }; p
+skip_space(text byte[:], pos int) int:
+	p ~= pos; n := text.len
+	loop:
+		if p >= n || !is_space(text[p]) { break }
+		p += 1
+		if p + 8 <= n { x := hash_le(text, p, 8) ^ 0x2020202020202020; if x == 0 { p += 8; continue }; p += ctz(x) >> 3 }
+	p
 scan_string(text byte[:], at int) int, bool:
 	if at < 0: return -1, false
 	p ~= at; esc ~= false
