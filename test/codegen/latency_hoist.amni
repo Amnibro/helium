@@ -1,0 +1,51 @@
+// hc-flags: --v3
+// Square roots and divisions moved ahead of the work before them, so their
+// latencies overlap: pair forces over three bodies, and a division whose
+// inputs are read before the loop reassigns them.
+import std;
+import os;
+import math;
+struct B { x real, y real, vx real, vy real, m real }
+fn step(p B[3]&, n int) {
+	for s in n {
+		for i in 3 {
+			for j in i + 1..3 {
+				let dx = p[i].x - p[j].x;
+				let dy = p[i].y - p[j].y;
+				let d2 = dx * dx + dy * dy + 0.01;
+				let mag = 0.01 / (d2 * sqrt(d2));
+				p[i].vx -= dx * p[j].m * mag;
+				p[i].vy -= dy * p[j].m * mag;
+				p[j].vx += dx * p[i].m * mag;
+				p[j].vy += dy * p[i].m * mag;
+			}
+		}
+		for &q in p {
+			q.x += 0.01 * q.vx;
+			q.y += 0.01 * q.vy;
+		}
+	}
+}
+fn carried(n int) real {
+	var a = 1.5;
+	var b = 0.75;
+	var c = 2.0;
+	for s in n {
+		let t = a - b;
+		b = b * 0.5 + t * 0.25;
+		let q = c / (t * t + 1.0);
+		a = a + q * 0.125;
+		let r = b / (a * a + 0.5);
+		c = c - r * 0.0625 + t * 0.03125;
+	}
+	return a + b * 3.0 + c * 7.0;
+}
+fn main() {
+	let k = args().len;
+	var p B[3] = [B { x: 0.0, y: 0.0, vx: 0.0, vy: 0.1, m: 1.0 }, B { x: 1.0, y: 0.0, vx: 0.0, vy: -0.3, m: 0.3 }, B { x: -1.0, y: 0.5, vx: 0.2, vy: 0.0, m: 0.5 }];
+	step(p, 200 + k);
+	var o byte[>..] = [];
+	for q in p { format(o, q.x, " ", q.y, " ", q.vx, " ", q.vy, "\n"); }
+	format(o, carried(300 + k), "\n");
+	print(o);
+}

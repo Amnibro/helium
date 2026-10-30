@@ -489,11 +489,11 @@ ILX ~= 4000
 NOCI ~= false
 NOLC ~= false; NORS ~= false; NORSM ~= false
 NOMS ~= false
-NOGA ~= false; NOCK ~= false; NOUM ~= false; NOEM ~= false; NODM ~= false; NOSCB ~= false; SCMX ~= 3; NOSF ~= false; NOSG ~= false; SFD ~= 40; NOSA ~= false; NOIG ~= false; NOAX ~= false; NOUF ~= false; NOXR2 ~= false; NOSI ~= false; NOXX ~= false; NOXF ~= false; NOFNG ~= false; NOFP2 ~= false; NOFS ~= false; NOPI ~= false; PIMX ~= 96; var GPE i32[>..<]; var PID i8[>..<]; NOMM ~= false; NOXS1 ~= false; NOXSD ~= false; var XS1 i8[>..<]; var XDI i32[>..<]; var XDV i32[>..<]; NOXS ~= false; XSK ~= 1; var XSV i32[>..<]; var XSS i32[>..<]; var XSE i32[>..<]; var VSBF i32[>..<]; NODMX ~= false; NOBFC ~= false; NOHS ~= false; NOKR ~= false; NORA ~= false; NONI ~= false; NORD ~= false; HSL ~= 256
+NOGA ~= false; NOCK ~= false; NOUM ~= false; NOEM ~= false; NODM ~= false; NOLL ~= false; LLW ~= 0; NOSCB ~= false; SCMX ~= 3; NOSF ~= false; NOSG ~= false; SFD ~= 40; NOSA ~= false; NOIG ~= false; NOAX ~= false; NOUF ~= false; NOXR2 ~= false; NOSI ~= false; NOXX ~= false; NOXF ~= false; NOFNG ~= false; NOFP2 ~= false; NOFS ~= false; NOPI ~= false; PIMX ~= 96; var GPE i32[>..<]; var PID i8[>..<]; NOMM ~= false; NOXS1 ~= false; NOXSD ~= false; var XS1 i8[>..<]; var XDI i32[>..<]; var XDV i32[>..<]; NOXS ~= false; XSK ~= 1; var XSV i32[>..<]; var XSS i32[>..<]; var XSE i32[>..<]; var VSBF i32[>..<]; NODMX ~= false; NOBFC ~= false; NOHS ~= false; NOKR ~= false; NORA ~= false; NONI ~= false; NORD ~= false; HSL ~= 256
 SIM ~= false; DWX ~= 4; NOAF ~= false; NOSIV ~= false; NOMDV ~= false; NOCF2 ~= false; NOTR ~= false; NOBT ~= false; NOJK ~= false; NOTB ~= false; NOLH ~= false; NONR ~= false; NOMB2 ~= false; NOVC ~= false; NOCH ~= false; NOHC ~= false; NOKI ~= false; NOXN ~= false
 var NCS i32[>..<]
 optimize_all():
-	nlc byte[>..] ~= []; NOGA = env("HC_NOGA", nlc); NOCK = env("HC_NOCK", nlc); NOUM = env("HC_NOUM", nlc); NOSF = env("HC_NOSF", nlc); NOSCB = env("HC_NOSCB", nlc); NOEM = env("HC_NOEM", nlc); NODM = env("HC_NODM", nlc); scm byte[>..] ~= []; if env("HC_SCMX", scm) { v, ok := parse_int(scm[..]); if ok { SCMX = v } } NOSG = env("HC_NOSG", nlc); sfd byte[>..] ~= []; if env("HC_SFD", sfd) { v, ok := parse_int(sfd[..]); if ok { SFD = v } } NOAB = env("HC_NOAB", nlc); NOSA = env("HC_NOSA", nlc); NOIG = env("HC_NOIG", nlc); NOAX = env("HC_NOAX", nlc); NOUF = env("HC_NOUF", nlc); NOMZ = env("HC_NOMZ", nlc); NOXR2 = env("HC_NOXR2", nlc); NOLC = env("HC_NOLC", nlc); NOMS = env("HC_NOMS", nlc); NOSI = env("HC_NOSI", nlc); NOXF = env("HC_NOXF", nlc); NOFNG = env("HC_NOFNG", nlc); NOFP2 = env("HC_NOFP2", nlc); NOFS = env("HC_NOFS", nlc); NOPI = env("HC_NOPI", nlc); pmx byte[>..] ~= []; if env("HC_PIMX", pmx) { v, ok := parse_int(pmx[..]); if ok { PIMX = v } } NOMM = env("HC_NOMM", nlc); NOXS1 = env("HC_NOXS1", nlc); NOXSD = env("HC_NOXSD", nlc); NOXS = env("HC_NOXS", nlc); if env("HC_XSK", nlc) { v, ok := parse_int(nlc[..]); XSK = v } NOHS = env("HC_NOHS", nlc); NOKR = env("HC_NOKR", nlc); NORA = env("HC_NORA", nlc); NONI = env("HC_NONI", nlc); NORD = env("HC_NORD", nlc); NOCF2 = env("HC_NOFI", nlc); NOTR = env("HC_NOTR", nlc); NOBT = env("HC_NOBT", nlc); NOJK = env("HC_NOJK", nlc); NOTB = env("HC_NOTB", nlc); NODMX = env("HC_NODMX", nlc); NOXX = env("HC_NOXX", nlc); NOBFC = env("HC_NOBFC", nlc); NOLH = env("HC_NOLH", nlc); NONR = env("HC_NONR", nlc); NOMB2 = env("HC_NOMB2", nlc); NOVC = env("HC_NOVC", nlc); NOCH = env("HC_NOCH", nlc); NOHC = env("HC_NOHC", nlc); NOKI = env("HC_NOKI", nlc); NOXN = env("HC_NOXN", nlc); NOAF = env("HC_NOAF", nlc); NOSIV = env("HC_NOSIV", nlc); NOMDV = env("HC_NOMDV", nlc); NOSE = env("HC_NOSE", nlc); NORS = env("HC_NORS", nlc); NORSM = env("HC_NORSM", nlc); if env("HC_DWX", nlc) { v, ok := parse_int(nlc[..]); DWX = v }
+	nlc byte[>..] ~= []; NOGA = env("HC_NOGA", nlc); NOCK = env("HC_NOCK", nlc); NOUM = env("HC_NOUM", nlc); NOSF = env("HC_NOSF", nlc); NOSCB = env("HC_NOSCB", nlc); NOEM = env("HC_NOEM", nlc); NODM = env("HC_NODM", nlc); NOLL = env("HC_NOLL", nlc); llw byte[>..] ~= []; if env("HC_LLW", llw) { v, ok := parse_int(llw[..]); if ok { LLW = v } } scm byte[>..] ~= []; if env("HC_SCMX", scm) { v, ok := parse_int(scm[..]); if ok { SCMX = v } } NOSG = env("HC_NOSG", nlc); sfd byte[>..] ~= []; if env("HC_SFD", sfd) { v, ok := parse_int(sfd[..]); if ok { SFD = v } } NOAB = env("HC_NOAB", nlc); NOSA = env("HC_NOSA", nlc); NOIG = env("HC_NOIG", nlc); NOAX = env("HC_NOAX", nlc); NOUF = env("HC_NOUF", nlc); NOMZ = env("HC_NOMZ", nlc); NOXR2 = env("HC_NOXR2", nlc); NOLC = env("HC_NOLC", nlc); NOMS = env("HC_NOMS", nlc); NOSI = env("HC_NOSI", nlc); NOXF = env("HC_NOXF", nlc); NOFNG = env("HC_NOFNG", nlc); NOFP2 = env("HC_NOFP2", nlc); NOFS = env("HC_NOFS", nlc); NOPI = env("HC_NOPI", nlc); pmx byte[>..] ~= []; if env("HC_PIMX", pmx) { v, ok := parse_int(pmx[..]); if ok { PIMX = v } } NOMM = env("HC_NOMM", nlc); NOXS1 = env("HC_NOXS1", nlc); NOXSD = env("HC_NOXSD", nlc); NOXS = env("HC_NOXS", nlc); if env("HC_XSK", nlc) { v, ok := parse_int(nlc[..]); XSK = v } NOHS = env("HC_NOHS", nlc); NOKR = env("HC_NOKR", nlc); NORA = env("HC_NORA", nlc); NONI = env("HC_NONI", nlc); NORD = env("HC_NORD", nlc); NOCF2 = env("HC_NOFI", nlc); NOTR = env("HC_NOTR", nlc); NOBT = env("HC_NOBT", nlc); NOJK = env("HC_NOJK", nlc); NOTB = env("HC_NOTB", nlc); NODMX = env("HC_NODMX", nlc); NOXX = env("HC_NOXX", nlc); NOBFC = env("HC_NOBFC", nlc); NOLH = env("HC_NOLH", nlc); NONR = env("HC_NONR", nlc); NOMB2 = env("HC_NOMB2", nlc); NOVC = env("HC_NOVC", nlc); NOCH = env("HC_NOCH", nlc); NOHC = env("HC_NOHC", nlc); NOKI = env("HC_NOKI", nlc); NOXN = env("HC_NOXN", nlc); NOAF = env("HC_NOAF", nlc); NOSIV = env("HC_NOSIV", nlc); NOMDV = env("HC_NOMDV", nlc); NOSE = env("HC_NOSE", nlc); NORS = env("HC_NORS", nlc); NORSM = env("HC_NORSM", nlc); if env("HC_DWX", nlc) { v, ok := parse_int(nlc[..]); DWX = v }
 	il0 byte[>..] ~= []; if env("HC_ILC", il0) { v, ok := parse_int(il0[..]); ILC = v } if env("HC_ILX", il0) { v, ok := parse_int(il0[..]); ILX = v } NOCI = env("HC_NOCI", il0)
 	lim byte[>..] ~= []; mx := if env("HC_INL", lim) { v, ok := parse_int(lim[..]); v } else { 100 }
 	noi byte[>..] ~= []; inl := !env("HC_NOINL", noi)
@@ -1126,6 +1126,51 @@ srg(fi int):
 			z := wsz(w); cw := c == B_AND as i64 && (ka && lo[a] >= 0 && hi[a] <= wh(w) && w & 4 == 0 || kb && lo[b] >= 0 && hi[b] <= wh(w) && w & 4 == 0) || inw(a, w) && inw(b, w)
 			if z < 8 && ok && l >= wl(w) && h <= wh(w) && cw: st(d, l, h); if w & 4 == 0 && (c == B_ADD as i64 || c == B_SUB as i64 || c == B_MUL as i64 || c == B_SHL as i64) { IR[i].w = 3 }
 			else: if z < 8 { if c == B_SAR as i64 && kb && lo[b] == hi[b] && lo[b] >= 0 && lo[b] < 8 * z as i64 && w & 4 == 0 { st(d, wl(w) >> lo[b], wh(w) >> lo[b]) } else { st(d, wl(w), wh(w)) } } else { if ok { st(d, l, h) } }
+lcl(x Ir) bool: o := x.op as int; o == I_FBIN && x.w & 8 != 0 && x.l < 0 || o == I_MOV && x.w & 8 != 0 || o == I_IMM
+lls(fi int):
+	f := NFS[fi]; i0 := f.i0 as int; i1 := f.i1 as int; nv ~= f.nv as int; win := LLW; n := i1 - i0
+	nd i32[>..<] ~= []; nd.resize(nv, 0); uc i32[>..<] ~= []; uc.resize(nv, 0); for i i0..i1 { opnds(i); for d OD { if d >= 0 && d < nv { nd[d] += 1 } } for u OU { if u >= 0 && u < nv { uc[u] += 1 } } }
+	pos i32[>..<] ~= []; pos.resize(nv, -1); mb i8[>..<] ~= []; mb.resize(n + 1, 0); own i32[>..<] ~= []; own.resize(n + 1, -1); mvd i8[>..<] ~= []; mvd.resize(n + 1, 0)
+	ce i32[>..<] ~= []; cm i32[>..<] ~= []; cmo i32[>..<] ~= []; cf i8[>..<] ~= []; wl i32[>..<] ~= []; cn i32[>..<] ~= []; us i32[>..<] ~= []; cu i32[>..<] ~= []; cu.resize(nv, 0); s ~= i0
+	for i i0..i1:
+		x := IR[i]; o := x.op as int
+		if o == I_LBL || o == I_JMP || o == I_BZ || o == I_BNZ || o == I_RET || o == I_RET2 || o == I_CALL || o == I_CALLR || o == I_SYS || o == I_VLOOP: s = i + 1; continue
+		if !(o == I_FUN && x.c & 255 == 12 || o == I_FBIN && x.c == 3 && x.w & 8 != 0) || i - s < 4 || own[i - i0] >= 0: continue
+		for q s..i { opnds(q); for d OD { if d >= 0 && d < nv { pos[d] = q as i32 } } }
+		cn.clear(); wl.clear(); e ~= s; cn.push(i as i32); mb[i - i0] = 1; wl.push(i as i32)
+		while wl.len > 0:
+			c := wl.pop() as int; opnds(c); us.clear(); for u OU { us.push(u) }
+			for u us:
+				if u < 0 || u >= nv || pos[u] < 0: continue
+				k := pos[u] as int; if mb[k - i0] != 0: continue
+				opnds(k); sd ~= true; for d OD { if d < 0 || d >= nv || nd[d] != 1 { sd = false } }
+				if sd && own[k - i0] < 0 && lcl(IR[k]) { mb[k - i0] = 1; cn.push(k as i32); wl.push(k as i32) } else { e = max(e, k + 1) }
+		if win > 0: e = max(e, i - win)
+		for c cn { opnds(c); for u OU { if u >= 0 && u < nv { cu[u] += 1 } } }
+		ch ~= true
+		while ch:
+			ch = false
+			for q e..i: if mb[q - i0] == 0 { opnds(q); for u OU { if u >= 0 && u < nv && pos[u] > q as i32 && mb[pos[u] - i0] != 0 && !(pos[u] as int != i && uc[u] > cu[u]) { e = q + 1; ch = true } } }
+		nmv ~= 0; for c cn { if c as int >= e { nmv++ } }
+		if nmv > 1 && e < i:
+			id := ce.len; ce.push(e as i32); cmo.push(cm.len as i32)
+			for q e..i + 1:
+				if mb[q - i0] == 0: continue
+				opnds(q); sh ~= false; for d OD { if d >= 0 && d < nv && uc[d] > cu[d] { sh = true } }
+				cl := sh && q != i; cm.push(q as i32); cf.push(if cl { 1 } else { 0 }); if !cl { mvd[q - i0] = 1; own[q - i0] = id as i32 }
+		for c cn { mb[c - i0] = 0; opnds(c); for u OU { if u >= 0 && u < nv { cu[u] = 0 } } } for q s..i + 1 { opnds(q); for d OD { if d >= 0 && d < nv { pos[d] = -1 } } }
+	if ce.len == 0: return
+	cmo.push(cm.len as i32); rn i32[>..<] ~= []; rn.resize(nv, -1); ot Ir[>..<] ~= []; nc ~= 0
+	for q i0..i1:
+		for c ce.len:
+			if ce[c] as int != q: continue
+			for k cmo[c]..cmo[c + 1]:
+				y ~= IR[cm[k]]; if y.op as int != I_IMM && y.a >= 0 && y.a < nv as i32 && rn[y.a] >= 0 { y.a = rn[y.a] } if y.b >= 0 && y.b < nv as i32 && rn[y.b] >= 0 && y.op as int != I_IMM { y.b = rn[y.b] }
+				if cf[k] != 0: rn[y.d] = nv as i32; y.d = nv as i32; nv++; nc++
+				ot.push(y)
+			for k cmo[c]..cmo[c + 1] { if cf[k] != 0 { rn[IR[cm[k]].d] = -1 } }
+		if mvd[q - i0] == 0: ot.push(IR[q])
+	ni0 := IR.len; for y ot { IR.push(y) } NFS[fi].i0 = ni0 as i32; NFS[fi].i1 = IR.len as i32; NFS[fi].nv = nv as i32
 dmf(fi int):
 	f := NFS[fi]; i0 := f.i0 as int; i1 := f.i1 as int; nv := f.nv as int; nd i32[>..<] ~= []; nd.resize(nv, 0); uc i32[>..<] ~= []; uc.resize(nv, 0)
 	for i i0..i1 { opnds(i); for d OD { nd[d] += 1 } for u OU { if u >= 0 && u < nv { uc[u] += 1 } } }
