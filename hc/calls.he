@@ -572,7 +572,7 @@ recursive call_block(n int, inst int) int:
 	for j na:
 		c := kid(n, j); pa := if ND[fv].fl & 1 != 0 && j < ND[fv].n && ND[kid(fv, j)].a >= 0 { rtype(ND[kid(fv, j)].a, ns_of(fv)) } else { -1 }; if is_pending(at(c)) && pa >= 0: conv(c, pa); ARGW[s + j] = pa
 		else:
-			if is_pending(at(c)): ARGW[s + j] = default_t(c) else: ct0 := at(c); ARGW[s + j] = (if ND[c].k as int == N_UN && ND[c].op as int == T_AND { if TY[ct0].k == TY_REF { ct0 } else { t_ref(ct0, 0) } } else { if has_rel(deref(ct0)) { if TY[ct0].k == TY_REF { ct0 } else { t_ref(ct0, 0) } } else { deref_val(ct0) } })
+			if is_pending(at(c)): ARGW[s + j] = default_t(c) else: ct0 := at(c); ARGW[s + j] = (if is_amp(c) { if TY[ct0].k == TY_REF { ct0 } else { t_ref(ct0, 0) } } else { if has_rel(deref(ct0)) { if TY[ct0].k == TY_REF { ct0 } else { t_ref(ct0, 0) } } else { deref_val(ct0) } })
 	bi ~= -1; ah ~= na
 	for j na: ah = ah * 1000003 + ARGW[s + j]
 	for f, i FI_:

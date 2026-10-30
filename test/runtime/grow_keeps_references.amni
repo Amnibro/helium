@@ -1,0 +1,43 @@
+// Pushes never invalidate a reference into a growable array (§3.3): a tree
+// of self-relative links built by holding a node across the push that adds
+// its child, and index_of on a reference taken before many more pushes.
+import std;
+
+struct Node { key i32, left Node&<u32>?, right Node&<u32>? }
+
+fn insert(pool Node[>..]&, key i32) {
+	if pool.len == 0 { pool.push(Node { key: key }); return; }
+	var cur .= pool[0];
+	loop {
+		if key == cur.key { return; }
+		let next = if key < cur.key { cur.left } else { cur.right };
+		if next { cur .= next; continue; }
+		if key < cur.key { cur.left .= pool.push(Node { key: key }); } else { cur.right .= pool.push(Node { key: key }); }
+		return;
+	}
+}
+
+recursive fn walk(n Node&, keys int[>..]&) {
+	let l = n.left;
+	if l { walk(l, keys); }
+	keys.push(n.key);
+	let r = n.right;
+	if r { walk(r, keys); }
+}
+
+fn main() {
+	var pool Node[>..] = [];
+	var x = 12345;
+	for i in 0..30000 { x = (x * 1103515245 + 12345) % 2147483648; insert(pool, (x % 1000000) as i32); }
+	var keys int[>..] = [];
+	walk(pool[0], keys);
+	var sorted = true;
+	for i in 1..keys.len { if keys[i - 1] >= keys[i] { sorted = false; } }
+	print(pool.len, " ", keys.len, " ", sorted, " ", keys[0], " ", keys[keys.len - 1]);
+	var arr int[>..] = [];
+	arr.push(7);
+	let r .= arr[0];
+	for i in 0..200000 { arr.push(i); }
+	r = 9;
+	print(arr.index_of(r), " ", arr[0], " ", arr.len);
+}

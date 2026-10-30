@@ -60,6 +60,7 @@ main():
 		if m[..] == "--native": native = true; continue
 		if m[..] == "--c": native = false; continue
 		if m[..] == "--v3": V3 = true; continue
+		if m[..] == "--static": STC = true; continue
 		if m[..] == "--v4": V3 = true; V4 = true; continue
 		if m[..] == "--debug": DBG = true; continue
 		if m[..] == "--update" && cmd == 5: PKF = 2; continue

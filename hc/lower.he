@@ -737,7 +737,7 @@ recursive lmatch(n int, d int):
 	lend := nlbl(); ai := flat0(n); sa := AOWN
 	for i ai.len / 2:
 		AOWN = ai[2 * i + 1]; arm := ai[2 * i]; ar := ND[arm]
-		if ar.fl & 1 != 0: lblk(ar.b, d); ir(I_JMP, 3, -1, -1, -1, lend); continue
+		if ar.fl & 1 != 0: lbr(ar.b, d); ir(I_JMP, 3, -1, -1, -1, lend); continue
 		lnext := nlbl(); lbody := nlbl()
 		for j ar.n:
 			it := kid(arm, j); lo := ND[it].a; c ~= -1
@@ -753,7 +753,7 @@ recursive lmatch(n int, d int):
 			if TY[lt].k == TY_REF: stw(la, 0, if has { addi(if hvs(deref(lt)) { ma } else { lmk(ma, dt) }, epoff(ei)) } else { imm(0) }, 3)
 			else:
 				if has: ir(I_COPY, 3, la, lunv(addi(if hvs(lt) { ma } else { lmk(ma, dt) }, epoff(ei)), lt), imm(tsz(lt)), 0)
-		lblk(ar.b, d); ir(I_JMP, 3, -1, -1, -1, lend); ir(I_LBL, 3, -1, -1, -1, lnext)
+		lbr(ar.b, d); ir(I_JMP, 3, -1, -1, -1, lend); ir(I_LBL, 3, -1, -1, -1, lnext)
 	AOWN = sa; ir(I_LBL, 3, -1, -1, -1, lend);
 recursive lcond(n int, lf int, onf bool): BRD++; lcond0(n, lf, onf); BRD--
 recursive lcond0(n int, lf int, onf bool):
@@ -764,10 +764,10 @@ recursive lcond0(n int, lf int, onf bool):
 recursive lbranch(n int, d int): BRD++; lbranch0(n, d); BRD--
 recursive lbranch0(n int, d int):
 	x := ND[n]; k := x.k
-	if k == N_IF: l1 := nlbl(); l2 := nlbl(); lcond(x.a, l1, true); lblk(x.b, d); ir(I_JMP, 3, -1, -1, -1, l2); ir(I_LBL, 3, -1, -1, -1, l1); if x.c >= 0 { if ND[x.c].k as int == N_IF { lbranch(x.c, d); } else { lblk(x.c, d); } } ir(I_LBL, 3, -1, -1, -1, l2); return
+	if k == N_IF: l1 := nlbl(); l2 := nlbl(); lcond(x.a, l1, true); lbr(x.b, d); ir(I_JMP, 3, -1, -1, -1, l2); ir(I_LBL, 3, -1, -1, -1, l1); if x.c >= 0 { if ND[x.c].k as int == N_IF { lbranch(x.c, d); } else { lbr(x.c, d); } } ir(I_LBL, 3, -1, -1, -1, l2); return
 	if k == N_BLOCK: lblk(n, d); return
 	if k == N_MATCH: lmatch(n, d); return
-	if k == N_EBLOCK: l1 := nlbl(); LOOPH.push(DROPS.len); LBRK.push(l1); LRV.push(if d == -2 { -2 - SINKA.len } else { d }); lblk(x.a, d); ir(I_LBL, 3, -1, -1, -1, l1); LOOPH.pop(); LBRK.pop(); LRV.pop(); return
+	if k == N_EBLOCK: l1 := nlbl(); LOOPH.push(DROPS.len); LBRK.push(l1); LRV.push(if d == -2 { -2 - SINKA.len } else { d }); lbr(x.a, d); ir(I_LBL, 3, -1, -1, -1, l1); LOOPH.pop(); LBRK.pop(); LRV.pop(); return
 	if k == N_LOOP: l0 := nlbl(); l1 := nlbl(); LOOPH.push(DROPS.len); LCH.push(DROPS.len); LBRK.push(l1); LCNT.push(l0); LRV.push(if d == -2 { -2 - SINKA.len } else { d }); ir(I_LBL, 3, -1, -1, -1, l0); lblk(x.a, -1); ir(I_JMP, 3, -1, -1, -1, l0); ir(I_LBL, 3, -1, -1, -1, l1); LOOPH.pop(); LCH.pop(); LBRK.pop(); LCNT.pop(); LRV.pop(); return
 	m byte[>..] ~= []; format(m, "unsupported branch form ", k); lerr(n, m[..]);
 var LRV i32[>..<]
@@ -807,6 +807,8 @@ recursive lmove_src(n int):
 LTREF ~= false
 recursive ltail(n int) int:
 	ft := fin(n); if ft >= 0 && TY[ft].k == TY_REF { return lrefv(n) } if LTREF { st := atc(n); if st >= 0 && TY[st].k != TY_REF && TY[st].k != TY_NULL && is_lplace(n) { return laddr(n) } } lx(n)
+recursive lbr(b int, d int):
+	s := if d >= 0 { brsw(b) } else { -1 }; lblk(b, d); if s >= 0 { set_cv(s, -1) }
 recursive lblk(b int, d int):
 	x := ND[b]
 	if x.k as int != N_BLOCK: if d == -2 && !ends(b) { sinkv(b, SINKA.len - 1); } else { if d >= 0 && !ends(b) { ir(I_MOV, 3, d, ltail(b), -1, 0); } else { lstmt(b); } } return

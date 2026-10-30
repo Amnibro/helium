@@ -1,0 +1,15 @@
+fn lcg(s int&) real { s = (s * 16807) % 2147483647; s / 2147483647.0 }
+fn half(s int&) real { 0.5 * s }
+fn main() {
+	var s = 7177;
+	var t = 0.0;
+	for i in 5 { t += lcg(s); }
+	print(s, " ", t, " ", half(s));
+	var u = 7;
+	print(ra(u), " ", rb(u), " ", rc(u), " ", rd(u), " ", re(u));
+}
+fn ra(s int&) real { s / 2.0 }
+fn rb(s int&) real { s * 0.5 }
+fn rc(s int&) real { s + 0.5 }
+fn rd(s int&) real { 0.5 + s }
+fn re(s int) real { s / 2.0 }

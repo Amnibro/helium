@@ -69,6 +69,8 @@ set_cvn(n int, t int): set_cv(n, t); i := aix(n); while ACN.len <= i { ACN.push(
 cvn(n int) bool: i := aix(n); i < ACN.len && ACN[i]
 cv(n int) int:
 	AC[aix(n)] as int
+brsw(b int) int:
+	tl := ND[b].a; bc := cv(b); if ND[b].k as int == N_BLOCK && tl >= 0 && bc >= 0 && bc != at(b) && cv(tl) < 0 && at(tl) == at(b) { set_cv(tl, bc); return tl } -1
 tn(t int) byte[>..]:
 	ty_name(t)
 add_lv(name int, t int, fl int, node int) int:
@@ -239,7 +241,7 @@ recursive commit(n int, t int):
 	x := ND[n]; k := x.k
 	f := at(n)
 	if k == N_BIN && (x.op == T_SHL || x.op == T_SHR) && t >= 0 && TY[t].k == TY_FLT && f >= 0 && is_pending(f): commit(n, T_I64); set_cv(n, t); return
-	if f >= 0 && !is_pending(f): if f != t && conv_ok(f, t, n) { cvx(n, t) } return
+	if f >= 0 && !is_pending(f): g := if TY[f].k == TY_REF && TY[f].c < 0 && TY[t].k != TY_REF { TY[f].a as int } else { f }; if f != t && conv_ok(g, t, n) { cvx(n, t) } return
 	set_t(n, t)
 	if k == N_UN: commit(x.a, t); return
 	if k == N_BIN:
