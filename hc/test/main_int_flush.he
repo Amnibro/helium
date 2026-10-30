@@ -1,0 +1,4 @@
+# an int main returning its exit code still flushes what it printed (the C path flushed before main ran)
+main() int:
+	print("printed before returning")
+	0

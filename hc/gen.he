@@ -2079,6 +2079,6 @@ gen_program(out byte[>..]&) bool:
 		lb.append("}\n"); out.append(lb[..])
 	out.append("static void hr_init_globals(void) {\n"); if GDLF.len > 0 { out.append("hr_dl_bind();\n") } out.append(GI); out.append("}\n")
 	out.append("static void hr_main(void) { ")
-	if mi >= 0: rt := FI_[mi].ret as int; if rt >= 0 && TY[rt].k == TY_INT { out.append("hr_flush(); exit((int)") } O.clear(); fn_cname(mi); out.append(O[..]); out.append("()"); if rt >= 0 && TY[rt].k == TY_INT { out.append(")") } out.append("; ")
+	if mi >= 0: rt := FI_[mi].ret as int; if rt >= 0 && TY[rt].k == TY_INT { out.append("hr_exit(") } O.clear(); fn_cname(mi); out.append(O[..]); out.append("()"); if rt >= 0 && TY[rt].k == TY_INT { out.append(")") } out.append("; ")
 	out.append("}\n")
 	GERR.len == 0
