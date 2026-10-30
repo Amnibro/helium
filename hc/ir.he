@@ -557,7 +557,7 @@ cg_fn(fi int):
 																									if op == I_CVT:
 																										ldv(RAX, a)
 																										if c == 1 { sse(0, false, 0x57, 0, 0); sse(fpx(w), true, 0x2A, 0, RAX); rx(RAX, 0, w) } if c == 2: cvt_u2f(w)
-																										if c == 5: xr(0, RAX, w); if w & 3 == 2 { sse(0xF3, false, 0x5A, 0, 0); rx(RDI, 0, 3); } else { mov_rr(RDI, RAX); } sse(0xF2, true, 0x2C, RAX, 0); mov_ri(RCX, 1); shl_imm(RCX, 63); alu(0x39, RAX, RCX); lk := nlbl(); jcc_l(CC_NE, lk); call_f(RT_F2I); bind(lk)
+																										if c == 5: xr(0, RAX, w); if w & 3 == 2 { sse(0xF3, false, 0x5A, 0, 0) } sse(0xF2, true, 0x2C, RAX, 0); mov_ri(RCX, 1); shl_imm(RCX, 63); alu(0x39, RAX, RCX); lk := nlbl(); jcc_l(CC_NE, lk); sv := [RDX, RSI, RDI, R8, R9, R10, R11]; for r sv { push_r(r) } alu_ri(5, RSP, 8); rx(RDI, 0, 3); call_f(RT_F2I); alu_ri(0, RSP, 8); for q sv.len { pop_r(sv[sv.len - 1 - q]) } bind(lk)
 																										if c == 7: mov_ri(RCX, 1); shl_imm(RCX, if w & 3 == 2 { 31 } else { 63 }); alu(0x31, RAX, RCX)
 																										stv(RAX, d)
 																									else:
