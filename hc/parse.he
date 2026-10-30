@@ -27,7 +27,7 @@ var SPLITS int[>..]
 var NEND i32[>..]
 set_end(n int): while NEND.len < ND.len { NEND.push(-1) } NEND[n] = ND.len
 NAME_FROM int ~= -1; NAME_INLINE int ~= -1; NAME_CHECKFREE int ~= -1; NAME_LUT int ~= -1; NAME_UNDER int ~= -1; NAME_UPTO int ~= -1
-NAME_FIELDS int ~= -1; NAME_TYPES int ~= -1; NAME_VARIANTS int ~= -1; NAME_STD int ~= -1
+NAME_FIELDS int ~= -1; NAME_TYPES int ~= -1; NAME_VARIANTS int ~= -1; NAME_STD int ~= -1; NAME_POW int ~= -1; NAME_TOINT int ~= -1; NAME_TOREAL int ~= -1; NAME_RANGE int ~= -1; NAME_CONTAINS int ~= -1; NAME_REVERSED int ~= -1; NAME_FLOORDIV int ~= -1; NAME_ENUMERATE int ~= -1; NAME_ITEMS int ~= -1; NAME_KEY int ~= -1; NAME_VAL int ~= -1; NAME_PUSH int ~= -1; NAME_SORTED int ~= -1; NAME_DICTAT int ~= -1; NAME_STR int ~= -1; NAME_EXTEND int ~= -1
 mk(k int, t int) int:
 	ND.push(Node{k: k, t: t, a: -1, b: -1, c: -1, d: -1, e: -1, s: -1, l: 0, n: 0, ..}); ND.len - 1
 tk() int:
@@ -65,6 +65,11 @@ wend(m int) int:
 setl(n int, m int): c := WS.len - m; { q_ := wend(m); ND[n].l = q_ }; ND[n].n = c
 kid(n int, i int) int:
 	LS[ND[n].l + i] as int
+mkid(name int, t int) int: f := mk(N_ID, t); ND[f].s = name; f
+mkcall(name int, t int, a int, b int) int: c := mk(N_CALL, t); ND[c].a = mkid(name, t); m := wbeg(); if a >= 0 { WS.push(a) } if b >= 0 { WS.push(b) } setl(c, m); c
+mkdecl(name int, init int, t int, fl int) int: v := mk(N_VDECL, t); m := wbeg(); WS.push(name); setl(v, m); ND[v].c = CURNS; il := mk(N_LIST, t); m2 := wbeg(); WS.push(init); setl(il, m2); ND[v].b = il; ND[v].fl = fl as u16; v
+mkblock(t int, ss i32[:], tail int) int: b := mk(N_BLOCK, t); m := wbeg(); for x in ss { WS.push(x) } setl(b, m); ND[b].a = tail; b
+mkdot(o int, name int, t int) int: d := mk(N_DOT, t); ND[d].a = o; ND[d].s = name; d
 qcat(a int, b int) int:
 	s byte[>..] ~= []; if a >= 0 { s.append(nm(a)) } s.append("::"); s.append(nm(b)); intern(s)
 qname(ctx const byte[:]) int:
@@ -231,11 +236,37 @@ pfor() int:
 	if !he() || tk() == K_IN: ex(K_IN, "for statement")
 	s := sub_begin(true)
 	{ q_ := pexpr(); ND[n].a = q_ }
+	fx := forfix(n)
 	if is(T_DOTDOT):
 		{ q_ := pexpr(); ND[n].b = q_ }
 	sub_end(s)
 	{ q_ := pblock("for body"); ND[n].d = q_ }
+	if fx.len > 0: b := ND[n].d; ss i32[>..] ~= []; ss.append(fx); for i ND[b].n { ss.push(kid(b, i) as i32) } ND[n].d = mkblock(ND[b].t, ss, ND[b].a)
 	n
+called(c int, name int, na int) bool: c >= 0 && ND[c].k as int == N_CALL && ND[c].b < 0 && (ND[ND[c].a].k as int == N_ID && ND[ND[c].a].s == name && ND[c].n == na + 1 || ND[ND[c].a].k as int == N_DOT && ND[ND[c].a].s == name && ND[c].n == na)
+recursive itm(c int) bool: called(c, NAME_ITEMS, 0) || (called(c, NAME_SORTED, 0) || called(c, NAME_REVERSED, 0)) && ND[ND[c].a].k as int == N_ID && itm(kid(c, 0))
+forfix(n int) i32[>..]:
+	fx i32[>..] ~= []; rc := ND[n].a
+	if !he(): return fx
+	if ND[rc].k as int == N_CALL && ND[rc].b < 0 && ND[rc].n >= 1 && ND[rc].n <= 2 && ND[ND[rc].a].k as int == N_ID && ND[ND[rc].a].s == NAME_RANGE: if ND[rc].n == 2 { ND[n].b = kid(rc, 1) } ND[n].a = kid(rc, 0)
+	if ND[n].c >= 0 && called(rc, NAME_ENUMERATE, 0) && ND[ND[rc].a].k as int == N_ID: v := ND[n].s; ND[n].s = ND[n].c; ND[n].c = v; ND[n].a = kid(rc, 0)
+	if ND[n].c >= 0 && itm(rc):
+		t := ND[n].t; it := intern(str("_hc_it", t)); fx.push(mkdecl(ND[n].s, mkdot(mkid(it, t), NAME_KEY, t), t, 0) as i32); fx.push(mkdecl(ND[n].c, mkdot(mkid(it, t), NAME_VAL, t), t, 0) as i32); ND[n].s = it; ND[n].c = -1
+	fx
+recursive pcomp(e int, st int) int:
+	c := intern(str("_hc_comp", st)); fs i32[>..] ~= []; cs i32[>..] ~= []
+	while is(K_FOR):
+		f := mk(N_FOR, P - 1); ND[f].l = -1; ND[f].n = -1; ND[f].s = ident("for binding"); if is(T_COMMA) { ND[f].c = ident("for index binding") }
+		ex(K_IN, "comprehension"); ND[f].a = pexpr(); fs.push(f as i32); cs.push(-1)
+		while is(K_IF): cs[cs.len - 1] = pexpr() as i32
+	pu := mk(N_CALL, st); ND[pu].a = mkdot(mkid(c, st), NAME_PUSH, st); m := wbeg(); WS.push(e); setl(pu, m)
+	body ~= pu
+	q ~= fs.len - 1
+	while q >= 0:
+		f := fs[q] as int; fx := forfix(f); ss i32[>..] ~= []; ss.append(fx)
+		if cs[q] >= 0: i := mk(N_IF, st); ND[i].a = cs[q]; ND[i].b = mkblock(st, [body as i32], -1); ss.push(i as i32) else: ss.push(body as i32)
+		ND[f].d = mkblock(st, ss, -1); body = f; q -= 1
+	eb := mk(N_EBLOCK, st); ND[eb].a = mkblock(st, [mkdecl(c, mk(N_ARR, st), st, V_VAR) as i32, body as i32], mkid(c, st)); eb
 pmatch() int:
 	st := P; nx()
 	n := mk(N_MATCH, st)
@@ -295,21 +326,28 @@ binprec(k int) int:
 	if k == T_LT || k == T_GT || k == T_LTEQ || k == T_GTEQ: return 4
 	if k == T_EQ || k == T_NEQ || k == T_DOTEQ || k == T_DOTNEQ: return 3
 	if k == T_ANDAND { return 2 } if k == T_OROR: return 1
+	if k == K_IN && he(): return 4
 	0
 recursive pbin(minp int) int:
-	l ~= pun()
+	l ~= pun(); lc ~= -1
 	loop:
 		if STMTE: return l
-		pr := binprec(tk())
+		ni := he() && tk() == T_NOT && TK[P].v != 0 && tkat(P + 1) == K_IN
+		pr := if ni { 4 } else { binprec(tk()) }
 		if pr < minp || pr == 0: return l
-		op := tk(); st := P; nx()
+		op := tk(); st := P; nx(); if ni { nx() }
 		s := sub_begin(NOSL)
 		r := pbin(pr + 1)
 		sub_end(s)
-		n := mk(N_BIN, st); ND[n].op = op; ND[n].a = l; ND[n].b = r
-		l = n
+		if op == T_DIV && TK[st].v == 3: l = mkcall(NAME_FLOORDIV, st, l, r); continue
+		if op == K_IN || ni: c := mkcall(NAME_CONTAINS, st, r, l); l = if ni { u := mk(N_UN, st); ND[u].op = T_NOT as u8; ND[u].a = c; u } else { c }; continue
+		rc := he() && (op == T_LT || op == T_GT || op == T_LTEQ || op == T_GTEQ) && ND[r].k as int <= N_ID
+		if lc >= 0 && rc: c2 := mk(N_BIN, st); ND[c2].op = op; ND[c2].a = lc; ND[c2].b = r; n2 := mk(N_BIN, st); ND[n2].op = T_ANDAND; ND[n2].a = l; ND[n2].b = c2; l = n2; lc = r; continue
+		n := mk(N_BIN, st); ND[n].op = op; ND[n].a = l; ND[n].b = r; if op == T_PLUS && he() { ND[n].c = mkcall(NAME_STR, st, l, r) }
+		l = n; lc = if rc { r } else { -1 }
 recursive pun() int:
 	k := tk()
+	if k == T_NOT && TK[P].v != 0: st := P; nx(); s := sub_begin(NOSL); a := pbin(3); sub_end(s); n := mk(N_UN, st); ND[n].op = T_NOT as u8; ND[n].a = a; return n
 	if k == T_MINUS || k == T_NOT || k == T_BITNOT || k == T_AND:
 		st := P; nx()
 		s := sub_begin(NOSL)
@@ -317,7 +355,9 @@ recursive pun() int:
 		sub_end(s)
 		n := mk(N_UN, st); ND[n].op = k; ND[n].a = a
 		return n
-	ppost()
+	e := ppost()
+	if tk() == T_MUL && TK[P].v == 2 && !STMTE: st := P; nx(); s := sub_begin(NOSL); r := pun(); sub_end(s); return mkcall(NAME_POW, st, e, r)
+	e
 ppost() int:
 	e ~= pprim()
 	loop:
@@ -340,7 +380,7 @@ pcall(callee int, tyargs int, st int) int:
 	s := sub_begin(false)
 	m := wbeg()
 	while tk() != T_RP && tk() != T_EOF:
-		WS.push(pexpr()); if !is(T_COMMA): break
+		g := pexpr(); WS.push(if he() && tk() == K_FOR { pcomp(g, P) } else { g }); if !is(T_COMMA): break
 	ex(T_RP, "call arguments")
 	setl(c, m)
 	sub_end(s)
@@ -351,8 +391,10 @@ pindex(obj int) int:
 	st := P; nx()
 	s := sub_begin(false)
 	lo ~= -1; lfe ~= false
-	sl ~= tk() == T_DOTDOT
-	if !sl: lfe = is(T_XOR); lo = pexpr(); sl = tk() == T_DOTDOT
+	if he() && tk() == T_CC && tkat(P + 1) == T_MINUS && tkat(P + 2) == T_INT && TK[P + 2].v == 1 && tkat(P + 3) == T_RB: P += 4; sub_end(s); return mkcall(NAME_REVERSED, st, obj, -1)
+	sl ~= tk() == T_DOTDOT || he() && tk() == T_COLON
+	if !sl: lfe = is(T_XOR); lo = pexpr(); sl = tk() == T_DOTDOT || he() && tk() == T_COLON
+	if he() && lo >= 0 && ND[lo].k as int == N_UN && ND[lo].op as int == T_MINUS && ND[ND[lo].a].k as int == N_INT: lfe = true; lo = ND[lo].a
 	r ~= -1
 	if sl:
 		nx()
@@ -360,9 +402,12 @@ pindex(obj int) int:
 		if lfe: ND[r].fl = 1
 		if tk() != T_RB:
 			if is(T_XOR) { ND[r].fl |= 2 } { q_ := pexpr(); ND[r].c = q_ }
+			hi := ND[r].c; if he() && ND[hi].k as int == N_UN && ND[hi].op as int == T_MINUS && ND[ND[hi].a].k as int == N_INT: ND[r].fl |= 2; ND[r].c = ND[hi].a
 	else:
-		if lfe: perr("'^' bounds are only valid in slices")
-		r = mk(N_IDX, st); ND[r].a = obj; ND[r].b = lo
+		if lfe && he(): sr := mk(N_SLICE, st); ND[sr].a = obj; ND[sr].b = lo; ND[sr].fl = 1; z := mk(N_INT, st); r = mk(N_IDX, st); ND[r].a = sr; ND[r].b = z
+		else:
+			if lfe: perr("'^' bounds are only valid in slices")
+			r = mk(N_IDX, st); ND[r].a = obj; ND[r].b = lo; if he() && (ND[obj].k as int == N_ID || ND[obj].k as int == N_DOT) { ND[r].c = mkcall(NAME_DICTAT, st, obj, lo) }
 	ex(T_RB, "indexing")
 	sub_end(s)
 	r
@@ -378,6 +423,7 @@ pprim() int:
 	if k == K_SELF: nx(); return mk(N_SELF, st)
 	if k == T_LP: nx(); s := sub_begin(false); e := pexpr(); ex(T_RP, "parenthesized expression"); sub_end(s); return e
 	if k == T_LB: return parray()
+	if (k == K_INT || k == K_REAL) && tkat(P + 1) == T_LP && he(): f := mk(N_ID, st); ND[f].s = if k == K_INT { NAME_TOINT } else { NAME_TOREAL }; nx(); nx(); return pcall(f, -1, st)
 	if k == T_IDENT || k == T_CC:
 		name := qname("expression")
 		if tk() == T_LT:
@@ -426,6 +472,7 @@ parray() int:
 	else:
 		if tk() != T_RB:
 			first := pexpr()
+			if he() && tk() == K_FOR: ec := pcomp(first, st); ND[a].k = N_EBLOCK; ND[a].a = ND[ec].a; ex(T_RB, "list comprehension"); sub_end(s); return a
 			if is(T_SEMI):
 				ND[a].a = first; { q_ := pexpr(); ND[a].b = q_ }
 			else: m := wbeg(); WS.push(first); while is(T_COMMA) && tk() != T_RB { WS.push(pexpr()) } setl(a, m)
@@ -544,10 +591,12 @@ pstmt(b int) bool:
 	if !STMTE:
 		o := tk()
 		if o == T_ASSIGN || o == T_DOTASSIGN || o == T_PLUSEQ || o == T_MINUSEQ || o == T_MULEQ || o == T_DIVEQ || o == T_MODEQ || o == T_ANDEQ || o == T_OREQ || o == T_XOREQ || o == T_SHLEQ || o == T_SHREQ:
-			nx(); r := pexpr(); semi("assignment statement")
-			n := mk(N_ASSIGN, st); ND[n].op = o; ND[n].a = e; ND[n].b = r; WS.push(n); return true
+			nx(); r0 := pexpr(); semi("assignment statement")
+			fd := o == T_DIVEQ && TK[st].v == 3 && ND[e].k as int == N_ID
+			r := if fd { mkcall(NAME_FLOORDIV, st, mkid(ND[e].s, ND[e].t), r0) } else { r0 }
+			n := mk(N_ASSIGN, st); ND[n].op = if fd { T_ASSIGN } else { o }; ND[n].a = e; ND[n].b = r; if o == T_PLUSEQ && he() { ND[n].c = mkcall(NAME_EXTEND, st, e, r) } WS.push(n); return true
 		if o == T_INC || o == T_DEC: nx(); semi("increment statement"); n := mk(N_INCDEC, st); ND[n].op = o; ND[n].a = e; WS.push(n); return true
-		if o == T_COMMA: WS.push(pmulti(e, st)); return true
+		if o == T_COMMA: r := pmulti(e, st); if r >= 0 { WS.push(r) } return true
 	if is(T_SEMI): WS.push(e); return true
 	if is(T_RC): ND[b].a = e; return false
 	if STMTE: WS.push(e); return true
@@ -563,8 +612,17 @@ pmulti(first int, st int) int:
 	if tk() != T_ASSIGN: perr("several values exist only in `return a, b;` and in a call's results, so a block or branch cannot end in `a, b`: return from each branch instead (§7.1)")
 	nx()
 	n := mk(N_ASSIGN, st); ND[n].op = T_COMMA as u8; ND[n].a = tl; { q_ := pexpr(); ND[n].b = q_ }
+	if he() && tk() == T_COMMA: return ptup(tl, ND[n].b, st)
 	semi("assignment statement")
 	n
+ptup(tl int, first int, st int) int:
+	rs i32[>..] ~= [first as i32]; while is(T_COMMA) { rs.push(pexpr() as i32) }
+	semi("assignment statement")
+	if rs.len != ND[tl].n: perr("a tuple assignment needs as many values as targets"); return -1
+	ns i32[>..] ~= []
+	for r, i rs: ns.push(intern(str("_hc_tup", st, "_", i)) as i32); WS.push(mkdecl(ns[i], r, st, 0))
+	for x, i ns: a := mk(N_ASSIGN, st); ND[a].op = T_ASSIGN as u8; ND[a].a = kid(tl, i); ND[a].b = mkid(x, st); WS.push(a)
+	-1
 pguard(b int):
 	st := P; nx()
 	c := pscrut()
@@ -595,6 +653,7 @@ pvdecl(glob bool) int:
 	if is(T_DOTASSIGN): fl |= V_BYREF
 	if fl & V_BYREF != 0 || is(T_ASSIGN): il := mk(N_LIST, P); m2 := wbeg(); loop { WS.push(pexpr()); if !is(T_COMMA) { break } } setl(il, m2); ND[v].b = il
 	ND[v].fl = fl
+	if he() && !glob && fl & V_VAR != 0 && ND[v].a < 0 && ND[v].b >= 0 && ND[ND[v].b].n == 1 && ND[kid(ND[v].b, 0)].k as int == N_STR: LS[ND[ND[v].b].l] = mkcall(NAME_STR, st, kid(ND[v].b, 0), -1) as i32
 	if glob:
 		if ND[v].b < 0 && fl & V_VAR == 0: perr("let and const global declarations require an initializer")
 		if ND[v].n != 1: perr("global declarations declare a single name")
@@ -748,7 +807,7 @@ ptop():
 	m byte[>..] ~= []; format(m, "top-level declaration expected, found '", cur_text(), "'"); perr(m);
 parse_init():
 	lex_init()
-	if NAME_FROM < 0: NAME_FROM = intern("from"); NAME_INLINE = intern("inline"); NAME_CHECKFREE = intern("checkfree"); NAME_LUT = intern("lut"); NAME_UNDER = intern("_"); NAME_UPTO = intern("upto"); NAME_FIELDS = intern("fields"); NAME_TYPES = intern("types"); NAME_VARIANTS = intern("variants"); NAME_STD = intern("std")
+	if NAME_FROM < 0: NAME_FROM = intern("from"); NAME_INLINE = intern("inline"); NAME_CHECKFREE = intern("checkfree"); NAME_LUT = intern("lut"); NAME_UNDER = intern("_"); NAME_UPTO = intern("upto"); NAME_FIELDS = intern("fields"); NAME_TYPES = intern("types"); NAME_VARIANTS = intern("variants"); NAME_STD = intern("std"); NAME_POW = intern("pow"); NAME_TOINT = intern("to_int"); NAME_TOREAL = intern("to_real"); NAME_RANGE = intern("range"); NAME_CONTAINS = intern("contains"); NAME_REVERSED = intern("reversed"); NAME_FLOORDIV = intern("floor_div"); NAME_ENUMERATE = intern("enumerate"); NAME_ITEMS = intern("items"); NAME_KEY = intern("key"); NAME_VAL = intern("val"); NAME_PUSH = intern("push"); NAME_SORTED = intern("sorted"); NAME_DICTAT = intern("dict_at"); NAME_STR = intern("str"); NAME_EXTEND = intern("extend")
 parse_file(path const byte[:]) bool:
 	parse_init()
 	t0 := TK.len

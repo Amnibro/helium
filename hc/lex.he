@@ -75,12 +75,74 @@ esc(p int&, f int, line int) int:
 	-1
 lay_else(p0 int) bool:
 	p ~= p0; d ~= 0; loop { c u8 := SRC[p]; if c == 0 || c == '\n' || c == '#' { return false } if c == '"' || c == '\'' { p++; while SRC[p] != c && SRC[p] != 0 && SRC[p] != '\n' { if SRC[p] == '\\' { p++ } p++ } } if c == '(' || c == '[' { d++ } if c == ')' || c == ']' { d-- } if d == 0 && c == '{' { return false } if d == 0 && c == ':' && SRC[p + 1] != ':' { return true } if d == 0 && c == ':' { p++ } p++ } false
+qend(s const byte[:], j0 int, q byte) int:
+	j ~= j0; while j < s.len && s[j] != q && s[j] != '\n' { if s[j] == '\\' { j += 1 } j += 1 }; if j < s.len && s[j] == q { j + 1 } else { j }
+he_pre(s const byte[:], o byte[>..]&):
+	i ~= 0
+	while i < s.len:
+		c := s[i]
+		if c == '#': while i < s.len && s[i] != '\n' { o.push(s[i]); i += 1 }; continue
+		if c == '"' && i + 2 < s.len && s[i + 1] == '"' && s[i + 2] == '"': j ~= i + 3; while j + 2 < s.len && !(s[j] == '"' && s[j + 1] == '"' && s[j + 2] == '"') { j += 1 }; j = min(j + 3, s.len); o.append(s[i..j]); i = j; continue
+		if c == '"': j := qend(s, i + 1, '"'); o.append(s[i..j]); i = j; continue
+		if c == 'f' && i + 1 < s.len && (s[i + 1] == '"' || s[i + 1] == '\'') && (i == 0 || !idc(s[i - 1])): i = fstr(s, i + 1, o); continue
+		if c == '\'':
+			j := qend(s, i + 1, '\''); b := s[i + 1..max(j - 1, i + 1)]
+			if b.len == 1 || b.len > 0 && b[0] == '\\': o.append(s[i..j]) else: o.push('"'); for x in b { if x == '"' { o.push('\\') } o.push(x) } o.push('"')
+			i = j; continue
+		o.push(c); i += 1
+fstr(s const byte[:], j0 int, o byte[>..]&) int:
+	q := s[j0]; i ~= j0 + 1; lit byte[>..] ~= []; np ~= 0; o.append("str(")
+	flush(): if lit.len > 0 { if np > 0 { o.append(", ") } o.push('"'); o.append(lit[..]); o.push('"'); np += 1; lit.clear() }
+	while i < s.len && s[i] != q && s[i] != '\n':
+		ch := s[i]
+		if ch == '\\': lit.push(ch); if i + 1 < s.len { lit.push(s[i + 1]) }; i += 2; continue
+		if ch == '{' && i + 1 < s.len && s[i + 1] == '{': lit.push('{'); i += 2; continue
+		if ch == '}' && i + 1 < s.len && s[i + 1] == '}': lit.push('}'); i += 2; continue
+		if ch == '{':
+			flush(); k ~= i + 1; d ~= 0; cl ~= -1
+			while k < s.len && s[k] != '\n': x := s[k]; if x == '(' || x == '[' || x == '{' { d += 1 } if x == ')' || x == ']' || x == '}' { if d == 0 { break } d -= 1 } if x == ':' && d == 0 && cl < 0 { cl = k } if x == '"' || x == '\'' { k = qend(s, k + 1, x as byte) - 1 } k += 1
+			e ~= s[i + 1..(if cl >= 0 { cl } else { k })]; sp := if cl >= 0 { s[cl + 1..k] } else { s[k..k] }
+			if e.len > 1 && e[e.len - 2] == '!': e = e[..e.len - 2]
+			if e.len > 0 && e[e.len - 1] == '=': e = e[..e.len - 1]
+			if np > 0: o.append(", ")
+			fspec(o, e, sp); np += 1; i = k + 1; continue
+		if q == '\'' && ch == '"': lit.append("\\\""); i += 1; continue
+		lit.push(ch); i += 1
+	flush()
+	if np == 0: o.append("\"\"")
+	o.push(')')
+	if i < s.len && s[i] == q { i + 1 } else { i }
+fspec(o byte[>..]&, e const byte[:], sp const byte[:]):
+	if sp.len == 0: o.push('('); o.append(e); o.push(')'); return
+	fl ~= ' ' as byte; al ~= 0 as byte; z ~= false; w ~= -1; pr ~= -1; ty ~= 0 as byte; j ~= 0
+	if sp.len >= 2 && (sp[1] == '<' || sp[1] == '>' || sp[1] == '^'): fl = sp[0]; al = sp[1]; j = 2
+	elif sp[0] == '<' || sp[0] == '>' || sp[0] == '^': al = sp[0]; j = 1
+	if j < sp.len && (sp[j] == '+' || sp[j] == '-' || sp[j] == ' '): j += 1
+	hx ~= false; if j < sp.len && sp[j] == '#': hx = true; j += 1
+	if j < sp.len && sp[j] == '0': z = true; j += 1
+	while j < sp.len && dig(sp[j]): w = max(w, 0) * 10 + (sp[j] - '0'); j += 1
+	if j < sp.len && (sp[j] == ',' || sp[j] == '_'): j += 1
+	if j < sp.len && sp[j] == '.': j += 1; pr = 0; while j < sp.len && dig(sp[j]) { pr = pr * 10 + (sp[j] - '0'); j += 1 }
+	if j < sp.len: ty = sp[j]
+	v byte[>..] ~= []
+	if ty == 'f' || ty == 'F' || ty == 'e' || ty == 'g' || ty == '%' || ty == 0 && pr >= 0: format(v, "fmt(real(", e, ")", if ty == '%' { " * 100.0" } else { "" }, ", ", if pr >= 0 { pr } else { 6 }, ")"); if ty == '%' { s0 := str("str(", v[..], ", \"%\")"); v.clear(); v.append(s0[..]) }
+	elif hx && (ty == 'x' || ty == 'b' || ty == 'o'): format(v, if ty == 'x' { "hex(" } else { if ty == 'b' { "bin(" } else { "oct(" } }, e, ")")
+	elif ty == 'x' || ty == 'X' || ty == 'b' || ty == 'o': format(v, if ty == 'X' { "upper(" } else { "" }, "to_base(", e, ", ", if ty == 'b' { 2 } else { if ty == 'o' { 8 } else { 16 } }, ")", if ty == 'X' { ")" } else { "" })
+	else: format(v, "str(", e, ")")
+	if w < 0: o.append(v[..]); return
+	fc byte[>..] ~= ['\'']; if fl == '\'' || fl == '\\' { fc.push('\\') } fc.push(fl); fc.push('\'')
+	if al == '<': format(o, "ljust(", v[..], ", ", w, ", ", fc[..], ")")
+	elif al == '>': format(o, "rjust(", v[..], ", ", w, ", ", fc[..], ")")
+	elif al == '^': format(o, "center(", v[..], ", ", w, ", ", fc[..], ")")
+	elif z: format(o, "zfill(", v[..], ", ", w, ")")
+	else: format(o, "fstr_w(", e, ", ", v[..], ", ", w, ")")
 lex_file(path const byte[:]) bool:
 	lex_init()
 	body byte[>..] ~= []
 	ov ~= -1; for o, i OVS { if OVB[o.p0..o.p1] == path { ov = i } }
 	if ov >= 0 { body.append(OVB[OVS[ov].t0..OVS[ov].t1]) } else if !read_file(path, body) { LERR.append("cannot read "); LERR.append(path); return false }
 	if path.len > 5 && path[^5..] == ".amni" && lut_find(body[..], "lut fn ", 0) >= 0: lb byte[>..] ~= []; if !lut_desugar(body[..], path, FILES.len == 0, lb) { return false } body.clear(); body.append(lb[..])
+	if path.len > 3 && path[^3..] == ".he": hb byte[>..] ~= []; he_pre(body[..], hb); body.clear(); body.append(hb[..])
 	f := FILES.len
 	base := SRC.len
 	skip := if body.len >= 3 && body[0] == 0xEF && body[1] == 0xBB && body[2] == 0xBF { 3 } else { 0 }
@@ -103,7 +165,7 @@ lex_file(path const byte[:]) bool:
 			nl = false
 			while inl > 0: lay(T_RC, p); inl--
 			lt := TK.len - 1; top := ind[ind.len - 1]
-			isel := c == 'e' && SRC[p + 1] == 'l' && SRC[p + 2] == 's' && SRC[p + 3] == 'e' && !idc(SRC[p + 4])
+			isel := c == 'e' && SRC[p + 1] == 'l' && (SRC[p + 2] == 's' && SRC[p + 3] == 'e' || SRC[p + 2] == 'i' && SRC[p + 3] == 'f') && !idc(SRC[p + 4])
 			if TK[lt].k as int == T_COLON && TK[lt].lay: if c == 0 || col <= top { return lerr(f, line, "expected an indented block after ':'") } TK[lt].k = T_LC as u8; ind.push(col); ss = TK.len
 			else:
 				cl := if c == 0 { 0 } else { col }
@@ -147,9 +209,12 @@ lex_file(path const byte[:]) bool:
 			id := intern(SRC[s..p])
 			k ~= if id < NKW { T_KW + id } else { T_IDENT }
 			if !amni && k >= K_INT: k = T_IDENT
+			el ~= false
+			if he && k == T_IDENT && p - s <= 4: w := SRC[s..p]; if w == "and" { k = T_ANDAND } else if w == "or" { k = T_OROR } else if w == "not" { k = T_NOT } else if w == "elif" { k = K_ELSE; el = true }
 			if he && dep == 0 && k == K_ELSE && inl > 0 && lay_else(p): lay(T_RC, s); inl--
 			if he && dep == 0 && ind.len == 1 && TK.len == ss && p - s == 3 && SRC[s..p] == "use" && SRC[p] == ' ': k = K_IMPORT
-			put(k, s, p); TK[TK.len - 1].v = id
+			put(k, s, p); TK[TK.len - 1].v = if el { K_ELSE - T_KW } else { id }
+			if el: put(K_IF, s, p); TK[TK.len - 1].v = K_IF - T_KW
 			continue
 		if c == '\'':
 			p++; v := esc(p, f, line)
@@ -241,9 +306,11 @@ lex_file(path const byte[:]) bool:
 				else:
 					if n1 == '>': p++; k = T_ARROW else: k = T_MINUS
 		if c == '*':
-			if n1 == '=': p++; k = T_MULEQ else: k = T_MUL
+			if n1 == '=': p++; k = T_MULEQ else: if he && n1 == '*' { p++ } k = T_MUL
 		if c == '/':
-			if n1 == '=': p++; k = T_DIVEQ else: k = T_DIV
+			if he && n1 == '/': p++; k = if SRC[p] == '=' { p++; T_DIVEQ } else { T_DIV }
+			else:
+				if n1 == '=': p++; k = T_DIVEQ else: k = T_DIV
 		if c == '%':
 			if n1 == '=': p++; k = T_MODEQ else: k = T_MOD
 		if c == '=':
@@ -276,6 +343,8 @@ lex_file(path const byte[:]) bool:
 			if n1 == '=': p++; k = T_XOREQ else: k = T_XOR
 		if k < 0: return lerr(f, line, "illegal character")
 		put(k, s, p)
+		if k == T_MUL && p - s == 2: TK[TK.len - 1].v = 2
+		if (k == T_DIV || k == T_DIVEQ) && SRC[s + 1] == '/': TK[TK.len - 1].v = 3
 	true
 tok_text(t int) const byte[:]:
 	x := TK[t]; SRC[(x.s as int)..x.s + x.n]

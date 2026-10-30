@@ -313,6 +313,7 @@ static int64_t hr_span_regrow(hrv *v, int64_t idx, int64_t ol, int64_t nl) {
 }
 static inline bool hr_memeq(const void *a, const void *b, int64_t n) { return n == 0 || memcmp(a, b, (size_t)n) == 0; }
 static inline bool hr_streq(hsl a, hsl b) { return a.n == b.n && hr_memeq(a.p, b.p, a.n); }
+static inline int hr_strcmp(hsl a, hsl b) { int64_t n = a.n < b.n ? a.n : b.n; int c = n ? memcmp(a.p, b.p, (size_t)n) : 0; return c ? c : (a.n > b.n) - (a.n < b.n); }
 static inline hsl hr_str(const char *s, int64_t n) { return (hsl){ (uint8_t *)s, n }; }
 static inline void hr_ob_put(const void *p, int64_t n) { hr_append(&hr_ob, p, n, 1); if (hr_ob.n > 65536) hr_flush(); }
 static pthread_mutex_t hr_omu = PTHREAD_MUTEX_INITIALIZER;

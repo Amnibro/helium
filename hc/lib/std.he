@@ -16,6 +16,13 @@ next_pow2(x int) int:
 	p
 extern popcount(x uint) int = "hr_popcount"; extern clz(x uint) int = "hr_clz"; extern ctz(x uint) int = "hr_ctz"
 swap<T>(a T&, b T&): t T := a; a = b; b = t
+extern pow(x real, y real) real = "hr_pow"; extern pow(x f32, y f32) f32 = "hr_powf"
+pow(b int, e int) int: r ~= 1; x ~= b; k ~= e; while k > 0 { if k & 1 == 1 { r *= x }; x *= x; k >>= 1 }; r
+to_int<T>(x T) int: x as int
+to_int(s byte[:]) int: v, ok := parse_int(trim(s)); v
+to_int(c byte) int: if c >= '0' && c <= '9' { c - '0' } else { c as int }
+to_real<T>(x T) real: x as real
+to_real(s byte[:]) real: v, ok := parse_flt(trim(s)); v
 HASH_K uint := 11400714819323198485
 hash_mix(x uint) uint: h := x * HASH_K; h ^ (h >> 32)
 hash(x i8) uint: hash_mix(x as! uint)
@@ -72,12 +79,19 @@ position<T>(xs T[:], v T) int:
 	for x, i xs { if x == v { return i } }
 	-1
 contains<T>(xs T[:], v T) bool: position(xs, v) >= 0
+contains(s byte[:], sub byte[:]) bool: find(s, sub) >= 0
+range(n int) int[>..]: o int[>..] ~= []; for i n { o.push(i) }; o
+range(a int, b int) int[>..]: o int[>..] ~= []; for i a..b { o.push(i) }; o
+range(a int, b int, s int) int[>..]: o int[>..] ~= []; i ~= a; while s > 0 && i < b || s < 0 && i > b { o.push(i); i += s }; o
+any(xs bool[:]) bool: for x in xs { if x { return true } }; false
+all(xs bool[:]) bool: for x in xs { if !x { return false } }; true
 any<T, F>(xs T[:]) bool:
 	for x xs { if F(x) { return true } }
 	false
 all<T, F>(xs T[:]) bool:
 	for x xs { if !F(x) { return false } }
 	true
+count(s byte[:], sub byte[:]) int: n ~= 0; i ~= 0; while sub.len > 0 && i + sub.len <= s.len { if s[i..i + sub.len] == sub { n += 1; i += sub.len } else { i += 1 } }; n
 count<T, F>(xs T[:]) int:
 	n ~= 0; for x xs { if F(x) { n += 1 } }
 	n
@@ -106,6 +120,10 @@ lower_bound<T, F>(xs T[:]) int:
 	lo ~= 0; hi ~= xs.len; while lo < hi { m := lo + (hi - lo) / 2; if F(xs[m]) { lo = m + 1 } else { hi = m } }
 	lo
 binary_search<T>(xs T[:], v T) int, bool: lo := lower_bound(xs) { it < v }; return lo, lo < xs.len && xs[lo] == v
+find<T>(xs T[:], v T) int: position(xs, v)
+index<T>(xs T[:], v T) int: position(xs, v)
+index<T>(xs T[:], sub T[:]) int: find(xs, sub)
+count<T>(xs T[:], v T) int: n ~= 0; for x in xs { if x == v { n += 1 } }; n
 find<T>(xs T[:], sub T[:]) int:
 	if sub.len == 0: return 0
 	for i xs.len - sub.len + 1 { if xs[i] == sub[0] && xs[i..i + sub.len] == sub { return i } }
@@ -152,6 +170,28 @@ concat<T>(a T[:], b T[:]) T[>..]: o T[>..] ~= []; o.append(a); o.append(b); o
 fill<T>(xs T[:], v T): for i xs.len { xs[i] .= v }
 copy_into<T>(dst T[:], src T[:]): assert(dst.len == src.len); for i dst.len { dst[i] .= src[i] }
 reverse<T>(xs T[:]): i ~= 0; j ~= xs.len - 1; while i < j { swap_at(xs, i, j); i += 1; j -= 1 }
+extend<T>(xs T[>..]&, ys T[:]): xs.append(ys)
+extend(s byte[>..]&, c int): s.push(c as byte)
+title(s byte[:]) byte[>..]: o byte[>..] ~= []; p ~= false; for c in s { o.push(if isalpha(c) { if p { lower(c) } else { upper(c) } } else { c }); p = isalpha(c) }; o
+capitalize(s byte[:]) byte[>..]: o byte[>..] ~= []; for c, i in s { o.push(if i == 0 { upper(c) } else { lower(c) }) }; o
+median<T>(xs T[:]) real: s := sorted(xs); n := s.len; if n % 2 == 1 { real(s[n / 2]) } else { (real(s[n / 2 - 1]) + real(s[n / 2])) / 2.0 }
+mean<T>(xs T[:]) real: t ~= 0.0; for x in xs { t += real(x) }; t / real(xs.len)
+prod<T>(xs T[:]) T: p ~= 1 as T; for x in xs { p *= x }; p
+factorial(n int) int: p ~= 1; for i in 2..n + 1 { p *= i }; p
+comb(n int, k int) int: if k < 0 || k > n { return 0 } r ~= 1; for i in 0..min(k, n - k) { r = r * (n - i) / (i + 1) }; r
+perm(n int, k int) int: if k < 0 || k > n { return 0 } r ~= 1; for i in 0..k { r *= n - i }; r
+isqrt(n int) int: if n < 2 { return n } x ~= n; y ~= (x + 1) / 2; while y < x { x = y; y = (x + n / x) / 2 }; x
+pyb(n int, b int, p const byte[:]) byte[>..]: o byte[>..] ~= []; if n < 0 { o.push('-') } o.append(p); o.append(to_base(abs(n), b)); o
+bin(n int) byte[>..]: pyb(n, 2, "0b")
+oct(n int) byte[>..]: pyb(n, 8, "0o")
+hex(n int) byte[>..]: pyb(n, 16, "0x")
+reversed<T>(xs T[:]) T[>..]: o T[>..] ~= []; o.append(xs); reverse(o); o
+sorted<T>(xs T[:]) T[>..]: o T[>..] ~= []; o.append(xs); sort(o); o
+sorted<T, F>(xs T[:]) T[>..]: o T[>..] ~= []; o.append(xs); sort(o) { a, b => F(a, b) }; o
+floor_div(a int, b int) int: q := a / b; if a % b != 0 && (a < 0) != (b < 0) { q - 1 } else { q }
+floor_div(a real, b real) real: flt_floor(a / b)
+gcd(a int, b int) int: x ~= abs(a); y ~= abs(b); while y != 0 { t := x % y; x = y; y = t }; x
+lcm(a int, b int) int: if a == 0 || b == 0 { 0 } else { abs(a / gcd(a, b) * b) }
 to_lower(s byte[:]): for &c s { if c >= 'A' && c <= 'Z' { c += 32 } }
 to_upper(s byte[:]): for &c s { if c >= 'a' && c <= 'z' { c -= 32 } }
 sort_insertion<T, F>(v T[:]):
@@ -375,9 +415,34 @@ compare(a byte[:], b byte[:]) int:
 	for i min(a.len, b.len) { if a[i] < b[i] { return -1 }; if b[i] < a[i] { return 1 } }
 	if a.len < b.len { -1 } else if b.len < a.len { 1 } else { 0 }
 is_space(c byte) bool: c == ' ' || c == '\t' || c == '\n' || c == '\r'
+isdigit(c byte) bool: c >= '0' && c <= '9'
+isupper(c byte) bool: c >= 'A' && c <= 'Z'
+islower(c byte) bool: c >= 'a' && c <= 'z'
+isalpha(c byte) bool: isupper(c) || islower(c)
+isalnum(c byte) bool: isalpha(c) || isdigit(c)
+isspace(c byte) bool: is_space(c)
+isdigit(s byte[:]) bool: for c in s { if !isdigit(c) { return false } }; s.len > 0
+isalpha(s byte[:]) bool: for c in s { if !isalpha(c) { return false } }; s.len > 0
+isupper(s byte[:]) bool: u ~= false; for c in s { if islower(c) { return false }; if isupper(c) { u = true } }; u
+islower(s byte[:]) bool: u ~= false; for c in s { if isupper(c) { return false }; if islower(c) { u = true } }; u
+ord(c byte) int: c
+ord(s byte[:]) int: s[0]
+chr(n int) byte[>..]: o byte[>..] ~= []; o.push(n as byte); o
 trim_start(s byte[:]) byte[:]: i ~= 0; while i < s.len && is_space(s[i]) { i += 1 }; s[i..]
 trim_end(s byte[:]) byte[:]: e ~= s.len; while e > 0 && is_space(s[e - 1]) { e -= 1 }; s[..e]
 trim(s byte[:]) byte[:]: trim_end(trim_start(s))
+strip(s byte[:]) byte[:]: trim(s)
+lstrip(s byte[:]) byte[:]: trim_start(s)
+rstrip(s byte[:]) byte[:]: trim_end(s)
+startswith(s byte[:], p byte[:]) bool: starts_with(s, p)
+endswith(s byte[:], p byte[:]) bool: ends_with(s, p)
+rjust(s byte[:], w int, f byte = ' ') byte[>..]: o byte[>..] ~= []; for i w - s.len { o.push(f) }; o.append(s); o
+ljust(s byte[:], w int, f byte = ' ') byte[>..]: o byte[>..] ~= []; o.append(s); for i w - s.len { o.push(f) }; o
+center(s byte[:], w int, f byte = ' ') byte[>..]: l := max(w - s.len, 0) / 2; o byte[>..] ~= []; for i l { o.push(f) }; o.append(s); for i w - s.len - l { o.push(f) }; o
+zfill(s byte[:], w int) byte[>..]: if s.len > 0 && (s[0] == '-' || s[0] == '+') { o byte[>..] ~= []; o.push(s[0]); o.append(rjust(s[1..], w - 1, '0')); o } else { rjust(s, w, '0') }
+to_base(n int, b int) byte[>..]: o byte[>..] ~= []; format_int(o, n, b, 0, ' '); o
+fstr_w(s byte[:], t byte[:], w int) byte[>..]: ljust(t, w)
+fstr_w<T>(x T, t byte[:], w int) byte[>..]: rjust(t, w)
 split(s byte[:], sep byte) const byte[:][>..]: o const byte[:][>..] ~= []; each_split(s, sep) { o.push(it) }; o
 split(s byte[:], sep byte[:]) const byte[:][>..]: o const byte[:][>..] ~= []; each_split(s, sep) { o.push(it) }; o
 each_split<F>(s byte[:], sep byte): b ~= 0; for c, i s { if c == sep { F(s[b..i]); b = i + 1 } }; F(s[b..])
@@ -387,6 +452,7 @@ each_split<F>(s byte[:], sep byte[:]):
 	while i + sep.len <= s.len: if s[i..i + sep.len] == sep { F(s[b..i]); i += sep.len; b = i } else { i += 1 }
 	F(s[b..])
 words(s byte[:]) const byte[:][>..]: o const byte[:][>..] ~= []; each_word(s) { o.push(it) }; o
+split(s byte[:]) const byte[:][>..]: words(s)
 each_word<F>(s byte[:]):
 	i ~= 0
 	while i < s.len:
@@ -395,7 +461,19 @@ each_word<F>(s byte[:]):
 		while i < s.len && !is_space(s[i]): i += 1
 		if i > b: F(s[b..i])
 join<T>(out byte[>..]&, parts T[:], sep byte[:]): for p, i parts { if i > 0 { out.append(sep) }; out.append(p) }
+join<T>(sep byte[:], parts T[:]) byte[>..]: o byte[>..] ~= []; join(o, parts, sep); o
+join(sep byte[:], parts byte[:]) byte[>..]: o byte[>..] ~= []; for c, i in parts { if i > 0 { o.append(sep) }; o.push(c) }; o
+join<T>(sep int, parts T[:]) byte[>..]: o byte[>..] ~= []; for p, i in parts { if i > 0 { o.push(sep as byte) }; o.append(p) }; o
+join(sep int, parts byte[:]) byte[>..]: o byte[>..] ~= []; for c, i in parts { if i > 0 { o.push(sep as byte) }; o.push(c) }; o
+upper(s byte[:]) byte[>..]: o byte[>..] ~= []; o.append(s); to_upper(o); o
+upper(c byte) byte: if c >= 'a' && c <= 'z' { c - 32 } else { c }
+lower(c byte) byte: if c >= 'A' && c <= 'Z' { c + 32 } else { c }
+lower(s byte[:]) byte[>..]: o byte[>..] ~= []; o.append(s); to_lower(o); o
+fmt(x real, d int) byte[>..]: o byte[>..] ~= []; format_flt(o, x, d); o
 format_replaced(out byte[>..]&, s byte[:], old byte[:], with byte[:]): f ~= true; each_split(s, old) { if !f { out.append(with) }; f = false; out.append(it) }
+replace(s byte[:], old byte[:], with byte[:]) byte[>..]: o byte[>..] ~= []; format_replaced(o, s, old, with); o
+replace(s byte[:], old int, with int) byte[>..]: o byte[>..] ~= []; for c in s { o.push(if c == old { with as byte } else { c }) }; o
+repeat(s byte[:], n int) byte[>..]: o byte[>..] ~= []; for i n { o.append(s) }; o
 utf8_cont(s byte[:], i int) int: s[i] & 0x3F
 each_utf8<F>(s byte[:]):
 	i ~= 0

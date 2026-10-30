@@ -425,6 +425,7 @@ recursive gbin(n int):
 		ta := fin(a); tb := fin(b)
 		if m == 1: if ord { format(O, "({ uint64_t _l", q, " = (uint64_t)("); gx(a); format(O, "); _l", q, " "); ow(cmp_op(o)); ow(" (uint64_t)("); gx(b); ow("); })"); return } ow("((uint64_t)("); gx(a); ow(") "); ow(cmp_op(o)); ow(" (uint64_t)("); gx(b); ow("))"); return
 		if m == 2: if ord { format(O, "({ hsl _l", q, " = "); gas(a); ow("; "); if o == T_NEQ { ow("!") } format(O, "hr_streq(_l", q, ", "); gas(b); ow("); })"); return } if o == T_NEQ { ow("!") } ow("hr_streq("); gas(a); ow(", "); gas(b); ow(")"); return
+		if m == 4: if ord { format(O, "({ hsl _l", q, " = "); gas(a); format(O, "; hr_strcmp(_l", q, ", "); gas(b); ow(") "); ow(cmp_op(o)); ow(" 0; })"); return } ow("(hr_strcmp("); gas(a); ow(", "); gas(b); ow(") "); ow(cmp_op(o)); ow(" 0)"); return
 		if m == 3:
 			et := deref(if TY[ta].k == TY_VARIANT || TY[ta].k == TY_ARRLIT { tb } else { ta }); gen_heq(et)
 			if ord: ow("({ "); if hsl_ty(et) { ow("hsl"); } else { ct(et); } format(O, " _l", q, " = "); if hsl_ty(et) { gas(a); } else { gxas(a, et); } ow("; "); if o == T_NEQ { ow("!") } ow("heq"); oi(et); format(O, "(_l", q, ", "); if hsl_ty(et) { gas(b); } else { gxas(b, et); } ow("); })"); return
@@ -1418,7 +1419,7 @@ recursive gbuiltin0(n int):
 		gerr(n, "unsupported limited-array operation"); return
 	if TY[rt].k == TY_SLICE || is_fix(rt):
 		if b == B_INDEXOF: ow("({ hsl _v"); oi(p); ow(" = "); gas(recv); ow("; "); ct(e); ow(" _x"); oi(p); ow(" = "); gx(arg(1)); format(O, "; int64_t _r", p, " = -1; for (int64_t _j = 0; _j < _v", p, ".n; _j++) if ("); heq_val_s(e, p); format(O, ") { _r", p, " = _j; break; } _r", p, "; })"); return
-		gerr(n, "this operation needs a resizable array"); return
+		gerr(n, "push, append, pop, resize and clear need a growable array: declare it with its type, as in `xs int[>..] ~= [1, 2]`, or start from `[]`"); return
 	if b == B_PUSH && relpush(n, recv, arg(1), e, p, false): return
 	if b == B_PUSH && is_rel(e): rpd := relpool(e); c := arg(1); ow("({ hrv *_v"); oi(p); ow(" = "); grecv_ptr(recv); ow("; "); ct(e); ow(" *_p"); oi(p); ow(" = ("); ct(e); format(O, "*)hr_grow(_v", p, ", 1, sizeof *_p", p, "); "); ow(if rpd >= 0 { "hr_pst(_p" } else { "hr_rst(_p" }); oi(p); ow(", (void*)("); if TY[fin(c)].k == TY_REF || TY[fin(c)].k == TY_NULL { gx(c); } else { gaddr(c); } if rpd >= 0 { format(O, "), (uint8_t*)g", rpd, ".b, ", (TY[e].fl as int) & RF_OPT != 0, "); _p", p, "; })"); } else { format(O, "), ", (TY[e].fl as int) & RF_OPT != 0, ", ", 8 << ((TY[e].c as int) & 3), "); _p", p, "; })"); } return
 	ow("({ hrv *_v"); oi(p); ow(" = "); grecv_ptr(recv); ow("; ")

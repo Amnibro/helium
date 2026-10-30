@@ -47,3 +47,9 @@ remove<K, V>(d dictionary<K, V>&, key K) bool:
 clear<K, V>(d dictionary<K, V>&): for &s d.slots { s.tag = 0 }; for &c d.ctrl { c = 128 }; d.count = 0
 reserve<K, V>(d dictionary<K, V>&, n int): need := max(next_pow2((n * 3 + 1) / 2), 16); if need > d.slots.len: dgrow(d, need)
 each<K, V, F>(d dictionary<K, V>&): for &s d.slots { if s.tag != 0 { F(s.key, &s.val) } }
+keys<K, V>(d dictionary<K, V>&) K[>..]: o K[>..] ~= []; for &s d.slots { if s.tag != 0 { o.push(s.key) } }; o
+values<K, V>(d dictionary<K, V>&) V[>..]: o V[>..] ~= []; for &s d.slots { if s.tag != 0 { o.push(s.val) } }; o
+items<K, V>(d dictionary<K, V>&) dictionary_slot<K, V>[>..]: o dictionary_slot<K, V>[>..] ~= []; for &s d.slots { if s.tag != 0 { o.push(s) } }; o
+sorted<K, V>(xs dictionary_slot<K, V>[:]) dictionary_slot<K, V>[>..]: o dictionary_slot<K, V>[>..] ~= []; o.append(xs); sort(o) { a, b => a.key < b.key }; o
+dict_at<K, V>(d dictionary<K, V>&, key K) V&: i, n := dput(d, key, default<V>()); d.slots[i].val
+get<K, V>(d dictionary<K, V>&, key K, v0 V) V: i := dat(d, key); if i < 0 { v0 } else { d.slots[i].val }

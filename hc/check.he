@@ -198,7 +198,7 @@ recursive conv(n int, t int) bool:
 	if fk == TY_VOID && ends(n): return true
 	nk := ND[n].k
 	if (nk == N_BLOCK || nk == N_IF || nk == N_MATCH) && fk != TY_VOID && tkd == TY_REF && TY[t].c < 0 && TY[t].fl & RF_OPT == 0 && deref(f) == TY[t].a && tail_place(n): conv_tail(n, t); set_t(n, t); return true
-	if (nk == N_BLOCK || nk == N_EBLOCK || nk == N_IF || nk == N_MATCH || nk == N_LOOP) && fk != TY_VOID && (fk == TY_VARIANT && tkd == TY_ENUM && TY[f].a == TY[t].a || conv_ok(if fk == TY_REF && TY[f].c < 0 { TY[f].a as int } else { f }, t, n) && (tkd == TY_SLICE || fk == TY_REF) || (nk == N_BLOCK || nk == N_EBLOCK) && lp_tail(n)): conv_tail(n, t); set_t(n, t); return true
+	if (nk == N_BLOCK || nk == N_EBLOCK || nk == N_IF || nk == N_MATCH || nk == N_LOOP) && fk != TY_VOID && !(nk == N_EBLOCK && tkd == TY_SLICE && fk == TY_ARR && !lp_tail(n)) && (fk == TY_VARIANT && tkd == TY_ENUM && TY[f].a == TY[t].a || conv_ok(if fk == TY_REF && TY[f].c < 0 { TY[f].a as int } else { f }, t, n) && (tkd == TY_SLICE || fk == TY_REF) || (nk == N_BLOCK || nk == N_EBLOCK) && lp_tail(n)): conv_tail(n, t); set_t(n, t); return true
 	if tkd == TY_BOOL && fk == TY_REF && TY[f].fl & RF_OPT != 0: set_cv(n, T_BOOL); return true
 	if tkd == TY_REF && TY[t].c < 0 && fk != TY_NULL && fk != TY_REF:
 		if tclass(t) >= 0: ok := conv(n, TY[t].a); if ok && cv(n) < 0 { set_cv(n, t) } return ok
@@ -274,7 +274,7 @@ recursive default_t(n int) int:
 	if k == TY_ARRLIT:
 		x := ND[n]
 		e ~= -1
-		if x.a >= 0: e = default_t(x.a); cnt, u0, ok := cval(x.b); conv(x.b, T_I64); a := t_arr(e, A_FIXED, cnt, -1); set_t(n, a); return a
+		if x.a >= 0: e = default_t(x.a); cnt, u0, ok := cval(x.b); conv(x.b, T_I64); a := if ok { t_arr(e, A_FIXED, cnt, -1) } else { t_arr(e, A_GROW, -1, -1) }; set_t(n, a); return a
 		for i x.n:
 			c := kid(n, i); ct := at(c); if !is_pending(ct): e = if e >= 0 && e != ct && (TY[e].k == TY_VARIANT || TY[e].k == TY_ENUM) && (TY[ct].k == TY_VARIANT || TY[ct].k == TY_ENUM) && TY[e].a == TY[ct].a { t_enum(TY[e].a, TY[e].fl & 1 != 0 && TY[e].k == TY_ENUM) } else { ct }
 		if e < 0 && x.n > 0: e = default_t(kid(n, 0)); if TY[e].k == TY_ARR && TY[e].s as int == A_FIXED && !is_fixed(TY[e].a as int) { e = t_arr(TY[e].a as int, A_VAR, -1, 6) }
@@ -369,6 +369,9 @@ recursive ck_bin(n int, want int) int:
 	if cmp && (TY[da].k == TY_INT && TY[db].k == TY_INT) && is_signed(da) != is_signed(db) && (ibits(da) == 64 || ibits(db) == 64) && !widens(da, db) && !widens(db, da):
 		set_x(n, 1)
 		return set_t(n, T_BOOL)
+	if o == T_PLUS && x.c >= 0 && (TY[da].k == TY_STRLIT || is_byte_arr(da)) && (TY[db].k == TY_STRLIT || is_byte_arr(db)): ND[n] = ND[x.c]; return ck(n, want)
+	if cmp && o != T_EQ && o != T_NEQ && (TY[da].k == TY_STRLIT || is_byte_arr(da)) && (TY[db].k == TY_STRLIT || is_byte_arr(db)): if TY[da].k == TY_STRLIT { set_t(a, TT_STR) } if TY[db].k == TY_STRLIT { set_t(b, TT_STR) } set_x(n, 4); return set_t(n, T_BOOL)
+	if cmp && o != T_EQ && o != T_NEQ && (TY[da].k == TY_ARR || TY[da].k == TY_SLICE || TY[db].k == TY_ARR || TY[db].k == TY_SLICE || TY[da].k == TY_STRUCT && la < 4 || TY[db].k == TY_STRUCT && lb < 4): cerr(n, "< > <= >= compare numbers or strings: compare fields, as in `a.x < b.x`"); return set_t(n, T_BOOL)
 	if cmp && (o == T_EQ || o == T_NEQ):
 		ka := TY[da].k; kb := TY[db].k
 		if ka == TY_NULL || kb == TY_NULL: if ka == TY_NULL && kb == TY_NULL { return set_t(n, T_BOOL) } if ka == TY_NULL { set_t(a, tb); } else { set_t(b, ta); } return set_t(n, T_BOOL)
@@ -547,6 +550,7 @@ rtype_name_enum(de int) int:
 recursive ck_idx(n int, want int) int:
 	x := ND[n]
 	t ~= ck(x.a, -1)
+	d0 := deref(t); if x.c >= 0 && TY[d0].k == TY_STRUCT && nm(STI[TY[d0].a].name as int) == "dictionary": ND[n] = ND[x.c]; return ck(n, want)
 	if TY[t].k == TY_STRLIT: set_t(x.a, TT_STR); t = TT_STR
 	if TY[t].k == TY_ARRLIT: t = default_t(x.a)
 	d := deref(t)
@@ -932,7 +936,7 @@ recursive ck_arr(n int, want int) int:
 	e ~= -1
 	if want >= 0 && (TY[want].k == TY_ARR || TY[want].k == TY_SLICE): e = TY[want].a
 	if x.c >= 0: ck(x.c, T_I64); conv(x.c, T_I64); if want >= 0 { return set_t(n, want) } return set_t(n, T_ARRLIT)
-	if x.a >= 0: ck(x.a, e); ck(x.b, T_I64); if e >= 0 { conv(x.a, e); conv(x.b, T_I64); if TY[want].k == TY_SLICE { cnt, u0, ok := cval(x.b); set_t(n, t_arr(e, A_FIXED, cnt, -1)); set_cv(n, want); return want } return set_t(n, want) } return set_t(n, T_ARRLIT)
+	if x.a >= 0: ck(x.a, e); ck(x.b, T_I64); if e >= 0 { conv(x.a, e); conv(x.b, T_I64); if TY[want].k == TY_SLICE { cnt, u0, ok := cval(x.b); if !ok { return set_t(n, t_arr(e, A_GROW, -1, -1)) } set_t(n, t_arr(e, A_FIXED, cnt, -1)); set_cv(n, want); return want } return set_t(n, want) } return set_t(n, T_ARRLIT)
 	for i x.n: ck(kid(n, i), e)
 	if e >= 0:
 		for i x.n: conv(kid(n, i), e)
@@ -1060,6 +1064,7 @@ recursive ck_assign(n int):
 		return
 	tt := ck(x.a, -1)
 	d := deref(tt)
+	if o == T_PLUSEQ && x.c >= 0 && TY[d].k == TY_ARR && is_grow(d): ND[n] = ND[x.c]; cstmt(n); return
 	if o == T_ASSIGN:
 		if pend_local(x.a): rt := ck(x.b, -1); dr := deref(rt); if TY[dr].k == TY_ARR || TY[dr].k == TY_SLICE { complete(x.a, TY[dr].a) } conv(x.b, deref(at(x.a))); return
 		if TY[tt].k == TY_REF && is_opt(tt):

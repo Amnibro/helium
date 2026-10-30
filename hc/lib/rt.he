@@ -165,6 +165,7 @@ rt_fflt(o byte[48]&, bits u64, is32 bool) int:
 rt_pf(bits u64, is32 int): var o byte[48]; n := rt_fflt(o, bits, is32 != 0); rt_ps(o[..n]);
 rt_memeq(a const byte[:], b const byte[:]) bool: if a.len != b.len { return false } pa := ptr(a); pb := ptr(b); i ~= 0; while i + 8 <= a.len { if mld(pa + i) != mld(pb + i) { return false } i += 8 } while i < a.len { if mld1(pa + i) != mld1(pb + i) { return false } i += 1 } true
 extern mld1(a int) int = "!ld1"
+rt_strcmp(a const byte[:], b const byte[:]) int: n := if a.len < b.len { a.len } else { b.len }; pa := ptr(a); pb := ptr(b); i ~= 0; while i < n { x := mld1(pa + i); y := mld1(pb + i); if x != y { return x - y } i += 1 } a.len - b.len
 extern mst1(a int, v int) = "!st1"
 var RT_SP int
 var RT_PB byte[4096]; var RT_PB2 byte[4096]; var RT_ST byte[144]; var RT_TS int[2]
