@@ -542,7 +542,7 @@ recursive hook_walk(t int):
 	HOOKW[t] = 1
 	x := TY[t]; k := x.k as int
 	if k == TY_REF: hook_walk(x.a as int); return
-	if k == TY_ARR || k == TY_SLICE: hook_walk(x.a as int); return
+	if k == TY_ARR || k == TY_SLICE: hook_of(t); hook_walk(x.a as int); return
 	if k == TY_MULTI: for i x.n { hook_walk(TYL[x.l as int + i] as int) } return
 	if k == TY_STRUCT: hook_of(t); si := x.a as int; for i STI[si].fnum { f := SFI[STI[si].f0 as int + i]; if f.ty >= 0 { hook_walk(f.ty as int) } } return
 	if k == TY_VARIANT: hook_of(t); v := ENV[ENI[x.a].v0 as int + x.c as int]; if v.si >= 0 { for i STI[v.si].fnum { f := SFI[STI[v.si].f0 as int + i]; if f.ty >= 0 { hook_walk(f.ty as int) } } } return
