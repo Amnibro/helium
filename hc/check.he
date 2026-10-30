@@ -19,6 +19,7 @@ AOWN int ~= -1
 CFN int ~= -1
 GLOBI int ~= -1
 var CERR byte[>..]
+var CEP byte[>..]
 var CALL byte[>..]
 LSPM ~= false
 var NERR int
@@ -27,7 +28,7 @@ var LOOPD int
 var ARGW i32[>..<]
 var ORDER i32[>..]
 cerrl(f int, line int, m const byte[:]): NERR++; if LSPM { CALL.append(nm(FILES[f].name)); format(CALL, ":", line, ": error: ", m, "\n") } if CERR.len > 0 { return } CERR.append(nm(FILES[f].name)); format(CERR, ":", line, ": error: ", m);
-cerr(n int, m const byte[:]): NERR++; x := TK[ND[max(n, 0)].t]; if LSPM { CALL.append(nm(FILES[x.f].name)); format(CALL, ":", x.line, ": error: ", m, "\n") } if CERR.len > 0 { return } CERR.append(nm(FILES[x.f].name)); format(CERR, ":", x.line, ": error: ", m);
+cerr(n int, m const byte[:]): NERR++; x := TK[ND[max(n, 0)].t]; if LSPM { CALL.append(nm(FILES[x.f].name)); format(CALL, ":", x.line, ": error: ", CEP, m, "\n") } if CERR.len > 0 { return } CERR.append(nm(FILES[x.f].name)); format(CERR, ":", x.line, ": error: ", CEP, m);
 var SDI i32[>..]
 sdinst(si int) int:
 	if STI[si].tn == 0 { return GLOBI } while SDI.len <= si { SDI.push(-1) } if SDI[si] >= 0 { return SDI[si] as int } nd := STI[si].node as int; i := new_inst(-1, nd, NEND[nd] as int, GLOBI); FI_[i].st = 3; FI_[i].g0 = GBS.len as i32; gn i32[..16] ~= []; gen_names(ND[nd].d, gn); for j gn.len { GBS.push(Gb{gn[j], TYL[STI[si].ta as int + j]}) } FI_[i].gn = gn.len as i32; SDI[si] = i as i32; i
@@ -206,7 +207,7 @@ recursive conv(n int, t int) bool:
 	if is_lp(n) && (fk == TY_INT || fk == TY_FLT) && (tkd == TY_INT || tkd == TY_FLT) && !(fk == TY_FLT && tkd == TY_INT): set_cv(n, t); return true
 	if fk == TY_ILIT:
 		v, u, ok := cval(n)
-		if tkd == TY_INT: if ok && !int_fits(v, u, t) && !(bn_ad(n) && !is_signed(t)) { m byte[>..] ~= []; format(m, "constant ", v, " does not fit in ", tn(t)); cerr(n, m); return false } commit(n, t); return true
+		if tkd == TY_INT: if ok && !int_fits(v, u, t) && !(bn_ad(n) && !is_signed(t)) { m byte[>..] ~= []; format(m, "constant ", v, " does not fit ", tn(t)); cerr(n, m); return false } commit(n, t); return true
 		if tkd == TY_FLT || tkd == TY_VARINT: commit(n, t); return true
 	if fk == TY_FLIT && tkd == TY_FLT: commit(n, t); return true
 	if fk == TY_STRLIT && (is_byte_arr(t) || tkd == TY_REF && is_byte_arr(TY[t].a)): commit(n, if tkd == TY_REF { TY[t].a as int } else { t }); return true
@@ -214,7 +215,8 @@ recursive conv(n int, t int) bool:
 	if fk == TY_NULL && tkd == TY_REF && TY[t].fl & RF_OPT != 0: commit(n, t); return true
 	if conv_ok(f, t, n): set_cv(n, t); return true
 	if fk == TY_INT && tkd == TY_INT && !OLDLOC && FILES[TK[ND[n].t].f].he: set_cvn(n, t); return true
-	m byte[>..] ~= []; format(m, "cannot convert ", tn(f), " to ", tn(t)); cerr(n, m)
+	if fk == TY_NULL: m byte[>..] ~= []; format(m, "null is only a value of optional types, not ", tn(t)); cerr(n, m); return false
+	m byte[>..] ~= []; fi := fk == TY_INT || fk == TY_ILIT; ff := fk == TY_FLT || fk == TY_FLIT; format(m, "expected a value of type ", tn(t), ", got ", if fk == TY_ILIT { "i64" } else if fk == TY_FLIT { "f64" } else { tn(f) }, if fi && tkd == TY_INT { " (narrowing and sign changes require an explicit `as`)" } else if ff && tkd == TY_INT { " (a float converts to an integer only with an explicit `as`)" } else if ff && tkd == TY_FLT && f != t && tn(t) == "f32" { " (f64 to f32 requires an explicit `as f32` to round the value)" } else { "" }); cerr(n, m)
 	false
 conv_ok(f int, t int, n int) bool:
 	if f == t: return true
@@ -315,7 +317,7 @@ unify(n int, a int, b int) int:
 	if ka == TY_VARIANT && kb == TY_VARIANT && TY[da].a == TY[db].a: et := t_enum(TY[da].a, false); cvx(a, et); cvx(b, et); return et
 	if ka == TY_ENUM && kb == TY_VARIANT && TY[da].a == TY[db].a: cvx(b, da); if ta != da { cvx(a, da) } return da
 	if kb == TY_ENUM && ka == TY_VARIANT && TY[da].a == TY[db].a: cvx(a, db); if tb != db { cvx(b, db) } return db
-	m byte[>..] ~= []; format(m, "operands of types ", tn(da), " and ", tn(db), " need a cast to a common type"); cerr(n, m)
+	m byte[>..] ~= []; format(m, "operands of ", tok_text(ND[n].t), " have no common type: ", tn(da), " and ", tn(db), " (convert one with `as`)"); cerr(n, m)
 	T_ERRT
 recursive leaf_kind(t int) int:
 	x := TY[t]; k := x.k
@@ -390,7 +392,7 @@ ck_un(n int, want int) int:
 	if ND[a].k as int == N_ARR && is_pending(t): t = default_t(a)
 	d := deref(t)
 	if t != d: set_cv(a, d)
-	if o == T_MINUS && TY[d].k == TY_INT && !is_signed(d): cerr(n, "unary - of an unsigned integer")
+	if o == T_MINUS && TY[d].k == TY_INT && !is_signed(d): m byte[>..] ~= []; format(m, "cannot negate a value of unsigned type ", tn(d), " (convert with `as`)"); cerr(n, m)
 	set_t(n, d)
 deref_place(t int) int:
 	if TY[t].k == TY_REF && TY[t].c < 0:
@@ -416,7 +418,7 @@ recursive ck_id(n int, want int) int:
 	if d >= 0: set_r(n, R_FN, d); set_x(n, -1); return set_t(n, T_FNV)
 	if find_nest(name, n) >= 0 || block_binding(name) >= 0: set_x(n, -1); return set_t(n, T_FNV)
 	gvt := gb_find(name); if gvt >= 0 && TY[gvt].k == TY_VARIANT: vs0 := ENV[ENI[TY[gvt].a].v0 as int + TY[gvt].c as int].si as int; if vs0 >= 0 && STI[vs0].fnum > 0 { cerr(n, "a variant with a payload is constructed with { }"); return set_t(n, T_ERRT) } set_r(n, R_VARIANT, TY[gvt].c as int); return set_t(n, gvt)
-	m byte[>..] ~= []; format(m, "unknown name: ", nm(name)); cerr(n, m)
+	m byte[>..] ~= []; format(m, "unknown identifier: ", nm(name)); cerr(n, m)
 	set_t(n, T_ERRT)
 var GLT i32[>..]
 var GLST u8[>..]
@@ -813,12 +815,12 @@ recursive cf_expand(cf int) bool:
 		for i ND[src].n: t := rtype(kid(src, i), ns); ents.push(n0 as i32); ents.push(t as i32)
 	if op == 2:
 		t := deref(rtype(kid(src, 0), ns)); si := if TY[t].k == TY_STRUCT { TY[t].a as int } else { if TY[t].k == TY_VARIANT { ENV[ENI[TY[t].a].v0 as int + TY[t].c as int].si as int } else { -2 } }
-		if si == -2: if TY[t].k != TY_ERR { cerr(cf, if TY[t].k == TY_ENUM { "fields<T> takes a struct or variant type; an ADT's variants are visited with variants<E>" } else { "fields<T> takes a struct or variant type" }) } return false
+		if si == -2: if TY[t].k != TY_ERR { m byte[>..] ~= []; format(m, "fields requires a concrete struct or variant type, got ", tn(t)); cerr(cf, m) } return false
 		if si >= 0:
 			for j STI[si].fnum:
 				f := SFI[STI[si].f0 as int + j]; if f.ty >= 0: ents.push(n0 as i32); ents.push(cfb(1, f.name as int, 0, 0) as i32); ents.push(n1 as i32); ents.push(cfb(2, si, j, f.name as int) as i32)
 	if op == 3:
-		t := deref(rtype(kid(src, 0), ns)); if TY[t].k != TY_ENUM { if TY[t].k != TY_ERR { cerr(cf, "variants<E> takes an ADT") } return false } ei := TY[t].a as int
+		t := deref(rtype(kid(src, 0), ns)); if TY[t].k != TY_ENUM { if TY[t].k != TY_ERR { m byte[>..] ~= []; format(m, "variants requires a concrete ADT type, got ", tn(t)); cerr(cf, m) } return false } ei := TY[t].a as int
 		for vi ENI[ei].vnum: ents.push(n0 as i32); ents.push(cfb(1, ENV[ENI[ei].v0 as int + vi].name as int, 0, 0) as i32); ents.push(n1 as i32); ents.push(t_variant(ei, vi) as i32)
 	per := need * 2; q ~= 0
 	if ents.len == 0: CFX.push(Cfx{cf as i32, (-2 - AOWN) as i32, -1}); return true
@@ -867,7 +869,7 @@ ret_fn() int:
 recursive ck_break(n int) int:
 	x := ND[n]
 	if x.a >= 0:
-		if BRK_T.len == 0: cerr(n, "break with a value outside loop or block"); return T_VOID
+		if BRK_T.len == 0: cerr(n, "break with a value exits loop/block only"); return T_VOID
 		w := BRK_T[BRK_T.len - 1]
 		t := ck(x.a, if w >= 0 { w } else { -1 })
 		if w < 0 || is_pending(w): BRK_T[BRK_T.len - 1] = if TY[t].k == TY_FLIT || w >= 0 && TY[w].k == TY_FLIT && TY[t].k == TY_ILIT { T_FLIT } else { if TY[t].k == TY_ILIT && w < 0 { T_ILIT } else { if is_pending(t) { default_t(x.a) } else { t } } } else: conv(x.a, w)

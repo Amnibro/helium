@@ -67,12 +67,13 @@ vexp(pfx int, w bool, r int, b int, vv int, m int):
 	x := if SIBM { SIBI } else { 0 }; pp := if pfx == 0x66 { 1 } else { if pfx == 0xF3 { 2 } else { if pfx == 0xF2 { 3 } else { 0 } } }
 	if EVX && VEXL == 1: xb(0x62); xb((if r < 8 { 0x80 } else { 0 }) | (if x < 8 { 0x40 } else { 0 }) | (if b < 8 { 0x20 } else { 0 }) | 0x10 | m); xb(0x84 | (15 - vv) << 3 | pp); xb(0x48); EVD = true; return
 	xb(0xC4); xb((if r < 8 { 0x80 } else { 0 }) | (if x < 8 { 0x40 } else { 0 }) | (if b < 8 { 0x20 } else { 0 }) | m); xb((if w { 0x80 } else { 0 }) | (15 - vv) << 3 | VEXL << 2 | (if pfx == 0x66 { 1 } else { if pfx == 0xF3 { 2 } else { if pfx == 0xF2 { 3 } else { 0 } } }))
+fvc(pfx int, op int) bool: !VEXM && FVEC && op == 0x5A && (pfx == 0xF2 || pfx == 0xF3)
 fvx(op int) bool: !VEXM && FVEC && (vexok(op) || op == 0x6E || op == 0x7E || op == 0xD6)
-sse(pfx int, w bool, op int, r int, rm int): if VEXM || fvx(op) { if !vexok(op) && VEXM { VXBAD = true } l0 := VEXL; if !VEXM { VEXL = 0 } vexp(pfx, w, r, rm, if vexmv(op) || op == 0x6E || op == 0x7E || op == 0xD6 { 0 } else { if op >= 0x71 && op <= 0x73 { rm } else { r } }, 1); VEXL = l0; xb(op); xb(0xC0 | (r & 7) << 3 | rm & 7); return } if pfx != 0 { xb(pfx) } xrex(w, r, 0, rm); xb(0x0F); xb(op); xb(0xC0 | (r & 7) << 3 | rm & 7);
+sse(pfx int, w bool, op int, r int, rm int): if VEXM || fvx(op) || fvc(pfx, op) { if !vexok(op) && VEXM { VXBAD = true } l0 := VEXL; if !VEXM { VEXL = 0 } vexp(pfx, w, r, rm, if vexmv(op) || op == 0x6E || op == 0x7E || op == 0xD6 { 0 } else { if op >= 0x71 && op <= 0x73 { rm } else { r } }, 1); VEXL = l0; xb(op); xb(0xC0 | (r & 7) << 3 | rm & 7); return } if pfx != 0 { xb(pfx) } xrex(w, r, 0, rm); xb(0x0F); xb(op); xb(0xC0 | (r & 7) << 3 | rm & 7);
 alu_ri(ext int, r int, v int):
 	xrex(true, 0, 0, r); if v >= -128 && v < 128: xb(0x83); xb(0xC0 | ext << 3 | r & 7); xb(v & 255); else: xb(0x81); xb(0xC0 | ext << 3 | r & 7); x32(v);
 imul_ri(d int, s int, v int): xrex(true, d, 0, s); xb(0x69); xb(0xC0 | (d & 7) << 3 | s & 7); x32(v);
 sh_ri(ext int, r int, v int): xrex(true, 0, 0, r); xb(0xC1); xb(0xC0 | ext << 3 | r & 7); xb(v & 63);
-ssem(pfx int, w bool, op int, r int, base int, d int): if VEXM || fvx(op) { if !vexok(op) && VEXM { VXBAD = true } l0 := VEXL; if !VEXM { VEXL = 0 } vexp(pfx, w, r, base, if vexmv(op) || op == 0x6E || op == 0x7E || op == 0xD6 { 0 } else { r }, 1); VEXL = l0; xb(op); xmem(r, base, d); return } if pfx != 0 { xb(pfx) } xrex(w, r, 0, base); xb(0x0F); xb(op); xmem(r, base, d);
+ssem(pfx int, w bool, op int, r int, base int, d int): if VEXM || fvx(op) || fvc(pfx, op) { if !vexok(op) && VEXM { VXBAD = true } l0 := VEXL; if !VEXM { VEXL = 0 } vexp(pfx, w, r, base, if vexmv(op) || op == 0x6E || op == 0x7E || op == 0xD6 { 0 } else { r }, 1); VEXL = l0; xb(op); xmem(r, base, d); return } if pfx != 0 { xb(pfx) } xrex(w, r, 0, base); xb(0x0F); xb(op); xmem(r, base, d);
 put32(at int, v int):
 	for i 4: XC[at + i] = (v >> i * 8 & 255) as! byte

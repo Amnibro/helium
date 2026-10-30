@@ -456,7 +456,7 @@ recursive gidx1(n int):
 	d := deref(bt)
 	e := TY[d].a
 	p := nt()
-	if is_seq(d): gerr(n, "an array of variable-size elements is sequential: iterate it instead of indexing"); return
+	if is_seq(d): gerr(n, "arrays of variable-size elements cannot be indexed, only iterated; for random access, keep your own array of references to them (§3.3)"); return
 	if is_fix(d) && TY[bt].k != TY_REF:
 		ow("("); gx(a); ow(").e[hr_ix("); gx(x.b); format(O, ", ", TY[d].b, ", "); wloc(n); ow(")]"); return
 	ow("(*({ ")
@@ -1363,7 +1363,7 @@ recursive gbuiltin0(n int):
 	if b == B_FROMBYTES && TY[at(n)].k == TY_MULTI:
 		mt := at(n); t := TYL[TY[mt].l] as int; e := TY[t].a as int
 		if !is_fixed(e): gerr(n, "from_bytes of variable-size elements is not supported by the self-hosted compiler yet"); return
-		if !(is_res(t) || is_vimg(t) && vlim(t) == 0): gerr(n, "from_bytes builds a resizable array or a T[] (§12)"); return
+		if !(is_res(t) || is_vimg(t) && vlim(t) == 0): m byte[>..] ~= []; format(m, "from_bytes builds a resizable or variable array (T[>..], T[>..<], T[]), not ", tn(t)); gerr(n, m); return
 		vf_need(n, e)
 		format(O, "({ hsl _s", p, " = "); gas(arg(0)); format(O, "; int64_t _n", p, " = -1; const uint8_t *_q", p, " = hr_uleb_rd(_s", p, ", &_n", p, "); int64_t _c", p, " = _q", p, " && _n", p, " == _s", p, ".p + _s", p, ".n - _q", p, " ? vf", e, "(_q", p, ", _n", p, ") : -1; ")
 		fx := fb_idx(n); gd := fx >> 1
@@ -1443,11 +1443,11 @@ recursive gbuiltin0(n int):
 embed_read(n int, a0 int, emb byte[>..]&) const byte[:]:
 	a ~= a0
 	if ND[a].k as int == N_ID && rk(a) == R_GLOBAL: g := DC[rv(a)].node; if ND[g].b >= 0 { a = kid(ND[g].b, 0) }
-	if ND[a].k as int != N_STR: return "embed_file needs a string literal path"
+	if ND[a].k as int != N_STR: return "embed_file takes a string literal"
 	f := nm(FILES[TK[ND[n].t].f].name); p byte[..4096] ~= []; sl ~= -1; for c, i f { if c == '/' { sl = i } }
 	if sl >= 0: p.append(f[..sl + 1])
 	p.append(tok_str(ND[a].t))
-	if read_file(p[..], emb) { "" } else { "embed_file cannot read its file" }
+	if read_file(p[..], emb) { "" } else { "embed_file: cannot open" }
 gembed(n int, a int):
 	emb byte[>..] ~= []; e := embed_read(n, a, emb)
 	if e.len > 0: gerr(n, e); return

@@ -205,7 +205,7 @@ recursive rtype(n int, ns int) int:
 	if k == N_TARR:
 		e := rtype(x.a as int, ns)
 		a := x.op as int
-		if a == A_FIXED: v, ok := ceval(x.b as int, ns); if !ok { derr(x.t as int, "array size must be a constant") } return t_arr(e, A_FIXED, v, -1)
+		if a == A_FIXED: v, ok := ceval(x.b as int, ns); if !ok { derr(x.t as int, "constant integer expression expected for array size") } return t_arr(e, A_FIXED, v, -1)
 		if a == A_LIM: if x.b < 0 { return t_arr(e, A_LIM, -1, 6) } v, ok := ceval(x.b as int, ns); if !ok { derr(x.t as int, "capacity must be a constant") } return t_arr(e, A_LIM, v, lim_lenstore(v))
 		if a == A_VAR: ls := if x.c < 0 { 6 } else { if x.c as int == K_VARINT { 8 } else { int_storage_of_tok(x.c as int) } }; return t_arr(e, A_VAR, -1, ls)
 		return t_arr(e, a, -1, -1)

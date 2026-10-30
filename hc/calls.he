@@ -227,13 +227,13 @@ recursive check_inst0(i int):
 	if FI_[i].st != 0: return
 	node := FI_[i].node
 	FI_[i].st = 1
-	if ND[node].fl & F_EXTERN != 0: sa0 := AOWN; sc0 := CFN; AOWN = i; CFN = i; for j ND[node].n { p := kid(node, j); if ND[p].b >= 0 { pt := ptype_of(i, j); NSOV = decl_ns(node); ck(ND[p].b, pt); NSOV = -1; conv(ND[p].b, pt) } } AOWN = sa0; CFN = sc0; FI_[i].st = 2; return
+	if ND[node].fl & F_EXTERN != 0: sa0 := AOWN; sc0 := CFN; AOWN = i; CFN = i; for j ND[node].n { p := kid(node, j); if ND[p].b >= 0 { pt := ptype_of(i, j); NSOV = decl_ns(node); ce := CEP.len; format(CEP, "the default of parameter ", nm(ND[p].s), " cannot be passed as ", tn(pt), ": "); ck(ND[p].b, pt); NSOV = -1; CEP.pop_n(CEP.len - ce); conv(ND[p].b, pt) } } AOWN = sa0; CFN = sc0; FI_[i].st = 2; return
 	sa := AOWN; sc := CFN; sm := SCOPE.len; ld := LOOPD; bt := BRK_T.len; nm0 := NESTS.len
 	AOWN = i; CFN = i; LOOPD = 0
 	g0 := GB.len
 	for j FI_[i].gn: GB.push(GBS[FI_[i].g0 as int + j])
 	for j ND[node].n:
-		p := kid(node, j); if ND[p].b >= 0: pt := ptype_of(i, j); NSOV = decl_ns(node); ck(ND[p].b, pt); NSOV = -1; conv(ND[p].b, pt)
+		p := kid(node, j); if ND[p].b >= 0: pt := ptype_of(i, j); NSOV = decl_ns(node); ce := CEP.len; format(CEP, "the default of parameter ", nm(ND[p].s), " cannot be passed as ", tn(pt), ": "); ck(ND[p].b, pt); NSOV = -1; conv(ND[p].b, pt); CEP.pop_n(CEP.len - ce)
 	lm ~= 0
 	for j FI_[i].gn:
 		g := GBS[FI_[i].g0 as int + j]; if g.name as int == LPN: lm = g.ty
@@ -384,7 +384,7 @@ recursive resolve(n int, name int, ns int, a0 int, an int, blk int, tyargs int, 
 			if worst == bestr && user == bestuser && loc == bestloc && gen == bestgen && (ND[best].fl & F_EXTERN == 0 || ND[fnode].fl & F_EXTERN == 0): tie = true
 	CANDS.pop_n(CANDS.len - c0)
 	if best < 0: BINDS.pop_n(BINDS.len - nb0); return -1, nb0, 0
-	if tie && report: m byte[>..] ~= []; format(m, "ambiguous call to ", nm(name)); cerr(n, m)
+	if tie && report: m byte[>..] ~= []; format(m, "ambiguous call to ", nm(name), ": multiple overloads match equally well"); cerr(n, m)
 	if bestb0 > nb0:
 		for q 0..bestbn: BINDS[nb0 + q] = BINDS[bestb0 + q]
 	BINDS.pop_n(BINDS.len - nb0 - bestbn)
@@ -485,7 +485,7 @@ recursive ck_pdef(i int, an int, n int):
 	for j an..(ND[nd].n as int):
 		p := kid(nd, j); if ND[p].b < 0: continue
 		k ~= PDB; while k < PDS.len { if PDS[k] == nd && PDS[k + 1] == j { m byte[>..] ~= []; format(m, "the default of parameter ", nm(ND[p].s), " of ", nm(FI_[i].name), " leads to this call, which takes it again"); cerr(n, m[..]); return } k += 2 }
-		PDS.push(nd as i32); PDS.push(j as i32); DOS.push(i as i32); sa := AOWN; sc := CFN; AOWN = i; CFN = i; g0 := dpush(i); pt := ptype_of(i, j); NSOV = decl_ns(nd); ck(ND[p].b, pt); NSOV = -1; conv(ND[p].b, pt); GB.pop_n(GB.len - g0); AOWN = sa; CFN = sc; PDS.pop_n(2); DOS.pop()
+		PDS.push(nd as i32); PDS.push(j as i32); DOS.push(i as i32); sa := AOWN; sc := CFN; AOWN = i; CFN = i; g0 := dpush(i); pt := ptype_of(i, j); NSOV = decl_ns(nd); ce := CEP.len; format(CEP, "the default of parameter ", nm(ND[p].s), " cannot be passed as ", tn(pt), ": "); ck(ND[p].b, pt); NSOV = -1; conv(ND[p].b, pt); CEP.pop_n(CEP.len - ce); GB.pop_n(GB.len - g0); AOWN = sa; CFN = sc; PDS.pop_n(2); DOS.pop()
 stname(si int) byte[>..]:
 	o byte[>..] ~= []; for e, ei ENI { for q e.vnum { if ENV[e.v0 as int + q].si == si { format(o, tn(t_enum(ei, false)), ".", nm(ENV[e.v0 as int + q].name as int)); return o } } } o.append(tn(t_struct(si))); o
 recursive ck_fdef(si int, j int, n int):
@@ -749,9 +749,7 @@ recursive call_fn(n int, name int, recv int, want int) int:
 	if fnode < 0:
 		BINDS.pop_n(BINDS.len - b0); dr := try_case(n, name, s, an, blk, bown); if dr >= 0: pop_args(s); return dr
 	if fnode < 0:
-		m byte[>..] ~= []; format(m, "no function ", nm(name), " matches (")
-		for j an: if j > 0 { m.append(", ") } m.append(tn(ARGW[s + j]))
-		m.append(")")
+		m byte[>..] ~= []; if find_lv(name) >= 0 { format(m, nm(name), " is a variable, not a function") } else if has_fn(name) { format(m, "no matching overload for call to ", nm(name)) } else if lookup_q(name, ns_of(n), D_GLOBAL) >= 0 { format(m, nm(name), " is a variable, not a function") } else { format(m, "unknown function: ", nm(name)) }
 		cerr(n, m)
 		pop_args(s)
 		BINDS.pop_n(BINDS.len - b0)
@@ -869,7 +867,7 @@ recursive ck_builtin(n int, b int, recv int, want int) int:
 	if b == B_QPUT: c := arg(0); t ~= ck(c, -1); if is_pending(t) { t = default_t(c) } d := deref(t); if d != t { set_cv(c, d) } return set_t(n, T_BOOL)
 	if b == B_QGET || b == B_QPOLL || b == B_QLIMIT:
 		ta := x.c; t := if ta >= 0 { rtype(kid(ta, 0), ns_of(n)) } else { T_ERRT }
-		if ta < 0: cerr(n, "this builtin needs its queue's type: name it as <T>"); return set_t(n, T_ERRT)
+		if ta < 0: cerr(n, if b == B_QLIMIT { "qlimit<T>(n) needs exactly one explicit type argument" } else if b == B_QPOLL { "qpoll<T>() needs exactly one explicit type argument" } else { "qget<T>(ms) needs exactly one explicit type argument" }); return set_t(n, T_ERRT)
 		if b == B_QLIMIT: ck(arg(0), T_I64); conv(arg(0), T_I64); return set_t(n, T_VOID)
 		if b == B_QGET && total == 0: return set_t(n, t)
 		if total > 0: ck(arg(0), T_I64); conv(arg(0), T_I64)
@@ -980,7 +978,7 @@ check_program() bool:
 	FI_[GLOBI].st = 2
 	AOWN = GLOBI; CFN = GLOBI
 	md := lookup(intern("main"), -1, D_FN)
-	if md < 0 && !LSPM: cerr(0, "no main function"); return false
+	if md < 0 && !LSPM: cerr(0, "program needs exactly one global fn main()"); return false
 	for d, i DC:
 		if d.k as int == D_GLOBAL && d.file == 0: global_type(i)
 	for d DC: if d.k as int == D_FN && ND[d.node].fl & F_EXPORT != 0 && ND[d.node].d < 0 { EXPN.push(d.node) }
