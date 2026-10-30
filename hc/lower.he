@@ -686,6 +686,7 @@ recursive lx1(n int) int:
 		return ldw(laddr(n), 0, wof(st))
 	if k == N_UN && x.op as int == T_AND: ra := at(x.a); return if TY[t].k != TY_REF && TY[t].k != TY_NULL && is_scal(t) { if TY[ra].k == TY_REF && TY[ra].c < 0 && TY[ra].fl & RF_OPT == 0 && TY[fin(x.a)].k == TY_REF { ldr(lx(x.a), t) } else { lx(x.a) } } else { laddr(x.a) }
 	if k == N_UN:
+		if x.op == T_MINUS && isf(t) && ND[x.a].k as int == N_FLT && !env("HC_NOFNK", FNKB): b := flt_bits(tok_text(ND[x.a].t)); return imm((if wof(atn(n)) == 10 { d2f_bits(b) ^ 0x80000000 } else { b ^ (1 as u64) << 63 }) as! int)
 		o := x.op; a := lx(x.a); d := nv(); ut := if at(n) >= 0 && TY[at(n)].k == TY_INT { at(n) } else { t }; if o == T_NOT { ir(I_UN, 4, d, a, -1, 2); return d } if o == T_MINUS { return lneg(a, if isf(t) { atn(n) } else { ut }, n) } if o == T_BITNOT { ir(I_UN, wof(ut), d, a, -1, 1); return d } if o == T_PLUS { return a } if o == T_AND: return laddr(x.a)
 	if k == N_BIN:
 		o := x.op
@@ -786,6 +787,7 @@ recursive lsinkf(sk int, n int, i0 int, total int):
 drop_to(h int):
 	i ~= DROPS.len; while i > h: i -= 2; ldrop(DROPS[i], DROPS[i + 1])
 KEEPDS ~= false
+FNKB byte[>..] ~= []
 drop_keep(): sv := KEEPDS; KEEPDS = true; drop_ret(); KEEPDS = sv
 drop_ret():
 	i ~= DROPS.len; while i > 0:
