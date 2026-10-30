@@ -1,0 +1,69 @@
+# Relay client (ported from the minigolf networking spike onto hc/lib/net.he): joins room "golf" on the Helium server, sends one quantized putt input when the room has 2 players,
+# receives the peer's putt, simulates both putts with fixed-step deterministic physics and prints a state hash.
+# Then a UDP check: pings the peer directly over a Helium UDP socket.  Usage: client PORT NAME ID
+use net
+use os
+use math
+send_frame(fd int, msg const byte[:]):
+	f byte[>..] ~= []; net::frame(f, msg); net::send(fd, f[..]);
+# fixed 120 Hz, constant friction factor (no pow at runtime), box walls, restitution 0.55
+hash_putt(h0 u64, dxq int, dzq int, pq int) u64:
+	dx ~= dxq as real / 10000.0; dz ~= dzq as real / 10000.0; l := sqrt(dx * dx + dz * dz); dx /= l; dz /= l
+	p := pq as real / 1000.0; s := p * p * (3.0 - 2.0 * p) * 28.0
+	x ~= 0.0; z ~= 0.0; vx ~= dx * s; vz ~= dz * s; dt := 1.0 / 120.0; fr := 0.9883; steps ~= 0
+	while steps < 20000:
+		x += vx * dt; z += vz * dt
+		if x < -3.0 { x = -6.0 - x; vx = -vx * 0.55 } if x > 3.0 { x = 6.0 - x; vx = -vx * 0.55 }
+		if z < -1.0 { z = -2.0 - z; vz = -vz * 0.55 } if z > 20.0 { z = 40.0 - z; vz = -vz * 0.55 }
+		vx *= fr; vz *= fr; steps += 1
+		if sqrt(vx * vx + vz * vz) < 0.045: break
+	h ~= h0
+	for v [x, z, steps as real]: h = (h ^ (v as! u64)) * 1099511628211
+	h
+main():
+	a := args()
+	if a.len < 4: print("usage: client PORT NAME ID"); exit(2)
+	port, _ := parse_int(a[1]); name := a[2]; id, _ := parse_int(a[3])
+	fd := net::connect(net::addr("127.0.0.1", port))
+	if fd < 0: print(name, ": connect failed ", fd); exit(1)
+	net::wait_one(fd, net::WRITE, 2000)
+	e := net::connected(fd)
+	if e != 0: print(name, ": connect error ", e); exit(1)
+	print(name, ": connected fd ", fd)
+	send_frame(fd, str("J golf ", name)[..])
+	mine := [3000 + 2000 * id, 10000, 620 + 130 * id]
+	peer ~= [0, 0, 0]; have_peer ~= false; sent ~= false; t0 := clock()
+	buf byte[>..] ~= []
+	while !(have_peer && sent) && clock() - t0 < 8.0:
+		if net::wait_one(fd, net::READ, 50) <= 0: continue
+		r := net::recv(fd, buf)
+		if r == 0: print(name, ": server closed"); exit(1)
+		loop:
+			if buf.len < 2: break
+			m := (buf[0] as int) | (buf[1] as int) << 8
+			if buf.len < 2 + m: break
+			msg := copy(buf[2..2 + m]); rest := copy(buf[2 + m..]); buf.clear(); buf.append(rest[..])
+			print(name, ": got \"", msg, "\"")
+			if msg == "R 2" && !sent: send_frame(fd, str("PUTT ", mine[0], " ", mine[1], " ", mine[2])[..]); sent = true
+			bar := find_index(msg[..]) { it == '|' }
+			if bar >= 0 && starts_with(msg[bar + 1..], "PUTT "):
+				k ~= 0
+				for w words(msg[bar + 6..]): v, _ := parse_int(w); if k < 3: peer[k] = v; k += 1
+				have_peer = true
+	if !have_peer: print(name, ": no peer putt"); exit(1)
+	# both sides simulate putts in player-id order: lockstep on quantized inputs
+	pa := if id == 0 { mine } else { peer }; pb := if id == 0 { peer } else { mine }
+	h ~= hash_putt(14695981039346656037, pa[0], pa[1], pa[2]); h = hash_putt(h, pb[0], pb[1], pb[2])
+	print(name, ": SIMHASH ", h)
+	# UDP: direct datagrams between the two processes
+	u := net::udp(net::addr("127.0.0.1", port + 10 + id))
+	if u < 0: print(name, ": udp bind failed ", u); exit(1)
+	got_udp ~= false; extra ~= 0; t1 := clock()
+	while extra < 10 && clock() - t1 < 4.0:
+		net::send_to(u, net::addr("127.0.0.1", port + 11 - id), str("UDP hello from ", name)[..])
+		if net::wait_one(u, net::READ, 20) > 0:
+			d byte[>..] ~= []; var from net::Addr
+			if net::recv_from(u, d, from) > 0 && !got_udp: print(name, ": udp got \"", d, "\" from port ", from.port); got_udp = true
+		if got_udp: extra += 1
+	net::close(u); net::close(fd)
+	print(name, if got_udp { ": UDP ok" } else { ": UDP FAILED" })

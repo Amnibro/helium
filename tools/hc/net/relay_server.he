@@ -1,0 +1,79 @@
+# Relay/lobby server (ported from the minigolf networking spike onto hc/lib/net.he): rooms by name, relays every frame to the other members of the sender's room.
+# Usage: server PORT
+use net
+use os
+struct Conn { live bool, fd int, room byte[..32], name byte[..32], buf byte[..8192] }
+var C Conn[16]
+send_frame(fd int, msg const byte[:]):
+	f byte[>..] ~= []; net::frame(f, msg); net::send(fd, f[..]);
+roster(room const byte[:]):
+	n ~= 0
+	for &c in C: if c.live && c.room[..] == room: n += 1
+	m := str("R ", n)
+	for &c in C: if c.live && c.room[..] == room: send_frame(c.fd, m[..])
+handle(i int, msg const byte[:]) int:
+	if msg.len > 2 && msg[0] == 'J' && msg[1] == ' ':
+		parts := split(msg[2..], ' ')
+		k ~= 0
+		for p parts:
+			if k == 0: C[i].room.clear(); C[i].room.append(p)
+			if k == 1: C[i].name.clear(); C[i].name.append(p)
+			k += 1
+		print("server: ", C[i].name, " joined room ", C[i].room)
+		roster(C[i].room[..])
+		return 0
+	out := str(C[i].name, "|", msg)
+	sent ~= 0
+	for &c, j in C: if c.live && j != i && c.room[..] == C[i].room[..]: send_frame(c.fd, out[..]); sent += 1
+	print("server: relayed ", msg.len, " bytes from ", C[i].name, " to ", sent, " peer(s)")
+	1
+main():
+	a := args()
+	port ~= 7777
+	if a.len > 1: v, ok := parse_int(a[1]); if ok: port = v
+	lf := net::listen(net::addr("127.0.0.1", port))
+	if lf < 0: print("server: listen failed ", lf); exit(1)
+	print("server: listening on 127.0.0.1:", port)
+	seen ~= 0; relays ~= 0; t0 := clock()
+	loop:
+		if clock() - t0 > 15.0: print("server: timeout"); break
+		live ~= 0
+		for &c in C: if c.live: live += 1
+		if seen >= 2 && live == 0: break
+		var p net::Poll
+		net::add(p, lf, net::READ, -1)
+		for &c, j in C: if c.live: net::add(p, c.fd, net::READ, j)
+		n := net::wait(p, 50)
+		if n <= 0: continue
+		acc ~= false
+		for k n: if net::tag(p, k) == -1: acc = true
+		if acc:
+			loop:
+				fd := net::accept(lf)
+				if fd < 0: break
+				slot ~= -1
+				for &c, j in C: if !c.live && slot < 0: slot = j
+				if slot < 0: net::close(fd); continue
+				C[slot].live = true; C[slot].fd = fd; C[slot].buf.clear(); C[slot].room.clear(); C[slot].name.clear()
+				seen += 1
+		for k n:
+			i := net::tag(p, k)
+			if i < 0 || !C[i].live: continue
+			got byte[>..] ~= []
+			r := net::recv(C[i].fd, got)
+			if r == 0 || r < 0 && r != net::AGAIN:
+				print("server: ", C[i].name, " left"); net::close(C[i].fd); C[i].live = false
+				room := copy(C[i].room)
+				roster(room[..])
+				continue
+			if r > 0: C[i].buf.append(got[..])
+			loop:
+				if C[i].buf.len < 2: break
+				m := (C[i].buf[0] as int) | (C[i].buf[1] as int) << 8
+				if C[i].buf.len < 2 + m: break
+				msg := copy(C[i].buf[2..2 + m])
+				rest := copy(C[i].buf[2 + m..])
+				C[i].buf.clear(); C[i].buf.append(rest[..])
+				relays += handle(i, msg[..])
+	net::close(lf)
+	print("server: done, ", seen, " clients, ", relays, " relayed messages")

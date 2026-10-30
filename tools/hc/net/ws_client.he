@@ -1,0 +1,30 @@
+# The browser side of hc/lib/net.he: a WebSocket client driven by EV_NET events. tools/hc/net/wstest.mjs runs it
+# under hc/web/web.js against a small echo server; it prints what it sees, then "closed".
+use web
+use net
+var H int
+var GOT int
+main():
+	host byte[>..] ~= []
+	web::location("host", host)
+	url := str("ws://", host, "/echo")
+	H = net::ws_connect(url[..])
+	print("handle ", H > 0, " state ", net::ws_state(H), " connected ", net::error_name(net::connected(H)))
+	print("raw tcp on the web: ", net::error_name(net::listen(net::addr("127.0.0.1", 0))))
+export he_event(tag i32, kind i32):
+	if kind != web::EV_NET || tag != H: return
+	if net::ws_state(H) == net::OPEN && GOT == 0 && net::wait_one(H, net::READ, 0) == 0:
+		print("open, connected ", net::error_name(net::connected(H)), " writable ", net::wait_one(H, net::WRITE, 0))
+		net::ws_send(H, "hello", false)
+		bin byte[>..] ~= [1, 2, 3, 250]
+		net::ws_send(H, bin[..], true)
+		net::ws_send(H, "bye", false)
+		GOT = 1
+		return
+	loop:
+		d byte[>..] ~= []
+		t := net::ws_recv(H, d)
+		if t == net::TEXT: print("text \"", d, "\""); GOT += 1
+		else if t == net::BINARY: print("binary ", d.len, " bytes, last ", d[d.len - 1]); GOT += 1
+		else if t == 0: print("closed, state ", net::ws_state(H), " poll ", net::wait_one(H, net::READ, 0) > 0); net::close(H); return
+		else: break

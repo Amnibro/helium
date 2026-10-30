@@ -1,0 +1,7 @@
+handle true state 0 connected would block (AGAIN)
+raw tcp on the web: not supported on this target
+open, connected ok writable 4
+text "hello"
+binary 4 bytes, last 250
+text "bye"
+closed, state 2 poll true
