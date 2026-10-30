@@ -1,0 +1,24 @@
+# UDP over loopback: bind, send_to, recv_from with the sender's address, empty datagrams, AGAIN
+use net
+main():
+	a := net::udp(net::addr("127.0.0.1", 0)); b := net::udp(net::addr("0.0.0.0", 0))
+	print("bound ", a >= 0 && b >= 0)
+	to := net::addr("127.0.0.1", net::local_port(b))
+	print("local ", net::local_addr(a).ip == net::LOOPBACK)
+	d byte[>..] ~= []; var from net::Addr
+	print("nothing ", net::error_name(net::recv_from(b, d, from)))
+	for i 3: msg byte[>..] ~= []; format(msg, "datagram ", i); net::send_to(a, to, msg[..])
+	print("sent empty ", net::send_to(a, to, ""))
+	n ~= 0
+	while n < 4:
+		if net::wait_one(b, net::READ, 2000) <= 0: break
+		d.clear()
+		k := net::recv_from(b, d, from)
+		if k < 0: break
+		print("got ", k, " '", d[..], "' from loopback ", from.ip == net::LOOPBACK, " port ", from.port == net::local_port(a))
+		n += 1
+	print("reply ", net::send_to(b, from, "pong"))
+	net::wait_one(a, net::READ, 2000); d.clear()
+	print("pong ", net::recv_from(a, d, from), " ", d[..], " ", from.port == to.port)
+	print("bad addr ", net::error_name(net::send_to(a, net::addr("1.2.3", 9), "x")))
+	net::close(a); net::close(b);

@@ -1,0 +1,42 @@
+# TCP over loopback in one process: listen on an ephemeral port, connect, accept, both directions, EOF, errors
+use net
+main():
+	l := net::listen(net::addr("127.0.0.1", 0))
+	port := net::local_port(l)
+	print("listen ", l >= 0, " port ", port > 0)
+	c := net::connect(net::addr("localhost", port))
+	print("connect ", c >= 0)
+	print("accept ready ", net::wait_one(l, net::READ, 2000) & net::READ)
+	s := net::accept(l)
+	print("accepted ", s >= 0, " again ", net::accept(l) == net::AGAIN)
+	print("writable ", net::wait_one(c, net::WRITE, 2000) & net::WRITE, " connected ", net::connected(c))
+	print("nodelay ", net::nodelay(c, true))
+	print("peer is local ", net::peer_addr(s).port == net::local_port(c), " ", net::peer_addr(c).port == port)
+	b byte[>..] ~= []
+	print("empty ", net::error_name(net::recv(s, b)))
+	print("sent ", net::send(c, "hello"))
+	net::wait_one(s, net::READ, 2000)
+	print("recv ", net::recv(s, b), " ", b[..])
+	big byte[>..] ~= []
+	for i 200000: big.push((i % 251) as! byte)
+	sent ~= 0; got byte[>..] ~= []
+	while got.len < big.len:
+		if sent < big.len: sent += net::send_all(s, big[sent..])
+		net::wait_one(c, net::READ, 2000)
+		while net::recv(c, got) > 0 {}
+	print("big ", got.len, " same ", got[..] == big[..])
+	net::close(c)
+	net::wait_one(s, net::READ, 2000)
+	print("eof ", net::recv(s, b))
+	net::close(s)
+	r := net::connected(net::connect(net::addr("127.0.0.1", port)))
+	print("still listening ", r == 0 || r == net::AGAIN)
+	net::close(l)
+	e ~= net::connect(net::addr("127.0.0.1", port))
+	r2 ~= net::connected(e)
+	if r2 == net::AGAIN: net::wait_one(e, net::WRITE, 2000); r2 = net::connected(e)
+	print("closed listener: ", net::error_name(r2))
+	print("bad host ", net::error_name(net::connect(net::addr("300.1.1.1", 80))))
+	print("bad handle ", net::error_name(net::send(-1, "x")))
+	l2 := net::listen(net::addr("127.0.0.1", 0)); l3 := net::listen(net::addr("127.0.0.1", net::local_port(l2)))
+	print("in use ", net::error_name(l3))

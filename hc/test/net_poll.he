@@ -1,0 +1,45 @@
+# a poll-driven echo server and three clients in one process, plus addresses, framing and blocking mode
+use net
+main():
+	a, ok := net::parse_addr("127.0.0.1:8080")
+	_, ok2 := net::parse_addr("nohost:1"); _, ok3 := net::parse_addr("1.2.3.4:70000")
+	print(ok, " ", a, " ", ok2, " ", ok3, " ", net::addr("localhost", 1))
+	l := net::listen(net::addr("127.0.0.1", 0), 8); port := net::local_port(l)
+	cs int[>..] ~= []
+	for i 3: cs.push(net::connect(net::addr("127.0.0.1", port)))
+	ss int[>..] ~= []
+	var p net::Poll
+	sent ~= false; replies ~= 0; rounds ~= 0
+	inbox byte[>..][>..] ~= []; echoed byte[>..][>..] ~= []
+	for i 3: inbox.push([]); echoed.push([])
+	while replies < 3 && rounds < 200:
+		rounds += 1
+		net::clear(p); net::add(p, l, net::READ, -1)
+		for s, i ss: net::add(p, s, net::READ, i)
+		for c, i cs: net::add(p, c, net::READ, 100 + i)
+		n := net::wait(p, 2000)
+		if n <= 0: break
+		if !sent:
+			sent = true
+			for c, i cs: t byte[>..] ~= []; format(t, "client ", i); m byte[>..] ~= []; net::frame(m, t[..]); net::send_all(c, m[..])
+		for k n:
+			t := net::tag(p, k)
+			if t == -1:
+				loop { s := net::accept(l); if s < 0 { break } ss.push(s) }
+			else if t < 100:
+				b byte[>..] ~= []
+				r := net::recv(ss[t], b)
+				if r > 0: net::send_all(ss[t], b[..])
+			else:
+				q := t - 100
+				net::recv(cs[q], inbox[q])
+				f := net::frame_len(inbox[q][..])
+				if f > 0 && echoed[q].len == 0: echoed[q].append(inbox[q][2..f]); replies += 1
+	for e, q echoed: print("client ", q, " echoed '", e[..], "'")
+	print("accepted ", ss.len, " replies ", replies)
+	print("timeout ", net::wait(p, 0) >= 0, " ", net::wait_one(cs[0], net::READ, 10))
+	print("blocking ", net::blocking(cs[0], true), " ", net::send(cs[0], "x"), " ", net::blocking(cs[0], false))
+	for c cs: net::close(c)
+	for s ss: net::close(s)
+	net::close(l)
+	print(net::error_name(net::CONNREFUSED), "; ", net::error_name(net::NOSYS), "; ", net::error_name(-12345))

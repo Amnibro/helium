@@ -1,0 +1,178 @@
+# Sockets: TCP, UDP and readiness polling over integer handles (IPv4).
+# A handle is an int >= 0; a failure is a negative errno in Linux numbering on every target (AGAIN, CONNREFUSED, ...).
+# Every socket is non-blocking; nothing here blocks except Poll waits with ms != 0 (and sockets set blocking(h, true)).
+# Backends, all behind the hr_net_* externs: native x86-64 rt.he (raw Linux syscalls), C path hrt.h (POSIX sockets;
+# no winsock yet), web web.js (browser WebSocket; raw TCP and UDP return NOSYS there, host.mjs returns NOSYS for all).
+namespace net
+use std
+AGAIN := -11
+INPROGRESS := -115
+INTR := -4
+BADF := -9
+ACCES := -13
+INVAL := -22
+PIPE := -32
+NOSYS := -38
+MSGSIZE := -90
+ADDRINUSE := -98
+ADDRNOTAVAIL := -99
+NETUNREACH := -101
+CONNABORTED := -103
+CONNRESET := -104
+NOTCONN := -107
+TIMEDOUT := -110
+CONNREFUSED := -111
+HOSTUNREACH := -113
+# readiness bits (poll(2) values)
+READ := 1
+WRITE := 4
+ERR := 8
+HUP := 16
+ANY := 0
+LOOPBACK := 0x7F000001
+# WebSocket states and message kinds
+CONNECTING := 0
+OPEN := 1
+CLOSED := 2
+TEXT := 1
+BINARY := 2
+struct Addr { ip int, port int }
+extern listen_raw(ip int, port int, backlog int) int = "hr_net_listen"
+extern accept(h int) int = "hr_net_accept"
+extern connect_raw(ip int, port int) int = "hr_net_connect"
+extern connected(h int) int = "hr_net_connected"
+extern send(h int, data const byte[:]) int = "hr_net_send"
+extern recv_into(h int, buf byte[:]) int = "hr_net_recv"
+extern udp_raw(ip int, port int) int = "hr_net_udp"
+extern send_to_raw(h int, ip int, port int, data const byte[:]) int = "hr_net_sendto"
+extern recv_from_into(h int, buf byte[:], from byte[:]) int = "hr_net_recvfrom"
+extern close(h int) int = "hr_net_close"
+extern nodelay(h int, on bool) int = "hr_net_nodelay"
+extern blocking(h int, on bool) int = "hr_net_blocking"
+extern local_raw(h int) int = "hr_net_local"
+extern peer_raw(h int) int = "hr_net_peer"
+extern poll_raw(fds int[:], ms int) int = "hr_net_poll"
+extern ws_connect(url const byte[:]) int = "hr_net_ws_open"
+extern ws_send(h int, msg const byte[:], binary bool) int = "hr_net_ws_send"
+extern ws_recv(h int, out byte[>..]&) int = "hr_net_ws_recv"
+extern ws_state(h int) int = "hr_net_ws_state"
+var RB byte[65536]
+var FROM byte[8]
+# addresses
+parse_ip(s const byte[:]) int, bool:
+	if s == "localhost": return LOOPBACK, true
+	ip ~= 0; part ~= 0; digits ~= 0; dots ~= 0
+	for c s:
+		if c == '.':
+			if digits == 0 || dots == 3: return 0, false
+			ip = ip << 8 | part; part = 0; digits = 0; dots += 1
+		else if c >= '0' && c <= '9':
+			part = part * 10 + (c - '0') as int; digits += 1
+			if digits > 3 || part > 255: return 0, false
+		else:
+			return 0, false
+	if digits == 0 || dots != 3: return 0, false
+	return ip << 8 | part, true
+# an invalid host gives ip -1, which listen, connect, udp and send_to reject with INVAL
+addr(host const byte[:], port int) Addr:
+	ip, ok := parse_ip(host)
+	Addr { ip: if ok { ip } else { -1 }, port: port }
+# "host:port"
+parse_addr(s const byte[:]) Addr, bool:
+	k ~= -1
+	for c, i in s: if c == ':': k = i
+	if k < 0: return Addr { ip: -1, port: 0 }, false
+	ip, ok := parse_ip(s[..k]); p, pok := parse_int(s[k + 1..])
+	if !ok || !pok || p < 0 || p > 65535: return Addr { ip: -1, port: 0 }, false
+	return Addr { ip: ip, port: p }, true
+format(out byte[>..]&, a Addr):
+	format(out, a.ip >> 24 & 255, ".", a.ip >> 16 & 255, ".", a.ip >> 8 & 255, ".", a.ip & 255, ":", a.port);
+unpack(v int) Addr: Addr { ip: v >> 16 & 0xFFFFFFFF, port: v & 0xFFFF }
+valid(a Addr) bool: a.ip >= 0 && a.ip <= 0xFFFFFFFF && a.port >= 0 && a.port <= 65535
+# TCP. listen sets SO_REUSEADDR; connect returns at once with the handle while the connection is made, then
+# connected(h) is 0 once it is up, AGAIN while it is still connecting, or the -errno it failed with.
+listen(a Addr, backlog int = 64) int: if valid(a) { listen_raw(a.ip, a.port, backlog) } else { INVAL }
+connect(a Addr) int: if valid(a) { connect_raw(a.ip, a.port) } else { INVAL }
+# appends what arrived (at most limit bytes): n > 0 bytes, 0 when the peer closed, AGAIN when nothing is waiting
+recv(h int, out byte[>..]&, limit int = 65536) int:
+	n := recv_into(h, RB[..clamp(limit, 1, RB.len)])
+	if n > 0: out.append(RB[..n])
+	n
+# sends all of data unless it would block or fails: the count sent, which is less than data.len only on AGAIN
+send_all(h int, data const byte[:]) int:
+	o ~= 0
+	while o < data.len:
+		n := send(h, data[o..])
+		if n == AGAIN: return o
+		if n < 0: return n
+		o += n
+	o
+local_addr(h int) Addr: v := local_raw(h); if v < 0 { Addr { ip: -1, port: v } } else { unpack(v) }
+peer_addr(h int) Addr: v := peer_raw(h); if v < 0 { Addr { ip: -1, port: v } } else { unpack(v) }
+local_port(h int) int: v := local_raw(h); if v < 0 { v } else { v & 0xFFFF }
+# UDP: port 0 binds an ephemeral port (see local_port). A datagram of up to 1200 bytes avoids fragmentation.
+udp(a Addr) int: if valid(a) { udp_raw(a.ip, a.port) } else { INVAL }
+send_to(h int, to Addr, data const byte[:]) int: if valid(to) { send_to_raw(h, to.ip, to.port, data) } else { INVAL }
+# appends one datagram and sets from to its sender: the datagram's size (0 is an empty datagram), or AGAIN
+recv_from(h int, out byte[>..]&, from Addr&) int:
+	n := recv_from_into(h, RB[..], FROM[..])
+	if n >= 0:
+		out.append(RB[..n])
+		from = Addr { ip: (FROM[0] as int) << 24 | (FROM[1] as int) << 16 | (FROM[2] as int) << 8 | FROM[3] as int, port: (FROM[4] as int) << 8 | FROM[5] as int }
+	n
+# readiness: a level-triggered poll set. add() handles with the events wanted and a tag, wait(ms), then read
+# tag(i) and events(i) for i in 0..count. wait(0) never blocks (the only kind the web allows); ms < 0 waits forever.
+struct Poll { n int, tags int[64], fds int[64] }
+clear(p Poll&): p.n = 0;
+add(p Poll&, h int, events int, tag int = 0) bool:
+	if p.n == 64: return false
+	p.fds[p.n] = h & 0xFFFFFFFF | (events & 0xFFFF) << 32; p.tags[p.n] = tag; p.n += 1
+	true
+# the number of handles with events (0 on timeout) or -errno; ready ones come first, in the order they were added
+wait(p Poll&, ms int) int:
+	r := poll_raw(p.fds[..p.n], ms)
+	if r <= 0: return r
+	k ~= 0
+	for i p.n:
+		if p.fds[i] >> 48 & 0xFFFF != 0:
+			f := p.fds[i]; t := p.tags[i]; p.fds[i] = p.fds[k]; p.tags[i] = p.tags[k]; p.fds[k] = f; p.tags[k] = t; k += 1
+	k
+tag(p Poll&, i int) int: p.tags[i]
+handle(p Poll&, i int) int: p.fds[i] & 0xFFFFFFFF
+events(p Poll&, i int) int: p.fds[i] >> 48 & 0xFFFF
+# one handle, one wait: the events that came (0 on timeout) or -errno
+wait_one(h int, events int, ms int) int:
+	var p Poll
+	add(p, h, events)
+	r := wait(p, ms)
+	if r <= 0 { r } else { p.events(0) }
+# u16 little-endian length framing, for message streams over TCP
+frame(out byte[>..]&, msg const byte[:]):
+	out.push((msg.len & 255) as! byte); out.push((msg.len >> 8 & 255) as! byte); out.append(msg)
+# the length of the first whole frame in buf counting its header, or 0 if it has not all arrived
+frame_len(buf const byte[:]) int:
+	if buf.len < 2: return 0
+	m := (buf[0] as int) | (buf[1] as int) << 8
+	if buf.len < 2 + m { 0 } else { 2 + m }
+error_name(e int) const byte[:]:
+	match e:
+		0 => "ok"
+		-11 => "would block (AGAIN)"
+		-115 => "in progress"
+		-4 => "interrupted"
+		-9 => "bad handle"
+		-13 => "permission denied"
+		-22 => "invalid argument"
+		-32 => "broken pipe"
+		-38 => "not supported on this target"
+		-90 => "message too long"
+		-98 => "address in use"
+		-99 => "address not available"
+		-101 => "network unreachable"
+		-103 => "connection aborted"
+		-104 => "connection reset"
+		-107 => "not connected"
+		-110 => "timed out"
+		-111 => "connection refused"
+		-113 => "host unreachable"
+		_ => "socket error"

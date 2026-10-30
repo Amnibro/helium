@@ -237,6 +237,44 @@ rt_os_time_ns() int: sys3(228, 0, iptr(RT_TS[..]), 0); RT_TS[0] * 1000000000 + R
 rt_os_clock_ns() int: sys3(228, 1, iptr(RT_TS[..]), 0); RT_TS[0] * 1000000000 + RT_TS[1]
 rt_os_sleep_ms(ms int): RT_TS[0] = ms / 1000; RT_TS[1] = ms % 1000 * 1000000; sys3(35, iptr(RT_TS[..]), 0, 0);
 rt_os_random_u64() u64: var b u64[1]; if sys3(318, uptr(b[..]), 8, 0) != 8 { return rt_os_time_ns() as! u64 } b[0]
+# sockets for hc/lib/net.he: IPv4, always non-blocking and close-on-exec, results are handles or -errno
+rt_sa(sa byte[16]&, ip int, port int) int: for i 16 { sa[i] = 0 } sa[0] = 2; sa[2] = (port >> 8 & 255) as! byte; sa[3] = (port & 255) as! byte; sa[4] = (ip >> 24 & 255) as! byte; sa[5] = (ip >> 16 & 255) as! byte; sa[6] = (ip >> 8 & 255) as! byte; sa[7] = (ip & 255) as! byte; ptr(sa[..])
+rt_sa_pack(sa byte[16]&) int: (sa[4] as int) << 40 | (sa[5] as int) << 32 | (sa[6] as int) << 24 | (sa[7] as int) << 16 | (sa[2] as int) << 8 | sa[3] as int
+rt_net_opt(h int, lv int, nm int, v int) int: var o int[1]; o[0] = v; sys6(54, h, lv, nm, iptr(o[..]), 4, 0)
+rt_net_bound(kind int, ip int, port int, lst int) int:
+	var sa byte[16]; h := sys6(41, 2, kind | 0x80800, 0, 0, 0, 0); if h < 0: return h
+	if lst >= 0: rt_net_opt(h, 1, 2, 1);
+	r ~= sys6(49, h, rt_sa(sa, ip, port), 16, 0, 0, 0); if r == 0 && lst >= 0: r = sys6(50, h, lst, 0, 0, 0, 0)
+	if r < 0: sys3(3, h, 0, 0); return r
+	h
+rt_net_listen(ip int, port int, backlog int) int: rt_net_bound(1, ip, port, max(backlog, 1))
+rt_net_udp(ip int, port int) int: rt_net_bound(2, ip, port, -1)
+rt_net_accept(h int) int: sys6(288, h, 0, 0, 0x80800, 0, 0)
+rt_net_connect(ip int, port int) int:
+	var sa byte[16]; h := sys6(41, 2, 0x80801, 0, 0, 0, 0); if h < 0: return h
+	r := sys6(42, h, rt_sa(sa, ip, port), 16, 0, 0, 0); if r < 0 && r != -115: sys3(3, h, 0, 0); return r
+	h
+rt_net_connected(h int) int:
+	var p int[1]; p[0] = h & 0xFFFFFFFF | 4 << 32; r := sys6(7, iptr(p[..]), 1, 0, 0, 0, 0); if r < 0 { return r } if r == 0 { return -11 }
+	var e int[1]; var l int[1]; e[0] = 0; l[0] = 4; r2 := sys6(55, h, 1, 4, iptr(e[..]), iptr(l[..]), 0); if r2 < 0 { r2 } else { -(e[0] & 0xFFFFFFFF) }
+rt_net_send(h int, d const byte[:]) int: sys6(44, h, ptr(d), d.len, 0x4000, 0, 0)
+rt_net_recv(h int, b byte[:]) int: sys6(45, h, ptr(b), b.len, 0, 0, 0)
+rt_net_sendto(h int, ip int, port int, d const byte[:]) int: var sa byte[16]; sys6(44, h, ptr(d), d.len, 0x4000, rt_sa(sa, ip, port), 16)
+rt_net_recvfrom(h int, b byte[:], from byte[:]) int:
+	var sa byte[16]; var l int[1]; l[0] = 16; n := sys6(45, h, ptr(b), b.len, 0, rt_sa(sa, 0, 0), iptr(l[..]))
+	if n >= 0 && from.len >= 6: for i 4 { from[i] = sa[4 + i] } from[4] = sa[2]; from[5] = sa[3]
+	n
+rt_net_close(h int) int: sys3(3, h, 0, 0)
+rt_net_nodelay(h int, on bool) int: rt_net_opt(h, 6, 1, if on { 1 } else { 0 })
+rt_net_blocking(h int, on bool) int: f := sys3(72, h, 3, 0); if f < 0 { return f } sys3(72, h, 4, if on { f & ~0x800 } else { f | 0x800 })
+rt_net_name(nr int, h int) int: var sa byte[16]; var l int[1]; l[0] = 16; r := sys3(nr, h, rt_sa(sa, 0, 0), iptr(l[..])); if r < 0 { r } else { rt_sa_pack(sa) }
+rt_net_local(h int) int: rt_net_name(51, h)
+rt_net_peer(h int) int: rt_net_name(52, h)
+rt_net_poll(fds int[:], ms int) int: loop { r := sys3(7, iptr(fds), fds.len, ms); if r != -4 { return r } }
+rt_net_ws_open(url const byte[:]) int: -38
+rt_net_ws_send(h int, m const byte[:], binary bool) int: -38
+rt_net_ws_recv(h int, out int) int: -38
+rt_net_ws_state(h int) int: 2
 rt_trim_memory() bool: true
 rt_os_resource_dir(out int) bool: c := rt_path("/proc/self/exe", RT_PB); n := sys3(89, c, ptr(RT_PB2[..]), 4096); if n <= 0 { return false } k ~= n; while k > 1 && RT_PB2[k - 1] != '/' { k -= 1 } rt_appto(out, ptr(RT_PB2[..]), k - 1); true
 rt_fmod(xb u64, yb u64) u64:
