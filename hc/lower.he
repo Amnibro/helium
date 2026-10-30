@@ -111,7 +111,7 @@ NRMI ~= 0
 ckf(n int) i64, bool:
 	x := ND[n]; k := x.k as int; if k == N_FLT { return flt_bits(tok_text(x.t)) as! i64, true } if k == N_UN && x.op as int == T_MINUS && x.a >= 0 && ND[x.a].k as int == N_FLT { return (flt_bits(tok_text(ND[x.a].t)) ^ (1 as u64) << 63) as! i64, true } return 0, false
 lrom(v int, init int, t int) bool:
-	x := ND[init]; if LVS[v].fl & (LV_VAR | LV_REF | LV_PARAM | LV_FOR | LV_BLKP | LV_CFB) != 0 || TY[t].k != TY_ARR || !is_fix(t) || x.k as int != N_ARR || x.a >= 0 || x.n < 1: return false
+	x := ND[init]; if LVS[v].fl & LV_CONST == 0 || LVS[v].fl & (LV_VAR | LV_REF | LV_PARAM | LV_FOR | LV_BLKP | LV_CFB) != 0 || TY[t].k != TY_ARR || !is_fix(t) || x.k as int != N_ARR || x.a >= 0 || x.n < 1: return false
 	e := TY[t].a; ek := TY[e].k; if tsz(e) != 8 || x.n * 8 != tsz(t) || ek != TY_INT && ek != TY_FLT: return false
 	b byte[>..] ~= []; for i x.n { c := kid(init, i); fv, fo := ckf(c); iv, iu, io := cval(c); if ek == TY_FLT && !fo || ek == TY_INT && (!io || fo) { return false } w := if ek == TY_FLT { fv } else { iv }; for q 8 { b.push((w >> ((q * 8) as i64) & 255) as! byte) } }
 	while LROM.len <= v { LROM.push(-1) } LROM[v] = rodata(b[..]) as i32; true

@@ -1,0 +1,27 @@
+// An AND with a small mask may read past a widening of its operand, but
+// only when the widened value cannot change in between: here the loop
+// variable is reassigned after the widening and before the AND.
+import std;
+import os;
+fn run(n int) int {
+	var h = 0;
+	var v0 u16 = (-714359196201 * n) as! u16;
+	var v6 u32 = (70286219800 * n) as! u32;
+	for s in 37 {
+		v6 = (v0 as! u32);
+		h = h * 31 + v6 as! int;
+		v0 = (((((19590 as u16) >> 0) & (1 as! u16)) >> 1) << 14);
+		h = h * 31 + v0 as! int;
+		v6 = ((v6 & (1 as! u32)) * v6);
+		h = h * 31 + v6 as! int;
+		if s == 0 { return h; }
+	}
+	h
+}
+fn main() {
+	let a = args();
+	var o byte[>..] = [];
+	let n = a.len + 2;
+	format(o, (-714359196201 * n) as! u16, " ", run(n), "\n");
+	print(o);
+}

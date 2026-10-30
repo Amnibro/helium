@@ -1117,11 +1117,11 @@ slf(fi int):
 		if o == I_JMP && x.c >= 0 && nr[x.c] == 1 && nx(i) < i1 && IR[nx(i)].op as int == I_LBL && IR[nx(i)].c == x.c: IR[i] = Ir{I_NOP as u8, 3, -1, -1, -1, 0, -1}; nr[x.c] = 0; continue
 		if o == I_LBL && nr[x.c] == 0: continue
 		if o == I_LBL || o == I_JMP || o == I_BZ || o == I_BNZ || o == I_RET || o == I_RET2: kp.clear(); kv.clear(); kw.clear(); ki.clear(); continue
-		if (o == I_LD || o == I_ST) && x.a >= 0 && sb[x.a] != 0 && x.w & 4 == 0:
+		if (o == I_LD || o == I_ST) && x.a >= 0 && sb[x.a] != 0:
 			z := wsz(x.w as int) as i64; p := so[x.a] + x.c; if !ok(p, z): continue
 			k ~= -1; for q kp.len { if kp[q] == p && wsz(kw[q] as int) as i64 == z && i - ki[q] as int <= SFD { k = q } }
 			if o == I_LD && x.d >= 0:
-				if k >= 0 && kw[k] == x.w: IR[i] = Ir{I_MOV as u8, x.w, x.d, kv[k], -1, 0, -1}
+				if k >= 0 && kw[k] & 8 == x.w & 8: IR[i] = if z == 8 || x.w & 8 != 0 { Ir{I_MOV as u8, x.w, x.d, kv[k], -1, 0, -1} } else { Ir{I_EXT as u8, x.w, x.d, kv[k], -1, 0, -1} }
 				else: if k >= 0 && nd[x.d] == 1 { av[x.d] = kv[k]; aw[x.d] = kw[k] }
 				continue
 			if o == I_ST && x.b >= 0:
@@ -1141,7 +1141,7 @@ andx(fi int):
 	for i i0..i1:
 		x := IR[i]; if x.op as int != I_BIN || x.c != B_AND || x.l >= 0 || x.w & 8 != 0 || x.a < 0 || x.b < 0 || nd[x.b] != 1 || IR[dp[x.b]].op as int != I_IMM: continue
 		k := IR[dp[x.b]].c; if k < 0 || k >= 1 << 31: continue
-		a ~= x.a as int; for z 4 { if nd[a] != 1 || dp[a] < 0 { break } y := IR[dp[a]]; if y.op as int != I_EXT || y.w & 8 != 0 || y.a < 0 || k >= 1 << (8 * min(wsz(y.w as int), 4) - 1) { break } a = y.a as int }
+		a ~= x.a as int; for z 4 { if nd[a] != 1 || dp[a] < 0 { break } y := IR[dp[a]]; if y.op as int != I_EXT || y.w & 8 != 0 || y.a < 0 || nd[y.a] != 1 || k >= 1 << (8 * min(wsz(y.w as int), 4) - 1) { break } a = y.a as int }
 		IR[i].a = a as i32
 deadcode(fi int):
 	f := NFS[fi]; i0 := f.i0; i1 := f.i1; nv := f.nv

@@ -1,0 +1,30 @@
+// Narrow fields of small structs and arrays rewritten through stack slots:
+// unsigned and signed bytes and halves, a whole-value copy over earlier field
+// stores, and loads of one width after stores of another.
+import std;
+import os;
+struct B { x byte, y byte, z i8, w u16, v i16 }
+fn step(b B, s byte) B {
+	var q = b;
+	q.x *= s;
+	q.y = q.y + q.x;
+	q.x /= s;
+	q.z = (q.z as int - 100) as! i8;
+	q.w = q.w * 3 + q.x as u16;
+	q.v = (q.v as int * 7) as! i16;
+	if q.y > 200 { q = b; q.y = 1; }
+	q
+}
+fn main() {
+	let n = args().len;
+	var b = B { x: 6, y: 12, z: 5, w: 40000, v: -3 };
+	var h = 0;
+	for i in 50 { b = step(b, (n + 1 + i % 3) as byte); h = h * 31 + b.x as int + b.y as int * 3 + b.z as int * 5 + b.w as int * 7 + b.v as int * 11; }
+	var a byte[4] = [250, 251, 252, 253];
+	a[1] += 10;
+	let c = a[1];
+	a[1] = c / 2;
+	var o byte[>..] = [];
+	format(o, h, " ", a[0], " ", a[1], " ", c, "\n");
+	print(o);
+}
