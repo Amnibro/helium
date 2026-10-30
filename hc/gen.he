@@ -1377,7 +1377,7 @@ recursive gbuiltin0(n int):
 			if TY[rt].k == TY_SLICE: gas(recv); ow(").p")
 			else:
 				if is_vimg(rt): if rr { gx0(recv); } else { gx(recv); } format(O, "); _b", p, " += hr_vhd(_b", p, ", ", vw(rt), ", ", vlim(rt), ")") else: if rr { gx0(recv); } else { gaddr(recv); } ow(")->e")
-		format(O, "; const uint8_t *_r", p, " = (const uint8_t*)("); gx(arg(1)); format(O, "); (int64_t)((_r", p, " - _b", p, ") / (int64_t)sizeof("); ct(e); ow(")); })")
+		format(O, "; const uint8_t *_r", p, " = (const uint8_t*)hr_canonp((const void*)("); gx(arg(1)); format(O, ")); (int64_t)((_r", p, " - _b", p, ") / (int64_t)sizeof("); ct(e); ow(")); })")
 		return
 	if is_vimg(rt) && vlim(rt) == 1 && !is_seq(rt):
 		w := vw(rt)
