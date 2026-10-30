@@ -123,6 +123,7 @@ test/he/he_discarded_tails.he
 test/he/he_else_binding.he
 test/he/he_int_locals.he
 test/he/he_layout.he
+test/if_arr_conv.amni
 test/lifetimes/append_copied_refs.amni
 test/lifetimes/assign_path_after.amni
 test/lifetimes/assign_through_ref_field.amni
@@ -340,6 +341,7 @@ test/physics/physics_queries.amni
 test/physics/physics_recording.amni
 test/physics/physics_shapes.amni
 test/physics/physics_world.amni
+test/ref_flit.amni
 test/runtime/abort_msg.amni
 test/runtime/assert_ufcs_fails.amni
 test/runtime/cast_abort_f32.amni
@@ -564,3 +566,4 @@ test/ui/ui_popups.amni
 test/ui/ui_style.amni
 test/ui/ui_widgets.amni
 test/ui/ui_windows.amni
+test/vst_ref_if.amni
