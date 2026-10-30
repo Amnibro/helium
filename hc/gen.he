@@ -38,6 +38,7 @@ vok(n int, t int) bool:
 is_seq(t int) bool:
 	(TY[t].k == TY_ARR || TY[t].k == TY_SLICE) && is_vval(TY[t].a)
 DSU ~= 0
+LITQ ~= -1
 var HRG byte[>..]
 var HRS byte[>..]
 var HRL byte[>..]
@@ -515,13 +516,14 @@ recursive garr(n int):
 		ow("_t"); oi(p); ow("; })")
 		return
 	if is_fix(t) || is_lim(t):
-		ow("({ "); ct(t); ow(" _t"); oi(p); ow("; ")
+		q := LITQ; LITQ = -1
+		tg byte[..32] ~= []; if q >= 0 { format(tg, "(*_q", q, ")") } else { format(tg, "_t", p); ow("({ "); ct(t); ow(" _t"); oi(p); ow("; ") }
 		if x.a >= 0:
-			ct(e); ow(" _v"); oi(p); ow(" = "); gxe(x.a, e); format(O, "; for (int64_t _k = 0; _k < ", if is_fix(t) { TY[t].b } else { 0 }, "; _k++) _t", p, ".e[_k] = "); grep_v(p, e); ow("; "); if is_lim(t): ow("int64_t _c"); oi(p); ow(" = "); gx(x.b); format(O, "; for (int64_t _k = 0; _k < _c", p, "; _k++) _t", p, ".e[_k] = "); grep_v(p, e); format(O, "; _t", p, ".n = _c", p, "; ")
+			ct(e); ow(" _v"); oi(p); ow(" = "); gxe(x.a, e); format(O, "; for (int64_t _k = 0; _k < ", if is_fix(t) { TY[t].b } else { 0 }, "; _k++) ", tg[..], ".e[_k] = "); grep_v(p, e); ow("; "); if is_lim(t): ow("int64_t _c"); oi(p); ow(" = "); gx(x.b); format(O, "; for (int64_t _k = 0; _k < _c", p, "; _k++) ", tg[..], ".e[_k] = "); grep_v(p, e); format(O, "; ", tg[..], ".n = _c", p, "; ")
 		else:
-			if is_lim(t) { format(O, "memset(&_t", p, ", 0, sizeof _t", p, "); _t", p, ".n = ", x.n, "; ") } for i x.n:
-				if is_rel(e): grel_st_open(e); format(O, "_t", p, ".e[", i, "]"); grel_st_close(e, kid(n, i)); ow(" ") else: format(O, "_t", p, ".e[", i, "] = "); gxe(kid(n, i), e); ow("; ")
-		ow("_t"); oi(p); ow("; })")
+			if is_lim(t) { format(O, "memset(&", tg[..], ", 0, sizeof ", tg[..], "); ", tg[..], ".n = ", x.n, "; ") } for i x.n:
+				if is_rel(e): grel_st_open(e); format(O, tg[..], ".e[", i, "]"); grel_st_close(e, kid(n, i)); ow(" ") else: format(O, tg[..], ".e[", i, "] = "); gxe(kid(n, i), e); ow("; ")
+		if q < 0: ow("_t"); oi(p); ow("; })")
 		return
 	if is_vimg(t) && is_seq(t):
 		if !vok(n, t): return
@@ -1720,6 +1722,8 @@ recursive gvdecl(n int):
 	v := rv(n)
 	t := LVS[v].ty
 	decl_lv(v)
+	ia := if x.b >= 0 { kid(x.b, 0) } else { -1 }
+	if ia >= 0 && ND[ia].k as int == N_ARR && (is_fix(t) || is_lim(t)) && at(ia) == t && cv(ia) < 0 && !lv_isptr(v) && !needs_drop(t): q := nt(); ow("; { "); ct(t); ow(" *_q"); oi(q); ow(" = &"); lv_name(v); ow("; "); LITQ = q; garr(ia); ow("} "); return
 	ow(" = ")
 	if x.b < 0: if is_vval(t) { gvzero(t); ow("; "); } else { if has_def(t) { gdefault(t); ow("; "); } else { ow("{0}; "); } } return
 	init := kid(x.b, 0)
@@ -1891,6 +1895,7 @@ recursive gvst(si int, n int):
 		else:
 			ga := if given >= 0 { ND[given].a as int } else { -1 }
 			if given < 0 && f.def < 0 || ga >= 0 && is_fixed(ft) && is_lim(ft) && fin(ga) == ft && ND[ga].k == N_ARR && ND[ga].n == 0 && ND[ga].a < 0: format(O, "hr_ds.n = _c", p, "; memset(hr_grow(&hr_ds, sizeof("); ct(ft); ow("), 1), 0, sizeof("); ct(ft); ow(")); } "); continue
+			if ga >= 0 && is_fixed(ft) && fin(ga) == ft && is_place(ga): format(O, "hr_ds.n = _c", p, "; memcpy(hr_grow(&hr_ds, sizeof("); ct(ft); ow("), 1), "); { sa1 := AOWN; AOWN = gi; gaddr(ga); AOWN = sa1 }; ow(", sizeof("); ct(ft); ow(")); } "); continue
 			ct(ft); ow(" _v")
 			if given >= 0 && !is_fixed(ft): format(O, " = _h", p, "_", j, "; ")
 			else:

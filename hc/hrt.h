@@ -45,6 +45,7 @@ typedef struct { uint8_t *b; int64_t n; int64_t top; int64_t *fl; int64_t fln, f
 #ifndef HR_ASZ
 #define HR_ASZ ((int64_t)1 << 17)
 #endif
+#define HR_GRD ((int64_t)(HR_ALIAS ? 16384 : 65536))
 #define HR_LIKELY(x) __builtin_expect(!!(x), 1)
 #define HR_UNLIKELY(x) __builtin_expect(!!(x), 0)
 static int hr_argc; static char **hr_argv;
@@ -81,9 +82,9 @@ static inline int64_t hr_ix(int64_t i, int64_t n, const char *loc) { if (HR_UNLI
 #if HR_ALIAS
 static pthread_mutex_t hr_smu = PTHREAD_MUTEX_INITIALIZER;
 static int64_t hr_rcap(const uint8_t *b) { return ((const int64_t *)b)[-1]; }
-static uint8_t *hr_map(int64_t s) { s = (s + 16383) & ~(int64_t)16383; void *p = mmap(NULL, (size_t)(16384 + s + 65536), PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0); if (p == MAP_FAILED) { fprintf(stderr, "helium runtime error: out of address space\n"); exit(1); } uint8_t *b = (uint8_t *)p + 16384; mprotect(b + s, 65536, PROT_NONE); ((int64_t *)b)[-1] = s; return b; }
+static uint8_t *hr_map(int64_t s) { s = (s + 16383) & ~(int64_t)16383; void *p = mmap(NULL, (size_t)(16384 + s + HR_GRD), PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0); if (p == MAP_FAILED) { fprintf(stderr, "helium runtime error: out of address space\n"); exit(1); } uint8_t *b = (uint8_t *)p + 16384; mprotect(b + s, HR_GRD, PROT_NONE); ((int64_t *)b)[-1] = s; return b; }
 static void hr_rtedit(const uint8_t *s, int64_t c, hr_ch *ch) { pthread_mutex_lock(&hr_smu); hr_rtab *o = hr_rt; int64_t n = o ? o->n : 0, k = 0, put = s != NULL; hr_rtab *t = malloc(sizeof *t + (size_t)(n + 1) * sizeof(hr_ret)); for (int64_t i = 0; i <= n; i++) { if (put && (i == n || o->e[i].s > s)) { t->e[k++] = (hr_ret){ s, s + c, ch }; put = 0; } if (i < n && (s || o->e[i].ch != ch)) t->e[k++] = o->e[i]; } t->n = k; if (!k) { free(t); t = NULL; } __atomic_store_n(&hr_rt, t, __ATOMIC_RELEASE); if (o) { free(hr_rold[hr_roldn & 63]); hr_rold[hr_roldn++ & 63] = o; } pthread_mutex_unlock(&hr_smu); }
-static void hr_unmap(uint8_t *b) { hr_ch *ch = ((hr_ch **)b)[-2]; int64_t c = hr_rcap(b); if (ch) hr_rtedit(NULL, 0, ch); munmap(b - 16384, (size_t)(16384 + c + 65536)); if (ch) { for (int64_t i = 0; i < ch->n; i++) munmap(ch->mb[i] - 16384, (size_t)(16384 + ch->mc[i] + 65536)); free(ch->mb); free(ch->mc); free(ch); } }
+static void hr_unmap(uint8_t *b) { hr_ch *ch = ((hr_ch **)b)[-2]; int64_t c = hr_rcap(b); if (ch) hr_rtedit(NULL, 0, ch); munmap(b - 16384, (size_t)(16384 + c + HR_GRD)); if (ch) { for (int64_t i = 0; i < ch->n; i++) munmap(ch->mb[i] - 16384, (size_t)(16384 + ch->mc[i] + HR_GRD)); free(ch->mb); free(ch->mc); free(ch); } }
 static __attribute__((noinline, cold, pure)) uint8_t *hr_regrow(uint8_t *b, int64_t x, const char *loc) {
 	int64_t c = hr_rcap(b), s = c; if (x > HR_RSZ) hr_die("array grew past its reservation", loc); while (s < x) s *= 4; s = s < HR_RSZ ? s : HR_RSZ;
 	uint8_t *nb = hr_map(s); vm_address_t a = (vm_address_t)nb; vm_prot_t cp, mp;
@@ -701,9 +702,14 @@ static int64_t hr_hardware_threads(void) {
 }
 static void hr_main(void);
 static void hr_init_globals(void);
-#ifdef __ANDROID__
+#if defined(__ANDROID__) || HR_ALIAS && defined(__aarch64__)
 static void *hr_bigmain(void *a) { hr_init_globals(); hr_main(); hr_flush(); return a; }
+#endif
+#ifdef __ANDROID__
 int main(int argc, char **argv) { hr_argc = argc; hr_argv = argv; pthread_attr_t at; pthread_t th; pthread_attr_init(&at); pthread_attr_setstacksize(&at, (size_t)1 << 28); if (pthread_create(&th, &at, hr_bigmain, 0)) { hr_bigmain(0); return 0; } pthread_join(th, 0); return 0; }
+#elif HR_ALIAS && defined(__aarch64__)
+__attribute__((naked, noinline)) static void hr_onstack(void *top, void *(*fn)(void *)) { __asm__ volatile("mov x9, sp\n\tmov sp, x0\n\tstp x9, x30, [sp, #-16]!\n\tblr x1\n\tldp x9, x30, [sp], #16\n\tmov sp, x9\n\tret"); }
+int main(int argc, char **argv) { hr_argc = argc; hr_argv = argv; size_t s = (size_t)1 << 26; uint8_t *p = mmap(NULL, s + 16384, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0); if (p == MAP_FAILED) hr_bigmain(0); else { mprotect(p, 16384, PROT_NONE); hr_onstack(p + 16384 + s, hr_bigmain); } return 0; }
 #else
 int main(int argc, char **argv) { hr_argc = argc; hr_argv = argv; hr_init_globals(); hr_main(); hr_flush(); return 0; }
 #endif
