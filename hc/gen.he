@@ -1889,6 +1889,8 @@ recursive gvst(si int, n int):
 			e byte[..512] ~= []; vz_into(e, ft, "_f")
 			format(O, "; hr_vplace(_c", p, ", _f, ", e[..], "); } ")
 		else:
+			ga := if given >= 0 { ND[given].a as int } else { -1 }
+			if given < 0 && f.def < 0 || ga >= 0 && is_fixed(ft) && is_lim(ft) && fin(ga) == ft && ND[ga].k == N_ARR && ND[ga].n == 0 && ND[ga].a < 0: format(O, "hr_ds.n = _c", p, "; memset(hr_grow(&hr_ds, sizeof("); ct(ft); ow("), 1), 0, sizeof("); ct(ft); ow(")); } "); continue
 			ct(ft); ow(" _v")
 			if given >= 0 && !is_fixed(ft): format(O, " = _h", p, "_", j, "; ")
 			else:
