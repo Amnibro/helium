@@ -103,10 +103,9 @@ With AVX-512 allowed, the `simd fn` programs go further: nbody/2 79.7 ms at
 ## Helium results (Linux)
 
 Wall time in ms, best of three to five runs, with the program and its peak
-memory under each time. Measured 2026-10-29 under Linux on CPUs 8-15,24-31 of
-the same Ryzen 9950X3D (the core complex without the large L3), Helium built
-by the gate-164 compiler (ef13ac9e); json-serde, merkletrees and nsieve
-measured again on 2026-10-30 with the gate-175 compiler (52394c45). Each
+memory under each time. Measured under Linux on CPUs 8-15,24-31 of the same
+Ryzen 9950X3D (the core complex without the large L3): Helium on 2026-10-30
+with the gate-187 compiler (ba3d9302), the other languages on 2026-10-29. Each
 program's latest run
 (`plb.py report --markdown --last 1`). Single- and multithreaded programs are
 split as in the table above, and "ratio" is the fastest of Rust, C and C++
@@ -123,41 +122,41 @@ PLB's own flags: code for any x86-64 CPU from Broadwell on (`-march=broadwell`,
 
 | problem | input | Helium | Goose | Rust | C/C++ | ratio | Helium -m | Goose -m | Rust -m | C/C++ -m | ratio -m |
 |---|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|
-| binarytrees | 15 | 10 <sub>1 1.0M</sub> | 9 <sub>1 3.7M</sub> | 77 <sub>4 5.9M</sub> | - | 7.99 | 2 <sub>2-m 4.6M</sub> | 2 <sub>2-m 7.2M</sub> | - | - | - |
-| binarytrees | 18 | 114 <sub>1 11.1M</sub> | 96 <sub>1 15.0M</sub> | 888 <sub>4 33.9M</sub> | - | 7.82 | 19 <sub>2-m 67.8M</sub> | 15 <sub>2-m 68.2M</sub> | - | - | - |
-| coro-prime-sieve | 1000 | 1 <sub>1 2.0M</sub> | 2 <sub>1 2.4M</sub> | 46 <sub>3 4.1M</sub> | - | 38.45 | - | - | 6 <sub>5 3.1M</sub> | - | - |
-| coro-prime-sieve | 4000 | 16 <sub>1 2.0M</sub> | 20 <sub>1 2.4M</sub> | 710 <sub>3 9.1M</sub> | - | 45.45 | - | - | 53 <sub>5 4.9M</sub> | - | - |
-| edigits | 100000 | 14 <sub>1 5.3M</sub> | 13 <sub>1 3.9M</sub> | 15 <sub>1 3.1M</sub> | - | 1.12 | - | - | - | - | - |
-| edigits | 250001 | 49 <sub>1 6.0M</sub> | 49 <sub>1 7.0M</sub> | 59 <sub>1 3.7M</sub> | - | 1.19 | - | - | - | - | - |
-| fannkuch-redux | 10 | 33 <sub>1 0.6M</sub> | 33 <sub>1 2.4M</sub> | 65 <sub>3-i 1.9M</sub> | - | 1.95 | 4 <sub>1-m 2.5M</sub> | 4 <sub>1-m 2.4M</sub> | 6 <sub>3-im 2.0M</sub> | 62 <sub>1-im 4.3M</sub> | 1.28 |
-| fannkuch-redux | 11 | 384 <sub>1 2.0M</sub> | 388 <sub>1 2.1M</sub> | 773 <sub>3-i 1.9M</sub> | - | 2.01 | 43 <sub>1-m 2.5M</sub> | 41 <sub>1-m 2.2M</sub> | 53 <sub>3-im 2.1M</sub> | 740 <sub>1-im 4.4M</sub> | 1.25 |
-| fasta | 250000 | 4 <sub>2 8.2M</sub> | 5 <sub>1 3.1M</sub> | 5 <sub>6 1.9M</sub> | - | 1.16 | 4 <sub>2-m 4.5M</sub> | 5 <sub>1-m 3.7M</sub> | 6 <sub>5c-m 7.1M</sub> | - | 1.37 |
-| fasta | 2500000 | 37 <sub>2 8.0M</sub> | 49 <sub>1 3.1M</sub> | 48 <sub>6 1.9M</sub> | - | 1.29 | 38 <sub>2-m 5.7M</sub> | 46 <sub>1-m 5.5M</sub> | 50 <sub>5c-m 7.3M</sub> | - | 1.31 |
-| helloworld | QwQ | 0 <sub>1 2.0M</sub> | 0 <sub>1 2.2M</sub> | 0 <sub>1 1.9M</sub> | 0 <sub>1 2.2M</sub> | 1.20 | - | - | - | - | - |
-| json-serde | sample 5000 | 11 <sub>1 10.5M</sub> | 12 <sub>1 6.9M</sub> | 11 <sub>5-i 9.9M</sub> | - | 1.00 | 5 <sub>1-m 13.6M</sub> | - | - | - | - |
-| json-serde | canada 15 | 96 <sub>1 54.2M</sub> | 98 <sub>1 50.0M</sub> | 99 <sub>5-i 52.5M</sub> | - | 1.03 | 40 <sub>1-m 77.5M</sub> | - | - | - | - |
-| knucleotide | 250000_in | 10 <sub>1 14.1M</sub> | 18 <sub>1 10.6M</sub> | 21 <sub>8 11.5M</sub> | - | 2.11 | 6 <sub>1-m 26.1M</sub> | 10 <sub>1-m 18.0M</sub> | 8 <sub>8-m 16.0M</sub> | 26 <sub>1 9.1M</sub> | 1.29 |
-| knucleotide | 2500000_in | 88 <sub>1 36.1M</sub> | 130 <sub>1 34.3M</sub> | 161 <sub>8 23.9M</sub> | - | 1.83 | 34 <sub>3-m 73.4M</sub> | 59 <sub>1-m 65.4M</sub> | 45 <sub>8-m 27.9M</sub> | 240 <sub>1 19.6M</sub> | 1.35 |
-| lru | 100 500000 | 4 <sub>2 2.0M</sub> | 6 <sub>2 2.1M</sub> | 13 <sub>0-unsafe 1.9M</sub> | - | 2.93 | - | - | - | - | - |
-| lru | 1000 1000000 | 9 <sub>2 0.5M</sub> | 15 <sub>2 2.2M</sub> | 16 <sub>0-unsafe 1.9M</sub> | - | 1.76 | - | - | - | - | - |
-| lru | 1000 3000000 | 26 <sub>2 0.6M</sub> | 43 <sub>2 2.2M</sub> | 60 <sub>0-unsafe 1.9M</sub> | - | 2.26 | - | - | - | - | - |
-| mandelbrot | 1000 | 6 <sub>1 0.5M</sub> | 6 <sub>1 2.4M</sub> | 7 <sub>8 2.1M</sub> | - | 1.22 | 2 <sub>1-m 0.8M</sub> | 2 <sub>1-m 2.6M</sub> | - | - | - |
-| mandelbrot | 5000 | 133 <sub>1 3.0M</sub> | 127 <sub>1 5.1M</sub> | 161 <sub>8 4.9M</sub> | - | 1.21 | 17 <sub>1-m 3.8M</sub> | 15 <sub>1-m 5.3M</sub> | - | - | - |
-| merkletrees | 15 | 24 <sub>1 8.0M</sub> | 23 <sub>1 6.4M</sub> | 90 <sub>1 9.9M</sub> | - | 3.82 | - | - | - | - | - |
-| merkletrees | 17 | 110 <sub>1 20.0M</sub> | 109 <sub>1 19.2M</sub> | 450 <sub>1 33.9M</sub> | - | 4.09 | - | - | - | - | - |
-| nbody | 500000 | 14 <sub>2 2.0M</sub> | 15 <sub>2 2.1M</sub> | 10 <sub>4-i 1.9M</sub> | 10 <sub>0-i 4.0M</sub> | 0.68 | - | - | - | - | - |
-| nbody | 5000000 | 143 <sub>2 2.0M</sub> | 134 <sub>2 2.1M</sub> | 98 <sub>4-i 1.9M</sub> | 90 <sub>0-i 4.0M</sub> | 0.63 | - | - | - | - | - |
-| nsieve | 10 | 25 <sub>1 13.0M</sub> | 29 <sub>1 11.9M</sub> | 32 <sub>1 11.6M</sub> | 29 <sub>1 11.9M</sub> | 1.13 | 18 <sub>2-m 5.8M</sub> | - | - | - | - |
-| nsieve | 12 | 126 <sub>2 7.0M</sub> | 122 <sub>2 7.1M</sub> | 160 <sub>2 6.9M</sub> | 133 <sub>1 8.7M</sub> | 1.06 | 74 <sub>2-m 13.1M</sub> | - | - | - | - |
-| pidigits | 4000 | 30 <sub>1 0.5M</sub> | 33 <sub>1 2.1M</sub> | 151 <sub>2 2.4M</sub> | - | 4.99 | - | - | - | - | - |
-| pidigits | 8000 | 127 <sub>1 2.0M</sub> | 137 <sub>1 2.4M</sub> | 639 <sub>2 2.6M</sub> | - | 5.03 | - | - | - | - | - |
-| regex-redux | 250000_in | 21 <sub>1 14.5M</sub> | 55 <sub>1 13.3M</sub> | - | - | - | 17 <sub>2-m 28.9M</sub> | 21 <sub>2-m 20.8M</sub> | 24 <sub>7 10.7M</sub> | - | 1.45 |
-| regex-redux | 2500000_in | 179 <sub>1 104.5M</sub> | 512 <sub>1 99.9M</sub> | - | - | - | 148 <sub>2-m 203.9M</sub> | 215 <sub>2-m 171.4M</sub> | 227 <sub>7 76.7M</sub> | - | 1.53 |
-| secp256k1 | 500 | 12 <sub>2 2.0M</sub> | 18 <sub>1 2.1M</sub> | 15 <sub>0 1.9M</sub> | - | 1.28 | - | - | - | - | - |
-| secp256k1 | 2000 | 47 <sub>2 2.0M</sub> | 69 <sub>1 2.2M</sub> | 60 <sub>0 1.9M</sub> | - | 1.28 | - | - | - | - | - |
-| spectral-norm | 2000 | 24 <sub>2 2.0M</sub> | 29 <sub>1 2.2M</sub> | 50 <sub>7 1.9M</sub> | - | 2.11 | 6 <sub>2-m 16.1M</sub> | 5 <sub>2-m 2.4M</sub> | 7 <sub>7-m 2.1M</sub> | 59 <sub>5-im 2.7M</sub> | 1.14 |
-| spectral-norm | 4000 | 95 <sub>2 2.0M</sub> | 115 <sub>1 2.1M</sub> | 200 <sub>7 1.9M</sub> | - | 2.11 | 15 <sub>2-m 14.3M</sub> | 17 <sub>2-m 3.0M</sub> | 27 <sub>7-m 2.3M</sub> | 234 <sub>5-im 2.4M</sub> | 1.72 |
-| spectral-norm | 8000 | 378 <sub>2 2.0M</sub> | 460 <sub>1 2.4M</sub> | 799 <sub>7 2.2M</sub> | - | 2.11 | 54 <sub>2-m 12.6M</sub> | 64 <sub>1-m 5.0M</sub> | 103 <sub>7-m 2.2M</sub> | 938 <sub>5-im 3.0M</sub> | 1.92 |
+| binarytrees | 15 | 10 <sub>1 3.0M</sub> | 9 <sub>1 3.7M</sub> | 77 <sub>4 5.9M</sub> | - | 7.80 | 2 <sub>2-m 6.4M</sub> | 2 <sub>2-m 7.2M</sub> | - | - | - |
+| binarytrees | 18 | 112 <sub>1 12.1M</sub> | 96 <sub>1 15.0M</sub> | 888 <sub>4 33.9M</sub> | - | 7.96 | 20 <sub>2-m 85.8M</sub> | 15 <sub>2-m 68.2M</sub> | - | - | - |
+| coro-prime-sieve | 1000 | 1 <sub>1 2.0M</sub> | 2 <sub>1 2.4M</sub> | 46 <sub>3 4.1M</sub> | - | 35.32 | - | - | 6 <sub>5 3.1M</sub> | - | - |
+| coro-prime-sieve | 4000 | 17 <sub>1 2.0M</sub> | 20 <sub>1 2.4M</sub> | 710 <sub>3 9.1M</sub> | - | 41.38 | - | - | 53 <sub>5 4.9M</sub> | - | - |
+| edigits | 100000 | 13 <sub>1 5.3M</sub> | 13 <sub>1 3.9M</sub> | 15 <sub>1 3.1M</sub> | - | 1.20 | - | - | - | - | - |
+| edigits | 250001 | 46 <sub>1 6.0M</sub> | 49 <sub>1 7.0M</sub> | 59 <sub>1 3.7M</sub> | - | 1.29 | - | - | - | - | - |
+| fannkuch-redux | 10 | 33 <sub>1 2.0M</sub> | 33 <sub>1 2.4M</sub> | 65 <sub>3-i 1.9M</sub> | - | 1.96 | 5 <sub>1-m 2.5M</sub> | 4 <sub>1-m 2.4M</sub> | 6 <sub>3-im 2.0M</sub> | 62 <sub>1-im 4.3M</sub> | 1.22 |
+| fannkuch-redux | 11 | 406 <sub>1 2.0M</sub> | 388 <sub>1 2.1M</sub> | 773 <sub>3-i 1.9M</sub> | - | 1.91 | 46 <sub>1-m 2.5M</sub> | 41 <sub>1-m 2.2M</sub> | 53 <sub>3-im 2.1M</sub> | 740 <sub>1-im 4.4M</sub> | 1.16 |
+| fasta | 250000 | 5 <sub>2 8.2M</sub> | 5 <sub>1 3.1M</sub> | 5 <sub>6 1.9M</sub> | - | 1.09 | 5 <sub>2-m 4.3M</sub> | 5 <sub>1-m 3.7M</sub> | 6 <sub>5c-m 7.1M</sub> | - | 1.29 |
+| fasta | 2500000 | 37 <sub>2 8.0M</sub> | 49 <sub>1 3.1M</sub> | 48 <sub>6 1.9M</sub> | - | 1.28 | 38 <sub>2-m 5.4M</sub> | 46 <sub>1-m 5.5M</sub> | 50 <sub>5c-m 7.3M</sub> | - | 1.33 |
+| helloworld | QwQ | 0 <sub>1 2.0M</sub> | 0 <sub>1 2.2M</sub> | 0 <sub>1 1.9M</sub> | 0 <sub>1 2.2M</sub> | 1.46 | - | - | - | - | - |
+| json-serde | sample 5000 | 11 <sub>1 10.6M</sub> | 12 <sub>1 6.9M</sub> | 11 <sub>5-i 9.9M</sub> | - | 1.02 | 5 <sub>1-m 17.8M</sub> | - | - | - | - |
+| json-serde | canada 15 | 95 <sub>1 54.2M</sub> | 98 <sub>1 50.0M</sub> | 99 <sub>5-i 52.5M</sub> | - | 1.04 | 41 <sub>1-m 77.9M</sub> | - | - | - | - |
+| knucleotide | 250000_in | 10 <sub>1 14.1M</sub> | 18 <sub>1 10.6M</sub> | 21 <sub>8 11.5M</sub> | - | 2.13 | 6 <sub>1-m 24.1M</sub> | 10 <sub>1-m 18.0M</sub> | 8 <sub>8-m 16.0M</sub> | 26 <sub>1 9.1M</sub> | 1.37 |
+| knucleotide | 2500000_in | 83 <sub>1 36.1M</sub> | 130 <sub>1 34.3M</sub> | 161 <sub>8 23.9M</sub> | - | 1.93 | 31 <sub>3-m 73.4M</sub> | 59 <sub>1-m 65.4M</sub> | 45 <sub>8-m 27.9M</sub> | 240 <sub>1 19.6M</sub> | 1.46 |
+| lru | 100 500000 | 4 <sub>2 2.0M</sub> | 6 <sub>2 2.1M</sub> | 13 <sub>0-unsafe 1.9M</sub> | - | 3.36 | - | - | - | - | - |
+| lru | 1000 1000000 | 8 <sub>2 2.0M</sub> | 15 <sub>2 2.2M</sub> | 16 <sub>0-unsafe 1.9M</sub> | - | 1.97 | - | - | - | - | - |
+| lru | 1000 3000000 | 24 <sub>2 2.0M</sub> | 43 <sub>2 2.2M</sub> | 60 <sub>0-unsafe 1.9M</sub> | - | 2.47 | - | - | - | - | - |
+| mandelbrot | 1000 | 6 <sub>1 2.0M</sub> | 6 <sub>1 2.4M</sub> | 7 <sub>8 2.1M</sub> | - | 1.26 | 2 <sub>1-m 10.8M</sub> | 2 <sub>1-m 2.6M</sub> | - | - | - |
+| mandelbrot | 5000 | 128 <sub>1 5.1M</sub> | 127 <sub>1 5.1M</sub> | 161 <sub>8 4.9M</sub> | - | 1.26 | 17 <sub>1-m 22.3M</sub> | 15 <sub>1-m 5.3M</sub> | - | - | - |
+| merkletrees | 15 | 24 <sub>1 8.0M</sub> | 23 <sub>1 6.4M</sub> | 90 <sub>1 9.9M</sub> | - | 3.83 | - | - | - | - | - |
+| merkletrees | 17 | 109 <sub>1 20.0M</sub> | 109 <sub>1 19.2M</sub> | 450 <sub>1 33.9M</sub> | - | 4.13 | - | - | - | - | - |
+| nbody | 500000 | 13 <sub>2 2.0M</sub> | 15 <sub>2 2.1M</sub> | 10 <sub>4-i 1.9M</sub> | 10 <sub>0-i 4.0M</sub> | 0.73 | - | - | - | - | - |
+| nbody | 5000000 | 133 <sub>2 2.0M</sub> | 134 <sub>2 2.1M</sub> | 98 <sub>4-i 1.9M</sub> | 90 <sub>0-i 4.0M</sub> | 0.68 | - | - | - | - | - |
+| nsieve | 10 | 26 <sub>1 13.0M</sub> | 29 <sub>1 11.9M</sub> | 32 <sub>1 11.6M</sub> | 29 <sub>1 11.9M</sub> | 1.10 | 18 <sub>2-m 5.8M</sub> | - | - | - | - |
+| nsieve | 12 | 125 <sub>2 7.0M</sub> | 122 <sub>2 7.1M</sub> | 160 <sub>2 6.9M</sub> | 133 <sub>1 8.7M</sub> | 1.07 | 73 <sub>2-m 13.1M</sub> | - | - | - | - |
+| pidigits | 4000 | 29 <sub>1 2.0M</sub> | 33 <sub>1 2.1M</sub> | 151 <sub>2 2.4M</sub> | - | 5.18 | - | - | - | - | - |
+| pidigits | 8000 | 126 <sub>1 2.0M</sub> | 137 <sub>1 2.4M</sub> | 639 <sub>2 2.6M</sub> | - | 5.07 | - | - | - | - | - |
+| regex-redux | 250000_in | 22 <sub>1 14.4M</sub> | 55 <sub>1 13.3M</sub> | - | - | - | 16 <sub>2-m 28.8M</sub> | 21 <sub>2-m 20.8M</sub> | 24 <sub>7 10.7M</sub> | - | 1.47 |
+| regex-redux | 2500000_in | 186 <sub>1 104.5M</sub> | 512 <sub>1 99.9M</sub> | - | - | - | 149 <sub>2-m 205.8M</sub> | 215 <sub>2-m 171.4M</sub> | 227 <sub>7 76.7M</sub> | - | 1.52 |
+| secp256k1 | 500 | 11 <sub>2 2.0M</sub> | 18 <sub>1 2.1M</sub> | 15 <sub>0 1.9M</sub> | - | 1.39 | - | - | - | - | - |
+| secp256k1 | 2000 | 44 <sub>2 2.0M</sub> | 69 <sub>1 2.2M</sub> | 60 <sub>0 1.9M</sub> | - | 1.38 | - | - | - | - | - |
+| spectral-norm | 2000 | 24 <sub>2 2.0M</sub> | 29 <sub>1 2.2M</sub> | 50 <sub>7 1.9M</sub> | - | 2.11 | 7 <sub>1-m 15.1M</sub> | 5 <sub>2-m 2.4M</sub> | 7 <sub>7-m 2.1M</sub> | 59 <sub>5-im 2.7M</sub> | 1.03 |
+| spectral-norm | 4000 | 94 <sub>2 2.0M</sub> | 115 <sub>1 2.1M</sub> | 200 <sub>7 1.9M</sub> | - | 2.12 | 17 <sub>2-m 12.2M</sub> | 17 <sub>2-m 3.0M</sub> | 27 <sub>7-m 2.3M</sub> | 234 <sub>5-im 2.4M</sub> | 1.59 |
+| spectral-norm | 8000 | 375 <sub>2 2.0M</sub> | 460 <sub>1 2.4M</sub> | 799 <sub>7 2.2M</sub> | - | 2.13 | 53 <sub>2-m 14.0M</sub> | 64 <sub>1-m 5.0M</sub> | 103 <sub>7-m 2.2M</sub> | 938 <sub>5-im 3.0M</sub> | 1.94 |
 
 ### Built for this CPU
 
@@ -167,41 +166,41 @@ registers also hold small arrays across a loop). Goose was not rebuilt.
 
 | problem | input | Helium | Goose | Rust | C/C++ | ratio | Helium -m | Goose -m | Rust -m | C/C++ -m | ratio -m |
 |---|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|
-| binarytrees | 15 | 10 <sub>1 3.0M</sub> | - | 77 <sub>4 5.9M</sub> | - | 7.89 | 3 <sub>2-m 6.4M</sub> | - | - | - | - |
-| binarytrees | 18 | 109 <sub>1 12.1M</sub> | - | 886 <sub>4 33.9M</sub> | - | 8.11 | 21 <sub>2-m 83.7M</sub> | - | - | - | - |
-| coro-prime-sieve | 1000 | 1 <sub>1 2.0M</sub> | - | 46 <sub>3 4.4M</sub> | - | 38.54 | - | - | 8 <sub>3-m 4.2M</sub> | - | - |
-| coro-prime-sieve | 4000 | 16 <sub>1 2.0M</sub> | - | 700 <sub>3 9.4M</sub> | - | 44.86 | - | - | 54 <sub>5 4.5M</sub> | - | - |
-| edigits | 100000 | 14 <sub>1 5.3M</sub> | - | 15 <sub>1 3.2M</sub> | - | 1.09 | - | - | - | - | - |
-| edigits | 250001 | 49 <sub>1 6.0M</sub> | - | 56 <sub>1 3.7M</sub> | - | 1.16 | - | - | - | - | - |
-| fannkuch-redux | 10 | 34 <sub>1 2.0M</sub> | - | 64 <sub>3-i 1.9M</sub> | - | 1.89 | 4 <sub>1-m 2.5M</sub> | - | 5 <sub>3-im 2.5M</sub> | 62 <sub>1-im 4.2M</sub> | 1.14 |
-| fannkuch-redux | 11 | 390 <sub>1 2.0M</sub> | - | 759 <sub>3-i 1.9M</sub> | - | 1.95 | 44 <sub>1-m 2.5M</sub> | - | 54 <sub>3-im 2.5M</sub> | 741 <sub>1-im 4.3M</sub> | 1.21 |
-| fasta | 250000 | 5 <sub>2 8.2M</sub> | - | 5 <sub>6 1.9M</sub> | - | 1.10 | 4 <sub>2-m 4.2M</sub> | - | 6 <sub>5c-m 7.5M</sub> | - | 1.33 |
-| fasta | 2500000 | 38 <sub>2 8.0M</sub> | - | 48 <sub>6 1.9M</sub> | - | 1.29 | 39 <sub>2-m 6.7M</sub> | - | 49 <sub>5c-m 7.3M</sub> | - | 1.28 |
-| helloworld | QwQ | 0 <sub>1 2.0M</sub> | - | 0 <sub>1 1.9M</sub> | 0 <sub>1 2.2M</sub> | 1.10 | - | - | - | - | - |
-| json-serde | sample 5000 | 11 <sub>1 10.6M</sub> | - | 11 <sub>5-i 10.2M</sub> | - | 1.02 | 5 <sub>1-m 14.3M</sub> | - | - | - | - |
-| json-serde | canada 15 | 96 <sub>1 54.2M</sub> | - | 88 <sub>5-i 53.5M</sub> | - | 0.91 | 41 <sub>1-m 77.6M</sub> | - | - | - | - |
-| knucleotide | 250000_in | 10 <sub>1 14.1M</sub> | - | 22 <sub>8 11.5M</sub> | - | 2.14 | 6 <sub>1-m 25.1M</sub> | - | 8 <sub>8-m 15.4M</sub> | 27 <sub>1 8.8M</sub> | 1.32 |
-| knucleotide | 2500000_in | 88 <sub>1 36.1M</sub> | - | 161 <sub>8 23.7M</sub> | - | 1.82 | 34 <sub>3-m 73.4M</sub> | - | 48 <sub>8-m 28.9M</sub> | 243 <sub>1 19.8M</sub> | 1.42 |
-| lru | 100 500000 | 4 <sub>2 2.0M</sub> | - | 13 <sub>0-unsafe 1.9M</sub> | - | 3.06 | - | - | - | - | - |
-| lru | 1000 1000000 | 9 <sub>2 2.0M</sub> | - | 14 <sub>0-unsafe 1.9M</sub> | - | 1.56 | - | - | - | - | - |
-| lru | 1000 3000000 | 26 <sub>2 2.0M</sub> | - | 69 <sub>0-unsafe 1.9M</sub> | - | 2.62 | - | - | - | - | - |
-| mandelbrot | 1000 | 6 <sub>1 2.0M</sub> | - | 7 <sub>8 1.9M</sub> | - | 1.18 | 2 <sub>1-m 12.5M</sub> | - | - | - | - |
-| mandelbrot | 5000 | 128 <sub>1 5.1M</sub> | - | 150 <sub>8 5.0M</sub> | - | 1.18 | 16 <sub>1-m 22.4M</sub> | - | - | - | - |
-| merkletrees | 15 | 25 <sub>1 8.0M</sub> | - | 85 <sub>1 9.9M</sub> | - | 3.47 | - | - | - | - | - |
-| merkletrees | 17 | 115 <sub>1 20.0M</sub> | - | 430 <sub>1 33.9M</sub> | - | 3.74 | - | - | - | - | - |
-| nbody | 500000 | 9 <sub>2 2.0M</sub> | - | 9 <sub>4-i 1.9M</sub> | 9 <sub>0-i 4.0M</sub> | 1.03 | - | - | - | - | - |
-| nbody | 5000000 | 89 <sub>2 2.0M</sub> | - | 90 <sub>4-i 1.9M</sub> | 88 <sub>0-i 4.0M</sub> | 1.00 | - | - | - | - | - |
-| nsieve | 10 | 26 <sub>1 13.0M</sub> | - | 30 <sub>1 11.8M</sub> | 25 <sub>1 12.0M</sub> | 0.97 | 18 <sub>2-m 5.8M</sub> | - | - | - | - |
-| nsieve | 12 | 127 <sub>2 7.0M</sub> | - | 181 <sub>1 41.0M</sub> | 126 <sub>1 8.8M</sub> | 1.00 | 75 <sub>2-m 13.1M</sub> | - | - | - | - |
-| pidigits | 4000 | 30 <sub>1 2.0M</sub> | - | 144 <sub>2 2.4M</sub> | - | 4.87 | - | - | - | - | - |
-| pidigits | 8000 | 126 <sub>1 2.0M</sub> | - | 619 <sub>2 2.7M</sub> | - | 4.89 | - | - | - | - | - |
-| regex-redux | 250000_in | 22 <sub>1 14.2M</sub> | - | - | - | - | 16 <sub>2-m 28.7M</sub> | - | 23 <sub>7 11.7M</sub> | - | 1.44 |
-| regex-redux | 2500000_in | 182 <sub>1 104.5M</sub> | - | - | - | - | 148 <sub>2-m 203.7M</sub> | - | 213 <sub>7 78.7M</sub> | - | 1.44 |
-| secp256k1 | 500 | 11 <sub>2 2.0M</sub> | - | 14 <sub>0 1.9M</sub> | - | 1.33 | - | - | - | - | - |
+| binarytrees | 15 | 10 <sub>1 3.0M</sub> | - | 77 <sub>4 5.9M</sub> | - | 8.03 | 2 <sub>2-m 6.9M</sub> | - | - | - | - |
+| binarytrees | 18 | 108 <sub>1 12.1M</sub> | - | 886 <sub>4 33.9M</sub> | - | 8.16 | 20 <sub>2-m 85.8M</sub> | - | - | - | - |
+| coro-prime-sieve | 1000 | 1 <sub>1 2.0M</sub> | - | 46 <sub>3 4.4M</sub> | - | 35.16 | - | - | 8 <sub>3-m 4.2M</sub> | - | - |
+| coro-prime-sieve | 4000 | 16 <sub>1 2.0M</sub> | - | 700 <sub>3 9.4M</sub> | - | 44.57 | - | - | 54 <sub>5 4.5M</sub> | - | - |
+| edigits | 100000 | 13 <sub>1 5.3M</sub> | - | 15 <sub>1 3.2M</sub> | - | 1.19 | - | - | - | - | - |
+| edigits | 250001 | 45 <sub>1 6.0M</sub> | - | 56 <sub>1 3.7M</sub> | - | 1.25 | - | - | - | - | - |
+| fannkuch-redux | 10 | 33 <sub>1 2.0M</sub> | - | 64 <sub>3-i 1.9M</sub> | - | 1.95 | 4 <sub>1-m 2.5M</sub> | - | 5 <sub>3-im 2.5M</sub> | 62 <sub>1-im 4.2M</sub> | 1.18 |
+| fannkuch-redux | 11 | 378 <sub>1 2.0M</sub> | - | 759 <sub>3-i 1.9M</sub> | - | 2.01 | 44 <sub>1-m 2.5M</sub> | - | 54 <sub>3-im 2.5M</sub> | 741 <sub>1-im 4.3M</sub> | 1.21 |
+| fasta | 250000 | 4 <sub>2 8.2M</sub> | - | 5 <sub>6 1.9M</sub> | - | 1.14 | 4 <sub>2-m 4.3M</sub> | - | 6 <sub>5c-m 7.5M</sub> | - | 1.31 |
+| fasta | 2500000 | 37 <sub>2 8.0M</sub> | - | 48 <sub>6 1.9M</sub> | - | 1.30 | 38 <sub>2-m 6.2M</sub> | - | 49 <sub>5c-m 7.3M</sub> | - | 1.30 |
+| helloworld | QwQ | 0 <sub>1 2.0M</sub> | - | 0 <sub>1 1.9M</sub> | 0 <sub>1 2.2M</sub> | 0.95 | - | - | - | - | - |
+| json-serde | sample 5000 | 11 <sub>1 10.6M</sub> | - | 11 <sub>5-i 10.2M</sub> | - | 1.05 | 5 <sub>1-m 14.3M</sub> | - | - | - | - |
+| json-serde | canada 15 | 95 <sub>1 54.2M</sub> | - | 88 <sub>5-i 53.5M</sub> | - | 0.93 | 40 <sub>1-m 77.3M</sub> | - | - | - | - |
+| knucleotide | 250000_in | 9 <sub>1 14.1M</sub> | - | 22 <sub>8 11.5M</sub> | - | 2.36 | 5 <sub>1-m 24.1M</sub> | - | 8 <sub>8-m 15.4M</sub> | 27 <sub>1 8.8M</sub> | 1.51 |
+| knucleotide | 2500000_in | 84 <sub>1 36.1M</sub> | - | 161 <sub>8 23.7M</sub> | - | 1.92 | 31 <sub>3-m 72.4M</sub> | - | 48 <sub>8-m 28.9M</sub> | 243 <sub>1 19.8M</sub> | 1.53 |
+| lru | 100 500000 | 4 <sub>2 2.0M</sub> | - | 13 <sub>0-unsafe 1.9M</sub> | - | 3.51 | - | - | - | - | - |
+| lru | 1000 1000000 | 8 <sub>2 2.0M</sub> | - | 14 <sub>0-unsafe 1.9M</sub> | - | 1.65 | - | - | - | - | - |
+| lru | 1000 3000000 | 24 <sub>2 2.0M</sub> | - | 69 <sub>0-unsafe 1.9M</sub> | - | 2.86 | - | - | - | - | - |
+| mandelbrot | 1000 | 6 <sub>1 2.0M</sub> | - | 7 <sub>8 1.9M</sub> | - | 1.18 | 2 <sub>1-m 11.7M</sub> | - | - | - | - |
+| mandelbrot | 5000 | 128 <sub>1 5.1M</sub> | - | 150 <sub>8 5.0M</sub> | - | 1.17 | 16 <sub>1-m 19.6M</sub> | - | - | - | - |
+| merkletrees | 15 | 23 <sub>1 8.0M</sub> | - | 85 <sub>1 9.9M</sub> | - | 3.70 | - | - | - | - | - |
+| merkletrees | 17 | 108 <sub>1 20.0M</sub> | - | 430 <sub>1 33.9M</sub> | - | 3.99 | - | - | - | - | - |
+| nbody | 500000 | 9 <sub>2 2.0M</sub> | - | 9 <sub>4-i 1.9M</sub> | 9 <sub>0-i 4.0M</sub> | 1.04 | - | - | - | - | - |
+| nbody | 5000000 | 87 <sub>2 2.0M</sub> | - | 90 <sub>4-i 1.9M</sub> | 88 <sub>0-i 4.0M</sub> | 1.02 | - | - | - | - | - |
+| nsieve | 10 | 25 <sub>1 13.0M</sub> | - | 30 <sub>1 11.8M</sub> | 25 <sub>1 12.0M</sub> | 1.00 | 18 <sub>2-m 5.8M</sub> | - | - | - | - |
+| nsieve | 12 | 125 <sub>2 7.0M</sub> | - | 181 <sub>1 41.0M</sub> | 126 <sub>1 8.8M</sub> | 1.01 | 73 <sub>2-m 13.0M</sub> | - | - | - | - |
+| pidigits | 4000 | 29 <sub>1 2.0M</sub> | - | 144 <sub>2 2.4M</sub> | - | 4.96 | - | - | - | - | - |
+| pidigits | 8000 | 125 <sub>1 2.0M</sub> | - | 619 <sub>2 2.7M</sub> | - | 4.94 | - | - | - | - | - |
+| regex-redux | 250000_in | 22 <sub>1 14.5M</sub> | - | - | - | - | 17 <sub>2-m 28.7M</sub> | - | 23 <sub>7 11.7M</sub> | - | 1.41 |
+| regex-redux | 2500000_in | 186 <sub>1 104.5M</sub> | - | - | - | - | 149 <sub>2-m 204.6M</sub> | - | 213 <sub>7 78.7M</sub> | - | 1.43 |
+| secp256k1 | 500 | 11 <sub>2 2.0M</sub> | - | 14 <sub>0 1.9M</sub> | - | 1.28 | - | - | - | - | - |
 | secp256k1 | 2000 | 43 <sub>2 2.0M</sub> | - | 57 <sub>0 1.9M</sub> | - | 1.31 | - | - | - | - | - |
-| spectral-norm | 2000 | 20 <sub>2 2.0M</sub> | - | 47 <sub>7 1.9M</sub> | - | 2.32 | 6 <sub>2-m 14.0M</sub> | - | 8 <sub>7-m 2.4M</sub> | 59 <sub>5-im 2.6M</sub> | 1.31 |
-| spectral-norm | 4000 | 82 <sub>2 2.0M</sub> | - | 188 <sub>7 1.9M</sub> | - | 2.31 | 13 <sub>2-m 13.3M</sub> | - | 27 <sub>7-m 2.4M</sub> | 234 <sub>5-im 2.4M</sub> | 2.07 |
-| spectral-norm | 8000 | 325 <sub>2 2.0M</sub> | - | 749 <sub>7 2.2M</sub> | - | 2.30 | 41 <sub>2-m 14.9M</sub> | - | 105 <sub>7-m 2.4M</sub> | 936 <sub>5-im 2.9M</sub> | 2.57 |
+| spectral-norm | 2000 | 20 <sub>2 2.0M</sub> | - | 47 <sub>7 1.9M</sub> | - | 2.32 | 6 <sub>2-m 17.1M</sub> | - | 8 <sub>7-m 2.4M</sub> | 59 <sub>5-im 2.6M</sub> | 1.27 |
+| spectral-norm | 4000 | 81 <sub>2 2.0M</sub> | - | 188 <sub>7 1.9M</sub> | - | 2.32 | 12 <sub>2-m 16.4M</sub> | - | 27 <sub>7-m 2.4M</sub> | 234 <sub>5-im 2.4M</sub> | 2.15 |
+| spectral-norm | 8000 | 324 <sub>2 2.0M</sub> | - | 749 <sub>7 2.2M</sub> | - | 2.31 | 39 <sub>2-m 15.8M</sub> | - | 105 <sub>7-m 2.4M</sub> | 936 <sub>5-im 2.9M</sub> | 2.69 |
 
 ## Notes on the programs
 
