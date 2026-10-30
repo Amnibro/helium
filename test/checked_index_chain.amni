@@ -1,0 +1,19 @@
+import std;
+struct T { p byte[512], q byte[512] }
+fn walk(t const T&, a int, b int, c int) int {
+	let pe .= t.p;
+	let pq .= t.q;
+	var s = 0;
+	s += pq[a + pe[b + pe[c]]] as int;
+	s += pq[a + 1 + pe[b + 1 + pe[c + 1]]] as int;
+	s
+}
+fn main() {
+	var t = T { p: [0; 512], q: [0; 512] };
+	for k in 512 { t.p[k] = ((k * 151 + 7) & 255) as byte; t.q[k] = ((k * 37 + 11) % 12) as byte; }
+	var h = 0;
+	for i in 256 { h = h * 31 + walk(t, i, (i * 7) & 255, (i * 13) & 255); h &= 0xffffff; }
+	var o byte[>..] = [];
+	format(o, h, "\n");
+	print(o);
+}
