@@ -14,6 +14,7 @@ step vecweb env VFWEB=1 python3 tools/hc/vecfuzz.py "$HN" 140 7001
 step he tools/hc/hetest.sh "$HN"
 step lsp timeout 300 python3 tools/hc/lsptest.py "$HN"
 step webhost tools/hc/webtest.sh "$HN"
+step net tools/hc/nettest.sh "$HN"
 step pkg python3 tools/hc/pkgtest.py "$HN"
 step lut tools/hc/luttest.sh "$HN"
 step err python3 tools/hc/errtest.py "$HN"
