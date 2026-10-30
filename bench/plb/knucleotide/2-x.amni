@@ -1,0 +1,137 @@
+// Step-reduced (-x): the output of 1.amni without its hash tables, from one
+// pass over the sequence. Each pair of codes is counted in one of 16
+// counters (in four banks, so that repeats of a pair do not wait on each
+// other), and the frequencies of single codes are those of the pairs they
+// start plus the last code. The names are all prefixes of the longest, so
+// at each position the window of the next MAXK codes holds each name's
+// k-nucleotide there in its top 2k bits: each name is one compare, its
+// count a register.
+
+import std;
+import os;
+
+let MAXK = 18;
+
+fn code_of(c byte) byte { (c >> 1) & 3 }
+
+// The codes of the sequence after the line starting with ">THREE", written
+// over the start of text.
+fn read_three(text byte[:]) byte[:] {
+	let header = byte_set(">");
+	var at = 0;
+	loop {
+		let k = find_any(text[at..], header);
+		assert(k >= 0);
+		at += k;
+		if starts_with(text[at..], ">THREE") { break; }
+		at += 1;
+	}
+	at += find(text[at..], "\n") + 1;
+	var end = find_any(text[at..], header);
+	end = if end < 0 { text.len } else { at + end };
+	// Every byte is stored, and the next one overwrites a newline's.
+	var n = 0;
+	for c in text[at..end] {
+		text[n] = code_of(c);
+		n += if c != '\n' { 1 } else { 0 };
+	}
+	return text[..n];
+}
+
+fn decode(out byte[>..]&, key uint, k int) {
+	for i in k {
+		out.push("ACTG"[((key >> (2 * (k - 1 - i))) & 3) as! int]);
+	}
+}
+
+struct Entry { key uint, count int }
+
+fn report(out byte[>..]&, counts int[:], k int) {
+	var entries Entry[>..] = [];
+	var total = 0;
+	for n, key in counts {
+		guard n != 0;
+		entries.push(Entry { key as uint, n });
+		total += n;
+	}
+	sort(entries) { a, b => a.count > b.count || (a.count == b.count && a.key > b.key) };
+	for e in entries {
+		decode(out, e.key, k);
+		out.push(' ');
+		format_flt(out, (e.count as f32 * 100.0) / total, 3);
+		out.push('\n');
+	}
+	out.push('\n');
+}
+
+fn key_of(name byte[:]) uint {
+	var key uint = 0;
+	for c in name { key = (key << 2) | code_of(c); }
+	return key;
+}
+
+// One pass over the windows that fit: the pairs at each position into
+// pairs, a bank of 16 counters for each position mod 4, and the
+// occurrences of each name into found. A position where the shortest name
+// does not start, so none does, costs one compare.
+fn scan(seq byte[:], names const byte[:][:], pairs int[64]&, found int[5]&) {
+	let k0 = key_of(names[0]);
+	let s0 = (2 * (MAXK - names[0].len)) as uint;
+	var keys uint[5] = [0; 5];
+	var shifts uint[5] = [0; 5];
+	for name, j in names {
+		keys[j] = key_of(name);
+		shifts[j] = (2 * (MAXK - name.len)) as uint;
+	}
+	let mask uint = (1 << (2 * MAXK)) - 1;
+	var w uint = 0;
+	for c in seq[..MAXK - 1] { w = (w << 2) | c; }
+	var f0 = 0;
+	for p in seq.len - MAXK + 1 {
+		w = ((w << 2) | seq[p + MAXK - 1]) & mask;
+		pairs[(p & 3) * 16 + (w >> (2 * MAXK - 4)) as! int] += 1;
+		if w >> s0 == k0 {
+			f0++;
+			for j in 1..5 { found[j] += if w >> shifts[j] == keys[j] { 1 } else { 0 }; }
+		}
+	}
+	found[0] += f0;
+}
+
+fn main() {
+	let a = args();
+	assert(a.len > 1);
+	var text byte[>..] = [];
+	if !read_file(a[1], text) { abort("cannot read the input"); }
+	let seq = read_three(text);
+	let n = seq.len;
+	assert(n >= MAXK);
+	let names = ["GGT", "GGTA", "GGTATT", "GGTATTTTAATT", "GGTATTTTAATTTATAGT"];
+	assert(names.len == 5);
+	for name in names { assert(starts_with(name, names[0]) && starts_with(names[4], name) && name.len <= MAXK); }
+	var pairs int[64] = [0; 64];
+	var found int[5] = [0; 5];
+	scan(seq, names[..], pairs, found);
+	// The last MAXK - 1 positions, whose windows run past the end.
+	for p in n - MAXK + 1..n {
+		for name, j in names {
+			guard p + name.len <= n;
+			var key uint = 0;
+			for c in seq[p..p + name.len] { key = (key << 2) | c; }
+			found[j] += if key == key_of(name) { 1 } else { 0 };
+		}
+		if p + 1 < n { pairs[(p & 3) * 16 + (seq[p] * 4 + seq[p + 1]) as int] += 1; }
+	}
+	var two int[16] = [0; 16];
+	var one int[4] = [0; 4];
+	for i in 16 {
+		two[i] = pairs[i] + pairs[16 + i] + pairs[32 + i] + pairs[48 + i];
+		one[i / 4] += two[i];
+	}
+	one[seq[n - 1] as int] += 1;
+	var out byte[>..] = [];
+	report(out, one[..], 1);
+	report(out, two[..], 2);
+	for name, j in names { format(out, found[j], "\t", name, "\n"); }
+	write_stdout(out);
+}
