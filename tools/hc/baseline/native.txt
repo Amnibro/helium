@@ -437,6 +437,7 @@ test/runtime/free_negative.amni
 test/runtime/free_past_end.amni
 test/runtime/free_u64.amni
 test/runtime/free_valid.amni
+test/runtime/grow_keeps_references.amni
 test/runtime/heap_pop_empty.amni
 test/runtime/integer_text.amni
 test/runtime/native_stack_overflow.amni
