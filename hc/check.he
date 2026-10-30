@@ -278,7 +278,7 @@ recursive default_t(n int) int:
 		for i x.n:
 			c := kid(n, i); ct := at(c); if !is_pending(ct): e = if e >= 0 && e != ct && (TY[e].k == TY_VARIANT || TY[e].k == TY_ENUM) && (TY[ct].k == TY_VARIANT || TY[ct].k == TY_ENUM) && TY[e].a == TY[ct].a { t_enum(TY[e].a, TY[e].fl & 1 != 0 && TY[e].k == TY_ENUM) } else { ct }
 		if e < 0 && x.n > 0: e = default_t(kid(n, 0)); if TY[e].k == TY_ARR && TY[e].s as int == A_FIXED && !is_fixed(TY[e].a as int) { e = t_arr(TY[e].a as int, A_VAR, -1, 6) }
-		if e < 0: cerr(n, "an empty [] has no element type here"); return T_ERRT
+		if e < 0: m byte[>..] ~= []; ectx(n, m); cerr(n, m[..]); return T_ERRT
 		for i x.n: conv(kid(n, i), e)
 		a := t_arr(e, A_FIXED, x.n, -1)
 		set_t(n, a)
@@ -472,6 +472,25 @@ place_ok(n int) bool:
 var HRELC i8[>..]
 recursive srel(si int) bool:
 	for i STI[si].fnum { ft := SFI[STI[si].f0 as int + i].ty; if ft >= 0 && (TY[ft].k == TY_REF && TY[ft].c >= 0 || has_rel(ft)) { return true } } false
+epar(n int) int:
+	for p ND.len:
+		k := ND[p].k as int
+		if (k == N_BIN || k == N_IDX || k == N_SLICE || k == N_DOT || k == N_FOR || k == N_IF || k == N_BREAK || k == N_ARR) && (ND[p].a == n as i32 || k != N_FOR && k != N_DOT && ND[p].b == n as i32 || k == N_IF && ND[p].c == n as i32): return p
+		if (k == N_BLOCK || k == N_CALL || k == N_ARR || k == N_LIST || k == N_RET) && (k == N_BLOCK || k == N_CALL) && ND[p].a == n as i32: return p
+		if k == N_BLOCK || k == N_CALL || k == N_ARR || k == N_LIST || k == N_RET: for j ND[p].n { if kid(p, j) == n { return p } }
+	-1
+ectx(n int, m byte[>..]&):
+	m.append("cannot infer the element type of []: "); p := epar(n); k := if p >= 0 { ND[p].k as int } else { -1 }; u byte[>..] ~= []
+	if k == N_BIN: u.append(tname(ND[p].op as int))
+	else if k == N_IDX || k == N_SLICE: u.append("an index, slice or field of it")
+	else if k == N_DOT: { if rk(p) == R_MEMBER { u.push('.'); u.append(nm(ND[p].s)) } else { u.append("an index, slice or field of it") } }
+	else if k == N_FOR: u.append("a for loop")
+	else if k == N_ARR: u.append("the array literal around it")
+	else if k == N_BLOCK && ND[p].a != n as i32: u.append("a statement")
+	else if k == N_CALL: c := ND[p].a as int; if c >= 0 && (ND[c].k as int == N_ID || ND[c].k as int == N_DOT) { u.append(nm(ND[c].s)) }
+	else if k == N_BLOCK: q := epar(p); if q >= 0 && ND[q].k as int == N_IF { m.append("a [] branch takes none from the other branches (§6.4)"); return }
+	if u.len == 0: m.clear(); m.append("an empty [] has no element type here"); return
+	m.append(u); m.append(" gives it none (§4.2)")
 recursive has_rel(t int) bool:
 	if t < 0: return false
 	while HRELC.len < TY.len: HRELC.push(-1)

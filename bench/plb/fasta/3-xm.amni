@@ -137,8 +137,7 @@ fn main() {
 		let lines = (counts[sec] + LINE - 1) / LINE;
 		var first = 0;
 		while first < lines {
-			let t = if sec == 0 { [] } else { if sec == 1 { iub } else { sapiens } };
-			qput(Job { id: jobs, first: first, lines: min(PIECE, lines - first), count: counts[sec], seed: seeds[sec], table: t });
+			qput(Job { id: jobs, first: first, lines: min(PIECE, lines - first), count: counts[sec], seed: seeds[sec], table: if sec == 0 { [] } else { if sec == 1 { copy(iub) } else { copy(sapiens) } } });
 			jobs++;
 			first += PIECE;
 		}
