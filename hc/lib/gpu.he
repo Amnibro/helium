@@ -1,0 +1,106 @@
+namespace gpu
+use std
+use os
+use ffi
+use lutgpu
+extern "libc.so.6" {
+	c_memcpy(d uint, s uint, n uint) uint = "memcpy";
+}
+struct Kern { id int, sm uint, dsl uint, pl uint, pipe uint, dp uint, ds uint, nb int }
+struct Buf { b uint, m uint, p uint, size int }
+var KS Kern[>..]
+var BUFS Buf[>..]
+var CUR = -1
+var NARG = 0
+var BROKEN = false
+var APTR uint[16]
+var ALEN int[16]
+var ARW bool[16]
+var CPOOL uint = 0
+var CBUF uint = 0
+var RUNS = 0
+mtype(bits int, want int) int:
+	for i lutgpu::g32(lutgpu::MEMP[..], 0): if bits & (1 << i) != 0 && lutgpu::g32(lutgpu::MEMP[..], 4 + i * 8) & want == want { return i }
+	-1
+freebuf(b Buf):
+	if b.b != 0: lutgpu::vk_db(lutgpu::DEV, b.b, 0)
+	if b.m != 0: lutgpu::vk_fm(lutgpu::DEV, b.m, 0)
+mkbuf(size int, usage int, rb bool) Buf:
+	d := lutgpu::DEV; bci := lutgpu::zb(56); lutgpu::p32(bci, 0, 12); lutgpu::p64(bci, 24, size as uint); lutgpu::p32(bci, 32, usage); o := lutgpu::zb(8)
+	if lutgpu::vk_cb(d, lutgpu::pt(bci[..]), 0, lutgpu::pt(o[..])) != 0: return Buf { 0, 0, 0, 0 }
+	b := lutgpu::g64(o[..], 0); rq := lutgpu::zb(24); lutgpu::vk_bmr(d, b, lutgpu::pt(rq[..])); bits := lutgpu::g32(rq[..], 16); m uint ~= 0
+	for want if rb { [14, 6, 7] } else { [7, 6, 6] }:
+		t := mtype(bits, want); if t < 0 || m != 0: continue
+		mai := lutgpu::zb(32); lutgpu::p32(mai, 0, 5); lutgpu::p64(mai, 16, lutgpu::g64(rq[..], 0)); lutgpu::p32(mai, 24, t)
+		if lutgpu::vk_am(d, lutgpu::pt(mai[..]), 0, lutgpu::pt(o[..])) == 0 { m = lutgpu::g64(o[..], 0) }
+	if m == 0: lutgpu::vk_db(d, b, 0); return Buf { 0, 0, 0, 0 }
+	mp := lutgpu::zb(8)
+	if lutgpu::vk_bbm(d, b, m, 0) != 0 || lutgpu::vk_mm(d, m, 0, size as uint, 0, lutgpu::pt(mp[..])) != 0: freebuf(Buf { b, m, 0, 0 }); return Buf { 0, 0, 0, 0 }
+	Buf { b, m, lutgpu::g64(mp[..], 0), size }
+mkkern(spv const byte[:], id int, nb int) bool:
+	d := lutgpu::DEV; o := lutgpu::zb(8); k ~= Kern { id, 0, 0, 0, 0, 0, 0, nb }
+	sc byte[>..] ~= []; sc.append(spv); smi := lutgpu::zb(40); lutgpu::p32(smi, 0, 16); lutgpu::p64(smi, 24, spv.len as uint); lutgpu::p64(smi, 32, lutgpu::pt(sc[..]))
+	if lutgpu::vk_csm(d, lutgpu::pt(smi[..]), 0, lutgpu::pt(o[..])) != 0: return false
+	k.sm = lutgpu::g64(o[..], 0); bd := lutgpu::zb(24 * (nb + 1))
+	for i nb + 1: lutgpu::p32(bd, i * 24, i); lutgpu::p32(bd, i * 24 + 4, if i == 0 { 6 } else { 7 }); lutgpu::p32(bd, i * 24 + 8, 1); lutgpu::p32(bd, i * 24 + 12, 0x20)
+	dli := lutgpu::zb(32); lutgpu::p32(dli, 0, 32); lutgpu::p32(dli, 20, nb + 1); lutgpu::p64(dli, 24, lutgpu::pt(bd[..]))
+	if lutgpu::vk_cdsl(d, lutgpu::pt(dli[..]), 0, lutgpu::pt(o[..])) != 0: return false
+	k.dsl = lutgpu::g64(o[..], 0); sls := lutgpu::zb(8); lutgpu::p64(sls, 0, k.dsl); pli := lutgpu::zb(48); lutgpu::p32(pli, 0, 30); lutgpu::p32(pli, 20, 1); lutgpu::p64(pli, 24, lutgpu::pt(sls[..]))
+	if lutgpu::vk_cpl(d, lutgpu::pt(pli[..]), 0, lutgpu::pt(o[..])) != 0: return false
+	k.pl = lutgpu::g64(o[..], 0); en := "main\0"; cpi := lutgpu::zb(96); lutgpu::p32(cpi, 0, 29); lutgpu::p32(cpi, 24, 18); lutgpu::p32(cpi, 44, 0x20); lutgpu::p64(cpi, 48, k.sm); lutgpu::p64(cpi, 56, lutgpu::pt(en)); lutgpu::p64(cpi, 72, k.pl); lutgpu::p32(cpi, 88, -1)
+	if lutgpu::vk_ccp(d, 0, 1, lutgpu::pt(cpi[..]), 0, lutgpu::pt(o[..])) != 0: return false
+	k.pipe = lutgpu::g64(o[..], 0); ps := lutgpu::zb(16); lutgpu::p32(ps, 0, 6); lutgpu::p32(ps, 4, 1); lutgpu::p32(ps, 8, 7); lutgpu::p32(ps, 12, nb)
+	dpi := lutgpu::zb(40); lutgpu::p32(dpi, 0, 33); lutgpu::p32(dpi, 20, 1); lutgpu::p32(dpi, 24, if nb > 0 { 2 } else { 1 }); lutgpu::p64(dpi, 32, lutgpu::pt(ps[..]))
+	if lutgpu::vk_cdp(d, lutgpu::pt(dpi[..]), 0, lutgpu::pt(o[..])) != 0: return false
+	k.dp = lutgpu::g64(o[..], 0); sl := lutgpu::zb(8); lutgpu::p64(sl, 0, k.dsl); dai := lutgpu::zb(40); lutgpu::p32(dai, 0, 34); lutgpu::p64(dai, 16, k.dp); lutgpu::p32(dai, 24, 1); lutgpu::p64(dai, 32, lutgpu::pt(sl[..]))
+	if lutgpu::vk_ads(d, lutgpu::pt(dai[..]), lutgpu::pt(o[..])) != 0: return false
+	k.ds = lutgpu::g64(o[..], 0); KS.push(k); BUFS.resize(KS.len * 17, Buf { 0, 0, 0, 0 }); true
+cmdbuf() bool:
+	if CBUF != 0: return true
+	d := lutgpu::DEV; o := lutgpu::zb(8); cpci := lutgpu::zb(24); lutgpu::p32(cpci, 0, 39); lutgpu::p32(cpci, 16, 2); lutgpu::p32(cpci, 20, lutgpu::QFAM)
+	if lutgpu::vk_ccpool(d, lutgpu::pt(cpci[..]), 0, lutgpu::pt(o[..])) != 0: return false
+	CPOOL = lutgpu::g64(o[..], 0); cbi := lutgpu::zb(32); lutgpu::p32(cbi, 0, 40); lutgpu::p64(cbi, 16, CPOOL); lutgpu::p32(cbi, 28, 1)
+	if lutgpu::vk_acb(d, lutgpu::pt(cbi[..]), lutgpu::pt(o[..])) != 0: return false
+	CBUF = lutgpu::g64(o[..], 0); true
+available() bool: !BROKEN && lutgpu::init()
+begin(spv const byte[:], id int, nb int) bool:
+	NARG = 0; CUR = -1
+	if BROKEN || !lutgpu::init(): return false
+	for k, i KS: if k.id == id { CUR = i }
+	if CUR < 0:
+		if !cmdbuf() || !mkkern(spv, id, nb): BROKEN = true; return false
+		CUR = KS.len - 1
+	true
+arg(s const byte[:], rw bool):
+	if NARG < 16: APTR[NARG] = ffi::ptr(s); ALEN[NARG] = s.len; ARW[NARG] = rw
+	NARG++
+fit(slot int, size int, usage int, rb bool) bool:
+	b := BUFS[slot]; if b.b != 0 && b.size >= size: return true
+	freebuf(b); n ~= 256; while n < size { n *= 2 } nb := mkbuf(n, usage, rb); BUFS[slot] = nb; nb.b != 0
+go(count u32, u byte[>..]&) bool:
+	if CUR < 0: return false
+	k := KS[CUR]; d := lutgpu::DEV; base := CUR * 17
+	if NARG != k.nb: return false
+	q0 := clock()
+	while u.len < 16 || u.len % 16 != 0 { u.push(0) }
+	if !fit(base, u.len, 0x10, false): BROKEN = true; return false
+	ffi::write(BUFS[base].p, u[..])
+	for a NARG:
+		if !fit(base + 1 + a, max(ALEN[a], 16), 0x20, ARW[a]): BROKEN = true; return false
+		if ALEN[a] > 0 { c_memcpy(BUFS[base + 1 + a].p, APTR[a], ALEN[a] as uint) }
+	q1 := clock(); bi := lutgpu::zb(24 * (NARG + 1)); w := lutgpu::zb(64 * (NARG + 1))
+	for i NARG + 1:
+		lutgpu::p64(bi, i * 24, BUFS[base + i].b); lutgpu::p64(bi, i * 24 + 16, 0xFFFFFFFFFFFFFFFF)
+		lutgpu::p32(w, i * 64, 35); lutgpu::p64(w, i * 64 + 16, k.ds); lutgpu::p32(w, i * 64 + 24, i); lutgpu::p32(w, i * 64 + 32, 1); lutgpu::p32(w, i * 64 + 36, if i == 0 { 6 } else { 7 }); lutgpu::p64(w, i * 64 + 48, lutgpu::pt(bi[..]) + (i * 24) as uint)
+	lutgpu::vk_uds(d, (NARG + 1) as u32, lutgpu::pt(w[..]), 0, 0)
+	g := (count as int + 63) / 64; gx := min(g, 65535); gy := (g + 65534) / 65535
+	cb := CBUF; cbl := lutgpu::zb(8); lutgpu::p64(cbl, 0, cb); dl := lutgpu::zb(8); lutgpu::p64(dl, 0, k.ds); bgi := lutgpu::zb(32); lutgpu::p32(bgi, 0, 42); lutgpu::p32(bgi, 16, 1)
+	si := lutgpu::zb(72); lutgpu::p32(si, 0, 4); lutgpu::p32(si, 40, 1); lutgpu::p64(si, 48, lutgpu::pt(cbl[..]))
+	lutgpu::vk_rcb(cb, 0)
+	if lutgpu::vk_bcb(cb, lutgpu::pt(bgi[..])) != 0: BROKEN = true; return false
+	lutgpu::vk_cbp(cb, 1, k.pipe); lutgpu::vk_cbds(cb, 1, k.pl, 0, 1, lutgpu::pt(dl[..]), 0, 0)
+	if g > 0: lutgpu::vk_cdb(cb, 0, 0, 0, gx as u32, max(gy, 1) as u32, 1)
+	if lutgpu::vk_ecb(cb) != 0 || lutgpu::vk_qs(lutgpu::QUEUE, 1, lutgpu::pt(si[..]), 0) != 0 || lutgpu::vk_qwi(lutgpu::QUEUE) != 0: BROKEN = true; return false
+	q2 := clock(); for a NARG: if ARW[a] && ALEN[a] > 0 { c_memcpy(APTR[a], BUFS[base + 1 + a].p, ALEN[a] as uint) }
+	if lutgpu::LOG: write_stderr(str("gpu run ", count, ": upload ", ((q1 - q0) * 1000.0) as! int, " ms, kernel ", ((q2 - q1) * 1000.0) as! int, " ms, download ", ((clock() - q2) * 1000.0) as! int, " ms\n"))
+	RUNS++; true

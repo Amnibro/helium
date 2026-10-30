@@ -12,7 +12,7 @@ setlib():
 	d byte[>..] ~= []; if resource_dir(d): for sub ["/lib", "/../hc/lib", "/../lib"] { p byte[>..] ~= []; p.append(d[..]); p.append(sub); p.append("/std.he"); if file_exists(p[..]) { LIBDIR.append(p[..p.len - 7]); return } }
 	LIBDIR.append("hc/lib")
 compile(a const byte[:], o const byte[:], native bool, chk bool) bool:
-	LG_ON = !WEB
+	LG_ON = !WEB; GW_NATIVE = !WEB
 	if !load_program(a): print(DERR); return false
 	if native:
 		rf := load_import(intern("rt"), 0, -1); if rf < 0 { print(DERR); return false } for d, i DC:
@@ -47,6 +47,7 @@ main():
 	if a[..] == "--to-he": t byte[>..] ~= []; arg(3, t); parse_init(); exit(if to_he(o[..], t[..]) { 0 } else { 1 })
 	if a[..] == "lsp": if o[..] == "--probe" { print("hc lsp 0.7"); exit(0) } setlib(); exit(lsp_main(argv0()[..]))
 	if a[..] == "--query": t byte[>..] ~= []; arg(3, t); setlib(); exit(qmain(o[..], t[..]))
+	if a[..] == "--glsl": t byte[>..] ~= []; arg(3, t); exit(if gpu_glsl(o[..], t[..]) { 0 } else { 1 })
 	if a[..] == "--wgsl": t byte[>..] ~= []; arg(3, t); exit(if gpu_wgsl(o[..], t[..]) { 0 } else { 1 })
 	if a[..] == "--tokens": parse_init(); exit(if dump_tokens(o[..]) { 0 } else { 1 })
 	if a[..] == "--spv": src byte[>..] ~= []; read_file(o[..], src); w u32[>..] ~= []; if !shc::cspv(src[..], 2, w) { print(shc::ERRM); exit(1) } b byte[>..] ~= []; for x w { for k 4 { b.push(((x >> (k * 8) as u32) & 255) as! byte) } } q byte[>..] ~= []; arg(3, q); write_file(q[..], b[..]); exit(0)

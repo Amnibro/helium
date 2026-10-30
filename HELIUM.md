@@ -237,6 +237,7 @@ fn main() { var x = [1.0 as f32, 2.0]; var y = [0.5 as f32, 0.5]; for i in 2 { s
 
 - The first parameter is the invocation index. Scalars (`i32 u32 f32 bool`) form one uniform struct at binding 0, in parameter order. Slices of `i32 u32 f32` are storage buffers at bindings 1, 2, ... (`const` slices are read-only).
 - Bodies use locals, fixed local arrays (`var t f32[3] = [0.0; 3];`), `if while for loop guard`, `if` expressions, casts, `min max clamp abs` and `math` functions (cast their `real` results with `as f32` for the CPU), and calls to plain helper functions with scalar parameters. `int` is 32-bit on the GPU; `%` stays Euclidean.
+- In a native build each `gpu fn k` also gets `k_gpu(n u32, ...) bool`, which runs `n` invocations on the GPU through Vulkan (slices are copied in, writable ones copied back; `false` when there is no GPU), and `k_run(n u32, ...)`, which uses the GPU or else loops on the CPU. `HELIUM_GPU=off` forces the CPU, `HELIUM_GPU=discrete` prefers the discrete GPU, `HELIUM_GPU_LOG=1` times each run.
 - The module exports one object per kernel: `{wg, uniform, buffers, wgsl}`. `hc/web/hgpu.js` builds the pipeline, packs the uniforms and dispatches: `await run(await device(), K.saxpy, count, {count, a}, {x, y})`.
 
 ## Program, modules, threads

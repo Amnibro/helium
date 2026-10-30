@@ -1,5 +1,6 @@
 use std
 use lutglsl
+use shaderc
 struct GwFn { name int, p0 int, pn int, ret int, body int, gpu bool }
 var GWWHY byte[>..]
 var GWAT = 0
@@ -19,7 +20,11 @@ var GWFL = 0
 var GWOUT byte[>..]
 var GWCUR = -1
 var GWMOD = false
+var GWGL = false
+var GW_NATIVE = true
+var GWPE i32[>..]
 GW_NAMES := ["i32", "u32", "f32", "bool", "i32", "f32"]
+GL_NAMES := ["int", "uint", "float", "bool", "int", "float"]
 gw_no(w const byte[:]): if GWWHY.len == 0 { GWWHY.append(w); GWAT = LGP }
 gw_bad() bool: GWWHY.len > 0
 gw_t() const byte[:]: if LGP >= LGTS.len { gw_no("end of file"); "" } else { lg_tk(LGP) }
@@ -27,7 +32,9 @@ gw_is(s const byte[:]) bool: LGP < LGTS.len && lg_tk(LGP) == s
 gw_eat(s const byte[:]): if !gw_is(s) { gw_no(str("expected ", s, " near ", lg_tk(LGP))) } else { LGP++ }
 gw_ty(t const byte[:]) int:
 	if t == "int" || t == "i64" || t == "i32" || t == "i16" || t == "i8" { 0 } else if t == "uint" || t == "u64" || t == "u32" || t == "u16" || t == "u8" || t == "byte" { 1 } else if t == "f32" || t == "real" || t == "f64" { 2 } else if t == "bool" { 3 } else { -1 }
-gw_name(t int) const byte[:]: if t >= 0 && t < 6 { GW_NAMES[t] } else { "void" }
+gw_name(t int) const byte[:]: if t >= 0 && t < 6 { if GWGL { GL_NAMES[t] } else { GW_NAMES[t] } } else { "void" }
+gw_sel(f const byte[:], t const byte[:], c const byte[:]) byte[>..]: o byte[>..] ~= []; if GWGL { format(o, "(", c, " ? ", t, " : ", f, ")") } else { format(o, "select(", f, ", ", t, ", ", c, ")") } o
+gw_decl(o byte[>..]&, kw const byte[:], n const byte[:], ty int): if GWGL { format(o, gw_name(ty), " ", n) } else { format(o, kw, " ", n, ": ", gw_name(ty)) }
 gw_lit(l const byte[:], t int) byte[>..]:
 	v byte[>..] ~= []; for c l { if c != '_' { v.push(c) } } fl ~= false; hx := v.len > 1 && v[0] == '0' && (v[1] == 'x' || v[1] == 'X')
 	if !hx: for c v { if c == '.' || c == 'e' || c == 'E' { fl = true } }
@@ -37,9 +44,9 @@ gw_lit(l const byte[:], t int) byte[>..]:
 		v.clear(); format(v, n)
 	o byte[>..] ~= []
 	if t == 2 || t == 5:
-		if fl { o.append(v[..]) } else { format(o, v, ".0") } if t == 2 { o.push('f') } return o
+		if fl { o.append(v[..]) } else { format(o, v, ".0") } if t == 2 && !GWGL { o.push('f') } return o
 	if fl: gw_no("float literal where an integer is needed"); return v
-	o.append(v[..]); if t == 0 { o.push('i') } else if t == 1 { o.push('u') } o
+	o.append(v[..]); if t == 0 && !GWGL { o.push('i') } else if t == 1 { o.push('u') } o
 gw_to(c const byte[:], ty int, t int) byte[>..]:
 	o byte[>..] ~= []
 	if ty == t || t == 4 || t == 5 && ty == 5: o.append(c); return o
@@ -53,7 +60,7 @@ gw_local(n const byte[:]) int:
 	i ~= GWSN.len - 1; while i >= GWFL { if lg_tk(GWSN[i] as int) == n { return i } i-- } -1
 gw_ref(i int) byte[>..]:
 	o byte[>..] ~= []; k := GWSK[i] as int; n := lg_tk(GWSN[i] as int)
-	if k == 1 { if GWST[i] == 3 { format(o, "(u.p_", n, " != 0u)") } else { format(o, "u.p_", n) } } else if k == 2 { format(o, "b_", n) } else { format(o, "l_", n) } o
+	if k == 1 { u := if GWGL { "" } else { "u." }; if GWST[i] == 3 { format(o, "(", u, "p_", n, " != 0u)") } else { format(o, u, "p_", n) } } else if k == 2 { format(o, "b_", n) } else { format(o, "l_", n) } o
 gw_bin(op const byte[:], a const byte[:], at int, b const byte[:], bt int) byte[>..], int:
 	o byte[>..] ~= []
 	if op == "&&" || op == "||": if at != 3 || bt != 3 { gw_no(str(op, " on non-bool")) } format(o, "(", a, " ", op, " ", b, ")"); return o, 3
@@ -90,7 +97,7 @@ recursive gw_ifexpr() byte[>..], int:
 	gw_eat("if"); c, ct := gw_expr(1); if ct != 3 { gw_no("if on non-bool") }
 	gw_eat("{"); a, at := gw_expr(1); gw_eat("}"); gw_eat("else"); b byte[>..] ~= []; bt ~= 0
 	if gw_is("if") { x, xt := gw_ifexpr(); b = x; bt = xt } else { gw_eat("{"); x, xt := gw_expr(1); gw_eat("}"); b = x; bt = xt }
-	t := gw_unify(at, bt); o byte[>..] ~= []; format(o, "select(", gw_to(b[..], bt, t), ", ", gw_to(a[..], at, t), ", ", c, ")"); return o, t
+	t := gw_unify(at, bt); return gw_sel(gw_to(b[..], bt, t)[..], gw_to(a[..], at, t)[..], c[..]), t
 gw_math(t const byte[:]) int:
 	if t == "min" || t == "max" || t == "clamp" || t == "abs" || t == "sign" { 1 } else if t == "sqrt" || t == "floor" || t == "ceil" || t == "round" || t == "trunc" || t == "exp" || t == "exp2" || t == "log" || t == "log2" || t == "pow" || t == "sin" || t == "cos" || t == "tan" || t == "asin" || t == "acos" || t == "atan" || t == "atan2" || t == "fract" || t == "lerp" || t == "fma" { 2 } else { 0 }
 recursive gw_primary() byte[>..], int:
@@ -111,14 +118,14 @@ recursive gw_primary() byte[>..], int:
 			ty ~= aty[0]; for x aty { ty = gw_unify(ty, x) } if mk == 2 || ty == 5 { ty = 2 } if ty == 4 { ty = 0 } if ty == 3 { gw_no(str(t, " on bool")) }
 			if t == "abs" && ty == 1: return ac[0], 1
 			c byte[>..] ~= []; for x, i ac { if i > 0 { c.append(", ") } c.append(gw_to(x[..], aty[i], ty)[..]) }
-			nm := if t == "lerp" { "mix" } else if t == "atan2" { "atan2" } else { t }; format(o, nm, "(", c, ")"); return o, ty
+			nm := if t == "lerp" { "mix" } else if t == "atan2" { if GWGL { "atan" } else { "atan2" } } else { t }; format(o, nm, "(", c, ")"); return o, ty
 		fi := gw_func(t); if fi < 0: return o, 0
 		f := GWF[fi]; if ac.len != f.pn: gw_no(str("call to ", t, " with defaults")); return o, 0
 		format(o, "h_", t, "("); for x, i ac { if i > 0 { o.append(", ") } o.append(gw_to(x[..], aty[i], GWPT[f.p0 + i] as int)[..]) } o.push(')'); return o, f.ret
 	li := gw_local(t); if li < 0: gw_no(str("name ", t)); return o, 0
 	if GWSA[li] >= 0 || GWSK[li] == 2:
 		if gw_is(".") && LGP + 1 < LGTS.len && lg_tk(LGP + 1) == "len":
-			LGP += 2; if GWSK[li] == 2 { format(o, "arrayLength(&b_", t, ")") } else { format(o, GWSA[li], "u") } return o, 1
+			LGP += 2; if GWSK[li] == 2 { if GWGL { format(o, "uint(b_", t, ".length())") } else { format(o, "arrayLength(&b_", t, ")") } } else { format(o, GWSA[li], "u") } return o, 1
 		if !gw_is("["): gw_no(str("array ", t, " used without an index")); return o, 0
 		LGP++; ix, it := gw_expr(1); gw_eat("]"); if it == 3 || it == 2 || it == 5 { gw_no("array index must be an integer") }
 		format(o, gw_ref(li), "[", if it == 4 { gw_lit(ix[..], 1) } else { ix }, "]"); return o, GWST[li] as int
@@ -135,9 +142,9 @@ recursive gw_func(n const byte[:]) int:
 	sig byte[>..] ~= []
 	for k f.pn:
 		pt := GWPT[f.p0 + k] as int; if pt < 0 || GWPA[f.p0 + k] != 0 { gw_no(str(n, ": helper parameters must be i32, u32, f32 or bool")) }
-		gw_push(GWPN[f.p0 + k] as int, pt, 0, -1); if k > 0 { sig.append(", ") } format(sig, "l_", lg_tk(GWPN[f.p0 + k] as int), ": ", gw_name(pt))
+		gw_push(GWPN[f.p0 + k] as int, pt, 0, -1); if k > 0 { sig.append(", ") } pv byte[>..] ~= []; format(pv, "l_", lg_tk(GWPN[f.p0 + k] as int)); gw_decl(sig, "", pv[..], pt)
 	LGP = f.body; body byte[>..] ~= []; gw_block(body, f.ret >= 0, 1)
-	format(GWOUT, "fn h_", n, "(", sig, ")"); if f.ret >= 0 { format(GWOUT, " -> ", gw_name(f.ret)) } format(GWOUT, " {\n", body)
+	if GWGL { format(GWOUT, gw_name(f.ret), " h_", n, "(", sig, ") {\n", body) } else { format(GWOUT, "fn h_", n, "(", sig, ")"); if f.ret >= 0 { format(GWOUT, " -> ", gw_name(f.ret)) } format(GWOUT, " {\n", body) }
 	if f.ret >= 0 { format(GWOUT, "    return ", if f.ret == 3 { "false" } else { gw_lit("0", f.ret) }, ";\n") } GWOUT.append("}\n")
 	LGP = sp; gw_pop(s0); GWFL = fl; GWCUR = cur; GWBUSY.pop(); GWDONE.push(fi as i32); fi
 recursive gw_block(o byte[>..]&, tail bool, ind int):
@@ -164,22 +171,22 @@ recursive gw_stmt(o byte[>..]&, tail bool, ind int):
 			if gw_is("["): LGP++; n, nn := parse_int(gw_t()); if !nn || n <= 0 { gw_no("local arrays need a fixed size") } an = n; LGP++; gw_eat("]")
 		if an >= 0:
 			gw_eat("="); gw_eat("["); e, et := gw_expr(1); gw_eat(";"); gw_eat(str(an)[..]); gw_eat("]"); gw_eat(";")
-			n := lg_tk(nt); format(o, ip, "var l_", n, ": array<", gw_name(ty), ", ", an, ">;\n"); v := gw_to(e[..], et, ty)
-			if v[..] != gw_lit("0", ty)[..] && v[..] != "false": format(o, ip, "for (var gw_i = 0u; gw_i < ", an, "u; gw_i++) { l_", n, "[gw_i] = ", v, "; }\n")
+			n := lg_tk(nt); v := gw_to(e[..], et, ty); if GWGL { format(o, ip, gw_name(ty), " l_", n, "[", an, "];\n") } else { format(o, ip, "var l_", n, ": array<", gw_name(ty), ", ", an, ">;\n") }
+			if GWGL || v[..] != gw_lit("0", ty)[..] && v[..] != "false": format(o, ip, "for (", if GWGL { "uint gw_i" } else { "var gw_i" }, " = 0u; gw_i < ", an, "u; gw_i++) { l_", n, "[gw_i] = ", v, "; }\n")
 			gw_push(nt, ty, 0, an); return
 		if !gw_is("="): gw_no("local without initializer"); return
 		LGP++; e, et := gw_expr(1); gw_eat(";"); if ty < 0 { ty = gw_fix(et) }
-		gw_push(nt, ty, 0, -1); format(o, ip, if t == "var" { "var" } else { "let" }, " l_", lg_tk(nt), ": ", gw_name(ty), " = ", gw_to(e[..], et, ty), ";\n"); return
+		gw_push(nt, ty, 0, -1); o.append(ip[..]); ln byte[>..] ~= []; format(ln, "l_", lg_tk(nt)); gw_decl(o, if t == "var" { "var" } else { "let" }, ln[..], ty); format(o, " = ", gw_to(e[..], et, ty), ";\n"); return
 	if t == "while":
 		LGP++; c, ct := gw_expr(1); if ct != 3 { gw_no("while on non-bool") } b byte[>..] ~= []; gw_block(b, false, ind + 1); format(o, ip, "while (", c, ") {\n", b, ip, "}\n"); return
-	if t == "loop": LGP++; b byte[>..] ~= []; gw_block(b, false, ind + 1); format(o, ip, "loop {\n", b, ip, "}\n"); return
+	if t == "loop": LGP++; b byte[>..] ~= []; gw_block(b, false, ind + 1); format(o, ip, if GWGL { "while (true) {\n" } else { "loop {\n" }, b, ip, "}\n"); return
 	if t == "for":
 		LGP++; nt := LGP; LGP++; if gw_is(",") || gw_is(":") { gw_no("for binding form"); return } gw_eat("in")
 		a, at := gw_expr(1); lo byte[>..] ~= []; lo.append("0"); lt ~= 4; hi ~= a; ht ~= at
 		if gw_is(".."): LGP++; lo = a; lt = at; h, h2 := gw_expr(1); hi = h; ht = h2
 		ty ~= gw_unify(lt, ht); if ty == 4 { ty = 0 } if ty == 3 || ty == 2 || ty == 5 { gw_no("for over a non-integer") }
 		s0 := GWSN.len; gw_push(nt, ty, 0, -1); b byte[>..] ~= []; gw_block(b, false, ind + 1); gw_pop(s0)
-		n := lg_tk(nt); format(o, ip, "{ let l_", n, "_end: ", gw_name(ty), " = ", gw_to(hi[..], ht, ty), "; for (var l_", n, ": ", gw_name(ty), " = ", gw_to(lo[..], lt, ty), "; l_", n, " < l_", n, "_end; l_", n, "++) {\n", b, ip, "} }\n"); return
+		n := lg_tk(nt); e1 byte[>..] ~= []; format(e1, "l_", n, "_end"); e2 byte[>..] ~= []; format(e2, "l_", n); format(o, ip, "{ "); gw_decl(o, "let", e1[..], ty); format(o, " = ", gw_to(hi[..], ht, ty), "; for ("); gw_decl(o, "var", e2[..], ty); format(o, " = ", gw_to(lo[..], lt, ty), "; l_", n, " < l_", n, "_end; l_", n, "++) {\n", b, ip, "} }\n"); return
 	if t == "if":
 		ai := lg_afterif(LGP); last := tail && ai < LGTS.len && lg_tk(ai) == "}"; LGP++; c, ct := gw_expr(1); if ct != 3 { gw_no("if on non-bool") } b byte[>..] ~= []; gw_block(b, last, ind + 1); format(o, ip, "if (", c, ") {\n", b, ip, "}")
 		while !gw_bad() && gw_is("else"):
@@ -205,17 +212,17 @@ recursive gw_stmt(o byte[>..]&, tail bool, ind int):
 		LGP++; gw_assign(o, ind, gw_ref(li)[..], GWST[li] as int); return
 	e, et := gw_expr(1)
 	if gw_is("}") && tail && GWCUR >= 0: format(o, ip, "return ", gw_to(e[..], et, GWCUR), ";\n"); return
-	gw_eat(";"); format(o, ip, if et < 0 { "" } else { "_ = " }, e, ";\n")
+	gw_eat(";"); format(o, ip, if et < 0 || GWGL { "" } else { "_ = " }, e, ";\n")
 gw_scan():
-	GWF.clear(); GWPN.clear(); GWPT.clear(); GWPA.clear(); GWPC.clear()
+	GWF.clear(); GWPN.clear(); GWPT.clear(); GWPA.clear(); GWPC.clear(); GWPE.clear()
 	for i LGTS.len:
 		if lg_tk(i) != "fn" || i > 0 && (lg_tk(i - 1) == "extern" || lg_tk(i - 1) == "::") || i + 2 >= LGTS.len || lg_tk(i + 2) != "(": continue
 		j ~= i + 3; f ~= GwFn{i + 1, GWPN.len, 0, -1, -1, i > 0 && lg_tk(i - 1) == "gpu"}
 		while j < LGTS.len && lg_tk(j) != ")":
 			pn := j; j++; if j < LGTS.len && lg_tk(j) == ":" { j++ } t0 := j; while j < LGTS.len && lg_tk(j) != "," && lg_tk(j) != ")" { j++ }
 			cq := j > t0 && lg_tk(t0) == "const"; ts := if cq { t0 + 1 } else { t0 }; ty ~= -1; ar ~= 0
-			if j == ts + 1 { ty = gw_ty(lg_tk(ts)) } else if j == ts + 4 && lg_tk(ts + 1) == "[" && lg_tk(ts + 2) == ":" && lg_tk(ts + 3) == "]" { ty = gw_ty(lg_tk(ts)); ar = 1 }
-			GWPN.push(pn as i32); GWPT.push(ty as i32); GWPA.push(ar as i32); GWPC.push((if cq { 1 } else { 0 }) as i32); f.pn++; if j < LGTS.len && lg_tk(j) == "," { j++ }
+			if j == ts + 1 { ty = gw_ty(lg_tk(ts)) } else if j == ts + 4 && lg_tk(ts + 1) == "[" && lg_tk(ts + 2) == ":" && lg_tk(ts + 3) == "]" { e := lg_tk(ts); ty = if e == "i32" || e == "u32" || e == "f32" { gw_ty(e) } else { -1 }; ar = 1 }
+			GWPN.push(pn as i32); GWPE.push(j as i32); GWPT.push(ty as i32); GWPA.push(ar as i32); GWPC.push((if cq { 1 } else { 0 }) as i32); f.pn++; if j < LGTS.len && lg_tk(j) == "," { j++ }
 		j++; if j < LGTS.len && lg_tk(j) == "->" { j++ } r0 := j; while j < LGTS.len && lg_tk(j) != "{" && lg_tk(j) != "=" && lg_tk(j) != ";" { j++ }
 		f.ret = if j == r0 + 1 { gw_ty(lg_tk(r0)) } else { -1 }
 		if j < LGTS.len && lg_tk(j) == "{" && gw_find(lg_tk(i + 1)) < 0: f.body = j; GWF.push(f)
@@ -232,16 +239,19 @@ gw_kernel(fi int, o byte[>..]&, js byte[>..]&) bool:
 		if pt < 0: gw_no(str("gpu fn ", n, ": parameter ", pn, " must be i32, u32, f32, bool or a slice of i32, u32 or f32")); return false
 		if GWPA[f.p0 + k] != 0:
 			if pt == 3: gw_no(str("gpu fn ", n, ": bool slices are not supported")); return false
-			nb++; ro := GWPC[f.p0 + k] == 1; format(bd, "@group(0) @binding(", nb, ") var<storage, ", if ro { "read" } else { "read_write" }, "> b_", pn, ": array<", gw_name(pt), ">;\n")
+			nb++; ro := GWPC[f.p0 + k] == 1; if nb > 16 { gw_no(str("gpu fn ", n, ": more than 16 slices")); return false }
+			if GWGL { format(bd, "layout(set = 0, binding = ", nb, ", std430) ", if ro { "readonly " } else { "" }, "buffer B", nb, " { ", gw_name(pt), " b_", pn, "[]; };\n") } else { format(bd, "@group(0) @binding(", nb, ") var<storage, ", if ro { "read" } else { "read_write" }, "> b_", pn, ": array<", gw_name(pt), ">;\n") }
 			if jb.len > 0 { jb.push(',') } format(jb, "[\"", pn, "\",\"", gw_name(pt), "\",\"", if ro { "read" } else { "read_write" }, "\"]"); gw_push(GWPN[f.p0 + k] as int, pt, 2, -1, GWPC[f.p0 + k] as int)
 		else:
-			if nu > 0 { un.push(',') } format(un, "p_", pn, ": ", if pt == 3 { "u32" } else { gw_name(pt) }); nu++
+			ft := if pt == 3 { 1 } else { pt }; if GWGL { format(un, gw_name(ft), " p_", pn, "; ") } else { if nu > 0 { un.push(',') } format(un, "p_", pn, ": ", gw_name(ft)) } nu++
 			if ju.len > 0 { ju.push(',') } format(ju, "[\"", pn, "\",\"", if pt == 3 { "bool" } else { gw_name(pt) }, "\"]"); gw_push(GWPN[f.p0 + k] as int, pt, 1, -1)
 	LGP = f.body; body byte[>..] ~= []; gw_block(body, false, 1); if gw_bad(): return false
-	if GWMOD: o.append("fn gw_mod(a: i32, b: i32) -> i32 { if (b == 0) { return 0; } let r = a % b; return select(r, r + abs(b), r < 0); }\n")
-	if nu > 0: format(o, "struct U { ", un, " };\n@group(0) @binding(0) var<uniform> u: U;\n")
+	if GWGL: o.append("#version 450\nlayout(local_size_x = 64) in;\n")
+	if GWMOD: o.append(if GWGL { "int gw_mod(int a, int b) { if (b == 0) { return 0; } int r = a - b * (a / b); return r < 0 ? r + abs(b) : r; }\n" } else { "fn gw_mod(a: i32, b: i32) -> i32 { if (b == 0) { return 0; } let r = a % b; return select(r, r + abs(b), r < 0); }\n" })
+	if nu > 0: if GWGL { format(o, "layout(set = 0, binding = 0, std140) uniform U { ", un, "};\n") } else { format(o, "struct U { ", un, " };\n@group(0) @binding(0) var<uniform> u: U;\n") }
 	o.append(bd[..]); o.append(GWOUT[..])
 	ix := lg_tk(GWPN[f.p0] as int)
+	if GWGL { format(o, "void main() {\n    ", gw_name(GWPT[f.p0] as int), " l_", ix, " = ", if GWPT[f.p0] == 0 { "int(" } else { "(" }, "gl_GlobalInvocationID.x + gl_GlobalInvocationID.y * 4194240u);\n", body, "}\n"); return true }
 	format(o, "@compute @workgroup_size(64) fn main(@builtin(global_invocation_id) gw_g: vec3u, @builtin(num_workgroups) gw_n: vec3u) {\n    let l_", ix, ": ", gw_name(GWPT[f.p0] as int), " = ", if GWPT[f.p0] == 0 { "i32(" } else { "(" }, "gw_g.x + gw_g.y * gw_n.x * 64u);\n", body, "}\n")
 	format(js, "export const ", n, " = {wg: 64, uniform: [", ju, "], buffers: [", jb, "], wgsl: `", o, "`};\n"); true
 gpu_wgsl(path const byte[:], out const byte[:]) bool:
@@ -257,3 +267,40 @@ gpu_wgsl(path const byte[:], out const byte[:]) bool:
 	format(js, "export default {", names, "};\n")
 	if !write_file(out, js[..]): print("cannot write ", out); return false
 	true
+gpu_glsl(path const byte[:], out const byte[:]) bool:
+	src byte[>..] ~= []; if !read_file(path, src): print("cannot read ", path); return false
+	lg_lex(src[..]); gw_scan(); o byte[>..] ~= []; nk ~= 0; GWGL = true
+	for f, i GWF:
+		if !f.gpu: continue
+		w byte[>..] ~= []; js byte[>..] ~= []
+		if !gw_kernel(i, w, js): GWGL = false; print(path, ":", gw_line(src[..]), ": error: ", GWWHY); return false
+		sp u32[>..] ~= []; if !shc::cspv(w[..], 2, sp): GWGL = false; print(path, ": gpu fn ", lg_tk(f.name), ": our shader compiler rejected it: ", shc::ERRM, "\n", w); return false
+		format(o, "// ", lg_tk(f.name), " (", sp.len * 4, " bytes of SPIR-V)\n", w); nk++
+	GWGL = false
+	if nk == 0: print(path, ": no gpu fn found"); return false
+	write_file(out, o[..])
+gw_ptext(src const byte[:], k int) const byte[:]: src[(LGTS[GWPN[k] as int] as int)..(LGTE[(GWPE[k] as int) - 1] as int)]
+gw_ptype(src const byte[:], k int) const byte[:]: a := (GWPN[k] as int) + 1; t ~= a; if t < GWPE[k] as int && lg_tk(t) == ":" { t++ } src[(LGTS[t] as int)..(LGTE[(GWPE[k] as int) - 1] as int)]
+gpu_native(src const byte[:], out byte[>..]&) bool:
+	out.append(src); lg_lex(src); gw_scan(); gen byte[>..] ~= []; any ~= false
+	for i LGTS.len: if lg_tk(i) == "gpu" && i + 1 < LGTS.len && lg_tk(i + 1) == "fn" && (i == 0 || lg_tk(i - 1) != "::") { for c (LGTS[i] as int)..(LGTE[i] as int) { out[c] = ' ' } }
+	for f, fi GWF:
+		if !f.gpu: continue
+		n := lg_tk(f.name); sp u32[>..] ~= []
+		if GW_NATIVE:
+			GWGL = true; w byte[>..] ~= []; js byte[>..] ~= []; ok := gw_kernel(fi, w, js); GWGL = false
+			if !ok: return false
+			if !shc::cspv(w[..], 2, sp): GWWHY.clear(); format(GWWHY, "gpu fn ", n, ": our shader compiler rejected the generated GLSL: ", shc::ERRM); GWAT = f.name; return false
+		sig byte[>..] ~= []; args byte[>..] ~= []; body byte[>..] ~= []; nb ~= 0
+		for k 1..f.pn:
+			q := f.p0 + k; pn := lg_tk(GWPN[q] as int); format(sig, ", ", gw_ptext(src, q)); if args.len > 0 { args.append(", ") } args.append(pn)
+			if GWPA[q] != 0 { nb++; format(body, "\tgpu::arg(bytes_of(", pn, "), ", if GWPC[q] == 1 { "false" } else { "true" }, ");\n") } else if GWPT[q] == 3 { format(body, "\tlet gpu__", k, " u32 = if ", pn, " { 1 } else { 0 }; gpu__u.append(bytes_of(gpu__", k, "));\n") } else { t := if GWPT[q] == 0 { "i32" } else if GWPT[q] == 1 { "u32" } else { "f32" }; format(body, "\tlet gpu__", k, " ", t, " = ", pn, " as", if GWPT[q] == 2 { " " } else { "! " }, t, "; gpu__u.append(bytes_of(gpu__", k, "));\n") }
+		if GW_NATIVE:
+			h u64 ~= 14695981039346656037; for x sp { h = (h ^ x as u64) * 1099511628211 }
+			format(gen, "let ", n, "__spv byte[", sp.len * 4, "] = ["); for x, i sp { for q 4 { if i + q > 0 { gen.append(", ") } format(gen, (x >> (q * 8) as u32) & 255) } } gen.append("];\n")
+			format(gen, "fn ", n, "_gpu(gpu__n u32", sig, ") bool {\n\tif !gpu::begin(", n, "__spv, ", (h >> 2) as int, ", ", nb, ") { return false; }\n\tvar gpu__u byte[>..] = [];\n", body, "\tgpu::go(gpu__n, gpu__u)\n}\n"); any = true
+		else:
+			format(gen, "fn ", n, "_gpu(gpu__n u32", sig, ") bool { false }\n")
+		format(gen, "fn ", n, "_run(gpu__n u32", sig, ") { if !", n, "_gpu(gpu__n", if args.len > 0 { ", " } else { "" }, args, ") { for gpu__i in gpu__n { ", n, "(gpu__i as! ", gw_ptype(src, f.p0), if args.len > 0 { ", " } else { "" }, args, "); } } }\n")
+	if gen.len == 0: return true
+	out.append("\n"); out.append(gen[..]); if any { out.append("import gpu;\n") } true

@@ -1,0 +1,32 @@
+import math;
+fn lo(a u32) u32 { ((a + 1) >> 1) & 1 }
+fn sq(x f32) f32 { x * x }
+gpu fn saxpy(n u32, count u32, a f32, x const f32[:], y f32[:]) {
+	if n >= count { return; }
+	y[n] = a * x[n] + y[n];
+}
+gpu fn mix3(n u32, count u32, k i32, w f32, flag bool, xs const f32[:], ix const i32[:], out f32[:], cnt u32[:]) {
+	if n >= count { return; }
+	var acc f32 = 0.0;
+	var t f32[3] = [0.0; 3];
+	for c in 3 { t[c] = xs[(3 * n + c) % count] * (c as f32 + 1.0); }
+	for c in 0..3 { acc += t[c]; }
+	let j = ix[n] % k;
+	let s = if flag { sqrt(abs(acc)) as f32 } else { sq(acc) };
+	var m = 0;
+	while m < 4 { if lo(m as u32) == 1 { m += 2; continue; } m++; }
+	out[n] = s * w + j as f32 + min(acc, 2.5) - max(m, 3) as f32 + floor(w * 3.7) as f32 + pow(1.5, 2.0) as f32;
+	cnt[n] = (n << 2) ^ (lo(n) * 7) | 1;
+}
+fn main() {
+	let count u32 = 1000;
+	var x = []; var y = []; var ix = []; var out = []; var cnt = [];
+	for i in count { x.push((i % 17) as f32 * 0.25 - 2.0); y.push(i as f32 * 0.5); ix.push((i * 7) as i32 - 3000); out.push(0.0 as f32); cnt.push(0 as u32); }
+	saxpy_run(count, count, 1.5, x, y);
+	var o2 = copy(out); var c2 = copy(cnt);
+	mix3_run(count, count, 13, 0.75, true, x, ix, out, cnt);
+	mix3_run(count, count, 13, 0.75, false, x, ix, o2, c2);
+	for i in count { if i % 2 == 1 { out[i] = o2[i]; cnt[i] = c2[i]; } }
+	print(y); print(out); print(cnt);
+	print("gpu runs ", gpu::RUNS);
+}

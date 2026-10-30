@@ -1,5 +1,6 @@
 use os
 use lutglsl
+use gpuwgsl
 T_EOF := 0; T_IDENT := 1; T_INT := 2; T_FLT := 3; T_STR := 4
 T_LP := 5; T_RP := 6; T_LB := 7; T_RB := 8; T_LC := 9; T_RC := 10; T_COMMA := 11; T_SEMI := 12; T_COLON := 13; T_QUEST := 14; T_CC := 15
 T_DOT := 16; T_DOTDOT := 17; T_DOTASSIGN := 18; T_DOTEQ := 19; T_DOTNEQ := 20
@@ -80,7 +81,7 @@ lex_file(path const byte[:]) bool:
 	body byte[>..] ~= []
 	ov ~= -1; for o, i OVS { if OVB[o.p0..o.p1] == path { ov = i } }
 	if ov >= 0 { body.append(OVB[OVS[ov].t0..OVS[ov].t1]) } else if !read_file(path, body) { LERR.append("cannot read "); LERR.append(path); return false }
-	if path.len > 5 && path[^5..] == ".amni": gp ~= lut_find(body[..], "gpu fn ", 0); while gp >= 0 { if gp == 0 || body[gp - 1] == '\n' || body[gp - 1] == ' ' || body[gp - 1] == '\t' { body[gp] = ' '; body[gp + 1] = ' '; body[gp + 2] = ' ' } gp = lut_find(body[..], "gpu fn ", gp + 7) }
+	if path.len > 5 && path[^5..] == ".amni" && lut_find(body[..], "gpu fn ", 0) >= 0: gb byte[>..] ~= []; if !gpu_native(body[..], gb) { ln ~= 1; if GWAT < LGTS.len { for c body[..(LGTS[GWAT] as int)] { if c == '\n' { ln++ } } } format(LERR, path, ":", ln, ": error: ", GWWHY); return false } body.clear(); body.append(gb[..])
 	if path.len > 5 && path[^5..] == ".amni" && lut_find(body[..], "lut fn ", 0) >= 0: lb byte[>..] ~= []; if !lut_desugar(body[..], path, FILES.len == 0, lb) { return false } body.clear(); body.append(lb[..])
 	f := FILES.len
 	base := SRC.len
