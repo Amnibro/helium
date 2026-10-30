@@ -1,0 +1,15 @@
+import std;
+import binary;
+let LO = 1.90821492927058770002e-10;
+let H f32 = 0.75;
+let P2 = -2.77777777770155933842e-03;
+fn band(x real) int { if x < -5.0 || x > 5.0 { return 1; } if x < -0.5 { return 2; } if x > 0.5 { return 3; } 0 }
+fn bandf(x f32) int { if x < -2.5 { return 1; } if x > 2.5 { return 2; } 0 }
+fn arm(x real) real { if x > 0.0 { -4.0 } else { 4.0 } }
+fn poly(t real) real { t * (P2 + t * -LO) - -(2.0 * LO) }
+fn neg32(x f32) f32 { x - -H }
+fn main() {
+	var s = 0;
+	for i in 41 { let x = (i - 20) as real * 0.375; s = s * 7 + band(x) + bandf(x as f32) * 5; }
+	print(str(s, " ", arm(1.0), " ", arm(-1.0), " ", poly(0.5), " ", neg32(1.0), " ", -H, " ", binary::f64_bits(-0.0), " ", -LO));
+}

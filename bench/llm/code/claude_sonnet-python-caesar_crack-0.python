@@ -1,0 +1,17 @@
+text = 'Wkh vhfuhw phhwlqj lv dw qrrq'
+
+def shift(s, k):
+    out = []
+    for c in s:
+        if c.isalpha() and c.isascii():
+            base = ord('A') if c.isupper() else ord('a')
+            out.append(chr((ord(c) - base - k) % 26 + base))
+        else:
+            out.append(c)
+    return ''.join(out)
+
+for k in range(26):
+    d = shift(text, k)
+    if 'secret' in d.lower().split():
+        print(d)
+        break

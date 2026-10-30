@@ -1,0 +1,31 @@
+use std::collections::HashMap;
+
+fn main() {
+    let words = [
+        "listen", "silent", "enlist", "google", "gooegl", "cat", "act", "tac", "dog",
+    ];
+
+    let mut groups: HashMap<String, Vec<&str>> = HashMap::new();
+    for w in words.iter() {
+        let mut chars: Vec<char> = w.chars().collect();
+        chars.sort_unstable();
+        let key: String = chars.into_iter().collect();
+        groups.entry(key).or_insert_with(Vec::new).push(w);
+    }
+
+    let mut lines: Vec<Vec<&str>> = groups
+        .into_values()
+        .map(|mut g| {
+            g.sort();
+            g
+        })
+        .collect();
+    lines.sort_by(|a, b| a[0].cmp(b[0]));
+
+    let mut out = String::new();
+    for g in lines {
+        out.push_str(&g.join(" "));
+        out.push('\n');
+    }
+    print!("{}", out);
+}

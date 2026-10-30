@@ -1,0 +1,13 @@
+struct Rec { name byte[..8], age int }
+
+fn main() {
+	var rs Rec[>..] = [];
+	rs.push(Rec { name: "mia", age: 34 });
+	rs.push(Rec { name: "leo", age: 27 });
+	rs.push(Rec { name: "ava", age: 34 });
+	rs.push(Rec { name: "zoe", age: 19 });
+	rs.push(Rec { name: "eli", age: 27 });
+	rs.push(Rec { name: "ian", age: 41 });
+	sort(rs) { a, b => if a.age != b.age { a.age > b.age } else { compare(a.name, b.name) < 0 } };
+	for r in rs { print(r.name, ",", r.age); }
+}

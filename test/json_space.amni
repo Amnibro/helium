@@ -1,0 +1,16 @@
+import std;
+import os;
+import json;
+fn sum(t const byte[:]) real {
+	var r = json::reader(t);
+	var s = 0.0;
+	json::each_element(r) { s += json::read_number(r); };
+	if !json::finish(r) { print(json::message(r)); return -1.0; }
+	return s;
+}
+fn main() {
+	let docs = ["[1,2]", " [ 1 , 2 ] ", "[1,\t\n\r 2]", "[                1,                        2                ]                ", "\n\n\n\n\n\n\n\n\n[\n\t\t\t\t\t\t\t\t\t3.25\n        ,\r\n                   4.5\n]\n\n      ", "[7]        ", "  [8]", "[   ]", "[1   x]"];
+	var o byte[>..] = [];
+	for d in docs { format(o, sum(d), "\n"); }
+	print(o);
+}

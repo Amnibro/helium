@@ -185,11 +185,56 @@ fn addmul_1(r uint[:], a uint[:], m uint) uint {
 	return c;
 }
 
+// r[..n] + a * (m0 + m1 B) into r, n = a.len and r one limb longer, whose
+// last limb is only written; the limb above r. Two carry chains, one for
+// each multiplier, so that each limb of r is read and written once for two
+// products (as GMP's addmul_2).
+fn addmul_2(r uint[:], a uint[:], m0 uint, m1 uint) uint {
+	let n = a.len;
+	assert(r.len == n + 1);
+	var c0 uint = 0;
+	var c1 uint = 0;
+	// a[i - 1] * m1, which goes in at i and i + 1
+	var l1 uint = 0;
+	var h1 uint = 0;
+	for i in n {
+		var lo = a[i] * m0;
+		var hi = mulhi(a[i], m0);
+		lo += c0;
+		if lo < c0 { hi++; }
+		var x = r[i] + lo;
+		if x < lo { hi++; }
+		c0 = hi;
+		var g = h1;
+		l1 += c1;
+		if l1 < c1 { g++; }
+		x += l1;
+		if x < l1 { g++; }
+		r[i] = x;
+		c1 = g;
+		l1 = a[i] * m1;
+		h1 = mulhi(a[i], m1);
+	}
+	var x = c0;
+	var g = h1;
+	l1 += c1;
+	if l1 < c1 { g++; }
+	x += l1;
+	if x < l1 { g++; }
+	r[n] = x;
+	return g;
+}
+
 fn mul_basecase(r uint[:], a uint[:], b uint[:]) {
 	let n = a.len;
 	assert(r.len == n + b.len && b.len >= 1);
 	r[n] = mul_1(r[..n], a, b[0]);
-	for j in 1..b.len { r[j + n] = addmul_1(r[j..j + n], a, b[j]); }
+	var j = 1;
+	while j + 1 < b.len {
+		r[j + n + 1] = addmul_2(r[j..j + n + 1], a, b[j], b[j + 1]);
+		j += 2;
+	}
+	if j < b.len { r[j + n] = addmul_1(r[j..j + n], a, b[j]); }
 }
 
 // r = a^2: the products of distinct limbs once, doubled, and the squares of

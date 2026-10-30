@@ -1,0 +1,38 @@
+ones = ["zero", "one", "two", "three", "four", "five", "six", "seven", "eight",
+        "nine", "ten", "eleven", "twelve", "thirteen", "fourteen", "fifteen",
+        "sixteen", "seventeen", "eighteen", "nineteen"]
+tens = ["", "", "twenty", "thirty", "forty", "fifty", "sixty", "seventy",
+        "eighty", "ninety"]
+
+
+def below_thousand(n):
+    parts = []
+    if n >= 100:
+        parts.append(ones[n // 100] + " hundred")
+        n %= 100
+    if n:
+        if n < 20:
+            parts.append(ones[n])
+        else:
+            w = tens[n // 10]
+            if n % 10:
+                w += "-" + ones[n % 10]
+            parts.append(w)
+    return " ".join(parts)
+
+
+def to_words(n):
+    if n == 0:
+        return "zero"
+    parts = []
+    for value, name in ((10**9, "billion"), (10**6, "million"), (1000, "thousand")):
+        if n >= value:
+            parts.append(below_thousand(n // value) + " " + name)
+            n %= value
+    if n:
+        parts.append(below_thousand(n))
+    return " ".join(parts)
+
+
+for x in (1234567, 90210, 13, 1000000):
+    print(to_words(x))

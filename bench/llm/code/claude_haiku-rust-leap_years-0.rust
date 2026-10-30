@@ -1,0 +1,8 @@
+fn is_leap(year: u32) -> bool {
+    (year % 4 == 0 && year % 100 != 0) || year % 400 == 0
+}
+
+fn main() {
+    let count = (1900..=2100).filter(|&y| is_leap(y)).count();
+    println!("{}", count);
+}

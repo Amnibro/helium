@@ -1,0 +1,46 @@
+fn alive(g int[:], r int, c int) int {
+	if r < 0 || r >= 8 || c < 0 || c >= 8 { return 0; }
+	g[r * 8 + c]
+}
+
+fn step(g int[:], nxt int[:]) {
+	for r in 8 {
+		for c in 8 {
+			var n = 0;
+			for dr in 3 {
+				for dc in 3 {
+					if dr != 1 || dc != 1 {
+						n += alive(g, r + dr - 1, c + dc - 1);
+					}
+				}
+			}
+			let cur = g[r * 8 + c];
+			nxt[r * 8 + c] = if cur == 1 {
+				if n == 2 || n == 3 { 1 } else { 0 }
+			} else {
+				if n == 3 { 1 } else { 0 }
+			};
+		}
+	}
+}
+
+fn main() {
+	var a int[64] = [0; 64];
+	var b int[64] = [0; 64];
+	a[0 * 8 + 1] = 1;
+	a[1 * 8 + 2] = 1;
+	a[2 * 8 + 0] = 1;
+	a[2 * 8 + 1] = 1;
+	a[2 * 8 + 2] = 1;
+	for gen in 4 {
+		step(a, b);
+		for i in 64 { a[i] = b[i]; }
+	}
+	for r in 8 {
+		var line byte[>..] = [];
+		for c in 8 {
+			if a[r * 8 + c] == 1 { line.push('#'); } else { line.push('.'); }
+		}
+		print(line);
+	}
+}

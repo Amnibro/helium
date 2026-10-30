@@ -1,0 +1,17 @@
+recursive fn solve(n int, row int, cols int, d1 int, d2 int) int {
+	if row == n { return 1; }
+	let full = (1 << n) - 1;
+	let blocked = (cols | d1 | d2) & full;
+	var avail = full ^ blocked;
+	var count = 0;
+	while avail != 0 {
+		let bit = avail & -avail;
+		avail = avail ^ bit;
+		count += solve(n, row + 1, cols | bit, ((d1 | bit) << 1) & full, (d2 | bit) >> 1);
+	}
+	count
+}
+
+fn main() {
+	print(solve(10, 0, 0, 0, 0));
+}

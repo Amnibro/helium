@@ -1,0 +1,21 @@
+fn main() {
+    const N: usize = 1_000_000;
+    let mut cache = vec![0u32; N];
+    let mut best = 1usize;
+    let mut best_steps = 0u32;
+    for i in 2..N {
+        let mut n = i as u64;
+        let mut steps = 0u32;
+        while n >= N as u64 || (n as usize) >= i {
+            n = if n % 2 == 0 { n / 2 } else { 3 * n + 1 };
+            steps += 1;
+        }
+        let total = steps + cache[n as usize];
+        cache[i] = total;
+        if total > best_steps {
+            best_steps = total;
+            best = i;
+        }
+    }
+    println!("{} {}", best, best_steps);
+}

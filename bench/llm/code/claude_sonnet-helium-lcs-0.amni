@@ -1,0 +1,19 @@
+fn main() {
+	let a = "ACCGGTCGAGTGCGCGGAAGCCGGCCGAA";
+	let b = "GTCGTTCGGAATGCCGTTGCTCTGTAAA";
+	let n = a.len;
+	let m = b.len;
+	var dp int[>..] = [];
+	dp.resize((n + 1) * (m + 1), 0);
+	for i in 1..n + 1 {
+		for j in 1..m + 1 {
+			let k = i * (m + 1) + j;
+			if a[i - 1] == b[j - 1] {
+				dp[k] = dp[k - m - 2] + 1;
+			} else {
+				dp[k] = max(dp[k - m - 1], dp[k - 1]);
+			}
+		}
+	}
+	print(dp[n * (m + 1) + m]);
+}

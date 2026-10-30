@@ -1,0 +1,46 @@
+fn main() {
+	var grid byte[>..] = [];
+	grid.append("S.#.......");
+	grid.append(".##.####.#");
+	grid.append("....#....#");
+	grid.append("#.#.#.##.#");
+	grid.append("..#...#..#");
+	grid.append(".####.#.##");
+	grid.append("......#...");
+	grid.append(".######.#.");
+	grid.append("........#E");
+	let H = 9;
+	let W = 10;
+	var dist int[>..] = [];
+	var queue int[>..] = [];
+	var start = 0;
+	var goal = 0;
+	for i in H * W {
+		dist.push(-1);
+		if grid[i] == 'S' { start = i; }
+		if grid[i] == 'E' { goal = i; }
+	}
+	dist[start] = 0;
+	queue.push(start);
+	var head = 0;
+	while head < queue.len {
+		let cur = queue[head];
+		head++;
+		let r = cur / W;
+		let c = cur % W;
+		for k in 4 {
+			var nr = r;
+			var nc = c;
+			if k == 0 { nr = r - 1; }
+			if k == 1 { nr = r + 1; }
+			if k == 2 { nc = c - 1; }
+			if k == 3 { nc = c + 1; }
+			if nr < 0 || nr >= H || nc < 0 || nc >= W { continue; }
+			let n = nr * W + nc;
+			if grid[n] == '#' || dist[n] >= 0 { continue; }
+			dist[n] = dist[cur] + 1;
+			queue.push(n);
+		}
+	}
+	print(dist[goal]);
+}

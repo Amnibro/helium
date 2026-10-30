@@ -1,0 +1,12 @@
+fn main() {
+	for n in 16 {
+		if (n & (n >> 1)) == 0 {
+			var s byte[>..] = [];
+			for k in 4 {
+				let b = (n >> (3 - k)) & 1;
+				s.push(if b == 1 { '1' } else { '0' });
+			}
+			print(s);
+		}
+	}
+}

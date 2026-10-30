@@ -1,0 +1,18 @@
+fn main() {
+	var n = 600851475143;
+	var d = 2;
+	var out byte[>..] = [];
+	while d * d <= n {
+		while n % d == 0 {
+			if out.len > 0 { out.push(' '); }
+			format(out, d);
+			n = n / d;
+		}
+		d++;
+	}
+	if n > 1 {
+		if out.len > 0 { out.push(' '); }
+		format(out, n);
+	}
+	print(out);
+}

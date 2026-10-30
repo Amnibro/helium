@@ -1,0 +1,16 @@
+recursive fn solve(n int, cols int, d1 int, d2 int) int {
+	let all = (1 << n) - 1;
+	if cols == all { return 1; }
+	var count = 0;
+	var avail = ((cols | d1 | d2) ^ all) & all;
+	while avail != 0 {
+		let bit = avail & -avail;
+		avail = avail ^ bit;
+		count += solve(n, cols | bit, ((d1 | bit) << 1) & all, (d2 | bit) >> 1);
+	}
+	count
+}
+
+fn main() {
+	print(solve(10, 0, 0, 0));
+}

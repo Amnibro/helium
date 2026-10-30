@@ -686,6 +686,7 @@ recursive lx1(n int) int:
 		return ldw(laddr(n), 0, wof(st))
 	if k == N_UN && x.op as int == T_AND: ra := at(x.a); return if TY[t].k != TY_REF && TY[t].k != TY_NULL && is_scal(t) { if TY[ra].k == TY_REF && TY[ra].c < 0 && TY[ra].fl & RF_OPT == 0 && TY[fin(x.a)].k == TY_REF { ldr(lx(x.a), t) } else { lx(x.a) } } else { laddr(x.a) }
 	if k == N_UN:
+		if x.op == T_MINUS && isf(t) && ND[x.a].k as int == N_FLT && !env("HC_NOFNK", FNKB): b := flt_bits(tok_text(ND[x.a].t)); return imm((if wof(atn(n)) == 10 { d2f_bits(b) ^ 0x80000000 } else { b ^ (1 as u64) << 63 }) as! int)
 		o := x.op; a := lx(x.a); d := nv(); ut := if at(n) >= 0 && TY[at(n)].k == TY_INT { at(n) } else { t }; if o == T_NOT { ir(I_UN, 4, d, a, -1, 2); return d } if o == T_MINUS { return lneg(a, if isf(t) { atn(n) } else { ut }, n) } if o == T_BITNOT { ir(I_UN, wof(ut), d, a, -1, 1); return d } if o == T_PLUS { return a } if o == T_AND: return laddr(x.a)
 	if k == N_BIN:
 		o := x.op
@@ -786,6 +787,7 @@ recursive lsinkf(sk int, n int, i0 int, total int):
 drop_to(h int):
 	i ~= DROPS.len; while i > h: i -= 2; ldrop(DROPS[i], DROPS[i + 1])
 KEEPDS ~= false
+FNKB byte[>..] ~= []
 drop_keep(): sv := KEEPDS; KEEPDS = true; drop_ret(); KEEPDS = sv
 drop_ret():
 	i ~= DROPS.len; while i > 0:
@@ -1547,10 +1549,11 @@ lower_fn(i int):
 	pq i32[>..<] ~= []
 	sret := is_agg(rt); sp := nv(); if sret: ir(I_PARAM, 3, sp, -1, -1, 0); pi = 1
 	for j ND[node].n:
-		pt := ptype_of(i, j); for q if is_pair(pt) { 2 } else { 1 }: r := nv(); ir(I_PARAM, 3, r, -1, -1, pi); pi++; pq.push(r)
+		pt := ptype_of(i, j); for q if is_pair(pt) { 2 } else { 1 }: r := nv(); ir(I_PARAM, if !is_pair(pt) && isf(pt) && !env("HC_NOFP", FNKB) { wof(pt) } else { 3 }, r, -1, -1, pi); pi++; pq.push(r)
 	CAPSL.clear(); while CAPSL.len < LVS.len { CAPSL.push(-1) } cq i32[>..<] ~= []
 	for cp CAPS:
 		if cp.inst == i: r := nv(); ir(I_PARAM, 3, r, -1, -1, pi); pi++; cq.push(r); cq.push(cp.lv)
+	while PKO.len <= nf { PKO.push(-1); PKC.push(0) } PKO[nf] = PKW.len as i32; for k i0..IR.len { if IR[k].op as int == I_PARAM { PKW.push(IR[k].w as i8) } } PKC[nf] = PKW.len as i32 - PKO[nf]
 	ci ~= 0; while ci < cq.len: so := slot(8, 8); CAPSL[cq[ci + 1]] = so; sa := nv(); ir(I_SLOT, 8, sa, -1, -1, so); stw(sa, 0, cq[ci], 3); ci += 2
 	qi ~= 0
 	for j ND[node].n:
@@ -1669,6 +1672,7 @@ lower_program(out byte[>..]&) bool:
 	mov_rr(RDI, RSP); lea_rip(RSI, 1, rsg); call_f(rst); mov_rr(RSP, RAX); if dlb >= 0 { call_f(dlb) } call_f(gi); call_f(rm); mov_ri(RDI, 0); call_f(rinit); ud2()
 	irw byte[>..] ~= []; dump := env("HC_IR", irw)
 	noi byte[>..] ~= []; opt := !env("HC_NOOPT", noi); if opt: gtag(); optimize_all(); vec_all(); rot_all(); vjl_all(); NOADC = env("HC_NOADC", noi)
+	if !WEB { xabi_prep() }
 	for f, i NFS: if dump && f.inst >= 0 && nm(FI_[f.inst].name) == irw[..] { ir_dump(i) } if opt { vperm(i); regalloc(i); for _ 2 { f0 := NFS[i]; c0 := RCOST; if !NORS && rsplit(i) { regalloc(i); if RCOST * 20 > c0 * 19 || c0 - RCOST < 8 { NFS[i] = f0; regalloc(i); break } } } } else { REGOF.clear(); RUSED.clear(); VZERO.clear(); FK.clear(); XREG.clear(); SVR.clear(); } cg_fn2(i)
 	dbg byte[>..] ~= []; if env("HC_NDEBUG", dbg):
 		for f, i NFS: print(if f.inst >= 0 { nm(FI_[f.inst].name) } else { "<init>" }, " ", 0x400000 + code_off() + FOFF[i] as int, " nv ", f.nv, " sb ", f.sb)

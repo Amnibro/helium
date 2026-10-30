@@ -1,0 +1,19 @@
+fn main() {
+	var digits int[>..] = [];
+	digits.push(1);
+	for k in 2..101 {
+		var carry = 0;
+		for &d in digits {
+			let v = d * k + carry;
+			d = v % 10;
+			carry = v / 10;
+		}
+		while carry > 0 {
+			digits.push(carry % 10);
+			carry = carry / 10;
+		}
+	}
+	var total = 0;
+	for d in digits { total += d; }
+	print(total);
+}

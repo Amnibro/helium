@@ -1,0 +1,4 @@
+import codecs
+
+text = 'Hello, World! The year is 2026.'
+print(codecs.encode(text, 'rot_13'))

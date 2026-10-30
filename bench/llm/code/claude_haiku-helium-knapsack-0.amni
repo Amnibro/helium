@@ -1,0 +1,15 @@
+fn main() {
+	let w = [12, 7, 11, 8, 9, 6, 15, 4, 10, 13];
+	let v = [24, 13, 23, 15, 16, 12, 30, 7, 19, 25];
+	let cap = 50;
+	var dp int[51] = [0; 51];
+	for i in 10 {
+		var c = cap;
+		while c >= w[i] {
+			let cand = dp[c - w[i]] + v[i];
+			if cand > dp[c] { dp[c] = cand; }
+			c -= 1;
+		}
+	}
+	print(dp[cap]);
+}

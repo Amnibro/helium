@@ -1,0 +1,21 @@
+use std::collections::HashMap;
+
+fn main() {
+    let text = "It was the best of times, it was the worst of times, it was the age of wisdom, it was the age of foolishness, it was the epoch of belief, it was the epoch of incredulity, it was the season of Light, it was the season of Darkness.";
+
+    let lowered = text.to_lowercase();
+
+    let mut counts: HashMap<&str, usize> = HashMap::new();
+    for word in lowered.split(|c: char| !c.is_alphabetic()) {
+        if !word.is_empty() {
+            *counts.entry(word).or_insert(0) += 1;
+        }
+    }
+
+    let mut entries: Vec<(&str, usize)> = counts.into_iter().collect();
+    entries.sort_by(|a, b| b.1.cmp(&a.1).then(a.0.cmp(b.0)));
+
+    for (word, count) in entries.iter().take(5) {
+        println!("{} {}", word, count);
+    }
+}

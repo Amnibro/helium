@@ -1,0 +1,17 @@
+fn main() {
+	let s = "abracadabraabracadabra";
+	var codes int[>..] = [];
+	for i in s.len - 2 {
+		codes.push(s[i] as int * 65536 + s[i + 1] as int * 256 + s[i + 2] as int);
+	}
+	sort(codes);
+	var distinct = 0;
+	for i in codes.len {
+		if i == 0 {
+			distinct++;
+		} else if codes[i] != codes[i - 1] {
+			distinct++;
+		}
+	}
+	print(distinct);
+}

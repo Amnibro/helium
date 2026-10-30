@@ -1,0 +1,4 @@
+for i in range(16):
+    s = format(i, '04b')
+    if '11' not in s:
+        print(s)

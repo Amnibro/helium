@@ -1,0 +1,29 @@
+fn next(mut n: usize) -> usize {
+    let mut s = 0;
+    while n > 0 {
+        let d = n % 10;
+        s += d * d;
+        n /= 10;
+    }
+    s
+}
+
+fn main() {
+    // Max sum for 7 digits: 7*81 = 567
+    let max = 7 * 81;
+    let mut end = vec![0u8; max + 1];
+    for i in 1..=max {
+        let mut n = i;
+        while n != 1 && n != 89 {
+            n = next(n);
+        }
+        end[i] = if n == 89 { 89 } else { 1 };
+    }
+    let mut count = 0u32;
+    for i in 1..10_000_000usize {
+        if end[next(i)] == 89 {
+            count += 1;
+        }
+    }
+    println!("{}", count);
+}

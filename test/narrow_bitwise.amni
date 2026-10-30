@@ -1,0 +1,23 @@
+import std;
+import os;
+fn mix32(a i32, b i32, k int) int {
+	let x = a & b; let y = a | b; let z = a ^ b; let s = a >> 3; let t = (a ^ -1) & 0x7fffffff; let u = (a | b) >> 31;
+	var r = 0;
+	if x < 0 { r += 1; } if y < -5 { r += 2; } if z > 100 { r += 4; } if s < 0 { r += 8; } if u == -1 { r += 16; }
+	r + (x as int) * 3 + (y as int) * 5 + (z as int) * 7 + (s as int) + (t as int) + (u as int) + k
+}
+fn mix16(a i16, b i16) int { let x = a & b; let y = a ^ b; let s = a >> 2; (x as int) * 3 + (y as int) * 5 + (s as int) + (if y < 0 { 1 } else { 0 }) }
+fn mix8(a i8, b u8) int { let x = a & -3; let y = b | 0x80; let z = b >> 1; let w = a >> 1; (x as int) + (y as int) * 3 + (z as int) * 5 + (w as int) * 7 + (if w < 0 { 100 } else { 0 }) }
+fn mixu32(a u32, b u32) u64 { let x = a & b; let y = a ^ b; let s = a >> 5; (x as u64) + (y as u64) * 3 + (s as u64) * 5 }
+fn main() {
+	let v = [0, 1, -1, 2147483647, -2147483648, 12345, -98765, 65535, -65536, 255, -128, 127];
+	var h = 0;
+	var hu u64 = 0;
+	for a in v { for b in v {
+		h = h * 31 + mix32(a as! i32, b as! i32, a - b) + mix16(a as! i16, b as! i16) + mix8(a as! i8, b as! u8);
+		hu = hu * 37 + mixu32(a as! u32, b as! u32);
+	} }
+	var o byte[>..] = [];
+	format(o, h, " ", hu, "\n");
+	print(o);
+}

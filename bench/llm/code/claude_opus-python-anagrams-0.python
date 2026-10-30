@@ -1,0 +1,13 @@
+from collections import defaultdict
+
+words = ["listen", "silent", "enlist", "google", "gooegl", "cat", "act", "tac", "dog"]
+
+groups = defaultdict(list)
+for w in words:
+    groups["".join(sorted(w))].append(w)
+
+lines = [sorted(g) for g in groups.values()]
+lines.sort(key=lambda g: g[0])
+
+for g in lines:
+    print(" ".join(g))

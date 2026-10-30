@@ -1,0 +1,41 @@
+fn main() {
+	let g = "S.#.......123";
+	let grid = ".##.####.#....#....##.#.#.##.#..#...#..#.####.#.##......#....######.#.........#E";
+	let full = "S.#.......";
+	var cells byte[>..] = [];
+	cells.append(full);
+	cells.append(".##.####.#");
+	cells.append("....#....#");
+	cells.append("#.#.#.##.#");
+	cells.append("..#...#..#");
+	cells.append(".####.#.##");
+	cells.append("......#...");
+	cells.append(".######.#.");
+	cells.append("........#E");
+	var dist int[90] = [-1; 90];
+	var q int[90] = [0; 90];
+	let dr int[4] = [-1, 1, 0, 0];
+	let dc int[4] = [0, 0, -1, 1];
+	var head = 0;
+	var tail = 1;
+	dist[0] = 0;
+	while head < tail {
+		let cur = q[head];
+		head += 1;
+		let r = cur / 10;
+		let c = cur % 10;
+		for d in 4 {
+			let nr = r + dr[d];
+			let nc = c + dc[d];
+			if nr >= 0 && nr < 9 && nc >= 0 && nc < 10 {
+				let ni = nr * 10 + nc;
+				if cells[ni] != '#' && dist[ni] < 0 {
+					dist[ni] = dist[cur] + 1;
+					q[tail] = ni;
+					tail += 1;
+				}
+			}
+		}
+	}
+	print(dist[89]);
+}

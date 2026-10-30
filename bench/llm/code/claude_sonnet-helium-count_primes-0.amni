@@ -1,0 +1,21 @@
+fn main() {
+	let n = 20000000;
+	var sieve byte[>..] = [];
+	sieve.resize(n, 0);
+	var i = 2;
+	while i * i < n {
+		if sieve[i] == 0 {
+			var j = i * i;
+			while j < n {
+				sieve[j] = 1;
+				j += i;
+			}
+		}
+		i++;
+	}
+	var count = 0;
+	for k in 2..n {
+		if sieve[k] == 0 { count++; }
+	}
+	print(count);
+}

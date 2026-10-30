@@ -1,0 +1,17 @@
+fn main() {
+	var row int[>..] = [1];
+	var r = 0;
+	while r < 10 {
+		var s byte[>..] = [];
+		for i in row.len {
+			if i > 0 { s.push(' '); }
+			format(s, row[i]);
+		}
+		print(s);
+		var next int[>..] = [1];
+		for i in 1..row.len { next.push(row[i - 1] + row[i]); }
+		next.push(1);
+		row = copy(next);
+		r++;
+	}
+}

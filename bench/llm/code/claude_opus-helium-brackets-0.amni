@@ -1,0 +1,28 @@
+fn balanced(s const byte[:]) bool {
+	var st byte[>..<] = [];
+	for c in s {
+		if c == '(' || c == '[' || c == '{' {
+			st.push(c);
+		} else if c == ')' || c == ']' || c == '}' {
+			if st.len == 0 { return false; }
+			let o = st.pop();
+			if c == ')' && o != '(' { return false; }
+			if c == ']' && o != '[' { return false; }
+			if c == '}' && o != '{' { return false; }
+		}
+	}
+	st.len == 0
+}
+
+fn report(s const byte[:]) {
+	if balanced(s) { print("YES"); } else { print("NO"); }
+}
+
+fn main() {
+	report("([]{})");
+	report("([)]");
+	report("((()");
+	report("{[()()]}");
+	report("");
+	report("}{");
+}

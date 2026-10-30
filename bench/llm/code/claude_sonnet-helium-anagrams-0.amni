@@ -1,0 +1,37 @@
+fn anagram(a const byte[:], b const byte[:]) bool {
+	if a.len != b.len { return false; }
+	var c int[256] = [0; 256];
+	for x in a { c[x] += 1; }
+	for x in b { c[x] -= 1; }
+	for v in c { if v != 0 { return false; } }
+	return true;
+}
+
+fn main() {
+	var words = ["listen", "silent", "enlist", "google", "gooegl", "cat", "act", "tac", "dog"];
+	let n = words.len;
+	for i in n {
+		for j in n - 1 - i {
+			if compare(words[j], words[j + 1]) > 0 {
+				var t = words[j];
+				words[j] = words[j + 1];
+				words[j + 1] = t;
+			}
+		}
+	}
+	var used bool[9] = [false; 9];
+	for i in n {
+		if used[i] { continue; }
+		var line byte[>..] = [];
+		line.append(words[i]);
+		used[i] = true;
+		for j in i + 1..n {
+			if !used[j] && anagram(words[i], words[j]) {
+				line.push(' ');
+				line.append(words[j]);
+				used[j] = true;
+			}
+		}
+		print(line);
+	}
+}

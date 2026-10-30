@@ -1,0 +1,40 @@
+fn decrypt(s byte[:], k int, out byte[>..]&) {
+	for c in s {
+		if c >= 97 && c <= 122 {
+			let v = ((c as int) - 97 - k + 26) % 26;
+			out.push(((v + 97) as byte));
+		} else if c >= 65 && c <= 90 {
+			let v = ((c as int) - 65 - k + 26) % 26;
+			out.push(((v + 65) as byte));
+		} else {
+			out.push(c);
+		}
+	}
+}
+
+fn has_word(s byte[:], w byte[:]) bool {
+	if w.len > s.len { return false; }
+	for i in s.len - w.len + 1 {
+		var ok = true;
+		for j in w.len {
+			if s[i + j] != w[j] {
+				ok = false;
+				break;
+			}
+		}
+		if ok { return true; }
+	}
+	false
+}
+
+fn main() {
+	let cipher = "Wkh vhfuhw phhwlqj lv dw qrrq";
+	for k in 26 {
+		var out byte[>..] = [];
+		decrypt(cipher, k, out);
+		if has_word(out, "secret") {
+			print(out);
+			return;
+		}
+	}
+}

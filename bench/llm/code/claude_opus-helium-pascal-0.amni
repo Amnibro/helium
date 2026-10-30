@@ -1,0 +1,14 @@
+fn main() {
+	var row int[10] = [0; 10];
+	row[0] = 1;
+	for n in 10 {
+		var j = n;
+		while j > 0 { row[j] = row[j] + row[j - 1]; j -= 1; }
+		var s byte[>..] = [];
+		for i in n + 1 {
+			if i > 0 { s.push(' '); }
+			format(s, row[i]);
+		}
+		print(s);
+	}
+}

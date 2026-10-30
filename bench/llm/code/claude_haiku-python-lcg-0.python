@@ -1,0 +1,14 @@
+def main():
+    s = 42
+    count = 0
+    threshold = 1073741824
+    for _ in range(1000000):
+        s = (1103515245 * s + 12345) % 2147483648
+        if s < threshold:
+            count += 1
+    print(count)
+    print(s)
+
+
+if __name__ == "__main__":
+    main()

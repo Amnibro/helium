@@ -1,0 +1,31 @@
+import std;
+import os;
+import binary;
+fn p1(a real, b real) real { if a < b { a } else { b } }
+fn p2(a real, b real) real { if a < b { b } else { a } }
+fn p3(a real, b real) real { if a > b { a } else { b } }
+fn p4(a real, b real) real { if a > b { b } else { a } }
+fn p5(a real, b real) real { if a <= b { a } else { b } }
+fn p6(a real) real { if a > 1.0 { 1.0 } else { a } }
+fn p7(a real) real { if a < -0.0 { -0.0 } else { a } }
+fn p8(a real) real { if 0.0 < a { a } else { 0.0 } }
+fn q1(a f32, b f32) f32 { if a < b { a } else { b } }
+fn q2(a f32, b f32) f32 { if a > b { b } else { a } }
+fn cl(v real, a real, b real) real { if v < a { a } else if v > b { b } else { v } }
+fn sq(x real) real { let t = cl(x, 0.0, 1.0); t * t * (3.0 - 2.0 * t) }
+fn main() {
+	let z = args().len as real - 1.0;
+	let nan = z / z;
+	let v = [0.0, -0.0, 1.0, -1.0, 2.5, nan, 1.0 / 0.0, -1.0 / 0.0, 1.0, 0.5];
+	var h u64 = 0;
+	for a in v { for b in v {
+		h = h * 1000003 + binary::f64_bits(p1(a, b)); h = h * 1000003 + binary::f64_bits(p2(a, b)); h = h * 1000003 + binary::f64_bits(p3(a, b)); h = h * 1000003 + binary::f64_bits(p4(a, b)); h = h * 1000003 + binary::f64_bits(p5(a, b));
+		h = h * 1000003 + binary::f32_bits(q1(a as f32, b as f32)) as u64; h = h * 1000003 + binary::f32_bits(q2(a as f32, b as f32)) as u64;
+	}
+	h = h * 1000003 + binary::f64_bits(p6(a)); h = h * 1000003 + binary::f64_bits(p7(a)); h = h * 1000003 + binary::f64_bits(p8(a)); h = h * 1000003 + binary::f64_bits(sq(a)); h = h * 1000003 + binary::f64_bits(cl(a, -0.0, 0.0)); }
+	var s = 0.0;
+	for i in 3000 { s += sq(i as real * 0.001 - 1.0) + p6(i as real * 0.001); }
+	var o byte[>..] = [];
+	format(o, h, " ", s, "\n");
+	print(o);
+}

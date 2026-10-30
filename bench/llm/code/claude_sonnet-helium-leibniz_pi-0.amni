@@ -1,0 +1,11 @@
+fn main() {
+	var sum = 0.0;
+	var sgn = 1.0;
+	for i in 10000000 {
+		sum += sgn / (2 * i + 1);
+		sgn = -sgn;
+	}
+	var s byte[>..] = [];
+	format_flt(s, 4.0 * sum, 6);
+	print(s);
+}

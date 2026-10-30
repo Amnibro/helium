@@ -1,0 +1,20 @@
+def main():
+    n = 600
+    count = 0
+    for i in range(n):
+        cr = -2.0 + 3.0 * i / n
+        for j in range(n):
+            ci = -1.5 + 3.0 * j / n
+            zr = 0.0
+            zi = 0.0
+            inside = True
+            for _ in range(200):
+                zr, zi = zr * zr - zi * zi + cr, 2.0 * zr * zi + ci
+                if zr * zr + zi * zi > 4.0:
+                    inside = False
+                    break
+            if inside:
+                count += 1
+    print(count)
+
+main()

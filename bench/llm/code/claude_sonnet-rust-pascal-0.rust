@@ -1,0 +1,13 @@
+fn main() {
+    let mut row: Vec<u64> = vec![1];
+    for _ in 0..10 {
+        let line: Vec<String> = row.iter().map(|n| n.to_string()).collect();
+        println!("{}", line.join(" "));
+        let mut next = vec![1u64];
+        for w in row.windows(2) {
+            next.push(w[0] + w[1]);
+        }
+        next.push(1);
+        row = next;
+    }
+}

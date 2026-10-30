@@ -1,0 +1,34 @@
+import sys
+
+def main():
+    limit = 1000000
+    cache = [0] * limit
+    cache[1] = 0
+    best_n = 1
+    best_steps = 0
+    for start in range(2, limit):
+        n = start
+        steps = 0
+        path = []
+        while n >= limit or (n != 1 and cache[n] == 0):
+            path.append(n)
+            if n & 1:
+                n = 3 * n + 1
+            else:
+                n >>= 1
+            steps += 1
+        base = cache[n]
+        total = base + steps
+        # fill cache for path elements within range
+        s = total
+        for v in path:
+            if v < limit:
+                cache[v] = s
+            s -= 1
+        if total > best_steps:
+            best_steps = total
+            best_n = start
+    sys.stdout.write(f"{best_n} {best_steps}\n")
+
+if __name__ == "__main__":
+    main()

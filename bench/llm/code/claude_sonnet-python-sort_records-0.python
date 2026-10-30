@@ -1,0 +1,11 @@
+records = ['mia,34', 'leo,27', 'ava,34', 'zoe,19', 'eli,27', 'ian,41']
+
+parsed = []
+for r in records:
+    name, age = r.split(',')
+    parsed.append((name, int(age)))
+
+parsed.sort(key=lambda x: (-x[1], x[0]))
+
+for name, age in parsed:
+    print(f"{name},{age}")

@@ -1,0 +1,23 @@
+def main():
+    def ends_at_89(n):
+        while n != 1 and n != 89:
+            n = sum(int(c) ** 2 for c in str(n))
+        return n == 89
+
+    # counts[s] = number of 7-digit strings (leading zeros allowed) with digit-square sum s
+    counts = {0: 1}
+    for _ in range(7):
+        new = {}
+        for s, c in counts.items():
+            for d in range(10):
+                t = s + d * d
+                new[t] = new.get(t, 0) + c
+        counts = new
+
+    total = 0
+    for s, c in counts.items():
+        if s > 0 and ends_at_89(s):
+            total += c
+    print(total)
+
+main()

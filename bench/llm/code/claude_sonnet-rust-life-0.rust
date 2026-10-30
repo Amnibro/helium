@@ -1,0 +1,39 @@
+fn main() {
+    const N: usize = 8;
+    let mut g = [[false; N]; N];
+    for &(r, c) in &[(0, 1), (1, 2), (2, 0), (2, 1), (2, 2)] {
+        g[r][c] = true;
+    }
+    for _ in 0..4 {
+        let mut n = [[false; N]; N];
+        for r in 0..N {
+            for c in 0..N {
+                let mut cnt = 0;
+                for dr in -1i32..=1 {
+                    for dc in -1i32..=1 {
+                        if dr == 0 && dc == 0 {
+                            continue;
+                        }
+                        let rr = r as i32 + dr;
+                        let cc = c as i32 + dc;
+                        if rr >= 0 && rr < N as i32 && cc >= 0 && cc < N as i32 {
+                            if g[rr as usize][cc as usize] {
+                                cnt += 1;
+                            }
+                        }
+                    }
+                }
+                n[r][c] = matches!((g[r][c], cnt), (true, 2) | (true, 3) | (false, 3));
+            }
+        }
+        g = n;
+    }
+    let mut out = String::new();
+    for r in 0..N {
+        for c in 0..N {
+            out.push(if g[r][c] { '#' } else { '.' });
+        }
+        out.push('\n');
+    }
+    print!("{}", out);
+}
