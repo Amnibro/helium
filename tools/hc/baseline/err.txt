@@ -265,6 +265,8 @@ growshrink_relative_slice.amni
 growshrink_slice.amni
 growshrink_slot_deref_bytes.amni
 growshrink_slot_holder_copy_shrink.amni
+growshrink_slot_merged.amni
+growshrink_slot_rebind_merged.amni
 growshrink_store.amni
 growshrink_store_argument.amni
 growshrink_store_callee_shrink.amni
@@ -431,9 +433,15 @@ shrink_class_copy_recursive.amni
 shrink_class_pair_back_edge.amni
 shrink_class_read_byteview.amni
 shrink_class_read_elem_ref.amni
+shrink_class_read_holders.amni
 shrink_class_read_holders_own.amni
 shrink_class_read_own_store.amni
 shrink_class_read_result.amni
+shrink_class_read_view.amni
+shrink_contents_append.amni
+shrink_contents_later_store.amni
+shrink_contents_slot_ref.amni
+shrink_contents_whole.amni
 shrink_elem_refs_byteview.amni
 shrink_elem_refs_callee_result.amni
 shrink_elem_refs_callee_shrink.amni
@@ -449,6 +457,8 @@ shrink_elem_refs_param.amni
 shrink_elem_refs_recursive.amni
 shrink_elem_refs_slot_refs.amni
 shrink_elem_refs_var.amni
+shrink_elem_refs_view.amni
+shrink_elem_refs_view_passed.amni
 shrink_elem_refs_view_store.amni
 shrink_exit_return_value.amni
 shrink_global_append.amni
@@ -478,10 +488,19 @@ shrink_growonly_holder_ref.amni
 shrink_growonly_slice_field_ref.amni
 shrink_growonly_slice_ref.amni
 shrink_growonly_slot_byteview.amni
+shrink_holder_contents_caller_store.amni
+shrink_holder_contents_copy.amni
+shrink_holder_contents_global.amni
+shrink_holder_contents_holder_ref.amni
+shrink_holder_contents_holders.amni
 shrink_holder_contents_local.amni
 shrink_holder_contents_own_store.amni
+shrink_holder_contents_param.amni
+shrink_holder_contents_passed.amni
 shrink_holder_contents_recursive.amni
 shrink_holder_contents_ref.amni
+shrink_holder_contents_var.amni
+shrink_holder_contents_view.amni
 shrink_holder_slot_byteview.amni
 shrink_holder_slot_call_result.amni
 shrink_holder_slot_callee_shrink.amni
@@ -493,6 +512,7 @@ shrink_holder_slot_global.amni
 shrink_holder_slot_holder_ref.amni
 shrink_holder_slot_loop.amni
 shrink_holder_slot_ref.amni
+shrink_holder_slot_ref_param.amni
 shrink_holder_slot_ref_var.amni
 shrink_holder_slot_slices.amni
 shrink_later_condition_body.amni
@@ -512,6 +532,7 @@ shrink_param_contents_holders.amni
 shrink_param_contents_literal.amni
 shrink_param_contents_own_store.amni
 shrink_param_contents_passed.amni
+shrink_param_contents_two_level.amni
 shrink_passed_bound.amni
 shrink_passed_holder.amni
 shrink_passed_holder_local.amni
@@ -551,6 +572,7 @@ slice_ref_readonly_slot_for.amni
 slice_ref_readonly_slot_global.amni
 slice_ref_readonly_slot_match.amni
 slice_ref_readonly_slot_temp.amni
+slice_ref_store_block.amni
 slice_ref_store_callee_merged.amni
 slice_ref_store_chain.amni
 slice_ref_store_depth.amni
@@ -558,6 +580,7 @@ slice_ref_store_depth_explicit.amni
 slice_ref_store_elem_view.amni
 slice_ref_store_let.amni
 slice_ref_store_merged.amni
+slice_ref_store_nested.amni
 slice_ref_temp_binding.amni
 slice_return_local.amni
 slice_return_value_param.amni
@@ -565,6 +588,7 @@ slice_view_elem_read.amni
 slice_view_global_keep.amni
 slice_view_result_local.amni
 slice_view_result_shrink.amni
+slice_view_store_through.amni
 spec_depth_return.amni
 store_contents_local.amni
 struct_literal_field_readback.amni
