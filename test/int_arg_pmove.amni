@@ -1,0 +1,20 @@
+import std;
+import os;
+fn rot6(a int, b int, c int, d int, e int, f int, n int) int { if n == 0 { a + 2 * b + 3 * c + 5 * d + 7 * e + 11 * f } else { rot6(b, c, d, e, f, a + n, n - 1) } }
+fn swp(a int, b int, n int) int { if n == 0 { a * 3 - b } else { swp(b, a + 1, n - 1) } }
+fn mix(a int, x real, b int, y real, c int) real { (a - b + c) as real * x + y }
+fn pick(a int, b int, c int) int { a * 100 + b * 10 + c }
+fn main() {
+	let k = args().len;
+	var h = 0;
+	var r = 0.0;
+	for i in 200 {
+		let p = i + k; let q = i * 3; let s = i ^ 5;
+		h = h * 31 + rot6(p, q, s, p + q, q - s, s * 2, i % 13) + swp(p, q, i % 7) + pick(s, q, p) + pick(q, p, s);
+		r += mix(q, 0.5, p, r * 0.001, s) + mix(s, r * 0.0001, q, 1.5, p);
+		h = h % 1000000007;
+	}
+	var o byte[>..] = [];
+	format(o, h, " ", r, "\n");
+	print(o);
+}

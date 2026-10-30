@@ -297,24 +297,29 @@ xabi_prep():
 		for k PKC[fi] { if (PKW[PKO[fi] + k] as int) & 8 != 0 && nx < XAN { nx++ } else { ng++ } }
 		if ng > 6 || nx == 0 && rf == 0: continue
 		XAB[fi] = 1; XRF[fi] = rf as i8
-xpm(ts i32[>..<]&, ss i32[>..<]&):
+xpm(ts i32[>..<]&, ss i32[>..<]&, g bool):
 	while ts.len > 0:
 		k ~= -1; for q ts.len { if k < 0 { bl ~= false; for j ss.len { if j != q && ss[j] == ts[q] { bl = true } } if !bl { k = q } } }
-		if k < 0: rx(R11, ss[0] as int, 3); ss[0] = -1; continue
-		if ss[k] < 0 { xr(ts[k] as int, R11, 3) } else if ss[k] != ts[k] { sse(0, false, 0x28, ts[k] as int, ss[k] as int) }
+		if k < 0: (if g { mov_rr(RAX, ss[0] as int) } else { rx(R11, ss[0] as int, 3) }); ss[0] = -1; continue
+		if ss[k] < 0 { if g { mov_rr(ts[k] as int, RAX) } else { xr(ts[k] as int, R11, 3) } } else if ss[k] != ts[k] { if g { mov_rr(ts[k] as int, ss[k] as int) } else { sse(0, false, 0x28, ts[k] as int, ss[k] as int) } }
 		t := ts.len - 1; ts[k] = ts[t]; ss[k] = ss[t]; ts.pop(); ss.pop()
+gargs(c int, a int, n int):
+	ts i32[>..<] ~= []; ss i32[>..<] ~= []
+	for j n { pr := if c >= 0 { pmr(c, j) } else { j }; v := ARGL[a + j] as int; if pr < 6 && gr(v) >= 0 { ts.push(ARGR[pr] as i32); ss.push(gr(v) as i32) } }
+	xpm(ts, ss, true)
+	for j n { pr := if c >= 0 { pmr(c, j) } else { j }; v := ARGL[a + j] as int; if pr < 6 && gr(v) < 0 { ldv(ARGR[pr], v) } }
 xacall(c int, a int, n int):
 	ts i32[>..<] ~= []; ss i32[>..<] ~= []
-	for j n { pr := pmr(c, j); if pr < XMB { ldv(ARGR[pr], ARGL[a + j] as int) } }
+	gargs(c, a, n)
 	for j n { pr := pmr(c, j); v := ARGL[a + j] as int; if pr >= XMB && xg(v) >= 0 { ts.push((pr - XMB) as i32); ss.push(xg(v) as i32) } }
-	xpm(ts, ss)
+	xpm(ts, ss, false)
 	for j n { pr := pmr(c, j); v := ARGL[a + j] as int; if pr >= XMB && xg(v) < 0 { ldx(pr - XMB, v, PKW[PKO[c] + j] as int) } }
 xpar(fi int):
 	f := NFS[fi]; ts i32[>..<] ~= []; ss i32[>..<] ~= []
 	for i (f.i0 as int)..f.i1 as int { x := IR[i]; if x.op as int == I_PARAM && x.d >= 0 { pr := pmr(fi, x.c as int); if pr < XMB { stv(ARGR[pr], x.d as int) } } }
 	for i (f.i0 as int)..f.i1 as int { x := IR[i]; if x.op as int == I_PARAM && x.d >= 0 { pr := pmr(fi, x.c as int); if pr >= XMB && xg(x.d as int) < 0 { stx(pr - XMB, x.d as int, x.w as int) } } }
 	for i (f.i0 as int)..f.i1 as int { x := IR[i]; if x.op as int == I_PARAM && x.d >= 0 { pr := pmr(fi, x.c as int); if pr >= XMB && xg(x.d as int) >= 0 { ts.push(xg(x.d as int) as i32); ss.push((pr - XMB) as i32) } } }
-	xpm(ts, ss)
+	xpm(ts, ss, false)
 	for i (f.i0 as int)..f.i1 as int { x := IR[i]; if x.op as int == I_PARAM && x.d >= 0 && pmr(fi, x.c as int) >= XMB { for v, k XSV { if v == x.d && XS1[k] != 0 { ssem(0xF2, false, 0x11, XREG[v] as int, RBP, vo(v as int)) } } } }
 pin(c int, d int):
 	if c < 6 { stv(ARGR[c], d) } else { ld(RAX, RBP, 16 + 8 * (c - 6), 8, false); stv(RAX, d) }
@@ -567,7 +572,7 @@ cg_fn(fi int):
 																sr := [0, 7, 6, 2, 10, 8, 9]; for j n { ldv(sr[j], ARGL[a + j]) } if c == 2 { xb(0x48); xb(0x87); xb(0x07); } else { syscall(); } if c == 1:
 																	for q [0x48, 0x85, 0xC0, 0x75, 30, 0x4C, 0x89, 0xC6, 0xBF, 0x01, 0x10, 0, 0, 0xB8, 158, 0, 0, 0, 0x0F, 0x05, 0x31, 0xED, 0x58, 0x5F, 0xFF, 0xD0, 0xB8, 60, 0, 0, 0, 0x31, 0xFF, 0x0F, 0x05]: xb(q)
 															else:
-																if xa { xacall(c as int, a, n) } else { for j min(n, 6) { ldv(ARGR[j], ARGL[a + j]) } } if op == I_CALL: call_f(c) else: ldv(R11, c); call_r(R11)
+																if xa { xacall(c as int, a, n) } else { gargs(-1, a, min(n, 6)) } if op == I_CALL: call_f(c) else: ldv(R11, c); call_r(R11)
 															if st0 + pdn > 0: add_rsp(8 * (st0 + pdn))
 														if d >= 0: if xa && XRF[c] != 0 { stx(0, d, XRF[c] as int) } else { stv(RAX, d) }
 														if x.l >= 0: stv(RDX, x.l)
