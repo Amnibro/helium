@@ -495,6 +495,105 @@ static void hr_os_sleep_ms(int64_t ms) { struct timespec t = { ms / 1000, (ms % 
 static uint64_t hr_os_random_u64(void) { uint64_t v = 0; int fd = open("/dev/urandom", O_RDONLY); if (fd >= 0) { if (read(fd, &v, 8) != 8) v = (uint64_t)hr_os_time_ns(); close(fd); } return v; }
 static bool hr_trim_memory(void) { return true; }
 static bool hr_os_resource_dir(hrv *out) { char b[4096]; ssize_t n = readlink("/proc/self/exe", b, sizeof b); if (n <= 0) return false; while (n > 1 && b[n - 1] != '/') n--; hr_append(out, b, n - 1, 1); return true; }
+/* sockets for hc/lib/net.he: IPv4, non-blocking, close-on-exec; results are handles or -errno in Linux numbering */
+#include <sys/socket.h>
+#include <netinet/in.h>
+#include <netinet/tcp.h>
+#include <poll.h>
+static int64_t hr_net_err(int e) {
+  switch (e) {
+  case EAGAIN: return -11;
+#if EWOULDBLOCK != EAGAIN
+  case EWOULDBLOCK: return -11;
+#endif
+  case EINPROGRESS: return -115; case EINTR: return -4; case EBADF: return -9; case EACCES: return -13; case EINVAL: return -22;
+  case EPIPE: return -32; case ENOSYS: return -38; case EMSGSIZE: return -90; case EADDRINUSE: return -98; case EADDRNOTAVAIL: return -99;
+  case ENETUNREACH: return -101; case ECONNABORTED: return -103; case ECONNRESET: return -104; case ENOTCONN: return -107;
+  case ETIMEDOUT: return -110; case ECONNREFUSED: return -111; case EHOSTUNREACH: return -113; case EALREADY: return -114;
+  case EMFILE: return -24; case ENFILE: return -23; case ENOBUFS: return -105; case ENOMEM: return -12; case EPERM: return -1;
+  default: return e > 0 ? -e : -5;
+  }
+}
+#ifdef MSG_NOSIGNAL
+#define HR_NET_NOSIG MSG_NOSIGNAL
+#else
+#define HR_NET_NOSIG 0
+#endif
+static struct sockaddr_in hr_net_sa(int64_t ip, int64_t port) {
+  struct sockaddr_in a; memset(&a, 0, sizeof a); a.sin_family = AF_INET; a.sin_port = htons((uint16_t)port); a.sin_addr.s_addr = htonl((uint32_t)ip); return a;
+}
+static int64_t hr_net_sock(int type) {
+  int h = socket(AF_INET, type, 0); if (h < 0) return hr_net_err(errno);
+  fcntl(h, F_SETFD, FD_CLOEXEC); fcntl(h, F_SETFL, fcntl(h, F_GETFL) | O_NONBLOCK);
+#ifdef SO_NOSIGPIPE
+  { int one = 1; setsockopt(h, SOL_SOCKET, SO_NOSIGPIPE, &one, sizeof one); }
+#endif
+  return h;
+}
+static int64_t hr_net_bound(int type, int64_t ip, int64_t port, int64_t lst) {
+  int64_t h = hr_net_sock(type); if (h < 0) return h;
+  if (lst >= 0) { int one = 1; setsockopt((int)h, SOL_SOCKET, SO_REUSEADDR, &one, sizeof one); }
+  struct sockaddr_in a = hr_net_sa(ip, port);
+  if (bind((int)h, (struct sockaddr *)&a, sizeof a) < 0 || (lst >= 0 && listen((int)h, (int)lst) < 0)) { int64_t e = hr_net_err(errno); close((int)h); return e; }
+  return h;
+}
+static int64_t hr_net_listen(int64_t ip, int64_t port, int64_t backlog) { return hr_net_bound(SOCK_STREAM, ip, port, backlog < 1 ? 1 : backlog); }
+static int64_t hr_net_udp(int64_t ip, int64_t port) { return hr_net_bound(SOCK_DGRAM, ip, port, -1); }
+static int64_t hr_net_accept(int64_t h) {
+  int c = accept((int)h, NULL, NULL); if (c < 0) return hr_net_err(errno);
+  fcntl(c, F_SETFD, FD_CLOEXEC); fcntl(c, F_SETFL, fcntl(c, F_GETFL) | O_NONBLOCK);
+#ifdef SO_NOSIGPIPE
+  { int one = 1; setsockopt(c, SOL_SOCKET, SO_NOSIGPIPE, &one, sizeof one); }
+#endif
+  return c;
+}
+static int64_t hr_net_connect(int64_t ip, int64_t port) {
+  int64_t h = hr_net_sock(SOCK_STREAM); if (h < 0) return h;
+  struct sockaddr_in a = hr_net_sa(ip, port);
+  if (connect((int)h, (struct sockaddr *)&a, sizeof a) < 0 && errno != EINPROGRESS) { int64_t e = hr_net_err(errno); close((int)h); return e; }
+  return h;
+}
+static int64_t hr_net_connected(int64_t h) {
+  struct pollfd p = { (int)h, POLLOUT, 0 }; int r = poll(&p, 1, 0); if (r < 0) return hr_net_err(errno); if (r == 0) return -11;
+  int e = 0; socklen_t l = sizeof e; if (getsockopt((int)h, SOL_SOCKET, SO_ERROR, &e, &l) < 0) return hr_net_err(errno);
+  return e ? hr_net_err(e) : 0;
+}
+static int64_t hr_net_send(int64_t h, hsl d) { ssize_t n = send((int)h, d.p, (size_t)d.n, HR_NET_NOSIG); return n < 0 ? hr_net_err(errno) : n; }
+static int64_t hr_net_recv(int64_t h, hsl b) { ssize_t n = recv((int)h, b.p, (size_t)b.n, 0); return n < 0 ? hr_net_err(errno) : n; }
+static int64_t hr_net_sendto(int64_t h, int64_t ip, int64_t port, hsl d) {
+  struct sockaddr_in a = hr_net_sa(ip, port); ssize_t n = sendto((int)h, d.p, (size_t)d.n, HR_NET_NOSIG, (struct sockaddr *)&a, sizeof a); return n < 0 ? hr_net_err(errno) : n;
+}
+static int64_t hr_net_recvfrom(int64_t h, hsl b, hsl from) {
+  struct sockaddr_in a; socklen_t l = sizeof a; memset(&a, 0, sizeof a);
+  ssize_t n = recvfrom((int)h, b.p, (size_t)b.n, 0, (struct sockaddr *)&a, &l); if (n < 0) return hr_net_err(errno);
+  if (from.n >= 6) { uint32_t ip = ntohl(a.sin_addr.s_addr); uint16_t pt = ntohs(a.sin_port); from.p[0] = ip >> 24; from.p[1] = ip >> 16; from.p[2] = ip >> 8; from.p[3] = ip; from.p[4] = pt >> 8; from.p[5] = pt; }
+  return n;
+}
+static int64_t hr_net_close(int64_t h) { return close((int)h) < 0 ? hr_net_err(errno) : 0; }
+static int64_t hr_net_nodelay(int64_t h, bool on) { int v = on; return setsockopt((int)h, IPPROTO_TCP, TCP_NODELAY, &v, sizeof v) < 0 ? hr_net_err(errno) : 0; }
+static int64_t hr_net_blocking(int64_t h, bool on) { int f = fcntl((int)h, F_GETFL); if (f < 0) return hr_net_err(errno); return fcntl((int)h, F_SETFL, on ? f & ~O_NONBLOCK : f | O_NONBLOCK) < 0 ? hr_net_err(errno) : 0; }
+static int64_t hr_net_name(int64_t h, int peer) {
+  struct sockaddr_in a; socklen_t l = sizeof a; memset(&a, 0, sizeof a);
+  if ((peer ? getpeername((int)h, (struct sockaddr *)&a, &l) : getsockname((int)h, (struct sockaddr *)&a, &l)) < 0) return hr_net_err(errno);
+  return (int64_t)ntohl(a.sin_addr.s_addr) << 16 | ntohs(a.sin_port);
+}
+static int64_t hr_net_local(int64_t h) { return hr_net_name(h, 0); }
+static int64_t hr_net_peer(int64_t h) { return hr_net_name(h, 1); }
+/* fds packs fd | events << 32 per entry, as Linux's struct pollfd; revents come back in bits 48..63 */
+static int64_t hr_net_poll(hsl fds, int64_t ms) {
+  int64_t *f = (int64_t *)fds.p; struct pollfd sp[64], *p = fds.n <= 64 ? sp : malloc(sizeof *p * (size_t)fds.n); if (!p) return -12;
+  for (int64_t i = 0; i < fds.n; i++) { p[i].fd = (int)(uint32_t)f[i]; { int64_t w = f[i] >> 32 & 0xFFFF; p[i].events = (short)((w & 1 ? POLLIN : 0) | (w & 2 ? POLLPRI : 0) | (w & 4 ? POLLOUT : 0)); } p[i].revents = 0; }
+  int r; do r = poll(p, (nfds_t)fds.n, ms < 0 ? -1 : ms > 0x7FFFFFFF ? 0x7FFFFFFF : (int)ms); while (r < 0 && errno == EINTR);
+  for (int64_t i = 0; i < fds.n; i++) { int64_t ev, re = p[i].revents;
+    ev = (re & POLLIN ? 1 : 0) | (re & POLLPRI ? 2 : 0) | (re & POLLOUT ? 4 : 0) | (re & POLLERR ? 8 : 0) | (re & POLLHUP ? 16 : 0) | (re & POLLNVAL ? 32 : 0);
+    f[i] = (f[i] & 0xFFFFFFFFFFFF) | ev << 48; }
+  if (p != sp) free(p);
+  return r < 0 ? hr_net_err(errno) : r;
+}
+static int64_t hr_net_ws_open(hsl url) { (void)url; return -38; }
+static int64_t hr_net_ws_send(int64_t h, hsl m, bool binary) { (void)h; (void)m; (void)binary; return -38; }
+static int64_t hr_net_ws_recv(int64_t h, hrv *out) { (void)h; (void)out; return -38; }
+static int64_t hr_net_ws_state(int64_t h) { (void)h; return 2; }
 static int64_t hr_popcount(uint64_t x) { return __builtin_popcountll(x); }
 static int64_t hr_clz(uint64_t x) { return x ? __builtin_clzll(x) : 64; }
 static int64_t hr_ctz(uint64_t x) { return x ? __builtin_ctzll(x) : 64; }
