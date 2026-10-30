@@ -1,0 +1,82 @@
+# Echo over TCP and UDP with hc/lib/net.he.
+#   33_net_echo server [port]          echo TCP connections and UDP datagrams on the same port until killed
+#   33_net_echo client host:port text  send text over TCP and over UDP, print both replies
+#   33_net_echo                        the demo: server and client in this one process
+use net
+use os
+struct Echo { tcp int, udp int, conns int[>..] }
+open_echo(port int) Echo:
+	a := net::addr("127.0.0.1", port)
+	t := net::listen(a)
+	if t < 0: return Echo { tcp: t, udp: -1, conns: [] }
+	# port 0 asks for any free port; UDP takes the same one TCP got
+	u := net::udp(net::addr("127.0.0.1", net::local_port(t)))
+	Echo { tcp: t, udp: u, conns: [] }
+# one round of the server: waits up to ms for something to do and does it
+step(e Echo&, ms int):
+	var p net::Poll
+	net::add(p, e.tcp, net::READ, -1); net::add(p, e.udp, net::READ, -2)
+	for h, i in e.conns: net::add(p, h, net::READ, i);
+	n := net::wait(p, ms)
+	gone int[>..] ~= []
+	for k n:
+		t := net::tag(p, k)
+		if t == -1:
+			loop { h := net::accept(e.tcp); if h < 0 { break } e.conns.push(h) }
+		else if t == -2:
+			d byte[>..] ~= []; var from net::Addr
+			while net::recv_from(e.udp, d, from) >= 0: net::send_to(e.udp, from, d[..]); d.clear()
+		else:
+			d byte[>..] ~= []
+			r := net::recv(e.conns[t], d)
+			if r > 0: net::send_all(e.conns[t], d[..])
+			else if r != net::AGAIN: net::close(e.conns[t]); gone.push(t)
+	# gone is in ascending order, so drop from the back
+	j ~= gone.len
+	while j > 0: j -= 1; remove_at(e.conns, gone[j]);
+# sends text both ways, letting the server run between waits when it lives in this process
+ask(to net::Addr, text const byte[:], e Echo&, local bool) int:
+	c := net::connect(to)
+	got byte[>..] ~= []
+	sent ~= false
+	for _ 300:
+		if local: step(e, 0)
+		if net::wait_one(c, if sent { net::READ } else { net::WRITE }, 10) <= 0: continue
+		if !sent:
+			if net::connected(c) != 0: print("tcp: ", net::error_name(net::connected(c))); return 1
+			net::send_all(c, text); sent = true
+		else:
+			net::recv(c, got)
+			if got.len >= text.len: break
+	print("tcp echo: ", got)
+	net::close(c)
+	u := net::udp(net::addr("127.0.0.1", 0))
+	net::send_to(u, to, text)
+	d byte[>..] ~= []; var from net::Addr
+	for _ 300:
+		if local: step(e, 0)
+		if net::wait_one(u, net::READ, 10) > 0 && net::recv_from(u, d, from) >= 0: break
+	print("udp echo: ", d, if from.port == to.port { " (from the server's port)" } else { " (from somewhere else)" })
+	net::close(u)
+	if got[..] == text && d[..] == text { 0 } else { 1 }
+main() int:
+	a := args()
+	if a.len > 1 && a[1] == "server":
+		port ~= 7001
+		if a.len > 2: v, ok := parse_int(a[2]); if ok: port = v
+		e ~= open_echo(port)
+		if e.tcp < 0 || e.udp < 0: print("listen: ", net::error_name(min(e.tcp, e.udp))); return 1
+		print("echo server on ", net::local_addr(e.tcp))
+		loop: step(e, -1)
+	if a.len > 3 && a[1] == "client":
+		to, ok := net::parse_addr(a[2])
+		if !ok: print("bad address ", a[2]); return 2
+		var none Echo
+		return ask(to, a[3], none, false)
+	if a.len > 1: print("usage: 33_net_echo [server [port] | client host:port text]"); return 2
+	e ~= open_echo(0)
+	if e.tcp < 0: print("listen: ", net::error_name(e.tcp)); return 1
+	r := ask(net::addr("127.0.0.1", net::local_port(e.tcp)), "hello, sockets", e, true)
+	for h in e.conns: net::close(h);
+	net::close(e.tcp); net::close(e.udp)
+	r

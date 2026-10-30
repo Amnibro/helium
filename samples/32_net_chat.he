@@ -1,0 +1,124 @@
+# A line-based TCP chat over hc/lib/net.he: one poll loop, non-blocking sockets, no threads.
+#   32_net_chat server [port]                 serve until killed; every line a client sends goes to everyone, itself included
+#   32_net_chat client host:port name msg...  join, say each msg, print what arrives until its own last line comes back
+#   32_net_chat                               the demo: a server and two clients in this one process
+# The first line a client sends is its name. Lines end with '\n'; a client's partial line waits in its buffer.
+use net
+use os
+struct Peer { h int, name byte[>..], buf byte[>..] }
+struct Server { l int, peers Peer[>..] }
+# l < 0 is the error listen failed with
+start(port int) Server:
+	l := net::listen(net::addr("127.0.0.1", port))
+	if l < 0: print("listen: ", net::error_name(l))
+	Server { l: l, peers: [] }
+broadcast(s Server&, line const byte[:]):
+	for &p in s.peers: if p.name.len > 0: net::send_all(p.h, line);
+# one line from peer i: its name if it has none yet, else a message for everyone
+said(s Server&, i int, line const byte[:]):
+	if s.peers[i].name.len == 0:
+		s.peers[i].name.append(line)
+		m := str("* ", line, " joined\n"); broadcast(s, m[..])
+	else:
+		m := str(s.peers[i].name, ": ", line, "\n"); broadcast(s, m[..])
+# handles whatever the poll set reported for the server's own handles (tags 1000 + i, and 999 for the listener)
+serve(s Server&, p net::Poll&, k int):
+	t := net::tag(p, k)
+	if t == 999:
+		loop { h := net::accept(s.l); if h < 0 { break } s.peers.push(Peer { h: h, name: [], buf: [] }) }
+		return
+	i := t - 1000
+	if i < 0 || i >= s.peers.len: return
+	r := net::recv(s.peers[i].h, s.peers[i].buf)
+	if r == 0 || r < 0 && r != net::AGAIN:
+		net::close(s.peers[i].h); name := copy(s.peers[i].name); remove_at(s.peers, i)
+		m := str("* ", name, " left\n"); broadcast(s, m[..])
+		return
+	loop:
+		nl := find_index(s.peers[i].buf[..]) { it == '\n' }
+		if nl < 0: break
+		line := copy(s.peers[i].buf[..nl]); rest := copy(s.peers[i].buf[nl + 1..])
+		s.peers[i].buf.clear(); s.peers[i].buf.append(rest[..])
+		said(s, i, line[..])
+watch(s Server&, p net::Poll&):
+	net::add(p, s.l, net::READ, 999)
+	for &q, i in s.peers: net::add(p, q.h, net::READ, 1000 + i);
+# says says[0] when it hears cue[0], then says[1] on cue[1], and so on; done once its own last line comes back
+struct Client { h int, name byte[>..], cue byte[>..][>..], says byte[>..][>..], last byte[>..], buf byte[>..], done bool }
+join(to net::Addr, name const byte[:]) Client:
+	c ~= Client { h: net::connect(to), name: [], cue: [], says: [], last: [], buf: [], done: false }
+	c.name.append(name)
+	m := str(name, "\n"); net::send_all(c.h, m[..])
+	c
+script(c Client&, cue const byte[:], say const byte[:]):
+	c.cue.push(copy(cue)); c.says.push(copy(say))
+	c.last.clear(); c.last.append(str(c.name, ": ", say)[..])
+# reads what arrived for one client and handles each whole line
+heard(c Client&, show bool):
+	r := net::recv(c.h, c.buf)
+	if r == 0: c.done = true; return
+	loop:
+		nl := find_index(c.buf[..]) { it == '\n' }
+		if nl < 0: break
+		line := copy(c.buf[..nl]); rest := copy(c.buf[nl + 1..]); c.buf.clear(); c.buf.append(rest[..])
+		if show: print("[", c.name, "] ", line)
+		if line[..] == c.last[..]: c.done = true
+		if c.cue.len > 0 && line[..] == c.cue[0][..]:
+			m := str(c.says[0], "\n"); net::send_all(c.h, m[..]); remove_at(c.cue, 0); remove_at(c.says, 0)
+demo() int:
+	s ~= start(0)
+	if s.l < 0: return 1
+	to := net::addr("127.0.0.1", net::local_port(s.l))
+	cs Client[>..] ~= []
+	cs.push(join(to, "ada"))
+	script(cs[0], "* ada joined", "hello"); script(cs[0], "* bob joined", "hi bob"); script(cs[0], "bob: how's it going?", "fine, bye")
+	waited ~= 0
+	# bob joins once ada's hello has gone round, so every line below has one possible order
+	while waited < 400 && cs.len < 2:
+		var p net::Poll
+		watch(s, p); net::add(p, cs[0].h, net::READ, 0)
+		n := net::wait(p, 20); waited += 1
+		for k n: if net::tag(p, k) >= 999 { serve(s, p, k) } else { heard(cs[0], false) }
+		if cs[0].cue.len == 2:
+			cs.push(join(to, "bob"))
+			script(cs[1], "ada: hi bob", "how's it going?"); script(cs[1], "ada: fine, bye", "bye")
+	while waited < 400 && !(cs[0].done && cs[1].done):
+		var p net::Poll
+		watch(s, p)
+		for &c, i in cs: if !c.done: net::add(p, c.h, net::READ, i);
+		n := net::wait(p, 20); waited += 1
+		for k n:
+			t := net::tag(p, k)
+			if t >= 999 { serve(s, p, k) } else { heard(cs[t], t == 1) }
+	for &c in cs: net::close(c.h);
+	net::close(s.l)
+	if cs[0].done && cs[1].done { 0 } else { print("demo: timed out"); 1 }
+main() int:
+	a := args()
+	if a.len < 2: return demo()
+	if a[1] == "server":
+		port ~= 7000
+		if a.len > 2: v, ok := parse_int(a[2]); if ok: port = v
+		s ~= start(port)
+		if s.l < 0: return 1
+		print("chat server on ", net::local_addr(s.l))
+		loop:
+			var p net::Poll
+			watch(s, p)
+			n := net::wait(p, -1)
+			for k n: serve(s, p, k);
+	if a[1] == "client" && a.len > 3:
+		to, ok := net::parse_addr(a[2])
+		if !ok: print("bad address ", a[2]); return 2
+		c ~= join(to, a[3])
+		# each message goes once the previous one has come back
+		for i 4..a.len:
+			cue := if i == 4 { str("* ", a[3], " joined") } else { str(a[3], ": ", a[i - 1]) }
+			script(c, cue[..], a[i])
+		if net::wait_one(c.h, net::WRITE, 3000) <= 0 || net::connected(c.h) != 0: print("connect: ", net::error_name(net::connected(c.h))); return 1
+		t0 := clock()
+		while !c.done && clock() - t0 < 10.0: if net::wait_one(c.h, net::READ, 100) > 0: heard(c, true);
+		net::close(c.h)
+		return if c.done { 0 } else { 1 }
+	print("usage: 32_net_chat [server [port] | client host:port name msg...]")
+	2

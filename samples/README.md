@@ -69,6 +69,13 @@ Run a sample, or build it into an executable beside it:
 |---|---|
 | [24_call_c](24_call_c.amni) | `extern fn` to libm and to a small C header (`call_c.h`): scalars, a slice, a struct through a reference, a string builder C appends to. Build with `goose --include call_c.h ...`. |
 
+## Networking
+
+| Sample | What it shows |
+|---|---|
+| [32_net_chat](32_net_chat.he) | A line-based TCP chat with `net`: one non-blocking poll loop serves the listener and every client, splits lines out of per-client buffers and broadcasts them. Run alone it plays a scripted chat between two clients in one process; `server [port]` and `client host:port name msg...` run it as real processes. |
+| [33_net_echo](33_net_echo.he) | A TCP and UDP echo server on one port: `accept` until `AGAIN`, `send_all`, `recv_from` with the sender's address and `send_to` back; a client that waits for the connection with `wait_one(h, net::WRITE, ms)` and `connected`. |
+
 ## Serialization
 
 | Sample | What it shows |
