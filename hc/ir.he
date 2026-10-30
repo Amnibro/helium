@@ -144,7 +144,7 @@ ldv(r int, v int):
 	k := fk(v); if k == 1 { mov_ri(r, FD[v] as int); return } if k == 2 { lea(r, RBP, FD[v] as int - CSBA); return } if k == 3 { lea_g(r, FD[v] as int); return } if k == 4 || k == 5 { lea_rip(r, if k == 4 { 2 } else { 1 }, FD[v] as int); return } if k == 6 { B := gr(FB[v]); if B >= 0 && FD[v] != 0 { lea(r, B, FD[v] as int) } else { ldv(r, FB[v]); if FD[v] != 0 { alu_ri(0, r, FD[v] as int) } } return } if k == 7 { B := gr(FB[v]); I := gr(FI[v]); if I < 0 && B >= 0 && B != r && !NOLX { ldv(r, FI[v]); SIBM = true; SIBI = r; SIBS = FS[v]; lea(r, B, FD[v] as int); return } t := if r == RDX { RCX } else { RDX }; sv := I < 0 || I == r && B < 0; if sv { push_r(t); ldv(t, FI[v]) } if B < 0 { ldv(r, FB[v]) } SIBM = true; SIBI = if sv { t } else { I }; SIBS = FS[v]; lea(r, if B >= 0 { B } else { r }, FD[v] as int); if sv { pop_r(t) } return } if xg(v) >= 0 { rx(r, XREG[v], XW[v]); return } if v < REGOF.len && REGOF[v] >= 0: mov_rr(r, REGOF[v]);
 	else:
 		if LSP == XC.len && LSV == v: mov_rr(r, LSR); else: ld(r, RBP, vo(v), 8, false);
-var SGK int[>..<]; var SGO i32[>..<]; var FPK i64[>..<]; var FPZ i8[>..<]; var FPO i32[>..<]; var P16K i32[>..<]; var P16O i32[>..<]; var P64K i64[>..<]; var P64O i32[>..<]
+XMB := 1 << 20; var XAB i8[>..<]; var XRF i8[>..<]; var PKW i8[>..<]; var PKO i32[>..<]; var PKC i32[>..<]; var SGK int[>..<]; var SGO i32[>..<]; var FPK i64[>..<]; var FPZ i8[>..<]; var FPO i32[>..<]; var P16K i32[>..<]; var P16O i32[>..<]; var P64K i64[>..<]; var P64O i32[>..<]
 pool64(c i64): o ~= -1; for k, q P64K { if k == c { o = P64O[q] } } if o < 0 { while RO.len % 64 != 0 { RO.push(0) } o = RO.len; for j 8 { for b 8 { RO.push(if b == 0 { ((c >> (3 * j)) & 7) as! byte } else { 0 }) } } P64K.push(c); P64O.push(o as i32) } RIPM = true; RIPK = 2; RIPT = o
 pool16(v int): o ~= -1; for k, q P16K { if k as int == v { o = P16O[q] } } if o < 0 { while RO.len % 16 != 0 { RO.push(0) } o = RO.len; for j 16 { RO.push(v as! byte) } P16K.push(v as i32); P16O.push(o as i32) } RIPM = true; RIPK = 2; RIPT = o
 sgnpool(f4 bool): b := if f4 { 0x80000000 } else { ((1 as u64) << 63) as! int }; o ~= -1; for k, q SGK { if k == b { o = SGO[q] } } if o < 0 { while RO.len % 16 != 0 { RO.push(0) } o = RO.len; for j 16 { RO.push(if j < 8 { (b >> 8 * j & 255) as! byte } else { 0 }) } SGK.push(b); SGO.push(o as i32) } RIPM = true; RIPK = 2; RIPT = o
@@ -286,6 +286,21 @@ rx(r int, x int, w int): sse(0x66, w & 3 == 3, 0x7E, x, r);
 rcp2(v int, w int) int:
 	sg := w & 3 == 2; mb := if sg { 23 } else { 52 }; em := if sg { 0xFF } else { 0x7FF }; e := v >> mb & em; if v & (1 << mb) - 1 != 0 || e < 1 || e > em - 2 { return -1 } v & ~((1 << mb) - 1 | em << mb) | em - 1 - e << mb
 cvt_u2f(w int): l1 := nlbl(); l2 := nlbl(); sse(0, false, 0x57, 0, 0); test_rr(RAX, RAX); jcc_l(8, l1); sse(fpx(w), true, 0x2A, 0, RAX); jmp_l(l2); bind(l1); mov_rr(RCX, RAX); xrex(true, 0, 0, RCX); xb(0xD1); xb(0xE8 | 1); xb(0x48); xb(0x83); xb(0xE0); xb(1); alu(0x09, RCX, RAX); sse(fpx(w), true, 0x2A, 0, RCX); sse(fpx(w), false, 0x58, 0, 0); bind(l2); rx(RAX, 0, w);
+xabi_prep():
+	XAB.clear(); XAB.resize(NFS.len, 0); XRF.clear(); XRF.resize(NFS.len, 0); nz byte[>..] ~= []; if env("HC_NOXA", nz): return
+	ok i8[>..<] ~= []; ok.resize(NFS.len, 1); for x IR { o := x.op as int; if o == I_FADDR && x.c >= 0 && x.c < NFS.len as i64 { ok[x.c] = 0 } if o == I_CALL && x.c >= 0 && x.c < NFS.len as i64 { k := x.c as int; if k >= PKC.len || x.b as int != PKC[k] as int { ok[k] = 0 } } }
+	for f, fi NFS:
+		if ok[fi] == 0 || f.inst < 0 || fi >= PKO.len || PKO[fi] < 0: continue
+		q := nm(FI_[f.inst].name); if q == "main" || q.len >= 3 && (q[..3] == "rt_" || q[..3] == "hr_"): continue
+		rt := FI_[f.inst].ret; rf := if !is_agg(rt) && isf(rt) { wof(rt) } else { 0 }; nx ~= 0; ng ~= 0
+		for k PKC[fi] { if (PKW[PKO[fi] + k] as int) & 8 != 0 && nx < 3 { nx++ } else { ng++ } }
+		if ng > 6 || nx == 0 && rf == 0: continue
+		XAB[fi] = 1; XRF[fi] = rf as i8
+pin(fi int, c int, d int, w int):
+	pr := pmr(fi, c); if pr >= XMB { stx(pr - XMB, d, w) } else if pr < 6 { stv(ARGR[pr], d) } else { ld(RAX, RBP, 16 + 8 * (c - 6), 8, false); stv(RAX, d) }
+pmr(f int, c int) int:
+	if f >= XAB.len || XAB[f] == 0: return c
+	xi ~= 0; gi ~= 0; for k (c + 1) { fl := (PKW[PKO[f] + k] as int) & 8 != 0 && xi < 3; if k == c { return if fl { XMB + xi } else { gi } } if fl { xi++ } else { gi++ } } c
 fsel(x Ir):
 	d := x.d as int; a := x.a as int; T := x.b as int; E := x.c as int; w := if XW[d] != 0 { XW[d] as int } else { 11 }; R := xg(d); cc ~= FUSEC; FUSEC = -1
 	if cc < 0: A := srcr(a, RDX); test_rr(A, A); cc = CC_NE
@@ -364,7 +379,7 @@ swx(fi int, l int) int:
 	j ~= p + 1; while p >= 0 && j < f.i1 as int && (IR[j].op as int == I_NOP || IR[j].op as int == I_LBL || IR[j].op as int == I_IMM && IR[j].d >= 0 && fk(IR[j].d as int) == 1) { j++ }
 	if p >= 0 && j < f.i1 as int && IR[j].op as int == I_RET { j } else { -1 }
 swp(fi int) int:
-	nz byte[>..] ~= []; if env("HC_NOSW", nz): return -1
+	nz byte[>..] ~= []; if env("HC_NOSW", nz) || fi < XAB.len && XAB[fi] != 0: return -1
 	f := NFS[fi]; i0 := f.i0 as int; i1 := f.i1 as int; am ~= 0; ok i8[>..<] ~= []; ok.resize(f.nv as int, 0); SWB.clear(); lp i32[>..<] ~= []; lp.resize(LBL.len, -1); fx i32[>..<] ~= []; fx.resize(LBL.len, -2)
 	for i i0..i1 { x := IR[i]; o := x.op as int; if o == I_PARAM { if x.c >= 2 { return -1 } am |= 1 << ARGR[x.c as int] } if o == I_LBL { lp[x.c] = i as i32 } }
 	av(v int) bool: v < 0 || fk(v) == 1 || v < ok.len && ok[v] != 0
@@ -409,7 +424,7 @@ cg_fn(fi int):
 	NFS[fi].sb = sba; CSBA = sba; vhome(fi)
 	VSI.clear(); VSI.resize(f.nv, -1); CNV = 0; for v XSV { VSI[v] = CNV; CNV++ } for i (f.i0 as int)..f.i1 as int:
 		opnds(i); for v OU { if v >= 0 && v < f.nv as int && VSI[v] < 0 && fk(v) == 0 && gr(v) < 0 && xg(v) < 0 { VSI[v] = CNV; CNV++ } } for v OD { if v >= 0 && v < f.nv as int && VSI[v] < 0 && fk(v) == 0 && gr(v) < 0 && xg(v) < 0 { VSI[v] = CNV; CNV++ } }
-	sp6 ~= false; for i (f.i0 as int)..f.i1 as int { if IR[i].op as int == I_PARAM && IR[i].c >= 6 { sp6 = true } }
+	sp6 ~= false; for i (f.i0 as int)..f.i1 as int { if IR[i].op as int == I_PARAM && pmr(fi, IR[i].c as int) >= 6 && pmr(fi, IR[i].c as int) < XMB { sp6 = true } }
 	FRL = FRF && SVR.len == 0 && XSV.len == 0 && !sp6
 	if SWE >= 0 { for k (f.i0 as int)..SWE { x := IR[k]; if x.op as int == I_PARAM && x.d >= 0 && gr(x.d as int) >= 0 { SWR.push(x.d as i32); SWR.push(REGOF[x.d]); SWR.push(ARGR[x.c as int] as i32) } } swal(true) }
 	if FRL { if SWE < 0 { for r RUSED { push_r(r as int) } if RUSED.len % 2 == 0 { sub_rsp(8) } } } else { push_r(RBP); mov_rr(RBP, RSP); sub_rsp(al(sba + 8 * CNV + 8 * RUSED.len + (if SVR.len > 0 { 48 } else { 0 }) + 16, 64) - 16); for r, k RUSED { st(r, RBP, rso(k), 8) } } UFS = false
@@ -522,24 +537,25 @@ cg_fn(fi int):
 														for r, k SVR:
 															if SVS[k] < (i as i32) && SVE[k] > i as i32: st(r, RBP, rcs(r), 8)
 														for v, k XSV: if XSS[k] < (i as i32) && XSE[k] > i as i32 && XS1[k] == 0 && !xsd(i, v as int) { ssem(0xF2, false, 0x11, XREG[v] as int, RBP, vo(v as int)) }
+														xa := op == I_CALL && c >= 0 && c < XAB.len as i64 && XAB[c] != 0
 														if op == I_VLOOP || op == I_CALLR && x.l < -1: if op == I_VLOOP { cg_vloop(a, b, c) } else { cg_ccall(a, b, c, -2 - x.l as int) }
 														else:
-															n := b; st0 := if n > 6 && op != I_SYS { n - 6 } else { 0 }; pdn := st0 & 1
+															n := b; st0 := if n > 6 && op != I_SYS && !xa { n - 6 } else { 0 }; pdn := st0 & 1
 															if pdn == 1: sub_rsp(8)
-															k ~= n - 1; while k >= 6 && op != I_SYS: ldv(RAX, ARGL[a + k]); push_r(RAX); k--
+															k ~= n - 1; while k >= 6 && op != I_SYS && !xa: ldv(RAX, ARGL[a + k]); push_r(RAX); k--
 															if op == I_SYS:
 																sr := [0, 7, 6, 2, 10, 8, 9]; for j n { ldv(sr[j], ARGL[a + j]) } if c == 2 { xb(0x48); xb(0x87); xb(0x07); } else { syscall(); } if c == 1:
 																	for q [0x48, 0x85, 0xC0, 0x75, 30, 0x4C, 0x89, 0xC6, 0xBF, 0x01, 0x10, 0, 0, 0xB8, 158, 0, 0, 0, 0x0F, 0x05, 0x31, 0xED, 0x58, 0x5F, 0xFF, 0xD0, 0xB8, 60, 0, 0, 0, 0x31, 0xFF, 0x0F, 0x05]: xb(q)
 															else:
-																for j min(n, 6) { ldv(ARGR[j], ARGL[a + j]) } if op == I_CALL: call_f(c) else: ldv(R11, c); call_r(R11)
+																if xa { for j n { pr := pmr(c as int, j); v := ARGL[a + j] as int; if pr >= XMB { ldx(pr - XMB, v, PKW[PKO[c] + j] as int) } else { ldv(ARGR[pr], v) } } } else { for j min(n, 6) { ldv(ARGR[j], ARGL[a + j]) } } if op == I_CALL: call_f(c) else: ldv(R11, c); call_r(R11)
 															if st0 + pdn > 0: add_rsp(8 * (st0 + pdn))
-														if d >= 0: stv(RAX, d)
+														if d >= 0: if xa && XRF[c] != 0 { stx(0, d, XRF[c] as int) } else { stv(RAX, d) }
 														if x.l >= 0: stv(RDX, x.l)
 														for r, k SVR:
 															if SVS[k] < (i as i32) && SVE[k] > i as i32: ld(r, RBP, rcs(r), 8, false)
 														for v, k XSV: if XSS[k] < (i as i32) && XSE[k] > i as i32 && !xsd(i, v as int) { ssem(0xF2, false, 0x10, XREG[v] as int, RBP, vo(v as int)) }
 													else:
-														if op == I_RET: if a >= 0 { ldv(RAX, a) } if b >= 0 { ldv(RDX, b) } if SWE >= 0 && i < SWE { ret() } else { epi() }
+														if op == I_RET: if a >= 0 { if fi < XRF.len && XRF[fi] != 0 { ldx(0, a, XRF[fi] as int) } else { ldv(RAX, a) } } if b >= 0 { ldv(RDX, b) } if SWE >= 0 && i < SWE { ret() } else { epi() }
 														else:
 															if op == I_LD:
 																mb, md := memb(a, c as int); if xg(d) >= 0 && w & 8 != 0: ssem(if w & 3 == 2 { 0xF3 } else { 0xF2 }, false, 0x10, xg(d), mb, md) else: r := dstr(d); ld(r, mb, md, wsz(w), wsg(w)); fin(r, d)
@@ -554,7 +570,7 @@ cg_fn(fi int):
 																			if op == I_FADDR: lea_rip(RAX, 1, c); stv(RAX, d)
 																			else:
 																				if op == I_PARAM:
-																					if c < 6: stv(ARGR[c], d) else: ld(RAX, RBP, 16 + 8 * (c - 6), 8, false); stv(RAX, d)
+																					pin(fi, c as int, d, w as int)
 																					for v, k XSV { if v == d && XS1[k] != 0 { ssem(0xF2, false, 0x11, XREG[v] as int, RBP, vo(v as int)) } }
 																				else:
 																					if op == I_FBIN:
