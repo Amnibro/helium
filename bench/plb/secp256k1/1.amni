@@ -156,12 +156,13 @@ inline fn fe_add(a Fe, b Fe) Fe {
 		s[i] = y;
 		c = c1 || (c && y == 0);
 	}
-	if c {                            // a + b - 2^256 + PC is below p
-		s[0] += PC;
-		var k = s[0] < PC;
-		for i in 1..4 { if k { s[i]++; k = s[i] == 0; } }
-		return s;
-	}
+	// Past 2^256, a + b - 2^256 + PC is below p, and canon leaves it. Whether
+	// a sum of field elements carries is a coin toss, so PC is added under a
+	// mask rather than a branch; carrying further is rare.
+	let m = PC & (0 - (if c { 1 } else { 0 }) as uint);
+	s[0] += m;
+	var k = s[0] < m;
+	for i in 1..4 { if k { s[i]++; k = s[i] == 0; } }
 	return canon(s);
 }
 
@@ -175,12 +176,13 @@ inline fn fe_sub(a Fe, b Fe) Fe {
 		s[i] = y;
 		borrow = b1 || (borrow && x == 0);
 	}
-	if borrow {                       // a - b + 2^256 - PC = a - b + p
-		let old = s[0];
-		s[0] -= PC;
-		var k = old < PC;
-		for i in 1..4 { if k { k = s[i] == 0; s[i]--; } }
-	}
+	// Below 0, a - b + 2^256 - PC = a - b + p: PC is taken off under a mask,
+	// as in fe_add.
+	let m = PC & (0 - (if borrow { 1 } else { 0 }) as uint);
+	let old = s[0];
+	s[0] -= m;
+	var k = old < m;
+	for i in 1..4 { if k { k = s[i] == 0; s[i]--; } }
 	return s;
 }
 
