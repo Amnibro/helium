@@ -54,7 +54,7 @@ nine-slice 4 borders 1 2 3 4 sub false; of a part: 5 6 7 8 sub true
 texture image 42
 rects 1.5 2.5 3.0 4.0; 1.0 4.0; 5.0 6.0 7.0 8.0; pos 5.0 6.0 size 7.0 8.0
 null rect -8192.0 -8192.0 16384.0 16384.0
-murmur 2649154057 2856506138 0
+murmur 1293897673 378007604 0
 triangle up: 5.0,2.0 9.0,18.0 1.0,18.0
 triangle right: 1.0,2.0 9.0,10.0 1.0,18.0
 triangle down: 1.0,2.0 9.0,2.0 5.0,18.0

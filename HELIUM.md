@@ -222,7 +222,7 @@ fn main() { print(fast_steps(27), " ", fast_steps(27)); }
 
 - Parameters are `bool`, `byte`/`u8`, `i8`, `u16` or `i16`, 24 bits in all; the result is any fixed-size flat type.
 - Each entry is computed on its first call and then looked up. The table is sparse: 4096-entry tiles exist only once something in them is asked for, so an unvisited range costs nothing.
-- Tables in the root file are saved to `~/.goose/lut/<name>-<hash>.lut` when `main` returns and loaded on first use, so a later run starts with every entry already computed. Editing the function changes the hash.
+- Tables in the root file are saved to `~/.helium/lut/<name>-<hash>.lut` (or `$HELIUM_HOME/lut`) when `main` returns and loaded on first use, so a later run starts with every entry already computed. Editing the function changes the hash.
 - The body must be pure: same inputs, same result, no output.
 - `lut fn` works in `.amni` files.
 - A table of 10 to 20 bits whose body is integer code (ints, bools, `if`, loops, calls, `min`/`max`/`abs`/`clamp`) can fill on the GPU. On its first run the program times 64 sample entries; when a whole CPU fill would take over 30 ms, the GPU computes every entry at once. An entry the GPU cannot finish (division by zero, a very long loop) stays unset and is computed on the CPU when first used, so results never change. `HELIUM_GPU=off` keeps everything on the CPU, `HELIUM_GPU=discrete` prefers the discrete GPU over the integrated one, `HELIUM_GPU_MIN_MS` sets the 30 ms bar, and `HELIUM_GPU_LOG=1` reports what ran where (`=2` also writes each table's compute shader to `<name>.comp`).

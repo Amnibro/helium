@@ -4,12 +4,12 @@ pressed: outside 51 102 153, title bar 40 40 40, window 45 45 45, button 35 35 3
 clicks 1
 released: clicks 1
 check box clicked: true, its box 100 100 100 before, 45 45 45 after
-typed: 'goose'
-backspace: 'goos'
-home, A: 'Agoos'
-select all, copy: the clipboard holds 'Agoos'
-end, paste: 'Agoos!'
-select all, cut: '', the clipboard holds 'Agoos!'
+typed: 'helium'
+backspace: 'heliu'
+home, A: 'Aheliu'
+select all, copy: the clipboard holds 'Aheliu'
+end, paste: 'Aheliu!'
+select all, cut: '', the clipboard holds 'Aheliu!'
 undo: ''
 render target: window 45 45 45, as on the screen true
 half alpha: window true true

@@ -111,7 +111,7 @@ fn main() {
 	print(at(), " ", at(Point { x: 1, y: 2 }));
 	print(fmt::render(1), " ", fmt::render(1, 2), " ", fmt::render(1, 2, Opts { width: 3 }));
 	greet();
-	greet("goose");
+	greet("helium");
 	print(total(), " ", total(TABLE[2..]), " ", neg());
 	print(draw(1), " ", draw(1, Mode.Dots), " ", count(), " ", count(10));
 	var five = 5;

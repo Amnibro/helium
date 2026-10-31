@@ -414,7 +414,7 @@ fn words(text byte[:]) byte[][>..] {
 }
 
 fn sequential() {
-	let ws = words("feed the goose");
+	let ws = words("feed the birds");
 	var n = 0;
 	for w, i in ws { n += w.len + i; }
 	print(n);
@@ -609,7 +609,7 @@ fn process(n int) int {
 // --- globals, writability into globals, struct-stored refs ------------------
 
 var gcounter = 0;
-let gname byte[] = "goose";
+let gname byte[] = "helium";
 var gvec = Float3 { 0.0, 0.0, 0.0 };
 
 var gint = 5;

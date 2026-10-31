@@ -17,7 +17,7 @@ use_tag = prog("use_tag", [f'import gitpkg from "{url}@v1";', "fn main() { print
 use_hash = prog("use_hash", [f'import gitpkg from "{url}@{second}";', "fn main() { print(gitpkg::code()); }"])
 lib = base / "lib"; lib.mkdir(); (lib / "lib.amni").write_text(f'namespace lib;\nimport gitpkg from "{url}@v2";\nfn code() i64 {{ return gitpkg::code(); }}\n')
 use_lib = prog("use_lib", ['import lib from "./lib";', f'import gitpkg from "{url}@v1";', "fn main() { print(lib::code()); }"])
-env = dict(os.environ, GIT_ALLOW_PROTOCOL="file", GOOSE_HOME=str(home), XDG_CACHE_HOME=str(base / "cache"), HC_LIB=str(Path(os.environ.get("HC_LIB", Path(__file__).resolve().parents[2] / "hc" / "lib")).resolve()))
+env = dict(os.environ, GIT_ALLOW_PROTOCOL="file", HELIUM_HOME=str(home), XDG_CACHE_HOME=str(base / "cache"), HC_LIB=str(Path(os.environ.get("HC_LIB", Path(__file__).resolve().parents[2] / "hc" / "lib")).resolve()))
 def hc(*a, ok=True):
     r = subprocess.run([exe, *map(str, a)], cwd=base, env=env, capture_output=True, text=True, timeout=120)
     if ok and r.returncode != 0: raise SystemExit(f"FAIL hc {a}: {r.returncode}\n{r.stdout}{r.stderr}")

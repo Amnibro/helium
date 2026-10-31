@@ -371,7 +371,7 @@ seed_mouse():
 start(win0 bool, title const byte[:], width int, height int, flags int) bool:
 	if DEV != 0: return misuse("gfx is already open: close() it first")
 	windowed ~= win0; hv byte[>..] ~= []
-	if env("GOOSE_GFX_HEADLESS", hv) && atoi(hv[..]) != 0: windowed = false
+	if (env("HELIUM_GFX_HEADLESS", hv) || env("GOOSE_GFX_HEADLESS", hv)) && atoi(hv[..]) != 0: windowed = false
 	if width < 1 || height < 1 || width > 16384 || height > 16384: return misuse(str("a screen of ", width, " x ", height, " pixels"))
 	reset(); ERR.clear(); FLAGS = flags
 	s_hint(ffi::ptr("SDL_ASSERT\0"), ffi::ptr("ignore\0")); s_hint(ffi::ptr("SDL_APP_NAME\0"), ffi::ptr("Helium\0"))
@@ -380,7 +380,7 @@ start(win0 bool, title const byte[:], width int, height int, flags int) bool:
 		s_hint(ffi::ptr("SDL_VIDEO_DRIVER\0"), ffi::ptr("offscreen\0")); ok := s_init(32); s_rhint(ffi::ptr("SDL_VIDEO_DRIVER\0"))
 		if !ok: return sdl_fail("initializing SDL video")
 	VIDI = true; debug ~= flags & 32 != 0; dv byte[>..] ~= []
-	if env("GOOSE_GFX_DEBUG", dv): debug = atoi(dv[..]) != 0
+	if env("HELIUM_GFX_DEBUG", dv) || env("GOOSE_GFX_DEBUG", dv): debug = atoi(dv[..]) != 0
 	DEV = s_mkdev(18, debug, 0)
 	if DEV == 0: fail(str("no GPU device: ", sdlerr())); close_raw(); return false
 	have := s_fmts(DEV); SHF = if have & 2 != 0 { 2 } else { if have & 4 != 0 { 4 } else { 16 } }

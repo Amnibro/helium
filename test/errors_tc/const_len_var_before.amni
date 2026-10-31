@@ -4,7 +4,7 @@
 // type there.
 struct Word { letters byte[name.len] }
 
-var name = "goose";
+var name = "helium";
 
 fn main() {
 	let w = Word { "geese" };

@@ -124,7 +124,7 @@ fn main() {
 
 	// --- text and keys ---
 	click(ctx, field_at);
-	gfx::inject_text("goose");
+	gfx::inject_text("helium");
 	frame(ctx);
 	print("typed: '", name, "'");
 	tap("Backspace");

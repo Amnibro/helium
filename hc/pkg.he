@@ -60,7 +60,7 @@ c_prelude(o byte[>..]&):
 		if x.size > off: format(o, "uint8_t _pe[", x.size - off, "]; ")
 		format(o, "} ", nm(x.name), "_g;\n")
 build_wrap(k int) bool:
-	name := nm(PKS[k].name); out byte[>..] ~= goose_home(); out.append("/build/hc/"); out.append(nm(PKS[k].key)); so byte[>..] ~= []; format(so, out[..], "/lib", name, ".so"); wc byte[>..] ~= []; format(wc, out[..], "/hc_include.c"); log byte[>..] ~= []; format(log, out[..], "/build.log")
+	name := nm(PKS[k].name); out byte[>..] ~= helium_home(); out.append("/build/hc/"); out.append(nm(PKS[k].key)); so byte[>..] ~= []; format(so, out[..], "/lib", name, ".so"); wc byte[>..] ~= []; format(wc, out[..], "/hc_include.c"); log byte[>..] ~= []; format(log, out[..], "/build.log")
 	w byte[>..] ~= []; c_prelude(w); st := file_mtime(so[..]); stale ~= st < 0; p0 ~= 0; for c, i HINC { if c == '\n' { format(w, "#include \"", HINC[p0..i], "\"\n"); if newer(HINC[p0..i], st) { stale = true } p0 = i + 1 } }
 	PKS[k].so = intern(so[..]); old byte[>..] ~= []; read_file(wc[..], old); if !stale && old[..] == w[..]: return true
 	mk byte[>..] ~= []; mk.append("mkdir -p"); shq(mk, out[..]); if run_command(mk[..]) != 0 || !write_file(wc[..], w[..]): format(PERRS, "cannot write ", wc[..]); return false
@@ -77,7 +77,7 @@ build_pkg(k int) bool:
 		if v == "true": PKS[k].mt = true
 	srcs := sc_vals("c_sources"); ct := sc_vals("cmake_target")
 	if srcs.len == 0 && ct.len == 0: return true
-	out byte[>..] ~= goose_home(); out.append("/build/hc/"); out.append(nm(PKS[k].key))
+	out byte[>..] ~= helium_home(); out.append("/build/hc/"); out.append(nm(PKS[k].key))
 	so byte[>..] ~= []; so.append(out[..]); so.append("/lib"); so.append(name); so.append(".so")
 	st := file_mtime(so[..]); stale ~= st < 0 || newer(sc[..], st)
 	for s srcs:

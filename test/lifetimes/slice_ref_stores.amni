@@ -93,7 +93,7 @@ fn element_slots() {
 
 fn main() {
 	g1.append("hello world");
-	g2.append("goose");
+	g2.append("helium");
 	written();
 	named();
 	advanced();

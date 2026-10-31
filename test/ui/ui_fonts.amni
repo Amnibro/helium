@@ -30,8 +30,8 @@ fn scaled(what const byte[:], f ui::Font) {
 	let info = ui::info(f);
 	let image = ui::atlas_size(ui::atlas(f));
 	let glyph, found = ui::find_glyph(f, 'A');
-	print(what, ": ", num(info.height), " high, ascent ", num(info.ascent), ", 'Goose' ",
-		  num(ui::text_width(f, "Goose")), " wide; 'A' ", found, " ", num(glyph.w), " x ",
+	print(what, ": ", num(info.height), " high, ascent ", num(info.ascent), ", 'Helium' ",
+		  num(ui::text_width(f, "Helium")), " wide; 'A' ", found, " ", num(glyph.w), " x ",
 		  num(glyph.h), " from ", num((glyph.u1 - glyph.u0) * image.x), " x ",
 		  num((glyph.v1 - glyph.v0) * image.y), " texels");
 }
@@ -102,9 +102,9 @@ fn main() {
 		let info = ui::info(f);
 		print("font ", num(info.height), " high: ascent ", num(info.ascent), ", descent ",
 			  num(info.descent), ", ", info.glyph_count, " glyphs, fallback ",
-			  info.fallback_codepoint, "; 'Goose' ", num(ui::text_width(f, "Goose")), " wide");
+			  info.fallback_codepoint, "; 'Helium' ", num(ui::text_width(f, "Helium")), " wide");
 	}
-	print("wider when bigger ", ui::text_width(big, "Goose") > ui::text_width(small, "Goose"),
+	print("wider when bigger ", ui::text_width(big, "Helium") > ui::text_width(small, "Helium"),
 		  "; empty text ", num(ui::text_width(small, "")));
 	let g, own = ui::find_glyph(small, 'A');
 	print("'A': own ", own, ", codepoint ", g.codepoint, ", advance ", num(g.xadvance),
@@ -190,14 +190,14 @@ fn main() {
 	let file_ctx = ui::create_from_file(FONT_FILE, 12.0);
 	let from_file = ui::font(file_ctx);
 	print("from a file: valid ", ui::is_valid(file_ctx), ", ", num(ui::info(from_file).height),
-		  " high, 'Goose' ", num(ui::text_width(from_file, "Goose")), " wide, image ",
+		  " high, 'Helium' ", num(ui::text_width(from_file, "Helium")), " wide, image ",
 		  ui::atlas_size(ui::context_atlas(file_ctx)).y > 0);
 	let small_image = ui::atlas_size(ui::context_atlas(file_ctx));
 	ui::set_scale(file_ctx, 2.0);
 	let rebaked = ui::font(file_ctx);
 	let big_image = ui::atlas_size(ui::context_atlas(file_ctx));
 	print("at 2: the same font ", rebaked == from_file, ", ", num(ui::info(rebaked).height),
-		  " high, 'Goose' ", num(ui::text_width(rebaked, "Goose")), " wide, a bigger image ",
+		  " high, 'Helium' ", num(ui::text_width(rebaked, "Helium")), " wide, a bigger image ",
 		  big_image.x * big_image.y > small_image.x * small_image.y);
 	let memory_ctx = ui::create_from_memory(ttf, 12.0);
 	print("from memory: valid ", ui::is_valid(memory_ctx), ", ",

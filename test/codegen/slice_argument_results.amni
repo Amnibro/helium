@@ -32,7 +32,7 @@ fn points(n int) Pt[>..] {
 }
 fn words() byte[][>..] {
 	var a byte[][>..] = [];
-	a.push("goose");
+	a.push("helium");
 	a.push("gander");
 	return a;
 }

@@ -13,7 +13,7 @@ fn longest(parts byte[>..]&, extra byte[]) int {
 
 fn main() {
 	var parts byte[>..] = [];
-	parts.append("goose");
+	parts.append("helium");
 	print(longest(parts, "!"));         // 6
 	print(str(42).len);                 // 2
 }

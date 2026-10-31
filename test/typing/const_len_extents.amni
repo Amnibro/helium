@@ -7,7 +7,7 @@ const table = [10, 20, 30, 40];
 let typed int[3] = [1, 2, 3];
 let room int[..6] = [1];
 let filled = [0; typed.len + 2];
-let name = "goose";
+let name = "helium";
 let copied = typed;
 let twice = table.len * 2;
 const words = ["a", "bc", "def"];
@@ -44,7 +44,7 @@ fn main() {
 	var b int[..table.len + room.cap] = [];
 	b.push(1);
 	let c = [5; filled.len];
-	let d byte[name.len] = "geese";
+	let d byte[name.len] = "carbon";
 	let e int[twice] = [0, 0, 0, 0, 0, 0, 0, 0];
 	var counts int[words.len] = [0, 0, 0];
 	counts[2] += 1;

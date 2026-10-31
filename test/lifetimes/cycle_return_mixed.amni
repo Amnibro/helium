@@ -62,7 +62,7 @@ fn main() {
 	print(even.v, " ", odd.v);
 	last .= find(spare, 3);
 	print(last.v);
-	var word byte[>..] = "goose";
+	var word byte[>..] = "helium";
 	print(nth_or(word, 2), " ", nth_or(word, 7));
 	print(bump(pool, 3).v);
 }

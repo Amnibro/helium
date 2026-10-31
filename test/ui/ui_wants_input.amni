@@ -158,7 +158,7 @@ fn main() {
 	state(ctx, "text field clicked");
 	move_to(ctx, outside);
 	state(ctx, "mouse off the windows");
-	type_in(ctx, "goose");
+	type_in(ctx, "helium");
 	state(ctx, "typed");
 	texts();
 

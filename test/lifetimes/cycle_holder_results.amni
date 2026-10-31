@@ -93,7 +93,7 @@ fn main() {
 	print(forwarded(3).text);
 	print(deepest(4).text);
 	print(mixed(3).text, " ", mixed(4).text);
-	print(letter("goose", 2).text, " ", letter("goose", 9).text);
+	print(letter("helium", 2).text, " ", letter("helium", 9).text);
 	var word byte[>..] = "gander";
 	print(tail(Fragment { text: word[..] }, 4).text);
 	let v = lowered(2);

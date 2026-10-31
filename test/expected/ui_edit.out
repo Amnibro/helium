@@ -25,13 +25,13 @@ paste in view mode: false 'fresh-\xc3\xa9\xe2\x82\xac' cursor 8 selection 5..5 l
 step 0: '' inactive
 step 1: '' active activated
 step 2: '' active
-step 3: 'G' active
-step 4: 'Go' active
-step 5: 'Goo' active
-step 6: 'Goose!' active
-step 7: 'Goose' active
-step 8: 'Goose' active committed
-step 9: 'Goose' inactive deactivated
+step 3: 'H' active
+step 4: 'He' active
+step 5: 'Hel' active
+step 6: 'Helium!' active
+step 7: 'Helium' active
+step 8: 'Helium' active committed
+step 9: 'Helium' inactive deactivated
 flags field: 'Zabc'
 flags auto select: 'Z'
 flags go to end: 'abcZ'

@@ -37,7 +37,7 @@ fn get_a() byte[4]& { ga }
 fn ints() i32[3] { return [10, 20, 30]; }
 fn words() byte[][>..] {
 	var a byte[][>..] = [];
-	a.push("goose");
+	a.push("helium");
 	a.push("gander");
 	return a;
 }

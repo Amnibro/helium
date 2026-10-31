@@ -13,8 +13,12 @@ var DERR byte[>..]
 var NS_FILE i32[>..]
 struct Pk { name i32, root i32, key i32, src i32, so i32, mt bool, tk i32 }
 var PKS Pk[>..]; var FPKG i32[>..]
-goose_home() byte[>..]:
-	h byte[>..] ~= []; if !env("GOOSE_HOME", h) || h.len == 0 { h.clear(); env("HOME", h); h.append("/.goose") } h
+helium_home() byte[>..]:
+	h byte[>..] ~= []; if env("HELIUM_HOME", h) && h.len > 0: return h
+	h.clear(); if env("GOOSE_HOME", h) && h.len > 0: return h
+	h.clear(); env("HOME", h); n := h.len; h.append("/.helium"); if is_dir(h[..]): return h
+	h.resize(n); h.append("/.goose"); if is_dir(h[..]): return h
+	h.resize(n); h.append("/.helium"); h
 blessed(name const byte[:]) const byte[:]:
 	if name == "physics":
 		"physics"
@@ -41,7 +45,7 @@ pk_git(name int, src const byte[:]) int:
 	key byte[>..] ~= []; key.append(url[k..e]); sf ~= key.len > 0 && key[0] != '/'; sl ~= 0; for c key { if c == '/' { sl++ } if !(c >= 'a' && c <= 'z' || c >= 'A' && c <= 'Z' || c >= '0' && c <= '9' || c == '.' || c == '_' || c == '-' || c == '/') { sf = false } }
 	if !sf || sl != 2: r0 ~= 0; for c, i key { if c == '/' { r0 = i + 1 } } rp byte[>..] ~= []; for c key[r0..] { rp.push(if c >= 'a' && c <= 'z' || c >= 'A' && c <= 'Z' || c >= '0' && c <= '9' || c == '.' || c == '_' || c == '-' { c } else { '_' }) } key.clear(); key.append(if rp.len == 0 { "repo" } else { rp[..] }); key.push('-'); key.append(hx8(url[..])[..])
 	key.push('/'); for c, i ref { if !iscommit(ref[..]) || i < 12 { key.push(if c == '/' || c == '\\' { '_' } else { c }) } }
-	root byte[>..] ~= goose_home(); root.append("/pkg/"); root.append(key[..])
+	root byte[>..] ~= helium_home(); root.append("/pkg/"); root.append(key[..])
 	pk_add(name, root[..], key[..], src)
 pk_fetch(i int, pt int) bool:
 	src := nm(PKS[i].src); dir := nm(PKS[i].root); nmn := nm(PKS[i].name); url byte[>..] ~= []; ref byte[>..] ~= []; gsrc(src, url, ref); cm := iscommit(ref[..]); up := PKF == 2 && !cm
@@ -132,7 +136,7 @@ recursive try_load(path const byte[:], pk int) int:
 		if ND[n].a >= 0 && f != 0 && pk_find(ND[n].s) < 0 { m byte[>..] ~= []; format(m, nm(FILES[f].name), " needs the package ", nm(ND[n].s), ": add\n    import ", nm(ND[n].s), " from \"", tok_str(ND[n].a), "\";\nto ", nm(FILES[0].name), " (packages are declared by the root file only)"); derr(ND[n].t, m); return -2 } if load_import(ND[n].s, f, ND[n].t) < 0: return -2
 	f
 recursive try_ext(p const byte[:], pk int) int:
-	a byte[>..] ~= []; a.append(p); a.append(".he"); r0 := try_load(a[..], pk); if r0 != -1 { return r0 } a.resize(p.len); a.append(".amni"); r := try_load(a[..], pk); if r != -1 { return r } a.resize(p.len); a.append(".goose"); try_load(a[..], pk)
+	a byte[>..] ~= []; a.append(p); a.append(".he"); r0 := try_load(a[..], pk); if r0 != -1 { return r0 } a.resize(p.len); a.append(".amni"); try_load(a[..], pk)
 lib_path(name const byte[:]) byte[..1024]:
 	p byte[..1024] ~= []; p.append(LIBDIR); p.push('/'); p.append(name); p.append(".he"); if !file_exists(p[..]) { p.resize(p.len - 3); p.append(".amni"); }; p
 imp_rel(t int) bool:
