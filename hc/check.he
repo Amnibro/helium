@@ -416,7 +416,7 @@ deref_place(t int) int:
 recursive ck_id(n int, want int) int:
 	name := ND[n].s as int
 	v := find_lv(name)
-	if v >= 0 && LVS[v].fl & LV_CFB != 0: b := LVS[v].node as int; set_r(n, R_CFB, b); c := CFBS[b]; if c.k == 2 { cerr(n, "a field accessor is written in a member access or an initializer label"); return set_t(n, T_ERRT) } t := cf_ty(b); if want >= 0 && is_pending(t) && (TY[want].k == TY_INT || TY[want].k == TY_FLT) { set_t(n, t); conv(n, want); return want } return set_t(n, t)
+	if v >= 0 && LVS[v].fl & LV_CFB != 0: b := LVS[v].node as int; set_r(n, R_CFB, b); c := CFBS[b]; if c.k == 2 { mm byte[>..] ~= []; format(mm, "const for binding ", nm(name), " is not a value"); cerr(n, mm); return set_t(n, T_ERRT) } t := cf_ty(b); if want >= 0 && is_pending(t) && (TY[want].k == TY_INT || TY[want].k == TY_FLT) { set_t(n, t); conv(n, want); return want } return set_t(n, t)
 	if v >= 0 && LVS[v].fl & LV_PEND != 0: mm byte[>..] ~= []; format(mm, nm(name), " is used before it gets a value"); cerr(n, mm); return set_t(n, T_ERRT)
 	if v >= 0: set_r(n, R_LOCAL, v); note_cap(v); return set_t(n, if LVS[v].fl & LV_FLET != 0 { T_FLIT } else { decode_rel(LVS[v].ty as int) })
 	ns := ns_of(n)
@@ -433,10 +433,21 @@ recursive ck_id(n int, want int) int:
 	if d >= 0: set_r(n, R_FN, d); set_x(n, -1); return set_t(n, T_FNV)
 	if find_nest(name, n) >= 0 || block_binding(name) >= 0: set_x(n, -1); return set_t(n, T_FNV)
 	gvt := gb_find(name); if gvt >= 0 && TY[gvt].k == TY_VARIANT: vs0 := ENV[ENI[TY[gvt].a].v0 as int + TY[gvt].c as int].si as int; if vs0 >= 0 && STI[vs0].fnum > 0 { cerr(n, "a variant with a payload is constructed with { }"); return set_t(n, T_ERRT) } set_r(n, R_VARIANT, TY[gvt].c as int); return set_t(n, gvt)
-	m byte[>..] ~= []; format(m, "unknown identifier: ", nm(name)); cerr(n, m)
+	m byte[>..] ~= []; if cfgb(name) { format(m, "const for binding ", nm(name), " is not a value") } else { format(m, "unknown identifier: ", nm(name)) } cerr(n, m)
 	set_t(n, T_ERRT)
 var GLT i32[>..]
 var GLST u8[>..]
+anyfn(name int) bool:
+	if dmap(name) >= 0: return true
+	w := nm(name)
+	for d DC.len:
+		q := nm(DC[d].name as int); if q.len > w.len + 1 && q[q.len - w.len - 1] == ':' && q[q.len - w.len..] == w { return true }
+	false
+cfgb(name int) bool:
+	i ~= AOWN
+	while i >= 0:
+		f := FI_[i]; if f.node >= 0 && ND[f.node].k == N_CFOR { for j f.gn { if GBS[f.g0 as int + j].name as int == name { return true } } } i = f.par as int
+	false
 recursive const_of(d int) int:
 	for c, i CONSTD:
 		if c == d: return i
@@ -774,6 +785,10 @@ recursive ck_match(n int, want int) int:
 					if ax0.s >= 0 && found >= 0: vt := t_variant(ei, found); byr := ax0.fl & 2 != 0 || is_bytes(vt); v := add_lv(ax0.s, if byr { t_ref(vt, 0) } else { vt }, if byr { LV_REF } else { 0 }, arm); set_r(arm, R_LOCAL, v)
 				else:
 					ck(lo, d); conv(lo, d)
+					if ax0.s >= 0 && ND[it].b < 0:
+						mb byte[>..] ~= []; lq := if ND[lo].k == N_ID { find_lv(ND[lo].s as int) } else { -1 }
+						if ND[lo].k == N_ID && (lq < 0 || LVS[lq].fl & LV_CFB == 0) { format(mb, "constant pattern ", nm(ND[lo].s as int), " has no payload to bind") } else { cv, cok := ceval(lo, ns_of(lo)); if cok { format(mb, "constant pattern ", cv, " has no payload to bind") } else { format(mb, "a constant pattern has no payload to bind") } }
+						cerr(lo, mb)
 					if ND[it].b >= 0: ck(ND[it].b, d); conv(ND[it].b, d)
 		bt := ck(ax0.b, want)
 		SCOPE.pop_n(SCOPE.len - m); GB.pop_n(GB.len - g0); AOWN = sa
@@ -816,7 +831,9 @@ find_from_fn(name int) int:
 recursive ck_ret(n int) int:
 	x := ND[n]
 	f := if x.s >= 0 { find_from_fn(x.s) } else { ret_fn() }
-	if f < 0: cerr(n, "return outside of a function"); return T_VOID
+	if f < 0:
+		if x.s >= 0: m byte[>..] ~= []; if anyfn(x.s as int) || find_lv(x.s as int) >= 0 { format(m, "return from ", nm(x.s as int), ": no enclosing call of ", nm(x.s as int), " on this compile-time call path") } else { format(m, "return from ", nm(x.s as int), ": unknown function") } cerr(n, m); return T_VOID
+		cerr(n, "return outside of a function"); return T_VOID
 	if f != CFN: FI_[CFN].lr = true; FI_[f].tg = true; set_x(n, f); dyt_add(CFN, f) else: set_x(n, -1)
 	rt := FI_[f].ret
 	if x.n == 0: if rt >= 0 && rt != T_VOID && !FI_[f].rinf { cerr(n, "return needs a value") } if rt < 0 { FI_[f].ret = T_VOID } return set_t(n, T_VOID)

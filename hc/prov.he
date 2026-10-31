@@ -598,7 +598,7 @@ recursive psz(e int, m byte[>..]&) int:
 		for v in 0..LVS.len:
 			l := LVS[v]; if l.cfn != PI as i32 || l.name != ND[e].s { continue }
 			dt := ND[l.node].t as int; b := if v < PLB.len { PLB[v] as int } else { -1 }
-			if l.fl & (LV_PARAM | LV_BLKP) != 0 || dt < t && b >= 0 && t <= ptend(ND[b].t as int): m.append("array size "); m.append(nm(ND[e].s)); m.append(" names a local variable, not a constant"); return e
+			if l.fl & (LV_PARAM | LV_BLKP) != 0 || dt < t && b >= 0 && t <= ptend(ND[b].t as int): m.append(nm(ND[e].s)); fq0 := FI_[PI].node as int; m.append(if l.fl & LV_PARAM != 0 && fq0 >= 0 && ND[fq0].k as int == N_FN && ND[fq0].c >= 0 && ND[e].t < ND[ND[fq0].c].t { " names a parameter, not a constant" } else { " names a local variable, not a constant" }); return e
 		return -1
 	if k == N_BIN: r := psz(ND[e].a as int, m); return if r >= 0 { r } else { psz(ND[e].b as int, m) }
 	if k == N_UN: return psz(ND[e].a as int, m)
@@ -607,7 +607,7 @@ pszs(fq int):
 	j ~= fq + 1; e := NEND[fq] as int
 	while j < e:
 		if ND[j].k as int == N_FN && j < NEND.len && NEND[j] > j: j = NEND[j] as int; continue
-		if ND[j].k as int == N_TARR && ND[j].b >= 0: m byte[>..] ~= []; r := psz(ND[j].b as int, m); if r >= 0 { cerr(r, m[..]) }
+		if ND[j].k as int == N_TARR && ND[j].b >= 0: m byte[>..] ~= []; m.append(if ND[j].op as int == A_LIM { "array capacity " } else { "array size " }); r := psz(ND[j].b as int, m); if r >= 0 { cerr(r, m[..]) }
 		j += 1
 recursive pexs(e int, m byte[>..]&) bool:
 	k := ND[e].k as int
@@ -998,12 +998,60 @@ pglob():
 			if !(e.file == d.file && x as int >= di || e.file == 0 && d.file != 0): continue
 			w := TK[ND[e.node].t]; m byte[>..] ~= []; m.append("variable "); m.append(nm(e.name)); m.append(" may be used before it is assigned: globals initialize in declaration order, imported files first (§11.1), so "); m.append(nm(e.name)); m.append(" has no value until its initializer at "); m.append(nm(FILES[w.f].name)); format(m, ":", w.line, " has run"); cerr(ND[vn].b as int, m[..]); break
 	AOWN = sa
+pnhk(t int) bool:
+	h := hook_of(t); if h < 0 || FI_[h].pn < 2 { return false } pt := ptype_of(h, 1); pt > 0 && TY[pt].k as int == TY_REF && TY[pt].c < 0 && !tpc(ND[kid(FI_[h].node as int, 1)].a as int)
+recursive pncid(e int, lk bool) int:
+	if e < 0 || ND[e].k as int != N_ID: return -1
+	if rk(e) == R_CONST: return rv(e)
+	if !lk || rk(e) != R_NONE: return -1
+	d := lookup_q(ND[e].s as int, ns_of(e), D_GLOBAL); if d < 0 { return -1 } const_of(d)
+pncr(ci int, n int, kd int, U i32[>..]&, UK i32[>..]&):
+	if ND[DC[CONSTD[ci]].node].fl & V_CONST != 0: return
+	while U.len <= ci { U.push(-1); UK.push(0) }
+	if U[ci] < 0 || ND[n].t < ND[U[ci]].t { U[ci] = n as i32; UK[ci] = kd as i32 }
+recursive pncw(e int, kd int, U i32[>..]&, UK i32[>..]&):
+	if e < 0: return
+	k := ND[e].k as int
+	if k == N_ID: ci := pncid(e, kd == 0); if ci >= 0 { pncr(ci, e, kd, U, UK) } return
+	if k == N_BIN: pncw(ND[e].a as int, kd, U, UK); pncw(ND[e].b as int, kd, U, UK); return
+	if k == N_UN || k == N_AS: pncw(ND[e].a as int, kd, U, UK)
+pnconst():
+	U i32[>..] ~= []; UK i32[>..] ~= []; B i32[>..] ~= []; BK i32[>..] ~= []
+	OW i32[>..] ~= []; OW.resize(ND.len, -1); sa := AOWN
+	for f, i FI_:
+		if i == GLOBI || f.hi <= f.lo: continue
+		lo0 := f.lo as int; hi0 := min(f.hi as int, ND.len)
+		for n in lo0..hi0: if OW[n] < 0 || (FI_[OW[n]].hi - FI_[OW[n]].lo) as int > hi0 - lo0 { OW[n] = i as i32 }
+	for n in 0..ND.len:
+		if ND[n].t < 0 || FILES[TK[ND[n].t].f].he: continue
+		AOWN = if OW[n] >= 0 { OW[n] as int } else { GLOBI }
+		k := ND[n].k as int
+		if k == N_TARR && ND[n].b >= 0: pncw(ND[n].b as int, 0, U, UK)
+		else if k == N_ARR && ND[n].a >= 0 && ND[n].b >= 0: pncw(ND[n].b as int, 1, U, UK)
+		else if k == N_PITEM: pncw(ND[n].a as int, 2, U, UK); pncw(ND[n].b as int, 2, U, UK)
+	for n in 0..ND.len:
+		if ND[n].t < 0 || FILES[TK[ND[n].t].f].he: continue
+		AOWN = if OW[n] >= 0 { OW[n] as int } else { GLOBI }
+		k := ND[n].k as int
+		if k == N_ID && rk(n) == R_CONST: t := fin_t(n); if t > 0 && t < TY.len && TY[t].k as int == TY_INT && t != T_I64 { pncr(rv(n), n, 3, U, UK) }
+		if k == N_UN && ND[n].op as int == T_AND: ci := pncid(ND[n].a as int, false); if ci >= 0 { pncr(ci, n, 0, B, BK) }
+		if k == N_VDECL && ND[n].n == 1 && ND[n].b >= 0 && rk(n) == R_LOCAL: { dt := LVS[rv(n)].ty as int; ci := pncid(kid(ND[n].b as int, 0), false); if ci >= 0 && dt > 0 && TY[dt].k as int == TY_REF && TY[dt].c < 0 && !tpc(ND[n].a as int) { pncr(ci, n, 0, B, BK) } }
+		if k == N_CALL && rk(n) == R_BUILTIN && (rv(n) == B_PRINT || rv(n) == B_STR || rv(n) == B_FORMAT): for j ND[n].n { a6 := kid(n, j); ci := pncid(a6, false); t6 := if fin_t(a6) == T_ILIT { T_I64 } else { fin_t(a6) }; if ci >= 0 && t6 > 0 && t6 < TY.len && pnhk(t6) { pncr(ci, a6, 0, B, BK) } }
+		if k == N_CALL && rk(n) == R_FN: { c1 := rv(n); if c1 >= 0 && c1 < FI_.len { fnd := FI_[c1].node as int; for j ND[n].n { if j < FI_[c1].pn as int && j < ND[fnd].n as int { pt := ptype_of(c1, j); ci := pncid(kid(n, j), false); if ci >= 0 && pt > 0 && TY[pt].k as int == TY_REF && TY[pt].c < 0 && TY[pt].fl & RF_OPT == 0 && !tpc(ND[kid(fnd, j)].a as int) { pncr(ci, kid(n, j), 0, B, BK) } } } } }
+	AOWN = sa
+	for ci in 0..B.len:
+		if B[ci] < 0 || ci >= U.len || U[ci] < 0: continue
+		b := B[ci] as int; u := U[ci] as int; kn := ["array size", "array fill count", "match pattern", "use as a literal"][UK[ci] as int]
+		cn := nm(DC[CONSTD[ci]].name); m byte[>..] ~= []
+		if ND[b].t > ND[u].t: w := TK[ND[u].t]; m.append(cn); m.append(" is bound to a writable reference here, through which it may change, while the "); m.append(kn); m.append(" at "); m.append(nm(FILES[w.f].name)); format(m, ":", w.line, " relies on it keeping its initializer's value (§4.4)"); cerr(b, m[..])
+		else: w := TK[ND[b].t]; m.append("the "); m.append(kn); m.append(" relies on "); m.append(cn); m.append(" keeping its initializer's value, but a writable reference bound to "); m.append(cn); m.append(" at "); m.append(nm(FILES[w.f].name)); format(m, ":", w.line, " may change it (§4.4)"); cerr(u, m[..])
 prov_program() bool:
 	if NERR > 0: return false
 	nlc byte[>..] ~= []; if env("HC_NOPROV", nlc): return true
 	GST.clear(); GCP.clear(); PSH.clear(); PSO.clear(); PRM.clear(); PRM.resize(FI_.len, 0); SHR.clear(); SHR.resize(FI_.len, 0); PSG.clear(); PSG.resize(FI_.len, 0); PPW.clear(); PCW.clear(); SHG.clear(); PPR.clear(); PPN.clear(); for _ FI_.len { SHG.push([]); PPR.push([]); PPN.push([]) } PCH = false
 	p0 i64[>..] ~= []; GRR.clear(); GRU.clear(); PSGG.clear(); sg := AOWN; AOWN = GLOBI
 	for d, di DC: if d.k as int == D_GLOBAL && !FILES[d.file].he && ND[d.node].k as int == N_VDECL && ND[d.node].b >= 0 && ND[ND[d.node].b].n > 0 { t := global_type(di); if t > 0 && (TY[t].k as int == TY_REF && TY[t].c < 0 || TY[t].k as int == TY_SLICE) { e := kid(ND[d.node].b as int, 0); q := pl(e); if TY[t].k as int == TY_SLICE && q.v <= -3 && pgsid(q.v as int) && ND[e].k as int != N_NULL { m byte[>..] ~= []; m.append("storing a reference into "); pidn(q.v as int, m); m.append(", which holds a grow-shrink array: such a reference lives in a variable, is passed down or returned, and is never stored (§5.2)"); cerr(e, m[..]) } if ND[e].k as int != N_NULL { grrw(di, if q.d == -2 && q.v <= -3 { q.v as int } else { -9 }) } } }
+	pnconst()
 	for d, di DC: if d.k as int == D_GLOBAL && !FILES[d.file].he && ND[d.node].k as int == N_VDECL && ND[d.node].b >= 0 && ND[ND[d.node].b].n > 0 { t := global_type(di); if t > 0 && (isrs(t) || hold(t)) { e := kid(ND[d.node].b as int, 0); if isrs(t) { pgst(e, -3 - di, e) } else { q := pvin(t, e); if q.v <= -3 && q.v as int != -3 - di { GST.push(q.v); GST.push((-3 - di) as i32); GST.push(e as i32) } } } }
 	AOWN = sg
 	for _ 7:

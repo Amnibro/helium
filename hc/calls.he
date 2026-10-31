@@ -40,6 +40,12 @@ member_of(name const byte[:]) int:
 var FREEM bool
 user_fn_n(name int, k int) bool:
 	d ~= dmap(name); while d >= 0 { if DC[d].k as int == D_FN && !is_std_node(DC[d].node) && ND[DC[d].node].n == k { return true } d = DC[d].next } false
+cfnv(s int, an int) bool:
+	for i an:
+		if s + i < ARGW.len && ARGW[s + i] as int == T_FNV:
+			k := ND[DIDX[s + i]].k as int
+			if k != N_ID && k != N_FUNVAL: return true
+	false
 has_fn(name int) bool:
 	d ~= dmap(name); while d >= 0 { if DC[d].k as int == D_FN { return true } d = DC[d].next } false
 nscore(q int, at int) i64:
@@ -691,7 +697,7 @@ recursive try_case(n int, name int, s int, an int, blk int, bown int) int:
 		if rt < 0: cerr(n, "a case function called here needs its result type written"); return set_t(n, T_ERRT)
 		return set_t(n, rt)
 	-1
-recursive ck_spawn(n int) int:
+recursive ck_spawn(n int, ctd bool) int:
 	x := ND[n]
 	if x.n == 0 || ND[kid(n, 0)].k as int != N_ID: cerr(n, "thread_spawn needs a thread_fn"); return set_t(n, T_ERRT)
 	wn := kid(n, 0)
@@ -702,6 +708,10 @@ recursive ck_spawn(n int) int:
 	for i 1..x.n: c := kid(n, i); ARGW.push(ck(c, -1)); DIDX.push(c)
 	an := x.n as int - 1
 	fnode, b0, bn := resolve(n, wnm, ns_of(n), s, an, -1, -1, false)
+	if fnode >= 0 && ND[fnode].fl & F_THREAD == 0 || fnode < 0 && wb >= 0 && FI_[wb].blk >= 0:
+		BINDS.pop_n(BINDS.len - b0); pop_args(s); m byte[>..] ~= []; format(m, if ctd { "thread_spawn_contained" } else { "thread_spawn" }, "'s first argument names a thread_fn")
+		if wb >= 0: if FI_[wb].blk < -1 { format(m, ": ", nm(ND[wn].s), " is bound to ", nm(wnm), ", which is not one") } else { format(m, ": ", nm(ND[wn].s), " is bound to a block") }
+		cerr(n, m); return set_t(n, T_ERRT)
 	if fnode < 0 || ND[fnode].fl & F_THREAD == 0: BINDS.pop_n(BINDS.len - b0); pop_args(s); m byte[>..] ~= []; format(m, "no thread_fn ", nm(ND[wn].s), " matches these arguments"); cerr(n, m); return set_t(n, T_ERRT)
 	inst := get_inst(fnode, b0, bn, -1, AOWN)
 	BINDS.pop_n(BINDS.len - b0)
@@ -749,7 +759,7 @@ recursive call_fn(n int, name int, recv int, want int) int:
 	if fnode < 0:
 		BINDS.pop_n(BINDS.len - b0); dr := try_case(n, name, s, an, blk, bown); if dr >= 0: pop_args(s); return dr
 	if fnode < 0:
-		m byte[>..] ~= []; if find_lv(name) >= 0 { format(m, nm(name), " is a variable, not a function") } else if has_fn(name) { format(m, "no matching overload for call to ", nm(name)) } else if lookup_q(name, ns_of(n), D_GLOBAL) >= 0 { format(m, nm(name), " is a variable, not a function") } else { format(m, "unknown function: ", nm(name)) }
+		m byte[>..] ~= []; lv9 := find_lv(name); if lv9 >= 0 && LVS[lv9].fl & LV_CFB != 0 { format(m, "const for field accessor is not callable") } else if lv9 >= 0 { format(m, nm(name), " is a variable, not a function") } else if has_fn(name) && cfnv(s, an) { format(m, "a function value must be a function name or block literal") } else if has_fn(name) { format(m, "no matching overload for call to ", nm(name)) } else if lookup_q(name, ns_of(n), D_GLOBAL) >= 0 { format(m, nm(name), " is a variable, not a function") } else { format(m, "unknown function: ", nm(name)) }
 		cerr(n, m)
 		pop_args(s)
 		BINDS.pop_n(BINDS.len - b0)
@@ -861,7 +871,7 @@ recursive ck_builtin(n int, b int, recv int, want int) int:
 	if b == B_FROMBYTES: ta := x.c; t := if ta >= 0 { rtype(kid(ta, 0), ns_of(n)) } else { T_ERRT }; ck(arg(0), TT_STR); if is_pending(at(arg(0))) { default_t(arg(0)) } if TY[t].k == TY_ARR { rs i32[..2] ~= []; rs.push(t); rs.push(T_BOOL); return set_t(n, tlist(TY_MULTI, rs[..], -1)) } return set_t(n, t)
 	if b == B_EMBED: ck(arg(0), TT_STR); default_t(arg(0)); return set_t(n, TT_STR)
 	if b == B_EMBEDSH: return ck_shader(n, total, recv)
-	if b == B_SPAWN || b == B_SPAWNC: return ck_spawn(n)
+	if b == B_SPAWN || b == B_SPAWNC: return ck_spawn(n, b == B_SPAWNC)
 	if b == B_TWAIT: ck(arg(0), T_I64); conv(arg(0), T_I64); if total > 1 { ck(arg(1), -1) } return set_t(n, T_BOOL)
 	if b == B_HWT: return set_t(n, T_I64)
 	if b == B_QPUT: c := arg(0); t ~= ck(c, -1); if is_pending(t) { t = default_t(c) } d := deref(t); if d != t { set_cv(c, d) } return set_t(n, T_BOOL)

@@ -228,7 +228,7 @@ recursive rtype(n int, ns int) int:
 		if dk == D_STRUCT: return t_struct(inst_struct(DC[d].node as int, args[..]))
 		if dk == D_ENUM: return t_enum(inst_enum(DC[d].node as int, args[..]), x.fl & 1 != 0)
 		if dk == D_ALIAS: an := DC[d].node as int; return rtype(ND[an].b as int, ns_of(an))
-		m byte[>..] ~= []; format(m, "unknown type ", nm(name)); derr(x.t as int, m)
+		m byte[>..] ~= []; v9 := if x.n == 0 { find_lv(name) } else { -1 }; if v9 >= 0 && LVS[v9].fl & LV_CFB != 0 { format(m, "const for binding ", nm(name), " is not a type") } else { format(m, "unknown type ", nm(name)) } derr(x.t as int, m)
 		return T_ERRT
 	derr(x.t as int, "bad type")
 	T_ERRT
