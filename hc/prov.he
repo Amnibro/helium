@@ -61,7 +61,7 @@ pown(v int) bool: if LVS[v].fl & LV_BLKP != 0 { pidx(v) != 62 } else { LVS[v].cf
 pbind(v int) Pv:
 	pgrow(v); l := LVS[v]
 	if l.fl & (LV_PARAM | LV_BLKP) != 0 || l.cfn != PI as i32: Pv{0, v as i32, if !pown(v) { 0 } else { (1 as i64) << min(pidx(v), 30) | PXM[v] }}
-	else: { if PMXON && v < PVRS.len && !isrs(l.ty as int) && hold(l.ty as int) { PMXF = if PMXF == -1 { v } else { -2 }; for x PVRS[v] { if x != -1 && !PMX.contains(x) { PMX.push(x) } } } Pv{PBD[v], PBV[v], PBM[v]} }
+	else: { if PMXON && v < PVRS.len && (isrs(l.ty as int) || hold(l.ty as int)) { if !isrs(l.ty as int) { PMXF = if PMXF == -1 { v } else { -2 } } for x PVRS[v] { if x != -1 && !PMX.contains(x) { PMX.push(x) } } } Pv{PBD[v], PBV[v], PBM[v]} }
 pidx(v int) int: nd := FI_[PI].node as int; for j ND[nd].n { if rv(kid(nd, j)) == v { return j } } if ND[nd].k as int == N_FUNVAL && rk(nd) == R_LOCAL && rv(nd) == v { 0 } else { 62 }
 recursive pl(n int) Pv:
 	k := ND[n].k as int; if at(n) < 0 && rk(n) == R_NONE { return pnone() }
@@ -696,7 +696,7 @@ pcwapp(f int, n int):
 		x := q[3 * i] as int; y := q[3 * i + 1] as int; t := q[3 * i + 2] as int
 		if LVS[y].cfn != PI as i32 && LVS[x].cfn != PI as i32 { pcwadd(PI, x, y, t); continue }
 		if LVS[x].cfn != PI as i32 { continue }
-		p := Pv{pdep(y) as i32, y as i32, 0}
+		p := if LVS[y].cfn == PI as i32 && LVS[y].fl & (LV_PARAM | LV_BLKP) != 0 { pbind(y) } else { Pv{pdep(y) as i32, y as i32, 0} }
 		if t == 0 { pbset(x, p, true, n) } else { pthruv(x, p, n) }
 var NDA (i32[>..])[>..]
 var NDX i32[>..]
