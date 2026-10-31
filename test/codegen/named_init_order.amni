@@ -1,4 +1,7 @@
 // runtime-debug: field evaluation and construction follow declaration order.
+// Out-of-order fields are only accepted when reordering cannot cross an effect,
+// runtime check, or nonlocal exit (calls count as effects); those cases are
+// written in declaration order here and rejected cases live in test/errors_tc/init_order*.
 import std;
 struct Pair { a int, b int }
 struct Triple { a int, b int, c int }
@@ -14,7 +17,7 @@ fn count(bytes const byte[:]) int { bytes.len }
 fn word() byte[] { return "hello"; }
 fn main() {
 	var x = 4;
-	let p = Pair { b: pure(x), a: x };
+	let p = Pair { a: x, b: pure(x) };
 	assert(p.a == 4 && p.b == 4);
 	let t = Triple { c: p.b, a: p.a, b: if x > 0 { 2 } else { 3 } };
 	assert(t.a == 4 && t.b == 2 && t.c == 4);
@@ -25,7 +28,7 @@ fn main() {
 	let u uint = 18446744073709551615;
 	let bits = Unsigned { b: u + 1, a: u << 1 };
 	assert(bits.a == 18446744073709551614 && bits.b == 0);
-	let m = Message.Text { tail: "world", head: word() };
+	let m = Message.Text { head: word(), tail: "world" };
 	print(m);
 	let counted = Pair { b: count([1, 2]), a: x };
 	assert(counted.b == 2);

@@ -922,6 +922,119 @@ recursive slit_infer(n int, sn int) int:
 	for a args:
 		if a < 0: return -1
 	t_struct(inst_struct(sn, args[..]))
+var INIT_VIS i32[>..]
+recursive init_store_safe(n int, dest int) bool:
+	if n < 0 || dest < 0 || dest == T_VOID: return true
+	if has_rel(dest): return ND[n].k as int == N_NULL
+	if TY[dest].k != TY_ARR: return true
+	k := ND[n].k as int
+	if k == N_BLOCK: return ND[n].a >= 0 && init_store_safe(ND[n].a as int, dest)
+	if k == N_IF: return ND[n].b >= 0 && ND[n].c >= 0 && init_store_safe(ND[n].b as int, dest) && init_store_safe(ND[n].c as int, dest)
+	if k == N_MATCH:
+		for j ND[n].n { arm := kid(n, j); if ND[arm].b < 0 || !init_store_safe(ND[arm].b as int, dest) { return false } }
+		return true
+	from ~= -1
+	if k == N_STR || k == N_ARR: from = at(n)
+	else if k == N_ID && rk(n) == R_LOCAL: from = LVS[rv(n)].ty as int
+	else if k == N_CALL:
+		if rk(n) == R_FN:
+			inst := rv(n)
+			if inst >= 0 && FI_[inst].ret >= 0: from = FI_[inst].ret as int
+	else if k == N_UN && ND[n].op as int == T_AND:
+		return init_store_safe(ND[n].a as int, dest)
+	if from >= 0:
+		if TY[from].k == TY_REF: from = TY[from].a as int
+	return from >= 0 && from == dest
+recursive init_order_safe(n int, callee int) bool:
+	if n < 0: return true
+	k := ND[n].k as int; x := ND[n]
+	if k == N_INT || k == N_FLT || k == N_TRUE || k == N_FALSE || k == N_STR || k == N_NULL || k == N_SELF || k == N_ID: return true
+	if k == N_DOT:
+		if rk(n) == R_VARIANT || rk(n) == R_FCONST: return true
+		return init_order_safe(x.a as int, callee)
+	if k == N_UN:
+		ak := ND[x.a].k as int
+		if ak == N_INT || ak == N_FLT: return true
+		if x.op as int == T_MINUS:
+			t := at(x.a as int)
+			if t >= 0 && TY[t].k == TY_REF: t = TY[t].a as int
+			if t < 0 || (TY[t].k != TY_INT && TY[t].k != TY_FLT): return false
+			if TY[t].k == TY_INT && is_signed(t): return false
+		return init_order_safe(x.a as int, callee)
+	if k == N_BIN:
+		op := x.op as int
+		if op == T_ANDAND || op == T_OROR || op == T_EQ || op == T_NEQ:
+			return init_order_safe(x.a as int, callee) && init_order_safe(x.b as int, callee)
+		t := at(x.a as int)
+		if t >= 0 && TY[t].k == TY_REF: t = TY[t].a as int
+		if t < 0 || (TY[t].k != TY_INT && TY[t].k != TY_FLT && TY[t].k != TY_BOOL): return false
+		if TY[t].k == TY_INT && (op == T_DIV || op == T_MOD || (is_signed(t) && (op == T_PLUS || op == T_MINUS || op == T_MUL))): return false
+		return init_order_safe(x.a as int, callee) && init_order_safe(x.b as int, callee)
+	if k == N_AS:
+		from := at(x.a as int); to := at(n)
+		lossless := false
+		if from >= 0 && to >= 0 && TY[from].k == TY_INT && TY[to].k == TY_INT:
+			fs := is_signed(from); ts := is_signed(to); fb := ibits(from); tb := ibits(to)
+			lossless = (fs == ts && tb >= fb) || (!fs && ts && tb > fb)
+		if !lossless && (to < 0 || TY[to].k != TY_FLT): return false
+		return init_order_safe(x.a as int, callee)
+	if k == N_CALL:
+		if rk(n) != R_FN: return false
+		inst := rv(n)
+		if inst < 0 || inst >= FI_.len: return false
+		fnode := FI_[inst].node as int
+		if fnode < 0 || is_std_node(fnode): return false
+		fbody := ND[fnode].c as int
+		if fbody < 0: return false
+		if INIT_VIS.contains(inst as i32): return false
+		INIT_VIS.push(inst as i32)
+		ok := true
+		for j x.n:
+			argn := kid(n, j)
+			pty := ptype_of(inst, j)
+			if !init_store_safe(argn, pty) || !init_order_safe(argn, callee): ok = false
+		if ok && FI_[inst].ret >= 0:
+			if !init_store_safe(fbody, FI_[inst].ret as int): ok = false
+		if ok && !init_order_safe(fbody, inst): ok = false
+		INIT_VIS.pop()
+		return ok
+	if k == N_RET:
+		if callee < 0 || ret_fn() != callee: return false
+		if x.n != 1 || FI_[callee].ret < 0: return false
+		val := kid(n, 0)
+		return init_store_safe(val, FI_[callee].ret as int) && init_order_safe(val, callee)
+	if k == N_VDECL:
+		if callee < 0: return false
+		if x.b < 0: return true
+		init := kid(x.b as int, 0)
+		vty := at(init)
+		return init_store_safe(init, vty) && init_order_safe(init, callee)
+	if k == N_ARR:
+		if x.a >= 0: return false
+		elem := TY[at(n)].a as int
+		for j x.n { if !init_store_safe(kid(n, j), elem) { return false } }
+	else if k == N_SLIT:
+		si := rv(n)
+		if si >= 0:
+			for j x.n:
+				c := kid(n, j)
+				fi := if ND[c].k as int == N_FI { sfield(si, ND[c].s as int) } else { j }
+				if fi >= 0 && fi < STI[si].fnum as int:
+					ft := SFI[STI[si].f0 as int + fi].ty as int
+					v := if ND[c].k as int == N_FI { ND[c].a as int } else { c }
+					if !init_store_safe(v, ft): return false
+	else if k != N_BLOCK && k != N_IF && k != N_MATCH:
+		return false
+	for j x.n:
+		if !init_order_safe(kid(n, j), callee): return false
+	true
+init_order_idx_safe(sl_node int, si int, idx int, ftypes i32[:]) bool:
+	INIT_VIS.clear()
+	gn, gi := sl_given(sl_node, idx)
+	init := if gn >= 0 { ND[gn].a as int } else { SFI[STI[si].f0 as int + idx].def as int }
+	ft := ftypes[idx] as int
+	init_store_safe(init, ft) && init_order_safe(init, -1)
+
 recursive ck_slit(n int, want int) int:
 	x := ND[n]
 	tnode := x.a as int
@@ -963,6 +1076,57 @@ recursive ck_slit(n int, want int) int:
 		if !given && f.def < 0: ck_defs(f.ty as int)
 		if !given && f.def < 0 && x.fl & 1 == 0 && !is_opt(f.ty as int): m byte[>..] ~= []; format(m, "missing field ", nm(f.name as int), " in ", tn(t)); cerr(n, m)
 		if !given && f.def < 0 && x.fl & 1 != 0: m byte[>..] ~= []; format(m, "missing initializer for field ", nm(f.name as int), " of ", tn(t), " (it has no declared default, and "); if nzr(f.ty as int, m) { m.append(")"); cerr(n, m) }
+	if named:
+		src_indices i32[>..] ~= []
+		k = 0
+		while k < items.len:
+			fi := items[k] as int; k += 2
+			idx := sfield(si, cf_acc(ND[fi].s as int))
+			if idx >= 0: src_indices.push(idx as i32)
+		supplied bool[>..] ~= []
+		reorderable i32[>..] ~= []
+		for j nf:
+			supplied.push(false)
+			reorderable.push(-1)
+		for idx src_indices:
+			supplied[idx as int] = true
+		ftypes i32[>..] ~= []
+		for j nf:
+			ftypes.push(SFI[STI[si].f0 as int + j].ty)
+		err_reported ~= false
+		for a in 0..src_indices.len:
+			if err_reported: break
+			for b in (a + 1)..src_indices.len:
+				if err_reported: break
+				hi := src_indices[a] as int
+				lo := src_indices[b] as int
+				if hi <= lo: continue
+				ok := true
+				if reorderable[lo] < 0:
+					reorderable[lo] = if init_order_idx_safe(n, si, lo, ftypes[..]) { 1 } else { 0 }
+				if reorderable[lo] == 0: ok = false
+				if ok:
+					if reorderable[hi] < 0:
+						reorderable[hi] = if init_order_idx_safe(n, si, hi, ftypes[..]) { 1 } else { 0 }
+					if reorderable[hi] == 0: ok = false
+				if ok:
+					for i in (lo + 1)..hi:
+						if !supplied[i] && SFI[STI[si].f0 as int + i].ty >= 0:
+							if reorderable[i] < 0:
+								reorderable[i] = if init_order_idx_safe(n, si, i, ftypes[..]) { 1 } else { 0 }
+							if reorderable[i] == 0: ok = false; break
+				if !ok:
+					err_reported = true
+					ord byte[>..] ~= []
+					for i in 0..nf:
+						if supplied[i]:
+							if ord.len > 0: ord.append(", ")
+							ord.append(nm(SFI[STI[si].f0 as int + i].name as int))
+					gn_lo, gi_lo := sl_given(n, lo)
+					lo_node := if gn_lo >= 0 { ND[gn_lo].a as int } else { n }
+					msg byte[>..] ~= []
+					format(msg, "field initializers must follow declaration order: ", nm(SFI[STI[si].f0 as int + lo].name as int), " comes before ", nm(SFI[STI[si].f0 as int + hi].name as int), "; reordering may cross a side effect, runtime check, or nonlocal exit; supplied fields in declaration order: ", ord[..], "; fields are evaluated and constructed front-to-back")
+					cerr(lo_node, msg[..])
 	set_r(n, R_CTOR, si)
 	set_t(n, t)
 nzr(t int, m byte[>..]&) bool:
