@@ -27,6 +27,10 @@ block_reference_implicit_copy.amni
 block_slice_escape.amni
 block_value_implicit_copy.amni
 block_valued_break_unassigned.amni
+branch_join_arrays.amni
+branch_join_arrays_break.amni
+branch_join_arrays_match.amni
+branch_join_arrays_receiver.amni
 branch_join_const_ref.amni
 branch_join_const_write.amni
 branch_join_growshrink_store.amni
