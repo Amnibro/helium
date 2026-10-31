@@ -1,0 +1,13 @@
+fn show(xs int[:]) {
+	var o byte[>..] = [];
+	o.append("results: ");
+	for x, i in xs {
+		if i > 0 { o.append(","); }
+		format(o, x);
+	}
+	print(o);
+}
+
+fn main() {
+	show([3, 18, 7, 25, 12].filter() { it >= 5 && it <= 20 });
+}

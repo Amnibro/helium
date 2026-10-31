@@ -1,0 +1,4 @@
+list = 40, 15, 70, 25, 90
+filter budget each with limit 30
+cache results
+return results

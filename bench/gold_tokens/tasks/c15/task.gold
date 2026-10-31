@@ -1,0 +1,5 @@
+sub = fold evens last 2 digits
+list = 2468,1357,8642,2048,9876
+apply sub to each result
+scale gaps with cache multiplier 3
+return results

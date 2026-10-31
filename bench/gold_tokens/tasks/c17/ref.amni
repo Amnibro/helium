@@ -1,0 +1,32 @@
+fn show(xs int[:]) {
+	var o byte[>..] = [];
+	o.append("results: ");
+	for x, i in xs {
+		if i > 0 { o.append(","); }
+		format(o, x);
+	}
+	print(o);
+}
+
+fn is_prime(n int) bool {
+	if n < 2 { return false; }
+	var d = 2;
+	while d * d <= n { if n % d == 0 { return false; } d++; }
+	true
+}
+
+fn main() {
+	let text = "AbCdEfGh";
+	var codes int[>..] = [];
+	for c in text[text.len / 2..] {
+		var n = c as int;
+		if is_prime(n) {
+			n++;
+			while !is_prime(n) { n++; }
+		}
+		codes.push(n);
+	}
+	sort(codes);
+	codes.retain() { it >= 65 };
+	show(codes);
+}

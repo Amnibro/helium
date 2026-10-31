@@ -1,0 +1,1 @@
+Report errors before returning the running sums.

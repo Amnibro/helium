@@ -1,0 +1,6 @@
+list = 12, 18, -3, 25, 140, 33
+clamp item distribution safely between 0 upper 100
+record pairwise number deltas
+check gaps between consecutive items under 50
+check errors
+return results

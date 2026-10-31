@@ -1,0 +1,5 @@
+sub = collect values running count peaks
+list = 142, 365, 876
+Apply sub to each result.
+Insert value into sorted list.
+Return results.

@@ -1,0 +1,23 @@
+fn show(xs int[:]) {
+	var o byte[>..] = [];
+	o.append("results: ");
+	for x, i in xs {
+		if i > 0 { o.append(","); }
+		format(o, x);
+	}
+	print(o);
+}
+
+fn remove_last_max(xs int[>..]&) {
+	let m = max(xs);
+	var i = xs.len - 1;
+	while xs[i] != m { i--; }
+	xs.remove_at(i);
+}
+
+fn main() {
+	var lengths int[>..] = [];
+	for w in words("parse the config file then retry") { lengths.push(w.len); }
+	remove_last_max(lengths);
+	show(lengths);
+}

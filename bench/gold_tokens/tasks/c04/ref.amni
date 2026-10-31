@@ -1,0 +1,25 @@
+fn show(xs int[:]) {
+	var o byte[>..] = [];
+	o.append("results: ");
+	for x, i in xs {
+		if i > 0 { o.append(","); }
+		format(o, x);
+	}
+	print(o);
+}
+
+fn digit_sum(n int) int {
+	var x = abs(n);
+	var s = 0;
+	while x > 0 { s += x % 10; x /= 10; }
+	s
+}
+
+fn main() {
+	var xs int[>..] = [19, 28, 37, 8, 40];
+	for &x in xs {
+		if x < 10 { break; }
+		x = digit_sum(x);
+	}
+	show(xs);
+}

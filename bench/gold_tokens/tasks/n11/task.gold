@@ -1,0 +1,4 @@
+list = 10, 14, 19, 31, 33
+check gaps between consecutive items under 10
+check errors
+return results

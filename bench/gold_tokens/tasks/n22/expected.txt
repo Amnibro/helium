@@ -1,0 +1,2 @@
+results: 20,55
+=> i=75 r=37.5 ok=true s="returned 2" errors=0 n=2 res=[20,55] cache=1 hits=0

@@ -1,0 +1,3 @@
+cached 3 results
+results: 40,15,25
+=> i=80 r=26.666666666666668 ok=true s="returned 3" errors=0 n=3 res=[40,15,25] cache=3 hits=0

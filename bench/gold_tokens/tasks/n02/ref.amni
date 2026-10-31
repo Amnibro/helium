@@ -1,0 +1,22 @@
+fn show(xs int[:]) {
+	var o byte[>..] = [];
+	o.append("results: ");
+	for x, i in xs {
+		if i > 0 { o.append(","); }
+		format(o, x);
+	}
+	print(o);
+}
+
+fn top_unique(xs int[:], k int) int[>..] {
+	var u int[>..] = copy(xs);
+	sort(u) { a, b => a > b };
+	u.dedup();
+	var top int[>..] = [];
+	top.append(u[..min(k, u.len)]);
+	top
+}
+
+fn main() {
+	show(top_unique([72, 95, 60, 88, 95, 41], 3));
+}

@@ -1,0 +1,5 @@
+list = 12,25,30,45,18
+rule = digit sum
+filter each number recursively with rule to depth 2
+run total of unique values
+return results

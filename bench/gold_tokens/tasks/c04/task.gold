@@ -1,0 +1,4 @@
+f = digit sum
+list = 19,28,37,8,40
+map head elements at least 10 using f
+return results

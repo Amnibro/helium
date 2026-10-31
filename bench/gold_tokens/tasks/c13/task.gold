@@ -1,0 +1,5 @@
+sub = search tail first non zero digit
+list = 120,4500,70,89,105,60
+apply sub to each result
+filter sorted elements above threshold 6
+return results

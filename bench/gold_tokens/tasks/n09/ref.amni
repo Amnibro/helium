@@ -1,0 +1,22 @@
+fn show(xs int[:]) {
+	var o byte[>..] = [];
+	o.append("results: ");
+	for x, i in xs {
+		if i > 0 { o.append(","); }
+		format(o, x);
+	}
+	print(o);
+}
+
+fn is_prime(n int) bool {
+	if n < 2 { return false; }
+	var d = 2;
+	while d * d <= n { if n % d == 0 { return false; } d++; }
+	true
+}
+
+fn main() {
+	var xs int[>..] = [1];
+	for n in 2..31 { if is_prime(n) { xs.push(n); } }
+	show(xs);
+}

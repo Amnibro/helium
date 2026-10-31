@@ -1,0 +1,3 @@
+cached 2 results
+results: 95,88
+=> i=183 r=91.5 ok=true s="returned 2" errors=0 n=2 res=[95,88] cache=2 hits=0

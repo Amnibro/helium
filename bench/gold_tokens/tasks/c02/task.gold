@@ -1,0 +1,4 @@
+list = 10,20,30,40,5
+subtract last element across list
+swap items in reverse up to limit 2
+return results

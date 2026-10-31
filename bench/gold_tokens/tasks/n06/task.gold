@@ -1,0 +1,6 @@
+f = digit sum
+list = 99, 18, 1234
+apply f to each result
+cache results
+run total of unique values
+return results

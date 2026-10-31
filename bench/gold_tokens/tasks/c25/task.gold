@@ -1,0 +1,6 @@
+x = collatz step
+y = reaches one
+input = 14
+Run function x until y.
+Filter numbers running retry total.
+Return results.

@@ -1,0 +1,26 @@
+fn show(xs int[:]) {
+	var o byte[>..] = [];
+	o.append("results: ");
+	for x, i in xs {
+		if i > 0 { o.append(","); }
+		format(o, x);
+	}
+	print(o);
+}
+
+fn gaps_within(xs int[:], limit int) bool {
+	for i in 1..xs.len { if abs(xs[i] - xs[i - 1]) > limit { return false; } }
+	true
+}
+
+fn main() {
+	let xs = [12, 18, -3, 25, 140, 33].map() { clamp(it, 0, 100) };
+	var deltas int[>..] = [];
+	for i in xs.len - 1 { deltas.push(xs[i + 1] - xs[i]); }
+	if gaps_within(deltas, 50) {
+		print("no errors in ", deltas.len, " results");
+	} else {
+		print("error: gap exceeds limit (1 total)");
+	}
+	show(deltas);
+}

@@ -1,0 +1,34 @@
+import dictionary;
+
+fn apply_memo<F>(xs int[>..]&) {
+	var memo = dictionary<int, int> {};
+	var hits = 0;
+	for &x in xs {
+		let c = memo.get(x);
+		if c {
+			hits++;
+			x = c;
+		} else {
+			let y = F(x);
+			memo.insert(x, y);
+			x = y;
+		}
+	}
+	print("subfunction ran on ", xs.len, " results, ", hits, " memo hits");
+}
+
+fn digit_sum(n int) int {
+	var x = abs(n);
+	var s = 0;
+	while x > 0 { s += x % 10; x /= 10; }
+	s
+}
+
+fn main() {
+	var xs int[>..] = [99, 18, 1234];
+	apply_memo(xs) { digit_sum(it) };
+	print("cached ", xs.len, " results");
+	sort(xs);
+	xs.dedup();
+	print("results: ", sum(xs));
+}

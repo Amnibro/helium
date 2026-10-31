@@ -1,0 +1,2 @@
+results: 500,200
+=> i=700 r=350.0 ok=true s="returned 2" errors=0 n=2 res=[500,200] cache=0 hits=0

@@ -1,0 +1,35 @@
+fn show(xs int[:]) {
+	var o byte[>..] = [];
+	o.append("results: ");
+	for x, i in xs {
+		if i > 0 { o.append(","); }
+		format(o, x);
+	}
+	print(o);
+}
+
+fn remove_last_max(xs int[>..]&) {
+	let m = max(xs);
+	var i = xs.len - 1;
+	while xs[i] != m { i--; }
+	xs.remove_at(i);
+}
+
+fn cap_running_sum(xs int[:], limit int) int[>..] {
+	var kept int[>..] = [];
+	var total = 0;
+	for x in xs {
+		if total + x > limit { break; }
+		total += x;
+		kept.push(x);
+	}
+	kept
+}
+
+fn main() {
+	var xs int[>..] = [20, 35, 15, 40, 10];
+	remove_last_max(xs);
+	var sums = cap_running_sum(xs, 60);
+	for i in 1..sums.len { sums[i] += sums[i - 1]; }
+	show(sums);
+}

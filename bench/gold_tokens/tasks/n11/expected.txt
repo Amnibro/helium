@@ -1,0 +1,3 @@
+error: gap exceeds limit (1 total)
+results: 10,14,19,31,33
+=> i=107 r=21.4 ok=false s="returned 5" errors=1 n=5 res=[10,14,19,31,33] cache=0 hits=0

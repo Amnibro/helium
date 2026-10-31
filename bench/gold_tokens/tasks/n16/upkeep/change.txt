@@ -1,0 +1,1 @@
+Widen the accepted range from 5..20 to 10..30.

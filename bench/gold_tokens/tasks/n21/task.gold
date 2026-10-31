@@ -1,0 +1,7 @@
+x = collatz step
+big = above 1000
+input = 27
+keep running x until big
+filter budget each with limit 50
+cache results
+return results

@@ -1,0 +1,5 @@
+pred = above 0
+list = 10,25,18,40,32
+Rank all spaces between observations.
+Validate all history items with pred.
+Return results.

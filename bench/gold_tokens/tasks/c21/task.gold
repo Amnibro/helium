@@ -1,0 +1,5 @@
+p = above 5
+list = 8, 3, 12, 1, 9, 4
+collect all sorted elements satisfying p.
+check running condition total under ceiling 50.
+return results.

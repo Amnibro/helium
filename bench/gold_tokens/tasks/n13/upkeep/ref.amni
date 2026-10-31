@@ -1,0 +1,16 @@
+fn show(xs int[:]) {
+	var o byte[>..] = [];
+	o.append("results: ");
+	for x, i in xs {
+		if i > 0 { o.append(","); }
+		format(o, x);
+	}
+	print(o);
+}
+
+fn main() {
+	var lengths int[>..] = [];
+	for w in words("parse the config file then retry") { lengths.push(w.len); }
+	for i in 1..lengths.len { lengths[i] += lengths[i - 1]; }
+	show(lengths);
+}

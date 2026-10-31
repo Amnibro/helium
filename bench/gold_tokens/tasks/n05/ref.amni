@@ -1,0 +1,15 @@
+fn show(xs int[:]) {
+	var o byte[>..] = [];
+	o.append("results: ");
+	for x, i in xs {
+		if i > 0 { o.append(","); }
+		format(o, x);
+	}
+	print(o);
+}
+
+fn main() {
+	var sums int[>..] = [];
+	each_chunk([1, 2, 3, 4, 5, 6, 7], 3) { c, k => sums.push(sum(c)); };
+	show(sums);
+}

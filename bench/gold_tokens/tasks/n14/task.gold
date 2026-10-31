@@ -1,0 +1,4 @@
+list = 4, 9
+verify list has at least 3 items in cache
+check errors
+return results

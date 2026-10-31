@@ -1,0 +1,17 @@
+fn show(xs int[:]) {
+	var o byte[>..] = [];
+	o.append("results: ");
+	for x, i in xs {
+		if i > 0 { o.append(","); }
+		format(o, x);
+	}
+	print(o);
+}
+
+fn main() {
+	var xs int[>..] = [10, 20, 30, 40, 5];
+	let tail = last(xs);
+	for &x in xs { x -= tail; }
+	for i in min(2, xs.len / 2) { swap_at(xs, i, xs.len - 1 - i); }
+	show(xs);
+}

@@ -1,0 +1,3 @@
+cached 4 results
+results: 27,41,31,47
+=> i=146 r=36.5 ok=true s="returned 4" errors=0 n=4 res=[27,41,31,47] cache=4 hits=0

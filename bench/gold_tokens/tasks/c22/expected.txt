@@ -1,0 +1,2 @@
+results: 72,108,117
+=> i=297 r=99.0 ok=true s="returned 3" errors=0 n=3 res=[72,108,117] cache=3 hits=1

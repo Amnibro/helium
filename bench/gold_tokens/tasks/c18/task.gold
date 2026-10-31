@@ -1,0 +1,6 @@
+sub = sum squares of observation digits
+list = 12, 34, 56, 78
+Run subfunction.
+Trace value every_other element.
+Check errors and cache results.
+Return results.

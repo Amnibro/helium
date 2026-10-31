@@ -1,0 +1,15 @@
+fn show(xs int[:]) {
+	var o byte[>..] = [];
+	o.append("results: ");
+	for x, i in xs {
+		if i > 0 { o.append(","); }
+		format(o, x);
+	}
+	print(o);
+}
+
+fn main() {
+	var lengths int[>..] = [];
+	for w in words("a bb ccc dddd") { if w.len >= 2 { lengths.push(w.len); } }
+	show(lengths);
+}

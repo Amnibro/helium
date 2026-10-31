@@ -1,0 +1,2 @@
+results: 8,9,12
+=> i=29 r=9.666666666666666 ok=true s="returned 3" errors=0 n=3 res=[8,9,12] cache=0 hits=0

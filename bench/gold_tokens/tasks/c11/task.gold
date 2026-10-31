@@ -1,0 +1,6 @@
+sub = digit sum
+list = 25,12,8,30,15,40
+Keep sorted elements within limit 25 in place.
+Store history items between 10 through 25.
+Run subfunction sub.
+Return results.

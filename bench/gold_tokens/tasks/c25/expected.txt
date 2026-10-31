@@ -1,0 +1,2 @@
+results: 14,22,34,52
+=> i=122 r=30.5 ok=true s="returned 4" errors=0 n=4 res=[14,22,34,52] cache=0 hits=0

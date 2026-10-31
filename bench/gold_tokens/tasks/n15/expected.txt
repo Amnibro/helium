@@ -1,0 +1,2 @@
+results: 9,4,2
+=> i=15 r=5.0 ok=true s="returned 3" errors=0 n=3 res=[9,4,2] cache=0 hits=0

@@ -1,0 +1,6 @@
+sub = retry sum of squares 2 times
+list = 19,7,12,23
+run subfunction sub
+pair total times with repeat 1
+check errors
+return results

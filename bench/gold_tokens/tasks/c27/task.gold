@@ -1,0 +1,6 @@
+sub = digit sum
+list = 19, 28, 37, 46
+Apply sub to each result.
+Cache results.
+Scale minimum item repeatedly across 3 passes.
+Return results.

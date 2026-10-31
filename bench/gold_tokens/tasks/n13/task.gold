@@ -1,0 +1,4 @@
+text = "parse the config file then retry"
+measure all word lengths in text
+remove last occurrence of maximum value
+return results

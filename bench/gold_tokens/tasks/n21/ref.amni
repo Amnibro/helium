@@ -1,0 +1,19 @@
+fn show(xs int[:]) {
+	var o byte[>..] = [];
+	o.append("results: ");
+	for x, i in xs {
+		if i > 0 { o.append(","); }
+		format(o, x);
+	}
+	print(o);
+}
+
+fn collatz(n int) int { if n % 2 == 0 { n / 2 } else { 3 * n + 1 } }
+
+fn main() {
+	var seq int[>..] = [27];
+	while last(seq) <= 1000 { seq.push(collatz(last(seq))); }
+	seq.retain() { abs(it) <= 50 };
+	print("cached ", seq.len, " results");
+	show(seq);
+}

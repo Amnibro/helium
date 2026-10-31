@@ -1,0 +1,4 @@
+list = 21, 23, 22, 30, 29, 18
+record pairwise number deltas
+filter sequence within range 1 to 1000
+return results

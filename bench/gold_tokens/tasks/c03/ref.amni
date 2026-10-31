@@ -1,0 +1,15 @@
+fn show(xs int[:]) {
+	var o byte[>..] = [];
+	o.append("results: ");
+	for x, i in xs {
+		if i > 0 { o.append(","); }
+		format(o, x);
+	}
+	print(o);
+}
+
+fn main() {
+	let xs = [3, 7, 3, 9, 7, 3];
+	print("no errors in ", xs.len, " results");
+	show(xs);
+}

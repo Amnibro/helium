@@ -1,0 +1,8 @@
+x = collatz step
+y = reaches one
+sub = sum squares of observation digits
+input = 27
+Run function x until y.
+Check errors and cache results.
+Run subfunction.
+Return results.

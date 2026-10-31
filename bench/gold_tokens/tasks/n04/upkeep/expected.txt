@@ -1,0 +1,3 @@
+no errors in 4 results
+results: 30,25,40,10
+=> i=105 r=26.25 ok=true s="returned 4" errors=0 n=4 res=[30,25,40,10] cache=1 hits=0

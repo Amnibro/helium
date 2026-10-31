@@ -1,0 +1,6 @@
+sub = rank collatz loop steps to one
+list = 3,5,6,7
+run subfunction
+validate sequence with cache records
+check errors
+return results

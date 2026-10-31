@@ -1,0 +1,55 @@
+package main
+
+import (
+	"fmt"
+	"slices"
+	"strconv"
+	"strings"
+)
+
+func show(xs []int) {
+	s := make([]string, len(xs))
+	for i, x := range xs {
+		s[i] = strconv.Itoa(x)
+	}
+	fmt.Println("results: " + strings.Join(s, ","))
+}
+
+func applyMemo(xs []int, f func(int) int) []int {
+	memo := map[int]int{}
+	hits := 0
+	out := make([]int, len(xs))
+	for i, x := range xs {
+		if v, ok := memo[x]; ok {
+			hits++
+			out[i] = v
+		} else {
+			memo[x] = f(x)
+			out[i] = memo[x]
+		}
+	}
+	fmt.Printf("subfunction ran on %d results, %d memo hits\n", len(out), hits)
+	return out
+}
+
+func digitSum(n int) int {
+	if n < 0 {
+		n = -n
+	}
+	s := 0
+	for ; n > 0; n /= 10 {
+		s += n % 10
+	}
+	return s
+}
+
+func main() {
+	var xs []int
+	for _, x := range []int{25, 12, 8, 30, 15, 40} {
+		if x <= 25 {
+			xs = append(xs, x)
+		}
+	}
+	slices.Sort(xs)
+	show(applyMemo(xs, digitSum))
+}

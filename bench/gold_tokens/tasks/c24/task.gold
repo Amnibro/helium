@@ -1,0 +1,6 @@
+sub = fold items up to bound 50
+list = 3, 5, 7
+run subfunction sub.
+count numbers at_least threshold 40.
+cache results.
+return results.

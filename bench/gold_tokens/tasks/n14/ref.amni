@@ -1,0 +1,19 @@
+fn show(xs int[:]) {
+	var o byte[>..] = [];
+	o.append("results: ");
+	for x, i in xs {
+		if i > 0 { o.append(","); }
+		format(o, x);
+	}
+	print(o);
+}
+
+fn main() {
+	let xs = [4, 9];
+	if xs.len < 3 {
+		print("error: list shorter than minimum (1 total)");
+	} else {
+		print("no errors in ", xs.len, " results");
+	}
+	show(xs);
+}

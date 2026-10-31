@@ -1,0 +1,18 @@
+fn show(xs int[:]) {
+	var o byte[>..] = [];
+	o.append("results: ");
+	for x, i in xs {
+		if i > 0 { o.append(","); }
+		format(o, x);
+	}
+	print(o);
+}
+
+fn collatz(n int) int { if n % 2 == 0 { n / 2 } else { 3 * n + 1 } }
+
+fn main() {
+	var seq int[>..] = [5];
+	while last(seq) != 1 { seq.push(collatz(last(seq))); }
+	print("no errors in ", seq.len, " results");
+	show(seq);
+}

@@ -1,0 +1,583 @@
+{
+ "gold_commit": "b7bc76e5d5a757767f5f92c1e85addcf717d896a",
+ "tasks": [
+  {
+   "id": "c01",
+   "title": "Collatz sequence from a start value",
+   "source": "gold data/conversational/scripts.jsonl line 1",
+   "alt": {
+    "kind": "input",
+    "value": "6"
+   },
+   "invisible_sentences": [],
+   "note": ""
+  },
+  {
+   "id": "c02",
+   "title": "Subtract last element, swap ends",
+   "source": "gold data/conversational/scripts.jsonl line 2",
+   "alt": {
+    "kind": "list",
+    "value": "7, 1, 9, 4, 6, 3"
+   },
+   "invisible_sentences": [],
+   "note": ""
+  },
+  {
+   "id": "c03",
+   "title": "Count duplicates, check errors",
+   "source": "gold data/conversational/scripts.jsonl line 3",
+   "alt": {
+    "kind": "list",
+    "value": "4, 4, 1, 8"
+   },
+   "invisible_sentences": [
+    "count duplicates appearing at least 2 times"
+   ],
+   "note": ""
+  },
+  {
+   "id": "c04",
+   "title": "Digit-sum the leading items >= 10",
+   "source": "gold data/conversational/scripts.jsonl line 4",
+   "alt": {
+    "kind": "list",
+    "value": "55, 91, 3, 77"
+   },
+   "invisible_sentences": [],
+   "note": ""
+  },
+  {
+   "id": "c05",
+   "title": "Repeated digit sum, sum of unique values",
+   "source": "gold data/conversational/scripts.jsonl line 5",
+   "alt": {
+    "kind": "list",
+    "value": "99, 123, 45, 7, 808"
+   },
+   "invisible_sentences": [],
+   "note": ""
+  },
+  {
+   "id": "c06",
+   "title": "Collatz, drop leading items above 4",
+   "source": "gold data/conversational/scripts.jsonl line 6",
+   "alt": {
+    "kind": "input",
+    "value": "2"
+   },
+   "invisible_sentences": [],
+   "note": ""
+  },
+  {
+   "id": "c07",
+   "title": "Collatz step counts with memo",
+   "source": "gold data/conversational/scripts.jsonl line 7",
+   "alt": {
+    "kind": "list",
+    "value": "9, 27, 9, 1"
+   },
+   "invisible_sentences": [
+    "validate sequence with cache records"
+   ],
+   "note": ""
+  },
+  {
+   "id": "c08",
+   "title": "Last non-zero digit, keep > 4",
+   "source": "gold data/conversational/scripts.jsonl line 8",
+   "alt": {
+    "kind": "list",
+    "value": "3400, 16, 250, 9, 9"
+   },
+   "invisible_sentences": [],
+   "note": ""
+  },
+  {
+   "id": "c09",
+   "title": "Collatz from 12",
+   "source": "gold data/conversational/scripts.jsonl line 9",
+   "alt": {
+    "kind": "input",
+    "value": "19"
+   },
+   "invisible_sentences": [
+    "Scan items comparing at most 5."
+   ],
+   "note": ""
+  },
+  {
+   "id": "c10",
+   "title": "Rank consecutive gaps",
+   "source": "gold data/conversational/scripts.jsonl line 10",
+   "alt": {
+    "kind": "list",
+    "value": "5, 9, 30, 31, 50, 52"
+   },
+   "invisible_sentences": [
+    "Validate all history items with pred."
+   ],
+   "note": ""
+  },
+  {
+   "id": "c11",
+   "title": "Sort, keep <= 25, digit sum",
+   "source": "gold data/conversational/scripts.jsonl line 11",
+   "alt": {
+    "kind": "list",
+    "value": "47, 19, 3, 22, 25, 11, 19"
+   },
+   "invisible_sentences": [
+    "Store history items between 10 through 25."
+   ],
+   "note": ""
+  },
+  {
+   "id": "c12",
+   "title": "Tally of 7, Collatz step counts",
+   "source": "gold data/conversational/scripts.jsonl line 12",
+   "alt": {
+    "kind": "list",
+    "value": "7, 1, 7"
+   },
+   "invisible_sentences": [],
+   "note": ""
+  },
+  {
+   "id": "c13",
+   "title": "Last non-zero digit, sort, keep >= 6",
+   "source": "gold data/conversational/scripts.jsonl line 13",
+   "alt": {
+    "kind": "list",
+    "value": "17, 280, 3, 46, 900"
+   },
+   "invisible_sentences": [],
+   "note": ""
+  },
+  {
+   "id": "c14",
+   "title": "Collatz, strip trailing 1s",
+   "source": "gold data/conversational/scripts.jsonl line 14",
+   "alt": {
+    "kind": "input",
+    "value": "3"
+   },
+   "invisible_sentences": [],
+   "note": ""
+  },
+  {
+   "id": "c15",
+   "title": "Sum of last two even digits, scaled gaps",
+   "source": "gold data/conversational/scripts.jsonl line 15",
+   "alt": {
+    "kind": "list",
+    "value": "1234, 8000, 5, 642"
+   },
+   "invisible_sentences": [],
+   "note": ""
+  },
+  {
+   "id": "c16",
+   "title": "Squared-digit sum twice, pair sums",
+   "source": "gold data/conversational/scripts.jsonl line 16",
+   "alt": {
+    "kind": "list",
+    "value": "4, 85, 10, 3, 2"
+   },
+   "invisible_sentences": [],
+   "note": ""
+  },
+  {
+   "id": "c17",
+   "title": "Char codes of second half, shift primes",
+   "source": "gold data/conversational/scripts.jsonl line 17",
+   "alt": {
+    "kind": "text",
+    "value": "zKqmea"
+   },
+   "invisible_sentences": [],
+   "note": ""
+  },
+  {
+   "id": "c18",
+   "title": "Squared-digit sum, every other element",
+   "source": "gold data/conversational/scripts.jsonl line 18",
+   "alt": {
+    "kind": "list",
+    "value": "9, 10, 11, 12, 13"
+   },
+   "invisible_sentences": [],
+   "note": ""
+  },
+  {
+   "id": "c21",
+   "title": "Keep > 5, sorted",
+   "source": "gold data/conversational/scripts.jsonl line 21",
+   "alt": {
+    "kind": "list",
+    "value": "6, 2, 30, 7, 5"
+   },
+   "invisible_sentences": [
+    "check running condition total under ceiling 50."
+   ],
+   "note": ""
+  },
+  {
+   "id": "c22",
+   "title": "Every other character code",
+   "source": "gold data/conversational/scripts.jsonl line 22",
+   "alt": {
+    "kind": "text",
+    "value": "Gold-bench"
+   },
+   "invisible_sentences": [
+    "search cache for any target 72."
+   ],
+   "note": ""
+  },
+  {
+   "id": "c23",
+   "title": "Small-divisor counts, unique, repeated twice",
+   "source": "gold data/conversational/scripts.jsonl line 23",
+   "alt": {
+    "kind": "list",
+    "value": "7, 30, 30, 1"
+   },
+   "invisible_sentences": [],
+   "note": ""
+  },
+  {
+   "id": "c24",
+   "title": "Doubling sums up to 50",
+   "source": "gold data/conversational/scripts.jsonl line 24",
+   "alt": {
+    "kind": "list",
+    "value": "1, 20, 60"
+   },
+   "invisible_sentences": [
+    "count numbers at_least threshold 40."
+   ],
+   "note": ""
+  },
+  {
+   "id": "c25",
+   "title": "Collatz, running maxima",
+   "source": "gold data/conversational/scripts.jsonl line 25",
+   "alt": {
+    "kind": "input",
+    "value": "9"
+   },
+   "invisible_sentences": [],
+   "note": ""
+  },
+  {
+   "id": "c26",
+   "title": "Prefix at least the average, double below 40",
+   "source": "gold data/conversational/scripts.jsonl line 26",
+   "alt": {
+    "kind": "list",
+    "value": "50, 33, 21, 3, 8"
+   },
+   "invisible_sentences": [],
+   "note": ""
+  },
+  {
+   "id": "c27",
+   "title": "Digit sum, scale first minimum by 2^3",
+   "source": "gold data/conversational/scripts.jsonl line 27",
+   "alt": {
+    "kind": "list",
+    "value": "55, 4, 31, 4"
+   },
+   "invisible_sentences": [],
+   "note": ""
+  },
+  {
+   "id": "c28",
+   "title": "Digit peak counts, sorted insert of count",
+   "source": "gold data/conversational/scripts.jsonl line 28",
+   "alt": {
+    "kind": "list",
+    "value": "9, 1203, 5550"
+   },
+   "invisible_sentences": [],
+   "note": "Gold's digit walk returns 0 for input 0; the Python, Go and Rust refs return 1 (not exercised)."
+  },
+  {
+   "id": "e01",
+   "title": "Gold demo: Collatz 27, digit sums",
+   "source": "gold examples/demo.gold",
+   "alt": {
+    "kind": "input",
+    "value": "9"
+   },
+   "invisible_sentences": [],
+   "note": ""
+  },
+  {
+   "id": "e02",
+   "title": "Gold nested: Collatz until > 50, digit sums",
+   "source": "gold examples/nested.gold",
+   "alt": {
+    "kind": "input",
+    "value": "9"
+   },
+   "invisible_sentences": [],
+   "note": ""
+  },
+  {
+   "id": "n01",
+   "title": "Parse integer tokens from text",
+   "source": "written for this benchmark",
+   "alt": {
+    "kind": "text",
+    "value": "take 5 skip -2 add 40 x9"
+   },
+   "invisible_sentences": [],
+   "note": ""
+  },
+  {
+   "id": "n02",
+   "title": "Top 3 unique values",
+   "source": "written for this benchmark",
+   "alt": {
+    "kind": "list",
+    "value": "5, 5, 9, 1, 9, 3, 7"
+   },
+   "invisible_sentences": [],
+   "note": ""
+  },
+  {
+   "id": "n03",
+   "title": "Running sum",
+   "source": "written for this benchmark",
+   "alt": {
+    "kind": "list",
+    "value": "2, -4, 8, 1"
+   },
+   "invisible_sentences": [],
+   "note": ""
+  },
+  {
+   "id": "n04",
+   "title": "Prefix within a budget of 100",
+   "source": "written for this benchmark",
+   "alt": {
+    "kind": "list",
+    "value": "60, 30, 20, 5"
+   },
+   "invisible_sentences": [],
+   "note": ""
+  },
+  {
+   "id": "n05",
+   "title": "Sums of groups of 3",
+   "source": "written for this benchmark",
+   "alt": {
+    "kind": "list",
+    "value": "10, 20, 30, 40, 50"
+   },
+   "invisible_sentences": [],
+   "note": ""
+  },
+  {
+   "id": "n06",
+   "title": "Digit sums, sum of unique",
+   "source": "written for this benchmark",
+   "alt": {
+    "kind": "list",
+    "value": "11, 20, 5, 77, 99"
+   },
+   "invisible_sentences": [],
+   "note": ""
+  },
+  {
+   "id": "n07",
+   "title": "Pairwise deltas",
+   "source": "written for this benchmark",
+   "alt": {
+    "kind": "list",
+    "value": "100, 90, 95, 95, 120"
+   },
+   "invisible_sentences": [],
+   "note": ""
+  },
+  {
+   "id": "n08",
+   "title": "Running sum of even values",
+   "source": "written for this benchmark",
+   "alt": {
+    "kind": "list",
+    "value": "2, 7, 4, 10, 1, 6"
+   },
+   "invisible_sentences": [],
+   "note": ""
+  },
+  {
+   "id": "n09",
+   "title": "Append primes up to 30",
+   "source": "written for this benchmark",
+   "alt": {
+    "kind": "input",
+    "value": "4, 8"
+   },
+   "invisible_sentences": [],
+   "note": ""
+  },
+  {
+   "id": "n10",
+   "title": "Clamp to 0..50",
+   "source": "written for this benchmark",
+   "alt": {
+    "kind": "list",
+    "value": "77, -1, 25, 50, 51"
+   },
+   "invisible_sentences": [],
+   "note": ""
+  },
+  {
+   "id": "n11",
+   "title": "Gap check under 10",
+   "source": "written for this benchmark",
+   "alt": {
+    "kind": "list",
+    "value": "3, 9, 12, 20"
+   },
+   "invisible_sentences": [],
+   "note": ""
+  },
+  {
+   "id": "n12",
+   "title": "Keep |x| <= 50",
+   "source": "written for this benchmark",
+   "alt": {
+    "kind": "list",
+    "value": "-60, -20, 50, 51, 0"
+   },
+   "invisible_sentences": [],
+   "note": ""
+  },
+  {
+   "id": "n13",
+   "title": "Word lengths minus the last longest",
+   "source": "written for this benchmark",
+   "alt": {
+    "kind": "text",
+    "value": "go run the bench again quickly now"
+   },
+   "invisible_sentences": [],
+   "note": ""
+  },
+  {
+   "id": "n14",
+   "title": "Minimum-length check",
+   "source": "written for this benchmark",
+   "alt": {
+    "kind": "list",
+    "value": "1, 2, 3, 4"
+   },
+   "invisible_sentences": [],
+   "note": ""
+  },
+  {
+   "id": "n15",
+   "title": "Remove last occurrence of the maximum",
+   "source": "written for this benchmark",
+   "alt": {
+    "kind": "list",
+    "value": "3, 8, 1, 8, 8, 2"
+   },
+   "invisible_sentences": [],
+   "note": ""
+  },
+  {
+   "id": "n16",
+   "title": "Keep values in 5..20",
+   "source": "written for this benchmark",
+   "alt": {
+    "kind": "list",
+    "value": "5, 20, 4, 21, 10"
+   },
+   "invisible_sentences": [],
+   "note": ""
+  },
+  {
+   "id": "n17",
+   "title": "Vowel counts",
+   "source": "written for this benchmark",
+   "alt": {
+    "kind": "text",
+    "value": "Audio Equipment"
+   },
+   "invisible_sentences": [],
+   "note": ""
+  },
+  {
+   "id": "n18",
+   "title": "Lengths of words with 2+ letters",
+   "source": "written for this benchmark",
+   "alt": {
+    "kind": "text",
+    "value": "x yy z wwww vv"
+   },
+   "invisible_sentences": [],
+   "note": ""
+  },
+  {
+   "id": "n19",
+   "title": "Parse numbers, top 2 unique",
+   "source": "written for this benchmark",
+   "alt": {
+    "kind": "text",
+    "value": "port 8080 code 404 port 8080 code 200"
+   },
+   "invisible_sentences": [],
+   "note": ""
+  },
+  {
+   "id": "n20",
+   "title": "Clamp, deltas, gap check",
+   "source": "written for this benchmark",
+   "alt": {
+    "kind": "list",
+    "value": "10, 30, 45, 60, 58"
+   },
+   "invisible_sentences": [],
+   "note": ""
+  },
+  {
+   "id": "n21",
+   "title": "Collatz until > 1000, keep |x| <= 50",
+   "source": "written for this benchmark",
+   "alt": {
+    "kind": "input",
+    "value": "31"
+   },
+   "invisible_sentences": [],
+   "note": ""
+  },
+  {
+   "id": "n22",
+   "title": "Drop max, budget 60, running sum",
+   "source": "written for this benchmark",
+   "alt": {
+    "kind": "list",
+    "value": "10, 10, 50, 5"
+   },
+   "invisible_sentences": [],
+   "note": ""
+  }
+ ],
+ "excluded": [
+  {
+   "id": "c19",
+   "reason": "its only visible output is the debug '=>' state line; no stdout result to reproduce",
+   "source": "gold data/conversational/scripts.jsonl line 19"
+  },
+  {
+   "id": "c20",
+   "reason": "prints only the subfunction line; the computed values appear only in the debug '=>' line",
+   "source": "gold data/conversational/scripts.jsonl line 20"
+  }
+ ]
+}

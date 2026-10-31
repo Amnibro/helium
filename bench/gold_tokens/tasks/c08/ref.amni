@@ -1,0 +1,42 @@
+import dictionary;
+
+fn show(xs int[:]) {
+	var o byte[>..] = [];
+	o.append("results: ");
+	for x, i in xs {
+		if i > 0 { o.append(","); }
+		format(o, x);
+	}
+	print(o);
+}
+
+fn apply_memo<F>(xs int[>..]&) {
+	var memo = dictionary<int, int> {};
+	var hits = 0;
+	for &x in xs {
+		let c = memo.get(x);
+		if c {
+			hits++;
+			x = c;
+		} else {
+			let y = F(x);
+			memo.insert(x, y);
+			x = y;
+		}
+	}
+	print("subfunction ran on ", xs.len, " results, ", hits, " memo hits");
+}
+
+fn last_nonzero_digit(n int) int {
+	var x = abs(n);
+	while x != 0 && x % 10 == 0 { x /= 10; }
+	x % 10
+}
+
+fn main() {
+	var xs int[>..] = [120, 4500, 70, 89, 105];
+	apply_memo(xs) { last_nonzero_digit(it) };
+	xs.retain() { it > 4 };
+	print("no errors in ", xs.len, " results");
+	show(xs);
+}

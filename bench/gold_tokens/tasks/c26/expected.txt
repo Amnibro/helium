@@ -1,0 +1,2 @@
+results: 50,40,60
+=> i=150 r=50.0 ok=true s="returned 3" errors=0 n=3 res=[50,40,60] cache=0 hits=0

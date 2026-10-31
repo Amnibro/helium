@@ -1,0 +1,6 @@
+step = collatz step
+stop = reaches one
+input = 5
+run function step until stop
+check for errors
+return results

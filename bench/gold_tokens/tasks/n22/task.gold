@@ -1,0 +1,5 @@
+list = 20, 35, 15, 40, 10
+remove last occurrence of maximum value
+cap running sum up to limit 60 in cache
+accumulate running sum into checkpoints
+return results

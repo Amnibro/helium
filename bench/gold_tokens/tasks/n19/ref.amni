@@ -1,0 +1,31 @@
+fn show(xs int[:]) {
+	var o byte[>..] = [];
+	o.append("results: ");
+	for x, i in xs {
+		if i > 0 { o.append(","); }
+		format(o, x);
+	}
+	print(o);
+}
+
+fn parse_numbers(text const byte[:]) int[>..] {
+	var nums int[>..] = [];
+	for w in words(text) {
+		let n, ok = parse_int(w);
+		if ok { nums.push(n); }
+	}
+	nums
+}
+
+fn top_unique(xs int[:], k int) int[>..] {
+	var u int[>..] = copy(xs);
+	sort(u) { a, b => a > b };
+	u.dedup();
+	var top int[>..] = [];
+	top.append(u[..min(k, u.len)]);
+	top
+}
+
+fn main() {
+	show(top_unique(parse_numbers("code 500 retry 3 code 200 code 500 retry 1"), 2));
+}

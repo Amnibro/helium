@@ -1,0 +1,4 @@
+list = 30, 25, 40, 10, 50
+cap running sum up to limit 150 in cache
+check errors
+return results

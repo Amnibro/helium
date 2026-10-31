@@ -1,0 +1,4 @@
+list = 25, 20, 15, 4, 2
+Filter items while at least average.
+Repeat threshold until ceiling 40.
+Return results.

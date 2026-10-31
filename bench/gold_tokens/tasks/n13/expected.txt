@@ -1,0 +1,2 @@
+results: 5,3,4,4,5
+=> i=21 r=4.2 ok=true s="returned 5" errors=0 n=5 res=[5,3,4,4,5] cache=0 hits=0

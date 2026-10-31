@@ -1,0 +1,26 @@
+fn show(xs int[:]) {
+	var o byte[>..] = [];
+	o.append("results: ");
+	for x, i in xs {
+		if i > 0 { o.append(","); }
+		format(o, x);
+	}
+	print(o);
+}
+
+fn cap_running_sum(xs int[:], limit int) int[>..] {
+	var kept int[>..] = [];
+	var total = 0;
+	for x in xs {
+		if total + x > limit { break; }
+		total += x;
+		kept.push(x);
+	}
+	kept
+}
+
+fn main() {
+	let kept = cap_running_sum([30, 25, 40, 10, 50], 150);
+	print("no errors in ", kept.len, " results");
+	show(kept);
+}

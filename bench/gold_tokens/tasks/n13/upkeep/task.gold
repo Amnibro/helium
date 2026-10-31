@@ -1,0 +1,4 @@
+text = "parse the config file then retry"
+measure all word lengths in text
+accumulate running sum into checkpoints
+return results

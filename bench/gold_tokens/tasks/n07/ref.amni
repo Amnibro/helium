@@ -1,0 +1,16 @@
+fn show(xs int[:]) {
+	var o byte[>..] = [];
+	o.append("results: ");
+	for x, i in xs {
+		if i > 0 { o.append(","); }
+		format(o, x);
+	}
+	print(o);
+}
+
+fn main() {
+	let xs = [21, 23, 22, 30, 29, 18];
+	var deltas int[>..] = [];
+	for i in xs.len - 1 { deltas.push(xs[i + 1] - xs[i]); }
+	show(deltas);
+}

@@ -1,0 +1,46 @@
+import dictionary;
+
+fn show(xs int[:]) {
+	var o byte[>..] = [];
+	o.append("results: ");
+	for x, i in xs {
+		if i > 0 { o.append(","); }
+		format(o, x);
+	}
+	print(o);
+}
+
+fn apply_memo<F>(xs int[>..]&) {
+	var memo = dictionary<int, int> {};
+	var hits = 0;
+	for &x in xs {
+		let c = memo.get(x);
+		if c {
+			hits++;
+			x = c;
+		} else {
+			let y = F(x);
+			memo.insert(x, y);
+			x = y;
+		}
+	}
+	print("subfunction ran on ", xs.len, " results, ", hits, " memo hits");
+}
+
+fn collatz(n int) int { if n % 2 == 0 { n / 2 } else { 3 * n + 1 } }
+
+fn square_digit_sum(n int) int {
+	var x = abs(n);
+	var s = 0;
+	while x > 0 { let d = x % 10; s += d * d; x /= 10; }
+	s
+}
+
+fn main() {
+	var seq int[>..] = [27];
+	while last(seq) != 1 { seq.push(collatz(last(seq))); }
+	print("no errors in ", seq.len, " results");
+	print("cached ", seq.len, " results");
+	apply_memo(seq) { square_digit_sum(it) };
+	show(seq);
+}

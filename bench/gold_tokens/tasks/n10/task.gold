@@ -1,0 +1,4 @@
+list = -5, 12, 48, 103, 7
+clamp item distribution safely between 0 upper 50
+check errors
+return results

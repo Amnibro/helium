@@ -1,0 +1,7 @@
+x = collatz step
+y = reaches one
+input = 7
+run function x until y
+retry comparing tail values matching 1
+check errors
+return results

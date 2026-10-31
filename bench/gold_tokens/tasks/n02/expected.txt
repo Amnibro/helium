@@ -1,0 +1,2 @@
+results: 95,88,72
+=> i=255 r=85.0 ok=true s="returned 3" errors=0 n=3 res=[95,88,72] cache=0 hits=0

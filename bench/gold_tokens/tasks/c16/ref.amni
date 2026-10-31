@@ -1,0 +1,49 @@
+import dictionary;
+
+fn show(xs int[:]) {
+	var o byte[>..] = [];
+	o.append("results: ");
+	for x, i in xs {
+		if i > 0 { o.append(","); }
+		format(o, x);
+	}
+	print(o);
+}
+
+fn apply_memo<F>(xs int[>..]&) {
+	var memo = dictionary<int, int> {};
+	var hits = 0;
+	for &x in xs {
+		let c = memo.get(x);
+		if c {
+			hits++;
+			x = c;
+		} else {
+			let y = F(x);
+			memo.insert(x, y);
+			x = y;
+		}
+	}
+	print("subfunction ran on ", xs.len, " results, ", hits, " memo hits");
+}
+
+fn square_digit_sum(n int) int {
+	var x = abs(n);
+	var s = 0;
+	while x > 0 { let d = x % 10; s += d * d; x /= 10; }
+	s
+}
+
+fn main() {
+	var xs int[>..] = [19, 7, 12, 23];
+	apply_memo(xs) { square_digit_sum(square_digit_sum(it)) };
+	if xs.len < 2 {
+		print("error: not enough items to pair (1 total)");
+	} else {
+		let pairs = xs.len / 2;
+		for i in pairs { xs[i] = xs[2 * i] + xs[2 * i + 1]; }
+		xs.resize(pairs, 0);
+		print("no errors in ", xs.len, " results");
+	}
+	show(xs);
+}

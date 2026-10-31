@@ -1,0 +1,13 @@
+fn digit_sum(n int) int {
+	var x = abs(n);
+	var s = 0;
+	while x > 0 { s += x % 10; x /= 10; }
+	s
+}
+
+fn main() {
+	var xs = [12, 25, 30, 45, 18].map() { digit_sum(digit_sum(it)) };
+	sort(xs);
+	xs.dedup();
+	print("results: ", sum(xs));
+}

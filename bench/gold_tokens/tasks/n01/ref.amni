@@ -1,0 +1,24 @@
+fn show(xs int[:]) {
+	var o byte[>..] = [];
+	o.append("results: ");
+	for x, i in xs {
+		if i > 0 { o.append(","); }
+		format(o, x);
+	}
+	print(o);
+}
+
+fn parse_numbers(text const byte[:]) int[>..] {
+	var nums int[>..] = [];
+	for w in words(text) {
+		let n, ok = parse_int(w);
+		if ok { nums.push(n); }
+	}
+	nums
+}
+
+fn main() {
+	let nums = parse_numbers("order 12 qty 7 price 30 tax 3");
+	print("no errors in ", nums.len, " results");
+	show(nums);
+}

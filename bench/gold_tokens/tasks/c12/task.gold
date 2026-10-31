@@ -1,0 +1,6 @@
+sub = rank collatz loop steps to one
+list = 7,3,7,9,7,2,7
+Keep tally of 7 in_place in sample.
+Apply sub to each result.
+Check errors and cache results.
+Return results.

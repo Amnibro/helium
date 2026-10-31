@@ -1,0 +1,5 @@
+sub = count divisors of numbers up to 10
+list = 6, 12, 18
+apply sub to each result.
+duplicate unique checkpoint elements by 2.
+return results.

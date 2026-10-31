@@ -63,6 +63,36 @@ A template enters the library only after it passes all of these checks:
 Expected outputs are checked only by running the compiled Helium. No result is
 computed outside Helium.
 
+## Token cost
+
+[bench/gold_tokens](../bench/gold_tokens/RESULTS.md) measures 50 tasks: 28 from
+Gold's script corpus, the two examples, and 22 new ones. For each task, the Gold
+script and hand-written Helium, Rust, Go and Python programs must build and
+print identical output, on the original input and on a second one. Tokens per
+program, relative to the Gold script (o200k_base, geometric mean of per-task
+ratios; cl100k_base and the Qwen2.5-Coder tokenizer agree within 7%):
+
+| | writing (50 tasks) | a change, diff tokens (11 tasks) |
+|---|---|---|
+| Python | 2.42× | 3.68× |
+| Helium, hand-written | 4.88× | 3.53× |
+| Rust | 5.12× | 3.25× |
+| Go | 5.86× | 3.46× |
+| expanded Helium, without prelude | 18.3× | (regenerated) |
+
+Limits:
+
+* Gold's lead is smallest against Python. On one task, Python ties under two
+  tokenizers and wins by one token under the third. On one change, the Rust
+  diff is smaller than the Gold diff.
+* Writing Gold requires knowing the phrase library: 4,841 phrasings at the
+  benchmark's pin, about 34k tokens as a plain list.
+* The generated Helium is larger than hand-written Helium (median 3.8×).
+* Every task is one the library can express, and all of them are small.
+
+The methodology, per-task tables and fairness notes are in
+[RESULTS.md](../bench/gold_tokens/RESULTS.md).
+
 ## Why it matters
 
 Programming content such as tutorials, exercises, examples and training data

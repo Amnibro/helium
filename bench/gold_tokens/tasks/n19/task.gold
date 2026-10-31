@@ -1,0 +1,5 @@
+text = "code 500 retry 3 code 200 code 500 retry 1"
+collect number tokens with retry from text
+keep sequence unique across observation sample
+select maximum values up to 2
+return results

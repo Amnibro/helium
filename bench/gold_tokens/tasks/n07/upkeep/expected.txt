@@ -1,0 +1,2 @@
+results: 2,8
+=> i=10 r=5.0 ok=true s="returned 2" errors=0 n=2 res=[2,8] cache=0 hits=0

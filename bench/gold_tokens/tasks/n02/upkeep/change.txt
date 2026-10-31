@@ -1,0 +1,1 @@
+Return only the top 2 values, and cache them.

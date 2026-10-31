@@ -1,0 +1,1 @@
+Use the sum of squared digits instead of the digit sum.

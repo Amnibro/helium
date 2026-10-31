@@ -1,0 +1,2 @@
+results: 0,35,25,15,5
+=> i=80 r=16.0 ok=true s="returned 5" errors=0 n=5 res=[0,35,25,15,5] cache=0 hits=0

@@ -1,0 +1,7 @@
+cond = above 4
+x = collatz step
+y = reaches one
+input = 10
+run function x until y
+drop items in loop while cond holds
+return results

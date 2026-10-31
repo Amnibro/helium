@@ -1,0 +1,3 @@
+text = "a bb ccc dddd"
+retain words in loop recursively above length 2
+return results

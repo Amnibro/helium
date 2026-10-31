@@ -1,0 +1,3 @@
+subfunction ran on 4 results, 0 memo hits
+results: 8,3,6,7
+=> i=24 r=6.0 ok=true s="returned 4" errors=0 n=4 res=[8,3,6,7] cache=7 hits=0

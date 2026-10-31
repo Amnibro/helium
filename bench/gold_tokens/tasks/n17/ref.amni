@@ -1,0 +1,16 @@
+fn show(xs int[:]) {
+	var o byte[>..] = [];
+	o.append("results: ");
+	for x, i in xs {
+		if i > 0 { o.append(","); }
+		format(o, x);
+	}
+	print(o);
+}
+
+fn main() {
+	var text = copy("retry loop");
+	to_lower(text);
+	let counts = "aeiou".map() { v => count(text) { it == v } };
+	show(counts);
+}

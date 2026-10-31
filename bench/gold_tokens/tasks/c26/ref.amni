@@ -1,0 +1,22 @@
+fn show(xs int[:]) {
+	var o byte[>..] = [];
+	o.append("results: ");
+	for x, i in xs {
+		if i > 0 { o.append(","); }
+		format(o, x);
+	}
+	print(o);
+}
+
+fn main() {
+	let xs = [25, 20, 15, 4, 2];
+	let avg = sum(xs) / xs.len;
+	var kept int[>..] = [];
+	for x in xs {
+		if x < avg { break; }
+		var v = x;
+		while v > 0 && v < 40 { v *= 2; }
+		kept.push(v);
+	}
+	show(kept);
+}

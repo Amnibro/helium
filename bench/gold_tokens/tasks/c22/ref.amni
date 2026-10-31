@@ -1,0 +1,16 @@
+fn show(xs int[:]) {
+	var o byte[>..] = [];
+	o.append("results: ");
+	for x, i in xs {
+		if i > 0 { o.append(","); }
+		format(o, x);
+	}
+	print(o);
+}
+
+fn main() {
+	let text = "Helium";
+	var codes int[>..] = [];
+	for c, i in text { if i % 2 == 0 { codes.push(c as int); } }
+	show(codes);
+}

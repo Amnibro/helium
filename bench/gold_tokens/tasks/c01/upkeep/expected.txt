@@ -1,0 +1,4 @@
+no errors in 6 results
+cached 6 results
+results: 5,16,8,4,2,1
+=> i=36 r=6.0 ok=true s="returned 6" errors=0 n=6 res=[5,16,8,4,2,1] cache=6 hits=0

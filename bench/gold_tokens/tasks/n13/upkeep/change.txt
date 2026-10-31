@@ -1,0 +1,1 @@
+Return running totals of the word lengths instead of removing the longest.

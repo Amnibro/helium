@@ -1,0 +1,6 @@
+x = collatz step
+y = reaches one
+input = 12
+Run function x until y.
+Scan items comparing at most 5.
+Return results.

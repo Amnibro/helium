@@ -1,0 +1,4 @@
+text = "order 12 qty 7 price 30 tax 3"
+collect number tokens with retry from text
+check errors
+return results

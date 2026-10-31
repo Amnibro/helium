@@ -88,6 +88,17 @@ that `hc` checks, compiles and runs. Programming content can then be kept as
 short scripts over a library of tested templates instead of hand-maintained
 code. See [docs/gold.md](docs/gold.md).
 
+Token benchmark ([bench/gold_tokens](bench/gold_tokens/RESULTS.md)): on 50 small
+tasks where Gold and hand-written Helium, Rust, Go and Python all build and print
+identical output, the same program takes 2.4× the tokens in Python, 4.9× in
+Helium, 5.1× in Rust and 5.9× in Go (o200k_base, geometric mean of per-task
+ratios). The Gold script, not the generated Helium, is what gets counted: the
+expanded program is 18× the size of the script. The counts also leave out the
+phrase library a writer has to know (about 34k tokens), and every task is one
+Gold's library can express.
+
+![Gold token savings](bench/gold_tokens/gold_tokens.png)
+
 ## Tests
 
 ```bash

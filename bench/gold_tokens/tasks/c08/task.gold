@@ -1,0 +1,7 @@
+cond = above 4
+sub = search tail first non zero digit
+list = 120,4500,70,89,105
+run subfunction
+select counter of items matching any cond
+check errors
+return results
