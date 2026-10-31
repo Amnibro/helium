@@ -76,6 +76,7 @@ const_for_constant_binder.amni
 const_for_lifetime.amni
 const_for_limit.amni
 const_for_mixed_init.amni
+const_for_reordered_init.amni
 const_for_runtime_if.amni
 const_for_type_value.amni
 const_for_typed_constant.amni
@@ -357,6 +358,16 @@ inferred_reference_shrink.amni
 inferred_result_mixed_returns.amni
 inferred_result_store.amni
 inferred_result_value_use.amni
+init_order.amni
+init_order_bounds.amni
+init_order_call_capacity.amni
+init_order_capacity.amni
+init_order_default_effect.amni
+init_order_defaults.amni
+init_order_middle_effect.amni
+init_order_overflow.amni
+init_order_return_capacity.amni
+init_order_variant.amni
 inpool_cross_pool.amni
 int_float_let_commits.amni
 int_float_overload_ambiguous.amni
