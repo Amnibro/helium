@@ -926,13 +926,13 @@ var INIT_VIS i32[>..]
 recursive init_store_safe(n int, dest int) bool:
 	if n < 0 || dest < 0 || dest == T_VOID: return true
 	if has_rel(dest): return ND[n].k as int == N_NULL
+	if TY[dest].k != TY_ARR: return true
 	k := ND[n].k as int
 	if k == N_BLOCK: return ND[n].a >= 0 && init_store_safe(ND[n].a as int, dest)
 	if k == N_IF: return ND[n].b >= 0 && ND[n].c >= 0 && init_store_safe(ND[n].b as int, dest) && init_store_safe(ND[n].c as int, dest)
 	if k == N_MATCH:
 		for j ND[n].n { arm := kid(n, j); if ND[arm].b < 0 || !init_store_safe(ND[arm].b as int, dest) { return false } }
 		return true
-	if TY[dest].k != TY_ARR: return true
 	from ~= -1
 	if k == N_STR || k == N_ARR: from = at(n)
 	else if k == N_ID && rk(n) == R_LOCAL: from = LVS[rv(n)].ty as int
@@ -953,6 +953,8 @@ recursive init_order_safe(n int, callee int) bool:
 		if rk(n) == R_VARIANT || rk(n) == R_FCONST: return true
 		return init_order_safe(x.a as int, callee)
 	if k == N_UN:
+		ak := ND[x.a].k as int
+		if ak == N_INT || ak == N_FLT: return true
 		if x.op as int == T_MINUS:
 			t := at(x.a as int)
 			if t >= 0 && TY[t].k == TY_REF: t = TY[t].a as int
