@@ -676,6 +676,7 @@ bjm(a int, b int, want int) bool:
 	ak := TY[a].k; bk := TY[b].k
 	if !(ak == TY_ARR || ak == TY_SLICE) || !(bk == TY_ARR || bk == TY_SLICE) || !bjfx(a) && !bjfx(b): return false
 	bjfx(a) && bjfx(b) || TY[a].a != TY[b].a
+bjarg(n int) bool: q := epar(n); q >= 0 && ND[q].k as int == N_CALL
 recursive ck_if(n int, want int) int:
 	x := ND[n]
 	c := ck(x.a, T_BOOL)
@@ -696,7 +697,7 @@ recursive ck_if(n int, want int) int:
 	if tb == tc: return set_t(n, tb)
 	if want >= 0 && want != T_VOID && (is_pending(tb) || lp_tail(x.b) || conv_ok(tb, want, x.b)) && (is_pending(tc) || lp_tail(x.c) || conv_ok(tc, want, x.c)): conv(x.b, want); conv(x.c, want); return set_t(n, want)
 	db := deref(tb); dc := deref(tc)
-	if bjm(db, dc, want): m byte[>..] ~= []; format(m, "branches have mismatched types: ", tn(db), " vs ", tn(dc)); cerr(n, m); return set_t(n, T_ERRT)
+	if bjm(db, dc, want) && !bjarg(n): m byte[>..] ~= []; format(m, "branches have mismatched types: ", tn(db), " vs ", tn(dc)); cerr(n, m); return set_t(n, T_ERRT)
 	if db != dc && (TY[db].k == TY_ARR || TY[db].k == TY_SLICE) && (TY[dc].k == TY_ARR || TY[dc].k == TY_SLICE) && TY[db].a == TY[dc].a: st := t_slice(TY[db].a, false); conv_tail(n, st); return set_t(n, st)
 	u := unify(n, x.b, x.c)
 	set_t(n, u)
@@ -825,7 +826,7 @@ recursive ck_match(n int, want int) int:
 			if ft < 0: ft = bt
 			else if bt != ft:
 				AOWN = sa
-				if bjm(ft, bt, want): m byte[>..] ~= []; format(m, "branches have mismatched types: ", tn(ft), " vs ", tn(bt)); cerr(n, m); return set_t(n, T_ERRT)
+				if bjm(ft, bt, want) && !bjarg(n): m byte[>..] ~= []; format(m, "branches have mismatched types: ", tn(ft), " vs ", tn(bt)); cerr(n, m); return set_t(n, T_ERRT)
 				break
 	AOWN = sa
 	for i na:
