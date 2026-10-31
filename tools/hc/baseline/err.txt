@@ -752,6 +752,10 @@ slice_view_result_shrink.amni
 slice_view_store_through.amni
 spec_depth_return.amni
 store_contents_local.amni
+store_inexact_call_result.amni
+store_inexact_merged.amni
+store_inexact_push.amni
+store_inexact_read_back.amni
 store_source_elem_field.amni
 store_source_field_slot.amni
 store_source_field_slot_copy.amni
