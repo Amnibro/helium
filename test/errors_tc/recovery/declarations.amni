@@ -8,7 +8,7 @@
 // A declaration that raises an error is reported and dropped, and the
 // parse goes on at the next one, which it finds by the next `;` or the
 // matching `}` of a body, or at a keyword only a declaration can start
-// with (docs/design/language_server.md §5 D).
+// with.
 import std
 struct P { x int y int }
 type T = ;

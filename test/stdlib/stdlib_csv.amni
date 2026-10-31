@@ -1,4 +1,4 @@
-// runtime-debug: stdlib/csv.goose's records with plain, empty and quoted
+// runtime-debug: hc/lib/csv.he's records with plain, empty and quoted
 // fields, doubled quotes, separators and line breaks inside quotes, LF and
 // CRLF records, blank lines, other separators, each kind of malformed
 // record, and format_field's quoting read back by each_record.

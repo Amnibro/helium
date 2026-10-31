@@ -1,5 +1,5 @@
 // lsp: fixture for test/lsp_protocol.py: an entry file importing
-// two_shared.goose.
+// two_shared.amni.
 import two_shared;
 
 fn main() { print(two_shared::twice(1)); }

@@ -1,5 +1,5 @@
 // error: .format appends text to u8 arrays
-// A text sink writes any byte, so an index type of u8 is no byte. (docs/design/index_types.md)
+// A text sink writes any byte, so an index type of u8 is no byte.
 var bytes byte[>..] = [];
 fn main() {
 	bytes.push(1);

@@ -1,5 +1,5 @@
 // error: expected a value of type u32[:], got (u32 in nodes)[>..]
-// A slice of plain integers could have any value written through it. (docs/design/index_types.md)
+// A slice of plain integers could have any value written through it.
 var nodes i32[>..] = [];
 type NodeId = u32 in nodes;
 fn main() {

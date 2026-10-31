@@ -6,7 +6,7 @@
 // hand: a countdown loop and an iterative factorial.
 //
 // Build and run (from this directory):
-//   goose -o vm.c 19_vm.goose && cl vm.c && vm
+//   hc build 19_vm.amni -o vm && ./vm
 
 import std;
 

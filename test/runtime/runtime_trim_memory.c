@@ -2,7 +2,7 @@
    from Linux's resident set, and on macOS mark them reusable and declare
    them reused as growth reopens them; keep live partial pages and other
    stacks, and commit again through the fault handler (Windows and macOS)
-   behind a commit mark that follows each trim. This runs beside the Goose
+   behind a commit mark that follows each trim. This runs beside the Helium
    fixtures in both CI profiles. */
 #include <stdint.h>
 #include <stdio.h>

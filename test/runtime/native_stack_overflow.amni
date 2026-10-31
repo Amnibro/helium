@@ -3,7 +3,7 @@
 // Expected to abort.
 //
 // No loop can take the recursion's place: the call's result indexes an array
-// that has to outlive the call, so neither Goose's accumulator loops nor a C
+// that has to outlive the call, so neither Helium's accumulator loops nor a C
 // compiler's tail calls apply, and whether the base case is ever reached
 // depends on values no compiler follows.
 

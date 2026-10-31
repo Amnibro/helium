@@ -75,26 +75,12 @@ Bootstraps if needed, then runs the corpus in `test/` and `samples/` natively, t
 
 Apache License 2.0. See [LICENSE](LICENSE) and [NOTICE](NOTICE).
 
-## Authorship and lineage
+## Authorship
 
 Helium, its two syntaxes, the compiler `hc` (front end, type and lifetime checker, optimizer,
 x86-64 code generator and ELF writer, WebAssembly and C back ends, language server, package
 fetcher), the runtime and the libraries in `hc/lib` are written by Anthony Reffelt
-(Amniscient). hc was written from scratch in Helium; it replaced, rather than adapted, the
-Goose C++ compiler, which was removed from this repository on 2026-10-27 (commit `450f08e5`).
-
-Helium's memory model and core semantics started from
-[Goose](https://github.com/aardappel/goose), a language by Wouter van Oortmerssen,
-released under the Apache License 2.0. This repository's history begins with Goose's,
-and some material is still Goose's work, used under that licence:
-
-- `docs/`: the tutorial, reference, specification and design notes describe Goose and use
-  its syntax (`.goose` files, the `goose` command); [HELIUM.md](HELIUM.md) is the Helium
-  description.
-- `test/` and `samples/`: most programs come from Goose's corpus, converted to `.amni`.
-- `vscode/` and `tree-sitter/`: Goose's editor support.
-- `bench/` outside `bench/heavyweights/`: Goose's benchmark programs and its results
-  against C++ and Rust (see [bench/README.md](bench/README.md)).
+(Amniscient). hc is written in Helium and compiles itself.
 
 `ui` is a port of [Nuklear](https://github.com/Immediate-Mode-UI/Nuklear) and `physics` a
 port of [Box3D](https://github.com/erincatto/box3d); see [NOTICE](NOTICE).

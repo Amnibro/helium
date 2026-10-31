@@ -1,5 +1,5 @@
 // error: the array of an index type must be a global variable
-// A local has no name where a type is declared. (docs/design/index_types.md)
+// A local has no name where a type is declared.
 fn main() {
 	var local i32[>..] = [];
 	local.push(1);

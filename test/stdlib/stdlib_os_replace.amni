@@ -1,4 +1,4 @@
-// stdlib/os.goose's replacing of files, inside a scratch directory the test
+// hc/lib/os.he's replacing of files, inside a scratch directory the test
 // makes and removes: rename_file onto a new name and over a file, and
 // write_file_atomic creating and replacing one, leaving no temporary behind;
 // the failures, which leave every file as it was: a missing source, a

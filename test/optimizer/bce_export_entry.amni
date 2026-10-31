@@ -1,5 +1,5 @@
 // An export's C wrapper passes whatever its C caller does, so the export
-// enters with nothing its Goose call sites proved; a plain function with
+// enters with nothing its Helium call sites proved; a plain function with
 // the same sites gets their facts (`recursive` keeps it out of line, as the
 // export is).
 export "c_pick" fn pick(dist i32[:], i int) i32 {

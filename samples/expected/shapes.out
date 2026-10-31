@@ -13,8 +13,8 @@ other 6.0
 2 dots, widest rect now 3.0
 [Circle { 1.0 }, Shape.Dot, Rect { 3.0, 3.0 }, Shape.Dot, Tri { 3.0, 4.0, 5.0 }]
 3: rect 2.0 by 3.0
-0: label "hello, goose"
+0: label "hello, helium"
 4: label "x"
 1: circle 1.5
 2: dot
-5 marks in 44 bytes
+5 marks in 45 bytes

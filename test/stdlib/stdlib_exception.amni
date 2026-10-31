@@ -98,7 +98,7 @@ fn main() {
 	assert(value_caught);
 
 	// Static references are permitted; local borrows are rejected in
-	// errors_tc/exception_borrow_escape.goose.
+	// errors_tc/exception_borrow_escape.amni.
 	fn static_error() { exception::throw("static"); }
 	exception::try<const byte[:]>(static_error) { error => assert(error == "static"); };
 

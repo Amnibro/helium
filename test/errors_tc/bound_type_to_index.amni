@@ -1,5 +1,5 @@
 // error: expected a value of type u32 in nodes, got u32 upto nodes
-// A bound may be the length itself, which is no index: converting one checks. (docs/design/index_types.md)
+// A bound may be the length itself, which is no index: converting one checks.
 var nodes i32[>..] = [];
 type NodeId = u32 in nodes;
 fn main() {

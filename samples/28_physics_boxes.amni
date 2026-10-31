@@ -1,5 +1,5 @@
 // Thousands of boxes raining into a walled arena: the physics module
-// (Box3D, docs/stdlib.md) moves them, the gfx module draws them.
+// (Box3D, hc/lib/physics.he) moves them, the gfx module draws them.
 //
 // Boxes of every size and color fall from high above the whole arena. They
 // tumble onto two pyramids and each other, and a long arm turning in the
@@ -17,15 +17,15 @@
 // button to look around and use the wheel to zoom; Up and Down pour faster
 // and slower; Escape quits.
 //
-//   goose 28_physics_boxes.goose
-//   goose 28_physics_boxes.goose -- --boxes 20000
+//   hc run 28_physics_boxes.amni
+//   hc run 28_physics_boxes.amni -- --boxes 20000
 //
 // `--frames N` stops after N frames and saves the last as physics_boxes.png;
-// `--rate N` drops N boxes a frame. Built from the generated C, the program
-// links both native layers, whose paths goose prints as response files:
-//   goose -o physics_boxes.c 28_physics_boxes.goose
-//   cl physics_boxes.c @<goose --gfx-link msvc> @<goose --physics-link msvc>
-//   cc physics_boxes.c -o physics_boxes @<goose --gfx-link cc> @<goose --physics-link cc>
+// `--rate N` drops N boxes a frame. gfx and physics are part of hc's library,
+// so nothing extra is linked. To keep an executable:
+//   hc build 28_physics_boxes.amni -o physics_boxes
+//
+//
 
 import std;
 import vec;
@@ -210,7 +210,7 @@ fn main() {
 		if ok && argv[a] == "--rate" { rate = max(n, 0); }
 		a += 2;
 	}
-	guard gfx::open("Goose: boxes", 1280, 720, gfx::WINDOW_RESIZABLE) else {
+	guard gfx::open("Helium: boxes", 1280, 720, gfx::WINDOW_RESIZABLE) else {
 		write_stderr(str("gfx: ", gfx::error(), "\n"));
 		return;
 	}
@@ -427,7 +427,7 @@ fn main() {
 		gfx::end_pass();
 
 		if stats_frames == 30 {
-			gfx::set_title(str("Goose: ", bodies.len - pyramid_boxes, " boxes, ",
+			gfx::set_title(str("Helium: ", bodies.len - pyramid_boxes, " boxes, ",
 							   physics::awake_body_count(world), " awake, a step takes ",
 							   round(stats_time / 30.0 * 1000.0) as int, " ms on ",
 							   physics::worker_count(world), " threads (",

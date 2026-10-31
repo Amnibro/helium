@@ -1,5 +1,5 @@
 // error: cannot clear GARR while r is still used
-// As cycle_unreached_member.goose, with m calling itself: main's call checks
+// As cycle_unreached_member.amni, with m calling itself: main's call checks
 // a specialization of m of its own, whose recursion is a cycle of its own,
 // not h's, so main does not join one and may hold s across the call.
 var GARR int[>..] = [1, 2, 3];

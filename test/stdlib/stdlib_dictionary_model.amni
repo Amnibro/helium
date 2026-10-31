@@ -1,4 +1,4 @@
-// runtime-debug: stdlib/dictionary.goose against a plain array model.
+// runtime-debug: hc/lib/dictionary.he against a plain array model.
 // Random inserts, updates, get_or_insert, removes, lookups and the odd
 // clear or reserve (which then grows a filled table by more than a factor
 // of two in place) over a universe of keys, checking every result and the

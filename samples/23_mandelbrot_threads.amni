@@ -1,4 +1,4 @@
-// The Mandelbrot set, rendered by a pool of worker threads. Goose threads
+// The Mandelbrot set, rendered by a pool of worker threads. Helium threads
 // share no memory: a worker is a separate program that receives flat
 // values through typed queues and sends flat values back. Here the main
 // program queues one job per row, spawns as many workers as the machine
@@ -8,7 +8,7 @@
 // timing is measured too, for the comparison.
 //
 // Build and run (from this directory):
-//   goose -o mandelbrot_threads.c 23_mandelbrot_threads.goose && cl mandelbrot_threads.c && mandelbrot_threads
+//   hc build 23_mandelbrot_threads.amni -o mandelbrot_threads && ./mandelbrot_threads
 
 import std;
 import os;

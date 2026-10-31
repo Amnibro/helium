@@ -1,4 +1,4 @@
-// stdlib/os.goose's directories, inside a scratch directory the test makes
+// hc/lib/os.he's directories, inside a scratch directory the test makes
 // and removes: make_dir, is_dir, delete_dir and list_dir, whose listings
 // come sorted bytewise whatever the file system's own order, and a file
 // named in scripts no single code page holds, opened by its listed name.

@@ -1,13 +1,13 @@
 // Arbitrary-precision integers on an array of 32-bit limbs, least
 // significant first. Multiplying two limbs needs a 64-bit product and a
-// carry, which is exactly the arithmetic Goose's typed integers express:
+// carry, which is exactly the arithmetic Helium's typed integers express:
 // `u32 * u32` is a 32-bit multiply, so the code says `as u64` where it
 // wants the wide one, and the carries are visible instead of accidental.
 // Computes 100!, the 500th Fibonacci number and 2^1000, and prints them in
 // decimal with repeated division.
 //
 // Build and run (from this directory):
-//   goose -o bignum.c 08_bignum.goose && cl bignum.c && bignum
+//   hc build 08_bignum.amni -o bignum && ./bignum
 
 import std;
 

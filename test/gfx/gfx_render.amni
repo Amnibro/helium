@@ -11,7 +11,7 @@ import gfx;
 let W = 64;
 
 // The uniform blocks of the rectangle shaders in main. std140 rounds a block
-// to a multiple of 16 bytes, where a Goose struct is packed: hence the pad.
+// to a multiple of 16 bytes, where a Helium struct is packed: hence the pad.
 struct Place { rect float4, depth f32, pad 12 }
 struct Paint { color float4 }
 

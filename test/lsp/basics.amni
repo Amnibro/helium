@@ -62,8 +62,8 @@ fn spare(x) { x }
 // lsp: definition 35:22 -> 19:5
 // lsp: definition 33:11 -> 31:9
 // lsp: definition 15:30 -> 15:11
-// lsp: definition 36:19 -> helper.goose
-// lsp: definition 5:3 -> helper.goose
+// lsp: definition 36:19 -> helper.amni
+// lsp: definition 5:3 -> helper.amni
 // lsp: symbol Point struct
 // lsp: symbol add function
 // lsp: symbol Shape enum

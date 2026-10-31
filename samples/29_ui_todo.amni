@@ -1,5 +1,5 @@
 // A small to-do list, and a color mixer for what lies behind it, built with
-// the ui module (docs/stdlib.md): Nuklear's immediate-mode widgets, drawn
+// the ui module (hc/lib/ui.he): Nuklear's immediate-mode widgets, drawn
 // through gfx.
 //
 // Immediate mode means each frame the program says which windows and
@@ -14,13 +14,13 @@
 // closing the window quits. `-- --frames N` stops after N frames. Either
 // way the last frame is saved as ui_todo.png.
 //
-//   goose 29_ui_todo.goose
+//   hc run 29_ui_todo.amni
 //
-// Built from the generated C, the program links the ui layer and gfx's,
-// whose paths `goose --ui-link` and `goose --gfx-link` print:
-//   goose -o ui_todo.c 29_ui_todo.goose
-//   cl ui_todo.c @<goose --ui-link msvc> @<goose --gfx-link msvc>
-//   cc ui_todo.c -o ui_todo @<goose --ui-link cc> @<goose --gfx-link cc>
+// ui and gfx are part of hc's library, so nothing extra is linked. To keep
+// an executable:
+//   hc build 29_ui_todo.amni -o ui_todo
+//
+//
 
 import std;
 import vec;
@@ -52,7 +52,7 @@ fn main() {
 		let n, ok = parse_int(argv[2]);
 		if ok { frames = n; }
 	}
-	guard gfx::open("Goose: a ui to-do list", 760, 520, gfx::WINDOW_RESIZABLE) else {
+	guard gfx::open("Helium: a ui to-do list", 760, 520, gfx::WINDOW_RESIZABLE) else {
 		write_stderr(str("gfx: ", gfx::error(), "\n"));
 		return;
 	}
@@ -71,8 +71,8 @@ fn main() {
 	ui::style_from_table(ctx, colors);
 
 	var tasks Task[>..] = [];
-	tasks.push(task("Feed the goose", true));
-	tasks.push(task("Read docs/stdlib.md", false));
+	tasks.push(task("Water the plants", true));
+	tasks.push(task("Read HELIUM.md", false));
 	tasks.push(task("Draw a window with ui", false));
 	var entry byte[..40] = [];
 	var show = SHOW_ALL;

@@ -1,11 +1,11 @@
-// Error handling. Goose has no exceptions and no Result type; it has three
+// Error handling. Helium has no exceptions and no Result type; it has three
 // idioms, and this program uses each where it fits: a trailing bool (or
 // code) for a two-outcome call, an optional for "found or not", and
 // `return ... from` for a failure deep inside nested calls that should land
 // in one place. Plus the ones that end the program: assert and abort.
 //
 // Build and run (from this directory):
-//   goose -o errors.c 04_errors.goose && cl errors.c && errors
+//   hc build 04_errors.amni -o errors && ./errors
 
 import std;
 

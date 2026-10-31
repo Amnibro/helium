@@ -2,7 +2,7 @@
 // A generic function nothing calls is not checked, so a body that no
 // binding of its parameters' types could make right is no error of the
 // program's: only main's is reported. The language server checks such a
-// function once with opaque bindings (docs/design/language_server.md §11),
+// function once with opaque bindings,
 // silently, and reports nothing of it either (test/lsp_protocol.py opens
 // this file); its hover answers from what that check annotated.
 fn never<T>(value T) int {

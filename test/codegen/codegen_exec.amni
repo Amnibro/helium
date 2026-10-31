@@ -1484,7 +1484,7 @@ extern fn getenv_ex(name const byte[:], out byte[>..]&) bool = "gs_os_getenv";
 fn externs() {
 	print(sqrt(16.0) == 4.0, abs_ex(-2.5) == 2.5);   // truetrue
 	var v byte[>..] = [];
-	print(getenv_ex("GOOSE_NO_SUCH_VARIABLE_", v), v.len);   // false0
+	print(getenv_ex("HELIUM_NO_SUCH_VARIABLE_", v), v.len);   // false0
 }
 
 struct PtAg { x int, y real }

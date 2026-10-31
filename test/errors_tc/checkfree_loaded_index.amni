@@ -1,5 +1,5 @@
 // error: checkfree fn relax keeps a bounds check: adj[k] is read out of an element
-// An index read out of an array keeps its check; the error says how to carry it. (docs/design/index_types.md)
+// An index read out of an array keeps its check; the error says how to carry it.
 var dist i32[>..] = [];
 checkfree fn relax(adj i32[:], d i32) {
 	for k in adj.len {

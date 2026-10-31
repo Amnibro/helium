@@ -1,5 +1,5 @@
 // error: ++ cannot update a u32 in nodes
-// An increment is an update too. (docs/design/index_types.md)
+// An increment is an update too.
 var nodes i32[>..] = [];
 type NodeId = u32 in nodes;
 fn main() {

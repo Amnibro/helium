@@ -6,8 +6,8 @@
 // error: argument 1 of k: constant 200 does not fit i8
 // error: argument 1 of k: constant 201 does not fit i8
 // The whole-program fixups run once every root is checked, and go on past
-// an error as the checker does past a root's (docs/design/language_server.md
-// §5 D2): each shrink of a global array, each growth conflict the call sites
+// an error as the checker does past a root's
+// recovery: each shrink of a global array, each growth conflict the call sites
 // settle, and each literal argument is an item of its own, whose error ends
 // it alone. An item checked more than once -- k(201) in each specialization
 // of twice -- reports its error once.

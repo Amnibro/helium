@@ -1,4 +1,4 @@
-// stdlib/vec.goose: the component-combining functions and the aliases.
+// hc/lib/vec.he: the component-combining functions and the aliases.
 import vec;
 
 // A global initialized from an imported module's global: imported globals

@@ -2,7 +2,7 @@
 // error: variable mode (..) requires an ADT type, not i64
 // error: struct Pair takes 1 type argument(s), 2 given
 // A struct or enum instance whose build an error cut short is not used
-// again (docs/design/language_server.md §5 D2): a later root that names it
+// again: a later root that names it
 // ends silently, as a consequence of the error reported, rather than
 // finding it half built, and a global of its type stays unassigned. The
 // errors are S<i64>'s, E<i64>'s, and first's Pair<i64, i64>'s.

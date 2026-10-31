@@ -4,9 +4,9 @@ Helium's source files are `.amni` (this page) or `.he` (the same language with l
 
 Run: `hc file.amni` (native, cached). `hc check file.amni` typechecks. `hc build file.amni` makes an executable (`-o out.c` writes C, `--web` WebAssembly).
 
-## Porting from Goose
+## `.amni` basics
 
-Helium's memory model started from Goose (github.com/aardappel/goose), and `tools/amni/goose2amni.py` converts Goose source. A `.amni` file differs from a `.goose` file in three ways:
+Three things to know before reading `.amni` code:
 
 - Word types: `int`=i64, `uint`=u64, `byte`=u8, `real`=f64. The others stay: `i8 i16 i32 u16 u32 f32 bool varint`.
 - No `:` before a type in declarations and no `->` before results: `fn f(a int, b real) int, bool`, `struct P { x real, y real }`, `var n int = 0`. Literals and named arguments keep `:` (`P { x: 1.0, y: 2.0 }`).
@@ -229,7 +229,7 @@ fn main() { print(fast_steps(27), " ", fast_steps(27)); }
 
 ## Program, modules, threads
 
-- One root file; `import a.b;` loads `a/b.amni` (or `.goose`) relative to the root, then the standard library. `namespace geo;` scopes a file: `geo::Pt`. `fn main()` in the root is the entry.
+- One root file; `import a.b;` loads `a/b.amni` relative to the root, then the standard library. `namespace geo;` scopes a file: `geo::Pt`. `fn main()` in the root is the entry.
 - Globals: `var log byte[>..];` starts empty; `let SIZE = 16;` is a named constant usable as an array size.
 - `fn format(out byte[>..]&, p Point) { format(out, "(", p.x, ",", p.y, ")"); }` customizes how a type prints.
 - Threads share nothing: `thread_fn worker() { let j = qget<Job>(); qput(Result { ... }); }`, `thread_spawn(worker)`, `thread_wait(id)`. Only flat (reference-free) values cross queues.

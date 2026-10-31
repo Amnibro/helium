@@ -1,4 +1,4 @@
-// A doubly-linked list the Goose way. The nodes live in a `reusable` pool:
+// A doubly-linked list the Helium way. The nodes live in a `reusable` pool:
 // a grow-only array with a freelist, so removing a node hands its slot
 // back and the next insertion takes it, with no allocator involved. The
 // links are 4-byte offsets measured from the pool's base (`in pool`), and
@@ -7,7 +7,7 @@
 // insertion and removal is the same four stores, with no special cases.
 //
 // Build and run (from this directory):
-//   goose -o linked_list.c 13_linked_list.goose && cl linked_list.c && linked_list
+//   hc build 13_linked_list.amni -o linked_list && ./linked_list
 
 import std;
 

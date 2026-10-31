@@ -1,5 +1,5 @@
 // error: checkfree fn sum_all calls get, which is not checkfree
-// What a checkfree function calls runs inside it, so it must be checkfree too. (docs/design/index_types.md)
+// What a checkfree function calls runs inside it, so it must be checkfree too.
 var a i32[>..] = [];
 fn get(i int) i32 { a[i] }
 checkfree fn sum_all(n int) int {

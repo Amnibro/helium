@@ -5,7 +5,7 @@
 // error: expected a value of type i64, got const u8[:]
 // error: operator + cannot be applied to i64 and const u8[:]
 // The checker goes on past an error to the next root
-// (docs/design/language_server.md §5 D2): the globals' initializers, main,
+//: the globals' initializers, main,
 // the thread entry points, the functions nothing reached, and the exports,
 // in that order. An error ends its root: main's second error, after the
 // call of helper, goes unreported, as does unreached_a's, whose call of

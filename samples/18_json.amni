@@ -12,7 +12,7 @@
 // back to the top.
 //
 // Build and run (from this directory):
-//   goose -o json.c 18_json.goose && cl json.c && json [file.json]
+//   hc build 18_json.amni -o json && ./json [file.json]
 
 import std;
 import os;

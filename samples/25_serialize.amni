@@ -15,7 +15,7 @@
 // variable-size form of the same data, and then a tampered file.
 //
 // Build and run (from this directory):
-//   goose -o serialize.c 25_serialize.goose && cl serialize.c && serialize
+//   hc build 25_serialize.amni -o serialize && ./serialize
 
 import std;
 import dictionary;

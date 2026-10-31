@@ -1,6 +1,6 @@
 # hc: what's left
 
-Status as of 2026-10-27 (gate 97, Goose's C++ compiler deleted).
+Status as of 2026-10-27 (gate 97, the old C++ compiler deleted).
 
 ## Where things stand
 
@@ -13,14 +13,14 @@ Status as of 2026-10-27 (gate 97, Goose's C++ compiler deleted).
 | Corpus, WebAssembly | 628 / 645 (the rest open a GPU, link C libraries, or assume native's 16 GiB regions) |
 | hc's own tests | `hc/test/*.he` with `.out` files; `tools/hc/hetest.sh <hc>` runs each one through the C path, `--native` and `--native --debug` |
 | Pom-Pom Grove sim | garden, race, mini, load traces bit-identical on both paths |
-| Own modules replacing Goose packages | `audio` (hc/lib/audio.he on SDL3: the same mixer, bit-identical to goose_gfx offline and live). `gfx` (hc/lib/gfx.he straight on SDL3's GPU API, no C layer: the same checks and messages; every SDL struct's layout is checked field by field against the C compiler's). `ui` (hc/lib/ui.he: Nuklear ported line by line to `.he`, with its own TrueType loader hc/lib/ttf.he; the same checks and misuse messages, all 12 ui tests pass, and canvas output matches the C build command for command). `physics` (hc/lib/physics.he over hc/lib/physics_engine.he: Box3D ported to `.he`, the full API with joints, queries, events, recording and replay; all 9 physics tests pass on both backends). No Goose package is loaded any more; inside a package, `import gfx` resolves to hc/lib. Modules that must stay on the main thread declare `MAIN_THREAD := true`, and the thread check rejects a `thread_fn` that reaches their state |
-| Full apps | Pom-Pom Grove (`pomling.amni`, gfx + ui) and Waystone (`play.amni`, gfx + ui + audio + C sources) compile natively with hc. On lavapipe, Pom-Pom Grove built by hc with our gfx renders pixel-identical to the Goose build: test_creature, test_render and the app's scripted HUD and menu shots exactly, test_world and test_garden within 1 level on 2 and 4 pixels (libm rounding, as before). With our ui too: Pom-Pom Grove's HUD and menu shots and Waystone's title, lobby, shop, memoir, in-run and HUD screens are 0-pixel-diff vs Goose's ui |
-| Driver | `hc run file [-- args]` (native, cached under ~/.cache/hc), `hc build file [-o out]` (`-o out.c` for C, `--web` for `.wasm` plus the `helium.js` host), `hc check`, `hc fetch [--update]` (git packages, Goose's cache layout under GOOSE_HOME/pkg, locked, submodules), `--offline`, `hc lsp`, `hc version`, `hc help`; `hc file` runs; `hc in out [--native]` still works. The library is HC_LIB, else `lib` beside the executable |
+| Own modules replacing the old C packages | `audio` (hc/lib/audio.he on SDL3: the same mixer, bit-identical to the old C gfx layer offline and live). `gfx` (hc/lib/gfx.he straight on SDL3's GPU API, no C layer: the same checks and messages; every SDL struct's layout is checked field by field against the C compiler's). `ui` (hc/lib/ui.he: Nuklear ported line by line to `.he`, with its own TrueType loader hc/lib/ttf.he; the same checks and misuse messages, all 12 ui tests pass, and canvas output matches the C build command for command). `physics` (hc/lib/physics.he over hc/lib/physics_engine.he: Box3D ported to `.he`, the full API with joints, queries, events, recording and replay; all 9 physics tests pass on both backends). No old C package is loaded any more; inside a package, `import gfx` resolves to hc/lib. Modules that must stay on the main thread declare `MAIN_THREAD := true`, and the thread check rejects a `thread_fn` that reaches their state |
+| Full apps | Pom-Pom Grove (`pomling.amni`, gfx + ui) and Waystone (`play.amni`, gfx + ui + audio + C sources) compile natively with hc. On lavapipe, Pom-Pom Grove built by hc with our gfx renders pixel-identical to the old toolchain's build: test_creature, test_render and the app's scripted HUD and menu shots exactly, test_world and test_garden within 1 level on 2 and 4 pixels (libm rounding, as before). With our ui too: Pom-Pom Grove's HUD and menu shots and Waystone's title, lobby, shop, memoir, in-run and HUD screens are 0-pixel-diff vs Goose's ui |
+| Driver | `hc run file [-- args]` (native, cached under ~/.cache/hc), `hc build file [-o out]` (`-o out.c` for C, `--web` for `.wasm` plus the `helium.js` host), `hc check`, `hc fetch [--update]` (git packages, cached under `$GOOSE_HOME/pkg`, locked, submodules), `--offline`, `hc lsp`, `hc version`, `hc help`; `hc file` runs; `hc in out [--native]` still works. The library is HC_LIB, else `lib` beside the executable |
 | Waystone parity | `HELIUM=hc tools/parity.sh`: 193 of 193 traces identical to the JS original |
 | Shaders | `hc/shaderc.he` compiles GLSL to SPIR-V, MSL and HLSL inside hc (no C tool, no cache). It began as a port of cute_spirv and is byte-identical to it on 2698 real and mutated shaders; since then it emits valid SPIR-V where the original did not (sampler parameters, whole-struct buffer stores, `refract`), and every corpus module passes `spirv-val` |
 | Language server | `hc lsp` (hc/lsp.he): diagnostics as you type (every error, not just the first), hover, definition, references, rename, document and workspace symbols, completion (scope, and members after `.` on a line that does not parse yet), signature help, inlay type hints, folding. Each request is answered by `hc --query` in a child process over the open buffers. `tools/hc/lsptest.py` runs the fixtures in hc/test/lsp |
 | Web target | `hc file out.wasm --web` emits WebAssembly from hc's own optimized IR (hc/wasm.he): structured control flow, interval-colored locals, a checked shadow stack, threads on workers over shared memory, regions in tiers so hundreds fit in 4 GiB. Externs become JS imports and `export` functions become JS-typed exports. Hosts: hc/web/host.mjs (node: files, threads, futexes) and hc/web/web.js (browser: DOM, events, fetch, storage, WebGL 2, JS interop). The corpus runs as WebAssembly 619/645 (the rest open a GPU, link C libraries, or assume native's 16 GiB regions). Amni Prayer builds with hc and renders the same as the Goose build |
-| Goose | Its C++ compiler (`src/`), `stdlib/*.goose`, CMake files and `third_party/` are deleted; the corpus in `test/` and `samples/` is `.amni`. Pomling and Waystone still ship from the Goose toolchain in their own checkouts |
+| Old toolchain | The C++ compiler (`src/`), the old `stdlib/`, CMake files and `third_party/` are deleted; the corpus in `test/` and `samples/` is `.amni`. Pomling and Waystone still ship from the old toolchain in their own checkouts |
 
 ## 0. The `.he` syntax
 
@@ -41,7 +41,7 @@ Converters:
 
 o200k token counts: hc 243,964 (`.amni`) → 228,365 (`.he`, slimmed), −6.4%. Corpus, syntax only: −10.6% code tokens.
 
-Projects still on `.amni`, because they build with the Goose toolchain: Pomling and Waystone (their parity suites must pass on hc first), and Amni Prayer (now builds with hc; the site still ships the Goose build).
+Projects still on `.amni`, because they build with the old toolchain: Pomling and Waystone (their parity suites must pass on hc first), and Amni Prayer (now builds with hc; the site still ships the Goose build).
 
 ## 1. Correctness gaps
 
@@ -49,7 +49,7 @@ The native corpus passes completely. What is left:
 
 - **`lut fn`:** done in `.amni` files: CPU tables (lex.he `lut_desugar`) and the GPU fill (hc/lutglsl.he writes GLSL, our shaderc compiles it with int64, hc/lib/lutgpu.he runs it through Vulkan from an optional `extern "libvulkan.so.1?"`). `tools/hc/luttest.sh` checks GPU tables against the CPU. Left: `.he` files (a `lut fn` there is still a plain function).
 - **C path** (101 tests): it lags native on variable-mode ADTs, varint values and serialization, contextual generic floats and the newer native fixes. An `if` expression yielding `null` or a pool element into a pool-relative field emits an assignment clang rejects (`hc/test/relref_guard.he` builds its links with statements instead).
-- **Rejection parity:** `python3 tools/hc/errtest.py <hc>` runs the 1937 `test/errors_tc` programs, each of which Goose rejects with the diagnostic in its `// error:` line. hc (2026-10-27): 26 match, 160 rejected with other wording, 1751 accepted, 0 crash (was 2 match and 20 crash that morning). All 20 now stop with Goose's diagnostic: cycles in constants, field defaults and parameter defaults (each is re-checked under a stack of the defaults in progress), generic types and recursive specializations capped at 16 in a chain, `const for` expansion capped at 100000 generated nodes. Accepting is not harmless: `var l = l0; return l` compiled to a use-after-free until hc gained Goose's return check. `tools/hc/baseline/err.txt` holds the matching files; CI fails if one stops matching.
+- **Rejection parity:** `python3 tools/hc/errtest.py <hc>` runs the 1937 `test/errors_tc` programs, each of which expects the diagnostic in its `// error:` line. hc (2026-10-27): 26 match, 160 rejected with other wording, 1751 accepted, 0 crash (was 2 match and 20 crash that morning). All 20 now stop with the expected diagnostic: cycles in constants, field defaults and parameter defaults (each is re-checked under a stack of the defaults in progress), generic types and recursive specializations capped at 16 in a chain, `const for` expansion capped at 100000 generated nodes. Accepting is not harmless: `var l = l0; return l` compiled to a use-after-free until hc gained the return check. `tools/hc/baseline/err.txt` holds the matching files; CI fails if one stops matching.
 
 ## 2. Performance (native vs clang)
 
@@ -73,7 +73,7 @@ The native corpus passes completely. What is left:
   - Runtime guards for bounds and aliasing, with the scalar loop kept as the tail.
   - `HC_NOVEC=1` turns it off.
   - Gate any change to it with `python3 tools/hc/vecfuzz.py <hc> [count] [first seed]`. It runs random loop programs with and without `HC_NOVEC` and compares exit codes and output. Run it with both the C-built `hc` and the natively built `hcn`: the native one runs `vec.he` as native code. In October 2026 that exposed a native double release that the C-built compiler hid.
-  - Stores may go through row slices (a data pointer plus a loop-invariant offset), so `bench/goose/blur_rows.goose` vectorizes too.
+  - Stores may go through row slices (a data pointer plus a loop-invariant offset), so row-wise blur kernels vectorize too.
   - Blur runs 9x faster. Not yet supported: float reductions and conversions, conditionals (select, e.g. the audio mixer's clamp), gathers, AVX2, and strided or struct-of-arrays access. vecfuzz's `flt` mode covers floats, including inf and NaN from division by zero.
 - **Byte gathers:** a counted loop `for k n { v |= (s[i + k] as uint) << (8 * k) }` with n of 2, 4 or 8 (after inlining) becomes one guarded n-byte load. When `i` or `n` falls out of bounds, the original loop runs and traps at the same index (`vlc_loop` in `vec.he`). It covers `std.hash` and `binary.le`. A literal `for k 8` is unrolled during lowering and is not combined yet.
 - **Memory forwarding (`lvn`):** addresses are canonicalized to a root base plus constant offset. A store only invalidates earlier loads and stores of the same base whose bytes overlap it, so struct field updates through one reference forward their values. Loads from immutable non-escaping `let` globals (`GADDR` tagged `l = -4` by `gtag`) ignore stores, and LICM hoists them. LICM also hoists loads from globals and stack slots out of loops that contain no stores or calls. `tools/hc/optfuzz.py <hc> [n] [seed]` fuzzes aliasing references, globals and calls, native optimized against `HC_NOOPT` and the C path.
@@ -90,16 +90,16 @@ The native corpus passes completely. What is left:
 - **Inlining heuristics:** size limits are hand-tuned with no profile feedback.
 - **Compile time:** hc self-compile is ~300 ms, up from ~206 ms before the optimizer passes. Main costs: two value-numbering passes, LICM, rebuilding IR after strength reduction.
 
-## 3. Own everything (replacing Goose and third-party C)
+## 3. Own everything (replacing the old toolchain and third-party C)
 
-- **Graphics (`gfx`):** done: hc/lib/gfx.he, the whole goose_gfx API on SDL3's GPU API (dlopened libSDL3), with the C layer's checks and misuse messages.
+- **Graphics (`gfx`):** done: hc/lib/gfx.he, the whole old gfx API on SDL3's GPU API (dlopened libSDL3), with the C layer's checks and misuse messages.
 - **Shaders:** done (hc/shaderc.he). Left: the MSL and HLSL banners still name cute_spirv. `lut fn` GPU fills are ported (64-bit ints added to shaderc); the Helium-subset GPU language for `embed_shader` tables is not; no app uses it.
 - **`physics`:** done (hc/lib/physics.he, hc/lib/physics_engine.he). Left: starting a recording on a non-empty world, recording queries.
 - **`ui`:** done: hc/lib/ui.he (Nuklear under its public-domain option, no C layer) and hc/lib/ttf.he (TrueType outlines, rasterizing, rect packing). ProggyClean is still the built-in default font; ttf.he reads `glyf` outlines only, so CFF (`.otf`) fonts are not loaded yet.
-- **Pom-Pom Grove app** (`eng/`, `app/`, `pomling.amni`): builds only with Goose today. It moves once gfx and shaders exist.
-- **Driver:** done (see the status table). Not carried over from Goose: the TinyCC JIT, C toolchain selection (`--cc`, `toolchain`), `--standalone`, `--multi-test` and the compiler-debugging dumps beyond `--tokens`.
+- **Pom-Pom Grove app** (`eng/`, `app/`, `pomling.amni`): builds only with the old toolchain today. It moves once gfx and shaders exist.
+- **Driver:** done (see the status table). Not carried over from the old compiler: the TinyCC JIT, C toolchain selection (`--cc`, `toolchain`), `--standalone`, `--multi-test` and the compiler-debugging dumps beyond `--tokens`.
 - **Web target:** done (see the status table). Left: threads in the browser need a cross-origin isolated page (COOP/COEP) and a worker host; `gfx`/`ui` on WebGL or WebGPU; the 64 MiB main shadow stack could shrink for small apps; an HTML page beside the host.
-- **LSP:** done for the features above. Left: semantic tokens, code lenses, call hierarchy, selection ranges, recovery from parse errors beyond member completion, and a VS Code extension for `.he` (the one in `vscode/` is Goose's and starts `goose lsp`).
+- **LSP:** done for the features above. Left: semantic tokens, code lenses, call hierarchy, selection ranges, recovery from parse errors beyond member completion, and a VS Code extension for `.he` and `.amni`.
 - **Mail-client libraries** (planned; another session will likely build them, so check git log before starting one):
   - Sockets and TLS: TCP client and server, non-blocking I/O, certificate verification.
   - IMAP and SMTP clients (STARTTLS, AUTH, IDLE).
@@ -116,12 +116,10 @@ The native corpus passes completely. What is left:
 
 - `tools/hc/ci.sh` is the gate: bootstrap, corpus native / C / WebAssembly against `tools/hc/baseline/*.txt`, vecfuzz, hetest, lsptest, webtest, pkgtest. Update the baselines when a change gains tests. App parity (Pomling traces, Waystone's `tools/parity.sh` with `HELIUM=hc`) runs from those projects' own checkouts.
 - Perf tools still live outside the repo: `pcount`, `psamp`, `attr.py`, `annot.py`.
-- `vscode/` and `tree-sitter/` are Goose's (`.goose`, `goose lsp`); they need a Helium version for `.he` and `.amni` on `hc lsp`.
-- `docs/` is Goose's specification and site; `HELIUM.md` and this file describe hc.
 
 ## Suggested order
 
-1. Rejection parity: Goose's §4.1 copy and lifetime checks (the accepted programs that miscompile).
+1. Rejection parity: the §4.1 copy and lifetime checks (the accepted programs that miscompile).
 2. `lut fn` in `.he` files.
 3. Performance passes: `separate`, `reachable`, BLAKE3, bounds checks in loops.
 4. Editor support for `.he` and `.amni` on `hc lsp`.

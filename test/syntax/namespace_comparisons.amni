@@ -1,5 +1,5 @@
 // A `<` before a qualified name is a comparison unless a type argument list
-// follows (docs/design/namespaces.md). The parser tries a type argument list
+// follows. The parser tries a type argument list
 // first; what it took for types there is no type when none follows, so an
 // unknown qualified type name among them is no error.
 struct lim::Pair<T> { a T, b T }

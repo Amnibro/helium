@@ -374,7 +374,7 @@ start(win0 bool, title const byte[:], width int, height int, flags int) bool:
 	if env("GOOSE_GFX_HEADLESS", hv) && atoi(hv[..]) != 0: windowed = false
 	if width < 1 || height < 1 || width > 16384 || height > 16384: return misuse(str("a screen of ", width, " x ", height, " pixels"))
 	reset(); ERR.clear(); FLAGS = flags
-	s_hint(ffi::ptr("SDL_ASSERT\0"), ffi::ptr("ignore\0")); s_hint(ffi::ptr("SDL_APP_NAME\0"), ffi::ptr("Goose\0"))
+	s_hint(ffi::ptr("SDL_ASSERT\0"), ffi::ptr("ignore\0")); s_hint(ffi::ptr("SDL_APP_NAME\0"), ffi::ptr("Helium\0"))
 	if !s_init(32):
 		if windowed: return sdl_fail("initializing SDL video")
 		s_hint(ffi::ptr("SDL_VIDEO_DRIVER\0"), ffi::ptr("offscreen\0")); ok := s_init(32); s_rhint(ffi::ptr("SDL_VIDEO_DRIVER\0"))

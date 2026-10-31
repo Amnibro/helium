@@ -7,7 +7,7 @@
 // printed so the run shows something without one.
 //
 // Build and run (from this directory):
-//   goose -o raytrace.c 21_raytrace.goose && cl raytrace.c && raytrace
+//   hc build 21_raytrace.amni -o raytrace && ./raytrace
 
 import std;
 import vec;

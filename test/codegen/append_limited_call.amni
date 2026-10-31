@@ -5,7 +5,7 @@
 // case-function dispatch, and a function value given as a block and as a
 // named function; a receiver reached through a reference, i32 elements,
 // results with no elements to add, and a limited receiver too. A queue
-// read's is in append_limited_queue.goose, which TinyCC does not run.
+// read's is in append_limited_queue.amni, which TinyCC does not run.
 enum Shape { Circle { r int }, Sq { s int } }
 
 // Big enough, and called often enough, to stay calls at -O2.

@@ -1,4 +1,4 @@
-// runtime-debug: stdlib/regex.goose. A table of patterns and texts, each
+// runtime-debug: hc/lib/regex.he. A table of patterns and texts, each
 // printed with every match's groups as the regex crate finds them (the
 // table was checked against the crate, regex 1.13 with Unicode off):
 // literals, escapes, classes, the Perl classes, `.` with and without (?s),

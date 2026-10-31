@@ -1,4 +1,4 @@
-// parse-only standalone (no main); imported and typechecked by parser_all.goose.
+// parse-only standalone (no main); imported and typechecked by parser_all.amni.
 struct Vec2 { x real, y real }
 
 fn add2(a Vec2, b Vec2) Vec2 {

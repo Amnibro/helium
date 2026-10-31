@@ -5,7 +5,7 @@
 // and never copies a byte it does not have to.
 //
 // Build and run (from this directory):
-//   goose -o strings.c 03_strings.goose && cl strings.c && strings
+//   hc build 03_strings.amni -o strings && ./strings
 
 import std;
 

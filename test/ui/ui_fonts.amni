@@ -1,5 +1,5 @@
 // The ui module's library, font atlases and fonts, and contexts: Nuklear's
-// font configuration defaults against the Goose ones, the built-in font at
+// font configuration defaults against the Helium ones, the built-in font at
 // two sizes and a TrueType one from a file and from memory in one atlas,
 // glyph ranges of every kind, baking and what it leaves (the image, the
 // fonts' metrics, glyphs, text widths), baking at a scale and again at

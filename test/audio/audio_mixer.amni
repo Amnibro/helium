@@ -12,7 +12,7 @@ fn main() {
 	let sound = audio::create_sound(pcm);
 	assert(sound.id != 0);
 	pcm[0] = 0.75; // Mutating the original must not change the copied sound.
-	pcm.resize(0);  // Native playback owns a copy, not this Goose allocation.
+	pcm.resize(0);  // Native playback owns a copy, not this Helium allocation.
 	let voice = audio::play(sound);
 	var out f32[8] = [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0];
 	assert(audio::render(out));

@@ -3,7 +3,7 @@
 // blocks that differ only in their bodies: each pair is two instantiations
 // (§7.7) on one line that the argument types alone would print alike. The
 // chain names the function values, a block by the position of its `{`: this
-// error is in `store<F = {block at function_value_chain.goose:11:72}>(i64)`,
+// error is in `store<F = {block at function_value_chain.amni:11:72}>(i64)`,
 // the second block in pick, reached from `pick<G = wide>(i64)`.
 fn small() byte { 1 }
 fn wide() int { 300 }

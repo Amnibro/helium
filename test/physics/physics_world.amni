@@ -1,4 +1,4 @@
-// The physics module's library and worlds: Box3D's version, the Goose field
+// The physics module's library and worlds: Box3D's version, the Helium field
 // defaults against Box3D's own, a world's settings read back after creation
 // and after changing them, a pile of boxes stepped until it sleeps, the same
 // pile stepped with one and with four worker threads to the same result,
@@ -45,7 +45,7 @@ fn main() {
 		  physics::misuse_count());
 	physics::check();
 
-	// Every definition's Goose defaults are Box3D's.
+	// Every definition's Helium defaults are Box3D's.
 	print("defaults: world ", physics::default_world_def() == physics::WorldDef {},
 		  ", body ", physics::default_body_def() == physics::BodyDef {},
 		  ", shape ", physics::default_shape_def() == physics::ShapeDef {},

@@ -1,4 +1,4 @@
 // error: extern fn cannot be checkfree
-// An extern has no body to check. (docs/design/index_types.md)
+// An extern has no body to check.
 checkfree extern fn f() int;
 fn main() {}

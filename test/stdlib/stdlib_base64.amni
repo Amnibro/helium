@@ -1,4 +1,4 @@
-// runtime-debug: stdlib/base64.goose against RFC 4648's test vectors and a
+// runtime-debug: hc/lib/base64.he against RFC 4648's test vectors and a
 // plain table-driven codec written here: round trips at every length to 200
 // and some long ones (each length mod 3, and the vector loops' bodies),
 // every byte at every position of valid texts (every invalid character, '='

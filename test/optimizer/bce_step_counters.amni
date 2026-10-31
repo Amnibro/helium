@@ -2,7 +2,7 @@
 // iteration (`lt += if less { 1 } else { 0 }`, `if keep { w += 1; }`): the
 // counter cannot outrun the loop index it started at or below, so an index
 // through it is in range wherever the loop index is. Every kept check here
-// passes at runtime; bce_step_counters_abort.goose is one that fires.
+// passes at runtime; bce_step_counters_abort.amni is one that fires.
 import std;
 
 // The branchless Lomuto partition of std's sort: every element is swapped

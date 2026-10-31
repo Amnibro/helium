@@ -1,5 +1,5 @@
 // error: cannot assign nodes: an index type names nodes
-// A whole assignment rebuilds the array, which may leave it shorter. (docs/design/index_types.md)
+// A whole assignment rebuilds the array, which may leave it shorter.
 var nodes i32[>..] = [];
 type NodeId = u32 in nodes;
 fn main() {

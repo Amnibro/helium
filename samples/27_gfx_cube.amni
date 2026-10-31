@@ -1,5 +1,5 @@
 // A window with a spinning, lit cube, drawn with the gfx module
-// (docs/stdlib.md): SDL3's GPU API behind a small Goose interface.
+// (hc/lib/gfx.he): SDL3's GPU API behind a small Helium interface.
 //
 // The shaders are GLSL, written in main as """ strings. embed_shader
 // compiles each one when this program is compiled -- to SPIR-V for Vulkan,
@@ -10,13 +10,13 @@
 // `-- --frames N` stops after N frames. Either way the last frame is saved
 // as gfx_cube.png.
 //
-//   goose 27_gfx_cube.goose
+//   hc run 27_gfx_cube.amni
 //
-// Built from the generated C, the program links the gfx layer and SDL, whose
-// paths `goose --gfx-link` prints as a response file:
-//   goose -o gfx_cube.c 27_gfx_cube.goose
-//   cl gfx_cube.c @<goose --gfx-link msvc>          (or clang-cl)
-//   cc gfx_cube.c -o gfx_cube @<goose --gfx-link cc>
+// gfx is part of hc's library and loads SDL3 when the program starts, so
+// nothing extra is linked. To keep an executable:
+//   hc build 27_gfx_cube.amni -o gfx_cube
+//
+//
 
 import std;
 import vec;
@@ -30,7 +30,7 @@ import gfx;
 struct Vertex { pos float3, normal float3, color byte[4] }
 
 // The vertex shader's uniform block: two column-major matrices. std140 lays
-// those out with no padding, so the packed Goose struct matches it exactly.
+// those out with no padding, so the packed Helium struct matches it exactly.
 struct Transform { model gfx::mat4, view_proj gfx::mat4 }
 
 // Four corners and two triangles per face, counterclockwise seen from
@@ -65,7 +65,7 @@ fn main() {
 		let n, ok = parse_int(argv[2]);
 		if ok { frames = n; }
 	}
-	guard gfx::open("Goose: a gfx cube", 640, 480, gfx::WINDOW_RESIZABLE) else {
+	guard gfx::open("Helium: a gfx cube", 640, 480, gfx::WINDOW_RESIZABLE) else {
 		write_stderr(str("gfx: ", gfx::error(), "\n"));
 		return;
 	}

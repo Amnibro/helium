@@ -6,7 +6,7 @@
 // grow-shrink array of node indices heap-ordered by weight.
 //
 // Build and run (from this directory):
-//   goose -o huffman.c 12_huffman.goose && cl huffman.c && huffman
+//   hc build 12_huffman.amni -o huffman && ./huffman
 
 import std;
 

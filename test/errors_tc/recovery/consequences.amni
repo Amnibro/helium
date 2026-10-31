@@ -2,7 +2,7 @@
 // error: unknown identifier: nothere
 // error: expected a value of type bool, got i64
 // What follows from an error reported is not reported again
-// (docs/design/language_server.md §5 D2): a global whose initializer
+//: a global whose initializer
 // failed is unassigned for good, and a use of it ends that root silently
 // rather than as a use before assignment; a specialization an error cut
 // short is never reused, and a call that would reuse it ends its root

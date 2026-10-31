@@ -1,5 +1,5 @@
 // error: expected a value of type u32 in nodes, got u32
-// A branch of an index and a constant is a plain integer. (docs/design/index_types.md)
+// A branch of an index and a constant is a plain integer.
 var nodes i32[>..] = [];
 type NodeId = u32 in nodes;
 var ids NodeId[>..] = [];

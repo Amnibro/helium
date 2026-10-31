@@ -9,7 +9,7 @@
 // error: expected identifier in field access, found '}'
 // error: expected identifier in field access, found 'end of file'
 // A `.` with no name after it is reported once and kept as an
-// incomplete Dot (docs/design/language_server.md §5 D); the error the rest
+// incomplete Dot; the error the rest
 // of its statement then raises is a consequence and is not reported, nor,
 // where the `.` ends the file, is the end of the blocks still open there.
 // In a declaration, the error of a member after the one holding the `.`

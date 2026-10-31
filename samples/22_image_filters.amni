@@ -7,7 +7,7 @@
 // C backend sees the same loop it would see from C.
 //
 // Build and run (from this directory):
-//   goose -o image_filters.c 22_image_filters.goose && cl image_filters.c && image_filters
+//   hc build 22_image_filters.amni -o image_filters && ./image_filters
 
 import std;
 import math;

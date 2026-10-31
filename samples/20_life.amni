@@ -2,12 +2,12 @@
 // generation and one for the next, and a step function that reads one and
 // writes the other; the grids swap roles by swapping which one is passed
 // where, so no cell is ever copied. Wrapping at the edges is `%`, which in
-// Goose is Euclidean: (x - 1) % W is W - 1 when x is 0, with no special
+// Helium is Euclidean: (x - 1) % W is W - 1 when x is 0, with no special
 // case. Prints a few generations of a glider and a blinker, then runs a
 // larger random grid for a while and counts what is left.
 //
 // Build and run (from this directory):
-//   goose -o life.c 20_life.goose && cl life.c && life
+//   hc build 20_life.amni -o life && ./life
 
 import std;
 

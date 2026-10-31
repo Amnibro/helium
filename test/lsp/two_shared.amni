@@ -1,5 +1,5 @@
-// lsp: fixture for test/lsp_protocol.py: a module two_a.goose and
-// two_b.goose import, both entry files of a client of their own.
+// lsp: fixture for test/lsp_protocol.py: a module two_a.amni and
+// two_b.amni import, both entry files of a client of their own.
 namespace two_shared;
 
 fn twice(x int) int { x * 2 }
@@ -7,7 +7,7 @@ fn twice(x int) int { x * 2 }
 fn half(x int) int { x / 2 }
 fn half(x real) real { x / 2.0 }
 
-// Instantiated by two_b.goose alone, with an f64. Its exemplar in
-// two_a.goose's analysis ends before the call of half, which that analysis
+// Instantiated by two_b.amni alone, with an f64. Its exemplar in
+// two_a.amni's analysis ends before the call of half, which that analysis
 // takes for the first half by its name alone.
 fn apply<T>(x T) real { let y real = x; half(y) }

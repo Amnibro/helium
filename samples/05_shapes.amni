@@ -1,6 +1,6 @@
 // Algebraic data types, the only dynamic polymorphism in the language: no
 // inheritance, no vtables. The classic shapes example, with the two things
-// that make Goose's version different -- an enum value can be stored
+// that make Helium's version different -- an enum value can be stored
 // *fixed* (every value the size of the largest variant, indexable and
 // overwritable) or *variable* (each value exactly its variant's size, text
 // included, walked sequentially or reached through an index kept beside the
@@ -8,7 +8,7 @@
 // set: the virtual-call idiom.
 //
 // Build and run (from this directory):
-//   goose -o shapes.c 05_shapes.goose && cl shapes.c && shapes
+//   hc build 05_shapes.amni -o shapes && ./shapes
 
 import math;
 
@@ -128,7 +128,7 @@ fn main() {
 	// --- variable mode with an index: random access ------------------------
 	// push builds each mark in place at the end of `marks` and returns a
 	// reference to it, which the index keeps as that mark's offset.
-	mark_at.push(marks.push(Mark.Label { text: "hello, goose" }));
+	mark_at.push(marks.push(Mark.Label { text: "hello, helium" }));
 	mark_at.push(marks.push(Mark.Circle { r: 1.5 }));
 	mark_at.push(marks.push(Mark.Dot));
 	mark_at.push(marks.push(Mark.Rect { w: 2.0, h: 3.0 }));

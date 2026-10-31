@@ -1,4 +1,4 @@
-// runtime-debug: stdlib/dictionary.goose: integer, slice and struct keys,
+// runtime-debug: hc/lib/dictionary.he: integer, slice and struct keys,
 // growth, deletion.
 import dictionary;
 

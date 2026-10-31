@@ -7,7 +7,7 @@
 // own growable data of its own.
 //
 // Build and run (from this directory):
-//   goose -o bst.c 14_bst.goose && cl bst.c && bst
+//   hc build 14_bst.amni -o bst && ./bst
 
 import std;
 

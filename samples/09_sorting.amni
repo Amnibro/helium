@@ -2,11 +2,11 @@
 // sort, and binary search, all over slices, so they work on any array kind
 // and on any sub-range of one. Then the same jobs through the standard
 // library, and timings on a million integers. The merge sort shows the one
-// rule recursion has in Goose: a recursive function owns no growable
+// rule recursion has in Helium: a recursive function owns no growable
 // locals, so the scratch buffer belongs to the caller and is passed in.
 //
 // Build and run (from this directory):
-//   goose -o sorting.c 09_sorting.goose && cl sorting.c && sorting
+//   hc build 09_sorting.amni -o sorting && ./sorting
 
 import std;
 import os;

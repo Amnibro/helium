@@ -1,5 +1,5 @@
 // error: cannot pass between threads: it holds an index type
-// A worker's argument crosses to another thread program. (docs/design/index_types.md)
+// A worker's argument crosses to another thread program.
 var nodes i32[>..] = [];
 type NodeId = u32 in nodes;
 thread_fn worker(w: NodeId) { print(w); }

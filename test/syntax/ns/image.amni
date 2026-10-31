@@ -1,4 +1,4 @@
-// The library side of the namespaces test (docs/design/namespaces.md): every
+// The library side of the namespaces test: every
 // declaration here is image::<name>, reached unqualified from this file and
 // from any other `namespace image;` file, and as image::<name> elsewhere.
 namespace image;

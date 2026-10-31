@@ -1,4 +1,4 @@
-// stdlib/std.goose's byte sets: find_any and find_pair against plain loops,
+// hc/lib/std.he's byte sets: find_any and find_pair against plain loops,
 // over sets of every kind byte_set makes (the empty and the full set, one to
 // three bytes and their complements, ranges and their complements, and sets
 // only the tables describe), at every length up to 40 and some beyond, from

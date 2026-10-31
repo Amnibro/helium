@@ -6,7 +6,7 @@
 // through the library's heap_push/heap_pop with a comparator block.
 //
 // Build and run (from this directory):
-//   goose -o maze.c 11_maze.goose && cl maze.c && maze
+//   hc build 11_maze.amni -o maze && ./maze
 
 import std;
 

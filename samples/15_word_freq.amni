@@ -1,11 +1,11 @@
 // Word frequencies of a text file: the program every language's tutorial
-// writes, with one Goose twist. The counting map is keyed by slices into
+// writes, with one Helium twist. The counting map is keyed by slices into
 // the text itself, so no word is ever copied -- the text is read once into
 // one buffer, lowercased in place, and every key, every table row and the
 // final report point into it.
 //
 // Build and run (from this directory):
-//   goose -o word_freq.c 15_word_freq.goose && cl word_freq.c && word_freq [file]
+//   hc build 15_word_freq.amni -o word_freq && ./word_freq [file]
 
 import std;
 import dictionary;

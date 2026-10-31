@@ -1,4 +1,4 @@
-// runtime-debug: stdlib/dictionary.goose with optional references as values,
+// runtime-debug: hc/lib/dictionary.he with optional references as values,
 // plain, `in pool` and into a local array. insert over an existing key
 // stores the new reference and leaves the old pointee alone; get,
 // get_or_insert, update's block and each's block receive the stored

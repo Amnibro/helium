@@ -1,5 +1,5 @@
 // error: holds variable-size elements, which cannot be indexed
-// A sequential array cannot be indexed, so nothing is an index of it. (docs/design/index_types.md)
+// A sequential array cannot be indexed, so nothing is an index of it.
 var names byte[][>..] = [];
 fn main() {
 	names.push("a");

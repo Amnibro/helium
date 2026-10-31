@@ -2,7 +2,7 @@
 // struct with a bad field, an enum with a bad variant and functions with
 // bad parameter lists, each reported where it is; the declarations stand
 // with what was parsed before their errors, the program goes on without
-// the module, and is checked (docs/design/language_server.md §5 D).
+// the module, and is checked.
 import nowhere.at.all;
 
 struct Point { x int, y int z int }

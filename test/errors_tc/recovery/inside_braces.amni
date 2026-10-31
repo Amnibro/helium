@@ -4,7 +4,7 @@
 // A statement's error inside braces the statement opened, a struct
 // literal's or a match's, loses the statement through the `}` closing
 // them, by the lexer's count of the braces open, and the block goes on
-// after it (docs/design/language_server.md §5 D): neither that `}` nor a
+// after it: neither that `}` nor a
 // keyword before it ends the block. The language server publishes each
 // error where it is (test/lsp_protocol.py opens this file).
 struct P { x int, y int }

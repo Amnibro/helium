@@ -7,7 +7,7 @@
 // customer with a dictionary keyed by slices into the orders.
 //
 // Build and run (from this directory):
-//   goose -o records.c 16_records.goose && cl records.c && records
+//   hc build 16_records.amni -o records && ./records
 
 import std;
 import dictionary;

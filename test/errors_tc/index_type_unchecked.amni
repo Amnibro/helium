@@ -1,5 +1,5 @@
 // error: as! cannot make a u32 in nodes
-// Only the checked conversion makes an index. (docs/design/index_types.md)
+// Only the checked conversion makes an index.
 var nodes i32[>..] = [];
 type NodeId = u32 in nodes;
 fn main() {

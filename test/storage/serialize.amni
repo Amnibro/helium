@@ -1,4 +1,4 @@
-// to_bytes / bytes_of / from_bytes (docs/design/serialization.md): an array
+// to_bytes / bytes_of / from_bytes: an array
 // of self-relative structure written out as bytes, and verified back in.
 //
 // The point of the verifier is that a *hostile* image can never produce a

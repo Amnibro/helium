@@ -6,7 +6,7 @@
 // error: expected ')' in function declaration, found 'i64'
 // error: expected ';' in variable declaration, found '}'
 // A declaration with an error past its name stands with what was parsed
-// before the error (docs/design/language_server.md §5 D): a struct or an
+// before the error: a struct or an
 // enum skips to the `}` closing its body, braces balanced, or to a
 // keyword only a declaration starts with where the body lacks its `}`,
 // and a function keeps its name with no body. Nothing after them is lost.

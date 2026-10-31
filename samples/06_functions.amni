@@ -5,7 +5,7 @@
 // there are no function pointers and nothing is boxed.
 //
 // Build and run (from this directory):
-//   goose -o functions.c 06_functions.goose && cl functions.c && functions
+//   hc build 06_functions.amni -o functions && ./functions
 
 import std;
 

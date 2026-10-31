@@ -1,4 +1,4 @@
-/* The C side of pkg_own_c.goose, compiled from its sidecar. A slice crosses
+/* The C side of pkg_own_c.amni, compiled from its sidecar. A slice crosses
    as a data pointer and a length (spec 7.10). */
 #include <stdint.h>
 

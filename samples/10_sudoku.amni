@@ -6,7 +6,7 @@
 // recursion, and nothing is allocated anywhere.
 //
 // Build and run (from this directory):
-//   goose -o sudoku.c 10_sudoku.goose && cl sudoku.c && sudoku
+//   hc build 10_sudoku.amni -o sudoku && ./sudoku
 
 import std;
 import os;

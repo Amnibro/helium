@@ -1,4 +1,4 @@
-// Calling C. An `extern fn` binds a Goose signature to a C symbol: libm's
+// Calling C. An `extern fn` binds a Helium signature to a C symbol: libm's
 // functions arrive this way (the `math` module is nothing but such
 // declarations), and so does any C the program brings along. What crosses
 // the boundary is exactly what has a plain C shape: scalars, flat
@@ -7,8 +7,8 @@
 // string builder, which C appends to. The C for this sample is call_c.h.
 //
 // Build and run (from this directory):
-//   goose --include call_c.h -o call_c.c 24_call_c.goose
-//   cc call_c.c -o call_c -lm -pthread && ./call_c   (or: cl call_c.c && call_c)
+//   hc run 24_call_c.amni --include call_c.h
+//   (samples/data/call_c.flags passes --include call_c.h to the test runner)
 
 import std;
 
@@ -18,7 +18,7 @@ struct Stats { lo i32, hi i32, mean real }
 extern fn cube_root(x real) real = "cbrt";
 extern fn hypot(x real, y real) real;
 // `abs` rather than `labs`: C's `long` is 32 bits on Windows and 64 on Linux
-// and macOS, so it has no one Goose type, where `int` is i32 everywhere.
+// and macOS, so it has no one Helium type, where `int` is i32 everywhere.
 extern fn c_abs(x i32) i32 = "abs";
 
 // From call_c.h: a slice in, a scalar out.

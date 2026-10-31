@@ -4,10 +4,10 @@
 // build a cabin and light it. This is a programming sample, not an engine:
 // a finite grid, a few plain structs, and one update/draw loop.
 //
-//   goose samples/30_mini_minecraft.goose
-//   goose samples/30_mini_minecraft.goose -- --seed 123
-//   goose samples/30_mini_minecraft.goose -- --frames 120
-//   goose samples/30_mini_minecraft.goose -- --test
+//   hc run samples/30_mini_minecraft.amni
+//   hc run samples/30_mini_minecraft.amni -- --seed 123
+//   hc run samples/30_mini_minecraft.amni -- --frames 120
+//   hc run samples/30_mini_minecraft.amni -- --test
 //
 // WASD walk; Space jump/swim up; Shift run; mouse or arrows look.
 // Ctrl sneaks slowly and stops at ledges; jumping releases that protection.
@@ -618,7 +618,7 @@ fn save_image() byte[>..] {
 	image
 }
 fn restore(image const byte[:]) bool {
-	// The header uses Goose's framed serialization; the grid is just bytes
+	// The header uses Helium's framed serialization; the grid is just bytes
 	// of block IDs. Validate both before changing anything in the game.
 	let header_size = to_bytes([Game { .. }]).len;
 	let grid_end = 4 + header_size + VOLUME;
@@ -1403,7 +1403,7 @@ fn main() {
 		if frames < 0 { return; }
 	}
 	generate(seed);
-	guard gfx::open("Goose: mini Minecraft", 1280, 800, gfx::WINDOW_RESIZABLE) else {
+	guard gfx::open("Helium: mini Minecraft", 1280, 800, gfx::WINDOW_RESIZABLE) else {
 		write_stderr(str("gfx: ", gfx::error(), "\n"));
 		return;
 	}

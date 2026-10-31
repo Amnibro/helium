@@ -1,4 +1,4 @@
-// stdlib/math.goose: libm through extern fns, both widths, and the rest.
+// hc/lib/math.he: libm through extern fns, both widths, and the rest.
 // Transcendental results allow rounding differences between native libm and JIT.
 import math;
 import std;

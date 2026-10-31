@@ -1,6 +1,6 @@
-/* The C side of 24_call_c.goose: three functions with the argument shapes an
+/* The C side of 24_call_c.amni: three functions with the argument shapes an
    `extern fn` can pass. The header is included after the generated type
-   declarations, so it can use the slice and struct typedefs Goose emits:
+   declarations, so it can use the slice and struct typedefs hc emits:
    sl_u8 and sl_i32 for the slices, and `Stats` as `Stats_g` with its fields
    `lo_g`, `hi_g` and `mean_g`. Every name that comes from the program carries
    that _g suffix; the functions below keep their plain names because an
@@ -19,7 +19,7 @@ static uint32_t crc32_bytes(sl_u8 s) {
     return ~crc;
 }
 
-/* Fills a Goose struct through a pointer: min, max and mean of the slice. */
+/* Fills a Helium struct through a pointer: min, max and mean of the slice. */
 static void stats_of(sl_i32 xs, Stats_g *out) {
     int64_t sum = 0;
     out->lo_g = xs.len ? xs.data[0] : 0;
@@ -33,7 +33,7 @@ static void stats_of(sl_i32 xs, Stats_g *out) {
     out->mean_g = xs.len ? (double)sum / (double)xs.len : 0.0;
 }
 
-/* Appends text to a Goose string builder: the way C hands bytes back. */
+/* Appends text to a Helium string builder: the way C hands bytes back. */
 static void c_version(gs_rref out) {
     const char *s = "C library 1.0";
     gs_bld_append(out, s, strlen(s));

@@ -1,7 +1,7 @@
 // runtime-debug: fixed values above the C backend's native-value threshold
 // keep their value semantics on data stacks. With the old lowering the
 // save/reset/load sequence alone reserved 1,280,144 bytes in MSVC's main
-// frame after Goose inlining, overflowing Windows' default 1 MiB stack.
+// frame after Helium inlining, overflowing Windows' default 1 MiB stack.
 struct Game { blocks byte[256000], seed int }
 var game = Game { .. };
 

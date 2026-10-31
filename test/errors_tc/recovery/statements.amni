@@ -7,7 +7,7 @@
 // error: expected identifier in variable declaration, found '='
 // The parser reports the error a statement raises, loses the statement,
 // and goes on at the next one, in the same block or after its `}`
-// (docs/design/language_server.md §5 D): every function's errors come
+//: every function's errors come
 // out, in order, one per broken statement. A function type, `fn(`, in
 // what is skipped starts no nested function.
 fn f(x int) int {

@@ -1,4 +1,4 @@
-// runtime-debug: stdlib/std.goose, one function group per section; the
+// runtime-debug: hc/lib/std.he, one function group per section; the
 // expected values are worked out by hand in the comments. Valid input trips
 // none of GS_DEBUG's checks inside std.
 import std;

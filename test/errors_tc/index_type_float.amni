@@ -1,5 +1,5 @@
 // error: only an integer converts to u32 in nodes, not f64
-// An index is converted from an integer, never from a float. (docs/design/index_types.md)
+// An index is converted from an integer, never from a float.
 var nodes i32[>..] = [];
 type NodeId = u32 in nodes;
 fn main() {

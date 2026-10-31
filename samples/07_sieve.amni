@@ -5,7 +5,7 @@
 // nowhere in sight.
 //
 // Build and run (from this directory):
-//   goose -o sieve.c 07_sieve.goose && cl sieve.c && sieve
+//   hc build 07_sieve.amni -o sieve && ./sieve
 
 import std;
 import os;

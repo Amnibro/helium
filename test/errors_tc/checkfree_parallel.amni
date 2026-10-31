@@ -1,5 +1,5 @@
 // error: so `assert(dist.len >= nodes.len)`
-// Against another array an index needs the length relation, which the error names. (docs/design/index_types.md)
+// Against another array an index needs the length relation, which the error names.
 var nodes i32[>..] = [];
 type NodeId = u32 in nodes;
 checkfree fn read(dist i32[:], w NodeId) i32 { dist[w] }

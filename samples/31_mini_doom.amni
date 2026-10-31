@@ -3,9 +3,9 @@
 // font and sound effects. This is an independent, deliberately small game;
 // it is not a source port and does not reproduce Doom's simulation exactly.
 //
-//   goose samples/31_mini_doom.goose
-//   goose samples/31_mini_doom.goose -- --frames 30
-//   goose samples/31_mini_doom.goose -- --wad path/to/freedoom1-e1m1.wad
+//   hc run samples/31_mini_doom.amni
+//   hc run samples/31_mini_doom.amni -- --frames 30
+//   hc run samples/31_mini_doom.amni -- --wad path/to/freedoom1-e1m1.wad
 //
 // WASD walks, Shift runs, mouse or Left/Right turns, E or Space uses doors
 // and switches. Left mouse or Ctrl fires. 1 selects fists, 2 the pistol,
@@ -1204,7 +1204,7 @@ fn sprite_mesh(out Vertex[>..]&) {
 
 // --- a small HUD, using the WAD's own font and weapon patches -----------------
 // These glyphs are game artwork in the sprite atlas. For ordinary fonts/text,
-// use ui's existing font and text renderer over gfx (see docs/stdlib.md).
+// use ui's existing font and text renderer over gfx (see hc/lib/ui.he).
 
 let WHITE = float4 { 1.0, 1.0, 1.0, 1.0 };
 fn hud_quad(out HudVertex[>..]&, x f32, y f32, w f32, h f32, id int, color float4) {
@@ -1433,7 +1433,7 @@ fn main() {
 	load_map();
 	reset_game();
 
-	require(gfx::open("Goose: Mini Doom / Freedoom E1M1", 960, 600, gfx::WINDOW_RESIZABLE), gfx::error());
+	require(gfx::open("Helium: Mini Doom / Freedoom E1M1", 960, 600, gfx::WINDOW_RESIZABLE), gfx::error());
 	load_sounds(quiet || frames > 0);
 	let atlas = gfx::texture2d(ATLAS_W, ATLAS_H);
 	require(atlas.id != 0 && gfx::update_texture(atlas, atlas_pixels), gfx::error());

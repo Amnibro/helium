@@ -4,7 +4,7 @@
 // error: expression expected, found 'end of file'
 // Recovery inside nested blocks: a statement's error ends at the `}`
 // that closes its block where no `;` comes first, braces balanced, and
-// a block the file ends in ends there (docs/design/language_server.md §5 D).
+// a block the file ends in ends there.
 struct P { x int, y int }
 fn f(c bool) int {
 	var n = 0;

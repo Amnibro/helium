@@ -1,10 +1,10 @@
-// Where values live, and what that buys. Goose has no allocator: every
+// Where values live, and what that buys. Helium has no allocator: every
 // dynamic value is owned by a variable and lives on a data stack, growth is
 // a pointer bump, and the only "free" is a scope ending. This program walks
 // through the consequences one at a time, with the numbers to show for it.
 //
 // Build and run (from this directory):
-//   goose -o memory.c 02_memory.goose && cl memory.c && memory
+//   hc build 02_memory.amni -o memory && ./memory
 
 import std;
 

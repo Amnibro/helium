@@ -1,4 +1,4 @@
-// runtime-debug: stdlib/json.goose. The writer's strings, escapes and
+// runtime-debug: hc/lib/json.he. The writer's strings, escapes and
 // numbers; the document tree of every kind of value, read back out with
 // the accessors and written out again; escapes decoded, surrogate pairs
 // included; integers that do and do not fit an i64; numbers that take the

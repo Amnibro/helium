@@ -1,4 +1,4 @@
-// Namespace terrain: integer constants match_constants.goose names in its
+// Namespace terrain: integer constants match_constants.amni names in its
 // patterns qualified, and this file's own match names unqualified.
 namespace terrain;
 
