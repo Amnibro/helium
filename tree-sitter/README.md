@@ -1,5 +1,9 @@
 # tree-sitter-goose
 
+> Inherited from [Goose](https://github.com/aardappel/goose) (Apache License 2.0,
+> see [NOTICE](../NOTICE)) and not yet adapted to Helium: it handles `.goose` files and
+> the `goose` command. `hc lsp` is Helium's language server.
+
 A [tree-sitter](https://tree-sitter.github.io/) grammar and highlight query for
 [Goose](https://github.com/aardappel/goose), for editors that highlight with
 tree-sitter (Neovim, Helix, Zed, …).

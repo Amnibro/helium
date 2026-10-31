@@ -1,5 +1,13 @@
 # Goose documentation
 
+> **Inherited documentation.** The documents in `docs/` were written for
+> [Goose](https://github.com/aardappel/goose), the language by Wouter van
+> Oortmerssen that Helium's memory model started from (Apache License 2.0; see
+> [NOTICE](../NOTICE)). They describe Goose's syntax (`.goose` files, `name: type`,
+> the `goose` command) and its C++ compiler. The memory model and most rules apply
+> to Helium; for Helium's syntax and tools read [HELIUM.md](../HELIUM.md) and the
+> [README](../README.md).
+
 Goose is a memory-safe systems language with no heap allocator, garbage
 collector or lifetime annotations ([what it is and why](../README.md)).
 This page is the map of its documentation. The language is described

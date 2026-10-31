@@ -1,5 +1,9 @@
 # Goose for Visual Studio Code
 
+> Inherited from [Goose](https://github.com/aardappel/goose) (Apache License 2.0,
+> see [NOTICE](../NOTICE)) and not yet adapted to Helium: it handles `.goose` files and
+> the `goose` command. `hc lsp` is Helium's language server.
+
 An extension for the [Goose language](https://github.com/aardappel/goose). With
 a compiler that has `goose lsp`, the compiler itself is the language server:
 the extension starts it and it analyzes your programs as you type. With an

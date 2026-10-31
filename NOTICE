@@ -1,0 +1,70 @@
+Helium
+Copyright 2026 Anthony Reffelt (Amniscient)
+
+Licensed under the Apache License, Version 2.0 (see LICENSE).
+
+The compiler hc, the runtime and the libraries in hc/lib are original work
+by Anthony Reffelt, except for the two ports listed below.
+
+------------------------------------------------------------------------------
+Goose
+https://github.com/aardappel/goose
+By Wouter van Oortmerssen, licensed under the Apache License, Version 2.0.
+
+Helium's memory model and core language semantics started from Goose, and this
+repository's git history begins with Goose's. The following still contain
+material from Goose, modified for Helium (file syntax converted to .amni,
+renamed, extended or partly rewritten):
+  docs/            tutorial, reference, specification, design notes
+  test/, samples/  most of the test corpus and samples
+  vscode/, tree-sitter/  editor support
+  bench/           everything except bench/heavyweights/
+
+------------------------------------------------------------------------------
+hc/lib/ui.he is a port of Nuklear
+https://github.com/Immediate-Mode-UI/Nuklear
+used under the MIT License (Nuklear's "Alternative A"):
+
+Copyright (c) 2017 Micha Mettke
+Permission is hereby granted, free of charge, to any person obtaining a copy of
+this software and associated documentation files (the "Software"), to deal in
+the Software without restriction, including without limitation the rights to
+use, copy, modify, merge, publish, distribute, sublicense, and/or sell copies
+of the Software, and to permit persons to whom the Software is furnished to do
+so, subject to the following conditions:
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+
+------------------------------------------------------------------------------
+hc/lib/physics.he and hc/lib/physics_engine.he are a port of Box3D
+https://github.com/erincatto/box3d
+used under the MIT License:
+
+MIT License
+
+Copyright (c) 2026 Erin Catto
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.

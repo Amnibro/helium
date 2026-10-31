@@ -1,12 +1,16 @@
 # Helium
 
-Helium's source files are `.amni` (this page) or `.he` (the same language with layout instead of braces, see `hc/TODO.md` §0). Coming from Goose (github.com/aardappel/goose), a `.amni` file differs from a `.goose` file in three ways:
+Helium's source files are `.amni` (this page) or `.he` (the same language with layout instead of braces, see `hc/TODO.md` §0).
+
+Run: `hc file.amni` (native, cached). `hc check file.amni` typechecks. `hc build file.amni` makes an executable (`-o out.c` writes C, `--web` WebAssembly).
+
+## Porting from Goose
+
+Helium's memory model started from Goose (github.com/aardappel/goose), and `tools/amni/goose2amni.py` converts Goose source. A `.amni` file differs from a `.goose` file in three ways:
 
 - Word types: `int`=i64, `uint`=u64, `byte`=u8, `real`=f64. The others stay: `i8 i16 i32 u16 u32 f32 bool varint`.
 - No `:` before a type in declarations and no `->` before results: `fn f(a int, b real) int, bool`, `struct P { x real, y real }`, `var n int = 0`. Literals and named arguments keep `:` (`P { x: 1.0, y: 2.0 }`).
 - `import std;` is implicit. Other modules are imported: `import dictionary;`, `import os;`, `import math;`.
-
-Run: `hc file.amni` (native, cached). `hc check file.amni` typechecks. `hc build file.amni` makes an executable (`-o out.c` writes C, `--web` WebAssembly). `tools/amni/goose2amni.py` converts Goose source.
 
 ## Core
 
