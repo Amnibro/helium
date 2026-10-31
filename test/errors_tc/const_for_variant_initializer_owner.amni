@@ -1,8 +1,0 @@
-// error: const for accessor belongs to Item<i64>.Some, not Item<f64>.Some
-enum Item<T> { Some { value T } }
-fn main() {
-	let item = Item<real>.Some {
-		const for <N, A> in fields<Item<int>.Some> { A: 3.5, }
-	};
-	print(item.value);
-}

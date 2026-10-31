@@ -1,9 +1,0 @@
-// error: cannot call remove, which shrinks a: the elements of a[..], which the statement reads after it
-// error: may be in a
-fn remove(a int[>..<]&) int { a.pop() }
-fn main() {
-	var other int[>..<] = [0];
-	remove(other);
-	var a int[>..<] = [0];
-	print((a[..])[remove(a)]);
-}

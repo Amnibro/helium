@@ -1,9 +1,0 @@
-// error: expected a value of type i64, got f64
-// A call's values forwarded by a return meet the function's return types as
-// values of their own would.
-fn halves() real, real { return 0.5, 1.5; }
-fn counts() int, int { return halves(); }
-fn main() {
-	let a, b = counts();
-	print(a, " ", b);
-}

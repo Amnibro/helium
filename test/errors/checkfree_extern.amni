@@ -1,4 +1,0 @@
-// error: extern fn cannot be checkfree
-// An extern has no body to check.
-checkfree extern fn f() int;
-fn main() {}

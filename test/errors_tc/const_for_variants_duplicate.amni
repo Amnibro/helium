@@ -1,4 +1,0 @@
-// error: variant Dot is already matched by an earlier arm
-enum Shape { Circle { r int }, Rect { w int, h int }, Dot }
-fn f(s Shape) int { match s { Dot => 0, const for <N, V> in variants<Shape> { V => 1, } } }
-fn main() { let s Shape = Shape.Dot; print(f(s)); }

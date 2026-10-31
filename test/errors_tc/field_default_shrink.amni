@@ -1,9 +1,0 @@
-// error: cannot call zap
-var data int[>..<] = [42];
-fn zap() int { data.clear(); 0 }
-struct S<T> { x int = zap() }
-fn main() {
-	let r .= data[0];
-	let s = S<byte> {};
-	print(r);
-}

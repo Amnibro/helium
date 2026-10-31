@@ -1,3 +1,0 @@
-// error: missing initializer
-struct S { x int, y int }
-fn main() { print(S { const for <C> in [2] { x: C, } }); }

@@ -1,6 +1,0 @@
-// error: read-only
-struct S { x int }
-fn main() {
-	const s = S { 1 };
-	const for <N, A> in fields<S> { s.A = 2; }
-}

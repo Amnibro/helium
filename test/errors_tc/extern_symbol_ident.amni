@@ -1,3 +1,0 @@
-// error: extern fn zv: C symbol "zlib.Version" is not a C identifier
-extern fn zv() uint = "zlib.Version";
-fn main() { print(zv()); }

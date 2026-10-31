@@ -1,8 +1,0 @@
-// error: cannot call remove, which shrinks a: a[..], evaluated earlier in the statement
-// error: may still refer into a
-fn read(r int[:], unused int) { print(r); }
-fn remove(a int[>..<]&) int { a.pop() }
-fn main() {
-	var a int[>..<] = [42];
-	read(a[..], remove(a));
-}

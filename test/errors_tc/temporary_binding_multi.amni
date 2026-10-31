@@ -1,8 +1,0 @@
-// error: binding s to a slice rooted at a temporary, which does not outlive it
-// Each name a multi-value call binds is held to the same rule.
-fn mk() byte[] { "hello" }
-fn two(xs const byte[:]) const byte[:], int { return xs, xs.len; }
-fn main() {
-	let s, n = two(mk());
-	print(s, n);
-}

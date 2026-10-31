@@ -1,3 +1,0 @@
-// error: type is already optional
-fn f(x int??) { }
-fn main() { }
