@@ -670,6 +670,12 @@ recursive tail_place(n int) bool:
 	if k == N_IF: return ND[n].c >= 0 && (ends(ND[n].b) || tail_place(ND[n].b)) && (ends(ND[n].c) || tail_place(ND[n].c))
 	if k == N_MATCH: ai := flat0(n); sa := AOWN; ok ~= ai.len > 0; for i ai.len / 2 { AOWN = ai[2 * i + 1]; b := ND[ai[2 * i]].b; if b < 0 || !ends(b) && !tail_place(b) { ok = false } } AOWN = sa; return ok
 	t := at(n); is_place(n) || t >= 0 && TY[t].k == TY_REF && TY[t].c < 0
+bjfx(t int) bool: TY[t].k == TY_ARR && TY[t].s as int == A_FIXED
+bjm(a int, b int, want int) bool:
+	if a == b || want >= 0 && TY[deref(want)].k == TY_SLICE: return false
+	ak := TY[a].k; bk := TY[b].k
+	if !(ak == TY_ARR || ak == TY_SLICE) || !(bk == TY_ARR || bk == TY_SLICE) || !bjfx(a) && !bjfx(b): return false
+	bjfx(a) && bjfx(b) || TY[a].a != TY[b].a
 recursive ck_if(n int, want int) int:
 	x := ND[n]
 	c := ck(x.a, T_BOOL)
@@ -690,6 +696,7 @@ recursive ck_if(n int, want int) int:
 	if tb == tc: return set_t(n, tb)
 	if want >= 0 && want != T_VOID && (is_pending(tb) || lp_tail(x.b) || conv_ok(tb, want, x.b)) && (is_pending(tc) || lp_tail(x.c) || conv_ok(tc, want, x.c)): conv(x.b, want); conv(x.c, want); return set_t(n, want)
 	db := deref(tb); dc := deref(tc)
+	if bjm(db, dc, want): m byte[>..] ~= []; format(m, "branches have mismatched types: ", tn(db), " vs ", tn(dc)); cerr(n, m); return set_t(n, T_ERRT)
 	if db != dc && (TY[db].k == TY_ARR || TY[db].k == TY_SLICE) && (TY[dc].k == TY_ARR || TY[dc].k == TY_SLICE) && TY[db].a == TY[dc].a: st := t_slice(TY[db].a, false); conv_tail(n, st); return set_t(n, st)
 	u := unify(n, x.b, x.c)
 	set_t(n, u)
@@ -811,6 +818,16 @@ recursive ck_match(n int, want int) int:
 	AOWN = sa; if is_pending(rt) && TY[rt].k == TY_ARRLIT && want < 0: return set_t(n, rt)
 	if is_pending(rt) && want < 0: fl ~= false; for i na { AOWN = ai[2 * i + 1]; b := ND[ai[2 * i]].b; if !ends(b) && TY[at(b)].k == TY_FLIT { fl = true } } AOWN = sa; if fl { return set_t(n, T_FLIT) }
 	if is_pending(rt): AOWN = ai[1]; b := ND[ai[0]].b; rt = default_t(b); AOWN = sa
+	ft ~= -1
+	for i na:
+		AOWN = ai[2 * i + 1]; b := ND[ai[2 * i]].b; bt := deref(at(b))
+		if !ends(b) && !is_pending(bt):
+			if ft < 0: ft = bt
+			else if bt != ft:
+				AOWN = sa
+				if bjm(ft, bt, want): m byte[>..] ~= []; format(m, "branches have mismatched types: ", tn(ft), " vs ", tn(bt)); cerr(n, m); return set_t(n, T_ERRT)
+				break
+	AOWN = sa
 	for i na:
 		AOWN = ai[2 * i + 1]; b := ND[ai[2 * i]].b; bt := deref(at(b)); if !ends(b) && !is_pending(bt) && bt != rt && (widens(rt, bt) && !(TY[rt].k == TY_FLT && TY[bt].k == TY_INT) || TY[rt].k == TY_INT && TY[bt].k == TY_FLT): rt = bt
 	if TY[rt].k == TY_INT && rt != T_I64 && widens(rt, T_I64):
