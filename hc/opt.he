@@ -530,16 +530,31 @@ tre(fi int):
 		if o == I_PARAM: if x.c < 0 || x.c > 16 || x.d < 0 { return } while pv.len <= x.c as int { pv.push(-1); pw.push(3) } pv[x.c] = x.d; pw[x.c] = x.w as i8; np = i + 1
 	if rt < 0: return
 	for i i0..np: o := IR[i].op as int; if o != I_PARAM && o != I_NOP { return }
-	q ~= rt - 1; while q > np && IR[q].op as int == I_NOP { q-- } if IR[q].op as int != I_LBL: return
-	rl := IR[q].c; uc i32[>..<] ~= []; uc.resize(nv, 0); for i i0..i1 { opnds(i); for u OU { uc[u] += 1 } }
+	q ~= rt - 1; while q > np && IR[q].op as int == I_NOP { q-- }
+	rl := if IR[q].op as int == I_LBL { IR[q].c } else { (-1) as i64 }; uc i32[>..<] ~= []; uc.resize(nv, 0); for i i0..i1 { opnds(i); for u OU { uc[u] += 1 } }
 	nx(p int) int: k ~= p + 1; while k < i1 && IR[k].op as int == I_NOP { k++ } k
+	lix(c i64) int:
+		for k i0..i1: if IR[k].op as int == I_LBL && IR[k].c == c { return k }
+		-1
+	reach(j0 int, c0 int) bool:
+		jj ~= j0; cc ~= c0; nn ~= 0
+		while nn < 32:
+			nn++; z := IR[jj]; o := z.op as int
+			if jj == rt: return cc == rv
+			if o == I_LBL || o == I_NOP: jj = nx(jj); continue
+			if o == I_JMP: jj = lix(z.c); if jj < 0 { return false } continue
+			if o == I_MOV && z.w == 3 && z.a as int == cc && z.d >= 0: cc = z.d as int; jj = nx(jj); continue
+			return false
+		false
 	sc i32[>..] ~= []; sx i32[>..] ~= []; sp i32[>..] ~= []; sj i32[>..] ~= []
 	for i np..i1:
 		x := IR[i]; if x.op as int != I_CALL || x.c != fi as i64 || x.d < 0 || uc[x.d] != 1 || x.b as int != pv.len: continue
 		p := nx(i); y := IR[p]; X ~= -2
-		if y.op as int == I_MOV && y.d as int == rv && y.a == x.d && y.w == 3: X = -1
-		if y.op as int == I_BIN && y.c == B_ADD as i64 && y.l < 0 && y.w == 3 && y.d as int == rv: X = if y.b == x.d { y.a as int } else { if y.a == x.d { y.b as int } else { -2 } }
-		j := nx(p); z := IR[j]; if X == -2 || !((z.op as int == I_JMP || z.op as int == I_LBL) && z.c == rl): continue
+		if y.op as int == I_MOV && y.d >= 0 && y.a == x.d && y.w == 3: X = -1
+		if y.op as int == I_BIN && y.c == B_ADD as i64 && y.l < 0 && y.w == 3 && y.d >= 0: X = if y.b == x.d { y.a as int } else { if y.a == x.d { y.b as int } else { -2 } }
+		j := nx(p); z := IR[j]; if X == -2: continue
+		dr := y.d as int == rv && (z.op as int == I_JMP || z.op as int == I_LBL) && z.c == rl
+		if !dr && !reach(j, y.d as int): continue
 		sc.push(i as i32); sx.push(X as i32); sp.push(p as i32); sj.push(if z.op as int == I_JMP { j as i32 } else { -1 })
 	if sc.len == 0: return
 	ni0 := IR.len; acc := nv; nv++; lp := nlbl(); rp i32[>..<] ~= []; rp.resize(nv + pv.len, -1)
