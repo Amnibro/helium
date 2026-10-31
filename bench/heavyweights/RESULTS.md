@@ -6,7 +6,31 @@ the benchmark size before it is timed; all 64 builds matched.
 Numbers are measured, not estimated; regenerate them with `python3 run.py` (about 30
 minutes, most of it CPython) and `python3 report.py`.
 
-![wall time relative to C](chart.png)
+## Headline
+
+Ratio of geometric-mean wall times over the programs below (each language's times are first
+divided by C (gcc)'s; the ratio of two such geomeans is the same whichever language is the
+reference). bintrees favours Helium because its program uses a per-function pool where the
+others allocate every node (see below), so the right-hand column leaves it out.
+
+| Helium (hcn) against | geomean wall time, all 7 programs | without bintrees |
+|---|---:|---:|
+| Rust (rustc -O3) | Helium 1.25× faster | Helium 1.11× slower |
+| Go | Helium 1.48× faster | Helium 1.14× faster |
+| Java (OpenJDK) | Helium 1.16× faster | Helium 1.02× faster |
+| Node.js | Helium 1.95× faster | Helium 1.67× faster |
+| Python (CPython) | Helium 33.45× faster | Helium 34.26× faster |
+| Zig (ReleaseFast) | Helium 1.01× slower | Helium 1.36× slower |
+| C (clang -O2) | Helium 1.35× faster | Helium 1.06× faster |
+| C (gcc -O2) | Helium 1.08× faster | Helium 1.21× slower |
+
+Helium is slower on fib, where gcc inlines the recursion into itself (see below).
+
+![speedup relative to C (gcc -O2), higher is faster](chart.png)
+
+The chart shows speedup, C (gcc)'s time divided by each language's (higher is faster), on a
+log scale; the right panel is the geometric mean over all 7 programs (solid) and without
+bintrees (hatched), with the corresponding time ratio in brackets.
 
 ## Wall time
 

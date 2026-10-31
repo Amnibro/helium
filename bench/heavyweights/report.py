@@ -64,28 +64,90 @@ def bold_best(d, langs, b, val):
     return min(vals, key=vals.get) if vals else None
 
 
+def headline(d, langs):
+    """Helium's geometric-mean wall time against each other language, all programs and without bintrees."""
+    lab = labels(d)
+
+    def rel(l, skip=()):
+        h, x = geomean_vs_ref(d, "helium", skip)[0], geomean_vs_ref(d, l, skip)[0]
+        r = x / h
+        return f"{r:.2f}× faster" if r >= 1 else f"{1 / r:.2f}× slower"
+
+    order = [l for l in ["rust", "go", "java", "node", "python", "zig", "c-clang", "c-gcc"] if l in langs]
+    rows = ["| Helium (hcn) against | geomean wall time, all 7 programs | without bintrees |", "|---|---:|---:|"]
+    for l in order:
+        rows.append(f"| {lab[l]} | Helium {rel(l)} | Helium {rel(l, ('bintrees',))} |")
+    return "\n".join(rows)
+
+
 def chart(d, langs, path):
+    """Speedup vs. C (gcc -O2) per program, plus geometric means; higher is faster."""
     import matplotlib
     matplotlib.use("Agg")
     import matplotlib.pyplot as plt
     lab = labels(d)
     langs = [l for l in langs if l != "c-gcc-arena"]
-    fig, ax = plt.subplots(figsize=(13, 5.5), dpi=120)
-    w = 0.8 / len(langs)
     colors = {"helium": "#7b2ff7", "c-gcc": "#555555", "c-clang": "#999999", "rust": "#ce422b", "zig": "#f7a41d",
-              "go": "#00add8", "java": "#5382a1", "node": "#3c873a", "python": "#ffd43b"}
+              "go": "#00add8", "java": "#5382a1", "node": "#3c873a", "python": "#e0b800"}
+
+    def sp(l, b):
+        return d[(REF, b)]["wall"]["median"] / d[(l, b)]["wall"]["median"] if (l, b) in d and (REF, b) in d else None
+
+    def lbl(x):
+        return f"{x:.2f}" if x >= 0.1 else f"{x:.3f}"
+
+    fig, (ax, gx) = plt.subplots(1, 2, figsize=(19, 8), dpi=130, gridspec_kw={"width_ratios": [2.8, 1]})
+    w = 0.8 / len(langs)
     for i, l in enumerate(langs):
-        ys = [d[(l, b)]["wall"]["median"] / d[(REF, b)]["wall"]["median"] if (l, b) in d else float("nan") for b in BENCHES]
-        ax.bar([x + (i - len(langs) / 2 + 0.5) * w for x in range(len(BENCHES))], ys, w, label=lab[l],
-               color=colors.get(l), edgecolor="black" if l == "helium" else None, linewidth=0.8)
+        hl = l == "helium"
+        xs, ys = [], []
+        for j, b in enumerate(BENCHES):
+            s = sp(l, b)
+            if s is None:
+                continue
+            xs.append(j + (i - len(langs) / 2 + 0.5) * w); ys.append(s)
+        ax.bar(xs, ys, w, label=lab[l], color=colors.get(l), alpha=1.0 if hl else 0.55,
+               edgecolor="black" if hl else "none", linewidth=1.2 if hl else 0, zorder=3 if hl else 2)
+        for x, y in zip(xs, ys):
+            ax.text(x, y * 1.06, lbl(y) + "×", ha="center", va="bottom", rotation=90,
+                    fontsize=7.5 if hl else 6.5, fontweight="bold" if hl else "normal",
+                    color="black" if hl else "#444444")
     ax.set_yscale("log")
-    ax.axhline(1.0, color="black", linewidth=0.6)
+    ax.axhline(1.0, color="black", linewidth=0.7)
     ax.set_xticks(range(len(BENCHES)), BENCHES)
-    ax.set_ylabel("wall time relative to C (gcc -O2), log scale; lower is faster")
-    ax.set_title("Helium vs. other languages: median wall time, same algorithm, same output")
-    ax.set_ylim(top=ax.get_ylim()[1] * 2)
-    ax.legend(ncol=9, fontsize=8, loc="upper center", bbox_to_anchor=(0.5, -0.08), frameon=False)
+    ax.set_ylim(0.005, 30)
+    ax.set_ylabel("speedup vs. C (gcc -O2) = gcc time / language time\nlog scale; higher is faster")
+    ax.set_title("Per program: median wall time, same algorithm, same output")
+    ax.legend(ncol=len(langs), fontsize=8, loc="upper center", bbox_to_anchor=(0.5, -0.07), frameon=False)
     ax.grid(axis="y", which="both", alpha=0.25)
+
+    rows = []
+    for l in langs:
+        g, _ = geomean_vs_ref(d, l)
+        gnb, _ = geomean_vs_ref(d, l, ("bintrees",))
+        rows.append((l, 1 / g, 1 / gnb, g, gnb))
+    rows.sort(key=lambda r: r[1])
+    h = 0.38
+    for k, (l, s, snb, g, gnb) in enumerate(rows):
+        hl = l == "helium"
+        a = 1.0 if hl else 0.55
+        gx.barh(k + h / 2, s, h, color=colors.get(l), alpha=a, edgecolor="black" if hl else "none", linewidth=1.2 if hl else 0)
+        gx.barh(k - h / 2, snb, h, color=colors.get(l), alpha=a * 0.6, hatch="///", edgecolor="black" if hl else "#666666",
+                linewidth=1.2 if hl else 0.3)
+        fw = "bold" if hl else "normal"
+        gx.text(s * 1.08, k + h / 2, f"{s:.2f}× (time {g:.2f}×)", va="center", fontsize=8, fontweight=fw)
+        gx.text(snb * 1.08, k - h / 2, f"{snb:.2f}× (time {gnb:.2f}×)", va="center", fontsize=7, fontweight=fw, color="#444444")
+    gx.set_yticks(range(len(rows)), [lab[r[0]] for r in rows])
+    for t, r in zip(gx.get_yticklabels(), rows):
+        if r[0] == "helium":
+            t.set_fontweight("bold"); t.set_color(colors["helium"])
+    gx.set_xscale("log")
+    gx.set_xlim(0.015, 60)
+    gx.axvline(1.0, color="black", linewidth=0.7)
+    gx.set_xlabel("geomean speedup vs. C (gcc -O2), log scale; higher is faster")
+    gx.set_title("Geometric mean, all 7 programs (solid)\nand without bintrees (hatched)")
+    gx.grid(axis="x", which="both", alpha=0.25)
+    fig.suptitle("Helium vs. C, Rust, Zig, Go, Java, Node and Python: speedup relative to C (gcc -O2)", fontsize=13)
     fig.tight_layout()
     fig.savefig(path)
 
@@ -154,7 +216,22 @@ the benchmark size before it is timed; {"all " + str(len(d)) + " builds matched"
 Numbers are measured, not estimated; regenerate them with `python3 run.py` (about 30
 minutes, most of it CPython) and `python3 report.py`.
 
-![wall time relative to C](chart.png)
+## Headline
+
+Ratio of geometric-mean wall times over the programs below (each language's times are first
+divided by C (gcc)'s; the ratio of two such geomeans is the same whichever language is the
+reference). bintrees favours Helium because its program uses a per-function pool where the
+others allocate every node (see below), so the right-hand column leaves it out.
+
+{headline(d, langs)}
+
+Helium is slower on fib, where gcc inlines the recursion into itself (see below).
+
+![speedup relative to C (gcc -O2), higher is faster](chart.png)
+
+The chart shows speedup, C (gcc)'s time divided by each language's (higher is faster), on a
+log scale; the right panel is the geometric mean over all 7 programs (solid) and without
+bintrees (hatched), with the corresponding time ratio in brackets.
 
 ## Wall time
 

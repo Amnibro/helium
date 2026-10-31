@@ -36,7 +36,25 @@ The library in `hc/lib` is Helium throughout: `std`, `os`, `math`, `json`, `rege
 Seven programs (Benchmarks Game n-body, spectral-norm, binary-trees, fannkuch-redux, plus
 recursive fib, a Mandelbrot count and a string-keyed hash map), each written with the same
 algorithm in Helium, C, Rust, Zig, Go, Java, JavaScript and Python and checked for identical
-output. Median wall time of 5 runs on an AMD Ryzen 9 9950X3D, single-threaded:
+output. Median wall time of 5 runs on an AMD Ryzen 9 9950X3D, single-threaded.
+
+Geometric mean of wall time, Helium against each language:
+
+| Helium (hcn) against | all 7 programs | without bintrees |
+|---|---:|---:|
+| Rust (rustc -O3) | Helium 1.25× faster | Helium 1.11× slower |
+| Go | Helium 1.48× faster | Helium 1.14× faster |
+| Java (OpenJDK) | Helium 1.16× faster | Helium 1.02× faster |
+| Node.js | Helium 1.95× faster | Helium 1.67× faster |
+| Python (CPython) | Helium 33.45× faster | Helium 34.26× faster |
+| Zig (ReleaseFast) | Helium 1.01× slower | Helium 1.36× slower |
+| C (clang -O2) | Helium 1.35× faster | Helium 1.06× faster |
+| C (gcc -O2) | Helium 1.08× faster | Helium 1.21× slower |
+
+![speedup relative to C (gcc -O2), higher is faster](bench/heavyweights/chart.png)
+
+The chart shows speedup over C (gcc -O2), log scale, higher is faster; the right panel is the
+geometric mean with and without binary-trees. Per-program wall times:
 
 | Program | Helium (hcn) | C (gcc -O2) | C (clang -O2) | Rust (rustc -O3) | Zig (ReleaseFast) | Go | Java (OpenJDK) | Node.js | Python (CPython) |
 |---|---:|---:|---:|---:|---:|---:|---:|---:|---:|
@@ -47,7 +65,7 @@ output. Median wall time of 5 runs on an AMD Ryzen 9 9950X3D, single-threaded:
 | fannkuch | 1816 ms | 1800 ms | 1956 ms | 1822 ms | 2058 ms | 1790 ms | 2044 ms | 1857 ms | 64.0 s |
 | mandelbrot | 656 ms | 602 ms | 656 ms | 614 ms | 625 ms | 630 ms | 691 ms | 676 ms | 31.6 s |
 | strmap | 793 ms | 731 ms | 1114 ms | 779 ms | 215 ms | 801 ms | 535 ms | 2869 ms | 2406 ms |
-| geomean vs C (gcc) | 0.93× | 1.00× | 1.26× | 1.16× | 0.92× | 1.37× | 1.08× | 1.82× | 31.09× |
+| geomean time vs C (gcc) | 0.93× | 1.00× | 1.26× | 1.16× | 0.92× | 1.37× | 1.08× | 1.82× | 31.09× |
 | geomean without bintrees | 1.21× | 1.00× | 1.28× | 1.09× | 0.89× | 1.38× | 1.24× | 2.02× | 41.53× |
 
 Helium is ahead on binary-trees because its program builds each tree in a pool instead of
@@ -56,12 +74,19 @@ allocating every node; against a C program that does the same it is 1.6× slower
 inlines the recursion into itself, and 1.1× clang, Rust and Zig), on nbody (Rust and Zig are
 1.5× faster) and on strmap (Zig's `StringHashMap` is 3.7× faster, Java's `HashMap` 1.5×). Executables are larger than C's or Zig's and smaller than Rust's or Go's.
 
-![wall time relative to C](bench/heavyweights/chart.png)
-
 Peak memory, executable size, compile time, machine details, the exact commands and the
 differences between the implementations (notably binary-trees, where Helium's per-tree pool
 is compared both with per-node allocation and with a C arena) are in
 [bench/heavyweights/RESULTS.md](bench/heavyweights/RESULTS.md).
+
+## Gold
+
+Gold is a conversational layer over Helium. Each plain sentence (verb noun
+modifier context, for example `run function x until y`) maps to a verified
+Helium template, and a chain of sentences expands into one real Helium program
+that `hc` checks, compiles and runs. Programming content can then be kept as
+short scripts over a library of tested templates instead of hand-maintained
+code. See [docs/gold.md](docs/gold.md).
 
 ## Tests
 
