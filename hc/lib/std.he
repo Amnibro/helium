@@ -23,6 +23,8 @@ to_int(s byte[:]) int: v, ok := parse_int(trim(s)); v
 to_int(c byte) int: if c >= '0' && c <= '9' { c - '0' } else { c as int }
 to_real<T>(x T) real: x as real
 to_real(s byte[:]) real: v, ok := parse_flt(trim(s)); v
+to_real(s const byte[>..]&) real: to_real(s[..])
+to_int(s const byte[>..]&) int: to_int(s[..])
 HASH_K uint := 11400714819323198485
 hash_mix(x uint) uint: h := x * HASH_K; h ^ (h >> 32)
 hash(x i8) uint: hash_mix(x as! uint)
@@ -82,6 +84,7 @@ contains<T>(xs T[:], v T) bool: position(xs, v) >= 0
 contains(s byte[:], sub byte[:]) bool: find(s, sub) >= 0
 range(n int) int[>..]: o int[>..] ~= []; for i n { o.push(i) }; o
 range(a int, b int) int[>..]: o int[>..] ~= []; for i a..b { o.push(i) }; o
+inline pyrcount(a int, b int, s int) int: if s > 0 { if b > a { (b - a + s - 1) / s } else { 0 } } else { if a > b { (a - b - s - 1) / (0 - s) } else { 0 } }
 range(a int, b int, s int) int[>..]: o int[>..] ~= []; i ~= a; while s > 0 && i < b || s < 0 && i > b { o.push(i); i += s }; o
 any(xs bool[:]) bool: for x in xs { if x { return true } }; false
 all(xs bool[:]) bool: for x in xs { if !x { return false } }; true
@@ -248,7 +251,7 @@ hex(n int) byte[>..]: pyb(n, 16, "0x")
 reversed<T>(xs T[:]) T[>..]: o T[>..] ~= []; o.append(xs); reverse(o); o
 sorted<T>(xs T[:]) T[>..]: o T[>..] ~= []; o.append(xs); sort(o); o
 sorted<T, F>(xs T[:]) T[>..]: o T[>..] ~= []; o.append(xs); sort(o) { a, b => F(a, b) }; o
-floor_div(a int, b int) int: q := a / b; if a % b != 0 && (a < 0) != (b < 0) { q - 1 } else { q }
+inline floor_div(a int, b int) int: if b > 0 { (a - a % b) / b } else { q := a / b; if a % b != 0 && a > 0 { q - 1 } else { q } }
 floor_div(a real, b real) real: flt_floor(a / b)
 gcd(a int, b int) int: x ~= abs(a); y ~= abs(b); while y != 0 { t := x % y; x = y; y = t }; x
 lcm(a int, b int) int: if a == 0 || b == 0 { 0 } else { abs(a / gcd(a, b) * b) }

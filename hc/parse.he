@@ -241,11 +241,12 @@ pfor() int:
 	s := sub_begin(true)
 	{ q_ := pyarr(pexpr()); ND[n].a = q_ }
 	if PY && (ND[ND[n].a].k as int == N_ID || ND[ND[n].a].k as int == N_DOT) && ND[n].c < 0: ND[n].e = mkcall(intern("keys"), st, ND[n].a, -1)
-	fx := forfix(n)
+	fx := forfix(n); r3 := FR3 == n; r3v := FR3V; r3c := FR3RC; r3a := ncpy3(FR3A)
 	if is(T_DOTDOT):
 		{ q_ := pexpr(); ND[n].b = q_ }
 	sub_end(s)
-	{ q_ := pblock("for body"); ND[n].d = q_ }
+	pb0 := P; { q_ := pblock("for body"); ND[n].d = q_ }
+	if r3 && r3a.len > 0: { bad ~= false; for q pb0..P { if TK[q].k as int == T_IDENT && r3a.contains(TK[q].v as i32) && (pyas(tkat(q + 1)) && tkat(q + 1) != T_COLON || tkat(q + 1) == T_INC || tkat(q + 1) == T_DEC || tkat(q - 1) == K_FOR || tkat(q - 1) == T_COMMA && tkat(q + 1) == K_IN) { bad = true } } if bad { ND[n].a = r3c; ND[n].s = r3v; fx.clear() } }
 	if fx.len > 0: b := ND[n].d; ss i32[>..] ~= []; ss.append(fx); for i ND[b].n { ss.push(kid(b, i) as i32) } ND[n].d = mkblock(ND[b].t, ss, ND[b].a)
 	n
 called(c int, name int, na int) bool: c >= 0 && ND[c].k as int == N_CALL && ND[c].b < 0 && (ND[ND[c].a].k as int == N_ID && ND[ND[c].a].s == name && ND[c].n == na + 1 || ND[ND[c].a].k as int == N_DOT && ND[ND[c].a].s == name && ND[c].n == na)
@@ -256,9 +257,23 @@ pyfor3(n int, st int) int:
 	it := intern(str("_hc_it", st)); ND[n].s = it; fx i32[>..] ~= []
 	for w, i in ns: fx.push(mkdecl(w as int, mkdot(mkid(it, st), intern(str("f", i)), st), st, 0) as i32)
 	b := pblock("for body"); ss i32[>..] ~= []; ss.append(fx); for i ND[b].n { ss.push(kid(b, i) as i32) } ND[n].d = mkblock(ND[b].t, ss, ND[b].a); n
+pylitk(e int) int: if ND[e].k as int == N_INT { return TK[ND[e].t].v as int } if ND[e].k as int == N_UN && ND[e].op as int == T_MINUS && ND[ND[e].a].k as int == N_INT { return 0 - TK[ND[ND[e].a].t].v as int } 0
+recursive pycp(e int) int:
+	k := ND[e].k as int; if k == N_INT { return mk(N_INT, ND[e].t) } if k == N_ID { return mkid(ND[e].s, ND[e].t) } if k == N_BIN { return mkbin(ND[e].op as int, pycp(ND[e].a as int), pycp(ND[e].b as int), ND[e].t) } u := mk(N_UN, ND[e].t); ND[u].op = ND[e].op; ND[u].a = pycp(ND[e].a); u
+var FR3 = -1
+var FR3V = -1
+var FR3RC = -1
+var FR3A i32[>..]
+ncpy3(a i32[>..]&) i32[>..]: o i32[>..] ~= []; for x a { o.push(x) } o
+recursive pypure(e int, o i32[>..]&) bool:
+	k := ND[e].k as int; if k == N_INT { return true } if k == N_ID { o.push(ND[e].s as i32); return true } if k == N_UN && ND[e].op as int == T_MINUS { return pypure(ND[e].a as int, o) } k == N_BIN && (ND[e].op as int == T_PLUS || ND[e].op as int == T_MINUS || ND[e].op as int == T_MUL) && pypure(ND[e].a as int, o) && pypure(ND[e].b as int, o)
 forfix(n int) i32[>..]:
-	fx i32[>..] ~= []; rc := ND[n].a
+	fx i32[>..] ~= []; rc := ND[n].a; FR3A.clear()
 	if !he(): return fx
+	if PY && ND[rc].k as int == N_CALL && ND[rc].b < 0 && ND[rc].n == 3 && ND[ND[rc].a].k as int == N_ID && ND[ND[rc].a].s == NAME_RANGE && ND[n].c < 0 && pypure(kid(rc, 0), FR3A) && pypure(kid(rc, 2), FR3A):
+		a0 := kid(rc, 0); s0 := kid(rc, 2); t := ND[n].t; k := intern(str("_hc_k", t)); c := mk(N_CALL, t); ND[c].a = mkid(intern("pyrcount"), t); m := wbeg(); WS.push(a0); WS.push(kid(rc, 1)); WS.push(s0); setl(c, m)
+		FR3 = n; FR3V = ND[n].s; FR3RC = rc; ND[n].a = c; ND[n].s = k
+		fx.push(mkdecl(FR3V, mkbin(T_PLUS, pycp(a0), mkbin(T_MUL, mkid(k, t), pycp(s0), t), t), t, V_VAR) as i32); return fx
 	if ND[rc].k as int == N_CALL && ND[rc].b < 0 && ND[rc].n >= 1 && ND[rc].n <= 2 && ND[ND[rc].a].k as int == N_ID && ND[ND[rc].a].s == NAME_RANGE: if ND[rc].n == 2 { ND[n].b = kid(rc, 1) } ND[n].a = kid(rc, 0)
 	if ND[n].c >= 0 && called(rc, NAME_ENUMERATE, 0) && ND[ND[rc].a].k as int == N_ID: v := ND[n].s; ND[n].s = ND[n].c; ND[n].c = v; ND[n].a = kid(rc, 0)
 	if PY && ND[n].c >= 0 && !itm(rc) && !called(rc, NAME_ENUMERATE, 0): t := ND[n].t; it := intern(str("_hc_it", t)); fx.push(mkdecl(ND[n].s, mkdot(mkid(it, t), intern("f0"), t), t, 0) as i32); fx.push(mkdecl(ND[n].c, mkdot(mkid(it, t), intern("f1"), t), t, 0) as i32); ND[n].s = it; ND[n].c = -1
@@ -849,8 +864,11 @@ pydict(st int) int:
 		if !pr: return mkcall(intern("set"), st, mkcall(NAME_LIST, st, ka, -1), -1)
 		va := mk(N_ARR, st); m2 := wbeg(); i = 1; while i < ND[n].n { WS.push(pyval(kid(n, i))); i += 2 } setl(va, m2); return mkcall(intern("dict_from"), st, mkcall(NAME_LIST, st, ka, -1), mkcall(NAME_LIST, st, va, -1))
 	n
+pyctor(s const byte[:]) bool: s == "set" || s == "dict" || s == "deque" || s == "list" || s == "Counter" || s == "defaultdict"
+pystrl(t int) bool: t >= 0 && ND[t].k as int == N_TARR && ND[t].a >= 0 && ND[ND[t].a].k as int == N_TARR && ND[ND[t].a].a >= 0 && ND[ND[ND[t].a].a].k as int == N_TPRIM && ND[ND[ND[t].a].a].op as int == K_BYTE
 pyinit(e int, ty int) int:
 	k := ND[e].k as int; st := ND[e].t
+	if k == N_CALL && pystrl(ty) && !(ND[ND[e].a].k as int == N_ID && pyctor(nm(ND[ND[e].a].s))): return mkcall(NAME_LIST, st, e, -1)
 	if k == N_EBLOCK && ND[ND[e].a].n > 0: d0 := kid(ND[e].a, 0); tl := ND[ND[e].a].a; if ND[d0].k as int == N_VDECL && tl >= 0 && ND[tl].k as int == N_ID && starts_with(nm(ND[tl].s), "_hc_comp") { ND[d0].a = ty; return e }
 	if k == N_SLIT && ND[e].a < 0:
 		if ND[e].n == 0: ND[e].a = ty; return e
@@ -989,6 +1007,22 @@ pyclass():
 		if pyw(NAME_DEF): ms.push(pydef(false, w) as i32); continue
 		f := mk(N_FIELD, P); ND[f].s = ident("class field"); ex(T_COLON, "class field"); ND[f].a = pyty(1); if is(T_ASSIGN) { ND[f].b = pexpr() } WS.push(f)
 	ex(T_RC, "class body"); setl(n, m); set_end(n); TOP.push(n); for x in ms { TOP.push(x) }
+pyas(k int) bool: k == T_ASSIGN || k == T_COLON || k >= T_PLUSEQ && k <= T_XOREQ
+pyfree(j int) int:
+	b ~= j; while b < TK.len - 1 && tkat(b) != T_LC { b++ } e := pyend(b); lo i32[>..] ~= []; gl i32[>..] ~= []; us i32[>..] ~= []; d ~= 0
+	for q (j + 2)..b { k := tkat(q); if k == T_LP || k == T_LB { d++ } if k == T_RP || k == T_RB { d-- } if k == T_IDENT && d == 1 && (tkat(q - 1) == T_LP || tkat(q - 1) == T_COMMA || tkat(q - 1) == T_MUL) { lo.push(TK[q].v as i32) } }
+	d = 0
+	for q b..e:
+		k := tkat(q); if k == T_LP || k == T_LB { d++ } if k == T_RP || k == T_RB { d-- }
+		if k == K_FOR || k == T_IDENT && TK[q].v == NAME_LAMBDA as i64: z ~= q + 1; while z < e && tkat(z) != K_IN && tkat(z) != T_COLON { if tkat(z) == T_IDENT { lo.push(TK[z].v as i32) } z++ } continue
+		if k != T_IDENT || tkat(q - 1) == T_DOT: continue
+		if TK[q].v == NAME_GLOBAL as i64 || nm(TK[q].v as int) == "nonlocal": z ~= q + 1; while z < e && tkat(z) != T_SEMI { if tkat(z) == T_IDENT { gl.push(TK[z].v as i32) } z++ } continue
+		s := tkat(q - 1)
+		if s == T_LC || s == T_SEMI || s == T_RC: { z ~= q; while tkat(z) == T_IDENT && tkat(z + 1) == T_COMMA { z += 2 } if tkat(z) == T_IDENT && pyas(tkat(z + 1)) { y ~= q; while y <= z { lo.push(TK[y].v as i32); y += 2 } } }
+		if d > 0 && tkat(q + 1) == T_ASSIGN: continue
+		us.push(TK[q].v as i32)
+	for u us { if (!lo.contains(u) || gl.contains(u)) && !PYF.contains(u) { PYF.push(u) } }
+	e
 pyf(w int) bool: for x in PYF { if x == w { return true } } false
 pytop(st int):
 	k := tk()
@@ -1064,12 +1098,17 @@ parse_file(path const byte[:]) bool:
 	if FILES[TK[t0].f].py:
 		for m in ["dictionary", "math"]: n := mk(N_IMPORT, t0); ND[n].s = intern(m); TOP.push(n)
 		for j t0..TK.len - 1: if TK[j].k as int == T_IDENT && TK[j].v == NAME_CLASS && TK[j + 1].k as int == T_IDENT { PYC.push(TK[j + 1].v as i32) }
-		PYS.clear(); PYG.clear(); PYF.clear(); PYSM = true; j ~= t0
+		PYS.clear(); PYG.clear(); PYF.clear(); PYSM = true; j ~= t0; tn i32[>..] ~= []; ti (i32[>..])[>..] ~= []
 		while j < TK.len - 1:
 			if TK[j].k as int == T_IDENT && TK[j].v == NAME_DEF && (j == t0 || tkat(j - 1) == T_SEMI || tkat(j - 1) == T_RC):
 				if TK[j + 1].k as int == T_IDENT && nm(TK[j + 1].v as int) == "main" { PYSM = false }
-				b ~= j; while b < TK.len - 1 && tkat(b) != T_LC { b++ } e := pyend(b); for q b..e { if TK[q].k as int == T_IDENT { PYF.push(TK[q].v as i32) } } j = e
+				j = pyfree(j)
+			else if TK[j].k as int == T_IDENT && TK[j].v == NAME_CLASS && (j == t0 || tkat(j - 1) == T_SEMI || tkat(j - 1) == T_RC):
+				b ~= j; while b < TK.len - 1 && tkat(b) != T_LC { b++ } j = pyend(b)
+			else if TK[j].k as int == T_IDENT && (j == t0 || tkat(j - 1) == T_SEMI || tkat(j - 1) == T_RC) && (tkat(j + 1) == T_ASSIGN || tkat(j + 1) == T_COLON):
+				tn.push(TK[j].v as i32); iv i32[>..] ~= []; d ~= 0; q ~= j + 2; while q < TK.len - 1 && !(d == 0 && tkat(q) == T_SEMI) { k := tkat(q); if k == T_LP || k == T_LB || k == T_LC { d++ } if k == T_RP || k == T_RB || k == T_RC { d-- } if k == T_IDENT && tkat(q - 1) != T_DOT { iv.push(TK[q].v as i32) } q++ } ti.push(iv); j = q
 			j++
+		ch ~= true; while ch { ch = false; for w, wi tn { if pyf(w as int) { for x ti[wi] { if tn.contains(x) && !pyf(x as int) { PYF.push(x); ch = true } } } } }
 	while tk() != T_EOF && PERR.len == 0: ptop()
 	if FILES[TK[t0].f].py && PYSM && PYS.len > 0 && PERR.len == 0: pymain(t0)
 	FILENS.push(FILENS0)

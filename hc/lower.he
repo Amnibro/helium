@@ -270,7 +270,7 @@ recursive is_lplace(n int) bool:
 var SINKA i32[>..<]; var SINKT i32[>..<]
 recursive lsink(n int, addr int, t int): SINKA.push(addr); SINKT.push(t); lbranch(n, -2); SINKA.pop(); SINKT.pop();
 sinkv(n int, si int):
-	st := SINKT[si]; lstore(SINKA[si], n, st); if TY[st].k != TY_REF && TY[st].k != TY_SLICE: lmove_src(n);
+	st := SINKT[si]; lstore(SINKA[si], n, st); if TY[st].k != TY_REF && TY[st].k != TY_SLICE: lsrc(n, SINKA[si], st);
 recursive lres_len(n int, b int, va int, ca int, cw int, eb int, cap int, nn int, e int, total int):
 	es := tsz(e); cur := ldw(ca, 0, cw)
 	dk := needs_drop(e) && !is_vimg(e); bs := if eb >= 0 { eb } else { ldw(va, 0, 3) }
@@ -814,10 +814,14 @@ tmp_drop(a int, t int):
 	if needs_drop(t): e ~= a; if BRD > SBRD && FZP >= 0 { q ~= IR.len - 1; while q > FZP && !(IR[q].op as int == I_SLOT && IR[q].d == a) { q-- } if q > FZP { o := IR[q].c as int; FZL = min(FZL, o); FZH = max(FZH, o + tsz(t)); e = -(o + 1) } } STMP.push(e); STMP.push(t);
 tmpa(a int) int:
 	if a >= 0 { return a } q := nv(); ir(I_SLOT, 8, q, -1, -1, -(a + 1)); q
+lsrc(n int, a int, t int):
+	if NOLSD < 0: q byte[>..] ~= []; NOLSD = if env("HC_NOLSD", q) { 1 } else { 0 }
+	if NOLSD == 0 && is_lplace(n) && !(ND[n].k as int == N_ID && rk(n) == R_LOCAL) && TY[t].k != TY_REF && TY[t].k != TY_SLICE && needs_drop(t) { lwalk(1, a, -1, t) } else { lmove_src(n) }
 recursive lmove_src(n int):
 	ft := fin(n); if ft >= 0 && (TY[ft].k == TY_SLICE || TY[ft].k == TY_REF) { return } if ND[n].k as int == N_ID && rk(n) == R_LOCAL:
 		t := LVS[rv(n)].ty; if TY[t].k != TY_REF && needs_drop(t): lzero(vaddr(n), tsz(t));
 LTREF ~= false
+NOLSD ~= -1
 recursive ltail(n int) int:
 	ft := fin(n); if ft >= 0 && TY[ft].k == TY_REF { return lrefv(n) } if LTREF { st := atc(n); if st >= 0 && TY[st].k != TY_REF && TY[st].k != TY_NULL && is_lplace(n) { return laddr(n) } } lx(n)
 recursive lbr(b int, d int):
@@ -1371,9 +1375,9 @@ recursive lstmt1(n int):
 	if k == N_RET && ax(n) >= 0 && ax(n) != CURI:
 		lt := ax(n); rt0 := FI_[lt].ret as int; va := if lrrel(lt) { ldw(lrdst(lt), 0, 3) } else { lrval(lt) }
 		if x.n > 1:
-			for i x.n: c := kid(n, i); lstore(addi(va, moff(rt0, i)), c, mel(rt0, i)); lmove_src(c)
+			for i x.n: c := kid(n, i); lstore(addi(va, moff(rt0, i)), c, mel(rt0, i)); lsrc(c, addi(va, moff(rt0, i)), mel(rt0, i))
 		else:
-			if x.n == 1: c := kid(n, 0); lstore(va, c, rt0); lmove_src(c)
+			if x.n == 1: c := kid(n, 0); lstore(va, c, rt0); lsrc(c, va, rt0)
 		cr := FI_[CUR].ret as int; if cr >= 0 && is_vimg(cr) { ir(I_MOV, 3, RETV, imm(0), -1, 0) } stw(lrflag(), 0, imm(lrkey(lt) + 1), 3); drop_keep(); ir(I_JMP, 3, -1, -1, -1, RETK); return
 	if k == N_RET && x.n > 1: rt := FI_[CUR].ret as int; for i x.n { c := kid(n, i); et := mel(rt, i); dup ~= false; for j i + 1..x.n { c2 := kid(n, j); if ND[c].k as int == N_ID && ND[c2].k as int == N_ID && rk(c) == R_LOCAL && rk(c2) == R_LOCAL && rv(c) == rv(c2) { dup = true } } if dup && is_res(et) && deref(at(c)) == et { sp, sn := lsl(c); if nseq(et) { rtcall("rt_sqfrom", [addi(RETV, moff(rt, i)) as i32, sp as i32, sn as i32, lsqbytes(sp, sn, TY[et].a as int) as i32]); } else { rtcall("rt_rfrom", [addi(RETV, moff(rt, i)) as i32, sp as i32, sn as i32, imm(tsz(TY[et].a as int)) as i32]); } } else { lstore(addi(RETV, moff(rt, i)), c, et); if !dup { lmove_src(c) } } } drop_ret(); ir(I_JMP, 3, -1, -1, -1, RETL); return
 	if k == N_RET: if x.n > 0 { c := kid(n, 0); lret(c); } else { drop_to(0); ir(I_JMP, 3, -1, -1, -1, RETL); } return
@@ -1384,7 +1388,7 @@ recursive lstmt1(n int):
 	lx(n);
 recursive lret(c int):
 	rt := FI_[CUR].ret; th := STMP.len
-	if is_agg(rt): lstore(RETV, c, rt); lmove_src(c); drop_stmp(th); drop_ret(); ir(I_JMP, 3, -1, -1, -1, RETL); return
+	if is_agg(rt): lstore(RETV, c, rt); lsrc(c, RETV, rt); drop_stmp(th); drop_ret(); ir(I_JMP, 3, -1, -1, -1, RETL); return
 	if is_pair(rt): p, q := lsl(c); ir(I_MOV, 3, RETV, p, -1, 0); ir(I_MOV, 3, RETV2, q, -1, 0)
 	else:
 		if is_scal(rt): ir(I_MOV, 3, RETV, lx(c), -1, 0) else: lerr(c, "returning this type natively")
