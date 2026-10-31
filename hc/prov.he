@@ -396,7 +396,22 @@ recursive pvexpr(n int):
 	if k == N_BIN || k == N_IDX: pvexpr(ND[n].a as int); pvexpr(ND[n].b as int); return
 	if k == N_UN || k == N_AS || k == N_DOT || k == N_FI: pvexpr(ND[n].a as int); return
 	if k == N_SLICE: pvexpr(ND[n].a as int); pvexpr(ND[n].b as int); pvexpr(ND[n].c as int); return
-	if k == N_ARR || k == N_SLIT: for j ND[n].n { pvexpr(kid(n, j)) } return
+	if k == N_ARR || k == N_SLIT:
+		if k == N_ARR && ND[n].n == 0 && ND[n].a >= 0:
+			pvexpr(ND[n].a as int); pvexpr(ND[n].b as int)
+			c := ND[n].a as int; ct := at(c); q := pv(c)
+			if (isrs(ct) || rref(ct)) && pgsid(q.v as int): pnst(c, q, ct)
+			return
+		t := at(n); si := if t > 0 && TY[t].k as int == TY_STRUCT { TY[t].a as int } else { if t > 0 && TY[t].k as int == TY_VARIANT { ENV[ENI[TY[t].a].v0 as int + TY[t].c as int].si as int } else { -1 } }
+		for j ND[n].n:
+			c := kid(n, j); pvexpr(c)
+			v := if ND[c].k as int == N_FI { ND[c].a as int } else { c }
+			fi := if ND[c].k as int == N_FI { if si >= 0 { sfield(si, ND[c].s as int) } else { -1 } } else { j }
+			ft := if si >= 0 && fi >= 0 && fi < STI[si].fnum as int { SFI[STI[si].f0 as int + fi].ty as int } else { at(v) }
+			vk := ND[v].k as int; vt := at(v)
+			q := if rref(ft) && (vk == N_ID || vk == N_DOT || vk == N_IDX) && vt > 0 && TY[vt].k as int != TY_REF && !isrs(vt) { pdst(v) } else { pv(v) }
+			if (isrs(ft) || rref(ft)) && pgsid(q.v as int): pnst(v, q, ft)
+		return
 	if k == N_CALL:
 		for j ND[n].n { pvexpr(kid(n, j)) }
 		c := ND[n].a as int; b := rv(n)

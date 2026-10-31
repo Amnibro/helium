@@ -299,10 +299,15 @@ growshrink_slot_var_loop_merged.amni
 growshrink_slot_var_rebind.amni
 growshrink_store.amni
 growshrink_store_argument.amni
+growshrink_store_branch.amni
 growshrink_store_callee_shrink.amni
 growshrink_store_elements.amni
+growshrink_store_fill.amni
 growshrink_store_nested.amni
 growshrink_store_parameter.amni
+growshrink_store_return.amni
+growshrink_store_tail.amni
+growshrink_store_view_binding.amni
 guard_else_skips_assign.amni
 holder_copy_escapes.amni
 holder_inferred_array_escapes.amni
