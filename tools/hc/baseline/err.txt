@@ -27,6 +27,10 @@ block_reference_implicit_copy.amni
 block_slice_escape.amni
 block_value_implicit_copy.amni
 block_valued_break_unassigned.amni
+branch_join_arrays.amni
+branch_join_arrays_break.amni
+branch_join_arrays_match.amni
+branch_join_arrays_receiver.amni
 branch_join_const_ref.amni
 branch_join_const_write.amni
 branch_join_growshrink_store.amni
@@ -52,6 +56,7 @@ byteview_holder_return.amni
 byteview_nested_holder_return.amni
 byteview_param_reuse.amni
 byteview_return.amni
+byteview_slot_var_explicit.amni
 byteview_storage.amni
 clear_live_ref_field.amni
 clear_live_slice.amni
@@ -71,6 +76,7 @@ const_for_constant_binder.amni
 const_for_lifetime.amni
 const_for_limit.amni
 const_for_mixed_init.amni
+const_for_reordered_init.amni
 const_for_runtime_if.amni
 const_for_type_value.amni
 const_for_typed_constant.amni
@@ -190,6 +196,10 @@ field_default_self.amni
 field_default_slice_pool.amni
 field_default_variant.amni
 field_tail_assign_outlives.amni
+field_tail_shrink_holder.amni
+field_tail_shrink_live_ref.amni
+field_tail_shrink_nested.amni
+field_tail_shrink_var_prefix.amni
 float_narrow_destination.amni
 fnval_if_argument.amni
 fnval_loop_argument.amni
@@ -274,6 +284,7 @@ growshrink_call.amni
 growshrink_call_nested.amni
 growshrink_elems_clean_first.amni
 growshrink_elems_clean_last.amni
+growshrink_function_value_same_name_writer.amni
 growshrink_global.amni
 growshrink_global_view_bind.amni
 growshrink_global_view_call.amni
@@ -289,7 +300,10 @@ growshrink_ref.amni
 growshrink_relative_slice.amni
 growshrink_slice.amni
 growshrink_slice_ref_elem_store.amni
+growshrink_slot_deref_autoref.amni
 growshrink_slot_deref_bytes.amni
+growshrink_slot_deref_decay.amni
+growshrink_slot_deref_explicit.amni
 growshrink_slot_holder_copy_shrink.amni
 growshrink_slot_merged.amni
 growshrink_slot_merged_param.amni
@@ -313,6 +327,8 @@ growshrink_store_return.amni
 growshrink_store_tail.amni
 growshrink_store_view_binding.amni
 guard_else_skips_assign.amni
+held_ref_tail_self_store.amni
+held_ref_tail_through_ref_local.amni
 holder_copy_escapes.amni
 holder_inferred_array_escapes.amni
 holder_loop_escapes.amni
@@ -342,6 +358,16 @@ inferred_reference_shrink.amni
 inferred_result_mixed_returns.amni
 inferred_result_store.amni
 inferred_result_value_use.amni
+init_order.amni
+init_order_bounds.amni
+init_order_call_capacity.amni
+init_order_capacity.amni
+init_order_default_effect.amni
+init_order_defaults.amni
+init_order_middle_effect.amni
+init_order_overflow.amni
+init_order_return_capacity.amni
+init_order_variant.amni
 inpool_cross_pool.amni
 int_float_let_commits.amni
 int_float_overload_ambiguous.amni
@@ -533,6 +559,7 @@ shrink_contents_slot_ref.amni
 shrink_contents_whole.amni
 shrink_copy_readback_loop.amni
 shrink_copy_readback_loop_store.amni
+shrink_elem_refs_block.amni
 shrink_elem_refs_byteview.amni
 shrink_elem_refs_callee_result.amni
 shrink_elem_refs_callee_shrink.amni
@@ -545,6 +572,7 @@ shrink_elem_refs_let.amni
 shrink_elem_refs_loop.amni
 shrink_elem_refs_merge.amni
 shrink_elem_refs_multi_level.amni
+shrink_elem_refs_nested_use.amni
 shrink_elem_refs_param.amni
 shrink_elem_refs_recursive.amni
 shrink_elem_refs_slot_refs.amni
@@ -555,6 +583,7 @@ shrink_elem_refs_view_store.amni
 shrink_exit_continue.amni
 shrink_exit_inner_break.amni
 shrink_exit_return_value.amni
+shrink_function_value_same_name_writer.amni
 shrink_global_append.amni
 shrink_global_byteview.amni
 shrink_global_call_result.amni
@@ -591,6 +620,8 @@ shrink_growonly_holder_ref.amni
 shrink_growonly_slice_field_ref.amni
 shrink_growonly_slice_ref.amni
 shrink_growonly_slot_byteview.amni
+shrink_growonly_slot_load.amni
+shrink_growonly_tail_call.amni
 shrink_holder_contents_caller_store.amni
 shrink_holder_contents_copy.amni
 shrink_holder_contents_global.amni
@@ -604,6 +635,7 @@ shrink_holder_contents_recursive.amni
 shrink_holder_contents_ref.amni
 shrink_holder_contents_var.amni
 shrink_holder_contents_view.amni
+shrink_holder_slot_block.amni
 shrink_holder_slot_byteview.amni
 shrink_holder_slot_call_result.amni
 shrink_holder_slot_callee_shrink.amni
@@ -617,6 +649,7 @@ shrink_holder_slot_field.amni
 shrink_holder_slot_global.amni
 shrink_holder_slot_holder_ref.amni
 shrink_holder_slot_loop.amni
+shrink_holder_slot_nested.amni
 shrink_holder_slot_param.amni
 shrink_holder_slot_ref.amni
 shrink_holder_slot_ref_param.amni
@@ -639,12 +672,15 @@ shrink_loop_callee_store.amni
 shrink_loop_store.amni
 shrink_merged_copy_caller.amni
 shrink_merged_copy_own_store.amni
+shrink_merged_readback_global.amni
+shrink_merged_readback_store.amni
 shrink_merged_root.amni
 shrink_merged_root_growonly.amni
 shrink_merged_root_in_callee.amni
 shrink_merged_root_loop_store.amni
 shrink_merged_root_stored.amni
 shrink_merged_var_copy_loop.amni
+shrink_nested_function_captured_view.amni
 shrink_param_contents_byteview.amni
 shrink_param_contents_caller_store.amni
 shrink_param_contents_holder_ref.amni
@@ -664,14 +700,18 @@ shrink_passed_view_rhs.amni
 shrink_passed_whole_rhs.amni
 shrink_result_copy_caller.amni
 shrink_slice_ref_byref_elem_pop.amni
+shrink_slice_ref_byref_rebind.amni
 shrink_slice_ref_byteview_param.amni
 shrink_slice_ref_explicit.amni
 shrink_slice_ref_explicit_callee.amni
 shrink_slice_ref_explicit_decay.amni
+shrink_slice_ref_explicit_load.amni
 shrink_slice_ref_explicit_local.amni
 shrink_slice_ref_loaded.amni
 shrink_slice_ref_local.amni
 shrink_slice_ref_param_clear.amni
+shrink_slice_ref_param_container.amni
+shrink_slice_ref_param_passed_on.amni
 shrink_slice_ref_rebound.amni
 shrink_static_result_backedge.amni
 shrink_static_result_mixed.amni
@@ -691,6 +731,7 @@ slice_ref_const_slice_reslice.amni
 slice_ref_elem_return.amni
 slice_ref_holder_return.amni
 slice_ref_outer_optional.amni
+slice_ref_read_back_return.amni
 slice_ref_readonly_slot_const_local.amni
 slice_ref_readonly_slot_const_ref.amni
 slice_ref_readonly_slot_const_var.amni
@@ -701,6 +742,7 @@ slice_ref_readonly_slot_match.amni
 slice_ref_readonly_slot_temp.amni
 slice_ref_store_block.amni
 slice_ref_store_callee_merged.amni
+slice_ref_store_callee_read_back.amni
 slice_ref_store_chain.amni
 slice_ref_store_depth.amni
 slice_ref_store_depth_explicit.amni
@@ -710,10 +752,13 @@ slice_ref_store_loop.amni
 slice_ref_store_merged.amni
 slice_ref_store_nested.amni
 slice_ref_store_nested_reuse.amni
+slice_ref_store_parent_param.amni
 slice_ref_temp_binding.amni
 slice_return_local.amni
 slice_return_value_param.amni
 slice_view_callee_keep.amni
+slice_view_callee_store.amni
+slice_view_captured_slot.amni
 slice_view_elem_read.amni
 slice_view_global_keep.amni
 slice_view_loop_store.amni
@@ -722,6 +767,10 @@ slice_view_result_shrink.amni
 slice_view_store_through.amni
 spec_depth_return.amni
 store_contents_local.amni
+store_inexact_call_result.amni
+store_inexact_merged.amni
+store_inexact_push.amni
+store_inexact_read_back.amni
 store_source_elem_field.amni
 store_source_field_slot.amni
 store_source_field_slot_copy.amni
