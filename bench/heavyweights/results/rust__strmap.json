@@ -1,0 +1,42 @@
+{
+  "lang": "rust",
+  "label": "Rust (rustc -O3)",
+  "bench": "strmap",
+  "file": "strmap",
+  "n": 5000000,
+  "compile_cmd": "rustc -C opt-level=3 -C codegen-units=1 -o /tmp/helium-heavyweights/rust/strmap /home/anmire/ai/amni-lang/helium-identity/bench/heavyweights/rust/strmap.rs",
+  "compile": {
+    "median": 0.159409891,
+    "mean": 0.161769839,
+    "stddev": 0.00460143021256131,
+    "min": 0.15882717500000001,
+    "max": 0.167072451,
+    "times": [
+      0.159409891,
+      0.15882717500000001,
+      0.167072451
+    ],
+    "peak_rss_kb": 131116.0
+  },
+  "run_cmd": "/tmp/helium-heavyweights/rust/strmap 5000000",
+  "binary_bytes": 4537952,
+  "stripped_bytes": 370576,
+  "stdout": "200000 58 24989\n",
+  "single_run_s": 0.8081991672515869,
+  "wall": {
+    "median": 0.7794499060000001,
+    "mean": 0.8316410512,
+    "stddev": 0.22048260115765922,
+    "min": 0.59611004,
+    "max": 1.089930826,
+    "times": [
+      0.6604744880000001,
+      0.59611004,
+      0.7794499060000001,
+      1.089930826,
+      1.032239996
+    ]
+  },
+  "peak_rss_kb": 18204.0,
+  "correct": true
+}

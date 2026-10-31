@@ -1,0 +1,46 @@
+// Helium has no per-object heap: each tree is a pool local to the function
+// that builds it (the language's idiomatic form), freed when that function
+// returns. The C/Rust/Zig/Go/Java/Python/JS programs allocate per node.
+import os;
+
+struct Node { l Node&<u32>?, r Node&<u32>? }
+
+recursive fn make(pool Node[>..]&, depth int) Node& {
+	if depth == 0 { return pool.push(Node {}); }
+	let l Node& = make(pool, depth - 1);
+	let r Node& = make(pool, depth - 1);
+	return pool.push(Node { l: l, r: r });
+}
+
+recursive fn check(n Node&) int {
+	let l = n.l;
+	guard l else { return 1; }
+	let r = n.r;
+	guard r else { return 1; }
+	return 1 + check(l) + check(r);
+}
+
+fn tree_check(depth int) int {
+	var pool Node[>..] = [];
+	return check(make(pool, depth));
+}
+
+fn main() {
+	let a = args();
+	var n = 10;
+	if a.len > 1 { let v, ok = parse_int(a[1]); if ok { n = v; } }
+	let min_depth = 4;
+	let max_depth = max(min_depth + 2, n);
+	print("stretch tree of depth ", max_depth + 1, "\t check: ", tree_check(max_depth + 1));
+	var long Node[>..] = [];
+	let long_root Node& = make(long, max_depth);
+	var d = min_depth;
+	while d <= max_depth {
+		let iterations = 1 << (max_depth - d + min_depth);
+		var chk = 0;
+		for i in iterations { chk += tree_check(d); }
+		print(iterations, "\t trees of depth ", d, "\t check: ", chk);
+		d += 2;
+	}
+	print("long lived tree of depth ", max_depth, "\t check: ", check(long_root));
+}

@@ -1,0 +1,28 @@
+{
+  "lang": "python",
+  "label": "Python (CPython)",
+  "bench": "nbody",
+  "file": "nbody",
+  "n": 10000000,
+  "run_cmd": "python3 /home/anmire/ai/amni-lang/helium-identity/bench/heavyweights/python/nbody.py 10000000",
+  "binary_bytes": null,
+  "stripped_bytes": null,
+  "stdout": "-0.169075164\n-0.169077842\n",
+  "single_run_s": 30.12003469467163,
+  "wall": {
+    "median": 30.526228684,
+    "mean": 30.8544842428,
+    "stddev": 0.9406446879514861,
+    "min": 29.947272934,
+    "max": 32.376451637,
+    "times": [
+      30.526228684,
+      31.06552173,
+      32.376451637,
+      30.356946229,
+      29.947272934
+    ]
+  },
+  "peak_rss_kb": 10584.0,
+  "correct": true
+}

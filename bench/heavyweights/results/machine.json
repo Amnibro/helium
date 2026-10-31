@@ -1,0 +1,22 @@
+{
+  "cpu": "AMD Ryzen 9 9950X3D 16-Core Processor",
+  "threads": 32,
+  "mem_gib": 60.5,
+  "kernel": "7.2.9-arch1-1",
+  "os": "Amni OS",
+  "pinning": "nice -n 10 taskset -c 8-11",
+  "runs": 5,
+  "versions": {
+    "gcc": "gcc (GCC) 16.2.1 20260810",
+    "clang": "clang version 23.1.1",
+    "helium": "hcn built from this repository at f5a599c",
+    "rustc": "rustc 1.98.1 (48a229cea 2026-09-01)",
+    "zig": "0.17.0",
+    "go": "go version go1.27.3 linux/amd64",
+    "java": "openjdk version \"17.0.20.1\" 2026-08-18",
+    "node": "v26.12.1",
+    "python": "Python 3.14.8",
+    "hyperfine": "hyperfine 2.0.0"
+  },
+  "date": "2026-10-30 23:42 -0400"
+}

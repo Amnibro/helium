@@ -1,0 +1,35 @@
+import os;
+import math;
+
+fn a(i int, j int) real { 1.0 / (((i + j) * (i + j + 1) / 2 + i + 1) as real) }
+
+fn mul_av(v real[:], av real[:]) {
+	let n = v.len;
+	for i in n { var s = 0.0; for j in n { s += a(i, j) * v[j]; } av[i] = s; }
+}
+
+fn mul_atv(v real[:], atv real[:]) {
+	let n = v.len;
+	for i in n { var s = 0.0; for j in n { s += a(j, i) * v[j]; } atv[i] = s; }
+}
+
+fn mul_atav(v real[:], out real[:], tmp real[:]) { mul_av(v, tmp); mul_atv(tmp, out); }
+
+fn main() {
+	let args_ = args();
+	var n = 100;
+	if args_.len > 1 { let x, ok = parse_int(args_[1]); if ok { n = x; } }
+	var u real[>..] = [];
+	var v real[>..] = [];
+	var tmp real[>..] = [];
+	u.resize(n, 1.0);
+	v.resize(n, 0.0);
+	tmp.resize(n, 0.0);
+	for k in 10 { mul_atav(u, v, tmp); mul_atav(v, u, tmp); }
+	var vbv = 0.0;
+	var vv = 0.0;
+	for i in n { vbv += u[i] * v[i]; vv += v[i] * v[i]; }
+	var out byte[>..] = [];
+	format_flt(out, sqrt(vbv / vv), 9);
+	print(out);
+}

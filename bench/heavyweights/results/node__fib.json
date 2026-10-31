@@ -1,0 +1,28 @@
+{
+  "lang": "node",
+  "label": "Node.js",
+  "bench": "fib",
+  "file": "fib",
+  "n": 40,
+  "run_cmd": "node /home/anmire/ai/amni-lang/helium-identity/bench/heavyweights/js/fib.js 40",
+  "binary_bytes": null,
+  "stripped_bytes": null,
+  "stdout": "102334155\n",
+  "single_run_s": 0.6237857341766357,
+  "wall": {
+    "median": 0.6339607690000001,
+    "mean": 0.6424452522,
+    "stddev": 0.02231456561632039,
+    "min": 0.6249466840000001,
+    "max": 0.680238126,
+    "times": [
+      0.6289398230000001,
+      0.6339607690000001,
+      0.680238126,
+      0.6441408590000001,
+      0.6249466840000001
+    ]
+  },
+  "peak_rss_kb": 56032.0,
+  "correct": true
+}

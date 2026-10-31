@@ -1,0 +1,28 @@
+{
+  "lang": "node",
+  "label": "Node.js",
+  "bench": "strmap",
+  "file": "strmap",
+  "n": 5000000,
+  "run_cmd": "node /home/anmire/ai/amni-lang/helium-identity/bench/heavyweights/js/strmap.js 5000000",
+  "binary_bytes": null,
+  "stripped_bytes": null,
+  "stdout": "200000 58 24989\n",
+  "single_run_s": 3.492570638656616,
+  "wall": {
+    "median": 2.869405731,
+    "mean": 2.9593823966,
+    "stddev": 0.491660760179373,
+    "min": 2.277560953,
+    "max": 3.612030791,
+    "times": [
+      2.869405731,
+      2.844462731,
+      3.193451777,
+      3.612030791,
+      2.277560953
+    ]
+  },
+  "peak_rss_kb": 94044.0,
+  "correct": true
+}

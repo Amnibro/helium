@@ -1,0 +1,28 @@
+{
+  "lang": "python",
+  "label": "Python (CPython)",
+  "bench": "fib",
+  "file": "fib",
+  "n": 40,
+  "run_cmd": "python3 /home/anmire/ai/amni-lang/helium-identity/bench/heavyweights/python/fib.py 40",
+  "binary_bytes": null,
+  "stripped_bytes": null,
+  "stdout": "102334155\n",
+  "single_run_s": 5.9341652393341064,
+  "wall": {
+    "median": 6.017148011,
+    "mean": 5.9388176716,
+    "stddev": 0.14020455083510933,
+    "min": 5.766081687,
+    "max": 6.063404959,
+    "times": [
+      5.766081687,
+      6.0392224,
+      6.017148011,
+      5.808231301,
+      6.063404959
+    ]
+  },
+  "peak_rss_kb": 9880.0,
+  "correct": true
+}

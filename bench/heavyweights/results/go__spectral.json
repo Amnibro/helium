@@ -1,0 +1,42 @@
+{
+  "lang": "go",
+  "label": "Go",
+  "bench": "spectral",
+  "file": "spectral",
+  "n": 3000,
+  "compile_cmd": "/home/anmire/.local/opt/go1.27.3/bin/go build -o /tmp/helium-heavyweights/go/spectral /home/anmire/ai/amni-lang/helium-identity/bench/heavyweights/go/spectral.go",
+  "compile": {
+    "median": 0.03545713,
+    "mean": 0.03554811233333333,
+    "stddev": 0.0009629814120689635,
+    "min": 0.034633851,
+    "max": 0.036553356,
+    "times": [
+      0.034633851,
+      0.03545713,
+      0.036553356
+    ],
+    "peak_rss_kb": 21736.0
+  },
+  "run_cmd": "/tmp/helium-heavyweights/go/spectral 3000",
+  "binary_bytes": 2375106,
+  "stripped_bytes": 1536408,
+  "stdout": "1.274224153\n",
+  "single_run_s": 0.29641151428222656,
+  "wall": {
+    "median": 0.28965069400000004,
+    "mean": 0.2904764186,
+    "stddev": 0.003510466101205124,
+    "min": 0.285872519,
+    "max": 0.295367139,
+    "times": [
+      0.285872519,
+      0.28945137800000004,
+      0.28965069400000004,
+      0.295367139,
+      0.292040363
+    ]
+  },
+  "peak_rss_kb": 5576.0,
+  "correct": true
+}

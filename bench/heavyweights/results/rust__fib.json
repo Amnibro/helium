@@ -1,0 +1,42 @@
+{
+  "lang": "rust",
+  "label": "Rust (rustc -O3)",
+  "bench": "fib",
+  "file": "fib",
+  "n": 40,
+  "compile_cmd": "rustc -C opt-level=3 -C codegen-units=1 -o /tmp/helium-heavyweights/rust/fib /home/anmire/ai/amni-lang/helium-identity/bench/heavyweights/rust/fib.rs",
+  "compile": {
+    "median": 0.07625516900000001,
+    "mean": 0.07369748266666667,
+    "stddev": 0.004895246055946563,
+    "min": 0.068053194,
+    "max": 0.076784085,
+    "times": [
+      0.068053194,
+      0.07625516900000001,
+      0.076784085
+    ],
+    "peak_rss_kb": 114692.0
+  },
+  "run_cmd": "/tmp/helium-heavyweights/rust/fib 40",
+  "binary_bytes": 4510088,
+  "stripped_bytes": 353496,
+  "stdout": "102334155\n",
+  "single_run_s": 0.17204523086547852,
+  "wall": {
+    "median": 0.169510813,
+    "mean": 0.1701992196,
+    "stddev": 0.003001863316246648,
+    "min": 0.166385367,
+    "max": 0.17452920400000002,
+    "times": [
+      0.16922193000000002,
+      0.17452920400000002,
+      0.171348784,
+      0.166385367,
+      0.169510813
+    ]
+  },
+  "peak_rss_kb": 2220.0,
+  "correct": true
+}

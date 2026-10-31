@@ -1,0 +1,42 @@
+{
+  "lang": "rust",
+  "label": "Rust (rustc -O3)",
+  "bench": "nbody",
+  "file": "nbody",
+  "n": 10000000,
+  "compile_cmd": "rustc -C opt-level=3 -C codegen-units=1 -o /tmp/helium-heavyweights/rust/nbody /home/anmire/ai/amni-lang/helium-identity/bench/heavyweights/rust/nbody.rs",
+  "compile": {
+    "median": 0.094732575,
+    "mean": 0.095565457,
+    "stddev": 0.0016490381977161722,
+    "min": 0.09449897600000001,
+    "max": 0.09746482000000001,
+    "times": [
+      0.094732575,
+      0.09746482000000001,
+      0.09449897600000001
+    ],
+    "peak_rss_kb": 137752.0
+  },
+  "run_cmd": "/tmp/helium-heavyweights/rust/nbody 10000000",
+  "binary_bytes": 4539768,
+  "stripped_bytes": 381224,
+  "stdout": "-0.169075164\n-0.169077842\n",
+  "single_run_s": 0.2560732364654541,
+  "wall": {
+    "median": 0.250208619,
+    "mean": 0.2513492228,
+    "stddev": 0.003110773394525022,
+    "min": 0.24881791,
+    "max": 0.256761579,
+    "times": [
+      0.256761579,
+      0.250208619,
+      0.250170006,
+      0.24881791,
+      0.250788
+    ]
+  },
+  "peak_rss_kb": 2240.0,
+  "correct": true
+}

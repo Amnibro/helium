@@ -1,0 +1,28 @@
+{
+  "lang": "python",
+  "label": "Python (CPython)",
+  "bench": "strmap",
+  "file": "strmap",
+  "n": 5000000,
+  "run_cmd": "python3 /home/anmire/ai/amni-lang/helium-identity/bench/heavyweights/python/strmap.py 5000000",
+  "binary_bytes": null,
+  "stripped_bytes": null,
+  "stdout": "200000 58 24989\n",
+  "single_run_s": 1.951190710067749,
+  "wall": {
+    "median": 2.406075023,
+    "mean": 2.2820514562,
+    "stddev": 0.43589798486582704,
+    "min": 1.610850471,
+    "max": 2.7879432140000002,
+    "times": [
+      2.406075023,
+      2.439363379,
+      2.7879432140000002,
+      2.166025194,
+      1.610850471
+    ]
+  },
+  "peak_rss_kb": 32244.0,
+  "correct": true
+}

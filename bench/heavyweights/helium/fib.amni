@@ -1,0 +1,10 @@
+import os;
+
+recursive fn fib(n int) int { if n < 2 { n } else { fib(n - 1) + fib(n - 2) } }
+
+fn main() {
+	let a = args();
+	var n = 30;
+	if a.len > 1 { let v, ok = parse_int(a[1]); if ok { n = v; } }
+	print(fib(n));
+}

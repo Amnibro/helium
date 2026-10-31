@@ -1,0 +1,42 @@
+{
+  "lang": "java",
+  "label": "Java (OpenJDK)",
+  "bench": "strmap",
+  "file": "strmap",
+  "n": 5000000,
+  "compile_cmd": "javac -d /tmp/helium-heavyweights/java/strmap /home/anmire/ai/amni-lang/helium-identity/bench/heavyweights/java/strmap.java",
+  "compile": {
+    "median": 0.276735112,
+    "mean": 0.27572836933333333,
+    "stddev": 0.004234864530348192,
+    "min": 0.27108085400000004,
+    "max": 0.279369142,
+    "times": [
+      0.279369142,
+      0.276735112,
+      0.27108085400000004
+    ],
+    "peak_rss_kb": 90988.0
+  },
+  "run_cmd": "java -cp /tmp/helium-heavyweights/java/strmap strmap 5000000",
+  "binary_bytes": 2358,
+  "stripped_bytes": 2358,
+  "stdout": "200000 58 24989\n",
+  "single_run_s": 0.5005185604095459,
+  "wall": {
+    "median": 0.534543652,
+    "mean": 0.5391614100000001,
+    "stddev": 0.13191632743392773,
+    "min": 0.37984140600000005,
+    "max": 0.724806955,
+    "times": [
+      0.45937421700000003,
+      0.37984140600000005,
+      0.534543652,
+      0.724806955,
+      0.59724082
+    ]
+  },
+  "peak_rss_kb": 168532.0,
+  "correct": true
+}

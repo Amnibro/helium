@@ -1,0 +1,42 @@
+{
+  "lang": "zig",
+  "label": "Zig (ReleaseFast)",
+  "bench": "mandelbrot",
+  "file": "mandelbrot",
+  "n": 4000,
+  "compile_cmd": "/home/anmire/.local/opt/zig-x86_64-linux-0.17.0/zig build-exe -O ReleaseFast -mcpu=baseline --global-cache-dir /tmp/helium-heavyweights/zigcache-run --cache-dir /tmp/helium-heavyweights/zigcache-local -femit-bin=/tmp/helium-heavyweights/zig/mandelbrot /home/anmire/ai/amni-lang/helium-identity/bench/heavyweights/zig/mandelbrot.zig",
+  "compile": {
+    "median": 0.151724259,
+    "mean": 0.151684233,
+    "stddev": 0.0002325855555510705,
+    "min": 0.151434232,
+    "max": 0.151894208,
+    "times": [
+      0.151724259,
+      0.151894208,
+      0.151434232
+    ],
+    "peak_rss_kb": 117584.0
+  },
+  "run_cmd": "/tmp/helium-heavyweights/zig/mandelbrot 4000",
+  "binary_bytes": 1017560,
+  "stripped_bytes": 9544,
+  "stdout": "6351041\n",
+  "single_run_s": 0.6321699619293213,
+  "wall": {
+    "median": 0.624787725,
+    "mean": 0.624995686,
+    "stddev": 0.0009482902191381119,
+    "min": 0.624028555,
+    "max": 0.626577174,
+    "times": [
+      0.626577174,
+      0.624924291,
+      0.624028555,
+      0.624787725,
+      0.624660685
+    ]
+  },
+  "peak_rss_kb": 1288.0,
+  "correct": true
+}

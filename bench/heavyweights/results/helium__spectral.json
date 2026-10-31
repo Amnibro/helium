@@ -1,0 +1,42 @@
+{
+  "lang": "helium",
+  "label": "Helium (hcn)",
+  "bench": "spectral",
+  "file": "spectral",
+  "n": 3000,
+  "compile_cmd": "/home/anmire/ai/amni-lang/helium-identity/build/hcn build /home/anmire/ai/amni-lang/helium-identity/bench/heavyweights/helium/spectral.amni -o /tmp/helium-heavyweights/helium/spectral",
+  "compile": {
+    "median": 0.09736153600000001,
+    "mean": 0.096594381,
+    "stddev": 0.0021371509807168528,
+    "min": 0.094179543,
+    "max": 0.098242064,
+    "times": [
+      0.098242064,
+      0.094179543,
+      0.09736153600000001
+    ],
+    "peak_rss_kb": 24704.0
+  },
+  "run_cmd": "/tmp/helium-heavyweights/helium/spectral 3000",
+  "binary_bytes": 98304,
+  "stripped_bytes": 98304,
+  "stdout": "1.274224153\n",
+  "single_run_s": 0.28604912757873535,
+  "wall": {
+    "median": 0.287287784,
+    "mean": 0.28827816100000003,
+    "stddev": 0.0027221198381576625,
+    "min": 0.286017893,
+    "max": 0.292893049,
+    "times": [
+      0.292893049,
+      0.286782923,
+      0.286017893,
+      0.287287784,
+      0.288409156
+    ]
+  },
+  "peak_rss_kb": 2076.0,
+  "correct": true
+}

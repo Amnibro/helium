@@ -1,0 +1,42 @@
+{
+  "lang": "rust",
+  "label": "Rust (rustc -O3)",
+  "bench": "spectral",
+  "file": "spectral",
+  "n": 3000,
+  "compile_cmd": "rustc -C opt-level=3 -C codegen-units=1 -o /tmp/helium-heavyweights/rust/spectral /home/anmire/ai/amni-lang/helium-identity/bench/heavyweights/rust/spectral.rs",
+  "compile": {
+    "median": 0.098256171,
+    "mean": 0.09810800833333334,
+    "stddev": 0.004068776731998744,
+    "min": 0.093967174,
+    "max": 0.10210068000000001,
+    "times": [
+      0.098256171,
+      0.10210068000000001,
+      0.093967174
+    ],
+    "peak_rss_kb": 120892.0
+  },
+  "run_cmd": "/tmp/helium-heavyweights/rust/spectral 3000",
+  "binary_bytes": 4537592,
+  "stripped_bytes": 379080,
+  "stdout": "1.274224153\n",
+  "single_run_s": 0.27492499351501465,
+  "wall": {
+    "median": 0.274443337,
+    "mean": 0.2769684792,
+    "stddev": 0.004824795432122712,
+    "min": 0.273104795,
+    "max": 0.284825677,
+    "times": [
+      0.284825677,
+      0.278355212,
+      0.273104795,
+      0.274443337,
+      0.274113375
+    ]
+  },
+  "peak_rss_kb": 2196.0,
+  "correct": true
+}

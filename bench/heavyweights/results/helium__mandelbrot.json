@@ -1,0 +1,42 @@
+{
+  "lang": "helium",
+  "label": "Helium (hcn)",
+  "bench": "mandelbrot",
+  "file": "mandelbrot",
+  "n": 4000,
+  "compile_cmd": "/home/anmire/ai/amni-lang/helium-identity/build/hcn build /home/anmire/ai/amni-lang/helium-identity/bench/heavyweights/helium/mandelbrot.amni -o /tmp/helium-heavyweights/helium/mandelbrot",
+  "compile": {
+    "median": 0.032556989,
+    "mean": 0.03167196966666667,
+    "stddev": 0.0031399249001236203,
+    "min": 0.028184516000000003,
+    "max": 0.034274404,
+    "times": [
+      0.032556989,
+      0.028184516000000003,
+      0.034274404
+    ],
+    "peak_rss_kb": 16420.0
+  },
+  "run_cmd": "/tmp/helium-heavyweights/helium/mandelbrot 4000",
+  "binary_bytes": 32768,
+  "stripped_bytes": 32768,
+  "stdout": "6351041\n",
+  "single_run_s": 0.6417858600616455,
+  "wall": {
+    "median": 0.65630175,
+    "mean": 0.6543370086,
+    "stddev": 0.007512269719382321,
+    "min": 0.643279087,
+    "max": 0.6613128970000001,
+    "times": [
+      0.650461363,
+      0.65630175,
+      0.6613128970000001,
+      0.6603299460000001,
+      0.643279087
+    ]
+  },
+  "peak_rss_kb": 2072.0,
+  "correct": true
+}

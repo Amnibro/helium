@@ -1,0 +1,42 @@
+{
+  "lang": "c-gcc",
+  "label": "C (gcc -O2)",
+  "bench": "fannkuch",
+  "file": "fannkuch",
+  "n": 11,
+  "compile_cmd": "gcc -O2 -o /tmp/helium-heavyweights/c-gcc/fannkuch /home/anmire/ai/amni-lang/helium-identity/bench/heavyweights/c/fannkuch.c -lm",
+  "compile": {
+    "median": 0.046707437000000004,
+    "mean": 0.046589725000000005,
+    "stddev": 0.0011395210083679913,
+    "min": 0.045395917,
+    "max": 0.047665821000000004,
+    "times": [
+      0.047665821000000004,
+      0.045395917,
+      0.046707437000000004
+    ],
+    "peak_rss_kb": 45036.0
+  },
+  "run_cmd": "/tmp/helium-heavyweights/c-gcc/fannkuch 11",
+  "binary_bytes": 16088,
+  "stripped_bytes": 14488,
+  "stdout": "556355\nPfannkuchen(11) = 51\n",
+  "single_run_s": 1.7835514545440674,
+  "wall": {
+    "median": 1.8002613310000002,
+    "mean": 1.7951038564000001,
+    "stddev": 0.012561686426118362,
+    "min": 1.780840227,
+    "max": 1.80936279,
+    "times": [
+      1.782921728,
+      1.780840227,
+      1.8002613310000002,
+      1.8021332060000002,
+      1.80936279
+    ]
+  },
+  "peak_rss_kb": 2128.0,
+  "correct": true
+}

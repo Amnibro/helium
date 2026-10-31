@@ -1,0 +1,38 @@
+// Keys are built in a small inline buffer; a new key's text is appended to a
+// grow-only arena (elements never move) and the dictionary keys on a view of it.
+import os;
+import dictionary;
+
+fn main() {
+	let a = args();
+	var n = 1000;
+	if a.len > 1 { let v, ok = parse_int(a[1]); if ok { n = v; } }
+	var arena byte[>..] = [];
+	var d = dictionary<const byte[:], int> {};
+	var x uint = 1;
+	var buf byte[..32] = [];
+	for i in n {
+		x = (x * 1103515245 + 12345) & 0x7fffffff;
+		buf.clear();
+		buf.append("key");
+		format_int(buf, (x % 200000) as int, 10, 0, ' ');
+		if d.contains(buf) {
+			update(d, buf, 0) { it += 1; }
+		} else {
+			let start = arena.len;
+			arena.append(buf);
+			d.insert(arena[start..], 1);
+		}
+	}
+	var maxc = 0;
+	each(d) { k, v => if v > maxc { maxc = v; } }
+	var sum = 0;
+	for j in 1000 {
+		buf.clear();
+		buf.append("key");
+		format_int(buf, j, 10, 0, ' ');
+		let v = d.get(buf);
+		if v { sum += v; }
+	}
+	print(d.count, " ", maxc, " ", sum);
+}

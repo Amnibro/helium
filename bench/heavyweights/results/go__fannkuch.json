@@ -1,0 +1,42 @@
+{
+  "lang": "go",
+  "label": "Go",
+  "bench": "fannkuch",
+  "file": "fannkuch",
+  "n": 11,
+  "compile_cmd": "/home/anmire/.local/opt/go1.27.3/bin/go build -o /tmp/helium-heavyweights/go/fannkuch /home/anmire/ai/amni-lang/helium-identity/bench/heavyweights/go/fannkuch.go",
+  "compile": {
+    "median": 0.032750163,
+    "mean": 0.030564470333333333,
+    "stddev": 0.0039117601462902015,
+    "min": 0.026048332,
+    "max": 0.032894916,
+    "times": [
+      0.026048332,
+      0.032750163,
+      0.032894916
+    ],
+    "peak_rss_kb": 21312.0
+  },
+  "run_cmd": "/tmp/helium-heavyweights/go/fannkuch 11",
+  "binary_bytes": 2375005,
+  "stripped_bytes": 1536408,
+  "stdout": "556355\nPfannkuchen(11) = 51\n",
+  "single_run_s": 1.8412485122680664,
+  "wall": {
+    "median": 1.7901083500000001,
+    "mean": 1.7944107104,
+    "stddev": 0.016676351968468933,
+    "min": 1.782922899,
+    "max": 1.823344129,
+    "times": [
+      1.792221299,
+      1.7834568750000002,
+      1.782922899,
+      1.823344129,
+      1.7901083500000001
+    ]
+  },
+  "peak_rss_kb": 3564.0,
+  "correct": true
+}

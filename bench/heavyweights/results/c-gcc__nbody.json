@@ -1,0 +1,42 @@
+{
+  "lang": "c-gcc",
+  "label": "C (gcc -O2)",
+  "bench": "nbody",
+  "file": "nbody",
+  "n": 10000000,
+  "compile_cmd": "gcc -O2 -o /tmp/helium-heavyweights/c-gcc/nbody /home/anmire/ai/amni-lang/helium-identity/bench/heavyweights/c/nbody.c -lm",
+  "compile": {
+    "median": 0.060166702,
+    "mean": 0.06015651666666667,
+    "stddev": 0.0011036732491119527,
+    "min": 0.059047786000000005,
+    "max": 0.061255062000000006,
+    "times": [
+      0.059047786000000005,
+      0.060166702,
+      0.061255062000000006
+    ],
+    "peak_rss_kb": 50808.0
+  },
+  "run_cmd": "/tmp/helium-heavyweights/c-gcc/nbody 10000000",
+  "binary_bytes": 16416,
+  "stripped_bytes": 14792,
+  "stdout": "-0.169075164\n-0.169077842\n",
+  "single_run_s": 0.3715851306915283,
+  "wall": {
+    "median": 0.37081233300000005,
+    "mean": 0.37196969440000005,
+    "stddev": 0.003178400773037019,
+    "min": 0.368338214,
+    "max": 0.376520161,
+    "times": [
+      0.37369303800000003,
+      0.376520161,
+      0.37081233300000005,
+      0.37048472600000004,
+      0.368338214
+    ]
+  },
+  "peak_rss_kb": 2184.0,
+  "correct": true
+}

@@ -1,0 +1,42 @@
+{
+  "lang": "java",
+  "label": "Java (OpenJDK)",
+  "bench": "spectral",
+  "file": "spectral",
+  "n": 3000,
+  "compile_cmd": "javac -d /tmp/helium-heavyweights/java/spectral /home/anmire/ai/amni-lang/helium-identity/bench/heavyweights/java/spectral.java",
+  "compile": {
+    "median": 0.298226313,
+    "mean": 0.326541962,
+    "stddev": 0.11620895950826989,
+    "min": 0.227107576,
+    "max": 0.454291997,
+    "times": [
+      0.454291997,
+      0.298226313,
+      0.227107576
+    ],
+    "peak_rss_kb": 88360.0
+  },
+  "run_cmd": "java -cp /tmp/helium-heavyweights/java/spectral spectral 3000",
+  "binary_bytes": 1316,
+  "stripped_bytes": 1316,
+  "stdout": "1.274224153\n",
+  "single_run_s": 0.3381648063659668,
+  "wall": {
+    "median": 0.352971886,
+    "mean": 0.3525403056,
+    "stddev": 0.019758229450409306,
+    "min": 0.32664138200000004,
+    "max": 0.377182819,
+    "times": [
+      0.364848442,
+      0.377182819,
+      0.341056999,
+      0.32664138200000004,
+      0.352971886
+    ]
+  },
+  "peak_rss_kb": 41504.0,
+  "correct": true
+}

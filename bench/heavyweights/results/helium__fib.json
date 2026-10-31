@@ -1,0 +1,42 @@
+{
+  "lang": "helium",
+  "label": "Helium (hcn)",
+  "bench": "fib",
+  "file": "fib",
+  "n": 40,
+  "compile_cmd": "/home/anmire/ai/amni-lang/helium-identity/build/hcn build /home/anmire/ai/amni-lang/helium-identity/bench/heavyweights/helium/fib.amni -o /tmp/helium-heavyweights/helium/fib",
+  "compile": {
+    "median": 0.043212485,
+    "mean": 0.043157081,
+    "stddev": 0.0009345105819069171,
+    "min": 0.042196101,
+    "max": 0.044062657000000005,
+    "times": [
+      0.042196101,
+      0.044062657000000005,
+      0.043212485
+    ],
+    "peak_rss_kb": 19884.0
+  },
+  "run_cmd": "/tmp/helium-heavyweights/helium/fib 40",
+  "binary_bytes": 32768,
+  "stripped_bytes": 32768,
+  "stdout": "102334155\n",
+  "single_run_s": 0.24907588958740234,
+  "wall": {
+    "median": 0.190327554,
+    "mean": 0.1893969536,
+    "stddev": 0.0054614790053128725,
+    "min": 0.181790517,
+    "max": 0.196112639,
+    "times": [
+      0.190327554,
+      0.18659441400000001,
+      0.19215964400000002,
+      0.196112639,
+      0.181790517
+    ]
+  },
+  "peak_rss_kb": 2072.0,
+  "correct": true
+}

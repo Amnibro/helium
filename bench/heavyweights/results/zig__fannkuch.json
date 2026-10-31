@@ -1,0 +1,42 @@
+{
+  "lang": "zig",
+  "label": "Zig (ReleaseFast)",
+  "bench": "fannkuch",
+  "file": "fannkuch",
+  "n": 11,
+  "compile_cmd": "/home/anmire/.local/opt/zig-x86_64-linux-0.17.0/zig build-exe -O ReleaseFast -mcpu=baseline --global-cache-dir /tmp/helium-heavyweights/zigcache-run --cache-dir /tmp/helium-heavyweights/zigcache-local -femit-bin=/tmp/helium-heavyweights/zig/fannkuch /home/anmire/ai/amni-lang/helium-identity/bench/heavyweights/zig/fannkuch.zig",
+  "compile": {
+    "median": 0.184881177,
+    "mean": 0.18490353633333334,
+    "stddev": 0.003311988606179731,
+    "min": 0.18160278400000002,
+    "max": 0.18822664800000002,
+    "times": [
+      0.18160278400000002,
+      0.184881177,
+      0.18822664800000002
+    ],
+    "peak_rss_kb": 120200.0
+  },
+  "run_cmd": "/tmp/helium-heavyweights/zig/fannkuch 11",
+  "binary_bytes": 1028816,
+  "stripped_bytes": 11224,
+  "stdout": "556355\nPfannkuchen(11) = 51\n",
+  "single_run_s": 1.9960353374481201,
+  "wall": {
+    "median": 2.058135673,
+    "mean": 2.050382066,
+    "stddev": 0.025874176773060347,
+    "min": 2.020687403,
+    "max": 2.084537411,
+    "times": [
+      2.060004172,
+      2.028545671,
+      2.020687403,
+      2.084537411,
+      2.058135673
+    ]
+  },
+  "peak_rss_kb": 1288.0,
+  "correct": true
+}

@@ -1,0 +1,29 @@
+import os;
+
+fn main() {
+	let a = args();
+	var n = 200;
+	if a.len > 1 { let v, ok = parse_int(a[1]); if ok { n = v; } }
+	var count = 0;
+	let nf real = n;
+	for y in n {
+		let ci = 2.0 * (y as real) / nf - 1.0;
+		for x in n {
+			let cr = 2.0 * (x as real) / nf - 1.5;
+			var zr = 0.0;
+			var zi = 0.0;
+			var tr = 0.0;
+			var ti = 0.0;
+			var i = 0;
+			while i < 50 && tr + ti <= 4.0 {
+				zi = 2.0 * zr * zi + ci;
+				zr = tr - ti + cr;
+				tr = zr * zr;
+				ti = zi * zi;
+				i += 1;
+			}
+			if tr + ti <= 4.0 { count += 1; }
+		}
+	}
+	print(count);
+}
