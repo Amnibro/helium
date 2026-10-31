@@ -277,6 +277,21 @@ grrw(d int, k int): while GRR.len <= d { GRR.push([]); GRU.push(false) } if k ==
 pgg(i int, b int, g int): while PSGG.len <= i { PSGG.push([]) } j ~= 0; while j < PSGG[i].len { if PSGG[i][j] == b as i32 && PSGG[i][j + 1] == g as i32 { return } j += 2 } PSGG[i].push(b as i32); PSGG[i].push(g as i32)
 pgsv(q Pv, g int, nd int): if q.v <= -3 && q.v as int != g { GST.push(q.v); GST.push(g as i32); GST.push(nd as i32) } if q.v >= 0 && q.v < PVRS.len { for x PVRS[q.v] { if x <= -3 && x as int != g { GST.push(x); GST.push(g as i32); GST.push(nd as i32) } } }
 pgst(e int, g int, nd int): rr i32[>..] ~= []; proots(e, rr); for x rr { if x <= -3 && x as int != g { GST.push(x); GST.push(g as i32); GST.push(nd as i32) } }
+pinex(a int, src Pv, n int) bool:
+	if !PCH || src.d <= 0 || src.v < 0: return false
+	b := if ND[a].k as int == N_ID && rk(a) == R_LOCAL { rv(a) } else { pbase(a) }
+	if b < 0 || b >= PVRS.len || LVS[b].cfn != PI as i32 || !rref(LVS[b].ty as int) || LVS[b].fl & (LV_PARAM | LV_BLKP | LV_FOR) != 0 || PVRS[b].len < 2 || PVRS[b].contains(src.v): return false
+	for c PVRS[b]:
+		if c >= 0 && c < LVS.len && src.d > pdep(c as int):
+			m0 byte[>..] ~= []
+			m0.append("storing a reference rooted at ")
+			pname(src, m0)
+			m0.append(", which does not outlive the destination: it is reached through a reference that may point into ")
+			m0.append(nm(LVS[c].name))
+			m0.append(" (§9.2)")
+			cerr(n, m0[..])
+			return true
+	false
 pstore(n int, src Pv, dst Pv):
 	if src.d == 0 && dst.d == -2 && dst.v <= -3 && src.m != 0: for b in 0..63 { if (src.m >> b) & 1 != 0 { pgg(PI, b, dst.v as int) } }
 	if PCH && dst.v >= 0 && dst.v < PVRS.len && src.v <= -3: for x PVRS[dst.v] { if x <= -3 && x != src.v { GST.push(src.v); GST.push(x); GST.push(n as i32) } }
@@ -327,6 +342,7 @@ recursive pvstmt(n int):
 		if rb:
 			pmx0(); p := if TY[t].k as int == TY_REF || !isrs(at(b)) { pl(b) } else { pv(b) }; xs := pmx1()
 			if ND[a].k as int == N_ID && rk(a) == R_LOCAL: v := rv(a); pstore(b, p, Pv{pdep(v) as i32, v as i32, 0}); pthru(a, p, b); pbset(v, p, true, b); pmxs(v, xs); if LVS[v].cfn != PI as i32 && p.v >= 0 && LVS[p.v].cfn != PI as i32 { pcwadd(PI, v, p.v as int, 0) } return
+			if pinex(a, p, b): return
 			pnst(b, p, t); pheld(a, p, b); pstore(b, p, pdst(a)); return
 		vt := if TY[t].k == TY_REF && TY[t].c < 0 { TY[t].a as int } else { t }
 		if !isrs(vt) && !hold(vt): return
@@ -441,6 +457,7 @@ recursive pvexpr(n int):
 		o := ND[c].a as int; prels(kid(n, 0), if ND[o].k as int == N_ID && rk(o) == R_LOCAL && !isrs(LVS[rv(o)].ty as int) { Pv{pdep(rv(o)) as i32, rv(o) as i32, 0} } else { pdst(o) }, false); et := TY[pdr(at(o))].a as int; if et < 0 || !isrs(et) && !hold(et) { return } e := kid(n, 0)
 		s0 := pstrip(e); p := if b == B_PUSH { pvin(et, e) } else if TY[pdr(at(s0))].k as int == TY_SLICE && (rref(et) || hold(et)) { pnone() } else { pva(s0) }
 		if ND[o].k as int == N_ID && rk(o) == R_LOCAL && !isrs(LVS[rv(o)].ty as int): v := rv(o); pnst(e, p, et); pstore(e, p, Pv{pdep(v) as i32, v as i32, 0}); pbset(v, p, true, e); return
+		if pinex(o, p, e): return
 		pnst(e, p, et); pstore(e, p, pdst(o))
 pel(b int, p int) int: if p < ND[b].n as int { kid(b, p) } else if p == ND[b].n as int { ND[b].a as int } else { -1 }
 ptend(t0 int) int:
