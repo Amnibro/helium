@@ -4,7 +4,7 @@ Copyright 2026 Anthony Reffelt (Amniscient)
 Licensed under the Apache License, Version 2.0 (see LICENSE).
 
 The compiler hc, the runtime and the libraries in hc/lib are original work
-by Anthony Reffelt, except for the two ports listed below.
+by Anthony Reffelt, except for the parts listed below.
 
 ------------------------------------------------------------------------------
 Goose
@@ -13,12 +13,12 @@ By Wouter van Oortmerssen, licensed under the Apache License, Version 2.0.
 
 Helium's memory model and core language semantics started from Goose, and this
 repository's git history begins with Goose's. The following still contain
-material from Goose, modified for Helium (file syntax converted to .amni,
+material from Goose, modified for Helium (converted to Helium syntax,
 renamed, extended or partly rewritten):
-  docs/            tutorial, reference, specification, design notes
-  test/, samples/  most of the test corpus and samples
-  vscode/, tree-sitter/  editor support
-  bench/           everything except bench/heavyweights/
+  test/, samples/  most of the test corpus and the numbered samples
+  hc/lib/          std.he, json.he, regex.he, dictionary.he, binary.he,
+                   vec.he and exception.he, translated from Goose's stdlib
+  bench/heavyweights/helium/bintrees.amni
 
 ------------------------------------------------------------------------------
 hc/lib/ui.he is a port of Nuklear
