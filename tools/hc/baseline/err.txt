@@ -295,6 +295,8 @@ growshrink_slot_merged.amni
 growshrink_slot_merged_param.amni
 growshrink_slot_param_key.amni
 growshrink_slot_rebind_merged.amni
+growshrink_slot_recursive_result.amni
+growshrink_slot_return_mixed.amni
 growshrink_slot_var_loop_merged.amni
 growshrink_slot_var_rebind.amni
 growshrink_store.amni
@@ -305,6 +307,8 @@ growshrink_store_elements.amni
 growshrink_store_fill.amni
 growshrink_store_nested.amni
 growshrink_store_parameter.amni
+growshrink_store_recursive.amni
+growshrink_store_recursive_parameter.amni
 growshrink_store_return.amni
 growshrink_store_tail.amni
 growshrink_store_view_binding.amni
@@ -483,6 +487,7 @@ return_local_reference_copy.amni
 return_merge_block_escape.amni
 return_merge_block_escape_swapped.amni
 return_merge_local_path.amni
+return_merge_slot_read.amni
 return_tie_local_contents.amni
 return_tie_local_holder.amni
 return_tie_local_literal.amni
@@ -669,6 +674,7 @@ shrink_slice_ref_local.amni
 shrink_slice_ref_param_clear.amni
 shrink_slice_ref_rebound.amni
 shrink_static_result_backedge.amni
+shrink_static_result_mixed.amni
 shrink_temporary_byteview.amni
 shrink_through_call.amni
 slice_assign_local_to_global.amni

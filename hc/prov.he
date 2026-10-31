@@ -16,6 +16,7 @@ var SHG (i32[>..])[>..]
 var PPR (i32[>..])[>..]
 var PPN (i32[>..])[>..]
 var PGN (i32[>..])[>..]
+var PRG (i32[>..])[>..]
 var PCL i32[>..]
 var PCG i32[>..]
 var PMK i32[>..]
@@ -153,6 +154,7 @@ pvcall(n int) Pv:
 		a := kid(n, j); pt := if j < ND[fq].n as int { ptype_of(ci, j) } else { -1 }
 		if (m >> b) & 1 != 0: r = pmerge(r, pvin(pt, a))
 		if (m >> (b + 31)) & 1 != 0: r = pmerge(r, pva(a))
+	if ci < PRG.len: for g PRG[ci] { r = pmerge(r, Pv{-2, g, 0}) }
 	r
 pdst(n int) Pv:
 	k := ND[n].k as int
@@ -289,6 +291,11 @@ pret(n int, e int):
 	if !isrs(rt): for v in 0..LVS.len { if LVS[v].cfn == PI as i32 && LVS[v].fl & LV_PARAM != 0 && !pgsid(v) && pdir(e, v) { pgnadd(PI, pidx(v), e, LVS[v].name as int) } }
 	p := pvin(rt, e)
 	PRM[PI] = PRM[PI] | p.m
+	while PRG.len <= PI { PRG.push([]) }
+	if p.v <= -3 && !PRG[PI].contains(p.v): PRG[PI].push(p.v)
+	if isrs(rt):
+		rr0 i32[>..] ~= []; proots(e, rr0)
+		for x0 rr0 { if x0 <= -3 && !PRG[PI].contains(x0) { PRG[PI].push(x0) } }
 	if !PCH || p.d < 1 || ND[FI_[PI].node].k as int == N_FUNVAL: return
 	m byte[>..] ~= []; if p.v < 0 { m.append("returning a reference into a temporary") } else { m.append("returning a reference rooted in "); pname(p, m); m.append(", which dies with this function (§9.2)") } cerr(e, m[..])
 pcsrc(b int) int:
@@ -927,7 +934,7 @@ pvfn(i int):
 	f := FI_[i]; if f.node < 0 || FILES[TK[ND[f.node].t].f].he: return
 	fv := ND[f.node].k as int == N_FUNVAL; bd := if fv { ND[f.node].a as int } else { ND[f.node].c as int }
 	if !fv && (ND[f.node].k as int != N_FN || f.st != 2 || ND[f.node].fl & F_EXTERN != 0) || bd < 0: return
-	sa := AOWN; sc := CFN; AOWN = i; CFN = i; PI = i; PVK = 1; PBS.clear(); PBJ.clear(); PLP.clear(); PBK.clear(); for a PTL { pcset0(a as int) } PTL.clear(); SHR[i] = 0; PSG[i] = 0; SHG[i].clear(); PPR[i].clear(); while PPN.len <= i { PPN.push([]) } PPN[i].clear(); while PGN.len <= i { PGN.push([]) } PGN[i].clear(); if i < PPW.len { PPW[i].clear() } if i < PCW.len { PCW[i].clear() } for j ND[f.node].n { q9 := kid(f.node as int, j); if rk(q9) == R_LOCAL { pgrow(rv(q9)); PXM[rv(q9)] = 0 } }
+	sa := AOWN; sc := CFN; AOWN = i; CFN = i; PI = i; PVK = 1; PBS.clear(); PBJ.clear(); PLP.clear(); PBK.clear(); for a PTL { pcset0(a as int) } PTL.clear(); SHR[i] = 0; PSG[i] = 0; SHG[i].clear(); PPR[i].clear(); while PPN.len <= i { PPN.push([]) } PPN[i].clear(); while PGN.len <= i { PGN.push([]) } PGN[i].clear(); while PRG.len <= i { PRG.push([]) } if i < PPW.len { PPW[i].clear() } if i < PCW.len { PCW[i].clear() } for j ND[f.node].n { q9 := kid(f.node as int, j); if rk(q9) == R_LOCAL { pgrow(rv(q9)); PXM[rv(q9)] = 0 } }
 	if fv && at(bd) < 0: AOWN = sa; CFN = sc; return
 	if fv: { while PFT.len <= i { PFT.push([]) } PFT[i].clear(); for j ND[f.node].n { q := kid(f.node as int, j); PFT[i].push(if rk(q) == R_LOCAL { LVS[rv(q)].ty } else { -1 }) } if ND[f.node].n == 0 && rk(f.node as int) == R_LOCAL { PFT[i].push(LVS[rv(f.node as int)].ty) } }
 	pblk(bd, true)
@@ -1063,14 +1070,14 @@ pnconst():
 prov_program() bool:
 	if NERR > 0: return false
 	nlc byte[>..] ~= []; if env("HC_NOPROV", nlc): return true
-	GST.clear(); GCP.clear(); PSH.clear(); PSO.clear(); PRM.clear(); PRM.resize(FI_.len, 0); SHR.clear(); SHR.resize(FI_.len, 0); PSG.clear(); PSG.resize(FI_.len, 0); PPW.clear(); PCW.clear(); SHG.clear(); PPR.clear(); PPN.clear(); for _ FI_.len { SHG.push([]); PPR.push([]); PPN.push([]) } PCH = false
+	GST.clear(); GCP.clear(); PSH.clear(); PSO.clear(); PRM.clear(); PRM.resize(FI_.len, 0); SHR.clear(); SHR.resize(FI_.len, 0); PSG.clear(); PSG.resize(FI_.len, 0); PPW.clear(); PCW.clear(); SHG.clear(); PPR.clear(); PPN.clear(); PGN.clear(); PRG.clear(); for _ FI_.len { SHG.push([]); PPR.push([]); PPN.push([]); PGN.push([]); PRG.push([]) } PCH = false
 	p0 i64[>..] ~= []; GRR.clear(); GRU.clear(); PSGG.clear(); sg := AOWN; AOWN = GLOBI
 	for d, di DC: if d.k as int == D_GLOBAL && !FILES[d.file].he && ND[d.node].k as int == N_VDECL && ND[d.node].b >= 0 && ND[ND[d.node].b].n > 0 { t := global_type(di); if t > 0 && (TY[t].k as int == TY_REF && TY[t].c < 0 || TY[t].k as int == TY_SLICE) { e := kid(ND[d.node].b as int, 0); q := pl(e); if TY[t].k as int == TY_SLICE && q.v <= -3 && pgsid(q.v as int) && ND[e].k as int != N_NULL { m byte[>..] ~= []; m.append("storing a reference into "); pidn(q.v as int, m); m.append(", which holds a grow-shrink array: such a reference lives in a variable, is passed down or returned, and is never stored (§5.2)"); cerr(e, m[..]) } if ND[e].k as int != N_NULL { grrw(di, if q.d == -2 && q.v <= -3 { q.v as int } else { -9 }) } } }
 	pnconst()
 	for d, di DC: if d.k as int == D_GLOBAL && !FILES[d.file].he && ND[d.node].k as int == N_VDECL && ND[d.node].b >= 0 && ND[ND[d.node].b].n > 0 { t := global_type(di); if t > 0 && (isrs(t) || hold(t)) { e := kid(ND[d.node].b as int, 0); if isrs(t) { pgst(e, -3 - di, e) } else { q := pvin(t, e); if q.v <= -3 && q.v as int != -3 - di { GST.push(q.v); GST.push((-3 - di) as i32); GST.push(e as i32) } } } }
 	AOWN = sg
 	for _ 7:
-		CGE.clear(); p0.clear(); for x PRM { p0.push(x) } for x SHR { p0.push(x) } for x PSG { p0.push(x) } for x SHG { p0.push(x.len as i64) } for x PPR { p0.push(x.len as i64) } for x PGN { p0.push(x.len as i64) } for i PRM.len { p0.push(ppwsum(i)) } c0 := pcwlen(); for i FI_.len { pvfn(i) } same ~= pcwlen() == c0; for i PRM.len { if ppwsum(i) != p0[5 * PRM.len + i] { same = false } } for i PRM.len { if PRM[i] != p0[i] || SHR[i] != p0[PRM.len + i] || PSG[i] != p0[2 * PRM.len + i] || SHG[i].len as i64 != p0[3 * PRM.len + i] || PPR[i].len as i64 != p0[4 * PRM.len + i] { same = false } } if same { break }
+		CGE.clear(); p0.clear(); for x PRM { p0.push(x) } for x SHR { p0.push(x) } for x PSG { p0.push(x) } for x SHG { p0.push(x.len as i64) } for x PPR { p0.push(x.len as i64) } for x PGN { p0.push(x.len as i64) } for x PRG { p0.push(x.len as i64) } for i PRM.len { p0.push(ppwsum(i)) } c0 := pcwlen(); for i FI_.len { pvfn(i) } same ~= pcwlen() == c0; for i PRM.len { if ppwsum(i) != p0[7 * PRM.len + i] { same = false } } for i PRM.len { if PRM[i] != p0[i] || SHR[i] != p0[PRM.len + i] || PSG[i] != p0[2 * PRM.len + i] || SHG[i].len as i64 != p0[3 * PRM.len + i] || PPR[i].len as i64 != p0[4 * PRM.len + i] || PGN[i].len as i64 != p0[5 * PRM.len + i] || PRG[i].len as i64 != p0[6 * PRM.len + i] { same = false } } if same { break }
 	pcycles(); PCH = true; po i32[>..] ~= []; for i FI_.len { po.push(i as i32) } j0 ~= 1; while j0 < po.len { k0 ~= j0; while k0 > 0 && pfit(po[k0 - 1] as int) > pfit(po[k0] as int) { x0 := po[k0]; po[k0] = po[k0 - 1]; po[k0 - 1] = x0; k0 -= 1 } j0 += 1 } for i po { pvfn(i as int) }
 	if NERR == 0: nwall()
 	for i FI_.len { pdaf(i) }
