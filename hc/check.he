@@ -598,6 +598,7 @@ recursive ck_as(n int, want int) int:
 	f := ck(x.a, if TY[t].k == TY_INT || TY[t].k == TY_FLT { -1 } else { t })
 	df := deref(f)
 	dk := TY[df].k; tk := TY[t].k
+	if (tk == TY_INT || tk == TY_FLT) && (dk == TY_STRUCT || dk == TY_ARR || dk == TY_SLICE || dk == TY_STRLIT || dk == TY_ARRLIT || dk == TY_MULTI): m byte[>..] ~= []; format(m, "as requires a numeric source, got ", tn(df)); cerr(n, m)
 	if dk == TY_ILIT && tk == TY_INT && (x.fl & 1 != 0 || !lit_fits(x.a, t)): default_t(x.a)
 	else:
 		if dk == TY_FLIT && (tk == TY_INT || tk == TY_FLT): conv(x.a, T_F64)
