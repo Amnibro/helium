@@ -43,10 +43,13 @@ caller edits between frames. After `gltf::reset()` call `s3d::forget()`.
 
 ### Motion vectors, TAA and upscaling
 
-The colour pass writes a second target, `s3d::motion_target()` (RGBA16F, render
-size): xy is the screen motion since last frame in uv units (this frame's uv minus
-last frame's, y down), z the view depth, w coverage. Skinned meshes use last frame's
-joint palette; the sky gives camera-rotation motion only.
+When temporal runs (or `s3d::motion_vectors = true`), the colour pass writes a
+second target, `s3d::motion_target()` (RGBA16F, render size): xy is the screen
+motion since last frame in uv units (this frame's uv minus last frame's, y down), z
+the view depth, w coverage. Skinned meshes use last frame's joint palette; the sky
+gives camera-rotation motion only. With both off the motion targets are neither
+allocated nor drawn (they cost about 33 bytes a pixel: a 4x MSAA and a resolved
+RGBA16F image).
 
 ```
 s3d::temporal = 1;                   // jittered frames accumulated into a history
@@ -59,7 +62,9 @@ With `temporal = 1` the projection is offset each frame by a (2, 3) Halton sampl
 nearest-sample weighting, a YCoCg neighbourhood clip (`temporal_gamma` standard
 deviations), motion from the nearest surface in 3x3, Catmull-Rom history fetch and a
 blend that rises with motion (`temporal_blend`, `temporal_motion`, `temporal_max`).
-Bloom and the tone curve run at the output size after it.
+Bloom and the tone curve run at the output size after it. Shadow cascades are fitted
+to the unjittered view (`setup_cascades` uses only `view` and the render size), so
+they do not move with the jitter; the look+taa test checks that.
 
 ## Where later features attach
 
@@ -141,15 +146,24 @@ Bloom and the tone curve run at the output size after it.
      |albedo - 1| < 2.5 %. Roughness below 0.3 is reported as unresolved: the
      directional samples cannot integrate a lobe that narrow (the grazing corner
      there is covered by the LUT check).
-   * **Sphere grid golden.** A 5x5 metal x roughness grid at 480x360 is compared
-     with `hc/test/gfx/golden/spheres.png`; PSNR must be > 40 dB. A missing golden
-     fails (`GFX_MAKE_GOLDEN=1` writes one for review and still exits 1).
-   * **Full frame** with every feature, checked for light and contrast.
-   * **Timing.** 1280x720 sphere grid (shadows, SSAO and bloom off, as in every
-     recorded baseline), 30 warmup frames then 200 timed frames, each
+   * **Sphere grid golden.** A 5x5 metal x roughness grid at 480x360 with shadows,
+     SSAO and bloom off is compared with `hc/test/gfx/golden/spheres.png`; PSNR must
+     be > 40 dB. A missing golden fails (`GFX_MAKE_GOLDEN=1` writes both goldens for
+     review and still exits 1).
+   * **Shipped-look golden.** The same grid with scene3d's default look (shadows, 3
+     cascades at 2048^2, SSAO 16 samples, bloom 0.6) against
+     `hc/test/gfx/golden/spheres_default.png` (> 40 dB, required; `GFX_MAKE_GOLDEN=default`
+     writes only this one), with light/contrast bars; the effects-off image must fail
+     against it (control).
+   * **Full frame** (floor, skinned + morphed glTF, point light, particles, text) with
+     the shipped look, sun and sky, checked for light and contrast. Before 2026-11-01
+     this frame ran with shadows, SSAO and bloom off, left behind by the sphere test.
+   * **Timing.** 1280x720 sphere grid, 30 warmup frames then 200 timed frames, each
      render + submit + fence wait with no readback: wall-clock min / median / p95,
      and GPU time from timestamp queries through the `tools/hc/gputime` Vulkan layer
-     (`GPUTIME=0` turns it off).
+     (`GPUTIME=0` turns it off). Timed three ways: shadows, SSAO and bloom off (the
+     recorded baseline), the shipped look with TAA off, and the shipped look with TAA
+     on.
    * **Motion vectors.** A moving sphere and a sliding camera are compared with a CPU
      projection (per-pixel error, sky, view depth), and a skinned animation step
      must move pixels while a repeated pose moves none.
@@ -173,6 +187,22 @@ Bloom and the tone curve run at the output size after it.
      resolve's GPU p95 must be under 1 ms. This reuses the gputime layer on the real
      engine pass rather than a separate C harness, so a stand-alone bench was not
      kept.
+   * **Shadows.** The sphere grid before a wall (960x540), direct light only
+     (`debug_view = 5`), shadows off and on. A pixel is shadowed on the GPU when
+     shadows on keep less than half its direct light. The reference casts a ray per
+     pixel centre through the same camera into the exact spheres and boxes, then one
+     toward the sun. Counted: pixels the sun lights with shadows off and whose hit
+     faces the sun, outside a 2 px band around shadow and object edges. Gate: IoU of
+     the two shadow masks >= 0.9 in the main cascade (the one with most counted
+     pixels). Controls that must fail: shadows off, and the render's sun mirrored in
+     x. The shadow pass is timed at 1280x720 (off vs on). `GFX_ONLY=shadows` runs
+     only this check.
+   * **Shipped look with TAA.** Over the 16 jitter phases the rasterising
+     `view_proj` must change every frame and the cascade matrices never; the shadow
+     mask of converged TAA frames must pass the same 0.9 IoU bar; the wall scene with
+     the shipped look must settle (< 0.5/255) and stay within 2/255 mean of the
+     TAA-off frame (bloom then reads the temporal result); 720p -> 1080p with the
+     shipped look must settle and reach >= 30 dB against native 1080p TAA.
 
 Raw output of each recorded run is in `hc/test/gfx/results/`; `gfxtest.sh` writes
 the header itself (commit, command, driver, GPU, packages) into `$GFX_OUT/results.txt`.
@@ -201,6 +231,45 @@ Image metrics count non-sky pixels only. The same run passes the furnace and gra
 (1.5 % / 2.5 %, controls failing) and the golden image (53.53 dB). The earlier runs at
 8c351bc (before the rebase), 89a60db and 6713aa8 are kept in `results/`; the last two each failed only the ghost control, which led to the wall scene and
 then to the mean-error gate.
+
+### Shadow and shipped-look results (RX 9060 XT, RADV, Mesa 26.2.4; `results/2026-11-01_rx9060xt_radv_3fcea0b_shadowfix.txt`)
+
+Shadow mask against the ray-traced reference, main cascade (cascade 2, 441405 counted
+pixels, 44111 shadowed in the reference); earlier libraries were run with the same
+test (`results/..._12652cf_shadow_before.txt`, `..._509c26c_shadow_layeronly.txt`):
+
+| library | IoU | bar |
+| --- | --- | --- |
+| before (12652cf): all cascades in depth layer 0 | 0.0999 | >= 0.9 |
+| layer fix only (509c26c) | 0.8343 | |
+| layer fix + 1.5-texel normal offset (e4adf92 on) | 0.9952 | |
+| same, TAA on (converged, 16 jitter phases) | 0.9952 | >= 0.9 |
+| control: shadows off / sun mirrored in x | 0.0 / 0.2367 | must fail |
+
+| check | result | bar |
+| --- | --- | --- |
+| cascades under jitter | view_proj jittered 16/16, cascade matrices change 0.0 | 16/16, 0 |
+| shipped-look golden / effects-off control | 99.0 dB (golden taken in the same batch) / 27.98 dB | > 40 dB / must fail |
+| wall scene, shipped look, TAA still | settle max 0.033/255, vs TAA off mean 0.269/255, 46.39 dB | < 0.5, <= 2 |
+| 720p -> 1080p, shipped look | settle 0.048/255, 45.63 dB vs native 1080p TAA | < 0.5, >= 30 dB |
+
+Timing, 1280x720, 30 warmup + 200 frames, GPU timestamps min / median / p95 (wall median):
+
+| frame | GPU ms | wall median |
+| --- | --- | --- |
+| sphere grid, effects off (baseline) | 0.1524 / 0.159 / 0.162 | 0.2473 |
+| sphere grid, shipped look, TAA off | 0.7247 / 0.7488 / 0.759 | 0.9314 |
+| sphere grid, shipped look, TAA on | 0.9194 / 0.9509 / 0.9718 | 1.1467 |
+| 720p -> 1080p TSR, shipped look | 1.1174 / 1.1569 / 1.1733 | 1.5978 |
+| wall scene, shadows off / on (3 x 2048^2) | median 0.2159 / 0.5305 | 0.3062 / 0.6691 |
+
+The old "1.21 ms at 720p" figure was a wall-clock mean over 20 frames with one
+readback and broken shadows; the comparable number now is 0.93 ms wall (0.75 ms GPU)
+for the shipped look with TAA off. The shadow fix itself costs nothing measurable
+(wall scene, shadows on: GPU median 0.6198 ms on the old library vs 0.6239 ms fixed, both
+in the e4adf92 batch, before the motion change). Between 12652cf and fc9f014 the motion target was always allocated and
+drawn, which put the effects-off frame at 0.2295 ms (+44 %); it is now made only when
+temporal runs or `motion_vectors` is set, and the frame is back at 0.159 ms.
 
 ### Furnace results (RX 9060 XT, roughness >= 0.3)
 
@@ -288,9 +357,16 @@ are reserved but not shaded. Also:
   math there on the CPU, not the GPU.
 * The rough 0.3 metal tile at n.v 0.05 is still 0.5 % above its converged value at
   16384 directions; the bars include that.
-* With shadows on, the 480x360 sphere grid rendered with no sun light at all in one
-  run (the sphere test now turns shadows off, as its golden always had); not
-  investigated.
+* Until 2026-11-01 (auron/gfx-shadowfix) sun shadows were wrong whenever they were
+  on, not only in one run: `gfx::begin_pass` ignored the depth target's layer, so
+  all three cascades were drawn into layer 0, each clearing the last, while
+  `sun_visibility()` read each cascade's own layer (never written, or stale). The
+  result was misplaced, slab-shaped shadows (shadow-mask IoU 0.10 against a
+  ray-traced reference) or a sphere grid with no sun at all. A normal offset that
+  grew as `0.02 (c+1)^2` (0.18 units in cascade 2, about 11 texels) also detached
+  shadows from their casters. Both are fixed (IoU 0.995) and the shadow check
+  above guards them. The effects-off sphere golden and timing baseline still run
+  with shadows off; the shipped look has its own golden and timing.
 * The golden was made on one GPU and driver; other GPUs are untested (hc/TODO.md,
   JK-M3).
 * The CPU-only part of `gfx_smoke` still needs SDL3 installed: `gfx.he` declares its
