@@ -54,6 +54,9 @@ fn add_block(x0 real, z0 real, x1 real, z1 real, x2 real, z2 real, x3 real, z3 r
 	quad(x3, h, z3, x0, h, z0, x0, 0.0, z0, x3, 0.0, z3, 0);
 }
 
+// triangle -> surface: 0 floor, 1 ceiling, 2 back, 3 red, 4 green, 5 short block, 6 tall block
+fn surface_of(t int) int { if t < 10 { t / 2 } else if t < 20 { 5 } else { 6 } }
+
 let RX = 556.0; let RY = 548.8; let RZ = 559.2;
 fn build() {
 	tris.clear(); tri_mat.clear();

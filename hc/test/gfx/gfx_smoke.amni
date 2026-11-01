@@ -1300,6 +1300,13 @@ const T7_P95_MS = 0.5;        // resolve gpu-timestamp p95; no gpu time = FAIL
 
 // ---- T8: pre-registered bars ----
 const T8_STILL_BAR = 0.25;    // still scene: rejection on vs off, mean abs /255
+// G1/G2 (gap-map item 3, GI part 1), pre-registered before any GI GPU run (README,
+// "Pre-registered bars (GI part 1)"): the renderer's linear HDR Cornell box, box-filtered
+// to 128 x 128, against hc/test/gfx/gi/cornell_ref.txt.gz (Helium CPU path tracer).
+// Metric: mean over the region's pixels of |Y_render - Y_ref| / Y_ref (Rec. 709 luminance).
+const GI_BAR = 0.10;            // G1 all gated pixels, G2a ceiling, G2b shadowed (not directly lit)
+const GI_REF_NOISE_BAR = 0.01;  // reference: mean luminance rel. standard error must be below this
+const GI_MIN_REGION = 1000;     // each region needs this many gated pixels or the check fails
 // and, per ghost case: band mean with rejection on <= band mean with rejection off
 
 // ---- shadows: the sun's shadow mask against a CPU ray-traced reference ----

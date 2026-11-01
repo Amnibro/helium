@@ -23,6 +23,7 @@
 // every pixel is a non-light pixel.
 //
 //   build/hcn build hc/test/gfx/gi/cornell_pt.amni -o pt
+//   pt mask                       the gate's region mask (see mask_line)
 //   pt <worker> <workers> <spp>   rows j with j % workers == worker, one line per pixel:
 //   "<j*W+i> r g b n sumY sumY2" (linear radiance, luminance sums for the noise estimate)
 // hc/test/gfx/gi/make_cornell_ref.sh runs the workers, merges and hashes.
@@ -128,10 +129,39 @@ fn radiance(i int, j int) real, real, real {
 	return lr, lg, lb;
 }
 
+// region mask for the gate: the surface under each pixel centre (0 floor, 1 ceiling,
+// 2 back wall, 3 red wall, 4 green wall, 5 short block, 6 tall block, -1 nothing) and
+// whether that point sees the light (1 directly lit, 0 shadowed or facing away).
+fn mask_line(out byte[>..]&, i int, j int) {
+	let th = tan(cornell::FOV_Y * 0.5);
+	let u = ((i as real + 0.5) / W as real * 2.0 - 1.0) * th;
+	let v = (1.0 - (j as real + 0.5) / H as real * 2.0) * th;
+	var dx = -u; var dy = v; var dz = 1.0;
+	let dl = sqrt(dx * dx + dy * dy + dz * dz); dx /= dl; dy /= dl; dz /= dl;
+	let h = trace(cornell::EYE_X, cornell::EYE_Y, cornell::EYE_Z, dx, dy, dz, 1e30);
+	var surf = -1; var lit = 0;
+	if h.tri >= 0 {
+		surf = cornell::surface_of(h.tri);
+		let px = cornell::EYE_X + dx * h.t; let py = cornell::EYE_Y + dy * h.t; let pz = cornell::EYE_Z + dz * h.t;
+		var nx = h.nx; var ny = h.ny; var nz = h.nz;
+		if nx * dx + ny * dy + nz * dz > 0.0 { nx = -nx; ny = -ny; nz = -nz; }
+		let lx = cornell::LIGHT_X - px; let ly = cornell::LIGHT_Y - py; let lz = cornell::LIGHT_Z - pz;
+		let d = sqrt(lx * lx + ly * ly + lz * lz);
+		if (nx * lx + ny * ly + nz * lz) / d > 0.0 && trace(px, py, pz, lx / d, ly / d, lz / d, d - cornell::TMIN).tri < 0 { lit = 1; }
+	}
+	format(out, j * W + i, " ", surf, " ", lit, "\n");
+}
+
 fn arg_int(k int) int { var s byte[>..] = []; arg(k, s); to_int(s[..]) }
 
 fn main() {
 	cornell::build();
+	if arg_count() > 1 { var a byte[>..] = []; arg(1, a); if a[..] == "mask" {
+		var out byte[>..] = [];
+		for j in H { for i in W { mask_line(out, i, j); } }
+		write_stdout(out[..]);
+		return;
+	} }
 	let worker = arg_int(1); let workers = arg_int(2); let spp = arg_int(3);
 	var out byte[>..] = [];
 	for j in H {

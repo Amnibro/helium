@@ -394,6 +394,37 @@ reported as a failure and fixed in the renderer, not in the gate.
   {10, 20, 30, 40, 60} x L in {50, 100, 200, 300, 500, 1000, 2000, 4000 (capped at the
   ring)}; reported: which (C, L) fail a bar and the smallest L caught per C.
 
+### Pre-registered bars (GI part 1, gap-map item 3)
+
+Committed before any GI GPU run; never loosened afterwards. Scene and reference:
+`hc/lib/gfx/cornell.amni` (Cornell PCG "Cornell Box Data": room 556 x 548.8 x 559.2 mm,
+short and tall blocks, camera (278, 273, -800) mm, 35 mm lens on 25 mm film; white
+0.73, red 0.65/0.05/0.05, green 0.12/0.45/0.15; one point light 10 mm under the
+centre of the published ceiling light with the renderer's `range_falloff`), and
+`hc/test/gfx/gi/cornell_pt.amni`, a Helium CPU path tracer (Kajiya 1986; Lambertian
+only; cosine-weighted bounces, next-event estimation, Russian roulette from bounce 3;
+Moller-Trumbore 1997 ray/triangle; splitmix64 keyed by pixel and sample, so the image
+does not depend on the job split). 128 x 128 at 65536 spp: luminance relative standard
+error mean 0.505 %, median 0.353 %, p99 2.17 %, max 2.87 %; sha256 of the text image in
+`gi/cornell_ref.sha256` (`gi/cornell_ref.txt.gz` is that file). The light is a point,
+so no pixel shows an emitter: every lit-geometry pixel is a non-light pixel.
+
+* **G0 reference.** `zcat gi/cornell_ref.txt.gz | sha256sum` matches `cornell_ref.sha256`
+  and the mean luminance relative standard error is < 1 % (`GI_REF_NOISE_BAR`).
+* **G1 Cornell overall.** The renderer's Cornell frame (linear HDR, shipped GI on,
+  bloom off, sky not drawn, box-filtered to 128 x 128) against the reference: mean
+  over gated pixels of |Y - Y_ref| / Y_ref < **0.10** (`GI_BAR`). Gated pixels: the
+  reference is > 0 there and in its 8 neighbours (drops the background and the
+  silhouette ring against it).
+* **G2 indirect regions, each separately < 0.10**, from `pt mask` (surface and
+  direct visibility at each pixel centre): (a) the ceiling (2450 pixels; its only
+  direct light is grazing from 1 cm below); (b) shadowed: every non-ceiling pixel whose
+  centre does not see the light (2455 pixels: the floor and walls behind and beside
+  the blocks, the blocks' faces turned away). Each region needs >= 1000 gated pixels.
+* **Must-fail control (GI off).** The same frame with the GI term replaced by the
+  shipped direct + analytic sky ambient must score >= 0.10 on G1 and on G2(a); if it
+  passes either, the gate is not discriminating and the run fails.
+
 Raw output of each recorded run is in `hc/test/gfx/results/`; `gfxtest.sh` writes
 the header itself (commit, command, driver, GPU, packages) into `$GFX_OUT/results.txt`.
 With no GPU it prints `SKIPPED (no GPU)` after the CPU checks (`GFX_REQUIRE_GPU=1`
