@@ -15,6 +15,20 @@ fn acos_c(x f32) f32 { acos(clamp(x, -1.0, 1.0)) }
 // Rotation that rotates point p about pivot c by q.
 fn rot_about(q float4, c float3, p float3) float3 { c + qrot(q, p - c) }
 
+let SOFT_K f32 = 0.97;
+// d <= s is unchanged; above it d' = s + w*tanh((d - s)/w)
+// with w = reach - s. tanh has slope 1 and curvature 0 at 0, so the map is
+// C2 at s (no acceleration step where softening begins), monotone, < reach.
+// s is passed in: max(SOFT_K*reach, current |a->c|), so a limb the animation
+// already holds extended is left alone and only extra pull is softened.
+fn soft_reach(d f32, s0 f32, reach f32) f32 {
+	let s = min(s0, reach * 0.999);
+	if d <= s { return d; }
+	let w = reach - s;
+	let x = (d - s) / w;
+	s + w * (1.0 - 2.0 / (exp(2.0 * x) + 1.0))
+}
+
 // Two-bone IK on the chain a -> b -> c (b's parent must be a, c's parent b).
 // target: where c should go; pole: a point the middle joint should bend
 // toward; weight blends the result; keep_end keeps c's model orientation.
@@ -26,7 +40,11 @@ fn two_bone_ik(sk Skeleton&, p Pose&, m Model&, a i32, b i32, c i32, target floa
 	let l2 = length(pc - pb);
 	let reach = l1 + l2;
 	let dt = length(target - pa);
-	let d = clamp(dt, abs(l1 - l2) + 1.0e-4, reach * 0.99999);
+	// Soft reach: past SOFT_K * reach the solved distance eases toward (but
+	// never hits) full reach. A hard clamp leaves the knee angle acos(..) with
+	// an unbounded derivative near full extension, which amplifies small
+	// target motion into thigh/shin pops.
+	let d = clamp(soft_reach(dt, max(length(pc - pa), reach * SOFT_K), reach), abs(l1 - l2) + 1.0e-4, reach * 0.99999);
 	// current and wanted interior angles at a (between a->c and a->b) and b
 	let ac = safe_norm(pc - pa, float3 { 0.0, -1.0, 0.0 });
 	let ab = safe_norm(pb - pa, ac);
@@ -147,11 +165,22 @@ struct Leg {
 	has_prev bool = false,
 	err f32 = 0.0,
 	out_w float3 = V0,     // last world ankle target actually solved for
+	out_v float3 = V0,     // its velocity (m/s)
+	prev_tw float3 = V0,   // last unlocked (anim + ground) target
+	prev_tw_v float3 = V0, // and its velocity
+	has_out bool = false,
+	// release: the offset (output - anim target) at the moment of release is
+	// decayed to zero by a quintic matching offset and velocity (inertialization)
+	releasing bool = false,
+	rel_t f32 = 0.0, rel_T f32 = 0.0,
+	rel_x0 float3 = V0, rel_v0 float3 = V0,
 }
 struct PlantCfg {
 	contact_h f32 = 0.04,   // ankle within this of its sole height = contact
 	contact_v f32 = 0.35,   // and moving slower than this (m/s, world)
-	lock_rate f32 = 12.0,   // lock weight change per second (1/12 s eased fades; slower lets the lock gap grow)
+	lock_rate f32 = 8.0,    // engage: lock weight per second (eased 1/8 s)
+	release_t f32 = 0.3,    // release: offset decay time (s)
+	lock_max f32 = 1.0,     // ceiling on the lock weight (callers fade locking out at speed)
 	max_drop f32 = 0.35,    // pelvis may drop at most this far
 	pelvis i32 = -1,
 }
@@ -176,20 +205,42 @@ fn plant_feet(sk Skeleton&, p Pose&, m Model&, legs Leg[2]&, ground_y f32[2], ch
 		if lg.has_prev && dt > 0.0 { let dv = ank_w - lg.prev; v = length(float3 { dv.x, 0.0, dv.z }) / dt; }
 		legs[i].prev = ank_w; legs[i].has_prev = true;
 		let contact = h < cfg.contact_h && v < cfg.contact_v;
+		// unlocked target: the anim ankle carried onto this foot's ground
+		let tw0 = float3 { ank_w.x, ank_w.y + off[i], ank_w.z };
+		let tw0_v = if lg.has_out && dt > 0.0 { (tw0 - lg.prev_tw) / dt } else { V0 };
+		legs[i].prev_tw = tw0; legs[i].prev_tw_v = tw0_v;
 		if contact && !lg.locked {
 			legs[i].locked = true;
-			// re-locking mid-release starts from where the foot really is
-			legs[i].lock_pos = if lg.lock_w > 0.0 { lg.out_w } else { float3 { ank_w.x, ground_y[i] + lg.sole, ank_w.z } };
+			// lock where the foot is drawn now (continuous: weight starts at 0)
+			let here = if lg.has_out { lg.out_w } else { tw0 };
+			legs[i].lock_pos = float3 { here.x, ground_y[i] + lg.sole, here.z };
 		}
-		if !contact { legs[i].locked = false; }
-		legs[i].lock_w = approach_f(lg.lock_w, if legs[i].locked { 1.0 } else { 0.0 }, cfg.lock_rate, dt);
-		// ground following: lift/lower the anim ankle by its ground offset
-		var tw = float3 { ank_w.x, ank_w.y + off[i], ank_w.z };
+		if !contact && lg.locked {
+			legs[i].locked = false;
+			if lg.has_out && dt > 0.0 {
+				// hand the remaining offset to the inertializer and drop the lock
+				legs[i].releasing = true; legs[i].rel_t = 0.0; legs[i].rel_T = cfg.release_t;
+				// offset and its velocity as of the previous frame; the decay is
+				// then first evaluated one step in (rel_t = dt below)
+				legs[i].rel_x0 = lg.out_w - lg.prev_tw;
+				legs[i].rel_v0 = lg.out_v - lg.prev_tw_v;
+			}
+			legs[i].lock_w = 0.0;
+		}
+		if legs[i].locked { legs[i].lock_w = approach_f(legs[i].lock_w, 1.0, cfg.lock_rate, dt); }
+		// base = unlocked target + decaying release offset
+		var base = tw0;
+		if legs[i].releasing {
+			legs[i].rel_t += dt;
+			if legs[i].rel_t >= legs[i].rel_T { legs[i].releasing = false; }
+			else { base = base + inert_offset(legs[i].rel_x0, legs[i].rel_v0, legs[i].rel_t, legs[i].rel_T); }
+		}
+		// eased lock weight: zero slope at both ends
+		let lw = smootherstep01(legs[i].lock_w) * clamp(cfg.lock_max, 0.0, 1.0);
 		let lp = legs[i].lock_pos;
-		// eased weight: zero slope at both ends, so lock/release add no velocity step
-		let lw = smootherstep01(legs[i].lock_w);
-		tw = tw + (float3 { lp.x, ground_y[i] + lg.sole + max(h, 0.0), lp.z } - tw) * lw;
-		legs[i].out_w = tw;
+		let tw = base + (float3 { lp.x, ground_y[i] + lg.sole + max(h, 0.0), lp.z } - base) * lw;
+		legs[i].out_v = if legs[i].has_out && dt > 0.0 { (tw - lg.out_w) / dt } else { V0 };
+		legs[i].out_w = tw; legs[i].has_out = true;
 		let t = xf_point(inv, tw);
 		if length(t - ank) < 1.0e-4 { legs[i].err = 0.0; continue; }
 		// pole: in front of the knee along its current bend direction
@@ -201,6 +252,24 @@ fn plant_feet(sk Skeleton&, p Pose&, m Model&, legs Leg[2]&, ground_y f32[2], ch
 		fk(sk, p, m);
 	}
 	drop
+}
+// Inertialization offset (D. Bollo, "Inertialization: High-Performance
+// Animation Transitions in Gears of War", GDC 2016): a quintic x(t) with
+// x(0)=x0, x'(0)=v0, x''(0)=0 and x, x', x'' all zero at t1. Per axis.
+fn inert_axis(x0 f32, v0 f32, t f32, t1 f32) f32 {
+	var T = t1;
+	// keep the decay from overshooting when moving away: shorten T (Bollo)
+	if x0 * v0 < 0.0 { T = min(T, abs(-5.0 * x0 / v0)); }
+	if T <= 1.0e-5 || t >= T { return 0.0; }
+	let T2 = T * T; let T3 = T2 * T; let T4 = T3 * T; let T5 = T4 * T;
+	let A = 0.0 - (6.0 * v0 * T + 12.0 * x0) / (2.0 * T5);
+	let B = (16.0 * v0 * T + 30.0 * x0) / (2.0 * T4);
+	let C = 0.0 - (12.0 * v0 * T + 20.0 * x0) / (2.0 * T3);
+	let t2 = t * t;
+	((A * t + B) * t + C) * t2 * t + v0 * t + x0
+}
+fn inert_offset(x0 float3, v0 float3, t f32, t1 f32) float3 {
+	float3 { inert_axis(x0.x, v0.x, t, t1), inert_axis(x0.y, v0.y, t, t1), inert_axis(x0.z, v0.z, t, t1) }
 }
 fn approach_f(x f32, target f32, rate f32, dt f32) f32 {
 	let d = target - x;
