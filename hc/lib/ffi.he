@@ -1,0 +1,16 @@
+# ffi: raw memory at addresses handed over by foreign code (hc/hrt.h)
+namespace ffi
+extern cstr(p uint, out byte[>..]&) bool = "hr_ffi_cstr"
+extern bytes(p uint, n int, out byte[>..]&) bool = "hr_ffi_bytes"
+extern ptr(s const byte[:]) uint = "hr_ffi_ptr"
+extern write(p uint, s const byte[:]) = "hr_ffi_write"
+extern read(p uint, o byte[:]) = "hr_ffi_read"
+# copying forms: an empty result when the address is null
+cstr(p uint) byte[>..]:
+	s byte[>..] ~= []
+	cstr(p, s)
+	s
+bytes(p uint, n int) byte[>..]:
+	s byte[>..] ~= []
+	bytes(p, n, s)
+	s

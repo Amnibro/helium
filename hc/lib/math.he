@@ -1,0 +1,66 @@
+# math: real and f32 functions. Rounding and square roots are lowered by
+# the native backend; the rest bind to the C library through hc/hrt.h.
+use std
+
+PI := 3.141592653589793
+TAU := 2.0 * PI
+
+# rounding to an integral value
+extern floor(x real) real
+extern ceil(x real) real
+extern round(x real) real
+extern trunc(x real) real
+extern floor(x f32) f32 = "floorf"
+extern ceil(x f32) f32 = "ceilf"
+extern round(x f32) f32 = "roundf"
+extern trunc(x f32) f32 = "truncf"
+
+# roots
+extern sqrt(x real) real = "hr_sqrt"
+extern sqrt(x f32) f32 = "hr_sqrtf"
+extern rsqrt_est(x real) real = "hr_rsqrt_est"
+extern rsqrt_est(x f32) f32 = "hr_rsqrtf_est"
+
+# trigonometry, in radians
+extern sin(x real) real = "hr_sin"
+extern cos(x real) real = "hr_cos"
+extern tan(x real) real = "hr_tan"
+extern asin(x real) real = "hr_asin"
+extern acos(x real) real = "hr_acos"
+extern atan(x real) real = "hr_atan"
+extern atan2(y real, x real) real = "hr_atan2"
+extern sin(x f32) f32 = "hr_sinf"
+extern cos(x f32) f32 = "hr_cosf"
+extern tan(x f32) f32 = "hr_tanf"
+extern asin(x f32) f32 = "hr_asinf"
+extern acos(x f32) f32 = "hr_acosf"
+extern atan(x f32) f32 = "hr_atanf"
+extern atan2(y f32, x f32) f32 = "hr_atan2f"
+
+# exponentials and logarithms
+extern exp(x real) real = "hr_exp"
+extern log(x real) real = "hr_log"
+extern log2(x real) real = "hr_log2"
+extern log10(x real) real = "hr_log10"
+extern exp(x f32) f32 = "hr_expf"
+extern log(x f32) f32 = "hr_logf"
+extern log2(x f32) f32 = "hr_log2f"
+extern log10(x f32) f32 = "hr_log10f"
+
+# angle units
+radians(d real) real: d * (PI / 180.0)
+degrees(r real) real: r * (180.0 / PI)
+# classification: NaN is the only value unequal to itself, and an
+# infinity is the only non-NaN value whose difference with itself is NaN
+is_nan(x real) bool: x != x
+is_inf(x real) bool: x == x && x - x != 0.0
+is_finite(x real) bool: x - x == 0.0
+# length of (x, y), scaled so the squares cannot overflow
+hypot(x real, y real) real:
+	a := abs(x)
+	b := abs(y)
+	big := max(a, b)
+	if big == 0.0 || is_inf(big): return big
+	p := a / big
+	q := b / big
+	big * sqrt(p * p + q * q)
