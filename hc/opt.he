@@ -415,6 +415,55 @@ gpre(c int) int:
 		if i < m: opnds(i); for u OU { if u >= 0 && u < nv && dd[u] == 0 { return -1 } }
 		if i < m && (o == I_JMP || o == I_BZ || o == I_BNZ) && rchain(x.c as int, lp, ch): for k ch { opnds(k as int); for u OD { if u >= 0 && u < nv { dd[u] = 1 } } } for k ch { opnds(k as int); for u OU { if u >= 0 && u < nv && dd[u] == 0 { return -1 } } }
 	GPE[c] = m as i32; m
+sgd(fi int):
+	nz byte[>..] ~= []; if WEB || env("HC_NOSGD", nz): return
+	f := NFS[fi]; i0 := f.i0 as int; i1 := f.i1 as int; ov := f.nv as int
+	nc ~= 0; for i i0..i1 { x := IR[i]; if x.op as int == I_CALL && x.c == fi as i64 && x.l < 0 && x.d >= 0 { nc++ } }
+	if nc == 0: return
+	np ~= 0; for i i0..i1 { if IR[i].op as int == I_PARAM { np++ } }
+	lp i32[>..<] ~= []; lp.resize(LBL.len, -1); for i i0..i1 { if IR[i].op as int == I_LBL { lp[IR[i].c] = i as i32 } }
+	dv i8[>..<] ~= []; dv.resize(ov, 0); pq i32[>..<] ~= []; fq i32[>..<] ~= []
+	cl(o int, c i64) bool: o == I_IMM || o == I_GADDR || o == I_MOV || o == I_EXT || o == I_CVT && c != 5 || o == I_CMP || o == I_FCMP || o == I_FBIN || o == I_LD || o == I_BCHK || o == I_BIN && c != B_DIV as i64 && c != B_MOD as i64 && c != B_UDIV as i64 && c != B_UMOD as i64
+	dk(v int) bool: v >= 0 && v < ov && dv[v] != 0
+	uk(i int) bool:
+		opnds(i); for u OU { if !dk(u as int) { return false } } for u OD { if u < 0 || u >= ov as i32 { return false } } for u OD { dv[u] = 1 } true
+	wk(p0 int, q i32[>..<]&) int:
+		p ~= p0; n ~= 0
+		while p < i1 && n < 64:
+			x := IR[p]; o := x.op as int; n++
+			if o == I_NOP || o == I_LBL: p++; continue
+			if o == I_PARAM: if x.d < 0 || x.d >= ov as i32 || x.c >= 6 { return -1 } dv[x.d] = 1; q.push(p as i32); p++; continue
+			if o == I_JMP: if x.c < 0 || x.c >= LBL.len as i64 || lp[x.c] < 0 { return -1 } p = lp[x.c] as int; continue
+			if o == I_BZ || o == I_BNZ: if !dk(x.a as int) || x.b >= 0 && !dk(x.b as int) || x.c < 0 || x.c >= LBL.len as i64 { return -1 } return p
+			if o == I_RET: if x.b >= 0 || !dk(x.a as int) { return -1 } return p
+			if !cl(o, x.c) || !uk(p): return -1
+			q.push(p as i32); if q.len > 16: return -1
+			p++
+		-1
+	b0 := wk(i0, pq); if b0 < 0 || IR[b0].op as int != I_BZ && IR[b0].op as int != I_BNZ: return
+	bx := IR[b0]; d0 i8[>..<] ~= []; for z dv { d0.push(z) }
+	tk ~= true; ri ~= -1; t := lp[bx.c] as int
+	if t >= 0: ri = wk(t, fq)
+	if ri < 0 || IR[ri].op as int != I_RET: tk = false; fq.clear(); for z, k d0 { dv[k] = z } ri = wk(b0 + 1, fq)
+	if ri < 0 || IR[ri].op as int != I_RET || pq.len + fq.len > 16: return
+	mp i32[>..<] ~= []; mp.resize(ov, -1); nv ~= ov; ni0 := IR.len
+	cp(j int, x Ir):
+		y ~= IR[j]; o := y.op as int
+		if o == I_PARAM: mp[y.d] = ARGL[x.a as int + y.c as int]; return
+		if y.a >= 0 && o != I_IMM && o != I_GADDR: y.a = mp[y.a]
+		if y.b >= 0 && usesb(o): y.b = mp[y.b]
+		if y.d >= 0 { nd := nv; nv++; mp[y.d] = nd as i32; y.d = nd as i32 } IR.push(y)
+	for i i0..i1:
+		x := IR[i]
+		if !(x.op as int == I_CALL && x.c == fi as i64 && x.l < 0 && x.d >= 0 && x.b as int == np): IR.push(x); continue
+		ls := nlbl(); le := nlbl(); for j pq { cp(j as int, x) }
+		g ~= bx; g.a = mp[bx.a]; if bx.b >= 0 { g.b = mp[bx.b] } g.c = ls as i64; IR.push(g)
+		if tk: IR.push(x); IR.push(Ir{I_JMP as u8, 3, -1, -1, -1, le as i64, -1}); IR.push(Ir{I_LBL as u8, 3, -1, -1, -1, ls as i64, -1})
+		for j fq { cp(j as int, x) }
+		IR.push(Ir{I_MOV as u8, 3, x.d, mp[IR[ri].a], -1, 0, -1})
+		if !tk: IR.push(Ir{I_JMP as u8, 3, -1, -1, -1, le as i64, -1}); IR.push(Ir{I_LBL as u8, 3, -1, -1, -1, ls as i64, -1}); IR.push(x)
+		IR.push(Ir{I_LBL as u8, 3, -1, -1, -1, le as i64, -1})
+	NFS[fi].i0 = ni0 as i32; NFS[fi].i1 = IR.len as i32; NFS[fi].nv = nv as i32
 inline_into(fi int, fsz i32[>..<]&, mx int):
 	f := NFS[fi]; ni0 := IR.len; nv ~= f.nv; sb ~= f.sb; lm i32[>..<] ~= []
 	kn i8[>..<] ~= []; kn.resize(nv, 0); for i (f.i0 as int)..f.i1 as int:
@@ -519,6 +568,7 @@ optimize_all():
 			ns0 := if rp >= 1 { nsc(fi) } else { 0 }; if rp >= 1 && !WEB && !NOTR { tre(fi) } ns1 := if rp >= 1 { nsc(fi) } else { 0 }; trd := ns1 < ns0 && !NOTRX; sc := ns1 > 0; brk := rp >= 1 && !(inl && sc && !NOSI && !WEB && (if NOHS { isize(fi) <= 128 } else { hsize(fi) <= HSL })); if brk && !trd { break } SIM = rp >= 1 && !brk; if SIM && !NOHS { fsz[fi] = hsize(fi) as i32 }
 			if inl && !brk { inline_into(fi, fsz, mx) } if !env("HC_NOCPL", noi) { cpld(fi) } tk(0); mem2reg(fi); tk(1); if we { webs(fi) } copyprop(fi); tk(2); constfold(fi); tk(3); sra(fi); cpfwd(fi); if !NOSF { slf(fi) } if !NOSG { srg(fi) } tk(4); if we { webs(fi) } copyprop(fi); tk(2); constfold(fi); tk(3); if !NODMX { dmx(fi) } lvn(fi); tk(5); copyprop(fi); cpfwd(fi); copyprop(fi); constfold(fi); if !NOAX { andx(fi) } if !NOSA { sarm(fi) } copyprop(fi); jthread(fi); lvn(fi); copyprop(fi); rnz(fi); udv(fi); if !env("HC_NOBR", noi) { if !env("HC_NOUMH", noi) { umh(fi) } if !env("HC_NOSCF", noi) { scf(fi) } if !env("HC_NOIFC", noi) { ifc(fi) } if !env("HC_NOBST", noi) { bset(fi) } } if we { webs(fi); copyprop(fi); constfold(fi); copyprop(fi) } licm(fi); lvn(fi); copyprop(fi); if !env("HC_NOSR", noi) { fuse(fi); sred(fi); copyprop(fi) } tk(2); deadcode(fi); tk(6); if inl: fsz[fi] = isize(fi)
 			if brk { break }
+		if inl && !NOSI { sgd(fi); copyprop(fi); constfold(fi); jthread(fi); copyprop(fi); deadcode(fi) }
 		sgs(fi)
 	pe byte[>..] ~= []; if env("HC_PT", pe):
 		for v, k pt: print(k, " ", v / 1000000, "ms\n")

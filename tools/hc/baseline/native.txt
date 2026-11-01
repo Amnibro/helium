@@ -58,6 +58,7 @@ test/pool_order.amni
 test/ref_flit.amni
 test/rmw_mem.amni
 test/rotate_u32.amni
+test/self_guard_call.amni
 test/stdlib/json_format_fuzz.amni
 test/stdlib/rsqrt_est.amni
 test/stdlib/stdlib_match32.amni
