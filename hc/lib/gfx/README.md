@@ -59,9 +59,18 @@ s3d::temporal_reset = true;          // after a camera cut
 
 With `temporal = 1` the projection is offset each frame by a (2, 3) Halton sample
 (`jitter_phases` long) and `shaders/temporal.frag` resolves into the history:
-nearest-sample weighting, a YCoCg neighbourhood clip (`temporal_gamma` standard
-deviations), motion from the nearest surface in 3x3, Catmull-Rom history fetch and a
-blend that rises with motion (`temporal_blend`, `temporal_motion`, `temporal_max`).
+nearest-sample weighting, a YCoCg neighbourhood clip, motion from the nearest surface
+in 3x3, Catmull-Rom history fetch, depth-based history rejection
+(`temporal_depth_reject`, 0.1 = 10 % of the view depth; 0 turns it off) and a blend
+that rises with motion (`temporal_blend`, `temporal_motion`, `temporal_max`). The clip
+box is the 3x3 mean +/- `temporal_gamma` standard deviations intersected with the
+neighbourhood min/max; history outside it is moved along the line toward the centre of
+that box (not toward the mean: the two differ where min/max cuts the sigma box) until it
+lies inside. The motion target is written by a single-sample prepass, so motion and
+depth at an MSAA silhouette belong to the one surface under the pixel's sample point,
+never an average of the two (tested by `silhouette_checks`, T4 below). See References
+for the published techniques this design follows; the code was written from those
+descriptions.
 Bloom and the tone curve run at the output size after it. Shadow cascades are fitted
 to the unjittered view (`setup_cascades` uses only `view` and the render size), so
 they do not move with the jitter; the look+taa test checks that.
@@ -110,11 +119,28 @@ they do not move with the jitter; the look+taa test checks that.
   `HC_LIB=hc/lib build/hcn run hc/test/gfx/tools/make_ms_lut.amni > hc/lib/gfx/shaders/ms_lut.glsl`.
 * The 0.25 floor on `E` caps `ms` at 4 for a white metal. The generator checks the
   grazing corner the GPU furnace cannot resolve (mu down to 0.00007, roughness 0.03
-  to 0.3, a 4x finer grid than the table): for mu >= 0.01 every white-metal and
-  white-dielectric albedo is within 2.6 % of 1; below mu 0.01 the largest gain is
-  5.42 % (mu 0.0023, roughness 0.11, from bilinear interpolation of the table), so the
-  floor never overshoots and was kept. Below mu of about 0.001 the `1e-4` guard in the
-  denominator turns the lobe off (loss up to 82 %), which is a loss, not a boost.
+  to 0.3, a 4x finer grid than the table) against an independent integrator (N4
+  below): for mu >= 0.01 every white-metal and white-dielectric albedo is within 3 %
+  of 1. Below mu 0.01 bilinear interpolation of the table undershot E and the metal
+  gained up to 5.42 %; the shader now reads the largest E of the four corners there
+  (`ms_e`), and the largest gain below 0.01 is 0.61 % for the white metal and 2.70 %
+  for the white dielectric. Below mu of about 0.001 the `1e-4` guard in the
+  denominator turns the lobe off (metal loss up to 82.3 % at mu 0.00007, reported, not
+  gated), which is a loss, not a boost.
+* Reciprocity (N5). `kd` depends on the view direction only, so the diffuse term is
+  not reciprocal: swapping l and v changes it. Measured from the table (F0 = 0.04,
+  with compensation), `kd` at n.v = 1 / 0.2 / 0.05 / 0.01 is 0.960 / 0.645 / 0.226 /
+  0.242 at roughness 0, 0.961 / 0.797 / 0.724 / 0.682 at 0.3, 0.964 / 0.902 / 0.858 /
+  0.840 at 0.5 and 0.987 / 0.970 / 0.960 / 0.957 at 1; max / min over n.v is 6.3,
+  1.42, 1.15 and 1.03, which is the size of the asymmetry. The symmetric form
+  `kd(v, l) = (1 - ms E_F(n.v)) (1 - ms E_F(n.l)) / (1 - avg)`, with `avg` the
+  cosine-weighted mean of `ms E_F` (about 0.047 at roughness 0.5), is reciprocal and
+  conserves energy just as well (furnace error 2.6e-4 over n.v, quadrature only).
+  It is not adopted in this branch: it moves direct diffuse by up to -10 % for a
+  grazing light at roughness 0.5 (0.868 vs 0.964 at n.v = 1, n.l = 0.05; +1.1 % with
+  both at normal incidence), which re-takes both goldens and every furnace control,
+  and it needs a second table fetch per light plus an `avg` table that is quadratic in
+  F0 (three coefficients per roughness row). Kept as a known gap with these numbers.
 
 ## Tests
 
@@ -148,12 +174,14 @@ they do not move with the jitter; the look+taa test checks that.
      there is covered by the LUT check).
    * **Sphere grid golden.** A 5x5 metal x roughness grid at 480x360 with shadows,
      SSAO and bloom off is compared with `hc/test/gfx/golden/spheres.png`; PSNR must
-     be > 40 dB. A missing golden fails (`GFX_MAKE_GOLDEN=1` writes both goldens for
-     review and still exits 1).
+     be > 40 dB. A missing golden fails. `GFX_MAKE_GOLDEN=1` makes gfx_smoke itself
+     render and write both goldens (the paths are its second and third arguments)
+     and exit 1 for review; only unset, 0 or 1 is accepted, anything else fails in
+     both gfxtest.sh and gfx_smoke.
    * **Shipped-look golden.** The same grid with scene3d's default look (shadows, 3
      cascades at 2048^2, SSAO 16 samples, bloom 0.6) against
-     `hc/test/gfx/golden/spheres_default.png` (> 40 dB, required; `GFX_MAKE_GOLDEN=default`
-     writes only this one), with light/contrast bars; the effects-off image must fail
+     `hc/test/gfx/golden/spheres_default.png` (> 40 dB, required), with light/contrast
+     bars; the effects-off image must fail
      against it (control).
    * **Full frame** (floor, skinned + morphed glTF, point light, particles, text) with
      the shipped look, sun and sky, checked for light and contrast. Before 2026-11-01
@@ -184,7 +212,7 @@ they do not move with the jitter; the look+taa test checks that.
      least 30 dB against native 1080p TAA. The native frame, the upscaled frame and
      the resolve alone (`s3d::temporal_repeat(1)` then `gfx::flush()`: one submit
      holding only the resolve) are each timed for 30 warmup + 200 iterations; the
-     resolve's GPU p95 must be under 1 ms. This reuses the gputime layer on the real
+     resolve's GPU p95 must be under 0.5 ms (T7 below; no GPU time is a failure). This reuses the gputime layer on the real
      engine pass rather than a separate C harness, so a stand-alone bench was not
      kept.
    * **Shadows.** The sphere grid before a wall (960x540), direct light only
@@ -468,6 +496,20 @@ pass-through mean error is 0.0106 % (max 0.0488 %).
   Industrial Light & Magic tech report, 2019.
 * C. J. Fdez-Aguera, "A Multiple-Scattering Microfacet Model for Real-Time
   Image-Based Lighting", JCGT 8(1), 2019.
+* Temporal anti-aliasing (citations for the techniques; no code was taken from any
+  of them):
+  * B. Karis, "High Quality Temporal Supersampling", SIGGRAPH 2014 course
+    "Advances in Real-Time Rendering" (jittered accumulation, neighbourhood clamp,
+    YCoCg).
+  * M. Salvi, "An Excursion in Temporal Supersampling", GDC 2016 (variance clipping:
+    mean +/- gamma sigma).
+  * L. Pedersen, "Temporal Reprojection Anti-Aliasing in INSIDE", GDC 2016, Playdead
+    (clipping toward the box centre, velocity from the nearest neighbour).
+  * J. H. Halton, "On the efficiency of certain quasi-random sequences of points in
+    evaluating multi-dimensional integrals", Numerische Mathematik 2, 1960 (the (2, 3)
+    jitter sequence).
+  * E. Catmull, R. Rom, "A Class of Local Interpolating Splines", Computer Aided
+    Geometric Design, Academic Press 1974 (the history filter).
 * D. Hoskins, "Hash without Sine", https://www.shadertoy.com/view/4djSRW, 2014
   (MIT; `hash12` in `ssao.frag`).
 
