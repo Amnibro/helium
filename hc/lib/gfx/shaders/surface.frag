@@ -47,9 +47,9 @@ layout(location = 0) out vec4 out_rgba;
 
 vec2 pick_uv(float set) { return set > 0.5 ? in_uv.zw : in_uv.xy; }
 
-// Single-scatter directional albedo of the specular lobe from ms_lut.glsl, bilinear
-// (columns are sqrt(n.v), rows roughness): x = E(n.v, rough) with Fresnel = 1,
-// y = B, the part of E carried by Schlick's (1 - v.h)^5 term.
+// Single-scatter directional albedo of the specular lobe from ms_lut.glsl (16-bit
+// unorm pairs), bilinear (columns are sqrt(n.v), rows roughness): x = E(n.v, rough)
+// with Fresnel = 1, y = B, the part of E carried by Schlick's (1 - v.h)^5 term.
 vec2 ms_lut(float n_v, float rough) {
 	float x = sqrt(clamp(n_v, 0.0, 1.0)) * float(MS_N - 1);
 	float y = clamp(rough, 0.0, 1.0) * float(MS_N - 1);
@@ -58,8 +58,8 @@ vec2 ms_lut(float n_v, float rough) {
 	float fx = x - float(x0);
 	float fy = y - float(y0);
 	int i = y0 * MS_N + x0;
-	vec2 a = mix(vec2(MS_E[i], MS_B[i]), vec2(MS_E[i + 1], MS_B[i + 1]), fx);
-	vec2 b = mix(vec2(MS_E[i + MS_N], MS_B[i + MS_N]), vec2(MS_E[i + MS_N + 1], MS_B[i + MS_N + 1]), fx);
+	vec2 a = mix(unpackUnorm2x16(MS_EB[i]), unpackUnorm2x16(MS_EB[i + 1]), fx);
+	vec2 b = mix(unpackUnorm2x16(MS_EB[i + MS_N]), unpackUnorm2x16(MS_EB[i + MS_N + 1]), fx);
 	return mix(a, b, fy);
 }
 
