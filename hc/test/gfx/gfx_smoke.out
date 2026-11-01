@@ -1,0 +1,16 @@
+qrotate 0 0 -1000
+qslerp w 924
+inverse ok true
+png 37x23 true sum 845791653
+jpeg 61x45 true sum 444578738
+inflate stored true abc
+gltf meshes 2 nodes 4 roots 3 materials 2 images 1 skins 1 animations 1 skipped 1
+  prim verts 24 indices 36 targets 0 skinned false tangents true
+  prim verts 12 indices 12 targets 1 skinned true tangents false
+  material checker mode 0 metal 0 rough 600 emissive 0 0 two-sided false
+  material glow mode 2 metal 1000 rough 1000 emissive 4000 2000 two-sided true
+  image 4x4 sum 721154210
+anim rotation 0 0 707 707 weight 1000
+anim joint -1000 2000 0
+sphere asset 1 indices 768 verts 153
+text width 9600 verts 72

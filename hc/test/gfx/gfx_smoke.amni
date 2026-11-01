@@ -1,0 +1,274 @@
+// gfx_smoke: end-to-end checks for hc/lib/gfx (run by tools/hc/gfxtest.sh).
+//
+// No arguments: CPU checks only, deterministic output compared with gfx_smoke.out
+//   (math, inflate + PNG + JPEG decoding, the glTF loader, animation sampling,
+//   procedural shapes, SDF text layout).
+// With an output directory: also renders headless and prints "gpu: ..." lines:
+//   furnace  - white dielectric, mirror and half-metal spheres inside a uniform white sky with
+//              no sun; every HDR pixel should come back 1.0 (energy error in %)
+//   spheres  - 5x5 metal/roughness grid, saved as spheres.png and compared with
+//              golden/spheres.png when it exists (PSNR in dB)
+//   frame    - floor, skinned + morphed glTF, point light, particles and text,
+//              saved as frame.png and checked for light and contrast
+//   timing   - mean milliseconds per 1280x720 frame of the sphere grid
+import os;
+import gfx;
+import math;
+import gfx.linalg;
+import gfx.zlib;
+import gfx.codec_png;
+import gfx.codec_jpeg;
+import gfx.gltf;
+import gfx.motion;
+import gfx.shapes;
+import gfx.sparks;
+import gfx.scene3d;
+import gfx.sdf_font;
+
+fn milli(v f32) int { round((v * 1000.0) as real) as int }
+
+fn checksum(b const byte[:]) int {
+	var s = 0;
+	for k in b.len { s = (s * 31 + b[k] as int) % 1000000007; }
+	s
+}
+
+fn cpu_checks() {
+	// math
+	let q = linalg::qaxis(linalg::v3(0.0, 1.0, 0.0), 1.5707963);
+	let p = linalg::qrotate(q, linalg::v3(1.0, 0.0, 0.0));
+	print("qrotate ", milli(p.x), " ", milli(p.y), " ", milli(p.z));
+	let half_turn = linalg::qslerp(linalg::quat_identity(), q, 0.5);
+	print("qslerp w ", milli(half_turn.w));
+	let m = linalg::compose(linalg::v3(1.0, 2.0, 3.0), q, linalg::v3(2.0, 2.0, 2.0));
+	print("inverse ok ", linalg::near_equal(gfx::mul(m, linalg::inverse(m)), gfx::mat4_identity, 0.0001));
+
+	// codecs
+	var png byte[>..] = [];
+	let w, h, ok = codec_png::decode(embed_file("fixtures/palette.png"), png);
+	print("png ", w, "x", h, " ", ok, " sum ", checksum(png[..]));
+	var jpg byte[>..] = [];
+	let jw, jh, jok = codec_jpeg::decode(embed_file("fixtures/photo420.jpg"), jpg);
+	print("jpeg ", jw, "x", jh, " ", jok, " sum ", checksum(jpg[..]));
+	var raw byte[>..] = [];
+	print("inflate stored ", zlib::inflate([0x78 as byte, 0x01, 0x01, 0x03, 0x00, 0xFC, 0xFF, 0x61, 0x62, 0x63, 0x02, 0x4D, 0x01, 0x27], raw), " ", raw[..]);
+
+	// glTF
+	let a = gltf::load_bytes(embed_file("fixtures/scene.glb"), "");
+	if a < 0 { print("gltf FAIL ", gltf::error()); return; }
+	let s = gltf::assets[a];
+	print("gltf meshes ", s.meshes.count, " nodes ", s.nodes.count, " roots ", s.roots.count, " materials ", s.materials.count, " images ", s.images.count, " skins ", s.skins.count, " animations ", s.animations.count, " skipped ", gltf::skipped());
+	for pr in gltf::prims { print("  prim verts ", pr.vcount, " indices ", pr.icount, " targets ", pr.targets, " skinned ", pr.skinned, " tangents ", pr.tangents); }
+	for mt in gltf::materials { print("  material ", gltf::text_of(mt.name), " mode ", mt.alpha_mode, " metal ", milli(mt.metallic), " rough ", milli(mt.roughness), " emissive ", milli(mt.emissive.x), " ", milli(mt.emissive.y), " two-sided ", mt.double_sided); }
+	let im = gltf::images[0];
+	print("  image ", im.width, "x", im.height, " sum ", checksum(gltf::pixels[im.pixels.first..im.pixels.first + im.pixels.count]));
+
+	// animation
+	let anim = gltf::find_animation(a, "wave");
+	motion::rest(a);
+	motion::apply(anim, 1.0, 1.0);
+	motion::update(a, gfx::mat4_identity);
+	let bone = gltf::find_node(a, "bone");
+	let r = motion::pose_r[bone];
+	print("anim rotation ", milli(r.x), " ", milli(r.y), " ", milli(r.z), " ", milli(r.w), " weight ", milli(motion::weight(gltf::find_node(a, "strip"), 0)));
+	var pal gfx::mat4[>..] = [];
+	motion::joints(0, pal);
+	let moved = linalg::point(pal[1], linalg::v3(0.0, 2.0, 0.0));
+	print("anim joint ", milli(moved.x), " ", milli(moved.y), " ", milli(moved.z));
+
+	// shapes
+	let before = gltf::indices.len;
+	let ball = shapes::sphere(1.0, 16, 8, shapes::material(linalg::v3(1.0, 1.0, 1.0), 0.0, 0.5));
+	print("sphere asset ", ball - a, " indices ", gltf::indices.len - before, " verts ", gltf::prims[gltf::prims.len - 1].vcount);
+
+	// text layout
+	var vs TextVtx[>..] = [];
+	sdf_text(vs, 10.0, 20.0, 24.0, "Helium", [255, 255, 255, 255], 0, false);
+	print("text width ", round((sdf_text_w("Helium", 24.0) * 100.0) as real) as int, " verts ", vs.len);
+	gltf::reset();
+}
+
+fn half_to_f32(lo byte, hi byte) f32 {
+	let h = (lo as int) | ((hi as int) << 8);
+	let e = (h >> 10) & 31;
+	let m = h & 1023;
+	let sign f32 = if (h & 0x8000) != 0 { -1.0 } else { 1.0 };
+	if e == 0 { return sign * (m as f32) / 16777216.0; }
+	if e == 31 { return sign * 65504.0; }
+	sign * linalg::f(pow(2.0, (e - 15) as real)) * (1.0 + m as f32 / 1024.0)
+}
+
+fn reset_scene() {
+	s3d::items.clear();
+	s3d::lights.clear();
+	gltf::reset();
+	s3d::forget();
+}
+
+fn furnace(size int, dir const byte[:]) f32 {
+	reset_scene();
+	let white = shapes::sphere(1.0, 48, 24, shapes::material(linalg::v3(1.0, 1.0, 1.0), 0.0, 0.5));
+	let mirror = shapes::sphere(1.0, 48, 24, shapes::material(linalg::v3(1.0, 1.0, 1.0), 1.0, 0.1));
+	let half_metal = shapes::sphere(0.7, 48, 24, shapes::material(linalg::v3(1.0, 1.0, 1.0), 0.5, 0.6));
+	s3d::place(s3d::add(white), gfx::translate(float3 { -1.1, -0.5, 0.0 }));
+	s3d::place(s3d::add(mirror), gfx::translate(float3 { 1.1, -0.5, 0.0 }));
+	s3d::place(s3d::add(half_metal), gfx::translate(float3 { 0.0, 1.2, 0.0 }));
+	let keep_sky = s3d::sky;
+	let keep_sun = s3d::sun;
+	let keep_look = s3d::look;
+	let one = float3 { 1.0, 1.0, 1.0 };
+	s3d::sky = s3d::Sky { zenith: one, horizon: one, ground: one, ambient: 1.0, draw: true };
+	s3d::sun.rgb = float3 { 0.0, 0.0, 0.0 };
+	s3d::sun.shadows = false;
+	s3d::look.ssao = false;
+	s3d::look.bloom = 0.0;
+	s3d::view = s3d::Camera { eye: float3 { 0.0, 0.0, 5.0 }, target: float3 { 0.0, 0.0, 0.0 }, up: float3 { 0.0, 1.0, 0.0 }, fov_y: 0.8, near: 0.1, far: 50.0 };
+	s3d::init(size, size);
+	let out = gfx::render_target(size, size, gfx::RGBA8);
+	s3d::render(out);
+	let px = gfx::read_pixels(s3d::hdr_target());
+	let mid = ((size / 2) * size + size / 2) * 8;
+	print("gpu: furnace bytes ", px.len, " centre ", px[mid] as int, " ", px[mid + 1] as int, " corner ", px[0] as int, " ", px[1] as int, " -> ", half_to_f32(px[mid], px[mid + 1]));
+	let fp = path(dir, "furnace.png");
+	print("gpu: furnace png ", fp[..], " ", gfx::save_png(out, fp[..]));
+	var worst f32 = 0.0;
+	var total real = 0.0;
+	let n = px.len / 8;
+	for i in n {
+		for c in 3 {
+			let v = half_to_f32(px[i * 8 + c * 2], px[i * 8 + c * 2 + 1]);
+			let e = abs(v - 1.0);
+			worst = max(worst, e);
+			total += e as real;
+		}
+	}
+	gfx::release(out);
+	s3d::sky = keep_sky;
+	s3d::sun = keep_sun;
+	s3d::look = keep_look;
+	print("gpu: furnace mean error ", total / (n * 3) as real * 100.0, " % max ", worst * 100.0, " %");
+	worst
+}
+
+fn sphere_grid() {
+	reset_scene();
+	for row in 5 {
+		for c in 5 {
+			let metal = row as f32 / 4.0;
+			let rough = 0.05 + 0.95 * c as f32 / 4.0;
+			let ball = shapes::sphere(0.42, 48, 24, shapes::material(linalg::v3(0.9, 0.55, 0.3), metal, rough));
+			s3d::place(s3d::add(ball), gfx::translate(float3 { (c as f32 - 2.0) * 1.0, (2.0 - row as f32) * 1.0, 0.0 }));
+		}
+	}
+	let floor = shapes::cube(float3 { 3.0, 0.1, 3.0 }, shapes::material(linalg::v3(0.6, 0.6, 0.6), 0.0, 0.8));
+	s3d::place(s3d::add(floor), gfx::translate(float3 { 0.0, -2.7, -1.0 }));
+	s3d::view = s3d::Camera { eye: float3 { 0.0, 0.3, 7.5 }, target: float3 { 0.0, 0.0, 0.0 }, up: float3 { 0.0, 1.0, 0.0 }, fov_y: 0.75, near: 0.1, far: 60.0 };
+	s3d::sun.to_sun = float3 { 0.5, 0.7, 0.6 };
+	s3d::sun.shadow_far = 20.0;
+}
+
+fn psnr(a const byte[:], b const byte[:]) real {
+	if a.len != b.len || a.len == 0 { return 0.0; }
+	var se real = 0.0;
+	var n = 0;
+	for i in a.len {
+		if i % 4 == 3 { continue; }
+		let d = (a[i] as int - b[i] as int) as real;
+		se += d * d;
+		n += 1;
+	}
+	if se == 0.0 { return 99.0; }
+	10.0 * log10(255.0 * 255.0 / (se / n as real))
+}
+
+fn path(dir const byte[:], name const byte[:]) byte[>..] { var p byte[>..] = []; format(p, dir, "/", name); p }
+
+fn gpu_checks(dir const byte[:], golden const byte[:]) bool {
+	var good = true;
+	if furnace(256, dir) >= 0.02 { good = false; }
+
+	sphere_grid();
+	s3d::init(480, 360);
+	let out = gfx::render_target(480, 360, gfx::RGBA8);
+	s3d::render(out);
+	let got = gfx::read_pixels(out);
+	let sp = path(dir, "spheres.png");
+	print("gpu: spheres png ", sp[..], " ", gfx::save_png(out, sp[..]));
+	if golden.len > 0 {
+		var want byte[>..] = [];
+		read_file(golden, want);
+		var ref byte[>..] = [];
+		let gw, gh, gok = codec_png::decode(want[..], ref);
+		let db = if gok && gw == 480 && gh == 360 { psnr(got[..], ref[..]) } else { 0.0 };
+		print("gpu: spheres psnr ", round(db * 100.0) / 100.0, " dB vs golden");
+		if db < 40.0 { good = false; }
+	} else {
+		print("gpu: spheres saved (no golden given)");
+	}
+	gfx::release(out);
+
+	// timing at 720p on the same scene
+	s3d::init(1280, 720);
+	let big = gfx::render_target(1280, 720, gfx::RGBA8);
+	s3d::render(big);
+	let _ = gfx::read_pixels(big);
+	let t0 = gfx::time();
+	let frames = 20;
+	for k in frames { s3d::render(big); }
+	let _ = gfx::read_pixels(big);
+	let ms = (gfx::time() - t0) * 1000.0 / frames as real;
+	print("gpu: timing 1280x720 ", round(ms * 100.0) / 100.0, " ms/frame (", s3d::batch.len, " draws, 3 cascades, ssao, bloom, 4x msaa)");
+	gfx::release(big);
+
+	// a full frame with every feature
+	reset_scene();
+	let a = gltf::load_bytes(embed_file("fixtures/scene.glb"), "");
+	let floor = shapes::plane(6.0, shapes::material(linalg::v3(0.5, 0.52, 0.55), 0.0, 0.7));
+	s3d::add(floor);
+	let it = s3d::add(a);
+	s3d::place(it, gfx::translate(float3 { 0.0, 0.6, 0.0 }));
+	s3d::animate(it, gltf::find_animation(a, "wave"), 0.7);
+	let ball = shapes::sphere(0.5, 32, 16, shapes::material(linalg::v3(0.95, 0.95, 0.95), 1.0, 0.25));
+	s3d::place(s3d::add(ball), gfx::translate(float3 { 1.6, 0.5, 0.4 }));
+	s3d::add_light(float3 { -1.5, 1.2, 1.0 }, float3 { 6.0, 2.0, 0.8 }, 6.0);
+	s3d::view = s3d::Camera { eye: float3 { 2.5, 2.2, 5.0 }, target: float3 { 0.0, 0.6, 0.0 }, up: float3 { 0.0, 1.0, 0.0 }, fov_y: 0.9, near: 0.1, far: 60.0 };
+	s3d::init(640, 360);
+	sparks::init(512);
+	sparks::ground = 0.0;
+	sparks::burst(float3 { 1.6, 1.1, 0.4 }, float3 { 0.0, 1.0, 0.0 }, 300, 3.0, 0.6, 1.5, float4 { 4.0, 2.2, 0.8, 1.0 }, 0.05, 7);
+	sparks::step(0.0);
+	for k in 8 { sparks::step(0.03); }
+	let frame = gfx::render_target(640, 360, gfx::RGBA8);
+	s3d::render(frame);
+	var text TextVtx[>..] = [];
+	sdf_text(text, 16.0, 16.0, 28.0, "helium gfx", [255, 255, 255, 255], 1, true);
+	sdf_draw(frame, 640, 360, text);
+	let px = gfx::read_pixels(frame);
+	let frp = path(dir, "frame.png");
+	print("gpu: frame png ", frp[..], " ", gfx::save_png(frame, frp[..]));
+	var lo = 255;
+	var hi = 0;
+	var sum = 0;
+	for i in px.len / 4 {
+		let l = (px[i * 4] as int * 2 + px[i * 4 + 1] as int * 5 + px[i * 4 + 2] as int) / 8;
+		lo = min(lo, l); hi = max(hi, l); sum += l;
+	}
+	let mean = sum / max(px.len / 4, 1);
+	print("gpu: frame mean ", mean, " range ", lo, "..", hi);
+	if mean < 30 || mean > 225 || hi - lo < 120 { good = false; }
+	let err = gfx::error();
+	if err.len > 0 { print("gpu: gfx error ", err[..]); good = false; }
+	good
+}
+
+fn main() {
+	cpu_checks();
+	let av = args();
+	if av.len < 2 { return; }
+	if !gfx::open_headless(64, 64) { print("gpu: skipped (no device: ", gfx::error()[..], ")"); return; }
+	let golden = if av.len > 2 { av[2] } else { "" };
+	let t0 = gfx::time();
+	let good = gpu_checks(av[1], golden);
+	print(if good { "gpu: ok" } else { "gpu: FAILED" }, " (", round((gfx::time() - t0) * 10.0) / 10.0, " s, ", gfx::driver()[..], ")");
+	gfx::close();
+}
