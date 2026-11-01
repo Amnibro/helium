@@ -1,0 +1,16 @@
+use std
+use math
+use vec
+
+main():
+	a := vec3<real>{1.0, 2.0, 3.0}
+	b := vec3<real>{4.0, -5.0, 6.0}
+	print(dot(a, b), " ", cross(a, b), " ", a + b, " ", a - b, " ", a * 2.0, " ", b / 2.0)
+	print(length(vec2<real>{3.0, 4.0}), " ", distance(a, b), " ", length(normalize(b)))
+	print(lerp(a, b, 0.25), " ", xy(a), " ", xyz(vec4<real>{9.0, 8.0, 7.0, 6.0}))
+	p := vec2<int>{3, -4}
+	print(p + vec2<int>{1, 1}, " ", dot(p, p), " ", length_sq(p))
+	print(radians(180.0), " ", degrees(PI / 2.0), " ", hypot(5.0, 12.0), " ", hypot(1.0e200, 1.0e200))
+	inf := 1.0 / 0.0
+	print(is_nan(inf - inf), " ", is_inf(-inf), " ", is_finite(1.0), " ", is_finite(inf), " ", is_nan(1.0))
+	print(abs(-1.5), " ", abs(-3), " ", sign(-2.5), " ", sign(0), " ", sqrt(2.0), " ", pow(2.0, 10.0))

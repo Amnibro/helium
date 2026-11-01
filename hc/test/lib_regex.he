@@ -1,0 +1,58 @@
+use std
+use regex
+
+show(p byte[:], t byte[:]):
+	re := regex::compile(p)
+	s, e := regex::find(re, t)
+	line byte[>..] ~= []
+	line.append(str(p, " on ", t, ": "))
+	if s < 0:
+		line.append("none")
+	else:
+		line.append(str(s, "..", e, " '", t[s..e], "'"))
+	line.append(str(" count=", regex::count(re, t)))
+	print(line)
+
+main():
+	show("b+", "aabbbcbb")
+	show("x*", "abc")
+	show("a|ab", "ab")
+	show("ab|a", "ab")
+	show("a.c", "a\nc abc")
+	show("[^a-c]+", "abcdefabc")
+	show("\\d+", "room 101, floor 7")
+	show("\\w+", "  hello_world!  ")
+	show("\\s", "nospace")
+	show("^ab", "abab")
+	show("ab$", "abab")
+	show("\\bcat\\b", "concat cat cats")
+	show("\\Bcat", "concat cat")
+	show("a{2}", "aaaaa")
+	show("a{2,}", "aaaaa")
+	show("a{1,2}", "aaaaa")
+	show("a{,2}", "a{,2}")
+	show("a+?", "aaa")
+	show("a*?b", "aaab")
+	show("(ab)*c", "ababc")
+	show("\\x41\\x42", "zzABzz")
+	show("[\\]x]", "a]b")
+	show("[a-]", "-")
+	show("\\.", "a.b")
+	# groups
+	re := regex::compile("(\\w+)@(\\w+)\\.(com|org)")
+	regex::each_captures(re, "mail ann@site.com and bob@club.org now") { c => print(regex::group(c, 0), " user=", regex::group(c, 1), " host=", regex::group(c, 2), " tld=", regex::group(c, 3)) }
+	opt := regex::compile("(a)|(b)")
+	regex::each_captures(opt, "ab") { c => print("[", regex::group(c, 1), "][", regex::group(c, 2), "]") }
+	# replacing
+	out byte[>..] ~= []
+	nums := regex::compile("[0-9]+")
+	regex::format_replaced(out, nums, "a1b22c333") { c => out.append(str("<", regex::group(c, 0).len, ">")) }
+	print(out)
+	# spans
+	regex::each_match(regex::compile("o"), "foo boo") { s, e => print(s, " ", e) }
+	print(regex::matches(regex::compile("^[0-9]+$"), "12345"), " ", regex::matches(regex::compile("^[0-9]+$"), "12a45"))
+	# errors
+	err byte[>..] ~= []
+	for p ["(ab", "ab)", "[ab", "*a", "a{3,1}", "x\\"]:
+		bad := regex::compile(p, err)
+		print(p, " -> ", err, " / matches: ", regex::matches(bad, "ab"))

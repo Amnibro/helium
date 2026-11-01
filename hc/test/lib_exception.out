@@ -1,0 +1,11 @@
+before
+caught 7 at 3
+shallow 4
+ok 6
+caught 1 for -1
+ok 8
+silent try done
+before
+inner got 7
+inner carries on
+end

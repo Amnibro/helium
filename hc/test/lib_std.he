@@ -1,0 +1,40 @@
+use std
+
+main():
+	# whole numbers
+	print(gcd(84, 36), " ", lcm(4, 6), " ", isqrt(99), " ", isqrt(100), " ", comb(10, 3), " ", perm(5, 2), " ", factorial(10))
+	print(div_euclid(-7, 3), " ", rem(-7, 3), " ", floor_div(-7, 2), " ", clamp(15, 0, 10), " ", clamp(-3, 0, 10))
+	print(to_base(255, 2), " ", to_base(255, 16), " ", hex(48879), " ", zfill("42", 5))
+	for s ["123", "-45", "+7", "0x1F", "12a", "", "-", "9223372036854775807", "9223372036854775808", "-9223372036854775808", "-9223372036854775809"]:
+		v, ok := parse_int(s)
+		print("'", s, "' ", v, " ", ok)
+	h, okh := parse_int("ff", 16)
+	print(h, " ", okh)
+	# reals
+	for s ["1.5", "-0.25", "1e3", "2.5E-3", ".5", "5.", "inf", "-inf", "1.2.3", "e5", "123456789012345678901234567890", "4.9e-324", "1e-400", "1e400"]:
+		v, ok := parse_flt(s)
+		print("'", s, "' ", v, " ", ok)
+	print(fmt(2.0 / 3.0, 4), " ", fmt(-0.0, 3), " ", fmt(1234.5, 0), " ", fmt(0.125, 2), " ", fmt(1.0e22, 1))
+	print(pyround(2.5), " ", pyround(3.5), " ", pyround(-2.5), " ", pyround(1.23456, 2))
+	# text
+	print(upper("MiXed 9"), " ", lower("MiXed 9"), " ", title("the quick fox"), " ", capitalize("hELLO"))
+	print("[", strip("  pad me \t"), "] [", lstrip("  x "), "] [", rstrip("  x "), "]")
+	print("[", center("hi", 6, '*'), "] [", ljust("hi", 5), "] [", rjust("hi", 5), "]")
+	print(replace("one two one", "one", "1"), " ", repeat("ab", 3), " ", startswith("helium", "hel"), " ", endswith("helium", "um"))
+	parts := split("a,b,,c", ',')
+	print(parts.len, " ", join("|", parts))
+	ws := words("  lots   of\tspace\n here ")
+	print(ws.len, " ", join("_", ws))
+	print(find("banana", "an"), " ", find("banana", "x"), " ", count("banana", "a"))
+	# lists
+	xs int[>..] ~= [5, 3, 9, 1, 3, 7]
+	ys := sorted(xs[..])
+	print(ys, " ", xs, " ", reversed(xs[..]))
+	at, hit := binary_search(ys[..], 7)
+	at2, hit2 := binary_search(ys[..], 4)
+	print(at, " ", hit, " ", at2, " ", hit2)
+	print(sum(xs[..]), " ", min(4, 2), " ", max(4, 2), " ", mean(xs[..]), " ", median(xs[..]))
+	sort(xs[..]) { a, b => a > b }
+	print(xs)
+	dedup(xs)
+	print(xs)

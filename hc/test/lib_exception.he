@@ -1,0 +1,33 @@
+use std
+use exception
+
+struct problem { code int, at int }
+
+level3(n int) int:
+	if n > 2: exception::throw(problem{7, n})
+	n
+level2(n int) int: level3(n + 1) + 1
+level1(n int) int: level2(n + 1) + 1
+
+go_deep(): print("before"); print(level1(1)); print("never")
+go_shallow(): print("shallow ", level1(0))
+
+check(x int) int:
+	if x < 0: exception::throw(problem{1, x})
+	x * 2
+input ~= 0
+run_check(): print("ok ", check(input))
+
+throw42(): exception::throw(42)
+inner(): exception::try<problem>(go_deep) { e => print("inner got ", e.code) }; print("inner carries on")
+
+main():
+	exception::try<problem>(go_deep) { e => print("caught ", e.code, " at ", e.at) }
+	exception::try<problem>(go_shallow) { e => print("not reached") }
+	for x [3, -1, 4]:
+		input = x
+		exception::try<problem>(run_check) { e => print("caught ", e.code, " for ", e.at) }
+	exception::try<int>(throw42)
+	print("silent try done")
+	exception::try<problem>(inner) { e => print("outer got ", e.code) }
+	print("end")

@@ -1,0 +1,48 @@
+use std
+use json
+main():
+	text := "{\"a\": 12, \"b\": [1.5, true, null, \"x\\u00e9\\n\\ud83d\\ude00\"], \"c\": {\"d\": -3e2}, \"e\": false}"
+	r ~= json::reader(text)
+	s byte[>..] ~= []
+	json::each_member(r) { k =>
+		print(k)
+	}
+	print(json::finish(r))
+	r2 ~= json::reader(text)
+	json::each_member(r2) { k => if k == "a" { print(json::read_int(r2)) } else if k == "b" { json::each_element(r2) { if json::peek(r2) == '"' { print(json::read_string(r2, s)) } else { json::skip_value(r2) } } } else if k == "e" { print(json::read_bool(r2)) } }
+	print(json::finish(r2))
+	bad ~= json::reader("[1, 2,, 3]")
+	json::skip_value(bad)
+	print(json::finish(bad), " ", json::message(bad))
+	out byte[>..] ~= []
+	json::format_string(out, "q\"\\\t\x01")
+	print(out)
+	d ~= json::Doc{}
+	root, err := json::parse(text, d)
+	print(root, " ", err)
+	o2 byte[>..] ~= []
+	json::format_node(o2, d, root)
+	print(o2)
+	b := json::member(d, root, "b")
+	v, good := json::as_f64(d, json::element(d, b, 0))
+	print(v, " ", good)
+	q, g2 := json::as_string(d, json::element(d, b, 3))
+	print(q)
+	cd := json::member(d, json::member(d, root, "c"), "d")
+	print(json::as_f64(d, cd))
+	json::each(d, b) { i => print(json::kind(d, i)) }
+	r3, e3 := json::parse("{\"a\":}", d)
+	print(r3, " ", e3)
+	for t ["[1,2]x", "\"open", "{\"k\" 1}", "[1.]", "-", "01"]:
+		ri, ei := json::parse(t, d)
+		print(t, " -> ", ri, " ", ei)
+	nums byte[>..] ~= []
+	for x [0.0, -0.0, 1.0, 0.5, 1.0e-5, 1.25e-6, 123456789.0, 1.0e15, 1.0e16, -2.5e20, 0.1 + 0.2, 1.0 / 3.0]:
+		nums.clear()
+		json::format_number(nums, x)
+		print(nums)
+	nums.clear()
+	json::format_number(nums, 0.0 / 0.0)
+	print(nums)
+	big, eb := json::parse("[9223372036854775807, 9223372036854775808, -9223372036854775808, 1e2]", d)
+	json::each(d, big) { i => print(json::kind(d, i), " ", json::as_f64(d, i)) }
