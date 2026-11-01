@@ -1,0 +1,138 @@
+# tools/hc/gfxtest.sh run, raw output (auron/gfx-taa)
+# GPU run under: flock ~/.cache/amni-art/gpu.lock (whole gfxtest invocation, headless, no window)
+# date: 2026-11-01T04:05:59-05:00
+# commit: 89a60db1cc5173da102917436dc7bbf572ee16da  (worktree changes: 0)
+# command: MESA_VK_DEVICE_SELECT='1002:7590!' CC=gcc GFX_OUT=<dir> tools/hc/gfxtest.sh build/hcn
+# exit: 1
+# host: Linux 7.2.9-arch1-1 x86_64
+# vulkan: apiVersion         = 1.4.354
+# vulkan: deviceName         = AMD Radeon RX 9060 XT (RADV GFX1200)
+# vulkan: driverName         = radv
+# vulkan: driverInfo         = Mesa 26.2.4-arch1.1
+# vulkan: conformanceVersion = 1.4.5.3
+# sdl3: sdl3 3.4.18-1
+# mesa: vulkan-radeon 1:26.2.4-1 mesa 1:26.2.4-1 
+# gpu-timestamp: tools/hc/gputime Vulkan layer (timestamp pair per primary command buffer, summed per submit); raw log: 2026-11-01_rx9060xt_radv_89a60db_taa.gputime.log
+# wall-clock: gfx::time() around render (or resolve) + submit + fence wait; no readback
+# note: first run: FAILED only on the ghost-control ratio (control 0.467 % < 4 x 0.166 %); against the open sky the disocclusions are sky, which the metric excludes. Superseded by the wall scene in the next commit.
+#
+qrotate 0 0 -1000
+qslerp w 924
+inverse ok true
+png 37x23 true sum 845791653
+jpeg 61x45 true sum 444578738
+inflate stored true abc
+gltf meshes 2 nodes 4 roots 3 materials 2 images 1 skins 1 animations 1 skipped 1
+  prim verts 24 indices 36 targets 0 skinned false tangents true
+  prim verts 12 indices 12 targets 1 skinned true tangents false
+  material checker mode 0 metal 0 rough 600 emissive 0 0 two-sided false
+  material glow mode 2 metal 1000 rough 1000 emissive 4000 2000 two-sided true
+  image 4x4 sum 721154210
+anim rotation 0 0 707 707 weight 1000
+anim joint -1000 2000 0
+sphere asset 1 indices 768 verts 153
+text width 9600 verts 72
+gpu: out dir /home/anmire/ai/amni-games/jk-helium-poc-work/tmp/taa/out
+gpu: ambient pass-through (fp16 precision, not a furnace) pixels 55860 mean error 0.0106 % max 0.0488 %
+gpu: furnace single metal 0 rough 0.0 (unresolved) pixels 2561 albedo mean 1.0049 min 0.9527 max 6.403 | mean error 0.49 % worst pixel 540.3 %
+gpu: furnace single metal 0 rough 0.1 (unresolved) pixels 2549 albedo mean 1.0066 min 0.9693 max 1.7664 | mean error 0.66 % worst pixel 76.64 %
+gpu: furnace single metal 0 rough 0.2 (unresolved) pixels 2538 albedo mean 1.007 min 0.9983 max 1.0937 | mean error 0.7 % worst pixel 9.37 %
+gpu: furnace single metal 0 rough 0.3 pixels 2533 albedo mean 1.0052 min 0.9978 max 1.0692 | mean error 0.52 % worst pixel 6.92 %
+gpu: furnace single metal 0 rough 0.4 pixels 2526 albedo mean 1.0016 min 0.9963 max 1.0412 | mean error 0.16 % worst pixel 4.12 %
+gpu: furnace single metal 0 rough 0.5 pixels 2524 albedo mean 0.9968 min 0.9936 max 1.0179 | mean error 0.32 % worst pixel 1.79 %
+gpu: furnace single metal 0 rough 0.6 pixels 2525 albedo mean 0.9915 min 0.9896 max 1.0022 | mean error 0.85 % worst pixel 1.04 %
+gpu: furnace single metal 0 rough 0.7 pixels 2530 albedo mean 0.9862 min 0.9851 max 0.9922 | mean error 1.38 % worst pixel 1.49 %
+gpu: furnace single metal 0 rough 0.8 pixels 2537 albedo mean 0.9813 min 0.9806 max 0.9843 | mean error 1.87 % worst pixel 1.94 %
+gpu: furnace single metal 0 rough 0.9 pixels 2547 albedo mean 0.9768 min 0.976 max 0.9786 | mean error 2.32 % worst pixel 2.4 %
+gpu: furnace single metal 0 rough 1.0 pixels 2560 albedo mean 0.9729 min 0.9719 max 0.9739 | mean error 2.71 % worst pixel 2.81 %
+gpu: furnace single metal 1 rough 0.0 (unresolved) pixels 2560 albedo mean 0.8721 min 0.0064 max 95.8819 | mean error 12.79 % worst pixel 9488.19 %
+gpu: furnace single metal 1 rough 0.1 (unresolved) pixels 2547 albedo mean 1.0139 min 0.1581 max 6.2869 | mean error 1.39 % worst pixel 528.69 %
+gpu: furnace single metal 1 rough 0.2 (unresolved) pixels 2537 albedo mean 0.9792 min 0.8311 max 1.0687 | mean error 2.08 % worst pixel 16.89 %
+gpu: furnace single metal 1 rough 0.3 pixels 2530 albedo mean 0.9469 min 0.8388 max 0.9871 | mean error 5.31 % worst pixel 16.12 %
+gpu: furnace single metal 1 rough 0.4 pixels 2525 albedo mean 0.8938 min 0.7536 max 0.9569 | mean error 10.62 % worst pixel 24.64 %
+gpu: furnace single metal 1 rough 0.5 pixels 2524 albedo mean 0.8207 min 0.6947 max 0.8947 | mean error 17.93 % worst pixel 30.53 %
+gpu: furnace single metal 1 rough 0.6 pixels 2526 albedo mean 0.7326 min 0.653 max 0.7963 | mean error 26.74 % worst pixel 34.7 %
+gpu: furnace single metal 1 rough 0.7 pixels 2533 albedo mean 0.6362 min 0.6107 max 0.6707 | mean error 36.38 % worst pixel 38.93 %
+gpu: furnace single metal 1 rough 0.8 pixels 2538 albedo mean 0.5378 min 0.5325 max 0.5696 | mean error 46.22 % worst pixel 46.75 %
+gpu: furnace single metal 1 rough 0.9 pixels 2549 albedo mean 0.4435 min 0.4114 max 0.5156 | mean error 55.65 % worst pixel 58.86 %
+gpu: furnace single metal 1 rough 1.0 pixels 2561 albedo mean 0.3575 min 0.3068 max 0.4544 | mean error 64.25 % worst pixel 69.32 %
+gpu: furnace single summary (4096 sun directions) rough >= 0.3: worst material mean error 64.25 %, mean over materials 17.08 %, worst pixel 69.32 % (worst pixel loss 69.32 %); all roughness incl. unresolved: worst mean 64.25 %, mean 13.24 %, worst pixel 9488.19 %
+gpu: furnace compensated metal 0 rough 0.0 (unresolved) pixels 2561 albedo mean 1.0049 min 0.9527 max 6.403 | mean error 0.49 % worst pixel 540.3 %
+gpu: furnace compensated metal 0 rough 0.1 (unresolved) pixels 2549 albedo mean 1.0066 min 0.9693 max 1.7669 | mean error 0.66 % worst pixel 76.69 %
+gpu: furnace compensated metal 0 rough 0.2 (unresolved) pixels 2538 albedo mean 1.0071 min 0.9983 max 1.0942 | mean error 0.71 % worst pixel 9.42 %
+gpu: furnace compensated metal 0 rough 0.3 pixels 2533 albedo mean 1.0054 min 0.9979 max 1.0701 | mean error 0.54 % worst pixel 7.01 %
+gpu: furnace compensated metal 0 rough 0.4 pixels 2526 albedo mean 1.0019 min 0.9965 max 1.0424 | mean error 0.19 % worst pixel 4.24 %
+gpu: furnace compensated metal 0 rough 0.5 pixels 2524 albedo mean 0.9972 min 0.9938 max 1.0191 | mean error 0.28 % worst pixel 1.91 %
+gpu: furnace compensated metal 0 rough 0.6 pixels 2525 albedo mean 0.992 min 0.9901 max 1.0033 | mean error 0.8 % worst pixel 0.99 %
+gpu: furnace compensated metal 0 rough 0.7 pixels 2530 albedo mean 0.9869 min 0.9858 max 0.9933 | mean error 1.31 % worst pixel 1.42 %
+gpu: furnace compensated metal 0 rough 0.8 pixels 2537 albedo mean 0.9821 min 0.9814 max 0.9853 | mean error 1.79 % worst pixel 1.86 %
+gpu: furnace compensated metal 0 rough 0.9 pixels 2547 albedo mean 0.9777 min 0.977 max 0.9796 | mean error 2.23 % worst pixel 2.3 %
+gpu: furnace compensated metal 0 rough 1.0 pixels 2560 albedo mean 0.9739 min 0.973 max 0.975 | mean error 2.61 % worst pixel 2.7 %
+gpu: furnace compensated metal 1 rough 0.0 (unresolved) pixels 2560 albedo mean 0.8725 min 0.0064 max 96.0069 | mean error 12.75 % worst pixel 9500.69 %
+gpu: furnace compensated metal 1 rough 0.1 (unresolved) pixels 2547 albedo mean 1.0188 min 0.1604 max 6.3978 | mean error 1.88 % worst pixel 539.78 %
+gpu: furnace compensated metal 1 rough 0.2 (unresolved) pixels 2537 albedo mean 0.9995 min 0.881 max 1.1318 | mean error 0.05 % worst pixel 13.18 %
+gpu: furnace compensated metal 1 rough 0.3 pixels 2530 albedo mean 0.9995 min 0.9955 max 1.0017 | mean error 0.05 % worst pixel 0.45 %
+gpu: furnace compensated metal 1 rough 0.4 pixels 2525 albedo mean 0.9998 min 0.9971 max 1.0005 | mean error 0.02 % worst pixel 0.29 %
+gpu: furnace compensated metal 1 rough 0.5 pixels 2524 albedo mean 0.9997 min 0.9986 max 1.0003 | mean error 0.03 % worst pixel 0.14 %
+gpu: furnace compensated metal 1 rough 0.6 pixels 2526 albedo mean 0.9996 min 0.9988 max 1.0001 | mean error 0.04 % worst pixel 0.12 %
+gpu: furnace compensated metal 1 rough 0.7 pixels 2533 albedo mean 0.9994 min 0.999 max 0.9998 | mean error 0.06 % worst pixel 0.1 %
+gpu: furnace compensated metal 1 rough 0.8 pixels 2538 albedo mean 0.9994 min 0.999 max 0.9997 | mean error 0.06 % worst pixel 0.1 %
+gpu: furnace compensated metal 1 rough 0.9 pixels 2549 albedo mean 0.9994 min 0.9991 max 0.9998 | mean error 0.06 % worst pixel 0.09 %
+gpu: furnace compensated metal 1 rough 1.0 pixels 2561 albedo mean 0.9995 min 0.9993 max 0.9997 | mean error 0.05 % worst pixel 0.07 %
+gpu: furnace compensated summary (4096 sun directions) rough >= 0.3: worst material mean error 2.61 %, mean over materials 0.63 %, worst pixel 7.01 % (worst pixel loss 2.7 %); all roughness incl. unresolved: worst mean 12.75 %, mean 1.21 %, worst pixel 9500.69 %
+gpu: furnace control metal 0 rough 0.0 (unresolved) pixels 2561 albedo mean 0.9044 min 0.8574 max 5.7607 | mean error 9.56 % worst pixel 476.07 %
+gpu: furnace control metal 0 rough 0.1 (unresolved) pixels 2549 albedo mean 0.9059 min 0.8724 max 1.59 | mean error 9.41 % worst pixel 59.0 %
+gpu: furnace control metal 0 rough 0.2 (unresolved) pixels 2538 albedo mean 0.9064 min 0.8985 max 0.9847 | mean error 9.36 % worst pixel 10.15 %
+gpu: furnace control metal 0 rough 0.3 pixels 2533 albedo mean 0.9048 min 0.8981 max 0.9631 | mean error 9.52 % worst pixel 10.19 %
+gpu: furnace control metal 0 rough 0.4 pixels 2526 albedo mean 0.9017 min 0.8968 max 0.9381 | mean error 9.83 % worst pixel 10.32 %
+gpu: furnace control metal 0 rough 0.5 pixels 2524 albedo mean 0.8975 min 0.8944 max 0.9172 | mean error 10.25 % worst pixel 10.56 %
+gpu: furnace control metal 0 rough 0.6 pixels 2525 albedo mean 0.8928 min 0.891 max 0.9029 | mean error 10.72 % worst pixel 10.9 %
+gpu: furnace control metal 0 rough 0.7 pixels 2530 albedo mean 0.8882 min 0.8872 max 0.8939 | mean error 11.18 % worst pixel 11.28 %
+gpu: furnace control metal 0 rough 0.8 pixels 2537 albedo mean 0.8839 min 0.8832 max 0.8867 | mean error 11.61 % worst pixel 11.68 %
+gpu: furnace control metal 0 rough 0.9 pixels 2547 albedo mean 0.8799 min 0.8793 max 0.8816 | mean error 12.01 % worst pixel 12.07 %
+gpu: furnace control metal 0 rough 1.0 pixels 2560 albedo mean 0.8765 min 0.8757 max 0.8774 | mean error 12.35 % worst pixel 12.43 %
+gpu: furnace control metal 1 rough 0.0 (unresolved) pixels 2560 albedo mean 0.7853 min 0.0058 max 86.3812 | mean error 21.47 % worst pixel 8538.12 %
+gpu: furnace control metal 1 rough 0.1 (unresolved) pixels 2547 albedo mean 0.9169 min 0.1444 max 5.7561 | mean error 8.31 % worst pixel 475.61 %
+gpu: furnace control metal 1 rough 0.2 (unresolved) pixels 2537 albedo mean 0.8996 min 0.793 max 1.0183 | mean error 10.04 % worst pixel 20.7 %
+gpu: furnace control metal 1 rough 0.3 pixels 2530 albedo mean 0.8996 min 0.8959 max 0.9015 | mean error 10.04 % worst pixel 10.41 %
+gpu: furnace control metal 1 rough 0.4 pixels 2525 albedo mean 0.8999 min 0.8973 max 0.9004 | mean error 10.01 % worst pixel 10.27 %
+gpu: furnace control metal 1 rough 0.5 pixels 2524 albedo mean 0.8998 min 0.8987 max 0.9002 | mean error 10.02 % worst pixel 10.13 %
+gpu: furnace control metal 1 rough 0.6 pixels 2526 albedo mean 0.8996 min 0.8989 max 0.9001 | mean error 10.04 % worst pixel 10.11 %
+gpu: furnace control metal 1 rough 0.7 pixels 2533 albedo mean 0.8995 min 0.8991 max 0.8998 | mean error 10.05 % worst pixel 10.09 %
+gpu: furnace control metal 1 rough 0.8 pixels 2538 albedo mean 0.8994 min 0.8991 max 0.8998 | mean error 10.06 % worst pixel 10.09 %
+gpu: furnace control metal 1 rough 0.9 pixels 2549 albedo mean 0.8994 min 0.8992 max 0.8998 | mean error 10.06 % worst pixel 10.08 %
+gpu: furnace control metal 1 rough 1.0 pixels 2561 albedo mean 0.8995 min 0.8993 max 0.8998 | mean error 10.05 % worst pixel 10.07 %
+gpu: furnace control summary (4096 sun directions) rough >= 0.3: worst material mean error 12.35 %, mean over materials 10.49 %, worst pixel 12.43 % (worst pixel loss 12.43 %); all roughness incl. unresolved: worst mean 21.47 %, mean 10.73 %, worst pixel 8538.12 %
+gpu: furnace verdict (rough >= 0.3): compensated worst material mean 2.61 % and worst pixel loss 2.7 % (bar 5.0 %), worst pixel 7.01 % (bar 8.0 %) PASS; single-scatter worst 64.25 % (reported, not gated); control (x0.9) worst 12.35 % FAILS as required
+gpu: spheres png /home/anmire/ai/amni-games/jk-helium-poc-work/tmp/taa/out/spheres.png true
+gpu: spheres psnr 99.0 dB vs golden (bar > 40 dB) PASS
+gpu: timing 1280x720 sphere grid (26 draws, 3 cascades, ssao, bloom, 4x msaa): 30 warmup + 200 timed frames, each render + submit + fence wait, no readback
+gpu: timing wall-clock ms/frame min 0.2981 median 0.313 p95 0.3558 ms
+gpu: timing gpu-timestamp ms/frame min 0.2165 median 0.2247 p95 0.2301 ms (1 submit(s) per frame, top-of-pipe to bottom-of-pipe)
+gpu: frame png /home/anmire/ai/amni-games/jk-helium-poc-work/tmp/taa/out/frame.png true
+gpu: frame mean 161 range 0..255
+gpu: motion object want 12.16,-8.11 px got 12.16,-8.11 px (err 0.006) sky -0.0 px
+gpu: motion camera want -9.73,0.0 px got -9.73,0.0 px (err 0.005) sky -0.0 px depth 3.5 want 3.5
+gpu: motion skinned 18574 of 18594 pixels moving (peak 8.98 px), 0 moving on a repeated pose
+gpu: jitter phase 1: offset 0.25,-0.389 px, image moved -0.239,0.392 px (want the negative)
+gpu: jitter 16 phases: image moved by -jitter in 16/16, worst error 0.016 px
+gpu: taa png /home/anmire/ai/amni-games/jk-helium-poc-work/tmp/taa/out/taa_off.png true
+gpu: taa png /home/anmire/ai/amni-games/jk-helium-poc-work/tmp/taa/out/taa_on.png true
+gpu: taa still 960x540 (31.56% non-sky pixels counted) frame-to-frame mean abs diff frames 30-59: max 0.076 mean 0.05 /255 (frame 1: 0.056)
+gpu: taa psnr (non-sky) vs 2x supersampled: off 45.35 dB, taa 46.17 dB
+gpu: taa png /home/anmire/ai/amni-games/jk-helium-poc-work/tmp/taa/out/taa_moving.png true
+gpu: taa png /home/anmire/ai/amni-games/jk-helium-poc-work/tmp/taa/out/taa_moving_ref.png true
+gpu: taa png /home/anmire/ai/amni-games/jk-helium-poc-work/tmp/taa/out/taa_moving_noclip.png true
+gpu: taa moving 40 frames (~7 px/frame), non-sky pixels: 0.166% pixels off by >24/255 vs converged (mean 0.852/255); no-clip control 0.467% (mean 2.046); no-taa floor 0.006%
+gpu: tsr png /home/anmire/ai/amni-games/jk-helium-poc-work/tmp/taa/out/tsr_native1080.png true
+gpu: tsr timing native 1920x1080 taa frame: 30 warmup + 200 timed, wall-clock ms min 1.2745 median 1.5828 p95 2.0398 ms
+gpu: tsr timing native 1920x1080 taa frame: gpu-timestamp ms min 1.1633 median 1.226 p95 1.2613 ms (1 submit(s) each)
+gpu: tsr png /home/anmire/ai/amni-games/jk-helium-poc-work/tmp/taa/out/tsr_720to1080.png true
+gpu: tsr 720p->1080p psnr (non-sky, 31.02% of pixels) 47.17 dB vs native 1080p taa
+gpu: tsr timing 1280x720->1920x1080 frame: 30 warmup + 200 timed, wall-clock ms min 0.5871 median 0.6155 p95 0.7649 ms
+gpu: tsr timing 1280x720->1920x1080 frame: gpu-timestamp ms min 0.4976 median 0.5177 p95 0.5314 ms (1 submit(s) each)
+gpu: tsr timing resolve 1280x720->1920x1080: 30 warmup + 200 timed, wall-clock ms min 0.2645 median 0.2956 p95 0.3241 ms
+gpu: tsr timing resolve 1280x720->1920x1080: gpu-timestamp ms min 0.2348 median 0.2416 p95 0.2532 ms (1 submit(s) each)
+gpu: FAILED (11.3 s, vulkan)
+# gfxtest.sh:
+# gfxtest: GPU checks failed

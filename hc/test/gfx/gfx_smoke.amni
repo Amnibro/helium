@@ -20,7 +20,8 @@
 //              and a skinned animation step that moves pixels with placement unchanged
 //   taa      - 60 still frames must settle (frame-to-frame mean abs diff < 0.5/255 over
 //              frames 30-59); a 40-frame camera slide compared with a converged still frame
-//              (pixels off by >24/255), with the neighbourhood clip off as a control
+//              (pixels off by >24/255), against the sky (reported) and against a wall
+//              (gated: <= 0.5 %), with the neighbourhood clip off as a control that must fail
 //   jitter   - a sphere's coverage centroid must move by -jitter for all 16 phases
 //   tsr      - 1280x720 rendered, 1920x1080 out: PSNR vs native 1080p; frame and resolve-only
 //              times, 30 warmup + 200 iterations, wall-clock and (under tools/hc/gputime)
@@ -838,46 +839,60 @@ fn taa_checks(dir const byte[:]) bool {
 	print("gpu: taa psnr (non-sky) vs 2x supersampled: off ", r2(psnr_m(off[..], ref[..], mask[..])), " dB, taa ", r2(psnr_m(last[..], ref[..], mask[..])), " dB");
 	if worst >= 0.5 { good = false; }
 
-	// moving camera: slide sideways for 40 frames, then compare with a still, converged
-	// frame from the final pose. The same run with the neighbourhood clip off is the control.
-	var frac_on real = 0.0;
-	var frac_off real = 0.0;
-	var mad_on real = 0.0;
-	var mad_off real = 0.0;
-	var ref_still byte[>..] = [];
-	var mask_end byte[>..] = [];
-	for pass in 2 {
-		s3d::temporal_gamma = if pass == 0 { 1.25 } else { 0.0 };
-		s3d::temporal_reset = true;
-		for k in 40 {
-			let t = k as f32 / 39.0;
-			s3d::view.eye = float3 { -1.5 + 3.0 * t, 0.3, 7.5 };
-			s3d::view.target = float3 { -0.5 + 1.0 * t, 0.0, 0.0 };
-			s3d::render(out);
+	// moving camera: slide sideways for 40 frames (~7 px/frame), then compare with a still,
+	// converged frame from the final pose. The same run with the neighbourhood clip off is
+	// the control. Scene 0 is the grid against the sky: disoccluded pixels there are sky,
+	// which the metric leaves out, so it is reported only. Scene 1 puts a wall behind the
+	// grid, so every disocclusion uncovers geometry; it is gated: ghost fraction <= 0.5 %,
+	// and the control must fail that bar and be at least 3x worse.
+	for scene in 2 {
+		if scene == 1 {
+			let wall = shapes::cube(float3 { 9.0, 5.0, 0.1 }, shapes::material(linalg::v3(0.2, 0.3, 0.45), 0.0, 0.7));
+			s3d::place(s3d::add(wall), gfx::translate(float3 { 0.0, 0.0, -1.5 }));
+			s3d::init(w, h);
 		}
-		let moved = gfx::read_pixels(out);
-		let pm = path(dir, if pass == 0 { "taa_moving.png" } else { "taa_moving_noclip.png" });
-		print("gpu: taa png ", pm[..], " ", gfx::save_png(out, pm[..]));
-		if pass == 0 {
+		s3d::temporal = 1;
+		var frac_on real = 0.0;
+		var frac_off real = 0.0;
+		var mad_on real = 0.0;
+		var mad_off real = 0.0;
+		var ref_still byte[>..] = [];
+		var mask_end byte[>..] = [];
+		for pass in 2 {
+			s3d::temporal_gamma = if pass == 0 { 1.25 } else { 0.0 };
 			s3d::temporal_reset = true;
-			for k in 48 { s3d::render(out); }
-			ref_still = gfx::read_pixels(out);
-			mask_end = geo_mask(w, h);
-			let pr = path(dir, "taa_moving_ref.png");
-			print("gpu: taa png ", pr[..], " ", gfx::save_png(out, pr[..]));
+			for k in 40 {
+				let t = k as f32 / 39.0;
+				s3d::view.eye = float3 { -1.5 + 3.0 * t, 0.3, 7.5 };
+				s3d::view.target = float3 { -0.5 + 1.0 * t, 0.0, 0.0 };
+				s3d::render(out);
+			}
+			let moved = gfx::read_pixels(out);
+			let pm = path(dir, if scene == 0 { if pass == 0 { "taa_moving_sky.png" } else { "taa_moving_sky_noclip.png" } } else { if pass == 0 { "taa_moving.png" } else { "taa_moving_noclip.png" } });
+			print("gpu: taa png ", pm[..], " ", gfx::save_png(out, pm[..]));
+			if pass == 0 {
+				s3d::temporal_reset = true;
+				for k in 48 { s3d::render(out); }
+				ref_still = gfx::read_pixels(out);
+				mask_end = geo_mask(w, h);
+				let pr = path(dir, if scene == 0 { "taa_moving_sky_ref.png" } else { "taa_moving_ref.png" });
+				print("gpu: taa png ", pr[..], " ", gfx::save_png(out, pr[..]));
+			}
+			let f = luma_over(moved[..], ref_still[..], 24, mask_end[..]);
+			let d = mean_abs(moved[..], ref_still[..], mask_end[..]);
+			if pass == 0 { frac_on = f; mad_on = d; } else { frac_off = f; mad_off = d; }
 		}
-		let f = luma_over(moved[..], ref_still[..], 24, mask_end[..]);
-		let d = mean_abs(moved[..], ref_still[..], mask_end[..]);
-		if pass == 0 { frac_on = f; mad_on = d; } else { frac_off = f; mad_off = d; }
+		s3d::temporal_gamma = 1.25;
+		// floor: the aliasing difference between a no-TAA frame and the converged one
+		s3d::temporal = 0;
+		s3d::render(out);
+		let plain = gfx::read_pixels(out);
+		let frac_floor = luma_over(plain[..], ref_still[..], 24, mask_end[..]);
+		let gated = scene == 1;
+		let pass_ok = frac_on <= 0.005 && frac_off > 0.005 && frac_off >= frac_on * 3.0;
+		print("gpu: taa moving ", if scene == 0 { "grid on sky (reported)" } else { "grid on wall (gated)" }, ", 40 frames, ", r2(mask_frac(mask_end[..]) * 100.0), "% non-sky pixels: ghosts ", r3(frac_on * 100.0), "% pixels off by >24/255 vs converged (mean ", r3(mad_on), "/255); no-clip control ", r3(frac_off * 100.0), "% (mean ", r3(mad_off), "); no-taa floor ", r3(frac_floor * 100.0), "%", if gated { if pass_ok { " PASS" } else { " FAIL" } } else { "" });
+		if gated && !pass_ok { good = false; }
 	}
-	s3d::temporal_gamma = 1.25;
-	// floor: the aliasing difference between a no-TAA frame and the converged one
-	s3d::temporal = 0;
-	s3d::render(out);
-	let plain = gfx::read_pixels(out);
-	let frac_floor = luma_over(plain[..], ref_still[..], 24, mask_end[..]);
-	print("gpu: taa moving 40 frames (~7 px/frame), non-sky pixels: ", r3(frac_on * 100.0), "% pixels off by >24/255 vs converged (mean ", r3(mad_on), "/255); no-clip control ", r3(frac_off * 100.0), "% (mean ", r3(mad_off), "); no-taa floor ", r3(frac_floor * 100.0), "%");
-	if frac_on > 0.005 || frac_off < frac_on * 4.0 { good = false; }
 	gfx::release(out);
 	good
 }
