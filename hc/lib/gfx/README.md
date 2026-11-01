@@ -247,6 +247,14 @@ reported as a failure and fixed in the renderer, not in the gate.
   supersampled reference: TAA (60 frames) must beat TAA off (4x MSAA, no temporal
   pass) by at least 0.5 dB.
 
+* **T7 resolve cost.** The 1280x720 -> 1920x1080 resolve alone, GPU time from the
+  gputime layer, p95 over 200 iterations after 30 warmup: < 0.5 ms (was < 1 ms). The
+  last recorded p95 was 0.253 ms (Lulu reproduced 0.2529 ms); 0.5 ms leaves about
+  2x headroom for driver and clock variance and is 3 % of a 60 Hz frame (16.7 ms).
+  If the GPU time is unavailable (no gputime layer, or the submits cannot be split
+  per iteration) the check FAILS; it no longer passes silently. The p95 is taken
+  from the sorted times.
+
 Raw output of each recorded run is in `hc/test/gfx/results/`; `gfxtest.sh` writes
 the header itself (commit, command, driver, GPU, packages) into `$GFX_OUT/results.txt`.
 With no GPU it prints `SKIPPED (no GPU)` after the CPU checks (`GFX_REQUIRE_GPU=1`
