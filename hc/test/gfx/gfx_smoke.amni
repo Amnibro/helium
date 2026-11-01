@@ -1323,6 +1323,14 @@ const S5_MAX_DIFF = 0;
 // S6, pre-registered: a single-layer, single-mip pass leaves the rest untouched
 const S6_LAYERS = 3;
 const S6_MIPS = 3;
+// S3 gap, pre-registered (review2 part B): near2 fence view; cascade 0 gated at SH_BAR2,
+// its shift control must fail; near0's cascade-0 shift control is reported only
+const SH_FENCE_POSTS = 6;
+const SH_NEAR2_CASCADE = 0;
+// T1 case (c) and the trail sweep, pre-registered (review2 part B): case (c) uses the
+// GH_* bars; the sweep is a measurement
+const GH_SWEEP_C int[5] = [10, 20, 30, 40, 60];
+const GH_SWEEP_L int[8] = [50, 100, 200, 300, 500, 1000, 2000, 4000];
 const SH_W = 960;
 const SH_H = 540;
 const SH_BAND = 2;

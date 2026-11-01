@@ -357,6 +357,42 @@ reported as a failure and fixed in the renderer, not in the gate.
   by the uploads) must change at least one byte outside the target. Depth arrays
   cannot be read back, so this is tested on a colour array.
 
+#### Pre-registered for review2 part B (before its GPU run; separate commit)
+
+* **S3 gap, near2 fence view.** In the aa57217 run the ~5 px shift control was not
+  caught for near0 cascade 0 (IoU 0.9981): that view's cascade-0 shadow is a large
+  area with little edge along light-space x. A fourth view, near2, adds a fence to
+  the wall scene in that view only (renderer and CPU reference both): six thin
+  posts (0.06 x 0.6 x 0.06, x = -1.6 .. 0.4 step 0.4, z = 1.2) and a rail
+  (2.4 x 0.04 x 0.04 at y = -2.2), standing on the floor in front of the spheres,
+  eye (-0.6, -1.4, 2.2) looking at (-0.6, -2.6, 0.9). Bars: near2 cascade 0 must be
+  gated (>= 20000 counted, >= 5000 reference-shadow pixels) and reach IoU >= 0.98
+  (every other gated cascade there too, as in every view); the ~5 px shift control
+  must take near2 cascade 0 below 0.98 (must fail), and the other controls apply as
+  in every view. Re-scope, stated here before the run and not after: in near0 the
+  shift control stays required for cascade 1 and is reported, not gated, for
+  cascade 0 (measured 0.9981 there in aa57217); cascade 0's shift control is the
+  near2 one. The near0 cascade-0 IoU bar itself (0.98) is unchanged.
+* **S5.** The fix stays the cycle-once rule above (SDL's cycling gives each frame in
+  flight its own backing image of the whole array). Added, reported only: the same
+  no-wait run with the shadow pass never cycling (`shadow_test_cycle_never`), to
+  show whether this driver serialises it anyway.
+* **T1 case (c), grid and camera move together.** The grid moves +25 px/frame and
+  the camera -25 px/frame along x (each 25 px/frame at the grid's depth; so 50 px/frame
+  of the grid relative to the camera and 25 px/frame for the wall), same 16 moving
+  frames after 32 still, band from the same CPU ray tracer. Same bars as the other
+  T1 cases (band mean <= 1.5/255, p99 <= 12/255, <= 300 px above 20/255), with the
+  effects off and again with the shipped defaults (lit; shadows, SSAO, bloom), and
+  the same must-fail controls with the effects off (clip off, gamma 4, motion 0,
+  synthetic trail).
+* **T1 trail sensitivity (a measurement, not a bar).** The injected trail is: +C/255
+  added to every channel (clamped at 255) of the first L pixels, in raster order, of
+  the band's innermost ring (band pixels within sqrt(12) ~ 3.5 px of a final-pose
+  sphere pixel; one to three pixels wide around each silhouette). The gate trail is
+  C = 30 and L = the whole ring. Swept per effects-off case (a, b, c): C in
+  {10, 20, 30, 40, 60} x L in {50, 100, 200, 300, 500, 1000, 2000, 4000 (capped at the
+  ring)}; reported: which (C, L) fail a bar and the smallest L caught per C.
+
 Raw output of each recorded run is in `hc/test/gfx/results/`; `gfxtest.sh` writes
 the header itself (commit, command, driver, GPU, packages) into `$GFX_OUT/results.txt`.
 With no GPU it prints `SKIPPED (no GPU)` after the CPU checks (`GFX_REQUIRE_GPU=1`
