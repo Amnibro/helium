@@ -231,6 +231,18 @@ reported as a failure and fixed in the renderer, not in the gate.
   scene3d's shipped look on (shadows, SSAO, bloom): the same three bars against 48
   converged frames at the final pose with the same look.
 
+* **T4 motion and depth at silhouettes** (`silhouette_checks`, `T4_*`). The motion
+  target is written by the single-sample prepass, so each pixel's motion and depth
+  belong to the one surface under its sample point. In case (a) of the ghost scene
+  (spheres at view depth 7.1-7.9 moving 25 px/frame before the wall at depth 10.5),
+  every pixel of the motion target must hold either a sphere or the wall: pixels with
+  depth strictly between 8.0 and 10.4 must number 0, and pixels whose motion is
+  between 1 and 20 px must number 0. Control: the same target averaged over 2x2
+  pixel blocks (what an averaging resolve does at an edge) must show at least 100
+  such mixed pixels. `motion_checks` now requires each pixel's two depths (this
+  frame's and last frame's view depth of the same point) to agree within 0.02 on a
+  still scene.
+
 Raw output of each recorded run is in `hc/test/gfx/results/`; `gfxtest.sh` writes
 the header itself (commit, command, driver, GPU, packages) into `$GFX_OUT/results.txt`.
 With no GPU it prints `SKIPPED (no GPU)` after the CPU checks (`GFX_REQUIRE_GPU=1`

@@ -1061,6 +1061,14 @@ const GH_BIG_MAX = 300;       // pixels above GH_BIG_ERR
 const GH_TRAIL = 30;          // synthetic trail added to the innermost band ring, /255
 const GH_RING_R = 2.0;        // the 8 extra band rays sit on a circle of this radius, px
 
+// ---- T4: pre-registered bars ----
+const T4_Z_LO = 8.0;          // depth between the spheres and the wall
+const T4_Z_HI = 10.4;
+const T4_MIX_MAX = 0;         // pixels of mixed depth or intermediate motion allowed
+const T4_MV_LO = 1.0;         // intermediate motion, px
+const T4_MV_HI = 20.0;
+const T4_CONTROL_MIN = 100;   // the 2x2-averaged control must show at least this many
+
 // ---- shadows: the sun's shadow mask against a CPU ray-traced reference ----
 // The sphere grid in front of a wall (and on its floor), lit by the sun, rendered with
 // debug view 5 (direct light only) with shadows off and on. A GPU pixel is shadowed when
