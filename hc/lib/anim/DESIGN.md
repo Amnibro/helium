@@ -61,15 +61,17 @@ Sources used:
     Bollo inertialization over release_t = 0.3 s; always solves (switching
     the solver on/off would toggle the soft-reach change).
 * `gltf.amni` — GLB/glTF 2.0 loader written from the Khronos spec: nodes,
-  skins, inverse bind matrices, meshes (POSITION/NORMAL/JOINTS_0/WEIGHTS_0),
+  skins, inverse bind matrices, meshes (POSITION/NORMAL/TANGENT/JOINTS_0/WEIGHTS_0),
   animation samplers LINEAR/STEP/CUBICSPLINE resampled to clips.
 * `skin.amni` — skinning palette (model × IBM) and CPU linear-blend skinning
-  (reference path; GPU skinning uploads the palette).
+  of positions, normals and tangents (reference path; GPU skinning uploads
+  the palette). See "Normals and tangents" under GPU skinning.
 * `gold.amni` — the "gold" rig: loco 1D blend space (idle → walk → run;
-  walk is stretched to 2.6 m/s, run starts at 3.4 m/s, so the walk→run blend
-  is centred on 3 m/s; rate-matched), two action states, additive layer, root
-  motion, foot planting. The speed parameter follows the command through a
-  critically damped spring (ω = 2.5 rad/s; C1 in time). Action fades are capped by clip length; exits are
+  walk is stretched to 1.8 m/s, run starts at 4.2 m/s, so the walk→run blend
+  is centred on 3 m/s and 2.4 m/s wide; rate-matched), two action states,
+  additive layer, root motion, foot planting. The speed parameter follows the
+  command through a critically damped spring (ω = 5.27 rad/s: 95% of a step
+  in 0.90 s; C1 in time). Action fades are capped by clip length; exits are
   timed so the fade ends as the non-looping clip ends (a clip clamping on its
   last frame mid-fade pops); interrupting fades last ≥ 0.45 s and the frozen
   source's extrapolated velocity decays over the first 30% of the fade.
@@ -94,6 +96,19 @@ all-states baseline was used; with it the transition scenario scored
 the action clips — review finding M1.) The old all-states ratio is still
 printed as a reference line.
 
+What the per-state thresholds do and do not tighten: in the gold rigs the
+action clips (act, and especially act2, the dodge) contain the most violent
+per-joint motion of any state. A transition tick always has an action in its
+context mask, so its threshold is max(loco, action) — and for the joints
+that decide the verdict that maximum is the action's value, i.e. the same as
+the all-states baseline. That is why the worst transition ratio printed
+equals the "all-states reference" line exactly (0.9497 = 0.9497 on jk-h06 in
+the 2026-11-01 delta review; 0.986 = 0.986 on jk-h02 after the spring
+retune). The per-state thresholds tighten the loco-only ticks — the speed
+sweep and the speed changes inside the transition script, where they found
+the two real artifacts below — not the action fades themselves. Tightening
+those would need per-joint thresholds that follow the fade weights.
+
 [V] (per-frame change) is printed for information. Scenarios: speed sweep
 0→6→0 m/s, and a scripted run of state transitions and interrupts (including
 speed steps 0→2→5→0 m/s), each with and without foot IK. Controls (each must
@@ -112,8 +127,20 @@ What the per-state thresholds found, and fixed:
   accelerating instantly; through the 0.8 m/s wide walk/run blend this was a
   ~0.1 s cross-blend of walk and run arm swing (up to 2.4× the loco
   threshold on a 5→0 m/s stop). The gold speed now follows a critically
-  damped spring (x'' = ω²(target − x) − 2ωx', exact closed-form step,
-  ω = 2.5 rad/s, peak 4.6 m/s² on a 5 m/s step), so the speed is C1.
+  damped spring (x'' = ω²(target − x) − 2ωx', exact closed-form step), so
+  the speed is C1. From rest a step reaches 95% at ωt = 4.744.
+  - First fix (add2ab8d) was ω = 2.0 (95% in 2.37 s; the docs said 2.5),
+    which was sluggish. Faster springs with the 0.8 m/s band failed the
+    test for the same reason as the slew (ω 2.1–6: 0–36/39 pass, not
+    monotonic in ω; the failures were forearm/hand rotation pops while braking 5→0 m/s, up to ~1.5×).
+    A two-stage (C2) spring and smoothstep blend weights both made it worse:
+    the pop scales with how fast the blend weight moves, not with the speed
+    acceleration.
+  - Fix: the walk→run band is widened to 1.8–4.2 m/s (still centred on
+    3 m/s), so braking from a run crosses it in ~0.3 s. With it ω 4.74–6.5
+    (95% in 1.0–0.73 s) all pass 39/39; ω = 5.27 (0.90 s, peak 9.7 m/s² on
+    a 5 m/s step) is used. Walk is also stretched less (to 1.8 m/s, was
+    2.6).
 
 ## Perf (hc/test/anim/anim_perf.amni)
 
@@ -133,8 +160,16 @@ is not implemented; the CPU reference is LBS, so the GPU path is LBS too.
   Helium's own GLSL->SPIR-V compiler: `hcn --spv skin.comp skin.spv`.
 * Palette is uploaded as the top three rows of each 4x4 (12 floats per joint
   per character); the CPU anim tick packs it straight from `Palette.m`.
-* Normals are blended without renormalizing, as `skin_cpu` does, so the two
-  paths compare exactly; a renderer normalizes in its vertex/fragment shader.
+* Normals and tangents. Per vertex both paths form the blended 3x4
+  A = Σ w_k M_k (rows r0, r1, r2) and output p' = A p,
+  t' = normalize(A3 t.xyz) with the glTF handedness t.w kept, and
+  n' = normalize(cof(A3) n · sign det A3), where cof(A3) = det(A3) · A3^-T
+  has rows r1×r2, r2×r0, r0×r1 (the inverse-transpose up to scale, no
+  division). So n' stays perpendicular to t' (and to the surface) under
+  non-uniform joint scale — and also under the shear that blending two
+  rotations produces, where the plain linear 3x3 is off as well. Both are
+  unit length (a degenerate vector gives 0, not NaN). Meshes without
+  TANGENT get (1,0,0,1).
 * `gpuskin.he` is a self-contained Vulkan 1.0 compute backend written from
   the Vulkan spec struct layouts (own `extern "libvulkan.so.1?"` block). It
   does **not** use `hc/lib/gfx`: gfx sits on SDL3 GPU (not installed on the
@@ -149,13 +184,23 @@ is not implemented; the CPU reference is LBS, so the GPU path is LBS too.
   two timestamp queries give the GPU time. Device pick: discrete > integrated
   > virtual > cpu, or an explicit physical-device index.
 * Correctness (anim_gpuskin): 32 characters, 8 checkpoints over 4 s of crowd
-  motion, every vertex vs `skin_cpu`; tolerance 1e-4 m (positions) and 1e-4
-  (normals). Measured on lavapipe: max |dp| 5.0e-7 m, max |dn| 2.7e-7.
+  motion, every vertex vs `skin_cpu`: position, normal, tangent xyz and w;
+  tolerance 1e-4 m (positions) and 1e-4 (unit normal/tangent). Odd
+  characters get a non-uniform scale diag(1.4, 0.7, 1.15) on their palette;
+  for every vertex whose rest normal and tangent are perpendicular the GPU
+  n'·t' must stay < 1e-3, and a control (the linear 3x3 normal on the same
+  palette) must exceed it. jk-h02 and bfme-hr01: lavapipe max |dp|, |dn|,
+  |dt| 0 (bit-identical), 9060 XT max |dp| 4.9e-7 m, |dn| 3.6e-6,
+  |dt| 1.3e-6; |n'·t'| ≤ 1.4e-6; the control reaches 0.99.
 * Bench harness (Helium): `HC_LIB=<repo>/hc/lib build/hcn
   hc/test/anim/gpuskin_bench.amni -- <results.txt> <frames> <hero.glb>...`
   builds the shader and test binary, runs each hero headless and writes a
   text report (optional `GSK_SHA` checks the GLBs before and after,
-  `GSK_DEVICE` picks a GPU, `HCN` overrides the compiler path). Child tools
+  `GSK_DEVICE` picks a GPU, `HCN` overrides the compiler path). The shader
+  is validated with `spirv-val --target-env vulkan1.1` (hcn emits SPIR-V
+  1.3); the version and command line are logged. spirv-val missing or
+  failing exits 1; `GSK_NO_SPIRV_VAL=1` runs without it, logs
+  "spirv-val: SKIPPED" and exits 3. Child tools
   run through `os.run_command` with output redirected to a private work dir
   that is removed at the end.
 
