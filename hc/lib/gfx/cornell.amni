@@ -20,6 +20,7 @@ let FOV_Y = 0.691111014;        // 2 atan(12.5 / 35)
 let LIGHT_X = 2.78; let LIGHT_Y = 5.388; let LIGHT_Z = 2.795;
 let LIGHT_RGB = 18.0;           // white, renderer units
 let LIGHT_RANGE = 100.0;
+let AO_RADIUS = 1.0;            // the GTAO test radius (AO_REF_RADIUS in gfx_smoke)
 // materials: 0 white, 1 red (left wall, x = 556), 2 green (right wall, x = 0)
 fn albedo_r(m int) real { if m == 1 { 0.65 } else if m == 2 { 0.12 } else { 0.73 } }
 fn albedo_g(m int) real { if m == 1 { 0.05 } else if m == 2 { 0.45 } else { 0.73 } }

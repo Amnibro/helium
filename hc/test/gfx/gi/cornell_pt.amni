@@ -23,6 +23,7 @@
 // every pixel is a non-light pixel.
 //
 //   build/hcn build hc/test/gfx/gi/cornell_pt.amni -o pt
+//   pt ao <worker> <workers>      the GTAO test's ray-traced AO and bent normals (ao_line)
 //   pt mask                       the gate's region mask (see mask_line)
 //   pt <worker> <workers> <spp>   rows j with j % workers == worker, one line per pixel:
 //   "<j*W+i> r g b n sumY sumY2" (linear radiance, luminance sums for the noise estimate)
@@ -152,6 +153,39 @@ fn mask_line(out byte[>..]&, i int, j int) {
 	format(out, j * W + i, " ", surf, " ", lit, "\n");
 }
 
+// ray-traced AO reference for the GTAO test (A1-A3): at the pixel centre's surface point,
+// cosine-weighted visibility of the hemisphere within cornell::AO_RADIUS from 64 x 64
+// stratum-centre directions (Malley mapping), and the bent normal, the normalized sum of
+// the unoccluded directions. "idx ao bx by bz" (world space); nothing hit: ao 1, n 0.
+fn ao_line(out byte[>..]&, i int, j int) {
+	let th = tan(cornell::FOV_Y * 0.5);
+	let u = ((i as real + 0.5) / W as real * 2.0 - 1.0) * th;
+	let v = (1.0 - (j as real + 0.5) / H as real * 2.0) * th;
+	var dx = -u; var dy = v; var dz = 1.0;
+	let dl = sqrt(dx * dx + dy * dy + dz * dz); dx /= dl; dy /= dl; dz /= dl;
+	let h = trace(cornell::EYE_X, cornell::EYE_Y, cornell::EYE_Z, dx, dy, dz, 1e30);
+	if h.tri < 0 { format(out, j * W + i, " 1 0 0 0\n"); return; }
+	let px = cornell::EYE_X + dx * h.t; let py = cornell::EYE_Y + dy * h.t; let pz = cornell::EYE_Z + dz * h.t;
+	var nx = h.nx; var ny = h.ny; var nz = h.nz;
+	if nx * dx + ny * dy + nz * dz > 0.0 { nx = -nx; ny = -ny; nz = -nz; }
+	var ax = 1.0; var ay = 0.0; var az = 0.0;
+	if abs(nx) > 0.9 { ax = 0.0; ay = 1.0; }
+	var bx = ay * nz - az * ny; var by = az * nx - ax * nz; var bz = ax * ny - ay * nx;
+	let bl = sqrt(bx * bx + by * by + bz * bz); bx /= bl; by /= bl; bz /= bl;
+	let cx = ny * bz - nz * by; let cy = nz * bx - nx * bz; let cz = nx * by - ny * bx;
+	let S = 64;
+	var vis = 0; var sx = 0.0; var sy = 0.0; var sz = 0.0;
+	for a in S { for b in S {
+		let r1 = (a as real + 0.5) / S as real; let r2 = (b as real + 0.5) / S as real;
+		let rr = sqrt(r1); let ph = 2.0 * cornell::PI * r2;
+		let l1 = rr * cos(ph); let l2 = rr * sin(ph); let l3 = sqrt(max(1.0 - r1, 0.0));
+		let wx = bx * l1 + cx * l2 + nx * l3; let wy = by * l1 + cy * l2 + ny * l3; let wz = bz * l1 + cz * l2 + nz * l3;
+		if trace(px, py, pz, wx, wy, wz, cornell::AO_RADIUS).tri < 0 { vis += 1; sx += wx; sy += wy; sz += wz; }
+	} }
+	let sl = max(sqrt(sx * sx + sy * sy + sz * sz), 1e-12);
+	format(out, j * W + i, " ", vis as real / (S * S) as real, " ", sx / sl, " ", sy / sl, " ", sz / sl, "\n");
+}
+
 fn arg_int(k int) int { var s byte[>..] = []; arg(k, s); to_int(s[..]) }
 
 fn main() {
@@ -160,6 +194,12 @@ fn main() {
 		var out byte[>..] = [];
 		for j in H { for i in W { mask_line(out, i, j); } }
 		write_stdout(out[..]);
+		return;
+	}
+	if a[..] == "ao" {
+		var out byte[>..] = [];
+		let worker = arg_int(2); let workers = arg_int(3);
+		for j in H { if j % workers == worker { for i in W { ao_line(out, i, j); } write_stdout(out[..]); out.clear(); } }
 		return;
 	} }
 	let worker = arg_int(1); let workers = arg_int(2); let spp = arg_int(3);
