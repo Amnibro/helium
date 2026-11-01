@@ -316,6 +316,13 @@ reported as a failure and fixed in the renderer, not in the gate.
   byte (max abs diff 0), the same sun rendered alone with a wait. On a driver that
   serialises the queue this cannot fail; there is no must-fail control.
 
+* **S6 single layer and mip.** An RGBA8 array of 3 layers x 3 mips is filled with
+  known per-(layer, mip) patterns; one pass clears layer 1 mip 1. Bars: every other
+  (layer, mip) reads back byte-identical, and the target equals the clear colour
+  exactly. Control: the same pass with `cycle: 1` (forced, with the texture bound
+  by the uploads) must change at least one byte outside the target. Depth arrays
+  cannot be read back, so this is tested on a colour array.
+
 Raw output of each recorded run is in `hc/test/gfx/results/`; `gfxtest.sh` writes
 the header itself (commit, command, driver, GPU, packages) into `$GFX_OUT/results.txt`.
 With no GPU it prints `SKIPPED (no GPU)` after the CPU checks (`GFX_REQUIRE_GPU=1`

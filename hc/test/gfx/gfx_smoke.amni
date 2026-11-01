@@ -1102,6 +1102,9 @@ const SH_SHIFT_PX = 5.0;       // light-space shift, in screen pixels at the med
 // S5, pre-registered: no-wait multi-frame shadow renders equal the fenced ones exactly
 const S5_FRAMES = 6;
 const S5_MAX_DIFF = 0;
+// S6, pre-registered: a single-layer, single-mip pass leaves the rest untouched
+const S6_LAYERS = 3;
+const S6_MIPS = 3;
 const SH_W = 960;
 const SH_H = 540;
 const SH_BAND = 2;
