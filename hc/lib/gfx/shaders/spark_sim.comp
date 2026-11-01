@@ -1,0 +1,19 @@
+// Particle integration: gravity, exponential drag, a bouncing ground plane.
+layout(local_size_x = 64) in;
+struct Spark { vec4 pos_life; vec4 vel_span; vec4 rgba; vec4 size; };
+layout(std430, set = 1, binding = 0) buffer Sparks { Spark sparks[]; };
+layout(set = 2, binding = 0) uniform Step { vec4 gravity_dt; vec4 world; }; // world: drag, ground y, bounce, count
+void main() {
+	uint i = gl_GlobalInvocationID.x;
+	if (i >= uint(world.w)) return;
+	Spark s = sparks[i];
+	if (s.pos_life.w <= 0.0) return;
+	float dt = gravity_dt.w;
+	vec3 v = s.vel_span.xyz + gravity_dt.xyz * dt;
+	v *= exp(-world.x * dt);
+	vec3 p = s.pos_life.xyz + v * dt;
+	if (p.y < world.y) { p.y = world.y; v.y = -v.y * world.z; v.xz *= 0.8; }
+	s.pos_life = vec4(p, s.pos_life.w - dt);
+	s.vel_span.xyz = v;
+	sparks[i] = s;
+}

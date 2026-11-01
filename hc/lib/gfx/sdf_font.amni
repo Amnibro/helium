@@ -1,0 +1,1078 @@
+// sdf_font: an original procedural signed-distance-field font. ASCII 32..126
+// are vector strokes (line segments and circular arcs) defined in code; there
+// are no font files. sdf_bake renders a 1024x512 distance atlas on the CPU in
+// two weights (stroke radius 1.3 and 2.1 cell px); sdf_init uploads it.
+//
+// Text is emitted as TextVtx quads (pos, uv, col; 20 bytes). Draw them with
+// shaders/sdf_text.vert and shaders/sdf_text.frag, with sdf_texture() and
+// sdf_sampler() bound at fragment sampler slot 0. In the vertex stream:
+//   uv.x <  0   flat colour (solid rects can share the pipeline)
+//   uv.x >= 2   outline pass (uv.x - 2 is the atlas coordinate)
+//   otherwise   glyph fill
+// sdf_text(vs, x, y, px, text, colour, weight, outline): px is the cap height
+// in pixels and (x, y) the top-left of the cap box; weight 0 regular, 1 bold;
+// outline false adds a soft drop shadow, true a dark outline.
+// sdf_text_w(text, px) is the advance width in pixels.
+import std;
+import math;
+import gfx;
+
+struct TextVtx { pos float2, uv float2, col byte[4] }
+
+struct SdfStroke {
+	kind int,
+	x0 f32, y0 f32, x1 f32, y1 f32,
+	r f32, a0 f32, a1 f32
+}
+
+let SDF_ATLAS_W = 1024;
+let SDF_ATLAS_H = 512;
+let SDF_CELL = 48;
+let SDF_COLS = 20;
+let SDF_CAP_H f32 = 24.0;
+let SDF_SPREAD f32 = 6.0;
+let SDF_R_REG f32 = 1.3;
+let SDF_R_BOLD f32 = 2.1;
+
+var SDF_TEX gfx::Texture;
+var SDF_SMP gfx::Sampler;
+var SDF_READY bool = false;
+var SDF_PIPE gfx::Pipeline;
+var SDF_VB gfx::Buffer;
+var SDF_VB_CAP int = 0;
+
+struct SdfProj { proj gfx::mat4 }
+
+var SDF_STROKES SdfStroke[>..] = [];
+var SDF_FIRST int[95];
+var SDF_COUNT int[95];
+var SDF_ADV f32[95];
+// Pen-relative x shift (font units) that centres each glyph's ink inside its advance.
+var SDF_OFF f32[95];
+
+fn sdf_seg(x0 f32, y0 f32, x1 f32, y1 f32) {
+	SDF_STROKES.push(SdfStroke { kind: 0, x0: x0, y0: y0, x1: x1, y1: y1, r: 0.0, a0: 0.0, a1: 0.0 });
+}
+
+fn sdf_arc(cx f32, cy f32, r f32, a0 f32, a1 f32) {
+	SDF_STROKES.push(SdfStroke { kind: 1, x0: cx, y0: cy, x1: 0.0, y1: 0.0, r: r, a0: a0, a1: a1 });
+}
+
+fn sdf_circle(cx f32, cy f32, r f32) {
+	sdf_arc(cx, cy, r, 0.0, 6.2831853);
+}
+
+fn sdf_dist_seg(px f32, py f32, x0 f32, y0 f32, x1 f32, y1 f32) f32 {
+	let dx = x1 - x0;
+	let dy = y1 - y0;
+	let l2 = dx * dx + dy * dy;
+	if l2 <= 0.00001 {
+		let qx = px - x0;
+		let qy = py - y0;
+		return sqrt(qx * qx + qy * qy);
+	}
+	let t = clamp(((px - x0) * dx + (py - y0) * dy) / l2, 0.0, 1.0);
+	let qx = px - (x0 + t * dx);
+	let qy = py - (y0 + t * dy);
+	return sqrt(qx * qx + qy * qy);
+}
+
+fn sdf_dist_arc(px f32, py f32, cx f32, cy f32, r f32, a0 f32, a1 f32) f32 {
+	let dx = px - cx;
+	let dy = py - cy;
+	let d_center = sqrt(dx * dx + dy * dy);
+	var th = atan2(dy, dx);
+	let pi2 = 6.2831853;
+	var diff = th - a0;
+	while diff < 0.0 { diff += pi2; }
+	while diff >= pi2 { diff -= pi2; }
+	let sweep = a1 - a0;
+	if diff <= sweep {
+		return abs(d_center - r);
+	}
+	let p0x = cx + r * cos(a0);
+	let p0y = cy + r * sin(a0);
+	let p1x = cx + r * cos(a1);
+	let p1y = cy + r * sin(a1);
+	let d0x = px - p0x;
+	let d0y = py - p0y;
+	let d1x = px - p1x;
+	let d1y = py - p1y;
+	let d0 = sqrt(d0x * d0x + d0y * d0y);
+	let d1 = sqrt(d1x * d1x + d1y * d1y);
+	return min(d0, d1);
+}
+
+// Strokes are drawn on a shared 48-unit cell (origin x 8), but advances are
+// proportional, so centre the ink of each glyph within its advance.
+fn sdf_fit_bearings() {
+	for k in 95 {
+		SDF_OFF[k] = 0.0;
+		if SDF_COUNT[k] == 0 { continue; }
+		var lo f32 = 1000.0;
+		var hi f32 = -1000.0;
+		for j in SDF_COUNT[k] {
+			let st = SDF_STROKES[SDF_FIRST[k] + j];
+			if st.kind == 0 {
+				lo = min(lo, min(st.x0, st.x1));
+				hi = max(hi, max(st.x0, st.x1));
+			} else {
+				for n in 17 {
+					let a = st.a0 + (st.a1 - st.a0) * n as f32 / 16.0;
+					let x = st.x0 + st.r * cos(a);
+					lo = min(lo, x);
+					hi = max(hi, x);
+				}
+			}
+		}
+		SDF_OFF[k] = (SDF_ADV[k] - (hi - lo)) * 0.5 - (lo - 8.0);
+	}
+}
+
+fn sdf_build_glyphs() {
+	if SDF_STROKES.len > 0 { return; }
+	for i in 95 {
+		SDF_FIRST[i] = 0;
+		SDF_COUNT[i] = 0;
+		SDF_ADV[i] = 16.0;
+	}
+
+	let X0 f32 = 8.0;
+	let X1 f32 = 24.0;
+	let XM f32 = 16.0;
+	let YT f32 = 11.0;
+	let YM f32 = 23.0;
+	let YB f32 = 35.0;
+	let YD f32 = 41.0;
+	let yt f32 = 19.0;
+	let ym f32 = 27.0;
+
+	// ASCII 32: Space
+	SDF_FIRST[0] = SDF_STROKES.len;
+	SDF_COUNT[0] = 0;
+	SDF_ADV[0] = 12.0;
+
+	// ASCII 33: '!'
+	SDF_FIRST[1] = SDF_STROKES.len;
+	sdf_seg(XM, YT, XM, YB - 6.0);
+	sdf_seg(XM, YB - 1.0, XM, YB - 1.0);
+	SDF_COUNT[1] = SDF_STROKES.len - SDF_FIRST[1];
+	SDF_ADV[1] = 10.0;
+
+	// ASCII 34: '"'
+	SDF_FIRST[2] = SDF_STROKES.len;
+	sdf_seg(13.0, YT, 13.0, YT + 6.0);
+	sdf_seg(19.0, YT, 19.0, YT + 6.0);
+	SDF_COUNT[2] = SDF_STROKES.len - SDF_FIRST[2];
+	SDF_ADV[2] = 14.0;
+
+	// ASCII 35: '#'
+	SDF_FIRST[3] = SDF_STROKES.len;
+	sdf_seg(13.0, YT, 13.0, YB);
+	sdf_seg(19.0, YT, 19.0, YB);
+	sdf_seg(9.0, 18.0, 23.0, 18.0);
+	sdf_seg(9.0, 28.0, 23.0, 28.0);
+	SDF_COUNT[3] = SDF_STROKES.len - SDF_FIRST[3];
+	SDF_ADV[3] = 18.0;
+
+	// ASCII 36: '$'
+	SDF_FIRST[4] = SDF_STROKES.len;
+	sdf_seg(XM, YT - 2.0, XM, YB + 2.0);
+	sdf_seg(X1, YT + 2.0, X0 + 4.0, YT);
+	sdf_seg(X0 + 4.0, YT, X0, YT + 4.0);
+	sdf_seg(X0, YT + 4.0, X1, YB - 4.0);
+	sdf_seg(X1, YB - 4.0, X1 - 4.0, YB);
+	sdf_seg(X1 - 4.0, YB, X0, YB - 2.0);
+	SDF_COUNT[4] = SDF_STROKES.len - SDF_FIRST[4];
+	SDF_ADV[4] = 18.0;
+
+	// ASCII 37: '%'
+	SDF_FIRST[5] = SDF_STROKES.len;
+	sdf_seg(22.0, YT, 10.0, YB);
+	sdf_circle(12.0, YT + 3.0, 2.5);
+	sdf_circle(20.0, YB - 3.0, 2.5);
+	SDF_COUNT[5] = SDF_STROKES.len - SDF_FIRST[5];
+	SDF_ADV[5] = 19.0;
+
+	// ASCII 38: '&'
+	SDF_FIRST[6] = SDF_STROKES.len;
+	sdf_seg(22.0, YB, 11.0, 17.0);
+	sdf_circle(15.0, 16.0, 4.0);
+	sdf_arc(16.0, 28.0, 6.0, 0.0, 5.0);
+	SDF_COUNT[6] = SDF_STROKES.len - SDF_FIRST[6];
+	SDF_ADV[6] = 19.0;
+
+	// ASCII 39: '''
+	SDF_FIRST[7] = SDF_STROKES.len;
+	sdf_seg(XM, YT, XM, YT + 5.0);
+	SDF_COUNT[7] = SDF_STROKES.len - SDF_FIRST[7];
+	SDF_ADV[7] = 8.0;
+
+	// ASCII 40: '('
+	SDF_FIRST[8] = SDF_STROKES.len;
+	sdf_arc(21.0, YM, 14.0, 2.0, 4.28);
+	SDF_COUNT[8] = SDF_STROKES.len - SDF_FIRST[8];
+	SDF_ADV[8] = 10.0;
+
+	// ASCII 41: ')'
+	SDF_FIRST[9] = SDF_STROKES.len;
+	sdf_arc(11.0, YM, 14.0, -1.14, 1.14);
+	SDF_COUNT[9] = SDF_STROKES.len - SDF_FIRST[9];
+	SDF_ADV[9] = 10.0;
+
+	// ASCII 42: '*'
+	SDF_FIRST[10] = SDF_STROKES.len;
+	sdf_seg(11.0, YM, 21.0, YM);
+	sdf_seg(13.0, YM - 5.0, 19.0, YM + 5.0);
+	sdf_seg(13.0, YM + 5.0, 19.0, YM - 5.0);
+	SDF_COUNT[10] = SDF_STROKES.len - SDF_FIRST[10];
+	SDF_ADV[10] = 13.0;
+
+	// ASCII 43: '+'
+	SDF_FIRST[11] = SDF_STROKES.len;
+	sdf_seg(10.0, YM, 22.0, YM);
+	sdf_seg(XM, YM - 6.0, XM, YM + 6.0);
+	SDF_COUNT[11] = SDF_STROKES.len - SDF_FIRST[11];
+	SDF_ADV[11] = 17.0;
+
+	// ASCII 44: ','
+	SDF_FIRST[12] = SDF_STROKES.len;
+	sdf_seg(XM, YB - 1.0, XM - 2.0, YB + 4.0);
+	SDF_COUNT[12] = SDF_STROKES.len - SDF_FIRST[12];
+	SDF_ADV[12] = 8.0;
+
+	// ASCII 45: '-'
+	SDF_FIRST[13] = SDF_STROKES.len;
+	sdf_seg(10.0, YM, 22.0, YM);
+	SDF_COUNT[13] = SDF_STROKES.len - SDF_FIRST[13];
+	SDF_ADV[13] = 15.0;
+
+	// ASCII 46: '.'
+	SDF_FIRST[14] = SDF_STROKES.len;
+	sdf_seg(XM, YB - 1.0, XM, YB - 1.0);
+	SDF_COUNT[14] = SDF_STROKES.len - SDF_FIRST[14];
+	SDF_ADV[14] = 8.0;
+
+	// ASCII 47: '/'
+	SDF_FIRST[15] = SDF_STROKES.len;
+	sdf_seg(10.0, YB, 22.0, YT);
+	SDF_COUNT[15] = SDF_STROKES.len - SDF_FIRST[15];
+	SDF_ADV[15] = 16.0;
+
+	// ASCII 48: '0'
+	SDF_FIRST[16] = SDF_STROKES.len;
+	sdf_arc(XM, 18.0, 7.0, 3.14159, 6.28318);
+	sdf_arc(XM, 28.0, 7.0, 0.0, 3.14159);
+	sdf_seg(9.0, 18.0, 9.0, 28.0);
+	sdf_seg(23.0, 18.0, 23.0, 28.0);
+	sdf_seg(11.0, 30.0, 21.0, 16.0);
+	SDF_COUNT[16] = SDF_STROKES.len - SDF_FIRST[16];
+	SDF_ADV[16] = 18.0;
+
+	// ASCII 49: '1'
+	SDF_FIRST[17] = SDF_STROKES.len;
+	sdf_seg(XM, YT, XM, YB);
+	sdf_seg(12.0, YT + 4.0, XM, YT);
+	sdf_seg(11.0, YB, 21.0, YB);
+	SDF_COUNT[17] = SDF_STROKES.len - SDF_FIRST[17];
+	SDF_ADV[17] = 18.0;
+
+	// ASCII 50: '2'
+	SDF_FIRST[18] = SDF_STROKES.len;
+	sdf_arc(XM, 17.0, 6.5, -3.14159, 0.2);
+	sdf_seg(22.0, 19.0, 10.0, YB);
+	sdf_seg(10.0, YB, 22.0, YB);
+	SDF_COUNT[18] = SDF_STROKES.len - SDF_FIRST[18];
+	SDF_ADV[18] = 18.0;
+
+	// ASCII 51: '3'
+	SDF_FIRST[19] = SDF_STROKES.len;
+	sdf_seg(10.0, YT, 22.0, YT);
+	sdf_seg(22.0, YT, 17.0, YM);
+	sdf_arc(16.0, 29.0, 6.0, -1.5708, 2.5);
+	SDF_COUNT[19] = SDF_STROKES.len - SDF_FIRST[19];
+	SDF_ADV[19] = 18.0;
+
+	// ASCII 52: '4'
+	SDF_FIRST[20] = SDF_STROKES.len;
+	sdf_seg(20.0, YT, 20.0, YB);
+	sdf_seg(20.0, YT, 10.0, YM + 3.0);
+	sdf_seg(10.0, YM + 3.0, 23.0, YM + 3.0);
+	SDF_COUNT[20] = SDF_STROKES.len - SDF_FIRST[20];
+	SDF_ADV[20] = 18.0;
+
+	// ASCII 53: '5'
+	SDF_FIRST[21] = SDF_STROKES.len;
+	sdf_seg(22.0, YT, 10.0, YT);
+	sdf_seg(10.0, YT, 10.0, YM - 1.0);
+	sdf_seg(10.0, YM - 1.0, 16.0, YM - 1.0);
+	sdf_arc(16.0, 29.0, 6.0, -1.5708, 2.5);
+	SDF_COUNT[21] = SDF_STROKES.len - SDF_FIRST[21];
+	SDF_ADV[21] = 18.0;
+
+	// ASCII 54: '6'
+	SDF_FIRST[22] = SDF_STROKES.len;
+	sdf_seg(21.0, YT + 2.0, 10.0, 27.0);
+	sdf_circle(16.0, 28.0, 6.0);
+	SDF_COUNT[22] = SDF_STROKES.len - SDF_FIRST[22];
+	SDF_ADV[22] = 18.0;
+
+	// ASCII 55: '7'
+	SDF_FIRST[23] = SDF_STROKES.len;
+	sdf_seg(10.0, YT, 22.0, YT);
+	sdf_seg(22.0, YT, 14.0, YB);
+	SDF_COUNT[23] = SDF_STROKES.len - SDF_FIRST[23];
+	SDF_ADV[23] = 18.0;
+
+	// ASCII 56: '8'
+	SDF_FIRST[24] = SDF_STROKES.len;
+	sdf_circle(XM, 17.0, 5.5);
+	sdf_circle(XM, 29.0, 6.0);
+	SDF_COUNT[24] = SDF_STROKES.len - SDF_FIRST[24];
+	SDF_ADV[24] = 18.0;
+
+	// ASCII 57: '9'
+	SDF_FIRST[25] = SDF_STROKES.len;
+	sdf_circle(16.0, 18.0, 6.0);
+	sdf_seg(22.0, 18.0, 11.0, YB - 2.0);
+	SDF_COUNT[25] = SDF_STROKES.len - SDF_FIRST[25];
+	SDF_ADV[25] = 18.0;
+
+	// ASCII 58: ':'
+	SDF_FIRST[26] = SDF_STROKES.len;
+	sdf_seg(XM, 21.0, XM, 21.0);
+	sdf_seg(XM, 33.0, XM, 33.0);
+	SDF_COUNT[26] = SDF_STROKES.len - SDF_FIRST[26];
+	SDF_ADV[26] = 8.0;
+
+	// ASCII 59: ';'
+	SDF_FIRST[27] = SDF_STROKES.len;
+	sdf_seg(XM, 21.0, XM, 21.0);
+	sdf_seg(XM, 33.0, XM - 2.0, 38.0);
+	SDF_COUNT[27] = SDF_STROKES.len - SDF_FIRST[27];
+	SDF_ADV[27] = 8.0;
+
+	// ASCII 60: '<'
+	SDF_FIRST[28] = SDF_STROKES.len;
+	sdf_seg(22.0, YT + 3.0, 10.0, YM);
+	sdf_seg(10.0, YM, 22.0, YB - 3.0);
+	SDF_COUNT[28] = SDF_STROKES.len - SDF_FIRST[28];
+	SDF_ADV[28] = 16.0;
+
+	// ASCII 61: '='
+	SDF_FIRST[29] = SDF_STROKES.len;
+	sdf_seg(10.0, YM - 3.0, 22.0, YM - 3.0);
+	sdf_seg(10.0, YM + 3.0, 22.0, YM + 3.0);
+	SDF_COUNT[29] = SDF_STROKES.len - SDF_FIRST[29];
+	SDF_ADV[29] = 16.0;
+
+	// ASCII 62: '>'
+	SDF_FIRST[30] = SDF_STROKES.len;
+	sdf_seg(10.0, YT + 3.0, 22.0, YM);
+	sdf_seg(22.0, YM, 10.0, YB - 3.0);
+	SDF_COUNT[30] = SDF_STROKES.len - SDF_FIRST[30];
+	SDF_ADV[30] = 16.0;
+
+	// ASCII 63: '?'
+	SDF_FIRST[31] = SDF_STROKES.len;
+	sdf_arc(XM, 17.0, 5.5, -3.14159, 0.0);
+	sdf_seg(21.5, 17.0, XM, 25.0);
+	sdf_seg(XM, 25.0, XM, 28.0);
+	sdf_seg(XM, 33.0, XM, 33.0);
+	SDF_COUNT[31] = SDF_STROKES.len - SDF_FIRST[31];
+	SDF_ADV[31] = 16.0;
+
+	// ASCII 64: '@'
+	SDF_FIRST[32] = SDF_STROKES.len;
+	sdf_circle(16.0, 24.0, 4.0);
+	sdf_arc(16.0, 23.0, 9.0, 0.6, 5.7);
+	SDF_COUNT[32] = SDF_STROKES.len - SDF_FIRST[32];
+	SDF_ADV[32] = 24.0;
+
+	// ASCII 65: 'A'
+	SDF_FIRST[33] = SDF_STROKES.len;
+	sdf_seg(X0, YB, XM, YT);
+	sdf_seg(XM, YT, X1, YB);
+	sdf_seg(X0 + 3.0, YM + 2.0, X1 - 3.0, YM + 2.0);
+	SDF_COUNT[33] = SDF_STROKES.len - SDF_FIRST[33];
+	SDF_ADV[33] = 20.0;
+
+	// ASCII 66: 'B'
+	SDF_FIRST[34] = SDF_STROKES.len;
+	sdf_seg(X0, YB, X0, YT);
+	sdf_seg(X0, YT, XM, YT);
+	sdf_arc(XM, 17.0, 6.0, -1.5708, 1.5708);
+	sdf_seg(XM, YM, X0, YM);
+	sdf_arc(XM, 29.0, 6.0, -1.5708, 1.5708);
+	sdf_seg(XM, YB, X0, YB);
+	SDF_COUNT[34] = SDF_STROKES.len - SDF_FIRST[34];
+	SDF_ADV[34] = 20.0;
+
+	// ASCII 67: 'C'
+	SDF_FIRST[35] = SDF_STROKES.len;
+	sdf_seg(X0, YT + 6.0, X0, YB - 6.0);
+	sdf_arc(X0 + 6.0, YT + 6.0, 6.0, 3.14159, 4.71239);
+	sdf_seg(X0 + 6.0, YT, X1, YT);
+	sdf_arc(X0 + 6.0, YB - 6.0, 6.0, 1.5708, 3.14159);
+	sdf_seg(X0 + 6.0, YB, X1, YB);
+	SDF_COUNT[35] = SDF_STROKES.len - SDF_FIRST[35];
+	SDF_ADV[35] = 19.0;
+
+	// ASCII 68: 'D'
+	SDF_FIRST[36] = SDF_STROKES.len;
+	sdf_seg(X0, YB, X0, YT);
+	sdf_seg(X0, YT, X0 + 4.0, YT);
+	sdf_arc(X0 + 4.0, YM, 12.0, -1.5708, 1.5708);
+	sdf_seg(X0 + 4.0, YB, X0, YB);
+	SDF_COUNT[36] = SDF_STROKES.len - SDF_FIRST[36];
+	SDF_ADV[36] = 20.0;
+
+	// ASCII 69: 'E'
+	SDF_FIRST[37] = SDF_STROKES.len;
+	sdf_seg(X0, YB, X0, YT);
+	sdf_seg(X0, YT, X1, YT);
+	sdf_seg(X0, YM, X1 - 2.0, YM);
+	sdf_seg(X0, YB, X1, YB);
+	SDF_COUNT[37] = SDF_STROKES.len - SDF_FIRST[37];
+	SDF_ADV[37] = 19.0;
+
+	// ASCII 70: 'F'
+	SDF_FIRST[38] = SDF_STROKES.len;
+	sdf_seg(X0, YB, X0, YT);
+	sdf_seg(X0, YT, X1, YT);
+	sdf_seg(X0, YM, X1 - 3.0, YM);
+	SDF_COUNT[38] = SDF_STROKES.len - SDF_FIRST[38];
+	SDF_ADV[38] = 18.0;
+
+	// ASCII 71: 'G'
+	SDF_FIRST[39] = SDF_STROKES.len;
+	sdf_seg(X0, YT + 6.0, X0, YB - 6.0);
+	sdf_arc(X0 + 6.0, YT + 6.0, 6.0, 3.14159, 4.71239);
+	sdf_seg(X0 + 6.0, YT, X1, YT);
+	sdf_arc(X0 + 6.0, YB - 6.0, 6.0, 1.5708, 3.14159);
+	sdf_seg(X0 + 6.0, YB, X1, YB);
+	sdf_seg(X1, YB, X1, YM);
+	sdf_seg(X1, YM, XM, YM);
+	SDF_COUNT[39] = SDF_STROKES.len - SDF_FIRST[39];
+	SDF_ADV[39] = 20.0;
+
+	// ASCII 72: 'H'
+	SDF_FIRST[40] = SDF_STROKES.len;
+	sdf_seg(X0, YB, X0, YT);
+	sdf_seg(X1, YB, X1, YT);
+	sdf_seg(X0, YM, X1, YM);
+	SDF_COUNT[40] = SDF_STROKES.len - SDF_FIRST[40];
+	SDF_ADV[40] = 20.0;
+
+	// ASCII 73: 'I'
+	SDF_FIRST[41] = SDF_STROKES.len;
+	sdf_seg(XM, YB, XM, YT);
+	SDF_COUNT[41] = SDF_STROKES.len - SDF_FIRST[41];
+	SDF_ADV[41] = 10.0;
+
+	// ASCII 74: 'J'
+	SDF_FIRST[42] = SDF_STROKES.len;
+	sdf_seg(X1 - 2.0, YT, X1 - 2.0, YB - 5.0);
+	sdf_arc(X1 - 7.0, YB - 5.0, 5.0, 0.0, 3.14159);
+	SDF_COUNT[42] = SDF_STROKES.len - SDF_FIRST[42];
+	SDF_ADV[42] = 14.0;
+
+	// ASCII 75: 'K'
+	SDF_FIRST[43] = SDF_STROKES.len;
+	sdf_seg(X0, YB, X0, YT);
+	sdf_seg(X1, YT, X0, YM);
+	sdf_seg(X0 + 4.0, YM - 2.0, X1, YB);
+	SDF_COUNT[43] = SDF_STROKES.len - SDF_FIRST[43];
+	SDF_ADV[43] = 19.0;
+
+	// ASCII 76: 'L'
+	SDF_FIRST[44] = SDF_STROKES.len;
+	sdf_seg(X0, YB, X0, YT);
+	sdf_seg(X0, YB, X1, YB);
+	SDF_COUNT[44] = SDF_STROKES.len - SDF_FIRST[44];
+	SDF_ADV[44] = 17.0;
+
+	// ASCII 77: 'M'
+	SDF_FIRST[45] = SDF_STROKES.len;
+	sdf_seg(7.0, YB, 7.0, YT);
+	sdf_seg(25.0, YB, 25.0, YT);
+	sdf_seg(7.0, YT, XM, YM + 4.0);
+	sdf_seg(25.0, YT, XM, YM + 4.0);
+	SDF_COUNT[45] = SDF_STROKES.len - SDF_FIRST[45];
+	SDF_ADV[45] = 26.0;
+
+	// ASCII 78: 'N'
+	SDF_FIRST[46] = SDF_STROKES.len;
+	sdf_seg(X0, YB, X0, YT);
+	sdf_seg(X1, YB, X1, YT);
+	sdf_seg(X0, YT, X1, YB);
+	SDF_COUNT[46] = SDF_STROKES.len - SDF_FIRST[46];
+	SDF_ADV[46] = 20.0;
+
+	// ASCII 79: 'O'
+	SDF_FIRST[47] = SDF_STROKES.len;
+	sdf_arc(XM, 18.0, 7.0, 3.14159, 6.28318);
+	sdf_arc(XM, 28.0, 7.0, 0.0, 3.14159);
+	sdf_seg(9.0, 18.0, 9.0, 28.0);
+	sdf_seg(23.0, 18.0, 23.0, 28.0);
+	SDF_COUNT[47] = SDF_STROKES.len - SDF_FIRST[47];
+	SDF_ADV[47] = 20.0;
+
+	// ASCII 80: 'P'
+	SDF_FIRST[48] = SDF_STROKES.len;
+	sdf_seg(X0, YB, X0, YT);
+	sdf_seg(X0, YT, XM, YT);
+	sdf_arc(XM, 17.0, 6.0, -1.5708, 1.5708);
+	sdf_seg(XM, YM, X0, YM);
+	SDF_COUNT[48] = SDF_STROKES.len - SDF_FIRST[48];
+	SDF_ADV[48] = 19.0;
+
+	// ASCII 81: 'Q'
+	SDF_FIRST[49] = SDF_STROKES.len;
+	sdf_arc(XM, 18.0, 7.0, 3.14159, 6.28318);
+	sdf_arc(XM, 28.0, 7.0, 0.0, 3.14159);
+	sdf_seg(9.0, 18.0, 9.0, 28.0);
+	sdf_seg(23.0, 18.0, 23.0, 28.0);
+	sdf_seg(XM + 1.0, YB - 3.0, X1 + 2.0, YB + 3.0);
+	SDF_COUNT[49] = SDF_STROKES.len - SDF_FIRST[49];
+	SDF_ADV[49] = 21.0;
+
+	// ASCII 82: 'R'
+	SDF_FIRST[50] = SDF_STROKES.len;
+	sdf_seg(X0, YB, X0, YT);
+	sdf_seg(X0, YT, XM, YT);
+	sdf_arc(XM, 17.0, 6.0, -1.5708, 1.5708);
+	sdf_seg(XM, YM, X0, YM);
+	sdf_seg(XM, YM, X1, YB);
+	SDF_COUNT[50] = SDF_STROKES.len - SDF_FIRST[50];
+	SDF_ADV[50] = 20.0;
+
+	// ASCII 83: 'S'
+	SDF_FIRST[51] = SDF_STROKES.len;
+	sdf_seg(X1, YT, X0 + 5.0, YT);
+	sdf_arc(X0 + 5.0, YT + 5.0, 5.0, 3.14159, 4.71239);
+	sdf_seg(X0, YT + 5.0, X0, YM - 1.0);
+	sdf_seg(X0, YM - 1.0, X1, YM + 1.0);
+	sdf_seg(X1, YM + 1.0, X1, YB - 5.0);
+	sdf_arc(X1 - 5.0, YB - 5.0, 5.0, 0.0, 1.5708);
+	sdf_seg(X1 - 5.0, YB, X0, YB);
+	SDF_COUNT[51] = SDF_STROKES.len - SDF_FIRST[51];
+	SDF_ADV[51] = 19.0;
+
+	// ASCII 84: 'T'
+	SDF_FIRST[52] = SDF_STROKES.len;
+	sdf_seg(X0 - 1.0, YT, X1 + 1.0, YT);
+	sdf_seg(XM, YB, XM, YT);
+	SDF_COUNT[52] = SDF_STROKES.len - SDF_FIRST[52];
+	SDF_ADV[52] = 18.0;
+
+	// ASCII 85: 'U'
+	SDF_FIRST[53] = SDF_STROKES.len;
+	sdf_seg(X0, YT, X0, YB - 7.0);
+	sdf_seg(X1, YT, X1, YB - 7.0);
+	sdf_arc(XM, YB - 7.0, 8.0, 0.0, 3.14159);
+	SDF_COUNT[53] = SDF_STROKES.len - SDF_FIRST[53];
+	SDF_ADV[53] = 20.0;
+
+	// ASCII 86: 'V'
+	SDF_FIRST[54] = SDF_STROKES.len;
+	sdf_seg(X0, YT, XM, YB);
+	sdf_seg(X1, YT, XM, YB);
+	SDF_COUNT[54] = SDF_STROKES.len - SDF_FIRST[54];
+	SDF_ADV[54] = 20.0;
+
+	// ASCII 87: 'W'
+	SDF_FIRST[55] = SDF_STROKES.len;
+	sdf_seg(7.0, YT, 11.5, YB);
+	sdf_seg(11.5, YB, XM, YM + 3.0);
+	sdf_seg(XM, YM + 3.0, 20.5, YB);
+	sdf_seg(20.5, YB, 25.0, YT);
+	SDF_COUNT[55] = SDF_STROKES.len - SDF_FIRST[55];
+	SDF_ADV[55] = 26.0;
+
+	// ASCII 88: 'X'
+	SDF_FIRST[56] = SDF_STROKES.len;
+	sdf_seg(X0, YT, X1, YB);
+	sdf_seg(X0, YB, X1, YT);
+	SDF_COUNT[56] = SDF_STROKES.len - SDF_FIRST[56];
+	SDF_ADV[56] = 19.0;
+
+	// ASCII 89: 'Y'
+	SDF_FIRST[57] = SDF_STROKES.len;
+	sdf_seg(X0, YT, XM, YM);
+	sdf_seg(X1, YT, XM, YM);
+	sdf_seg(XM, YM, XM, YB);
+	SDF_COUNT[57] = SDF_STROKES.len - SDF_FIRST[57];
+	SDF_ADV[57] = 19.0;
+
+	// ASCII 90: 'Z'
+	SDF_FIRST[58] = SDF_STROKES.len;
+	sdf_seg(X0, YT, X1, YT);
+	sdf_seg(X1, YT, X0, YB);
+	sdf_seg(X0, YB, X1, YB);
+	SDF_COUNT[58] = SDF_STROKES.len - SDF_FIRST[58];
+	SDF_ADV[58] = 19.0;
+
+	// ASCII 91: '['
+	SDF_FIRST[59] = SDF_STROKES.len;
+	sdf_seg(13.0, YT, 13.0, YB);
+	sdf_seg(13.0, YT, 18.0, YT);
+	sdf_seg(13.0, YB, 18.0, YB);
+	SDF_COUNT[59] = SDF_STROKES.len - SDF_FIRST[59];
+	SDF_ADV[59] = 11.0;
+
+	// ASCII 92: '\'
+	SDF_FIRST[60] = SDF_STROKES.len;
+	sdf_seg(10.0, YT, 22.0, YB);
+	SDF_COUNT[60] = SDF_STROKES.len - SDF_FIRST[60];
+	SDF_ADV[60] = 16.0;
+
+	// ASCII 93: ']'
+	SDF_FIRST[61] = SDF_STROKES.len;
+	sdf_seg(19.0, YT, 19.0, YB);
+	sdf_seg(14.0, YT, 19.0, YT);
+	sdf_seg(14.0, YB, 19.0, YB);
+	SDF_COUNT[61] = SDF_STROKES.len - SDF_FIRST[61];
+	SDF_ADV[61] = 11.0;
+
+	// ASCII 94: '^'
+	SDF_FIRST[62] = SDF_STROKES.len;
+	sdf_seg(11.0, 20.0, XM, 13.0);
+	sdf_seg(XM, 13.0, 21.0, 20.0);
+	SDF_COUNT[62] = SDF_STROKES.len - SDF_FIRST[62];
+	SDF_ADV[62] = 14.0;
+
+	// ASCII 95: '_'
+	SDF_FIRST[63] = SDF_STROKES.len;
+	sdf_seg(8.0, YB + 3.0, 24.0, YB + 3.0);
+	SDF_COUNT[63] = SDF_STROKES.len - SDF_FIRST[63];
+	SDF_ADV[63] = 18.0;
+
+	// ASCII 96: '`'
+	SDF_FIRST[64] = SDF_STROKES.len;
+	sdf_seg(14.0, YT, 16.0, YT + 4.0);
+	SDF_COUNT[64] = SDF_STROKES.len - SDF_FIRST[64];
+	SDF_ADV[64] = 8.0;
+
+	// Lowercase guides
+	let lx0 f32 = 9.0;
+	let lx1 f32 = 21.0;
+	let lxm f32 = 15.0;
+
+	// ASCII 97: 'a'
+	SDF_FIRST[65] = SDF_STROKES.len;
+	sdf_circle(lxm, ym, 6.0);
+	sdf_seg(lx1, yt + 2.0, lx1, YB);
+	SDF_COUNT[65] = SDF_STROKES.len - SDF_FIRST[65];
+	SDF_ADV[65] = 16.0;
+
+	// ASCII 98: 'b'
+	SDF_FIRST[66] = SDF_STROKES.len;
+	sdf_seg(lx0, YT, lx0, YB);
+	sdf_arc(lxm, ym, 6.0, -1.5708, 1.5708);
+	sdf_seg(lx0, yt, lxm, yt);
+	sdf_seg(lx0, YB, lxm, YB);
+	SDF_COUNT[66] = SDF_STROKES.len - SDF_FIRST[66];
+	SDF_ADV[66] = 17.0;
+
+	// ASCII 99: 'c'
+	SDF_FIRST[67] = SDF_STROKES.len;
+	sdf_arc(lxm, ym, 6.0, 0.7, 5.58);
+	SDF_COUNT[67] = SDF_STROKES.len - SDF_FIRST[67];
+	SDF_ADV[67] = 15.0;
+
+	// ASCII 100: 'd'
+	SDF_FIRST[68] = SDF_STROKES.len;
+	sdf_seg(lx1, YT, lx1, YB);
+	sdf_arc(lxm, ym, 6.0, 1.5708, 4.71239);
+	sdf_seg(lx1, yt, lxm, yt);
+	sdf_seg(lx1, YB, lxm, YB);
+	SDF_COUNT[68] = SDF_STROKES.len - SDF_FIRST[68];
+	SDF_ADV[68] = 17.0;
+
+	// ASCII 101: 'e'
+	SDF_FIRST[69] = SDF_STROKES.len;
+	sdf_seg(lx0, ym, lx1, ym);
+	sdf_arc(lxm, ym, 6.0, -3.14159, 2.35);
+	SDF_COUNT[69] = SDF_STROKES.len - SDF_FIRST[69];
+	SDF_ADV[69] = 16.0;
+
+	// ASCII 102: 'f'
+	SDF_FIRST[70] = SDF_STROKES.len;
+	sdf_seg(lxm, YB, lxm, YT + 4.0);
+	sdf_arc(lxm + 4.0, YT + 4.0, 4.0, 3.14159, 4.71239);
+	sdf_seg(lx0, yt, lx1, yt);
+	SDF_COUNT[70] = SDF_STROKES.len - SDF_FIRST[70];
+	SDF_ADV[70] = 13.0;
+
+	// ASCII 103: 'g'
+	SDF_FIRST[71] = SDF_STROKES.len;
+	sdf_circle(lxm, ym, 6.0);
+	sdf_seg(lx1, yt, lx1, YD - 3.0);
+	sdf_arc(lxm + 2.0, YD - 3.0, 4.0, 0.0, 3.14159);
+	SDF_COUNT[71] = SDF_STROKES.len - SDF_FIRST[71];
+	SDF_ADV[71] = 17.0;
+
+	// ASCII 104: 'h'
+	SDF_FIRST[72] = SDF_STROKES.len;
+	sdf_seg(lx0, YT, lx0, YB);
+	sdf_arc(lxm, yt + 4.0, 4.0, 3.14159, 6.28318);
+	sdf_seg(lx1, yt + 4.0, lx1, YB);
+	SDF_COUNT[72] = SDF_STROKES.len - SDF_FIRST[72];
+	SDF_ADV[72] = 17.0;
+
+	// ASCII 105: 'i'
+	SDF_FIRST[73] = SDF_STROKES.len;
+	sdf_seg(lxm, yt + 3.0, lxm, YB);
+	sdf_seg(lxm, YT + 3.0, lxm, YT + 3.0);
+	SDF_COUNT[73] = SDF_STROKES.len - SDF_FIRST[73];
+	SDF_ADV[73] = 9.0;
+
+	// ASCII 106: 'j'
+	SDF_FIRST[74] = SDF_STROKES.len;
+	sdf_seg(lxm, yt + 3.0, lxm, YD - 3.0);
+	sdf_arc(lxm - 3.0, YD - 3.0, 3.0, 0.0, 3.14159);
+	sdf_seg(lxm, YT + 3.0, lxm, YT + 3.0);
+	SDF_COUNT[74] = SDF_STROKES.len - SDF_FIRST[74];
+	SDF_ADV[74] = 11.0;
+
+	// ASCII 107: 'k'
+	SDF_FIRST[75] = SDF_STROKES.len;
+	sdf_seg(lx0, YT, lx0, YB);
+	sdf_seg(lx1, yt, lx0, ym);
+	sdf_seg(lx0 + 3.0, ym - 1.0, lx1, YB);
+	SDF_COUNT[75] = SDF_STROKES.len - SDF_FIRST[75];
+	SDF_ADV[75] = 16.0;
+
+	// ASCII 108: 'l'
+	SDF_FIRST[76] = SDF_STROKES.len;
+	sdf_seg(lxm, YT, lxm, YB);
+	SDF_COUNT[76] = SDF_STROKES.len - SDF_FIRST[76];
+	SDF_ADV[76] = 9.0;
+
+	// ASCII 109: 'm'
+	SDF_FIRST[77] = SDF_STROKES.len;
+	sdf_seg(7.0, yt, 7.0, YB);
+	sdf_arc(11.0, yt + 3.0, 4.0, 3.14159, 6.28318);
+	sdf_seg(15.0, yt + 3.0, 15.0, YB);
+	sdf_arc(19.0, yt + 3.0, 4.0, 3.14159, 6.28318);
+	sdf_seg(23.0, yt + 3.0, 23.0, YB);
+	SDF_COUNT[77] = SDF_STROKES.len - SDF_FIRST[77];
+	SDF_ADV[77] = 25.0;
+
+	// ASCII 110: 'n'
+	SDF_FIRST[78] = SDF_STROKES.len;
+	sdf_seg(lx0, yt, lx0, YB);
+	sdf_arc(lxm, yt + 4.0, 6.0, 3.14159, 6.28318);
+	sdf_seg(lx1, yt + 4.0, lx1, YB);
+	SDF_COUNT[78] = SDF_STROKES.len - SDF_FIRST[78];
+	SDF_ADV[78] = 17.0;
+
+	// ASCII 111: 'o'
+	SDF_FIRST[79] = SDF_STROKES.len;
+	sdf_circle(lxm, ym, 6.0);
+	SDF_COUNT[79] = SDF_STROKES.len - SDF_FIRST[79];
+	SDF_ADV[79] = 16.0;
+
+	// ASCII 112: 'p'
+	SDF_FIRST[80] = SDF_STROKES.len;
+	sdf_seg(lx0, yt, lx0, YD);
+	sdf_arc(lxm, ym, 6.0, -1.5708, 1.5708);
+	sdf_seg(lx0, yt, lxm, yt);
+	sdf_seg(lx0, YB, lxm, YB);
+	SDF_COUNT[80] = SDF_STROKES.len - SDF_FIRST[80];
+	SDF_ADV[80] = 17.0;
+
+	// ASCII 113: 'q'
+	SDF_FIRST[81] = SDF_STROKES.len;
+	sdf_seg(lx1, yt, lx1, YD);
+	sdf_arc(lxm, ym, 6.0, 1.5708, 4.71239);
+	sdf_seg(lx1, yt, lxm, yt);
+	sdf_seg(lx1, YB, lxm, YB);
+	SDF_COUNT[81] = SDF_STROKES.len - SDF_FIRST[81];
+	SDF_ADV[81] = 17.0;
+
+	// ASCII 114: 'r'
+	SDF_FIRST[82] = SDF_STROKES.len;
+	sdf_seg(lx0, yt, lx0, YB);
+	sdf_arc(lxm - 1.0, yt + 4.0, 4.0, 3.14159, 5.34);
+	SDF_COUNT[82] = SDF_STROKES.len - SDF_FIRST[82];
+	SDF_ADV[82] = 13.0;
+
+	// ASCII 115: 's'
+	SDF_FIRST[83] = SDF_STROKES.len;
+	sdf_seg(lx1, yt, lx0 + 3.0, yt);
+	sdf_seg(lx0 + 3.0, yt, lx0, ym - 1.0);
+	sdf_seg(lx0, ym - 1.0, lx1, ym + 1.0);
+	sdf_seg(lx1, ym + 1.0, lx1 - 3.0, YB);
+	sdf_seg(lx1 - 3.0, YB, lx0, YB);
+	SDF_COUNT[83] = SDF_STROKES.len - SDF_FIRST[83];
+	SDF_ADV[83] = 15.0;
+
+	// ASCII 116: 't'
+	SDF_FIRST[84] = SDF_STROKES.len;
+	sdf_seg(lxm, yt - 3.0, lxm, YB - 3.0);
+	sdf_arc(lxm + 3.0, YB - 3.0, 3.0, 1.5708, 3.14159);
+	sdf_seg(lx0, yt, lx1, yt);
+	SDF_COUNT[84] = SDF_STROKES.len - SDF_FIRST[84];
+	SDF_ADV[84] = 12.0;
+
+	// ASCII 117: 'u'
+	SDF_FIRST[85] = SDF_STROKES.len;
+	sdf_seg(lx0, yt, lx0, YB - 4.0);
+	sdf_arc(lxm, YB - 4.0, 6.0, 0.0, 3.14159);
+	sdf_seg(lx1, yt, lx1, YB);
+	SDF_COUNT[85] = SDF_STROKES.len - SDF_FIRST[85];
+	SDF_ADV[85] = 17.0;
+
+	// ASCII 118: 'v'
+	SDF_FIRST[86] = SDF_STROKES.len;
+	sdf_seg(lx0, yt, lxm, YB);
+	sdf_seg(lx1, yt, lxm, YB);
+	SDF_COUNT[86] = SDF_STROKES.len - SDF_FIRST[86];
+	SDF_ADV[86] = 16.0;
+
+	// ASCII 119: 'w'
+	SDF_FIRST[87] = SDF_STROKES.len;
+	sdf_seg(7.0, yt, 11.0, YB);
+	sdf_seg(11.0, YB, 15.0, ym + 1.0);
+	sdf_seg(15.0, ym + 1.0, 19.0, YB);
+	sdf_seg(19.0, YB, 23.0, yt);
+	SDF_COUNT[87] = SDF_STROKES.len - SDF_FIRST[87];
+	SDF_ADV[87] = 25.0;
+
+	// ASCII 120: 'x'
+	SDF_FIRST[88] = SDF_STROKES.len;
+	sdf_seg(lx0, yt, lx1, YB);
+	sdf_seg(lx0, YB, lx1, yt);
+	SDF_COUNT[88] = SDF_STROKES.len - SDF_FIRST[88];
+	SDF_ADV[88] = 16.0;
+
+	// ASCII 121: 'y'
+	SDF_FIRST[89] = SDF_STROKES.len;
+	sdf_seg(lx0, yt, lxm, ym + 2.0);
+	sdf_seg(lx1, yt, lx0, YD);
+	SDF_COUNT[89] = SDF_STROKES.len - SDF_FIRST[89];
+	SDF_ADV[89] = 16.0;
+
+	// ASCII 122: 'z'
+	SDF_FIRST[90] = SDF_STROKES.len;
+	sdf_seg(lx0, yt, lx1, yt);
+	sdf_seg(lx1, yt, lx0, YB);
+	sdf_seg(lx0, YB, lx1, YB);
+	SDF_COUNT[90] = SDF_STROKES.len - SDF_FIRST[90];
+	SDF_ADV[90] = 15.0;
+
+	// ASCII 123: '{'
+	SDF_FIRST[91] = SDF_STROKES.len;
+	sdf_seg(17.0, YT, 14.0, YT);
+	sdf_seg(14.0, YT, 14.0, YM - 2.0);
+	sdf_seg(14.0, YM - 2.0, 11.0, YM);
+	sdf_seg(11.0, YM, 14.0, YM + 2.0);
+	sdf_seg(14.0, YM + 2.0, 14.0, YB);
+	sdf_seg(14.0, YB, 17.0, YB);
+	SDF_COUNT[91] = SDF_STROKES.len - SDF_FIRST[91];
+	SDF_ADV[91] = 11.0;
+
+	// ASCII 124: '|'
+	SDF_FIRST[92] = SDF_STROKES.len;
+	sdf_seg(XM, YT - 2.0, XM, YB + 2.0);
+	SDF_COUNT[92] = SDF_STROKES.len - SDF_FIRST[92];
+	SDF_ADV[92] = 8.0;
+
+	// ASCII 125: '}'
+	SDF_FIRST[93] = SDF_STROKES.len;
+	sdf_seg(13.0, YT, 16.0, YT);
+	sdf_seg(16.0, YT, 16.0, YM - 2.0);
+	sdf_seg(16.0, YM - 2.0, 19.0, YM);
+	sdf_seg(19.0, YM, 16.0, YM + 2.0);
+	sdf_seg(16.0, YM + 2.0, 16.0, YB);
+	sdf_seg(16.0, YB, 13.0, YB);
+	SDF_COUNT[93] = SDF_STROKES.len - SDF_FIRST[93];
+	SDF_ADV[93] = 11.0;
+
+	// ASCII 126: '~'
+	SDF_FIRST[94] = SDF_STROKES.len;
+	sdf_arc(13.0, YM, 3.5, 3.14159, 6.28318);
+	sdf_arc(19.0, YM, 3.5, 0.0, 3.14159);
+	SDF_COUNT[94] = SDF_STROKES.len - SDF_FIRST[94];
+	SDF_ADV[94] = 15.0;
+	sdf_fit_bearings();
+}
+
+// Bake the atlas into pix (SDF_ATLAS_W x SDF_ATLAS_H RGBA8, the distance in
+// every channel): regular weight in cell rows 0..4, bold in rows 5..9. CPU only.
+fn sdf_bake(pix byte[>..]&) {
+	sdf_build_glyphs();
+	pix.clear();
+	pix.resize(SDF_ATLAS_W * SDF_ATLAS_H * 4, 0);
+
+	for weight in 2 {
+		let radius = if weight == 0 { SDF_R_REG } else { SDF_R_BOLD };
+		let row_offset = if weight == 0 { 0 } else { 5 };
+
+		for k in 95 {
+			let col = k % SDF_COLS;
+			let row = row_offset + k / SDF_COLS;
+			let cell_x = col * SDF_CELL;
+			let cell_y = row * SDF_CELL;
+
+			let first = SDF_FIRST[k];
+			let count = SDF_COUNT[k];
+
+			for py in SDF_CELL {
+				let ay = cell_y + py;
+				let ly = py as f32;
+
+				for px in SDF_CELL {
+					let ax = cell_x + px;
+					let lx = px as f32;
+
+					var min_d f32 = 999.0;
+					for s in count {
+						let st = SDF_STROKES[first + s];
+						var d f32 = 999.0;
+						if st.kind == 0 {
+							d = sdf_dist_seg(lx, ly, st.x0, st.y0, st.x1, st.y1);
+						} else {
+							d = sdf_dist_arc(lx, ly, st.x0, st.y0, st.r, st.a0, st.a1);
+						}
+						if d < min_d { min_d = d; }
+					}
+
+					let dist = min_d - radius;
+					let val = clamp(0.5 - dist / (2.0 * SDF_SPREAD), 0.0, 1.0);
+					let b = (val * 255.0 + 0.5) as int as byte;
+
+					let idx = (ay * SDF_ATLAS_W + ax) * 4;
+					pix[idx + 0] = b;
+					pix[idx + 1] = b;
+					pix[idx + 2] = b;
+					pix[idx + 3] = b;
+				}
+			}
+		}
+	}
+}
+
+// Bake and upload the atlas and build the text pipeline once; needs an open
+// gfx device.
+fn sdf_init() {
+	if SDF_READY { return; }
+	var d = gfx::PipelineDesc { cull: gfx::CULL_NONE, depth_test: false, depth_write: false, blend: gfx::BLEND_ALPHA };
+	d.formats[2] = gfx::VERTEX_UBYTE4_NORM;
+	SDF_PIPE = gfx::pipeline(embed_shader("shaders/sdf_text.vert"), embed_shader("shaders/sdf_text.frag"), d);
+	var pix byte[>..] = [];
+	sdf_bake(pix);
+	SDF_TEX = gfx::texture2d(SDF_ATLAS_W, SDF_ATLAS_H, gfx::RGBA8, gfx::SAMPLED);
+	gfx::update_texture(SDF_TEX, pix[..]);
+	SDF_SMP = gfx::sampler(gfx::LINEAR, gfx::CLAMP);
+	SDF_READY = true;
+}
+
+fn sdf_texture() gfx::Texture { SDF_TEX }
+fn sdf_sampler() gfx::Sampler { SDF_SMP }
+
+fn sdf_text_w(t const byte[:], px f32) f32 {
+	sdf_build_glyphs();
+	let s = px / SDF_CAP_H;
+	var w f32 = 0.0;
+	for i in t.len {
+		var k = t[i] as int - 32;
+		if k < 0 || k >= 95 { k = 0; }
+		w += SDF_ADV[k] * s;
+	}
+	w
+}
+
+fn sdf_text(vs TextVtx[>..]&, x f32, y f32, px f32, t const byte[:], c byte[4], weight int, outline bool) {
+	sdf_build_glyphs();
+	let s = px / SDF_CAP_H;
+	let row_offset = if weight != 0 { 5 } else { 0 };
+
+	// Passes: if outline requested, pass 0 emits dark outline quads with uv.x sentinel offset >= 2.0;
+	// otherwise pass 0 emits a crisp drop shadow.
+	let passes = 2;
+
+	for pass in passes {
+		let is_bg = pass == 0;
+		if is_bg && c[3] == 0 { continue; }
+
+		let o = if outline {
+			0.0
+		} else if is_bg {
+			max(1.0, px * 0.07)
+		} else {
+			0.0
+		};
+
+		let col byte[4] = if is_bg { [0, 0, 0, c[3]] } else { c };
+		let uv_mode_offset f32 = if outline && is_bg { 2.0 } else { 0.0 };
+
+		var cur_x = x + o;
+		let cur_y = y + o;
+
+		for i in t.len {
+			var k = t[i] as int - 32;
+			if k < 0 || k >= 95 { k = 0; }
+
+			let adv = SDF_ADV[k] * s;
+			if k == 0 {
+				cur_x += adv;
+				continue;
+			}
+
+			let col_idx = k % SDF_COLS;
+			let row_idx = row_offset + k / SDF_COLS;
+
+			let u0 = (col_idx * SDF_CELL) as f32 / SDF_ATLAS_W as f32 + uv_mode_offset;
+			let v0 = (row_idx * SDF_CELL) as f32 / SDF_ATLAS_H as f32;
+			let u1 = ((col_idx + 1) * SDF_CELL) as f32 / SDF_ATLAS_W as f32 + uv_mode_offset;
+			let v1 = ((row_idx + 1) * SDF_CELL) as f32 / SDF_ATLAS_H as f32;
+
+			let qx = cur_x + (SDF_OFF[k] - 8.0) * s;
+			let qy = cur_y - 11.0 * s;
+			let qw = SDF_CELL as f32 * s;
+			let qh = SDF_CELL as f32 * s;
+
+			vs.append([
+				TextVtx { pos: float2 { qx, qy }, uv: float2 { u0, v0 }, col: col },
+				TextVtx { pos: float2 { qx + qw, qy }, uv: float2 { u1, v0 }, col: col },
+				TextVtx { pos: float2 { qx + qw, qy + qh }, uv: float2 { u1, v1 }, col: col },
+				TextVtx { pos: float2 { qx, qy }, uv: float2 { u0, v0 }, col: col },
+				TextVtx { pos: float2 { qx + qw, qy + qh }, uv: float2 { u1, v1 }, col: col },
+				TextVtx { pos: float2 { qx, qy + qh }, uv: float2 { u0, v1 }, col: col }
+			]);
+
+			cur_x += adv;
+		}
+	}
+}
+
+// A flat rectangle in the same vertex stream (uv.x < 0).
+fn sdf_rect(vs TextVtx[>..]&, x f32, y f32, w f32, h f32, c byte[4]) {
+	let n = float2 { -1.0, -1.0 };
+	vs.append([TextVtx { pos: float2 { x, y }, uv: n, col: c }, TextVtx { pos: float2 { x + w, y }, uv: n, col: c },
+		TextVtx { pos: float2 { x + w, y + h }, uv: n, col: c }, TextVtx { pos: float2 { x, y }, uv: n, col: c },
+		TextVtx { pos: float2 { x + w, y + h }, uv: n, col: c }, TextVtx { pos: float2 { x, y + h }, uv: n, col: c }]);
+}
+
+// Draw vs over target (w x h pixels, y down) without clearing it.
+fn sdf_draw(target gfx::Texture, w int, h int, vs TextVtx[>..]&) {
+	if vs.len == 0 { return; }
+	sdf_init();
+	if vs.len > SDF_VB_CAP {
+		if SDF_VB_CAP > 0 { gfx::release(SDF_VB); }
+		SDF_VB_CAP = max(vs.len, 4096);
+		SDF_VB = gfx::buffer(gfx::BUFFER_VERTEX as int, SDF_VB_CAP * 20, []);
+	}
+	gfx::update_buffer(SDF_VB, 0, bytes_of(vs)[..vs.len * 20]);
+	let t0 = gfx::Texture { 0 };
+	guard gfx::begin_pass(gfx::PassDesc { color: [target, t0, t0, t0], clear_color: false, .. }) else { return; }
+	gfx::bind(SDF_PIPE);
+	gfx::uniforms(gfx::VERTEX as int, 0, SdfProj { proj: gfx::ortho(0.0, w as f32, h as f32, 0.0, -1.0, 1.0) });
+	gfx::bind_texture(gfx::FRAGMENT, 0, SDF_TEX, SDF_SMP);
+	gfx::bind_vertex_buffer(SDF_VB);
+	gfx::draw(vs.len);
+	gfx::end_pass();
+}

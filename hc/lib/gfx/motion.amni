@@ -1,0 +1,159 @@
+// motion: poses for glTF scenes. Samples animation channels (step, linear and
+// cubic Hermite spline per the glTF 2.0 specification), walks the node hierarchy
+// into world matrices, and builds joint matrices and morph weights for drawing.
+// The pose arrays are indexed like gltf::nodes.
+namespace motion;
+import gfx;
+import gfx.linalg;
+import gfx.gltf;
+
+let MAX_WEIGHTS = 8;
+
+var pose_t float3[>..];
+var pose_r linalg::Quat[>..];
+var pose_s float3[>..];
+var pose_w f32[>..];          // MAX_WEIGHTS per node
+var world gfx::mat4[>..];
+
+fn grow() {
+	while pose_t.len < gltf::nodes.len {
+		pose_t.push(float3 { 0.0, 0.0, 0.0 });
+		pose_r.push(linalg::quat_identity());
+		pose_s.push(float3 { 1.0, 1.0, 1.0 });
+		world.push(gfx::mat4_identity);
+		for k in MAX_WEIGHTS { pose_w.push(0.0); }
+	}
+}
+
+// Puts every node of the asset back in its rest pose (morph weights from the node, else its mesh).
+fn rest(asset int) {
+	grow();
+	let a = gltf::assets[asset];
+	for k in a.nodes.count {
+		let i = a.nodes.first + k;
+		let n = gltf::nodes[i];
+		pose_t[i] = n.t;
+		pose_r[i] = n.r;
+		pose_s[i] = n.s;
+		var w = n.weights;
+		if w.count == 0 && n.mesh >= 0 { w = gltf::meshes[n.mesh].weights; }
+		for j in MAX_WEIGHTS { pose_w[i * MAX_WEIGHTS + j] = if j < w.count { gltf::floats[w.first + j] } else { 0.0 }; }
+	}
+}
+
+// Index of the last key at or before t (0 when t is before the first key).
+fn key_before(times gltf::Span, t f32) int {
+	var lo = 0;
+	var hi = times.count - 1;
+	if t <= gltf::floats[times.first] { return 0; }
+	if t >= gltf::floats[times.first + hi] { return hi; }
+	while hi - lo > 1 {
+		let mid = (lo + hi) / 2;
+		if gltf::floats[times.first + mid] <= t { lo = mid; } else { hi = mid; }
+	}
+	lo
+}
+
+// Samples component j of channel c at time t.
+fn sample(c gltf::Channel, t f32, j int) f32 {
+	let n = c.times.count;
+	let k0 = key_before(c.times, t);
+	let k1 = min(k0 + 1, n - 1);
+	let t0 = gltf::floats[c.times.first + k0];
+	let t1 = gltf::floats[c.times.first + k1];
+	let span = t1 - t0;
+	let u = if span > 0.0 { clamp((t - t0) / span, 0.0, 1.0) } else { 0.0 };
+	let w = c.width;
+	let v = c.values.first;
+	if c.interp == gltf::STEP_CUBIC {
+		// keys hold (in-tangent, value, out-tangent)
+		let p0 = gltf::floats[v + (3 * k0 + 1) * w + j];
+		let p1 = gltf::floats[v + (3 * k1 + 1) * w + j];
+		if k0 == k1 { return p0; }
+		let m0 = gltf::floats[v + (3 * k0 + 2) * w + j] * span;
+		let m1 = gltf::floats[v + (3 * k1) * w + j] * span;
+		let u2 = u * u;
+		let u3 = u2 * u;
+		return (2.0 * u3 - 3.0 * u2 + 1.0) * p0 + (u3 - 2.0 * u2 + u) * m0 + (3.0 * u2 - 2.0 * u3) * p1 + (u3 - u2) * m1;
+	}
+	let a = gltf::floats[v + k0 * w + j];
+	if c.interp == gltf::STEP_HOLD || k0 == k1 { return a; }
+	let b = gltf::floats[v + k1 * w + j];
+	a + (b - a) * u
+}
+
+fn rotation_at(c gltf::Channel, t f32) linalg::Quat {
+	if c.interp == gltf::STEP_LINEAR {
+		let k0 = key_before(c.times, t);
+		let k1 = min(k0 + 1, c.times.count - 1);
+		let v = c.values.first;
+		let a = linalg::Quat { gltf::floats[v + k0 * 4], gltf::floats[v + k0 * 4 + 1], gltf::floats[v + k0 * 4 + 2], gltf::floats[v + k0 * 4 + 3] };
+		if k0 == k1 { return linalg::qnorm(a); }
+		let b = linalg::Quat { gltf::floats[v + k1 * 4], gltf::floats[v + k1 * 4 + 1], gltf::floats[v + k1 * 4 + 2], gltf::floats[v + k1 * 4 + 3] };
+		let t0 = gltf::floats[c.times.first + k0];
+		let t1 = gltf::floats[c.times.first + k1];
+		let u = if t1 > t0 { clamp((t - t0) / (t1 - t0), 0.0, 1.0) } else { 0.0 };
+		return linalg::qslerp(a, b, u);
+	}
+	linalg::qnorm(linalg::Quat { sample(c, t, 0), sample(c, t, 1), sample(c, t, 2), sample(c, t, 3) })
+}
+
+// Applies animation `anim` at time t. amount 1 replaces the pose; less blends toward it.
+fn apply(anim int, t f32, amount f32) {
+	grow();
+	let a = gltf::animations[anim];
+	for k in a.channels.count {
+		let c = gltf::channels[a.channels.first + k];
+		let i = c.node;
+		match c.path {
+			0 => { let v = float3 { sample(c, t, 0), sample(c, t, 1), sample(c, t, 2) }; pose_t[i] = linalg::mix3(pose_t[i], v, amount); },
+			1 => { pose_r[i] = linalg::qslerp(pose_r[i], rotation_at(c, t), amount); },
+			2 => { let v = float3 { sample(c, t, 0), sample(c, t, 1), sample(c, t, 2) }; pose_s[i] = linalg::mix3(pose_s[i], v, amount); },
+			_ => {
+				for j in min(c.width, MAX_WEIGHTS) {
+					let old = pose_w[i * MAX_WEIGHTS + j];
+					pose_w[i * MAX_WEIGHTS + j] = old + (sample(c, t, j) - old) * amount;
+				}
+			},
+		}
+	}
+}
+
+fn local_matrix(i int) gfx::mat4 {
+	let n = gltf::nodes[i];
+	if n.has_matrix { n.matrix } else { linalg::compose(pose_t[i], pose_r[i], pose_s[i]) }
+}
+
+// World matrices for the asset's scene, placed by `root` (the asset's transform in the world).
+fn update(asset int, root gfx::mat4) {
+	grow();
+	let a = gltf::assets[asset];
+	var stack int[>..<] = [];
+	for k in a.roots.count {
+		let r = gltf::ints[a.roots.first + k];
+		world[r] = gfx::mul(root, local_matrix(r));
+		stack.push(r);
+	}
+	var guard_steps = 0;
+	while stack.len > 0 && guard_steps < 1000000 {
+		guard_steps += 1;
+		let i = stack.pop();
+		let ch = gltf::nodes[i].children;
+		for k in ch.count {
+			let c = gltf::ints[ch.first + k];
+			world[c] = gfx::mul(world[i], local_matrix(c));
+			stack.push(c);
+		}
+	}
+}
+
+// Joint matrices of a skin in world space (vertices are then drawn with an identity model).
+fn joints(skin int, out gfx::mat4[>..]&) {
+	out.clear();
+	let s = gltf::skins[skin];
+	for k in s.joints.count {
+		out.push(gfx::mul(world[gltf::ints[s.joints.first + k]], gltf::matrices[s.inverse_binds.first + k]));
+	}
+}
+
+fn weight(node int, j int) f32 { pose_w[node * MAX_WEIGHTS + j] }

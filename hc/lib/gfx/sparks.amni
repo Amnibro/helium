@@ -1,0 +1,82 @@
+// sparks: GPU particles. Emission writes slots of a fixed ring on the CPU side;
+// each step a compute shader integrates every live particle in place, and the
+// colour pass of gfx.scene3d draws them as additive camera-facing discs.
+namespace sparks;
+import gfx;
+import math;
+
+struct Spark { pos_life float4, vel_span float4, rgba float4, size float4 }
+struct StepU { gravity_dt float4, world float4 }
+struct ViewU { view_proj gfx::mat4, right float4, up float4 }
+
+var capacity int = 0;
+var next int = 0;
+var buf gfx::Buffer;
+var sim gfx::ComputePipeline;
+var pipe gfx::Pipeline;
+var pending Spark[>..] = [];
+var pending_slot int[>..] = [];
+var gravity float3 = float3 { 0.0, -9.8, 0.0 };
+var drag f32 = 0.6;
+var ground f32 = 0.0;
+var bounce f32 = 0.4;
+
+fn ready() bool { capacity > 0 }
+
+fn init(count int) bool {
+	if capacity > 0 { return true; }
+	let n = max((count + 63) / 64 * 64, 64);
+	var zero byte[>..] = [];
+	for k in n * 64 { zero.push(0); }
+	buf = gfx::buffer(gfx::BUFFER_STORAGE | gfx::BUFFER_COMPUTE_WRITE, n * 64, zero[..]);
+	sim = gfx::compute_pipeline(embed_shader("shaders/spark_sim.comp"));
+	pipe = gfx::pipeline(embed_shader("shaders/spark.vert"), embed_shader("shaders/spark.frag"),
+		gfx::PipelineDesc { depth_test: true, depth_write: false, blend: gfx::BLEND_ADD, depth_compare: gfx::COMPARE_LESS_EQUAL });
+	capacity = n;
+	true
+}
+
+// One particle: life in seconds, size shrinking from size0 to size1.
+fn emit(pos float3, vel float3, life f32, rgba float4, size0 f32, size1 f32) {
+	if capacity == 0 { return; }
+	pending.push(Spark { float4 { pos.x, pos.y, pos.z, life }, float4 { vel.x, vel.y, vel.z, life }, rgba, float4 { size1, size0, 0.0, 0.0 } });
+	pending_slot.push(next);
+	next = (next + 1) % capacity;
+}
+
+// A spray of n particles around dir with the given spread (0 = a line, 1 = a hemisphere).
+fn burst(pos float3, dir float3, n int, speed f32, spread f32, life f32, rgba float4, size f32, seed int) {
+	var s = seed as uint * 2654435761 + 12345;
+	fn rnd(s uint&) f32 { s = s * 1103515245 + 12345; ((s >> 8) & 0xFFFF) as f32 / 65535.0 }
+	for k in n {
+		let jx = (rnd(s) * 2.0 - 1.0) * spread;
+		let jy = (rnd(s) * 2.0 - 1.0) * spread;
+		let jz = (rnd(s) * 2.0 - 1.0) * spread;
+		let sp = speed * (0.5 + rnd(s));
+		emit(pos, float3 { (dir.x + jx) * sp, (dir.y + jy) * sp, (dir.z + jz) * sp }, life * (0.6 + 0.4 * rnd(s)), rgba, size, size * 0.2);
+	}
+}
+
+// Uploads new particles and advances the simulation; call outside any pass.
+fn step(dt f32) {
+	if capacity == 0 { return; }
+	for p, k in pending { gfx::update_buffer(buf, pending_slot[k] * 64, bytes_of(p)); }
+	pending.clear();
+	pending_slot.clear();
+	if dt <= 0.0 { return; }
+	let rw = [buf];
+	guard gfx::begin_compute(rw[..]) else { return; }
+	gfx::bind(sim);
+	gfx::uniforms(gfx::COMPUTE, 0, StepU { float4 { gravity.x, gravity.y, gravity.z, dt }, float4 { drag, ground, bounce, capacity as f32 } });
+	gfx::dispatch(capacity / 64, 1, 1);
+	gfx::end_compute();
+}
+
+// Draws inside the current colour pass (called by gfx.scene3d).
+fn draw(view_proj gfx::mat4, right float3, up float3) {
+	if capacity == 0 { return; }
+	gfx::bind(pipe);
+	gfx::bind_storage_buffer(gfx::VERTEX, 0, buf);
+	gfx::uniforms(gfx::VERTEX, 0, ViewU { view_proj, float4 { right.x, right.y, right.z, 0.0 }, float4 { up.x, up.y, up.z, 0.0 } });
+	gfx::draw(capacity * 6);
+}

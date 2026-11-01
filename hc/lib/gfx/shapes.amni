@@ -1,0 +1,108 @@
+// shapes: procedural meshes added to the gltf pools as one-node assets, so they
+// render through gfx.scene3d exactly like loaded files.
+namespace shapes;
+import gfx;
+import math;
+import gfx.linalg;
+import gfx.gltf;
+
+fn material(rgb float3, metallic f32, roughness f32) gltf::Material {
+	var m = gltf::default_material();
+	m.base = float4 { rgb.x, rgb.y, rgb.z, 1.0 };
+	m.metallic = metallic;
+	m.roughness = roughness;
+	m
+}
+
+fn vertex(p float3, n float3, u f32, v f32, t float4) {
+	let at = gltf::verts.len;
+	for k in gltf::VERTEX_FLOATS { gltf::verts.push(0.0); }
+	gltf::verts[at + gltf::AT_POS] = p.x; gltf::verts[at + gltf::AT_POS + 1] = p.y; gltf::verts[at + gltf::AT_POS + 2] = p.z;
+	gltf::verts[at + gltf::AT_NRM] = n.x; gltf::verts[at + gltf::AT_NRM + 1] = n.y; gltf::verts[at + gltf::AT_NRM + 2] = n.z;
+	gltf::verts[at + gltf::AT_UV0] = u; gltf::verts[at + gltf::AT_UV0 + 1] = v;
+	gltf::verts[at + gltf::AT_TAN] = t.x; gltf::verts[at + gltf::AT_TAN + 1] = t.y; gltf::verts[at + gltf::AT_TAN + 2] = t.z; gltf::verts[at + gltf::AT_TAN + 3] = t.w;
+	for k in 4 { gltf::verts[at + gltf::AT_COL + k] = 1.0; }
+	gltf::verts[at + gltf::AT_WEIGHT] = 1.0;
+}
+
+// Wraps vertices [vfirst, end) and indices [ifirst, end) into an asset.
+fn finish(vfirst int, ifirst int, lo float3, hi float3, m gltf::Material) int {
+	let vcount = gltf::verts.len / gltf::VERTEX_FLOATS - vfirst;
+	gltf::materials.push(m);
+	gltf::prims.push(gltf::Primitive { vfirst, vcount, ifirst, gltf::indices.len - ifirst, gltf::materials.len - 1, gltf::morphs.len / gltf::MORPH_FLOATS, 0, lo, hi, true, false });
+	gltf::meshes.push(gltf::Mesh { gltf::Span { gltf::prims.len - 1, 1 }, gltf::Span { gltf::floats.len, 0 }, gltf::Span { 0, 0 } });
+	gltf::nodes.push(gltf::Node {
+		parent: -1, mesh: gltf::meshes.len - 1, skin: -1, children: gltf::Span { gltf::ints.len, 0 },
+		t: float3 { 0.0, 0.0, 0.0 }, r: linalg::quat_identity(), s: float3 { 1.0, 1.0, 1.0 },
+		matrix: gfx::mat4_identity, has_matrix: false, weights: gltf::Span { gltf::floats.len, 0 }, name: gltf::Span { 0, 0 }
+	});
+	gltf::ints.push(gltf::nodes.len - 1);
+	gltf::assets.push(gltf::Asset {
+		meshes: gltf::Span { gltf::meshes.len - 1, 1 }, nodes: gltf::Span { gltf::nodes.len - 1, 1 },
+		materials: gltf::Span { gltf::materials.len - 1, 1 }, textures: gltf::Span { gltf::textures.len, 0 },
+		images: gltf::Span { gltf::images.len, 0 }, skins: gltf::Span { gltf::skins.len, 0 },
+		animations: gltf::Span { gltf::animations.len, 0 }, roots: gltf::Span { gltf::ints.len - 1, 1 }, ok: true
+	});
+	gltf::assets.len - 1
+}
+
+// UV sphere: `around` segments in longitude, `down` in latitude.
+fn sphere(radius f32, around int, down int, m gltf::Material) int {
+	let vfirst = gltf::verts.len / gltf::VERTEX_FLOATS;
+	let ifirst = gltf::indices.len;
+	for j in down + 1 {
+		let th = linalg::f(PI * j as real / down as real);
+		for i in around + 1 {
+			let ph = linalg::f(2.0 * PI * i as real / around as real);
+			let st = linalg::f(sin(th as real));
+			let n = linalg::v3(st * linalg::f(cos(ph as real)), linalg::f(cos(th as real)), -st * linalg::f(sin(ph as real)));
+			let t = float4 { -linalg::f(sin(ph as real)), 0.0, -linalg::f(cos(ph as real)), 1.0 };
+			vertex(linalg::v3(n.x * radius, n.y * radius, n.z * radius), n, i as f32 / around as f32, j as f32 / down as f32, t);
+		}
+	}
+	for j in down {
+		for i in around {
+			let a = (j * (around + 1) + i) as u32;
+			let b = a + (around + 1) as u32;
+			gltf::indices.append([a, b, a + 1, a + 1, b, b + 1]);
+		}
+	}
+	finish(vfirst, ifirst, linalg::v3(-radius, -radius, -radius), linalg::v3(radius, radius, radius), m)
+}
+
+// Square in the xz plane facing +y.
+fn plane(half f32, m gltf::Material) int {
+	let vfirst = gltf::verts.len / gltf::VERTEX_FLOATS;
+	let ifirst = gltf::indices.len;
+	let n = linalg::v3(0.0, 1.0, 0.0);
+	let t = float4 { 1.0, 0.0, 0.0, 1.0 };
+	vertex(linalg::v3(-half, 0.0, -half), n, 0.0, 0.0, t);
+	vertex(linalg::v3(-half, 0.0, half), n, 0.0, 1.0, t);
+	vertex(linalg::v3(half, 0.0, half), n, 1.0, 1.0, t);
+	vertex(linalg::v3(half, 0.0, -half), n, 1.0, 0.0, t);
+	gltf::indices.append([0 as u32, 1, 2, 0, 2, 3]);
+	finish(vfirst, ifirst, linalg::v3(-half, 0.0, -half), linalg::v3(half, 0.0, half), m)
+}
+
+// Axis-aligned box centred on the origin.
+fn cube(half float3, m gltf::Material) int {
+	let vfirst = gltf::verts.len / gltf::VERTEX_FLOATS;
+	let ifirst = gltf::indices.len;
+	let axes = [linalg::v3(1.0, 0.0, 0.0), linalg::v3(0.0, 1.0, 0.0), linalg::v3(0.0, 0.0, 1.0)];
+	for face in 6 {
+		let a = face / 2;
+		let sgn f32 = if face % 2 == 0 { 1.0 } else { -1.0 };
+		let n = linalg::v3(axes[a].x * sgn, axes[a].y * sgn, axes[a].z * sgn);
+		let u = axes[(a + 1) % 3];
+		let v = linalg::cross3(n, u);
+		let base = (gltf::verts.len / gltf::VERTEX_FLOATS - vfirst) as u32;
+		for c in 4 {
+			let su f32 = if c == 1 || c == 2 { 1.0 } else { -1.0 };
+			let sv f32 = if c >= 2 { 1.0 } else { -1.0 };
+			let p = linalg::v3((n.x + u.x * su + v.x * sv) * half.x, (n.y + u.y * su + v.y * sv) * half.y, (n.z + u.z * su + v.z * sv) * half.z);
+			vertex(p, n, (su + 1.0) * 0.5, (1.0 - sv) * 0.5, float4 { u.x, u.y, u.z, 1.0 });
+		}
+		gltf::indices.append([base, base + 1, base + 2, base, base + 2, base + 3]);
+	}
+	finish(vfirst, ifirst, linalg::v3(-half.x, -half.y, -half.z), half, m)
+}
