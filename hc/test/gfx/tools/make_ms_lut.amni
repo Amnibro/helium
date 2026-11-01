@@ -44,6 +44,12 @@ let MS_FLOOR = 0.25;
 let GRAZE_BAR = 0.03;
 let GRAZE_CORNER_GAIN = 0.06;
 
+// N4, pre-registered: check 0, the stored nodes against the independent integrator
+let REF_REL_BAR = 0.0025;
+let REF_B_BAR = 0.001;
+// N4, pre-registered: gain bar below mu 0.01 with the shader's corner cap (was 0.06)
+let GRAZE_CORNER_GAIN_CAP = 0.03;
+
 // E and B of the lobe at (mu, rough), see the header
 fn albedo(mu real, rough real) real, real {
 	let n_v = max(mu, 0.0001);

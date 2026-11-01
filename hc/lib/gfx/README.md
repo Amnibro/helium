@@ -275,6 +275,19 @@ reported as a failure and fixed in the renderer, not in the gate.
   (tile mean < 1.5 %, every pixel < 2.5 %) are kept and are re-justified by the
   replay's own vs-1 error, printed per tile.
 
+* **N4 LUT convergence and the grazing cap** (`make_ms_lut`). The generator samples
+  the half-vector polar angle with a graded mapping (u1 = 1 - (1 - s)^3) that
+  crowds samples toward grazing half vectors. Check 0, new: every one of the 32 x 32
+  stored (16-bit) nodes is compared with an independent integrator using a
+  different scheme (theta_h through tan(theta_h) = alpha tan(pi s / 2), D written
+  out, phi by a midpoint rule over the analytic valid interval only, 2048 x 48):
+  E and the dielectric E_F within 0.25 % relative, B within 0.001 absolute.
+  Check 2 now uses that integrator as truth, and the shader caps the metal gain at
+  silhouettes: below sqrt(n.v) * 31 < 3 the compensation reads the largest E of the
+  four bilinear corners (the diffuse weight keeps the bilinear E_F). Bars of check
+  2: every gain and loss < 3 % for n.v >= 0.01 (unchanged), and gain < 3 % below
+  0.01 (was 6 %); the loss there is reported.
+
 Raw output of each recorded run is in `hc/test/gfx/results/`; `gfxtest.sh` writes
 the header itself (commit, command, driver, GPU, packages) into `$GFX_OUT/results.txt`.
 With no GPU it prints `SKIPPED (no GPU)` after the CPU checks (`GFX_REQUIRE_GPU=1`
