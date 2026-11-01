@@ -53,8 +53,6 @@ fn two_bone_ik(sk Skeleton&, p Pose&, m Model&, a i32, b i32, c i32, target floa
 	let ab = safe_norm(pb - pa, ac);
 	let ba = ab * -1.0;
 	let bc = safe_norm(pc - pb, ac);
-	let a0 = acos_c(dot(ac, ab));
-	let b0 = acos_c(dot(ba, bc));
 	let b1 = clamp(kt, 1.0e-3, PI);
 	let d = max(sqrt(max(l1 * l1 + l2 * l2 - 2.0 * l1 * l2 * cos(b1), 0.0)), lo);
 	let a1 = acos_c((l2 * l2 - l1 * l1 - d * d) / (-2.0 * l1 * d));
@@ -65,11 +63,19 @@ fn two_bone_ik(sk Skeleton&, p Pose&, m Model&, a i32, b i32, c i32, target floa
 	if length_sq(n) < 1.0e-10 { n = cross(ac, ab); }
 	if length_sq(n) < 1.0e-10 { n = cross(ac, float3 { 1.0, 0.0, 0.0 }); }
 	n = normalize(n);
-	// signed current angles about n: a knee bent away from the pole side
-	// is past straight, so its interior angle is 2pi - b0 (and -a0 at a);
-	// both are continuous with the unflipped values at straight
-	var a0s = a0; var b0s = b0;
-	if dot(cross(ac, ab), n) < 0.0 { a0s = 0.0 - a0; b0s = 2.0 * PI - b0; }
+	// signed current angles about n, measured in the bend plane (the plane
+	// normal to n): a knee bent away from the pole side is past straight,
+	// so its interior angle is 2pi - b0 (and -a0 at a). Measuring in the
+	// plane keeps them continuous when the animated knee swings sideways
+	// across the pole plane (a sign test on the 3D angles jumped by 2*a0 and
+	// 2*(pi - b0) there: a one-frame thigh/shin pop of a near-straight leg)
+	let ac_p = safe_norm(ac - n * dot(ac, n), ac);
+	let ab_p = safe_norm(ab - n * dot(ab, n), ab);
+	let bc_p = safe_norm(bc - n * dot(bc, n), bc);
+	let ba_p = ab_p * -1.0;
+	let a0s = atan2(dot(cross(ac_p, ab_p), n), dot(ac_p, ab_p));
+	var b0s = atan2(dot(cross(ba_p, bc_p), n), dot(ba_p, bc_p));
+	if b0s < 0.0 { b0s += 2.0 * PI; }
 	let q0 = qaxis(n, a1 - a0s);          // opens the angle at a
 	let q1 = qaxis(n, b1 - b0s);          // opens the angle at b
 	// apply the bends: c moves about b by q1, then everything about a by q0
