@@ -7,6 +7,8 @@ layout(location = 1) in vec3 in_nrm;
 layout(location = 2) in vec4 in_tan;
 layout(location = 3) in vec4 in_uv;
 layout(location = 4) in vec4 in_col;
+layout(location = 5) in vec4 in_cur;
+layout(location = 6) in vec4 in_prev;
 
 layout(set = 2, binding = 0) uniform sampler2D tex_base;
 layout(set = 2, binding = 1) uniform sampler2D tex_mr;
@@ -44,6 +46,7 @@ layout(set = 3, binding = 1) uniform Surface {
 };
 
 layout(location = 0) out vec4 out_rgba;
+layout(location = 1) out vec4 out_motion;   // xy: uv now minus uv last frame, z: view depth, w: coverage
 
 vec2 pick_uv(float set) { return set > 0.5 ? in_uv.zw : in_uv.xy; }
 
@@ -127,9 +130,21 @@ vec3 ambient_light(vec3 n, vec3 v, vec3 l, vec3 base_rgb, float metal, float rou
 	return mix(dielectric, fm * env, metal);
 }
 
+// Screen-space motion of this surface point since last frame, in uv units
+// (positive x to the right, positive y down), from the unjittered clip positions.
+// A point that was behind the camera last frame gets a large vector so the
+// temporal pass treats its history as missing. Blended surfaces write coverage 0,
+// which leaves the opaque motion behind them in place.
+vec4 motion_vector() {
+	vec2 now = in_cur.xy / in_cur.w;
+	vec2 d = in_prev.w > 1e-5 ? (now - in_prev.xy / in_prev.w) * vec2(0.5, -0.5) : vec2(4.0);
+	return vec4(d, in_cur.w, alpha.x > 1.5 ? 0.0 : 1.0);
+}
+
 void main() {
 	vec4 tint = base * in_col * texture(tex_base, pick_uv(uv_sets.x));
 	if (alpha.x > 0.5 && alpha.x < 1.5 && tint.a < alpha.y) discard;
+	out_motion = motion_vector();
 	if (emissive.w > 0.5) { out_rgba = vec4(tint.rgb, alpha.x > 1.5 ? tint.a : 1.0); return; }
 
 	vec3 n = normalize(in_nrm);

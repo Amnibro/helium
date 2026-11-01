@@ -17,11 +17,13 @@ layout(set = 1, binding = 0) uniform Draw {
 	mat4 model;
 	mat4 model_normal;
 	mat4 view_proj;
-	mat4 prev_model;     // reserved for a velocity pass
+	mat4 prev_model;     // last frame's model matrix (velocity)
 	vec4 deform;         // x joint base (-1 none), y morph first, z targets, w first vertex
 	vec4 weights_lo;
 	vec4 weights_hi;
-	vec4 misc;           // x vertex count
+	vec4 misc;           // x vertex count, y last frame's joint base (-1: reuse this frame's)
+	mat4 cur_vp;         // this frame's view-projection without the sub-pixel jitter
+	mat4 prev_vp;        // last frame's view-projection without jitter
 };
 
 layout(location = 0) out vec3 out_world;
@@ -29,9 +31,19 @@ layout(location = 1) out vec3 out_nrm;
 layout(location = 2) out vec4 out_tan;
 layout(location = 3) out vec4 out_uv;
 layout(location = 4) out vec4 out_col;
+layout(location = 5) out vec4 out_cur;   // unjittered clip position, this frame
+layout(location = 6) out vec4 out_prev;  // unjittered clip position, last frame
 
 mat4 joint(int j) {
 	return mat4(joint_cols[j * 4], joint_cols[j * 4 + 1], joint_cols[j * 4 + 2], joint_cols[j * 4 + 3]);
+}
+
+// linear blend of the four joint matrices the vertex is bound to
+mat4 skin(int base) {
+	return joint(base + int(in_joint.x)) * in_weight.x
+		+ joint(base + int(in_joint.y)) * in_weight.y
+		+ joint(base + int(in_joint.z)) * in_weight.z
+		+ joint(base + int(in_joint.w)) * in_weight.w;
 }
 
 float morph_weight(int t) {
@@ -53,14 +65,12 @@ void main() {
 		}
 	}
 	mat4 m = model;
+	mat4 pm = prev_model;
 	vec3 wn = (model_normal * vec4(n, 0.0)).xyz;
 	if (deform.x >= 0.0) {
-		int base = int(deform.x);
-		mat4 s = joint(base + int(in_joint.x)) * in_weight.x
-			+ joint(base + int(in_joint.y)) * in_weight.y
-			+ joint(base + int(in_joint.z)) * in_weight.z
-			+ joint(base + int(in_joint.w)) * in_weight.w;
+		mat4 s = skin(int(deform.x));
 		m = s;
+		pm = misc.y >= 0.0 ? skin(int(misc.y)) : s;
 		// cofactor columns: the inverse transpose up to a positive scale
 		vec3 c0 = s[0].xyz;
 		vec3 c1 = s[1].xyz;
@@ -73,5 +83,7 @@ void main() {
 	out_tan = vec4((m * vec4(in_tan.xyz, 0.0)).xyz, in_tan.w);
 	out_uv = vec4(in_uv0, in_uv1);
 	out_col = in_col;
+	out_cur = cur_vp * w;
+	out_prev = prev_vp * (pm * vec4(p, 1.0));
 	gl_Position = view_proj * w;
 }
