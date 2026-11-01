@@ -60,9 +60,43 @@ measures it, `sdf_rect` adds flat quads (uv.x < 0) to the same stream, and
 (y down, alpha-blended, no clear). Edges are anti-aliased with `fwidth`, so
 text stays sharp from ~8 px to headline sizes; outline quads use uv.x >= 2.
 
-/hc/gfxtest.sh build/hcn` (CPU checks plus one headless GPU frame;
+## Test
+
+`hc/test/gfx/gfx_smoke.amni` checks the CPU side (half floats, quaternions,
+matrices, a glTF binary round trip through `gfx.glb`, the SDF font) against
+`gfx_smoke.out`, then renders one headless frame with PBR, shadows, SSAO,
+bloom, the filmic tonemap, GPU particles and SDF text and checks it is lit.
+Run it with `tools/hc/gfxtest.sh build/hcn` (no GPU: CPU part only;
 `GPU_LOCK=<file>` serializes the GPU run on shared machines).
 
-Origin: the Pomling Helium engine (`eng/`, commit cbd6348) as vendored and
-extended in the Jedi-King Helium PoC (ORM/normal maps, 12 point lights, rim
-light, analytic tonemap, GPU particles, SDF HUD font), made game-independent here.
+## Provenance and licenses
+
+- `render`, `glb`, `anim`, `m3d`, `half`, `png`, `jpeg`, `image` and
+  `shaders/` are derived from the
+  Jedi-King Helium proof of concept, `apps/jedi-king-he/eng/` in amni-arena
+  (branch `auron/jk-helium-poc`, commit 37cc11c).
+- That `eng/` was vendored from Pomling's Helium engine,
+  `pomling-helium/helium/eng` at commit cbd6348.
+- The Pomling renderer is a Helium port of Bevy's renderer
+  (https://github.com/bevyengine/bevy, MIT OR Apache-2.0, used here under MIT).
+  Several pieces follow Bevy closely: the PBR shading, the `StandardMaterial`
+  flags, the `pbr_input_from_standard_material` and lighting functions, the
+  env-BRDF approximation, the shadow cascades and filtering, the bloom with
+  its "natural" energy-conserving composite, the fog falloff modes, and the
+  tonemap's display transforms and grading. The screen-space AO passes are
+  the Pomling engine's own. The ORM/normal maps, 12 point lights, rim light,
+  analytic tonemap curve and GPU particles were added in Jedi-King.
+- Bevy's PBR lighting functions are in turn adapted from Google's Filament
+  (Apache-2.0). The ACES fitted curve in `tonemap.frag` follows Stephen
+  Hill's fit (BakingLab, MIT), as Bevy's does.
+- The Bevy MIT license text is in NOTICE at the repository root.
+- `sdf_font` is original to this library (glyphs defined as strokes in code,
+  no font files). The Bevy-derived parts are the renderer and its shaders;
+  the decoders and math helpers are the Pomling engine's own.
+- No third-party data is included. The Tony McMapface LUT that Pomling used
+  was dropped in Jedi-King (tonemap modes 1 and 2 are analytic) and is not
+  part of this library.
+
+When upstreaming, the game-specific material kinds and shaders were removed,
+comments were made game-neutral, imports moved from `eng.*` to `gfx.*`, and
+`glb` was ported to the `json.he` Doc API used by Helium main.

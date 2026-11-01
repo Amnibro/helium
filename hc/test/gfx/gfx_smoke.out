@@ -8,6 +8,7 @@ qslerp w 924
 minv 500 -1000 4000
 srgb 2140
 sphere 153 verts 768 indices
+glb prims 1 verts 4 idx 6 mat stone rough 85 hi 6 extras {"tag":7}
 sdf adv 18000 1083
 sdf verts 96 x0 -288 I off -300
 sdf atlas 1024x512 inside 31210

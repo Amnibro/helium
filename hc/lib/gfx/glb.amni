@@ -44,40 +44,24 @@ var PIX byte[>..];
 var IPX byte[>..];
 var FILES GFile[>..];
 var GBUF byte[>..];
-var GDEC byte[>..];
+var JD json::Doc;
 var GERR byte[>..];
 fn span(s const byte[:]) Span { let a = TXT.len; TXT.append(s); Span { a, s.len } }
 fn sp(x Span) const byte[:] { TXT[x.a..x.a + x.n] }
-recursive fn jwrite(n json::Node&, out byte[>..]&) {
-	match n.val {
-		Null => out.append("null"),
-		Bool b => out.append(if b.v { "true" } else { "false" }),
-		Int i => json::format_int(out, i.v),
-		UInt u => format(out, u.v),
-		Num x => json::format_number(out, x.v),
-		Str t => json::format_string(out, t.s),
-		Arr => { out.push('['); var c = n.first; var f = true; while c { if !f { out.push(','); } f = false; jwrite(c, out); c .= c.next; } out.push(']'); },
-		Obj => { out.push('{'); var c = n.first; var f = true; while c { if !f { out.push(','); } f = false; json::format_string(out, c.key); out.push(':'); jwrite(c, out); c .= c.next; } out.push('}'); },
-	}
-}
-fn extras_of(n json::Node?) Span { let e = json::member(n, "extras"); if e { let a = TXT.len; jwrite(e, TXT); Span { a, TXT.len - a } } else { Span { 0, 0 } } }
+// Object member lookup on the parsed glTF JSON (JD); -1 when absent.
+fn jm(n int, k const byte[:]) int { if n < 0 || JD.nodes[n].kind != json::K_OBJ { return -1; } var c = JD.nodes[n].first; while c >= 0 { if JD.nodes[c].name[..] == k { return c; } c = JD.nodes[c].next; } -1 }
+fn extras_of(n int) Span { let e = jm(n, "extras"); if e >= 0 { let a = TXT.len; json::format_node(TXT, JD, e); Span { a, TXT.len - a } } else { Span { 0, 0 } } }
 fn pick(s const byte[:], opts const byte[:][:]) int { for o, i in opts { if o == s { return i; } } opts.len }
-fn ji(n json::Node?, k const byte[:], d int) int { let v, ok = json::as_i64(json::member(n, k)); if ok { v } else { d } }
-fn jf(n json::Node?, k const byte[:], d f32) f32 { let v, ok = json::as_f64(json::member(n, k)); if ok { v as f32 } else { d } }
-fn jb(n json::Node?, k const byte[:]) bool { let v, ok = json::as_bool(json::member(n, k)); ok && v }
-fn js(n json::Node?, k const byte[:]) const byte[:] { let v, ok = json::as_string(json::member(n, k)); if ok { v } else { "" } }
-fn jfa(n json::Node?, k const byte[:], out f32[:]) { let a = json::member(n, k); var i = 0; if a { json::each(a) { if i < out.len { let v, ok = json::as_f64(it); out[i] = v as f32; } i++; }; } }
+fn ji(n int, k const byte[:], d int) int { let v, ok = json::as_i64(JD, jm(n, k)); if ok { v } else { d } }
+fn jf(n int, k const byte[:], d f32) f32 { let v, ok = json::as_f64(JD, jm(n, k)); if ok { v as f32 } else { d } }
+fn jb(n int, k const byte[:]) bool { let v, ok = json::as_bool(JD, jm(n, k)); ok && v }
+fn js(n int, k const byte[:]) const byte[:] { let v, ok = json::as_string(JD, jm(n, k)); if ok { v } else { "" } }
+fn jfa(n int, k const byte[:], out f32[:]) { let a = jm(n, k); var i = 0; if a >= 0 { json::each(JD, a) { if i < out.len { let v, ok = json::as_f64(JD, it); out[i] = v as f32; } i++; }; } }
 fn u16le(b const byte[:], o int) u32 { (b[o] as u32) | ((b[o + 1] as u32) << 8) }
 fn u32le(b const byte[:], o int) u32 { (b[o] as u32) | ((b[o + 1] as u32) << 8) | ((b[o + 2] as u32) << 16) | ((b[o + 3] as u32) << 24) }
 fn f32le(b const byte[:], o int) f32 { binary::f32_from_bits(u32le(b, o)) }
 struct Acc { off int, count int, nc int, stride int, ct int, norm bool }
-fn nth(arr json::Node?, i int) json::Node? {
-	if !arr { return null; }
-	var c = arr.first;
-	var k = 0;
-	while c { if k == i { return c; } k++; c .= c.next; }
-	return null;
-}
+fn nth(arr int, i int) int { if i < 0 { -1 } else { json::element(JD, arr, i) } }
 fn comp_size(ct int) int { if ct == 5120 || ct == 5121 { 1 } else { if ct == 5122 || ct == 5123 { 2 } else { 4 } } }
 fn read_comp(b const byte[:], o int, ct int, norm bool) f32 {
 	if ct == 5126 { return f32le(b, o); }
@@ -97,15 +81,13 @@ fn glb_load(path const byte[:]) int {
 	if !main_glb_ok(b) { return glb_fail("not a glb"); }
 	let jl = u32le(b, 12) as int;
 	let bin = 20 + jl + 8;
-	var doc json::Node[>..] = [];
-	GDEC.clear();
-	let root, err = json::parse(b[20..20 + jl], doc, GDEC);
-	if !root { return glb_fail(err); }
+	let root, err = json::parse(b[20..20 + jl], JD);
+	if root < 0 { return glb_fail(err); }
 	var accs Acc[>..] = [];
-	let bvs = json::member(root, "bufferViews");
-	let jaccs = json::member(root, "accessors");
-	if jaccs {
-		json::each(jaccs) {
+	let bvs = jm(root, "bufferViews");
+	let jaccs = jm(root, "accessors");
+	if jaccs >= 0 {
+		json::each(JD, jaccs) {
 			let bv = nth(bvs, ji(it, "bufferView", 0));
 			let nc = [1, 2, 3, 4, 16, 4][pick(js(it, "type"), ["SCALAR", "VEC2", "VEC3", "VEC4", "MAT4"])];
 			let ct = ji(it, "componentType", 5126);
@@ -115,38 +97,38 @@ fn glb_load(path const byte[:]) int {
 	let fi = FILES.len;
 	var f = GFile { name: span(path), mfirst: MESHES.len, nfirst: NODES.len, sfirst: SKINS.len, cfirst: CLIPS.len, matfirst: MATS.len, imgfirst: IMGS.len, extras: extras_of(root), .. };
 	var isrc int[2][>..] = [];
-	let jimgs = json::member(root, "images");
-	if jimgs { json::each(jimgs) { let bv = nth(bvs, ji(it, "bufferView", -1)); if bv { isrc.push([bin + ji(bv, "byteOffset", 0), ji(bv, "byteLength", 0)]); } else { isrc.push([0, 0]); } IMGS.push(GImg { 0, 0, 0 }); }; }
-	let jtex = json::member(root, "textures");
-	let jmats = json::member(root, "materials");
-	if jmats {
-		json::each(jmats) {
-			let pbr = json::member(it, "pbrMetallicRoughness");
+	let jimgs = jm(root, "images");
+	if jimgs >= 0 { json::each(JD, jimgs) { let bv = nth(bvs, ji(it, "bufferView", -1)); if bv >= 0 { isrc.push([bin + ji(bv, "byteOffset", 0), ji(bv, "byteLength", 0)]); } else { isrc.push([0, 0]); } IMGS.push(GImg { 0, 0, 0 }); }; }
+	let jtex = jm(root, "textures");
+	let jmats = jm(root, "materials");
+	if jmats >= 0 {
+		json::each(JD, jmats) {
+			let pbr = jm(it, "pbrMetallicRoughness");
 			var m = GMat { file: fi, name: span(js(it, "name")), base: [1.0, 1.0, 1.0, 1.0], emis: [0.0, 0.0, 0.0], rough: jf(pbr, "roughnessFactor", 1.0), metal: jf(pbr, "metallicFactor", 1.0), img: -1, alpha: 0, cutoff: jf(it, "alphaCutoff", 0.5), double: jb(it, "doubleSided"), orm: -1, occ: -1, nrm: -1 };
 			jfa(pbr, "baseColorFactor", m.base);
 			jfa(it, "emissiveFactor", m.emis);
-			let bt = json::member(pbr, "baseColorTexture");
-			if bt { let t = nth(jtex, ji(bt, "index", -1)); if t { let s = ji(t, "source", -1); if s >= 0 { m.img = f.imgfirst + s; } } }
+			let bt = jm(pbr, "baseColorTexture");
+			if bt >= 0 { let t = nth(jtex, ji(bt, "index", -1)); if t >= 0 { let s = ji(t, "source", -1); if s >= 0 { m.img = f.imgfirst + s; } } }
 			// Metallic-roughness (ORM), occlusion and normal image indices are kept.
-			let mt = json::member(pbr, "metallicRoughnessTexture");
-			if mt { let t = nth(jtex, ji(mt, "index", -1)); if t { let s = ji(t, "source", -1); if s >= 0 { m.orm = f.imgfirst + s; } } }
-			let ot = json::member(it, "occlusionTexture");
-			if ot { let t = nth(jtex, ji(ot, "index", -1)); if t { let s = ji(t, "source", -1); if s >= 0 { m.occ = f.imgfirst + s; } } }
-			let nt = json::member(it, "normalTexture");
-			if nt { let t = nth(jtex, ji(nt, "index", -1)); if t { let s = ji(t, "source", -1); if s >= 0 { m.nrm = f.imgfirst + s; } } }
+			let mt = jm(pbr, "metallicRoughnessTexture");
+			if mt >= 0 { let t = nth(jtex, ji(mt, "index", -1)); if t >= 0 { let s = ji(t, "source", -1); if s >= 0 { m.orm = f.imgfirst + s; } } }
+			let ot = jm(it, "occlusionTexture");
+			if ot >= 0 { let t = nth(jtex, ji(ot, "index", -1)); if t >= 0 { let s = ji(t, "source", -1); if s >= 0 { m.occ = f.imgfirst + s; } } }
+			let nt = jm(it, "normalTexture");
+			if nt >= 0 { let t = nth(jtex, ji(nt, "index", -1)); if t >= 0 { let s = ji(t, "source", -1); if s >= 0 { m.nrm = f.imgfirst + s; } } }
 			m.alpha = ([0, 1, 2, 0][pick(js(it, "alphaMode"), ["OPAQUE", "MASK", "BLEND"])]) as! byte;
 			MATS.push(m);
 		};
 	}
-	let jmeshes = json::member(root, "meshes");
-	if jmeshes {
-		json::each(jmeshes) {
+	let jmeshes = jm(root, "meshes");
+	if jmeshes >= 0 {
+		json::each(JD, jmeshes) {
 			let mi = MESHES.len;
 			var gm = GMesh { fi, span(js(it, "name")), PRIMS.len, 0, extras_of(it) };
-			let prims = json::member(it, "primitives");
-			if prims {
-				json::each(prims) {
-					let at = json::member(it, "attributes");
+			let prims = jm(it, "primitives");
+			if prims >= 0 {
+				json::each(JD, prims) {
+					let at = jm(it, "attributes");
 					let pa = ji(at, "POSITION", -1);
 					if pa >= 0 {
 						let n = accs[pa].count;
@@ -198,9 +180,9 @@ fn glb_load(path const byte[:]) int {
 						let ia = ji(it, "indices", -1);
 						if ia >= 0 { let a = accs[ia]; let cs = comp_size(a.ct); for k in a.count { let o = a.off + k * cs; IDX.push(if cs == 4 { u32le(b, o) } else { if cs == 2 { u16le(b, o) } else { b[o] as u32 } }); } pr.icount = a.count; }
 						else { for k in n { IDX.push(k as! u32); } pr.icount = n; }
-						let tg = json::member(it, "targets");
-						if tg {
-							json::each(tg) {
+						let tg = jm(it, "targets");
+						if tg >= 0 {
+							json::each(JD, tg) {
 								pr.nmorph++;
 								let tp = ji(it, "POSITION", -1);
 								let tn = ji(it, "NORMAL", -1);
@@ -218,9 +200,9 @@ fn glb_load(path const byte[:]) int {
 			MESHES.push(gm);
 		};
 	}
-	let jnodes = json::member(root, "nodes");
-	if jnodes {
-		json::each(jnodes) {
+	let jnodes = jm(root, "nodes");
+	if jnodes >= 0 {
+		json::each(JD, jnodes) {
 			var nd = GNode { file: fi, name: span(js(it, "name")), parent: -1, mesh: ji(it, "mesh", -1), skin: ji(it, "skin", -1), t: [0.0, 0.0, 0.0], r: [0.0, 0.0, 0.0, 1.0], s: [1.0, 1.0, 1.0], extras: extras_of(it) };
 			if nd.mesh >= 0 { nd.mesh += f.mfirst; }
 			if nd.skin >= 0 { nd.skin += f.sfirst; }
@@ -230,28 +212,28 @@ fn glb_load(path const byte[:]) int {
 			NODES.push(nd);
 		};
 		var k = 0;
-		json::each(jnodes) { let ch = json::member(it, "children"); if ch { json::each(ch) { let v, ok = json::as_i64(it); if ok { NODES[f.nfirst + v].parent = f.nfirst + k; } }; } k++; };
+		json::each(JD, jnodes) { let ch = jm(it, "children"); if ch >= 0 { json::each(JD, ch) { let v, ok = json::as_i64(JD, it); if ok { NODES[f.nfirst + v].parent = f.nfirst + k; } }; } k++; };
 	}
-	let jskins = json::member(root, "skins");
-	if jskins {
-		json::each(jskins) {
+	let jskins = jm(root, "skins");
+	if jskins >= 0 {
+		json::each(JD, jskins) {
 			var s = GSkin { fi, JOINTS.len, 0, IBMS.len };
-			let jj = json::member(it, "joints");
-			if jj { json::each(jj) { let v, ok = json::as_i64(it); JOINTS.push(f.nfirst + v); s.jn++; }; }
+			let jj = jm(it, "joints");
+			if jj >= 0 { json::each(JD, jj) { let v, ok = json::as_i64(JD, it); JOINTS.push(f.nfirst + v); s.jn++; }; }
 			let ia = ji(it, "inverseBindMatrices", -1);
 			for q in s.jn { var m f32[16] = [1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0]; if ia >= 0 { let a = accs[ia]; for k in 16 { m[k] = f32le(b, a.off + q * a.stride + k * 4); } } IBMS.push(m); }
 			SKINS.push(s);
 		};
 	}
-	let janims = json::member(root, "animations");
-	if janims {
-		json::each(janims) {
+	let janims = jm(root, "animations");
+	if janims >= 0 {
+		json::each(JD, janims) {
 			var c = GClip { fi, span(js(it, "name")), CHANS.len, 0, 0.0 };
-			let smp = json::member(it, "samplers");
-			let chs = json::member(it, "channels");
-			if chs {
-				json::each(chs) {
-					let tg = json::member(it, "target");
+			let smp = jm(it, "samplers");
+			let chs = jm(it, "channels");
+			if chs >= 0 {
+				json::each(JD, chs) {
+					let tg = jm(it, "target");
 					let s = nth(smp, ji(it, "sampler", 0));
 					let ia = ji(s, "input", -1);
 					let oa = ji(s, "output", -1);
