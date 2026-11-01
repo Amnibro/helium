@@ -1,18 +1,95 @@
 # Gap #5: clean-room Helium animation runtime. STATUS (newest first)
 
-Owner: Anthony Reffelt · Lead: Kimahri · Review: **Lulu (accepted with items; items fixed; nothing pushed)**
+Owner: Anthony Reffelt · Lead: Kimahri · Review: **Lulu (round 3: ACCEPT; remaining LOW items fixed; nothing pushed)**
 Repo: Amnibro/helium, worktree `/workspace/helium-anim`, local branch `kimahri/anim-runtime` (cut from main c188cec).
 **Local commits only, not pushed.** main and CI workflows are untouched.
+
+## 2026-11-01 ~07:50 AST: round 3 accepted, LOW items fixed (local commits, not pushed)
+
+Lulu's round 3 fix-check of 58d9d457 / 98f9559 ("Round 3" in `/workspace/lulu_reviews/helium-anim/REVIEW.md`) was **ACCEPT**, with no BLOCKER, HIGH or MEDIUM findings. She ruled the 1.8–4.2 m/s band a legitimate design change. Her remaining LOW items are done.
+
+**Commits on `kimahri/anim-runtime`** (author Amnibro):
+- `b82615cf`: **R3-L1.** The tangent handedness flips with the normal: w' = t.w · sign(det A3) in `skin.amni` and `skin.comp`. `anim_gpuskin` adds negative-scale characters, and adds the 9060 XT rerun as `gpuskin_results_9060xt_r3_2026-11-01.txt`.
+- `ea93a3db`: **Foot drift.** Adds a foot-sliding test for the walk/run blend band: `hc/test/anim/anim_drift.amni`, with raw results in `drift_results_2026-11-01.txt`. DESIGN.md has a "Foot drift" section.
+- The commit that carries this entry: STATUS (CPU skinning note, hr01 dt 1.34e-6, D-L4/D-L6 labels).
+
+On `kimahri/jk-anim`, a RESULTS.md commit relabels the spring item D-L6 → D-L4 and adds the drift and R3-L1 numbers.
+
+**R3-L1: negative-scale test.** Characters 2, 6, 10, … get diag(−1.25, 0.9, 1.0) on their palette (det < 0 on every vertex). Odd characters keep diag(1.4, 0.7, 1.15).
+- For every vertex with a rest bitangent b = cross(n, t)·w, the GPU's cross(n', t')·w' must have a positive cosine with A3·b, and w' must equal t.w·sign(det A3) exactly.
+- The control keeps w and must flip those bitangents.
+
+| device | mesh | det<0 vertex-frames (unmirrored chars) | bitangents flipped | min cos | w' ≠ w·sign(det) | control (w kept) flips | dp / dn / dt / dw | result |
+|---|---|---|---|---|---|---|---|---|
+| box lavapipe | jk-h02 | 1,919,645 (52) | 0 | 0.023 | 0 | 1,919,645 | 0 / 0 / 0 / 0 | PASS |
+| box lavapipe | bfme-hr01 | 1,516,311 (87) | 0 | 0.039 | 0 | 1,516,311 | 0 / 0 / 0 / 0 | PASS |
+| RX 9060 XT | jk-h02 | 1,919,645 (52) | 0 | 0.023 | 0 | 1,919,645 | 4.9e-7 m / 2.3e-6 / 7.0e-7 / 0 | PASS |
+| RX 9060 XT | bfme-hr01 | 1,516,311 (87) | 0 | 0.039 | 0 | 1,516,311 | 4.2e-7 m / 1.4e-6 / 1.34e-6 / 0 | PASS |
+
+- On mirrored jk-h02 characters, w' = −w on 1,919,593 of 1,920,000 vertex-frames. On the other 407, the LBS blend already had det < 0, so the mirror makes det positive and w is correctly kept.
+- The n'·t' invariant and its control are unchanged: max 6.5e-7, control 0.99.
+- spirv-val (Antman, SPIRV-Tools v2026.4, `--target-env vulkan1.1`): **OK**.
+- skin.spv is 8728 bytes (was 8692). The Antman and box builds are byte-identical (sha256 09839b47…).
+- GLB sha256 was OK before and after.
+- 9060 XT, 600 frames: GPU skin 0.138 ms (jk-h02) and 0.102 ms (hr01); serialized frame 0.58 / 0.56 ms. Raw output is in `gpuskin_results_9060xt_r3_2026-11-01.txt`.
+- Antman's `~/kim7_gate` was synced to this tree's hc/lib and tests. The run was headless and took about 6 s; nothing was left running.
+
+**Foot drift** (method in DESIGN.md "Foot drift"; 39/39 PASS; LODs identical to their base rig):
+- Measurement: the stillest 100 ms of each step, using the slower of heel and ball, in world space.
+- Gates:
+  - blend excess over the WALK_TOP..RUN_LOW line ≤ 0.05;
+  - IK ≤ noIK + 0.02·v;
+  - an injected-skate control (1.0 × speed) must raise slip by ≥ 0.5·skate.
+
+| rig | slip ratio (slip / body speed) at 2.4 / 3.0 / 3.6 | worst blend excess | IK minus noIK worst | control min |
+|---|---|---|---|---|
+| jk-h02 | 0.070 / 0.104 / 0.120 | 0.017 | +0.005 m/s | +0.53 v |
+| jk-h04 | 0.076 / 0.110 / 0.130 | 0.022 | +0.006 m/s | +0.54 v |
+| jk-h06 | 0.053 / 0.093 / 0.113 | 0.010 | +0.010 m/s | +0.55 v |
+| bfme-hr01 | 0.056 / 0.093 / 0.115 | 0.008 | +0.016 m/s | +0.54 v |
+| bfme-hr02 | 0.066 / 0.104 / 0.125 | 0.015 | +0.004 m/s | +0.55 v |
+| bfme-hr03 | 0.055 / 0.093 / 0.113 | 0.008 | +0.006 m/s | +0.54 v |
+| bfme-hr04 | 0.058 / 0.096 / 0.116 | 0.009 | +0.013 m/s | +0.54 v |
+| bfme-hr05 | 0.073 / 0.103 / 0.129 | 0.014 | +0.007 m/s | +0.54 v |
+
+jk-h02 drift, in mm per stillest 100 ms:
+
+| v (m/s) | 1.39 (walk) | 1.8 | 2.4 | 3.0 | 3.6 | 4.2 | 6.0 |
+|---|---|---|---|---|---|---|---|
+| no IK | 5.3 | 8.8 | 15.4 | 28.3 | 40.3 | 53.3 | 82.7 |
+| IK | 4.2 | 7.6 | 13.9 | 28.6 | 40.8 | 51.8 | 82.0 |
+
+Findings (not fixed in this round):
+- The blend adds at most 0.022·v of slip beyond the line between its end clips. Most in-band slip comes from the authored run clip, which slips ~0.13·v at 4.2 m/s.
+- IK reduces slip only up to ~2.4 m/s. Above that, the stillest foot speed stays over the IK contact_v of 0.35 m/s, so the IK never locks.
+- On bfme-hr01 at 2.4 m/s, IK is +0.016 m/s worse than no IK (within the +0.02·v tolerance).
+- **Rate match lags inside the band.** Commanded 2.4 / 3.0 / 3.6 gives a measured body speed of 2.19 / 2.71 / 3.37 m/s (−8.6 / −9.6 / −6.4 %), the same on all 8 rigs.
+  - Cause: `machine.amni` eval_motion divides the commanded speed by Σ w·speed, but root motion is duration-weighted.
+  - Recommended fix: v_sum = Σ w·speed·dur / Σ w·dur. Not changed here, because it moves the blend and needs its own pop rerun.
+- Gate 1 (blend excess) has no tripping control of its own.
+- Disclosure: one read-only prototype drift run on jk-h02 was made before this round's GLB checksum baseline was written. All later runs were checksummed before and after, and all were OK.
+
+**Reruns at ea93a3db** (box):
+- Pop: 39/39 PASS, identical to round 3.
+  - sweep 0.768–0.904; transitions 0.833–0.986;
+  - controls: hard cut 14.56–32.22, near miss 2.056–5.566, unsmoothed 12.75–21.40.
+- anim_unit: ALL PASS.
+- JK `anim_proof/run.amni`: rc 0, 9/9 PASS. Anim 0.50 ms; CPU skin 33.5 ms (full res) and 6.7 ms (lod2).
+- GLB sha256 identical before and after every run.
+
+**CPU skinning cost (R3-N1).** CPU skinning of 32 × jk-h02 went from **19.9 ms to 30.7 ms** (Lulu's measurements, round 2 → round 3) after the cofactor normals and tangents were added; lod2 went from 4.29 to 6.4 ms. Today's box run gives 33.5 ms. That puts the CPU path further from 60 fps (16.7 ms): it is a reference and fallback only. **GPU skinning is the path to rely on**: 0.10–0.14 ms on the 9060 XT for the same crowd.
+
+**Label correction.** In Lulu's delta review the spring is **D-L4** and the joint cap is **D-L6**. The entry below had them swapped; the labels are now corrected there.
 
 ## 2026-11-01 ~04:00 AST: delta review items fixed (local commits, not pushed)
 
 Lulu's delta review of 2f71ddc7 / 7ac10db ("Delta review" in `/workspace/lulu_reviews/helium-anim/REVIEW.md`) was "accept with items, no blocker". Both MEDIUM items and all five LOW items are done.
 
 **Commits on `kimahri/anim-runtime`** (author Amnibro):
-- `ab16343f`: **D-M1 + D-L5.** Tangents are skinned on the CPU and GPU paths: xyz goes through the blended 3x3, is renormalized, and keeps w. Normals use the inverse-transpose: cof(A3)·n·sign(det), normalized. Shader output is 3 vec4 per vertex. The GPU-vs-CPU test checks tangents and puts a non-uniform scale on odd characters. Setup rejects more than 255 joints.
+- `ab16343f`: **D-M1 + D-L5 + D-L6.** Tangents are skinned on the CPU and GPU paths: xyz goes through the blended 3x3, is renormalized, and keeps w (round 3, b82615cf: w now flips with sign(det)). Normals use the inverse-transpose: cof(A3)·n·sign(det), normalized. Shader output is 3 vec4 per vertex. The GPU-vs-CPU test checks tangents and puts a non-uniform scale on odd characters. Setup rejects more than 255 joints.
 - `28b7958d`: **D-L2.** `gpuskin_bench.amni` fails loudly when spirv-val is missing (exit 1). `GSK_NO_SPIRV_VAL=1` skips it explicitly, logs SKIPPED and exits 3. It logs the spirv-val version and the exact command.
-- `dc6eb742`: **D-L6.** The speed spring reaches 95% in **0.90 s** (ω 5.27, was 2.37 s). The walk→run band is widened to 1.8–4.2 m/s (was 2.6–3.4); see below.
-- `671402ce`: **D-M2 + D-L3 + D-L4.** Adds `hc/test/anim/gpuskin_results_9060xt_2026-11-01.txt` (the raw Antman output, spirv-val log included) and deletes the stale 300-frame `gpuskin_results_2026-11-01.txt`, which showed the vulkan1.0 spirv-val failure. Also updates DESIGN.md and this file.
+- `dc6eb742`: **D-L4.** The speed spring reaches 95% in **0.90 s** (ω 5.27, was 2.37 s). The walk→run band is widened to 1.8–4.2 m/s (was 2.6–3.4); see below.
+- `671402ce`: **D-M2 + D-L3.** Adds `hc/test/anim/gpuskin_results_9060xt_2026-11-01.txt` (the raw Antman output, spirv-val log included) and deletes the stale 300-frame `gpuskin_results_2026-11-01.txt`, which showed the vulkan1.0 spirv-val failure. Also updates DESIGN.md and this file.
 
 On `kimahri/jk-anim`, `98f9559` updates RESULTS.md to match. `anim_proof/run.amni` was re-run at 671402ce: 9/9 JK PASS, sha256 OK, anim 0.50 ms, CPU skin 31.2 ms.
 
@@ -25,7 +102,7 @@ On `kimahri/jk-anim`, `98f9559` updates RESULTS.md to match. `anim_proof/run.amn
 | box lavapipe | jk-h02 | 7,680,000 | 0 | 0 | 0 | 0 | 4.8e-7 | 0.991 / 0.9999 |
 | box lavapipe | bfme-hr01 | 6,064,896 | 0 | 0 | 0 | 0 | 3.7e-7 | 0.9994 / 0.992 |
 | RX 9060 XT | jk-h02 | 7,680,000 | 4.9e-7 m | 3.6e-6 | 7.0e-7 | 0 | 1.4e-6 | 0.992 / 0.9988 |
-| RX 9060 XT | bfme-hr01 | 6,064,896 | 4.8e-7 m | 1.4e-6 | 1.3e-6 | 0 | 3.3e-7 | 0.999 / 0.988 |
+| RX 9060 XT | bfme-hr01 | 6,064,896 | 4.8e-7 m | 1.4e-6 | 1.34e-6 | 0 | 3.3e-7 | 0.999 / 0.988 |
 
 - Tolerance is 1e-4 for the diffs and 1e-3 for n'·t'. All four runs PASS.
 - lavapipe matches the CPU bit for bit, because it evaluates in the same order.
@@ -43,11 +120,11 @@ On `kimahri/jk-anim`, `98f9559` updates RESULTS.md to match. `anim_proof/run.amn
 | bfme-hr01 (23691 verts) | 0.405 ms | 0.009 ms | **0.118 ms** | 0.191 (0.462) ms | **0.606 (0.889) ms** | ~1651 |
 
 - GPU time roughly doubled against the pre-tangent shader (0.06–0.08 ms). The causes: 48 rather than 32 bytes out per vertex, plus the cofactor.
-- Box comparison: CPU skinning of jk-h02 × 32 now takes 30.9 ms (was 20.4 ms; tangents and cofactor added). The anim tick is unchanged at 0.49 ms.
+- Box comparison: CPU skinning of jk-h02 × 32 now takes 30.9 ms (was 20.4 ms; tangents and cofactor added). The anim tick is unchanged at 0.49 ms. Lulu's figures for the same change are 19.9 → 30.7 ms; see round 3 above. The CPU path is further from 60 fps, and GPU skinning is the path to rely on.
 
 **D-L1: why the worst transition equals the old bound.** The action clips, the dodge above all, carry the most violent per-joint motion. Every transition tick has an action in its context, so for the joints that decide the verdict its threshold is max(loco, action), which is the all-states value. The per-state thresholds therefore tighten only loco-only ticks: the speed sweep and the speed changes, where they found the two real artifacts. This is noted in DESIGN.md and RESULTS.md.
 
-**D-L6: spring.**
+**D-L4: spring.**
 - Going faster than ω 2.0 with the old 0.8 m/s band failed: ω 2.1–5.9 passed between 0 and 36 of 39, and not monotonically in ω. The cause was the same as the old slew: braking from a run crossed the narrow walk/run band in about 0.1 s, which is a near-miss crossfade (forearm/hand rotation up to ~1.5×).
 - Rejected: a two-stage C2 spring and smoothstep weights, both worse; bands of 2.2–3.8, 30/39.
 - Bands of 2.0–4.0 and 1.8–4.2 pass 39/39. With 1.8–4.2, every ω from 4.74 to 6.5 (95% in 1.0–0.73 s) passes 39/39.
