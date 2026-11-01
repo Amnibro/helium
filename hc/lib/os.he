@@ -1,0 +1,54 @@
+# os: files, directories, standard streams, process arguments, environment,
+# clocks and child processes. Each binding names its entry in hc/hrt.h.
+use std
+
+# whole files
+extern read_file(path const byte[:], out byte[>..]&) bool = "hr_os_read_file"
+extern write_file(path const byte[:], data const byte[:]) bool = "hr_os_write_file"
+extern write_file_atomic(path const byte[:], data const byte[:]) bool = "hr_os_write_file_atomic"
+extern append_file(path const byte[:], data const byte[:]) bool = "hr_os_append_file"
+extern make_exec(path const byte[:]) bool = "hr_os_make_exec"
+
+# the file system
+extern file_exists(path const byte[:]) bool = "hr_os_file_exists"
+extern is_dir(path const byte[:]) bool = "hr_os_is_dir"
+extern file_mtime(path const byte[:]) int = "hr_os_file_mtime"
+extern rename_file(src const byte[:], dst const byte[:]) bool = "hr_os_rename_file"
+extern delete_file(path const byte[:]) bool = "hr_os_remove_file"
+extern make_dir(path const byte[:]) bool = "hr_os_make_dir"
+extern delete_dir(path const byte[:]) bool = "hr_os_remove_dir"
+extern list_dir(path const byte[:], out byte[>..]&) bool = "hr_os_list_dir"
+extern resource_dir(out byte[>..]&) bool = "hr_os_resource_dir"
+
+# standard streams
+extern write_stdout(text const byte[:]) = "hr_os_write_stdout"
+extern write_stderr(text const byte[:]) = "hr_os_write_stderr"
+extern flush_stdout() = "hr_os_flush_stdout"
+extern read_line(out byte[>..]&) bool = "hr_os_read_line"
+extern read_bytes(count int, out byte[>..]&) int = "hr_os_read_bytes"
+extern read_stdin(out byte[>..]&) = "hr_os_read_stdin"
+
+# the process
+extern arg_count() int = "hr_os_arg_count"
+extern arg(index int, out byte[>..]&) = "hr_os_arg"
+extern env(name const byte[:], out byte[>..]&) bool = "hr_os_getenv"
+extern run_command(command const byte[:]) int = "hr_os_run"
+extern trim_memory() bool = "hr_trim_memory"
+# every command-line argument, the program name first
+args() byte[:][>..]:
+	all byte[:][>..] ~= []
+	for i arg_count():
+		one byte[>..] ~= []
+		arg(i, one)
+		all.push(one)
+	all
+
+# time
+extern time_ns() int = "hr_os_time_ns"
+extern clock_ns() int = "hr_os_clock_ns"
+extern sleep_ms(ms int) = "hr_os_sleep_ms"
+extern random_seed() uint = "hr_os_random_u64"
+# seconds as reals: wall clock since the epoch, and a monotonic clock
+time() real: time_ns() as real * 1.0e-9
+clock() real: clock_ns() as real * 1.0e-9
+sleep(seconds real): sleep_ms((seconds * 1000.0) as! int)

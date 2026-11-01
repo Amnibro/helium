@@ -608,7 +608,7 @@ sid(s const byte[:]) int:
 	m := SNH.len - 1; j ~= (shash(s) as! int) & m
 	while SNH[j] >= 0: if snm(SNH[j]) == s { return SNH[j] } j = j + 1 & m
 	id := SNM.len; SNM.push(Snm{SNB.len, s.len}); SNB.append(s); SNH[j] = id; id
-dgi<K>(d dictionary<K, int>&, k K) int: i := dat(d, k); if i < 0 { -1 } else { d.slots[i].val }
+dgi<K>(d dictionary<K, int>&, k K) int: get(d, k, -1)
 T_VOID := 0
 T_BOOL := 1
 T_INT := 2

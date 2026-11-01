@@ -1,0 +1,19 @@
+# exception: try a body, throw a value out of any depth beneath it.
+# throw returns straight from the innermost active landing frame (Helium's
+# `return value from f`), so nothing between the throw and the try runs on.
+namespace exception
+
+# runs the body; a throw lands here with the thrown value as the one element
+landing<E, Body>() E[]:
+	Body()
+	return []
+
+# exception::try<E>(body) { e => ... } calls the block with the thrown value
+try<E, Body, Catch>():
+	got := landing<E>(Body)
+	if got.len > 0: Catch(got[0])
+
+# exception::try<E>(body) with no handler just stops the body
+try<E, Body>(): landing<E>(Body);
+
+throw(value): return [value] from landing

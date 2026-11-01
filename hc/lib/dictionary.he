@@ -1,0 +1,135 @@
+# dictionary: a hash map from K to V.
+# Open addressing with linear probing over a power-of-two table. A slot's
+# state is 0 (never used), 1 (holds an entry) or 2 (entry removed). The table
+# grows when live plus removed slots would pass three quarters of it.
+use std
+
+struct dictionary_slot<K, V> { key K, val V, state byte }
+struct dictionary<K, V> { count int = 0, removed int = 0, slots dictionary_slot<K, V>[>..<] = [] }
+
+# slot index holding key, or -1
+probe<K, V>(d dictionary<K, V>&, key K) int:
+	n := d.slots.len
+	if n == 0: return -1
+	mask := n - 1
+	at ~= (hash(key) & mask as uint) as int
+	steps ~= 0
+	while steps < n:
+		st := d.slots[at].state
+		if st == 0: return -1
+		if st == 1 && d.slots[at].key == key: return at
+		at = (at + 1) & mask
+		steps += 1
+	-1
+
+rehash<K, V>(d dictionary<K, V>&, size int):
+	old dictionary_slot<K, V>[>..] ~= []
+	for &s d.slots: if s.state == 1 { old.push(s) }
+	d.slots.clear()
+	d.slots.resize(size, dictionary_slot<K, V>{default<K>(), default<V>(), 0})
+	d.count = 0
+	d.removed = 0
+	mask := size - 1
+	for &s old:
+		at ~= (hash(s.key) & mask as uint) as int
+		while d.slots[at].state != 0: at = (at + 1) & mask
+		d.slots[at] = s
+		d.count += 1
+
+# index of key's slot, adding key with value v0 when absent; true when added
+place<K, V>(d dictionary<K, V>&, key K, v0 V) int, bool:
+	found := probe(d, key)
+	if found >= 0: return found, false
+	if (d.count + d.removed + 1) * 4 > d.slots.len * 3: rehash(d, max(16, next_pow2(d.count * 2 + 2)))
+	mask := d.slots.len - 1
+	at ~= (hash(key) & mask as uint) as int
+	while d.slots[at].state == 1: at = (at + 1) & mask
+	if d.slots[at].state == 2: d.removed -= 1
+	d.slots[at] = dictionary_slot<K, V>{key, v0, 1}
+	d.count += 1
+	return at, true
+
+get<K, V>(d dictionary<K, V>&, key K) V?:
+	i := probe(d, key)
+	if i < 0: return null
+	return d.slots[i].val
+get<K, V>(d dictionary<K, V>&, key K, fallback V) V:
+	i := probe(d, key)
+	if i < 0 { fallback } else { d.slots[i].val }
+contains<K, V>(d dictionary<K, V>&, key K) bool: probe(d, key) >= 0
+# sets key to val; true when key was new
+insert<K, V>(d dictionary<K, V>&, key K, val V) bool:
+	i, added := place(d, key, val)
+	if !added: d.slots[i].val = val
+	added
+get_or_insert<K, V>(d dictionary<K, V>&, key K, v0 V) V&:
+	i, added := place(d, key, v0)
+	return d.slots[i].val
+update<K, V, F>(d dictionary<K, V>&, key K, v0 V):
+	i, added := place(d, key, v0)
+	F(&d.slots[i].val)
+# d[key]: the value for key, added as the default value when absent
+dict_at<K, V>(d dictionary<K, V>&, key K) V&:
+	i, added := place(d, key, default<V>())
+	d.slots[i].val
+remove<K, V>(d dictionary<K, V>&, key K) bool:
+	i := probe(d, key)
+	if i < 0: return false
+	d.slots[i].state = 2
+	d.count -= 1
+	d.removed += 1
+	true
+clear<K, V>(d dictionary<K, V>&):
+	for &s d.slots: s.state = 0
+	d.count = 0
+	d.removed = 0
+reserve<K, V>(d dictionary<K, V>&, n int):
+	size := max(16, next_pow2(n * 2))
+	if size > d.slots.len: rehash(d, size)
+each<K, V, F>(d dictionary<K, V>&): for &s d.slots { if s.state == 1 { F(s.key, &s.val) } }
+keys<K, V>(d dictionary<K, V>&) K[>..]:
+	o K[>..] ~= []
+	for &s d.slots: if s.state == 1 { o.push(s.key) }
+	o
+values<K, V>(d dictionary<K, V>&) V[>..]:
+	o V[>..] ~= []
+	for &s d.slots: if s.state == 1 { o.push(s.val) }
+	o
+items<K, V>(d dictionary<K, V>&) dictionary_slot<K, V>[>..]:
+	o dictionary_slot<K, V>[>..] ~= []
+	for &s d.slots: if s.state == 1 { o.push(s) }
+	o
+truthy<K, V>(d dictionary<K, V>&) bool: d.count > 0
+
+# helpers the Python dialect lowers to
+slot_lt<K, V>(a dictionary_slot<K, V>, b dictionary_slot<K, V>) bool:
+	if a.key == b.key { a.val < b.val } else { a.key < b.key }
+sorted<K, V>(xs dictionary_slot<K, V>[:]) dictionary_slot<K, V>[>..]:
+	o dictionary_slot<K, V>[>..] ~= []
+	o.append(xs)
+	sort(o) { a, b => slot_lt(a, b) }
+	o
+set_add<K>(d dictionary<K, bool>&, k K): insert(d, k, true)
+set<T>(xs T[:]) dictionary<T, bool>:
+	d ~= dictionary<T, bool>{}
+	for x in xs: insert(d, x, true)
+	d
+counter<T>(xs T[:]) dictionary<T, int>:
+	d ~= dictionary<T, int>{}
+	for x in xs: dict_at(d, x) += 1
+	d
+dict_from<K, V>(ks K[:], vs V[:]) dictionary<K, V>:
+	d ~= dictionary<K, V>{}
+	for i ks.len: insert(d, ks[i], vs[i])
+	d
+pyfmt<K, V>(s dictionary_slot<K, V>) byte[>..]: str("(", pyrepr(s.key), ", ", pyrepr(s.val), ")")
+pyfmt<K, V>(d dictionary<K, V>&) byte[>..]:
+	o byte[>..] ~= ['{']
+	first ~= true
+	for &s d.slots:
+		if s.state == 1:
+			if !first: o.append(", ")
+			first = false
+			o.append(pyrepr(s.key)); o.append(": "); o.append(pyrepr(s.val))
+	o.push('}')
+	o
