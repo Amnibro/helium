@@ -286,14 +286,15 @@ fn gpu_checks(dir const byte[:], golden const byte[:]) bool {
 
 fn main() {
 	cpu_checks();
-	let av = args();
-	if av.len < 2 { return; }
-	print("gpu: out dir ", av[1][..]);
-	if !gfx::open_headless(64, 64) { print("gpu: skipped (no device: ", gfx::error()[..], ")"); return; }
+	// read argv straight into owned buffers (os.args() hands back slices of freed buffers)
+	let argc = arg_count();
+	if argc < 2 { return; }
 	OUT_DIR.clear();
-	OUT_DIR.append(av[1][..]);
+	arg(1, OUT_DIR);
 	GOLDEN.clear();
-	if av.len > 2 { GOLDEN.append(av[2][..]); }
+	if argc > 2 { arg(2, GOLDEN); }
+	print("gpu: out dir ", OUT_DIR[..]);
+	if !gfx::open_headless(64, 64) { print("gpu: skipped (no device: ", gfx::error()[..], ")"); return; }
 	let t0 = gfx::time();
 	let good = gpu_checks(OUT_DIR[..], GOLDEN[..]);
 	print(if good { "gpu: ok" } else { "gpu: FAILED" }, " (", round((gfx::time() - t0) * 10.0) / 10.0, " s, ", gfx::driver()[..], ")");

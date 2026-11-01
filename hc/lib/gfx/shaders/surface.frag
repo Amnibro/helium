@@ -89,9 +89,9 @@ vec3 ambient_light(vec3 n, vec3 v, vec3 l, vec3 base_rgb, float metal, float rou
 }
 
 void main() {
-	vec4 base = base * in_col * texture(tex_base, pick_uv(uv_sets.x));
-	if (alpha.x > 0.5 && alpha.x < 1.5 && base.a < alpha.y) discard;
-	if (emissive.w > 0.5) { out_rgba = vec4(base.rgb, alpha.x > 1.5 ? base.a : 1.0); return; }
+	vec4 tint = base * in_col * texture(tex_base, pick_uv(uv_sets.x));
+	if (alpha.x > 0.5 && alpha.x < 1.5 && tint.a < alpha.y) discard;
+	if (emissive.w > 0.5) { out_rgba = vec4(tint.rgb, alpha.x > 1.5 ? tint.a : 1.0); return; }
 
 	vec3 n = normalize(in_nrm);
 	if (!gl_FrontFacing && alpha.z > 0.5) n = -n;
@@ -128,8 +128,8 @@ void main() {
 	float occ = 1.0 + params.w * (texture(tex_occlusion, pick_uv(uv_sets.w)).r - 1.0);
 	if (eye.w > 0.5) occ *= texture(tex_ao, gl_FragCoord.xy * screen.xy).r;
 
-	vec3 albedo = base.rgb * (1.0 - metal);
-	vec3 f0 = mix(vec3(0.04), base.rgb, metal);
+	vec3 albedo = tint.rgb * (1.0 - metal);
+	vec3 f0 = mix(vec3(0.04), tint.rgb, metal);
 	vec3 v = normalize(eye.xyz - in_world);
 	vec3 rgb = vec3(0.0);
 	vec3 l = normalize(to_sun.xyz);
@@ -143,11 +143,11 @@ void main() {
 	}
 
 	vec3 direct = rgb;
-	vec3 ambient = ambient_light(n, v, l, base.rgb, metal, rough) * occ * screen.w;
+	vec3 ambient = ambient_light(n, v, l, tint.rgb, metal, rough) * occ * screen.w;
 	rgb += ambient;
 
 	rgb += emissive.rgb * texture(tex_emissive, pick_uv(uv_sets2.x)).rgb;
-	out_rgba = vec4(rgb, alpha.x > 1.5 ? base.a : 1.0);
+	out_rgba = vec4(rgb, alpha.x > 1.5 ? tint.a : 1.0);
 
 	int dbg = int(uv_sets2.y + 0.5);
 	if (dbg == 1) out_rgba = vec4(n * 0.5 + 0.5, 1.0);
@@ -156,5 +156,5 @@ void main() {
 	else if (dbg == 4) out_rgba = vec4(ambient, 1.0);
 	else if (dbg == 5) out_rgba = vec4(direct, 1.0);
 	else if (dbg == 6) out_rgba = vec4(vec3(occ), 1.0);
-	else if (dbg == 7) out_rgba = vec4(base.rgb, 1.0);
+	else if (dbg == 7) out_rgba = vec4(tint.rgb, 1.0);
 }
