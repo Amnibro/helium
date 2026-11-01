@@ -5,9 +5,10 @@
 //   procedural shapes, SDF text layout).
 // With an output directory: also renders headless and prints "gpu: ..." lines:
 //   furnace  - white roughness x metal sphere grid lit by a sun swept over the sphere of
-//              directions: per-material directional albedo (should be 1), single-scatter
-//              and compensated, a x0.9 control that must fail, and the ambient pass-through
-//              (fp16) check
+//              directions: per-material directional albedo (should be 1), compensated
+//              and four controls that must fail (single scatter, wrong F, legacy diffuse
+//              weight, x0.9), the same on flat tiles seen at n.v 0.35 .. 0.05 (grazing),
+//              and the ambient pass-through (fp16) check
 //   spheres  - 5x5 metal/roughness grid, saved as spheres.png and compared with the
 //              golden given as the second argument; PSNR must be > 40 dB, and a
 //              missing golden fails
@@ -118,6 +119,15 @@ fn reset_scene() {
 // integral of the BRDF times cos over the hemisphere, i.e. its directional albedo, which
 // is 1 for a surface that neither loses nor gains energy. Only pixels inside a sphere
 // (taken from a mask frame and eroded by two pixels so MSAA edges drop out) count.
+//
+// A sphere shows each n.v once per ring, so grazing views are a thin rim. The grazing
+// test adds flat tiles tilted so that the camera sees them at n.v = 0.35, 0.2, 0.1 and
+// 0.05 (per-pixel n.v read back from debug view 8), for both metal values and the same
+// 11 roughness values, and holds them to the same per-pixel bar.
+//
+// Controls that must fail with the same verdict: compensation off (single scatter),
+// F0 = 1 for dielectrics in the specular lobe only (wrong F), the older per-light
+// 1 - F(v.h) diffuse weight (legacy diffuse) and the direct light scaled by 0.9.
 let FN_COLS = 11;
 let FN_CELL = 68;
 let FN_W = 748;      // FN_COLS * FN_CELL
@@ -127,17 +137,22 @@ let FN_BAR f32 = 0.05;
 // that (low roughness) are point-sampled, so their pixels are noisy and the sphere mean
 // is biased; only roughness >= FN_RESOLVED is gated, the rest is printed as unresolved.
 let FN_RESOLVED = 3;            // in tenths
-// Bars: material mean |albedo - 1| < FN_BAR and worst pixel loss (1 - albedo) < FN_BAR.
-// A pixel may gain up to FN_GAIN: the dielectric diffuse term is weighted by 1 - F(v.h)
-// per light, not by the specular directional albedo, so grazing pixels of rough
-// dielectrics come out above 1 (measured 7.0 % at roughness 0.3, independent of K).
-let FN_GAIN f32 = 0.08;
+// Bars: material mean |albedo - 1| < FN_BAR, and every pixel |albedo - 1| < FN_PX
+// (gain and loss alike) on the spheres and the grazing tiles.
+let FN_PX f32 = 0.03;
+let GZ_ROWS = 8;
+let GZ_CELL = 48;
+let GZ_W = 528;      // FN_COLS * GZ_CELL
+let GZ_H = 384;      // GZ_ROWS * GZ_CELL
+let GZ_D f32 = 200.0;           // camera distance
 var FN_WPX real = 0.0;          // worst pixel error of the resolved materials, last sweep
 var FN_LOSS real = 0.0;         // worst pixel loss of the resolved materials, last sweep
+var FN_GAIN real = 0.0;         // worst pixel gain of the resolved materials, last sweep
 
 var HALF f32[>..] = [];
 var MASK int[>..] = [];          // pixel index of every counted pixel
 var MASK_ID int[>..] = [];       // its material (col + 11 * row)
+var MU real[>..] = [];           // its n.v (grazing test)
 var ACC real[>..] = [];
 
 fn half_table() {
@@ -146,6 +161,12 @@ fn half_table() {
 }
 
 fn red(px const byte[:], i int) f32 { HALF[(px[i * 8] as int) | ((px[i * 8 + 1] as int) << 8)] }
+
+fn furnace_look() {
+	s3d::sun.shadows = false;
+	s3d::look.ssao = false;
+	s3d::look.bloom = 0.0;
+}
 
 fn furnace_scene() {
 	reset_scene();
@@ -158,30 +179,71 @@ fn furnace_scene() {
 	}
 	// half height 1.0 at distance 30 so the grid fills FN_W x FN_H
 	s3d::view = s3d::Camera { eye: float3 { 0.0, 0.0, 30.0 }, target: float3 { 0.0, 0.0, 0.0 }, up: float3 { 0.0, 1.0, 0.0 }, fov_y: 0.0666419, near: 20.0, far: 40.0 };
-	s3d::sun.shadows = false;
-	s3d::look.ssao = false;
-	s3d::look.bloom = 0.0;
+	furnace_look();
+}
+
+// grazing tiles: row r (0 at the top) has metal r / 4 and target n.v gz_mu(r), so the
+// two n.v = 0.05 rows sit next to each other in the middle of the frame
+fn gz_mu(row int) real {
+	let k = if row < 4 { row } else { 7 - row };
+	if k == 0 { 0.35 } else if k == 1 { 0.2 } else if k == 2 { 0.1 } else { 0.05 }
+}
+
+fn grazing_scene() {
+	reset_scene();
+	for row in GZ_ROWS {
+		for c in FN_COLS {
+			let rough = c as f32 / 10.0;
+			let mu = gz_mu(row);
+			let xc = (c as real - 5.0);
+			let yc = 3.5 - row as real;
+			// view vector at the tile centre, and the tilt about x that gives n.v = mu with
+			// n = (0, cos b, sin b): n.v = rho cos(b - phi)
+			let len = sqrt(xc * xc + yc * yc + (GZ_D * GZ_D) as real);
+			let vy = -yc / len;
+			let vz = GZ_D as real / len;
+			let rho = sqrt(vy * vy + vz * vz);
+			let beta = atan2(vz, vy) - acos(mu / rho);
+			// 0.8 wide, and long enough that it covers half a cell on screen
+			let tile = shapes::plane(0.5, shapes::material(linalg::v3(1.0, 1.0, 1.0), (row / 4) as f32, rough));
+			let m = linalg::compose(float3 { linalg::f(xc), linalg::f(yc), 0.0 }, linalg::qaxis(float3 { 1.0, 0.0, 0.0 }, linalg::f(beta)), float3 { 0.8, 1.0, linalg::f(0.5 / mu) });
+			s3d::place(s3d::add(tile), m);
+		}
+	}
+	// half height 4.0 at distance GZ_D (nearly orthographic: n.v drifts by about 0.0025 along a tile)
+	s3d::view = s3d::Camera { eye: float3 { 0.0, 0.0, GZ_D }, target: float3 { 0.0, 0.0, 0.0 }, up: float3 { 0.0, 1.0, 0.0 }, fov_y: linalg::f(2.0 * atan2(4.0, GZ_D as real)), near: GZ_D - 15.0, far: GZ_D + 15.0 };
+	furnace_look();
 }
 
 fn sky_of(zenith f32, horizon f32, ambient f32, draw bool) s3d::Sky {
 	s3d::Sky { zenith: float3 { zenith, zenith, zenith }, horizon: float3 { horizon, horizon, horizon }, ground: float3 { zenith, zenith, zenith }, ambient: ambient, draw: draw }
 }
 
-fn furnace_mask(out gfx::Texture) {
-	// sun off, sky not drawn and cleared to 0, ambient 1: spheres > 0, background 0
+fn furnace_mask(out gfx::Texture, w int, h int, cell int) {
+	// sun off, sky not drawn and cleared to 0, ambient 1: surfaces > 0, background 0
 	s3d::sun.rgb = float3 { 0.0, 0.0, 0.0 };
 	s3d::sky = sky_of(1.0, 0.0, 1.0, false);
 	s3d::render(out);
 	let px = gfx::read_pixels(s3d::hdr_target());
 	MASK.clear();
 	MASK_ID.clear();
-	for y in 2..FN_H - 2 {
-		for x in 2..FN_W - 2 {
+	for y in 2..h - 2 {
+		for x in 2..w - 2 {
 			var inside = true;
-			for dy in 5 { for dx in 5 { if red(px[..], (y + dy - 2) * FN_W + x + dx - 2) <= 0.0 { inside = false; } } }
-			if inside { MASK.push(y * FN_W + x); MASK_ID.push(x / FN_CELL + FN_COLS * (y / FN_CELL)); }
+			for dy in 5 { for dx in 5 { if red(px[..], (y + dy - 2) * w + x + dx - 2) <= 0.0 { inside = false; } } }
+			if inside { MASK.push(y * w + x); MASK_ID.push(x / cell + FN_COLS * (y / cell)); }
 		}
 	}
+}
+
+// n.v of every mask pixel, from debug view 8
+fn read_mu(out gfx::Texture) {
+	s3d::debug_view = 8;
+	s3d::render(out);
+	s3d::debug_view = 0;
+	let px = gfx::read_pixels(s3d::hdr_target());
+	MU.clear();
+	for p in MASK { MU.push(red(px[..], p) as real); }
 }
 
 // Ambient pass-through / fp16 check (not a furnace): uniform white sky ambient, sun off.
@@ -204,10 +266,10 @@ fn ambient_passthrough(out gfx::Texture) f32 {
 }
 
 fn pct(x real) real { round(x * 10000.0) / 100.0 }
+fn r4(x real) real { round(x * 10000.0) / 10000.0 }
 
-// One sweep; prints a table and returns the worst |albedo - 1| of any material's mean.
-// kind: "single", "compensated" or "control".
-fn furnace_sweep(out gfx::Texture, kind const byte[:], k int) real {
+// sums the K sun directions into ACC
+fn sweep(out gfx::Texture, k int) {
 	s3d::sky = sky_of(0.0, 0.0, 0.0, false);
 	ACC.clear();
 	for i in MASK.len { ACC.push(0.0); }
@@ -223,6 +285,28 @@ fn furnace_sweep(out gfx::Texture, kind const byte[:], k int) real {
 		let px = gfx::read_pixels(s3d::hdr_target());
 		for p, i in MASK { ACC[i] += red(px[..], p) as real; }
 	}
+}
+
+// Sets up a furnace variant: "single" (compensation off), "compensated", "wrong-F",
+// "legacy-diffuse" or "x0.9".
+fn variant(kind const byte[:]) {
+	s3d::multiscatter = kind != "single";
+	s3d::furnace_mode = if kind == "wrong-F" { 1 } else if kind == "legacy-diffuse" { 2 } else { 0 };
+	s3d::furnace_scale = if kind == "x0.9" { 0.9 } else { 1.0 };
+}
+
+fn variant_reset() { s3d::multiscatter = true; s3d::furnace_mode = 0; s3d::furnace_scale = 1.0; }
+
+// The verdict for one sweep: every resolved material's mean within FN_BAR and every
+// resolved pixel within FN_PX.
+fn passes(worst_mean real) bool { worst_mean < FN_BAR as real && FN_WPX < FN_PX as real }
+
+// One sphere sweep; prints a table and returns the worst |albedo - 1| of any resolved
+// material's mean.
+fn furnace_sweep(out gfx::Texture, kind const byte[:], k int) real {
+	variant(kind);
+	sweep(out, k);
+	variant_reset();
 	var sum real[>..] = [];
 	var lo real[>..] = [];
 	var hi real[>..] = [];
@@ -240,48 +324,116 @@ fn furnace_sweep(out gfx::Texture, kind const byte[:], k int) real {
 	var r_all real = 0.0;
 	var r_n = 0;
 	var r_loss real = 0.0;
+	var r_gain real = 0.0;
+	var d_px real = 0.0;
+	var d_all real = 0.0;
+	var m_px real = 0.0;
+	var m_all real = 0.0;
 	for m in 2 * FN_COLS {
 		let mean = sum[m] / max(cnt[m], 1) as real;
 		let px_err = max(abs(lo[m] - 1.0), abs(hi[m] - 1.0));
 		let resolved = m % FN_COLS >= FN_RESOLVED;
-		if resolved { r_mean = max(r_mean, abs(mean - 1.0)); r_px = max(r_px, px_err); r_all += abs(mean - 1.0); r_n += 1; r_loss = max(r_loss, 1.0 - lo[m]); }
-		print("gpu: furnace ", kind, " metal ", m / FN_COLS, " rough ", (m % FN_COLS) as real / 10.0, if resolved { "" } else { " (unresolved)" }, " pixels ", cnt[m], " albedo mean ", round(mean * 10000.0) / 10000.0, " min ", round(lo[m] * 10000.0) / 10000.0, " max ", round(hi[m] * 10000.0) / 10000.0, " | mean error ", pct(abs(mean - 1.0)), " % worst pixel ", pct(px_err), " %");
+		if resolved {
+			r_mean = max(r_mean, abs(mean - 1.0)); r_px = max(r_px, px_err); r_all += abs(mean - 1.0); r_n += 1;
+			r_loss = max(r_loss, 1.0 - lo[m]); r_gain = max(r_gain, hi[m] - 1.0);
+			if m / FN_COLS == 0 { d_px = max(d_px, px_err); d_all = max(d_all, abs(mean - 1.0)); } else { m_px = max(m_px, px_err); m_all = max(m_all, abs(mean - 1.0)); }
+		}
+		print("gpu: furnace ", kind, " metal ", m / FN_COLS, " rough ", (m % FN_COLS) as real / 10.0, if resolved { "" } else { " (unresolved)" }, " pixels ", cnt[m], " albedo mean ", r4(mean), " min ", r4(lo[m]), " max ", r4(hi[m]), " | mean error ", pct(abs(mean - 1.0)), " % worst pixel ", pct(px_err), " %");
 		worst_mean = max(worst_mean, abs(mean - 1.0));
 		worst_px = max(worst_px, px_err);
 		all += abs(mean - 1.0);
 	}
-	print("gpu: furnace ", kind, " summary (", k, " sun directions) rough >= 0.", FN_RESOLVED, ": worst material mean error ", pct(r_mean), " %, mean over materials ", pct(r_all / max(r_n, 1) as real), " %, worst pixel ", pct(r_px), " % (worst pixel loss ", pct(r_loss), " %); all roughness incl. unresolved: worst mean ", pct(worst_mean), " %, mean ", pct(all / (2 * FN_COLS) as real), " %, worst pixel ", pct(worst_px), " %");
+	print("gpu: furnace ", kind, " summary (", k, " sun directions) rough >= 0.", FN_RESOLVED, ": worst material mean error ", pct(r_mean), " %, mean over materials ", pct(r_all / max(r_n, 1) as real), " %, worst pixel ", pct(r_px), " % (gain ", pct(max(r_gain, 0.0)), " %, loss ", pct(max(r_loss, 0.0)), " %); dielectric worst mean ", pct(d_all), " % worst pixel ", pct(d_px), " %; metal worst mean ", pct(m_all), " % worst pixel ", pct(m_px), " %; all roughness incl. unresolved: worst mean ", pct(worst_mean), " %, mean ", pct(all / (2 * FN_COLS) as real), " %, worst pixel ", pct(worst_px), " %");
 	FN_WPX = r_px;
-	FN_LOSS = r_loss;
+	FN_LOSS = max(r_loss, 0.0);
+	FN_GAIN = max(r_gain, 0.0);
 	r_mean
 }
 
-// The furnace verdict: compensated BRDF within FN_BAR on every material's mean, and the
-// control (direct light scaled by 0.9, a BRDF that loses 10%) must be caught.
+// One grazing sweep; prints a line per tile and a summary, and returns the worst
+// |albedo - 1| of any resolved tile's mean (FN_WPX etc. as for the spheres).
+fn grazing_sweep(out gfx::Texture, kind const byte[:], k int) real {
+	variant(kind);
+	sweep(out, k);
+	variant_reset();
+	let T = GZ_ROWS * FN_COLS;
+	var sum real[>..] = []; var lo real[>..] = []; var hi real[>..] = []; var cnt int[>..] = [];
+	var mlo real[>..] = []; var mhi real[>..] = [];
+	for m in T { sum.push(0.0); lo.push(99.0); hi.push(-99.0); cnt.push(0); mlo.push(2.0); mhi.push(-1.0); }
+	for m, i in MASK_ID {
+		let a = ACC[i];
+		sum[m] += a; lo[m] = min(lo[m], a); hi[m] = max(hi[m], a); cnt[m] += 1;
+		mlo[m] = min(mlo[m], MU[i]); mhi[m] = max(mhi[m], MU[i]);
+	}
+	var r_mean real = 0.0; var r_px real = 0.0; var r_loss real = 0.0; var r_gain real = 0.0;
+	var d_px real = 0.0; var m_px real = 0.0; var d_mean real = 0.0; var m_mean real = 0.0;
+	var u_gain real = 0.0; var u_loss real = 0.0;
+	var g05 real = 0.0;
+	var empty = 0;
+	for m in T {
+		let row = m / FN_COLS;
+		let c = m % FN_COLS;
+		let metal = row / 4;
+		let mean = sum[m] / max(cnt[m], 1) as real;
+		let px_err = max(abs(lo[m] - 1.0), abs(hi[m] - 1.0));
+		let resolved = c >= FN_RESOLVED;
+		if cnt[m] < 100 { empty += 1; }
+		if resolved {
+			r_mean = max(r_mean, abs(mean - 1.0)); r_px = max(r_px, px_err);
+			r_loss = max(r_loss, 1.0 - lo[m]); r_gain = max(r_gain, hi[m] - 1.0);
+			if metal == 0 { d_px = max(d_px, px_err); d_mean = max(d_mean, abs(mean - 1.0)); } else { m_px = max(m_px, px_err); m_mean = max(m_mean, abs(mean - 1.0)); }
+			if gz_mu(row) < 0.06 { g05 = max(g05, px_err); }
+		} else {
+			u_gain = max(u_gain, hi[m] - 1.0); u_loss = max(u_loss, 1.0 - lo[m]);
+		}
+		print("gpu: grazing ", kind, " metal ", metal, " n.v ", gz_mu(row), " rough ", c as real / 10.0, if resolved { "" } else { " (unresolved)" }, " pixels ", cnt[m], " n.v ", r4(mlo[m]), "..", r4(mhi[m]), " albedo mean ", r4(mean), " min ", r4(lo[m]), " max ", r4(hi[m]), " | worst pixel ", pct(px_err), " %");
+	}
+	print("gpu: grazing ", kind, " summary (", k, " sun directions) rough >= 0.", FN_RESOLVED, ": worst tile mean error ", pct(r_mean), " %, worst pixel ", pct(r_px), " % (gain ", pct(max(r_gain, 0.0)), " %, loss ", pct(max(r_loss, 0.0)), " %); dielectric worst mean ", pct(d_mean), " % worst pixel ", pct(d_px), " %; metal worst mean ", pct(m_mean), " % worst pixel ", pct(m_px), " %; n.v 0.05 rows worst pixel ", pct(g05), " %; unresolved (rough < 0.", FN_RESOLVED, ", reported) worst pixel gain ", pct(max(u_gain, 0.0)), " % loss ", pct(max(u_loss, 0.0)), " %; tiles with < 100 pixels ", empty);
+	FN_WPX = if empty > 0 { 99.0 } else { r_px };
+	FN_LOSS = max(r_loss, 0.0);
+	FN_GAIN = max(r_gain, 0.0);
+	r_mean
+}
+
+// runs one variant over the current mask; returns whether it passes
+fn furnace_run(out gfx::Texture, grazing bool, kind const byte[:], k int) bool {
+	let w = if grazing { grazing_sweep(out, kind, k) } else { furnace_sweep(out, kind, k) };
+	passes(w)
+}
+
+// The furnace verdict: the compensated BRDF passes on the spheres and on the grazing
+// tiles, and every control fails the same verdict (on the spheres, the tiles or both).
 fn furnace(k int) bool {
 	half_table();
-	furnace_scene();
 	let keep_sky = s3d::sky;
 	let keep_sun = s3d::sun;
 	let keep_look = s3d::look;
-	s3d::init(FN_W, FN_H);
-	let out = gfx::render_target(FN_W, FN_H, gfx::RGBA8);
-	furnace_mask(out);
-	var good = ambient_passthrough(out) < 0.02;
-	s3d::multiscatter = false;
-	let single = furnace_sweep(out, "single", k);
-	s3d::multiscatter = true;
-	let comp = furnace_sweep(out, "compensated", k);
-	let comp_px = FN_WPX;
-	let comp_loss = FN_LOSS;
-	let comp_ok = comp < FN_BAR as real && comp_loss < FN_BAR as real && comp_px < FN_GAIN as real;
-	s3d::furnace_scale = 0.9;
-	let control = furnace_sweep(out, "control", k);
-	s3d::furnace_scale = 1.0;
-	let control_caught = control >= FN_BAR as real;
-	print("gpu: furnace verdict (rough >= 0.", FN_RESOLVED, "): compensated worst material mean ", pct(comp), " % and worst pixel loss ", pct(comp_loss), " % (bar ", pct(FN_BAR as real), " %), worst pixel ", pct(comp_px), " % (bar ", pct(FN_GAIN as real), " %) ", if comp_ok { "PASS" } else { "FAIL" }, "; single-scatter worst ", pct(single), " % (reported, not gated); control (x0.9) worst ", pct(control), " % ", if control_caught { "FAILS as required" } else { "NOT CAUGHT" });
-	if !comp_ok || !control_caught { good = false; }
-	gfx::release(out);
+	var good = true;
+	var comp_ok bool[>..] = [];
+	let kinds = ["single", "wrong-F", "legacy-diffuse", "x0.9"];
+	var fails bool[>..] = [];       // control i fails on pass p at [p * kinds.len + i]
+	for pass in 2 {
+		let grazing = pass == 1;
+		if grazing { grazing_scene(); } else { furnace_scene(); }
+		let w = if grazing { GZ_W } else { FN_W };
+		let h = if grazing { GZ_H } else { FN_H };
+		s3d::init(w, h);
+		let out = gfx::render_target(w, h, gfx::RGBA8);
+		furnace_mask(out, w, h, if grazing { GZ_CELL } else { FN_CELL });
+		if grazing { read_mu(out); } else if ambient_passthrough(out) >= 0.02 { good = false; }
+		comp_ok.push(furnace_run(out, grazing, "compensated", k));
+		for kd in kinds { fails.push(!furnace_run(out, grazing, kd, k)); }
+		gfx::release(out);
+	}
+	var controls byte[>..] = [];
+	for kd, i in kinds {
+		let sph = fails[i];
+		let gz = fails[kinds.len + i];
+		format(controls, " ", kd, " ", if sph || gz { "FAILS as required" } else { "NOT CAUGHT" }, " (spheres ", if sph { "fail" } else { "pass" }, ", grazing ", if gz { "fail" } else { "pass" }, ");");
+		if !sph && !gz { good = false; }
+	}
+	if !comp_ok[0] || !comp_ok[1] { good = false; }
+	print("gpu: furnace verdict (rough >= 0.", FN_RESOLVED, ", bars: material mean < ", pct(FN_BAR as real), " %, every pixel |albedo - 1| < ", pct(FN_PX as real), " %): compensated spheres ", if comp_ok[0] { "PASS" } else { "FAIL" }, ", grazing tiles ", if comp_ok[1] { "PASS" } else { "FAIL" }, "; controls:", controls[..]);
 	s3d::sky = keep_sky;
 	s3d::sun = keep_sun;
 	s3d::look = keep_look;

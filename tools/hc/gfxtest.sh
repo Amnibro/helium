@@ -10,9 +10,16 @@
 #   new golden is never taken silently; review and commit it, then rerun).
 # GPUTIME=0 skips the gputime Vulkan layer (GPU-timestamp frame times) built from
 #   tools/hc/gputime with $CC (default cc).
+# First, on the CPU: hc/test/gfx/tools/make_ms_lut.amni must reproduce
+#   hc/lib/gfx/shaders/ms_lut.glsl byte for byte and pass its grazing-corner check.
 H=${1:?usage: gfxtest.sh hc}; R=$(cd "$(dirname "$0")/../.." && pwd); T=$(mktemp -d); trap 'rm -rf "$T"' EXIT
 O=${GFX_OUT:-$T}; mkdir -p "$O"; G="$R/hc/test/gfx/golden/spheres.png"
 if [ "${GFX_MAKE_GOLDEN:-0}" != 1 ] && [ ! -f "$G" ]; then echo "gfxtest: FAILED: golden $G is missing (GFX_MAKE_GOLDEN=1 writes one)"; exit 1; fi
+HC_LIB=${HC_LIB:-$R/hc/lib} "$H" run "$R/hc/test/gfx/tools/make_ms_lut.amni" > "$T/ms_lut.glsl" 2> "$O/ms_lut.txt" || { echo "gfxtest: make_ms_lut failed"; tail -n 5 "$T/ms_lut.glsl" "$O/ms_lut.txt"; exit 1; }
+cat "$O/ms_lut.txt"
+cmp -s "$T/ms_lut.glsl" "$R/hc/lib/gfx/shaders/ms_lut.glsl" || { echo "gfxtest: FAILED: make_ms_lut output differs from hc/lib/gfx/shaders/ms_lut.glsl"; exit 1; }
+grep -q "^make_ms_lut: grazing compensation: .* PASS$" "$O/ms_lut.txt" || { echo "gfxtest: FAILED: make_ms_lut grazing check"; exit 1; }
+echo "gfxtest: ms_lut.glsl reproduced byte for byte"
 HC_LIB=${HC_LIB:-$R/hc/lib} "$H" build "$R/hc/test/gfx/gfx_smoke.amni" -o "$T/gs" > "$T/build.txt" 2>&1 || { echo "gfxtest: build failed"; grep -av "W[0-9]" "$T/build.txt" | tail -n 5; exit 1; }
 E=()
 if [ "${GPUTIME:-1}" != 0 ]; then
