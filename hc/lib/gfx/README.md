@@ -181,24 +181,25 @@ makes that a failure). `GPU_LOCK=<file>` serializes the GPU part on shared
 machines. `tools/hc/ci.sh` runs it only when `HELIUM_GFX_TEST=1`. The test binary
 needs SDL3 even for the CPU part (see Known gaps).
 
-### Temporal results (RX 9060 XT, RADV, Mesa 26.2.4; `results/2026-11-01_rx9060xt_radv_8c351bc_taa.txt`)
+### Temporal results (RX 9060 XT, RADV, Mesa 26.2.4; `results/2026-11-01_rx9060xt_radv_10e4813_taa.txt`, rebased on e0a080c)
 
 | check | result | bar |
 | --- | --- | --- |
 | motion, moving object / sliding camera | 0.006 px / 0.005 px error, depth 3.5 (want 3.5) | |
 | skinned step / repeated pose | 18574 of 18594 pixels move / 0 | |
 | jitter sign | -jitter in 16/16 phases, worst 0.016 px | 16/16, < 0.1 px |
-| still camera, frames 30-59 | max 0.076/255, mean 0.05/255 | < 0.5/255 |
-| PSNR vs 2x supersampled | TAA 46.17 dB, no AA 45.35 dB | reported |
-| slide on wall: clip on / no-clip control | 0.023 % >24/255, mean 0.286/255 / 0.061 %, mean 0.91/255 (3.2x) | <= 0.5 %, <= 0.5/255; control fails, >= 2x |
-| slide on sky (reported) | 0.166 %, mean 0.852/255 / control 0.467 %, mean 2.046/255 | reported |
-| 720p -> 1080p PSNR vs native 1080p TAA | 48.07 dB | >= 30 dB |
-| resolve alone 720p -> 1080p, GPU | min 0.2345, median 0.2409, p95 0.2521 ms (wall median 0.2927) | p95 < 1 ms |
-| 720p -> 1080p frame, GPU | median 0.5125 ms, p95 0.5252 (wall median 0.6102) | reported |
-| native 1080p TAA frame, GPU | median 1.2218 ms, p95 1.2609 (wall median 1.5801) | reported |
+| still camera, frames 30-59 | max 0.075/255, mean 0.049/255 | < 0.5/255 |
+| PSNR vs 2x supersampled | TAA 46.33 dB, no AA 45.33 dB | reported |
+| slide on wall: clip on / no-clip control | 0.021 % >24/255, mean 0.305/255 / 0.06 %, mean 0.91/255 (3.0x) | <= 0.5 %, <= 0.5/255; control fails, >= 2x |
+| slide on sky (reported) | 0.155 %, mean 0.875/255 / control 0.393 %, mean 1.958/255 | reported |
+| 720p -> 1080p PSNR vs native 1080p TAA | 47.41 dB | >= 30 dB |
+| resolve alone 720p -> 1080p, GPU | min 0.2353, median 0.2435, p95 0.2533 ms (wall median 0.3009) | p95 < 1 ms |
+| 720p -> 1080p frame, GPU | median 0.5195 ms, p95 0.536 (wall median 0.6198) | reported |
+| native 1080p TAA frame, GPU | median 1.2171 ms, p95 1.2559 (wall median 1.5865) | reported |
 
-Image metrics count non-sky pixels only. The earlier runs at 89a60db and 6713aa8 are
-kept in `results/`: each failed only the ghost control, which led to the wall scene and
+Image metrics count non-sky pixels only. The same run passes the furnace and grazing bars
+(1.5 % / 2.5 %, controls failing) and the golden image (53.53 dB). The earlier runs at
+8c351bc (before the rebase), 89a60db and 6713aa8 are kept in `results/`; the last two each failed only the ghost control, which led to the wall scene and
 then to the mean-error gate.
 
 ### Furnace results (RX 9060 XT, roughness >= 0.3)
