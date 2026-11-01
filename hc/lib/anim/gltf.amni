@@ -68,14 +68,18 @@ fn jint(n int, dflt int) int { let v, ok = json::as_i64(GDOC, n); if ok { v } el
 fn jtop(key const byte[:]) int { jm(GI.root, key) }
 
 // ---- accessors
-struct Acc { off int, stride int, count int, ctype int, ncomp int, norm bool }
-fn comp_size(ct int) int { if ct == 5120 || ct == 5121 { 1 } else if ct == 5122 || ct == 5123 { 2 } else { 4 } }
+// glTF 2.0 spec §3.6.2 "Accessors": componentType 5120 BYTE, 5121
+// UNSIGNED_BYTE (1 byte), 5122 SHORT, 5123 UNSIGNED_SHORT (2), 5125
+// UNSIGNED_INT, 5126 FLOAT (4); type SCALAR/VEC2/VEC3/VEC4/MAT2/MAT3/MAT4 =
+// 1/2/3/4/4/9/16 components; a zero bufferView.byteStride means tightly packed.
+struct Accessor { off int, stride int, count int, ctype int, ncomp int, norm bool }
+fn component_bytes(ct int) int { if ct == 5120 || ct == 5121 { 1 } else if ct == 5122 || ct == 5123 { 2 } else { 4 } }
 fn ncomp_of(ty const byte[:]) int {
 	if ty == "SCALAR" { 1 } else if ty == "VEC2" { 2 } else if ty == "VEC3" { 3 } else if ty == "VEC4" { 4 } else if ty == "MAT4" { 16 } else if ty == "MAT3" { 9 } else { 4 }
 }
-fn accessor(i int) Acc {
+fn accessor(i int) Accessor {
 	let a = jel(jtop("accessors"), i);
-	var r = default<Acc>();
+	var r = default<Accessor>();
 	r.count = jint(jm(a, "count"), 0);
 	r.ctype = jint(jm(a, "componentType"), 5126);
 	let ty, tok = json::as_string(GDOC, jm(a, "type"));
@@ -90,14 +94,14 @@ fn accessor(i int) Acc {
 		off += jint(jm(bv, "byteOffset"), 0);
 		stride = jint(jm(bv, "byteStride"), 0);
 	}
-	if stride == 0 { stride = r.ncomp * comp_size(r.ctype); }
+	if stride == 0 { stride = r.ncomp * component_bytes(r.ctype); }
 	r.off = GI.bin + off;
 	r.stride = stride;
 	r
 }
 // Component c of element k as a float (normalized ints per the spec).
-fn acc_f(a Acc, k int, c int) f32 {
-	let at = a.off + k * a.stride + c * comp_size(a.ctype);
+fn acc_f(a Accessor, k int, c int) f32 {
+	let at = a.off + k * a.stride + c * component_bytes(a.ctype);
 	match a.ctype {
 		5126 => f32_at(at),
 		5121 => { let v = GLB[at] as f32; if a.norm { v / 255.0 } else { v } },
@@ -107,12 +111,12 @@ fn acc_f(a Acc, k int, c int) f32 {
 		_ => (binary::gather(GLB[..], at, 4) as int) as f32,
 	}
 }
-fn acc_i(a Acc, k int, c int) int {
-	let at = a.off + k * a.stride + c * comp_size(a.ctype);
-	binary::gather(GLB[..], at, comp_size(a.ctype)) as int
+fn acc_i(a Accessor, k int, c int) int {
+	let at = a.off + k * a.stride + c * component_bytes(a.ctype);
+	binary::gather(GLB[..], at, component_bytes(a.ctype)) as int
 }
-fn acc_v3(a Acc, k int) float3 { float3 { acc_f(a, k, 0), acc_f(a, k, 1), acc_f(a, k, 2) } }
-fn acc_v4(a Acc, k int) float4 { float4 { acc_f(a, k, 0), acc_f(a, k, 1), acc_f(a, k, 2), acc_f(a, k, 3) } }
+fn acc_v3(a Accessor, k int) float3 { float3 { acc_f(a, k, 0), acc_f(a, k, 1), acc_f(a, k, 2) } }
+fn acc_v4(a Accessor, k int) float4 { float4 { acc_f(a, k, 0), acc_f(a, k, 1), acc_f(a, k, 2), acc_f(a, k, 3) } }
 
 // ---- nodes and the skeleton
 fn node_trs(n int) Xf {
@@ -165,7 +169,7 @@ fn glb_skeleton(sk Skeleton&, skin int) bool {
 	}
 	for k in nj { SKIN_JOINT.push(NODE_JOINT[jint(jel(joints, k), 0)]); }
 	let ibm_i = jint(jm(sj, "inverseBindMatrices"), -1);
-	var ibm = default<Acc>();
+	var ibm = default<Accessor>();
 	if ibm_i >= 0 { ibm = accessor(ibm_i); }
 	for k in nj {
 		let node = jint(jel(joints, k), 0);
@@ -186,8 +190,8 @@ fn glb_skeleton(sk Skeleton&, skin int) bool {
 }
 
 // ---- animation samplers
-struct Samp { input Acc, output Acc, interp i32 }   // 0 LINEAR, 1 STEP, 2 CUBICSPLINE
-fn find_key(a Acc, t f32) int {
+struct Samp { input Accessor, output Accessor, interp i32 }   // 0 LINEAR, 1 STEP, 2 CUBICSPLINE
+fn find_key(a Accessor, t f32) int {
 	// last key with time <= t (binary search), clamped to [0, count-2]
 	var lo = 0; var hi = a.count - 1;
 	if t <= acc_f(a, 0, 0) { return 0; }

@@ -35,7 +35,7 @@ fn glb_skin_mesh(mesh int, prim int) SkinMesh {
 	let wi = jint(jm(at, "WEIGHTS_0"), -1);
 	if pi < 0 || ji < 0 || wi < 0 { return r; }
 	let pa = accessor(pi); let ja = accessor(ji); let wa = accessor(wi);
-	var na = default<Acc>();
+	var na = default<Accessor>();
 	if ni >= 0 { na = accessor(ni); }
 	r.base = SK_P.len; r.nv = pa.count;
 	for v in pa.count {
