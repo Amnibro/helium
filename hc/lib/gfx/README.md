@@ -265,6 +265,16 @@ reported as a failure and fixed in the renderer, not in the gate.
   excluded); in both ghost cases the band's mean error with rejection on must not
   exceed its mean error with rejection off.
 
+* **N3 grazing furnace replay** (`GZ_REPLAY_BAR`). gfx_smoke replays the shader on
+  the CPU over the same 16384 Fibonacci sun directions, with the LUT parsed from
+  `ms_lut.glsl` (`GFX_MS_LUT`, set by gfxtest; missing = FAIL), for up to 64 mask
+  pixels of every grazing tile, each with its own camera ray, n and v. Bar: for
+  every tile with roughness >= 0.3, |GPU tile mean - replay tile mean| < 0.5 % of
+  the replay mean. This takes the direction undersampling out of the gate: the GPU
+  must match what the shader formulas give for the same directions. The vs-1 bars
+  (tile mean < 1.5 %, every pixel < 2.5 %) are kept and are re-justified by the
+  replay's own vs-1 error, printed per tile.
+
 Raw output of each recorded run is in `hc/test/gfx/results/`; `gfxtest.sh` writes
 the header itself (commit, command, driver, GPU, packages) into `$GFX_OUT/results.txt`.
 With no GPU it prints `SKIPPED (no GPU)` after the CPU checks (`GFX_REQUIRE_GPU=1`

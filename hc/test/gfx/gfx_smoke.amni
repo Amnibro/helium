@@ -186,6 +186,9 @@ let GZ_D f32 = 200.0;           // camera distance
 // over the same Fibonacci directions puts the white metal tile at +10.3 % with 4096
 // directions, +1.4 % with 16384 and +0.9 % with 65536 to 1M (the converged value; the
 // GPU measured +11.7 % mean at 4096), so 4096 measures the sampling, not the shading.
+// N3, pre-registered: GPU grazing tile mean vs the CPU replay over the same directions
+let GZ_REPLAY_BAR real = 0.005;
+let GZ_REPLAY_PX = 64;
 let GZ_K_MUL = 4;
 var FN_WPX real = 0.0;          // worst pixel error of the resolved materials, last sweep
 var FN_LOSS real = 0.0;         // worst pixel loss of the resolved materials, last sweep
