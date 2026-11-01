@@ -132,14 +132,19 @@ let FN_COLS = 11;
 let FN_CELL = 68;
 let FN_W = 748;      // FN_COLS * FN_CELL
 let FN_H = 136;      // 2 * FN_CELL
-let FN_BAR f32 = 0.05;
 // A sun direction stands for a cone of about sqrt(4 pi / K) radians. Lobes narrower than
 // that (low roughness) are point-sampled, so their pixels are noisy and the sphere mean
 // is biased; only roughness >= FN_RESOLVED is gated, the rest is printed as unresolved.
 let FN_RESOLVED = 3;            // in tenths
-// Bars: material mean |albedo - 1| < FN_BAR, and every pixel |albedo - 1| < FN_PX
-// (gain and loss alike) on the spheres and the grazing tiles.
-let FN_PX f32 = 0.03;
+// Bars: material (tile) mean |albedo - 1| < FN_BAR, and every pixel |albedo - 1| < FN_PX
+// (gain and loss alike) on the spheres and the grazing tiles. Set just above the worst
+// case measured on the RX 9060 XT at 08016bc (results/2026-11-01_*): mean 1.37 % and
+// pixel 1.88 %, both the white metal at rough 0.3, n.v 0.05, where the grazing sweep is
+// still not converged (a CPU replay converges to +0.9 %); every other resolved tile and
+// sphere stays under 0.5 %. The older 5 % mean / 8 % pixel bars passed the legacy
+// diffuse weight on the spheres (2.61 % mean, 7.01 % pixel).
+let FN_BAR f32 = 0.015;
+let FN_PX f32 = 0.025;
 let GZ_ROWS = 8;
 let GZ_CELL = 48;
 let GZ_W = 528;      // FN_COLS * GZ_CELL
@@ -585,7 +590,7 @@ fn gpu_checks(dir const byte[:], golden const byte[:]) bool {
 		gfx::flush();
 		wall.push((gfx::time() - t) * 1000.0);
 	}
-	print("gpu: timing 1280x720 sphere grid (", s3d::batch.len, " draws, 3 cascades, ssao, bloom, 4x msaa): ", TIME_WARMUP, " warmup + ", TIME_FRAMES, " timed frames, each render + submit + fence wait, no readback");
+	print("gpu: timing 1280x720 sphere grid (", s3d::batch.len, " draws, 4x msaa; shadows, ssao and bloom off as in the baseline): ", TIME_WARMUP, " warmup + ", TIME_FRAMES, " timed frames, each render + submit + fence wait, no readback");
 	print("gpu: timing wall-clock ms/frame ", stats(wall)[..]);
 	if have_log {
 		gputime_lines(log[..], gpu_ns);
