@@ -1,0 +1,16 @@
+# the counter lowering: a local collection that is only pushed and measured becomes a count
+use os
+evens(n int) int:
+	xs i32[>..] ~= []
+	for i n: if i % 2 == 0 { xs.push(i) }
+	xs.len
+main():
+	ys i64[>..] ~= []
+	for i 100:
+		if i % 7 == 3: ys.push(i * 2)
+		ys.push(1)
+	k i32[>..] ~= []
+	print(evens(11), " ", ys.len, " ", k.len)
+	zs i32[>..] ~= []
+	for i 5: zs.push(i)
+	print(zs.len, " ", zs[4])

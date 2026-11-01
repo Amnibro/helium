@@ -1,0 +1,13 @@
+# W6 negatives: a merge over real keys, and the radix-sorted form
+use os
+main():
+	x real[>..] ~= [5.0, 9.0, 1.0, 4.0]
+	y real[>..] ~= []; y.resize(4, 0.0)
+	i ~= 0; j ~= 2; k ~= 0
+	while i < 2 && j < 4:
+		if x[i] <= x[j]: y[k] = x[i]; i += 1
+		else: y[k] = x[j]; j += 1
+		k += 1
+	z u32[>..] ~= [5, 9, 1, 4]
+	sort(z[..])
+	print(y[0], " ", z[0])

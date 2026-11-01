@@ -1,0 +1,12 @@
+# W5: a pure index function recomputed inside nested loops of a hot function
+use os
+a(i int, j int) real: 1.0 / ((i + j) * (i + j + 1) / 2 + i + 1) as real
+mv(n int) real:
+	s ~= 0.0
+	for i n:
+		for j n: s += a(i, j)
+	s
+main():
+	t ~= 0.0
+	for k 3: t += mv(10)
+	print(t > 0.0)

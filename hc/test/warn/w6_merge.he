@@ -1,0 +1,11 @@
+# W6: a hand-written merge of fixed-width integer keys
+use os
+main():
+	x u32[>..] ~= [5, 9, 1, 4]
+	y u32[>..] ~= []; y.resize(4, 0)
+	i ~= 0; j ~= 2; k ~= 0
+	while i < 2 && j < 4:
+		if x[i] <= x[j]: y[k] = x[i]; i += 1
+		else: y[k] = x[j]; j += 1
+		k += 1
+	print(y[0])

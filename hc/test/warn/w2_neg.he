@@ -1,0 +1,9 @@
+# W2 negatives: the collection's elements are read; the simple counted one is lowered silently
+use os
+main():
+	xs i32[>..] ~= []
+	for i 10: xs.push(i)
+	print(xs[3], " ", xs.len)
+	ys i32[>..] ~= []
+	for i 10: if i % 2 == 0 { ys.push(i) }
+	print(ys.len)

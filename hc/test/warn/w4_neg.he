@@ -1,0 +1,13 @@
+# W4 negatives: a single-enum match, and a two-enum function whose arms compute
+use os
+enum State { Closed, Open }
+enum Event { Press, Done }
+code(s State) int:
+	match s:
+		Closed => 0
+		Open => 1
+mix(s State, e Event, k int) int:
+	match s:
+		Closed => match e { Press => k + 1, _ => k }
+		Open => match e { Done => k * 2, _ => k }
+main(): print(code(State.Open), " ", mix(State.Closed, Event.Press, 4))

@@ -1,0 +1,10 @@
+# W3: the same pure call that does work (a loop) twice in one statement
+use os
+tri(x int) int:
+	s ~= 0
+	for i x: s += i
+	s
+main():
+	a := 7
+	b := tri(a) + tri(a)
+	print(b)

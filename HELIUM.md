@@ -246,6 +246,21 @@ fn main() { print(fast_steps(27), " ", fast_steps(27)); }
 - `import math;`: `sqrt sin cos tan atan2 exp log pow floor ceil round PI TAU`. `import os;`: `read_file(path, out) write_file append_file file_exists list_dir read_line args() arg_count clock time sleep_ms random_seed`.
 - Also `vec` (`float2 float3 float4`), `json`, `csv`, `regex`, `base64`, `binary`, `ffi`, `exception`; `gfx`, `audio`, `ui`, `physics` packages.
 
+## Minimal by construction (std constructs and waste warnings)
+
+One spelling each; every one works on native, C and web.
+
+- `seq(n, a0, a1) { a, b => a + b }`: the n-th term of a two-term recurrence in n - 1 steps (`seq(n, 0, 1) { a, b => a + b }` is fib). `seq(n, a0) { a => ... }` applies a one-term step n times.
+- `tab(n) { i => f(i) }` fills `T[>..]` once; `tab(n, m) { i, j => f(i, j) }` fills a flat row-major table, read as `t[i * m + j]`.
+- `each_sum(out, m) { i, j => t[i * m + j] * v[j] }` sets `out[i]` to the sum over `j < m`, eight rows at a time.
+- `sort(xs)` / `sorted(xs)` on `u8 i8 u16 i16 u32 i32 u64 i64` slices is a radix sort (one counting read, one pass per key byte that varies); other element types and `sort(xs) { a, b => ... }` stay comparison sorts.
+- `counter()`: a count starts at 0. hc lowers a local `xs T[>..] = []` that is only pushed (with simple values) and read as `xs.len` into one, so `xs.push(v)` becomes `xs++`.
+
+`hc` warns (it does not fail) when root-package code spends work these remove; each warning names its rewrite:
+
+- W1 a pure function calling itself on `n - 1` and `n - 2`: use `seq`. W2 a collection only pushed (and measured): count it, or drop it. W3 the same pure call with a loop inside, twice in one statement: bind it once. W4 a constant match over two enums: one table load. W5 a pure closed-form `f(i, j)` recomputed inside nested hot loops: `tab` it once. W6 a hand merge on fixed-width integer keys: `sort(xs)`.
+- Pure means: no I/O, no writes to globals or `&`/mutable-slice parameters, no calls to impure functions (checked through callers).
+
 ## Web
 
 `hc build --web app.amni -o app.wasm` writes `app.wasm` and the `helium.js` host beside it. A page starts it with `<script type="module">import {start} from './helium.js'; start({wasm: 'app.wasm'});</script>`. `main` runs once and globals stay alive; the host then calls the program's `export fn he_frame(t real)` every animation frame after `web::frames(true)`, and `export fn he_event(tag i32, kind i32)` for each listener, timer, fetch and JS result, by the tag the program gave (`kind` is `web::EV_DOM`, `EV_TIMER`, `EV_FETCH`, `EV_PROGRESS`, `EV_JS`, `EV_CALLBACK`).

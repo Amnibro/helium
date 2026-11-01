@@ -17,4 +17,5 @@ step webhost tools/hc/webtest.sh "$HN"
 step pkg python3 tools/hc/pkgtest.py "$HN"
 step lut tools/hc/luttest.sh "$HN"
 step err python3 tools/hc/errtest.py "$HN"
+step warn tools/hc/warntest.sh "$HN"
 [ $fail -eq 0 ] && echo "ci: ok" || echo "ci: FAILED"; exit $fail

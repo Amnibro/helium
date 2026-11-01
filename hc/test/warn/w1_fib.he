@@ -1,0 +1,4 @@
+# W1: a pure function that recurses on n - 1 and n - 2 recomputes itself exponentially
+use os
+fib(n int) int: if n < 2 { n } else { fib(n - 1) + fib(n - 2) }
+main(): print(fib(20))

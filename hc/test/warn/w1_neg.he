@@ -1,0 +1,14 @@
+# W1 negatives: one self-call, the seq form, and impure functions (purity rule: they log,
+# directly or through a helper)
+use os
+var CALLS i32[>..]
+fact(n int) int: if n < 2 { 1 } else { n * fact(n - 1) }
+logfib(n int) int:
+	print(n, " ")
+	if n < 2 { n } else { logfib(n - 1) + logfib(n - 2) }
+note(n int) int:
+	CALLS.push(n as i32)
+	n
+tracefib(n int) int: if n < 2 { note(n) } else { tracefib(n - 1) + tracefib(n - 2) }
+fib(n int) int: seq(n, 0, 1) { a, b => a + b }
+main(): print(fact(5), " ", logfib(3), " ", tracefib(5), " ", fib(20), " ", CALLS.len)

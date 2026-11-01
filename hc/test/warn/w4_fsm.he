@@ -1,0 +1,13 @@
+# W4: a constant match over two enums
+use os
+enum State { Closed, Opening, Open }
+enum Event { Press, Done }
+step(s State, e Event) State:
+	match s:
+		Closed => match e { Press => State.Opening, _ => State.Closed }
+		Opening => match e { Done => State.Open, _ => State.Opening }
+		Open => match e { Press => State.Closed, _ => State.Open }
+main():
+	s ~= State.Closed
+	for e [Event.Press, Event.Done, Event.Press]: s = step(s, e)
+	print(s as int)
