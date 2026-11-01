@@ -5276,7 +5276,7 @@ if ((((src_13087).n) == (((int64_t)0LL)))) { (void)(({ hr_pb(); hr_fs(&hr_ob, g0
  }
 (void)(f5_setlib());
 if (g1152) { hrv nv8_13107 __attribute__((cleanup(hr_rdrop))) = ((hrv){0}); 
-if (hr_os_getenv(hr_str("HC_VLN8", 7), (&(nv8_13107)))) { g1189 = ((int64_t)8LL);
+if ((!(hr_os_getenv(hr_str("HC_VLN4", 7), (&(nv8_13107)))))) { g1189 = ((int64_t)8LL);
  }
  }
 if ((g609 && ((f2017_hdef(hr_str("GS_STACK_RESERVE", 16))) < (((int64_t)0LL))))) { (void)(({ hrv *_v349 = &(g608); hsl _s349 = hr_str("GS_STACK_RESERVE=33554432\012", 26); hr_append(_v349, _s349.p, _s349.n, sizeof(uint8_t)); }));
