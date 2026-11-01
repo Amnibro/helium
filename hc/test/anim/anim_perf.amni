@@ -1,0 +1,15 @@
+// Perf test: 32 gold characters (blend space + machine + additive + root
+// motion + foot IK + skin palette) ticked at 60 Hz, then CPU linear-blend
+// skinning of the hero mesh for all 32.
+// HC_LIB=hc/lib build/hcn hc/test/anim/anim_perf.amni -- [hero.glb] [frames]
+// (program args go after "--"; a bare path is taken as hcn's output file)
+import os;
+import perf_body;
+fn main() {
+	var path byte[>..] = []; var nf byte[>..] = [];
+	if arg_count() > 1 { arg(1, path); } else { path.append("/workspace/bake/r4/base/jk-h02.glb"); }
+	var frames = 600;
+	if arg_count() > 2 { arg(2, nf); frames = 0; for c in nf.len { frames = frames * 10 + (nf[c] as int - 48); } }
+	let f = anim::perf_main(path[..], frames);
+	if f != 0 { exit(1); }
+}
