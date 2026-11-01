@@ -1,0 +1,156 @@
+// anim/clip: the clip bank (uniformly resampled keyframes), sampling by
+// time or normalized phase, additive clip baking and root-motion extraction.
+// Clean-room; see DESIGN.md.
+namespace anim;
+import vec;
+import math;
+import anim.math;
+import anim.pose;
+
+// Frame-major storage: key (f, j) of clip c is at CLIPS[c].base + f * nj + j.
+// A looping clip's last frame is expected to equal its first, so its period
+// is dur = (frames - 1) / fps.
+struct Clip {
+	name byte[..64],
+	nj i32, frames i32, fps f32, dur f32, base int,
+	looping bool, additive bool,
+	root i32,          // root-motion joint, -1 for none
+	root_v float3,     // average root velocity over one period (m/s)
+	root_end float3,   // root translation delta over one period
+	speed f32,         // horizontal root speed (m/s)
+}
+var CLIPS Clip[>..];
+var KT float3[>..];
+var KR float4[>..];
+var KS float3[>..];
+
+fn clip_count() int { CLIPS.len }
+fn clip_find(name const byte[:]) i32 {
+	for c, i in CLIPS { if c.name == name { return i as i32; } }
+	-1
+}
+// Suffix match, e.g. "walk" finds "humanoid_v1_loco_walk" (first match).
+fn clip_find_suffix(sfx const byte[:]) i32 {
+	for c, i in CLIPS { if ends_with(c.name[..], sfx) { return i as i32; } }
+	-1
+}
+fn clip_bank_clear() { CLIPS.clear(); KT.clear(); KR.clear(); KS.clear(); }
+
+// Reserves frames * nj keys filled from the skeleton rest pose.
+fn clip_new(sk Skeleton&, name const byte[:], frames i32, fps f32, looping bool) int {
+	let base = KT.len;
+	for f in frames {
+		for j in sk.n { KT.push(sk.rest_t[j]); KR.push(sk.rest_r[j]); KS.push(sk.rest_s[j]); }
+	}
+	var c = Clip { nj: sk.n, frames: frames, fps: fps, dur: ((max(frames, 2) - 1) as f32) / fps, base: base,
+		looping: looping, additive: false, root: -1, root_v: V0, root_end: V0, speed: 0.0, .. };
+	let cut = min(name.len, 64);
+	c.name.append(name[..cut]);
+	CLIPS.push(c);
+	CLIPS.len - 1
+}
+fn key_at(c int, f int, j int) int { CLIPS[c].base + f * CLIPS[c].nj + j }
+fn clip_set(c int, f int, j int, t float3, r float4, s float3) {
+	let k = key_at(c, f, j);
+	KT[k] = t; KR[k] = r; KS[k] = s;
+}
+fn clip_set_t(c int, f int, j int, t float3) { KT[key_at(c, f, j)] = t; }
+fn clip_set_r(c int, f int, j int, r float4) { KR[key_at(c, f, j)] = r; }
+fn clip_set_s(c int, f int, j int, s float3) { KS[key_at(c, f, j)] = s; }
+
+// Wraps (looping) or clamps a time into [0, dur].
+fn clip_time(c int, t f32) f32 {
+	let d = CLIPS[c].dur;
+	if d <= 0.0 { return 0.0; }
+	if CLIPS[c].looping { let k = floor(t / d); return t - k * d; }
+	clamp(t, 0.0, d)
+}
+// Samples clip c at time t (seconds) into p, interpolating between the two
+// neighbouring frames (lerp translation/scale, short-arc nlerp rotation).
+fn sample(c int, t f32, p Pose&) {
+	let cl = CLIPS[c];
+	let tt = clip_time(c, t);
+	let u = tt * cl.fps;
+	var f0 = floor(u) as int;
+	if f0 >= cl.frames - 1 { f0 = cl.frames - 2; }
+	if f0 < 0 { f0 = 0; }
+	let f1 = min(f0 + 1, cl.frames - 1);
+	let a = clamp(u - (f0 as f32), 0.0, 1.0);
+	let b = 1.0 - a;
+	let k0 = cl.base + f0 * cl.nj;
+	let k1 = cl.base + f1 * cl.nj;
+	p.n = cl.nj;
+	for j in cl.nj {
+		p.t[j] = KT[k0 + j] * b + KT[k1 + j] * a;
+		p.s[j] = KS[k0 + j] * b + KS[k1 + j] * a;
+		let q0 = KR[k0 + j];
+		var q1 = KR[k1 + j];
+		if qdot(q0, q1) < 0.0 { q1 = qneg(q1); }
+		p.r[j] = qnorm(q0 * b + q1 * a);
+	}
+}
+fn sample_phase(c int, phase f32, p Pose&) { sample(c, phase * CLIPS[c].dur, p); }
+
+// Bakes an additive clip: every frame of src expressed relative to frame
+// ref_frame of clip ref (q = qref^-1 q, t - tref, s / sref).
+fn make_additive_clip(sk Skeleton&, src int, ref int, ref_frame int, name const byte[:]) int {
+	let s = CLIPS[src];
+	let c = clip_new(sk, name, s.frames, s.fps, s.looping);
+	CLIPS[c].additive = true;
+	for f in s.frames {
+		for j in s.nj {
+			let ka = key_at(src, f, j);
+			let kr = key_at(ref, ref_frame, j);
+			clip_set(c, f, j, KT[ka] - KT[kr], qnorm(qmul(qconj(KR[kr]), KR[ka])), KS[ka] / KS[kr]);
+		}
+	}
+	c
+}
+
+// Root motion. The root joint's horizontal (XZ) translation is the motion;
+// the in-place pose pins it to its frame-0 value. Yaw is left in the pose
+// (none of the target rigs turn through their loco clips).
+fn clip_set_root(c int, root i32) {
+	CLIPS[c].root = root;
+	if root < 0 { return; }
+	let cl = CLIPS[c];
+	let a = KT[key_at(c, 0, root)];
+	let b = KT[key_at(c, cl.frames - 1, root)];
+	let d = float3 { b.x - a.x, 0.0, b.z - a.z };
+	CLIPS[c].root_end = d;
+	CLIPS[c].root_v = if cl.dur > 0.0 { d / cl.dur } else { V0 };
+	CLIPS[c].speed = if cl.dur > 0.0 { length(d) / cl.dur } else { 0.0 };
+}
+fn root_pos(c int, t f32) float3 {
+	let r = CLIPS[c].root;
+	// sample just the root joint
+	let cl = CLIPS[c];
+	let u = clip_time(c, t) * cl.fps;
+	var f0 = floor(u) as int;
+	if f0 >= cl.frames - 1 { f0 = cl.frames - 2; }
+	if f0 < 0 { f0 = 0; }
+	let f1 = min(f0 + 1, cl.frames - 1);
+	let a = clamp(u - (f0 as f32), 0.0, 1.0);
+	KT[key_at(c, f0, r)] * (1.0 - a) + KT[key_at(c, f1, r)] * a
+}
+// Horizontal root displacement while the clip's unwrapped time goes from
+// t0 to t1 (t1 >= t0); loops add whole periods.
+fn root_delta(c int, t0 f32, t1 f32) float3 {
+	let cl = CLIPS[c];
+	if cl.root < 0 || cl.dur <= 0.0 { return V0; }
+	if !cl.looping {
+		let d = root_pos(c, t1) - root_pos(c, t0);
+		return float3 { d.x, 0.0, d.z };
+	}
+	let n0 = floor(t0 / cl.dur);
+	let n1 = floor(t1 / cl.dur);
+	let d = root_pos(c, t1 - n1 * cl.dur) - root_pos(c, t0 - n0 * cl.dur) + cl.root_end * (n1 - n0);
+	float3 { d.x, 0.0, d.z }
+}
+// Pins the root joint's XZ to its frame-0 value (in-place pose).
+fn make_in_place(c int, p Pose&) {
+	let r = CLIPS[c].root;
+	if r < 0 { return; }
+	let z = KT[key_at(c, 0, r)];
+	p.t[r] = float3 { z.x, p.t[r].y, z.z };
+}

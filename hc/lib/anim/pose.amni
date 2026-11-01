@@ -1,0 +1,146 @@
+// anim/pose: skeletons, local poses, forward kinematics, n-way normalized
+// blending, additive layers and per-bone masks. Clean-room; see DESIGN.md.
+namespace anim;
+import vec;
+import math;
+import anim.math;
+
+let MAXJ = 128;
+
+// Joints are stored parent-before-child (parent[j] < j, root parent -1).
+struct Skeleton {
+	n i32,
+	parent i32[128],
+	rest_t float3[128], rest_r float4[128], rest_s float3[128],
+	inv_bind M4[128],
+	name byte[..40][128],
+}
+// A local-space pose: translation, rotation, scale per joint.
+struct Pose { n i32, t float3[128], r float4[128], s float3[128] }
+// Model-space (character-space) transforms of every joint.
+struct Model { n i32, x Xf[128] }
+// Per-bone weights 0..1.
+struct Mask { w f32[128] }
+
+fn rest_pose(sk Skeleton&, p Pose&) {
+	p.n = sk.n;
+	for j in sk.n { p.t[j] = sk.rest_t[j]; p.r[j] = sk.rest_r[j]; p.s[j] = sk.rest_s[j]; }
+}
+fn identity_pose(n i32, p Pose&) {
+	p.n = n;
+	for j in n { p.t[j] = V0; p.r[j] = QI; p.s[j] = V1; }
+}
+fn joint_index(sk Skeleton&, name const byte[:]) i32 {
+	for j in sk.n { if sk.name[j] == name { return j as i32; } }
+	-1
+}
+fn local_xf(p Pose&, j int) Xf { Xf { p.t[j], p.r[j], p.s[j] } }
+
+// Forward kinematics: model[j] = model[parent] * local[j].
+fn fk(sk Skeleton&, p Pose&, m Model&) {
+	m.n = p.n;
+	for j in p.n {
+		let l = Xf { p.t[j], p.r[j], p.s[j] };
+		let pa = sk.parent[j];
+		m.x[j] = if pa < 0 { l } else { xf_mul(m.x[pa], l) };
+	}
+}
+// Model rotation -> local rotation of joint j given its parent's model rotation.
+fn local_rot_from_model(sk Skeleton&, m Model&, j int, model_r float4) float4 {
+	let pa = sk.parent[j];
+	if pa < 0 { return model_r; }
+	qnorm(qmul(qconj(m.x[pa].r), model_r))
+}
+
+// Two-pose blend: out = a*(1-w) + b*w (rotations nlerp on the short arc).
+fn blend2(a Pose&, b Pose&, w f32, out Pose&) {
+	out.n = a.n;
+	let ia = 1.0 - w;
+	for j in a.n {
+		out.t[j] = a.t[j] * ia + b.t[j] * w;
+		out.s[j] = a.s[j] * ia + b.s[j] * w;
+		out.r[j] = nlerp(a.r[j], b.r[j], w);
+	}
+}
+
+// N-way normalized weighted blend, done as an accumulator so callers can
+// sample each source straight into it. Rotations are summed with their sign
+// aligned to the first contribution, then normalized (the normalized
+// weighted quaternion average; exact for n = 2 up to nlerp's arc spacing).
+struct Accum { n i32, wsum f32, t float3[128], r float4[128], s float3[128] }
+fn accum_begin(acc Accum&, n i32) {
+	acc.n = n; acc.wsum = 0.0;
+	for j in n { acc.t[j] = V0; acc.r[j] = float4 { 0.0, 0.0, 0.0, 0.0 }; acc.s[j] = V0; }
+}
+fn accum_add(acc Accum&, p Pose&, w f32) {
+	if w <= 0.0 { return; }
+	let first = acc.wsum <= 0.0;
+	acc.wsum += w;
+	for j in acc.n {
+		acc.t[j] = acc.t[j] + p.t[j] * w;
+		acc.s[j] = acc.s[j] + p.s[j] * w;
+		var q = p.r[j];
+		if !first && qdot(acc.r[j], q) < 0.0 { q = qneg(q); }
+		acc.r[j] = acc.r[j] + q * w;
+	}
+}
+fn accum_end(acc Accum&, out Pose&) {
+	out.n = acc.n;
+	let k = if acc.wsum > 0.0 { 1.0 / acc.wsum } else { 0.0 };
+	for j in acc.n {
+		out.t[j] = acc.t[j] * k;
+		out.s[j] = acc.s[j] * k;
+		out.r[j] = qnorm(acc.r[j]);
+	}
+}
+// Blend n poses taken from a flat pose list with the given weights.
+fn blend_n(poses Pose[:], weights f32[:], out Pose&) {
+	var acc = default<Accum>();
+	accum_begin(acc, poses[0].n);
+	for i in poses.len { accum_add(acc, poses[i], weights[i]); }
+	accum_end(acc, out);
+}
+
+// Additive: delta = ref^-1 * pose per joint in local space
+// (rotation qref^-1 q, translation t - tref, scale s / sref).
+fn make_additive(pose Pose&, ref Pose&, out Pose&) {
+	out.n = pose.n;
+	for j in pose.n {
+		out.r[j] = qnorm(qmul(qconj(ref.r[j]), pose.r[j]));
+		out.t[j] = pose.t[j] - ref.t[j];
+		out.s[j] = pose.s[j] / ref.s[j];
+	}
+}
+// base += delta * weight (* mask): q = qbase * slerp(I, qdelta, w).
+fn apply_additive(base Pose&, delta Pose&, weight f32, mask Mask&, use_mask bool) {
+	for j in base.n {
+		let w = if use_mask { weight * mask.w[j] } else { weight };
+		if w <= 0.0 { continue; }
+		base.r[j] = qnorm(qmul(base.r[j], nlerp(QI, delta.r[j], w)));
+		base.t[j] = base.t[j] + delta.t[j] * w;
+		base.s[j] = base.s[j] * (V1 + (delta.s[j] - V1) * w);
+	}
+}
+// Override layer: base = lerp(base, over, weight * mask).
+fn apply_override(base Pose&, over Pose&, weight f32, mask Mask&, use_mask bool) {
+	for j in base.n {
+		let w = if use_mask { weight * mask.w[j] } else { weight };
+		if w <= 0.0 { continue; }
+		base.t[j] = base.t[j] + (over.t[j] - base.t[j]) * w;
+		base.s[j] = base.s[j] + (over.s[j] - base.s[j]) * w;
+		base.r[j] = nlerp(base.r[j], over.r[j], w);
+	}
+}
+
+// Masks: all zero, then a joint and every descendant set to w.
+fn mask_clear(m Mask&) { for j in MAXJ { m.w[j] = 0.0; } }
+fn mask_branch(sk Skeleton&, m Mask&, root i32, w f32) {
+	if root < 0 { return; }
+	var inside = [false; 128];
+	inside[root] = true;
+	m.w[root] = w;
+	for j in sk.n {
+		let pa = sk.parent[j];
+		if pa >= 0 && inside[pa] { inside[j] = true; m.w[j] = w; }
+	}
+}

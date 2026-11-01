@@ -1,0 +1,4 @@
+// Unit tests for hc/lib/anim: math, blending, clips, spaces, machine, IK.
+// HC_LIB=hc/lib build/hcn hc/test/anim/anim_unit.amni
+import unit_body;
+fn main() { let f = anim::unit_main(); if f != 0 { exit(1); } }

@@ -1,0 +1,226 @@
+// Unit tests for hc/lib/anim (body; entry is anim_unit.amni).
+namespace anim;
+import vec;
+import math;
+import anim.math;
+import anim.pose;
+import anim.clip;
+import anim.space;
+import anim.machine;
+import anim.ik;
+
+var FAILS = 0;
+fn check(ok bool, what const byte[:]) {
+	if ok { print("ok   ", what); } else { print("FAIL ", what); FAILS += 1; }
+}
+fn near(a f32, b f32, e f32) bool { abs(a - b) <= e }
+fn vnear(a float3, b float3, e f32) bool { length(a - b) <= e }
+
+// leg rig: root(0) -> hip(1) -> knee(2) -> ankle(3); hip 1 m up, bones 0.45/0.45;
+// a second leg 4 -> 5 -> 6 for the planting test
+fn leg_rig(sk Skeleton&) {
+	sk.n = 7;
+	sk.parent[0] = -1; sk.parent[1] = 0; sk.parent[2] = 1; sk.parent[3] = 2;
+	sk.parent[4] = 0; sk.parent[5] = 4; sk.parent[6] = 5;   // second leg
+	sk.rest_t[4] = v3(0.2, 1.0, 0.0); sk.rest_t[5] = v3(0.0, -0.45, 0.02); sk.rest_t[6] = v3(0.0, -0.45, -0.02);
+	for j in 7 { sk.rest_r[j] = QI; sk.rest_s[j] = V1; }
+	sk.rest_t[0] = V0;
+	sk.rest_t[1] = v3(0.0, 1.0, 0.0);
+	sk.rest_t[2] = v3(0.0, -0.45, 0.02);   // slight forward knee
+	sk.rest_t[3] = v3(0.0, -0.45, -0.02); sk.rest_t[6] = sk.rest_t[3];
+}
+
+fn test_math() {
+	let q = qaxis(v3(0.0, 1.0, 0.0), 1.2);
+	check(near(qangle(q, QI), 1.2, 1.0e-4), "qangle(qaxis)");
+	let r = qfromto(v3(1.0, 0.0, 0.0), v3(0.0, 0.0, 1.0));
+	check(vnear(qrot(r, v3(1.0, 0.0, 0.0)), v3(0.0, 0.0, 1.0), 1.0e-5), "qfromto");
+	let h = slerp(QI, q, 0.5);
+	check(near(qangle(h, QI), 0.6, 1.0e-4), "slerp halfway");
+	let x = Xf { v3(1.0, 2.0, 3.0), q, V1 };
+	let back = xf_mul(xf_inv(x), x);
+	check(vnear(back.t, V0, 1.0e-5) && near(qangle(back.r, QI), 0.0, 1.0e-3), "xf_inv");
+}
+
+fn test_blend(sk Skeleton&) {
+	var a = default<Pose>(); var b = default<Pose>(); var o = default<Pose>();
+	rest_pose(sk, a); rest_pose(sk, b);
+	b.r[1] = qaxis(v3(1.0, 0.0, 0.0), 1.0);
+	b.t[1] = v3(0.0, 2.0, 0.0);
+	blend2(a, b, 0.25, o);
+	check(near(o.t[1].y, 1.25, 1.0e-5), "blend2 translation");
+	var acc = default<Accum>();
+	accum_begin(acc, 4);
+	accum_add(acc, a, 1.0); accum_add(acc, b, 1.0);
+	b.r[1] = qneg(b.r[1]);                // same rotation, other hemisphere
+	accum_add(acc, b, 2.0);
+	accum_end(acc, o);
+	check(near(o.t[1].y, 1.75, 1.0e-5), "accum normalized weights");
+	check(near(qangle(o.r[1], qaxis(v3(1.0, 0.0, 0.0), 0.75)), 0.0, 0.02), "accum hemisphere aligned");
+	// additive round trip: base + (pose - ref) == pose when base == ref
+	var d = default<Pose>();
+	b.r[1] = qaxis(v3(1.0, 0.0, 0.0), 1.0);
+	make_additive(b, a, d);
+	var base = a;
+	var mask = default<Mask>();
+	apply_additive(base, d, 1.0, mask, false);
+	check(near(qangle(base.r[1], b.r[1]), 0.0, 1.0e-3) && vnear(base.t[1], b.t[1], 1.0e-5), "additive round trip");
+	mask_clear(mask); mask_branch(sk, mask, 2, 1.0);
+	check(mask.w[1] == 0.0 && mask.w[2] == 1.0 && mask.w[3] == 1.0, "mask_branch");
+}
+
+fn test_clip(sk Skeleton&) {
+	clip_bank_clear();
+	// 1 m forward over 1 s, 31 frames at 30 fps, looping
+	let c = clip_new(sk, "walk", 31, 30.0, true);
+	for f in 31 {
+		let k = (f as f32) / 30.0;
+		clip_set_t(c, f, 0, v3(0.0, 0.0, k));
+		clip_set_r(c, f, 1, qaxis(v3(1.0, 0.0, 0.0), sin(k * 6.2831853) * 0.5));
+	}
+	clip_set_root(c, 0);
+	check(near(CLIPS[c].dur, 1.0, 1.0e-5), "clip duration");
+	check(near(CLIPS[c].speed, 1.0, 1.0e-4), "clip root speed");
+	check(vnear(root_delta(c, 0.25, 0.5), v3(0.0, 0.0, 0.25), 1.0e-4), "root delta");
+	check(vnear(root_delta(c, 0.9, 1.1), v3(0.0, 0.0, 0.2), 1.0e-4), "root delta across loop");
+	check(vnear(root_delta(c, 0.5, 2.5), v3(0.0, 0.0, 2.0), 1.0e-4), "root delta over 2 loops");
+	var p = default<Pose>();
+	sample(c, 0.25, p);
+	check(near(qangle(p.r[1], qaxis(v3(1.0, 0.0, 0.0), 0.5)), 0.0, 0.01), "sample rotation");
+	make_in_place(c, p);
+	check(near(p.t[0].z, 0.0, 1.0e-5), "in place");
+}
+
+fn test_space() {
+	var s = space1d();
+	space_add(s, 0, 3.0); space_add(s, 1, 0.0); space_add(s, 2, 1.0);
+	space_build(s);
+	var w = [0.0 as f32; 16];
+	space_weights(s, 2.0, 0.0, w);
+	var sum = 0.0 as f32; for i in s.n { sum += w[i]; }
+	check(near(sum, 1.0, 1.0e-5), "1D weights sum");
+	// sorted: clip1@0, clip2@1, clip0@3 -> at 2: half clip2 half clip0
+	check(near(w[1], 0.5, 1.0e-5) && near(w[2], 0.5, 1.0e-5), "1D weights");
+	space_weights(s, 9.0, 0.0, w);
+	check(near(w[2], 1.0, 1.0e-6), "1D clamp");
+	var s2 = space2d();
+	space_add(s2, 0, 0.0, 0.0); space_add(s2, 1, 1.0, 0.0); space_add(s2, 2, 0.0, 1.0);
+	space_add(s2, 3, -1.0, 0.0); space_add(s2, 4, 0.0, -1.0);
+	space_build(s2);
+	check(s2.ntri == 4, "2D delaunay triangles");
+	space_weights(s2, 0.25, 0.25, w);
+	check(near(w[0], 0.5, 1.0e-4) && near(w[1], 0.25, 1.0e-4) && near(w[2], 0.25, 1.0e-4), "2D barycentric");
+}
+
+fn test_machine(sk Skeleton&) {
+	clip_bank_clear();
+	let idle = clip_new(sk, "idle", 31, 30.0, true);
+	let walk = clip_new(sk, "walk", 31, 30.0, true);
+	for f in 31 {
+		let k = (f as f32) / 30.0;
+		clip_set_t(walk, f, 0, v3(0.0, 0.0, k * 1.5));
+		clip_set_r(walk, f, 1, qaxis(v3(1.0, 0.0, 0.0), sin(k * 6.2831853) * 0.5));
+	}
+	clip_set_root(idle, 0); clip_set_root(walk, 0);
+	var d = machine_def();
+	var sp = space1d(); space_add(sp, idle, 0.0); space_add(sp, walk, 1.5);
+	sp.rate_match = true; space_build(sp);
+	let si = def_space(d, sp);
+	let loco = def_state_space(d, "loco", si, 0);
+	let jump = def_state_clip(d, "jump", idle);
+	var t = Transition { from: loco, to: jump, duration: 0.2, consume: 1 };
+	t.nc = 1; t.c[0] = cond(1, OP_TRUE);
+	def_trans(d, t);
+	var back = Transition { from: jump, to: loco, duration: 0.25, exit_time: 0.5 };
+	def_trans(d, back);
+	var m = default<Machine>();
+	machine_start(d, m, loco);
+	var out = default<Pose>(); var s1 = default<Pose>(); var s2 = default<Pose>(); var acc = default<Accum>();
+	m.params[0] = 0.75;
+	var dist = 0.0 as f32;
+	for i in 60 { machine_update(d, m, 1.0 / 60.0, out, s1, s2, acc); dist += m.root.z; }
+	check(near(dist, 0.75, 0.01), "loco root motion matches speed param");
+	m.params[1] = 1.0;
+	machine_update(d, m, 1.0 / 60.0, out, s1, s2, acc);
+	check(m.cur == jump && m.params[1] == 0.0 && m.src_kind == 1, "trigger fires + consumed");
+	for i in 6 { machine_update(d, m, 1.0 / 60.0, out, s1, s2, acc); }
+	m.params[1] = 1.0;  // jump is not reachable from jump; nothing should fire
+	machine_update(d, m, 1.0 / 60.0, out, s1, s2, acc);
+	check(m.cur == jump, "no self transition");
+	m.params[1] = 0.0;
+	for i in 40 { machine_update(d, m, 1.0 / 60.0, out, s1, s2, acc); }
+	check(m.cur == loco, "exit-time transition back");
+}
+
+fn test_ik(sk Skeleton&) {
+	var p = default<Pose>(); var m = default<Model>();
+	rest_pose(sk, p); fk(sk, p, m);
+	let target = v3(0.1, 0.3, 0.2);
+	let pole = v3(0.0, 0.6, 1.0);
+	let err = two_bone_ik(sk, p, m, 1, 2, 3, target, pole, 1.0, true);
+	fk(sk, p, m);
+	check(err < 1.0e-3 && vnear(m.x[3].t, target, 1.0e-3), "two-bone reaches target");
+	check(m.x[2].t.z > 0.0, "two-bone knee bends toward pole");
+	check(near(length(m.x[2].t - m.x[1].t), length(sk.rest_t[2]), 1.0e-4), "two-bone keeps bone length");
+	check(near(qangle(m.x[3].r, QI), 0.0, 1.0e-3), "two-bone keeps end orientation");
+	// unreachable: straightens toward target
+	rest_pose(sk, p); fk(sk, p, m);
+	let far = v3(0.0, -2.0, 0.5);
+	let err2 = two_bone_ik(sk, p, m, 1, 2, 3, far, pole, 1.0, false);
+	fk(sk, p, m);
+	let dir = normalize(m.x[3].t - m.x[1].t);
+	check(err2 > 0.5 && near(dot(dir, normalize(far - m.x[1].t)), 1.0, 1.0e-3), "two-bone unreachable points at target");
+	// FABRIK on the same chain
+	rest_pose(sk, p); fk(sk, p, m);
+	var chain = [1 as i32, 2, 3];
+	let r = fabrik(sk, p, m, chain[..], target, 1.0e-4, 20, 1.0, true);
+	fk(sk, p, m);
+	check(r.error < 1.0e-3 && vnear(m.x[3].t, target, 1.0e-3), "fabrik reaches target");
+	print("     fabrik iterations ", r.iters);
+	check(near(length(m.x[3].t - m.x[2].t), length(sk.rest_t[3]), 1.0e-4), "fabrik keeps bone length");
+}
+
+fn test_plant(sk Skeleton&) {
+	// static leg standing, ground raised 0.1 under it: foot must follow
+	var p = default<Pose>(); var m = default<Model>();
+	var legs = [Leg { hip: 1, knee: 2, ankle: 3, sole: 0.1 }, Leg { hip: 4, knee: 5, ankle: 6, sole: 0.1 }];
+	sk.rest_t[3] = v3(0.0, -0.40, -0.02); sk.rest_t[6] = sk.rest_t[3]; // ankle 0.15 above ground
+	var cfg = PlantCfg {};
+	var g = [0.1 as f32, 0.1];
+	var ch = XI;
+	for i in 30 {
+		rest_pose(sk, p); fk(sk, p, m);
+		plant_feet(sk, p, m, legs, g, ch, cfg, 1.0 / 60.0);
+	}
+	check(near(m.x[3].t.y, 0.25, 2.0e-3), "plant follows raised ground");
+	// character drifts forward 1 cm/frame while in contact: foot stays put
+	sk.rest_t[3] = v3(0.0, -0.80, -0.02); sk.rest_t[6] = sk.rest_t[3];
+	g = [0.0 as f32, 0.0];
+	var lg2 = [Leg { hip: 1, knee: 2, ankle: 3, sole: 0.15 }, Leg { hip: 4, knee: 5, ankle: 6, sole: 0.15 }];
+	var cfg2 = PlantCfg { contact_v: 0.8, lock_rate: 1000.0 };
+	var w0 = V0;
+	for i in 10 {
+		ch.t = v3(0.0, 0.0, (i as f32) * 0.01);
+		rest_pose(sk, p); fk(sk, p, m);
+		plant_feet(sk, p, m, lg2, g, ch, cfg2, 1.0 / 60.0);
+		let w = xf_point(ch, m.x[3].t);
+		if i == 1 { w0 = w; }
+	}
+	let w9 = xf_point(ch, m.x[3].t);
+	check(lg2[0].locked && near(w9.z, w0.z, 2.0e-3), "plant locks foot in world");
+	sk.rest_t[3] = v3(0.0, -0.45, -0.02); sk.rest_t[6] = sk.rest_t[3];
+}
+
+fn unit_main() i32 {
+	var sk = default<Skeleton>();
+	leg_rig(sk);
+	test_math();
+	test_blend(sk);
+	test_clip(sk);
+	test_space();
+	test_machine(sk);
+	test_ik(sk);
+	test_plant(sk);
+	if FAILS == 0 { print("ALL PASS"); } else { print("FAILURES: ", FAILS); }
+	FAILS as i32
+}

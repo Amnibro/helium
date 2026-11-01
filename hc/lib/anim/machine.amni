@@ -1,0 +1,214 @@
+// anim/machine: motions (a clip or a blend space) and the animation state
+// machine: states, transitions with conditions / exit times, smoothstep
+// crossfades, phase sync, and interruption by freezing the last output pose.
+// Root motion flows through: every motion reports its root displacement
+// for the tick and the machine blends them with the same weights as the
+// poses. Clean-room; see DESIGN.md.
+namespace anim;
+import vec;
+import math;
+import anim.math;
+import anim.pose;
+import anim.clip;
+import anim.space;
+
+let MK_CLIP = 0;
+let MK_SPACE = 1;
+let OP_GT = 0;
+let OP_LT = 1;
+let OP_GE = 2;
+let OP_LE = 3;
+let OP_TRUE = 4;   // param > 0.5 (a bool or trigger)
+let OP_FALSE = 5;  // param <= 0.5
+let NPARAM = 16;
+
+struct Motion { kind i32, clip i32 = -1, space i32 = -1, px i32 = -1, py i32 = -1, rate f32 = 1.0 }
+struct State { name byte[..32], motion Motion }
+struct Cond { param i32 = -1, op i32 = 0, value f32 = 0.0 }
+struct Transition {
+	from i32,             // -1: from any state
+	to i32,
+	nc i32 = 0, c Cond[2] = [Cond{}, Cond{}],
+	exit_time f32 = -1.0, // >= 0: also needs the source phase to reach it
+	duration f32 = 0.2,   // crossfade seconds
+	sync bool = false,    // target starts at the source's normalized phase
+	consume i32 = -1,     // trigger param reset to 0 when this fires
+}
+struct MachineDef {
+	nstates i32, states State[16],
+	ntrans i32, trans Transition[48],
+	nspaces i32, spaces Space[4],
+	entry i32,
+}
+struct Machine {
+	cur i32, phase f32, time_in f32,
+	src_kind i32,          // 0 none, 1 a live state, 2 a frozen pose
+	src i32, src_phase f32,
+	fade f32, fade_dur f32,
+	params f32[16],
+	root float3,           // root displacement of the last tick (character space)
+	root_v float3,         // its velocity (m/s); a frozen source keeps moving at it
+	frozen_v float3,
+	fired i32,             // transition index fired this tick, or -1
+	frozen Pose, last Pose,
+}
+
+fn machine_def() MachineDef { default<MachineDef>() }
+fn def_space(d MachineDef&, s Space) i32 { d.spaces[d.nspaces] = s; d.nspaces += 1; (d.nspaces - 1) as i32 }
+fn def_state_clip(d MachineDef&, name const byte[:], clip int, rate f32 = 1.0) i32 {
+	var st = default<State>();
+	st.name.append(name[..min(name.len, 32)]);
+	st.motion = Motion { kind: MK_CLIP, clip: clip as i32, rate: rate };
+	d.states[d.nstates] = st; d.nstates += 1;
+	(d.nstates - 1) as i32
+}
+fn def_state_space(d MachineDef&, name const byte[:], space i32, px i32, py i32 = -1, rate f32 = 1.0) i32 {
+	var st = default<State>();
+	st.name.append(name[..min(name.len, 32)]);
+	st.motion = Motion { kind: MK_SPACE, space: space, px: px, py: py, rate: rate };
+	d.states[d.nstates] = st; d.nstates += 1;
+	(d.nstates - 1) as i32
+}
+fn def_trans(d MachineDef&, t Transition) i32 { d.trans[d.ntrans] = t; d.ntrans += 1; (d.ntrans - 1) as i32 }
+fn cond(param i32, op i32, value f32 = 0.0) Cond { Cond { param, op, value } }
+
+fn machine_start(d MachineDef&, m Machine&, state i32) {
+	m.cur = state; m.phase = 0.0; m.time_in = 0.0; m.src_kind = 0; m.fade = 0.0; m.fade_dur = 0.0; m.fired = -1;
+	m.root = V0; m.root_v = V0; m.frozen_v = V0;
+}
+
+fn motion_looping(d MachineDef&, mo Motion) bool {
+	if mo.kind == MK_CLIP { return CLIPS[mo.clip].looping; }
+	let s = d.spaces[mo.space];
+	for i in s.n { if !CLIPS[s.clip[i]].looping { return false; } }
+	true
+}
+
+// Samples a motion advanced by dt from phase; writes the pose (root pinned
+// in place) and returns the root displacement and the new phase.
+fn eval_motion(d MachineDef&, mo Motion, params f32[16]&, phase f32, dt f32, out Pose&, tmp Pose&, acc Accum&) float3, f32 {
+	if mo.kind == MK_CLIP {
+		let c = mo.clip;
+		let dur = max(CLIPS[c].dur, 1.0e-4);
+		let t0 = phase * dur;
+		let t1 = t0 + dt * mo.rate;
+		let rd = root_delta(c, t0, t1);
+		var ph = t1 / dur;
+		if CLIPS[c].looping { ph = ph - floor(ph); } else { ph = min(ph, 1.0); }
+		sample(c, ph * dur, out);
+		make_in_place(c, out);
+		return rd, ph;
+	}
+	let s = d.spaces[mo.space];
+	let x = if mo.px >= 0 { params[mo.px] } else { 0.0 };
+	let y = if mo.py >= 0 { params[mo.py] } else { 0.0 };
+	var w = [0.0 as f32; 16];
+	space_weights(s, x, y, w);
+	// merge samples that share a clip
+	var uc = [0 as i32; 16];
+	var uw = [0.0 as f32; 16];
+	var nu = 0;
+	for i in s.n {
+		if w[i] <= 1.0e-6 { continue; }
+		var found = -1;
+		for k in nu { if uc[k] == s.clip[i] { found = k; } }
+		if found >= 0 { uw[found] += w[i]; } else { uc[nu] = s.clip[i]; uw[nu] = w[i]; nu += 1; }
+	}
+	var dur_sum = 0.0 as f32;
+	var v_sum = 0.0 as f32;
+	for k in nu { dur_sum += uw[k] * CLIPS[uc[k]].dur; v_sum += uw[k] * CLIPS[uc[k]].speed; }
+	var rate = mo.rate;
+	if s.rate_match && v_sum > 0.05 { rate *= clamp(x / v_sum, s.rate_min, s.rate_max); }
+	let dph = if dur_sum > 1.0e-4 { dt * rate / dur_sum } else { 0.0 };
+	var rd = V0;
+	accum_begin(acc, CLIPS[uc[0]].nj);
+	for k in nu {
+		let c = uc[k];
+		let dur = CLIPS[c].dur;
+		let t0 = phase * dur;
+		let t1 = (phase + dph) * dur;
+		rd = rd + root_delta(c, t0, t1) * uw[k];
+		sample(c, t1, tmp);
+		make_in_place(c, tmp);
+		accum_add(acc, tmp, uw[k]);
+	}
+	accum_end(acc, out);
+	var ph = phase + dph;
+	if motion_looping(d, mo) { ph = ph - floor(ph); } else { ph = min(ph, 1.0); }
+	return rd, ph;
+}
+
+fn cond_ok(c Cond, params f32[16]&) bool {
+	if c.param < 0 { return true; }
+	let v = params[c.param];
+	match c.op {
+		0 => v > c.value,
+		1 => v < c.value,
+		2 => v >= c.value,
+		3 => v <= c.value,
+		4 => v > 0.5,
+		_ => v <= 0.5,
+	}
+}
+fn trans_ok(d MachineDef&, m Machine&, t Transition) bool {
+	if t.from >= 0 && t.from != m.cur { return false; }
+	if t.to == m.cur { return false; }
+	for i in t.nc { if !cond_ok(t.c[i], m.params) { return false; } }
+	if t.exit_time >= 0.0 && m.phase < t.exit_time { return false; }
+	true
+}
+
+// One tick: pick a transition, advance the live motions, crossfade.
+fn machine_update(d MachineDef&, m Machine&, dt f32, out Pose&, scratch Pose&, scratch2 Pose&, acc Accum&) {
+	m.fired = -1;
+	for i in d.ntrans {
+		let t = d.trans[i];
+		if !trans_ok(d, m, t) { continue; }
+		m.fired = i as i32;
+		if t.consume >= 0 { m.params[t.consume] = 0.0; }
+		let fading = m.src_kind != 0;
+		if t.duration > 0.0 {
+			if fading {
+				// interrupted: fade from exactly what was on screen
+				m.frozen = m.last;
+				m.frozen_v = m.root_v;
+				m.src_kind = 2;
+			} else {
+				m.src_kind = 1; m.src = m.cur; m.src_phase = m.phase;
+			}
+		} else { m.src_kind = 0; }
+		let new_phase = if t.sync { m.phase } else { 0.0 };
+		m.cur = t.to; m.phase = new_phase; m.time_in = 0.0;
+		m.fade = 0.0; m.fade_dur = t.duration;
+		break;
+	}
+	let cur_mo = d.states[m.cur].motion;
+	let rd, ph = eval_motion(d, cur_mo, m.params, m.phase, dt, out, scratch, acc);
+	m.phase = ph; m.time_in += dt;
+	var root = rd;
+	if m.src_kind != 0 {
+		m.fade += dt;
+		let a = smoothstep01(m.fade / max(m.fade_dur, 1.0e-4));
+		if m.src_kind == 1 {
+			let src_mo = d.states[m.src].motion;
+			let srd, sph = eval_motion(d, src_mo, m.params, m.src_phase, dt, scratch2, scratch, acc);
+			m.src_phase = sph;
+			root = srd * (1.0 - a) + rd * a;
+			blend2(scratch2, out, a, out);
+		} else {
+			root = m.frozen_v * (dt * (1.0 - a)) + rd * a;
+			blend2(m.frozen, out, a, out);
+		}
+		if m.fade >= m.fade_dur { m.src_kind = 0; }
+	}
+	m.root = root;
+	m.root_v = if dt > 0.0 { root / dt } else { V0 };
+	m.last = out;
+}
+
+// Moves x toward target at rate per second (for smooth layer weights/params).
+fn approach(x f32, target f32, rate f32, dt f32) f32 {
+	let d = target - x;
+	let step = rate * dt;
+	if abs(d) <= step { target } else if d > 0.0 { x + step } else { x - step }
+}
