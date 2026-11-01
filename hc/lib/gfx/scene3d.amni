@@ -507,10 +507,13 @@ fn setup_view() {
 		// (2, 3) Halton sequence; index 0 is skipped because it is (0, 0)
 		let i = frames % max(jitter_phases, 1) + 1;
 		jitter = float2 { halton(i, 2) - 0.5, halton(i, 3) - 0.5 };
-		// clip x/w gains -c2.x and y/w -c2.y (w = -z), so shift the third column:
-		// +jx pixels is +2 jx / width in NDC; +jy pixels down is -2 jy / height
-		proj_mat.c2.x -= 2.0 * jitter.x / width as f32;
-		proj_mat.c2.y += 2.0 * jitter.y / height as f32;
+		// pixel centre c must see the unjittered image at c + jitter (temporal.frag puts
+		// input sample k at k + 0.5 + jitter), so the image moves by -jitter. Clip x/w
+		// gains -c2.x and y/w -c2.y (w = -z): -jx pixels is -2 jx / width in NDC, so
+		// c2.x += 2 jx / width; -jy pixels (up) is +2 jy / height, so c2.y -= 2 jy / height.
+		// gfx_smoke's jitter check measures the shift on the GPU.
+		proj_mat.c2.x += 2.0 * jitter.x / width as f32;
+		proj_mat.c2.y -= 2.0 * jitter.y / height as f32;
 	}
 	view_proj = gfx::mul(proj_mat, view_mat);
 }

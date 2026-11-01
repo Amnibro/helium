@@ -21,9 +21,11 @@
 //   taa      - 60 still frames must settle (frame-to-frame mean abs diff < 0.5/255 over
 //              frames 30-59); a 40-frame camera slide compared with a converged still frame
 //              (pixels off by >24/255), with the neighbourhood clip off as a control
-//   tsr      - 1280x720 rendered, 1920x1080 out: PSNR vs native 1080p, and the resolve's GPU
-//              time from N back-to-back resolves vs none, fenced by a read (SDL GPU has no
-//              timestamp queries)
+//   jitter   - a sphere's coverage centroid must move by -jitter for all 16 phases
+//   tsr      - 1280x720 rendered, 1920x1080 out: PSNR vs native 1080p; frame and resolve-only
+//              times, 30 warmup + 200 iterations, wall-clock and (under tools/hc/gputime)
+//              GPU-timestamp; the resolve's GPU p95 must be < 1 ms
+// Image metrics in motion / taa / tsr count non-sky pixels only (geo_mask).
 import os;
 import gfx;
 import math;
@@ -563,26 +565,95 @@ fn motion_at(px const byte[:], w int, x int, y int) float4 {
 }
 fn r2(v real) real { round(v * 100.0) / 100.0 }
 fn r3(v real) real { round(v * 1000.0) / 1000.0 }
-// mean absolute difference over the RGB bytes of two RGBA8 images, in 1/255 steps
-fn mean_abs(a const byte[:], b const byte[:]) real {
-	if a.len != b.len || a.len == 0 { return 999.0; }
-	var s = 0;
-	for i in a.len {
-		if i % 4 == 3 { continue; }
-		s += abs(a[i] as int - b[i] as int);
+// Image metrics count only the pixels set in a mask (one byte per pixel, from geo_mask):
+// the sky is smooth and identical in every frame, so it would only dilute the numbers.
+
+// 1 where the motion target holds geometry (view depth < 1000; the sky writes 60000),
+// grown by one pixel so silhouette pixels, whose resolved depth mixes in the sky, count
+fn geo_mask(w int, h int) byte[>..] {
+	let mv = gfx::read_pixels(s3d::motion_target());
+	var g byte[>..] = [];
+	for i in w * h {
+		if half_to_f32(mv[i * 8 + 4], mv[i * 8 + 5]) < 1000.0 { g.push(1 as byte); } else { g.push(0 as byte); }
 	}
-	s as real / (a.len / 4 * 3) as real
+	var m byte[>..] = [];
+	for y in h {
+		for x in w {
+			var v = 0;
+			for dy in 3 {
+				for dx in 3 {
+					let xx = x + dx - 1;
+					let yy = y + dy - 1;
+					if xx >= 0 && yy >= 0 && xx < w && yy < h && g[yy * w + xx] != 0 { v = 1; }
+				}
+			}
+			m.push(v as byte);
+		}
+	}
+	m
 }
-// fraction of pixels whose luma differs by more than cut (0..255)
-fn luma_over(a const byte[:], b const byte[:], cut int) real {
-	if a.len != b.len || a.len == 0 { return 1.0; }
+fn mask_frac(m const byte[:]) real {
 	var n = 0;
-	for i in a.len / 4 {
+	for v in m { if v != 0 { n += 1; } }
+	n as real / max(m.len, 1) as real
+}
+// mean absolute difference over the RGB bytes of the masked pixels, in 1/255 steps
+fn mean_abs(a const byte[:], b const byte[:], m const byte[:]) real {
+	if a.len != b.len || a.len == 0 || m.len * 4 != a.len { return 999.0; }
+	var s = 0;
+	var n = 0;
+	for i in m.len {
+		if m[i] == 0 { continue; }
+		for c in 3 { s += abs(a[i * 4 + c] as int - b[i * 4 + c] as int); }
+		n += 3;
+	}
+	s as real / max(n, 1) as real
+}
+// fraction of the masked pixels whose luma differs by more than cut (0..255)
+fn luma_over(a const byte[:], b const byte[:], cut int, m const byte[:]) real {
+	if a.len != b.len || a.len == 0 || m.len * 4 != a.len { return 1.0; }
+	var n = 0;
+	var k = 0;
+	for i in m.len {
+		if m[i] == 0 { continue; }
+		k += 1;
 		let la = (a[i * 4] as int * 2 + a[i * 4 + 1] as int * 5 + a[i * 4 + 2] as int) / 8;
 		let lb = (b[i * 4] as int * 2 + b[i * 4 + 1] as int * 5 + b[i * 4 + 2] as int) / 8;
 		if abs(la - lb) > cut { n += 1; }
 	}
-	n as real / (a.len / 4) as real
+	n as real / max(k, 1) as real
+}
+// PSNR over the RGB bytes of the masked pixels
+fn psnr_m(a const byte[:], b const byte[:], m const byte[:]) real {
+	if a.len != b.len || a.len == 0 || m.len * 4 != a.len { return 0.0; }
+	var se real = 0.0;
+	var n = 0;
+	for i in m.len {
+		if m[i] == 0 { continue; }
+		for c in 3 { let d = (a[i * 4 + c] as int - b[i * 4 + c] as int) as real; se += d * d; }
+		n += 3;
+	}
+	if n == 0 { return 0.0; }
+	if se == 0.0 { return 99.0; }
+	10.0 * log10(255.0 * 255.0 / (se / n as real))
+}
+// geometry coverage of every pixel from the motion target's resolved view depth (the 4
+// MSAA samples average the sphere's ~4 with the sky's 60000), and its centroid in pixels
+fn coverage_centroid(w int, h int, depth f32) float2 {
+	let mv = gfx::read_pixels(s3d::motion_target());
+	var sx real = 0.0;
+	var sy real = 0.0;
+	var sw real = 0.0;
+	for y in h {
+		for x in w {
+			let z = half_to_f32(mv[(y * w + x) * 8 + 4], mv[(y * w + x) * 8 + 5]);
+			let f = min(max((60000.0 - z) / (60000.0 - depth), 0.0), 1.0) as real;
+			sx += f * (x as real + 0.5);
+			sy += f * (y as real + 0.5);
+			sw += f;
+		}
+	}
+	float2 { (sx / max(sw, 1.0)) as f32, (sy / max(sw, 1.0)) as f32 }
 }
 // 2x2 box reduction of an RGBA8 image
 fn half_size(src const byte[:], w int, h int) byte[>..] {
@@ -681,7 +752,44 @@ fn motion_checks() bool {
 	print("gpu: motion skinned ", moving, " of ", covered, " pixels moving (peak ", r2(peak as real), " px), ", still, " moving on a repeated pose");
 	if moving < 20 || still > 0 { good = false; }
 	gfx::release(out2);
+	if !jitter_check() { good = false; }
 	good
+}
+
+// Jitter sign: temporal.frag takes input pixel k to be the scene at k + 0.5 + jitter, so a
+// jittered frame must show the image moved by -jitter. A sphere's coverage centroid is
+// measured without jitter and then for all 16 phases.
+fn jitter_check() bool {
+	reset_scene();
+	let w = 320;
+	let h = 240;
+	let ball = shapes::sphere(0.5, 64, 32, shapes::material(linalg::v3(0.8, 0.8, 0.8), 0.0, 0.5));
+	s3d::place(s3d::add(ball), gfx::translate(float3 { 0.0, 0.0, 0.0 }));
+	s3d::view = s3d::Camera { eye: float3 { 0.0, 0.0, 4.0 }, target: float3 { 0.0, 0.0, 0.0 }, up: float3 { 0.0, 1.0, 0.0 }, fov_y: 0.8, near: 0.1, far: 60.0 };
+	s3d::temporal = 0;
+	s3d::init(w, h);
+	let out = gfx::render_target(w, h, gfx::RGBA8);
+	s3d::render(out);
+	let c0 = coverage_centroid(w, h, 3.75);
+	s3d::temporal = 1;
+	var worst f32 = 0.0;
+	var agree = 0;
+	for k in 16 {
+		s3d::render(out);
+		let c = coverage_centroid(w, h, 3.75);
+		let dx = c.x - c0.x;
+		let dy = c.y - c0.y;
+		let jx = s3d::jitter.x;
+		let jy = s3d::jitter.y;
+		worst = max(worst, max(abs(dx + jx), abs(dy + jy)));
+		if dx * jx + dy * jy < 0.0 { agree += 1; }
+		if k == 0 { print("gpu: jitter phase 1: offset ", r3(jx as real), ",", r3(jy as real), " px, image moved ", r3(dx as real), ",", r3(dy as real), " px (want the negative)"); }
+	}
+	print("gpu: jitter 16 phases: image moved by -jitter in ", agree, "/16, worst error ", r3(worst as real), " px");
+	s3d::temporal = 0;
+	s3d::temporal_reset = true;
+	gfx::release(out);
+	agree == 16 && worst < 0.1
 }
 
 // (b) TAA: a still camera must settle, a moving one must not leave trails
@@ -703,6 +811,7 @@ fn taa_checks(dir const byte[:]) bool {
 	let out = gfx::render_target(w, h, gfx::RGBA8);
 	s3d::render(out);
 	let off = gfx::read_pixels(out);
+	let mask = geo_mask(w, h);
 	let p0 = path(dir, "taa_off.png");
 	print("gpu: taa png ", p0[..], " ", gfx::save_png(out, p0[..]));
 
@@ -716,7 +825,7 @@ fn taa_checks(dir const byte[:]) bool {
 		s3d::render(out);
 		let px = gfx::read_pixels(out);
 		if k > 0 {
-			let d = mean_abs(px[..], last[..]);
+			let d = mean_abs(px[..], last[..], mask[..]);
 			if k == 1 { first = d; }
 			if k >= 30 { worst = max(worst, d); sum += d; }
 		}
@@ -725,8 +834,8 @@ fn taa_checks(dir const byte[:]) bool {
 	}
 	let p1 = path(dir, "taa_on.png");
 	print("gpu: taa png ", p1[..], " ", gfx::save_png(out, p1[..]));
-	print("gpu: taa still 960x540 frame-to-frame mean abs diff frames 30-59: max ", r3(worst), " mean ", r3(sum / 30.0), " /255 (frame 1: ", r3(first), ")");
-	print("gpu: taa psnr vs 2x supersampled: off ", r2(psnr(off[..], ref[..])), " dB, taa ", r2(psnr(last[..], ref[..])), " dB");
+	print("gpu: taa still 960x540 (", r2(mask_frac(mask[..]) * 100.0), "% non-sky pixels counted) frame-to-frame mean abs diff frames 30-59: max ", r3(worst), " mean ", r3(sum / 30.0), " /255 (frame 1: ", r3(first), ")");
+	print("gpu: taa psnr (non-sky) vs 2x supersampled: off ", r2(psnr_m(off[..], ref[..], mask[..])), " dB, taa ", r2(psnr_m(last[..], ref[..], mask[..])), " dB");
 	if worst >= 0.5 { good = false; }
 
 	// moving camera: slide sideways for 40 frames, then compare with a still, converged
@@ -736,6 +845,7 @@ fn taa_checks(dir const byte[:]) bool {
 	var mad_on real = 0.0;
 	var mad_off real = 0.0;
 	var ref_still byte[>..] = [];
+	var mask_end byte[>..] = [];
 	for pass in 2 {
 		s3d::temporal_gamma = if pass == 0 { 1.25 } else { 0.0 };
 		s3d::temporal_reset = true;
@@ -752,11 +862,12 @@ fn taa_checks(dir const byte[:]) bool {
 			s3d::temporal_reset = true;
 			for k in 48 { s3d::render(out); }
 			ref_still = gfx::read_pixels(out);
+			mask_end = geo_mask(w, h);
 			let pr = path(dir, "taa_moving_ref.png");
 			print("gpu: taa png ", pr[..], " ", gfx::save_png(out, pr[..]));
 		}
-		let f = luma_over(moved[..], ref_still[..], 24);
-		let d = mean_abs(moved[..], ref_still[..]);
+		let f = luma_over(moved[..], ref_still[..], 24, mask_end[..]);
+		let d = mean_abs(moved[..], ref_still[..], mask_end[..]);
 		if pass == 0 { frac_on = f; mad_on = d; } else { frac_off = f; mad_off = d; }
 	}
 	s3d::temporal_gamma = 1.25;
@@ -764,11 +875,56 @@ fn taa_checks(dir const byte[:]) bool {
 	s3d::temporal = 0;
 	s3d::render(out);
 	let plain = gfx::read_pixels(out);
-	let frac_floor = luma_over(plain[..], ref_still[..], 24);
-	print("gpu: taa moving 40 frames (~7 px/frame): ", r3(frac_on * 100.0), "% pixels off by >24/255 vs converged (mean ", r3(mad_on), "/255); no-clip control ", r3(frac_off * 100.0), "% (mean ", r3(mad_off), "); no-taa floor ", r3(frac_floor * 100.0), "%");
+	let frac_floor = luma_over(plain[..], ref_still[..], 24, mask_end[..]);
+	print("gpu: taa moving 40 frames (~7 px/frame), non-sky pixels: ", r3(frac_on * 100.0), "% pixels off by >24/255 vs converged (mean ", r3(mad_on), "/255); no-clip control ", r3(frac_off * 100.0), "% (mean ", r3(mad_off), "); no-taa floor ", r3(frac_floor * 100.0), "%");
 	if frac_on > 0.005 || frac_off < frac_on * 4.0 { good = false; }
 	gfx::release(out);
 	good
+}
+
+// TIME_WARMUP + TIME_FRAMES iterations of a full frame (render) or of the temporal resolve
+// alone (on the last frame's inputs), each submitted and fenced on its own, no readback.
+// Prints wall-clock and, under the gputime layer, GPU-timestamp min / median / p95.
+// Returns the GPU p95 in ms, or -1 when not measured.
+fn time_loop(label const byte[:], out gfx::Texture, resolve_only bool) real {
+	for k in TIME_WARMUP {
+		if resolve_only { s3d::temporal_repeat(1); } else { s3d::render(out); }
+		gfx::flush();
+	}
+	var log byte[>..] = [];
+	let have_log = env("HELIUM_GPUTIME", log) && log.len > 0;
+	var gpu_ns real[>..] = [];
+	if have_log { gputime_lines(log[..], gpu_ns); }
+	let first = gpu_ns.len;
+	var wall real[>..] = [];
+	for k in TIME_FRAMES {
+		let t = gfx::time();
+		if resolve_only { s3d::temporal_repeat(1); } else { s3d::render(out); }
+		gfx::flush();
+		wall.push((gfx::time() - t) * 1000.0);
+	}
+	print("gpu: tsr timing ", label, ": ", TIME_WARMUP, " warmup + ", TIME_FRAMES, " timed, wall-clock ms ", stats(wall)[..]);
+	if !have_log {
+		print("gpu: tsr timing ", label, ": gpu-timestamp not measured (run under tools/hc/gputime)");
+		return -1.0;
+	}
+	gputime_lines(log[..], gpu_ns);
+	let n = gpu_ns.len - first;
+	if n == 0 || n % TIME_FRAMES != 0 {
+		print("gpu: tsr timing ", label, ": ", n, " submits for ", TIME_FRAMES, " iterations, cannot split");
+		return 1.0e9;
+	}
+	let per = n / TIME_FRAMES;
+	var each real[>..] = [];
+	for f in TIME_FRAMES {
+		var t = 0.0;
+		for j in per { t += gpu_ns[first + f * per + j]; }
+		each.push(t / 1.0e6);
+	}
+	let st = stats(each);
+	let p95 = each[min((each.len * 95 + 99) / 100 - 1, each.len - 1)];
+	print("gpu: tsr timing ", label, ": gpu-timestamp ms ", st[..], " (", per, " submit(s) each)");
+	p95
 }
 
 // (c) upscaling: 1280x720 rendered, 1920x1080 out
@@ -781,12 +937,10 @@ fn tsr_checks(dir const byte[:]) bool {
 	s3d::temporal_reset = true;
 	for k in 32 { s3d::render(out); }
 	let native = gfx::read_pixels(out);
+	let mask = geo_mask(1920, 1080);
 	let pn = path(dir, "tsr_native1080.png");
 	print("gpu: tsr png ", pn[..], " ", gfx::save_png(out, pn[..]));
-	let t0 = gfx::time();
-	for k in 20 { s3d::render(out); }
-	let _ = gfx::read_pixels(out);
-	let native_ms = (gfx::time() - t0) * 1000.0 / 20.0;
+	let _ = time_loop("native 1920x1080 taa frame", out, false);
 
 	s3d::init(1280, 720, 1920, 1080);
 	s3d::temporal_reset = true;
@@ -794,30 +948,13 @@ fn tsr_checks(dir const byte[:]) bool {
 	let up = gfx::read_pixels(out);
 	let pu = path(dir, "tsr_720to1080.png");
 	print("gpu: tsr png ", pu[..], " ", gfx::save_png(out, pu[..]));
-	let t1 = gfx::time();
-	for k in 20 { s3d::render(out); }
-	let _ = gfx::read_pixels(out);
-	let up_ms = (gfx::time() - t1) * 1000.0 / 20.0;
-	let db = psnr(up[..], native[..]);
-	print("gpu: tsr 720p->1080p psnr ", r2(db), " dB vs native 1080p taa; frame ", r2(up_ms), " ms vs native ", r2(native_ms), " ms");
+	let db = psnr_m(up[..], native[..], mask[..]);
+	print("gpu: tsr 720p->1080p psnr (non-sky, ", r2(mask_frac(mask[..]) * 100.0), "% of pixels) ", r2(db), " dB vs native 1080p taa");
 	if db < 30.0 { good = false; }
-
-	// resolve cost alone: N back-to-back resolves vs none, each fenced by a 1x1 read
-	let n = 200;
-	var best real = 1e9;
-	for rep in 3 {
-		let _ = gfx::read_pixels(s3d::white);
-		let a0 = gfx::time();
-		let _ = gfx::read_pixels(s3d::white);
-		let empty = gfx::time() - a0;
-		let a1 = gfx::time();
-		s3d::temporal_repeat(n);
-		let _ = gfx::read_pixels(s3d::white);
-		let full = gfx::time() - a1;
-		best = min(best, (full - empty) * 1000.0 / n as real);
-	}
-	print("gpu: tsr resolve 1280x720->1920x1080 ", r3(best), " ms (fence-timed, ", n, " back-to-back)");
-	if best >= 1.0 { good = false; }
+	let _ = time_loop("1280x720->1920x1080 frame", out, false);
+	// the resolve alone, one submit per iteration (bar: GPU p95 < 1 ms)
+	let p95 = time_loop("resolve 1280x720->1920x1080", out, true);
+	if p95 >= 1.0 { good = false; }
 	s3d::temporal = 0;
 	s3d::temporal_reset = true;
 	gfx::release(out);
