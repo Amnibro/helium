@@ -1,0 +1,32 @@
+struct Rec { a i32, b int, c u8 }
+bump(xs int[>..]&) int:
+	s ~= 0; j ~= 0
+	while j + 1 < xs.len:
+		t := xs[j]; j += 1; s = (s * 3 + t + xs[j]) % 1000003
+	s
+swaps(xs int[>..]&) int:
+	i ~= 0; k ~= xs.len - 1
+	while i < k:
+		t := xs[i]; xs[i] = xs[k]; xs[k] = t; i += 1; k -= 1
+	xs[0] * 1000 + xs[xs.len - 1]
+recs(rs Rec[>..]&) int:
+	s ~= 0; i ~= 0
+	while i < rs.len:
+		rs[i].b += rs[i].a as int; s += rs[i].b - rs[i].c as int; i += 2; if i < rs.len { rs[i].c = (i % 200) as! u8 }
+	s
+cmpb(a byte[:], b byte[:]) int:
+	if a.len != b.len: return -1
+	j ~= 0; while j < a.len { if a[j] != b[j] { return j } j += 1 } a.len
+stride(xs int[>..]&, st int) int:
+	s ~= 0; j ~= st
+	for r 3:
+		while j < xs.len { xs[j] += r; s += xs[j - st]; j += st }
+		j = r + 1 + st
+	s
+main():
+	xs int[>..] ~= []; for i 37: xs.push(i * i - 50)
+	print(bump(xs)); print(swaps(xs)); print(stride(xs, 3)); print(bump(xs))
+	rs Rec[>..] ~= []; for i 23: rs.push(Rec{a: (i * 7) as i32, b: i, c: (i * 3) as! u8})
+	print(recs(rs)); print(recs(rs))
+	w1 := "abcdefghijklmnopq"; w2 := "abcdefghijklmnopq"; w3 := "abcdefghijklmnoXq"
+	print(str(cmpb(w1, w2), " ", cmpb(w1, w3), " ", cmpb(w1[2..9], w3[2..9]), " ", cmpb(w1[..16], w3[..15])))

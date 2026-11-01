@@ -1,0 +1,38 @@
+from collections import deque
+
+grid = [
+    "S.#.......",
+    ".##.####.#",
+    "....#....#",
+    "#.#.#.##.#",
+    "..#...#..#",
+    ".####.#.##",
+    "......#...",
+    ".######.#.",
+    "........#E",
+]
+
+def solve():
+    rows = len(grid)
+    cols = len(grid[0])
+    start = end = None
+    for r in range(rows):
+        for c in range(cols):
+            if grid[r][c] == 'S':
+                start = (r, c)
+            elif grid[r][c] == 'E':
+                end = (r, c)
+    dist = {start: 0}
+    q = deque([start])
+    while q:
+        r, c = q.popleft()
+        if (r, c) == end:
+            return dist[(r, c)]
+        for dr, dc in ((1, 0), (-1, 0), (0, 1), (0, -1)):
+            nr, nc = r + dr, c + dc
+            if 0 <= nr < rows and 0 <= nc < cols and grid[nr][nc] != '#' and (nr, nc) not in dist:
+                dist[(nr, nc)] = dist[(r, c)] + 1
+                q.append((nr, nc))
+    return -1
+
+print(solve())

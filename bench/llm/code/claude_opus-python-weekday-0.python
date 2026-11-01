@@ -1,0 +1,15 @@
+def day_of_week(y, m, d):
+    # Zeller's congruence (Gregorian calendar)
+    if m < 3:
+        m += 12
+        y -= 1
+    k = y % 100
+    j = y // 100
+    h = (d + (13 * (m + 1)) // 5 + k + k // 4 + j // 4 + 5 * j) % 7
+    names = ["Saturday", "Sunday", "Monday", "Tuesday",
+             "Wednesday", "Thursday", "Friday"]
+    return names[h]
+
+
+for y, m, d in [(2026, 10, 29), (2000, 1, 1), (1969, 7, 20)]:
+    print(day_of_week(y, m, d))

@@ -1,0 +1,26 @@
+fn main() {
+    let max = 10000usize;
+    let mut s = vec![true; max + 1];
+    s[0] = false;
+    s[1] = false;
+    let mut i = 2;
+    while i * i <= max {
+        if s[i] {
+            let mut j = i * i;
+            while j <= max {
+                s[j] = false;
+                j += i;
+            }
+        }
+        i += 1;
+    }
+    for &n in &[10usize, 100, 1000, 10000] {
+        let mut c = 0;
+        for p in 2..=n / 2 {
+            if s[p] && s[n - p] {
+                c += 1;
+            }
+        }
+        println!("{} {}", n, c);
+    }
+}

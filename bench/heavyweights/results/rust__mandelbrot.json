@@ -1,0 +1,42 @@
+{
+  "lang": "rust",
+  "label": "Rust (rustc -O3)",
+  "bench": "mandelbrot",
+  "file": "mandelbrot",
+  "n": 4000,
+  "compile_cmd": "rustc -C opt-level=3 -C codegen-units=1 -o /tmp/helium-heavyweights/rust/mandelbrot /home/anmire/ai/amni-lang/helium-identity/bench/heavyweights/rust/mandelbrot.rs",
+  "compile": {
+    "median": 0.07663534600000001,
+    "mean": 0.07678225866666667,
+    "stddev": 0.0021199114101349463,
+    "min": 0.074739625,
+    "max": 0.078971805,
+    "times": [
+      0.07663534600000001,
+      0.078971805,
+      0.074739625
+    ],
+    "peak_rss_kb": 116688.0
+  },
+  "run_cmd": "/tmp/helium-heavyweights/rust/mandelbrot 4000",
+  "binary_bytes": 4510240,
+  "stripped_bytes": 353640,
+  "stdout": "6351041\n",
+  "single_run_s": 0.6164147853851318,
+  "wall": {
+    "median": 0.613719302,
+    "mean": 0.6140883024,
+    "stddev": 0.002948364554850229,
+    "min": 0.6112290920000001,
+    "max": 0.619032157,
+    "times": [
+      0.6112290920000001,
+      0.619032157,
+      0.6127076260000001,
+      0.613719302,
+      0.6137533350000001
+    ]
+  },
+  "peak_rss_kb": 2220.0,
+  "correct": true
+}

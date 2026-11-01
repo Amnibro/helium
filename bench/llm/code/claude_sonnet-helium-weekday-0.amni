@@ -1,0 +1,24 @@
+fn dow(y int, m int, d int) int {
+	var yy = y;
+	if m < 3 { yy -= 1; }
+	let t int[12] = [0, 3, 2, 5, 0, 3, 5, 1, 4, 6, 2, 4];
+	(yy + yy / 4 - yy / 100 + yy / 400 + t[m - 1] + d) % 7
+}
+
+fn name(n int) const byte[:] {
+	match n {
+		0 => "Sunday",
+		1 => "Monday",
+		2 => "Tuesday",
+		3 => "Wednesday",
+		4 => "Thursday",
+		5 => "Friday",
+		_ => "Saturday",
+	}
+}
+
+fn main() {
+	print(name(dow(2026, 10, 29)));
+	print(name(dow(2000, 1, 1)));
+	print(name(dow(1969, 7, 20)));
+}

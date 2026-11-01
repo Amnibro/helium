@@ -1,0 +1,19 @@
+import math;
+
+fn main() {
+	let xs int[10] = [2, 4, 4, 4, 5, 5, 7, 9, 13, 21];
+	var total = 0.0;
+	for x in xs { total += x; }
+	let mean = total / 10.0;
+	var ss = 0.0;
+	for x in xs {
+		let d = x - mean;
+		ss += d * d;
+	}
+	let sd = sqrt(ss / 10.0);
+	var out byte[>..] = [];
+	format_flt(out, mean, 3);
+	out.push(' ');
+	format_flt(out, sd, 3);
+	print(out);
+}

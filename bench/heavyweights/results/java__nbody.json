@@ -1,0 +1,42 @@
+{
+  "lang": "java",
+  "label": "Java (OpenJDK)",
+  "bench": "nbody",
+  "file": "nbody",
+  "n": 10000000,
+  "compile_cmd": "javac -d /tmp/helium-heavyweights/java/nbody /home/anmire/ai/amni-lang/helium-identity/bench/heavyweights/java/nbody.java",
+  "compile": {
+    "median": 0.283236635,
+    "mean": 0.28835548433333336,
+    "stddev": 0.037147888319229196,
+    "min": 0.25403247900000003,
+    "max": 0.327797339,
+    "times": [
+      0.327797339,
+      0.25403247900000003,
+      0.283236635
+    ],
+    "peak_rss_kb": 95504.0
+  },
+  "run_cmd": "java -cp /tmp/helium-heavyweights/java/nbody nbody 10000000",
+  "binary_bytes": 3095,
+  "stripped_bytes": 3095,
+  "stdout": "-0.169075164\n-0.169077842\n",
+  "single_run_s": 0.4034121036529541,
+  "wall": {
+    "median": 0.409237142,
+    "mean": 0.42273387020000003,
+    "stddev": 0.024961867629523557,
+    "min": 0.39872548700000005,
+    "max": 0.44992652600000005,
+    "times": [
+      0.39872548700000005,
+      0.40619676600000004,
+      0.409237142,
+      0.44958343,
+      0.44992652600000005
+    ]
+  },
+  "peak_rss_kb": 48992.0,
+  "correct": true
+}

@@ -1,0 +1,54 @@
+// A remainder and then a quotient by the same constant, of a variable the
+// loop reassigns: the quotient is shared, in both signednesses and widths.
+
+import std;
+
+fn digits(v uint) uint {
+	var x = v;
+	var t uint = 0;
+	while x > 0 {
+		t = t * 3 + x % 10;
+		x /= 10;
+	}
+	return t;
+}
+
+fn sdigits(v int) int {
+	var x = v;
+	var t = 0;
+	var n = 0;
+	while n < 20 {
+		t = t * 7 + x % 1000;
+		x /= 1000;
+		n++;
+	}
+	return t + x;
+}
+
+fn small(v u32) u32 {
+	var x = v;
+	var t u32 = 0;
+	for i in 6 {
+		t ^= (x % 7) << (i * 3);
+		x /= 7;
+		x += 12345;
+	}
+	return t + x;
+}
+
+fn neg(v int) int {
+	var x = v;
+	var t = 0;
+	for i in 5 {
+		t += x % -3;
+		x /= -3;
+	}
+	return t * 100 + x;
+}
+
+fn main() {
+	print(digits(18446744073709551615), " ", digits(1234567890123));
+	print(sdigits(-9223372036854775807), " ", sdigits(9223372036854775807), " ", sdigits(-5));
+	print(small(4000000000), " ", small(0));
+	print(neg(-1000), " ", neg(997));
+}

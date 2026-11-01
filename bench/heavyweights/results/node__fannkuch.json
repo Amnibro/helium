@@ -1,0 +1,28 @@
+{
+  "lang": "node",
+  "label": "Node.js",
+  "bench": "fannkuch",
+  "file": "fannkuch",
+  "n": 11,
+  "run_cmd": "node /home/anmire/ai/amni-lang/helium-identity/bench/heavyweights/js/fannkuch.js 11",
+  "binary_bytes": null,
+  "stripped_bytes": null,
+  "stdout": "556355\nPfannkuchen(11) = 51\n",
+  "single_run_s": 1.9092791080474854,
+  "wall": {
+    "median": 1.856883277,
+    "mean": 1.8721328022000001,
+    "stddev": 0.059643545225392905,
+    "min": 1.812417622,
+    "max": 1.9673259060000001,
+    "times": [
+      1.8378873150000001,
+      1.856883277,
+      1.812417622,
+      1.886149891,
+      1.9673259060000001
+    ]
+  },
+  "peak_rss_kb": 58664.0,
+  "correct": true
+}

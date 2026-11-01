@@ -1,0 +1,15 @@
+text = "four score and seven years ago our fathers brought forth on this continent a new nation conceived in liberty and dedicated to the proposition that all men are created equal"
+seen: set[str] = set()
+out: list[str] = []
+for w in text.split():
+    if len(w) >= 5 and w not in seen:
+        letters: set[int] = set()
+        ok = True
+        for c in w:
+            if ord(c) in letters:
+                ok = False
+            letters.add(ord(c))
+        if ok:
+            out.append(w)
+        seen.add(w)
+print(" ".join(out))

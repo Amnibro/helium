@@ -1,0 +1,96 @@
+use std::iter::Peekable;
+use std::str::Chars;
+
+struct Parser<'a> {
+    chars: Peekable<Chars<'a>>,
+}
+
+impl<'a> Parser<'a> {
+    fn new(s: &'a str) -> Self {
+        Parser { chars: s.chars().peekable() }
+    }
+
+    fn skip_ws(&mut self) {
+        while let Some(&c) = self.chars.peek() {
+            if c.is_whitespace() {
+                self.chars.next();
+            } else {
+                break;
+            }
+        }
+    }
+
+    fn expr(&mut self) -> i64 {
+        let mut v = self.term();
+        loop {
+            self.skip_ws();
+            match self.chars.peek().copied() {
+                Some('+') => {
+                    self.chars.next();
+                    v += self.term();
+                }
+                Some('-') => {
+                    self.chars.next();
+                    v -= self.term();
+                }
+                _ => break,
+            }
+        }
+        v
+    }
+
+    fn term(&mut self) -> i64 {
+        let mut v = self.factor();
+        loop {
+            self.skip_ws();
+            match self.chars.peek().copied() {
+                Some('*') => {
+                    self.chars.next();
+                    v *= self.factor();
+                }
+                _ => break,
+            }
+        }
+        v
+    }
+
+    fn factor(&mut self) -> i64 {
+        self.skip_ws();
+        match self.chars.peek().copied() {
+            Some('(') => {
+                self.chars.next();
+                let v = self.expr();
+                self.skip_ws();
+                self.chars.next(); // consume ')'
+                v
+            }
+            Some('-') => {
+                self.chars.next();
+                -self.factor()
+            }
+            _ => {
+                let mut n: i64 = 0;
+                while let Some(&c) = self.chars.peek() {
+                    if let Some(d) = c.to_digit(10) {
+                        n = n * 10 + d as i64;
+                        self.chars.next();
+                    } else {
+                        break;
+                    }
+                }
+                n
+            }
+        }
+    }
+}
+
+fn main() {
+    let exprs = [
+        "(1+2)*3-4*(5-6)",
+        "2*(3+4)*(5-1)",
+        "100-2*3*4+(7-10)*2",
+    ];
+    for e in exprs.iter() {
+        println!("{}", Parser::new(e).expr());
+    }
+}

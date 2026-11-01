@@ -1,0 +1,8 @@
+main():
+	xs byte[>..][>..] ~= []
+	for w in ["d", "b", "a", "c"]: heap_push(xs, str(w))
+	o byte[>..] ~= []
+	while xs.len > 0: o.append(heap_pop(xs))
+	ys byte[>..][>..] ~= []
+	for w in ["p", "q", "r", "s"]: ys.push(str(w))
+	print(o, " ", remove_at(ys, 1), " ", swap_remove(ys, 0), " ", ys)

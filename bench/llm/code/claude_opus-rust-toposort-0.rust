@@ -1,0 +1,31 @@
+use std::collections::BinaryHeap;
+use std::cmp::Reverse;
+
+fn main() {
+    let n = 8;
+    let edges = [(5, 2), (5, 0), (4, 0), (4, 1), (2, 3), (3, 1), (7, 6), (6, 3)];
+    let mut adj = vec![Vec::new(); n];
+    let mut indeg = vec![0; n];
+    for &(a, b) in edges.iter() {
+        adj[a].push(b);
+        indeg[b] += 1;
+    }
+    let mut heap = BinaryHeap::new();
+    for i in 0..n {
+        if indeg[i] == 0 {
+            heap.push(Reverse(i));
+        }
+    }
+    let mut order = Vec::new();
+    while let Some(Reverse(u)) = heap.pop() {
+        order.push(u);
+        for &v in adj[u].iter() {
+            indeg[v] -= 1;
+            if indeg[v] == 0 {
+                heap.push(Reverse(v));
+            }
+        }
+    }
+    let s: Vec<String> = order.iter().map(|x| x.to_string()).collect();
+    println!("{}", s.join(" "));
+}

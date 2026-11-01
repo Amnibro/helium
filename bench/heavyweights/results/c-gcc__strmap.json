@@ -1,0 +1,42 @@
+{
+  "lang": "c-gcc",
+  "label": "C (gcc -O2)",
+  "bench": "strmap",
+  "file": "strmap",
+  "n": 5000000,
+  "compile_cmd": "gcc -O2 -o /tmp/helium-heavyweights/c-gcc/strmap /home/anmire/ai/amni-lang/helium-identity/bench/heavyweights/c/strmap.c -lm",
+  "compile": {
+    "median": 0.049962637000000004,
+    "mean": 0.051091746666666674,
+    "stddev": 0.003245226234259536,
+    "min": 0.048561899000000006,
+    "max": 0.054750704000000004,
+    "times": [
+      0.054750704000000004,
+      0.049962637000000004,
+      0.048561899000000006
+    ],
+    "peak_rss_kb": 46568.0
+  },
+  "run_cmd": "/tmp/helium-heavyweights/c-gcc/strmap 5000000",
+  "binary_bytes": 16440,
+  "stripped_bytes": 14536,
+  "stdout": "200000 58 24989\n",
+  "single_run_s": 0.7354040145874023,
+  "wall": {
+    "median": 0.730985681,
+    "mean": 0.6686209274,
+    "stddev": 0.1334585864033651,
+    "min": 0.43795010300000004,
+    "max": 0.764693668,
+    "times": [
+      0.764693668,
+      0.730985681,
+      0.670770057,
+      0.43795010300000004,
+      0.7387051280000001
+    ]
+  },
+  "peak_rss_kb": 24516.0,
+  "correct": true
+}

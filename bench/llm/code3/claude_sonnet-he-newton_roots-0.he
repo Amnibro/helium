@@ -1,0 +1,8 @@
+def cbrt(n: float) -> float:
+    x = 1.0
+    for _ in range(30):
+        x = x - (x * x * x - n) / (3.0 * x * x)
+    return x
+
+for v in [2.0, 10.0, 100.0]:
+    print(f"{cbrt(v):.10f}")

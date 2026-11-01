@@ -1,0 +1,42 @@
+{
+  "lang": "c-clang",
+  "label": "C (clang -O2)",
+  "bench": "strmap",
+  "file": "strmap",
+  "n": 5000000,
+  "compile_cmd": "clang -O2 -o /tmp/helium-heavyweights/c-clang/strmap /home/anmire/ai/amni-lang/helium-identity/bench/heavyweights/c/strmap.c -lm",
+  "compile": {
+    "median": 0.061780922,
+    "mean": 0.061320091,
+    "stddev": 0.0014434648634196116,
+    "min": 0.059702478,
+    "max": 0.062476873,
+    "times": [
+      0.061780922,
+      0.059702478,
+      0.062476873
+    ],
+    "peak_rss_kb": 110948.0
+  },
+  "run_cmd": "/tmp/helium-heavyweights/c-clang/strmap 5000000",
+  "binary_bytes": 16472,
+  "stripped_bytes": 14560,
+  "stdout": "200000 58 24989\n",
+  "single_run_s": 0.844243049621582,
+  "wall": {
+    "median": 1.113554323,
+    "mean": 1.1124782662000001,
+    "stddev": 0.12946752921419483,
+    "min": 0.9178537000000001,
+    "max": 1.277078061,
+    "times": [
+      0.9178537000000001,
+      1.098183036,
+      1.113554323,
+      1.155722211,
+      1.277078061
+    ]
+  },
+  "peak_rss_kb": 24580.0,
+  "correct": true
+}

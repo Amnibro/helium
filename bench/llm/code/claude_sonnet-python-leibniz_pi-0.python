@@ -1,0 +1,8 @@
+import math
+
+def main():
+    n = 10000000
+    total = math.fsum((1.0 if k % 2 == 0 else -1.0) / (2 * k + 1) for k in range(n))
+    print("%.6f" % (4 * total))
+
+main()

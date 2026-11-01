@@ -1,0 +1,9 @@
+fn main() {
+	let values int[6] = [3, 7, 1, 5, 0, 4];
+	for v in values {
+		var line byte[>..] = [];
+		format(line, v, ": ");
+		for i in v { line.push('*'); }
+		print(line);
+	}
+}

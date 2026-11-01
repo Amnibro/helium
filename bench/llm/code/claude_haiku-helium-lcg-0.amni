@@ -1,0 +1,12 @@
+fn main() {
+	var s = 42;
+	var below = 0;
+	var last = 0;
+	for i in 1000000 {
+		s = (1103515245 * s + 12345) % 2147483648;
+		if s < 1073741824 { below++; }
+		last = s;
+	}
+	print(below);
+	print(last);
+}

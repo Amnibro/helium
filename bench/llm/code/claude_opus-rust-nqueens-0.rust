@@ -1,0 +1,25 @@
+fn solve(n: usize, row: usize, cols: u32, d1: u32, d2: u32) -> u64 {
+    if row == n {
+        return 1;
+    }
+    let full: u32 = (1u32 << n) - 1;
+    let mut avail = full & !(cols | d1 | d2);
+    let mut count = 0u64;
+    while avail != 0 {
+        let bit = avail & avail.wrapping_neg();
+        avail ^= bit;
+        count += solve(
+            n,
+            row + 1,
+            cols | bit,
+            ((d1 | bit) << 1) & full,
+            (d2 | bit) >> 1,
+        );
+    }
+    count
+}
+
+fn main() {
+    let n = 10;
+    println!("{}", solve(n, 0, 0, 0, 0));
+}

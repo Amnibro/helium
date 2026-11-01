@@ -1,0 +1,24 @@
+fn main() {
+	let text = "Wkh vhfuhw phhwlqj lv dw qrrq";
+	for s in 26 {
+		var out byte[>..] = [];
+		for c in text {
+			let v int = c;
+			if v >= 'a' && v <= 'z' {
+				out.push(('a' + (v - 'a' - s) % 26) as byte);
+			} else if v >= 'A' && v <= 'Z' {
+				out.push(('A' + (v - 'A' - s) % 26) as byte);
+			} else {
+				out.push(c);
+			}
+		}
+		var found = false;
+		if out.len >= 6 {
+			for i in out.len - 5 {
+				let w = out[i..i + 6];
+				if w == "secret" { found = true; }
+			}
+		}
+		if found { print(out); }
+	}
+}

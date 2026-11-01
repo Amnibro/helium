@@ -1,0 +1,2 @@
+namespace helper
+bump(v int) int: v + 1

@@ -1,0 +1,9 @@
+people = list(range(1, 42))
+order: list[int] = []
+idx = 0
+while len(people) > 0:
+    idx = (idx + 2) % len(people)
+    order.append(people.pop(idx))
+    if len(people) > 0:
+        idx = idx % len(people)
+print(order[-2], order[-1])

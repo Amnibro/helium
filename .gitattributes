@@ -1,0 +1,6 @@
+# Normalize line endings to LF everywhere: expected outputs are compared
+# byte for byte, and the bootstrap compares hc/seed/hc.c byte for byte.
+* text=auto eol=lf
+
+hc/seed/** linguist-generated
+bench/** linguist-vendored

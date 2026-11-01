@@ -1,0 +1,30 @@
+fn eval(expr: &str) -> i64 {
+    let mut stack: Vec<i64> = Vec::new();
+    for tok in expr.split_whitespace() {
+        match tok {
+            "+" | "-" | "*" => {
+                let b = stack.pop().expect("stack underflow");
+                let a = stack.pop().expect("stack underflow");
+                stack.push(match tok {
+                    "+" => a + b,
+                    "-" => a - b,
+                    _ => a * b,
+                });
+            }
+            _ => stack.push(tok.parse().expect("invalid number")),
+        }
+    }
+    stack.pop().expect("empty expression")
+}
+
+fn main() {
+    let exprs = [
+        "3 4 + 2 *",
+        "5 1 2 + 4 * + 3 -",
+        "2 3 4 * 5 - *",
+        "9 8 7 6 - - -",
+    ];
+    for e in exprs.iter() {
+        println!("{}", eval(e));
+    }
+}

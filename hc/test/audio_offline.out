@@ -1,0 +1,5 @@
+true false audio is already open; close it before opening again
+true [0.25, -0.5, 0.25, -0.5, 0.25, -0.5, 0.25, -0.5, 0.25, -0.5, 0.25, -0.5]
+false true false voice is no longer playing
+true [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0] false
+true false a sound that is null, released, or was never created

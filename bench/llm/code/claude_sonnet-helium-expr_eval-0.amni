@@ -1,0 +1,46 @@
+recursive fn expr(s const byte[:], p int&) int {
+	var v = term(s, p);
+	while p < s.len && (s[p] == '+' || s[p] == '-') {
+		let op = s[p];
+		p += 1;
+		let r = term(s, p);
+		if op == '+' { v += r; } else { v -= r; }
+	}
+	v
+}
+
+fn term(s const byte[:], p int&) int {
+	var v = atom(s, p);
+	while p < s.len && s[p] == '*' {
+		p += 1;
+		let r = atom(s, p);
+		v *= r;
+	}
+	v
+}
+
+fn atom(s const byte[:], p int&) int {
+	if s[p] == '(' {
+		p += 1;
+		let v = expr(s, p);
+		p += 1;
+		return v;
+	}
+	var v = 0;
+	while p < s.len && s[p] >= '0' && s[p] <= '9' {
+		v = v * 10 + (s[p] - '0');
+		p += 1;
+	}
+	v
+}
+
+fn eval(s const byte[:]) int {
+	var p = 0;
+	expr(s, p)
+}
+
+fn main() {
+	print(eval("(1+2)*3-4*(5-6)"));
+	print(eval("2*(3+4)*(5-1)"));
+	print(eval("100-2*3*4+(7-10)*2"));
+}

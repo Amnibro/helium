@@ -1,0 +1,46 @@
+use std::cmp::Reverse;
+use std::collections::BinaryHeap;
+
+fn main() {
+    let n = 7;
+    let edges: [(usize, usize, u64); 12] = [
+        (0, 1, 7),
+        (0, 2, 9),
+        (0, 5, 14),
+        (1, 2, 10),
+        (1, 3, 15),
+        (2, 3, 11),
+        (2, 5, 2),
+        (3, 4, 6),
+        (4, 5, 9),
+        (5, 4, 3),
+        (4, 6, 1),
+        (3, 6, 20),
+    ];
+    let mut adj: Vec<Vec<(usize, u64)>> = vec![Vec::new(); n];
+    for &(u, v, w) in edges.iter() {
+        adj[u].push((v, w));
+    }
+    let inf = u64::MAX;
+    let mut dist = vec![inf; n];
+    dist[0] = 0;
+    let mut heap = BinaryHeap::new();
+    heap.push(Reverse((0u64, 0usize)));
+    while let Some(Reverse((d, u))) = heap.pop() {
+        if d > dist[u] {
+            continue;
+        }
+        for &(v, w) in &adj[u] {
+            let nd = d + w;
+            if nd < dist[v] {
+                dist[v] = nd;
+                heap.push(Reverse((nd, v)));
+            }
+        }
+    }
+    let out: Vec<String> = dist
+        .iter()
+        .map(|&d| if d == inf { "INF".to_string() } else { d.to_string() })
+        .collect();
+    println!("{}", out.join(" "));
+}

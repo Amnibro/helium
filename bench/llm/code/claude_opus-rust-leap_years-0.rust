@@ -1,0 +1,6 @@
+fn main() {
+    let count = (1900..=2100)
+        .filter(|&y: &i32| (y % 4 == 0 && y % 100 != 0) || y % 400 == 0)
+        .count();
+    println!("{}", count);
+}

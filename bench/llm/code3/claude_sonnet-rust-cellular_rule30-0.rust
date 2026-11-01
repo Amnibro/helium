@@ -1,0 +1,17 @@
+fn main() {
+    let n = 31;
+    let mut cells = vec![false; n];
+    cells[n / 2] = true;
+    for _ in 0..15 {
+        let mut next = vec![false; n];
+        for i in 0..n {
+            let l = if i > 0 { cells[i - 1] } else { false };
+            let c = cells[i];
+            let r = if i + 1 < n { cells[i + 1] } else { false };
+            let idx = ((l as u8) << 2) | ((c as u8) << 1) | (r as u8);
+            next[i] = (30u8 >> idx) & 1 == 1;
+        }
+        cells = next;
+    }
+    println!("{}", cells.iter().filter(|&&x| x).count());
+}

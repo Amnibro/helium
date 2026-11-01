@@ -1,0 +1,19 @@
+// A variable-size struct literal takes fields from reference parameters,
+// which it must copy through the reference, and from locals, which it may
+// copy straight from their storage.
+import std;
+
+struct P { a int, b real }
+struct V { p P, xs int[], big real[..512], n int }
+
+fn make(p P&, big real[..512]&, n int) V { V { p: p, xs: [1, 2, 3], big: big, n: n } }
+
+fn main() {
+	var p = P { a: 7, b: 2.5 };
+	var big real[..512] = [];
+	for i in 0..300 { big.push(i * 0.5); }
+	let v = make(p, big, 4);
+	print(v.p.a, " ", v.p.b, " ", v.xs, " ", v.big.len, " ", v.big[299], " ", v.n);
+	let w = V { p: p, xs: [], big: big, n: 9 };
+	print(w.p.a, " ", w.p.b, " ", w.xs.len, " ", w.big.len, " ", w.big[1], " ", w.n);
+}

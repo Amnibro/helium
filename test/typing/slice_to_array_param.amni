@@ -1,0 +1,14 @@
+// A slice, being a fixed-size view, converts to a by-value byte[] parameter
+// by copying, in calls and in thread_spawn alike.
+import std;
+thread_fn w(p: byte[], n: int) { print("w ", p.len + n, " ", p[0], " ", p[p.len - 1]); }
+fn g(p: byte[], n: int) int { p.len + n }
+fn main() {
+	var s byte[>..] = [];
+	s.append("abcdef");
+	print(g(s[1..4], 2));
+	let id = thread_spawn(w, s[2..], 2);
+	thread_wait(id);
+	let x = s[..];
+	print(g(x, 0));
+}

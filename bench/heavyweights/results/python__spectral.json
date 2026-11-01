@@ -1,0 +1,28 @@
+{
+  "lang": "python",
+  "label": "Python (CPython)",
+  "bench": "spectral",
+  "file": "spectral",
+  "n": 3000,
+  "run_cmd": "python3 /home/anmire/ai/amni-lang/helium-identity/bench/heavyweights/python/spectral.py 3000",
+  "binary_bytes": null,
+  "stripped_bytes": null,
+  "stdout": "1.274224153\n",
+  "single_run_s": 34.97366428375244,
+  "wall": {
+    "median": 34.399538763,
+    "mean": 34.527053018800004,
+    "stddev": 0.5562146448024446,
+    "min": 33.867908417,
+    "max": 35.310607214,
+    "times": [
+      34.822548743,
+      34.234661957,
+      34.399538763,
+      33.867908417,
+      35.310607214
+    ]
+  },
+  "peak_rss_kb": 10584.0,
+  "correct": true
+}

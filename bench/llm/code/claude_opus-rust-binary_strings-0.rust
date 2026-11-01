@@ -1,0 +1,9 @@
+fn main() {
+    let mut out = String::new();
+    for n in 0u32..16 {
+        if n & (n >> 1) == 0 {
+            out.push_str(&format!("{:04b}\n", n));
+        }
+    }
+    print!("{}", out);
+}

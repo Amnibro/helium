@@ -1,0 +1,11 @@
+use std
+struct Co { r byte, g byte }
+struct Im { t u32 = 7, rg u16[4] = [5; 4] }
+struct It { k i32 = 3, c Co = Co{1, 2}, im Im = Im{}, z f32 }
+struct Bt { n It, h It, q int }
+struct Big { s Bt, v int[>..] }
+var G Big[>..] = []
+main():
+	b := Bt{q: 9, ..}
+	G.push(Big{..})
+	print(str(b.n.k, " ", b.h.c.g, " ", b.n.im.t, " ", b.h.im.rg[3], " ", b.q, " ", G[0].s.n.c.r, " ", G[0].s.h.im.rg[0], " ", G[0].v.len))

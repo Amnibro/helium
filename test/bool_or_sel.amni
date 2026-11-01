@@ -1,0 +1,19 @@
+import std;
+fn pick(a int, b int, f bool, g bool) int {
+	let x = if a == b || f { 1 } else { 0 };
+	let y = if (a < b && !g) || a > 3 * b { 1 } else { 0 };
+	let z = if a != 0 && (f || g) { 1 } else { 0 };
+	return x * 100 + y * 10 + z;
+}
+fn main() {
+	var s = 0;
+	var t = 0;
+	for i in 64 {
+		let a = i % 7 - 3;
+		let b = i % 5 - 2;
+		let r = pick(a, b, i % 2 == 0, i % 3 == 0);
+		s += r;
+		t = t * 3 + r % 7;
+	}
+	print(str(s, " ", t));
+}

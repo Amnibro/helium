@@ -1,0 +1,16 @@
+def main():
+    n = 31
+    cells = [0] * n
+    cells[n // 2] = 1
+    for _ in range(15):
+        new = [0] * n
+        for i in range(n):
+            l = cells[i - 1] if i > 0 else 0
+            c = cells[i]
+            r = cells[i + 1] if i < n - 1 else 0
+            idx = (l << 2) | (c << 1) | r
+            new[i] = (30 >> idx) & 1
+        cells = new
+    print(sum(cells))
+
+main()

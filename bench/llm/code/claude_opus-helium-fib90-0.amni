@@ -1,0 +1,10 @@
+fn main() {
+	var a int = 1;
+	var b int = 1;
+	for i in 2..90 {
+		let t = a + b;
+		a = b;
+		b = t;
+	}
+	print(b);
+}

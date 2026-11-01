@@ -1,0 +1,11 @@
+use std
+main():
+	a int[>..] ~= []; b f64[>..] ~= []; c byte[>..][>..] ~= []
+	for i 6:
+		if i % 2 == 0:
+			a.push(i)
+		else:
+			b.push(i as f64)
+			c.push(copy("x"))
+		a.push(-1)
+	print(a.len, " ", b.len, " ", c.len)

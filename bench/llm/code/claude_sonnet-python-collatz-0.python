@@ -1,0 +1,22 @@
+def main():
+    limit = 1000000
+    cache = [0] * limit
+    best_n, best_s = 1, 0
+    for n in range(2, limit):
+        x = n
+        s = 0
+        while x >= n:
+            if x & 1:
+                x = 3 * x + 1
+            else:
+                x >>= 1
+            s += 1
+        s += cache[x]
+        cache[n] = s
+        if s > best_s:
+            best_s = s
+            best_n = n
+    print(best_n, best_s)
+
+
+main()

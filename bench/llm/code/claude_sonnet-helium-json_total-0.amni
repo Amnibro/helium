@@ -1,0 +1,41 @@
+fn isdig(c byte) bool { c >= '0' && c <= '9' }
+
+fn main() {
+	let s = "{\"order\": 1042, \"items\": [{\"name\": \"bolt\", \"price\": 0.25, \"qty\": 120}, {\"name\": \"nut\", \"price\": 0.1, \"qty\": 300}, {\"name\": \"gear\", \"price\": 12.5, \"qty\": 4}, {\"name\": \"spring\", \"price\": 1.75, \"qty\": 16}]}";
+	var i = 0;
+	var price = 0.0;
+	var total = 0.0;
+	while i < s.len {
+		if s[i] == '"' {
+			var j = i + 1;
+			while s[j] != '"' { j++; }
+			let key = s[i + 1..j];
+			i = j + 1;
+			if key == "price" || key == "qty" {
+				while !isdig(s[i]) { i++; }
+				var v = 0.0;
+				while isdig(s[i]) {
+					let d = (s[i] as int) - 48;
+					v = v * 10.0 + d;
+					i++;
+				}
+				if s[i] == '.' {
+					i++;
+					var sc = 0.1;
+					while isdig(s[i]) {
+						let d = (s[i] as int) - 48;
+						v += d * sc;
+						sc /= 10.0;
+						i++;
+					}
+				}
+				if key == "price" { price = v; } else { total += price * v; }
+			}
+		} else {
+			i++;
+		}
+	}
+	var out byte[>..] = [];
+	format_flt(out, total, 2);
+	print(out);
+}

@@ -1,0 +1,37 @@
+fn main() {
+    let rows = ["11000110", "11001100", "00100001", "00011011", "10000011", "11110000"];
+    let g: Vec<Vec<u8>> = rows.iter().map(|r| r.bytes().collect()).collect();
+    let h = g.len();
+    let w = g[0].len();
+    let mut seen = vec![vec![false; w]; h];
+    let mut count = 0;
+    let mut largest = 0;
+    for i in 0..h {
+        for j in 0..w {
+            if g[i][j] == b'1' && !seen[i][j] {
+                count += 1;
+                let mut size = 0;
+                let mut stack = vec![(i, j)];
+                seen[i][j] = true;
+                while let Some((r, c)) = stack.pop() {
+                    size += 1;
+                    let mut nb = Vec::new();
+                    if r > 0 { nb.push((r - 1, c)); }
+                    if r + 1 < h { nb.push((r + 1, c)); }
+                    if c > 0 { nb.push((r, c - 1)); }
+                    if c + 1 < w { nb.push((r, c + 1)); }
+                    for (nr, nc) in nb {
+                        if g[nr][nc] == b'1' && !seen[nr][nc] {
+                            seen[nr][nc] = true;
+                            stack.push((nr, nc));
+                        }
+                    }
+                }
+                if size > largest {
+                    largest = size;
+                }
+            }
+        }
+    }
+    println!("{} {}", count, largest);
+}

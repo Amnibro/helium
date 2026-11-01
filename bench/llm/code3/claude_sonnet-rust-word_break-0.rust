@@ -1,0 +1,24 @@
+fn count(s: &str, dict: &[&str]) -> u64 {
+    let b = s.as_bytes();
+    let n = b.len();
+    let mut dp = vec![0u64; n + 1];
+    dp[0] = 1;
+    for i in 1..=n {
+        for w in dict {
+            let l = w.len();
+            if l <= i && &b[i - l..i] == w.as_bytes() {
+                dp[i] += dp[i - l];
+            }
+        }
+    }
+    dp[n]
+}
+
+fn main() {
+    let dict = [
+        "apple", "pen", "applepen", "pine", "pineapple", "cats", "dog", "sand", "and", "cat",
+    ];
+    for s in ["pineapplepenapple", "catsandog", "catsanddog", "applepenpine"] {
+        println!("{} {}", s, count(s, &dict));
+    }
+}

@@ -1,0 +1,19 @@
+import std;
+import os;
+inline fn rotl(x u32, s u32) u32 { (x << s) | (x >> (32 - s)) }
+fn rotl7(x u32) u32 { (x << 7) | (x >> 25) }
+fn rotr3(x u64) u64 { (x >> 3) | (x << 61) }
+fn main() {
+	let n = args().len as u32;
+	var a u32 = 0x9E3779B9 + n;
+	var b u64 = 0x0123456789ABCDEF;
+	var h u64 = 0;
+	for i in 300 {
+		a = rotl(a + 0xd76aa478 + i as u32, 1 + (i as u32) % 31) ^ rotl7(a);
+		b = rotr3(b) + a as u64;
+		h = h * 1000003 + a as u64 + (b >> 17);
+	}
+	var o byte[>..] = [];
+	format(o, a, " ", b, " ", h, "\n");
+	print(o);
+}

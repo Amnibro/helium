@@ -1,0 +1,42 @@
+{
+  "lang": "java",
+  "label": "Java (OpenJDK)",
+  "bench": "fib",
+  "file": "fib",
+  "n": 40,
+  "compile_cmd": "javac -d /tmp/helium-heavyweights/java/fib /home/anmire/ai/amni-lang/helium-identity/bench/heavyweights/java/fib.java",
+  "compile": {
+    "median": 0.268907651,
+    "mean": 0.25771245600000003,
+    "stddev": 0.03324302498874509,
+    "min": 0.220317069,
+    "max": 0.28391264800000005,
+    "times": [
+      0.220317069,
+      0.28391264800000005,
+      0.268907651
+    ],
+    "peak_rss_kb": 80224.0
+  },
+  "run_cmd": "java -cp /tmp/helium-heavyweights/java/fib fib 40",
+  "binary_bytes": 602,
+  "stripped_bytes": 602,
+  "stdout": "102334155\n",
+  "single_run_s": 0.2053236961364746,
+  "wall": {
+    "median": 0.20030624500000002,
+    "mean": 0.200150652,
+    "stddev": 0.005158454672218796,
+    "min": 0.19250993400000002,
+    "max": 0.206762633,
+    "times": [
+      0.19250993400000002,
+      0.201989785,
+      0.199184663,
+      0.20030624500000002,
+      0.206762633
+    ]
+  },
+  "peak_rss_kb": 41924.0,
+  "correct": true
+}

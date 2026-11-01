@@ -1,0 +1,29 @@
+use std::collections::BTreeSet;
+
+fn main() {
+    const N: usize = 8;
+    let edges: [(usize, usize); 8] = [(5, 2), (5, 0), (4, 0), (4, 1), (2, 3), (3, 1), (7, 6), (6, 3)];
+
+    let mut adj: Vec<Vec<usize>> = vec![Vec::new(); N];
+    let mut indeg = vec![0usize; N];
+    for &(a, b) in &edges {
+        adj[a].push(b);
+        indeg[b] += 1;
+    }
+
+    let mut available: BTreeSet<usize> = (0..N).filter(|&i| indeg[i] == 0).collect();
+    let mut order = Vec::with_capacity(N);
+
+    while let Some(&t) = available.iter().next() {
+        available.remove(&t);
+        order.push(t.to_string());
+        for &next in &adj[t] {
+            indeg[next] -= 1;
+            if indeg[next] == 0 {
+                available.insert(next);
+            }
+        }
+    }
+
+    println!("{}", order.join(" "));
+}

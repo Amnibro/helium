@@ -1,0 +1,14 @@
+use audio
+main():
+	print(audio::open_offline(8000), " ", audio::open_offline(8000), " ", audio::error())
+	s := audio::create_sound([0.0, 1.0, -0.5, 0.25])
+	t := audio::create_sound([0.5, -0.5, 0.5, -0.5], 16000, 2)
+	a := audio::play(s, 0.5, -0.5, 0.75)
+	b := audio::play(t, 1.0, 0.5, 1.0, true)
+	out f32[>..] ~= []; out.resize(12, 0.0)
+	print(audio::render(out[..]), " ", out)
+	print(audio::playing(a), " ", audio::playing(b), " ", audio::set_voice(a, 1.0, 0.0, 1.0), " ", audio::error())
+	audio::stop(b)
+	print(audio::render(out[..]), " ", out, " ", audio::playing(b))
+	print(audio::release_sound(s), " ", audio::release_sound(s), " ", audio::error())
+	audio::close()

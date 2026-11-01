@@ -1,0 +1,10 @@
+struct Box { w int }
+area(b Box) int: b.w * b.h
+unused(x int) int: x + nope
+main():
+	b := Box{2}
+	print(area(b), 1 + "a")
+# lsp: error 2
+# lsp: error 3
+# lsp: error 6
+# lsp: hover 5:2 "(let) b Box"

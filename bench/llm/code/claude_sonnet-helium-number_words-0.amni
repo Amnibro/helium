@@ -1,0 +1,89 @@
+fn ones(n int) const byte[:] {
+	match n {
+		0 => "zero",
+		1 => "one",
+		2 => "two",
+		3 => "three",
+		4 => "four",
+		5 => "five",
+		6 => "six",
+		7 => "seven",
+		8 => "eight",
+		9 => "nine",
+		10 => "ten",
+		11 => "eleven",
+		12 => "twelve",
+		13 => "thirteen",
+		14 => "fourteen",
+		15 => "fifteen",
+		16 => "sixteen",
+		17 => "seventeen",
+		18 => "eighteen",
+		19 => "nineteen",
+		_ => "",
+	}
+}
+
+fn tens(n int) const byte[:] {
+	match n {
+		2 => "twenty",
+		3 => "thirty",
+		4 => "forty",
+		5 => "fifty",
+		6 => "sixty",
+		7 => "seventy",
+		8 => "eighty",
+		9 => "ninety",
+		_ => "",
+	}
+}
+
+fn say_small(out byte[>..]&, n int) {
+	var r = n;
+	if r >= 100 {
+		out.append(ones(r / 100));
+		out.append(" hundred");
+		r = r % 100;
+		if r > 0 { out.push(' '); }
+	}
+	if r >= 20 {
+		out.append(tens(r / 10));
+		if r % 10 > 0 {
+			out.push('-');
+			out.append(ones(r % 10));
+		}
+	} else if r > 0 {
+		out.append(ones(r));
+	}
+}
+
+fn spell(out byte[>..]&, n int) {
+	if n == 0 {
+		out.append("zero");
+		return;
+	}
+	var rest = n;
+	if rest >= 1000000 {
+		say_small(out, rest / 1000000);
+		out.append(" million");
+		rest = rest % 1000000;
+		if rest > 0 { out.push(' '); }
+	}
+	if rest >= 1000 {
+		say_small(out, rest / 1000);
+		out.append(" thousand");
+		rest = rest % 1000;
+		if rest > 0 { out.push(' '); }
+	}
+	if rest > 0 {
+		say_small(out, rest);
+	}
+}
+
+fn main() {
+	for n in [1234567, 90210, 13, 1000000] {
+		var s byte[>..] = [];
+		spell(s, n);
+		print(s);
+	}
+}

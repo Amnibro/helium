@@ -1,0 +1,42 @@
+{
+  "lang": "c-clang",
+  "label": "C (clang -O2)",
+  "bench": "fib",
+  "file": "fib",
+  "n": 40,
+  "compile_cmd": "clang -O2 -o /tmp/helium-heavyweights/c-clang/fib /home/anmire/ai/amni-lang/helium-identity/bench/heavyweights/c/fib.c -lm",
+  "compile": {
+    "median": 0.045043263,
+    "mean": 0.04720457966666667,
+    "stddev": 0.004526377655508802,
+    "min": 0.044163997,
+    "max": 0.052406479000000006,
+    "times": [
+      0.044163997,
+      0.045043263,
+      0.052406479000000006
+    ],
+    "peak_rss_kb": 106904.0
+  },
+  "run_cmd": "/tmp/helium-heavyweights/c-clang/fib 40",
+  "binary_bytes": 16064,
+  "stripped_bytes": 14496,
+  "stdout": "102334155\n",
+  "single_run_s": 0.16872739791870117,
+  "wall": {
+    "median": 0.168519456,
+    "mean": 0.1695258616,
+    "stddev": 0.002577035947859732,
+    "min": 0.167513412,
+    "max": 0.173939112,
+    "times": [
+      0.168519456,
+      0.169554165,
+      0.173939112,
+      0.167513412,
+      0.168103163
+    ]
+  },
+  "peak_rss_kb": 2212.0,
+  "correct": true
+}

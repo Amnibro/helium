@@ -1,0 +1,8 @@
+use std
+extern dl_global_zv() int = "dl_global_zv"
+extern "libz.so.1" {
+	zver() uint = "zlibVersion";
+}
+main():
+	print(str(dl_global_zv()))
+	print(str(zver() != 0))

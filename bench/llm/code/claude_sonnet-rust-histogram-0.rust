@@ -1,0 +1,5 @@
+fn main() {
+    for v in [3usize, 7, 1, 5, 0, 4] {
+        println!("{}: {}", v, "*".repeat(v));
+    }
+}

@@ -1,0 +1,16 @@
+use std
+struct P { a int, v i32, w i32, b byte, c byte, u u32, x u32, f f32, g f32 }
+ea<F>(ps P[>..]&): for &s ps { F(s.a, &s.v) }
+g1(c i32&) int: t ~= 0; t = t + c; t
+g2(c i32&) int: t ~= 0; t += c; t
+g3(c i32&) int: t int := c; t
+g4(c byte&) int: t ~= 0; t += c; t
+g5(c u32&) int: t ~= 0; t += c; t
+g6(c f32&) f64: t ~= 0.5; t += c; t
+g7(c i32&) f64: t ~= 0.5; t += c; t
+main():
+	ps P[>..] ~= []
+	ps.push(P{1, -2, -1, 200, 255, 4000000000, 4294967295, 1.5, -3.0})
+	t ~= 0
+	ea(ps) { a, c => t += c }
+	print(str(t, " ", g1(&ps[0].v), " ", g2(&ps[0].v), " ", g3(&ps[0].v), " ", g4(&ps[0].b), " ", g5(&ps[0].u), " ", g6(&ps[0].f), " ", g7(&ps[0].v)))

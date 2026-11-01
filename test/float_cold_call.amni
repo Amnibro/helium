@@ -1,0 +1,21 @@
+import std;
+fn slow(x real) real { var s = 0.0; for i in 3 { s += x * (i as real); } return s; }
+fn pick(x real, k int) real {
+	var v = x * 1.5;
+	if k % 9 == 0 { return slow(v); }
+	v = v / 3.0 + 0.25;
+	if k % 4 == 0 { v = -v; }
+	return v;
+}
+fn keep(x real, k int) real {
+	let a = x * 2.0;
+	let b = slow(a) + 1.0;
+	let c = slow(b) * 0.5;
+	return a + b + c + (k as real);
+}
+fn main() {
+	var s = 0.0;
+	var t = 0.0;
+	for k in 50 { s += pick(k as real * 0.75, k); t += keep(k as real, k); }
+	print(str(s, " ", t));
+}

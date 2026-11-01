@@ -1,0 +1,43 @@
+fn next(mut n: usize) -> usize {
+    let mut s = 0;
+    while n > 0 {
+        let d = n % 10;
+        s += d * d;
+        n /= 10;
+    }
+    s
+}
+
+fn main() {
+    // Max sum of squares for 7 digits: 7 * 81 = 567
+    const MAXS: usize = 7 * 81;
+    let mut counts = vec![0u64; MAXS + 1];
+    counts[0] = 1;
+    for _ in 0..7 {
+        let mut nc = vec![0u64; MAXS + 1];
+        for s in 0..=MAXS {
+            if counts[s] == 0 {
+                continue;
+            }
+            for d in 0..10usize {
+                let t = s + d * d;
+                if t <= MAXS {
+                    nc[t] += counts[s];
+                }
+            }
+        }
+        counts = nc;
+    }
+
+    let mut total: u64 = 0;
+    for s in 1..=MAXS {
+        let mut n = s;
+        while n != 1 && n != 89 {
+            n = next(n);
+        }
+        if n == 89 {
+            total += counts[s];
+        }
+    }
+    println!("{}", total);
+}

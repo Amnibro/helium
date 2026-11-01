@@ -1,0 +1,26 @@
+import heapq
+
+def main():
+    n = 8
+    edges = [(5, 2), (5, 0), (4, 0), (4, 1), (2, 3), (3, 1), (7, 6), (6, 3)]
+    adj = [[] for _ in range(n)]
+    indeg = [0] * n
+    for a, b in edges:
+        adj[a].append(b)
+        indeg[b] += 1
+
+    heap = [i for i in range(n) if indeg[i] == 0]
+    heapq.heapify(heap)
+    order = []
+    while heap:
+        u = heapq.heappop(heap)
+        order.append(u)
+        for v in adj[u]:
+            indeg[v] -= 1
+            if indeg[v] == 0:
+                heapq.heappush(heap, v)
+
+    print(" ".join(map(str, order)))
+
+if __name__ == "__main__":
+    main()

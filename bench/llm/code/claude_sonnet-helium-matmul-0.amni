@@ -1,0 +1,23 @@
+let N = 300;
+
+fn main() {
+	var a int[>..] = [];
+	var b int[>..] = [];
+	for i in N {
+		for j in N {
+			a.push((i * j) % 7);
+			b.push((i + j) % 5);
+		}
+	}
+	var total = 0;
+	for i in N {
+		for j in N {
+			var s = 0;
+			for k in N {
+				s += a[i * N + k] * b[k * N + j];
+			}
+			total += s;
+		}
+	}
+	print(total);
+}

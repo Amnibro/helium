@@ -1,0 +1,21 @@
+fn main() {
+    let a = b"ACCGGTCGAGTGCGCGGAAGCCGGCCGAA";
+    let b = b"GTCGTTCGGAATGCCGTTGCTCTGTAAA";
+
+    let m = b.len();
+    let mut prev = vec![0usize; m + 1];
+    let mut curr = vec![0usize; m + 1];
+
+    for &ca in a.iter() {
+        for j in 1..=m {
+            curr[j] = if ca == b[j - 1] {
+                prev[j - 1] + 1
+            } else {
+                prev[j].max(curr[j - 1])
+            };
+        }
+        std::mem::swap(&mut prev, &mut curr);
+    }
+
+    println!("{}", prev[m]);
+}

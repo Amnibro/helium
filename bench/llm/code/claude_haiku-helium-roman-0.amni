@@ -1,0 +1,36 @@
+fn sym(i int) const byte[:] {
+	match i {
+		0 => "M",
+		1 => "CM",
+		2 => "D",
+		3 => "CD",
+		4 => "C",
+		5 => "XC",
+		6 => "L",
+		7 => "XL",
+		8 => "X",
+		9 => "IX",
+		10 => "V",
+		11 => "IV",
+		_ => "I",
+	}
+}
+
+fn to_roman(out byte[>..]&, n int) {
+	let vals = [1000, 900, 500, 400, 100, 90, 50, 40, 10, 9, 5, 4, 1];
+	var m = n;
+	for i in 13 {
+		while m >= vals[i] {
+			out.append(sym(i));
+			m -= vals[i];
+		}
+	}
+}
+
+fn main() {
+	for n in [1994, 2024, 3999, 4] {
+		var s byte[>..] = [];
+		to_roman(s, n);
+		print(s);
+	}
+}

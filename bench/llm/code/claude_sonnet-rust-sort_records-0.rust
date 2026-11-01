@@ -1,0 +1,16 @@
+fn main() {
+    let data = ["mia,34", "leo,27", "ava,34", "zoe,19", "eli,27", "ian,41"];
+    let mut v: Vec<(&str, u32)> = data
+        .iter()
+        .map(|s| {
+            let mut p = s.split(',');
+            let n = p.next().unwrap();
+            let a: u32 = p.next().unwrap().parse().unwrap();
+            (n, a)
+        })
+        .collect();
+    v.sort_by(|a, b| b.1.cmp(&a.1).then(a.0.cmp(b.0)));
+    for (n, a) in v {
+        println!("{},{}", n, a);
+    }
+}

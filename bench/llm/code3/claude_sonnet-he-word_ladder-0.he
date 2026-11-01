@@ -1,0 +1,23 @@
+from collections import deque
+
+words: list[str] = ["cold", "cord", "card", "ward", "warm", "word", "worm", "wore", "core", "care", "ware", "wold"]
+
+def diff1(a: str, b: str) -> bool:
+    d = 0
+    for i in range(len(a)):
+        if a[i] != b[i]:
+            d += 1
+    return d == 1
+
+n = len(words)
+dist: list[int] = [-1] * n
+dist[0] = 1
+q: deque[int] = deque()
+q.append(0)
+while len(q) > 0:
+    u = q.popleft()
+    for v in range(n):
+        if dist[v] < 0 and diff1(words[u], words[v]):
+            dist[v] = dist[u] + 1
+            q.append(v)
+print(dist[4])

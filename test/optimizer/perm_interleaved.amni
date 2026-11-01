@@ -1,0 +1,31 @@
+// A lane permutation written as an array literal of another array's
+// elements, whose loads and stores interleave, still becomes one permuting
+// copy; inside a step loop of small arrays it also gets register homes
+// under --v4.
+import std;
+import os;
+import math;
+extern fn fbits(x real) uint = "hr_f64_bits";
+simd fn run(q0 real[8]&, q1 real[8]&, n int) {
+	var p0 = q0;
+	var p1 = q1;
+	for s in n {
+		let t0 = [p0[1], p0[2], p0[3], p0[4], p0[5], p0[6], p0[7], p0[0]];
+		for l in 8 { p1[l] = p1[l] * 0.5 + t0[l]; p0[l] = p0[l] + p1[l] * 0.25; }
+	}
+	q0 = p0;
+	q1 = p1;
+}
+fn main() {
+	let a = args();
+	var n = 3;
+	if a.len > 1 { let v, ok = parse_int(a[1]); if ok { n = v; } }
+	var p0 real[8] = [0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8];
+	var p1 real[8] = [0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8];
+	run(p0, p1, n);
+	var h uint = 0;
+	for l in 8 { h = h * 1000003 + fbits(p0[l]) + fbits(p1[l]); }
+	var o byte[>..] = [];
+	format(o, h, "\n");
+	print(o);
+}

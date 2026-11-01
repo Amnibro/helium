@@ -1,0 +1,26 @@
+import dictionary;
+
+struct Entry { w const byte[:], n int }
+
+fn main() {
+	let src = "It was the best of times, it was the worst of times, it was the age of wisdom, it was the age of foolishness, it was the epoch of belief, it was the epoch of incredulity, it was the season of Light, it was the season of Darkness.";
+	var low byte[>..] = [];
+	for c in src {
+		if c >= 'a' && c <= 'z' { low.push(c); }
+		else if c >= 'A' && c <= 'Z' { low.push(c + 32); }
+		else { low.push(' '); }
+	}
+	var d = dictionary<const byte[:], int> {};
+	let total_len = low.len;
+	var i = 0;
+	while i < total_len {
+		if low[i] == ' ' { i++; continue; }
+		let s = i;
+		while i < total_len && low[i] != ' ' { i++; }
+		update(d, low[s..i], 0) { it += 1; };
+	}
+	var entries Entry[>..] = [];
+	each(d) { k, v => { entries.push(Entry { w: k, n: v }); } };
+	sort(entries) { a, b => a.n > b.n || (a.n == b.n && compare(a.w, b.w) < 0) };
+	for i in 5 { print(entries[i].w, " ", entries[i].n); }
+}

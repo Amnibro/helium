@@ -1,0 +1,52 @@
+use std::collections::VecDeque;
+
+fn main() {
+    let rows = [
+        "S.#.......",
+        ".##.####.#",
+        "....#....#",
+        "#.#.#.##.#",
+        "..#...#..#",
+        ".####.#.##",
+        "......#...",
+        ".######.#.",
+        "........#E",
+    ];
+    let grid: Vec<Vec<u8>> = rows.iter().map(|r| r.bytes().collect()).collect();
+    let h = grid.len();
+    let mut start = (0usize, 0usize);
+    let mut end = (0usize, 0usize);
+    for (i, row) in grid.iter().enumerate() {
+        for (j, &c) in row.iter().enumerate() {
+            if c == b'S' {
+                start = (i, j);
+            } else if c == b'E' {
+                end = (i, j);
+            }
+        }
+    }
+    let mut dist: Vec<Vec<i64>> = grid.iter().map(|r| vec![-1; r.len()]).collect();
+    let mut q = VecDeque::new();
+    dist[start.0][start.1] = 0;
+    q.push_back(start);
+    let dirs: [(i64, i64); 4] = [(-1, 0), (1, 0), (0, -1), (0, 1)];
+    while let Some((r, c)) = q.pop_front() {
+        if (r, c) == end {
+            break;
+        }
+        for &(dr, dc) in dirs.iter() {
+            let nr = r as i64 + dr;
+            let nc = c as i64 + dc;
+            if nr < 0 || nr >= h as i64 || nc < 0 {
+                continue;
+            }
+            let (nr, nc) = (nr as usize, nc as usize);
+            if nc >= grid[nr].len() || grid[nr][nc] == b'#' || dist[nr][nc] != -1 {
+                continue;
+            }
+            dist[nr][nc] = dist[r][c] + 1;
+            q.push_back((nr, nc));
+        }
+    }
+    println!("{}", dist[end.0][end.1]);
+}

@@ -1,0 +1,16 @@
+fn main() {
+    let coins = [1usize, 7, 10, 22];
+    let max = 999;
+    let mut dp = vec![usize::MAX; max + 1];
+    dp[0] = 0;
+    for i in 1..=max {
+        for &c in &coins {
+            if c <= i && dp[i - c] != usize::MAX && dp[i - c] + 1 < dp[i] {
+                dp[i] = dp[i - c] + 1;
+            }
+        }
+    }
+    let amounts = [14usize, 30, 59, 100, 999];
+    let out: Vec<String> = amounts.iter().map(|&a| dp[a].to_string()).collect();
+    println!("{}", out.join(" "));
+}

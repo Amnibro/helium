@@ -1,0 +1,8 @@
+requests = [5, 2, 9, 9, 1, 7, 3]
+cur = 0
+floors = 0
+for r in requests:
+    floors += abs(r - cur)
+    cur = r
+total = floors * 2 + len(requests) * 5
+print(f"{total} {floors}")

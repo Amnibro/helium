@@ -1,0 +1,38 @@
+def main():
+    # Numbers below 10^7 have at most 7 digits; max digit-square sum is 7*81 = 567.
+    max_sum = 7 * 81
+
+    def ends_at_89(n):
+        while n != 1 and n != 89:
+            s = 0
+            while n:
+                n, d = divmod(n, 10)
+                s += d * d
+            n = s
+        return n == 89
+
+    arrives89 = [False] * (max_sum + 1)
+    for s in range(1, max_sum + 1):
+        arrives89[s] = ends_at_89(s)
+
+    # Count how many 7-digit strings (with leading zeros) have each digit-square sum.
+    counts = [0] * (max_sum + 1)
+    counts[0] = 1
+    squares = [d * d for d in range(10)]
+    for _ in range(7):
+        new = [0] * (max_sum + 1)
+        for s, c in enumerate(counts):
+            if c:
+                for sq in squares:
+                    if s + sq <= max_sum:
+                        new[s + sq] += c
+        counts = new
+
+    total = 0
+    for s in range(1, max_sum + 1):
+        if arrives89[s]:
+            total += counts[s]
+    print(total)
+
+
+main()

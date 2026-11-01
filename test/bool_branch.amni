@@ -1,0 +1,21 @@
+import std;
+import os;
+struct Cell { on bool, mark bool, v int }
+fn count(fs bool[:], cs Cell[:]) int {
+	var c = 0;
+	for i in fs.len { if fs[i] { c += i; } else { c -= 1; } }
+	for k in cs.len { if !cs[k].on { continue; } if cs[k].mark { c += cs[k].v; } }
+	var j = 0;
+	while j < fs.len && fs[j] { j++; }
+	return c * 7 + j;
+}
+fn main() {
+	let n = args().len;
+	var fs bool[>..] = [];
+	for i in 300 { fs.push((i * 7 + n) % 3 != 0 || i < 5); }
+	var cs Cell[>..] = [];
+	for i in 90 { cs.push(Cell { on: i % 4 != 1, mark: i % 3 == 2, v: i * i }); }
+	var o byte[>..] = [];
+	format(o, count(fs[..], cs[..]), "\n");
+	print(o);
+}

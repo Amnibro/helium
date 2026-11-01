@@ -1,0 +1,12 @@
+fn main() {
+	var sum = 0.0;
+	var sign = 1.0;
+	for i in 10000000 {
+		sum += sign / (2.0 * (i as real) + 1.0);
+		sign = -sign;
+	}
+	let pi = 4.0 * sum;
+	var out byte[>..] = [];
+	format_flt(out, pi, 6);
+	print(out);
+}

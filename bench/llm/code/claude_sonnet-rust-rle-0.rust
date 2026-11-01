@@ -1,0 +1,17 @@
+fn main() {
+    let s = "aaabccddddde";
+    let mut out = String::new();
+    let chars: Vec<char> = s.chars().collect();
+    let mut i = 0;
+    while i < chars.len() {
+        let c = chars[i];
+        let mut j = i;
+        while j < chars.len() && chars[j] == c {
+            j += 1;
+        }
+        out.push(c);
+        out.push_str(&(j - i).to_string());
+        i = j;
+    }
+    println!("{}", out);
+}

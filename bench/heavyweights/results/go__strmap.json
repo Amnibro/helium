@@ -1,0 +1,42 @@
+{
+  "lang": "go",
+  "label": "Go",
+  "bench": "strmap",
+  "file": "strmap",
+  "n": 5000000,
+  "compile_cmd": "/home/anmire/.local/opt/go1.27.3/bin/go build -o /tmp/helium-heavyweights/go/strmap /home/anmire/ai/amni-lang/helium-identity/bench/heavyweights/go/strmap.go",
+  "compile": {
+    "median": 0.035006311000000005,
+    "mean": 0.035813822333333335,
+    "stddev": 0.0015725788453445915,
+    "min": 0.034809051,
+    "max": 0.037626105,
+    "times": [
+      0.037626105,
+      0.035006311000000005,
+      0.034809051
+    ],
+    "peak_rss_kb": 20104.0
+  },
+  "run_cmd": "/tmp/helium-heavyweights/go/strmap 5000000",
+  "binary_bytes": 2358761,
+  "stripped_bytes": 1524120,
+  "stdout": "200000 58 24989\n",
+  "single_run_s": 0.777916431427002,
+  "wall": {
+    "median": 0.801421903,
+    "mean": 0.7849023856,
+    "stddev": 0.1499715160424901,
+    "min": 0.567841967,
+    "max": 0.985918716,
+    "times": [
+      0.985918716,
+      0.801421903,
+      0.7517251460000001,
+      0.567841967,
+      0.817604196
+    ]
+  },
+  "peak_rss_kb": 23108.0,
+  "correct": true
+}

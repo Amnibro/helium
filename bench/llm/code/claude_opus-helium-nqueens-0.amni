@@ -1,0 +1,15 @@
+recursive fn solve(row int, cols int, d1 int, d2 int) int {
+	if row == 10 { return 1; }
+	var count = 0;
+	var avail = 1023 ^ ((cols | d1 | d2) & 1023);
+	while avail != 0 {
+		let bit = avail & (0 - avail);
+		avail -= bit;
+		count += solve(row + 1, cols | bit, ((d1 | bit) << 1) & 1023, (d2 | bit) >> 1);
+	}
+	return count;
+}
+
+fn main() {
+	print(solve(0, 0, 0, 0));
+}

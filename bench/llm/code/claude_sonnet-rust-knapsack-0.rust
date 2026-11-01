@@ -1,0 +1,15 @@
+fn main() {
+    let w = [12usize, 7, 11, 8, 9, 6, 15, 4, 10, 13];
+    let v = [24u32, 13, 23, 15, 16, 12, 30, 7, 19, 25];
+    let cap = 50usize;
+    let mut dp = vec![0u32; cap + 1];
+    for i in 0..w.len() {
+        for c in (w[i]..=cap).rev() {
+            let cand = dp[c - w[i]] + v[i];
+            if cand > dp[c] {
+                dp[c] = cand;
+            }
+        }
+    }
+    println!("{}", dp[cap]);
+}

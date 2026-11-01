@@ -1,0 +1,19 @@
+fn main() {
+    let records = ["mia,34", "leo,27", "ava,34", "zoe,19", "eli,27", "ian,41"];
+
+    let mut people: Vec<(&str, u32)> = records
+        .iter()
+        .map(|r| {
+            let mut parts = r.splitn(2, ',');
+            let name = parts.next().unwrap();
+            let age: u32 = parts.next().unwrap().trim().parse().unwrap();
+            (name, age)
+        })
+        .collect();
+
+    people.sort_by(|a, b| b.1.cmp(&a.1).then_with(|| a.0.cmp(b.0)));
+
+    for (name, age) in people {
+        println!("{},{}", name, age);
+    }
+}

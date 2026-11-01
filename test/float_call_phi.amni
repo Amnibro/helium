@@ -1,0 +1,26 @@
+import std;
+import os;
+struct Box { lo real, hi real, k real }
+fn apply(b Box, x real, d real) real {
+	if x < b.lo || x > b.hi { return d; }
+	let t = (x - b.lo) / (b.hi - b.lo + 1.0);
+	d * (1.0 - t) + b.k * t - 0.25
+}
+fn scale(v real, w f32) f32 { (v as f32) * w + 0.5 }
+fn main() {
+	let n = args().len as real;
+	var bs Box[>..] = [];
+	for i in 40 { let c = i as real * 1.7; bs.push(Box { lo: c - 2.0, hi: c + 3.0 + n, k: i as real * 0.3 }); }
+	var acc = 0.0;
+	var g f32 = 0.0;
+	for j in 500 {
+		let x = j as real * 0.13;
+		var d = 1.0;
+		for b in bs { d = apply(b, x, d); }
+		acc += d;
+		g = scale(d * 0.01, g * 0.5 + 0.25);
+	}
+	var o byte[>..] = [];
+	format(o, acc, " ", g, "\n");
+	print(o);
+}

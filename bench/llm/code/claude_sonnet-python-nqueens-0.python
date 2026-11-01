@@ -1,0 +1,18 @@
+def solve(n):
+    full = (1 << n) - 1
+
+    def place(cols, d1, d2):
+        if cols == full:
+            return 1
+        count = 0
+        avail = full & ~(cols | d1 | d2)
+        while avail:
+            bit = avail & -avail
+            avail ^= bit
+            count += place(cols | bit, ((d1 | bit) << 1) & full, (d2 | bit) >> 1)
+        return count
+
+    return place(0, 0, 0)
+
+
+print(solve(10))

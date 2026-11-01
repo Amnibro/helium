@@ -1,0 +1,23 @@
+// sin, cos, log and pow over ordinary, tiny, huge and edge arguments. Each
+// has a fast path whose result is checked against an error bound and falls
+// back to the exact path when the bound cannot settle the rounding, so every
+// bit must match the exact path.
+import std;
+import os;
+import math;
+extern fn fbits(x real) uint = "hr_f64_bits";
+fn main() {
+	let n = args().len as real;
+	var h uint = 0;
+	var o byte[>..] = [];
+	var x = 1e-300 * n;
+	while x < 1e300 {
+		h = h * 1000003 + fbits(sin(x)) + fbits(cos(-x)) * 3 + fbits(log(x)) * 7 + fbits(pow(x, 0.37)) * 11 + fbits(pow(x, -2.0)) * 13;
+		x = x * 1.0371;
+	}
+	format(o, h, "\n");
+	for v in [0.0, -0.0, 1.0, 0.5, 1e-310, 3.0e8, 268435456.0, 7.0e15, 1.5707963267948966, 3.141592653589793, 710.0, -3.0] {
+		format(o, sin(v), " ", cos(v), " ", log(v), " ", pow(v, 2.5), " ", pow(v, -3.0), " ", pow(2.0, v), "\n");
+	}
+	print(o);
+}

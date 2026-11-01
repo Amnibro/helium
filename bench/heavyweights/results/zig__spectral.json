@@ -1,0 +1,42 @@
+{
+  "lang": "zig",
+  "label": "Zig (ReleaseFast)",
+  "bench": "spectral",
+  "file": "spectral",
+  "n": 3000,
+  "compile_cmd": "/home/anmire/.local/opt/zig-x86_64-linux-0.17.0/zig build-exe -O ReleaseFast -mcpu=baseline --global-cache-dir /tmp/helium-heavyweights/zigcache-run --cache-dir /tmp/helium-heavyweights/zigcache-local -femit-bin=/tmp/helium-heavyweights/zig/spectral /home/anmire/ai/amni-lang/helium-identity/bench/heavyweights/zig/spectral.zig",
+  "compile": {
+    "median": 0.354868628,
+    "mean": 0.3551861293333334,
+    "stddev": 0.006034694475848,
+    "min": 0.349316453,
+    "max": 0.36137330700000003,
+    "times": [
+      0.354868628,
+      0.349316453,
+      0.36137330700000003
+    ],
+    "peak_rss_kb": 130568.0
+  },
+  "run_cmd": "/tmp/helium-heavyweights/zig/spectral 3000",
+  "binary_bytes": 1065856,
+  "stripped_bytes": 28088,
+  "stdout": "1.274224153\n",
+  "single_run_s": 0.2687947750091553,
+  "wall": {
+    "median": 0.26843077400000004,
+    "mean": 0.26901522840000003,
+    "stddev": 0.0020940013504554588,
+    "min": 0.267565054,
+    "max": 0.272639479,
+    "times": [
+      0.272639479,
+      0.26881038900000004,
+      0.267630446,
+      0.26843077400000004,
+      0.267565054
+    ]
+  },
+  "peak_rss_kb": 1288.0,
+  "correct": true
+}

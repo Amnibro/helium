@@ -1,0 +1,17 @@
+fn main() {
+	let N = 100000;
+	var comp bool[>..] = [];
+	comp.resize(N, false);
+	var total = 0;
+	for i in 2..N {
+		if !comp[i] {
+			total += i;
+			var j = i * i;
+			while j < N {
+				comp[j] = true;
+				j += i;
+			}
+		}
+	}
+	print(total);
+}

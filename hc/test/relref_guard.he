@@ -1,0 +1,75 @@
+struct TNode { l TNode&<u32>?, r TNode&<u32>?, v int }
+struct Cell { v int }
+var cells Cell[>..] = [Cell{v: 10}, Cell{v: 11}, Cell{v: 12}, Cell{v: 13}]
+struct Link { to Cell&<u16 in cells>?, nx Cell&<u32 in cells>?, n int }
+recursive make(pool TNode[>..]&, depth int, s int) TNode&:
+	if depth == 0: return pool.push(TNode{v: s})
+	if s % 3 == 0: l := make(pool, depth - 1, s * 2); return pool.push(TNode{l: l, v: s})
+	l := make(pool, depth - 1, s * 2); r := make(pool, depth - 1, s * 2 + 1); pool.push(TNode{l: l, r: r, v: s})
+recursive check(n TNode&) int:
+	let l = n.l
+	guard l else { return n.v }
+	let r = n.r
+	guard r else { return 1 + check(l) }
+	n.v + check(l) + check(r)
+outside(n TNode&) int:
+	let l = n.l
+	s ~= 0
+	if l != null { s += 7 }
+	if l == null { s + 100 } else { s + l.v }
+eqform(n TNode&) int:
+	let r = n.r
+	if r == null: return -1
+	r.v * 2
+walk(n TNode&) int:
+	s ~= 0; p ~= n.l
+	while p != null:
+		let q = p
+		guard q else { break }
+		s += q.v; p = q.l
+	s
+loopguard(ns TNode[>..]&) int:
+	s ~= 0
+	for i ns.len:
+		let l = ns[i].l
+		guard l else { continue }
+		let r = ns[i].r
+		guard r else { s += l.v; continue }
+		s += l.v * 3 + r.v
+	s
+rebind(n TNode&) int:
+	p ~= n.l; c ~= 0
+	while p != null:
+		let q = p
+		guard q else { break }
+		c += 1; p = if c > 3 { null } else { q.l }
+	let r = n.l
+	guard r else { return c }
+	r = n
+	c * 1000 + r.v
+links(ls Link[>..]&) int:
+	s ~= 0
+	for k ls:
+		let t = k.to
+		guard t else { s += 1000; continue }
+		let x = k.nx
+		guard x else { s += t.v; continue }
+		s += t.v * x.v + k.n
+	s
+lastnull(ls Link[>..]&) int:
+	c ~= 0
+	for k ls:
+		let t = k.to
+		if t != null { c += t.v }
+		c += if t == null { 1 } else { 2 }
+	c
+main():
+	pool TNode[>..] ~= []; root := make(pool, 7, 1)
+	print(check(root)); print(outside(root)); print(outside(pool[0])); print(eqform(root)); print(eqform(pool[0])); print(walk(root)); print(rebind(root)); print(rebind(pool[pool.len - 1])); print(loopguard(pool))
+	ls Link[>..] ~= []
+	for i 9:
+		k ~= Link{n: i}
+		if i % 4 != 0 { k.to = cells[i % 4] }
+		if i % 3 != 0 { k.nx = cells[(i + 1) % 4] }
+		ls.push(k)
+	print(links(ls)); print(lastnull(ls))

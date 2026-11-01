@@ -1,0 +1,11 @@
+def main():
+    weights = [12, 7, 11, 8, 9, 6, 15, 4, 10, 13]
+    values = [24, 13, 23, 15, 16, 12, 30, 7, 19, 25]
+    capacity = 50
+    dp = [0] * (capacity + 1)
+    for w, v in zip(weights, values):
+        for c in range(capacity, w - 1, -1):
+            dp[c] = max(dp[c], dp[c - w] + v)
+    print(dp[capacity])
+
+main()

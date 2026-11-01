@@ -1,0 +1,36 @@
+import std;
+fn f(a int, b uint, c i32) int {
+	var s = 0;
+	for i in 50 {
+		let x = a + i;
+		s += x * 3 + x * 5 * 2 + x * 9;
+		let y = b + i as uint;
+		s += (y * 5) as! int + (y * 9) as! int;
+		let z = c + i as i32;
+		s += (z * 3) as int + (z * 9) as int;
+	}
+	return s;
+}
+fn main() { print(str(f(123456789, 0xFFFFFFFFFFFFFF00, -1000000))); print(str(f(-7, 3, 2147483000))); main2(); }
+fn dig(s byte[:]) uint {
+	var m uint = 0;
+	for c in s { m = m * 10 + (c - '0'); }
+	return m;
+}
+fn mix(n int) int {
+	var a = 1;
+	var b = 7;
+	for i in n {
+		a = a * 6 + i;
+		b = b * 18 + a;
+		if b - a * 3 == 0 { a++; }
+		a = (a * 10 + b) % 1000003;
+		b = b % 999983;
+	}
+	return a * 1000 + b;
+}
+fn main2() {
+	print(str(dig("12345678901234567")));
+	print(str(dig("98765")));
+	print(str(mix(1000)));
+}

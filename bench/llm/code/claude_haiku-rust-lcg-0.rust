@@ -1,0 +1,14 @@
+fn main() {
+    let mut s: u64 = 42;
+    let mut count: u64 = 0;
+    let mut last: u64 = 0;
+    for _ in 0..1_000_000 {
+        s = (1103515245u64.wrapping_mul(s).wrapping_add(12345)) & 2147483647;
+        if s < 1073741824 {
+            count += 1;
+        }
+        last = s;
+    }
+    println!("{}", count);
+    println!("{}", last);
+}

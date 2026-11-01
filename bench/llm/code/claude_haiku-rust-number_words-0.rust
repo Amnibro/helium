@@ -1,0 +1,70 @@
+fn below_100(n: u64) -> String {
+    const ONES: [&str; 20] = [
+        "zero", "one", "two", "three", "four", "five", "six", "seven", "eight", "nine",
+        "ten", "eleven", "twelve", "thirteen", "fourteen", "fifteen", "sixteen",
+        "seventeen", "eighteen", "nineteen",
+    ];
+    const TENS: [&str; 10] = [
+        "", "", "twenty", "thirty", "forty", "fifty", "sixty", "seventy", "eighty", "ninety",
+    ];
+
+    if n < 20 {
+        ONES[n as usize].to_string()
+    } else {
+        let tens = TENS[(n / 10) as usize];
+        let ones = n % 10;
+        if ones == 0 {
+            tens.to_string()
+        } else {
+            format!("{}-{}", tens, ONES[ones as usize])
+        }
+    }
+}
+
+fn below_1000(n: u64) -> String {
+    let hundreds = n / 100;
+    let rest = n % 100;
+    let mut parts: Vec<String> = Vec::new();
+
+    if hundreds > 0 {
+        parts.push(format!("{} hundred", below_100(hundreds)));
+    }
+    if rest > 0 {
+        parts.push(below_100(rest));
+    }
+    parts.join(" ")
+}
+
+fn to_words(mut n: u64) -> String {
+    if n == 0 {
+        return "zero".to_string();
+    }
+
+    let scales: [(u64, &str); 3] = [
+        (1_000_000_000, "billion"),
+        (1_000_000, "million"),
+        (1_000, "thousand"),
+    ];
+
+    let mut parts: Vec<String> = Vec::new();
+
+    for (value, name) in scales.iter() {
+        if n >= *value {
+            let chunk = n / value;
+            parts.push(format!("{} {}", below_1000(chunk), name));
+            n %= value;
+        }
+    }
+
+    if n > 0 {
+        parts.push(below_1000(n));
+    }
+
+    parts.join(" ")
+}
+
+fn main() {
+    for n in [1234567u64, 90210, 13, 1000000] {
+        println!("{}", to_words(n));
+    }
+}

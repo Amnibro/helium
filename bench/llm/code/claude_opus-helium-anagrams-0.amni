@@ -1,0 +1,31 @@
+struct W { w byte[..16], k byte[..16] }
+
+fn main() {
+	let src = ["listen", "silent", "enlist", "google", "gooegl", "cat", "act", "tac", "dog"];
+	var ws W[>..] = [];
+	for s in src {
+		var w byte[..16] = [];
+		w.append(s);
+		var k byte[..16] = [];
+		k.append(s);
+		sort(k) { a, b => a < b };
+		ws.push(W { w: w, k: k });
+	}
+	sort(ws) { a, b => compare(a.w, b.w) < 0 };
+	var used bool[>..] = [];
+	for i in ws.len { used.push(false); }
+	for i in ws.len {
+		if used[i] { continue; }
+		used[i] = true;
+		var line byte[>..] = [];
+		line.append(ws[i].w);
+		for j in i + 1..ws.len {
+			if !used[j] && ws[j].k == ws[i].k {
+				used[j] = true;
+				line.push(' ');
+				line.append(ws[j].w);
+			}
+		}
+		print(line);
+	}
+}

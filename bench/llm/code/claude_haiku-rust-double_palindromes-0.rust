@@ -1,0 +1,16 @@
+fn is_palindrome(mut n: u64, base: u64) -> bool {
+    let mut digits = Vec::new();
+    while n > 0 {
+        digits.push(n % base);
+        n /= base;
+    }
+    let len = digits.len();
+    (0..len / 2).all(|i| digits[i] == digits[len - 1 - i])
+}
+
+fn main() {
+    let sum: u64 = (1..1_000_000u64)
+        .filter(|&n| is_palindrome(n, 10) && is_palindrome(n, 2))
+        .sum();
+    println!("{}", sum);
+}

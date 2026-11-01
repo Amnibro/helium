@@ -1,0 +1,11 @@
+# .he: an untyped local takes int when its initializer is a narrower integer that is not a cast
+struct B { v u8, w i32 }
+main():
+	b := B{250, 2000000000}
+	k := b.v
+	m := b.w
+	c := b.v as u8
+	print(k + 10, " ", m * 2, " ", c + 10)
+	s byte[] := "az"
+	d := s[0]
+	print(d - 'b')

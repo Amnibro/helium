@@ -1,0 +1,42 @@
+{
+  "lang": "c-gcc",
+  "label": "C (gcc -O2)",
+  "bench": "fib",
+  "file": "fib",
+  "n": 40,
+  "compile_cmd": "gcc -O2 -o /tmp/helium-heavyweights/c-gcc/fib /home/anmire/ai/amni-lang/helium-identity/bench/heavyweights/c/fib.c -lm",
+  "compile": {
+    "median": 0.045281552,
+    "mean": 0.04540892466666667,
+    "stddev": 0.0002636100574737864,
+    "min": 0.04523319,
+    "max": 0.045712032,
+    "times": [
+      0.045712032,
+      0.045281552,
+      0.04523319
+    ],
+    "peak_rss_kb": 44916.0
+  },
+  "run_cmd": "/tmp/helium-heavyweights/c-gcc/fib 40",
+  "binary_bytes": 16056,
+  "stripped_bytes": 14480,
+  "stdout": "102334155\n",
+  "single_run_s": 0.07236027717590332,
+  "wall": {
+    "median": 0.074881904,
+    "mean": 0.0755739568,
+    "stddev": 0.0035041002393488545,
+    "min": 0.071966984,
+    "max": 0.081360163,
+    "times": [
+      0.071966984,
+      0.075551355,
+      0.074881904,
+      0.074109378,
+      0.081360163
+    ]
+  },
+  "peak_rss_kb": 2208.0,
+  "correct": true
+}

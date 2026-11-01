@@ -1,0 +1,21 @@
+import std;
+import os;
+import json;
+extern fn fbits(x uint) real = "hr_f64_from_bits";
+fn main() {
+	var s uint = 88172645463325252;
+	var out byte[>..] = [];
+	var h uint = 1469598103934665603;
+	let sp = [0.0, -0.0, 1.0, -1.0, 0.1, 1e21, 1e22, 1e-7, 1e-6, 123456789012345680000.0, 5e-324, 1.7976931348623157e308, 0.30000000000000004, 100.0, 1e16, 12345.678];
+	for x in sp { out.clear(); json::format_number(out, x); print(out); }
+	for it in 200000 {
+		s ^= s << 13; s ^= s >> 7; s ^= s << 17;
+		let k = s % 4;
+		var x = fbits(s);
+		if k == 1 { x = ((s >> 11) as! real) / 1000000.0 - 4000000000.0; }
+		if k == 2 { x = ((s >> 30) % 400000) as! real - 200000.0 + ((s >> 3) % 1000) as! real / 1000.0; }
+		out.clear(); json::format_number(out, x);
+		for c in out { h = (h ^ c as uint) * 1099511628211; }
+	}
+	print(h);
+}

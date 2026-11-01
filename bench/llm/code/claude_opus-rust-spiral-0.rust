@@ -1,0 +1,39 @@
+fn main() {
+    const N: usize = 5;
+    let mut m = [[0i32; N]; N];
+    let mut v = 1;
+    for i in 0..N {
+        for j in 0..N {
+            m[i][j] = v;
+            v += 1;
+        }
+    }
+
+    let mut out: Vec<String> = Vec::with_capacity(N * N);
+    let (mut top, mut bottom, mut left, mut right) = (0i32, N as i32 - 1, 0i32, N as i32 - 1);
+
+    while top <= bottom && left <= right {
+        for j in left..=right {
+            out.push(m[top as usize][j as usize].to_string());
+        }
+        top += 1;
+        for i in top..=bottom {
+            out.push(m[i as usize][right as usize].to_string());
+        }
+        right -= 1;
+        if top <= bottom {
+            for j in (left..=right).rev() {
+                out.push(m[bottom as usize][j as usize].to_string());
+            }
+            bottom -= 1;
+        }
+        if left <= right {
+            for i in (top..=bottom).rev() {
+                out.push(m[i as usize][left as usize].to_string());
+            }
+            left += 1;
+        }
+    }
+
+    println!("{}", out.join(" "));
+}

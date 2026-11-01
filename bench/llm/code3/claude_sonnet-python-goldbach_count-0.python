@@ -1,0 +1,15 @@
+def main():
+    N = 10000
+    sieve = bytearray([1]) * (N + 1)
+    sieve[0] = sieve[1] = 0
+    for i in range(2, int(N ** 0.5) + 1):
+        if sieve[i]:
+            sieve[i*i::i] = bytearray(len(range(i*i, N + 1, i)))
+    for n in (10, 100, 1000, 10000):
+        count = 0
+        for p in range(2, n // 2 + 1):
+            if sieve[p] and sieve[n - p]:
+                count += 1
+        print(n, count)
+
+main()

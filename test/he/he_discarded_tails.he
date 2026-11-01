@@ -1,0 +1,19 @@
+# .he: a statement-position block discards its tail value, whatever its type
+g() int: 7
+h(c bool) int:
+	if c: g()
+	while false: g()
+	for i 3: g()
+	xs int[>..] ~= []
+	xs.push(1)
+	if c: xs.pop() else: g()
+	5
+k() u8: 3
+v(c bool):
+	if c: g() else: k()
+	match g():
+		7 => g()
+		_ => k()
+main():
+	print(h(true))
+	v(true);

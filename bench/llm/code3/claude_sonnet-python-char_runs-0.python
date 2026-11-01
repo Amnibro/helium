@@ -1,0 +1,9 @@
+from itertools import groupby
+
+s = 'aaabccddddeffffffg'
+best_char, best_len = '', 0
+for ch, grp in groupby(s):
+    n = len(list(grp))
+    if n > best_len:
+        best_char, best_len = ch, n
+print(f"{best_char} {best_len}")

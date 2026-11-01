@@ -1,0 +1,15 @@
+fn f(x: f64) -> f64 {
+    x.sin() * (-x / 3.0).exp()
+}
+
+fn main() {
+    let n: usize = 100000;
+    let a = 0.0f64;
+    let b = 10.0f64;
+    let h = (b - a) / n as f64;
+    let mut sum = 0.5 * (f(a) + f(b));
+    for i in 1..n {
+        sum += f(a + i as f64 * h);
+    }
+    println!("{:.8}", sum * h);
+}

@@ -1,0 +1,7 @@
+import math
+
+values = [2, 4, 4, 4, 5, 5, 7, 9, 13, 21]
+mean = sum(values) / len(values)
+variance = sum((x - mean) ** 2 for x in values) / len(values)
+std_dev = math.sqrt(variance)
+print(f"{mean:.3f} {std_dev:.3f}")

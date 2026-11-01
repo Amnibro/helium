@@ -1,0 +1,53 @@
+fn less(a const byte[:], b const byte[:]) bool {
+	var i = 0;
+	while i < a.len && i < b.len {
+		if a[i] != b[i] { return a[i] < b[i]; }
+		i += 1;
+	}
+	a.len < b.len
+}
+
+fn is_anagram(a const byte[:], b const byte[:]) bool {
+	if a.len != b.len { return false; }
+	var cnt int[26] = [0; 26];
+	for i in a.len {
+		cnt[(a[i] as int) - 97] += 1;
+		cnt[(b[i] as int) - 97] -= 1;
+	}
+	for c in cnt { if c != 0 { return false; } }
+	true
+}
+
+fn main() {
+	let words = ["listen", "silent", "enlist", "google", "gooegl", "cat", "act", "tac", "dog"];
+
+	var order int[>..] = [];
+	for i in words.len { order.push(i); }
+	for i in 1..order.len {
+		var j = i;
+		while j > 0 && less(words[order[j]], words[order[j - 1]]) {
+			let t = order[j];
+			order[j] = order[j - 1];
+			order[j - 1] = t;
+			j -= 1;
+		}
+	}
+
+	var used bool[9] = [false; 9];
+	for p in order.len {
+		let w = order[p];
+		if used[w] { continue; }
+		var line byte[>..] = [];
+		var first = true;
+		for q in order.len {
+			let v = order[q];
+			if is_anagram(words[w], words[v]) {
+				used[v] = true;
+				if !first { line.push(' '); }
+				first = false;
+				line.append(words[v]);
+			}
+		}
+		print(line);
+	}
+}

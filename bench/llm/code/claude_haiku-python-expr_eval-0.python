@@ -1,0 +1,66 @@
+import re
+
+
+def tokenize(s):
+    tokens = []
+    for m in re.finditer(r"\s*(\d+|[()+\-*])", s):
+        tokens.append(m.group(1))
+    return tokens
+
+
+class Parser:
+    def __init__(self, tokens):
+        self.tokens = tokens
+        self.pos = 0
+
+    def peek(self):
+        return self.tokens[self.pos] if self.pos < len(self.tokens) else None
+
+    def advance(self):
+        tok = self.peek()
+        self.pos += 1
+        return tok
+
+    def parse_expr(self):
+        value = self.parse_term()
+        while self.peek() in ("+", "-"):
+            op = self.advance()
+            rhs = self.parse_term()
+            value = value + rhs if op == "+" else value - rhs
+        return value
+
+    def parse_term(self):
+        value = self.parse_factor()
+        while self.peek() == "*":
+            self.advance()
+            value *= self.parse_factor()
+        return value
+
+    def parse_factor(self):
+        tok = self.peek()
+        if tok == "(":
+            self.advance()
+            value = self.parse_expr()
+            if self.advance() != ")":
+                raise SyntaxError("expected ')'")
+            return value
+        if tok == "-":
+            self.advance()
+            return -self.parse_factor()
+        if tok is not None and tok.isdigit():
+            self.advance()
+            return int(tok)
+        raise SyntaxError(f"unexpected token: {tok!r}")
+
+
+def evaluate(expression):
+    parser = Parser(tokenize(expression))
+    value = parser.parse_expr()
+    if parser.peek() is not None:
+        raise SyntaxError("unexpected trailing input")
+    return value
+
+
+if __name__ == "__main__":
+    for expr in ("(1+2)*3-4*(5-6)", "2*(3+4)*(5-1)", "100-2*3*4+(7-10)*2"):
+        print(evaluate(expr))

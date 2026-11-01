@@ -1,0 +1,36 @@
+fn main() {
+	var g bool[64] = [false; 64];
+	g[0 * 8 + 1] = true;
+	g[1 * 8 + 2] = true;
+	g[2 * 8 + 0] = true;
+	g[2 * 8 + 1] = true;
+	g[2 * 8 + 2] = true;
+	for gen in 4 {
+		var n bool[64] = [false; 64];
+		for r in 8 {
+			for c in 8 {
+				var cnt = 0;
+				for dr in 3 {
+					for dc in 3 {
+						if dr == 1 && dc == 1 { continue; }
+						let rr = r + dr - 1;
+						let cc = c + dc - 1;
+						if rr >= 0 && rr < 8 && cc >= 0 && cc < 8 {
+							if g[rr * 8 + cc] { cnt++; }
+						}
+					}
+				}
+				let alive = g[r * 8 + c];
+				n[r * 8 + c] = cnt == 3 || (alive && cnt == 2);
+			}
+		}
+		g = n;
+	}
+	for r in 8 {
+		var line byte[>..] = [];
+		for c in 8 {
+			if g[r * 8 + c] { line.push('#'); } else { line.push('.'); }
+		}
+		print(line);
+	}
+}

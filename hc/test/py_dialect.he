@@ -1,0 +1,49 @@
+import heapq
+from dataclasses import dataclass
+
+@dataclass
+class Rec:
+    name: str
+    age: int
+
+def key_of(w: str) -> str:
+    return "".join(sorted(w))
+
+def split_pair(n: int) -> tuple[int, int]:
+    return n // 10, n % 10
+
+def main() -> None:
+    words = ["listen", "silent", "cat", "act", "dog"]
+    groups: dict[str, list[str]] = {}
+    for w in words:
+        k = key_of(w)
+        if k not in groups:
+            groups[k] = []
+        groups[k].append(w)
+    result: list[list[str]] = []
+    for k in groups:
+        g = groups[k]
+        g.sort()
+        result.append(g)
+    result.sort(key=lambda g: g[0])
+    for g in result:
+        print(" ".join(g))
+    recs = [Rec("mia", 34), Rec("leo", 27), Rec("ava", 34)]
+    recs.sort(key=lambda r: (-r.age, r.name))
+    print(", ".join(f"{r.name}:{r.age}" for r in recs))
+    h: list[tuple[int, str]] = []
+    for i, w in enumerate(words):
+        heapq.heappush(h, (len(w), w))
+    d, top = heapq.heappop(h)
+    a, b = split_pair(47)
+    print(d, top, a, b, len(groups), [x * x for x in range(5) if x % 2 == 0])
+    total = 0.0
+    for e in [(1, 2.5), (3, 0.5)]:
+        total += e[0] * e[1]
+    if total > 3:
+        label = "big"
+    else:
+        label = "small"
+    print(f"{total:.2f} {label}", total / 2, 7 // 2, -7 // 2, True, [True, False], max(3, 9, 4))
+
+main()

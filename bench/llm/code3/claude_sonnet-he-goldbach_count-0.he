@@ -1,0 +1,21 @@
+N = 10000
+sieve: list[bool] = [True] * (N + 1)
+sieve[0] = False
+sieve[1] = False
+i = 2
+while i * i <= N:
+    if sieve[i]:
+        j = i * i
+        while j <= N:
+            sieve[j] = False
+            j += i
+    i += 1
+
+for n in [10, 100, 1000, 10000]:
+    count = 0
+    p = 2
+    while p <= n // 2:
+        if sieve[p] and sieve[n - p]:
+            count += 1
+        p += 1
+    print(f"{n} {count}")

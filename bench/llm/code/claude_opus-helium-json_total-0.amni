@@ -1,0 +1,29 @@
+fn main() {
+	let doc = "{\"order\": 1042, \"items\": [{\"name\": \"bolt\", \"price\": 0.25, \"qty\": 120}, {\"name\": \"nut\", \"price\": 0.1, \"qty\": 300}, {\"name\": \"gear\", \"price\": 12.5, \"qty\": 4}, {\"name\": \"spring\", \"price\": 1.75, \"qty\": 16}]}";
+	var i = 0;
+	var price = 0.0;
+	var total = 0.0;
+	while i < doc.len {
+		if doc[i] == '"' {
+			let start = i + 1;
+			var j = start;
+			while j < doc.len && doc[j] != '"' { j++; }
+			let key = doc[start..j];
+			i = j + 1;
+			if key == "price" || key == "qty" {
+				while i < doc.len && (doc[i] == ':' || doc[i] == ' ') { i++; }
+				let ns = i;
+				while i < doc.len && (doc[i] == '.' || doc[i] == '-' || (doc[i] >= '0' && doc[i] <= '9')) { i++; }
+				let v, ok = parse_flt(doc[ns..i]);
+				if ok {
+					if key == "price" { price = v; } else { total += price * v; }
+				}
+			}
+		} else {
+			i++;
+		}
+	}
+	var out byte[>..] = [];
+	format_flt(out, total, 2);
+	print(out);
+}

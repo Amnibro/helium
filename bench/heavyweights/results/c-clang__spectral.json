@@ -1,0 +1,42 @@
+{
+  "lang": "c-clang",
+  "label": "C (clang -O2)",
+  "bench": "spectral",
+  "file": "spectral",
+  "n": 3000,
+  "compile_cmd": "clang -O2 -o /tmp/helium-heavyweights/c-clang/spectral /home/anmire/ai/amni-lang/helium-identity/bench/heavyweights/c/spectral.c -lm",
+  "compile": {
+    "median": 0.068152771,
+    "mean": 0.06775692566666668,
+    "stddev": 0.0008812230128760402,
+    "min": 0.06674719400000001,
+    "max": 0.068370812,
+    "times": [
+      0.06674719400000001,
+      0.068152771,
+      0.068370812
+    ],
+    "peak_rss_kb": 112140.0
+  },
+  "run_cmd": "/tmp/helium-heavyweights/c-clang/spectral 3000",
+  "binary_bytes": 16192,
+  "stripped_bytes": 14520,
+  "stdout": "1.274224153\n",
+  "single_run_s": 0.2833993434906006,
+  "wall": {
+    "median": 0.285566724,
+    "mean": 0.2848755438,
+    "stddev": 0.0016330891958465403,
+    "min": 0.282973219,
+    "max": 0.286371248,
+    "times": [
+      0.285566724,
+      0.283268045,
+      0.282973219,
+      0.286371248,
+      0.286198483
+    ]
+  },
+  "peak_rss_kb": 2208.0,
+  "correct": true
+}

@@ -1,0 +1,13 @@
+fn main() {
+	for n in 16 {
+		if n & (n >> 1) == 0 {
+			var s byte[>..] = [];
+			var b = 3;
+			while b >= 0 {
+				if (n >> b) & 1 == 1 { s.push('1'); } else { s.push('0'); }
+				b -= 1;
+			}
+			print(s);
+		}
+	}
+}

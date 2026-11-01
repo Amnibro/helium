@@ -1,0 +1,15 @@
+import std;
+import os;
+fn wide(a int, x real, b int, y real, c int, z real, d int, w real, e int, u real, f int, v real, g int, t real, h int, s real, k int, r real) real {
+	(a + b + c + d + e + f + g + h + k) as real + x - y * z + w / (u + 2.0) + v * t - s + r
+}
+fn main() {
+	let n = args().len;
+	var q0 = 1.5; var q1 = 2; var q2 = 0.25; var q3 = 4; var q4 = -1.75; var q5 = 6; var q6 = 3.125; var q7 = 8; var q8 = 0.5; var q9 = 10; var q10 = -2.5; var q11 = 12; var q12 = 7.75; var q13 = 14; var q14 = 0.125; var q15 = 16; var q16 = 9.5;
+	fn mix(i int, x real) real { x * q0 + (q1 + i) as real - q2 * x + (q3 as real) * q4 + (q5 as real) + q6 - (q7 as real) * q8 + (q9 as real) * q10 + (q11 as real) - q12 * x + (q13 as real) * q14 + (q15 as real) + q16 }
+	var acc = 0.0;
+	for i in 200 { let x = i as real * 0.5 - n as real; acc += mix(i, x) + wide(i, x, 2, 0.5, 3, x, 4, 1.25, 5, x * 0.25, 6, 2.0, 7, x, 8, 0.75, 9, -x); q0 += 0.01; q15 += 1; }
+	var o byte[>..] = [];
+	format(o, acc, "\n");
+	print(o);
+}

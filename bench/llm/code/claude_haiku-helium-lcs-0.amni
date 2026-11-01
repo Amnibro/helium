@@ -1,0 +1,22 @@
+fn lcs(a const byte[:], b const byte[:]) int {
+	let m = b.len;
+	var dp int[>..] = [];
+	dp.resize(m + 1, 0);
+	for i in a.len {
+		var diag = 0;
+		for j in m {
+			let up = dp[j + 1];
+			if a[i] == b[j] {
+				dp[j + 1] = diag + 1;
+			} else {
+				dp[j + 1] = max(dp[j + 1], dp[j]);
+			}
+			diag = up;
+		}
+	}
+	dp[m]
+}
+
+fn main() {
+	print(lcs("ACCGGTCGAGTGCGCGGAAGCCGGCCGAA", "GTCGTTCGGAATGCCGTTGCTCTGTAAA"));
+}

@@ -1,0 +1,42 @@
+{
+  "lang": "zig",
+  "label": "Zig (ReleaseFast)",
+  "bench": "nbody",
+  "file": "nbody",
+  "n": 10000000,
+  "compile_cmd": "/home/anmire/.local/opt/zig-x86_64-linux-0.17.0/zig build-exe -O ReleaseFast -mcpu=baseline --global-cache-dir /tmp/helium-heavyweights/zigcache-run --cache-dir /tmp/helium-heavyweights/zigcache-local -femit-bin=/tmp/helium-heavyweights/zig/nbody /home/anmire/ai/amni-lang/helium-identity/bench/heavyweights/zig/nbody.zig",
+  "compile": {
+    "median": 0.306231588,
+    "mean": 0.3130685226666667,
+    "stddev": 0.012200395214368484,
+    "min": 0.305819662,
+    "max": 0.327154318,
+    "times": [
+      0.327154318,
+      0.306231588,
+      0.305819662
+    ],
+    "peak_rss_kb": 126560.0
+  },
+  "run_cmd": "/tmp/helium-heavyweights/zig/nbody 10000000",
+  "binary_bytes": 1055968,
+  "stripped_bytes": 29064,
+  "stdout": "-0.169075164\n-0.169077842\n",
+  "single_run_s": 0.24179720878601074,
+  "wall": {
+    "median": 0.24309170700000002,
+    "mean": 0.24293731780000002,
+    "stddev": 0.001384739430706984,
+    "min": 0.24144205000000002,
+    "max": 0.24505020500000002,
+    "times": [
+      0.24144205000000002,
+      0.24198207700000002,
+      0.24505020500000002,
+      0.24312055000000002,
+      0.24309170700000002
+    ]
+  },
+  "peak_rss_kb": 1288.0,
+  "correct": true
+}

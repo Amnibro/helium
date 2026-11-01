@@ -1,0 +1,22 @@
+def rpn(expr: str) -> int:
+    stack: list[int] = []
+    for tok in expr.split():
+        if tok == "+":
+            b = stack.pop()
+            a = stack.pop()
+            stack.append(a + b)
+        elif tok == "-":
+            b = stack.pop()
+            a = stack.pop()
+            stack.append(a - b)
+        elif tok == "*":
+            b = stack.pop()
+            a = stack.pop()
+            stack.append(a * b)
+        else:
+            stack.append(int(tok))
+    return stack[-1]
+
+exprs = ["3 4 + 2 *", "5 1 2 + 4 * + 3 -", "2 3 4 * 5 - *", "9 8 7 6 - - -"]
+for e in exprs:
+    print(rpn(e))

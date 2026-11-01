@@ -1,0 +1,11 @@
+# Build output and caches
+/build/
+/build-*/
+__pycache__/
+bench/gen/
+
+# Images and generated files the samples write
+samples/*.ppm
+samples/*.pgm
+samples/*.png
+samples/*.gsx

@@ -1,0 +1,23 @@
+import std;
+import os;
+import binary;
+fn or0(x real) real { if x != x { 0.0 } else { x } }
+fn eqs(a real, b real, c real) real { if a == b { c } else { a - c } }
+fn isel(k int, a real, b real) real { if k > 3 { a } else { b } }
+fn nest(a real, b real) real { let p = if a >= b { a * 2.0 } else { b - 1.0 }; let q = if p != p { -1.0 } else if p <= 0.5 { p } else { 0.5 }; p * q + (if a == a { 1.5 } else { -2.5 }) }
+fn same(a real, k int) real { if k % 2 == 0 { a } else { a } }
+fn f4(a f32, b f32) f32 { if a >= b { b } else { a + b } }
+fn lp(n int) real { var s = 0.0; var m = 1.0; for i in n { let x = (i as real) * 0.37 - 5.0; m = if x > m { x } else { m * 0.99 }; s += if (i & 3) == 1 { m } else { x * 0.5 }; } s + m }
+fn main() {
+	let z = args().len as real - 1.0;
+	let nan = z / z;
+	let v = [0.0, -0.0, 1.0, -1.0, 2.5, nan, 1.0 / 0.0, 0.5];
+	var h u64 = 0;
+	for a in v { for b in v {
+		h = h * 1000003 + binary::f64_bits(eqs(a, b, 0.25)); h = h * 1000003 + binary::f64_bits(nest(a, b)); h = h * 1000003 + binary::f32_bits(f4(a as f32, b as f32)) as u64;
+	}
+	h = h * 1000003 + binary::f64_bits(or0(a)); for k in 7 { h = h * 1000003 + binary::f64_bits(isel(k, a, -a)) + binary::f64_bits(same(a, k)); } }
+	var o byte[>..] = [];
+	format(o, h, " ", lp(5000), "\n");
+	print(o);
+}

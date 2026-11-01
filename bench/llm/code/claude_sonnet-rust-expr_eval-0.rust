@@ -1,0 +1,83 @@
+struct Parser {
+    chars: Vec<char>,
+    pos: usize,
+}
+
+impl Parser {
+    fn new(s: &str) -> Self {
+        Parser {
+            chars: s.chars().filter(|c| !c.is_whitespace()).collect(),
+            pos: 0,
+        }
+    }
+
+    fn peek(&self) -> Option<char> {
+        self.chars.get(self.pos).copied()
+    }
+
+    fn expr(&mut self) -> i64 {
+        let mut v = self.term();
+        while let Some(c) = self.peek() {
+            if c == '+' {
+                self.pos += 1;
+                v += self.term();
+            } else if c == '-' {
+                self.pos += 1;
+                v -= self.term();
+            } else {
+                break;
+            }
+        }
+        v
+    }
+
+    fn term(&mut self) -> i64 {
+        let mut v = self.factor();
+        while let Some('*') = self.peek() {
+            self.pos += 1;
+            v *= self.factor();
+        }
+        v
+    }
+
+    fn factor(&mut self) -> i64 {
+        match self.peek() {
+            Some('(') => {
+                self.pos += 1;
+                let v = self.expr();
+                if self.peek() == Some(')') {
+                    self.pos += 1;
+                }
+                v
+            }
+            Some('-') => {
+                self.pos += 1;
+                -self.factor()
+            }
+            _ => {
+                let mut n: i64 = 0;
+                while let Some(c) = self.peek() {
+                    if let Some(d) = c.to_digit(10) {
+                        n = n * 10 + d as i64;
+                        self.pos += 1;
+                    } else {
+                        break;
+                    }
+                }
+                n
+            }
+        }
+    }
+}
+
+fn main() {
+    let exprs = [
+        "(1+2)*3-4*(5-6)",
+        "2*(3+4)*(5-1)",
+        "100-2*3*4+(7-10)*2",
+    ];
+    for e in exprs.iter() {
+        let mut p = Parser::new(e);
+        println!("{}", p.expr());
+    }
+}

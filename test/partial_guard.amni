@@ -1,0 +1,28 @@
+import std;
+import os;
+struct Box { lo real[3], hi real[3], k int }
+struct W { boxes Box[>..], hits int, buf int[>..] }
+fn heavy(w W&, i int, x real) real { w.hits += 1; w.buf.push(i); var s = 0.0; for k in 40 { s += (x + k as real) * 0.25; } s }
+fn cull(w W&, i int, x real, y real, z real, d real) real {
+	let b .= w.boxes[i];
+	var t = [0, 0, 0, 0];
+	for q in 4 { t[q] = q; }
+	if x < b.lo[0] || x > b.hi[0] || y < b.lo[1] || y > b.hi[1] || z < b.lo[2] || z > b.hi[2] { return d; }
+	if b.k == 7 { return d; }
+	var e = 0.0; for k in 9 { e += heavy(w, i, x + k as real) * 0.5 + heavy(w, i + k, y - k as real) * 0.25; if e > 1.0e6 { e = e * 0.5 + z; } else { e = e - z * 0.125; } }
+	let v = e + heavy(w, i, x + y + z) + (t[3] as real);
+	if v > d { v } else { d }
+}
+fn ask(n int, d int) int { if n < 0 { return d; } if n == 99 { return d; } var s = 0; for k in n { s += k * k; } s + d }
+fn main() {
+	var w = W { boxes: [], hits: 0, buf: [] };
+	for i in 37 { let c = i as real * 1.7; w.boxes.push(Box { lo: [c - 2.0, -1.0, c * 0.5 - 3.0], hi: [c + 2.0, 1.0, c * 0.5 + 3.0], k: i % 11 }); }
+	var acc = 0.0;
+	for s in 3000 { let x = (s % 70) as real; let y = ((s * 7) % 5) as real * 0.5 - 1.0; let z = (s % 31) as real; var d = -1.0e9; for i in w.boxes.len { d = cull(w, i, x, y, z, d); } acc += d; }
+	for s in 500 { acc += cull(w, s % 37, (s % 61) as real, 0.25, (s % 23) as real, -5.0e8); }
+	var q = 0; for n in 120 { q += ask(n - 10, n); }
+	var bh = 0; for v in w.buf { bh = bh * 31 + v; }
+	var o byte[>..] = [];
+	format(o, acc, " ", w.hits, " ", bh, " ", q, "\n");
+	print(o);
+}

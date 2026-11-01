@@ -1,0 +1,6 @@
+import statistics
+
+values = [2, 4, 4, 4, 5, 5, 7, 9, 13, 21]
+mean = statistics.mean(values)
+pstdev = statistics.pstdev(values)
+print(f"{mean:.3f} {pstdev:.3f}")

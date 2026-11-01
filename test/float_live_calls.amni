@@ -1,0 +1,29 @@
+import std;
+fn wt(k int, y real) real { if k % 3 == 0 { return 0.0; } y * 0.25 + k as real }
+fn curve(t real) real { var s = 1.0; for i in 4 { s = s * t + 0.5; } s }
+fn prof(n int, y real) real {
+	var r = 0.0;
+	var w = 0.0;
+	for k in n {
+		let a = wt(k, y);
+		if a > 0.0 { r += a * curve(y + k as real); w += a; }
+	}
+	if w > 0.0 { r / w } else { curve(y) }
+}
+fn conv(v real[:], k int) int {
+	var a = v[0] * 1.5;
+	var b = v[1] + 2.25;
+	var p = k * 3;
+	var q = k + 7;
+	var h = 0;
+	for x in v { h = h * 31 + x as int + (x * 0.5) as i32 as int + (x as f32) as int + p + q; a += 1.0; b *= 1.0001; p++; q--; }
+	h + (a + b) as int
+}
+fn main() {
+	var s = 0.0;
+	for i in 30 { s += prof(i % 7 + 1, i as real * 0.1); }
+	let big = [1.0e19, -1.0e30, 0.0 / 0.0, -9223372036854775808.0, 3.7, -2.5, 1.0e300, 9.3e18, -9.3e18, 1.0 / 0.0];
+	var h = 0;
+	for k in 5 { h = h * 3 + conv(big[..], k); }
+	print(str(s, " ", h));
+}

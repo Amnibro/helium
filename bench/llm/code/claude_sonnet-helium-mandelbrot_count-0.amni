@@ -1,0 +1,25 @@
+fn main() {
+	var count = 0;
+	for i in 600 {
+		for j in 600 {
+			let cx = -2.0 + 3.0 * (i as real) / 600.0;
+			let cy = -1.5 + 3.0 * (j as real) / 600.0;
+			var zr = 0.0;
+			var zi = 0.0;
+			var inside = true;
+			var k = 0;
+			while k < 200 {
+				let nr = zr * zr - zi * zi + cx;
+				zi = 2.0 * zr * zi + cy;
+				zr = nr;
+				if zr * zr + zi * zi > 4.0 {
+					inside = false;
+					break;
+				}
+				k++;
+			}
+			if inside { count++; }
+		}
+	}
+	print(count);
+}

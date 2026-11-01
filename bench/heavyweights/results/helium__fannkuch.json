@@ -1,0 +1,42 @@
+{
+  "lang": "helium",
+  "label": "Helium (hcn)",
+  "bench": "fannkuch",
+  "file": "fannkuch",
+  "n": 11,
+  "compile_cmd": "/home/anmire/ai/amni-lang/helium-identity/build/hcn build /home/anmire/ai/amni-lang/helium-identity/bench/heavyweights/helium/fannkuch.amni -o /tmp/helium-heavyweights/helium/fannkuch",
+  "compile": {
+    "median": 0.032988773,
+    "mean": 0.03385663033333333,
+    "stddev": 0.0017696092666036009,
+    "min": 0.032688487,
+    "max": 0.035892631,
+    "times": [
+      0.035892631,
+      0.032988773,
+      0.032688487
+    ],
+    "peak_rss_kb": 17192.0
+  },
+  "run_cmd": "/tmp/helium-heavyweights/helium/fannkuch 11",
+  "binary_bytes": 36864,
+  "stripped_bytes": 36864,
+  "stdout": "556355\nPfannkuchen(11) = 51\n",
+  "single_run_s": 1.8097288608551025,
+  "wall": {
+    "median": 1.816063529,
+    "mean": 1.8209081654000001,
+    "stddev": 0.02644297594342342,
+    "min": 1.7941144850000001,
+    "max": 1.852982692,
+    "times": [
+      1.7941144850000001,
+      1.8433470870000002,
+      1.816063529,
+      1.798033034,
+      1.852982692
+    ]
+  },
+  "peak_rss_kb": 2076.0,
+  "correct": true
+}

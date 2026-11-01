@@ -1,0 +1,1865 @@
+namespace physics
+use std
+use vec
+use math
+use physics_engine
+use binary
+use os
+MAIN_THREAD := true
+STATIC i32 := 0
+KINEMATIC i32 := 1
+DYNAMIC i32 := 2
+SHAPE_CAPSULE i32 := 0
+SHAPE_COMPOUND i32 := 1
+SHAPE_HEIGHT_FIELD i32 := 2
+SHAPE_HULL i32 := 3
+SHAPE_MESH i32 := 4
+SHAPE_SPHERE i32 := 5
+JOINT_PARALLEL i32 := 0
+JOINT_DISTANCE i32 := 1
+JOINT_FILTER i32 := 2
+JOINT_MOTOR i32 := 3
+JOINT_PRISMATIC i32 := 4
+JOINT_REVOLUTE i32 := 5
+JOINT_SPHERICAL i32 := 6
+JOINT_WELD i32 := 7
+JOINT_WHEEL i32 := 8
+MIX_DEFAULT i32 := 0
+MIX_GEOMETRIC i32 := 1
+MIX_MIN i32 := 2
+MIX_MAX i32 := 3
+MIX_AVERAGE i32 := 4
+MIX_MULTIPLY i32 := 5
+TOI_UNKNOWN i32 := 0
+TOI_FAILED i32 := 1
+TOI_OVERLAPPED i32 := 2
+TOI_HIT i32 := 3
+TOI_SEPARATED i32 := 4
+MAX_WORKERS i32 := 32
+MAX_PROXY_POINTS i32 := 128
+MAX_HULL_VERTICES i32 := 128
+MAX_MANIFOLD_POINTS i32 := 4
+HEIGHT_FIELD_HOLE i32 := 255
+ALL_BITS uint := 0xFFFFFFFFFFFFFFFF
+struct World { id u32 }
+struct Body { id uint }
+struct Shape { id uint }
+struct Joint { id uint }
+struct Contact { index1 i32, world0 u16, reserved i16, generation u32 }
+struct DistanceJoint { joint Joint }
+struct FilterJoint { joint Joint }
+struct MotorJoint { joint Joint }
+struct ParallelJoint { joint Joint }
+struct PrismaticJoint { joint Joint }
+struct RevoluteJoint { joint Joint }
+struct SphericalJoint { joint Joint }
+struct WeldJoint { joint Joint }
+struct WheelJoint { joint Joint }
+struct Hull { id u32 }
+struct Mesh { id u32 }
+struct HeightField { id u32 }
+struct Compound { id u32 }
+struct Recording { id u32 }
+struct Player { id u32 }
+type Quat = phx::Quat
+type Transform = phx::Transform
+type Mat3 = phx::Mat3
+type AABB = phx::AABB
+type Plane = phx::Plane
+type MassData = phx::MassData
+type Sphere = phx::Sphere
+type Capsule = phx::Capsule
+struct Version { major i32, minor i32, revision i32 }
+quat_identity := Quat{0.0, 0.0, 0.0, 1.0}
+transform_identity := Transform{p: float3{0.0, 0.0, 0.0}, q: Quat{0.0, 0.0, 0.0, 1.0}}
+struct Capacity { static_shapes i32 = 0, dynamic_shapes i32 = 0, static_bodies i32 = 0, dynamic_bodies i32 = 0, contacts i32 = 0 }
+struct WorldDef { gravity float3 = float3{0.0, -10.0, 0.0}, restitution_threshold f32 = 1.0, hit_event_threshold f32 = 1.0, contact_hertz f32 = 30.0, contact_damping_ratio f32 = 10.0, contact_speed f32 = 3.0, maximum_linear_speed f32 = 400.0, enable_sleep bool = true, enable_continuous bool = true, workers i32 = 1, friction_mixing i32 = 0, restitution_mixing i32 = 0, user_data uint = 0, capacity Capacity = Capacity{} }
+struct MotionLocks { linear_x bool = false, linear_y bool = false, linear_z bool = false, angular_x bool = false, angular_y bool = false, angular_z bool = false }
+struct BodyDef { body_type i32 = 0, position float3 = float3{0.0, 0.0, 0.0}, rotation Quat = Quat{0.0, 0.0, 0.0, 1.0}, linear_velocity float3 = float3{0.0, 0.0, 0.0}, angular_velocity float3 = float3{0.0, 0.0, 0.0}, linear_damping f32 = 0.0, angular_damping f32 = 0.0, gravity_scale f32 = 1.0, sleep_threshold f32 = 0.05, safety_factor f32 = 0.5, motion_locks MotionLocks = MotionLocks{}, enable_sleep bool = true, is_awake bool = true, is_bullet bool = false, is_enabled bool = true, allow_fast_rotation bool = false, enable_contact_recycling bool = true, user_data uint = 0 }
+struct Filter { category_bits uint = 0xFFFFFFFFFFFFFFFF, mask_bits uint = 0xFFFFFFFFFFFFFFFF, group_index i32 = 0 }
+struct QueryFilter { category_bits uint = 0xFFFFFFFFFFFFFFFF, mask_bits uint = 0xFFFFFFFFFFFFFFFF }
+struct SurfaceMaterial { friction f32 = 0.6, restitution f32 = 0.0, rolling_resistance f32 = 0.0, tangent_velocity float3 = float3{0.0, 0.0, 0.0}, user_material_id uint = 0, custom_color u32 = 0 }
+struct ShapeDef { material SurfaceMaterial = SurfaceMaterial{}, density f32 = 1000.0, filter Filter = Filter{}, is_sensor bool = false, enable_sensor_events bool = false, enable_contact_events bool = false, enable_hit_events bool = false, invoke_contact_creation bool = true, update_body_mass bool = true, enable_speculative_contact bool = true, explosion_scale f32 = 1.0, user_data uint = 0 }
+struct ExplosionDef { position float3 = float3{0.0, 0.0, 0.0}, radius f32 = 0.0, falloff f32 = 0.0, impulse_per_area f32 = 0.0, mask_bits uint = 0xFFFFFFFFFFFFFFFF }
+struct JointDef { body_a Body = Body{0}, body_b Body = Body{0}, frame_a Transform = Transform{p: float3{0.0, 0.0, 0.0}, q: Quat{0.0, 0.0, 0.0, 1.0}}, frame_b Transform = Transform{p: float3{0.0, 0.0, 0.0}, q: Quat{0.0, 0.0, 0.0, 1.0}}, collide_connected bool = false, force_threshold f32 = 3.4028235e38, torque_threshold f32 = 3.4028235e38, constraint_hertz f32 = 60.0, constraint_damping_ratio f32 = 2.0, draw_scale f32 = 1.0, user_data uint = 0 }
+struct DistanceJointDef { base JointDef = JointDef{}, length f32 = 1.0, enable_spring bool = false, lower_spring_force f32 = -3.4028235e38, upper_spring_force f32 = 3.4028235e38, hertz f32 = 0.0, damping_ratio f32 = 0.0, enable_limit bool = false, min_length f32 = 0.0, max_length f32 = 100000.0, enable_motor bool = false, max_motor_force f32 = 0.0, motor_speed f32 = 0.0 }
+struct FilterJointDef { base JointDef = JointDef{} }
+struct MotorJointDef { base JointDef = JointDef{}, linear_velocity float3 = float3{0.0, 0.0, 0.0}, max_velocity_force f32 = 0.0, angular_velocity float3 = float3{0.0, 0.0, 0.0}, max_velocity_torque f32 = 0.0, linear_hertz f32 = 0.0, linear_damping_ratio f32 = 0.0, max_spring_force f32 = 0.0, angular_hertz f32 = 0.0, angular_damping_ratio f32 = 0.0, max_spring_torque f32 = 0.0 }
+struct ParallelJointDef { base JointDef = JointDef{}, hertz f32 = 1.0, damping_ratio f32 = 1.0, max_torque f32 = 3.4028235e38 }
+struct PrismaticJointDef { base JointDef = JointDef{}, enable_spring bool = false, hertz f32 = 0.0, damping_ratio f32 = 0.0, target_translation f32 = 0.0, enable_limit bool = false, lower_translation f32 = 0.0, upper_translation f32 = 0.0, enable_motor bool = false, max_motor_force f32 = 0.0, motor_speed f32 = 0.0 }
+struct RevoluteJointDef { base JointDef = JointDef{}, target_angle f32 = 0.0, enable_spring bool = false, hertz f32 = 0.0, damping_ratio f32 = 0.0, enable_limit bool = false, lower_angle f32 = 0.0, upper_angle f32 = 0.0, enable_motor bool = false, max_motor_torque f32 = 0.0, motor_speed f32 = 0.0 }
+struct SphericalJointDef { base JointDef = JointDef{}, enable_spring bool = false, hertz f32 = 0.0, damping_ratio f32 = 0.0, target_rotation Quat = Quat{0.0, 0.0, 0.0, 1.0}, enable_cone_limit bool = false, cone_angle f32 = 0.0, enable_twist_limit bool = false, lower_twist_angle f32 = 0.0, upper_twist_angle f32 = 0.0, enable_motor bool = false, max_motor_torque f32 = 0.0, motor_velocity float3 = float3{0.0, 0.0, 0.0} }
+struct WeldJointDef { base JointDef = JointDef{}, linear_hertz f32 = 0.0, angular_hertz f32 = 0.0, linear_damping_ratio f32 = 0.0, angular_damping_ratio f32 = 0.0 }
+struct WheelJointDef { base JointDef = JointDef{}, enable_suspension_spring bool = true, suspension_hertz f32 = 1.0, suspension_damping_ratio f32 = 0.7, enable_suspension_limit bool = false, lower_suspension_limit f32 = 0.0, upper_suspension_limit f32 = 0.0, enable_spin_motor bool = false, max_spin_torque f32 = 0.0, spin_speed f32 = 0.0, enable_steering bool = false, steering_hertz f32 = 1.0, steering_damping_ratio f32 = 0.7, target_steering_angle f32 = 0.0, max_steering_torque f32 = 0.0, enable_steering_limit bool = false, lower_steering_limit f32 = 0.0, upper_steering_limit f32 = 0.0 }
+struct BodyMoveEvent { transform Transform, body Body, user_data uint, fell_asleep bool }
+struct SensorEvent { sensor Shape, visitor Shape }
+struct ContactEvent { shape_a Shape, shape_b Shape, contact Contact }
+struct ContactHitEvent { shape_a Shape, shape_b Shape, contact Contact, point float3, normal float3, approach_speed f32, material_a uint, material_b uint }
+struct JointEvent { joint Joint, user_data uint }
+struct RayHit { shape Shape, point float3, normal float3, fraction f32, material_id uint, triangle_index i32, child_index i32, hit bool }
+struct CastOutput { normal float3, point float3, fraction f32, iterations i32, triangle_index i32, child_index i32, material_index i32, hit bool }
+struct PlaneHit { shape Shape, plane Plane, point float3, triangle_index i32, child_index i32, material_index i32 }
+struct CollisionPlane { plane Plane, push_limit f32 = 3.4028235e38, push f32 = 0.0, clip_velocity bool = true }
+struct ToiHit { point float3, normal float3, fraction f32, shape Shape }
+struct DistanceOutput { point_a float3, point_b float3, normal float3, distance f32, iterations i32 }
+struct Sweep { local_center float3, c1 float3, c2 float3, q1 Quat, q2 Quat }
+struct ToiOutput { state i32, point float3, normal float3, fraction f32, distance f32 }
+struct ManifoldPoint { anchor_a float3, anchor_b float3, separation f32, base_separation f32, normal_impulse f32, total_normal_impulse f32, normal_velocity f32, feature_id u32, triangle_index i32, persisted bool }
+struct Manifold { contact Contact, shape_a Shape, shape_b Shape, normal float3, twist_impulse f32, friction_impulse float3, rolling_impulse float3, point_count i32, points ManifoldPoint[4] }
+struct Profile { step f32, pairs f32, collide f32, solve f32, solver_setup f32, constraints f32, prepare_constraints f32, integrate_velocities f32, warm_start f32, solve_impulses f32, integrate_positions f32, relax_impulses f32, apply_restitution f32, store_impulses f32, split_islands f32, transforms f32, sensor_hits f32, joint_events f32, hit_events f32, refit f32, bullets f32, sleep_islands f32, sensors f32 }
+struct Counters { body_count i32, shape_count i32, contact_count i32, joint_count i32, island_count i32, stack_used i32, arena_capacity i32, static_tree_height i32, tree_height i32, sat_call_count i32, sat_cache_hit_count i32, byte_count i32, task_count i32, color_counts i32[24], manifold_counts i32[8], awake_contact_count i32, recycled_contact_count i32, distance_iterations i32, push_back_iterations i32, root_iterations i32 }
+struct HullInfo { vertex_count i32, half_edge_count i32, face_count i32, byte_count i32, volume f32, surface_area f32, inner_radius f32, center float3, central_inertia Mat3, aabb AABB }
+struct MeshDef { weld_tolerance f32 = 0.0, weld_vertices bool = false, use_median_split bool = false, identify_edges bool = false, clockwise bool = false }
+struct MeshInfo { vertex_count i32, triangle_count i32, material_count i32, degenerate_count i32, node_count i32, tree_height i32, byte_count i32, surface_area f32, bounds AABB }
+struct HeightFieldDef { scale float3 = float3{1.0, 1.0, 1.0}, count_x i32 = 0, count_z i32 = 0, min_height f32 = 0.0, max_height f32 = 0.0, clockwise bool = false }
+struct HeightFieldInfo { columns i32, rows i32, byte_count i32, min_height f32, max_height f32, scale float3, aabb AABB }
+struct CompoundSphere { sphere Sphere, material SurfaceMaterial = SurfaceMaterial{} }
+struct CompoundCapsule { capsule Capsule, material SurfaceMaterial = SurfaceMaterial{} }
+struct CompoundHull { hull Hull, transform Transform = Transform{p: float3{0.0, 0.0, 0.0}, q: Quat{0.0, 0.0, 0.0, 1.0}}, material SurfaceMaterial = SurfaceMaterial{} }
+struct CompoundMesh { mesh Mesh, transform Transform = Transform{p: float3{0.0, 0.0, 0.0}, q: Quat{0.0, 0.0, 0.0, 1.0}}, scale float3 = float3{1.0, 1.0, 1.0}, material SurfaceMaterial = SurfaceMaterial{} }
+struct CompoundInfo { sphere_count i32, capsule_count i32, hull_count i32, mesh_count i32, material_count i32, byte_count i32 }
+struct PlayerInfo { frame_count i32, worker_count i32, time_step f32, sub_step_count i32, length_scale f32, bounds AABB }
+use os
+var WS phx::World[>..] = []
+var WGEN int[>..] = []
+var WMAX = 0
+var ERR byte[>..] = []
+var MIS = 0
+Z3 := float3{0.0, 0.0, 0.0}
+fail(m const byte[:]) bool: ERR.clear(); ERR.append(m[..min(m.len, 1023)]); false
+misuse(m const byte[:]) bool:
+	fail(m)
+	if RPL: return false
+	MIS += 1
+	if MIS <= 8: write_stderr(str("physics: ", ERR, "\n"))
+	false
+available() bool: true
+misuse_count() int: MIS
+error() byte[>..]: t byte[>..] ~= []; t.append(ERR[..]); t
+check(): if MIS > 0 { abort(str("physics: ", error())) }
+bad(fnm const byte[:], what const byte[:], nul bool) bool: misuse(if nul { str("physics::", fnm, ": a null ", what) } else { str("physics::", fnm, ": a ", what, " that was destroyed, or never created") })
+gfmt(x f32) byte[>..]:
+	o byte[>..] ~= []; v := x as real
+	if v != v: o.append("nan"); return o
+	if v < 0.0 || v == 0.0 && 1.0 / v < 0.0: o.push('-')
+	a := abs(v)
+	if a == 0.0: o.push('0'); return o
+	if a > 1.7976931348623157e308: o.append("inf"); return o
+	e ~= floor(log10(a)) as int; m ~= round(a / pow(10.0, (e - 5) as real))
+	if m >= 1000000.0: e += 1; m = round(a / pow(10.0, (e - 5) as real))
+	d byte[>..] ~= []; format_int(d, m as int, 10, 6, '0'); k ~= 6; while k > 1 && d[k - 1] == '0' { k -= 1 }
+	if e < -4 || e >= 6:
+		o.push(d[0]); if k > 1 { o.push('.'); o.append(d[1..k]) } o.push('e'); o.push(if e < 0 { '-' } else { '+' }); format_int(o, abs(e), 10, 2, '0'); return o
+	if e >= 0 { o.append(d[..min(e + 1, 6)]); if k > e + 1 { o.push('.'); o.append(d[e + 1..k]) } } else { o.append("0."); for i -e - 1 { o.push('0') } o.append(d[..k]) }
+	o
+wix(id u32) int: i := (id >> 16) as int - 1; if id != 0 && i >= 0 && i < WS.len && WS[i].in_use && WGEN[i] == (id & 0xFFFF) as int { i } else { -1 }
+wi(w World, fnm const byte[:]) int: i := wix(w.id); if i < 0 { bad(fnm, "world", w.id == 0) } i
+wof(i int) World: World{(((i + 1) << 16) | WGEN[i]) as u32}
+hix(id uint) int: ((id >> 16) & 0xFFFF) as int
+xid(wi int, x int, g int) uint: ((x + 1) as uint << 32) | (wi as uint << 16) | (g & 0xFFFF) as uint
+bdx(id uint) int, int:
+	wi := hix(id); b := (id >> 32) as int - 1
+	if id != 0 && wi < WS.len && WS[wi].in_use && b >= 0 && b < WS[wi].bodies.len && WS[wi].bodies[b].set != -1 && WS[wi].bodies[b].gen & 0xFFFF == (id & 0xFFFF) as int: return wi, b
+	return -1, -1
+bi(b Body, fnm const byte[:]) int, int: wi, x := bdx(b.id); if wi < 0 { bad(fnm, "body", b.id == 0) } return wi, x
+bof(wi int, b int) Body: Body{xid(wi, b, WS[wi].bodies[b].gen)}
+sdx(id uint) int, int:
+	wi := hix(id); s := (id >> 32) as int - 1
+	if id != 0 && wi < WS.len && WS[wi].in_use && s >= 0 && s < WS[wi].shapes.len && WS[wi].shapes[s].id != -1 && WS[wi].shapes[s].gen & 0xFFFF == (id & 0xFFFF) as int: return wi, s
+	return -1, -1
+si(s Shape, fnm const byte[:]) int, int: wi, x := sdx(s.id); if wi < 0 { bad(fnm, "shape", s.id == 0) } return wi, x
+sof(wi int, s int) Shape: Shape{xid(wi, s, WS[wi].shapes[s].gen)}
+jdx(id uint) int, int:
+	wi := hix(id); j := (id >> 32) as int - 1
+	if id != 0 && wi < WS.len && WS[wi].in_use && j >= 0 && j < WS[wi].joints.len && WS[wi].joints[j].jid != -1 && WS[wi].joints[j].gen & 0xFFFF == (id & 0xFFFF) as int: return wi, j
+	return -1, -1
+ji(j Joint, fnm const byte[:]) int, int: wi, x := jdx(j.id); if wi < 0 { bad(fnm, "joint", j.id == 0) } return wi, x
+jof(wi int, j int) Joint: Joint{xid(wi, j, WS[wi].joints[j].gen)}
+version() Version: Version{0, 2, 0}
+byte_count() int:
+	n ~= 0
+	for w WS: if w.in_use { n += 4096 + 200 * w.bodies.len + 300 * w.shapes.len + 220 * w.contacts.len + 400 * w.joints.len + 64 * w.islands.len }
+	for k GH.live.len: if GH.live[k] != 0 { n += phx::hull_bytes(HL[k]) }
+	for k GM.live.len: if GM.live[k] != 0 { n += phx::mesh_bytes(phx::G_MESH[k]) }
+	for k GF.live.len: if GF.live[k] != 0 { n += phx::hf_bytes(phx::G_HF[k]) }
+	for k GC.live.len: if GC.live[k] != 0 { n += phx::G_CPD[k].bytes }
+	n
+set_length_units_per_meter(u f32):
+	if !(u > 0.0) || u > 3.4028235e38: misuse(str("physics::set_length_units_per_meter: ", gfmt(u), " units")); return
+	phx::LUPM = u
+length_units_per_meter() f32: phx::LUPM
+world_count() int: n ~= 0; for w WS { if w.in_use { n += 1 } } n
+max_world_count() int: WMAX
+default_world_def() WorldDef: WorldDef{}
+default_body_def() BodyDef: BodyDef{}
+default_shape_def() ShapeDef: ShapeDef{}
+default_surface_material() SurfaceMaterial: SurfaceMaterial{}
+default_filter() Filter: Filter{}
+default_query_filter() QueryFilter: QueryFilter{}
+default_explosion_def() ExplosionDef: ExplosionDef{}
+default_distance_joint_def() DistanceJointDef: DistanceJointDef{}
+default_filter_joint_def() FilterJointDef: FilterJointDef{}
+default_motor_joint_def() MotorJointDef: MotorJointDef{}
+default_parallel_joint_def() ParallelJointDef: ParallelJointDef{}
+default_prismatic_joint_def() PrismaticJointDef: PrismaticJointDef{}
+default_revolute_joint_def() RevoluteJointDef: RevoluteJointDef{}
+default_spherical_joint_def() SphericalJointDef: SphericalJointDef{}
+default_weld_joint_def() WeldJointDef: WeldJointDef{}
+default_wheel_joint_def() WheelJointDef: WheelJointDef{}
+mixok(r int, fnm const byte[:]) bool: if r >= 0 && r <= 5 { true } else { misuse(str("physics::", fnm, ": no mixing rule ", r)) }
+nworkers(n int) int: max(1, min(n, 32))
+create_world(d WorldDef) World:
+	if !mixok(d.friction_mixing, "create_world") || !mixok(d.restitution_mixing, "create_world"): return World{0}
+	n := world_count()
+	if n >= 128: fail("too many worlds: Box3D keeps at most 128 at once"); return World{0}
+	i ~= 0; while i < WS.len && WS[i].in_use: i += 1
+	if i == WS.len { WS.push(wnew(d, i)); WGEN.push(0) } else { WS[i] = wnew(d, i) }
+	WMAX = max(WMAX, n + 1); wof(i)
+create_world() World: create_world(WorldDef{})
+wnew(d WorldDef, i int) phx::World:
+	c := d.capacity
+	nw ~= phx::new_world(d.gravity, d.restitution_threshold, d.hit_event_threshold, d.contact_speed, d.contact_hertz, d.contact_damping_ratio, d.maximum_linear_speed, d.enable_sleep, d.enable_continuous, nworkers(d.workers), phx::Cap5{c.static_shapes, c.dynamic_shapes, c.static_bodies, c.dynamic_bodies, c.contacts})
+	nw.fmix = d.friction_mixing; nw.rmix = d.restitution_mixing; nw.ud = d.user_data; nw.wid = i; nw
+destroy(w World):
+	check(); i := wi(w, "destroy")
+	if i < 0: return
+	stop_rec(i); WS[i] = phx::World{..}; WGEN[i] = (WGEN[i] + 1) & 0xFFFF; sweep()
+is_valid(w World) bool: wix(w.id) >= 0
+step(w World, ts f32, sub int):
+	i := wi(w, "step")
+	if i >= 0:
+		if !(ts >= 0.0) || ts > 3.4028235e38 { misuse(str("physics::step: a time step of ", gfmt(ts))) } else if sub < 1 || sub > 1000 { misuse(str("physics::step: ", sub, " sub-steps")) } else { rec_step(i, ts, sub); phx::world_step(WS[i], ts, sub as int); rec_post(i) }
+	check()
+bounds(w World) AABB:
+	i := wi(w, "bounds"); r ~= AABB{Z3, Z3}; h ~= false
+	if i < 0: return r
+	for t WS[i].bp.tr: if t.pcount > 0 { b := phx::tree_root_box(t); r = if h { AABB{phx::vmin(r.lower, b.lower), phx::vmax(r.upper, b.upper)} } else { b }; h = true }
+	r
+enable_sleeping(w World, f bool):
+	r_enable_sleeping_World(w, f)
+	i := wi(w, "enable_sleeping")
+	if i < 0 || f == WS[i].sleep: return
+	WS[i].sleep = f
+	if !f: for k 3..WS[i].sets.len { if WS[i].sets[k].sims.len > 0 { phx::wake_set(WS[i], k) } }
+sleeping_enabled(w World) bool: i := wi(w, "sleeping_enabled"); i >= 0 && WS[i].sleep
+enable_continuous(w World, f bool): r_enable_continuous_World(w, f); i := wi(w, "enable_continuous"); if i >= 0 { WS[i].continuous = f }
+continuous_enabled(w World) bool: i := wi(w, "continuous_enabled"); i >= 0 && WS[i].continuous
+clampf(v f32) f32: if v > 0.0 { min(v, 3.4028235e38) } else { 0.0 }
+set_restitution_threshold(w World, v f32): r_set_restitution_threshold_World(w, v); i := wi(w, "set_restitution_threshold"); if i >= 0 { WS[i].rest_th = clampf(v) }
+restitution_threshold(w World) f32: i := wi(w, "restitution_threshold"); if i >= 0 { WS[i].rest_th } else { 0.0 }
+set_hit_event_threshold(w World, v f32): r_set_hit_event_threshold_World(w, v); i := wi(w, "set_hit_event_threshold"); if i >= 0 { WS[i].hit_th = clampf(v) }
+hit_event_threshold(w World) f32: i := wi(w, "hit_event_threshold"); if i >= 0 { WS[i].hit_th } else { 0.0 }
+set_gravity(w World, g float3): r_set_gravity_World(w, g); i := wi(w, "set_gravity"); if i >= 0 { WS[i].gravity = g }
+gravity(w World) float3: i := wi(w, "gravity"); if i >= 0 { WS[i].gravity } else { Z3 }
+explode(w World, d ExplosionDef): r_explode_World(w, d); i := wi(w, "explode"); if i >= 0 { phx::explode(WS[i], d.position, d.radius, d.falloff, d.impulse_per_area, d.mask_bits) }
+set_contact_tuning(w World, hz f32, dr f32, ps f32): r_set_contact_tuning_World(w, hz, dr, ps); i := wi(w, "set_contact_tuning"); if i >= 0 { WS[i].chz = clampf(hz); WS[i].cdr = clampf(dr); WS[i].cspeed = clampf(ps) }
+set_contact_recycle_distance(w World, d f32): r_set_contact_recycle_distance_World(w, d); i := wi(w, "set_contact_recycle_distance"); if i >= 0 { WS[i].crecycle = clampf(d) }
+contact_recycle_distance(w World) f32: i := wi(w, "contact_recycle_distance"); if i >= 0 { WS[i].crecycle } else { 0.0 }
+set_maximum_linear_speed(w World, s f32): r_set_maximum_linear_speed_World(w, s); i := wi(w, "set_maximum_linear_speed"); if i >= 0 { WS[i].max_speed = s }
+maximum_linear_speed(w World) f32: i := wi(w, "maximum_linear_speed"); if i >= 0 { WS[i].max_speed } else { 0.0 }
+enable_warm_starting(w World, f bool): r_enable_warm_starting_World(w, f); i := wi(w, "enable_warm_starting"); if i >= 0 { WS[i].warm = f }
+warm_starting_enabled(w World) bool: i := wi(w, "warm_starting_enabled"); i >= 0 && WS[i].warm
+awake_body_count(w World) int: i := wi(w, "awake_body_count"); if i >= 0 { WS[i].sets[phx::SET_AWAKE].sims.len } else { 0 }
+profile(w World) Profile: wi(w, "profile"); default<Profile>()
+counters(w World) Counters:
+	r ~= default<Counters>(); i := wi(w, "counters")
+	if i < 0: return r
+	x := &WS[i]; r.body_count = phx::id_count(x.bpool) as i32; r.shape_count = phx::id_count(x.spool) as i32; r.contact_count = phx::id_count(x.cpool) as i32; r.joint_count = phx::id_count(x.jpool) as i32; r.island_count = phx::id_count(x.ipool) as i32
+	r.static_tree_height = phx::tree_height(x.bp.tr[0]) as i32; r.tree_height = max(phx::tree_height(x.bp.tr[1]), phx::tree_height(x.bp.tr[2])) as i32; r.sat_call_count = x.sat_calls as i32; r.sat_cache_hit_count = x.sat_hits as i32; r.byte_count = byte_count() as i32; r.recycled_contact_count = x.recycled as i32
+	for k 8: r.manifold_counts[k] = x.mcounts[k] as i32
+	for k 24: c := &x.colors[k]; n := c.convex.len + c.contacts.len; r.color_counts[k] = (n + c.jsims.len) as i32; r.awake_contact_count += n as i32
+	r.awake_contact_count += x.sets[phx::SET_AWAKE].cidx.len as i32; r
+max_capacity(w World) Capacity: i := wi(w, "max_capacity"); if i < 0 { return Capacity{} } c := WS[i].maxcap; Capacity{c.ss as i32, c.ds as i32, c.sb as i32, c.db as i32, c.c as i32}
+set_user_data(w World, d uint): i := wi(w, "set_user_data"); if i >= 0 { WS[i].ud = d }
+user_data(w World) uint: i := wi(w, "user_data"); if i >= 0 { WS[i].ud } else { 0 }
+set_friction_mixing(w World, r int): r_set_friction_mixing_World(w, r); i := wi(w, "set_friction_mixing"); if i >= 0 && mixok(r, "set_friction_mixing") { WS[i].fmix = r }
+set_restitution_mixing(w World, r int): r_set_restitution_mixing_World(w, r); i := wi(w, "set_restitution_mixing"); if i >= 0 && mixok(r, "set_restitution_mixing") { WS[i].rmix = r }
+set_worker_count(w World, n int): i := wi(w, "set_worker_count"); if i >= 0 { WS[i].workers = nworkers(n) }
+worker_count(w World) int: i := wi(w, "worker_count"); if i >= 0 { WS[i].workers } else { 0 }
+XI3 := Transform{float3{0.0, 0.0, 0.0}, Quat{0.0, 0.0, 0.0, 1.0}}
+M30 := Mat3{Z3, Z3, Z3}
+btype_ok(t int, fnm const byte[:]) bool: if t >= 0 && t <= 2 { true } else { misuse(str("physics::", fnm, ": no body type ", t, " (STATIC, KINEMATIC or DYNAMIC)")) }
+lockbits(m MotionLocks) int: (if m.linear_x { 1 } else { 0 }) | (if m.linear_y { 2 } else { 0 }) | (if m.linear_z { 4 } else { 0 }) | (if m.angular_x { 8 } else { 0 }) | (if m.angular_y { 16 } else { 0 }) | (if m.angular_z { 32 } else { 0 })
+create_body(w World, d BodyDef) Body:
+	r_create_body_World(w, d)
+	i := wi(w, "create_body")
+	if i < 0 || !btype_ok(d.body_type, "create_body"): return Body{0}
+	e ~= phx::BDef{..}; e.ty = d.body_type; e.p = d.position; e.q = d.rotation; e.v = d.linear_velocity; e.w = d.angular_velocity; e.ld = d.linear_damping; e.ad = d.angular_damping; e.gs = d.gravity_scale; e.sth = d.sleep_threshold; e.safety = d.safety_factor
+	e.locks = lockbits(d.motion_locks); e.sleep = d.enable_sleep; e.awake = d.is_awake; e.bullet = d.is_bullet; e.enabled = d.is_enabled; e.fast_rot = d.allow_fast_rotation; e.recycle = d.enable_contact_recycling; e.ud = d.user_data
+	b := phx::create_body(WS[i], e); rec_body(i, b); bof(i, b)
+destroy(b Body): r_destroy_Body(b); i, x := bi(b, "destroy"); if i >= 0 { phx::destroy_body(WS[i], x); sweep() }
+is_valid(b Body) bool: i, x := bdx(b.id); i >= 0
+body_type(b Body) i32: i, x := bi(b, "body_type"); if i >= 0 { WS[i].bodies[x].ty as i32 } else { 0 }
+set_type(b Body, t int): r_set_type_Body(b, t); i, x := bi(b, "set_type"); if i >= 0 && btype_ok(t, "set_type") { phx::set_body_type(WS[i], x, t) }
+set_name(b Body, n const byte[:]): i, x := bi(b, "set_name"); if i >= 0 { WS[i].bodies[x].name.clear(); WS[i].bodies[x].name.append(n) }
+name(b Body) byte[>..]: i, x := bi(b, "name"); r byte[>..] ~= []; if i >= 0 { r.append(WS[i].bodies[x].name[..]) } r
+set_user_data(b Body, d uint): i, x := bi(b, "set_user_data"); if i >= 0 { WS[i].bodies[x].ud = d }
+user_data(b Body) uint: i, x := bi(b, "user_data"); if i >= 0 { WS[i].bodies[x].ud } else { 0 }
+transform(b Body) Transform: i, x := bi(b, "transform"); if i >= 0 { phx::body_xf(WS[i], x) } else { XI3 }
+position(b Body) float3: i, x := bi(b, "position"); if i >= 0 { phx::body_xf(WS[i], x).p } else { Z3 }
+rotation(b Body) Quat: i, x := bi(b, "rotation"); if i >= 0 { phx::body_xf(WS[i], x).q } else { quat_identity }
+transforms(bs const Body[:], out Transform[:]):
+	if bs.len != out.len: misuse(str("physics::transforms: ", bs.len, " bodies into ", out.len, " transforms")); return
+	rep ~= false
+	for b, k bs:
+		i, x := bdx(b.id)
+		if i >= 0 { out[k] = phx::body_xf(WS[i], x) } else { out[k] = XI3; if !rep { misuse(str("physics::transforms: body ", k, " was destroyed, or never created")); rep = true } }
+set_transform(b Body, p float3, q Quat): r_set_transform_Body(b, p, q); i, x := bi(b, "set_transform"); if i >= 0 { phx::set_body_xf(WS[i], x, p, q) }
+local_point(b Body, p float3) float3: i, x := bi(b, "local_point"); if i >= 0 { phx::xipt(phx::body_xf(WS[i], x), p) } else { Z3 }
+world_point(b Body, p float3) float3: i, x := bi(b, "world_point"); if i >= 0 { phx::xpt(phx::body_xf(WS[i], x), p) } else { Z3 }
+local_vector(b Body, v float3) float3: i, x := bi(b, "local_vector"); if i >= 0 { phx::irot(phx::body_xf(WS[i], x).q, v) } else { Z3 }
+world_vector(b Body, v float3) float3: i, x := bi(b, "world_vector"); if i >= 0 { phx::rot(phx::body_xf(WS[i], x).q, v) } else { Z3 }
+linear_velocity(b Body) float3: i, x := bi(b, "linear_velocity"); if i >= 0 { phx::lin_vel(WS[i], x) } else { Z3 }
+angular_velocity(b Body) float3: i, x := bi(b, "angular_velocity"); if i >= 0 { phx::ang_vel(WS[i], x) } else { Z3 }
+set_linear_velocity(b Body, v float3): r_set_linear_velocity_Body(b, v); i, x := bi(b, "set_linear_velocity"); if i >= 0 { phx::set_lin_vel(WS[i], x, v) }
+set_angular_velocity(b Body, v float3): r_set_angular_velocity_Body(b, v); i, x := bi(b, "set_angular_velocity"); if i >= 0 { phx::set_ang_vel(WS[i], x, v) }
+set_target_transform(b Body, t Transform, ts f32, wake bool):
+	r_set_target_transform_Body(b, t, ts, wake)
+	i, x := bi(b, "set_target_transform")
+	if i < 0: return
+	if !(ts > 0.0) { misuse(str("physics::set_target_transform: a time step of ", gfmt(ts))) } else { phx::set_target_xf(WS[i], x, t, ts, wake) }
+local_point_velocity(b Body, p float3) float3: i, x := bi(b, "local_point_velocity"); if i >= 0 { phx::local_point_vel(WS[i], x, p) } else { Z3 }
+world_point_velocity(b Body, p float3) float3: i, x := bi(b, "world_point_velocity"); if i >= 0 { phx::world_point_vel(WS[i], x, p) } else { Z3 }
+apply_force(b Body, f float3, p float3, wake bool): r_apply_force_Body(b, f, p, wake); i, x := bi(b, "apply_force"); if i >= 0 { phx::apply_force(WS[i], x, f, p, wake) }
+apply_force_to_center(b Body, f float3, wake bool): r_apply_force_to_center_Body(b, f, wake); i, x := bi(b, "apply_force_to_center"); if i >= 0 { phx::apply_force_center(WS[i], x, f, wake) }
+apply_torque(b Body, t float3, wake bool): r_apply_torque_Body(b, t, wake); i, x := bi(b, "apply_torque"); if i >= 0 { phx::apply_torque(WS[i], x, t, wake) }
+apply_linear_impulse(b Body, m float3, p float3, wake bool): r_apply_linear_impulse_Body(b, m, p, wake); i, x := bi(b, "apply_linear_impulse"); if i >= 0 { phx::apply_impulse(WS[i], x, m, p, wake) }
+apply_linear_impulse_to_center(b Body, m float3, wake bool): r_apply_linear_impulse_to_center_Body(b, m, wake); i, x := bi(b, "apply_linear_impulse_to_center"); if i >= 0 { phx::apply_impulse_center(WS[i], x, m, wake) }
+apply_angular_impulse(b Body, m float3, wake bool): r_apply_angular_impulse_Body(b, m, wake); i, x := bi(b, "apply_angular_impulse"); if i >= 0 { phx::apply_ang_impulse(WS[i], x, m, wake) }
+mass(b Body) f32: i, x := bi(b, "mass"); if i >= 0 { WS[i].bodies[x].mass } else { 0.0 }
+rotational_inertia(b Body) Mat3: i, x := bi(b, "rotational_inertia"); if i >= 0 { WS[i].bodies[x].inertia } else { M30 }
+inverse_mass(b Body) f32: i, x := bi(b, "inverse_mass"); if i >= 0 { phx::bsim(WS[i], x).im } else { 0.0 }
+world_inverse_inertia(b Body) Mat3: i, x := bi(b, "world_inverse_inertia"); if i >= 0 { phx::bsim(WS[i], x).iiw } else { M30 }
+local_center(b Body) float3: i, x := bi(b, "local_center"); if i >= 0 { phx::bsim(WS[i], x).lc } else { Z3 }
+world_center(b Body) float3: i, x := bi(b, "world_center"); if i >= 0 { phx::bsim(WS[i], x).c } else { Z3 }
+set_mass_data(b Body, d MassData):
+	r_set_mass_data_Body(b, d)
+	i, x := bi(b, "set_mass_data")
+	if i < 0: return
+	if WS[i].bodies[x].ty != phx::BODY_DYNAMIC { misuse("physics::set_mass_data: only a dynamic body has a mass") } else if !(d.mass > 0.0) || d.mass > 3.4028235e38 { misuse(str("physics::set_mass_data: a mass of ", gfmt(d.mass))) } else { phx::set_mass_data(WS[i], x, d) }
+mass_data(b Body) MassData: i, x := bi(b, "mass_data"); if i >= 0 { MassData{WS[i].bodies[x].mass, phx::bsim(WS[i], x).lc, WS[i].bodies[x].inertia} } else { MassData{0.0, Z3, M30} }
+apply_mass_from_shapes(b Body): r_apply_mass_from_shapes_Body(b); i, x := bi(b, "apply_mass_from_shapes"); if i >= 0 { phx::update_mass(WS[i], x) }
+set_linear_damping(b Body, d f32): r_set_linear_damping_Body(b, d); i, x := bi(b, "set_linear_damping"); if i >= 0 { phx::bsim(WS[i], x).ld = d }
+linear_damping(b Body) f32: i, x := bi(b, "linear_damping"); if i >= 0 { phx::bsim(WS[i], x).ld } else { 0.0 }
+set_angular_damping(b Body, d f32): r_set_angular_damping_Body(b, d); i, x := bi(b, "set_angular_damping"); if i >= 0 { phx::bsim(WS[i], x).ad = d }
+angular_damping(b Body) f32: i, x := bi(b, "angular_damping"); if i >= 0 { phx::bsim(WS[i], x).ad } else { 0.0 }
+set_gravity_scale(b Body, s f32): r_set_gravity_scale_Body(b, s); i, x := bi(b, "set_gravity_scale"); if i >= 0 { phx::bsim(WS[i], x).gs = s }
+gravity_scale(b Body) f32: i, x := bi(b, "gravity_scale"); if i >= 0 { phx::bsim(WS[i], x).gs } else { 0.0 }
+is_awake(b Body) bool: i, x := bi(b, "is_awake"); i >= 0 && WS[i].bodies[x].set == phx::SET_AWAKE
+set_awake(b Body, a bool): r_set_awake_Body(b, a); i, x := bi(b, "set_awake"); if i >= 0 { phx::set_awake(WS[i], x, a) }
+enable_sleep(b Body, f bool): r_enable_sleep_Body(b, f); i, x := bi(b, "enable_sleep"); if i >= 0 { phx::enable_sleep(WS[i], x, f) }
+sleep_enabled(b Body) bool: i, x := bi(b, "sleep_enabled"); i >= 0 && WS[i].bodies[x].flags & phx::BF_SLEEP != 0
+set_sleep_threshold(b Body, t f32): r_set_sleep_threshold_Body(b, t); i, x := bi(b, "set_sleep_threshold"); if i >= 0 { WS[i].bodies[x].sth = t }
+sleep_threshold(b Body) f32: i, x := bi(b, "sleep_threshold"); if i >= 0 { WS[i].bodies[x].sth } else { 0.0 }
+set_safety_factor(b Body, f f32): r_set_safety_factor_Body(b, f); i, x := bi(b, "set_safety_factor"); if i >= 0 { WS[i].bodies[x].safety = f }
+safety_factor(b Body) f32: i, x := bi(b, "safety_factor"); if i >= 0 { WS[i].bodies[x].safety } else { 0.0 }
+is_enabled(b Body) bool: i, x := bi(b, "is_enabled"); i >= 0 && WS[i].bodies[x].set != phx::SET_DISABLED
+disable(b Body): r_disable_Body(b); i, x := bi(b, "disable"); if i >= 0 { phx::disable_body(WS[i], x) }
+enable(b Body): i, x := bi(b, "enable"); if i >= 0 { phx::enable_body(WS[i], x) }
+set_motion_locks(b Body, m MotionLocks): r_set_motion_locks_Body(b, m); i, x := bi(b, "set_motion_locks"); if i >= 0 { phx::set_locks(WS[i], x, lockbits(m)) }
+motion_locks(b Body) MotionLocks: i, x := bi(b, "motion_locks"); f := if i >= 0 { WS[i].bodies[x].flags } else { 0 }; MotionLocks{f & 1 != 0, f & 2 != 0, f & 4 != 0, f & 8 != 0, f & 16 != 0, f & 32 != 0}
+bflag(b Body, fl int, on bool, fnm const byte[:]): i, x := bi(b, fnm); if i >= 0 { phx::set_body_flag(WS[i], x, fl, on) }
+bhas(b Body, fl int, fnm const byte[:]) bool: i, x := bi(b, fnm); i >= 0 && WS[i].bodies[x].flags & fl != 0
+set_bullet(b Body, f bool): r_set_bullet_Body(b, f); bflag(b, phx::BF_BULLET, f, "set_bullet")
+is_bullet(b Body) bool: bhas(b, phx::BF_BULLET, "is_bullet")
+allow_fast_rotation(b Body, f bool): bflag(b, phx::BF_FAST_ROT, f, "allow_fast_rotation")
+fast_rotation_allowed(b Body) bool: bhas(b, phx::BF_FAST_ROT, "fast_rotation_allowed")
+enable_contact_recycling(b Body, f bool): r_enable_contact_recycling_Body(b, f); bflag(b, phx::BF_RECYCLE, f, "enable_contact_recycling")
+contact_recycling_enabled(b Body) bool: bhas(b, phx::BF_RECYCLE, "contact_recycling_enabled")
+enable_hit_events(b Body, f bool): r_enable_hit_events_Body(b, f); i, x := bi(b, "enable_hit_events"); if i >= 0 { phx::enable_hit_events(WS[i], x, f) }
+world(b Body) World: i, x := bi(b, "world"); if i >= 0 { wof(i) } else { World{0} }
+shape_count(b Body) int: i, x := bi(b, "shape_count"); if i >= 0 { WS[i].bodies[x].scount } else { 0 }
+shapes(b Body) Shape[>..]: i, x := bi(b, "shapes"); r Shape[>..] ~= []; if i >= 0 { for s phx::slist(WS[i], x) { r.push(sof(i, s)) } } r
+joint_count(b Body) int: i, x := bi(b, "joint_count"); if i >= 0 { WS[i].bodies[x].jcount } else { 0 }
+joints(b Body) Joint[>..]: i, x := bi(b, "joints"); r Joint[>..] ~= []; if i >= 0 { for j phx::jlist(WS[i], x) { r.push(jof(i, j)) } } r
+aabb(b Body) AABB:
+	i, x := bi(b, "aabb")
+	if i < 0: return AABB{Z3, Z3}
+	ss := phx::slist(WS[i], x)
+	if ss.len == 0: p := phx::body_xf(WS[i], x).p; return AABB{p, p}
+	r ~= WS[i].shapes[ss[0]].aabb; for s ss { a := WS[i].shapes[s].aabb; r = AABB{phx::vmin(r.lower, a.lower), phx::vmax(r.upper, a.upper)} } r
+min_extent(b Body) f32: i, x := bi(b, "min_extent"); if i >= 0 { phx::bsim(WS[i], x).minx } else { 0.0 }
+max_extent(b Body) float3: i, x := bi(b, "max_extent"); if i >= 0 { phx::bsim(WS[i], x).maxx } else { Z3 }
+max_extent_origin(b Body) float3: i, x := bi(b, "max_extent_origin"); if i >= 0 { s := phx::bsim(WS[i], x); s.maxx + phx::vabs(s.lc) } else { Z3 }
+mat_of(m SurfaceMaterial) phx::Mat: phx::Mat{m.friction, m.restitution, m.rolling_resistance, m.tangent_velocity, m.user_material_id, m.custom_color}
+smat(m phx::Mat) SurfaceMaterial: SurfaceMaterial{m.fr, m.rest, m.roll, m.tv, m.uid, m.color}
+sdef_of(d ShapeDef) phx::SDef:
+	e ~= phx::SDef{..}; e.base = mat_of(d.material); e.den = d.density; e.filter = phx::Filter3{d.filter.category_bits, d.filter.mask_bits, d.filter.group_index as int}; e.sensor = d.is_sensor; e.sensor_ev = d.enable_sensor_events; e.contact_ev = d.enable_contact_events
+	e.hit_ev = d.enable_hit_events; e.invoke = d.invoke_contact_creation; e.update_mass = d.update_body_mass; e.speculative = d.enable_speculative_contact; e.exs = d.explosion_scale; e.ud = d.user_data; e
+fin3(v float3) bool: v.x - v.x == 0.0 && v.y - v.y == 0.0 && v.z - v.z == 0.0
+sstart(b Body, d ShapeDef, fnm const byte[:]) int, int:
+	i, x := bi(b, fnm)
+	if i < 0: return -1, -1
+	if !(d.density >= 0.0) || d.density > 3.4028235e38: misuse(str("physics::", fnm, ": a density of ", gfmt(d.density))); return -1, -1
+	if !(d.material.friction >= 0.0) || !(d.material.restitution >= 0.0): misuse(str("physics::", fnm, ": a friction of ", gfmt(d.material.friction), " and a restitution of ", gfmt(d.material.restitution))); return -1, -1
+	return i, x
+radok(r f32, fnm const byte[:]) bool: if r >= 0.0 && r <= 3.4028235e38 { true } else { misuse(str("physics::", fnm, ": a radius of ", gfmt(r))) }
+scaleok(s float3, fnm const byte[:]) bool: if fin3(s) && s.x != 0.0 && s.y != 0.0 && s.z != 0.0 { true } else { misuse(str("physics::", fnm, ": a scale of ", gfmt(s.x), ", ", gfmt(s.y), ", ", gfmt(s.z))) }
+staticok(i int, x int, fnm const byte[:], what const byte[:]) bool: if WS[i].bodies[x].ty == phx::BODY_STATIC { true } else { misuse(str("physics::", fnm, ": ", what, " shapes go on static bodies only")) }
+mkshape(i int, s int) Shape: if s < 0 { Shape{0} } else { rec_shape(i, s); sof(i, s) }
+create_sphere_shape(b Body, d ShapeDef, s Sphere) Shape: r_create_sphere_shape_Body(b, d, s); i, x := sstart(b, d, "create_sphere_shape"); if i < 0 || !radok(s.radius, "create_sphere_shape") { return Shape{0} } e ~= sdef_of(d); mkshape(i, phx::create_sphere_shape(WS[i], x, e, s))
+create_capsule_shape(b Body, d ShapeDef, c Capsule) Shape: r_create_capsule_shape_Body(b, d, c); i, x := sstart(b, d, "create_capsule_shape"); if i < 0 || !radok(c.radius, "create_capsule_shape") { return Shape{0} } e ~= sdef_of(d); mkshape(i, phx::create_capsule_shape(WS[i], x, e, c))
+create_box_shape(b Body, d ShapeDef, h float3, f Transform) Shape:
+	r_create_box_shape_Body(b, d, h, f)
+	i, x := sstart(b, d, "create_box_shape")
+	if i < 0: return Shape{0}
+	if !fin3(h) || !(h.x > 0.0) || !(h.y > 0.0) || !(h.z > 0.0): misuse(str("physics::create_box_shape: half extents of ", gfmt(h.x), ", ", gfmt(h.y), ", ", gfmt(h.z))); return Shape{0}
+	e ~= sdef_of(d); hd ~= phx::box_hull(h.x, h.y, h.z, f); mkshape(i, phx::create_hull_shape(WS[i], x, e, hd))
+create_box_shape(b Body, d ShapeDef, h float3) Shape: create_box_shape(b, d, h, transform_identity)
+create_hull_shape(b Body, d ShapeDef, h Hull) Shape: r_create_hull_shape_Body(b, d, h); i, x := sstart(b, d, "create_hull_shape"); if i < 0 { return Shape{0} } k := gget(GH, h.id, "create_hull_shape"); if k < 0 { return Shape{0} } e ~= sdef_of(d); mkshape(i, phx::create_hull_shape(WS[i], x, e, HL[k]))
+create_transformed_hull_shape(b Body, d ShapeDef, h Hull, t Transform, sc float3) Shape:
+	r_create_transformed_hull_shape_Body(b, d, h, t, sc)
+	i, x := sstart(b, d, "create_transformed_hull_shape")
+	if i < 0: return Shape{0}
+	k := gget(GH, h.id, "create_transformed_hull_shape")
+	if k < 0 || !scaleok(sc, "create_transformed_hull_shape"): return Shape{0}
+	hd, ok := phx::clone_xform_hull(HL[k], t, sc)
+	if !ok: fail("the transformed hull is degenerate"); return Shape{0}
+	e ~= sdef_of(d); mkshape(i, phx::create_hull_shape(WS[i], x, e, hd))
+matsok(ms const SurfaceMaterial[:], e phx::SDef&, fnm const byte[:]) bool:
+	if ms.len > 255: return misuse(str("physics::", fnm, ": ", ms.len, " materials (at most 255)"))
+	for m ms: e.mats.push(mat_of(m))
+	true
+create_mesh_shape(b Body, d ShapeDef, m Mesh, sc float3, ms const SurfaceMaterial[:]) Shape:
+	r_create_mesh_shape_Body(b, d, m, sc, ms)
+	i, x := sstart(b, d, "create_mesh_shape")
+	if i < 0: return Shape{0}
+	k := gget(GM, m.id, "create_mesh_shape"); e ~= sdef_of(d)
+	if k < 0 || !scaleok(sc, "create_mesh_shape") || !matsok(ms, e, "create_mesh_shape"): return Shape{0}
+	mkshape(i, phx::create_mesh_shape(WS[i], x, e, k, sc))
+create_mesh_shape(b Body, d ShapeDef, m Mesh) Shape: no SurfaceMaterial[>..] ~= []; create_mesh_shape(b, d, m, float3{1.0, 1.0, 1.0}, no)
+create_height_field_shape(b Body, d ShapeDef, h HeightField, ms const SurfaceMaterial[:]) Shape:
+	r_create_height_field_shape_Body(b, d, h, ms)
+	i, x := sstart(b, d, "create_height_field_shape")
+	if i < 0: return Shape{0}
+	k := gget(GF, h.id, "create_height_field_shape"); e ~= sdef_of(d)
+	if k < 0 || !staticok(i, x, "create_height_field_shape", "height field") || !matsok(ms, e, "create_height_field_shape"): return Shape{0}
+	mkshape(i, phx::create_hf_shape(WS[i], x, e, k))
+create_height_field_shape(b Body, d ShapeDef, h HeightField) Shape: no SurfaceMaterial[>..] ~= []; create_height_field_shape(b, d, h, no)
+create_compound_shape(b Body, d ShapeDef, c Compound) Shape:
+	r_create_compound_shape_Body(b, d, c)
+	i, x := sstart(b, d, "create_compound_shape")
+	if i < 0: return Shape{0}
+	k := gget(GC, c.id, "create_compound_shape")
+	if k < 0 || !staticok(i, x, "create_compound_shape", "compound"): return Shape{0}
+	e ~= sdef_of(d); mkshape(i, phx::create_compound_shape(WS[i], x, e, k))
+destroy(s Shape, upd bool): r_destroy_Shape(s, upd); i, x := si(s, "destroy"); if i >= 0 { phx::destroy_shape(WS[i], x, upd); sweep() }
+destroy(s Shape): destroy(s, true)
+is_valid(s Shape) bool: i, x := sdx(s.id); i >= 0
+shape_type(s Shape) i32: i, x := si(s, "shape_type"); if i >= 0 { WS[i].shapes[x].ty as i32 } else { 0 }
+body(s Shape) Body: i, x := si(s, "body"); if i >= 0 { bof(i, WS[i].shapes[x].bid) } else { Body{0} }
+world(s Shape) World: i, x := si(s, "world"); if i >= 0 { wof(i) } else { World{0} }
+is_sensor(s Shape) bool: i, x := si(s, "is_sensor"); i >= 0 && WS[i].shapes[x].sensor != -1
+set_name(s Shape, n const byte[:]): i, x := si(s, "set_name"); if i >= 0 { WS[i].shapes[x].name.clear(); WS[i].shapes[x].name.append(n) }
+name(s Shape) byte[>..]: i, x := si(s, "name"); r byte[>..] ~= []; if i >= 0 { r.append(WS[i].shapes[x].name[..]) } r
+set_user_data(s Shape, d uint): i, x := si(s, "set_user_data"); if i >= 0 { WS[i].shapes[x].ud = d }
+user_data(s Shape) uint: i, x := si(s, "user_data"); if i >= 0 { WS[i].shapes[x].ud } else { 0 }
+set_density(s Shape, d f32, upd bool):
+	r_set_density_Shape(s, d, upd)
+	i, x := si(s, "set_density")
+	if i < 0: return
+	if !(d >= 0.0) || d > 3.4028235e38: misuse(str("physics::set_density: a density of ", gfmt(d))); return
+	if d == WS[i].shapes[x].den: return
+	WS[i].shapes[x].den = d
+	if upd: phx::update_mass(WS[i], WS[i].shapes[x].bid)
+density(s Shape) f32: i, x := si(s, "density"); if i >= 0 { WS[i].shapes[x].den } else { 0.0 }
+set_friction(s Shape, f f32): r_set_friction_Shape(s, f); i, x := si(s, "set_friction"); if i >= 0 { WS[i].shapes[x].mats[0].fr = f }
+friction(s Shape) f32: i, x := si(s, "friction"); if i >= 0 { WS[i].shapes[x].mats[0].fr } else { 0.0 }
+set_restitution(s Shape, r f32): r_set_restitution_Shape(s, r); i, x := si(s, "set_restitution"); if i >= 0 { WS[i].shapes[x].mats[0].rest = r }
+restitution(s Shape) f32: i, x := si(s, "restitution"); if i >= 0 { WS[i].shapes[x].mats[0].rest } else { 0.0 }
+set_surface_material(s Shape, m SurfaceMaterial): r_set_surface_material_Shape(s, m); i, x := si(s, "set_surface_material"); if i >= 0 { WS[i].shapes[x].mats[0] = mat_of(m) }
+surface_material(s Shape) SurfaceMaterial: i, x := si(s, "surface_material"); if i >= 0 { smat(WS[i].shapes[x].mats[0]) } else { SurfaceMaterial{0.0, 0.0, 0.0, Z3, 0, 0} }
+mesh_material_count(s Shape) int: i, x := si(s, "mesh_material_count"); if i >= 0 { WS[i].shapes[x].mats.len } else { 0 }
+mmok(i int, x int, k int, fnm const byte[:]) bool: n := WS[i].shapes[x].mats.len; if k >= 0 && k < n { true } else { misuse(str("physics::", fnm, ": material ", k, " of ", n)) }
+set_mesh_material(s Shape, m SurfaceMaterial, k int): r_set_mesh_material_Shape(s, m, k); i, x := si(s, "set_mesh_material"); if i >= 0 && mmok(i, x, k, "set_mesh_material") { WS[i].shapes[x].mats[k] = mat_of(m) }
+mesh_material(s Shape, k int) SurfaceMaterial: i, x := si(s, "mesh_material"); if i >= 0 && mmok(i, x, k, "mesh_material") { smat(WS[i].shapes[x].mats[k]) } else { SurfaceMaterial{0.0, 0.0, 0.0, Z3, 0, 0} }
+shape_filter(s Shape) Filter: i, x := si(s, "filter"); if i < 0 { return Filter{0, 0, 0} } f := WS[i].shapes[x].filter; Filter{f.cat, f.mask, f.group as i32}
+set_shape_filter(s Shape, f Filter, inv bool):
+	r_set_shape_filter_Shape(s, f, inv)
+	i, x := si(s, "set_filter")
+	if i < 0: return
+	o := WS[i].shapes[x].filter
+	if f.mask_bits == o.mask && f.category_bits == o.cat && f.group_index as int == o.group: return
+	WS[i].shapes[x].filter = phx::Filter3{f.category_bits, f.mask_bits, f.group_index as int}
+	if inv: WS[i].locked = true; phx::reset_proxy(WS[i], x, true, true); WS[i].locked = false
+sflag(s Shape, fl int, on bool, fnm const byte[:]): i, x := si(s, fnm); if i >= 0 { WS[i].shapes[x].flags = if on { WS[i].shapes[x].flags | fl } else { WS[i].shapes[x].flags & ~fl } }
+shas(s Shape, fl int, fnm const byte[:]) bool: i, x := si(s, fnm); i >= 0 && WS[i].shapes[x].flags & fl != 0
+enable_sensor_events(s Shape, f bool): r_enable_sensor_events_Shape(s, f); sflag(s, phx::SF_SENSOR_EV, f, "enable_sensor_events")
+sensor_events_enabled(s Shape) bool: shas(s, phx::SF_SENSOR_EV, "sensor_events_enabled")
+enable_contact_events(s Shape, f bool): r_enable_contact_events_Shape(s, f); sflag(s, phx::SF_CONTACT_EV, f, "enable_contact_events")
+contact_events_enabled(s Shape) bool: shas(s, phx::SF_CONTACT_EV, "contact_events_enabled")
+enable_hit_events(s Shape, f bool): r_enable_hit_events_Shape(s, f); sflag(s, phx::SF_HIT_EV, f, "enable_hit_events")
+hit_events_enabled(s Shape) bool: shas(s, phx::SF_HIT_EV, "hit_events_enabled")
+cout(o phx::CastOut) CastOutput: CastOutput{o.n, o.p, o.frac, o.iters as i32, o.tri as i32, o.child as i32, o.mat as i32, o.hit}
+NOCAST := CastOutput{Z3, Z3, 0.0, 0, 0, 0, 0, false}
+ray_cast(s Shape, org float3, tr float3) CastOutput:
+	i, x := si(s, "ray_cast")
+	if i < 0: return NOCAST
+	xf := phx::body_xf(WS[i], WS[i].shapes[x].bid); o ~= phx::ray_shape(WS[i], x, Transform{xf.p - org, xf.q}, Z3, tr, 1.0); o.p = org + o.p; cout(o)
+sis(i int, x int, t int, fnm const byte[:], what const byte[:]) bool: if WS[i].shapes[x].ty == t { true } else { misuse(str("physics::", fnm, ": not a ", what, " shape")) }
+sphere(s Shape) Sphere: i, x := si(s, "sphere"); if i >= 0 && sis(i, x, phx::SH_SPHERE, "sphere", "sphere") { WS[i].shapes[x].sph } else { Sphere{Z3, 0.0} }
+capsule(s Shape) Capsule: i, x := si(s, "capsule"); if i >= 0 && sis(i, x, phx::SH_CAPSULE, "capsule", "capsule") { WS[i].shapes[x].cap } else { Capsule{Z3, Z3, 0.0} }
+hull(s Shape) Hull: i, x := si(s, "hull"); if i >= 0 && sis(i, x, phx::SH_HULL, "hull", "hull") { GB.clear(); Hull{hadd(copy(WS[i].hulls[WS[i].shapes[x].hull]))} } else { Hull{0} }
+mesh(s Shape) Mesh: i, x := si(s, "mesh"); if i >= 0 && sis(i, x, phx::SH_MESH, "mesh", "mesh") { Mesh{gfind(GM, WS[i].shapes[x].mesh)} } else { Mesh{0} }
+mesh_scale(s Shape) float3: i, x := si(s, "mesh_scale"); if i >= 0 && sis(i, x, phx::SH_MESH, "mesh_scale", "mesh") { WS[i].shapes[x].msc } else { Z3 }
+height_field(s Shape) HeightField: i, x := si(s, "height_field"); if i >= 0 && sis(i, x, phx::SH_HEIGHT, "height_field", "height field") { HeightField{gfind(GF, WS[i].shapes[x].hf)} } else { HeightField{0} }
+compound(s Shape) Compound: i, x := si(s, "compound"); if i >= 0 && sis(i, x, phx::SH_COMPOUND, "compound", "compound") { Compound{gfind(GC, WS[i].shapes[x].cpd)} } else { Compound{0} }
+regeom(i int, x int): w := &WS[i]; w.locked = true; w.shapes[x].margin = phx::shape_margin(WS[i], x); phx::reset_proxy(WS[i], x, true, true); WS[i].locked = false
+set_sphere(s Shape, g Sphere): r_set_sphere_Shape(s, g); i, x := si(s, "set_sphere"); if i >= 0 && radok(g.radius, "set_sphere") { phx::destroy_shape_allocs(WS[i], x); WS[i].shapes[x].sph = g; WS[i].shapes[x].ty = phx::SH_SPHERE; regeom(i, x); sweep() }
+set_capsule(s Shape, g Capsule): r_set_capsule_Shape(s, g); i, x := si(s, "set_capsule"); if i >= 0 && radok(g.radius, "set_capsule") { phx::destroy_shape_allocs(WS[i], x); WS[i].shapes[x].cap = g; WS[i].shapes[x].ty = phx::SH_CAPSULE; regeom(i, x); sweep() }
+set_hull(s Shape, h Hull):
+	r_set_hull_Shape(s, h)
+	i, x := si(s, "set_hull")
+	if i < 0: return
+	k := gget(GH, h.id, "set_hull")
+	if k < 0: return
+	d := phx::hull_db_add(WS[i], HL[k])
+	if WS[i].shapes[x].ty == phx::SH_HULL && d == WS[i].shapes[x].hull: phx::hull_db_remove(WS[i], d); return
+	phx::destroy_shape_allocs(WS[i], x); WS[i].shapes[x].hull = d; WS[i].shapes[x].ty = phx::SH_HULL; regeom(i, x); sweep()
+set_mesh(s Shape, m Mesh, sc float3):
+	r_set_mesh_Shape(s, m, sc)
+	i, x := si(s, "set_mesh")
+	if i < 0: return
+	k := gget(GM, m.id, "set_mesh")
+	if k < 0 || !scaleok(sc, "set_mesh"): return
+	phx::destroy_shape_allocs(WS[i], x); WS[i].shapes[x].mesh = k; WS[i].shapes[x].msc = phx::safe_scale(sc); WS[i].shapes[x].ty = phx::SH_MESH; regeom(i, x); sweep()
+cof(i int, cid int) Contact: Contact{(cid + 1) as i32, i as u16, 0, WS[i].contacts[cid].gen as u32}
+put_mans(i int, cid int, out Manifold[>..]&):
+	c := &WS[i].contacts[cid]
+	for m c.mans:
+		o ~= default<Manifold>(); o.contact = cof(i, cid); o.shape_a = sof(i, c.sa); o.shape_b = sof(i, c.sb); o.normal = m.n; o.twist_impulse = m.twist; o.friction_impulse = m.fi; o.rolling_impulse = m.ri; o.point_count = min(m.count, 4) as i32
+		for k o.point_count: p := m.pts[k]; o.points[k] = ManifoldPoint{p.aa, p.ab, p.s, p.bs, p.ni, p.tni, p.nv, p.fid, p.tri as i32, p.persisted}
+		out.push(o)
+contacts(s Shape) Manifold[>..]:
+	i, x := si(s, "contacts"); r Manifold[>..] ~= []
+	if i < 0 || WS[i].shapes[x].sensor != -1: return r
+	k ~= WS[i].bodies[WS[i].shapes[x].bid].hck
+	while k != -1:
+		cid := k >> 1; c := &WS[i].contacts[cid]
+		if (c.sa == x || c.sb == x) && c.flags & phx::CF_TOUCHING != 0: put_mans(i, cid, r)
+		k = WS[i].contacts[cid].ed[k & 1].next
+	r
+sensor_overlaps(s Shape) Shape[>..]:
+	i, x := si(s, "sensor_overlaps"); r Shape[>..] ~= []
+	if i < 0 || WS[i].shapes[x].sensor == -1: return r
+	for v WS[i].sensors[WS[i].shapes[x].sensor].o2: o := Shape{xid(i, v.sid, v.gen)}; if is_valid(o) { r.push(o) }
+	r
+aabb(s Shape) AABB: i, x := si(s, "aabb"); if i >= 0 { WS[i].shapes[x].aabb } else { AABB{Z3, Z3} }
+mass_data(s Shape) MassData: i, x := si(s, "mass_data"); if i >= 0 { phx::shape_mass(WS[i], x) } else { MassData{0.0, Z3, M30} }
+closest_point(s Shape, t float3) float3:
+	i, x := si(s, "closest_point")
+	if i < 0: return Z3
+	xf := phx::body_xf(WS[i], WS[i].shapes[x].bid); pa := phx::shape_pts(WS[i], x); pb := [t]; c ~= phx::SCache{..}
+	o := phx::shape_distance(phx::Proxy{pa[..], phx::shape_rad(WS[i], x)}, phx::Proxy{pb[..], 0.0}, phx::ximul(xf, phx::XI), true, c); phx::xpt(xf, o.pa)
+apply_wind(s Shape, wind float3, drag f32, lift f32, ms f32, wake bool): r_apply_wind_Shape(s, wind, drag, lift, ms, wake); i, x := si(s, "apply_wind"); if i >= 0 { phx::apply_wind(WS[i], x, wind, drag, lift, ms, wake) }
+is_valid(c Contact) bool: cix(c) >= 0
+cix(c Contact) int: i := c.world0 as int; k := c.index1 as int - 1; if c.index1 != 0 && i < WS.len && WS[i].in_use && k >= 0 && k < WS[i].contacts.len && WS[i].contacts[k].id != -1 && WS[i].contacts[k].gen as u32 == c.generation { k } else { -1 }
+manifolds(c Contact) Manifold[>..]: r Manifold[>..] ~= []; k := cix(c); if k < 0 { misuse(if c.index1 == 0 { "physics::manifolds: a null contact" } else { "physics::manifolds: a contact that ended" }) } else { put_mans(c.world0 as int, k, r) } r
+struct Reg { nm byte[>..], gen int[>..], live int[>..], free int[>..] }
+var GH Reg = Reg{"hull", [], [], []}
+var GM Reg = Reg{"mesh", [], [], []}
+var GF Reg = Reg{"height field", [], [], []}
+var GC Reg = Reg{"compound", [], [], []}
+var GR Reg = Reg{"recording", [], [], []}
+var GP Reg = Reg{"player", [], [], []}
+var HL phx::HData[>..] = []
+gslot(r Reg&) int:
+	k := if r.free.len > 0 { r.free.pop() } else { r.gen.push(0); r.live.push(0); r.gen.len - 1 }
+	r.gen[k] = r.gen[k] % 4095 + 1; r.live[k] = 1; k
+gid(r Reg&, k int) u32: ((r.gen[k] << 20) | k) as u32
+gix(r Reg&, id u32) int: k := (id & 0xFFFFF) as int; if id != 0 && k < r.gen.len && r.live[k] == 1 && r.gen[k] == (id >> 20) as int { k } else { -1 }
+gget(r Reg&, id u32, fnm const byte[:]) int: k := gix(r, id); if k < 0 { misuse(if id == 0 { str("physics::", fnm, ": a null ", r.nm) } else { str("physics::", fnm, ": a ", r.nm, " that was destroyed, or never created") }) } k
+gfind(r Reg&, k int) u32: if k >= 0 && k < r.gen.len && r.live[k] == 1 { gid(r, k) } else { 0 }
+gfree(r Reg&, k int): r.live[k] = 0; r.free.push(k)
+hadd(h phx::HData) u32: k := gslot(GH); if k == HL.len { HL.push(h) } else { HL[k] = h } if GB.len == 0 { rcp_hull_pts(h.pts[..]) } rcp(RCH, k); gid(GH, k)
+madd(m phx::MeshD) u32: k := gslot(GM); if k == phx::G_MESH.len { phx::G_MESH.push(m) } else { phx::G_MESH[k] = m } rcp(RCM, k); gid(GM, k)
+fadd(f phx::HField) u32: k := gslot(GF); if k == phx::G_HF.len { phx::G_HF.push(f) } else { phx::G_HF[k] = f } rcp(RCF, k); gid(GF, k)
+cadd(c phx::CompoundD) u32: k := gslot(GC); if k == phx::G_CPD.len { phx::G_CPD.push(c) } else { phx::G_CPD[k] = c } rcp(RCC, k); gid(GC, k)
+used(t int, k int) bool:
+	for w WS: if w.in_use { for s w.shapes { if s.id != -1 && s.ty == t && (t == phx::SH_MESH && s.mesh == k || t == phx::SH_HEIGHT && s.hf == k || t == phx::SH_COMPOUND && s.cpd == k) { return true } } }
+	false
+sweep():
+	for k GM.live.len: if GM.live[k] == 2 && !used(phx::SH_MESH, k) { gfree(GM, k); phx::G_MESH[k] = phx::MeshD{..} }
+	for k GF.live.len: if GF.live[k] == 2 && !used(phx::SH_HEIGHT, k) { gfree(GF, k); phx::G_HF[k] = phx::HField{..} }
+	for k GC.live.len: if GC.live[k] == 2 && !used(phx::SH_COMPOUND, k) { gfree(GC, k); phx::G_CPD[k] = phx::CompoundD{..} }
+own(id u32, ok bool, what const byte[:]) u32: if ok { id } else { fail(what); 0 }
+pos(v f32) bool: v > 0.0 && v <= 3.4028235e38
+create_hull(p const float3[:], mv int) Hull:
+	r_create_hull_arr_float3(p, mv)
+	if p.len > 100000: misuse(str("physics::create_hull: ", p.len, " points")); return Hull{0}
+	h, ok := phx::create_hull(p, max(4, min(mv, 128)))
+	if !ok: fail("the points make no hull: fewer than four, or all in a plane"); return Hull{0}
+	Hull{hadd(h)}
+create_hull(p const float3[:]) Hull: create_hull(p, MAX_HULL_VERTICES)
+create_box_hull(h float3, f Transform) Hull:
+	r_create_box_hull_float3(h, f)
+	if !pos(h.x) || !pos(h.y) || !pos(h.z): misuse(str("physics::create_box_hull: half extents of ", gfmt(h.x), ", ", gfmt(h.y), ", ", gfmt(h.z))); return Hull{0}
+	Hull{hadd(phx::box_hull(h.x, h.y, h.z, f))}
+create_box_hull(h float3) Hull: create_box_hull(h, transform_identity)
+create_cylinder_hull(h f32, r f32, yo f32, n int) Hull:
+	r_create_cylinder_hull_f32(h, r, yo, n)
+	if !pos(h) || !pos(r) || n < 3 || n > 32: misuse(str("physics::create_cylinder_hull: height ", gfmt(h), ", radius ", gfmt(r), ", ", n, " sides (3 to 32)")); return Hull{0}
+	d, ok := phx::cylinder_hull(h, r, yo, n); if !ok { fail("cannot make the cylinder"); return Hull{0} } Hull{hadd(d)}
+create_cone_hull(h f32, r1 f32, r2 f32, n int) Hull:
+	r_create_cone_hull_f32(h, r1, r2, n)
+	if !pos(h) || !pos(r1) || !pos(r2) || n < 4 || n > 32: misuse(str("physics::create_cone_hull: height ", gfmt(h), ", radii ", gfmt(r1), " and ", gfmt(r2), ", ", n, " slices (4 to 32)")); return Hull{0}
+	d, ok := phx::cone_hull(h, r1, r2, n); if !ok { fail("cannot make the cone"); return Hull{0} } Hull{hadd(d)}
+create_rock_hull(r f32) Hull:
+	r_create_rock_hull_f32(r)
+	if !pos(r): misuse(str("physics::create_rock_hull: a radius of ", gfmt(r))); return Hull{0}
+	d, ok := phx::rock_hull(r); if !ok { fail("cannot make the rock"); return Hull{0} } Hull{hadd(d)}
+transformed(h Hull, t Transform, sc float3) Hull:
+	r_transformed_Hull(h, t, sc)
+	k := gget(GH, h.id, "transformed")
+	if k < 0: return Hull{0}
+	if !fin3(sc) || sc.x == 0.0 || sc.y == 0.0 || sc.z == 0.0: misuse(str("physics::transformed: a scale of ", gfmt(sc.x), ", ", gfmt(sc.y), ", ", gfmt(sc.z))); return Hull{0}
+	d, ok := phx::clone_xform_hull(HL[k], t, sc); if !ok { fail("the transformed hull is degenerate"); return Hull{0} } Hull{hadd(d)}
+destroy(h Hull): k := gget(GH, h.id, "destroy"); if k >= 0 { gfree(GH, k); HL[k] = phx::HData{..} }
+is_valid(h Hull) bool: gix(GH, h.id) >= 0
+info(h Hull) HullInfo:
+	k := gget(GH, h.id, "info")
+	if k < 0: return default<HullInfo>()
+	d := &HL[k]; HullInfo{d.pts.len as i32, d.eg.len as i32, d.fe.len as i32, phx::hull_bytes(HL[k]) as i32, d.vol, d.area, d.ir, d.cen, d.ci, d.aabb}
+vertices(h Hull) float3[>..]: k := gget(GH, h.id, "vertices"); r float3[>..] ~= []; if k >= 0 { r.append(HL[k].pts[..]) } r
+triangles(h Hull) int3[>..]:
+	k := gget(GH, h.id, "triangles"); r int3[>..] ~= []
+	if k < 0: return r
+	d := &HL[k]
+	for f d.fe.len:
+		a := d.fe[f]; v0 := d.eg[a].o; e ~= d.eg[a].n; v1 ~= d.eg[e].o; e = d.eg[e].n
+		while e != a: v2 := d.eg[e].o; r.push(int3{v0 as i32, v1 as i32, v2 as i32}); v1 = v2; e = d.eg[e].n
+	r
+create_mesh(v const float3[:], ix const i32[:], mi const byte[:], d MeshDef) Mesh:
+	r_create_mesh_arr_float3(v, ix, mi, d)
+	nt := ix.len / 3
+	if v.len < 3 || ix.len % 3 != 0 || nt < 1: misuse(str("physics::create_mesh: ", v.len, " vertices and ", ix.len, " indices (three per triangle)")); return Mesh{0}
+	for x, k ix: if x < 0 || x as int >= v.len { misuse(str("physics::create_mesh: index ", k, " is ", x, ", of ", v.len, " vertices")); return Mesh{0} }
+	if mi.len != 0 && mi.len != nt: misuse(str("physics::create_mesh: ", mi.len, " material indices for ", nt, " triangles")); return Mesh{0}
+	is int[>..] ~= []; for x ix { is.push(x as int) }
+	m, ok := phx::create_mesh(v, is[..], mi, d.weld_vertices, d.weld_tolerance, d.use_median_split, d.identify_edges, d.clockwise); Mesh{own(if ok { madd(m) } else { 0 }, ok, "cannot make the mesh")}
+create_mesh(v const float3[:], ix const i32[:]) Mesh: no byte[>..] ~= []; create_mesh(v, ix, no, MeshDef{})
+create_grid_mesh(xc int, zc int, cw f32, mc int, ie bool) Mesh:
+	r_create_grid_mesh_int(xc, zc, cw, mc, ie)
+	if xc < 1 || zc < 1 || xc * zc > 16777216 || !pos(cw) || mc < 0 || mc > 255: misuse(str("physics::create_grid_mesh: ", xc, " x ", zc, " cells of ", gfmt(cw), ", ", mc, " materials")); return Mesh{0}
+	m, ok := phx::grid_mesh(xc, zc, cw, mc, ie); Mesh{own(if ok { madd(m) } else { 0 }, ok, "cannot make the grid mesh")}
+create_wave_mesh(xc int, zc int, cw f32, amp f32, rf f32, cf f32) Mesh:
+	r_create_wave_mesh_int(xc, zc, cw, amp, rf, cf)
+	if xc < 1 || zc < 1 || xc * zc > 16777216 || !pos(cw): misuse(str("physics::create_wave_mesh: ", xc, " x ", zc, " cells of ", gfmt(cw))); return Mesh{0}
+	m, ok := phx::wave_mesh(xc, zc, cw, amp, rf, cf); Mesh{own(if ok { madd(m) } else { 0 }, ok, "cannot make the wave mesh")}
+create_torus_mesh(rr int, tr int, rad f32, th f32) Mesh:
+	r_create_torus_mesh_int(rr, tr, rad, th)
+	if rr < 3 || tr < 3 || rr * tr > 16777216 || !pos(rad) || !pos(th): misuse(str("physics::create_torus_mesh: ", rr, " x ", tr, " segments, radius ", gfmt(rad), ", thickness ", gfmt(th))); return Mesh{0}
+	m, ok := phx::torus_mesh(rr, tr, rad, th); Mesh{own(if ok { madd(m) } else { 0 }, ok, "cannot make the torus mesh")}
+extok(e float3, fnm const byte[:]) bool: if pos(e.x) && pos(e.y) && pos(e.z) { true } else { misuse(str("physics::", fnm, ": an extent of ", gfmt(e.x), ", ", gfmt(e.y), ", ", gfmt(e.z))) }
+create_box_mesh(c float3, e float3, ie bool) Mesh: r_create_box_mesh_float3(c, e, ie); if !extok(e, "create_box_mesh") { return Mesh{0} } m, ok := phx::box_mesh(c, e, ie); Mesh{own(if ok { madd(m) } else { 0 }, ok, "cannot make the box mesh")}
+create_hollow_box_mesh(c float3, e float3) Mesh: r_create_hollow_box_mesh_float3(c, e); if !extok(e, "create_hollow_box_mesh") { return Mesh{0} } m, ok := phx::hollow_box_mesh(c, e); Mesh{own(if ok { madd(m) } else { 0 }, ok, "cannot make the hollow box mesh")}
+create_platform_mesh(c float3, h f32, tw f32, bw f32) Mesh:
+	r_create_platform_mesh_float3(c, h, tw, bw)
+	if !pos(h) || !pos(tw) || !pos(bw): misuse(str("physics::create_platform_mesh: height ", gfmt(h), ", widths ", gfmt(tw), " and ", gfmt(bw))); return Mesh{0}
+	m, ok := phx::platform_mesh(c, h, tw, bw); Mesh{own(if ok { madd(m) } else { 0 }, ok, "cannot make the platform mesh")}
+release(r Reg&, id u32, fnm const byte[:]): k := gget(r, id, fnm); if k >= 0 { r.live[k] = 2; sweep() }
+destroy(m Mesh): release(GM, m.id, "destroy")
+is_valid(m Mesh) bool: gix(GM, m.id) >= 0
+info(m Mesh) MeshInfo:
+	k := gget(GM, m.id, "info")
+	if k < 0: return default<MeshInfo>()
+	d := &phx::G_MESH[k]; MeshInfo{d.v.len as i32, d.t.len as i32, d.mcount as i32, d.degen as i32, d.nodes.len as i32, d.height as i32, phx::mesh_bytes(phx::G_MESH[k]) as i32, d.area, d.bounds}
+vertices(m Mesh) float3[>..]: k := gget(GM, m.id, "vertices"); r float3[>..] ~= []; if k >= 0 { r.append(phx::G_MESH[k].v[..]) } r
+triangles(m Mesh) int3[>..]: k := gget(GM, m.id, "triangles"); r int3[>..] ~= []; if k >= 0 { for t phx::G_MESH[k].t { r.push(int3{t.i1 as i32, t.i2 as i32, t.i3 as i32}) } } r
+create_height_field(hs const f32[:], mi const byte[:], d HeightFieldDef) HeightField:
+	r_create_height_field_arr_f32(hs, mi, d)
+	cells := (d.count_x as int - 1) * (d.count_z as int - 1)
+	if d.count_x < 2 || d.count_z < 2 || d.count_x as int * d.count_z as int != hs.len || hs.len > 67108864: misuse(str("physics::create_height_field: ", hs.len, " heights for ", d.count_x, " x ", d.count_z)); return HeightField{0}
+	if mi.len != 0 && mi.len != cells: misuse(str("physics::create_height_field: ", mi.len, " material indices for ", cells, " cells")); return HeightField{0}
+	if !pos(d.scale.x) || !pos(d.scale.y) || !pos(d.scale.z): misuse(str("physics::create_height_field: a scale of ", gfmt(d.scale.x), ", ", gfmt(d.scale.y), ", ", gfmt(d.scale.z))); return HeightField{0}
+	lo ~= d.min_height; hi ~= d.max_height
+	if lo == 0.0 && hi == 0.0: lo = 3.4028235e38; hi = -3.4028235e38; for h hs { lo = min(lo, h); hi = max(hi, h) }
+	if !(lo <= hi) || lo - lo != 0.0 || hi - hi != 0.0: misuse(str("physics::create_height_field: heights from ", gfmt(lo), " to ", gfmt(hi))); return HeightField{0}
+	HeightField{fadd(phx::create_hf(hs, mi, d.scale, d.count_x as int, d.count_z as int, lo, hi, d.clockwise))}
+gridok(r int, c int, sc float3, fnm const byte[:]) bool: if r >= 2 && c >= 2 && r * c <= 16777216 && pos(sc.x) && pos(sc.y) && pos(sc.z) { true } else { misuse(str("physics::", fnm, ": ", r, " x ", c, " heights at a scale of ", gfmt(sc.x), ", ", gfmt(sc.y), ", ", gfmt(sc.z))) }
+create_grid_height_field(r int, c int, sc float3, holes bool) HeightField: r_create_grid_height_field_int(r, c, sc, holes); if gridok(r, c, sc, "create_grid_height_field") { HeightField{fadd(phx::grid_hf(r, c, sc, holes))} } else { HeightField{0} }
+create_wave_height_field(r int, c int, sc float3, rf f32, cf f32, holes bool) HeightField: r_create_wave_height_field_int(r, c, sc, rf, cf, holes); if gridok(r, c, sc, "create_wave_height_field") { HeightField{fadd(phx::wave_hf(r, c, sc, rf, cf, holes))} } else { HeightField{0} }
+destroy(h HeightField): release(GF, h.id, "destroy")
+is_valid(h HeightField) bool: gix(GF, h.id) >= 0
+info(h HeightField) HeightFieldInfo:
+	k := gget(GF, h.id, "info")
+	if k < 0: return default<HeightFieldInfo>()
+	d := &phx::G_HF[k]; HeightFieldInfo{d.cols as i32, d.rows as i32, phx::hf_bytes(phx::G_HF[k]) as i32, d.minh, d.maxh, d.sc, d.aabb}
+create_compound(sp const CompoundSphere[:], ca const CompoundCapsule[:], hu const CompoundHull[:], me const CompoundMesh[:]) Compound:
+	r_create_compound_arr_CompoundSphere(sp, ca, hu, me)
+	t := sp.len + ca.len + hu.len + me.len
+	if t < 1 || t > 1048576: misuse(str("physics::create_compound: ", t, " children")); return Compound{0}
+	cs phx::CCap[>..] ~= []; cm phx::Mat[>..] ~= []; ss phx::CSph[>..] ~= []; sm phx::Mat[>..] ~= []; hs phx::CHullDef[>..] ~= []; hp phx::HData[>..] ~= []; ms phx::CMeshDef[>..] ~= []; mp phx::MeshD[>..] ~= []
+	for c, k ca: cs.push(phx::CCap{c.capsule, k}); cm.push(mat_of(c.material))
+	for c, k sp: ss.push(phx::CSph{c.sphere, k}); sm.push(mat_of(c.material))
+	for c hu: k := gget(GH, c.hull.id, "create_compound"); if k < 0 { return Compound{0} } hp.push(copy(HL[k])); hs.push(phx::CHullDef{hp.len - 1, c.transform, mat_of(c.material)})
+	for c me:
+		k := gget(GM, c.mesh.id, "create_compound")
+		if k < 0: return Compound{0}
+		n := phx::G_MESH[k].mcount
+		if n > 4: misuse(str("physics::create_compound: a mesh of ", n, " materials (at most 4)")); return Compound{0}
+		mp.push(copy(phx::G_MESH[k])); mm phx::Mat[>..] ~= []; for q n { mm.push(mat_of(c.material)) } ms.push(phx::CMeshDef{mp.len - 1, c.transform, c.scale, mm})
+	cd, ok := phx::create_compound(cs[..], cm[..], hs[..], hp, ms[..], mp, ss[..], sm[..]); Compound{own(if ok { cadd(cd) } else { 0 }, ok, "cannot make the compound")}
+destroy(c Compound): release(GC, c.id, "destroy")
+is_valid(c Compound) bool: gix(GC, c.id) >= 0
+info(c Compound) CompoundInfo:
+	k := gget(GC, c.id, "info")
+	if k < 0: return default<CompoundInfo>()
+	d := &phx::G_CPD[k]; CompoundInfo{d.sph.len as i32, d.caps.len as i32, d.hi.len as i32, d.mi.len as i32, d.mats.len as i32, d.bytes as i32}
+MD0 := MassData{0.0, float3{0.0, 0.0, 0.0}, Mat3{float3{0.0, 0.0, 0.0}, float3{0.0, 0.0, 0.0}, float3{0.0, 0.0, 0.0}}}
+AB0 := AABB{float3{0.0, 0.0, 0.0}, float3{0.0, 0.0, 0.0}}
+compute_mass(s Sphere, d f32) MassData: phx::sphere_mass(s, d)
+compute_mass(c Capsule, d f32) MassData: phx::capsule_mass(c, d)
+compute_mass(h Hull, d f32) MassData: k := gget(GH, h.id, "compute_mass"); if k >= 0 { phx::hull_mass(HL[k], d) } else { MD0 }
+compute_aabb(s Sphere, t Transform) AABB: phx::sphere_box(s, t)
+compute_aabb(c Capsule, t Transform) AABB: phx::capsule_box(c, t)
+compute_aabb(h Hull, t Transform) AABB: k := gget(GH, h.id, "compute_aabb"); if k >= 0 { phx::hull_box(HL[k], t) } else { AB0 }
+compute_aabb(m Mesh, t Transform, sc float3) AABB: k := gget(GM, m.id, "compute_aabb"); if k >= 0 { phx::mesh_box(phx::G_MESH[k], t, sc) } else { AB0 }
+compute_aabb(h HeightField, t Transform) AABB: k := gget(GF, h.id, "compute_aabb"); if k >= 0 { phx::hf_box(phx::G_HF[k], t) } else { AB0 }
+compute_aabb(c Compound, t Transform) AABB: k := gget(GC, c.id, "compute_aabb"); if k >= 0 { phx::compound_box(phx::G_CPD[k], t) } else { AB0 }
+rayok(o float3, t float3, mf f32) bool: if fin3(o) && fin3(t) && mf - mf == 0.0 && 0.0 <= mf && mf < phx::huge() { true } else { misuse(str("physics::ray_cast: a ray from ", gfmt(o.x), ", ", gfmt(o.y), ", ", gfmt(o.z), " by ", gfmt(t.x), ", ", gfmt(t.y), ", ", gfmt(t.z), " to fraction ", gfmt(mf))) }
+ray_cast(s Sphere, o float3, t float3, mf f32) CastOutput: if rayok(o, t, mf) { cout(phx::ray_sphere(s, o, t, mf)) } else { NOCAST }
+ray_cast(c Capsule, o float3, t float3, mf f32) CastOutput: if rayok(o, t, mf) { cout(phx::ray_capsule(c, o, t, mf)) } else { NOCAST }
+ray_cast(h Hull, o float3, t float3, mf f32) CastOutput: k := gget(GH, h.id, "ray_cast"); if k >= 0 && rayok(o, t, mf) { cout(phx::ray_hull(HL[k], o, t, mf)) } else { NOCAST }
+ray_cast(m Mesh, sc float3, o float3, t float3, mf f32) CastOutput: k := gget(GM, m.id, "ray_cast"); if k >= 0 && rayok(o, t, mf) { cout(phx::ray_mesh(phx::G_MESH[k], sc, o, t, mf)) } else { NOCAST }
+ray_cast(h HeightField, o float3, t float3, mf f32) CastOutput: k := gget(GF, h.id, "ray_cast"); if k >= 0 && rayok(o, t, mf) { cout(phx::ray_hf(phx::G_HF[k], o, t, mf)) } else { NOCAST }
+ray_cast(c Compound, o float3, t float3, mf f32) CastOutput: k := gget(GC, c.id, "ray_cast"); if k >= 0 && rayok(o, t, mf) { cout(phx::ray_compound(phx::G_CPD[k], o, t, mf)) } else { NOCAST }
+pxok(p const float3[:], r f32, fnm const byte[:]) bool:
+	if p.len < 1 || p.len > 128: return misuse(str("physics::", fnm, ": a shape of ", p.len, " points (1 to 128)"))
+	if !(r >= 0.0) || r > 3.4028235e38: return misuse(str("physics::", fnm, ": a radius of ", gfmt(r)))
+	true
+overlap(s Sphere, t Transform, p const float3[:], r f32) bool: pxok(p, r, "overlap") && phx::overlap_sphere(s, t, phx::Proxy{p, r})
+overlap(c Capsule, t Transform, p const float3[:], r f32) bool: pxok(p, r, "overlap") && phx::overlap_capsule(c, t, phx::Proxy{p, r})
+overlap(h Hull, t Transform, p const float3[:], r f32) bool: k := gget(GH, h.id, "overlap"); k >= 0 && pxok(p, r, "overlap") && phx::overlap_hull(HL[k], t, phx::Proxy{p, r})
+overlap(m Mesh, sc float3, t Transform, p const float3[:], r f32) bool: k := gget(GM, m.id, "overlap"); k >= 0 && pxok(p, r, "overlap") && phx::overlap_mesh(phx::G_MESH[k], sc, t, phx::Proxy{p, r})
+overlap(h HeightField, t Transform, p const float3[:], r f32) bool: k := gget(GF, h.id, "overlap"); k >= 0 && pxok(p, r, "overlap") && phx::overlap_hf(phx::G_HF[k], t, phx::Proxy{p, r})
+overlap(c Compound, t Transform, p const float3[:], r f32) bool: k := gget(GC, c.id, "overlap"); k >= 0 && pxok(p, r, "overlap") && phx::overlap_compound(phx::G_CPD[k], t, phx::Proxy{p, r})
+shape_cast(s Sphere, p const float3[:], r f32, t float3, mf f32, en bool) CastOutput: if pxok(p, r, "shape_cast") { cout(phx::cast_sphere(s, phx::Proxy{p, r}, t, mf, en)) } else { NOCAST }
+shape_cast(c Capsule, p const float3[:], r f32, t float3, mf f32, en bool) CastOutput: if pxok(p, r, "shape_cast") { cout(phx::cast_capsule(c, phx::Proxy{p, r}, t, mf, en)) } else { NOCAST }
+shape_cast(h Hull, p const float3[:], r f32, t float3, mf f32, en bool) CastOutput: k := gget(GH, h.id, "shape_cast"); if k >= 0 && pxok(p, r, "shape_cast") { cout(phx::cast_hull(HL[k], phx::Proxy{p, r}, t, mf, en)) } else { NOCAST }
+shape_cast(m Mesh, sc float3, p const float3[:], r f32, t float3, mf f32, en bool) CastOutput: k := gget(GM, m.id, "shape_cast"); if k >= 0 && pxok(p, r, "shape_cast") { cout(phx::cast_mesh(phx::G_MESH[k], sc, phx::Proxy{p, r}, t, mf, en)) } else { NOCAST }
+shape_cast(h HeightField, p const float3[:], r f32, t float3, mf f32, en bool) CastOutput: k := gget(GF, h.id, "shape_cast"); if k >= 0 && pxok(p, r, "shape_cast") { cout(phx::cast_hf(phx::G_HF[k], phx::Proxy{p, r}, t, mf, en)) } else { NOCAST }
+shape_cast(c Compound, p const float3[:], r f32, t float3, mf f32, en bool) CastOutput: k := gget(GC, c.id, "shape_cast"); if k >= 0 && pxok(p, r, "shape_cast") { cout(phx::cast_compound(phx::G_CPD[k], phx::Proxy{p, r}, t, mf, en)) } else { NOCAST }
+shape_distance(pa const float3[:], ra f32, pb const float3[:], rb f32, x Transform, ur bool) DistanceOutput:
+	if !pxok(pa, ra, "shape_distance") || !pxok(pb, rb, "shape_distance"): return DistanceOutput{Z3, Z3, Z3, 0.0, 0}
+	c ~= phx::SCache{..}; o := phx::shape_distance(phx::Proxy{pa, ra}, phx::Proxy{pb, rb}, x, ur, c); DistanceOutput{o.pa, o.pb, o.n, o.d, o.iters as i32}
+shape_cast(pa const float3[:], ra f32, pb const float3[:], rb f32, x Transform, tb float3, mf f32, en bool) CastOutput: if pxok(pa, ra, "shape_cast") && pxok(pb, rb, "shape_cast") { cout(phx::shape_cast_pair(phx::Proxy{pa, ra}, phx::Proxy{pb, rb}, x, tb, mf, en)) } else { NOCAST }
+swp(s Sweep) phx::Sweep: phx::Sweep{s.local_center, s.c1, s.c2, s.q1, s.q2}
+time_of_impact(pa const float3[:], ra f32, sa Sweep, pb const float3[:], rb f32, sb Sweep, mf f32) ToiOutput:
+	if !pxok(pa, ra, "time_of_impact") || !pxok(pb, rb, "time_of_impact"): return ToiOutput{0, Z3, Z3, 0.0, 0.0}
+	o := phx::time_of_impact(phx::Proxy{pa, ra}, phx::Proxy{pb, rb}, swp(sa), swp(sb), mf); ToiOutput{o.state as i32, o.p, o.n, o.frac, o.d}
+sweep_transform(s Sweep, t f32) Transform: phx::sweep_xf(swp(s), t)
+NOHIT := RayHit{Shape{0}, float3{0.0, 0.0, 0.0}, float3{0.0, 0.0, 0.0}, 0.0, 0, 0, 0, false}
+qf(s phx::Shape, f QueryFilter) bool: phx::qok(s.filter, f.category_bits, f.mask_bits)
+umat(i int, s int, m int) uint: ms := &WS[i].shapes[s].mats; ms[phx::iclamp(m, 0, ms.len - 1)].uid
+contacts(b Body) Manifold[>..]:
+	i, x := bi(b, "contacts"); r Manifold[>..] ~= []
+	if i < 0: return r
+	k ~= WS[i].bodies[x].hck
+	while k != -1: cid := k >> 1; if WS[i].contacts[cid].flags & phx::CF_TOUCHING != 0 { put_mans(i, cid, r) } k = WS[i].contacts[cid].ed[k & 1].next
+	r
+closest_point(b Body, t float3) float3, f32:
+	i, x := bi(b, "closest_point")
+	if i < 0: return Z3, 0.0
+	xf := phx::body_xf(WS[i], x); bd ~= 3.4028235e38 as f32; bp ~= xf.p; pa := [t]
+	for s phx::slist(WS[i], x):
+		ty := WS[i].shapes[s].ty
+		if ty == phx::SH_SPHERE || ty == phx::SH_CAPSULE || ty == phx::SH_HULL: pb := phx::shape_pts(WS[i], s); c ~= phx::SCache{..}; o := phx::shape_distance(phx::Proxy{pa[..], 0.0}, phx::Proxy{pb[..], phx::shape_rad(WS[i], s)}, xf, false, c); if o.d < bd { bd = o.d; bp = o.pb }
+	return bp, bd
+bhit(i int, s int, org float3, o phx::CastOut) RayHit: RayHit{sof(i, s), org + o.p, o.n, o.frac, umat(i, s, o.mat), o.tri as i32, -1, true}
+cast_ray(b Body, org float3, tr float3, f QueryFilter, mf f32, bx Transform) RayHit:
+	i, x := bi(b, "cast_ray"); r ~= NOHIT
+	if i < 0: return r
+	xf := Transform{bx.p - org, bx.q}; m ~= mf
+	for s phx::slist(WS[i], x): if qf(WS[i].shapes[s], f) { o := phx::ray_shape(WS[i], s, xf, Z3, tr, m); if o.hit && o.frac <= m { r = bhit(i, s, org, o); m = o.frac } }
+	r
+cast_shape(b Body, org float3, p const float3[:], rad f32, tr float3, f QueryFilter, mf f32, en bool, bx Transform) RayHit:
+	i, x := bi(b, "cast_shape"); r ~= NOHIT
+	if i < 0 || !pxok(p, rad, "cast_shape"): return r
+	xf := Transform{bx.p - org, bx.q}; m ~= mf
+	for s phx::slist(WS[i], x): if qf(WS[i].shapes[s], f) { o := phx::cast_shape_at(WS[i], s, xf, phx::Proxy{p, rad}, tr, m, en); if o.hit && o.frac <= m { r = bhit(i, s, org, o); m = o.frac } }
+	r
+overlap_shape(b Body, org float3, p const float3[:], rad f32, f QueryFilter, bx Transform) bool:
+	i, x := bi(b, "overlap_shape")
+	if i < 0 || !pxok(p, rad, "overlap_shape"): return false
+	xf := Transform{bx.p - org, bx.q}
+	for s phx::slist(WS[i], x): if qf(WS[i].shapes[s], f) && phx::overlap_shape_at(WS[i], s, xf, phx::Proxy{p, rad}) { return true }
+	false
+phit(i int, s int, p phx::PlaneRes) PlaneHit: PlaneHit{sof(i, s), p.pl, p.p, p.tri as i32, p.child as i32, p.mat as i32}
+collide_mover(b Body, org float3, mv Capsule, f QueryFilter, bx Transform) PlaneHit[>..]:
+	i, x := bi(b, "collide_mover"); r PlaneHit[>..] ~= []
+	if i < 0: return r
+	xf := Transform{bx.p - org, bx.q}; ss := phx::slist(WS[i], x)
+	for s ss:
+		t := WS[i].shapes[s].ty
+		if qf(WS[i].shapes[s], f) && (t == phx::SH_SPHERE || t == phx::SH_CAPSULE || t == phx::SH_HULL): for p phx::collide_mover_shape(WS[i], s, xf, mv, 1) { r.push(phit(i, s, p)) }
+		if r.len == ss.len: return r
+	r
+time_of_impact_mover(b Body, org float3, mv Capsule, tr float3, f QueryFilter, x1 Transform, x2 Transform) ToiHit:
+	i, x := bi(b, "time_of_impact_mover"); r ~= ToiHit{Z3, Z3, 1.0, Shape{0}}
+	if i < 0: return r
+	a1 := Transform{x1.p - org, x1.q}; a2 := Transform{x2.p - org, x2.q}; lc := phx::bsim(WS[i], x).lc; cp := [mv.center1, mv.center2]
+	sa := phx::Sweep{lc, phx::xpt(a1, lc), phx::xpt(a2, lc), x1.q, x2.q}; sb := phx::Sweep{Z3, Z3, tr, quat_identity, quat_identity}; m ~= 1.0 as f32
+	for s phx::slist(WS[i], x):
+		t := WS[i].shapes[s].ty
+		if qf(WS[i].shapes[s], f) && (t == phx::SH_SPHERE || t == phx::SH_CAPSULE || t == phx::SH_HULL): pa := phx::shape_pts(WS[i], s); o := phx::time_of_impact(phx::Proxy{pa[..], phx::shape_rad(WS[i], s)}, phx::Proxy{cp[..], mv.radius}, sa, sb, m); if 0.0 < o.frac && o.frac < r.fraction { m = o.frac; r = ToiHit{org + o.p, o.n, o.frac, sof(i, s)} }
+	r
+overlap_aabb(w World, bx AABB, f QueryFilter) Shape[>..]:
+	i := wi(w, "overlap_aabb"); r Shape[>..] ~= []
+	if i < 0: return r
+	for t 3: phx::tree_query(WS[i].bp.tr[t], bx, f.mask_bits, false) { px, ud => if qf(WS[i].shapes[ud as! int], f) { r.push(sof(i, ud as! int)) }; true }
+	r
+ovone(i int, s int, f QueryFilter, org float3, p phx::Proxy) bool: x := &WS[i].shapes[s]; if !qf(WS[i].shapes[s], f) { return false } bx := phx::body_xf(WS[i], x.bid); phx::overlap_shape_at(WS[i], s, Transform{bx.p - org, bx.q}, p)
+overlap_shape(w World, org float3, p const float3[:], rad f32, f QueryFilter) Shape[>..]:
+	i := wi(w, "overlap_shape"); r Shape[>..] ~= []
+	if i < 0 || !pxok(p, rad, "overlap_shape"): return r
+	px := phx::Proxy{p, rad}; lb := phx::proxy_box(px); bx := AABB{lb.lower + org, lb.upper + org}
+	for t 3: phx::tree_query(WS[i].bp.tr[t], bx, f.mask_bits, false) { q, ud => if ovone(i, ud as! int, f, org, px) { r.push(sof(i, ud as! int)) }; true }
+	r
+hitless(a RayHit, b RayHit) bool: if a.fraction != b.fraction { a.fraction < b.fraction } else { a.shape.id < b.shape.id }
+sorthits(r RayHit[>..]&): phx::qsort_b3(r[..]) { a, b => hitless(a, b) }
+rayone(i int, s int, f QueryFilter, org float3, tr float3, mf f32, r RayHit[>..]&, fr f32&) f32:
+	x := &WS[i].shapes[s]
+	if !qf(WS[i].shapes[s], f): return mf
+	bx := phx::body_xf(WS[i], x.bid); o := phx::ray_shape(WS[i], s, Transform{bx.p - org, bx.q}, Z3, tr, mf)
+	if !o.hit: return mf
+	r.push(RayHit{sof(i, s), org + o.p, o.n, o.frac, umat(i, s, o.mat), o.tri as i32, o.child as i32, true}); fr = 1.0; 1.0
+cast_ray(w World, org float3, tr float3, f QueryFilter) RayHit[>..]:
+	i := wi(w, "cast_ray"); r RayHit[>..] ~= []
+	if i < 0: return r
+	fr ~= 1.0 as f32
+	for t 3: phx::tree_ray(WS[i].bp.tr[t], org, tr, fr, f.mask_bits, false) { mf, q, ud => rayone(i, ud as! int, f, org, tr, mf, r, fr) }
+	sorthits(r); r
+cast_ray_closest(w World, org float3, tr float3, f QueryFilter) RayHit:
+	i := wi(w, "cast_ray_closest"); r ~= NOHIT
+	if i < 0: return r
+	fr ~= 1.0 as f32
+	for t 3:
+		phx::tree_ray(WS[i].bp.tr[t], org, tr, fr, f.mask_bits, false) { mf, q, ud => rayclose(i, ud as! int, f, org, tr, mf, r, fr) }
+		if fr == 0.0: break
+	r
+rayclose(i int, s int, f QueryFilter, org float3, tr float3, mf f32, r RayHit&, fr f32&) f32:
+	x := &WS[i].shapes[s]
+	if !qf(WS[i].shapes[s], f): return mf
+	bx := phx::body_xf(WS[i], x.bid); o := phx::ray_shape(WS[i], s, Transform{bx.p - org, bx.q}, Z3, tr, mf)
+	if !o.hit: return mf
+	if o.frac == 0.0: return -1.0
+	r = RayHit{sof(i, s), org + o.p, o.n, o.frac, umat(i, s, o.mat), o.tri as i32, o.child as i32, true}; fr = o.frac; o.frac
+castone(i int, s int, f QueryFilter, org float3, px phx::Proxy, tr float3, mf f32, r RayHit[>..]&, fr f32&) f32:
+	x := &WS[i].shapes[s]
+	if !qf(WS[i].shapes[s], f): return mf
+	bx := phx::body_xf(WS[i], x.bid); o := phx::cast_shape_at(WS[i], s, Transform{bx.p - org, bx.q}, px, tr, mf, false)
+	if !o.hit: return mf
+	r.push(RayHit{sof(i, s), org + o.p, o.n, o.frac, umat(i, s, o.mat), o.tri as i32, o.child as i32, true}); fr = 1.0; 1.0
+cast_shape(w World, org float3, p const float3[:], rad f32, tr float3, f QueryFilter) RayHit[>..]:
+	i := wi(w, "cast_shape"); r RayHit[>..] ~= []
+	if i < 0 || !pxok(p, rad, "cast_shape"): return r
+	px := phx::Proxy{p, rad}; lb := phx::proxy_box(px); bx := AABB{lb.lower + org, lb.upper + org}; fr ~= 1.0 as f32
+	for t 3: phx::tree_boxcast(WS[i].bp.tr[t], bx, tr, fr, f.mask_bits, false) { mf, q, ud => castone(i, ud as! int, f, org, px, tr, mf, r, fr) }
+	sorthits(r); r
+mvone(i int, s int, f QueryFilter, org float3, px phx::Proxy, tr float3, mf f32, fr f32&) f32:
+	x := &WS[i].shapes[s]
+	if !qf(WS[i].shapes[s], f): return fr
+	bx := phx::body_xf(WS[i], x.bid); o := phx::cast_shape_at(WS[i], s, Transform{bx.p - org, bx.q}, px, tr, mf, px.r > 0.0)
+	if o.frac == 0.0: return fr
+	fr = o.frac; o.frac
+cast_mover(w World, org float3, mv Capsule, tr float3, f QueryFilter) f32:
+	i := wi(w, "cast_mover")
+	if i < 0: return 1.0
+	cp := [mv.center1, mv.center2]; px := phx::Proxy{cp[..], mv.radius}; lb := phx::proxy_box(px); bx := AABB{lb.lower + org, lb.upper + org}; fr ~= 1.0 as f32
+	for t 3:
+		phx::tree_boxcast(WS[i].bp.tr[t], bx, tr, fr, f.mask_bits, false) { mf, q, ud => mvone(i, ud as! int, f, org, px, tr, mf, fr) }
+		if fr == 0.0: break
+	fr
+cmone(i int, s int, f QueryFilter, org float3, mv Capsule, r PlaneHit[>..]&):
+	x := &WS[i].shapes[s]
+	if !qf(WS[i].shapes[s], f): return
+	bx := phx::body_xf(WS[i], x.bid); for p phx::collide_mover_shape(WS[i], s, Transform{bx.p - org, bx.q}, mv, 64) { r.push(phit(i, s, p)) }
+collide_mover(w World, org float3, mv Capsule, f QueryFilter) PlaneHit[>..]:
+	i := wi(w, "collide_mover"); r PlaneHit[>..] ~= []
+	if i < 0: return r
+	rr := float3{mv.radius, mv.radius, mv.radius}; bx := AABB{phx::vmin(mv.center1, mv.center2) - rr + org, phx::vmax(mv.center1, mv.center2) + rr + org}
+	for t 3: phx::tree_query(WS[i].bp.tr[t], bx, f.mask_bits, false) { q, ud => cmone(i, ud as! int, f, org, mv, r); true }
+	r
+solve_planes(td float3, ps CollisionPlane[:]) float3, int:
+	for k ps.len: ps[k].push = 0.0
+	d ~= td; sl := phx::slop(); it ~= 0
+	while it < 20:
+		tp ~= 0.0 as f32
+		for k ps.len: p := &ps[k]; s := dot(p.plane.normal, d) - p.plane.offset + sl; a := p.push; p.push = phx::fclamp(p.push - s, 0.0, p.push_limit); u := p.push - a; d = phx::madd(d, u, p.plane.normal); tp += abs(u)
+		if tp < sl: break
+		it += 1
+	return d, it
+clip_vector(v0 float3, ps const CollisionPlane[:]) float3: v ~= v0; for p ps { if p.push != 0.0 && p.clip_velocity { v = phx::msub(v, min(0.0, dot(v, p.plane.normal)), p.plane.normal) } } v
+spair(i int, p phx::ShapePair) SensorEvent: SensorEvent{Shape{xid(i, p.sa, p.ga)}, Shape{xid(i, p.sb, p.gb)}}
+cpair(i int, p phx::ShapePair) ContactEvent: ContactEvent{Shape{xid(i, p.sa, p.ga)}, Shape{xid(i, p.sb, p.gb)}, Contact{(p.cid + 1) as i32, i as u16, 0, p.cgen as u32}}
+body_move_events(w World) BodyMoveEvent[>..]: i := wi(w, "body_move_events"); r BodyMoveEvent[>..] ~= []; if i >= 0 { for m WS[i].moves { r.push(BodyMoveEvent{m.xf, Body{xid(i, m.bid, m.gen)}, m.ud, m.asleep}) } } r
+sensor_begin_events(w World) SensorEvent[>..]: i := wi(w, "sensor_begin_events"); r SensorEvent[>..] ~= []; if i >= 0 { for p WS[i].sbegin { r.push(spair(i, p)) } } r
+sensor_end_events(w World) SensorEvent[>..]: i := wi(w, "sensor_end_events"); r SensorEvent[>..] ~= []; if i >= 0 { for p if WS[i].endix == 1 { WS[i].send0[..] } else { WS[i].send1[..] } { r.push(spair(i, p)) } } r
+contact_begin_events(w World) ContactEvent[>..]: i := wi(w, "contact_begin_events"); r ContactEvent[>..] ~= []; if i >= 0 { for p WS[i].cbegin { r.push(cpair(i, p)) } } r
+contact_end_events(w World) ContactEvent[>..]: i := wi(w, "contact_end_events"); r ContactEvent[>..] ~= []; if i >= 0 { for p if WS[i].endix == 1 { WS[i].cend0[..] } else { WS[i].cend1[..] } { r.push(cpair(i, p)) } } r
+contact_hit_events(w World) ContactHitEvent[>..]: i := wi(w, "contact_hit_events"); r ContactHitEvent[>..] ~= []; if i >= 0 { for h WS[i].hits { r.push(ContactHitEvent{Shape{xid(i, h.sa, h.ga)}, Shape{xid(i, h.sb, h.gb)}, Contact{(h.cid + 1) as i32, i as u16, 0, h.cgen as u32}, h.p, h.n, h.speed, h.ma, h.mb}) } } r
+joint_events(w World) JointEvent[>..]: i := wi(w, "joint_events"); r JointEvent[>..] ~= []; if i >= 0 { for e WS[i].jevents { r.push(JointEvent{Joint{xid(i, e.jid, e.gen)}, e.ud}) } } r
+JN := ["parallel", "distance", "filter", "motor", "prismatic", "revolute", "spherical", "weld", "wheel"]
+jk(j Joint, k int, fnm const byte[:]) int, int:
+	i, x := ji(j, fnm)
+	if i < 0: return -1, -1
+	t := WS[i].joints[x].ty
+	if t != k: misuse(str("physics::", fnm, ": a ", JN[t], " joint, not a ", JN[k], " joint")); return -1, -1
+	return i, x
+jf<F>(j Joint, k int, fnm const byte[:]) f32: i, x := jk(j, k, fnm); if i >= 0 { F(phx::jsim(WS[i], x)) } else { 0.0 }
+jb<F>(j Joint, k int, fnm const byte[:]) bool: i, x := jk(j, k, fnm); if i >= 0 { F(phx::jsim(WS[i], x)) } else { false }
+jv<F>(j Joint, k int, fnm const byte[:]) float3: i, x := jk(j, k, fnm); if i >= 0 { F(phx::jsim(WS[i], x)) } else { Z3 }
+jstart(w World, d JointDef, fnm const byte[:]) int:
+	i := wi(w, fnm)
+	if i < 0: return -1
+	a, xa := bi(d.body_a, fnm)
+	if a < 0: return -1
+	b, xb := bi(d.body_b, fnm)
+	if b < 0: return -1
+	if a != i || b != i: misuse(str("physics::", fnm, ": the bodies are in another world")); return -1
+	if d.body_a.id == d.body_b.id: misuse(str("physics::", fnm, ": a joint between a body and itself")); return -1
+	i
+jmake(i int, d JointDef, js phx::JointSim) Joint: a, xa := bdx(d.body_a.id); b, xb := bdx(d.body_b.id); jd ~= phx::JDef{xa, xb, d.frame_a, d.frame_b, d.force_threshold, d.torque_threshold, d.constraint_hertz, d.constraint_damping_ratio, d.draw_scale, d.user_data, d.collide_connected}; j := phx::create_joint(WS[i], jd, js); rec_joint(i, j); jof(i, j)
+jkind(t int) phx::JointSim: js ~= phx::JointSim{..}; js.ty = t; js
+create_distance_joint(w World, d DistanceJointDef) DistanceJoint:
+	r_create_distance_joint_World(w, d)
+	i := jstart(w, d.base, "create_distance_joint")
+	if i < 0: return DistanceJoint{Joint{0}}
+	js ~= phx::dist_joint(d.length, d.hertz, d.damping_ratio, d.enable_spring, d.enable_limit, d.min_length, d.max_length, d.enable_motor, d.max_motor_force, d.motor_speed); js.d.lsf = d.lower_spring_force; js.d.usf = d.upper_spring_force
+	DistanceJoint{jmake(i, d.base, js)}
+create_filter_joint(w World, d FilterJointDef) FilterJoint: r_create_filter_joint_World(w, d); i := jstart(w, d.base, "create_filter_joint"); if i < 0 { return FilterJoint{Joint{0}} } FilterJoint{jmake(i, d.base, jkind(phx::J_FILTER))}
+create_motor_joint(w World, d MotorJointDef) MotorJoint:
+	r_create_motor_joint_World(w, d)
+	i := jstart(w, d.base, "create_motor_joint")
+	if i < 0: return MotorJoint{Joint{0}}
+	js ~= jkind(phx::J_MOTOR); js.mo = phx::JMotor{lv: d.linear_velocity, av: d.angular_velocity, mvf: d.max_velocity_force, mvt: d.max_velocity_torque, lhz: d.linear_hertz, ldr: d.linear_damping_ratio, msf: d.max_spring_force, ahz: d.angular_hertz, adr: d.angular_damping_ratio, mst: d.max_spring_torque}
+	MotorJoint{jmake(i, d.base, js)}
+create_parallel_joint(w World, d ParallelJointDef) ParallelJoint:
+	r_create_parallel_joint_World(w, d)
+	i := jstart(w, d.base, "create_parallel_joint")
+	if i < 0: return ParallelJoint{Joint{0}}
+	js ~= jkind(phx::J_PARALLEL); js.pa = phx::JPar{hz: d.hertz, dr: d.damping_ratio, mt: d.max_torque}; ParallelJoint{jmake(i, d.base, js)}
+create_prismatic_joint(w World, d PrismaticJointDef) PrismaticJoint:
+	r_create_prismatic_joint_World(w, d)
+	i := jstart(w, d.base, "create_prismatic_joint")
+	if i < 0: return PrismaticJoint{Joint{0}}
+	js ~= jkind(phx::J_PRISMATIC); js.pr = phx::JPris{hz: d.hertz, dr: d.damping_ratio, tt: d.target_translation, lt: d.lower_translation, ut: d.upper_translation, mmf: d.max_motor_force, ms: d.motor_speed, spring: d.enable_spring, limit: d.enable_limit, motor: d.enable_motor}
+	PrismaticJoint{jmake(i, d.base, js)}
+create_revolute_joint(w World, d RevoluteJointDef) RevoluteJoint: r_create_revolute_joint_World(w, d); i := jstart(w, d.base, "create_revolute_joint"); if i < 0 { return RevoluteJoint{Joint{0}} } RevoluteJoint{jmake(i, d.base, phx::rev_joint(d.hertz, d.damping_ratio, d.enable_spring, d.target_angle, d.enable_limit, d.lower_angle, d.upper_angle, d.enable_motor, d.max_motor_torque, d.motor_speed))}
+create_spherical_joint(w World, d SphericalJointDef) SphericalJoint: r_create_spherical_joint_World(w, d); i := jstart(w, d.base, "create_spherical_joint"); if i < 0 { return SphericalJoint{Joint{0}} } SphericalJoint{jmake(i, d.base, phx::sph_joint(d.hertz, d.damping_ratio, d.enable_spring, d.target_rotation, d.enable_cone_limit, d.cone_angle, d.enable_twist_limit, d.lower_twist_angle, d.upper_twist_angle, d.enable_motor, d.max_motor_torque, d.motor_velocity))}
+create_weld_joint(w World, d WeldJointDef) WeldJoint:
+	r_create_weld_joint_World(w, d)
+	i := jstart(w, d.base, "create_weld_joint")
+	if i < 0: return WeldJoint{Joint{0}}
+	js ~= jkind(phx::J_WELD); js.we = phx::JWeld{lhz: d.linear_hertz, ldr: d.linear_damping_ratio, ahz: d.angular_hertz, adr: d.angular_damping_ratio}; WeldJoint{jmake(i, d.base, js)}
+create_wheel_joint(w World, d WheelJointDef) WheelJoint:
+	r_create_wheel_joint_World(w, d)
+	i := jstart(w, d.base, "create_wheel_joint")
+	if i < 0: return WheelJoint{Joint{0}}
+	js ~= jkind(phx::J_WHEEL); js.wh = phx::JWheel{sspring: d.enable_suspension_spring, shz: d.suspension_hertz, sdr: d.suspension_damping_ratio, slimit: d.enable_suspension_limit, lsl: d.lower_suspension_limit, usl: d.upper_suspension_limit, spin: d.enable_spin_motor, mst: d.max_spin_torque, sps: d.spin_speed, steer: d.enable_steering, sthz: d.steering_hertz, stdr: d.steering_damping_ratio, tsa: d.target_steering_angle, mstt: d.max_steering_torque, stlimit: d.enable_steering_limit, lstl: d.lower_steering_limit, ustl: d.upper_steering_limit}
+	WheelJoint{jmake(i, d.base, js)}
+destroy(j Joint, wake bool): r_destroy_Joint(j, wake); i, x := ji(j, "destroy"); if i >= 0 { phx::destroy_joint_internal(WS[i], x, wake) }
+destroy(j Joint): destroy(j, true)
+is_valid(j Joint) bool: i, x := jdx(j.id); i >= 0
+joint_type(j Joint) i32: i, x := ji(j, "joint_type"); if i >= 0 { WS[i].joints[x].ty as i32 } else { -1 }
+body_a(j Joint) Body: i, x := ji(j, "body_a"); if i >= 0 { bof(i, WS[i].joints[x].ed[0].bid) } else { Body{0} }
+body_b(j Joint) Body: i, x := ji(j, "body_b"); if i >= 0 { bof(i, WS[i].joints[x].ed[1].bid) } else { Body{0} }
+world(j Joint) World: i, x := ji(j, "world"); if i >= 0 { wof(i) } else { World{0} }
+set_local_frame_a(j Joint, f Transform): r_set_local_frame_a_Joint(j, f); i, x := ji(j, "set_local_frame_a"); if i >= 0 { s := &phx::jsim(WS[i], x); s.lfa = f }
+local_frame_a(j Joint) Transform: i, x := ji(j, "local_frame_a"); if i >= 0 { phx::jsim(WS[i], x).lfa } else { transform_identity }
+set_local_frame_b(j Joint, f Transform): r_set_local_frame_b_Joint(j, f); i, x := ji(j, "set_local_frame_b"); if i >= 0 { s := &phx::jsim(WS[i], x); s.lfb = f }
+local_frame_b(j Joint) Transform: i, x := ji(j, "local_frame_b"); if i >= 0 { phx::jsim(WS[i], x).lfb } else { transform_identity }
+set_collide_connected(j Joint, f bool): r_set_collide_connected_Joint(j, f); i, x := ji(j, "set_collide_connected"); if i >= 0 { phx::set_collide(WS[i], x, f) }
+collide_connected(j Joint) bool: i, x := ji(j, "collide_connected"); i >= 0 && WS[i].joints[x].collide
+set_user_data(j Joint, d uint): i, x := ji(j, "set_user_data"); if i >= 0 { WS[i].joints[x].ud = d }
+user_data(j Joint) uint: i, x := ji(j, "user_data"); if i >= 0 { WS[i].joints[x].ud } else { 0 }
+wake_bodies(j Joint): r_wake_bodies_Joint(j); i, x := ji(j, "wake_bodies"); if i >= 0 { phx::wake_body(WS[i], WS[i].joints[x].ed[0].bid); phx::wake_body(WS[i], WS[i].joints[x].ed[1].bid) }
+is_awake(j Joint) bool: i, x := ji(j, "is_awake"); i >= 0 && WS[i].joints[x].set == phx::SET_AWAKE
+constraint_force(j Joint) float3: i, x := ji(j, "constraint_force"); if i >= 0 { phx::jforce(WS[i], x) } else { Z3 }
+constraint_torque(j Joint) float3: i, x := ji(j, "constraint_torque"); if i >= 0 { phx::jtorque(WS[i], x) } else { Z3 }
+linear_separation(j Joint) f32: i, x := ji(j, "linear_separation"); if i >= 0 { phx::jlinsep(WS[i], x) } else { 0.0 }
+angular_separation(j Joint) f32: i, x := ji(j, "angular_separation"); if i >= 0 { phx::jangsep(WS[i], x) } else { 0.0 }
+set_constraint_tuning(j Joint, hz f32, dr f32): r_set_constraint_tuning_Joint(j, hz, dr); i, x := ji(j, "set_constraint_tuning"); if i >= 0 { s := &phx::jsim(WS[i], x); s.chz = hz; s.cdr = dr }
+constraint_tuning(j Joint) f32, f32: i, x := ji(j, "constraint_tuning"); if i < 0 { return 0.0, 0.0 } s := &phx::jsim(WS[i], x); return s.chz, s.cdr
+set_force_threshold(j Joint, v f32): r_set_force_threshold_Joint(j, v); i, x := ji(j, "set_force_threshold"); if i >= 0 { s := &phx::jsim(WS[i], x); s.fth = v }
+force_threshold(j Joint) f32: i, x := ji(j, "force_threshold"); if i >= 0 { phx::jsim(WS[i], x).fth } else { 0.0 }
+set_torque_threshold(j Joint, v f32): r_set_torque_threshold_Joint(j, v); i, x := ji(j, "set_torque_threshold"); if i >= 0 { s := &phx::jsim(WS[i], x); s.tth = v }
+torque_threshold(j Joint) f32: i, x := ji(j, "torque_threshold"); if i >= 0 { phx::jsim(WS[i], x).tth } else { 0.0 }
+dj(j DistanceJoint, fnm const byte[:]) int, int: jk(j.joint, phx::J_DISTANCE, fnm)
+set_rest_length(j DistanceJoint, v f32): r_set_rest_length_DistanceJoint(j, v); i, x := dj(j, "set_rest_length"); if i >= 0 { d := &phx::jsim(WS[i], x).d; d.len = phx::fclamp(v, phx::slop(), phx::huge()); d.imp = 0.0; d.limp = 0.0; d.uimp = 0.0 }
+rest_length(j DistanceJoint) f32: jf(j.joint, phx::J_DISTANCE, "rest_length") { s => s.d.len }
+enable_spring(j DistanceJoint, f bool): r_enable_spring_DistanceJoint(j, f); i, x := dj(j, "enable_spring"); if i >= 0 { d := &phx::jsim(WS[i], x).d; d.spring = f }
+spring_enabled(j DistanceJoint) bool: jb(j.joint, phx::J_DISTANCE, "spring_enabled") { s => s.d.spring }
+set_spring_force_range(j DistanceJoint, lo f32, hi f32): r_set_spring_force_range_DistanceJoint(j, lo, hi); i, x := dj(j, "set_spring_force_range"); if i >= 0 { d := &phx::jsim(WS[i], x).d; d.lsf = lo; d.usf = hi }
+spring_force_range(j DistanceJoint) f32, f32: i, x := dj(j, "spring_force_range"); if i < 0 { return 0.0, 0.0 } d := &phx::jsim(WS[i], x).d; return d.lsf, d.usf
+set_spring_hertz(j DistanceJoint, v f32): r_set_spring_hertz_DistanceJoint(j, v); i, x := dj(j, "set_spring_hertz"); if i >= 0 { d := &phx::jsim(WS[i], x).d; d.hz = v }
+spring_hertz(j DistanceJoint) f32: jf(j.joint, phx::J_DISTANCE, "spring_hertz") { s => s.d.hz }
+set_spring_damping_ratio(j DistanceJoint, v f32): r_set_spring_damping_ratio_DistanceJoint(j, v); i, x := dj(j, "set_spring_damping_ratio"); if i >= 0 { d := &phx::jsim(WS[i], x).d; d.dr = v }
+spring_damping_ratio(j DistanceJoint) f32: jf(j.joint, phx::J_DISTANCE, "spring_damping_ratio") { s => s.d.dr }
+enable_limit(j DistanceJoint, f bool): r_enable_limit_DistanceJoint(j, f); i, x := dj(j, "enable_limit"); if i >= 0 { d := &phx::jsim(WS[i], x).d; d.limit = f }
+limit_enabled(j DistanceJoint) bool: jb(j.joint, phx::J_DISTANCE, "limit_enabled") { s => s.d.limit }
+set_length_range(j DistanceJoint, lo f32, hi f32): r_set_length_range_DistanceJoint(j, lo, hi); i, x := dj(j, "set_length_range"); if i >= 0 { d := &phx::jsim(WS[i], x).d; a := phx::fclamp(lo, phx::slop(), phx::huge()); b := phx::fclamp(hi, phx::slop(), phx::huge()); d.minl = min(a, b); d.maxl = max(a, b); d.imp = 0.0; d.limp = 0.0; d.uimp = 0.0 }
+min_length(j DistanceJoint) f32: jf(j.joint, phx::J_DISTANCE, "min_length") { s => s.d.minl }
+max_length(j DistanceJoint) f32: jf(j.joint, phx::J_DISTANCE, "max_length") { s => s.d.maxl }
+current_length(j DistanceJoint) f32: i, x := dj(j, "current_length"); if i >= 0 { phx::vlen(phx::jdp(WS[i], phx::jsim(WS[i], x))) } else { 0.0 }
+enable_motor(j DistanceJoint, f bool): r_enable_motor_DistanceJoint(j, f); i, x := dj(j, "enable_motor"); if i >= 0 { d := &phx::jsim(WS[i], x).d; if f != d.motor { d.motor = f; d.mimp = 0.0 } }
+motor_enabled(j DistanceJoint) bool: jb(j.joint, phx::J_DISTANCE, "motor_enabled") { s => s.d.motor }
+set_motor_speed(j DistanceJoint, v f32): r_set_motor_speed_DistanceJoint(j, v); i, x := dj(j, "set_motor_speed"); if i >= 0 { d := &phx::jsim(WS[i], x).d; d.ms = v }
+motor_speed(j DistanceJoint) f32: jf(j.joint, phx::J_DISTANCE, "motor_speed") { s => s.d.ms }
+set_max_motor_force(j DistanceJoint, v f32): r_set_max_motor_force_DistanceJoint(j, v); i, x := dj(j, "set_max_motor_force"); if i >= 0 { d := &phx::jsim(WS[i], x).d; d.mmf = v }
+max_motor_force(j DistanceJoint) f32: jf(j.joint, phx::J_DISTANCE, "max_motor_force") { s => s.d.mmf }
+motor_force(j DistanceJoint) f32: i, x := dj(j, "motor_force"); if i >= 0 { WS[i].inv_h * phx::jsim(WS[i], x).d.mimp } else { 0.0 }
+mj(j MotorJoint, fnm const byte[:]) int, int: jk(j.joint, phx::J_MOTOR, fnm)
+set_linear_velocity(j MotorJoint, v float3): r_set_linear_velocity_MotorJoint(j, v); i, x := mj(j, "set_linear_velocity"); if i >= 0 { m := &phx::jsim(WS[i], x).mo; m.lv = v }
+linear_velocity(j MotorJoint) float3: jv(j.joint, phx::J_MOTOR, "linear_velocity") { s => s.mo.lv }
+set_angular_velocity(j MotorJoint, v float3): r_set_angular_velocity_MotorJoint(j, v); i, x := mj(j, "set_angular_velocity"); if i >= 0 { m := &phx::jsim(WS[i], x).mo; m.av = v }
+angular_velocity(j MotorJoint) float3: jv(j.joint, phx::J_MOTOR, "angular_velocity") { s => s.mo.av }
+set_max_velocity_force(j MotorJoint, v f32): r_set_max_velocity_force_MotorJoint(j, v); i, x := mj(j, "set_max_velocity_force"); if i >= 0 { m := &phx::jsim(WS[i], x).mo; m.mvf = v }
+max_velocity_force(j MotorJoint) f32: jf(j.joint, phx::J_MOTOR, "max_velocity_force") { s => s.mo.mvf }
+set_max_velocity_torque(j MotorJoint, v f32): r_set_max_velocity_torque_MotorJoint(j, v); i, x := mj(j, "set_max_velocity_torque"); if i >= 0 { m := &phx::jsim(WS[i], x).mo; m.mvt = v }
+max_velocity_torque(j MotorJoint) f32: jf(j.joint, phx::J_MOTOR, "max_velocity_torque") { s => s.mo.mvt }
+set_linear_hertz(j MotorJoint, v f32): r_set_linear_hertz_MotorJoint(j, v); i, x := mj(j, "set_linear_hertz"); if i >= 0 { m := &phx::jsim(WS[i], x).mo; m.lhz = v }
+linear_hertz(j MotorJoint) f32: jf(j.joint, phx::J_MOTOR, "linear_hertz") { s => s.mo.lhz }
+set_linear_damping_ratio(j MotorJoint, v f32): r_set_linear_damping_ratio_MotorJoint(j, v); i, x := mj(j, "set_linear_damping_ratio"); if i >= 0 { m := &phx::jsim(WS[i], x).mo; m.ldr = v }
+linear_damping_ratio(j MotorJoint) f32: jf(j.joint, phx::J_MOTOR, "linear_damping_ratio") { s => s.mo.ldr }
+set_angular_hertz(j MotorJoint, v f32): r_set_angular_hertz_MotorJoint(j, v); i, x := mj(j, "set_angular_hertz"); if i >= 0 { m := &phx::jsim(WS[i], x).mo; m.ahz = v }
+angular_hertz(j MotorJoint) f32: jf(j.joint, phx::J_MOTOR, "angular_hertz") { s => s.mo.ahz }
+set_angular_damping_ratio(j MotorJoint, v f32): r_set_angular_damping_ratio_MotorJoint(j, v); i, x := mj(j, "set_angular_damping_ratio"); if i >= 0 { m := &phx::jsim(WS[i], x).mo; m.adr = v }
+angular_damping_ratio(j MotorJoint) f32: jf(j.joint, phx::J_MOTOR, "angular_damping_ratio") { s => s.mo.adr }
+set_max_spring_force(j MotorJoint, v f32): r_set_max_spring_force_MotorJoint(j, v); i, x := mj(j, "set_max_spring_force"); if i >= 0 { m := &phx::jsim(WS[i], x).mo; m.msf = max(0.0, v) }
+max_spring_force(j MotorJoint) f32: jf(j.joint, phx::J_MOTOR, "max_spring_force") { s => s.mo.msf }
+set_max_spring_torque(j MotorJoint, v f32): r_set_max_spring_torque_MotorJoint(j, v); i, x := mj(j, "set_max_spring_torque"); if i >= 0 { m := &phx::jsim(WS[i], x).mo; m.mst = max(0.0, v) }
+max_spring_torque(j MotorJoint) f32: jf(j.joint, phx::J_MOTOR, "max_spring_torque") { s => s.mo.mst }
+aj(j ParallelJoint, fnm const byte[:]) int, int: jk(j.joint, phx::J_PARALLEL, fnm)
+set_spring_hertz(j ParallelJoint, v f32): r_set_spring_hertz_ParallelJoint(j, v); i, x := aj(j, "set_spring_hertz"); if i >= 0 { p := &phx::jsim(WS[i], x).pa; p.hz = v }
+spring_hertz(j ParallelJoint) f32: jf(j.joint, phx::J_PARALLEL, "spring_hertz") { s => s.pa.hz }
+set_spring_damping_ratio(j ParallelJoint, v f32): r_set_spring_damping_ratio_ParallelJoint(j, v); i, x := aj(j, "set_spring_damping_ratio"); if i >= 0 { p := &phx::jsim(WS[i], x).pa; p.dr = v }
+spring_damping_ratio(j ParallelJoint) f32: jf(j.joint, phx::J_PARALLEL, "spring_damping_ratio") { s => s.pa.dr }
+set_max_torque(j ParallelJoint, v f32): r_set_max_torque_ParallelJoint(j, v); i, x := aj(j, "set_max_torque"); if i >= 0 { p := &phx::jsim(WS[i], x).pa; p.mt = v }
+max_torque(j ParallelJoint) f32: jf(j.joint, phx::J_PARALLEL, "max_torque") { s => s.pa.mt }
+pj(j PrismaticJoint, fnm const byte[:]) int, int: jk(j.joint, phx::J_PRISMATIC, fnm)
+enable_spring(j PrismaticJoint, f bool): r_enable_spring_PrismaticJoint(j, f); i, x := pj(j, "enable_spring"); if i >= 0 { p := &phx::jsim(WS[i], x).pr; if f != p.spring { p.si = 0.0 } p.spring = f }
+spring_enabled(j PrismaticJoint) bool: jb(j.joint, phx::J_PRISMATIC, "spring_enabled") { s => s.pr.spring }
+set_spring_hertz(j PrismaticJoint, v f32): r_set_spring_hertz_PrismaticJoint(j, v); i, x := pj(j, "set_spring_hertz"); if i >= 0 { p := &phx::jsim(WS[i], x).pr; p.hz = v }
+spring_hertz(j PrismaticJoint) f32: jf(j.joint, phx::J_PRISMATIC, "spring_hertz") { s => s.pr.hz }
+set_spring_damping_ratio(j PrismaticJoint, v f32): r_set_spring_damping_ratio_PrismaticJoint(j, v); i, x := pj(j, "set_spring_damping_ratio"); if i >= 0 { p := &phx::jsim(WS[i], x).pr; p.dr = v }
+spring_damping_ratio(j PrismaticJoint) f32: jf(j.joint, phx::J_PRISMATIC, "spring_damping_ratio") { s => s.pr.dr }
+set_target_translation(j PrismaticJoint, v f32): r_set_target_translation_PrismaticJoint(j, v); i, x := pj(j, "set_target_translation"); if i >= 0 { p := &phx::jsim(WS[i], x).pr; p.tt = v }
+target_translation(j PrismaticJoint) f32: jf(j.joint, phx::J_PRISMATIC, "target_translation") { s => s.pr.tt }
+enable_limit(j PrismaticJoint, f bool): r_enable_limit_PrismaticJoint(j, f); i, x := pj(j, "enable_limit"); if i >= 0 { p := &phx::jsim(WS[i], x).pr; if f != p.limit { p.loi = 0.0; p.upi = 0.0 } p.limit = f }
+limit_enabled(j PrismaticJoint) bool: jb(j.joint, phx::J_PRISMATIC, "limit_enabled") { s => s.pr.limit }
+lower_limit(j PrismaticJoint) f32: jf(j.joint, phx::J_PRISMATIC, "lower_limit") { s => s.pr.lt }
+upper_limit(j PrismaticJoint) f32: jf(j.joint, phx::J_PRISMATIC, "upper_limit") { s => s.pr.ut }
+set_limits(j PrismaticJoint, lo f32, hi f32): r_set_limits_PrismaticJoint(j, lo, hi); i, x := pj(j, "set_limits"); if i >= 0 { p := &phx::jsim(WS[i], x).pr; p.lt = min(lo, hi); p.ut = max(lo, hi) }
+enable_motor(j PrismaticJoint, f bool): r_enable_motor_PrismaticJoint(j, f); i, x := pj(j, "enable_motor"); if i >= 0 { p := &phx::jsim(WS[i], x).pr; if f != p.motor { p.mi = 0.0 } p.motor = f }
+motor_enabled(j PrismaticJoint) bool: jb(j.joint, phx::J_PRISMATIC, "motor_enabled") { s => s.pr.motor }
+set_motor_speed(j PrismaticJoint, v f32): r_set_motor_speed_PrismaticJoint(j, v); i, x := pj(j, "set_motor_speed"); if i >= 0 { p := &phx::jsim(WS[i], x).pr; p.ms = v }
+motor_speed(j PrismaticJoint) f32: jf(j.joint, phx::J_PRISMATIC, "motor_speed") { s => s.pr.ms }
+set_max_motor_force(j PrismaticJoint, v f32): r_set_max_motor_force_PrismaticJoint(j, v); i, x := pj(j, "set_max_motor_force"); if i >= 0 { p := &phx::jsim(WS[i], x).pr; p.mmf = v }
+max_motor_force(j PrismaticJoint) f32: jf(j.joint, phx::J_PRISMATIC, "max_motor_force") { s => s.pr.mmf }
+motor_force(j PrismaticJoint) f32: i, x := pj(j, "motor_force"); if i >= 0 { WS[i].inv_h * phx::jsim(WS[i], x).pr.mi } else { 0.0 }
+translation(j PrismaticJoint) f32: i, x := pj(j, "translation"); if i >= 0 { phx::pris_translation(WS[i], x) } else { 0.0 }
+speed(j PrismaticJoint) f32: i, x := pj(j, "speed"); if i >= 0 { phx::pris_speed(WS[i], x) } else { 0.0 }
+rj(j RevoluteJoint, fnm const byte[:]) int, int: jk(j.joint, phx::J_REVOLUTE, fnm)
+enable_spring(j RevoluteJoint, f bool): r_enable_spring_RevoluteJoint(j, f); i, x := rj(j, "enable_spring"); if i >= 0 { r := &phx::jsim(WS[i], x).rv; if f != r.spring { r.si = 0.0 } r.spring = f }
+spring_enabled(j RevoluteJoint) bool: jb(j.joint, phx::J_REVOLUTE, "spring_enabled") { s => s.rv.spring }
+set_spring_hertz(j RevoluteJoint, v f32): r_set_spring_hertz_RevoluteJoint(j, v); i, x := rj(j, "set_spring_hertz"); if i >= 0 { r := &phx::jsim(WS[i], x).rv; r.hz = v }
+spring_hertz(j RevoluteJoint) f32: jf(j.joint, phx::J_REVOLUTE, "spring_hertz") { s => s.rv.hz }
+set_spring_damping_ratio(j RevoluteJoint, v f32): r_set_spring_damping_ratio_RevoluteJoint(j, v); i, x := rj(j, "set_spring_damping_ratio"); if i >= 0 { r := &phx::jsim(WS[i], x).rv; r.dr = v }
+spring_damping_ratio(j RevoluteJoint) f32: jf(j.joint, phx::J_REVOLUTE, "spring_damping_ratio") { s => s.rv.dr }
+set_target_angle(j RevoluteJoint, v f32): r_set_target_angle_RevoluteJoint(j, v); i, x := rj(j, "set_target_angle"); if i >= 0 { r := &phx::jsim(WS[i], x).rv; r.ta = v }
+target_angle(j RevoluteJoint) f32: jf(j.joint, phx::J_REVOLUTE, "target_angle") { s => s.rv.ta }
+angle(j RevoluteJoint) f32: i, x := rj(j, "angle"); if i >= 0 { phx::twist_angle_q(phx::jrel(WS[i], phx::jsim(WS[i], x))) } else { 0.0 }
+enable_limit(j RevoluteJoint, f bool): r_enable_limit_RevoluteJoint(j, f); i, x := rj(j, "enable_limit"); if i >= 0 { r := &phx::jsim(WS[i], x).rv; if f != r.limit { r.loi = 0.0; r.upi = 0.0 } r.limit = f }
+limit_enabled(j RevoluteJoint) bool: jb(j.joint, phx::J_REVOLUTE, "limit_enabled") { s => s.rv.limit }
+lower_limit(j RevoluteJoint) f32: jf(j.joint, phx::J_REVOLUTE, "lower_limit") { s => s.rv.la }
+upper_limit(j RevoluteJoint) f32: jf(j.joint, phx::J_REVOLUTE, "upper_limit") { s => s.rv.ua }
+set_limits(j RevoluteJoint, lo f32, hi f32): r_set_limits_RevoluteJoint(j, lo, hi); i, x := rj(j, "set_limits"); if i >= 0 { r := &phx::jsim(WS[i], x).rv; r.la = phx::fclamp(min(lo, hi), -0.99 * phx::PI, 0.99 * phx::PI); r.ua = phx::fclamp(max(lo, hi), -0.99 * phx::PI, 0.99 * phx::PI) }
+enable_motor(j RevoluteJoint, f bool): r_enable_motor_RevoluteJoint(j, f); i, x := rj(j, "enable_motor"); if i >= 0 { r := &phx::jsim(WS[i], x).rv; if f != r.motor { r.mi = 0.0 } r.motor = f }
+motor_enabled(j RevoluteJoint) bool: jb(j.joint, phx::J_REVOLUTE, "motor_enabled") { s => s.rv.motor }
+set_motor_speed(j RevoluteJoint, v f32): r_set_motor_speed_RevoluteJoint(j, v); i, x := rj(j, "set_motor_speed"); if i >= 0 { r := &phx::jsim(WS[i], x).rv; r.ms = v }
+motor_speed(j RevoluteJoint) f32: jf(j.joint, phx::J_REVOLUTE, "motor_speed") { s => s.rv.ms }
+motor_torque(j RevoluteJoint) f32: i, x := rj(j, "motor_torque"); if i >= 0 { WS[i].inv_h * phx::jsim(WS[i], x).rv.mi } else { 0.0 }
+set_max_motor_torque(j RevoluteJoint, v f32): r_set_max_motor_torque_RevoluteJoint(j, v); i, x := rj(j, "set_max_motor_torque"); if i >= 0 { r := &phx::jsim(WS[i], x).rv; r.mmt = v }
+max_motor_torque(j RevoluteJoint) f32: jf(j.joint, phx::J_REVOLUTE, "max_motor_torque") { s => s.rv.mmt }
+sj(j SphericalJoint, fnm const byte[:]) int, int: jk(j.joint, phx::J_SPHERICAL, fnm)
+enable_cone_limit(j SphericalJoint, f bool): r_enable_cone_limit_SphericalJoint(j, f); i, x := sj(j, "enable_cone_limit"); if i >= 0 { s := &phx::jsim(WS[i], x).sp; if f != s.cl { s.swi = 0.0 } s.cl = f }
+cone_limit_enabled(j SphericalJoint) bool: jb(j.joint, phx::J_SPHERICAL, "cone_limit_enabled") { s => s.sp.cl }
+cone_limit(j SphericalJoint) f32: jf(j.joint, phx::J_SPHERICAL, "cone_limit") { s => s.sp.cone }
+set_cone_limit(j SphericalJoint, v f32): r_set_cone_limit_SphericalJoint(j, v); i, x := sj(j, "set_cone_limit"); if i >= 0 { s := &phx::jsim(WS[i], x).sp; s.cone = v }
+cone_angle(j SphericalJoint) f32: i, x := sj(j, "cone_angle"); if i >= 0 { phx::swing_angle_q(phx::jrel(WS[i], phx::jsim(WS[i], x))) } else { 0.0 }
+enable_twist_limit(j SphericalJoint, f bool): r_enable_twist_limit_SphericalJoint(j, f); i, x := sj(j, "enable_twist_limit"); if i >= 0 { s := &phx::jsim(WS[i], x).sp; if f != s.tl { s.lti = 0.0; s.uti = 0.0 } s.tl = f }
+twist_limit_enabled(j SphericalJoint) bool: jb(j.joint, phx::J_SPHERICAL, "twist_limit_enabled") { s => s.sp.tl }
+lower_twist_limit(j SphericalJoint) f32: jf(j.joint, phx::J_SPHERICAL, "lower_twist_limit") { s => s.sp.lta }
+upper_twist_limit(j SphericalJoint) f32: jf(j.joint, phx::J_SPHERICAL, "upper_twist_limit") { s => s.sp.uta }
+set_twist_limits(j SphericalJoint, lo f32, hi f32): r_set_twist_limits_SphericalJoint(j, lo, hi); i, x := sj(j, "set_twist_limits"); if i >= 0 { s := &phx::jsim(WS[i], x).sp; s.lta = phx::fclamp(min(lo, hi), -0.99 * phx::PI, 0.99 * phx::PI); s.uta = phx::fclamp(max(lo, hi), -0.99 * phx::PI, 0.99 * phx::PI) }
+twist_angle(j SphericalJoint) f32: i, x := sj(j, "twist_angle"); if i >= 0 { phx::twist_angle_q(phx::jrel(WS[i], phx::jsim(WS[i], x))) } else { 0.0 }
+enable_spring(j SphericalJoint, f bool): r_enable_spring_SphericalJoint(j, f); i, x := sj(j, "enable_spring"); if i >= 0 { s := &phx::jsim(WS[i], x).sp; if f != s.spring { s.si = Z3 } s.spring = f }
+spring_enabled(j SphericalJoint) bool: jb(j.joint, phx::J_SPHERICAL, "spring_enabled") { s => s.sp.spring }
+set_spring_hertz(j SphericalJoint, v f32): r_set_spring_hertz_SphericalJoint(j, v); i, x := sj(j, "set_spring_hertz"); if i >= 0 { s := &phx::jsim(WS[i], x).sp; s.hz = v }
+spring_hertz(j SphericalJoint) f32: jf(j.joint, phx::J_SPHERICAL, "spring_hertz") { s => s.sp.hz }
+set_spring_damping_ratio(j SphericalJoint, v f32): r_set_spring_damping_ratio_SphericalJoint(j, v); i, x := sj(j, "set_spring_damping_ratio"); if i >= 0 { s := &phx::jsim(WS[i], x).sp; s.dr = v }
+spring_damping_ratio(j SphericalJoint) f32: jf(j.joint, phx::J_SPHERICAL, "spring_damping_ratio") { s => s.sp.dr }
+set_target_rotation(j SphericalJoint, q Quat): r_set_target_rotation_SphericalJoint(j, q); i, x := sj(j, "set_target_rotation"); if i >= 0 { s := &phx::jsim(WS[i], x).sp; s.tq = q }
+target_rotation(j SphericalJoint) Quat: i, x := sj(j, "target_rotation"); if i >= 0 { phx::jsim(WS[i], x).sp.tq } else { quat_identity }
+enable_motor(j SphericalJoint, f bool): r_enable_motor_SphericalJoint(j, f); i, x := sj(j, "enable_motor"); if i >= 0 { s := &phx::jsim(WS[i], x).sp; if f != s.motor { s.mi = Z3 } s.motor = f }
+motor_enabled(j SphericalJoint) bool: jb(j.joint, phx::J_SPHERICAL, "motor_enabled") { s => s.sp.motor }
+set_motor_velocity(j SphericalJoint, v float3): r_set_motor_velocity_SphericalJoint(j, v); i, x := sj(j, "set_motor_velocity"); if i >= 0 { s := &phx::jsim(WS[i], x).sp; s.mvel = v }
+motor_velocity(j SphericalJoint) float3: jv(j.joint, phx::J_SPHERICAL, "motor_velocity") { s => s.sp.mvel }
+motor_torque(j SphericalJoint) float3: i, x := sj(j, "motor_torque"); if i >= 0 { phx::sv(WS[i].inv_h, phx::jsim(WS[i], x).sp.mi) } else { Z3 }
+set_max_motor_torque(j SphericalJoint, v f32): r_set_max_motor_torque_SphericalJoint(j, v); i, x := sj(j, "set_max_motor_torque"); if i >= 0 { s := &phx::jsim(WS[i], x).sp; s.mmt = v }
+max_motor_torque(j SphericalJoint) f32: jf(j.joint, phx::J_SPHERICAL, "max_motor_torque") { s => s.sp.mmt }
+wj(j WeldJoint, fnm const byte[:]) int, int: jk(j.joint, phx::J_WELD, fnm)
+set_linear_hertz(j WeldJoint, v f32): r_set_linear_hertz_WeldJoint(j, v); i, x := wj(j, "set_linear_hertz"); if i >= 0 { e := &phx::jsim(WS[i], x).we; e.lhz = v }
+linear_hertz(j WeldJoint) f32: jf(j.joint, phx::J_WELD, "linear_hertz") { s => s.we.lhz }
+set_linear_damping_ratio(j WeldJoint, v f32): r_set_linear_damping_ratio_WeldJoint(j, v); i, x := wj(j, "set_linear_damping_ratio"); if i >= 0 { e := &phx::jsim(WS[i], x).we; e.ldr = v }
+linear_damping_ratio(j WeldJoint) f32: jf(j.joint, phx::J_WELD, "linear_damping_ratio") { s => s.we.ldr }
+set_angular_hertz(j WeldJoint, v f32): r_set_angular_hertz_WeldJoint(j, v); i, x := wj(j, "set_angular_hertz"); if i >= 0 { e := &phx::jsim(WS[i], x).we; e.ahz = v }
+angular_hertz(j WeldJoint) f32: jf(j.joint, phx::J_WELD, "angular_hertz") { s => s.we.ahz }
+set_angular_damping_ratio(j WeldJoint, v f32): r_set_angular_damping_ratio_WeldJoint(j, v); i, x := wj(j, "set_angular_damping_ratio"); if i >= 0 { e := &phx::jsim(WS[i], x).we; e.adr = v }
+angular_damping_ratio(j WeldJoint) f32: jf(j.joint, phx::J_WELD, "angular_damping_ratio") { s => s.we.adr }
+hj(j WheelJoint, fnm const byte[:]) int, int: jk(j.joint, phx::J_WHEEL, fnm)
+enable_suspension(j WheelJoint, f bool): r_enable_suspension_WheelJoint(j, f); i, x := hj(j, "enable_suspension"); if i >= 0 { h := &phx::jsim(WS[i], x).wh; if f != h.sspring { h.sspring = f; h.ssi = 0.0 } }
+suspension_enabled(j WheelJoint) bool: jb(j.joint, phx::J_WHEEL, "suspension_enabled") { s => s.wh.sspring }
+set_suspension_hertz(j WheelJoint, v f32): r_set_suspension_hertz_WheelJoint(j, v); i, x := hj(j, "set_suspension_hertz"); if i >= 0 { h := &phx::jsim(WS[i], x).wh; h.shz = v }
+suspension_hertz(j WheelJoint) f32: jf(j.joint, phx::J_WHEEL, "suspension_hertz") { s => s.wh.shz }
+set_suspension_damping_ratio(j WheelJoint, v f32): r_set_suspension_damping_ratio_WheelJoint(j, v); i, x := hj(j, "set_suspension_damping_ratio"); if i >= 0 { h := &phx::jsim(WS[i], x).wh; h.sdr = v }
+suspension_damping_ratio(j WheelJoint) f32: jf(j.joint, phx::J_WHEEL, "suspension_damping_ratio") { s => s.wh.sdr }
+enable_suspension_limit(j WheelJoint, f bool): r_enable_suspension_limit_WheelJoint(j, f); i, x := hj(j, "enable_suspension_limit"); if i >= 0 { h := &phx::jsim(WS[i], x).wh; if f != h.slimit { h.lsi = 0.0; h.usi = 0.0 } h.slimit = f }
+suspension_limit_enabled(j WheelJoint) bool: jb(j.joint, phx::J_WHEEL, "suspension_limit_enabled") { s => s.wh.slimit }
+lower_suspension_limit(j WheelJoint) f32: jf(j.joint, phx::J_WHEEL, "lower_suspension_limit") { s => s.wh.lsl }
+upper_suspension_limit(j WheelJoint) f32: jf(j.joint, phx::J_WHEEL, "upper_suspension_limit") { s => s.wh.usl }
+set_suspension_limits(j WheelJoint, lo f32, hi f32): r_set_suspension_limits_WheelJoint(j, lo, hi); i, x := hj(j, "set_suspension_limits"); if i >= 0 { h := &phx::jsim(WS[i], x).wh; if lo != h.lsl || hi != h.usl { h.lsl = lo; h.usl = hi; h.lsi = 0.0; h.usi = 0.0 } }
+enable_spin_motor(j WheelJoint, f bool): r_enable_spin_motor_WheelJoint(j, f); i, x := hj(j, "enable_spin_motor"); if i >= 0 { h := &phx::jsim(WS[i], x).wh; if f != h.spin { h.spi = 0.0 } h.spin = f }
+spin_motor_enabled(j WheelJoint) bool: jb(j.joint, phx::J_WHEEL, "spin_motor_enabled") { s => s.wh.spin }
+set_spin_motor_speed(j WheelJoint, v f32): r_set_spin_motor_speed_WheelJoint(j, v); i, x := hj(j, "set_spin_motor_speed"); if i >= 0 { h := &phx::jsim(WS[i], x).wh; h.sps = v }
+spin_motor_speed(j WheelJoint) f32: jf(j.joint, phx::J_WHEEL, "spin_motor_speed") { s => s.wh.sps }
+set_max_spin_torque(j WheelJoint, v f32): r_set_max_spin_torque_WheelJoint(j, v); i, x := hj(j, "set_max_spin_torque"); if i >= 0 { h := &phx::jsim(WS[i], x).wh; h.mst = v }
+max_spin_torque(j WheelJoint) f32: jf(j.joint, phx::J_WHEEL, "max_spin_torque") { s => s.wh.mst }
+spin_speed(j WheelJoint) f32: i, x := hj(j, "spin_speed"); if i >= 0 { phx::wheel_spin_speed(WS[i], x) } else { 0.0 }
+spin_torque(j WheelJoint) f32: i, x := hj(j, "spin_torque"); if i >= 0 { WS[i].inv_h * phx::jsim(WS[i], x).wh.spi } else { 0.0 }
+enable_steering(j WheelJoint, f bool): r_enable_steering_WheelJoint(j, f); i, x := hj(j, "enable_steering"); if i >= 0 { h := &phx::jsim(WS[i], x).wh; if f != h.steer { h.ai = float2{0.0, 0.0} } h.steer = f }
+steering_enabled(j WheelJoint) bool: jb(j.joint, phx::J_WHEEL, "steering_enabled") { s => s.wh.steer }
+set_steering_hertz(j WheelJoint, v f32): r_set_steering_hertz_WheelJoint(j, v); i, x := hj(j, "set_steering_hertz"); if i >= 0 { h := &phx::jsim(WS[i], x).wh; h.sthz = v }
+steering_hertz(j WheelJoint) f32: jf(j.joint, phx::J_WHEEL, "steering_hertz") { s => s.wh.sthz }
+set_steering_damping_ratio(j WheelJoint, v f32): r_set_steering_damping_ratio_WheelJoint(j, v); i, x := hj(j, "set_steering_damping_ratio"); if i >= 0 { h := &phx::jsim(WS[i], x).wh; h.stdr = v }
+steering_damping_ratio(j WheelJoint) f32: jf(j.joint, phx::J_WHEEL, "steering_damping_ratio") { s => s.wh.stdr }
+set_max_steering_torque(j WheelJoint, v f32): r_set_max_steering_torque_WheelJoint(j, v); i, x := hj(j, "set_max_steering_torque"); if i >= 0 { h := &phx::jsim(WS[i], x).wh; h.mstt = v }
+max_steering_torque(j WheelJoint) f32: jf(j.joint, phx::J_WHEEL, "max_steering_torque") { s => s.wh.mstt }
+enable_steering_limit(j WheelJoint, f bool): r_enable_steering_limit_WheelJoint(j, f); i, x := hj(j, "enable_steering_limit"); if i >= 0 { h := &phx::jsim(WS[i], x).wh; if f != h.stlimit { h.lsti = 0.0; h.usti = 0.0 } h.stlimit = f }
+steering_limit_enabled(j WheelJoint) bool: jb(j.joint, phx::J_WHEEL, "steering_limit_enabled") { s => s.wh.stlimit }
+lower_steering_limit(j WheelJoint) f32: jf(j.joint, phx::J_WHEEL, "lower_steering_limit") { s => s.wh.lstl }
+upper_steering_limit(j WheelJoint) f32: jf(j.joint, phx::J_WHEEL, "upper_steering_limit") { s => s.wh.ustl }
+set_steering_limits(j WheelJoint, lo f32, hi f32): r_set_steering_limits_WheelJoint(j, lo, hi); i, x := hj(j, "set_steering_limits"); if i >= 0 { h := &phx::jsim(WS[i], x).wh; h.lstl = lo; h.ustl = hi }
+set_target_steering_angle(j WheelJoint, v f32): r_set_target_steering_angle_WheelJoint(j, v); i, x := hj(j, "set_target_steering_angle"); if i >= 0 { h := &phx::jsim(WS[i], x).wh; h.tsa = v }
+target_steering_angle(j WheelJoint) f32: jf(j.joint, phx::J_WHEEL, "target_steering_angle") { s => s.wh.tsa }
+steering_angle(j WheelJoint) f32: i, x := hj(j, "steering_angle"); if i >= 0 { phx::wheel_steer_angle(WS[i], x) } else { 0.0 }
+steering_torque(j WheelJoint) f32: i, x := hj(j, "steering_torque"); if i >= 0 { WS[i].inv_h * phx::jsim(WS[i], x).wh.sti } else { 0.0 }
+put(x AABB): put(x.lower); put(x.upper)
+g_AABB(r RRd&) AABB: a0 := g_float3(r); a1 := g_float3(r); AABB{lower: a0, upper: a1}
+put(x BodyDef): put(x.body_type); put(x.position); put(x.rotation); put(x.linear_velocity); put(x.angular_velocity); put(x.linear_damping); put(x.angular_damping); put(x.gravity_scale); put(x.sleep_threshold); put(x.safety_factor); put(x.motion_locks); put(x.enable_sleep); put(x.is_awake); put(x.is_bullet); put(x.is_enabled); put(x.allow_fast_rotation); put(x.enable_contact_recycling); put(x.user_data)
+g_BodyDef(r RRd&) BodyDef: a0 := g_i32(r); a1 := g_float3(r); a2 := g_Quat(r); a3 := g_float3(r); a4 := g_float3(r); a5 := g_f32(r); a6 := g_f32(r); a7 := g_f32(r); a8 := g_f32(r); a9 := g_f32(r); a10 := g_MotionLocks(r); a11 := g_bool(r); a12 := g_bool(r); a13 := g_bool(r); a14 := g_bool(r); a15 := g_bool(r); a16 := g_bool(r); a17 := g_uint(r); BodyDef{body_type: a0, position: a1, rotation: a2, linear_velocity: a3, angular_velocity: a4, linear_damping: a5, angular_damping: a6, gravity_scale: a7, sleep_threshold: a8, safety_factor: a9, motion_locks: a10, enable_sleep: a11, is_awake: a12, is_bullet: a13, is_enabled: a14, allow_fast_rotation: a15, enable_contact_recycling: a16, user_data: a17}
+put(x Capacity): put(x.static_shapes); put(x.dynamic_shapes); put(x.static_bodies); put(x.dynamic_bodies); put(x.contacts)
+g_Capacity(r RRd&) Capacity: a0 := g_i32(r); a1 := g_i32(r); a2 := g_i32(r); a3 := g_i32(r); a4 := g_i32(r); Capacity{static_shapes: a0, dynamic_shapes: a1, static_bodies: a2, dynamic_bodies: a3, contacts: a4}
+put(x Capsule): put(x.center1); put(x.center2); put(x.radius)
+g_Capsule(r RRd&) Capsule: a0 := g_float3(r); a1 := g_float3(r); a2 := g_f32(r); Capsule{center1: a0, center2: a1, radius: a2}
+put(x CompoundCapsule): put(x.capsule); put(x.material)
+g_CompoundCapsule(r RRd&) CompoundCapsule: a0 := g_Capsule(r); a1 := g_SurfaceMaterial(r); CompoundCapsule{capsule: a0, material: a1}
+put(x CompoundHull): put(x.hull); put(x.transform); put(x.material)
+g_CompoundHull(r RRd&) CompoundHull: a0 := g_Hull(r); a1 := g_Transform(r); a2 := g_SurfaceMaterial(r); CompoundHull{hull: a0, transform: a1, material: a2}
+put(x CompoundMesh): put(x.mesh); put(x.transform); put(x.scale); put(x.material)
+g_CompoundMesh(r RRd&) CompoundMesh: a0 := g_Mesh(r); a1 := g_Transform(r); a2 := g_float3(r); a3 := g_SurfaceMaterial(r); CompoundMesh{mesh: a0, transform: a1, scale: a2, material: a3}
+put(x CompoundSphere): put(x.sphere); put(x.material)
+g_CompoundSphere(r RRd&) CompoundSphere: a0 := g_Sphere(r); a1 := g_SurfaceMaterial(r); CompoundSphere{sphere: a0, material: a1}
+put(x DistanceJoint): put(x.joint)
+g_DistanceJoint(r RRd&) DistanceJoint: a0 := g_Joint(r); DistanceJoint{joint: a0}
+put(x DistanceJointDef): put(x.base); put(x.length); put(x.enable_spring); put(x.lower_spring_force); put(x.upper_spring_force); put(x.hertz); put(x.damping_ratio); put(x.enable_limit); put(x.min_length); put(x.max_length); put(x.enable_motor); put(x.max_motor_force); put(x.motor_speed)
+g_DistanceJointDef(r RRd&) DistanceJointDef: a0 := g_JointDef(r); a1 := g_f32(r); a2 := g_bool(r); a3 := g_f32(r); a4 := g_f32(r); a5 := g_f32(r); a6 := g_f32(r); a7 := g_bool(r); a8 := g_f32(r); a9 := g_f32(r); a10 := g_bool(r); a11 := g_f32(r); a12 := g_f32(r); DistanceJointDef{base: a0, length: a1, enable_spring: a2, lower_spring_force: a3, upper_spring_force: a4, hertz: a5, damping_ratio: a6, enable_limit: a7, min_length: a8, max_length: a9, enable_motor: a10, max_motor_force: a11, motor_speed: a12}
+put(x ExplosionDef): put(x.position); put(x.radius); put(x.falloff); put(x.impulse_per_area); put(x.mask_bits)
+g_ExplosionDef(r RRd&) ExplosionDef: a0 := g_float3(r); a1 := g_f32(r); a2 := g_f32(r); a3 := g_f32(r); a4 := g_uint(r); ExplosionDef{position: a0, radius: a1, falloff: a2, impulse_per_area: a3, mask_bits: a4}
+put(x Filter): put(x.category_bits); put(x.mask_bits); put(x.group_index)
+g_Filter(r RRd&) Filter: a0 := g_uint(r); a1 := g_uint(r); a2 := g_i32(r); Filter{category_bits: a0, mask_bits: a1, group_index: a2}
+put(x FilterJointDef): put(x.base)
+g_FilterJointDef(r RRd&) FilterJointDef: a0 := g_JointDef(r); FilterJointDef{base: a0}
+put(x HeightFieldDef): put(x.scale); put(x.count_x); put(x.count_z); put(x.min_height); put(x.max_height); put(x.clockwise)
+g_HeightFieldDef(r RRd&) HeightFieldDef: a0 := g_float3(r); a1 := g_i32(r); a2 := g_i32(r); a3 := g_f32(r); a4 := g_f32(r); a5 := g_bool(r); HeightFieldDef{scale: a0, count_x: a1, count_z: a2, min_height: a3, max_height: a4, clockwise: a5}
+put(x JointDef): put(x.body_a); put(x.body_b); put(x.frame_a); put(x.frame_b); put(x.collide_connected); put(x.force_threshold); put(x.torque_threshold); put(x.constraint_hertz); put(x.constraint_damping_ratio); put(x.draw_scale); put(x.user_data)
+g_JointDef(r RRd&) JointDef: a0 := g_Body(r); a1 := g_Body(r); a2 := g_Transform(r); a3 := g_Transform(r); a4 := g_bool(r); a5 := g_f32(r); a6 := g_f32(r); a7 := g_f32(r); a8 := g_f32(r); a9 := g_f32(r); a10 := g_uint(r); JointDef{body_a: a0, body_b: a1, frame_a: a2, frame_b: a3, collide_connected: a4, force_threshold: a5, torque_threshold: a6, constraint_hertz: a7, constraint_damping_ratio: a8, draw_scale: a9, user_data: a10}
+put(x MassData): put(x.mass); put(x.center); put(x.inertia)
+g_MassData(r RRd&) MassData: a0 := g_f32(r); a1 := g_float3(r); a2 := g_Mat3(r); MassData{mass: a0, center: a1, inertia: a2}
+put(x Mat3): put(x.cx); put(x.cy); put(x.cz)
+g_Mat3(r RRd&) Mat3: a0 := g_float3(r); a1 := g_float3(r); a2 := g_float3(r); Mat3{cx: a0, cy: a1, cz: a2}
+put(x MeshDef): put(x.weld_tolerance); put(x.weld_vertices); put(x.use_median_split); put(x.identify_edges); put(x.clockwise)
+g_MeshDef(r RRd&) MeshDef: a0 := g_f32(r); a1 := g_bool(r); a2 := g_bool(r); a3 := g_bool(r); a4 := g_bool(r); MeshDef{weld_tolerance: a0, weld_vertices: a1, use_median_split: a2, identify_edges: a3, clockwise: a4}
+put(x MotionLocks): put(x.linear_x); put(x.linear_y); put(x.linear_z); put(x.angular_x); put(x.angular_y); put(x.angular_z)
+g_MotionLocks(r RRd&) MotionLocks: a0 := g_bool(r); a1 := g_bool(r); a2 := g_bool(r); a3 := g_bool(r); a4 := g_bool(r); a5 := g_bool(r); MotionLocks{linear_x: a0, linear_y: a1, linear_z: a2, angular_x: a3, angular_y: a4, angular_z: a5}
+put(x MotorJoint): put(x.joint)
+g_MotorJoint(r RRd&) MotorJoint: a0 := g_Joint(r); MotorJoint{joint: a0}
+put(x MotorJointDef): put(x.base); put(x.linear_velocity); put(x.max_velocity_force); put(x.angular_velocity); put(x.max_velocity_torque); put(x.linear_hertz); put(x.linear_damping_ratio); put(x.max_spring_force); put(x.angular_hertz); put(x.angular_damping_ratio); put(x.max_spring_torque)
+g_MotorJointDef(r RRd&) MotorJointDef: a0 := g_JointDef(r); a1 := g_float3(r); a2 := g_f32(r); a3 := g_float3(r); a4 := g_f32(r); a5 := g_f32(r); a6 := g_f32(r); a7 := g_f32(r); a8 := g_f32(r); a9 := g_f32(r); a10 := g_f32(r); MotorJointDef{base: a0, linear_velocity: a1, max_velocity_force: a2, angular_velocity: a3, max_velocity_torque: a4, linear_hertz: a5, linear_damping_ratio: a6, max_spring_force: a7, angular_hertz: a8, angular_damping_ratio: a9, max_spring_torque: a10}
+put(x ParallelJoint): put(x.joint)
+g_ParallelJoint(r RRd&) ParallelJoint: a0 := g_Joint(r); ParallelJoint{joint: a0}
+put(x ParallelJointDef): put(x.base); put(x.hertz); put(x.damping_ratio); put(x.max_torque)
+g_ParallelJointDef(r RRd&) ParallelJointDef: a0 := g_JointDef(r); a1 := g_f32(r); a2 := g_f32(r); a3 := g_f32(r); ParallelJointDef{base: a0, hertz: a1, damping_ratio: a2, max_torque: a3}
+put(x PrismaticJoint): put(x.joint)
+g_PrismaticJoint(r RRd&) PrismaticJoint: a0 := g_Joint(r); PrismaticJoint{joint: a0}
+put(x PrismaticJointDef): put(x.base); put(x.enable_spring); put(x.hertz); put(x.damping_ratio); put(x.target_translation); put(x.enable_limit); put(x.lower_translation); put(x.upper_translation); put(x.enable_motor); put(x.max_motor_force); put(x.motor_speed)
+g_PrismaticJointDef(r RRd&) PrismaticJointDef: a0 := g_JointDef(r); a1 := g_bool(r); a2 := g_f32(r); a3 := g_f32(r); a4 := g_f32(r); a5 := g_bool(r); a6 := g_f32(r); a7 := g_f32(r); a8 := g_bool(r); a9 := g_f32(r); a10 := g_f32(r); PrismaticJointDef{base: a0, enable_spring: a1, hertz: a2, damping_ratio: a3, target_translation: a4, enable_limit: a5, lower_translation: a6, upper_translation: a7, enable_motor: a8, max_motor_force: a9, motor_speed: a10}
+put(x RevoluteJoint): put(x.joint)
+g_RevoluteJoint(r RRd&) RevoluteJoint: a0 := g_Joint(r); RevoluteJoint{joint: a0}
+put(x RevoluteJointDef): put(x.base); put(x.target_angle); put(x.enable_spring); put(x.hertz); put(x.damping_ratio); put(x.enable_limit); put(x.lower_angle); put(x.upper_angle); put(x.enable_motor); put(x.max_motor_torque); put(x.motor_speed)
+g_RevoluteJointDef(r RRd&) RevoluteJointDef: a0 := g_JointDef(r); a1 := g_f32(r); a2 := g_bool(r); a3 := g_f32(r); a4 := g_f32(r); a5 := g_bool(r); a6 := g_f32(r); a7 := g_f32(r); a8 := g_bool(r); a9 := g_f32(r); a10 := g_f32(r); RevoluteJointDef{base: a0, target_angle: a1, enable_spring: a2, hertz: a3, damping_ratio: a4, enable_limit: a5, lower_angle: a6, upper_angle: a7, enable_motor: a8, max_motor_torque: a9, motor_speed: a10}
+put(x ShapeDef): put(x.material); put(x.density); put(x.filter); put(x.is_sensor); put(x.enable_sensor_events); put(x.enable_contact_events); put(x.enable_hit_events); put(x.invoke_contact_creation); put(x.update_body_mass); put(x.enable_speculative_contact); put(x.explosion_scale); put(x.user_data)
+g_ShapeDef(r RRd&) ShapeDef: a0 := g_SurfaceMaterial(r); a1 := g_f32(r); a2 := g_Filter(r); a3 := g_bool(r); a4 := g_bool(r); a5 := g_bool(r); a6 := g_bool(r); a7 := g_bool(r); a8 := g_bool(r); a9 := g_bool(r); a10 := g_f32(r); a11 := g_uint(r); ShapeDef{material: a0, density: a1, filter: a2, is_sensor: a3, enable_sensor_events: a4, enable_contact_events: a5, enable_hit_events: a6, invoke_contact_creation: a7, update_body_mass: a8, enable_speculative_contact: a9, explosion_scale: a10, user_data: a11}
+put(x Sphere): put(x.center); put(x.radius)
+g_Sphere(r RRd&) Sphere: a0 := g_float3(r); a1 := g_f32(r); Sphere{center: a0, radius: a1}
+put(x SphericalJoint): put(x.joint)
+g_SphericalJoint(r RRd&) SphericalJoint: a0 := g_Joint(r); SphericalJoint{joint: a0}
+put(x SphericalJointDef): put(x.base); put(x.enable_spring); put(x.hertz); put(x.damping_ratio); put(x.target_rotation); put(x.enable_cone_limit); put(x.cone_angle); put(x.enable_twist_limit); put(x.lower_twist_angle); put(x.upper_twist_angle); put(x.enable_motor); put(x.max_motor_torque); put(x.motor_velocity)
+g_SphericalJointDef(r RRd&) SphericalJointDef: a0 := g_JointDef(r); a1 := g_bool(r); a2 := g_f32(r); a3 := g_f32(r); a4 := g_Quat(r); a5 := g_bool(r); a6 := g_f32(r); a7 := g_bool(r); a8 := g_f32(r); a9 := g_f32(r); a10 := g_bool(r); a11 := g_f32(r); a12 := g_float3(r); SphericalJointDef{base: a0, enable_spring: a1, hertz: a2, damping_ratio: a3, target_rotation: a4, enable_cone_limit: a5, cone_angle: a6, enable_twist_limit: a7, lower_twist_angle: a8, upper_twist_angle: a9, enable_motor: a10, max_motor_torque: a11, motor_velocity: a12}
+put(x SurfaceMaterial): put(x.friction); put(x.restitution); put(x.rolling_resistance); put(x.tangent_velocity); put(x.user_material_id); put(x.custom_color)
+g_SurfaceMaterial(r RRd&) SurfaceMaterial: a0 := g_f32(r); a1 := g_f32(r); a2 := g_f32(r); a3 := g_float3(r); a4 := g_uint(r); a5 := g_u32(r); SurfaceMaterial{friction: a0, restitution: a1, rolling_resistance: a2, tangent_velocity: a3, user_material_id: a4, custom_color: a5}
+put(x WeldJoint): put(x.joint)
+g_WeldJoint(r RRd&) WeldJoint: a0 := g_Joint(r); WeldJoint{joint: a0}
+put(x WeldJointDef): put(x.base); put(x.linear_hertz); put(x.angular_hertz); put(x.linear_damping_ratio); put(x.angular_damping_ratio)
+g_WeldJointDef(r RRd&) WeldJointDef: a0 := g_JointDef(r); a1 := g_f32(r); a2 := g_f32(r); a3 := g_f32(r); a4 := g_f32(r); WeldJointDef{base: a0, linear_hertz: a1, angular_hertz: a2, linear_damping_ratio: a3, angular_damping_ratio: a4}
+put(x WheelJoint): put(x.joint)
+g_WheelJoint(r RRd&) WheelJoint: a0 := g_Joint(r); WheelJoint{joint: a0}
+put(x WheelJointDef): put(x.base); put(x.enable_suspension_spring); put(x.suspension_hertz); put(x.suspension_damping_ratio); put(x.enable_suspension_limit); put(x.lower_suspension_limit); put(x.upper_suspension_limit); put(x.enable_spin_motor); put(x.max_spin_torque); put(x.spin_speed); put(x.enable_steering); put(x.steering_hertz); put(x.steering_damping_ratio); put(x.target_steering_angle); put(x.max_steering_torque); put(x.enable_steering_limit); put(x.lower_steering_limit); put(x.upper_steering_limit)
+g_WheelJointDef(r RRd&) WheelJointDef: a0 := g_JointDef(r); a1 := g_bool(r); a2 := g_f32(r); a3 := g_f32(r); a4 := g_bool(r); a5 := g_f32(r); a6 := g_f32(r); a7 := g_bool(r); a8 := g_f32(r); a9 := g_f32(r); a10 := g_bool(r); a11 := g_f32(r); a12 := g_f32(r); a13 := g_f32(r); a14 := g_f32(r); a15 := g_bool(r); a16 := g_f32(r); a17 := g_f32(r); WheelJointDef{base: a0, enable_suspension_spring: a1, suspension_hertz: a2, suspension_damping_ratio: a3, enable_suspension_limit: a4, lower_suspension_limit: a5, upper_suspension_limit: a6, enable_spin_motor: a7, max_spin_torque: a8, spin_speed: a9, enable_steering: a10, steering_hertz: a11, steering_damping_ratio: a12, target_steering_angle: a13, max_steering_torque: a14, enable_steering_limit: a15, lower_steering_limit: a16, upper_steering_limit: a17}
+put(x WorldDef): put(x.gravity); put(x.restitution_threshold); put(x.hit_event_threshold); put(x.contact_hertz); put(x.contact_damping_ratio); put(x.contact_speed); put(x.maximum_linear_speed); put(x.enable_sleep); put(x.enable_continuous); put(x.workers); put(x.friction_mixing); put(x.restitution_mixing); put(x.user_data); put(x.capacity)
+g_WorldDef(r RRd&) WorldDef: a0 := g_float3(r); a1 := g_f32(r); a2 := g_f32(r); a3 := g_f32(r); a4 := g_f32(r); a5 := g_f32(r); a6 := g_f32(r); a7 := g_bool(r); a8 := g_bool(r); a9 := g_i32(r); a10 := g_i32(r); a11 := g_i32(r); a12 := g_uint(r); a13 := g_Capacity(r); WorldDef{gravity: a0, restitution_threshold: a1, hit_event_threshold: a2, contact_hertz: a3, contact_damping_ratio: a4, contact_speed: a5, maximum_linear_speed: a6, enable_sleep: a7, enable_continuous: a8, workers: a9, friction_mixing: a10, restitution_mixing: a11, user_data: a12, capacity: a13}
+put(x const CompoundCapsule[:]): put(x.len); for e x { put(e) }
+g_arr_CompoundCapsule(r RRd&) CompoundCapsule[>..]: n := g_int(r); o CompoundCapsule[>..] ~= []; for q n { o.push(g_CompoundCapsule(r)) } o
+put(x const CompoundHull[:]): put(x.len); for e x { put(e) }
+g_arr_CompoundHull(r RRd&) CompoundHull[>..]: n := g_int(r); o CompoundHull[>..] ~= []; for q n { o.push(g_CompoundHull(r)) } o
+put(x const CompoundMesh[:]): put(x.len); for e x { put(e) }
+g_arr_CompoundMesh(r RRd&) CompoundMesh[>..]: n := g_int(r); o CompoundMesh[>..] ~= []; for q n { o.push(g_CompoundMesh(r)) } o
+put(x const CompoundSphere[:]): put(x.len); for e x { put(e) }
+g_arr_CompoundSphere(r RRd&) CompoundSphere[>..]: n := g_int(r); o CompoundSphere[>..] ~= []; for q n { o.push(g_CompoundSphere(r)) } o
+put(x const SurfaceMaterial[:]): put(x.len); for e x { put(e) }
+g_arr_SurfaceMaterial(r RRd&) SurfaceMaterial[>..]: n := g_int(r); o SurfaceMaterial[>..] ~= []; for q n { o.push(g_SurfaceMaterial(r)) } o
+put(x const byte[:]): put(x.len); for e x { put(e) }
+g_arr_byte(r RRd&) byte[>..]: n := g_int(r); o byte[>..] ~= []; for q n { o.push(g_byte(r)) } o
+put(x const f32[:]): put(x.len); for e x { put(e) }
+g_arr_f32(r RRd&) f32[>..]: n := g_int(r); o f32[>..] ~= []; for q n { o.push(g_f32(r)) } o
+put(x const float3[:]): put(x.len); for e x { put(e) }
+g_arr_float3(r RRd&) float3[>..]: n := g_int(r); o float3[>..] ~= []; for q n { o.push(g_float3(r)) } o
+put(x const i32[:]): put(x.len); for e x { put(e) }
+g_arr_i32(r RRd&) i32[>..]: n := g_int(r); o i32[>..] ~= []; for q n { o.push(g_i32(r)) } o
+r_enable_sleeping_World(w World, f bool): if RON > 0 && rbeg(wix(w.id), 1) { put(f); rend() }
+r_enable_continuous_World(w World, f bool): if RON > 0 && rbeg(wix(w.id), 2) { put(f); rend() }
+r_set_restitution_threshold_World(w World, v f32): if RON > 0 && rbeg(wix(w.id), 3) { put(v); rend() }
+r_set_hit_event_threshold_World(w World, v f32): if RON > 0 && rbeg(wix(w.id), 4) { put(v); rend() }
+r_set_gravity_World(w World, g float3): if RON > 0 && rbeg(wix(w.id), 5) { put(g); rend() }
+r_explode_World(w World, d ExplosionDef): if RON > 0 && rbeg(wix(w.id), 6) { put(d); rend() }
+r_set_contact_tuning_World(w World, hz f32, dr f32, ps f32): if RON > 0 && rbeg(wix(w.id), 7) { put(hz); put(dr); put(ps); rend() }
+r_set_contact_recycle_distance_World(w World, d f32): if RON > 0 && rbeg(wix(w.id), 8) { put(d); rend() }
+r_set_maximum_linear_speed_World(w World, s f32): if RON > 0 && rbeg(wix(w.id), 9) { put(s); rend() }
+r_enable_warm_starting_World(w World, f bool): if RON > 0 && rbeg(wix(w.id), 10) { put(f); rend() }
+r_set_friction_mixing_World(w World, r int): if RON > 0 && rbeg(wix(w.id), 11) { put(r); rend() }
+r_set_restitution_mixing_World(w World, r int): if RON > 0 && rbeg(wix(w.id), 12) { put(r); rend() }
+r_create_body_World(w World, d BodyDef): if RON > 0 && rbeg(wix(w.id), 13) { put(d); rend() }
+r_destroy_Body(b Body): if RON > 0 && rbeg(hix(b.id), 14) { put(b); rend() }
+r_set_type_Body(b Body, t int): if RON > 0 && rbeg(hix(b.id), 15) { put(b); put(t); rend() }
+r_set_transform_Body(b Body, p float3, q Quat): if RON > 0 && rbeg(hix(b.id), 16) { put(b); put(p); put(q); rend() }
+r_set_linear_velocity_Body(b Body, v float3): if RON > 0 && rbeg(hix(b.id), 17) { put(b); put(v); rend() }
+r_set_angular_velocity_Body(b Body, v float3): if RON > 0 && rbeg(hix(b.id), 18) { put(b); put(v); rend() }
+r_set_target_transform_Body(b Body, t Transform, ts f32, wake bool): if RON > 0 && rbeg(hix(b.id), 19) { put(b); put(t); put(ts); put(wake); rend() }
+r_apply_force_Body(b Body, f float3, p float3, wake bool): if RON > 0 && rbeg(hix(b.id), 20) { put(b); put(f); put(p); put(wake); rend() }
+r_apply_force_to_center_Body(b Body, f float3, wake bool): if RON > 0 && rbeg(hix(b.id), 21) { put(b); put(f); put(wake); rend() }
+r_apply_torque_Body(b Body, t float3, wake bool): if RON > 0 && rbeg(hix(b.id), 22) { put(b); put(t); put(wake); rend() }
+r_apply_linear_impulse_Body(b Body, m float3, p float3, wake bool): if RON > 0 && rbeg(hix(b.id), 23) { put(b); put(m); put(p); put(wake); rend() }
+r_apply_linear_impulse_to_center_Body(b Body, m float3, wake bool): if RON > 0 && rbeg(hix(b.id), 24) { put(b); put(m); put(wake); rend() }
+r_apply_angular_impulse_Body(b Body, m float3, wake bool): if RON > 0 && rbeg(hix(b.id), 25) { put(b); put(m); put(wake); rend() }
+r_set_mass_data_Body(b Body, d MassData): if RON > 0 && rbeg(hix(b.id), 26) { put(b); put(d); rend() }
+r_apply_mass_from_shapes_Body(b Body): if RON > 0 && rbeg(hix(b.id), 27) { put(b); rend() }
+r_set_linear_damping_Body(b Body, d f32): if RON > 0 && rbeg(hix(b.id), 28) { put(b); put(d); rend() }
+r_set_angular_damping_Body(b Body, d f32): if RON > 0 && rbeg(hix(b.id), 29) { put(b); put(d); rend() }
+r_set_gravity_scale_Body(b Body, s f32): if RON > 0 && rbeg(hix(b.id), 30) { put(b); put(s); rend() }
+r_set_awake_Body(b Body, a bool): if RON > 0 && rbeg(hix(b.id), 31) { put(b); put(a); rend() }
+r_enable_sleep_Body(b Body, f bool): if RON > 0 && rbeg(hix(b.id), 32) { put(b); put(f); rend() }
+r_set_sleep_threshold_Body(b Body, t f32): if RON > 0 && rbeg(hix(b.id), 33) { put(b); put(t); rend() }
+r_set_safety_factor_Body(b Body, f f32): if RON > 0 && rbeg(hix(b.id), 34) { put(b); put(f); rend() }
+r_disable_Body(b Body): if RON > 0 && rbeg(hix(b.id), 35) { put(b); rend() }
+r_set_motion_locks_Body(b Body, m MotionLocks): if RON > 0 && rbeg(hix(b.id), 36) { put(b); put(m); rend() }
+r_set_bullet_Body(b Body, f bool): if RON > 0 && rbeg(hix(b.id), 37) { put(b); put(f); rend() }
+r_enable_contact_recycling_Body(b Body, f bool): if RON > 0 && rbeg(hix(b.id), 38) { put(b); put(f); rend() }
+r_enable_hit_events_Body(b Body, f bool): if RON > 0 && rbeg(hix(b.id), 39) { put(b); put(f); rend() }
+r_create_sphere_shape_Body(b Body, d ShapeDef, s Sphere): if RON > 0 && rbeg(hix(b.id), 40) { put(b); put(d); put(s); rend() }
+r_create_capsule_shape_Body(b Body, d ShapeDef, c Capsule): if RON > 0 && rbeg(hix(b.id), 41) { put(b); put(d); put(c); rend() }
+r_create_box_shape_Body(b Body, d ShapeDef, h float3, f Transform): if RON > 0 && rbeg(hix(b.id), 42) { put(b); put(d); put(h); put(f); rend() }
+r_create_hull_shape_Body(b Body, d ShapeDef, h Hull): if RON > 0 && rbeg(hix(b.id), 43) { put(b); put(d); put(h); rend() }
+r_create_transformed_hull_shape_Body(b Body, d ShapeDef, h Hull, t Transform, sc float3): if RON > 0 && rbeg(hix(b.id), 44) { put(b); put(d); put(h); put(t); put(sc); rend() }
+r_create_mesh_shape_Body(b Body, d ShapeDef, m Mesh, sc float3, ms const SurfaceMaterial[:]): if RON > 0 && rbeg(hix(b.id), 45) { put(b); put(d); put(m); put(sc); put(ms); rend() }
+r_create_height_field_shape_Body(b Body, d ShapeDef, h HeightField, ms const SurfaceMaterial[:]): if RON > 0 && rbeg(hix(b.id), 46) { put(b); put(d); put(h); put(ms); rend() }
+r_create_compound_shape_Body(b Body, d ShapeDef, c Compound): if RON > 0 && rbeg(hix(b.id), 47) { put(b); put(d); put(c); rend() }
+r_destroy_Shape(s Shape, upd bool): if RON > 0 && rbeg(hix(s.id), 48) { put(s); put(upd); rend() }
+r_set_density_Shape(s Shape, d f32, upd bool): if RON > 0 && rbeg(hix(s.id), 49) { put(s); put(d); put(upd); rend() }
+r_set_friction_Shape(s Shape, f f32): if RON > 0 && rbeg(hix(s.id), 50) { put(s); put(f); rend() }
+r_set_restitution_Shape(s Shape, r f32): if RON > 0 && rbeg(hix(s.id), 51) { put(s); put(r); rend() }
+r_set_surface_material_Shape(s Shape, m SurfaceMaterial): if RON > 0 && rbeg(hix(s.id), 52) { put(s); put(m); rend() }
+r_set_mesh_material_Shape(s Shape, m SurfaceMaterial, k int): if RON > 0 && rbeg(hix(s.id), 53) { put(s); put(m); put(k); rend() }
+r_set_shape_filter_Shape(s Shape, f Filter, inv bool): if RON > 0 && rbeg(hix(s.id), 54) { put(s); put(f); put(inv); rend() }
+r_enable_sensor_events_Shape(s Shape, f bool): if RON > 0 && rbeg(hix(s.id), 55) { put(s); put(f); rend() }
+r_enable_contact_events_Shape(s Shape, f bool): if RON > 0 && rbeg(hix(s.id), 56) { put(s); put(f); rend() }
+r_enable_hit_events_Shape(s Shape, f bool): if RON > 0 && rbeg(hix(s.id), 57) { put(s); put(f); rend() }
+r_set_sphere_Shape(s Shape, g Sphere): if RON > 0 && rbeg(hix(s.id), 58) { put(s); put(g); rend() }
+r_set_capsule_Shape(s Shape, g Capsule): if RON > 0 && rbeg(hix(s.id), 59) { put(s); put(g); rend() }
+r_set_hull_Shape(s Shape, h Hull): if RON > 0 && rbeg(hix(s.id), 60) { put(s); put(h); rend() }
+r_set_mesh_Shape(s Shape, m Mesh, sc float3): if RON > 0 && rbeg(hix(s.id), 61) { put(s); put(m); put(sc); rend() }
+r_apply_wind_Shape(s Shape, wind float3, drag f32, lift f32, ms f32, wake bool): if RON > 0 && rbeg(hix(s.id), 62) { put(s); put(wind); put(drag); put(lift); put(ms); put(wake); rend() }
+r_create_hull_arr_float3(p const float3[:], mv int): CB.clear(); p8(63); put(p); put(mv); GB.clear(); GB.append(CB[..])
+r_create_box_hull_float3(h float3, f Transform): CB.clear(); p8(64); put(h); put(f); GB.clear(); GB.append(CB[..])
+r_create_cylinder_hull_f32(h f32, r f32, yo f32, n int): CB.clear(); p8(65); put(h); put(r); put(yo); put(n); GB.clear(); GB.append(CB[..])
+r_create_cone_hull_f32(h f32, r1 f32, r2 f32, n int): CB.clear(); p8(66); put(h); put(r1); put(r2); put(n); GB.clear(); GB.append(CB[..])
+r_create_rock_hull_f32(r f32): CB.clear(); p8(67); put(r); GB.clear(); GB.append(CB[..])
+r_transformed_Hull(h Hull, t Transform, sc float3): CB.clear(); p8(68); put(h); put(t); put(sc); GB.clear(); GB.append(CB[..])
+r_create_mesh_arr_float3(v const float3[:], ix const i32[:], mi const byte[:], d MeshDef): CB.clear(); p8(69); put(v); put(ix); put(mi); put(d); GB.clear(); GB.append(CB[..])
+r_create_grid_mesh_int(xc int, zc int, cw f32, mc int, ie bool): CB.clear(); p8(70); put(xc); put(zc); put(cw); put(mc); put(ie); GB.clear(); GB.append(CB[..])
+r_create_wave_mesh_int(xc int, zc int, cw f32, amp f32, rf f32, cf f32): CB.clear(); p8(71); put(xc); put(zc); put(cw); put(amp); put(rf); put(cf); GB.clear(); GB.append(CB[..])
+r_create_torus_mesh_int(rr int, tr int, rad f32, th f32): CB.clear(); p8(72); put(rr); put(tr); put(rad); put(th); GB.clear(); GB.append(CB[..])
+r_create_box_mesh_float3(c float3, e float3, ie bool): CB.clear(); p8(73); put(c); put(e); put(ie); GB.clear(); GB.append(CB[..])
+r_create_hollow_box_mesh_float3(c float3, e float3): CB.clear(); p8(74); put(c); put(e); GB.clear(); GB.append(CB[..])
+r_create_platform_mesh_float3(c float3, h f32, tw f32, bw f32): CB.clear(); p8(75); put(c); put(h); put(tw); put(bw); GB.clear(); GB.append(CB[..])
+r_create_height_field_arr_f32(hs const f32[:], mi const byte[:], d HeightFieldDef): CB.clear(); p8(76); put(hs); put(mi); put(d); GB.clear(); GB.append(CB[..])
+r_create_grid_height_field_int(r int, c int, sc float3, holes bool): CB.clear(); p8(77); put(r); put(c); put(sc); put(holes); GB.clear(); GB.append(CB[..])
+r_create_wave_height_field_int(r int, c int, sc float3, rf f32, cf f32, holes bool): CB.clear(); p8(78); put(r); put(c); put(sc); put(rf); put(cf); put(holes); GB.clear(); GB.append(CB[..])
+r_create_compound_arr_CompoundSphere(sp const CompoundSphere[:], ca const CompoundCapsule[:], hu const CompoundHull[:], me const CompoundMesh[:]): CB.clear(); p8(79); put(sp); put(ca); put(hu); put(me); GB.clear(); GB.append(CB[..])
+r_create_distance_joint_World(w World, d DistanceJointDef): if RON > 0 && rbeg(wix(w.id), 80) { put(d); rend() }
+r_create_filter_joint_World(w World, d FilterJointDef): if RON > 0 && rbeg(wix(w.id), 81) { put(d); rend() }
+r_create_motor_joint_World(w World, d MotorJointDef): if RON > 0 && rbeg(wix(w.id), 82) { put(d); rend() }
+r_create_parallel_joint_World(w World, d ParallelJointDef): if RON > 0 && rbeg(wix(w.id), 83) { put(d); rend() }
+r_create_prismatic_joint_World(w World, d PrismaticJointDef): if RON > 0 && rbeg(wix(w.id), 84) { put(d); rend() }
+r_create_revolute_joint_World(w World, d RevoluteJointDef): if RON > 0 && rbeg(wix(w.id), 85) { put(d); rend() }
+r_create_spherical_joint_World(w World, d SphericalJointDef): if RON > 0 && rbeg(wix(w.id), 86) { put(d); rend() }
+r_create_weld_joint_World(w World, d WeldJointDef): if RON > 0 && rbeg(wix(w.id), 87) { put(d); rend() }
+r_create_wheel_joint_World(w World, d WheelJointDef): if RON > 0 && rbeg(wix(w.id), 88) { put(d); rend() }
+r_destroy_Joint(j Joint, wake bool): if RON > 0 && rbeg(hix(j.id), 89) { put(j); put(wake); rend() }
+r_set_local_frame_a_Joint(j Joint, f Transform): if RON > 0 && rbeg(hix(j.id), 90) { put(j); put(f); rend() }
+r_set_local_frame_b_Joint(j Joint, f Transform): if RON > 0 && rbeg(hix(j.id), 91) { put(j); put(f); rend() }
+r_set_collide_connected_Joint(j Joint, f bool): if RON > 0 && rbeg(hix(j.id), 92) { put(j); put(f); rend() }
+r_wake_bodies_Joint(j Joint): if RON > 0 && rbeg(hix(j.id), 93) { put(j); rend() }
+r_set_constraint_tuning_Joint(j Joint, hz f32, dr f32): if RON > 0 && rbeg(hix(j.id), 94) { put(j); put(hz); put(dr); rend() }
+r_set_force_threshold_Joint(j Joint, v f32): if RON > 0 && rbeg(hix(j.id), 95) { put(j); put(v); rend() }
+r_set_torque_threshold_Joint(j Joint, v f32): if RON > 0 && rbeg(hix(j.id), 96) { put(j); put(v); rend() }
+r_set_rest_length_DistanceJoint(j DistanceJoint, v f32): if RON > 0 && rbeg(hix(j.joint.id), 97) { put(j); put(v); rend() }
+r_enable_spring_DistanceJoint(j DistanceJoint, f bool): if RON > 0 && rbeg(hix(j.joint.id), 98) { put(j); put(f); rend() }
+r_set_spring_force_range_DistanceJoint(j DistanceJoint, lo f32, hi f32): if RON > 0 && rbeg(hix(j.joint.id), 99) { put(j); put(lo); put(hi); rend() }
+r_set_spring_hertz_DistanceJoint(j DistanceJoint, v f32): if RON > 0 && rbeg(hix(j.joint.id), 100) { put(j); put(v); rend() }
+r_set_spring_damping_ratio_DistanceJoint(j DistanceJoint, v f32): if RON > 0 && rbeg(hix(j.joint.id), 101) { put(j); put(v); rend() }
+r_enable_limit_DistanceJoint(j DistanceJoint, f bool): if RON > 0 && rbeg(hix(j.joint.id), 102) { put(j); put(f); rend() }
+r_set_length_range_DistanceJoint(j DistanceJoint, lo f32, hi f32): if RON > 0 && rbeg(hix(j.joint.id), 103) { put(j); put(lo); put(hi); rend() }
+r_enable_motor_DistanceJoint(j DistanceJoint, f bool): if RON > 0 && rbeg(hix(j.joint.id), 104) { put(j); put(f); rend() }
+r_set_motor_speed_DistanceJoint(j DistanceJoint, v f32): if RON > 0 && rbeg(hix(j.joint.id), 105) { put(j); put(v); rend() }
+r_set_max_motor_force_DistanceJoint(j DistanceJoint, v f32): if RON > 0 && rbeg(hix(j.joint.id), 106) { put(j); put(v); rend() }
+r_set_linear_velocity_MotorJoint(j MotorJoint, v float3): if RON > 0 && rbeg(hix(j.joint.id), 107) { put(j); put(v); rend() }
+r_set_angular_velocity_MotorJoint(j MotorJoint, v float3): if RON > 0 && rbeg(hix(j.joint.id), 108) { put(j); put(v); rend() }
+r_set_max_velocity_force_MotorJoint(j MotorJoint, v f32): if RON > 0 && rbeg(hix(j.joint.id), 109) { put(j); put(v); rend() }
+r_set_max_velocity_torque_MotorJoint(j MotorJoint, v f32): if RON > 0 && rbeg(hix(j.joint.id), 110) { put(j); put(v); rend() }
+r_set_linear_hertz_MotorJoint(j MotorJoint, v f32): if RON > 0 && rbeg(hix(j.joint.id), 111) { put(j); put(v); rend() }
+r_set_linear_damping_ratio_MotorJoint(j MotorJoint, v f32): if RON > 0 && rbeg(hix(j.joint.id), 112) { put(j); put(v); rend() }
+r_set_angular_hertz_MotorJoint(j MotorJoint, v f32): if RON > 0 && rbeg(hix(j.joint.id), 113) { put(j); put(v); rend() }
+r_set_angular_damping_ratio_MotorJoint(j MotorJoint, v f32): if RON > 0 && rbeg(hix(j.joint.id), 114) { put(j); put(v); rend() }
+r_set_max_spring_force_MotorJoint(j MotorJoint, v f32): if RON > 0 && rbeg(hix(j.joint.id), 115) { put(j); put(v); rend() }
+r_set_max_spring_torque_MotorJoint(j MotorJoint, v f32): if RON > 0 && rbeg(hix(j.joint.id), 116) { put(j); put(v); rend() }
+r_set_spring_hertz_ParallelJoint(j ParallelJoint, v f32): if RON > 0 && rbeg(hix(j.joint.id), 117) { put(j); put(v); rend() }
+r_set_spring_damping_ratio_ParallelJoint(j ParallelJoint, v f32): if RON > 0 && rbeg(hix(j.joint.id), 118) { put(j); put(v); rend() }
+r_set_max_torque_ParallelJoint(j ParallelJoint, v f32): if RON > 0 && rbeg(hix(j.joint.id), 119) { put(j); put(v); rend() }
+r_enable_spring_PrismaticJoint(j PrismaticJoint, f bool): if RON > 0 && rbeg(hix(j.joint.id), 120) { put(j); put(f); rend() }
+r_set_spring_hertz_PrismaticJoint(j PrismaticJoint, v f32): if RON > 0 && rbeg(hix(j.joint.id), 121) { put(j); put(v); rend() }
+r_set_spring_damping_ratio_PrismaticJoint(j PrismaticJoint, v f32): if RON > 0 && rbeg(hix(j.joint.id), 122) { put(j); put(v); rend() }
+r_set_target_translation_PrismaticJoint(j PrismaticJoint, v f32): if RON > 0 && rbeg(hix(j.joint.id), 123) { put(j); put(v); rend() }
+r_enable_limit_PrismaticJoint(j PrismaticJoint, f bool): if RON > 0 && rbeg(hix(j.joint.id), 124) { put(j); put(f); rend() }
+r_set_limits_PrismaticJoint(j PrismaticJoint, lo f32, hi f32): if RON > 0 && rbeg(hix(j.joint.id), 125) { put(j); put(lo); put(hi); rend() }
+r_enable_motor_PrismaticJoint(j PrismaticJoint, f bool): if RON > 0 && rbeg(hix(j.joint.id), 126) { put(j); put(f); rend() }
+r_set_motor_speed_PrismaticJoint(j PrismaticJoint, v f32): if RON > 0 && rbeg(hix(j.joint.id), 127) { put(j); put(v); rend() }
+r_set_max_motor_force_PrismaticJoint(j PrismaticJoint, v f32): if RON > 0 && rbeg(hix(j.joint.id), 128) { put(j); put(v); rend() }
+r_enable_spring_RevoluteJoint(j RevoluteJoint, f bool): if RON > 0 && rbeg(hix(j.joint.id), 129) { put(j); put(f); rend() }
+r_set_spring_hertz_RevoluteJoint(j RevoluteJoint, v f32): if RON > 0 && rbeg(hix(j.joint.id), 130) { put(j); put(v); rend() }
+r_set_spring_damping_ratio_RevoluteJoint(j RevoluteJoint, v f32): if RON > 0 && rbeg(hix(j.joint.id), 131) { put(j); put(v); rend() }
+r_set_target_angle_RevoluteJoint(j RevoluteJoint, v f32): if RON > 0 && rbeg(hix(j.joint.id), 132) { put(j); put(v); rend() }
+r_enable_limit_RevoluteJoint(j RevoluteJoint, f bool): if RON > 0 && rbeg(hix(j.joint.id), 133) { put(j); put(f); rend() }
+r_set_limits_RevoluteJoint(j RevoluteJoint, lo f32, hi f32): if RON > 0 && rbeg(hix(j.joint.id), 134) { put(j); put(lo); put(hi); rend() }
+r_enable_motor_RevoluteJoint(j RevoluteJoint, f bool): if RON > 0 && rbeg(hix(j.joint.id), 135) { put(j); put(f); rend() }
+r_set_motor_speed_RevoluteJoint(j RevoluteJoint, v f32): if RON > 0 && rbeg(hix(j.joint.id), 136) { put(j); put(v); rend() }
+r_set_max_motor_torque_RevoluteJoint(j RevoluteJoint, v f32): if RON > 0 && rbeg(hix(j.joint.id), 137) { put(j); put(v); rend() }
+r_enable_cone_limit_SphericalJoint(j SphericalJoint, f bool): if RON > 0 && rbeg(hix(j.joint.id), 138) { put(j); put(f); rend() }
+r_set_cone_limit_SphericalJoint(j SphericalJoint, v f32): if RON > 0 && rbeg(hix(j.joint.id), 139) { put(j); put(v); rend() }
+r_enable_twist_limit_SphericalJoint(j SphericalJoint, f bool): if RON > 0 && rbeg(hix(j.joint.id), 140) { put(j); put(f); rend() }
+r_set_twist_limits_SphericalJoint(j SphericalJoint, lo f32, hi f32): if RON > 0 && rbeg(hix(j.joint.id), 141) { put(j); put(lo); put(hi); rend() }
+r_enable_spring_SphericalJoint(j SphericalJoint, f bool): if RON > 0 && rbeg(hix(j.joint.id), 142) { put(j); put(f); rend() }
+r_set_spring_hertz_SphericalJoint(j SphericalJoint, v f32): if RON > 0 && rbeg(hix(j.joint.id), 143) { put(j); put(v); rend() }
+r_set_spring_damping_ratio_SphericalJoint(j SphericalJoint, v f32): if RON > 0 && rbeg(hix(j.joint.id), 144) { put(j); put(v); rend() }
+r_set_target_rotation_SphericalJoint(j SphericalJoint, q Quat): if RON > 0 && rbeg(hix(j.joint.id), 145) { put(j); put(q); rend() }
+r_enable_motor_SphericalJoint(j SphericalJoint, f bool): if RON > 0 && rbeg(hix(j.joint.id), 146) { put(j); put(f); rend() }
+r_set_motor_velocity_SphericalJoint(j SphericalJoint, v float3): if RON > 0 && rbeg(hix(j.joint.id), 147) { put(j); put(v); rend() }
+r_set_max_motor_torque_SphericalJoint(j SphericalJoint, v f32): if RON > 0 && rbeg(hix(j.joint.id), 148) { put(j); put(v); rend() }
+r_set_linear_hertz_WeldJoint(j WeldJoint, v f32): if RON > 0 && rbeg(hix(j.joint.id), 149) { put(j); put(v); rend() }
+r_set_linear_damping_ratio_WeldJoint(j WeldJoint, v f32): if RON > 0 && rbeg(hix(j.joint.id), 150) { put(j); put(v); rend() }
+r_set_angular_hertz_WeldJoint(j WeldJoint, v f32): if RON > 0 && rbeg(hix(j.joint.id), 151) { put(j); put(v); rend() }
+r_set_angular_damping_ratio_WeldJoint(j WeldJoint, v f32): if RON > 0 && rbeg(hix(j.joint.id), 152) { put(j); put(v); rend() }
+r_enable_suspension_WheelJoint(j WheelJoint, f bool): if RON > 0 && rbeg(hix(j.joint.id), 153) { put(j); put(f); rend() }
+r_set_suspension_hertz_WheelJoint(j WheelJoint, v f32): if RON > 0 && rbeg(hix(j.joint.id), 154) { put(j); put(v); rend() }
+r_set_suspension_damping_ratio_WheelJoint(j WheelJoint, v f32): if RON > 0 && rbeg(hix(j.joint.id), 155) { put(j); put(v); rend() }
+r_enable_suspension_limit_WheelJoint(j WheelJoint, f bool): if RON > 0 && rbeg(hix(j.joint.id), 156) { put(j); put(f); rend() }
+r_set_suspension_limits_WheelJoint(j WheelJoint, lo f32, hi f32): if RON > 0 && rbeg(hix(j.joint.id), 157) { put(j); put(lo); put(hi); rend() }
+r_enable_spin_motor_WheelJoint(j WheelJoint, f bool): if RON > 0 && rbeg(hix(j.joint.id), 158) { put(j); put(f); rend() }
+r_set_spin_motor_speed_WheelJoint(j WheelJoint, v f32): if RON > 0 && rbeg(hix(j.joint.id), 159) { put(j); put(v); rend() }
+r_set_max_spin_torque_WheelJoint(j WheelJoint, v f32): if RON > 0 && rbeg(hix(j.joint.id), 160) { put(j); put(v); rend() }
+r_enable_steering_WheelJoint(j WheelJoint, f bool): if RON > 0 && rbeg(hix(j.joint.id), 161) { put(j); put(f); rend() }
+r_set_steering_hertz_WheelJoint(j WheelJoint, v f32): if RON > 0 && rbeg(hix(j.joint.id), 162) { put(j); put(v); rend() }
+r_set_steering_damping_ratio_WheelJoint(j WheelJoint, v f32): if RON > 0 && rbeg(hix(j.joint.id), 163) { put(j); put(v); rend() }
+r_set_max_steering_torque_WheelJoint(j WheelJoint, v f32): if RON > 0 && rbeg(hix(j.joint.id), 164) { put(j); put(v); rend() }
+r_enable_steering_limit_WheelJoint(j WheelJoint, f bool): if RON > 0 && rbeg(hix(j.joint.id), 165) { put(j); put(f); rend() }
+r_set_steering_limits_WheelJoint(j WheelJoint, lo f32, hi f32): if RON > 0 && rbeg(hix(j.joint.id), 166) { put(j); put(lo); put(hi); rend() }
+r_set_target_steering_angle_WheelJoint(j WheelJoint, v f32): if RON > 0 && rbeg(hix(j.joint.id), 167) { put(j); put(v); rend() }
+rexec(op int, r RRd&) u64:
+	if op == 1: a0 := g_World(r); a1 := g_bool(r); enable_sleeping(a0, a1); return 0
+	if op == 2: a0 := g_World(r); a1 := g_bool(r); enable_continuous(a0, a1); return 0
+	if op == 3: a0 := g_World(r); a1 := g_f32(r); set_restitution_threshold(a0, a1); return 0
+	if op == 4: a0 := g_World(r); a1 := g_f32(r); set_hit_event_threshold(a0, a1); return 0
+	if op == 5: a0 := g_World(r); a1 := g_float3(r); set_gravity(a0, a1); return 0
+	if op == 6: a0 := g_World(r); a1 := g_ExplosionDef(r); explode(a0, a1); return 0
+	if op == 7: a0 := g_World(r); a1 := g_f32(r); a2 := g_f32(r); a3 := g_f32(r); set_contact_tuning(a0, a1, a2, a3); return 0
+	if op == 8: a0 := g_World(r); a1 := g_f32(r); set_contact_recycle_distance(a0, a1); return 0
+	if op == 9: a0 := g_World(r); a1 := g_f32(r); set_maximum_linear_speed(a0, a1); return 0
+	if op == 10: a0 := g_World(r); a1 := g_bool(r); enable_warm_starting(a0, a1); return 0
+	if op == 11: a0 := g_World(r); a1 := g_int(r); set_friction_mixing(a0, a1); return 0
+	if op == 12: a0 := g_World(r); a1 := g_int(r); set_restitution_mixing(a0, a1); return 0
+	if op == 13: a0 := g_World(r); a1 := g_BodyDef(r); h := create_body(a0, a1); padd(0, h.id); return 0
+	if op == 14: a0 := g_Body(r); destroy(a0); return 0
+	if op == 15: a0 := g_Body(r); a1 := g_int(r); set_type(a0, a1); return 0
+	if op == 16: a0 := g_Body(r); a1 := g_float3(r); a2 := g_Quat(r); set_transform(a0, a1, a2); return 0
+	if op == 17: a0 := g_Body(r); a1 := g_float3(r); set_linear_velocity(a0, a1); return 0
+	if op == 18: a0 := g_Body(r); a1 := g_float3(r); set_angular_velocity(a0, a1); return 0
+	if op == 19: a0 := g_Body(r); a1 := g_Transform(r); a2 := g_f32(r); a3 := g_bool(r); set_target_transform(a0, a1, a2, a3); return 0
+	if op == 20: a0 := g_Body(r); a1 := g_float3(r); a2 := g_float3(r); a3 := g_bool(r); apply_force(a0, a1, a2, a3); return 0
+	if op == 21: a0 := g_Body(r); a1 := g_float3(r); a2 := g_bool(r); apply_force_to_center(a0, a1, a2); return 0
+	if op == 22: a0 := g_Body(r); a1 := g_float3(r); a2 := g_bool(r); apply_torque(a0, a1, a2); return 0
+	if op == 23: a0 := g_Body(r); a1 := g_float3(r); a2 := g_float3(r); a3 := g_bool(r); apply_linear_impulse(a0, a1, a2, a3); return 0
+	if op == 24: a0 := g_Body(r); a1 := g_float3(r); a2 := g_bool(r); apply_linear_impulse_to_center(a0, a1, a2); return 0
+	if op == 25: a0 := g_Body(r); a1 := g_float3(r); a2 := g_bool(r); apply_angular_impulse(a0, a1, a2); return 0
+	if op == 26: a0 := g_Body(r); a1 := g_MassData(r); set_mass_data(a0, a1); return 0
+	if op == 27: a0 := g_Body(r); apply_mass_from_shapes(a0); return 0
+	if op == 28: a0 := g_Body(r); a1 := g_f32(r); set_linear_damping(a0, a1); return 0
+	if op == 29: a0 := g_Body(r); a1 := g_f32(r); set_angular_damping(a0, a1); return 0
+	if op == 30: a0 := g_Body(r); a1 := g_f32(r); set_gravity_scale(a0, a1); return 0
+	if op == 31: a0 := g_Body(r); a1 := g_bool(r); set_awake(a0, a1); return 0
+	if op == 32: a0 := g_Body(r); a1 := g_bool(r); enable_sleep(a0, a1); return 0
+	if op == 33: a0 := g_Body(r); a1 := g_f32(r); set_sleep_threshold(a0, a1); return 0
+	if op == 34: a0 := g_Body(r); a1 := g_f32(r); set_safety_factor(a0, a1); return 0
+	if op == 35: a0 := g_Body(r); disable(a0); return 0
+	if op == 36: a0 := g_Body(r); a1 := g_MotionLocks(r); set_motion_locks(a0, a1); return 0
+	if op == 37: a0 := g_Body(r); a1 := g_bool(r); set_bullet(a0, a1); return 0
+	if op == 38: a0 := g_Body(r); a1 := g_bool(r); enable_contact_recycling(a0, a1); return 0
+	if op == 39: a0 := g_Body(r); a1 := g_bool(r); enable_hit_events(a0, a1); return 0
+	if op == 40: a0 := g_Body(r); a1 := g_ShapeDef(r); a2 := g_Sphere(r); h := create_sphere_shape(a0, a1, a2); padd(1, h.id); return 0
+	if op == 41: a0 := g_Body(r); a1 := g_ShapeDef(r); a2 := g_Capsule(r); h := create_capsule_shape(a0, a1, a2); padd(1, h.id); return 0
+	if op == 42: a0 := g_Body(r); a1 := g_ShapeDef(r); a2 := g_float3(r); a3 := g_Transform(r); h := create_box_shape(a0, a1, a2, a3); padd(1, h.id); return 0
+	if op == 43: a0 := g_Body(r); a1 := g_ShapeDef(r); a2 := g_Hull(r); h := create_hull_shape(a0, a1, a2); padd(1, h.id); return 0
+	if op == 44: a0 := g_Body(r); a1 := g_ShapeDef(r); a2 := g_Hull(r); a3 := g_Transform(r); a4 := g_float3(r); h := create_transformed_hull_shape(a0, a1, a2, a3, a4); padd(1, h.id); return 0
+	if op == 45: a0 := g_Body(r); a1 := g_ShapeDef(r); a2 := g_Mesh(r); a3 := g_float3(r); a4 := g_arr_SurfaceMaterial(r); h := create_mesh_shape(a0, a1, a2, a3, a4); padd(1, h.id); return 0
+	if op == 46: a0 := g_Body(r); a1 := g_ShapeDef(r); a2 := g_HeightField(r); a3 := g_arr_SurfaceMaterial(r); h := create_height_field_shape(a0, a1, a2, a3); padd(1, h.id); return 0
+	if op == 47: a0 := g_Body(r); a1 := g_ShapeDef(r); a2 := g_Compound(r); h := create_compound_shape(a0, a1, a2); padd(1, h.id); return 0
+	if op == 48: a0 := g_Shape(r); a1 := g_bool(r); destroy(a0, a1); return 0
+	if op == 49: a0 := g_Shape(r); a1 := g_f32(r); a2 := g_bool(r); set_density(a0, a1, a2); return 0
+	if op == 50: a0 := g_Shape(r); a1 := g_f32(r); set_friction(a0, a1); return 0
+	if op == 51: a0 := g_Shape(r); a1 := g_f32(r); set_restitution(a0, a1); return 0
+	if op == 52: a0 := g_Shape(r); a1 := g_SurfaceMaterial(r); set_surface_material(a0, a1); return 0
+	if op == 53: a0 := g_Shape(r); a1 := g_SurfaceMaterial(r); a2 := g_int(r); set_mesh_material(a0, a1, a2); return 0
+	if op == 54: a0 := g_Shape(r); a1 := g_Filter(r); a2 := g_bool(r); set_shape_filter(a0, a1, a2); return 0
+	if op == 55: a0 := g_Shape(r); a1 := g_bool(r); enable_sensor_events(a0, a1); return 0
+	if op == 56: a0 := g_Shape(r); a1 := g_bool(r); enable_contact_events(a0, a1); return 0
+	if op == 57: a0 := g_Shape(r); a1 := g_bool(r); enable_hit_events(a0, a1); return 0
+	if op == 58: a0 := g_Shape(r); a1 := g_Sphere(r); set_sphere(a0, a1); return 0
+	if op == 59: a0 := g_Shape(r); a1 := g_Capsule(r); set_capsule(a0, a1); return 0
+	if op == 60: a0 := g_Shape(r); a1 := g_Hull(r); set_hull(a0, a1); return 0
+	if op == 61: a0 := g_Shape(r); a1 := g_Mesh(r); a2 := g_float3(r); set_mesh(a0, a1, a2); return 0
+	if op == 62: a0 := g_Shape(r); a1 := g_float3(r); a2 := g_f32(r); a3 := g_f32(r); a4 := g_f32(r); a5 := g_bool(r); apply_wind(a0, a1, a2, a3, a4, a5); return 0
+	if op == 63: a0 := g_arr_float3(r); a1 := g_int(r); return create_hull(a0, a1).id as u64
+	if op == 64: a0 := g_float3(r); a1 := g_Transform(r); return create_box_hull(a0, a1).id as u64
+	if op == 65: a0 := g_f32(r); a1 := g_f32(r); a2 := g_f32(r); a3 := g_int(r); return create_cylinder_hull(a0, a1, a2, a3).id as u64
+	if op == 66: a0 := g_f32(r); a1 := g_f32(r); a2 := g_f32(r); a3 := g_int(r); return create_cone_hull(a0, a1, a2, a3).id as u64
+	if op == 67: a0 := g_f32(r); return create_rock_hull(a0).id as u64
+	if op == 68: a0 := g_Hull(r); a1 := g_Transform(r); a2 := g_float3(r); return transformed(a0, a1, a2).id as u64
+	if op == 69: a0 := g_arr_float3(r); a1 := g_arr_i32(r); a2 := g_arr_byte(r); a3 := g_MeshDef(r); return create_mesh(a0, a1, a2, a3).id as u64
+	if op == 70: a0 := g_int(r); a1 := g_int(r); a2 := g_f32(r); a3 := g_int(r); a4 := g_bool(r); return create_grid_mesh(a0, a1, a2, a3, a4).id as u64
+	if op == 71: a0 := g_int(r); a1 := g_int(r); a2 := g_f32(r); a3 := g_f32(r); a4 := g_f32(r); a5 := g_f32(r); return create_wave_mesh(a0, a1, a2, a3, a4, a5).id as u64
+	if op == 72: a0 := g_int(r); a1 := g_int(r); a2 := g_f32(r); a3 := g_f32(r); return create_torus_mesh(a0, a1, a2, a3).id as u64
+	if op == 73: a0 := g_float3(r); a1 := g_float3(r); a2 := g_bool(r); return create_box_mesh(a0, a1, a2).id as u64
+	if op == 74: a0 := g_float3(r); a1 := g_float3(r); return create_hollow_box_mesh(a0, a1).id as u64
+	if op == 75: a0 := g_float3(r); a1 := g_f32(r); a2 := g_f32(r); a3 := g_f32(r); return create_platform_mesh(a0, a1, a2, a3).id as u64
+	if op == 76: a0 := g_arr_f32(r); a1 := g_arr_byte(r); a2 := g_HeightFieldDef(r); return create_height_field(a0, a1, a2).id as u64
+	if op == 77: a0 := g_int(r); a1 := g_int(r); a2 := g_float3(r); a3 := g_bool(r); return create_grid_height_field(a0, a1, a2, a3).id as u64
+	if op == 78: a0 := g_int(r); a1 := g_int(r); a2 := g_float3(r); a3 := g_f32(r); a4 := g_f32(r); a5 := g_bool(r); return create_wave_height_field(a0, a1, a2, a3, a4, a5).id as u64
+	if op == 79: a0 := g_arr_CompoundSphere(r); a1 := g_arr_CompoundCapsule(r); a2 := g_arr_CompoundHull(r); a3 := g_arr_CompoundMesh(r); return create_compound(a0, a1, a2, a3).id as u64
+	if op == 80: a0 := g_World(r); a1 := g_DistanceJointDef(r); h := create_distance_joint(a0, a1); padd(2, h.joint.id); return 0
+	if op == 81: a0 := g_World(r); a1 := g_FilterJointDef(r); h := create_filter_joint(a0, a1); padd(2, h.joint.id); return 0
+	if op == 82: a0 := g_World(r); a1 := g_MotorJointDef(r); h := create_motor_joint(a0, a1); padd(2, h.joint.id); return 0
+	if op == 83: a0 := g_World(r); a1 := g_ParallelJointDef(r); h := create_parallel_joint(a0, a1); padd(2, h.joint.id); return 0
+	if op == 84: a0 := g_World(r); a1 := g_PrismaticJointDef(r); h := create_prismatic_joint(a0, a1); padd(2, h.joint.id); return 0
+	if op == 85: a0 := g_World(r); a1 := g_RevoluteJointDef(r); h := create_revolute_joint(a0, a1); padd(2, h.joint.id); return 0
+	if op == 86: a0 := g_World(r); a1 := g_SphericalJointDef(r); h := create_spherical_joint(a0, a1); padd(2, h.joint.id); return 0
+	if op == 87: a0 := g_World(r); a1 := g_WeldJointDef(r); h := create_weld_joint(a0, a1); padd(2, h.joint.id); return 0
+	if op == 88: a0 := g_World(r); a1 := g_WheelJointDef(r); h := create_wheel_joint(a0, a1); padd(2, h.joint.id); return 0
+	if op == 89: a0 := g_Joint(r); a1 := g_bool(r); destroy(a0, a1); return 0
+	if op == 90: a0 := g_Joint(r); a1 := g_Transform(r); set_local_frame_a(a0, a1); return 0
+	if op == 91: a0 := g_Joint(r); a1 := g_Transform(r); set_local_frame_b(a0, a1); return 0
+	if op == 92: a0 := g_Joint(r); a1 := g_bool(r); set_collide_connected(a0, a1); return 0
+	if op == 93: a0 := g_Joint(r); wake_bodies(a0); return 0
+	if op == 94: a0 := g_Joint(r); a1 := g_f32(r); a2 := g_f32(r); set_constraint_tuning(a0, a1, a2); return 0
+	if op == 95: a0 := g_Joint(r); a1 := g_f32(r); set_force_threshold(a0, a1); return 0
+	if op == 96: a0 := g_Joint(r); a1 := g_f32(r); set_torque_threshold(a0, a1); return 0
+	if op == 97: a0 := g_DistanceJoint(r); a1 := g_f32(r); set_rest_length(a0, a1); return 0
+	if op == 98: a0 := g_DistanceJoint(r); a1 := g_bool(r); enable_spring(a0, a1); return 0
+	if op == 99: a0 := g_DistanceJoint(r); a1 := g_f32(r); a2 := g_f32(r); set_spring_force_range(a0, a1, a2); return 0
+	if op == 100: a0 := g_DistanceJoint(r); a1 := g_f32(r); set_spring_hertz(a0, a1); return 0
+	if op == 101: a0 := g_DistanceJoint(r); a1 := g_f32(r); set_spring_damping_ratio(a0, a1); return 0
+	if op == 102: a0 := g_DistanceJoint(r); a1 := g_bool(r); enable_limit(a0, a1); return 0
+	if op == 103: a0 := g_DistanceJoint(r); a1 := g_f32(r); a2 := g_f32(r); set_length_range(a0, a1, a2); return 0
+	if op == 104: a0 := g_DistanceJoint(r); a1 := g_bool(r); enable_motor(a0, a1); return 0
+	if op == 105: a0 := g_DistanceJoint(r); a1 := g_f32(r); set_motor_speed(a0, a1); return 0
+	if op == 106: a0 := g_DistanceJoint(r); a1 := g_f32(r); set_max_motor_force(a0, a1); return 0
+	if op == 107: a0 := g_MotorJoint(r); a1 := g_float3(r); set_linear_velocity(a0, a1); return 0
+	if op == 108: a0 := g_MotorJoint(r); a1 := g_float3(r); set_angular_velocity(a0, a1); return 0
+	if op == 109: a0 := g_MotorJoint(r); a1 := g_f32(r); set_max_velocity_force(a0, a1); return 0
+	if op == 110: a0 := g_MotorJoint(r); a1 := g_f32(r); set_max_velocity_torque(a0, a1); return 0
+	if op == 111: a0 := g_MotorJoint(r); a1 := g_f32(r); set_linear_hertz(a0, a1); return 0
+	if op == 112: a0 := g_MotorJoint(r); a1 := g_f32(r); set_linear_damping_ratio(a0, a1); return 0
+	if op == 113: a0 := g_MotorJoint(r); a1 := g_f32(r); set_angular_hertz(a0, a1); return 0
+	if op == 114: a0 := g_MotorJoint(r); a1 := g_f32(r); set_angular_damping_ratio(a0, a1); return 0
+	if op == 115: a0 := g_MotorJoint(r); a1 := g_f32(r); set_max_spring_force(a0, a1); return 0
+	if op == 116: a0 := g_MotorJoint(r); a1 := g_f32(r); set_max_spring_torque(a0, a1); return 0
+	if op == 117: a0 := g_ParallelJoint(r); a1 := g_f32(r); set_spring_hertz(a0, a1); return 0
+	if op == 118: a0 := g_ParallelJoint(r); a1 := g_f32(r); set_spring_damping_ratio(a0, a1); return 0
+	if op == 119: a0 := g_ParallelJoint(r); a1 := g_f32(r); set_max_torque(a0, a1); return 0
+	if op == 120: a0 := g_PrismaticJoint(r); a1 := g_bool(r); enable_spring(a0, a1); return 0
+	if op == 121: a0 := g_PrismaticJoint(r); a1 := g_f32(r); set_spring_hertz(a0, a1); return 0
+	if op == 122: a0 := g_PrismaticJoint(r); a1 := g_f32(r); set_spring_damping_ratio(a0, a1); return 0
+	if op == 123: a0 := g_PrismaticJoint(r); a1 := g_f32(r); set_target_translation(a0, a1); return 0
+	if op == 124: a0 := g_PrismaticJoint(r); a1 := g_bool(r); enable_limit(a0, a1); return 0
+	if op == 125: a0 := g_PrismaticJoint(r); a1 := g_f32(r); a2 := g_f32(r); set_limits(a0, a1, a2); return 0
+	if op == 126: a0 := g_PrismaticJoint(r); a1 := g_bool(r); enable_motor(a0, a1); return 0
+	if op == 127: a0 := g_PrismaticJoint(r); a1 := g_f32(r); set_motor_speed(a0, a1); return 0
+	if op == 128: a0 := g_PrismaticJoint(r); a1 := g_f32(r); set_max_motor_force(a0, a1); return 0
+	if op == 129: a0 := g_RevoluteJoint(r); a1 := g_bool(r); enable_spring(a0, a1); return 0
+	if op == 130: a0 := g_RevoluteJoint(r); a1 := g_f32(r); set_spring_hertz(a0, a1); return 0
+	if op == 131: a0 := g_RevoluteJoint(r); a1 := g_f32(r); set_spring_damping_ratio(a0, a1); return 0
+	if op == 132: a0 := g_RevoluteJoint(r); a1 := g_f32(r); set_target_angle(a0, a1); return 0
+	if op == 133: a0 := g_RevoluteJoint(r); a1 := g_bool(r); enable_limit(a0, a1); return 0
+	if op == 134: a0 := g_RevoluteJoint(r); a1 := g_f32(r); a2 := g_f32(r); set_limits(a0, a1, a2); return 0
+	if op == 135: a0 := g_RevoluteJoint(r); a1 := g_bool(r); enable_motor(a0, a1); return 0
+	if op == 136: a0 := g_RevoluteJoint(r); a1 := g_f32(r); set_motor_speed(a0, a1); return 0
+	if op == 137: a0 := g_RevoluteJoint(r); a1 := g_f32(r); set_max_motor_torque(a0, a1); return 0
+	if op == 138: a0 := g_SphericalJoint(r); a1 := g_bool(r); enable_cone_limit(a0, a1); return 0
+	if op == 139: a0 := g_SphericalJoint(r); a1 := g_f32(r); set_cone_limit(a0, a1); return 0
+	if op == 140: a0 := g_SphericalJoint(r); a1 := g_bool(r); enable_twist_limit(a0, a1); return 0
+	if op == 141: a0 := g_SphericalJoint(r); a1 := g_f32(r); a2 := g_f32(r); set_twist_limits(a0, a1, a2); return 0
+	if op == 142: a0 := g_SphericalJoint(r); a1 := g_bool(r); enable_spring(a0, a1); return 0
+	if op == 143: a0 := g_SphericalJoint(r); a1 := g_f32(r); set_spring_hertz(a0, a1); return 0
+	if op == 144: a0 := g_SphericalJoint(r); a1 := g_f32(r); set_spring_damping_ratio(a0, a1); return 0
+	if op == 145: a0 := g_SphericalJoint(r); a1 := g_Quat(r); set_target_rotation(a0, a1); return 0
+	if op == 146: a0 := g_SphericalJoint(r); a1 := g_bool(r); enable_motor(a0, a1); return 0
+	if op == 147: a0 := g_SphericalJoint(r); a1 := g_float3(r); set_motor_velocity(a0, a1); return 0
+	if op == 148: a0 := g_SphericalJoint(r); a1 := g_f32(r); set_max_motor_torque(a0, a1); return 0
+	if op == 149: a0 := g_WeldJoint(r); a1 := g_f32(r); set_linear_hertz(a0, a1); return 0
+	if op == 150: a0 := g_WeldJoint(r); a1 := g_f32(r); set_linear_damping_ratio(a0, a1); return 0
+	if op == 151: a0 := g_WeldJoint(r); a1 := g_f32(r); set_angular_hertz(a0, a1); return 0
+	if op == 152: a0 := g_WeldJoint(r); a1 := g_f32(r); set_angular_damping_ratio(a0, a1); return 0
+	if op == 153: a0 := g_WheelJoint(r); a1 := g_bool(r); enable_suspension(a0, a1); return 0
+	if op == 154: a0 := g_WheelJoint(r); a1 := g_f32(r); set_suspension_hertz(a0, a1); return 0
+	if op == 155: a0 := g_WheelJoint(r); a1 := g_f32(r); set_suspension_damping_ratio(a0, a1); return 0
+	if op == 156: a0 := g_WheelJoint(r); a1 := g_bool(r); enable_suspension_limit(a0, a1); return 0
+	if op == 157: a0 := g_WheelJoint(r); a1 := g_f32(r); a2 := g_f32(r); set_suspension_limits(a0, a1, a2); return 0
+	if op == 158: a0 := g_WheelJoint(r); a1 := g_bool(r); enable_spin_motor(a0, a1); return 0
+	if op == 159: a0 := g_WheelJoint(r); a1 := g_f32(r); set_spin_motor_speed(a0, a1); return 0
+	if op == 160: a0 := g_WheelJoint(r); a1 := g_f32(r); set_max_spin_torque(a0, a1); return 0
+	if op == 161: a0 := g_WheelJoint(r); a1 := g_bool(r); enable_steering(a0, a1); return 0
+	if op == 162: a0 := g_WheelJoint(r); a1 := g_f32(r); set_steering_hertz(a0, a1); return 0
+	if op == 163: a0 := g_WheelJoint(r); a1 := g_f32(r); set_steering_damping_ratio(a0, a1); return 0
+	if op == 164: a0 := g_WheelJoint(r); a1 := g_f32(r); set_max_steering_torque(a0, a1); return 0
+	if op == 165: a0 := g_WheelJoint(r); a1 := g_bool(r); enable_steering_limit(a0, a1); return 0
+	if op == 166: a0 := g_WheelJoint(r); a1 := g_f32(r); a2 := g_f32(r); set_steering_limits(a0, a1, a2); return 0
+	if op == 167: a0 := g_WheelJoint(r); a1 := g_f32(r); set_target_steering_angle(a0, a1); return 0
+	0
+okind(op int) int: if op == 63 { 0 } else if op == 64 { 0 } else if op == 65 { 0 } else if op == 66 { 0 } else if op == 67 { 0 } else if op == 68 { 0 } else if op == 69 { 1 } else if op == 70 { 1 } else if op == 71 { 1 } else if op == 72 { 1 } else if op == 73 { 1 } else if op == 74 { 1 } else if op == 75 { 1 } else if op == 76 { 2 } else if op == 77 { 2 } else if op == 78 { 2 } else if op == 79 { 3 } else { -1 }
+OP_CREATE_BODY := 13
+rcp_hull_pts(p const float3[:]): r_create_hull_arr_float3(p, 128)
+OP_END := 0
+OP_STEP := 250
+OP_HASH := 251
+struct RecD { buf byte[>..], bm dictionary<uint, int>, sm dictionary<uint, int>, jm dictionary<uint, int>, gm dictionary<u64, int>, nb int = 0, ns int = 0, nj int = 0, ng int = 0 }
+struct RRd { d const byte[:], p int }
+struct PlayD { data byte[>..], pos int = 0, hdr int = 0, w World = World{0}, wi int = -1, bodies Body[>..], shapes Shape[>..], joints Joint[>..], gid u32[>..], mk int[>..], mid u32[>..], frame int = 0, frames int = 0, workers int = 1, dt f32 = 0.0, sub int = 0, ls f32 = 1.0, bounds AABB = AABB{Z3, Z3}, def WorldDef = WorldDef{}, crec f32 = 0.0, warm bool = true, pre bool = false, end bool = false, div bool = false, df int = -1 }
+var RD RecD[>..] = []
+var WREC int[>..] = []
+var RON = 0
+var CR = -1
+var OPC = 0
+var CB byte[>..] = []
+var GB byte[>..] = []
+var RPL = false
+var RCH (byte[>..])[>..] = []
+var RCM (byte[>..])[>..] = []
+var RCF (byte[>..])[>..] = []
+var RCC (byte[>..])[>..] = []
+var PD PlayD[>..] = []
+var CP = -1
+var DEP = 0
+p8(x int): CB.push((x & 255) as byte)
+pn(x uint, n int): for k n { CB.push(((x >> (8 * k) as uint) & 255) as byte) }
+put(x f32): pn(binary::f32_bits(x) as uint, 4)
+put(x i32): pn(x as! u32 as uint, 4)
+put(x int): pn(x as! uint, 8)
+put(x uint): pn(x, 8)
+put(x u32): pn(x as uint, 4)
+put(x bool): p8(if x { 1 } else { 0 })
+put(x byte): CB.push(x)
+put(x float3): put(x.x); put(x.y); put(x.z)
+put(x Quat): put(x.x); put(x.y); put(x.z); put(x.w)
+put(x Transform): put(x.p); put(x.q)
+put(x World): return
+mget(m dictionary<uint, int>&, k uint) int: if contains(m, k) { get_or_insert(m, k, -1) } else { -1 }
+put(x Body): put((if CR >= 0 { mget(RD[CR].bm, x.id) } else { -1 }) as i32)
+put(x Shape): put((if CR >= 0 { mget(RD[CR].sm, x.id) } else { -1 }) as i32)
+put(x Joint): put((if CR >= 0 { mget(RD[CR].jm, x.id) } else { -1 }) as i32)
+papp(l (byte[>..])[>..]&, k int): n := if k >= 0 && k < l.len { l[k].len } else { 0 }; put(n); if n > 0 { CB.append(l[k][..]) }
+pgeo(kind int, k int, id u32):
+	if CR >= 0:
+		key := ((kind as u64) << 32) | id as u64; g := &RD[CR]
+		if contains(g.gm, key): p8(0); put(get_or_insert(g.gm, key, -1) as i32); return
+		insert(g.gm, key, g.ng); g.ng += 1
+	p8(1)
+	if kind == 0 { papp(RCH, k) } else if kind == 1 { papp(RCM, k) } else if kind == 2 { papp(RCF, k) } else { papp(RCC, k) }
+put(x Hull): pgeo(0, gix(GH, x.id), x.id)
+put(x Mesh): pgeo(1, gix(GM, x.id), x.id)
+put(x HeightField): pgeo(2, gix(GF, x.id), x.id)
+put(x Compound): pgeo(3, gix(GC, x.id), x.id)
+rcp(l (byte[>..])[>..]&, k int): while l.len <= k { e byte[>..] ~= []; l.push(e) } l[k].clear(); l[k].append(GB[..]); GB.clear()
+g8(r RRd&) int: v := if r.p < r.d.len { r.d[r.p] as int } else { 0 }; r.p += 1; v
+gn(r RRd&, n int) uint: v uint ~= 0; for k n { v |= (g8(r) as uint) << (8 * k) as uint } v
+g_f32(r RRd&) f32: binary::f32_from_bits(gn(r, 4) as u32)
+g_i32(r RRd&) i32: gn(r, 4) as u32 as! i32
+g_int(r RRd&) int: gn(r, 8) as! int
+g_uint(r RRd&) uint: gn(r, 8)
+g_u32(r RRd&) u32: gn(r, 4) as u32
+g_bool(r RRd&) bool: g8(r) != 0
+g_byte(r RRd&) byte: g8(r) as byte
+g_float3(r RRd&) float3: x := g_f32(r); y := g_f32(r); z := g_f32(r); float3{x, y, z}
+g_Quat(r RRd&) Quat: x := g_f32(r); y := g_f32(r); z := g_f32(r); w := g_f32(r); Quat{x, y, z, w}
+g_Transform(r RRd&) Transform: p := g_float3(r); q := g_Quat(r); Transform{p, q}
+g_World(r RRd&) World: PD[CP].w
+g_Body(r RRd&) Body: k := g_i32(r) as int; p := &PD[CP]; if k >= 0 && k < p.bodies.len { p.bodies[k] } else { Body{0} }
+g_Shape(r RRd&) Shape: k := g_i32(r) as int; p := &PD[CP]; if k >= 0 && k < p.shapes.len { p.shapes[k] } else { Shape{0} }
+g_Joint(r RRd&) Joint: k := g_i32(r) as int; p := &PD[CP]; if k >= 0 && k < p.joints.len { p.joints[k] } else { Joint{0} }
+ggeo(r RRd&) u32:
+	if g8(r) == 0: k := g_i32(r) as int; p := &PD[CP]; return if k >= 0 && k < p.gid.len { p.gid[k] } else { 0 }
+	n := g_int(r); s := r.p; r.p += max(n, 0); id ~= 0 as u32
+	if n > 0 && s + n <= r.d.len: rr ~= RRd{r.d[s..s + n], 0}; op := g8(rr); DEP += 1; id = rexec(op, rr) as u32; DEP -= 1; if id != 0 { PD[CP].mk.push(okind(op)); PD[CP].mid.push(id) }
+	if DEP == 0: PD[CP].gid.push(id)
+	id
+g_Hull(r RRd&) Hull: Hull{ggeo(r)}
+g_Mesh(r RRd&) Mesh: Mesh{ggeo(r)}
+g_HeightField(r RRd&) HeightField: HeightField{ggeo(r)}
+g_Compound(r RRd&) Compound: Compound{ggeo(r)}
+padd(kind int, id uint):
+	p := &PD[CP]
+	if id == 0: return
+	if kind == 0: p.bodies.push(Body{id})
+	if kind == 1: p.shapes.push(Shape{id})
+	if kind == 2: p.joints.push(Joint{id})
+rw(i int) int: if RON > 0 && i >= 0 && i < WREC.len { WREC[i] } else { -1 }
+rbeg(i int, code int) bool: r := rw(i); if r < 0 { return false } CR = r; CB.clear(); OPC = code; true
+rend(): b := &RD[CR].buf; b.push(OPC as byte); n := CB.len as uint; for k 4 { b.push(((n >> (8 * k) as uint) & 255) as byte) } b.append(CB[..]); CR = -1
+rec_body(i int, b int): r := rw(i); if r >= 0 { insert(RD[r].bm, xid(i, b, WS[i].bodies[b].gen), RD[r].nb); RD[r].nb += 1 }
+rec_shape(i int, s int): r := rw(i); if r >= 0 { insert(RD[r].sm, xid(i, s, WS[i].shapes[s].gen), RD[r].ns); RD[r].ns += 1 }
+rec_joint(i int, j int): r := rw(i); if r >= 0 { insert(RD[r].jm, xid(i, j, WS[i].joints[j].gen), RD[r].nj); RD[r].nj += 1 }
+hm(h uint, v f32) uint: (h ^ binary::f32_bits(v) as uint) * 1099511628211
+hv(h uint, v float3) uint: hm(hm(hm(h, v.x), v.y), v.z)
+whash(i int) uint:
+	h ~= 14695981039346656037 as uint
+	for b, k WS[i].bodies: if b.set != -1 { x := phx::body_xf(WS[i], k); h = hm(hv(hv(hv(hv(h, x.p), phx::qv(x.q)), phx::bvel(WS[i], k)), phx::bang(WS[i], k)), x.q.w) }
+	h
+rec_step(i int, ts f32, sub int): if rbeg(i, OP_STEP) { put(ts); put(sub as i32); rend() }
+rec_post(i int): if rbeg(i, OP_HASH) { put(whash(i)); put(bounds(wof(i))); rend() }
+stop_rec(i int): if rbeg(i, OP_END) { rend(); WREC[i] = -1; RON -= 1 }
+create_recording(cap int) Recording:
+	if cap < 0 || cap > 2147483647: misuse(str("physics::create_recording: a capacity of ", cap, " bytes")); return Recording{0}
+	k := gslot(GR)
+	while RD.len <= k: RD.push(RecD{..})
+	RD[k] = RecD{..}; Recording{gid(GR, k)}
+create_recording() Recording: create_recording(0)
+phdr(p PlayD&) bool:
+	r ~= RRd{p.data[..], 0}
+	if p.data.len < 12 || p.data[0] != 'H' || p.data[1] != 'E' || p.data[2] != 'P' || p.data[3] != 'R': return false
+	r.p = 4
+	if g_u32(r) != 1: return false
+	p.ls = g_f32(r); p.def = g_WorldDef(r); p.crec = g_f32(r); p.warm = g_bool(r); p.hdr = r.p; p.pos = r.p
+	r.p <= p.data.len
+pscan(p PlayD&) bool:
+	k ~= p.hdr; first ~= true
+	loop:
+		if k + 5 > p.data.len: return false
+		op := p.data[k] as int; rr ~= RRd{p.data[k + 1..k + 5], 0}; n := g_u32(rr) as int; s := k + 5
+		if s + n > p.data.len: return false
+		r ~= RRd{p.data[s..s + n], 0}
+		if op == OP_STEP: p.frames += 1; if first { p.dt = g_f32(r); p.sub = g_i32(r) as int; first = false }
+		if op == OP_HASH: h := g_uint(r); b := g_AABB(r); p.bounds = if p.frames <= 1 { b } else { AABB{phx::vmin(p.bounds.lower, b.lower), phx::vmax(p.bounds.upper, b.upper)} }
+		if op == OP_END: return s + n == p.data.len
+		k = s + n
+rok(d const byte[:]) bool: p ~= PlayD{..}; p.data.append(d); phdr(p) && pscan(p)
+load_recording(path const byte[:]) Recording:
+	d byte[>..] ~= []
+	if !read_file(path, d) || !rok(d[..]): fail(str("cannot load a recording from ", path)); return Recording{0}
+	k := gslot(GR)
+	while RD.len <= k: RD.push(RecD{..})
+	RD[k] = RecD{..}; RD[k].buf.append(d[..]); Recording{gid(GR, k)}
+destroy(r Recording):
+	k := gget(GR, r.id, "destroy")
+	if k < 0: return
+	for x, i WREC: if x == k { WREC[i] = -1; RON -= 1 }
+	gfree(GR, k); RD[k] = RecD{..}
+is_valid(r Recording) bool: gix(GR, r.id) >= 0
+size(r Recording) int: k := gget(GR, r.id, "size"); if k >= 0 { RD[k].buf.len } else { 0 }
+bytes(r Recording) byte[>..]: k := gget(GR, r.id, "bytes"); o byte[>..] ~= []; if k >= 0 { o.append(RD[k].buf[..]) } o
+save(r Recording, path const byte[:]) bool: k := gget(GR, r.id, "save"); if k < 0 { return false } if write_file(path, RD[k].buf[..]) { true } else { fail(str("cannot save the recording to ", path)) }
+start_recording(w World, r Recording):
+	i := wi(w, "start_recording")
+	if i < 0: return
+	k := gget(GR, r.id, "start_recording")
+	if k < 0: return
+	while WREC.len <= i: WREC.push(-1)
+	if WREC[i] >= 0: misuse("physics::start_recording: the world is already recording (stop_recording first)"); return
+	for x WREC: if x == k { misuse("physics::start_recording: another world is recording into it"); return }
+	if phx::id_count(WS[i].bpool) > 0: misuse("physics::start_recording: the world already has bodies (start recording on a new world)"); return
+	x := &WS[i]; RD[k] = RecD{..}; CB.clear(); for c "HEPR" { CB.push(c) } put(1 as u32); put(phx::LUPM)
+	put(WorldDef{x.gravity, x.rest_th, x.hit_th, x.chz, x.cdr, x.cspeed, x.max_speed, x.sleep, x.continuous, x.workers as i32, x.fmix as i32, x.rmix as i32, x.ud, Capacity{}}); put(x.crecycle); put(x.warm)
+	RD[k].buf.append(CB[..]); WREC[i] = k; RON += 1
+stop_recording(w World):
+	i := wi(w, "stop_recording")
+	if i < 0: return
+	if rw(i) < 0: misuse("physics::stop_recording: the world is not recording"); return
+	stop_rec(i)
+pget(p Player, fnm const byte[:]) int: gget(GP, p.id, fnm)
+pdel(t int, id u32):
+	if t == 0: destroy(Hull{id})
+	if t == 1: destroy(Mesh{id})
+	if t == 2: destroy(HeightField{id})
+	if t == 3: destroy(Compound{id})
+pclean(k int):
+	RPL = true
+	for t, j PD[k].mk: pdel(t, PD[k].mid[j])
+	RPL = false; PD[k].mk.clear(); PD[k].mid.clear(); PD[k].gid.clear(); PD[k].bodies.clear(); PD[k].shapes.clear(); PD[k].joints.clear()
+create_player(r Recording, workers int) Player:
+	k := gget(GR, r.id, "create_player")
+	if k < 0: return Player{0}
+	if world_count() >= 128: fail("too many worlds: Box3D keeps at most 128 at once"); return Player{0}
+	pd ~= PlayD{..}; pd.data.append(RD[k].buf[..])
+	if pd.data.len == 0 || !phdr(pd) || !pscan(pd): fail("not a complete recording (stop_recording before replaying it)"); return Player{0}
+	pd.workers = nworkers(workers); d ~= pd.def; d.workers = pd.workers as i32; pd.w = create_world(d); pd.wi = wix(pd.w.id); WS[pd.wi].crecycle = pd.crec; WS[pd.wi].warm = pd.warm
+	s := gslot(GP)
+	while PD.len <= s: PD.push(PlayD{..})
+	PD[s] = pd; Player{gid(GP, s)}
+pone(k int) int:
+	p := &PD[k]; op := p.data[p.pos] as int; rr ~= RRd{p.data[p.pos + 1..p.pos + 5], 0}; n := g_u32(rr) as int; s := p.pos + 5; p.pos = s + n
+	r ~= RRd{p.data[s..s + n], 0}; CP = k; RPL = true
+	if op == OP_STEP { ts := g_f32(r); sb := g_i32(r); step(PD[k].w, ts, sb as int) } else if op == OP_HASH { if g_uint(r) != whash(PD[k].wi) { PD[k].div = true } } else if op != OP_END { rexec(op, r) }
+	RPL = false; op
+pmark(k int, op int, st bool&):
+	if op == OP_STEP: PD[k].pre = false; PD[k].frame += 1; st = true
+	if op == OP_HASH && PD[k].df < 0 && PD[k].div: PD[k].df = PD[k].frame
+pstep(k int) bool:
+	PD[k].pre = false
+	if PD[k].end: return false
+	st ~= false
+	loop:
+		p := &PD[k]
+		if p.pos >= p.data.len: p.end = true; return st
+		op := p.data[p.pos] as int
+		if st && op != OP_HASH: return true
+		if op == OP_END: p.pos = p.data.len; p.end = true; return st
+		pmark(k, pone(k), st)
+psub(k int):
+	if PD[k].end: return
+	st ~= false; hc ~= false
+	loop:
+		p := &PD[k]
+		if p.pos >= p.data.len: p.end = true; p.pre = false; return
+		op := p.data[p.pos] as int
+		if st && op != OP_HASH: return
+		if !p.pre && hc && op == OP_STEP: p.pre = true; return
+		if op == OP_END: p.pos = p.data.len; p.end = true; p.pre = false; return
+		pone(k)
+		if op == OP_CREATE_BODY: hc = true
+		pmark(k, op, st)
+prestart(k int):
+	pclean(k); p := &PD[k]; d ~= p.def; d.workers = p.workers as i32; WS[p.wi] = wnew(d, p.wi); WS[p.wi].crecycle = p.crec; WS[p.wi].warm = p.warm
+	p.pos = p.hdr; p.frame = 0; p.df = -1; p.div = false; p.end = false; p.pre = false
+destroy(p Player): k := pget(p, "destroy"); if k < 0 { return } pclean(k); destroy(PD[k].w); gfree(GP, k); PD[k] = PlayD{..}
+is_valid(p Player) bool: gix(GP, p.id) >= 0
+step(p Player) bool: k := pget(p, "step"); k >= 0 && pstep(k)
+sub_step(p Player): k := pget(p, "sub_step"); if k >= 0 { psub(k) }
+at_pre_step(p Player) bool: k := pget(p, "at_pre_step"); k >= 0 && PD[k].pre
+restart(p Player): k := pget(p, "restart"); if k >= 0 { prestart(k) }
+seek(p Player, f int):
+	k := pget(p, "seek")
+	if k < 0: return
+	if f < 0 || f > PD[k].frames: misuse(str("physics::seek: frame ", f, " of a recording of ", PD[k].frames)); return
+	if f < PD[k].frame || PD[k].pre: prestart(k)
+	n ~= 0
+	while PD[k].frame < f && pstep(k): n += 1
+world(p Player) World: k := pget(p, "world"); if k >= 0 { PD[k].w } else { World{0} }
+frame(p Player) int: k := pget(p, "frame"); if k >= 0 { PD[k].frame } else { 0 }
+frame_count(p Player) int: k := pget(p, "frame_count"); if k >= 0 { PD[k].frames } else { 0 }
+at_end(p Player) bool: k := pget(p, "at_end"); k < 0 || PD[k].end
+diverged(p Player) bool: k := pget(p, "diverged"); k >= 0 && PD[k].div
+diverge_frame(p Player) int: k := pget(p, "diverge_frame"); if k >= 0 { PD[k].df } else { -1 }
+body_count(p Player) int: k := pget(p, "body_count"); if k >= 0 { PD[k].bodies.len } else { 0 }
+body(p Player, n int) Body:
+	k := pget(p, "body")
+	if k < 0: return Body{0}
+	if n < 0 || n >= PD[k].bodies.len: misuse(str("physics::body: body ", n, " of ", PD[k].bodies.len, " recorded")); return Body{0}
+	PD[k].bodies[n]
+info(p Player) PlayerInfo: k := pget(p, "info"); if k < 0 { return default<PlayerInfo>() } x := &PD[k]; PlayerInfo{x.frames as i32, x.workers as i32, x.dt, x.sub as i32, x.ls, x.bounds}
+set_worker_count(p Player, n int): k := pget(p, "set_worker_count"); if k >= 0 { PD[k].workers = nworkers(n); WS[PD[k].wi].workers = PD[k].workers }
+validate_replay(r Recording, workers int) bool:
+	k := gget(GR, r.id, "validate_replay")
+	if k < 0: return false
+	if RD[k].buf.len == 0: return fail("the recording is empty")
+	p := create_player(r, workers)
+	if p.id == 0: return fail("the replay did not reproduce the recording")
+	x := gix(GP, p.id)
+	n ~= 0
+	while pstep(x): n += 1
+	ok := !PD[x].div; destroy(p)
+	ok || fail("the replay did not reproduce the recording")
+quat_axis_angle(axis float3, angle f32) Quat:
+	a := ::normalize(axis)
+	s := sin(angle * 0.5)
+	Quat{a.x * s, a.y * s, a.z * s, cos(angle * 0.5)}
+normalize(q Quat) Quat:
+	l := sqrt(q.x * q.x + q.y * q.y + q.z * q.z + q.w * q.w)
+	Quat{q.x / l, q.y / l, q.z / l, q.w / l}
+conjugate(q Quat) Quat: Quat{-q.x, -q.y, -q.z, q.w}
+mul(a Quat, b Quat) Quat:
+	Quat{a.w * b.x + a.x * b.w + a.y * b.z - a.z * b.y, a.w * b.y - a.x * b.z + a.y * b.w + a.z * b.x, a.w * b.z + a.x * b.y - a.y * b.x + a.z * b.w, a.w * b.w - a.x * b.x - a.y * b.y - a.z * b.z}
+rotate(q Quat, v float3) float3:
+	u := float3{q.x, q.y, q.z}
+	t := cross(u, v) * float3{2.0, 2.0, 2.0}
+	v + t * float3{q.w, q.w, q.w} + cross(u, t)
+inv_rotate(q Quat, v float3) float3: rotate(conjugate(q), v)
+rotation_matrix(q Quat) Mat3:
+	Mat3{cx: rotate(q, float3{1.0, 0.0, 0.0}), cy: rotate(q, float3{0.0, 1.0, 0.0}), cz: rotate(q, float3{0.0, 0.0, 1.0})}
+transform_point(t Transform, p float3) float3: rotate(t.q, p) + t.p
+inv_transform_point(t Transform, p float3) float3: inv_rotate(t.q, p - t.p)
+mul(a Transform, b Transform) Transform:
+	Transform{p: transform_point(a, b.p), q: mul(a.q, b.q)}
+inv_mul(a Transform, b Transform) Transform:
+	Transform{p: inv_rotate(a.q, b.p - a.p), q: mul(conjugate(a.q), b.q)}
+local_frame(b Body, world_frame Transform) Transform: inv_mul(transform(b), world_frame)
+joint_def(a Body, b Body, frame Transform) JointDef:
+	JointDef{body_a: a, body_b: b, frame_a: local_frame(a, frame), frame_b: local_frame(b, frame)}
+joint_def(a Body, b Body, anchor float3) JointDef:
+	joint_def(a, b, Transform{p: anchor, q: quat_identity})

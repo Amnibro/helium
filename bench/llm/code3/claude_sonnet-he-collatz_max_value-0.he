@@ -1,0 +1,16 @@
+best_start = 1
+best_peak = 1
+for s in range(1, 300000):
+    n = s
+    peak = n
+    while n != 1:
+        if n % 2 == 0:
+            n //= 2
+        else:
+            n = 3 * n + 1
+            if n > peak:
+                peak = n
+    if peak > best_peak:
+        best_peak = peak
+        best_start = s
+print(best_start, best_peak)

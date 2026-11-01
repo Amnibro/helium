@@ -1,0 +1,8 @@
+import std;
+fn pick(t const byte[512]&, k i32) int { t[(k & 255) as int + 257] as int }
+fn main() {
+	var t byte[512] = [0; 512];
+	for k in 512 { t[k] = (k & 255) as byte; }
+	var o byte[>..] = [];
+	for k in 253..257 { format(o, pick(t, k as i32), "\n"); print(o); o.clear(); }
+}

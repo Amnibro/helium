@@ -1,0 +1,85 @@
+import web;
+import webgl;
+import math;
+let TAG_CLICK: i32 = 1;
+let TAG_FETCH: i32 = 2;
+let TAG_RESIZE: i32 = 3;
+var clicks = 0;
+var canvas: i32 = 0;
+var prog: i32 = 0;
+var vbo: i32 = 0;
+var u_t: i32 = 0;
+var pts f32[>..];
+var got byte[>..];
+var vs = "#version 300 es\nlayout(location=0) in vec2 p;\nuniform float t;\nvoid main(){ float a=t*0.001; gl_Position=vec4(p.x*cos(a)-p.y*sin(a), p.x*sin(a)+p.y*cos(a), 0.0, 1.0); gl_PointSize=6.0; }";
+var fs = "#version 300 es\nprecision mediump float;\nout vec4 o;\nvoid main(){ float d=length(gl_PointCoord-0.5); if(d>0.5) discard; o=vec4(1.0,0.8,0.3,1.0-d*2.0); }";
+fn shader(kind i32, src const byte[:]) i32 {
+	let s = gl::create_shader(kind);
+	gl::shader_source(s, src);
+	if !gl::compile_shader(s) { var log byte[>..] = []; gl::shader_log(s, log); web::error(log); }
+	s
+}
+fn resize() {
+	let d = web::dpr();
+	web::prop_num(canvas, "width", floor(web::win_w() * d));
+	web::prop_num(canvas, "height", floor(web::win_h() * d));
+	gl::viewport(0, 0, gl::drawing_w(), gl::drawing_h());
+}
+export fn he_frame(t real) {
+	gl::clear_color(0.04, 0.04, 0.07, 1.0);
+	gl::clear(gl::COLOR_BUFFER_BIT);
+	gl::use_program(prog);
+	gl::uniform1f(u_t, t);
+	gl::bind_buffer(gl::ARRAY_BUFFER, vbo);
+	gl::enable_attrib(0);
+	gl::attrib_ptr(0, 2, gl::FLOAT, false, 8, 0);
+	gl::draw_arrays(gl::POINTS, 0, (pts.len / 2) as i32);
+}
+export fn he_event(tag i32, kind i32) {
+	match tag {
+		1 => {
+			clicks++;
+			var s byte[>..] = [];
+			format(s, "clicked ", clicks, " times at ", web::ev_x(), ",", web::ev_y());
+			web::text(web::el("msg"), s);
+		},
+		2 => {
+			got.clear();
+			let ok = web::fetch_take(web::ev_id(), got);
+			var s byte[>..] = [];
+			format(s, "fetched status ", web::ev_status(), " bytes ", got.len, " ok ", ok, ": ", trim(got));
+			web::text(web::el("fetch"), s);
+		},
+		3 => resize(),
+		_ => {},
+	}
+}
+fn main() {
+	canvas = web::el("c");
+	if !gl::init(canvas, true, false) { web::error("no webgl2"); return; }
+	prog = gl::create_program();
+	gl::attach_shader(prog, shader(gl::VERTEX_SHADER, vs));
+	gl::attach_shader(prog, shader(gl::FRAGMENT_SHADER, fs));
+	gl::bind_attrib(prog, 0, "p");
+	if !gl::link_program(prog) { web::error("link failed"); }
+	u_t = gl::uniform_loc(prog, "t");
+	for i in 2000 {
+		let a = i as real * 0.0123;
+		let r = sqrt(i as real / 2000.0) * 0.9;
+		pts.push((cos(a * 7.0) * r) as f32);
+		pts.push((sin(a * 7.0) * r) as f32);
+	}
+	vbo = gl::create_buffer();
+	gl::bind_buffer(gl::ARRAY_BUFFER, vbo);
+	gl::buffer_data(gl::ARRAY_BUFFER, bytes_of(pts), gl::STATIC_DRAW);
+	gl::enable(gl::BLEND);
+	gl::blend_func(gl::SRC_ALPHA, gl::ONE_MINUS_SRC_ALPHA);
+	resize();
+	web::listen(web::el("btn"), "click", TAG_CLICK, 0);
+	web::listen(web::WINDOW, "resize", TAG_RESIZE, 0);
+	web::fetch("hello.txt", TAG_FETCH);
+	var ua byte[>..] = [];
+	web::user_agent(ua);
+	print("helium web demo up; ua length ", ua.len);
+	web::frames(true);
+}

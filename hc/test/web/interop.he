@@ -1,0 +1,12 @@
+use web
+var COUNT i32
+var BUF byte[>..]
+main():
+	web::log("hello from hc on the web")
+	web::user_agent(BUF)
+	print("agent ", BUF, " now ", web::now() > 0.0)
+export he_event(tag i32, kind i32):
+	COUNT += tag
+	print("event ", tag, " ", kind, " total ", COUNT)
+export he_frame(t real) real:
+	t * 2.0

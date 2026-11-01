@@ -1,0 +1,13 @@
+def main():
+    n = 10000000
+    total = 0.0
+    sign = 1.0
+    for k in range(n):
+        total += sign / (2 * k + 1)
+        sign = -sign
+    pi_approx = 4.0 * total
+    print(f"{pi_approx:.6f}")
+
+
+if __name__ == "__main__":
+    main()

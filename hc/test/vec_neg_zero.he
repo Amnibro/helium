@@ -1,0 +1,9 @@
+use std
+use vec
+use binary
+main():
+	a := float3{1.0, 0.0, -0.0}
+	b := -a
+	c := [1, -2, 3]
+	d := -c
+	print(str(binary::f32_bits(b.y), " ", binary::f32_bits(b.z), " ", b.x, " ", d[1]))

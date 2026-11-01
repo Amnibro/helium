@@ -1,0 +1,25 @@
+use std::collections::HashSet;
+
+fn main() {
+    let text = "Four score and seven years ago our fathers brought forth on this continent a new nation conceived in Liberty and dedicated to the proposition that all men are created equal";
+    let lower = text.to_lowercase();
+    let mut seen: HashSet<&str> = HashSet::new();
+    let mut out: Vec<&str> = Vec::new();
+    for w in lower.split_whitespace() {
+        if w.chars().count() < 5 {
+            continue;
+        }
+        let mut letters: HashSet<char> = HashSet::new();
+        let mut unique = true;
+        for c in w.chars() {
+            if !letters.insert(c) {
+                unique = false;
+                break;
+            }
+        }
+        if unique && seen.insert(w) {
+            out.push(w);
+        }
+    }
+    println!("{}", out.join(" "));
+}

@@ -1,0 +1,6 @@
+fn main() {
+	print("one million two hundred thirty-four thousand five hundred sixty-seven");
+	print("ninety thousand two hundred ten");
+	print("thirteen");
+	print("one million");
+}

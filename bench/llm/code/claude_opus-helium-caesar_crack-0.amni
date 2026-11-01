@@ -1,0 +1,37 @@
+fn has_sub(s byte[:], sub const byte[:]) bool {
+	if sub.len > s.len { return false; }
+	var i = 0;
+	while i + sub.len <= s.len {
+		var ok = true;
+		var j = 0;
+		while j < sub.len {
+			if s[i + j] != sub[j] { ok = false; break; }
+			j++;
+		}
+		if ok { return true; }
+		i++;
+	}
+	false
+}
+
+fn main() {
+	let text = "Wkh vhfuhw phhwlqj lv dw qrrq";
+	for s in 26 {
+		var out byte[>..] = [];
+		for c in text {
+			let v int = c;
+			if v >= 'a' && v <= 'z' {
+				let d = (v - 'a' - s) % 26 + 'a';
+				out.push(d as byte);
+			} else if v >= 'A' && v <= 'Z' {
+				let d = (v - 'A' - s) % 26 + 'A';
+				out.push(d as byte);
+			} else {
+				out.push(c);
+			}
+		}
+		if has_sub(out, "secret") {
+			print(out);
+		}
+	}
+}

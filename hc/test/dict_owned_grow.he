@@ -1,0 +1,6 @@
+use dictionary
+main():
+	d ~= dictionary<byte[>..], byte[>..][>..]> {}
+	for i in range(40): w := str("k", i); l byte[>..][>..] ~= []; l.push(str("v", i)); insert(d, w, l)
+	for i in range(40): k := str("k", i); print(contains(d, k[..]), " ", d[k][0])
+	print(d.count)

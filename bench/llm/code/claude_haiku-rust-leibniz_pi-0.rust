@@ -1,0 +1,13 @@
+fn main() {
+    const N: u64 = 10_000_000;
+    let mut sum: f64 = 0.0;
+    for k in 0..N {
+        let term = 1.0 / ((2 * k + 1) as f64);
+        if k % 2 == 0 {
+            sum += term;
+        } else {
+            sum -= term;
+        }
+    }
+    println!("{:.6}", 4.0 * sum);
+}

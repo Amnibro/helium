@@ -1,0 +1,22 @@
+import std;
+import os;
+import math;
+fn tou(x real) u32 {
+	if !(abs(x) < 1.0e300) { return 0; }
+	let t = if x < 0.0 { -floor(-x) } else { floor(x) };
+	let m = t - floor(t / 4294967296.0) * 4294967296.0;
+	m as u32
+}
+fn main() {
+	let n = args().len as real;
+	var o byte[>..] = [];
+	let v = [0.0, -0.0, 2.5, -2.5, 1e17, -1e17, 4294967297.75, -7.0, 0.0 / 0.0, 1.0 / 0.0, -1.0 / 0.0, 9007199254740993.0];
+	for x in v {
+		let y = x * n;
+		let f = floor(y);
+		let i = (y as int) as real;
+		let g = (y as f32) as real;
+		format(o, floor(f), " ", ceil(f), " ", trunc(f), " ", -(-f), " ", floor(f + i), " ", ceil(f * 3.0), " ", floor(i), " ", trunc(-f), " ", floor(floor(g) * 0.5), " ", tou(y), " ", ((tou(y) as! i32) & 255) as int, "\n");
+	}
+	print(o);
+}

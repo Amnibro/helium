@@ -1,0 +1,16 @@
+x = 7
+vals: list[int] = []
+for _ in range(2000):
+    x = (x * 1103515245 + 12345) % 2147483648
+    vals.append(x % 1000)
+
+n = len(vals)
+dp: list[int] = [1] * n
+best = 0
+for i in range(n):
+    for j in range(i):
+        if vals[j] < vals[i] and dp[j] + 1 > dp[i]:
+            dp[i] = dp[j] + 1
+    if dp[i] > best:
+        best = dp[i]
+print(best)

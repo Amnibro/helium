@@ -1,0 +1,27 @@
+fn shift_text(s: &str, k: u8) -> String {
+    s.chars()
+        .map(|c| {
+            if c.is_ascii_lowercase() {
+                (((c as u8 - b'a' + 26 - k) % 26) + b'a') as char
+            } else if c.is_ascii_uppercase() {
+                (((c as u8 - b'A' + 26 - k) % 26) + b'A') as char
+            } else {
+                c
+            }
+        })
+        .collect()
+}
+
+fn main() {
+    let cipher = "Wkh vhfuhw phhwlqj lv dw qrrq";
+    for k in 0..26u8 {
+        let plain = shift_text(cipher, k);
+        if plain
+            .split_whitespace()
+            .any(|w| w.to_ascii_lowercase() == "secret")
+        {
+            println!("{}", plain);
+            break;
+        }
+    }
+}

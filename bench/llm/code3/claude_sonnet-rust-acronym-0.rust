@@ -1,0 +1,10 @@
+fn main() {
+    let text = "Four score and seven years ago our fathers brought forth on this continent a new nation conceived in Liberty and dedicated to the proposition that all men are created equal";
+    let s: String = text
+        .split_whitespace()
+        .filter(|w| w.chars().count() >= 4)
+        .filter_map(|w| w.chars().next())
+        .flat_map(|c| c.to_uppercase())
+        .collect();
+    println!("{}", s);
+}

@@ -1,0 +1,10 @@
+use std
+struct H { a int[>..], k int }
+f(o H&) H:
+	h ~= copy(o)
+	h.a[0] = 99; h.k = 5
+	h
+main():
+	x ~= H{[1, 2, 3], 1}
+	y := f(x)
+	print(str(x.a[0], " ", x.k, " ", y.a[0], " ", y.k))

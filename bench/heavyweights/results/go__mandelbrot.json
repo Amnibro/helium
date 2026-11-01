@@ -1,0 +1,42 @@
+{
+  "lang": "go",
+  "label": "Go",
+  "bench": "mandelbrot",
+  "file": "mandelbrot",
+  "n": 4000,
+  "compile_cmd": "/home/anmire/.local/opt/go1.27.3/bin/go build -o /tmp/helium-heavyweights/go/mandelbrot /home/anmire/ai/amni-lang/helium-identity/bench/heavyweights/go/mandelbrot.go",
+  "compile": {
+    "median": 0.040301194000000005,
+    "mean": 0.040118195333333335,
+    "stddev": 0.004232373215824232,
+    "min": 0.035797291,
+    "max": 0.044256101000000006,
+    "times": [
+      0.044256101000000006,
+      0.040301194000000005,
+      0.035797291
+    ],
+    "peak_rss_kb": 20108.0
+  },
+  "run_cmd": "/tmp/helium-heavyweights/go/mandelbrot 4000",
+  "binary_bytes": 2357814,
+  "stripped_bytes": 1524120,
+  "stdout": "6351041\n",
+  "single_run_s": 0.634655237197876,
+  "wall": {
+    "median": 0.630189337,
+    "mean": 0.6304234396,
+    "stddev": 0.0027616693227038836,
+    "min": 0.627127341,
+    "max": 0.634379307,
+    "times": [
+      0.631597819,
+      0.634379307,
+      0.630189337,
+      0.6288233940000001,
+      0.627127341
+    ]
+  },
+  "peak_rss_kb": 1860.0,
+  "correct": true
+}

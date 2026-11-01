@@ -1,0 +1,13 @@
+fn main() {
+    let requests = [5i32, 2, 9, 9, 1, 7, 3];
+    let mut pos = 0;
+    let mut floors = 0;
+    let mut time = 0;
+    for &r in requests.iter() {
+        let d = (r - pos).abs();
+        floors += d;
+        time += d * 2 + 5;
+        pos = r;
+    }
+    println!("{} {}", time, floors);
+}

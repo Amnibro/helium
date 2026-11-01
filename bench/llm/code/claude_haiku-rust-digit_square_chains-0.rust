@@ -1,0 +1,32 @@
+fn digit_square_sum(mut n: u64) -> u64 {
+    let mut s = 0;
+    while n > 0 {
+        let d = n % 10;
+        s += d * d;
+        n /= 10;
+    }
+    s
+}
+
+fn ends_at_89(mut n: u64) -> bool {
+    loop {
+        if n == 1 {
+            return false;
+        }
+        if n == 89 {
+            return true;
+        }
+        n = digit_square_sum(n);
+    }
+}
+
+fn main() {
+    let limit: u64 = 10_000_000;
+    let mut count: u64 = 0;
+    for n in 1..limit {
+        if ends_at_89(n) {
+            count += 1;
+        }
+    }
+    println!("{}", count);
+}

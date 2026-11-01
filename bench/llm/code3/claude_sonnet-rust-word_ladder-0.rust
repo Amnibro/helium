@@ -1,0 +1,20 @@
+use std::collections::VecDeque;
+
+fn main() {
+    let w = ["cold","cord","card","ward","warm","word","worm","wore","core","care","ware","wold"];
+    let n = w.len();
+    let diff = |a: &str, b: &str| a.bytes().zip(b.bytes()).filter(|(x, y)| x != y).count();
+    let mut dist = vec![usize::MAX; n];
+    let mut q = VecDeque::new();
+    dist[0] = 1;
+    q.push_back(0);
+    while let Some(u) = q.pop_front() {
+        for v in 0..n {
+            if dist[v] == usize::MAX && diff(w[u], w[v]) == 1 {
+                dist[v] = dist[u] + 1;
+                q.push_back(v);
+            }
+        }
+    }
+    println!("{}", dist[4]);
+}

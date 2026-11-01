@@ -1,0 +1,31 @@
+def main():
+    LIMIT = 1000000
+    cache = [-1] * LIMIT
+    cache[1] = 0
+
+    best_n = 1
+    best_s = 0
+
+    for start in range(2, LIMIT):
+        n = start
+        path = []
+        while n >= LIMIT or cache[n] < 0:
+            path.append(n)
+            if n % 2 == 0:
+                n //= 2
+            else:
+                n = 3 * n + 1
+        s = cache[n]
+        for v in reversed(path):
+            s += 1
+            if v < LIMIT:
+                cache[v] = s
+        if s > best_s:
+            best_s = s
+            best_n = start
+
+    print(best_n, best_s)
+
+
+if __name__ == "__main__":
+    main()

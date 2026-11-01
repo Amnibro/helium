@@ -1,0 +1,15 @@
+def main():
+    n = 300
+    A = [[(i * j) % 7 for j in range(n)] for i in range(n)]
+    B = [[(i + j) % 5 for j in range(n)] for i in range(n)]
+    col_sum_A = [0] * n
+    for i in range(n):
+        row = A[i]
+        for k in range(n):
+            col_sum_A[k] += row[k]
+    row_sum_B = [sum(B[k]) for k in range(n)]
+    total = sum(col_sum_A[k] * row_sum_B[k] for k in range(n))
+    print(total)
+
+if __name__ == "__main__":
+    main()

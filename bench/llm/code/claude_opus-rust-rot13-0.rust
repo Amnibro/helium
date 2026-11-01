@@ -1,0 +1,13 @@
+fn rot13(c: char) -> char {
+    match c {
+        'a'..='z' => (((c as u8 - b'a' + 13) % 26) + b'a') as char,
+        'A'..='Z' => (((c as u8 - b'A' + 13) % 26) + b'A') as char,
+        _ => c,
+    }
+}
+
+fn main() {
+    let input = "Hello, World! The year is 2026.";
+    let output: String = input.chars().map(rot13).collect();
+    println!("{}", output);
+}

@@ -1,0 +1,26 @@
+fn main() {
+    const N: usize = 20_000_000;
+    // Odd-only sieve: index i represents number 2*i + 1
+    let half = N / 2;
+    let mut composite = vec![false; half];
+    composite[0] = true; // 1 is not prime
+    let mut i = 1usize;
+    while (2 * i + 1) * (2 * i + 1) < N {
+        if !composite[i] {
+            let p = 2 * i + 1;
+            let mut j = (p * p) / 2;
+            while j < half {
+                composite[j] = true;
+                j += p;
+            }
+        }
+        i += 1;
+    }
+    let mut count = if N > 2 { 1 } else { 0 }; // prime 2
+    for k in 0..half {
+        if !composite[k] && 2 * k + 1 < N {
+            count += 1;
+        }
+    }
+    println!("{}", count);
+}

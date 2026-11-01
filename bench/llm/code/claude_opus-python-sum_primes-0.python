@@ -1,0 +1,14 @@
+def main():
+    n = 100000
+    sieve = bytearray([1]) * n
+    sieve[0] = sieve[1] = 0
+    i = 2
+    while i * i < n:
+        if sieve[i]:
+            sieve[i * i::i] = bytearray(len(range(i * i, n, i)))
+        i += 1
+    print(sum(i for i in range(n) if sieve[i]))
+
+
+if __name__ == "__main__":
+    main()

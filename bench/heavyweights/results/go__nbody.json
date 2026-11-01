@@ -1,0 +1,42 @@
+{
+  "lang": "go",
+  "label": "Go",
+  "bench": "nbody",
+  "file": "nbody",
+  "n": 10000000,
+  "compile_cmd": "/home/anmire/.local/opt/go1.27.3/bin/go build -o /tmp/helium-heavyweights/go/nbody /home/anmire/ai/amni-lang/helium-identity/bench/heavyweights/go/nbody.go",
+  "compile": {
+    "median": 0.034329226000000004,
+    "mean": 0.034234278,
+    "stddev": 0.001650618396174297,
+    "min": 0.032538235,
+    "max": 0.035835373000000004,
+    "times": [
+      0.034329226000000004,
+      0.032538235,
+      0.035835373000000004
+    ],
+    "peak_rss_kb": 19792.0
+  },
+  "run_cmd": "/tmp/helium-heavyweights/go/nbody 10000000",
+  "binary_bytes": 2375784,
+  "stripped_bytes": 1536408,
+  "stdout": "-0.169075164\n-0.169077842\n",
+  "single_run_s": 0.5262277126312256,
+  "wall": {
+    "median": 0.51629061,
+    "mean": 0.5142820788,
+    "stddev": 0.005286088319446142,
+    "min": 0.506842166,
+    "max": 0.519173057,
+    "times": [
+      0.51078952,
+      0.519173057,
+      0.518315041,
+      0.506842166,
+      0.51629061
+    ]
+  },
+  "peak_rss_kb": 3568.0,
+  "correct": true
+}

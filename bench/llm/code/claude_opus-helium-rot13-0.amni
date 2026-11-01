@@ -1,0 +1,11 @@
+fn rot(c byte) byte {
+	if c >= 'a' and c <= 'z' { return ((c - 'a' + 13) % 26 + 'a') as byte; }
+	if c >= 'A' and c <= 'Z' { return ((c - 'A' + 13) % 26 + 'A') as byte; }
+	c
+}
+fn main() {
+	let src = "Hello, World! The year is 2026.";
+	var out byte[>..] = [];
+	for c in src { out.push(rot(c)); }
+	print(out);
+}

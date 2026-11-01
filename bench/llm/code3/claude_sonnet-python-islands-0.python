@@ -1,0 +1,22 @@
+grid = ['11000110', '11001100', '00100001', '00011011', '10000011', '11110000']
+R, C = len(grid), len(grid[0])
+seen = [[False] * C for _ in range(R)]
+count = 0
+largest = 0
+for i in range(R):
+    for j in range(C):
+        if grid[i][j] == '1' and not seen[i][j]:
+            count += 1
+            size = 0
+            stack = [(i, j)]
+            seen[i][j] = True
+            while stack:
+                x, y = stack.pop()
+                size += 1
+                for dx, dy in ((1, 0), (-1, 0), (0, 1), (0, -1)):
+                    nx, ny = x + dx, y + dy
+                    if 0 <= nx < R and 0 <= ny < C and grid[nx][ny] == '1' and not seen[nx][ny]:
+                        seen[nx][ny] = True
+                        stack.append((nx, ny))
+            largest = max(largest, size)
+print(count, largest)

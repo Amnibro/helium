@@ -1,0 +1,11 @@
+fn main() {
+	var s = 0.0;
+	var sign = 1.0;
+	for i in 10000000 {
+		s += sign / ((2 * i + 1) as real);
+		sign = -sign;
+	}
+	var out byte[>..] = [];
+	format_flt(out, 4.0 * s, 6);
+	print(out);
+}

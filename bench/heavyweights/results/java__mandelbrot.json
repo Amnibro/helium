@@ -1,0 +1,42 @@
+{
+  "lang": "java",
+  "label": "Java (OpenJDK)",
+  "bench": "mandelbrot",
+  "file": "mandelbrot",
+  "n": 4000,
+  "compile_cmd": "javac -d /tmp/helium-heavyweights/java/mandelbrot /home/anmire/ai/amni-lang/helium-identity/bench/heavyweights/java/mandelbrot.java",
+  "compile": {
+    "median": 0.213668098,
+    "mean": 0.211465373,
+    "stddev": 0.013326649997819217,
+    "min": 0.197174598,
+    "max": 0.223553423,
+    "times": [
+      0.223553423,
+      0.197174598,
+      0.213668098
+    ],
+    "peak_rss_kb": 79720.0
+  },
+  "run_cmd": "java -cp /tmp/helium-heavyweights/java/mandelbrot mandelbrot 4000",
+  "binary_bytes": 801,
+  "stripped_bytes": 801,
+  "stdout": "6351041\n",
+  "single_run_s": 0.686715841293335,
+  "wall": {
+    "median": 0.690507455,
+    "mean": 0.68810148,
+    "stddev": 0.010467020033689796,
+    "min": 0.6720217740000001,
+    "max": 0.698251979,
+    "times": [
+      0.6720217740000001,
+      0.695548567,
+      0.698251979,
+      0.690507455,
+      0.684177625
+    ]
+  },
+  "peak_rss_kb": 40480.0,
+  "correct": true
+}

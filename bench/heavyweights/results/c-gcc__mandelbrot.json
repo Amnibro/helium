@@ -1,0 +1,42 @@
+{
+  "lang": "c-gcc",
+  "label": "C (gcc -O2)",
+  "bench": "mandelbrot",
+  "file": "mandelbrot",
+  "n": 4000,
+  "compile_cmd": "gcc -O2 -o /tmp/helium-heavyweights/c-gcc/mandelbrot /home/anmire/ai/amni-lang/helium-identity/bench/heavyweights/c/mandelbrot.c -lm",
+  "compile": {
+    "median": 0.031933766,
+    "mean": 0.032926161333333336,
+    "stddev": 0.002797235004375811,
+    "min": 0.030760426,
+    "max": 0.036084292000000004,
+    "times": [
+      0.036084292000000004,
+      0.031933766,
+      0.030760426
+    ],
+    "peak_rss_kb": 44252.0
+  },
+  "run_cmd": "/tmp/helium-heavyweights/c-gcc/mandelbrot 4000",
+  "binary_bytes": 16032,
+  "stripped_bytes": 14480,
+  "stdout": "6351041\n",
+  "single_run_s": 0.6136116981506348,
+  "wall": {
+    "median": 0.6021639010000001,
+    "mean": 0.604553333,
+    "stddev": 0.0066306987445356935,
+    "min": 0.5997532320000001,
+    "max": 0.616064909,
+    "times": [
+      0.616064909,
+      0.600770908,
+      0.5997532320000001,
+      0.6021639010000001,
+      0.604013715
+    ]
+  },
+  "peak_rss_kb": 2204.0,
+  "correct": true
+}

@@ -1,0 +1,28 @@
+{
+  "lang": "python",
+  "label": "Python (CPython)",
+  "bench": "fannkuch",
+  "file": "fannkuch",
+  "n": 11,
+  "run_cmd": "python3 /home/anmire/ai/amni-lang/helium-identity/bench/heavyweights/python/fannkuch.py 11",
+  "binary_bytes": null,
+  "stripped_bytes": null,
+  "stdout": "556355\nPfannkuchen(11) = 51\n",
+  "single_run_s": 61.98897457122803,
+  "wall": {
+    "median": 63.990312566,
+    "mean": 64.0543677334,
+    "stddev": 0.8758514510067628,
+    "min": 62.975476386,
+    "max": 65.117650743,
+    "times": [
+      63.475083359,
+      62.975476386,
+      63.990312566,
+      64.713315613,
+      65.117650743
+    ]
+  },
+  "peak_rss_kb": 10328.0,
+  "correct": true
+}

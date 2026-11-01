@@ -1,0 +1,24 @@
+fn main() {
+    let limit: u64 = 300000;
+    let mut best_start = 1u64;
+    let mut best_max = 1u64;
+    for s in 1..limit {
+        let mut n = s;
+        let mut m = s;
+        while n != 1 {
+            if n % 2 == 0 {
+                n /= 2;
+            } else {
+                n = 3 * n + 1;
+                if n > m {
+                    m = n;
+                }
+            }
+        }
+        if m > best_max {
+            best_max = m;
+            best_start = s;
+        }
+    }
+    println!("{} {}", best_start, best_max);
+}

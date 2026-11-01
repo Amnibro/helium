@@ -1,0 +1,46 @@
+recursive fn parse_expr(s const byte[:], p int&) int {
+	var v = parse_term(s, p);
+	while p < s.len && (s[p] == '+' || s[p] == '-') {
+		let op = s[p];
+		p += 1;
+		let r = parse_term(s, p);
+		if op == '+' { v = v + r; } else { v = v - r; }
+	}
+	v
+}
+
+recursive fn parse_term(s const byte[:], p int&) int {
+	var v = parse_factor(s, p);
+	while p < s.len && s[p] == '*' {
+		p += 1;
+		let r = parse_factor(s, p);
+		v = v * r;
+	}
+	v
+}
+
+recursive fn parse_factor(s const byte[:], p int&) int {
+	if s[p] == '(' {
+		p += 1;
+		let v = parse_expr(s, p);
+		p += 1;
+		return v;
+	}
+	var v = 0;
+	while p < s.len && s[p] >= '0' && s[p] <= '9' {
+		v = v * 10 + ((s[p] - '0') as int);
+		p += 1;
+	}
+	v
+}
+
+fn evaluate(s const byte[:]) int {
+	var p = 0;
+	parse_expr(s, p)
+}
+
+fn main() {
+	print(evaluate("(1+2)*3-4*(5-6)"));
+	print(evaluate("2*(3+4)*(5-1)"));
+	print(evaluate("100-2*3*4+(7-10)*2"));
+}

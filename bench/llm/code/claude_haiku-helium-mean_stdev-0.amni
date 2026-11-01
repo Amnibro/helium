@@ -1,0 +1,20 @@
+import math;
+
+fn main() {
+	let xs real[10] = [2.0, 4.0, 4.0, 4.0, 5.0, 5.0, 7.0, 9.0, 13.0, 21.0];
+	let n = xs.len as real;
+	var s = 0.0;
+	for x in xs { s += x; }
+	let m = s / n;
+	var ss = 0.0;
+	for x in xs {
+		let d = x - m;
+		ss += d * d;
+	}
+	let sd = sqrt(ss / n);
+	var out byte[>..] = [];
+	format_flt(out, m, 3);
+	out.push(' ');
+	format_flt(out, sd, 3);
+	print(out);
+}

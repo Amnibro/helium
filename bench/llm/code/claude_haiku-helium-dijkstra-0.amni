@@ -1,0 +1,27 @@
+let NODES = 7;
+let EDGES = 12;
+let INF = 1000000;
+
+fn main() {
+	let fr = [0, 0, 0, 1, 1, 2, 2, 3, 4, 5, 4, 3];
+	let to = [1, 2, 5, 2, 3, 3, 5, 4, 5, 4, 6, 6];
+	let w  = [7, 9, 14, 10, 15, 11, 2, 6, 9, 3, 1, 20];
+
+	var dist = [INF; 7];
+	dist[0] = 0;
+
+	for round in NODES {
+		for e in EDGES {
+			if dist[fr[e]] < INF && dist[fr[e]] + w[e] < dist[to[e]] {
+				dist[to[e]] = dist[fr[e]] + w[e];
+			}
+		}
+	}
+
+	var line byte[>..] = [];
+	for i in NODES {
+		if i > 0 { line.push(' '); }
+		format(line, dist[i]);
+	}
+	print(line);
+}

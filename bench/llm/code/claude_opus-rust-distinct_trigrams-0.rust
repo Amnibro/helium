@@ -1,0 +1,12 @@
+use std::collections::HashSet;
+
+fn main() {
+    let s = "abracadabraabracadabra".as_bytes();
+    let mut set: HashSet<&[u8]> = HashSet::new();
+    if s.len() >= 3 {
+        for i in 0..=s.len() - 3 {
+            set.insert(&s[i..i + 3]);
+        }
+    }
+    println!("{}", set.len());
+}

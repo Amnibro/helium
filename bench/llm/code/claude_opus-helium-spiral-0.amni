@@ -1,0 +1,31 @@
+fn main() {
+	var m int[25] = [0; 25];
+	for i in 25 { m[i] = i + 1; }
+	var top = 0;
+	var bottom = 4;
+	var left = 0;
+	var right = 4;
+	var s byte[>..] = [];
+	var first = true;
+	fn emit(v int) {
+		if first { first = false; } else { s.push(' '); }
+		format(s, v);
+	}
+	while top <= bottom && left <= right {
+		for c in left..right + 1 { emit(m[top * 5 + c]); }
+		top++;
+		for r in top..bottom + 1 { emit(m[r * 5 + right]); }
+		right--;
+		if top <= bottom {
+			var c = right;
+			while c >= left { emit(m[bottom * 5 + c]); c--; }
+			bottom--;
+		}
+		if left <= right {
+			var r = bottom;
+			while r >= top { emit(m[r * 5 + left]); r--; }
+			left++;
+		}
+	}
+	print(s);
+}

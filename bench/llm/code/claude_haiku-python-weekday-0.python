@@ -1,0 +1,13 @@
+def day_of_week(y, m, d):
+    # Sakamoto's algorithm: 0 = Sunday, ..., 6 = Saturday
+    t = [0, 3, 2, 5, 0, 3, 5, 1, 4, 6, 2, 4]
+    if m < 3:
+        y -= 1
+    return (y + y // 4 - y // 100 + y // 400 + t[m - 1] + d) % 7
+
+
+NAMES = ["Sunday", "Monday", "Tuesday", "Wednesday",
+         "Thursday", "Friday", "Saturday"]
+
+for year, month, day in [(2026, 10, 29), (2000, 1, 1), (1969, 7, 20)]:
+    print(NAMES[day_of_week(year, month, day)])

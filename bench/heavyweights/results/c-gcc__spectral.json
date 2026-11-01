@@ -1,0 +1,42 @@
+{
+  "lang": "c-gcc",
+  "label": "C (gcc -O2)",
+  "bench": "spectral",
+  "file": "spectral",
+  "n": 3000,
+  "compile_cmd": "gcc -O2 -o /tmp/helium-heavyweights/c-gcc/spectral /home/anmire/ai/amni-lang/helium-identity/bench/heavyweights/c/spectral.c -lm",
+  "compile": {
+    "median": 0.052666098,
+    "mean": 0.052088537000000004,
+    "stddev": 0.0012613611267162945,
+    "min": 0.050641806000000004,
+    "max": 0.05295770700000001,
+    "times": [
+      0.05295770700000001,
+      0.050641806000000004,
+      0.052666098
+    ],
+    "peak_rss_kb": 48176.0
+  },
+  "run_cmd": "/tmp/helium-heavyweights/c-gcc/spectral 3000",
+  "binary_bytes": 16240,
+  "stripped_bytes": 14504,
+  "stdout": "1.274224153\n",
+  "single_run_s": 0.27050065994262695,
+  "wall": {
+    "median": 0.272526246,
+    "mean": 0.2730178836,
+    "stddev": 0.001505250341282241,
+    "min": 0.271018376,
+    "max": 0.274695511,
+    "times": [
+      0.272526246,
+      0.271018376,
+      0.27250866300000004,
+      0.274695511,
+      0.27434062200000003
+    ]
+  },
+  "peak_rss_kb": 2172.0,
+  "correct": true
+}

@@ -1,0 +1,12 @@
+import re
+from collections import Counter
+
+text = ("It was the best of times, it was the worst of times, it was the age of wisdom, "
+        "it was the age of foolishness, it was the epoch of belief, it was the epoch of incredulity, "
+        "it was the season of Light, it was the season of Darkness.")
+
+words = [w for w in re.split(r"[^a-z]+", text.lower()) if w]
+counts = Counter(words)
+top = sorted(counts.items(), key=lambda kv: (-kv[1], kv[0]))[:5]
+for word, count in top:
+    print(f"{word} {count}")

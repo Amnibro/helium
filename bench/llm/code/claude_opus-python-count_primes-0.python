@@ -1,0 +1,14 @@
+import math
+
+def main():
+    n = 20000000
+    sieve = bytearray([1]) * n
+    sieve[0] = 0
+    sieve[1] = 0
+    for i in range(2, math.isqrt(n - 1) + 1):
+        if sieve[i]:
+            start = i * i
+            sieve[start::i] = bytes(len(range(start, n, i)))
+    print(sum(sieve))
+
+main()

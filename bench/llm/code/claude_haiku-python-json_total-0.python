@@ -1,0 +1,14 @@
+import json
+from decimal import Decimal
+
+DOC = '{"order": 1042, "items": [{"name": "bolt", "price": 0.25, "qty": 120}, {"name": "nut", "price": 0.1, "qty": 300}, {"name": "gear", "price": 12.5, "qty": 4}, {"name": "spring", "price": 1.75, "qty": 16}]}'
+
+data = json.loads(DOC, parse_float=Decimal)
+
+total = Decimal("0")
+for item in data["items"]:
+    price = item["price"]
+    if price.as_tuple().exponent == -2:
+        total += price * item["qty"]
+
+print(total)

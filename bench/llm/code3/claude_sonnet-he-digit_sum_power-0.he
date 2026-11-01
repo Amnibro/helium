@@ -1,0 +1,22 @@
+LIMIT = 9223372036854775807
+
+def digit_sum(n: int) -> int:
+    s = 0
+    while n > 0:
+        s += n % 10
+        n //= 10
+    return s
+
+best_sum = -1
+best_val = 0
+for a in range(1, 20):
+    p = 1
+    for b in range(1, 20):
+        if p > LIMIT // a:
+            break
+        p *= a
+        ds = digit_sum(p)
+        if ds > best_sum or (ds == best_sum and p < best_val):
+            best_sum = ds
+            best_val = p
+print(f"{best_sum} {best_val}")

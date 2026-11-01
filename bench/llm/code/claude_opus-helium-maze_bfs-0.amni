@@ -1,0 +1,37 @@
+fn main() {
+	let W = 10;
+	let H = 9;
+	let g = "S.#........##.####.#....#....##.#.#.##.#..#...#..#.####.#.##......#....######.#.........#E";
+	var s = 0;
+	var e = 0;
+	for i in W * H {
+		if g[i] == 'S' { s = i; }
+		if g[i] == 'E' { e = i; }
+	}
+	var dist int[>..] = [];
+	for i in W * H { dist.push(-1); }
+	let dr int[4] = [-1, 1, 0, 0];
+	let dc int[4] = [0, 0, -1, 1];
+	var q int[>..] = [];
+	var head = 0;
+	q.push(s);
+	dist[s] = 0;
+	while head < q.len {
+		let c = q[head];
+		head++;
+		let r = c / W;
+		let col = c % W;
+		for d in 4 {
+			let nr = r + dr[d];
+			let nc = col + dc[d];
+			if nr >= 0 && nr < H && nc >= 0 && nc < W {
+				let n = nr * W + nc;
+				if g[n] != '#' && dist[n] == -1 {
+					dist[n] = dist[c] + 1;
+					q.push(n);
+				}
+			}
+		}
+	}
+	print(dist[e]);
+}

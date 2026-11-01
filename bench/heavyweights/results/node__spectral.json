@@ -1,0 +1,28 @@
+{
+  "lang": "node",
+  "label": "Node.js",
+  "bench": "spectral",
+  "file": "spectral",
+  "n": 3000,
+  "run_cmd": "node /home/anmire/ai/amni-lang/helium-identity/bench/heavyweights/js/spectral.js 3000",
+  "binary_bytes": null,
+  "stripped_bytes": null,
+  "stdout": "1.274224153\n",
+  "single_run_s": 0.4174373149871826,
+  "wall": {
+    "median": 0.40364331800000003,
+    "mean": 0.4035777488,
+    "stddev": 0.007934249766106231,
+    "min": 0.394494921,
+    "max": 0.414842568,
+    "times": [
+      0.40364331800000003,
+      0.397988249,
+      0.394494921,
+      0.414842568,
+      0.406919688
+    ]
+  },
+  "peak_rss_kb": 59200.0,
+  "correct": true
+}

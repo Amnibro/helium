@@ -1,0 +1,28 @@
+{
+  "lang": "node",
+  "label": "Node.js",
+  "bench": "mandelbrot",
+  "file": "mandelbrot",
+  "n": 4000,
+  "run_cmd": "node /home/anmire/ai/amni-lang/helium-identity/bench/heavyweights/js/mandelbrot.js 4000",
+  "binary_bytes": null,
+  "stripped_bytes": null,
+  "stdout": "6351041\n",
+  "single_run_s": 0.6821649074554443,
+  "wall": {
+    "median": 0.6755214340000001,
+    "mean": 0.6751553666000001,
+    "stddev": 0.0029365143141775996,
+    "min": 0.671046166,
+    "max": 0.6779891610000001,
+    "times": [
+      0.677734782,
+      0.67348529,
+      0.6755214340000001,
+      0.6779891610000001,
+      0.671046166
+    ]
+  },
+  "peak_rss_kb": 58720.0,
+  "correct": true
+}

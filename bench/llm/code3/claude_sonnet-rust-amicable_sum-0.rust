@@ -1,0 +1,19 @@
+fn main() {
+    const N: usize = 10000;
+    let mut d = vec![0usize; N];
+    for i in 1..N {
+        let mut j = i * 2;
+        while j < N {
+            d[j] += i;
+            j += i;
+        }
+    }
+    let mut sum = 0usize;
+    for a in 2..N {
+        let b = d[a];
+        if b != a && b < N && d[b] == a {
+            sum += a;
+        }
+    }
+    println!("{}", sum);
+}

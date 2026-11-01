@@ -1,0 +1,27 @@
+fn main() {
+    const N: usize = 300;
+    let mut a = vec![vec![0u64; N]; N];
+    let mut b = vec![vec![0u64; N]; N];
+    for i in 0..N {
+        for j in 0..N {
+            a[i][j] = ((i * j) % 7) as u64;
+            b[i][j] = ((i + j) % 5) as u64;
+        }
+    }
+    let mut c = vec![vec![0u64; N]; N];
+    for i in 0..N {
+        for k in 0..N {
+            let aik = a[i][k];
+            for j in 0..N {
+                c[i][j] += aik * b[k][j];
+            }
+        }
+    }
+    let mut sum: u64 = 0;
+    for i in 0..N {
+        for j in 0..N {
+            sum += c[i][j];
+        }
+    }
+    println!("{}", sum);
+}

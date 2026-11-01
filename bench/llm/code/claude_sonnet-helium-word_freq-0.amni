@@ -1,0 +1,35 @@
+struct WC { w byte[..16], n int }
+
+fn main() {
+	let text = "It was the best of times, it was the worst of times, it was the age of wisdom, it was the age of foolishness, it was the epoch of belief, it was the epoch of incredulity, it was the season of Light, it was the season of Darkness.";
+	var words WC[>..] = [];
+	var cur byte[..16] = [];
+
+	fn flush() {
+		if cur.len > 0 {
+			var found = false;
+			for &e in words {
+				if e.w == cur { e.n += 1; found = true; }
+			}
+			if !found {
+				words.push(WC { w: cur, n: 1 });
+			}
+			cur.clear();
+		}
+	}
+
+	for ch in text {
+		if (ch >= 'A' && ch <= 'Z') || (ch >= 'a' && ch <= 'z') {
+			let lc = if ch >= 'A' && ch <= 'Z' { ch + 32 } else { ch };
+			cur.push(lc);
+		} else {
+			flush();
+		}
+	}
+	flush();
+
+	sort(words) { a, b => a.n > b.n || (a.n == b.n && compare(a.w, b.w) < 0) };
+	for i in 5 {
+		print(words[i].w, " ", words[i].n);
+	}
+}

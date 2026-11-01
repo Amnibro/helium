@@ -1,0 +1,27 @@
+fn main() {
+    let n = 600;
+    let max_iter = 200;
+    let mut count: u64 = 0;
+    for i in 0..n {
+        let cx = -2.0 + 3.0 * (i as f64) / (n as f64);
+        for j in 0..n {
+            let cy = -1.5 + 3.0 * (j as f64) / (n as f64);
+            let (mut zx, mut zy) = (0.0f64, 0.0f64);
+            let mut inside = true;
+            for _ in 0..max_iter {
+                let nx = zx * zx - zy * zy + cx;
+                let ny = 2.0 * zx * zy + cy;
+                zx = nx;
+                zy = ny;
+                if zx * zx + zy * zy > 4.0 {
+                    inside = false;
+                    break;
+                }
+            }
+            if inside {
+                count += 1;
+            }
+        }
+    }
+    println!("{}", count);
+}

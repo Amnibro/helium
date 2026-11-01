@@ -1,0 +1,27 @@
+import std;
+import os;
+import binary;
+fn mix(a int, x real, y real, b int, z real, w real) real { (a as real) * x - y * (b as real) + z / (w + 1.5) }
+fn ff(a f32, b f32, k int) f32 { a * b - (k as f32) }
+fn rec(x real, n int) real { if n == 0 { x } else { rec(x * 0.5 + 1.0, n - 1) + 0.25 } }
+fn sev(a int, b int, c int, d int, e int, f int, x real, g int) real { ((a + b + c + d + e + f + g) as real) * x }
+fn many(p real, q real, r real, s real, t real, u real, v real, w real, k int) real { p + q * 2.0 + r * 3.0 + s * 4.0 + t * 5.0 + u * 6.0 + v * 7.0 + w * 8.0 + k as real }
+fn ptr_t(x real) real { x * x + 1.0 }
+fn pair(x real) real, real { return x + 1.0, x - 1.0; }
+fn ret_only(k int) real { (k as real) * 0.125 }
+fn deep(x real, y real) real { let a = ret_only(3) + x; let b = rec(y, 4); let c = mix(2, a, b, 3, x, y); let d = ff(a as f32, b as f32, 2) as real; a + b * c - d + ptr_t(x) }
+fn main() {
+	let z = args().len as real;
+	var h u64 = 0;
+	var acc = 0.0;
+	for i in 300 {
+		let x = i as real * 0.37 - z;
+		acc += mix(i, x, x * 0.5, i % 7, -x, 2.0) + rec(x, i % 5) + sev(1, 2, 3, 4, 5, i, x, 7) + many(x, 1.0, 2.0, x, 3.0, 4.0, x, 5.0, i);
+		acc += ptr_t(x) + ptr_t(x * 0.1) + ret_only(i) + deep(x, x * 0.3);
+		let p, m = pair(x); acc += p * m;
+		h = h * 1000003 + binary::f64_bits(acc) + binary::f32_bits(ff(x as f32, 0.5, i)) as u64;
+	}
+	var o byte[>..] = [];
+	format(o, h, " ", acc, "\n");
+	print(o);
+}

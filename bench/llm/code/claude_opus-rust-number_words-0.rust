@@ -1,0 +1,62 @@
+const ONES: [&str; 20] = [
+    "zero", "one", "two", "three", "four", "five", "six", "seven", "eight", "nine", "ten",
+    "eleven", "twelve", "thirteen", "fourteen", "fifteen", "sixteen", "seventeen", "eighteen",
+    "nineteen",
+];
+const TENS: [&str; 10] = [
+    "", "", "twenty", "thirty", "forty", "fifty", "sixty", "seventy", "eighty", "ninety",
+];
+
+fn under_thousand(n: u64) -> String {
+    let mut parts: Vec<String> = Vec::new();
+    let h = n / 100;
+    let r = n % 100;
+    if h > 0 {
+        parts.push(format!("{} hundred", ONES[h as usize]));
+    }
+    if r > 0 {
+        if r < 20 {
+            parts.push(ONES[r as usize].to_string());
+        } else {
+            let t = TENS[(r / 10) as usize];
+            let o = r % 10;
+            if o == 0 {
+                parts.push(t.to_string());
+            } else {
+                parts.push(format!("{}-{}", t, ONES[o as usize]));
+            }
+        }
+    }
+    parts.join(" ")
+}
+
+fn to_words(n: u64) -> String {
+    if n == 0 {
+        return "zero".to_string();
+    }
+    let scales = ["", "thousand", "million", "billion", "trillion", "quadrillion", "quintillion"];
+    let mut groups: Vec<String> = Vec::new();
+    let mut n = n;
+    let mut i = 0;
+    while n > 0 {
+        let g = n % 1000;
+        if g > 0 {
+            let mut s = under_thousand(g);
+            if !scales[i].is_empty() {
+                s.push(' ');
+                s.push_str(scales[i]);
+            }
+            groups.push(s);
+        }
+        n /= 1000;
+        i += 1;
+    }
+    groups.reverse();
+    groups.join(" ")
+}
+
+fn main() {
+    for n in [1234567u64, 90210, 13, 1000000] {
+        println!("{}", to_words(n));
+    }
+}

@@ -1,0 +1,18 @@
+// lut fn: sparse, persistent lookup tables, the same results on every run.
+import std;
+struct P { a int, b i16 }
+fn steps(n int) int { var x = n; var c = 0; while x > 1 { x = if x % 2 == 0 { x / 2 } else { 3 * x + 1 }; c++; } c }
+lut fn fast_steps(n u16) int { steps(n) }
+lut fn mix(f bool, x i8, y u8) P { P { a: if f { x * 2 } else { -x }, b: y } }
+lut fn fib(n byte) u64 { var a u64 = 0; var b u64 = 1; for i in n as int { let c = a + b; a = b; b = c; } a }
+lut fn wide(hi u16, lo byte) bool { (hi as int * 256 + lo as int) % 7 == 3 }
+fn main() {
+	print(fast_steps(27), " ", fast_steps(27), " ", fast_steps(65535));
+	print(mix(true, -5, 200), " ", mix(false, 127, 255), " ", mix(false, -128, 0));
+	print(fib(90), " ", fib(0), " ", fib(1));
+	var t = 0;
+	for i in 1000 { t += fast_steps(i as u16); }
+	var w = 0;
+	for i in 70000 { if wide((i >> 8) as u16, (i & 255) as byte) { w++; } }
+	print(t, " ", w);
+}

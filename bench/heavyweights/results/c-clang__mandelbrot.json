@@ -1,0 +1,42 @@
+{
+  "lang": "c-clang",
+  "label": "C (clang -O2)",
+  "bench": "mandelbrot",
+  "file": "mandelbrot",
+  "n": 4000,
+  "compile_cmd": "clang -O2 -o /tmp/helium-heavyweights/c-clang/mandelbrot /home/anmire/ai/amni-lang/helium-identity/bench/heavyweights/c/mandelbrot.c -lm",
+  "compile": {
+    "median": 0.095516973,
+    "mean": 0.095874135,
+    "stddev": 0.00867625827720291,
+    "min": 0.087381973,
+    "max": 0.104723459,
+    "times": [
+      0.104723459,
+      0.087381973,
+      0.095516973
+    ],
+    "peak_rss_kb": 108396.0
+  },
+  "run_cmd": "/tmp/helium-heavyweights/c-clang/mandelbrot 4000",
+  "binary_bytes": 16040,
+  "stripped_bytes": 14496,
+  "stdout": "6351041\n",
+  "single_run_s": 0.7087802886962891,
+  "wall": {
+    "median": 0.6558020990000001,
+    "mean": 0.6805967476000001,
+    "stddev": 0.060199922675109006,
+    "min": 0.6361478580000001,
+    "max": 0.785048229,
+    "times": [
+      0.785048229,
+      0.6492863400000001,
+      0.6558020990000001,
+      0.676699212,
+      0.6361478580000001
+    ]
+  },
+  "peak_rss_kb": 2112.0,
+  "correct": true
+}

@@ -1,0 +1,14 @@
+h(x real) real: x * 2.0
+pick(v real&, lim real) real:
+	a := if v > lim { 0.0 } else { v }
+	b := if v > lim { v } else { 0.5 }
+	h(if v < lim { v } else { 1.0 }) + a + b
+ipick(v int&) int:
+	q := if v > 3 { v } else { 7 }
+	q + (if v < 0 { 1 } else { v })
+main():
+	x ~= 1.5
+	y ~= 9.0
+	n ~= 2
+	m ~= 5
+	print(pick(x, 3.0), " ", pick(y, 3.0), " ", ipick(n), " ", ipick(m))

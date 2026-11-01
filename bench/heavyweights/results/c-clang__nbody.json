@@ -1,0 +1,42 @@
+{
+  "lang": "c-clang",
+  "label": "C (clang -O2)",
+  "bench": "nbody",
+  "file": "nbody",
+  "n": 10000000,
+  "compile_cmd": "clang -O2 -o /tmp/helium-heavyweights/c-clang/nbody /home/anmire/ai/amni-lang/helium-identity/bench/heavyweights/c/nbody.c -lm",
+  "compile": {
+    "median": 0.064020329,
+    "mean": 0.062634984,
+    "stddev": 0.0024289444576142535,
+    "min": 0.059830349000000005,
+    "max": 0.06405427400000001,
+    "times": [
+      0.064020329,
+      0.059830349000000005,
+      0.06405427400000001
+    ],
+    "peak_rss_kb": 110608.0
+  },
+  "run_cmd": "/tmp/helium-heavyweights/c-clang/nbody 10000000",
+  "binary_bytes": 16344,
+  "stripped_bytes": 14776,
+  "stdout": "-0.169075164\n-0.169077842\n",
+  "single_run_s": 0.3620293140411377,
+  "wall": {
+    "median": 0.385751585,
+    "mean": 0.38552341760000003,
+    "stddev": 0.006968937723864039,
+    "min": 0.37597693800000004,
+    "max": 0.39279162300000003,
+    "times": [
+      0.37597693800000004,
+      0.39145503600000003,
+      0.385751585,
+      0.39279162300000003,
+      0.38164190600000003
+    ]
+  },
+  "peak_rss_kb": 2192.0,
+  "correct": true
+}

@@ -1,0 +1,17 @@
+use std::io::{self, Write};
+
+fn main() {
+    let stdout = io::stdout();
+    let mut out = io::BufWriter::new(stdout.lock());
+    for i in 1..=30 {
+        if i % 15 == 0 {
+            writeln!(out, "FizzBuzz").unwrap();
+        } else if i % 3 == 0 {
+            writeln!(out, "Fizz").unwrap();
+        } else if i % 5 == 0 {
+            writeln!(out, "Buzz").unwrap();
+        } else {
+            writeln!(out, "{}", i).unwrap();
+        }
+    }
+}

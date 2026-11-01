@@ -1,0 +1,19 @@
+struct Blk { k int, d f32[..], g f32[>..] }
+struct TR { id i32, d f32[], m byte[] }
+fn mk(B const Blk&, c bool) TR { TR { id: 1, d: if c { copy(B.d) } else { [] }, m: if c { [1 as byte, 2 as byte] } else { [] } } }
+fn mg(B const Blk&, c bool) TR { TR { id: 2, d: if c { copy(B.g) } else { [] }, m: [] } }
+fn pick(B const Blk&, w int) f32[] { match w { 0 => { copy(B.d) }, 1 => { copy(B.g) }, _ => { [] } } }
+fn tl(B const Blk&, w int) f32[] { if w == 0 { copy(B.d) } else if w == 1 { copy(B.g) } else { [] } }
+fn main() {
+	var B = Blk { k: 1, d: [..8], g: [] };
+	for i in 5 { B.d.push(i as f32 + 0.5); B.g.push(i as f32 * 2.0 + 1.0); }
+	let a = TR { id: 1, d: if B.k > 0 { copy(B.d) } else { [] }, m: [] };
+	let b = mk(B, true);
+	let c = mg(B, true);
+	let x1 f32[] = if B.k > 0 { copy(B.d) } else { [] };
+	let p0 = pick(B, 0); let p1 = pick(B, 1); let p2 = pick(B, 2);
+	let e = mk(B, false);
+	let t0 = tl(B, 0); let t1 = tl(B, 1); let t2 = tl(B, 2);
+	print(a.d.len, " ", a.d[0], " ", a.d[4], " ", b.d[0], " ", b.d[4], " ", b.m.len, " ", c.d.len, " ", c.d[0], " ", c.d[4]);
+	print(x1[0], " ", x1[4], " ", p0[0], " ", p0[4], " ", p1[0], " ", p1[4], " ", p2.len, " ", e.d.len, " ", e.m.len, " ", t0.len, " ", t0[4], " ", t1.len, " ", t1[4], " ", t2.len);
+}

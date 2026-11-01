@@ -1,0 +1,28 @@
+{
+  "lang": "node",
+  "label": "Node.js",
+  "bench": "nbody",
+  "file": "nbody",
+  "n": 10000000,
+  "run_cmd": "node /home/anmire/ai/amni-lang/helium-identity/bench/heavyweights/js/nbody.js 10000000",
+  "binary_bytes": null,
+  "stripped_bytes": null,
+  "stdout": "-0.169075164\n-0.169077842\n",
+  "single_run_s": 0.4686548709869385,
+  "wall": {
+    "median": 0.44041844100000005,
+    "mean": 0.4436719076,
+    "stddev": 0.021670867112774016,
+    "min": 0.42058157500000004,
+    "max": 0.472668552,
+    "times": [
+      0.42668609100000005,
+      0.42058157500000004,
+      0.472668552,
+      0.44041844100000005,
+      0.45800487900000003
+    ]
+  },
+  "peak_rss_kb": 59152.0,
+  "correct": true
+}

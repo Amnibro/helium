@@ -1,0 +1,73 @@
+fn find_at(s const byte[:], pat const byte[:], from int) int {
+	var i = from;
+	while i + pat.len <= s.len {
+		var ok = true;
+		for j in pat.len {
+			if s[i + j] != pat[j] { ok = false; break; }
+		}
+		if ok { return i; }
+		i += 1;
+	}
+	return -1;
+}
+
+fn number_end(s const byte[:], p int) int {
+	var i = p;
+	while i < s.len && (s[i] == '-' || s[i] == '.' || (s[i] >= '0' && s[i] <= '9')) { i += 1; }
+	return i;
+}
+
+fn parse_real(s const byte[:], from int, to int) real {
+	var v = 0.0;
+	var scale = 1.0;
+	var seen = false;
+	for i in from..to {
+		let c = s[i];
+		if c == '.' {
+			seen = true;
+		} else if seen {
+			scale /= 10.0;
+			v += (c - '0') as real * scale;
+		} else {
+			v = v * 10.0 + (c - '0') as real;
+		}
+	}
+	v
+}
+
+fn parse_int(s const byte[:], from int, to int) int {
+	var v = 0;
+	for i in from..to {
+		v = v * 10 + (s[i] - '0') as int;
+	}
+	v
+}
+
+fn frac_digits(s const byte[:], from int, to int) int {
+	var i = from;
+	while i < to && s[i] != '.' { i += 1; }
+	if i >= to { return 0; }
+	to - (i + 1)
+}
+
+fn main() {
+	let doc = "{\"order\": 1042, \"items\": [{\"name\": \"bolt\", \"price\": 0.25, \"qty\": 120}, {\"name\": \"nut\", \"price\": 0.1, \"qty\": 300}, {\"name\": \"gear\", \"price\": 12.5, \"qty\": 4}, {\"name\": \"spring\", \"price\": 1.75, \"qty\": 16}]}";
+	var total = 0.0;
+	var pp = find_at(doc, "\"price\": ", 0);
+	while pp >= 0 {
+		let ps = pp + 9;
+		let pe = number_end(doc, ps);
+		let price = parse_real(doc, ps, pe);
+		let qp = find_at(doc, "\"qty\": ", pe);
+		let qs = qp + 7;
+		let qe = number_end(doc, qs);
+		let qty = parse_int(doc, qs, qe);
+		if frac_digits(doc, ps, pe) <= 2 {
+			total += price * (qty as real);
+		}
+		pp = find_at(doc, "\"price\": ", qe);
+	}
+	var out byte[>..] = [];
+	format_flt(out, total, 2);
+	print(out);
+}

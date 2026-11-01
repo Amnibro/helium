@@ -1,0 +1,363 @@
+use os
+use types
+D_STRUCT := 1; D_ENUM := 2; D_ALIAS := 3; D_FN := 4; D_GLOBAL := 5
+struct Dc { k u8, node i32, file i32, next i32, name i32 }
+struct Gb { name i32, ty i32 }
+var DC Dc[>..]
+var DMAP i32[>..]
+var GB Gb[>..<]
+var ROOTDIR byte[>..]
+var LIBDIR byte[>..]
+var IMPS i32[>..]
+var DERR byte[>..]
+var NS_FILE i32[>..]
+struct Pk { name i32, root i32, key i32, src i32, so i32, mt bool, tk i32 }
+var PKS Pk[>..]; var FPKG i32[>..]
+helium_home() byte[>..]:
+	h byte[>..] ~= []; if env("HELIUM_HOME", h) && h.len > 0: return h
+	h.clear(); if env("GOOSE_HOME", h) && h.len > 0: return h
+	h.clear(); env("HOME", h); n := h.len; h.append("/.helium"); if is_dir(h[..]): return h
+	h.resize(n); h.append("/.goose"); if is_dir(h[..]): return h
+	h.resize(n); h.append("/.helium"); h
+blessed(name const byte[:]) const byte[:]:
+	if name == "physics":
+		"physics"
+	else:
+		if name == "gfx" || name == "audio" || name == "ui":
+			"gfx"
+		else:
+			""
+pk_find(name int) int:
+	for k, i PKS { if k.name == name { return i } } -1
+pk_add(name int, root const byte[:], key const byte[:], src const byte[:]) int:
+	PKS.push(Pk{name, intern(root), intern(key), intern(src), -1, false, -1}); PKS.len - 1
+PKF ~= 0
+shq(b byte[>..]&, s const byte[:]): b.append(" '"); for c s { if c == '\'' { b.append("'\\''") } else { b.push(c) } } b.push('\'')
+hx8(s const byte[:]) byte[>..]: h u64 ~= 14695981039346656037; for c s { h = (h ^ c) * 1099511628211 } o byte[>..] ~= []; for i 8 { d := ((h >> ((60 - i * 4) as u64)) & 15) as int; o.push((if d < 10 { '0' as int + d } else { 'a' as int + d - 10 }) as byte) } o
+iscommit(r const byte[:]) bool: ok ~= r.len >= 7 && r.len <= 40; for c r { if !(c >= '0' && c <= '9' || c >= 'a' && c <= 'f' || c >= 'A' && c <= 'F') { ok = false } } ok
+gsrc(src const byte[:], url byte[>..]&, ref byte[>..]&) bool:
+	at ~= -1; for c, i src { if c == '@' { at = i } } if at <= 0: return false
+	for c src[at..] { if c == ':' { return false } } ref.append(src[at + 1..]); rp := src[..at]; sl ~= 0; sch ~= false; for c, i rp { if c == '/' { sl++ } if c == '@' || c == ':' && i + 2 < rp.len && rp[i + 1] == '/' && rp[i + 2] == '/' { sch = true } }
+	if sch { url.append(rp) } else { if sl == 1 { url.append("https://github.com/"); url.append(rp) } else { if sl >= 2 { url.append("https://"); url.append(rp) } } } url.len > 0 && ref.len > 0
+pk_git(name int, src const byte[:]) int:
+	url byte[>..] ~= []; ref byte[>..] ~= []; if !gsrc(src, url, ref): return -1
+	k ~= 0; for c, i url { if c == ':' && i + 2 < url.len && url[i + 1] == '/' && url[i + 2] == '/' && k == 0 { k = i + 3 } } e ~= url.len; while e > k && url[e - 1] == '/' { e-- } if e - k > 4 && url[e - 4..e] == ".git" { e -= 4 }
+	key byte[>..] ~= []; key.append(url[k..e]); sf ~= key.len > 0 && key[0] != '/'; sl ~= 0; for c key { if c == '/' { sl++ } if !(c >= 'a' && c <= 'z' || c >= 'A' && c <= 'Z' || c >= '0' && c <= '9' || c == '.' || c == '_' || c == '-' || c == '/') { sf = false } }
+	if !sf || sl != 2: r0 ~= 0; for c, i key { if c == '/' { r0 = i + 1 } } rp byte[>..] ~= []; for c key[r0..] { rp.push(if c >= 'a' && c <= 'z' || c >= 'A' && c <= 'Z' || c >= '0' && c <= '9' || c == '.' || c == '_' || c == '-' { c } else { '_' }) } key.clear(); key.append(if rp.len == 0 { "repo" } else { rp[..] }); key.push('-'); key.append(hx8(url[..])[..])
+	key.push('/'); for c, i ref { if !iscommit(ref[..]) || i < 12 { key.push(if c == '/' || c == '\\' { '_' } else { c }) } }
+	root byte[>..] ~= helium_home(); root.append("/pkg/"); root.append(key[..])
+	pk_add(name, root[..], key[..], src)
+pk_fetch(i int, pt int) bool:
+	src := nm(PKS[i].src); dir := nm(PKS[i].root); nmn := nm(PKS[i].name); url byte[>..] ~= []; ref byte[>..] ~= []; gsrc(src, url, ref); cm := iscommit(ref[..]); up := PKF == 2 && !cm
+	if is_dir(dir) && !up: return true
+	if PKF == 0: m byte[>..] ~= []; format(m, "the package ", nmn, " from ", src, " is not fetched, and --offline fetches nothing: `hc fetch` fetches it"); derr(pt, m); return false
+	t byte[>..] ~= []; format(t, dir, ".tmp"); lg byte[>..] ~= []; format(lg, dir, ".log"); par byte[>..] ~= []; par.append(dir); while par.len > 0 && par[par.len - 1] != '/' { par.pop() }
+	g byte[>..] ~= []; g.append("git -C"); shq(g, t[..]); gd byte[>..] ~= []; gd.append("git -C"); shq(gd, dir)
+	b byte[>..] ~= []; b.append("if [ -d"); shq(b, dir); b.append(" ]; then ")
+	if up { format(b, "echo \"updating the package ", nmn, " from ", src, "\" >&2; ", gd[..], " fetch -q --no-progress --depth 1"); shq(b, url[..]); shq(b, ref[..]); format(b, " && ", gd[..], " checkout -q --detach FETCH_HEAD && ", gd[..], " submodule update -q --init --recursive --depth 1") } else { b.append("true") }
+	format(b, "; else echo \"fetching the package ", nmn, " from ", src, "\" >&2; rm -rf"); shq(b, t[..]); b.append(" && { ")
+	if cm { b.append("git init -q"); shq(b, t[..]); format(b, " && ", g[..], " fetch -q --no-progress --depth 1"); shq(b, url[..]); shq(b, ref[..]); format(b, " && ", g[..], " checkout -q --detach FETCH_HEAD && ", g[..], " submodule update -q --init --recursive --depth 1") } else { b.append("git clone -q --no-progress --depth 1 --branch"); shq(b, ref[..]); b.append(" --recurse-submodules --shallow-submodules"); shq(b, url[..]); shq(b, t[..]) }
+	b.append(" && mv"); shq(b, t[..]); shq(b, dir); b.append("; } || { rm -rf"); shq(b, t[..]); b.append("; exit 1; }; fi")
+	c byte[>..] ~= []; c.append("mkdir -p"); shq(c, par[..]); c.append(" && { flock 9 && sh -c"); shq(c, b[..]); c.append(" 2>&1 >/dev/null | grep -v '^Cloning\\|^warning: \\|^hint:' >&2; [ ${PIPESTATUS[0]} -eq 0 ] || exit 1; } 9>"); shq(c, dir); c.append(".lock"); w byte[>..] ~= []; w.append("bash -c"); shq(w, c[..])
+	if run_command(w[..]) == 0 && is_dir(dir): return true
+	m byte[>..] ~= []; format(m, "cannot fetch the package ", nmn, " from ", src); derr(pt, m); false
+fdir(f int) byte[>..]:
+	d byte[>..] ~= []; d.append(nm(FILES[f].name)); sl ~= -1; for c, i d { if c == '/' { sl = i } } if sl >= 0 { d.resize(sl); } else { d.clear(); d.push('.'); } d
+pk_same(n int, f int, k int) bool:
+	src := tok_str(ND[n].a); if nm(PKS[k].src) == src: return true
+	u0 byte[>..] ~= []; r0 byte[>..] ~= []; u1 byte[>..] ~= []; r1 byte[>..] ~= []; g0 := gsrc(nm(PKS[k].src), u0, r0); g1 := gsrc(src, u1, r1); x := TK[max(ND[n].t, 0)]; y := TK[max(PKS[k].tk, 0)]; who := if f != 0 && FPKG[f] >= 0 { nm(PKS[FPKG[f]].name) } else { nm(FILES[f].name) }
+	if !g0 && !g1: return true
+	if g0 && g1 && u0[..] == u1[..] && f != 0: w byte[>..] ~= []; format(w, nm(FILES[x.f].name), ":", x.line, ": warning: ", who, " needs the package ", nm(ND[n].s), " at ", r1[..], ", which ", nm(FILES[y.f].name), ":", y.line, " declares at ", r0[..], "\n"); write_stderr(w[..]); return true
+	m byte[>..] ~= []; if f != 0 { format(m, who, " needs the package ", nm(ND[n].s), " from ", src, ", which ", nm(FILES[y.f].name), ":", y.line, " declared from a different source, ", nm(PKS[k].src)) } else { format(m, "the package ", nm(ND[n].s), " is declared from both ", nm(PKS[k].src), " and ", src) } derr(ND[n].t, m); false
+pk_declare(n int, f int) bool:
+	name := ND[n].s; src byte[>..] ~= []; src.append(tok_str(ND[n].a))
+	k := pk_find(name); if k >= 0: return pk_same(n, f, k)
+	if src.len > 0 && (src[0] == '.' || src[0] == '/'): root byte[>..] ~= []; if src[0] != '/' { root.append(fdir(f)); root.push('/') } root.append(src[..]); key byte[>..] ~= []; format(key, "local/", hash(root[..])); pk_add(name, root[..], key[..], src[..]); return true
+	i := pk_git(name, src[..]); if i < 0 { m byte[>..] ~= []; format(m, "the git source ", src[..], " is not owner/repo@ref, host/owner/repo@ref or a URL with @ref"); derr(ND[n].t, m); return false } PKS[i].tk = ND[n].t; pk_fetch(i, ND[n].t)
+derr(t int, m const byte[:]): if DERR.len > 0 { return } x := TK[max(t, 0)]; DERR.append(nm(FILES[x.f].name)); format(DERR, ":", x.line, ": error: ", m);
+dmap(name int) int:
+	if name < 0 || name >= DMAP.len:
+		-1
+	else:
+		DMAP[name] as int
+dadd(k int, node int, file int, name int):
+	while DMAP.len <= name: DMAP.push(-1)
+	i := DC.len
+	DC.push(Dc{k, node, file, DMAP[name], name})
+	DMAP[name] = i
+qual(ns int, name int) int:
+	if ns < 0:
+		name
+	else:
+		s byte[>..] ~= []; s.append(nm(ns)); s.append("::"); s.append(nm(name)); intern(s)
+node_file(n int) int:
+	TK[ND[n].t].f as int
+file_ns(f int) int:
+	if f < NS_FILE.len:
+		NS_FILE[f] as int
+	else:
+		-1
+collect(file int, t0 int, t1 int):
+	for i t0..t1:
+		n := TOP[i]
+		x := ND[n]
+		k := x.k
+		if k == N_STRUCT: dadd(D_STRUCT, n, file, qual(x.a, x.s))
+		if k == N_ENUM: dadd(D_ENUM, n, file, qual(x.a, x.s))
+		if k == N_ALIAS: dadd(D_ALIAS, n, file, qual(x.a, x.s))
+		if k == N_FN:
+			if !(nm(x.s) == "main" && file != 0): dadd(D_FN, n, file, qual(x.a, x.s))
+		if k == N_VDECL: dadd(D_GLOBAL, n, file, qual(x.c, LS[x.l]))
+recursive try_load(path const byte[:], pk int) int:
+	id := intern(path)
+	for f, i FILES:
+		if f.name == id: return i
+	if !file_exists(path): return -1
+	t0 := TOP.len
+	if !parse_file(path): DERR.append(PERR); return -2
+	f := FILES.len - 1
+	while FPKG.len < FILES.len { FPKG.push(-1) } FPKG[f] = pk
+	while NS_FILE.len < FILES.len: NS_FILE.push(-1)
+	NS_FILE[f] = FILENS[FILENS.len - 1]
+	collect(f, t0, TOP.len)
+	t1 := TOP.len
+	im0 := IMPS.len
+	for i t0..t1:
+		if ND[TOP[i]].k == N_IMPORT: IMPS.push(TOP[i])
+	im1 := IMPS.len
+	sp := lib_path("std"); isstd := path == sp[..]
+	if FILES[f].amni && !isstd:
+		if load_import(NAME_STD, f, -1) < 0: return -2
+	if f == 0:
+		for q im0..im1:
+			n := IMPS[q]; if ND[n].a >= 0 && !pk_declare(n, f): return -2
+	for q im0..im1:
+		n := IMPS[q]; if ND[n].a >= 0 && f != 0 && pk_find(ND[n].s) >= 0 && !pk_same(n, f, pk_find(ND[n].s)): return -2
+		if ND[n].a >= 0 && f != 0 && pk_find(ND[n].s) < 0 { m byte[>..] ~= []; format(m, nm(FILES[f].name), " needs the package ", nm(ND[n].s), ": add\n    import ", nm(ND[n].s), " from \"", tok_str(ND[n].a), "\";\nto ", nm(FILES[0].name), " (packages are declared by the root file only)"); derr(ND[n].t, m); return -2 } if load_import(ND[n].s, f, ND[n].t) < 0: return -2
+	f
+recursive try_ext(p const byte[:], pk int) int:
+	a byte[>..] ~= []; a.append(p); a.append(".he"); r0 := try_load(a[..], pk); if r0 != -1 { return r0 } a.resize(p.len); a.append(".amni"); try_load(a[..], pk)
+lib_path(name const byte[:]) byte[..1024]:
+	p byte[..1024] ~= []; p.append(LIBDIR); p.push('/'); p.append(name); p.append(".he"); if !file_exists(p[..]) { p.resize(p.len - 3); p.append(".amni"); }; p
+imp_rel(t int) bool:
+	for n IMPS { if ND[n].t == t && ND[n].k == N_IMPORT { return ND[n].fl == 1 } } false
+recursive load_import(name int, from int, t int) int:
+	p byte[..1024] ~= []
+	rel := t >= 0 && from >= 0 && from < FILES.len && imp_rel(t); fnm := nm(FILES[from].name); sl ~= -1; if rel:
+		for c, i fnm:
+			if c == '/': sl = i
+	fp := if from >= 0 && from < FPKG.len { FPKG[from] as int } else { -1 }
+	if sl >= 0 { p.append(fnm[..sl]); } else { if fp >= 0 { p.append(nm(PKS[fp].root)); } else { p.append(ROOTDIR); } } p.push('/'); p.append(nm(name))
+	bl := !rel && blessed(nm(name)).len > 0; lb := lib_path(nm(name)); lo := fp >= 0 && nm(PKS[fp].key).len > 6 && nm(PKS[fp].key)[..6] == "local/"; r ~= if bl && fp >= 0 && !lo && file_exists(lb[..]) { try_load(lb[..], -1) } else { -1 }
+	if r == -1: r = try_ext(p[..], fp)
+	if r == -1 && bl && file_exists(lb[..]): r = try_load(lb[..], -1)
+	if r == -1 && !rel:
+		s byte[>..] ~= []; s.append(nm(name)); c ~= s.len; for ch, i s { if ch == '/' && c == s.len { c = i } } pk := pk_find(intern(s[..c])); if pk >= 0: q byte[>..] ~= []; q.append(nm(PKS[pk].root)); q.push('/'); q.append(if c < s.len { s[c + 1..] } else { s[..] }); r = try_ext(q[..], pk)
+	if r == -1: lp := lib_path(nm(name)); r = try_load(lp[..], -1)
+	if r == -1: m byte[>..] ~= []; format(m, "cannot find module ", nm(name)); derr(t, m); return -2
+	r
+load_program(root const byte[:]) bool:
+	parse_init()
+	types_init()
+	d ~= root.len; while d > 0 && root[d - 1] != '/': d--
+	ROOTDIR.clear(); ROOTDIR.append(if d > 0 { root[..d - 1] } else { "." })
+	e ~= root.len; for c, i root { if c == '.' && i > d { e = i } } key byte[>..] ~= []; format(key, "local/", hash(ROOTDIR[..])); pk_add(intern(root[d..e]), ROOTDIR[..], key[..], ".")
+	try_load(root, 0) >= 0 && DERR.len == 0
+gb_find(name int) int:
+	i ~= GB.len - 1; while i >= 0 { if GB[i].name == name { return GB[i].ty } i-- } -1
+lookup(name int, ns int, k int) int:
+	if ns >= 0:
+		d ~= dmap(qual(ns, name)); while d >= 0: if DC[d].k == k { return d } d = DC[d].next
+	d ~= dmap(name); f ~= -1
+	while d >= 0: if DC[d].k == k { if DC[d].file == 0 { return d } if f < 0 { f = d } } d = DC[d].next
+	f
+split_q(q int) int, int:
+	s := nm(q)
+	for i s.len:
+		if s[i] == ':' && i + 1 < s.len && s[i + 1] == ':': if i == 0 { return -2, intern(s[2..]) } return intern(s[..i]), intern(s[i + 2..])
+	return -1, q
+lookup_q(q int, ns int, k int) int:
+	a, b := split_q(q)
+	if a == -2: return lookup(b, -1, k)
+	if a >= 0: d ~= dmap(q); while d >= 0 { if DC[d].k == k { return d } d = DC[d].next } return -1
+	lookup(b, ns, k)
+lookup_ty(q int, ns int) int:
+	a, b := split_q(q)
+	if a == -1 && ns >= 0: for k [D_STRUCT, D_ENUM, D_ALIAS] { d ~= dmap(qual(ns, b)); while d >= 0 { if DC[d].k as int == k { return d } d = DC[d].next } }
+	for k [D_STRUCT, D_ENUM, D_ALIAS] { d := lookup_q(q, if a == -1 { -1 } else { ns }, k); if d >= 0 { return d } }
+	-1
+NSOV ~= -1
+ns_of(n int) int: if NSOV >= 0 { NSOV } else { file_ns(node_file(n)) }
+decl_ns(node int) int: if ND[node].a >= 0 { ND[node].a as int } else { file_ns(node_file(node)) }
+recursive rtype(n int, ns int) int:
+	if n < 0: return T_VOID
+	x := ND[n]
+	k := x.k as int
+	if k == N_TPRIM: return prim_type(x.op as int)
+	if k == N_TCONST: return rtype(x.a as int, ns)
+	if k == N_TIDX: return prim_type(x.op as int)
+	if k == N_TSLICE: e := rtype(x.a as int, ns); return t_slice(e, x.fl & 1 != 0)
+	if k == N_TREF:
+		e := rtype(x.a as int, ns)
+		fl := (x.fl & 1) as int | (x.fl & 2) as int
+		if x.c >= 0:
+			w := if x.c as int == K_VARINT { 8 } else { int_storage_of_tok(x.c as int) }
+			pd := if x.s >= 0 { lookup_q(x.s as int, ns, D_GLOBAL) } else { -1 }
+			return t_rel(e, fl, w, pd as i64)
+		if TY[e].k == TY_REF: if fl & 2 != 0 { return t_ref(TY[e].a as int, TY[e].fl as int | 2) } return if TY[e].c < 0 { e } else { t_ref(TY[e].a as int, TY[e].fl as int) }
+		return t_ref(e, fl)
+	if k == N_TARR:
+		e := rtype(x.a as int, ns)
+		a := x.op as int
+		if a == A_FIXED: v, ok := ceval(x.b as int, ns); if !ok { derr(x.t as int, "constant integer expression expected for array size") } return t_arr(e, A_FIXED, v, -1)
+		if a == A_LIM: if x.b < 0 { return t_arr(e, A_LIM, -1, 6) } v, ok := ceval(x.b as int, ns); if !ok { derr(x.t as int, "capacity must be a constant") } return t_arr(e, A_LIM, v, lim_lenstore(v))
+		if a == A_VAR: ls := if x.c < 0 { 6 } else { if x.c as int == K_VARINT { 8 } else { int_storage_of_tok(x.c as int) } }; return t_arr(e, A_VAR, -1, ls)
+		return t_arr(e, a, -1, -1)
+	if k == N_TVAR:
+		b := rtype(x.a as int, ns)
+		if TY[b].k != TY_ENUM: derr(x.t as int, "variant type of a non-enum"); return T_ERRT
+		ei := TY[b].a as int
+		for i ENI[ei].vnum:
+			if ENV[ENI[ei].v0 as int + i].name == x.s: return t_variant(ei, i)
+		m byte[>..] ~= []; format(m, "no variant ", nm(x.s as int), " in ", ty_name(b)); derr(x.t as int, m)
+		return T_ERRT
+	if k == N_TFN: return T_FNV
+	if k == N_TNAME:
+		name := x.s as int
+		if x.n == 0:
+			g := gb_find(name); if g >= 0: return g
+		args i32[..16] ~= []
+		for i x.n: at0 := rtype(kid(n, i), ns); args.push(at0 as i32)
+		d := lookup_ty(name, ns); dk := if d >= 0 { DC[d].k as int } else { -1 }
+		if dk == D_STRUCT: return t_struct(inst_struct(DC[d].node as int, args[..]))
+		if dk == D_ENUM: return t_enum(inst_enum(DC[d].node as int, args[..]), x.fl & 1 != 0)
+		if dk == D_ALIAS: an := DC[d].node as int; return rtype(ND[an].b as int, ns_of(an))
+		m byte[>..] ~= []; v9 := if x.n == 0 { find_lv(name) } else { -1 }; if v9 >= 0 && LVS[v9].fl & LV_CFB != 0 { format(m, "const for binding ", nm(name), " is not a type") } else { format(m, "unknown type ", nm(name)) } derr(x.t as int, m)
+		return T_ERRT
+	derr(x.t as int, "bad type")
+	T_ERRT
+gen_names(gl int, out i32[..16]&):
+	if gl >= 0:
+		for i ND[gl].n: out.push(ND[kid(gl, i)].s)
+var ISI i32[>..]
+inode(t int) int: if TY[t].k == TY_STRUCT { STI[TY[t].a].node as int } else { ENI[TY[t].a].node as int }
+ichain(node int, t int) bool:
+	ISI.push(t as i32); ch i32[..17] ~= []; for q ISI { if inode(q) == node && ch.len < 17 { ch.push(q) } } if ch.len <= 16: return false
+	m byte[>..] ~= []; format(m, "instantiating ", ty_name(t), " would chain more than 16 instantiations of ", nm(ND[node].s), ", each needed by the one before ("); for q ch[..3] { format(m, ty_name(q), ", ") } m.append("...)"); derr(ND[node].t, m[..]); true
+recursive inst_struct(node int, args i32[:]) int:
+	for s, i STI:
+		if s.node == node && s.tn == args.len:
+			same ~= true; for j args.len { if TYL[s.ta + j] != args[j] { same = false } } if same: return i
+	ta := TYL.len; TYL.append(args)
+	si := STI.len
+	STI.push(SI{node: node, ta: ta, tn: args.len, f0: SFI.len, fnum: 0, name: ND[node].s, ..})
+	gn i32[..16] ~= []; gen_names(ND[node].d, gn)
+	if gn.len != args.len: derr(ND[node].t, "wrong number of type arguments")
+	g0 := GB.len
+	for i min(gn.len, args.len): GB.push(Gb{gn[i], args[i]})
+	deep := ichain(node, t_struct(si))
+	f0 := if deep { SFI.len } else { fields_into(node, ns_of(node)) }
+	ISI.pop(); STI[si].f0 = f0; STI[si].fnum = SFI.len - f0
+	GB.pop_n(GB.len - g0)
+	si
+recursive fields_into(node int, ns int) int:
+	buf FI[..256] ~= []
+	for i ND[node].n:
+		f := kid(node, i)
+		x := ND[f]
+		if x.fl & 4 != 0: buf.push(FI{name: -1, ty: -1, def: -1, fl: x.fl, padn: x.c, off: 0}); continue
+		ft := rtype(x.a, ns)
+		buf.push(FI{name: x.s, ty: ft, def: x.b, fl: x.fl, padn: 0, off: 0})
+	f0 := SFI.len
+	SFI.append(buf[..])
+	f0
+recursive inst_enum(node int, args i32[:]) int:
+	for s, i ENI:
+		if s.node == node && s.tn == args.len:
+			same ~= true; for j args.len { if TYL[s.ta + j] != args[j] { same = false } } if same: return i
+	ta := TYL.len; TYL.append(args)
+	ei := ENI.len
+	nv := ND[node].n
+	ENI.push(EI{node: node, ta: ta, tn: args.len, v0: ENV.len, vnum: nv, name: ND[node].s, ..})
+	v0 := ENV.len
+	for i nv: v := kid(node, i); ENV.push(VI{name: ND[v].s, f0: 0, fnum: 0, si: -1, size: 0, haspay: ND[v].fl & 1 != 0})
+	gn i32[..16] ~= []; gen_names(ND[node].d, gn)
+	g0 := GB.len
+	for i min(gn.len, args.len): GB.push(Gb{gn[i], args[i]})
+	ns := ns_of(node); deep := ichain(node, t_enum(ei, false))
+	for i nv:
+		v := kid(node, i)
+		si := STI.len
+		STI.push(SI{node: v, ta: ta, tn: args.len, f0: SFI.len, fnum: 0, name: ND[v].s, ..})
+		f0 := if deep { SFI.len } else { fields_into(v, ns) }
+		STI[si].f0 = f0; STI[si].fnum = SFI.len - f0
+		ENV[v0 + i].si = si
+	ISI.pop(); GB.pop_n(GB.len - g0)
+	ei
+cwrap(v i64, c int) i64:
+	if c < 0 || c & 3 == 3: return v
+	b := 8 << (c & 3) as i64
+	u := (v as! u64) & (1 << b as u64) - 1
+	if c < 4 && u >= 1 << (b - 1) as u64: return u as! i64 - (1 << b)
+	u as! i64
+ceval(n int, ns int) i64, bool: v, c, ok := ceval3(n, ns); return v, ok
+var CEV i32[>..]
+cev_cyc(d int, name int, t int) bool:
+	for q CEV { if q == d { m byte[>..] ~= []; format(m, "cycle in constant initializer: ", nm(name)); derr(t, m[..]); return true } } false
+recursive ceval3(n int, ns int) i64, int, bool:
+	if n < 0: return 0, -1, false
+	x := ND[n]
+	k := x.k
+	if k == N_INT: return TK[x.t].v, if TK[x.t].uns { 7 } else { -1 }, true
+	if k == N_ID && CFBS.len > 0:
+		v := find_lv(x.s); if v >= 0 && LVS[v].fl & LV_CFB != 0: c := CFBS[LVS[v].node]; if c.k != 0 { return 0, -1, false } sa := AOWN; AOWN = c.b; r, u, ok := cval(c.a); AOWN = sa; return r, if u { 7 } else { -1 }, ok
+	if k == N_UN:
+		v, c, ok := ceval3(x.a, ns)
+		if x.op as int == T_MINUS: c2 := if c == 7 && ND[x.a].k == N_INT { -1 } else { c }; return cwrap(0 - v, c2), c2, ok
+		if x.op as int == T_BITNOT: return cwrap(~v, c), c, ok
+		return 0, -1, false
+	if k == N_BIN:
+		a, ca, oa := ceval3(x.a, ns)
+		b, cb, ob := ceval3(x.b, ns)
+		if !oa || !ob: return 0, -1, false
+		o := x.op
+		c := if o == T_SHL || o == T_SHR { ca } else { if ca >= 0 { ca } else { cb } }
+		un := c >= 4
+		ua := a as! u64; ub := b as! u64
+		sh := if c >= 0 { ((8 << (c & 3) as i64) - 1) as u64 } else { 63 }
+		if o == T_PLUS { return cwrap(a + b, c), c, true } if o == T_MINUS { return cwrap(a - b, c), c, true } if o == T_MUL: return cwrap(a * b, c), c, true
+		if o == T_DIV: if b == 0 { return 0, -1, false } if un { return cwrap((ua / ub) as! i64, c), c, true } if b == -1 { return cwrap(0 - a, c), c, true } return cwrap(a / b, c), c, true
+		if o == T_MOD: if b == 0 { return 0, -1, false } if un { return cwrap((ua % ub) as! i64, c), c, true } if b == -1 || b == 1 { return 0, c, true } r := a % b; return cwrap(if r < 0 { if b < 0 { r - b } else { r + b } } else { r }, c), c, true
+		if o == T_SHL: return cwrap(a << (ub & sh), c), c, true
+		if o == T_SHR: if un { w := if c >= 0 && c & 3 != 3 { (a as! u64) & (1 << sh + 1) - 1 } else { ua }; return cwrap((w >> (ub & sh)) as! i64, c), c, true } return cwrap(a >> (ub & sh), c), c, true
+		if o == T_AND { return cwrap(a & b, c), c, true } if o == T_OR { return cwrap(a | b, c), c, true } if o == T_XOR: return cwrap(a ^ b, c), c, true
+		return 0, -1, false
+	if k == N_AS: v, c, ok := ceval3(x.a, ns); tn0 := x.b; if ND[tn0].k == N_TPRIM { tc := int_storage_of_tok(ND[tn0].op); if tc >= 0 { return cwrap(v, tc), tc, ok } } return v, c, ok
+	if k == N_ID:
+		d := lookup_q(x.s, ns, D_GLOBAL)
+		if d < 0: return 0, -1, false
+		g := DC[d].node
+		if ND[g].fl & V_VAR != 0 || ND[g].b < 0: return 0, -1, false
+		if cev_cyc(d, x.s as int, x.t as int): return 0, -1, false
+		CEV.push(d as i32); v, c, ok := ceval3(kid(ND[g].b, 0), ns_of(g)); CEV.pop()
+		tn0 := ND[g].a
+		if tn0 >= 0 && ND[tn0].k == N_TPRIM:
+			tc := int_storage_of_tok(ND[tn0].op); if tc >= 0: return cwrap(v, tc), tc, ok
+		return v, c, ok
+	if k == N_DOT && (nm(x.s) == "len" || nm(x.s) == "cap") && ND[x.a].k == N_ID: v, ok := glen(ND[x.a].s as int, ns, nm(x.s) == "cap"); return v, -1, ok
+	return 0, -1, false
+recursive glen(name int, ns int, cap bool) i64, bool:
+	d := lookup_q(name, ns, D_GLOBAL)
+	if d < 0: return 0, false
+	if cev_cyc(d, name, ND[DC[d].node].t as int): return 0, false
+	CEV.push(d as i32); v, ok := glen_d(d, cap); CEV.pop(); return v, ok
+recursive glen_d(d int, cap bool) i64, bool:
+	g := DC[d].node; gs := ns_of(g)
+	if ND[g].a >= 0:
+		t := rtype(ND[g].a, gs); if TY[t].k == TY_ARR && TY[t].s == A_FIXED as u8 { return TY[t].b, true } if TY[t].k == TY_ARR && TY[t].s == A_LIM as u8 && TY[t].b >= 0 && cap { return TY[t].b, true } return 0, false
+	if ND[g].b < 0: return 0, false
+	iv := kid(ND[g].b, 0); ik := ND[iv].k as int
+	if ik == N_ARR: if ND[iv].b >= 0 { v, c, ok := ceval3(ND[iv].b, gs); return v, ok } return ND[iv].n as i64, true
+	if ik == N_STR: return TK[ND[iv].t].w as i64, true
+	if ik == N_ID: return glen(ND[iv].s as int, gs, cap)
+	return 0, false

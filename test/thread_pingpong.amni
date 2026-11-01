@@ -1,0 +1,35 @@
+import std;
+import os;
+struct Job { id int, lo int, hi int }
+struct Done { id int, sum int }
+thread_fn worker(data: int[], scale: int) {
+	loop {
+		let j = qget<Job>();
+		guard j.id >= 0 else { break; }
+		var s = 0;
+		for i in j.lo..j.hi { s += data[i] * scale; }
+		qput(Done { id: j.id, sum: s });
+	}
+}
+fn main() {
+	var data int[>..] = [];
+	for i in 77777 { data.push(i % 1007 - 503); }
+	let workers = 7;
+	var ids int[>..] = [];
+	for w in workers { ids.push(thread_spawn(worker, data[..], 3)); }
+	var total = 0;
+	var rounds = 0;
+	for r in 377 {
+		let n = 1 + r % 9;
+		let step = data.len / n;
+		for k in n { qput(Job { id: k, lo: k * step, hi: if k == n - 1 { data.len } else { (k + 1) * step } }); }
+		var got = 0;
+		for k in n { let d = qget<Done>(); got += d.sum + d.id; }
+		total += got;
+		rounds++;
+	}
+	for w in workers { qput(Job { id: -1, lo: 0, hi: 0 }); }
+	for id in ids { thread_wait(id); }
+	let x, ok = qget<Done>(7);
+	print(str(rounds, " ", total, " ", x.sum, " ", ok));
+}

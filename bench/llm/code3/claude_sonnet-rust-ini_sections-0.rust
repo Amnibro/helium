@@ -1,0 +1,25 @@
+use std::collections::BTreeMap;
+
+fn main() {
+    let text = "[db]\nhost=local\nport=5432\n[web]\nport=8080\nworkers=4\n[db]\nuser=admin";
+    let mut sections: BTreeMap<String, BTreeMap<String, String>> = BTreeMap::new();
+    let mut current = String::new();
+    for line in text.lines() {
+        let line = line.trim();
+        if line.is_empty() || line.starts_with(';') || line.starts_with('#') {
+            continue;
+        }
+        if line.starts_with('[') && line.ends_with(']') {
+            current = line[1..line.len() - 1].trim().to_string();
+            sections.entry(current.clone()).or_default();
+        } else if let Some(pos) = line.find('=') {
+            let k = line[..pos].trim().to_string();
+            let v = line[pos + 1..].trim().to_string();
+            sections.entry(current.clone()).or_default().insert(k, v);
+        }
+    }
+    for (name, kv) in &sections {
+        let parts: Vec<String> = kv.iter().map(|(k, v)| format!("{}={}", k, v)).collect();
+        println!("{}: {}", name, parts.join(","));
+    }
+}

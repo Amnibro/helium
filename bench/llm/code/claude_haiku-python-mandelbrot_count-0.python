@@ -1,0 +1,23 @@
+def main():
+    n = 600
+    max_iter = 200
+    count = 0
+    for i in range(n):
+        x = -2.0 + 3.0 * i / n
+        for j in range(n):
+            y = -1.5 + 3.0 * j / n
+            c = complex(x, y)
+            z = 0j
+            inside = True
+            for _ in range(max_iter):
+                z = z * z + c
+                if z.real * z.real + z.imag * z.imag > 4.0:
+                    inside = False
+                    break
+            if inside:
+                count += 1
+    print(count)
+
+
+if __name__ == "__main__":
+    main()

@@ -1,0 +1,42 @@
+{
+  "lang": "java",
+  "label": "Java (OpenJDK)",
+  "bench": "fannkuch",
+  "file": "fannkuch",
+  "n": 11,
+  "compile_cmd": "javac -d /tmp/helium-heavyweights/java/fannkuch /home/anmire/ai/amni-lang/helium-identity/bench/heavyweights/java/fannkuch.java",
+  "compile": {
+    "median": 0.26687510400000003,
+    "mean": 0.26279047533333333,
+    "stddev": 0.02569507975248375,
+    "min": 0.235297739,
+    "max": 0.286198583,
+    "times": [
+      0.235297739,
+      0.26687510400000003,
+      0.286198583
+    ],
+    "peak_rss_kb": 80216.0
+  },
+  "run_cmd": "java -cp /tmp/helium-heavyweights/java/fannkuch fannkuch 11",
+  "binary_bytes": 1481,
+  "stripped_bytes": 1481,
+  "stdout": "556355\nPfannkuchen(11) = 51\n",
+  "single_run_s": 1.9413809776306152,
+  "wall": {
+    "median": 2.043714808,
+    "mean": 1.9723520116,
+    "stddev": 0.10627770136361775,
+    "min": 1.849892483,
+    "max": 2.061138058,
+    "times": [
+      2.043714808,
+      1.862684422,
+      1.849892483,
+      2.044330287,
+      2.061138058
+    ]
+  },
+  "peak_rss_kb": 42620.0,
+  "correct": true
+}

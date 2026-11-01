@@ -1,0 +1,80 @@
+def tokenize(s):
+    tokens = []
+    i = 0
+    while i < len(s):
+        c = s[i]
+        if c.isspace():
+            i += 1
+        elif c.isdigit():
+            j = i
+            while j < len(s) and s[j].isdigit():
+                j += 1
+            tokens.append(int(s[i:j]))
+            i = j
+        elif c in "+-*()":
+            tokens.append(c)
+            i += 1
+        else:
+            raise ValueError("Unexpected character: %r" % c)
+    return tokens
+
+
+class Parser:
+    def __init__(self, tokens):
+        self.tokens = tokens
+        self.pos = 0
+
+    def peek(self):
+        return self.tokens[self.pos] if self.pos < len(self.tokens) else None
+
+    def next(self):
+        t = self.peek()
+        self.pos += 1
+        return t
+
+    def expr(self):
+        val = self.term()
+        while self.peek() in ("+", "-"):
+            op = self.next()
+            rhs = self.term()
+            val = val + rhs if op == "+" else val - rhs
+        return val
+
+    def term(self):
+        val = self.factor()
+        while self.peek() == "*":
+            self.next()
+            val *= self.factor()
+        return val
+
+    def factor(self):
+        t = self.next()
+        if t == "-":
+            return -self.factor()
+        if t == "+":
+            return self.factor()
+        if t == "(":
+            val = self.expr()
+            if self.next() != ")":
+                raise ValueError("Expected ')'")
+            return val
+        if isinstance(t, int):
+            return t
+        raise ValueError("Unexpected token: %r" % (t,))
+
+
+def evaluate(s):
+    p = Parser(tokenize(s))
+    val = p.expr()
+    if p.peek() is not None:
+        raise ValueError("Trailing tokens")
+    return val
+
+
+def main():
+    for e in ['(1+2)*3-4*(5-6)', '2*(3+4)*(5-1)', '100-2*3*4+(7-10)*2']:
+        print(evaluate(e))
+
+
+if __name__ == "__main__":
+    main()

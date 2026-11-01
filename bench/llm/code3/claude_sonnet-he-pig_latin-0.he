@@ -1,0 +1,10 @@
+def pig(w: str) -> str:
+    if w[0] in "aeiou":
+        return w + "way"
+    i = 0
+    while i < len(w) and w[i] not in "aeiou":
+        i += 1
+    return w[i:] + w[:i] + "ay"
+
+words = "the quick brown fox jumps over the lazy dog".split()
+print(" ".join(pig(w) for w in words))

@@ -1,0 +1,85 @@
+fn small(n int) const byte[:] {
+	match n {
+		0 => "zero",
+		1 => "one",
+		2 => "two",
+		3 => "three",
+		4 => "four",
+		5 => "five",
+		6 => "six",
+		7 => "seven",
+		8 => "eight",
+		9 => "nine",
+		10 => "ten",
+		11 => "eleven",
+		12 => "twelve",
+		13 => "thirteen",
+		14 => "fourteen",
+		15 => "fifteen",
+		16 => "sixteen",
+		17 => "seventeen",
+		18 => "eighteen",
+		19 => "nineteen",
+		_ => "",
+	}
+}
+
+fn tens_word(n int) const byte[:] {
+	match n {
+		2 => "twenty",
+		3 => "thirty",
+		4 => "forty",
+		5 => "fifty",
+		6 => "sixty",
+		7 => "seventy",
+		8 => "eighty",
+		9 => "ninety",
+		_ => "",
+	}
+}
+
+fn word(out byte[>..]&, w const byte[:]) {
+	if out.len > 0 { out.push(' '); }
+	out.append(w);
+}
+
+fn below_thousand(out byte[>..]&, n int) {
+	let h = n / 100;
+	let r = n % 100;
+	if h > 0 {
+		word(out, small(h));
+		word(out, "hundred");
+	}
+	if r > 0 {
+		if r < 20 {
+			word(out, small(r));
+		} else {
+			word(out, tens_word(r / 10));
+			if r % 10 > 0 {
+				out.push('-');
+				out.append(small(r % 10));
+			}
+		}
+	}
+}
+
+fn spell(out byte[>..]&, n int) {
+	if n == 0 { word(out, "zero"); return; }
+	let billions = n / 1000000000;
+	let millions = (n / 1000000) % 1000;
+	let thousands = (n / 1000) % 1000;
+	let rest = n % 1000;
+	if billions > 0 { below_thousand(out, billions); word(out, "billion"); }
+	if millions > 0 { below_thousand(out, millions); word(out, "million"); }
+	if thousands > 0 { below_thousand(out, thousands); word(out, "thousand"); }
+	if rest > 0 { below_thousand(out, rest); }
+}
+
+fn main() {
+	let nums int[4] = [1234567, 90210, 13, 1000000];
+	for n in nums {
+		var s byte[>..] = [];
+		spell(s, n);
+		print(s);
+	}
+}

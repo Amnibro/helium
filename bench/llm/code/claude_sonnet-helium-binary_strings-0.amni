@@ -1,0 +1,12 @@
+fn main() {
+	for n in 16 {
+		if n & (n >> 1) == 0 {
+			var s byte[..4] = [];
+			for i in 4 {
+				let bit = (n >> (3 - i)) & 1;
+				s.push(if bit == 1 { '1' } else { '0' });
+			}
+			print(s);
+		}
+	}
+}

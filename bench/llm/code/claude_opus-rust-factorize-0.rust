@@ -1,0 +1,17 @@
+fn main() {
+    let mut n: u64 = 600851475143;
+    let mut factors: Vec<u64> = Vec::new();
+    let mut d: u64 = 2;
+    while d * d <= n {
+        while n % d == 0 {
+            factors.push(d);
+            n /= d;
+        }
+        d += if d == 2 { 1 } else { 2 };
+    }
+    if n > 1 {
+        factors.push(n);
+    }
+    let out: Vec<String> = factors.iter().map(|f| f.to_string()).collect();
+    println!("{}", out.join(" "));
+}

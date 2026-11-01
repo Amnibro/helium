@@ -1,0 +1,7 @@
+use std::collections::HashSet;
+
+fn main() {
+    let s = "abracadabraabracadabra".as_bytes();
+    let set: HashSet<&[u8]> = s.windows(3).collect();
+    println!("{}", set.len());
+}

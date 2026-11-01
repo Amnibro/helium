@@ -1,0 +1,53 @@
+import std;
+fn addc(r uint[:], a uint[:]) uint {
+	var c uint = 0;
+	for i in a.len {
+		let lo = a[i] + c;
+		var hi uint = 0;
+		if lo < c { hi = 1; }
+		let x = r[i] + lo;
+		if x < lo { hi++; }
+		r[i] = x;
+		c = hi;
+	}
+	return c;
+}
+fn ops(r uint[:], s int[:], k uint, m int) int {
+	var z = 0;
+	for i in r.len {
+		r[i] += k;
+		s[i] -= m;
+		r[i] &= 0xFFFFFFFFFF;
+		r[i] |= 3;
+		r[i] ^= k * 7;
+		let t = s[i] - m;
+		s[i] = t;
+		if t == 0 { z++; }
+		let u = s[i] + m;
+		s[i] = u;
+		if u != 0 { z += 2; }
+	}
+	return z;
+}
+fn main() {
+	var r uint[>..] = [];
+	var a uint[>..] = [];
+	var s int[>..] = [];
+	for i in 40 {
+		r.push(0xFFFFFFFFFFFFFFF0 + i as uint);
+		a.push(if i % 3 == 0 { 0xFFFFFFFFFFFFFFFF } else { i as uint * 0x123456789 });
+		s.push(i * 5 - 60);
+	}
+	var cs uint = 0;
+	for k in 5 { cs += addc(r[..], a[..]); }
+	print(str("carry ", cs));
+	var h uint = 0;
+	for v in r { h = h * 31 + v; }
+	print(str("hash ", h));
+	print(str("ops ", ops(r[..], s[..], 0x9E3779B9, 4)));
+	h = 0;
+	for v in r { h = h * 31 + v; }
+	var hs = 0;
+	for v in s { hs = hs * 17 + v; }
+	print(str("after ", h, " ", hs));
+}

@@ -1,0 +1,59 @@
+import std;
+fn mix(x uint) uint { return x * 6364136223846793005 + 1442695040888963407; }
+// The early path uses every parameter; the loop behind the rare branch keeps
+// many values live at once, so the allocator evicts long-lived values there.
+fn work(a uint, b uint, c uint, d uint, e uint, n int, rare bool) uint {
+	var s = a ^ b;
+	var t = c + d;
+	var u = e;
+	if n > 3 { s += a * 3; t ^= b >> 2; u += c; }
+	if rare {
+		var k = 0;
+		var p uint = 1;
+		var q uint = 2;
+		var r uint = 3;
+		var w uint = 4;
+		var y uint = 5;
+		var z uint = 6;
+		var g uint = 7;
+		while k < n {
+			p = p * 31 + q; q ^= r + p; r += w * 3; w = w * 5 + y; y ^= z << 1; z += g + p; g = g * 7 + k as uint; k++;
+		}
+		u += p ^ q ^ r ^ w ^ y ^ z ^ g;
+		t += k as uint;
+	}
+	return s * 1000003 + t * 7919 + u + a + b + c + d + e;
+}
+fn back(v byte[:], n int) uint {
+	var acc uint = 0;
+	var i = 0;
+	var hold uint = 77;
+	while i < n {
+		acc = acc * 131 + v[i] as uint + hold;
+		if v[i] > 250 {
+			var j = 0;
+			var m1 uint = 1;
+			var m2 uint = 2;
+			var m3 uint = 3;
+			var m4 uint = 4;
+			var m5 uint = 5;
+			var m6 uint = 6;
+			while j < 7 { m1 += m2; m2 ^= m3; m3 += m4; m4 ^= m5; m5 += m6; m6 ^= m1 + j as uint; j++; }
+			hold = m1 + m2 + m3 + m4 + m5 + m6;
+		}
+		i++;
+	}
+	return acc + hold;
+}
+fn main() {
+	var x uint = 1;
+	var h uint = 0;
+	var v byte[>..] = [];
+	for i in 7000 {
+		x = mix(x);
+		h = h * 31 + work(x, x >> 7, x >> 13, x >> 21, x >> 29, (x >> 40) as! int % 17, (x >> 50) % 9 == 0);
+		v.push((x >> 35) as! byte);
+	}
+	print(h);
+	print(back(v, v.len));
+}

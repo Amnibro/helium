@@ -1,0 +1,24 @@
+namespace base64
+use std
+ABC := "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/"
+val(c byte) int: if c >= 'A' && c <= 'Z' { c - 'A' } else if c >= 'a' && c <= 'z' { c - 'a' + 26 } else if c >= '0' && c <= '9' { c - '0' + 52 } else if c == '+' { 62 } else if c == '/' { 63 } else { -1 }
+simd encode(out byte[>..]&, src const byte[:]):
+	o ~= out.len; out.resize(o + (src.len + 2) / 3 * 4, 0); i ~= 0
+	while i + 3 <= src.len:
+		a := src[i]; b := src[i + 1]; c := src[i + 2]; v := a << 16 | b << 8 | c
+		out[o] = ABC[v >> 18]; out[o + 1] = ABC[(v >> 12) & 63]; out[o + 2] = ABC[(v >> 6) & 63]; out[o + 3] = ABC[v & 63]; i += 3; o += 4
+	r := src.len - i
+	if r > 0:
+		a := src[i]; b := if r == 2 { src[i + 1] } else { 0 }; v := a << 16 | b << 8
+		out[o] = ABC[v >> 18]; out[o + 1] = ABC[(v >> 12) & 63]; out[o + 2] = if r == 2 { ABC[(v >> 6) & 63] } else { '=' }; out[o + 3] = '='
+simd decode(out byte[>..]&, src const byte[:]) bool:
+	if src.len % 4 != 0: return false
+	st := out.len; i ~= 0
+	while i < src.len:
+		z := i + 4 == src.len && src[i + 3] == '='; y := z && src[i + 2] == '='
+		a := val(src[i]); b := val(src[i + 1]); c := if y { 0 } else { val(src[i + 2]) }; d := if z { 0 } else { val(src[i + 3]) }
+		if a < 0 || b < 0 || c < 0 || d < 0: out.resize(st); return false
+		v := a << 18 | b << 12 | c << 6 | d
+		out.push((v >> 16) as u8); if !y { out.push(((v >> 8) & 255) as u8) }; if !z { out.push((v & 255) as u8) }
+		i += 4
+	true

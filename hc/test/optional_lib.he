@@ -1,0 +1,9 @@
+extern "libnope_never.so.1?" {
+	nope_a(x int) int = "nope_a";
+}
+extern "libm.so.6?" {
+	m_cbrt(x real) real = "cbrt";
+	m_nosym() int = "no_such_symbol_here";
+}
+main():
+	print(nope_a(5), " ", m_cbrt(8.0), " ", m_nosym())

@@ -1,0 +1,75 @@
+struct Parser<'a> {
+    s: &'a [u8],
+    p: usize,
+}
+
+impl<'a> Parser<'a> {
+    fn peek(&mut self) -> Option<u8> {
+        while self.p < self.s.len() && self.s[self.p].is_ascii_whitespace() {
+            self.p += 1;
+        }
+        self.s.get(self.p).copied()
+    }
+
+    fn expr(&mut self) -> i64 {
+        let mut v = self.term();
+        loop {
+            match self.peek() {
+                Some(b'+') => {
+                    self.p += 1;
+                    v += self.term();
+                }
+                Some(b'-') => {
+                    self.p += 1;
+                    v -= self.term();
+                }
+                _ => return v,
+            }
+        }
+    }
+
+    fn term(&mut self) -> i64 {
+        let mut v = self.factor();
+        while self.peek() == Some(b'*') {
+            self.p += 1;
+            v *= self.factor();
+        }
+        v
+    }
+
+    fn factor(&mut self) -> i64 {
+        match self.peek() {
+            Some(b'(') => {
+                self.p += 1;
+                let v = self.expr();
+                if self.peek() == Some(b')') {
+                    self.p += 1;
+                }
+                v
+            }
+            Some(b'-') => {
+                self.p += 1;
+                -self.factor()
+            }
+            _ => {
+                let mut v: i64 = 0;
+                while self.p < self.s.len() && self.s[self.p].is_ascii_digit() {
+                    v = v * 10 + (self.s[self.p] - b'0') as i64;
+                    self.p += 1;
+                }
+                v
+            }
+        }
+    }
+}
+
+fn eval(e: &str) -> i64 {
+    let mut p = Parser { s: e.as_bytes(), p: 0 };
+    p.expr()
+}
+
+fn main() {
+    for e in ["(1+2)*3-4*(5-6)", "2*(3+4)*(5-1)", "100-2*3*4+(7-10)*2"] {
+        println!("{}", eval(e));
+    }
+}

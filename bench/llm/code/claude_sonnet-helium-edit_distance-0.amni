@@ -1,0 +1,24 @@
+fn lev(a const byte[:], b const byte[:]) int {
+	var prev int[>..] = [];
+	var cur int[>..] = [];
+	for j in b.len + 1 {
+		prev.push(j);
+		cur.push(0);
+	}
+	for i in a.len {
+		cur[0] = i + 1;
+		for j in b.len {
+			let cost = if a[i] == b[j] { 0 } else { 1 };
+			cur[j + 1] = min(min(prev[j + 1] + 1, cur[j] + 1), prev[j] + cost);
+		}
+		for j in b.len + 1 {
+			prev[j] = cur[j];
+		}
+	}
+	prev[b.len]
+}
+
+fn main() {
+	print(lev("kitten", "sitting"));
+	print(lev("intention", "execution"));
+}

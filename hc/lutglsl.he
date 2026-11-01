@@ -1,0 +1,225 @@
+use std
+use shaderc
+struct LgFn { name int, p0 int, pn int, ret int, body int }
+var LG_ON = true
+var LGSRC byte[>..]
+var LGTS i32[>..]
+var LGTE i32[>..]
+var LGP = 0
+var LGWHY byte[>..]
+var LGF LgFn[>..]
+var LGPN i32[>..]
+var LGPT i32[>..]
+var LGDONE i32[>..]
+var LGBUSY i32[>..]
+var LGSN i32[>..]
+var LGST i32[>..]
+var LGSM i32[>..]
+var LGOUT byte[>..]
+var LGCUR = 0
+LG_NAMES := ["int64_t", "uint64_t", "int", "uint", "i16", "i8", "u16", "u8", "bool", "lit"]
+lg_no(w const byte[:]): if LGWHY.len == 0 { LGWHY.append(w) }
+lg_bad() bool: LGWHY.len > 0
+lg_tk(i int) const byte[:]: if i >= 0 && i < LGTS.len { LGSRC[(LGTS[i] as int)..(LGTE[i] as int)] } else { "" }
+lg_t() const byte[:]: if LGP >= LGTS.len { lg_no("end of file"); "" } else { lg_tk(LGP) }
+lg_is(s const byte[:]) bool: LGP < LGTS.len && lg_tk(LGP) == s
+lg_eat(s const byte[:]): if !lg_is(s) { lg_no(str("expected ", s, " near ", lg_tk(LGP))) } else { LGP++ }
+lg_ty(t const byte[:]) int:
+	if t == "int" || t == "i64" { 0 } else if t == "uint" || t == "u64" { 1 } else if t == "i32" { 2 } else if t == "u32" { 3 } else if t == "i16" { 4 } else if t == "i8" { 5 } else if t == "u16" { 6 } else if t == "u8" || t == "byte" { 7 } else if t == "bool" { 8 } else { -1 }
+lg_store(t int) const byte[:]: if t == 4 || t == 5 { "int" } else if t == 6 || t == 7 { "uint" } else if t == 9 { "int64_t" } else if t >= 0 { LG_NAMES[t] } else { "void" }
+lg_st(t int) int: if t == 4 || t == 5 { 2 } else if t == 6 || t == 7 { 3 } else if t == 9 { 0 } else { t }
+lg_signed(t int) bool: t == 0 || t == 2 || t == 4 || t == 5
+lg_width(t int) int: if t == 0 || t == 1 || t == 9 { 64 } else if t == 2 || t == 3 { 32 } else if t == 4 || t == 6 { 16 } else if t == 8 { 1 } else { 8 }
+lg_wrap(c const byte[:], t int) byte[>..]:
+	o byte[>..] ~= []; if t == 4 || t == 5 { s := 32 - lg_width(t); format(o, "(((", c, ") << ", s, ") >> ", s, ")") } else if t == 7 { format(o, "((", c, ") & 0xFFu)") } else if t == 6 { format(o, "((", c, ") & 0xFFFFu)") } else { o.append(c) } o
+lg_widens(f int, t int) bool:
+	if f == t { true } else if f == 8 || t == 8 { false } else if lg_signed(f) == lg_signed(t) { lg_width(f) < lg_width(t) } else { !lg_signed(f) && lg_signed(t) && lg_width(f) < lg_width(t) }
+lg_lit(l const byte[:], t int) byte[>..]:
+	v byte[>..] ~= []; for c l { if c != '_' { v.push(c) } } for c v { if c == '.' { lg_no("float literal") } }
+	if v.len > 0 && v[0] == '\'':
+		n ~= -1; if v.len == 3 { n = v[1] as int } else if v.len == 4 && v[1] == '\\' { c := v[2]; n = if c == 'n' { 10 } else if c == 't' { 9 } else if c == 'r' { 13 } else if c == '0' { 0 } else { c as int } } else { lg_no("character literal") } v.clear(); format(v, max(n, 0))
+	s := lg_store(t); o byte[>..] ~= []
+	if s == "int64_t" { format(o, "int64_t(", v, "l)") } else if s == "uint64_t" { format(o, "uint64_t(", v, "ul)") } else if s == "uint" { format(o, v, "u") } else if s == "bool" { lg_no("integer as bool") } else { format(o, "int(", v, ")") } o
+lg_to(c const byte[:], ty int, ll bool, t int) byte[>..]:
+	o byte[>..] ~= []; if ty == t { o.append(c); return o }
+	if ty == 9: return lg_lit(c, t)
+	if !(ll && t != 8) && !lg_widens(ty, t): lg_no(str("no implicit ", LG_NAMES[max(ty, 0)], " to ", LG_NAMES[max(t, 0)]))
+	format(o, lg_store(t), "(", c, ")"); o
+lg_unify(a int, al bool, b int, bl bool) int:
+	if a == b { return if a == 9 { 0 } else { a } }
+	if a == 9 || al && !bl && b != 8 { return b } if b == 9 || bl && !al && a != 8 { return a }
+	if lg_widens(a, b) { return b } if lg_widens(b, a) { return a }
+	lg_no(str("mixed ", LG_NAMES[max(a, 0)], " and ", LG_NAMES[max(b, 0)])); 0
+lg_local(n const byte[:]) int:
+	i ~= LGSN.len; while i > 0 { i--; if lg_tk(LGSN[i] as int) == n { return LGST[i] as int } } -1
+lg_def(t int) byte[>..]: o byte[>..] ~= []; if t == 8 { o.append("false") } else { format(o, lg_store(t), "(0)") } o
+lg_guard() byte[>..]: o byte[>..] ~= []; format(o, "if (++gs_n > 65536u) { gs_fail = 1u; return ", lg_def(LGCUR), "; } "); o
+lg_prec(o const byte[:]) int:
+	if o == "*" || o == "/" || o == "%" { 10 } else if o == "+" || o == "-" { 9 } else if o == "<<" || o == ">>" { 8 } else if o == "&" { 7 } else if o == "^" { 6 } else if o == "|" { 5 } else if o == "<" || o == "<=" || o == ">" || o == ">=" { 4 } else if o == "==" || o == "!=" { 3 } else if o == "&&" { 2 } else if o == "||" { 1 } else { 0 }
+lg_bin(op const byte[:], a const byte[:], at int, al bool, b const byte[:], bt int, bl bool) byte[>..], int, bool:
+	o byte[>..] ~= []
+	if op == "&&" || op == "||": if at != 8 || bt != 8 { lg_no("&& on non-bool") } format(o, "(", a, " ", op, " ", b, ")"); return o, 8, false
+	if at == 8 || bt == 8: if (op == "==" || op == "!=") && at == bt { format(o, "(", a, " ", op, " ", b, ")") } else { lg_no("arithmetic on bool") } return o, 8, false
+	if op == "<<" || op == ">>":
+		t := if at == 9 { 0 } else { at }; x := lg_to(a, at, al, t); k byte[>..] ~= []; if bt == 9 { k = lg_lit(b, lg_st(t)) } else { format(k, lg_store(t), "(", b, ")") } m := lg_lit(str(lg_width(t) - 1), lg_st(t))
+		w byte[>..] ~= []; format(w, "(", x, " ", op, " (", k, " & ", m, "))"); return lg_wrap(w[..], t), t, false
+	t := lg_unify(at, al, bt, bl); x := lg_to(a, at, al, t); y := lg_to(b, bt, bl, t); ll := (al || at == 9) && (bl || bt == 9)
+	if op == "==" || op == "!=" || op == "<" || op == "<=" || op == ">" || op == ">=": format(o, "(", x, " ", op, " ", y, ")"); return o, 8, false
+	if op == "/" || op == "%": format(o, if op == "/" { "gs_div(" } else { "gs_mod(" }, x, ", ", y, ")"); return lg_wrap(o[..], t), t, ll
+	format(o, "(", x, " ", op, " ", y, ")"); return lg_wrap(o[..], t), t, ll
+recursive lg_expr(mn int) byte[>..], int, bool:
+	l, lt, ll ~= lg_unary()
+	while !lg_bad() && LGP < LGTS.len:
+		o := lg_tk(LGP); pr := lg_prec(o); if pr == 0 || pr < mn: break
+		LGP++; r, rt, rl := lg_expr(pr + 1); n, nt, nl := lg_bin(o, l[..], lt, ll, r[..], rt, rl); l = n; lt = nt; ll = nl
+	return l, lt, ll
+recursive lg_unary() byte[>..], int, bool:
+	o byte[>..] ~= []
+	if lg_is("-"): LGP++; e, t, l := lg_unary(); if t == 9 { format(o, "-", e); return o, 9, false } if t == 8 { lg_no("- on bool") } format(o, "(-", e, ")"); return lg_wrap(o[..], t), t, false
+	if lg_is("!"): LGP++; e, t, l := lg_unary(); if t != 8 { lg_no("! on non-bool") } format(o, "(!", e, ")"); return o, 8, false
+	if lg_is("~"): LGP++; e, t, l ~= lg_unary(); if t == 9 { x := lg_lit(e[..], 0); e = x; t = 0 } if t == 8 { lg_no("~ on bool") } format(o, "(~", e, ")"); return lg_wrap(o[..], t), t, false
+	return lg_postfix()
+recursive lg_postfix() byte[>..], int, bool:
+	e, t, l ~= lg_primary()
+	while !lg_bad() && (lg_is("as") || lg_is("as!")):
+		LGP++; if lg_is("!") { LGP++ } c := lg_ty(lg_t()); LGP++
+		if c < 0 || c == 8 || t == 8: lg_no("cast"); break
+		if t == 9 { e = lg_lit(e[..], c) } else { w byte[>..] ~= []; format(w, lg_store(c), "(", e, ")"); e = lg_wrap(w[..], c) } t = c; l = false
+	return e, t, l
+recursive lg_ifexpr() byte[>..], int, bool:
+	lg_eat("if"); c, ct, cl := lg_expr(1); if ct != 8 { lg_no("if on non-bool") }
+	lg_eat("{"); a, at, al := lg_expr(1); lg_eat("}"); lg_eat("else"); b byte[>..] ~= []; bt ~= 0; bl ~= false
+	if lg_is("if") { x, xt, xl := lg_ifexpr(); b = x; bt = xt; bl = xl } else { lg_eat("{"); x, xt, xl := lg_expr(1); lg_eat("}"); b = x; bt = xt; bl = xl }
+	ll ~= (al || at == 9) && (bl || bt == 9); t ~= 8; o byte[>..] ~= []
+	if at == 8 || bt == 8 { if at != bt { lg_no("if branches") } ll = false; format(o, "(", c, " ? ", a, " : ", b, ")") } else { t = lg_unify(at, al, bt, bl); format(o, "(", c, " ? ", lg_to(a[..], at, al, t), " : ", lg_to(b[..], bt, bl, t), ")") }
+	return o, t, ll
+recursive lg_primary() byte[>..], int, bool:
+	o byte[>..] ~= []; t := lg_t(); if lg_bad(): return o, 0, false
+	if t == "(": LGP++; e, et, el := lg_expr(1); lg_eat(")"); return e, et, el
+	if t == "if": return lg_ifexpr()
+	if t == "true" || t == "false": LGP++; o.append(t); return o, 8, false
+	if t.len > 0 && (t[0] >= '0' && t[0] <= '9' || t[0] == '\''): LGP++; o.append(t); return o, 9, false
+	if t.len == 0 || !(t[0] >= 'a' && t[0] <= 'z' || t[0] >= 'A' && t[0] <= 'Z' || t[0] == '_'): lg_no(str("token ", t)); return o, 0, false
+	nt := LGP; LGP++
+	if lg_is("("):
+		LGP++; ac byte[>..][>..] ~= []; aty int[>..] ~= []; al bool[>..] ~= []
+		while !lg_bad() && !lg_is(")") && LGP < LGTS.len { e, et, el := lg_expr(1); ac.push(e); aty.push(et); al.push(el); if lg_is(",") { LGP++ } }
+		LGP++
+		if t == "min" || t == "max" || t == "abs" || t == "clamp":
+			if aty.len == 0: lg_no("builtin args"); return o, 0, false
+			ty ~= aty[0]; for x, i aty { ty = lg_unify(ty, false, x, al[i]) } if ty == 9 { ty = 0 }
+			if ty == 8 || t == "abs" && !lg_signed(ty): lg_no("builtin type")
+			c byte[>..] ~= []; for x, i ac { if i > 0 { c.append(", ") } c.append(lg_to(x[..], aty[i], al[i], ty)[..]) } w byte[>..] ~= []; format(w, t, "(", c, ")"); return lg_wrap(w[..], ty), ty, false
+		fi := lg_func(t); if fi < 0: return o, 0, false
+		f := LGF[fi]; if ac.len != f.pn: lg_no(str("call to ", t, " with defaults")); return o, 0, false
+		format(o, "h_", t, "("); for x, i ac { if i > 0 { o.append(", ") } o.append(lg_to(x[..], aty[i], al[i], LGPT[f.p0 + i] as int)[..]) } o.push(')'); return o, f.ret, false
+	ty := lg_local(t); if ty < 0: lg_no(str("name ", t)); return o, 0, false
+	format(o, "l_", t); return o, ty, false
+lg_find(n const byte[:]) int: for f, i LGF { if lg_tk(f.name) == n { return i } } -1
+recursive lg_func(n const byte[:]) int:
+	fi := lg_find(n); if fi < 0: lg_no(str("function ", n)); return -1
+	if LGDONE.contains(fi as i32): return fi
+	if LGBUSY.contains(fi as i32): lg_no(str("recursion through ", n)); return -1
+	f := LGF[fi]; if f.ret < 0: lg_no(str(n, " result type")); return -1
+	LGBUSY.push(fi as i32); sp := LGP; s0 := LGSN.len; m0 := LGSM.len; cur := LGCUR; LGCUR = f.ret; LGSM.push(LGSN.len as i32)
+	sig byte[>..] ~= []; for k f.pn { pt := LGPT[f.p0 + k] as int; if pt < 0 { lg_no(str(n, " parameter type")) } LGSN.push(LGPN[f.p0 + k]); LGST.push(pt as i32); if k > 0 { sig.append(", ") } format(sig, lg_store(pt), " l_", lg_tk(LGPN[f.p0 + k] as int)) }
+	LGP = f.body; body byte[>..] ~= []; lg_block(body, true, 1)
+	format(LGOUT, lg_store(f.ret), " h_", n, "(", sig, ") {\n", body, "    return ", lg_def(f.ret), ";\n}\n")
+	LGP = sp; LGSN.resize(s0, 0); LGST.resize(s0, 0); LGSM.resize(m0, 0); LGCUR = cur; LGBUSY.pop(); LGDONE.push(fi as i32); fi
+lg_skip(j0 int) int: j ~= j0; d ~= 0; while j < LGTS.len { if lg_tk(j) == "{" { d++ } else if lg_tk(j) == "}" { d--; if d == 0 { return j + 1 } } j++ } j
+lg_afterif(i0 int) int:
+	i ~= i0
+	loop:
+		while i < LGTS.len && lg_tk(i) != "{" { i++ } i = lg_skip(i)
+		if i < LGTS.len && lg_tk(i) == "else": i++; if i < LGTS.len && lg_tk(i) == "if" { continue } while i < LGTS.len && lg_tk(i) != "{" { i++ } return lg_skip(i)
+		return i
+recursive lg_block(o byte[>..]&, tail bool, ind int):
+	lg_eat("{"); s0 := LGSN.len
+	while !lg_bad() && !lg_is("}") && LGP < LGTS.len: lg_stmt(o, tail, ind)
+	LGP++; LGSN.resize(s0, 0); LGST.resize(s0, 0)
+recursive lg_stmt(o byte[>..]&, tail bool, ind int):
+	ip byte[>..] ~= []; for k ind * 4 { ip.push(' ') } t := lg_t(); if lg_bad(): return
+	if t == ";": LGP++; return
+	if t == "let" || t == "var" || t == "const":
+		LGP++; nt := LGP; LGP++; ty ~= -1; if lg_is(":") { LGP++ }
+		if !lg_is("=") && !lg_is(";") { ty = lg_ty(lg_t()); if ty < 0 { lg_no(str("local type ", lg_t())) } LGP++ }
+		if !lg_is("="): lg_no("local without initializer"); return
+		LGP++; e, et, el := lg_expr(1); lg_eat(";"); if ty < 0 { ty = if et == 9 { 0 } else { et } }
+		v byte[>..] ~= []; if ty == 8 { if et != 8 { lg_no("bool init") } v = e } else { v = lg_to(e[..], et, el, ty) }
+		LGSN.push(nt as i32); LGST.push(ty as i32); format(o, ip, lg_store(ty), " l_", lg_tk(nt), " = ", v, ";\n"); return
+	if t == "while":
+		LGP++; c, ct, cl := lg_expr(1); if ct != 8 { lg_no("while on non-bool") } b byte[>..] ~= []; lg_block(b, false, ind + 1); format(o, ip, "while (", c, ") { ", lg_guard(), "\n", b, ip, "}\n"); return
+	if t == "loop": LGP++; b byte[>..] ~= []; lg_block(b, false, ind + 1); format(o, ip, "while (true) { ", lg_guard(), "\n", b, ip, "}\n"); return
+	if t == "for":
+		LGP++; nt := LGP; LGP++; if lg_is(",") || lg_is(":") { lg_no("for binding form"); return } lg_eat("in")
+		a, at, al := lg_expr(1); lo byte[>..] ~= []; lo.append("0"); lt ~= 9; ll ~= false; hi ~= a; ht ~= at; hl ~= al
+		if lg_is(".."): LGP++; lo = a; lt = at; ll = al; h, h2, h3 := lg_expr(1); hi = h; ht = h2; hl = h3
+		ty ~= lg_unify(lt, ll, ht, hl); if ty == 9 { ty = 0 } if ty == 8 { lg_no("for over bool") }
+		lc := lg_to(lo[..], lt, ll, ty); hcv := lg_to(hi[..], ht, hl, ty); s0 := LGSN.len; LGSN.push(nt as i32); LGST.push(ty as i32); b byte[>..] ~= []; lg_block(b, false, ind + 1); LGSN.resize(s0, 0); LGST.resize(s0, 0)
+		n := lg_tk(nt); st := lg_store(ty); format(o, ip, "{ ", st, " l_", n, "_end = ", hcv, "; for (", st, " l_", n, " = ", lc, "; l_", n, " < l_", n, "_end; l_", n, " = l_", n, " + ", lg_lit("1", ty), ") { ", lg_guard(), "\n", b, ip, "} }\n"); return
+	if t == "if":
+		ai := lg_afterif(LGP); last := tail && ai < LGTS.len && lg_tk(ai) == "}"; LGP++
+		c, ct, cl := lg_expr(1); if ct != 8 { lg_no("if on non-bool") } b byte[>..] ~= []; lg_block(b, last, ind + 1); format(o, ip, "if (", c, ") {\n", b, ip, "}")
+		while !lg_bad() && lg_is("else"):
+			LGP++
+			if lg_is("if") { LGP++; c2, c2t, c2l := lg_expr(1); if c2t != 8 { lg_no("if on non-bool") } b2 byte[>..] ~= []; lg_block(b2, last, ind + 1); format(o, " else if (", c2, ") {\n", b2, ip, "}") } else { b2 byte[>..] ~= []; lg_block(b2, last, ind + 1); format(o, " else {\n", b2, ip, "}") }
+		o.push('\n'); return
+	if t == "guard":
+		LGP++; c, ct, cl := lg_expr(1); if ct != 8 { lg_no("guard on non-bool") } if lg_is(";") { lg_no("guard without else"); return } lg_eat("else"); b byte[>..] ~= []; lg_block(b, false, ind + 1); format(o, ip, "if (!", c, ") {\n", b, ip, "}\n"); return
+	if t == "return":
+		LGP++; e, et, el := lg_expr(1); lg_eat(";"); v byte[>..] ~= []; if LGCUR == 8 { if et != 8 { lg_no("return type") } v = e } else { v = lg_to(e[..], et, el, LGCUR) } format(o, ip, "return ", v, ";\n"); return
+	if t == "break" || t == "continue": LGP++; if !lg_is(";") { lg_no("break with a value"); return } LGP++; format(o, ip, t, ";\n"); return
+	if t == "{": b byte[>..] ~= []; lg_block(b, tail, ind + 1); format(o, ip, "{\n", b, ip, "}\n"); return
+	if LGP + 1 < LGTS.len && lg_local(t) >= 0:
+		op := lg_tk(LGP + 1); ty := lg_local(t); nm byte[>..] ~= []; format(nm, "l_", t)
+		if op == "++" || op == "--": LGP += 2; lg_eat(";"); v, vt, vl := lg_bin(if op == "++" { "+" } else { "-" }, nm[..], ty, false, "1", 9, false); format(o, ip, nm, " = ", v, ";\n"); return
+		if op == "=" || op.len >= 2 && op[op.len - 1] == '=' && op != "==" && op != "!=" && op != "<=" && op != ">=":
+			LGP += 2; e, et, el := lg_expr(1); lg_eat(";"); v byte[>..] ~= []; vt ~= ty
+			if op == "=" { if ty == 8 { v = e } else { v = lg_to(e[..], et, el, ty) } } else { x, xt, xl := lg_bin(op[..op.len - 1], nm[..], ty, false, e[..], et, el); v = x; vt = xt }
+			if op != "=" && vt != ty: v = lg_to(v[..], vt, false, ty)
+			format(o, ip, nm, " = ", v, ";\n"); return
+	e, et, el := lg_expr(1)
+	if lg_is("}") && tail: v byte[>..] ~= []; if LGCUR == 8 { v = e } else { v = lg_to(e[..], et, el, LGCUR) } format(o, ip, "return ", v, ";\n"); return
+	lg_eat(";"); format(o, ip, e, ";\n")
+lg_lex(src const byte[:]):
+	LGSRC.clear(); LGSRC.append(src); LGTS.clear(); LGTE.clear(); i ~= 0; n := src.len
+	ops := ["<<=", ">>=", "as!", "==", "!=", "<=", ">=", "&&", "||", "<<", ">>", "+=", "-=", "*=", "/=", "%=", "&=", "|=", "^=", "++", "--", "..", "->", "::", ".="]
+	while i < n:
+		c := src[i]; b := i
+		if c == ' ' || c == '\t' || c == '\r' || c == '\n': i++; continue
+		if c == '/' && i + 1 < n && src[i + 1] == '/': while i < n && src[i] != '\n' { i++ } continue
+		if c == '/' && i + 1 < n && src[i + 1] == '*': i += 2; while i + 1 < n && !(src[i] == '*' && src[i + 1] == '/') { i++ } i += 2; continue
+		if c >= 'a' && c <= 'z' || c >= 'A' && c <= 'Z' || c == '_': while i < n && (src[i] >= 'a' && src[i] <= 'z' || src[i] >= 'A' && src[i] <= 'Z' || src[i] >= '0' && src[i] <= '9' || src[i] == '_') { i++ } if i < n && src[i] == '!' && src[b..i] == "as" { i++ } LGTS.push(b as i32); LGTE.push(i as i32); continue
+		if c >= '0' && c <= '9': while i < n && (src[i] >= 'a' && src[i] <= 'z' || src[i] >= 'A' && src[i] <= 'Z' || src[i] >= '0' && src[i] <= '9' || src[i] == '_') { i++ } if i + 1 < n && src[i] == '.' && src[i + 1] >= '0' && src[i + 1] <= '9' { i++; while i < n && src[i] >= '0' && src[i] <= '9' { i++ } } LGTS.push(b as i32); LGTE.push(i as i32); continue
+		if c == '"': i++; while i < n && src[i] != '"' { i += if src[i] == '\\' { 2 } else { 1 } } i++; LGTS.push(b as i32); LGTE.push(min(i, n) as i32); continue
+		if c == '\'': i++; while i < n && src[i] != '\'' { i += if src[i] == '\\' { 2 } else { 1 } } i++; LGTS.push(b as i32); LGTE.push(min(i, n) as i32); continue
+		hit ~= false; for o ops { if !hit && i + o.len <= n && src[i..i + o.len] == o { hit = true; i += o.len } }
+		if !hit: i++
+		LGTS.push(b as i32); LGTE.push(i as i32)
+	LGF.clear(); LGPN.clear(); LGPT.clear()
+	for i LGTS.len:
+		if lg_tk(i) != "fn" || i > 0 && (lg_tk(i - 1) == "extern" || lg_tk(i - 1) == "::") || i + 2 >= LGTS.len || lg_tk(i + 2) != "(": continue
+		j ~= i + 3; f ~= LgFn{i + 1, LGPN.len, 0, -1, -1}
+		while j < LGTS.len && lg_tk(j) != ")":
+			pn := j; j++; if j < LGTS.len && lg_tk(j) == ":" { j++ } t0 := j; while j < LGTS.len && lg_tk(j) != "," && lg_tk(j) != ")" { j++ }
+			LGPN.push(pn as i32); LGPT.push((if j == t0 + 1 { lg_ty(lg_tk(t0)) } else { -1 }) as i32); f.pn++; if j < LGTS.len && lg_tk(j) == "," { j++ }
+		j++; if j < LGTS.len && lg_tk(j) == "->" { j++ } r0 := j; while j < LGTS.len && lg_tk(j) != "{" && lg_tk(j) != "=" && lg_tk(j) != ";" { j++ }
+		f.ret = if j == r0 + 1 { lg_ty(lg_tk(r0)) } else { -1 }
+		if j < LGTS.len && lg_tk(j) == "{" && lg_find(lg_tk(i + 1)) < 0: f.body = j; LGF.push(f)
+lut_glsl(src const byte[:], name const byte[:], pn const byte[:][:], pt const byte[:][:], pb const int[:], ret const byte[:], n int, o byte[>..]&) bool:
+	LGWHY.clear(); LGOUT.clear(); LGDONE.clear(); LGBUSY.clear(); LGSN.clear(); LGST.clear(); LGSM.clear(); LGP = 0
+	rt := lg_ty(ret); if rt < 0: lg_no(str("result type ", ret)); return false
+	lg_lex(src); lg_func(name); if lg_bad(): return false
+	o.append("#version 450\n#extension GL_EXT_shader_explicit_arithmetic_types_int64 : require\nlayout(local_size_x = 64) in;\nlayout(std430, set = 1, binding = 0) buffer V { int64_t v[]; };\nlayout(std430, set = 1, binding = 1) buffer F { uint f[]; };\nuint gs_fail;\nuint gs_n;\n")
+	for t [0, 1, 2, 3]:
+		s := lg_store(t); format(o, s, " gs_div(", s, " a, ", s, " b) { if (b == ", s, "(0)) { gs_fail = 1u; return ", s, "(0); } ")
+		if lg_signed(t): format(o, "if (b == -", s, "(1) && a == (", s, "(1) << ", lg_width(t) - 1, ")) { gs_fail = 1u; return ", s, "(0); } ")
+		format(o, "return a / b; }\n", s, " gs_mod(", s, " a, ", s, " b) { if (b == ", s, "(0)) { gs_fail = 1u; return ", s, "(0); } ")
+		if lg_signed(t) { format(o, "if (b == -", s, "(1)) { return ", s, "(0); } ", s, " r = a - b * (a / b); return r < ", s, "(0) ? r + (b < ", s, "(0) ? -b : b) : r; }\n") } else { o.append("return a % b; }\n") }
+	o.append(LGOUT[..]); format(o, "void main() {\n    uint i = gl_GlobalInvocationID.x;\n    if (i >= ", n, "u) { return; }\n    gs_fail = 0u;\n    gs_n = 0u;\n")
+	sh ~= 0; for b pb { sh += b } args byte[>..] ~= []
+	for x, k pn:
+		sh -= pb[k]; t := lg_ty(pt[k]); raw byte[>..] ~= []; format(raw, "((i >> ", sh, "u) & ", (1 << pb[k]) - 1, "u)")
+		format(o, "    ", lg_store(t), " a_", x, " = "); if t == 8 { format(o, raw, " != 0u") } else if t == 4 || t == 5 { format(o, "((int(", raw, ") << ", 32 - pb[k], ") >> ", 32 - pb[k], ")") } else if lg_store(t) == "uint" { o.append(raw[..]) } else { format(o, lg_store(t), "(", raw, ")") } o.append(";\n")
+		if k > 0 { args.append(", ") } format(args, "a_", x)
+	format(o, "    ", lg_store(rt), " r = h_", name, "(", args, ");\n    v[i] = ", if rt == 8 { "(r ? int64_t(1) : int64_t(0))" } else { "int64_t(r)" }, ";\n    f[i] = gs_fail;\n}\n"); true

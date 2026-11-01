@@ -1,0 +1,22 @@
+fn steps(n int) int {
+	var x = n;
+	var c = 0;
+	while x > 1 {
+		x = if x % 2 == 0 { x / 2 } else { 3 * x + 1 };
+		c++;
+	}
+	c
+}
+
+fn main() {
+	var best = 1;
+	var best_steps = 0;
+	for i in 1..1000000 {
+		let s = steps(i);
+		if s > best_steps {
+			best_steps = s;
+			best = i;
+		}
+	}
+	print(best, " ", best_steps);
+}

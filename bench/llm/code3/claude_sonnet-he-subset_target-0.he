@@ -1,0 +1,8 @@
+nums = [3, 34, 4, 12, 5, 2, 27, 18, 9, 11, 7, 15, 21, 6, 8]
+target = 50
+dp: list[int] = [0] * (target + 1)
+dp[0] = 1
+for x in nums:
+    for s in range(target, x - 1, -1):
+        dp[s] += dp[s - x]
+print(dp[target])
