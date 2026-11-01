@@ -1092,6 +1092,10 @@ const T8_STILL_BAR = 0.25;    // still scene: rejection on vs off, mean abs /255
 // (penumbra and filtering) and object edge (silhouettes, msaa). Gate: IoU of the two
 // shadow masks >= SH_BAR inside the main cascade (the one holding most counted pixels).
 // Controls that must fail: shadows off, and the sun mirrored in x for the render.
+// S1/S2, pre-registered: per-cascade gates at 0.98 (replaces SH_BAR 0.9 on the main cascade)
+const SH_BAR2 = 0.98;
+const SH_MIN_COUNTED = 20000;  // a (view, cascade) is gated with this many counted pixels
+const SH_MIN_SHADOW = 5000;    // and this many reference-shadow pixels
 const SH_BAR = 0.9;
 const SH_W = 960;
 const SH_H = 540;

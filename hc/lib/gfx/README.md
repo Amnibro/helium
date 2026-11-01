@@ -288,6 +288,16 @@ reported as a failure and fixed in the renderer, not in the gate.
   2: every gain and loss < 3 % for n.v >= 0.01 (unchanged), and gain < 3 % below
   0.01 (was 6 %); the loss there is reported.
 
+* **S1/S2 shadows per cascade.** The far view only reaches cascade 2 (every counted
+  hit is at view depth 6.7-9.05, beyond cascade_end[1] = 5.907), so two near views
+  are added: near0, eye (0.5, -1.5, 1.0) looking at (-0.5, -2.6, -1.0) (cascade 0:
+  about 411k counted pixels, 62k shadowed in the CPU reference), and near1, eye
+  (-1.0, 0.0, 3.0) looking at (-1.0, -1.0, -1.5) (cascade 1: about 420k, 154k
+  shadowed). Every (view, cascade) with at least 20000 counted pixels and 5000
+  reference-shadow pixels is gated separately at IoU >= 0.98 (was 0.9 on the main
+  cascade only); each of cascades 0, 1 and 2 must be gated in at least one view,
+  or the check fails.
+
 Raw output of each recorded run is in `hc/test/gfx/results/`; `gfxtest.sh` writes
 the header itself (commit, command, driver, GPU, packages) into `$GFX_OUT/results.txt`.
 With no GPU it prints `SKIPPED (no GPU)` after the CPU checks (`GFX_REQUIRE_GPU=1`
