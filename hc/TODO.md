@@ -125,3 +125,12 @@ The native corpus passes completely. What is left:
 4. Editor support for `.he` and `.amni` on `hc lsp`.
 5. arm64 and Mach-O.
 6. A native seed so a fresh build needs no C compiler.
+
+## 5. hc/lib/gfx
+
+- **JK-M3: sphere-grid golden on other GPUs.** Owner: Auron. `hc/test/gfx/golden/spheres.png` was made on an RX 9060 XT with RADV (Mesa 26.2.4). Done when `tools/hc/gfxtest.sh` passes with PSNR > 40 dB at 480x360 on at least one other GPU or driver (another vendor, or lavapipe); if it does not, decide between a per-driver golden and a looser metric.
+- **`make_scene.py` stays Python.** It writes `hc/test/gfx/fixtures/scene.glb` with Python's `json.dumps` and `zlib.compress` (level 6). A Helium port would only be worth having if it reproduced `scene.glb` byte for byte, and Helium has inflate but no deflate encoder, so it cannot match zlib's level-6 stream. Port it after a deflate encoder exists (or drop the zlib-compressed part of the fixture).
+- **CPU-only gfx tests without SDL3.** `gfx.he` declares SDL3 in an `extern "libSDL3.so.0"` block that is loaded when the program starts, and most gfx modules `import gfx`, so `gfx_smoke` with no arguments still needs `libSDL3.so.0`. Fix by making the extern lazily loaded (`?`-optional like `libvulkan.so.1?`) or by splitting the CPU modules (linalg, zlib, codecs, gltf, motion) away from `gfx`.
+- **Furnace below roughness 0.3.** The sun sweep cannot integrate narrow lobes; add importance-sampled directions or an analytic check for those.
+- **Rough dielectric energy gain** (up to +7 % at grazing, +2.6 % mean at roughness 1): weight diffuse by `1 - E_spec(mu)` from the multiscatter table instead of `1 - F(v.h)`.
+- **glTF test coverage:** data-URI and external-file buffers have no fixture.
