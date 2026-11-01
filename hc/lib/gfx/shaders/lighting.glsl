@@ -30,7 +30,10 @@ vec3 schlick_f(vec3 f0, float cos_t) {
 // Radiance reflected toward v from a light arriving along l with irradiance e.
 // ms scales the specular lobe to put back the energy that single scattering loses
 // (see ms_factor in surface.frag); vec3(1.0) is the plain single-scatter model.
-vec3 light_term(vec3 n, vec3 v, vec3 l, vec3 e, vec3 albedo, vec3 f0, float rough, vec3 ms) {
+// kd weights the Lambertian lobe by the energy the specular lobe leaves for it, per view
+// direction (diffuse_weight in surface.frag); a negative kd selects the per-light
+// 1 - F(v.h) weight instead, which is kept only as a furnace-test control.
+vec3 light_term(vec3 n, vec3 v, vec3 l, vec3 e, vec3 albedo, vec3 f0, float rough, vec3 ms, vec3 kd) {
 	float n_l = max(dot(n, l), 0.0);
 	if (n_l <= 0.0) return vec3(0.0);
 	vec3 h = normalize(v + l);
@@ -39,7 +42,7 @@ vec3 light_term(vec3 n, vec3 v, vec3 l, vec3 e, vec3 albedo, vec3 f0, float roug
 	float alpha = max(rough * rough, 0.002);
 	vec3 f = schlick_f(f0, max(dot(h, v), 0.0));
 	vec3 spec = ms * f * (ggx_d(n_h, alpha) * smith_g(n_l, n_v, rough) / (4.0 * n_l * n_v + 1e-4));
-	vec3 diff = (1.0 - f) * albedo / PI_F;
+	vec3 diff = (kd.x < 0.0 ? 1.0 - f : kd) * albedo / PI_F;
 	return (diff + spec) * e * n_l;
 }
 

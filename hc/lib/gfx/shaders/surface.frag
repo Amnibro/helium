@@ -40,16 +40,17 @@ layout(set = 3, binding = 1) uniform Surface {
 	vec4 params;          // x metallic, y roughness, z normal scale, w occlusion strength
 	vec4 alpha;           // x mode (0 opaque, 1 mask, 2 blend), y cutoff, z double sided
 	vec4 uv_sets;         // which UV set each texture reads: base, mr, normal, occlusion
-	vec4 uv_sets2;        // x emissive, y debug view (see scene3d.debug_view), z multiscatter on, w furnace control scale
+	vec4 uv_sets2;        // x emissive, y debug view (see scene3d.debug_view), z multiscatter on + 2 * furnace control mode, w furnace control scale
 };
 
 layout(location = 0) out vec4 out_rgba;
 
 vec2 pick_uv(float set) { return set > 0.5 ? in_uv.zw : in_uv.xy; }
 
-// Single-scatter directional albedo E(n.v, rough) of the specular lobe with Fresnel = 1,
-// bilinear in ms_lut.glsl (columns are sqrt(n.v), rows roughness).
-float ms_albedo(float n_v, float rough) {
+// Single-scatter directional albedo of the specular lobe from ms_lut.glsl, bilinear
+// (columns are sqrt(n.v), rows roughness): x = E(n.v, rough) with Fresnel = 1,
+// y = B, the part of E carried by Schlick's (1 - v.h)^5 term.
+vec2 ms_lut(float n_v, float rough) {
 	float x = sqrt(clamp(n_v, 0.0, 1.0)) * float(MS_N - 1);
 	float y = clamp(rough, 0.0, 1.0) * float(MS_N - 1);
 	int x0 = min(int(x), MS_N - 2);
@@ -57,8 +58,8 @@ float ms_albedo(float n_v, float rough) {
 	float fx = x - float(x0);
 	float fy = y - float(y0);
 	int i = y0 * MS_N + x0;
-	float a = mix(MS_E[i], MS_E[i + 1], fx);
-	float b = mix(MS_E[i + MS_N], MS_E[i + MS_N + 1], fx);
+	vec2 a = mix(vec2(MS_E[i], MS_B[i]), vec2(MS_E[i + 1], MS_B[i + 1]), fx);
+	vec2 b = mix(vec2(MS_E[i + MS_N], MS_B[i + MS_N]), vec2(MS_E[i + MS_N + 1], MS_B[i + MS_N + 1]), fx);
 	return mix(a, b, fy);
 }
 
@@ -66,11 +67,22 @@ float ms_albedo(float n_v, float rough) {
 // E of the incoming energy after one bounce; the rest would leave after further bounces
 // between microfacets, so the lobe is scaled by 1 + F0 (1 / E - 1), which brings a white
 // conductor back to 1 and leaves a low-F0 dielectric almost unchanged. E is floored at
-// 0.25 so the numerical guard in light_term at extreme grazing angles is not amplified.
-vec3 ms_factor(vec3 f0, float n_v, float rough) {
-	if (uv_sets2.z < 0.5) return vec3(1.0);
-	float e = max(ms_albedo(n_v, rough), 0.25);
-	return 1.0 + f0 * (1.0 / e - 1.0);
+// 0.25 so the numerical guard in light_term at extreme grazing angles is not amplified
+// (make_ms_lut's grazing check bounds the result: no gain above 6 % at any n.v).
+vec3 ms_factor(vec3 f0, float e, bool on) {
+	if (!on) return vec3(1.0);
+	return 1.0 + f0 * (1.0 / max(e, 0.25) - 1.0);
+}
+
+// Diffuse weight per view direction: the energy the (compensated) specular lobe does not
+// reflect. Its Fresnel-weighted albedo is E_F = F0 (E - B) + B (a scale / bias split of
+// the directional albedo), and with compensation the lobe returns ms E_F = E_F + E_ms,
+// so the diffuse lobe gets 1 - ms E_F. This is the directional-albedo energy coupling of
+// Fdez-Aguera 2019 ("A Multiple-Scattering Microfacet Model for Real-Time Image-based
+// Lighting"), applied here to direct lights. Weighting by 1 - F(v.h) per light instead
+// lets rough dielectrics exceed 1 near grazing (kept only as a furnace control).
+vec3 diffuse_weight(vec3 f0, vec2 eb, vec3 ms) {
+	return max(1.0 - ms * (f0 * (eb.x - eb.y) + eb.y), vec3(0.0));
 }
 
 float sun_visibility(vec3 p, vec3 n) {
@@ -159,15 +171,27 @@ void main() {
 	vec3 f0 = mix(vec3(0.04), tint.rgb, metal);
 	vec3 v = normalize(eye.xyz - in_world);
 	vec3 rgb = vec3(0.0);
-	vec3 ms = ms_factor(f0, max(dot(n, v), 1e-4), rough);
+	float n_v = max(dot(n, v), 1e-4);
+	vec2 eb = ms_lut(n_v, rough);
+	// uv_sets2.z = multiscatter on (0 / 1) + 2 * furnace control mode (scene3d.furnace_mode,
+	// 0 in normal use): 1 gives dielectrics F0 = 1 in the specular lobe only, 2 restores the
+	// older 1 - F(v.h) diffuse weight. Both must make the furnace test fail.
+	int mode = int(uv_sets2.z + 0.5);
+	int control = mode / 2;
+	bool ms_on = mode - 2 * control == 1;
+	vec3 ms = ms_factor(f0, eb.x, ms_on);
+	vec3 kd = diffuse_weight(f0, eb, ms);
+	vec3 f0_spec = f0;
+	if (control == 1) { f0_spec = mix(vec3(1.0), tint.rgb, metal); ms = ms_factor(f0_spec, eb.x, ms_on); }
+	if (control == 2) kd = vec3(-1.0);
 	vec3 l = normalize(to_sun.xyz);
-	rgb += light_term(n, v, l, sun_rgb.rgb, albedo, f0, rough, ms) * sun_visibility(in_world, normalize(in_nrm));
+	rgb += light_term(n, v, l, sun_rgb.rgb, albedo, f0_spec, rough, ms, kd) * sun_visibility(in_world, normalize(in_nrm));
 	int count = int(screen.z);
 	for (int i = 0; i < MAX_LIGHTS; i++) {
 		if (i >= count) break;
 		vec3 d = light_pos[i].xyz - in_world;
 		float dist = length(d);
-		rgb += light_term(n, v, d / max(dist, 1e-4), light_rgb[i].rgb * range_falloff(dist, light_pos[i].w), albedo, f0, rough, ms);
+		rgb += light_term(n, v, d / max(dist, 1e-4), light_rgb[i].rgb * range_falloff(dist, light_pos[i].w), albedo, f0_spec, rough, ms, kd);
 	}
 
 	// furnace control hook (scene3d.furnace_scale, 1 in normal use): scales the direct
@@ -188,4 +212,5 @@ void main() {
 	else if (dbg == 5) out_rgba = vec4(direct, 1.0);
 	else if (dbg == 6) out_rgba = vec4(vec3(occ), 1.0);
 	else if (dbg == 7) out_rgba = vec4(tint.rgb, 1.0);
+	else if (dbg == 8) out_rgba = vec4(vec3(max(dot(n, v), 0.0)), 1.0);
 }
