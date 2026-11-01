@@ -12,9 +12,9 @@ Lulu's delta review of 2f71ddc7 / 7ac10db ("Delta review" in `/workspace/lulu_re
 - `ab16343f`: **D-M1 + D-L5.** Tangents are skinned on the CPU and GPU paths: xyz goes through the blended 3x3, is renormalized, and keeps w. Normals use the inverse-transpose: cof(A3)·n·sign(det), normalized. Shader output is 3 vec4 per vertex. The GPU-vs-CPU test checks tangents and puts a non-uniform scale on odd characters. Setup rejects more than 255 joints.
 - `28b7958d`: **D-L2.** `gpuskin_bench.amni` fails loudly when spirv-val is missing (exit 1). `GSK_NO_SPIRV_VAL=1` skips it explicitly, logs SKIPPED and exits 3. It logs the spirv-val version and the exact command.
 - `dc6eb742`: **D-L6.** The speed spring reaches 95% in **0.90 s** (ω 5.27, was 2.37 s). The walk→run band is widened to 1.8–4.2 m/s (was 2.6–3.4); see below.
-- Next commit: **D-M2 + D-L3 + D-L4.** Adds `hc/test/anim/gpuskin_results_9060xt_2026-11-01.txt` (the raw Antman output, spirv-val log included) and deletes the stale 300-frame `gpuskin_results_2026-11-01.txt`, which showed the vulkan1.0 spirv-val failure. Also updates DESIGN.md and this file.
+- `671402ce`: **D-M2 + D-L3 + D-L4.** Adds `hc/test/anim/gpuskin_results_9060xt_2026-11-01.txt` (the raw Antman output, spirv-val log included) and deletes the stale 300-frame `gpuskin_results_2026-11-01.txt`, which showed the vulkan1.0 spirv-val failure. Also updates DESIGN.md and this file.
 
-On `kimahri/jk-anim`, RESULTS.md is updated to match (separate commit).
+On `kimahri/jk-anim`, `98f9559` updates RESULTS.md to match. `anim_proof/run.amni` was re-run at 671402ce: 9/9 JK PASS, sha256 OK, anim 0.50 ms, CPU skin 31.2 ms.
 
 **Correction.** The earlier entry said add2ab8d used ω 2.5. The code actually had ω 2.0 (95% in 2.37 s), which matches Lulu's 2.4 s.
 
