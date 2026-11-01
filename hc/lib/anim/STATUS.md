@@ -11,9 +11,9 @@ Lulu's round 3 fix-check of 58d9d457 / 98f9559 ("Round 3" in `/workspace/lulu_re
 **Commits on `kimahri/anim-runtime`** (author Amnibro):
 - `b82615cf`: **R3-L1.** The tangent handedness flips with the normal: w' = t.w · sign(det A3) in `skin.amni` and `skin.comp`. `anim_gpuskin` adds negative-scale characters, and adds the 9060 XT rerun as `gpuskin_results_9060xt_r3_2026-11-01.txt`.
 - `ea93a3db`: **Foot drift.** Adds a foot-sliding test for the walk/run blend band: `hc/test/anim/anim_drift.amni`, with raw results in `drift_results_2026-11-01.txt`. DESIGN.md has a "Foot drift" section.
-- The commit that carries this entry: STATUS (CPU skinning note, hr01 dt 1.34e-6, D-L4/D-L6 labels).
+- `897b1b7f` (+ the refs commit after it): STATUS (CPU skinning note, hr01 dt 1.34e-6, D-L4/D-L6 labels).
 
-On `kimahri/jk-anim`, a RESULTS.md commit relabels the spring item D-L6 → D-L4 and adds the drift and R3-L1 numbers.
+On `kimahri/jk-anim`, `9f9a823` (RESULTS.md) relabels the spring item D-L6 → D-L4 and adds the drift and R3-L1 numbers.
 
 **R3-L1: negative-scale test.** Characters 2, 6, 10, … get diag(−1.25, 0.9, 1.0) on their palette (det < 0 on every vertex). Odd characters keep diag(1.4, 0.7, 1.15).
 - For every vertex with a rest bitangent b = cross(n, t)·w, the GPU's cross(n', t')·w' must have a positive cosine with A3·b, and w' must equal t.w·sign(det A3) exactly.
