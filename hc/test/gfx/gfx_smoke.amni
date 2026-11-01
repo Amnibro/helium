@@ -27,6 +27,11 @@
 //   tsr      - 1280x720 rendered, 1920x1080 out: PSNR vs native 1080p; frame and resolve-only
 //              times, 30 warmup + 200 iterations, wall-clock and (under tools/hc/gputime)
 //              GPU-timestamp; the resolve's GPU p95 must be < 1 ms
+//   shadows  - sphere grid before a wall, direct light with shadows off and on: the shadow
+//              mask vs a CPU ray-traced reference, IoU >= 0.9 in the main cascade outside a
+//              2 px band at shadow and object edges; controls that must fail: shadows off,
+//              and the sun mirrored in x; the shadow pass's cost at 1280x720
+// GFX_ONLY=shadows runs only the shadow checks (for bisecting a renderer change).
 // Image metrics in motion / taa / tsr count non-sky pixels only (geo_mask).
 import os;
 import gfx;
@@ -985,8 +990,337 @@ fn tsr_checks(dir const byte[:]) bool {
 	good
 }
 
+// ---- shadows: the sun's shadow mask against a CPU ray-traced reference ----
+// The sphere grid in front of a wall (and on its floor), lit by the sun, rendered with
+// debug view 5 (direct light only) with shadows off and on. A GPU pixel is shadowed when
+// shadows on keep less than half of its direct light. The reference casts one ray per
+// pixel centre through the same camera into the exact spheres and boxes, then one ray
+// from the hit point toward the sun. Counted: pixels the sun lights with shadows off
+// (direct luma > 32) whose hit faces the sun, outside a 2 px band around every shadow edge
+// (penumbra and filtering) and object edge (silhouettes, msaa). Gate: IoU of the two
+// shadow masks >= SH_BAR inside the main cascade (the one holding most counted pixels).
+// Controls that must fail: shadows off, and the sun mirrored in x for the render.
+const SH_BAR = 0.9;
+const SH_W = 960;
+const SH_H = 540;
+const SH_BAND = 2;
+var SH_ID int[>..] = [];      // per pixel: what the primary ray hits: -1 nothing, 0..24 spheres, 25 floor, 26 wall
+var SH_DARK int[>..] = [];    // per pixel: 1 shadowed from the sun, 0 lit, 2 facing away
+var SH_DEPTH real[>..] = [];  // per pixel: view depth of the hit
+var SH_KEEP byte[>..] = [];   // per pixel: 1 outside the band around shadow and object edges
+var SH_HIT = -1;
+var SH_N real[>..] = [0.0, 0.0, 0.0, 0.0, 0.0, 0.0];   // box centre and half size scratch
+
+fn wall_scene() {
+	sphere_grid();
+	let wall = shapes::cube(float3 { 9.0, 5.0, 0.1 }, shapes::material(linalg::v3(0.2, 0.3, 0.45), 0.0, 0.7));
+	s3d::place(s3d::add(wall), gfx::translate(float3 { 0.0, 0.0, -1.5 }));
+	s3d::look.ssao = false;
+	s3d::look.bloom = 0.0;
+	s3d::temporal = 0;
+}
+
+fn sh_box(k int) {
+	if k == 25 { SH_N[0] = 0.0; SH_N[1] = -2.7; SH_N[2] = -1.0; SH_N[3] = 3.0; SH_N[4] = 0.1; SH_N[5] = 3.0; }
+	else { SH_N[0] = 0.0; SH_N[1] = 0.0; SH_N[2] = -1.5; SH_N[3] = 9.0; SH_N[4] = 5.0; SH_N[5] = 0.1; }
+}
+fn sh_sphere_x(k int) real { (k % 5) as real - 2.0 }
+fn sh_sphere_y(k int) real { 2.0 - (k / 5) as real }
+
+// nearest hit along o + t d for t in (0, tmax); sets SH_HIT, returns t (tmax: none)
+fn sh_trace(ox real, oy real, oz real, dx real, dy real, dz real, tmax real) real {
+	var best = tmax;
+	SH_HIT = -1;
+	let dd = dx * dx + dy * dy + dz * dz;
+	for k in 25 {
+		let px = ox - sh_sphere_x(k);
+		let py = oy - sh_sphere_y(k);
+		let pz = oz;
+		let b = px * dx + py * dy + pz * dz;
+		let c = px * px + py * py + pz * pz - 0.42 * 0.42;
+		let disc = b * b - dd * c;
+		if disc < 0.0 { continue; }
+		let s = sqrt(disc);
+		var t = (-b - s) / dd;
+		if t <= 0.0 { t = (-b + s) / dd; }
+		if t > 0.0 && t < best { best = t; SH_HIT = k; }
+	}
+	for k in 2 {
+		sh_box(25 + k);
+		var t0 = -1.0e30;
+		var t1 = 1.0e30;
+		var miss = false;
+		for a in 3 {
+			let o = if a == 0 { ox } else { if a == 1 { oy } else { oz } };
+			let d = if a == 0 { dx } else { if a == 1 { dy } else { dz } };
+			let lo = SH_N[a] - SH_N[a + 3];
+			let hi = SH_N[a] + SH_N[a + 3];
+			if abs(d) < 1.0e-12 {
+				if o < lo || o > hi { miss = true; }
+			} else {
+				var ta = (lo - o) / d;
+				var tb = (hi - o) / d;
+				if ta > tb { let x = ta; ta = tb; tb = x; }
+				t0 = max(t0, ta);
+				t1 = min(t1, tb);
+			}
+		}
+		if miss || t0 > t1 { continue; }
+		let t = if t0 > 0.0 { t0 } else { t1 };
+		if t > 0.0 && t < best { best = t; SH_HIT = 25 + k; }
+	}
+	best
+}
+
+// the reference for the current s3d::view and a sun toward (lx, ly, lz)
+fn sh_reference(lx0 real, ly0 real, lz0 real) {
+	SH_ID.clear(); SH_DARK.clear(); SH_DEPTH.clear(); SH_KEEP.clear();
+	let ll = sqrt(lx0 * lx0 + ly0 * ly0 + lz0 * lz0);
+	let lx = lx0 / ll;
+	let ly = ly0 / ll;
+	let lz = lz0 / ll;
+	let v = s3d::view;
+	let ex = v.eye.x as real;
+	let ey = v.eye.y as real;
+	let ez = v.eye.z as real;
+	var fx = v.target.x as real - ex;
+	var fy = v.target.y as real - ey;
+	var fz = v.target.z as real - ez;
+	let fl = sqrt(fx * fx + fy * fy + fz * fz);
+	fx /= fl; fy /= fl; fz /= fl;
+	// side = f x up, up' = side x f
+	var sx = fy * v.up.z as real - fz * v.up.y as real;
+	var sy = fz * v.up.x as real - fx * v.up.z as real;
+	var sz = fx * v.up.y as real - fy * v.up.x as real;
+	let sl = sqrt(sx * sx + sy * sy + sz * sz);
+	sx /= sl; sy /= sl; sz /= sl;
+	let ux = sy * fz - sz * fy;
+	let uy = sz * fx - sx * fz;
+	let uz = sx * fy - sy * fx;
+	let th = tan(v.fov_y as real * 0.5);
+	let aspect = SH_W as real / SH_H as real;
+	for y in SH_H {
+		for x in SH_W {
+			let nx = ((x as real + 0.5) / SH_W as real * 2.0 - 1.0) * th * aspect;
+			let ny = (1.0 - (y as real + 0.5) / SH_H as real * 2.0) * th;
+			let dx = fx + nx * sx + ny * ux;
+			let dy = fy + nx * sy + ny * uy;
+			let dz = fz + nx * sz + ny * uz;
+			let t = sh_trace(ex, ey, ez, dx, dy, dz, 1.0e30);
+			let id = SH_HIT;
+			SH_ID.push(id);
+			if id < 0 { SH_DARK.push(2); SH_DEPTH.push(0.0); continue; }
+			let px = ex + t * dx;
+			let py = ey + t * dy;
+			let pz = ez + t * dz;
+			SH_DEPTH.push((px - ex) * fx + (py - ey) * fy + (pz - ez) * fz);
+			var nnx = 0.0;
+			var nny = 0.0;
+			var nnz = 0.0;
+			if id < 25 {
+				nnx = (px - sh_sphere_x(id)) / 0.42; nny = (py - sh_sphere_y(id)) / 0.42; nnz = pz / 0.42;
+			} else {
+				sh_box(id);
+				let qx = (px - SH_N[0]) / SH_N[3];
+				let qy = (py - SH_N[1]) / SH_N[4];
+				let qz = (pz - SH_N[2]) / SH_N[5];
+				if abs(qx) >= abs(qy) && abs(qx) >= abs(qz) { nnx = if qx > 0.0 { 1.0 } else { -1.0 }; }
+				else { if abs(qy) >= abs(qz) { nny = if qy > 0.0 { 1.0 } else { -1.0 }; } else { nnz = if qz > 0.0 { 1.0 } else { -1.0 }; } }
+			}
+			if nnx * lx + nny * ly + nnz * lz <= 0.05 { SH_DARK.push(2); continue; }
+			let _ = sh_trace(px + nnx * 2.0e-3, py + nny * 2.0e-3, pz + nnz * 2.0e-3, lx, ly, lz, 1.0e30);
+			SH_DARK.push(if SH_HIT >= 0 { 1 } else { 0 });
+		}
+	}
+	for y in SH_H {
+		for x in SH_W {
+			let i = y * SH_W + x;
+			var keep = 1;
+			for dy in 2 * SH_BAND + 1 {
+				for dx in 2 * SH_BAND + 1 {
+					let xx = x + dx - SH_BAND;
+					let yy = y + dy - SH_BAND;
+					if xx < 0 || yy < 0 || xx >= SH_W || yy >= SH_H { keep = 0; continue; }
+					let j = yy * SH_W + xx;
+					if SH_ID[j] != SH_ID[i] || (SH_DARK[j] == 1) != (SH_DARK[i] == 1) { keep = 0; }
+				}
+			}
+			SH_KEEP.push(keep as byte);
+		}
+	}
+}
+
+fn sh_luma(px const byte[:], i int) int { (px[i * 4] as int * 2 + px[i * 4 + 1] as int * 5 + px[i * 4 + 2] as int) / 8 }
+fn sh_cascade(i int) int {
+	let d = SH_DEPTH[i];
+	if d > s3d::cascade_end[2] as real { 3 } else { if d > s3d::cascade_end[1] as real { 2 } else { if d > s3d::cascade_end[0] as real { 1 } else { 0 } } }
+}
+
+// IoU of the GPU and reference shadow masks over the counted pixels of cascade cas
+// (-1: the main cascade); prints the per-cascade numbers, returns the IoU of the gated one
+fn sh_score(label const byte[:], off const byte[:], on const byte[:], cas int) real {
+	var n int[>..] = [0, 0, 0, 0];
+	var both int[>..] = [0, 0, 0, 0];
+	var either int[>..] = [0, 0, 0, 0];
+	var truth int[>..] = [0, 0, 0, 0];
+	var gpu int[>..] = [0, 0, 0, 0];
+	for i in SH_W * SH_H {
+		if SH_ID[i] < 0 || SH_DARK[i] == 2 || SH_KEEP[i] == 0 { continue; }
+		let a = sh_luma(off, i);
+		if a <= 32 { continue; }
+		let c = sh_cascade(i);
+		let g = sh_luma(on, i) * 2 < a;
+		let r = SH_DARK[i] == 1;
+		n[c] += 1;
+		if g && r { both[c] += 1; }
+		if g || r { either[c] += 1; }
+		if r { truth[c] += 1; }
+		if g { gpu[c] += 1; }
+	}
+	var main = 0;
+	for c in 4 { if n[c] > n[main] { main = c; } }
+	let gate = if cas >= 0 { cas } else { main };
+	for c in 4 {
+		if n[c] == 0 { continue; }
+		let iou = both[c] as real / max(either[c], 1) as real;
+		print("gpu: shadows ", label, " cascade ", c, if c == 3 { " (beyond)" } else { "" }, if c == gate { " [gated]" } else { "" }, ": ", n[c], " px counted, reference shadows ", truth[c], ", gpu shadows ", gpu[c], ", both ", both[c], ", IoU ", r4(iou));
+	}
+	both[gate] as real / max(either[gate], 1) as real
+}
+
+// white: both shadowed, red: only the reference, blue: only the gpu, grey: both lit,
+// dark grey: not counted (band, facing away, unlit), black: background
+fn sh_save_mask(off const byte[:], on const byte[:], name const byte[:]) {
+	var px byte[>..] = [];
+	for i in SH_W * SH_H {
+		var r = 0; var g = 0; var b = 0;
+		if SH_ID[i] >= 0 {
+			let a = sh_luma(off, i);
+			if SH_DARK[i] == 2 || SH_KEEP[i] == 0 || a <= 32 { r = 40; g = 40; b = 40; }
+			else {
+				let gs = sh_luma(on, i) * 2 < a;
+				let rs = SH_DARK[i] == 1;
+				if gs && rs { r = 255; g = 255; b = 255; }
+				else { if rs { r = 230; } else { if gs { b = 255; g = 90; } else { r = 120; g = 120; b = 120; } } }
+			}
+		}
+		px.push(r as byte); px.push(g as byte); px.push(b as byte); px.push(255 as byte);
+	}
+	let t = gfx::render_target(SH_W, SH_H, gfx::RGBA8);
+	let _ = gfx::update_texture(t, px[..]);
+	let p = path(OUT_DIR[..], name);
+	print("gpu: shadows png ", p[..], " ", gfx::save_png(t, p[..]));
+	gfx::release(t);
+}
+
+fn sh_direct(out gfx::Texture, shadows bool, name const byte[:]) byte[>..] {
+	s3d::sun.shadows = shadows;
+	s3d::render(out);
+	let px = gfx::read_pixels(out);
+	if name.len > 0 { let p = path(OUT_DIR[..], name); print("gpu: shadows png ", p[..], " ", gfx::save_png(out, p[..])); }
+	px
+}
+
+fn sh_time(label const byte[:], out gfx::Texture) {
+	for k in TIME_WARMUP { s3d::render(out); gfx::flush(); }
+	var log byte[>..] = [];
+	let have_log = env("HELIUM_GPUTIME", log) && log.len > 0;
+	var gpu_ns real[>..] = [];
+	if have_log { gputime_lines(log[..], gpu_ns); }
+	let first = gpu_ns.len;
+	var wall real[>..] = [];
+	for k in TIME_FRAMES {
+		let t = gfx::time();
+		s3d::render(out);
+		gfx::flush();
+		wall.push((gfx::time() - t) * 1000.0);
+	}
+	print("gpu: shadows timing ", label, ": ", TIME_WARMUP, " warmup + ", TIME_FRAMES, " timed, wall-clock ms ", stats(wall)[..]);
+	if !have_log { print("gpu: shadows timing ", label, ": gpu-timestamp not measured (run under tools/hc/gputime)"); return; }
+	gputime_lines(log[..], gpu_ns);
+	let n = gpu_ns.len - first;
+	if n == 0 || n % TIME_FRAMES != 0 { print("gpu: shadows timing ", label, ": ", n, " submits for ", TIME_FRAMES, " frames, cannot split"); return; }
+	let per = n / TIME_FRAMES;
+	var each real[>..] = [];
+	for f in TIME_FRAMES {
+		var t = 0.0;
+		for j in per { t += gpu_ns[first + f * per + j]; }
+		each.push(t / 1.0e6);
+	}
+	print("gpu: shadows timing ", label, ": gpu-timestamp ms ", stats(each)[..], " (", per, " submit(s) each)");
+}
+
+fn shadow_checks() bool {
+	var good = true;
+	wall_scene();
+	let sun = s3d::sun.to_sun;
+	s3d::init(SH_W, SH_H);
+	let out = gfx::render_target(SH_W, SH_H, gfx::RGBA8);
+	s3d::debug_view = 5;
+	let off = sh_direct(out, false, "shadow_direct_off.png");
+	let on = sh_direct(out, true, "shadow_direct_on.png");
+	let t0 = gfx::time();
+	sh_reference(sun.x as real, sun.y as real, sun.z as real);
+	print("gpu: shadows reference: ", SH_W, "x", SH_H, " primary + sun rays into 25 spheres and 2 boxes, ", SH_BAND, " px band excluded (cascades end at ", r3(s3d::cascade_end[0] as real), ", ", r3(s3d::cascade_end[1] as real), ", ", r3(s3d::cascade_end[2] as real), ")");
+	let _ = t0;
+	sh_save_mask(off[..], on[..], "shadow_mask.png");
+	let iou = sh_score("on", off[..], on[..], -1);
+	print("gpu: shadows mask IoU ", r4(iou), " in the main cascade (bar >= ", SH_BAR, ") ", if iou >= SH_BAR { "PASS" } else { "FAIL" });
+	if iou < SH_BAR { good = false; }
+	// control 1: shadows off must fail
+	let c1 = sh_score("control off", off[..], off[..], -1);
+	print("gpu: shadows control (shadows off) IoU ", r4(c1), " must fail: ", if c1 < SH_BAR { "PASS" } else { "FAIL" });
+	if c1 >= SH_BAR { good = false; }
+	// control 2: the render's sun mirrored in x, scored against the true sun's reference
+	s3d::sun.to_sun = float3 { -sun.x, sun.y, sun.z };
+	let moff = sh_direct(out, false, "");
+	let mon = sh_direct(out, true, "shadow_direct_on_mirrored.png");
+	let c2 = sh_score("control mirrored sun", moff[..], mon[..], -1);
+	print("gpu: shadows control (sun mirrored in x) IoU ", r4(c2), " must fail: ", if c2 < SH_BAR { "PASS" } else { "FAIL" });
+	if c2 >= SH_BAR { good = false; }
+	s3d::sun.to_sun = sun;
+	s3d::debug_view = 0;
+	let _ = sh_direct(out, true, "shadow_shaded_on.png");
+	gfx::release(out);
+	// cost of the shadow pass: 1280x720, the same scene, shadows off then on
+	s3d::init(1280, 720);
+	let big = gfx::render_target(1280, 720, gfx::RGBA8);
+	s3d::sun.shadows = false;
+	sh_time("1280x720 wall scene, shadows off", big);
+	s3d::sun.shadows = true;
+	sh_time("1280x720 wall scene, shadows on (3 cascades, 2048^2)", big);
+	gfx::release(big);
+	// the sphere grid as the golden saw it, but with shadows on (reported, not gated)
+	sphere_grid();
+	s3d::sun.shadows = true;
+	s3d::init(480, 360);
+	let sg = gfx::render_target(480, 360, gfx::RGBA8);
+	s3d::render(sg);
+	let got = gfx::read_pixels(sg);
+	let p = path(OUT_DIR[..], "spheres_shadows_on.png");
+	print("gpu: shadows png ", p[..], " ", gfx::save_png(sg, p[..]));
+	if GOLDEN.len > 0 {
+		var want byte[>..] = [];
+		var ref byte[>..] = [];
+		if read_file(GOLDEN[..], want) {
+			let gw, gh, gok = codec_png::decode(want[..], ref);
+			if gok && gw == 480 && gh == 360 { print("gpu: shadows sphere grid with shadows on: psnr ", round(psnr(got[..], ref[..]) * 100.0) / 100.0, " dB vs the golden (reported)"); }
+		}
+	}
+	gfx::release(sg);
+	s3d::sun.shadows = false;
+	good
+}
+
 fn gpu_checks(dir const byte[:], golden const byte[:]) bool {
 	var good = true;
+	var only byte[>..] = [];
+	if env("GFX_ONLY", only) && only.len > 0 {
+		let ok = shadow_checks();
+		let e = gfx::error();
+		if e.len > 0 { print("gpu: gfx error ", e[..]); return false; }
+		return ok;
+	}
 	if !furnace(FURNACE_K) { good = false; }
 
 	sphere_grid();
@@ -1099,6 +1433,7 @@ fn gpu_checks(dir const byte[:], golden const byte[:]) bool {
 	if !motion_checks() { good = false; }
 	if !taa_checks(dir) { good = false; }
 	if !tsr_checks(dir) { good = false; }
+	if !shadow_checks() { good = false; }
 	let err = gfx::error();
 	if err.len > 0 { print("gpu: gfx error ", err[..]); good = false; }
 	good
