@@ -1,4 +1,58 @@
-# bench/beyond results (2026-10-31 / 11-01, Antman)
+# bench/beyond results, round 2 (2026-11-01, Antman)
+
+Same machine, toolchains, sizes and method as round 1 below (Ryzen 9 9950X3D, `taskset -c 3,19`,
+hyperfine 2.0.0, 1 warmup + 7 runs, **median [min–max] seconds**, Python one run with a 150 s limit,
+`?` = over the limit; every variant's stdout matched gcc -O2 byte for byte; no fast-math; load ~7
+from other users' jobs). `he`/`he-v3` = compiler at e5a8443 (round 2: self-inlining of recursion,
+fixed-lane list scheduling K=4, parallel-array dictionary). Raw data: one full `run.py` pass.
+
+| bench | gcc-O2 | gcc-O3n | clang-O2 | clang-O3n | he | he-v3 | rust | rust-native | go | java | node | python |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| fib | 0.775 [0.761–0.817] | 0.797 [0.780–0.804] | 1.918 [1.903–1.956] | 1.887 [1.879–1.898] | 1.044 [1.028–1.088] | 1.047 [1.008–1.081] | 1.854 [1.831–1.889] | 1.837 [1.826–1.872] | 3.433 [3.404–3.457] | 1.982 [1.920–2.001] | 6.615 [6.576–7.326] | 63.687 |
+| nbody | 1.181 [1.175–1.188] | 1.180 [1.175–1.192] | 1.288 [1.278–1.458] | 1.168 [1.166–1.180] | 1.106 [1.100–1.114] | 1.100 [1.095–1.109] | 0.864 [0.862–0.877] | 0.841 [0.840–0.842] | 1.550 [1.538–1.556] | 1.134 [1.129–1.143] | 1.749 [1.730–1.810] | 102.432 |
+| spectral | 0.934 [0.932–0.941] | 0.128 [0.128–0.128] | 0.963 [0.954–1.014] | 0.908 [0.906–0.912] | 0.962 [0.957–0.964] | 0.955 [0.953–0.960] | 0.933 [0.932–0.942] | 0.929 [0.928–0.933] | 0.974 [0.971–0.982] | 0.975 [0.971–1.005] | 1.284 [1.276–1.306] | 117.284 |
+| fannkuch | 1.881 [1.853–1.901] | 1.588 [1.584–1.595] | 1.853 [1.837–1.863] | 1.858 [1.829–1.863] | 1.806 [1.799–1.819] | 1.800 [1.796–1.815] | 1.685 [1.676–1.688] | 1.679 [1.672–1.681] | 1.732 [1.677–1.769] | 1.621 [1.600–1.796] | 1.688 [1.682–1.710] | 36.304 |
+| mandelbrot | 1.363 [1.351–1.382] | 1.254 [1.249–1.269] | 2.364 [2.362–2.384] | 1.279 [1.277–1.298] | 1.574 [1.569–1.588] | 1.577 [1.571–1.586] | 1.438 [1.425–1.444] | 1.370 [1.370–1.375] | 1.493 [1.488–1.509] | 1.544 [1.527–1.557] | 1.394 [1.388–1.407] | 67.066 |
+| bintrees | 0.736 [0.726–0.752] | 0.560 [0.555–0.569] | 1.008 [0.983–1.038] | 0.996 [0.970–1.046] | 1.306 [1.297–1.350] | 1.293 [1.290–1.343] | 1.206 [1.198–1.240] | 1.212 [1.201–1.228] | 1.297 [1.273–1.331] | 1.217 [1.199–1.235] | 3.354 [3.327–3.399] | 49.247 |
+| hashmap | 1.300 [1.276–1.337] | 1.400 [1.267–1.562] | 1.186 [1.167–1.235] | 1.186 [1.161–1.232] | 1.611 [1.498–1.708] | 1.589 [1.559–1.707] | 1.824 [1.751–2.434] | 1.852 [1.814–1.893] | 2.329 [2.263–2.489] | 8.885 [8.435–9.309] | 5.552 [5.197–6.038] | 20.814 |
+| strbuild | 0.786 [0.777–0.812] | 0.759 [0.749–0.770] | 0.741 [0.724–0.765] | 0.742 [0.736–0.761] | 0.565 [0.557–0.574] | 0.566 [0.563–0.573] | 0.561 [0.554–0.572] | 0.552 [0.541–0.609] | 0.957 [0.938–0.965] | 2.385 [2.347–3.537] | 4.820 [4.712–5.406] | 9.572 |
+| json | 0.825 [0.800–0.856] | 0.707 [0.701–0.723] | 0.645 [0.636–0.659] | 0.630 [0.625–0.635] | 0.470 [0.467–0.478] | 0.454 [0.450–0.474] | 0.464 [0.459–0.468] | 0.481 [0.476–0.493] | 0.863 [0.784–0.917] | 0.794 [0.783–0.841] | 3.993 [3.940–4.137] | 23.753 |
+| regex | 0.637 [0.628–0.660] | 0.493 [0.476–0.501] | 0.768 [0.764–0.775] | 0.769 [0.760–0.794] | 0.996 [0.992–1.009] | 1.012 [0.992–1.026] | 0.760 [0.752–0.778] | 0.774 [0.765–0.783] | 0.814 [0.805–0.823] | 0.929 [0.882–0.943] | 1.536 [1.263–1.543] | 46.796 |
+| matmul | 0.960 [0.949–1.008] | 0.861 [0.749–1.176] | 1.026 [1.007–1.047] | 0.669 [0.638–0.749] | 0.632 [0.628–0.670] | 0.643 [0.625–0.655] | 1.070 [1.060–1.081] | 0.762 [0.756–0.768] | 2.459 [2.408–2.531] | 1.716 [1.715–1.734] | 4.737 [4.585–5.059] | ? |
+| sort | 1.415 [1.399–1.436] | 1.508 [1.482–1.522] | 0.908 [0.904–0.924] | 0.915 [0.912–0.933] | 1.581 [1.550–1.612] | 1.572 [1.549–1.629] | 1.574 [1.549–1.615] | 1.514 [1.504–1.551] | 1.526 [1.508–1.534] | 1.960 [1.773–2.027] | 3.155 [3.145–3.202] | 59.500 |
+
+| bench | he/gcc-O2 | best C | he vs best C | best non-Helium | he vs best overall | he instr / gcc-O2 instr |
+|---|---|---|---|---|---|---|
+| fib | 1.35x | gcc-O2 0.775 | 1.35x | gcc-O2 0.775 | 1.35x | 1.15 |
+| nbody | 0.93x | clang-O3n 1.168 | 0.94x | rust-native 0.841 | 1.31x | 1.07 |
+| spectral | 1.02x | gcc-O3n 0.128 | 7.46x | gcc-O3n 0.128 | 7.46x | 1.39 |
+| fannkuch | 0.96x | gcc-O3n 1.588 | 1.13x | gcc-O3n 1.588 | 1.13x | 0.73 |
+| mandelbrot | 1.15x | gcc-O3n 1.254 | 1.26x | gcc-O3n 1.254 | 1.26x | 1.28 |
+| bintrees | 1.76x | gcc-O3n 0.560 | 2.31x | gcc-O3n 0.560 | 2.31x | 1.45 |
+| hashmap | 1.22x | clang-O2 1.186 | 1.34x | clang-O2 1.186 | 1.34x | 1.99 |
+| strbuild | 0.72x | clang-O2 0.741 | 0.76x | rust-native 0.552 | 1.02x | 0.78 |
+| json | 0.55x | clang-O3n 0.630 | 0.72x | rust 0.464 | 0.98x | 0.63 |
+| regex | 1.56x | gcc-O3n 0.493 | 2.02x | gcc-O3n 0.493 | 2.02x | 2.39 |
+| matmul | 0.66x | clang-O3n 0.669 | 0.94x | clang-O3n 0.669 | 0.94x | 0.42 |
+| sort | 1.11x | clang-O2 0.908 | 1.73x | clang-O2 0.908 | 1.73x | 1.98 |
+
+Round-2 notes
+- c89c93a (branch-on-compare through a bool copy) landed after this table: same-window interleaved
+  A/B on cpu 3 (min/median of 7, ms) regex 987/997 -> 953/968; json, fib, sort, bintrees,
+  mandelbrot unchanged within noise. The regex cell above predates it.
+- Dictionary (e5a8443): keys/vals/states kept as three parallel arrays, so probes walk a 1-byte
+  state array; single-probe insert. hashmap 20M: 1941 -> ~1500-1600 ms in same-window runs
+  (-20%), now ahead of Rust, Go, Java, Node; 1.34x behind clang.
+- Lane scheduling (6ff4529): matmul ~-5%, fib ~-3%, others within ±1%.
+- Helium beats every C variant on nbody, strbuild, json, matmul; beats gcc -O2 also on fannkuch;
+  is fastest of all languages on matmul and (within noise of Rust) json and strbuild.
+- Biggest gaps: spectral vs gcc-O3n AVX-512 division vectorisation (7.5x), bintrees (2.3x, allocator),
+  regex (2.0x), sort (1.7x vs clang), fib (1.35x: frame + callee-saved saves on the n<2 path, param
+  and result spilled across the recursive calls), mandelbrot (1.26x), hashmap (1.34x).
+
+---
+
+# Round 1 (2026-10-31 / 11-01, Antman)
 
 Machine: Ryzen 9 9950X3D, Linux, everything pinned with `taskset -c 3,19` (one V-cache core + its SMT
 sibling), no sudo, other users' jobs running (load ~6–8), so expect ~5% noise between runs taken at
