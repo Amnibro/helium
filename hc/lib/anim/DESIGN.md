@@ -162,14 +162,18 @@ is not implemented; the CPU reference is LBS, so the GPU path is LBS too.
   per character); the CPU anim tick packs it straight from `Palette.m`.
 * Normals and tangents. Per vertex both paths form the blended 3x4
   A = Σ w_k M_k (rows r0, r1, r2) and output p' = A p,
-  t' = normalize(A3 t.xyz) with the glTF handedness t.w kept, and
+  t' = normalize(A3 t.xyz), w' = t.w · sign(det A3), and
   n' = normalize(cof(A3) n · sign det A3), where cof(A3) = det(A3) · A3^-T
   has rows r1×r2, r2×r0, r0×r1 (the inverse-transpose up to scale, no
   division). So n' stays perpendicular to t' (and to the surface) under
   non-uniform joint scale — and also under the shear that blending two
   rotations produces, where the plain linear 3x3 is off as well. Both are
   unit length (a degenerate vector gives 0, not NaN). Meshes without
-  TANGENT get (1,0,0,1).
+  TANGENT get (1,0,0,1). Handedness: the glTF bitangent is cross(n, t) · w.
+  Under det A3 < 0 (a mirroring palette, or an LBS blend that inverts A3),
+  cross(n', t') points along -A3 (cross(n, t)), so w flips with the same
+  sign(det A3) the normal already uses; cross(n', t') · w' then stays on the
+  side of the skinned rest bitangent A3 (cross(n, t) · w).
 * `gpuskin.he` is a self-contained Vulkan 1.0 compute backend written from
   the Vulkan spec struct layouts (own `extern "libvulkan.so.1?"` block). It
   does **not** use `hc/lib/gfx`: gfx sits on SDL3 GPU (not installed on the
@@ -189,9 +193,15 @@ is not implemented; the CPU reference is LBS, so the GPU path is LBS too.
   characters get a non-uniform scale diag(1.4, 0.7, 1.15) on their palette;
   for every vertex whose rest normal and tangent are perpendicular the GPU
   n'·t' must stay < 1e-3, and a control (the linear 3x3 normal on the same
-  palette) must exceed it. jk-h02 and bfme-hr01: lavapipe max |dp|, |dn|,
-  |dt| 0 (bit-identical), 9060 XT max |dp| 4.9e-7 m, |dn| 3.6e-6,
-  |dt| 1.3e-6; |n'·t'| ≤ 1.4e-6; the control reaches 0.99.
+  palette) must exceed it. Characters 2 mod 4 instead get a negative,
+  non-uniform scale diag(-1.25, 0.9, 1.0) (det < 0 on every vertex): for
+  every vertex with a rest bitangent, cross(n', t') · w' (GPU) must have a
+  positive cosine with A3 (cross(n, t) · w), and w' must equal
+  t.w · sign(det A3) exactly; the control (w kept) must flip those bitangents.
+  jk-h02 and bfme-hr01: lavapipe max |dp|, |dn|, |dt| 0 (bit-identical),
+  9060 XT max |dp| 4.9e-7 m, |dn| 3.6e-6, |dt| 1.34e-6; |n'·t'| ≤ 1.4e-6;
+  the normal control reaches 0.99; handedness 0 flipped (min cos 0.023),
+  the w-kept control flips all 1,919,645 / 1,516,311 det < 0 vertex-frames.
 * Bench harness (Helium): `HC_LIB=<repo>/hc/lib build/hcn
   hc/test/anim/gpuskin_bench.amni -- <results.txt> <frames> <hero.glb>...`
   builds the shader and test binary, runs each hero headless and writes a

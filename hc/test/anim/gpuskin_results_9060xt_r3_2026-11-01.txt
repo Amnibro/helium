@@ -1,0 +1,37 @@
+gpuskin bench  2026-11-01 06:46:28 EST  host Antman-PC  frames 600
+hcn /home/anmire/kim7_gate/build/hcn
+glb sha256 before: OK (2 files)
+skin.spv 8728 bytes (hcn --spv)
+spirv-val version: SPIRV-Tools v2026.4 v2026.4.rc2-0-gef96ed763
+$ spirv-val --target-env vulkan1.1 '/tmp/gpuskin_bench.1793533588362484341/skin.spv'
+spirv-val: OK
+
+WARNING: radv is not a conformant Vulkan implementation, testing use only.
+gpuskin /home/anmire/kim7_gate/glb/jk-h02.glb  device 'AMD Radeon RX 9060 XT (RADV GFX1200)' (type 2)  joints 56  verts 30000  chars 32
+  correctness: 7680000 skinned vertices (32 chars x 8 frames, odd chars non-uniformly scaled 1.4/0.7/1.15, chars 2 mod 4 mirrored -1.25/0.9/1.0) vs CPU skin_cpu:
+    max |dp| 4.851466428590356e-07 m (char 15 vert 14833), max |dn| 2.27168197852734e-06, max |dt| 6.99085262567678e-07, max |dw| 0.0  tol 0.0001 m / 0.0001
+    n'.t' invariant (7680000 checks, rest |n.t| < 1e-5): max |n'.t'| 6.491318345069885e-07 (tol 0.001); control, linear 3x3 normals on scaled chars: 0.9918135404586792 (trips, as expected), 3754643 checks > 0.01; unscaled chars: 0.9987503886222839, 2054315 checks > 0.01 (blended rotations shear A3 too)
+    handedness (7680000 checks, 1919645 with det A3 < 0, 52 of them on unmirrored chars): bitangent cross(n',t')*w' against A3 (cross(n,t)*w): 0 flipped, min cos 0.02265000343322754; w' != w*sign(det A3): 0; mirrored chars w' = -w on 1919593/1920000 verts (the rest are LBS blends with det < 0 before the mirror); control, w kept: 1919645 flipped (trips, as expected)
+    -> PASS
+  bench 600 frames, 32 chars x 30000 verts:
+    anim tick (CPU)        avg 0.36994139666666626 ms
+    palette pack (CPU)     avg 0.007917756666666676 ms
+    gpu skin submit+wait   avg 0.2015997733333333 ms  worst 1.221652 ms
+    gpu skin (timestamps)  avg 0.1381547333333333 ms
+    frame (serialized)     avg 0.5794589266666662 ms  worst 1.593928 ms -> 1725.7478554217703 fps
+
+WARNING: radv is not a conformant Vulkan implementation, testing use only.
+gpuskin /home/anmire/kim7_gate/glb/bfme-hr01.glb  device 'AMD Radeon RX 9060 XT (RADV GFX1200)' (type 2)  joints 65  verts 23691  chars 32
+  correctness: 6064896 skinned vertices (32 chars x 8 frames, odd chars non-uniformly scaled 1.4/0.7/1.15, chars 2 mod 4 mirrored -1.25/0.9/1.0) vs CPU skin_cpu:
+    max |dp| 4.172325134277344e-07 m (char 21 vert 15936), max |dn| 1.4379427284438862e-06, max |dt| 1.3366474149734131e-06, max |dw| 0.0  tol 0.0001 m / 0.0001
+    n'.t' invariant (6064896 checks, rest |n.t| < 1e-5): max |n'.t'| 3.2782554626464844e-07 (tol 0.001); control, linear 3x3 normals on scaled chars: 0.998954176902771 (trips, as expected), 2936293 checks > 0.01; unscaled chars: 0.9877834320068359, 1593867 checks > 0.01 (blended rotations shear A3 too)
+    handedness (6064896 checks, 1516311 with det A3 < 0, 87 of them on unmirrored chars): bitangent cross(n',t')*w' against A3 (cross(n,t)*w): 0 flipped, min cos 0.038575589656829834; w' != w*sign(det A3): 0; mirrored chars w' = -w on 1516224/1516224 verts (the rest are LBS blends with det < 0 before the mirror); control, w kept: 1516311 flipped (trips, as expected)
+    -> PASS
+  bench 600 frames, 32 chars x 23691 verts:
+    anim tick (CPU)        avg 0.40092378166666703 ms
+    palette pack (CPU)     avg 0.009042885000000007 ms
+    gpu skin submit+wait   avg 0.1541350799999999 ms  worst 1.066994 ms
+    gpu skin (timestamps)  avg 0.1017404 ms
+    frame (serialized)     avg 0.5641017466666669 ms  worst 1.462283 ms -> 1772.7298415739697 fps
+glb sha256 after: OK (2 files)
+done 06:46:34 EST  rc 0

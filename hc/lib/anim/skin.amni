@@ -60,11 +60,14 @@ fn glb_skin_mesh(mesh int, prim int) SkinMesh {
 // A = sum_k w_k M_k is formed once per vertex (same arithmetic as
 // skin.comp), then:
 //   p' = A p
-//   t' = normalize(A3 t.xyz), w kept   (tangents move with the surface)
+//   t' = normalize(A3 t.xyz), w' = w * sign(det A3)
 //   n' = normalize(cof(A3) n * sign(det A3))
 // where A3 is the upper 3x3 and cof(A3) = det(A3) * inverse-transpose(A3):
 // rows r1 x r2, r2 x r0, r0 x r1 of the rows r0..r2 of A3. This keeps n'
 // perpendicular to t' under non-uniform joint scale, where A3 n would not.
+// The glTF bitangent is cross(n, t) * w; under a reflection (det A3 < 0)
+// cross(n', t') points against A3 b, so w flips with the sign of det A3 to
+// keep b' = cross(n', t') * w' along A3 b (normal maps stay right-handed).
 fn skin_cpu(mesh SkinMesh, pal Palette&, out_p float3[>..]&, out_n float3[>..]&, out_t float4[>..]&) {
 	out_p.clear(); out_n.clear(); out_t.clear();
 	for v in mesh.nv {
@@ -82,10 +85,10 @@ fn skin_cpu(mesh SkinMesh, pal Palette&, out_p float3[>..]&, out_n float3[>..]&,
 		let p = SK_P[i]; let n = SK_N[i]; let t4 = SK_T[i];
 		out_p.push(float3 { dot(r0, p) + m[3], dot(r1, p) + m[7], dot(r2, p) + m[11] });
 		let t = float3 { t4.x, t4.y, t4.z };
-		out_t.push(skin_unit4(float3 { dot(r0, t), dot(r1, t), dot(r2, t) }, t4.w));
 		let c0 = cross(r1, r2); let c1 = cross(r2, r0); let c2 = cross(r0, r1);
 		let sg = if dot(r0, c0) < 0.0 { -1.0 } else { 1.0 };
 		out_n.push(skin_unit(float3 { dot(c0, n), dot(c1, n), dot(c2, n) } * sg));
+		out_t.push(skin_unit4(float3 { dot(r0, t), dot(r1, t), dot(r2, t) }, t4.w * sg));
 	}
 }
 // normalize, with 0 for a degenerate vector (no NaN); skin.comp does the same

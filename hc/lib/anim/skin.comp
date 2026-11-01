@@ -1,8 +1,9 @@
 // anim/skin.comp: linear blend skinning, one invocation per (vertex, character).
-// A = sum_k w_k M_k (3x4 rows), p' = A p, t' = normalize(A3 t.xyz) with t.w
-// kept, n' = normalize(cof(A3) n * sign(det A3)) where cof(A3) = det(A3) *
-// inverse-transpose(A3) has rows r1 x r2, r2 x r0, r0 x r1 (correct under
-// non-uniform scale). Same arithmetic as the CPU reference skin_cpu.
+// A = sum_k w_k M_k (3x4 rows), p' = A p, t' = normalize(A3 t.xyz) with
+// t.w' = t.w * sign(det A3) (the glTF bitangent cross(n,t)*w stays along
+// A3 b under a reflection), n' = normalize(cof(A3) n * sign(det A3)) where
+// cof(A3) = det(A3) * inverse-transpose(A3) has rows r1 x r2, r2 x r0,
+// r0 x r1 (correct under non-uniform scale). Same arithmetic as the CPU reference skin_cpu.
 // Palette rows are the top 3 rows of model * inverse-bind. Layout: see
 // gpuskin.he. Clean-room.
 // Build: hcn --spv skin.comp skin.spv   (Helium's own GLSL compiler)
@@ -41,5 +42,5 @@ void main() {
 	uint o = (c * nv + v) * 3u;
 	outv[o] = vec4(dot(r0, p), dot(r1, p), dot(r2, p), 1.0);
 	outv[o + 1u] = vec4(unit(vec3(dot(c0, n.xyz), dot(c1, n.xyz), dot(c2, n.xyz)) * sg), 0.0);
-	outv[o + 2u] = vec4(unit(vec3(dot(r0.xyz, t.xyz), dot(r1.xyz, t.xyz), dot(r2.xyz, t.xyz))), t.w);
+	outv[o + 2u] = vec4(unit(vec3(dot(r0.xyz, t.xyz), dot(r1.xyz, t.xyz), dot(r2.xyz, t.xyz))), t.w * sg);
 }
