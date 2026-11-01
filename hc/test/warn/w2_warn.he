@@ -1,0 +1,9 @@
+# W2: a collection built only to be counted; the push argument has a call, so hc warns instead of lowering
+use os
+var SEEN i32[>..]
+g(i int) int: i * 3
+main():
+	xs i32[>..] ~= []
+	for i 10: if i % 3 == 0 { xs.push(g(i)) }
+	for i 5: SEEN.push(i)
+	print(xs.len, " ", SEEN.len)

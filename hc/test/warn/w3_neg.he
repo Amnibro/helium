@@ -1,0 +1,17 @@
+# W3 negatives: different arguments, an impure callee, a repeat guarded by &&, and a cheap accessor
+use os
+tri(x int) int:
+	s ~= 0
+	for i x: s += i
+	s
+sq(x int) int: x * x + 1
+noisy(x int) int:
+	print("!")
+	x
+main():
+	a := 7
+	b := tri(a) + tri(a + 1)
+	c := noisy(a) + noisy(a)
+	d := a > 0 && tri(a) > 3 && tri(a) < 100
+	e := sq(a) + sq(a)
+	print(b, " ", c, " ", d, " ", e)

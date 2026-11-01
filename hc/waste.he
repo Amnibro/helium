@@ -1,0 +1,424 @@
+# waste: warnings for code that does more work than its result needs, each with
+# the construct that does it once (std seq, tab, each_sum, sort), plus the one
+# rewrite that is always safe: a local collection that is only pushed and
+# measured becomes a counter. Rules (root-package code only, std is skipped):
+#   W1 exponential recursion on n - k that is a linear recurrence -> seq
+#   W2 a collection only pushed and measured -> a counter (lowered when local)
+#   W3 the same pure call twice in one statement -> bind it once
+#   W4 a constant match over two enums -> a table
+#   W5 a pure index function recomputed in nested loops -> tab
+#   W6 a hand-written merge on fixed-width integer keys -> sort (radix)
+# Pure means: no mutable slice or reference parameters, no writes to module
+# variables, no I/O, and only pure functions called.
+use calls
+var WST_FN i32[>..]
+var WST_IMP bool[>..]
+var WST_PAR i32[>..]
+var WST_GLOB i32[>..]
+var WST_OUT byte[>..]
+var WST_LOC i32[>..]
+var WST_CALL i32[>..]
+var WST_LOOPV i32[>..]
+var WST_HOT bool[>..]
+var WST_COST bool[>..]
+var WST_RG bool[>..]
+var WST_MGLOB i32[>..]
+var WST_EDGE i32[>..]
+var WST_G_N i32[>..]
+var WST_G_P i32[>..]
+var WST_G_L i32[>..]
+var WST_G_O i32[>..]
+wpush(o i32[>..]&, x int): if x >= 0 && x < ND.len { o.push(x as i32) }
+recursive wkids(n int, o i32[>..]&):
+	x := ND[n]; k := x.k as int
+	if k == N_FOR { wpush(o, x.a); wpush(o, x.b); wpush(o, x.d); return }
+	if k == N_VDECL { wpush(o, x.b); return }
+	if k == N_FN { wpush(o, x.c); return }
+	if k == N_FUNVAL || k == N_EBLOCK || k == N_LOOP || k == N_UN || k == N_AS || k == N_DOT || k == N_FI || k == N_BREAK { wpush(o, x.a); return }
+	if k == N_CFOR { if x.fl == 0 { wpush(o, x.c) } return }
+	if k == N_WHILE || k == N_BIN || k == N_IDX || k == N_ASSIGN || k == N_PITEM { wpush(o, x.a); wpush(o, x.b); return }
+	if k == N_INCDEC { wpush(o, x.a); return }
+	if k == N_IF || k == N_SLICE { wpush(o, x.a); wpush(o, x.b); wpush(o, x.c); return }
+	if k == N_CALL { wpush(o, x.a); for i x.n { wpush(o, kid(n, i)) } wpush(o, x.b); return }
+	if k == N_ARR { if x.c >= 0 { wpush(o, x.c) } else { if x.a >= 0 { wpush(o, x.a); wpush(o, x.b) } else { for i x.n { wpush(o, kid(n, i)) } } } return }
+	if k == N_MATCH || k == N_BLOCK { wpush(o, x.a); for i x.n { wpush(o, kid(n, i)) } return }
+	if k == N_ARM { for i x.n { wpush(o, kid(n, i)) } wpush(o, x.a); wpush(o, x.b); return }
+	if k == N_RET || k == N_LIST || k == N_SLIT: for i x.n { wpush(o, kid(n, i)) }
+# every node under n (n first), with WST_PAR set to each node's parent
+recursive wall(n int, p int, o i32[>..]&):
+	if n < 0 || n >= ND.len: return
+	WST_PAR[n] = p as i32; o.push(n as i32)
+	ks i32[>..] ~= []; wkids(n, ks)
+	for c ks: wall(c as int, n, o)
+wroot(e int) int:
+	x ~= e
+	while x >= 0 && (ND[x].k as int == N_IDX || ND[x].k as int == N_DOT || ND[x].k as int == N_SLICE): x = ND[x].a
+	if x >= 0 && ND[x].k as int == N_ID { ND[x].s as int } else { -1 }
+win(xs i32[:], v int) bool:
+	for x xs: if x as int == v { return true }
+	false
+callee(n int) int:
+	a := ND[n].a; if a < 0: return -1
+	if ND[a].k as int == N_ID || ND[a].k as int == N_DOT: return ND[a].s as int
+	-1
+wname(n int) const byte[:]: if n >= 0 { nm(n) } else { "" }
+impure_builtin(s const byte[:]) bool:
+	for b ["print", "println", "write_stdout", "write_stderr", "write_file", "append_file", "read_file", "read_line", "read_stdin", "exit", "abort", "panic", "random", "rand", "clock", "time", "now", "sleep", "sleep_ms", "arg", "env", "run", "system", "spawn", "make_exec", "remove_file", "mkdir", "thread_spawn"]: if s == b { return true }
+	false
+mutator(s const byte[:]) bool:
+	for b ["push", "append", "pop", "pop_n", "clear", "resize", "sort", "stable_sort", "fill", "reverse", "insert", "remove", "swap_at", "format", "format_flt", "extend", "set", "put", "del", "heap_push", "heap_pop", "shuffle", "each_sum"]: if s == b { return true }
+	false
+mut_param(p int) bool:
+	t := ND[p].a; if t < 0: return false
+	k := ND[t].k as int
+	k == N_TREF || k == N_TSLICE && ND[t].fl & 1 == 0 || k == N_TARR && ND[t].op as int != A_FIXED
+# locals: parameters, declarations, loop and arm bindings, block parameters
+wlocals(f int, ns i32[:]):
+	WST_LOC.clear()
+	for i ND[f].n: WST_LOC.push(ND[kid(f, i)].s)
+	for n32 ns:
+		n := n32 as int; k := ND[n].k as int
+		if k == N_VDECL: for i ND[n].n { WST_LOC.push(kid(n, i) as i32) }
+		if k == N_FOR { WST_LOC.push(ND[n].s); if ND[n].c >= 0 { WST_LOC.push(ND[n].c) } }
+		if k == N_FUNVAL: for i ND[n].n { WST_LOC.push(ND[kid(n, i)].s) }
+		if k == N_ARM && ND[n].s >= 0: WST_LOC.push(ND[n].s)
+wglobal(name int) bool: name >= 0 && win(WST_GLOB[..], name) && !win(WST_LOC[..], name)
+# does f do work worth sharing (a loop or recursion), and does it read a mutable global?
+wcost_direct(f int, ns i32[:]) bool:
+	for n32 ns:
+		k := ND[n32].k as int
+		if k == N_FOR || k == N_WHILE || k == N_LOOP || k == N_CFOR: return true
+		if k == N_CALL && callee(n32 as int) == ND[f].s as int: return true
+	false
+wrg_direct(ns i32[:]) bool:
+	for n32 ns: if ND[n32].k as int == N_ID && win(WST_MGLOB[..], ND[n32].s) && !win(WST_LOC[..], ND[n32].s) { return true }
+	false
+wflag(name int, fl bool[>..]&) bool:
+	for f, i WST_FN: if ND[f].s == name && fl[i] { return true }
+	false
+wcostly(name int) bool: wflag(name, WST_COST)
+# direct impurity of fn f (calls to other user functions are settled later)
+wdirect(f int, ns i32[:]) bool:
+	if ND[f].fl & F_EXTERN != 0: return true
+	for i ND[f].n: if mut_param(kid(f, i)) { return true }
+	for n32 ns:
+		n := n32 as int; k := ND[n].k as int
+		if k == N_ASSIGN:
+			a := ND[n].a
+			if a >= 0 && ND[a].k as int == N_LIST { for i ND[a].n { if wglobal(wroot(kid(a, i))) { return true } } } else { if wglobal(wroot(a)) { return true } }
+		if k == N_INCDEC && wglobal(wroot(ND[n].a)): return true
+		if k == N_CALL:
+			c := callee(n); a := ND[n].a
+			if c >= 0 && impure_builtin(nm(c)): return true
+			if c >= 0 && mutator(nm(c)):
+				if ND[a].k as int == N_DOT && wglobal(wroot(ND[a].a)): return true
+				if ND[a].k as int == N_ID && ND[n].n > 0 && wglobal(wroot(kid(n, 0))): return true
+	false
+wfind(name int) int:
+	for f, i WST_FN: if ND[f].s == name { return i }
+	-1
+wpure_name(name int) bool:
+	if name < 0: return false
+	any ~= false
+	for f, i WST_FN: if ND[f].s == name { any = true; if WST_IMP[i] { return false } }
+	any
+wwarn(n int, rule const byte[:], m const byte[:], fix const byte[:]):
+	t := TK[ND[n].t]
+	format(WST_OUT, nm(FILES[t.f].name), ":", t.line, ": warning: ", rule, " ", m, " (rewrite: ", fix, ")\n")
+prim_int(t int) bool:
+	if t < 0 || ND[t].k as int != N_TPRIM: return false
+	s := tok_text(ND[t].t)
+	for b ["int", "uint", "i8", "u8", "byte", "i16", "u16", "i32", "u32", "i64", "u64"]: if s == b { return true }
+	false
+scalar_res(f int) bool:
+	r := ND[f].b; if r < 0: return false
+	t ~= r; if ND[r].k as int == N_LIST { if ND[r].n != 1 { return false } t = kid(r, 0) }
+	ND[t].k as int == N_TPRIM
+# W1: a pure scalar function calling itself at least twice on param - k, k distinct
+w1(f int, ns i32[:]):
+	if !scalar_res(f): return
+	name := ND[f].s; ks i32[>..] ~= []; calls ~= 0; pn ~= -1
+	for n32 ns:
+		n := n32 as int
+		if ND[n].k as int != N_CALL || ND[ND[n].a].k as int != N_ID || ND[ND[n].a].s != name: continue
+		for i ND[n].n:
+			a := kid(n, i)
+			if ND[a].k as int == N_BIN && ND[a].op as int == T_MINUS && ND[ND[a].a].k as int == N_ID && ND[ND[a].b].k as int == N_INT:
+				p := ND[ND[a].a].s
+				for j ND[f].n: if ND[kid(f, j)].s == p { pn = p; calls += 1; v := TK[ND[ND[a].b].t].v as int; if !win(ks[..], v) { ks.push(v as i32) } }
+	if calls >= 2 && ks.len >= 2:
+		m byte[>..] ~= []; format(m, nm(name), " recomputes itself exponentially on ", nm(pn), " - k; it is a linear recurrence, n - 1 steps")
+		fx byte[>..] ~= []; format(fx, "seq(", nm(pn), ", x0, x1) { a, b => ... }")
+		wwarn(f, "W1", m[..], fx[..])
+# W3: the same pure call twice in one statement (only where both always run)
+recursive wsig(n int, o byte[>..]&):
+	x := ND[n]; format(o, "(", x.k as int, ":", x.op as int, ":", x.s)
+	k := x.k as int
+	if k == N_INT || k == N_FLT || k == N_STR: o.append(tok_text(x.t))
+	ks i32[>..] ~= []; wkids(n, ks)
+	for c ks: wsig(c as int, o)
+	o.append(")")
+recursive w3col(n int, o i32[>..]&):
+	k := ND[n].k as int
+	if k == N_BLOCK || k == N_EBLOCK || k == N_IF || k == N_MATCH || k == N_WHILE || k == N_LOOP || k == N_FOR || k == N_FUNVAL || k == N_FN || k == N_CFOR: return
+	if k == N_BIN && (ND[n].op as int == T_ANDAND || ND[n].op as int == T_OROR): w3col(ND[n].a, o); return
+	if k == N_CALL && ND[n].b < 0 && ND[n].n > 0 && ND[ND[n].a].k as int == N_ID && wpure_name(ND[ND[n].a].s) && wcostly(ND[ND[n].a].s): o.push(n as i32)
+	ks i32[>..] ~= []; wkids(n, ks)
+	for c ks: w3col(c as int, o)
+w3stmt(s int):
+	k := ND[s].k as int
+	r ~= s
+	if k == N_IF || k == N_WHILE || k == N_MATCH { r = ND[s].a } else { if k == N_FOR { r = ND[s].a } else { if k == N_BLOCK || k == N_EBLOCK || k == N_LOOP || k == N_FN || k == N_CFOR { return } } }
+	if r < 0: return
+	cs i32[>..] ~= []; w3col(r, cs)
+	if cs.len < 2: return
+	sg byte[>..][>..] ~= []
+	for c cs { b byte[>..] ~= []; wsig(c as int, b); sg.push(b) }
+	for i cs.len:
+		for j i + 1..cs.len:
+			if sg[i][..] == sg[j][..]:
+				c := cs[i] as int
+				m byte[>..] ~= []; format(m, nm(ND[ND[c].a].s), "(...) is pure and called twice with the same arguments in one statement")
+				wwarn(c, "W3", m[..], "bind it once: v := f(...)"); return
+w3(ns i32[:]):
+	for n32 ns:
+		n := n32 as int
+		if ND[n].k as int == N_BLOCK:
+			for i ND[n].n: w3stmt(kid(n, i))
+			if ND[n].a >= 0: w3stmt(ND[n].a)
+# W4: fn over two enum parameters whose body is a match of constant arms
+wenum(t int) bool:
+	if t < 0 || ND[t].k as int != N_TNAME: return false
+	for d DC: if d.k as int == D_ENUM && d.name == ND[t].s { return true }
+	false
+recursive wunwrap(e int) int:
+	if e < 0: return -1
+	k := ND[e].k as int
+	if (k == N_BLOCK || k == N_EBLOCK) && ND[e].n == 0: return wunwrap(if k == N_BLOCK { ND[e].a as int } else { ND[e].a as int })
+	if k == N_EBLOCK: return wunwrap(ND[e].a)
+	if k == N_BLOCK && ND[e].n == 1 && ND[e].a < 0: return wunwrap(kid(e, 0))
+	if k == N_RET && ND[e].n == 1: return wunwrap(kid(e, 0))
+	e
+wconst(e0 int) bool:
+	e := wunwrap(e0); if e < 0: return false
+	k := ND[e].k as int
+	k == N_INT || k == N_FLT || k == N_STR || k == N_TRUE || k == N_FALSE || k == N_DOT && ND[ND[e].a].k as int == N_ID || k == N_ID && !win(WST_LOC[..], ND[e].s)
+warmv(a int) int: if ND[a].b >= 0 { ND[a].b as int } else { ND[a].a as int }
+recursive wcmatch(e0 int, p int, inner int) bool:
+	e := wunwrap(e0)
+	if e < 0 || ND[e].k as int != N_MATCH || ND[e].n < 2: return false
+	s := ND[e].a; if s < 0 || ND[s].k as int != N_ID || ND[s].s != p: return false
+	for i ND[e].n:
+		v := warmv(kid(e, i))
+		if !wconst(v) && !(inner >= 0 && wcmatch(v, inner, -1)): return false
+	true
+w4(f int):
+	if ND[f].n != 2: return
+	p0 := kid(f, 0); p1 := kid(f, 1)
+	if !wenum(ND[p0].a) || !wenum(ND[p1].a): return
+	b := ND[f].c
+	if wcmatch(b, ND[p0].s, ND[p1].s) || wcmatch(b, ND[p1].s, ND[p0].s):
+		m byte[>..] ~= []; format(m, nm(ND[f].s), " is a constant match over ", nm(ND[ND[p0].a].s), " x ", nm(ND[ND[p1].a].s), "; every call walks the arms")
+		fx byte[>..] ~= []; format(fx, "one load from a table filled once: T[", nm(ND[p0].s), " as int * #", nm(ND[ND[p1].a].s), " + ", nm(ND[p1].s), " as int]")
+		wwarn(f, "W4", m[..], fx[..])
+# W5 and the call graph: walk with loop depth and the enclosing loop variables
+idx_fn(name int) bool:
+	i := wfind(name); if i < 0 || WST_IMP[i]: return false
+	f := WST_FN[i] as int
+	if ND[f].n < 2 || !scalar_res(f) || WST_RG[i]: return false
+	for j ND[f].n: if !prim_int(ND[kid(f, j)].a) { return false }
+	true
+# functions reached from a loop body, directly or through callers (fixpoint over call edges)
+whot_all():
+	ne := WST_EDGE.len / 3
+	ci i32[>..] ~= []
+	for k ne: ci.push(wfind(WST_EDGE[3 * k + 1] as int) as i32)
+	h i32[>..] ~= []; h.resize(WST_FN.len, 0)
+	more ~= 1
+	while more > 0:
+		more = 0
+		for k ne:
+			j := ci[k] as int
+			if j >= 0 && h[j] == 0:
+				if WST_EDGE[3 * k + 2] != 0 || h[WST_EDGE[3 * k] as int] != 0: h[j] = 1; more += 1
+	WST_HOT.clear(); for x h: WST_HOT.push(x != 0)
+recursive w5walk(n int, fi int, depth int, hits i32[>..]&):
+	if n < 0 || n >= ND.len: return
+	k := ND[n].k as int
+	if k == N_FN && n != WST_FN[fi] as int: return
+	if k == N_CALL:
+		c := callee(n)
+		if c >= 0: WST_EDGE.push(fi as i32); WST_EDGE.push(c as i32); WST_EDGE.push(if depth > 0 { 1 } else { 0 })
+		if c >= 0 && depth >= 2 && ND[ND[n].a].k as int == N_ID && idx_fn(c):
+			ok ~= true; vs i32[>..] ~= []
+			for i ND[n].n:
+				a := kid(n, i)
+				if ND[a].k as int != N_ID || !win(WST_LOOPV[..], ND[a].s) { ok = false } else { if !win(vs[..], ND[a].s) { vs.push(ND[a].s) } }
+			if ok && vs.len >= 2: hits.push(n as i32); hits.push(depth as i32)
+	if k == N_FOR:
+		w5walk(ND[n].a, fi, depth, hits); w5walk(ND[n].b, fi, depth, hits)
+		WST_LOOPV.push(ND[n].s); w5walk(ND[n].d, fi, depth + 1, hits); WST_LOOPV.pop()
+		return
+	if k == N_WHILE || k == N_LOOP:
+		ks i32[>..] ~= []; wkids(n, ks)
+		for c ks: w5walk(c as int, fi, depth + 1, hits)
+		return
+	ks i32[>..] ~= []; wkids(n, ks)
+	for c ks: w5walk(c as int, fi, depth, hits)
+# W6: while i < a && j < b with an if comparing two indexed fixed-width int keys
+wint_arr(name int, f int, ns i32[:]) bool:
+	if name < 0: return false
+	for i ND[f].n:
+		p := kid(f, i); if ND[p].s == name { return welem_int(ND[p].a) }
+	for n32 ns:
+		n := n32 as int
+		if ND[n].k as int == N_VDECL && ND[n].n == 1 && kid(n, 0) == name: return welem_int(ND[n].a)
+	false
+welem_int(t0 int) bool:
+	t ~= t0; if t >= 0 && ND[t].k as int == N_TCONST: t = ND[t].a
+	t >= 0 && (ND[t].k as int == N_TSLICE || ND[t].k as int == N_TARR) && prim_int(ND[t].a)
+w6(f int, ns i32[:]):
+	for n32 ns:
+		n := n32 as int
+		if ND[n].k as int != N_WHILE: continue
+		c := ND[n].a
+		if c < 0 || ND[c].k as int != N_BIN || ND[c].op as int != T_ANDAND: continue
+		l := ND[c].a; r := ND[c].b
+		if ND[l].k as int != N_BIN || ND[l].op as int != T_LT || ND[r].k as int != N_BIN || ND[r].op as int != T_LT: continue
+		bs i32[>..] ~= []; wall(ND[n].b, n, bs)
+		for q32 bs:
+			q := q32 as int
+			if ND[q].k as int != N_IF: continue
+			e := ND[q].a
+			if e < 0 || ND[e].k as int != N_BIN || ND[e].op as int != T_LTEQ && ND[e].op as int != T_LT: continue
+			x := ND[e].a; y := ND[e].b
+			if ND[x].k as int == N_IDX && ND[y].k as int == N_IDX && wint_arr(wroot(x), f, ns) && wint_arr(wroot(y), f, ns):
+				m byte[>..] ~= []; format(m, "hand-written merge on fixed-width integer keys of ", nm(wroot(x)), ": log2(n) passes of compares")
+				wwarn(n, "W6", m[..], "sort(xs) - a radix sort for fixed-width keys, one counting read and at most one pass per key byte"); return
+# W2: a collection only pushed (as a statement) and measured
+wsimple_arg(n int) bool:
+	p0 := WST_PAR[n]; ns i32[>..] ~= []; wall(n, -1, ns); WST_PAR[n] = p0
+	for q32 ns:
+		q := q32 as int; k := ND[q].k as int
+		if k == N_INT || k == N_FLT || k == N_STR || k == N_TRUE || k == N_FALSE || k == N_ID: continue
+		if k == N_UN || k == N_DOT: continue
+		if k == N_AS && ND[q].fl & 1 != 0: continue
+		if k == N_BIN && ND[q].op as int != T_DIV && ND[q].op as int != T_MOD && ND[q].op as int != T_SHL && ND[q].op as int != T_SHR: continue
+		return false
+	true
+# classifies each use of name inside ns: returns pushes, lengths, other uses, and whether every push argument is simple
+wuses(name int, ns i32[:]) int, int, int, bool:
+	pu ~= 0; ln ~= 0; ot ~= 0; simple ~= true
+	for n32 ns:
+		n := n32 as int
+		if ND[n].k as int != N_ID || ND[n].s != name: continue
+		p := WST_PAR[n] as int
+		if p >= 0 && ND[p].k as int == N_DOT && ND[p].a == n:
+			g := WST_PAR[p] as int; callee_dot := g >= 0 && ND[g].k as int == N_CALL && ND[g].a == p
+			if nm(ND[p].s) == "len" && !callee_dot { ln += 1; continue }
+			if nm(ND[p].s) == "push" && callee_dot && ND[g].n == 1 && ND[g].b < 0:
+				h := WST_PAR[g] as int
+				if h >= 0 && ND[h].k as int == N_BLOCK { pu += 1; if !wsimple_arg(kid(g, 0)) { simple = false } continue }
+		ot += 1
+	return pu, ln, ot, simple
+wempty_init(v int) bool:
+	il := ND[v].b
+	if il < 0: return ND[v].a >= 0 && ND[ND[v].a].k as int == N_TARR
+	if ND[il].n != 1: return false
+	e := kid(il, 0)
+	ND[e].k as int == N_ARR && ND[e].n == 0 && ND[e].a < 0 && ND[e].c < 0 && (ND[v].a < 0 || ND[ND[v].a].k as int == N_TARR)
+# the counter lowering: decl -> counter(), x.push(v) -> x++, x.len -> x
+wlower(v int, name int, ns i32[:]):
+	t := ND[v].t
+	ND[v].a = -1; ND[v].fl = (ND[v].fl as int | V_VAR) as u16
+	il := ND[v].b; LS[ND[il].l] = mkcall(intern("counter"), t, -1, -1) as i32
+	for n32 ns:
+		n := n32 as int
+		if ND[n].k as int != N_ID || ND[n].s != name: continue
+		p := WST_PAR[n] as int
+		if p < 0 || ND[p].k as int != N_DOT: continue
+		if nm(ND[p].s) == "len": ND[p].k = N_ID as u8; ND[p].s = name; ND[p].a = -1; continue
+		g := WST_PAR[p] as int
+		ND[g].k = N_INCDEC as u8; ND[g].op = T_INC as u8; ND[g].a = n; ND[g].b = -1; ND[g].n = 0
+		h := WST_PAR[g] as int
+		if ND[h].a == g:
+			# x++ is a statement, not a block's tail value: move it into the statement list
+			m := wbeg(); for i ND[h].n { WS.push(kid(h, i) as i32) } WS.push(g as i32); setl(h, m); ND[h].a = -1
+w2(f int, ns i32[:]):
+	for n32 ns:
+		v := n32 as int
+		if ND[v].k as int != N_VDECL || ND[v].n != 1 || !wempty_init(v): continue
+		name := kid(v, 0)
+		decls ~= 0
+		for q32 ns:
+			q := q32 as int; if ND[q].k as int == N_VDECL { for i ND[q].n { if kid(q, i) == name { decls += 1 } } }
+			if ND[q].k as int == N_FOR && (ND[q].s == name || ND[q].c == name) || ND[q].k as int == N_ARM && ND[q].s == name: decls += 1
+			if ND[q].k as int == N_FUNVAL: for i ND[q].n { if ND[kid(q, i)].s == name { decls += 1 } }
+		for i ND[f].n: if ND[kid(f, i)].s == name { decls += 1 }
+		if decls != 1 || win(WST_GLOB[..], name): continue
+		pu, ln, ot, simple := wuses(name, ns)
+		if pu == 0 || ot > 0: continue
+		if ln > 0 && simple && ND[v].b >= 0: wlower(v, name, ns); continue
+		m byte[>..] ~= []
+		if ln == 0 { format(m, nm(name), " is only pushed, never read") } else { format(m, nm(name), " is only pushed and measured; its elements are never read") }
+		wwarn(v, "W2", m[..], if ln == 0 { "drop it" } else { "count instead: n ~= 0 ... n += 1" })
+w2glob(ns i32[:]):
+	for n32 ns:
+		n := n32 as int
+		if ND[n].k as int != N_ID: continue
+		gi ~= -1; for g, i WST_G_N { if g == ND[n].s { gi = i } }
+		if gi < 0 || win(WST_LOC[..], ND[n].s): continue
+		one i32[>..] ~= [n as i32]
+		pu, ln, ot, simple := wuses(ND[n].s, one[..])
+		WST_G_P[gi] += pu as i32; WST_G_L[gi] += ln as i32; WST_G_O[gi] += ot as i32
+# entry: run after parsing, before the checker (the counter lowering rewrites the
+# tree); the warnings wait in WST_OUT until the program has checked
+waste_program():
+	WST_FN.clear(); WST_IMP.clear(); WST_COST.clear(); WST_RG.clear(); WST_MGLOB.clear(); WST_GLOB.clear(); WST_OUT.clear(); WST_EDGE.clear(); WST_G_N.clear(); WST_G_P.clear(); WST_G_L.clear(); WST_G_O.clear()
+	WST_PAR.clear(); WST_PAR.resize(ND.len, -1)
+	gdecl i32[>..] ~= []
+	for d DC:
+		if d.k as int == D_GLOBAL: WST_GLOB.push(kid(d.node as int, 0) as i32); if ND[d.node].fl & V_VAR != 0 { for j ND[d.node].n { WST_MGLOB.push(kid(d.node as int, j) as i32) } }
+		if d.k as int == D_GLOBAL && !lib_file(d.file as int) && ND[d.node].n == 1 && wempty_init(d.node as int): WST_G_N.push(kid(d.node as int, 0) as i32); WST_G_P.push(0); WST_G_L.push(0); WST_G_O.push(0); gdecl.push(d.node)
+		if d.k as int == D_FN && !lib_file(d.file as int) && ND[d.node].c >= 0 && ND[d.node].fl & F_EXTERN == 0: WST_FN.push(d.node)
+	if WST_FN.len == 0: return
+	body i32[>..][>..] ~= []
+	for f WST_FN:
+		ns i32[>..] ~= []; wall(ND[f].c, f as int, ns); body.push(ns)
+	for f, i WST_FN: wlocals(f as int, body[i][..]); WST_IMP.push(wdirect(f as int, body[i][..]))
+	for f, i WST_FN: wlocals(f as int, body[i][..]); WST_COST.push(wcost_direct(f as int, body[i][..])); WST_RG.push(wrg_direct(body[i][..]))
+	# impurity, cost and global reads flow from callee to caller (fixpoint)
+	more ~= 1
+	while more > 0:
+		more = 0
+		for f, i WST_FN:
+			for n32 body[i]:
+				if ND[n32].k as int != N_CALL: continue
+				c := callee(n32 as int)
+				if c < 0 || c == ND[f].s as int: continue
+				if !WST_IMP[i] && wflag(c, WST_IMP): WST_IMP[i] = true; more += 1
+				if !WST_COST[i] && wflag(c, WST_COST): WST_COST[i] = true; more += 1
+				if !WST_RG[i] && wflag(c, WST_RG): WST_RG[i] = true; more += 1
+	for f, i WST_FN:
+		fq := f as int; ns := body[i][..]
+		wlocals(fq, ns)
+		if !WST_IMP[i]: w1(fq, ns)
+		w3(ns); w4(fq); w6(fq, ns); w2glob(ns); w2(fq, ns)
+	# W5 needs to know which functions run inside loops (directly or through callers)
+	hits i32[>..] ~= []; hf i32[>..] ~= []
+	for f, i WST_FN: WST_LOOPV.clear(); h0 := hits.len; w5walk(f as int, i, 0, hits); for q (h0 / 2)..(hits.len / 2) { hf.push(i as i32) }
+	whot_all()
+	q ~= 0
+	while q < hits.len:
+		n := hits[q] as int; d := hits[q + 1] as int; fi := hf[q / 2] as int
+		if d >= 3 || WST_HOT[fi]:
+			c := ND[ND[n].a].s
+			m byte[>..] ~= []; format(m, nm(c), "(...) is a pure index function recomputed for every pass of nested loops")
+			fx byte[>..] ~= []; format(fx, "fill it once: t := tab(n, m) { i, j => ", nm(c), "(i, j) }, then t[i * m + j]")
+			wwarn(n, "W5", m[..], fx[..])
+		q += 2
+	for g, i WST_G_N:
+		if WST_G_P[i] > 0 && WST_G_O[i] == 0:
+			m byte[>..] ~= []; format(m, nm(g), " is only pushed", if WST_G_L[i] > 0 { " and measured; its elements are never read" } else { ", never read" })
+			wwarn(gdecl[i] as int, "W2", m[..], if WST_G_L[i] > 0 { "count instead: n ~= 0 ... n += 1" } else { "drop it" })
+waste_report(): if WST_OUT.len > 0 { write_stderr(WST_OUT[..]) }

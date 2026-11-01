@@ -1,0 +1,17 @@
+// sort with sort(): fixed-width u32 keys take the radix lowering.
+import os;
+fn arg_n(d int) int { if arg_count() < 2 { return d; } var s byte[>..] = []; arg(1, s); let n, ok = parse_int(s[..]); if ok { n } else { d } }
+var rs u32 = 2463534242;
+fn rnd() u32 { rs ^= rs << 13; rs ^= rs >> 17; rs ^= rs << 5; rs }
+fn main() {
+	let n = arg_n(1000);
+	var x u32[>..] = []; x.resize(n, 0);
+	for i in n { x[i] = rnd(); }
+	sort(x[..]);
+	var h = 0; var ok = 1;
+	for i in n {
+		h = (h + x[i] as int * (i % 1000 + 1)) % 1000000007;
+		if i > 0 && x[i - 1] > x[i] { ok = 0; }
+	}
+	print(h, " ", ok);
+}

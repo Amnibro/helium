@@ -1,0 +1,5 @@
+// fib with seq: the recurrence written once, lowered to n - 1 additions.
+import os;
+fn arg_n(d int) int { if arg_count() < 2 { return d; } var s byte[>..] = []; arg(1, s); let n, ok = parse_int(s[..]); if ok { n } else { d } }
+fn fib(n int) int { seq(n, 0, 1) { a, b => a + b } }
+fn main() { print(fib(arg_n(30))); }

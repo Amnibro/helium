@@ -1,0 +1,25 @@
+// spectral with tab + each_sum: A and its transpose are filled once, then each
+// product is eight row sums at a time, added in the same order as the loop.
+import os;
+import math;
+fn arg_n(d int) int { if arg_count() < 2 { return d; } var s byte[>..] = []; arg(1, s); let n, ok = parse_int(s[..]); if ok { n } else { d } }
+fn a(i int, j int) real { 1.0 / ((i + j) * (i + j + 1) / 2 + i + 1) as real }
+fn mul_atav(at real[:], av real[:], v real[:], out real[:], tmp real[:]) {
+	let n = v.len;
+	each_sum(tmp, n) { i, j => av[i * n + j] * v[j] }
+	each_sum(out, n) { i, j => at[i * n + j] * tmp[j] }
+}
+fn main() {
+	let n = arg_n(100);
+	let av = tab(n, n) { i, j => a(i, j) };
+	let at = tab(n, n) { i, j => a(j, i) };
+	var u real[>..] = []; u.resize(n, 1.0);
+	var v real[>..] = []; v.resize(n, 0.0);
+	var t real[>..] = []; t.resize(n, 0.0);
+	for k in 10 { mul_atav(at, av, u, v, t); mul_atav(at, av, v, u, t); }
+	var vbv = 0.0; var vv = 0.0;
+	for i in n { vbv += u[i] * v[i]; vv += v[i] * v[i]; }
+	var o byte[>..] = [];
+	format_flt(o, sqrt(vbv / vv), 9);
+	print(o);
+}

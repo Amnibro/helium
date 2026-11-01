@@ -1,0 +1,21 @@
+# seq, tab and each_sum from std: one spelling each, checked against the hand-written loops
+use os
+use math
+a(i int, j int) real: 1.0 / ((i + j) * (i + j + 1) / 2 + i + 1) as real
+main():
+	print(seq(10, 0, 1) { a, b => a + b }, " ", seq(1, 0, 1) { a, b => a + b }, " ", seq(0, 0, 1) { a, b => a + b }, " ", seq(5, 1) { x => x * 3 })
+	sq := tab(6) { i => i * i }
+	print(sq.len, " ", sq[5])
+	A := tab(3, 4) { i, j => i * 10 + j }
+	print(A.len, " ", A[1 * 4 + 2], " ", A[11])
+	n := 21
+	v real[>..] ~= []; for i n { v.push(1.0 + i as real / 7.0) }
+	o1 real[>..] ~= []; o1.resize(n, 0.0); o2 real[>..] ~= []; o2.resize(n, 0.0)
+	for i n:
+		s ~= 0.0
+		for j n: s += a(i, j) * v[j]
+		o1[i] = s
+	each_sum(o2[..], n) { i, j => a(i, j) * v[j] }
+	same ~= true; for i n { if o1[i] != o2[i] { same = false } }
+	m := o2[20]; ob byte[>..] ~= []; format_flt(ob, m, 12)
+	print(same, " ", ob)
