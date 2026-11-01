@@ -425,6 +425,20 @@ so no pixel shows an emitter: every lit-geometry pixel is a non-light pixel.
   shipped direct + analytic sky ambient must score >= 0.10 on G1 and on G2(a); if it
   passes either, the gate is not discriminating and the run fails.
 
+* **A1-A3 GTAO with bent normals** (Jimenez, Wu, Pesce, Jarabo 2016, "Practical
+  Real-Time Strategies for Accurate Indirect Occlusion"). Test scene: the Cornell view
+  above (corners, block contacts, the tall block's shadowed side). Reference: a Helium
+  CPU ray tracer on the same triangles, per pixel centre, cosine-weighted visibility of
+  the hemisphere within `AO_REF_RADIUS` = 1.0 scene units (100 mm), 4096 stratified
+  rays; bent normal = normalized mean unoccluded direction. The renderer's GTAO runs at
+  the test radius 1.0, its AO and bent normal box-filtered to 128 x 128, gated on G1's
+  pixels. A1: mean |AO - AO_ref| < **0.05**. A2: that MAE <= **0.5 x** the AO-off
+  control's (AO = 1 everywhere). A3: where AO_ref < 0.8, mean angle between the
+  renderer's and the reference bent normal < **12 deg** and <= **0.5 x** the
+  geometric-normal control's. Controls that must fail: AO off on A1 (if AO off passes
+  A1 the scene is not discriminating and the run fails) and the geometric normal on A3.
+  Reported, not gated: the current hemisphere SSAO's MAE on the same pixels.
+
 Raw output of each recorded run is in `hc/test/gfx/results/`; `gfxtest.sh` writes
 the header itself (commit, command, driver, GPU, packages) into `$GFX_OUT/results.txt`.
 With no GPU it prints `SKIPPED (no GPU)` after the CPU checks (`GFX_REQUIRE_GPU=1`
