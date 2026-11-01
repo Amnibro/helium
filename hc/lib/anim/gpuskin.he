@@ -5,12 +5,13 @@
 # (Magnenat-Thalmann et al. 1988); see DESIGN.md. Does not use hc/lib/gfx.
 #
 # Buffer layout (the adapter contract; any renderer can bind these):
-#   rest   vec4[2*nv]   (pos.xyz,1) (normal.xyz,0)          device-local
+#   rest   vec4[3*nv]   (pos.xyz,1) (normal.xyz,0) (tangent.xyz,w)  device-local
 #   wts    vec4[nv]     4 weights, normalized                device-local
 #   jts    uint[nv]     4 joint indices, 8 bits each         device-local
 #   pal    vec4[3*nj*nchar] rows of the 3x4 affine palette   host-visible
 #   par    uint[4]      nv, nj, nchar, 0                     host-visible
-#   out    vec4[2*nv*nchar] skinned (pos,1)(normal,0)   device-local, storage+vertex
+#   out    vec4[3*nv*nchar] skinned (pos,1)(normal,0)(tangent,w)  device-local, storage+vertex
+#   (normal and tangent unit length; normal via the inverse-transpose)
 # Dispatch (ceil(nv/64), nchar, 1). `out` is what a vertex shader reads.
 namespace gsk
 use std
@@ -179,10 +180,12 @@ upload(dst Buf&, data const byte[:]) bool:
 	r := zb(24); p64(r, 16, data.len as uint); vk_ccopy(cb, STG.b, dst.b, 1, pt(r[..]))
 	vk_ecb(cb) == 0 && submit_wait(cb)
 
-# rest: 8 floats/vertex as bytes (pos.xyz,1, nrm.xyz,0); wts: 4 floats/vertex;
+# rest: 12 floats/vertex as bytes (pos.xyz,1, nrm.xyz,0, tan.xyzw); wts: 4 floats/vertex;
 # jts: 1 uint/vertex; spv: compiled anim/skin.comp.
 setup(spv const byte[:], rest const byte[:], wts const byte[:], jts const byte[:], nv int, nj int, nchar int) bool:
 	NV = nv; NJ = nj; NCH = nchar; o := zb(8)
+	# joint indices are packed 8 bits each (jts); the CPU side caps at MAXJ = 128 (glb_skeleton)
+	if nj > 255: return fail("more than 255 joints (8-bit joint indices)")
 	if spv.len < 20 || spv.len & 3 != 0: return fail("bad SPIR-V")
 	cpci := zb(24); p32(cpci, 0, 39); p32(cpci, 16, 2); p32(cpci, 20, QFAM)
 	if vk_ccpool(DEV, pt(cpci[..]), 0, pt(o[..])) != 0: return fail("command pool failed")
@@ -190,7 +193,7 @@ setup(spv const byte[:], rest const byte[:], wts const byte[:], jts const byte[:
 	if CB_SKIN == 0 || CB_XFER == 0: return fail("command buffers failed")
 	if !mkbuf(STG, max(rest.len, max(wts.len, jts.len)), 1, true): return false
 	if !mkbuf(REST, rest.len, 0x22, false) || !mkbuf(WTS, wts.len, 0x22, false) || !mkbuf(JTS, jts.len, 0x22, false): return false
-	if !mkbuf(PAL, nchar * nj * 48, 0x20, true) || !mkbuf(PAR, 16, 0x20, true) || !mkbuf(OUT, nv * 32 * nchar, 0xA1, false): return false
+	if !mkbuf(PAL, nchar * nj * 48, 0x20, true) || !mkbuf(PAR, 16, 0x20, true) || !mkbuf(OUT, nv * 48 * nchar, 0xA1, false): return false
 	if !upload(REST, rest) || !upload(WTS, wts) || !upload(JTS, jts): return false
 	pa := zb(16); p32(pa, 0, nv); p32(pa, 4, nj); p32(pa, 8, nchar); ffi::write(PAR.p, pa[..])
 	sc byte[>..] ~= []; sc.append(spv); smi := zb(40); p32(smi, 0, 16); p64(smi, 24, spv.len as uint); p64(smi, 32, pt(sc[..]))
@@ -238,9 +241,9 @@ gpu_ms() real:
 	d := g64(r[..], 8) - g64(r[..], 0)
 	if TSBITS < 64: d = d & ((1 as uint << TSBITS as uint) - 1)
 	(d as real) * TSPERIOD * 1.0e-6
-# copy `out` back: 8 floats per vertex per character
+# copy `out` back: 12 floats per vertex per character
 readback(out byte[>..]&) bool:
-	n := NV * 32 * NCH
+	n := NV * 48 * NCH
 	if RB.b == 0: if !mkbuf(RB, n, 2, true) { return false }
 	cb := CB_XFER
 	if !begin(cb): return fail("begin failed")

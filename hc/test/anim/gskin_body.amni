@@ -1,6 +1,10 @@
 // GPU skinning test + bench body (entry: anim_gpuskin.amni). Reuses the perf
 // crowd (perf_body.amni). Correctness: GPU LBS vs the CPU reference skin_cpu
-// for every vertex of all 32 characters at several crowd frames. Bench: 32
+// for every vertex of all 32 characters at several crowd frames: position,
+// normal and tangent (xyz + handedness w). Odd characters get a non-uniform
+// scale in their palette, so the inverse-transpose normal path is exercised;
+// a vertex invariant checks it: for rest n.t ~ 0, the skinned n'.t' must stay
+// ~ 0 (with the plain linear 3x3 it would not; that is printed as a control). Bench: 32
 // characters per 60 Hz frame = anim tick + palette pack + GPU skin dispatch.
 namespace anim;
 import vec;
@@ -20,7 +24,14 @@ import anim.gpuskin;
 import perf_body;
 
 let GS_TOL_P = 1.0e-4;   // metres
-let GS_TOL_N = 1.0e-4;   // normal components (unnormalized LBS normal)
+let GS_TOL_N = 1.0e-4;   // unit normal / tangent components
+let GS_TOL_O = 1.0e-3;   // |n'.t'| for vertices with rest |n.t| < 1e-5
+let GS_SCALE = float3 { 1.4, 0.7, 1.15 };   // non-uniform scale on odd characters
+
+// left-multiplies every palette matrix by diag(s): a non-uniform scale
+fn gs_scale_pal(p Palette&, nj int, s float3) {
+	for j in nj { for c in 4 { p.m[j].m[c * 4] *= s.x; p.m[j].m[c * 4 + 1] *= s.y; p.m[j].m[c * 4 + 2] *= s.z; } }
+}
 
 fn gs_pack_pal(nj int, out f32[>..]&) {
 	out.clear();
@@ -55,9 +66,10 @@ fn gs_main(path const byte[:], spv_path const byte[:], frames int, pick int) i32
 	// mesh data in the gpuskin layout
 	var rest f32[>..]; var jts u32[>..];
 	for v in nv {
-		let p = SK_P[v]; let n = SK_N[v];
+		let p = SK_P[v]; let n = SK_N[v]; let tg = SK_T[v];
 		rest.push(p.x); rest.push(p.y); rest.push(p.z); rest.push(1.0);
 		rest.push(n.x); rest.push(n.y); rest.push(n.z); rest.push(0.0);
+		rest.push(tg.x); rest.push(tg.y); rest.push(tg.z); rest.push(tg.w);
 		var pk = 0;
 		for k in 4 { pk = pk | ((SK_J[v * 4 + k] as int) & 255) << (k * 8); }
 		jts.push(pk as! u32);
@@ -73,31 +85,66 @@ fn gs_main(path const byte[:], spv_path const byte[:], frames int, pick int) i32
 		CHARS.push(ch);
 	}
 	// --- correctness: 8 checkpoints over 4 s of crowd motion ---
-	var g f32[>..]; var pal f32[>..]; var gout byte[>..] = []; var op float3[>..]; var on float3[>..];
-	var t = 0.0 as f32; var ep = 0.0; var en = 0.0; var nchk = 0; var epw_c = 0; var epw_v = 0;
+	var g f32[>..]; var pal f32[>..]; var gout byte[>..] = []; var op float3[>..]; var on float3[>..]; var ot float4[>..];
+	var t = 0.0 as f32; var ep = 0.0; var en = 0.0; var et = 0.0; var ew = 0.0; var nchk = 0; var epw_c = 0; var epw_v = 0;
+	var eo = 0.0; var eo_lin = 0.0; var eo_lin0 = 0.0; var nlin0 = 0; var nlin1 = 0; var no = 0; var ntan = 0;
+	var tan_src = false;
+	for v in nv { let tg = SK_T[v]; if tg.x != 1.0 || tg.y != 0.0 || tg.z != 0.0 { tan_src = true; } }
 	for ck in 8 {
 		for f in 30 { for i in NCHAR { crowd_drive(i, t, CHARS[i]); gold_update(sk, r, d, CHARS[i], PDT, true); } t += PDT; }
+		for c in NCHAR { if c % 2 == 1 { gs_scale_pal(CHARS[c].pal, sk.n as int, GS_SCALE); } }
 		gs_pack_pal(sk.n as int, pal);
 		if !gsk::frame(bytes_of(pal)) || !gsk::readback(gout) { print("gpu frame failed: ", gsk::error()); gsk::shutdown(); return 3; }
-		if gout.len != NCHAR * nv * 32 { print("readback: bad size ", gout.len); gsk::shutdown(); return 3; }
+		if gout.len != NCHAR * nv * 48 { print("readback: bad size ", gout.len); gsk::shutdown(); return 3; }
 		g.clear();
 		for q in gout.len / 4 { let x, xok = binary::read_f32le(gout[..], q * 4); g.push(x); }
 		for c in NCHAR {
 			for k in meshes.len {
-				skin_cpu(meshes[k], CHARS[c].pal, op, on);
+				skin_cpu(meshes[k], CHARS[c].pal, op, on, ot);
 				for v in meshes[k].nv {
-					let o = ((c * nv + meshes[k].base + v) * 8) as int;
+					let o = ((c * nv + meshes[k].base + v) * 12) as int;
 					let dp = length(float3 { g[o], g[o + 1], g[o + 2] } - op[v]) as real;
 					let dn = length(float3 { g[o + 4], g[o + 5], g[o + 6] } - on[v]) as real;
+					let gt = float3 { g[o + 8], g[o + 9], g[o + 10] };
+					let dt = length(gt - float3 { ot[v].x, ot[v].y, ot[v].z }) as real;
+					let dw = abs(g[o + 11] - ot[v].w) as real;
 					if dp > ep { ep = dp; epw_c = c; epw_v = v; }
 					if dn > en { en = dn; }
+					if dt > et { et = dt; }
+					if dw > ew { ew = dw; }
 					nchk += 1;
+					// invariant: rest n.t ~ 0 => skinned n'.t' ~ 0 (GPU output)
+					let i = meshes[k].base + v;
+					let rn = SK_N[i]; let rt = SK_T[i]; let rt3 = float3 { rt.x, rt.y, rt.z };
+					if length(rn) > 0.5 && length(rt3) > 0.5 && abs(dot(rn, rt3)) < 1.0e-5 * length(rn) * length(rt3) {
+						let gn = float3 { g[o + 4], g[o + 5], g[o + 6] };
+						let d = abs(dot(gn, gt)) as real;
+						if d > eo { eo = d; }
+						{
+							// control: the linear 3x3 (no inverse-transpose) on the same palette
+							var ln = float3 { 0.0, 0.0, 0.0 };
+							let wv = SK_W[i];
+							for kk in 4 {
+								let wk = if kk == 0 { wv.x } else if kk == 1 { wv.y } else if kk == 2 { wv.z } else { wv.w };
+								ln = ln + m4_dir(CHARS[c].pal.m[SK_J[i * 4 + kk] as int], rn) * wk;
+							}
+							let dl = abs(dot(skin_unit(ln), gt)) as real;
+							if c % 2 == 1 { if dl > eo_lin { eo_lin = dl; } if dl > 0.01 { nlin1 += 1; } }
+							else { if dl > eo_lin0 { eo_lin0 = dl; } if dl > 0.01 { nlin0 += 1; } }
+						}
+						no += 1;
+					}
 				}
 			}
 		}
 	}
-	let okc = ep < GS_TOL_P && en < GS_TOL_N;
-	print("  correctness: ", nchk, " skinned vertices (32 chars x 8 frames) vs CPU skin_cpu: max |dp| ", ep, " m (char ", epw_c, " vert ", epw_v, "), max |dn| ", en, "  tol ", GS_TOL_P, " m -> ", if okc { "PASS" } else { "FAIL" });
+	let okt = tan_src && et < GS_TOL_N && ew == 0.0;
+	let oko = no > 0 && eo < GS_TOL_O && eo_lin > GS_TOL_O;
+	let okc = ep < GS_TOL_P && en < GS_TOL_N && okt && oko;
+	print("  correctness: ", nchk, " skinned vertices (32 chars x 8 frames, odd chars non-uniformly scaled ", GS_SCALE.x, "/", GS_SCALE.y, "/", GS_SCALE.z, ") vs CPU skin_cpu:");
+	print("    max |dp| ", ep, " m (char ", epw_c, " vert ", epw_v, "), max |dn| ", en, ", max |dt| ", et, ", max |dw| ", ew, "  tol ", GS_TOL_P, " m / ", GS_TOL_N, if tan_src { "" } else { "  (mesh has no TANGENT)" });
+	print("    n'.t' invariant (", no, " checks, rest |n.t| < 1e-5): max |n'.t'| ", eo, " (tol ", GS_TOL_O, "); control, linear 3x3 normals on scaled chars: ", eo_lin, if eo_lin > GS_TOL_O { " (trips, as expected)" } else { " (DID NOT TRIP)" }, ", ", nlin1, " checks > 0.01; unscaled chars: ", eo_lin0, ", ", nlin0, " checks > 0.01 (blended rotations shear A3 too)");
+	print("    -> ", if okc { "PASS" } else { "FAIL" });
 	// --- bench ---
 	var ta = 0.0; var tp = 0.0; var tg = 0.0; var tgw = 0.0; var tts = 0.0; var nts = 0; var worst = 0.0;
 	for f in frames {

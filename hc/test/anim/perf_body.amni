@@ -77,12 +77,12 @@ fn perf_main(path const byte[:], frames int) i32 {
 	print("  crowd at end: loco ", nst[r.st_loco as int], " act ", nst[r.st_act as int], " act2 ", nst[r.st_act2 as int], "; moved >0.5 m: ", moved, "/", NCHAR);
 	print("  anim (32 chars, blend+machine+additive+root+IK+palette): avg ", avg, " ms/frame  worst ", worst, " ms  (budget 16.67 ms)");
 	// CPU skinning of all 32 (positions + normals), fewer frames
-	var op float3[>..]; var on float3[>..];
+	var op float3[>..]; var on float3[>..]; var ot float4[>..];
 	let sf = max(frames / 10, 10);
 	var stot = 0.0; var sworst = 0.0;
 	for f in sf {
 		let c0 = clock_ns();
-		for i in NCHAR { for k in meshes.len { skin_cpu(meshes[k], CHARS[i].pal, op, on); } }
+		for i in NCHAR { for k in meshes.len { skin_cpu(meshes[k], CHARS[i].pal, op, on, ot); } }
 		let ms = (clock_ns() - c0) as real * 1.0e-6;
 		stot += ms; if ms > sworst { sworst = ms; }
 	}
