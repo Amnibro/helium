@@ -1,0 +1,39 @@
+// sort: bottom-up merge sort of n xorshift32 values. Prints a position-weighted checksum
+// modulo 1e9+7 and whether the result is ordered.
+import os;
+fn arg_n(d int) int { if arg_count() < 2 { return d; } var s byte[>..] = []; arg(1, s); let n, ok = parse_int(s[..]); if ok { n } else { d } }
+var rs u32 = 2463534242;
+fn rnd() u32 { rs ^= rs << 13; rs ^= rs >> 17; rs ^= rs << 5; rs }
+fn main() {
+	let n = arg_n(1000);
+	var x u32[>..] = []; x.resize(n, 0);
+	var y u32[>..] = []; y.resize(n, 0);
+	for i in n { x[i] = rnd(); }
+	var flip = false;
+	var w = 1;
+	while w < n {
+		var src u32[:] = x[..]; var dst u32[:] = y[..];
+		if flip { src = y[..]; dst = x[..]; }
+		var lo = 0;
+		while lo < n {
+			let mid = min(lo + w, n); let hi = min(lo + 2 * w, n);
+			var i = lo; var j = mid; var k = lo;
+			while i < mid && j < hi {
+				if src[i] <= src[j] { dst[k] = src[i]; i++; } else { dst[k] = src[j]; j++; }
+				k++;
+			}
+			while i < mid { dst[k] = src[i]; i++; k++; }
+			while j < hi { dst[k] = src[j]; j++; k++; }
+			lo += 2 * w;
+		}
+		flip = !flip;
+		w *= 2;
+	}
+	let r u32[:] = if flip { y[..] } else { x[..] };
+	var h = 0; var ok = 1;
+	for i in n {
+		h = (h + r[i] as int * (i % 1000 + 1)) % 1000000007;
+		if i > 0 && r[i - 1] > r[i] { ok = 0; }
+	}
+	print(h, " ", ok);
+}

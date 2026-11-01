@@ -1,0 +1,54 @@
+// json: generate a JSON array of n records, then parse it with a generic recursive-descent
+// parser. Prints the sum of all numbers, total string bytes, trues, objects and arrays.
+import os;
+fn arg_n(d int) int { if arg_count() < 2 { return d; } var s byte[>..] = []; arg(1, s); let n, ok = parse_int(s[..]); if ok { n } else { d } }
+var rs u32 = 2463534242;
+fn rnd() u32 { rs ^= rs << 13; rs ^= rs >> 17; rs ^= rs << 5; rs }
+var D byte[>..];
+var P int;
+var nums int; var strs int; var trues int; var objs int; var arrs int;
+fn ws() { while P < D.len && (D[P] == ' ' || D[P] == '\n' || D[P] == '\t' || D[P] == '\r') { P++; } }
+fn string() {
+	P++;
+	let s = P;
+	while D[P] != '"' { if D[P] == '\\' { P++; } P++; }
+	strs += P - s;
+	P++;
+}
+recursive fn value() {
+	ws();
+	let c = D[P];
+	if c == '{' {
+		objs++; P++; ws();
+		if D[P] == '}' { P++; return; }
+		loop { ws(); string(); ws(); P++; value(); ws(); if D[P] == ',' { P++; continue; } P++; return; }
+	} else if c == '[' {
+		arrs++; P++; ws();
+		if D[P] == ']' { P++; return; }
+		loop { value(); ws(); if D[P] == ',' { P++; continue; } P++; return; }
+	} else if c == '"' { string(); }
+	else if c == 't' { trues++; P += 4; }
+	else if c == 'f' { P += 5; }
+	else if c == 'n' { P += 4; }
+	else {
+		var neg = false; if D[P] == '-' { neg = true; P++; }
+		var v = 0; while P < D.len && D[P] >= '0' && D[P] <= '9' { v = v * 10 + (D[P] - '0') as int; P++; }
+		nums += if neg { -v } else { v };
+	}
+}
+fn main() {
+	let n = arg_n(1000);
+	D.push('[');
+	for i in n {
+		if i > 0 { D.append(",\n"); }
+		D.append("{\"id\":"); format(D, i);
+		D.append(",\"name\":\"item"); format(D, i);
+		D.append("\",\"tags\":[\"t"); format(D, rnd() % 100); D.append("\",\"t"); format(D, rnd() % 100);
+		D.append("\"],\"pos\":{\"x\":"); format(D, rnd() % 10000); D.append(",\"y\":"); format(D, (rnd() % 10000) as int - 5000);
+		D.append("},\"ok\":"); D.append(if rnd() & 1 != 0 { "true" } else { "false" }); D.push('}');
+	}
+	D.push(']');
+	P = 0;
+	value();
+	print(D.len, " ", nums, " ", strs, " ", trues, " ", objs, " ", arrs);
+}
