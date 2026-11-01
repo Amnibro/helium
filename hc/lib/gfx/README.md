@@ -153,17 +153,26 @@ Bloom and the tone curve run at the output size after it.
    * **Motion vectors.** A moving sphere and a sliding camera are compared with a CPU
      projection (per-pixel error, sky, view depth), and a skinned animation step
      must move pixels while a repeated pose moves none.
-   * **Jitter sign.** A sub-pixel feature rendered with each jitter phase must move
-     by the Halton offset, in the same direction.
+   * **Jitter sign.** A sphere's coverage centroid (from the motion target) must move
+     by minus the jitter offset in all 16 phases, within 0.1 px: input sample k sits
+     at k + 0.5 + jitter, so the image shifts the other way.
    * **TAA.** 60 still frames must settle (frame-to-frame mean abs change over
-     frames 30-59 below 0.5/255, sky excluded); a 40-frame camera slide is compared
-     with a converged still frame at the final pose (ghost fraction: non-sky pixels
-     off by more than 24/255), and the neighbourhood clip turned off is a control
-     that must fail.
-   * **Upscaling (TSR).** 1280x720 rendered, 1920x1080 out, PSNR (sky excluded)
-     against native 1080p TAA; the resolve alone is timed for 30 warmup + 200 frames,
-     one submit each, GPU time from the gputime layer, and must stay under 1 ms
-     (median).
+     frames 30-59 below 0.5/255, sky excluded). A 40-frame camera slide is compared
+     with a converged still frame at the final pose, once against the open sky
+     (reported only: the disoccluded pixels there are sky, which the metrics leave
+     out) and once against a wall behind the grid (gated). Gate: at most 0.5 % of
+     pixels off by more than 24/255 and mean abs error at most 0.5/255; the same
+     slide with the neighbourhood clip off is a control that must fail one of those
+     and show at least 2x the mean error. The no-clip trails are wide but faint, so
+     the >24/255 fraction alone does not separate them; these bars were set after
+     the first wall run (see results/).
+   * **Upscaling (TSR).** 1280x720 rendered, 1920x1080 out, PSNR (sky excluded) of at
+     least 30 dB against native 1080p TAA. The native frame, the upscaled frame and
+     the resolve alone (`s3d::temporal_repeat(1)` then `gfx::flush()`: one submit
+     holding only the resolve) are each timed for 30 warmup + 200 iterations; the
+     resolve's GPU p95 must be under 1 ms. This reuses the gputime layer on the real
+     engine pass rather than a separate C harness, so a stand-alone bench was not
+     kept.
 
 Raw output of each recorded run is in `hc/test/gfx/results/`; `gfxtest.sh` writes
 the header itself (commit, command, driver, GPU, packages) into `$GFX_OUT/results.txt`.
@@ -171,6 +180,26 @@ With no GPU it prints `SKIPPED (no GPU)` after the CPU checks (`GFX_REQUIRE_GPU=
 makes that a failure). `GPU_LOCK=<file>` serializes the GPU part on shared
 machines. `tools/hc/ci.sh` runs it only when `HELIUM_GFX_TEST=1`. The test binary
 needs SDL3 even for the CPU part (see Known gaps).
+
+### Temporal results (RX 9060 XT, RADV, Mesa 26.2.4; `results/2026-11-01_rx9060xt_radv_8c351bc_taa.txt`)
+
+| check | result | bar |
+| --- | --- | --- |
+| motion, moving object / sliding camera | 0.006 px / 0.005 px error, depth 3.5 (want 3.5) | |
+| skinned step / repeated pose | 18574 of 18594 pixels move / 0 | |
+| jitter sign | -jitter in 16/16 phases, worst 0.016 px | 16/16, < 0.1 px |
+| still camera, frames 30-59 | max 0.076/255, mean 0.05/255 | < 0.5/255 |
+| PSNR vs 2x supersampled | TAA 46.17 dB, no AA 45.35 dB | reported |
+| slide on wall: clip on / no-clip control | 0.023 % >24/255, mean 0.286/255 / 0.061 %, mean 0.91/255 (3.2x) | <= 0.5 %, <= 0.5/255; control fails, >= 2x |
+| slide on sky (reported) | 0.166 %, mean 0.852/255 / control 0.467 %, mean 2.046/255 | reported |
+| 720p -> 1080p PSNR vs native 1080p TAA | 48.07 dB | >= 30 dB |
+| resolve alone 720p -> 1080p, GPU | min 0.2345, median 0.2409, p95 0.2521 ms (wall median 0.2927) | p95 < 1 ms |
+| 720p -> 1080p frame, GPU | median 0.5125 ms, p95 0.5252 (wall median 0.6102) | reported |
+| native 1080p TAA frame, GPU | median 1.2218 ms, p95 1.2609 (wall median 1.5801) | reported |
+
+Image metrics count non-sky pixels only. The earlier runs at 89a60db and 6713aa8 are
+kept in `results/`: each failed only the ghost control, which led to the wall scene and
+then to the mean-error gate.
 
 ### Furnace results (RX 9060 XT, roughness >= 0.3)
 
@@ -268,6 +297,9 @@ are reserved but not shaded. Also:
   most gfx modules import `gfx`. Splitting that out is not a small change (hc/TODO.md).
 * glTF data-URI and external-file buffers are implemented but not covered by a test
   fixture.
+* TAA ghosting is measured on one slide (about 7 px/frame); fast rotation, thin
+  geometry and disocclusion of high-contrast detail are not covered. Sky pixels are
+  left out of every image metric, so ghosts over the sky are only reported.
 * Motion vectors ignore morph-target changes (last frame's weights are not kept),
   and transparent (blended) surfaces write no motion, so the surface behind them is
   reprojected.
