@@ -40,6 +40,7 @@ imul(d int, s int): xrex(true, d, 0, s); xb(0x0F); xb(0xAF); xb(0xC0 | (d & 7) <
 grp3(ext int, r int): xrex(true, 0, 0, r); xb(0xF7); xb(0xC0 | ext << 3 | r & 7);
 shcl(ext int, r int): xrex(true, 0, 0, r); xb(0xD3); xb(0xC0 | ext << 3 | r & 7);
 cqo(): xb(0x48); xb(0x99);
+setcc8(cc int, r int): xrexb(0, r); xb(0x0F); xb(0x90 + cc); xb(0xC0 | r & 7);
 setcc(cc int, r int): xrexb(0, r); xb(0x0F); xb(0x90 + cc); xb(0xC0 | r & 7); xrex(true, r, 0, r); xb(0x0F); xb(0xB6); xb(0xC0 | (r & 7) << 3 | r & 7);
 test_rr(a int, b int): xrr(0x85, b, a);
 lg2(v int) int: k ~= 0; while (1 << k) < v { k++ } k
