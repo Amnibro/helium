@@ -305,7 +305,7 @@ fn stats(v real[>..]&) byte[>..] {
 	if v.len == 0 { s.append("no samples"); return s; }
 	let p95 = v[min((v.len * 95 + 99) / 100 - 1, v.len - 1)];
 	let med = if v.len % 2 == 1 { v[v.len / 2] } else { (v[v.len / 2 - 1] + v[v.len / 2]) / 2.0 };
-	format(s, "min {} median {} p95 {} ms", round(v[0] * 1000.0) / 1000.0, round(med * 1000.0) / 1000.0, round(p95 * 1000.0) / 1000.0);
+	format(s, "min ", round(v[0] * 10000.0) / 10000.0, " median ", round(med * 10000.0) / 10000.0, " p95 ", round(p95 * 10000.0) / 10000.0, " ms");
 	s
 }
 
