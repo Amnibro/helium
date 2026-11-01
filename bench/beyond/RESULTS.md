@@ -1,3 +1,73 @@
+# bench/beyond results, round 3 (2026-11-01, Antman)
+
+Same machine, toolchains, sizes and method as round 1 and 2 below (Ryzen 9 9950X3D, `taskset -c 3,19`,
+hyperfine 1 warmup + 7 runs, **median [min–max] seconds**, Python one run with a 150 s limit, `?` =
+over the limit; every variant's stdout matched gcc -O2 byte for byte; no fast-math; other users' jobs
+running). `he`/`he-v3` = compiler at 057b627 (round 3: uaj, evd, sstc). Raw data: one full `run.py` pass.
+
+| bench | gcc-O2 | gcc-O3n | clang-O2 | clang-O3n | he | he-v3 | rust | rust-native | go | java | node | python |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| fib | 0.774 [0.765–0.778] | 0.784 [0.776–0.794] | 1.890 [1.884–1.902] | 1.893 [1.872–1.907] | 1.042 [1.007–1.080] | 1.067 [1.040–1.088] | 1.831 [1.824–1.860] | 1.859 [1.839–1.876] | 3.410 [3.404–3.437] | 1.969 [1.954–2.016] | 6.618 [6.536–6.740] | 63.626 |
+| nbody | 1.184 [1.180–1.195] | 1.184 [1.177–1.198] | 1.284 [1.279–1.295] | 1.182 [1.181–1.193] | 1.113 [1.105–1.142] | 1.112 [1.105–1.117] | 0.872 [0.869–0.880] | 0.850 [0.845–0.853] | 1.554 [1.551–1.567] | 1.155 [1.147–1.161] | 1.791 [1.740–1.859] | 103.948 |
+| spectral | 0.938 [0.931–0.964] | 0.127 [0.127–0.128] | 0.951 [0.949–0.953] | 0.905 [0.904–0.908] | 0.938 [0.937–0.938] | 0.480 [0.479–0.484] | 0.933 [0.928–0.938] | 0.924 [0.923–0.924] | 0.963 [0.962–0.966] | 0.979 [0.971–0.986] | 1.289 [1.282–1.299] | 118.305 |
+| fannkuch | 1.896 [1.845–1.923] | 1.598 [1.583–1.612] | 1.839 [1.833–1.880] | 1.855 [1.840–1.865] | 1.923 [1.804–2.061] | 1.788 [1.773–1.829] | 1.650 [1.640–1.662] | 1.757 [1.742–1.763] | 1.710 [1.705–1.737] | 1.723 [1.581–1.796] | 1.669 [1.658–1.677] | 36.366 |
+| mandelbrot | 1.330 [1.322–1.344] | 1.239 [1.236–1.243] | 2.381 [2.351–2.442] | 1.276 [1.272–1.289] | 1.569 [1.559–1.583] | 1.570 [1.569–1.583] | 1.414 [1.410–1.422] | 1.353 [1.349–1.360] | 1.469 [1.465–1.472] | 1.507 [1.480–1.561] | 1.418 [1.375–1.448] | 66.649 |
+| bintrees | 0.723 [0.716–0.745] | 0.554 [0.550–0.557] | 1.012 [0.993–1.102] | 1.006 [0.997–1.083] | 1.300 [1.284–1.407] | 1.297 [1.294–1.303] | 1.197 [1.187–1.206] | 1.210 [1.198–1.224] | 1.310 [1.295–1.364] | 1.210 [1.201–1.232] | 3.342 [3.319–3.405] | 49.472 |
+| hashmap | 1.317 [1.210–1.437] | 1.388 [1.289–1.495] | 1.251 [1.213–1.294] | 1.227 [1.190–1.268] | 1.519 [1.499–1.609] | 1.591 [1.552–1.694] | 1.675 [1.658–1.796] | 1.695 [1.662–1.771] | 2.277 [2.163–2.486] | 8.608 [7.857–9.363] | 5.348 [4.977–5.540] | 20.362 |
+| strbuild | 0.779 [0.773–0.814] | 0.752 [0.748–0.797] | 0.733 [0.727–0.752] | 0.740 [0.729–0.779] | 0.555 [0.550–0.568] | 0.559 [0.553–0.580] | 0.552 [0.551–0.569] | 0.553 [0.546–0.558] | 0.935 [0.916–1.084] | 3.459 [2.283–3.523] | 5.100 [4.720–5.654] | 9.356 |
+| json | 0.825 [0.809–1.287] | 0.749 [0.737–1.114] | 0.658 [0.643–0.672] | 0.666 [0.649–0.680] | 0.474 [0.469–0.481] | 0.465 [0.461–0.472] | 0.491 [0.486–0.506] | 0.490 [0.484–0.494] | 0.805 [0.760–0.820] | 0.791 [0.759–0.835] | 4.084 [3.822–4.277] | 23.784 |
+| regex | 0.630 [0.611–0.644] | 0.481 [0.477–0.486] | 0.774 [0.762–0.829] | 0.762 [0.748–0.773] | 0.970 [0.955–0.982] | 0.963 [0.952–0.972] | 0.758 [0.746–0.792] | 0.779 [0.775–0.795] | 0.836 [0.813–0.850] | 0.962 [0.898–1.034] | 1.549 [1.288–1.558] | 47.448 |
+| matmul | 0.950 [0.944–0.962] | 0.689 [0.651–0.758] | 0.993 [0.970–1.003] | 0.538 [0.509–0.553] | 0.629 [0.622–0.644] | 0.647 [0.590–0.666] | 1.089 [1.065–1.106] | 0.667 [0.625–0.700] | 2.393 [2.376–2.414] | 1.764 [1.740–1.789] | 4.801 [4.627–4.953] | ? |
+| sort | 1.443 [1.434–1.458] | 1.504 [1.489–1.543] | 0.919 [0.903–0.960] | 0.909 [0.906–0.937] | 1.128 [1.127–1.151] | 1.129 [1.115–1.230] | 1.530 [1.522–1.588] | 1.504 [1.495–1.522] | 1.507 [1.494–1.523] | 1.963 [1.828–2.012] | 3.182 [3.131–3.225] | 60.054 |
+
+| bench | he/gcc-O2 | best C | best he vs best C | best non-Helium | best he vs best overall | he instr / gcc-O2 instr |
+|---|---|---|---|---|---|---|
+| fib | 1.35x | gcc-O2 0.774 | 1.35x | gcc-O2 0.774 | 1.35x | 1.15 |
+| nbody | 0.94x | clang-O3n 1.182 | 0.94x | rust-native 0.850 | 1.31x | 1.07 |
+| spectral | 1.00x | gcc-O3n 0.127 | 3.77x | gcc-O3n 0.127 | 3.77x | 1.11 |
+| fannkuch | 1.01x | gcc-O3n 1.598 | 1.12x | gcc-O3n 1.598 | 1.12x | 0.73 |
+| mandelbrot | 1.18x | gcc-O3n 1.239 | 1.27x | gcc-O3n 1.239 | 1.27x | 1.28 |
+| bintrees | 1.80x | gcc-O3n 0.554 | 2.34x | gcc-O3n 0.554 | 2.34x | 1.45 |
+| hashmap | 1.15x | clang-O3n 1.227 | 1.24x | clang-O3n 1.227 | 1.24x | 1.99 |
+| strbuild | 0.71x | clang-O2 0.733 | 0.76x | rust 0.552 | 1.00x | 0.78 |
+| json | 0.57x | clang-O2 0.658 | 0.71x | rust-native 0.490 | 0.95x | 0.63 |
+| regex | 1.54x | gcc-O3n 0.481 | 2.00x | gcc-O3n 0.481 | 2.00x | 2.19 |
+| matmul | 0.66x | clang-O3n 0.538 | 1.17x | clang-O3n 0.538 | 1.17x | 0.42 |
+| sort | 0.78x | clang-O3n 0.909 | 1.24x | clang-O3n 0.909 | 1.24x | 2.49 |
+
+Round-3 notes (interleaved A/B on cpu 3, identical output, min/median ms unless noted)
+- (a) spectral, 2641467 `uaj`: unroll-and-jam of simple counted loop nests by 4, so SLP packs the inner
+  body into AVX2 lanes (in-order per-lane sums: results are bit-identical, with runtime overlap checks and
+  a scalar fallback/tail). `--v3` only. he-v3 0.955 -> 0.480 s (-49%); plain `he` (SSE2 baseline)
+  unchanged. Still 3.8x behind gcc -O3 -march=native, which uses AVX-512 (8-wide f64 divide). No
+  AVX-512 path is implemented, neither runtime-detected nor behind a flag, so there is no AVX-512 number
+  to report for Helium.
+- (e) sort, b345887 `sstc`: if-converts a load-compare diamond that stores to the same slot in both arms
+  into `sel` + store + branchless counter bumps (the merge step). 1555/1559 -> 1111/1126 (`--v3`
+  1550/1560 -> 1115/1122), -28%. Helium is now ahead of gcc (both -O2 and -O3n), Rust, Go, Java and
+  Node on sort; 1.24x behind clang. Left over: mid/hi in stack slots, 3 bounds checks per merge step,
+  setcc/movzx/test chains where clang fuses cmp into cmov.
+- (b) bintrees: neither the C nor the Helium version allocates per node (both use arena indices), so a
+  bump/size-class allocator has nothing to replace. The gap is call/prologue overhead in the recursion.
+- (c) fib: with `HC_CS=1 HC_CSM=1` (callee-saved steal) the inner call has no spills at all, but 5
+  interleaved pairs were all slower (default 1025–1081 vs 1092–1145 ms). Self-inline depth sweep:
+  HC_SIR=1 ~1139–1220, 2 (default) ~1037–1054, 3 ~1226–1274, 4 ~1601–1623. Nothing landed. gcc
+  wins by computing the leaves arithmetically (fewer calls), not only by register use.
+- (c) regex: the loop-carried r/t of the self-tail-loop in `here` and the reloaded RE ptr/len live in
+  stack slots (`addq $1,-0x78(%rbp)` on the hot path) because linear scan evicts long whole-function
+  intervals. Knob sweep (HC_CS, HC_CSM, HC_NORS, HC_SIR) moved it 3% at most, within noise. A real fix
+  needs region-based live-range splitting. Not done.
+- (d) shrink-wrapping does not apply to fib: the n<2 guard is already duplicated to the call sites, so
+  the function is only entered with n>=2.
+- matmul: clang -O3n ran at 0.538 s in this pass (0.669 in round 2, 0.748 in round 1). Helium is
+  unchanged at 0.63 s, so Helium is behind clang -O3n in this run.
+- Helium beats every C variant on nbody, strbuild and json, and beats gcc (-O2 and -O3n) on sort and
+  matmul; it is the fastest language overall on json and ties Rust on strbuild.
+- Remaining gaps vs best overall: spectral 3.8x (AVX-512), bintrees 2.3x, regex 2.0x, fib 1.35x,
+  nbody 1.31x (Rust), mandelbrot 1.27x, sort 1.24x (clang), hashmap 1.24x, matmul 1.17x, fannkuch 1.12x.
+
+---
+
 # bench/beyond results, round 2 (2026-11-01, Antman)
 
 Same machine, toolchains, sizes and method as round 1 below (Ryzen 9 9950X3D, `taskset -c 3,19`,
