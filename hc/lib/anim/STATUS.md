@@ -4,6 +4,48 @@ Owner: Anthony Reffelt · Lead: Kimahri · Review: **Lulu (pending; nothing leav
 Repo: Amnibro/helium, worktree `/workspace/helium-anim`, local branch `kimahri/anim-runtime` (cut from main c188cec).
 **Local commits only, not pushed.** main and CI workflows are untouched.
 
+## 2026-11-01 03:27 AST: Lulu review items fixed (local commits, not pushed)
+
+Lulu's review of 5724a716 / 3a73b35 was "accept with items, no blocker" (`/workspace/lulu_reviews/helium-anim/REVIEW.md`). All four MEDIUM items and the optional LOW item are done. 370293ad (GPU skinning) is still unreviewed.
+
+**Commits on `kimahri/anim-runtime`** (author Amnibro):
+- `8526dfac`: two-bone IK measures the current angles signed in the bend plane, so they stay continuous (fixes a one-frame pop, see below).
+- `add2ab8d`: the gold speed follows a critically damped spring (ω 2.5 rad/s, C1) instead of a linear 8 m/s² slew.
+- `17fe23ed`: **M1 + M2.** The pop test uses per-scenario thresholds and a gated 0.1 s near-miss control (the fade-0 hard cut is kept). DESIGN.md is updated.
+- `36002642`: **M4.** `hc/test/anim/gpuskin_bench.amni` (Helium, `os.run_command`) replaces `gpuskin_bench.sh`, with the same steps. It was checked on the box and on Antman (spirv-val OK, both heroes PASS). `~/kim7_gate/run.sh` now just sets paths and runs the .amni.
+- `98ae7f40`: **L4.** `Acc` is renamed `Accessor` and `comp_size` is renamed `component_bytes`, with a glTF 2.0 §3.6.2 citation. eng/ was not read.
+
+On `kimahri/jk-anim`: `7ac10db` covers **M3 + M4**. `anim_proof/run.amni` replaces run.sh: it runs the pop test on jk-h0*, does perf on h02/h02.lod2, and checks sha256 before and after. RESULTS.md now gives a plain coverage statement and the new numbers.
+
+**Pop metric now.** Every tick is judged against 1.25 × the steady baseline of the states that fed its last 3 frames, plus the floor. The speed sweep is therefore judged against loco only, and a loco→act fade against max(loco, act). Action baselines stop before the exit transition. The old all-states ratio is still printed as a reference. Three controls are gated and must trip: hard cut (fade 0), near miss (all fades 0.1 s), and unsmoothed speed steps.
+
+**Coverage, stated plainly.** There is one fixed script, and it is not randomized. The 39 files contain **8 distinct rigs** (5 BFME + 3 JK). The rest are copies:
+- LOD copies (.lod1/.lod2), whose numbers are byte-identical to the base file.
+- BFME .mobile variants, a reduced 37-joint skeleton of the same hero. Their sweep and transition numbers are identical to the base, but their control ratios differ.
+
+The earlier note above, "full/lod/mobile identical", was wrong about mobile. In total that is 13 skeleton/clip combinations.
+
+**Results** (39/39 PASS; GLB sha256 identical before and after; anim_unit ALL PASS):
+
+| scenario | ratio range over 39 files |
+|---|---|
+| speed sweep, no IK / IK | 0.742–0.871 / 0.744–0.872 |
+| transitions + interrupts, no IK / IK | 0.811–0.896 / 0.864–0.950 (worst: jk-h06 calf_r vs loco+act2) |
+| CONTROL hard cut (fade 0) | 14.7–32.5 (must be ≥ 1) |
+| CONTROL near miss (fade 0.1 s) | 2.09–5.60 |
+| CONTROL unsmoothed speed steps | 12.8–21.4 |
+
+**The stricter thresholds exposed two real artifacts** that the single all-states threshold had hidden. Both are fixed:
+1. jk-h02, IK transitions: 3.9×, a one-frame thigh_l spike.
+   - Cause: the "past straight" test compared 3D angles, which jumped as a locked, over-reached, near-straight knee swung across the pole plane.
+   - Fix: projected signed angles (atan2 in the bend plane).
+2. jk-h04, transitions: 2.0× on spine_03 during a 5→0 m/s stop.
+   - Cause: the linear slew crossed the 0.8 m/s walk/run blend band in ~0.1 s, which acts like a near-miss cross-blend.
+   - Fix: the critically damped speed spring.
+   - Rejected: smoothstep blend weights (made it worse) and ω 3–4 (1.2–1.5×).
+
+**Perf after the fixes**, box, jk-h02 × 32 characters: anim 0.49 ms/frame (unchanged); full-res CPU skinning 20.4 ms; lod2 5.7 ms. Antman 9060 XT via the Helium harness (120 frames): GPU skin 0.068 ms, frame 0.52 ms.
+
 ## 2026-11-01 03:13 AST: GPU skinning stage done (local commits, not pushed)
 
 **Commits on `kimahri/anim-runtime`** (author Amnibro):
@@ -39,7 +81,7 @@ Repo: Amnibro/helium, worktree `/workspace/helium-anim`, local branch `kimahri/a
 
 **Antman run** (Shell via the registered machine Antman-PC; prior gates used ~/kim2..6_gate):
 - Package in `~/kim7_gate`: static hcn, hc/lib, test files, and the 2 GLBs with sha256 checks.
-- Command: `~/kim7_gate/run.sh 300`. It takes ~4 s, runs CLI only with no window, and writes results to `~/kim7_gate/results_9060xt.txt`.
+- Command: `~/kim7_gate/run.sh 300` (since 36002642 it runs the Helium harness `gpuskin_bench.amni`). It takes ~4 s, runs CLI only with no window, and writes results to `~/kim7_gate/results_9060xt.txt`.
 - The GLB sha256 matched before and after, and nothing was left running.
 - On the first run, spirv-val ran with target vulkan1.0 and failed because the shader is SPIR-V 1.3. It validates OK with vulkan1.1, and the script is fixed.
 
