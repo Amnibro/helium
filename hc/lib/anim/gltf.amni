@@ -1,0 +1,289 @@
+// anim/gltf: a clean-room GLB (glTF 2.0 binary) reader for skinned
+// characters, written from the Khronos glTF 2.0 specification: the 12-byte
+// header and JSON/BIN chunks, accessors over buffer views (float and
+// normalized integer components), node TRS, skins with inverse bind
+// matrices, and animation samplers (LINEAR, STEP, CUBICSPLINE), resampled
+// into the clip bank at a uniform rate. Sparse accessors and external
+// buffers are not supported (GLB with one embedded BIN chunk only).
+namespace anim;
+import vec;
+import math;
+import os;
+import json;
+import binary;
+import anim.math;
+import anim.pose;
+import anim.clip;
+
+var GLB byte[>..];
+var GDOC json::Doc;
+var NODE_PARENT i32[>..];   // node -> parent node (-1)
+var NODE_JOINT i32[>..];    // node -> skeleton joint (-1)
+var SKIN_JOINT i32[>..];    // skin.joints order -> skeleton joint
+
+struct GlbInfo { ok bool, root int, bin int, bin_len int, err byte[..128] }
+var GI GlbInfo;
+
+fn gerr(msg const byte[:]) bool { GI.ok = false; GI.err.clear(); GI.err.append(msg[..min(msg.len, 120)]); false }
+
+fn u32_at(at int) int { let v, ok = binary::read_u32le(GLB[..], at); v as int }
+fn f32_at(at int) f32 { let v, ok = binary::read_f32le(GLB[..], at); v }
+
+// Reads a .glb file and parses its JSON chunk.
+fn glb_open(path const byte[:]) bool {
+	GLB.clear();
+	GI = default<GlbInfo>();
+	if !read_file(path, GLB) { return gerr("cannot read file"); }
+	if GLB.len < 20 || u32_at(0) != 0x46546C67 { return gerr("not a GLB (magic)"); }
+	if u32_at(4) != 2 { return gerr("GLB version is not 2"); }
+	let jlen = u32_at(12);
+	if u32_at(16) != 0x4E4F534A { return gerr("first chunk is not JSON"); }
+	let root, perr = json::parse(GLB[20..20 + jlen], GDOC);
+	if root < 0 { return gerr("bad JSON chunk"); }
+	GI.root = root;
+	let at = 20 + jlen;
+	if at + 8 <= GLB.len && u32_at(at + 4) == 0x004E4942 {
+		GI.bin = at + 8; GI.bin_len = u32_at(at);
+	} else { GI.bin = -1; }
+	GI.ok = true;
+	true
+}
+
+// ---- JSON helpers
+fn jm(n int, key const byte[:]) int { json::member(GDOC, n, key) }
+fn jel(n int, k int) int { json::element(GDOC, n, k) }
+fn jlen(n int) int { if json::kind(GDOC, n) == json::K_ARR { GDOC.nodes[n].count } else { 0 } }
+fn jnum(n int, dflt f32) f32 { let v, ok = json::as_f64(GDOC, n); if ok { v as f32 } else { dflt } }
+fn jint(n int, dflt int) int { let v, ok = json::as_i64(GDOC, n); if ok { v } else { dflt } }
+fn jtop(key const byte[:]) int { jm(GI.root, key) }
+
+// ---- accessors
+struct Acc { off int, stride int, count int, ctype int, ncomp int, norm bool }
+fn comp_size(ct int) int { if ct == 5120 || ct == 5121 { 1 } else if ct == 5122 || ct == 5123 { 2 } else { 4 } }
+fn ncomp_of(ty const byte[:]) int {
+	if ty == "SCALAR" { 1 } else if ty == "VEC2" { 2 } else if ty == "VEC3" { 3 } else if ty == "VEC4" { 4 } else if ty == "MAT4" { 16 } else if ty == "MAT3" { 9 } else { 4 }
+}
+fn accessor(i int) Acc {
+	let a = jel(jtop("accessors"), i);
+	var r = default<Acc>();
+	r.count = jint(jm(a, "count"), 0);
+	r.ctype = jint(jm(a, "componentType"), 5126);
+	let ty, tok = json::as_string(GDOC, jm(a, "type"));
+	r.ncomp = ncomp_of(ty);
+	let nb, nok = json::as_bool(GDOC, jm(a, "normalized"));
+	r.norm = nok && nb;
+	let bvi = jint(jm(a, "bufferView"), -1);
+	var off = jint(jm(a, "byteOffset"), 0);
+	var stride = 0;
+	if bvi >= 0 {
+		let bv = jel(jtop("bufferViews"), bvi);
+		off += jint(jm(bv, "byteOffset"), 0);
+		stride = jint(jm(bv, "byteStride"), 0);
+	}
+	if stride == 0 { stride = r.ncomp * comp_size(r.ctype); }
+	r.off = GI.bin + off;
+	r.stride = stride;
+	r
+}
+// Component c of element k as a float (normalized ints per the spec).
+fn acc_f(a Acc, k int, c int) f32 {
+	let at = a.off + k * a.stride + c * comp_size(a.ctype);
+	match a.ctype {
+		5126 => f32_at(at),
+		5121 => { let v = GLB[at] as f32; if a.norm { v / 255.0 } else { v } },
+		5123 => { let v = (binary::gather(GLB[..], at, 2) as int) as f32; if a.norm { v / 65535.0 } else { v } },
+		5120 => { var v = GLB[at] as int; if v > 127 { v -= 256; } let f = v as f32; if a.norm { max(f / 127.0, -1.0) } else { f } },
+		5122 => { var v = binary::gather(GLB[..], at, 2) as int; if v > 32767 { v -= 65536; } let f = v as f32; if a.norm { max(f / 32767.0, -1.0) } else { f } },
+		_ => (binary::gather(GLB[..], at, 4) as int) as f32,
+	}
+}
+fn acc_i(a Acc, k int, c int) int {
+	let at = a.off + k * a.stride + c * comp_size(a.ctype);
+	binary::gather(GLB[..], at, comp_size(a.ctype)) as int
+}
+fn acc_v3(a Acc, k int) float3 { float3 { acc_f(a, k, 0), acc_f(a, k, 1), acc_f(a, k, 2) } }
+fn acc_v4(a Acc, k int) float4 { float4 { acc_f(a, k, 0), acc_f(a, k, 1), acc_f(a, k, 2), acc_f(a, k, 3) } }
+
+// ---- nodes and the skeleton
+fn node_trs(n int) Xf {
+	var x = XI;
+	let t = jm(n, "translation"); let r = jm(n, "rotation"); let s = jm(n, "scale");
+	if t >= 0 { x.t = float3 { jnum(jel(t, 0), 0.0), jnum(jel(t, 1), 0.0), jnum(jel(t, 2), 0.0) }; }
+	if r >= 0 { x.r = qnorm(float4 { jnum(jel(r, 0), 0.0), jnum(jel(r, 1), 0.0), jnum(jel(r, 2), 0.0), jnum(jel(r, 3), 1.0) }); }
+	if s >= 0 { x.s = float3 { jnum(jel(s, 0), 1.0), jnum(jel(s, 1), 1.0), jnum(jel(s, 2), 1.0) }; }
+	x
+}
+
+// Loads skin `skin` as a skeleton: joints sorted parent-before-child
+// (by depth among joints), parent = nearest joint ancestor.
+fn glb_skeleton(sk Skeleton&, skin int) bool {
+	let nodes = jtop("nodes");
+	let nn = jlen(nodes);
+	NODE_PARENT.clear(); NODE_JOINT.clear(); SKIN_JOINT.clear();
+	for i in nn { NODE_PARENT.push(-1); NODE_JOINT.push(-1); }
+	for i in nn {
+		let ch = jm(jel(nodes, i), "children");
+		for k in jlen(ch) { NODE_PARENT[jint(jel(ch, k), 0)] = i as i32; }
+	}
+	let sj = jel(jtop("skins"), skin);
+	if sj < 0 { return gerr("no skin"); }
+	let joints = jm(sj, "joints");
+	let nj = jlen(joints);
+	if nj > MAXJ { return gerr("too many joints"); }
+	var is_joint = [false; 1024];
+	if nn > 1024 { return gerr("too many nodes"); }
+	for k in nj { is_joint[jint(jel(joints, k), 0)] = true; }
+	// depth among joints
+	var depth = [0 as i32; 128];
+	var maxd = 0;
+	for k in nj {
+		var d = 0;
+		var a = NODE_PARENT[jint(jel(joints, k), 0)] as int;
+		while a >= 0 { if is_joint[a] { d += 1; } a = NODE_PARENT[a] as int; }
+		depth[k] = d as i32;
+		maxd = max(maxd, d);
+	}
+	sk.n = nj as i32;
+	var next = 0;
+	for d in maxd + 1 {
+		for k in nj {
+			if depth[k] != d as i32 { continue; }
+			let node = jint(jel(joints, k), 0);
+			NODE_JOINT[node] = next as i32;
+			next += 1;
+		}
+	}
+	for k in nj { SKIN_JOINT.push(NODE_JOINT[jint(jel(joints, k), 0)]); }
+	let ibm_i = jint(jm(sj, "inverseBindMatrices"), -1);
+	var ibm = default<Acc>();
+	if ibm_i >= 0 { ibm = accessor(ibm_i); }
+	for k in nj {
+		let node = jint(jel(joints, k), 0);
+		let j = NODE_JOINT[node] as int;
+		var a = NODE_PARENT[node] as int;
+		while a >= 0 && !is_joint[a] { a = NODE_PARENT[a] as int; }
+		sk.parent[j] = if a >= 0 { NODE_JOINT[a] } else { -1 };
+		let x = node_trs(jel(nodes, node));
+		sk.rest_t[j] = x.t; sk.rest_r[j] = x.r; sk.rest_s[j] = x.s;
+		sk.name[j].clear();
+		let nm, nok = json::as_string(GDOC, jm(jel(nodes, node), "name"));
+		sk.name[j].append(nm[..min(nm.len, 40)]);
+		var m = default<M4>();
+		if ibm_i >= 0 { for e in 16 { m.m[e] = acc_f(ibm, k, e); } } else { m.m[0] = 1.0; m.m[5] = 1.0; m.m[10] = 1.0; m.m[15] = 1.0; }
+		sk.inv_bind[j] = m;
+	}
+	true
+}
+
+// ---- animation samplers
+struct Samp { input Acc, output Acc, interp i32 }   // 0 LINEAR, 1 STEP, 2 CUBICSPLINE
+fn find_key(a Acc, t f32) int {
+	// last key with time <= t (binary search), clamped to [0, count-2]
+	var lo = 0; var hi = a.count - 1;
+	if t <= acc_f(a, 0, 0) { return 0; }
+	if t >= acc_f(a, hi, 0) { return max(hi - 1, 0); }
+	while hi - lo > 1 {
+		let mid = (lo + hi) / 2;
+		if acc_f(a, mid, 0) <= t { lo = mid; } else { hi = mid; }
+	}
+	lo
+}
+fn samp_val(s Samp, k int, c int, n int) f32 {
+	// CUBICSPLINE stores (in-tangent, value, out-tangent) per key
+	if s.interp == 2 { acc_f(s.output, k * 3 + 1, c) } else { acc_f(s.output, k, c) }
+}
+// Evaluates n components (3 or 4) of the sampler at time t.
+fn samp_eval(s Samp, t f32, n int, is_rot bool) float4 {
+	let cnt = s.input.count;
+	var r = float4 { 0.0, 0.0, 0.0, 0.0 };
+	if cnt == 1 {
+		return float4 { samp_val(s, 0, 0, n), samp_val(s, 0, 1, n), samp_val(s, 0, 2, n), if n == 4 { samp_val(s, 0, 3, n) } else { 0.0 } };
+	}
+	let k = find_key(s.input, t);
+	let t0 = acc_f(s.input, k, 0); let t1 = acc_f(s.input, k + 1, 0);
+	let td = max(t1 - t0, 1.0e-6);
+	let u = clamp((t - t0) / td, 0.0, 1.0);
+	var a = float4 { samp_val(s, k, 0, n), samp_val(s, k, 1, n), samp_val(s, k, 2, n), if n == 4 { samp_val(s, k, 3, n) } else { 0.0 } };
+	var b = float4 { samp_val(s, k + 1, 0, n), samp_val(s, k + 1, 1, n), samp_val(s, k + 1, 2, n), if n == 4 { samp_val(s, k + 1, 3, n) } else { 0.0 } };
+	if s.interp == 1 { return if u >= 1.0 { b } else { a }; }
+	if s.interp == 2 {
+		// cubic Hermite: p = (2u³-3u²+1)a + (u³-2u²+u)td·mA + (-2u³+3u²)b + (u³-u²)td·mB
+		var ma = float4 { 0.0, 0.0, 0.0, 0.0 }; var mb = ma;
+		ma = float4 { acc_f(s.output, k * 3 + 2, 0), acc_f(s.output, k * 3 + 2, 1), acc_f(s.output, k * 3 + 2, 2), if n == 4 { acc_f(s.output, k * 3 + 2, 3) } else { 0.0 } };
+		mb = float4 { acc_f(s.output, (k + 1) * 3, 0), acc_f(s.output, (k + 1) * 3, 1), acc_f(s.output, (k + 1) * 3, 2), if n == 4 { acc_f(s.output, (k + 1) * 3, 3) } else { 0.0 } };
+		let u2 = u * u; let u3 = u2 * u;
+		r = a * (2.0 * u3 - 3.0 * u2 + 1.0) + ma * ((u3 - 2.0 * u2 + u) * td) + b * (3.0 * u2 - 2.0 * u3) + mb * ((u3 - u2) * td);
+		return if is_rot { qnorm(r) } else { r };
+	}
+	if is_rot { return slerp(qnorm(a), qnorm(b), u); }
+	a + (b - a) * u
+}
+
+// Loads every animation into the clip bank, resampled at `fps` (or the
+// clip's extras.fps when fps <= 0, default 30). Clip names get `prefix`.
+// Every clip's root motion is set on the joint named `root_name` (if any).
+// Returns the number of clips loaded.
+fn glb_clips(sk Skeleton&, prefix const byte[:], fps_in f32, root_name const byte[:]) int {
+	let anims = jtop("animations");
+	let na = jlen(anims);
+	let rootj = joint_index(sk, root_name);
+	var loaded = 0;
+	for ai in na {
+		let an = jel(anims, ai);
+		let samplers = jm(an, "samplers");
+		let channels = jm(an, "channels");
+		let ex = jm(an, "extras");
+		var fps = fps_in;
+		if fps <= 0.0 { fps = jnum(jm(ex, "fps"), 30.0); }
+		let lb, lok = json::as_bool(GDOC, jm(ex, "loop"));
+		var dur = 0.0 as f32;
+		for si in jlen(samplers) {
+			let inp = accessor(jint(jm(jel(samplers, si), "input"), 0));
+			dur = max(dur, acc_f(inp, inp.count - 1, 0));
+		}
+		let frames = max((dur * fps + 0.5) as int, 1) + 1;
+		var name byte[..64] = [];
+		name.append(prefix[..min(prefix.len, 20)]);
+		let nm, nok = json::as_string(GDOC, jm(an, "name"));
+		name.append(nm[..min(nm.len, 64 - name.len)]);
+		let c = clip_new(sk, name[..], frames as i32, fps, lok && lb);
+		for ci in jlen(channels) {
+			let ch = jel(channels, ci);
+			let tg = jm(ch, "target");
+			let node = jint(jm(tg, "node"), -1);
+			if node < 0 || node >= NODE_JOINT.len { continue; }
+			let j = NODE_JOINT[node] as int;
+			if j < 0 { continue; }
+			let path, pok = json::as_string(GDOC, jm(tg, "path"));
+			let sm = jel(samplers, jint(jm(ch, "sampler"), 0));
+			var s = default<Samp>();
+			s.input = accessor(jint(jm(sm, "input"), 0));
+			s.output = accessor(jint(jm(sm, "output"), 0));
+			let ip, iok = json::as_string(GDOC, jm(sm, "interpolation"));
+			s.interp = if ip == "STEP" { 1 } else if ip == "CUBICSPLINE" { 2 } else { 0 };
+			for f in frames {
+				let t = min((f as f32) / fps, dur);
+				if path == "rotation" {
+					let v = samp_eval(s, t, 4, true);
+					clip_set_r(c, f, j, v);
+				} else if path == "translation" {
+					let v = samp_eval(s, t, 3, false);
+					clip_set_t(c, f, j, float3 { v.x, v.y, v.z });
+				} else if path == "scale" {
+					let v = samp_eval(s, t, 3, false);
+					clip_set_s(c, f, j, float3 { v.x, v.y, v.z });
+				}
+			}
+		}
+		// keep successive rotation keys in one hemisphere (clean lerps)
+		for f in 1..frames {
+			for j in sk.n {
+				let a = KR[key_at(c, f - 1, j)]; let b = KR[key_at(c, f, j)];
+				if qdot(a, b) < 0.0 { KR[key_at(c, f, j)] = qneg(b); }
+			}
+		}
+		clip_set_root(c, rootj);
+		loaded += 1;
+	}
+	loaded
+}

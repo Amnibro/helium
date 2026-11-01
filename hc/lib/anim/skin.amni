@@ -1,0 +1,70 @@
+// anim/skin: skinning palettes (model * inverse bind, as column-major 4x4)
+// and linear-blend CPU skinning of a glTF mesh primitive. On the GPU the
+// palette is what gets uploaded; the CPU path is for tests, tools and the
+// software renderer. Clean-room; see DESIGN.md.
+namespace anim;
+import vec;
+import math;
+import anim.math;
+import anim.pose;
+import anim.gltf;
+
+struct Palette { n i32, m M4[128] }
+struct SkinMesh { base int, nv int, ok bool }
+var SK_P float3[>..];
+var SK_N float3[>..];
+var SK_J i32[>..];     // 4 skeleton joint indices per vertex
+var SK_W float4[>..];
+
+fn skin_bank_clear() { SK_P.clear(); SK_N.clear(); SK_J.clear(); SK_W.clear(); }
+
+fn palette(sk Skeleton&, m Model&, out Palette&) {
+	out.n = sk.n;
+	for j in sk.n { out.m[j] = m4_mul(m4_of(m.x[j]), sk.inv_bind[j]); }
+}
+
+// Loads POSITION/NORMAL/JOINTS_0/WEIGHTS_0 of mesh `mesh` primitive `prim`
+// from the open GLB (after glb_skeleton, which maps skin joints).
+fn glb_skin_mesh(mesh int, prim int) SkinMesh {
+	var r = default<SkinMesh>();
+	let pr = jel(jm(jel(jtop("meshes"), mesh), "primitives"), prim);
+	let at = jm(pr, "attributes");
+	let pi = jint(jm(at, "POSITION"), -1);
+	let ni = jint(jm(at, "NORMAL"), -1);
+	let ji = jint(jm(at, "JOINTS_0"), -1);
+	let wi = jint(jm(at, "WEIGHTS_0"), -1);
+	if pi < 0 || ji < 0 || wi < 0 { return r; }
+	let pa = accessor(pi); let ja = accessor(ji); let wa = accessor(wi);
+	var na = default<Acc>();
+	if ni >= 0 { na = accessor(ni); }
+	r.base = SK_P.len; r.nv = pa.count;
+	for v in pa.count {
+		SK_P.push(acc_v3(pa, v));
+		SK_N.push(if ni >= 0 { acc_v3(na, v) } else { float3 { 0.0, 1.0, 0.0 } });
+		for c in 4 { SK_J.push(SKIN_JOINT[acc_i(ja, v, c)]); }
+		var w = acc_v4(wa, v);
+		let s = w.x + w.y + w.z + w.w;
+		if s > 1.0e-6 { w = w / s; }
+		SK_W.push(w);
+	}
+	r.ok = true;
+	r
+}
+
+// Linear blend skinning: out positions/normals for every vertex.
+fn skin_cpu(mesh SkinMesh, pal Palette&, out_p float3[>..]&, out_n float3[>..]&) {
+	out_p.clear(); out_n.clear();
+	for v in mesh.nv {
+		let i = mesh.base + v;
+		let w = SK_W[i];
+		let p = SK_P[i]; let n = SK_N[i];
+		let j0 = SK_J[i * 4] as int; let j1 = SK_J[i * 4 + 1] as int; let j2 = SK_J[i * 4 + 2] as int; let j3 = SK_J[i * 4 + 3] as int;
+		var sp = m4_point(pal.m[j0], p) * w.x;
+		var sn = m4_dir(pal.m[j0], n) * w.x;
+		if w.y > 0.0 { sp = sp + m4_point(pal.m[j1], p) * w.y; sn = sn + m4_dir(pal.m[j1], n) * w.y; }
+		if w.z > 0.0 { sp = sp + m4_point(pal.m[j2], p) * w.z; sn = sn + m4_dir(pal.m[j2], n) * w.z; }
+		if w.w > 0.0 { sp = sp + m4_point(pal.m[j3], p) * w.w; sn = sn + m4_dir(pal.m[j3], n) * w.w; }
+		out_p.push(sp);
+		out_n.push(sn);
+	}
+}
