@@ -748,7 +748,8 @@ parse_int(s byte[:], base int = 10) int, bool:
 		if v > (lim - d as uint) / base as uint: return 0, false
 		v = v * base as uint + d as uint
 		at += 1
-	r := if neg { 0 - v as! int } else { v as! int }
+	# -2^63 has no positive twin, so it comes straight from its bits
+	r := if !neg { v as! int } else if v == lim { lim as! int } else { 0 - v as! int }
 	return r, true
 to_int(s byte[:]) int:
 	v, ok := parse_int(trim(s))
@@ -832,7 +833,8 @@ slow_decimal(digits byte[:], e10 int) real:
 	if big_zero(num): return 0.0
 	den uint[>..] ~= [1]
 	for i abs(e10): big_mul_add(if e10 > 0 { num } else { den }, 10, 0)
-	sh ~= 64 - (big_bits(num) - big_bits(den))
+	# lands the quotient in [2^62, 2^64); one more bit if it came out short
+	sh ~= 63 - (big_bits(num) - big_bits(den))
 	q ~= 0 as uint; sticky ~= false
 	for attempt 2:
 		n2 uint[>..] ~= []; n2.append(num[..])
