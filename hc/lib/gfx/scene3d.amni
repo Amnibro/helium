@@ -6,9 +6,10 @@
 //   3. AO prepass: view normal + depth, then hemisphere SSAO and a depth-aware blur
 //   4. colour: 4x MSAA RGBA16F; sky, opaque and cut-out surfaces, blended
 //      surfaces far to near, then particles (gfx.sparks); resolved to `hdr`.
-//      A second target, `motion`, gets every pixel's screen motion since last
-//      frame (uv units, from unjittered clip positions, skinning included), its
-//      view depth and coverage.
+//      When temporal runs (or `motion_vectors` is set) a second target, `motion`,
+//      gets every pixel's screen motion since last frame (uv units, from
+//      unjittered clip positions, skinning included), its view depth and
+//      coverage; otherwise it is not allocated or drawn.
 //   4b. temporal (when `temporal` is on, or the output is larger than the render
 //      size): jittered frames accumulate into a history image at the output size
 //      (shaders/temporal.frag); TAA at equal sizes, a temporal upscaler otherwise
@@ -78,6 +79,9 @@ var temporal_max f32 = 0.5;
 var temporal_gamma f32 = 1.25;       // neighbourhood clip width in standard deviations (0 = no clip)
 var temporal_reset = false;          // drop the history on the next frame (camera cut)
 var jitter_phases = 16;
+// Write the motion target even when temporal is off (for a caller that reads
+// motion_target()). With both off the target is neither allocated nor drawn.
+var motion_vectors = false;
 var lights Light[>..] = [];
 var items Item[>..] = [];
 var batch Batch[>..] = [];
@@ -169,7 +173,9 @@ fn place(item int, m gfx::mat4) { items[item].place = m; }
 fn animate(item int, anim int, time f32) { items[item].anim = anim; items[item].time = time; }
 fn add_light(pos float3, rgb float3, range f32) { lights.push(Light { pos, range, rgb, 0 }); }
 fn hdr_target() gfx::Texture { hdr }
+// Valid after a frame that wrote motion (motion_wanted()); a null handle before any.
 fn motion_target() gfx::Texture { motion_tex }
+fn motion_wanted() bool { motion_vectors || temporal_on() }
 // The image bloom and grading read: the temporal result when it ran, else `hdr`.
 fn resolved() gfx::Texture { if temporal_used { history[hist_cur] } else { hdr } }
 fn temporal_on() bool { temporal != 0 || out_width != width || out_height != height }
@@ -181,7 +187,8 @@ fn surface_desc(cull i32, blend i32, depth_write bool) gfx::PipelineDesc {
 }
 
 fn drop_targets() {
-	for t in [color_ms, depth_ms, hdr, nd, nd_depth, ao_raw, ao, motion_ms, motion_tex] { gfx::release(t); }
+	for t in [color_ms, depth_ms, hdr, nd, nd_depth, ao_raw, ao] { gfx::release(t); }
+	drop_motion();
 	for t in glow { gfx::release(t); }
 	for t in history { gfx::release(t); }
 }
@@ -196,8 +203,6 @@ fn make_targets(w int, h int, ow int, oh int) {
 	height = h;
 	out_width = ow;
 	out_height = oh;
-	motion_ms = gfx::texture(gfx::TextureDesc { format: gfx::RGBA16F, usage: gfx::COLOR_TARGET, width: w as i32, height: h as i32, samples: MSAA as i32 });
-	motion_tex = gfx::render_target(w, h, gfx::RGBA16F);
 	history.clear();
 	for k in 2 { history.push(gfx::render_target(ow, oh, gfx::RGBA16F)); }
 	hist_valid = false;
@@ -216,6 +221,22 @@ fn make_targets(w int, h int, ow int, oh int) {
 		gw = max(gw / 2, 1);
 		gh = max(gh / 2, 1);
 	}
+}
+
+// The motion targets (MSAA and resolved, about 33 bytes a pixel) are made on the
+// first frame that wants them.
+fn make_motion() {
+	if motion_ms.id != 0 { return; }
+	motion_ms = gfx::texture(gfx::TextureDesc { format: gfx::RGBA16F, usage: gfx::COLOR_TARGET, width: width as i32, height: height as i32, samples: MSAA as i32 });
+	motion_tex = gfx::render_target(width, height, gfx::RGBA16F);
+}
+
+fn drop_motion() {
+	if motion_ms.id == 0 { return; }
+	gfx::release(motion_ms);
+	gfx::release(motion_tex);
+	motion_ms = none();
+	motion_tex = none();
 }
 
 fn make_shadow_map(size int) {
@@ -677,7 +698,13 @@ fn draw_lit(b Batch) {
 
 fn color_pass() {
 	let clear = x4(sky.horizon, 1.0);
-	guard gfx::begin_pass(gfx::PassDesc { color: [color_ms, motion_ms, none(), none()], resolve: [hdr, motion_tex, none(), none()], depth: depth_ms, color_value: clear, .. }) else { return; }
+	// motion is a second colour target only when something reads it; without it
+	// the shaders' motion output has no attachment and is dropped
+	let mv = motion_wanted();
+	if mv { make_motion(); }
+	let mt = if mv { motion_ms } else { none() };
+	let mr = if mv { motion_tex } else { none() };
+	guard gfx::begin_pass(gfx::PassDesc { color: [color_ms, mt, none(), none()], resolve: [hdr, mr, none(), none()], depth: depth_ms, color_value: clear, .. }) else { return; }
 	// the sky pass also fills the motion target behind everything; with sky
 	// drawing off it writes the flat clear colour
 	gfx::bind(pipe_sky);
