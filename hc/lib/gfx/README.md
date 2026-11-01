@@ -176,8 +176,9 @@ they do not move with the jitter; the look+taa test checks that.
      SSAO and bloom off is compared with `hc/test/gfx/golden/spheres.png`; PSNR must
      be > 40 dB. A missing golden fails. `GFX_MAKE_GOLDEN=1` makes gfx_smoke itself
      render and write both goldens (the paths are its second and third arguments)
-     and exit 1 for review; only unset, 0 or 1 is accepted, anything else fails in
-     both gfxtest.sh and gfx_smoke.
+     and exit 1 for review; only unset, 0 or 1 is accepted, anything else fails.
+     All golden handling (value check, missing-golden failure, writing) is in
+     gfx_smoke; gfxtest.sh only passes `GFX_MAKE_GOLDEN` through.
    * **Shipped-look golden.** The same grid with scene3d's default look (shadows, 3
      cascades at 2048^2, SSAO 16 samples, bloom 0.6) against
      `hc/test/gfx/golden/spheres_default.png` (> 40 dB, required), with light/contrast
