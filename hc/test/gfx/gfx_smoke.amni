@@ -9,13 +9,19 @@
 //              and four controls that must fail (single scatter, wrong F, legacy diffuse
 //              weight, x0.9), the same on flat tiles seen at n.v 0.35 .. 0.05 (grazing),
 //              and the ambient pass-through (fp16) check
-//   spheres  - 5x5 metal/roughness grid, saved as spheres.png and compared with the
-//              golden given as the second argument; PSNR must be > 40 dB, and a
-//              missing golden fails
-//   frame    - floor, skinned + morphed glTF, point light, particles and text,
-//              saved as frame.png and checked for light and contrast
+//   spheres  - 5x5 metal/roughness grid with shadows, SSAO and bloom off, saved as
+//              spheres.png and compared with the golden given as the second argument;
+//              PSNR must be > 40 dB, and a missing golden fails
+//   default  - the same grid with the shipped look (scene3d's defaults: shadows, SSAO,
+//              bloom on), saved as spheres_default.png and compared with the third
+//              argument's golden (> 40 dB, required), checked for light and contrast; the
+//              effects-off image must fail against it (control)
+//   frame    - floor, skinned + morphed glTF, point light, particles and text with the
+//              shipped look and sun, saved as frame.png and checked for light and contrast
 //   timing   - 1280x720 sphere grid, 30 warmup + 200 frames without readback: wall-clock
-//              and (under tools/hc/gputime) GPU-timestamp min / median / p95 ms
+//              and (under tools/hc/gputime) GPU-timestamp min / median / p95 ms, with
+//              the effects off (the recorded baseline), then with the shipped look with
+//              TAA off and on
 //   motion   - motion target vs a CPU projection for a moving sphere and a sliding camera,
 //              and a skinned animation step that moves pixels with placement unchanged
 //   taa      - 60 still frames must settle (frame-to-frame mean abs diff < 0.5/255 over
@@ -31,7 +37,15 @@
 //              mask vs a CPU ray-traced reference, IoU >= 0.9 in the main cascade outside a
 //              2 px band at shadow and object edges; controls that must fail: shadows off,
 //              and the sun mirrored in x; the shadow pass's cost at 1280x720
-// GFX_ONLY=shadows runs only the shadow checks (for bisecting a renderer change).
+//   look+taa - with TAA on: the shadow cascades must not move across the 16 jitter
+//              phases (the projection does), and the shadow mask IoU of converged TAA
+//              frames must pass the same bar; the wall scene with the shipped look must
+//              settle (< 0.5/255 as above) and stay within 2/255 mean of the TAA-off
+//              frame (bloom then reads the temporal result); 720p -> 1080p with the
+//              shipped look must settle and keep PSNR >= 30 dB vs native 1080p TAA
+// GFX_ONLY=shadows runs only the shadow checks (for bisecting a renderer change);
+// GFX_ONLY=default only renders spheres_default.png (tools/hc/gfxtest.sh
+// GFX_MAKE_GOLDEN=default takes the shipped-look golden from it).
 // Image metrics in motion / taa / tsr count non-sky pixels only (geo_mask).
 import os;
 import gfx;
@@ -551,6 +565,42 @@ fn psnr(a const byte[:], b const byte[:]) real {
 // Output directory for the PNGs, kept in a global so it outlives every frame's scratch.
 var OUT_DIR byte[>..] = [];
 var GOLDEN byte[>..] = [];
+var GOLDEN_DEF byte[>..] = [];
+// scene3d's shipped look, sun and sky, captured at start before any check edits them
+var DEF_LOOK s3d::Look;
+var DEF_SUN s3d::Sun;
+var DEF_SKY s3d::Sky;
+
+// The shipped look on the current scene: scene3d's default Look, and its shadow
+// settings with the scene's own sun direction and shadow distance.
+fn shipped_look() {
+	s3d::look = DEF_LOOK;
+	s3d::sun.shadows = DEF_SUN.shadows;
+	s3d::sun.map_size = DEF_SUN.map_size;
+}
+
+// PSNR of px against a 480x360 golden PNG; -1 when it is missing or unreadable.
+fn golden_psnr(px const byte[:], file const byte[:]) real {
+	if file.len == 0 { return -1.0; }
+	var want byte[>..] = [];
+	var ref byte[>..] = [];
+	if !read_file(file, want) { return -1.0; }
+	let gw, gh, gok = codec_png::decode(want[..], ref);
+	if !gok || gw != 480 || gh != 360 { return -1.0; }
+	psnr(px, ref[..])
+}
+
+// mean, min and max luma (2r + 5g + b) / 8 of an RGBA8 image
+fn luma_stats(px const byte[:]) int, int, int {
+	var lo = 255;
+	var hi = 0;
+	var sum = 0;
+	for i in px.len / 4 {
+		let l = (px[i * 4] as int * 2 + px[i * 4 + 1] as int * 5 + px[i * 4 + 2] as int) / 8;
+		lo = min(lo, l); hi = max(hi, l); sum += l;
+	}
+	return sum / max(px.len / 4, 1), lo, hi;
+}
 var FURNACE_K = 4096;
 let TIME_WARMUP = 30;
 let TIME_FRAMES = 200;
@@ -682,6 +732,8 @@ fn motion_checks() bool {
 	var good = true;
 	reset_scene();
 	s3d::temporal = 0;
+	// these frames read the motion target with temporal off
+	s3d::motion_vectors = true;
 	let w = 320;
 	let h = 240;
 	let ball = shapes::sphere(0.5, 48, 24, shapes::material(linalg::v3(0.8, 0.8, 0.8), 0.0, 0.5));
@@ -760,6 +812,7 @@ fn motion_checks() bool {
 	if moving < 20 || still > 0 { good = false; }
 	gfx::release(out2);
 	if !jitter_check() { good = false; }
+	s3d::motion_vectors = false;
 	good
 }
 
@@ -774,6 +827,7 @@ fn jitter_check() bool {
 	s3d::place(s3d::add(ball), gfx::translate(float3 { 0.0, 0.0, 0.0 }));
 	s3d::view = s3d::Camera { eye: float3 { 0.0, 0.0, 4.0 }, target: float3 { 0.0, 0.0, 0.0 }, up: float3 { 0.0, 1.0, 0.0 }, fov_y: 0.8, near: 0.1, far: 60.0 };
 	s3d::temporal = 0;
+	s3d::motion_vectors = true;
 	s3d::init(w, h);
 	let out = gfx::render_target(w, h, gfx::RGBA8);
 	s3d::render(out);
@@ -803,6 +857,8 @@ fn jitter_check() bool {
 fn taa_checks(dir const byte[:]) bool {
 	var good = true;
 	sphere_grid();
+	// the TAA-off frame's geo_mask reads the motion target
+	s3d::motion_vectors = true;
 	let w = 960;
 	let h = 540;
 	// reference: the same frame rendered at twice the size (4x msaa there too) and box-reduced
@@ -907,6 +963,7 @@ fn taa_checks(dir const byte[:]) bool {
 		print("gpu: taa moving ", if scene == 0 { "grid on sky (reported)" } else { "grid on wall (gated)" }, ", 40 frames, ", r2(mask_frac(mask_end[..]) * 100.0), "% non-sky pixels: ghosts ", r3(frac_on * 100.0), "% pixels off by >24/255 vs converged (mean ", r3(mad_on), "/255); no-clip control ", r3(frac_off * 100.0), "% (mean ", r3(mad_off), "); >8/255: ", r3(f8_on * 100.0), "% vs control ", r3(f8_off * 100.0), "%; no-taa floor ", r3(frac_floor * 100.0), "%", if gated { if pass_ok { " PASS" } else { " FAIL" } } else { "" });
 		if gated && !pass_ok { good = false; }
 	}
+	s3d::motion_vectors = false;
 	gfx::release(out);
 	good
 }
@@ -1221,7 +1278,9 @@ fn sh_direct(out gfx::Texture, shadows bool, name const byte[:]) byte[>..] {
 	px
 }
 
-fn sh_time(label const byte[:], out gfx::Texture) {
+// TIME_WARMUP + TIME_FRAMES full frames, each submitted and fenced, no readback; prints
+// "gpu: <tag> timing <label>: ..." wall-clock and (under gputime) GPU-timestamp stats.
+fn frame_time(tag const byte[:], label const byte[:], out gfx::Texture) {
 	for k in TIME_WARMUP { s3d::render(out); gfx::flush(); }
 	var log byte[>..] = [];
 	let have_log = env("HELIUM_GPUTIME", log) && log.len > 0;
@@ -1235,11 +1294,11 @@ fn sh_time(label const byte[:], out gfx::Texture) {
 		gfx::flush();
 		wall.push((gfx::time() - t) * 1000.0);
 	}
-	print("gpu: shadows timing ", label, ": ", TIME_WARMUP, " warmup + ", TIME_FRAMES, " timed, wall-clock ms ", stats(wall)[..]);
-	if !have_log { print("gpu: shadows timing ", label, ": gpu-timestamp not measured (run under tools/hc/gputime)"); return; }
+	print("gpu: ", tag, " timing ", label, ": ", TIME_WARMUP, " warmup + ", TIME_FRAMES, " timed, wall-clock ms ", stats(wall)[..]);
+	if !have_log { print("gpu: ", tag, " timing ", label, ": gpu-timestamp not measured (run under tools/hc/gputime)"); return; }
 	gputime_lines(log[..], gpu_ns);
 	let n = gpu_ns.len - first;
-	if n == 0 || n % TIME_FRAMES != 0 { print("gpu: shadows timing ", label, ": ", n, " submits for ", TIME_FRAMES, " frames, cannot split"); return; }
+	if n == 0 || n % TIME_FRAMES != 0 { print("gpu: ", tag, " timing ", label, ": ", n, " submits for ", TIME_FRAMES, " frames, cannot split"); return; }
 	let per = n / TIME_FRAMES;
 	var each real[>..] = [];
 	for f in TIME_FRAMES {
@@ -1247,7 +1306,7 @@ fn sh_time(label const byte[:], out gfx::Texture) {
 		for j in per { t += gpu_ns[first + f * per + j]; }
 		each.push(t / 1.0e6);
 	}
-	print("gpu: shadows timing ", label, ": gpu-timestamp ms ", stats(each)[..], " (", per, " submit(s) each)");
+	print("gpu: ", tag, " timing ", label, ": gpu-timestamp ms ", stats(each)[..], " (", per, " submit(s) each)");
 }
 
 fn shadow_checks() bool {
@@ -1286,9 +1345,9 @@ fn shadow_checks() bool {
 	s3d::init(1280, 720);
 	let big = gfx::render_target(1280, 720, gfx::RGBA8);
 	s3d::sun.shadows = false;
-	sh_time("1280x720 wall scene, shadows off", big);
+	frame_time("shadows", "1280x720 wall scene, shadows off", big);
 	s3d::sun.shadows = true;
-	sh_time("1280x720 wall scene, shadows on (3 cascades, 2048^2)", big);
+	frame_time("shadows", "1280x720 wall scene, shadows on (3 cascades, 2048^2)", big);
 	gfx::release(big);
 	// the sphere grid as the golden saw it, but with shadows on (reported, not gated)
 	sphere_grid();
@@ -1312,10 +1371,135 @@ fn shadow_checks() bool {
 	good
 }
 
+fn mat_diff(a gfx::mat4, b gfx::mat4) f32 {
+	var d f32 = 0.0;
+	for k in 4 {
+		let x = if k == 0 { a.c0 } else { if k == 1 { a.c1 } else { if k == 2 { a.c2 } else { a.c3 } } };
+		let y = if k == 0 { b.c0 } else { if k == 1 { b.c1 } else { if k == 2 { b.c2 } else { b.c3 } } };
+		d = max(d, max(max(abs(x.x - y.x), abs(x.y - y.y)), max(abs(x.z - y.z), abs(x.w - y.w))));
+	}
+	d
+}
+
+// n TAA frames from a reset, read back
+fn taa_frames(out gfx::Texture, n int) byte[>..] {
+	s3d::temporal = 1;
+	s3d::temporal_reset = true;
+	for k in n { s3d::render(out); }
+	gfx::read_pixels(out)
+}
+
+// largest frame-to-frame mean abs diff (/255, over mask) of n more TAA frames
+fn taa_settle(out gfx::Texture, n int, mask const byte[:]) real {
+	var last = gfx::read_pixels(out);
+	var worst real = 0.0;
+	for k in n {
+		s3d::render(out);
+		let px = gfx::read_pixels(out);
+		worst = max(worst, mean_abs(px[..], last[..], mask));
+		last.clear();
+		last.append(px[..]);
+	}
+	worst
+}
+
+// TAA with shadows, SSAO and bloom on. Runs after shadow_checks, whose ray-traced
+// reference (SH_*) is for the same wall scene, camera and size.
+fn look_taa_checks(dir const byte[:]) bool {
+	var good = true;
+	wall_scene();
+	s3d::init(SH_W, SH_H);
+	let out = gfx::render_target(SH_W, SH_H, gfx::RGBA8);
+	// cascades are fitted to the unjittered view: across the 16 jitter phases the
+	// rasterising view_proj must change every frame and the cascade matrices never
+	s3d::sun.shadows = true;
+	s3d::temporal = 0;
+	s3d::render(out);
+	var base gfx::mat4[>..] = [];
+	for m in s3d::cascade_vp { base.push(m); }
+	let vp0 = s3d::view_proj;
+	s3d::temporal = 1;
+	s3d::temporal_reset = true;
+	var moved = 0;
+	var worst f32 = 0.0;
+	for k in 16 {
+		s3d::render(out);
+		if mat_diff(vp0, s3d::view_proj) > 0.0 { moved += 1; }
+		for c in base.len { worst = max(worst, mat_diff(base[c], s3d::cascade_vp[c])); }
+	}
+	let cas_ok = moved == 16 && worst == 0.0 && base.len == s3d::cascade_vp.len;
+	print("gpu: look+taa cascades over 16 jitter phases: view_proj jittered in ", moved, "/16 frames, ", base.len, " cascade matrices max change ", worst, " (want 0) ", if cas_ok { "PASS" } else { "FAIL" });
+	if !cas_ok { good = false; }
+	// shadow mask of converged TAA frames vs the same reference
+	s3d::debug_view = 5;
+	s3d::sun.shadows = false;
+	let toff = taa_frames(out, 32);
+	s3d::sun.shadows = true;
+	let ton = taa_frames(out, 32);
+	let tp = path(dir, "shadow_direct_on_taa.png");
+	print("gpu: look+taa png ", tp[..], " ", gfx::save_png(out, tp[..]));
+	s3d::debug_view = 0;
+	let tiou = sh_score("taa on", toff[..], ton[..], -1);
+	print("gpu: look+taa shadow mask IoU with taa on ", r4(tiou), " in the main cascade (bar >= ", SH_BAR, ") ", if tiou >= SH_BAR { "PASS" } else { "FAIL" });
+	if tiou < SH_BAR { good = false; }
+	// the wall scene with the shipped look: still TAA settles, and stays close to TAA off
+	shipped_look();
+	s3d::temporal = 0;
+	s3d::render(out);
+	let plain = gfx::read_pixels(out);
+	let p0 = path(dir, "taa_default_off.png");
+	print("gpu: look+taa png ", p0[..], " ", gfx::save_png(out, p0[..]));
+	let conv = taa_frames(out, 32);
+	let mask = geo_mask(SH_W, SH_H);
+	let settle = taa_settle(out, 28, mask[..]);
+	let p1 = path(dir, "taa_default_on.png");
+	print("gpu: look+taa png ", p1[..], " ", gfx::save_png(out, p1[..]));
+	let dev = mean_abs(conv[..], plain[..], mask[..]);
+	let look_ok = settle < 0.5 && dev <= 2.0;
+	print("gpu: look+taa still wall scene, shipped look (", r2(mask_frac(mask[..]) * 100.0), "% non-sky): frame-to-frame mean abs diff frames 32-59 max ", r3(settle), "/255 (bar < 0.5); converged vs taa off mean abs ", r3(dev), "/255 (bar <= 2), psnr ", r2(psnr_m(conv[..], plain[..], mask[..])), " dB ", if look_ok { "PASS" } else { "FAIL" });
+	if !look_ok { good = false; }
+	gfx::release(out);
+	// upscaling with the shipped look, bloom at the output size from the temporal result
+	sphere_grid();
+	shipped_look();
+	let big = gfx::render_target(1920, 1080, gfx::RGBA8);
+	s3d::init(1920, 1080);
+	let native = taa_frames(big, 32);
+	let nmask = geo_mask(1920, 1080);
+	s3d::init(1280, 720, 1920, 1080);
+	let up = taa_frames(big, 32);
+	let usettle = taa_settle(big, 16, nmask[..]);
+	let pu = path(dir, "tsr_default_720to1080.png");
+	print("gpu: look+taa png ", pu[..], " ", gfx::save_png(big, pu[..]));
+	let udb = psnr_m(up[..], native[..], nmask[..]);
+	let up_ok = usettle < 0.5 && udb >= 30.0;
+	print("gpu: look+taa tsr 720p->1080p shipped look: settle max ", r3(usettle), "/255 (bar < 0.5), psnr ", r2(udb), " dB vs native 1080p taa (bar >= 30) ", if up_ok { "PASS" } else { "FAIL" });
+	if !up_ok { good = false; }
+	frame_time("default", "1280x720->1920x1080 tsr frame, shipped look", big);
+	gfx::release(big);
+	s3d::temporal = 0;
+	s3d::temporal_reset = true;
+	s3d::sun.shadows = false;
+	good
+}
+
 fn gpu_checks(dir const byte[:], golden const byte[:]) bool {
 	var good = true;
 	var only byte[>..] = [];
-	if env("GFX_ONLY", only) && only.len > 0 {
+	if env("GFX_ONLY", only) && only.len > 0 && only[0] == 100 {
+		sphere_grid();
+		shipped_look();
+		s3d::init(480, 360);
+		let o = gfx::render_target(480, 360, gfx::RGBA8);
+		s3d::render(o);
+		let p = path(dir, "spheres_default.png");
+		print("gpu: default png ", p[..], " ", gfx::save_png(o, p[..]));
+		gfx::release(o);
+		let e = gfx::error();
+		if e.len > 0 { print("gpu: gfx error ", e[..]); return false; }
+		return true;
+	}
+	if only.len > 0 {
 		let ok = shadow_checks();
 		let e = gfx::error();
 		if e.len > 0 { print("gpu: gfx error ", e[..]); return false; }
@@ -1349,6 +1533,33 @@ fn gpu_checks(dir const byte[:], golden const byte[:]) bool {
 		}
 	}
 	gfx::release(out);
+
+	// the shipped look on the same grid (shadows, SSAO and bloom on)
+	sphere_grid();
+	shipped_look();
+	s3d::init(480, 360);
+	let dout = gfx::render_target(480, 360, gfx::RGBA8);
+	s3d::render(dout);
+	let dgot = gfx::read_pixels(dout);
+	let dsp = path(dir, "spheres_default.png");
+	print("gpu: default png ", dsp[..], " ", gfx::save_png(dout, dsp[..]));
+	gfx::release(dout);
+	let ddb = golden_psnr(dgot[..], GOLDEN_DEF[..]);
+	if ddb < 0.0 {
+		print("gpu: default FAILED: golden ", GOLDEN_DEF[..], " missing, unreadable or not a 480x360 PNG (expected hc/test/gfx/golden/spheres_default.png)");
+		good = false;
+	} else {
+		print("gpu: default spheres (shipped look: shadows, ssao, bloom on) psnr ", r2(ddb), " dB vs golden (bar > 40 dB) ", if ddb > 40.0 { "PASS" } else { "FAIL" });
+		if ddb <= 40.0 { good = false; }
+		let cdb = golden_psnr(got[..], GOLDEN_DEF[..]);
+		print("gpu: default control (effects-off image vs the shipped-look golden) psnr ", r2(cdb), " dB must fail the 40 dB bar: ", if cdb <= 40.0 { "PASS" } else { "FAIL" });
+		if cdb > 40.0 { good = false; }
+	}
+	let dmean, dlo, dhi = luma_stats(dgot[..]);
+	print("gpu: default spheres luma mean ", dmean, " range ", dlo, "..", dhi);
+	if dmean < 30 || dmean > 225 || dhi - dlo < 120 { good = false; }
+	sphere_grid();
+	s3d::init(480, 360);
 
 	// timing at 720p on the same scene: 30 warmup frames, then 200 timed frames, each
 	// render + submit + fence wait with no readback. Wall clock per frame always; GPU time
@@ -1391,10 +1602,23 @@ fn gpu_checks(dir const byte[:], golden const byte[:]) bool {
 	} else {
 		print("gpu: timing gpu-timestamp: not measured (run under tools/hc/gputime, see tools/hc/gfxtest.sh)");
 	}
+	// the same scene and size with the shipped look: what an application gets by default
+	shipped_look();
+	frame_time("default", "1280x720 sphere grid, shipped look (shadows 3x2048^2, ssao 16, bloom on), taa off", big);
+	s3d::temporal = 1;
+	s3d::temporal_reset = true;
+	frame_time("default", "1280x720 sphere grid, shipped look, taa on", big);
+	s3d::temporal = 0;
+	s3d::temporal_reset = true;
 	gfx::release(big);
 
-	// a full frame with every feature
+	// a full frame with every feature, in the shipped look and sun
 	reset_scene();
+	s3d::look = DEF_LOOK;
+	s3d::sun = DEF_SUN;
+	s3d::sky = DEF_SKY;
+	s3d::temporal = 0;
+	print("gpu: frame look: shadows ", s3d::sun.shadows, ", ssao ", s3d::look.ssao, ", bloom ", r2(s3d::look.bloom as real), " (scene3d defaults)");
 	let a = gltf::load_bytes(embed_file("fixtures/scene.glb"), "");
 	let floor = shapes::plane(6.0, shapes::material(linalg::v3(0.5, 0.52, 0.55), 0.0, 0.7));
 	s3d::add(floor);
@@ -1419,14 +1643,7 @@ fn gpu_checks(dir const byte[:], golden const byte[:]) bool {
 	let px = gfx::read_pixels(frame);
 	let frp = path(dir, "frame.png");
 	print("gpu: frame png ", frp[..], " ", gfx::save_png(frame, frp[..]));
-	var lo = 255;
-	var hi = 0;
-	var sum = 0;
-	for i in px.len / 4 {
-		let l = (px[i * 4] as int * 2 + px[i * 4 + 1] as int * 5 + px[i * 4 + 2] as int) / 8;
-		lo = min(lo, l); hi = max(hi, l); sum += l;
-	}
-	let mean = sum / max(px.len / 4, 1);
+	let mean, lo, hi = luma_stats(px[..]);
 	print("gpu: frame mean ", mean, " range ", lo, "..", hi);
 	if mean < 30 || mean > 225 || hi - lo < 120 { good = false; }
 	gfx::release(frame);
@@ -1434,6 +1651,7 @@ fn gpu_checks(dir const byte[:], golden const byte[:]) bool {
 	if !taa_checks(dir) { good = false; }
 	if !tsr_checks(dir) { good = false; }
 	if !shadow_checks() { good = false; }
+	if !look_taa_checks(dir) { good = false; }
 	let err = gfx::error();
 	if err.len > 0 { print("gpu: gfx error ", err[..]); good = false; }
 	good
@@ -1450,6 +1668,11 @@ fn main() {
 	if env("FURNACE_K", kv) && kv.len > 0 { var k = 0; for c in kv { if c >= 48 && c <= 57 { k = k * 10 + (c as int - 48); } } if k > 0 { FURNACE_K = k; } }
 	GOLDEN.clear();
 	if argc > 2 { arg(2, GOLDEN); }
+	GOLDEN_DEF.clear();
+	if argc > 3 { arg(3, GOLDEN_DEF); }
+	DEF_LOOK = s3d::look;
+	DEF_SUN = s3d::sun;
+	DEF_SKY = s3d::sky;
 	print("gpu: out dir ", OUT_DIR[..]);
 	if !gfx::open_headless(64, 64) { print("gpu: skipped (no device: ", gfx::error()[..], ")"); return; }
 	let t0 = gfx::time();
