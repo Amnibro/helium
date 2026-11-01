@@ -19,15 +19,20 @@ import anim.skin;
 let P_SPEED = 0;
 let P_ACT = 1;
 let P_ACT2 = 2;
-let WALK_TOP = 2.6;    // walk stretched up to here
-let RUN_LOW = 3.4;     // run from here: the walk->run blend is centred on 3 m/s
+// The walk->run blend band [WALK_TOP, RUN_LOW] is centred on 3 m/s and
+// 2.4 m/s wide: the speed spring crosses it in about 0.3 s when braking from
+// a run (a 0.8 m/s band took ~0.1 s, a near-miss crossfade the pop test
+// flags, which is what capped the spring at 2.4 s).
+let WALK_TOP = 1.8;    // walk stretched up to here
+let RUN_LOW = 4.2;     // run from here
 let RUN_TOP = 6.0;
 // Speed command smoothing: a critically damped spring (natural frequency
 // SPEED_W rad/s), so the speed parameter is C1 in time. The previous linear
 // slew (8 m/s^2) started and stopped its acceleration instantly, and the
 // walk/run blend it drives turned that into a per-frame velocity kink on the
 // whole body (seen by the per-state pop thresholds, see DESIGN.md).
-let SPEED_W = 2.0;
+// From rest a step reaches 95% at w t = 4.744: w 5.27 -> 0.90 s.
+let SPEED_W = 5.27;
 // Exact step of x'' = w^2 (target - x) - 2 w x' (critical damping, the
 // closed-form solution x = target + (c1 + c2 t) e^(-w t)).
 fn spring_cd(x f32&, v f32&, target f32, w f32, dt f32) {
