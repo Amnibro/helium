@@ -91,6 +91,47 @@ all printed 1.274224153, gcc 16.2.1, load ~8.6 from other jobs)
   vectorizer is not fixed at 4 lanes. Under `--v4` it already emits zmm (8 doubles) where the loop allows
   it (`HC_NOV4=1` turns that off); see the row below.
 
+Loop-carried reuse (compiler 114c6cd, `lcr`; `HC_NOLCR=1` turns it off). In a loop with one backedge,
+an f64/f32 op `x op y` that runs before the only in-loop def of its operands and is repeated (same op,
+same operands) after that def reads a carried copy instead: the copy is computed once in the preheader
+and refreshed right after the later op. Exact (same op on the same values, no reassociation, no
+contraction). The pass rejects loops where a branch can skip the later op (`continue`, an `if`) or where an
+operand has two defs (test/loop_carry.amni covers those shapes). In mandelbrot it carries `zr*zr` and
+`zi*zi` from the escape test into the next step, so the hot loop does 3 multiplies instead of 5, like gcc -O2.
+Of all benches and tests under default/`--v3`/`--v4`/`--vhost`, only mandelbrot and test/pair_sqrt_div
+build differently, and both print the same output. `HC_NOLCR=1` gives binaries byte-identical to the
+previous compiler.
+
+mandelbrot 6000, interleaved, 7 reps alternating all six binaries, `taskset -c 7`, **min / median ms**,
+every variant printed `14289222 2938195826`, load ~7-8 from other jobs, two passes:
+
+| pass | he --v4 new | he --v4 old (bb55899) | he default new | gcc-O3n | clang-O3n | gcc-O2 |
+|---|---|---|---|---|---|---|
+| 1 | 1380 / 1390 | 1449 / 1453 | 1400 / 1409 | 1253 / 1268 | 1269 / 1284 | 1354 / 1359 |
+| 2 | 1381 / 1395 | 1442 / 1451 | 1398 / 1410 | 1260 / 1269 | 1271 / 1281 | 1355 / 1362 |
+
+- -4.5% min against the previous compiler. Helium is now 1.9% behind gcc-O2, down from 6-7%; it is not ahead.
+- What remains vs gcc-O2: the loop is not rotated. Each step takes two branches (escape test jumps over the
+  `break`, then the counter compare jumps back), where gcc takes one. There are also more register copies
+  (9 `movaps` per step in the default build vs 5 `movapd`). The FMA gap to -O3n stays by design (no contraction).
+
+Profile of the two largest remaining gaps (PC sampling via ptrace every 2 ms, since `perf` is not installed;
+`--v4` vs gcc -O3 -march=native, bintrees 21, regex 1M, user time from getrusage, sys time under 0.03 s
+in all four runs). Nothing fixed here.
+- bintrees (he 1.16 s user vs gcc-O3n 0.56 s): 68% of samples are in `build`, 28% in `check`. Biggest
+  fixable cost: one full call per tree node. Each call pushes and pops 5 callee-saved registers, including
+  the leaf path that half of all calls take. For each array store it also reloads the `L`/`R` base and
+  length from globals and does a bounds check. gcc inlines the bottom levels of the recursion (`d == 0`,
+  `1`, `2` written as straight stores, leaf path with no saves), so it makes several times fewer calls. Fix:
+  inline the base levels of self-recursion (or at least shrink-wrap the leaf path).
+- regex (he 0.90 s vs gcc-O3n 0.49 s): 89% of samples are in `here` (star and one inlined into it;
+  1268 IR ops, 99 labels, 9 calls). 48% of all samples land on `(%rbp)` stack-slot instructions. The top two
+  are the reload of `RE.len` from the slot it was just stored to, and `addq $1,-0x80(%rbp)` on `t` in the
+  self-tail loop. Biggest fixable cost: register allocation of `here`. The loop-carried r/t and the RE
+  ptr/len stay in a 0x370-byte stack frame instead of callee-saved registers (as noted in round 3: linear
+  scan evicts the long whole-function intervals). Fix: live-range splitting at calls, or loop-priority
+  callee-saved assignment, for that loop.
+
 Width check and mandelbrot fix (compiler 9dc0997 = 8-lane default + f64 `x*2.0` folded to `x+x`, which is
 exact; `HC_NOFX2=1` turns it off). Interleaved, 7 reps alternating all six binaries, `taskset -c 7`,
 **min / median ms**, every variant printed the same output, gcc 16.2.1, clang 23.1.1, load ~8 from other
@@ -112,7 +153,8 @@ jobs. `old` = he --v4 before the fold, `ymm` = new compiler with `HC_NOV4=1` (ve
      1584 -> 1439 ms min.
   2. gcc -O2 carries `zr*zr` and `zi*zi` from the escape test into the next iteration, so each step does
      3 multiplies instead of 5. A hand-written Helium version doing the same ran 1390 ms vs gcc-O2 1380 ms
-     (5 interleaved reps, same session), so this is the remaining gap to gcc-O2. Not done in the compiler yet.
+     (5 interleaved reps, same session), so this is the remaining gap to gcc-O2. Done in the compiler in
+     114c6cd (`lcr`, see the section above): 1442-1449 -> 1380-1381 ms min.
   3. gcc-O3n and clang-O3n contract `a*b+c` into FMA (`vfmadd`/`vfmsub` in their loops), which changes
      rounding. Helium does not contract (no fast-math), so that part of the gap to -O3n stays by design.
 
