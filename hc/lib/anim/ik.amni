@@ -16,18 +16,19 @@ fn acos_c(x f32) f32 { acos(clamp(x, -1.0, 1.0)) }
 fn rot_about(q float4, c float3, p float3) float3 { c + qrot(q, p - c) }
 
 let SOFT_K f32 = 0.97;
-// d <= s is unchanged; above it d' = s + w*tanh((d - s)/w)
-// with w = reach - s. tanh has slope 1 and curvature 0 at 0, so the map is
-// C2 at s (no acceleration step where softening begins), monotone, < reach.
-// s is passed in: max(SOFT_K*reach, current |a->c|), so a limb the animation
-// already holds extended is left alone and only extra pull is softened.
-fn soft_reach(d f32, s0 f32, reach f32) f32 {
-	let s = min(s0, reach * 0.999);
+
+// Soft reach map, fixed per limb: d <= s = SOFT_K*reach is unchanged; above
+// it d' = s + w*tanh((d - s)/w), w = reach - s. tanh has slope 1 and
+// curvature 0 at 0, so the map is C2 at s, monotone, and always < reach.
+fn soft_reach(d f32, reach f32) f32 {
+	let s = reach * SOFT_K;
 	if d <= s { return d; }
 	let w = reach - s;
 	let x = (d - s) / w;
 	s + w * (1.0 - 2.0 / (exp(2.0 * x) + 1.0))
 }
+// interior knee angle (law of cosines) for a root->end distance d
+fn knee_angle(l1 f32, l2 f32, d f32) f32 { acos_c((d * d - l1 * l1 - l2 * l2) / (-2.0 * l1 * l2)) }
 
 // Two-bone IK on the chain a -> b -> c (b's parent must be a, c's parent b).
 // target: where c should go; pole: a point the middle joint should bend
@@ -40,11 +41,13 @@ fn two_bone_ik(sk Skeleton&, p Pose&, m Model&, a i32, b i32, c i32, target floa
 	let l2 = length(pc - pb);
 	let reach = l1 + l2;
 	let dt = length(target - pa);
-	// Soft reach: past SOFT_K * reach the solved distance eases toward (but
-	// never hits) full reach. A hard clamp leaves the knee angle acos(..) with
-	// an unbounded derivative near full extension, which amplifies small
-	// target motion into thigh/shin pops.
-	let d = clamp(soft_reach(dt, max(length(pc - pa), reach * SOFT_K), reach), abs(l1 - l2) + 1.0e-4, reach * 0.99999);
+	// Near full extension acos(..) has an unbounded slope, so a hard clamp
+	// turns millimetres of target motion into thigh/shin pops. The knee is
+	// therefore solved on a fixed C2 soft map of the distance (soft_reach):
+	// legs straighter than SOFT_K of their reach are bent slightly, always,
+	// so the change is a smooth function of the pose and never toggles.
+	let lo = abs(l1 - l2) + 1.0e-4;
+	let kt = knee_angle(l1, l2, clamp(soft_reach(dt, reach), lo, reach));
 	// current and wanted interior angles at a (between a->c and a->b) and b
 	let ac = safe_norm(pc - pa, float3 { 0.0, -1.0, 0.0 });
 	let ab = safe_norm(pb - pa, ac);
@@ -52,15 +55,23 @@ fn two_bone_ik(sk Skeleton&, p Pose&, m Model&, a i32, b i32, c i32, target floa
 	let bc = safe_norm(pc - pb, ac);
 	let a0 = acos_c(dot(ac, ab));
 	let b0 = acos_c(dot(ba, bc));
+	let b1 = clamp(kt, 1.0e-3, PI);
+	let d = max(sqrt(max(l1 * l1 + l2 * l2 - 2.0 * l1 * l2 * cos(b1), 0.0)), lo);
 	let a1 = acos_c((l2 * l2 - l1 * l1 - d * d) / (-2.0 * l1 * d));
-	let b1 = acos_c((d * d - l1 * l1 - l2 * l2) / (-2.0 * l1 * l2));
-	// bend plane normal; a straight limb falls back to the pole's plane
-	var n = cross(ac, ab);
-	if length_sq(n) < 1.0e-10 { n = cross(ac, pole - pa); }
+	// bend plane normal from the pole (stable), not from the current knee:
+	// an animated knee that passes through straight (hyperextends) would
+	// flip cross(ac, ab) and with it the solved bend side
+	var n = cross(ac, pole - pa);
+	if length_sq(n) < 1.0e-10 { n = cross(ac, ab); }
 	if length_sq(n) < 1.0e-10 { n = cross(ac, float3 { 1.0, 0.0, 0.0 }); }
 	n = normalize(n);
-	let q0 = qaxis(n, a1 - a0);           // opens the angle at a
-	let q1 = qaxis(n, b1 - b0);           // opens the angle at b
+	// signed current angles about n: a knee bent away from the pole side
+	// is past straight, so its interior angle is 2pi - b0 (and -a0 at a);
+	// both are continuous with the unflipped values at straight
+	var a0s = a0; var b0s = b0;
+	if dot(cross(ac, ab), n) < 0.0 { a0s = 0.0 - a0; b0s = 2.0 * PI - b0; }
+	let q0 = qaxis(n, a1 - a0s);          // opens the angle at a
+	let q1 = qaxis(n, b1 - b0s);          // opens the angle at b
 	// apply the bends: c moves about b by q1, then everything about a by q0
 	let pc1 = rot_about(q0, pa, rot_about(q1, pb, pc));
 	let pb1 = rot_about(q0, pa, pb);
@@ -169,6 +180,11 @@ struct Leg {
 	prev_tw float3 = V0,   // last unlocked (anim + ground) target
 	prev_tw_v float3 = V0, // and its velocity
 	has_out bool = false,
+	// knee-forward direction in the knee joint's frame, captured the first
+	// time the leg is clearly bent; gives a pole that follows the shin and
+	// does not flip when the animated knee passes through straight
+	fwd_k float3 = V0,
+	has_fwd bool = false,
 	// release: the offset (output - anim target) at the moment of release is
 	// decayed to zero by a quintic matching offset and velocity (inertialization)
 	releasing bool = false,
@@ -242,11 +258,32 @@ fn plant_feet(sk Skeleton&, p Pose&, m Model&, legs Leg[2]&, ground_y f32[2], ch
 		legs[i].out_v = if legs[i].has_out && dt > 0.0 { (tw - lg.out_w) / dt } else { V0 };
 		legs[i].out_w = tw; legs[i].has_out = true;
 		let t = xf_point(inv, tw);
-		if length(t - ank) < 1.0e-4 { legs[i].err = 0.0; continue; }
-		// pole: in front of the knee along its current bend direction
+		// always solve (no skip when the target sits on the animated ankle):
+		// the soft reach map changes near-straight legs, and switching the
+		// solver on and off would switch that change on and off
+		if lg.knee < 0 { legs[i].err = 0.0; continue; }
+		// pole: in front of the knee. Its direction is the bend direction as
+		// seen in the knee's own frame (captured once while clearly bent), so
+		// it moves with the shin and stays on the front through straight legs
 		let pa = m.x[lg.hip].t; let pb = m.x[lg.knee].t;
 		let mid = (pa + ank) * 0.5;
-		let bend = safe_norm(pb - mid, float3 { 0.0, 0.0, 1.0 });
+		let bv = pb - mid;
+		let lleg = length(pb - pa) + length(ank - pb);
+		// the hinge axis is kept in the thigh's frame, refreshed while the
+		// knee is clearly bent; near straight (and through hyperextension)
+		// the pole comes from that stored hinge instead of the knee itself
+		let acn = safe_norm(ank - pa, float3 { 0.0, -1.0, 0.0 });
+		let bf = length(bv) / max(lleg, 1.0e-6);
+		let bn = safe_norm(bv, float3 { 0.0, 0.0, 1.0 });
+		var bend = bn;
+		if bf > 0.15 {
+			legs[i].fwd_k = qrot(qconj(m.x[sk.parent[lg.knee]].r), safe_norm(cross(acn, pb - pa), float3 { 1.0, 0.0, 0.0 }));
+			legs[i].has_fwd = true;
+		} else if lg.has_fwd {
+			let st = safe_norm(cross(qrot(m.x[sk.parent[lg.knee]].r, lg.fwd_k), acn), bn);
+			let w = smootherstep01((bf - 0.03) / 0.12) * smootherstep01(dot(bn, st));
+			bend = safe_norm(st + (bn - st) * w, st);
+		}
 		let pole = pb + bend * 0.5;
 		legs[i].err = two_bone_ik(sk, p, m, lg.hip, lg.knee, lg.ankle, t, pole, 1.0, true);
 		fk(sk, p, m);

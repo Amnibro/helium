@@ -39,6 +39,10 @@ struct MachineDef {
 	ntrans i32, trans Transition[48],
 	nspaces i32, spaces Space[4],
 	entry i32,
+	// an interrupting fade (from a frozen pose) lasts at least this long; its
+	// source does not run out like a clip does, and the blend's acceleration
+	// term scales with 1/duration^2 times the frozen-to-target distance
+	interrupt_min f32,
 }
 struct Machine {
 	cur i32, phase f32, time_in f32,
@@ -53,8 +57,9 @@ struct Machine {
 	ticks i32,
 	// frozen source of an interrupted fade: the last output pose, carried
 	// forward by its last per-tick joint change (frozen_d) with that change
-	// decaying linearly to zero over the fade, so joint velocity stays
-	// continuous at the interrupt instead of dropping to zero.
+	// decaying linearly to zero over the first 30% of the fade, so joint
+	// velocity stays continuous at the interrupt instead of dropping to zero,
+	// while the extrapolated pose does not drift far from what was on screen.
 	frozen Pose, frozen_d Pose, last Pose, prev Pose,
 }
 
@@ -194,6 +199,7 @@ fn machine_update(d MachineDef&, m Machine&, dt f32, out Pose&, scratch Pose&, s
 		let new_phase = if t.sync { m.phase } else { 0.0 };
 		m.cur = t.to; m.phase = new_phase; m.time_in = 0.0;
 		m.fade = 0.0; m.fade_dur = t.duration;
+		if m.src_kind == 2 { m.fade_dur = max(t.duration, d.interrupt_min); }
 		break;
 	}
 	let cur_mo = d.states[m.cur].motion;
@@ -210,7 +216,7 @@ fn machine_update(d MachineDef&, m Machine&, dt f32, out Pose&, scratch Pose&, s
 			root = srd * (1.0 - a) + rd * a;
 			blend2(scratch2, out, a, out);
 		} else {
-			let k = max(0.0, 1.0 - m.fade / max(m.fade_dur, 1.0e-4));
+			let k = max(0.0, 1.0 - m.fade / max(0.3 * m.fade_dur, 1.0e-4));
 			for j in m.frozen.n {
 				m.frozen.r[j] = qnorm(qmul(nlerp(QI, m.frozen_d.r[j], k), m.frozen.r[j]));
 				m.frozen.t[j] = m.frozen.t[j] + m.frozen_d.t[j] * k;

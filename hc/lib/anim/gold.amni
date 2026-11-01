@@ -55,6 +55,12 @@ fn gold_fail(r GoldRig&, msg const byte[:]) bool { r.ok = false; r.err.clear(); 
 // Finds clips and joints for a JK (walk_fwd/run_fwd/thigh/calf) or BFME
 // (humanoid_v1_loco_*/thigh/shin) character whose clips were loaded with
 // name prefix `prefix`, and builds the machine.
+let EXIT_FADE f32 = 0.3;
+fn exit_at(clip i32, fade f32) f32 {
+	let dur = CLIPS[clip as int].dur;
+	if dur <= 0.0 { return 0.8; }
+	clamp(1.0 - fade / dur, 0.5, 0.97)
+}
 fn gold_setup(sk Skeleton&, prefix const byte[:], r GoldRig&, d MachineDef&) bool {
 	r.idle = find_clip2(prefix, "idle", "humanoid_v1_loco_idle");
 	r.walk = find_clip2(prefix, "walk_fwd", "humanoid_v1_loco_walk");
@@ -102,15 +108,19 @@ fn gold_setup(sk Skeleton&, prefix const byte[:], r GoldRig&, d MachineDef&) boo
 	r.st_loco = def_state_space(d, "loco", si, P_SPEED);
 	r.st_act = def_state_clip(d, "act", r.act);
 	r.st_act2 = def_state_clip(d, "act2", r.act2);
-	var t1 = Transition { from: -1, to: r.st_act2, duration: 0.25, consume: P_ACT2 };
+	var t1 = Transition { from: -1, to: r.st_act2, duration: 0.35, consume: P_ACT2 };
 	t1.nc = 1; t1.c[0] = cond(P_ACT2, OP_TRUE);
 	def_trans(d, t1);
 	var t2 = Transition { from: r.st_loco, to: r.st_act, duration: 0.25, consume: P_ACT };
 	t2.nc = 1; t2.c[0] = cond(P_ACT, OP_TRUE);
 	def_trans(d, t2);
-	def_trans(d, Transition { from: r.st_act, to: r.st_loco, exit_time: 0.8, duration: 0.3 });
-	def_trans(d, Transition { from: r.st_act2, to: r.st_loco, exit_time: 0.8, duration: 0.3 });
+	// exits start so the fade ends as the (non-looping) action clip ends: a
+	// clip that runs out mid-fade clamps on its last frame, and its motion
+	// stopping dead while still weighted is a visible acceleration pop
+	def_trans(d, Transition { from: r.st_act, to: r.st_loco, exit_time: exit_at(r.act, EXIT_FADE), duration: EXIT_FADE });
+	def_trans(d, Transition { from: r.st_act2, to: r.st_loco, exit_time: exit_at(r.act2, EXIT_FADE), duration: EXIT_FADE });
 	d.entry = r.st_loco;
+	d.interrupt_min = 0.45;
 	r.ok = true;
 	true
 }
