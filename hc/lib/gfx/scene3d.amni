@@ -99,6 +99,8 @@ var motion_vectors = false;
 // the whole map (what a layer-only cycling rule did before S5).
 var shadow_test_shift float3 = float3 { 0.0, 0.0, 0.0 };
 var shadow_test_cycle_all = false;
+// and never cycles at all (reported only: does the driver serialise frames anyway)
+var shadow_test_cycle_never = false;
 var lights Light[>..] = [];
 var items Item[>..] = [];
 var batch Batch[>..] = [];
@@ -632,7 +634,7 @@ fn shadow_pass() {
 	// so a frame still sampling the last map keeps it (frames are submitted without
 	// waiting), and never on the later cascades, which would discard the earlier layers.
 	for c in CASCADES {
-		let cyc = if shadow_test_cycle_all || c == 0 { 1 } else { 2 };
+		let cyc = if shadow_test_cycle_never { 2 } else if shadow_test_cycle_all || c == 0 { 1 } else { 2 };
 		guard gfx::begin_pass(gfx::PassDesc { depth: shadow_map, layer: c as i32, clear_depth: true, depth_value: 1.0, cycle: cyc as i32, .. }) else { return; }
 		gfx::bind(pipe_shadow);
 		bind_geometry();

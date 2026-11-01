@@ -2397,6 +2397,28 @@ fn s5_inflight() bool {
 	for i in ra.len { if ra[i] != rb[i] { ab += 1; } }
 	let ok = worst <= S5_MAX_DIFF && ab > 0;
 	print("gpu: shadow map in flight (S5): ", S5_FRAMES, " frames, two suns alternating, no wait between submits: max abs diff vs the fenced renders ", worst, " (bar <= ", S5_MAX_DIFF, "), ", differ, " bytes differ; the two suns' renders differ in ", ab, " bytes (must be > 0) ", if ok { "PASS" } else { "FAIL" });
+	// reported only (part B): the same no-wait run with the shadow pass never cycling
+	s3d::shadow_test_cycle_never = true;
+	for f in S5_FRAMES {
+		s3d::sun.to_sun = if f % 2 == 0 { sa } else { sb };
+		s3d::render(outs[f]);
+		let _ = gfx::frame();
+	}
+	gfx::flush();
+	s3d::shadow_test_cycle_never = false;
+	var nworst = 0;
+	var ndiffer = 0;
+	for f in S5_FRAMES {
+		let px = gfx::read_pixels(outs[f]);
+		let want = if f % 2 == 0 { ra[..] } else { rb[..] };
+		for i in px.len {
+			let d = px[i] as int - want[i] as int;
+			let a = if d < 0 { -d } else { d };
+			if a > 0 { ndiffer += 1; }
+			nworst = max(nworst, a);
+		}
+	}
+	print("gpu: shadow map in flight (S5) never-cycle variant (reported, not gated): max abs diff ", nworst, ", ", ndiffer, " bytes differ", if ndiffer == 0 { " (this driver serialises the frames; the hazard cannot be shown here)" } else { "" });
 	for t in outs { gfx::release(t); }
 	s3d::sun.to_sun = keep;
 	s3d::debug_view = 0;
