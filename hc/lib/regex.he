@@ -1,0 +1,461 @@
+# regex: byte-oriented regular expressions.
+# A pattern is parsed into a tree, the tree is laid out as a list of
+# instructions, and a Pike machine runs every live thread in lockstep over
+# the text, so time is linear in the text. Threads keep a priority order, so
+# the match chosen is the leftmost one and, among those, the one a
+# backtracking matcher would find first.
+#
+# syntax: literals, ., [...] and [^...] with ranges, \d \w \s \D \W \S,
+# \n \t \r \f \v \xHH, groups (...) and (?:...), |, * + ? {m} {m,} {m,n}
+# (a trailing ? makes them lazy), ^ and $ for the ends of the text, \b \B.
+namespace regex
+use std
+
+# tree nodes
+T_EMPTY := 0
+T_SET := 1
+T_CAT := 2
+T_ALT := 3
+T_REP := 4
+T_GROUP := 5
+T_ASSERT := 6
+struct Tree { kind int, a int, b int, lo int, hi int, greedy bool }
+
+# instructions: SET consumes a byte in sets[a]; SPLIT tries a, then b; JMP
+# goes to a; SAVE records the position in slot a; ASSERT checks condition a
+OP_SET := 0
+OP_SPLIT := 1
+OP_JMP := 2
+OP_SAVE := 3
+OP_MATCH := 4
+OP_ASSERT := 5
+struct Op { kind int, a int, b int }
+
+# conditions for ASSERT
+AT_START := 0
+AT_END := 1
+AT_WORD_EDGE := 2
+AT_NOT_WORD_EDGE := 3
+
+struct Regex { prog Op[>..] = [], sets ByteSet[>..] = [], groups int = 1 }
+
+struct Parser {
+	pat const byte[:],
+	at int = 0,
+	tree Tree[>..] = [],
+	sets ByteSet[>..] = [],
+	groups int = 1,
+	err byte[>..] = []
+}
+
+node(p Parser&, kind int, a int, b int) int:
+	p.tree.push(Tree{kind, a, b, 0, 0, true})
+	p.tree.len - 1
+set_node(p Parser&, s ByteSet) int:
+	p.sets.push(s)
+	node(p, T_SET, p.sets.len - 1, 0)
+problem(p Parser&, what const byte[:]):
+	if p.err.len == 0: p.err.append(str("regex: ", what, " at offset ", p.at))
+	p.at = p.pat.len
+more(p Parser&) bool: p.at < p.pat.len && p.err.len == 0
+next_is(p Parser&, c byte) bool: p.at < p.pat.len && p.pat[p.at] == c
+
+word_byte(c byte) bool: c >= 'a' && c <= 'z' || c >= 'A' && c <= 'Z' || c >= '0' && c <= '9' || c == '_'
+hex_of(c byte) int:
+	if c >= '0' && c <= '9': return (c - '0') as int
+	if c >= 'a' && c <= 'f': return (c - 'a') as int + 10
+	if c >= 'A' && c <= 'F': return (c - 'A') as int + 10
+	-1
+
+# adds the members of a class letter (d w s, capital for the complement);
+# false when c names no class
+class_letter(on bool[256]&, c byte) bool:
+	low := if c >= 'A' && c <= 'Z' { c + 32 } else { c }
+	if low != 'd' && low != 'w' && low != 's': return false
+	for v 256:
+		b := v as byte
+		hit := if low == 'd' { b >= '0' && b <= '9' } else if low == 'w' { word_byte(b) } else { b == ' ' || b >= 9 && b <= 13 }
+		if hit != (low != c): on[v] = true
+	true
+
+# the byte an escape stands for, after the backslash; at is moved past it
+escape_byte(p Parser&) byte:
+	c byte := p.pat[p.at]
+	p.at += 1
+	if c == 'n': return '\n'
+	if c == 't': return '\t'
+	if c == 'r': return '\r'
+	if c == 'f': return 12
+	if c == 'v': return 11
+	if c == '0': return 0
+	if c == 'x':
+		if p.at + 2 > p.pat.len || hex_of(p.pat[p.at]) < 0 || hex_of(p.pat[p.at + 1]) < 0:
+			problem(p, "bad \\x escape")
+			return 0
+		v := hex_of(p.pat[p.at]) * 16 + hex_of(p.pat[p.at + 1])
+		p.at += 2
+		return v as byte
+	c
+
+# [...] with the opening bracket already taken
+parse_class(p Parser&) int:
+	on bool[256] ~= [false; 256]
+	negate := next_is(p, '^')
+	if negate: p.at += 1
+	first ~= true
+	while true:
+		if p.at >= p.pat.len:
+			problem(p, "unclosed [")
+			return node(p, T_EMPTY, 0, 0)
+		c byte := p.pat[p.at]
+		if c == ']' && !first:
+			p.at += 1
+			break
+		first = false
+		p.at += 1
+		lo ~= c
+		if c == '\\':
+			if p.at >= p.pat.len:
+				problem(p, "trailing backslash")
+				return node(p, T_EMPTY, 0, 0)
+			if class_letter(on, p.pat[p.at]):
+				p.at += 1
+				continue
+			lo = escape_byte(p)
+		hi ~= lo
+		if p.at + 1 < p.pat.len && p.pat[p.at] == '-' && p.pat[p.at + 1] != ']':
+			p.at += 1
+			hc byte := p.pat[p.at]
+			p.at += 1
+			hi = hc
+			if hc == '\\':
+				if p.at >= p.pat.len:
+					problem(p, "trailing backslash")
+					return node(p, T_EMPTY, 0, 0)
+				hi = escape_byte(p)
+			if hi < lo:
+				problem(p, "range out of order")
+				return node(p, T_EMPTY, 0, 0)
+		v ~= lo as int
+		while v <= hi as int:
+			on[v] = true
+			v += 1
+	if negate:
+		for v 256: on[v] = !on[v]
+	set_node(p, ByteSet{on})
+
+one_byte(p Parser&, c byte) int:
+	on bool[256] ~= [false; 256]
+	on[c] = true
+	set_node(p, ByteSet{on})
+
+atom(p Parser&) int:
+	c byte := p.pat[p.at]
+	p.at += 1
+	if c == '(':
+		index ~= -1
+		if p.at + 1 < p.pat.len && p.pat[p.at] == '?' && p.pat[p.at + 1] == ':':
+			p.at += 2
+		else:
+			index = p.groups
+			p.groups += 1
+		inner := alternation(p)
+		if !next_is(p, ')'):
+			problem(p, "missing )")
+			return inner
+		p.at += 1
+		if index < 0: return inner
+		return node(p, T_GROUP, inner, index)
+	if c == '[': return parse_class(p)
+	if c == '.':
+		on bool[256] ~= [true; 256]
+		on['\n'] = false
+		return set_node(p, ByteSet{on})
+	if c == '^': return node(p, T_ASSERT, AT_START, 0)
+	if c == '$': return node(p, T_ASSERT, AT_END, 0)
+	if c == '*' || c == '+' || c == '?':
+		p.at -= 1
+		problem(p, "nothing to repeat")
+		return node(p, T_EMPTY, 0, 0)
+	if c == '\\':
+		if p.at >= p.pat.len:
+			problem(p, "trailing backslash")
+			return node(p, T_EMPTY, 0, 0)
+		e byte := p.pat[p.at]
+		if e == 'b' || e == 'B':
+			p.at += 1
+			return node(p, T_ASSERT, if e == 'b' { AT_WORD_EDGE } else { AT_NOT_WORD_EDGE }, 0)
+		cls bool[256] ~= [false; 256]
+		if class_letter(cls, e):
+			p.at += 1
+			return set_node(p, ByteSet{cls})
+		return one_byte(p, escape_byte(p))
+	one_byte(p, c)
+
+# a decimal number at p.at, or -1 when there is none
+number(p Parser&) int:
+	v ~= -1
+	while p.at < p.pat.len && p.pat[p.at] >= '0' && p.pat[p.at] <= '9':
+		v = (if v < 0 { 0 } else { v }) * 10 + (p.pat[p.at] - '0') as int
+		p.at += 1
+	v
+
+# {m}, {m,} or {m,n} at p.at: lo, hi (-1 for no bound), and whether it was one
+counted(p Parser&) int, int, bool:
+	back := p.at
+	p.at += 1
+	lo := number(p)
+	if lo < 0:
+		p.at = back
+		return 0, 0, false
+	hi ~= lo
+	if next_is(p, ','):
+		p.at += 1
+		hi = number(p)
+	if !next_is(p, '}'):
+		p.at = back
+		return 0, 0, false
+	p.at += 1
+	return lo, hi, true
+
+repetition(p Parser&) int:
+	t ~= atom(p)
+	while more(p):
+		c byte := p.pat[p.at]
+		lo ~= 0; hi ~= -1
+		if c == '*':
+			p.at += 1
+		else if c == '+':
+			lo = 1
+			p.at += 1
+		else if c == '?':
+			hi = 1
+			p.at += 1
+		else if c == '{':
+			a, b, ok := counted(p)
+			if !ok: break
+			lo = a; hi = b
+			if hi >= 0 && hi < lo:
+				problem(p, "bad repeat bounds")
+				break
+		else:
+			break
+		lazy := next_is(p, '?')
+		if lazy: p.at += 1
+		r := node(p, T_REP, t, 0)
+		p.tree[r].lo = lo
+		p.tree[r].hi = hi
+		p.tree[r].greedy = !lazy
+		t = r
+	t
+
+concatenation(p Parser&) int:
+	t ~= -1
+	while more(p) && !next_is(p, '|') && !next_is(p, ')'):
+		r := repetition(p)
+		t = if t < 0 { r } else { node(p, T_CAT, t, r) }
+	if t < 0 { node(p, T_EMPTY, 0, 0) } else { t }
+
+alternation(p Parser&) int:
+	t ~= concatenation(p)
+	while more(p) && next_is(p, '|'):
+		p.at += 1
+		r := concatenation(p)
+		t = node(p, T_ALT, t, r)
+	t
+
+op(re Regex&, kind int, a int, b int) int:
+	re.prog.push(Op{kind, a, b})
+	re.prog.len - 1
+# a split at s that prefers `into` when greedy and `past` otherwise
+order(re Regex&, s int, into int, past int, greedy bool):
+	re.prog[s].a = if greedy { into } else { past }
+	re.prog[s].b = if greedy { past } else { into }
+
+# lays out tree node t at the end of the program; returns the new length
+lay_out(re Regex&, tree Tree[:], t int) int:
+	n := tree[t]
+	if n.kind == T_SET:
+		op(re, OP_SET, n.a, 0)
+	else if n.kind == T_CAT:
+		lay_out(re, tree, n.a)
+		lay_out(re, tree, n.b)
+	else if n.kind == T_ALT:
+		s := op(re, OP_SPLIT, 0, 0)
+		lay_out(re, tree, n.a)
+		j := op(re, OP_JMP, 0, 0)
+		order(re, s, s + 1, re.prog.len, true)
+		lay_out(re, tree, n.b)
+		re.prog[j].a = re.prog.len
+	else if n.kind == T_GROUP:
+		op(re, OP_SAVE, 2 * n.b, 0)
+		lay_out(re, tree, n.a)
+		op(re, OP_SAVE, 2 * n.b + 1, 0)
+	else if n.kind == T_ASSERT:
+		op(re, OP_ASSERT, n.a, 0)
+	else if n.kind == T_REP:
+		for k n.lo: lay_out(re, tree, n.a)
+		if n.hi < 0:
+			top := op(re, OP_SPLIT, 0, 0)
+			lay_out(re, tree, n.a)
+			op(re, OP_JMP, top, 0)
+			order(re, top, top + 1, re.prog.len, n.greedy)
+		else if n.hi > n.lo:
+			holes int[>..] ~= []
+			for k n.hi - n.lo:
+				holes.push(op(re, OP_SPLIT, 0, 0))
+				lay_out(re, tree, n.a)
+			for s holes: order(re, s, s + 1, re.prog.len, n.greedy)
+	re.prog.len
+
+build(pattern byte[:], err byte[>..]&) Regex:
+	p ~= Parser{pat: pattern}
+	root := alternation(p)
+	if p.err.len == 0 && p.at < pattern.len: problem(p, "unmatched )")
+	re ~= Regex{}
+	err.clear()
+	if p.err.len > 0:
+		err.append(p.err[..])
+		re.prog.push(Op{OP_SET, 0, 0})
+		re.sets.push(ByteSet{[false; 256]})
+		return re
+	re.groups = p.groups
+	re.sets.append(p.sets[..])
+	op(re, OP_SAVE, 0, 0)
+	lay_out(re, p.tree[..], root)
+	op(re, OP_SAVE, 1, 0)
+	op(re, OP_MATCH, 0, 0)
+	re
+
+# compiles pattern; a bad pattern stops the program with the reason
+compile(pattern byte[:]) Regex:
+	err byte[>..] ~= []
+	re := build(pattern, err)
+	if err.len > 0: abort(err[..])
+	re
+# compiles pattern; a bad pattern leaves the reason in err and matches nothing
+compile(pattern byte[:], err byte[>..]&) Regex: build(pattern, err)
+
+# ---- the machine
+
+struct Threads { pcs int[>..] = [], slots int[>..] = [] }
+struct Machine { now Threads, later Threads, seen int[>..], stamp int, work int[>..], best int[>..], width int }
+
+holds(cond int, text byte[:], i int) bool:
+	if cond == AT_START: return i == 0
+	if cond == AT_END: return i == text.len
+	before := i > 0 && word_byte(text[i - 1])
+	after := i < text.len && word_byte(text[i])
+	(before != after) == (cond == AT_WORD_EDGE)
+
+# follows every jump from pc at position i, queueing the threads that wait
+# on a byte or have matched, in priority order
+follow(re Regex&, m Machine&, into Threads&, pc int, text byte[:], i int) int:
+	if m.seen[pc] == m.stamp: return into.pcs.len
+	m.seen[pc] = m.stamp
+	o := re.prog[pc]
+	if o.kind == OP_JMP:
+		follow(re, m, into, o.a, text, i)
+	else if o.kind == OP_SPLIT:
+		follow(re, m, into, o.a, text, i)
+		follow(re, m, into, o.b, text, i)
+	else if o.kind == OP_SAVE:
+		old := m.work[o.a]
+		m.work[o.a] = i
+		follow(re, m, into, pc + 1, text, i)
+		m.work[o.a] = old
+	else if o.kind == OP_ASSERT:
+		if holds(o.a, text, i): follow(re, m, into, pc + 1, text, i)
+	else:
+		into.pcs.push(pc)
+		into.slots.append(m.work[..])
+	into.pcs.len
+
+machine(re Regex&) Machine:
+	w := 2 * re.groups
+	seen int[>..] ~= []
+	seen.resize(re.prog.len, -1)
+	work int[>..] ~= []
+	work.resize(w, -1)
+	best int[>..] ~= []
+	best.resize(w, -1)
+	Machine{Threads{}, Threads{}, seen, 0, work, best, w}
+
+# the first match starting at or after from; its slots are left in m.best
+run(re Regex&, m Machine&, text byte[:], from int) bool:
+	m.now.pcs.clear(); m.now.slots.clear()
+	found ~= false
+	i ~= from
+	m.stamp += 1
+	while true:
+		if !found:
+			for k m.width: m.work[k] = -1
+			follow(re, m, m.now, 0, text, i)
+		if m.now.pcs.len == 0:
+			# no thread lives here; a new start may still work further on
+			if found || i >= text.len: break
+			i += 1
+			m.stamp += 1
+			continue
+		m.stamp += 1
+		m.later.pcs.clear(); m.later.slots.clear()
+		for t m.now.pcs.len:
+			pc := m.now.pcs[t]
+			o := re.prog[pc]
+			if o.kind == OP_MATCH:
+				for k m.width: m.best[k] = m.now.slots[t * m.width + k]
+				found = true
+				break
+			if i < text.len && re.sets[o.a].members[text[i]]:
+				for k m.width: m.work[k] = m.now.slots[t * m.width + k]
+				follow(re, m, m.later, pc + 1, text, i + 1)
+		if i >= text.len: break
+		m.now.pcs = m.later.pcs
+		m.now.slots = m.later.slots
+		i += 1
+	found
+
+# start and end of the first match, or -1, -1
+find(re Regex&, text byte[:]) int, int:
+	m ~= machine(re)
+	if run(re, m, text, 0): return m.best[0], m.best[1]
+	return -1, -1
+matches(re Regex&, text byte[:]) bool:
+	m ~= machine(re)
+	run(re, m, text, 0)
+
+# walks the matches left to right without overlap. An empty match is not
+# taken where the previous match ended; the scan steps one byte instead
+each_slots<F>(re Regex&, text byte[:]):
+	m ~= machine(re)
+	at ~= 0
+	last ~= -1
+	while at <= text.len && run(re, m, text, at):
+		s := m.best[0]; e := m.best[1]
+		if s == e && e == last:
+			at = e + 1
+			continue
+		F(m.best[..])
+		last = e
+		at = if e > s { e } else { e + 1 }
+
+# calls the block with the start and end of each match
+each_match<F>(re Regex&, text byte[:]):
+	each_slots(re, text) { sl => F(sl[0], sl[1]) }
+count(re Regex&, text byte[:]) int:
+	n ~= 0
+	each_slots(re, text) { sl => n += 1 }
+	n
+
+# a match with its groups: group 0 is the whole match, an unset group is empty
+struct Captures { text const byte[:], slots int[>..] }
+group(c Captures, k int) const byte[:]:
+	if k < 0 || 2 * k + 1 >= c.slots.len || c.slots[2 * k] < 0: return c.text[0..0]
+	c.text[c.slots[2 * k]..c.slots[2 * k + 1]]
+each_captures<F>(re Regex&, text byte[:]):
+	each_slots(re, text) { sl => c ~= Captures{text, []}; c.slots.append(sl); F(c) }
+# copies text to out with each match replaced by what the block appends
+format_replaced<F>(out byte[>..]&, re Regex&, text byte[:]):
+	done ~= 0
+	each_slots(re, text) { sl => out.append(text[done..sl[0]]); c ~= Captures{text, []}; c.slots.append(sl); F(c); done = sl[1] }
+	out.append(text[done..])

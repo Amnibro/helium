@@ -1,0 +1,446 @@
+# json: writing JSON text, a pull reader, and a small document tree.
+namespace json
+use std
+
+# ---- writing
+
+HEXCHARS := "0123456789abcdef"
+
+# s with the escapes JSON needs: quote, backslash and control bytes
+format_escaped(out byte[>..]&, s byte[:]):
+	for c s:
+		if c == '"': out.append("\\\"")
+		else if c == '\\': out.append("\\\\")
+		else if c == '\n': out.append("\\n")
+		else if c == '\r': out.append("\\r")
+		else if c == '\t': out.append("\\t")
+		else if c == 8: out.append("\\b")
+		else if c == 12: out.append("\\f")
+		else if c < 0x20:
+			out.append("\\u00")
+			out.push(HEXCHARS[(c >> 4) as int])
+			out.push(HEXCHARS[(c & 15) as int])
+		else: out.push(c)
+format_string(out byte[>..]&, s byte[:]):
+	out.push('"')
+	format_escaped(out, s)
+	out.push('"')
+# a member name and its colon
+format_key(out byte[>..]&, key byte[:]):
+	format_string(out, key)
+	out.push(':')
+format_bool(out byte[>..]&, b bool): out.append(if b { "true" } else { "false" })
+format_null(out byte[>..]&): out.append("null")
+format_int(out byte[>..]&, v int): format(out, v)
+
+# the shortest digits that read back as v (no sign, no zeros at the end)
+# and the power of ten after the first of them: v = d.ddd * 10^e
+digits_of(v real, digits byte[>..]&) int:
+	t byte[>..] ~= []
+	format(t, std_fabs(v))
+	digits.clear()
+	e ~= 0; seen_point ~= false; lead ~= 0; exp_at ~= -1
+	for c, i t:
+		if c == 'e' || c == 'E':
+			exp_at = i
+			break
+		if c == '.':
+			seen_point = true
+		else if digits.len == 0 && c == '0':
+			if seen_point: lead += 1
+		else:
+			digits.push(c)
+			if !seen_point: e += 1
+	shift ~= 0
+	if exp_at >= 0:
+		s, ok := parse_int(t[exp_at + 1..])
+		shift = s
+	while digits.len > 1 && digits[digits.len - 1] == '0': digits.pop()
+	if digits.len == 0:
+		digits.push('0')
+		return 0
+	(if e > 0 { e - 1 } else { -1 - lead }) + shift
+
+# a finite number in its shortest exact form: plain decimals for 1e-5 up to
+# 1e16, with ".0" on whole values, and d.ddde<n> outside that range. JSON has
+# no NaN or infinity, so those come out as null
+format_number(out byte[>..]&, v real):
+	if v != v || v - v != 0.0:
+		out.append("null")
+		return
+	if std_bits(v) >> 63 == 1: out.push('-')
+	if v == 0.0:
+		out.append("0.0")
+		return
+	d byte[>..] ~= []
+	e := digits_of(v, d)
+	if e < -5 || e >= 16:
+		out.push(d[0])
+		if d.len > 1:
+			out.push('.')
+			out.append(d[1..])
+		out.push('e')
+		format(out, e)
+	else if e < 0:
+		out.append("0.")
+		for k -1 - e: out.push('0')
+		out.append(d[..])
+	else if d.len <= e + 1:
+		out.append(d[..])
+		for k e + 1 - d.len: out.push('0')
+		out.append(".0")
+	else:
+		out.append(d[..e + 1])
+		out.push('.')
+		out.append(d[e + 1..])
+
+# ---- reading, one value at a time
+#
+#   r ~= json::reader(text)
+#   json::each_member(r) { key => if key == "n" { n = json::read_int(r) } else { json::skip_value(r) } }
+#   if !json::finish(r): print(json::message(r))
+#
+# The first problem is kept with its byte offset; after it every read
+# returns a zero value and the loops end.
+
+struct Reader { text const byte[:], pos int = 0, error byte[>..] = [], error_at int = -1, key byte[>..] = [] }
+
+reader(text const byte[:]) Reader: Reader{text: text}
+ok(r Reader&) bool: r.error_at < 0
+fail(r Reader&, what const byte[:]):
+	if r.error_at < 0:
+		r.error.append(what)
+		r.error_at = r.pos
+	r.pos = r.text.len
+message(r Reader&) byte[>..]: str("json: ", r.error[..], " at byte ", r.error_at)
+white(c byte) bool: c == ' ' || c == '\t' || c == '\n' || c == '\r'
+# the next byte that is not white space, or 0 at the end
+peek(r Reader&) byte:
+	while r.pos < r.text.len && white(r.text[r.pos]): r.pos += 1
+	if r.pos < r.text.len { r.text[r.pos] } else { 0 }
+# true when the text held one value and nothing after it
+finish(r Reader&) bool:
+	if ok(r) && peek(r) != 0: fail(r, "text after the value")
+	ok(r)
+expect(r Reader&, c byte) bool:
+	if peek(r) != c:
+		m byte[>..] ~= []
+		m.append("expected '")
+		m.push(c)
+		m.push('\'')
+		fail(r, m[..])
+		return false
+	r.pos += 1
+	true
+literal(r Reader&, word const byte[:]) bool:
+	peek(r)
+	if r.pos + word.len <= r.text.len && r.text[r.pos..r.pos + word.len] == word:
+		r.pos += word.len
+		return true
+	fail(r, "expected a value")
+	false
+
+# the extent of a number at r.pos by the JSON grammar; the end and whether
+# it had a fraction or exponent, or -1 when there is no number
+number_end(r Reader&) int, bool:
+	t := r.text
+	i ~= r.pos
+	if i < t.len && t[i] == '-': i += 1
+	if i >= t.len || t[i] < '0' || t[i] > '9': return -1, false
+	if t[i] == '0':
+		i += 1
+	else:
+		while i < t.len && t[i] >= '0' && t[i] <= '9': i += 1
+	real_form ~= false
+	if i < t.len && t[i] == '.':
+		i += 1
+		real_form = true
+		if i >= t.len || t[i] < '0' || t[i] > '9': return -1, false
+		while i < t.len && t[i] >= '0' && t[i] <= '9': i += 1
+	if i < t.len && (t[i] == 'e' || t[i] == 'E'):
+		i += 1
+		real_form = true
+		if i < t.len && (t[i] == '+' || t[i] == '-'): i += 1
+		if i >= t.len || t[i] < '0' || t[i] > '9': return -1, false
+		while i < t.len && t[i] >= '0' && t[i] <= '9': i += 1
+	return i, real_form
+
+read_number(r Reader&) real:
+	peek(r)
+	e, fr := number_end(r)
+	if e < 0:
+		fail(r, "expected a number")
+		return 0.0
+	v, good := parse_flt(r.text[r.pos..e])
+	r.pos = e
+	v
+# a number written as a whole value that fits in an int
+read_int(r Reader&) int:
+	peek(r)
+	e, fr := number_end(r)
+	if e < 0 || fr:
+		fail(r, "expected an integer")
+		return 0
+	v, good := parse_int(r.text[r.pos..e])
+	if !good:
+		fail(r, "integer out of range")
+		return 0
+	r.pos = e
+	v
+read_bool(r Reader&) bool:
+	c := peek(r)
+	if c == 't': return literal(r, "true")
+	if c == 'f': literal(r, "false"); return false
+	fail(r, "expected true or false")
+	false
+read_null(r Reader&) bool: literal(r, "null")
+
+hex4(t byte[:], at int) int:
+	if at + 4 > t.len: return -1
+	v ~= 0
+	for k 4:
+		c := t[at + k]
+		d := if c >= '0' && c <= '9' { (c - '0') as int } else if c >= 'a' && c <= 'f' { (c - 'a') as int + 10 } else if c >= 'A' && c <= 'F' { (c - 'A') as int + 10 } else { -1 }
+		if d < 0: return -1
+		v = v * 16 + d
+	v
+
+# decodes the string at r.pos into into (cleared first); false on a problem
+decode(r Reader&, into byte[>..]&) bool:
+	into.clear()
+	if !expect(r, '"'): return false
+	t := r.text
+	while true:
+		if r.pos >= t.len:
+			fail(r, "unclosed string")
+			return false
+		c := t[r.pos]
+		if c == '"':
+			r.pos += 1
+			return true
+		if c < 0x20:
+			fail(r, "control byte in a string")
+			return false
+		if c != '\\':
+			into.push(c)
+			r.pos += 1
+			continue
+		if r.pos + 1 >= t.len:
+			fail(r, "unclosed string")
+			return false
+		e := t[r.pos + 1]
+		r.pos += 2
+		if e == '"' || e == '\\' || e == '/': into.push(e)
+		else if e == 'n': into.push('\n')
+		else if e == 't': into.push('\t')
+		else if e == 'r': into.push('\r')
+		else if e == 'b': into.push(8)
+		else if e == 'f': into.push(12)
+		else if e == 'u':
+			cp ~= hex4(t, r.pos)
+			if cp < 0:
+				fail(r, "bad \\u escape")
+				return false
+			r.pos += 4
+			if cp >= 0xD800 && cp < 0xDC00 && r.pos + 1 < t.len && t[r.pos] == '\\' && t[r.pos + 1] == 'u':
+				lo := hex4(t, r.pos + 2)
+				if lo >= 0xDC00 && lo < 0xE000:
+					cp = 0x10000 + (cp - 0xD800) * 0x400 + (lo - 0xDC00)
+					r.pos += 6
+			push_utf8(into, cp)
+		else:
+			fail(r, "bad escape")
+			return false
+	false
+
+# the string at r.pos, decoded into scratch
+read_string(r Reader&, scratch byte[>..]&) const byte[:]:
+	decode(r, scratch)
+	scratch[..]
+
+# calls the block with each member name of an object; the block reads or
+# skips the value
+each_member<F>(r Reader&):
+	if !expect(r, '{'): return
+	if peek(r) == '}':
+		r.pos += 1
+		return
+	name byte[>..] ~= []
+	while ok(r):
+		if !decode(r, name) || !expect(r, ':'): return
+		at := r.pos
+		F(name[..])
+		if r.pos == at && ok(r): skip_value(r)
+		c := peek(r)
+		r.pos += 1
+		if c == '}': return
+		if c != ',':
+			r.pos -= 1
+			fail(r, "expected ',' or '}'")
+# calls the block for each element of an array; the block reads or skips it
+each_element<F>(r Reader&):
+	if !expect(r, '['): return
+	if peek(r) == ']':
+		r.pos += 1
+		return
+	while ok(r):
+		at := r.pos
+		F()
+		if r.pos == at && ok(r): skip_value(r)
+		c := peek(r)
+		r.pos += 1
+		if c == ']': return
+		if c != ',':
+			r.pos -= 1
+			fail(r, "expected ',' or ']'")
+
+# steps over one value of any kind; returns whether the reader is still fine
+skip_value(r Reader&) bool:
+	c := peek(r)
+	scratch byte[>..] ~= []
+	if c == '{': each_member(r) { k => skip_value(r) }
+	else if c == '[': each_element(r) { skip_value(r) }
+	else if c == '"': decode(r, scratch)
+	else if c == 't' || c == 'f': read_bool(r)
+	else if c == 'n': read_null(r)
+	else if c == '-' || c >= '0' && c <= '9': read_number(r)
+	else: fail(r, "expected a value")
+	ok(r)
+
+# ---- a whole document as a tree
+#
+# Nodes live in one array and point at each other by index (-1 for none):
+# an array or object points at its first child, and every child at the
+# next one. Object members carry their names.
+
+K_NULL := 0
+K_BOOL := 1
+K_INT := 2
+K_NUM := 3
+K_STR := 4
+K_ARR := 5
+K_OBJ := 6
+struct Node { kind int = 0, num real = 0.0, whole int = 0, text byte[>..] = [], name byte[>..] = [], first int = -1, next int = -1, count int = 0 }
+struct Doc { nodes Node[>..] = [] }
+
+add_node(d Doc&, kind int) int:
+	d.nodes.push(Node{kind: kind})
+	d.nodes.len - 1
+
+# links child after prev under parent; returns the child
+attach(d Doc&, parent int, prev int, child int) int:
+	if prev < 0 { d.nodes[parent].first = child } else { d.nodes[prev].next = child }
+	d.nodes[parent].count += 1
+	child
+
+value(r Reader&, d Doc&, depth int) int:
+	if depth > 500:
+		fail(r, "nested too deeply")
+		return -1
+	c := peek(r)
+	if c == '{':
+		n := add_node(d, K_OBJ)
+		last ~= -1
+		each_member(r) { key => k := value(r, d, depth + 1); if k >= 0 { d.nodes[k].name.append(key); last = attach(d, n, last, k) } }
+		return n
+	if c == '[':
+		n := add_node(d, K_ARR)
+		last ~= -1
+		each_element(r) { k := value(r, d, depth + 1); if k >= 0 { last = attach(d, n, last, k) } }
+		return n
+	if c == '"':
+		n := add_node(d, K_STR)
+		s byte[>..] ~= []
+		decode(r, s)
+		d.nodes[n].text.append(s[..])
+		return n
+	if c == 't' || c == 'f':
+		n := add_node(d, K_BOOL)
+		d.nodes[n].whole = if read_bool(r) { 1 } else { 0 }
+		return n
+	if c == 'n':
+		read_null(r)
+		return add_node(d, K_NULL)
+	peek(r)
+	start := r.pos
+	e, fr := number_end(r)
+	if e < 0:
+		fail(r, "expected a value")
+		return -1
+	if !fr:
+		v, fits := parse_int(r.text[start..e])
+		if fits:
+			r.pos = e
+			n := add_node(d, K_INT)
+			d.nodes[n].whole = v
+			d.nodes[n].num = v as real
+			return n
+	n := add_node(d, K_NUM)
+	d.nodes[n].num = read_number(r)
+	n
+
+# parses text into d (cleared first): the root index and "" or -1 and why
+parse(text const byte[:], d Doc&) int, byte[>..]:
+	d.nodes.clear()
+	r ~= reader(text)
+	root := value(r, d, 0)
+	if !finish(r): return -1, message(r)
+	return root, []
+
+# the member of object n named key, or -1
+member(d Doc&, n int, key byte[:]) int:
+	if n < 0 || d.nodes[n].kind != K_OBJ: return -1
+	c ~= d.nodes[n].first
+	while c >= 0:
+		if d.nodes[c].name == key: return c
+		c = d.nodes[c].next
+	-1
+# element k of array n, or -1
+element(d Doc&, n int, k int) int:
+	if n < 0 || d.nodes[n].kind != K_ARR: return -1
+	c ~= d.nodes[n].first
+	i ~= 0
+	while c >= 0 && i < k:
+		c = d.nodes[c].next
+		i += 1
+	c
+# calls the block with each child of n
+each<F>(d Doc&, n int):
+	c ~= if n < 0 { -1 } else { d.nodes[n].first }
+	while c >= 0:
+		F(c)
+		c = d.nodes[c].next
+kind(d Doc&, n int) int: if n < 0 { -1 } else { d.nodes[n].kind }
+as_f64(d Doc&, n int) real, bool:
+	k := kind(d, n)
+	if k == K_NUM || k == K_INT: return d.nodes[n].num, true
+	return 0.0, false
+as_i64(d Doc&, n int) int, bool:
+	if kind(d, n) == K_INT: return d.nodes[n].whole, true
+	return 0, false
+as_bool(d Doc&, n int) bool, bool:
+	if kind(d, n) == K_BOOL: return d.nodes[n].whole == 1, true
+	return false, false
+as_string(d Doc&, n int) const byte[:], bool:
+	if kind(d, n) == K_STR: return d.nodes[n].text[..], true
+	return "", false
+is_null(d Doc&, n int) bool: kind(d, n) == K_NULL
+
+# writes node n back out as compact JSON
+format_node(out byte[>..]&, d Doc&, n int) int:
+	k := kind(d, n)
+	if k == K_OBJ || k == K_ARR:
+		out.push(if k == K_OBJ { '{' } else { '[' })
+		c ~= d.nodes[n].first
+		while c >= 0:
+			if c != d.nodes[n].first: out.push(',')
+			if k == K_OBJ: format_key(out, d.nodes[c].name[..])
+			format_node(out, d, c)
+			c = d.nodes[c].next
+		out.push(if k == K_OBJ { '}' } else { ']' })
+	else if k == K_STR: format_string(out, d.nodes[n].text[..])
+	else if k == K_INT: format(out, d.nodes[n].whole)
+	else if k == K_NUM: format_number(out, d.nodes[n].num)
+	else if k == K_BOOL: format_bool(out, d.nodes[n].whole == 1)
+	else: format_null(out)
+	out.len
