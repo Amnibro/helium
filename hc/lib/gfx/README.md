@@ -41,12 +41,31 @@ s3d::render(target);                 // RGBA8 target; s3d::hdr_target() is the l
 The scene is plain data (`view`, `sun`, `sky`, `look`, `lights`, `items`) that the
 caller edits between frames. After `gltf::reset()` call `s3d::forget()`.
 
+### Motion vectors, TAA and upscaling
+
+The colour pass writes a second target, `s3d::motion_target()` (RGBA16F, render
+size): xy is the screen motion since last frame in uv units (this frame's uv minus
+last frame's, y down), z the view depth, w coverage. Skinned meshes use last frame's
+joint palette; the sky gives camera-rotation motion only.
+
+```
+s3d::temporal = 1;                   // jittered frames accumulated into a history
+s3d::init(1280, 720, 1920, 1080);    // render size, output size: temporal upscaling
+s3d::temporal_reset = true;          // after a camera cut
+```
+
+With `temporal = 1` the projection is offset each frame by a (2, 3) Halton sample
+(`jitter_phases` long) and `shaders/temporal.frag` resolves into the history:
+nearest-sample weighting, a YCoCg neighbourhood clip (`temporal_gamma` standard
+deviations), motion from the nearest surface in 3x3, Catmull-Rom history fetch and a
+blend that rises with motion (`temporal_blend`, `temporal_motion`, `temporal_max`).
+Bloom and the tone curve run at the output size after it.
+
 ## Where later features attach
 
-* **Velocity buffer, TAA/TSR**: every Item keeps `prev_place`, the frame keeps
-  `prev_view_proj`, and `DrawU` already carries `prev_model`; a velocity target is
-  one more colour attachment of the colour pass plus a jitter on `proj_mat` in
-  `setup_view`.
+* **Motion blur, reprojection for SSR/GI**: `motion_target()` already holds per-pixel
+  motion and view depth at render size; the history (`resolved()`) is last frame's
+  anti-aliased HDR image at output size.
 * **GTAO, SH probes, SSR**: the AO prepass already writes view normals + depth
   (`nd`, `nd_depth`); a different AO kernel replaces `ssao.frag` only. The ambient
   term is a single function (`ambient_light()` in `surface.frag`) fed by `Sky`; probe
@@ -131,6 +150,20 @@ caller edits between frames. After `gltf::reset()` call `s3d::forget()`.
      render + submit + fence wait with no readback: wall-clock min / median / p95,
      and GPU time from timestamp queries through the `tools/hc/gputime` Vulkan layer
      (`GPUTIME=0` turns it off).
+   * **Motion vectors.** A moving sphere and a sliding camera are compared with a CPU
+     projection (per-pixel error, sky, view depth), and a skinned animation step
+     must move pixels while a repeated pose moves none.
+   * **Jitter sign.** A sub-pixel feature rendered with each jitter phase must move
+     by the Halton offset, in the same direction.
+   * **TAA.** 60 still frames must settle (frame-to-frame mean abs change over
+     frames 30-59 below 0.5/255, sky excluded); a 40-frame camera slide is compared
+     with a converged still frame at the final pose (ghost fraction: non-sky pixels
+     off by more than 24/255), and the neighbourhood clip turned off is a control
+     that must fail.
+   * **Upscaling (TSR).** 1280x720 rendered, 1920x1080 out, PSNR (sky excluded)
+     against native 1080p TAA; the resolve alone is timed for 30 warmup + 200 frames,
+     one submit each, GPU time from the gputime layer, and must stay under 1 ms
+     (median).
 
 Raw output of each recorded run is in `hc/test/gfx/results/`; `gfxtest.sh` writes
 the header itself (commit, command, driver, GPU, packages) into `$GFX_OUT/results.txt`.
@@ -235,3 +268,6 @@ are reserved but not shaded. Also:
   most gfx modules import `gfx`. Splitting that out is not a small change (hc/TODO.md).
 * glTF data-URI and external-file buffers are implemented but not covered by a test
   fixture.
+* Motion vectors ignore morph-target changes (last frame's weights are not kept),
+  and transparent (blended) surfaces write no motion, so the surface behind them is
+  reprojected.
