@@ -1329,8 +1329,11 @@ const SH_FENCE_POSTS = 6;
 const SH_NEAR2_CASCADE = 0;
 // T1 case (c) and the trail sweep, pre-registered (review2 part B): case (c) uses the
 // GH_* bars; the sweep is a measurement
-const GH_SWEEP_C int[5] = [10, 20, 30, 40, 60];
-const GH_SWEEP_L int[8] = [50, 100, 200, 300, 500, 1000, 2000, 4000];
+var GH_SWEEP_C int[>..] = [10, 20, 30, 40, 60];
+var GH_SWEEP_L int[>..] = [50, 100, 200, 300, 500, 1000, 2000, 4000];
+var GH_TRAIL_LIM = 1000000000;  // the synthetic trail covers the first this many ring pixels
+var GH_QUIET = false;
+var SH_NBOX = 2;               // boxes in the reference: floor, wall, then the near2 fence
 const SH_W = 960;
 const SH_H = 540;
 const SH_BAND = 2;
@@ -1351,6 +1354,8 @@ fn wall_scene() {
 }
 
 fn sh_box(k int) {
+	if k >= 27 && k < 27 + SH_FENCE_POSTS { SH_N[0] = -1.6 + 0.4 * (k - 27) as real; SH_N[1] = -2.3; SH_N[2] = 1.2; SH_N[3] = 0.03; SH_N[4] = 0.3; SH_N[5] = 0.03; return; }
+	if k == 27 + SH_FENCE_POSTS { SH_N[0] = -0.6; SH_N[1] = -2.2; SH_N[2] = 1.2; SH_N[3] = 1.2; SH_N[4] = 0.02; SH_N[5] = 0.02; return; }
 	if k == 25 { SH_N[0] = 0.0; SH_N[1] = -2.7; SH_N[2] = -1.0; SH_N[3] = 3.0; SH_N[4] = 0.1; SH_N[5] = 3.0; }
 	else { SH_N[0] = 0.0; SH_N[1] = 0.0; SH_N[2] = -1.5; SH_N[3] = 9.0; SH_N[4] = 5.0; SH_N[5] = 0.1; }
 }
@@ -1375,7 +1380,7 @@ fn sh_trace(ox real, oy real, oz real, dx real, dy real, dz real, tmax real) rea
 		if t <= 0.0 { t = (-b + s) / dd; }
 		if t > 0.0 && t < best { best = t; SH_HIT = k; }
 	}
-	for k in 2 {
+	for k in SH_NBOX {
 		sh_box(25 + k);
 		var t0 = -1.0e30;
 		var t1 = 1.0e30;
@@ -1554,6 +1559,7 @@ fn sh_png(base const byte[:], v int) byte[>..] {
 	p.append(base);
 	if v == 0 { p.append("_near0"); }
 	if v == 1 { p.append("_near1"); }
+	if v == 3 { p.append("_near2"); }
 	p.append(".png");
 	p
 }
@@ -1630,9 +1636,23 @@ fn shadow_checks() bool {
 	var good = true;
 	var covered int[>..] = [0, 0, 0];
 	let out = gfx::render_target(SH_W, SH_H, gfx::RGBA8);
-	for v in 3 {
-		let vn = if v == 0 { "near0" } else if v == 1 { "near1" } else { "far" };
+	// near2 runs before far: the far view's reference and gating stay for look_taa_checks
+	for vi in 4 {
+		let v = if vi < 2 { vi } else if vi == 2 { 3 } else { 2 };
+		let vn = if v == 0 { "near0" } else if v == 1 { "near1" } else if v == 3 { "near2" } else { "far" };
 		wall_scene();
+		SH_NBOX = 2;
+		if v == 3 {
+			// the near2 fence (renderer and reference): posts and a rail on the floor
+			let fm = shapes::material(linalg::v3(0.5, 0.45, 0.4), 0.0, 0.8);
+			SH_NBOX = 3 + SH_FENCE_POSTS;
+			for k in SH_FENCE_POSTS + 1 {
+				sh_box(27 + k);
+				let b = shapes::cube(float3 { linalg::f(SH_N[3]), linalg::f(SH_N[4]), linalg::f(SH_N[5]) }, fm);
+				s3d::place(s3d::add(b), gfx::translate(float3 { linalg::f(SH_N[0]), linalg::f(SH_N[1]), linalg::f(SH_N[2]) }));
+			}
+			s3d::view.eye = float3 { -0.6, -1.4, 2.2 }; s3d::view.target = float3 { -0.6, -2.6, 0.9 };
+		}
 		if v == 0 { s3d::view.eye = float3 { 0.5, -1.5, 1.0 }; s3d::view.target = float3 { -0.5, -2.6, -1.0 }; }
 		if v == 1 { s3d::view.eye = float3 { -1.0, 0.0, 3.0 }; s3d::view.target = float3 { -1.0, -1.0, -1.5 }; }
 		let sun = s3d::sun.to_sun;
@@ -1658,6 +1678,11 @@ fn shadow_checks() bool {
 			print("gpu: shadows ", vn, " cascade ", c, " mask IoU ", r4(SC_IOU[c]), " (bar >= ", SH_BAR2, ") ", if ok { "PASS" } else { "FAIL" });
 			if !ok { good = false; }
 		}
+		if v == 3 {
+			let g2 = SC_GATED[SH_NEAR2_CASCADE];
+			print("gpu: shadows near2 cascade ", SH_NEAR2_CASCADE, " gated (must be): ", if g2 { "PASS" } else { "FAIL" });
+			if !g2 { good = false; }
+		}
 		// control: shadows off
 		sh_score(vn, "control shadows off", off[..], off[..], false);
 		if !sh_control(vn, "shadows off", true) { good = false; }
@@ -1678,7 +1703,17 @@ fn shadow_checks() bool {
 		let son = sh_direct(out, true, n_sh[..]);
 		s3d::shadow_test_shift = float3 { 0.0, 0.0, 0.0 };
 		sh_score(vn, "control shift", off[..], son[..], false);
-		if !sh_control(vn, "shadow map shifted ~5 px", true) { good = false; }
+		if v == 0 || v == 3 {
+			// pre-registered (part B): near0 requires cascade 1 (cascade 0 reported, little
+			// edge there); near2 requires cascade 0; other gated cascades reported
+			let rc = if v == 0 { 1 } else { SH_NEAR2_CASCADE };
+			let caught = SC_GATED[rc] && SC_IOU[rc] < SH_BAR2;
+			for c in 3 { if SC_GATED[c] && c != rc { print("gpu: shadows ", vn, " control (shadow map shifted ~5 px) cascade ", c, " IoU ", r4(SC_IOU[c]), " (reported, not gated)"); } }
+			print("gpu: shadows ", vn, " control (shadow map shifted ~5 px): cascade ", rc, if SC_GATED[rc] { " gated" } else { " NOT gated" }, ", IoU ", r4(SC_IOU[rc]), " must be below ", SH_BAR2, ": ", if caught { "FAILS as required" } else { "NOT CAUGHT" });
+			if !caught { good = false; }
+		} else {
+			if !sh_control(vn, "shadow map shifted ~5 px", true) { good = false; }
+		}
 		// S3 control 2: the layer-only build's behaviour (every cascade's clear cycles the
 		// map, so only the last cascade drawn survives); required where cascade 0 or 1 is
 		// gated, reported where only cascade 2 is (see the README)
@@ -1700,7 +1735,9 @@ fn shadow_checks() bool {
 		if !sh_control(vn, "sun mirrored in x", true) { good = false; }
 		s3d::debug_view = 0;
 		if v == 2 { let _ = sh_direct(out, true, "shadow_shaded_on.png"); }
+		if v == 3 { let _ = sh_direct(out, true, "shadow_shaded_on_near2.png"); }
 	}
+	SH_NBOX = 2;
 	for c in 3 {
 		print("gpu: shadows cascade ", c, " gated in ", covered[c], " view(s) (must be >= 1) ", if covered[c] > 0 { "PASS" } else { "FAIL" });
 		if covered[c] == 0 { good = false; }
@@ -1918,8 +1955,9 @@ fn gh_wall_texture() int {
 // pose j (0..GH_MOVES): case 0 moves the grid by gh_off(j), case 1 the camera
 fn gh_pose(cs int, j int) {
 	let o = gh_off(j);
-	let go = if cs == 0 { o } else { 0.0 };
-	let co = if cs == 1 { o } else { 0.0 };
+	// case 2 (c): the grid +o and the camera -o at the same time
+	let go = if cs == 0 || cs == 2 { o } else { 0.0 };
+	let co = if cs == 1 { o } else if cs == 2 { -o } else { 0.0 };
 	for k in 25 { s3d::place(GH_ITEMS[k], gfx::translate(float3 { linalg::f(gh_cx(k) + go), linalg::f(gh_cy(k)), 0.0 })); }
 	s3d::view.eye = float3 { linalg::f(co), 0.0, linalg::f(GH_EYE_Z) };
 	s3d::view.target = float3 { linalg::f(co), 0.0, 0.0 };
@@ -2005,8 +2043,8 @@ fn gh_band(cs int) int, int {
 	GH_SPH.clear();
 	let th = tan(GH_FOV * 0.5);
 	let asp = GH_W as real / GH_H as real;
-	let efx = if cs == 1 { gh_off(GH_MOVES) } else { 0.0 };
-	let sfx = if cs == 0 { gh_off(GH_MOVES) } else { 0.0 };
+	let efx = if cs == 1 { gh_off(GH_MOVES) } else if cs == 2 { -gh_off(GH_MOVES) } else { 0.0 };
+	let sfx = if cs == 0 || cs == 2 { gh_off(GH_MOVES) } else { 0.0 };
 	let wd = GH_EYE_Z - GH_WALL_Z;
 	for y in GH_H {
 		for x in GH_W {
@@ -2031,8 +2069,8 @@ fn gh_band(cs int) int, int {
 				let wy = wd * dy;
 				var cov = false;
 				for j in GH_MOVES {
-					let ejx = if cs == 1 { gh_off(j) } else { 0.0 };
-					let sj = if cs == 0 { gh_off(j) } else { 0.0 };
+					let ejx = if cs == 1 { gh_off(j) } else if cs == 2 { -gh_off(j) } else { 0.0 };
+					let sj = if cs == 0 || cs == 2 { gh_off(j) } else { 0.0 };
 					if gh_hits(ejx, 0.0, GH_EYE_Z, wx - ejx, wy, GH_WALL_Z - GH_EYE_Z, 1.0, sj) { cov = true; break; }
 				}
 				if !cov { all = false; break; }
@@ -2063,11 +2101,11 @@ fn gh_band(cs int) int, int {
 	return band, ring;
 }
 
-fn gh_case(cs int) const byte[:] { if cs == 0 { "(a) grid moves" } else { "(b) camera moves" } }
+fn gh_case(cs int) const byte[:] { if cs == 0 { "(a) grid moves" } else if cs == 1 { "(b) camera moves" } else { "(c) grid and camera move" } }
 fn gh_name(cs int, base const byte[:]) byte[>..] {
 	var p byte[>..] = [];
 	p.append("ghost_");
-	p.append(if cs == 0 { "a_" } else { "b_" });
+	p.append(if cs == 0 { "a_" } else if cs == 1 { "b_" } else { "c_" });
 	p.append(base);
 	p.append(".png");
 	p
@@ -2085,12 +2123,15 @@ fn gh_score(cs int, label const byte[:], px const byte[:], ref const byte[:], ad
 	var n = 0;
 	var sum = 0;
 	var big = 0;
+	var rn = 0;
 	for i in GH_W * GH_H {
 		if GH_BAND[i] == 0 { continue; }
 		var e = 0;
+		let tr = add > 0 && GH_BAND[i] == 2 && rn < GH_TRAIL_LIM;
+		if GH_BAND[i] == 2 { rn += 1; }
 		for c in 3 {
 			var a = px[i * 4 + c] as int;
-			if add > 0 && GH_BAND[i] == 2 { a = min(a + add, 255); }
+			if tr { a = min(a + add, 255); }
 			let d = a - ref[i * 4 + c] as int;
 			e = max(e, if d < 0 { -d } else { d });
 		}
@@ -2109,8 +2150,43 @@ fn gh_score(cs int, label const byte[:], px const byte[:], ref const byte[:], ad
 	let mean = sum as real / max(n, 1) as real;
 	GH_MEAN = mean;
 	let ok = n > 0 && mean <= GH_MEAN_BAR && p99 as real <= GH_P99_BAR && big <= GH_BIG_MAX;
-	print("gpu: ghost case ", gh_case(cs), " ", label, ": band ", n, " px, mean ", r3(mean), "/255 (bar <= ", GH_MEAN_BAR, "), p99 ", p99, "/255 (bar <= ", GH_P99_BAR, "), above ", GH_BIG_ERR, "/255 ", big, " px (bar <= ", GH_BIG_MAX, "): ", if ok { "within all bars" } else { "outside a bar" });
+	if !GH_QUIET { print("gpu: ghost case ", gh_case(cs), " ", label, ": band ", n, " px, mean ", r3(mean), "/255 (bar <= ", GH_MEAN_BAR, "), p99 ", p99, "/255 (bar <= ", GH_P99_BAR, "), above ", GH_BIG_ERR, "/255 ", big, " px (bar <= ", GH_BIG_MAX, "): ", if ok { "within all bars" } else { "outside a bar" }); }
 	ok
+}
+
+fn gh_sm(n int) byte[>..] { if n < 0 { var o byte[>..] = []; o.append("none"); o } else { gh_istr(n) } }
+fn gh_istr(n0 int) byte[>..] {
+	var d byte[>..] = [];
+	var n = n0;
+	if n == 0 { d.push(48 as byte); }
+	while n > 0 { d.push((48 + n % 10) as byte); n = n / 10; }
+	var o byte[>..] = [];
+	var k = d.len;
+	while k > 0 { k -= 1; o.push(d[k]); }
+	o
+}
+
+// trail sensitivity (pre-registered measurement, part B): +C/255 on the first L ring
+// pixels in raster order of the passing frame, C x L swept; reports what fails a bar
+fn gh_sweep(cs int, px const byte[:], ref const byte[:], nr int) {
+	GH_QUIET = true;
+	for ci in GH_SWEEP_C.len {
+		let c = GH_SWEEP_C[ci];
+		var line byte[>..] = [];
+		var smallest = -1;
+		for li in GH_SWEEP_L.len {
+			let l = min(GH_SWEEP_L[li], nr);
+			GH_TRAIL_LIM = l;
+			let pass = gh_score(cs, "sweep", px, ref, c);
+			line.append(" L=");
+			line.append(gh_istr(l));
+			line.append(if pass { ":missed" } else { ":caught" });
+			if !pass && smallest < 0 { smallest = l; }
+		}
+		print("gpu: ghost case ", gh_case(cs), " trail sweep (measurement) C=", c, "/255:", line[..], "; smallest caught L ", gh_sm(smallest)[..], " (ring ", nr, " px)");
+	}
+	GH_TRAIL_LIM = 1000000000;
+	GH_QUIET = false;
 }
 
 fn gh_save_band(name const byte[:]) {
@@ -2179,7 +2255,7 @@ fn ghost_checks() bool {
 	let keep_r = s3d::temporal_depth_reject;
 	let keep_m = s3d::temporal_motion_scale;
 	let out = gfx::render_target(GH_W, GH_H, gfx::RGBA8);
-	for cs in 2 {
+	for cs in 3 {
 		ghost_scene(false);
 		s3d::init(GH_W, GH_H);
 		let nb, nr = gh_band(cs);
@@ -2224,7 +2300,20 @@ fn ghost_checks() bool {
 		let tp = gh_score(cs, "synthetic trail (+30/255 on the ring of the shipped frame)", px[..], ref[..], GH_TRAIL);
 		print("gpu: ghost case ", gh_case(cs), " synthetic 1 px trail (", nr, " px at +", GH_TRAIL, "/255) must fail a bar: ", if tp { "NOT CAUGHT" } else { "FAILS as required" });
 		if tp { good = false; }
+		gh_sweep(cs, px[..], ref[..], nr);
 	}
+	// case (c) with the shipped defaults (pre-registered, part B)
+	ghost_scene(true);
+	shipped_look();
+	s3d::init(GH_W, GH_H);
+	let nbc, nrc = gh_band(2);
+	let refc = gh_reference(2, out);
+	gh_png(out, "ghost_c_defaults_reference.png");
+	let pxc = gh_frames(2, out);
+	gh_png(out, "ghost_c_defaults_shipped.png");
+	let okc = gh_score(2, "shipped defaults (lit; shadows, ssao, bloom on)", pxc[..], refc[..], 0);
+	print("gpu: ghost case (c) with the shipped defaults (band ", nbc, " px, ring ", nrc, " px): ", if okc { "PASS" } else { "FAIL" });
+	if !okc { good = false; }
 	// the shipped defaults (shadows, SSAO, bloom on), lit, camera moving
 	ghost_scene(true);
 	shipped_look();
