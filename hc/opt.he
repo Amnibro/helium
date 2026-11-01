@@ -103,7 +103,7 @@ evd(fi int):
 
 VLN ~= 4
 # Vector lane count shared by uaj (jam factor), slp (outer-loop packing) and ipk (integer lanes).
-# 4 = one ymm of doubles. 8 (zmm) needs vecem support first, so nothing sets it yet; the sqrt-pair
+# 4 = one ymm of doubles (default, --v3). 8 = one zmm: set by hc.he under --v4/--vhost unless HC_VLN4 is set; the sqrt-pair
 # and horizontal-sum groups in slp stay 4-lane only and are skipped when VLN != 4.
 
 uaj(fi int):
