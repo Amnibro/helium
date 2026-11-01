@@ -56,6 +56,10 @@ var look Look = Look { exposure: 1.0, white: 6.0, bloom: 0.6, bloom_cut: 1.2, de
 // Debug view for the colour pass: 0 shaded; 1 shading normal; 2 vertex normal;
 // 3 tangent; 4 ambient term; 5 direct light; 6 occlusion; 7 base colour.
 var debug_view = 0;
+// Multiple-scattering energy compensation of the specular lobe (surface.frag ms_factor).
+var multiscatter = true;
+// Test hook for the furnace control: scales the direct light; 1.0 in normal use.
+var furnace_scale f32 = 1.0;
 var lights Light[>..] = [];
 var items Item[>..] = [];
 var batch Batch[>..] = [];
@@ -531,7 +535,7 @@ fn surface_of(m gltf::Material) SurfaceU {
 		params: f4(m.metallic, m.roughness, m.normal_scale, m.occlusion_strength),
 		alpha: f4(m.alpha_mode as f32, m.alpha_cutoff, if m.double_sided { 1.0 } else { 0.0 }, 0.0),
 		uv_sets: f4(m.base_tex.uv as f32, m.mr_tex.uv as f32, m.normal_tex.uv as f32, m.occlusion_tex.uv as f32),
-		uv_sets2: f4(m.emissive_tex.uv as f32, debug_view as f32, 0.0, 0.0)
+		uv_sets2: f4(m.emissive_tex.uv as f32, debug_view as f32, if multiscatter { 1.0 } else { 0.0 }, furnace_scale)
 	}
 }
 

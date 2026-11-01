@@ -1,5 +1,6 @@
 // Colour pass for glTF metallic-roughness materials.
 #include "lighting.glsl"
+#include "ms_lut.glsl"
 
 layout(location = 0) in vec3 in_world;
 layout(location = 1) in vec3 in_nrm;
@@ -39,12 +40,38 @@ layout(set = 3, binding = 1) uniform Surface {
 	vec4 params;          // x metallic, y roughness, z normal scale, w occlusion strength
 	vec4 alpha;           // x mode (0 opaque, 1 mask, 2 blend), y cutoff, z double sided
 	vec4 uv_sets;         // which UV set each texture reads: base, mr, normal, occlusion
-	vec4 uv_sets2;        // x emissive, y debug view (see scene3d.debug_view)
+	vec4 uv_sets2;        // x emissive, y debug view (see scene3d.debug_view), z multiscatter on, w furnace control scale
 };
 
 layout(location = 0) out vec4 out_rgba;
 
 vec2 pick_uv(float set) { return set > 0.5 ? in_uv.zw : in_uv.xy; }
+
+// Single-scatter directional albedo E(n.v, rough) of the specular lobe with Fresnel = 1,
+// bilinear in ms_lut.glsl (columns are sqrt(n.v), rows roughness).
+float ms_albedo(float n_v, float rough) {
+	float x = sqrt(clamp(n_v, 0.0, 1.0)) * float(MS_N - 1);
+	float y = clamp(rough, 0.0, 1.0) * float(MS_N - 1);
+	int x0 = min(int(x), MS_N - 2);
+	int y0 = min(int(y), MS_N - 2);
+	float fx = x - float(x0);
+	float fy = y - float(y0);
+	int i = y0 * MS_N + x0;
+	float a = mix(MS_E[i], MS_E[i + 1], fx);
+	float b = mix(MS_E[i + MS_N], MS_E[i + MS_N + 1], fx);
+	return mix(a, b, fy);
+}
+
+// Multiple-scattering compensation for the specular lobe. A white (F = 1) lobe reflects
+// E of the incoming energy after one bounce; the rest would leave after further bounces
+// between microfacets, so the lobe is scaled by 1 + F0 (1 / E - 1), which brings a white
+// conductor back to 1 and leaves a low-F0 dielectric almost unchanged. E is floored at
+// 0.25 so the numerical guard in light_term at extreme grazing angles is not amplified.
+vec3 ms_factor(vec3 f0, float n_v, float rough) {
+	if (uv_sets2.z < 0.5) return vec3(1.0);
+	float e = max(ms_albedo(n_v, rough), 0.25);
+	return 1.0 + f0 * (1.0 / e - 1.0);
+}
 
 float sun_visibility(vec3 p, vec3 n) {
 	if (to_sun.w < 0.5) return 1.0;
@@ -132,16 +159,20 @@ void main() {
 	vec3 f0 = mix(vec3(0.04), tint.rgb, metal);
 	vec3 v = normalize(eye.xyz - in_world);
 	vec3 rgb = vec3(0.0);
+	vec3 ms = ms_factor(f0, max(dot(n, v), 1e-4), rough);
 	vec3 l = normalize(to_sun.xyz);
-	rgb += light_term(n, v, l, sun_rgb.rgb, albedo, f0, rough) * sun_visibility(in_world, normalize(in_nrm));
+	rgb += light_term(n, v, l, sun_rgb.rgb, albedo, f0, rough, ms) * sun_visibility(in_world, normalize(in_nrm));
 	int count = int(screen.z);
 	for (int i = 0; i < MAX_LIGHTS; i++) {
 		if (i >= count) break;
 		vec3 d = light_pos[i].xyz - in_world;
 		float dist = length(d);
-		rgb += light_term(n, v, d / max(dist, 1e-4), light_rgb[i].rgb * range_falloff(dist, light_pos[i].w), albedo, f0, rough);
+		rgb += light_term(n, v, d / max(dist, 1e-4), light_rgb[i].rgb * range_falloff(dist, light_pos[i].w), albedo, f0, rough, ms);
 	}
 
+	// furnace control hook (scene3d.furnace_scale, 1 in normal use): scales the direct
+	// light so the furnace test can check that it notices a non-conserving BRDF
+	rgb *= uv_sets2.w;
 	vec3 direct = rgb;
 	vec3 ambient = ambient_light(n, v, l, tint.rgb, metal, rough) * occ * screen.w;
 	rgb += ambient;

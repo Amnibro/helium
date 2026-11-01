@@ -28,7 +28,9 @@ vec3 schlick_f(vec3 f0, float cos_t) {
 }
 
 // Radiance reflected toward v from a light arriving along l with irradiance e.
-vec3 light_term(vec3 n, vec3 v, vec3 l, vec3 e, vec3 albedo, vec3 f0, float rough) {
+// ms scales the specular lobe to put back the energy that single scattering loses
+// (see ms_factor in surface.frag); vec3(1.0) is the plain single-scatter model.
+vec3 light_term(vec3 n, vec3 v, vec3 l, vec3 e, vec3 albedo, vec3 f0, float rough, vec3 ms) {
 	float n_l = max(dot(n, l), 0.0);
 	if (n_l <= 0.0) return vec3(0.0);
 	vec3 h = normalize(v + l);
@@ -36,7 +38,7 @@ vec3 light_term(vec3 n, vec3 v, vec3 l, vec3 e, vec3 albedo, vec3 f0, float roug
 	float n_h = max(dot(n, h), 0.0);
 	float alpha = max(rough * rough, 0.002);
 	vec3 f = schlick_f(f0, max(dot(h, v), 0.0));
-	vec3 spec = f * (ggx_d(n_h, alpha) * smith_g(n_l, n_v, rough) / (4.0 * n_l * n_v + 1e-4));
+	vec3 spec = ms * f * (ggx_d(n_h, alpha) * smith_g(n_l, n_v, rough) / (4.0 * n_l * n_v + 1e-4));
 	vec3 diff = (1.0 - f) * albedo / PI_F;
 	return (diff + spec) * e * n_l;
 }
