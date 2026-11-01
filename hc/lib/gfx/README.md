@@ -307,6 +307,15 @@ reported as a failure and fixed in the renderer, not in the gate.
   `s3d::shadow_test_cycle_all`): at least one gated cascade must fall below 0.98 in
   every view.
 
+* **S5 shadow map in flight.** Layered targets do not cycle by default, so a frame
+  could overwrite the shadow map while an earlier frame still samples it. A pass now
+  takes `cycle` (0 auto, 1 always, 2 never); the shadow pass cycles once, on the
+  first cascade's clear (the whole map is rewritten every frame), and never on the
+  other cascades. Test: six frames with two alternating suns are rendered and
+  submitted without waiting (`gfx::frame`), then flushed; each must equal, byte for
+  byte (max abs diff 0), the same sun rendered alone with a wait. On a driver that
+  serialises the queue this cannot fail; there is no must-fail control.
+
 Raw output of each recorded run is in `hc/test/gfx/results/`; `gfxtest.sh` writes
 the header itself (commit, command, driver, GPU, packages) into `$GFX_OUT/results.txt`.
 With no GPU it prints `SKIPPED (no GPU)` after the CPU checks (`GFX_REQUIRE_GPU=1`
