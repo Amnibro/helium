@@ -298,6 +298,15 @@ reported as a failure and fixed in the renderer, not in the gate.
   cascade only); each of cascades 0, 1 and 2 must be gated in at least one view,
   or the check fails.
 
+* **S3 near-miss shadow controls.** (1) The shadow map is rendered with its
+  cascade matrices shifted along light-space x by about 5 screen pixels at the
+  median depth of each gated cascade's counted pixels (test hook
+  `s3d::shadow_test_shift`, in texels per cascade; sampling is unshifted): every
+  gated (view, cascade) must fall below 0.98. (2) The layer-only build's behaviour
+  (every cascade's clear cycles the whole map, test hook
+  `s3d::shadow_test_cycle_all`): at least one gated cascade must fall below 0.98 in
+  every view.
+
 Raw output of each recorded run is in `hc/test/gfx/results/`; `gfxtest.sh` writes
 the header itself (commit, command, driver, GPU, packages) into `$GFX_OUT/results.txt`.
 With no GPU it prints `SKIPPED (no GPU)` after the CPU checks (`GFX_REQUIRE_GPU=1`

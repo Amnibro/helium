@@ -1097,6 +1097,8 @@ const SH_BAR2 = 0.98;
 const SH_MIN_COUNTED = 20000;  // a (view, cascade) is gated with this many counted pixels
 const SH_MIN_SHADOW = 5000;    // and this many reference-shadow pixels
 const SH_BAR = 0.9;
+// S3, pre-registered: near-miss controls must fail the 0.98 bar
+const SH_SHIFT_PX = 5.0;       // light-space shift, in screen pixels at the median counted depth
 const SH_W = 960;
 const SH_H = 540;
 const SH_BAND = 2;
