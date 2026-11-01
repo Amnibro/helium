@@ -1,0 +1,170 @@
+// Foot-drift test body (entry: anim_drift.amni). See DESIGN.md "Foot drift".
+namespace anim;
+import vec;
+import math;
+import os;
+import anim.math;
+import anim.pose;
+import anim.clip;
+import anim.space;
+import anim.machine;
+import anim.ik;
+import anim.gltf;
+import anim.skin;
+import anim.gold;
+
+let FDT = 1.0 / 60.0;
+struct Foot { ank i32, toe i32 }   // ankle (heel) and its toe child (ball), -1 if none
+
+fn feet(sk Skeleton&, r GoldRig&, ft Foot[2]&) {
+	for f in 2 {
+		ft[f].ank = r.legs[f].ankle;
+		var t byte[..32] = []; t.append("toe"); t.append(if f == 0 { "_l" } else { "_r" });
+		let tj = joint_index(sk, t[..]);
+		ft[f].toe = if tj >= 0 && sk.parent[tj] == ft[f].ank { tj } else { -1 as i32 };
+	}
+}
+
+// Foot drift: how still the planted foot gets in world space while the body
+// moves at a steady speed. Independent of the IK's own contact test and of
+// any height threshold (the hero clips do not put the foot down at its lowest
+// point: on jk-h02 the walk's lowest ankle point is at a 4 m/s pass, and the
+// run's ball is lowest at 12 m/s and 45-55 mm up while the foot is slowest):
+// per frame and foot, the foot speed is the horizontal world speed of the
+// slower of the heel (ankle joint) and the ball (toe joint). A step is a run
+// of frames where that speed is below the body speed (a swing foot is faster
+// than the body, a planted one slower). The plant of a step is its stillest
+// PLANT_N frame (100 ms) window: the mean foot speed over that window. A
+// planted foot scores ~0; a foot that skates with the body ~ body speed.
+//   slip  = worst step's plant speed (m/s); mean = mean over steps
+//   drift = slip x 100 ms (mm the foot moves in its stillest 100 ms)
+//   ratio = slip / body speed (0 planted, 1 the foot moves with the body)
+// Steps cut by the window start or end are not scored.
+let PLANT_N = 6;
+struct Drift { steps i32, slip f32, mean f32, drift_mm f32, ratio f32, body_v f32 }
+
+fn drift_run(sk Skeleton&, r GoldRig&, d MachineDef&, ft Foot[2]&, ik bool, speed f32, skate f32, secs f32, out Drift&) {
+	var ch = default<Character>();
+	gold_char(r, d, ch, V0, 0.0);
+	ch.ik = ik;
+	ch.speed = speed; ch.cmd = speed;
+	out = default<Drift>();
+	let warm = 60;
+	let n = (secs / FDT) as int;
+	var pw float3[>..] = [];   // per frame: foot 0 heel, ball, foot 1 heel, ball (world)
+	var b0 = V0; var b1 = V0;
+	for i in n + warm {
+		gold_update(sk, r, d, ch, FDT, false);
+		// control: slide the whole character forward by skate x speed (an
+		// injected, known foot skate the metric has to report)
+		if skate > 0.0 { ch.xf.t = ch.xf.t + qrot(ch.xf.r, float3 { 0.0, 0.0, skate * speed * FDT }); }
+		if i < warm { continue; }
+		if i == warm { b0 = ch.xf.t; }
+		b1 = ch.xf.t;
+		for f in 2 {
+			for b in 2 {
+				let j = if b == 0 || ft[f].toe < 0 { ft[f].ank } else { ft[f].toe };
+				pw.push(xf_point(ch.xf, ch.model.x[j].t));
+			}
+		}
+	}
+	out.body_v = length(float3 { b1.x - b0.x, 0.0, b1.z - b0.z }) / ((n - 1) as f32 * FDT);
+	let vb = max(out.body_v, 0.3);
+	var sum = 0.0 as f32;
+	for f in 2 {
+		var fs f32[>..] = [];
+		fs.push(1.0e9);
+		for i in 1..n {
+			var v = 1.0e9 as f32;
+			for b in 2 {
+				let a = pw[(i - 1) * 4 + f * 2 + b]; let c = pw[i * 4 + f * 2 + b];
+				v = min(v, length(float3 { c.x - a.x, 0.0, c.z - a.z }) / FDT);
+			}
+			fs.push(v);
+		}
+		var i = 1;
+		while i < n {
+			if fs[i] >= vb { i += 1; continue; }
+			var e = i;
+			while e < n && fs[e] < vb { e += 1; }
+			if i > 1 && e < n && e - i >= PLANT_N {
+				var best = 1.0e9 as f32;
+				for k in i..(e - PLANT_N + 1) {
+					var m = 0.0 as f32;
+					for q in PLANT_N { m += fs[k + q]; }
+					best = min(best, m / PLANT_N as f32);
+				}
+				out.steps += 1; sum += best; out.slip = max(out.slip, best);
+			}
+			i = e;
+		}
+	}
+	if out.steps > 0 { out.mean = sum / out.steps as f32; }
+	out.drift_mm = out.slip * PLANT_N as f32 * FDT * 1000.0;
+	out.ratio = out.slip / vb;
+}
+
+// Gates (DESIGN.md "Foot drift"):
+//  1. blend: inside the band (2.4, 3.0, 3.6 m/s) the slide ratio exceeds the
+//     straight line between the band ends (pure walk at WALK_TOP, pure run at
+//     RUN_LOW) by at most BLEND_EXCESS: the walk/run blend adds little skate
+//     beyond what the two clips have on their own;
+//  2. IK: foot IK never makes the slip worse (<= noIK + IK_TOL x speed);
+//  3. control: an injected skate of SKATE x speed (the whole character slid
+//     forward each frame) must raise the slip by at least 0.5 x SKATE x speed
+//     at every speed (the metric sees skating). SKATE is large because the
+//     clips' own stance feet slide back and forth by up to ~0.6 m/s, which a
+//     small constant push can cancel in the stillest window.
+let BLEND_EXCESS = 0.05;
+let SKATE = 1.0;
+let IK_TOL = 0.02;
+
+fn drift_main(path const byte[:]) i32 {
+	clip_bank_clear();
+	if !glb_open(path) { print("cannot open ", path); return 2; }
+	var sk = default<Skeleton>();
+	glb_skeleton(sk, 0);
+	glb_clips(sk, "", 30.0, "root");
+	var r = default<GoldRig>(); var d = default<MachineDef>();
+	if !gold_setup(sk, "", r, d) { print("setup failed: ", r.err[..]); return 2; }
+	var ft = [default<Foot>(); 2];
+	feet(sk, r, ft);
+	print("foot drift ", path, "  walk ", CLIPS[r.walk].speed, " m/s natural, run ", CLIPS[r.run].speed, " m/s natural, band ", WALK_TOP, "-", RUN_LOW, "  toe joints ", ft[0].toe >= 0 && ft[1].toe >= 0);
+	var sp f32[>..] = [];
+	sp.push(max(CLIPS[r.walk].speed, 0.5)); sp.push(WALK_TOP); sp.push(2.4); sp.push(3.0); sp.push(3.6); sp.push(RUN_LOW); sp.push(RUN_TOP);
+	var res = [default<Drift>(); 32];
+	var fails = 0;
+	for pass in 3 {
+		let ik = pass == 1;
+		let skate = if pass == 2 { SKATE } else { 0.0 };
+		for k in sp.len {
+			var dr = default<Drift>();
+			drift_run(sk, r, d, ft, ik, sp[k], skate, 6.0, dr);
+			res[pass * 8 + k] = dr;
+			print(if pass == 1 { "  IK    " } else if pass == 0 { "  noIK  " } else { "  skate " }, " v ", sp[k], "  body ", dr.body_v, "  steps ", dr.steps, "  slip ", dr.slip, " m/s (mean ", dr.mean, ")  drift ", dr.drift_mm, " mm/100ms  ratio ", dr.ratio);
+			if dr.steps < 4 { print("    FAIL: only ", dr.steps, " scored steps"); fails += 1; }
+		}
+	}
+	// 1. blend excess (noIK), band ends = sp[1] (WALK_TOP) and sp[5] (RUN_LOW)
+	var worst = -1.0 as f32;
+	for k in 2..5 {
+		let t = (sp[k] - sp[1]) / (sp[5] - sp[1]);
+		let line = res[1].ratio + (res[5].ratio - res[1].ratio) * t;
+		let ex = res[k].ratio - line;
+		worst = max(worst, ex);
+		print("  blend v ", sp[k], "  ratio ", res[k].ratio, "  end-line ", line, "  excess ", ex);
+		if ex > BLEND_EXCESS { print("    FAIL: blend excess ", ex, " > ", BLEND_EXCESS); fails += 1; }
+	}
+	// 2. IK not worse; 3. control trips
+	var ik_worst = 0.0 as f32; var ctl_min = 1.0e9 as f32;
+	for k in sp.len {
+		let a = res[k]; let b = res[8 + k]; let c = res[16 + k];
+		ik_worst = max(ik_worst, b.slip - a.slip);
+		if b.slip > a.slip + IK_TOL * sp[k] { print("    FAIL: IK slip ", b.slip, " > noIK ", a.slip, " + ", IK_TOL, " x v at v ", sp[k]); fails += 1; }
+		let up = (c.slip - a.slip) / sp[k];
+		ctl_min = min(ctl_min, up);
+		if up < 0.5 * SKATE { print("    FAIL: control: injected skate ", SKATE, " x v raised the slip by only ", up, " x v at v ", sp[k]); fails += 1; }
+	}
+	print("drift ", if fails == 0 { "PASS" } else { "FAIL" }, "  ", path, "  band ratio 2.4/3.0/3.6 ", res[2].ratio, " ", res[3].ratio, " ", res[4].ratio, "  worst blend excess ", worst, "  IK worst ", ik_worst, " m/s  control min +", ctl_min, " x v");
+	if fails == 0 { 0 } else { 1 }
+}

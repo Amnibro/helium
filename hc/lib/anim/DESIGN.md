@@ -214,6 +214,50 @@ is not implemented; the CPU reference is LBS, so the GPU path is LBS too.
   run through `os.run_command` with output redirected to a private work dir
   that is removed at the end.
 
+## Foot drift (hc/test/anim/anim_drift.amni)
+
+Measures foot sliding, in particular inside the walk/run blend band
+(1.8-4.2 m/s), which the pop metric does not see. It is independent of the
+IK's own contact test and of any foot-height threshold. The hero clips do not
+plant at their lowest point: the lowest ankle point is a mid-swing pass, and
+the run's ball is 45-55 mm up while it is slowest.
+
+* Per 60 Hz frame and foot: foot speed = horizontal world speed of the slower
+  of heel (ankle joint) and ball (its `toe_l`/`toe_r` child). A step is a run
+  of frames with foot speed < body speed (the measured root speed). Its plant
+  is the stillest 6-frame (100 ms) window mean. Steps cut by the window are
+  dropped.
+* Reported per speed: slip = worst step's plant speed (m/s), mean, drift =
+  slip x 100 ms (mm), ratio = slip / body speed. 60 warm-up ticks, then 6 s at
+  each of {walk natural, 1.8, 2.4, 3.0, 3.6, 4.2, 6.0} m/s, in three passes:
+  no IK, IK, and a control that slides the whole character forward by an
+  extra SKATE = 1.0 x speed.
+* Gates:
+  1. Blend excess: the no-IK ratio at 2.4/3.0/3.6, minus the straight line
+     between the ratios at WALK_TOP and RUN_LOW, must be <= 0.05 (the blend
+     must not slip much more than the clips it blends).
+  2. IK slip <= no-IK slip + 0.02 x v.
+  3. Control: the skate pass must raise slip by >= 0.5 x SKATE x v, showing
+     that the metric sees a skating foot. The clips' own stance feet slide
+     back and forth up to ~0.6 m/s, so a smaller push is partly cancelled.
+
+  Gate 1 has no tripping control of its own.
+* Results 2026-11-01: 39/39 PASS; LODs are identical to their base rig.
+  * Band ratio at 2.4/3.0/3.6: 0.053-0.076 / 0.093-0.110 / 0.113-0.130.
+  * Worst blend excess 0.0215 (jk-h04).
+  * IK worst +0.016 m/s (bfme-hr01 at 2.4).
+  * Control min +0.531 x v.
+
+  Findings:
+  * The authored run clip itself slips ~0.13 x v.
+  * IK only reduces slip up to ~2.4 m/s. Above that, the stillest foot speed
+    stays over the IK contact_v of 0.35 m/s, so IK never locks.
+  * Inside the band, the body moves 6-10 % slower than commanded
+    (2.4/3.0/3.6 -> 2.19/2.71/3.37 m/s on jk-h02). The rate match divides by
+    the weight-averaged clip speed, while root motion is duration-weighted.
+
+  Raw output: `hc/test/anim/drift_results_2026-11-01.txt`.
+
 ## Running
 
 `HC_LIB=<repo>/hc/lib build/hcn hc/test/anim/anim_pop.amni -- <file.glb>`.
