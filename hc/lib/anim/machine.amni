@@ -50,7 +50,12 @@ struct Machine {
 	root_v float3,         // its velocity (m/s); a frozen source keeps moving at it
 	frozen_v float3,
 	fired i32,             // transition index fired this tick, or -1
-	frozen Pose, last Pose,
+	ticks i32,
+	// frozen source of an interrupted fade: the last output pose, carried
+	// forward by its last per-tick joint change (frozen_d) with that change
+	// decaying linearly to zero over the fade, so joint velocity stays
+	// continuous at the interrupt instead of dropping to zero.
+	frozen Pose, frozen_d Pose, last Pose, prev Pose,
 }
 
 fn machine_def() MachineDef { default<MachineDef>() }
@@ -172,6 +177,15 @@ fn machine_update(d MachineDef&, m Machine&, dt f32, out Pose&, scratch Pose&, s
 				// interrupted: fade from exactly what was on screen
 				m.frozen = m.last;
 				m.frozen_v = m.root_v;
+				m.frozen_d.n = m.last.n;
+				for j in m.last.n {
+					if m.ticks >= 2 {
+						var q = qmul(m.last.r[j], qconj(m.prev.r[j]));
+						if q.w < 0.0 { q = qneg(q); }
+						m.frozen_d.r[j] = qnorm(q);
+						m.frozen_d.t[j] = m.last.t[j] - m.prev.t[j];
+					} else { m.frozen_d.r[j] = QI; m.frozen_d.t[j] = V0; }
+				}
 				m.src_kind = 2;
 			} else {
 				m.src_kind = 1; m.src = m.cur; m.src_phase = m.phase;
@@ -188,7 +202,7 @@ fn machine_update(d MachineDef&, m Machine&, dt f32, out Pose&, scratch Pose&, s
 	var root = rd;
 	if m.src_kind != 0 {
 		m.fade += dt;
-		let a = smoothstep01(m.fade / max(m.fade_dur, 1.0e-4));
+		let a = smootherstep01(m.fade / max(m.fade_dur, 1.0e-4));
 		if m.src_kind == 1 {
 			let src_mo = d.states[m.src].motion;
 			let srd, sph = eval_motion(d, src_mo, m.params, m.src_phase, dt, scratch2, scratch, acc);
@@ -196,6 +210,11 @@ fn machine_update(d MachineDef&, m Machine&, dt f32, out Pose&, scratch Pose&, s
 			root = srd * (1.0 - a) + rd * a;
 			blend2(scratch2, out, a, out);
 		} else {
+			let k = max(0.0, 1.0 - m.fade / max(m.fade_dur, 1.0e-4));
+			for j in m.frozen.n {
+				m.frozen.r[j] = qnorm(qmul(nlerp(QI, m.frozen_d.r[j], k), m.frozen.r[j]));
+				m.frozen.t[j] = m.frozen.t[j] + m.frozen_d.t[j] * k;
+			}
 			root = m.frozen_v * (dt * (1.0 - a)) + rd * a;
 			blend2(m.frozen, out, a, out);
 		}
@@ -203,7 +222,9 @@ fn machine_update(d MachineDef&, m Machine&, dt f32, out Pose&, scratch Pose&, s
 	}
 	m.root = root;
 	m.root_v = if dt > 0.0 { root / dt } else { V0 };
+	m.prev = m.last;
 	m.last = out;
+	m.ticks += 1;
 }
 
 // Moves x toward target at rate per second (for smooth layer weights/params).

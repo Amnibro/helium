@@ -151,7 +151,7 @@ struct Leg {
 struct PlantCfg {
 	contact_h f32 = 0.04,   // ankle within this of its sole height = contact
 	contact_v f32 = 0.35,   // and moving slower than this (m/s, world)
-	lock_rate f32 = 8.0,    // lock weight change per second (1/8 s fades)
+	lock_rate f32 = 12.0,   // lock weight change per second (1/12 s eased fades; slower lets the lock gap grow)
 	max_drop f32 = 0.35,    // pelvis may drop at most this far
 	pelvis i32 = -1,
 }
@@ -186,7 +186,8 @@ fn plant_feet(sk Skeleton&, p Pose&, m Model&, legs Leg[2]&, ground_y f32[2], ch
 		// ground following: lift/lower the anim ankle by its ground offset
 		var tw = float3 { ank_w.x, ank_w.y + off[i], ank_w.z };
 		let lp = legs[i].lock_pos;
-		let lw = legs[i].lock_w;
+		// eased weight: zero slope at both ends, so lock/release add no velocity step
+		let lw = smootherstep01(legs[i].lock_w);
 		tw = tw + (float3 { lp.x, ground_y[i] + lg.sole + max(h, 0.0), lp.z } - tw) * lw;
 		legs[i].out_w = tw;
 		let t = xf_point(inv, tw);

@@ -135,3 +135,6 @@ fn m4_dir(a M4, p float3) float3 {
 		a.m[2] * p.x + a.m[6] * p.y + a.m[10] * p.z }
 }
 fn smoothstep01(x f32) f32 { let t = clamp(x, 0.0, 1.0); t * t * (3.0 - 2.0 * t) }
+// C2 "smootherstep" 6t^5 - 15t^4 + 10t^3 (Perlin 2002): zero 1st and 2nd
+// derivative at both ends, so a crossfade adds no acceleration kink.
+fn smootherstep01(x f32) f32 { let t = clamp(x, 0.0, 1.0); t * t * t * (t * (t * 6.0 - 15.0) + 10.0) }

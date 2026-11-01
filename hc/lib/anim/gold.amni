@@ -1,0 +1,162 @@
+// anim/gold: the "gold angle" locomotion character used by the tests and
+// the JK / BFME proofs: "blend walk into run above 3 m/s; plant feet".
+// A 1D speed space (idle, walk at its natural speed and stretched to
+// 2.6 m/s, run from 3.4 m/s at a slowed cadence up to 6 m/s, all rate
+// matched), an action state and an interrupting action state, an additive
+// upper-body layer, root motion into a world transform, and two-leg foot
+// planting on gently rolling ground.
+namespace anim;
+import vec;
+import math;
+import anim.math;
+import anim.pose;
+import anim.clip;
+import anim.space;
+import anim.machine;
+import anim.ik;
+import anim.skin;
+
+let P_SPEED = 0;
+let P_ACT = 1;
+let P_ACT2 = 2;
+let WALK_TOP = 2.6;    // walk stretched up to here
+let RUN_LOW = 3.4;     // run from here: the walk->run blend is centred on 3 m/s
+let RUN_TOP = 6.0;
+
+struct GoldRig {
+	idle i32 = -1, walk i32 = -1, run i32 = -1, act i32 = -1, act2 i32 = -1,
+	add_clip i32 = -1,      // additive delta clip (layer)
+	add_w f32 = 0.35,
+	mask Mask,
+	legs Leg[2],
+	pelvis i32 = -1,
+	st_loco i32, st_act i32, st_act2 i32,
+	ok bool,
+	err byte[..96],
+}
+
+fn gold_ground(x f32, z f32) f32 { 0.04 * sin(0.7 * x) * cos(0.5 * z) }
+
+fn find_joint2(sk Skeleton&, a const byte[:], b const byte[:]) i32 {
+	let j = joint_index(sk, a);
+	if j >= 0 { j } else { joint_index(sk, b) }
+}
+fn find_clip2(prefix const byte[:], a const byte[:], b const byte[:]) i32 {
+	var n byte[..96] = [];
+	n.append(prefix); n.append(a);
+	var c = clip_find(n[..]);
+	if c >= 0 { return c as i32; }
+	n.clear(); n.append(prefix); n.append(b);
+	c = clip_find(n[..]);
+	c as i32
+}
+fn gold_fail(r GoldRig&, msg const byte[:]) bool { r.ok = false; r.err.clear(); r.err.append(msg); false }
+
+// Finds clips and joints for a JK (walk_fwd/run_fwd/thigh/calf) or BFME
+// (humanoid_v1_loco_*/thigh/shin) character whose clips were loaded with
+// name prefix `prefix`, and builds the machine.
+fn gold_setup(sk Skeleton&, prefix const byte[:], r GoldRig&, d MachineDef&) bool {
+	r.idle = find_clip2(prefix, "idle", "humanoid_v1_loco_idle");
+	r.walk = find_clip2(prefix, "walk_fwd", "humanoid_v1_loco_walk");
+	r.run = find_clip2(prefix, "run_fwd", "humanoid_v1_loco_run");
+	r.act = find_clip2(prefix, "light_1", "humanoid_v1_combat_attack");
+	r.act2 = find_clip2(prefix, "dodge_fwd", "humanoid_v1_combat_hit");
+	let cidle = find_clip2(prefix, "combat_idle", "humanoid_v1_combat_idle");
+	if r.idle < 0 || r.walk < 0 || r.run < 0 || r.act < 0 || r.act2 < 0 || cidle < 0 { return gold_fail(r, "missing clip"); }
+	var an byte[..96] = [];
+	an.append(prefix); an.append("~add_combat_idle");
+	r.add_clip = make_additive_clip(sk, cidle, r.idle, 0, an[..]) as i32;
+	let spine = find_joint2(sk, "spine_01", "spine_a");
+	if spine < 0 { return gold_fail(r, "no spine"); }
+	mask_clear(r.mask); mask_branch(sk, r.mask, spine, 1.0);
+	r.pelvis = joint_index(sk, "pelvis");
+	var rest = default<Pose>(); var m = default<Model>();
+	rest_pose(sk, rest); fk(sk, rest, m);
+	for side in 2 {
+		let s = if side == 0 { "_l" } else { "_r" };
+		var a byte[..32] = []; a.append("thigh"); a.append(s);
+		var k1 byte[..32] = []; k1.append("calf"); k1.append(s);
+		var k2 byte[..32] = []; k2.append("shin"); k2.append(s);
+		var f byte[..32] = []; f.append("foot"); f.append(s);
+		let hip = joint_index(sk, a[..]);
+		let knee = find_joint2(sk, k1[..], k2[..]);
+		let ank = joint_index(sk, f[..]);
+		if hip < 0 || knee < 0 || ank < 0 { return gold_fail(r, "missing leg joint"); }
+		if sk.parent[knee] != hip || sk.parent[ank] != knee { return gold_fail(r, "leg chain is not direct"); }
+		r.legs[side] = Leg { hip: hip, knee: knee, ankle: ank, sole: m.x[ank].t.y };
+	}
+	// machine
+	d = machine_def();
+	var sp = space1d();
+	let wv = max(CLIPS[r.walk].speed, 0.5);
+	let rv = CLIPS[r.run].speed;
+	space_add(sp, r.idle, 0.0);
+	space_add(sp, r.walk, wv);
+	if WALK_TOP > wv + 0.05 { space_add(sp, r.walk, WALK_TOP); }
+	space_add(sp, r.run, RUN_LOW);
+	if rv > RUN_LOW + 0.05 && rv < RUN_TOP - 0.05 { space_add(sp, r.run, rv); }
+	space_add(sp, r.run, RUN_TOP);
+	sp.rate_match = true; sp.rate_min = 0.5; sp.rate_max = 2.5;
+	space_build(sp);
+	let si = def_space(d, sp);
+	r.st_loco = def_state_space(d, "loco", si, P_SPEED);
+	r.st_act = def_state_clip(d, "act", r.act);
+	r.st_act2 = def_state_clip(d, "act2", r.act2);
+	var t1 = Transition { from: -1, to: r.st_act2, duration: 0.25, consume: P_ACT2 };
+	t1.nc = 1; t1.c[0] = cond(P_ACT2, OP_TRUE);
+	def_trans(d, t1);
+	var t2 = Transition { from: r.st_loco, to: r.st_act, duration: 0.25, consume: P_ACT };
+	t2.nc = 1; t2.c[0] = cond(P_ACT, OP_TRUE);
+	def_trans(d, t2);
+	def_trans(d, Transition { from: r.st_act, to: r.st_loco, exit_time: 0.8, duration: 0.3 });
+	def_trans(d, Transition { from: r.st_act2, to: r.st_loco, exit_time: 0.8, duration: 0.3 });
+	d.entry = r.st_loco;
+	r.ok = true;
+	true
+}
+
+struct Character {
+	m Machine,
+	xf Xf,
+	speed f32, cmd f32,
+	add_t f32,
+	ik bool,
+	legs Leg[2],
+	out Pose, s1 Pose, s2 Pose,
+	acc Accum,
+	model Model,
+	pal Palette,
+}
+fn gold_char(r GoldRig&, d MachineDef&, ch Character&, pos float3, yaw f32) {
+	machine_start(d, ch.m, d.entry);
+	ch.xf = Xf { pos, qyaw(yaw), V1 };
+	ch.legs = r.legs;
+	ch.ik = true;
+}
+// One tick of one character. make_palette also builds its skin palette.
+fn gold_update(sk Skeleton&, r GoldRig&, d MachineDef&, ch Character&, dt f32, make_palette bool) {
+	ch.speed = approach(ch.speed, ch.cmd, 8.0, dt);       // m/s²
+	ch.m.params[P_SPEED] = ch.speed;
+	machine_update(d, ch.m, dt, ch.out, ch.s1, ch.s2, ch.acc);
+	// additive layer (breathing/guard), faded out while running
+	ch.add_t += dt;
+	let ac = r.add_clip as int;
+	sample(ac, ch.add_t, ch.s1);
+	let lw = r.add_w * clamp(1.0 - ch.speed / RUN_LOW, 0.0, 1.0);
+	apply_additive(ch.out, ch.s1, lw, r.mask, true);
+	// root motion into the world
+	ch.xf.t = ch.xf.t + qrot(ch.xf.r, ch.m.root);
+	ch.xf.t.y = gold_ground(ch.xf.t.x, ch.xf.t.z);
+	fk(sk, ch.out, ch.model);
+	if ch.ik {
+		var g = [0.0 as f32; 2];
+		for i in 2 {
+			let w = xf_point(ch.xf, ch.model.x[ch.legs[i].ankle].t);
+			g[i] = gold_ground(w.x, w.z);
+		}
+		var cfg = PlantCfg {};
+		cfg.pelvis = r.pelvis;
+		plant_feet(sk, ch.out, ch.model, ch.legs, g, ch.xf, cfg, dt);
+	}
+	if make_palette { palette(sk, ch.model, ch.pal); }
+}

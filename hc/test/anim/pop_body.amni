@@ -1,0 +1,190 @@
+// Pop test body (entry: anim_pop.amni). See DESIGN.md "Pop test".
+namespace anim;
+import vec;
+import math;
+import os;
+import anim.math;
+import anim.pose;
+import anim.clip;
+import anim.space;
+import anim.machine;
+import anim.ik;
+import anim.gltf;
+import anim.skin;
+import anim.gold;
+
+let DT = 1.0 / 60.0;
+let FLOOR_ROT = 0.0087;   // 0.5 degree
+let FLOOR_TR = 0.002;     // 2 mm
+let HEAD = 1.25;          // headroom over content motion
+
+// rot/tr: per-frame change (joint velocity per 60 Hz frame).
+// arot/atr: second difference = deviation from the previous frame's
+// motion continued (the size of a discontinuity, independent of speed).
+struct JStats { rot f32[128], tr f32[128], arot f32[128], atr f32[128] }
+struct Track { prev Model, prev2 Model, n i32 }
+fn stats_clear(s JStats&) { for j in MAXJ { s.rot[j] = 0.0; s.tr[j] = 0.0; s.arot[j] = 0.0; s.atr[j] = 0.0; } }
+// per-joint model-space change since the previous frame, folded into s
+fn track(sk Skeleton&, tk Track&, m Model&, s JStats&) {
+	if tk.n >= 1 {
+		for j in sk.n {
+			let dr = qangle(m.x[j].r, tk.prev.x[j].r);
+			let dt = length(m.x[j].t - tk.prev.x[j].t);
+			if dr > s.rot[j] { s.rot[j] = dr; }
+			if dt > s.tr[j] { s.tr[j] = dt; }
+		}
+	}
+	if tk.n >= 2 {
+		for j in sk.n {
+			let q1 = tk.prev.x[j].r; let q2 = tk.prev2.x[j].r;
+			let pred = qnorm(qmul(qmul(q1, qconj(q2)), q1));
+			let ar = qangle(m.x[j].r, pred);
+			let at = length(m.x[j].t - tk.prev.x[j].t * 2.0 + tk.prev2.x[j].t);
+			if ar > s.arot[j] { s.arot[j] = ar; }
+			if at > s.atr[j] { s.atr[j] = at; }
+		}
+	}
+	tk.prev2 = tk.prev; tk.prev = m; tk.n += 1;
+}
+fn stats_max(a JStats&, b JStats&) { for j in MAXJ { a.rot[j] = max(a.rot[j], b.rot[j]); a.tr[j] = max(a.tr[j], b.tr[j]); a.arot[j] = max(a.arot[j], b.arot[j]); a.atr[j] = max(a.atr[j], b.atr[j]); } }
+
+struct Verdict { ratio f32, joint i32, is_rot bool, max_rot f32, max_tr f32, rot_joint i32, tr_joint i32 }
+// accel: judge the second difference (discontinuity) instead of velocity
+fn judge(sk Skeleton&, s JStats&, base JStats&, accel bool) Verdict {
+	var v = default<Verdict>();
+	for j in sk.n {
+		let sr = if accel { s.arot[j] } else { s.rot[j] };
+		let st = if accel { s.atr[j] } else { s.tr[j] };
+		let br = if accel { base.arot[j] } else { base.rot[j] };
+		let bt = if accel { base.atr[j] } else { base.tr[j] };
+		let tr = HEAD * br + FLOOR_ROT;
+		let tt = HEAD * bt + FLOOR_TR;
+		let rr = sr / tr; let rt = st / tt;
+		if rr > v.ratio { v.ratio = rr; v.joint = j as i32; v.is_rot = true; }
+		if rt > v.ratio { v.ratio = rt; v.joint = j as i32; v.is_rot = false; }
+		if sr > v.max_rot { v.max_rot = sr; v.rot_joint = j as i32; }
+		if st > v.max_tr { v.max_tr = st; v.tr_joint = j as i32; }
+	}
+	v
+}
+fn report(sk Skeleton&, label const byte[:], v Verdict) {
+	print("    ", label, ": worst ratio ", v.ratio, " (", sk.name[v.joint][..], if v.is_rot { " rot" } else { " pos" },
+		")  max rot ", v.max_rot * 57.29578, " deg (", sk.name[v.rot_joint][..], ")  max pos ", v.max_tr * 1000.0, " mm (", sk.name[v.tr_joint][..], ")");
+}
+
+// Steady state: hold a speed (or a state) with no transitions.
+fn steady(sk Skeleton&, r GoldRig&, d MachineDef&, ik bool, state i32, speed f32, secs f32, out JStats&) {
+	var ch = default<Character>();
+	gold_char(r, d, ch, V0, 0.0);
+	ch.ik = ik;
+	machine_start(d, ch.m, state);
+	ch.speed = speed; ch.cmd = speed;
+	var tk = default<Track>();
+	stats_clear(out);
+	// loops: warm up 30 ticks so IK state settles; actions: measure from the start
+	let warm = if state == r.st_loco { 30 } else { 0 };
+	let n = (secs / DT) as int;
+	for i in n + warm {
+		gold_update(sk, r, d, ch, DT, false);
+		if i >= warm { track(sk, tk, ch.model, out); }
+		if state != r.st_loco && ch.m.cur != state { break; }   // stop before the exit transition
+	}
+}
+
+struct Event { t f32, cmd f32, act i32 }   // act: 0 none, 1 P_ACT, 2 P_ACT2, -1 ramp
+fn run_script(sk Skeleton&, r GoldRig&, d MachineDef&, ik bool, t_from f32, t_to f32, s JStats&, root_acc f32&, raw_speed bool) {
+	var ch = default<Character>();
+	gold_char(r, d, ch, V0, 0.0);
+	ch.ik = ik;
+	var tk = default<Track>();
+	stats_clear(s);
+	var t = 0.0 as f32;
+	var prev_v = V0; var has_v = false;
+	root_acc = 0.0;
+	let n = (t_to / DT) as int;
+	for i in n {
+		t = (i as f32) * DT;
+		// speed command script
+		var cmd = 0.0 as f32;
+		if t < 2.0 { cmd = 0.0; }
+		else if t < 14.0 { cmd = 0.5 * (t - 2.0); }
+		else if t < 15.0 { cmd = 6.0; }
+		else if t < 21.0 { cmd = 6.0 - (t - 15.0); }
+		else if t < 22.0 { cmd = 0.0; }
+		else if t < 25.5 { cmd = 2.0; }
+		else if t < 30.0 { cmd = 5.0; }
+		else { cmd = 0.0; }
+		ch.cmd = cmd;
+		if raw_speed { ch.speed = cmd; }
+		if abs(t - 23.0) < 0.5 * DT || abs(t - 27.0) < 0.5 * DT || abs(t - 31.5) < 0.5 * DT { ch.m.params[P_ACT] = 1.0; }
+		if abs(t - 23.1) < 0.5 * DT || abs(t - 28.5) < 0.5 * DT { ch.m.params[P_ACT2] = 1.0; }
+		gold_update(sk, r, d, ch, DT, false);
+		if t >= t_from {
+			track(sk, tk, ch.model, s);
+			let v = ch.m.root_v;
+			if has_v { root_acc = max(root_acc, length(v - prev_v) / DT); }
+			prev_v = v; has_v = true;
+		}
+	}
+}
+
+fn pop_main(path const byte[:], prefix const byte[:]) i32 {
+	clip_bank_clear();
+	if !glb_open(path) { print("cannot open ", path); return 2; }
+	var sk = default<Skeleton>();
+	glb_skeleton(sk, 0);
+	glb_clips(sk, prefix, 30.0, "root");
+	var r = default<GoldRig>(); var d = default<MachineDef>();
+	if !gold_setup(sk, prefix, r, d) { print("setup failed: ", r.err[..]); return 2; }
+	print("pop test ", path, "  joints ", sk.n, "  clips ", clip_count());
+	print("  walk ", CLIPS[r.walk].speed, " m/s natural, run ", CLIPS[r.run].speed, " m/s natural; space samples:");
+	let sp = d.spaces[0];
+	for i in sp.n { print("    x=", sp.x[i], "  ", CLIPS[sp.clip[i]].name[..]); }
+	var fails = 0;
+	for pass in 2 {
+		let ik = pass == 1;
+		print(if ik { "with foot IK + additive layer:" } else { "without IK (blend + machine + additive):" });
+		// content baseline: steady state at every sample speed + each action clip
+		var base = default<JStats>(); stats_clear(base);
+		var tmp = default<JStats>();
+		for i in sp.n { steady(sk, r, d, ik, r.st_loco, sp.x[i], 2.5, tmp); stats_max(base, tmp); }
+		// action states at every sample speed too: the speed sets the
+		// additive layer weight and the foot IK, which change the content
+		for i in sp.n {
+			steady(sk, r, d, ik, r.st_act, sp.x[i], 5.0, tmp); stats_max(base, tmp);
+			steady(sk, r, d, ik, r.st_act2, sp.x[i], 5.0, tmp); stats_max(base, tmp);
+		}
+		var s = default<JStats>();
+		var racc = 0.0 as f32;
+		var sw = default<JStats>(); var racc_sw = 0.0 as f32;
+		run_script(sk, r, d, ik, 0.0, 22.0, sw, racc_sw, false);
+		var tr = default<JStats>(); var racc_tr = 0.0 as f32;
+		run_script(sk, r, d, ik, 22.0, 33.0, tr, racc_tr, false);
+		var dh = d;
+		for i in dh.ntrans { dh.trans[i].duration = 0.0; }
+		var hc = default<JStats>(); var racc_hc = 0.0 as f32;
+		run_script(sk, r, dh, ik, 22.0, 33.0, hc, racc_hc, false);
+		var us = default<JStats>(); var racc_us = 0.0 as f32;
+		run_script(sk, r, d, ik, 0.0, 33.0, us, racc_us, true);
+		for metric in 2 {
+			let acc = metric == 0;
+			print(if acc { "  [A] discontinuity = per-frame second difference (PASS/FAIL metric)" } else { "  [V] per-frame joint change (velocity; informational)" });
+			report(sk, "content baseline (steady states)", judge(sk, base, base, acc));
+			let v1 = judge(sk, sw, base, acc);
+			report(sk, "speed sweep 0->6->0 m/s", v1);
+			let v2 = judge(sk, tr, base, acc);
+			report(sk, "state transitions + interrupts", v2);
+			let c1 = judge(sk, hc, base, acc);
+			report(sk, "CONTROL hard cuts (fade 0)", c1);
+			let c2 = judge(sk, us, base, acc);
+			report(sk, "CONTROL unsmoothed speed steps", c2);
+			if acc {
+				if v1.ratio >= 1.0 || v2.ratio >= 1.0 { fails += 1; print("    POP DETECTED"); } else { print("    no pops (all ratios < 1)"); }
+				if c1.ratio < 1.0 { print("    hard-cut control did not trip: detector insensitive"); fails += 1; } else { print("    hard-cut control tripped as expected"); }
+			}
+		}
+		print("  root accel max (m/s^2): sweep ", racc_sw, "  transitions ", racc_tr, "  hard cuts ", racc_hc);
+	}
+	if fails == 0 { print("POP TEST PASS"); } else { print("POP TEST FAIL ", fails); }
+	fails as i32
+}

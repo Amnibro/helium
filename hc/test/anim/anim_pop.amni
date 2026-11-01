@@ -1,0 +1,11 @@
+// Pop test: HC_LIB=hc/lib build/hcn hc/test/anim/anim_pop.amni [hero.glb] [clip-prefix]
+// Default: the Jedi-King hero jk-h02.
+import os;
+import pop_body;
+fn main() {
+	var path byte[>..] = []; var prefix byte[>..] = [];
+	if arg_count() > 1 { arg(1, path); } else { path.append("/workspace/bake/r4/base/jk-h02.glb"); }
+	if arg_count() > 2 { arg(2, prefix); }
+	let f = anim::pop_main(path[..], prefix[..]);
+	if f != 0 { exit(1); }
+}
