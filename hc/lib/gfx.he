@@ -887,7 +887,7 @@ begin_pass_desc(d const PassDesc&) bool:
 		tw := max(s.d.width as int >> mip, 1); th := max(s.d.height as int >> mip, 1)
 		if i > 0 && (tw != w || th != h || s.d.samples as int != samples): return misuse("begin_pass: the color targets differ in size or sample count")
 		w = tw; h = th; samples = s.d.samples as int
-		c ~= CCol{s.tex, mip as u32, lay as u32, d.color_value.x, d.color_value.y, d.color_value.z, d.color_value.w, if d.clear_color { 1 } else { 0 }, 0, 0, 0, 0, d.clear_color, false}
+		c ~= CCol{s.tex, mip as u32, lay as u32, d.color_value.x, d.color_value.y, d.color_value.z, d.color_value.w, if d.clear_color { 1 } else { 0 }, 0, 0, 0, 0, d.clear_color && layers == 1 && s.d.mips as int == 1, false}
 		if d.resolve[i].id != 0:
 			rk := tslot(d.resolve[i])
 			if rk < 0: return false
@@ -901,9 +901,12 @@ begin_pass_desc(d const PassDesc&) bool:
 		if k < 0: return false
 		let s .= TEXS[k]
 		if s.usage & 4 == 0: return misuse("begin_pass: the depth target was not created with DEPTH_TARGET")
-		if t.nc > 0 && (s.d.width as int != w || s.d.height as int != h || s.d.samples as int != samples): return misuse(str("begin_pass: the depth target is ", s.d.width, " x ", s.d.height, " with ", s.d.samples, " sample(s), the color targets ", w, " x ", h, " with ", samples))
-		w = s.d.width as int; h = s.d.height as int; samples = s.d.samples as int
-		dt = CDep{s.tex, d.depth_value, if d.clear_depth { 1 } else { 0 }, 0, 1, 0, d.clear_depth, 0, 0, 0}; t.hd = true; t.d = s.fmt
+		dlayers := if s.d.kind == 3 { 6 } else { if s.d.kind == 0 { 1 } else { s.d.depth as int } }
+		if mip < 0 || mip >= s.d.mips as int || lay < 0 || lay >= dlayers || mip > 255 || lay > 255: return misuse(str("begin_pass: the depth target has no mip ", mip, ", layer ", lay))
+		dw := max(s.d.width as int >> mip, 1); dh := max(s.d.height as int >> mip, 1)
+		if t.nc > 0 && (dw != w || dh != h || s.d.samples as int != samples): return misuse(str("begin_pass: the depth target is ", dw, " x ", dh, " with ", s.d.samples, " sample(s), the color targets ", w, " x ", h, " with ", samples))
+		w = dw; h = dh; samples = s.d.samples as int
+		dt = CDep{s.tex, d.depth_value, if d.clear_depth { 1 } else { 0 }, 0, 1, 0, d.clear_depth && dlayers == 1 && s.d.mips as int == 1, 0, mip as u8, lay as u8}; t.hd = true; t.d = s.fmt
 	if t.nc == 0 && !t.hd: return misuse("begin_pass with no targets")
 	t.sc = nsamp(samples); c := cmd()
 	if c == 0: return false
