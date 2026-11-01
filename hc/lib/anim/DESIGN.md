@@ -1,6 +1,6 @@
 # hc/lib/anim — clean-room animation runtime for Helium
 
-Status: under construction on the local branch `kimahri/anim-runtime`.
+Status: local branch `kimahri/anim-runtime` (not pushed, not merged). Proven headless on the Jedi-King and BFME r5B hero GLBs; see "Proof" below.
 
 ## Clean-room notice
 
@@ -19,7 +19,9 @@ Sources used:
 | Shortest-arc rotation between vectors | half-angle construction from the cross/dot product (textbook) |
 | 2D blend space triangulation | A. Bowyer, "Computing Dirichlet tessellations", Comput. J. 1981; D. F. Watson, "Computing the n-dimensional Delaunay tessellation…", Comput. J. 1981 (Bowyer–Watson) |
 | Barycentric weights, nearest-edge projection | textbook planar geometry |
-| Smoothstep crossfade weight | Hermite cubic 3t²−2t³ (C¹ at both ends) |
+| Smoothstep / smootherstep weights | Hermite cubic 3t²−2t³; quintic 6t⁵−15t⁴+10t³ (K. Perlin, "Improving Noise", SIGGRAPH 2002), C² at both ends — used for crossfades, lock engage and IK blend weights |
+| Inertialization (foot-lock release) | D. Bollo, "Inertialization: High-Performance Animation Transitions in Gears of War", GDC 2016 — quintic offset decay matching x0, v0 with zero end conditions; T shortened to |5x0/v0| when x0·v0<0 (overshoot guard) |
+| Soft reach (two-bone IK) | own construction: d' = s + w·tanh((d−s)/w), s = 0.97·reach, w = reach−s (C² at s, monotone, < reach) |
 | Two-bone IK | law of cosines (analytic triangle solve), pole-vector twist about the root→target axis |
 | FABRIK | A. Aristidou, J. Lasenby, "FABRIK: A fast, iterative solver for the Inverse Kinematics problem", Graphical Models 73(5), 2011 |
 | glTF loading | Khronos glTF 2.0 specification (GLB container, accessors, skins, animation samplers LINEAR/STEP/CUBICSPLINE) |
@@ -46,8 +48,53 @@ Sources used:
   interruption by freezing the on-screen pose (and its root velocity) as the
   new source — so a fade can never jump.
 * `ik.amni` — analytic two-bone IK with pole, FABRIK chains, and foot planting
-  (ground following, contact lock in world space with weighted release, pelvis
-  drop).
+  (ground following, contact lock in world space, pelvis drop). Details:
+  - knee solved on the C² soft-reach map (acos has unbounded slope at full
+    extension; a hard clamp turns millimetres of target motion into pops);
+  - bend plane from the pole, with signed angles, so a knee animated through
+    straight (JK idles are hyperextended ~5%) does not flip sides;
+  - the pole comes from a hinge axis stored in the thigh frame, refreshed
+    while the knee is clearly bent (>15% offset), blended (smootherstep) with
+    the live bend direction — stable through straight legs;
+  - lock engage eased (lock_rate 8/s, smootherstep weight); release by
+    Bollo inertialization over release_t = 0.3 s; always solves (switching
+    the solver on/off would toggle the soft-reach change).
+* `gltf.amni` — GLB/glTF 2.0 loader written from the Khronos spec: nodes,
+  skins, inverse bind matrices, meshes (POSITION/NORMAL/JOINTS_0/WEIGHTS_0),
+  animation samplers LINEAR/STEP/CUBICSPLINE resampled to clips.
+* `skin.amni` — skinning palette (model × IBM) and CPU linear-blend skinning
+  (reference path; GPU skinning uploads the palette).
+* `gold.amni` — the "gold" rig: loco 1D blend space (idle → walk → run;
+  walk is stretched to 2.6 m/s, run starts at 3.4 m/s, so the walk→run blend
+  is centred on 3 m/s; rate-matched), two action states, additive layer, root
+  motion, foot planting. Action fades are capped by clip length; exits are
+  timed so the fade ends as the non-looping clip ends (a clip clamping on its
+  last frame mid-fade pops); interrupting fades last ≥ 0.45 s and the frozen
+  source's extrapolated velocity decays over the first 30% of the fade.
+
+## Pop metric (hc/test/anim/anim_pop.amni)
+
+Per joint, model space, 60 Hz. PASS/FAIL uses [A], the second difference
+(acceleration per frame²) of rotation angle and position. Threshold per joint
+= 1.25 × baseline + floor (0.5° rotation, 2 mm position), where the baseline
+is the worst [A] seen in steady states (loco at every sample speed, plus each
+action at every sample speed) — i.e. "no worse than the animation content
+itself". [V] (per-frame change) is printed for information. Scenarios: speed
+sweep 0→6→0 m/s, and a scripted run of state transitions and interrupts, each
+with and without foot IK. Controls (must FAIL, proving the detector is
+sensitive): hard cuts (fade 0) and unsmoothed speed steps.
+
+## Perf (hc/test/anim/anim_perf.amni)
+
+`hcn anim_perf.amni -- <glb> [frames]`: 32 characters, phase-shifted crowd
+script, full anim (blend space + machine + additive + root + IK + palette)
+per frame, plus CPU LBS skinning timed separately.
+
+## Running
+
+`HC_LIB=<repo>/hc/lib build/hcn hc/test/anim/anim_pop.amni -- <file.glb>`.
+Program arguments MUST follow `--`: a bare positional argument after the
+source file is taken as hcn's OUTPUT path and is overwritten.
 
 ## Helium constraints and how they were handled
 
@@ -63,3 +110,7 @@ Sources used:
 * A root `.amni` file with `fn main()` cannot share a namespace, so tests keep
   their body in a namespaced module (`hc/test/anim/unit_body.amni`).
 * Overloads are strict about `int` vs `i32`; clip handles are `int` at the API.
+* No threads/SIMD in the language surface used here: perf numbers are
+  single-threaded scalar.
+* `hcn` treats a positional argument after the source as the output path
+  (foot-gun; see Running).
