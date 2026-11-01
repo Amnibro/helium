@@ -50,7 +50,7 @@ Round-4 notes (interleaved A/B, pinned to one core, identical output, min/median
   were measured as free and left in. Re-issuing the compare before the select so it fuses into cmovcc,
   plus xor-zero + setcc with no movzx: 1138 -> 967 (ablation: both 969, no-xz 1054, no-ssf 1053,
   neither 1139). sort is now 1.05x behind clang-O2, ahead of gcc, Rust, Go, Java and Node.
-- Remaining gaps vs best overall: spectral 2.08x, regex 1.87x, bintrees 1.86x, hashmap 1.34x, fib 1.33x,
+- Remaining gaps vs best overall (round 4; spectral is 1.07x with 8 lanes, see below): spectral 2.08x, regex 1.87x, bintrees 1.86x, hashmap 1.34x, fib 1.33x,
   nbody 1.29x (vs Rust), mandelbrot 1.25x, fannkuch 1.13x, sort 1.05x. Helium leads or ties on matmul,
   json, and strbuild (1.03x vs rust-native).
 
@@ -65,11 +65,29 @@ Round-4 notes (interleaved A/B, pinned to one core, identical output, min/median
 
 - spectral: the gap is lane width. gcc-O3n built for 256-bit vectors runs in 253 ms, close to he --v4.
   Measured per-instruction cost of `vdivpd` is the same for ymm and zmm (0.611 vs 0.614 ns), so 8 lanes
-  should roughly halve the divide-bound loop. Helium's outer-loop SLP still packs 4 lanes, so that is the
-  next change (lane count is now a setting in uaj/slp/ipk, still 4; zmm emission comes next).
+  should roughly halve the divide-bound loop. Helium's outer-loop SLP packed 4 lanes at the time of this
+  row; 8 lanes is now the default under `--v4` (see the 8-lane row below).
 - matmul: --v4 is ahead of gcc-O3n here.
 - mandelbrot: --v4 gains nothing over --v3, so its gap is not vector width.
 - `--vhost` produces the same binary as `--v4` on Antman (Zen 5, full AVX-512).
+
+8-lane `--v4` row (compiler f4f3eaf: 8 lanes, zmm, is the default under `--v4`/`--vhost`; `HC_VLN4=1`
+turns it off and gives the old 4-lane `--v4` binary byte for byte; `--v3` and the default stay 4 lanes and
+are byte-identical to before. Interleaved, 7 reps alternating the four binaries, `taskset -c 7`, n=5500,
+all printed 1.274224153, gcc 16.2.1, load ~8.6 from other jobs)
+
+| spectral | min ms | median ms |
+|---|---|---|
+| he --v4, 8 lanes | 138 | 139 |
+| he --v4, 4 lanes (`HC_VLN4=1`) | 270 | 271 |
+| gcc -O3 -march=native | 129 | 130 |
+| gcc -O2 | 940 | 942 |
+
+- spectral: 8 lanes is 1.96x faster than 4 lanes; he --v4 / gcc-O3n is now 1.07x (min), down from 2.08x.
+- Every other bench and every test builds to the same binary under `--v4` with 8 or 4 lanes, so nothing
+  else changed speed. Only spectral's binary changed; its output matched at n=10/100/1000/5500.
+- mandelbrot, nbody and matmul do not take 8 lanes because SLP forms no packs in them (`HC_SLPV=1` prints
+  nothing); their vector code comes from the vloop path in vec.he, which is still fixed at 4 lanes.
 
 # bench/beyond results, round 3 (2026-11-01, Antman)
 
