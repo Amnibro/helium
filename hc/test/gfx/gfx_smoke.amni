@@ -1047,6 +1047,20 @@ fn tsr_checks(dir const byte[:]) bool {
 	good
 }
 
+// ---- T1 ghost gate: pre-registered bars (see README "Pre-registered bars") ----
+const GH_W = 960;
+const GH_H = 540;
+const GH_STEP_PX = 25.0;      // motion per frame at the grid's depth, in pixels
+const GH_MOVES = 16;          // moving frames
+const GH_CONVERGE = 32;       // still frames before the move
+const GH_REF_FRAMES = 48;     // converged frames for the reference at the final pose
+const GH_MEAN_BAR = 1.5;      // mean max-channel error over the band, /255
+const GH_P99_BAR = 12.0;      // 99th percentile, /255
+const GH_BIG_ERR = 20;        // /255
+const GH_BIG_MAX = 300;       // pixels above GH_BIG_ERR
+const GH_TRAIL = 30;          // synthetic trail added to the innermost band ring, /255
+const GH_RING_R = 2.0;        // the 8 extra band rays sit on a circle of this radius, px
+
 // ---- shadows: the sun's shadow mask against a CPU ray-traced reference ----
 // The sphere grid in front of a wall (and on its floor), lit by the sun, rendered with
 // debug view 5 (direct light only) with shadows off and on. A GPU pixel is shadowed when

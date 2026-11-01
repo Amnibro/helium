@@ -204,6 +204,33 @@ they do not move with the jitter; the look+taa test checks that.
      TAA-off frame (bloom then reads the temporal result); 720p -> 1080p with the
      shipped look must settle and reach >= 30 dB against native 1080p TAA.
 
+### Pre-registered bars (gfx-review2)
+
+Each bar below was committed (code and this text) before the GPU run that measures
+it, one commit per item, and is not loosened after the run. A failing result is
+reported as a failure and fixed in the renderer, not in the gate.
+
+* **T1 ghost gate** (`ghost_checks`, constants `GH_*`). Scene: 960x540, eye
+  (0, 0, 7.5), fov 0.75; a 5x5 grid of bright unlit spheres (rgb 3, r 0.4, spacing
+  1) before a dark unlit wall (front face at z = -3) carrying a blob texture.
+  Motion of 25 px/frame (0.27336 world units at the grid's depth) for 16 frames,
+  after 32 converged still frames: (a) the grid moves, camera still; (b) the camera
+  slides, grid still. Reference: 48 converged TAA frames at the final pose.
+  Scored only in the disoccluded band: pixels whose centre ray and 8 rays on a
+  2 px circle all hit the wall at a point some sphere covered in an earlier frame
+  of the move (CPU ray tracer, exact spheres). Error per pixel: the largest channel
+  difference. Bars per case: mean <= 1.5/255, p99 <= 12/255, at most 300 pixels
+  above 20/255. Controls, run with depth rejection off so that they test the clip
+  and the reprojection: clip off (`temporal_gamma` 0), a very loose clip (gamma 4)
+  and motion forced to zero (`temporal_motion_scale` 0) must each fail at least one
+  bar in both cases. A synthetic 1 px trail, +30/255 added to the innermost ring of
+  the band of the passing frame (about 3000 px), must fail. With rejection on the
+  band mostly measures the depth rejection; the shipped clip is also reported with
+  rejection off (not gated).
+* **T1 ghost gate, shipped defaults.** Case (b) again with lit materials and
+  scene3d's shipped look on (shadows, SSAO, bloom): the same three bars against 48
+  converged frames at the final pose with the same look.
+
 Raw output of each recorded run is in `hc/test/gfx/results/`; `gfxtest.sh` writes
 the header itself (commit, command, driver, GPU, packages) into `$GFX_OUT/results.txt`.
 With no GPU it prints `SKIPPED (no GPU)` after the CPU checks (`GFX_REQUIRE_GPU=1`
