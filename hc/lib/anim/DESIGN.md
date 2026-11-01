@@ -22,7 +22,8 @@ Sources used:
 | Smoothstep / smootherstep weights | Hermite cubic 3t²−2t³; quintic 6t⁵−15t⁴+10t³ (K. Perlin, "Improving Noise", SIGGRAPH 2002), C² at both ends — used for crossfades, lock engage and IK blend weights |
 | Inertialization (foot-lock release) | D. Bollo, "Inertialization: High-Performance Animation Transitions in Gears of War", GDC 2016 — quintic offset decay matching x0, v0 with zero end conditions; T shortened to |5x0/v0| when x0·v0<0 (overshoot guard) |
 | Soft reach (two-bone IK) | own construction: d' = s + w·tanh((d−s)/w), s = 0.97·reach, w = reach−s (C² at s, monotone, < reach) |
-| Two-bone IK | law of cosines (analytic triangle solve), pole-vector twist about the root→target axis |
+| Two-bone IK | law of cosines (analytic triangle solve), current angles signed in the pole's bend plane, pole-vector twist about the root→target axis |
+| Critically damped spring (speed smoothing) | closed-form solution x = target + (c₁ + c₂t)e^(−ωt) of x'' = ω²(target − x) − 2ωx' (standard second-order linear ODE, damping ratio 1) |
 | FABRIK | A. Aristidou, J. Lasenby, "FABRIK: A fast, iterative solver for the Inverse Kinematics problem", Graphical Models 73(5), 2011 |
 | glTF loading | Khronos glTF 2.0 specification (GLB container, accessors, skins, animation samplers LINEAR/STEP/CUBICSPLINE) |
 
@@ -67,7 +68,8 @@ Sources used:
 * `gold.amni` — the "gold" rig: loco 1D blend space (idle → walk → run;
   walk is stretched to 2.6 m/s, run starts at 3.4 m/s, so the walk→run blend
   is centred on 3 m/s; rate-matched), two action states, additive layer, root
-  motion, foot planting. Action fades are capped by clip length; exits are
+  motion, foot planting. The speed parameter follows the command through a
+  critically damped spring (ω = 2.5 rad/s; C1 in time). Action fades are capped by clip length; exits are
   timed so the fade ends as the non-looping clip ends (a clip clamping on its
   last frame mid-fade pops); interrupting fades last ≥ 0.45 s and the frozen
   source's extrapolated velocity decays over the first 30% of the fade.
@@ -76,13 +78,42 @@ Sources used:
 
 Per joint, model space, 60 Hz. PASS/FAIL uses [A], the second difference
 (acceleration per frame²) of rotation angle and position. Threshold per joint
-= 1.25 × baseline + floor (0.5° rotation, 2 mm position), where the baseline
-is the worst [A] seen in steady states (loco at every sample speed, plus each
-action at every sample speed) — i.e. "no worse than the animation content
-itself". [V] (per-frame change) is printed for information. Scenarios: speed
-sweep 0→6→0 m/s, and a scripted run of state transitions and interrupts, each
-with and without foot IK. Controls (must FAIL, proving the detector is
-sensitive): hard cuts (fade 0) and unsmoothed speed steps.
+= 1.25 × baseline + floor (0.5° rotation, 2 mm position).
+
+Baselines are per state, not one for the whole rig: the worst [A] seen in
+steady loco at every blend-space sample speed, and in each action state at
+every sample speed (the action is entered directly and measured up to its
+exit, not through it). Every scripted tick is judged against the states that
+fed its last three output frames (current state, a live fade source, and the
+states behind a frozen fade source): a loco-only tick against the loco
+baseline, a loco→act fade against max(loco, act). So the speed sweep is
+judged against locomotion alone, and a fast action clip cannot raise the
+threshold for an upper-body pop in locomotion. (Before 2026-11-01 one
+all-states baseline was used; with it the transition scenario scored
+11–11.7× against a loco-only threshold, i.e. the threshold was inflated by
+the action clips — review finding M1.) The old all-states ratio is still
+printed as a reference line.
+
+[V] (per-frame change) is printed for information. Scenarios: speed sweep
+0→6→0 m/s, and a scripted run of state transitions and interrupts (including
+speed steps 0→2→5→0 m/s), each with and without foot IK. Controls (each must
+FAIL, i.e. ratio ≥ 1, or the test fails, proving the detector is sensitive):
+hard cuts (every fade 0), near miss (every fade 0.1 s, a short but real
+crossfade), and unsmoothed speed steps. The test covers one fixed script; it
+is not randomized.
+
+What the per-state thresholds found, and fixed:
+* Two-bone IK sign test: the "knee past straight" test compared 3D angles,
+  which jumped by 2·a0 and 2·(π − b0) when a near-straight animated knee
+  swung sideways across the pole plane, a one-frame thigh/shin pop of up to
+  36° [A] (jk-h02, locked foot with the leg over-reached). The current
+  angles are now signed and measured in the bend plane (continuous).
+* Speed command smoothing: the linear 8 m/s² slew started and stopped
+  accelerating instantly; through the 0.8 m/s wide walk/run blend this was a
+  ~0.1 s cross-blend of walk and run arm swing (up to 2.4× the loco
+  threshold on a 5→0 m/s stop). The gold speed now follows a critically
+  damped spring (x'' = ω²(target − x) − 2ωx', exact closed-form step,
+  ω = 2.5 rad/s, peak 4.6 m/s² on a 5 m/s step), so the speed is C1.
 
 ## Perf (hc/test/anim/anim_perf.amni)
 
