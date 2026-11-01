@@ -1075,6 +1075,10 @@ const T6_GAIN_DB = 0.5;       // taa psnr >= off psnr + this, vs the supersample
 // ---- T7: pre-registered bar ----
 const T7_P95_MS = 0.5;        // resolve gpu-timestamp p95; no gpu time = FAIL
 
+// ---- T8: pre-registered bars ----
+const T8_STILL_BAR = 0.25;    // still scene: rejection on vs off, mean abs /255
+// and, per ghost case: band mean with rejection on <= band mean with rejection off
+
 // ---- shadows: the sun's shadow mask against a CPU ray-traced reference ----
 // The sphere grid in front of a wall (and on its floor), lit by the sun, rendered with
 // debug view 5 (direct light only) with shadows off and on. A GPU pixel is shadowed when

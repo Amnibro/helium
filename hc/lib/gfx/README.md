@@ -255,6 +255,16 @@ reported as a failure and fixed in the renderer, not in the gate.
   per iteration) the check FAILS; it no longer passes silently. The p95 is taken
   from the sorted times.
 
+* **T8 depth rejection** (`temporal_depth_reject`, default 0.1). The history alpha
+  stores the view depth of each output pixel's surface. A pixel drops its history
+  when the depth stored where its surface was last frame is nearer than that
+  surface's own last-frame depth by more than 10 %, and no pixel of its 3x3 input
+  neighbourhood was at that depth last frame (so a still silhouette under jitter is
+  not rejected). Bars: on the still sphere grid with the shipped look, converged TAA
+  frames with rejection on and off must agree within a mean abs of 0.25/255 (sky
+  excluded); in both ghost cases the band's mean error with rejection on must not
+  exceed its mean error with rejection off.
+
 Raw output of each recorded run is in `hc/test/gfx/results/`; `gfxtest.sh` writes
 the header itself (commit, command, driver, GPU, packages) into `$GFX_OUT/results.txt`.
 With no GPU it prints `SKIPPED (no GPU)` after the CPU checks (`GFX_REQUIRE_GPU=1`
