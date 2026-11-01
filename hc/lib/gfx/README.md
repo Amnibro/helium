@@ -401,6 +401,64 @@ makes that a failure). `GPU_LOCK=<file>` serializes the GPU part on shared
 machines. `tools/hc/ci.sh` runs it only when `HELIUM_GFX_TEST=1`. The test binary
 needs SDL3 even for the CPU part (see Known gaps).
 
+### Review2 part B results (RX 9060 XT, RADV, Mesa 26.2.4; `results/2026-11-01_rx9060xt_radv_0b196b4_review2b.txt`, clean worktree)
+
+**Disclosure: a control was re-scoped after a run had shown its value.** In the
+aa57217 run the near0 cascade-0 ~5 px shift control gave IoU 0.9981, so the gate
+did not catch it. For part B, that control was moved from **must-fail to report-only**,
+with that view's large, low-edge cascade-0 shadow as the reason. Its must-fail role
+is **taken over by the near2 fence view's cascade-0 shift control**. The change was
+pre-registered in its own commit before this run (see "Pre-registered for review2
+part B"), but it was decided after seeing 0.9981. near0's cascade-0 IoU bar (>= 0.98)
+and its cascade-1 shift control (must fail) are unchanged.
+
+| check | result | bar |
+|---|---|---|
+| near2 cascade 0 gated | 334105 px counted, 22603 reference-shadow px | must be gated (>= 20000 / >= 5000) |
+| near2 cascade 0 / 1 mask IoU | 1.0 / 1.0 | >= 0.98 |
+| near2 cascade 0 shift control (~5 px = 6.12 texels) | IoU 0.9454, fails as required | must fail (< 0.98) |
+| near2 cascade 1 shift control | 0.9883 | reported |
+| near0 cascade 0 shift control (re-scoped, see above) | 0.9981 | reported only (was must-fail) |
+| near0 cascade 1 shift control | 0.947, fails as required | must fail |
+| near0 c0 / near1 c1 / far c2 IoU | PASS (far 0.9952) | >= 0.98 |
+| far layer-only control | 0.9952, not caught | reported only (cascade 2 is drawn last, so it survives cycling) |
+| S5 no-wait, 6 frames, two suns | max abs diff 0; the suns differ in 1426172 bytes | 0 / > 0 |
+| S5 never-cycle variant | diff 0 (the driver serialises; the hazard cannot be shown here) | reported |
+| S6 single layer and mip | 0 bytes elsewhere; control 60263 | 0 / > 0 |
+| T1 case (c) grid +25 and camera -25 px/frame, effects off | mean 0.498/255, p99 3, 4 px > 20 | <= 1.5, <= 12, <= 300 |
+| T1 case (c), shipped defaults (lit, shadows, SSAO, bloom) | mean 0.949/255, p99 6, 0 px | same |
+| T1 case (c) controls: clip off / gamma 4 / motion 0 / trail +30 over ring 3264 px | 69.137 / 3.205 / 7.334 mean; trail 3264 px > 20 | must fail: all fail |
+| T1 case (a) / (b), effects off | mean 0.518 / 1.145, p99 6 / 10, 5 / 0 px | same bars |
+| T1 case (b), shipped defaults | mean 0.829, p99 4, 0 px | same bars |
+| T6 TAA gain | 1.12 dB (45.37 to 46.49) | >= 0.5 dB |
+| T7 resolve GPU p95 | 0.2608 ms | < 0.5 ms, unavailable = FAIL |
+| N3 grazing replay worst | 0.097 % | < 0.5 % |
+| sphere / shipped-look golden | 53.52 / 78.31 dB (effects-off control 27.98 dB) | > 40 / must fail |
+
+hetest 108 pass, 0 fail; native 68/68.
+
+**Trail sensitivity (a measurement, not a bar).** The trail is 1 px wide and
++C/255 on every channel of the first L innermost-ring pixels in raster order. The
+table gives the smallest L the gate catches; "none" means even the whole ring was
+missed.
+
+| C (/255) | case (a), ring 4240 | case (b), ring 4266 | case (c), ring 3264 |
+|---|---|---|---|
+| 10 | none | 4000 | none |
+| 20 | 1000 | 300 | 1000 |
+| 30 | 300 | 300 | 300 |
+| 40 | 300 | 300 | 300 |
+| 60 | 300 | 300 | 300 |
+
+**What the gate misses.** At C >= 21/255 the "<= 300 px above 20/255" bar catches
+any trail longer than about 300 px. It misses every trail of 200 px or less at any
+contrast (p99 and the band mean barely move). At C = 20/255 or lower, the pixels
+sit at the 20/255 threshold, so only the band mean can catch them: about 1000 px is
+needed in cases (a) and (c) and about 300 px in (b), whose band is smaller (73406 px
+against 172870 and 200718). At C = 10/255 the gate misses the whole ring in (a) and
+(c) and needs about 4000 px in (b). Faint (<= 10/255) or short (<= 200 px) ghost
+trails are therefore not detected.
+
 ### Temporal results (RX 9060 XT, RADV, Mesa 26.2.4; `results/2026-11-01_rx9060xt_radv_10e4813_taa.txt`, rebased on e0a080c)
 
 | check | result | bar |
