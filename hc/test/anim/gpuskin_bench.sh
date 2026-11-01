@@ -18,7 +18,7 @@ export HC_LIB="${HC_LIB:-$HERE/../../lib}"
 WORK="$(mktemp -d)"; trap 'rm -rf "$WORK"' EXIT
 log() { echo "$@" | tee -a "$OUT"; }
 : > "$OUT"
-log "gpuskin bench  $(date '+%Y-%m-%d %H:%M:%S %Z')  host $(hostname)  frames $FRAMES"
+log "gpuskin bench  $(date '+%Y-%m-%d %H:%M:%S %Z')  host $(cat /etc/hostname 2>/dev/null || hostname)  frames $FRAMES"
 log "hcn $HCN"
 if [ -n "${GSK_SHA:-}" ]; then
 	if sha256sum --quiet -c "$GSK_SHA" >>"$OUT" 2>&1; then log "glb sha256 before: OK ($(wc -l < "$GSK_SHA") files)"; else log "glb sha256 before: MISMATCH"; exit 1; fi
@@ -26,7 +26,7 @@ fi
 "$HCN" --spv "$HC_LIB/anim/skin.comp" "$WORK/skin.spv" >>"$OUT" 2>&1 || { log "shader build failed"; exit 1; }
 log "skin.spv $(stat -c %s "$WORK/skin.spv") bytes (hcn --spv)"
 if command -v spirv-val >/dev/null 2>&1; then
-	if spirv-val --target-env vulkan1.0 "$WORK/skin.spv" >>"$OUT" 2>&1; then log "spirv-val: OK"; else log "spirv-val: FAILED"; fi
+	if spirv-val --target-env vulkan1.1 "$WORK/skin.spv" >>"$OUT" 2>&1; then log "spirv-val: OK"; else log "spirv-val: FAILED"; fi
 fi
 "$HCN" build "$HERE/anim_gpuskin.amni" -o "$WORK/gpuskin" >>"$OUT" 2>&1 || { log "build failed"; exit 1; }
 rc=0
