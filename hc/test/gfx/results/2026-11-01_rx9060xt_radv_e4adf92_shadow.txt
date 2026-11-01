@@ -1,0 +1,661 @@
+# tools/hc/gfxtest.sh run, raw output
+# GPU run under: flock ~/.cache/amni-art/gpu.lock around the whole batch (tmp/shadow/batch.sh), headless, no window
+# date: 2026-11-01T05:57:38-05:00
+# commit: e4adf92a09a8491309a637922fa073e8e21beb58  (worktree changes: 0)
+# command: MESA_VK_DEVICE_SELECT='1002:7590!' CC='gcc' GFX_OUT=<dir> tools/hc/gfxtest.sh build/hcn
+# host: Linux 7.2.9-arch1-1 x86_64
+# vulkan: apiVersion         = 1.4.354
+# vulkan: deviceName         = AMD Radeon RX 9060 XT (RADV GFX1200)
+# vulkan: driverName         = radv
+# vulkan: driverInfo         = Mesa 26.2.4-arch1.1
+# vulkan: conformanceVersion = 1.4.5.3
+# packages: sdl3 3.4.18-1 vulkan-radeon 1:26.2.4-1 mesa 1:26.2.4-1 
+# gpu-timestamp: tools/hc/gputime Vulkan layer, one timestamp pair per primary command
+#   buffer (TOP_OF_PIPE at begin, BOTTOM_OF_PIPE at end), summed per submit; raw log: gputime.log
+# wall-clock: gfx::time() around render + submit + fence wait; no readback in either
+#
+make_ms_lut: min E 0.07264; worst bilinear relative error at cell centres, main region (mu >= 0.01, rough >= 0.03): E 1.82573 % at mu 0.01275 rough 0.08065, dielectric E_F 2.37914 % at mu 0.01275 rough 0.04839
+make_ms_lut: grazing corner cell centres (mu < 0.01 or rough < 0.03): E 75.96801 % at mu 0.00026 rough 0.04839, dielectric E_F 75.31512 % at mu 0.00026 rough 0.04839
+make_ms_lut: grazing compensation mu 0.05..0.36, rough 0.03..0.3: white metal gain 0.50129 % (mu 0.05470 rough 0.04839) loss 0.56149 % (mu 0.05470 rough 0.17742); white dielectric gain 0.51823 % (mu 0.05470 rough 0.04839) loss 0.21595 % (mu 0.05099 rough 0.17742)
+make_ms_lut: grazing compensation mu 0.01..0.05, rough 0.03..0.3: white metal gain 2.59014 % (mu 0.01275 rough 0.03000) loss 2.02378 % (mu 0.01099 rough 0.08065); white dielectric gain 2.15776 % (mu 0.01275 rough 0.03000) loss 0.78478 % (mu 0.01099 rough 0.08065)
+make_ms_lut: grazing compensation mu 0.00007..0.01, rough 0.03..0.3: white metal gain 5.42155 % (mu 0.00234 rough 0.11290) loss 81.58743 % (mu 0.00007 rough 0.04839); white dielectric gain 2.74154 % (mu 0.00234 rough 0.11290) loss 7.33952 % (mu 0.00007 rough 0.04839)
+make_ms_lut: grazing compensation: 2590 points, E floor 0.25000, largest ms 4.00000; bars: all < 3.00000 % for mu >= 0.01, gain < 6.00000 % below PASS
+gfxtest: ms_lut.glsl reproduced byte for byte
+qrotate 0 0 -1000
+qslerp w 924
+inverse ok true
+png 37x23 true sum 845791653
+jpeg 61x45 true sum 444578738
+inflate stored true abc
+gltf meshes 2 nodes 4 roots 3 materials 2 images 1 skins 1 animations 1 skipped 1
+  prim verts 24 indices 36 targets 0 skinned false tangents true
+  prim verts 12 indices 12 targets 1 skinned true tangents false
+  material checker mode 0 metal 0 rough 600 emissive 0 0 two-sided false
+  material glow mode 2 metal 1000 rough 1000 emissive 4000 2000 two-sided true
+  image 4x4 sum 721154210
+anim rotation 0 0 707 707 weight 1000
+anim joint -1000 2000 0
+sphere asset 1 indices 768 verts 153
+text width 9600 verts 72
+gpu: out dir /home/anmire/ai/amni-games/jk-helium-poc-work/tmp/shadow/out
+gpu: ambient pass-through (fp16 precision, not a furnace) pixels 55860 mean error 0.0106 % max 0.0488 %
+gpu: furnace compensated metal 0 rough 0.0 (unresolved) pixels 2561 albedo mean 0.9962 min 0.8467 max 6.3647 | mean error 0.38 % worst pixel 536.47 %
+gpu: furnace compensated metal 0 rough 0.1 (unresolved) pixels 2549 albedo mean 0.9982 min 0.888 max 1.679 | mean error 0.18 % worst pixel 67.9 %
+gpu: furnace compensated metal 0 rough 0.2 (unresolved) pixels 2538 albedo mean 0.9994 min 0.9835 max 1.0148 | mean error 0.06 % worst pixel 1.65 %
+gpu: furnace compensated metal 0 rough 0.3 pixels 2533 albedo mean 0.9995 min 0.999 max 0.9997 | mean error 0.05 % worst pixel 0.1 %
+gpu: furnace compensated metal 0 rough 0.4 pixels 2526 albedo mean 0.9995 min 0.9992 max 0.9997 | mean error 0.05 % worst pixel 0.08 %
+gpu: furnace compensated metal 0 rough 0.5 pixels 2524 albedo mean 0.9996 min 0.9992 max 0.9997 | mean error 0.04 % worst pixel 0.08 %
+gpu: furnace compensated metal 0 rough 0.6 pixels 2525 albedo mean 0.9996 min 0.9992 max 0.9997 | mean error 0.04 % worst pixel 0.08 %
+gpu: furnace compensated metal 0 rough 0.7 pixels 2530 albedo mean 0.9996 min 0.9993 max 0.9997 | mean error 0.04 % worst pixel 0.07 %
+gpu: furnace compensated metal 0 rough 0.8 pixels 2537 albedo mean 0.9996 min 0.9993 max 0.9997 | mean error 0.04 % worst pixel 0.07 %
+gpu: furnace compensated metal 0 rough 0.9 pixels 2547 albedo mean 0.9996 min 0.9994 max 0.9997 | mean error 0.04 % worst pixel 0.06 %
+gpu: furnace compensated metal 0 rough 1.0 pixels 2560 albedo mean 0.9996 min 0.9993 max 0.9997 | mean error 0.04 % worst pixel 0.07 %
+gpu: furnace compensated metal 1 rough 0.0 (unresolved) pixels 2560 albedo mean 0.8725 min 0.0064 max 96.0069 | mean error 12.75 % worst pixel 9500.69 %
+gpu: furnace compensated metal 1 rough 0.1 (unresolved) pixels 2547 albedo mean 1.0188 min 0.1604 max 6.3978 | mean error 1.88 % worst pixel 539.78 %
+gpu: furnace compensated metal 1 rough 0.2 (unresolved) pixels 2537 albedo mean 0.9995 min 0.881 max 1.1318 | mean error 0.05 % worst pixel 13.18 %
+gpu: furnace compensated metal 1 rough 0.3 pixels 2530 albedo mean 0.9995 min 0.9955 max 1.0017 | mean error 0.05 % worst pixel 0.45 %
+gpu: furnace compensated metal 1 rough 0.4 pixels 2525 albedo mean 0.9998 min 0.9971 max 1.0005 | mean error 0.02 % worst pixel 0.29 %
+gpu: furnace compensated metal 1 rough 0.5 pixels 2524 albedo mean 0.9997 min 0.9986 max 1.0003 | mean error 0.03 % worst pixel 0.14 %
+gpu: furnace compensated metal 1 rough 0.6 pixels 2526 albedo mean 0.9996 min 0.9988 max 1.0001 | mean error 0.04 % worst pixel 0.12 %
+gpu: furnace compensated metal 1 rough 0.7 pixels 2533 albedo mean 0.9994 min 0.999 max 0.9998 | mean error 0.06 % worst pixel 0.1 %
+gpu: furnace compensated metal 1 rough 0.8 pixels 2538 albedo mean 0.9994 min 0.999 max 0.9998 | mean error 0.06 % worst pixel 0.1 %
+gpu: furnace compensated metal 1 rough 0.9 pixels 2549 albedo mean 0.9994 min 0.9991 max 0.9998 | mean error 0.06 % worst pixel 0.09 %
+gpu: furnace compensated metal 1 rough 1.0 pixels 2561 albedo mean 0.9995 min 0.9993 max 0.9997 | mean error 0.05 % worst pixel 0.07 %
+gpu: furnace compensated summary (4096 sun directions) rough >= 0.3: worst material mean error 0.06 %, mean over materials 0.04 %, worst pixel 0.45 % (gain 0.17 %, loss 0.45 %); dielectric worst mean 0.05 % worst pixel 0.1 %; metal worst mean 0.06 % worst pixel 0.45 %; all roughness incl. unresolved: worst mean 12.75 %, mean 0.73 %, worst pixel 9500.69 %
+gpu: furnace single metal 0 rough 0.0 (unresolved) pixels 2561 albedo mean 0.9962 min 0.8467 max 6.3647 | mean error 0.38 % worst pixel 536.47 %
+gpu: furnace single metal 0 rough 0.1 (unresolved) pixels 2549 albedo mean 0.9982 min 0.8881 max 1.6786 | mean error 0.18 % worst pixel 67.86 %
+gpu: furnace single metal 0 rough 0.2 (unresolved) pixels 2538 albedo mean 0.9994 min 0.9835 max 1.0147 | mean error 0.06 % worst pixel 1.65 %
+gpu: furnace single metal 0 rough 0.3 pixels 2533 albedo mean 0.9995 min 0.999 max 0.9997 | mean error 0.05 % worst pixel 0.1 %
+gpu: furnace single metal 0 rough 0.4 pixels 2526 albedo mean 0.9995 min 0.9992 max 0.9997 | mean error 0.05 % worst pixel 0.08 %
+gpu: furnace single metal 0 rough 0.5 pixels 2524 albedo mean 0.9996 min 0.9992 max 0.9997 | mean error 0.04 % worst pixel 0.08 %
+gpu: furnace single metal 0 rough 0.6 pixels 2525 albedo mean 0.9996 min 0.9993 max 0.9997 | mean error 0.04 % worst pixel 0.07 %
+gpu: furnace single metal 0 rough 0.7 pixels 2530 albedo mean 0.9996 min 0.9993 max 0.9997 | mean error 0.04 % worst pixel 0.07 %
+gpu: furnace single metal 0 rough 0.8 pixels 2537 albedo mean 0.9996 min 0.9993 max 0.9997 | mean error 0.04 % worst pixel 0.07 %
+gpu: furnace single metal 0 rough 0.9 pixels 2547 albedo mean 0.9996 min 0.9994 max 0.9997 | mean error 0.04 % worst pixel 0.06 %
+gpu: furnace single metal 0 rough 1.0 pixels 2560 albedo mean 0.9996 min 0.9994 max 0.9997 | mean error 0.04 % worst pixel 0.06 %
+gpu: furnace single metal 1 rough 0.0 (unresolved) pixels 2560 albedo mean 0.8721 min 0.0064 max 95.8819 | mean error 12.79 % worst pixel 9488.19 %
+gpu: furnace single metal 1 rough 0.1 (unresolved) pixels 2547 albedo mean 1.0139 min 0.1581 max 6.2869 | mean error 1.39 % worst pixel 528.69 %
+gpu: furnace single metal 1 rough 0.2 (unresolved) pixels 2537 albedo mean 0.9792 min 0.8311 max 1.0687 | mean error 2.08 % worst pixel 16.89 %
+gpu: furnace single metal 1 rough 0.3 pixels 2530 albedo mean 0.9469 min 0.8388 max 0.9871 | mean error 5.31 % worst pixel 16.12 %
+gpu: furnace single metal 1 rough 0.4 pixels 2525 albedo mean 0.8938 min 0.7536 max 0.9569 | mean error 10.62 % worst pixel 24.64 %
+gpu: furnace single metal 1 rough 0.5 pixels 2524 albedo mean 0.8207 min 0.6947 max 0.8947 | mean error 17.93 % worst pixel 30.53 %
+gpu: furnace single metal 1 rough 0.6 pixels 2526 albedo mean 0.7326 min 0.653 max 0.7963 | mean error 26.74 % worst pixel 34.7 %
+gpu: furnace single metal 1 rough 0.7 pixels 2533 albedo mean 0.6362 min 0.6107 max 0.6707 | mean error 36.38 % worst pixel 38.93 %
+gpu: furnace single metal 1 rough 0.8 pixels 2538 albedo mean 0.5378 min 0.5325 max 0.5696 | mean error 46.22 % worst pixel 46.75 %
+gpu: furnace single metal 1 rough 0.9 pixels 2549 albedo mean 0.4435 min 0.4114 max 0.5156 | mean error 55.65 % worst pixel 58.86 %
+gpu: furnace single metal 1 rough 1.0 pixels 2561 albedo mean 0.3575 min 0.3068 max 0.4544 | mean error 64.25 % worst pixel 69.32 %
+gpu: furnace single summary (4096 sun directions) rough >= 0.3: worst material mean error 64.25 %, mean over materials 16.47 %, worst pixel 69.32 % (gain 0.0 %, loss 69.32 %); dielectric worst mean 0.05 % worst pixel 0.1 %; metal worst mean 64.25 % worst pixel 69.32 %; all roughness incl. unresolved: worst mean 64.25 %, mean 12.74 %, worst pixel 9488.19 %
+gpu: furnace wrong-F metal 0 rough 0.0 (unresolved) pixels 2561 albedo mean 1.8931 min 0.859 max 104.5788 | mean error 89.31 % worst pixel 10357.88 %
+gpu: furnace wrong-F metal 0 rough 0.1 (unresolved) pixels 2549 albedo mean 1.93 min 1.0733 max 6.8994 | mean error 93.0 % worst pixel 589.94 %
+gpu: furnace wrong-F metal 0 rough 0.2 (unresolved) pixels 2538 albedo mean 1.949 min 1.7469 max 2.0472 | mean error 94.9 % worst pixel 104.72 %
+gpu: furnace wrong-F metal 0 rough 0.3 pixels 2533 albedo mean 1.9513 min 1.8785 max 1.9609 | mean error 95.13 % worst pixel 96.09 %
+gpu: furnace wrong-F metal 0 rough 0.4 pixels 2526 albedo mean 1.9551 min 1.9052 max 1.9621 | mean error 95.51 % worst pixel 96.21 %
+gpu: furnace wrong-F metal 0 rough 0.5 pixels 2524 albedo mean 1.9596 min 1.9305 max 1.9646 | mean error 95.96 % worst pixel 96.46 %
+gpu: furnace wrong-F metal 0 rough 0.6 pixels 2525 albedo mean 1.9647 min 1.9457 max 1.9681 | mean error 96.47 % worst pixel 96.81 %
+gpu: furnace wrong-F metal 0 rough 0.7 pixels 2530 albedo mean 1.9697 min 1.9563 max 1.9723 | mean error 96.97 % worst pixel 97.23 %
+gpu: furnace wrong-F metal 0 rough 0.8 pixels 2537 albedo mean 1.9744 min 1.9642 max 1.977 | mean error 97.44 % worst pixel 97.7 %
+gpu: furnace wrong-F metal 0 rough 0.9 pixels 2547 albedo mean 1.9788 min 1.9701 max 1.9817 | mean error 97.88 % worst pixel 98.17 %
+gpu: furnace wrong-F metal 0 rough 1.0 pixels 2560 albedo mean 1.9827 min 1.9749 max 1.9859 | mean error 98.27 % worst pixel 98.59 %
+gpu: furnace wrong-F metal 1 rough 0.0 (unresolved) pixels 2560 albedo mean 0.8725 min 0.0064 max 96.0069 | mean error 12.75 % worst pixel 9500.69 %
+gpu: furnace wrong-F metal 1 rough 0.1 (unresolved) pixels 2547 albedo mean 1.0188 min 0.1604 max 6.3978 | mean error 1.88 % worst pixel 539.78 %
+gpu: furnace wrong-F metal 1 rough 0.2 (unresolved) pixels 2537 albedo mean 0.9995 min 0.881 max 1.1318 | mean error 0.05 % worst pixel 13.18 %
+gpu: furnace wrong-F metal 1 rough 0.3 pixels 2530 albedo mean 0.9995 min 0.9955 max 1.0017 | mean error 0.05 % worst pixel 0.45 %
+gpu: furnace wrong-F metal 1 rough 0.4 pixels 2525 albedo mean 0.9998 min 0.9971 max 1.0005 | mean error 0.02 % worst pixel 0.29 %
+gpu: furnace wrong-F metal 1 rough 0.5 pixels 2524 albedo mean 0.9997 min 0.9986 max 1.0003 | mean error 0.03 % worst pixel 0.14 %
+gpu: furnace wrong-F metal 1 rough 0.6 pixels 2526 albedo mean 0.9996 min 0.9988 max 1.0001 | mean error 0.04 % worst pixel 0.12 %
+gpu: furnace wrong-F metal 1 rough 0.7 pixels 2533 albedo mean 0.9994 min 0.999 max 0.9998 | mean error 0.06 % worst pixel 0.1 %
+gpu: furnace wrong-F metal 1 rough 0.8 pixels 2538 albedo mean 0.9994 min 0.999 max 0.9998 | mean error 0.06 % worst pixel 0.1 %
+gpu: furnace wrong-F metal 1 rough 0.9 pixels 2549 albedo mean 0.9994 min 0.9991 max 0.9998 | mean error 0.06 % worst pixel 0.09 %
+gpu: furnace wrong-F metal 1 rough 1.0 pixels 2561 albedo mean 0.9995 min 0.9993 max 0.9997 | mean error 0.05 % worst pixel 0.07 %
+gpu: furnace wrong-F summary (4096 sun directions) rough >= 0.3: worst material mean error 98.27 %, mean over materials 48.37 %, worst pixel 98.59 % (gain 98.59 %, loss 0.45 %); dielectric worst mean 98.27 % worst pixel 98.59 %; metal worst mean 0.06 % worst pixel 0.45 %; all roughness incl. unresolved: worst mean 98.27 %, mean 48.45 %, worst pixel 10357.88 %
+gpu: furnace legacy-diffuse metal 0 rough 0.0 (unresolved) pixels 2561 albedo mean 1.0049 min 0.9527 max 6.403 | mean error 0.49 % worst pixel 540.3 %
+gpu: furnace legacy-diffuse metal 0 rough 0.1 (unresolved) pixels 2549 albedo mean 1.0066 min 0.9693 max 1.7669 | mean error 0.66 % worst pixel 76.69 %
+gpu: furnace legacy-diffuse metal 0 rough 0.2 (unresolved) pixels 2538 albedo mean 1.0071 min 0.9983 max 1.0942 | mean error 0.71 % worst pixel 9.42 %
+gpu: furnace legacy-diffuse metal 0 rough 0.3 pixels 2533 albedo mean 1.0054 min 0.9979 max 1.0701 | mean error 0.54 % worst pixel 7.01 %
+gpu: furnace legacy-diffuse metal 0 rough 0.4 pixels 2526 albedo mean 1.0019 min 0.9965 max 1.0424 | mean error 0.19 % worst pixel 4.24 %
+gpu: furnace legacy-diffuse metal 0 rough 0.5 pixels 2524 albedo mean 0.9972 min 0.9938 max 1.0191 | mean error 0.28 % worst pixel 1.91 %
+gpu: furnace legacy-diffuse metal 0 rough 0.6 pixels 2525 albedo mean 0.992 min 0.9901 max 1.0033 | mean error 0.8 % worst pixel 0.99 %
+gpu: furnace legacy-diffuse metal 0 rough 0.7 pixels 2530 albedo mean 0.9869 min 0.9858 max 0.9933 | mean error 1.31 % worst pixel 1.42 %
+gpu: furnace legacy-diffuse metal 0 rough 0.8 pixels 2537 albedo mean 0.9821 min 0.9814 max 0.9853 | mean error 1.79 % worst pixel 1.86 %
+gpu: furnace legacy-diffuse metal 0 rough 0.9 pixels 2547 albedo mean 0.9777 min 0.977 max 0.9796 | mean error 2.23 % worst pixel 2.3 %
+gpu: furnace legacy-diffuse metal 0 rough 1.0 pixels 2560 albedo mean 0.9739 min 0.973 max 0.975 | mean error 2.61 % worst pixel 2.7 %
+gpu: furnace legacy-diffuse metal 1 rough 0.0 (unresolved) pixels 2560 albedo mean 0.8725 min 0.0064 max 96.0069 | mean error 12.75 % worst pixel 9500.69 %
+gpu: furnace legacy-diffuse metal 1 rough 0.1 (unresolved) pixels 2547 albedo mean 1.0188 min 0.1604 max 6.3978 | mean error 1.88 % worst pixel 539.78 %
+gpu: furnace legacy-diffuse metal 1 rough 0.2 (unresolved) pixels 2537 albedo mean 0.9995 min 0.881 max 1.1318 | mean error 0.05 % worst pixel 13.18 %
+gpu: furnace legacy-diffuse metal 1 rough 0.3 pixels 2530 albedo mean 0.9995 min 0.9955 max 1.0017 | mean error 0.05 % worst pixel 0.45 %
+gpu: furnace legacy-diffuse metal 1 rough 0.4 pixels 2525 albedo mean 0.9998 min 0.9971 max 1.0005 | mean error 0.02 % worst pixel 0.29 %
+gpu: furnace legacy-diffuse metal 1 rough 0.5 pixels 2524 albedo mean 0.9997 min 0.9986 max 1.0003 | mean error 0.03 % worst pixel 0.14 %
+gpu: furnace legacy-diffuse metal 1 rough 0.6 pixels 2526 albedo mean 0.9996 min 0.9988 max 1.0001 | mean error 0.04 % worst pixel 0.12 %
+gpu: furnace legacy-diffuse metal 1 rough 0.7 pixels 2533 albedo mean 0.9994 min 0.999 max 0.9998 | mean error 0.06 % worst pixel 0.1 %
+gpu: furnace legacy-diffuse metal 1 rough 0.8 pixels 2538 albedo mean 0.9994 min 0.999 max 0.9998 | mean error 0.06 % worst pixel 0.1 %
+gpu: furnace legacy-diffuse metal 1 rough 0.9 pixels 2549 albedo mean 0.9994 min 0.9991 max 0.9998 | mean error 0.06 % worst pixel 0.09 %
+gpu: furnace legacy-diffuse metal 1 rough 1.0 pixels 2561 albedo mean 0.9995 min 0.9993 max 0.9997 | mean error 0.05 % worst pixel 0.07 %
+gpu: furnace legacy-diffuse summary (4096 sun directions) rough >= 0.3: worst material mean error 2.61 %, mean over materials 0.63 %, worst pixel 7.01 % (gain 7.01 %, loss 2.7 %); dielectric worst mean 2.61 % worst pixel 7.01 %; metal worst mean 0.06 % worst pixel 0.45 %; all roughness incl. unresolved: worst mean 12.75 %, mean 1.21 %, worst pixel 9500.69 %
+gpu: furnace x0.9 metal 0 rough 0.0 (unresolved) pixels 2561 albedo mean 0.8966 min 0.762 max 5.7263 | mean error 10.34 % worst pixel 472.63 %
+gpu: furnace x0.9 metal 0 rough 0.1 (unresolved) pixels 2549 albedo mean 0.8983 min 0.7992 max 1.5109 | mean error 10.17 % worst pixel 51.09 %
+gpu: furnace x0.9 metal 0 rough 0.2 (unresolved) pixels 2538 albedo mean 0.8995 min 0.8851 max 0.9133 | mean error 10.05 % worst pixel 11.49 %
+gpu: furnace x0.9 metal 0 rough 0.3 pixels 2533 albedo mean 0.8995 min 0.8991 max 0.8997 | mean error 10.05 % worst pixel 10.09 %
+gpu: furnace x0.9 metal 0 rough 0.4 pixels 2526 albedo mean 0.8996 min 0.8992 max 0.8998 | mean error 10.04 % worst pixel 10.08 %
+gpu: furnace x0.9 metal 0 rough 0.5 pixels 2524 albedo mean 0.8996 min 0.8993 max 0.8998 | mean error 10.04 % worst pixel 10.07 %
+gpu: furnace x0.9 metal 0 rough 0.6 pixels 2525 albedo mean 0.8996 min 0.8993 max 0.8997 | mean error 10.04 % worst pixel 10.07 %
+gpu: furnace x0.9 metal 0 rough 0.7 pixels 2530 albedo mean 0.8996 min 0.8994 max 0.8997 | mean error 10.04 % worst pixel 10.06 %
+gpu: furnace x0.9 metal 0 rough 0.8 pixels 2537 albedo mean 0.8996 min 0.8994 max 0.8997 | mean error 10.04 % worst pixel 10.06 %
+gpu: furnace x0.9 metal 0 rough 0.9 pixels 2547 albedo mean 0.8996 min 0.8994 max 0.8997 | mean error 10.04 % worst pixel 10.06 %
+gpu: furnace x0.9 metal 0 rough 1.0 pixels 2560 albedo mean 0.8996 min 0.8994 max 0.8997 | mean error 10.04 % worst pixel 10.06 %
+gpu: furnace x0.9 metal 1 rough 0.0 (unresolved) pixels 2560 albedo mean 0.7853 min 0.0058 max 86.3812 | mean error 21.47 % worst pixel 8538.12 %
+gpu: furnace x0.9 metal 1 rough 0.1 (unresolved) pixels 2547 albedo mean 0.9169 min 0.1444 max 5.7561 | mean error 8.31 % worst pixel 475.61 %
+gpu: furnace x0.9 metal 1 rough 0.2 (unresolved) pixels 2537 albedo mean 0.8996 min 0.793 max 1.0183 | mean error 10.04 % worst pixel 20.7 %
+gpu: furnace x0.9 metal 1 rough 0.3 pixels 2530 albedo mean 0.8996 min 0.8959 max 0.9015 | mean error 10.04 % worst pixel 10.41 %
+gpu: furnace x0.9 metal 1 rough 0.4 pixels 2525 albedo mean 0.8999 min 0.8973 max 0.9005 | mean error 10.01 % worst pixel 10.27 %
+gpu: furnace x0.9 metal 1 rough 0.5 pixels 2524 albedo mean 0.8998 min 0.8987 max 0.9002 | mean error 10.02 % worst pixel 10.13 %
+gpu: furnace x0.9 metal 1 rough 0.6 pixels 2526 albedo mean 0.8996 min 0.8989 max 0.9001 | mean error 10.04 % worst pixel 10.11 %
+gpu: furnace x0.9 metal 1 rough 0.7 pixels 2533 albedo mean 0.8995 min 0.8991 max 0.8998 | mean error 10.05 % worst pixel 10.09 %
+gpu: furnace x0.9 metal 1 rough 0.8 pixels 2538 albedo mean 0.8994 min 0.8991 max 0.8998 | mean error 10.06 % worst pixel 10.09 %
+gpu: furnace x0.9 metal 1 rough 0.9 pixels 2549 albedo mean 0.8994 min 0.8992 max 0.8998 | mean error 10.06 % worst pixel 10.08 %
+gpu: furnace x0.9 metal 1 rough 1.0 pixels 2561 albedo mean 0.8995 min 0.8993 max 0.8997 | mean error 10.05 % worst pixel 10.07 %
+gpu: furnace x0.9 summary (4096 sun directions) rough >= 0.3: worst material mean error 10.06 %, mean over materials 10.04 %, worst pixel 10.41 % (gain 0.0 %, loss 10.41 %); dielectric worst mean 10.05 % worst pixel 10.09 %; metal worst mean 10.06 % worst pixel 10.41 %; all roughness incl. unresolved: worst mean 21.47 %, mean 10.5 %, worst pixel 8538.12 %
+gpu: grazing compensated metal 0 n.v 0.35 rough 0.0 (unresolved) pixels 698 n.v 0.3455..0.3472 albedo mean 0.9246 min 0.8674 max 1.0841 | worst pixel 13.26 %
+gpu: grazing compensated metal 0 n.v 0.35 rough 0.1 (unresolved) pixels 698 n.v 0.3455..0.3472 albedo mean 1.0583 min 1.0141 max 1.0946 | worst pixel 9.46 %
+gpu: grazing compensated metal 0 n.v 0.35 rough 0.2 (unresolved) pixels 700 n.v 0.3452..0.3472 albedo mean 0.9994 min 0.9993 max 0.9994 | worst pixel 0.07 %
+gpu: grazing compensated metal 0 n.v 0.35 rough 0.3 pixels 701 n.v 0.3452..0.3472 albedo mean 0.9995 min 0.9995 max 0.9995 | worst pixel 0.05 %
+gpu: grazing compensated metal 0 n.v 0.35 rough 0.4 pixels 709 n.v 0.3452..0.3472 albedo mean 0.9994 min 0.9994 max 0.9995 | worst pixel 0.06 %
+gpu: grazing compensated metal 0 n.v 0.35 rough 0.5 pixels 720 n.v 0.3452..0.3472 albedo mean 0.9995 min 0.9995 max 0.9995 | worst pixel 0.05 %
+gpu: grazing compensated metal 0 n.v 0.35 rough 0.6 pixels 710 n.v 0.3452..0.3472 albedo mean 0.9995 min 0.9995 max 0.9995 | worst pixel 0.05 %
+gpu: grazing compensated metal 0 n.v 0.35 rough 0.7 pixels 703 n.v 0.3452..0.3472 albedo mean 0.9996 min 0.9996 max 0.9996 | worst pixel 0.04 %
+gpu: grazing compensated metal 0 n.v 0.35 rough 0.8 pixels 700 n.v 0.3452..0.3472 albedo mean 0.9996 min 0.9996 max 0.9996 | worst pixel 0.04 %
+gpu: grazing compensated metal 0 n.v 0.35 rough 0.9 pixels 699 n.v 0.3452..0.3472 albedo mean 0.9996 min 0.9996 max 0.9996 | worst pixel 0.04 %
+gpu: grazing compensated metal 0 n.v 0.35 rough 1.0 pixels 698 n.v 0.3452..0.3472 albedo mean 0.9996 min 0.9996 max 0.9996 | worst pixel 0.04 %
+gpu: grazing compensated metal 0 n.v 0.2 rough 0.0 (unresolved) pixels 691 n.v 0.1952..0.1971 albedo mean 0.6556 min 0.6463 max 0.6845 | worst pixel 35.37 %
+gpu: grazing compensated metal 0 n.v 0.2 rough 0.1 (unresolved) pixels 696 n.v 0.1952..0.1971 albedo mean 0.8179 min 0.8017 max 0.847 | worst pixel 19.83 %
+gpu: grazing compensated metal 0 n.v 0.2 rough 0.2 (unresolved) pixels 698 n.v 0.1952..0.1971 albedo mean 1.0008 min 0.9999 max 1.0014 | worst pixel 0.14 %
+gpu: grazing compensated metal 0 n.v 0.2 rough 0.3 pixels 699 n.v 0.1952..0.1971 albedo mean 0.9996 min 0.9996 max 0.9996 | worst pixel 0.04 %
+gpu: grazing compensated metal 0 n.v 0.2 rough 0.4 pixels 703 n.v 0.1952..0.1971 albedo mean 0.9993 min 0.9993 max 0.9993 | worst pixel 0.07 %
+gpu: grazing compensated metal 0 n.v 0.2 rough 0.5 pixels 711 n.v 0.1951..0.197 albedo mean 0.9993 min 0.9993 max 0.9994 | worst pixel 0.07 %
+gpu: grazing compensated metal 0 n.v 0.2 rough 0.6 pixels 703 n.v 0.1951..0.197 albedo mean 0.9995 min 0.9995 max 0.9995 | worst pixel 0.05 %
+gpu: grazing compensated metal 0 n.v 0.2 rough 0.7 pixels 699 n.v 0.1951..0.197 albedo mean 0.9996 min 0.9996 max 0.9996 | worst pixel 0.04 %
+gpu: grazing compensated metal 0 n.v 0.2 rough 0.8 pixels 698 n.v 0.1951..0.197 albedo mean 0.9996 min 0.9996 max 0.9996 | worst pixel 0.04 %
+gpu: grazing compensated metal 0 n.v 0.2 rough 0.9 pixels 696 n.v 0.1951..0.197 albedo mean 0.9996 min 0.9996 max 0.9996 | worst pixel 0.04 %
+gpu: grazing compensated metal 0 n.v 0.2 rough 1.0 pixels 693 n.v 0.1951..0.197 albedo mean 0.9996 min 0.9996 max 0.9996 | worst pixel 0.04 %
+gpu: grazing compensated metal 0 n.v 0.1 rough 0.0 (unresolved) pixels 717 n.v 0.0952..0.0972 albedo mean 0.4031 min 0.3993 max 0.4081 | worst pixel 60.07 %
+gpu: grazing compensated metal 0 n.v 0.1 rough 0.1 (unresolved) pixels 720 n.v 0.0952..0.0972 albedo mean 0.6636 min 0.6352 max 0.7136 | worst pixel 36.48 %
+gpu: grazing compensated metal 0 n.v 0.1 rough 0.2 (unresolved) pixels 724 n.v 0.0952..0.0972 albedo mean 1.0201 min 1.0108 max 1.0251 | worst pixel 2.51 %
+gpu: grazing compensated metal 0 n.v 0.1 rough 0.3 pixels 729 n.v 0.0951..0.0972 albedo mean 0.9999 min 0.9995 max 1.0002 | worst pixel 0.05 %
+gpu: grazing compensated metal 0 n.v 0.1 rough 0.4 pixels 734 n.v 0.0951..0.0972 albedo mean 0.9992 min 0.9992 max 0.9993 | worst pixel 0.08 %
+gpu: grazing compensated metal 0 n.v 0.1 rough 0.5 pixels 739 n.v 0.0951..0.0972 albedo mean 0.9993 min 0.9993 max 0.9993 | worst pixel 0.07 %
+gpu: grazing compensated metal 0 n.v 0.1 rough 0.6 pixels 735 n.v 0.095..0.0972 albedo mean 0.9994 min 0.9994 max 0.9994 | worst pixel 0.06 %
+gpu: grazing compensated metal 0 n.v 0.1 rough 0.7 pixels 730 n.v 0.095..0.0971 albedo mean 0.9995 min 0.9995 max 0.9995 | worst pixel 0.05 %
+gpu: grazing compensated metal 0 n.v 0.1 rough 0.8 pixels 727 n.v 0.095..0.0971 albedo mean 0.9996 min 0.9996 max 0.9996 | worst pixel 0.04 %
+gpu: grazing compensated metal 0 n.v 0.1 rough 0.9 pixels 723 n.v 0.095..0.0971 albedo mean 0.9996 min 0.9996 max 0.9996 | worst pixel 0.04 %
+gpu: grazing compensated metal 0 n.v 0.1 rough 1.0 pixels 718 n.v 0.095..0.097 albedo mean 0.9996 min 0.9996 max 0.9996 | worst pixel 0.04 %
+gpu: grazing compensated metal 0 n.v 0.05 rough 0.0 (unresolved) pixels 695 n.v 0.0452..0.0473 albedo mean 0.233 min 0.2295 max 0.237 | worst pixel 77.05 %
+gpu: grazing compensated metal 0 n.v 0.05 rough 0.1 (unresolved) pixels 702 n.v 0.0452..0.0472 albedo mean 1.7307 min 0.5151 max 3.1545 | worst pixel 215.45 %
+gpu: grazing compensated metal 0 n.v 0.05 rough 0.2 (unresolved) pixels 711 n.v 0.0451..0.0472 albedo mean 0.9481 min 0.925 max 1.0155 | worst pixel 7.5 %
+gpu: grazing compensated metal 0 n.v 0.05 rough 0.3 pixels 721 n.v 0.0451..0.0472 albedo mean 1.002 min 0.9978 max 1.0046 | worst pixel 0.46 %
+gpu: grazing compensated metal 0 n.v 0.05 rough 0.4 pixels 730 n.v 0.0451..0.0472 albedo mean 0.9994 min 0.9994 max 0.9996 | worst pixel 0.06 %
+gpu: grazing compensated metal 0 n.v 0.05 rough 0.5 pixels 736 n.v 0.0451..0.0472 albedo mean 0.9993 min 0.9993 max 0.9994 | worst pixel 0.07 %
+gpu: grazing compensated metal 0 n.v 0.05 rough 0.6 pixels 731 n.v 0.045..0.0471 albedo mean 0.9994 min 0.9994 max 0.9994 | worst pixel 0.06 %
+gpu: grazing compensated metal 0 n.v 0.05 rough 0.7 pixels 723 n.v 0.045..0.0471 albedo mean 0.9995 min 0.9995 max 0.9995 | worst pixel 0.05 %
+gpu: grazing compensated metal 0 n.v 0.05 rough 0.8 pixels 714 n.v 0.045..0.0471 albedo mean 0.9996 min 0.9996 max 0.9996 | worst pixel 0.04 %
+gpu: grazing compensated metal 0 n.v 0.05 rough 0.9 pixels 707 n.v 0.045..0.0471 albedo mean 0.9996 min 0.9996 max 0.9996 | worst pixel 0.04 %
+gpu: grazing compensated metal 0 n.v 0.05 rough 1.0 pixels 700 n.v 0.045..0.0471 albedo mean 0.9996 min 0.9996 max 0.9996 | worst pixel 0.04 %
+gpu: grazing compensated metal 1 n.v 0.05 rough 0.0 (unresolved) pixels 695 n.v 0.0452..0.0473 albedo mean 0.0056 min 0.0052 max 0.0071 | worst pixel 99.48 %
+gpu: grazing compensated metal 1 n.v 0.05 rough 0.1 (unresolved) pixels 702 n.v 0.0452..0.0472 albedo mean 1.5264 min 0.2558 max 2.7693 | worst pixel 176.93 %
+gpu: grazing compensated metal 1 n.v 0.05 rough 0.2 (unresolved) pixels 711 n.v 0.0451..0.0472 albedo mean 0.9137 min 0.8708 max 1.0243 | worst pixel 12.92 %
+gpu: grazing compensated metal 1 n.v 0.05 rough 0.3 pixels 721 n.v 0.0451..0.0472 albedo mean 1.0137 min 1.0054 max 1.0188 | worst pixel 1.88 %
+gpu: grazing compensated metal 1 n.v 0.05 rough 0.4 pixels 730 n.v 0.0451..0.0472 albedo mean 1.0043 min 1.0041 max 1.0045 | worst pixel 0.45 %
+gpu: grazing compensated metal 1 n.v 0.05 rough 0.5 pixels 736 n.v 0.0451..0.0472 albedo mean 1.0001 min 1.0 max 1.0002 | worst pixel 0.02 %
+gpu: grazing compensated metal 1 n.v 0.05 rough 0.6 pixels 731 n.v 0.045..0.0471 albedo mean 0.9981 min 0.998 max 0.9982 | worst pixel 0.2 %
+gpu: grazing compensated metal 1 n.v 0.05 rough 0.7 pixels 723 n.v 0.045..0.0471 albedo mean 0.9978 min 0.9977 max 0.9978 | worst pixel 0.23 %
+gpu: grazing compensated metal 1 n.v 0.05 rough 0.8 pixels 714 n.v 0.045..0.0471 albedo mean 0.9981 min 0.9981 max 0.9981 | worst pixel 0.19 %
+gpu: grazing compensated metal 1 n.v 0.05 rough 0.9 pixels 707 n.v 0.045..0.0471 albedo mean 0.9986 min 0.9986 max 0.9986 | worst pixel 0.14 %
+gpu: grazing compensated metal 1 n.v 0.05 rough 1.0 pixels 700 n.v 0.045..0.0471 albedo mean 0.9991 min 0.999 max 0.9991 | worst pixel 0.1 %
+gpu: grazing compensated metal 1 n.v 0.1 rough 0.0 (unresolved) pixels 717 n.v 0.0952..0.0972 albedo mean 0.0517 min 0.0157 max 0.1098 | worst pixel 98.43 %
+gpu: grazing compensated metal 1 n.v 0.1 rough 0.1 (unresolved) pixels 720 n.v 0.0952..0.0972 albedo mean 0.3099 min 0.251 max 0.5464 | worst pixel 74.9 %
+gpu: grazing compensated metal 1 n.v 0.1 rough 0.2 (unresolved) pixels 724 n.v 0.0952..0.0972 albedo mean 1.0446 min 1.0251 max 1.052 | worst pixel 5.2 %
+gpu: grazing compensated metal 1 n.v 0.1 rough 0.3 pixels 730 n.v 0.0951..0.0972 albedo mean 1.0021 min 1.0018 max 1.0024 | worst pixel 0.24 %
+gpu: grazing compensated metal 1 n.v 0.1 rough 0.4 pixels 734 n.v 0.0951..0.0972 albedo mean 0.9991 min 0.999 max 0.9992 | worst pixel 0.1 %
+gpu: grazing compensated metal 1 n.v 0.1 rough 0.5 pixels 739 n.v 0.0951..0.0972 albedo mean 0.9965 min 0.9965 max 0.9965 | worst pixel 0.35 %
+gpu: grazing compensated metal 1 n.v 0.1 rough 0.6 pixels 735 n.v 0.095..0.0972 albedo mean 0.9964 min 0.9963 max 0.9964 | worst pixel 0.37 %
+gpu: grazing compensated metal 1 n.v 0.1 rough 0.7 pixels 730 n.v 0.095..0.0971 albedo mean 0.9978 min 0.9978 max 0.9978 | worst pixel 0.22 %
+gpu: grazing compensated metal 1 n.v 0.1 rough 0.8 pixels 727 n.v 0.095..0.0971 albedo mean 0.9993 min 0.9992 max 0.9993 | worst pixel 0.08 %
+gpu: grazing compensated metal 1 n.v 0.1 rough 0.9 pixels 723 n.v 0.095..0.0971 albedo mean 1.0001 min 1.0001 max 1.0002 | worst pixel 0.02 %
+gpu: grazing compensated metal 1 n.v 0.1 rough 1.0 pixels 718 n.v 0.095..0.097 albedo mean 0.9999 min 0.9999 max 1.0 | worst pixel 0.01 %
+gpu: grazing compensated metal 1 n.v 0.2 rough 0.0 (unresolved) pixels 691 n.v 0.1952..0.1971 albedo mean 0.0958 min 0.0603 max 0.1283 | worst pixel 93.97 %
+gpu: grazing compensated metal 1 n.v 0.2 rough 0.1 (unresolved) pixels 696 n.v 0.1952..0.1971 albedo mean 0.6142 min 0.5671 max 0.7371 | worst pixel 43.29 %
+gpu: grazing compensated metal 1 n.v 0.2 rough 0.2 (unresolved) pixels 698 n.v 0.1952..0.1971 albedo mean 1.0022 min 1.0005 max 1.0038 | worst pixel 0.38 %
+gpu: grazing compensated metal 1 n.v 0.2 rough 0.3 pixels 699 n.v 0.1952..0.1971 albedo mean 0.9989 min 0.9988 max 0.999 | worst pixel 0.12 %
+gpu: grazing compensated metal 1 n.v 0.2 rough 0.4 pixels 703 n.v 0.1952..0.1971 albedo mean 0.9959 min 0.9958 max 0.9959 | worst pixel 0.42 %
+gpu: grazing compensated metal 1 n.v 0.2 rough 0.5 pixels 711 n.v 0.1951..0.197 albedo mean 0.9958 min 0.9957 max 0.9959 | worst pixel 0.43 %
+gpu: grazing compensated metal 1 n.v 0.2 rough 0.6 pixels 703 n.v 0.1951..0.197 albedo mean 0.9993 min 0.9992 max 0.9994 | worst pixel 0.08 %
+gpu: grazing compensated metal 1 n.v 0.2 rough 0.7 pixels 699 n.v 0.1951..0.197 albedo mean 1.0 min 1.0 max 1.0001 | worst pixel 0.01 %
+gpu: grazing compensated metal 1 n.v 0.2 rough 0.8 pixels 698 n.v 0.1951..0.197 albedo mean 0.9996 min 0.9996 max 0.9996 | worst pixel 0.04 %
+gpu: grazing compensated metal 1 n.v 0.2 rough 0.9 pixels 696 n.v 0.1951..0.197 albedo mean 0.9997 min 0.9997 max 0.9997 | worst pixel 0.03 %
+gpu: grazing compensated metal 1 n.v 0.2 rough 1.0 pixels 693 n.v 0.1951..0.197 albedo mean 0.9997 min 0.9997 max 0.9997 | worst pixel 0.03 %
+gpu: grazing compensated metal 1 n.v 0.35 rough 0.0 (unresolved) pixels 698 n.v 0.3455..0.3472 albedo mean 0.1029 min 0.0621 max 0.2234 | worst pixel 93.79 %
+gpu: grazing compensated metal 1 n.v 0.35 rough 0.1 (unresolved) pixels 698 n.v 0.3455..0.3472 albedo mean 0.8162 min 0.7266 max 0.9478 | worst pixel 27.34 %
+gpu: grazing compensated metal 1 n.v 0.35 rough 0.2 (unresolved) pixels 700 n.v 0.3452..0.3472 albedo mean 1.0004 min 1.0002 max 1.0005 | worst pixel 0.05 %
+gpu: grazing compensated metal 1 n.v 0.35 rough 0.3 pixels 701 n.v 0.3452..0.3472 albedo mean 0.9987 min 0.9987 max 0.9988 | worst pixel 0.13 %
+gpu: grazing compensated metal 1 n.v 0.35 rough 0.4 pixels 709 n.v 0.3452..0.3472 albedo mean 0.9971 min 0.9971 max 0.9972 | worst pixel 0.29 %
+gpu: grazing compensated metal 1 n.v 0.35 rough 0.5 pixels 720 n.v 0.3452..0.3472 albedo mean 0.9998 min 0.9998 max 0.9998 | worst pixel 0.02 %
+gpu: grazing compensated metal 1 n.v 0.35 rough 0.6 pixels 709 n.v 0.3452..0.3472 albedo mean 0.9991 min 0.999 max 0.9991 | worst pixel 0.1 %
+gpu: grazing compensated metal 1 n.v 0.35 rough 0.7 pixels 702 n.v 0.3452..0.3472 albedo mean 0.9995 min 0.9995 max 0.9995 | worst pixel 0.05 %
+gpu: grazing compensated metal 1 n.v 0.35 rough 0.8 pixels 700 n.v 0.3452..0.3472 albedo mean 0.9996 min 0.9996 max 0.9996 | worst pixel 0.04 %
+gpu: grazing compensated metal 1 n.v 0.35 rough 0.9 pixels 699 n.v 0.3452..0.3472 albedo mean 0.9997 min 0.9996 max 0.9997 | worst pixel 0.04 %
+gpu: grazing compensated metal 1 n.v 0.35 rough 1.0 pixels 698 n.v 0.3452..0.3472 albedo mean 0.9996 min 0.9996 max 0.9996 | worst pixel 0.04 %
+gpu: grazing compensated summary (16384 sun directions) rough >= 0.3: worst tile mean error 1.37 %, worst pixel 1.88 % (gain 1.88 %, loss 0.43 %); dielectric worst mean 0.2 % worst pixel 0.46 %; metal worst mean 1.37 % worst pixel 1.88 %; n.v 0.05 rows worst pixel 1.88 %; unresolved (rough < 0.3, reported) worst pixel gain 215.45 % loss 99.48 %; tiles with < 100 pixels 0
+gpu: grazing single metal 0 n.v 0.35 rough 0.0 (unresolved) pixels 698 n.v 0.3455..0.3472 albedo mean 0.9246 min 0.8674 max 1.0841 | worst pixel 13.26 %
+gpu: grazing single metal 0 n.v 0.35 rough 0.1 (unresolved) pixels 698 n.v 0.3455..0.3472 albedo mean 1.0583 min 1.0142 max 1.0946 | worst pixel 9.46 %
+gpu: grazing single metal 0 n.v 0.35 rough 0.2 (unresolved) pixels 700 n.v 0.3452..0.3472 albedo mean 0.9994 min 0.9993 max 0.9994 | worst pixel 0.07 %
+gpu: grazing single metal 0 n.v 0.35 rough 0.3 pixels 701 n.v 0.3452..0.3472 albedo mean 0.9995 min 0.9995 max 0.9995 | worst pixel 0.05 %
+gpu: grazing single metal 0 n.v 0.35 rough 0.4 pixels 709 n.v 0.3452..0.3472 albedo mean 0.9994 min 0.9994 max 0.9995 | worst pixel 0.06 %
+gpu: grazing single metal 0 n.v 0.35 rough 0.5 pixels 720 n.v 0.3452..0.3472 albedo mean 0.9995 min 0.9995 max 0.9995 | worst pixel 0.05 %
+gpu: grazing single metal 0 n.v 0.35 rough 0.6 pixels 710 n.v 0.3452..0.3472 albedo mean 0.9995 min 0.9995 max 0.9995 | worst pixel 0.05 %
+gpu: grazing single metal 0 n.v 0.35 rough 0.7 pixels 703 n.v 0.3452..0.3472 albedo mean 0.9996 min 0.9996 max 0.9996 | worst pixel 0.04 %
+gpu: grazing single metal 0 n.v 0.35 rough 0.8 pixels 700 n.v 0.3452..0.3472 albedo mean 0.9996 min 0.9996 max 0.9996 | worst pixel 0.04 %
+gpu: grazing single metal 0 n.v 0.35 rough 0.9 pixels 699 n.v 0.3452..0.3472 albedo mean 0.9996 min 0.9996 max 0.9996 | worst pixel 0.04 %
+gpu: grazing single metal 0 n.v 0.35 rough 1.0 pixels 698 n.v 0.3452..0.3472 albedo mean 0.9996 min 0.9996 max 0.9996 | worst pixel 0.04 %
+gpu: grazing single metal 0 n.v 0.2 rough 0.0 (unresolved) pixels 691 n.v 0.1952..0.1971 albedo mean 0.6557 min 0.6464 max 0.6846 | worst pixel 35.36 %
+gpu: grazing single metal 0 n.v 0.2 rough 0.1 (unresolved) pixels 696 n.v 0.1952..0.1971 albedo mean 0.8182 min 0.8021 max 0.8473 | worst pixel 19.79 %
+gpu: grazing single metal 0 n.v 0.2 rough 0.2 (unresolved) pixels 698 n.v 0.1952..0.1971 albedo mean 1.0008 min 0.9999 max 1.0014 | worst pixel 0.14 %
+gpu: grazing single metal 0 n.v 0.2 rough 0.3 pixels 699 n.v 0.1952..0.1971 albedo mean 0.9996 min 0.9995 max 0.9996 | worst pixel 0.05 %
+gpu: grazing single metal 0 n.v 0.2 rough 0.4 pixels 703 n.v 0.1952..0.1971 albedo mean 0.9993 min 0.9993 max 0.9993 | worst pixel 0.07 %
+gpu: grazing single metal 0 n.v 0.2 rough 0.5 pixels 711 n.v 0.1951..0.197 albedo mean 0.9994 min 0.9993 max 0.9994 | worst pixel 0.07 %
+gpu: grazing single metal 0 n.v 0.2 rough 0.6 pixels 703 n.v 0.1951..0.197 albedo mean 0.9995 min 0.9995 max 0.9995 | worst pixel 0.05 %
+gpu: grazing single metal 0 n.v 0.2 rough 0.7 pixels 699 n.v 0.1951..0.197 albedo mean 0.9996 min 0.9996 max 0.9996 | worst pixel 0.04 %
+gpu: grazing single metal 0 n.v 0.2 rough 0.8 pixels 698 n.v 0.1951..0.197 albedo mean 0.9996 min 0.9996 max 0.9996 | worst pixel 0.04 %
+gpu: grazing single metal 0 n.v 0.2 rough 0.9 pixels 696 n.v 0.1951..0.197 albedo mean 0.9996 min 0.9996 max 0.9996 | worst pixel 0.04 %
+gpu: grazing single metal 0 n.v 0.2 rough 1.0 pixels 693 n.v 0.1951..0.197 albedo mean 0.9996 min 0.9996 max 0.9996 | worst pixel 0.04 %
+gpu: grazing single metal 0 n.v 0.1 rough 0.0 (unresolved) pixels 717 n.v 0.0952..0.0972 albedo mean 0.4034 min 0.3996 max 0.4084 | worst pixel 60.04 %
+gpu: grazing single metal 0 n.v 0.1 rough 0.1 (unresolved) pixels 720 n.v 0.0952..0.0972 albedo mean 0.665 min 0.6368 max 0.7147 | worst pixel 36.32 %
+gpu: grazing single metal 0 n.v 0.1 rough 0.2 (unresolved) pixels 724 n.v 0.0952..0.0972 albedo mean 1.0198 min 1.0107 max 1.0248 | worst pixel 2.48 %
+gpu: grazing single metal 0 n.v 0.1 rough 0.3 pixels 729 n.v 0.0951..0.0972 albedo mean 0.9999 min 0.9995 max 1.0002 | worst pixel 0.05 %
+gpu: grazing single metal 0 n.v 0.1 rough 0.4 pixels 734 n.v 0.0951..0.0972 albedo mean 0.9993 min 0.9992 max 0.9993 | worst pixel 0.08 %
+gpu: grazing single metal 0 n.v 0.1 rough 0.5 pixels 739 n.v 0.0951..0.0972 albedo mean 0.9993 min 0.9993 max 0.9993 | worst pixel 0.07 %
+gpu: grazing single metal 0 n.v 0.1 rough 0.6 pixels 735 n.v 0.095..0.0972 albedo mean 0.9994 min 0.9994 max 0.9994 | worst pixel 0.06 %
+gpu: grazing single metal 0 n.v 0.1 rough 0.7 pixels 730 n.v 0.095..0.0971 albedo mean 0.9995 min 0.9995 max 0.9995 | worst pixel 0.05 %
+gpu: grazing single metal 0 n.v 0.1 rough 0.8 pixels 727 n.v 0.095..0.0971 albedo mean 0.9996 min 0.9996 max 0.9996 | worst pixel 0.04 %
+gpu: grazing single metal 0 n.v 0.1 rough 0.9 pixels 723 n.v 0.095..0.0971 albedo mean 0.9996 min 0.9996 max 0.9996 | worst pixel 0.04 %
+gpu: grazing single metal 0 n.v 0.1 rough 1.0 pixels 718 n.v 0.095..0.097 albedo mean 0.9996 min 0.9996 max 0.9996 | worst pixel 0.04 %
+gpu: grazing single metal 0 n.v 0.05 rough 0.0 (unresolved) pixels 695 n.v 0.0452..0.0473 albedo mean 0.2341 min 0.2306 max 0.238 | worst pixel 76.94 %
+gpu: grazing single metal 0 n.v 0.05 rough 0.1 (unresolved) pixels 702 n.v 0.0452..0.0472 albedo mean 1.7238 min 0.5196 max 3.1346 | worst pixel 213.46 %
+gpu: grazing single metal 0 n.v 0.05 rough 0.2 (unresolved) pixels 711 n.v 0.0451..0.0472 albedo mean 0.9492 min 0.9267 max 1.0151 | worst pixel 7.33 %
+gpu: grazing single metal 0 n.v 0.05 rough 0.3 pixels 721 n.v 0.0451..0.0472 albedo mean 1.002 min 0.9978 max 1.0045 | worst pixel 0.45 %
+gpu: grazing single metal 0 n.v 0.05 rough 0.4 pixels 730 n.v 0.0451..0.0472 albedo mean 0.9994 min 0.9994 max 0.9996 | worst pixel 0.06 %
+gpu: grazing single metal 0 n.v 0.05 rough 0.5 pixels 736 n.v 0.0451..0.0472 albedo mean 0.9993 min 0.9993 max 0.9994 | worst pixel 0.07 %
+gpu: grazing single metal 0 n.v 0.05 rough 0.6 pixels 731 n.v 0.045..0.0471 albedo mean 0.9994 min 0.9994 max 0.9994 | worst pixel 0.06 %
+gpu: grazing single metal 0 n.v 0.05 rough 0.7 pixels 723 n.v 0.045..0.0471 albedo mean 0.9995 min 0.9995 max 0.9995 | worst pixel 0.05 %
+gpu: grazing single metal 0 n.v 0.05 rough 0.8 pixels 714 n.v 0.045..0.0471 albedo mean 0.9996 min 0.9996 max 0.9996 | worst pixel 0.04 %
+gpu: grazing single metal 0 n.v 0.05 rough 0.9 pixels 707 n.v 0.045..0.0471 albedo mean 0.9996 min 0.9996 max 0.9996 | worst pixel 0.04 %
+gpu: grazing single metal 0 n.v 0.05 rough 1.0 pixels 700 n.v 0.045..0.0471 albedo mean 0.9996 min 0.9996 max 0.9996 | worst pixel 0.04 %
+gpu: grazing single metal 1 n.v 0.05 rough 0.0 (unresolved) pixels 695 n.v 0.0452..0.0473 albedo mean 0.0054 min 0.005 max 0.0068 | worst pixel 99.5 %
+gpu: grazing single metal 1 n.v 0.05 rough 0.1 (unresolved) pixels 702 n.v 0.0452..0.0472 albedo mean 1.2325 min 0.2075 max 2.2461 | worst pixel 124.61 %
+gpu: grazing single metal 1 n.v 0.05 rough 0.2 (unresolved) pixels 711 n.v 0.0451..0.0472 albedo mean 0.5839 min 0.5553 max 0.6559 | worst pixel 44.47 %
+gpu: grazing single metal 1 n.v 0.05 rough 0.3 pixels 721 n.v 0.0451..0.0472 albedo mean 0.6667 min 0.6613 max 0.6713 | worst pixel 33.87 %
+gpu: grazing single metal 1 n.v 0.05 rough 0.4 pixels 730 n.v 0.0451..0.0472 albedo mean 0.7102 min 0.7085 max 0.712 | worst pixel 29.15 %
+gpu: grazing single metal 1 n.v 0.05 rough 0.5 pixels 736 n.v 0.0451..0.0472 albedo mean 0.7397 min 0.7383 max 0.7412 | worst pixel 26.17 %
+gpu: grazing single metal 1 n.v 0.05 rough 0.6 pixels 731 n.v 0.045..0.0471 albedo mean 0.7451 min 0.744 max 0.7464 | worst pixel 25.6 %
+gpu: grazing single metal 1 n.v 0.05 rough 0.7 pixels 723 n.v 0.045..0.0471 albedo mean 0.7282 min 0.7273 max 0.7292 | worst pixel 27.27 %
+gpu: grazing single metal 1 n.v 0.05 rough 0.8 pixels 714 n.v 0.045..0.0471 albedo mean 0.6929 min 0.6922 max 0.6937 | worst pixel 30.78 %
+gpu: grazing single metal 1 n.v 0.05 rough 0.9 pixels 707 n.v 0.045..0.0471 albedo mean 0.6439 min 0.6432 max 0.6445 | worst pixel 35.68 %
+gpu: grazing single metal 1 n.v 0.05 rough 1.0 pixels 700 n.v 0.045..0.0471 albedo mean 0.5857 min 0.5852 max 0.5863 | worst pixel 41.48 %
+gpu: grazing single metal 1 n.v 0.1 rough 0.0 (unresolved) pixels 717 n.v 0.0952..0.0972 albedo mean 0.0511 min 0.0155 max 0.1085 | worst pixel 98.45 %
+gpu: grazing single metal 1 n.v 0.1 rough 0.1 (unresolved) pixels 720 n.v 0.0952..0.0972 albedo mean 0.2807 min 0.2271 max 0.4946 | worst pixel 77.29 %
+gpu: grazing single metal 1 n.v 0.1 rough 0.2 (unresolved) pixels 724 n.v 0.0952..0.0972 albedo mean 0.7592 min 0.7432 max 0.7659 | worst pixel 25.68 %
+gpu: grazing single metal 1 n.v 0.1 rough 0.3 pixels 730 n.v 0.0951..0.0972 albedo mean 0.6569 min 0.6562 max 0.6575 | worst pixel 34.38 %
+gpu: grazing single metal 1 n.v 0.1 rough 0.4 pixels 734 n.v 0.0951..0.0972 albedo mean 0.6667 min 0.6664 max 0.6671 | worst pixel 33.36 %
+gpu: grazing single metal 1 n.v 0.1 rough 0.5 pixels 739 n.v 0.0951..0.0972 albedo mean 0.6901 min 0.6894 max 0.6908 | worst pixel 31.06 %
+gpu: grazing single metal 1 n.v 0.1 rough 0.6 pixels 735 n.v 0.095..0.0972 albedo mean 0.7003 min 0.6996 max 0.701 | worst pixel 30.04 %
+gpu: grazing single metal 1 n.v 0.1 rough 0.7 pixels 730 n.v 0.095..0.0971 albedo mean 0.6903 min 0.6897 max 0.691 | worst pixel 31.03 %
+gpu: grazing single metal 1 n.v 0.1 rough 0.8 pixels 727 n.v 0.095..0.0971 albedo mean 0.6608 min 0.6602 max 0.6614 | worst pixel 33.98 %
+gpu: grazing single metal 1 n.v 0.1 rough 0.9 pixels 723 n.v 0.095..0.0971 albedo mean 0.6155 min 0.6149 max 0.616 | worst pixel 38.51 %
+gpu: grazing single metal 1 n.v 0.1 rough 1.0 pixels 718 n.v 0.095..0.097 albedo mean 0.5593 min 0.5588 max 0.5599 | worst pixel 44.12 %
+gpu: grazing single metal 1 n.v 0.2 rough 0.0 (unresolved) pixels 691 n.v 0.1952..0.1971 albedo mean 0.0953 min 0.06 max 0.1277 | worst pixel 94.0 %
+gpu: grazing single metal 1 n.v 0.2 rough 0.1 (unresolved) pixels 696 n.v 0.1952..0.1971 albedo mean 0.5885 min 0.5435 max 0.7061 | worst pixel 45.65 %
+gpu: grazing single metal 1 n.v 0.2 rough 0.2 (unresolved) pixels 698 n.v 0.1952..0.1971 albedo mean 0.85 min 0.8479 max 0.8523 | worst pixel 15.21 %
+gpu: grazing single metal 1 n.v 0.2 rough 0.3 pixels 699 n.v 0.1952..0.1971 albedo mean 0.7349 min 0.734 max 0.7357 | worst pixel 26.6 %
+gpu: grazing single metal 1 n.v 0.2 rough 0.4 pixels 703 n.v 0.1952..0.1971 albedo mean 0.679 min 0.6786 max 0.6794 | worst pixel 32.14 %
+gpu: grazing single metal 1 n.v 0.2 rough 0.5 pixels 711 n.v 0.1951..0.197 albedo mean 0.6643 min 0.6643 max 0.6644 | worst pixel 33.57 %
+gpu: grazing single metal 1 n.v 0.2 rough 0.6 pixels 703 n.v 0.1951..0.197 albedo mean 0.6585 min 0.6583 max 0.6587 | worst pixel 34.17 %
+gpu: grazing single metal 1 n.v 0.2 rough 0.7 pixels 699 n.v 0.1951..0.197 albedo mean 0.6436 min 0.6433 max 0.6439 | worst pixel 35.67 %
+gpu: grazing single metal 1 n.v 0.2 rough 0.8 pixels 698 n.v 0.1951..0.197 albedo mean 0.6135 min 0.6131 max 0.6138 | worst pixel 38.69 %
+gpu: grazing single metal 1 n.v 0.2 rough 0.9 pixels 696 n.v 0.1951..0.197 albedo mean 0.5686 min 0.5682 max 0.569 | worst pixel 43.18 %
+gpu: grazing single metal 1 n.v 0.2 rough 1.0 pixels 693 n.v 0.1951..0.197 albedo mean 0.5127 min 0.5123 max 0.5131 | worst pixel 48.77 %
+gpu: grazing single metal 1 n.v 0.35 rough 0.0 (unresolved) pixels 698 n.v 0.3455..0.3472 albedo mean 0.1027 min 0.062 max 0.2229 | worst pixel 93.8 %
+gpu: grazing single metal 1 n.v 0.35 rough 0.1 (unresolved) pixels 698 n.v 0.3455..0.3472 albedo mean 0.8003 min 0.7124 max 0.9291 | worst pixel 28.76 %
+gpu: grazing single metal 1 n.v 0.35 rough 0.2 (unresolved) pixels 700 n.v 0.3452..0.3472 albedo mean 0.924 min 0.9237 max 0.9244 | worst pixel 7.63 %
+gpu: grazing single metal 1 n.v 0.35 rough 0.3 pixels 701 n.v 0.3452..0.3472 albedo mean 0.8377 min 0.8372 max 0.8383 | worst pixel 16.28 %
+gpu: grazing single metal 1 n.v 0.35 rough 0.4 pixels 709 n.v 0.3452..0.3472 albedo mean 0.7534 min 0.7529 max 0.7539 | worst pixel 24.71 %
+gpu: grazing single metal 1 n.v 0.35 rough 0.5 pixels 720 n.v 0.3452..0.3472 albedo mean 0.694 min 0.6937 max 0.6942 | worst pixel 30.63 %
+gpu: grazing single metal 1 n.v 0.35 rough 0.6 pixels 709 n.v 0.3452..0.3472 albedo mean 0.6528 min 0.6527 max 0.6529 | worst pixel 34.73 %
+gpu: grazing single metal 1 n.v 0.35 rough 0.7 pixels 702 n.v 0.3452..0.3472 albedo mean 0.6148 min 0.6147 max 0.6149 | worst pixel 38.53 %
+gpu: grazing single metal 1 n.v 0.35 rough 0.8 pixels 700 n.v 0.3452..0.3472 albedo mean 0.5703 min 0.5701 max 0.5705 | worst pixel 42.99 %
+gpu: grazing single metal 1 n.v 0.35 rough 0.9 pixels 699 n.v 0.3452..0.3472 albedo mean 0.5166 min 0.5163 max 0.5169 | worst pixel 48.37 %
+gpu: grazing single metal 1 n.v 0.35 rough 1.0 pixels 698 n.v 0.3452..0.3472 albedo mean 0.4556 min 0.4552 max 0.4559 | worst pixel 54.48 %
+gpu: grazing single summary (16384 sun directions) rough >= 0.3: worst tile mean error 54.44 %, worst pixel 54.48 % (gain 0.45 %, loss 54.48 %); dielectric worst mean 0.2 % worst pixel 0.45 %; metal worst mean 54.44 % worst pixel 54.48 %; n.v 0.05 rows worst pixel 41.48 %; unresolved (rough < 0.3, reported) worst pixel gain 213.46 % loss 99.5 %; tiles with < 100 pixels 0
+gpu: grazing wrong-F metal 0 n.v 0.35 rough 0.0 (unresolved) pixels 698 n.v 0.3455..0.3472 albedo mean 1.3723 min 0.9969 max 2.4291 | worst pixel 142.91 %
+gpu: grazing wrong-F metal 0 n.v 0.35 rough 0.1 (unresolved) pixels 698 n.v 0.3455..0.3472 albedo mean 2.2586 min 1.9602 max 2.5038 | worst pixel 150.38 %
+gpu: grazing wrong-F metal 0 n.v 0.35 rough 0.2 (unresolved) pixels 700 n.v 0.3452..0.3472 albedo mean 1.8588 min 1.8581 max 1.8596 | worst pixel 85.96 %
+gpu: grazing wrong-F metal 0 n.v 0.35 rough 0.3 pixels 701 n.v 0.3452..0.3472 albedo mean 1.8795 min 1.879 max 1.88 | worst pixel 88.0 %
+gpu: grazing wrong-F metal 0 n.v 0.35 rough 0.4 pixels 709 n.v 0.3452..0.3472 albedo mean 1.9052 min 1.9049 max 1.9055 | worst pixel 90.55 %
+gpu: grazing wrong-F metal 0 n.v 0.35 rough 0.5 pixels 720 n.v 0.3452..0.3472 albedo mean 1.9307 min 1.9305 max 1.9308 | worst pixel 93.08 %
+gpu: grazing wrong-F metal 0 n.v 0.35 rough 0.6 pixels 710 n.v 0.3452..0.3472 albedo mean 1.9457 min 1.9456 max 1.9458 | worst pixel 94.58 %
+gpu: grazing wrong-F metal 0 n.v 0.35 rough 0.7 pixels 703 n.v 0.3452..0.3472 albedo mean 1.9568 min 1.9567 max 1.9568 | worst pixel 95.68 %
+gpu: grazing wrong-F metal 0 n.v 0.35 rough 0.8 pixels 700 n.v 0.3452..0.3472 albedo mean 1.9645 min 1.9644 max 1.9645 | worst pixel 96.45 %
+gpu: grazing wrong-F metal 0 n.v 0.35 rough 0.9 pixels 699 n.v 0.3452..0.3472 albedo mean 1.9704 min 1.9703 max 1.9704 | worst pixel 97.04 %
+gpu: grazing wrong-F metal 0 n.v 0.35 rough 1.0 pixels 698 n.v 0.3452..0.3472 albedo mean 1.9752 min 1.9751 max 1.9752 | worst pixel 97.52 %
+gpu: grazing wrong-F metal 0 n.v 0.2 rough 0.0 (unresolved) pixels 691 n.v 0.1952..0.1971 albedo mean 0.6856 min 0.663 max 0.7635 | worst pixel 33.7 %
+gpu: grazing wrong-F metal 0 n.v 0.2 rough 0.1 (unresolved) pixels 696 n.v 0.1952..0.1971 albedo mean 1.1368 min 1.0906 max 1.2165 | worst pixel 21.65 %
+gpu: grazing wrong-F metal 0 n.v 0.2 rough 0.2 (unresolved) pixels 698 n.v 0.1952..0.1971 albedo mean 1.7158 min 1.7125 max 1.7182 | worst pixel 71.82 %
+gpu: grazing wrong-F metal 0 n.v 0.2 rough 0.3 pixels 699 n.v 0.1952..0.1971 albedo mean 1.7938 min 1.7932 max 1.7944 | worst pixel 79.44 %
+gpu: grazing wrong-F metal 0 n.v 0.2 rough 0.4 pixels 703 n.v 0.1952..0.1971 albedo mean 1.8555 min 1.8552 max 1.8559 | worst pixel 85.59 %
+gpu: grazing wrong-F metal 0 n.v 0.2 rough 0.5 pixels 711 n.v 0.1951..0.197 albedo mean 1.8966 min 1.8963 max 1.8969 | worst pixel 89.69 %
+gpu: grazing wrong-F metal 0 n.v 0.2 rough 0.6 pixels 703 n.v 0.1951..0.197 albedo mean 1.9257 min 1.9255 max 1.926 | worst pixel 92.6 %
+gpu: grazing wrong-F metal 0 n.v 0.2 rough 0.7 pixels 699 n.v 0.1951..0.197 albedo mean 1.943 min 1.9429 max 1.9431 | worst pixel 94.31 %
+gpu: grazing wrong-F metal 0 n.v 0.2 rough 0.8 pixels 698 n.v 0.1951..0.197 albedo mean 1.9539 min 1.9538 max 1.954 | worst pixel 95.4 %
+gpu: grazing wrong-F metal 0 n.v 0.2 rough 0.9 pixels 696 n.v 0.1951..0.197 albedo mean 1.9624 min 1.9623 max 1.9624 | worst pixel 96.24 %
+gpu: grazing wrong-F metal 0 n.v 0.2 rough 1.0 pixels 693 n.v 0.1951..0.197 albedo mean 1.9688 min 1.9687 max 1.9688 | worst pixel 96.88 %
+gpu: grazing wrong-F metal 0 n.v 0.1 rough 0.0 (unresolved) pixels 717 n.v 0.0952..0.0972 albedo mean 0.4128 min 0.4088 max 0.4205 | worst pixel 59.12 %
+gpu: grazing wrong-F metal 0 n.v 0.1 rough 0.1 (unresolved) pixels 720 n.v 0.0952..0.0972 albedo mean 0.8623 min 0.8067 max 0.9638 | worst pixel 19.33 %
+gpu: grazing wrong-F metal 0 n.v 0.1 rough 0.2 (unresolved) pixels 724 n.v 0.0952..0.0972 albedo mean 1.6551 min 1.6367 max 1.6651 | worst pixel 66.51 %
+gpu: grazing wrong-F metal 0 n.v 0.1 rough 0.3 pixels 729 n.v 0.0951..0.0972 albedo mean 1.7477 min 1.7467 max 1.7485 | worst pixel 74.85 %
+gpu: grazing wrong-F metal 0 n.v 0.1 rough 0.4 pixels 734 n.v 0.0951..0.0972 albedo mean 1.8233 min 1.8228 max 1.8237 | worst pixel 82.37 %
+gpu: grazing wrong-F metal 0 n.v 0.1 rough 0.5 pixels 739 n.v 0.0951..0.0972 albedo mean 1.8707 min 1.8704 max 1.8711 | worst pixel 87.11 %
+gpu: grazing wrong-F metal 0 n.v 0.1 rough 0.6 pixels 735 n.v 0.095..0.0972 albedo mean 1.9033 min 1.9031 max 1.9036 | worst pixel 90.36 %
+gpu: grazing wrong-F metal 0 n.v 0.1 rough 0.7 pixels 730 n.v 0.095..0.0971 albedo mean 1.9267 min 1.9265 max 1.9269 | worst pixel 92.69 %
+gpu: grazing wrong-F metal 0 n.v 0.1 rough 0.8 pixels 727 n.v 0.095..0.0971 albedo mean 1.9433 min 1.9431 max 1.9434 | worst pixel 94.34 %
+gpu: grazing wrong-F metal 0 n.v 0.1 rough 0.9 pixels 723 n.v 0.095..0.0971 albedo mean 1.955 min 1.9548 max 1.9551 | worst pixel 95.51 %
+gpu: grazing wrong-F metal 0 n.v 0.1 rough 1.0 pixels 718 n.v 0.095..0.097 albedo mean 1.9629 min 1.9629 max 1.963 | worst pixel 96.3 %
+gpu: grazing wrong-F metal 0 n.v 0.05 rough 0.0 (unresolved) pixels 695 n.v 0.0452..0.0473 albedo mean 0.2355 min 0.2317 max 0.2398 | worst pixel 76.83 %
+gpu: grazing wrong-F metal 0 n.v 0.05 rough 0.1 (unresolved) pixels 702 n.v 0.0452..0.0472 albedo mean 2.5776 min 0.6223 max 4.8596 | worst pixel 385.96 %
+gpu: grazing wrong-F metal 0 n.v 0.05 rough 0.2 (unresolved) pixels 711 n.v 0.0451..0.0472 albedo mean 1.5017 min 1.456 max 1.6412 | worst pixel 64.12 %
+gpu: grazing wrong-F metal 0 n.v 0.05 rough 0.3 pixels 721 n.v 0.0451..0.0472 albedo mean 1.7328 min 1.7252 max 1.7373 | worst pixel 73.73 %
+gpu: grazing wrong-F metal 0 n.v 0.05 rough 0.4 pixels 730 n.v 0.0451..0.0472 albedo mean 1.8049 min 1.8043 max 1.8056 | worst pixel 80.56 %
+gpu: grazing wrong-F metal 0 n.v 0.05 rough 0.5 pixels 736 n.v 0.0451..0.0472 albedo mean 1.8564 min 1.856 max 1.8568 | worst pixel 85.68 %
+gpu: grazing wrong-F metal 0 n.v 0.05 rough 0.6 pixels 731 n.v 0.045..0.0471 albedo mean 1.8924 min 1.8922 max 1.8926 | worst pixel 89.26 %
+gpu: grazing wrong-F metal 0 n.v 0.05 rough 0.7 pixels 723 n.v 0.045..0.0471 albedo mean 1.9177 min 1.9175 max 1.9179 | worst pixel 91.79 %
+gpu: grazing wrong-F metal 0 n.v 0.05 rough 0.8 pixels 714 n.v 0.045..0.0471 albedo mean 1.9356 min 1.9355 max 1.9357 | worst pixel 93.57 %
+gpu: grazing wrong-F metal 0 n.v 0.05 rough 0.9 pixels 707 n.v 0.045..0.0471 albedo mean 1.9486 min 1.9485 max 1.9487 | worst pixel 94.87 %
+gpu: grazing wrong-F metal 0 n.v 0.05 rough 1.0 pixels 700 n.v 0.045..0.0471 albedo mean 1.9583 min 1.9582 max 1.9583 | worst pixel 95.83 %
+gpu: grazing wrong-F metal 1 n.v 0.05 rough 0.0 (unresolved) pixels 695 n.v 0.0452..0.0473 albedo mean 0.0056 min 0.0052 max 0.0071 | worst pixel 99.48 %
+gpu: grazing wrong-F metal 1 n.v 0.05 rough 0.1 (unresolved) pixels 702 n.v 0.0452..0.0472 albedo mean 1.5264 min 0.2558 max 2.7693 | worst pixel 176.93 %
+gpu: grazing wrong-F metal 1 n.v 0.05 rough 0.2 (unresolved) pixels 711 n.v 0.0451..0.0472 albedo mean 0.9137 min 0.8708 max 1.0243 | worst pixel 12.92 %
+gpu: grazing wrong-F metal 1 n.v 0.05 rough 0.3 pixels 721 n.v 0.0451..0.0472 albedo mean 1.0137 min 1.0054 max 1.0188 | worst pixel 1.88 %
+gpu: grazing wrong-F metal 1 n.v 0.05 rough 0.4 pixels 730 n.v 0.0451..0.0472 albedo mean 1.0043 min 1.0041 max 1.0045 | worst pixel 0.45 %
+gpu: grazing wrong-F metal 1 n.v 0.05 rough 0.5 pixels 736 n.v 0.0451..0.0472 albedo mean 1.0001 min 1.0 max 1.0002 | worst pixel 0.02 %
+gpu: grazing wrong-F metal 1 n.v 0.05 rough 0.6 pixels 731 n.v 0.045..0.0471 albedo mean 0.9981 min 0.998 max 0.9982 | worst pixel 0.2 %
+gpu: grazing wrong-F metal 1 n.v 0.05 rough 0.7 pixels 723 n.v 0.045..0.0471 albedo mean 0.9978 min 0.9977 max 0.9978 | worst pixel 0.23 %
+gpu: grazing wrong-F metal 1 n.v 0.05 rough 0.8 pixels 714 n.v 0.045..0.0471 albedo mean 0.9981 min 0.9981 max 0.9981 | worst pixel 0.19 %
+gpu: grazing wrong-F metal 1 n.v 0.05 rough 0.9 pixels 707 n.v 0.045..0.0471 albedo mean 0.9986 min 0.9986 max 0.9986 | worst pixel 0.14 %
+gpu: grazing wrong-F metal 1 n.v 0.05 rough 1.0 pixels 700 n.v 0.045..0.0471 albedo mean 0.9991 min 0.999 max 0.9991 | worst pixel 0.1 %
+gpu: grazing wrong-F metal 1 n.v 0.1 rough 0.0 (unresolved) pixels 717 n.v 0.0952..0.0972 albedo mean 0.0517 min 0.0157 max 0.1098 | worst pixel 98.43 %
+gpu: grazing wrong-F metal 1 n.v 0.1 rough 0.1 (unresolved) pixels 720 n.v 0.0952..0.0972 albedo mean 0.3099 min 0.251 max 0.5464 | worst pixel 74.9 %
+gpu: grazing wrong-F metal 1 n.v 0.1 rough 0.2 (unresolved) pixels 724 n.v 0.0952..0.0972 albedo mean 1.0446 min 1.0251 max 1.052 | worst pixel 5.2 %
+gpu: grazing wrong-F metal 1 n.v 0.1 rough 0.3 pixels 730 n.v 0.0951..0.0972 albedo mean 1.0021 min 1.0018 max 1.0024 | worst pixel 0.24 %
+gpu: grazing wrong-F metal 1 n.v 0.1 rough 0.4 pixels 734 n.v 0.0951..0.0972 albedo mean 0.9991 min 0.999 max 0.9992 | worst pixel 0.1 %
+gpu: grazing wrong-F metal 1 n.v 0.1 rough 0.5 pixels 739 n.v 0.0951..0.0972 albedo mean 0.9965 min 0.9965 max 0.9965 | worst pixel 0.35 %
+gpu: grazing wrong-F metal 1 n.v 0.1 rough 0.6 pixels 735 n.v 0.095..0.0972 albedo mean 0.9964 min 0.9963 max 0.9964 | worst pixel 0.37 %
+gpu: grazing wrong-F metal 1 n.v 0.1 rough 0.7 pixels 730 n.v 0.095..0.0971 albedo mean 0.9978 min 0.9978 max 0.9978 | worst pixel 0.22 %
+gpu: grazing wrong-F metal 1 n.v 0.1 rough 0.8 pixels 727 n.v 0.095..0.0971 albedo mean 0.9993 min 0.9992 max 0.9993 | worst pixel 0.08 %
+gpu: grazing wrong-F metal 1 n.v 0.1 rough 0.9 pixels 723 n.v 0.095..0.0971 albedo mean 1.0001 min 1.0001 max 1.0002 | worst pixel 0.02 %
+gpu: grazing wrong-F metal 1 n.v 0.1 rough 1.0 pixels 718 n.v 0.095..0.097 albedo mean 0.9999 min 0.9999 max 1.0 | worst pixel 0.01 %
+gpu: grazing wrong-F metal 1 n.v 0.2 rough 0.0 (unresolved) pixels 691 n.v 0.1952..0.1971 albedo mean 0.0958 min 0.0603 max 0.1283 | worst pixel 93.97 %
+gpu: grazing wrong-F metal 1 n.v 0.2 rough 0.1 (unresolved) pixels 696 n.v 0.1952..0.1971 albedo mean 0.6142 min 0.5671 max 0.7371 | worst pixel 43.29 %
+gpu: grazing wrong-F metal 1 n.v 0.2 rough 0.2 (unresolved) pixels 698 n.v 0.1952..0.1971 albedo mean 1.0022 min 1.0005 max 1.0038 | worst pixel 0.38 %
+gpu: grazing wrong-F metal 1 n.v 0.2 rough 0.3 pixels 699 n.v 0.1952..0.1971 albedo mean 0.9989 min 0.9988 max 0.999 | worst pixel 0.12 %
+gpu: grazing wrong-F metal 1 n.v 0.2 rough 0.4 pixels 703 n.v 0.1952..0.1971 albedo mean 0.9959 min 0.9958 max 0.9959 | worst pixel 0.42 %
+gpu: grazing wrong-F metal 1 n.v 0.2 rough 0.5 pixels 711 n.v 0.1951..0.197 albedo mean 0.9958 min 0.9957 max 0.9959 | worst pixel 0.43 %
+gpu: grazing wrong-F metal 1 n.v 0.2 rough 0.6 pixels 703 n.v 0.1951..0.197 albedo mean 0.9993 min 0.9992 max 0.9994 | worst pixel 0.08 %
+gpu: grazing wrong-F metal 1 n.v 0.2 rough 0.7 pixels 699 n.v 0.1951..0.197 albedo mean 1.0 min 1.0 max 1.0001 | worst pixel 0.01 %
+gpu: grazing wrong-F metal 1 n.v 0.2 rough 0.8 pixels 698 n.v 0.1951..0.197 albedo mean 0.9996 min 0.9996 max 0.9996 | worst pixel 0.04 %
+gpu: grazing wrong-F metal 1 n.v 0.2 rough 0.9 pixels 696 n.v 0.1951..0.197 albedo mean 0.9997 min 0.9997 max 0.9997 | worst pixel 0.03 %
+gpu: grazing wrong-F metal 1 n.v 0.2 rough 1.0 pixels 693 n.v 0.1951..0.197 albedo mean 0.9997 min 0.9997 max 0.9997 | worst pixel 0.03 %
+gpu: grazing wrong-F metal 1 n.v 0.35 rough 0.0 (unresolved) pixels 698 n.v 0.3455..0.3472 albedo mean 0.1029 min 0.0621 max 0.2234 | worst pixel 93.79 %
+gpu: grazing wrong-F metal 1 n.v 0.35 rough 0.1 (unresolved) pixels 698 n.v 0.3455..0.3472 albedo mean 0.8162 min 0.7266 max 0.9478 | worst pixel 27.34 %
+gpu: grazing wrong-F metal 1 n.v 0.35 rough 0.2 (unresolved) pixels 700 n.v 0.3452..0.3472 albedo mean 1.0004 min 1.0002 max 1.0005 | worst pixel 0.05 %
+gpu: grazing wrong-F metal 1 n.v 0.35 rough 0.3 pixels 701 n.v 0.3452..0.3472 albedo mean 0.9987 min 0.9987 max 0.9988 | worst pixel 0.13 %
+gpu: grazing wrong-F metal 1 n.v 0.35 rough 0.4 pixels 709 n.v 0.3452..0.3472 albedo mean 0.9971 min 0.9971 max 0.9972 | worst pixel 0.29 %
+gpu: grazing wrong-F metal 1 n.v 0.35 rough 0.5 pixels 720 n.v 0.3452..0.3472 albedo mean 0.9998 min 0.9998 max 0.9998 | worst pixel 0.02 %
+gpu: grazing wrong-F metal 1 n.v 0.35 rough 0.6 pixels 709 n.v 0.3452..0.3472 albedo mean 0.9991 min 0.999 max 0.9991 | worst pixel 0.1 %
+gpu: grazing wrong-F metal 1 n.v 0.35 rough 0.7 pixels 702 n.v 0.3452..0.3472 albedo mean 0.9995 min 0.9995 max 0.9995 | worst pixel 0.05 %
+gpu: grazing wrong-F metal 1 n.v 0.35 rough 0.8 pixels 700 n.v 0.3452..0.3472 albedo mean 0.9996 min 0.9996 max 0.9996 | worst pixel 0.04 %
+gpu: grazing wrong-F metal 1 n.v 0.35 rough 0.9 pixels 699 n.v 0.3452..0.3472 albedo mean 0.9997 min 0.9996 max 0.9997 | worst pixel 0.04 %
+gpu: grazing wrong-F metal 1 n.v 0.35 rough 1.0 pixels 698 n.v 0.3452..0.3472 albedo mean 0.9996 min 0.9996 max 0.9996 | worst pixel 0.04 %
+gpu: grazing wrong-F summary (16384 sun directions) rough >= 0.3: worst tile mean error 97.52 %, worst pixel 97.52 % (gain 97.52 %, loss 0.43 %); dielectric worst mean 97.52 % worst pixel 97.52 %; metal worst mean 1.37 % worst pixel 1.88 %; n.v 0.05 rows worst pixel 95.83 %; unresolved (rough < 0.3, reported) worst pixel gain 385.96 % loss 99.48 %; tiles with < 100 pixels 0
+gpu: grazing legacy-diffuse metal 0 n.v 0.35 rough 0.0 (unresolved) pixels 698 n.v 0.3455..0.3472 albedo mean 1.0305 min 0.9741 max 1.1892 | worst pixel 18.92 %
+gpu: grazing legacy-diffuse metal 0 n.v 0.35 rough 0.1 (unresolved) pixels 698 n.v 0.3455..0.3472 albedo mean 1.1616 min 1.1181 max 1.1971 | worst pixel 19.71 %
+gpu: grazing legacy-diffuse metal 0 n.v 0.35 rough 0.2 (unresolved) pixels 700 n.v 0.3452..0.3472 albedo mean 1.0918 min 1.0911 max 1.0924 | worst pixel 9.24 %
+gpu: grazing legacy-diffuse metal 0 n.v 0.35 rough 0.3 pixels 701 n.v 0.3452..0.3472 albedo mean 1.0697 min 1.0693 max 1.0702 | worst pixel 7.02 %
+gpu: grazing legacy-diffuse metal 0 n.v 0.35 rough 0.4 pixels 709 n.v 0.3452..0.3472 albedo mean 1.0424 min 1.0421 max 1.0426 | worst pixel 4.26 %
+gpu: grazing legacy-diffuse metal 0 n.v 0.35 rough 0.5 pixels 720 n.v 0.3452..0.3472 albedo mean 1.0196 min 1.0194 max 1.0197 | worst pixel 1.97 %
+gpu: grazing legacy-diffuse metal 0 n.v 0.35 rough 0.6 pixels 710 n.v 0.3452..0.3472 albedo mean 1.0038 min 1.0037 max 1.0039 | worst pixel 0.39 %
+gpu: grazing legacy-diffuse metal 0 n.v 0.35 rough 0.7 pixels 703 n.v 0.3452..0.3472 albedo mean 0.9932 min 0.9931 max 0.9932 | worst pixel 0.69 %
+gpu: grazing legacy-diffuse metal 0 n.v 0.35 rough 0.8 pixels 700 n.v 0.3452..0.3472 albedo mean 0.9856 min 0.9856 max 0.9856 | worst pixel 1.44 %
+gpu: grazing legacy-diffuse metal 0 n.v 0.35 rough 0.9 pixels 699 n.v 0.3452..0.3472 albedo mean 0.9797 min 0.9797 max 0.9797 | worst pixel 2.03 %
+gpu: grazing legacy-diffuse metal 0 n.v 0.35 rough 1.0 pixels 698 n.v 0.3452..0.3472 albedo mean 0.9749 min 0.9749 max 0.9749 | worst pixel 2.51 %
+gpu: grazing legacy-diffuse metal 0 n.v 0.2 rough 0.0 (unresolved) pixels 691 n.v 0.1952..0.1971 albedo mean 0.9614 min 0.9539 max 0.9884 | worst pixel 4.61 %
+gpu: grazing legacy-diffuse metal 0 n.v 0.2 rough 0.1 (unresolved) pixels 696 n.v 0.1952..0.1971 albedo mean 1.1087 min 1.0943 max 1.1388 | worst pixel 13.88 %
+gpu: grazing legacy-diffuse metal 0 n.v 0.2 rough 0.2 (unresolved) pixels 698 n.v 0.1952..0.1971 albedo mean 1.2332 min 1.2312 max 1.235 | worst pixel 23.5 %
+gpu: grazing legacy-diffuse metal 0 n.v 0.2 rough 0.3 pixels 699 n.v 0.1952..0.1971 albedo mean 1.1498 min 1.1493 max 1.1504 | worst pixel 15.04 %
+gpu: grazing legacy-diffuse metal 0 n.v 0.2 rough 0.4 pixels 703 n.v 0.1952..0.1971 albedo mean 1.0846 min 1.0843 max 1.0849 | worst pixel 8.49 %
+gpu: grazing legacy-diffuse metal 0 n.v 0.2 rough 0.5 pixels 711 n.v 0.1951..0.197 albedo mean 1.0434 min 1.0432 max 1.0436 | worst pixel 4.36 %
+gpu: grazing legacy-diffuse metal 0 n.v 0.2 rough 0.6 pixels 703 n.v 0.1951..0.197 albedo mean 1.0179 min 1.0178 max 1.018 | worst pixel 1.8 %
+gpu: grazing legacy-diffuse metal 0 n.v 0.2 rough 0.7 pixels 699 n.v 0.1951..0.197 albedo mean 1.0014 min 1.0014 max 1.0015 | worst pixel 0.15 %
+gpu: grazing legacy-diffuse metal 0 n.v 0.2 rough 0.8 pixels 698 n.v 0.1951..0.197 albedo mean 0.9901 min 0.9901 max 0.9901 | worst pixel 0.99 %
+gpu: grazing legacy-diffuse metal 0 n.v 0.2 rough 0.9 pixels 696 n.v 0.1951..0.197 albedo mean 0.9818 min 0.9818 max 0.9818 | worst pixel 1.82 %
+gpu: grazing legacy-diffuse metal 0 n.v 0.2 rough 1.0 pixels 693 n.v 0.1951..0.197 albedo mean 0.9753 min 0.9753 max 0.9753 | worst pixel 2.47 %
+gpu: grazing legacy-diffuse metal 0 n.v 0.1 rough 0.0 (unresolved) pixels 717 n.v 0.0952..0.0972 albedo mean 0.9538 min 0.952 max 0.9556 | worst pixel 4.8 %
+gpu: grazing legacy-diffuse metal 0 n.v 0.1 rough 0.1 (unresolved) pixels 720 n.v 0.0952..0.0972 albedo mean 1.1573 min 1.1311 max 1.2052 | worst pixel 20.52 %
+gpu: grazing legacy-diffuse metal 0 n.v 0.1 rough 0.2 (unresolved) pixels 724 n.v 0.0952..0.0972 albedo mean 1.3484 min 1.3386 max 1.354 | worst pixel 35.4 %
+gpu: grazing legacy-diffuse metal 0 n.v 0.1 rough 0.3 pixels 729 n.v 0.0951..0.0972 albedo mean 1.1948 min 1.1941 max 1.1955 | worst pixel 19.55 %
+gpu: grazing legacy-diffuse metal 0 n.v 0.1 rough 0.4 pixels 734 n.v 0.0951..0.0972 albedo mean 1.1145 min 1.1141 max 1.1149 | worst pixel 11.49 %
+gpu: grazing legacy-diffuse metal 0 n.v 0.1 rough 0.5 pixels 739 n.v 0.0951..0.0972 albedo mean 1.0644 min 1.0642 max 1.0647 | worst pixel 6.47 %
+gpu: grazing legacy-diffuse metal 0 n.v 0.1 rough 0.6 pixels 735 n.v 0.095..0.0972 albedo mean 1.0318 min 1.0316 max 1.0319 | worst pixel 3.19 %
+gpu: grazing legacy-diffuse metal 0 n.v 0.1 rough 0.7 pixels 730 n.v 0.095..0.0971 albedo mean 1.0099 min 1.0098 max 1.0101 | worst pixel 1.01 %
+gpu: grazing legacy-diffuse metal 0 n.v 0.1 rough 0.8 pixels 727 n.v 0.095..0.0971 albedo mean 0.9949 min 0.9949 max 0.995 | worst pixel 0.51 %
+gpu: grazing legacy-diffuse metal 0 n.v 0.1 rough 0.9 pixels 723 n.v 0.095..0.0971 albedo mean 0.9841 min 0.9841 max 0.9841 | worst pixel 1.59 %
+gpu: grazing legacy-diffuse metal 0 n.v 0.1 rough 1.0 pixels 718 n.v 0.095..0.097 albedo mean 0.9759 min 0.9759 max 0.9759 | worst pixel 2.41 %
+gpu: grazing legacy-diffuse metal 0 n.v 0.05 rough 0.0 (unresolved) pixels 695 n.v 0.0452..0.0473 albedo mean 0.94 min 0.9395 max 0.941 | worst pixel 6.05 %
+gpu: grazing legacy-diffuse metal 0 n.v 0.05 rough 0.1 (unresolved) pixels 702 n.v 0.0452..0.0472 albedo mean 2.2964 min 1.0811 max 3.7205 | worst pixel 272.05 %
+gpu: grazing legacy-diffuse metal 0 n.v 0.05 rough 0.2 (unresolved) pixels 711 n.v 0.0451..0.0472 albedo mean 1.2833 min 1.26 max 1.3508 | worst pixel 35.08 %
+gpu: grazing legacy-diffuse metal 0 n.v 0.05 rough 0.3 pixels 721 n.v 0.0451..0.0472 albedo mean 1.2171 min 1.2131 max 1.2204 | worst pixel 22.04 %
+gpu: grazing legacy-diffuse metal 0 n.v 0.05 rough 0.4 pixels 730 n.v 0.0451..0.0472 albedo mean 1.1349 min 1.1344 max 1.1356 | worst pixel 13.56 %
+gpu: grazing legacy-diffuse metal 0 n.v 0.05 rough 0.5 pixels 736 n.v 0.0451..0.0472 albedo mean 1.0791 min 1.0787 max 1.0794 | worst pixel 7.94 %
+gpu: grazing legacy-diffuse metal 0 n.v 0.05 rough 0.6 pixels 731 n.v 0.045..0.0471 albedo mean 1.0411 min 1.0409 max 1.0414 | worst pixel 4.14 %
+gpu: grazing legacy-diffuse metal 0 n.v 0.05 rough 0.7 pixels 723 n.v 0.045..0.0471 albedo mean 1.0156 min 1.0155 max 1.0157 | worst pixel 1.57 %
+gpu: grazing legacy-diffuse metal 0 n.v 0.05 rough 0.8 pixels 714 n.v 0.045..0.0471 albedo mean 0.9981 min 0.998 max 0.9982 | worst pixel 0.2 %
+gpu: grazing legacy-diffuse metal 0 n.v 0.05 rough 0.9 pixels 707 n.v 0.045..0.0471 albedo mean 0.9857 min 0.9856 max 0.9857 | worst pixel 1.44 %
+gpu: grazing legacy-diffuse metal 0 n.v 0.05 rough 1.0 pixels 700 n.v 0.045..0.0471 albedo mean 0.9764 min 0.9764 max 0.9764 | worst pixel 2.36 %
+gpu: grazing legacy-diffuse metal 1 n.v 0.05 rough 0.0 (unresolved) pixels 695 n.v 0.0452..0.0473 albedo mean 0.0056 min 0.0052 max 0.0071 | worst pixel 99.48 %
+gpu: grazing legacy-diffuse metal 1 n.v 0.05 rough 0.1 (unresolved) pixels 702 n.v 0.0452..0.0472 albedo mean 1.5264 min 0.2558 max 2.7693 | worst pixel 176.93 %
+gpu: grazing legacy-diffuse metal 1 n.v 0.05 rough 0.2 (unresolved) pixels 711 n.v 0.0451..0.0472 albedo mean 0.9137 min 0.8708 max 1.0243 | worst pixel 12.92 %
+gpu: grazing legacy-diffuse metal 1 n.v 0.05 rough 0.3 pixels 721 n.v 0.0451..0.0472 albedo mean 1.0137 min 1.0054 max 1.0188 | worst pixel 1.88 %
+gpu: grazing legacy-diffuse metal 1 n.v 0.05 rough 0.4 pixels 730 n.v 0.0451..0.0472 albedo mean 1.0043 min 1.0041 max 1.0045 | worst pixel 0.45 %
+gpu: grazing legacy-diffuse metal 1 n.v 0.05 rough 0.5 pixels 736 n.v 0.0451..0.0472 albedo mean 1.0001 min 1.0 max 1.0002 | worst pixel 0.02 %
+gpu: grazing legacy-diffuse metal 1 n.v 0.05 rough 0.6 pixels 731 n.v 0.045..0.0471 albedo mean 0.9981 min 0.998 max 0.9982 | worst pixel 0.2 %
+gpu: grazing legacy-diffuse metal 1 n.v 0.05 rough 0.7 pixels 723 n.v 0.045..0.0471 albedo mean 0.9978 min 0.9977 max 0.9978 | worst pixel 0.23 %
+gpu: grazing legacy-diffuse metal 1 n.v 0.05 rough 0.8 pixels 714 n.v 0.045..0.0471 albedo mean 0.9981 min 0.9981 max 0.9981 | worst pixel 0.19 %
+gpu: grazing legacy-diffuse metal 1 n.v 0.05 rough 0.9 pixels 707 n.v 0.045..0.0471 albedo mean 0.9986 min 0.9986 max 0.9986 | worst pixel 0.14 %
+gpu: grazing legacy-diffuse metal 1 n.v 0.05 rough 1.0 pixels 700 n.v 0.045..0.0471 albedo mean 0.9991 min 0.999 max 0.9991 | worst pixel 0.1 %
+gpu: grazing legacy-diffuse metal 1 n.v 0.1 rough 0.0 (unresolved) pixels 717 n.v 0.0952..0.0972 albedo mean 0.0517 min 0.0157 max 0.1098 | worst pixel 98.43 %
+gpu: grazing legacy-diffuse metal 1 n.v 0.1 rough 0.1 (unresolved) pixels 720 n.v 0.0952..0.0972 albedo mean 0.3099 min 0.251 max 0.5464 | worst pixel 74.9 %
+gpu: grazing legacy-diffuse metal 1 n.v 0.1 rough 0.2 (unresolved) pixels 724 n.v 0.0952..0.0972 albedo mean 1.0446 min 1.0251 max 1.052 | worst pixel 5.2 %
+gpu: grazing legacy-diffuse metal 1 n.v 0.1 rough 0.3 pixels 730 n.v 0.0951..0.0972 albedo mean 1.0021 min 1.0018 max 1.0024 | worst pixel 0.24 %
+gpu: grazing legacy-diffuse metal 1 n.v 0.1 rough 0.4 pixels 734 n.v 0.0951..0.0972 albedo mean 0.9991 min 0.999 max 0.9992 | worst pixel 0.1 %
+gpu: grazing legacy-diffuse metal 1 n.v 0.1 rough 0.5 pixels 739 n.v 0.0951..0.0972 albedo mean 0.9965 min 0.9965 max 0.9965 | worst pixel 0.35 %
+gpu: grazing legacy-diffuse metal 1 n.v 0.1 rough 0.6 pixels 735 n.v 0.095..0.0972 albedo mean 0.9964 min 0.9963 max 0.9964 | worst pixel 0.37 %
+gpu: grazing legacy-diffuse metal 1 n.v 0.1 rough 0.7 pixels 730 n.v 0.095..0.0971 albedo mean 0.9978 min 0.9978 max 0.9978 | worst pixel 0.22 %
+gpu: grazing legacy-diffuse metal 1 n.v 0.1 rough 0.8 pixels 727 n.v 0.095..0.0971 albedo mean 0.9993 min 0.9992 max 0.9993 | worst pixel 0.08 %
+gpu: grazing legacy-diffuse metal 1 n.v 0.1 rough 0.9 pixels 723 n.v 0.095..0.0971 albedo mean 1.0001 min 1.0001 max 1.0002 | worst pixel 0.02 %
+gpu: grazing legacy-diffuse metal 1 n.v 0.1 rough 1.0 pixels 718 n.v 0.095..0.097 albedo mean 0.9999 min 0.9999 max 1.0 | worst pixel 0.01 %
+gpu: grazing legacy-diffuse metal 1 n.v 0.2 rough 0.0 (unresolved) pixels 691 n.v 0.1952..0.1971 albedo mean 0.0958 min 0.0603 max 0.1283 | worst pixel 93.97 %
+gpu: grazing legacy-diffuse metal 1 n.v 0.2 rough 0.1 (unresolved) pixels 696 n.v 0.1952..0.1971 albedo mean 0.6142 min 0.5671 max 0.7371 | worst pixel 43.29 %
+gpu: grazing legacy-diffuse metal 1 n.v 0.2 rough 0.2 (unresolved) pixels 698 n.v 0.1952..0.1971 albedo mean 1.0022 min 1.0005 max 1.0038 | worst pixel 0.38 %
+gpu: grazing legacy-diffuse metal 1 n.v 0.2 rough 0.3 pixels 699 n.v 0.1952..0.1971 albedo mean 0.9989 min 0.9988 max 0.999 | worst pixel 0.12 %
+gpu: grazing legacy-diffuse metal 1 n.v 0.2 rough 0.4 pixels 703 n.v 0.1952..0.1971 albedo mean 0.9959 min 0.9958 max 0.9959 | worst pixel 0.42 %
+gpu: grazing legacy-diffuse metal 1 n.v 0.2 rough 0.5 pixels 711 n.v 0.1951..0.197 albedo mean 0.9958 min 0.9957 max 0.9959 | worst pixel 0.43 %
+gpu: grazing legacy-diffuse metal 1 n.v 0.2 rough 0.6 pixels 703 n.v 0.1951..0.197 albedo mean 0.9993 min 0.9992 max 0.9994 | worst pixel 0.08 %
+gpu: grazing legacy-diffuse metal 1 n.v 0.2 rough 0.7 pixels 699 n.v 0.1951..0.197 albedo mean 1.0 min 1.0 max 1.0001 | worst pixel 0.01 %
+gpu: grazing legacy-diffuse metal 1 n.v 0.2 rough 0.8 pixels 698 n.v 0.1951..0.197 albedo mean 0.9996 min 0.9996 max 0.9996 | worst pixel 0.04 %
+gpu: grazing legacy-diffuse metal 1 n.v 0.2 rough 0.9 pixels 696 n.v 0.1951..0.197 albedo mean 0.9997 min 0.9997 max 0.9997 | worst pixel 0.03 %
+gpu: grazing legacy-diffuse metal 1 n.v 0.2 rough 1.0 pixels 693 n.v 0.1951..0.197 albedo mean 0.9997 min 0.9997 max 0.9997 | worst pixel 0.03 %
+gpu: grazing legacy-diffuse metal 1 n.v 0.35 rough 0.0 (unresolved) pixels 698 n.v 0.3455..0.3472 albedo mean 0.1029 min 0.0621 max 0.2234 | worst pixel 93.79 %
+gpu: grazing legacy-diffuse metal 1 n.v 0.35 rough 0.1 (unresolved) pixels 698 n.v 0.3455..0.3472 albedo mean 0.8162 min 0.7266 max 0.9478 | worst pixel 27.34 %
+gpu: grazing legacy-diffuse metal 1 n.v 0.35 rough 0.2 (unresolved) pixels 700 n.v 0.3452..0.3472 albedo mean 1.0004 min 1.0002 max 1.0005 | worst pixel 0.05 %
+gpu: grazing legacy-diffuse metal 1 n.v 0.35 rough 0.3 pixels 701 n.v 0.3452..0.3472 albedo mean 0.9987 min 0.9987 max 0.9988 | worst pixel 0.13 %
+gpu: grazing legacy-diffuse metal 1 n.v 0.35 rough 0.4 pixels 709 n.v 0.3452..0.3472 albedo mean 0.9971 min 0.9971 max 0.9972 | worst pixel 0.29 %
+gpu: grazing legacy-diffuse metal 1 n.v 0.35 rough 0.5 pixels 720 n.v 0.3452..0.3472 albedo mean 0.9998 min 0.9998 max 0.9998 | worst pixel 0.02 %
+gpu: grazing legacy-diffuse metal 1 n.v 0.35 rough 0.6 pixels 709 n.v 0.3452..0.3472 albedo mean 0.9991 min 0.999 max 0.9991 | worst pixel 0.1 %
+gpu: grazing legacy-diffuse metal 1 n.v 0.35 rough 0.7 pixels 702 n.v 0.3452..0.3472 albedo mean 0.9995 min 0.9995 max 0.9995 | worst pixel 0.05 %
+gpu: grazing legacy-diffuse metal 1 n.v 0.35 rough 0.8 pixels 700 n.v 0.3452..0.3472 albedo mean 0.9996 min 0.9996 max 0.9996 | worst pixel 0.04 %
+gpu: grazing legacy-diffuse metal 1 n.v 0.35 rough 0.9 pixels 699 n.v 0.3452..0.3472 albedo mean 0.9997 min 0.9996 max 0.9997 | worst pixel 0.04 %
+gpu: grazing legacy-diffuse metal 1 n.v 0.35 rough 1.0 pixels 698 n.v 0.3452..0.3472 albedo mean 0.9996 min 0.9996 max 0.9996 | worst pixel 0.04 %
+gpu: grazing legacy-diffuse summary (16384 sun directions) rough >= 0.3: worst tile mean error 21.71 %, worst pixel 22.04 % (gain 22.04 %, loss 2.51 %); dielectric worst mean 21.71 % worst pixel 22.04 %; metal worst mean 1.37 % worst pixel 1.88 %; n.v 0.05 rows worst pixel 22.04 %; unresolved (rough < 0.3, reported) worst pixel gain 272.05 % loss 99.48 %; tiles with < 100 pixels 0
+gpu: grazing x0.9 metal 0 n.v 0.35 rough 0.0 (unresolved) pixels 698 n.v 0.3455..0.3472 albedo mean 0.8321 min 0.7807 max 0.9757 | worst pixel 21.93 %
+gpu: grazing x0.9 metal 0 n.v 0.35 rough 0.1 (unresolved) pixels 698 n.v 0.3455..0.3472 albedo mean 0.9525 min 0.9128 max 0.9851 | worst pixel 8.72 %
+gpu: grazing x0.9 metal 0 n.v 0.35 rough 0.2 (unresolved) pixels 700 n.v 0.3452..0.3472 albedo mean 0.8994 min 0.8994 max 0.8994 | worst pixel 10.06 %
+gpu: grazing x0.9 metal 0 n.v 0.35 rough 0.3 pixels 701 n.v 0.3452..0.3472 albedo mean 0.8995 min 0.8995 max 0.8995 | worst pixel 10.05 %
+gpu: grazing x0.9 metal 0 n.v 0.35 rough 0.4 pixels 709 n.v 0.3452..0.3472 albedo mean 0.8995 min 0.8995 max 0.8995 | worst pixel 10.05 %
+gpu: grazing x0.9 metal 0 n.v 0.35 rough 0.5 pixels 720 n.v 0.3452..0.3472 albedo mean 0.8995 min 0.8995 max 0.8996 | worst pixel 10.05 %
+gpu: grazing x0.9 metal 0 n.v 0.35 rough 0.6 pixels 710 n.v 0.3452..0.3472 albedo mean 0.8996 min 0.8996 max 0.8996 | worst pixel 10.04 %
+gpu: grazing x0.9 metal 0 n.v 0.35 rough 0.7 pixels 703 n.v 0.3452..0.3472 albedo mean 0.8996 min 0.8996 max 0.8996 | worst pixel 10.04 %
+gpu: grazing x0.9 metal 0 n.v 0.35 rough 0.8 pixels 700 n.v 0.3452..0.3472 albedo mean 0.8996 min 0.8996 max 0.8996 | worst pixel 10.04 %
+gpu: grazing x0.9 metal 0 n.v 0.35 rough 0.9 pixels 699 n.v 0.3452..0.3472 albedo mean 0.8996 min 0.8996 max 0.8996 | worst pixel 10.04 %
+gpu: grazing x0.9 metal 0 n.v 0.35 rough 1.0 pixels 698 n.v 0.3452..0.3472 albedo mean 0.8996 min 0.8996 max 0.8996 | worst pixel 10.04 %
+gpu: grazing x0.9 metal 0 n.v 0.2 rough 0.0 (unresolved) pixels 691 n.v 0.1952..0.1971 albedo mean 0.59 min 0.5817 max 0.6161 | worst pixel 41.83 %
+gpu: grazing x0.9 metal 0 n.v 0.2 rough 0.1 (unresolved) pixels 696 n.v 0.1952..0.1971 albedo mean 0.7361 min 0.7215 max 0.7623 | worst pixel 27.85 %
+gpu: grazing x0.9 metal 0 n.v 0.2 rough 0.2 (unresolved) pixels 698 n.v 0.1952..0.1971 albedo mean 0.9007 min 0.8999 max 0.9013 | worst pixel 10.01 %
+gpu: grazing x0.9 metal 0 n.v 0.2 rough 0.3 pixels 699 n.v 0.1952..0.1971 albedo mean 0.8996 min 0.8996 max 0.8996 | worst pixel 10.04 %
+gpu: grazing x0.9 metal 0 n.v 0.2 rough 0.4 pixels 703 n.v 0.1952..0.1971 albedo mean 0.8993 min 0.8993 max 0.8994 | worst pixel 10.07 %
+gpu: grazing x0.9 metal 0 n.v 0.2 rough 0.5 pixels 711 n.v 0.1951..0.197 albedo mean 0.8994 min 0.8994 max 0.8994 | worst pixel 10.06 %
+gpu: grazing x0.9 metal 0 n.v 0.2 rough 0.6 pixels 703 n.v 0.1951..0.197 albedo mean 0.8995 min 0.8995 max 0.8995 | worst pixel 10.05 %
+gpu: grazing x0.9 metal 0 n.v 0.2 rough 0.7 pixels 699 n.v 0.1951..0.197 albedo mean 0.8996 min 0.8996 max 0.8996 | worst pixel 10.04 %
+gpu: grazing x0.9 metal 0 n.v 0.2 rough 0.8 pixels 698 n.v 0.1951..0.197 albedo mean 0.8996 min 0.8996 max 0.8996 | worst pixel 10.04 %
+gpu: grazing x0.9 metal 0 n.v 0.2 rough 0.9 pixels 696 n.v 0.1951..0.197 albedo mean 0.8996 min 0.8996 max 0.8996 | worst pixel 10.04 %
+gpu: grazing x0.9 metal 0 n.v 0.2 rough 1.0 pixels 693 n.v 0.1951..0.197 albedo mean 0.8996 min 0.8996 max 0.8996 | worst pixel 10.04 %
+gpu: grazing x0.9 metal 0 n.v 0.1 rough 0.0 (unresolved) pixels 717 n.v 0.0952..0.0972 albedo mean 0.3628 min 0.3593 max 0.3672 | worst pixel 64.07 %
+gpu: grazing x0.9 metal 0 n.v 0.1 rough 0.1 (unresolved) pixels 720 n.v 0.0952..0.0972 albedo mean 0.5972 min 0.5717 max 0.6422 | worst pixel 42.83 %
+gpu: grazing x0.9 metal 0 n.v 0.1 rough 0.2 (unresolved) pixels 724 n.v 0.0952..0.0972 albedo mean 0.9181 min 0.9097 max 0.9226 | worst pixel 9.03 %
+gpu: grazing x0.9 metal 0 n.v 0.1 rough 0.3 pixels 729 n.v 0.0951..0.0972 albedo mean 0.8999 min 0.8995 max 0.9002 | worst pixel 10.05 %
+gpu: grazing x0.9 metal 0 n.v 0.1 rough 0.4 pixels 734 n.v 0.0951..0.0972 albedo mean 0.8993 min 0.8993 max 0.8993 | worst pixel 10.07 %
+gpu: grazing x0.9 metal 0 n.v 0.1 rough 0.5 pixels 739 n.v 0.0951..0.0972 albedo mean 0.8994 min 0.8994 max 0.8994 | worst pixel 10.06 %
+gpu: grazing x0.9 metal 0 n.v 0.1 rough 0.6 pixels 735 n.v 0.095..0.0972 albedo mean 0.8994 min 0.8994 max 0.8995 | worst pixel 10.06 %
+gpu: grazing x0.9 metal 0 n.v 0.1 rough 0.7 pixels 730 n.v 0.095..0.0971 albedo mean 0.8995 min 0.8995 max 0.8995 | worst pixel 10.05 %
+gpu: grazing x0.9 metal 0 n.v 0.1 rough 0.8 pixels 727 n.v 0.095..0.0971 albedo mean 0.8996 min 0.8996 max 0.8996 | worst pixel 10.04 %
+gpu: grazing x0.9 metal 0 n.v 0.1 rough 0.9 pixels 723 n.v 0.095..0.0971 albedo mean 0.8997 min 0.8996 max 0.8997 | worst pixel 10.04 %
+gpu: grazing x0.9 metal 0 n.v 0.1 rough 1.0 pixels 718 n.v 0.095..0.097 albedo mean 0.8997 min 0.8997 max 0.8997 | worst pixel 10.03 %
+gpu: grazing x0.9 metal 0 n.v 0.05 rough 0.0 (unresolved) pixels 695 n.v 0.0452..0.0473 albedo mean 0.2097 min 0.2065 max 0.2132 | worst pixel 79.35 %
+gpu: grazing x0.9 metal 0 n.v 0.05 rough 0.1 (unresolved) pixels 702 n.v 0.0452..0.0472 albedo mean 1.5576 min 0.4635 max 2.8392 | worst pixel 183.92 %
+gpu: grazing x0.9 metal 0 n.v 0.05 rough 0.2 (unresolved) pixels 711 n.v 0.0451..0.0472 albedo mean 0.8533 min 0.8325 max 0.9139 | worst pixel 16.75 %
+gpu: grazing x0.9 metal 0 n.v 0.05 rough 0.3 pixels 721 n.v 0.0451..0.0472 albedo mean 0.9018 min 0.898 max 0.9042 | worst pixel 10.2 %
+gpu: grazing x0.9 metal 0 n.v 0.05 rough 0.4 pixels 730 n.v 0.0451..0.0472 albedo mean 0.8995 min 0.8994 max 0.8996 | worst pixel 10.06 %
+gpu: grazing x0.9 metal 0 n.v 0.05 rough 0.5 pixels 736 n.v 0.0451..0.0472 albedo mean 0.8994 min 0.8994 max 0.8994 | worst pixel 10.06 %
+gpu: grazing x0.9 metal 0 n.v 0.05 rough 0.6 pixels 731 n.v 0.045..0.0471 albedo mean 0.8994 min 0.8994 max 0.8995 | worst pixel 10.06 %
+gpu: grazing x0.9 metal 0 n.v 0.05 rough 0.7 pixels 723 n.v 0.045..0.0471 albedo mean 0.8995 min 0.8995 max 0.8995 | worst pixel 10.05 %
+gpu: grazing x0.9 metal 0 n.v 0.05 rough 0.8 pixels 714 n.v 0.045..0.0471 albedo mean 0.8996 min 0.8996 max 0.8996 | worst pixel 10.04 %
+gpu: grazing x0.9 metal 0 n.v 0.05 rough 0.9 pixels 707 n.v 0.045..0.0471 albedo mean 0.8996 min 0.8996 max 0.8996 | worst pixel 10.04 %
+gpu: grazing x0.9 metal 0 n.v 0.05 rough 1.0 pixels 700 n.v 0.045..0.0471 albedo mean 0.8996 min 0.8996 max 0.8996 | worst pixel 10.04 %
+gpu: grazing x0.9 metal 1 n.v 0.05 rough 0.0 (unresolved) pixels 695 n.v 0.0452..0.0473 albedo mean 0.005 min 0.0047 max 0.0063 | worst pixel 99.53 %
+gpu: grazing x0.9 metal 1 n.v 0.05 rough 0.1 (unresolved) pixels 702 n.v 0.0452..0.0472 albedo mean 1.3738 min 0.2302 max 2.4917 | worst pixel 149.17 %
+gpu: grazing x0.9 metal 1 n.v 0.05 rough 0.2 (unresolved) pixels 711 n.v 0.0451..0.0472 albedo mean 0.8223 min 0.7837 max 0.9218 | worst pixel 21.63 %
+gpu: grazing x0.9 metal 1 n.v 0.05 rough 0.3 pixels 721 n.v 0.0451..0.0472 albedo mean 0.9123 min 0.9049 max 0.9169 | worst pixel 9.51 %
+gpu: grazing x0.9 metal 1 n.v 0.05 rough 0.4 pixels 730 n.v 0.0451..0.0472 albedo mean 0.9038 min 0.9037 max 0.9041 | worst pixel 9.63 %
+gpu: grazing x0.9 metal 1 n.v 0.05 rough 0.5 pixels 736 n.v 0.0451..0.0472 albedo mean 0.9001 min 0.9 max 0.9002 | worst pixel 10.0 %
+gpu: grazing x0.9 metal 1 n.v 0.05 rough 0.6 pixels 731 n.v 0.045..0.0471 albedo mean 0.8983 min 0.8982 max 0.8983 | worst pixel 10.18 %
+gpu: grazing x0.9 metal 1 n.v 0.05 rough 0.7 pixels 723 n.v 0.045..0.0471 albedo mean 0.898 min 0.8979 max 0.898 | worst pixel 10.21 %
+gpu: grazing x0.9 metal 1 n.v 0.05 rough 0.8 pixels 714 n.v 0.045..0.0471 albedo mean 0.8983 min 0.8983 max 0.8983 | worst pixel 10.17 %
+gpu: grazing x0.9 metal 1 n.v 0.05 rough 0.9 pixels 707 n.v 0.045..0.0471 albedo mean 0.8987 min 0.8987 max 0.8988 | worst pixel 10.13 %
+gpu: grazing x0.9 metal 1 n.v 0.05 rough 1.0 pixels 700 n.v 0.045..0.0471 albedo mean 0.8991 min 0.8991 max 0.8991 | worst pixel 10.09 %
+gpu: grazing x0.9 metal 1 n.v 0.1 rough 0.0 (unresolved) pixels 717 n.v 0.0952..0.0972 albedo mean 0.0465 min 0.0141 max 0.0988 | worst pixel 98.59 %
+gpu: grazing x0.9 metal 1 n.v 0.1 rough 0.1 (unresolved) pixels 720 n.v 0.0952..0.0972 albedo mean 0.2789 min 0.2258 max 0.4916 | worst pixel 77.42 %
+gpu: grazing x0.9 metal 1 n.v 0.1 rough 0.2 (unresolved) pixels 724 n.v 0.0952..0.0972 albedo mean 0.9401 min 0.9226 max 0.9468 | worst pixel 7.74 %
+gpu: grazing x0.9 metal 1 n.v 0.1 rough 0.3 pixels 730 n.v 0.0951..0.0972 albedo mean 0.9019 min 0.9016 max 0.9022 | worst pixel 9.84 %
+gpu: grazing x0.9 metal 1 n.v 0.1 rough 0.4 pixels 734 n.v 0.0951..0.0972 albedo mean 0.8992 min 0.8991 max 0.8992 | worst pixel 10.09 %
+gpu: grazing x0.9 metal 1 n.v 0.1 rough 0.5 pixels 739 n.v 0.0951..0.0972 albedo mean 0.8968 min 0.8968 max 0.8969 | worst pixel 10.32 %
+gpu: grazing x0.9 metal 1 n.v 0.1 rough 0.6 pixels 735 n.v 0.095..0.0972 albedo mean 0.8967 min 0.8967 max 0.8967 | worst pixel 10.33 %
+gpu: grazing x0.9 metal 1 n.v 0.1 rough 0.7 pixels 730 n.v 0.095..0.0971 albedo mean 0.898 min 0.898 max 0.898 | worst pixel 10.2 %
+gpu: grazing x0.9 metal 1 n.v 0.1 rough 0.8 pixels 727 n.v 0.095..0.0971 albedo mean 0.8994 min 0.8993 max 0.8994 | worst pixel 10.07 %
+gpu: grazing x0.9 metal 1 n.v 0.1 rough 0.9 pixels 723 n.v 0.095..0.0971 albedo mean 0.9001 min 0.9001 max 0.9001 | worst pixel 9.99 %
+gpu: grazing x0.9 metal 1 n.v 0.1 rough 1.0 pixels 718 n.v 0.095..0.097 albedo mean 0.8999 min 0.8999 max 0.8999 | worst pixel 10.01 %
+gpu: grazing x0.9 metal 1 n.v 0.2 rough 0.0 (unresolved) pixels 691 n.v 0.1952..0.1971 albedo mean 0.0862 min 0.0543 max 0.1154 | worst pixel 94.57 %
+gpu: grazing x0.9 metal 1 n.v 0.2 rough 0.1 (unresolved) pixels 696 n.v 0.1952..0.1971 albedo mean 0.5528 min 0.5104 max 0.6633 | worst pixel 48.96 %
+gpu: grazing x0.9 metal 1 n.v 0.2 rough 0.2 (unresolved) pixels 698 n.v 0.1952..0.1971 albedo mean 0.9019 min 0.9004 max 0.9033 | worst pixel 9.96 %
+gpu: grazing x0.9 metal 1 n.v 0.2 rough 0.3 pixels 699 n.v 0.1952..0.1971 albedo mean 0.899 min 0.8989 max 0.8991 | worst pixel 10.11 %
+gpu: grazing x0.9 metal 1 n.v 0.2 rough 0.4 pixels 703 n.v 0.1952..0.1971 albedo mean 0.8962 min 0.8962 max 0.8963 | worst pixel 10.38 %
+gpu: grazing x0.9 metal 1 n.v 0.2 rough 0.5 pixels 711 n.v 0.1951..0.197 albedo mean 0.8962 min 0.8961 max 0.8962 | worst pixel 10.39 %
+gpu: grazing x0.9 metal 1 n.v 0.2 rough 0.6 pixels 703 n.v 0.1951..0.197 albedo mean 0.8994 min 0.8993 max 0.8994 | worst pixel 10.07 %
+gpu: grazing x0.9 metal 1 n.v 0.2 rough 0.7 pixels 699 n.v 0.1951..0.197 albedo mean 0.9 min 0.9 max 0.9 | worst pixel 10.0 %
+gpu: grazing x0.9 metal 1 n.v 0.2 rough 0.8 pixels 698 n.v 0.1951..0.197 albedo mean 0.8997 min 0.8996 max 0.8997 | worst pixel 10.04 %
+gpu: grazing x0.9 metal 1 n.v 0.2 rough 0.9 pixels 696 n.v 0.1951..0.197 albedo mean 0.8997 min 0.8997 max 0.8997 | worst pixel 10.03 %
+gpu: grazing x0.9 metal 1 n.v 0.2 rough 1.0 pixels 693 n.v 0.1951..0.197 albedo mean 0.8997 min 0.8997 max 0.8997 | worst pixel 10.03 %
+gpu: grazing x0.9 metal 1 n.v 0.35 rough 0.0 (unresolved) pixels 698 n.v 0.3455..0.3472 albedo mean 0.0926 min 0.0559 max 0.201 | worst pixel 94.41 %
+gpu: grazing x0.9 metal 1 n.v 0.35 rough 0.1 (unresolved) pixels 698 n.v 0.3455..0.3472 albedo mean 0.7345 min 0.6539 max 0.8531 | worst pixel 34.61 %
+gpu: grazing x0.9 metal 1 n.v 0.35 rough 0.2 (unresolved) pixels 700 n.v 0.3452..0.3472 albedo mean 0.9003 min 0.9002 max 0.9004 | worst pixel 9.98 %
+gpu: grazing x0.9 metal 1 n.v 0.35 rough 0.3 pixels 701 n.v 0.3452..0.3472 albedo mean 0.8988 min 0.8988 max 0.8989 | worst pixel 10.12 %
+gpu: grazing x0.9 metal 1 n.v 0.35 rough 0.4 pixels 709 n.v 0.3452..0.3472 albedo mean 0.8974 min 0.8974 max 0.8974 | worst pixel 10.26 %
+gpu: grazing x0.9 metal 1 n.v 0.35 rough 0.5 pixels 720 n.v 0.3452..0.3472 albedo mean 0.8998 min 0.8998 max 0.8998 | worst pixel 10.02 %
+gpu: grazing x0.9 metal 1 n.v 0.35 rough 0.6 pixels 709 n.v 0.3452..0.3472 albedo mean 0.8991 min 0.8991 max 0.8992 | worst pixel 10.09 %
+gpu: grazing x0.9 metal 1 n.v 0.35 rough 0.7 pixels 702 n.v 0.3452..0.3472 albedo mean 0.8995 min 0.8995 max 0.8995 | worst pixel 10.05 %
+gpu: grazing x0.9 metal 1 n.v 0.35 rough 0.8 pixels 700 n.v 0.3452..0.3472 albedo mean 0.8996 min 0.8996 max 0.8997 | worst pixel 10.04 %
+gpu: grazing x0.9 metal 1 n.v 0.35 rough 0.9 pixels 699 n.v 0.3452..0.3472 albedo mean 0.8997 min 0.8997 max 0.8997 | worst pixel 10.03 %
+gpu: grazing x0.9 metal 1 n.v 0.35 rough 1.0 pixels 698 n.v 0.3452..0.3472 albedo mean 0.8997 min 0.8997 max 0.8997 | worst pixel 10.03 %
+gpu: grazing x0.9 summary (16384 sun directions) rough >= 0.3: worst tile mean error 10.38 %, worst pixel 10.39 % (gain 0.0 %, loss 10.39 %); dielectric worst mean 10.07 % worst pixel 10.2 %; metal worst mean 10.38 % worst pixel 10.39 %; n.v 0.05 rows worst pixel 10.21 %; unresolved (rough < 0.3, reported) worst pixel gain 183.92 % loss 99.53 %; tiles with < 100 pixels 0
+gpu: furnace verdict (rough >= 0.3, bars: material mean < 1.5 %, every pixel |albedo - 1| < 2.5 %): compensated spheres PASS, grazing tiles PASS; controls: single FAILS as required (spheres fail, grazing fail); wrong-F FAILS as required (spheres fail, grazing fail); legacy-diffuse FAILS as required (spheres fail, grazing fail); x0.9 FAILS as required (spheres fail, grazing fail);
+gpu: spheres png /home/anmire/ai/amni-games/jk-helium-poc-work/tmp/shadow/out/spheres.png true
+gpu: spheres psnr 53.53 dB vs golden (bar > 40 dB) PASS
+gpu: timing 1280x720 sphere grid (26 draws, 4x msaa; shadows, ssao and bloom off as in the baseline): 30 warmup + 200 timed frames, each render + submit + fence wait, no readback
+gpu: timing wall-clock ms/frame min 0.2957 median 0.3183 p95 0.3839 ms
+gpu: timing gpu-timestamp ms/frame min 0.2196 median 0.2295 p95 0.2353 ms (1 submit(s) per frame, top-of-pipe to bottom-of-pipe)
+gpu: frame png /home/anmire/ai/amni-games/jk-helium-poc-work/tmp/shadow/out/frame.png true
+gpu: frame mean 161 range 0..255
+gpu: motion object want 12.16,-8.11 px got 12.16,-8.11 px (err 0.006) sky -0.0 px
+gpu: motion camera want -9.73,0.0 px got -9.73,0.0 px (err 0.005) sky -0.0 px depth 3.5 want 3.5
+gpu: motion skinned 18574 of 18594 pixels moving (peak 8.98 px), 0 moving on a repeated pose
+gpu: jitter phase 1: offset 0.125,0.278 px, image moved -0.124,-0.281 px (want the negative)
+gpu: jitter 16 phases: image moved by -jitter in 16/16, worst error 0.016 px
+gpu: taa png /home/anmire/ai/amni-games/jk-helium-poc-work/tmp/shadow/out/taa_off.png true
+gpu: taa png /home/anmire/ai/amni-games/jk-helium-poc-work/tmp/shadow/out/taa_on.png true
+gpu: taa still 960x540 (31.56% non-sky pixels counted) frame-to-frame mean abs diff frames 30-59: max 0.075 mean 0.049 /255 (frame 1: 0.08)
+gpu: taa psnr (non-sky) vs 2x supersampled: off 45.33 dB, taa 46.33 dB
+gpu: taa png /home/anmire/ai/amni-games/jk-helium-poc-work/tmp/shadow/out/taa_moving_sky.png true
+gpu: taa png /home/anmire/ai/amni-games/jk-helium-poc-work/tmp/shadow/out/taa_moving_sky_ref.png true
+gpu: taa png /home/anmire/ai/amni-games/jk-helium-poc-work/tmp/shadow/out/taa_moving_sky_noclip.png true
+gpu: taa moving grid on sky (reported), 40 frames, 31.2% non-sky pixels: ghosts 0.155% pixels off by >24/255 vs converged (mean 0.875/255); no-clip control 0.393% (mean 1.958); >8/255: 1.97% vs control 5.324%; no-taa floor 0.002%
+gpu: taa png /home/anmire/ai/amni-games/jk-helium-poc-work/tmp/shadow/out/taa_moving.png true
+gpu: taa png /home/anmire/ai/amni-games/jk-helium-poc-work/tmp/shadow/out/taa_moving_ref.png true
+gpu: taa png /home/anmire/ai/amni-games/jk-helium-poc-work/tmp/shadow/out/taa_moving_noclip.png true
+gpu: taa moving grid on wall (gated), 40 frames, 100.0% non-sky pixels: ghosts 0.021% pixels off by >24/255 vs converged (mean 0.305/255); no-clip control 0.06% (mean 0.91); >8/255: 0.439% vs control 1.081%; no-taa floor 0.0% PASS
+gpu: tsr png /home/anmire/ai/amni-games/jk-helium-poc-work/tmp/shadow/out/tsr_native1080.png true
+gpu: tsr timing native 1920x1080 taa frame: 30 warmup + 200 timed, wall-clock ms min 1.241 median 1.5868 p95 2.1031 ms
+gpu: tsr timing native 1920x1080 taa frame: gpu-timestamp ms min 1.152 median 1.2152 p95 1.2484 ms (1 submit(s) each)
+gpu: tsr png /home/anmire/ai/amni-games/jk-helium-poc-work/tmp/shadow/out/tsr_720to1080.png true
+gpu: tsr 720p->1080p psnr (non-sky, 31.02% of pixels) 47.41 dB vs native 1080p taa
+gpu: tsr timing 1280x720->1920x1080 frame: 30 warmup + 200 timed, wall-clock ms min 0.596 median 0.6216 p95 0.7939 ms
+gpu: tsr timing 1280x720->1920x1080 frame: gpu-timestamp ms min 0.5038 median 0.5212 p95 0.5354 ms (1 submit(s) each)
+gpu: tsr timing resolve 1280x720->1920x1080: 30 warmup + 200 timed, wall-clock ms min 0.2785 median 0.2991 p95 0.3279 ms
+gpu: tsr timing resolve 1280x720->1920x1080: gpu-timestamp ms min 0.235 median 0.2414 p95 0.2533 ms (1 submit(s) each)
+gpu: shadows png /home/anmire/ai/amni-games/jk-helium-poc-work/tmp/shadow/out/shadow_direct_off.png true
+gpu: shadows png /home/anmire/ai/amni-games/jk-helium-poc-work/tmp/shadow/out/shadow_direct_on.png true
+gpu: shadows reference: 960x540 primary + sun rays into 25 spheres and 2 boxes, 2 px band excluded (cascades end at 2.122, 5.907, 20.0)
+gpu: shadows png /home/anmire/ai/amni-games/jk-helium-poc-work/tmp/shadow/out/shadow_mask.png true
+gpu: shadows on cascade 2 [gated]: 441405 px counted, reference shadows 44111, gpu shadows 43901, both 43901, IoU 0.9952
+gpu: shadows mask IoU 0.9952 in the main cascade (bar >= 0.9) PASS
+gpu: shadows control off cascade 2 [gated]: 441405 px counted, reference shadows 44111, gpu shadows 0, both 0, IoU 0.0
+gpu: shadows control (shadows off) IoU 0.0 must fail: PASS
+gpu: shadows png /home/anmire/ai/amni-games/jk-helium-poc-work/tmp/shadow/out/shadow_direct_on_mirrored.png true
+gpu: shadows control mirrored sun cascade 2 [gated]: 430248 px counted, reference shadows 44111, gpu shadows 43385, both 16746, IoU 0.2367
+gpu: shadows control (sun mirrored in x) IoU 0.2367 must fail: PASS
+gpu: shadows png /home/anmire/ai/amni-games/jk-helium-poc-work/tmp/shadow/out/shadow_shaded_on.png true
+gpu: shadows timing 1280x720 wall scene, shadows off: 30 warmup + 200 timed, wall-clock ms min 0.358 median 0.3817 p95 0.4433 ms
+gpu: shadows timing 1280x720 wall scene, shadows off: gpu-timestamp ms min 0.2789 median 0.2912 p95 0.3012 ms (1 submit(s) each)
+gpu: shadows timing 1280x720 wall scene, shadows on (3 cascades, 2048^2): 30 warmup + 200 timed, wall-clock ms min 0.7557 median 0.7767 p95 1.0736 ms
+gpu: shadows timing 1280x720 wall scene, shadows on (3 cascades, 2048^2): gpu-timestamp ms min 0.6113 median 0.6239 p95 0.6322 ms (1 submit(s) each)
+gpu: shadows png /home/anmire/ai/amni-games/jk-helium-poc-work/tmp/shadow/out/spheres_shadows_on.png true
+gpu: shadows sphere grid with shadows on: psnr 30.85 dB vs the golden (reported)
+gpu: ok (153.3 s, vulkan)
+gfxtest: ok
+# note: first run with the shadow fix (509c26c layer + e4adf92 normal offset) and the new shadow checks; all bars pass
+# gfxtest.sh tail:
+# == full gfxtest 2026-11-01T05:57:38-05:00
+# gfxtest rc=0
+# gpu: shadows sphere grid with shadows on: psnr 30.85 dB vs the golden (reported)
+# gpu: ok (153.3 s, vulkan)
