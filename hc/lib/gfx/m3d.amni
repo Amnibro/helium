@@ -1,0 +1,75 @@
+import gfx;
+import vec;
+import math;
+fn v3(x f32, y f32, z f32) float3 { float3 { x, y, z } }
+fn v3a(a f32[3]) float3 { float3 { a[0], a[1], a[2] } }
+fn qid() float4 { float4 { 0.0, 0.0, 0.0, 1.0 } }
+fn q4(a f32[4]) float4 { float4 { a[0], a[1], a[2], a[3] } }
+fn qmul(a float4, b float4) float4 { float4 { a.w * b.x + a.x * b.w + a.y * b.z - a.z * b.y, a.w * b.y - a.x * b.z + a.y * b.w + a.z * b.x, a.w * b.z + a.x * b.y - a.y * b.x + a.z * b.w, a.w * b.w - a.x * b.x - a.y * b.y - a.z * b.z } }
+fn qrot(q float4, v float3) float3 { let u = float3 { q.x, q.y, q.z }; let t = cross(u, v) * 2.0; v + t * q.w + cross(u, t) }
+fn qaxis(axis float3, ang f32) float4 { let a = normalize(axis); let s = sin(ang * 0.5); float4 { a.x * s, a.y * s, a.z * s, cos(ang * 0.5) } }
+fn qnorm(q float4) float4 { let l = sqrt(q.x * q.x + q.y * q.y + q.z * q.z + q.w * q.w); if l > 0.0 { q / l } else { qid() } }
+fn qconj(q float4) float4 { float4 { -q.x, -q.y, -q.z, q.w } }
+fn qdot(a float4, b float4) f32 { a.x * b.x + a.y * b.y + a.z * b.z + a.w * b.w }
+fn qslerp(a float4, b0 float4, t f32) float4 {
+	var b = b0;
+	var d = qdot(a, b);
+	if d < 0.0 { b = b * -1.0; d = -d; }
+	if d > 0.9995 { return qnorm(a + (b - a) * t); }
+	let th = acos(d);
+	let s = sin(th);
+	(a * sin(th * (1.0 - t)) + b * sin(th * t)) / s
+}
+fn qfrom_mat3(x float3, y float3, z float3) float4 {
+	let tr = x.x + y.y + z.z;
+	if tr > 0.0 { let s = sqrt(tr + 1.0) * 2.0; return float4 { (y.z - z.y) / s, (z.x - x.z) / s, (x.y - y.x) / s, 0.25 * s }; }
+	if x.x > y.y && x.x > z.z { let s = sqrt(1.0 + x.x - y.y - z.z) * 2.0; return float4 { 0.25 * s, (y.x + x.y) / s, (z.x + x.z) / s, (y.z - z.y) / s }; }
+	if y.y > z.z { let s = sqrt(1.0 + y.y - x.x - z.z) * 2.0; return float4 { (y.x + x.y) / s, 0.25 * s, (z.y + y.z) / s, (z.x - x.z) / s }; }
+	let s = sqrt(1.0 + z.z - x.x - y.y) * 2.0;
+	float4 { (z.x + x.z) / s, (z.y + y.z) / s, 0.25 * s, (x.y - y.x) / s }
+}
+fn look_rot(dir float3, up float3) float4 { let back = normalize(dir) * -1.0; let right = normalize(cross(up, back)); let u = cross(back, right); qfrom_mat3(right, u, back) }
+fn trs(t float3, r float4, s float3) gfx::mat4 {
+	let x2 = r.x + r.x; let y2 = r.y + r.y; let z2 = r.z + r.z;
+	let xx = r.x * x2; let xy = r.x * y2; let xz = r.x * z2; let yy = r.y * y2; let yz = r.y * z2; let zz = r.z * z2; let wx = r.w * x2; let wy = r.w * y2; let wz = r.w * z2;
+	gfx::mat4 { c0: float4 { (1.0 - (yy + zz)) * s.x, (xy + wz) * s.x, (xz - wy) * s.x, 0.0 }, c1: float4 { (xy - wz) * s.y, (1.0 - (xx + zz)) * s.y, (yz + wx) * s.y, 0.0 }, c2: float4 { (xz + wy) * s.z, (yz - wx) * s.z, (1.0 - (xx + yy)) * s.z, 0.0 }, c3: float4 { t.x, t.y, t.z, 1.0 } }
+}
+fn mmul(a gfx::mat4, b gfx::mat4) gfx::mat4 { gfx::mul(a, b) }
+fn mpoint(m gfx::mat4, p float3) float3 { float3 { m.c0.x * p.x + m.c1.x * p.y + m.c2.x * p.z + m.c3.x, m.c0.y * p.x + m.c1.y * p.y + m.c2.y * p.z + m.c3.y, m.c0.z * p.x + m.c1.z * p.y + m.c2.z * p.z + m.c3.z } }
+fn mvec(m gfx::mat4, p float3) float3 { float3 { m.c0.x * p.x + m.c1.x * p.y + m.c2.x * p.z, m.c0.y * p.x + m.c1.y * p.y + m.c2.y * p.z, m.c0.z * p.x + m.c1.z * p.y + m.c2.z * p.z } }
+fn mfrom(a f32[16]) gfx::mat4 { gfx::mat4 { c0: float4 { a[0], a[1], a[2], a[3] }, c1: float4 { a[4], a[5], a[6], a[7] }, c2: float4 { a[8], a[9], a[10], a[11] }, c3: float4 { a[12], a[13], a[14], a[15] } } }
+fn minv(m gfx::mat4) gfx::mat4 {
+	let a00 = m.c0.x; let a01 = m.c0.y; let a02 = m.c0.z; let a03 = m.c0.w;
+	let a10 = m.c1.x; let a11 = m.c1.y; let a12 = m.c1.z; let a13 = m.c1.w;
+	let a20 = m.c2.x; let a21 = m.c2.y; let a22 = m.c2.z; let a23 = m.c2.w;
+	let a30 = m.c3.x; let a31 = m.c3.y; let a32 = m.c3.z; let a33 = m.c3.w;
+	let b00 = a00 * a11 - a01 * a10; let b01 = a00 * a12 - a02 * a10; let b02 = a00 * a13 - a03 * a10; let b03 = a01 * a12 - a02 * a11;
+	let b04 = a01 * a13 - a03 * a11; let b05 = a02 * a13 - a03 * a12; let b06 = a20 * a31 - a21 * a30; let b07 = a20 * a32 - a22 * a30;
+	let b08 = a20 * a33 - a23 * a30; let b09 = a21 * a32 - a22 * a31; let b10 = a21 * a33 - a23 * a31; let b11 = a22 * a33 - a23 * a32;
+	let det = b00 * b11 - b01 * b10 + b02 * b09 + b03 * b08 - b04 * b07 + b05 * b06;
+	let d = if det != 0.0 { 1.0 / det } else { 0.0 };
+	gfx::mat4 {
+		c0: float4 { (a11 * b11 - a12 * b10 + a13 * b09) * d, (a02 * b10 - a01 * b11 - a03 * b09) * d, (a31 * b05 - a32 * b04 + a33 * b03) * d, (a22 * b04 - a21 * b05 - a23 * b03) * d },
+		c1: float4 { (a12 * b08 - a10 * b11 - a13 * b07) * d, (a00 * b11 - a02 * b08 + a03 * b07) * d, (a32 * b02 - a30 * b05 - a33 * b01) * d, (a20 * b05 - a22 * b02 + a23 * b01) * d },
+		c2: float4 { (a10 * b10 - a11 * b08 + a13 * b06) * d, (a01 * b08 - a00 * b10 - a03 * b06) * d, (a30 * b04 - a31 * b02 + a33 * b00) * d, (a21 * b02 - a20 * b04 - a23 * b00) * d },
+		c3: float4 { (a11 * b07 - a10 * b09 - a12 * b06) * d, (a00 * b09 - a01 * b07 + a02 * b06) * d, (a31 * b01 - a30 * b03 - a32 * b00) * d, (a20 * b03 - a21 * b01 + a22 * b00) * d } }
+}
+fn persp_rev(fov f32, aspect f32, near f32) gfx::mat4 { let f = 1.0 / tan(fov * 0.5); gfx::mat4 { c0: float4 { f / aspect, 0.0, 0.0, 0.0 }, c1: float4 { 0.0, f, 0.0, 0.0 }, c2: float4 { 0.0, 0.0, 0.0, -1.0 }, c3: float4 { 0.0, 0.0, near, 0.0 } } }
+fn ortho_rh(l f32, r f32, b f32, t f32, n f32, f f32) gfx::mat4 { let rcp_w = 1.0 / (r - l); let rcp_h = 1.0 / (t - b); let rr = 1.0 / (n - f); gfx::mat4 { c0: float4 { rcp_w + rcp_w, 0.0, 0.0, 0.0 }, c1: float4 { 0.0, rcp_h + rcp_h, 0.0, 0.0 }, c2: float4 { 0.0, 0.0, rr, 0.0 }, c3: float4 { -(l + r) * rcp_w, -(t + b) * rcp_h, rr * n, 1.0 } } }
+fn look_to_rh(eye float3, dir float3, up float3) gfx::mat4 { let f = normalize(dir); let s = normalize(cross(f, up)); let u = cross(s, f); gfx::mat4 { c0: float4 { s.x, u.x, -f.x, 0.0 }, c1: float4 { s.y, u.y, -f.y, 0.0 }, c2: float4 { s.z, u.z, -f.z, 0.0 }, c3: float4 { -dot(eye, s), -dot(eye, u), dot(eye, f), 1.0 } } }
+fn inv_t3(m gfx::mat4) float3[3] {
+	let a = float3 { m.c0.x, m.c0.y, m.c0.z }; let b = float3 { m.c1.x, m.c1.y, m.c1.z }; let c = float3 { m.c2.x, m.c2.y, m.c2.z };
+	let x = cross(b, c); let y = cross(c, a); let z = cross(a, b);
+	let det = dot(c, z);
+	let d = if det != 0.0 { 1.0 / det } else { 0.0 };
+	[x * d, y * d, z * d]
+}
+fn mrow(m gfx::mat4, i int) float4 { gfx::row(m, i) }
+fn mbytes(m gfx::mat4, out byte[>..]&) { let a gfx::mat4[1] = [m]; out.append(bytes_of(a)); }
+fn srgb_lin(c f32) f32 { if c <= 0.04045 { c / 12.92 } else { pow((c + 0.055) / 1.055, 2.4 as f32) } }
+fn srgb3(r f32, g f32, b f32) float3 { float3 { srgb_lin(r), srgb_lin(g), srgb_lin(b) } }
+fn glerp(a f32, b f32, t f32) f32 { a * (1.0 - t) + b * t }
+fn glerp3(a float3, b float3, t f32) float3 { a * (1.0 - t) + b * t }
+fn nrm3(v float3) float3 { v * (1.0 / length(v)) }
+fn nrm2(v float2) float2 { v * (1.0 / length(v)) }
+fn smoothstep(a f32, b f32, x f32) f32 { let t = clamp((x - a) / (b - a), 0.0, 1.0); t * t * (3.0 - 2.0 * t) }

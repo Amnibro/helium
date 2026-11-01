@@ -1,0 +1,143 @@
+import gfx;
+import math;
+import gfx.m3d;
+import gfx.glb;
+import gfx.render;
+struct Inst { file int, base int, clip int, seek f32, repeat bool, fin bool }
+var INSTS Inst[>..];
+var IN_T float3[>..];
+var IN_R float4[>..];
+var IN_S float3[>..];
+var IN_G gfx::mat4[>..];
+var IN_J gfx::mat4[..64];
+fn inst_new(file int) int {
+	let f = FILES[file];
+	let base = IN_T.len;
+	for n in f.nfirst..f.nfirst + f.nn { let nd = NODES[n]; IN_T.push(v3a(nd.t)); IN_R.push(q4(nd.r)); IN_S.push(v3a(nd.s)); IN_G.push(gfx::mat4_identity); }
+	INSTS.push(Inst { file, base, -1, 0.0, false, false });
+	INSTS.len - 1
+}
+fn inst_play(i int, name const byte[:], offset f32) {
+	INSTS[i].clip = find_clip(INSTS[i].file, name);
+	INSTS[i].seek = offset;
+	INSTS[i].repeat = name != "happy";
+	INSTS[i].fin = false;
+}
+fn inst_tick(i int, dt f32) {
+	let c = INSTS[i].clip;
+	if c < 0 || INSTS[i].fin { return; }
+	let dur = CLIPS[c].dur;
+	INSTS[i].seek = INSTS[i].seek + dt;
+	let s = INSTS[i].seek;
+	if !(dur > 0.0 && (s >= dur || s < 0.0)) { return; }
+	if INSTS[i].repeat { let r = s % dur; INSTS[i].seek = if r < 0.0 { r + dur } else { r }; } else { INSTS[i].seek = clamp(s, 0.0, dur); INSTS[i].fin = true; }
+}
+fn acos_approx(v f32) f32 {
+	let x = abs(v);
+	let root = sqrt(max(1.0 - x, 0.0));
+	let poly = (((((-0.0012624911 * x + 0.00667009) * x - 0.017088126) * x + 0.03089188) * x - 0.050174303) * x + 0.08897899) * x - 0.2145988;
+	let r = (poly * x + 1.5707963) * root;
+	if v >= 0.0 { r } else { 3.1415927 - r }
+}
+fn qn(q float4) float4 { q * (1.0 / sqrt(qdot(q, q))) }
+fn gslerp(a float4, b0 float4, s f32) float4 {
+	var b = b0;
+	var d = qdot(a, b);
+	if d < 0.0 { b = b * -1.0; d = -d; }
+	if d > 1.0 - 1.1920929e-7 { return qn(a * (1.0 - s) + b * s); }
+	let th = acos_approx(d);
+	(b * sin(th * s) + a * sin(th * (1.0 - s))) / sin(th)
+}
+fn seg(tf int, n int, at f32) int, int, f32 {
+	if n < 2 || at <= TIMES[tf] { return 0, 0, 0.0; }
+	if at >= TIMES[tf + n - 1] { return n - 1, n - 1, 0.0; }
+	var lo = 0; var hi = n;
+	while lo < hi { let m = (lo + hi) / 2; if TIMES[tf + m] <= at { lo = m + 1; } else { hi = m; } }
+	let i = min(max(lo - 1, 0), n - 2);
+	return i, i + 1, clamp((at - TIMES[tf + i]) / max(TIMES[tf + i + 1] - TIMES[tf + i], 1e-7), 0.0, 1.0);
+}
+fn inst_sample(i int, clip int, seek f32) {
+	let ins = INSTS[i];
+	if clip < 0 { return; }
+	let c = CLIPS[clip];
+	let nf = FILES[ins.file].nfirst;
+	for k in c.cfirst..c.cfirst + c.cn {
+		let ch = CHANS[k];
+		if ch.path > 2 { continue; }
+		let a, b, s0 = seg(ch.tfirst, ch.n, seek);
+		let s = if ch.step { 0.0 } else { s0 };
+		let nd = ins.base + ch.node - nf;
+		let v = ch.vfirst;
+		if ch.path == 1 {
+			let q0 = float4 { VALS[v + a * 4], VALS[v + a * 4 + 1], VALS[v + a * 4 + 2], VALS[v + a * 4 + 3] };
+			let q1 = float4 { VALS[v + b * 4], VALS[v + b * 4 + 1], VALS[v + b * 4 + 2], VALS[v + b * 4 + 3] };
+			IN_R[nd] = gslerp(q0, q1, s);
+		} else {
+			let p0 = float3 { VALS[v + a * 3], VALS[v + a * 3 + 1], VALS[v + a * 3 + 2] };
+			let p1 = float3 { VALS[v + b * 3], VALS[v + b * 3 + 1], VALS[v + b * 3 + 2] };
+			let x = glerp3(p0, p1, s);
+			if ch.path == 0 { IN_T[nd] = x; } else { IN_S[nd] = x; }
+		}
+	}
+}
+fn inst_blend(i int, clip int, seek f32, weight f32) {
+	let ins = INSTS[i];
+	if clip < 0 { return; }
+	let c = CLIPS[clip];
+	let nf = FILES[ins.file].nfirst;
+	for k in c.cfirst..c.cfirst + c.cn {
+		let ch = CHANS[k];
+		if ch.path > 2 { continue; }
+		let a, b, s0 = seg(ch.tfirst, ch.n, seek);
+		let s = if ch.step { 0.0 } else { s0 };
+		let nd = ins.base + ch.node - nf;
+		let v = ch.vfirst;
+		if ch.path == 1 {
+			let q0 = float4 { VALS[v + a * 4], VALS[v + a * 4 + 1], VALS[v + a * 4 + 2], VALS[v + a * 4 + 3] };
+			let q1 = float4 { VALS[v + b * 4], VALS[v + b * 4 + 1], VALS[v + b * 4 + 2], VALS[v + b * 4 + 3] };
+			let r = gslerp(q0, q1, s);
+			IN_R[nd] = gslerp(IN_R[nd], r, weight);
+		} else {
+			let p0 = float3 { VALS[v + a * 3], VALS[v + a * 3 + 1], VALS[v + a * 3 + 2] };
+			let p1 = float3 { VALS[v + b * 3], VALS[v + b * 3 + 1], VALS[v + b * 3 + 2] };
+			let x = glerp3(p0, p1, s);
+			if ch.path == 0 { IN_T[nd] = glerp3(IN_T[nd], x, weight); } else { IN_S[nd] = glerp3(IN_S[nd], x, weight); }
+		}
+	}
+}
+fn inst_apply(i int) {
+	inst_sample(i, INSTS[i].clip, INSTS[i].seek);
+}
+fn inst_step(i int, dt f32) { inst_tick(i, dt); inst_apply(i); }
+fn lod_hidden(n const byte[:]) bool { n.len > 5 && (n[n.len - 5..] == "_LOD1" || n[n.len - 5..] == "_LOD2") }
+fn inst_draw(i int, world gfx::mat4, casts bool) {
+	let ins = INSTS[i];
+	let f = FILES[ins.file];
+	for k in f.nn {
+		var g = trs(IN_T[ins.base + k], IN_R[ins.base + k], IN_S[ins.base + k]);
+		var p = NODES[f.nfirst + k].parent;
+		while p >= 0 { let q = ins.base + p - f.nfirst; g = mmul(trs(IN_T[q], IN_R[q], IN_S[q]), g); p = NODES[p].parent; }
+		IN_G[ins.base + k] = mmul(world, g);
+	}
+	for k in f.nn {
+		let nd = NODES[f.nfirst + k];
+		if nd.mesh < 0 || lod_hidden(sp(nd.name)) { continue; }
+		var hidden = false;
+		var p = nd.parent;
+		while p >= 0 { if lod_hidden(sp(NODES[p].name)) { hidden = true; } p = NODES[p].parent; }
+		if hidden { continue; }
+		let me = MESHES[nd.mesh];
+		var jb = -1;
+		if nd.skin >= 0 {
+			let sk = SKINS[nd.skin];
+			IN_J.clear();
+			for j in sk.jn { IN_J.push(mmul(IN_G[ins.base + JOINTS[sk.jfirst + j] - f.nfirst], mfrom(IBMS[sk.ibm + j]))); }
+			jb = push_joints(IN_J[..]);
+		}
+		for pi in me.pfirst..me.pfirst + me.pn {
+			let gp = prim_gpu(pi);
+			let mt = glb_mat(PRIMS[pi].mat);
+			if jb >= 0 { add_skinned(gp, mt, jb, -1, 0, casts, true); } else { add_item(gp, mt, IN_G[ins.base + k], casts, true); }
+		}
+	}
+}

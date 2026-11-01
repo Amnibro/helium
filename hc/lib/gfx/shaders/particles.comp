@@ -1,0 +1,62 @@
+#version 450
+// GPU particles. One invocation per particle: spawns from the
+// CPU emitter list (ring ranges), then integrates sparks (gravity, drag,
+// floor bounce) and dust (drag, buoyancy, growth). Presentation only.
+layout(local_size_x = 64) in;
+struct P { vec4 pl; vec4 vk; vec4 cs; vec4 ex; };
+layout(std430, set = 1, binding = 0) buffer Ps { P ps[]; };
+layout(set = 2, binding = 0) uniform E { vec4 hdr; vec4 ea[16]; vec4 eb[16]; vec4 ec[16]; };
+
+uint hsh(uint x) {
+	x ^= x >> 16; x *= 0x7feb352du; x ^= x >> 15; x *= 0x846ca68bu; x ^= x >> 16;
+	return x;
+}
+float rnd(inout uint s) { s = hsh(s); return float(s >> 8) * (1.0 / 16777216.0); }
+
+void main() {
+	uint i = gl_GlobalInvocationID.x;
+	uint n = uint(hdr.w);
+	if (i >= n) return;
+	P p = ps[i];
+	float dt = hdr.y;
+	int ne = int(hdr.x);
+	for (int e = 0; e < ne; e++) {
+		uint st = uint(ea[e].w);
+		uint cnt = uint(eb[e].w);
+		if ((i + n - st) % n < cnt) {
+			uint s = hsh(i * 9781u + uint(hdr.z) * 6271u + uint(e) * 131u);
+			vec3 r = vec3(rnd(s), rnd(s), rnd(s)) * 2.0 - 1.0;
+			vec3 d = eb[e].xyz;
+			float life;
+			if (ec[e].w < 0.5) {
+				p.vk = vec4(d * (2.0 + 4.0 * rnd(s)) + r * 3.0 + vec3(0.0, 1.5 + 2.5 * rnd(s), 0.0), 0.0);
+				life = 0.25 + 0.45 * rnd(s);
+				p.pl = vec4(ea[e].xyz + r * 0.06, life);
+				p.cs = vec4(ec[e].rgb * (0.6 + 0.8 * rnd(s)), 0.014 + 0.016 * rnd(s));
+			} else {
+				vec3 h = normalize(vec3(r.x, 0.0, r.z) + vec3(1e-4, 0.0, 0.0));
+				p.vk = vec4(h * (0.5 + 1.3 * rnd(s)) + d + vec3(0.0, 0.2 + 0.4 * rnd(s), 0.0), 1.0);
+				life = 0.9 + 0.9 * rnd(s);
+				p.pl = vec4(ea[e].xyz + vec3(r.x, 0.0, r.z) * 0.35 + vec3(0.0, 0.12, 0.0), life);
+				p.cs = vec4(ec[e].rgb * (0.7 + 0.5 * rnd(s)), 0.22 + 0.22 * rnd(s));
+			}
+			p.ex = vec4(life, 0.0, 0.0, 0.0);
+			ps[i] = p;
+			return;
+		}
+	}
+	if (p.pl.w <= 0.0) return;
+	p.pl.w -= dt;
+	if (p.vk.w < 0.5) {
+		p.vk.xyz *= exp(-1.2 * dt);
+		p.vk.y -= 9.8 * dt;
+		p.pl.xyz += p.vk.xyz * dt;
+		if (p.pl.y < 0.02 && p.vk.y < 0.0) { p.pl.y = 0.02; p.vk.y *= -0.35; p.vk.xz *= 0.6; }
+	} else {
+		p.vk.xyz *= exp(-2.2 * dt);
+		p.vk.y += 0.1 * dt;
+		p.pl.xyz += p.vk.xyz * dt;
+		p.cs.w += 0.5 * dt;
+	}
+	ps[i] = p;
+}

@@ -1,0 +1,726 @@
+import gfx;
+import gfx.m3d;
+import gfx.glb;
+import gfx.half;
+let VS_MESH = embed_shader("shaders/mesh.vert");
+let VS_SHADOW = embed_shader("shaders/shadow.vert");
+let FS_SHADOW = embed_shader("shaders/shadow.frag");
+let VS_AO_PRE = embed_shader("shaders/ao_prepass.vert");
+let FS_AO_PRE = embed_shader("shaders/ao_prepass.frag");
+let FS_AO = embed_shader("shaders/ao.frag");
+let FS_AO_BLUR = embed_shader("shaders/ao_blur.frag");
+let FS_STD = embed_shader("shaders/standard.frag");
+let VS_FULL = embed_shader("shaders/fullscreen.vert");
+let FS_SKY = embed_shader("shaders/sky.frag");
+let FS_DOWN = embed_shader("shaders/bloom_down.frag");
+let FS_UP = embed_shader("shaders/bloom_up.frag");
+let FS_TONE = embed_shader("shaders/tonemap.frag");
+let FS_ENVF = embed_shader("shaders/env_filter.frag");
+let VS_OUTLINE = embed_shader("shaders/outline.vert");
+let FS_OUTLINE = embed_shader("shaders/outline.frag");
+let CS_PART = embed_shader("shaders/particles.comp");
+let VS_PART = embed_shader("shaders/particles.vert");
+let FS_PART = embed_shader("shaders/particles.frag");
+let K_STD = 0;
+let K_OUTLINE = 1;
+struct GpuPrim { vb gfx::Buffer, ib gfx::Buffer, n int, mb gfx::Buffer, nmorph int, vcount int, center float3, radius f32, attrs u32 }
+struct Mat { kind int, u f32[24], alpha byte, cull byte, tex int, texs int[4], params f32[96], np int, bias f32, shadows bool, vp float4, nvp bool }
+struct Item { gp int, mat int, model gfx::mat4, joint int, morph int, nmorph int, casts bool, receives bool, layers u32, far f32 }
+struct Pipe { kind int, alpha byte, cull byte, shadow bool, bias f32, p gfx::Pipeline }
+struct Tex { t gfx::Texture, s gfx::Sampler }
+struct Cam { world gfx::mat4, fov f32, near f32, exposure f32, msaa int, bloom f32, tonemap int, saturation f32, temperature f32, gexposure f32,
+	clear float4, fog_mode u32, fog_color float4, fog_dl float4, fog_dl_exp f32, fog_be float3, fog_bi float3, layers u32, ao bool }
+struct Sun { dir float3, color float3, on bool, shadows bool, depth_bias f32, normal_bias f32, nb int, bounds f32[4], overlap f32, min_dist f32, size int }
+struct EnvL { diffuse gfx::Texture, specular gfx::Texture, mips int, intensity f32, rot float4, on bool }
+struct SkyB { cube gfx::Texture, brightness f32, rot float4, on bool }
+struct Draw { pipe int, mat int, gp int, first int, count int, joint int, morph int, nmorph int, alpha byte, depth f32 }
+var GP GpuPrim[>..];
+var PRIM_GP int[>..];
+var MATS_R Mat[>..];
+var TEXS Tex[>..];
+var PIPES Pipe[>..];
+var IT Item[>..<];
+var JM gfx::mat4[>..<];
+var MW float4[>..<];
+var DRAWS Draw[>..<];
+var SDRAWS Draw[>..<];
+var SCOUNT int[4];
+var INST f32[>..<];
+var CAM Cam;
+var SUN Sun;
+var ENV EnvL;
+var SKY SkyB;
+var AMBIENT float4;
+var R_TIME f32;
+var R_DT f32;
+var R_FRAME int;
+var LIN_REPEAT gfx::Sampler;
+var LIN_CLAMP gfx::Sampler;
+var LIN_ANISO gfx::Sampler;
+var SHADOW_S gfx::Sampler;
+var WHITE gfx::Texture;
+var BLACK_CUBE gfx::Texture;
+var DUMMY_BUF gfx::Buffer;
+var JOINT_BUF gfx::Buffer;
+var INST_BUF gfx::Buffer;
+var SHADOW_T gfx::Texture[2];
+var SHADOW_SIZE int;
+var T_W int;
+var T_H int;
+var T_MS int;
+var T_HDR gfx::Texture;
+var T_MSAA gfx::Texture;
+var T_DEPTH gfx::Texture;
+var BL_D gfx::Texture[8];
+var BL_U gfx::Texture[8];
+var BL_N int;
+var BL_W int;
+var BL_H int;
+var P_SKY gfx::Pipeline;
+var P_DOWN gfx::Pipeline;
+var P_UP gfx::Pipeline;
+var P_TONE gfx::Pipeline;
+var P_ENVF gfx::Pipeline;
+var T_PRE_COL gfx::Texture;
+var T_PRE_DEP gfx::Texture;
+var T_AO_RAW gfx::Texture;
+var T_AO_BLUR gfx::Texture;
+var P_AO_PRE gfx::Pipeline;
+var P_AO_PRE_DBL gfx::Pipeline;
+var P_AO gfx::Pipeline;
+var P_AO_BLUR gfx::Pipeline;
+var KIND_VS const byte[:][>..];
+var KIND_FS const byte[:][>..];
+var KIND_SHADOWS bool[>..];
+var UB byte[>..];
+var VIEW_U f32[88];
+var FRAME_U f32[216];
+// Up to 12 point lights (pos.xyz, range; color * intensity), see pbr_fs.glsl.
+var PL_POS float4[12];
+var PL_COL float4[12];
+var PL_N int;
+fn kind_add(vs const byte[:], fs const byte[:], shadows bool) int { KIND_VS.push(vs); KIND_FS.push(fs); KIND_SHADOWS.push(shadows); KIND_VS.len - 1 }
+var R_READY bool;
+var RIM float3;
+fn r_init() {
+	if R_READY { return; }
+	R_READY = true;
+	LIN_REPEAT = gfx::sampler(gfx::SamplerDesc { max_anisotropy: 1.0, .. });
+	LIN_ANISO = gfx::sampler(gfx::SamplerDesc { max_anisotropy: 8.0, .. });
+	LIN_CLAMP = gfx::sampler(gfx::SamplerDesc { wrap_u: gfx::CLAMP, wrap_v: gfx::CLAMP, wrap_w: gfx::CLAMP, .. });
+	SHADOW_S = gfx::sampler(gfx::SamplerDesc { wrap_u: gfx::CLAMP, wrap_v: gfx::CLAMP, mip_filter: gfx::NEAREST, compare: gfx::COMPARE_LESS_EQUAL, .. });
+	WHITE = gfx::texture(gfx::TextureDesc { format: gfx::RGBA8_SRGB, width: 1, height: 1, .. });
+	let wp byte[4] = [255, 255, 255, 255];
+	gfx::update_texture(WHITE, wp[..]);
+	BLACK_CUBE = gfx::texture_cube(1, gfx::RGBA16F, gfx::SAMPLED);
+	let bp u16[4] = [0, 0, 0, f16(1.0)];
+	for f in 6 { gfx::update_texture(BLACK_CUBE, gfx::Region { layer: f as! i32, .. }, bytes_of(bp)); }
+	let zb f32[64] = [0.0; 64];
+	DUMMY_BUF = gfx::buffer(gfx::BUFFER_STORAGE, bytes_of(zb));
+	JOINT_BUF = gfx::buffer(gfx::BUFFER_STORAGE, 64 * 16384, bytes_of(zb)[..0]);
+	INST_BUF = gfx::buffer(gfx::BUFFER_VERTEX, 128 * 65536, bytes_of(zb)[..0]);
+	P_SKY = gfx::pipeline(VS_FULL, FS_SKY);
+	P_DOWN = gfx::pipeline(VS_FULL, FS_DOWN);
+	P_UP = gfx::pipeline(VS_FULL, FS_UP);
+	P_TONE = gfx::pipeline(VS_FULL, FS_TONE);
+	P_ENVF = gfx::pipeline(VS_FULL, FS_ENVF);
+	let d_pre = gfx::PipelineDesc { cull: gfx::CULL_BACK, depth_test: true, depth_write: true,
+		depth_compare: gfx::COMPARE_GREATER_EQUAL, blend: gfx::BLEND_NONE, instance_location: 7, .. };
+	P_AO_PRE = gfx::pipeline(VS_AO_PRE, FS_AO_PRE, d_pre);
+	let d_predbl = gfx::PipelineDesc { cull: gfx::CULL_NONE, depth_test: true, depth_write: true,
+		depth_compare: gfx::COMPARE_GREATER_EQUAL, blend: gfx::BLEND_NONE, instance_location: 7, .. };
+	P_AO_PRE_DBL = gfx::pipeline(VS_AO_PRE, FS_AO_PRE, d_predbl);
+	P_AO = gfx::pipeline(VS_FULL, FS_AO);
+	P_AO_BLUR = gfx::pipeline(VS_FULL, FS_AO_BLUR);
+	// Built-in material kinds; register more (custom fragment shaders over
+	// pbr_fs.glsl) with kind_add() after r_init().
+	if KIND_VS.len == 0 { kind_add(VS_MESH, FS_STD, true); kind_add(VS_OUTLINE, FS_OUTLINE, false); }
+	SHADOW_SIZE = 0;
+	T_W = 0;
+	AMBIENT = float4 { 0.0, 0.0, 0.0, 1.0 };
+	CAM = Cam {
+		world: gfx::mat4_identity, fov: 0.785398, near: 0.1, exposure: 1.0, msaa: 4, bloom: 0.0,
+		tonemap: 1, saturation: 1.0, temperature: 0.0, gexposure: 0.0, clear: float4 { 0.0, 0.0, 0.0, 1.0 },
+		fog_mode: 0, fog_color: float4 { 0.0, 0.0, 0.0, 0.0 }, fog_dl: float4 { 0.0, 0.0, 0.0, 0.0 },
+		fog_dl_exp: 8.0, fog_be: float3 { 0.0, 0.0, 0.0 }, fog_bi: float3 { 0.0, 0.0, 0.0 }, layers: 1, ao: true
+	};
+}
+fn pow2f(k int) f32 { var v f32 = 1.0; if k >= 0 { for _ in k { v *= 2.0; } } else { for _ in -k { v *= 0.5; } } v }
+fn ev100(ev f32) f32 { pow(2.0 as f32, -ev) / 1.2 }
+fn tex_add(t gfx::Texture, s gfx::Sampler) int { TEXS.push(Tex { t, s }); TEXS.len - 1 }
+fn tex_rgba8(w int, h int, px const byte[:], srgb bool, mips bool, s gfx::Sampler) int {
+	let t = gfx::texture(gfx::TextureDesc { format: if srgb { gfx::RGBA8_SRGB } else { gfx::RGBA8 }, usage: gfx::SAMPLED | (if mips { gfx::COLOR_TARGET } else { 0 }), width: w as! i32, height: h as! i32, mips: if mips { 0 } else { 1 }, .. });
+	gfx::update_texture(t, px);
+	if mips { gfx::generate_mips(t); }
+	tex_add(t, s)
+}
+var IMG_T int[>..];
+fn img_tex(img int, srgb bool) int { if img < 0 { return -1; } while IMG_T.len < IMGS.len { IMG_T.push(-1); } if IMG_T[img] >= 0 { return IMG_T[img]; } let g = IMGS[img]; if g.w == 0 { return -1; } IMG_T[img] = tex_rgba8(g.w, g.h, PIX[g.pfirst..g.pfirst + g.w * g.h * 4], srgb, true, LIN_REPEAT); IMG_T[img] }
+fn mesh_upload(v GVtx[:], idx u32[:], morph f32[3][:], nmorph int, attrs u32) int {
+	var lo = float3 { 1e30, 1e30, 1e30 };
+	var hi = float3 { -1e30, -1e30, -1e30 };
+	for &x in v { lo = float3 { min(lo.x, x.p[0]), min(lo.y, x.p[1]), min(lo.z, x.p[2]) }; hi = float3 { max(hi.x, x.p[0]), max(hi.y, x.p[1]), max(hi.z, x.p[2]) }; }
+	let c = (lo + hi) * 0.5;
+	let rad = length(hi - lo) * 0.5;
+	var g = GpuPrim { gfx::vertex_buffer(bytes_of(v)), gfx::index_buffer(bytes_of(idx)), idx.len, DUMMY_BUF, nmorph, v.len, c, rad, attrs };
+	if nmorph > 0 {
+		var m f32[>..] = [];
+		for r in morph { m.push(r[0]); m.push(r[1]); m.push(r[2]); m.push(0.0); }
+		g.mb = gfx::buffer(gfx::BUFFER_STORAGE, bytes_of(m));
+	}
+	GP.push(g);
+	GP.len - 1
+}
+fn prim_gpu(pi int) int {
+	while PRIM_GP.len < PRIMS.len { PRIM_GP.push(-1); }
+	if PRIM_GP[pi] >= 0 { return PRIM_GP[pi]; }
+	let p = PRIMS[pi];
+	let g = mesh_upload(VTX[p.vfirst..p.vfirst + p.vcount], IDX[p.ifirst..p.ifirst + p.icount], MORPH[p.mfirst..p.mfirst + p.nmorph * 2 * p.vcount], p.nmorph, p.has);
+	PRIM_GP[pi] = g;
+	g
+}
+fn std_mat(base float4, rough f32, metal f32, tex int, alpha byte, double bool) Mat {
+	var m = Mat { kind: K_STD, u: [0.0; 24], alpha: alpha, cull: if double { 0 } else { 1 }, tex: tex, texs: [-1; 4], params: [0.0; 96], np: 0, bias: 0.0, shadows: true, vp: float4 { 0.0, 0.0, 0.0, 0.0 }, nvp: false };
+	m.u[0] = base.x; m.u[1] = base.y; m.u[2] = base.z; m.u[3] = base.w;
+	m.u[8] = 1.0; m.u[11] = 1.0;
+	m.u[16] = rough; m.u[17] = metal; m.u[18] = 0.5; m.u[19] = 0.5;
+	var fl u32 = ((alpha as u32) << 29) | 256;
+	if tex >= 0 { fl |= 1; }
+	if double { fl |= 16; }
+	if alpha == 0 { fl |= 128; }
+	m.u[20] = binary::f32_from_bits(fl);
+	m
+}
+fn mat_flag(m Mat&, bit u32, on bool) { var fl = binary::f32_bits(m.u[20]); fl = if on { fl | bit } else { fl & ~bit }; m.u[20] = binary::f32_from_bits(fl); }
+fn pbr_mat(tint float4, color int, orm int, tile f32) Mat { var m = std_mat(tint, 1.0, 0.0, color, 0, false); m.texs[0] = orm; m.texs[1] = orm; mat_flag(m, 12, true); m.u[8] = tile; m.u[11] = tile; m }
+var MAT_FREE int[>..];
+fn mat_add(m Mat) int { if MAT_FREE.len > 0 { let i = MAT_FREE.pop(); MATS_R[i] = m; return i; } MATS_R.push(m); MATS_R.len - 1 }
+fn mat_free(i int) { if i >= 0 { for q in MAT_FREE { if q == i { return; } } MAT_FREE.push(i); } }
+var GMAT_R int[>..];
+var REL_Q gfx::Buffer[>..];
+var REL_TQ gfx::Texture[>..];
+var REL_N int;
+fn rel_tex(t gfx::Texture) { REL_TQ.push(t); REL_N = 4; }
+fn rel_tick() { if REL_N > 0 { REL_N--; if REL_N == 0 { for b in REL_Q { gfx::release(b); } for t in REL_TQ { gfx::release(t); } REL_Q.clear(); REL_TQ.clear(); } } }
+var GP_MARK int;
+var MAT_MARK int;
+fn gpu_mark() { GP_MARK = GP.len; MAT_MARK = MATS_R.len; }
+fn gpu_rewind() {
+	while GP.len > GP_MARK { let g = GP.pop(); REL_Q.push(g.vb); REL_Q.push(g.ib); if g.mb.id != DUMMY_BUF.id { REL_Q.push(g.mb); } }
+	REL_N = 4;
+	for k in PRIM_GP.len { if PRIM_GP[k] >= GP_MARK { PRIM_GP[k] = -1; } }
+	while MATS_R.len > MAT_MARK { MATS_R.pop(); }
+	for k in GMAT_R.len { if GMAT_R[k] >= MAT_MARK { GMAT_R[k] = -1; } }
+	var k = 0; while k < MAT_FREE.len { if MAT_FREE[k] >= MAT_MARK { MAT_FREE[k] = MAT_FREE[MAT_FREE.len - 1]; MAT_FREE.pop(); } else { k++; } }
+	IT.clear();
+}
+fn glb_mat(mi int) int {
+	if mi < 0 { return mat_add(std_mat(float4 { 1.0, 1.0, 1.0, 1.0 }, 0.5, 0.0, -1, 0, false)); }
+	while GMAT_R.len < MATS.len { GMAT_R.push(-1); }
+	if GMAT_R[mi] >= 0 { return GMAT_R[mi]; }
+	let g = MATS[mi];
+	var m = std_mat(float4 { g.base[0], g.base[1], g.base[2], g.base[3] }, g.rough, g.metal, img_tex(g.img, true), g.alpha, g.double);
+	m.u[4] = g.emis[0]; m.u[5] = g.emis[1]; m.u[6] = g.emis[2];
+	m.u[19] = g.cutoff;
+	// ORM (flags 4, 8) and tangent-free normal map (flag 64, binding 8).
+	if g.orm >= 0 { m.texs[0] = img_tex(g.orm, false); mat_flag(m, 4, true); }
+	if g.occ >= 0 { m.texs[1] = img_tex(g.occ, false); mat_flag(m, 8, true); }
+	if g.nrm >= 0 { m.texs[3] = img_tex(g.nrm, false); mat_flag(m, 64, true); }
+	GMAT_R[mi] = mat_add(m);
+	GMAT_R[mi]
+}
+fn pipe_for(kind int, alpha byte, cull byte, shadow bool, bias f32) int {
+	for &p, i in PIPES { if p.kind == kind && p.alpha == alpha && p.cull == cull && p.shadow == shadow && p.bias == bias { return i; } }
+	let vs = if shadow { VS_SHADOW } else { KIND_VS[kind] };
+	let fs = if shadow { FS_SHADOW } else { KIND_FS[kind] };
+	let bl = if shadow { gfx::BLEND_NONE } else { if alpha == 2 { gfx::BLEND_ALPHA } else { if alpha == 3 || alpha == 4 { gfx::BLEND_PREMULTIPLIED } else { if alpha == 5 { gfx::BLEND_MULTIPLY } else { gfx::BLEND_NONE } } } };
+	let d = gfx::PipelineDesc { cull: (if cull == 1 { gfx::CULL_BACK } else { if cull == 2 { gfx::CULL_FRONT } else { gfx::CULL_NONE } }), depth_test: true, depth_write: shadow || alpha < 2, depth_compare: if shadow { gfx::COMPARE_LESS_EQUAL } else { gfx::COMPARE_GREATER_EQUAL }, blend: bl, instance_location: 7, depth_bias: bias, depth_bias_slope: if shadow { 2.0 } else { 0.0 }, .. };
+	PIPES.push(Pipe { kind, alpha, cull, shadow, bias, gfx::pipeline(vs, fs, d) });
+	PIPES.len - 1
+}
+fn add_item(gp int, mat int, model gfx::mat4, casts bool, receives bool) { IT.push(Item { gp, mat, model, -1, -1, 0, casts, receives, 1, 1e30 }); }
+fn add_ranged(gp int, mat int, model gfx::mat4, casts bool, far f32) { IT.push(Item { gp, mat, model, -1, -1, 0, casts, true, 1, far }); }
+fn push_joints(ms gfx::mat4[:]) int { let jb = JM.len; for m in ms { JM.push(m); } jb }
+fn push_weights(w f32[:]) int { let mo = MW.len; for q in 16 { let k = q * 4; MW.push(float4 { if k < w.len { w[k] } else { 0.0 }, if k + 1 < w.len { w[k + 1] } else { 0.0 }, if k + 2 < w.len { w[k + 2] } else { 0.0 }, if k + 3 < w.len { w[k + 3] } else { 0.0 } }); } mo }
+fn add_skinned(gp int, mat int, jb int, mo int, nmorph int, casts bool, receives bool) { IT.push(Item { gp, mat, gfx::mat4_identity, jb, if nmorph > 0 { mo } else { -1 }, nmorph, casts, receives, 1, 1e30 }); }
+fn add_morphed(gp int, mat int, model gfx::mat4, mo int, nmorph int, casts bool) { IT.push(Item { gp, mat, model, -1, mo, nmorph, casts, true, 1, 1e30 }); }
+fn frame_begin() { IT.clear(); JM.clear(); MW.clear(); }
+fn planes(m gfx::mat4) float4[5] {
+	let r0 = gfx::row(m, 0); let r1 = gfx::row(m, 1); let r2 = gfx::row(m, 2); let r3 = gfx::row(m, 3);
+	var p float4[5] = [r3 + r0, r3 - r0, r3 + r1, r3 - r1, r3 - r2];
+	for &q in p { let l = max(sqrt(q.x * q.x + q.y * q.y + q.z * q.z), 1e-7); q = q / l; }
+	p
+}
+fn visible(pl float4[5]&, c float3, r f32) bool { for p in pl { if p.x * c.x + p.y * c.y + p.z * c.z + p.w <= -r { return false; } } true }
+fn item_center(it Item&) float3, f32 {
+	let g = GP[it.gp];
+	let m = it.model;
+	let sx = length(float3 { m.c0.x, m.c0.y, m.c0.z }); let sy = length(float3 { m.c1.x, m.c1.y, m.c1.z }); let sz = length(float3 { m.c2.x, m.c2.y, m.c2.z });
+	return mpoint(m, g.center), g.radius * max(sx, max(sy, sz));
+}
+fn push_inst(it Item&) {
+	let m = it.model;
+	let n = inv_t3(m);
+	let g = GP[it.gp];
+	INST.push(m.c0.x); INST.push(m.c0.y); INST.push(m.c0.z); INST.push(m.c0.w);
+	INST.push(m.c1.x); INST.push(m.c1.y); INST.push(m.c1.z); INST.push(m.c1.w);
+	INST.push(m.c2.x); INST.push(m.c2.y); INST.push(m.c2.z); INST.push(m.c2.w);
+	INST.push(m.c3.x); INST.push(m.c3.y); INST.push(m.c3.z); INST.push(m.c3.w);
+	for k in 3 { INST.push(n[k].x); INST.push(n[k].y); INST.push(n[k].z); INST.push(0.0); }
+	INST.push(g.nmorph as f32); INST.push(g.vcount as f32); INST.push(if it.receives { 1.0 } else { 0.0 }); INST.push(g.attrs as f32);
+}
+fn cascades(world gfx::mat4, fov f32, near0 f32, aspect f32, ld float3, size f32, mats gfx::mat4[4]&, texel f32[4]&) int {
+	let th = tan(fov * 0.5);
+	let up = if abs(ld.y) > 0.99 { float3 { 0.0, 0.0, 1.0 } } else { float3 { 0.0, 1.0, 0.0 } };
+	var prev = max(SUN.min_dist, near0);
+	for ci in SUN.nb {
+		let far = SUN.bounds[ci];
+		let near = prev;
+		var cs float3[8] = [float3 { 0.0, 0.0, 0.0 }; 8];
+		var k = 0;
+		for z in [near, far] { let hx = z * th * aspect; let hy = z * th; for p in [float3 { -hx, -hy, -z }, float3 { hx, -hy, -z }, float3 { -hx, hy, -z }, float3 { hx, hy, -z }] { cs[k] = mpoint(world, p); k++; } }
+		var center = float3 { 0.0, 0.0, 0.0 };
+		for c in cs { center = center + c; }
+		center = center / 8.0;
+		var radius f32 = 0.0;
+		for c in cs { radius = max(radius, length(c - center)); }
+		radius = max(radius, 0.01);
+		let tx = radius * 2.0 / size;
+		let lv = look_to_rh(float3 { 0.0, 0.0, 0.0 }, ld * -1.0, up);
+		var lc = mpoint(lv, center);
+		lc.x = floor(lc.x / tx) * tx;
+		lc.y = floor(lc.y / tx) * tx;
+		let ext = radius + 70.0;
+		mats[ci] = mmul(ortho_rh(lc.x - radius, lc.x + radius, lc.y - radius, lc.y + radius, -lc.z - ext, -lc.z + radius), lv);
+		texel[ci] = tx;
+		prev = far * (1.0 - SUN.overlap);
+	}
+	SUN.nb
+}
+struct Tg { w int, h int, ms int, hdr gfx::Texture, msaa gfx::Texture, depth gfx::Texture, bd gfx::Texture[8], bu gfx::Texture[8], bn int, bw int, bh int,
+	pre_col gfx::Texture, pre_dep gfx::Texture, ao_raw gfx::Texture, ao_blur gfx::Texture, used int }
+var TGS Tg[..3];
+fn ensure_targets(w int, h int, ms int) {
+	if T_W == w && T_H == h && T_MS == ms { return; }
+	for k in TGS.len {
+		if TGS[k].w == w && TGS[k].h == h && TGS[k].ms == ms {
+			let t = TGS[k];
+			T_W = w; T_H = h; T_MS = ms;
+			T_HDR = t.hdr; T_MSAA = t.msaa; T_DEPTH = t.depth;
+			BL_D = t.bd; BL_U = t.bu; BL_N = t.bn; BL_W = t.bw; BL_H = t.bh;
+			T_PRE_COL = t.pre_col; T_PRE_DEP = t.pre_dep;
+			T_AO_RAW = t.ao_raw; T_AO_BLUR = t.ao_blur;
+			TGS[k].used = R_FRAME;
+			return;
+		}
+	}
+	if TGS.len == 3 {
+		var o = 0;
+		for k in 3 { if TGS[k].used < TGS[o].used { o = k; } }
+		let t = TGS[o];
+		rel_tex(t.hdr);
+		if t.msaa.id != 0 { rel_tex(t.msaa); }
+		rel_tex(t.depth);
+		for i in t.bn { rel_tex(t.bd[i]); rel_tex(t.bu[i]); }
+		if t.pre_col.id != 0 { rel_tex(t.pre_col); }
+		if t.pre_dep.id != 0 { rel_tex(t.pre_dep); }
+		if t.ao_raw.id != 0 { rel_tex(t.ao_raw); }
+		if t.ao_blur.id != 0 { rel_tex(t.ao_blur); }
+		TGS[o] = TGS[2];
+		TGS.pop();
+	}
+	T_W = w; T_H = h; T_MS = ms;
+	T_HDR = gfx::texture(gfx::TextureDesc { format: gfx::RGBA16F, usage: gfx::SAMPLED | gfx::COLOR_TARGET, width: w as! i32, height: h as! i32, .. });
+	T_MSAA = if ms > 1 { gfx::texture(gfx::TextureDesc { format: gfx::RGBA16F, usage: gfx::COLOR_TARGET, width: w as! i32, height: h as! i32, samples: ms as! i32, .. }) } else { gfx::Texture { 0 } };
+	T_DEPTH = gfx::texture(gfx::TextureDesc { format: gfx::DEPTH32F, usage: gfx::DEPTH_TARGET, width: w as! i32, height: h as! i32, samples: ms as! i32, .. });
+	let sc = 512.0 / (max(w, h) as f32);
+	BL_W = max(((w as f32) * sc) as int, 1); BL_H = max(((h as f32) * sc) as int, 1);
+	var l = 0; var mm = min(BL_W, BL_H); while mm > 1 { mm >>= 1; l++; }
+	BL_N = min(8, max(l, 1));
+	for i in BL_N { let bw = max(BL_W >> i, 1); let bh = max(BL_H >> i, 1); BL_D[i] = gfx::render_target(bw, bh, gfx::RGBA16F); BL_U[i] = gfx::render_target(bw, bh, gfx::RGBA16F); }
+	let pw = max(w / 2, 1);
+	let ph = max(h / 2, 1);
+	T_PRE_COL = gfx::texture(gfx::TextureDesc { format: gfx::RGBA16F, usage: gfx::SAMPLED | gfx::COLOR_TARGET, width: pw as! i32, height: ph as! i32, .. });
+	T_PRE_DEP = gfx::texture(gfx::TextureDesc { format: gfx::DEPTH32F, usage: gfx::DEPTH_TARGET, width: pw as! i32, height: ph as! i32, .. });
+	T_AO_RAW = gfx::texture(gfx::TextureDesc { format: gfx::RGBA16F, usage: gfx::SAMPLED | gfx::COLOR_TARGET, width: pw as! i32, height: ph as! i32, .. });
+	T_AO_BLUR = gfx::texture(gfx::TextureDesc { format: gfx::RGBA8, usage: gfx::SAMPLED | gfx::COLOR_TARGET, width: pw as! i32, height: ph as! i32, .. });
+	TGS.push(Tg { w, h, ms, T_HDR, T_MSAA, T_DEPTH, BL_D, BL_U, BL_N, BL_W, BL_H, T_PRE_COL, T_PRE_DEP, T_AO_RAW, T_AO_BLUR, R_FRAME });
+}
+fn ensure_shadow(size int) { if SHADOW_SIZE == size { return; } SHADOW_SIZE = size; for c in 2 { SHADOW_T[c] = gfx::texture(gfx::TextureDesc { format: gfx::DEPTH32F, usage: gfx::DEPTH_TARGET | gfx::SAMPLED, width: size as! i32, height: size as! i32, .. }); } }
+fn fpush(b f32[:]) { UB.clear(); UB.append(bytes_of(b)); }
+fn view_block(cfw gfx::mat4, wfv gfx::mat4, cfv gfx::mat4, exposure f32, w f32, h f32) f32[88] {
+	var u f32[88] = [0.0; 88];
+	let ms = [cfw, wfv, minv(wfv), cfv, minv(cfv)];
+	for m, i in ms { let o = i * 16; let cols = [m.c0, m.c1, m.c2, m.c3]; for c, j in cols { u[o + j * 4] = c.x; u[o + j * 4 + 1] = c.y; u[o + j * 4 + 2] = c.z; u[o + j * 4 + 3] = c.w; } }
+	u[80] = wfv.c3.x; u[81] = wfv.c3.y; u[82] = wfv.c3.z; u[83] = exposure; u[86] = w; u[87] = h;
+	u
+}
+fn put_mat(u f32[:], o int, m gfx::mat4) { let cols = [m.c0, m.c1, m.c2, m.c3]; for c, j in cols { u[o + j * 4] = c.x; u[o + j * 4 + 1] = c.y; u[o + j * 4 + 2] = c.z; u[o + j * 4 + 3] = c.w; } }
+fn bloom_factor(intensity f32, mip f32, mx f32) f32 { var lf = (1.0 - pow(1.0 - mip / mx, 20.0 as f32)) * 0.7; let hp = 1.0 - clamp((mip / mx - 1.0) / 1.0, 0.0, 1.0); lf *= 1.0 - intensity; (intensity + lf) * hp }
+var GRADE_CON float3 = float3 { 1.0, 1.0, 1.0 };
+var OPAQUE_OUT bool = true;
+fn grade_block(ldr bool) f32[52] {
+	var u f32[52] = [0.0; 52];
+	let wpx = 0.31272 - CAM.temperature; let wpy = 0.32903;
+	let lms = float3 { 0.701634, 1.15856, -0.904175 } + (float3 { -0.051461, 0.045854, 0.953127 } + float3 { 0.452749, -0.296122, -0.955206 } * wpx) / wpy;
+	let rl0 = float3 { 0.311692, 0.0905138, 0.00764433 }; let rl1 = float3 { 0.652085, 0.901341, 0.0486554 }; let rl2 = float3 { 0.0362225, 0.00814478, 0.943700 };
+	let lr0 = float3 { 4.06305, -0.40791, -0.0118812 }; let lr1 = float3 { -2.93241, 1.40437, -0.0486532 }; let lr2 = float3 { -0.130646, 0.00353630, 1.0605344 };
+	let dg = float3 { 0.975538 / lms.x, 1.01648 / lms.y, 1.08475 / lms.z };
+	let rc = [rl0, rl1, rl2];
+	for j in 3 {
+		let c = rc[j];
+		let s = float3 { c.x * dg.x, c.y * dg.y, c.z * dg.z };
+		let col = lr0 * s.x + lr1 * s.y + lr2 * s.z;
+		u[j * 4] = col.x; u[j * 4 + 1] = col.y; u[j * 4 + 2] = col.z;
+	}
+	for k in 3 { u[12 + k] = 1.0; u[16 + k] = [GRADE_CON.x, GRADE_CON.y, GRADE_CON.z][k]; u[20 + k] = 1.0; u[24 + k] = 1.0; u[28 + k] = 0.0; }
+	u[32] = 0.2; u[33] = 0.7;
+	u[36] = CAM.gexposure; u[37] = CAM.tonemap as f32; u[38] = CAM.saturation; u[39] = if OPAQUE_OUT { 1.0 } else { 0.0 };
+	if ldr { u[40] = CAM.clear.x; u[41] = CAM.clear.y; u[42] = CAM.clear.z; u[43] = CAM.clear.w; u[44] = 1.0; }
+	u
+}
+fn bind_frag_common(kind int, it_mat int) {
+	let sh0 = if SHADOW_SIZE > 0 { SHADOW_T[0] } else { WHITE };
+	let sh1 = if SHADOW_SIZE > 0 { SHADOW_T[1] } else { WHITE };
+	gfx::bind_texture(gfx::FRAGMENT, 0, sh0, SHADOW_S);
+	gfx::bind_texture(gfx::FRAGMENT, 1, sh1, SHADOW_S);
+	gfx::bind_texture(gfx::FRAGMENT, 2, if ENV.on { ENV.diffuse } else { BLACK_CUBE }, LIN_CLAMP);
+	gfx::bind_texture(gfx::FRAGMENT, 3, if ENV.on { ENV.specular } else { BLACK_CUBE }, LIN_CLAMP);
+	let m .= MATS_R[it_mat];
+	if m.tex >= 0 { gfx::bind_texture(gfx::FRAGMENT, 4, TEXS[m.tex].t, TEXS[m.tex].s); } else { gfx::bind_texture(gfx::FRAGMENT, 4, WHITE, LIN_REPEAT); }
+	for k in 4 { let t = m.texs[k]; if t >= 0 { gfx::bind_texture(gfx::FRAGMENT, 5 + k, TEXS[t].t, TEXS[t].s); } else { if m.kind == K_STD && k < 4 { gfx::bind_texture(gfx::FRAGMENT, 5 + k, WHITE, LIN_REPEAT); } } }
+	let ao_t = if CAM.ao && T_AO_BLUR.id != 0 { T_AO_BLUR } else { WHITE };
+	gfx::bind_texture(gfx::FRAGMENT, 9, ao_t, LIN_CLAMP);
+}
+fn draw_prepass(d Draw&) {
+	let g = GP[d.gp];
+	let m .= MATS_R[d.mat];
+	gfx::bind(if m.cull == 0 { P_AO_PRE_DBL } else { P_AO_PRE });
+	gfx::push_uniforms(gfx::VERTEX, 0, bytes_of(VIEW_U));
+	gfx::bind_vertex_buffer(0, g.vb, 0);
+	gfx::bind_vertex_buffer(1, INST_BUF, d.first * 128);
+	gfx::bind_index_buffer(g.ib, 4);
+	gfx::bind_storage_buffer(gfx::VERTEX, 0, JOINT_BUF);
+	gfx::bind_storage_buffer(gfx::VERTEX, 1, if d.nmorph > 0 { g.mb } else { DUMMY_BUF });
+	var du f32[68] = [0.0; 68];
+	du[0] = binary::f32_from_bits(d.joint as! u32);
+	du[1] = binary::f32_from_bits(d.nmorph as! u32);
+	du[2] = binary::f32_from_bits(0);
+	du[3] = binary::f32_from_bits(g.vcount as! u32);
+	if d.morph >= 0 {
+		for q in 16 {
+			let w = MW[d.morph + q];
+			du[4 + q * 4] = w.x; du[5 + q * 4] = w.y; du[6 + q * 4] = w.z; du[7 + q * 4] = w.w;
+		}
+	}
+	gfx::push_uniforms(gfx::VERTEX, 1, bytes_of(du));
+	gfx::draw_indexed(g.n, d.count, 0, 0, 0);
+}
+fn draw_one(d Draw&, shadow bool) {
+	let g = GP[d.gp];
+	gfx::bind(PIPES[d.pipe].p);
+	gfx::push_uniforms(gfx::VERTEX, 0, bytes_of(VIEW_U));
+	gfx::bind_vertex_buffer(0, g.vb, 0);
+	gfx::bind_vertex_buffer(1, INST_BUF, d.first * 128);
+	gfx::bind_index_buffer(g.ib, 4);
+	gfx::bind_storage_buffer(gfx::VERTEX, 0, JOINT_BUF);
+	gfx::bind_storage_buffer(gfx::VERTEX, 1, if d.nmorph > 0 { g.mb } else { DUMMY_BUF });
+	var du f32[68] = [0.0; 68];
+	du[0] = binary::f32_from_bits(d.joint as! u32); du[1] = binary::f32_from_bits(d.nmorph as! u32); du[2] = binary::f32_from_bits(0); du[3] = binary::f32_from_bits(g.vcount as! u32);
+	if d.morph >= 0 { for q in 16 { let w = MW[d.morph + q]; du[4 + q * 4] = w.x; du[5 + q * 4] = w.y; du[6 + q * 4] = w.z; du[7 + q * 4] = w.w; } }
+	gfx::push_uniforms(gfx::VERTEX, 1, bytes_of(du));
+	if !shadow && MATS_R[d.mat].nvp { let vp float4[1] = [MATS_R[d.mat].vp]; gfx::push_uniforms(gfx::VERTEX, 2, bytes_of(vp)); }
+	if !shadow {
+		let m .= MATS_R[d.mat];
+		bind_frag_common(m.kind, d.mat);
+		gfx::push_uniforms(gfx::FRAGMENT, 0, bytes_of(VIEW_U));
+		gfx::push_uniforms(gfx::FRAGMENT, 1, bytes_of(FRAME_U));
+		gfx::push_uniforms(gfx::FRAGMENT, 2, bytes_of(m.u));
+		if m.np > 0 { gfx::push_uniforms(gfx::FRAGMENT, 3, bytes_of(m.params[..m.np])); }
+	}
+	gfx::draw_indexed(g.n, d.count, 0, 0, 0);
+}
+fn render_frame(target gfx::Texture, tw int, th int, is_win bool) {
+	R_FRAME++;
+	pt_run();
+	let aspect = (tw as f32) / (max(th, 1) as f32);
+	let cfv = persp_rev(CAM.fov, aspect, CAM.near);
+	let wfv = CAM.world;
+	let cfw = mmul(cfv, minv(wfv));
+	let shadows_on = is_win && SUN.on && SUN.shadows;
+	var cm gfx::mat4[4] = [gfx::mat4_identity; 4];
+	var ctex f32[4] = [0.0; 4];
+	let nc = if shadows_on { cascades(wfv, CAM.fov, CAM.near, aspect, SUN.dir, SUN.size as f32, cm, ctex) } else { 0 };
+	if shadows_on { ensure_shadow(SUN.size); }
+	ensure_targets(tw, th, CAM.msaa);
+	let pl = planes(cfw);
+	let eye = float3 { wfv.c3.x, wfv.c3.y, wfv.c3.z };
+	DRAWS.clear(); SDRAWS.clear(); INST.clear();
+	var order int[>..<] = [];
+	for &it, i in IT { if (it.layers & CAM.layers) == 0 { continue; } let c, r = item_center(it); if (it.far > 1e29 || length(c - eye) < it.far) && (it.joint >= 0 || visible(pl, c, r)) { order.push(i); } }
+	sort(order[..]) { a, b => IT[a].mat < IT[b].mat || (IT[a].mat == IT[b].mat && IT[a].gp < IT[b].gp) };
+	for i in order {
+		let it .= IT[i];
+		let m .= MATS_R[it.mat];
+		let p = pipe_for(m.kind, m.alpha, m.cull, false, m.bias);
+		let first = INST.len / 32;
+		push_inst(it);
+		let c, r = item_center(it);
+		let dep = length(c - eye);
+		let n = DRAWS.len;
+		if n > 0 && m.alpha < 2 && DRAWS[n - 1].alpha < 2 && DRAWS[n - 1].pipe == p && DRAWS[n - 1].mat == it.mat && DRAWS[n - 1].gp == it.gp && it.joint < 0 && it.morph < 0 && DRAWS[n - 1].first + DRAWS[n - 1].count == first && DRAWS[n - 1].joint < 0 && DRAWS[n - 1].morph < 0 { DRAWS[n - 1].count++; }
+		else { DRAWS.push(Draw { p, it.mat, it.gp, first, 1, it.joint, it.morph, it.nmorph, m.alpha, dep }); }
+	}
+	sort(DRAWS[..]) { a, b => (a.alpha < 2 && b.alpha >= 2) || (a.alpha >= 2 && b.alpha >= 2 && a.depth > b.depth) };
+	for c in nc {
+		SCOUNT[c] = SDRAWS.len;
+		let spl = planes(cm[c]);
+		for &it in IT {
+			let m .= MATS_R[it.mat];
+			if !it.casts || m.alpha >= 2 || !m.shadows || !KIND_SHADOWS[m.kind] { continue; }
+			let cc, r = item_center(it);
+			if it.joint < 0 && !visible(spl, cc, r + 70.0) { continue; }
+			let p = pipe_for(0, 0, if m.cull == 0 { 0 } else { 1 }, true, 0.0);
+			let first = INST.len / 32;
+			push_inst(it);
+			SDRAWS.push(Draw { p, it.mat, it.gp, first, 1, it.joint, it.morph, it.nmorph, 0, 0.0 });
+		}
+	}
+	SCOUNT[nc] = SDRAWS.len;
+	if INST.len > 0 { gfx::update_buffer(INST_BUF, 0, bytes_of(INST[..])); }
+	if JM.len > 0 { gfx::update_buffer(JOINT_BUF, 0, bytes_of(JM[..])); }
+	var fr f32[216] = [0.0; 216];
+	fr[0] = SUN.dir.x; fr[1] = SUN.dir.y; fr[2] = SUN.dir.z; fr[3] = binary::f32_from_bits(if shadows_on { 1 } else { 0 });
+	if SUN.on { fr[4] = SUN.color.x; fr[5] = SUN.color.y; fr[6] = SUN.color.z; fr[7] = 1.0; }
+	fr[8] = AMBIENT.x; fr[9] = AMBIENT.y; fr[10] = AMBIENT.z; fr[11] = 1.0;
+	for c in 4 { put_mat(fr[..], 12 + c * 16, cm[c]); }
+	for c in 3 { fr[76 + c] = if c < nc { SUN.bounds[c] } else { 0.0 }; }
+	fr[79] = nc as f32;
+	for c in 4 { fr[80 + c] = ctex[c]; }
+	fr[84] = SUN.depth_bias; fr[85] = SUN.normal_bias; fr[86] = SUN.size as f32; fr[87] = SUN.overlap;
+	fr[88] = if ENV.on { ENV.intensity } else { 0.0 }; fr[89] = if ENV.on { (ENV.mips - 1) as f32 } else { 0.0 }; fr[90] = if ENV.on { 1.0 } else { 0.0 };
+	fr[92] = ENV.rot.x; fr[93] = ENV.rot.y; fr[94] = ENV.rot.z; fr[95] = ENV.rot.w;
+	fr[96] = CAM.fog_color.x; fr[97] = CAM.fog_color.y; fr[98] = CAM.fog_color.z; fr[99] = CAM.fog_color.w;
+	fr[100] = CAM.fog_dl.x; fr[101] = CAM.fog_dl.y; fr[102] = CAM.fog_dl.z; fr[103] = CAM.fog_dl.w;
+	fr[104] = CAM.fog_be.x; fr[105] = CAM.fog_be.y; fr[106] = CAM.fog_be.z; fr[107] = CAM.fog_dl_exp;
+	fr[108] = CAM.fog_bi.x; fr[109] = CAM.fog_bi.y; fr[110] = CAM.fog_bi.z; fr[111] = binary::f32_from_bits(CAM.fog_mode);
+	fr[112] = R_TIME; fr[113] = R_DT; fr[114] = R_FRAME as f32;
+	fr[116] = min(PL_N, 12) as f32;
+	fr[117] = RIM.x; fr[118] = RIM.y; fr[119] = RIM.z;
+	for k in min(PL_N, 12) { let a = PL_POS[k]; let b = PL_COL[k]; fr[120 + k * 4] = a.x; fr[121 + k * 4] = a.y; fr[122 + k * 4] = a.z; fr[123 + k * 4] = a.w; fr[168 + k * 4] = b.x; fr[169 + k * 4] = b.y; fr[170 + k * 4] = b.z; fr[171 + k * 4] = b.w; }
+	for c in nc {
+		let pd = gfx::PassDesc { depth: SHADOW_T[c], clear_color: false, .. };
+		gfx::begin_pass(pd);
+		VIEW_U = view_block(cm[c], gfx::mat4_identity, gfx::mat4_identity, 1.0, 1.0, 1.0);
+		for k in SCOUNT[c]..SCOUNT[c + 1] { draw_one(SDRAWS[k], true); }
+		gfx::end_pass();
+	}
+	VIEW_U = view_block(cfw, wfv, cfv, CAM.exposure, tw as f32, th as f32);
+	FRAME_U = fr;
+	if CAM.ao {
+		let pre_pd = gfx::PassDesc {
+			color: [T_PRE_COL, gfx::Texture { 0 }, gfx::Texture { 0 }, gfx::Texture { 0 }],
+			depth: T_PRE_DEP,
+			clear_color: true,
+			clear_depth: true,
+			color_value: float4 { 0.0, 0.0, 0.0, 1.0e4 },
+			depth_value: 0.0,
+			..
+		};
+		gfx::begin_pass(pre_pd);
+		for &d in DRAWS {
+			if d.alpha < 2 { draw_prepass(d); }
+		}
+		gfx::end_pass();
+		let pw = max(tw / 2, 1);
+		let ph = max(th / 2, 1);
+		let ao_pd = gfx::PassDesc {
+			color: [T_AO_RAW, gfx::Texture { 0 }, gfx::Texture { 0 }, gfx::Texture { 0 }],
+			clear_color: false,
+			clear_depth: false,
+			..
+		};
+		gfx::begin_pass(ao_pd);
+		gfx::bind(P_AO);
+		gfx::bind_texture(gfx::FRAGMENT, 0, T_PRE_COL, LIN_CLAMP);
+		let aou f32[8] = [
+			tan(CAM.fov * 0.5),
+			aspect,
+			0.6,
+			1.5,
+			1.0 / (pw as f32),
+			1.0 / (ph as f32),
+			0.02,
+			0.0
+		];
+		gfx::push_uniforms(gfx::FRAGMENT, 0, bytes_of(aou));
+		gfx::draw(3);
+		gfx::end_pass();
+		let blur_pd = gfx::PassDesc {
+			color: [T_AO_BLUR, gfx::Texture { 0 }, gfx::Texture { 0 }, gfx::Texture { 0 }],
+			clear_color: false,
+			clear_depth: false,
+			..
+		};
+		gfx::begin_pass(blur_pd);
+		gfx::bind(P_AO_BLUR);
+		gfx::bind_texture(gfx::FRAGMENT, 0, T_AO_RAW, LIN_CLAMP);
+		let bu f32[4] = [1.0 / (pw as f32), 1.0 / (ph as f32), 0.0, 0.0];
+		gfx::push_uniforms(gfx::FRAGMENT, 0, bytes_of(bu));
+		gfx::draw(3);
+		gfx::end_pass();
+	}
+	let ms = CAM.msaa > 1;
+	var pd = gfx::PassDesc { depth: T_DEPTH, color_value: float4 { 0.0, 0.0, 0.0, 0.0 }, depth_value: 0.0, .. };
+	pd.color[0] = if ms { T_MSAA } else { T_HDR };
+	if ms { pd.resolve[0] = T_HDR; }
+	gfx::begin_pass(pd);
+	if SKY.on {
+		gfx::bind(P_SKY);
+		gfx::bind_texture(gfx::FRAGMENT, 0, SKY.cube, LIN_CLAMP);
+		var su f32[24] = [0.0; 24];
+		put_mat(su[..], 0, mmul(wfv, minv(cfv)));
+		su[16] = SKY.rot.x; su[17] = SKY.rot.y; su[18] = SKY.rot.z; su[19] = SKY.rot.w; su[20] = SKY.brightness * CAM.exposure;
+		gfx::push_uniforms(gfx::FRAGMENT, 0, bytes_of(su));
+		gfx::draw(3);
+	}
+	for &d in DRAWS { draw_one(d, false); }
+	pt_draw(cfw, wfv);
+	gfx::end_pass();
+	let bon = CAM.bloom > 0.0;
+	if bon {
+		fn bpass(dst gfx::Texture, src gfx::Texture, src2 gfx::Texture, pipe gfx::Pipeline, tx f32, ty f32, z f32) {
+			gfx::begin_pass(gfx::PassDesc { color: [dst, gfx::Texture { 0 }, gfx::Texture { 0 }, gfx::Texture { 0 }], .. });
+			gfx::bind(pipe);
+			gfx::bind_texture(gfx::FRAGMENT, 0, src, LIN_CLAMP);
+			if src2.id != 0 { gfx::bind_texture(gfx::FRAGMENT, 1, src2, LIN_CLAMP); }
+			let bu f32[8] = [0.0, 0.0, 0.0, 0.0, tx, ty, z, 0.0];
+			gfx::push_uniforms(gfx::FRAGMENT, 0, bytes_of(bu));
+			gfx::draw(3);
+			gfx::end_pass();
+		}
+		let n = BL_N;
+		bpass(BL_D[0], T_HDR, gfx::Texture { 0 }, P_DOWN, 1.0 / (tw as f32), 1.0 / (th as f32), 1.0);
+		for m in 1..n { bpass(BL_D[m], BL_D[m - 1], gfx::Texture { 0 }, P_DOWN, 1.0 / (max(BL_W >> (m - 1), 1) as f32), 1.0 / (max(BL_H >> (m - 1), 1) as f32), 0.0); }
+		let mx = (n - 1) as f32;
+		var m = n - 1;
+		while m >= 1 { let src = if m == n - 1 { BL_D[m] } else { BL_U[m] }; bpass(BL_U[m - 1], src, BL_D[m - 1], P_UP, 1.0 / (max(BL_W >> m, 1) as f32), 1.0 / (max(BL_H >> m, 1) as f32), bloom_factor(CAM.bloom, m as f32, mx)); m--; }
+	}
+	gfx::begin_pass(gfx::PassDesc { color: [target, gfx::Texture { 0 }, gfx::Texture { 0 }, gfx::Texture { 0 }], color_value: float4 { 0.0, 0.0, 0.0, 0.0 }, .. });
+	gfx::bind(P_TONE);
+	gfx::bind_texture(gfx::FRAGMENT, 0, T_HDR, LIN_CLAMP);
+	let b0 = if !bon { T_HDR } else { if BL_N > 1 { BL_U[0] } else { BL_D[0] } };
+	gfx::bind_texture(gfx::FRAGMENT, 1, b0, LIN_CLAMP);
+	var gu = grade_block(true);
+	if bon { gu[48] = 1.0 / (BL_W as f32); gu[49] = 1.0 / (BL_H as f32); gu[50] = bloom_factor(CAM.bloom, 0.0, (BL_N - 1) as f32); gu[51] = 1.0; }
+	gfx::push_uniforms(gfx::FRAGMENT, 0, bytes_of(gu));
+	gfx::draw(3);
+	gfx::end_pass();
+}
+fn env_generate(cube_px u16[:], base int) gfx::Texture, gfx::Texture, int {
+	var mips = 0; var q = base; while q > 0 { mips++; q >>= 1; }
+	let src = gfx::texture(gfx::TextureDesc { kind: gfx::TEXTURE_CUBE, format: gfx::RGBA16F, usage: gfx::SAMPLED, width: base as! i32, height: base as! i32, mips: mips as! i32, .. });
+	var lev f32[>..] = [];
+	for i in cube_px.len { lev.push(f16_to_f32(cube_px[i])); }
+	var s = base;
+	var mip = 0;
+	var hb u16[>..] = [];
+	loop {
+		hb.clear();
+		for i in 6 * s * s * 4 { hb.push(f16(lev[i])); }
+		for f in 6 { gfx::update_texture(src, gfx::Region { mip: mip as! i32, layer: f as! i32, .. }, bytes_of(hb[f * s * s * 4..(f + 1) * s * s * 4])); }
+		if s <= 1 { break; }
+		let n = s / 2;
+		var nx f32[>..] = [];
+		for f in 6 { for y in n { for x in n { for c in 4 { let r0 = ((f * s + y * 2) * s + x * 2) * 4 + c; let r1 = r0 + s * 4; nx.push((lev[r0] + lev[r0 + 4] + lev[r1] + lev[r1 + 4]) * 0.25); } } } }
+		lev.clear(); lev.append(nx);
+		s = n; mip++;
+	}
+	let ss = min(base, 256);
+	var sm = 0; q = ss; while q > 0 { sm++; q >>= 1; }
+	let spec = gfx::texture(gfx::TextureDesc { kind: gfx::TEXTURE_CUBE, format: gfx::RGBA16F, usage: gfx::SAMPLED | gfx::COLOR_TARGET, width: ss as! i32, height: ss as! i32, mips: sm as! i32, .. });
+	let diff = gfx::texture(gfx::TextureDesc { kind: gfx::TEXTURE_CUBE, format: gfx::RGBA16F, usage: gfx::SAMPLED | gfx::COLOR_TARGET, width: 32, height: 32, .. });
+	for job in sm + 1 {
+		let t = if job < sm { spec } else { diff };
+		let m = if job < sm { job } else { 0 };
+		let rough = if job < sm { (job as f32) / ((sm - 1) as f32) } else { 1.0 };
+		let mode u32 = if job < sm { 0 } else { 1 };
+		for face in 6 {
+			gfx::begin_pass(gfx::PassDesc { color: [t, gfx::Texture { 0 }, gfx::Texture { 0 }, gfx::Texture { 0 }], layer: face as! i32, mip: m as! i32, clear_color: false, .. });
+			gfx::bind(P_ENVF);
+			gfx::bind_texture(gfx::FRAGMENT, 0, src, LIN_CLAMP);
+			let fu f32[4] = [binary::f32_from_bits(face as! u32), rough, binary::f32_from_bits(mode), mips as f32];
+			gfx::push_uniforms(gfx::FRAGMENT, 0, bytes_of(fu));
+			gfx::draw(3);
+			gfx::end_pass();
+		}
+	}
+	rel_tex(src);
+	return spec, diff, sm;
+}
+
+// ---- GPU particles (compute step outside passes, vertex-pulled quads in the HDR pass) ----
+// The CPU only queues emitters (a ring range each); spawn, integration and
+// expansion all run on the GPU. Steps are queued per sim tick by the caller.
+let PT_N = 8192;
+let PT_EMAX = 16;
+var PT_ON bool;
+var PT_BUF gfx::Buffer;
+var PT_CP gfx::ComputePipeline;
+var PT_P gfx::Pipeline;
+var PT_HEAD = 0;
+var PT_NE = 0;
+var PT_STEPS = 0;
+var PT_SEED = 0;
+var PT_DT f32 = 0.05;
+var PT_E f32[192];
+fn pt_init() {
+	if PT_ON { return; }
+	var z f32[>..] = [];
+	for _ in PT_N * 16 { z.push(0.0); }
+	PT_BUF = gfx::buffer(gfx::BUFFER_COMPUTE_WRITE | gfx::BUFFER_STORAGE, bytes_of(z));
+	PT_CP = gfx::compute_pipeline(CS_PART);
+	PT_P = gfx::pipeline(VS_PART, FS_PART, gfx::PipelineDesc { cull: gfx::CULL_NONE, depth_test: true, depth_write: false,
+		depth_compare: gfx::COMPARE_GREATER_EQUAL, blend: gfx::BLEND_PREMULTIPLIED, .. });
+	PT_ON = true;
+}
+// kind 0 = sparks (dir = spray direction), 1 = dust (dir = drift).
+fn pt_emit(p float3, d float3, c float3, kind int, n int) {
+	if !PT_ON || PT_NE >= PT_EMAX || n <= 0 { return; }
+	let k = PT_NE;
+	PT_E[k * 4] = p.x; PT_E[k * 4 + 1] = p.y; PT_E[k * 4 + 2] = p.z; PT_E[k * 4 + 3] = PT_HEAD as f32;
+	PT_E[64 + k * 4] = d.x; PT_E[65 + k * 4] = d.y; PT_E[66 + k * 4] = d.z; PT_E[67 + k * 4] = min(n, PT_N) as f32;
+	PT_E[128 + k * 4] = c.x; PT_E[129 + k * 4] = c.y; PT_E[130 + k * 4] = c.z; PT_E[131 + k * 4] = kind as f32;
+	PT_HEAD = (PT_HEAD + min(n, PT_N)) % PT_N;
+	PT_NE++;
+}
+fn pt_step(n int, seed int) { PT_STEPS += n; PT_SEED = seed; }
+fn pt_run() {
+	if !PT_ON || PT_STEPS == 0 { return; }
+	let sub = 2;
+	for s in min(PT_STEPS, 8) * sub {
+		var u f32[196] = [0.0; 196];
+		u[0] = if s == 0 { PT_NE as f32 } else { 0.0 };
+		u[1] = PT_DT / (sub as f32); u[2] = ((PT_SEED * 16 + s) % 16777216) as f32; u[3] = PT_N as f32;
+		if s == 0 { for k in 192 { u[4 + k] = PT_E[k]; } }
+		let rw gfx::Buffer[1] = [PT_BUF];
+		gfx::begin_compute(rw);
+		gfx::bind(PT_CP);
+		gfx::push_uniforms(gfx::COMPUTE, 0, bytes_of(u));
+		gfx::dispatch(PT_N / 64, 1, 1);
+		gfx::end_compute();
+	}
+	PT_STEPS = 0; PT_NE = 0;
+}
+fn pt_draw(cfw gfx::mat4, wfv gfx::mat4) {
+	if !PT_ON { return; }
+	var u f32[28] = [0.0; 28];
+	put_mat(u[..], 0, cfw);
+	u[16] = wfv.c0.x; u[17] = wfv.c0.y; u[18] = wfv.c0.z;
+	u[20] = wfv.c1.x; u[21] = wfv.c1.y; u[22] = wfv.c1.z;
+	u[24] = wfv.c3.x; u[25] = wfv.c3.y; u[26] = wfv.c3.z;
+	gfx::bind(PT_P);
+	gfx::push_uniforms(gfx::VERTEX, 0, bytes_of(u));
+	gfx::bind_storage_buffer(gfx::VERTEX, 0, PT_BUF);
+	gfx::draw(PT_N * 6);
+}

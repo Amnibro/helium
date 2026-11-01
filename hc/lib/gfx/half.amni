@@ -1,0 +1,32 @@
+import binary;
+fn f16(x f32) u16 {
+	let b = binary::f32_bits(x);
+	let sign = ((b >> 16) & 0x8000) as! u16;
+	let e = ((b >> 23) & 0xFF) as int;
+	let m = b & 0x7FFFFF;
+	if e == 255 { return sign | 0x7C00 | (if m != 0 { 0x200 } else { 0 }); }
+	let ue = e - 127 + 15;
+	if ue >= 31 { return sign | 0x7C00; }
+	if ue <= 0 {
+		if ue < -10 { return sign; }
+		let mm = m | 0x800000;
+		let sh = (14 - ue) as u32;
+		var r = mm >> sh;
+		let rem = mm & ((1 << sh) - 1);
+		let half = 1 << (sh - 1);
+		if rem > half || (rem == half && (r & 1) != 0) { r++; }
+		return sign | (r as! u16);
+	}
+	var r = ((ue as u32) << 10) | (m >> 13);
+	let rem = m & 0x1FFF;
+	if rem > 0x1000 || (rem == 0x1000 && (r & 1) != 0) { r++; }
+	sign | (r as! u16)
+}
+fn f16_to_f32(h u16) f32 {
+	let sign = ((h as u32) & 0x8000) << 16;
+	let e = ((h >> 10) & 31) as u32;
+	let m = (h & 0x3FF) as u32;
+	if e == 0 { let v = (m as f32) * binary::f32_from_bits(0x33800000); return if sign != 0 { -v } else { v }; }
+	if e == 31 { return binary::f32_from_bits(sign | 0x7F800000 | (m << 13)); }
+	binary::f32_from_bits(sign | ((e + 112) << 23) | (m << 13))
+}

@@ -1,0 +1,137 @@
+// gfx_smoke: lib/gfx (scene/material PBR layer, SSAO, analytic tonemap, GPU
+// particles, procedural SDF font) end to end. The CPU part prints deterministic values (checked
+// against gfx_smoke.out); with a GPU it renders a lit sphere on a floor with
+// shadows, SSAO, bloom, the filmic tonemap and a particle burst headless,
+// draws SDF text over it, saves a PNG, decodes it with gfx.png and checks the frame is lit and
+// shaded. Run through tools/hc/gfxtest.sh.
+import os;
+import gfx;
+import gfx.m3d;
+import gfx.half;
+import gfx.glb;
+import gfx.render;
+import gfx.png;
+import gfx.sdf_font;
+
+fn sphere(v GVtx[>..]&, ix u32[>..]&, r f32, nu int, nv int) {
+	for j in nv + 1 {
+		let t = 3.14159265 * j as f32 / nv as f32;
+		for i in nu + 1 {
+			let p = 6.2831853 * i as f32 / nu as f32;
+			let n = [sin(t) * cos(p), cos(t), sin(t) * sin(p)];
+			v.push(GVtx { [n[0] * r, n[1] * r, n[2] * r], n, [i as f32 / nu as f32, j as f32 / nv as f32], [0.0, 0.0], [1.0, 1.0, 1.0, 1.0], [0.0; 4], [1.0, 0.0, 0.0, 0.0] });
+		}
+	}
+	for j in nv {
+		for i in nu {
+			let a = (j * (nu + 1) + i) as u32;
+			let b = a + (nu + 1) as u32;
+			ix.append([a, a + 1, b, a + 1, b + 1, b]);
+		}
+	}
+}
+
+fn lum(px byte[>..]&, w int, x int, y int) int { let o = (y * w + x) * 4; (px[o] as int * 3 + px[o + 1] as int * 6 + px[o + 2] as int) / 10 }
+
+fn cpu_checks() {
+	// half floats
+	let hs f32[5] = [0.0, 1.0, -2.5, 0.333, 65504.0];
+	for x in hs { print("f16 ", x, " -> ", f16(x), " -> ", f16_to_f32(f16(x))); }
+	// quaternions and matrices
+	let q = qaxis(v3(0.0, 1.0, 0.0), 1.5707963);
+	let r = qrot(q, v3(1.0, 0.0, 0.0));
+	print("qrot ", round(r.x * 1000.0) as int, " ", round(r.y * 1000.0) as int, " ", round(r.z * 1000.0) as int);
+	let h = qslerp(qid(), q, 0.5);
+	print("qslerp w ", round(h.w * 1000.0) as int);
+	let m = trs(v3(1.0, 2.0, 3.0), q, v3(2.0, 2.0, 2.0));
+	let p = mpoint(minv(m), mpoint(m, v3(0.5, -1.0, 4.0)));
+	print("minv ", round(p.x * 1000.0) as int, " ", round(p.y * 1000.0) as int, " ", round(p.z * 1000.0) as int);
+	print("srgb ", round(srgb_lin(0.5) * 10000.0) as int);
+	var v GVtx[>..] = [];
+	var ix u32[>..] = [];
+	sphere(v, ix, 1.0, 16, 8);
+	print("sphere ", v.len, " verts ", ix.len, " indices");
+	// SDF font: advances, quads (fill + shadow per visible glyph), atlas coverage
+	print("sdf adv ", round(sdf_text_w("Helium 0123", 24.0) * 100.0) as int, " ", round(sdf_text_w("W", 10.0) * 100.0) as int);
+	var tv TextVtx[>..] = [];
+	sdf_text(tv, 0.0, 0.0, 16.0, "Hi there!", [255, 255, 255, 255], 1, false);
+	print("sdf verts ", tv.len, " x0 ", round(tv[0].pos.x * 100.0) as int, " I off ", round(SDF_OFF[41] * 100.0) as int);
+	var atlas byte[>..] = [];
+	sdf_bake(atlas);
+	var inside = 0;
+	var i = 0;
+	while i < atlas.len { if atlas[i] >= 128 { inside += 1; } i += 4; }
+	print("sdf atlas ", SDF_ATLAS_W, "x", SDF_ATLAS_H, " inside ", inside);
+}
+
+fn main() {
+	cpu_checks();
+	// os::arg rather than args(): each path is copied into its own buffer.
+	if arg_count() < 2 { print("gpu: skipped (no output path)"); return; }
+	var out byte[>..] = [];
+	arg(1, out);
+	let w = 320;
+	let h = 180;
+	guard gfx::open_headless(w, h) else { print("gpu: skipped (", gfx::error(), ")"); return; }
+	r_init();
+	pt_init();
+	SUN = Sun { nrm3(float3 { 0.4, 0.8, 0.3 }), float3 { 1.0, 0.96, 0.9 } * 3.0, true, true, 0.02, 1.8, 2, [8.0, 30.0, 0.0, 0.0], 0.2, 0.1, 1024 };
+	AMBIENT = float4 { 0.04, 0.045, 0.05, 1.0 };
+	CAM.ao = true;
+	CAM.bloom = 0.06;
+	CAM.tonemap = 1;
+	CAM.msaa = 4;
+	CAM.clear = float4 { 0.02, 0.025, 0.03, 1.0 };
+	var v GVtx[>..] = [];
+	var ix u32[>..] = [];
+	var mo f32[3][>..] = [];
+	sphere(v, ix, 1.0, 48, 24);
+	let sg = mesh_upload(v[..], ix[..], mo[..], 0, 1);
+	let sm = mat_add(std_mat(float4 { 0.8, 0.35, 0.2, 1.0 }, 0.35, 0.0, -1, 0, false));
+	var fv GVtx[>..] = [];
+	let e = 8.0;
+	let cs = [float2 { -e, -e }, float2 { e, -e }, float2 { e, e }, float2 { -e, e }];
+	for c in cs { fv.push(GVtx { [c.x, 0.0, c.y], [0.0, 1.0, 0.0], [0.0, 0.0], [0.0, 0.0], [1.0, 1.0, 1.0, 1.0], [0.0; 4], [1.0, 0.0, 0.0, 0.0] }); }
+	let fi u32[6] = [0, 2, 1, 0, 3, 2];
+	let fg = mesh_upload(fv[..], fi[..], mo[..], 0, 1);
+	let fm = mat_add(std_mat(float4 { 0.5, 0.5, 0.52, 1.0 }, 0.8, 0.0, -1, 0, false));
+	let eye = v3(0.0, 2.2, 5.0);
+	for f in 6 {
+		guard gfx::frame() else { print("gpu: error: frame: ", gfx::error()); exit(1); }
+		frame_begin();
+		CAM.world = trs(eye, look_rot(v3(0.0, 0.8, 0.0) - eye, float3 { 0.0, 1.0, 0.0 }), float3 { 1.0, 1.0, 1.0 });
+		CAM.fov = 0.8;
+		R_DT = 1.0 / 60.0;
+		R_TIME = f as f32 / 60.0;
+		PL_POS[0] = float4 { 1.5, 1.0, 1.5, 6.0 };
+		PL_COL[0] = float4 { 0.3, 0.6, 1.0, 1.0 };
+		PL_N = 1;
+		if f == 1 { pt_emit(v3(0.0, 2.0, 0.0), v3(0.0, 1.0, 0.0), float3 { 4.0, 2.0, 0.6 }, 0, 256); }
+		pt_step(1, f);
+		add_item(sg, sm, gfx::translate(v3(0.0, 1.0, 0.0)), true, true);
+		add_item(fg, fm, gfx::mat4_identity, false, true);
+		render_frame(gfx::screen(), w, h, true);
+		var tv TextVtx[>..] = [];
+		sdf_text(tv, 8.0, 8.0, 20.0, "HELIUM", [255, 255, 255, 255], 1, false);
+		sdf_draw(gfx::screen(), w, h, tv);
+		if f == 5 { guard gfx::screenshot(out[..]) else { print("gpu: error: screenshot: ", gfx::error()); exit(1); } }
+	}
+	gfx::finish();
+	var src byte[>..] = [];
+	guard read_file(out[..], src) else { print("gpu: error: cannot read ", out[..]); exit(1); }
+	var px byte[>..] = [];
+	let iw, ih, ok = png_decode(src[..], px);
+	if !ok || iw != w || ih != h { print("gpu: error: png ", iw, "x", ih); exit(1); }
+	// Lit sphere centre vs. the floor in its contact shadow vs. the sky corner.
+	let c = lum(px, w, w / 2, h / 2 - 10);
+	let k = lum(px, w, 2, 2);
+	var sum = 0;
+	for y in h { for x in w { sum += lum(px, w, x, y); } }
+	let mean = sum / (w * h);
+	// The SDF text in the top-left corner: bright glyph pixels over the dark sky.
+	var tmax = 0;
+	for y in 22 { for x in 90 { tmax = max(tmax, lum(px, w, 8 + x, 8 + y)); } }
+	let lit = c > k + 20 && mean > 8 && mean < 240 && tmax > 200;
+	print(if lit { "gpu: ok" } else { "gpu: FAIL" }, " centre ", c, " corner ", k, " mean ", mean, " text ", tmax);
+	if !lit { exit(1); }
+}

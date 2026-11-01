@@ -1,0 +1,174 @@
+struct Bits { p int, b uint, n int }
+struct Huff { mask uint, tab u32[32768] }
+var HL Huff;
+var HD Huff;
+var HC Huff;
+let LBASE u16[29] = [3, 4, 5, 6, 7, 8, 9, 10, 11, 13, 15, 17, 19, 23, 27, 31, 35, 43, 51, 59, 67, 83, 99, 115, 131, 163, 195, 227, 258];
+let LEXT byte[29] = [0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 2, 2, 2, 2, 3, 3, 3, 3, 4, 4, 4, 4, 5, 5, 5, 5, 0];
+let DBASE u16[30] = [1, 2, 3, 4, 5, 7, 9, 13, 17, 25, 33, 49, 65, 97, 129, 193, 257, 385, 513, 769, 1025, 1537, 2049, 3073, 4097, 6145, 8193, 12289, 16385, 24577];
+let DEXT byte[30] = [0, 0, 0, 0, 1, 1, 2, 2, 3, 3, 4, 4, 5, 5, 6, 6, 7, 7, 8, 8, 9, 9, 10, 10, 11, 11, 12, 12, 13, 13];
+let CLORD byte[19] = [16, 17, 18, 0, 8, 7, 9, 6, 10, 5, 11, 4, 12, 3, 13, 2, 14, 1, 15];
+fn need(bs Bits&, src const byte[:], k int) { while bs.n < k { if bs.p < src.len { bs.b |= (src[bs.p] as uint) << (bs.n as uint); } bs.p++; bs.n += 8; } }
+fn take(bs Bits&, src const byte[:], k int) uint { need(bs, src, k); let v = bs.b & ((1 << (k as uint)) - 1); bs.b >>= k as uint; bs.n -= k; v }
+fn build(h Huff&, lens const byte[:]) bool {
+	var cnt int[16] = [0; 16];
+	var maxl = 0;
+	for l in lens { cnt[l]++; if l > maxl { maxl = l as int; } }
+	cnt[0] = 0;
+	if maxl == 0 { maxl = 1; }
+	var next int[16] = [0; 16];
+	var code = 0;
+	for b in 1..16 { code = (code + cnt[b - 1]) << 1; next[b] = code; }
+	let size = 1 << maxl;
+	h.mask = (size - 1) as uint;
+	for k in size { h.tab[k] = 0; }
+	for l, s in lens {
+		if l == 0 { continue; }
+		let c = next[l];
+		next[l]++;
+		var r = 0;
+		for i in l as int { r = (r << 1) | ((c >> i) & 1); }
+		let e = ((s as u32) << 4) | (l as u32);
+		var k = r;
+		while k < size { h.tab[k] = e; k += 1 << l; }
+	}
+	true
+}
+fn sym(h Huff&, bs Bits&, src const byte[:]) int { need(bs, src, 15); let e = h.tab[bs.b & h.mask]; let l = (e & 15) as int; bs.b >>= l as uint; bs.n -= l; (e >> 4) as int }
+fn inflate(src const byte[:], at int, out byte[:]) int, bool {
+	var bs = Bits { at, 0, 0 };
+	var o = 0;
+	var lens byte[320] = [0; 320];
+	loop {
+		let last = take(bs, src, 1);
+		let typ = take(bs, src, 2);
+		if typ == 0 {
+			bs.b = 0; bs.n = 0;
+			guard bs.p + 4 <= src.len else { return o, false; }
+			let n = (src[bs.p] as int) | ((src[bs.p + 1] as int) << 8);
+			bs.p += 4;
+			guard bs.p + n <= src.len && o + n <= out.len else { return o, false; }
+			for i in n { out[o + i] = src[bs.p + i]; }
+			o += n; bs.p += n;
+		} else {
+			if typ == 1 {
+				for i in 288 { lens[i] = if i < 144 { 8 } else { if i < 256 { 9 } else { if i < 280 { 7 } else { 8 } } }; }
+				build(HL, lens[..288]);
+				for i in 30 { lens[i] = 5; }
+				build(HD, lens[..30]);
+			} else {
+				guard typ == 2 else { return o, false; }
+				let hlit = take(bs, src, 5) as int + 257;
+				let hdist = take(bs, src, 5) as int + 1;
+				let hclen = take(bs, src, 4) as int + 4;
+				var cl byte[19] = [0; 19];
+				for i in hclen { cl[CLORD[i]] = take(bs, src, 3) as! byte; }
+				build(HC, cl[..]);
+				var i = 0;
+				while i < hlit + hdist {
+					let s = sym(HC, bs, src);
+					if s < 16 { lens[i] = s as! byte; i++; }
+					else {
+						var rep = 0;
+						var v byte = 0;
+						if s == 16 { guard i > 0 else { return o, false; } v = lens[i - 1]; rep = 3 + take(bs, src, 2) as int; }
+						else { if s == 17 { rep = 3 + take(bs, src, 3) as int; } else { rep = 11 + take(bs, src, 7) as int; } }
+						guard i + rep <= hlit + hdist else { return o, false; }
+						for _ in rep { lens[i] = v; i++; }
+					}
+				}
+				build(HL, lens[..hlit]);
+				build(HD, lens[hlit..hlit + hdist]);
+			}
+			loop {
+				let s = sym(HL, bs, src);
+				if s < 256 { guard o < out.len else { return o, false; } out[o] = s as! byte; o++; continue; }
+				if s == 256 { break; }
+				let li = s - 257;
+				guard li < 29 else { return o, false; }
+				let n = LBASE[li] as int + take(bs, src, LEXT[li] as int) as int;
+				let ds = sym(HD, bs, src);
+				guard ds < 30 else { return o, false; }
+				let d = DBASE[ds] as int + take(bs, src, DEXT[ds] as int) as int;
+				guard d <= o && o + n <= out.len else { return o, false; }
+				for k in n { out[o + k] = out[o + k - d]; }
+				o += n;
+			}
+		}
+		if last == 1 { break; }
+	}
+	return o, true;
+}
+fn be32(s const byte[:], i int) int { ((s[i] as int) << 24) | ((s[i + 1] as int) << 16) | ((s[i + 2] as int) << 8) | (s[i + 3] as int) }
+var IDAT byte[>..];
+var RAW byte[>..];
+fn paeth(a int, b int, c int) int { let p = a + b - c; let pa = abs(p - a); let pb = abs(p - b); let pc = abs(p - c); if pa <= pb && pa <= pc { a } else { if pb <= pc { b } else { c } } }
+fn png_decode(src const byte[:], out byte[>..]&) int, int, bool {
+	guard src.len > 33 && src[1] == 'P' && src[2] == 'N' && src[3] == 'G' else { return 0, 0, false; }
+	var w = 0; var h = 0; var depth = 0; var ct = 0; var il = 0;
+	var pal byte[1024] = [255; 1024];
+	var trns = -1;
+	IDAT.clear();
+	var i = 8;
+	while i + 8 <= src.len {
+		let n = be32(src, i);
+		let t = src[i + 4..i + 8];
+		let d = i + 8;
+		guard d + n <= src.len else { return 0, 0, false; }
+		if t == "IHDR" { w = be32(src, d); h = be32(src, d + 4); depth = src[d + 8] as int; ct = src[d + 9] as int; il = src[d + 12] as int; }
+		if t == "PLTE" { for k in n / 3 { pal[k * 4] = src[d + k * 3]; pal[k * 4 + 1] = src[d + k * 3 + 1]; pal[k * 4 + 2] = src[d + k * 3 + 2]; } }
+		if t == "tRNS" { if ct == 3 { for k in n { pal[k * 4 + 3] = src[d + k]; } } else { if n >= 2 { trns = ((src[d] as int) << 8) | (src[d + 1] as int); } } }
+		if t == "IDAT" { IDAT.append(src[d..d + n]); }
+		if t == "IEND" { break; }
+		i = d + n + 4;
+	}
+	guard w > 0 && h > 0 && il == 0 && (depth == 8 || depth == 16 || (ct == 3 && depth <= 8) || (ct == 0 && depth <= 8)) else { return 0, 0, false; }
+	let ch = match ct { 0 => 1, 2 => 3, 3 => 1, 4 => 2, 6 => 4, _ => 0 };
+	guard ch > 0 else { return 0, 0, false; }
+	let bitspp = ch * depth;
+	let bpp = max(1, bitspp / 8);
+	let stride = (w * bitspp + 7) / 8;
+	let need = h * (stride + 1);
+	RAW.clear();
+	RAW.resize(need, 0);
+	guard IDAT.len > 2 else { return 0, 0, false; }
+	let got, ok = inflate(IDAT[..], 2, RAW[..]);
+	guard ok && got == need else { return 0, 0, false; }
+	for y in h {
+		let r = y * (stride + 1);
+		let f = RAW[r];
+		let row = r + 1;
+		let up = row - stride - 1;
+		if f == 1 { for x in bpp..stride { RAW[row + x] = RAW[row + x] + RAW[row + x - bpp]; } }
+		if f == 2 && y > 0 { for x in stride { RAW[row + x] = RAW[row + x] + RAW[up + x]; } }
+		if f == 3 { for x in stride { let a = if x >= bpp { RAW[row + x - bpp] as int } else { 0 }; let b = if y > 0 { RAW[up + x] as int } else { 0 }; RAW[row + x] = RAW[row + x] + (((a + b) >> 1) as! byte); } }
+		if f == 4 { for x in stride { let a = if x >= bpp { RAW[row + x - bpp] as int } else { 0 }; let b = if y > 0 { RAW[up + x] as int } else { 0 }; let c = if x >= bpp && y > 0 { RAW[up + x - bpp] as int } else { 0 }; RAW[row + x] = RAW[row + x] + (paeth(a, b, c) as! byte); } }
+	}
+	out.clear();
+	out.resize(w * h * 4, 255);
+	let step = depth / 8;
+	for y in h {
+		let row = y * (stride + 1) + 1;
+		let o = y * w * 4;
+		if depth < 8 {
+			let per = 8 / depth;
+			let msk = (1 << depth) - 1;
+			for x in w {
+				let v = ((RAW[row + x / per] as int) >> ((per - 1 - x % per) * depth)) & msk;
+				if ct == 3 { for k in 4 { out[o + x * 4 + k] = pal[v * 4 + k]; } }
+				else { let g = (v * 255 / msk) as! byte; out[o + x * 4] = g; out[o + x * 4 + 1] = g; out[o + x * 4 + 2] = g; if v == trns { out[o + x * 4 + 3] = 0; } }
+			}
+			continue;
+		}
+		for x in w {
+			let s = row + x * ch * step;
+			let q = o + x * 4;
+			if ct == 6 { for k in 4 { out[q + k] = RAW[s + k * step]; } }
+			if ct == 2 { for k in 3 { out[q + k] = RAW[s + k * step]; } }
+			if ct == 0 { let g = RAW[s]; out[q] = g; out[q + 1] = g; out[q + 2] = g; }
+			if ct == 4 { let g = RAW[s]; out[q] = g; out[q + 1] = g; out[q + 2] = g; out[q + 3] = RAW[s + step]; }
+			if ct == 3 { let v = RAW[s] as int; for k in 4 { out[q + k] = pal[v * 4 + k]; } }
+		}
+	}
+	return w, h, true;
+}

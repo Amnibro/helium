@@ -1,0 +1,284 @@
+import gfx.image;
+import json;
+import binary;
+import os;
+let A_NRM u32 = 1;
+let A_UV0 u32 = 2;
+let A_UV1 u32 = 4;
+let A_COL u32 = 8;
+let A_SKIN u32 = 16;
+let A_UV2 u32 = 32;
+let A_MASK u32 = 64;
+let A_PART u32 = 128;
+struct Span { a int, n int }
+struct GVtx { p f32[3], n f32[3], uv f32[2], uv1 f32[2], col f32[4], j f32[4], w f32[4] }
+struct GPrim { file int, mesh int, vfirst int, vcount int, ifirst int, icount int, mat int, has u32, nmorph int, mfirst int, xfirst int, lo f32[3], hi f32[3] }
+struct GMesh { file int, name Span, pfirst int, pn int, extras Span }
+struct GNode { file int, name Span, parent int, mesh int, skin int, t f32[3], r f32[4], s f32[3], extras Span }
+struct GSkin { file int, jfirst int, jn int, ibm int }
+struct GChan { node int, path byte, step bool, tfirst int, n int, vfirst int }
+struct GClip { file int, name Span, cfirst int, cn int, dur f32 }
+struct GMat { file int, name Span, base f32[4], emis f32[3], rough f32, metal f32, img int, alpha byte, cutoff f32, double bool, orm int, occ int, nrm int }
+struct GImg { w int, h int, pfirst int }
+struct GFile { name Span, mfirst int, mn int, nfirst int, nn int, sfirst int, sn int, cfirst int, cn int, matfirst int, matn int, imgfirst int, imgn int, extras Span }
+var TXT byte[>..];
+var VTX GVtx[>..];
+var IDX u32[>..];
+var XUV2 f32[2][>..];
+var XMASK f32[2][>..];
+var XPART f32[4][>..];
+var MORPH f32[3][>..];
+var PRIMS GPrim[>..];
+var MESHES GMesh[>..];
+var NODES GNode[>..];
+var SKINS GSkin[>..];
+var JOINTS int[>..];
+var IBMS f32[16][>..];
+var CHANS GChan[>..];
+var CLIPS GClip[>..];
+var TIMES f32[>..];
+var VALS f32[>..];
+var MATS GMat[>..];
+var IMGS GImg[>..];
+var PIX byte[>..];
+var IPX byte[>..];
+var FILES GFile[>..];
+var GBUF byte[>..];
+var GDEC byte[>..];
+var GERR byte[>..];
+fn span(s const byte[:]) Span { let a = TXT.len; TXT.append(s); Span { a, s.len } }
+fn sp(x Span) const byte[:] { TXT[x.a..x.a + x.n] }
+recursive fn jwrite(n json::Node&, out byte[>..]&) {
+	match n.val {
+		Null => out.append("null"),
+		Bool b => out.append(if b.v { "true" } else { "false" }),
+		Int i => json::format_int(out, i.v),
+		UInt u => format(out, u.v),
+		Num x => json::format_number(out, x.v),
+		Str t => json::format_string(out, t.s),
+		Arr => { out.push('['); var c = n.first; var f = true; while c { if !f { out.push(','); } f = false; jwrite(c, out); c .= c.next; } out.push(']'); },
+		Obj => { out.push('{'); var c = n.first; var f = true; while c { if !f { out.push(','); } f = false; json::format_string(out, c.key); out.push(':'); jwrite(c, out); c .= c.next; } out.push('}'); },
+	}
+}
+fn extras_of(n json::Node?) Span { let e = json::member(n, "extras"); if e { let a = TXT.len; jwrite(e, TXT); Span { a, TXT.len - a } } else { Span { 0, 0 } } }
+fn pick(s const byte[:], opts const byte[:][:]) int { for o, i in opts { if o == s { return i; } } opts.len }
+fn ji(n json::Node?, k const byte[:], d int) int { let v, ok = json::as_i64(json::member(n, k)); if ok { v } else { d } }
+fn jf(n json::Node?, k const byte[:], d f32) f32 { let v, ok = json::as_f64(json::member(n, k)); if ok { v as f32 } else { d } }
+fn jb(n json::Node?, k const byte[:]) bool { let v, ok = json::as_bool(json::member(n, k)); ok && v }
+fn js(n json::Node?, k const byte[:]) const byte[:] { let v, ok = json::as_string(json::member(n, k)); if ok { v } else { "" } }
+fn jfa(n json::Node?, k const byte[:], out f32[:]) { let a = json::member(n, k); var i = 0; if a { json::each(a) { if i < out.len { let v, ok = json::as_f64(it); out[i] = v as f32; } i++; }; } }
+fn u16le(b const byte[:], o int) u32 { (b[o] as u32) | ((b[o + 1] as u32) << 8) }
+fn u32le(b const byte[:], o int) u32 { (b[o] as u32) | ((b[o + 1] as u32) << 8) | ((b[o + 2] as u32) << 16) | ((b[o + 3] as u32) << 24) }
+fn f32le(b const byte[:], o int) f32 { binary::f32_from_bits(u32le(b, o)) }
+struct Acc { off int, count int, nc int, stride int, ct int, norm bool }
+fn nth(arr json::Node?, i int) json::Node? {
+	if !arr { return null; }
+	var c = arr.first;
+	var k = 0;
+	while c { if k == i { return c; } k++; c .= c.next; }
+	return null;
+}
+fn comp_size(ct int) int { if ct == 5120 || ct == 5121 { 1 } else { if ct == 5122 || ct == 5123 { 2 } else { 4 } } }
+fn read_comp(b const byte[:], o int, ct int, norm bool) f32 {
+	if ct == 5126 { return f32le(b, o); }
+	if ct == 5121 { let v = b[o] as f32; return if norm { v / 255.0 } else { v }; }
+	if ct == 5123 { let v = u16le(b, o) as f32; return if norm { v / 65535.0 } else { v }; }
+	if ct == 5125 { return u32le(b, o) as f32; }
+	if ct == 5120 { let v = (b[o] as! i8) as f32; return if norm { max(v / 127.0, -1.0) } else { v }; }
+	let v = (u16le(b, o) as! i16) as f32;
+	if norm { max(v / 32767.0, -1.0) } else { v }
+}
+fn main_glb_ok(b const byte[:]) bool { b.len >= 28 && b[0] == 'g' && b[1] == 'l' && b[2] == 'T' && b[3] == 'F' }
+fn glb_fail(m const byte[:]) int { GERR.clear(); GERR.append(m); -1 }
+fn glb_load(path const byte[:]) int {
+	GBUF.clear();
+	if !read_file(path, GBUF) { return glb_fail("cannot read"); }
+	let b = GBUF[..];
+	if !main_glb_ok(b) { return glb_fail("not a glb"); }
+	let jl = u32le(b, 12) as int;
+	let bin = 20 + jl + 8;
+	var doc json::Node[>..] = [];
+	GDEC.clear();
+	let root, err = json::parse(b[20..20 + jl], doc, GDEC);
+	if !root { return glb_fail(err); }
+	var accs Acc[>..] = [];
+	let bvs = json::member(root, "bufferViews");
+	let jaccs = json::member(root, "accessors");
+	if jaccs {
+		json::each(jaccs) {
+			let bv = nth(bvs, ji(it, "bufferView", 0));
+			let nc = [1, 2, 3, 4, 16, 4][pick(js(it, "type"), ["SCALAR", "VEC2", "VEC3", "VEC4", "MAT4"])];
+			let ct = ji(it, "componentType", 5126);
+			accs.push(Acc { bin + ji(bv, "byteOffset", 0) + ji(it, "byteOffset", 0), ji(it, "count", 0), nc, ji(bv, "byteStride", nc * comp_size(ct)), ct, jb(it, "normalized") });
+		};
+	}
+	let fi = FILES.len;
+	var f = GFile { name: span(path), mfirst: MESHES.len, nfirst: NODES.len, sfirst: SKINS.len, cfirst: CLIPS.len, matfirst: MATS.len, imgfirst: IMGS.len, extras: extras_of(root), .. };
+	var isrc int[2][>..] = [];
+	let jimgs = json::member(root, "images");
+	if jimgs { json::each(jimgs) { let bv = nth(bvs, ji(it, "bufferView", -1)); if bv { isrc.push([bin + ji(bv, "byteOffset", 0), ji(bv, "byteLength", 0)]); } else { isrc.push([0, 0]); } IMGS.push(GImg { 0, 0, 0 }); }; }
+	let jtex = json::member(root, "textures");
+	let jmats = json::member(root, "materials");
+	if jmats {
+		json::each(jmats) {
+			let pbr = json::member(it, "pbrMetallicRoughness");
+			var m = GMat { file: fi, name: span(js(it, "name")), base: [1.0, 1.0, 1.0, 1.0], emis: [0.0, 0.0, 0.0], rough: jf(pbr, "roughnessFactor", 1.0), metal: jf(pbr, "metallicFactor", 1.0), img: -1, alpha: 0, cutoff: jf(it, "alphaCutoff", 0.5), double: jb(it, "doubleSided"), orm: -1, occ: -1, nrm: -1 };
+			jfa(pbr, "baseColorFactor", m.base);
+			jfa(it, "emissiveFactor", m.emis);
+			let bt = json::member(pbr, "baseColorTexture");
+			if bt { let t = nth(jtex, ji(bt, "index", -1)); if t { let s = ji(t, "source", -1); if s >= 0 { m.img = f.imgfirst + s; } } }
+			// Metallic-roughness (ORM), occlusion and normal image indices are kept.
+			let mt = json::member(pbr, "metallicRoughnessTexture");
+			if mt { let t = nth(jtex, ji(mt, "index", -1)); if t { let s = ji(t, "source", -1); if s >= 0 { m.orm = f.imgfirst + s; } } }
+			let ot = json::member(it, "occlusionTexture");
+			if ot { let t = nth(jtex, ji(ot, "index", -1)); if t { let s = ji(t, "source", -1); if s >= 0 { m.occ = f.imgfirst + s; } } }
+			let nt = json::member(it, "normalTexture");
+			if nt { let t = nth(jtex, ji(nt, "index", -1)); if t { let s = ji(t, "source", -1); if s >= 0 { m.nrm = f.imgfirst + s; } } }
+			m.alpha = ([0, 1, 2, 0][pick(js(it, "alphaMode"), ["OPAQUE", "MASK", "BLEND"])]) as! byte;
+			MATS.push(m);
+		};
+	}
+	let jmeshes = json::member(root, "meshes");
+	if jmeshes {
+		json::each(jmeshes) {
+			let mi = MESHES.len;
+			var gm = GMesh { fi, span(js(it, "name")), PRIMS.len, 0, extras_of(it) };
+			let prims = json::member(it, "primitives");
+			if prims {
+				json::each(prims) {
+					let at = json::member(it, "attributes");
+					let pa = ji(at, "POSITION", -1);
+					if pa >= 0 {
+						let n = accs[pa].count;
+						var pr = GPrim { file: fi, mesh: mi, vfirst: VTX.len, vcount: n, ifirst: IDX.len, mat: -1, mfirst: MORPH.len, xfirst: -1, lo: [1e30, 1e30, 1e30], hi: [-1e30, -1e30, -1e30], .. };
+						let mt = ji(it, "material", -1);
+						pr.mat = if mt >= 0 { f.matfirst + mt } else { -1 };
+						for _ in n { VTX.push(GVtx { p: [0.0, 0.0, 0.0], n: [0.0, 1.0, 0.0], uv: [0.0, 0.0], uv1: [0.0, 0.0], col: [1.0, 1.0, 1.0, 1.0], j: [0.0, 0.0, 0.0, 0.0], w: [0.0, 0.0, 0.0, 0.0] }); }
+						let v0 = pr.vfirst;
+						fn rd(name const byte[:], bit u32, which int) {
+							let ai = ji(at, name, -1);
+							if ai < 0 { return; }
+							let a = accs[ai];
+							let cs = comp_size(a.ct);
+							pr.has |= bit;
+							for v in min(a.count, n) {
+								let o = a.off + v * a.stride;
+								let x .= VTX[v0 + v];
+								if which == 0 { for k in 3 { x.p[k] = f32le(b, o + k * 4); } }
+								if which == 1 { for k in 3 { x.n[k] = f32le(b, o + k * 4); } }
+								if which == 2 { for k in 2 { x.uv[k] = read_comp(b, o + k * cs, a.ct, a.norm); } }
+								if which == 3 { for k in 2 { x.uv1[k] = read_comp(b, o + k * cs, a.ct, a.norm); } }
+								if which == 4 { for k in min(a.nc, 4) { x.col[k] = read_comp(b, o + k * cs, a.ct, a.ct != 5126); } }
+								if which == 5 { for k in 4 { x.j[k] = read_comp(b, o + k * cs, a.ct, false); } }
+								if which == 6 { for k in 4 { x.w[k] = read_comp(b, o + k * cs, a.ct, a.ct != 5126); } }
+							}
+						}
+						rd("POSITION", 0, 0);
+						rd("NORMAL", A_NRM, 1);
+						rd("TEXCOORD_0", A_UV0, 2);
+						rd("TEXCOORD_1", A_UV1, 3);
+						rd("COLOR_0", A_COL, 4);
+						rd("JOINTS_0", A_SKIN, 5);
+						rd("WEIGHTS_0", 0, 6);
+						let u2 = ji(at, "TEXCOORD_2", -1);
+						let fm = ji(at, "_FACEMASK", -1);
+						let pc = ji(at, "_PARTCOLOR", -1);
+						if u2 >= 0 || fm >= 0 || pc >= 0 {
+							pr.xfirst = XUV2.len;
+							for v in n {
+								var q2 f32[2] = [0.0, 0.0]; var qm f32[2] = [0.0, 0.0]; var qp f32[4] = [0.0, 0.0, 0.0, 0.0];
+								if u2 >= 0 { let a = accs[u2]; let cs = comp_size(a.ct); for k in 2 { q2[k] = read_comp(b, a.off + v * a.stride + k * cs, a.ct, a.norm); } }
+								if fm >= 0 { let a = accs[fm]; let cs = comp_size(a.ct); for k in min(a.nc, 2) { qm[k] = read_comp(b, a.off + v * a.stride + k * cs, a.ct, a.norm); } }
+								if pc >= 0 { let a = accs[pc]; let cs = comp_size(a.ct); for k in min(a.nc, 4) { qp[k] = read_comp(b, a.off + v * a.stride + k * cs, a.ct, a.norm); } }
+								XUV2.push(q2); XMASK.push(qm); XPART.push(qp);
+							}
+							pr.has |= (if u2 >= 0 { A_UV2 } else { 0 }) | (if fm >= 0 { A_MASK } else { 0 }) | (if pc >= 0 { A_PART } else { 0 });
+						}
+						for v in n { let x = VTX[v0 + v]; for k in 3 { pr.lo[k] = min(pr.lo[k], x.p[k]); pr.hi[k] = max(pr.hi[k], x.p[k]); } }
+						let ia = ji(it, "indices", -1);
+						if ia >= 0 { let a = accs[ia]; let cs = comp_size(a.ct); for k in a.count { let o = a.off + k * cs; IDX.push(if cs == 4 { u32le(b, o) } else { if cs == 2 { u16le(b, o) } else { b[o] as u32 } }); } pr.icount = a.count; }
+						else { for k in n { IDX.push(k as! u32); } pr.icount = n; }
+						let tg = json::member(it, "targets");
+						if tg {
+							json::each(tg) {
+								pr.nmorph++;
+								let tp = ji(it, "POSITION", -1);
+								let tn = ji(it, "NORMAL", -1);
+								for kk in 2 {
+									let ai = if kk == 0 { tp } else { tn };
+									for v in n { var d f32[3] = [0.0, 0.0, 0.0]; if ai >= 0 { let a = accs[ai]; for k in 3 { d[k] = f32le(b, a.off + v * a.stride + k * 4); } } MORPH.push(d); }
+								}
+							};
+						}
+						PRIMS.push(pr);
+						gm.pn++;
+					}
+				};
+			}
+			MESHES.push(gm);
+		};
+	}
+	let jnodes = json::member(root, "nodes");
+	if jnodes {
+		json::each(jnodes) {
+			var nd = GNode { file: fi, name: span(js(it, "name")), parent: -1, mesh: ji(it, "mesh", -1), skin: ji(it, "skin", -1), t: [0.0, 0.0, 0.0], r: [0.0, 0.0, 0.0, 1.0], s: [1.0, 1.0, 1.0], extras: extras_of(it) };
+			if nd.mesh >= 0 { nd.mesh += f.mfirst; }
+			if nd.skin >= 0 { nd.skin += f.sfirst; }
+			jfa(it, "translation", nd.t);
+			jfa(it, "rotation", nd.r);
+			jfa(it, "scale", nd.s);
+			NODES.push(nd);
+		};
+		var k = 0;
+		json::each(jnodes) { let ch = json::member(it, "children"); if ch { json::each(ch) { let v, ok = json::as_i64(it); if ok { NODES[f.nfirst + v].parent = f.nfirst + k; } }; } k++; };
+	}
+	let jskins = json::member(root, "skins");
+	if jskins {
+		json::each(jskins) {
+			var s = GSkin { fi, JOINTS.len, 0, IBMS.len };
+			let jj = json::member(it, "joints");
+			if jj { json::each(jj) { let v, ok = json::as_i64(it); JOINTS.push(f.nfirst + v); s.jn++; }; }
+			let ia = ji(it, "inverseBindMatrices", -1);
+			for q in s.jn { var m f32[16] = [1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0]; if ia >= 0 { let a = accs[ia]; for k in 16 { m[k] = f32le(b, a.off + q * a.stride + k * 4); } } IBMS.push(m); }
+			SKINS.push(s);
+		};
+	}
+	let janims = json::member(root, "animations");
+	if janims {
+		json::each(janims) {
+			var c = GClip { fi, span(js(it, "name")), CHANS.len, 0, 0.0 };
+			let smp = json::member(it, "samplers");
+			let chs = json::member(it, "channels");
+			if chs {
+				json::each(chs) {
+					let tg = json::member(it, "target");
+					let s = nth(smp, ji(it, "sampler", 0));
+					let ia = ji(s, "input", -1);
+					let oa = ji(s, "output", -1);
+					if ia >= 0 && oa >= 0 {
+						let path = pick(js(tg, "path"), ["translation", "rotation", "scale"]);
+						let ai = accs[ia];
+						let ao = accs[oa];
+						var ch = GChan { f.nfirst + ji(tg, "node", 0), path as! byte, js(s, "interpolation") == "STEP", TIMES.len, ai.count, VALS.len };
+						for k in ai.count { let t = f32le(b, ai.off + k * ai.stride); TIMES.push(t); c.dur = max(c.dur, t); }
+						let cs = comp_size(ao.ct);
+						for k in ao.count { for q in ao.nc { VALS.push(read_comp(b, ao.off + k * ao.stride + q * cs, ao.ct, ao.ct != 5126)); } }
+						CHANS.push(ch);
+						c.cn++;
+					}
+				};
+			}
+			CLIPS.push(c);
+		};
+	}
+	f.mn = MESHES.len - f.mfirst; f.nn = NODES.len - f.nfirst; f.sn = SKINS.len - f.sfirst; f.cn = CLIPS.len - f.cfirst; f.matn = MATS.len - f.matfirst; f.imgn = IMGS.len - f.imgfirst;
+	FILES.push(f);
+	for q, k in isrc { if q[1] > 0 { let w, h, ok = image_decode(b[q[0]..q[0] + q[1]], IPX); if ok { IMGS[f.imgfirst + k] = GImg { w, h, PIX.len }; PIX.append(IPX); } } }
+	fi
+}
+fn glb_cached(path const byte[:]) int { for i in FILES.len { if sp(FILES[i].name) == path { return i; } } glb_load(path) }
+fn find_mesh(file int, name const byte[:]) int { let f = FILES[file]; for i in f.mfirst..f.mfirst + f.mn { if sp(MESHES[i].name) == name { return i; } } -1 }
+fn find_node(file int, name const byte[:]) int { let f = FILES[file]; for i in f.nfirst..f.nfirst + f.nn { if sp(NODES[i].name) == name { return i; } } -1 }
+fn find_clip(file int, name const byte[:]) int { let f = FILES[file]; for i in f.cfirst..f.cfirst + f.cn { if sp(CLIPS[i].name) == name { return i; } } -1 }
+fn has_sub(s const byte[:], t const byte[:]) bool { if t.len > s.len { return false; } for i in s.len - t.len + 1 { if s[i..i + t.len] == t { return true; } } false }
+fn drop_at<T>(a T[>..]&, i int) { for k in i..a.len - 1 { a[k] = a[k + 1]; } a.pop(); }

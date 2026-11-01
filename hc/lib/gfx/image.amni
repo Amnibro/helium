@@ -1,0 +1,6 @@
+import gfx.png;
+import gfx.jpeg;
+fn image_decode(src const byte[:], out byte[>..]&) int, int, bool {
+	if src.len > 1 && src[0] == 0xFF && src[1] == 0xD8 { return jpeg_decode(src, out); }
+	return png_decode(src, out);
+}

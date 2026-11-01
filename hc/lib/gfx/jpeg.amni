@@ -1,0 +1,219 @@
+let ZZ byte[64] = [0, 1, 8, 16, 9, 2, 3, 10, 17, 24, 32, 25, 18, 11, 4, 5, 12, 19, 26, 33, 40, 48, 41, 34, 27, 20, 13, 6, 7, 14, 21, 28, 35, 42, 49, 56, 57, 50, 43, 36, 29, 22, 15, 23, 30, 37, 44, 51, 58, 59, 52, 45, 38, 31, 39, 46, 53, 60, 61, 54, 47, 55, 62, 63];
+struct JHuff { tab u16[65536] }
+var JH JHuff[8];
+struct JComp { id int, h int, v int, tq int, td int, ta int, pred int, bw int, bh int, pw int }
+struct JRd { p int, acc uint, n int, end bool }
+var JQ i32[256];
+var PL byte[>..];
+var UP byte[>..];
+fn jbuild(t JHuff&, cnt const byte[:], vals const byte[:]) {
+	for k in 65536 { t.tab[k] = 0; }
+	var code = 0;
+	var vi = 0;
+	for l in 1..17 {
+		for _ in cnt[l - 1] as int {
+			let sh = 16 - l;
+			let e = ((l as u16) << 8) | (vals[vi] as u16);
+			for k in 1 << sh { t.tab[(code << sh) | k] = e; }
+			code++; vi++;
+		}
+		code <<= 1;
+	}
+}
+fn fill(r JRd&, s const byte[:]) {
+	while r.n <= 56 {
+		var c uint = 0;
+		if !r.end && r.p < s.len {
+			let b = s[r.p];
+			if b == 0xFF { let nx = if r.p + 1 < s.len { s[r.p + 1] } else { 0xD9 }; if nx == 0 { r.p += 2; c = 0xFF; } else { r.end = true; } } else { r.p++; c = b as uint; }
+		}
+		r.acc |= c << ((56 - r.n) as uint);
+		r.n += 8;
+	}
+}
+fn jbits(r JRd&, s const byte[:], k int) int { if k == 0 { return 0; } if r.n < k { fill(r, s); } let v = (r.acc >> ((64 - k) as uint)) as int; r.acc <<= k as uint; r.n -= k; v }
+fn jdec(r JRd&, s const byte[:], t JHuff&) int { if r.n < 16 { fill(r, s); } let e = t.tab[(r.acc >> 48) as int]; let l = (e >> 8) as int; if l == 0 { r.acc <<= 16; r.n -= 16; return 0; } r.acc <<= l as uint; r.n -= l; (e & 255) as int }
+fn ext(v int, s int) int { if s == 0 { 0 } else { if v < (1 << (s - 1)) { v - (1 << s) + 1 } else { v } } }
+fn rl(x int) byte { let v = x + 128; if v < 0 { 0 } else { if v > 255 { 255 } else { v as! byte } } }
+fn idct(c i32[64]&, q i32[:], out byte[:], at int, stride int) {
+	var ws int[64] = [0; 64];
+	for col in 8 {
+		let z2a = (c[16 + col] as int) * (q[16 + col] as int);
+		let z3a = (c[48 + col] as int) * (q[48 + col] as int);
+		let z1 = (z2a + z3a) * 4433;
+		let t2 = z1 + z3a * -15137;
+		let t3 = z1 + z2a * 6270;
+		let z2 = (c[col] as int) * (q[col] as int);
+		let z3 = (c[32 + col] as int) * (q[32 + col] as int);
+		let t0 = (z2 + z3) << 13;
+		let t1 = (z2 - z3) << 13;
+		let t10 = t0 + t3; let t13 = t0 - t3; let t11 = t1 + t2; let t12 = t1 - t2;
+		var o0 = (c[56 + col] as int) * (q[56 + col] as int);
+		var o1 = (c[40 + col] as int) * (q[40 + col] as int);
+		var o2 = (c[24 + col] as int) * (q[24 + col] as int);
+		var o3 = (c[8 + col] as int) * (q[8 + col] as int);
+		var y1 = o0 + o3; var y2 = o1 + o2; var y3 = o0 + o2; var y4 = o1 + o3;
+		let z5 = (y3 + y4) * 9633;
+		o0 *= 2446; o1 *= 16819; o2 *= 25172; o3 *= 12299;
+		y1 *= -7373; y2 *= -20995; y3 *= -16069; y4 *= -3196;
+		y3 += z5; y4 += z5;
+		o0 += y1 + y3; o1 += y2 + y4; o2 += y2 + y3; o3 += y1 + y4;
+		ws[col] = (t10 + o3 + 1024) >> 11; ws[56 + col] = (t10 - o3 + 1024) >> 11;
+		ws[8 + col] = (t11 + o2 + 1024) >> 11; ws[48 + col] = (t11 - o2 + 1024) >> 11;
+		ws[16 + col] = (t12 + o1 + 1024) >> 11; ws[40 + col] = (t12 - o1 + 1024) >> 11;
+		ws[24 + col] = (t13 + o0 + 1024) >> 11; ws[32 + col] = (t13 - o0 + 1024) >> 11;
+	}
+	for row in 8 {
+		let w = row * 8;
+		let z1 = (ws[w + 2] + ws[w + 6]) * 4433;
+		let t2 = z1 + ws[w + 6] * -15137;
+		let t3 = z1 + ws[w + 2] * 6270;
+		let t0 = (ws[w] + ws[w + 4]) << 13;
+		let t1 = (ws[w] - ws[w + 4]) << 13;
+		let t10 = t0 + t3; let t13 = t0 - t3; let t11 = t1 + t2; let t12 = t1 - t2;
+		var o0 = ws[w + 7]; var o1 = ws[w + 5]; var o2 = ws[w + 3]; var o3 = ws[w + 1];
+		var y1 = o0 + o3; var y2 = o1 + o2; var y3 = o0 + o2; var y4 = o1 + o3;
+		let z5 = (y3 + y4) * 9633;
+		o0 *= 2446; o1 *= 16819; o2 *= 25172; o3 *= 12299;
+		y1 *= -7373; y2 *= -20995; y3 *= -16069; y4 *= -3196;
+		y3 += z5; y4 += z5;
+		o0 += y1 + y3; o1 += y2 + y4; o2 += y2 + y3; o3 += y1 + y4;
+		let b = at + row * stride;
+		out[b] = rl((t10 + o3 + 131072) >> 18); out[b + 7] = rl((t10 - o3 + 131072) >> 18);
+		out[b + 1] = rl((t11 + o2 + 131072) >> 18); out[b + 6] = rl((t11 - o2 + 131072) >> 18);
+		out[b + 2] = rl((t12 + o1 + 131072) >> 18); out[b + 5] = rl((t12 - o1 + 131072) >> 18);
+		out[b + 3] = rl((t13 + o0 + 131072) >> 18); out[b + 4] = rl((t13 - o0 + 131072) >> 18);
+	}
+}
+fn be16(s const byte[:], i int) int { ((s[i] as int) << 8) | (s[i + 1] as int) }
+fn up_h2v2(src byte[:], sw int, sh int, spw int, dw int, dh int, dst byte[:]) {
+	for oy in dh {
+		let iy = oy / 2;
+		let ny = if oy % 2 == 0 { max(iy - 1, 0) } else { min(iy + 1, sh - 1) };
+		let r0 = iy * spw; let r1 = ny * spw; let o = oy * dw;
+		var this = (src[r0] as int) * 3 + (src[r1] as int);
+		if sw == 1 { dst[o] = ((this * 4 + 8) >> 4) as! byte; if dw > 1 { dst[o + 1] = ((this * 4 + 7) >> 4) as! byte; } continue; }
+		var next = (src[r0 + 1] as int) * 3 + (src[r1 + 1] as int);
+		var last = this;
+		dst[o] = ((this * 4 + 8) >> 4) as! byte;
+		dst[o + 1] = ((this * 3 + next + 7) >> 4) as! byte;
+		last = this; this = next;
+		for x in 1..sw - 1 {
+			next = (src[r0 + x + 1] as int) * 3 + (src[r1 + x + 1] as int);
+			let a = 2 * x;
+			if a < dw { dst[o + a] = ((this * 3 + last + 8) >> 4) as! byte; }
+			if a + 1 < dw { dst[o + a + 1] = ((this * 3 + next + 7) >> 4) as! byte; }
+			last = this; this = next;
+		}
+		let a = 2 * (sw - 1);
+		if a < dw { dst[o + a] = ((this * 3 + last + 8) >> 4) as! byte; }
+		if a + 1 < dw { dst[o + a + 1] = ((this * 4 + 7) >> 4) as! byte; }
+	}
+}
+fn clamp8(v int) byte { if v < 0 { 0 } else { if v > 255 { 255 } else { v as! byte } } }
+fn jpeg_decode(s const byte[:], out byte[>..]&) int, int, bool {
+	guard s.len > 4 && s[0] == 0xFF && s[1] == 0xD8 else { return 0, 0, false; }
+	var comps JComp[4] = [JComp { 0, 1, 1, 0, 0, 0, 0, 0, 0, 0 }; 4];
+	var nc = 0; var w = 0; var h = 0; var hmax = 1; var vmax = 1; var dri = 0;
+	var i = 2;
+	while i + 4 <= s.len {
+		guard s[i] == 0xFF else { return 0, 0, false; }
+		let m = s[i + 1];
+		if m == 0xFF { i++; continue; }
+		let l = be16(s, i + 2);
+		let d = i + 4;
+		if m == 0xDB { var p = d; while p < i + 2 + l { let pq = (s[p] >> 4) as int; let tq = (s[p] & 15) as int; p++; for k in 64 { let v = if pq == 0 { s[p + k] as int } else { be16(s, p + 2 * k) }; JQ[tq * 64 + (ZZ[k] as int)] = v as! i32; } p += if pq == 0 { 64 } else { 128 }; } }
+		if m == 0xC4 { var p = d; while p < i + 2 + l { let tc = (s[p] >> 4) as int; let th = (s[p] & 15) as int; var tot = 0; for k in 16 { tot += s[p + 1 + k] as int; } jbuild(JH[tc * 4 + th], s[p + 1..p + 17], s[p + 17..p + 17 + tot]); p += 17 + tot; } }
+		if m == 0xDD { dri = be16(s, d); }
+		if m == 0xC2 || m == 0xC3 || (m >= 0xC5 && m <= 0xCF && m != 0xC8 && m != 0xCC) { return 0, 0, false; }
+		if m == 0xC0 || m == 0xC1 {
+			h = be16(s, d + 1); w = be16(s, d + 3); nc = s[d + 5] as int;
+			guard nc == 1 || nc == 3 else { return 0, 0, false; }
+			for k in nc { let b = d + 6 + k * 3; comps[k] = JComp { s[b] as int, (s[b + 1] >> 4) as int, (s[b + 1] & 15) as int, s[b + 2] as int, 0, 0, 0, 0, 0, 0 }; hmax = max(hmax, comps[k].h); vmax = max(vmax, comps[k].v); }
+		}
+		if m == 0xDA {
+			let ns = s[d] as int;
+			for k in ns { let cid = s[d + 1 + k * 2] as int; let t = s[d + 2 + k * 2]; for &c in comps[..nc] { if c.id == cid { c.td = (t >> 4) as int; c.ta = (t & 15) as int; } } }
+			var p = d + 1 + ns * 2 + 3;
+			let mx = (w + 8 * hmax - 1) / (8 * hmax);
+			let my = (h + 8 * vmax - 1) / (8 * vmax);
+			var tot = 0;
+			for &c in comps[..nc] { c.pw = if nc == 1 { (w + 7) / 8 * 8 } else { mx * c.h * 8 }; c.bh = if nc == 1 { (h + 7) / 8 * 8 } else { my * c.v * 8 }; c.bw = tot; tot += c.pw * c.bh; c.pred = 0; }
+			PL.clear(); PL.resize(tot, 0);
+			var r = JRd { p, 0, 0, false };
+			var blk i32[64] = [0; 64];
+			let nmx = if nc == 1 { (w + 7) / 8 } else { mx };
+			let nmy = if nc == 1 { (h + 7) / 8 } else { my };
+			var todo = dri;
+			for yy in nmy {
+				for xx in nmx {
+					if dri > 0 {
+						if todo == 0 {
+							r.acc = 0; r.n = 0; r.end = false;
+							while r.p + 1 < s.len && !(s[r.p] == 0xFF && s[r.p + 1] >= 0xD0 && s[r.p + 1] <= 0xD7) { r.p++; }
+							r.p += 2;
+							for &c in comps[..nc] { c.pred = 0; }
+							todo = dri;
+						}
+						todo--;
+					}
+					for ci in nc {
+						let c .= comps[ci];
+						let bh = if nc == 1 { 1 } else { c.h };
+						let bv = if nc == 1 { 1 } else { c.v };
+						for v in bv {
+							for hh in bh {
+								for k in 64 { blk[k] = 0; }
+								let t = jdec(r, s, JH[c.td]);
+								c.pred += ext(jbits(r, s, t), t);
+								blk[0] = c.pred as! i32;
+								var k = 1;
+								while k < 64 {
+									let rs = jdec(r, s, JH[4 + c.ta]);
+									let rr = rs >> 4; let ss = rs & 15;
+									if ss == 0 { if rr == 15 { k += 16; continue; } break; }
+									k += rr;
+									if k > 63 { break; }
+									blk[ZZ[k]] = ext(jbits(r, s, ss), ss) as! i32;
+									k++;
+								}
+								let bx = (xx * bh + hh) * 8;
+								let by = (yy * bv + v) * 8;
+								idct(blk, JQ[c.tq * 64..c.tq * 64 + 64], PL[..], c.bw + by * c.pw + bx, c.pw);
+							}
+						}
+					}
+				}
+			}
+			out.clear();
+			out.resize(w * h * 4, 255);
+			if nc == 1 {
+				let c .= comps[0];
+				for y in h { for x in w { let g = PL[c.bw + y * c.pw + x]; let o = (y * w + x) * 4; out[o] = g; out[o + 1] = g; out[o + 2] = g; } }
+				return w, h, true;
+			}
+			UP.clear(); UP.resize(w * h * 3, 0);
+			for ci in 3 {
+				let c .= comps[ci];
+				let cw = (w * c.h + hmax - 1) / hmax;
+				let ch = (h * c.v + vmax - 1) / vmax;
+				let dst = UP[ci * w * h..(ci + 1) * w * h];
+				if c.h == hmax && c.v == vmax { for y in h { for x in w { dst[y * w + x] = PL[c.bw + y * c.pw + x]; } } }
+				else { if hmax / c.h == 2 && vmax / c.v == 2 { up_h2v2(PL[c.bw..c.bw + c.pw * c.bh], cw, ch, c.pw, w, h, dst); }
+				else { for y in h { for x in w { dst[y * w + x] = PL[c.bw + (y * c.v / vmax) * c.pw + x * c.h / hmax]; } } } }
+			}
+			let wh = w * h;
+			for k in wh {
+				let y = UP[k] as int; let cb = (UP[wh + k] as int) - 128; let cr = (UP[2 * wh + k] as int) - 128;
+				let o = k * 4;
+				out[o] = clamp8(y + ((91881 * cr + 32768) >> 16));
+				out[o + 1] = clamp8(y + ((-22554 * cb + 32768 - 46802 * cr) >> 16));
+				out[o + 2] = clamp8(y + ((116130 * cb + 32768) >> 16));
+			}
+			return w, h, true;
+		}
+		if m == 0xD9 { break; }
+		i = d + l - 2;
+	}
+	return 0, 0, false;
+}
