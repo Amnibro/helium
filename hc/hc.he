@@ -6,12 +6,21 @@ use lsp
 use wasm
 use prov
 use waste
-USAGE := "usage: hc <command> file [options] [-- program args...]\n       hc file [options] [-- program args...]\n\ncommands:\n  run        compile natively into the cache and run the program (hc file does too)\n  build      build an executable: -o out (native), or -o out.c for C\n  check      parse and typecheck only\n  fetch      clone the git packages the program declares (--update re-fetches tags and branches)\n  version    print the version\n  help       print this\n\noptions:\n  -o path    output for build (default: the file's name without its extension)\n  --debug    overflow, range and tag checks naming the source line\n  -DNAME=V   a runtime define\n  --offline  fetch no packages: one not in the cache is an error\n  --include file.h   C the program's extern functions come from, built with cc into a shared library\n  --c        build C instead of a native executable\n  --v3       target x86-64-v3 (Haswell and later): AVX2 vector code only, three-operand scalar floats\n\nenvironment: HC_LIB (library directory; default: lib beside hc, then hc/lib)"
+USAGE := "usage: hc <command> file [options] [-- program args...]\n       hc file [options] [-- program args...]\n\ncommands:\n  run        compile natively into the cache and run the program (hc file does too)\n  build      build an executable: -o out (native), or -o out.c for C\n  check      parse and typecheck only\n  fetch      clone the git packages the program declares (--update re-fetches tags and branches)\n  version    print the version\n  help       print this\n\noptions:\n  -o path    output for build (default: the file's name without its extension)\n  --debug    overflow, range and tag checks naming the source line\n  -DNAME=V   a runtime define\n  --offline  fetch no packages: one not in the cache is an error\n  --include file.h   C the program's extern functions come from, built with cc into a shared library\n  --c        build C instead of a native executable\n  --v3       target x86-64-v3 (Haswell and later): AVX2 vector code only, three-operand scalar floats\n  --v4       target x86-64-v4 (AVX-512 F/BW/CD/DQ/VL): --v3 plus AVX-512 integer-lane vector code\n  --vhost    pick --v4, --v3 or neither from the CPU flags of this machine (/proc/cpuinfo), like -march=native\n\nenvironment: HC_LIB (library directory; default: lib beside hc, then hc/lib)"
 VERSION := "hc 0.7 (Helium)"
 setlib():
 	lib byte[>..] ~= []; if env("HC_LIB", lib): LIBDIR.append(lib); return
 	d byte[>..] ~= []; if resource_dir(d): for sub ["/lib", "/../hc/lib", "/../lib"] { p byte[>..] ~= []; p.append(d[..]); p.append(sub); p.append("/std.he"); if file_exists(p[..]) { LIBDIR.append(p[..p.len - 7]); return } }
 	LIBDIR.append("hc/lib")
+cpf(b const byte[:], w const byte[:]) bool:
+	i ~= 0; while i + w.len + 1 < b.len { if b[i] == ' ' && b[i + 1..i + 1 + w.len] == w && (b[i + 1 + w.len] == ' ' || b[i + 1 + w.len] == '\n') { return true } i++ } false
+hostv():
+	b byte[>..] ~= []; if !read_file("/proc/cpuinfo", b): return
+	e ~= 0; f ~= 0; while e < b.len && !(b[e] == 'f' && e + 6 < b.len && b[e..e + 6] == "flags\t") { e++ } f = e; while f < b.len && b[f] != '\n' { f++ } if f < b.len { f++ }
+	l := b[e..f]
+	v3 ~= true; for w ["avx2", "fma", "bmi1", "bmi2", "abm", "movbe", "f16c"] { if !cpf(l, w) { v3 = false } }
+	v4 ~= v3; for w ["avx512f", "avx512bw", "avx512cd", "avx512dq", "avx512vl"] { if !cpf(l, w) { v4 = false } }
+	if v3 { V3 = true } if v4 { V4 = true }
 compile(a const byte[:], o const byte[:], native bool, chk bool) bool:
 	LG_ON = !WEB
 	if !load_program(a): print(DERR); return false
@@ -66,6 +75,7 @@ main():
 		if m[..] == "--v3": V3 = true; continue
 		if m[..] == "--static": STC = true; continue
 		if m[..] == "--v4": V3 = true; V4 = true; continue
+		if m[..] == "--vhost": hostv(); continue
 		if m[..] == "--debug": DBG = true; continue
 		if m[..] == "--update" && cmd == 5: PKF = 2; continue
 		if m[..] == "--offline": PKF = -1; continue
