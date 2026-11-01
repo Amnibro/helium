@@ -1,0 +1,5 @@
+980801bfd5f63a77988d0341a0dc41a9e0a9f3d2da806578268c899b9eac06f9  cornell_ref.txt
+# hc/test/gfx/gi/make_cornell_ref.sh build/hcn cornell_ref.txt 65536 30 (any job count gives the same file)
+# 128 x 128, 65536 spp, Russian roulette from bounce 3, NEE to the point light; Antman-PC (gcc via CC=gcc hc/bootstrap.sh)
+# noise: luminance rel. standard error over 15252 lit pixels: mean 0.5050 %, median 0.3532 %, p99 2.1658 %, max 2.8726 %
+# cornell_ref.txt.gz is that file (gzip -9n); zcat cornell_ref.txt.gz | sha256sum must match the first line
