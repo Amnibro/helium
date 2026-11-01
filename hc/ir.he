@@ -23,25 +23,35 @@ v3fb(c int, a int, b int, xd int, w int):
 	A := if xg(a) >= 0 { xg(a) } else { ldx(0, a, w); 0 }; fo := if c >= 0x50 { c } else { if c == B_ADD { 0x58 } else { if c == B_SUB { 0x5C } else { if c == B_MUL { 0x59 } else { 0x5E } } } }; VEXL = 0
 	if kf(b) { rc := if c == B_DIV { rcp2(FD[b] as int, w) } else { -1 }; fpool(if rc >= 0 { rc } else { FD[b] as int }, w); vexp(fpx(w), false, xd, RBP, A, 1); xb(if rc >= 0 { 0x59 } else { fo }); xmem(xd, RBP, 0) } else { if spl(b) { vexp(fpx(w), false, xd, RBP, A, 1); xb(fo); xmem(xd, RBP, vo(b)) } else { B := if xg(b) >= 0 { xg(b) } else { ldx(1, b, w); 1 }; vexp(fpx(w), false, xd, B, A, 1); xb(fo); xb(0xC0 | (xd & 7) << 3 | B & 7) } }
 	VEXL = 1
-vq(pfx int, op int, r int, vv int, rm int, m int, l int): l0 := VEXL; e0 := EVX; s0 := SIBM; VEXL = l; EVX = false; SIBM = false; vexp(pfx, false, r, rm, vv, m); xb(op); xb(0xC0 | (r & 7) << 3 | rm & 7); VEXL = l0; EVX = e0; SIBM = s0
-vm(op int, m int, r int, vv int, d int): l0 := VEXL; e0 := EVX; s0 := SIBM; VEXL = 1; EVX = false; SIBM = false; vexp(0x66, false, r, RBP, vv, m); xb(op); xmem(r, RBP, d); VEXL = l0; EVX = e0; SIBM = s0
+vq(pfx int, op int, r int, vv int, rm int, m int, l int): l0 := VEXL; e0 := EVX; s0 := SIBM; VEXL = l; EVX = ZM && l == 1; SIBM = false; vexp(pfx, false, r, rm, vv, m); xb(op); xb(0xC0 | (r & 7) << 3 | rm & 7); VEXL = l0; EVX = e0; SIBM = s0
+vm(op int, m int, r int, vv int, d int): l0 := VEXL; e0 := EVX; s0 := SIBM; VEXL = 1; EVX = ZM; SIBM = false; vexp(0x66, false, r, RBP, vv, m); xb(op); xmem(r, RBP, d); VEXL = l0; EVX = e0; SIBM = s0
 bx(v int, s int) int: if xg(v) >= 0 { xg(v) } else { ldx(s, v, 11); s }
 vf1(v int, s int) int: if xg(v) >= 0 { xg(v) } else { vm(0x10, 1, s, 0, vo(v)); s }
 vx2(op int, r int, vv int, b int): if xg(b) >= 0 { vq(0x66, op, r, vv, xg(b), 1, 1) } else { vm(op, 1, r, vv, vo(b)) }
-vecem(x Ir):
+ZM ~= false
+vecem(x Ir): ZM = VLN == 8; vecem0(x); ZM = false
+vb4(a int): vq(0x66, 0x14, 0, bx(ARGL[a] as int, 0), bx(ARGL[a + 1] as int, 1), 1, 0); vq(0x66, 0x14, 1, bx(ARGL[a + 2] as int, 1), bx(ARGL[a + 3] as int, 2), 1, 0)
+vg4(a int):
+	l0 := VEXL; e0 := EVX; s0 := SIBM; EVX = false; SIBM = false
+	for l 4 { v := ARGL[a + l] as int; G := if gr(v) >= 0 { gr(v) } else { ldv(RAX, v); RAX }; X := if l == 0 { 0 } else { if l == 1 || l == 2 { 1 } else { 2 } }; VEXL = 0; vexp(0x66, true, X, G, 0, 1); xb(0x6E); xb(0xC0 | (X & 7) << 3 | G & 7); if l == 1 { vq(0x66, 0x6C, 0, 0, 1, 1, 0) } if l == 3 { vq(0x66, 0x6C, 1, 1, 2, 1, 0) } }
+	VEXL = l0; EVX = e0; SIBM = s0
+vecem0(x Ir):
 	c := x.c as int; d := x.d as int; a := x.a as int; b := x.b as int
 	if c == 6:
-		s := xg(a); l := x.l as int; R := if xg(d) >= 0 { xg(d) } else { 0 }
+		s ~= xg(a); l ~= x.l as int; R := if xg(d) >= 0 { xg(d) } else { 0 }
+		if ZM && s >= 0 && l >= 4: evx(0x66, 0x1B, 3, s, 0, R, false, 0); xb(1); s = R; l -= 4
 		if s < 0 { ssem(0xF2, false, 0x10, R, RBP, vo(a) + 8 * l) } else { if l == 0 { if R != s { vq(0x66, 0x28, R, 0, s, 1, 0) } } else { if l == 1 { vq(0x66, 0x15, R, s, s, 1, 0) } else { vq(0x66, 0x19, s, 0, R, 3, 1); xb(1); if l == 3 { vq(0x66, 0x15, R, R, R, 1, 0) } } } }
 		if xg(d) < 0 { stx(R, d, 11) }
 		return
 	D := if xg(d) >= 0 { xg(d) } else { 0 }
 	if c == 4: if xg(a) < 0 && spl(a) && !kf(a) { vm(0x19, 2, D, 0, vo(a)) } else { S := if xg(a) >= 0 { xg(a) } else { ldx(0, a, 11); 0 }; vq(0x66, 0x19, D, 0, S, 2, 1) }
-	if c == 5: vq(0x66, 0x14, 0, bx(ARGL[a] as int, 0), bx(ARGL[a + 1] as int, 1), 1, 0); vq(0x66, 0x14, 1, bx(ARGL[a + 2] as int, 1), bx(ARGL[a + 3] as int, 2), 1, 0); vq(0x66, 0x18, D, 0, 1, 3, 1); xb(1)
-	if c == 10: T := if xg(a) >= 0 { xg(a) } else { vm(0x10, 1, 2, 0, vo(a)); 2 }; R := if xg(d) >= 0 { xg(d) } else { 1 }; vq(0x66, 0x15, 1, T, T, 1, 0); vq(0xF2, 0x58, 1, T, 1, 1, 0); vq(0x66, 0x19, T, 0, 0, 3, 1); xb(1); if x.l == 4 { vq(0xF2, 0x58, 1, 1, 0, 1, 0); vq(0x66, 0x15, 0, 0, 0, 1, 0) } vq(0xF2, 0x58, R, 1, 0, 1, 0); if xg(d) < 0 { stx(R, d, 11) } return
+	if c == 5:
+		if ZM: ZM = false; vb4(a + 4); vq(0x66, 0x18, 0, 0, 1, 3, 1); xb(1); evx(0x66, 0x28, 1, 16, 0, 0, false, 0); vb4(a); vq(0x66, 0x18, 0, 0, 1, 3, 1); xb(1); ZM = true; evx(0x66, 0x1A, 3, D, 0, 16, false, 0); xb(1)
+		else: vb4(a); vq(0x66, 0x18, D, 0, 1, 3, 1); xb(1)
+	if c == 10: T ~= if xg(a) >= 0 { xg(a) } else { vm(0x10, 1, 2, 0, vo(a)); 2 }; hl ~= x.l as int; if ZM { evx(0x66, 0x1B, 3, T, 0, 1, false, 0); xb(1); ZM = false; if hl < 8 { vq(0x66, 0x57, 0, 0, 0, 1, 0); vq(0x66, 0x0D, 1, 1, 0, 3, 1); xb(8) } vq(0x66, 0x58, 2, 1, T, 1, 1); T = 2; hl = 4 }; R := if xg(d) >= 0 { xg(d) } else { 1 }; vq(0x66, 0x15, 1, T, T, 1, 0); vq(0xF2, 0x58, 1, T, 1, 1, 0); vq(0x66, 0x19, T, 0, 0, 3, 1); xb(1); if hl == 4 { vq(0xF2, 0x58, 1, 1, 0, 1, 0); vq(0x66, 0x15, 0, 0, 0, 1, 0) } vq(0xF2, 0x58, R, 1, 0, 1, 0); if xg(d) < 0 { stx(R, d, 11) } return
 	if c == 9: A := if xg(a) >= 0 { xg(a) } else { vm(0x10, 1, 0, 0, vo(a)); 0 }; vq(0x66, 0x51, 1, 0, A, 1, 1); vq(0x66, 0x59, 1, A, 1, 1, 1); fpool(PQC[x.l] as int, 11); vm(0x19, 2, 2, 0, 0); vq(0x66, 0x5E, D, 2, 1, 1, 1)
-	if c == 12: if xg(a) < 0 { vm(0x19, 2, D, 0, vo(a) + 8 * x.l) } else { l0 := VEXL; e0 := EVX; s0 := SIBM; VEXL = 1; EVX = false; SIBM = false; vexp(0x66, true, D, xg(a), 0, 3); xb(0x01); xb(0xC0 | (D & 7) << 3 | xg(a) & 7); xb(0x55 * x.l); VEXL = l0; EVX = e0; SIBM = s0 }
-	if c == 13: while RO.len % 32 != 0 { RO.push(0) } o := RO.len; for l 4 { for j 8 { RO.push((VCP[a + l] >> 8 * j & 255) as! byte) } } RIPM = true; RIPK = 2; RIPT = o; vm(0x10, 1, D, 0, 0)
+	if c == 12: if xg(a) < 0 { vm(0x19, 2, D, 0, vo(a) + 8 * x.l) } else if ZM { S ~= xg(a); if x.l != 0 { evx(0x66, 0x03, 3, 0, S, S, false, 0); xb(x.l as int); S = 0 } evx(0x66, 0x19, 2, D, 0, S, false, 0) } else { l0 := VEXL; e0 := EVX; s0 := SIBM; VEXL = 1; EVX = false; SIBM = false; vexp(0x66, true, D, xg(a), 0, 3); xb(0x01); xb(0xC0 | (D & 7) << 3 | xg(a) & 7); xb(0x55 * x.l); VEXL = l0; EVX = e0; SIBM = s0 }
+	if c == 13: while RO.len % (8 * VLN) != 0 { RO.push(0) } o := RO.len; for l VLN { for j 8 { RO.push((VCP[a + l] >> 8 * j & 255) as! byte) } } RIPM = true; RIPK = 2; RIPT = o; vm(0x10, 1, D, 0, 0)
 	if c == 14:
 		t0 := ARGL[a] as int; t1 := ARGL[a + 1] as int; t2 := ARGL[a + 2] as int; t3 := ARGL[a + 3] as int
 		vx2(0x7C, 0, vf1(t0, 0), t1); vx2(0x7C, 1, vf1(t2, 1), t3); vq(0x66, 0x06, 0, 0, 1, 3, 1); xb(0x20)
@@ -51,15 +61,14 @@ vecem(x Ir):
 	if c >= 20 && c <= 22 || c >= 25 && c <= 28:
 		A := if xg(a) >= 0 { xg(a) } else { vm(0x10, 1, 1, 0, vo(a)); 1 }; B := if c <= 22 { if xg(b) >= 0 { xg(b) } else { vm(0x10, 1, 2, 0, vo(b)); 2 } } else { 0 }
 		if c == 20 || c == 21: vq(0x66, if c == 20 { 0xD4 } else { 0xFB }, D, A, B, 1, 1)
-		if c == 22: evy(0x66, 0x40, 2, D, A, B)
-		if c == 25: evy(0x66, 0x72, 1, 4, D, A); xb(x.l as int)
+		if c == 22: if ZM { evx(0x66, 0x40, 2, D, A, B, false, 0) } else { evy(0x66, 0x40, 2, D, A, B) }
+		if c == 25: if ZM { evx(0x66, 0x72, 1, 4, D, A, false, 0) } else { evy(0x66, 0x72, 1, 4, D, A) } xb(x.l as int)
 		if c == 26 || c == 27: vq(0x66, 0x73, if c == 26 { 2 } else { 6 }, D, A, 1, 1); xb(x.l as int)
-		if c == 28: evy(0xF3, 0xE6, 1, D, 0, A)
+		if c == 28: if ZM { evx(0xF3, 0xE6, 1, D, 0, A, false, 0) } else { evy(0xF3, 0xE6, 1, D, 0, A) }
 	if c == 29:
-		l0 := VEXL; e0 := EVX; s0 := SIBM; EVX = false; SIBM = false
-		for l 4 { v := ARGL[a + l] as int; G := if gr(v) >= 0 { gr(v) } else { ldv(RAX, v); RAX }; X := if l == 0 { 0 } else { if l == 1 || l == 2 { 1 } else { 2 } }; VEXL = 0; vexp(0x66, true, X, G, 0, 1); xb(0x6E); xb(0xC0 | (X & 7) << 3 | G & 7); if l == 1 { vq(0x66, 0x6C, 0, 0, 1, 1, 0) } if l == 3 { vq(0x66, 0x6C, 1, 1, 2, 1, 0) } }
-		VEXL = l0; EVX = e0; SIBM = s0; vq(0x66, 0x38, D, 0, 1, 3, 1); xb(1)
-	if c == 24: S := if gr(a) >= 0 { gr(a) } else { ldv(RAX, a); RAX }; evy(0x66, 0x7C, 2, D, 0, S)
+		if ZM: ZM = false; vg4(a + 4); vq(0x66, 0x38, 0, 0, 1, 3, 1); xb(1); evx(0x66, 0x28, 1, 16, 0, 0, false, 0); vg4(a); vq(0x66, 0x38, 0, 0, 1, 3, 1); xb(1); ZM = true; evx(0x66, 0x3A, 3, D, 0, 16, false, 0); xb(1)
+		else: vg4(a); vq(0x66, 0x38, D, 0, 1, 3, 1); xb(1)
+	if c == 24: S := if gr(a) >= 0 { gr(a) } else { ldv(RAX, a); RAX }; if ZM { evx(0x66, 0x7C, 2, D, 0, S, false, 0) } else { evy(0x66, 0x7C, 2, D, 0, S) }
 	if c == 7: if xg(a) >= 0 { vq(0x66, 0x51, D, 0, xg(a), 1, 1) } else { vm(0x51, 1, D, 0, vo(a)) }
 	if c == 8:
 		if xg(a) >= 0 && xg(d) < 0: vm(0x11, 1, xg(a), 0, vo(d)); LSP = -1; return
@@ -506,7 +515,7 @@ cg_fn(fi int):
 	sba := if f.sb >= 64 { al(f.sb + 16, 64) - 16 } else { al(f.sb, 16) }
 	NFS[fi].sb = sba; CSBA = sba; vhome(fi)
 	VSI.clear(); VSI.resize(f.nv, -1); CNV = 0; for v XSV { VSI[v] = CNV; CNV++ } for i (f.i0 as int)..f.i1 as int:
-		opnds(i); for v OU { if v >= 0 && v < f.nv as int && VSI[v] < 0 && fk(v) == 0 && gr(v) < 0 && xg(v) < 0 { q := if v < XW.len && XW[v] == 27 { 3 } else { 0 }; VSI[v] = CNV + q; CNV += q + 1 } } for v OD { if v >= 0 && v < f.nv as int && VSI[v] < 0 && fk(v) == 0 && gr(v) < 0 && xg(v) < 0 { q := if v < XW.len && XW[v] == 27 { 3 } else { 0 }; VSI[v] = CNV + q; CNV += q + 1 } }
+		opnds(i); for v OU { if v >= 0 && v < f.nv as int && VSI[v] < 0 && fk(v) == 0 && gr(v) < 0 && xg(v) < 0 { q := if v < XW.len && XW[v] == 27 { VLN - 1 } else { 0 }; VSI[v] = CNV + q; CNV += q + 1 } } for v OD { if v >= 0 && v < f.nv as int && VSI[v] < 0 && fk(v) == 0 && gr(v) < 0 && xg(v) < 0 { q := if v < XW.len && XW[v] == 27 { VLN - 1 } else { 0 }; VSI[v] = CNV + q; CNV += q + 1 } }
 	sp6 ~= false; for i (f.i0 as int)..f.i1 as int { if IR[i].op as int == I_PARAM && pmr(fi, IR[i].c as int) >= 6 && pmr(fi, IR[i].c as int) < XMB { sp6 = true } }
 	FRL = FRF && SVR.len == 0 && XSV.len == 0 && !sp6
 	if SWE >= 0 { for k (f.i0 as int)..SWE { x := IR[k]; if x.op as int == I_PARAM && x.d >= 0 && gr(x.d as int) >= 0 { SWR.push(x.d as i32); SWR.push(REGOF[x.d]); SWR.push(ARGR[x.c as int] as i32) } } swal(true) }

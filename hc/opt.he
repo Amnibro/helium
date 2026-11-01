@@ -13,7 +13,7 @@ usesb(op int) bool:
 	op == I_BIN || op == I_CMP || op == I_FBIN || op == I_FCMP || op == I_FUN || op == I_BCHK || op == I_SEL || op == I_ADC || op == I_SBB
 opnds(i int):
 	OU.clear(); OD.clear(); x := IR[i]; op := x.op; d := x.d; a := x.a; b := x.b
-	if op == I_VEC: if x.c == 5 || x.c == 14 || x.c == 29 { for j 4 { OU.push(ARGL[a + j]) } } else { if x.c != 13 { OU.push(a) } if x.c < 4 || x.c >= 20 && x.c <= 22 { OU.push(b) } } OD.push(d); return
+	if op == I_VEC: if x.c == 5 || x.c == 14 || x.c == 29 { for j VLN { OU.push(ARGL[a + j]) } } else { if x.c != 13 { OU.push(a) } if x.c < 4 || x.c >= 20 && x.c <= 22 { OU.push(b) } } OD.push(d); return
 	if op == I_CALL || op == I_CALLR || op == I_SYS || op == I_VLOOP: for j b { OU.push(ARGL[a + j]) } if op == I_CALLR { OU.push(x.c) } if d >= 0 { OD.push(d) } if op == I_CALL && x.l >= 0 { OD.push(x.l) } return
 	if op == I_ZERO || op == I_COPY || op == I_ST || op == I_RET || op == I_BZ || op == I_BNZ: if op == I_ZERO || op == I_COPY { OU.push(d) } if a >= 0 && op != I_ZERO { OU.push(a) } if b >= 0 { OU.push(b) } return
 	if op == I_LBL || op == I_JMP || op == I_DSS || op == I_DSR || op == I_NOP: return
@@ -1611,6 +1611,7 @@ slp(fi int) bool:
 			qi++
 	for g gk.len: if gk[g] != 2 { for l VLN { m := gm[VLN * g + l] as int; if m >= 0 { opnds(m); for u OU { for l2 VLN { m2 := gm[VLN * g + l2] as int; if l2 != l && m2 >= 0 && IR[m2].d as int == u { return false } } } } } }
 	sv ~= 0; for g gk.len { sv += if gk[g] == 2 { -5 } else { if gk[g] == 3 { 7 } else { if gk[g] == 4 { 2 } else { 3 } } }; if gk[g] == 0 && gc[g] == 3 && !NODVB { sv += 12 } for s 2 { k := if s == 0 { ok0[g] } else { ok1[g] }; if k == 1 || k == 3 || k == 5 { sv -= 1 } if k == 2 { sv -= 6 } } }
+	sv = sv * VLN / 4
 	xm i8[>..<] ~= []; xm.resize(nv, 0); for i i0..i1: if IR[i].op as int == I_LBL { for z xm.len { xm[z] = 0 } } if ig[i - i0] < 0 { opnds(i); for u OU { if u >= 0 && u < nv && (pv[u] >= 0 || tv[u] >= 0) && xm[u] == 0 { sv -= 1; xm[u] = 1 } } }
 	if SLPV { hk i32[>..<] ~= []; hk.resize(12, 0); for g gk.len { hk[gk[g]] += 1; if ok0[g] >= 0 { hk[3 + ok0[g]] += 1 } if ok1[g] >= 0 { hk[3 + ok1[g]] += 1 } } write_stderr(str("slp ", if NFS[fi].inst >= 0 { nm(FI_[NFS[fi].inst].name) } else { "?" }, " sv=", sv, " packs=", pb.len, " g=", hk[0], "/", hk[1], "/", hk[2], " op=", hk[3], "/", hk[4], "/", hk[5], "/", hk[6], "/", hk[7], "\n")) }
 	if sv <= 0: return false
