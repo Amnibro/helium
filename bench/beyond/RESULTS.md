@@ -86,8 +86,35 @@ all printed 1.274224153, gcc 16.2.1, load ~8.6 from other jobs)
 - spectral: 8 lanes is 1.96x faster than 4 lanes; he --v4 / gcc-O3n is now 1.07x (min), down from 2.08x.
 - Every other bench and every test builds to the same binary under `--v4` with 8 or 4 lanes, so nothing
   else changed speed. Only spectral's binary changed; its output matched at n=10/100/1000/5500.
-- mandelbrot, nbody and matmul do not take 8 lanes because SLP forms no packs in them (`HC_SLPV=1` prints
-  nothing); their vector code comes from the vloop path in vec.he, which is still fixed at 4 lanes.
+- mandelbrot, nbody and matmul do not change with the 8-lane SLP default because SLP forms no packs in
+  them (`HC_SLPV=1` prints nothing). Correction to the first version of this note: the vec.he loop
+  vectorizer is not fixed at 4 lanes. Under `--v4` it already emits zmm (8 doubles) where the loop allows
+  it (`HC_NOV4=1` turns that off); see the row below.
+
+Width check and mandelbrot fix (compiler 9dc0997 = 8-lane default + f64 `x*2.0` folded to `x+x`, which is
+exact; `HC_NOFX2=1` turns it off). Interleaved, 7 reps alternating all six binaries, `taskset -c 7`,
+**min / median ms**, every variant printed the same output, gcc 16.2.1, clang 23.1.1, load ~8 from other
+jobs. `old` = he --v4 before the fold, `ymm` = new compiler with `HC_NOV4=1` (vec.he limited to ymm).
+
+| bench | he --v4 new | he --v4 old | he ymm | gcc-O3n | clang-O3n | gcc-O2 |
+|---|---|---|---|---|---|---|
+| mandelbrot 6000 | 1439 / 1446 | 1584 / 1598 | 1440 / 1455 | 1251 / 1265 | 1271 / 1279 | 1352 / 1365 |
+| nbody 30M | 1120 / 1128 | 1121 / 1129 | 1122 / 1126 | 1204 / 1210 | 1187 / 1200 | 1198 / 1215 |
+| matmul 2000 | 611 / 621 | 609 / 626 | 648 / 658 | 770 / 784 | 767 / 773 | 995 / 1008 |
+
+- matmul: vec.he already runs the j loop in zmm under `--v4`; zmm vs ymm is 611 vs 648 ms, so width is
+  not the limiter (each mul-add also loads b and loads and stores c). Helium is ahead of both -O3n C builds.
+- nbody: the zmm that vec.he emits is in cold code; the hot pair loop over 5 bodies is scalar
+  (sqrt + divide per pair), and ymm vs zmm is the same. Helium is ahead of both -O3n C builds.
+- mandelbrot is not about width: nothing in its hot loop is vectorized by either compiler (data-dependent
+  `break`, 50-step dependency chain per pixel). Its gap was three things:
+  1. `2.0 * zr` was a multiply (3 cycles) on the chain; gcc and clang use `zr + zr`. Fixed here:
+     1584 -> 1439 ms min.
+  2. gcc -O2 carries `zr*zr` and `zi*zi` from the escape test into the next iteration, so each step does
+     3 multiplies instead of 5. A hand-written Helium version doing the same ran 1390 ms vs gcc-O2 1380 ms
+     (5 interleaved reps, same session), so this is the remaining gap to gcc-O2. Not done in the compiler yet.
+  3. gcc-O3n and clang-O3n contract `a*b+c` into FMA (`vfmadd`/`vfmsub` in their loops), which changes
+     rounding. Helium does not contract (no fast-math), so that part of the gap to -O3n stays by design.
 
 # bench/beyond results, round 3 (2026-11-01, Antman)
 
