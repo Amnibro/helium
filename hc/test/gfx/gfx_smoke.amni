@@ -16,6 +16,14 @@
 //              saved as frame.png and checked for light and contrast
 //   timing   - 1280x720 sphere grid, 30 warmup + 200 frames without readback: wall-clock
 //              and (under tools/hc/gputime) GPU-timestamp min / median / p95 ms
+//   motion   - motion target vs a CPU projection for a moving sphere and a sliding camera,
+//              and a skinned animation step that moves pixels with placement unchanged
+//   taa      - 60 still frames must settle (frame-to-frame mean abs diff < 0.5/255 over
+//              frames 30-59); a 40-frame camera slide compared with a converged still frame
+//              (pixels off by >24/255), with the neighbourhood clip off as a control
+//   tsr      - 1280x720 rendered, 1920x1080 out: PSNR vs native 1080p, and the resolve's GPU
+//              time from N back-to-back resolves vs none, fenced by a read (SDL GPU has no
+//              timestamp queries)
 import os;
 import gfx;
 import math;
@@ -539,6 +547,283 @@ let TIME_WARMUP = 30;
 let TIME_FRAMES = 200;
 fn path(dir const byte[:], name const byte[:]) byte[>..] { let _ = dir; var p byte[>..] = []; p.append(OUT_DIR[..]); p.append("/"); p.append(name); p }
 
+// ---- motion vectors, temporal anti-aliasing and upscaling ----
+
+// p under m as (u, v, w): u, v in [0, 1] with v down, w = clip w
+fn to_uv(m gfx::mat4, p float3) float3 {
+	let x = m.c0.x * p.x + m.c1.x * p.y + m.c2.x * p.z + m.c3.x;
+	let y = m.c0.y * p.x + m.c1.y * p.y + m.c2.y * p.z + m.c3.y;
+	let w = m.c0.w * p.x + m.c1.w * p.y + m.c2.w * p.z + m.c3.w;
+	float3 { 0.5 + 0.5 * x / w, 0.5 - 0.5 * y / w, w }
+}
+// one RGBA16F texel of the motion target
+fn motion_at(px const byte[:], w int, x int, y int) float4 {
+	let i = (y * w + x) * 8;
+	float4 { half_to_f32(px[i], px[i + 1]), half_to_f32(px[i + 2], px[i + 3]), half_to_f32(px[i + 4], px[i + 5]), half_to_f32(px[i + 6], px[i + 7]) }
+}
+fn r2(v real) real { round(v * 100.0) / 100.0 }
+fn r3(v real) real { round(v * 1000.0) / 1000.0 }
+// mean absolute difference over the RGB bytes of two RGBA8 images, in 1/255 steps
+fn mean_abs(a const byte[:], b const byte[:]) real {
+	if a.len != b.len || a.len == 0 { return 999.0; }
+	var s = 0;
+	for i in a.len {
+		if i % 4 == 3 { continue; }
+		s += abs(a[i] as int - b[i] as int);
+	}
+	s as real / (a.len / 4 * 3) as real
+}
+// fraction of pixels whose luma differs by more than cut (0..255)
+fn luma_over(a const byte[:], b const byte[:], cut int) real {
+	if a.len != b.len || a.len == 0 { return 1.0; }
+	var n = 0;
+	for i in a.len / 4 {
+		let la = (a[i * 4] as int * 2 + a[i * 4 + 1] as int * 5 + a[i * 4 + 2] as int) / 8;
+		let lb = (b[i * 4] as int * 2 + b[i * 4 + 1] as int * 5 + b[i * 4 + 2] as int) / 8;
+		if abs(la - lb) > cut { n += 1; }
+	}
+	n as real / (a.len / 4) as real
+}
+// 2x2 box reduction of an RGBA8 image
+fn half_size(src const byte[:], w int, h int) byte[>..] {
+	var d byte[>..] = [];
+	for y in h / 2 {
+		for x in w / 2 {
+			for c in 4 {
+				let i = ((y * 2) * w + x * 2) * 4 + c;
+				let s = src[i] as int + src[i + 4] as int + src[i + w * 4] as int + src[i + w * 4 + 4] as int;
+				d.push(((s + 2) / 4) as byte);
+			}
+		}
+	}
+	d
+}
+
+// (a) motion vectors: a moving sphere, a panning camera and a skinned animation
+fn motion_checks() bool {
+	var good = true;
+	reset_scene();
+	s3d::temporal = 0;
+	let w = 320;
+	let h = 240;
+	let ball = shapes::sphere(0.5, 48, 24, shapes::material(linalg::v3(0.8, 0.8, 0.8), 0.0, 0.5));
+	let it = s3d::add(ball);
+	s3d::place(it, gfx::translate(float3 { 0.0, 0.0, 0.0 }));
+	s3d::view = s3d::Camera { eye: float3 { 0.0, 0.0, 4.0 }, target: float3 { 0.0, 0.0, 0.0 }, up: float3 { 0.0, 1.0, 0.0 }, fov_y: 0.8, near: 0.1, far: 60.0 };
+	s3d::init(w, h);
+	let out = gfx::render_target(w, h, gfx::RGBA8);
+	s3d::render(out);
+	// object motion: the sphere moves, the camera stays
+	let before = to_uv(s3d::view_proj_nj, float3 { 0.0, 0.0, 0.5 });
+	s3d::place(it, gfx::translate(float3 { 0.15, 0.1, 0.0 }));
+	s3d::render(out);
+	let p = float3 { 0.15, 0.1, 0.5 };
+	let now = to_uv(s3d::view_proj_nj, p);
+	let mv = gfx::read_pixels(s3d::motion_target());
+	let m = motion_at(mv[..], w, (now.x * w as f32) as int, (now.y * h as f32) as int);
+	let ex = (now.x - before.x) * w as f32;
+	let ey = (now.y - before.y) * h as f32;
+	let err = max(abs(m.x * w as f32 - ex), abs(m.y * h as f32 - ey));
+	let bg = motion_at(mv[..], w, 4, 4);
+	let bg_px = max(abs(bg.x * w as f32), abs(bg.y * h as f32));
+	print("gpu: motion object want ", r2(ex as real), ",", r2(ey as real), " px got ", r2((m.x * w as f32) as real), ",", r2((m.y * h as f32) as real), " px (err ", r3(err as real), ") sky ", r3(bg_px as real), " px");
+	if err > 0.15 || bg_px > 0.01 || m.w < 0.99 { good = false; }
+	// camera motion: the camera slides right, the sphere stays (the sky is at infinity: no motion)
+	let prev_vp = s3d::view_proj_nj;
+	s3d::view.eye = float3 { 0.12, 0.0, 4.0 };
+	s3d::view.target = float3 { 0.12, 0.0, 0.0 };
+	s3d::render(out);
+	let a = to_uv(prev_vp, p);
+	let b = to_uv(s3d::view_proj_nj, p);
+	let mv2 = gfx::read_pixels(s3d::motion_target());
+	let m2 = motion_at(mv2[..], w, (b.x * w as f32) as int, (b.y * h as f32) as int);
+	let cx = (b.x - a.x) * w as f32;
+	let cy = (b.y - a.y) * h as f32;
+	let err2 = max(abs(m2.x * w as f32 - cx), abs(m2.y * h as f32 - cy));
+	let bg2 = motion_at(mv2[..], w, 4, 4);
+	let bg2_px = max(abs(bg2.x * w as f32), abs(bg2.y * h as f32));
+	print("gpu: motion camera want ", r2(cx as real), ",", r2(cy as real), " px got ", r2((m2.x * w as f32) as real), ",", r2((m2.y * h as f32) as real), " px (err ", r3(err2 as real), ") sky ", r3(bg2_px as real), " px depth ", r2(m2.z as real), " want ", r2(b.z as real));
+	if err2 > 0.15 || bg2_px > 0.01 || abs(m2.z - b.z) > 0.02 { good = false; }
+	gfx::release(out);
+
+	// skinned: the placement and the camera stay, only the animation time advances
+	reset_scene();
+	let asset = gltf::load_bytes(embed_file("fixtures/scene.glb"), "");
+	let man = s3d::add(asset);
+	s3d::place(man, gfx::translate(float3 { 0.0, 0.6, 0.0 }));
+	let wave = gltf::find_animation(asset, "wave");
+	s3d::animate(man, wave, 0.5);
+	s3d::view = s3d::Camera { eye: float3 { 1.5, 1.6, 3.5 }, target: float3 { 0.0, 0.6, 0.0 }, up: float3 { 0.0, 1.0, 0.0 }, fov_y: 0.9, near: 0.1, far: 60.0 };
+	s3d::init(w, h);
+	let out2 = gfx::render_target(w, h, gfx::RGBA8);
+	s3d::render(out2);
+	s3d::animate(man, wave, 0.6);
+	s3d::render(out2);
+	let mv3 = gfx::read_pixels(s3d::motion_target());
+	s3d::render(out2);
+	let mv4 = gfx::read_pixels(s3d::motion_target());
+	var moving = 0;
+	var still = 0;
+	var covered = 0;
+	var peak f32 = 0.0;
+	for y in h {
+		for x in w {
+			let q = motion_at(mv3[..], w, x, y);
+			if q.z > 1000.0 { continue; }
+			covered += 1;
+			let d = max(abs(q.x * w as f32), abs(q.y * h as f32));
+			if d > 0.25 { moving += 1; }
+			peak = max(peak, d);
+			let r = motion_at(mv4[..], w, x, y);
+			if max(abs(r.x * w as f32), abs(r.y * h as f32)) > 0.01 { still += 1; }
+		}
+	}
+	print("gpu: motion skinned ", moving, " of ", covered, " pixels moving (peak ", r2(peak as real), " px), ", still, " moving on a repeated pose");
+	if moving < 20 || still > 0 { good = false; }
+	gfx::release(out2);
+	good
+}
+
+// (b) TAA: a still camera must settle, a moving one must not leave trails
+fn taa_checks(dir const byte[:]) bool {
+	var good = true;
+	sphere_grid();
+	let w = 960;
+	let h = 540;
+	// reference: the same frame rendered at twice the size (4x msaa there too) and box-reduced
+	s3d::temporal = 0;
+	s3d::init(w * 2, h * 2);
+	let big = gfx::render_target(w * 2, h * 2, gfx::RGBA8);
+	s3d::render(big);
+	let big_px = gfx::read_pixels(big);
+	let ref = half_size(big_px[..], w * 2, h * 2);
+	gfx::release(big);
+
+	s3d::init(w, h);
+	let out = gfx::render_target(w, h, gfx::RGBA8);
+	s3d::render(out);
+	let off = gfx::read_pixels(out);
+	let p0 = path(dir, "taa_off.png");
+	print("gpu: taa png ", p0[..], " ", gfx::save_png(out, p0[..]));
+
+	s3d::temporal = 1;
+	s3d::temporal_reset = true;
+	var last byte[>..] = [];
+	var worst real = 0.0;
+	var sum real = 0.0;
+	var first real = 0.0;
+	for k in 60 {
+		s3d::render(out);
+		let px = gfx::read_pixels(out);
+		if k > 0 {
+			let d = mean_abs(px[..], last[..]);
+			if k == 1 { first = d; }
+			if k >= 30 { worst = max(worst, d); sum += d; }
+		}
+		last.clear();
+		last.append(px[..]);
+	}
+	let p1 = path(dir, "taa_on.png");
+	print("gpu: taa png ", p1[..], " ", gfx::save_png(out, p1[..]));
+	print("gpu: taa still 960x540 frame-to-frame mean abs diff frames 30-59: max ", r3(worst), " mean ", r3(sum / 30.0), " /255 (frame 1: ", r3(first), ")");
+	print("gpu: taa psnr vs 2x supersampled: off ", r2(psnr(off[..], ref[..])), " dB, taa ", r2(psnr(last[..], ref[..])), " dB");
+	if worst >= 0.5 { good = false; }
+
+	// moving camera: slide sideways for 40 frames, then compare with a still, converged
+	// frame from the final pose. The same run with the neighbourhood clip off is the control.
+	var frac_on real = 0.0;
+	var frac_off real = 0.0;
+	var mad_on real = 0.0;
+	var mad_off real = 0.0;
+	var ref_still byte[>..] = [];
+	for pass in 2 {
+		s3d::temporal_gamma = if pass == 0 { 1.25 } else { 0.0 };
+		s3d::temporal_reset = true;
+		for k in 40 {
+			let t = k as f32 / 39.0;
+			s3d::view.eye = float3 { -1.5 + 3.0 * t, 0.3, 7.5 };
+			s3d::view.target = float3 { -0.5 + 1.0 * t, 0.0, 0.0 };
+			s3d::render(out);
+		}
+		let moved = gfx::read_pixels(out);
+		let pm = path(dir, if pass == 0 { "taa_moving.png" } else { "taa_moving_noclip.png" });
+		print("gpu: taa png ", pm[..], " ", gfx::save_png(out, pm[..]));
+		if pass == 0 {
+			s3d::temporal_reset = true;
+			for k in 48 { s3d::render(out); }
+			ref_still = gfx::read_pixels(out);
+			let pr = path(dir, "taa_moving_ref.png");
+			print("gpu: taa png ", pr[..], " ", gfx::save_png(out, pr[..]));
+		}
+		let f = luma_over(moved[..], ref_still[..], 24);
+		let d = mean_abs(moved[..], ref_still[..]);
+		if pass == 0 { frac_on = f; mad_on = d; } else { frac_off = f; mad_off = d; }
+	}
+	s3d::temporal_gamma = 1.25;
+	// floor: the aliasing difference between a no-TAA frame and the converged one
+	s3d::temporal = 0;
+	s3d::render(out);
+	let plain = gfx::read_pixels(out);
+	let frac_floor = luma_over(plain[..], ref_still[..], 24);
+	print("gpu: taa moving 40 frames (~7 px/frame): ", r3(frac_on * 100.0), "% pixels off by >24/255 vs converged (mean ", r3(mad_on), "/255); no-clip control ", r3(frac_off * 100.0), "% (mean ", r3(mad_off), "); no-taa floor ", r3(frac_floor * 100.0), "%");
+	if frac_on > 0.005 || frac_off < frac_on * 4.0 { good = false; }
+	gfx::release(out);
+	good
+}
+
+// (c) upscaling: 1280x720 rendered, 1920x1080 out
+fn tsr_checks(dir const byte[:]) bool {
+	var good = true;
+	sphere_grid();
+	let out = gfx::render_target(1920, 1080, gfx::RGBA8);
+	s3d::temporal = 1;
+	s3d::init(1920, 1080);
+	s3d::temporal_reset = true;
+	for k in 32 { s3d::render(out); }
+	let native = gfx::read_pixels(out);
+	let pn = path(dir, "tsr_native1080.png");
+	print("gpu: tsr png ", pn[..], " ", gfx::save_png(out, pn[..]));
+	let t0 = gfx::time();
+	for k in 20 { s3d::render(out); }
+	let _ = gfx::read_pixels(out);
+	let native_ms = (gfx::time() - t0) * 1000.0 / 20.0;
+
+	s3d::init(1280, 720, 1920, 1080);
+	s3d::temporal_reset = true;
+	for k in 32 { s3d::render(out); }
+	let up = gfx::read_pixels(out);
+	let pu = path(dir, "tsr_720to1080.png");
+	print("gpu: tsr png ", pu[..], " ", gfx::save_png(out, pu[..]));
+	let t1 = gfx::time();
+	for k in 20 { s3d::render(out); }
+	let _ = gfx::read_pixels(out);
+	let up_ms = (gfx::time() - t1) * 1000.0 / 20.0;
+	let db = psnr(up[..], native[..]);
+	print("gpu: tsr 720p->1080p psnr ", r2(db), " dB vs native 1080p taa; frame ", r2(up_ms), " ms vs native ", r2(native_ms), " ms");
+	if db < 30.0 { good = false; }
+
+	// resolve cost alone: N back-to-back resolves vs none, each fenced by a 1x1 read
+	let n = 200;
+	var best real = 1e9;
+	for rep in 3 {
+		let _ = gfx::read_pixels(s3d::white);
+		let a0 = gfx::time();
+		let _ = gfx::read_pixels(s3d::white);
+		let empty = gfx::time() - a0;
+		let a1 = gfx::time();
+		s3d::temporal_repeat(n);
+		let _ = gfx::read_pixels(s3d::white);
+		let full = gfx::time() - a1;
+		best = min(best, (full - empty) * 1000.0 / n as real);
+	}
+	print("gpu: tsr resolve 1280x720->1920x1080 ", r3(best), " ms (fence-timed, ", n, " back-to-back)");
+	if best >= 1.0 { good = false; }
+	s3d::temporal = 0;
+	s3d::temporal_reset = true;
+	gfx::release(out);
+	good
+}
+
 fn gpu_checks(dir const byte[:], golden const byte[:]) bool {
 	var good = true;
 	if !furnace(FURNACE_K) { good = false; }
@@ -649,6 +934,10 @@ fn gpu_checks(dir const byte[:], golden const byte[:]) bool {
 	let mean = sum / max(px.len / 4, 1);
 	print("gpu: frame mean ", mean, " range ", lo, "..", hi);
 	if mean < 30 || mean > 225 || hi - lo < 120 { good = false; }
+	gfx::release(frame);
+	if !motion_checks() { good = false; }
+	if !taa_checks(dir) { good = false; }
+	if !tsr_checks(dir) { good = false; }
 	let err = gfx::error();
 	if err.len > 0 { print("gpu: gfx error ", err[..]); good = false; }
 	good

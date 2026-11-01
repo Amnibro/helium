@@ -153,6 +153,7 @@ var cur_bases int[>..] = [];
 var cascade_end f32[>..] = [0.0, 0.0, 0.0];
 var cascade_vp gfx::mat4[>..] = [];
 var frames int = 0;
+var motion_fresh = true;            // no previous frame to measure motion against
 
 fn f4(x f32, y f32, z f32, w f32) float4 { float4 { x, y, z, w } }
 fn x4(v float3, w f32) float4 { float4 { v.x, v.y, v.z, w } }
@@ -283,6 +284,10 @@ fn forget() {
 	if uploaded_verts >= 0 { uploaded_verts = -2; }
 	if uploaded_indices >= 0 { uploaded_indices = -2; }
 	if uploaded_morphs >= 0 { uploaded_morphs = -2; }
+	// a new scene: no last-frame placement, camera or history to measure against
+	prev_keys.clear(); prev_models.clear(); prev_bases.clear(); prev_joints.clear();
+	motion_fresh = true;
+	temporal_reset = true;
 }
 
 fn upload_geometry() {
@@ -493,7 +498,8 @@ fn setup_view() {
 	view_mat = gfx::look_at(view.eye, view.target, view.up);
 	proj_mat = gfx::perspective(view.fov_y, aspect, view.near, view.far);
 	let nj = gfx::mul(proj_mat, view_mat);
-	prev_view_proj = if frames == 0 { nj } else { view_proj_nj };
+	prev_view_proj = if motion_fresh { nj } else { view_proj_nj };
+	motion_fresh = false;
 	view_proj_nj = nj;
 	jitter = float2 { 0.0, 0.0 };
 	if temporal_on() {
