@@ -4,13 +4,17 @@
 //   (math, inflate + PNG + JPEG decoding, the glTF loader, animation sampling,
 //   procedural shapes, SDF text layout).
 // With an output directory: also renders headless and prints "gpu: ..." lines:
-//   furnace  - white dielectric, mirror and half-metal spheres inside a uniform white sky with
-//              no sun; every HDR pixel should come back 1.0 (energy error in %)
-//   spheres  - 5x5 metal/roughness grid, saved as spheres.png and compared with
-//              golden/spheres.png when it exists (PSNR in dB)
+//   furnace  - white roughness x metal sphere grid lit by a sun swept over the sphere of
+//              directions: per-material directional albedo (should be 1), single-scatter
+//              and compensated, a x0.9 control that must fail, and the ambient pass-through
+//              (fp16) check
+//   spheres  - 5x5 metal/roughness grid, saved as spheres.png and compared with the
+//              golden given as the second argument; PSNR must be > 40 dB, and a
+//              missing golden fails
 //   frame    - floor, skinned + morphed glTF, point light, particles and text,
 //              saved as frame.png and checked for light and contrast
-//   timing   - mean milliseconds per 1280x720 frame of the sphere grid
+//   timing   - 1280x720 sphere grid, 30 warmup + 200 frames without readback: wall-clock
+//              and (under tools/hc/gputime) GPU-timestamp min / median / p95 ms
 import os;
 import gfx;
 import math;
@@ -105,69 +109,225 @@ fn reset_scene() {
 	s3d::forget();
 }
 
-fn furnace(size int, dir const byte[:]) f32 {
+// ---- furnace: energy of the GGX BRDF in a uniform white environment
+//
+// 11 roughness values (0, 0.1 .. 1.0) x metal {0, 1}, all white, in an 11 x 2 grid seen
+// from far away (nearly orthographic). The sun is the only light: it sweeps K directions
+// of a Fibonacci sphere with irradiance 4 pi / K each, shadows, SSAO, bloom and the sky
+// ambient off, and the HDR frames are summed on the CPU. Each pixel then holds the
+// integral of the BRDF times cos over the hemisphere, i.e. its directional albedo, which
+// is 1 for a surface that neither loses nor gains energy. Only pixels inside a sphere
+// (taken from a mask frame and eroded by two pixels so MSAA edges drop out) count.
+let FN_COLS = 11;
+let FN_CELL = 68;
+let FN_W = 748;      // FN_COLS * FN_CELL
+let FN_H = 136;      // 2 * FN_CELL
+let FN_BAR f32 = 0.05;
+// A sun direction stands for a cone of about sqrt(4 pi / K) radians. Lobes narrower than
+// that (low roughness) are point-sampled, so their pixels are noisy and the sphere mean
+// is biased; only roughness >= FN_RESOLVED is gated, the rest is printed as unresolved.
+let FN_RESOLVED = 3;            // in tenths
+// Bars: material mean |albedo - 1| < FN_BAR and worst pixel loss (1 - albedo) < FN_BAR.
+// A pixel may gain up to FN_GAIN: the dielectric diffuse term is weighted by 1 - F(v.h)
+// per light, not by the specular directional albedo, so grazing pixels of rough
+// dielectrics come out above 1 (measured 7.0 % at roughness 0.3, independent of K).
+let FN_GAIN f32 = 0.08;
+var FN_WPX real = 0.0;          // worst pixel error of the resolved materials, last sweep
+var FN_LOSS real = 0.0;         // worst pixel loss of the resolved materials, last sweep
+
+var HALF f32[>..] = [];
+var MASK int[>..] = [];          // pixel index of every counted pixel
+var MASK_ID int[>..] = [];       // its material (col + 11 * row)
+var ACC real[>..] = [];
+
+fn half_table() {
+	if HALF.len > 0 { return; }
+	for h in 65536 { HALF.push(half_to_f32((h & 255) as byte, (h >> 8) as byte)); }
+}
+
+fn red(px const byte[:], i int) f32 { HALF[(px[i * 8] as int) | ((px[i * 8 + 1] as int) << 8)] }
+
+fn furnace_scene() {
 	reset_scene();
-	let white = shapes::sphere(1.0, 48, 24, shapes::material(linalg::v3(1.0, 1.0, 1.0), 0.0, 0.5));
-	let mirror = shapes::sphere(1.0, 48, 24, shapes::material(linalg::v3(1.0, 1.0, 1.0), 1.0, 0.1));
-	let half_metal = shapes::sphere(0.7, 48, 24, shapes::material(linalg::v3(1.0, 1.0, 1.0), 0.5, 0.6));
-	s3d::place(s3d::add(white), gfx::translate(float3 { -1.1, -0.5, 0.0 }));
-	s3d::place(s3d::add(mirror), gfx::translate(float3 { 1.1, -0.5, 0.0 }));
-	s3d::place(s3d::add(half_metal), gfx::translate(float3 { 0.0, 1.2, 0.0 }));
-	let keep_sky = s3d::sky;
-	let keep_sun = s3d::sun;
-	let keep_look = s3d::look;
-	let one = float3 { 1.0, 1.0, 1.0 };
-	s3d::sky = s3d::Sky { zenith: one, horizon: one, ground: one, ambient: 1.0, draw: true };
-	s3d::sun.rgb = float3 { 0.0, 0.0, 0.0 };
+	for row in 2 {
+		for c in FN_COLS {
+			let rough = c as f32 / 10.0;
+			let ball = shapes::sphere(0.45, 64, 32, shapes::material(linalg::v3(1.0, 1.0, 1.0), row as f32, rough));
+			s3d::place(s3d::add(ball), gfx::translate(float3 { c as f32 - 5.0, 0.5 - row as f32, 0.0 }));
+		}
+	}
+	// half height 1.0 at distance 30 so the grid fills FN_W x FN_H
+	s3d::view = s3d::Camera { eye: float3 { 0.0, 0.0, 30.0 }, target: float3 { 0.0, 0.0, 0.0 }, up: float3 { 0.0, 1.0, 0.0 }, fov_y: 0.0666419, near: 20.0, far: 40.0 };
 	s3d::sun.shadows = false;
 	s3d::look.ssao = false;
 	s3d::look.bloom = 0.0;
-	s3d::view = s3d::Camera { eye: float3 { 0.0, 0.0, 5.0 }, target: float3 { 0.0, 0.0, 0.0 }, up: float3 { 0.0, 1.0, 0.0 }, fov_y: 0.8, near: 0.1, far: 50.0 };
-	s3d::init(size, size);
-	let out = gfx::render_target(size, size, gfx::RGBA8);
+}
+
+fn sky_of(zenith f32, horizon f32, ambient f32, draw bool) s3d::Sky {
+	s3d::Sky { zenith: float3 { zenith, zenith, zenith }, horizon: float3 { horizon, horizon, horizon }, ground: float3 { zenith, zenith, zenith }, ambient: ambient, draw: draw }
+}
+
+fn furnace_mask(out gfx::Texture) {
+	// sun off, sky not drawn and cleared to 0, ambient 1: spheres > 0, background 0
+	s3d::sun.rgb = float3 { 0.0, 0.0, 0.0 };
+	s3d::sky = sky_of(1.0, 0.0, 1.0, false);
 	s3d::render(out);
 	let px = gfx::read_pixels(s3d::hdr_target());
-	let mid = ((size / 2) * size + size / 2) * 8;
-	print("gpu: furnace bytes ", px.len, " centre ", px[mid] as int, " ", px[mid + 1] as int, " corner ", px[0] as int, " ", px[1] as int, " -> ", half_to_f32(px[mid], px[mid + 1]));
-	let fp = path(dir, "furnace.png");
-	print("gpu: furnace png ", fp[..], " ", gfx::save_png(out, fp[..]));
+	MASK.clear();
+	MASK_ID.clear();
+	for y in 2..FN_H - 2 {
+		for x in 2..FN_W - 2 {
+			var inside = true;
+			for dy in 5 { for dx in 5 { if red(px[..], (y + dy - 2) * FN_W + x + dx - 2) <= 0.0 { inside = false; } } }
+			if inside { MASK.push(y * FN_W + x); MASK_ID.push(x / FN_CELL + FN_COLS * (y / FN_CELL)); }
+		}
+	}
+}
+
+// Ambient pass-through / fp16 check (not a furnace): uniform white sky ambient, sun off.
+// ambient_light() is built to return exactly the environment for a white surface, so this
+// only measures fp16, MSAA and raster error of the ambient path on sphere pixels.
+fn ambient_passthrough(out gfx::Texture) f32 {
+	s3d::sun.rgb = float3 { 0.0, 0.0, 0.0 };
+	s3d::sky = sky_of(1.0, 1.0, 1.0, false);
+	s3d::render(out);
+	let px = gfx::read_pixels(s3d::hdr_target());
 	var worst f32 = 0.0;
 	var total real = 0.0;
-	let n = px.len / 8;
-	var bad = 0;
-	var first = -1;
-	for i in n {
-		let hb = px[i * 8 + 1] as int;
-		if (hb & 0x7C) == 0x7C || (hb & 0x80) != 0 { bad += 1; if first < 0 { first = i; } }
+	for p in MASK {
+		let e = abs(red(px[..], p) - 1.0);
+		worst = max(worst, e);
+		total += e as real;
 	}
-	if first >= 0 {
-		// localise the bad term: re-render each debug view and count non-finite pixels
-		for mode in 7 {
-			s3d::debug_view = mode + 1;
-			s3d::render(out);
-			let dp = gfx::read_pixels(s3d::hdr_target());
-			var nb = 0;
-			for k in dp.len / 8 { if ((dp[k * 8 + 1] as int) & 0x7C) == 0x7C { nb += 1; } }
-			print("gpu: furnace debug view ", mode + 1, " non-finite ", nb);
-		}
-		s3d::debug_view = 0;
-		let q = first * 8;
-		print("gpu: furnace non-finite/negative pixels ", bad, " first at ", first % size, ",", first / size, " bytes ", px[q] as int, " ", px[q + 1] as int, " ", px[q + 2] as int, " ", px[q + 3] as int, " ", px[q + 4] as int, " ", px[q + 5] as int);
+	print("gpu: ambient pass-through (fp16 precision, not a furnace) pixels ", MASK.len, " mean error ", round(total / MASK.len as real * 1.0e6) / 1.0e4, " % max ", round((worst * 1.0e6) as real) / 1.0e4, " %");
+	worst
+}
+
+fn pct(x real) real { round(x * 10000.0) / 100.0 }
+
+// One sweep; prints a table and returns the worst |albedo - 1| of any material's mean.
+// kind: "single", "compensated" or "control".
+fn furnace_sweep(out gfx::Texture, kind const byte[:], k int) real {
+	s3d::sky = sky_of(0.0, 0.0, 0.0, false);
+	ACC.clear();
+	for i in MASK.len { ACC.push(0.0); }
+	let e = linalg::f((4.0 * 3.14159265358979 / k as real) as real);
+	s3d::sun.rgb = float3 { e, e, e };
+	let golden = 3.14159265358979 * (3.0 - sqrt(5.0));
+	for s in k {
+		let z = 1.0 - (2.0 * s as real + 1.0) / k as real;
+		let r = sqrt(max(1.0 - z * z, 0.0));
+		let ph = golden * s as real;
+		s3d::sun.to_sun = float3 { linalg::f(r * cos(ph)), linalg::f(z), linalg::f(r * sin(ph)) };
+		s3d::render(out);
+		let px = gfx::read_pixels(s3d::hdr_target());
+		for p, i in MASK { ACC[i] += red(px[..], p) as real; }
 	}
-	for i in n {
-		for c in 3 {
-			let v = half_to_f32(px[i * 8 + c * 2], px[i * 8 + c * 2 + 1]);
-			let e = abs(v - 1.0);
-			worst = max(worst, e);
-			total += e as real;
-		}
+	var sum real[>..] = [];
+	var lo real[>..] = [];
+	var hi real[>..] = [];
+	var cnt int[>..] = [];
+	for m in 2 * FN_COLS { sum.push(0.0); lo.push(99.0); hi.push(0.0); cnt.push(0); }
+	for m, i in MASK_ID {
+		let a = ACC[i];
+		sum[m] += a; lo[m] = min(lo[m], a); hi[m] = max(hi[m], a); cnt[m] += 1;
 	}
+	var worst_mean real = 0.0;
+	var worst_px real = 0.0;
+	var all real = 0.0;
+	var r_mean real = 0.0;
+	var r_px real = 0.0;
+	var r_all real = 0.0;
+	var r_n = 0;
+	var r_loss real = 0.0;
+	for m in 2 * FN_COLS {
+		let mean = sum[m] / max(cnt[m], 1) as real;
+		let px_err = max(abs(lo[m] - 1.0), abs(hi[m] - 1.0));
+		let resolved = m % FN_COLS >= FN_RESOLVED;
+		if resolved { r_mean = max(r_mean, abs(mean - 1.0)); r_px = max(r_px, px_err); r_all += abs(mean - 1.0); r_n += 1; r_loss = max(r_loss, 1.0 - lo[m]); }
+		print("gpu: furnace ", kind, " metal ", m / FN_COLS, " rough ", (m % FN_COLS) as real / 10.0, if resolved { "" } else { " (unresolved)" }, " pixels ", cnt[m], " albedo mean ", round(mean * 10000.0) / 10000.0, " min ", round(lo[m] * 10000.0) / 10000.0, " max ", round(hi[m] * 10000.0) / 10000.0, " | mean error ", pct(abs(mean - 1.0)), " % worst pixel ", pct(px_err), " %");
+		worst_mean = max(worst_mean, abs(mean - 1.0));
+		worst_px = max(worst_px, px_err);
+		all += abs(mean - 1.0);
+	}
+	print("gpu: furnace ", kind, " summary (", k, " sun directions) rough >= 0.", FN_RESOLVED, ": worst material mean error ", pct(r_mean), " %, mean over materials ", pct(r_all / max(r_n, 1) as real), " %, worst pixel ", pct(r_px), " % (worst pixel loss ", pct(r_loss), " %); all roughness incl. unresolved: worst mean ", pct(worst_mean), " %, mean ", pct(all / (2 * FN_COLS) as real), " %, worst pixel ", pct(worst_px), " %");
+	FN_WPX = r_px;
+	FN_LOSS = r_loss;
+	r_mean
+}
+
+// The furnace verdict: compensated BRDF within FN_BAR on every material's mean, and the
+// control (direct light scaled by 0.9, a BRDF that loses 10%) must be caught.
+fn furnace(k int) bool {
+	half_table();
+	furnace_scene();
+	let keep_sky = s3d::sky;
+	let keep_sun = s3d::sun;
+	let keep_look = s3d::look;
+	s3d::init(FN_W, FN_H);
+	let out = gfx::render_target(FN_W, FN_H, gfx::RGBA8);
+	furnace_mask(out);
+	var good = ambient_passthrough(out) < 0.02;
+	s3d::multiscatter = false;
+	let single = furnace_sweep(out, "single", k);
+	s3d::multiscatter = true;
+	let comp = furnace_sweep(out, "compensated", k);
+	let comp_px = FN_WPX;
+	let comp_loss = FN_LOSS;
+	let comp_ok = comp < FN_BAR as real && comp_loss < FN_BAR as real && comp_px < FN_GAIN as real;
+	s3d::furnace_scale = 0.9;
+	let control = furnace_sweep(out, "control", k);
+	s3d::furnace_scale = 1.0;
+	let control_caught = control >= FN_BAR as real;
+	print("gpu: furnace verdict (rough >= 0.", FN_RESOLVED, "): compensated worst material mean ", pct(comp), " % and worst pixel loss ", pct(comp_loss), " % (bar ", pct(FN_BAR as real), " %), worst pixel ", pct(comp_px), " % (bar ", pct(FN_GAIN as real), " %) ", if comp_ok { "PASS" } else { "FAIL" }, "; single-scatter worst ", pct(single), " % (reported, not gated); control (x0.9) worst ", pct(control), " % ", if control_caught { "FAILS as required" } else { "NOT CAUGHT" });
+	if !comp_ok || !control_caught { good = false; }
 	gfx::release(out);
 	s3d::sky = keep_sky;
 	s3d::sun = keep_sun;
 	s3d::look = keep_look;
-	print("gpu: furnace mean error ", total / (n * 3) as real * 100.0, " % max ", worst * 100.0, " %");
-	worst
+	good
+}
+
+// ---- timing helpers
+fn sort_reals(v real[>..]&) {
+	for i in 1..v.len {
+		let x = v[i];
+		var j = i;
+		while j > 0 && v[j - 1] > x { v[j] = v[j - 1]; j -= 1; }
+		v[j] = x;
+	}
+}
+
+// "min a median b p95 c" of v (sorted in place), in milliseconds with 3 decimals
+fn stats(v real[>..]&) byte[>..] {
+	sort_reals(v);
+	var s byte[>..] = [];
+	if v.len == 0 { s.append("no samples"); return s; }
+	let p95 = v[min((v.len * 95 + 99) / 100 - 1, v.len - 1)];
+	let med = if v.len % 2 == 1 { v[v.len / 2] } else { (v[v.len / 2 - 1] + v[v.len / 2]) / 2.0 };
+	format(s, "min {} median {} p95 {} ms", round(v[0] * 1000.0) / 1000.0, round(med * 1000.0) / 1000.0, round(p95 * 1000.0) / 1000.0);
+	s
+}
+
+// GPU nanoseconds of every "submit <n> <ns>" line the gputime layer has written so far
+fn gputime_lines(path const byte[:], ns real[>..]&) {
+	ns.clear();
+	var log byte[>..] = [];
+	if !read_file(path, log) { return; }
+	var i = 0;
+	while i < log.len {
+		var e = i;
+		while e < log.len && log[e] != 10 { e += 1; }
+		if e - i > 7 && log[i] == 115 && log[i + 1] == 117 && log[i + 2] == 98 {
+			// last field is the nanosecond count
+			var k = e;
+			while k > i && log[k - 1] != 32 { k -= 1; }
+			var v = 0;
+			for c in log[k..e] { if c >= 48 && c <= 57 { v = v * 10 + (c as int - 48); } }
+			ns.push(v as real);
+		}
+		i = e + 1;
+	}
 }
 
 fn sphere_grid() {
@@ -204,11 +364,14 @@ fn psnr(a const byte[:], b const byte[:]) real {
 // Output directory for the PNGs, kept in a global so it outlives every frame's scratch.
 var OUT_DIR byte[>..] = [];
 var GOLDEN byte[>..] = [];
+var FURNACE_K = 4096;
+let TIME_WARMUP = 30;
+let TIME_FRAMES = 200;
 fn path(dir const byte[:], name const byte[:]) byte[>..] { let _ = dir; var p byte[>..] = []; p.append(OUT_DIR[..]); p.append("/"); p.append(name); p }
 
 fn gpu_checks(dir const byte[:], golden const byte[:]) bool {
 	var good = true;
-	if furnace(256, dir) >= 0.02 { good = false; }
+	if !furnace(FURNACE_K) { good = false; }
 
 	sphere_grid();
 	s3d::init(480, 360);
@@ -217,30 +380,67 @@ fn gpu_checks(dir const byte[:], golden const byte[:]) bool {
 	let got = gfx::read_pixels(out);
 	let sp = path(dir, "spheres.png");
 	print("gpu: spheres png ", sp[..], " ", gfx::save_png(out, sp[..]));
-	if GOLDEN.len > 0 {
-		var want byte[>..] = [];
-		read_file(GOLDEN[..], want);
-		var ref byte[>..] = [];
-		let gw, gh, gok = codec_png::decode(want[..], ref);
-		let db = if gok && gw == 480 && gh == 360 { psnr(got[..], ref[..]) } else { 0.0 };
-		print("gpu: spheres psnr ", round(db * 100.0) / 100.0, " dB vs golden");
-		if db < 40.0 { good = false; }
+	// the golden is required: a missing, unreadable or wrong-sized golden is a failure
+	if GOLDEN.len == 0 {
+		print("gpu: spheres FAILED: no golden given (expected hc/test/gfx/golden/spheres.png)");
+		good = false;
 	} else {
-		print("gpu: spheres saved (no golden given)");
+		var want byte[>..] = [];
+		var ref byte[>..] = [];
+		let readable = read_file(GOLDEN[..], want);
+		let gw, gh, gok = codec_png::decode(want[..], ref);
+		if !readable || !gok || gw != 480 || gh != 360 {
+			print("gpu: spheres FAILED: golden ", GOLDEN[..], " unreadable or not a 480x360 PNG");
+			good = false;
+		} else {
+			let db = psnr(got[..], ref[..]);
+			print("gpu: spheres psnr ", round(db * 100.0) / 100.0, " dB vs golden (bar > 40 dB) ", if db > 40.0 { "PASS" } else { "FAIL" });
+			if db <= 40.0 { good = false; }
+		}
 	}
 	gfx::release(out);
 
-	// timing at 720p on the same scene
+	// timing at 720p on the same scene: 30 warmup frames, then 200 timed frames, each
+	// render + submit + fence wait with no readback. Wall clock per frame always; GPU time
+	// per frame from timestamp queries when run under the gputime layer (HELIUM_GPUTIME).
 	s3d::init(1280, 720);
 	let big = gfx::render_target(1280, 720, gfx::RGBA8);
 	s3d::render(big);
 	let _ = gfx::read_pixels(big);
-	let t0 = gfx::time();
-	let frames = 20;
-	for k in frames { s3d::render(big); }
-	let _ = gfx::read_pixels(big);
-	let ms = (gfx::time() - t0) * 1000.0 / frames as real;
-	print("gpu: timing 1280x720 ", round(ms * 100.0) / 100.0, " ms/frame (", s3d::batch.len, " draws, 3 cascades, ssao, bloom, 4x msaa)");
+	for k in TIME_WARMUP { s3d::render(big); gfx::flush(); }
+	var log byte[>..] = [];
+	let have_log = env("HELIUM_GPUTIME", log) && log.len > 0;
+	var gpu_ns real[>..] = [];
+	if have_log { gputime_lines(log[..], gpu_ns); }
+	let first = gpu_ns.len;
+	var wall real[>..] = [];
+	for k in TIME_FRAMES {
+		let t = gfx::time();
+		s3d::render(big);
+		gfx::flush();
+		wall.push((gfx::time() - t) * 1000.0);
+	}
+	print("gpu: timing 1280x720 sphere grid (", s3d::batch.len, " draws, 3 cascades, ssao, bloom, 4x msaa): ", TIME_WARMUP, " warmup + ", TIME_FRAMES, " timed frames, each render + submit + fence wait, no readback");
+	print("gpu: timing wall-clock ms/frame ", stats(wall)[..]);
+	if have_log {
+		gputime_lines(log[..], gpu_ns);
+		let n = gpu_ns.len - first;
+		if n > 0 && n % TIME_FRAMES == 0 {
+			let per = n / TIME_FRAMES;
+			var frame real[>..] = [];
+			for f in TIME_FRAMES {
+				var t = 0.0;
+				for j in per { t += gpu_ns[first + f * per + j]; }
+				frame.push(t / 1.0e6);
+			}
+			print("gpu: timing gpu-timestamp ms/frame ", stats(frame)[..], " (", per, " submit(s) per frame, top-of-pipe to bottom-of-pipe)");
+		} else {
+			print("gpu: timing gpu-timestamp: ", n, " submits for ", TIME_FRAMES, " frames, cannot split per frame");
+			good = false;
+		}
+	} else {
+		print("gpu: timing gpu-timestamp: not measured (run under tools/hc/gputime, see tools/hc/gfxtest.sh)");
+	}
 	gfx::release(big);
 
 	// a full frame with every feature
@@ -291,6 +491,8 @@ fn main() {
 	if argc < 2 { return; }
 	OUT_DIR.clear();
 	arg(1, OUT_DIR);
+	var kv byte[>..] = [];
+	if env("FURNACE_K", kv) && kv.len > 0 { var k = 0; for c in kv { if c >= 48 && c <= 57 { k = k * 10 + (c as int - 48); } } if k > 0 { FURNACE_K = k; } }
 	GOLDEN.clear();
 	if argc > 2 { arg(2, GOLDEN); }
 	print("gpu: out dir ", OUT_DIR[..]);
