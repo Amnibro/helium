@@ -1,0 +1,46 @@
+// A call whose result vreg is already live before the call (here: the entry-guard copy
+// gives it a value on the cheap path) and sits in a caller-saved register must not have
+// that register's pre-call value restored over the result after the call returns.
+import std;
+import os;
+struct Nd { k u8, op u8, fl u16, a i32, b i32, c i32, s i32, t i32, n i32, d i32 }
+var ND Nd[>..];
+var TV int;
+var TB int;
+recursive fn rt(n int, ns int) int {
+	if n < 0 { return TV; }
+	let x = ND[n];
+	let k = x.k as int;
+	if k == 1 { return x.op as int + ns; }
+	if k == 2 {
+		let e = rt(x.a as int, ns);
+		let fl = (x.fl & 1) as int | (x.fl & 2) as int;
+		if x.c >= 0 {
+			let w = if x.c == 9 { 8 } else { x.c as int + 1 };
+			let pd = if x.s >= 0 { rt(x.s as int, ns + 1) } else { -1 };
+			return e * 1000 + fl * 100 + w * 10 + pd + x.t as int + x.n as int + x.b as int + x.d as int;
+		}
+		if e == TB { return e + fl + x.t as int; }
+		return e * 7 + fl + x.n as int;
+	}
+	if k == 3 {
+		let e = rt(x.a as int, ns);
+		let v = rt(x.b as int, ns);
+		return e * 3 + v + x.op as int + x.t as int + x.n as int + x.s as int + x.d as int;
+	}
+	-1
+}
+fn main() {
+	let q = args().len;
+	TV = 5 + q; TB = 77;
+	ND.push(Nd{k: 1, op: 3, fl: 0, a: -1, b: 0, c: -1, s: -1, t: 1, n: 2, d: 3});
+	ND.push(Nd{k: 2, op: 0, fl: 3, a: 0, b: 4, c: 2, s: 0, t: 5, n: 6, d: 7});
+	ND.push(Nd{k: 2, op: 0, fl: 1, a: -1, b: 4, c: -1, s: -1, t: 5, n: 6, d: 7});
+	ND.push(Nd{k: 3, op: 2, fl: 1, a: 1, b: 2, c: -1, s: 1, t: 5, n: 6, d: 7});
+	ND.push(Nd{k: 2, op: 0, fl: 2, a: 3, b: 1, c: 9, s: 2, t: 1, n: 1, d: 1});
+	ND.push(Nd{k: 2, op: 0, fl: 2, a: -1, b: 1, c: 4, s: -1, t: 1, n: 1, d: 1});
+	var o byte[>..] = [];
+	for i in ND.len { format(o, rt(i, q), " "); }
+	format(o, "\n");
+	print(o);
+}

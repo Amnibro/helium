@@ -621,7 +621,7 @@ cg_fn(fi int):
 														if d >= 0: if xa && XRF[c] != 0 { stx(0, d, XRF[c] as int) } else { stv(RAX, d) }
 														if x.l >= 0: stv(RDX, x.l)
 														for r, k SVR:
-															if SVS[k] < (i as i32) && SVE[k] > i as i32: ld(r, RBP, rcs(r), 8, false)
+															if SVS[k] < (i as i32) && SVE[k] > i as i32 && !(d >= 0 && d < REGOF.len && REGOF[d] as int == r as int) && !(x.l >= 0 && x.l < REGOF.len && REGOF[x.l] as int == r as int): ld(r, RBP, rcs(r), 8, false)
 														for v, k XSV: if XSS[k] < (i as i32) && XSE[k] > i as i32 && !xsd(i, v as int) { ssem(0xF2, false, 0x10, XREG[v] as int, RBP, vo(v as int)) }
 													else:
 														if op == I_RET: if a >= 0 { if fi < XRF.len && XRF[fi] != 0 { ldx(0, a, XRF[fi] as int) } else { ldv(RAX, a) } } if b >= 0 { ldv(RDX, b) } if SWE >= 0 && i < SWE { ret() } else { epi() }
