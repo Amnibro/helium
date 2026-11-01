@@ -46,7 +46,6 @@ layout(set = 3, binding = 1) uniform Surface {
 };
 
 layout(location = 0) out vec4 out_rgba;
-layout(location = 1) out vec4 out_motion;   // xy: uv now minus uv last frame, z: view depth, w: coverage
 
 vec2 pick_uv(float set) { return set > 0.5 ? in_uv.zw : in_uv.xy; }
 
@@ -66,12 +65,30 @@ vec2 ms_lut(float n_v, float rough) {
 	return mix(a, b, fy);
 }
 
+// E for the compensation only, with a silhouette cap: where sqrt(n.v) (MS_N - 1) < 3 (n.v
+// below about 0.0094) E falls steeply toward grazing and bilinear interpolation between
+// nodes undershoots it, so 1 / E would overshoot (white metals gained up to 5.4 %); there
+// the largest E of the four corners is used, which can only lower the gain. The diffuse
+// weight keeps the bilinear (E, B). make_ms_lut's check 2 replays this exactly.
+float ms_e(float n_v, float rough, float e) {
+	float x = sqrt(clamp(n_v, 0.0, 1.0)) * float(MS_N - 1);
+	if (x >= 3.0) return e;
+	float y = clamp(rough, 0.0, 1.0) * float(MS_N - 1);
+	int x0 = min(int(x), MS_N - 2);
+	int y0 = min(int(y), MS_N - 2);
+	int i = y0 * MS_N + x0;
+	float a = max(unpackUnorm2x16(MS_EB[i]).x, unpackUnorm2x16(MS_EB[i + 1]).x);
+	float b = max(unpackUnorm2x16(MS_EB[i + MS_N]).x, unpackUnorm2x16(MS_EB[i + MS_N + 1]).x);
+	return max(a, b);
+}
+
 // Multiple-scattering compensation for the specular lobe. A white (F = 1) lobe reflects
 // E of the incoming energy after one bounce; the rest would leave after further bounces
 // between microfacets, so the lobe is scaled by 1 + F0 (1 / E - 1), which brings a white
 // conductor back to 1 and leaves a low-F0 dielectric almost unchanged. E is floored at
-// 0.25 so the numerical guard in light_term at extreme grazing angles is not amplified
-// (make_ms_lut's grazing check bounds the result: no gain above 6 % at any n.v).
+// 0.25, which caps the factor at 1 + 3 F0 where the table's E is tiny: the floor limits
+// how much lost energy is put back (a loss), it does not bound a gain. The gain is
+// bounded by make_ms_lut's check 2 with the cap in ms_e(): below 3 % at every n.v.
 vec3 ms_factor(vec3 f0, float e, bool on) {
 	if (!on) return vec3(1.0);
 	return 1.0 + f0 * (1.0 / max(e, 0.25) - 1.0);
@@ -132,21 +149,9 @@ vec3 ambient_light(vec3 n, vec3 v, vec3 l, vec3 base_rgb, float metal, float rou
 	return mix(dielectric, fm * env, metal);
 }
 
-// Screen-space motion of this surface point since last frame, in uv units
-// (positive x to the right, positive y down), from the unjittered clip positions.
-// A point that was behind the camera last frame gets a large vector so the
-// temporal pass treats its history as missing. Blended surfaces write coverage 0,
-// which leaves the opaque motion behind them in place.
-vec4 motion_vector() {
-	vec2 now = in_cur.xy / in_cur.w;
-	vec2 d = in_prev.w > 1e-5 ? (now - in_prev.xy / in_prev.w) * vec2(0.5, -0.5) : vec2(4.0);
-	return vec4(d, in_cur.w, alpha.x > 1.5 ? 0.0 : 1.0);
-}
-
 void main() {
 	vec4 tint = base * in_col * texture(tex_base, pick_uv(uv_sets.x));
 	if (alpha.x > 0.5 && alpha.x < 1.5 && tint.a < alpha.y) discard;
-	out_motion = motion_vector();
 	if (emissive.w > 0.5) { out_rgba = vec4(tint.rgb, alpha.x > 1.5 ? tint.a : 1.0); return; }
 
 	vec3 n = normalize(in_nrm);
@@ -196,10 +201,11 @@ void main() {
 	int mode = int(uv_sets2.z + 0.5);
 	int control = mode / 2;
 	bool ms_on = mode - 2 * control == 1;
-	vec3 ms = ms_factor(f0, eb.x, ms_on);
+	float e_ms = ms_e(n_v, rough, eb.x);
+	vec3 ms = ms_factor(f0, e_ms, ms_on);
 	vec3 kd = diffuse_weight(f0, eb, ms);
 	vec3 f0_spec = f0;
-	if (control == 1) { f0_spec = mix(vec3(1.0), tint.rgb, metal); ms = ms_factor(f0_spec, eb.x, ms_on); }
+	if (control == 1) { f0_spec = mix(vec3(1.0), tint.rgb, metal); ms = ms_factor(f0_spec, e_ms, ms_on); }
 	if (control == 2) kd = vec3(-1.0);
 	vec3 l = normalize(to_sun.xyz);
 	rgb += light_term(n, v, l, sun_rgb.rgb, albedo, f0_spec, rough, ms, kd) * sun_visibility(in_world, normalize(in_nrm));

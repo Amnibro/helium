@@ -15,10 +15,19 @@
 //   HC_LIB=hc/lib build/hcn run hc/test/gfx/tools/make_ms_lut.amni > hc/lib/gfx/shaders/ms_lut.glsl
 //
 // Integration: for every table entry, S x S stratified half vectors drawn from the GGX
-// distribution of normals (pdf D(h) n.h), mapped to light directions (pdf / 4 v.h).
+// distribution of normals (pdf D(h) n.h), mapped to light directions (pdf / 4 v.h). The
+// polar stratum s is graded, u1 = 1 - (1 - s)^3 (weight 3 (1 - s)^2), which puts more
+// samples on half vectors far from the normal: near grazing those are the only ones
+// that give a light above the horizon, and with uniform strata the nodes at
+// sqrt(n.v) = 1/31 .. 5/31 were off by up to a few % (N4 of Lulu's review).
 // The table is N x N over sqrt(mu) (mu = n.v) in [0, 1] and rough in [0, 1].
 //
 // Self-checks on stderr (tools/hc/gfxtest.sh gates the "make_ms_lut: ... PASS" lines):
+//   0. every stored (16-bit) node against albedo_ref(), an independent integrator with a
+//      different scheme (polar angle through tan(theta_h) = alpha tan(pi s / 2), D
+//      evaluated explicitly, azimuth by a midpoint rule over the analytic interval
+//      where the light is above the horizon): E and the dielectric E_F within
+//      REF_REL_BAR relative, B within REF_B_BAR;
 //   1. bilinear lookup of the 16-bit table against a direct integration at every cell centre, for E and for
 //      a dielectric's E_F (F0 = 0.04), split into the main region and the grazing
 //      corner (mu < 0.01 or rough < 0.03) that the older check skipped;
@@ -26,7 +35,8 @@
 //      (0, 0.36] and rough in [0.03, 0.3] (the shader clamps rough to >= 0.03), the
 //      compensated directional albedo the shader produces for a white metal
 //      (ms E with ms = 1 / max(E_lut, MS_FLOOR)) and a white dielectric
-//      (ms E_F + 1 - ms E_F_lut), against 1, in three bands of mu. The sun-sweep
+//      (ms E_F + 1 - ms E_F_lut), against 1, in three bands of mu, with E and B from
+//      albedo_ref() and the shader's silhouette cap (ms_e() in surface.frag). The sun-sweep
 //      furnace in gfx_smoke cannot resolve these narrow lobes, so this is the bound on
 //      smooth-metal boost there; it prints PASS or FAIL against the bars below.
 import os;
@@ -39,16 +49,21 @@ let PI = 3.14159265358979;
 let MS_FLOOR = 0.25;
 // bars for check 2: every term under 3 % for mu >= 0.01 (n.v >= 0.01, within 0.6 degrees
 // of grazing); below that the bilinear table cannot follow E (its first column step is
-// mu 0.001, where the 1e-4 guard switches the lobe off) and only the gain is bounded,
-// at just above the measured 5.42 %: the floor caps ms at 4 but no point reaches 1.06.
+// mu 0.001, where the 1e-4 guard switches the lobe off) and only the gain is bounded
+// (GRAZE_CORNER_GAIN_CAP below; it was 6 % without the corner cap). The loss there is
+// printed: the 1e-4 guard in light_term removes the lobe at n.v -> 0 and the table
+// cannot restore it.
 let GRAZE_BAR = 0.03;
-let GRAZE_CORNER_GAIN = 0.06;
 
 // N4, pre-registered: check 0, the stored nodes against the independent integrator
 let REF_REL_BAR = 0.0025;
 let REF_B_BAR = 0.001;
 // N4, pre-registered: gain bar below mu 0.01 with the shader's corner cap (was 0.06)
 let GRAZE_CORNER_GAIN_CAP = 0.03;
+// the shader's silhouette cap (ms_e() in surface.frag): below sqrt(n.v) (N - 1) < CAP_X the
+// compensation reads the largest E of the four corners; lookup() does that when CAP_ON
+let CAP_X = 3.0;
+var CAP_ON = false;
 
 // E and B of the lobe at (mu, rough), see the header
 fn albedo(mu real, rough real) real, real {
@@ -61,7 +76,8 @@ fn albedo(mu real, rough real) real, real {
 	var bias real = 0.0;
 	for i in S {
 		for j in S {
-			let u1 = (i as real + 0.5) / S as real;
+			let s1 = (i as real + 0.5) / S as real;
+			let u1 = 1.0 - (1.0 - s1) * (1.0 - s1) * (1.0 - s1);
 			let u2 = (j as real + 0.5) / S as real;
 			let t2 = a * a * u1 / (1.0 - u1);
 			let ch = 1.0 / sqrt(1.0 + t2);
@@ -72,12 +88,13 @@ fn albedo(mu real, rough real) real, real {
 			let hz = ch;
 			let v_h = vx * hx + vz * hz;
 			if v_h <= 0.0 { continue; }
+			let grade = 3.0 * (1.0 - s1) * (1.0 - s1);
 			let lz = 2.0 * v_h * hz - vz;
 			if lz <= 0.0 { continue; }
 			let _ = hy;
 			let g = (lz / (lz * (1.0 - k) + k)) * (n_v / (n_v * (1.0 - k) + k));
 			// f * n.l / pdf with f = D G / (4 n.l n.v + 1e-4) and pdf = D n.h / (4 v.h)
-			let w = g * lz * 4.0 * v_h / ((4.0 * lz * n_v + 0.0001) * hz);
+			let w = grade * g * lz * 4.0 * v_h / ((4.0 * lz * n_v + 0.0001) * hz);
 			sum += w;
 			let m = 1.0 - v_h;
 			let m2 = m * m;
@@ -85,6 +102,51 @@ fn albedo(mu real, rough real) real, real {
 		}
 	}
 	return sum / (S * S) as real, bias / (S * S) as real;
+}
+
+// The independent integrator of check 0 (see the header): theta_h = atan(alpha tan(pi s / 2))
+// with s at NU midpoints (dense where D is large at any roughness), phi_h by NP midpoints over
+// [0, phi0], phi0 the analytic edge of the region where l is above the horizon (mirror
+// symmetric, so doubled), and the integrand D G / (4 n.l n.v + 1e-4) n.l 4 v.h sin(theta_h)
+// written out, with no importance-sampling weights.
+fn albedo_ref(mu real, rough real) real, real {
+	let NU = 2048;
+	let NP = 48;
+	let n_v = max(mu, 0.0001);
+	let vx = sqrt(max(1.0 - n_v * n_v, 0.0));
+	let vz = n_v;
+	let a = max(rough * rough, 0.002);
+	let k = rough * rough * 0.5;
+	var sum real = 0.0;
+	var bias real = 0.0;
+	for i in NU {
+		let s = (i as real + 0.5) / NU as real;
+		let tq = tan(PI * s / 2.0);
+		let t = a * tq;
+		let th = atan(t);
+		let dth = a * (PI / 2.0) * (1.0 + tq * tq) / (1.0 + t * t);
+		let ch = cos(th);
+		let sh = sin(th);
+		let dd = ch * ch * (a * a - 1.0) + 1.0;
+		let d = a * a / (PI * dd * dd);
+		// l.z = 2 (v.h) h.z - v.z > 0  <=>  cos(phi) > v.z (1 / (2 h.z) - h.z) / (v.x sin(theta))
+		let c = clamp(vz * (1.0 / (2.0 * ch) - ch) / max(vx * sh, 1e-30), -1.0, 1.0);
+		let phi0 = acos(c);
+		let wrow = 2.0 * (phi0 / NP as real) * sh * dth / NU as real;
+		for j in NP {
+			let ph = (j as real + 0.5) / NP as real * phi0;
+			let v_h = vx * sh * cos(ph) + vz * ch;
+			let lz = 2.0 * v_h * ch - vz;
+			if v_h <= 0.0 || lz <= 0.0 { continue; }
+			let g = (lz / (lz * (1.0 - k) + k)) * (n_v / (n_v * (1.0 - k) + k));
+			let f = d * g / (4.0 * lz * n_v + 0.0001) * lz * 4.0 * v_h * wrow;
+			sum += f;
+			let m = 1.0 - v_h;
+			let m2 = m * m;
+			bias += f * (m2 * m2 * m);
+		}
+	}
+	return sum, bias;
 }
 
 fn fixed5(x real) byte[>..] {
@@ -106,6 +168,9 @@ fn lookup(t const real[:], mu real, rough real) real {
 	let y0 = min(floor(y) as int, N - 2);
 	let fx = x - x0 as real;
 	let fy = y - y0 as real;
+	if CAP_ON && x < CAP_X {
+		return max(max(t[y0 * N + x0], t[y0 * N + x0 + 1]), max(t[(y0 + 1) * N + x0], t[(y0 + 1) * N + x0 + 1]));
+	}
 	let a = t[y0 * N + x0] * (1.0 - fx) + t[y0 * N + x0 + 1] * fx;
 	let b = t[(y0 + 1) * N + x0] * (1.0 - fx) + t[(y0 + 1) * N + x0 + 1] * fx;
 	a * (1.0 - fy) + b * fy
@@ -156,6 +221,29 @@ fn main() {
 	for v in t { raw.push(v); }
 	for i in N * N { t[i] = dq16(q16(t[i])); tb[i] = dq16(q16(tb[i])); }
 
+	// 0. the stored nodes against the independent integrator
+	var r_e real = 0.0; var r_f real = 0.0; var r_b real = 0.0;
+	var r_em real = 0.0; var r_er real = 0.0; var r_fm real = 0.0; var r_fr real = 0.0;
+	for r in N {
+		for m in N {
+			let x = m as real / (N - 1) as real;
+			let mu = x * x;
+			let ro = r as real / (N - 1) as real;
+			let e, b = albedo_ref(mu, ro);
+			let i = r * N + m;
+			let er = abs(t[i] - e) / e;
+			let ef = 0.04 * (e - b) + b;
+			let fr = abs(0.04 * (t[i] - tb[i]) + tb[i] - ef) / ef;
+			if er > r_e { r_e = er; r_em = mu; r_er = ro; }
+			if fr > r_f { r_f = fr; r_fm = mu; r_fr = ro; }
+			r_b = max(r_b, abs(tb[i] - b));
+		}
+	}
+	let ok0 = r_e < REF_REL_BAR && r_f < REF_REL_BAR && r_b < REF_B_BAR;
+	var msg0 byte[>..] = [];
+	format(msg0, "make_ms_lut: nodes vs independent integrator (", N * N, " nodes, 16-bit): E ", fixed5(r_e * 100.0)[..], " % (mu ", fixed5(r_em)[..], " rough ", fixed5(r_er)[..], "), dielectric E_F ", fixed5(r_f * 100.0)[..], " % (mu ", fixed5(r_fm)[..], " rough ", fixed5(r_fr)[..], "), B abs ", fixed5(r_b)[..], "; bars ", fixed5(REF_REL_BAR * 100.0)[..], " % and ", fixed5(REF_B_BAR)[..], " ", if ok0 { "PASS" } else { "FAIL" });
+	say(msg0[..]);
+
 	// 1. cell centres
 	var w_e real = 0.0; var w_em real = 0.0; var w_er real = 0.0;
 	var w_f real = 0.0; var w_fm real = 0.0; var w_fr real = 0.0;
@@ -204,8 +292,10 @@ fn main() {
 			let xm = mi as real / Q as real;
 			let mu = xm * xm;
 			let band = if mu >= 0.05 { 0 } else if mu >= 0.01 { 1 } else { 2 };
-			let e, b = albedo(mu, ro);
+			let e, b = albedo_ref(mu, ro);
+			CAP_ON = true;
 			let le = max(lookup(t[..], mu, ro), MS_FLOOR);
+			CAP_ON = false;
 			let lb = lookup(tb[..], mu, ro);
 			// white metal: F0 = 1, ms = 1 + (1 / E - 1)
 			let ms_m = 1.0 / le;
@@ -230,9 +320,9 @@ fn main() {
 		format(msg, "make_ms_lut: grazing compensation ", name, ", rough 0.03..0.3: white metal gain ", fixed5(mg[band] * 100.0)[..], " % (mu ", fixed5(at_mu[k])[..], " rough ", fixed5(at_r[k])[..], ") loss ", fixed5(ml[band] * 100.0)[..], " % (mu ", fixed5(at_mu[k + 1])[..], " rough ", fixed5(at_r[k + 1])[..], "); white dielectric gain ", fixed5(dg[band] * 100.0)[..], " % (mu ", fixed5(at_mu[k + 2])[..], " rough ", fixed5(at_r[k + 2])[..], ") loss ", fixed5(dl[band] * 100.0)[..], " % (mu ", fixed5(at_mu[k + 3])[..], " rough ", fixed5(at_r[k + 3])[..], ")");
 		say(msg[..]);
 	}
-	var ok = mg[2] < GRAZE_CORNER_GAIN && dg[2] < GRAZE_CORNER_GAIN;
+	var ok = ok0 && mg[2] < GRAZE_CORNER_GAIN_CAP && dg[2] < GRAZE_CORNER_GAIN_CAP;
 	for band in 2 { ok = ok && mg[band] < GRAZE_BAR && ml[band] < GRAZE_BAR && dg[band] < GRAZE_BAR && dl[band] < GRAZE_BAR; }
 	msg.clear();
-	format(msg, "make_ms_lut: grazing compensation: ", pts, " points, E floor ", fixed5(MS_FLOOR)[..], ", largest ms ", fixed5(boost)[..], "; bars: all < ", fixed5(GRAZE_BAR * 100.0)[..], " % for mu >= 0.01, gain < ", fixed5(GRAZE_CORNER_GAIN * 100.0)[..], " % below ", if ok { "PASS" } else { "FAIL" });
+	format(msg, "make_ms_lut: grazing compensation: ", pts, " points, E floor ", fixed5(MS_FLOOR)[..], ", largest ms ", fixed5(boost)[..], "; bars: all < ", fixed5(GRAZE_BAR * 100.0)[..], " % for mu >= 0.01, gain < ", fixed5(GRAZE_CORNER_GAIN_CAP * 100.0)[..], " % below (corner cap below sqrt(mu) 31 < ", fixed5(CAP_X)[..], "), check 0 ", if ok0 { "pass" } else { "fail" }, " ", if ok { "PASS" } else { "FAIL" });
 	say(msg[..]);
 }
