@@ -192,14 +192,17 @@ they do not move with the jitter; the look+taa test checks that.
      shadows on keep less than half its direct light. The reference casts a ray per
      pixel centre through the same camera into the exact spheres and boxes, then one
      toward the sun. Counted: pixels the sun lights with shadows off and whose hit
-     faces the sun, outside a 2 px band around shadow and object edges. Gate: IoU of
-     the two shadow masks >= 0.9 in the main cascade (the one with most counted
-     pixels). Controls that must fail: shadows off, and the render's sun mirrored in
-     x. The shadow pass is timed at 1280x720 (off vs on). `GFX_ONLY=shadows` runs
-     only this check.
+     faces the sun, outside a 2 px band around shadow and object edges. Three views
+     (near0, near1, far; see S1/S2 below) so that every cascade is gated somewhere;
+     gate: IoU of the two shadow masks >= 0.98 per gated (view, cascade). Controls
+     that must fail: shadows off, the map shifted by about 5 px, the layer-only
+     build's cycling and the render's sun mirrored in x (S3 below). The shadow pass is
+     timed at 1280x720 (off vs on). `GFX_ONLY=shadows` runs only this check.
    * **Shipped look with TAA.** Over the 16 jitter phases the rasterising
      `view_proj` must change every frame and the cascade matrices never; the shadow
-     mask of converged TAA frames must pass the same 0.9 IoU bar; the wall scene with
+     mask of converged TAA frames (far view) must pass the same 0.98 IoU bar in every
+     cascade gated there (was 0.9 on the main cascade; changed with S2, before the
+     first GPU run); the wall scene with
      the shipped look must settle (< 0.5/255) and stay within 2/255 mean of the
      TAA-off frame (bloom then reads the temporal result); 720p -> 1080p with the
      shipped look must settle and reach >= 30 dB against native 1080p TAA.
@@ -305,7 +308,10 @@ reported as a failure and fixed in the renderer, not in the gate.
   gated (view, cascade) must fall below 0.98. (2) The layer-only build's behaviour
   (every cascade's clear cycles the whole map, test hook
   `s3d::shadow_test_cycle_all`): at least one gated cascade must fall below 0.98 in
-  every view.
+  every view that gates cascade 0 or 1. Amended before the first GPU run (separate
+  commit): cascade 2 is rendered last, so its layer survives even when every clear
+  discards the whole map, and in a view that gates only cascade 2 (the far view) this
+  control cannot fail; it is reported there, not gated.
 
 * **S5 shadow map in flight.** Layered targets do not cycle by default, so a frame
   could overwrite the shadow map while an earlier frame still samples it. A pass now
