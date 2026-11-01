@@ -31,9 +31,8 @@ clamp<T>(x T, lo T, hi T) T:
 	if x < lo: return lo
 	if hi < x: return hi
 	x
+# (for floats this keeps the sign of -0.0, which is not below zero)
 abs<T>(x T) T: if x < 0 { 0 - x } else { x }
-abs(x real) real: std_fabs(x)
-abs(x f32) f32: std_fabsf(x)
 sign<T>(x T) T:
 	if x > 0: return 1
 	if x < 0: return -1
@@ -969,37 +968,50 @@ pyb(n int, b int, p const byte[:]) byte[>..]:
 hex(n int) byte[>..]: pyb(n, 16, "0x")
 oct(n int) byte[>..]: pyb(n, 8, "0o")
 bin(n int) byte[>..]: pyb(n, 2, "0b")
-# v with exactly `decimals` digits after the point, rounded to nearest
-# (ties to even on the scaled value); a negative count prints shortest form
+# divides a by k in place and returns the remainder
+big_div_small(a uint[>..]&, k uint) uint:
+	r ~= 0 as uint
+	i ~= a.len - 1
+	while i >= 0:
+		cur := r << 32 | a[i]
+		a[i] = cur / k
+		r = cur % k
+		i -= 1
+	r
+# v with exactly `decimals` digits after the point. Exact: the double is
+# m * 2^e2, so v * 10^d is computed as a big integer and rounded half to
+# even once; a negative count prints the shortest form instead
 format_flt(out byte[>..]&, v real, decimals int):
 	if v != v: out.append("nan"); return
 	if v - v != 0.0: out.append(if v < 0.0 { "-inf" } else { "inf" }); return
 	if decimals < 0: format(out, v); return
-	d := min(decimals, 17)
-	x ~= abs(v)
-	scale ~= 1.0
-	for i d: scale = scale * 10.0
-	sx := x * scale
-	if sx >= 9.0e18:
-		# too wide for the integer route: whole digits from the shortest form
-		if v < 0.0: out.push('-')
-		whole := std_floor(x)
-		w byte[>..] ~= []; format(w, whole)
-		dot := find(w[..], '.')
-		out.append(if dot >= 0 { w[..dot] } else { w[..] })
-		if decimals > 0: out.push('.'); for i decimals { out.push('0') }
-		return
-	r ~= std_floor(sx)
-	frac := sx - r
-	if frac > 0.5 || frac == 0.5 && std_fabs(r - 2.0 * std_floor(r / 2.0)) == 1.0: r += 1.0
-	n := r as int
-	if v < 0.0: out.push('-')
-	unit := pow(10, d)
-	format_int(out, n / unit)
-	if decimals > 0:
-		out.push('.')
-		format_int(out, n % unit, 10, d, '0')
-		for i decimals - d: out.push('0')
+	bits := std_bits(v)
+	ex := (bits >> 52 & 0x7ff) as int
+	m ~= bits & 0xfffffffffffff
+	e2 ~= -1074
+	if ex != 0 { m = m | 1 << 52; e2 = ex - 1075 }
+	n uint[>..] ~= [m & 0xffffffff, m >> 32]
+	for i decimals: big_mul_add(n, 10, 0)
+	if e2 >= 0:
+		big_shl(n, e2)
+	else:
+		half ~= false; sticky ~= false
+		for i -e2:
+			sticky = sticky || half
+			half = n[0] & 1 == 1
+			big_shr1(n)
+		if half && (sticky || n[0] & 1 == 1): big_mul_add(n, 1, 1)
+	rev byte[>..] ~= []
+	while true:
+		rev.push(DIGITS[big_div_small(n, 10) as int])
+		if big_zero(n): break
+	while rev.len < decimals + 1: rev.push('0')
+	if bits >> 63 == 1: out.push('-')
+	k ~= rev.len
+	while k > 0:
+		if k == decimals: out.push('.')
+		k -= 1
+		out.push(rev[k])
 fmt(x real, d int) byte[>..]:
 	out byte[>..] ~= []
 	format_flt(out, x, d)
