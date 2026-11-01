@@ -95,14 +95,16 @@ float sun_visibility(vec3 p, vec3 n) {
 	if (depth > cascade_far.x) c = 1;
 	if (depth > cascade_far.y) c = 2;
 	if (depth > cascade_far.z) return 1.0;
-	// offset along the normal by about a texel of the chosen cascade
-	float scale = float(c + 1) * float(c + 1);
-	vec3 q = p + n * (0.02 * scale);
+	// offset along the normal by 1.5 shadow-map texels of the chosen cascade: the
+	// cascade's projection maps world x to ndc x with scale |row 0| = 1 / half width,
+	// so one texel (uv size 1 / map size) spans 2 / (|row 0| * map size) world units
+	float texel = cascade_far.w;
+	float row0 = length(vec3(cascade_mat[c][0][0], cascade_mat[c][1][0], cascade_mat[c][2][0]));
+	vec3 q = p + n * (1.5 * 2.0 * texel / row0);
 	vec4 s = cascade_mat[c] * vec4(q, 1.0);
 	vec3 ndc = s.xyz / s.w;
 	vec2 uv = vec2(ndc.x * 0.5 + 0.5, 0.5 - ndc.y * 0.5);
 	if (any(lessThan(uv, vec2(0.0))) || any(greaterThan(uv, vec2(1.0)))) return 1.0;
-	float texel = cascade_far.w;
 	float lit = 0.0;
 	for (int y = -1; y <= 1; y++)
 		for (int x = -1; x <= 1; x++)
