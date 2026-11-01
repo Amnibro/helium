@@ -39,7 +39,7 @@ layout(set = 3, binding = 1) uniform Surface {
 	vec4 params;          // x metallic, y roughness, z normal scale, w occlusion strength
 	vec4 alpha;           // x mode (0 opaque, 1 mask, 2 blend), y cutoff, z double sided
 	vec4 uv_sets;         // which UV set each texture reads: base, mr, normal, occlusion
-	vec4 uv_sets2;        // x emissive
+	vec4 uv_sets2;        // x emissive, y debug view (see scene3d.debug_view)
 };
 
 layout(location = 0) out vec4 out_rgba;
@@ -142,8 +142,19 @@ void main() {
 		rgb += light_term(n, v, d / max(dist, 1e-4), light_rgb[i].rgb * range_falloff(dist, light_pos[i].w), albedo, f0, rough);
 	}
 
-	rgb += ambient_light(n, v, l, base.rgb, metal, rough) * occ * screen.w;
+	vec3 direct = rgb;
+	vec3 ambient = ambient_light(n, v, l, base.rgb, metal, rough) * occ * screen.w;
+	rgb += ambient;
 
 	rgb += emissive.rgb * texture(tex_emissive, pick_uv(uv_sets2.x)).rgb;
 	out_rgba = vec4(rgb, alpha.x > 1.5 ? base.a : 1.0);
+
+	int dbg = int(uv_sets2.y + 0.5);
+	if (dbg == 1) out_rgba = vec4(n * 0.5 + 0.5, 1.0);
+	else if (dbg == 2) out_rgba = vec4(normalize(in_nrm) * 0.5 + 0.5, 1.0);
+	else if (dbg == 3) out_rgba = vec4(t * 0.5 + 0.5, 1.0);
+	else if (dbg == 4) out_rgba = vec4(ambient, 1.0);
+	else if (dbg == 5) out_rgba = vec4(direct, 1.0);
+	else if (dbg == 6) out_rgba = vec4(vec3(occ), 1.0);
+	else if (dbg == 7) out_rgba = vec4(base.rgb, 1.0);
 }

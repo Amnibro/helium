@@ -134,6 +134,26 @@ fn furnace(size int, dir const byte[:]) f32 {
 	var worst f32 = 0.0;
 	var total real = 0.0;
 	let n = px.len / 8;
+	var bad = 0;
+	var first = -1;
+	for i in n {
+		let hb = px[i * 8 + 1] as int;
+		if (hb & 0x7C) == 0x7C || (hb & 0x80) != 0 { bad += 1; if first < 0 { first = i; } }
+	}
+	if first >= 0 {
+		// localise the bad term: re-render each debug view and count non-finite pixels
+		for mode in 7 {
+			s3d::debug_view = mode + 1;
+			s3d::render(out);
+			let dp = gfx::read_pixels(s3d::hdr_target());
+			var nb = 0;
+			for k in dp.len / 8 { if ((dp[k * 8 + 1] as int) & 0x7C) == 0x7C { nb += 1; } }
+			print("gpu: furnace debug view ", mode + 1, " non-finite ", nb);
+		}
+		s3d::debug_view = 0;
+		let q = first * 8;
+		print("gpu: furnace non-finite/negative pixels ", bad, " first at ", first % size, ",", first / size, " bytes ", px[q] as int, " ", px[q + 1] as int, " ", px[q + 2] as int, " ", px[q + 3] as int, " ", px[q + 4] as int, " ", px[q + 5] as int);
+	}
 	for i in n {
 		for c in 3 {
 			let v = half_to_f32(px[i * 8 + c * 2], px[i * 8 + c * 2 + 1]);
@@ -181,7 +201,10 @@ fn psnr(a const byte[:], b const byte[:]) real {
 	10.0 * log10(255.0 * 255.0 / (se / n as real))
 }
 
-fn path(dir const byte[:], name const byte[:]) byte[>..] { var p byte[>..] = []; format(p, dir, "/", name); p }
+// Output directory for the PNGs, kept in a global so it outlives every frame's scratch.
+var OUT_DIR byte[>..] = [];
+var GOLDEN byte[>..] = [];
+fn path(dir const byte[:], name const byte[:]) byte[>..] { let _ = dir; var p byte[>..] = []; p.append(OUT_DIR[..]); p.append("/"); p.append(name); p }
 
 fn gpu_checks(dir const byte[:], golden const byte[:]) bool {
 	var good = true;
@@ -194,9 +217,9 @@ fn gpu_checks(dir const byte[:], golden const byte[:]) bool {
 	let got = gfx::read_pixels(out);
 	let sp = path(dir, "spheres.png");
 	print("gpu: spheres png ", sp[..], " ", gfx::save_png(out, sp[..]));
-	if golden.len > 0 {
+	if GOLDEN.len > 0 {
 		var want byte[>..] = [];
-		read_file(golden, want);
+		read_file(GOLDEN[..], want);
 		var ref byte[>..] = [];
 		let gw, gh, gok = codec_png::decode(want[..], ref);
 		let db = if gok && gw == 480 && gh == 360 { psnr(got[..], ref[..]) } else { 0.0 };
@@ -265,10 +288,14 @@ fn main() {
 	cpu_checks();
 	let av = args();
 	if av.len < 2 { return; }
+	print("gpu: out dir ", av[1][..]);
 	if !gfx::open_headless(64, 64) { print("gpu: skipped (no device: ", gfx::error()[..], ")"); return; }
-	let golden = if av.len > 2 { av[2] } else { "" };
+	OUT_DIR.clear();
+	OUT_DIR.append(av[1][..]);
+	GOLDEN.clear();
+	if av.len > 2 { GOLDEN.append(av[2][..]); }
 	let t0 = gfx::time();
-	let good = gpu_checks(av[1], golden);
+	let good = gpu_checks(OUT_DIR[..], GOLDEN[..]);
 	print(if good { "gpu: ok" } else { "gpu: FAILED" }, " (", round((gfx::time() - t0) * 10.0) / 10.0, " s, ", gfx::driver()[..], ")");
 	gfx::close();
 }
