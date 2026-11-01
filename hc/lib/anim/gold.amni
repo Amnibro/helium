@@ -22,6 +22,21 @@ let P_ACT2 = 2;
 let WALK_TOP = 2.6;    // walk stretched up to here
 let RUN_LOW = 3.4;     // run from here: the walk->run blend is centred on 3 m/s
 let RUN_TOP = 6.0;
+// Speed command smoothing: a critically damped spring (natural frequency
+// SPEED_W rad/s), so the speed parameter is C1 in time. The previous linear
+// slew (8 m/s^2) started and stopped its acceleration instantly, and the
+// walk/run blend it drives turned that into a per-frame velocity kink on the
+// whole body (seen by the per-state pop thresholds, see DESIGN.md).
+let SPEED_W = 2.0;
+// Exact step of x'' = w^2 (target - x) - 2 w x' (critical damping, the
+// closed-form solution x = target + (c1 + c2 t) e^(-w t)).
+fn spring_cd(x f32&, v f32&, target f32, w f32, dt f32) {
+	let d = x - target;
+	let j = v + w * d;
+	let e = exp(-w * dt);
+	x = target + (d + j * dt) * e;
+	v = (v - w * j * dt) * e;
+}
 
 struct GoldRig {
 	idle i32 = -1, walk i32 = -1, run i32 = -1, act i32 = -1, act2 i32 = -1,
@@ -129,6 +144,7 @@ struct Character {
 	m Machine,
 	xf Xf,
 	speed f32, cmd f32,
+	speed_v f32,          // d speed / dt (the speed spring's velocity)
 	add_t f32,
 	ik bool,
 	legs Leg[2],
@@ -145,7 +161,7 @@ fn gold_char(r GoldRig&, d MachineDef&, ch Character&, pos float3, yaw f32) {
 }
 // One tick of one character. make_palette also builds its skin palette.
 fn gold_update(sk Skeleton&, r GoldRig&, d MachineDef&, ch Character&, dt f32, make_palette bool) {
-	ch.speed = approach(ch.speed, ch.cmd, 8.0, dt);       // m/s²
+	spring_cd(ch.speed, ch.speed_v, ch.cmd, SPEED_W, dt);
 	ch.m.params[P_SPEED] = ch.speed;
 	machine_update(d, ch.m, dt, ch.out, ch.s1, ch.s2, ch.acc);
 	// additive layer (breathing/guard), faded out while running
