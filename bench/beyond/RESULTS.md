@@ -54,6 +54,23 @@ Round-4 notes (interleaved A/B, pinned to one core, identical output, min/median
   nbody 1.29x (vs Rust), mandelbrot 1.25x, fannkuch 1.13x, sort 1.05x. Helium leads or ties on matmul,
   json, and strbuild (1.03x vs rust-native).
 
+`--v4` measured row (interleaved A/B after round 4, compiler b930829, 7 reps alternating, `taskset -c 7`,
+**min ms**, identical output; the gcc build was timed in the same interleaved run, gcc-O3n for spectral)
+
+| bench | he --v3 | he --v4 | gcc | he --v4 / gcc |
+|---|---|---|---|---|
+| spectral | 488 | 271 | 130 | 2.08x |
+| matmul | 652 | 607 | 664 | 0.91x |
+| mandelbrot | 1586 | 1587 | 1251 | 1.27x |
+
+- spectral: the gap is lane width. gcc-O3n built for 256-bit vectors runs in 253 ms, close to he --v4.
+  Measured per-instruction cost of `vdivpd` is the same for ymm and zmm (0.611 vs 0.614 ns), so 8 lanes
+  should roughly halve the divide-bound loop. Helium's outer-loop SLP still packs 4 lanes, so that is the
+  next change (lane count is now a setting in uaj/slp/ipk, still 4; zmm emission comes next).
+- matmul: --v4 is ahead of gcc-O3n here.
+- mandelbrot: --v4 gains nothing over --v3, so its gap is not vector width.
+- `--vhost` produces the same binary as `--v4` on Antman (Zen 5, full AVX-512).
+
 # bench/beyond results, round 3 (2026-11-01, Antman)
 
 Same machine, toolchains, sizes and method as round 1 and 2 below (Ryzen 9 9950X3D, `taskset -c 3,19`,
