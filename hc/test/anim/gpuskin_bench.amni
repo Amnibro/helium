@@ -1,0 +1,132 @@
+// Headless GPU-skinning build-and-bench: 32 full-res skinned characters per
+// hero GLB, Vulkan compute, no window. Builds the shader with Helium's own
+// GLSL->SPIR-V compiler, checks GPU vs CPU skinning, prints frame time/fps,
+// and writes everything to a results text file. Exits when done; nothing is
+// left running.
+//
+//   HC_LIB=path/to/hc/lib path/to/hcn hc/test/anim/gpuskin_bench.amni -- \
+//       <results.txt> <frames> <hero.glb>...
+//
+// Env: HCN = the hcn binary (default $HC_LIB/../../build/hcn);
+// GSK_DEVICE=<index> (default: prefer a discrete GPU); GSK_SHA=<sha256 list>
+// to verify the hero GLBs before and after (they are only read).
+// Helium has no process API with argv or captured output, so child programs
+// are started with os.run_command (/bin/sh -c) with output redirected to
+// files in a private work dir that this program reads back (as the JK
+// tools/gate.amni does).
+import os;
+
+var OUT byte[>..] = [];
+var WORK byte[>..] = [];
+
+fn q(out byte[>..]&, s const byte[:]) { out.push('\''); out.append(s); out.push('\''); }   // paths: no ' inside
+
+fn log(s const byte[:]) {
+	print(s);
+	var l byte[>..] = []; l.append(s); l.push('\n');
+	append_file(OUT[..], l[..]);
+}
+fn wpath(name const byte[:], out byte[>..]&) { out.clear(); format(out, WORK, "/", name); }
+// runs cmd with stdout+stderr into WORK/name; returns the exit status
+fn run_to(cmd const byte[:], name const byte[:]) int {
+	var p byte[>..] = []; wpath(name, p);
+	var c byte[>..] = []; format(c, "(", cmd, ") > "); q(c, p[..]); c.append(" 2>&1");
+	run_command(c[..])
+}
+fn slurp(name const byte[:], out byte[>..]&) {
+	var p byte[>..] = []; wpath(name, p);
+	out.clear(); read_file(p[..], out);
+}
+fn trim(s byte[>..]&) { while s.len > 0 && (s[s.len - 1] == '\n' || s[s.len - 1] == ' ') { s.pop(); } }
+// copies a child log into the results file (and to stdout when show)
+fn keep(name const byte[:], show bool) {
+	var t byte[>..] = []; slurp(name, t);
+	if t.len == 0 { return; }
+	if show { write_stdout(t[..]); }
+	append_file(OUT[..], t[..]);
+}
+fn now(fmt const byte[:], out byte[>..]&) {
+	var c byte[>..] = []; format(c, "date '", fmt, "'");
+	run_to(c[..], "date"); slurp("date", out); trim(out);
+}
+fn sha_check(list const byte[:], when const byte[:]) bool {
+	var c byte[>..] = []; c.append("sha256sum --quiet -c "); q(c, list);
+	let rc = run_to(c[..], "sha");
+	keep("sha", false);
+	var t byte[>..] = []; read_file(list, t);
+	var n = 0; for i in t.len { if t[i] == '\n' { n += 1; } }
+	var l byte[>..] = [];
+	if rc == 0 { format(l, "glb sha256 ", when, ": OK (", n, " files)"); } else { format(l, "glb sha256 ", when, ": MISMATCH"); }
+	log(l[..]);
+	rc == 0
+}
+fn cleanup() {
+	for name in ["skin.spv", "gpuskin", "date", "sha", "spv.log", "val.log", "build.log", "run.log"] {
+		var p byte[>..] = []; wpath(name, p);
+		if file_exists(p[..]) { delete_file(p[..]); }
+	}
+	delete_dir(WORK[..]);
+}
+
+fn main() {
+	if arg_count() < 4 { print("usage: hcn gpuskin_bench.amni -- <results.txt> <frames> <hero.glb>..."); exit(2); }
+	arg(1, OUT);
+	var frames byte[>..] = []; arg(2, frames);
+	var lib byte[>..] = [];
+	if !env("HC_LIB", lib) { print("HC_LIB is not set"); exit(2); }
+	var hcn byte[>..] = [];
+	if !env("HCN", hcn) || hcn.len == 0 { hcn.clear(); format(hcn, lib, "/../../build/hcn"); }
+	var shaf byte[>..] = []; let has_sha = env("GSK_SHA", shaf) && shaf.len > 0;
+	var dev byte[>..] = []; let has_dev = env("GSK_DEVICE", dev) && dev.len > 0;
+	format(WORK, "/tmp/gpuskin_bench.", time_ns());
+	if !make_dir(WORK[..]) { print("cannot make ", WORK); exit(1); }
+	write_file(OUT[..], "");
+
+	var host byte[>..] = [];
+	if !read_file("/etc/hostname", host) { run_to("hostname", "date"); slurp("date", host); }
+	trim(host);
+	var d byte[>..] = []; now("+%Y-%m-%d %H:%M:%S %Z", d);
+	var l byte[>..] = [];
+	format(l, "gpuskin bench  ", d, "  host ", host, "  frames ", frames); log(l[..]);
+	l.clear(); format(l, "hcn ", hcn); log(l[..]);
+	if has_sha && !sha_check(shaf[..], "before") { cleanup(); exit(1); }
+
+	// shader: Helium's own GLSL -> SPIR-V compiler
+	var spv byte[>..] = []; wpath("skin.spv", spv);
+	var c byte[>..] = [];
+	q(c, hcn[..]); c.append(" --spv "); var src byte[>..] = []; format(src, lib, "/anim/skin.comp"); q(c, src[..]); c.push(' '); q(c, spv[..]);
+	if run_to(c[..], "spv.log") != 0 { keep("spv.log", true); log("shader build failed"); cleanup(); exit(1); }
+	keep("spv.log", false);
+	var sb byte[>..] = []; read_file(spv[..], sb);
+	l.clear(); format(l, "skin.spv ", sb.len, " bytes (hcn --spv)"); log(l[..]);
+	if run_to("command -v spirv-val", "val.log") == 0 {
+		c.clear(); c.append("spirv-val --target-env vulkan1.1 "); q(c, spv[..]);
+		let ok = run_to(c[..], "val.log") == 0;
+		keep("val.log", false);
+		log(if ok { "spirv-val: OK" } else { "spirv-val: FAILED" });
+	}
+
+	// bench program, built native
+	var exe byte[>..] = []; wpath("gpuskin", exe);
+	c.clear(); q(c, hcn[..]); c.append(" build "); var prog byte[>..] = []; format(prog, lib, "/../test/anim/anim_gpuskin.amni"); q(c, prog[..]);
+	c.append(" -o "); q(c, exe[..]);
+	let brc = run_to(c[..], "build.log");
+	keep("build.log", false);
+	if brc != 0 { log("build failed"); cleanup(); exit(1); }
+
+	var rc = 0;
+	for i in 3..arg_count() {
+		var g byte[>..] = []; arg(i, g);
+		log("");
+		c.clear(); q(c, exe[..]); c.push(' '); q(c, g[..]); c.push(' '); q(c, spv[..]); c.push(' '); c.append(frames);
+		if has_dev { c.push(' '); c.append(dev); }
+		let r = run_to(c[..], "run.log");
+		keep("run.log", true);
+		if r != 0 { l.clear(); format(l, "exit ", r); log(l[..]); rc = 1; }
+	}
+	if has_sha && !sha_check(shaf[..], "after") { rc = 1; }
+	now("+%H:%M:%S %Z", d);
+	l.clear(); format(l, "done ", d, "  rc ", rc); log(l[..]);
+	cleanup();
+	exit(rc);
+}

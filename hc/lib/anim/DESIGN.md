@@ -151,10 +151,13 @@ is not implemented; the CPU reference is LBS, so the GPU path is LBS too.
 * Correctness (anim_gpuskin): 32 characters, 8 checkpoints over 4 s of crowd
   motion, every vertex vs `skin_cpu`; tolerance 1e-4 m (positions) and 1e-4
   (normals). Measured on lavapipe: max |dp| 5.0e-7 m, max |dn| 2.7e-7.
-* Bench harness: `hc/test/anim/gpuskin_bench.sh <results.txt> <frames>
-  <hero.glb>...` builds the shader and test binary, runs each hero headless
-  and writes a text report (optional `GSK_SHA` checks the GLBs before and
-  after, `GSK_DEVICE` picks a GPU).
+* Bench harness (Helium): `HC_LIB=<repo>/hc/lib build/hcn
+  hc/test/anim/gpuskin_bench.amni -- <results.txt> <frames> <hero.glb>...`
+  builds the shader and test binary, runs each hero headless and writes a
+  text report (optional `GSK_SHA` checks the GLBs before and after,
+  `GSK_DEVICE` picks a GPU, `HCN` overrides the compiler path). Child tools
+  run through `os.run_command` with output redirected to a private work dir
+  that is removed at the end.
 
 ## Running
 
