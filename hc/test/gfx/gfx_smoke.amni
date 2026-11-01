@@ -1069,6 +1069,9 @@ const T4_MV_LO = 1.0;         // intermediate motion, px
 const T4_MV_HI = 20.0;
 const T4_CONTROL_MIN = 100;   // the 2x2-averaged control must show at least this many
 
+// ---- T6: pre-registered bar ----
+const T6_GAIN_DB = 0.5;       // taa psnr >= off psnr + this, vs the supersampled reference
+
 // ---- shadows: the sun's shadow mask against a CPU ray-traced reference ----
 // The sphere grid in front of a wall (and on its floor), lit by the sun, rendered with
 // debug view 5 (direct light only) with shadows off and on. A GPU pixel is shadowed when

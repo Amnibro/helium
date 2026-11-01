@@ -243,6 +243,10 @@ reported as a failure and fixed in the renderer, not in the gate.
   frame's and last frame's view depth of the same point) to agree within 0.02 on a
   still scene.
 
+* **T6 TAA gain.** On the still sphere grid, PSNR (sky excluded) against the 2x
+  supersampled reference: TAA (60 frames) must beat TAA off (4x MSAA, no temporal
+  pass) by at least 0.5 dB.
+
 Raw output of each recorded run is in `hc/test/gfx/results/`; `gfxtest.sh` writes
 the header itself (commit, command, driver, GPU, packages) into `$GFX_OUT/results.txt`.
 With no GPU it prints `SKIPPED (no GPU)` after the CPU checks (`GFX_REQUIRE_GPU=1`
