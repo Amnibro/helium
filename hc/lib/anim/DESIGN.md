@@ -90,6 +90,41 @@ sensitive): hard cuts (fade 0) and unsmoothed speed steps.
 script, full anim (blend space + machine + additive + root + IK + palette)
 per frame, plus CPU LBS skinning timed separately.
 
+## GPU skinning (gpuskin.he + skin.comp, test hc/test/anim/anim_gpuskin.amni)
+
+Linear blend skinning on the GPU: v' = sum_k w_k M_k v, where M_k is the joint
+palette matrix (model * inverseBind), the standard LBS formula
+(Magnenat-Thalmann et al. 1988). Dual-quaternion skinning (Kavan et al. 2007)
+is not implemented; the CPU reference is LBS, so the GPU path is LBS too.
+
+* `skin.comp`: GLSL 450 compute shader, 64 threads per group, one thread per
+  vertex per character; dispatch (ceil(nv/64), nchar, 1). Compiled by
+  Helium's own GLSL->SPIR-V compiler: `hcn --spv skin.comp skin.spv`.
+* Palette is uploaded as the top three rows of each 4x4 (12 floats per joint
+  per character); the CPU anim tick packs it straight from `Palette.m`.
+* Normals are blended without renormalizing, as `skin_cpu` does, so the two
+  paths compare exactly; a renderer normalizes in its vertex/fragment shader.
+* `gpuskin.he` is a self-contained Vulkan 1.0 compute backend written from
+  the Vulkan spec struct layouts (own `extern "libvulkan.so.1?"` block). It
+  does **not** use `hc/lib/gfx`: gfx sits on SDL3 GPU (not installed on the
+  box) and its internals are Bevy-lineage and off-limits. Porting to the
+  clean-room gfx core (gap #1) is a small adapter: create the six storage
+  buffers in the layout documented at the top of `gpuskin.he`, bind them at
+  bindings 0..5 of one set, dispatch `skin.comp`, then bind `out` as the
+  vertex buffer (it is created with STORAGE|VERTEX|TRANSFER_SRC usage). In
+  gfx public-API terms that is `compute_pipeline` + `bind_storage_buffer` x6
+  + `dispatch`.
+* The skinning command buffer is recorded once and resubmitted each frame;
+  two timestamp queries give the GPU time. Device pick: discrete > integrated
+  > virtual > cpu, or an explicit physical-device index.
+* Correctness (anim_gpuskin): 32 characters, 8 checkpoints over 4 s of crowd
+  motion, every vertex vs `skin_cpu`; tolerance 1e-4 m (positions) and 1e-4
+  (normals). Measured on lavapipe: max |dp| 5.0e-7 m, max |dn| 2.7e-7.
+* Bench harness: `hc/test/anim/gpuskin_bench.sh <results.txt> <frames>
+  <hero.glb>...` builds the shader and test binary, runs each hero headless
+  and writes a text report (optional `GSK_SHA` checks the GLBs before and
+  after, `GSK_DEVICE` picks a GPU).
+
 ## Running
 
 `HC_LIB=<repo>/hc/lib build/hcn hc/test/anim/anim_pop.amni -- <file.glb>`.
@@ -114,3 +149,12 @@ source file is taken as hcn's OUTPUT path and is overwritten.
   single-threaded scalar.
 * `hcn` treats a positional argument after the source as the output path
   (foot-gun; see Running).
+* `json::Doc` holds two growable arrays per node and the runtime maps a
+  separate 2 GB reservation (plus guard) for each, so parsing a hero GLB's
+  JSON (~55k nodes) pins the process at `vm.max_map_count` (65531). Any later
+  `mmap` from a foreign library then fails: the Vulkan loader reports "failed
+  to map segment from shared object" for every driver. `glb_close()` drops
+  the document once the skeleton, clips and meshes are extracted (back to
+  ~27k mappings), and the GPU test calls it before touching Vulkan.
+* `from_bytes<f32[>..]>` expects Helium's own serialized form, not raw bytes;
+  raw GPU readbacks are decoded with `binary::read_f32le`.

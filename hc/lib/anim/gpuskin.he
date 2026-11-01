@@ -1,0 +1,263 @@
+# anim/gpuskin: GPU linear-blend skinning on a self-contained Vulkan compute
+# backend (own FFI, own buffer layout, own shader: anim/skin.comp compiled by
+# Helium's GLSL->SPIR-V compiler `hcn --spv`). Clean-room: written from the
+# Vulkan 1.0 spec struct layouts and the LBS formula v' = sum_k w_k M_k v
+# (Magnenat-Thalmann et al. 1988); see DESIGN.md. Does not use hc/lib/gfx.
+#
+# Buffer layout (the adapter contract; any renderer can bind these):
+#   rest   vec4[2*nv]   (pos.xyz,1) (normal.xyz,0)          device-local
+#   wts    vec4[nv]     4 weights, normalized                device-local
+#   jts    uint[nv]     4 joint indices, 8 bits each         device-local
+#   pal    vec4[3*nj*nchar] rows of the 3x4 affine palette   host-visible
+#   par    uint[4]      nv, nj, nchar, 0                     host-visible
+#   out    vec4[2*nv*nchar] skinned (pos,1)(normal,0)   device-local, storage+vertex
+# Dispatch (ceil(nv/64), nchar, 1). `out` is what a vertex shader reads.
+namespace gsk
+use std
+use os
+use ffi
+extern "libvulkan.so.1?" {
+	vk_ci(ci uint, a uint, o uint) i32 = "vkCreateInstance";
+	vk_di(i uint, a uint) = "vkDestroyInstance";
+	vk_epd(i uint, n uint, o uint) i32 = "vkEnumeratePhysicalDevices";
+	vk_gpp(p uint, o uint) = "vkGetPhysicalDeviceProperties";
+	vk_gqf(p uint, n uint, o uint) = "vkGetPhysicalDeviceQueueFamilyProperties";
+	vk_gmp(p uint, o uint) = "vkGetPhysicalDeviceMemoryProperties";
+	vk_cd(p uint, ci uint, a uint, o uint) i32 = "vkCreateDevice";
+	vk_dd(d uint, a uint) = "vkDestroyDevice";
+	vk_dwi(d uint) i32 = "vkDeviceWaitIdle";
+	vk_gdq(d uint, f u32, i u32, o uint) = "vkGetDeviceQueue";
+	vk_cb(d uint, ci uint, a uint, o uint) i32 = "vkCreateBuffer";
+	vk_db(d uint, b uint, a uint) = "vkDestroyBuffer";
+	vk_bmr(d uint, b uint, o uint) = "vkGetBufferMemoryRequirements";
+	vk_am(d uint, ci uint, a uint, o uint) i32 = "vkAllocateMemory";
+	vk_fm(d uint, m uint, a uint) = "vkFreeMemory";
+	vk_bbm(d uint, b uint, m uint, off uint) i32 = "vkBindBufferMemory";
+	vk_mm(d uint, m uint, off uint, sz uint, f u32, o uint) i32 = "vkMapMemory";
+	vk_csm(d uint, ci uint, a uint, o uint) i32 = "vkCreateShaderModule";
+	vk_dsm(d uint, m uint, a uint) = "vkDestroyShaderModule";
+	vk_cdsl(d uint, ci uint, a uint, o uint) i32 = "vkCreateDescriptorSetLayout";
+	vk_ddsl(d uint, l uint, a uint) = "vkDestroyDescriptorSetLayout";
+	vk_cpl(d uint, ci uint, a uint, o uint) i32 = "vkCreatePipelineLayout";
+	vk_dpl(d uint, l uint, a uint) = "vkDestroyPipelineLayout";
+	vk_ccp(d uint, c uint, n u32, ci uint, a uint, o uint) i32 = "vkCreateComputePipelines";
+	vk_dp(d uint, p uint, a uint) = "vkDestroyPipeline";
+	vk_cdp(d uint, ci uint, a uint, o uint) i32 = "vkCreateDescriptorPool";
+	vk_ddp(d uint, p uint, a uint) = "vkDestroyDescriptorPool";
+	vk_ads(d uint, ci uint, o uint) i32 = "vkAllocateDescriptorSets";
+	vk_uds(d uint, n u32, w uint, c u32, cp uint) = "vkUpdateDescriptorSets";
+	vk_ccpool(d uint, ci uint, a uint, o uint) i32 = "vkCreateCommandPool";
+	vk_dcpool(d uint, p uint, a uint) = "vkDestroyCommandPool";
+	vk_acb(d uint, ci uint, o uint) i32 = "vkAllocateCommandBuffers";
+	vk_bcb(c uint, bi uint) i32 = "vkBeginCommandBuffer";
+	vk_ecb(c uint) i32 = "vkEndCommandBuffer";
+	vk_cbp(c uint, bp u32, p uint) = "vkCmdBindPipeline";
+	vk_cbds(c uint, bp u32, l uint, first u32, n u32, s uint, dn u32, d uint) = "vkCmdBindDescriptorSets";
+	vk_cdisp(c uint, x u32, y u32, z u32) = "vkCmdDispatch";
+	vk_ccopy(c uint, s uint, d uint, n u32, r uint) = "vkCmdCopyBuffer";
+	vk_cpb(c uint, ss u32, ds u32, df u32, nm u32, m uint, nb u32, b uint, ni u32, i uint) = "vkCmdPipelineBarrier";
+	vk_cqp(d uint, ci uint, a uint, o uint) i32 = "vkCreateQueryPool";
+	vk_dqp(d uint, p uint, a uint) = "vkDestroyQueryPool";
+	vk_crqp(c uint, p uint, f u32, n u32) = "vkCmdResetQueryPool";
+	vk_cwts(c uint, st u32, p uint, q u32) = "vkCmdWriteTimestamp";
+	vk_gqpr(d uint, p uint, f u32, n u32, sz uint, o uint, stride uint, fl u32) i32 = "vkGetQueryPoolResults";
+	vk_qs(q uint, n u32, s uint, f uint) i32 = "vkQueueSubmit";
+	vk_qwi(q uint) i32 = "vkQueueWaitIdle";
+}
+struct Buf { b uint, m uint, p uint, size int }
+var ERR byte[>..]
+var DEVNAME byte[>..]
+var DEVTYPE = 0
+var INST uint = 0
+var PHYS uint = 0
+var DEV uint = 0
+var QUEUE uint = 0
+var QFAM = -1
+var TSBITS = 0
+var TSPERIOD = 0.0
+var MEMP byte[>..]
+var REST Buf
+var WTS Buf
+var JTS Buf
+var PAL Buf
+var PAR Buf
+var OUT Buf
+var RB Buf
+var STG Buf
+var SM uint = 0
+var DSL uint = 0
+var PL uint = 0
+var PIPE uint = 0
+var DP uint = 0
+var DS uint = 0
+var CP uint = 0
+var CB_SKIN uint = 0
+var CB_XFER uint = 0
+var QP uint = 0
+var NV = 0
+var NJ = 0
+var NCH = 0
+
+p32(b byte[>..]&, o int, v int): for k 4 { b[o + k] = ((v >> (k * 8)) & 255) as! byte }
+p64(b byte[>..]&, o int, v uint): for k 8 { b[o + k] = ((v >> (k * 8) as uint) & 255) as! byte }
+g32(b const byte[:], o int) int: v ~= 0; for k 4 { v |= (b[o + k] as int) << (k * 8) } v
+g64(b const byte[:], o int) uint: v uint ~= 0; for k 8 { v |= (b[o + k] as uint) << (k * 8) as uint } v
+zb(n int) byte[>..]: b byte[>..] ~= []; b.resize(n, 0); b
+pt(b const byte[:]) uint: ffi::ptr(b)
+fail(m const byte[:]) bool: ERR.clear(); ERR.append(m); false
+error() const byte[:]: ERR[..]
+device_name() const byte[:]: DEVNAME[..]
+device_type() int: DEVTYPE
+f32_of_bits(v int) real:
+	# IEEE-754 single from its bits (timestampPeriod)
+	s := if (v >> 31) & 1 != 0 { -1.0 } else { 1.0 }; e := (v >> 23) & 255; m := v & 0x7FFFFF
+	if e == 0: return s * (m as real) * pow(2.0, -149.0)
+	s * (1.0 + (m as real) / 8388608.0) * pow(2.0, (e - 127) as real)
+
+# Instance + device. pick: -1 = prefer discrete > integrated > virtual > cpu,
+# otherwise the physical-device index.
+init(pick int) bool:
+	if DEV != 0: return true
+	nm := "helium-anim\0"; app := zb(48); p32(app, 0, 0); p64(app, 16, pt(nm)); p32(app, 24, 1); p64(app, 32, pt(nm)); p32(app, 40, 1); p32(app, 44, 1 << 22 | 1 << 12)
+	ici := zb(64); p32(ici, 0, 1); p64(ici, 24, pt(app[..])); o := zb(8)
+	rc := vk_ci(pt(ici[..]), 0, pt(o[..]))
+	if rc != 0: return fail(str("vkCreateInstance failed: ", rc))
+	INST = g64(o[..], 0); nd := zb(8); p32(nd, 0, 16); ds := zb(128)
+	if vk_epd(INST, pt(nd[..]), pt(ds[..])) < 0: return fail("vkEnumeratePhysicalDevices failed")
+	n := g32(nd[..], 0); best ~= -1; bs ~= -1
+	for i n:
+		pp := zb(1024); vk_gpp(g64(ds[..], i * 8), pt(pp[..])); ty := g32(pp[..], 16)
+		sc := if ty == 2 { 4 } else if ty == 1 { 3 } else if ty == 3 { 2 } else { 1 }
+		if pick == i: best = i; bs = 99
+		if sc > bs: best = i; bs = sc
+	if best < 0: return fail("no Vulkan device")
+	PHYS = g64(ds[..], best * 8); pp := zb(1024); vk_gpp(PHYS, pt(pp[..])); DEVTYPE = g32(pp[..], 16)
+	DEVNAME = ffi::cstr(pt(pp[..]) + 20); TSPERIOD = f32_of_bits(g32(pp[..], 296 + 424))
+	nq := zb(8); p32(nq, 0, 16); qf := zb(24 * 16); vk_gqf(PHYS, pt(nq[..]), pt(qf[..])); QFAM = -1
+	for i g32(nq[..], 0): if QFAM < 0 && g32(qf[..], i * 24) & 2 != 0 { QFAM = i; TSBITS = g32(qf[..], i * 24 + 8) }
+	if QFAM < 0: return fail("no compute queue")
+	pr := zb(4); p32(pr, 0, 0x3F800000); qci := zb(40); p32(qci, 0, 2); p32(qci, 20, QFAM); p32(qci, 24, 1); p64(qci, 32, pt(pr[..]))
+	dci := zb(72); p32(dci, 0, 3); p32(dci, 20, 1); p64(dci, 24, pt(qci[..]))
+	if vk_cd(PHYS, pt(dci[..]), 0, pt(o[..])) != 0: return fail("vkCreateDevice failed")
+	DEV = g64(o[..], 0); MEMP = zb(520); vk_gmp(PHYS, pt(MEMP[..])); vk_gdq(DEV, QFAM as u32, 0, pt(o[..])); QUEUE = g64(o[..], 0)
+	true
+
+# memory type with all of `want` property bits (1 device-local, 2 host-visible, 4 coherent)
+memtype(bits int, want int) int:
+	for i g32(MEMP[..], 0): if bits & (1 << i) != 0 && g32(MEMP[..], 4 + i * 8) & want == want { return i }
+	-1
+# usage: 0x20 storage, 1 transfer src, 2 transfer dst. host: map it.
+mkbuf(b Buf&, size int, usage int, host bool) bool:
+	b.size = size; bci := zb(56); p32(bci, 0, 12); p64(bci, 24, size as uint); p32(bci, 32, usage); o := zb(8)
+	if vk_cb(DEV, pt(bci[..]), 0, pt(o[..])) != 0: return fail("vkCreateBuffer failed")
+	b.b = g64(o[..], 0); rq := zb(24); vk_bmr(DEV, b.b, pt(rq[..])); bits := g32(rq[..], 16)
+	t ~= if host { memtype(bits, 6) } else { memtype(bits, 1) }
+	if t < 0: t = memtype(bits, 0)
+	if t < 0: return fail("no memory type")
+	mai := zb(32); p32(mai, 0, 5); p64(mai, 16, g64(rq[..], 0)); p32(mai, 24, t)
+	if vk_am(DEV, pt(mai[..]), 0, pt(o[..])) != 0: return fail("vkAllocateMemory failed")
+	b.m = g64(o[..], 0)
+	if vk_bbm(DEV, b.b, b.m, 0) != 0: return fail("vkBindBufferMemory failed")
+	if host: if vk_mm(DEV, b.m, 0, size as uint, 0, pt(o[..])) != 0 { return fail("vkMapMemory failed") } b.p = g64(o[..], 0)
+	true
+freebuf(b Buf&): if b.b != 0 { vk_db(DEV, b.b, 0) } if b.m != 0 { vk_fm(DEV, b.m, 0) } b.b = 0; b.m = 0; b.p = 0
+
+cmdbuf() uint:
+	cbi := zb(32); p32(cbi, 0, 40); p64(cbi, 16, CP); p32(cbi, 28, 1); o := zb(8)
+	if vk_acb(DEV, pt(cbi[..]), pt(o[..])) != 0: return 0 as uint
+	g64(o[..], 0)
+begin(cb uint) bool: bgi := zb(32); p32(bgi, 0, 42); vk_bcb(cb, pt(bgi[..])) == 0
+submit_wait(cb uint) bool:
+	cbl := zb(8); p64(cbl, 0, cb); si := zb(72); p32(si, 0, 4); p32(si, 40, 1); p64(si, 48, pt(cbl[..]))
+	vk_qs(QUEUE, 1, pt(si[..]), 0) == 0 && vk_qwi(QUEUE) == 0
+barrier(cb uint, ss int, sa int, dst int, da int):
+	mb := zb(24); p32(mb, 0, 46); p32(mb, 16, sa); p32(mb, 20, da); vk_cpb(cb, ss as u32, dst as u32, 0, 1, pt(mb[..]), 0, 0, 0, 0)
+# one-shot copy host staging -> device buffer
+upload(dst Buf&, data const byte[:]) bool:
+	ffi::write(STG.p, data); cb := CB_XFER
+	if !begin(cb): return fail("begin failed")
+	r := zb(24); p64(r, 16, data.len as uint); vk_ccopy(cb, STG.b, dst.b, 1, pt(r[..]))
+	vk_ecb(cb) == 0 && submit_wait(cb)
+
+# rest: 8 floats/vertex as bytes (pos.xyz,1, nrm.xyz,0); wts: 4 floats/vertex;
+# jts: 1 uint/vertex; spv: compiled anim/skin.comp.
+setup(spv const byte[:], rest const byte[:], wts const byte[:], jts const byte[:], nv int, nj int, nchar int) bool:
+	NV = nv; NJ = nj; NCH = nchar; o := zb(8)
+	if spv.len < 20 || spv.len & 3 != 0: return fail("bad SPIR-V")
+	cpci := zb(24); p32(cpci, 0, 39); p32(cpci, 16, 2); p32(cpci, 20, QFAM)
+	if vk_ccpool(DEV, pt(cpci[..]), 0, pt(o[..])) != 0: return fail("command pool failed")
+	CP = g64(o[..], 0); CB_SKIN = cmdbuf(); CB_XFER = cmdbuf()
+	if CB_SKIN == 0 || CB_XFER == 0: return fail("command buffers failed")
+	if !mkbuf(STG, max(rest.len, max(wts.len, jts.len)), 1, true): return false
+	if !mkbuf(REST, rest.len, 0x22, false) || !mkbuf(WTS, wts.len, 0x22, false) || !mkbuf(JTS, jts.len, 0x22, false): return false
+	if !mkbuf(PAL, nchar * nj * 48, 0x20, true) || !mkbuf(PAR, 16, 0x20, true) || !mkbuf(OUT, nv * 32 * nchar, 0xA1, false): return false
+	if !upload(REST, rest) || !upload(WTS, wts) || !upload(JTS, jts): return false
+	pa := zb(16); p32(pa, 0, nv); p32(pa, 4, nj); p32(pa, 8, nchar); ffi::write(PAR.p, pa[..])
+	sc byte[>..] ~= []; sc.append(spv); smi := zb(40); p32(smi, 0, 16); p64(smi, 24, spv.len as uint); p64(smi, 32, pt(sc[..]))
+	if vk_csm(DEV, pt(smi[..]), 0, pt(o[..])) != 0: return fail("shader module rejected")
+	SM = g64(o[..], 0)
+	bd := zb(24 * 6); for k 6 { p32(bd, k * 24, k); p32(bd, k * 24 + 4, 7); p32(bd, k * 24 + 8, 1); p32(bd, k * 24 + 12, 0x20) }
+	dli := zb(32); p32(dli, 0, 32); p32(dli, 20, 6); p64(dli, 24, pt(bd[..]))
+	if vk_cdsl(DEV, pt(dli[..]), 0, pt(o[..])) != 0: return fail("set layout failed")
+	DSL = g64(o[..], 0); sls := zb(8); p64(sls, 0, DSL)
+	pli := zb(48); p32(pli, 0, 30); p32(pli, 20, 1); p64(pli, 24, pt(sls[..]))
+	if vk_cpl(DEV, pt(pli[..]), 0, pt(o[..])) != 0: return fail("pipeline layout failed")
+	PL = g64(o[..], 0)
+	en := "main\0"; cpi := zb(96); p32(cpi, 0, 29); p32(cpi, 24, 18); p32(cpi, 44, 0x20); p64(cpi, 48, SM); p64(cpi, 56, pt(en)); p64(cpi, 72, PL); p32(cpi, 88, -1)
+	if vk_ccp(DEV, 0, 1, pt(cpi[..]), 0, pt(o[..])) != 0: return fail("compute pipeline failed")
+	PIPE = g64(o[..], 0)
+	ps := zb(8); p32(ps, 0, 7); p32(ps, 4, 6); dpi := zb(40); p32(dpi, 0, 33); p32(dpi, 20, 1); p32(dpi, 24, 1); p64(dpi, 32, pt(ps[..]))
+	if vk_cdp(DEV, pt(dpi[..]), 0, pt(o[..])) != 0: return fail("descriptor pool failed")
+	DP = g64(o[..], 0); dai := zb(40); p32(dai, 0, 34); p64(dai, 16, DP); p32(dai, 24, 1); p64(dai, 32, pt(sls[..]))
+	if vk_ads(DEV, pt(dai[..]), pt(o[..])) != 0: return fail("descriptor set failed")
+	DS = g64(o[..], 0)
+	# bindings: 0 rest, 1 wts, 2 jts, 3 pal, 4 par, 5 out
+	bi := zb(24 * 6); bs := [REST.b, WTS.b, JTS.b, PAL.b, PAR.b, OUT.b]
+	for k 6 { p64(bi, k * 24, bs[k]); p64(bi, k * 24 + 16, 0xFFFFFFFFFFFFFFFF) }
+	w := zb(64 * 6); for k 6 { p32(w, k * 64, 35); p64(w, k * 64 + 16, DS); p32(w, k * 64 + 24, k); p32(w, k * 64 + 32, 1); p32(w, k * 64 + 36, 7); p64(w, k * 64 + 48, pt(bi[..]) + (k * 24) as uint) }
+	vk_uds(DEV, 6, pt(w[..]), 0, 0)
+	if TSBITS > 0: qci := zb(32); p32(qci, 0, 11); p32(qci, 20, 2); p32(qci, 24, 2); if vk_cqp(DEV, pt(qci[..]), 0, pt(o[..])) == 0 { QP = g64(o[..], 0) }
+	# the skinning command buffer is recorded once and resubmitted every frame
+	cb := CB_SKIN
+	if !begin(cb): return fail("begin failed")
+	if QP != 0 { vk_crqp(cb, QP, 0, 2); vk_cwts(cb, 1, QP, 0) }
+	dl := zb(8); p64(dl, 0, DS)
+	vk_cbp(cb, 1, PIPE); vk_cbds(cb, 1, PL, 0, 1, pt(dl[..]), 0, 0); vk_cdisp(cb, ((nv + 63) / 64) as u32, nchar as u32, 1)
+	if QP != 0: vk_cwts(cb, 0x2000, QP, 1)
+	vk_ecb(cb) == 0 || fail("end failed")
+
+# palettes: 12 floats (3 rows x vec4) per joint per character, as bytes
+frame(pal const byte[:]) bool:
+	ffi::write(PAL.p, pal)
+	submit_wait(CB_SKIN)
+# GPU time of the last frame() in ms from timestamps (-1 if unsupported)
+gpu_ms() real:
+	if QP == 0: return -1.0
+	r := zb(16)
+	if vk_gqpr(DEV, QP, 0, 2, 16, pt(r[..]), 8, 3) != 0: return -1.0
+	d := g64(r[..], 8) - g64(r[..], 0)
+	if TSBITS < 64: d = d & ((1 as uint << TSBITS as uint) - 1)
+	(d as real) * TSPERIOD * 1.0e-6
+# copy `out` back: 8 floats per vertex per character
+readback(out byte[>..]&) bool:
+	n := NV * 32 * NCH
+	if RB.b == 0: if !mkbuf(RB, n, 2, true) { return false }
+	cb := CB_XFER
+	if !begin(cb): return fail("begin failed")
+	barrier(cb, 0x800, 0x40, 0x1000, 0x800)
+	r := zb(24); p64(r, 16, n as uint); vk_ccopy(cb, OUT.b, RB.b, 1, pt(r[..]))
+	barrier(cb, 0x1000, 0x1000, 0x4000, 0x2000)
+	if vk_ecb(cb) != 0 || !submit_wait(cb): return fail("readback failed")
+	out.clear(); out.append(ffi::bytes(RB.p, n)[..]); true
+shutdown():
+	if DEV == 0: return
+	vk_dwi(DEV)
+	if QP != 0: vk_dqp(DEV, QP, 0)
+	if CP != 0: vk_dcpool(DEV, CP, 0)
+	if DP != 0: vk_ddp(DEV, DP, 0)
+	if PIPE != 0: vk_dp(DEV, PIPE, 0)
+	if PL != 0: vk_dpl(DEV, PL, 0)
+	if DSL != 0: vk_ddsl(DEV, DSL, 0)
+	if SM != 0: vk_dsm(DEV, SM, 0)
+	freebuf(REST); freebuf(WTS); freebuf(JTS); freebuf(PAL); freebuf(PAR); freebuf(OUT); freebuf(RB); freebuf(STG)
+	vk_dd(DEV, 0); vk_di(INST, 0); DEV = 0; INST = 0; QP = 0; CP = 0; DP = 0; PIPE = 0; PL = 0; DSL = 0; SM = 0

@@ -1,0 +1,127 @@
+// GPU skinning test + bench body (entry: anim_gpuskin.amni). Reuses the perf
+// crowd (perf_body.amni). Correctness: GPU LBS vs the CPU reference skin_cpu
+// for every vertex of all 32 characters at several crowd frames. Bench: 32
+// characters per 60 Hz frame = anim tick + palette pack + GPU skin dispatch.
+namespace anim;
+import vec;
+import math;
+import os;
+import binary;
+import anim.math;
+import anim.pose;
+import anim.clip;
+import anim.space;
+import anim.machine;
+import anim.ik;
+import anim.gltf;
+import anim.skin;
+import anim.gold;
+import anim.gpuskin;
+import perf_body;
+
+let GS_TOL_P = 1.0e-4;   // metres
+let GS_TOL_N = 1.0e-4;   // normal components (unnormalized LBS normal)
+
+fn gs_pack_pal(nj int, out f32[>..]&) {
+	out.clear();
+	for c in NCHAR {
+		for j in nj {
+			let m = CHARS[c].pal.m[j].m;
+			for r in 3 { out.push(m[r]); out.push(m[4 + r]); out.push(m[8 + r]); out.push(m[12 + r]); }
+		}
+	}
+}
+
+fn gs_main(path const byte[:], spv_path const byte[:], frames int, pick int) i32 {
+	clip_bank_clear(); skin_bank_clear();
+	if !glb_open(path) { print("cannot open ", path); return 2; }
+	var sk = default<Skeleton>();
+	glb_skeleton(sk, 0);
+	glb_clips(sk, "", 30.0, "root");
+	var r = default<GoldRig>(); var d = default<MachineDef>();
+	if !gold_setup(sk, "", r, d) { print("setup failed: ", r.err[..]); return 2; }
+	var meshes SkinMesh[>..];
+	for mi in jlen(jtop("meshes")) {
+		let prims = jm(jel(jtop("meshes"), mi), "primitives");
+		for pi in jlen(prims) { let sm = glb_skin_mesh(mi, pi); if sm.ok { meshes.push(sm); } }
+	}
+	// release the parsed glTF JSON before touching Vulkan: json::Doc holds two
+	// runtime array reservations per node and a hero GLB has ~55k nodes, which
+	// pins the process at vm.max_map_count; the Vulkan loader then cannot map
+	// its driver ("failed to map segment") and the driver's own mmaps fail
+	glb_close();
+	if !gsk::init(pick) { print("vulkan: ", gsk::error()); return 3; }
+	let nv = SK_P.len;
+	// mesh data in the gpuskin layout
+	var rest f32[>..]; var jts u32[>..];
+	for v in nv {
+		let p = SK_P[v]; let n = SK_N[v];
+		rest.push(p.x); rest.push(p.y); rest.push(p.z); rest.push(1.0);
+		rest.push(n.x); rest.push(n.y); rest.push(n.z); rest.push(0.0);
+		var pk = 0;
+		for k in 4 { pk = pk | ((SK_J[v * 4 + k] as int) & 255) << (k * 8); }
+		jts.push(pk as! u32);
+	}
+	var spv byte[>..] = [];
+	if !read_file(spv_path, spv) { print("cannot read ", spv_path, " (build it: hcn --spv hc/lib/anim/skin.comp <out.spv>)"); return 2; }
+	print("gpuskin ", path, "  device '", gsk::device_name(), "' (type ", gsk::device_type(), ")  joints ", sk.n, "  verts ", nv, "  chars ", NCHAR);
+	if !gsk::setup(spv[..], bytes_of(rest), bytes_of(SK_W), bytes_of(jts), nv, sk.n as int, NCHAR) { print("setup: ", gsk::error()); gsk::shutdown(); return 3; }
+	CHARS.clear();
+	for i in NCHAR {
+		var ch = default<Character>();
+		gold_char(r, d, ch, float3 { (i % 8) as f32 * 2.0, 0.0, (i / 8) as f32 * 2.0 }, (i as f32) * 0.4);
+		CHARS.push(ch);
+	}
+	// --- correctness: 8 checkpoints over 4 s of crowd motion ---
+	var g f32[>..]; var pal f32[>..]; var gout byte[>..] = []; var op float3[>..]; var on float3[>..];
+	var t = 0.0 as f32; var ep = 0.0; var en = 0.0; var nchk = 0; var epw_c = 0; var epw_v = 0;
+	for ck in 8 {
+		for f in 30 { for i in NCHAR { crowd_drive(i, t, CHARS[i]); gold_update(sk, r, d, CHARS[i], PDT, true); } t += PDT; }
+		gs_pack_pal(sk.n as int, pal);
+		if !gsk::frame(bytes_of(pal)) || !gsk::readback(gout) { print("gpu frame failed: ", gsk::error()); gsk::shutdown(); return 3; }
+		if gout.len != NCHAR * nv * 32 { print("readback: bad size ", gout.len); gsk::shutdown(); return 3; }
+		g.clear();
+		for q in gout.len / 4 { let x, xok = binary::read_f32le(gout[..], q * 4); g.push(x); }
+		for c in NCHAR {
+			for k in meshes.len {
+				skin_cpu(meshes[k], CHARS[c].pal, op, on);
+				for v in meshes[k].nv {
+					let o = ((c * nv + meshes[k].base + v) * 8) as int;
+					let dp = length(float3 { g[o], g[o + 1], g[o + 2] } - op[v]) as real;
+					let dn = length(float3 { g[o + 4], g[o + 5], g[o + 6] } - on[v]) as real;
+					if dp > ep { ep = dp; epw_c = c; epw_v = v; }
+					if dn > en { en = dn; }
+					nchk += 1;
+				}
+			}
+		}
+	}
+	let okc = ep < GS_TOL_P && en < GS_TOL_N;
+	print("  correctness: ", nchk, " skinned vertices (32 chars x 8 frames) vs CPU skin_cpu: max |dp| ", ep, " m (char ", epw_c, " vert ", epw_v, "), max |dn| ", en, "  tol ", GS_TOL_P, " m -> ", if okc { "PASS" } else { "FAIL" });
+	// --- bench ---
+	var ta = 0.0; var tp = 0.0; var tg = 0.0; var tgw = 0.0; var tts = 0.0; var nts = 0; var worst = 0.0;
+	for f in frames {
+		let c0 = clock_ns();
+		for i in NCHAR { crowd_drive(i, t, CHARS[i]); gold_update(sk, r, d, CHARS[i], PDT, true); }
+		let c1 = clock_ns();
+		gs_pack_pal(sk.n as int, pal);
+		let c2 = clock_ns();
+		if !gsk::frame(bytes_of(pal)) { print("gpu frame failed: ", gsk::error()); gsk::shutdown(); return 3; }
+		let c3 = clock_ns();
+		let gt = gsk::gpu_ms(); if gt >= 0.0 { tts += gt; nts += 1; }
+		let a = (c1 - c0) as real * 1.0e-6; let p = (c2 - c1) as real * 1.0e-6; let g = (c3 - c2) as real * 1.0e-6;
+		ta += a; tp += p; tg += g; if g > tgw { tgw = g; }
+		let tot = a + p + g; if tot > worst { worst = tot; }
+		t += PDT;
+	}
+	let fr = frames as real;
+	let tot = (ta + tp + tg) / fr;
+	print("  bench ", frames, " frames, 32 chars x ", nv, " verts:");
+	print("    anim tick (CPU)        avg ", ta / fr, " ms");
+	print("    palette pack (CPU)     avg ", tp / fr, " ms");
+	print("    gpu skin submit+wait   avg ", tg / fr, " ms  worst ", tgw, " ms");
+	if nts > 0 { print("    gpu skin (timestamps)  avg ", tts / (nts as real), " ms"); } else { print("    gpu skin (timestamps)  n/a"); }
+	print("    frame (serialized)     avg ", tot, " ms  worst ", worst, " ms -> ", 1000.0 / tot, " fps");
+	gsk::shutdown();
+	if okc { 0 } else { 1 }
+}

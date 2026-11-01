@@ -49,6 +49,16 @@ fn glb_open(path const byte[:]) bool {
 	true
 }
 
+// Drop the parsed JSON document and the GLB bytes once everything needed has
+// been extracted. json::Doc keeps two growable arrays per node and the Helium
+// runtime maps a separate reservation for each, so a big glTF document can
+// hold tens of thousands of mappings (near vm.max_map_count) until released.
+fn glb_close() {
+	GDOC = default<json::Doc>();
+	GLB.clear();
+	GI = default<GlbInfo>();
+}
+
 // ---- JSON helpers
 fn jm(n int, key const byte[:]) int { json::member(GDOC, n, key) }
 fn jel(n int, k int) int { json::element(GDOC, n, k) }

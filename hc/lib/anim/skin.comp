@@ -1,0 +1,35 @@
+// anim/skin.comp: linear blend skinning, one invocation per (vertex, character).
+// v' = (sum_k w_k M_k) v, n' = (sum_k w_k R_k) n  (LBS; normals left
+// unnormalized, same as the CPU reference skin_cpu). Palette rows are the
+// top 3 rows of model * inverse-bind. Layout: see gpuskin.he. Clean-room.
+// Build: hcn --spv skin.comp skin.spv   (Helium's own GLSL compiler)
+#version 450
+layout(local_size_x = 64) in;
+layout(std430, set = 0, binding = 0) readonly buffer Rest { vec4 rest[]; };
+layout(std430, set = 0, binding = 1) readonly buffer Wts { vec4 wts[]; };
+layout(std430, set = 0, binding = 2) readonly buffer Jts { uint jts[]; };
+layout(std430, set = 0, binding = 3) readonly buffer Pal { vec4 pal[]; };
+layout(std430, set = 0, binding = 4) readonly buffer Par { uint par[]; };
+layout(std430, set = 0, binding = 5) writeonly buffer Out { vec4 outv[]; };
+void main() {
+	uint v = gl_GlobalInvocationID.x;
+	uint c = gl_GlobalInvocationID.y;
+	uint nv = par[0];
+	if (v >= nv) return;
+	uint nj = par[1];
+	vec4 p = rest[v * 2u];
+	vec4 n = rest[v * 2u + 1u];
+	vec4 w = wts[v];
+	uint jj = jts[v];
+	uint b = c * nj * 3u;
+	uint i0 = b + (jj & 255u) * 3u;
+	uint i1 = b + ((jj >> 8u) & 255u) * 3u;
+	uint i2 = b + ((jj >> 16u) & 255u) * 3u;
+	uint i3 = b + ((jj >> 24u) & 255u) * 3u;
+	vec4 r0 = pal[i0] * w.x + pal[i1] * w.y + pal[i2] * w.z + pal[i3] * w.w;
+	vec4 r1 = pal[i0 + 1u] * w.x + pal[i1 + 1u] * w.y + pal[i2 + 1u] * w.z + pal[i3 + 1u] * w.w;
+	vec4 r2 = pal[i0 + 2u] * w.x + pal[i1 + 2u] * w.y + pal[i2 + 2u] * w.z + pal[i3 + 2u] * w.w;
+	uint o = (c * nv + v) * 2u;
+	outv[o] = vec4(dot(r0, p), dot(r1, p), dot(r2, p), 1.0);
+	outv[o + 1u] = vec4(dot(r0.xyz, n.xyz), dot(r1.xyz, n.xyz), dot(r2.xyz, n.xyz), 0.0);
+}
