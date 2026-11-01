@@ -27,7 +27,7 @@ FULL = {"fib": 45, "nbody": 30_000_000, "spectral": 5500, "fannkuch": 11, "mande
 QUICK = {"fib": 30, "nbody": 1000, "spectral": 100, "fannkuch": 7, "mandelbrot": 200, "bintrees": 10,
          "hashmap": 1000, "strbuild": 1000, "json": 1000, "regex": 1000, "matmul": 100, "sort": 1000}
 CC = {"gcc-O2": ["gcc", "-O2"], "gcc-O3n": ["gcc", "-O3", "-march=native"], "clang-O2": ["clang", "-O2"], "clang-O3n": ["clang", "-O3", "-march=native"]}
-VARIANTS = ["gcc-O2", "gcc-O3n", "clang-O2", "clang-O3n", "he", "he-v3", "rust", "rust-native", "go", "java", "node", "python"]
+VARIANTS = ["gcc-O2", "gcc-O3n", "clang-O2", "clang-O3n", "he", "he-v3", "he-v4", "rust", "rust-native", "go", "java", "node", "python"]
 
 def sh(cmd, **kw):
     p = subprocess.run(cmd, capture_output=True, text=True, **kw)
@@ -38,7 +38,7 @@ def build(v, b, out, hc):
     """Returns the command (list) that runs variant v of program b."""
     exe = out / v / b; exe.parent.mkdir(parents=True, exist_ok=True)
     if v in CC: sh(CC[v] + [str(HERE / "c" / f"{b}.c"), "-o", str(exe), "-lm"])
-    elif v.startswith("he"): sh([hc, "build", str(HERE / "he" / f"{b}.amni"), "-o", str(exe)] + (["--v3"] if v == "he-v3" else []), env=dict(os.environ, HC_LIB=str(ROOT / "hc" / "lib")))
+    elif v.startswith("he"): sh([hc, "build", str(HERE / "he" / f"{b}.amni"), "-o", str(exe)] + ({"he-v3": ["--v3"], "he-v4": ["--v4"]}.get(v, [])), env=dict(os.environ, HC_LIB=str(ROOT / "hc" / "lib")))
     elif v.startswith("rust"): sh(["rustc", "-C", "opt-level=3", "-C", "codegen-units=1", "--edition", "2021"] + (["-C", "target-cpu=native"] if v == "rust-native" else []) + [str(HERE / "rs" / f"{b}.rs"), "-o", str(exe)])
     elif v == "go": sh([GO, "build", "-o", str(exe), str(HERE / "go" / f"{b}.go")], env=dict(os.environ, GO111MODULE="off", CGO_ENABLED="0", GOPATH=str(out / "gopath"), GOCACHE=str(out / "gocache")))
     elif v == "java":
