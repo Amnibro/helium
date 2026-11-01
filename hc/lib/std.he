@@ -436,6 +436,44 @@ sort<T, F>(xs T[:]):
 			m -= 1
 		xs[m] .= v
 sort<T>(xs T[:]): sort(xs) { a, b => a < b }
+# Fixed-width integer keys sort by value, not by comparison: an LSD radix
+# sort on bytes. One read counts every byte position, a position whose bytes
+# are all the same is skipped, and each other one is a single stable pass
+# through a scratch copy. Signed keys flip their top bit so negatives come
+# first. Short ranges use the comparison sort above.
+radix_key(k u64, d int, top int) int:
+	b := ((k >> (d * 8) as! u64) & 255) as! int
+	if d == top { b ^ 128 } else { b }
+radix_sort<T>(xs T[:], nb int, sgn bool):
+	n := xs.len
+	if n <= 256 { sort(xs) { a, b => a < b }; return }
+	top := if sgn { nb - 1 } else { -1 }
+	cnt int[>..] ~= []; cnt.resize(nb * 256, 0)
+	for x xs:
+		k := x as! u64
+		for d nb: cnt[d * 256 + radix_key(k, d, top)] += 1
+	tmp T[>..] ~= []
+	tmp.append(xs)
+	src T[:] ~= xs; dst T[:] ~= tmp[..]; moved ~= false
+	ofs int[256] ~= [0; 256]
+	for d nb:
+		c := d * 256
+		if cnt[c + radix_key(src[0] as! u64, d, top)] == n: continue
+		o ~= 0
+		for b 256 { ofs[b] = o; o += cnt[c + b] }
+		for x src:
+			b := radix_key(x as! u64, d, top)
+			dst[ofs[b]] = x; ofs[b] += 1
+		t := src; src = dst; dst = t; moved = !moved
+	if moved: for i n { xs[i] = src[i] }
+sort(xs u8[:]): radix_sort(xs, 1, false)
+sort(xs i8[:]): radix_sort(xs, 1, true)
+sort(xs u16[:]): radix_sort(xs, 2, false)
+sort(xs i16[:]): radix_sort(xs, 2, true)
+sort(xs u32[:]): radix_sort(xs, 4, false)
+sort(xs i32[:]): radix_sort(xs, 4, true)
+sort(xs u64[:]): radix_sort(xs, 8, false)
+sort(xs i64[:]): radix_sort(xs, 8, true)
 # stable_sort: merges runs of doubling width through one scratch copy
 stable_sort<T, F>(xs T[:]):
 	n := xs.len
@@ -467,6 +505,54 @@ sorted<T, F>(xs T[:]) T[>..]:
 	out.append(xs)
 	sort(out[..]) { a, b => F(a, b) }
 	out
+
+# ---- recurrences and tables: each value is computed once
+# seq: x0 = a0, x1 = a1, x(k) = F(x(k - 2), x(k - 1)); returns x(n) after
+# n - 1 steps (seq(n, 0, 1) { a, b => a + b } is fib(n)). The one-start form
+# steps x(k) = F(x(k - 1)).
+seq<T, F>(n int, a0 T, a1 T) T:
+	if n <= 0: return a0
+	a ~= a0; b ~= a1
+	for k 1..n:
+		c := F(a, b); a = b; b = c
+	b
+seq<T, F>(n int, a0 T) T:
+	a ~= a0
+	for k n: a = F(a)
+	a
+# tab: fills a table once from a pure index function: out[i] = F(i), or
+# out[i * m + j] = F(i, j) for the two-index form, row by row.
+tab<F>(n int):
+	out ~= []
+	for i n: out.push(F(i))
+	out
+tab<F>(n int, m int):
+	out ~= []
+	for i n:
+		for j m: out.push(F(i, j))
+	out
+# each_sum: out[i] = F(i, 0) + F(i, 1) + ... + F(i, m - 1), added from zero
+# in j order, so it is bit-identical to the nested loop even for reals. The
+# rows run eight at a time, each with its own sum, so the eight additions in
+# flight are independent.
+each_sum<T, F>(out T[:], m int):
+	n := out.len; i ~= 0
+	while i + 8 <= n:
+		s0 ~= default<T>(); s1 ~= s0; s2 ~= s0; s3 ~= s0; s4 ~= s0; s5 ~= s0; s6 ~= s0; s7 ~= s0
+		for j m:
+			s0 = s0 + F(i, j); s1 = s1 + F(i + 1, j); s2 = s2 + F(i + 2, j); s3 = s3 + F(i + 3, j)
+			s4 = s4 + F(i + 4, j); s5 = s5 + F(i + 5, j); s6 = s6 + F(i + 6, j); s7 = s7 + F(i + 7, j)
+		out[i] = s0; out[i + 1] = s1; out[i + 2] = s2; out[i + 3] = s3
+		out[i + 4] = s4; out[i + 5] = s5; out[i + 6] = s6; out[i + 7] = s7
+		i += 8
+	while i < n:
+		s ~= default<T>()
+		for j m: s = s + F(i, j)
+		out[i] = s
+		i += 1
+# counter: the start of a count; hc lowers a local collection that is only
+# pushed and measured to one (x.push(v) becomes x++, x.len becomes x).
+counter() int: 0
 
 # ---- binary heaps: xs[0] is the element the order puts first
 # (the smallest without a block). The block is a, b => a before b.
