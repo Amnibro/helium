@@ -48,6 +48,18 @@ vecem(x Ir):
 		vx2(0x14, 1, vf1(t0, 1), t1); vx2(0x14, 2, vf1(t2, 2), t3); vq(0x66, 0x06, 1, 1, 2, 3, 1); xb(0x31)
 		if x.l == 4: vq(0x66, 0x58, 0, 0, 1, 1, 1); vx2(0x15, 1, vf1(t0, 1), t1); vx2(0x15, 2, vf1(t2, 2), t3); vq(0x66, 0x06, 1, 1, 2, 3, 1); xb(0x31)
 		vq(0x66, 0x58, D, 0, 1, 1, 1)
+	if c >= 20 && c <= 22 || c >= 25 && c <= 28:
+		A := if xg(a) >= 0 { xg(a) } else { vm(0x10, 1, 1, 0, vo(a)); 1 }; B := if c <= 22 { if xg(b) >= 0 { xg(b) } else { vm(0x10, 1, 2, 0, vo(b)); 2 } } else { 0 }
+		if c == 20 || c == 21: vq(0x66, if c == 20 { 0xD4 } else { 0xFB }, D, A, B, 1, 1)
+		if c == 22: evy(0x66, 0x40, 2, D, A, B)
+		if c == 25: evy(0x66, 0x72, 1, 4, D, A); xb(x.l as int)
+		if c == 26 || c == 27: vq(0x66, 0x73, if c == 26 { 2 } else { 6 }, D, A, 1, 1); xb(x.l as int)
+		if c == 28: evy(0xF3, 0xE6, 1, D, 0, A)
+	if c == 29:
+		l0 := VEXL; e0 := EVX; s0 := SIBM; EVX = false; SIBM = false
+		for l 4 { v := ARGL[a + l] as int; G := if gr(v) >= 0 { gr(v) } else { ldv(RAX, v); RAX }; X := if l == 0 { 0 } else { if l == 1 || l == 2 { 1 } else { 2 } }; VEXL = 0; vexp(0x66, true, X, G, 0, 1); xb(0x6E); xb(0xC0 | (X & 7) << 3 | G & 7); if l == 1 { vq(0x66, 0x6C, 0, 0, 1, 1, 0) } if l == 3 { vq(0x66, 0x6C, 1, 1, 2, 1, 0) } }
+		VEXL = l0; EVX = e0; SIBM = s0; vq(0x66, 0x38, D, 0, 1, 3, 1); xb(1)
+	if c == 24: S := if gr(a) >= 0 { gr(a) } else { ldv(RAX, a); RAX }; evy(0x66, 0x7C, 2, D, 0, S)
 	if c == 7: if xg(a) >= 0 { vq(0x66, 0x51, D, 0, xg(a), 1, 1) } else { vm(0x51, 1, D, 0, vo(a)) }
 	if c == 8:
 		if xg(a) >= 0 && xg(d) < 0: vm(0x11, 1, xg(a), 0, vo(d)); LSP = -1; return
