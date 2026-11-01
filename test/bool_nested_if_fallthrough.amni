@@ -1,0 +1,18 @@
+import std;
+import os;
+// A bool function whose inner `if` returns true and whose outer `if` falls through to `false`:
+// the outer test's false edge reaches the final `false` too, so it must not become `x > 0`.
+fn f(p bool, x int) bool { if p { if x > 0 { return true; } } false }
+fn g(p bool, x int) bool { if p { if x > 0 { return true; } } return false; }
+fn h(p bool, q bool, x int) bool { if p { if q { if x > 0 { return true; } } } false }
+fn k(p bool, x int) int { if p { if x > 0 { return 1; } } 0 }
+fn main() {
+	print(f(false, 5));
+	let n = args().len;
+	var o byte[>..] = [];
+	for i in 4 {
+		let p = (i + n) % 2 == 0; let q = (i + n) % 3 != 0;
+		for x in -1..2 { format(o, f(p, x + n - 1), " ", g(p, x + n - 1), " ", h(p, q, x + n - 1), " ", k(p, x + n - 1), "\n"); }
+	}
+	print(o);
+}

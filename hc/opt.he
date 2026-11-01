@@ -1711,6 +1711,8 @@ scf(fi int):
 	ok(v int) bool: v >= 0 && z[v] != 0
 	lr(k int, l i64) bool:
 		q ~= nx(k); while q < i1 && IR[q].op as int == I_LBL { if IR[q].c == l { return true } q = nx(q) } false
+	lone(k int, l i64) bool:
+		q ~= nx(k); f ~= false; while q < i1 && IR[q].op as int == I_LBL { if IR[q].c != l { return false } f = true; q = nx(q) } f
 	nj(k int) int: q ~= nx(k); while q < i1 && (IR[q].op as int == I_IMM && IR[q].d >= 0 && uc[IR[q].d] == 0 || IR[q].op as int == I_LBL && lc[IR[q].c] == 0) { q = nx(q) } q
 	ae ~= 0
 	arm(s int) int, int, int, int, int:
@@ -1774,7 +1776,7 @@ scf(fi int):
 			x := IR[i]; o1 := x.op as int; r := x.a as int
 			if o1 != I_BZ && o1 != I_BNZ || !ok(r) || lc[x.c] != 1: i++; continue
 			a := nj(i); if a >= i1 || IR[a].op as int != I_IMM || IR[a].d < 0: i++; continue
-			t := IR[a].d; b := nx(a); if b >= i1 || IR[b].op as int != I_JMP || !lr(b, x.c): i++; continue
+			t := IR[a].d; b := nx(a); if b >= i1 || IR[b].op as int != I_JMP || !lone(b, x.c): i++; continue
 			e ~= nx(b); while e < i1 && IR[e].op as int == I_LBL { e = nx(e) } e = if e < i1 && IR[e].op as int == I_IMM && IR[e].d >= 0 && uc[IR[e].d] == 0 { nj(e - 1) } else { e }
 			if e >= i1 || IR[e].op as int != I_IMM || IR[e].d != t || !lr(e, IR[b].c): i++; continue
 			v1 := IR[a].c; v0 := IR[e].c; if !(o1 == I_BZ && v1 == 1 && v0 == 0 || o1 == I_BNZ && v1 == 0 && v0 == 1): i++; continue
@@ -1784,7 +1786,7 @@ scf(fi int):
 			x := IR[i]; o1 := x.op as int; r := x.a as int
 			if o1 != I_BZ && o1 != I_BNZ || !ok(r) || lc[x.c] != 1: i++; continue
 			ka, ya, ta, pa0, pa1 := arm(nx(i)); jb := ae
-			if ka == 0 || jb >= i1 || IR[jb].op as int != I_JMP || !lr(jb, x.c): i++; continue
+			if ka == 0 || jb >= i1 || IR[jb].op as int != I_JMP || !lone(jb, x.c): i++; continue
 			sb ~= nx(jb); while sb < i1 && IR[sb].op as int == I_LBL { sb = nx(sb) }
 			kb, yb, tb, pb0, pb1 := arm(sb); eb := ae
 			if kb == 0 || ka == kb || eb >= i1 || IR[eb].op as int != I_LBL || ya != yb || ta != tb || !lrun(eb, IR[jb].c): i++; continue

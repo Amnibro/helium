@@ -1,4 +1,5 @@
 test/bool_branch.amni
+test/bool_nested_if_fallthrough.amni
 test/bool_or_sel.amni
 test/checked_index_chain.amni
 test/codegen/global_index_abs.amni
