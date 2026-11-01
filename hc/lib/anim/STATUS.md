@@ -1,0 +1,143 @@
+# Gap #5: clean-room Helium animation runtime. STATUS (newest first)
+
+Owner: Anthony Reffelt · Lead: Kimahri · Review: **Lulu (pending; nothing leaves the branch until then)**
+Repo: Amnibro/helium, worktree `/workspace/helium-anim`, local branch `kimahri/anim-runtime` (cut from main c188cec).
+**Local commits only, not pushed.** main and CI workflows are untouched.
+
+## 2026-11-01 03:13 AST: GPU skinning stage done (local commits, not pushed)
+
+**Commits on `kimahri/anim-runtime`** (author Amnibro):
+- `370293ad`: GPU linear-blend skinning. Adds `hc/lib/anim/gpuskin.he` (a self-contained Vulkan compute backend), `hc/lib/anim/skin.comp` (compiled by Helium's own `hcn --spv`), `glb_close()` in gltf.amni, the GPU-vs-CPU test (`hc/test/anim/anim_gpuskin.amni` + `gskin_body.amni`), the headless bench harness `hc/test/anim/gpuskin_bench.sh`, and a GPU section in DESIGN.md.
+- `0d44474a`: the harness now validates the SPIR-V 1.3 shader as vulkan1.1; box and 9060 XT results are recorded in `hc/test/anim/gpuskin_results_2026-11-01.txt`.
+- A copy of this STATUS.md is committed as `hc/lib/anim/STATUS.md`, because /workspace/bfme is not a git repo.
+
+**Design.** Standard LBS (v' = Σ w_k M_k v), written clean-room from the published formula and the Vulkan 1.0/1.1 spec struct layouts. DQS (Kavan 2007) is not done, because the CPU reference is LBS.
+- The shader uses one thread per vertex per character. The palette is 3×4 rows per joint per character, and the command buffer is recorded once and resubmitted each frame. Two timestamp queries measure the GPU time.
+- **It does not use `hc/lib/gfx`.** gfx runs on SDL3 GPU, which is not installed on the box, and its internals are off-limits. So the skinning code has its own shader, its own buffer layout (documented at the top of gpuskin.he) and its own Vulkan FFI. This makes it portable to Auron's clean-room gfx core.
+- The adapter contract: 6 storage buffers at bindings 0..5, dispatch (ceil(nv/64), nchar, 1). `out` is created with STORAGE|VERTEX usage, so a renderer can bind it directly as the vertex buffer. In gfx public-API terms that is compute_pipeline + bind_storage_buffer ×6 + dispatch.
+
+**Correctness.** All 32 characters, every vertex, at 8 checkpoints over 4 s of crowd motion, against CPU `skin_cpu`. Tolerance is 1e-4 m. All four runs PASS:
+
+| Device | Mesh | max \|dp\| | max \|dn\| |
+|---|---|---|---|
+| lavapipe | jk-h02 (30000 verts) | 5.0e-7 m | 2.7e-7 |
+| lavapipe | bfme-hr01 (23691 verts) | 4.9e-7 m | 2.7e-7 |
+| 9060 XT | jk-h02 | 5.0e-7 m | 3.0e-7 |
+| 9060 XT | bfme-hr01 | 6.4e-7 m | 2.7e-7 |
+
+**Bench** (32 full-res characters, 300 frames, serialized frame = anim tick + palette pack + GPU submit/wait):
+
+| Device | Mesh | anim | GPU skin (timestamps) | submit+wait | frame | fps |
+|---|---|---|---|---|---|---|
+| box lavapipe (CPU Vulkan, shared box) | jk-h02 | 0.58 ms | 11.2–13.9 ms | 11.7–14.3 ms | 12.3–14.9 ms | 67–81 |
+| box lavapipe | bfme-hr01 | 0.58 ms | 8.7 ms | 9.2 ms | 9.8 ms | ~101 |
+| **Antman RX 9060 XT (RADV GFX1200)** | jk-h02 | 0.36 ms | **0.077 ms** | 0.13 ms | **0.49 ms** | **~2034** |
+| **Antman RX 9060 XT** | bfme-hr01 | 0.39 ms | **0.059 ms** | 0.18 ms | **0.58 ms** | **~1732** |
+
+- For comparison, CPU skinning took 20.6–21.4 ms for jk-h02 and 18.8 ms for hr01.
+- Antman was shared with other jobs during the run (load ~6, amni-browse and trellis-cli running).
+
+**Antman run** (Shell via the registered machine Antman-PC; prior gates used ~/kim2..6_gate):
+- Package in `~/kim7_gate`: static hcn, hc/lib, test files, and the 2 GLBs with sha256 checks.
+- Command: `~/kim7_gate/run.sh 300`. It takes ~4 s, runs CLI only with no window, and writes results to `~/kim7_gate/results_9060xt.txt`.
+- The GLB sha256 matched before and after, and nothing was left running.
+- On the first run, spirv-val ran with target vulkan1.0 and failed because the shader is SPIR-V 1.3. It validates OK with vulkan1.1, and the script is fixed.
+
+**GLB integrity.** All 39 hero GLB checksums matched before and after every bench run (baseline /tmp/gsk taken 03:04 AST).
+- Disclosure: one early read-only test run at about 03:00 happened before that baseline. BFME files are git-clean and JK mtimes are unchanged (2026-10-31 05:43).
+
+**Helium gaps found**
+1. **Address-space and mapping blow-up.** The runtime reserves 2 GB plus a guard per growable array. `json::Doc` holds 2 arrays per node, and a hero glTF has ~55k JSON nodes, so the process sits at `vm.max_map_count` (65531) after glb_open.
+   - Effect: every later foreign `mmap` fails. The Vulkan loader printed "failed to map segment" for every driver (vkCreateInstance -9), and lavapipe segfaulted on submit.
+   - Workaround: `glb_close()` drops the document before Vulkan init (~27k maps remain).
+   - The real fix belongs in the runtime (smaller reservations or a pooled allocator) or in `json` (no per-node arrays).
+2. `from_bytes<T[>..]>` expects Helium's serialized form, not raw bytes. GPU readback is decoded with `binary::read_f32le`.
+3. There is no SDL3 on the box, so `hc/lib/gfx` can't be exercised there. This is why the backend is self-contained.
+4. Helium's GLSL compiler emits SPIR-V 1.3, so the instance requests Vulkan 1.1.
+
+**Not done / next**
+- Dual-quaternion skinning.
+- A vertex-shader draw path consuming `out`; it waits for Auron's gfx core.
+- A gfx public-API adapter on Antman (SDL3 is present there).
+- Async overlap of the anim tick with the GPU (the frame is currently serialized).
+
+
+## 2026-11-01 02:58 AST: proofs complete, ready for Lulu review
+
+### Commits (author Amnibro, newest first)
+| hash | what |
+|---|---|
+| 5724a716 | DESIGN.md: sources, module docs, pop metric, perf, the hcn `--` gotcha |
+| 6a982c85 | IK/gold/machine fixes: signed pole bend plane, stored-hinge pole, interrupt_min 0.45, extrapolation decay over 30% of the fade, exit_at timing |
+| 59b22a10 | 32-character perf test (`hc/test/anim/anim_perf.amni`) |
+| caa63169 | inertialized foot-lock release (Bollo) + C2 tanh soft reach |
+| 94fa7728 | gold rig + joint-delta pop test |
+| f12a4943 | GLB loader + skinning |
+| 930b61a4 | core (pose, blend, additive, 1D/2D blend spaces, state machine, root motion, 2-bone IK, FABRIK) + unit tests |
+
+JK: `/workspace/jk-anim`, local branch `kimahri/jk-anim` @ **3a73b35** (cut from auron/jk-helium-poc 0759773):
+adds `apps/jedi-king-he/anim_proof/{run.sh,RESULTS.md}`. Auron's branch is untouched.
+
+### What's proven
+- Unit tests (`hc/test/anim/anim_unit.amni`): ALL PASS.
+- Gold angle: walk blends into run around 3 m/s (1D space: idle 0, walk at its natural speed up to 2.6, run 3.4 to 6.0, rate-matched), with feet planted (2-bone IK + eased foot lock + inertialized release) on rolling ground.
+- **(a) No pops:** the metric is the per-joint second difference in model space at 60 Hz. The threshold is 1.25 × the worst steady-state content value (loco + every action at every sample speed) + a floor of 0.5° / 2 mm. Ratio < 1 means PASS.
+  - Why this threshold: a pop is a delta the clip content itself never produces.
+  - Hard-cut and unsmoothed-step controls must trip, and they do, by 6–19×.
+  - 39/39 GLBs PASS, with and without IK:
+
+| hero (all variants) | worst ratio, sweep + transitions | weakest control |
+|---|---|---|
+| BFME hr01 ×6 | 0.833 | 7.98 |
+| BFME hr02 ×6 | 0.801 | 7.56 |
+| BFME hr03 ×6 | 0.854 | 7.74 |
+| BFME hr04 ×6 | 0.800 | 7.34 |
+| BFME hr05 ×6 | 0.800 | 6.07 |
+| JK h02 ×3 | 0.884 | 7.29 |
+| JK h04 ×3 | 0.992 (IK speed sweep, calf_r pos) | 6.25 |
+| JK h06 ×3 | 0.824 | 7.65 |
+
+  - Variants (full/lod/mobile) share skeleton and clips, so their numbers are identical: 8 distinct rigs in total.
+  - BFME: 30 GLBs, 34 clips each (= 990 clips in total incl. variants); 65 joints, or 37 for mobile.
+  - JK: 56/58/54 joints, 67 clips.
+- **(b) 32 characters:** measured on the **box, not the target machine**: Intel Xeon, 8 vCPU, single-threaded, CPU only, llvmpipe/lavapipe (no real GPU).
+
+| mesh | anim, 32 chars (blend + machine + additive + root + IK + palette) | + CPU LBS skinning |
+|---|---|---|
+| jk-h02 (30k verts) | 0.50 ms/frame | 20.6–21.4 ms → ~47–49 fps |
+| jk-h02.lod2 (6k verts) | 0.49–0.51 ms | 4.3–5.0 ms → ~200–209 fps |
+| bfme-hr01 (23.7k verts) | 0.53 ms | 18.8 ms → ~53 fps |
+| bfme-hr01.mobile.lod2 (2.6k verts) | 0.42 ms | 2.5 ms → ~402 fps |
+
+  - Animation for 32 characters uses ~3% of a 16.7 ms frame.
+  - 60 fps at full res needs GPU skinning (the per-frame palette is already produced). That path is **not measured on Anthony's RX 9060 XT**.
+  - On this box, 60 fps is met with lod1/lod2 meshes, not with full-res CPU skinning.
+
+### Incident (disclosed)
+- ~02:28 AST: a test run without `--` made hcn treat the GLB path as its output path, which overwrote GLBs.
+- They were restored, and all 39 sha256 were re-verified against the pre-run hashes.
+- After the final proof run, the 39 sha256 were re-checked: 0 mismatches.
+- `hcn` gotcha: program args must follow `--`. This is documented in DESIGN.md and in run.sh.
+
+### Rejected / discarded attempts (noted, not committed)
+- Capping action fades by clip length: made pops worse (ratios 1.05–1.6).
+- smootherstep for extrapolation decay.
+- SOFT_K 0.94 / 0.90: made hr02 worse.
+- Storing the knee-frame forward direction for the pole.
+- Hinge capture at bf > 0.05: broke JK h02, because the hyperextended idle knees captured the wrong side.
+- SOFT_BAND residual: removed; it gave identical results.
+
+### Helium gaps hit (worked around)
+- No closures or function values: blend trees and machines are data-driven tables.
+- One growable array per struct, and no heap or pointers: flat pools indexed by int.
+- Root-file namespace limit: module-qualified helpers.
+- Strict int/i32: explicit casts everywhere.
+- No threads or SIMD: 32 characters run single-threaded. Skinning would benefit most.
+- The hcn output-path foot-gun (above).
+
+### What's left / blockers
+- **Lulu review**: pending; required before anything leaves the branch.
+- GPU skinning path and a measurement on the RX 9060 XT: needs Anthony's machine.
+- Lavapipe visual proof (screenshots/video of walk→run + planted feet): not done.
+- In-client integration into the JK view/sim and the BFME arena: not done (JK `eng/` is off-limits under clean room).
+- Nothing pushed. BFME GLBs (arena-wire) are read-only and unchanged. Rikku's contact.py is untouched.
