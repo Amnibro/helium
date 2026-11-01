@@ -6,6 +6,8 @@ layout(set = 2, binding = 0) uniform sampler2D tex_nd;
 layout(set = 3, binding = 0) uniform Occlusion { vec4 lens; vec4 tune; }; // lens: tan(fov_x/2), tan(fov_y/2), 1/w, 1/h; tune: radius, bias, power, samples
 layout(location = 0) out vec4 out_ao;
 
+// hash12: "Hash without Sine" by David Hoskins, https://www.shadertoy.com/view/4djSRW,
+// Copyright (c) 2014 David Hoskins, MIT License (full text in NOTICE).
 float hash12(vec2 p) {
 	vec3 q = fract(vec3(p.xyx) * 0.1031);
 	q += dot(q, q.yzx + 33.33);
