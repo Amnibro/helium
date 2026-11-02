@@ -1,0 +1,36 @@
+use os
+struct P { name byte[..8], x real, y real }
+var G P[>..]
+bump(ps P[:], i int): ps[i].x += 100.0
+touch_g(): G[0].x += 1000.0
+pure_len(p P) real: p.x + p.y
+main():
+	ps P[>..] ~= []
+	for i 4: ps.push(P{"p", i as real, 2.0 * i as real})
+	t ~= 0.0
+	for p ps:
+		ps[0].x = 50.0
+		t += p.x
+	print(t)
+	for p, i ps:
+		bump(ps, (i + 1) % 4)
+		t += p.x
+	print(t)
+	G = copy(ps)
+	for g G:
+		touch_g()
+		t += g.x
+	print(t)
+	for p ps:
+		q := p
+		t += q.y + pure_len(p)
+	print(t)
+	for p ps:
+		r ~= p
+		r.x = 1.0
+		t += r.x + p.x
+	print(t)
+	best ~= P{"", 0.0, 0.0}
+	for p ps:
+		if p.x > best.x: best.name = p.name; best.x = p.x
+	print(best.name, " ", best.x)

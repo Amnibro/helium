@@ -64,11 +64,14 @@ wcolor(fi int):
 fg(k int): wb(0x20); ul(WO, WAR + 4 + k)
 fs(k int): wb(0x21); ul(WO, WAR + 4 + k)
 wsplit(k int): wb(0x44); for q 8 { wb([0, 0, 0, 2, 0, 0, 0xA0, 0x41][q]) } fg(k); wb(0xA2); fs(7); fg(7); fg(7); fg(k); wb(0xA1); wb(0xA1); fs(k + 1); fg(k); fg(k + 1); wb(0xA1); fs(k + 2)
+wfk(b u64): wb(0x44); for q 8 { wb(((b >> ((8 * q) as u64)) & 255) as int) }
+wfsc(k int, o int): wfk(0x37F0000000000000); wfk(0x3FF0000000000000); fg(k); wb(0x99); wfk(0x7E20000000000000); wb(0x64); wb(0x1B); fs(o)
 wfma(a int, b int, c int, w int):
 	fget(a, w); if w & 3 == 2 { wb(0xBB) } fs(0); fget(b, w); if w & 3 == 2 { wb(0xBB) } fs(3); fget(c, w); if w & 3 == 2 { wb(0xBB) } fs(6)
+	wfsc(0, 1); wfsc(3, 2); fg(0); fg(1); wb(0xA2); fs(0); fg(3); fg(2); wb(0xA2); fs(3); fg(6); fg(1); wb(0xA2); fg(2); wb(0xA2); fs(6); wfk(0x3FF0000000000000); fg(1); fg(2); wb(0xA2); wb(0xA3)
 	wsplit(0); wsplit(3); fg(0); fg(3); wb(0xA2); fs(0)
 	fg(1); fg(4); wb(0xA2); fg(0); wb(0xA1); fg(1); fg(5); wb(0xA2); wb(0xA0); fg(2); fg(4); wb(0xA2); wb(0xA0); fg(2); fg(5); wb(0xA2); wb(0xA0); fs(1)
-	fg(0); fg(6); wb(0xA0); fs(2); fg(2); fg(0); wb(0xA1); fs(3); fg(0); fg(2); fg(3); wb(0xA1); wb(0xA1); fg(6); fg(3); wb(0xA1); wb(0xA0); fg(1); wb(0xA0); fg(2); wb(0xA0)
+	fg(0); fg(6); wb(0xA0); fs(2); fg(2); fg(0); wb(0xA1); fs(3); fg(0); fg(2); fg(3); wb(0xA1); wb(0xA1); fg(6); fg(3); wb(0xA1); wb(0xA0); fg(1); wb(0xA0); fg(2); wb(0xA0); wb(0xA2)
 	if w & 3 == 2 { wb(0xB6) }
 rg(v int): wb(0x20); ul(WO, wl(v))
 rs(v int): wb(0x21); ul(WO, wl(v))

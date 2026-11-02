@@ -789,6 +789,7 @@ recursive lbranch0(n int, d int):
 var LRV i32[>..<]
 var DROPS i32[>..<]; var LOOPH i32[>..<]; var LCH i32[>..<]; var STMP i32[>..<]; var LSTM i32[>..<]; FSTM ~= 0
 var NOVDK int
+var NOAR bool
 recursive needs_drop(t int) bool:
 	if NOVDK == 0 { ev byte[>..] ~= []; NOVDK = if env("HC_NOVD", ev) { 1 } else { 2 } }
 	if t < 0 { return false } if is_res(t) { return true } k := TY[t].k; if k == TY_STRUCT && (!lvst(t) || NOVDK == 2) { si := TY[t].a; for j STI[si].fnum { ft := SFI[STI[si].f0 as int + j].ty; if ft >= 0 && TY[ft].k != TY_REF && needs_drop(ft) { return true } } return false } if k == TY_ARR && (is_fix(t) || is_lim(t)) { return needs_drop(TY[t].a) } false
@@ -1527,10 +1528,40 @@ recursive lfor_seq(n int):
 	lblk(x.d, -1)
 	ir(I_LBL, 3, -1, -1, -1, lc); ir(I_MOV, 3, kv, bin(B_ADD, 3, kv, imm(1), -1), -1, 0); ir(I_MOV, 3, q, bin(B_ADD, 3, q, z, -1), -1, 0); ir(I_JMP, 3, -1, -1, -1, l0); ir(I_LBL, 3, -1, -1, -1, l1)
 	LOOPH.pop(); LSTM.pop(); LCH.pop(); LBRK.pop(); LCNT.pop(); LRV.pop();
+recursive lvroot(n int) int:
+	x ~= n
+	while x >= 0 && (ND[x].k as int == N_IDX || ND[x].k as int == N_DOT || ND[x].k as int == N_SLICE): x = ND[x].a
+	if x >= 0 && ND[x].k as int == N_ID { x } else { -1 }
+aref_tgt(t int, v int, ar int) bool:
+	x ~= t
+	while x >= 0 && ND[x].k as int == N_DOT: x = ND[x].a
+	if x >= 0 && ND[x].k as int == N_IDX && ND[x].a >= 0 && ND[ND[x].a].k as int == N_ID: b := ND[x].a; if rk(b) != R_LOCAL { return false } bt := LVS[rv(b)].ty as int; if !(is_res(bt) || is_fix(bt) || is_lim(bt)) { return false } x = b
+	if x < 0 || ND[x].k as int != N_ID || rk(x) != R_LOCAL || rv(x) == v || rv(x) == ar: return false
+	lt := LVS[rv(x)].ty as int; lt >= 0 && TY[lt].k != TY_REF && TY[lt].k != TY_SLICE && !is_rel(lt)
+recursive autoref_ok(n int, v int, ar int) bool:
+	if n < 0 || n >= ND.len: return true
+	k := ND[n].k as int
+	if k == N_FUNVAL || k == N_CFOR: return false
+	if k == N_ASSIGN:
+		a := ND[n].a
+		if a >= 0 && ND[a].k as int == N_LIST { for i ND[a].n { if !aref_tgt(kid(a, i), v, ar) { return false } } } else { if !aref_tgt(a, v, ar) { return false } }
+	if k == N_INCDEC && !aref_tgt(ND[n].a, v, ar): return false
+	if k == N_UN && ND[n].op as int == T_AND: r := lvroot(ND[n].a); if r < 0 || rk(r) != R_LOCAL || rv(r) == v || rv(r) == ar { return false }
+	if k == N_CALL:
+		if rk(n) == R_BUILTIN: if mutator(wname(callee(n))) { r := lvroot(barg(n, 0)); if r < 0 || rk(r) != R_LOCAL || rv(r) == v || rv(r) == ar || !aref_tgt(barg(n, 0), v, ar) { return false } }
+		else:
+			if rk(n) != R_FN: return false
+			fd := FI_[rv(n)].node as int; if fd < 0 { return false }
+			for i ND[fd].n: if mut_param(kid(fd, i)) { return false }
+			for f, j WST_FN: if f as int == fd && WST_IMP[j] { return false }
+	ks i32[>..] ~= []; wkids(n, ks)
+	for c ks: if !autoref_ok(c as int, v, ar) { return false }
+	true
 recursive lfor_arr(n int):
 	x := ND[n]; v := rv(n); m := ax(n); a := x.a; bt := at(a); d := deref(bt); e := TY[d].a; es := tsz(e)
 	if sq(d): lfor_seq(n); return
-	byref := x.fl & 1 != 0 && TY[e].k != TY_REF || TY[LVS[v].ty].k == TY_REF && TY[e].k != TY_REF
+	byref ~= x.fl & 1 != 0 && TY[e].k != TY_REF || TY[LVS[v].ty].k == TY_REF && TY[e].k != TY_REF
+	if !byref && !NOAR && TY[e].k == TY_STRUCT && !is_rel(e) && !hvimg(e) && !lvst(e): ra := lvroot(a); arv := if ra >= 0 && rk(ra) == R_LOCAL { rv(ra) } else { -1 }; if (ra < 0 || rk(ra) == R_LOCAL || rk(ra) == R_GLOBAL) && autoref_ok(x.d, v, arv) { LVS[v].ty = t_ref(e, RF_CONST) as i32; byref = true }
 	rf := TY[bt].k == TY_REF; rm := if is_res(d) { if rf && pure_path(a) { 1 } else { 2 } } else { if is_lim(d) && !is_vimg(d) && (rf || is_place(a)) { 3 } else { if TY[d].k != TY_SLICE && rf && pure_path(a) { 4 } else { if TY[d].k == TY_SLICE && (rf || is_place(a)) { 5 } else { 0 } } } }
 	w := if rm == 2 || rm == 3 || rm == 5 { laddr(a) } else { -1 }; p0 ~= -1; n0 ~= -1; if rm == 0:
 		if is_fix(d) && nseq(d): p0 = if is_lplace(a) || rf { laddr(a) } else { ltmp(a, d) }; n0 = imm(TY[d].b as int) else: pp, ll := lsl(a); p0 = pp; n0 = ll
@@ -1676,6 +1707,7 @@ ginit_body():
 	ir(I_LBL, 3, -1, -1, -1, RETL); ir(I_RET, 3, -1, -1, -1, 0);
 lower_program(out byte[>..]&) bool:
 	BSS = max(BSS, 16); TLSM = TSP.len > 0
+	nar byte[>..] ~= []; NOAR = env("HC_NOAR", nar)
 	md := lookup(intern("main"), -1, D_FN)
 	mi ~= -1; for f, i FI_:
 		if f.node == DC[md].node && f.par < 0 && f.st == 2: mi = i
