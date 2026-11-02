@@ -446,6 +446,31 @@ makes that a failure). `GPU_LOCK=<file>` serializes the GPU part on shared
 machines. `tools/hc/ci.sh` runs it only when `HELIUM_GFX_TEST=1`. The test binary
 needs SDL3 even for the CPU part (see Known gaps).
 
+### Pre-registered bars (fx GPU particles)
+
+Committed before any GPU run of `gfx.fx`; never loosened afterwards. dt = 1/60 s throughout.
+
+* **F1 integration.** 64 particles from a point at 10 m/s along (1, 1, 0)/sqrt 2, gravity 9.8, drag
+  0.5 /s, then again with drag 0: after 60 steps every position is within **1e-3 m** of the
+  closed-form solution of v' = g - k v.
+* **F2 spawn rate.** An emitter at 1234.5 /s for 180 steps (lifetime 100 s): the live count is
+  within **1** of 3703.5.
+* **F3 incompressible curl noise.** 262 144 particles uniform in an 8 m cube, speed 0, gravity 0,
+  curl strength 0.5 and scale 0.5, 120 steps. Counts in 4 x 4 x 4 bins of the central 2 m cube:
+  coefficient of variation after / before <= **1.25**. Control: the gradient of the same noise
+  (compressible), same strength, must reach **>= 1.5**.
+* **F4 depth collision.** 2000 particles dropped from a 0.5 m sphere 2 m above the floor
+  (restitution 0.3), 120 steps, colliding against the prepass depth: <= **1 %** end more than
+  5 cm below the floor. Control: collision off, >= 90 % below.
+* **F5 sorted alpha.** 16 flat squares (alpha 0.5, distinct colours) on the view axis at depths 2
+  to 9.5 m, emitted front to back: the centre 3 x 3 pixels of the HDR image are within **0.01**
+  of back-to-front compositing over the background. Control: sorting off must miss by > 0.05.
+* **F6 soft particles.** A 1 m disc centred on the floor line, fade 0.5 m: the largest
+  row-to-row luminance step inside the disc's centre columns is <= **0.5 x** the same frame with
+  soft fading off.
+
+Reported, no bar: GPU time for 1 000 000 particles (spawn, simulate, draw, additive).
+
 ### Pre-registered bars (motion blur and depth of field, gap-map item 3 follow-ups)
 
 Committed before any GPU run of either effect; never loosened afterwards. Both are
