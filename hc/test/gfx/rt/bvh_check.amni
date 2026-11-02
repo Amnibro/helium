@@ -1,0 +1,60 @@
+import os;
+import math;
+import gfx;
+import gfx.rt;
+import gfx.cornell;
+var RS uint = 12345;
+fn rnd() f32 { RS = RS * 6364136223846793005 + 1442695040888963407; ((RS >> 40) as real / 16777216.0) as f32 }
+fn brute(ox f32, oy f32, oz f32, dx f32, dy f32, dz f32) f32 {
+	var best f32 = 1.0e30;
+	for t in rt::count() {
+		let b = t * 9;
+		let e1x = rt::tri_in[b + 3] - rt::tri_in[b]; let e1y = rt::tri_in[b + 4] - rt::tri_in[b + 1]; let e1z = rt::tri_in[b + 5] - rt::tri_in[b + 2];
+		let e2x = rt::tri_in[b + 6] - rt::tri_in[b]; let e2y = rt::tri_in[b + 7] - rt::tri_in[b + 1]; let e2z = rt::tri_in[b + 8] - rt::tri_in[b + 2];
+		let px = dy * e2z - dz * e2y; let py = dz * e2x - dx * e2z; let pz = dx * e2y - dy * e2x;
+		let det = e1x * px + e1y * py + e1z * pz;
+		if abs(det) < 1.0e-12 { continue; }
+		let inv = 1.0 / det;
+		let sx = ox - rt::tri_in[b]; let sy = oy - rt::tri_in[b + 1]; let sz = oz - rt::tri_in[b + 2];
+		let u = (sx * px + sy * py + sz * pz) * inv;
+		if u < 0.0 || u > 1.0 { continue; }
+		let qx = sy * e1z - sz * e1y; let qy = sz * e1x - sx * e1z; let qz = sx * e1y - sy * e1x;
+		let v = (dx * qx + dy * qy + dz * qz) * inv;
+		if v < 0.0 || u + v > 1.0 { continue; }
+		let t2 = (e2x * qx + e2y * qy + e2z * qz) * inv;
+		if t2 > 1.0e-4 && t2 < best { best = t2; }
+	}
+	best
+}
+fn run(label const byte[:], lo f32, hi f32, rays int) bool {
+	rt::build();
+	var bad = 0; var hits = 0;
+	for r in rays {
+		let ox = lo + (hi - lo) * rnd(); let oy = lo + (hi - lo) * rnd(); let oz = lo + (hi - lo) * rnd();
+		var dx = rnd() * 2.0 - 1.0; var dy = rnd() * 2.0 - 1.0; var dz = rnd() * 2.0 - 1.0;
+		let l = sqrt((dx * dx + dy * dy + dz * dz) as real) as f32; dx /= l; dy /= l; dz /= l;
+		let t, k = rt::hit(ox, oy, oz, dx, dy, dz, 1.0e30);
+		let tb = brute(ox, oy, oz, dx, dy, dz);
+		if k >= 0 { hits += 1; }
+		if t != tb { bad += 1; }
+	}
+	print(label, ": ", rt::count(), " triangles, ", rt::nodes.len / rt::NODE_FLOATS, " nodes, ", rays, " rays, ", hits, " hits, mismatches ", bad, if bad == 0 { " PASS" } else { " FAIL" });
+	bad == 0
+}
+fn main() {
+	var ok = true;
+	rt::clear();
+	cornell::build();
+	for t in cornell::tri_mat.len {
+		let b = t * 9;
+		rt::add(float3 { cornell::tris[b] as f32, cornell::tris[b + 1] as f32, cornell::tris[b + 2] as f32 }, float3 { cornell::tris[b + 3] as f32, cornell::tris[b + 4] as f32, cornell::tris[b + 5] as f32 }, float3 { cornell::tris[b + 6] as f32, cornell::tris[b + 7] as f32, cornell::tris[b + 8] as f32 }, float3 { 0.73, 0.73, 0.73 });
+	}
+	if !run("cornell", 0.1, 5.4, 20000) { ok = false; }
+	rt::clear();
+	for t in 20000 {
+		let cx = rnd() * 10.0; let cy = rnd() * 10.0; let cz = rnd() * 10.0; let s = 0.05 + rnd() * 0.3;
+		rt::add(float3 { cx, cy, cz }, float3 { cx + s * (rnd() - 0.5), cy + s * (rnd() - 0.5), cz + s }, float3 { cx + s, cy + s * (rnd() - 0.5), cz + s * (rnd() - 0.5) }, float3 { 0.5, 0.5, 0.5 });
+	}
+	if !run("soup", 0.0, 10.0, 3000) { ok = false; }
+	print(if ok { "bvh: ok" } else { "bvh: FAILED" });
+}

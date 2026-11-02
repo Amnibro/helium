@@ -1,0 +1,158 @@
+namespace rt;
+import gfx;
+let BINS = 12;
+let LEAF = 4;
+let NODE_FLOATS = 8;
+let TRI_FLOATS = 16;
+var tri_in f32[>..] = [];
+var alb_in f32[>..] = [];
+var nodes f32[>..] = [];
+var tris f32[>..] = [];
+var order int[>..] = [];
+var cen f32[>..] = [];
+var node_buf gfx::Buffer;
+var tri_buf gfx::Buffer;
+var has_bufs = false;
+var ready = false;
+fn clear() { tri_in.clear(); alb_in.clear(); ready = false; }
+fn count() int { tri_in.len / 9 }
+fn add(a float3, b float3, c float3, rgb float3) {
+	tri_in.append([a.x, a.y, a.z, b.x, b.y, b.z, c.x, c.y, c.z]);
+	alb_in.append([rgb.x, rgb.y, rgb.z]);
+}
+fn tmin(t int, k int) f32 { min(min(tri_in[t * 9 + k], tri_in[t * 9 + 3 + k]), tri_in[t * 9 + 6 + k]) }
+fn tmax(t int, k int) f32 { max(max(tri_in[t * 9 + k], tri_in[t * 9 + 3 + k]), tri_in[t * 9 + 6 + k]) }
+fn area(lo f32[3], hi f32[3]) f32 {
+	let dx = max(hi[0] - lo[0], 0.0); let dy = max(hi[1] - lo[1], 0.0); let dz = max(hi[2] - lo[2], 0.0);
+	dx * dy + dy * dz + dz * dx
+}
+fn set_node(n int, lo f32[3], hi f32[3], a int, c int) {
+	let b = n * NODE_FLOATS;
+	nodes[b] = lo[0]; nodes[b + 1] = lo[1]; nodes[b + 2] = lo[2]; nodes[b + 3] = a as f32;
+	nodes[b + 4] = hi[0]; nodes[b + 5] = hi[1]; nodes[b + 6] = hi[2]; nodes[b + 7] = c as f32;
+}
+fn new_node() int { let n = nodes.len / NODE_FLOATS; for k in NODE_FLOATS { nodes.push(0.0); } n }
+fn bounds(first int, cnt int) f32[3], f32[3], f32[3], f32[3] {
+	var lo f32[3] = [1.0e30; 3]; var hi f32[3] = [-1.0e30; 3]; var clo f32[3] = [1.0e30; 3]; var chi f32[3] = [-1.0e30; 3];
+	for i in cnt {
+		let t = order[first + i];
+		for k in 3 {
+			lo[k] = min(lo[k], tmin(t, k)); hi[k] = max(hi[k], tmax(t, k));
+			clo[k] = min(clo[k], cen[t * 3 + k]); chi[k] = max(chi[k], cen[t * 3 + k]);
+		}
+	}
+	return lo, hi, clo, chi;
+}
+fn split(first int, cnt int, clo f32[3], chi f32[3], parent_area f32) int, int, f32 {
+	var best_axis = -1; var best_bin = 0; var best_cost f32 = cnt as f32 * parent_area;
+	for ax in 3 {
+		let ext = chi[ax] - clo[ax];
+		if ext <= 1.0e-9 { continue; }
+		var bc int[12] = [0; 12];
+		var blo f32[36] = [1.0e30; 36]; var bhi f32[36] = [-1.0e30; 36];
+		for i in cnt {
+			let t = order[first + i];
+			let bi = min(((cen[t * 3 + ax] - clo[ax]) / ext * BINS as f32) as int, BINS - 1);
+			bc[bi] += 1;
+			for k in 3 { blo[bi * 3 + k] = min(blo[bi * 3 + k], tmin(t, k)); bhi[bi * 3 + k] = max(bhi[bi * 3 + k], tmax(t, k)); }
+		}
+		var ra f32[12] = [0.0; 12]; var rc int[12] = [0; 12];
+		var lo f32[3] = [1.0e30; 3]; var hi f32[3] = [-1.0e30; 3]; var c = 0;
+		var b = BINS - 1;
+		while b > 0 {
+			c += bc[b];
+			for k in 3 { lo[k] = min(lo[k], blo[b * 3 + k]); hi[k] = max(hi[k], bhi[b * 3 + k]); }
+			ra[b] = if c > 0 { area(lo, hi) } else { 0.0 }; rc[b] = c;
+			b -= 1;
+		}
+		lo = [1.0e30; 3]; hi = [-1.0e30; 3]; c = 0;
+		for s in BINS - 1 {
+			c += bc[s];
+			for k in 3 { lo[k] = min(lo[k], blo[s * 3 + k]); hi[k] = max(hi[k], bhi[s * 3 + k]); }
+			if c == 0 || rc[s + 1] == 0 { continue; }
+			let cost = 0.5 * parent_area + c as f32 * area(lo, hi) + rc[s + 1] as f32 * ra[s + 1];
+			if cost < best_cost { best_cost = cost; best_axis = ax; best_bin = s; }
+		}
+	}
+	return best_axis, best_bin, best_cost;
+}
+fn build() {
+	nodes.clear(); tris.clear(); order.clear(); cen.clear();
+	let n = count();
+	for t in n { order.push(t); for k in 3 { cen.push((tri_in[t * 9 + k] + tri_in[t * 9 + 3 + k] + tri_in[t * 9 + 6 + k]) / 3.0); } }
+	if n == 0 { ready = false; return; }
+	var st int[>..] = [];
+	let root = new_node();
+	st.push(root); st.push(0); st.push(n);
+	while st.len > 0 {
+		let cnt = st.pop(); let first = st.pop(); let nd = st.pop();
+		let lo, hi, clo, chi = bounds(first, cnt);
+		var leaf = cnt <= LEAF;
+		var ax = -1; var bin = 0;
+		if !leaf { let a, b, cost = split(first, cnt, clo, chi, area(lo, hi)); ax = a; bin = b; leaf = ax < 0; let _ = cost; }
+		if leaf { set_node(nd, lo, hi, first, cnt); continue; }
+		let ext = chi[ax] - clo[ax];
+		var i = first; var j = first + cnt - 1;
+		while i <= j {
+			let t = order[i];
+			let bi = min(((cen[t * 3 + ax] - clo[ax]) / ext * BINS as f32) as int, BINS - 1);
+			if bi <= bin { i += 1; } else { order[i] = order[j]; order[j] = t; j -= 1; }
+		}
+		let nl = i - first;
+		if nl == 0 || nl == cnt { set_node(nd, lo, hi, first, cnt); continue; }
+		let l = new_node(); let r = new_node();
+		set_node(nd, lo, hi, l, 0);
+		st.push(r); st.push(i); st.push(cnt - nl);
+		st.push(l); st.push(first); st.push(nl);
+	}
+	for oi in n {
+		let t = order[oi]; let b = t * 9;
+		tris.append([tri_in[b], tri_in[b + 1], tri_in[b + 2], 0.0, tri_in[b + 3] - tri_in[b], tri_in[b + 4] - tri_in[b + 1], tri_in[b + 5] - tri_in[b + 2], 0.0]);
+		tris.append([tri_in[b + 6] - tri_in[b], tri_in[b + 7] - tri_in[b + 1], tri_in[b + 8] - tri_in[b + 2], 0.0, alb_in[t * 3], alb_in[t * 3 + 1], alb_in[t * 3 + 2], 0.0]);
+	}
+	ready = true;
+}
+fn upload() {
+	if !ready { return; }
+	if has_bufs { gfx::release(node_buf); gfx::release(tri_buf); }
+	let u = gfx::BUFFER_STORAGE | gfx::BUFFER_COMPUTE_READ;
+	node_buf = gfx::buffer(u, bytes_of(nodes)[..nodes.len * 4]);
+	tri_buf = gfx::buffer(u, bytes_of(tris)[..tris.len * 4]);
+	has_bufs = true;
+}
+fn release() { if has_bufs { gfx::release(node_buf); gfx::release(tri_buf); has_bufs = false; } }
+fn hit(ox f32, oy f32, oz f32, dx f32, dy f32, dz f32, tmax0 f32) f32, int {
+	if !ready { return tmax0, -1; }
+	var best = tmax0; var bt = -1;
+	let ix = 1.0 / (if abs(dx) < 1.0e-12 { 1.0e-12 } else { dx }); let iy = 1.0 / (if abs(dy) < 1.0e-12 { 1.0e-12 } else { dy }); let iz = 1.0 / (if abs(dz) < 1.0e-12 { 1.0e-12 } else { dz });
+	var st int[>..] = [0];
+	while st.len > 0 {
+		let nd = st.pop(); let b = nd * NODE_FLOATS;
+		let t0x = (nodes[b] - ox) * ix; let t1x = (nodes[b + 4] - ox) * ix;
+		let t0y = (nodes[b + 1] - oy) * iy; let t1y = (nodes[b + 5] - oy) * iy;
+		let t0z = (nodes[b + 2] - oz) * iz; let t1z = (nodes[b + 6] - oz) * iz;
+		let tn = max(max(min(t0x, t1x), min(t0y, t1y)), max(min(t0z, t1z), 0.0));
+		let tf = min(min(max(t0x, t1x), max(t0y, t1y)), min(max(t0z, t1z), best));
+		if tn > tf { continue; }
+		let c = nodes[b + 7] as int; let a = nodes[b + 3] as int;
+		if c == 0 { st.push(a); st.push(a + 1); continue; }
+		for k in c {
+			let q = (a + k) * TRI_FLOATS;
+			let e1x = tris[q + 4]; let e1y = tris[q + 5]; let e1z = tris[q + 6];
+			let e2x = tris[q + 8]; let e2y = tris[q + 9]; let e2z = tris[q + 10];
+			let px = dy * e2z - dz * e2y; let py = dz * e2x - dx * e2z; let pz = dx * e2y - dy * e2x;
+			let det = e1x * px + e1y * py + e1z * pz;
+			if abs(det) < 1.0e-12 { continue; }
+			let inv = 1.0 / det;
+			let sx = ox - tris[q]; let sy = oy - tris[q + 1]; let sz = oz - tris[q + 2];
+			let u = (sx * px + sy * py + sz * pz) * inv;
+			if u < 0.0 || u > 1.0 { continue; }
+			let qx = sy * e1z - sz * e1y; let qy = sz * e1x - sx * e1z; let qz = sx * e1y - sy * e1x;
+			let v = (dx * qx + dy * qy + dz * qz) * inv;
+			if v < 0.0 || u + v > 1.0 { continue; }
+			let t = (e2x * qx + e2y * qy + e2z * qz) * inv;
+			if t > 1.0e-4 && t < best { best = t; bt = a + k; }
+		}
+	}
+	return best, bt;
+}

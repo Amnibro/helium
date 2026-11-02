@@ -17,6 +17,10 @@ layout(set = 2, binding = 3) uniform sampler2D tex_occlusion;
 layout(set = 2, binding = 4) uniform sampler2D tex_emissive;
 layout(set = 2, binding = 5) uniform sampler2DArrayShadow tex_shadow;
 layout(set = 2, binding = 6) uniform sampler2D tex_ao;
+layout(std430, set = 2, binding = 7) readonly buffer Nodes { vec4 bvh_nodes[]; };
+layout(std430, set = 2, binding = 8) readonly buffer Tris { vec4 bvh_tris[]; };
+layout(std430, set = 2, binding = 9) readonly buffer Irr { vec4 probe_irr[]; };
+layout(std430, set = 2, binding = 10) readonly buffer Dist { vec2 probe_dist[]; };
 
 const int CASCADES = 3;
 const int MAX_LIGHTS = 8;
@@ -34,7 +38,12 @@ layout(set = 3, binding = 0) uniform Frame {
 	vec4 screen;          // xy 1 / target size, z light count, w ambient scale
 	vec4 light_pos[MAX_LIGHTS];   // xyz position, w range
 	vec4 light_rgb[MAX_LIGHTS];   // rgb intensity, w kind (0 point; spot reserved)
+	vec4 gi;
+	vec4 gi_origin;
+	vec4 gi_step;
+	vec4 gi_dims;
 };
+#include "gi.glsl"
 
 layout(set = 3, binding = 1) uniform Surface {
 	vec4 base;            // base colour factor
@@ -134,11 +143,12 @@ float sun_visibility(vec3 p, vec3 n) {
 // Fresnel weight. The dielectric and metal responses are mixed by metalness, so a
 // white surface returns exactly the environment in a uniform sky (white furnace).
 // Probe irradiance or a prefiltered environment can replace this function.
-vec3 ambient_light(vec3 n, vec3 v, vec3 l, vec3 base_rgb, float metal, float rough) {
+vec3 ambient_light(vec3 n, vec3 v, vec3 l, vec3 base_rgb, float metal, float rough, vec3 gi_irr, bool use_gi) {
 	vec3 irr = mix(ground.rgb, zenith.rgb, n.y * 0.5 + 0.5);
 	irr = mix(irr, horizon.rgb, 0.5 * (1.0 - abs(n.y)));
+	if (use_gi) irr = gi_irr;
 	vec3 r = reflect(-v, n);
-	vec3 env = sky_color(r, l, zenith.rgb, horizon.rgb, ground.rgb, vec3(0.0));
+	vec3 env = use_gi ? gi_irr : sky_color(r, l, zenith.rgb, horizon.rgb, ground.rgb, vec3(0.0));
 	env = mix(env, irr, rough * rough);
 	float n_v = max(dot(n, v), 1e-4);
 	float smooth_w = (1.0 - rough) * (1.0 - rough);
@@ -208,20 +218,27 @@ void main() {
 	if (control == 1) { f0_spec = mix(vec3(1.0), tint.rgb, metal); ms = ms_factor(f0_spec, e_ms, ms_on); }
 	if (control == 2) kd = vec3(-1.0);
 	vec3 l = normalize(to_sun.xyz);
-	rgb += light_term(n, v, l, sun_rgb.rgb, albedo, f0_spec, rough, ms, kd) * sun_visibility(in_world, normalize(in_nrm));
+	vec3 gn = normalize(in_nrm);
+	if (!gl_FrontFacing && alpha.z > 0.5) gn = -gn;
+	vec3 rp = in_world + gn * 2e-3;
+	rgb += light_term(n, v, l, sun_rgb.rgb, albedo, f0_spec, rough, ms, kd) * (gi.y > 0.5 && to_sun.w > 0.5 ? (dot(gn, l) > 0.0 && gi_visible(rp, l, 1e4) ? 1.0 : 0.0) : sun_visibility(in_world, normalize(in_nrm)));
 	int count = int(screen.z);
 	for (int i = 0; i < MAX_LIGHTS; i++) {
 		if (i >= count) break;
 		vec3 d = light_pos[i].xyz - in_world;
 		float dist = length(d);
-		rgb += light_term(n, v, d / max(dist, 1e-4), light_rgb[i].rgb * range_falloff(dist, light_pos[i].w), albedo, f0_spec, rough, ms, kd);
+		vec3 ld = d / max(dist, 1e-4);
+		if (gi.y > 0.5 && (dot(gn, ld) <= 0.0 || !gi_visible(rp, ld, dist - 2e-3))) continue;
+		rgb += light_term(n, v, ld, light_rgb[i].rgb * range_falloff(dist, light_pos[i].w), albedo, f0_spec, rough, ms, kd);
 	}
 
 	// furnace control hook (scene3d.furnace_scale, 1 in normal use): scales the direct
 	// light so the furnace test can check that it notices a non-conserving BRDF
 	rgb *= uv_sets2.w;
 	vec3 direct = rgb;
-	vec3 ambient = ambient_light(n, v, l, tint.rgb, metal, rough) * occ * screen.w;
+	bool use_gi = gi.x > 0.5;
+	vec3 gi_irr = use_gi ? gi_irradiance(in_world, n, v, gi_origin, gi_step, gi_dims) : vec3(0.0);
+	vec3 ambient = ambient_light(n, v, l, tint.rgb, metal, rough, gi_irr, use_gi) * (use_gi ? (gi.z > 0.5 ? occ : 1.0) : occ * screen.w);
 	rgb += ambient;
 
 	rgb += emissive.rgb * texture(tex_emissive, pick_uv(uv_sets2.x)).rgb;

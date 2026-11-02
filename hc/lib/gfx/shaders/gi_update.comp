@@ -1,0 +1,49 @@
+layout(local_size_x = 64) in;
+layout(std430, set = 0, binding = 0) readonly buffer Rays { vec4 rays[]; };
+layout(std430, set = 1, binding = 0) buffer Irr { vec4 probe_irr[]; };
+layout(std430, set = 1, binding = 1) buffer Dist { vec2 probe_dist[]; };
+layout(set = 2, binding = 0) uniform Gi { vec4 origin; vec4 step; vec4 dims; vec4 rot0; vec4 rot1; vec4 rot2; vec4 params; vec4 to_sun; vec4 sun_rgb; vec4 zenith; vec4 horizon; vec4 ground; vec4 light_pos[8]; vec4 light_rgb[8]; };
+const int GI_IRR = 8;
+const int GI_DIST = 16;
+vec3 gi_unoct(vec2 uv) {
+	vec2 f = uv * 2.0 - 1.0;
+	vec3 n = vec3(f, 1.0 - abs(f.x) - abs(f.y));
+	float t = max(-n.z, 0.0);
+	n.x += n.x >= 0.0 ? -t : t;
+	n.y += n.y >= 0.0 ? -t : t;
+	return normalize(n);
+}
+vec3 gi_dir(int r, int n) {
+	float z = 1.0 - (2.0 * float(r) + 1.0) / float(n);
+	float s = sqrt(max(1.0 - z * z, 0.0));
+	float ph = float(r) * 2.39996323;
+	vec3 d = vec3(cos(ph) * s, sin(ph) * s, z);
+	return normalize(vec3(dot(rot0.xyz, d), dot(rot1.xyz, d), dot(rot2.xyz, d)));
+}
+void main() {
+	int id = int(gl_GlobalInvocationID.x);
+	int np = int(dims.x * dims.y * dims.z);
+	int nr = int(dims.w);
+	int per = GI_IRR * GI_IRR + GI_DIST * GI_DIST;
+	if (id >= np * per) return;
+	int pi = id / per;
+	int k = id - pi * per;
+	bool irr = k < GI_IRR * GI_IRR;
+	int res = irr ? GI_IRR : GI_DIST;
+	int tx = irr ? k : k - GI_IRR * GI_IRR;
+	vec3 dir = gi_unoct((vec2(tx % res, tx / res) + 0.5) / float(res));
+	vec3 sum = vec3(0.0);
+	vec2 ds = vec2(0.0);
+	float ws = 0.0;
+	for (int r = 0; r < 1024; r++) {
+		if (r >= nr) break;
+		vec4 ray = rays[pi * nr + r];
+		vec3 rd = gi_dir(r, nr);
+		float c = max(dot(dir, rd), 0.0);
+		if (irr) { sum += ray.rgb * c; ws += c; }
+		else { float w = pow(c, 50.0); float t = min(abs(ray.w), params.z); ds += vec2(t, t * t) * w; ws += w; }
+	}
+	float h = params.y;
+	if (irr) { vec3 v = ws > 0.0 ? sum / ws : vec3(0.0); int o = pi * GI_IRR * GI_IRR + tx; probe_irr[o] = vec4(mix(v, probe_irr[o].rgb, h), 1.0); }
+	else { vec2 v = ws > 0.0 ? ds / ws : vec2(params.z, params.z * params.z); int o = pi * GI_DIST * GI_DIST + tx; probe_dist[o] = mix(v, probe_dist[o], h); }
+}
