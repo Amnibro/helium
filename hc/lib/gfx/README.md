@@ -446,6 +446,36 @@ makes that a failure). `GPU_LOCK=<file>` serializes the GPU part on shared
 machines. `tools/hc/ci.sh` runs it only when `HELIUM_GFX_TEST=1`. The test binary
 needs SDL3 even for the CPU part (see Known gaps).
 
+### Pre-registered bars (motion blur and depth of field, gap-map item 3 follow-ups)
+
+Committed before any GPU run of either effect; never loosened afterwards. Both are
+compared with brute-force accumulation in linear HDR (Rec. 709 luminance), 640 x 360,
+temporal off, bloom off, shadows off.
+
+Motion blur (`motion_blur` = shutter fraction; McGuire, Hennessy, Bukowski, Osman 2012
+reconstruction filter). Test shutter 0.5.
+* **MB1 object motion.** Three spheres slide sideways at different speeds in front of a
+  static wall; the camera does not move. Reference: the mean of 64 renders with the spheres
+  at their positions across the shutter interval (centred on the current frame). Region M:
+  pixels where reference and sharp frame differ by more than 0.002. Bar: mean |blur - ref|
+  over M <= **0.35 x** mean |sharp - ref| over M.
+* **MB2 static pixels untouched.** Pixels at least 3 px from M where reference and sharp
+  frame agree within 1e-4: max |blur - sharp| <= **1e-3**.
+* **MB3 camera pan.** Static scene, the camera yaws each frame. Reference: 64 renders at
+  yaws across the shutter interval. Bar: mean |blur - ref| over non-sky pixels <= **0.5 x**
+  the sharp frame's.
+* **Must-fail control.** Shutter 0 (blur off) must fail MB1.
+
+Depth of field (`dof_aperture` = lens radius in scene units, `dof_focus` = focus distance;
+thin lens, scatter-as-gather disk). Test aperture 0.15, focus 7.5 (the middle sphere).
+* **D1.** Five spheres at depths 5.5 to 15.5 before a wall at 19.5. Reference: the mean of 64
+  renders with the eye moved over the lens disk (stratified, golden-angle) and the
+  projection sheared so the focal plane stays fixed (`lens_offset`). Bar: mean |dof - ref|
+  over all pixels <= **0.4 x** mean |sharp - ref|.
+* **D2 focal plane stays sharp.** Pixels whose depth gives a circle of confusion under
+  0.5 px: mean |dof - sharp| <= **1 %** of their mean luminance.
+* **Must-fail control.** The same frame with the focus distance doubled must fail D1.
+
 ### GI part 1 results (gap-map item 3; RX 9060 XT, RADV; `results/2026-11-02_rx9060xt_radv_44a84bd_gi1.txt`, clean worktree, full gfxtest ok)
 
 Three pieces, all off by default (`gi_on`, `rt_shadows`):

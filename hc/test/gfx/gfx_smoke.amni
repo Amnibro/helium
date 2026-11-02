@@ -1318,6 +1318,11 @@ const AO_MAE_BAR = 0.05;        // A1: mean |ao - ao_ref| < this
 const AO_CTRL_RATIO = 0.5;      // A2: MAE <= this x the AO-off control's MAE
 const BN_DEG_BAR = 12.0;        // A3: mean bent-normal angle error (deg) where ao_ref < 0.8
 const BN_CTRL_RATIO = 0.5;      //     and <= this x the geometric-normal control's error
+const MB1_RATIO = 0.35;
+const MB2_MAX = 0.001;
+const MB3_RATIO = 0.5;
+const D1_RATIO = 0.4;
+const D2_REL = 0.01;
 // and, per ghost case: band mean with rejection on <= band mean with rejection off
 
 // ---- shadows: the sun's shadow mask against a CPU ray-traced reference ----
