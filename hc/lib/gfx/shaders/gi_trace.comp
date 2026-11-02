@@ -1,0 +1,54 @@
+#include "lighting.glsl"
+layout(local_size_x = 64) in;
+layout(std430, set = 0, binding = 0) readonly buffer Nodes { vec4 bvh_nodes[]; };
+layout(std430, set = 0, binding = 1) readonly buffer Tris { vec4 bvh_tris[]; };
+layout(std430, set = 0, binding = 2) readonly buffer Irr { vec4 probe_irr[]; };
+layout(std430, set = 0, binding = 3) readonly buffer Dist { vec2 probe_dist[]; };
+layout(std430, set = 1, binding = 0) buffer Rays { vec4 rays[]; };
+layout(set = 2, binding = 0) uniform Gi { vec4 origin; vec4 step; vec4 dims; vec4 rot0; vec4 rot1; vec4 rot2; vec4 params; vec4 to_sun; vec4 sun_rgb; vec4 zenith; vec4 horizon; vec4 ground; vec4 light_pos[8]; vec4 light_rgb[8]; };
+#include "gi.glsl"
+vec3 gi_dir(int r, int n) {
+	float z = 1.0 - (2.0 * float(r) + 1.0) / float(n);
+	float s = sqrt(max(1.0 - z * z, 0.0));
+	float ph = float(r) * 2.39996323;
+	vec3 d = vec3(cos(ph) * s, sin(ph) * s, z);
+	return normalize(vec3(dot(rot0.xyz, d), dot(rot1.xyz, d), dot(rot2.xyz, d)));
+}
+void main() {
+	int id = int(gl_GlobalInvocationID.x);
+	int nr = int(dims.w);
+	int np = int(dims.x * dims.y * dims.z);
+	if (id >= np * nr) return;
+	int pi = id / nr;
+	int r = id - pi * nr;
+	int nx = int(dims.x); int ny = int(dims.y);
+	ivec3 c = ivec3(pi % nx, (pi / nx) % ny, pi / (nx * ny));
+	vec3 o = gi_probe_pos(c, origin, step);
+	vec3 d = gi_dir(r, nr);
+	int tri;
+	float t = gi_any(o, d, 1e4, false, tri);
+	if (tri < 0) { rays[id] = vec4(sky_color(d, to_sun.xyz, zenith.rgb, horizon.rgb, ground.rgb, vec3(0.0)) * params.x, 1e4); return; }
+	vec3 e1 = bvh_tris[tri * 4 + 1].xyz;
+	vec3 e2 = bvh_tris[tri * 4 + 2].xyz;
+	vec3 alb = bvh_tris[tri * 4 + 3].rgb;
+	vec3 n = normalize(cross(e1, e2));
+	bool back = dot(n, d) > 0.0;
+	if (back) n = -n;
+	vec3 p = o + d * t + n * 1e-3;
+	vec3 e = vec3(0.0);
+	int count = int(params.w);
+	for (int i = 0; i < 8; i++) {
+		if (i >= count) break;
+		vec3 l = light_pos[i].xyz - p;
+		float dist = length(l);
+		vec3 ld = l / max(dist, 1e-4);
+		float nl = dot(n, ld);
+		if (nl <= 0.0) continue;
+		if (!gi_visible(p, ld, dist - 1e-3)) continue;
+		e += light_rgb[i].rgb * range_falloff(dist, light_pos[i].w) * nl;
+	}
+	float sl = dot(n, to_sun.xyz);
+	if (sl > 0.0 && dot(sun_rgb.rgb, vec3(1.0)) > 0.0 && gi_visible(p, to_sun.xyz, 1e4)) e += sun_rgb.rgb * sl;
+	vec3 ind = params.y > 0.5 ? gi_irradiance(p, n, -d, origin, step, dims) : vec3(0.0);
+	rays[id] = vec4(alb * (e / PI_F + ind), back ? -t : t);
+}

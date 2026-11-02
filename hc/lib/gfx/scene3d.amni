@@ -31,6 +31,7 @@ import gfx.linalg;
 import gfx.gltf;
 import gfx.motion;
 import gfx.sparks;
+import gfx.rt;
 
 let CASCADES = 3;
 let MAX_LIGHTS = 8;
@@ -48,8 +49,9 @@ struct Batch { prim int, item int, node int, joint_base int, model gfx::mat4, de
 struct DrawU { model gfx::mat4, model_normal gfx::mat4, view_proj gfx::mat4, prev_model gfx::mat4, deform float4, weights_lo float4, weights_hi float4, misc float4, cur_vp gfx::mat4, prev_vp gfx::mat4 }
 struct FrameU {
 	cascade_mat gfx::mat4[3], cascade_far float4, eye float4, view_dir float4, to_sun float4, sun_rgb float4,
-	zenith float4, horizon float4, ground float4, screen float4, light_pos float4[8], light_rgb float4[8]
+	zenith float4, horizon float4, ground float4, screen float4, light_pos float4[8], light_rgb float4[8], gi float4, gi_origin float4, gi_step float4, gi_dims float4
 }
+struct GiU { origin float4, step float4, dims float4, rot0 float4, rot1 float4, rot2 float4, params float4, to_sun float4, sun_rgb float4, zenith float4, horizon float4, ground float4, light_pos float4[8], light_rgb float4[8] }
 struct SurfaceU { base float4, emissive float4, params float4, alpha float4, uv_sets float4, uv_sets2 float4 }
 struct CutU { base float4, alpha float4, uv_sets float4 }
 struct CutViewU { base float4, alpha float4, uv_sets float4, view gfx::mat4 }
@@ -71,6 +73,29 @@ var debug_view = 0;
 var ao_mode = 0;
 var gtao_steps = 8;
 var gtao_falloff f32 = 0.1;
+var gi_on = false;
+var rt_shadows = false;
+var gi_ao = true;
+var gi_rt_visibility = true;
+var gi_dims = [16, 16, 16];
+var gi_rays = 256;
+var gi_hysteresis f32 = 0.97;
+var gi_bias f32 = 0.3;
+var gi_max_dist f32 = 0.0;
+var gi_updates_per_frame = 1;
+var gi_built = false;
+var gi_np = 0;
+var gi_nr = 0;
+var gi_updates = 0;
+var gi_lo float3 = float3 { 0.0, 0.0, 0.0 };
+var gi_step float3 = float3 { 1.0, 1.0, 1.0 };
+var gi_irr gfx::Buffer;
+var gi_dist gfx::Buffer;
+var gi_rays_buf gfx::Buffer;
+var gi_dummy gfx::Buffer;
+var gi_have = false;
+var pipe_gi_trace gfx::ComputePipeline;
+var pipe_gi_update gfx::ComputePipeline;
 // Multiple-scattering energy compensation of the specular lobe (surface.frag ms_factor).
 var multiscatter = true;
 // Test hook for the furnace control: scales the direct light; 1.0 in normal use.
@@ -309,6 +334,9 @@ fn init(w int, h int, ow int, oh int) bool {
 	pipe_ao_blur = gfx::pipeline(scr, embed_shader("shaders/ssao_blur.frag"));
 	pipe_gtao = gfx::pipeline(scr, embed_shader("shaders/gtao.frag"));
 	pipe_gtao_blur = gfx::pipeline(scr, embed_shader("shaders/gtao_blur.frag"));
+	pipe_gi_trace = gfx::compute_pipeline(embed_shader("shaders/gi_trace.comp"));
+	pipe_gi_update = gfx::compute_pipeline(embed_shader("shaders/gi_update.comp"));
+	gi_dummy = gfx::buffer(gfx::BUFFER_STORAGE | gfx::BUFFER_COMPUTE_READ, 64, []);
 	pipe_bright = gfx::pipeline(scr, embed_shader("shaders/glow_bright.frag"));
 	pipe_down = gfx::pipeline(scr, embed_shader("shaders/glow_down.frag"));
 	pipe_up = gfx::pipeline(scr, embed_shader("shaders/glow_up.frag"), gfx::PipelineDesc { blend: gfx::BLEND_ADD });
@@ -343,6 +371,7 @@ fn forget() {
 	prev_keys.clear(); prev_models.clear(); prev_bases.clear(); prev_joints.clear();
 	motion_fresh = true;
 	temporal_reset = true;
+	gi_built = false;
 }
 
 fn upload_geometry() {
@@ -640,6 +669,103 @@ fn fill_frame() {
 			frame_u.light_rgb[k] = f4(0.0, 0.0, 0.0, 0.0);
 		}
 	}
+	let live = gi_built && rt::ready;
+	frame_u.gi = f4(if live && gi_on && gi_have { 1.0 } else { 0.0 }, if live && rt_shadows { 1.0 } else { 0.0 }, if gi_ao { 1.0 } else { 0.0 }, 0.0);
+	frame_u.gi_origin = x4(linalg::v3(gi_lo.x + gi_step.x * 0.5, gi_lo.y + gi_step.y * 0.5, gi_lo.z + gi_step.z * 0.5), if gi_rt_visibility { 1.0 } else { 0.0 });
+	frame_u.gi_step = x4(gi_step, gi_bias);
+	frame_u.gi_dims = f4(gi_dims[0] as f32, gi_dims[1] as f32, gi_dims[2] as f32, gi_rays as f32);
+}
+fn gi_scene() {
+	rt::clear();
+	for b in batch {
+		if b.mode == gltf::ALPHA_BLEND || b.joint_base >= 0 { continue; }
+		let pr = gltf::prims[b.prim];
+		if pr.targets > 0 { continue; }
+		let m = material_of(b.prim);
+		let k = 1.0 - m.metallic;
+		let rgb = linalg::v3(m.base.x * k, m.base.y * k, m.base.z * k);
+		var t = 0;
+		while t + 2 < pr.icount {
+			var q float3[3] = [float3 { 0.0, 0.0, 0.0 }; 3];
+			for c in 3 {
+				let vi = (pr.vfirst + gltf::indices[pr.ifirst + t + c] as int) * gltf::VERTEX_FLOATS + gltf::AT_POS;
+				q[c] = linalg::point(b.model, linalg::v3(gltf::verts[vi], gltf::verts[vi + 1], gltf::verts[vi + 2]));
+			}
+			rt::add(q[0], q[1], q[2], rgb);
+			t += 3;
+		}
+	}
+	rt::build();
+	rt::upload();
+	if rt::ready {
+		let lo = linalg::v3(rt::nodes[0], rt::nodes[1], rt::nodes[2]);
+		let hi = linalg::v3(rt::nodes[4], rt::nodes[5], rt::nodes[6]);
+		gi_lo = lo;
+		gi_step = linalg::v3((hi.x - lo.x) / gi_dims[0] as f32, (hi.y - lo.y) / gi_dims[1] as f32, (hi.z - lo.z) / gi_dims[2] as f32);
+	}
+	let np = gi_dims[0] * gi_dims[1] * gi_dims[2];
+	if gi_have && (np != gi_np || gi_rays != gi_nr) { gfx::release(gi_irr); gfx::release(gi_dist); gfx::release(gi_rays_buf); gi_have = false; }
+	if !gi_have && rt::ready {
+		let u = gfx::BUFFER_STORAGE | gfx::BUFFER_COMPUTE_READ | gfx::BUFFER_COMPUTE_WRITE;
+		gi_irr = gfx::buffer(u, np * 64 * 16, []);
+		gi_dist = gfx::buffer(u, np * 256 * 8, []);
+		gi_rays_buf = gfx::buffer(u, np * gi_rays * 16, []);
+		gi_have = true;
+	}
+	gi_np = np; gi_nr = gi_rays; gi_updates = 0;
+	gi_built = true;
+}
+fn gi_rot(k int) GiU {
+	let h = (k * 2654435761 + 12345) % 1000003;
+	let a = linalg::f(h as real * 0.000006283);
+	let b = linalg::f((h * 7919 % 1000003) as real * 0.000003141);
+	let c = linalg::f((h * 104729 % 1000003) as real * 0.000006283);
+	let ca = linalg::f(cos(a as real)); let sa = linalg::f(sin(a as real));
+	let cb = linalg::f(cos(b as real)); let sb = linalg::f(sin(b as real));
+	let cc = linalg::f(cos(c as real)); let sc = linalg::f(sin(c as real));
+	var g GiU;
+	g.rot0 = f4(ca * cc - sa * cb * sc, -ca * sc - sa * cb * cc, sa * sb, 0.0);
+	g.rot1 = f4(sa * cc + ca * cb * sc, -sa * sc + ca * cb * cc, -ca * sb, 0.0);
+	g.rot2 = f4(sb * sc, sb * cc, cb, 0.0);
+	g
+}
+fn gi_pass() {
+	if !(gi_on || rt_shadows) { return; }
+	if !gi_built { gi_scene(); }
+	if !gi_on || !gi_have || !rt::ready { return; }
+	let np = gi_np; let nr = gi_nr;
+	let maxd = if gi_max_dist > 0.0 { gi_max_dist } else { 1.5 * linalg::f(sqrt((gi_step.x * gi_step.x + gi_step.y * gi_step.y + gi_step.z * gi_step.z) as real)) };
+	for u in gi_updates_per_frame {
+		var g = gi_rot(gi_updates);
+		g.origin = frame_u.gi_origin; g.step = x4(gi_step, gi_bias); g.dims = f4(gi_dims[0] as f32, gi_dims[1] as f32, gi_dims[2] as f32, nr as f32);
+		g.to_sun = frame_u.to_sun; g.sun_rgb = frame_u.sun_rgb; g.zenith = frame_u.zenith; g.horizon = frame_u.horizon; g.ground = frame_u.ground;
+		for k in MAX_LIGHTS { g.light_pos[k] = frame_u.light_pos[k]; g.light_rgb[k] = frame_u.light_rgb[k]; }
+		g.params = f4(sky.ambient, if gi_updates > 0 { 1.0 } else { 0.0 }, maxd, frame_u.screen.z);
+		guard gfx::begin_compute([gi_rays_buf]) else { return; }
+		gfx::bind(pipe_gi_trace);
+		gfx::bind_storage_buffer(gfx::COMPUTE, 0, rt::node_buf);
+		gfx::bind_storage_buffer(gfx::COMPUTE, 1, rt::tri_buf);
+		gfx::bind_storage_buffer(gfx::COMPUTE, 2, gi_irr);
+		gfx::bind_storage_buffer(gfx::COMPUTE, 3, gi_dist);
+		gfx::uniforms(gfx::COMPUTE, 0, g);
+		gfx::dispatch((np * nr + 63) / 64, 1, 1);
+		gfx::end_compute();
+		g.params = f4(0.0, if gi_updates > 0 { gi_hysteresis } else { 0.0 }, maxd, 0.0);
+		guard gfx::begin_compute([gi_irr, gi_dist]) else { return; }
+		gfx::bind(pipe_gi_update);
+		gfx::bind_storage_buffer(gfx::COMPUTE, 0, gi_rays_buf);
+		gfx::uniforms(gfx::COMPUTE, 0, g);
+		gfx::dispatch((np * 320 + 63) / 64, 1, 1);
+		gfx::end_compute();
+		gi_updates += 1;
+	}
+}
+fn gi_bind() {
+	let live = gi_built && rt::ready;
+	gfx::bind_storage_buffer(gfx::FRAGMENT, 0, if live { rt::node_buf } else { gi_dummy });
+	gfx::bind_storage_buffer(gfx::FRAGMENT, 1, if live { rt::tri_buf } else { gi_dummy });
+	gfx::bind_storage_buffer(gfx::FRAGMENT, 2, if live && gi_have { gi_irr } else { gi_dummy });
+	gfx::bind_storage_buffer(gfx::FRAGMENT, 3, if live && gi_have { gi_dist } else { gi_dummy });
 }
 
 // ---- passes
@@ -687,7 +813,10 @@ fn sky_u() SkyU {
 fn ao_pass() {
 	let mv = motion_wanted();
 	if !look.ssao && !mv { return; }
-	let gt = look.ssao && ao_mode == 1;
+	let gia = gi_on && gi_ao && gi_built && gi_have;
+	let gt = look.ssao && (ao_mode == 1 || gia);
+	let ar = if gia { min(gi_step.x, min(gi_step.y, gi_step.z)) } else { look.ao_radius };
+	let ap = if gia { 1.0 } else { look.ao_power };
 	if mv || gt { make_motion(); }
 	let mt = if mv || gt { motion_tex } else { none() };
 	guard gfx::begin_pass(gfx::PassDesc { color: [nd, mt, if gt { lin_depth } else { none() }, none()], depth: nd_depth, color_value: f4(0.0, 0.0, 1.0, 0.0), .. }) else { return; }
@@ -725,7 +854,7 @@ fn ao_pass() {
 		gfx::bind(pipe_gtao);
 		gfx::bind_texture(gfx::FRAGMENT, 0, nd, smp_point);
 		gfx::bind_texture(gfx::FRAGMENT, 1, lin_depth, smp_point);
-		gfx::uniforms(gfx::FRAGMENT, 0, GtaoU { lens: f4(tx, ty, 1.0 / width as f32, 1.0 / height as f32), tune: f4(look.ao_radius, gtao_falloff, look.ao_power, 0.0), size: f4(1.0 / width as f32, 1.0 / height as f32, max(look.ao_samples / 4, 1) as f32, gtao_steps as f32) });
+		gfx::uniforms(gfx::FRAGMENT, 0, GtaoU { lens: f4(tx, ty, 1.0 / width as f32, 1.0 / height as f32), tune: f4(ar, gtao_falloff, ap, 0.0), size: f4(1.0 / width as f32, 1.0 / height as f32, max(look.ao_samples / 4, 1) as f32, gtao_steps as f32) });
 		gfx::draw(3);
 		gfx::end_pass();
 		guard gfx::begin_pass(gfx::PassDesc { color: [ao, bent, none(), none()], .. }) else { return; }
@@ -756,7 +885,7 @@ fn surface_of(m gltf::Material) SurfaceU {
 	SurfaceU {
 		base: m.base,
 		emissive: x4(m.emissive, if m.unlit { 1.0 } else { 0.0 }),
-		params: f4(m.metallic, m.roughness, m.normal_scale, m.occlusion_strength),
+		params: f4(m.metallic, m.roughness, if m.normal_tex.texture < 0 || gltf::textures[m.normal_tex.texture].image < 0 { 0.0 } else { m.normal_scale }, m.occlusion_strength),
 		alpha: f4(m.alpha_mode as f32, m.alpha_cutoff, if m.double_sided { 1.0 } else { 0.0 }, 0.0),
 		uv_sets: f4(m.base_tex.uv as f32, m.mr_tex.uv as f32, m.normal_tex.uv as f32, m.occlusion_tex.uv as f32),
 		uv_sets2: f4(m.emissive_tex.uv as f32, debug_view as f32, ((if multiscatter { 1 } else { 0 }) + 2 * furnace_mode) as f32, furnace_scale)
@@ -775,6 +904,7 @@ fn draw_lit(b Batch) {
 	bind_slot(4, m.emissive_tex, true, white);
 	gfx::bind_texture(gfx::FRAGMENT, 5, shadow_map, smp_shadow);
 	gfx::bind_texture(gfx::FRAGMENT, 6, if look.ssao { ao } else { white }, smp_point);
+	gi_bind();
 	draw_prim(b);
 }
 
@@ -899,6 +1029,8 @@ fn render(target gfx::Texture) {
 	setup_cascades();
 	gather();
 	warm_textures();
+	fill_frame();
+	gi_pass();
 	fill_frame();
 	shadow_pass();
 	ao_pass();

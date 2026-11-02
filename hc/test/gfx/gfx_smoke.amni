@@ -53,7 +53,7 @@
 //              depth rejection must not raise the band error, nor change a still scene
 //   s5 / s6  - frames in flight with no wait read the right shadow map; a pass on one
 //              layer and mip of an array leaves the others untouched
-// GFX_ONLY=gtao runs only the GTAO checks (A1-A3); any other value runs only the shadow checks.
+// GFX_ONLY=gtao runs only the GTAO checks (A1-A3), gi only the GI checks (G0-G2); any other value runs only the shadow checks.
 // GFX_MAKE_GOLDEN=1 writes both goldens (spheres, shipped look) to the paths given as the
 // second and third arguments and fails; anything but unset, 0 or 1 fails.
 // Image metrics in motion / taa / tsr count non-sky pixels only (geo_mask).
@@ -71,6 +71,7 @@ import gfx.sparks;
 import gfx.scene3d;
 import gfx.sdf_font;
 import gfx.cornell;
+import gfx.rt;
 
 fn milli(v f32) int { round((v * 1000.0) as real) as int }
 
@@ -2582,7 +2583,8 @@ fn cornell_scene() {
 			let q = linalg::v3(cornell::tris[b + 3] as f32, cornell::tris[b + 4] as f32, cornell::tris[b + 5] as f32);
 			let r = linalg::v3(cornell::tris[b + 6] as f32, cornell::tris[b + 7] as f32, cornell::tris[b + 8] as f32);
 			let nn = linalg::unit3(linalg::cross3(linalg::v3(q.x - a.x, q.y - a.y, q.z - a.z), linalg::v3(r.x - a.x, r.y - a.y, r.z - a.z)));
-			let tg = float4 { 1.0, 0.0, 0.0, 1.0 };
+			let tu = linalg::unit3(linalg::v3(q.x - a.x, q.y - a.y, q.z - a.z));
+			let tg = float4 { tu.x, tu.y, tu.z, 1.0 };
 			shapes::vertex(a, nn, 0.0, 0.0, tg); shapes::vertex(q, nn, 1.0, 0.0, tg); shapes::vertex(r, nn, 1.0, 1.0, tg);
 			gltf::indices.append([(n * 3) as u32, (n * 3 + 1) as u32, (n * 3 + 2) as u32]);
 			n += 1;
@@ -2594,6 +2596,7 @@ fn cornell_scene() {
 	}
 	s3d::view = s3d::Camera { eye: float3 { cornell::EYE_X as f32, cornell::EYE_Y as f32, cornell::EYE_Z as f32 }, target: float3 { cornell::EYE_X as f32, cornell::EYE_Y as f32, 0.0 }, up: float3 { 0.0, 1.0, 0.0 }, fov_y: cornell::FOV_Y as f32, near: 0.1, far: 100.0 };
 	s3d::sun.shadows = false;
+	s3d::sun.rgb = float3 { 0.0, 0.0, 0.0 };
 	s3d::look.bloom = 0.0;
 	s3d::temporal = 0;
 	s3d::add_light(float3 { cornell::LIGHT_X as f32, cornell::LIGHT_Y as f32, cornell::LIGHT_Z as f32 }, float3 { cornell::LIGHT_RGB as f32, cornell::LIGHT_RGB as f32, cornell::LIGHT_RGB as f32 }, cornell::LIGHT_RANGE as f32);
@@ -2647,6 +2650,126 @@ fn gtao_render(mode int, rw int, rh int, aor real[>..]&, bnr real[>..]&, gnr rea
 		gnr.push(hx); gnr.push(hy); gnr.push(hz);
 	} }
 	gfx::release(out);
+}
+fn gi_frame(rw int, rh int, frames int) byte[>..] {
+	s3d::init(rw, rh);
+	let out = gfx::render_target(rw, rh, gfx::RGBA8);
+	for f in frames { s3d::render(out); }
+	let px = gfx::read_pixels(s3d::hdr_target());
+	gfx::release(out);
+	px
+}
+fn gi_lum(px const byte[:], rw int) real[>..] {
+	let f = rw / cornell::REF_W;
+	var y real[>..] = [];
+	for j in cornell::REF_H { for i in cornell::REF_W {
+		var s = 0.0;
+		for yy in f { for xx in f {
+			let p = (j * f + yy) * rw + i * f + xx;
+			s += 0.2126 * gi_half(px, 8, p, 0) as real + 0.7152 * gi_half(px, 8, p, 1) as real + 0.0722 * gi_half(px, 8, p, 2) as real;
+		} }
+		y.push(s / (f * f) as real);
+	} }
+	y
+}
+var GI_BIAS = 0.0;
+fn gi_score(y const real[:], yr const real[:], gate const byte[:], mask const real[:], region int) real, int {
+	var e = 0.0; var n = 0;
+	for k in yr.len {
+		if gate[k] == 0 { continue; }
+		let surf = mask[k * 3 + 1] as int; let lit = mask[k * 3 + 2] as int;
+		let inr = if region == 0 { true } else if region == 1 { surf == 1 } else if region == 2 { surf >= 0 && surf != 1 && lit == 0 } else { lit == 1 };
+		if !inr { continue; }
+		e += abs(y[k] - yr[k]) / yr[k]; GI_BIAS += (y[k] - yr[k]) / yr[k]; n += 1;
+	}
+	GI_BIAS = if n > 0 { GI_BIAS / n as real } else { 0.0 };
+	return if n > 0 { e / n as real } else { 1.0 }, n;
+}
+fn gi_line(tag const byte[:], y const real[:], yr const real[:], gate const byte[:], mask const real[:]) bool {
+	let g1, n1 = gi_score(y, yr, gate, mask, 0);
+	let g2a, n2a = gi_score(y, yr, gate, mask, 1);
+	GI_BIAS = 0.0;
+	let g2b, n2b = gi_score(y, yr, gate, mask, 2);
+	let b2b = GI_BIAS; GI_BIAS = 0.0;
+	let dl, nl = gi_score(y, yr, gate, mask, 3);
+	print("gpu: gi ", tag, ": G1 all ", r4(g1), " (", n1, " px), G2a ceiling ", r4(g2a), " (", n2a, " px), G2b shadowed ", r4(g2b), " (", n2b, " px, signed ", r4(b2b), "); directly lit (reported) ", r4(dl), " (", nl, " px)");
+	g1 < GI_BAR && g2a < GI_BAR && g2b < GI_BAR && n2a >= GI_MIN_REGION && n2b >= GI_MIN_REGION
+}
+fn gi_checks() bool {
+	half_table();
+	var raw byte[>..] = [];
+	var rad real[>..] = [];
+	var mask real[>..] = [];
+	if !gi_gunzip("cornell_ref.txt.gz", raw) { print("gpu: gi FAILED: cannot read cornell_ref.txt.gz (GFX_GI_DIR)"); return false; }
+	gi_nums(raw[..], rad);
+	var mp byte[>..] = [];
+	raw.clear();
+	if !env("GFX_GI_MASK", mp) || !read_file(mp[..], raw) { print("gpu: gi FAILED: GFX_GI_MASK unset or unreadable (gfxtest.sh writes it with cornell_pt mask)"); return false; }
+	gi_nums(raw[..], mask);
+	let np = cornell::REF_W * cornell::REF_H;
+	if rad.len != np * 5 || mask.len != np * 3 { print("gpu: gi FAILED: reference sizes ", rad.len, " ", mask.len); return false; }
+	var se = 0.0; var nse = 0;
+	var yr real[>..] = [];
+	for k in np { yr.push(0.2126 * rad[k * 5 + 1] + 0.7152 * rad[k * 5 + 2] + 0.0722 * rad[k * 5 + 3]); if rad[k * 5 + 4] > 0.0 { se += rad[k * 5 + 4]; nse += 1; } }
+	let noise = if nse > 0 { se / nse as real } else { 1.0 };
+	let g0 = noise < GI_REF_NOISE_BAR;
+	print("gpu: gi G0 reference mean luminance rel. standard error ", r4(noise * 100.0), " % (bar < ", GI_REF_NOISE_BAR * 100.0, " %) ", if g0 { "PASS" } else { "FAIL" });
+	let gate = gi_gate(rad[..]);
+	cornell_scene();
+	s3d::look = DEF_LOOK;
+	s3d::look.bloom = 0.0;
+	s3d::sky = sky_of(0.0, 0.0, 0.0, false);
+	s3d::gi_on = true;
+	s3d::rt_shadows = true;
+	s3d::gi_updates_per_frame = 8;
+	let px = gi_frame(512, 512, 32);
+	let y = gi_lum(px[..], 512);
+	let ok = gi_line("GI on", y[..], yr[..], gate, mask[..]);
+	var img byte[>..] = [];
+	img.append("P5\n384 128\n255\n");
+	for j in cornell::REF_H { for k in 3 { for i in cornell::REF_W {
+		let q = j * cornell::REF_W + i;
+		let v = if k == 0 { sqrt(yr[q]) } else if k == 1 { sqrt(y[q]) } else if gate[q] == 0 { 0.5 } else { 0.5 + 0.5 * clamp((y[q] - yr[q]) / yr[q] / 0.3, -1.0, 1.0) };
+		img.push(clamp(round(v * 255.0), 0.0, 255.0) as int as byte);
+	} } }
+	let ip = path(OUT_DIR[..], "gi_ref_render_err.pgm");
+	print("gpu: gi image ", ip[..], " (reference | render, sqrt; signed relative error, mid-grey 0, white +30 %) ", write_file(ip[..], img[..]));
+	s3d::gi_updates_per_frame = 1;
+	s3d::init(1280, 720);
+	let tout = gfx::render_target(1280, 720, gfx::RGBA8);
+	for f in 10 { s3d::render(tout); }
+	let _ = gfx::read_pixels(tout);
+	let t0 = gfx::time();
+	for f in 60 { s3d::render(tout); }
+	let _ = gfx::read_pixels(tout);
+	let gt = (gfx::time() - t0) / 60.0 * 1000.0;
+	s3d::gi_on = false; s3d::rt_shadows = false;
+	for f in 10 { s3d::render(tout); }
+	let _ = gfx::read_pixels(tout);
+	let t1 = gfx::time();
+	for f in 60 { s3d::render(tout); }
+	let _ = gfx::read_pixels(tout);
+	let ot = (gfx::time() - t1) / 60.0 * 1000.0;
+	gfx::release(tout);
+	print("gpu: gi frame time 1280x720 Cornell (wall clock, 60 frames, reported): GI + RT shadows + 1 probe update/frame ", r3(gt), " ms; GI and RT shadows off ", r3(ot), " ms");
+	s3d::rt_shadows = true;
+	s3d::gi_on = false;
+	let cpx = gi_frame(512, 512, 1);
+	let cy = gi_lum(cpx[..], 512);
+	let cg1, cn1 = gi_score(cy[..], yr[..], gate, mask[..], 0);
+	let cg2, cn2 = gi_score(cy[..], yr[..], gate, mask[..], 1);
+	let cfail = cg1 >= GI_BAR && cg2 >= GI_BAR;
+	let _ = gi_line("control GI off", cy[..], yr[..], gate, mask[..]);
+	print("gpu: gi control (GI off: direct + sky ambient) ", if cfail { "fails G1 and G2a (good)" } else { "PASSES G1 or G2a (gate not discriminating: FAIL)" });
+	s3d::rt_shadows = false;
+	s3d::gi_updates_per_frame = 1;
+	s3d::sky = DEF_SKY;
+	s3d::sun = DEF_SUN;
+	s3d::look = DEF_LOOK;
+	print("gpu: gi ", if ok { "G1/G2 PASS" } else { "G1/G2 FAIL" });
+	let e2 = gfx::error();
+	if e2.len > 0 { print("gpu: gfx error ", e2[..]); return false; }
+	g0 && ok && cfail
 }
 fn gtao_checks() bool {
 	half_table();
@@ -2715,7 +2838,7 @@ fn gpu_checks(dir const byte[:], golden const byte[:]) bool {
 	var only byte[>..] = [];
 	let _ = env("GFX_ONLY", only);
 	if only.len > 0 {
-		let ok = if only[..] == "gtao" { gtao_checks() } else { shadow_checks() };
+		let ok = if only[..] == "gtao" { gtao_checks() } else if only[..] == "gi" { gi_checks() } else { shadow_checks() };
 		let e = gfx::error();
 		if e.len > 0 { print("gpu: gfx error ", e[..]); return false; }
 		return ok;
@@ -2872,6 +2995,7 @@ fn gpu_checks(dir const byte[:], golden const byte[:]) bool {
 	if !s5_inflight() { good = false; }
 	if !s6_layers() { good = false; }
 	if !gtao_checks() { good = false; }
+	if !gi_checks() { good = false; }
 	let err = gfx::error();
 	if err.len > 0 { print("gpu: gfx error ", err[..]); good = false; }
 	good

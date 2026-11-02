@@ -446,6 +446,68 @@ makes that a failure). `GPU_LOCK=<file>` serializes the GPU part on shared
 machines. `tools/hc/ci.sh` runs it only when `HELIUM_GFX_TEST=1`. The test binary
 needs SDL3 even for the CPU part (see Known gaps).
 
+### GI part 1 results (gap-map item 3; RX 9060 XT, RADV)
+
+Three pieces, all off by default (`gi_on`, `rt_shadows`):
+
+* **Software ray tracing.** `gfx.rt` builds a binned-SAH BVH (12 bins, up to 4 triangles a
+  leaf) over the static opaque triangles of the scene in world space (skinned, morphed and
+  blended primitives are left out) on the CPU, rebuilt when the scene is forgotten, and
+  uploads nodes and triangles as storage buffers. `shaders/gi.glsl` walks it (Moller-Trumbore,
+  stack of 32). `hc/test/gfx/rt/bvh_check.amni` checks every hit distance against brute force
+  (Cornell, 20000 rays; a 20000-triangle soup, 3000 rays): 0 mismatches.
+* **Ray-traced shadows.** With `rt_shadows` the lit pass casts one shadow ray per point light
+  (and for the sun instead of the cascades) through the BVH, so point lights cast exact hard
+  shadows.
+* **Probe GI** (after Majercik et al. 2019, DDGI). A `gi_dims` grid (16 x 16 x 16 by default)
+  is fitted cell-centred to the BVH bounds. Each update, `gi_trace.comp` shoots `gi_rays`
+  (256) spherical-Fibonacci rays per probe under a fresh random rotation; a hit returns
+  albedo x (direct light with shadow rays + last update's probe irradiance at the hit, so
+  bounces accumulate), a miss returns the sky. `gi_update.comp` folds the rays into each
+  probe's 8 x 8 octahedral irradiance (cosine-weighted mean radiance) and 16 x 16 distance
+  moments, with hysteresis `gi_hysteresis` (0.97; 0 on the first update). The lit pass
+  replaces the sky irradiance in `ambient_light()` with the probe irradiance: 8 probes,
+  trilinear x wrap-shaded backface weight, and visibility from a ray from the biased shading
+  point to each probe through the BVH (`gi_rt_visibility`; when no probe is visible it falls
+  back to DDGI's Chebyshev test on the distance moments, with RTXGI's weight crush). Probe GI
+  is low-frequency, so with `gi_ao` the AO pass switches to GTAO at power 1 with its radius
+  set to the probe spacing and multiplies only that indirect term.
+
+Fixed on the way: materials without a normal texture no longer pick up a tilt from the
+fallback normal texel (128 decodes to +0.0039, not 0). At grazing light this lit the two
+triangles of a flat quad differently whenever their tangents differed.
+
+Gate (`gi_checks`, also `GFX_ONLY=gi`): the Cornell box at 512 x 512, sun off, sky black (the
+reference has no environment), bloom off, the shipped look otherwise, 32 frames with 8 probe
+updates each, linear HDR box-filtered to 128 x 128. Regions from `cornell_pt mask`
+(gfxtest.sh runs it); G2 is scored on the gated pixels of each region.
+
+| check | result | bar |
+|---|---|---|
+| G0 reference noise | 0.505 % | < 1 % PASS |
+| G1 all gated pixels (14762) | 0.0593 | < 0.10 PASS |
+| G2a ceiling (2450 gated) | 0.0579 | < 0.10 PASS |
+| G2b shadowed (2430 gated of 2455) | 0.0890 (signed -0.011) | < 0.10 PASS |
+| control: GI off (direct + sky ambient; the sky is black here, so direct only) | G1 0.563, G2a 0.687 | must be >= 0.10: fails as required |
+| reported: directly lit pixels | 0.0535 | not gated |
+
+`gi_ref_render_err.pgm` shows reference, render and signed error. What is left: the ceiling
+around the light is a few % bright because the renderer's GGX lobe adds specular at grazing
+light where the reference is pure Lambert; contact corners are slightly dark (GTAO); the
+short block's front face (only indirect light) is a little bright and noisy.
+
+How the defaults were reached (all measured on this gate before they were fixed, so they are
+development numbers, not a blind run): 8^3 probes gave G2b 0.18-0.20; 12^3 0.12-0.13; 16^3
+0.10-0.11 without AO. The shipped hemisphere SSAO (power 1.5) on top over-darkened (G2b
+signed -0.10 with GTAO at the look's settings); GTAO at power 1 with a radius near the probe
+spacing gave the best result, which is why GI's AO follows the probe spacing. Ray-traced
+probe visibility changed the scores by less than 0.01 here (it matters where probes sit
+inside closed geometry with consistent winding; the Cornell data's winding is mixed).
+
+Cost (wall clock, 1280 x 720 Cornell, 60 frames): GI + RT shadows + one probe update a frame
+6.2 ms vs 0.43 ms with both off. Not optimized yet: the update loops over every ray for every
+texel, all 4096 probes update every frame, and every pixel casts 8 probe-visibility rays.
+
 ### GTAO results (GI part 3b; RX 9060 XT, RADV; `results/2026-11-02_rx9060xt_radv_420344b_gtao.txt`, clean worktree, full gfxtest ok)
 
 `ao_mode = 1` switches the AO pass from the hemisphere SSAO (`ao_mode = 0`, still the
@@ -662,6 +724,11 @@ pass-through mean error is 0.0106 % (max 0.0488 %).
   Indirect Occlusion", SIGGRAPH 2016 course (GTAO, bent normals).
 * J. Jimenez, "Next Generation Post Processing in Call of Duty: Advanced Warfare",
   SIGGRAPH 2014 course (interleaved gradient noise).
+* Z. Majercik, J.-P. Guertin, D. Nowrouzezahrai, M. McGuire, "Dynamic Diffuse Global
+  Illumination with Ray-Traced Irradiance Fields", JCGT 8(2), 2019 (DDGI).
+* T. Moller, B. Trumbore, "Fast, Minimum Storage Ray/Triangle Intersection", JGT 1997.
+* I. Wald, "On fast Construction of SAH-based Bounding Volume Hierarchies", IEEE RT 2007
+  (binned SAH).
 * B. Karis, "Real Shading in Unreal Engine 4", SIGGRAPH 2013 course notes
   (k = alpha / 2 for Smith-Schlick).
 * E. Reinhard, M. Stark, P. Shirley, J. Ferwerda, "Photographic Tone Reproduction

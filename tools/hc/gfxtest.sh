@@ -49,6 +49,10 @@ cmp -s "$T/ms_lut.glsl" "$R/hc/lib/gfx/shaders/ms_lut.glsl" || { say "gfxtest: F
 grep -q "^make_ms_lut: grazing compensation: .* PASS$" "$O/ms_lut.txt" || { say "gfxtest: FAILED: make_ms_lut grazing check"; exit 1; }
 grep -q "^make_ms_lut: nodes vs independent integrator .* PASS$" "$O/ms_lut.txt" || { say "gfxtest: FAILED: make_ms_lut independent-integrator check"; exit 1; }
 say "gfxtest: ms_lut.glsl reproduced byte for byte"
+HC_LIB=${HC_LIB:-$R/hc/lib} "$H" run "$R/hc/test/gfx/rt/bvh_check.amni" > "$O/bvh_check.txt" 2>&1; cat "$O/bvh_check.txt"; cat "$O/bvh_check.txt" >> "$RES"
+grep -q "^bvh: ok$" "$O/bvh_check.txt" || { say "gfxtest: FAILED: BVH vs brute-force ray check"; exit 1; }
+HC_LIB=${HC_LIB:-$R/hc/lib} "$H" run "$R/hc/test/gfx/gi/cornell_pt.amni" mask > "$T/gi_mask.txt" 2> "$T/gi_mask.err" || { say "gfxtest: FAILED: cornell_pt mask"; tail -n 5 "$T/gi_mask.err"; exit 1; }
+[ "$(wc -l < "$T/gi_mask.txt")" = 16384 ] || { say "gfxtest: FAILED: cornell_pt mask is not 128 x 128"; exit 1; }
 HC_LIB=${HC_LIB:-$R/hc/lib} "$H" build "$R/hc/test/gfx/gfx_smoke.amni" -o "$T/gs" > "$T/build.txt" 2>&1 || { echo "gfxtest: build failed"; grep -av "W[0-9]" "$T/build.txt" | tail -n 5; exit 1; }
 E=()
 if [ "${GPUTIME:-1}" != 0 ]; then
@@ -56,7 +60,7 @@ if [ "${GPUTIME:-1}" != 0 ]; then
 	: > "$O/gputime.log"; E=(env VK_LAYER_PATH="$T/layer" VK_INSTANCE_LAYERS=VK_LAYER_HELIUM_gputime HELIUM_GPUTIME="$O/gputime.log")
 fi
 L=(); [ -n "${GPU_LOCK:-}" ] && L=(flock "$GPU_LOCK")
-"${L[@]}" env GFX_MS_LUT="$R/hc/lib/gfx/shaders/ms_lut.glsl" GFX_GI_DIR="$R/hc/test/gfx/gi" "${E[@]}" "$T/gs" "$O" "$G" "$G2" > "$T/all.txt" 2> "$T/err.txt"; rc=$?
+"${L[@]}" env GFX_MS_LUT="$R/hc/lib/gfx/shaders/ms_lut.glsl" GFX_GI_DIR="$R/hc/test/gfx/gi" GFX_GI_MASK="$T/gi_mask.txt" "${E[@]}" "$T/gs" "$O" "$G" "$G2" > "$T/all.txt" 2> "$T/err.txt"; rc=$?
 cp "$T/all.txt" "$O/gfx_smoke.txt" 2>/dev/null; cat "$T/all.txt" >> "$RES" 2>/dev/null
 [ $rc = 0 ] || { echo "gfxtest: run failed"; tail -n 5 "$T/all.txt" "$T/err.txt"; exit 1; }
 grep -av "^gpu:" "$T/all.txt" > "$T/cpu.txt"
