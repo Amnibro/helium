@@ -30,3 +30,19 @@ the inflated corners, Dijkstra). Clearance is measured from the path to the orig
   built with radius 0 fails the clearance bar of N1 and N5.
 
 Reported, no bar: build time and mean query time on the largest N5 field.
+
+## Results (2026-11-02, first full run after two fixes)
+
+| check | measured | result |
+| --- | --- | --- |
+| N1 one box | length 0.999 x reference, clearance 0.300 | PASS |
+| N2 slopes and ledges | no ramp: none; 20 deg: ends at y 1.000; 60 deg: none | PASS |
+| N3 stairs | rise 0.2: found; rise 0.5: none | PASS |
+| N4 two layers | under y 0.0, on y 2.5; under path 8.0 (straight 8); up path ends at 2.5 | PASS |
+| N5 random fields | 200/200 found, 0.979 to 1.011 x reference, clearance 0.291 | PASS |
+| controls | straight segment and radius 0 (clearance 0.098, 0.012) fail | fail as required |
+
+Build 6 ms for a 25 x 25 m field (cs 0.1); 10 us per query. The first run failed N5 (1.106 x):
+A* scored routes through portal midpoints. Each node now crosses its portal at the best point
+for the straight line from its parent's crossing to the goal, and remembers which rect it
+entered so it never turns back through the portal it came in by.

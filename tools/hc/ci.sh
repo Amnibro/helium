@@ -18,5 +18,6 @@ step pkg python3 tools/hc/pkgtest.py "$HN"
 step lut tools/hc/luttest.sh "$HN"
 step err python3 tools/hc/errtest.py "$HN"
 step warn tools/hc/warntest.sh "$HN"
+step nav sh -c 'HC_LIB=hc/lib "$0" build hc/test/nav/nav_test.amni -o "$1/nt" 2>/dev/null && "$1/nt"' "$HN" "$W"
 [ -n "${HELIUM_GFX_TEST:-}" ] && step gfx tools/hc/gfxtest.sh "$HN"
 [ $fail -eq 0 ] && echo "ci: ok" || echo "ci: FAILED"; exit $fail

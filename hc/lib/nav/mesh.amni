@@ -1,0 +1,336 @@
+namespace nav;
+import vec;
+var cs f32 = 0.1;
+var ch f32 = 0.05;
+var radius f32 = 0.3;
+var height f32 = 1.8;
+var step f32 = 0.35;
+var slope_deg f32 = 45.0;
+var rect_max = 16;
+var tri_in f32[>..] = [];
+var gw = 0; var gh = 0; var ox f32 = 0.0; var oy f32 = 0.0; var oz f32 = 0.0;
+var col_head int[>..] = [];
+var sp_lo int[>..] = []; var sp_hi int[>..] = []; var sp_walk byte[>..] = []; var sp_y f32[>..] = []; var sp_next int[>..] = [];
+var col_c0 int[>..] = []; var col_cn int[>..] = [];
+var c_col int[>..] = []; var c_top int[>..] = []; var c_ceil int[>..] = []; var c_y f32[>..] = []; var c_link int[>..] = []; var c_dist int[>..] = []; var c_rect int[>..] = [];
+var r_x0 int[>..] = []; var r_z0 int[>..] = []; var r_x1 int[>..] = []; var r_z1 int[>..] = []; var r_cx f32[>..] = []; var r_cz f32[>..] = [];
+var p_a int[>..] = []; var p_b int[>..] = []; var p_d int[>..] = []; var p_q0 float3[>..] = []; var p_q1 float3[>..] = []; var p_next int[>..] = [];
+var r_head int[>..] = []; var adj0 int[>..] = []; var adj int[>..] = [];
+var poly_a f32[>..] = []; var poly_b f32[>..] = [];
+var ready = false;
+let DX = [-1, 0, 1, 0];
+let DZ = [0, 1, 0, -1];
+fn clear() { tri_in.clear(); ready = false; }
+fn add(a float3, b float3, c float3) { tri_in.append([a.x, a.y, a.z, b.x, b.y, b.z, c.x, c.y, c.z]); }
+fn cell_count() int { c_col.len }
+fn live_cells() int { var n = 0; for r in c_rect { if r >= 0 { n += 1; } } n }
+fn rect_count() int { r_x0.len }
+fn portal_count() int { p_a.len }
+fn clip(inp f32[>..]&, n int, out f32[>..]&, axis int, v f32, keep_hi bool) int {
+	out.clear();
+	var m = 0;
+	for i in n {
+		let j = (i + 1) % n;
+		let a = inp[i * 3 + axis] - v; let b = inp[j * 3 + axis] - v;
+		let ia = if keep_hi { a >= 0.0 } else { a <= 0.0 };
+		let ib = if keep_hi { b >= 0.0 } else { b <= 0.0 };
+		if ia { out.append([inp[i * 3], inp[i * 3 + 1], inp[i * 3 + 2]]); m += 1; }
+		if ia != ib {
+			let t = a / (a - b);
+			out.append([inp[i * 3] + (inp[j * 3] - inp[i * 3]) * t, inp[i * 3 + 1] + (inp[j * 3 + 1] - inp[i * 3 + 1]) * t, inp[i * 3 + 2] + (inp[j * 3 + 2] - inp[i * 3 + 2]) * t]);
+			m += 1;
+		}
+	}
+	m
+}
+fn add_span(c int, lo int, hi int, walk bool, y f32) {
+	var nlo = lo; var nhi = hi; var nw = walk; var ny = if walk { y } else { -1.0e30 };
+	var prev = -1; var cur = col_head[c];
+	while cur >= 0 {
+		if sp_lo[cur] > nhi { break; }
+		if sp_hi[cur] < nlo { prev = cur; cur = sp_next[cur]; continue; }
+		if sp_hi[cur] > nhi + 1 { nw = sp_walk[cur] != 0; ny = sp_y[cur]; } else if sp_hi[cur] >= nhi - 1 { nw = nw || sp_walk[cur] != 0; ny = max(ny, sp_y[cur]); }
+		nlo = min(nlo, sp_lo[cur]); nhi = max(nhi, sp_hi[cur]);
+		let nx = sp_next[cur];
+		if prev >= 0 { sp_next[prev] = nx; } else { col_head[c] = nx; }
+		cur = nx;
+	}
+	let s = sp_lo.len;
+	sp_lo.push(nlo); sp_hi.push(nhi); sp_walk.push(if nw { 1 } else { 0 }); sp_y.push(ny); sp_next.push(cur);
+	if prev >= 0 { sp_next[prev] = s; } else { col_head[c] = s; }
+}
+fn raster(t int, cosw f32) {
+	let b = t * 9;
+	let ax = tri_in[b]; let ay = tri_in[b + 1]; let az = tri_in[b + 2];
+	let e1 = float3 { tri_in[b + 3] - ax, tri_in[b + 4] - ay, tri_in[b + 5] - az };
+	let e2 = float3 { tri_in[b + 6] - ax, tri_in[b + 7] - ay, tri_in[b + 8] - az };
+	let nr = cross(e1, e2);
+	let ln = length(nr);
+	if ln <= 1.0e-12 { return; }
+	let walk = abs(nr.y) / ln >= cosw;
+	var x0 f32 = 1.0e30; var x1 f32 = -1.0e30; var z0 f32 = 1.0e30; var z1 f32 = -1.0e30;
+	for k in 3 { x0 = min(x0, tri_in[b + k * 3]); x1 = max(x1, tri_in[b + k * 3]); z0 = min(z0, tri_in[b + k * 3 + 2]); z1 = max(z1, tri_in[b + k * 3 + 2]); }
+	let cz0 = clamp(floor((z0 - oz) / cs) as int, 0, gh - 1); let cz1 = clamp(floor((z1 - oz) / cs) as int, 0, gh - 1);
+	let cx0 = clamp(floor((x0 - ox) / cs) as int, 0, gw - 1); let cx1 = clamp(floor((x1 - ox) / cs) as int, 0, gw - 1);
+	var tri f32[>..] = [];
+	for k in 9 { tri.push(tri_in[b + k]); }
+	var row f32[>..] = []; var tmp f32[>..] = []; var cell f32[>..] = [];
+	for z in cz0..cz1 + 1 {
+		let za = oz + z as f32 * cs;
+		var n = clip(tri, 3, tmp, 2, za, true);
+		if n < 3 { continue; }
+		n = clip(tmp, n, row, 2, za + cs, false);
+		if n < 3 { continue; }
+		for x in cx0..cx1 + 1 {
+			let xa = ox + x as f32 * cs;
+			var m = clip(row, n, tmp, 0, xa, true);
+			if m < 3 { continue; }
+			m = clip(tmp, m, cell, 0, xa + cs, false);
+			if m < 3 { continue; }
+			var y0 f32 = 1.0e30; var y1 f32 = -1.0e30;
+			for k in m { y0 = min(y0, cell[k * 3 + 1]); y1 = max(y1, cell[k * 3 + 1]); }
+			let lo = floor((y0 - oy) / ch) as int;
+			let hi = max(ceil((y1 - oy) / ch) as int, lo + 1);
+			add_span(z * gw + x, lo, hi, walk, y1);
+		}
+	}
+}
+fn link(c int, d int) int { c_link[c * 4 + d] }
+fn build() bool {
+	ready = false;
+	let nt = tri_in.len / 9;
+	if nt == 0 { return false; }
+	var x0 f32 = 1.0e30; var x1 f32 = -1.0e30; var y0 f32 = 1.0e30; var z0 f32 = 1.0e30; var z1 f32 = -1.0e30;
+	for v in tri_in.len / 3 { x0 = min(x0, tri_in[v * 3]); x1 = max(x1, tri_in[v * 3]); y0 = min(y0, tri_in[v * 3 + 1]); z0 = min(z0, tri_in[v * 3 + 2]); z1 = max(z1, tri_in[v * 3 + 2]); }
+	ox = x0; oy = y0 - ch; oz = z0;
+	gw = max(ceil((x1 - x0) / cs) as int, 1); gh = max(ceil((z1 - z0) / cs) as int, 1);
+	col_head.clear(); col_head.resize(gw * gh, -1);
+	sp_lo.clear(); sp_hi.clear(); sp_walk.clear(); sp_y.clear(); sp_next.clear();
+	let cosw = cos(slope_deg * 0.017453292);
+	for t in nt { raster(t, cosw); }
+	let hc = ceil(height / ch) as int;
+	col_c0.clear(); col_cn.clear(); c_col.clear(); c_top.clear(); c_ceil.clear(); c_y.clear();
+	for c in gw * gh {
+		col_c0.push(c_col.len);
+		var s = col_head[c];
+		while s >= 0 {
+			let nx = sp_next[s];
+			let top = sp_hi[s]; let cl = if nx >= 0 { sp_lo[nx] } else { 1 << 30 };
+			if sp_walk[s] != 0 && cl - top >= hc { c_col.push(c); c_top.push(top); c_ceil.push(cl); c_y.push(sp_y[s]); }
+			s = nx;
+		}
+		col_cn.push(c_col.len - col_c0[c]);
+	}
+	let n = c_col.len;
+	c_link.clear(); c_link.resize(n * 4, -1);
+	for c in n {
+		let cx = c_col[c] % gw; let cz = c_col[c] / gw;
+		for d in 4 {
+			let nx = cx + DX[d]; let nz = cz + DZ[d];
+			if nx < 0 || nz < 0 || nx >= gw || nz >= gh { continue; }
+			let col = nz * gw + nx;
+			var best = -1; var bd f32 = 1.0e30;
+			for k in col_cn[col] {
+				let o = col_c0[col] + k;
+				let dy = abs(c_y[o] - c_y[c]);
+				if dy <= step && min(c_ceil[o], c_ceil[c]) - max(c_top[o], c_top[c]) >= hc && dy < bd { bd = dy; best = o; }
+			}
+			c_link[c * 4 + d] = best;
+		}
+	}
+	c_dist.clear(); c_dist.resize(n, 1 << 28);
+	for c in n { if link(c, 0) < 0 || link(c, 1) < 0 || link(c, 2) < 0 || link(c, 3) < 0 { c_dist[c] = 0; } }
+	for c in n {
+		let a = link(c, 0); if a >= 0 { c_dist[c] = min(c_dist[c], c_dist[a] + 2); let q = link(a, 3); if q >= 0 { c_dist[c] = min(c_dist[c], c_dist[q] + 3); } }
+		let b = link(c, 3); if b >= 0 { c_dist[c] = min(c_dist[c], c_dist[b] + 2); let q = link(b, 2); if q >= 0 { c_dist[c] = min(c_dist[c], c_dist[q] + 3); } }
+	}
+	var c = n - 1;
+	while c >= 0 {
+		let a = link(c, 2); if a >= 0 { c_dist[c] = min(c_dist[c], c_dist[a] + 2); let q = link(a, 1); if q >= 0 { c_dist[c] = min(c_dist[c], c_dist[q] + 3); } }
+		let b = link(c, 1); if b >= 0 { c_dist[c] = min(c_dist[c], c_dist[b] + 2); let q = link(b, 0); if q >= 0 { c_dist[c] = min(c_dist[c], c_dist[q] + 3); } }
+		c -= 1;
+	}
+	c_rect.clear(); c_rect.resize(n, -1);
+	var keep byte[>..] = []; keep.resize(n, 0);
+	for k in n { if c_dist[k] as f32 * 0.5 * cs >= radius - 1.0e-4 { keep[k] = 1; } }
+	for k in n * 4 { if c_link[k] >= 0 && keep[c_link[k]] == 0 { c_link[k] = -1; } }
+	for k in n { if keep[k] == 0 { for d in 4 { c_link[k * 4 + d] = -1; } } }
+	r_x0.clear(); r_z0.clear(); r_x1.clear(); r_z1.clear(); r_cx.clear(); r_cz.clear();
+	var rowc int[>..] = []; var nxt int[>..] = [];
+	for s in n {
+		if keep[s] == 0 || c_rect[s] >= 0 { continue; }
+		let r = r_x0.len;
+		rowc.clear(); rowc.push(s);
+		var cur = s;
+		while rowc.len < rect_max { let q = link(cur, 2); if q < 0 || c_rect[q] >= 0 { break; } rowc.push(q); cur = q; }
+		for q in rowc { c_rect[q] = r; }
+		var rows = 1;
+		while rows < rect_max {
+			nxt.clear();
+			var ok = true;
+			for i in rowc.len { let q = link(rowc[i], 1); if q < 0 || c_rect[q] >= 0 { ok = false; break; } if i > 0 && link(nxt[i - 1], 2) != q { ok = false; break; } nxt.push(q); }
+			if !ok { break; }
+			for q in nxt { c_rect[q] = r; }
+			rowc.clear(); rowc.append(nxt[..]); rows += 1;
+		}
+		let sx = c_col[s] % gw; let sz = c_col[s] / gw;
+		r_x0.push(sx); r_z0.push(sz); r_x1.push(sx + rowc.len - 1); r_z1.push(sz + rows - 1);
+		r_cx.push(ox + (sx as f32 + rowc.len as f32 * 0.5) * cs); r_cz.push(oz + (sz as f32 + rows as f32 * 0.5) * cs);
+	}
+	let nr = r_x0.len;
+	p_a.clear(); p_b.clear(); p_d.clear(); p_q0.clear(); p_q1.clear(); p_next.clear();
+	r_head.clear(); r_head.resize(nr, -1);
+	for k in n {
+		let a = c_rect[k];
+		if a < 0 { continue; }
+		let cx = c_col[k] % gw; let cz = c_col[k] / gw;
+		for d in 4 {
+			let o = link(k, d);
+			if o < 0 { continue; }
+			let b = c_rect[o];
+			if b <= a { continue; }
+			let y = (c_y[k] + c_y[o]) * 0.5;
+			let ex = ox + (cx + (if d == 2 { 1 } else { 0 })) as f32 * cs; let ez = oz + (cz + (if d == 1 { 1 } else { 0 })) as f32 * cs;
+			let q0 = float3 { ex, y, ez };
+			let q1 = if d == 0 || d == 2 { float3 { ex, y, ez + cs } } else { float3 { ex + cs, y, ez } };
+			var p = r_head[a];
+			while p >= 0 && !(p_b[p] == b && p_d[p] == d) { p = p_next[p]; }
+			if p < 0 { p = p_a.len; p_a.push(a); p_b.push(b); p_d.push(d); p_q0.push(q0); p_q1.push(q1); p_next.push(r_head[a]); r_head[a] = p; continue; }
+			if q0.x + q0.z < p_q0[p].x + p_q0[p].z { p_q0[p] = q0; }
+			if q1.x + q1.z > p_q1[p].x + p_q1[p].z { p_q1[p] = q1; }
+		}
+	}
+	adj0.clear(); adj0.resize(nr + 1, 0); adj.clear();
+	for p in p_a.len { adj0[p_a[p] + 1] += 1; adj0[p_b[p] + 1] += 1; }
+	for r in nr { adj0[r + 1] += adj0[r]; }
+	adj.resize(adj0[nr], 0);
+	var fill int[>..] = []; fill.resize(nr, 0);
+	for p in p_a.len { adj[adj0[p_a[p]] + fill[p_a[p]]] = p; fill[p_a[p]] += 1; adj[adj0[p_b[p]] + fill[p_b[p]]] = p; fill[p_b[p]] += 1; }
+	ready = true;
+	true
+}
+fn locate(p float3) int, float3 {
+	if !ready { return -1, p; }
+	let cx = floor((p.x - ox) / cs) as int; let cz = floor((p.z - oz) / cs) as int;
+	var best = -1; var bd f32 = 1.0e30;
+	for ring in 64 {
+		for z in cz - ring..cz + ring + 1 {
+			for x in cx - ring..cx + ring + 1 {
+				if max(abs(x - cx), abs(z - cz)) != ring || x < 0 || z < 0 || x >= gw || z >= gh { continue; }
+				let col = z * gw + x;
+				for k in col_cn[col] {
+					let o = col_c0[col] + k;
+					if c_rect[o] < 0 { continue; }
+					let qx = clamp(p.x, ox + x as f32 * cs, ox + (x + 1) as f32 * cs); let qz = clamp(p.z, oz + z as f32 * cs, oz + (z + 1) as f32 * cs);
+					let dy = c_y[o] - p.y;
+					let d = (qx - p.x) * (qx - p.x) + (qz - p.z) * (qz - p.z) + (if dy > step { dy * dy * 4.0 } else { dy * dy * 0.25 });
+					if d < bd { bd = d; best = o; }
+				}
+			}
+		}
+		if best >= 0 && ring as f32 * cs > sqrt(bd) + cs { break; }
+	}
+	if best < 0 { return -1, p; }
+	let x = c_col[best] % gw; let z = c_col[best] / gw;
+	return best, float3 { clamp(p.x, ox + x as f32 * cs, ox + (x + 1) as f32 * cs), c_y[best], clamp(p.z, oz + z as f32 * cs, oz + (z + 1) as f32 * cs) };
+}
+fn mid(p int) float3 { (p_q0[p] + p_q1[p]) * 0.5 }
+fn dist(a float3, b float3) f32 { length(a - b) }
+fn cross_at(q int, a float3, b float3) float3 {
+	let e0 = p_q0[q]; let e1 = p_q1[q];
+	let s0 = cross2(a, b, e0); let s1 = cross2(a, b, e1);
+	if s0 * s1 < 0.0 { return e0 + (e1 - e0) * (s0 / (s0 - s1)); }
+	if dist(a, e0) + dist(e0, b) <= dist(a, e1) + dist(e1, b) { e0 } else { e1 }
+}
+fn cross2(a float3, b float3, c float3) f32 { (b.x - a.x) * (c.z - a.z) - (b.z - a.z) * (c.x - a.x) }
+fn hpush(hk f32[>..]&, hv int[>..]&, k f32, v int) {
+	hk.push(k); hv.push(v);
+	var i = hk.len - 1;
+	while i > 0 { let pi = (i - 1) / 2; if hk[pi] <= hk[i] { break; } let tk = hk[pi]; hk[pi] = hk[i]; hk[i] = tk; let tv = hv[pi]; hv[pi] = hv[i]; hv[i] = tv; i = pi; }
+}
+fn hpop(hk f32[>..]&, hv int[>..]&) int {
+	let top = hv[0];
+	let lk = hk.pop(); let lv = hv.pop();
+	if hk.len > 0 {
+		hk[0] = lk; hv[0] = lv;
+		var i = 0;
+		while true {
+			let l = i * 2 + 1; let r = l + 1; var m = i;
+			if l < hk.len && hk[l] < hk[m] { m = l; }
+			if r < hk.len && hk[r] < hk[m] { m = r; }
+			if m == i { break; }
+			let tk = hk[m]; hk[m] = hk[i]; hk[i] = tk; let tv = hv[m]; hv[m] = hv[i]; hv[i] = tv; i = m;
+		}
+	}
+	top
+}
+fn path(a float3, b float3, out float3[>..]&) bool {
+	out.clear();
+	let ca, sa = locate(a);
+	let cb, sb = locate(b);
+	if ca < 0 || cb < 0 { return false; }
+	let ra = c_rect[ca]; let rb = c_rect[cb];
+	if ra == rb { out.push(sa); out.push(sb); return true; }
+	let np = p_a.len;
+	var g f32[>..] = []; g.resize(np, 1.0e30);
+	var from int[>..] = []; from.resize(np, -2);
+	var done byte[>..] = []; done.resize(np, 0);
+	var hk f32[>..] = []; var hv int[>..] = [];
+	var pos float3[>..] = []; pos.resize(np, a);
+	var into int[>..] = []; into.resize(np, -1);
+	for k in adj0[ra]..adj0[ra + 1] { let p = adj[k]; let x = cross_at(p, sa, sb); let c = dist(sa, x); if c < g[p] { g[p] = c; pos[p] = x; from[p] = -1; into[p] = if p_a[p] == ra { p_b[p] } else { p_a[p] }; hpush(hk, hv, c + dist(x, sb), p); } }
+	var best_end = -1; var best_cost f32 = 1.0e30;
+	while hk.len > 0 {
+		let fk = hk[0];
+		if fk >= best_cost { break; }
+		let p = hpop(hk, hv);
+		if done[p] != 0 { continue; }
+		done[p] = 1;
+		if into[p] == rb { let c = g[p] + dist(pos[p], sb); if c < best_cost { best_cost = c; best_end = p; } }
+		{
+			let r = into[p];
+			for k in adj0[r]..adj0[r + 1] {
+				let q = adj[k];
+				if q == p || done[q] != 0 { continue; }
+				let x = cross_at(q, pos[p], sb); let c = g[p] + dist(pos[p], x);
+				if c < g[q] { g[q] = c; pos[q] = x; from[q] = p; into[q] = if p_a[q] == r { p_b[q] } else { p_a[q] }; hpush(hk, hv, c + dist(x, sb), q); }
+			}
+		}
+	}
+	if best_end < 0 { return false; }
+	var chain int[>..] = [];
+	var p = best_end;
+	while p >= 0 { chain.push(p); p = from[p]; }
+	var lt float3[>..] = []; var rt float3[>..] = [];
+	lt.push(sa); rt.push(sa);
+	var cur = ra;
+	var i = chain.len - 1;
+	while i >= 0 {
+		let q = chain[i];
+		let nx = if p_a[q] == cur { p_b[q] } else { p_a[q] };
+		let o = float3 { r_cx[cur], 0.0, r_cz[cur] };
+		let d = float3 { r_cx[nx], 0.0, r_cz[nx] };
+		let e0 = p_q0[q]; let e1 = p_q1[q];
+		let s0 = cross2(o, d, e0); let s1 = cross2(o, d, e1);
+		if s0 > s1 { lt.push(e0); rt.push(e1); } else { lt.push(e1); rt.push(e0); }
+		cur = nx; i -= 1;
+	}
+	lt.push(sb); rt.push(sb);
+	var apex = sa; var fl = sa; var fr = sa; var ai = 0; var li = 0; var ri = 0;
+	out.push(sa);
+	var k = 1;
+	while k < lt.len {
+		let l = lt[k]; let r = rt[k];
+		if cross2(apex, fr, r) >= 0.0 {
+			if dist(apex, fr) < 1.0e-6 || cross2(apex, fl, r) < 0.0 { fr = r; ri = k; }
+			else { out.push(fl); apex = fl; ai = li; fr = apex; ri = ai; k = ai + 1; continue; }
+		}
+		if cross2(apex, fl, l) <= 0.0 {
+			if dist(apex, fl) < 1.0e-6 || cross2(apex, fr, l) > 0.0 { fl = l; li = k; }
+			else { out.push(fr); apex = fr; ai = ri; fl = apex; li = ai; k = ai + 1; continue; }
+		}
+		k += 1;
+	}
+	if dist(out[out.len - 1], sb) > 1.0e-6 { out.push(sb); }
+	true
+}

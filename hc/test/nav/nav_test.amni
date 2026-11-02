@@ -1,0 +1,179 @@
+import vec;
+import os;
+import nav.mesh;
+var FAILS = 0;
+var BX f32[>..] = [];
+fn check(ok bool, what const byte[:]) { if ok { print("PASS ", what); } else { print("FAIL ", what); FAILS += 1; } }
+fn r3(x f32) f32 { floor(x * 1000.0 + 0.5) / 1000.0 }
+fn quad(a float3, b float3, c float3, d float3) { nav::add(a, b, c); nav::add(a, c, d); }
+fn box(x0 f32, y0 f32, z0 f32, x1 f32, y1 f32, z1 f32) {
+	let p = [float3 { x0, y0, z0 }, float3 { x1, y0, z0 }, float3 { x1, y0, z1 }, float3 { x0, y0, z1 }, float3 { x0, y1, z0 }, float3 { x1, y1, z0 }, float3 { x1, y1, z1 }, float3 { x0, y1, z1 }];
+	quad(p[4], p[7], p[6], p[5]); quad(p[0], p[1], p[2], p[3]);
+	quad(p[0], p[4], p[5], p[1]); quad(p[1], p[5], p[6], p[2]); quad(p[2], p[6], p[7], p[3]); quad(p[3], p[7], p[4], p[0]);
+}
+fn ground(h f32) { quad(float3 { -h, 0.0, -h }, float3 { -h, 0.0, h }, float3 { h, 0.0, h }, float3 { h, 0.0, -h }); }
+fn obstacle(cx f32, cz f32, hx f32, hz f32, top f32) { box(cx - hx, 0.0, cz - hz, cx + hx, top, cz + hz); BX.append([cx, cz, hx, hz]); }
+fn ramp(x0 f32, x1 f32, z0 f32, z1 f32, y0 f32, y1 f32) {
+	quad(float3 { x0, y0, z0 }, float3 { x0, y0, z1 }, float3 { x1, y1, z1 }, float3 { x1, y1, z0 });
+	nav::add(float3 { x0, y0, z0 }, float3 { x1, y1, z0 }, float3 { x1, y0, z0 }); nav::add(float3 { x0, y0, z1 }, float3 { x1, y0, z1 }, float3 { x1, y1, z1 });
+}
+fn plen(p const float3[:]) f32 { var l f32 = 0.0; for i in 1..p.len { l += length(p[i] - p[i - 1]); } l }
+fn rect_dist(x f32, z f32, b int) f32 {
+	let dx = max(abs(x - BX[b * 4]) - BX[b * 4 + 2], 0.0); let dz = max(abs(z - BX[b * 4 + 1]) - BX[b * 4 + 3], 0.0);
+	sqrt(dx * dx + dz * dz)
+}
+fn clearance(p const float3[:]) f32 {
+	var m f32 = 1.0e30;
+	for i in 1..p.len {
+		let n = max(ceil(length(p[i] - p[i - 1]) / 0.01) as int, 1);
+		for s in n + 1 { let t = s as f32 / n as f32; let q = p[i - 1] + (p[i] - p[i - 1]) * t; for b in BX.len / 4 { m = min(m, rect_dist(q.x, q.z, b)); } }
+	}
+	m
+}
+fn seg_hits(ax f32, az f32, bx f32, bz f32, r f32) bool {
+	for b in BX.len / 4 {
+		let lx = BX[b * 4] - BX[b * 4 + 2] - r + 1.0e-4; let hx = BX[b * 4] + BX[b * 4 + 2] + r - 1.0e-4;
+		let lz = BX[b * 4 + 1] - BX[b * 4 + 3] - r + 1.0e-4; let hz = BX[b * 4 + 1] + BX[b * 4 + 3] + r - 1.0e-4;
+		var t0 f32 = 0.0; var t1 f32 = 1.0;
+		let dx = bx - ax; let dz = bz - az;
+		var ok = true;
+		if abs(dx) < 1.0e-9 { if ax <= lx || ax >= hx { ok = false; } } else { var u = (lx - ax) / dx; var v = (hx - ax) / dx; if u > v { let t = u; u = v; v = t; } t0 = max(t0, u); t1 = min(t1, v); }
+		if abs(dz) < 1.0e-9 { if az <= lz || az >= hz { ok = false; } } else { var u = (lz - az) / dz; var v = (hz - az) / dz; if u > v { let t = u; u = v; v = t; } t0 = max(t0, u); t1 = min(t1, v); }
+		if ok && t0 < t1 { return true; }
+	}
+	false
+}
+fn reference(a float3, b float3, r f32) f32 {
+	var px f32[>..] = [a.x, b.x]; var pz f32[>..] = [a.z, b.z];
+	for k in BX.len / 4 {
+		let e = r + 1.0e-3;
+		for sx in 2 { for sz in 2 { px.push(BX[k * 4] + (if sx == 0 { -1.0 } else { 1.0 }) * (BX[k * 4 + 2] + e)); pz.push(BX[k * 4 + 1] + (if sz == 0 { -1.0 } else { 1.0 }) * (BX[k * 4 + 3] + e)); } }
+	}
+	let n = px.len;
+	var d f32[>..] = []; d.resize(n, 1.0e30); var dn byte[>..] = []; dn.resize(n, 0);
+	d[0] = 0.0;
+	for it in n {
+		var u = -1;
+		for i in n { if dn[i] == 0 && (u < 0 || d[i] < d[u]) { u = i; } }
+		if u < 0 || d[u] >= 1.0e29 { break; }
+		dn[u] = 1;
+		if u == 1 { break; }
+		for v in n {
+			if dn[v] != 0 { continue; }
+			let w = sqrt((px[u] - px[v]) * (px[u] - px[v]) + (pz[u] - pz[v]) * (pz[u] - pz[v]));
+			if d[u] + w < d[v] && !seg_hits(px[u], pz[u], px[v], pz[v], r) { d[v] = d[u] + w; }
+		}
+	}
+	d[1]
+}
+fn defaults() { nav::cs = 0.1; nav::ch = 0.05; nav::radius = 0.3; nav::height = 1.8; nav::step = 0.35; nav::slope_deg = 45.0; }
+fn n1() {
+	defaults(); nav::clear(); BX.clear(); ground(10.0); obstacle(0.0, 0.0, 1.0, 1.0, 1.0);
+	check(nav::build(), "N1 build");
+	let a = float3 { -5.0, 0.0, 0.2 }; let b = float3 { 5.0, 0.0, -0.2 };
+	var p float3[>..] = [];
+	let ok = nav::path(a, b, p);
+	let rf = reference(a, b, 0.3); let l = plen(p[..]); let cl = clearance(p[..]);
+	print("N1 cells ", nav::live_cells(), " rects ", nav::rect_count(), " portals ", nav::portal_count(), " points ", p.len, " length ", r3(l), " reference ", r3(rf), " ratio ", r3(l / rf), " clearance ", r3(cl));
+	check(ok && abs(l / rf - 1.0) <= 0.03 && cl >= 0.3 - 0.1, "N1 one box: length within 3 %, clearance >= r - cs");
+	let st = [a, b];
+	check(clearance(st[..]) < 0.2, "N1 control: straight segment fails clearance");
+	nav::radius = 0.0; nav::build();
+	var q float3[>..] = [];
+	let ok0 = nav::path(a, b, q);
+	print("N1 control radius 0: clearance ", r3(clearance(q[..])));
+	check(!ok0 || clearance(q[..]) < 0.2, "N1 control: radius 0 fails clearance");
+}
+fn platform_case(kind int) bool, f32 {
+	defaults(); nav::clear(); BX.clear(); ground(10.0);
+	box(2.0, 0.0, -2.0, 6.0, 1.0, 2.0);
+	if kind == 1 { ramp(2.0 - 1.0 / (tan(0.349066) as f32), 2.0, -1.0, 1.0, 0.0, 1.0); }
+	if kind == 2 { ramp(2.0 - 1.0 / (tan(1.047198) as f32), 2.0, -1.0, 1.0, 0.0, 1.0); }
+	if kind == 3 || kind == 4 {
+		let rise f32 = if kind == 3 { 0.2 } else { 0.5 };
+		let ns = (1.0 / rise + 0.5) as int;
+		for s in ns - 1 { box(2.0 - (ns - 1 - s) as f32 * 0.35, 0.0, -1.0, 2.0 - (ns - 2 - s) as f32 * 0.35, rise * (s + 1) as f32, 1.0); }
+	}
+	nav::build();
+	var p float3[>..] = [];
+	let ok = nav::path(float3 { -6.0, 0.0, 0.0 }, float3 { 4.0, 1.0, 0.0 }, p);
+	return ok, if ok { p[p.len - 1].y } else { -1.0 };
+}
+fn n2() {
+	let o0, y0 = platform_case(0); check(!o0, "N2 no ramp: no path to the platform");
+	let o1, y1 = platform_case(1); print("N2 20 deg ramp: found ", o1, " end y ", r3(y1)); check(o1 && abs(y1 - 1.0) <= 0.05, "N2 20 deg ramp: path ends on the platform");
+	let o2, y2 = platform_case(2); check(!o2, "N2 60 deg ramp: no path");
+	let o3, y3 = platform_case(3); print("N3 rise 0.2: found ", o3, " end y ", r3(y3)); check(o3, "N3 rise 0.2: path found");
+	let o4, y4 = platform_case(4); check(!o4, "N3 rise 0.5: no path");
+	let _ = y0 + y2 + y3 + y4;
+}
+fn n4() {
+	defaults(); nav::clear(); BX.clear(); ground(10.0);
+	let run = 2.5 / (tan(0.349066) as f32);
+	box(-3.0, 2.4, -1.0, 3.0, 2.5, 1.0);
+	ramp(-3.0 - run, -3.0, -1.0, 1.0, 0.0, 2.5);
+	ramp(3.0 + run, 3.0, -1.0, 1.0, 0.0, 2.5);
+	nav::build();
+	let c0, s0 = nav::locate(float3 { 0.0, 0.0, 0.0 });
+	let c1, s1 = nav::locate(float3 { 0.0, 2.5, 0.0 });
+	print("N4 under y ", r3(s0.y), " on y ", r3(s1.y));
+	check(c0 >= 0 && abs(s0.y) < 0.05 && c1 >= 0 && abs(s1.y - 2.5) < 0.05, "N4 locate picks the right layer");
+	var p float3[>..] = [];
+	let a = float3 { 0.0, 0.0, -4.0 }; let b = float3 { 0.0, 0.0, 4.0 };
+	let ok = nav::path(a, b, p);
+	print("N4 under: length ", r3(plen(p[..])), " straight 8");
+	check(ok && plen(p[..]) <= 8.0 * 1.03, "N4 path under the deck within 3 % of straight");
+	let ok2 = nav::path(float3 { 0.0, 0.0, -4.0 }, float3 { 0.0, 2.5, 0.0 }, p);
+	print("N4 up: found ", ok2, " end y ", if ok2 { r3(p[p.len - 1].y) } else { -1.0 });
+	check(ok2 && abs(p[p.len - 1].y - 2.5) < 0.05, "N4 path from under to on top ends on the deck");
+}
+var SEED = 12345;
+fn rnd() f32 { SEED = (SEED * 1103515245 + 12345) % 2147483648; SEED as f32 / 2147483648.0 }
+fn free_point(h f32) float3 {
+	while true {
+		let x = (rnd() * 2.0 - 1.0) * (h - 1.0); let z = (rnd() * 2.0 - 1.0) * (h - 1.0);
+		var ok = true;
+		for b in BX.len / 4 { if rect_dist(x, z, b) < 0.5 { ok = false; } }
+		if ok { return float3 { x, 0.0, z }; }
+	}
+	float3 { 0.0, 0.0, 0.0 }
+}
+fn n5() {
+	var found = 0; var total = 0; var lo f32 = 1.0e30; var hi f32 = 0.0; var cmin f32 = 1.0e30; var cmin0 f32 = 1.0e30;
+	var bt = 0; var qt = 0; var nq = 0;
+	for f in 20 {
+		defaults(); nav::clear(); BX.clear();
+		let h f32 = 12.5;
+		ground(h);
+		for gz in 9 { for gx in 9 {
+			if rnd() >= 0.4 { continue; }
+			obstacle(-10.0 + gx as f32 * 2.5, -10.0 + gz as f32 * 2.5, 0.5 + rnd() * 0.1, 0.5 + rnd() * 0.1, 1.0);
+		} }
+		let t0 = time_ns(); nav::build(); bt = time_ns() - t0;
+		var pts float3[>..] = [];
+		for k in 10 { pts.push(free_point(h)); pts.push(free_point(h)); }
+		for k in 10 {
+			let a = pts[k * 2]; let b = pts[k * 2 + 1];
+			var p float3[>..] = [];
+			let t1 = time_ns(); let ok = nav::path(a, b, p); qt += time_ns() - t1; nq += 1;
+			total += 1;
+			if !ok { print("N5 field ", f, " pair ", k, " no path"); continue; }
+			found += 1;
+			let rf = reference(a, b, 0.3); let rt = plen(p[..]) / rf;
+			if rt < lo { lo = rt; } if rt > hi { hi = rt; }
+			cmin = min(cmin, clearance(p[..]));
+		}
+		if f == 0 {
+			nav::radius = 0.0; nav::build();
+			for k in 10 { var p float3[>..] = []; if nav::path(pts[k * 2], pts[k * 2 + 1], p) { cmin0 = min(cmin0, clearance(p[..])); } }
+		}
+	}
+	print("N5 found ", found, "/", total, " ratio ", r3(lo), "..", r3(hi), " clearance ", r3(cmin), " build ms ", bt / 1000000, " query us ", qt / max(nq, 1) / 1000);
+	check(found == total && lo >= 0.97 && hi <= 1.04 && cmin >= 0.3 - 0.1, "N5 random fields: all found, 0.97-1.04 x reference, clearance >= r - cs");
+	print("N5 control radius 0: clearance ", r3(cmin0));
+	check(cmin0 < 0.2, "N5 control: radius 0 fails clearance");
+}
+fn main() {
+	n1(); n2(); n4(); n5();
+	if FAILS == 0 { print("nav: ok"); } else { print("nav: FAILED ", FAILS); exit(1); }
+}
