@@ -1,0 +1,257 @@
+import std;
+import math;
+import gfx;
+import gfx.linalg;
+import edit.scene;
+var FAILS = 0;
+fn check(ok bool, what const byte[:]) { if ok { print("PASS ", what); } else { print("FAIL ", what); FAILS += 1; } }
+var SEED = 777;
+fn rnd() int { SEED = (SEED * 1103515245 + 12345) % 2147483648; SEED }
+fn uni() real { rnd() as real / 2147483648.0 }
+fn rng(a real, b real) real { a + (b - a) * uni() }
+fn rf() f32 {
+	let k = rnd() % 10;
+	if k == 0 { return -0.0; }
+	if k == 1 { return 0.0; }
+	let sg = if rnd() % 2 == 0 { 1.0 } else { -1.0 };
+	let e = rnd() % 77 - 40;
+	(sg * rng(1.0, 3.4) * pow(10.0, e as real)) as f32
+}
+fn bits(x f32) int { std_bits(x as real) }
+fn rquat() linalg::Quat { linalg::qnorm(linalg::Quat { rng(-1.0, 1.0) as f32, rng(-1.0, 1.0) as f32, rng(-1.0, 1.0) as f32, rng(0.1, 1.0) as f32 }) }
+fn rname() byte[>..] { var s byte[>..] = []; let n = rnd() % 41; let pool = "ab\"\\ Z9_-é"; for k in n { let m = rnd() % 5; s.push(if m == 0 { (1 + rnd() % 31) as byte } else if m == 1 { (128 + rnd() % 128) as byte } else { pool[rnd() % pool.len] }); } s }
+fn same(a edit::Ent, b edit::Ent) bool {
+	a.id == b.id && a.parent == b.parent && a.kind == b.kind && a.name[..] == b.name[..] &&
+	bits(a.t.x) == bits(b.t.x) && bits(a.t.y) == bits(b.t.y) && bits(a.t.z) == bits(b.t.z) &&
+	bits(a.r.x) == bits(b.r.x) && bits(a.r.y) == bits(b.r.y) && bits(a.r.z) == bits(b.r.z) && bits(a.r.w) == bits(b.r.w) &&
+	bits(a.s.x) == bits(b.s.x) && bits(a.s.y) == bits(b.s.y) && bits(a.s.z) == bits(b.s.z) &&
+	bits(a.color.x) == bits(b.color.x) && bits(a.color.y) == bits(b.color.y) && bits(a.color.z) == bits(b.color.z)
+}
+fn e1() bool {
+	var bad = 0; var ents = 0;
+	for doc in 200 {
+		edit::reset();
+		let n = 1 + rnd() % 300;
+		for i in n {
+			let nm = rname();
+			var e = edit::ent(rnd() % 4, nm[..]);
+			e.parent = if i > 0 && rnd() % 2 == 0 { 1 + rnd() % i } else { -1 };
+			e.t = float3 { rf(), rf(), rf() }; e.r = linalg::Quat { rf(), rf(), rf(), rf() }; e.s = float3 { rf(), rf(), rf() }; e.color = float3 { rf(), rf(), rf() };
+			edit::E.push(e); edit::E[edit::E.len - 1].id = i + 1;
+		}
+		var keep edit::Ent[>..] = []; keep.append(edit::E[..]);
+		var a byte[>..] = []; edit::save(a);
+		if !edit::load(a[..]) { bad += 1; continue; }
+		var b byte[>..] = []; edit::save(b);
+		if a[..] != b[..] { bad += 1; if bad < 4 { print("E1 doc ", doc, " text differs"); } }
+		if edit::E.len != keep.len { bad += 1; continue; }
+		for i in keep.len { if !same(keep[i], edit::E[i]) { bad += 1; if bad < 4 { print("E1 doc ", doc, " entity ", i, " differs"); } } }
+		ents += n;
+	}
+	print("E1 save/load: 200 documents, ", ents, " entities, ", bad, " differences");
+	bad == 0
+}
+fn random_op() {
+	let n = edit::E.len;
+	let k = if n == 0 { 0 } else { rnd() % 8 };
+	if k == 0 { let nm = rname(); var e = edit::ent(rnd() % 4, nm[..]); e.parent = if n > 0 && rnd() % 2 == 0 { edit::E[rnd() % n].id } else { -1 }; e.t = float3 { rng(-3.0, 3.0) as f32, rng(-3.0, 3.0) as f32, rng(-3.0, 3.0) as f32 }; let _i = edit::add(e); return; }
+	var e = edit::E[rnd() % n];
+	if k == 1 { edit::remove(e.id); }
+	else if k == 2 { let nm = rname(); e.name = nm[..min(nm.len, 64)]; edit::set(e); }
+	else if k == 3 { e.t = float3 { rng(-3.0, 3.0) as f32, rng(-3.0, 3.0) as f32, rng(-3.0, 3.0) as f32 }; edit::set(e); }
+	else if k == 4 { e.r = rquat(); edit::set(e); }
+	else if k == 5 { e.s = float3 { rng(0.2, 2.0) as f32, rng(0.2, 2.0) as f32, rng(0.2, 2.0) as f32 }; edit::set(e); }
+	else if k == 6 { e.color = float3 { uni() as f32, uni() as f32, uni() as f32 }; edit::set(e); }
+	else { let np = if rnd() % 4 == 0 { -1 } else { edit::E[rnd() % n].id }; let _ok = edit::reparent(e.id, np); }
+}
+fn e2() bool {
+	var bad = 0; var refused = 0;
+	for sess in 50 {
+		edit::reset();
+		for i in 10 { let nm = rname(); var e = edit::ent(rnd() % 4, nm[..]); e.id = i + 1; edit::E.push(e); }
+		edit::NEXT = 11;
+		var init byte[>..] = []; edit::save(init);
+		for op in 400 {
+			let before = edit::steps();
+			random_op();
+			if edit::steps() == before { refused += 1; }
+		}
+		var fin byte[>..] = []; edit::save(fin);
+		while edit::undo() {}
+		var u byte[>..] = []; edit::save(u);
+		if u[..] != init[..] { bad += 1; print("E2 session ", sess, ": undo all differs"); }
+		while edit::redo() {}
+		var r byte[>..] = []; edit::save(r);
+		if r[..] != fin[..] { bad += 1; print("E2 session ", sess, ": redo all differs"); }
+		for k in 5 { let _u = edit::undo(); }
+		random_op();
+		if edit::redo() { bad += 1; print("E2 session ", sess, ": redo survived a new operation"); }
+	}
+	edit::reset();
+	let id = edit::add(edit::ent(0, "dragged"));
+	let s0 = edit::steps();
+	var pre byte[>..] = []; edit::save(pre);
+	edit::drag_begin();
+	for k in 100 { var e = edit::E[edit::idx(id)]; e.t = float3 { k as f32 * 0.1, 0.0, 0.0 }; edit::set(e); }
+	edit::drag_end();
+	let one = edit::steps() == s0 + 1;
+	let _u = edit::undo();
+	var post byte[>..] = []; edit::save(post);
+	print("E2 undo/redo: 50 sessions x 400 ops (", refused, " no-ops or refusals), ", bad, " failures; drag of 100 updates = ", edit::steps() - s0 + 1, " step");
+	bad == 0 && one && post[..] == pre[..]
+}
+fn rand_scene(n int) {
+	edit::reset();
+	for i in n {
+		var e = edit::ent(rnd() % 3, "s");
+		e.parent = if i > 0 && rnd() % 2 == 0 { edit::E[rnd() % i].id } else { -1 };
+		let sc = if e.parent >= 0 { 1.5 } else { 3.0 };
+		e.t = float3 { rng(-sc, sc) as f32, rng(-sc, sc) as f32, rng(-sc, sc) as f32 };
+		e.r = rquat(); e.s = float3 { rng(0.4, 2.0) as f32, rng(0.4, 2.0) as f32, rng(0.4, 2.0) as f32 };
+		let _i = edit::add(e);
+	}
+}
+fn rand_cam() edit::Cam {
+	let th = rng(0.0, 6.283185307179586); let ph = rng(-0.9, 0.9); let r = rng(10.0, 13.0);
+	edit::Cam { eye: float3 { (r * cos(ph) * cos(th)) as f32, (r * sin(ph)) as f32, (r * cos(ph) * sin(th)) as f32 }, target: float3 { 0.0, 0.0, 0.0 }, up: float3 { 0.0, 1.0, 0.0 }, fov_y: 0.9, w: 320.0, h: 240.0 }
+}
+fn inside(i int, inv gfx::mat4, p edit::R3, prev edit::R3) bool {
+	let q = edit::xform(inv, p, 1.0);
+	let k = edit::E[i].kind;
+	if k == edit::CUBE { return abs(q.x) <= 0.5 && abs(q.y) <= 0.5 && abs(q.z) <= 0.5; }
+	if k == edit::SPHERE { return q.x * q.x + q.y * q.y + q.z * q.z <= 0.25; }
+	let a = edit::xform(inv, prev, 1.0);
+	if (a.y > 0.0) == (q.y > 0.0) { return false; }
+	let f = a.y / (a.y - q.y); let x = a.x + (q.x - a.x) * f; let z = a.z + (q.z - a.z) * f;
+	abs(x) <= 0.5 && abs(z) <= 0.5
+}
+fn march(c edit::Cam, px real, py real, invs gfx::mat4[>..]&) int {
+	let o, d = edit::ray(c, px, py);
+	var prev = o; var t = 0.002;
+	while t < 40.0 {
+		let p = edit::radd(o, edit::rmul(d, t));
+		for i in edit::E.len { if inside(i, invs[i], p, prev) { return edit::E[i].id; } }
+		prev = p; t += 0.002;
+	}
+	-1
+}
+fn e3() bool {
+	var agree = 0; var total = 0; var unexplained = 0; var hits = 0;
+	for sc in 20 {
+		rand_scene(6 + rnd() % 5);
+		let c = rand_cam();
+		var invs gfx::mat4[>..] = []; for i in edit::E.len { invs.push(linalg::inverse(edit::world(edit::E[i].id))); }
+		for k in 100 {
+			let x = rnd() % 320; let y = rnd() % 240;
+			let px = x as real + 0.5; let py = y as real + 0.5;
+			let a = edit::pick(c, px, py); let r = march(c, px, py, invs);
+			total += 1; if r >= 0 { hits += 1; }
+			if a == r { agree += 1; continue; }
+			var near = false;
+			for dy in -1..2 { for dx in -1..2 { if edit::pick(c, px + dx as real, py + dy as real) == r { near = true; } } }
+			if !near { unexplained += 1; print("E3 scene ", sc, " click ", x, ",", y, " pick ", a, " reference ", r); }
+		}
+	}
+	print("E3 picking: ", agree, " / ", total, " agree (", hits, " on objects), ", unexplained, " disagreements without a neighbouring match");
+	agree * 100 >= total * 99 && unexplained == 0
+}
+fn rotv(v edit::R3, a edit::R3, th real) edit::R3 { edit::radd(edit::radd(edit::rmul(v, cos(th)), edit::rmul(edit::rcross(a, v), sin(th))), edit::rmul(a, edit::rdot(a, v) * (1.0 - cos(th)))) }
+fn infront(c edit::Cam, p edit::R3) bool { let f, s, u = edit::basis(c); let _s = s; let _u = u; edit::rdot(edit::rsub(p, edit::r3(c.eye)), f) > 0.5 }
+fn e4() bool {
+	var wt = 0.0; var wp = 0.0; var wr = 0.0; var ws = 0.0; var done = 0; var skipped = 0; var snap_bad = 0;
+	let s10 = sin(10.0 * 0.017453292519943295);
+	var k = 0;
+	while done < 300 {
+		k += 1;
+		let c = rand_cam();
+		let p = edit::R3 { rng(-1.0, 1.0), rng(-1.0, 1.0), rng(-1.0, 1.0) };
+		let ax = rnd() % 3;
+		let a = edit::R3 { if ax == 0 { 1.0 } else { 0.0 }, if ax == 1 { 1.0 } else { 0.0 }, if ax == 2 { 1.0 } else { 0.0 } };
+		let v = edit::runit(edit::rsub(p, edit::r3(c.eye)));
+		let along = abs(edit::rdot(v, a));
+		let mode = done % 4;
+		if mode == 0 || mode == 3 { if along > cos(10.0 * 0.017453292519943295) { skipped += 1; continue; } } else { if along < s10 { skipped += 1; continue; } }
+		if mode == 0 {
+			let l = rng(-2.0, 2.0); let q0 = edit::radd(p, edit::rmul(a, 0.7)); let q1 = edit::radd(p, edit::rmul(a, 0.7 + l));
+			if !infront(c, q0) || !infront(c, q1) { skipped += 1; continue; }
+			let x0, y0 = edit::project(c, q0); let x1, y1 = edit::project(c, q1);
+			let got = edit::drag_axis(c, p, a, x0, y0, x1, y1);
+			wt = max(wt, abs(got - l));
+			let t0 = rng(-3.0, 3.0); let sn = edit::snap(t0 + got, 0.25);
+			if sn * 4.0 != round(sn * 4.0) { snap_bad += 1; }
+		} else if mode == 1 {
+			let u = edit::R3 { a.y, a.z, a.x }; let w = edit::rcross(a, u);
+			let off = edit::radd(edit::rmul(u, rng(-2.0, 2.0)), edit::rmul(w, rng(-2.0, 2.0)));
+			let q0 = edit::radd(p, edit::rmul(u, 0.3)); let q1 = edit::radd(q0, off);
+			if !infront(c, q0) || !infront(c, q1) { skipped += 1; continue; }
+			let x0, y0 = edit::project(c, q0); let x1, y1 = edit::project(c, q1);
+			let got = edit::drag_plane(c, p, a, x0, y0, x1, y1);
+			let e = edit::rsub(got, off); wp = max(wp, sqrt(edit::rdot(e, e)));
+		} else if mode == 2 {
+			let u = edit::R3 { a.y, a.z, a.x }; let th = rng(-3.0, 3.0);
+			let q0 = edit::radd(p, u); let q1 = edit::radd(p, rotv(u, a, th));
+			if !infront(c, q0) || !infront(c, q1) { skipped += 1; continue; }
+			let x0, y0 = edit::project(c, q0); let x1, y1 = edit::project(c, q1);
+			let got = edit::drag_rotate(c, p, a, x0, y0, x1, y1);
+			wr = max(wr, abs(got - th));
+			let deg = edit::snap(got * 57.29577951308232, 15.0);
+			if deg / 15.0 != round(deg / 15.0) { snap_bad += 1; }
+		} else {
+			let f = rng(0.3, 3.0); let q0 = edit::radd(p, a); let q1 = edit::radd(p, edit::rmul(a, f));
+			if !infront(c, q0) || !infront(c, q1) { skipped += 1; continue; }
+			let x0, y0 = edit::project(c, q0); let x1, y1 = edit::project(c, q1);
+			let got = edit::drag_scale(c, p, a, x0, y0, x1, y1);
+			ws = max(ws, abs(got / f - 1.0));
+		}
+		done += 1;
+	}
+	print("E4 gizmos: 300 drags (", skipped, " skipped as hidden or behind the camera): translate ", wt, ", plane ", wp, ", rotate ", wr, " rad, scale ", ws, " relative; snapping misses ", snap_bad);
+	wt <= 1.0e-3 && wp <= 1.0e-3 && wr <= 1.0e-3 && ws <= 1.0e-3 && snap_bad == 0
+}
+struct M { m real[16] }
+fn mmul(a M, b M) M { var r = M { m: [0.0; 16] }; for i in 4 { for j in 4 { var s = 0.0; for k in 4 { s += a.m[k * 4 + i] * b.m[j * 4 + k]; } r.m[j * 4 + i] = s; } } r }
+fn trs(e edit::Ent) M {
+	let x = e.r.x as real; let y = e.r.y as real; let z = e.r.z as real; let w = e.r.w as real;
+	let n = sqrt(x * x + y * y + z * z + w * w); let qx = x / n; let qy = y / n; let qz = z / n; let qw = w / n;
+	let rr = [1.0 - 2.0 * (qy * qy + qz * qz), 2.0 * (qx * qy + qz * qw), 2.0 * (qx * qz - qy * qw), 2.0 * (qx * qy - qz * qw), 1.0 - 2.0 * (qx * qx + qz * qz), 2.0 * (qy * qz + qx * qw), 2.0 * (qx * qz + qy * qw), 2.0 * (qy * qz - qx * qw), 1.0 - 2.0 * (qx * qx + qy * qy)];
+	let s = [e.s.x as real, e.s.y as real, e.s.z as real];
+	var r = M { m: [0.0; 16] };
+	for c in 3 { for row in 3 { r.m[c * 4 + row] = rr[c * 3 + row] * s[c]; } }
+	r.m[12] = e.t.x as real; r.m[13] = e.t.y as real; r.m[14] = e.t.z as real; r.m[15] = 1.0;
+	r
+}
+fn refworld(id int) M { let i = edit::idx(id); let m = trs(edit::E[i]); if edit::E[i].parent < 0 { m } else { mmul(refworld(edit::E[i].parent), m) } }
+fn flat(g gfx::mat4) real[16] { let f = linalg::flat(g); var r = [0.0; 16]; for k in 16 { r[k] = f[k] as real; } r }
+fn e5() bool {
+	var we = 0.0; var wt = 0.0; var wr = 0.0;
+	for trial in 100 {
+		edit::reset();
+		let uniform = trial >= 50;
+		for i in 5 {
+			var e = edit::ent(0, "c"); e.parent = if i > 0 { i } else { -1 };
+			e.t = float3 { rng(-2.0, 2.0) as f32, rng(-2.0, 2.0) as f32, rng(-2.0, 2.0) as f32 }; e.r = rquat();
+			let s = rng(0.6, 1.5) as f32; e.s = if uniform { float3 { s, s, s } } else { float3 { rng(0.6, 1.5) as f32, rng(0.6, 1.5) as f32, rng(0.6, 1.5) as f32 } };
+			let _i = edit::add(e);
+		}
+		for id in 1..6 { let g = flat(edit::world(id)); let r = refworld(id); for k in 16 { we = max(we, abs(g[k] - r.m[k])); } }
+		if !uniform { continue; }
+		let mv = 2 + rnd() % 4; let np = if rnd() % 2 == 0 { -1 } else { 1 + rnd() % (mv - 1) };
+		var before real[16][>..] = []; for id in 1..6 { before.push(flat(edit::world(id))); }
+		if !edit::reparent(mv, np) { print("E5 reparent refused"); return false; }
+		for id in mv..6 {
+			let b = before[id - 1]; let a = flat(edit::world(id));
+			for k in 12..15 { wt = max(wt, abs(a[k] - b[k])); }
+			for c in 3 { let la = sqrt(a[c * 4] * a[c * 4] + a[c * 4 + 1] * a[c * 4 + 1] + a[c * 4 + 2] * a[c * 4 + 2]); let lb = sqrt(b[c * 4] * b[c * 4] + b[c * 4 + 1] * b[c * 4 + 1] + b[c * 4 + 2] * b[c * 4 + 2]); for row in 3 { wr = max(wr, abs(a[c * 4 + row] / la - b[c * 4 + row] / lb)); } }
+		}
+	}
+	print("E5 hierarchy: world vs reference worst ", we, "; keep-world reparent translation ", wt, ", rotation ", wr);
+	we <= 1.0e-4 && wt <= 1.0e-4 && wr <= 1.0e-4
+}
+fn main() {
+	check(e1(), "E1 save/load bit-identical, text byte-identical");
+	check(e2(), "E2 undo all / redo all exact, new op clears redo, drag is one step");
+	check(e3(), "E3 picking agrees with ray-march reference");
+	check(e4(), "E4 gizmo drags recover intent; snapping exact");
+	check(e5(), "E5 hierarchy world matrices and keep-world reparent");
+	if FAILS == 0 { print("edit: ok"); } else { print("edit: FAILED ", FAILS); exit(1); }
+}
