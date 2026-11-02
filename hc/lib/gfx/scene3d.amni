@@ -58,6 +58,10 @@ struct CutViewU { base float4, alpha float4, uv_sets float4, view gfx::mat4 }
 struct SkyU { inv_view_proj gfx::mat4, prev_view_proj gfx::mat4, to_sun float4, sun_rgb float4, zenith float4, horizon float4, ground float4 }
 struct AoU { lens float4, tune float4 }
 struct GtaoU { lens float4, tune float4, size float4 }
+struct TileU { size float4, lens float4, mode float4 }
+struct NearU { size float4, mode float4 }
+struct MblurU { size float4, tune float4 }
+struct DofU { size float4, lens float4, tune float4 }
 struct TexelU { texel float4 }
 struct GlowU { texel float4, cut float4 }
 struct GradeU { tone float4 }
@@ -73,6 +77,15 @@ var debug_view = 0;
 var ao_mode = 0;
 var gtao_steps = 8;
 var gtao_falloff f32 = 0.1;
+var motion_blur f32 = 0.0;
+var mb_samples = 15;
+var mb_soft_z f32 = 0.02;
+var lens_tile_px = 20;
+var dof_aperture f32 = 0.0;
+var dof_focus f32 = 10.0;
+var dof_max_px f32 = 24.0;
+var dof_samples = 48;
+var lens_offset float2 = float2 { 0.0, 0.0 };
 var gi_on = false;
 var rt_shadows = false;
 var gi_ao = true;
@@ -149,6 +162,13 @@ var pipe_sky_motion gfx::Pipeline;
 var pipe_ao gfx::Pipeline;
 var pipe_ao_blur gfx::Pipeline;
 var pipe_gtao gfx::Pipeline;
+var pipe_lens_tile gfx::Pipeline;
+var pipe_lens_near gfx::Pipeline;
+var pipe_mblur gfx::Pipeline;
+var pipe_dof gfx::Pipeline;
+var fx gfx::Texture;
+var tile_a gfx::Texture;
+var tile_b gfx::Texture;
 var pipe_gtao_blur gfx::Pipeline;
 var pipe_bright gfx::Pipeline;
 var pipe_down gfx::Pipeline;
@@ -231,7 +251,7 @@ fn motion_target() gfx::Texture { motion_tex }
 fn ao_target() gfx::Texture { ao }
 fn bent_target() gfx::Texture { bent }
 fn nd_target() gfx::Texture { nd }
-fn motion_wanted() bool { motion_vectors || temporal_on() }
+fn motion_wanted() bool { motion_vectors || temporal_on() || motion_blur > 0.0 }
 // The image bloom and grading read: the temporal result when it ran, else `hdr`.
 fn resolved() gfx::Texture { if temporal_used { history[hist_cur] } else { hdr } }
 fn temporal_on() bool { temporal != 0 || out_width != width || out_height != height }
@@ -243,7 +263,7 @@ fn surface_desc(cull i32, blend i32, depth_write bool) gfx::PipelineDesc {
 }
 
 fn drop_targets() {
-	for t in [color_ms, depth_ms, hdr, nd, nd_depth, ao_raw, ao, lin_depth, bent_raw, bent] { gfx::release(t); }
+	for t in [color_ms, depth_ms, hdr, nd, nd_depth, ao_raw, ao, lin_depth, bent_raw, bent, fx, tile_a, tile_b] { gfx::release(t); }
 	drop_motion();
 	for t in glow { gfx::release(t); }
 	for t in history { gfx::release(t); }
@@ -272,6 +292,10 @@ fn make_targets(w int, h int, ow int, oh int) {
 	lin_depth = gfx::render_target(w, h, gfx::R32F);
 	bent_raw = gfx::render_target(w, h, gfx::RGBA16F);
 	bent = gfx::render_target(w, h, gfx::RGBA16F);
+	fx = gfx::render_target(w, h, gfx::RGBA16F);
+	let tw = max((w + lens_tile_px - 1) / lens_tile_px, 1); let th = max((h + lens_tile_px - 1) / lens_tile_px, 1);
+	tile_a = gfx::render_target(tw, th, gfx::RG16F);
+	tile_b = gfx::render_target(tw, th, gfx::RG16F);
 	glow.clear();
 	var gw = max(ow / 2, 1);
 	var gh = max(oh / 2, 1);
@@ -333,6 +357,10 @@ fn init(w int, h int, ow int, oh int) bool {
 	pipe_ao = gfx::pipeline(scr, embed_shader("shaders/ssao.frag"));
 	pipe_ao_blur = gfx::pipeline(scr, embed_shader("shaders/ssao_blur.frag"));
 	pipe_gtao = gfx::pipeline(scr, embed_shader("shaders/gtao.frag"));
+	pipe_lens_tile = gfx::pipeline(scr, embed_shader("shaders/lens_tile.frag"));
+	pipe_lens_near = gfx::pipeline(scr, embed_shader("shaders/lens_near.frag"));
+	pipe_mblur = gfx::pipeline(scr, embed_shader("shaders/mblur.frag"));
+	pipe_dof = gfx::pipeline(scr, embed_shader("shaders/dof.frag"));
 	pipe_gtao_blur = gfx::pipeline(scr, embed_shader("shaders/gtao_blur.frag"));
 	pipe_gi_trace = gfx::compute_pipeline(embed_shader("shaders/gi_trace.comp"));
 	pipe_gi_update = gfx::compute_pipeline(embed_shader("shaders/gi_update.comp"));
@@ -581,6 +609,16 @@ fn setup_view() {
 	let aspect = width as f32 / height as f32;
 	view_mat = gfx::look_at(view.eye, view.target, view.up);
 	proj_mat = gfx::perspective(view.fov_y, aspect, view.near, view.far);
+	if lens_offset.x != 0.0 || lens_offset.y != 0.0 {
+		let fw = forward();
+		let rt = linalg::unit3(linalg::cross3(fw, view.up));
+		let uv = linalg::cross3(rt, fw);
+		let o = linalg::v3(rt.x * lens_offset.x + uv.x * lens_offset.y, rt.y * lens_offset.x + uv.y * lens_offset.y, rt.z * lens_offset.x + uv.z * lens_offset.y);
+		view_mat = gfx::look_at(linalg::v3(view.eye.x + o.x, view.eye.y + o.y, view.eye.z + o.z), linalg::v3(view.target.x + o.x, view.target.y + o.y, view.target.z + o.z), view.up);
+		let ty = linalg::f(tan((view.fov_y * 0.5) as real));
+		proj_mat.c2.x -= lens_offset.x / (dof_focus * ty * aspect);
+		proj_mat.c2.y -= lens_offset.y / (dof_focus * ty);
+	}
 	let nj = gfx::mul(proj_mat, view_mat);
 	prev_view_proj = if motion_fresh { nj } else { view_proj_nj };
 	motion_fresh = false;
@@ -812,7 +850,7 @@ fn sky_u() SkyU {
 // its (jittered) sample point.
 fn ao_pass() {
 	let mv = motion_wanted();
-	if !look.ssao && !mv { return; }
+	if !look.ssao && !mv && dof_aperture <= 0.0 { return; }
 	let gia = gi_on && gi_ao && gi_built && gi_have;
 	let gt = look.ssao && (ao_mode == 1 || gia);
 	let ar = if gia { min(gi_step.x, min(gi_step.y, gi_step.z)) } else { look.ao_radius };
@@ -947,6 +985,52 @@ fn color_pass() {
 	gfx::end_pass();
 }
 
+fn lens_tiles(src gfx::Texture, mode f32) {
+	let k = lens_tile_px;
+	let tw = max((width + k - 1) / k, 1); let th = max((height + k - 1) / k, 1);
+	let ty = linalg::f(tan((view.fov_y * 0.5) as real));
+	guard gfx::begin_pass(gfx::PassDesc { color: [tile_a, none(), none(), none()], .. }) else { return; }
+	gfx::bind(pipe_lens_tile);
+	gfx::bind_texture(gfx::FRAGMENT, 0, src, smp_point);
+	gfx::uniforms(gfx::FRAGMENT, 0, TileU { size: f4(width as f32, height as f32, k as f32, 0.0), lens: f4(dof_aperture * height as f32 / (2.0 * ty), dof_focus, dof_max_px, motion_blur), mode: f4(mode, 0.0, 0.0, 0.0) });
+	gfx::draw(3);
+	gfx::end_pass();
+	guard gfx::begin_pass(gfx::PassDesc { color: [tile_b, none(), none(), none()], .. }) else { return; }
+	gfx::bind(pipe_lens_near);
+	gfx::bind_texture(gfx::FRAGMENT, 0, tile_a, smp_point);
+	gfx::uniforms(gfx::FRAGMENT, 0, NearU { size: f4(tw as f32, th as f32, 0.0, 0.0), mode: f4(mode, 0.0, 0.0, 0.0) });
+	gfx::draw(3);
+	gfx::end_pass();
+}
+fn lens_swap() { let t = hdr; hdr = fx; fx = t; }
+fn lens_pass() {
+	let k = lens_tile_px;
+	if motion_blur > 0.0 && motion_tex.id != 0 {
+		lens_tiles(motion_tex, 0.0);
+		guard gfx::begin_pass(gfx::PassDesc { color: [fx, none(), none(), none()], .. }) else { return; }
+		gfx::bind(pipe_mblur);
+		gfx::bind_texture(gfx::FRAGMENT, 0, hdr, smp_point);
+		gfx::bind_texture(gfx::FRAGMENT, 1, motion_tex, smp_point);
+		gfx::bind_texture(gfx::FRAGMENT, 2, tile_b, smp_point);
+		gfx::uniforms(gfx::FRAGMENT, 0, MblurU { size: f4(width as f32, height as f32, 0.0, k as f32), tune: f4(motion_blur, k as f32, mb_samples as f32, mb_soft_z) });
+		gfx::draw(3);
+		gfx::end_pass();
+		lens_swap();
+	}
+	if dof_aperture > 0.0 {
+		lens_tiles(nd, 1.0);
+		let ty = linalg::f(tan((view.fov_y * 0.5) as real));
+		guard gfx::begin_pass(gfx::PassDesc { color: [fx, none(), none(), none()], .. }) else { return; }
+		gfx::bind(pipe_dof);
+		gfx::bind_texture(gfx::FRAGMENT, 0, hdr, smp_point);
+		gfx::bind_texture(gfx::FRAGMENT, 1, nd, smp_point);
+		gfx::bind_texture(gfx::FRAGMENT, 2, tile_b, smp_point);
+		gfx::uniforms(gfx::FRAGMENT, 0, DofU { size: f4(width as f32, height as f32, 0.0, k as f32), lens: f4(dof_aperture * height as f32 / (2.0 * ty), dof_focus, dof_max_px, 0.0), tune: f4(dof_samples as f32, 0.0, 0.0, 0.0) });
+		gfx::draw(3);
+		gfx::end_pass();
+		lens_swap();
+	}
+}
 fn temporal_draw() {
 	let into = 1 - hist_cur;
 	guard gfx::begin_pass(gfx::PassDesc { color: [history[into], none(), none(), none()], .. }) else { return; }
@@ -1035,6 +1119,7 @@ fn render(target gfx::Texture) {
 	shadow_pass();
 	ao_pass();
 	color_pass();
+	lens_pass();
 	temporal_pass();
 	glow_pass();
 	grade_pass(target);

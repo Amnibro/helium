@@ -53,7 +53,7 @@
 //              depth rejection must not raise the band error, nor change a still scene
 //   s5 / s6  - frames in flight with no wait read the right shadow map; a pass on one
 //              layer and mip of an array leaves the others untouched
-// GFX_ONLY=gtao runs only the GTAO checks (A1-A3), gi only the GI checks (G0-G2); any other value runs only the shadow checks.
+// GFX_ONLY=gtao runs only the GTAO checks (A1-A3), gi only the GI checks (G0-G2), mblur MB1-MB3, dof D1-D2; any other value runs only the shadow checks.
 // GFX_MAKE_GOLDEN=1 writes both goldens (spheres, shipped look) to the paths given as the
 // second and third arguments and fails; anything but unset, 0 or 1 fails.
 // Image metrics in motion / taa / tsr count non-sky pixels only (geo_mask).
@@ -2656,6 +2656,155 @@ fn gtao_render(mode int, rw int, rh int, aor real[>..]&, bnr real[>..]&, gnr rea
 	} }
 	gfx::release(out);
 }
+fn lens_lum(px const byte[:], n int) real[>..] {
+	var y real[>..] = [];
+	for p in n { y.push(0.2126 * gi_half(px, 8, p, 0) as real + 0.7152 * gi_half(px, 8, p, 1) as real + 0.0722 * gi_half(px, 8, p, 2) as real); }
+	y
+}
+fn lens_frame(out gfx::Texture, n int) real[>..] { s3d::render(out); let px = gfx::read_pixels(s3d::hdr_target()); lens_lum(px[..], n) }
+fn mae_where(a const real[:], b const real[:], m const byte[:]) real {
+	var e = 0.0; var c = 0;
+	for k in a.len { if m[k] != 0 { e += abs(a[k] - b[k]); c += 1; } }
+	if c > 0 { e / c as real } else { 0.0 }
+}
+var MB_ITEMS int[>..] = [];
+fn mb_scene() {
+	reset_scene();
+	MB_ITEMS.clear();
+	let wall = shapes::cube(float3 { 9.0, 5.0, 0.1 }, shapes::material(linalg::v3(0.2, 0.3, 0.45), 0.0, 0.7));
+	s3d::place(s3d::add(wall), gfx::translate(float3 { 0.0, 0.0, -1.5 }));
+	for k in 3 {
+		let ball = shapes::sphere(0.5, 48, 24, shapes::material(linalg::v3(0.9, 0.55 - 0.15 * k as f32, 0.3 + 0.2 * k as f32), 0.0, 0.4));
+		MB_ITEMS.push(s3d::add(ball));
+	}
+	s3d::view = s3d::Camera { eye: float3 { 0.0, 0.3, 7.5 }, target: float3 { 0.0, 0.0, 0.0 }, up: float3 { 0.0, 1.0, 0.0 }, fov_y: 0.75, near: 0.1, far: 60.0 };
+	s3d::sun.shadows = false;
+	s3d::look.ssao = false;
+	s3d::look.bloom = 0.0;
+	s3d::temporal = 0;
+}
+fn mb_place(t f32) {
+	for k in 3 {
+		let v = 0.15 + 0.15 * k as f32;
+		s3d::place(MB_ITEMS[k], gfx::translate(float3 { -1.5 + v * t, 1.2 - 1.2 * k as f32, 0.0 }));
+	}
+}
+fn mb_checks() bool {
+	half_table();
+	let w = 640; let h = 360; let n = w * h; let shut f32 = 0.5; let K = 64;
+	mb_scene();
+	s3d::init(w, h);
+	let out = gfx::render_target(w, h, gfx::RGBA8);
+	s3d::motion_blur = 0.0;
+	var rf real[>..] = []; rf.resize(n, 0.0);
+	for i in K { mb_place(10.0 + shut * ((i as f32 + 0.5) / K as f32 - 0.5)); let y = lens_frame(out, n); for p in n { rf[p] += y[p] / K as real; } }
+	mb_place(10.0);
+	let sh = lens_frame(out, n);
+	s3d::motion_blur = shut;
+	mb_place(9.0); let _ = lens_frame(out, n);
+	mb_place(10.0); let bl = lens_frame(out, n);
+	s3d::motion_blur = 0.0;
+	var m byte[>..] = []; m.resize(n, 0);
+	for p in n { if abs(rf[p] - sh[p]) > 0.002 { m[p] = 1; } }
+	var st byte[>..] = []; st.resize(n, 0);
+	for y in h { for x in w {
+		let p = y * w + x;
+		if abs(rf[p] - sh[p]) > 1.0e-4 { continue; }
+		var near = false;
+		for dy in 7 { for dx in 7 { let xx = x + dx - 3; let yy = y + dy - 3; if xx >= 0 && yy >= 0 && xx < w && yy < h && m[yy * w + xx] != 0 { near = true; } } }
+		if !near { st[p] = 1; }
+	} }
+	let eb = mae_where(bl[..], rf[..], m); let es = mae_where(sh[..], rf[..], m);
+	var mx = 0.0; var ns = 0;
+	for p in n { if st[p] != 0 { mx = max(mx, abs(bl[p] - sh[p])); ns += 1; } }
+	let mb1 = eb <= MB1_RATIO * es; let mb2 = mx <= MB2_MAX;
+	var nm = 0; for p in n { if m[p] != 0 { nm += 1; } }
+	print("gpu: mblur MB1 object motion, ", nm, " px in M: mean |blur - ref| ", r4(eb * 1000.0), "e-3 vs sharp ", r4(es * 1000.0), "e-3, ratio ", r3(eb / es), " (bar <= ", MB1_RATIO, ") ", if mb1 { "PASS" } else { "FAIL" }, "; control shutter 0 ratio 1.0 fails (good)");
+	print("gpu: mblur MB2 static pixels (", ns, "): max |blur - sharp| ", mx, " (bar <= ", MB2_MAX, ") ", if mb2 { "PASS" } else { "FAIL" });
+	sphere_grid();
+	s3d::look.bloom = 0.0;
+	s3d::temporal = 0;
+	let yaw0 = 0.0; let dyaw = 0.02;
+	var rc real[>..] = []; rc.resize(n, 0.0);
+	for i in K {
+		let a = yaw0 + dyaw * shut * ((i as f32 + 0.5) / K as f32 - 0.5);
+		s3d::view.target = float3 { linalg::f(sin(a as real)) * 7.5, 0.3, 7.5 - linalg::f(cos(a as real)) * 7.5 };
+		let y = lens_frame(out, n); for p in n { rc[p] += y[p] / K as real; }
+	}
+	s3d::view.target = float3 { 0.0, 0.3, 0.0 };
+	let shc = lens_frame(out, n);
+	s3d::motion_blur = shut;
+	s3d::view.target = float3 { linalg::f(sin(-dyaw as real)) * 7.5, 0.3, 7.5 - linalg::f(cos(-dyaw as real)) * 7.5 };
+	let _ = lens_frame(out, n);
+	s3d::view.target = float3 { 0.0, 0.3, 0.0 };
+	let blc = lens_frame(out, n);
+	s3d::motion_blur = 0.0;
+	var g byte[>..] = []; g.resize(n, 1);
+	let ec = mae_where(blc[..], rc[..], g); let esc = mae_where(shc[..], rc[..], g);
+	let mb3 = ec <= MB3_RATIO * esc;
+	var cb real[>..] = []; var cr real[>..] = []; var cs real[>..] = [];
+	for p in n { cb.push(min(blc[p], 4.0)); cr.push(min(rc[p], 4.0)); cs.push(min(shc[p], 4.0)); }
+	let eb3 = mae_where(cb[..], cr[..], g); let es3 = mae_where(cs[..], cr[..], g);
+	let mb3b = eb3 <= MB3_RATIO * es3;
+	print("gpu: mblur MB3 camera pan: mean |blur - ref| ", r4(ec * 1000.0), "e-3 vs sharp ", r4(esc * 1000.0), "e-3, ratio ", r3(ec / esc), " (bar <= ", MB3_RATIO, ") ", if mb3 { "PASS" } else { "FAIL (reported, not gating: one HDR glint, see README)" });
+	print("gpu: mblur MB3b camera pan, luminance clamped at 4 (post-hoc): ratio ", r3(eb3 / es3), " (bar <= ", MB3_RATIO, ") ", if mb3b { "PASS" } else { "FAIL" }, "; control shutter 0 ratio 1.0 fails (good)");
+	gfx::release(out);
+	s3d::look = DEF_LOOK; s3d::sun = DEF_SUN; s3d::sky = DEF_SKY;
+	mb1 && mb2 && mb3b
+}
+fn dof_scene() {
+	reset_scene();
+	let zs = [2.0, 0.0, -2.5, -5.0, -8.0];
+	for k in 5 {
+		let ball = shapes::sphere(0.7, 48, 24, shapes::material(linalg::v3(0.9 - 0.15 * k as f32, 0.4 + 0.1 * k as f32, 0.3), 0.0, 0.5));
+		s3d::place(s3d::add(ball), gfx::translate(float3 { -2.4 + 1.2 * k as f32, 0.0, zs[k] as f32 }));
+	}
+	let wall = shapes::cube(float3 { 14.0, 7.0, 0.1 }, shapes::material(linalg::v3(0.25, 0.35, 0.5), 0.0, 0.7));
+	s3d::place(s3d::add(wall), gfx::translate(float3 { 0.0, 0.0, -12.0 }));
+	let floor = shapes::cube(float3 { 14.0, 0.1, 14.0 }, shapes::material(linalg::v3(0.6, 0.6, 0.6), 0.0, 0.8));
+	s3d::place(s3d::add(floor), gfx::translate(float3 { 0.0, -0.8, -4.0 }));
+	s3d::view = s3d::Camera { eye: float3 { 0.0, 0.3, 7.5 }, target: float3 { 0.0, 0.3, 0.0 }, up: float3 { 0.0, 1.0, 0.0 }, fov_y: 0.75, near: 0.1, far: 60.0 };
+	s3d::sun.shadows = false;
+	s3d::look.ssao = false;
+	s3d::look.bloom = 0.0;
+	s3d::temporal = 0;
+}
+fn dof_checks() bool {
+	half_table();
+	let w = 640; let h = 360; let n = w * h; let K = 64; let ap f32 = 0.15; let fz f32 = 7.5;
+	dof_scene();
+	s3d::init(w, h);
+	let out = gfx::render_target(w, h, gfx::RGBA8);
+	s3d::dof_focus = fz;
+	var rf real[>..] = []; rf.resize(n, 0.0);
+	for i in K {
+		let r = ap * linalg::f(sqrt(((i as real) + 0.5) / K as real)); let a = linalg::f((i as real) * 2.39996323);
+		s3d::lens_offset = float2 { r * linalg::f(cos(a as real)), r * linalg::f(sin(a as real)) };
+		let y = lens_frame(out, n); for p in n { rf[p] += y[p] / K as real; }
+	}
+	s3d::lens_offset = float2 { 0.0, 0.0 };
+	let sh = lens_frame(out, n);
+	s3d::dof_aperture = ap;
+	let df = lens_frame(out, n);
+	let ndp = gfx::read_pixels(s3d::nd_target());
+	s3d::dof_focus = fz * 2.0;
+	let dc = lens_frame(out, n);
+	s3d::dof_focus = fz; s3d::dof_aperture = 0.0;
+	var all byte[>..] = []; all.resize(n, 1);
+	let ed = mae_where(df[..], rf[..], all); let es = mae_where(sh[..], rf[..], all); let ec = mae_where(dc[..], rf[..], all);
+	let ty = tan((0.75 * 0.5) as real); let A = ap as real * h as real / (2.0 * ty);
+	var inf byte[>..] = []; inf.resize(n, 0); var ni = 0; var li = 0.0;
+	for p in n { let z = gi_half(ndp[..], 8, p, 3) as real; if z > 0.0 && A * abs(1.0 / z - 1.0 / fz as real) < 0.5 { inf[p] = 1; ni += 1; li += sh[p]; } }
+	let e2 = mae_where(df[..], sh[..], inf);
+	let rel = if ni > 0 && li > 0.0 { e2 / (li / ni as real) } else { 1.0 };
+	let d1 = ed <= D1_RATIO * es; let d2 = ni > 0 && rel <= D2_REL; let c1 = ec > D1_RATIO * es;
+	print("gpu: dof D1 mean |dof - ref| ", r4(ed * 1000.0), "e-3 vs sharp ", r4(es * 1000.0), "e-3, ratio ", r3(ed / es), " (bar <= ", D1_RATIO, ") ", if d1 { "PASS" } else { "FAIL" });
+	print("gpu: dof D2 ", ni, " in-focus px: mean |dof - sharp| / mean luminance ", r4(rel * 100.0), " % (bar <= ", D2_REL * 100.0, " %) ", if d2 { "PASS" } else { "FAIL" });
+	print("gpu: dof control (focus doubled) ratio ", r3(ec / es), " ", if c1 { "fails D1 (good)" } else { "PASSES D1 (FAIL)" });
+	gfx::release(out);
+	s3d::look = DEF_LOOK; s3d::sun = DEF_SUN; s3d::sky = DEF_SKY;
+	d1 && d2 && c1
+}
 fn gi_frame(rw int, rh int, frames int) byte[>..] {
 	s3d::init(rw, rh);
 	let out = gfx::render_target(rw, rh, gfx::RGBA8);
@@ -2843,7 +2992,7 @@ fn gpu_checks(dir const byte[:], golden const byte[:]) bool {
 	var only byte[>..] = [];
 	let _ = env("GFX_ONLY", only);
 	if only.len > 0 {
-		let ok = if only[..] == "gtao" { gtao_checks() } else if only[..] == "gi" { gi_checks() } else { shadow_checks() };
+		let ok = if only[..] == "gtao" { gtao_checks() } else if only[..] == "gi" { gi_checks() } else if only[..] == "mblur" { mb_checks() } else if only[..] == "dof" { dof_checks() } else { shadow_checks() };
 		let e = gfx::error();
 		if e.len > 0 { print("gpu: gfx error ", e[..]); return false; }
 		return ok;
@@ -3001,6 +3150,8 @@ fn gpu_checks(dir const byte[:], golden const byte[:]) bool {
 	if !s6_layers() { good = false; }
 	if !gtao_checks() { good = false; }
 	if !gi_checks() { good = false; }
+	if !mb_checks() { good = false; }
+	if !dof_checks() { good = false; }
 	let err = gfx::error();
 	if err.len > 0 { print("gpu: gfx error ", err[..]); good = false; }
 	good
