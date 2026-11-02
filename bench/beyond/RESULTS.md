@@ -91,6 +91,27 @@ all printed 1.274224153, gcc 16.2.1, load ~8.6 from other jobs)
   vectorizer is not fixed at 4 lanes. Under `--v4` it already emits zmm (8 doubles) where the loop allows
   it (`HC_NOV4=1` turns that off); see the row below.
 
+Recursion base-level peeling (`lpl`; `HC_NOLPL=1` turns it off) and no-heap-write calls (`HCC`; `HC_NOHCC=1`).
+`lpl`: in a small self-recursive function whose entry is a run of pure ops ending in one branch, and whose
+taken side reaches a plain `ret` through pure ops and stores only, each self-call site gets that test and
+base path inlined, so the leaf half of the calls never happens. Stores in the entry block are kept, and the
+condition is recomputed only from the parameters. `HCC`: a callee that only stores to its own stack slots
+or flat vector elements, and calls nothing that does more, no longer kills `lvn`/`licm` header and global
+knowledge across the call (so `L`/`R` base and length stay in registers across `build(d - 1)`).
+test/rec_peel.amni covers stores, globals, side effects, three parameters and mutual argument swaps;
+optfuzz 400/400, ci ok (same counts as before).
+
+bintrees 21, 5 interleaved reps, `taskset -c 7`, ms, all printed the same output:
+
+| he --v4 old (1b7cda0) | he --v4 new | gcc -O3 -march=native |
+|---|---|---|
+| 1038 1053 1059 1063 1071 | 821 825 829 842 843 | 567 567 568 573 573 |
+
+- -22% on bintrees; still 1.45x behind gcc-O3n (was 1.86x). fib 45 1073 -> 1034 ms median (-3.6%; gcc-O3n 791).
+  sort, hashmap and json build differently but time the same within noise.
+- What remains in bintrees: gcc unrolls three levels (`d == 0, 1, 2` as straight stores) and shrink-wraps
+  the leaf; Helium peels one level and still saves 5 callee-saved registers on every non-leaf call.
+
 Loop-carried reuse (compiler 114c6cd, `lcr`; `HC_NOLCR=1` turns it off). In a loop with one backedge,
 an f64/f32 op `x op y` that runs before the only in-loop def of its operands and is repeated (same op,
 same operands) after that def reads a carried copy instead: the copy is computed once in the preheader
