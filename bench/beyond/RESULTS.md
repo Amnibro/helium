@@ -91,6 +91,17 @@ all printed 1.274224153, gcc 16.2.1, load ~8.6 from other jobs)
   vectorizer is not fixed at 4 lanes. Under `--v4` it already emits zmm (8 doubles) where the loop allows
   it (`HC_NOV4=1` turns that off); see the row below.
 
+Self-inlining growth cap (`HC_NOSTL=1` restores the old rule). A self-recursive function is
+inlined into itself only when its body times (1 + remaining self-calls) stays within 2 x HSL,
+instead of the body alone within HSL. regex's `here` (230 instructions, 3 self-calls after tail
+recursion) used to triple to 730 instructions and 2056 virtual registers; the hot tail loop's
+`r`, `t` and the pattern's pointer and length then lived in stack slots (`addq $1,-0x80(%rbp)`).
+fib (19 x 2), bintrees `build` (45 x 3) and `check` (34 x 2) are unaffected. Of the 12 benches
+only regex builds differently. ci ok (same counts).
+
+regex 1M, 5 interleaved reps, `taskset -c 7`, ms: old 914 923 926 907 926, new 827 824 804 809 819
+(-11%); gcc -O3 -march=native 481-510. Still 1.68x behind.
+
 Recursion base-level peeling (`lpl`; `HC_NOLPL=1` turns it off) and no-heap-write calls (`HCC`; `HC_NOHCC=1`).
 `lpl`: in a small self-recursive function whose entry is a run of pure ops ending in one branch, and whose
 taken side reaches a plain `ret` through pure ops and stores only, each self-call site gets that test and
