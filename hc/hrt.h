@@ -404,6 +404,7 @@ static uint64_t hr_f2d(uint32_t bits, int *ex) {
 	}
 	*ex = e10 + rm; return out;
 }
+static uint64_t hr_float_dec(double v, int64_t *e) { if (v == 0) { *e = 0; return 0; } uint64_t b; memcpy(&b, &v, 8); int x; uint64_t u = hr_d2d(b, &x); *e = x; return u; }
 static void hr_fflt(hrv *o, double v, int f32) {
 	if (v != v) { hr_fc(o, "nan"); return; }
 	if (isinf(v)) { hr_fc(o, v > 0 ? "inf" : "-inf"); return; }

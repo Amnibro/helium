@@ -119,6 +119,9 @@ rt_d2d(bits u64) u64, int:
 		loop: pd := vp / 10; md := vm / 10; if pd <= md { break } up = vr % 10 >= 5; vr = vr / 10; vp = pd; vm = md; rm += 1
 		out = vr + (if vr == vm || up { (1) as u64 } else { (0) as u64 })
 	return out, e10 + rm
+rt_float_dec(v real, e int&) u64:
+	if v == 0.0: e = 0; return 0
+	m, x := rt_d2d(rt_db(v)); e = x; m
 rt_f2d(bits u64) u64, int:
 	ma := bits & 0x7FFFFF; ie := (bits >> 23 & 0xFF) as int
 	e2 := if ie == 0 { 1 - 127 - 23 - 2 } else { ie - 127 - 23 - 2 }; m2 := if ie == 0 { ma } else { ma | ((1) as u64) << 23 }

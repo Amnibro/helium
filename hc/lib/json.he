@@ -35,31 +35,34 @@ format_int(out byte[>..]&, v int): format(out, v)
 
 # the shortest digits that read back as v (no sign, no zeros at the end)
 # and the power of ten after the first of them: v = d.ddd * 10^e
+DIG2 := "00010203040506070809101112131415161718192021222324252627282930313233343536373839404142434445464748495051525354555657585960616263646566676869707172737475767778798081828384858687888990919293949596979899"
 digits_of(v real, digits byte[>..]&) int:
-	t byte[>..] ~= []
-	format(t, std_fabs(v))
 	digits.clear()
-	e ~= 0; seen_point ~= false; lead ~= 0; exp_at ~= -1
-	for c, i t:
-		if c == 'e' || c == 'E':
-			exp_at = i
-			break
-		if c == '.':
-			seen_point = true
-		else if digits.len == 0 && c == '0':
-			if seen_point: lead += 1
-		else:
-			digits.push(c)
-			if !seen_point: e += 1
-	shift ~= 0
-	if exp_at >= 0:
-		s, ok := parse_int(t[exp_at + 1..])
-		shift = s
-	while digits.len > 1 && digits[digits.len - 1] == '0': digits.pop()
-	if digits.len == 0:
+	x ~= 0
+	m ~= float_dec(v, x)
+	if m == 0:
 		digits.push('0')
 		return 0
-	(if e > 0 { e - 1 } else { -1 - lead }) + shift
+	var t byte[24]
+	k ~= 24
+	while m >= 100:
+		q := m / 100
+		r := (m - q * 100) as int
+		k -= 2
+		t[k] = DIG2[2 * r]
+		t[k + 1] = DIG2[2 * r + 1]
+		m = q
+	if m >= 10:
+		k -= 2
+		t[k] = DIG2[2 * m as int]
+		t[k + 1] = DIG2[2 * m as int + 1]
+	else:
+		k -= 1
+		t[k] = (48 + m as int) as byte
+	e := 24
+	while t[e - 1] == '0': e -= 1
+	digits.append(t[k..e])
+	x + 23 - k
 
 # a finite number in its shortest exact form: plain decimals for 1e-5 up to
 # 1e16, with ".0" on whole values, and d.ddde<n> outside that range (d.ddde+<n>
