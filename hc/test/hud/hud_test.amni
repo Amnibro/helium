@@ -72,11 +72,87 @@ fn u2() bool {
 	for m in moves { let got = hud::nav(b2[m[0]], m[1]); if got != b2[m[2]] { ok = false; print("U2 irregular from ", m[0], " dir ", m[1], " got ", got - b2[0], " want ", m[2]); } }
 	ok
 }
+fn ref_ease(k int, t real) real {
+	let c1 = 1.70158;
+	if k == 0 { return t; } if k == 1 { return pow(t, 2.0); } if k == 2 { return 1.0 - pow(1.0 - t, 2.0); }
+	if k == 3 { return if t < 0.5 { 2.0 * pow(t, 2.0) } else { 1.0 - pow(2.0 - 2.0 * t, 2.0) * 0.5 }; }
+	if k == 4 { return pow(t, 3.0); } if k == 5 { return 1.0 - pow(1.0 - t, 3.0); }
+	if k == 6 { return if t < 0.5 { 4.0 * pow(t, 3.0) } else { 1.0 - pow(2.0 - 2.0 * t, 3.0) * 0.5 }; }
+	if k == 7 { return (c1 + 1.0) * pow(t, 3.0) - c1 * pow(t, 2.0); }
+	if k == 8 { return 1.0 + (c1 + 1.0) * pow(t - 1.0, 3.0) + c1 * pow(t - 1.0, 2.0); }
+	if t == 0.0 { return 0.0; } if t == 1.0 { return 1.0; }
+	pow(2.0, -10.0 * t) * sin((10.0 * t - 0.75) * (2.0 * 3.141592653589793 / 3.0)) + 1.0
+}
+fn u3() bool {
+	var worst = 0.0;
+	for k in 10 { for i in 101 { let t = i as real / 100.0; worst = max(worst, abs(hud::ease(k, t) - ref_ease(k, t))); } }
+	hud::clear(); hud::TW.clear();
+	let n = hud::node(-1);
+	let a = hud::tween(n, hud::P_X, 37.5, 0.7, hud::OUT_ELASTIC);
+	let b = hud::then(a, 10.0, 0.5, hud::LINEAR);
+	let _b = b;
+	hud::tick(0.35);
+	let mid = hud::N[n].ox as real;
+	hud::tick(0.35);
+	let end = hud::N[n].ox as real;
+	hud::tick(0.25);
+	let half = hud::N[n].ox as real;
+	hud::tick(1.0);
+	let fin = hud::N[n].ox as real;
+	print("U3 tweens: worst easing error ", worst, ", mid ", mid, ", end ", end, " (37.5), chained half ", half, " (23.75), final ", fin, " (10)");
+	worst <= 1.0e-6 && end == 37.5 && abs(half - 23.75) <= 1.0e-5 && fin == 10.0
+}
+fn u4() bool {
+	hud::rich("Hi <b>bold <color=#ff8000>orange</color></b> <size=32>big</size>!", 16.0, 0xffffff as u32);
+	var ok = hud::TXT[..] == "Hi bold orange big!";
+	let want = [[0, 3, 0, 16777215, 16], [3, 5, 1, 16777215, 16], [8, 6, 1, 16744448, 16], [14, 1, 0, 16777215, 16], [15, 3, 0, 16777215, 32], [18, 1, 0, 16777215, 16]];
+	if hud::RUNS.len != want.len { ok = false; print("U4 runs ", hud::RUNS.len, " want ", want.len); }
+	else { for i in want.len { let r = hud::RUNS[i]; let w = want[i]; if r.start != w[0] || r.len != w[1] || (if r.bold { 1 } else { 0 }) != w[2] || r.color as int != w[3] || r.size != w[4] as f32 { ok = false; print("U4 run ", i, " got ", r.start, " ", r.len, " ", r.bold, " ", r.color, " ", r.size); } } }
+	let dict = ["a", "on", "the", "quick", "brown", "lantern", "extraordinarily", "fox", "jumps", "over", "lazy", "dog", "incomprehensibilities", "of"];
+	var lines = 0; var bad = 0;
+	for trial in 200 {
+		var src byte[>..] = []; var words byte[>..][>..] = [];
+		let nw = 1 + (trial * 7) % 23;
+		for k in nw { let w = dict[(trial * 13 + k * 5 + k * k) % dict.len]; if k > 0 { src.append(if (trial + k) % 11 == 0 { "  " } else { " " }); } src.append(if (trial + k) % 5 == 0 { str("<size=24>", w, "</size>") } else { str(w) }); words.push(str(w)); }
+		hud::rich(src[..], 16.0, 0xffffff as u32);
+		let width = 40.0 + ((trial * 37) % 260) as f32;
+		hud::wrap(width);
+		var got byte[>..][>..] = [];
+		var l = 0;
+		while l < hud::LINES.len {
+			let a = hud::LINES[l]; let e = hud::LINES[l + 1];
+			var nwl = 0; var i = a;
+			while i < e { if hud::TXT[i] == 32 { i += 1; continue; } var j = i; while j < e && hud::TXT[j] != 32 { j += 1; } got.push(str(hud::TXT[i..j])); nwl += 1; i = j; }
+			if nwl > 1 && hud::span_w(a, e) > width + 1.0e-3 { bad += 1; print("U4 line too wide: ", hud::span_w(a, e), " > ", width); }
+			lines += 1; l += 2;
+		}
+		var same = got.len == words.len;
+		if same { for k in words.len { if got[k][..] != words[k][..] { same = false; } } }
+		if !same { bad += 1; print("U4 words changed in trial ", trial); }
+	}
+	print("U4 rich text: runs ", if ok { "match" } else { "differ" }, ", ", lines, " wrapped lines, ", bad, " violations");
+	ok && bad == 0 && lines > 200
+}
+fn u5() bool {
+	hud::put_string("en", "greet", "Hello, {name}! You have {0} new {{messages}}.");
+	hud::put_string("fr", "greet", "Bonjour, {name} ! Vous avez {0} nouveaux {{messages}}.");
+	hud::put_string("fr-CA", "bye", "Bye-bye, {name}!");
+	var nm byte[>..][>..] = [str("name"), str("0")]; var vl byte[>..][>..] = [str("Ana"), str("3")];
+	hud::set_locale("en"); let e = hud::tr("greet", nm, vl);
+	hud::set_locale("fr-CA"); let f = hud::tr("greet", nm, vl); let g = hud::tr("bye", nm, vl);
+	hud::set_locale("de"); let d = hud::tr("greet", nm, vl);
+	hud::set_locale("fr-CA"); let m = hud::tr("missing", nm, vl);
+	print("U5 strings: [", e, "] [", f, "] [", g, "] [", d, "] [", m, "]");
+	e[..] == "Hello, Ana! You have 3 new {messages}." && f[..] == "Bonjour, Ana ! Vous avez 3 nouveaux {messages}." && g[..] == "Bye-bye, Ana!" && d[..] == "[greet]" && m[..] == "[missing]"
+}
 fn main() {
 	var p byte[>..] = [];
 	if !env("HUD_TREES", p) { p.append("trees.txt"); }
 	var dd byte[>..] = []; if env("HUD_DUMP", dd) { var q = 0; DUMP = num(dd[..], q) as int; }
 	check(u1(p[..]), "U1 every node within 0.5 px of Chrome");
 	check(u2(), "U2 every d-pad move lands on the expected button");
+	check(u3(), "U3 easing within 1e-6, exact end value, chain starts from it");
+	check(u4(), "U4 rich text runs; wrapping never too wide, never splits a word");
+	check(u5(), "U5 locale fallback, arguments, escapes");
 	if FAILS == 0 { print("hud: ok"); } else { print("hud: FAILED ", FAILS); exit(1); }
 }
