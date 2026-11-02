@@ -1,0 +1,3 @@
+// error: this expression has no value
+fn h() { }
+fn main() { let x = h(); }

@@ -1082,6 +1082,7 @@ recursive ck_vdecl(n int):
 			else:
 				if TY[it].k == TY_FLIT && lf & (LV_VAR | LV_REF) == 0: lf = lf | LV_FLET
 				t = default_t(init)
+				if TY[t].k == TY_VOID: cerr(init, "this expression has no value (the call returns nothing), so there is nothing to bind"); return
 				if intloc(n, init, t): conv(init, T_I64); t = T_I64
 				if TY[t].k == TY_MULTI: t = TYL[TY[t].l] as int
 				if TY[t].k == TY_VARIANT && ND[init].k == N_DOT && lf & LV_VAR != 0: t = t_enum(TY[t].a as int, false); set_cv(init, t)
