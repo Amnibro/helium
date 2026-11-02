@@ -341,6 +341,7 @@ static inline uint32_t hr_l10p2(int e) { return ((uint32_t)e * 78913) >> 18; }
 static inline uint32_t hr_l10p5(int e) { return ((uint32_t)e * 732923) >> 20; }
 static uint64_t hr_d2d(uint64_t bits, int *ex) {
 	uint64_t ma = bits & ((1ULL << 52) - 1); uint32_t ie = (uint32_t)(bits >> 52) & 0x7ff;
+	if (ie >= 1023 && ie <= 1075) { uint64_t fm = (1ULL << 52) | ma; int sh = 1075 - (int)ie; if ((fm & ((1ULL << sh) - 1)) == 0) { uint64_t u = fm >> sh; int z = 0; while (u % 10 == 0) { u /= 10; z++; } *ex = z; return u; } }
 	int e2; uint64_t m2;
 	if (ie == 0) { e2 = 1 - 1023 - 52 - 2; m2 = ma; } else { e2 = (int)ie - 1023 - 52 - 2; m2 = (1ULL << 52) | ma; }
 	int ab = (m2 & 1) == 0; uint64_t mv = 4 * m2; uint32_t mms = ma != 0 || ie <= 1;
@@ -404,6 +405,8 @@ static uint64_t hr_f2d(uint32_t bits, int *ex) {
 	}
 	*ex = e10 + rm; return out;
 }
+static inline uint64_t hr_load_u64le(hsl s, int64_t at) { if (HR_UNLIKELY(at < 0 || at > s.n - 8)) hr_oob(at, s.n, "load_u64le"); uint64_t v; memcpy(&v, s.p + at, 8); return v; }
+static inline void hr_store_u64le(hsl s, int64_t at, uint64_t v) { if (HR_UNLIKELY(at < 0 || at > s.n - 8)) hr_oob(at, s.n, "store_u64le"); memcpy(s.p + at, &v, 8); }
 static uint64_t hr_float_dec(double v, int64_t *e) { if (v == 0) { *e = 0; return 0; } uint64_t b; memcpy(&b, &v, 8); int x; uint64_t u = hr_d2d(b, &x); *e = x; return u; }
 static void hr_fflt(hrv *o, double v, int f32) {
 	if (v != v) { hr_fc(o, "nan"); return; }

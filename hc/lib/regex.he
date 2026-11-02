@@ -328,8 +328,6 @@ build(pattern byte[:], err byte[>..]&) Regex:
 	starts(re)
 	re
 
-# when every match must begin with a byte from one known set, keeps that set
-# so a search can skip the bytes no match can start with
 starts(re Regex&):
 	on bool[256] ~= [false; 256]
 	seen bool[>..] ~= []

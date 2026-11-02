@@ -1,0 +1,28 @@
+use os
+struct R { mode byte[] = "", ls real[>..] = [], q int = 0 }
+mk(m const byte[:]) R:
+	r ~= R{mode: copy(m), ..}
+	r
+g(b const byte[:]) int: b.len
+hit(w const byte[:]) int:
+	for i 3:
+		if lower("AB") == w: return 1
+	0
+f(n int) byte[>..]:
+	k ~= 0
+	while copy("xy").len == 2:
+		k += 1
+		if lower("AB") == "zz": return copy("a")
+		if k > n: return lower("QQ")
+	copy("b")
+main():
+	t ~= 0
+	for i 70000:
+		r ~= mk("wall")
+		r.ls.push(1.0)
+		t += r.mode.len + r.ls.len + g(copy("ab")) + hit("ab") + f(i % 3).len
+		for j 3:
+			if lower("AB") == "ab": break
+		if lower("AB") == "ab": continue
+		t += 1000000
+	print(t)

@@ -20,6 +20,8 @@ extern std_ceil(x real) real = "ceil"
 extern std_round(x real) real = "round"
 extern std_bits(x real) uint = "hr_f64_bits"
 extern float_dec(v real, e int&) uint = "hr_float_dec"
+extern store_u64le(s byte[:], at int, v uint) = "hr_store_u64le"
+extern load_u64le(s const byte[:], at int) uint = "hr_load_u64le"
 extern std_from_bits(b uint) real = "hr_f64_from_bits"
 
 min<T>(a T, b T) T: if b < a { b } else { a }
