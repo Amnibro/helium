@@ -88,6 +88,7 @@ extern "libSDL3.so.0" {
 	s_swp(d uint, w uint, c i32, m i32) bool = "SDL_SetGPUSwapchainParameters";
 	s_wsz(w uint, a uint, b uint) bool = "SDL_GetWindowSize";
 	s_wpsz(w uint, a uint, b uint) bool = "SDL_GetWindowSizeInPixels";
+	s_wsafe(w uint, r uint) bool = "SDL_GetWindowSafeArea";
 	s_wpos(w uint, a uint, b uint) bool = "SDL_GetWindowPosition";
 	s_wflags(w uint) uint = "SDL_GetWindowFlags";
 	s_wid(w uint) u32 = "SDL_GetWindowID";
@@ -358,6 +359,10 @@ create_screen(w0 int, h0 int) bool:
 screen() Texture: need("screen"); SCR
 screen_depth() Texture: need("screen_depth"); SCRD
 screen_size() int2: int2{SW as i32, SH as i32}
+safe_area() int4:
+	if WIN == 0 || WW <= 0 || WH <= 0 || !s_wsafe(WIN, p4(0)): return int4{0, 0, SW as i32, SH as i32}
+	x0 := (I4[0] as int * WPW) / WW; y0 := (I4[1] as int * WPH) / WH; x1 := ((I4[0] + I4[2]) as int * WPW) / WW; y1 := ((I4[1] + I4[3]) as int * WPH) / WH
+	int4{x0 as i32, y0 as i32, (x1 - x0) as i32, (y1 - y0) as i32}
 available() bool: true
 update_input_scale():
 	if WIN == 0 || !s_wsz(WIN, p4(0), p4(1)) || !s_wpsz(WIN, p4(2), p4(3)): return
