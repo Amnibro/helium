@@ -125,3 +125,14 @@ The native corpus passes completely. What is left:
 4. Editor support for `.he` and `.amni` on `hc lsp`.
 5. arm64 and Mach-O.
 6. A native seed so a fresh build needs no C compiler.
+
+## 5. hc/lib/gfx
+
+- **JK-M3: sphere-grid golden on other GPUs.** Owner: Auron. `hc/test/gfx/golden/spheres.png` was made on an RX 9060 XT with RADV (Mesa 26.2.4). Done when `tools/hc/gfxtest.sh` passes with PSNR > 40 dB at 480x360 on at least one other GPU or driver (another vendor, or lavapipe); if it does not, decide between a per-driver golden and a looser metric.
+- **`make_scene.py` stays Python.** It writes `hc/test/gfx/fixtures/scene.glb` with Python's `json.dumps` and `zlib.compress` (level 6). A Helium port would only be worth having if it reproduced `scene.glb` byte for byte, and Helium has inflate but no deflate encoder, so it cannot match zlib's level-6 stream. Port it after a deflate encoder exists (or drop the zlib-compressed part of the fixture).
+- **CPU-only gfx tests without SDL3.** `gfx.he` declares SDL3 in an `extern "libSDL3.so.0"` block that is loaded when the program starts, and most gfx modules `import gfx`, so `gfx_smoke` with no arguments still needs `libSDL3.so.0`. Fix by making the extern lazily loaded (`?`-optional like `libvulkan.so.1?`) or by splitting the CPU modules (linalg, zlib, codecs, gltf, motion) away from `gfx`.
+- **Furnace below roughness 0.3.** The sun sweep cannot integrate narrow lobes; add importance-sampled directions or an analytic check for those.
+- ~~**Rough dielectric energy gain**~~ Done (7ae7cce): diffuse is weighted by `1 - ms E_F(mu)` (Fresnel-weighted directional albedo, Fdez-Aguera 2019) instead of `1 - F(v.h)`; dielectric worst pixel 7.01 % -> 0.1 % on the spheres, grazing furnace and must-fail controls added, bars 1.5 % mean / 2.5 % pixel.
+- **Grazing furnace convergence.** The rough 0.3 metal tile at n.v 0.05 reads +1.4 % at 16384 directions against +0.9 % converged. Importance-sample the sun directions around each tile's reflection lobe (or add a CPU replay to the test) so the bar can drop toward 1 %.
+- **Shadowed sphere grid.** Fixed on auron/gfx-shadowfix: shadows were wrong whenever on (all cascades drawn into depth layer 0 because `gfx::begin_pass` ignored the layer, plus an over-large normal offset in cascade 2), giving misplaced, slab-shaped shadows or no sun at all. gfx_smoke now gates the shadow mask against a ray-traced reference (IoU >= 0.9) and runs the shipped look (shadows, SSAO, bloom) against its own golden. Left: shadows on other GPUs, and the effects-off sphere golden still has shadows off.
+- **glTF test coverage:** data-URI and external-file buffers have no fixture.

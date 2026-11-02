@@ -1,0 +1,3 @@
+f5ef7bd761b4c851c0aed0e5db90c537636ddcc30871457951a8ee6f24929e01  cornell_ao_ref.txt
+# cat of `pt ao <k> 16` for k = 0..15, sorted by pixel index (deterministic: stratum-centre rays, no RNG)
+# radius 1.0, 64 x 64 cosine strata per pixel centre; 8270 of 16384 pixels occluded, mean(1 - ao) over all pixels 0.1163

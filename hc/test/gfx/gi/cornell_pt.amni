@@ -1,0 +1,224 @@
+// cornell_pt: CPU path-traced reference for the Cornell box GI gate (gap-map item 3).
+// Clean-room, written for Helium from published descriptions only:
+//  * scene: the Cornell Box data published by the Cornell University Program of
+//    Computer Graphics ("Cornell Box Data", classic room 556 x 548.8 x 559.2 mm, the
+//    short and tall blocks, camera at (278, 273, -800) looking down +z, 35 mm focal
+//    length on a 25 x 25 mm film); walls axis-aligned to the room extents, the blocks
+//    from the published top-face vertices extruded to the floor; colours are the
+//    usual sRGB-ish approximations of the measured spectra (white 0.73, red
+//    0.65/0.05/0.05, green 0.12/0.45/0.15);
+//  * light transport: Kajiya 1986, "The Rendering Equation", estimated by Monte Carlo
+//    path tracing with next-event estimation to the point light, cosine-weighted
+//    hemisphere sampling of the Lambertian lobe (Malley's method, Pharr/Jakob/Humphreys
+//    "Physically Based Rendering", 3rd ed., 13.6.3) and Russian roulette (Arvo & Kirk
+//    1990, "Particle Transport and Image Synthesis");
+//  * ray/triangle: Moller & Trumbore 1997, "Fast, Minimum Storage Ray/Triangle
+//    Intersection";
+//  * random numbers: splitmix64 (Steele, Lea & Flood 2014), keyed per pixel and
+//    sample, so the image does not depend on how the rows are split between processes.
+// Diffuse only. The single light is a point light 10 mm under the ceiling light's
+// centre with the renderer's falloff, rgb * q^2 / (1 + d^2), q = clamp(1 - d^2/range^2)
+// (range_falloff() in shaders/lighting.glsl), so direct light is defined identically on
+// both sides and the gate isolates indirect light. The light itself is invisible, so
+// every pixel is a non-light pixel.
+//
+//   build/hcn build hc/test/gfx/gi/cornell_pt.amni -o pt
+//   pt ao <worker> <workers>      the GTAO test's ray-traced AO and bent normals (ao_line)
+//   pt mask                       the gate's region mask (see mask_line)
+//   pt <worker> <workers> <spp>   rows j with j % workers == worker, one line per pixel:
+//   "<j*W+i> r g b n sumY sumY2" (linear radiance, luminance sums for the noise estimate)
+// hc/test/gfx/gi/make_cornell_ref.sh runs the workers, merges and hashes.
+import os;
+import math;
+import gfx.cornell;
+
+let W = cornell::REF_W;
+let H = cornell::REF_H;
+
+var RS uint = 0;
+fn next_u64() uint {
+	RS = RS + 0x9e3779b97f4a7c15;
+	var z = RS;
+	z = (z ^ (z >> 30)) * 0xbf58476d1ce4e5b9;
+	z = (z ^ (z >> 27)) * 0x94d049bb133111eb;
+	z ^ (z >> 31)
+}
+fn rnd() real { (next_u64() >> 11) as real * (1.0 / 9007199254740992.0) }
+
+struct Hit { t real, tri int, nx real, ny real, nz real }
+
+// closest hit along o + t d, t in (TMIN, tmax); tri -1 when none
+fn trace(ox real, oy real, oz real, dx real, dy real, dz real, tmax real) Hit {
+	var best = Hit { tmax, -1, 0.0, 0.0, 0.0 };
+	let tv = cornell::tris;
+	let n = tv.len / cornell::TRI_FLOATS;
+	for k in n {
+		let b = k * cornell::TRI_FLOATS;
+		let e1x = tv[b + 3] - tv[b]; let e1y = tv[b + 4] - tv[b + 1]; let e1z = tv[b + 5] - tv[b + 2];
+		let e2x = tv[b + 6] - tv[b]; let e2y = tv[b + 7] - tv[b + 1]; let e2z = tv[b + 8] - tv[b + 2];
+		let px = dy * e2z - dz * e2y; let py = dz * e2x - dx * e2z; let pz = dx * e2y - dy * e2x;
+		let det = e1x * px + e1y * py + e1z * pz;
+		if abs(det) < 1e-12 { continue; }
+		let inv = 1.0 / det;
+		let sx = ox - tv[b]; let sy = oy - tv[b + 1]; let sz = oz - tv[b + 2];
+		let u = (sx * px + sy * py + sz * pz) * inv;
+		if u < 0.0 || u > 1.0 { continue; }
+		let qx = sy * e1z - sz * e1y; let qy = sz * e1x - sx * e1z; let qz = sx * e1y - sy * e1x;
+		let v = (dx * qx + dy * qy + dz * qz) * inv;
+		if v < 0.0 || u + v > 1.0 { continue; }
+		let t = (e2x * qx + e2y * qy + e2z * qz) * inv;
+		if t > cornell::TMIN && t < best.t {
+			let nx = e1y * e2z - e1z * e2y; let ny = e1z * e2x - e1x * e2z; let nz = e1x * e2y - e1y * e2x;
+			let l = sqrt(nx * nx + ny * ny + nz * nz);
+			best = Hit { t, k, nx / l, ny / l, nz / l };
+		}
+	}
+	best
+}
+
+// one path through pixel (i, j); returns linear rgb
+fn radiance(i int, j int) real, real, real {
+	let th = tan(cornell::FOV_Y * 0.5);
+	let u = ((i as real + rnd()) / W as real * 2.0 - 1.0) * th;
+	let v = (1.0 - (j as real + rnd()) / H as real * 2.0) * th;
+	// camera looks down +z with y up; right = forward x up = -x (right-handed)
+	var dx = -u; var dy = v; var dz = 1.0;
+	let dl = sqrt(dx * dx + dy * dy + dz * dz); dx /= dl; dy /= dl; dz /= dl;
+	var ox = cornell::EYE_X; var oy = cornell::EYE_Y; var oz = cornell::EYE_Z;
+	var tr = 1.0; var tg = 1.0; var tb = 1.0;
+	var lr = 0.0; var lg = 0.0; var lb = 0.0;
+	var depth = 0;
+	while true {
+		let h = trace(ox, oy, oz, dx, dy, dz, 1e30);
+		if h.tri < 0 { break; }
+		let px = ox + dx * h.t; let py = oy + dy * h.t; let pz = oz + dz * h.t;
+		var nx = h.nx; var ny = h.ny; var nz = h.nz;
+		if nx * dx + ny * dy + nz * dz > 0.0 { nx = -nx; ny = -ny; nz = -nz; }
+		let m = cornell::tri_mat[h.tri];
+		let ar = cornell::albedo_r(m); let ag = cornell::albedo_g(m); let ab = cornell::albedo_b(m);
+		// next-event estimation to the point light
+		let lx = cornell::LIGHT_X - px; let ly = cornell::LIGHT_Y - py; let lz = cornell::LIGHT_Z - pz;
+		let d2 = lx * lx + ly * ly + lz * lz; let d = sqrt(d2);
+		let cl = (nx * lx + ny * ly + nz * lz) / d;
+		if cl > 0.0 {
+			let s = trace(px, py, pz, lx / d, ly / d, lz / d, d - cornell::TMIN);
+			if s.tri < 0 {
+				let e = cornell::falloff(d) * cl / cornell::PI;
+				lr += tr * ar * cornell::LIGHT_RGB * e; lg += tg * ag * cornell::LIGHT_RGB * e; lb += tb * ab * cornell::LIGHT_RGB * e;
+			}
+		}
+		// cosine-weighted bounce: throughput *= albedo (cos / pdf and 1 / pi cancel)
+		tr *= ar; tg *= ag; tb *= ab;
+		depth += 1;
+		if depth >= 3 {
+			let p = min(max(tr, max(tg, tb)), 0.95);
+			if rnd() >= p { break; }
+			tr /= p; tg /= p; tb /= p;
+		}
+		let r1 = rnd(); let r2 = rnd();
+		let rr = sqrt(r1); let ph = 2.0 * cornell::PI * r2;
+		let lx2 = rr * cos(ph); let ly2 = rr * sin(ph); let lz2 = sqrt(max(1.0 - r1, 0.0));
+		// orthonormal basis around n
+		var ax = 1.0; var ay = 0.0; var az = 0.0;
+		if abs(nx) > 0.9 { ax = 0.0; ay = 1.0; }
+		var bx = ay * nz - az * ny; var by = az * nx - ax * nz; var bz = ax * ny - ay * nx;
+		let bl = sqrt(bx * bx + by * by + bz * bz); bx /= bl; by /= bl; bz /= bl;
+		let cx = ny * bz - nz * by; let cy = nz * bx - nx * bz; let cz = nx * by - ny * bx;
+		dx = bx * lx2 + cx * ly2 + nx * lz2; dy = by * lx2 + cy * ly2 + ny * lz2; dz = bz * lx2 + cz * ly2 + nz * lz2;
+		ox = px; oy = py; oz = pz;
+	}
+	return lr, lg, lb;
+}
+
+// region mask for the gate: the surface under each pixel centre (0 floor, 1 ceiling,
+// 2 back wall, 3 red wall, 4 green wall, 5 short block, 6 tall block, -1 nothing) and
+// whether that point sees the light (1 directly lit, 0 shadowed or facing away).
+fn mask_line(out byte[>..]&, i int, j int) {
+	let th = tan(cornell::FOV_Y * 0.5);
+	let u = ((i as real + 0.5) / W as real * 2.0 - 1.0) * th;
+	let v = (1.0 - (j as real + 0.5) / H as real * 2.0) * th;
+	var dx = -u; var dy = v; var dz = 1.0;
+	let dl = sqrt(dx * dx + dy * dy + dz * dz); dx /= dl; dy /= dl; dz /= dl;
+	let h = trace(cornell::EYE_X, cornell::EYE_Y, cornell::EYE_Z, dx, dy, dz, 1e30);
+	var surf = -1; var lit = 0;
+	if h.tri >= 0 {
+		surf = cornell::surface_of(h.tri);
+		let px = cornell::EYE_X + dx * h.t; let py = cornell::EYE_Y + dy * h.t; let pz = cornell::EYE_Z + dz * h.t;
+		var nx = h.nx; var ny = h.ny; var nz = h.nz;
+		if nx * dx + ny * dy + nz * dz > 0.0 { nx = -nx; ny = -ny; nz = -nz; }
+		let lx = cornell::LIGHT_X - px; let ly = cornell::LIGHT_Y - py; let lz = cornell::LIGHT_Z - pz;
+		let d = sqrt(lx * lx + ly * ly + lz * lz);
+		if (nx * lx + ny * ly + nz * lz) / d > 0.0 && trace(px, py, pz, lx / d, ly / d, lz / d, d - cornell::TMIN).tri < 0 { lit = 1; }
+	}
+	format(out, j * W + i, " ", surf, " ", lit, "\n");
+}
+
+// ray-traced AO reference for the GTAO test (A1-A3): at the pixel centre's surface point,
+// cosine-weighted visibility of the hemisphere within cornell::AO_RADIUS from 64 x 64
+// stratum-centre directions (Malley mapping), and the bent normal, the normalized sum of
+// the unoccluded directions. "idx ao bx by bz" (world space); nothing hit: ao 1, n 0.
+fn ao_line(out byte[>..]&, i int, j int) {
+	let th = tan(cornell::FOV_Y * 0.5);
+	let u = ((i as real + 0.5) / W as real * 2.0 - 1.0) * th;
+	let v = (1.0 - (j as real + 0.5) / H as real * 2.0) * th;
+	var dx = -u; var dy = v; var dz = 1.0;
+	let dl = sqrt(dx * dx + dy * dy + dz * dz); dx /= dl; dy /= dl; dz /= dl;
+	let h = trace(cornell::EYE_X, cornell::EYE_Y, cornell::EYE_Z, dx, dy, dz, 1e30);
+	if h.tri < 0 { format(out, j * W + i, " 1 0 0 0\n"); return; }
+	let px = cornell::EYE_X + dx * h.t; let py = cornell::EYE_Y + dy * h.t; let pz = cornell::EYE_Z + dz * h.t;
+	var nx = h.nx; var ny = h.ny; var nz = h.nz;
+	if nx * dx + ny * dy + nz * dz > 0.0 { nx = -nx; ny = -ny; nz = -nz; }
+	var ax = 1.0; var ay = 0.0; var az = 0.0;
+	if abs(nx) > 0.9 { ax = 0.0; ay = 1.0; }
+	var bx = ay * nz - az * ny; var by = az * nx - ax * nz; var bz = ax * ny - ay * nx;
+	let bl = sqrt(bx * bx + by * by + bz * bz); bx /= bl; by /= bl; bz /= bl;
+	let cx = ny * bz - nz * by; let cy = nz * bx - nx * bz; let cz = nx * by - ny * bx;
+	let S = 64;
+	var vis = 0; var sx = 0.0; var sy = 0.0; var sz = 0.0;
+	for a in S { for b in S {
+		let r1 = (a as real + 0.5) / S as real; let r2 = (b as real + 0.5) / S as real;
+		let rr = sqrt(r1); let ph = 2.0 * cornell::PI * r2;
+		let l1 = rr * cos(ph); let l2 = rr * sin(ph); let l3 = sqrt(max(1.0 - r1, 0.0));
+		let wx = bx * l1 + cx * l2 + nx * l3; let wy = by * l1 + cy * l2 + ny * l3; let wz = bz * l1 + cz * l2 + nz * l3;
+		if trace(px, py, pz, wx, wy, wz, cornell::AO_RADIUS).tri < 0 { vis += 1; sx += wx; sy += wy; sz += wz; }
+	} }
+	let sl = max(sqrt(sx * sx + sy * sy + sz * sz), 1e-12);
+	format(out, j * W + i, " ", vis as real / (S * S) as real, " ", sx / sl, " ", sy / sl, " ", sz / sl, "\n");
+}
+
+fn arg_int(k int) int { var s byte[>..] = []; arg(k, s); to_int(s[..]) }
+
+fn main() {
+	cornell::build();
+	if arg_count() > 1 { var a byte[>..] = []; arg(1, a); if a[..] == "mask" {
+		var out byte[>..] = [];
+		for j in H { for i in W { mask_line(out, i, j); } }
+		write_stdout(out[..]);
+		return;
+	}
+	if a[..] == "ao" {
+		var out byte[>..] = [];
+		let worker = arg_int(2); let workers = arg_int(3);
+		for j in H { if j % workers == worker { for i in W { ao_line(out, i, j); } write_stdout(out[..]); out.clear(); } }
+		return;
+	} }
+	let worker = arg_int(1); let workers = arg_int(2); let spp = arg_int(3);
+	var out byte[>..] = [];
+	for j in H {
+		if j % workers != worker { continue; }
+		for i in W {
+			var sr = 0.0; var sg = 0.0; var sb = 0.0; var sy = 0.0; var sy2 = 0.0;
+			for s in spp {
+				// key the generator by pixel and sample: independent of the row split
+				RS = ((j * W + i) as uint) * 0x100000000 + s as uint;
+				let _ = next_u64();
+				let r, g, b = radiance(i, j);
+				let y = 0.2126 * r + 0.7152 * g + 0.0722 * b;
+				sr += r; sg += g; sb += b; sy += y; sy2 += y * y;
+			}
+			let n = spp as real;
+			format(out, j * W + i, " ", sr / n, " ", sg / n, " ", sb / n, " ", spp, " ", sy, " ", sy2, "\n");
+		}
+		write_stdout(out[..]); out.clear();
+	}
+}

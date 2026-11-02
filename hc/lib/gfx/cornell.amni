@@ -1,0 +1,71 @@
+// cornell: the Cornell box scene shared by the CPU path-traced reference
+// (hc/test/gfx/gi/cornell_pt.amni) and the renderer's GI gate in gfx_smoke, so both
+// see the same triangles. Geometry from the Cornell Box Data published by the Cornell
+// University Program of Computer Graphics (millimetres, scaled by SCALE to scene
+// units): the room's walls axis-aligned to 556 x 548.8 x 559.2, the short and tall
+// blocks from their published top-face corners extruded to the floor. Pure data, no
+// gfx imports.
+namespace cornell;
+import math;
+
+let PI = 3.14159265358979;
+let SCALE = 0.01;               // mm -> scene units (room about 5.5 units)
+let REF_W = 128;
+let REF_H = 128;
+let TMIN = 0.0001;
+// camera: (278, 273, -800) mm looking down +z, 35 mm lens on a 25 mm film
+let EYE_X = 2.78; let EYE_Y = 2.73; let EYE_Z = -8.0;
+let FOV_Y = 0.691111014;        // 2 atan(12.5 / 35)
+// point light 10 mm under the centre of the published ceiling light (343..213, 227..332)
+let LIGHT_X = 2.78; let LIGHT_Y = 5.388; let LIGHT_Z = 2.795;
+let LIGHT_RGB = 18.0;           // white, renderer units
+let LIGHT_RANGE = 100.0;
+let AO_RADIUS = 1.0;            // the GTAO test radius (AO_REF_RADIUS in gfx_smoke)
+// materials: 0 white, 1 red (left wall, x = 556), 2 green (right wall, x = 0)
+fn albedo_r(m int) real { if m == 1 { 0.65 } else if m == 2 { 0.12 } else { 0.73 } }
+fn albedo_g(m int) real { if m == 1 { 0.05 } else if m == 2 { 0.45 } else { 0.73 } }
+fn albedo_b(m int) real { if m == 1 { 0.05 } else if m == 2 { 0.15 } else { 0.73 } }
+// the renderer's point-light falloff (range_falloff in shaders/lighting.glsl)
+fn falloff(d real) real {
+	let q = clamp(1.0 - d * d / (LIGHT_RANGE * LIGHT_RANGE), 0.0, 1.0);
+	q * q / (1.0 + d * d)
+}
+
+let TRI_FLOATS = 9;
+var tris real[>..] = [];   // 3 vertices per triangle, scene units
+var tri_mat int[>..] = [];
+
+fn tri(a0 real, a1 real, a2 real, b0 real, b1 real, b2 real, c0 real, c1 real, c2 real, m int) {
+	tris.push(a0 * SCALE); tris.push(a1 * SCALE); tris.push(a2 * SCALE);
+	tris.push(b0 * SCALE); tris.push(b1 * SCALE); tris.push(b2 * SCALE);
+	tris.push(c0 * SCALE); tris.push(c1 * SCALE); tris.push(c2 * SCALE);
+	tri_mat.push(m);
+}
+// quad a b c d (in order around the edge) as two triangles
+fn quad(a0 real, a1 real, a2 real, b0 real, b1 real, b2 real, c0 real, c1 real, c2 real, d0 real, d1 real, d2 real, m int) {
+	tri(a0, a1, a2, b0, b1, b2, c0, c1, c2, m);
+	tri(a0, a1, a2, c0, c1, c2, d0, d1, d2, m);
+}
+// block: top corners (x, z) at height h, sides down to the floor
+fn add_block(x0 real, z0 real, x1 real, z1 real, x2 real, z2 real, x3 real, z3 real, h real) {
+	quad(x0, h, z0, x1, h, z1, x2, h, z2, x3, h, z3, 0);
+	quad(x0, h, z0, x1, h, z1, x1, 0.0, z1, x0, 0.0, z0, 0);
+	quad(x1, h, z1, x2, h, z2, x2, 0.0, z2, x1, 0.0, z1, 0);
+	quad(x2, h, z2, x3, h, z3, x3, 0.0, z3, x2, 0.0, z2, 0);
+	quad(x3, h, z3, x0, h, z0, x0, 0.0, z0, x3, 0.0, z3, 0);
+}
+
+// triangle -> surface: 0 floor, 1 ceiling, 2 back, 3 red, 4 green, 5 short block, 6 tall block
+fn surface_of(t int) int { if t < 10 { t / 2 } else if t < 20 { 5 } else { 6 } }
+
+let RX = 556.0; let RY = 548.8; let RZ = 559.2;
+fn build() {
+	tris.clear(); tri_mat.clear();
+	quad(0.0, 0.0, 0.0, RX, 0.0, 0.0, RX, 0.0, RZ, 0.0, 0.0, RZ, 0);     // floor
+	quad(0.0, RY, 0.0, 0.0, RY, RZ, RX, RY, RZ, RX, RY, 0.0, 0);         // ceiling
+	quad(0.0, 0.0, RZ, RX, 0.0, RZ, RX, RY, RZ, 0.0, RY, RZ, 0);         // back wall
+	quad(RX, 0.0, 0.0, RX, RY, 0.0, RX, RY, RZ, RX, 0.0, RZ, 1);         // red, x = 556
+	quad(0.0, 0.0, 0.0, 0.0, 0.0, RZ, 0.0, RY, RZ, 0.0, RY, 0.0, 2);     // green, x = 0
+	add_block(130.0, 65.0, 82.0, 225.0, 240.0, 272.0, 290.0, 114.0, 165.0);   // short block
+	add_block(423.0, 247.0, 265.0, 296.0, 314.0, 456.0, 472.0, 406.0, 330.0); // tall block
+}

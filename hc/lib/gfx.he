@@ -34,7 +34,7 @@ struct Region { mip i32 = 0, layer i32 = 0, x i32 = 0, y i32 = 0, z i32 = 0, w i
 struct SamplerDesc { min_filter i32 = 1, mag_filter i32 = 1, mip_filter i32 = 1, wrap_u i32 = 0, wrap_v i32 = 0, wrap_w i32 = 0, max_anisotropy f32 = 1.0, compare i32 = 0 }
 struct PipelineDesc { primitive i32 = 0, cull i32 = 0, clockwise bool = false, wireframe bool = false, depth_test bool = false, depth_write bool = false, depth_compare i32 = 2, blend i32 = 0, instance_location i32 = -1, depth_bias f32 = 0.0, depth_bias_slope f32 = 0.0, formats u8[16] = [0; 16] }
 struct Event { kind i32, scancode i32, keycode i32, mods i32, down bool, repeat bool, button i32, clicks i32, codepoint u32, x f32, y f32 }
-struct PassDesc { color Texture[4] = [Texture{0}; 4], resolve Texture[4] = [Texture{0}; 4], depth Texture = Texture{0}, layer i32 = 0, mip i32 = 0, clear_color bool = true, clear_depth bool = true, color_value float4 = float4{0.0, 0.0, 0.0, 1.0}, depth_value f32 = 1.0 }
+struct PassDesc { color Texture[4] = [Texture{0}; 4], resolve Texture[4] = [Texture{0}; 4], depth Texture = Texture{0}, layer i32 = 0, mip i32 = 0, clear_color bool = true, clear_depth bool = true, color_value float4 = float4{0.0, 0.0, 0.0, 1.0}, depth_value f32 = 1.0, cycle i32 = 0 }
 struct mat4 { c0 float4, c1 float4, c2 float4, c3 float4 }
 mat4_identity := mat4{float4{1.0, 0.0, 0.0, 0.0}, float4{0.0, 1.0, 0.0, 0.0}, float4{0.0, 0.0, 1.0, 0.0}, float4{0.0, 0.0, 0.0, 1.0}}
 struct CTex { ty i32, fmt i32, usage u32, w u32, h u32, lcd u32, lv u32, sc i32, props u32 }
@@ -872,6 +872,15 @@ release_resources():
 	for i TSMP.live.len: if TSMP.live[i] { s_rmsmp(DEV, SMPS[i]) }
 	tclear(TBUF, "buffer"); tclear(TTEX, "texture"); tclear(TSMP, "sampler"); BUFS.clear(); TEXS.clear(); SMPS.clear()
 reset_bindings(): for k 3 { SB[k] = 0; TB[k] = 0; BB[k] = 0 } VBB = 0; IXB = false
+# Whether a cleared target is cycled (a fresh backing image if the GPU may still use
+# the old one). Cycling discards the whole texture, so the automatic rule (cycle 0) only
+# cycles single-layer, single-mip targets; 1 forces it (use it on the first of several
+# passes that together rewrite every layer), 2 never cycles. Loaded targets never cycle.
+cycles(mode i32, clear bool, whole bool) bool:
+	if !clear: return false
+	if mode == 1: return true
+	if mode == 2: return false
+	whole
 begin_pass_desc(d const PassDesc&) bool:
 	if !need("begin_pass"): return false
 	if PASS != 0 || CPASS != 0: return misuse(str("begin_pass inside a ", pname(), " pass: end it first"))
@@ -887,7 +896,7 @@ begin_pass_desc(d const PassDesc&) bool:
 		tw := max(s.d.width as int >> mip, 1); th := max(s.d.height as int >> mip, 1)
 		if i > 0 && (tw != w || th != h || s.d.samples as int != samples): return misuse("begin_pass: the color targets differ in size or sample count")
 		w = tw; h = th; samples = s.d.samples as int
-		c ~= CCol{s.tex, mip as u32, lay as u32, d.color_value.x, d.color_value.y, d.color_value.z, d.color_value.w, if d.clear_color { 1 } else { 0 }, 0, 0, 0, 0, d.clear_color, false}
+		c ~= CCol{s.tex, mip as u32, lay as u32, d.color_value.x, d.color_value.y, d.color_value.z, d.color_value.w, if d.clear_color { 1 } else { 0 }, 0, 0, 0, 0, cycles(d.cycle, d.clear_color, layers == 1 && s.d.mips as int == 1), false}
 		if d.resolve[i].id != 0:
 			rk := tslot(d.resolve[i])
 			if rk < 0: return false
@@ -901,9 +910,12 @@ begin_pass_desc(d const PassDesc&) bool:
 		if k < 0: return false
 		let s .= TEXS[k]
 		if s.usage & 4 == 0: return misuse("begin_pass: the depth target was not created with DEPTH_TARGET")
-		if t.nc > 0 && (s.d.width as int != w || s.d.height as int != h || s.d.samples as int != samples): return misuse(str("begin_pass: the depth target is ", s.d.width, " x ", s.d.height, " with ", s.d.samples, " sample(s), the color targets ", w, " x ", h, " with ", samples))
-		w = s.d.width as int; h = s.d.height as int; samples = s.d.samples as int
-		dt = CDep{s.tex, d.depth_value, if d.clear_depth { 1 } else { 0 }, 0, 1, 0, d.clear_depth, 0, 0, 0}; t.hd = true; t.d = s.fmt
+		dlayers := if s.d.kind == 3 { 6 } else { if s.d.kind == 0 { 1 } else { s.d.depth as int } }
+		if mip < 0 || mip >= s.d.mips as int || lay < 0 || lay >= dlayers || mip > 255 || lay > 255: return misuse(str("begin_pass: the depth target has no mip ", mip, ", layer ", lay))
+		dw := max(s.d.width as int >> mip, 1); dh := max(s.d.height as int >> mip, 1)
+		if t.nc > 0 && (dw != w || dh != h || s.d.samples as int != samples): return misuse(str("begin_pass: the depth target is ", dw, " x ", dh, " with ", s.d.samples, " sample(s), the color targets ", w, " x ", h, " with ", samples))
+		w = dw; h = dh; samples = s.d.samples as int
+		dt = CDep{s.tex, d.depth_value, if d.clear_depth { 1 } else { 0 }, 0, 1, 0, cycles(d.cycle, d.clear_depth, dlayers == 1 && s.d.mips as int == 1), 0, mip as u8, lay as u8}; t.hd = true; t.d = s.fmt
 	if t.nc == 0 && !t.hd: return misuse("begin_pass with no targets")
 	t.sc = nsamp(samples); c := cmd()
 	if c == 0: return false

@@ -1,0 +1,50 @@
+# gfx_smoke shadow checks only (GFX_ONLY=shadows), raw output
+# GPU run under: flock ~/.cache/amni-art/gpu.lock around the whole batch (tmp/shadow/batch.sh), headless, no window
+# date: 2026-11-01 05:57:37 (PC local, EST)
+# library: hc/lib from 12652cf (git archive); test: hc/test/gfx/gfx_smoke.amni from e4adf92
+# command: MESA_VK_DEVICE_SELECT='1002:7590!' GFX_ONLY=shadows VK_LAYER_PATH=<gputime layer> VK_INSTANCE_LAYERS=VK_LAYER_HELIUM_gputime HELIUM_GPUTIME=<log> gs <dir> hc/test/gfx/golden/spheres.png
+# host: Linux 7.2.9-arch1-1 x86_64
+# vulkan: apiVersion         = 1.4.354
+# vulkan: deviceName         = AMD Radeon RX 9060 XT (RADV GFX1200)
+# vulkan: driverName         = radv
+# vulkan: driverInfo         = Mesa 26.2.4-arch1.1
+# vulkan: conformanceVersion = 1.4.5.3
+# packages: sdl3 3.4.18-1 vulkan-radeon 1:26.2.4-1 mesa 1:26.2.4-1 
+# note: before: the unfixed library (all cascades drawn into depth layer 0); the gate fails as expected (IoU 0.0999)
+#
+qrotate 0 0 -1000
+qslerp w 924
+inverse ok true
+png 37x23 true sum 845791653
+jpeg 61x45 true sum 444578738
+inflate stored true abc
+gltf meshes 2 nodes 4 roots 3 materials 2 images 1 skins 1 animations 1 skipped 1
+  prim verts 24 indices 36 targets 0 skinned false tangents true
+  prim verts 12 indices 12 targets 1 skinned true tangents false
+  material checker mode 0 metal 0 rough 600 emissive 0 0 two-sided false
+  material glow mode 2 metal 1000 rough 1000 emissive 4000 2000 two-sided true
+  image 4x4 sum 721154210
+anim rotation 0 0 707 707 weight 1000
+anim joint -1000 2000 0
+sphere asset 1 indices 768 verts 153
+text width 9600 verts 72
+gpu: out dir /home/anmire/ai/amni-games/jk-helium-poc-work/tmp/shadow/out_before
+gpu: shadows png /home/anmire/ai/amni-games/jk-helium-poc-work/tmp/shadow/out_before/shadow_direct_off.png true
+gpu: shadows png /home/anmire/ai/amni-games/jk-helium-poc-work/tmp/shadow/out_before/shadow_direct_on.png true
+gpu: shadows reference: 960x540 primary + sun rays into 25 spheres and 2 boxes, 2 px band excluded (cascades end at 2.122, 5.907, 20.0)
+gpu: shadows png /home/anmire/ai/amni-games/jk-helium-poc-work/tmp/shadow/out_before/shadow_mask.png true
+gpu: shadows on cascade 2 [gated]: 441405 px counted, reference shadows 44111, gpu shadows 441405, both 44111, IoU 0.0999
+gpu: shadows mask IoU 0.0999 in the main cascade (bar >= 0.9) FAIL
+gpu: shadows control off cascade 2 [gated]: 441405 px counted, reference shadows 44111, gpu shadows 0, both 0, IoU 0.0
+gpu: shadows control (shadows off) IoU 0.0 must fail: PASS
+gpu: shadows png /home/anmire/ai/amni-games/jk-helium-poc-work/tmp/shadow/out_before/shadow_direct_on_mirrored.png true
+gpu: shadows control mirrored sun cascade 2 [gated]: 430248 px counted, reference shadows 44111, gpu shadows 430248, both 44111, IoU 0.1025
+gpu: shadows control (sun mirrored in x) IoU 0.1025 must fail: PASS
+gpu: shadows png /home/anmire/ai/amni-games/jk-helium-poc-work/tmp/shadow/out_before/shadow_shaded_on.png true
+gpu: shadows timing 1280x720 wall scene, shadows off: 30 warmup + 200 timed, wall-clock ms min 0.3546 median 0.3837 p95 1.8445 ms
+gpu: shadows timing 1280x720 wall scene, shadows off: gpu-timestamp ms min 0.2797 median 0.2909 p95 0.3219 ms (1 submit(s) each)
+gpu: shadows timing 1280x720 wall scene, shadows on (3 cascades, 2048^2): 30 warmup + 200 timed, wall-clock ms min 0.7521 median 0.777 p95 1.0869 ms
+gpu: shadows timing 1280x720 wall scene, shadows on (3 cascades, 2048^2): gpu-timestamp ms min 0.6031 median 0.6198 p95 0.6296 ms (1 submit(s) each)
+gpu: shadows png /home/anmire/ai/amni-games/jk-helium-poc-work/tmp/shadow/out_before/spheres_shadows_on.png true
+gpu: shadows sphere grid with shadows on: psnr 22.37 dB vs the golden (reported)
+gpu: FAILED (0.5 s, vulkan)

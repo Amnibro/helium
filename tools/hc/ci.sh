@@ -18,4 +18,5 @@ step pkg python3 tools/hc/pkgtest.py "$HN"
 step lut tools/hc/luttest.sh "$HN"
 step err python3 tools/hc/errtest.py "$HN"
 step warn tools/hc/warntest.sh "$HN"
+[ -n "${HELIUM_GFX_TEST:-}" ] && step gfx tools/hc/gfxtest.sh "$HN"
 [ $fail -eq 0 ] && echo "ci: ok" || echo "ci: FAILED"; exit $fail

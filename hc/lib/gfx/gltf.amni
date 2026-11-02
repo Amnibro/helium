@@ -1,0 +1,765 @@
+// gltf: reads glTF 2.0 assets (.glb, and .gltf with external or data-URI buffers)
+// into flat global pools that the renderer uploads in one go.
+// Written from the Khronos glTF 2.0 specification. Every index stored in a pool
+// record is absolute (already offset by the owning asset's base), or -1 for none.
+namespace gltf;
+import json;
+import base64;
+import binary;
+import gfx;
+import gfx.linalg;
+import gfx.codec_png;
+import gfx.codec_jpeg;
+
+// One vertex is 26 floats: position 3, normal 3, uv0 2, uv1 2, tangent 4,
+// color 4, joints 4, weights 4.
+let VERTEX_FLOATS = 26;
+let AT_POS = 0;
+let AT_NRM = 3;
+let AT_UV0 = 6;
+let AT_UV1 = 8;
+let AT_TAN = 10;
+let AT_COL = 14;
+let AT_JOINT = 18;
+let AT_WEIGHT = 22;
+// One morph delta is 8 floats: position xyz, pad, normal xyz, pad.
+let MORPH_FLOATS = 8;
+
+let ALPHA_OPAQUE = 0;
+let ALPHA_MASK = 1;
+let ALPHA_BLEND = 2;
+let PATH_T = 0;
+let PATH_R = 1;
+let PATH_S = 2;
+let PATH_W = 3;
+let STEP_LINEAR = 0;
+let STEP_HOLD = 1;
+let STEP_CUBIC = 2;
+
+struct Span { first int, count int }
+struct TexRef { texture int, uv int }
+struct Material {
+	base float4, base_tex TexRef,
+	metallic f32, roughness f32, mr_tex TexRef,
+	normal_tex TexRef, normal_scale f32,
+	occlusion_tex TexRef, occlusion_strength f32,
+	emissive float3, emissive_tex TexRef,
+	alpha_mode int, alpha_cutoff f32, double_sided bool, unlit bool, name Span
+}
+struct Primitive { vfirst int, vcount int, ifirst int, icount int, material int, mfirst int, targets int, lo float3, hi float3, tangents bool, skinned bool }
+struct Mesh { prims Span, weights Span, name Span }
+struct Node { parent int, mesh int, skin int, children Span, t float3, r linalg::Quat, s float3, matrix gfx::mat4, has_matrix bool, weights Span, name Span }
+struct Texture { image int, mag_nearest bool, min_nearest bool, mipmaps bool, wrap_s int, wrap_t int }
+struct Image { width int, height int, pixels Span, ok bool }
+struct Skin { joints Span, inverse_binds Span, skeleton int, name Span }
+struct Channel { node int, path int, interp int, times Span, values Span, width int }
+struct Animation { channels Span, duration f32, name Span }
+struct Asset { meshes Span, nodes Span, materials Span, textures Span, images Span, skins Span, animations Span, roots Span, ok bool }
+
+var verts f32[>..];
+var indices u32[>..];
+var morphs f32[>..];
+var floats f32[>..];
+var ints int[>..];
+var matrices gfx::mat4[>..];
+var pixels byte[>..];
+var names byte[>..];
+var meshes Mesh[>..];
+var prims Primitive[>..];
+var nodes Node[>..];
+var materials Material[>..];
+var textures Texture[>..];
+var images Image[>..];
+var skins Skin[>..];
+var channels Channel[>..];
+var animations Animation[>..];
+var assets Asset[>..];
+var problem byte[>..];
+var skipped_prims int[>..];   // one counter: point and line primitives are not loaded
+
+// scratch for the asset being read
+var blob byte[>..];
+var buf_at int[>..];
+var buf_len int[>..];
+var view_at int[>..];
+var view_len int[>..];
+var view_stride int[>..];
+var accessor_node int[>..];
+
+fn error() const byte[:] { problem[..] }
+fn skipped() int { if skipped_prims.len == 0 { 0 } else { skipped_prims[0] } }
+
+fn fail(msg const byte[:]) int {
+	problem.clear();
+	problem.append(msg);
+	-1
+}
+
+fn reset() {
+	verts.clear(); indices.clear(); morphs.clear(); floats.clear(); ints.clear(); matrices.clear();
+	pixels.clear(); names.clear(); meshes.clear(); prims.clear(); nodes.clear(); materials.clear();
+	textures.clear(); images.clear(); skins.clear(); channels.clear(); animations.clear(); assets.clear();
+	problem.clear(); skipped_prims.clear();
+}
+
+fn text_of(s Span) const byte[:] { names[s.first..s.first + s.count] }
+
+fn keep_name(s const byte[:]) Span {
+	let at = names.len;
+	names.append(s);
+	Span { at, s.len }
+}
+
+// ---- JSON access
+
+fn get(d json::Doc&, n int, key const byte[:]) int {
+	if n < 0 || d.nodes[n].kind != json::K_OBJ { return -1; }
+	var c = d.nodes[n].first;
+	while c >= 0 {
+		if d.nodes[c].name == key { return c; }
+		c = d.nodes[c].next;
+	}
+	-1
+}
+
+fn num(d json::Doc&, n int, key const byte[:], fallback real) real {
+	let v, ok = json::as_f64(d, get(d, n, key));
+	if ok { v } else { fallback }
+}
+
+fn whole(d json::Doc&, n int, key const byte[:], fallback int) int {
+	let v, ok = json::as_f64(d, get(d, n, key));
+	if ok { v as int } else { fallback }
+}
+
+fn truth(d json::Doc&, n int, key const byte[:], fallback bool) bool {
+	let v, ok = json::as_bool(d, get(d, n, key));
+	if ok { v } else { fallback }
+}
+
+fn word(d json::Doc&, n int, key const byte[:]) const byte[:] {
+	let c = get(d, n, key);
+	if c < 0 || d.nodes[c].kind != json::K_STR { return ""; }
+	d.nodes[c].text[..]
+}
+
+fn children_of(d json::Doc&, n int, out int[>..]&) {
+	out.clear();
+	if n < 0 { return; }
+	var c = d.nodes[n].first;
+	while c >= 0 { out.push(c); c = d.nodes[c].next; }
+}
+
+fn item_num(d json::Doc&, arr int, k int, fallback real) real {
+	let v, ok = json::as_f64(d, json::element(d, arr, k));
+	if ok { v } else { fallback }
+}
+
+// ---- binary data
+
+fn u32le(b const byte[:], o int) int { b[o] as int | (b[o + 1] as int) << 8 | (b[o + 2] as int) << 16 | (b[o + 3] as int) << 24 }
+
+fn hexval(c byte) int {
+	if c >= '0' && c <= '9' { c as int - '0' } else if c >= 'a' && c <= 'f' { c as int - 'a' + 10 } else if c >= 'A' && c <= 'F' { c as int - 'A' + 10 } else { -1 }
+}
+
+// Resolves a URI: data URIs are decoded, anything else is a path relative to dir.
+fn fetch_uri(uri const byte[:], dir const byte[:], out byte[>..]&) bool {
+	if starts_with(uri, "data:") {
+		var comma = -1;
+		for c, i in uri { if c == ',' && comma < 0 { comma = i; } }
+		if comma < 0 { return false; }
+		let head = uri[..comma];
+		if ends_with(head, ";base64") { return base64::decode(out, uri[comma + 1..]); }
+		out.append(uri[comma + 1..]);
+		return true;
+	}
+	var path byte[>..] = [];
+	path.append(dir);
+	var i = 0;
+	while i < uri.len {
+		if uri[i] == '%' && i + 2 < uri.len && hexval(uri[i + 1]) >= 0 && hexval(uri[i + 2]) >= 0 {
+			path.push((hexval(uri[i + 1]) * 16 + hexval(uri[i + 2])) as byte);
+			i += 3;
+		} else {
+			path.push(uri[i]);
+			i += 1;
+		}
+	}
+	read_file(path[..], out)
+}
+
+fn component_size(kind int) int {
+	match kind { 5120, 5121 => 1, 5122, 5123 => 2, 5125, 5126 => 4, _ => 0 }
+}
+
+fn type_shape(t const byte[:]) int, int {   // columns, rows
+	if t == "SCALAR" { return 1, 1; }
+	if t == "VEC2" { return 1, 2; }
+	if t == "VEC3" { return 1, 3; }
+	if t == "VEC4" { return 1, 4; }
+	if t == "MAT2" { return 2, 2; }
+	if t == "MAT3" { return 3, 3; }
+	if t == "MAT4" { return 4, 4; }
+	return 0, 0;
+}
+
+fn component(o int, kind int, normalized bool) real {
+	match kind {
+		5120 => {
+			var v = blob[o] as int;
+			if v > 127 { v -= 256; }
+			if normalized { max(v as real / 127.0, -1.0) } else { v as real }
+		},
+		5121 => { let v = blob[o] as real; if normalized { v / 255.0 } else { v } },
+		5122 => {
+			var v = blob[o] as int | (blob[o + 1] as int) << 8;
+			if v > 32767 { v -= 65536; }
+			if normalized { max(v as real / 32767.0, -1.0) } else { v as real }
+		},
+		5123 => { let v = (blob[o] as int | (blob[o + 1] as int) << 8) as real; if normalized { v / 65535.0 } else { v } },
+		5125 => { let v = u32le(blob[..], o) as real; if normalized { v / 4294967295.0 } else { v } },
+		5126 => binary::f32_from_bits(u32le(blob[..], o) as u32) as real,
+		_ => 0.0,
+	}
+}
+
+// Appends every element of accessor `index` to out (count * columns * rows values,
+// columns major); returns count, values per element and success.
+fn read_accessor<T>(d json::Doc&, index int, out T[>..]&) int, int, bool {
+	if index < 0 || index >= accessor_node.len { return 0, 0, false; }
+	let a = accessor_node[index];
+	let kind = whole(d, a, "componentType", 0);
+	let cols, rows = type_shape(word(d, a, "type"));
+	let count = whole(d, a, "count", 0);
+	let normalized = truth(d, a, "normalized", false);
+	let cs = component_size(kind);
+	if cs == 0 || cols == 0 || count < 0 { return 0, 0, false; }
+	let width = cols * rows;
+	let column_bytes = if cols > 1 { (rows * cs + 3) / 4 * 4 } else { rows * cs };
+	let packed = cols * column_bytes;
+	let base = out.len;
+	let view = whole(d, a, "bufferView", -1);
+	if view < 0 {
+		for i in count * width { out.push(0.0 as T); }
+	} else {
+		if view >= view_at.len { return 0, 0, false; }
+		let stride = if view_stride[view] > 0 { view_stride[view] } else { packed };
+		let start = view_at[view] + whole(d, a, "byteOffset", 0);
+		if count > 0 && start + stride * (count - 1) + packed > view_at[view] + view_len[view] { return 0, 0, false; }
+		for i in count {
+			for c in cols {
+				for r in rows { out.push(component(start + i * stride + c * column_bytes + r * cs, kind, normalized) as T); }
+			}
+		}
+	}
+	let sparse = get(d, a, "sparse");
+	if sparse >= 0 {
+		let n = whole(d, sparse, "count", 0);
+		let si = get(d, sparse, "indices");
+		let sv = get(d, sparse, "values");
+		let iv = whole(d, si, "bufferView", -1);
+		let vv = whole(d, sv, "bufferView", -1);
+		if iv < 0 || vv < 0 || iv >= view_at.len || vv >= view_at.len { return 0, 0, false; }
+		let ik = whole(d, si, "componentType", 5125);
+		let ics = component_size(ik);
+		let i0 = view_at[iv] + whole(d, si, "byteOffset", 0);
+		let v0 = view_at[vv] + whole(d, sv, "byteOffset", 0);
+		if ics == 0 || i0 + n * ics > view_at[iv] + view_len[iv] || v0 + n * packed > view_at[vv] + view_len[vv] { return 0, 0, false; }
+		for k in n {
+			let at = component(i0 + k * ics, ik, false) as int;
+			if at < 0 || at >= count { return 0, 0, false; }
+			for c in cols {
+				for r in rows { out[base + at * width + c * rows + r] = component(v0 + k * packed + c * column_bytes + r * cs, kind, normalized) as T; }
+			}
+		}
+	}
+	return count, width, true;
+}
+
+// ---- loading
+
+fn load(path const byte[:]) int {
+	var data byte[>..] = [];
+	if !read_file(path, data) { return fail(str("gltf: cannot read ", path)); }
+	var cut = 0;
+	for c, i in path { if c == '/' { cut = i + 1; } }
+	load_bytes(data[..], path[..cut])
+}
+
+fn texref(d json::Doc&, n int, tex_base int) TexRef {
+	if n < 0 { return TexRef { -1, 0 }; }
+	let i = whole(d, n, "index", -1);
+	TexRef { if i < 0 { -1 } else { tex_base + i }, whole(d, n, "texCoord", 0) }
+}
+
+fn decode_image(data const byte[:]) Image {
+	var px byte[>..] = [];
+	var w = 0;
+	var h = 0;
+	var ok = false;
+	if codec_png::is_png(data) {
+		let a, b, c = codec_png::decode(data, px);
+		w = a; h = b; ok = c;
+	} else if data.len > 3 && data[0] == 255 && data[1] == 216 {
+		let a, b, c = codec_jpeg::decode(data, px);
+		w = a; h = b; ok = c;
+	}
+	if !ok || px.len != w * h * 4 {
+		px.clear();
+		px.append([255 as byte, 255, 255, 255]);
+		w = 1; h = 1; ok = false;
+	}
+	let at = pixels.len;
+	pixels.append(px[..]);
+	Image { w, h, Span { at, px.len }, ok }
+}
+
+fn load_bytes(data const byte[:], dir const byte[:]) int {
+	blob.clear(); buf_at.clear(); buf_len.clear(); view_at.clear(); view_len.clear(); view_stride.clear(); accessor_node.clear();
+	if skipped_prims.len == 0 { skipped_prims.push(0); }
+	var json_at = 0;
+	var json_len = data.len;
+	var bin_at = -1;
+	var bin_len = 0;
+	if data.len >= 12 && data[0] == 'g' && data[1] == 'l' && data[2] == 'T' && data[3] == 'F' {
+		if u32le(data, 4) != 2 { return fail("gltf: only GLB version 2 is supported"); }
+		let total = min(u32le(data, 8), data.len);
+		json_len = 0;
+		var o = 12;
+		while o + 8 <= total {
+			let n = u32le(data, o);
+			let kind = u32le(data, o + 4);
+			if n < 0 || o + 8 + n > total { return fail("gltf: a GLB chunk runs past the end of the file"); }
+			if kind == 0x4E4F534A && json_len == 0 { json_at = o + 8; json_len = n; }
+			else if kind == 0x004E4942 && bin_at < 0 { bin_at = o + 8; bin_len = n; }
+			o += 8 + (n + 3) / 4 * 4;
+		}
+		if json_len == 0 { return fail("gltf: the GLB has no JSON chunk"); }
+	}
+	var d = json::Doc {};
+	let root, why = json::parse(data[json_at..json_at + json_len], d);
+	if root < 0 { return fail(str("gltf: ", why)); }
+	let version = word(d, get(d, root, "asset"), "version");
+	if version.len == 0 || version[0] != '2' { return fail(str("gltf: unsupported asset version '", version, "'")); }
+	var list int[>..] = [];
+	children_of(d, get(d, root, "extensionsRequired"), list);
+	for e in list {
+		let ext = d.nodes[e].text[..];
+		if ext != "KHR_materials_emissive_strength" && ext != "KHR_materials_unlit" && ext != "KHR_mesh_quantization" {
+			return fail(str("gltf: required extension ", ext, " is not supported"));
+		}
+	}
+
+	// buffers and views
+	children_of(d, get(d, root, "buffers"), list);
+	for b, k in list {
+		let uri = word(d, b, "uri");
+		let at = blob.len;
+		if uri.len > 0 {
+			if !fetch_uri(uri, dir, blob) { return fail(str("gltf: cannot load buffer ", k, " (", if uri.len > 64 { uri[..64] } else { uri }, ")")); }
+		} else if k == 0 && bin_at >= 0 {
+			blob.append(data[bin_at..bin_at + bin_len]);
+		} else {
+			return fail(str("gltf: buffer ", k, " has no data"));
+		}
+		let n = blob.len - at;
+		if n < whole(d, b, "byteLength", 0) { return fail(str("gltf: buffer ", k, " is shorter than its byteLength")); }
+		buf_at.push(at);
+		buf_len.push(n);
+		while blob.len % 4 != 0 { blob.push(0); }
+	}
+	children_of(d, get(d, root, "bufferViews"), list);
+	for v, k in list {
+		let b = whole(d, v, "buffer", -1);
+		if b < 0 || b >= buf_at.len { return fail(str("gltf: bufferView ", k, " names a missing buffer")); }
+		let off = whole(d, v, "byteOffset", 0);
+		let len = whole(d, v, "byteLength", 0);
+		if off < 0 || len < 0 || off + len > buf_len[b] { return fail(str("gltf: bufferView ", k, " runs past its buffer")); }
+		view_at.push(buf_at[b] + off);
+		view_len.push(len);
+		view_stride.push(whole(d, v, "byteStride", 0));
+	}
+	children_of(d, get(d, root, "accessors"), list);
+	for a in list { accessor_node.push(a); }
+
+	var asset = Asset { ok: true, .. };
+
+	// images
+	asset.images.first = images.len;
+	children_of(d, get(d, root, "images"), list);
+	for im in list {
+		var raw byte[>..] = [];
+		let uri = word(d, im, "uri");
+		let view = whole(d, im, "bufferView", -1);
+		if uri.len > 0 {
+			fetch_uri(uri, dir, raw);
+		} else if view >= 0 && view < view_at.len {
+			raw.append(blob[view_at[view]..view_at[view] + view_len[view]]);
+		}
+		images.push(decode_image(raw[..]));
+	}
+	asset.images.count = images.len - asset.images.first;
+
+	// textures with their samplers
+	var samplers int[>..] = [];
+	children_of(d, get(d, root, "samplers"), samplers);
+	asset.textures.first = textures.len;
+	children_of(d, get(d, root, "textures"), list);
+	for t in list {
+		let src = whole(d, t, "source", -1);
+		let si = whole(d, t, "sampler", -1);
+		let s = if si >= 0 && si < samplers.len { samplers[si] } else { -1 };
+		let mag = whole(d, s, "magFilter", 9729);
+		let minf = whole(d, s, "minFilter", 9987);
+		textures.push(Texture {
+			if src >= 0 && src < asset.images.count { asset.images.first + src } else { -1 },
+			mag == 9728,
+			minf == 9728 || minf == 9984 || minf == 9986,
+			minf >= 9984,
+			whole(d, s, "wrapS", 10497),
+			whole(d, s, "wrapT", 10497)
+		});
+	}
+	asset.textures.count = textures.len - asset.textures.first;
+
+	// materials
+	let tb = asset.textures.first;
+	asset.materials.first = materials.len;
+	children_of(d, get(d, root, "materials"), list);
+	for m in list {
+		let pbr = get(d, m, "pbrMetallicRoughness");
+		let bc = get(d, pbr, "baseColorFactor");
+		let ef = get(d, m, "emissiveFactor");
+		let ext = get(d, m, "extensions");
+		let strength = num(d, get(d, ext, "KHR_materials_emissive_strength"), "emissiveStrength", 1.0) as f32;
+		let normal = get(d, m, "normalTexture");
+		let occl = get(d, m, "occlusionTexture");
+		let mode = word(d, m, "alphaMode");
+		materials.push(Material {
+			base: float4 { item_num(d, bc, 0, 1.0) as f32, item_num(d, bc, 1, 1.0) as f32, item_num(d, bc, 2, 1.0) as f32, item_num(d, bc, 3, 1.0) as f32 },
+			base_tex: texref(d, get(d, pbr, "baseColorTexture"), tb),
+			metallic: num(d, pbr, "metallicFactor", 1.0) as f32,
+			roughness: num(d, pbr, "roughnessFactor", 1.0) as f32,
+			mr_tex: texref(d, get(d, pbr, "metallicRoughnessTexture"), tb),
+			normal_tex: texref(d, normal, tb),
+			normal_scale: num(d, normal, "scale", 1.0) as f32,
+			occlusion_tex: texref(d, occl, tb),
+			occlusion_strength: num(d, occl, "strength", 1.0) as f32,
+			emissive: float3 { item_num(d, ef, 0, 0.0) as f32 * strength, item_num(d, ef, 1, 0.0) as f32 * strength, item_num(d, ef, 2, 0.0) as f32 * strength },
+			emissive_tex: texref(d, get(d, m, "emissiveTexture"), tb),
+			alpha_mode: if mode == "MASK" { ALPHA_MASK } else if mode == "BLEND" { ALPHA_BLEND } else { ALPHA_OPAQUE },
+			alpha_cutoff: num(d, m, "alphaCutoff", 0.5) as f32,
+			double_sided: truth(d, m, "doubleSided", false),
+			unlit: get(d, ext, "KHR_materials_unlit") >= 0,
+			name: keep_name(word(d, m, "name"))
+		});
+	}
+	asset.materials.count = materials.len - asset.materials.first;
+
+	// meshes
+	asset.meshes.first = meshes.len;
+	children_of(d, get(d, root, "meshes"), list);
+	var plist int[>..] = [];
+	for me, mk in list {
+		var mesh = Mesh { prims: Span { prims.len, 0 }, weights: Span { floats.len, 0 }, name: keep_name(word(d, me, "name")) };
+		children_of(d, get(d, me, "primitives"), plist);
+		for p in plist {
+			if !add_primitive(d, p, asset.materials.first, asset.materials.count) { return fail(str("gltf: mesh ", mk, ": ", problem)); }
+		}
+		mesh.prims.count = prims.len - mesh.prims.first;
+		let w = get(d, me, "weights");
+		if w >= 0 {
+			for i in d.nodes[w].count { floats.push(item_num(d, w, i, 0.0) as f32); }
+			mesh.weights.count = d.nodes[w].count;
+		}
+		meshes.push(mesh);
+	}
+	asset.meshes.count = meshes.len - asset.meshes.first;
+
+	// nodes
+	let nb = nodes.len;
+	children_of(d, get(d, root, "nodes"), list);
+	asset.nodes = Span { nb, list.len };
+	for n in list {
+		var node = Node {
+			parent: -1, mesh: -1, skin: -1, children: Span { ints.len, 0 },
+			t: float3 { 0.0, 0.0, 0.0 }, r: linalg::quat_identity(), s: float3 { 1.0, 1.0, 1.0 },
+			matrix: gfx::mat4_identity, has_matrix: false, weights: Span { floats.len, 0 }, name: keep_name(word(d, n, "name"))
+		};
+		let mi = whole(d, n, "mesh", -1);
+		if mi >= 0 && mi < asset.meshes.count { node.mesh = asset.meshes.first + mi; }
+		let ch = get(d, n, "children");
+		if ch >= 0 {
+			for i in d.nodes[ch].count {
+				let c = item_num(d, ch, i, -1.0) as int;
+				if c >= 0 && c < list.len { ints.push(nb + c); }
+			}
+			node.children.count = ints.len - node.children.first;
+		}
+		let t = get(d, n, "translation");
+		if t >= 0 { node.t = float3 { item_num(d, t, 0, 0.0) as f32, item_num(d, t, 1, 0.0) as f32, item_num(d, t, 2, 0.0) as f32 }; }
+		let r = get(d, n, "rotation");
+		if r >= 0 { node.r = linalg::qnorm(linalg::Quat { item_num(d, r, 0, 0.0) as f32, item_num(d, r, 1, 0.0) as f32, item_num(d, r, 2, 0.0) as f32, item_num(d, r, 3, 1.0) as f32 }); }
+		let s = get(d, n, "scale");
+		if s >= 0 { node.s = float3 { item_num(d, s, 0, 1.0) as f32, item_num(d, s, 1, 1.0) as f32, item_num(d, s, 2, 1.0) as f32 }; }
+		let m = get(d, n, "matrix");
+		if m >= 0 && d.nodes[m].count == 16 {
+			var e f32[16] = [0.0; 16];
+			for i in 16 { e[i] = item_num(d, m, i, 0.0) as f32; }
+			node.matrix = linalg::unflat(e);
+			node.has_matrix = true;
+		}
+		let w = get(d, n, "weights");
+		if w >= 0 {
+			for i in d.nodes[w].count { floats.push(item_num(d, w, i, 0.0) as f32); }
+			node.weights.count = d.nodes[w].count;
+		}
+		nodes.push(node);
+	}
+	for k in asset.nodes.count {
+		let ch = nodes[nb + k].children;
+		for i in ch.count { nodes[ints[ch.first + i]].parent = nb + k; }
+	}
+	for n, k in list {
+		let si = whole(d, n, "skin", -1);
+		if si >= 0 { nodes[nb + k].skin = skins.len + si; }
+	}
+
+	// skins
+	asset.skins.first = skins.len;
+	children_of(d, get(d, root, "skins"), list);
+	for s in list {
+		var skin = Skin { joints: Span { ints.len, 0 }, inverse_binds: Span { matrices.len, 0 }, skeleton: -1, name: keep_name(word(d, s, "name")) };
+		let js = get(d, s, "joints");
+		for i in d.nodes[js].count {
+			let j = item_num(d, js, i, 0.0) as int;
+			ints.push(if j >= 0 && j < asset.nodes.count { nb + j } else { nb });
+		}
+		skin.joints.count = ints.len - skin.joints.first;
+		let sk = whole(d, s, "skeleton", -1);
+		if sk >= 0 && sk < asset.nodes.count { skin.skeleton = nb + sk; }
+		let ibm = whole(d, s, "inverseBindMatrices", -1);
+		var raw f32[>..] = [];
+		if ibm >= 0 {
+			let n, width, ok = read_accessor(d, ibm, raw);
+			if !ok || width != 16 || n < skin.joints.count { return fail("gltf: bad inverseBindMatrices accessor"); }
+		}
+		for i in skin.joints.count {
+			if ibm >= 0 {
+				var e f32[16] = [0.0; 16];
+				for c in 16 { e[c] = raw[i * 16 + c]; }
+				matrices.push(linalg::unflat(e));
+			} else {
+				matrices.push(gfx::mat4_identity);
+			}
+		}
+		skin.inverse_binds.count = skin.joints.count;
+		skins.push(skin);
+	}
+	asset.skins.count = skins.len - asset.skins.first;
+
+	// animations
+	asset.animations.first = animations.len;
+	children_of(d, get(d, root, "animations"), list);
+	var clist int[>..] = [];
+	var slist int[>..] = [];
+	for an in list {
+		var anim = Animation { channels: Span { channels.len, 0 }, duration: 0.0, name: keep_name(word(d, an, "name")) };
+		children_of(d, get(d, an, "samplers"), slist);
+		children_of(d, get(d, an, "channels"), clist);
+		for c in clist {
+			let target = get(d, c, "target");
+			let node = whole(d, target, "node", -1);
+			let path = word(d, target, "path");
+			let si = whole(d, c, "sampler", -1);
+			if node < 0 || node >= asset.nodes.count || si < 0 || si >= slist.len { continue; }
+			let kind = if path == "translation" { PATH_T } else if path == "rotation" { PATH_R } else if path == "scale" { PATH_S } else if path == "weights" { PATH_W } else { -1 };
+			if kind < 0 { continue; }
+			let s = slist[si];
+			let how = word(d, s, "interpolation");
+			let interp = if how == "STEP" { STEP_HOLD } else if how == "CUBICSPLINE" { STEP_CUBIC } else { STEP_LINEAR };
+			let t0 = floats.len;
+			let nt, tw, tok = read_accessor(d, whole(d, s, "input", -1), floats);
+			let v0 = floats.len;
+			let nv, vw, vok = read_accessor(d, whole(d, s, "output", -1), floats);
+			if !tok || !vok || tw != 1 || nt == 0 { continue; }
+			let per = if interp == STEP_CUBIC { 3 } else { 1 };
+			let width = if kind == PATH_W { nv * vw / (nt * per) } else { vw };
+			if width <= 0 || nv * vw < nt * per * width { continue; }
+			channels.push(Channel { nb + node, kind, interp, Span { t0, nt }, Span { v0, nv * vw }, width });
+			anim.duration = max(anim.duration, floats[t0 + nt - 1]);
+		}
+		anim.channels.count = channels.len - anim.channels.first;
+		animations.push(anim);
+	}
+	asset.animations.count = animations.len - asset.animations.first;
+
+	// the scene's root nodes
+	asset.roots.first = ints.len;
+	children_of(d, get(d, root, "scenes"), list);
+	if list.len > 0 {
+		let pick = whole(d, root, "scene", 0);
+		let sc = list[clamp(pick, 0, list.len - 1)];
+		let rn = get(d, sc, "nodes");
+		for i in d.nodes[rn].count {
+			let n = item_num(d, rn, i, -1.0) as int;
+			if n >= 0 && n < asset.nodes.count { ints.push(nb + n); }
+		}
+	} else {
+		for k in asset.nodes.count { if nodes[nb + k].parent < 0 { ints.push(nb + k); } }
+	}
+	asset.roots.count = ints.len - asset.roots.first;
+	assets.push(asset);
+	blob.clear();
+	assets.len - 1
+}
+
+// Reads one mesh primitive into the vertex, index and morph pools.
+fn add_primitive(d json::Doc&, p int, mat_base int, mat_count int) bool {
+	let mode = whole(d, p, "mode", 4);
+	if mode < 4 || mode > 6 {
+		skipped_prims[0] += 1;
+		return true;
+	}
+	let attrs = get(d, p, "attributes");
+	var pos f32[>..] = [];
+	let n, pw, pok = read_accessor(d, whole(d, attrs, "POSITION", -1), pos);
+	if !pok || pw != 3 { problem.clear(); problem.append("a primitive has no usable POSITION"); return false; }
+	var nrm f32[>..] = [];
+	var uv0 f32[>..] = [];
+	var uv1 f32[>..] = [];
+	var tan f32[>..] = [];
+	var col f32[>..] = [];
+	var jnt f32[>..] = [];
+	var wgt f32[>..] = [];
+	fn grab(name const byte[:], out f32[>..]&, want int) int {
+		let a = whole(d, attrs, name, -1);
+		if a < 0 { return 0; }
+		let c, w, ok = read_accessor(d, a, out);
+		if !ok || c != n || (want > 0 && w != want) { out.clear(); return 0; }
+		w
+	}
+	let has_n = grab("NORMAL", nrm, 3) == 3;
+	grab("TEXCOORD_0", uv0, 2);
+	grab("TEXCOORD_1", uv1, 2);
+	let has_t = grab("TANGENT", tan, 4) == 4;
+	let cw = grab("COLOR_0", col, 0);
+	let skinned = grab("JOINTS_0", jnt, 4) == 4 && grab("WEIGHTS_0", wgt, 4) == 4;
+
+	// triangle list indices, local to this primitive
+	var tri u32[>..] = [];
+	var raw u32[>..] = [];
+	let ia = whole(d, p, "indices", -1);
+	if ia >= 0 {
+		let c, w, ok = read_accessor(d, ia, raw);
+		if !ok || w != 1 { problem.clear(); problem.append("bad index accessor"); return false; }
+	} else {
+		for i in n { raw.push(i as u32); }
+	}
+	for v in raw { if v as int >= n { problem.clear(); problem.append("an index is out of range"); return false; } }
+	if mode == 4 {
+		for i in raw.len / 3 * 3 { tri.push(raw[i]); }
+	} else if mode == 5 {
+		for i in max(raw.len - 2, 0) {
+			if i % 2 == 0 { tri.push(raw[i]); tri.push(raw[i + 1]); tri.push(raw[i + 2]); }
+			else { tri.push(raw[i + 1]); tri.push(raw[i]); tri.push(raw[i + 2]); }
+		}
+	} else {
+		for i in 1..max(raw.len - 1, 1) { tri.push(raw[0]); tri.push(raw[i]); tri.push(raw[i + 1]); }
+	}
+
+	// without normals every triangle gets its own corners and a face normal
+	let flat = !has_n;
+	var order u32[>..] = [];
+	if flat { order.append(tri[..]); } else { for i in n { order.push(i as u32); } }
+	let vfirst = verts.len / VERTEX_FLOATS;
+	var lo = float3 { 1.0e30, 1.0e30, 1.0e30 };
+	var hi = float3 { -1.0e30, -1.0e30, -1.0e30 };
+	for src, k in order {
+		let s = src as int;
+		let x = pos[s * 3];
+		let y = pos[s * 3 + 1];
+		let z = pos[s * 3 + 2];
+		lo = float3 { min(lo.x, x), min(lo.y, y), min(lo.z, z) };
+		hi = float3 { max(hi.x, x), max(hi.y, y), max(hi.z, z) };
+		verts.append([x, y, z]);
+		if flat {
+			let t = k / 3 * 3;
+			let a = linalg::v3(pos[order[t] as int * 3], pos[order[t] as int * 3 + 1], pos[order[t] as int * 3 + 2]);
+			let b = linalg::v3(pos[order[t + 1] as int * 3], pos[order[t + 1] as int * 3 + 1], pos[order[t + 1] as int * 3 + 2]);
+			let c = linalg::v3(pos[order[t + 2] as int * 3], pos[order[t + 2] as int * 3 + 1], pos[order[t + 2] as int * 3 + 2]);
+			let f = linalg::unit3(linalg::cross3(b - a, c - a));
+			verts.append([f.x, f.y, f.z]);
+		} else {
+			verts.append([nrm[s * 3], nrm[s * 3 + 1], nrm[s * 3 + 2]]);
+		}
+		if uv0.len > 0 { verts.append([uv0[s * 2], uv0[s * 2 + 1]]); } else { verts.append([0.0, 0.0]); }
+		if uv1.len > 0 { verts.append([uv1[s * 2], uv1[s * 2 + 1]]); } else { verts.append([0.0, 0.0]); }
+		if has_t { verts.append([tan[s * 4], tan[s * 4 + 1], tan[s * 4 + 2], if tan[s * 4 + 3] < 0.0 { -1.0 } else { 1.0 }]); }
+		else { verts.append([0.0, 0.0, 0.0, 0.0]); }
+		if cw == 4 { verts.append([col[s * 4], col[s * 4 + 1], col[s * 4 + 2], col[s * 4 + 3]]); }
+		else if cw == 3 { verts.append([col[s * 3], col[s * 3 + 1], col[s * 3 + 2], 1.0]); }
+		else { verts.append([1.0, 1.0, 1.0, 1.0]); }
+		if skinned {
+			verts.append([jnt[s * 4], jnt[s * 4 + 1], jnt[s * 4 + 2], jnt[s * 4 + 3]]);
+			var sum = wgt[s * 4] + wgt[s * 4 + 1] + wgt[s * 4 + 2] + wgt[s * 4 + 3];
+			if sum <= 0.0 { sum = 1.0; }
+			verts.append([wgt[s * 4] / sum, wgt[s * 4 + 1] / sum, wgt[s * 4 + 2] / sum, wgt[s * 4 + 3] / sum]);
+		} else {
+			verts.append([0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0]);
+		}
+	}
+	let ifirst = indices.len;
+	if flat { for k in order.len { indices.push(k as u32); } } else { indices.append(tri[..]); }
+
+	// morph targets: per target, one 8-float delta per emitted vertex
+	let mfirst = morphs.len / MORPH_FLOATS;
+	var targets int[>..] = [];
+	children_of(d, get(d, p, "targets"), targets);
+	var dp f32[>..] = [];
+	var dn f32[>..] = [];
+	for t in targets {
+		dp.clear();
+		dn.clear();
+		let a = whole(d, t, "POSITION", -1);
+		let b = whole(d, t, "NORMAL", -1);
+		if a >= 0 { let c, w, ok = read_accessor(d, a, dp); if !ok || c != n || w != 3 { dp.clear(); } }
+		if b >= 0 { let c, w, ok = read_accessor(d, b, dn); if !ok || c != n || w != 3 { dn.clear(); } }
+		for src in order {
+			let s = src as int;
+			if dp.len > 0 { morphs.append([dp[s * 3], dp[s * 3 + 1], dp[s * 3 + 2], 0.0]); } else { morphs.append([0.0, 0.0, 0.0, 0.0]); }
+			if dn.len > 0 && !flat { morphs.append([dn[s * 3], dn[s * 3 + 1], dn[s * 3 + 2], 0.0]); } else { morphs.append([0.0, 0.0, 0.0, 0.0]); }
+		}
+	}
+	let mi = whole(d, p, "material", -1);
+	prims.push(Primitive {
+		vfirst, order.len, ifirst, indices.len - ifirst,
+		if mi >= 0 && mi < mat_count { mat_base + mi } else { -1 },
+		mfirst, targets.len, lo, hi, has_t, skinned
+	});
+	true
+}
+
+// ---- lookups
+
+fn find_node(asset int, name const byte[:]) int {
+	let a = assets[asset];
+	for k in a.nodes.count { if text_of(nodes[a.nodes.first + k].name) == name { return a.nodes.first + k; } }
+	-1
+}
+
+fn find_animation(asset int, name const byte[:]) int {
+	let a = assets[asset];
+	for k in a.animations.count { if text_of(animations[a.animations.first + k].name) == name { return a.animations.first + k; } }
+	-1
+}
+
+fn default_material() Material {
+	Material {
+		base: float4 { 1.0, 1.0, 1.0, 1.0 }, base_tex: TexRef { -1, 0 }, metallic: 1.0, roughness: 1.0, mr_tex: TexRef { -1, 0 },
+		normal_tex: TexRef { -1, 0 }, normal_scale: 1.0, occlusion_tex: TexRef { -1, 0 }, occlusion_strength: 1.0,
+		emissive: float3 { 0.0, 0.0, 0.0 }, emissive_tex: TexRef { -1, 0 }, alpha_mode: ALPHA_OPAQUE, alpha_cutoff: 0.5,
+		double_sided: false, unlit: false, name: Span { 0, 0 }
+	}
+}

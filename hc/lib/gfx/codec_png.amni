@@ -1,0 +1,151 @@
+// codec_png: PNG decoding to 8-bit RGBA (PNG specification, ISO/IEC 15948).
+// Handles every color type and bit bit_depth, palettes with tRNS, and Adam7 interlacing.
+// 16-bit samples keep their high byte.
+namespace codec_png;
+import gfx.zlib;
+
+fn be32(b const byte[:], o int) int { (b[o] as int) << 24 | (b[o + 1] as int) << 16 | (b[o + 2] as int) << 8 | b[o + 3] as int }
+
+fn is_png(b const byte[:]) bool {
+	b.len >= 8 && b[0] == 137 && b[1] == 'P' && b[2] == 'N' && b[3] == 'G' && b[4] == 13 && b[5] == 10 && b[6] == 26 && b[7] == 10
+}
+
+// Samples per pixel for each PNG colour type (PNG spec 11.2.2); 0 = invalid.
+fn samples_per_pixel(ctype int) int {
+	if ctype == 0 || ctype == 3 { return 1; }
+	if ctype == 4 { return 2; }
+	if ctype == 2 { return 3; }
+	if ctype == 6 { return 4; }
+	0
+}
+
+fn paeth(a int, b int, c int) int {
+	let p = a + b - c;
+	let pa = abs(p - a);
+	let pb = abs(p - b);
+	let pc = abs(p - c);
+	if pa <= pb && pa <= pc { a } else if pb <= pc { b } else { c }
+}
+
+// Reverses the per-row filters of one (sub)image in place; rows start at `at` in raw.
+fn unfilter(raw byte[>..]&, at int, rows int, stride int, bpp int) bool {
+	for y in rows {
+		let row = at + y * (stride + 1);
+		let kind = raw[row] as int;
+		let p = row + 1;
+		let up = p - (stride + 1);
+		for x in stride {
+			let a = if x >= bpp { raw[p + x - bpp] as int } else { 0 };
+			let b = if y > 0 { raw[up + x] as int } else { 0 };
+			let c = if y > 0 && x >= bpp { raw[up + x - bpp] as int } else { 0 };
+			let v = raw[p + x] as int;
+			let r = match kind {
+				0 => v,
+				1 => v + a,
+				2 => v + b,
+				3 => v + (a + b) / 2,
+				4 => v + paeth(a, b, c),
+				_ => -1,
+			};
+			if r < 0 { return false; }
+			raw[p + x] = (r & 255) as byte;
+		}
+	}
+	true
+}
+
+// Decodes a PNG file image; returns width, height, ok. Pixels go to out as RGBA8.
+fn decode(file const byte[:], out byte[>..]&) int, int, bool {
+	if !is_png(file) { return 0, 0, false; }
+	var w = 0; var h = 0; var bit_depth = 0; var ctype = 0; var interlace = 0;
+	var palette byte[1024] = [255; 1024]; // RGBA palette entries
+	var pal_n = 0;
+	var key_r = -1; var key_g = -1; var key_b = -1; // tRNS color key for types 0 and 2
+	var idat byte[>..] = [];
+	var o = 8;
+	while o + 12 <= file.len {
+		let n = be32(file, o);
+		if n < 0 || o + 12 + n > file.len { return 0, 0, false; }
+		let t = file[o + 4..o + 8];
+		let d = file[o + 8..o + 8 + n];
+		if t == "IHDR" {
+			if n < 13 { return 0, 0, false; }
+			w = be32(d, 0); h = be32(d, 4); bit_depth = d[8] as int; ctype = d[9] as int; interlace = d[12] as int;
+		} else if t == "PLTE" {
+			pal_n = n / 3;
+			for i in min(pal_n, 256) { palette[i * 4] = d[i * 3]; palette[i * 4 + 1] = d[i * 3 + 1]; palette[i * 4 + 2] = d[i * 3 + 2]; palette[i * 4 + 3] = 255; }
+		} else if t == "tRNS" {
+			if ctype == 3 { for i in min(n, 256) { palette[i * 4 + 3] = d[i]; } }
+			else if ctype == 0 && n >= 2 { key_r = (d[0] as int) << 8 | d[1] as int; }
+			else if ctype == 2 && n >= 6 { key_r = (d[0] as int) << 8 | d[1] as int; key_g = (d[2] as int) << 8 | d[3] as int; key_b = (d[4] as int) << 8 | d[5] as int; }
+		} else if t == "IDAT" {
+			idat.append(d);
+		} else if t == "IEND" {
+			break;
+		}
+		o += 12 + n;
+	}
+	if w <= 0 || h <= 0 || w > 32768 || h > 32768 { return 0, 0, false; }
+	let chans = samples_per_pixel(ctype);
+	if chans == 0 || (bit_depth != 1 && bit_depth != 2 && bit_depth != 4 && bit_depth != 8 && bit_depth != 16) { return 0, 0, false; }
+	var raw byte[>..] = [];
+	if !zlib::inflate(idat[..], raw) { return 0, 0, false; }
+	let bits_px = chans * bit_depth;
+	let bpp = max(1, bits_px / 8);
+	out.clear();
+	out.resize(w * h * 4, 0 as byte);
+	// one sample of channel ch at pixel x of a row starting at byte r (8-bit scaled, or raw 16-bit)
+	fn sample(r int, x int, ch int) int {
+		if bit_depth == 8 { return raw[r + x * chans + ch] as int; }
+		if bit_depth == 16 { let k = r + (x * chans + ch) * 2; return (raw[k] as int) << 8 | raw[k + 1] as int; }
+		let bit = x * bit_depth; // sub-byte depths have one channel
+		let v = (raw[r + bit / 8] as int >> (8 - bit_depth - bit % 8)) & ((1 << bit_depth) - 1);
+		v
+	}
+	fn to8(v int) int {
+		if bit_depth == 16 { return v >> 8; }
+		if bit_depth == 8 { return v; }
+		v * 255 / ((1 << bit_depth) - 1)
+	}
+	fn put(r int, x int, dx int, dy int) {
+		let q = (dy * w + dx) * 4;
+		if ctype == 3 {
+			let i = sample(r, x, 0);
+			if i >= pal_n { out[q] = 0; out[q + 1] = 0; out[q + 2] = 0; out[q + 3] = 255; return; }
+			for c in 4 { out[q + c] = palette[i * 4 + c]; }
+		} else if ctype == 0 || ctype == 4 {
+			let g = sample(r, x, 0);
+			let v = to8(g) as byte;
+			out[q] = v; out[q + 1] = v; out[q + 2] = v;
+			out[q + 3] = if ctype == 4 { to8(sample(r, x, 1)) as byte } else if g == key_r { 0 } else { 255 };
+		} else {
+			let rr = sample(r, x, 0); let gg = sample(r, x, 1); let bb = sample(r, x, 2);
+			out[q] = to8(rr) as byte; out[q + 1] = to8(gg) as byte; out[q + 2] = to8(bb) as byte;
+			out[q + 3] = if ctype == 6 { to8(sample(r, x, 3)) as byte } else if rr == key_r && gg == key_g && bb == key_b { 0 } else { 255 };
+		}
+	}
+	if interlace == 0 {
+		let stride = (w * bits_px + 7) / 8;
+		if raw.len < h * (stride + 1) { return 0, 0, false; }
+		if !unfilter(raw, 0, h, stride, bpp) { return 0, 0, false; }
+		for y in h { for x in w { put(y * (stride + 1) + 1, x, x, y); } }
+	} else {
+		// Adam7: seven passes over an 8x8 grid
+		let sx = [0, 4, 0, 2, 0, 1, 0];
+		let sy = [0, 0, 4, 0, 2, 0, 1];
+		let dx = [8, 8, 4, 4, 2, 2, 1];
+		let dy = [8, 8, 8, 4, 4, 2, 2];
+		var at = 0;
+		for p in 7 {
+			let pw = (w - sx[p] + dx[p] - 1) / dx[p];
+			let ph = (h - sy[p] + dy[p] - 1) / dy[p];
+			if pw <= 0 || ph <= 0 { continue; }
+			let stride = (pw * bits_px + 7) / 8;
+			if raw.len < at + ph * (stride + 1) { return 0, 0, false; }
+			if !unfilter(raw, at, ph, stride, bpp) { return 0, 0, false; }
+			for y in ph { for x in pw { put(at + y * (stride + 1) + 1, x, sx[p] + x * dx[p], sy[p] + y * dy[p]); } }
+			at += ph * (stride + 1);
+		}
+	}
+	return w, h, true;
+}

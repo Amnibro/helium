@@ -1,0 +1,310 @@
+// codec_jpeg: baseline sequential JPEG decoding to RGBA8 (ITU-T T.81, JFIF color).
+// Huffman-coded 8-bit DCT with any sampling factors and restart intervals; grayscale or YCbCr.
+// Progressive, arithmetic-coded, lossless and CMYK files are reported as not decodable.
+namespace codec_jpeg;
+import math;
+
+struct Table {
+	mincode i32[17],
+	maxcode i32[18],
+	first i32[17],
+	symbols byte[256],
+	ready bool,
+}
+
+// One colour channel of a frame (T.81 B.2.2): sampling factors, table selectors,
+// running DC prediction and where its decoded samples live in `planes`.
+struct Channel { ident int, hsamp int, vsamp int, qtable int, dc_table int, ac_table int, dc_prev int, blocks_x int, blocks_y int, offset int }
+
+// zigzag position k -> natural (row-major) coefficient index
+let ZIGZAG = [0, 1, 8, 16, 9, 2, 3, 10, 17, 24, 32, 25, 18, 11, 4, 5, 12, 19, 26, 33, 40, 48, 41, 34, 27, 20, 13, 6, 7, 14, 21, 28,
+	35, 42, 49, 56, 57, 50, 43, 36, 29, 22, 15, 23, 30, 37, 44, 51, 58, 59, 52, 45, 38, 31, 39, 46, 53, 60, 61, 54, 47, 55, 62, 63];
+
+fn is_jpeg(b const byte[:]) bool { b.len >= 3 && b[0] == 0xFF && b[1] == 0xD8 && b[2] == 0xFF }
+
+fn be16(b const byte[:], o int) int { (b[o] as int) << 8 | b[o + 1] as int }
+
+fn make_table(t Table&, counts const byte[:], syms const byte[:]) {
+	var code = 0;
+	var k = 0;
+	for l in 1..17 {
+		let n = counts[l - 1] as int;
+		t.first[l] = k as i32;
+		t.mincode[l] = code as i32;
+		code += n;
+		k += n;
+		t.maxcode[l] = if n > 0 { (code - 1) as i32 } else { -1 };
+		code = code << 1;
+	}
+	t.maxcode[17] = 0x7FFFFFFF;
+	for i in min(syms.len, 256) { t.symbols[i] = syms[i]; }
+	t.ready = true;
+}
+
+// 8x8 inverse DCT basis: BASIS[x * 8 + u] = c(u) / 2 * cos((2x + 1) u pi / 16)
+fn basis() f32[64] {
+	var b f32[64] = [0.0; 64];
+	for x in 8 {
+		for u in 8 {
+			let cu = if u == 0 { 1.0 / sqrt(2.0) } else { 1.0 };
+			b[x * 8 + u] = (cu * 0.5 * cos(((2 * x + 1) * u) as real * PI / 16.0)) as f32;
+		}
+	}
+	b
+}
+
+fn decode(file const byte[:], out byte[>..]&) int, int, bool {
+	if !is_jpeg(file) { return 0, 0, false; }
+	var quant i32[256] = [1; 256];
+	var tables Table[8] = [Table { mincode: [0; 17], maxcode: [-1; 18], first: [0; 17], symbols: [0; 256], ready: false }; 8];
+	var parts Channel[4] = [Channel { 0, 1, 1, 0, 0, 0, 0, 0, 0, 0 }; 4];
+	var nparts = 0;
+	var width = 0;
+	var height = 0;
+	var restart = 0;
+	var peak_h = 1;
+	var peak_v = 1;
+	var planes byte[>..] = [];
+	var mcux = 0;
+	var mcuy = 0;
+	var frame = false;
+	let B = basis();
+	var o = 2;
+	var done = false;
+	while !done && o + 4 <= file.len {
+		if file[o] != 0xFF { o += 1; continue; }
+		let m = file[o + 1] as int;
+		if m == 0xFF { o += 1; continue; }
+		if m == 0xD9 { break; }
+		if m >= 0xD0 && m <= 0xD7 || m == 0x01 { o += 2; continue; }
+		let len = be16(file, o + 2);
+		let seg = o + 4;
+		let end = o + 2 + len;
+		if end > file.len || len < 2 { return 0, 0, false; }
+		if m == 0xDB {
+			var p = seg;
+			while p < end {
+				let pq = (file[p] as int) >> 4;
+				let tq = (file[p] as int) & 3;
+				p += 1;
+				for k in 64 {
+					quant[tq * 64 + k] = if pq == 0 { file[p + k] as i32 } else { be16(file, p + 2 * k) as i32 };
+				}
+				p += if pq == 0 { 64 } else { 128 };
+			}
+		} else if m == 0xC4 {
+			var p = seg;
+			while p + 17 <= end {
+				let tc = (file[p] as int) >> 4;
+				let th = (file[p] as int) & 3;
+				var n = 0;
+				for i in 16 { n += file[p + 1 + i] as int; }
+				if p + 17 + n > end { return 0, 0, false; }
+				make_table(tables[tc * 4 + th], file[p + 1..p + 17], file[p + 17..p + 17 + n]);
+				p += 17 + n;
+			}
+		} else if m == 0xDD {
+			restart = be16(file, seg);
+		} else if m == 0xC0 || m == 0xC1 {
+			if file[seg] != 8 { return 0, 0, false; }
+			height = be16(file, seg + 1);
+			width = be16(file, seg + 3);
+			nparts = file[seg + 5] as int;
+			if nparts != 1 && nparts != 3 || width <= 0 || height <= 0 { return 0, 0, false; }
+			for i in nparts {
+				let q = seg + 6 + i * 3;
+				parts[i] = Channel { file[q] as int, (file[q + 1] as int) >> 4, (file[q + 1] as int) & 15, (file[q + 2] as int) & 3, 0, 0, 0, 0, 0, 0 };
+				if parts[i].hsamp < 1 || parts[i].hsamp > 4 || parts[i].vsamp < 1 || parts[i].vsamp > 4 { return 0, 0, false; }
+				peak_h = max(peak_h, parts[i].hsamp);
+				peak_v = max(peak_v, parts[i].vsamp);
+			}
+			mcux = (width + 8 * peak_h - 1) / (8 * peak_h);
+			mcuy = (height + 8 * peak_v - 1) / (8 * peak_v);
+			var total = 0;
+			for i in nparts {
+				parts[i].blocks_x = mcux * parts[i].hsamp;
+				parts[i].blocks_y = mcuy * parts[i].vsamp;
+				parts[i].offset = total;
+				total += parts[i].blocks_x * parts[i].blocks_y * 64;
+			}
+			planes.resize(total, 0 as byte);
+			frame = true;
+		} else if m >= 0xC2 && m <= 0xCF && m != 0xC4 && m != 0xC8 && m != 0xCC {
+			return 0, 0, false; // progressive, lossless or arithmetic
+		} else if m == 0xDA {
+			if !frame { return 0, 0, false; }
+			let ns = file[seg] as int;
+			var scan int[4] = [0; 4];
+			for i in ns {
+				let id = file[seg + 1 + i * 2] as int;
+				let sel = file[seg + 2 + i * 2] as int;
+				var found = -1;
+				for j in nparts { if parts[j].ident == id { found = j; } }
+				if found < 0 { return 0, 0, false; }
+				parts[found].dc_table = sel >> 4;
+				parts[found].ac_table = sel & 15;
+				parts[found].dc_prev = 0;
+				scan[i] = found;
+			}
+			// entropy-coded segment
+			var p = end;
+			var acc = 0;
+			var nbits = 0;
+			var hit_marker = false;
+			fn bit() int {
+				if nbits == 0 {
+					var b = 0;
+					if hit_marker || p >= file.len { b = 0; }
+					else if file[p] == 0xFF {
+						let nx = if p + 1 < file.len { file[p + 1] as int } else { 0xD9 };
+						if nx == 0 { b = 0xFF; p += 2; }
+						else { hit_marker = true; b = 0; }
+					} else { b = file[p] as int; p += 1; }
+					acc = b;
+					nbits = 8;
+				}
+				nbits -= 1;
+				(acc >> nbits) & 1
+			}
+			fn bits(n int) int { var v = 0; for i in n { v = (v << 1) | bit(); } v }
+			fn extend(v int, n int) int { if n == 0 { 0 } else if v < (1 << (n - 1)) { v - (1 << n) + 1 } else { v } }
+			fn huff(t Table&) int {
+				var code = bit();
+				var l = 1;
+				while l <= 16 && (t.maxcode[l] < 0 || code > t.maxcode[l]) { code = (code << 1) | bit(); l += 1; }
+				if l > 16 { return -1; }
+				t.symbols[t.first[l] + code - t.mincode[l]] as int
+			}
+			var coef f32[64] = [0.0; 64];
+			var tmp f32[64] = [0.0; 64];
+			fn unit(ci int, bx int, by int) bool {
+				let pt .= parts[ci];
+				for i in 64 { coef[i] = 0.0; }
+				let dc .= tables[pt.dc_table];
+				let ac .= tables[4 + pt.ac_table];
+				if !dc.ready || !ac.ready { return false; }
+				let t = huff(dc);
+				if t < 0 || t > 11 { return false; }
+				pt.dc_prev += extend(bits(t), t);
+				let qt = pt.qtable * 64;
+				coef[0] = (pt.dc_prev * quant[qt]) as f32;
+				var k = 1;
+				while k < 64 {
+					let rs = huff(ac);
+					if rs < 0 { return false; }
+					let r = rs >> 4;
+					let s = rs & 15;
+					if s == 0 { if r == 15 { k += 16; continue; } break; }
+					k += r;
+					if k > 63 { return false; }
+					coef[ZIGZAG[k]] = (extend(bits(s), s) * quant[qt + k]) as f32;
+					k += 1;
+				}
+				// separable inverse DCT: columns then rows
+				for x in 8 {
+					for y in 8 {
+						var s f32 = 0.0;
+						for v in 8 { s += B[y * 8 + v] * coef[v * 8 + x]; }
+						tmp[y * 8 + x] = s;
+					}
+				}
+				let row_len = pt.blocks_x * 8;
+				for y in 8 {
+					for x in 8 {
+						var s f32 = 0.0;
+						for u in 8 { s += B[x * 8 + u] * tmp[y * 8 + u]; }
+						let v = clamp((s + 128.5) as int, 0, 255);
+						planes[pt.offset + (by * 8 + y) * row_len + bx * 8 + x] = v as byte;
+					}
+				}
+				true
+			}
+			fn resync() {
+				// byte-align, step over an RSTn marker, reset predictions
+				nbits = 0;
+				hit_marker = false;
+				while p + 1 < file.len && !(file[p] == 0xFF && file[p + 1] >= 0xD0 && file[p + 1] <= 0xD7) { p += 1; }
+				if p + 1 < file.len { p += 2; }
+				for i in nparts { parts[i].dc_prev = 0; }
+			}
+			if ns == 1 {
+				// non-interleaved: blocks cover the component itself
+				let ci = scan[0];
+				let cw = (width * parts[ci].hsamp + 8 * peak_h - 1) / (8 * peak_h);
+				let ch = (height * parts[ci].vsamp + 8 * peak_v - 1) / (8 * peak_v);
+				var count = 0;
+				for by in ch {
+					for bx in cw {
+						if restart > 0 && count > 0 && count % restart == 0 { resync(); }
+						if !unit(ci, bx, by) { return 0, 0, false; }
+						count += 1;
+					}
+				}
+			} else {
+				var count = 0;
+				for my in mcuy {
+					for mx in mcux {
+						if restart > 0 && count > 0 && count % restart == 0 { resync(); }
+						for i in ns {
+							let ci = scan[i];
+							for v in parts[ci].vsamp {
+								for h in parts[ci].hsamp {
+									if !unit(ci, mx * parts[ci].hsamp + h, my * parts[ci].vsamp + v) { return 0, 0, false; }
+								}
+							}
+						}
+						count += 1;
+					}
+				}
+			}
+			// continue after the scan data
+			o = p;
+			while o + 1 < file.len && !(file[o] == 0xFF && file[o + 1] != 0 && (file[o + 1] < 0xD0 || file[o + 1] > 0xD7)) { o += 1; }
+			continue;
+		}
+		o = end;
+	}
+	if !frame { return 0, 0, false; }
+	out.clear();
+	out.resize(width * height * 4, 0 as byte);
+	// full-resolution components are read directly; subsampled ones are interpolated
+	// bilinearly between sample centers
+	fn at(ci int, x int, y int) f32 {
+		let pt = parts[ci];
+		let row = pt.blocks_x * 8;
+		if pt.hsamp == peak_h && pt.vsamp == peak_v { return planes[pt.offset + y * row + x] as f32; }
+		let fx = (x as f32 + 0.5) * pt.hsamp as f32 / peak_h as f32 - 0.5;
+		let fy = (y as f32 + 0.5) * pt.vsamp as f32 / peak_v as f32 - 0.5;
+		let lastx = (width * pt.hsamp + peak_h - 1) / peak_h - 1;
+		let lasty = (height * pt.vsamp + peak_v - 1) / peak_v - 1;
+		let x0 = clamp(floor(fx) as int, 0, lastx);
+		let y0 = clamp(floor(fy) as int, 0, lasty);
+		let x1 = min(x0 + 1, lastx);
+		let y1 = min(y0 + 1, lasty);
+		let tx = clamp(fx - x0 as f32, 0.0, 1.0);
+		let ty = clamp(fy - y0 as f32, 0.0, 1.0);
+		let a = planes[pt.offset + y0 * row + x0] as f32;
+		let b = planes[pt.offset + y0 * row + x1] as f32;
+		let c = planes[pt.offset + y1 * row + x0] as f32;
+		let d = planes[pt.offset + y1 * row + x1] as f32;
+		(a + (b - a) * tx) * (1.0 - ty) + (c + (d - c) * tx) * ty
+	}
+	for y in height {
+		for x in width {
+			let q = (y * width + x) * 4;
+			if nparts == 1 {
+				let g = clamp((at(0, x, y) + 0.5) as int, 0, 255) as byte;
+				out[q] = g; out[q + 1] = g; out[q + 2] = g;
+			} else {
+				let yy = at(0, x, y);
+				let cb = at(1, x, y) - 128.0;
+				let cr = at(2, x, y) - 128.0;
+				out[q] = clamp((yy + 1.402 * cr + 0.5) as int, 0, 255) as byte;
+				out[q + 1] = clamp((yy - 0.344136 * cb - 0.714136 * cr + 0.5) as int, 0, 255) as byte;
+				out[q + 2] = clamp((yy + 1.772 * cb + 0.5) as int, 0, 255) as byte;
+			}
+			out[q + 3] = 255;
+		}
+	}
+	return width, height, true;
+}

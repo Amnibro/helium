@@ -1,0 +1,328 @@
+// make_ms_lut: writes hc/lib/gfx/shaders/ms_lut.glsl, a 32 x 32 table of two values of
+// the single-scatter specular lobe in lighting.glsl (GGX D, Smith-Schlick G with
+// k = rough^2 / 2, the same 1e-4 guard in the denominator):
+//   E  directional albedo E(mu, rough) with the Fresnel term set to 1
+//   B  the part of it carried by Schlick's (1 - v.h)^5 term, so that with
+//      F = F0 + (1 - F0) (1 - v.h)^5 the Fresnel-weighted albedo is
+//      E_F(mu, rough) = F0 (E - B) + B  (the scale / bias split)
+// packed as 16-bit unorms into one uint per entry (MS_EB, E low, B high; the shader reads
+// them with unpackUnorm2x16), so the table costs the shader what one float table did.
+// surface.frag divides by E to restore the energy lost to multiple scattering, and
+// weights the diffuse lobe by 1 - ms E_F, the energy the compensated specular lobe does
+// not reflect (the directional-albedo coupling described by Fdez-Aguera 2019, "A
+// Multiple-Scattering Microfacet Model for Real-Time Image-based Lighting").
+//
+//   HC_LIB=hc/lib build/hcn run hc/test/gfx/tools/make_ms_lut.amni > hc/lib/gfx/shaders/ms_lut.glsl
+//
+// Integration: for every table entry, S x S stratified half vectors drawn from the GGX
+// distribution of normals (pdf D(h) n.h), mapped to light directions (pdf / 4 v.h). The
+// polar stratum s is graded, u1 = 1 - (1 - s)^3 (weight 3 (1 - s)^2), which puts more
+// samples on half vectors far from the normal: near grazing those are the only ones
+// that give a light above the horizon, and with uniform strata the nodes at
+// sqrt(n.v) = 1/31 .. 5/31 were off by up to a few % (N4 of Lulu's review).
+// The table is N x N over sqrt(mu) (mu = n.v) in [0, 1] and rough in [0, 1].
+//
+// Self-checks on stderr (tools/hc/gfxtest.sh gates the "make_ms_lut: ... PASS" lines):
+//   0. every stored (16-bit) node against albedo_ref(), an independent integrator with a
+//      different scheme (polar angle through tan(theta_h) = alpha tan(pi s / 2), D
+//      evaluated explicitly, azimuth by a midpoint rule over the analytic interval
+//      where the light is above the horizon): E and the dielectric E_F within
+//      REF_REL_BAR relative, B within REF_B_BAR;
+//   1. bilinear lookup of the 16-bit table against a direct integration at every cell centre, for E and for
+//      a dielectric's E_F (F0 = 0.04), split into the main region and the grazing
+//      corner (mu < 0.01 or rough < 0.03) that the older check skipped;
+//   2. the grazing corner of the shading itself: on a 4x finer grid over mu in
+//      (0, 0.36] and rough in [0.03, 0.3] (the shader clamps rough to >= 0.03), the
+//      compensated directional albedo the shader produces for a white metal
+//      (ms E with ms = 1 / max(E_lut, MS_FLOOR)) and a white dielectric
+//      (ms E_F + 1 - ms E_F_lut), against 1, in three bands of mu, with E and B from
+//      albedo_ref() and the shader's silhouette cap (ms_e() in surface.frag). The sun-sweep
+//      furnace in gfx_smoke cannot resolve these narrow lobes, so this is the bound on
+//      smooth-metal boost there; it prints PASS or FAIL against the bars below.
+import os;
+import math;
+
+let N = 32;
+let S = 256;
+let PI = 3.14159265358979;
+// keep in step with ms_factor() in surface.frag
+let MS_FLOOR = 0.25;
+// bars for check 2: every term under 3 % for mu >= 0.01 (n.v >= 0.01, within 0.6 degrees
+// of grazing); below that the bilinear table cannot follow E (its first column step is
+// mu 0.001, where the 1e-4 guard switches the lobe off) and only the gain is bounded
+// (GRAZE_CORNER_GAIN_CAP below; it was 6 % without the corner cap). The loss there is
+// printed: the 1e-4 guard in light_term removes the lobe at n.v -> 0 and the table
+// cannot restore it.
+let GRAZE_BAR = 0.03;
+
+// N4, pre-registered: check 0, the stored nodes against the independent integrator
+let REF_REL_BAR = 0.0025;
+let REF_B_BAR = 0.001;
+// N4, pre-registered: gain bar below mu 0.01 with the shader's corner cap (was 0.06)
+let GRAZE_CORNER_GAIN_CAP = 0.03;
+// the shader's silhouette cap (ms_e() in surface.frag): below sqrt(n.v) (N - 1) < CAP_X the
+// compensation reads the largest E of the four corners; lookup() does that when CAP_ON
+let CAP_X = 3.0;
+var CAP_ON = false;
+
+// E and B of the lobe at (mu, rough), see the header
+fn albedo(mu real, rough real) real, real {
+	let n_v = max(mu, 0.0001);
+	let vx = sqrt(max(1.0 - n_v * n_v, 0.0));
+	let vz = n_v;
+	let a = max(rough * rough, 0.002);
+	let k = rough * rough * 0.5;
+	var sum real = 0.0;
+	var bias real = 0.0;
+	for i in S {
+		for j in S {
+			let s1 = (i as real + 0.5) / S as real;
+			let u1 = 1.0 - (1.0 - s1) * (1.0 - s1) * (1.0 - s1);
+			let u2 = (j as real + 0.5) / S as real;
+			let t2 = a * a * u1 / (1.0 - u1);
+			let ch = 1.0 / sqrt(1.0 + t2);
+			let sh = sqrt(max(1.0 - ch * ch, 0.0));
+			let ph = 2.0 * PI * u2;
+			let hx = sh * cos(ph);
+			let hy = sh * sin(ph);
+			let hz = ch;
+			let v_h = vx * hx + vz * hz;
+			if v_h <= 0.0 { continue; }
+			let grade = 3.0 * (1.0 - s1) * (1.0 - s1);
+			let lz = 2.0 * v_h * hz - vz;
+			if lz <= 0.0 { continue; }
+			let _ = hy;
+			let g = (lz / (lz * (1.0 - k) + k)) * (n_v / (n_v * (1.0 - k) + k));
+			// f * n.l / pdf with f = D G / (4 n.l n.v + 1e-4) and pdf = D n.h / (4 v.h)
+			let w = grade * g * lz * 4.0 * v_h / ((4.0 * lz * n_v + 0.0001) * hz);
+			sum += w;
+			let m = 1.0 - v_h;
+			let m2 = m * m;
+			bias += w * (m2 * m2 * m);
+		}
+	}
+	return sum / (S * S) as real, bias / (S * S) as real;
+}
+
+// The independent integrator of check 0 (see the header): theta_h = atan(alpha tan(pi s / 2))
+// with s at NU midpoints (dense where D is large at any roughness), phi_h by NP midpoints over
+// [0, phi0], phi0 the analytic edge of the region where l is above the horizon (mirror
+// symmetric, so doubled), and the integrand D G / (4 n.l n.v + 1e-4) n.l 4 v.h sin(theta_h)
+// written out, with no importance-sampling weights.
+fn albedo_ref(mu real, rough real) real, real {
+	let NU = 2048;
+	let NP = 48;
+	let n_v = max(mu, 0.0001);
+	let vx = sqrt(max(1.0 - n_v * n_v, 0.0));
+	let vz = n_v;
+	let a = max(rough * rough, 0.002);
+	let k = rough * rough * 0.5;
+	var sum real = 0.0;
+	var bias real = 0.0;
+	for i in NU {
+		let s = (i as real + 0.5) / NU as real;
+		let tq = tan(PI * s / 2.0);
+		let t = a * tq;
+		let th = atan(t);
+		let dth = a * (PI / 2.0) * (1.0 + tq * tq) / (1.0 + t * t);
+		let ch = cos(th);
+		let sh = sin(th);
+		let dd = ch * ch * (a * a - 1.0) + 1.0;
+		let d = a * a / (PI * dd * dd);
+		// l.z = 2 (v.h) h.z - v.z > 0  <=>  cos(phi) > v.z (1 / (2 h.z) - h.z) / (v.x sin(theta))
+		let c = clamp(vz * (1.0 / (2.0 * ch) - ch) / max(vx * sh, 1e-30), -1.0, 1.0);
+		let phi0 = acos(c);
+		let wrow = 2.0 * (phi0 / NP as real) * sh * dth / NU as real;
+		for j in NP {
+			let ph = (j as real + 0.5) / NP as real * phi0;
+			let v_h = vx * sh * cos(ph) + vz * ch;
+			let lz = 2.0 * v_h * ch - vz;
+			if v_h <= 0.0 || lz <= 0.0 { continue; }
+			let g = (lz / (lz * (1.0 - k) + k)) * (n_v / (n_v * (1.0 - k) + k));
+			let f = d * g / (4.0 * lz * n_v + 0.0001) * lz * 4.0 * v_h * wrow;
+			sum += f;
+			let m = 1.0 - v_h;
+			let m2 = m * m;
+			bias += f * (m2 * m2 * m);
+		}
+	}
+	return sum, bias;
+}
+
+fn fixed5(x real) byte[>..] {
+	var s byte[>..] = [];
+	let n = round(x * 100000.0) as int;
+	if n < 0 { s.append("-"); }
+	let p = abs(n);
+	format(s, p / 100000, ".");
+	let f = p % 100000;
+	var d = 10000;
+	while d > 0 { format(s, (f / d) % 10); d /= 10; }
+	s
+}
+
+fn lookup(t const real[:], mu real, rough real) real {
+	let x = sqrt(clamp(mu, 0.0, 1.0)) * (N - 1) as real;
+	let y = clamp(rough, 0.0, 1.0) * (N - 1) as real;
+	let x0 = min(floor(x) as int, N - 2);
+	let y0 = min(floor(y) as int, N - 2);
+	let fx = x - x0 as real;
+	let fy = y - y0 as real;
+	if CAP_ON && x < CAP_X {
+		return max(max(t[y0 * N + x0], t[y0 * N + x0 + 1]), max(t[(y0 + 1) * N + x0], t[(y0 + 1) * N + x0 + 1]));
+	}
+	let a = t[y0 * N + x0] * (1.0 - fx) + t[y0 * N + x0 + 1] * fx;
+	let b = t[(y0 + 1) * N + x0] * (1.0 - fx) + t[(y0 + 1) * N + x0 + 1] * fx;
+	a * (1.0 - fy) + b * fy
+}
+
+// x in [0, 1] as a 16-bit unorm, and back the way unpackUnorm2x16 reads it
+fn q16(x real) int { round(clamp(x, 0.0, 1.0) * 65535.0) as int }
+fn dq16(q int) real { q as real / 65535.0 }
+
+fn table(name const byte[:], e const real[:], b const real[:]) {
+	print("const uint ", name, "[", N * N, "] = uint[](");
+	for r in N {
+		var line byte[>..] = [];
+		line.append("\t");
+		for m in N {
+			let i = r * N + m;
+			format(line, q16(e[i]) + 65536 * q16(b[i]), "u");
+			if r < N - 1 || m < N - 1 { line.append(","); }
+			if m < N - 1 { line.append(" "); }
+		}
+		print(line[..]);
+	}
+	print(");");
+}
+
+fn say(msg const byte[:]) { var s byte[>..] = []; s.append(msg); s.append("\n"); write_stderr(s[..]); }
+
+fn main() {
+	var t real[>..] = [];
+	var tb real[>..] = [];
+	for r in N {
+		for m in N {
+			let x = m as real / (N - 1) as real;
+			let e, b = albedo(x * x, r as real / (N - 1) as real);
+			t.push(e);
+			tb.push(b);
+		}
+	}
+	print("// Generated by hc/test/gfx/tools/make_ms_lut.amni; do not edit.");
+	print("// Single-scatter GGX specular lobe of lighting.glsl, ", N, " x ", N, ", row = rough (0..1),");
+	print("// column = sqrt(mu = n.v) (0..1). unpackUnorm2x16(MS_EB[i]) = (E, B): E the directional");
+	print("// albedo with Fresnel = 1, B the part of E weighted by Schlick's (1 - v.h)^5, so the");
+	print("// Fresnel-weighted albedo for a given F0 is F0 * (E - B) + B.");
+	print("const int MS_N = ", N, ";");
+	table("MS_EB", t[..], tb[..]);
+	// the checks below read the table as the shader does: 16-bit values
+	var raw real[>..] = [];
+	for v in t { raw.push(v); }
+	for i in N * N { t[i] = dq16(q16(t[i])); tb[i] = dq16(q16(tb[i])); }
+
+	// 0. the stored nodes against the independent integrator
+	var r_e real = 0.0; var r_f real = 0.0; var r_b real = 0.0;
+	var r_em real = 0.0; var r_er real = 0.0; var r_fm real = 0.0; var r_fr real = 0.0;
+	for r in N {
+		for m in N {
+			let x = m as real / (N - 1) as real;
+			let mu = x * x;
+			let ro = r as real / (N - 1) as real;
+			let e, b = albedo_ref(mu, ro);
+			let i = r * N + m;
+			let er = abs(t[i] - e) / e;
+			let ef = 0.04 * (e - b) + b;
+			let fr = abs(0.04 * (t[i] - tb[i]) + tb[i] - ef) / ef;
+			if er > r_e { r_e = er; r_em = mu; r_er = ro; }
+			if fr > r_f { r_f = fr; r_fm = mu; r_fr = ro; }
+			r_b = max(r_b, abs(tb[i] - b));
+		}
+	}
+	let ok0 = r_e < REF_REL_BAR && r_f < REF_REL_BAR && r_b < REF_B_BAR;
+	var msg0 byte[>..] = [];
+	format(msg0, "make_ms_lut: nodes vs independent integrator (", N * N, " nodes, 16-bit): E ", fixed5(r_e * 100.0)[..], " % (mu ", fixed5(r_em)[..], " rough ", fixed5(r_er)[..], "), dielectric E_F ", fixed5(r_f * 100.0)[..], " % (mu ", fixed5(r_fm)[..], " rough ", fixed5(r_fr)[..], "), B abs ", fixed5(r_b)[..], "; bars ", fixed5(REF_REL_BAR * 100.0)[..], " % and ", fixed5(REF_B_BAR)[..], " ", if ok0 { "PASS" } else { "FAIL" });
+	say(msg0[..]);
+
+	// 1. cell centres
+	var w_e real = 0.0; var w_em real = 0.0; var w_er real = 0.0;
+	var w_f real = 0.0; var w_fm real = 0.0; var w_fr real = 0.0;
+	var g_e real = 0.0; var g_em real = 0.0; var g_er real = 0.0;
+	var g_f real = 0.0; var g_fm real = 0.0; var g_fr real = 0.0;
+	for r in N - 1 {
+		for m in N - 1 {
+			let xm = (m as real + 0.5) / (N - 1) as real;
+			let mu = xm * xm;
+			let ro = (r as real + 0.5) / (N - 1) as real;
+			let e, b = albedo(mu, ro);
+			let le = lookup(t[..], mu, ro);
+			let lb = lookup(tb[..], mu, ro);
+			let er = abs(le - e) / e;
+			let ef = 0.04 * (e - b) + b;
+			let fr = abs(0.04 * (le - lb) + lb - ef) / ef;
+			if ro < 0.03 || mu < 0.01 {
+				if er > g_e { g_e = er; g_em = mu; g_er = ro; }
+				if fr > g_f { g_f = fr; g_fm = mu; g_fr = ro; }
+			} else {
+				if er > w_e { w_e = er; w_em = mu; w_er = ro; }
+				if fr > w_f { w_f = fr; w_fm = mu; w_fr = ro; }
+			}
+		}
+	}
+	var lo real = 2.0;
+	for v in raw { lo = min(lo, v); }
+	var msg byte[>..] = [];
+	format(msg, "make_ms_lut: min E ", fixed5(lo)[..], "; worst bilinear relative error at cell centres, main region (mu >= 0.01, rough >= 0.03): E ", fixed5(w_e * 100.0)[..], " % at mu ", fixed5(w_em)[..], " rough ", fixed5(w_er)[..], ", dielectric E_F ", fixed5(w_f * 100.0)[..], " % at mu ", fixed5(w_fm)[..], " rough ", fixed5(w_fr)[..]);
+	say(msg[..]);
+	msg.clear();
+	format(msg, "make_ms_lut: grazing corner cell centres (mu < 0.01 or rough < 0.03): E ", fixed5(g_e * 100.0)[..], " % at mu ", fixed5(g_em)[..], " rough ", fixed5(g_er)[..], ", dielectric E_F ", fixed5(g_f * 100.0)[..], " % at mu ", fixed5(g_fm)[..], " rough ", fixed5(g_fr)[..]);
+	say(msg[..]);
+
+	// 2. compensated shading in the grazing corner, in three bands of mu
+	let Q = 4 * (N - 1);
+	let BANDS = 3;
+	var mg real[>..] = []; var ml real[>..] = []; var dg real[>..] = []; var dl real[>..] = [];
+	var at_mu real[>..] = []; var at_r real[>..] = [];
+	var boost real = 0.0;
+	var pts = 0;
+	for i in 4 * BANDS { mg.push(0.0); ml.push(0.0); dg.push(0.0); dl.push(0.0); at_mu.push(0.0); at_r.push(0.0); }
+	for ri in 3..38 {
+		let ro = if ri == 3 { 0.03 } else { ri as real / Q as real };
+		for mi in 1..75 {
+			let xm = mi as real / Q as real;
+			let mu = xm * xm;
+			let band = if mu >= 0.05 { 0 } else if mu >= 0.01 { 1 } else { 2 };
+			let e, b = albedo_ref(mu, ro);
+			CAP_ON = true;
+			let le = max(lookup(t[..], mu, ro), MS_FLOOR);
+			CAP_ON = false;
+			let lb = lookup(tb[..], mu, ro);
+			// white metal: F0 = 1, ms = 1 + (1 / E - 1)
+			let ms_m = 1.0 / le;
+			boost = max(boost, ms_m);
+			let am = ms_m * e - 1.0;
+			// white dielectric: F0 = 0.04, albedo 1, diffuse weighted by 1 - ms E_F_lut
+			let ms_d = 1.0 + 0.04 * (1.0 / le - 1.0);
+			let lef = 0.04 * (lookup(t[..], mu, ro) - lb) + lb;
+			let ad = ms_d * (0.04 * (e - b) + b) + max(1.0 - ms_d * lef, 0.0) - 1.0;
+			let k = band * 4;
+			if am > mg[band] { mg[band] = am; at_mu[k] = mu; at_r[k] = ro; }
+			if -am > ml[band] { ml[band] = -am; at_mu[k + 1] = mu; at_r[k + 1] = ro; }
+			if ad > dg[band] { dg[band] = ad; at_mu[k + 2] = mu; at_r[k + 2] = ro; }
+			if -ad > dl[band] { dl[band] = -ad; at_mu[k + 3] = mu; at_r[k + 3] = ro; }
+			pts += 1;
+		}
+	}
+	for band in BANDS {
+		let name = if band == 0 { "mu 0.05..0.36" } else if band == 1 { "mu 0.01..0.05" } else { "mu 0.00007..0.01" };
+		let k = band * 4;
+		msg.clear();
+		format(msg, "make_ms_lut: grazing compensation ", name, ", rough 0.03..0.3: white metal gain ", fixed5(mg[band] * 100.0)[..], " % (mu ", fixed5(at_mu[k])[..], " rough ", fixed5(at_r[k])[..], ") loss ", fixed5(ml[band] * 100.0)[..], " % (mu ", fixed5(at_mu[k + 1])[..], " rough ", fixed5(at_r[k + 1])[..], "); white dielectric gain ", fixed5(dg[band] * 100.0)[..], " % (mu ", fixed5(at_mu[k + 2])[..], " rough ", fixed5(at_r[k + 2])[..], ") loss ", fixed5(dl[band] * 100.0)[..], " % (mu ", fixed5(at_mu[k + 3])[..], " rough ", fixed5(at_r[k + 3])[..], ")");
+		say(msg[..]);
+	}
+	var ok = ok0 && mg[2] < GRAZE_CORNER_GAIN_CAP && dg[2] < GRAZE_CORNER_GAIN_CAP;
+	for band in 2 { ok = ok && mg[band] < GRAZE_BAR && ml[band] < GRAZE_BAR && dg[band] < GRAZE_BAR && dl[band] < GRAZE_BAR; }
+	msg.clear();
+	format(msg, "make_ms_lut: grazing compensation: ", pts, " points, E floor ", fixed5(MS_FLOOR)[..], ", largest ms ", fixed5(boost)[..], "; bars: all < ", fixed5(GRAZE_BAR * 100.0)[..], " % for mu >= 0.01, gain < ", fixed5(GRAZE_CORNER_GAIN_CAP * 100.0)[..], " % below (corner cap below sqrt(mu) 31 < ", fixed5(CAP_X)[..], "), check 0 ", if ok0 { "pass" } else { "fail" }, " ", if ok { "PASS" } else { "FAIL" });
+	say(msg[..]);
+}

@@ -1,0 +1,2902 @@
+// gfx_smoke: end-to-end checks for hc/lib/gfx (run by tools/hc/gfxtest.sh).
+//
+// No arguments: CPU checks only, deterministic output compared with gfx_smoke.out
+//   (math, inflate + PNG + JPEG decoding, the glTF loader, animation sampling,
+//   procedural shapes, SDF text layout).
+// With an output directory: also renders headless and prints "gpu: ..." lines:
+//   furnace  - white roughness x metal sphere grid lit by a sun swept over the sphere of
+//              directions: per-material directional albedo (should be 1), compensated
+//              and four controls that must fail (single scatter, wrong F, legacy diffuse
+//              weight, x0.9), the same on flat tiles seen at n.v 0.35 .. 0.05 (grazing),
+//              a CPU replay of the shader on the grazing tiles (N3, the LUT from
+//              GFX_MS_LUT) and the ambient pass-through (fp16) check
+//   spheres  - 5x5 metal/roughness grid with shadows, SSAO and bloom off, saved as
+//              spheres.png and compared with the golden given as the second argument;
+//              PSNR must be > 40 dB, and a missing golden fails
+//   default  - the same grid with the shipped look (scene3d's defaults: shadows, SSAO,
+//              bloom on), saved as spheres_default.png and compared with the third
+//              argument's golden (> 40 dB, required), checked for light and contrast; the
+//              effects-off image must fail against it (control)
+//   frame    - floor, skinned + morphed glTF, point light, particles and text with the
+//              shipped look and sun, saved as frame.png and checked for light and contrast
+//   timing   - 1280x720 sphere grid, 30 warmup + 200 frames without readback: wall-clock
+//              and (under tools/hc/gputime) GPU-timestamp min / median / p95 ms, with
+//              the effects off (the recorded baseline), then with the shipped look with
+//              TAA off and on
+//   motion   - motion target vs a CPU projection for a moving sphere and a sliding camera,
+//              and a skinned animation step that moves pixels with placement unchanged
+//   taa      - 60 still frames must settle (frame-to-frame mean abs diff < 0.5/255 over
+//              frames 30-59); a 40-frame camera slide compared with a converged still frame
+//              (pixels off by >24/255 and mean abs error), against the sky (reported) and
+//              against a wall (gated: <= 0.5 % and <= 0.5/255), with the neighbourhood clip
+//              off as a control that must fail and have >= 2x the mean error
+//   jitter   - a sphere's coverage centroid must move by -jitter for all 16 phases
+//   tsr      - 1280x720 rendered, 1920x1080 out: PSNR vs native 1080p; frame and resolve-only
+//              times, 30 warmup + 200 iterations, wall-clock and (under tools/hc/gputime)
+//              GPU-timestamp; the resolve's GPU p95 must be < 0.5 ms (no GPU time: FAIL)
+//   shadows  - sphere grid before a wall, direct light with shadows off and on: the shadow
+//              mask vs a CPU ray-traced reference outside a 2 px band at shadow and object
+//              edges, in three views (near0, near1, far) so that each of cascades 0-2 is
+//              gated somewhere: IoU >= 0.98 per gated (view, cascade); controls that must
+//              fail: shadows off, the map shifted ~5 px, the layer-only build's cycling,
+//              and the sun mirrored in x; the shadow pass's cost at 1280x720
+//   look+taa - with TAA on: the shadow cascades must not move across the 16 jitter
+//              phases (the projection does), and the shadow mask IoU of converged TAA
+//              frames must pass the same 0.98 bar per gated cascade of the far view; the wall scene with the shipped look must
+//              settle (< 0.5/255 as above) and stay within 2/255 mean of the TAA-off
+//              frame (bloom then reads the temporal result); 720p -> 1080p with the
+//              shipped look must settle and keep PSNR >= 30 dB vs native 1080p TAA
+//   ghost    - (T1) bright spheres before a dark wall moving 25 px/frame, (a) the grid and
+//              (b) the camera, and (b) again with the shipped defaults: the error in the
+//              disoccluded band vs converged frames; clip off, gamma 4, zero motion and a
+//              synthetic 1 px trail must fail; T4 silhouettes in the motion target; T8
+//              depth rejection must not raise the band error, nor change a still scene
+//   s5 / s6  - frames in flight with no wait read the right shadow map; a pass on one
+//              layer and mip of an array leaves the others untouched
+// GFX_ONLY=gtao runs only the GTAO checks (A1-A3); any other value runs only the shadow checks.
+// GFX_MAKE_GOLDEN=1 writes both goldens (spheres, shipped look) to the paths given as the
+// second and third arguments and fails; anything but unset, 0 or 1 fails.
+// Image metrics in motion / taa / tsr count non-sky pixels only (geo_mask).
+import os;
+import gfx;
+import math;
+import gfx.linalg;
+import gfx.zlib;
+import gfx.codec_png;
+import gfx.codec_jpeg;
+import gfx.gltf;
+import gfx.motion;
+import gfx.shapes;
+import gfx.sparks;
+import gfx.scene3d;
+import gfx.sdf_font;
+import gfx.cornell;
+
+fn milli(v f32) int { round((v * 1000.0) as real) as int }
+
+fn checksum(b const byte[:]) int {
+	var s = 0;
+	for k in b.len { s = (s * 31 + b[k] as int) % 1000000007; }
+	s
+}
+
+fn cpu_checks() {
+	// math
+	let q = linalg::qaxis(linalg::v3(0.0, 1.0, 0.0), 1.5707963);
+	let p = linalg::qrotate(q, linalg::v3(1.0, 0.0, 0.0));
+	print("qrotate ", milli(p.x), " ", milli(p.y), " ", milli(p.z));
+	let half_turn = linalg::qslerp(linalg::quat_identity(), q, 0.5);
+	print("qslerp w ", milli(half_turn.w));
+	let m = linalg::compose(linalg::v3(1.0, 2.0, 3.0), q, linalg::v3(2.0, 2.0, 2.0));
+	print("inverse ok ", linalg::near_equal(gfx::mul(m, linalg::inverse(m)), gfx::mat4_identity, 0.0001));
+
+	// codecs
+	var png byte[>..] = [];
+	let w, h, ok = codec_png::decode(embed_file("fixtures/palette.png"), png);
+	print("png ", w, "x", h, " ", ok, " sum ", checksum(png[..]));
+	var jpg byte[>..] = [];
+	let jw, jh, jok = codec_jpeg::decode(embed_file("fixtures/photo420.jpg"), jpg);
+	print("jpeg ", jw, "x", jh, " ", jok, " sum ", checksum(jpg[..]));
+	var raw byte[>..] = [];
+	print("inflate stored ", zlib::inflate([0x78 as byte, 0x01, 0x01, 0x03, 0x00, 0xFC, 0xFF, 0x61, 0x62, 0x63, 0x02, 0x4D, 0x01, 0x27], raw), " ", raw[..]);
+
+	// glTF
+	let a = gltf::load_bytes(embed_file("fixtures/scene.glb"), "");
+	if a < 0 { print("gltf FAIL ", gltf::error()); return; }
+	let s = gltf::assets[a];
+	print("gltf meshes ", s.meshes.count, " nodes ", s.nodes.count, " roots ", s.roots.count, " materials ", s.materials.count, " images ", s.images.count, " skins ", s.skins.count, " animations ", s.animations.count, " skipped ", gltf::skipped());
+	for pr in gltf::prims { print("  prim verts ", pr.vcount, " indices ", pr.icount, " targets ", pr.targets, " skinned ", pr.skinned, " tangents ", pr.tangents); }
+	for mt in gltf::materials { print("  material ", gltf::text_of(mt.name), " mode ", mt.alpha_mode, " metal ", milli(mt.metallic), " rough ", milli(mt.roughness), " emissive ", milli(mt.emissive.x), " ", milli(mt.emissive.y), " two-sided ", mt.double_sided); }
+	let im = gltf::images[0];
+	print("  image ", im.width, "x", im.height, " sum ", checksum(gltf::pixels[im.pixels.first..im.pixels.first + im.pixels.count]));
+
+	// animation
+	let anim = gltf::find_animation(a, "wave");
+	motion::rest(a);
+	motion::apply(anim, 1.0, 1.0);
+	motion::update(a, gfx::mat4_identity);
+	let bone = gltf::find_node(a, "bone");
+	let r = motion::pose_r[bone];
+	print("anim rotation ", milli(r.x), " ", milli(r.y), " ", milli(r.z), " ", milli(r.w), " weight ", milli(motion::weight(gltf::find_node(a, "strip"), 0)));
+	var pal gfx::mat4[>..] = [];
+	motion::joints(0, pal);
+	let moved = linalg::point(pal[1], linalg::v3(0.0, 2.0, 0.0));
+	print("anim joint ", milli(moved.x), " ", milli(moved.y), " ", milli(moved.z));
+
+	// shapes
+	let before = gltf::indices.len;
+	let ball = shapes::sphere(1.0, 16, 8, shapes::material(linalg::v3(1.0, 1.0, 1.0), 0.0, 0.5));
+	print("sphere asset ", ball - a, " indices ", gltf::indices.len - before, " verts ", gltf::prims[gltf::prims.len - 1].vcount);
+
+	// text layout
+	var vs TextVtx[>..] = [];
+	sdf_text(vs, 10.0, 20.0, 24.0, "Helium", [255, 255, 255, 255], 0, false);
+	print("text width ", round((sdf_text_w("Helium", 24.0) * 100.0) as real) as int, " verts ", vs.len);
+	gltf::reset();
+}
+
+fn half_to_f32(lo byte, hi byte) f32 {
+	let h = (lo as int) | ((hi as int) << 8);
+	let e = (h >> 10) & 31;
+	let m = h & 1023;
+	let sign f32 = if (h & 0x8000) != 0 { -1.0 } else { 1.0 };
+	if e == 0 { return sign * (m as f32) / 16777216.0; }
+	if e == 31 { return sign * 65504.0; }
+	sign * linalg::f(pow(2.0, (e - 15) as real)) * (1.0 + m as f32 / 1024.0)
+}
+
+fn reset_scene() {
+	s3d::items.clear();
+	s3d::lights.clear();
+	gltf::reset();
+	s3d::forget();
+}
+
+// ---- furnace: energy of the GGX BRDF in a uniform white environment
+//
+// 11 roughness values (0, 0.1 .. 1.0) x metal {0, 1}, all white, in an 11 x 2 grid seen
+// from far away (nearly orthographic). The sun is the only light: it sweeps K directions
+// of a Fibonacci sphere with irradiance 4 pi / K each, shadows, SSAO, bloom and the sky
+// ambient off, and the HDR frames are summed on the CPU. Each pixel then holds the
+// integral of the BRDF times cos over the hemisphere, i.e. its directional albedo, which
+// is 1 for a surface that neither loses nor gains energy. Only pixels inside a sphere
+// (taken from a mask frame and eroded by two pixels so MSAA edges drop out) count.
+//
+// A sphere shows each n.v once per ring, so grazing views are a thin rim. The grazing
+// test adds flat tiles tilted so that the camera sees them at n.v = 0.35, 0.2, 0.1 and
+// 0.05 (per-pixel n.v read back from debug view 8), for both metal values and the same
+// 11 roughness values, and holds them to the same per-pixel bar.
+//
+// Controls that must fail with the same verdict: compensation off (single scatter),
+// F0 = 1 for dielectrics in the specular lobe only (wrong F), the older per-light
+// 1 - F(v.h) diffuse weight (legacy diffuse) and the direct light scaled by 0.9.
+let FN_COLS = 11;
+let FN_CELL = 68;
+let FN_W = 748;      // FN_COLS * FN_CELL
+let FN_H = 136;      // 2 * FN_CELL
+// A sun direction stands for a cone of about sqrt(4 pi / K) radians. Lobes narrower than
+// that (low roughness) are point-sampled, so their pixels are noisy and the sphere mean
+// is biased; only roughness >= FN_RESOLVED is gated, the rest is printed as unresolved.
+let FN_RESOLVED = 3;            // in tenths
+// Bars: material (tile) mean |albedo - 1| < FN_BAR, and every pixel |albedo - 1| < FN_PX
+// (gain and loss alike) on the spheres and the grazing tiles. Set just above the worst
+// case measured on the RX 9060 XT at 08016bc (results/2026-11-01_*): mean 1.37 % and
+// pixel 1.88 %, both the white metal at rough 0.3, n.v 0.05, where the grazing sweep is
+// still not converged (a CPU replay converges to +0.9 %); every other resolved tile and
+// sphere stays under 0.5 %. The older 5 % mean / 8 % pixel bars passed the legacy
+// diffuse weight on the spheres (2.61 % mean, 7.01 % pixel).
+let FN_BAR f32 = 0.015;
+let FN_PX f32 = 0.025;
+let GZ_ROWS = 8;
+let GZ_CELL = 48;
+let GZ_W = 528;      // FN_COLS * GZ_CELL
+let GZ_H = 384;      // GZ_ROWS * GZ_CELL
+let GZ_D f32 = 200.0;           // camera distance
+// The grazing sweep uses GZ_K_MUL times as many sun directions as the spheres. At n.v 0.05
+// the rough 0.3 lobe is a thin sliver along the horizon, and a CPU replay of the shader
+// over the same Fibonacci directions puts the white metal tile at +10.3 % with 4096
+// directions, +1.4 % with 16384 and +0.9 % with 65536 to 1M (the converged value; the
+// GPU measured +11.7 % mean at 4096), so 4096 measures the sampling, not the shading.
+// N3, pre-registered: GPU grazing tile mean vs the CPU replay over the same directions
+let GZ_REPLAY_BAR real = 0.005;
+let GZ_REPLAY_PX = 64;
+let GZ_K_MUL = 4;
+var FN_WPX real = 0.0;          // worst pixel error of the resolved materials, last sweep
+var FN_LOSS real = 0.0;         // worst pixel loss of the resolved materials, last sweep
+var FN_GAIN real = 0.0;         // worst pixel gain of the resolved materials, last sweep
+
+var HALF f32[>..] = [];
+var MASK int[>..] = [];          // pixel index of every counted pixel
+var MASK_ID int[>..] = [];       // its material (col + 11 * row)
+var MU real[>..] = [];           // its n.v (grazing test)
+var ACC real[>..] = [];
+
+fn half_table() {
+	if HALF.len > 0 { return; }
+	for h in 65536 { HALF.push(half_to_f32((h & 255) as byte, (h >> 8) as byte)); }
+}
+
+fn red(px const byte[:], i int) f32 { HALF[(px[i * 8] as int) | ((px[i * 8 + 1] as int) << 8)] }
+
+fn furnace_look() {
+	s3d::sun.shadows = false;
+	s3d::look.ssao = false;
+	s3d::look.bloom = 0.0;
+}
+
+fn furnace_scene() {
+	reset_scene();
+	for row in 2 {
+		for c in FN_COLS {
+			let rough = c as f32 / 10.0;
+			let ball = shapes::sphere(0.45, 64, 32, shapes::material(linalg::v3(1.0, 1.0, 1.0), row as f32, rough));
+			s3d::place(s3d::add(ball), gfx::translate(float3 { c as f32 - 5.0, 0.5 - row as f32, 0.0 }));
+		}
+	}
+	// half height 1.0 at distance 30 so the grid fills FN_W x FN_H
+	s3d::view = s3d::Camera { eye: float3 { 0.0, 0.0, 30.0 }, target: float3 { 0.0, 0.0, 0.0 }, up: float3 { 0.0, 1.0, 0.0 }, fov_y: 0.0666419, near: 20.0, far: 40.0 };
+	furnace_look();
+}
+
+// grazing tiles: row r (0 at the top) has metal r / 4 and target n.v gz_mu(r), so the
+// two n.v = 0.05 rows sit next to each other in the middle of the frame
+fn gz_mu(row int) real {
+	let k = if row < 4 { row } else { 7 - row };
+	if k == 0 { 0.35 } else if k == 1 { 0.2 } else if k == 2 { 0.1 } else { 0.05 }
+}
+
+fn grazing_scene() {
+	reset_scene();
+	for row in GZ_ROWS {
+		for c in FN_COLS {
+			let rough = c as f32 / 10.0;
+			let mu = gz_mu(row);
+			let xc = (c as real - 5.0);
+			let yc = 3.5 - row as real;
+			// view vector at the tile centre, and the tilt about x that gives n.v = mu with
+			// n = (0, cos b, sin b): n.v = rho cos(b - phi)
+			let len = sqrt(xc * xc + yc * yc + (GZ_D * GZ_D) as real);
+			let vy = -yc / len;
+			let vz = GZ_D as real / len;
+			let rho = sqrt(vy * vy + vz * vz);
+			let beta = atan2(vz, vy) - acos(mu / rho);
+			// 0.8 wide, and long enough that it covers half a cell on screen
+			let tile = shapes::plane(0.5, shapes::material(linalg::v3(1.0, 1.0, 1.0), (row / 4) as f32, rough));
+			let m = linalg::compose(float3 { linalg::f(xc), linalg::f(yc), 0.0 }, linalg::qaxis(float3 { 1.0, 0.0, 0.0 }, linalg::f(beta)), float3 { 0.8, 1.0, linalg::f(0.5 / mu) });
+			s3d::place(s3d::add(tile), m);
+		}
+	}
+	// half height 4.0 at distance GZ_D (nearly orthographic: n.v drifts by about 0.0025 along a tile)
+	s3d::view = s3d::Camera { eye: float3 { 0.0, 0.0, GZ_D }, target: float3 { 0.0, 0.0, 0.0 }, up: float3 { 0.0, 1.0, 0.0 }, fov_y: linalg::f(2.0 * atan2(4.0, GZ_D as real)), near: GZ_D - 15.0, far: GZ_D + 15.0 };
+	furnace_look();
+}
+
+fn sky_of(zenith f32, horizon f32, ambient f32, draw bool) s3d::Sky {
+	s3d::Sky { zenith: float3 { zenith, zenith, zenith }, horizon: float3 { horizon, horizon, horizon }, ground: float3 { zenith, zenith, zenith }, ambient: ambient, draw: draw }
+}
+
+fn furnace_mask(out gfx::Texture, w int, h int, cell int) {
+	// sun off, sky not drawn and cleared to 0, ambient 1: surfaces > 0, background 0
+	s3d::sun.rgb = float3 { 0.0, 0.0, 0.0 };
+	s3d::sky = sky_of(1.0, 0.0, 1.0, false);
+	s3d::render(out);
+	let px = gfx::read_pixels(s3d::hdr_target());
+	MASK.clear();
+	MASK_ID.clear();
+	for y in 2..h - 2 {
+		for x in 2..w - 2 {
+			var inside = true;
+			for dy in 5 { for dx in 5 { if red(px[..], (y + dy - 2) * w + x + dx - 2) <= 0.0 { inside = false; } } }
+			if inside { MASK.push(y * w + x); MASK_ID.push(x / cell + FN_COLS * (y / cell)); }
+		}
+	}
+}
+
+// n.v of every mask pixel, from debug view 8
+fn read_mu(out gfx::Texture) {
+	s3d::debug_view = 8;
+	s3d::render(out);
+	s3d::debug_view = 0;
+	let px = gfx::read_pixels(s3d::hdr_target());
+	MU.clear();
+	for p in MASK { MU.push(red(px[..], p) as real); }
+}
+
+// Ambient pass-through / fp16 check (not a furnace): uniform white sky ambient, sun off.
+// ambient_light() is built to return exactly the environment for a white surface, so this
+// only measures fp16, MSAA and raster error of the ambient path on sphere pixels.
+fn ambient_passthrough(out gfx::Texture) f32 {
+	s3d::sun.rgb = float3 { 0.0, 0.0, 0.0 };
+	s3d::sky = sky_of(1.0, 1.0, 1.0, false);
+	s3d::render(out);
+	let px = gfx::read_pixels(s3d::hdr_target());
+	var worst f32 = 0.0;
+	var total real = 0.0;
+	for p in MASK {
+		let e = abs(red(px[..], p) - 1.0);
+		worst = max(worst, e);
+		total += e as real;
+	}
+	print("gpu: ambient pass-through (fp16 precision, not a furnace) pixels ", MASK.len, " mean error ", round(total / MASK.len as real * 1.0e6) / 1.0e4, " % max ", round((worst * 1.0e6) as real) / 1.0e4, " %");
+	worst
+}
+
+fn pct(x real) real { round(x * 10000.0) / 100.0 }
+fn r4(x real) real { round(x * 10000.0) / 10000.0 }
+
+// sums the K sun directions into ACC
+fn sweep(out gfx::Texture, k int) {
+	s3d::sky = sky_of(0.0, 0.0, 0.0, false);
+	ACC.clear();
+	for i in MASK.len { ACC.push(0.0); }
+	let e = linalg::f((4.0 * 3.14159265358979 / k as real) as real);
+	s3d::sun.rgb = float3 { e, e, e };
+	let golden = 3.14159265358979 * (3.0 - sqrt(5.0));
+	for s in k {
+		let z = 1.0 - (2.0 * s as real + 1.0) / k as real;
+		let r = sqrt(max(1.0 - z * z, 0.0));
+		let ph = golden * s as real;
+		s3d::sun.to_sun = float3 { linalg::f(r * cos(ph)), linalg::f(z), linalg::f(r * sin(ph)) };
+		s3d::render(out);
+		let px = gfx::read_pixels(s3d::hdr_target());
+		for p, i in MASK { ACC[i] += red(px[..], p) as real; }
+	}
+}
+
+// Sets up a furnace variant: "single" (compensation off), "compensated", "wrong-F",
+// "legacy-diffuse" or "x0.9".
+fn variant(kind const byte[:]) {
+	s3d::multiscatter = kind != "single";
+	s3d::furnace_mode = if kind == "wrong-F" { 1 } else if kind == "legacy-diffuse" { 2 } else { 0 };
+	s3d::furnace_scale = if kind == "x0.9" { 0.9 } else { 1.0 };
+}
+
+fn variant_reset() { s3d::multiscatter = true; s3d::furnace_mode = 0; s3d::furnace_scale = 1.0; }
+
+// The verdict for one sweep: every resolved material's mean within FN_BAR and every
+// resolved pixel within FN_PX.
+fn passes(worst_mean real) bool { worst_mean < FN_BAR as real && FN_WPX < FN_PX as real }
+
+// One sphere sweep; prints a table and returns the worst |albedo - 1| of any resolved
+// material's mean.
+fn furnace_sweep(out gfx::Texture, kind const byte[:], k int) real {
+	variant(kind);
+	sweep(out, k);
+	variant_reset();
+	var sum real[>..] = [];
+	var lo real[>..] = [];
+	var hi real[>..] = [];
+	var cnt int[>..] = [];
+	for m in 2 * FN_COLS { sum.push(0.0); lo.push(99.0); hi.push(0.0); cnt.push(0); }
+	for m, i in MASK_ID {
+		let a = ACC[i];
+		sum[m] += a; lo[m] = min(lo[m], a); hi[m] = max(hi[m], a); cnt[m] += 1;
+	}
+	var worst_mean real = 0.0;
+	var worst_px real = 0.0;
+	var all real = 0.0;
+	var r_mean real = 0.0;
+	var r_px real = 0.0;
+	var r_all real = 0.0;
+	var r_n = 0;
+	var r_loss real = 0.0;
+	var r_gain real = 0.0;
+	var d_px real = 0.0;
+	var d_all real = 0.0;
+	var m_px real = 0.0;
+	var m_all real = 0.0;
+	for m in 2 * FN_COLS {
+		let mean = sum[m] / max(cnt[m], 1) as real;
+		let px_err = max(abs(lo[m] - 1.0), abs(hi[m] - 1.0));
+		let resolved = m % FN_COLS >= FN_RESOLVED;
+		if resolved {
+			r_mean = max(r_mean, abs(mean - 1.0)); r_px = max(r_px, px_err); r_all += abs(mean - 1.0); r_n += 1;
+			r_loss = max(r_loss, 1.0 - lo[m]); r_gain = max(r_gain, hi[m] - 1.0);
+			if m / FN_COLS == 0 { d_px = max(d_px, px_err); d_all = max(d_all, abs(mean - 1.0)); } else { m_px = max(m_px, px_err); m_all = max(m_all, abs(mean - 1.0)); }
+		}
+		print("gpu: furnace ", kind, " metal ", m / FN_COLS, " rough ", (m % FN_COLS) as real / 10.0, if resolved { "" } else { " (unresolved)" }, " pixels ", cnt[m], " albedo mean ", r4(mean), " min ", r4(lo[m]), " max ", r4(hi[m]), " | mean error ", pct(abs(mean - 1.0)), " % worst pixel ", pct(px_err), " %");
+		worst_mean = max(worst_mean, abs(mean - 1.0));
+		worst_px = max(worst_px, px_err);
+		all += abs(mean - 1.0);
+	}
+	print("gpu: furnace ", kind, " summary (", k, " sun directions) rough >= 0.", FN_RESOLVED, ": worst material mean error ", pct(r_mean), " %, mean over materials ", pct(r_all / max(r_n, 1) as real), " %, worst pixel ", pct(r_px), " % (gain ", pct(max(r_gain, 0.0)), " %, loss ", pct(max(r_loss, 0.0)), " %); dielectric worst mean ", pct(d_all), " % worst pixel ", pct(d_px), " %; metal worst mean ", pct(m_all), " % worst pixel ", pct(m_px), " %; all roughness incl. unresolved: worst mean ", pct(worst_mean), " %, mean ", pct(all / (2 * FN_COLS) as real), " %, worst pixel ", pct(worst_px), " %");
+	FN_WPX = r_px;
+	FN_LOSS = max(r_loss, 0.0);
+	FN_GAIN = max(r_gain, 0.0);
+	r_mean
+}
+
+// ---- N3: CPU replay of the compensated shader on the grazing tiles (README
+// "Pre-registered bars"): the LUT parsed from ms_lut.glsl, the formulas of surface.frag
+// and lighting.glsl, white material, the same Fibonacci sun directions as sweep()
+var GZ_LUT real[>..] = [];
+var GZ_REPLAY_RAN = false;
+var GZ_REPLAY_OK = false;
+
+fn gz_load_lut() bool {
+	GZ_LUT.clear();
+	var p byte[>..] = [];
+	if !env("GFX_MS_LUT", p) || p.len == 0 { return false; }
+	var s byte[>..] = [];
+	if !read_file(p[..], s) { return false; }
+	var i = 0;
+	while i + 1 < s.len && (s[i] != 93 || s[i + 1] != 40) { i += 1; }     // "](" of "uint[]("
+	var v = 0.0;
+	var digits = false;
+	while i < s.len {
+		let c = s[i] as int;
+		if c >= 48 && c <= 57 { v = v * 10.0 + (c - 48) as real; digits = true; }
+		else {
+			if digits && c == 117 { GZ_LUT.push(v); }
+			v = 0.0;
+			digits = false;
+		}
+		i += 1;
+	}
+	GZ_LUT.len == 1024
+}
+
+// node i: E (low 16 bits) and B (high 16 bits)
+fn gz_node(i int) real, real {
+	let v = GZ_LUT[i];
+	let hi = (v / 65536.0) as int;
+	let lo = v - hi as real * 65536.0;
+	return lo / 65535.0, hi as real / 65535.0;
+}
+
+// bilinear E and B at x = sqrt(n.v) 31, y = rough 31
+fn gz_eb(n_v real, rough real) real, real {
+	let x = sqrt(min(max(n_v, 0.0), 1.0)) * 31.0;
+	let y = min(max(rough, 0.0), 1.0) * 31.0;
+	let x0 = min(x as int, 30);
+	let y0 = min(y as int, 30);
+	let fx = x - x0 as real;
+	let fy = y - y0 as real;
+	let i = y0 * 32 + x0;
+	let e00, b00 = gz_node(i);
+	let e01, b01 = gz_node(i + 1);
+	let e10, b10 = gz_node(i + 32);
+	let e11, b11 = gz_node(i + 33);
+	let ea = e00 + (e01 - e00) * fx;
+	let eb = e10 + (e11 - e10) * fx;
+	let ba = b00 + (b01 - b00) * fx;
+	let bb = b10 + (b11 - b10) * fx;
+	return ea + (eb - ea) * fy, ba + (bb - ba) * fy;
+}
+
+// the E the metal compensation reads: bilinear, or the largest corner below x = 3
+fn gz_ems(n_v real, rough real, e real) real {
+	let x = sqrt(min(max(n_v, 0.0), 1.0)) * 31.0;
+	if x >= 3.0 { return e; }
+	let y = min(max(rough, 0.0), 1.0) * 31.0;
+	let x0 = min(x as int, 30);
+	let y0 = min(y as int, 30);
+	let i = y0 * 32 + x0;
+	let e00, b00 = gz_node(i);
+	let e01, b01 = gz_node(i + 1);
+	let e10, b10 = gz_node(i + 32);
+	let e11, b11 = gz_node(i + 33);
+	let _ = b00 + b01 + b10 + b11;
+	max(max(e00, e01), max(e10, e11))
+}
+
+fn gz_replay(k int, sum const real[:], cnt const int[:]) bool {
+	GZ_REPLAY_RAN = true;
+	if !gz_load_lut() { print("gpu: grazing replay FAILED: GFX_MS_LUT unset or not a 32x32 ms_lut.glsl (tools/hc/gfxtest.sh sets it)"); return false; }
+	let PI_F = 3.14159265;
+	var lx real[>..] = [];
+	var ly real[>..] = [];
+	var lz real[>..] = [];
+	let golden = 3.14159265358979 * (3.0 - sqrt(5.0));
+	for s in k {
+		let z = 1.0 - (2.0 * s as real + 1.0) / k as real;
+		let r = sqrt(max(1.0 - z * z, 0.0));
+		let ph = golden * s as real;
+		let ax = linalg::f(r * cos(ph)) as real;
+		let ay = linalg::f(z) as real;
+		let az = linalg::f(r * sin(ph)) as real;
+		let al = sqrt(ax * ax + ay * ay + az * az);
+		lx.push(ax / al); ly.push(ay / al); lz.push(az / al);
+	}
+	let e = linalg::f(4.0 * 3.14159265358979 / k as real) as real;
+	let fov = linalg::f(2.0 * atan2(4.0, GZ_D as real)) as real;
+	let th = tan(fov * 0.5);
+	let asp = GZ_W as real / GZ_H as real;
+	let ez = GZ_D as real;
+	var ok = true;
+	var worst = 0.0;
+	var dnv = 0.0;
+	var tiles = 0;
+	for m in GZ_ROWS * FN_COLS {
+		let row = m / FN_COLS;
+		let c = m % FN_COLS;
+		if c < FN_RESOLVED { continue; }
+		var idx int[>..] = [];
+		for mm, i in MASK_ID { if mm == m { idx.push(i); } }
+		if idx.len == 0 { ok = false; print("gpu: grazing replay tile ", m, " has no pixels FAIL"); continue; }
+		let np = min(idx.len, GZ_REPLAY_PX);
+		let metal = (row / 4) as real;
+		let rough = max((c as f32 / 10.0) as real, 0.03);
+		let mu = gz_mu(row);
+		let xc = c as real - 5.0;
+		let yc = 3.5 - row as real;
+		let len = sqrt(xc * xc + yc * yc + ez * ez);
+		let vy0 = -yc / len;
+		let vz0 = ez / len;
+		let rho = sqrt(vy0 * vy0 + vz0 * vz0);
+		let beta = linalg::f(atan2(vz0, vy0) - acos(mu / rho)) as real;
+		let ny = cos(beta);
+		let nz = sin(beta);
+		let f0 = if metal > 0.5 { 1.0 } else { 0.04 };
+		let albedo = 1.0 - metal;
+		let alpha = max(rough * rough, 0.002);
+		let a2 = alpha * alpha;
+		let kk = rough * rough * 0.5;
+		var gsum = 0.0;
+		var rsum = 0.0;
+		for s in np {
+			let i = idx[(s * idx.len) / np];
+			let p = MASK[i];
+			let px = (p % GZ_W) as real + 0.5;
+			let py = (p / GZ_W) as real + 0.5;
+			let dx = (px / GZ_W as real * 2.0 - 1.0) * th * asp;
+			let dy = (1.0 - py / GZ_H as real * 2.0) * th;
+			let dz = -1.0;
+			let t = (yc * ny - ez * nz) / (dy * ny + dz * nz);
+			let wx = dx * t;
+			let wy = dy * t;
+			let wz = ez + dz * t;
+			var vx = -wx;
+			var vy = -wy;
+			var vz = ez - wz;
+			let vl = sqrt(vx * vx + vy * vy + vz * vz);
+			vx /= vl; vy /= vl; vz /= vl;
+			let nv_raw = ny * vy + nz * vz;
+			dnv = max(dnv, abs(nv_raw - MU[i]));
+			let n_v = max(nv_raw, 1.0e-4);
+			let ee, eb = gz_eb(n_v, rough);
+			let ems = gz_ems(n_v, rough, ee);
+			let ms = 1.0 + f0 * (1.0 / max(ems, 0.25) - 1.0);
+			let kd = max(1.0 - ms * (f0 * (ee - eb) + eb), 0.0);
+			let gv = n_v / (n_v * (1.0 - kk) + kk);
+			var acc = 0.0;
+			for s2 in k {
+				let n_l = ny * ly[s2] + nz * lz[s2];
+				if n_l <= 0.0 { continue; }
+				var hx = vx + lx[s2];
+				var hy = vy + ly[s2];
+				var hz = vz + lz[s2];
+				let hl = sqrt(hx * hx + hy * hy + hz * hz);
+				hx /= hl; hy /= hl; hz /= hl;
+				let n_h = max(ny * hy + nz * hz, 0.0);
+				let h_v = max(hx * vx + hy * vy + hz * vz, 0.0);
+				let q = 1.0 - h_v;
+				let f = f0 + (1.0 - f0) * q * q * q * q * q;
+				let tt = n_h * n_h * (a2 - 1.0) + 1.0;
+				let d = a2 / (PI_F * tt * tt);
+				let g = (n_l / (n_l * (1.0 - kk) + kk)) * gv;
+				let spec = ms * f * d * g / (4.0 * n_l * n_v + 1.0e-4);
+				acc += (kd * albedo / PI_F + spec) * e * n_l;
+			}
+			gsum += ACC[i];
+			rsum += acc;
+		}
+		let gm = gsum / np as real;
+		let rm = rsum / np as real;
+		let rel = abs(gm - rm) / max(rm, 1.0e-6);
+		worst = max(worst, rel);
+		tiles += 1;
+		let pass = rel < GZ_REPLAY_BAR;
+		if !pass { ok = false; }
+		print("gpu: grazing replay metal ", row / 4, " n.v ", mu, " rough ", c as real / 10.0, ": ", np, " px, gpu mean ", r4(gm), " (whole tile ", r4(sum[m] / max(cnt[m], 1) as real), "), replay ", r4(rm), ", |gpu - replay| ", r3(rel * 100.0), " % (bar < ", GZ_REPLAY_BAR * 100.0, " %) ", if pass { "PASS" } else { "FAIL" }, "; replay vs 1: ", pct(rm - 1.0), " %");
+	}
+	print("gpu: grazing replay (N3, ", tiles, " tiles with rough >= 0.", FN_RESOLVED, ", ", k, " directions, LUT from GFX_MS_LUT): worst |gpu - replay| ", r3(worst * 100.0), " % (bar < ", GZ_REPLAY_BAR * 100.0, " %); replay n.v vs debug-view n.v max diff ", r4(dnv), " ", if ok { "PASS" } else { "FAIL" });
+	ok
+}
+
+// One grazing sweep; prints a line per tile and a summary, and returns the worst
+// |albedo - 1| of any resolved tile's mean (FN_WPX etc. as for the spheres).
+fn grazing_sweep(out gfx::Texture, kind const byte[:], k int) real {
+	variant(kind);
+	sweep(out, k);
+	variant_reset();
+	let T = GZ_ROWS * FN_COLS;
+	var sum real[>..] = []; var lo real[>..] = []; var hi real[>..] = []; var cnt int[>..] = [];
+	var mlo real[>..] = []; var mhi real[>..] = [];
+	for m in T { sum.push(0.0); lo.push(99.0); hi.push(-99.0); cnt.push(0); mlo.push(2.0); mhi.push(-1.0); }
+	for m, i in MASK_ID {
+		let a = ACC[i];
+		sum[m] += a; lo[m] = min(lo[m], a); hi[m] = max(hi[m], a); cnt[m] += 1;
+		mlo[m] = min(mlo[m], MU[i]); mhi[m] = max(mhi[m], MU[i]);
+	}
+	var r_mean real = 0.0; var r_px real = 0.0; var r_loss real = 0.0; var r_gain real = 0.0;
+	var d_px real = 0.0; var m_px real = 0.0; var d_mean real = 0.0; var m_mean real = 0.0;
+	var u_gain real = 0.0; var u_loss real = 0.0;
+	var g05 real = 0.0;
+	var empty = 0;
+	for m in T {
+		let row = m / FN_COLS;
+		let c = m % FN_COLS;
+		let metal = row / 4;
+		let mean = sum[m] / max(cnt[m], 1) as real;
+		let px_err = max(abs(lo[m] - 1.0), abs(hi[m] - 1.0));
+		let resolved = c >= FN_RESOLVED;
+		if cnt[m] < 100 { empty += 1; }
+		if resolved {
+			r_mean = max(r_mean, abs(mean - 1.0)); r_px = max(r_px, px_err);
+			r_loss = max(r_loss, 1.0 - lo[m]); r_gain = max(r_gain, hi[m] - 1.0);
+			if metal == 0 { d_px = max(d_px, px_err); d_mean = max(d_mean, abs(mean - 1.0)); } else { m_px = max(m_px, px_err); m_mean = max(m_mean, abs(mean - 1.0)); }
+			if gz_mu(row) < 0.06 { g05 = max(g05, px_err); }
+		} else {
+			u_gain = max(u_gain, hi[m] - 1.0); u_loss = max(u_loss, 1.0 - lo[m]);
+		}
+		print("gpu: grazing ", kind, " metal ", metal, " n.v ", gz_mu(row), " rough ", c as real / 10.0, if resolved { "" } else { " (unresolved)" }, " pixels ", cnt[m], " n.v ", r4(mlo[m]), "..", r4(mhi[m]), " albedo mean ", r4(mean), " min ", r4(lo[m]), " max ", r4(hi[m]), " | worst pixel ", pct(px_err), " %");
+	}
+	print("gpu: grazing ", kind, " summary (", k, " sun directions) rough >= 0.", FN_RESOLVED, ": worst tile mean error ", pct(r_mean), " %, worst pixel ", pct(r_px), " % (gain ", pct(max(r_gain, 0.0)), " %, loss ", pct(max(r_loss, 0.0)), " %); dielectric worst mean ", pct(d_mean), " % worst pixel ", pct(d_px), " %; metal worst mean ", pct(m_mean), " % worst pixel ", pct(m_px), " %; n.v 0.05 rows worst pixel ", pct(g05), " %; unresolved (rough < 0.", FN_RESOLVED, ", reported) worst pixel gain ", pct(max(u_gain, 0.0)), " % loss ", pct(max(u_loss, 0.0)), " %; tiles with < 100 pixels ", empty);
+	FN_WPX = if empty > 0 { 99.0 } else { r_px };
+	FN_LOSS = max(r_loss, 0.0);
+	FN_GAIN = max(r_gain, 0.0);
+	if kind == "compensated" { GZ_REPLAY_OK = gz_replay(k, sum[..], cnt[..]); }
+	r_mean
+}
+
+// runs one variant over the current mask; returns whether it passes
+fn furnace_run(out gfx::Texture, grazing bool, kind const byte[:], k int) bool {
+	let w = if grazing { grazing_sweep(out, kind, k) } else { furnace_sweep(out, kind, k) };
+	passes(w)
+}
+
+// The furnace verdict: the compensated BRDF passes on the spheres and on the grazing
+// tiles, and every control fails the same verdict (on the spheres, the tiles or both).
+fn furnace(k int) bool {
+	half_table();
+	let keep_sky = s3d::sky;
+	let keep_sun = s3d::sun;
+	let keep_look = s3d::look;
+	var good = true;
+	var comp_ok bool[>..] = [];
+	let kinds = ["single", "wrong-F", "legacy-diffuse", "x0.9"];
+	var fails bool[>..] = [];       // control i fails on pass p at [p * kinds.len + i]
+	for pass in 2 {
+		let grazing = pass == 1;
+		if grazing { grazing_scene(); } else { furnace_scene(); }
+		let w = if grazing { GZ_W } else { FN_W };
+		let h = if grazing { GZ_H } else { FN_H };
+		s3d::init(w, h);
+		let out = gfx::render_target(w, h, gfx::RGBA8);
+		furnace_mask(out, w, h, if grazing { GZ_CELL } else { FN_CELL });
+		if grazing { read_mu(out); } else if ambient_passthrough(out) >= 0.02 { good = false; }
+		let kk = if grazing { GZ_K_MUL * k } else { k };
+		comp_ok.push(furnace_run(out, grazing, "compensated", kk));
+		for kd in kinds { fails.push(!furnace_run(out, grazing, kd, kk)); }
+		gfx::release(out);
+	}
+	var controls byte[>..] = [];
+	for kd, i in kinds {
+		let sph = fails[i];
+		let gz = fails[kinds.len + i];
+		format(controls, " ", kd, " ", if sph || gz { "FAILS as required" } else { "NOT CAUGHT" }, " (spheres ", if sph { "fail" } else { "pass" }, ", grazing ", if gz { "fail" } else { "pass" }, ");");
+		if !sph && !gz { good = false; }
+	}
+	if !comp_ok[0] || !comp_ok[1] { good = false; }
+	if !GZ_REPLAY_RAN || !GZ_REPLAY_OK { good = false; }
+	print("gpu: furnace verdict (rough >= 0.", FN_RESOLVED, ", bars: material mean < ", pct(FN_BAR as real), " %, every pixel |albedo - 1| < ", pct(FN_PX as real), " %): compensated spheres ", if comp_ok[0] { "PASS" } else { "FAIL" }, ", grazing tiles ", if comp_ok[1] { "PASS" } else { "FAIL" }, ", grazing replay (N3) ", if GZ_REPLAY_RAN && GZ_REPLAY_OK { "PASS" } else { "FAIL" }, "; controls:", controls[..]);
+	s3d::sky = keep_sky;
+	s3d::sun = keep_sun;
+	s3d::look = keep_look;
+	good
+}
+
+// ---- timing helpers
+fn sort_reals(v real[>..]&) {
+	for i in 1..v.len {
+		let x = v[i];
+		var j = i;
+		while j > 0 && v[j - 1] > x { v[j] = v[j - 1]; j -= 1; }
+		v[j] = x;
+	}
+}
+
+// "min a median b p95 c" of v (sorted in place), in milliseconds with 3 decimals
+fn stats(v real[>..]&) byte[>..] {
+	sort_reals(v);
+	var s byte[>..] = [];
+	if v.len == 0 { s.append("no samples"); return s; }
+	let p95 = v[min((v.len * 95 + 99) / 100 - 1, v.len - 1)];
+	let med = if v.len % 2 == 1 { v[v.len / 2] } else { (v[v.len / 2 - 1] + v[v.len / 2]) / 2.0 };
+	format(s, "min ", round(v[0] * 10000.0) / 10000.0, " median ", round(med * 10000.0) / 10000.0, " p95 ", round(p95 * 10000.0) / 10000.0, " ms");
+	s
+}
+
+// GPU nanoseconds of every "submit <n> <ns>" line the gputime layer has written so far
+fn gputime_lines(path const byte[:], ns real[>..]&) {
+	ns.clear();
+	var log byte[>..] = [];
+	if !read_file(path, log) { return; }
+	var i = 0;
+	while i < log.len {
+		var e = i;
+		while e < log.len && log[e] != 10 { e += 1; }
+		if e - i > 7 && log[i] == 115 && log[i + 1] == 117 && log[i + 2] == 98 {
+			// last field is the nanosecond count
+			var k = e;
+			while k > i && log[k - 1] != 32 { k -= 1; }
+			var v = 0;
+			for c in log[k..e] { if c >= 48 && c <= 57 { v = v * 10 + (c as int - 48); } }
+			ns.push(v as real);
+		}
+		i = e + 1;
+	}
+}
+
+fn sphere_grid() {
+	reset_scene();
+	for row in 5 {
+		for c in 5 {
+			let metal = row as f32 / 4.0;
+			let rough = 0.05 + 0.95 * c as f32 / 4.0;
+			let ball = shapes::sphere(0.42, 48, 24, shapes::material(linalg::v3(0.9, 0.55, 0.3), metal, rough));
+			s3d::place(s3d::add(ball), gfx::translate(float3 { (c as f32 - 2.0) * 1.0, (2.0 - row as f32) * 1.0, 0.0 }));
+		}
+	}
+	let floor = shapes::cube(float3 { 3.0, 0.1, 3.0 }, shapes::material(linalg::v3(0.6, 0.6, 0.6), 0.0, 0.8));
+	s3d::place(s3d::add(floor), gfx::translate(float3 { 0.0, -2.7, -1.0 }));
+	s3d::view = s3d::Camera { eye: float3 { 0.0, 0.3, 7.5 }, target: float3 { 0.0, 0.0, 0.0 }, up: float3 { 0.0, 1.0, 0.0 }, fov_y: 0.75, near: 0.1, far: 60.0 };
+	s3d::sun.to_sun = float3 { 0.5, 0.7, 0.6 };
+	s3d::sun.shadow_far = 20.0;
+	// No shadows, SSAO or bloom: the golden image and the timing baseline were recorded
+	// in this state, which the older furnace() left behind by restoring the look it had
+	// set up itself; furnace() now restores the caller's look, so this sets it here.
+	s3d::sun.shadows = false;
+	s3d::look.ssao = false;
+	s3d::look.bloom = 0.0;
+}
+
+fn psnr(a const byte[:], b const byte[:]) real {
+	if a.len != b.len || a.len == 0 { return 0.0; }
+	var se real = 0.0;
+	var n = 0;
+	for i in a.len {
+		if i % 4 == 3 { continue; }
+		let d = (a[i] as int - b[i] as int) as real;
+		se += d * d;
+		n += 1;
+	}
+	if se == 0.0 { return 99.0; }
+	10.0 * log10(255.0 * 255.0 / (se / n as real))
+}
+
+// Output directory for the PNGs, kept in a global so it outlives every frame's scratch.
+var OUT_DIR byte[>..] = [];
+var GOLDEN byte[>..] = [];
+var GOLDEN_DEF byte[>..] = [];
+// scene3d's shipped look, sun and sky, captured at start before any check edits them
+var DEF_LOOK s3d::Look;
+var DEF_SUN s3d::Sun;
+var DEF_SKY s3d::Sky;
+
+// The shipped look on the current scene: scene3d's default Look, and its shadow
+// settings with the scene's own sun direction and shadow distance.
+fn shipped_look() {
+	s3d::look = DEF_LOOK;
+	s3d::sun.shadows = DEF_SUN.shadows;
+	s3d::sun.map_size = DEF_SUN.map_size;
+}
+
+// PSNR of px against a 480x360 golden PNG; -1 when it is missing or unreadable.
+fn golden_psnr(px const byte[:], file const byte[:]) real {
+	if file.len == 0 { return -1.0; }
+	var want byte[>..] = [];
+	var ref byte[>..] = [];
+	if !read_file(file, want) { return -1.0; }
+	let gw, gh, gok = codec_png::decode(want[..], ref);
+	if !gok || gw != 480 || gh != 360 { return -1.0; }
+	psnr(px, ref[..])
+}
+
+// mean, min and max luma (2r + 5g + b) / 8 of an RGBA8 image
+fn luma_stats(px const byte[:]) int, int, int {
+	var lo = 255;
+	var hi = 0;
+	var sum = 0;
+	for i in px.len / 4 {
+		let l = (px[i * 4] as int * 2 + px[i * 4 + 1] as int * 5 + px[i * 4 + 2] as int) / 8;
+		lo = min(lo, l); hi = max(hi, l); sum += l;
+	}
+	return sum / max(px.len / 4, 1), lo, hi;
+}
+var FURNACE_K = 4096;
+let TIME_WARMUP = 30;
+let TIME_FRAMES = 200;
+fn path(dir const byte[:], name const byte[:]) byte[>..] { let _ = dir; var p byte[>..] = []; p.append(OUT_DIR[..]); p.append("/"); p.append(name); p }
+
+// ---- motion vectors, temporal anti-aliasing and upscaling ----
+
+// p under m as (u, v, w): u, v in [0, 1] with v down, w = clip w
+fn to_uv(m gfx::mat4, p float3) float3 {
+	let x = m.c0.x * p.x + m.c1.x * p.y + m.c2.x * p.z + m.c3.x;
+	let y = m.c0.y * p.x + m.c1.y * p.y + m.c2.y * p.z + m.c3.y;
+	let w = m.c0.w * p.x + m.c1.w * p.y + m.c2.w * p.z + m.c3.w;
+	float3 { 0.5 + 0.5 * x / w, 0.5 - 0.5 * y / w, w }
+}
+// one RGBA16F texel of the motion target
+fn motion_at(px const byte[:], w int, x int, y int) float4 {
+	let i = (y * w + x) * 8;
+	float4 { half_to_f32(px[i], px[i + 1]), half_to_f32(px[i + 2], px[i + 3]), half_to_f32(px[i + 4], px[i + 5]), half_to_f32(px[i + 6], px[i + 7]) }
+}
+fn r2(v real) real { round(v * 100.0) / 100.0 }
+fn r3(v real) real { round(v * 1000.0) / 1000.0 }
+// Image metrics count only the pixels set in a mask (one byte per pixel, from geo_mask):
+// the sky is smooth and identical in every frame, so it would only dilute the numbers.
+
+// 1 where the motion target holds geometry (view depth < 1000; the sky writes 60000),
+// grown by one pixel so silhouette pixels count: the motion target is written at one
+// sample per pixel, so a pixel whose centre sees the sky can still have geometry in some
+// of its MSAA samples
+fn geo_mask(w int, h int) byte[>..] {
+	let mv = gfx::read_pixels(s3d::motion_target());
+	var g byte[>..] = [];
+	for i in w * h {
+		if half_to_f32(mv[i * 8 + 4], mv[i * 8 + 5]) < 1000.0 { g.push(1 as byte); } else { g.push(0 as byte); }
+	}
+	var m byte[>..] = [];
+	for y in h {
+		for x in w {
+			var v = 0;
+			for dy in 3 {
+				for dx in 3 {
+					let xx = x + dx - 1;
+					let yy = y + dy - 1;
+					if xx >= 0 && yy >= 0 && xx < w && yy < h && g[yy * w + xx] != 0 { v = 1; }
+				}
+			}
+			m.push(v as byte);
+		}
+	}
+	m
+}
+fn mask_frac(m const byte[:]) real {
+	var n = 0;
+	for v in m { if v != 0 { n += 1; } }
+	n as real / max(m.len, 1) as real
+}
+// mean absolute difference over the RGB bytes of the masked pixels, in 1/255 steps
+fn mean_abs(a const byte[:], b const byte[:], m const byte[:]) real {
+	if a.len != b.len || a.len == 0 || m.len * 4 != a.len { return 999.0; }
+	var s = 0;
+	var n = 0;
+	for i in m.len {
+		if m[i] == 0 { continue; }
+		for c in 3 { s += abs(a[i * 4 + c] as int - b[i * 4 + c] as int); }
+		n += 3;
+	}
+	s as real / max(n, 1) as real
+}
+// fraction of the masked pixels whose luma differs by more than cut (0..255)
+fn luma_over(a const byte[:], b const byte[:], cut int, m const byte[:]) real {
+	if a.len != b.len || a.len == 0 || m.len * 4 != a.len { return 1.0; }
+	var n = 0;
+	var k = 0;
+	for i in m.len {
+		if m[i] == 0 { continue; }
+		k += 1;
+		let la = (a[i * 4] as int * 2 + a[i * 4 + 1] as int * 5 + a[i * 4 + 2] as int) / 8;
+		let lb = (b[i * 4] as int * 2 + b[i * 4 + 1] as int * 5 + b[i * 4 + 2] as int) / 8;
+		if abs(la - lb) > cut { n += 1; }
+	}
+	n as real / max(k, 1) as real
+}
+// PSNR over the RGB bytes of the masked pixels
+fn psnr_m(a const byte[:], b const byte[:], m const byte[:]) real {
+	if a.len != b.len || a.len == 0 || m.len * 4 != a.len { return 0.0; }
+	var se real = 0.0;
+	var n = 0;
+	for i in m.len {
+		if m[i] == 0 { continue; }
+		for c in 3 { let d = (a[i * 4 + c] as int - b[i * 4 + c] as int) as real; se += d * d; }
+		n += 3;
+	}
+	if n == 0 { return 0.0; }
+	if se == 0.0 { return 99.0; }
+	10.0 * log10(255.0 * 255.0 / (se / n as real))
+}
+// Centroid in pixels of a very bright unlit object (red > 10) in the raw jittered HDR frame,
+// within 60 px of the screen centre. The 4x MSAA resolve averages the object's 1000 with
+// the sky's ~1 by coverage, so this is the coverage centroid. (The motion target, which
+// an older version used, is now written per pixel at one sample: T4.)
+fn bright_centroid(w int, h int) float2 {
+	let px = gfx::read_pixels(s3d::hdr_target());
+	var sx real = 0.0;
+	var sy real = 0.0;
+	var sw real = 0.0;
+	for y in h / 2 - 60..h / 2 + 60 {
+		for x in w / 2 - 60..w / 2 + 60 {
+			let i = (y * w + x) * 8;
+			let f = max(half_to_f32(px[i], px[i + 1]) as real - 10.0, 0.0);
+			sx += f * (x as real + 0.5);
+			sy += f * (y as real + 0.5);
+			sw += f;
+		}
+	}
+	float2 { (sx / max(sw, 1.0)) as f32, (sy / max(sw, 1.0)) as f32 }
+}
+// 2x2 box reduction of an RGBA8 image
+fn half_size(src const byte[:], w int, h int) byte[>..] {
+	var d byte[>..] = [];
+	for y in h / 2 {
+		for x in w / 2 {
+			for c in 4 {
+				let i = ((y * 2) * w + x * 2) * 4 + c;
+				let s = src[i] as int + src[i + 4] as int + src[i + w * 4] as int + src[i + w * 4 + 4] as int;
+				d.push(((s + 2) / 4) as byte);
+			}
+		}
+	}
+	d
+}
+
+// (a) motion vectors: a moving sphere, a panning camera and a skinned animation
+fn motion_checks() bool {
+	var good = true;
+	reset_scene();
+	s3d::temporal = 0;
+	// these frames read the motion target with temporal off
+	s3d::motion_vectors = true;
+	let w = 320;
+	let h = 240;
+	let ball = shapes::sphere(0.5, 48, 24, shapes::material(linalg::v3(0.8, 0.8, 0.8), 0.0, 0.5));
+	let it = s3d::add(ball);
+	s3d::place(it, gfx::translate(float3 { 0.0, 0.0, 0.0 }));
+	s3d::view = s3d::Camera { eye: float3 { 0.0, 0.0, 4.0 }, target: float3 { 0.0, 0.0, 0.0 }, up: float3 { 0.0, 1.0, 0.0 }, fov_y: 0.8, near: 0.1, far: 60.0 };
+	s3d::init(w, h);
+	let out = gfx::render_target(w, h, gfx::RGBA8);
+	s3d::render(out);
+	// object motion: the sphere moves, the camera stays
+	let before = to_uv(s3d::view_proj_nj, float3 { 0.0, 0.0, 0.5 });
+	s3d::place(it, gfx::translate(float3 { 0.15, 0.1, 0.0 }));
+	s3d::render(out);
+	let p = float3 { 0.15, 0.1, 0.5 };
+	let now = to_uv(s3d::view_proj_nj, p);
+	let mv = gfx::read_pixels(s3d::motion_target());
+	let m = motion_at(mv[..], w, (now.x * w as f32) as int, (now.y * h as f32) as int);
+	let ex = (now.x - before.x) * w as f32;
+	let ey = (now.y - before.y) * h as f32;
+	let err = max(abs(m.x * w as f32 - ex), abs(m.y * h as f32 - ey));
+	let bg = motion_at(mv[..], w, 4, 4);
+	let bg_px = max(abs(bg.x * w as f32), abs(bg.y * h as f32));
+	print("gpu: motion object want ", r2(ex as real), ",", r2(ey as real), " px got ", r2((m.x * w as f32) as real), ",", r2((m.y * h as f32) as real), " px (err ", r3(err as real), ") sky ", r3(bg_px as real), " px, depth now ", r3(m.z as real), " last frame ", r3(m.w as real));
+	// the point under the pixel keeps its view depth (it moved in x, y): both depths agree
+	if err > 0.15 || bg_px > 0.01 || abs(m.z - m.w) > 0.02 { good = false; }
+	// camera motion: the camera slides right, the sphere stays (the sky is at infinity: no motion)
+	let prev_vp = s3d::view_proj_nj;
+	s3d::view.eye = float3 { 0.12, 0.0, 4.0 };
+	s3d::view.target = float3 { 0.12, 0.0, 0.0 };
+	s3d::render(out);
+	let a = to_uv(prev_vp, p);
+	let b = to_uv(s3d::view_proj_nj, p);
+	let mv2 = gfx::read_pixels(s3d::motion_target());
+	let m2 = motion_at(mv2[..], w, (b.x * w as f32) as int, (b.y * h as f32) as int);
+	let cx = (b.x - a.x) * w as f32;
+	let cy = (b.y - a.y) * h as f32;
+	let err2 = max(abs(m2.x * w as f32 - cx), abs(m2.y * h as f32 - cy));
+	let bg2 = motion_at(mv2[..], w, 4, 4);
+	let bg2_px = max(abs(bg2.x * w as f32), abs(bg2.y * h as f32));
+	print("gpu: motion camera want ", r2(cx as real), ",", r2(cy as real), " px got ", r2((m2.x * w as f32) as real), ",", r2((m2.y * h as f32) as real), " px (err ", r3(err2 as real), ") sky ", r3(bg2_px as real), " px depth ", r2(m2.z as real), " want ", r2(b.z as real));
+	print("gpu: motion camera depth now ", r3(m2.z as real), " last frame ", r3(m2.w as real));
+	if err2 > 0.15 || bg2_px > 0.01 || abs(m2.z - b.z) > 0.02 || abs(m2.z - m2.w) > 0.02 { good = false; }
+	gfx::release(out);
+
+	// skinned: the placement and the camera stay, only the animation time advances
+	reset_scene();
+	let asset = gltf::load_bytes(embed_file("fixtures/scene.glb"), "");
+	let man = s3d::add(asset);
+	s3d::place(man, gfx::translate(float3 { 0.0, 0.6, 0.0 }));
+	let wave = gltf::find_animation(asset, "wave");
+	s3d::animate(man, wave, 0.5);
+	s3d::view = s3d::Camera { eye: float3 { 1.5, 1.6, 3.5 }, target: float3 { 0.0, 0.6, 0.0 }, up: float3 { 0.0, 1.0, 0.0 }, fov_y: 0.9, near: 0.1, far: 60.0 };
+	s3d::init(w, h);
+	let out2 = gfx::render_target(w, h, gfx::RGBA8);
+	s3d::render(out2);
+	s3d::animate(man, wave, 0.6);
+	s3d::render(out2);
+	let mv3 = gfx::read_pixels(s3d::motion_target());
+	s3d::render(out2);
+	let mv4 = gfx::read_pixels(s3d::motion_target());
+	var moving = 0;
+	var still = 0;
+	var covered = 0;
+	var peak f32 = 0.0;
+	var zdiff = 0;
+	for y in h {
+		for x in w {
+			let q = motion_at(mv3[..], w, x, y);
+			if q.z > 1000.0 { continue; }
+			covered += 1;
+			let d = max(abs(q.x * w as f32), abs(q.y * h as f32));
+			if d > 0.25 { moving += 1; }
+			peak = max(peak, d);
+			let r = motion_at(mv4[..], w, x, y);
+			if max(abs(r.x * w as f32), abs(r.y * h as f32)) > 0.01 { still += 1; }
+			if r.z < 1000.0 && abs(r.z - r.w) > 0.02 { zdiff += 1; }
+		}
+	}
+	print("gpu: motion skinned ", moving, " of ", covered, " pixels moving (peak ", r2(peak as real), " px), ", still, " moving on a repeated pose, ", zdiff, " with depth now != last frame (> 0.02) on it");
+	if moving < 20 || still > 0 || zdiff > 0 { good = false; }
+	gfx::release(out2);
+	if !jitter_check() { good = false; }
+	s3d::motion_vectors = false;
+	good
+}
+
+// Jitter sign: temporal.frag takes input pixel k to be the scene at k + 0.5 + jitter, so a
+// jittered frame must show the image moved by -jitter. A sphere's coverage centroid is
+// measured without jitter and then for all 16 phases (unlit, 1000 bright, in the HDR frame).
+fn jitter_check() bool {
+	reset_scene();
+	let w = 320;
+	let h = 240;
+	var bm = shapes::material(linalg::v3(1000.0, 1000.0, 1000.0), 0.0, 0.5);
+	bm.unlit = true;
+	let ball = shapes::sphere(0.5, 64, 32, bm);
+	s3d::place(s3d::add(ball), gfx::translate(float3 { 0.0, 0.0, 0.0 }));
+	s3d::view = s3d::Camera { eye: float3 { 0.0, 0.0, 4.0 }, target: float3 { 0.0, 0.0, 0.0 }, up: float3 { 0.0, 1.0, 0.0 }, fov_y: 0.8, near: 0.1, far: 60.0 };
+	s3d::temporal = 0;
+	s3d::motion_vectors = true;
+	s3d::init(w, h);
+	let out = gfx::render_target(w, h, gfx::RGBA8);
+	s3d::render(out);
+	let c0 = bright_centroid(w, h);
+	s3d::temporal = 1;
+	var worst f32 = 0.0;
+	var agree = 0;
+	for k in 16 {
+		s3d::render(out);
+		let c = bright_centroid(w, h);
+		let dx = c.x - c0.x;
+		let dy = c.y - c0.y;
+		let jx = s3d::jitter.x;
+		let jy = s3d::jitter.y;
+		worst = max(worst, max(abs(dx + jx), abs(dy + jy)));
+		if dx * jx + dy * jy < 0.0 { agree += 1; }
+		if k == 0 { print("gpu: jitter phase 1: offset ", r3(jx as real), ",", r3(jy as real), " px, image moved ", r3(dx as real), ",", r3(dy as real), " px (want the negative)"); }
+	}
+	print("gpu: jitter 16 phases: image moved by -jitter in ", agree, "/16, worst error ", r3(worst as real), " px");
+	s3d::temporal = 0;
+	s3d::temporal_reset = true;
+	gfx::release(out);
+	agree == 16 && worst < 0.1
+}
+
+// (b) TAA: a still camera must settle, a moving one must not leave trails
+fn taa_checks(dir const byte[:]) bool {
+	var good = true;
+	sphere_grid();
+	// the TAA-off frame's geo_mask reads the motion target
+	s3d::motion_vectors = true;
+	let w = 960;
+	let h = 540;
+	// reference: the same frame rendered at twice the size (4x msaa there too) and box-reduced
+	s3d::temporal = 0;
+	s3d::init(w * 2, h * 2);
+	let big = gfx::render_target(w * 2, h * 2, gfx::RGBA8);
+	s3d::render(big);
+	let big_px = gfx::read_pixels(big);
+	let ref = half_size(big_px[..], w * 2, h * 2);
+	gfx::release(big);
+
+	s3d::init(w, h);
+	let out = gfx::render_target(w, h, gfx::RGBA8);
+	s3d::render(out);
+	let off = gfx::read_pixels(out);
+	let mask = geo_mask(w, h);
+	let p0 = path(dir, "taa_off.png");
+	print("gpu: taa png ", p0[..], " ", gfx::save_png(out, p0[..]));
+
+	s3d::temporal = 1;
+	s3d::temporal_reset = true;
+	var last byte[>..] = [];
+	var worst real = 0.0;
+	var sum real = 0.0;
+	var first real = 0.0;
+	for k in 60 {
+		s3d::render(out);
+		let px = gfx::read_pixels(out);
+		if k > 0 {
+			let d = mean_abs(px[..], last[..], mask[..]);
+			if k == 1 { first = d; }
+			if k >= 30 { worst = max(worst, d); sum += d; }
+		}
+		last.clear();
+		last.append(px[..]);
+	}
+	let p1 = path(dir, "taa_on.png");
+	print("gpu: taa png ", p1[..], " ", gfx::save_png(out, p1[..]));
+	print("gpu: taa still 960x540 (", r2(mask_frac(mask[..]) * 100.0), "% non-sky pixels counted) frame-to-frame mean abs diff frames 30-59: max ", r3(worst), " mean ", r3(sum / 30.0), " /255 (frame 1: ", r3(first), ")");
+	// T6 (pre-registered): TAA must beat no TAA (4x MSAA alone) by T6_GAIN_DB against the
+	// 2x supersampled reference
+	let ps_off = psnr_m(off[..], ref[..], mask[..]);
+	let ps_taa = psnr_m(last[..], ref[..], mask[..]);
+	let t6_ok = ps_taa >= ps_off + T6_GAIN_DB;
+	print("gpu: taa psnr (non-sky) vs 2x supersampled: off (4x msaa) ", r2(ps_off), " dB, taa ", r2(ps_taa), " dB, gain ", r2(ps_taa - ps_off), " dB (bar >= ", r2(T6_GAIN_DB), ")", if t6_ok { " PASS" } else { " FAIL" });
+	if worst >= 0.5 || !t6_ok { good = false; }
+
+	// moving camera: slide sideways for 40 frames (~7 px/frame), then compare with a still,
+	// converged frame from the final pose. The same run with the neighbourhood clip off is
+	// the control. Scene 0 is the grid against the sky: disoccluded pixels there are sky,
+	// which the metric leaves out, so it is reported only. Scene 1 puts a wall behind the
+	// grid, so every disocclusion uncovers geometry; it is gated: ghost fraction (>24/255)
+	// <= 0.5 % and mean abs error <= 0.5/255, and the control must fail one of those and
+	// have at least 2x the mean error. (The no-clip trails are wide but faint, mostly under
+	// 24/255, so the fraction alone does not separate the two; the mean does. These bars
+	// were set after the first wall run: on 0.023 % / 0.286, control 0.061 % / 0.91.)
+	for scene in 2 {
+		if scene == 1 {
+			let wall = shapes::cube(float3 { 9.0, 5.0, 0.1 }, shapes::material(linalg::v3(0.2, 0.3, 0.45), 0.0, 0.7));
+			s3d::place(s3d::add(wall), gfx::translate(float3 { 0.0, 0.0, -1.5 }));
+			s3d::init(w, h);
+		}
+		s3d::temporal = 1;
+		var frac_on real = 0.0;
+		var frac_off real = 0.0;
+		var mad_on real = 0.0;
+		var mad_off real = 0.0;
+		var f8_on real = 0.0;
+		var f8_off real = 0.0;
+		var ref_still byte[>..] = [];
+		var mask_end byte[>..] = [];
+		for pass in 2 {
+			s3d::temporal_gamma = if pass == 0 { 1.25 } else { 0.0 };
+			s3d::temporal_reset = true;
+			for k in 40 {
+				let t = k as f32 / 39.0;
+				s3d::view.eye = float3 { -1.5 + 3.0 * t, 0.3, 7.5 };
+				s3d::view.target = float3 { -0.5 + 1.0 * t, 0.0, 0.0 };
+				s3d::render(out);
+			}
+			let moved = gfx::read_pixels(out);
+			let pm = path(dir, if scene == 0 { if pass == 0 { "taa_moving_sky.png" } else { "taa_moving_sky_noclip.png" } } else { if pass == 0 { "taa_moving.png" } else { "taa_moving_noclip.png" } });
+			print("gpu: taa png ", pm[..], " ", gfx::save_png(out, pm[..]));
+			if pass == 0 {
+				s3d::temporal_reset = true;
+				for k in 48 { s3d::render(out); }
+				ref_still = gfx::read_pixels(out);
+				mask_end = geo_mask(w, h);
+				let pr = path(dir, if scene == 0 { "taa_moving_sky_ref.png" } else { "taa_moving_ref.png" });
+				print("gpu: taa png ", pr[..], " ", gfx::save_png(out, pr[..]));
+			}
+			let f = luma_over(moved[..], ref_still[..], 24, mask_end[..]);
+			let d = mean_abs(moved[..], ref_still[..], mask_end[..]);
+			let f8 = luma_over(moved[..], ref_still[..], 8, mask_end[..]);
+			if pass == 0 { frac_on = f; mad_on = d; f8_on = f8; } else { frac_off = f; mad_off = d; f8_off = f8; }
+		}
+		s3d::temporal_gamma = 1.25;
+		// floor: the aliasing difference between a no-TAA frame and the converged one
+		s3d::temporal = 0;
+		s3d::render(out);
+		let plain = gfx::read_pixels(out);
+		let frac_floor = luma_over(plain[..], ref_still[..], 24, mask_end[..]);
+		let gated = scene == 1;
+		let on_ok = frac_on <= 0.005 && mad_on <= 0.5;
+		let off_fails = frac_off > 0.005 || mad_off > 0.5;
+		let pass_ok = on_ok && off_fails && mad_off >= mad_on * 2.0;
+		print("gpu: taa moving ", if scene == 0 { "grid on sky (reported)" } else { "grid on wall (gated)" }, ", 40 frames, ", r2(mask_frac(mask_end[..]) * 100.0), "% non-sky pixels: ghosts ", r3(frac_on * 100.0), "% pixels off by >24/255 vs converged (mean ", r3(mad_on), "/255); no-clip control ", r3(frac_off * 100.0), "% (mean ", r3(mad_off), "); >8/255: ", r3(f8_on * 100.0), "% vs control ", r3(f8_off * 100.0), "%; no-taa floor ", r3(frac_floor * 100.0), "%", if gated { if pass_ok { " PASS" } else { " FAIL" } } else { "" });
+		if gated && !pass_ok { good = false; }
+	}
+	s3d::motion_vectors = false;
+	gfx::release(out);
+	good
+}
+
+// TIME_WARMUP + TIME_FRAMES iterations of a full frame (render) or of the temporal resolve
+// alone (on the last frame's inputs), each submitted and fenced on its own, no readback.
+// Prints wall-clock and, under the gputime layer, GPU-timestamp min / median / p95.
+// Returns the GPU p95 in ms, or -1 when not measured.
+fn time_loop(label const byte[:], out gfx::Texture, resolve_only bool) real {
+	for k in TIME_WARMUP {
+		if resolve_only { s3d::temporal_repeat(1); } else { s3d::render(out); }
+		gfx::flush();
+	}
+	var log byte[>..] = [];
+	let have_log = env("HELIUM_GPUTIME", log) && log.len > 0;
+	var gpu_ns real[>..] = [];
+	if have_log { gputime_lines(log[..], gpu_ns); }
+	let first = gpu_ns.len;
+	var wall real[>..] = [];
+	for k in TIME_FRAMES {
+		let t = gfx::time();
+		if resolve_only { s3d::temporal_repeat(1); } else { s3d::render(out); }
+		gfx::flush();
+		wall.push((gfx::time() - t) * 1000.0);
+	}
+	print("gpu: tsr timing ", label, ": ", TIME_WARMUP, " warmup + ", TIME_FRAMES, " timed, wall-clock ms ", stats(wall)[..]);
+	if !have_log {
+		print("gpu: tsr timing ", label, ": gpu-timestamp not measured (run under tools/hc/gputime)");
+		return -1.0;
+	}
+	gputime_lines(log[..], gpu_ns);
+	let n = gpu_ns.len - first;
+	if n == 0 || n % TIME_FRAMES != 0 {
+		print("gpu: tsr timing ", label, ": ", n, " submits for ", TIME_FRAMES, " iterations, cannot split");
+		return 1.0e9;
+	}
+	let per = n / TIME_FRAMES;
+	var each real[>..] = [];
+	for f in TIME_FRAMES {
+		var t = 0.0;
+		for j in per { t += gpu_ns[first + f * per + j]; }
+		each.push(t / 1.0e6);
+	}
+	// the p95 is read from the sorted times (stats() sorts too; this does not rely on it)
+	sort_reals(each);
+	let st = stats(each);
+	let p95 = each[min((each.len * 95 + 99) / 100 - 1, each.len - 1)];
+	print("gpu: tsr timing ", label, ": gpu-timestamp ms ", st[..], " (", per, " submit(s) each)");
+	p95
+}
+
+// (c) upscaling: 1280x720 rendered, 1920x1080 out
+fn tsr_checks(dir const byte[:]) bool {
+	var good = true;
+	sphere_grid();
+	let out = gfx::render_target(1920, 1080, gfx::RGBA8);
+	s3d::temporal = 1;
+	s3d::init(1920, 1080);
+	s3d::temporal_reset = true;
+	for k in 32 { s3d::render(out); }
+	let native = gfx::read_pixels(out);
+	let mask = geo_mask(1920, 1080);
+	let pn = path(dir, "tsr_native1080.png");
+	print("gpu: tsr png ", pn[..], " ", gfx::save_png(out, pn[..]));
+	let _ = time_loop("native 1920x1080 taa frame", out, false);
+
+	s3d::init(1280, 720, 1920, 1080);
+	s3d::temporal_reset = true;
+	for k in 32 { s3d::render(out); }
+	let up = gfx::read_pixels(out);
+	let pu = path(dir, "tsr_720to1080.png");
+	print("gpu: tsr png ", pu[..], " ", gfx::save_png(out, pu[..]));
+	let db = psnr_m(up[..], native[..], mask[..]);
+	print("gpu: tsr 720p->1080p psnr (non-sky, ", r2(mask_frac(mask[..]) * 100.0), "% of pixels) ", r2(db), " dB vs native 1080p taa");
+	if db < 30.0 { good = false; }
+	let _ = time_loop("1280x720->1920x1080 frame", out, false);
+	// T7 (pre-registered): the resolve alone, one submit per iteration, GPU p95 < T7_P95_MS.
+	// No GPU time (no gputime log: -1; submits that cannot be split: 1e9) is a FAIL.
+	let p95 = time_loop("resolve 1280x720->1920x1080", out, true);
+	let t7_ok = p95 >= 0.0 && p95 < T7_P95_MS;
+	print("gpu: tsr resolve gpu p95 ", if p95 < 0.0 { "unavailable" } else { "measured" }, " ", round(p95 * 10000.0) / 10000.0, " ms (bar < ", T7_P95_MS, " ms, unavailable = FAIL)", if t7_ok { " PASS" } else { " FAIL" });
+	if !t7_ok { good = false; }
+	s3d::temporal = 0;
+	s3d::temporal_reset = true;
+	gfx::release(out);
+	good
+}
+
+// ---- T1 ghost gate: pre-registered bars (see README "Pre-registered bars") ----
+const GH_W = 960;
+const GH_H = 540;
+const GH_STEP_PX = 25.0;      // motion per frame at the grid's depth, in pixels
+const GH_MOVES = 16;          // moving frames
+const GH_CONVERGE = 32;       // still frames before the move
+const GH_REF_FRAMES = 48;     // converged frames for the reference at the final pose
+const GH_MEAN_BAR = 1.5;      // mean max-channel error over the band, /255
+const GH_P99_BAR = 12.0;      // 99th percentile, /255
+const GH_BIG_ERR = 20;        // /255
+const GH_BIG_MAX = 300;       // pixels above GH_BIG_ERR
+const GH_TRAIL = 30;          // synthetic trail added to the innermost band ring, /255
+const GH_RING_R = 2.0;        // the 8 extra band rays sit on a circle of this radius, px
+
+// ---- T4: pre-registered bars ----
+const T4_Z_LO = 8.0;          // depth between the spheres and the wall
+const T4_Z_HI = 10.4;
+const T4_MIX_MAX = 0;         // pixels of mixed depth or intermediate motion allowed
+const T4_MV_LO = 1.0;         // intermediate motion, px
+const T4_MV_HI = 20.0;
+const T4_CONTROL_MIN = 100;   // the 2x2-averaged control must show at least this many
+
+// ---- T6: pre-registered bar ----
+const T6_GAIN_DB = 0.5;       // taa psnr >= off psnr + this, vs the supersampled reference
+
+// ---- T7: pre-registered bar ----
+const T7_P95_MS = 0.5;        // resolve gpu-timestamp p95; no gpu time = FAIL
+
+// ---- T8: pre-registered bars ----
+const T8_STILL_BAR = 0.25;    // still scene: rejection on vs off, mean abs /255
+// G1/G2 (gap-map item 3, GI part 1), pre-registered before any GI GPU run (README,
+// "Pre-registered bars (GI part 1)"): the renderer's linear HDR Cornell box, box-filtered
+// to 128 x 128, against hc/test/gfx/gi/cornell_ref.txt.gz (Helium CPU path tracer).
+// Metric: mean over the region's pixels of |Y_render - Y_ref| / Y_ref (Rec. 709 luminance).
+const GI_BAR = 0.10;            // G1 all gated pixels, G2a ceiling, G2b shadowed (not directly lit)
+const GI_REF_NOISE_BAR = 0.01;  // reference: mean luminance rel. standard error must be below this
+const GI_MIN_REGION = 1000;     // each region needs this many gated pixels or the check fails
+// A1-A3 GTAO (Jimenez et al. 2016), pre-registered before any GTAO GPU run: the Cornell
+// view, AO and bent normals box-filtered to 128 x 128, against a Helium CPU ray-traced
+// reference (cosine-weighted visibility within AO_REF_RADIUS, bent normal = mean
+// unoccluded cosine-weighted direction), on G1's gated pixels.
+const AO_REF_RADIUS = 1.0;      // scene units (100 mm); the renderer's ao_radius for the test
+const AO_MAE_BAR = 0.05;        // A1: mean |ao - ao_ref| < this
+const AO_CTRL_RATIO = 0.5;      // A2: MAE <= this x the AO-off control's MAE
+const BN_DEG_BAR = 12.0;        // A3: mean bent-normal angle error (deg) where ao_ref < 0.8
+const BN_CTRL_RATIO = 0.5;      //     and <= this x the geometric-normal control's error
+// and, per ghost case: band mean with rejection on <= band mean with rejection off
+
+// ---- shadows: the sun's shadow mask against a CPU ray-traced reference ----
+// The sphere grid in front of a wall (and on its floor), lit by the sun, rendered with
+// debug view 5 (direct light only) with shadows off and on. A GPU pixel is shadowed when
+// shadows on keep less than half of its direct light. The reference casts one ray per
+// pixel centre through the same camera into the exact spheres and boxes, then one ray
+// from the hit point toward the sun. Counted: pixels the sun lights with shadows off
+// (direct luma > 32) whose hit faces the sun, outside a 2 px band around every shadow edge
+// (penumbra and filtering) and object edge (silhouettes, msaa). Gate: IoU of the two
+// shadow masks per (view, cascade), three views (shadow_checks).
+// S1/S2, pre-registered: per-cascade gates at 0.98 (was 0.9 on the main cascade only)
+const SH_BAR2 = 0.98;
+const SH_MIN_COUNTED = 20000;  // a (view, cascade) is gated with this many counted pixels
+const SH_MIN_SHADOW = 5000;    // and this many reference-shadow pixels
+// S3, pre-registered: near-miss controls must fail the 0.98 bar
+const SH_SHIFT_PX = 5.0;       // light-space shift, in screen pixels at the median counted depth
+// S5, pre-registered: no-wait multi-frame shadow renders equal the fenced ones exactly
+const S5_FRAMES = 6;
+const S5_MAX_DIFF = 0;
+// S6, pre-registered: a single-layer, single-mip pass leaves the rest untouched
+const S6_LAYERS = 3;
+const S6_MIPS = 3;
+// S3 gap, pre-registered (review2 part B): near2 fence view; cascade 0 gated at SH_BAR2,
+// its shift control must fail; near0's cascade-0 shift control is reported only
+const SH_FENCE_POSTS = 6;
+const SH_NEAR2_CASCADE = 0;
+// T1 case (c) and the trail sweep, pre-registered (review2 part B): case (c) uses the
+// GH_* bars; the sweep is a measurement
+var GH_SWEEP_C int[>..] = [10, 20, 30, 40, 60];
+var GH_SWEEP_L int[>..] = [50, 100, 200, 300, 500, 1000, 2000, 4000];
+var GH_TRAIL_LIM = 1000000000;  // the synthetic trail covers the first this many ring pixels
+var GH_QUIET = false;
+var SH_NBOX = 2;               // boxes in the reference: floor, wall, then the near2 fence
+const SH_W = 960;
+const SH_H = 540;
+const SH_BAND = 2;
+var SH_ID int[>..] = [];      // per pixel: what the primary ray hits: -1 nothing, 0..24 spheres, 25 floor, 26 wall
+var SH_DARK int[>..] = [];    // per pixel: 1 shadowed from the sun, 0 lit, 2 facing away
+var SH_DEPTH real[>..] = [];  // per pixel: view depth of the hit
+var SH_KEEP byte[>..] = [];   // per pixel: 1 outside the band around shadow and object edges
+var SH_HIT = -1;
+var SH_N real[>..] = [0.0, 0.0, 0.0, 0.0, 0.0, 0.0];   // box centre and half size scratch
+
+fn wall_scene() {
+	sphere_grid();
+	let wall = shapes::cube(float3 { 9.0, 5.0, 0.1 }, shapes::material(linalg::v3(0.2, 0.3, 0.45), 0.0, 0.7));
+	s3d::place(s3d::add(wall), gfx::translate(float3 { 0.0, 0.0, -1.5 }));
+	s3d::look.ssao = false;
+	s3d::look.bloom = 0.0;
+	s3d::temporal = 0;
+}
+
+fn sh_box(k int) {
+	if k >= 27 && k < 27 + SH_FENCE_POSTS { SH_N[0] = -1.6 + 0.4 * (k - 27) as real; SH_N[1] = -2.3; SH_N[2] = 1.2; SH_N[3] = 0.03; SH_N[4] = 0.3; SH_N[5] = 0.03; return; }
+	if k == 27 + SH_FENCE_POSTS { SH_N[0] = -0.6; SH_N[1] = -2.2; SH_N[2] = 1.2; SH_N[3] = 1.2; SH_N[4] = 0.02; SH_N[5] = 0.02; return; }
+	if k == 25 { SH_N[0] = 0.0; SH_N[1] = -2.7; SH_N[2] = -1.0; SH_N[3] = 3.0; SH_N[4] = 0.1; SH_N[5] = 3.0; }
+	else { SH_N[0] = 0.0; SH_N[1] = 0.0; SH_N[2] = -1.5; SH_N[3] = 9.0; SH_N[4] = 5.0; SH_N[5] = 0.1; }
+}
+fn sh_sphere_x(k int) real { (k % 5) as real - 2.0 }
+fn sh_sphere_y(k int) real { 2.0 - (k / 5) as real }
+
+// nearest hit along o + t d for t in (0, tmax); sets SH_HIT, returns t (tmax: none)
+fn sh_trace(ox real, oy real, oz real, dx real, dy real, dz real, tmax real) real {
+	var best = tmax;
+	SH_HIT = -1;
+	let dd = dx * dx + dy * dy + dz * dz;
+	for k in 25 {
+		let px = ox - sh_sphere_x(k);
+		let py = oy - sh_sphere_y(k);
+		let pz = oz;
+		let b = px * dx + py * dy + pz * dz;
+		let c = px * px + py * py + pz * pz - 0.42 * 0.42;
+		let disc = b * b - dd * c;
+		if disc < 0.0 { continue; }
+		let s = sqrt(disc);
+		var t = (-b - s) / dd;
+		if t <= 0.0 { t = (-b + s) / dd; }
+		if t > 0.0 && t < best { best = t; SH_HIT = k; }
+	}
+	for k in SH_NBOX {
+		sh_box(25 + k);
+		var t0 = -1.0e30;
+		var t1 = 1.0e30;
+		var miss = false;
+		for a in 3 {
+			let o = if a == 0 { ox } else { if a == 1 { oy } else { oz } };
+			let d = if a == 0 { dx } else { if a == 1 { dy } else { dz } };
+			let lo = SH_N[a] - SH_N[a + 3];
+			let hi = SH_N[a] + SH_N[a + 3];
+			if abs(d) < 1.0e-12 {
+				if o < lo || o > hi { miss = true; }
+			} else {
+				var ta = (lo - o) / d;
+				var tb = (hi - o) / d;
+				if ta > tb { let x = ta; ta = tb; tb = x; }
+				t0 = max(t0, ta);
+				t1 = min(t1, tb);
+			}
+		}
+		if miss || t0 > t1 { continue; }
+		let t = if t0 > 0.0 { t0 } else { t1 };
+		if t > 0.0 && t < best { best = t; SH_HIT = 25 + k; }
+	}
+	best
+}
+
+// the reference for the current s3d::view and a sun toward (lx, ly, lz)
+fn sh_reference(lx0 real, ly0 real, lz0 real) {
+	SH_ID.clear(); SH_DARK.clear(); SH_DEPTH.clear(); SH_KEEP.clear();
+	let ll = sqrt(lx0 * lx0 + ly0 * ly0 + lz0 * lz0);
+	let lx = lx0 / ll;
+	let ly = ly0 / ll;
+	let lz = lz0 / ll;
+	let v = s3d::view;
+	let ex = v.eye.x as real;
+	let ey = v.eye.y as real;
+	let ez = v.eye.z as real;
+	var fx = v.target.x as real - ex;
+	var fy = v.target.y as real - ey;
+	var fz = v.target.z as real - ez;
+	let fl = sqrt(fx * fx + fy * fy + fz * fz);
+	fx /= fl; fy /= fl; fz /= fl;
+	// side = f x up, up' = side x f
+	var sx = fy * v.up.z as real - fz * v.up.y as real;
+	var sy = fz * v.up.x as real - fx * v.up.z as real;
+	var sz = fx * v.up.y as real - fy * v.up.x as real;
+	let sl = sqrt(sx * sx + sy * sy + sz * sz);
+	sx /= sl; sy /= sl; sz /= sl;
+	let ux = sy * fz - sz * fy;
+	let uy = sz * fx - sx * fz;
+	let uz = sx * fy - sy * fx;
+	let th = tan(v.fov_y as real * 0.5);
+	let aspect = SH_W as real / SH_H as real;
+	for y in SH_H {
+		for x in SH_W {
+			let nx = ((x as real + 0.5) / SH_W as real * 2.0 - 1.0) * th * aspect;
+			let ny = (1.0 - (y as real + 0.5) / SH_H as real * 2.0) * th;
+			let dx = fx + nx * sx + ny * ux;
+			let dy = fy + nx * sy + ny * uy;
+			let dz = fz + nx * sz + ny * uz;
+			let t = sh_trace(ex, ey, ez, dx, dy, dz, 1.0e30);
+			let id = SH_HIT;
+			SH_ID.push(id);
+			if id < 0 { SH_DARK.push(2); SH_DEPTH.push(0.0); continue; }
+			let px = ex + t * dx;
+			let py = ey + t * dy;
+			let pz = ez + t * dz;
+			SH_DEPTH.push((px - ex) * fx + (py - ey) * fy + (pz - ez) * fz);
+			var nnx = 0.0;
+			var nny = 0.0;
+			var nnz = 0.0;
+			if id < 25 {
+				nnx = (px - sh_sphere_x(id)) / 0.42; nny = (py - sh_sphere_y(id)) / 0.42; nnz = pz / 0.42;
+			} else {
+				sh_box(id);
+				let qx = (px - SH_N[0]) / SH_N[3];
+				let qy = (py - SH_N[1]) / SH_N[4];
+				let qz = (pz - SH_N[2]) / SH_N[5];
+				if abs(qx) >= abs(qy) && abs(qx) >= abs(qz) { nnx = if qx > 0.0 { 1.0 } else { -1.0 }; }
+				else { if abs(qy) >= abs(qz) { nny = if qy > 0.0 { 1.0 } else { -1.0 }; } else { nnz = if qz > 0.0 { 1.0 } else { -1.0 }; } }
+			}
+			if nnx * lx + nny * ly + nnz * lz <= 0.05 { SH_DARK.push(2); continue; }
+			let _ = sh_trace(px + nnx * 2.0e-3, py + nny * 2.0e-3, pz + nnz * 2.0e-3, lx, ly, lz, 1.0e30);
+			SH_DARK.push(if SH_HIT >= 0 { 1 } else { 0 });
+		}
+	}
+	for y in SH_H {
+		for x in SH_W {
+			let i = y * SH_W + x;
+			var keep = 1;
+			for dy in 2 * SH_BAND + 1 {
+				for dx in 2 * SH_BAND + 1 {
+					let xx = x + dx - SH_BAND;
+					let yy = y + dy - SH_BAND;
+					if xx < 0 || yy < 0 || xx >= SH_W || yy >= SH_H { keep = 0; continue; }
+					let j = yy * SH_W + xx;
+					if SH_ID[j] != SH_ID[i] || (SH_DARK[j] == 1) != (SH_DARK[i] == 1) { keep = 0; }
+				}
+			}
+			SH_KEEP.push(keep as byte);
+		}
+	}
+}
+
+fn sh_luma(px const byte[:], i int) int { (px[i * 4] as int * 2 + px[i * 4 + 1] as int * 5 + px[i * 4 + 2] as int) / 8 }
+fn sh_cascade(i int) int {
+	let d = SH_DEPTH[i];
+	if d > s3d::cascade_end[2] as real { 3 } else { if d > s3d::cascade_end[1] as real { 2 } else { if d > s3d::cascade_end[0] as real { 1 } else { 0 } } }
+}
+
+var SC_N int[>..] = [0, 0, 0, 0];
+var SC_TRUTH int[>..] = [0, 0, 0, 0];
+var SC_IOU real[>..] = [0.0, 0.0, 0.0, 0.0];
+var SC_MED real[>..] = [0.0, 0.0, 0.0, 0.0];    // median view depth of the counted pixels
+var SC_GATED bool[>..] = [false, false, false, false];
+
+// IoU of the GPU and reference shadow masks per cascade over the counted pixels (SC_*);
+// fix = true decides which cascades are gated: 0..2 with >= SH_MIN_COUNTED counted and
+// >= SH_MIN_SHADOW reference-shadow pixels (controls score with fix = false)
+fn sh_score(view const byte[:], label const byte[:], off const byte[:], on const byte[:], fix bool) {
+	var n int[>..] = [0, 0, 0, 0];
+	var both int[>..] = [0, 0, 0, 0];
+	var either int[>..] = [0, 0, 0, 0];
+	var truth int[>..] = [0, 0, 0, 0];
+	var gpu int[>..] = [0, 0, 0, 0];
+	var hist int[>..] = [];
+	for k in 4 * 6000 { hist.push(0); }
+	for i in SH_W * SH_H {
+		if SH_ID[i] < 0 || SH_DARK[i] == 2 || SH_KEEP[i] == 0 { continue; }
+		let a = sh_luma(off, i);
+		if a <= 32 { continue; }
+		let c = sh_cascade(i);
+		let g = sh_luma(on, i) * 2 < a;
+		let r = SH_DARK[i] == 1;
+		n[c] += 1;
+		if g && r { both[c] += 1; }
+		if g || r { either[c] += 1; }
+		if r { truth[c] += 1; }
+		if g { gpu[c] += 1; }
+		hist[c * 6000 + min(max((SH_DEPTH[i] * 100.0) as int, 0), 5999)] += 1;
+	}
+	for c in 4 {
+		SC_N[c] = n[c];
+		SC_TRUTH[c] = truth[c];
+		SC_IOU[c] = both[c] as real / max(either[c], 1) as real;
+		var acc = 0;
+		SC_MED[c] = 0.0;
+		for b in 6000 {
+			acc += hist[c * 6000 + b];
+			if n[c] > 0 && acc * 2 >= n[c] { SC_MED[c] = (b as real + 0.5) / 100.0; break; }
+		}
+		if fix { SC_GATED[c] = c < 3 && n[c] >= SH_MIN_COUNTED && truth[c] >= SH_MIN_SHADOW; }
+	}
+	for c in 4 {
+		if n[c] == 0 { continue; }
+		print("gpu: shadows ", view, " ", label, " cascade ", c, if c == 3 { " (beyond)" } else { "" }, if SC_GATED[c] { " [gated]" } else { "" }, ": ", n[c], " px counted (median depth ", r2(SC_MED[c]), "), reference shadows ", truth[c], ", gpu shadows ", gpu[c], ", both ", both[c], ", IoU ", r4(SC_IOU[c]));
+	}
+}
+
+// a must-fail control: every gated cascade (all) or at least one (!all) below SH_BAR2
+fn sh_control(view const byte[:], label const byte[:], all bool) bool {
+	var below = 0;
+	var gated = 0;
+	for c in 3 {
+		if !SC_GATED[c] { continue; }
+		gated += 1;
+		if SC_IOU[c] < SH_BAR2 { below += 1; }
+	}
+	let caught = gated > 0 && (if all { below == gated } else { below > 0 });
+	print("gpu: shadows ", view, " control (", label, "): ", below, " of ", gated, " gated cascades below ", SH_BAR2, if all { " (all must be)" } else { " (at least one must be)" }, ": ", if caught { "FAILS as required" } else { "NOT CAUGHT" });
+	caught
+}
+
+fn sh_png(base const byte[:], v int) byte[>..] {
+	var p byte[>..] = [];
+	p.append(base);
+	if v == 0 { p.append("_near0"); }
+	if v == 1 { p.append("_near1"); }
+	if v == 3 { p.append("_near2"); }
+	p.append(".png");
+	p
+}
+
+// white: both shadowed, red: only the reference, blue: only the gpu, grey: both lit,
+// dark grey: not counted (band, facing away, unlit), black: background
+fn sh_save_mask(off const byte[:], on const byte[:], name const byte[:]) {
+	var px byte[>..] = [];
+	for i in SH_W * SH_H {
+		var r = 0; var g = 0; var b = 0;
+		if SH_ID[i] >= 0 {
+			let a = sh_luma(off, i);
+			if SH_DARK[i] == 2 || SH_KEEP[i] == 0 || a <= 32 { r = 40; g = 40; b = 40; }
+			else {
+				let gs = sh_luma(on, i) * 2 < a;
+				let rs = SH_DARK[i] == 1;
+				if gs && rs { r = 255; g = 255; b = 255; }
+				else { if rs { r = 230; } else { if gs { b = 255; g = 90; } else { r = 120; g = 120; b = 120; } } }
+			}
+		}
+		px.push(r as byte); px.push(g as byte); px.push(b as byte); px.push(255 as byte);
+	}
+	let t = gfx::render_target(SH_W, SH_H, gfx::RGBA8);
+	let _ = gfx::update_texture(t, px[..]);
+	let p = path(OUT_DIR[..], name);
+	print("gpu: shadows png ", p[..], " ", gfx::save_png(t, p[..]));
+	gfx::release(t);
+}
+
+fn sh_direct(out gfx::Texture, shadows bool, name const byte[:]) byte[>..] {
+	s3d::sun.shadows = shadows;
+	s3d::render(out);
+	let px = gfx::read_pixels(out);
+	if name.len > 0 { let p = path(OUT_DIR[..], name); print("gpu: shadows png ", p[..], " ", gfx::save_png(out, p[..])); }
+	px
+}
+
+// TIME_WARMUP + TIME_FRAMES full frames, each submitted and fenced, no readback; prints
+// "gpu: <tag> timing <label>: ..." wall-clock and (under gputime) GPU-timestamp stats.
+fn frame_time(tag const byte[:], label const byte[:], out gfx::Texture) {
+	for k in TIME_WARMUP { s3d::render(out); gfx::flush(); }
+	var log byte[>..] = [];
+	let have_log = env("HELIUM_GPUTIME", log) && log.len > 0;
+	var gpu_ns real[>..] = [];
+	if have_log { gputime_lines(log[..], gpu_ns); }
+	let first = gpu_ns.len;
+	var wall real[>..] = [];
+	for k in TIME_FRAMES {
+		let t = gfx::time();
+		s3d::render(out);
+		gfx::flush();
+		wall.push((gfx::time() - t) * 1000.0);
+	}
+	print("gpu: ", tag, " timing ", label, ": ", TIME_WARMUP, " warmup + ", TIME_FRAMES, " timed, wall-clock ms ", stats(wall)[..]);
+	if !have_log { print("gpu: ", tag, " timing ", label, ": gpu-timestamp not measured (run under tools/hc/gputime)"); return; }
+	gputime_lines(log[..], gpu_ns);
+	let n = gpu_ns.len - first;
+	if n == 0 || n % TIME_FRAMES != 0 { print("gpu: ", tag, " timing ", label, ": ", n, " submits for ", TIME_FRAMES, " frames, cannot split"); return; }
+	let per = n / TIME_FRAMES;
+	var each real[>..] = [];
+	for f in TIME_FRAMES {
+		var t = 0.0;
+		for j in per { t += gpu_ns[first + f * per + j]; }
+		each.push(t / 1.0e6);
+	}
+	print("gpu: ", tag, " timing ", label, ": gpu-timestamp ms ", stats(each)[..], " (", per, " submit(s) each)");
+}
+
+// S1/S2/S3 (pre-registered): three views of the wall scene, near0 (the floor under the
+// bottom row, cascade 0), near1 (the lower left spheres and wall, cascade 1) and far (the
+// original view, cascade 2); each gated (view, cascade) must reach IoU >= SH_BAR2, every one of
+// cascades 0-2 must be gated in some view, and the controls must fail the same bar.
+fn shadow_checks() bool {
+	var good = true;
+	var covered int[>..] = [0, 0, 0];
+	let out = gfx::render_target(SH_W, SH_H, gfx::RGBA8);
+	// near2 runs before far: the far view's reference and gating stay for look_taa_checks
+	for vi in 4 {
+		let v = if vi < 2 { vi } else if vi == 2 { 3 } else { 2 };
+		let vn = if v == 0 { "near0" } else if v == 1 { "near1" } else if v == 3 { "near2" } else { "far" };
+		wall_scene();
+		SH_NBOX = 2;
+		if v == 3 {
+			// the near2 fence (renderer and reference): posts and a rail on the floor
+			let fm = shapes::material(linalg::v3(0.5, 0.45, 0.4), 0.0, 0.8);
+			SH_NBOX = 3 + SH_FENCE_POSTS;
+			for k in SH_FENCE_POSTS + 1 {
+				sh_box(27 + k);
+				let b = shapes::cube(float3 { linalg::f(SH_N[3]), linalg::f(SH_N[4]), linalg::f(SH_N[5]) }, fm);
+				s3d::place(s3d::add(b), gfx::translate(float3 { linalg::f(SH_N[0]), linalg::f(SH_N[1]), linalg::f(SH_N[2]) }));
+			}
+			s3d::view.eye = float3 { -0.6, -1.4, 2.2 }; s3d::view.target = float3 { -0.6, -2.6, 0.9 };
+		}
+		if v == 0 { s3d::view.eye = float3 { 0.5, -1.5, 1.0 }; s3d::view.target = float3 { -0.5, -2.6, -1.0 }; }
+		if v == 1 { s3d::view.eye = float3 { -1.0, 0.0, 3.0 }; s3d::view.target = float3 { -1.0, -1.0, -1.5 }; }
+		let sun = s3d::sun.to_sun;
+		s3d::init(SH_W, SH_H);
+		s3d::debug_view = 5;
+		let n_off = sh_png("shadow_direct_off", v);
+		let off = sh_direct(out, false, n_off[..]);
+		let n_on = sh_png("shadow_direct_on", v);
+		let on = sh_direct(out, true, n_on[..]);
+		var cvp gfx::mat4[>..] = [];
+		for m in s3d::cascade_vp { cvp.push(m); }
+		sh_reference(sun.x as real, sun.y as real, sun.z as real);
+		print("gpu: shadows ", vn, " reference: ", SH_W, "x", SH_H, " primary + sun rays into 25 spheres and 2 boxes, ", SH_BAND, " px band excluded (eye ", s3d::view.eye.x, " ", s3d::view.eye.y, " ", s3d::view.eye.z, ", cascades end at ", r3(s3d::cascade_end[0] as real), ", ", r3(s3d::cascade_end[1] as real), ", ", r3(s3d::cascade_end[2] as real), ")");
+		let n_mask = sh_png("shadow_mask", v);
+		sh_save_mask(off[..], on[..], n_mask[..]);
+		sh_score(vn, "on", off[..], on[..], true);
+		var med real[>..] = [];
+		for c in 4 { med.push(SC_MED[c]); }
+		for c in 3 {
+			if !SC_GATED[c] { continue; }
+			covered[c] += 1;
+			let ok = SC_IOU[c] >= SH_BAR2;
+			print("gpu: shadows ", vn, " cascade ", c, " mask IoU ", r4(SC_IOU[c]), " (bar >= ", SH_BAR2, ") ", if ok { "PASS" } else { "FAIL" });
+			if !ok { good = false; }
+		}
+		if v == 3 {
+			let g2 = SC_GATED[SH_NEAR2_CASCADE];
+			print("gpu: shadows near2 cascade ", SH_NEAR2_CASCADE, " gated (must be): ", if g2 { "PASS" } else { "FAIL" });
+			if !g2 { good = false; }
+		}
+		// control: shadows off
+		sh_score(vn, "control shadows off", off[..], off[..], false);
+		if !sh_control(vn, "shadows off", true) { good = false; }
+		// S3 control 1: the shadow map shifted by SH_SHIFT_PX screen pixels at each gated
+		// cascade's median counted depth, along light-space x
+		let th = tan(s3d::view.fov_y as real * 0.5);
+		var shift real[>..] = [0.0, 0.0, 0.0];
+		for c in 3 {
+			if !SC_GATED[c] { continue; }
+			let m = cvp[c];
+			let row0 = sqrt((m.c0.x * m.c0.x + m.c1.x * m.c1.x + m.c2.x * m.c2.x) as real);
+			let texel = 2.0 / (s3d::shadow_size as real * row0);
+			shift[c] = SH_SHIFT_PX * (2.0 * med[c] * th / SH_H as real) / texel;
+			print("gpu: shadows ", vn, " cascade ", c, " shift control: ", SH_SHIFT_PX, " px at depth ", r2(med[c]), " = ", r4(SH_SHIFT_PX * 2.0 * med[c] * th / SH_H as real), " world = ", r2(shift[c]), " texels (texel ", r4(texel), " world)");
+		}
+		s3d::shadow_test_shift = float3 { linalg::f(shift[0]), linalg::f(shift[1]), linalg::f(shift[2]) };
+		let n_sh = sh_png("shadow_direct_on_shift", v);
+		let son = sh_direct(out, true, n_sh[..]);
+		s3d::shadow_test_shift = float3 { 0.0, 0.0, 0.0 };
+		sh_score(vn, "control shift", off[..], son[..], false);
+		if v == 0 || v == 3 {
+			// pre-registered (part B): near0 requires cascade 1 (cascade 0 reported, little
+			// edge there); near2 requires cascade 0; other gated cascades reported
+			let rc = if v == 0 { 1 } else { SH_NEAR2_CASCADE };
+			let caught = SC_GATED[rc] && SC_IOU[rc] < SH_BAR2;
+			for c in 3 { if SC_GATED[c] && c != rc { print("gpu: shadows ", vn, " control (shadow map shifted ~5 px) cascade ", c, " IoU ", r4(SC_IOU[c]), " (reported, not gated)"); } }
+			print("gpu: shadows ", vn, " control (shadow map shifted ~5 px): cascade ", rc, if SC_GATED[rc] { " gated" } else { " NOT gated" }, ", IoU ", r4(SC_IOU[rc]), " must be below ", SH_BAR2, ": ", if caught { "FAILS as required" } else { "NOT CAUGHT" });
+			if !caught { good = false; }
+		} else {
+			if !sh_control(vn, "shadow map shifted ~5 px", true) { good = false; }
+		}
+		// S3 control 2: the layer-only build's behaviour (every cascade's clear cycles the
+		// map, so only the last cascade drawn survives); required where cascade 0 or 1 is
+		// gated, reported where only cascade 2 is (see the README)
+		s3d::shadow_test_cycle_all = true;
+		let n_cy = sh_png("shadow_direct_on_cycle_all", v);
+		let con = sh_direct(out, true, n_cy[..]);
+		s3d::shadow_test_cycle_all = false;
+		sh_score(vn, "control cycle all", off[..], con[..], false);
+		let cyc = sh_control(vn, "layer-only build: every cascade's clear cycles", false);
+		if (SC_GATED[0] || SC_GATED[1]) && !cyc { good = false; }
+		if !SC_GATED[0] && !SC_GATED[1] { print("gpu: shadows ", vn, " control (layer-only build) reported only: cascade 2, drawn last, survives cycling"); }
+		// control: the render's sun mirrored in x, scored against the true sun's reference
+		s3d::sun.to_sun = float3 { -sun.x, sun.y, sun.z };
+		let moff = sh_direct(out, false, "");
+		let n_mi = sh_png("shadow_direct_on_mirrored", v);
+		let mon = sh_direct(out, true, n_mi[..]);
+		s3d::sun.to_sun = sun;
+		sh_score(vn, "control mirrored sun", moff[..], mon[..], false);
+		if !sh_control(vn, "sun mirrored in x", true) { good = false; }
+		s3d::debug_view = 0;
+		if v == 2 { let _ = sh_direct(out, true, "shadow_shaded_on.png"); }
+		if v == 3 { let _ = sh_direct(out, true, "shadow_shaded_on_near2.png"); }
+	}
+	SH_NBOX = 2;
+	for c in 3 {
+		print("gpu: shadows cascade ", c, " gated in ", covered[c], " view(s) (must be >= 1) ", if covered[c] > 0 { "PASS" } else { "FAIL" });
+		if covered[c] == 0 { good = false; }
+	}
+	// the far view's reference and gating stay for look_taa_checks
+	gfx::release(out);
+	// cost of the shadow pass: 1280x720, the same scene, shadows off then on
+	s3d::init(1280, 720);
+	let big = gfx::render_target(1280, 720, gfx::RGBA8);
+	s3d::sun.shadows = false;
+	frame_time("shadows", "1280x720 wall scene, shadows off", big);
+	s3d::sun.shadows = true;
+	frame_time("shadows", "1280x720 wall scene, shadows on (3 cascades, 2048^2)", big);
+	gfx::release(big);
+	// the sphere grid as the golden saw it, but with shadows on (reported, not gated)
+	sphere_grid();
+	s3d::sun.shadows = true;
+	s3d::init(480, 360);
+	let sg = gfx::render_target(480, 360, gfx::RGBA8);
+	s3d::render(sg);
+	let got = gfx::read_pixels(sg);
+	let p = path(OUT_DIR[..], "spheres_shadows_on.png");
+	print("gpu: shadows png ", p[..], " ", gfx::save_png(sg, p[..]));
+	if GOLDEN.len > 0 {
+		var want byte[>..] = [];
+		var ref byte[>..] = [];
+		if read_file(GOLDEN[..], want) {
+			let gw, gh, gok = codec_png::decode(want[..], ref);
+			if gok && gw == 480 && gh == 360 { print("gpu: shadows sphere grid with shadows on: psnr ", round(psnr(got[..], ref[..]) * 100.0) / 100.0, " dB vs the golden (reported)"); }
+		}
+	}
+	gfx::release(sg);
+	s3d::sun.shadows = false;
+	good
+}
+
+fn mat_diff(a gfx::mat4, b gfx::mat4) f32 {
+	var d f32 = 0.0;
+	for k in 4 {
+		let x = if k == 0 { a.c0 } else { if k == 1 { a.c1 } else { if k == 2 { a.c2 } else { a.c3 } } };
+		let y = if k == 0 { b.c0 } else { if k == 1 { b.c1 } else { if k == 2 { b.c2 } else { b.c3 } } };
+		d = max(d, max(max(abs(x.x - y.x), abs(x.y - y.y)), max(abs(x.z - y.z), abs(x.w - y.w))));
+	}
+	d
+}
+
+// n TAA frames from a reset, read back
+fn taa_frames(out gfx::Texture, n int) byte[>..] {
+	s3d::temporal = 1;
+	s3d::temporal_reset = true;
+	for k in n { s3d::render(out); }
+	gfx::read_pixels(out)
+}
+
+// largest frame-to-frame mean abs diff (/255, over mask) of n more TAA frames
+fn taa_settle(out gfx::Texture, n int, mask const byte[:]) real {
+	var last = gfx::read_pixels(out);
+	var worst real = 0.0;
+	for k in n {
+		s3d::render(out);
+		let px = gfx::read_pixels(out);
+		worst = max(worst, mean_abs(px[..], last[..], mask));
+		last.clear();
+		last.append(px[..]);
+	}
+	worst
+}
+
+// TAA with shadows, SSAO and bloom on. Runs after shadow_checks, whose ray-traced
+// reference (SH_*) is for the same wall scene, camera and size.
+fn look_taa_checks(dir const byte[:]) bool {
+	var good = true;
+	wall_scene();
+	s3d::init(SH_W, SH_H);
+	let out = gfx::render_target(SH_W, SH_H, gfx::RGBA8);
+	// cascades are fitted to the unjittered view: across the 16 jitter phases the
+	// rasterising view_proj must change every frame and the cascade matrices never
+	s3d::sun.shadows = true;
+	s3d::temporal = 0;
+	s3d::render(out);
+	var base gfx::mat4[>..] = [];
+	for m in s3d::cascade_vp { base.push(m); }
+	let vp0 = s3d::view_proj;
+	s3d::temporal = 1;
+	s3d::temporal_reset = true;
+	var moved = 0;
+	var worst f32 = 0.0;
+	for k in 16 {
+		s3d::render(out);
+		if mat_diff(vp0, s3d::view_proj) > 0.0 { moved += 1; }
+		for c in base.len { worst = max(worst, mat_diff(base[c], s3d::cascade_vp[c])); }
+	}
+	let cas_ok = moved == 16 && worst == 0.0 && base.len == s3d::cascade_vp.len;
+	print("gpu: look+taa cascades over 16 jitter phases: view_proj jittered in ", moved, "/16 frames, ", base.len, " cascade matrices max change ", worst, " (want 0) ", if cas_ok { "PASS" } else { "FAIL" });
+	if !cas_ok { good = false; }
+	// shadow mask of converged TAA frames vs the same reference
+	s3d::debug_view = 5;
+	s3d::sun.shadows = false;
+	let toff = taa_frames(out, 32);
+	s3d::sun.shadows = true;
+	let ton = taa_frames(out, 32);
+	let tp = path(dir, "shadow_direct_on_taa.png");
+	print("gpu: look+taa png ", tp[..], " ", gfx::save_png(out, tp[..]));
+	s3d::debug_view = 0;
+	// against the far view's reference, each cascade gated there at the same 0.98 bar
+	sh_score("far", "taa on", toff[..], ton[..], false);
+	var tgated = 0;
+	for c in 3 {
+		if !SC_GATED[c] { continue; }
+		tgated += 1;
+		let tok = SC_IOU[c] >= SH_BAR2;
+		print("gpu: look+taa shadow mask IoU with taa on, far view cascade ", c, " ", r4(SC_IOU[c]), " (bar >= ", SH_BAR2, ") ", if tok { "PASS" } else { "FAIL" });
+		if !tok { good = false; }
+	}
+	if tgated == 0 { print("gpu: look+taa shadow mask: no gated cascade FAIL"); good = false; }
+	// the wall scene with the shipped look: still TAA settles, and stays close to TAA off
+	shipped_look();
+	s3d::temporal = 0;
+	s3d::render(out);
+	let plain = gfx::read_pixels(out);
+	let p0 = path(dir, "taa_default_off.png");
+	print("gpu: look+taa png ", p0[..], " ", gfx::save_png(out, p0[..]));
+	let conv = taa_frames(out, 32);
+	let mask = geo_mask(SH_W, SH_H);
+	let settle = taa_settle(out, 28, mask[..]);
+	let p1 = path(dir, "taa_default_on.png");
+	print("gpu: look+taa png ", p1[..], " ", gfx::save_png(out, p1[..]));
+	let dev = mean_abs(conv[..], plain[..], mask[..]);
+	let look_ok = settle < 0.5 && dev <= 2.0;
+	print("gpu: look+taa still wall scene, shipped look (", r2(mask_frac(mask[..]) * 100.0), "% non-sky): frame-to-frame mean abs diff frames 32-59 max ", r3(settle), "/255 (bar < 0.5); converged vs taa off mean abs ", r3(dev), "/255 (bar <= 2), psnr ", r2(psnr_m(conv[..], plain[..], mask[..])), " dB ", if look_ok { "PASS" } else { "FAIL" });
+	if !look_ok { good = false; }
+	gfx::release(out);
+	// upscaling with the shipped look, bloom at the output size from the temporal result
+	sphere_grid();
+	shipped_look();
+	let big = gfx::render_target(1920, 1080, gfx::RGBA8);
+	s3d::init(1920, 1080);
+	let native = taa_frames(big, 32);
+	let nmask = geo_mask(1920, 1080);
+	s3d::init(1280, 720, 1920, 1080);
+	let up = taa_frames(big, 32);
+	let usettle = taa_settle(big, 16, nmask[..]);
+	let pu = path(dir, "tsr_default_720to1080.png");
+	print("gpu: look+taa png ", pu[..], " ", gfx::save_png(big, pu[..]));
+	let udb = psnr_m(up[..], native[..], nmask[..]);
+	let up_ok = usettle < 0.5 && udb >= 30.0;
+	print("gpu: look+taa tsr 720p->1080p shipped look: settle max ", r3(usettle), "/255 (bar < 0.5), psnr ", r2(udb), " dB vs native 1080p taa (bar >= 30) ", if up_ok { "PASS" } else { "FAIL" });
+	if !up_ok { good = false; }
+	frame_time("default", "1280x720->1920x1080 tsr frame, shipped look", big);
+	gfx::release(big);
+	s3d::temporal = 0;
+	s3d::temporal_reset = true;
+	s3d::sun.shadows = false;
+	good
+}
+
+// ---- T1 ghost gate, T4 silhouettes, T8 depth rejection (README "Pre-registered bars
+// (gfx-review2)"). 25 bright spheres before a dark textured wall move 25 px/frame for 16
+// frames after 32 still ones, (a) the grid or (b) the camera; the error against 48
+// converged frames at the final pose is scored only where the move uncovered the wall
+// (CPU ray tests against the exact spheres).
+let GH_EYE_Z = 7.5;
+let GH_FOV = 0.75;
+let GH_R = 0.4;
+let GH_WALL_Z = -3.0;
+var GH_STEP real = 0.0;
+var GH_ITEMS int[>..] = [];
+var GH_BAND byte[>..] = [];     // 1 scored band pixel, 2 also in the innermost ring
+var GH_SPH byte[>..] = [];      // 1 where the final pose's centre ray hits a sphere
+var GH_MEAN real = 0.0;         // band mean of the last gh_score
+
+fn gh_cx(k int) real { (k % 5) as real - 2.0 }
+fn gh_cy(k int) real { 2.0 - (k / 5) as real }
+fn gh_off(j int) real { (j - GH_MOVES / 2) as real * GH_STEP }
+fn gh_hash(i int) real {
+	let s = abs(sin(i as real * 12.9898 + 78.233) * 43758.5453);
+	s - (s as int) as real
+}
+
+// the wall's texture: grey blobs (sigma 3 texels, peak 96/255) on 24/255, one per 12 texel
+// cell with a jittered centre; 1536 x 768 over the 24 x 12 face, about a texel per pixel
+fn gh_wall_texture() int {
+	let tw = 1536;
+	let th = 768;
+	let cell = 12;
+	let cw = tw / cell;
+	let ch = th / cell;
+	var jx real[>..] = [];
+	var jy real[>..] = [];
+	for c in cw * ch { jx.push((gh_hash(2 * c) - 0.5) * 6.0); jy.push((gh_hash(2 * c + 1) - 0.5) * 6.0); }
+	let first = gltf::pixels.len;
+	for y in th {
+		for x in tw {
+			var b = 0.0;
+			for dy in 3 {
+				for dx in 3 {
+					let gx = x / cell + dx - 1;
+					let gy = y / cell + dy - 1;
+					if gx < 0 || gy < 0 || gx >= cw || gy >= ch { continue; }
+					let c = gy * cw + gx;
+					let ex = (gx as real + 0.5) * cell as real + jx[c] - (x as real + 0.5);
+					let ey = (gy as real + 0.5) * cell as real + jy[c] - (y as real + 0.5);
+					b = max(b, exp(-(ex * ex + ey * ey) / 18.0));
+				}
+			}
+			let v = (24.0 + 72.0 * b + 0.5) as int;
+			gltf::pixels.push(v as byte); gltf::pixels.push(v as byte); gltf::pixels.push(v as byte); gltf::pixels.push(255 as byte);
+		}
+	}
+	gltf::images.push(gltf::Image { width: tw, height: th, pixels: gltf::Span { first: first, count: tw * th * 4 }, ok: true });
+	gltf::textures.push(gltf::Texture { image: gltf::images.len - 1, mag_nearest: false, min_nearest: false, mipmaps: true, wrap_s: 33071, wrap_t: 33071 });
+	gltf::textures.len - 1
+}
+
+// pose j (0..GH_MOVES): case 0 moves the grid by gh_off(j), case 1 the camera
+fn gh_pose(cs int, j int) {
+	let o = gh_off(j);
+	// case 2 (c): the grid +o and the camera -o at the same time
+	let go = if cs == 0 || cs == 2 { o } else { 0.0 };
+	let co = if cs == 1 { o } else if cs == 2 { -o } else { 0.0 };
+	for k in 25 { s3d::place(GH_ITEMS[k], gfx::translate(float3 { linalg::f(gh_cx(k) + go), linalg::f(gh_cy(k)), 0.0 })); }
+	s3d::view.eye = float3 { linalg::f(co), 0.0, linalg::f(GH_EYE_Z) };
+	s3d::view.target = float3 { linalg::f(co), 0.0, 0.0 };
+}
+
+// lit = false: unlit spheres (rgb 3) and wall; lit = true: lit materials (shipped-defaults case)
+fn ghost_scene(lit bool) {
+	reset_scene();
+	GH_ITEMS.clear();
+	GH_STEP = GH_STEP_PX * 2.0 * GH_EYE_Z * tan(GH_FOV * 0.5) / GH_H as real;
+	for k in 25 {
+		var m = shapes::material(linalg::v3(0.9, 0.55, 0.3), 0.0, 0.4);
+		if !lit { m = shapes::material(linalg::v3(3.0, 3.0, 3.0), 0.0, 0.5); m.unlit = true; }
+		GH_ITEMS.push(s3d::add(shapes::sphere(linalg::f(GH_R), 48, 24, m)));
+	}
+	var wm = shapes::material(linalg::v3(1.0, 1.0, 1.0), 0.0, 0.8);
+	wm.base_tex = gltf::TexRef { texture: gh_wall_texture(), uv: 0 };
+	wm.unlit = !lit;
+	s3d::place(s3d::add(shapes::cube(float3 { 12.0, 6.0, 0.1 }, wm)), gfx::translate(float3 { 0.0, 0.0, linalg::f(GH_WALL_Z - 0.1) }));
+	s3d::view = s3d::Camera { eye: float3 { 0.0, 0.0, 7.5 }, target: float3 { 0.0, 0.0, 0.0 }, up: float3 { 0.0, 1.0, 0.0 }, fov_y: 0.75, near: 0.1, far: 60.0 };
+	s3d::sky = DEF_SKY;
+	s3d::sun = DEF_SUN;
+	s3d::sun.to_sun = float3 { 0.5, 0.7, 0.6 };
+	s3d::sun.shadow_far = 20.0;
+	s3d::sun.shadows = false;
+	s3d::look = DEF_LOOK;
+	s3d::look.ssao = false;
+	s3d::look.bloom = 0.0;
+	gh_pose(0, 0);
+}
+
+// 32 still frames at pose 0 from a reset, then poses 1..16 one frame each; the last frame
+fn gh_frames(cs int, out gfx::Texture) byte[>..] {
+	gh_pose(cs, 0);
+	s3d::temporal = 1;
+	s3d::temporal_reset = true;
+	for k in GH_CONVERGE { s3d::render(out); }
+	for j in GH_MOVES { gh_pose(cs, j + 1); s3d::render(out); }
+	gfx::read_pixels(out)
+}
+
+// GH_REF_FRAMES converged frames at the final pose
+fn gh_reference(cs int, out gfx::Texture) byte[>..] {
+	gh_pose(cs, GH_MOVES);
+	s3d::temporal = 1;
+	s3d::temporal_reset = true;
+	for k in GH_REF_FRAMES { s3d::render(out); }
+	gfx::read_pixels(out)
+}
+
+// does e + t d, 0 < t < tmax, hit a sphere of the grid shifted by gxo in x?
+fn gh_hits(ex real, ey real, ez real, dx real, dy real, dz real, tmax real, gxo real) bool {
+	let t0 = -ez / dz;
+	let ix = (round(ex + t0 * dx - gxo) as int) + 2;
+	let iy = 2 - (round(ey + t0 * dy) as int);
+	let dd = dx * dx + dy * dy + dz * dz;
+	for a in 3 {
+		for b in 3 {
+			let gx = ix + a - 1;
+			let gy = iy + b - 1;
+			if gx < 0 || gx > 4 || gy < 0 || gy > 4 { continue; }
+			let px = ex - (gx as real - 2.0 + gxo);
+			let py = ey - (2.0 - gy as real);
+			let bb = px * dx + py * dy + ez * dz;
+			let c = px * px + py * py + ez * ez - GH_R * GH_R;
+			let disc = bb * bb - dd * c;
+			if disc < 0.0 { continue; }
+			let s = sqrt(disc);
+			let t1 = (-bb - s) / dd;
+			let t2 = (-bb + s) / dd;
+			if (t1 > 0.0 && t1 < tmax) || (t2 > 0.0 && t2 < tmax) { return true; }
+		}
+	}
+	false
+}
+
+// The band of case cs at the final pose: pixels whose centre ray and 8 rays on a
+// GH_RING_R px circle all miss the spheres and hit the wall at a point a sphere covered
+// (seen from that frame's eye) at some pose 0..GH_MOVES-1. Ring: band pixels within
+// 3.5 px of a sphere pixel. Returns the band and ring sizes.
+fn gh_band(cs int) int, int {
+	GH_BAND.clear();
+	GH_SPH.clear();
+	let th = tan(GH_FOV * 0.5);
+	let asp = GH_W as real / GH_H as real;
+	let efx = if cs == 1 { gh_off(GH_MOVES) } else if cs == 2 { -gh_off(GH_MOVES) } else { 0.0 };
+	let sfx = if cs == 0 || cs == 2 { gh_off(GH_MOVES) } else { 0.0 };
+	let wd = GH_EYE_Z - GH_WALL_Z;
+	for y in GH_H {
+		for x in GH_W {
+			var hit = false;
+			var all = true;
+			for r in 9 {
+				var sx = x as real + 0.5;
+				var sy = y as real + 0.5;
+				if r > 0 {
+					let a = (r - 1) as real * 0.785398163397448;
+					sx += GH_RING_R * cos(a);
+					sy += GH_RING_R * sin(a);
+				}
+				let dx = (sx / GH_W as real * 2.0 - 1.0) * th * asp;
+				let dy = (1.0 - sy / GH_H as real * 2.0) * th;
+				if gh_hits(efx, 0.0, GH_EYE_Z, dx, dy, -1.0, 1.0e30, sfx) {
+					if r == 0 { hit = true; }
+					all = false;
+					break;
+				}
+				let wx = efx + wd * dx;
+				let wy = wd * dy;
+				var cov = false;
+				for j in GH_MOVES {
+					let ejx = if cs == 1 { gh_off(j) } else if cs == 2 { -gh_off(j) } else { 0.0 };
+					let sj = if cs == 0 || cs == 2 { gh_off(j) } else { 0.0 };
+					if gh_hits(ejx, 0.0, GH_EYE_Z, wx - ejx, wy, GH_WALL_Z - GH_EYE_Z, 1.0, sj) { cov = true; break; }
+				}
+				if !cov { all = false; break; }
+			}
+			GH_SPH.push(if hit { 1 as byte } else { 0 as byte });
+			GH_BAND.push(if all { 1 as byte } else { 0 as byte });
+		}
+	}
+	var band = 0;
+	var ring = 0;
+	for y in GH_H {
+		for x in GH_W {
+			let i = y * GH_W + x;
+			if GH_BAND[i] == 0 { continue; }
+			band += 1;
+			var near = false;
+			for dy in 7 {
+				for dx in 7 {
+					let xx = x + dx - 3;
+					let yy = y + dy - 3;
+					if xx < 0 || yy < 0 || xx >= GH_W || yy >= GH_H { continue; }
+					if (dx - 3) * (dx - 3) + (dy - 3) * (dy - 3) <= 12 && GH_SPH[yy * GH_W + xx] == 1 { near = true; }
+				}
+			}
+			if near { GH_BAND[i] = 2 as byte; ring += 1; }
+		}
+	}
+	return band, ring;
+}
+
+fn gh_case(cs int) const byte[:] { if cs == 0 { "(a) grid moves" } else if cs == 1 { "(b) camera moves" } else { "(c) grid and camera move" } }
+fn gh_name(cs int, base const byte[:]) byte[>..] {
+	var p byte[>..] = [];
+	p.append("ghost_");
+	p.append(if cs == 0 { "a_" } else if cs == 1 { "b_" } else { "c_" });
+	p.append(base);
+	p.append(".png");
+	p
+}
+fn gh_png(out gfx::Texture, name const byte[:]) {
+	let p = path(OUT_DIR[..], name);
+	print("gpu: ghost png ", p[..], " ", gfx::save_png(out, p[..]));
+}
+
+// Band error of px vs ref, the largest channel difference per pixel; add > 0 first adds
+// a synthetic trail of add/255 to the ring pixels of px. Returns whether all three bars hold.
+fn gh_score(cs int, label const byte[:], px const byte[:], ref const byte[:], add int) bool {
+	var hist int[>..] = [];
+	for k in 256 { hist.push(0); }
+	var n = 0;
+	var sum = 0;
+	var big = 0;
+	var rn = 0;
+	for i in GH_W * GH_H {
+		if GH_BAND[i] == 0 { continue; }
+		var e = 0;
+		let tr = add > 0 && GH_BAND[i] == 2 && rn < GH_TRAIL_LIM;
+		if GH_BAND[i] == 2 { rn += 1; }
+		for c in 3 {
+			var a = px[i * 4 + c] as int;
+			if tr { a = min(a + add, 255); }
+			let d = a - ref[i * 4 + c] as int;
+			e = max(e, if d < 0 { -d } else { d });
+		}
+		hist[e] += 1;
+		n += 1;
+		sum += e;
+		if e > GH_BIG_ERR { big += 1; }
+	}
+	var p99 = 0;
+	var acc = 0;
+	let want = (n * 99 + 99) / 100;
+	for k in 256 {
+		acc += hist[k];
+		if acc >= want { p99 = k; break; }
+	}
+	let mean = sum as real / max(n, 1) as real;
+	GH_MEAN = mean;
+	let ok = n > 0 && mean <= GH_MEAN_BAR && p99 as real <= GH_P99_BAR && big <= GH_BIG_MAX;
+	if !GH_QUIET { print("gpu: ghost case ", gh_case(cs), " ", label, ": band ", n, " px, mean ", r3(mean), "/255 (bar <= ", GH_MEAN_BAR, "), p99 ", p99, "/255 (bar <= ", GH_P99_BAR, "), above ", GH_BIG_ERR, "/255 ", big, " px (bar <= ", GH_BIG_MAX, "): ", if ok { "within all bars" } else { "outside a bar" }); }
+	ok
+}
+
+fn gh_sm(n int) byte[>..] { if n < 0 { var o byte[>..] = []; o.append("none"); o } else { gh_istr(n) } }
+fn gh_istr(n0 int) byte[>..] {
+	var d byte[>..] = [];
+	var n = n0;
+	if n == 0 { d.push(48 as byte); }
+	while n > 0 { d.push((48 + n % 10) as byte); n = n / 10; }
+	var o byte[>..] = [];
+	var k = d.len;
+	while k > 0 { k -= 1; o.push(d[k]); }
+	o
+}
+
+// trail sensitivity (pre-registered measurement, part B): +C/255 on the first L ring
+// pixels in raster order of the passing frame, C x L swept; reports what fails a bar
+fn gh_sweep(cs int, px const byte[:], ref const byte[:], nr int) {
+	GH_QUIET = true;
+	for ci in GH_SWEEP_C.len {
+		let c = GH_SWEEP_C[ci];
+		var line byte[>..] = [];
+		var smallest = -1;
+		for li in GH_SWEEP_L.len {
+			let l = min(GH_SWEEP_L[li], nr);
+			GH_TRAIL_LIM = l;
+			let pass = gh_score(cs, "sweep", px, ref, c);
+			line.append(" L=");
+			line.append(gh_istr(l));
+			line.append(if pass { ":missed" } else { ":caught" });
+			if !pass && smallest < 0 { smallest = l; }
+		}
+		print("gpu: ghost case ", gh_case(cs), " trail sweep (measurement) C=", c, "/255:", line[..], "; smallest caught L ", gh_sm(smallest)[..], " (ring ", nr, " px)");
+	}
+	GH_TRAIL_LIM = 1000000000;
+	GH_QUIET = false;
+}
+
+fn gh_save_band(name const byte[:]) {
+	var px byte[>..] = [];
+	for i in GH_W * GH_H {
+		var r = 30;
+		var g = 30;
+		var b = 30;
+		if GH_SPH[i] == 1 { r = 120; g = 120; b = 120; }
+		if GH_BAND[i] == 1 { r = 40; g = 160; b = 255; }
+		if GH_BAND[i] == 2 { r = 255; g = 60; b = 40; }
+		px.push(r as byte); px.push(g as byte); px.push(b as byte); px.push(255 as byte);
+	}
+	let t = gfx::render_target(GH_W, GH_H, gfx::RGBA8);
+	let _ = gfx::update_texture(t, px[..]);
+	gh_png(t, name);
+	gfx::release(t);
+}
+
+// T4: the motion target after the last frame of ghost case (a). Every pixel must hold one
+// surface: no depth between the spheres and the wall, no motion between theirs.
+fn silhouette_checks() bool {
+	let mv = gfx::read_pixels(s3d::motion_target());
+	var zmix = 0;
+	var mmix = 0;
+	var moving = 0;
+	for y in GH_H {
+		for x in GH_W {
+			let m = motion_at(mv[..], GH_W, x, y);
+			let z = m.z as real;
+			let mx = m.x as real * GH_W as real;
+			let my = m.y as real * GH_H as real;
+			let d = sqrt(mx * mx + my * my);
+			if z > T4_Z_LO && z < T4_Z_HI { zmix += 1; }
+			if d > T4_MV_LO && d < T4_MV_HI { mmix += 1; }
+			if d >= T4_MV_HI { moving += 1; }
+		}
+	}
+	var zc = 0;
+	var mc = 0;
+	for by in GH_H / 2 {
+		for bx in GH_W / 2 {
+			var z = 0.0;
+			var mx = 0.0;
+			var my = 0.0;
+			for k in 4 {
+				let m = motion_at(mv[..], GH_W, bx * 2 + k % 2, by * 2 + k / 2);
+				z += m.z as real; mx += m.x as real; my += m.y as real;
+			}
+			z = z / 4.0;
+			mx = mx / 4.0 * GH_W as real;
+			my = my / 4.0 * GH_H as real;
+			let d = sqrt(mx * mx + my * my);
+			if z > T4_Z_LO && z < T4_Z_HI { zc += 1; }
+			if d > T4_MV_LO && d < T4_MV_HI { mc += 1; }
+		}
+	}
+	let ok = zmix <= T4_MIX_MAX && mmix <= T4_MIX_MAX && zc + mc >= T4_CONTROL_MIN;
+	print("gpu: silhouettes (T4) ghost case (a), last frame's motion target ", GH_W, "x", GH_H, " (", moving, " px moving >= ", T4_MV_HI, " px): depth in (", T4_Z_LO, ", ", T4_Z_HI, ") ", zmix, " px, motion in (", T4_MV_LO, ", ", T4_MV_HI, ") px ", mmix, " px (bar <= ", T4_MIX_MAX, " each); control, the target averaged over 2x2 blocks: ", zc, " + ", mc, " mixed (must be >= ", T4_CONTROL_MIN, ") ", if ok { "PASS" } else { "FAIL" });
+	ok
+}
+
+fn ghost_checks() bool {
+	var good = true;
+	let keep_g = s3d::temporal_gamma;
+	let keep_r = s3d::temporal_depth_reject;
+	let keep_m = s3d::temporal_motion_scale;
+	let out = gfx::render_target(GH_W, GH_H, gfx::RGBA8);
+	for cs in 3 {
+		ghost_scene(false);
+		s3d::init(GH_W, GH_H);
+		let nb, nr = gh_band(cs);
+		print("gpu: ghost case ", gh_case(cs), ": ", GH_W, "x", GH_H, ", ", r4(GH_STEP), " world units (", GH_STEP_PX, " px at the grid) per frame for ", GH_MOVES, " frames after ", GH_CONVERGE, " still, reference ", GH_REF_FRAMES, " converged frames; band ", nb, " px, innermost ring ", nr, " px");
+		let bn = gh_name(cs, "band");
+		gh_save_band(bn[..]);
+		let ref = gh_reference(cs, out);
+		let rn = gh_name(cs, "reference");
+		gh_png(out, rn[..]);
+		let px = gh_frames(cs, out);
+		let sn = gh_name(cs, "shipped");
+		gh_png(out, sn[..]);
+		let ok = gh_score(cs, "shipped (depth rejection 0.1, gamma 1.25)", px[..], ref[..], 0);
+		let m_on = GH_MEAN;
+		print("gpu: ghost case ", gh_case(cs), " shipped: ", if ok { "PASS" } else { "FAIL" });
+		if !ok { good = false; }
+		if cs == 0 && !silhouette_checks() { good = false; }
+		s3d::temporal_depth_reject = 0.0;
+		let po = gh_frames(cs, out);
+		let on = gh_name(cs, "rejection_off");
+		gh_png(out, on[..]);
+		let _ = gh_score(cs, "depth rejection off, gamma 1.25 (reported, not gated)", po[..], ref[..], 0);
+		let m_off = GH_MEAN;
+		let t8 = m_on <= m_off;
+		print("gpu: ghost case ", gh_case(cs), " T8: band mean with rejection on ", r3(m_on), " <= with rejection off ", r3(m_off), " ", if t8 { "PASS" } else { "FAIL" });
+		if !t8 { good = false; }
+		for ctl in 3 {
+			if ctl == 0 { s3d::temporal_gamma = 0.0; }
+			if ctl == 1 { s3d::temporal_gamma = 4.0; }
+			if ctl == 2 { s3d::temporal_motion_scale = 0.0; }
+			let pc = gh_frames(cs, out);
+			let cn = gh_name(cs, if ctl == 0 { "control_clip_off" } else if ctl == 1 { "control_gamma4" } else { "control_motion0" });
+			gh_png(out, cn[..]);
+			let label = if ctl == 0 { "control: clip off (gamma 0, rejection off)" } else if ctl == 1 { "control: very loose clip (gamma 4, rejection off)" } else { "control: motion forced to 0 (rejection off)" };
+			let cp = gh_score(cs, label, pc[..], ref[..], 0);
+			print("gpu: ghost case ", gh_case(cs), " ", label, " must fail a bar: ", if cp { "NOT CAUGHT" } else { "FAILS as required" });
+			if cp { good = false; }
+			s3d::temporal_gamma = keep_g;
+			s3d::temporal_motion_scale = keep_m;
+		}
+		s3d::temporal_depth_reject = keep_r;
+		let tp = gh_score(cs, "synthetic trail (+30/255 on the ring of the shipped frame)", px[..], ref[..], GH_TRAIL);
+		print("gpu: ghost case ", gh_case(cs), " synthetic 1 px trail (", nr, " px at +", GH_TRAIL, "/255) must fail a bar: ", if tp { "NOT CAUGHT" } else { "FAILS as required" });
+		if tp { good = false; }
+		gh_sweep(cs, px[..], ref[..], nr);
+	}
+	// case (c) with the shipped defaults (pre-registered, part B)
+	ghost_scene(true);
+	shipped_look();
+	s3d::init(GH_W, GH_H);
+	let nbc, nrc = gh_band(2);
+	let refc = gh_reference(2, out);
+	gh_png(out, "ghost_c_defaults_reference.png");
+	let pxc = gh_frames(2, out);
+	gh_png(out, "ghost_c_defaults_shipped.png");
+	let okc = gh_score(2, "shipped defaults (lit; shadows, ssao, bloom on)", pxc[..], refc[..], 0);
+	print("gpu: ghost case (c) with the shipped defaults (band ", nbc, " px, ring ", nrc, " px): ", if okc { "PASS" } else { "FAIL" });
+	if !okc { good = false; }
+	// the shipped defaults (shadows, SSAO, bloom on), lit, camera moving
+	ghost_scene(true);
+	shipped_look();
+	s3d::init(GH_W, GH_H);
+	let nb, nr = gh_band(1);
+	let ref = gh_reference(1, out);
+	gh_png(out, "ghost_b_defaults_reference.png");
+	let px = gh_frames(1, out);
+	gh_png(out, "ghost_b_defaults_shipped.png");
+	let ok = gh_score(1, "shipped defaults (lit; shadows, ssao, bloom on)", px[..], ref[..], 0);
+	print("gpu: ghost case (b) with the shipped defaults (band ", nb, " px, ring ", nr, " px): ", if ok { "PASS" } else { "FAIL" });
+	if !ok { good = false; }
+	gfx::release(out);
+	s3d::temporal = 0;
+	s3d::temporal_reset = true;
+	s3d::sun.shadows = false;
+	good
+}
+
+// T8 on a still scene: rejection must not change converged TAA
+fn t8_still() bool {
+	sphere_grid();
+	shipped_look();
+	s3d::init(GH_W, GH_H);
+	let out = gfx::render_target(GH_W, GH_H, gfx::RGBA8);
+	let keep = s3d::temporal_depth_reject;
+	let a = taa_frames(out, 48);
+	s3d::temporal_depth_reject = 0.0;
+	let b = taa_frames(out, 48);
+	s3d::temporal_depth_reject = keep;
+	let mask = geo_mask(GH_W, GH_H);
+	let d = mean_abs(a[..], b[..], mask[..]);
+	let ok = d <= T8_STILL_BAR;
+	print("gpu: depth rejection (T8) still sphere grid, shipped look, ", GH_W, "x", GH_H, ", 48 converged frames: rejection ", keep, " vs off mean abs ", r3(d), "/255 (bar <= ", T8_STILL_BAR, ") ", if ok { "PASS" } else { "FAIL" });
+	gfx::release(out);
+	s3d::temporal = 0;
+	s3d::temporal_reset = true;
+	s3d::sun.shadows = false;
+	ok
+}
+
+// S5 (pre-registered): six frames, two suns alternating, submitted without waiting
+// (gfx::frame), then flushed; each must equal the same sun rendered alone with a wait
+fn s5_inflight() bool {
+	wall_scene();
+	s3d::init(SH_W, SH_H);
+	s3d::debug_view = 5;
+	s3d::sun.shadows = true;
+	let keep = s3d::sun.to_sun;
+	let sa = float3 { 0.4, 0.8, 0.45 };
+	let sb = float3 { -0.5, 0.7, 0.5 };
+	let one = gfx::render_target(SH_W, SH_H, gfx::RGBA8);
+	s3d::sun.to_sun = sa;
+	s3d::render(one);
+	let ra = gfx::read_pixels(one);
+	s3d::sun.to_sun = sb;
+	s3d::render(one);
+	let rb = gfx::read_pixels(one);
+	gfx::release(one);
+	var outs gfx::Texture[>..] = [];
+	for f in S5_FRAMES { outs.push(gfx::render_target(SH_W, SH_H, gfx::RGBA8)); }
+	for f in S5_FRAMES {
+		s3d::sun.to_sun = if f % 2 == 0 { sa } else { sb };
+		s3d::render(outs[f]);
+		let _ = gfx::frame();
+	}
+	gfx::flush();
+	var worst = 0;
+	var differ = 0;
+	for f in S5_FRAMES {
+		let px = gfx::read_pixels(outs[f]);
+		let want = if f % 2 == 0 { ra[..] } else { rb[..] };
+		for i in px.len {
+			let d = px[i] as int - want[i] as int;
+			let a = if d < 0 { -d } else { d };
+			if a > 0 { differ += 1; }
+			worst = max(worst, a);
+		}
+	}
+	var ab = 0;
+	for i in ra.len { if ra[i] != rb[i] { ab += 1; } }
+	let ok = worst <= S5_MAX_DIFF && ab > 0;
+	print("gpu: shadow map in flight (S5): ", S5_FRAMES, " frames, two suns alternating, no wait between submits: max abs diff vs the fenced renders ", worst, " (bar <= ", S5_MAX_DIFF, "), ", differ, " bytes differ; the two suns' renders differ in ", ab, " bytes (must be > 0) ", if ok { "PASS" } else { "FAIL" });
+	// reported only (part B): the same no-wait run with the shadow pass never cycling
+	s3d::shadow_test_cycle_never = true;
+	for f in S5_FRAMES {
+		s3d::sun.to_sun = if f % 2 == 0 { sa } else { sb };
+		s3d::render(outs[f]);
+		let _ = gfx::frame();
+	}
+	gfx::flush();
+	s3d::shadow_test_cycle_never = false;
+	var nworst = 0;
+	var ndiffer = 0;
+	for f in S5_FRAMES {
+		let px = gfx::read_pixels(outs[f]);
+		let want = if f % 2 == 0 { ra[..] } else { rb[..] };
+		for i in px.len {
+			let d = px[i] as int - want[i] as int;
+			let a = if d < 0 { -d } else { d };
+			if a > 0 { ndiffer += 1; }
+			nworst = max(nworst, a);
+		}
+	}
+	print("gpu: shadow map in flight (S5) never-cycle variant (reported, not gated): max abs diff ", nworst, ", ", ndiffer, " bytes differ", if ndiffer == 0 { " (this driver serialises the frames; the hazard cannot be shown here)" } else { "" });
+	for t in outs { gfx::release(t); }
+	s3d::sun.to_sun = keep;
+	s3d::debug_view = 0;
+	s3d::sun.shadows = false;
+	ok
+}
+
+fn s6_pattern(l int, m int, n int) byte[>..] {
+	var p byte[>..] = [];
+	for i in n * n * 4 { p.push(((i * 7 + l * 31 + m * 57) % 250 + 1) as byte); }
+	p
+}
+
+fn s6_fill(t gfx::Texture, n int) {
+	for l in S6_LAYERS {
+		for m in S6_MIPS {
+			let sz = n >> m;
+			let p = s6_pattern(l, m, sz);
+			let _ = gfx::update_texture(t, gfx::Region { mip: m as i32, layer: l as i32, .. }, p[..]);
+		}
+	}
+}
+
+// bytes outside layer 1 mip 1 that differ from the fill, and whether the target equals
+// the clear colour (0.2, 0.4, 0.6, 0.8) exactly
+fn s6_read(t gfx::Texture, n int) int, bool {
+	var changed = 0;
+	var target = true;
+	for l in S6_LAYERS {
+		for m in S6_MIPS {
+			let sz = n >> m;
+			var b byte[>..] = [];
+			for i in sz * sz * 4 { b.push(0 as byte); }
+			let _ = gfx::read_texture(t, gfx::Region { mip: m as i32, layer: l as i32, .. }, b[..]);
+			if l == 1 && m == 1 {
+				for i in b.len {
+					let want = if i % 4 == 0 { 51 } else if i % 4 == 1 { 102 } else if i % 4 == 2 { 153 } else { 204 };
+					if b[i] as int != want { target = false; }
+				}
+			} else {
+				let p = s6_pattern(l, m, sz);
+				for i in b.len { if b[i] != p[i] { changed += 1; } }
+			}
+		}
+	}
+	return changed, target;
+}
+
+// S6 (pre-registered): a pass on one layer and mip leaves every other one untouched
+fn s6_layers() bool {
+	let n = 64;
+	let t = gfx::texture(gfx::TextureDesc { kind: 1, format: gfx::RGBA8, usage: gfx::SAMPLED | gfx::COLOR_TARGET, width: n as i32, height: n as i32, depth: S6_LAYERS as i32, mips: S6_MIPS as i32, .. });
+	s6_fill(t, n);
+	var d = gfx::PassDesc { layer: 1, mip: 1, color_value: float4 { 0.2, 0.4, 0.6, 0.8 }, cycle: 0, .. };
+	d.color[0] = t;
+	if gfx::begin_pass(d) { gfx::end_pass(); }
+	gfx::flush();
+	let changed, target = s6_read(t, n);
+	s6_fill(t, n);
+	var dc = gfx::PassDesc { layer: 1, mip: 1, color_value: float4 { 0.2, 0.4, 0.6, 0.8 }, cycle: 1, .. };
+	dc.color[0] = t;
+	if gfx::begin_pass(dc) { gfx::end_pass(); }
+	gfx::flush();
+	let cchanged, ctarget = s6_read(t, n);
+	let ok = changed == 0 && target && cchanged > 0;
+	print("gpu: single layer and mip (S6): ", S6_LAYERS, " layers x ", S6_MIPS, " mips RGBA8 array, clear of layer 1 mip 1: ", changed, " bytes changed elsewhere (bar 0), target equals the clear colour ", target, "; control with cycle 1: ", cchanged, " bytes changed elsewhere (must be > 0), target ", ctarget, " ", if ok { "PASS" } else { "FAIL" });
+	gfx::release(t);
+	ok
+}
+
+// GFX_MAKE_GOLDEN=1 (tools/hc/gfxtest.sh): write both goldens and stop (never a pass)
+fn make_goldens() bool {
+	if GOLDEN.len == 0 || GOLDEN_DEF.len == 0 { print("gpu: golden paths missing (gfxtest.sh passes both)"); return false; }
+	for g in 2 {
+		sphere_grid();
+		if g == 1 { shipped_look(); }
+		s3d::init(480, 360);
+		let o = gfx::render_target(480, 360, gfx::RGBA8);
+		s3d::render(o);
+		let ok = if g == 0 { gfx::save_png(o, GOLDEN[..]) } else { gfx::save_png(o, GOLDEN_DEF[..]) };
+		print(if ok { "gpu: golden written " } else { "gpu: golden NOT written " }, if g == 0 { GOLDEN[..] } else { GOLDEN_DEF[..] });
+		gfx::release(o);
+	}
+	print("gpu: goldens taken; review them, commit them and rerun without GFX_MAKE_GOLDEN");
+	false
+}
+
+fn gi_nums(s const byte[:], out real[>..]&) {
+	out.clear();
+	var i = 0;
+	while i < s.len {
+		let c = s[i] as int;
+		if !(c == 45 || c == 43 || c == 46 || (c >= 48 && c <= 57)) { i += 1; continue; }
+		var neg = false;
+		if c == 45 || c == 43 { neg = c == 45; i += 1; }
+		var v = 0.0; var scale = 1.0; var frac = false;
+		while i < s.len {
+			let d = s[i] as int;
+			if d >= 48 && d <= 57 { if frac { scale *= 0.1; v += (d - 48) as real * scale; } else { v = v * 10.0 + (d - 48) as real; } }
+			else if d == 46 { frac = true; }
+			else { break; }
+			i += 1;
+		}
+		if i < s.len && (s[i] == 101 || s[i] == 69) {
+			i += 1;
+			var en = false;
+			if i < s.len && (s[i] == 45 || s[i] == 43) { en = s[i] == 45; i += 1; }
+			var e = 0;
+			while i < s.len && s[i] >= 48 && s[i] <= 57 { e = e * 10 + (s[i] as int - 48); i += 1; }
+			v *= pow(10.0, (if en { -e } else { e }) as real);
+		}
+		out.push(if neg { -v } else { v });
+	}
+}
+fn gi_gunzip(name const byte[:], out byte[>..]&) bool {
+	out.clear();
+	var dir byte[>..] = [];
+	if !env("GFX_GI_DIR", dir) || dir.len == 0 { dir.clear(); dir.append("hc/test/gfx/gi"); }
+	var p byte[>..] = [];
+	p.append(dir[..]); p.append("/"); p.append(name);
+	var z byte[>..] = [];
+	if !read_file(p[..], z) || z.len < 18 || z[0] != 31 || z[1] != 139 || z[2] != 8 { return false; }
+	let fl = z[3] as int;
+	var at = 10;
+	if fl & 4 != 0 { at += 2 + (z[at] as int | (z[at + 1] as int << 8)); }
+	if fl & 8 != 0 { while at < z.len && z[at] != 0 { at += 1; } at += 1; }
+	if fl & 16 != 0 { while at < z.len && z[at] != 0 { at += 1; } at += 1; }
+	if fl & 2 != 0 { at += 2; }
+	at < z.len && zlib::inflate_raw(z[at..], out)
+}
+fn gi_half(px const byte[:], stride int, i int, c int) f32 { HALF[(px[i * stride + c * 2] as int) | ((px[i * stride + c * 2 + 1] as int) << 8)] }
+fn cornell_scene() {
+	reset_scene();
+	cornell::build();
+	let nt = cornell::tri_mat.len;
+	for m in 3 {
+		let vfirst = gltf::verts.len / gltf::VERTEX_FLOATS;
+		let ifirst = gltf::indices.len;
+		var n = 0;
+		for t in nt {
+			if cornell::tri_mat[t] != m { continue; }
+			let b = t * cornell::TRI_FLOATS;
+			let a = linalg::v3(cornell::tris[b] as f32, cornell::tris[b + 1] as f32, cornell::tris[b + 2] as f32);
+			let q = linalg::v3(cornell::tris[b + 3] as f32, cornell::tris[b + 4] as f32, cornell::tris[b + 5] as f32);
+			let r = linalg::v3(cornell::tris[b + 6] as f32, cornell::tris[b + 7] as f32, cornell::tris[b + 8] as f32);
+			let nn = linalg::unit3(linalg::cross3(linalg::v3(q.x - a.x, q.y - a.y, q.z - a.z), linalg::v3(r.x - a.x, r.y - a.y, r.z - a.z)));
+			let tg = float4 { 1.0, 0.0, 0.0, 1.0 };
+			shapes::vertex(a, nn, 0.0, 0.0, tg); shapes::vertex(q, nn, 1.0, 0.0, tg); shapes::vertex(r, nn, 1.0, 1.0, tg);
+			gltf::indices.append([(n * 3) as u32, (n * 3 + 1) as u32, (n * 3 + 2) as u32]);
+			n += 1;
+		}
+		var mat = shapes::material(linalg::v3(cornell::albedo_r(m) as f32, cornell::albedo_g(m) as f32, cornell::albedo_b(m) as f32), 0.0, 1.0);
+		mat.double_sided = true;
+		let asset = shapes::finish(vfirst, ifirst, linalg::v3(0.0, 0.0, 0.0), linalg::v3(5.56, 5.488, 5.592), mat);
+		s3d::place(s3d::add(asset), gfx::mat4_identity);
+	}
+	s3d::view = s3d::Camera { eye: float3 { cornell::EYE_X as f32, cornell::EYE_Y as f32, cornell::EYE_Z as f32 }, target: float3 { cornell::EYE_X as f32, cornell::EYE_Y as f32, 0.0 }, up: float3 { 0.0, 1.0, 0.0 }, fov_y: cornell::FOV_Y as f32, near: 0.1, far: 100.0 };
+	s3d::sun.shadows = false;
+	s3d::look.bloom = 0.0;
+	s3d::temporal = 0;
+	s3d::add_light(float3 { cornell::LIGHT_X as f32, cornell::LIGHT_Y as f32, cornell::LIGHT_Z as f32 }, float3 { cornell::LIGHT_RGB as f32, cornell::LIGHT_RGB as f32, cornell::LIGHT_RGB as f32 }, cornell::LIGHT_RANGE as f32);
+}
+fn gi_gate(rad const real[:]) byte[>..] {
+	let w = cornell::REF_W; let h = cornell::REF_H;
+	var g byte[>..] = [];
+	for j in h { for i in w {
+		var ok = true;
+		for dj in 3 { for di in 3 {
+			let x = i + di - 1; let y = j + dj - 1;
+			if x < 0 || y < 0 || x >= w || y >= h { ok = false; } else {
+				let k = (y * w + x) * 5;
+				if 0.2126 * rad[k + 1] + 0.7152 * rad[k + 2] + 0.0722 * rad[k + 3] <= 0.0 { ok = false; }
+			}
+		} }
+		g.push(if ok { 1 } else { 0 });
+	} }
+	g
+}
+fn to_world(m gfx::mat4, x real, y real, z real) real, real, real {
+	return m.c0.x as real * x + m.c0.y as real * y + m.c0.z as real * z, m.c1.x as real * x + m.c1.y as real * y + m.c1.z as real * z, m.c2.x as real * x + m.c2.y as real * y + m.c2.z as real * z;
+}
+fn deg(ax real, ay real, az real, bx real, by real, bz real) real {
+	let la = sqrt(ax * ax + ay * ay + az * az); let lb = sqrt(bx * bx + by * by + bz * bz);
+	if la <= 0.0 || lb <= 0.0 { return 180.0; }
+	acos(clamp((ax * bx + ay * by + az * bz) / (la * lb), -1.0, 1.0)) * 180.0 / cornell::PI
+}
+fn gtao_render(mode int, rw int, rh int, aor real[>..]&, bnr real[>..]&, gnr real[>..]&) {
+	s3d::ao_mode = mode;
+	s3d::init(rw, rh);
+	let out = gfx::render_target(rw, rh, gfx::RGBA8);
+	s3d::render(out);
+	let a = gfx::read_pixels(s3d::ao_target());
+	let b = gfx::read_pixels(s3d::bent_target());
+	let q = gfx::read_pixels(s3d::nd_target());
+	let f = rw / cornell::REF_W;
+	aor.clear(); bnr.clear(); gnr.clear();
+	for j in cornell::REF_H { for i in cornell::REF_W {
+		var sa = 0.0; var bx = 0.0; var by = 0.0; var bz = 0.0; var gx = 0.0; var gy = 0.0; var gz = 0.0;
+		for y in f { for x in f {
+			let p = (j * f + y) * rw + i * f + x;
+			sa += gi_half(a[..], 2, p, 0) as real;
+			bx += gi_half(b[..], 8, p, 0) as real; by += gi_half(b[..], 8, p, 1) as real; bz += gi_half(b[..], 8, p, 2) as real;
+			gx += gi_half(q[..], 8, p, 0) as real; gy += gi_half(q[..], 8, p, 1) as real; gz += gi_half(q[..], 8, p, 2) as real;
+		} }
+		aor.push(sa / (f * f) as real);
+		let wx, wy, wz = to_world(s3d::view_mat, bx, by, bz);
+		bnr.push(wx); bnr.push(wy); bnr.push(wz);
+		let hx, hy, hz = to_world(s3d::view_mat, gx, gy, gz);
+		gnr.push(hx); gnr.push(hy); gnr.push(hz);
+	} }
+	gfx::release(out);
+}
+fn gtao_checks() bool {
+	half_table();
+	var raw byte[>..] = [];
+	var rad real[>..] = [];
+	var aref real[>..] = [];
+	if !gi_gunzip("cornell_ref.txt.gz", raw) { print("gpu: gtao FAILED: cannot read cornell_ref.txt.gz (GFX_GI_DIR)"); return false; }
+	gi_nums(raw[..], rad);
+	if !gi_gunzip("cornell_ao_ref.txt.gz", raw) { print("gpu: gtao FAILED: cannot read cornell_ao_ref.txt.gz (GFX_GI_DIR)"); return false; }
+	gi_nums(raw[..], aref);
+	let np = cornell::REF_W * cornell::REF_H;
+	if rad.len != np * 5 || aref.len != np * 5 { print("gpu: gtao FAILED: reference sizes ", rad.len, " ", aref.len); return false; }
+	let gate = gi_gate(rad[..]);
+	cornell_scene();
+	s3d::look.ssao = true;
+	s3d::look.ao_radius = cornell::AO_RADIUS as f32;
+	s3d::look.ao_power = 1.0;
+	s3d::look.ao_samples = 32;
+	var ao real[>..] = []; var bn real[>..] = []; var gn real[>..] = [];
+	var sao real[>..] = []; var sbn real[>..] = []; var sgn real[>..] = [];
+	gtao_render(0, 512, 512, sao, sbn, sgn);
+	gtao_render(1, 512, 512, ao, bn, gn);
+	s3d::ao_mode = 0;
+	var n = 0; var e = 0.0; var ec = 0.0; var es = 0.0; var nb = 0; var eb = 0.0; var eg = 0.0;
+	for i in np {
+		if gate[i] == 0 { continue; }
+		let r = aref[i * 5 + 1];
+		n += 1; e += abs(ao[i] - r); ec += abs(1.0 - r); es += abs(sao[i] - r);
+		if r < 0.8 {
+			nb += 1;
+			eb += deg(bn[i * 3], bn[i * 3 + 1], bn[i * 3 + 2], aref[i * 5 + 2], aref[i * 5 + 3], aref[i * 5 + 4]);
+			eg += deg(gn[i * 3], gn[i * 3 + 1], gn[i * 3 + 2], aref[i * 5 + 2], aref[i * 5 + 3], aref[i * 5 + 4]);
+		}
+	}
+	if n == 0 || nb == 0 { print("gpu: gtao FAILED: no gated pixels (", n, ", ", nb, ")"); return false; }
+	let mae = e / n as real; let cmae = ec / n as real; let smae = es / n as real;
+	let ang = eb / nb as real; let gang = eg / nb as real;
+	let a1 = mae < AO_MAE_BAR; let a2 = mae <= AO_CTRL_RATIO * cmae; let a3 = ang < BN_DEG_BAR && ang <= BN_CTRL_RATIO * gang;
+	let c1 = cmae >= AO_MAE_BAR;
+	let c3 = gang >= BN_DEG_BAR;
+	print("gpu: gtao A1 ", n, " gated pixels, mean |ao - ao_ref| ", r4(mae), " (bar < ", AO_MAE_BAR, ") ", if a1 { "PASS" } else { "FAIL" });
+	print("gpu: gtao A2 vs AO-off control ", r4(cmae), ": ratio ", r3(mae / cmae), " (bar <= ", AO_CTRL_RATIO, ") ", if a2 { "PASS" } else { "FAIL" }, "; control on A1 ", if c1 { "fails (good)" } else { "PASSES (scene not discriminating: FAIL)" });
+	print("gpu: gtao A3 ", nb, " pixels with ao_ref < 0.8, bent normal mean error ", r2(ang), " deg (bar < ", BN_DEG_BAR, ", <= ", BN_CTRL_RATIO, " x geometric normal ", r2(gang), " deg) ", if a3 { "PASS" } else { "FAIL" }, "; geometric-normal control ", if c3 { "fails (good)" } else { "PASSES (FAIL)" });
+	print("gpu: gtao reported: hemisphere SSAO on the same pixels mean |ao - ao_ref| ", r4(smae));
+	var img byte[>..] = [];
+	img.append("P5\n384 128\n255\n");
+	for j in cornell::REF_H { for k in 3 { for i in cornell::REF_W {
+		let q = j * cornell::REF_W + i;
+		let v = if k == 0 { aref[q * 5 + 1] } else if k == 1 { ao[q] } else { sao[q] };
+		img.push(if gate[q] == 0 { 0 } else { clamp(round(v * 255.0), 0.0, 255.0) as int as byte });
+	} } }
+	let ip = path(OUT_DIR[..], "gtao_ref_gtao_ssao.pgm");
+	print("gpu: gtao image ", ip[..], " ", write_file(ip[..], img[..]));
+	let e2 = gfx::error();
+	if e2.len > 0 { print("gpu: gfx error ", e2[..]); return false; }
+	a1 && a2 && a3 && c1 && c3
+}
+fn gpu_checks(dir const byte[:], golden const byte[:]) bool {
+	var good = true;
+	// GFX_MAKE_GOLDEN: unset or 0 runs the checks, 1 writes both goldens and stops
+	var mg byte[>..] = [];
+	if env("GFX_MAKE_GOLDEN", mg) && mg.len > 0 {
+		if mg.len != 1 || (mg[0] != 48 && mg[0] != 49) { print("gpu: FAILED: GFX_MAKE_GOLDEN must be 0 or 1, got ", mg[..]); return false; }
+		if mg[0] == 49 { return make_goldens(); }
+	}
+	var only byte[>..] = [];
+	let _ = env("GFX_ONLY", only);
+	if only.len > 0 {
+		let ok = if only[..] == "gtao" { gtao_checks() } else { shadow_checks() };
+		let e = gfx::error();
+		if e.len > 0 { print("gpu: gfx error ", e[..]); return false; }
+		return ok;
+	}
+	if !furnace(FURNACE_K) { good = false; }
+
+	sphere_grid();
+	s3d::init(480, 360);
+	let out = gfx::render_target(480, 360, gfx::RGBA8);
+	s3d::render(out);
+	let got = gfx::read_pixels(out);
+	let sp = path(dir, "spheres.png");
+	print("gpu: spheres png ", sp[..], " ", gfx::save_png(out, sp[..]));
+	// the golden is required: a missing, unreadable or wrong-sized golden is a failure
+	if GOLDEN.len == 0 {
+		print("gpu: spheres FAILED: no golden given (expected hc/test/gfx/golden/spheres.png)");
+		good = false;
+	} else {
+		var want byte[>..] = [];
+		var ref byte[>..] = [];
+		let readable = read_file(GOLDEN[..], want);
+		let gw, gh, gok = codec_png::decode(want[..], ref);
+		if !readable || !gok || gw != 480 || gh != 360 {
+			print("gpu: spheres FAILED: golden ", GOLDEN[..], " unreadable or not a 480x360 PNG");
+			good = false;
+		} else {
+			let db = psnr(got[..], ref[..]);
+			print("gpu: spheres psnr ", round(db * 100.0) / 100.0, " dB vs golden (bar > 40 dB) ", if db > 40.0 { "PASS" } else { "FAIL" });
+			if db <= 40.0 { good = false; }
+		}
+	}
+	gfx::release(out);
+
+	// the shipped look on the same grid (shadows, SSAO and bloom on)
+	sphere_grid();
+	shipped_look();
+	s3d::init(480, 360);
+	let dout = gfx::render_target(480, 360, gfx::RGBA8);
+	s3d::render(dout);
+	let dgot = gfx::read_pixels(dout);
+	let dsp = path(dir, "spheres_default.png");
+	print("gpu: default png ", dsp[..], " ", gfx::save_png(dout, dsp[..]));
+	gfx::release(dout);
+	let ddb = golden_psnr(dgot[..], GOLDEN_DEF[..]);
+	if ddb < 0.0 {
+		print("gpu: default FAILED: golden ", GOLDEN_DEF[..], " missing, unreadable or not a 480x360 PNG (expected hc/test/gfx/golden/spheres_default.png)");
+		good = false;
+	} else {
+		print("gpu: default spheres (shipped look: shadows, ssao, bloom on) psnr ", r2(ddb), " dB vs golden (bar > 40 dB) ", if ddb > 40.0 { "PASS" } else { "FAIL" });
+		if ddb <= 40.0 { good = false; }
+		let cdb = golden_psnr(got[..], GOLDEN_DEF[..]);
+		print("gpu: default control (effects-off image vs the shipped-look golden) psnr ", r2(cdb), " dB must fail the 40 dB bar: ", if cdb <= 40.0 { "PASS" } else { "FAIL" });
+		if cdb > 40.0 { good = false; }
+	}
+	let dmean, dlo, dhi = luma_stats(dgot[..]);
+	print("gpu: default spheres luma mean ", dmean, " range ", dlo, "..", dhi);
+	if dmean < 30 || dmean > 225 || dhi - dlo < 120 { good = false; }
+	sphere_grid();
+	s3d::init(480, 360);
+
+	// timing at 720p on the same scene: 30 warmup frames, then 200 timed frames, each
+	// render + submit + fence wait with no readback. Wall clock per frame always; GPU time
+	// per frame from timestamp queries when run under the gputime layer (HELIUM_GPUTIME).
+	s3d::init(1280, 720);
+	let big = gfx::render_target(1280, 720, gfx::RGBA8);
+	s3d::render(big);
+	let _ = gfx::read_pixels(big);
+	for k in TIME_WARMUP { s3d::render(big); gfx::flush(); }
+	var log byte[>..] = [];
+	let have_log = env("HELIUM_GPUTIME", log) && log.len > 0;
+	var gpu_ns real[>..] = [];
+	if have_log { gputime_lines(log[..], gpu_ns); }
+	let first = gpu_ns.len;
+	var wall real[>..] = [];
+	for k in TIME_FRAMES {
+		let t = gfx::time();
+		s3d::render(big);
+		gfx::flush();
+		wall.push((gfx::time() - t) * 1000.0);
+	}
+	print("gpu: timing 1280x720 sphere grid (", s3d::batch.len, " draws, 4x msaa; shadows, ssao and bloom off as in the baseline): ", TIME_WARMUP, " warmup + ", TIME_FRAMES, " timed frames, each render + submit + fence wait, no readback");
+	print("gpu: timing wall-clock ms/frame ", stats(wall)[..]);
+	if have_log {
+		gputime_lines(log[..], gpu_ns);
+		let n = gpu_ns.len - first;
+		if n > 0 && n % TIME_FRAMES == 0 {
+			let per = n / TIME_FRAMES;
+			var frame real[>..] = [];
+			for f in TIME_FRAMES {
+				var t = 0.0;
+				for j in per { t += gpu_ns[first + f * per + j]; }
+				frame.push(t / 1.0e6);
+			}
+			print("gpu: timing gpu-timestamp ms/frame ", stats(frame)[..], " (", per, " submit(s) per frame, top-of-pipe to bottom-of-pipe)");
+		} else {
+			print("gpu: timing gpu-timestamp: ", n, " submits for ", TIME_FRAMES, " frames, cannot split per frame");
+			good = false;
+		}
+	} else {
+		print("gpu: timing gpu-timestamp: not measured (run under tools/hc/gputime, see tools/hc/gfxtest.sh)");
+	}
+	// the same scene and size with the shipped look: what an application gets by default
+	shipped_look();
+	frame_time("default", "1280x720 sphere grid, shipped look (shadows 3x2048^2, ssao 16, bloom on), taa off", big);
+	s3d::temporal = 1;
+	s3d::temporal_reset = true;
+	frame_time("default", "1280x720 sphere grid, shipped look, taa on", big);
+	s3d::temporal = 0;
+	s3d::temporal_reset = true;
+	gfx::release(big);
+
+	// a full frame with every feature, in the shipped look and sun
+	reset_scene();
+	s3d::look = DEF_LOOK;
+	s3d::sun = DEF_SUN;
+	s3d::sky = DEF_SKY;
+	s3d::temporal = 0;
+	print("gpu: frame look: shadows ", s3d::sun.shadows, ", ssao ", s3d::look.ssao, ", bloom ", r2(s3d::look.bloom as real), " (scene3d defaults)");
+	let a = gltf::load_bytes(embed_file("fixtures/scene.glb"), "");
+	let floor = shapes::plane(6.0, shapes::material(linalg::v3(0.5, 0.52, 0.55), 0.0, 0.7));
+	s3d::add(floor);
+	let it = s3d::add(a);
+	s3d::place(it, gfx::translate(float3 { 0.0, 0.6, 0.0 }));
+	s3d::animate(it, gltf::find_animation(a, "wave"), 0.7);
+	let ball = shapes::sphere(0.5, 32, 16, shapes::material(linalg::v3(0.95, 0.95, 0.95), 1.0, 0.25));
+	s3d::place(s3d::add(ball), gfx::translate(float3 { 1.6, 0.5, 0.4 }));
+	s3d::add_light(float3 { -1.5, 1.2, 1.0 }, float3 { 6.0, 2.0, 0.8 }, 6.0);
+	s3d::view = s3d::Camera { eye: float3 { 2.5, 2.2, 5.0 }, target: float3 { 0.0, 0.6, 0.0 }, up: float3 { 0.0, 1.0, 0.0 }, fov_y: 0.9, near: 0.1, far: 60.0 };
+	s3d::init(640, 360);
+	sparks::init(512);
+	sparks::ground = 0.0;
+	sparks::burst(float3 { 1.6, 1.1, 0.4 }, float3 { 0.0, 1.0, 0.0 }, 300, 3.0, 0.6, 1.5, float4 { 4.0, 2.2, 0.8, 1.0 }, 0.05, 7);
+	sparks::step(0.0);
+	for k in 8 { sparks::step(0.03); }
+	let frame = gfx::render_target(640, 360, gfx::RGBA8);
+	s3d::render(frame);
+	var text TextVtx[>..] = [];
+	sdf_text(text, 16.0, 16.0, 28.0, "helium gfx", [255, 255, 255, 255], 1, true);
+	sdf_draw(frame, 640, 360, text);
+	let px = gfx::read_pixels(frame);
+	let frp = path(dir, "frame.png");
+	print("gpu: frame png ", frp[..], " ", gfx::save_png(frame, frp[..]));
+	let mean, lo, hi = luma_stats(px[..]);
+	print("gpu: frame mean ", mean, " range ", lo, "..", hi);
+	if mean < 30 || mean > 225 || hi - lo < 120 { good = false; }
+	gfx::release(frame);
+	if !motion_checks() { good = false; }
+	if !taa_checks(dir) { good = false; }
+	if !tsr_checks(dir) { good = false; }
+	if !shadow_checks() { good = false; }
+	if !look_taa_checks(dir) { good = false; }
+	if !ghost_checks() { good = false; }
+	if !t8_still() { good = false; }
+	if !s5_inflight() { good = false; }
+	if !s6_layers() { good = false; }
+	if !gtao_checks() { good = false; }
+	let err = gfx::error();
+	if err.len > 0 { print("gpu: gfx error ", err[..]); good = false; }
+	good
+}
+
+fn main() {
+	cpu_checks();
+	// read argv straight into owned buffers (os.args() hands back slices of freed buffers)
+	let argc = arg_count();
+	if argc < 2 { return; }
+	OUT_DIR.clear();
+	arg(1, OUT_DIR);
+	var kv byte[>..] = [];
+	if env("FURNACE_K", kv) && kv.len > 0 { var k = 0; for c in kv { if c >= 48 && c <= 57 { k = k * 10 + (c as int - 48); } } if k > 0 { FURNACE_K = k; } }
+	GOLDEN.clear();
+	if argc > 2 { arg(2, GOLDEN); }
+	GOLDEN_DEF.clear();
+	if argc > 3 { arg(3, GOLDEN_DEF); }
+	DEF_LOOK = s3d::look;
+	DEF_SUN = s3d::sun;
+	DEF_SKY = s3d::sky;
+	print("gpu: out dir ", OUT_DIR[..]);
+	if !gfx::open_headless(64, 64) { print("gpu: skipped (no device: ", gfx::error()[..], ")"); return; }
+	let t0 = gfx::time();
+	let good = gpu_checks(OUT_DIR[..], GOLDEN[..]);
+	print(if good { "gpu: ok" } else { "gpu: FAILED" }, " (", round((gfx::time() - t0) * 10.0) / 10.0, " s, ", gfx::driver()[..], ")");
+	gfx::close();
+}
