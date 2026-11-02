@@ -22,3 +22,12 @@ epic) with render-scale.
 * **M3 scalability.** On the reference scene at 1280x720 (RX 9060 XT), mean frame time over 60
   frames: low <= **40 %** of epic, and low < medium < high <= epic. Every preset's image is
   finite and not blank (standard deviation of luminance > 0.02).
+
+### M1 interpretation (written before the first run)
+
+The recognizer can only see the samples it is given, so "true" pan translation, pinch ratio
+and rotation are computed by the test from the generator's first and last emitted (jittered)
+samples, not from the noise-free intent. Pans in the 600-trace set ease in and out (slow at
+release); swipes are a separate set of fast, accelerating strokes. A trace counts as
+recognized when the set of base gestures it produced (TAP, DOUBLE_TAP, LONG_PRESS, PAN, PINCH,
+ROTATE, SWIPE; updates and ends fold into their base) is exactly its label.

@@ -1,0 +1,92 @@
+import std;
+import math;
+import gfx;
+import gfx.touch;
+var FAILS = 0;
+fn check(ok bool, what const byte[:]) { if ok { print("PASS ", what); } else { print("FAIL ", what); FAILS += 1; } }
+var SEED = 4711;
+fn rnd() int { SEED = (SEED * 1103515245 + 12345) % 2147483648; SEED }
+fn uni() real { rnd() as real / 2147483648.0 }
+fn rng(a real, b real) real { a + (b - a) * uni() }
+fn jit() f32 { rng(-2.0, 2.0) as f32 }
+fn ease(u real) real { if u < 0.5 { 2.0 * u * u } else { 1.0 - pow(-2.0 * u + 2.0, 2.0) / 2.0 } }
+var T = 0.0;
+var GOT touch::Gesture[>..] = [];
+var ALL touch::Gesture[>..] = [];
+fn step(fs gfx::Finger[>..]&) { T += rng(0.008, 0.024); touch::frame(T, fs); touch::take(GOT); ALL.append(GOT[..]); }
+fn idle(secs real) { var none gfx::Finger[>..] = []; let end = T + secs; while T < end { step(none); } }
+fn one(id int, x f32, y f32) gfx::Finger[>..] { var f gfx::Finger[>..] = []; f.push(gfx::Finger { id: id, x: x + jit(), y: y + jit() }); f }
+var FX f32 = 0.0; var FY f32 = 0.0; var LXX f32 = 0.0; var LYY f32 = 0.0; var D_FIRST f32 = 0.0; var D_LAST f32 = 0.0; var A_FIRST real = 0.0; var A_LAST real = 0.0; var A_UNW real = 0.0;
+fn hold(x f32, y f32, secs real, first bool) { let end = T + secs; var f0 = true; while T < end || f0 { var f = one(1, x, y); if f0 && first { FX = f[0].x; FY = f[0].y; } f0 = false; LXX = f[0].x; LYY = f[0].y; step(f); } }
+fn tap(x f32, y f32) { hold(x, y, rng(0.05, 0.2), true); idle(0.0001); }
+fn pan(fast bool, ang real) {
+	let x0 = rng(300.0, 700.0) as f32; let y0 = rng(300.0, 500.0) as f32;
+	let dist = if fast { rng(150.0, 300.0) } else { rng(60.0, 250.0) }; let dur = if fast { rng(0.08, 0.15) } else { rng(0.6, 1.2) };
+	let t0 = T; var first = true;
+	while true {
+		let u = min((T - t0) / dur, 1.0); let e = if fast { u * u } else { ease(u) };
+		var f = one(1, x0 + (dist * e * cos(ang)) as f32, y0 + (dist * e * sin(ang)) as f32);
+		if first { FX = f[0].x; FY = f[0].y; first = false; }
+		LXX = f[0].x; LYY = f[0].y;
+		step(f);
+		if u >= 1.0 { break; }
+	}
+	idle(0.0001);
+}
+fn two(kind int) real {
+	let cx = rng(400.0, 600.0); let cy = rng(300.0, 450.0); let r0 = rng(40.0, 100.0); let a0 = rng(0.0, 6.28);
+	let sc = if kind == 0 { if rnd() % 2 == 0 { rng(1.3, 2.5) } else { rng(0.4, 0.75) } } else { 1.0 };
+	let rot = if kind == 1 { (if rnd() % 2 == 0 { 1.0 } else { -1.0 }) * rng(20.0, 120.0) * 0.017453292519943295 } else { 0.0 };
+	let dur = rng(0.5, 1.0); let t0 = T; var first = true; var prev = 0.0;
+	while true {
+		let u = min((T - t0) / dur, 1.0); let e = ease(u); let r = r0 * (1.0 + (sc - 1.0) * e); let a = a0 + rot * e;
+		var f gfx::Finger[>..] = [];
+		f.push(gfx::Finger { id: 1, x: (cx - r * cos(a)) as f32 + jit(), y: (cy - r * sin(a)) as f32 + jit() });
+		f.push(gfx::Finger { id: 2, x: (cx + r * cos(a)) as f32 + jit(), y: (cy + r * sin(a)) as f32 + jit() });
+		let dx = (f[1].x - f[0].x) as real; let dy = (f[1].y - f[0].y) as real; let an = atan2(dy, dx);
+		if first { D_FIRST = sqrt(dx * dx + dy * dy) as f32; A_FIRST = an; A_UNW = 0.0; prev = an; first = false; }
+		var da = an - prev; if da > 3.141592653589793 { da -= 6.283185307179586; } if da < -3.141592653589793 { da += 6.283185307179586; } A_UNW += da; prev = an;
+		D_LAST = sqrt(dx * dx + dy * dy) as f32;
+		step(f);
+		if u >= 1.0 { break; }
+	}
+	idle(0.0001);
+	sc
+}
+fn base(k int) int { if k == touch::PAN_END { touch::PAN } else if k == touch::PINCH_END { touch::PINCH } else if k == touch::ROTATE_END { touch::ROTATE } else { k } }
+fn main() {
+	touch::reset();
+	let names = ["tap", "double tap", "long press", "pan", "pinch", "rotate"];
+	let want = [touch::TAP, touch::DOUBLE_TAP, touch::LONG_PRESS, touch::PAN, touch::PINCH, touch::ROTATE];
+	var ok = 0; var multi = 0; var ws f32 = 0.0; var wr f32 = 0.0; var wp f32 = 0.0;
+	for i in 600 {
+		let lab = i % 6;
+		idle(0.7); ALL.clear();
+		let x = rng(200.0, 800.0) as f32; let y = rng(200.0, 600.0) as f32;
+		if lab == 0 { tap(x, y); } else if lab == 1 { tap(x, y); idle(rng(0.08, 0.2)); tap(x + jit(), y + jit()); } else if lab == 2 { hold(x, y, rng(0.7, 1.2), true); idle(0.0001); }
+		else if lab == 3 { pan(false, rng(0.0, 6.283185307179586)); } else { let _s = two(if lab == 4 { 0 } else { 1 }); }
+		idle(0.7);
+		var kinds int[>..] = [];
+		for g in ALL { let b = base(g.kind); var seen = false; for k in kinds { if k == b { seen = true; } } if !seen { kinds.push(b); } }
+		if kinds.len > 1 { multi += 1; }
+		if kinds.len == 1 && kinds[0] == want[lab] { ok += 1; } else { var ks byte[>..] = []; for k in kinds { ks.append(str(k, " ")); } print("M1 trace ", i, " (", names[lab], ") gave kinds: ", ks[..]); }
+		for g in ALL {
+			if g.kind == touch::PAN_END { wp = max(wp, max(abs(g.dx - (LXX - FX)), abs(g.dy - (LYY - FY)))); }
+			if g.kind == touch::PINCH_END { ws = max(ws, abs(g.scale / (D_LAST / D_FIRST) - 1.0)); }
+			if g.kind == touch::ROTATE_END { wr = max(wr, abs(g.angle - A_UNW as f32) * 57.29578); }
+		}
+	}
+	print("M1 gestures: ", ok, " / 600 recognized, ", multi, " traces with two kinds; pinch error ", ws * 100.0, " %, rotation ", wr, " deg, pan ", wp, " px");
+	check(ok >= 594 && multi == 0 && ws <= 0.01 && wr <= 1.0 && wp <= 1.0, "M1 >= 99 % recognized, none doubled, pinch 1 %, rotate 1 deg, pan 1 px");
+	var sw = 0;
+	for i in 100 {
+		idle(0.7); ALL.clear();
+		let d = rnd() % 4; let ang = [3.141592653589793, -1.5707963267948966, 0.0, 1.5707963267948966][d] + rng(-0.5, 0.5);
+		pan(true, ang); idle(0.4);
+		var good = false; for g in ALL { if g.kind == touch::SWIPE && g.dir == d { good = true; } }
+		if good { sw += 1; } else { print("M1 swipe ", i, " direction ", d, " missed"); }
+	}
+	print("M1 swipes: ", sw, " / 100 right direction");
+	check(sw == 100, "M1 swipe direction every time");
+	if FAILS == 0 { print("touch: ok"); } else { print("touch: FAILED ", FAILS); exit(1); }
+}

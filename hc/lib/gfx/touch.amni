@@ -1,0 +1,62 @@
+namespace touch;
+import std;
+import math;
+import gfx;
+let TAP = 1; let DOUBLE_TAP = 2; let LONG_PRESS = 3; let PAN = 4; let PAN_END = 5; let PINCH = 6; let PINCH_END = 7; let ROTATE = 8; let ROTATE_END = 9; let SWIPE = 10;
+let LEFT = 0; let UP = 1; let RIGHT = 2; let DOWN = 3;
+struct Gesture { kind int, x f32, y f32, dx f32, dy f32, scale f32, angle f32, dir int }
+var tap_time real = 0.3; var tap_slop f32 = 10.0; var double_gap real = 0.3; var double_slop f32 = 30.0; var long_time real = 0.5; var swipe_speed f32 = 800.0; var pinch_min f32 = 1.08; var rotate_min f32 = 0.13962634;
+let NONE = 0; let MAYBE = 1; let PANNING = 2; let PINCHING = 3; let ROTATING = 4; let WAIT = 5;
+var OUT Gesture[>..] = [];
+var ST = 0; var T0 = 0.0; var MAXN = 0; var PREVN = 0; var ID0 = 0; var SX f32 = 0.0; var SY f32 = 0.0; var LX f32 = 0.0; var LY f32 = 0.0;
+var IA = 0; var IB = 0; var D0 f32 = 0.0; var A0 f32 = 0.0; var ANG f32 = 0.0; var PA f32 = 0.0; var SC f32 = 1.0; var TWO = false;
+var HT real[>..] = []; var HX f32[>..] = []; var HY f32[>..] = [];
+var PEND = false; var PT = 0.0; var PX f32 = 0.0; var PY f32 = 0.0;
+fn take(out Gesture[>..]&) { out.clear(); out.append(OUT[..]); OUT.clear(); }
+fn emit(k int, x f32, y f32, dx f32, dy f32, s f32, a f32, d int) { OUT.push(Gesture { kind: k, x: x, y: y, dx: dx, dy: dy, scale: s, angle: a, dir: d }); }
+fn find(fs gfx::Finger[>..]&, id int) int { for i in fs.len { if fs[i].id == id { return i; } } -1 }
+fn hyp(x f32, y f32) f32 { sqrt((x * x + y * y) as real) as f32 }
+fn reset() { OUT.clear(); ST = NONE; PREVN = 0; PEND = false; }
+fn frame(t real, fs gfx::Finger[>..]&) {
+	let n = fs.len;
+	if PEND && t - PT > double_gap && (n == 0 || ST != MAYBE) { emit(TAP, PX, PY, 0.0, 0.0, 1.0, 0.0, 0); PEND = false; }
+	if PREVN == 0 && n > 0 { ST = MAYBE; T0 = t; MAXN = n; ID0 = fs[0].id; SX = fs[0].x; SY = fs[0].y; LX = SX; LY = SY; TWO = false; HT.clear(); HX.clear(); HY.clear(); }
+	MAXN = max(MAXN, n);
+	let i0 = find(fs, ID0);
+	if i0 >= 0 { LX = fs[i0].x; LY = fs[i0].y; HT.push(t); HX.push(LX); HY.push(LY); }
+	if n == 2 && !TWO && (ST == MAYBE) { TWO = true; IA = fs[0].id; IB = fs[1].id; D0 = hyp(fs[1].x - fs[0].x, fs[1].y - fs[0].y); A0 = atan2((fs[1].y - fs[0].y) as real, (fs[1].x - fs[0].x) as real) as f32; PA = A0; ANG = 0.0; SC = 1.0; }
+	if n == 2 && TWO && (ST == MAYBE || ST == PINCHING || ST == ROTATING) {
+		let a = find(fs, IA); let b = find(fs, IB);
+		if a >= 0 && b >= 0 {
+			let d = hyp(fs[b].x - fs[a].x, fs[b].y - fs[a].y); let an = atan2((fs[b].y - fs[a].y) as real, (fs[b].x - fs[a].x) as real) as f32;
+			var da = an - PA; if da > 3.14159265 { da -= 6.2831853; } if da < -3.14159265 { da += 6.2831853; }
+			PA = an; ANG += da;
+			let ns = if D0 > 0.0 { d / D0 } else { 1.0 };
+			let cx = (fs[a].x + fs[b].x) * 0.5; let cy = (fs[a].y + fs[b].y) * 0.5;
+			if ST == MAYBE { if ns >= pinch_min || ns <= 1.0 / pinch_min { ST = PINCHING; } else if abs(ANG) >= rotate_min { ST = ROTATING; } }
+			if ST == PINCHING { emit(PINCH, cx, cy, 0.0, 0.0, ns / SC, 0.0, 0); } else if ST == ROTATING { emit(ROTATE, cx, cy, 0.0, 0.0, 1.0, da, 0); }
+			SC = ns;
+		}
+	}
+	if (ST == PINCHING || ST == ROTATING) && n < 2 { if ST == PINCHING { emit(PINCH_END, LX, LY, 0.0, 0.0, SC, 0.0, 0); } else { emit(ROTATE_END, LX, LY, 0.0, 0.0, 1.0, ANG, 0); } ST = WAIT; }
+	if ST == MAYBE && MAXN == 1 && n == 1 {
+		if hyp(LX - SX, LY - SY) >= tap_slop { ST = PANNING; }
+		else if t - T0 >= long_time { emit(LONG_PRESS, LX, LY, 0.0, 0.0, 1.0, 0.0, 0); ST = WAIT; }
+	}
+	if ST == PANNING && n >= 1 && HX.len >= 2 { let k = HX.len - 1; emit(PAN, LX, LY, HX[k] - HX[k - 1], HY[k] - HY[k - 1], 1.0, 0.0, 0); }
+	if n == 0 && PREVN > 0 {
+		if ST == MAYBE && MAXN == 1 && t - T0 < tap_time && hyp(LX - SX, LY - SY) < tap_slop {
+			if PEND && t - PT <= double_gap + tap_time && hyp(LX - PX, LY - PY) <= double_slop { emit(DOUBLE_TAP, LX, LY, 0.0, 0.0, 1.0, 0.0, 0); PEND = false; }
+			else { PEND = true; PT = t; PX = LX; PY = LY; }
+		} else if ST == PANNING {
+			emit(PAN_END, LX, LY, LX - SX, LY - SY, 1.0, 0.0, 0);
+			let k = HT.len - 1; var j = k; while j > 0 && HT[k] - HT[j - 1] <= 0.1 { j -= 1; }
+			if j < k {
+				let dt = (HT[k] - HT[j]) as f32; let vx = (HX[k] - HX[j]) / dt; let vy = (HY[k] - HY[j]) / dt;
+				if hyp(vx, vy) >= swipe_speed { emit(SWIPE, LX, LY, vx, vy, 1.0, 0.0, if abs(vx) >= abs(vy) { if vx > 0.0 { RIGHT } else { LEFT } } else { if vy > 0.0 { DOWN } else { UP } }); }
+			}
+		}
+		ST = NONE;
+	}
+	PREVN = n;
+}
