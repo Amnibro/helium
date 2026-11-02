@@ -56,7 +56,7 @@ if [ "${GPUTIME:-1}" != 0 ]; then
 	: > "$O/gputime.log"; E=(env VK_LAYER_PATH="$T/layer" VK_INSTANCE_LAYERS=VK_LAYER_HELIUM_gputime HELIUM_GPUTIME="$O/gputime.log")
 fi
 L=(); [ -n "${GPU_LOCK:-}" ] && L=(flock "$GPU_LOCK")
-"${L[@]}" env GFX_MS_LUT="$R/hc/lib/gfx/shaders/ms_lut.glsl" "${E[@]}" "$T/gs" "$O" "$G" "$G2" > "$T/all.txt" 2> "$T/err.txt"; rc=$?
+"${L[@]}" env GFX_MS_LUT="$R/hc/lib/gfx/shaders/ms_lut.glsl" GFX_GI_DIR="$R/hc/test/gfx/gi" "${E[@]}" "$T/gs" "$O" "$G" "$G2" > "$T/all.txt" 2> "$T/err.txt"; rc=$?
 cp "$T/all.txt" "$O/gfx_smoke.txt" 2>/dev/null; cat "$T/all.txt" >> "$RES" 2>/dev/null
 [ $rc = 0 ] || { echo "gfxtest: run failed"; tail -n 5 "$T/all.txt" "$T/err.txt"; exit 1; }
 grep -av "^gpu:" "$T/all.txt" > "$T/cpu.txt"

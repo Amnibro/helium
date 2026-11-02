@@ -80,8 +80,8 @@ they do not move with the jitter; the look+taa test checks that.
 * **Motion blur, reprojection for SSR/GI**: `motion_target()` already holds per-pixel
   motion and view depth at render size; the history (`resolved()`) is last frame's
   anti-aliased HDR image at output size.
-* **GTAO, SH probes, SSR**: the AO prepass already writes view normals + depth
-  (`nd`, `nd_depth`); a different AO kernel replaces `ssao.frag` only. The ambient
+* **SH probes, SSR**: the AO prepass already writes view normals + depth
+  (`nd`, `lin_depth`), and GTAO (`ao_mode = 1`) writes bent normals (`bent_target()`). The ambient
   term is a single function (`ambient_light()` in `surface.frag`) fed by `Sky`; probe
   irradiance (SH) or a prefiltered cube replaces it without touching the lights.
 * **More cascades, point/spot shadows, PCSS, contact shadows**: `CASCADES` sizes
@@ -446,6 +446,41 @@ makes that a failure). `GPU_LOCK=<file>` serializes the GPU part on shared
 machines. `tools/hc/ci.sh` runs it only when `HELIUM_GFX_TEST=1`. The test binary
 needs SDL3 even for the CPU part (see Known gaps).
 
+### GTAO results (GI part 3b; RX 9060 XT, RADV)
+
+`ao_mode = 1` switches the AO pass from the hemisphere SSAO (`ao_mode = 0`, still the
+default, so the shipped look and both goldens are unchanged) to GTAO with bent normals
+(`shaders/gtao.frag`, written from Jimenez, Wu, Pesce, Jarabo 2016). Per pixel it walks
+`max(ao_samples / 4, 1)` slices (rotated per pixel by interleaved gradient noise,
+Jimenez 2014), `gtao_steps` steps per side out to `ao_radius` in view space, keeps the
+highest horizon cosine per side (samples fade out over the last `gtao_falloff` x radius,
+so occluders past the radius do not count, as in the reference), clamps both horizons to
+the hemisphere around the projected normal and integrates the cosine-weighted visible
+arc in closed form. The bent normal comes from the same arcs (the slice direction and
+view vector weighted by the first moment of the visible arc). The prepass writes linear
+view depth to an R32F target for it (the RGBA16F `nd` depth is too coarse at Cornell
+depths: about 0.008 units of step at depth 8 to 16), and a depth-aware 5 x 5 blur
+(`shaders/gtao_blur.frag`) filters AO and bent normal together. `bent_target()`,
+`ao_target()` and `nd_target()` expose the results; the lighting does not use the bent
+normal yet.
+
+Gate (`gtao_checks`, also `GFX_ONLY=gtao`): Cornell view rendered at 512 x 512, box
+filtered to 128 x 128, test settings `ao_radius` 1.0, `ao_power` 1.0, `ao_samples` 32
+(8 slices), `gtao_steps` 8, `gtao_falloff` 0.1, chosen before the first GPU run.
+
+| check | result | bar |
+|---|---|---|
+| A1 mean abs AO error, 14762 gated pixels | 0.0412 | < 0.05 PASS |
+| A2 vs AO-off control (0.1278) | 0.322 x | <= 0.5 x PASS (control fails A1) |
+| A3 bent-normal error, 4274 pixels with ao_ref < 0.8 | 6.70 deg | < 12, <= 0.5 x geometric normal 21.73 deg PASS (control fails) |
+| reported: hemisphere SSAO, same pixels | 0.0761 | not gated |
+
+Measured afterwards (not gated, settings not changed): 16 steps gives A1 0.0307 and A3
+5.17 deg (with 8 or 16 slices alike); widening the falloff to 0.3 x radius gives 0.0562 and
+8.72 deg (fails A1). `gtao_ref_gtao_ssao.pgm` in the output dir shows reference, GTAO and
+SSAO side by side; GTAO's remaining error is mostly at the wall/ceiling corners, which it
+draws lighter and narrower than the reference.
+
 ### Review2 part B results (RX 9060 XT, RADV, Mesa 26.2.4; `results/2026-11-01_rx9060xt_radv_0b196b4_review2b.txt`, clean worktree)
 
 **Disclosure: a control was re-scoped after a run had shown its value.** In the
@@ -623,6 +658,10 @@ pass-through mean error is 0.0106 % (max 0.0488 %).
   Antennas and Propagation, 1967 (masking-shadowing).
 * E. Heitz, "Understanding the Masking-Shadowing Function in Microfacet-Based
   BRDFs", JCGT 3(2), 2014.
+* J. Jimenez, X. Wu, A. Pesce, A. Jarabo, "Practical Real-Time Strategies for Accurate
+  Indirect Occlusion", SIGGRAPH 2016 course (GTAO, bent normals).
+* J. Jimenez, "Next Generation Post Processing in Call of Duty: Advanced Warfare",
+  SIGGRAPH 2014 course (interleaved gradient noise).
 * B. Karis, "Real Shading in Unreal Engine 4", SIGGRAPH 2013 course notes
   (k = alpha / 2 for Smith-Schlick).
 * E. Reinhard, M. Stark, P. Shirley, J. Ferwerda, "Photographic Tone Reproduction

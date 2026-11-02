@@ -13,6 +13,7 @@ layout(location = 0) out vec4 out_nd;
 // the same surface point last frame (clip w). A point that was behind the camera last
 // frame gets a large vector, so the temporal pass treats its history as missing.
 layout(location = 1) out vec4 out_motion;
+layout(location = 2) out vec4 out_depth;
 void main() {
 	if (alpha.x > 0.5 && alpha.x < 1.5) {
 		vec2 uv = uv_sets.x > 0.5 ? in_uv.zw : in_uv.xy;
@@ -23,6 +24,7 @@ void main() {
 	vec3 vn = normalize((view * vec4(n, 0.0)).xyz);
 	vec4 vp = view * vec4(in_world, 1.0);
 	out_nd = vec4(vn, -vp.z);
+	out_depth = vec4(-vp.z, 0.0, 0.0, 0.0);
 	vec2 now = in_cur.xy / in_cur.w;
 	bool seen = in_prev.w > 1e-5;
 	vec2 d = seen ? (now - in_prev.xy / in_prev.w) * vec2(0.5, -0.5) : vec2(4.0);

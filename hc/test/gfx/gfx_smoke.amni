@@ -53,7 +53,7 @@
 //              depth rejection must not raise the band error, nor change a still scene
 //   s5 / s6  - frames in flight with no wait read the right shadow map; a pass on one
 //              layer and mip of an array leaves the others untouched
-// GFX_ONLY=<anything> runs only the shadow checks (for bisecting a renderer change).
+// GFX_ONLY=gtao runs only the GTAO checks (A1-A3); any other value runs only the shadow checks.
 // GFX_MAKE_GOLDEN=1 writes both goldens (spheres, shipped look) to the paths given as the
 // second and third arguments and fails; anything but unset, 0 or 1 fails.
 // Image metrics in motion / taa / tsr count non-sky pixels only (geo_mask).
@@ -70,6 +70,7 @@ import gfx.shapes;
 import gfx.sparks;
 import gfx.scene3d;
 import gfx.sdf_font;
+import gfx.cornell;
 
 fn milli(v f32) int { round((v * 1000.0) as real) as int }
 
@@ -2522,6 +2523,187 @@ fn make_goldens() bool {
 	false
 }
 
+fn gi_nums(s const byte[:], out real[>..]&) {
+	out.clear();
+	var i = 0;
+	while i < s.len {
+		let c = s[i] as int;
+		if !(c == 45 || c == 43 || c == 46 || (c >= 48 && c <= 57)) { i += 1; continue; }
+		var neg = false;
+		if c == 45 || c == 43 { neg = c == 45; i += 1; }
+		var v = 0.0; var scale = 1.0; var frac = false;
+		while i < s.len {
+			let d = s[i] as int;
+			if d >= 48 && d <= 57 { if frac { scale *= 0.1; v += (d - 48) as real * scale; } else { v = v * 10.0 + (d - 48) as real; } }
+			else if d == 46 { frac = true; }
+			else { break; }
+			i += 1;
+		}
+		if i < s.len && (s[i] == 101 || s[i] == 69) {
+			i += 1;
+			var en = false;
+			if i < s.len && (s[i] == 45 || s[i] == 43) { en = s[i] == 45; i += 1; }
+			var e = 0;
+			while i < s.len && s[i] >= 48 && s[i] <= 57 { e = e * 10 + (s[i] as int - 48); i += 1; }
+			v *= pow(10.0, (if en { -e } else { e }) as real);
+		}
+		out.push(if neg { -v } else { v });
+	}
+}
+fn gi_gunzip(name const byte[:], out byte[>..]&) bool {
+	out.clear();
+	var dir byte[>..] = [];
+	if !env("GFX_GI_DIR", dir) || dir.len == 0 { dir.clear(); dir.append("hc/test/gfx/gi"); }
+	var p byte[>..] = [];
+	p.append(dir[..]); p.append("/"); p.append(name);
+	var z byte[>..] = [];
+	if !read_file(p[..], z) || z.len < 18 || z[0] != 31 || z[1] != 139 || z[2] != 8 { return false; }
+	let fl = z[3] as int;
+	var at = 10;
+	if fl & 4 != 0 { at += 2 + (z[at] as int | (z[at + 1] as int << 8)); }
+	if fl & 8 != 0 { while at < z.len && z[at] != 0 { at += 1; } at += 1; }
+	if fl & 16 != 0 { while at < z.len && z[at] != 0 { at += 1; } at += 1; }
+	if fl & 2 != 0 { at += 2; }
+	at < z.len && zlib::inflate_raw(z[at..], out)
+}
+fn gi_half(px const byte[:], stride int, i int, c int) f32 { HALF[(px[i * stride + c * 2] as int) | ((px[i * stride + c * 2 + 1] as int) << 8)] }
+fn cornell_scene() {
+	reset_scene();
+	cornell::build();
+	let nt = cornell::tri_mat.len;
+	for m in 3 {
+		let vfirst = gltf::verts.len / gltf::VERTEX_FLOATS;
+		let ifirst = gltf::indices.len;
+		var n = 0;
+		for t in nt {
+			if cornell::tri_mat[t] != m { continue; }
+			let b = t * cornell::TRI_FLOATS;
+			let a = linalg::v3(cornell::tris[b] as f32, cornell::tris[b + 1] as f32, cornell::tris[b + 2] as f32);
+			let q = linalg::v3(cornell::tris[b + 3] as f32, cornell::tris[b + 4] as f32, cornell::tris[b + 5] as f32);
+			let r = linalg::v3(cornell::tris[b + 6] as f32, cornell::tris[b + 7] as f32, cornell::tris[b + 8] as f32);
+			let nn = linalg::unit3(linalg::cross3(linalg::v3(q.x - a.x, q.y - a.y, q.z - a.z), linalg::v3(r.x - a.x, r.y - a.y, r.z - a.z)));
+			let tg = float4 { 1.0, 0.0, 0.0, 1.0 };
+			shapes::vertex(a, nn, 0.0, 0.0, tg); shapes::vertex(q, nn, 1.0, 0.0, tg); shapes::vertex(r, nn, 1.0, 1.0, tg);
+			gltf::indices.append([(n * 3) as u32, (n * 3 + 1) as u32, (n * 3 + 2) as u32]);
+			n += 1;
+		}
+		var mat = shapes::material(linalg::v3(cornell::albedo_r(m) as f32, cornell::albedo_g(m) as f32, cornell::albedo_b(m) as f32), 0.0, 1.0);
+		mat.double_sided = true;
+		let asset = shapes::finish(vfirst, ifirst, linalg::v3(0.0, 0.0, 0.0), linalg::v3(5.56, 5.488, 5.592), mat);
+		s3d::place(s3d::add(asset), gfx::mat4_identity);
+	}
+	s3d::view = s3d::Camera { eye: float3 { cornell::EYE_X as f32, cornell::EYE_Y as f32, cornell::EYE_Z as f32 }, target: float3 { cornell::EYE_X as f32, cornell::EYE_Y as f32, 0.0 }, up: float3 { 0.0, 1.0, 0.0 }, fov_y: cornell::FOV_Y as f32, near: 0.1, far: 100.0 };
+	s3d::sun.shadows = false;
+	s3d::look.bloom = 0.0;
+	s3d::temporal = 0;
+	s3d::add_light(float3 { cornell::LIGHT_X as f32, cornell::LIGHT_Y as f32, cornell::LIGHT_Z as f32 }, float3 { cornell::LIGHT_RGB as f32, cornell::LIGHT_RGB as f32, cornell::LIGHT_RGB as f32 }, cornell::LIGHT_RANGE as f32);
+}
+fn gi_gate(rad const real[:]) byte[>..] {
+	let w = cornell::REF_W; let h = cornell::REF_H;
+	var g byte[>..] = [];
+	for j in h { for i in w {
+		var ok = true;
+		for dj in 3 { for di in 3 {
+			let x = i + di - 1; let y = j + dj - 1;
+			if x < 0 || y < 0 || x >= w || y >= h { ok = false; } else {
+				let k = (y * w + x) * 5;
+				if 0.2126 * rad[k + 1] + 0.7152 * rad[k + 2] + 0.0722 * rad[k + 3] <= 0.0 { ok = false; }
+			}
+		} }
+		g.push(if ok { 1 } else { 0 });
+	} }
+	g
+}
+fn to_world(m gfx::mat4, x real, y real, z real) real, real, real {
+	return m.c0.x as real * x + m.c0.y as real * y + m.c0.z as real * z, m.c1.x as real * x + m.c1.y as real * y + m.c1.z as real * z, m.c2.x as real * x + m.c2.y as real * y + m.c2.z as real * z;
+}
+fn deg(ax real, ay real, az real, bx real, by real, bz real) real {
+	let la = sqrt(ax * ax + ay * ay + az * az); let lb = sqrt(bx * bx + by * by + bz * bz);
+	if la <= 0.0 || lb <= 0.0 { return 180.0; }
+	acos(clamp((ax * bx + ay * by + az * bz) / (la * lb), -1.0, 1.0)) * 180.0 / cornell::PI
+}
+fn gtao_render(mode int, rw int, rh int, aor real[>..]&, bnr real[>..]&, gnr real[>..]&) {
+	s3d::ao_mode = mode;
+	s3d::init(rw, rh);
+	let out = gfx::render_target(rw, rh, gfx::RGBA8);
+	s3d::render(out);
+	let a = gfx::read_pixels(s3d::ao_target());
+	let b = gfx::read_pixels(s3d::bent_target());
+	let q = gfx::read_pixels(s3d::nd_target());
+	let f = rw / cornell::REF_W;
+	aor.clear(); bnr.clear(); gnr.clear();
+	for j in cornell::REF_H { for i in cornell::REF_W {
+		var sa = 0.0; var bx = 0.0; var by = 0.0; var bz = 0.0; var gx = 0.0; var gy = 0.0; var gz = 0.0;
+		for y in f { for x in f {
+			let p = (j * f + y) * rw + i * f + x;
+			sa += gi_half(a[..], 2, p, 0) as real;
+			bx += gi_half(b[..], 8, p, 0) as real; by += gi_half(b[..], 8, p, 1) as real; bz += gi_half(b[..], 8, p, 2) as real;
+			gx += gi_half(q[..], 8, p, 0) as real; gy += gi_half(q[..], 8, p, 1) as real; gz += gi_half(q[..], 8, p, 2) as real;
+		} }
+		aor.push(sa / (f * f) as real);
+		let wx, wy, wz = to_world(s3d::view_mat, bx, by, bz);
+		bnr.push(wx); bnr.push(wy); bnr.push(wz);
+		let hx, hy, hz = to_world(s3d::view_mat, gx, gy, gz);
+		gnr.push(hx); gnr.push(hy); gnr.push(hz);
+	} }
+	gfx::release(out);
+}
+fn gtao_checks() bool {
+	half_table();
+	var raw byte[>..] = [];
+	var rad real[>..] = [];
+	var aref real[>..] = [];
+	if !gi_gunzip("cornell_ref.txt.gz", raw) { print("gpu: gtao FAILED: cannot read cornell_ref.txt.gz (GFX_GI_DIR)"); return false; }
+	gi_nums(raw[..], rad);
+	if !gi_gunzip("cornell_ao_ref.txt.gz", raw) { print("gpu: gtao FAILED: cannot read cornell_ao_ref.txt.gz (GFX_GI_DIR)"); return false; }
+	gi_nums(raw[..], aref);
+	let np = cornell::REF_W * cornell::REF_H;
+	if rad.len != np * 5 || aref.len != np * 5 { print("gpu: gtao FAILED: reference sizes ", rad.len, " ", aref.len); return false; }
+	let gate = gi_gate(rad[..]);
+	cornell_scene();
+	s3d::look.ssao = true;
+	s3d::look.ao_radius = cornell::AO_RADIUS as f32;
+	s3d::look.ao_power = 1.0;
+	s3d::look.ao_samples = 32;
+	var ao real[>..] = []; var bn real[>..] = []; var gn real[>..] = [];
+	var sao real[>..] = []; var sbn real[>..] = []; var sgn real[>..] = [];
+	gtao_render(0, 512, 512, sao, sbn, sgn);
+	gtao_render(1, 512, 512, ao, bn, gn);
+	s3d::ao_mode = 0;
+	var n = 0; var e = 0.0; var ec = 0.0; var es = 0.0; var nb = 0; var eb = 0.0; var eg = 0.0;
+	for i in np {
+		if gate[i] == 0 { continue; }
+		let r = aref[i * 5 + 1];
+		n += 1; e += abs(ao[i] - r); ec += abs(1.0 - r); es += abs(sao[i] - r);
+		if r < 0.8 {
+			nb += 1;
+			eb += deg(bn[i * 3], bn[i * 3 + 1], bn[i * 3 + 2], aref[i * 5 + 2], aref[i * 5 + 3], aref[i * 5 + 4]);
+			eg += deg(gn[i * 3], gn[i * 3 + 1], gn[i * 3 + 2], aref[i * 5 + 2], aref[i * 5 + 3], aref[i * 5 + 4]);
+		}
+	}
+	if n == 0 || nb == 0 { print("gpu: gtao FAILED: no gated pixels (", n, ", ", nb, ")"); return false; }
+	let mae = e / n as real; let cmae = ec / n as real; let smae = es / n as real;
+	let ang = eb / nb as real; let gang = eg / nb as real;
+	let a1 = mae < AO_MAE_BAR; let a2 = mae <= AO_CTRL_RATIO * cmae; let a3 = ang < BN_DEG_BAR && ang <= BN_CTRL_RATIO * gang;
+	let c1 = cmae >= AO_MAE_BAR;
+	let c3 = gang >= BN_DEG_BAR;
+	print("gpu: gtao A1 ", n, " gated pixels, mean |ao - ao_ref| ", r4(mae), " (bar < ", AO_MAE_BAR, ") ", if a1 { "PASS" } else { "FAIL" });
+	print("gpu: gtao A2 vs AO-off control ", r4(cmae), ": ratio ", r3(mae / cmae), " (bar <= ", AO_CTRL_RATIO, ") ", if a2 { "PASS" } else { "FAIL" }, "; control on A1 ", if c1 { "fails (good)" } else { "PASSES (scene not discriminating: FAIL)" });
+	print("gpu: gtao A3 ", nb, " pixels with ao_ref < 0.8, bent normal mean error ", r2(ang), " deg (bar < ", BN_DEG_BAR, ", <= ", BN_CTRL_RATIO, " x geometric normal ", r2(gang), " deg) ", if a3 { "PASS" } else { "FAIL" }, "; geometric-normal control ", if c3 { "fails (good)" } else { "PASSES (FAIL)" });
+	print("gpu: gtao reported: hemisphere SSAO on the same pixels mean |ao - ao_ref| ", r4(smae));
+	var img byte[>..] = [];
+	img.append("P5\n384 128\n255\n");
+	for j in cornell::REF_H { for k in 3 { for i in cornell::REF_W {
+		let q = j * cornell::REF_W + i;
+		let v = if k == 0 { aref[q * 5 + 1] } else if k == 1 { ao[q] } else { sao[q] };
+		img.push(if gate[q] == 0 { 0 } else { clamp(round(v * 255.0), 0.0, 255.0) as int as byte });
+	} } }
+	let ip = path(OUT_DIR[..], "gtao_ref_gtao_ssao.pgm");
+	print("gpu: gtao image ", ip[..], " ", write_file(ip[..], img[..]));
+	let e2 = gfx::error();
+	if e2.len > 0 { print("gpu: gfx error ", e2[..]); return false; }
+	a1 && a2 && a3 && c1 && c3
+}
 fn gpu_checks(dir const byte[:], golden const byte[:]) bool {
 	var good = true;
 	// GFX_MAKE_GOLDEN: unset or 0 runs the checks, 1 writes both goldens and stops
@@ -2533,7 +2715,7 @@ fn gpu_checks(dir const byte[:], golden const byte[:]) bool {
 	var only byte[>..] = [];
 	let _ = env("GFX_ONLY", only);
 	if only.len > 0 {
-		let ok = shadow_checks();
+		let ok = if only[..] == "gtao" { gtao_checks() } else { shadow_checks() };
 		let e = gfx::error();
 		if e.len > 0 { print("gpu: gfx error ", e[..]); return false; }
 		return ok;
@@ -2689,6 +2871,7 @@ fn gpu_checks(dir const byte[:], golden const byte[:]) bool {
 	if !t8_still() { good = false; }
 	if !s5_inflight() { good = false; }
 	if !s6_layers() { good = false; }
+	if !gtao_checks() { good = false; }
 	let err = gfx::error();
 	if err.len > 0 { print("gpu: gfx error ", err[..]); good = false; }
 	good
