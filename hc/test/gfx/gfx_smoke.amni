@@ -72,6 +72,7 @@ import gfx.scene3d;
 import gfx.sdf_font;
 import gfx.cornell;
 import gfx.rt;
+import gfx.fx;
 
 fn milli(v f32) int { round((v * 1000.0) as real) as int }
 
@@ -2805,6 +2806,227 @@ fn dof_checks() bool {
 	s3d::look = DEF_LOOK; s3d::sun = DEF_SUN; s3d::sky = DEF_SKY;
 	d1 && d2 && c1
 }
+fn fx_fresh() { if !fx::ready() { fx::init(262144); } fx::clear_emitters(); fx::reset(); fx::sorting = true; fx::square = false; fx::gravity = float3 { 0.0, -9.8, 0.0 }; }
+fn fx_run(n int) { let I = gfx::mat4_identity; for k in n { fx::simulate(1.0 / 60.0, s3d::nd_target(), false, I, I); } }
+fn fx_f1() bool {
+	var worst = 0.0;
+	for pass in 2 {
+		fx_fresh();
+		var e = fx::emitter();
+		let r2 = 0.70710678;
+		e.dir = float3 { r2, r2, 0.0 }; e.speed_min = 10.0; e.speed_max = 10.0; e.life_min = 10.0; e.life_max = 10.0; e.drag = if pass == 0 { 0.5 } else { 0.0 };
+		let i = fx::add(e);
+		fx::burst(i, 64);
+		fx_run(60);
+		var ps fx::Part[>..] = [];
+		fx::read_parts(ps);
+		var n = 0;
+		for p in ps {
+			if p.vel.w <= 0.0 { continue; }
+			n += 1;
+			let t = p.pos.w as real; let k = (if pass == 0 { 0.5 } else { 0.0 }) as real;
+			let v0x = 10.0 * 0.70710678 as real; let v0y = v0x; let g = -9.8;
+			var ex = 0.0; var ey = 0.0;
+			if k > 0.0 { let vt = g / k; let f = (1.0 - exp(-k * t)) / k; ex = v0x * f; ey = vt * t + (v0y - vt) * f; } else { ex = v0x * t; ey = v0y * t + 0.5 * g * t * t; }
+			worst = max(worst, sqrt((p.pos.x as real - ex) * (p.pos.x as real - ex) + (p.pos.y as real - ey) * (p.pos.y as real - ey) + p.pos.z as real * p.pos.z as real));
+		}
+		if n != 64 { print("gpu: fx F1 pass ", pass, " live particles ", n, " (expected 64)"); return false; }
+	}
+	let ok = worst <= 1.0e-3;
+	print("gpu: fx F1 integration: max position error ", worst, " m (bar <= 1e-3) ", if ok { "PASS" } else { "FAIL" });
+	ok
+}
+fn fx_f2() bool {
+	fx_fresh();
+	var e = fx::emitter();
+	e.rate = 1234.5; e.life_min = 100.0; e.life_max = 100.0; e.speed_min = 0.0; e.speed_max = 0.0; e.gravity = 0.0;
+	fx::add(e);
+	fx_run(180);
+	let n = fx::alive_count();
+	let ok = abs(n as real - 3703.5) <= 1.0;
+	print("gpu: fx F2 spawn rate: ", n, " live after 3 s at 1234.5/s (bar within 1 of 3703.5) ", if ok { "PASS" } else { "FAIL" });
+	ok
+}
+fn fx_cv(ps const fx::Part[:]) real {
+	var b int[>..] = []; b.resize(64, 0);
+	for p in ps { if p.vel.w <= 0.0 || abs(p.pos.x) >= 1.0 || abs(p.pos.y) >= 1.0 || abs(p.pos.z) >= 1.0 { continue; } let ix = ((p.pos.x + 1.0) * 2.0) as int; let iy = ((p.pos.y + 1.0) * 2.0) as int; let iz = ((p.pos.z + 1.0) * 2.0) as int; b[(iz * 4 + iy) * 4 + ix] += 1; }
+	var m = 0.0; for c in b { m += c as real; } m /= 64.0;
+	var v = 0.0; for c in b { v += (c as real - m) * (c as real - m); } v /= 64.0;
+	sqrt(v) / max(m, 1.0)
+}
+fn fx_f3() bool {
+	var ratio = [0.0, 0.0];
+	for pass in 2 {
+		fx_fresh();
+		var e = fx::emitter();
+		e.shape = 2; e.size = float3 { 4.0, 4.0, 4.0 }; e.speed_min = 0.0; e.speed_max = 0.0; e.gravity = 0.0; e.life_min = 100.0; e.life_max = 100.0;
+		e.curl = if pass == 0 { 0.5 } else { -0.5 }; e.curl_scale = 0.5;
+		let i = fx::add(e);
+		fx::burst(i, 262144);
+		fx_run(1);
+		var ps fx::Part[>..] = [];
+		fx::read_parts(ps);
+		let c0 = fx_cv(ps[..]);
+		fx_run(119);
+		fx::read_parts(ps);
+		let c1 = fx_cv(ps[..]);
+		ratio[pass] = c1 / c0;
+		print("gpu: fx F3 ", if pass == 0 { "curl" } else { "gradient control" }, ": bin CV ", c0, " -> ", c1, ", ratio ", ratio[pass]);
+	}
+	let ok = ratio[0] <= 1.25; let ctl = ratio[1] >= 1.5;
+	print("gpu: fx F3 incompressible curl: ratio ", ratio[0], " (bar <= 1.25) ", if ok { "PASS" } else { "FAIL" }, "; gradient control ", ratio[1], " (must be >= 1.5) ", if ctl { "fails (good)" } else { "does NOT fail" });
+	ok && ctl
+}
+fn fx_floor_scene() {
+	reset_scene();
+	let floor = shapes::cube(float3 { 10.0, 0.1, 10.0 }, shapes::material(linalg::v3(0.5, 0.5, 0.5), 0.0, 0.8));
+	s3d::place(s3d::add(floor), gfx::translate(float3 { 0.0, -0.1, 0.0 }));
+	s3d::view = s3d::Camera { eye: float3 { 0.0, 2.5, 6.0 }, target: float3 { 0.0, 0.5, 0.0 }, up: float3 { 0.0, 1.0, 0.0 }, fov_y: 0.75, near: 0.1, far: 60.0 };
+	s3d::sun.shadows = false; s3d::look.ssao = false; s3d::look.bloom = 0.0; s3d::temporal = 0;
+}
+fn fx_f4() bool {
+	var below = [0.0, 0.0];
+	let w = 320; let h = 180;
+	for pass in 2 {
+		fx_fresh();
+		fx_floor_scene();
+		s3d::init(w, h);
+		let out = gfx::render_target(w, h, gfx::RGBA8);
+		var e = fx::emitter();
+		e.shape = 1; e.pos = float3 { 0.0, 2.0, 0.0 }; e.size = float3 { 0.5, 0.5, 0.5 }; e.speed_min = 0.0; e.speed_max = 0.0; e.life_min = 10.0; e.life_max = 10.0; e.collide = pass == 0; e.restitution = 0.3; e.sizes = float4 { 0.03, 0.03, 0.03, 0.03 };
+		let i = fx::add(e);
+		fx::burst(i, 2000);
+		s3d::fx_dt = 1.0 / 60.0;
+		for f in 120 { s3d::render(out); }
+		s3d::fx_dt = 0.0;
+		var ps fx::Part[>..] = [];
+		fx::read_parts(ps);
+		var n = 0; var b = 0;
+		for p in ps { if p.vel.w > 0.0 { n += 1; if p.pos.y < -0.05 { b += 1; } } }
+		below[pass] = b as real / max(n, 1) as real;
+		print("gpu: fx F4 ", if pass == 0 { "collision" } else { "control no collision" }, ": ", b, " of ", n, " below the floor");
+		gfx::release(out);
+	}
+	let ok = below[0] <= 0.01; let ctl = below[1] >= 0.9;
+	print("gpu: fx F4 depth collision: ", below[0] * 100.0, " % below (bar <= 1 %) ", if ok { "PASS" } else { "FAIL" }, "; control ", below[1] * 100.0, " % ", if ctl { "fails (good)" } else { "does NOT fail" });
+	s3d::look = DEF_LOOK; s3d::sun = DEF_SUN; s3d::sky = DEF_SKY;
+	ok && ctl
+}
+fn fx_f5() bool {
+	let w = 160; let h = 90; let n = w * h;
+	reset_scene();
+	s3d::view = s3d::Camera { eye: float3 { 0.0, 0.0, 10.0 }, target: float3 { 0.0, 0.0, 0.0 }, up: float3 { 0.0, 1.0, 0.0 }, fov_y: 0.75, near: 0.1, far: 60.0 };
+	s3d::sun.shadows = false; s3d::look.ssao = false; s3d::look.bloom = 0.0; s3d::temporal = 0;
+	s3d::init(w, h);
+	let out = gfx::render_target(w, h, gfx::RGBA8);
+	fx_fresh();
+	s3d::render(out);
+	let bg = gfx::read_pixels(s3d::hdr_target());
+	var cols float4[>..] = [];
+	for k in 16 {
+		var e = fx::emitter();
+		e.pos = float3 { 0.0, 0.0, 10.0 - (2.0 + 0.5 * k as f32) }; e.speed_min = 0.0; e.speed_max = 0.0; e.gravity = 0.0; e.life_min = 100.0; e.life_max = 100.0; e.alpha = true;
+		let c = float4 { 0.2 + 0.05 * (k % 4) as f32, 0.9 - 0.05 * k as f32, 0.1 + 0.25 * (k % 3) as f32, 0.5 };
+		cols.push(c);
+		e.colors = [c; 4]; e.sizes = float4 { 0.5, 0.5, 0.5, 0.5 };
+		let i = fx::add(e);
+		fx::burst(i, 1);
+	}
+	fx::square = true;
+	var err = [0.0, 0.0];
+	for pass in 2 {
+		fx::sorting = pass == 0;
+		s3d::fx_dt = 1.0 / 60.0;
+		s3d::render(out);
+		s3d::fx_dt = 0.0;
+		let px = gfx::read_pixels(s3d::hdr_target());
+		var worst = 0.0;
+		for dy in 3 { for dx in 3 {
+			let p = (h / 2 - 1 + dy) * w + w / 2 - 1 + dx;
+			for ch in 3 {
+				var ref = gi_half(bg[..], 8, p, ch) as real;
+				var k = 15;
+				while k >= 0 { let cv = if ch == 0 { cols[k].x } else if ch == 1 { cols[k].y } else { cols[k].z }; ref = ref * 0.5 + cv as real * 0.5; k -= 1; }
+				worst = max(worst, abs(gi_half(px[..], 8, p, ch) as real - ref));
+			}
+		} }
+		err[pass] = worst;
+	}
+	fx::sorting = true; fx::square = false;
+	let ok = err[0] <= 0.01; let ctl = err[1] > 0.05;
+	print("gpu: fx F5 sorted alpha: centre error ", err[0], " (bar <= 0.01) ", if ok { "PASS" } else { "FAIL" }, "; unsorted control ", err[1], " ", if ctl { "fails (good)" } else { "does NOT fail" });
+	gfx::release(out);
+	s3d::look = DEF_LOOK; s3d::sun = DEF_SUN; s3d::sky = DEF_SKY;
+	ok && ctl
+}
+fn fx_f6() bool {
+	let w = 320; let h = 180;
+	fx_floor_scene();
+	s3d::view = s3d::Camera { eye: float3 { 0.0, 0.6, 5.0 }, target: float3 { 0.0, 0.0, 0.0 }, up: float3 { 0.0, 1.0, 0.0 }, fov_y: 0.75, near: 0.1, far: 60.0 };
+	s3d::init(w, h);
+	let out = gfx::render_target(w, h, gfx::RGBA8);
+	var step = [0.0, 0.0];
+	for pass in 2 {
+		fx_fresh();
+		var e = fx::emitter();
+		e.speed_min = 0.0; e.speed_max = 0.0; e.gravity = 0.0; e.life_min = 100.0; e.life_max = 100.0; e.alpha = true; e.soft = if pass == 0 { 0.5 } else { 0.0 };
+		e.colors = [float4 { 1.0, 0.6, 0.2, 0.8 }; 4]; e.sizes = float4 { 1.0, 1.0, 1.0, 1.0 };
+		let i = fx::add(e);
+		fx::burst(i, 1);
+		fx::square = true;
+		s3d::fx_dt = 1.0 / 60.0;
+		s3d::render(out);
+		s3d::fx_dt = 0.0;
+		let px = gfx::read_pixels(s3d::hdr_target());
+		let y = lens_lum(px[..], w * h);
+		var worst = 0.0;
+		for x in w / 2 - 10..w / 2 + 10 { for r in 30..h - 31 { worst = max(worst, abs(y[(r + 1) * w + x] - y[r * w + x])); } }
+		step[pass] = worst;
+	}
+	fx::square = false;
+	let ok = step[0] <= 0.5 * step[1];
+	print("gpu: fx F6 soft particles: largest row step ", step[0], " vs hard ", step[1], ", ratio ", step[0] / max(step[1], 1.0e-9), " (bar <= 0.5) ", if ok { "PASS" } else { "FAIL" });
+	gfx::release(out);
+	s3d::look = DEF_LOOK; s3d::sun = DEF_SUN; s3d::sky = DEF_SKY;
+	ok
+}
+fn fx_perf() {
+	fx::release(); fx::init(1000000);
+	fx_floor_scene();
+	let w = 640; let h = 360;
+	s3d::init(w, h);
+	let out = gfx::render_target(w, h, gfx::RGBA8);
+	var e = fx::emitter();
+	e.shape = 2; e.pos = float3 { 0.0, 1.5, 0.0 }; e.size = float3 { 3.0, 1.5, 3.0 }; e.speed_min = 0.5; e.speed_max = 2.0; e.spread = 3.14159; e.life_min = 100.0; e.life_max = 100.0; e.gravity = 0.0; e.curl = 0.3; e.curl_scale = 0.5;
+	e.colors = [float4 { 1.0, 0.5, 0.2, 0.3 }; 4]; e.sizes = float4 { 0.01, 0.01, 0.01, 0.01 };
+	let i = fx::add(e);
+	fx::burst(i, 1000000);
+	s3d::fx_dt = 1.0 / 60.0;
+	s3d::render(out); let _ = fx::alive_count();
+	let t0 = clock_ns();
+	for f in 60 { s3d::render(out); }
+	let n = fx::alive_count();
+	let t1 = clock_ns();
+	s3d::fx_dt = 0.0;
+	s3d::fx_dt = 0.0; fx::sorting = false;
+	s3d::render(out); let _ = fx::alive_count();
+	let t2 = clock_ns();
+	for f in 60 { s3d::render(out); }
+	let _ = fx::alive_count();
+	let t3 = clock_ns();
+	print("gpu: fx reported: ", n, " live particles, frame ", ((t1 - t0) / 60) as real / 1.0e6, " ms with spawn+simulate+draw vs ", ((t3 - t2) / 60) as real / 1.0e6, " ms draw only (640x360 floor scene, wall clock incl. readback sync)");
+	fx::sorting = true;
+	gfx::release(out);
+	fx::release();
+	s3d::look = DEF_LOOK; s3d::sun = DEF_SUN; s3d::sky = DEF_SKY;
+}
+fn fx_checks() bool {
+	half_table();
+	s3d::init(64, 64);
+	let a = fx_f1(); let b = fx_f2(); let c = fx_f3(); let d = fx_f4(); let e = fx_f5(); let f = fx_f6();
+	fx_perf();
+	a && b && c && d && e && f
+}
 fn gi_frame(rw int, rh int, frames int) byte[>..] {
 	s3d::init(rw, rh);
 	let out = gfx::render_target(rw, rh, gfx::RGBA8);
@@ -2992,7 +3214,7 @@ fn gpu_checks(dir const byte[:], golden const byte[:]) bool {
 	var only byte[>..] = [];
 	let _ = env("GFX_ONLY", only);
 	if only.len > 0 {
-		let ok = if only[..] == "gtao" { gtao_checks() } else if only[..] == "gi" { gi_checks() } else if only[..] == "mblur" { mb_checks() } else if only[..] == "dof" { dof_checks() } else { shadow_checks() };
+		let ok = if only[..] == "gtao" { gtao_checks() } else if only[..] == "gi" { gi_checks() } else if only[..] == "mblur" { mb_checks() } else if only[..] == "dof" { dof_checks() } else if only[..] == "fx" { fx_checks() } else { shadow_checks() };
 		let e = gfx::error();
 		if e.len > 0 { print("gpu: gfx error ", e[..]); return false; }
 		return ok;
@@ -3152,6 +3374,7 @@ fn gpu_checks(dir const byte[:], golden const byte[:]) bool {
 	if !gi_checks() { good = false; }
 	if !mb_checks() { good = false; }
 	if !dof_checks() { good = false; }
+	if !fx_checks() { good = false; }
 	let err = gfx::error();
 	if err.len > 0 { print("gpu: gfx error ", err[..]); good = false; }
 	good

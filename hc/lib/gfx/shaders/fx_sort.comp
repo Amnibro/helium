@@ -1,0 +1,14 @@
+layout(local_size_x = 64) in;
+layout(std430, set = 1, binding = 0) buffer Alive { uint alive[]; };
+layout(std430, set = 1, binding = 1) buffer Keys { float keys[]; };
+layout(set = 2, binding = 0) uniform U { vec4 info; };
+void main() {
+	uint i = gl_GlobalInvocationID.x;
+	uint n = uint(info.x); uint j = uint(info.y); uint k = uint(info.z);
+	if (i >= n) return;
+	uint l = i ^ j;
+	if (l <= i) return;
+	float a = keys[i]; float b = keys[l];
+	bool desc = (i & k) == 0u;
+	if (desc ? a < b : a > b) { keys[i] = b; keys[l] = a; uint t = alive[i + 1u]; alive[i + 1u] = alive[l + 1u]; alive[l + 1u] = t; }
+}

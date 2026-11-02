@@ -1,0 +1,164 @@
+namespace fx;
+import gfx;
+import math;
+struct Part { pos float4, vel float4, misc float4 }
+struct Emitter { pos float3, shape int, size float3, rate f32, dir float3, speed_min f32, speed_max f32, life_min f32, life_max f32, spread f32, gravity f32, drag f32, curl f32, curl_scale f32, collide bool, restitution f32, soft f32, alpha bool, colors float4[4], sizes float4, on bool }
+struct SpawnU { info float4, counts float4[4] }
+struct SimU { info float4, gravity float4, view_proj gfx::mat4, view gfx::mat4, screen float4 }
+struct SortU { info float4 }
+struct ViewU { view_proj gfx::mat4, view gfx::mat4, right float4, up float4, mode float4 }
+struct FragU { screen float4, mode float4 }
+let MAXE = 16;
+var capacity = 0;
+var sort_n = 0;
+var parts gfx::Buffer; var dead gfx::Buffer; var alive gfx::Buffer; var keys gfx::Buffer; var emit_buf gfx::Buffer;
+var p_clear gfx::ComputePipeline; var p_spawn gfx::ComputePipeline; var p_sim gfx::ComputePipeline; var p_sort gfx::ComputePipeline;
+var pipe_add gfx::Pipeline; var pipe_alpha gfx::Pipeline;
+var smp gfx::Sampler;
+var emitters Emitter[>..] = [];
+var acc f32[>..] = [];
+var bursts int[>..] = [];
+var gravity float3 = float3 { 0.0, -9.8, 0.0 };
+var thickness f32 = 0.5;
+var sorting = true;
+var square = false;
+var frame = 0;
+var dirty = true;
+fn ready() bool { capacity > 0 }
+fn pow2(n int) int { var p = 64; while p < n { p *= 2; } p }
+fn init(count int) bool {
+	if capacity > 0 { return true; }
+	let n = max((count + 63) / 64 * 64, 64);
+	sort_n = pow2(n);
+	var z byte[>..] = [];
+	z.resize(n * 48, 0);
+	let rw = gfx::BUFFER_STORAGE | gfx::BUFFER_COMPUTE_READ | gfx::BUFFER_COMPUTE_WRITE;
+	parts = gfx::buffer(rw, n * 48, z[..]);
+	var d i32[>..] = [];
+	d.push(n as i32);
+	for k in n { d.push((n - 1 - k) as i32); }
+	dead = gfx::buffer(rw, bytes_of(d)[..d.len * 4]);
+	var zz byte[>..] = [];
+	zz.resize((sort_n + 1) * 4, 0);
+	alive = gfx::buffer(rw, (sort_n + 1) * 4, zz[..]);
+	keys = gfx::buffer(rw, sort_n * 4, zz[..sort_n * 4]);
+	var ze byte[>..] = [];
+	ze.resize(MAXE * 176, 0);
+	emit_buf = gfx::buffer(gfx::BUFFER_STORAGE | gfx::BUFFER_COMPUTE_READ, MAXE * 176, ze[..]);
+	p_clear = gfx::compute_pipeline(embed_shader("shaders/fx_clear.comp"));
+	p_spawn = gfx::compute_pipeline(embed_shader("shaders/fx_spawn.comp"));
+	p_sim = gfx::compute_pipeline(embed_shader("shaders/fx_sim.comp"));
+	p_sort = gfx::compute_pipeline(embed_shader("shaders/fx_sort.comp"));
+	let vs = embed_shader("shaders/fx.vert"); let fs = embed_shader("shaders/fx.frag");
+	pipe_add = gfx::pipeline(vs, fs, gfx::PipelineDesc { depth_test: true, depth_write: false, blend: gfx::BLEND_ADD, depth_compare: gfx::COMPARE_LESS_EQUAL });
+	pipe_alpha = gfx::pipeline(vs, fs, gfx::PipelineDesc { depth_test: true, depth_write: false, blend: gfx::BLEND_ALPHA, depth_compare: gfx::COMPARE_LESS_EQUAL });
+	smp = gfx::sampler(gfx::NEAREST, gfx::CLAMP);
+	capacity = n;
+	true
+}
+fn emitter() Emitter {
+	Emitter { pos: float3 { 0.0, 0.0, 0.0 }, shape: 0, size: float3 { 0.0, 0.0, 0.0 }, rate: 0.0, dir: float3 { 0.0, 1.0, 0.0 }, speed_min: 1.0, speed_max: 1.0, life_min: 1.0, life_max: 1.0, spread: 0.0, gravity: 1.0, drag: 0.0, curl: 0.0, curl_scale: 1.0, collide: false, restitution: 0.5, soft: 0.0, alpha: false, colors: [float4 { 1.0, 1.0, 1.0, 1.0 }; 4], sizes: float4 { 0.1, 0.1, 0.1, 0.1 }, on: true }
+}
+fn add(e Emitter) int { if emitters.len >= MAXE { return -1; } emitters.push(e); acc.push(0.0); bursts.push(0); dirty = true; emitters.len - 1 }
+fn set(i int, e Emitter) { emitters[i] = e; dirty = true; }
+fn burst(i int, n int) { bursts[i] += n; }
+fn clear_emitters() { emitters.clear(); acc.clear(); bursts.clear(); dirty = true; }
+fn wants_depth() bool { for e in emitters { if e.on && (e.collide || e.soft > 0.0) { return true; } } false }
+fn upload_emitters() {
+	var f f32[>..] = [];
+	for e in emitters {
+		f.append([e.pos.x, e.pos.y, e.pos.z, e.shape as f32, e.size.x, e.size.y, e.size.z, e.rate, e.dir.x, e.dir.y, e.dir.z, e.speed_min, e.speed_max, e.life_min, e.life_max, e.spread]);
+		f.append([e.gravity, e.drag, e.curl, e.curl_scale, if e.collide { 1.0 } else { 0.0 }, e.restitution, e.soft, if e.alpha { 1.0 } else { 0.0 }]);
+		for c in e.colors { f.append([c.x, c.y, c.z, c.w]); }
+		f.append([e.sizes.x, e.sizes.y, e.sizes.z, e.sizes.w]);
+	}
+	if f.len > 0 { gfx::update_buffer(emit_buf, 0, bytes_of(f)[..f.len * 4]); }
+	dirty = false;
+}
+fn spawn_counts(dt f32) int, float4[4] {
+	var c float4[4] = [float4 { 0.0, 0.0, 0.0, 0.0 }; 4];
+	var total = 0;
+	for k in emitters.len {
+		var n = bursts[k];
+		bursts[k] = 0;
+		if emitters[k].on { acc[k] += emitters[k].rate * dt; let w = floor(acc[k]) as int; acc[k] -= w as f32; n += w; }
+		let q = k / 4; let r = k % 4;
+		if r == 0 { c[q].x = n as f32; } else if r == 1 { c[q].y = n as f32; } else if r == 2 { c[q].z = n as f32; } else { c[q].w = n as f32; }
+		total += n;
+	}
+	return total, c;
+}
+fn simulate(dt f32, nd gfx::Texture, have_nd bool, view gfx::mat4, view_proj gfx::mat4) {
+	if capacity == 0 { return; }
+	if dirty { upload_emitters(); }
+	frame += 1;
+	let total, counts = spawn_counts(dt);
+	let ab = [alive, keys];
+	guard gfx::begin_compute(ab[..]) else { return; }
+	gfx::bind(p_clear);
+	gfx::uniforms(gfx::COMPUTE, 0, SortU { float4 { sort_n as f32, 0.0, 0.0, 0.0 } });
+	gfx::dispatch(sort_n / 64, 1, 1);
+	gfx::end_compute();
+	if total > 0 {
+		let sb = [parts, dead];
+		guard gfx::begin_compute(sb[..]) else { return; }
+		gfx::bind(p_spawn);
+		gfx::bind_storage_buffer(gfx::COMPUTE, 0, emit_buf);
+		gfx::uniforms(gfx::COMPUTE, 0, SpawnU { float4 { total as f32, frame as f32, 0.0, 0.0 }, counts });
+		gfx::dispatch((total + 63) / 64, 1, 1);
+		gfx::end_compute();
+	}
+	let mb = [parts, dead, alive, keys];
+	guard gfx::begin_compute(mb[..]) else { return; }
+	gfx::bind(p_sim);
+	gfx::bind_texture(gfx::COMPUTE, 0, nd, smp);
+	gfx::bind_storage_buffer(gfx::COMPUTE, 0, emit_buf);
+	gfx::uniforms(gfx::COMPUTE, 0, SimU { float4 { capacity as f32, dt, 0.0, 0.0 }, float4 { gravity.x, gravity.y, gravity.z, 0.0 }, view_proj, view, float4 { 0.0, 0.0, if have_nd { 1.0 } else { 0.0 }, thickness } });
+	gfx::dispatch(capacity / 64, 1, 1);
+	gfx::end_compute();
+	var need = false;
+	for e in emitters { if e.alpha { need = true; } }
+	if sorting && need {
+		var k = 2;
+		while k <= sort_n {
+			var j = k / 2;
+			while j > 0 {
+				guard gfx::begin_compute(ab[..]) else { return; }
+				gfx::bind(p_sort);
+				gfx::uniforms(gfx::COMPUTE, 0, SortU { float4 { sort_n as f32, j as f32, k as f32, 0.0 } });
+				gfx::dispatch(sort_n / 64, 1, 1);
+				gfx::end_compute();
+				j /= 2;
+			}
+			k *= 2;
+		}
+	}
+}
+fn draw(view_proj gfx::mat4, view gfx::mat4, right float3, up float3, nd gfx::Texture, have_nd bool, scale f32) {
+	if capacity == 0 || emitters.len == 0 { return; }
+	for m in 2 {
+		var any = false;
+		for e in emitters { if e.alpha == (m == 1) { any = true; } }
+		if !any { continue; }
+		gfx::bind(if m == 0 { pipe_add } else { pipe_alpha });
+		gfx::bind_storage_buffer(gfx::VERTEX, 0, parts);
+		gfx::bind_storage_buffer(gfx::VERTEX, 1, alive);
+		gfx::bind_storage_buffer(gfx::VERTEX, 2, emit_buf);
+		gfx::bind_texture(gfx::FRAGMENT, 0, nd, smp);
+		gfx::uniforms(gfx::VERTEX, 0, ViewU { view_proj, view, float4 { right.x, right.y, right.z, 0.0 }, float4 { up.x, up.y, up.z, 0.0 }, float4 { m as f32, 0.0, 0.0, 0.0 } });
+		gfx::uniforms(gfx::FRAGMENT, 0, FragU { float4 { 0.0, 0.0, if have_nd { 1.0 } else { 0.0 }, scale }, float4 { m as f32, if square { 1.0 } else { 0.0 }, 0.0, 0.0 } });
+		gfx::draw(capacity * 6);
+	}
+}
+fn read_parts(out Part[>..]&) bool { out.clear(); gfx::read_buffer(parts, out, capacity) }
+fn alive_count() int { var a u32[>..] = []; if !gfx::read_buffer(alive, a, 1) { return -1; } a[0] as int }
+fn reset() {
+	if capacity == 0 { return; }
+	var z byte[>..] = []; z.resize(capacity * 48, 0);
+	gfx::update_buffer(parts, 0, z[..]);
+	var d i32[>..] = []; d.push(capacity as i32);
+	for k in capacity { d.push((capacity - 1 - k) as i32); }
+	gfx::update_buffer(dead, 0, bytes_of(d)[..d.len * 4]);
+	for k in acc.len { acc[k] = 0.0; bursts[k] = 0; }
+}
+fn release() { if capacity == 0 { return; } for b in [parts, dead, alive, keys, emit_buf] { gfx::release(b); } capacity = 0; emitters.clear(); acc.clear(); bursts.clear(); dirty = true; }

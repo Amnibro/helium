@@ -31,6 +31,7 @@ import gfx.linalg;
 import gfx.gltf;
 import gfx.motion;
 import gfx.sparks;
+import gfx.fx;
 import gfx.rt;
 
 let CASCADES = 3;
@@ -86,6 +87,8 @@ var dof_focus f32 = 10.0;
 var dof_max_px f32 = 24.0;
 var dof_samples = 48;
 var lens_offset float2 = float2 { 0.0, 0.0 };
+var fx_dt f32 = 0.0;
+var nd_ran = false;
 var gi_on = false;
 var rt_shadows = false;
 var gi_ao = true;
@@ -850,7 +853,9 @@ fn sky_u() SkyU {
 // its (jittered) sample point.
 fn ao_pass() {
 	let mv = motion_wanted();
-	if !look.ssao && !mv && dof_aperture <= 0.0 { return; }
+	nd_ran = false;
+	if !look.ssao && !mv && dof_aperture <= 0.0 && !(fx::ready() && fx::wants_depth()) { return; }
+	nd_ran = true;
 	let gia = gi_on && gi_ao && gi_built && gi_have;
 	let gt = look.ssao && (ao_mode == 1 || gia);
 	let ar = if gia { min(gi_step.x, min(gi_step.y, gi_step.z)) } else { look.ao_radius };
@@ -982,6 +987,7 @@ fn color_pass() {
 	let right = linalg::unit3(linalg::cross3(fwd, view.up));
 	let up = linalg::cross3(right, fwd);
 	sparks::draw(view_proj, right, up);
+	fx::draw(view_proj, view_mat, right, up, nd, nd_ran, 1.0);
 	gfx::end_pass();
 }
 
@@ -1118,6 +1124,7 @@ fn render(target gfx::Texture) {
 	fill_frame();
 	shadow_pass();
 	ao_pass();
+	if fx::ready() && fx_dt > 0.0 { fx::simulate(fx_dt, nd, nd_ran, view_mat, view_proj_nj); }
 	color_pass();
 	lens_pass();
 	temporal_pass();

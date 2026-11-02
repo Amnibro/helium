@@ -471,6 +471,36 @@ Committed before any GPU run of `gfx.fx`; never loosened afterwards. dt = 1/60 s
 
 Reported, no bar: GPU time for 1 000 000 particles (spawn, simulate, draw, additive).
 
+### fx results (2026-11-02, RX 9060 XT, RADV)
+
+`gfx.fx` is GPU particles on a dead list: a spawn kernel pops free slots (atomic counter)
+for each emitter's whole number of particles this frame (a running fraction keeps the rate
+exact); a simulate kernel steps gravity and linear drag with the closed-form update (exact for
+constant gravity), adds curl-noise advection (the curl of three gradient-noise channels, so the
+flow is divergence free), bounces off the prepass depth, retires dead particles and lists the
+living with their view depth; a bitonic sort orders them back to front when an emitter is
+alpha-blended. Colour and size follow 4-key curves over life; alpha particles can fade near
+geometry (soft particles). `s3d::fx_dt` runs it after the prepass each frame.
+
+| check | measured | bar | result |
+| --- | --- | --- | --- |
+| F1 integration | 2.8e-5 m | <= 1e-3 m | PASS |
+| F2 spawn rate | 3703 live | within 1 of 3703.5 | PASS |
+| F3 curl noise | CV ratio 0.89 | <= 1.25 | PASS |
+| F3 control: gradient field | CV ratio 10.4 | must be >= 1.5 | fails |
+| F4 depth collision | 0 of 2000 below | <= 1 % | PASS |
+| F4 control: no collision | 2000 of 2000 below | must be >= 90 % | fails |
+| F5 sorted alpha | 0.0004 | <= 0.01 | PASS |
+| F5 control: unsorted | 0.65 | must be > 0.05 | fails |
+| F6 soft particles | step ratio 0.42 | <= 0.5 | PASS |
+
+Reported: 1 000 000 live particles, 3.2 ms per 640 x 360 frame for spawn, simulate and draw
+(2.1 ms with the simulation off), wall clock including a readback sync.
+
+The first F5 run measured 0.088: the test drew 0.05 m squares, so the far ones covered under a
+pixel and the centre 3 x 3 the reference composites over was not covered. The bar names no
+size; the test now draws 0.5 m squares.
+
 ### Pre-registered bars (motion blur and depth of field, gap-map item 3 follow-ups)
 
 Committed before any GPU run of either effect; never loosened afterwards. Both are

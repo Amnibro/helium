@@ -1,0 +1,48 @@
+layout(local_size_x = 64) in;
+#include "fx_common.glsl"
+layout(set = 0, binding = 0) uniform sampler2D tex_nd;
+layout(std430, set = 0, binding = 1) readonly buffer Emits { vec4 emits[]; };
+layout(std430, set = 1, binding = 0) buffer Parts { Part parts[]; };
+layout(std430, set = 1, binding = 1) buffer Dead { int dead[]; };
+layout(std430, set = 1, binding = 2) buffer Alive { uint alive[]; };
+layout(std430, set = 1, binding = 3) buffer Keys { float keys[]; };
+layout(set = 2, binding = 0) uniform U { vec4 info; vec4 gravity; mat4 view_proj; mat4 view; vec4 screen; };
+void main() {
+	uint i = gl_GlobalInvocationID.x;
+	if (i >= uint(info.x)) return;
+	Part q = parts[i];
+	if (q.vel.w <= 0.0) return;
+	float dt = info.y;
+	q.pos.w += dt;
+	if (q.pos.w >= q.vel.w) { q.vel.w = 0.0; parts[i] = q; int c = atomicAdd(dead[0], 1); dead[c + 1] = int(i); return; }
+	int em = (int(q.misc.x)) * 11;
+	vec3 g = gravity.xyz * emits[em + 4].x;
+	float k = emits[em + 4].y;
+	vec3 v = q.vel.xyz;
+	vec3 p = q.pos.xyz;
+	vec3 np, nv;
+	if (k > 1e-6) { float ek = exp(-k * dt); vec3 vt = g / k; nv = vt + (v - vt) * ek; np = p + vt * dt + (v - vt) * ((1.0 - ek) / k); }
+	else { nv = v + g * dt; np = p + v * dt + 0.5 * g * dt * dt; }
+	if (emits[em + 4].z != 0.0) { vec3 fld = emits[em + 4].z > 0.0 ? fx_curl(p * emits[em + 4].w) : fx_gradfield(p * emits[em + 4].w); np += fld * abs(emits[em + 4].z) * dt; }
+	if (emits[em + 5].x > 0.5 && screen.z > 0.5) {
+		vec4 c = view_proj * vec4(np, 1.0);
+		if (c.w > 1e-4) {
+			vec2 uv = vec2(c.x / c.w * 0.5 + 0.5, 0.5 - c.y / c.w * 0.5);
+			if (uv.x >= 0.0 && uv.y >= 0.0 && uv.x <= 1.0 && uv.y <= 1.0) {
+				vec4 nd = textureLod(tex_nd, uv, 0.0);
+				float zp = -(view * vec4(np, 1.0)).z;
+				if (nd.w > 0.0 && zp > nd.w && zp < nd.w + screen.w) {
+					vec3 n = normalize(vec3(dot(view[0].xyz, nd.xyz), dot(view[1].xyz, nd.xyz), dot(view[2].xyz, nd.xyz)));
+					float vn = dot(nv, n);
+					if (vn < 0.0) nv -= (1.0 + emits[em + 5].y) * vn * n;
+					np = p;
+				}
+			}
+		}
+	}
+	q.pos.xyz = np; q.vel.xyz = nv;
+	parts[i] = q;
+	uint a = atomicAdd(alive[0], 1u);
+	alive[a + 1u] = i;
+	keys[a] = -(view * vec4(np, 1.0)).z;
+}
