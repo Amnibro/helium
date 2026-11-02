@@ -1,6 +1,7 @@
 import std;
 import os;
 import math;
+import gfx;
 import gfx.hud;
 var FAILS = 0;
 var DUMP = -1;
@@ -145,6 +146,42 @@ fn u5() bool {
 	print("U5 strings: [", e, "] [", f, "] [", g, "] [", d, "] [", m, "]");
 	e[..] == "Hello, Ana! You have 3 new {messages}." && f[..] == "Bonjour, Ana ! Vous avez 3 nouveaux {messages}." && g[..] == "Bye-bye, Ana!" && d[..] == "[greet]" && m[..] == "[missing]"
 }
+fn px_ok(px const byte[:], w int, x int, y int, c float4, what const byte[:]) bool {
+	let o = (y * w + x) * 4;
+	let want = [c.x, c.y, c.z];
+	var ok = true;
+	for k in 3 { if abs(px[o + k] as f32 / 255.0 - want[k]) > 1.0 / 255.0 + 1.0e-4 { ok = false; } }
+	if !ok { print("U6 ", what, " at ", x, ",", y, " got ", px[o], " ", px[o + 1], " ", px[o + 2], " want ", want[0] * 255.0, " ", want[1] * 255.0, " ", want[2] * 255.0); }
+	ok
+}
+fn u6() int {
+	if !gfx::open_headless(64, 64) { print("U6 skipped (no device: ", gfx::error()[..], ")"); return -1; }
+	let W = 320; let H = 200;
+	let tex = gfx::texture2d(W, H, gfx::RGBA8, gfx::COLOR_TARGET | gfx::SAMPLED);
+	hud::clear();
+	let root = hud::node(-1); hud::N[root].pd = 20.0; hud::N[root].gap = 20.0; hud::N[root].ali = hud::START;
+	let cols = [float4 { 0.9, 0.3, 0.2, 1.0 }, float4 { 0.2, 0.7, 0.3, 1.0 }, float4 { 0.95, 0.85, 0.1, 1.0 }];
+	let edges = [float4 { 1.0, 1.0, 1.0, 1.0 }, float4 { 0.0, 0.0, 0.0, 1.0 }, float4 { 0.3, 0.1, 0.6, 1.0 }];
+	let rad = [12.0, 20.0, 0.0]; let bws = [3.0, 4.0, 0.0];
+	var ps int[>..] = [];
+	for i in 3 { let p = hud::node(root); hud::N[p].wm = hud::PX; hud::N[p].wv = 80.0; hud::N[p].hm = hud::PX; hud::N[p].hv = 120.0; hud::N[p].color = cols[i]; hud::N[p].border = edges[i]; hud::N[p].radius = rad[i] as f32; hud::N[p].bw = bws[i] as f32; ps.push(p); }
+	hud::layout_root(root, 0.0, 0.0, W as f32, H as f32);
+	let bg = float4 { 0.1, 0.2, 0.3, 1.0 };
+	hud::draw(tex, W, H, true, bg);
+	let px = gfx::read_pixels(tex);
+	var ok = true;
+	for i in 3 {
+		let n = hud::N[ps[i]]; let x = n.x as int; let y = n.y as int; let w = n.w as int; let h = n.h as int;
+		ok = px_ok(px[..], W, x + w / 2, y + h / 2, cols[i], "centre") && ok;
+		if rad[i] > 0.0 { let k = (rad[i] - (rad[i] + 1.0) / sqrt(2.0) - 0.5) as int; ok = px_ok(px[..], W, x + k, y + k, bg, "outside corner") && ok; ok = px_ok(px[..], W, x + w - 1 - k, y + h - 1 - k, bg, "outside corner") && ok; }
+		if bws[i] > 0.0 { let b = (bws[i] / 2.0) as int; ok = px_ok(px[..], W, x + w / 2, y + b, edges[i], "top border") && ok; ok = px_ok(px[..], W, x + b, y + h / 2, edges[i], "left border") && ok; ok = px_ok(px[..], W, x + w - 1 - b, y + h / 2, edges[i], "right border") && ok; ok = px_ok(px[..], W, x + w / 2, y + h - 1 - b, edges[i], "bottom border") && ok; }
+	}
+	var o byte[>..] = [];
+	if env("HUD_PNG", o) { let _s = gfx::save_png(tex, o[..]); }
+	gfx::release(tex);
+	gfx::close();
+	if ok { 1 } else { 0 }
+}
 fn main() {
 	var p byte[>..] = [];
 	if !env("HUD_TREES", p) { p.append("trees.txt"); }
@@ -154,5 +191,7 @@ fn main() {
 	check(u3(), "U3 easing within 1e-6, exact end value, chain starts from it");
 	check(u4(), "U4 rich text runs; wrapping never too wide, never splits a word");
 	check(u5(), "U5 locale fallback, arguments, escapes");
+	let g = u6();
+	if g >= 0 { check(g == 1, "U6 panel centres, outside corners and borders within 1/255"); }
 	if FAILS == 0 { print("hud: ok"); } else { print("hud: FAILED ", FAILS); exit(1); }
 }

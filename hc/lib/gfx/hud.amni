@@ -1,0 +1,315 @@
+namespace hud;
+import vec;
+import math;
+import gfx;
+import gfx.sdf_font;
+struct Node { parent int, dir int, jus int, ali int, gap f32, pd f32, mar f32, wm int, wv f32, hm int, hv f32, grow f32, shrink f32, basis f32, minw f32, maxw f32, minh f32, maxh f32, abs bool, l f32, t f32, r f32, x f32, y f32, w f32, h f32, dw bool, dh bool, color float4, border float4, bw f32, radius f32, focusable bool, text int, opacity f32, ox f32, oy f32, scale f32, visible bool }
+let ROW = 0; let COL = 1;
+let START = 0; let END = 1; let CENTER = 2; let BETWEEN = 3; let AROUND = 4; let EVENLY = 5; let STRETCH = 3;
+let AUTO = 0; let PX = 1; let PCT = 2;
+var N Node[>..] = [];
+var KIDS int[>..][>..] = [];
+fn clear() { N.clear(); KIDS.clear(); }
+fn node(parent int) int {
+	N.push(Node { parent: parent, dir: ROW, jus: START, ali: STRETCH, gap: 0.0, pd: 0.0, mar: 0.0, wm: AUTO, wv: 0.0, hm: AUTO, hv: 0.0, grow: 0.0, shrink: 1.0, basis: -1.0, minw: -1.0, maxw: -1.0, minh: -1.0, maxh: -1.0, abs: false, l: -1.0, t: -1.0, r: -1.0, x: 0.0, y: 0.0, w: 0.0, h: 0.0, dw: false, dh: false, color: float4 { 0.0, 0.0, 0.0, 0.0 }, border: float4 { 0.0, 0.0, 0.0, 0.0 }, bw: 0.0, radius: 0.0, focusable: false, text: -1, opacity: 1.0, ox: 0.0, oy: 0.0, scale: 1.0, visible: true });
+	KIDS.push([]);
+	let i = N.len - 1;
+	if parent >= 0 { KIDS[parent].push(i); }
+	i
+}
+fn lo(n int, ax int) f32 { if ax == 0 { N[n].minw } else { N[n].minh } }
+fn hi(n int, ax int) f32 { if ax == 0 { N[n].maxw } else { N[n].maxh } }
+fn clampv(n int, ax int, v f32) f32 { var x = v; let b = hi(n, ax); if b >= 0.0 && x > b { x = b; } let a = lo(n, ax); if a >= 0.0 && x < a { x = a; } max(x, 2.0 * N[n].pd) }
+fn spec(n int, ax int, cb f32, cdef bool) f32 {
+	let m = if ax == 0 { N[n].wm } else { N[n].hm }; let v = if ax == 0 { N[n].wv } else { N[n].hv };
+	if m == PX { v } else if m == PCT && cdef { cb * v / 100.0 } else { -1.0 }
+}
+fn intrinsic(n int, ax int) f32 {
+	let d = N[n].dir; let p = N[n].pd;
+	var s f32 = 0.0; var k = 0;
+	for c in KIDS[n] {
+		if N[c].abs { continue; }
+		let v = contrib(c, ax, (ax == 0) == (d == ROW));
+		if (ax == 0) == (d == ROW) { s += v; k += 1; } else { s = max(s, v); }
+	}
+	if (ax == 0) == (d == ROW) && k > 1 { s += N[n].gap * (k - 1) as f32; }
+	s + 2.0 * p
+}
+fn contrib(c int, ax int, main bool) f32 {
+	let sp = spec(c, ax, 0.0, false);
+	let mc = if sp >= 0.0 { sp } else { intrinsic(c, ax) }; let fb = N[c].basis; let v = if !main || fb < 0.0 { mc } else if ax == 1 { fb } else if mc > fb { if N[c].grow > 0.0 { mc } else { fb } } else { if N[c].shrink > 0.0 { mc } else { fb } };
+	clampv(c, ax, v) + 2.0 * N[c].mar
+}
+fn layout_root(n int, x f32, y f32, w f32, h f32) { N[n].x = x; N[n].y = y; N[n].w = w; N[n].h = h; N[n].dw = true; N[n].dh = true; lay(n); }
+fn lay(n int) {
+	let d = N[n].dir; let pdd = N[n].pd;
+	let cw = max(N[n].w - 2.0 * pdd, 0.0); let ch = max(N[n].h - 2.0 * pdd, 0.0);
+	let mainax = if d == ROW { 0 } else { 1 }; let crossax = 1 - mainax;
+	let avail = if d == ROW { cw } else { ch }; let cavail = if d == ROW { ch } else { cw };
+	let mdef = if d == ROW { true } else { N[n].dh }; let cdef = if d == ROW { N[n].dh } else { true };
+	var items int[>..] = [];
+	for c in KIDS[n] { if !N[c].abs { items.push(c); } }
+	let k = items.len;
+	var base f32[>..] = []; var hyp f32[>..] = []; var tgt f32[>..] = []; var frozen byte[>..] = [];
+	var sumh f32 = 0.0;
+	for c in items {
+		let sp = spec(c, mainax, avail, mdef);
+		var b = if N[c].basis >= 0.0 { N[c].basis } else if sp >= 0.0 { sp } else { intrinsic(c, mainax) };
+		b = max(b, 2.0 * N[c].pd);
+		base.push(b); let hv = clampv(c, mainax, b); hyp.push(hv); tgt.push(hv); frozen.push(0);
+		sumh += hv + 2.0 * N[c].mar;
+	}
+	let gaps = if k > 1 { N[n].gap * (k - 1) as f32 } else { 0.0 };
+	let growing = sumh + gaps < avail;
+	for i in k {
+		let c = items[i];
+		let f = if growing { N[c].grow } else { N[c].shrink };
+		if f == 0.0 || growing && base[i] > hyp[i] || !growing && base[i] < hyp[i] { frozen[i] = 1; }
+	}
+	var init_free f32 = avail - gaps;
+	for i in k { init_free -= 2.0 * N[items[i]].mar + (if frozen[i] != 0 { tgt[i] } else { base[i] }); }
+	var guard_ = 0;
+	while guard_ < 64 {
+		guard_ += 1;
+		var any = false; for i in k { if frozen[i] == 0 { any = true; } }
+		if !any { break; }
+		var free f32 = avail - gaps; var sf f32 = 0.0;
+		for i in k { let c = items[i]; free -= 2.0 * N[c].mar + (if frozen[i] != 0 { tgt[i] } else { base[i] }); if frozen[i] == 0 { sf += if growing { N[c].grow } else { N[c].shrink }; } }
+		if sf < 1.0 { let sc = init_free * sf; if abs(sc) < abs(free) { free = sc; } }
+		if growing {
+			for i in k { if frozen[i] == 0 { tgt[i] = base[i] + (if sf > 0.0 { free * N[items[i]].grow / sf } else { 0.0 }); } }
+		} else {
+			var ss f32 = 0.0; for i in k { if frozen[i] == 0 { ss += N[items[i]].shrink * max(base[i] - 2.0 * N[items[i]].pd, 0.0); } }
+			for i in k { if frozen[i] == 0 { tgt[i] = base[i] + (if ss > 0.0 { free * N[items[i]].shrink * max(base[i] - 2.0 * N[items[i]].pd, 0.0) / ss } else { 0.0 }); } }
+		}
+		var tot f32 = 0.0; var vio int[>..] = []; vio.resize(k, 0);
+		for i in k { if frozen[i] == 0 { let cl = clampv(items[i], mainax, tgt[i]); tot += cl - tgt[i]; if cl > tgt[i] { vio[i] = 1; } else if cl < tgt[i] { vio[i] = -1; } tgt[i] = cl; } }
+		if abs(tot) < 1.0e-6 { for i in k { frozen[i] = 1; } } else if tot > 0.0 { for i in k { if vio[i] > 0 { frozen[i] = 1; } } } else { for i in k { if vio[i] < 0 { frozen[i] = 1; } } }
+	}
+	var cs f32[>..] = [];
+	for i in k {
+		let c = items[i];
+		let sp = spec(c, crossax, cavail, cdef);
+		var v f32 = 0.0;
+		var def = false;
+		if sp >= 0.0 { v = clampv(c, crossax, sp); def = true; }
+		else if N[n].ali == STRETCH && (if crossax == 0 { N[c].wm } else { N[c].hm }) == AUTO { v = clampv(c, crossax, cavail - 2.0 * N[c].mar); def = true; }
+		else { v = clampv(c, crossax, intrinsic(c, crossax)); }
+		cs.push(v);
+		if d == ROW { N[c].w = tgt[i]; N[c].h = v; N[c].dw = mdef || spec(c, 0, avail, mdef) >= 0.0; N[c].dh = def; }
+		else { N[c].h = tgt[i]; N[c].w = v; N[c].dh = mdef || spec(c, 1, avail, mdef) >= 0.0 || N[c].basis >= 0.0; N[c].dw = def; }
+	}
+	var used f32 = gaps; for i in k { used += tgt[i] + 2.0 * N[items[i]].mar; }
+	let free = avail - used;
+	var lead f32 = 0.0; var between = N[n].gap;
+	let j = N[n].jus;
+	if free >= 0.0 {
+		if j == END { lead = free; } else if j == CENTER { lead = free * 0.5; }
+		else if j == BETWEEN && k > 1 { between += free / (k - 1) as f32; }
+		else if j == AROUND && k > 0 { lead = free / (2 * k) as f32; between += free / k as f32; }
+		else if j == EVENLY && k > 0 { lead = free / (k + 1) as f32; between += free / (k + 1) as f32; }
+	} else {
+		if j == END { lead = free; } else if j == CENTER { lead = free * 0.5; }
+	}
+	var pos = (if d == ROW { N[n].x } else { N[n].y }) + pdd + lead;
+	for i in k {
+		let c = items[i]; let m = N[c].mar;
+		let cfree = cavail - cs[i] - 2.0 * m;
+		let a = N[n].ali;
+		let off = if a == END { cfree } else if a == CENTER { cfree * 0.5 } else { 0.0 };
+		if d == ROW { N[c].x = pos + m; N[c].y = N[n].y + pdd + m + off; } else { N[c].y = pos + m; N[c].x = N[n].x + pdd + m + off; }
+		pos += tgt[i] + 2.0 * m + between;
+	}
+	for c in KIDS[n] {
+		if !N[c].abs { continue; }
+		let pw = N[n].w; let ph = N[n].h;
+		let sw = spec(c, 0, pw, true); let sh = spec(c, 1, ph, N[n].dh);
+		var w = if sw >= 0.0 { sw } else if N[c].l >= 0.0 && N[c].r >= 0.0 { pw - N[c].l - N[c].r } else { intrinsic(c, 0) };
+		var h = if sh >= 0.0 { sh } else { intrinsic(c, 1) };
+		w = clampv(c, 0, w); h = clampv(c, 1, h);
+		N[c].w = w; N[c].h = h; N[c].x = N[n].x + max(N[c].l, 0.0); N[c].y = N[n].y + max(N[c].t, 0.0);
+		N[c].dw = sw >= 0.0 || N[c].l >= 0.0 && N[c].r >= 0.0; N[c].dh = sh >= 0.0;
+	}
+	for c in KIDS[n] { lay(c); }
+}
+let LEFT = 0; let UP = 1; let RIGHT = 2; let DOWN = 3;
+fn nav(from int, dir int) int {
+	let a = N[from];
+	var best = from; var bs f32 = 1.0e30;
+	for i in N.len {
+		let b = N[i];
+		if i == from || !b.focusable || !b.visible { continue; }
+		let p = if dir == RIGHT { b.x - (a.x + a.w) } else if dir == LEFT { a.x - (b.x + b.w) } else if dir == DOWN { b.y - (a.y + a.h) } else { a.y - (b.y + b.h) };
+		if p < -0.5 { continue; }
+		let s = if dir == LEFT || dir == RIGHT { max(max(b.y - (a.y + a.h), a.y - (b.y + b.h)), 0.0) } else { max(max(b.x - (a.x + a.w), a.x - (b.x + b.w)), 0.0) };
+		let sc = max(p, 0.0) + 3.0 * s;
+		if sc < bs { bs = sc; best = i; }
+	}
+	best
+}
+let LINEAR = 0; let IN_QUAD = 1; let OUT_QUAD = 2; let INOUT_QUAD = 3; let IN_CUBIC = 4; let OUT_CUBIC = 5; let INOUT_CUBIC = 6; let IN_BACK = 7; let OUT_BACK = 8; let OUT_ELASTIC = 9;
+fn ease(k int, t real) real {
+	let c1 = 1.70158; let c3 = c1 + 1.0; let u = 1.0 - t; let m = -2.0 * t + 2.0;
+	if k == IN_QUAD { t * t } else if k == OUT_QUAD { 1.0 - u * u } else if k == INOUT_QUAD { if t < 0.5 { 2.0 * t * t } else { 1.0 - m * m / 2.0 } }
+	else if k == IN_CUBIC { t * t * t } else if k == OUT_CUBIC { 1.0 - u * u * u } else if k == INOUT_CUBIC { if t < 0.5 { 4.0 * t * t * t } else { 1.0 - m * m * m / 2.0 } }
+	else if k == IN_BACK { c3 * t * t * t - c1 * t * t } else if k == OUT_BACK { 1.0 + c3 * (t - 1.0) * (t - 1.0) * (t - 1.0) + c1 * (t - 1.0) * (t - 1.0) }
+	else if k == OUT_ELASTIC { if t <= 0.0 { 0.0 } else if t >= 1.0 { 1.0 } else { pow(2.0, -10.0 * t) * sin((t * 10.0 - 0.75) * 2.0943951023931953) + 1.0 } }
+	else { t }
+}
+let P_X = 0; let P_Y = 1; let P_OPACITY = 2; let P_SCALE = 3;
+struct Tw { node int, prop int, a real, b real, el real, dur real, ease int, next int, live bool, from_prev bool }
+var TW Tw[>..] = [];
+fn prop_get(n int, p int) real { (if p == P_X { N[n].ox } else if p == P_Y { N[n].oy } else if p == P_OPACITY { N[n].opacity } else { N[n].scale }) as real }
+fn prop_set(n int, p int, v real) { if p == P_X { N[n].ox = v as f32; } else if p == P_Y { N[n].oy = v as f32; } else if p == P_OPACITY { N[n].opacity = v as f32; } else { N[n].scale = v as f32; } }
+fn tween(n int, p int, to real, dur real, e int) int { TW.push(Tw { node: n, prop: p, a: prop_get(n, p), b: to, el: 0.0, dur: dur, ease: e, next: -1, live: true, from_prev: false }); TW.len - 1 }
+fn then(prev int, to real, dur real, e int) int { TW.push(Tw { node: TW[prev].node, prop: TW[prev].prop, a: TW[prev].b, b: to, el: 0.0, dur: dur, ease: e, next: -1, live: false, from_prev: true }); TW[prev].next = TW.len - 1; TW.len - 1 }
+fn tw_value(i int) real { let t = TW[i]; if t.el >= t.dur { t.b } else { t.a + (t.b - t.a) * ease(t.ease, t.el / t.dur) } }
+fn tick(dt real) {
+	var on int[>..] = []; for i in TW.len { if TW[i].live { on.push(i); } }
+	for i in on {
+		var left = dt; var j = i;
+		while j >= 0 && TW[j].live {
+			TW[j].el += left;
+			prop_set(TW[j].node, TW[j].prop, tw_value(j));
+			if TW[j].el < TW[j].dur { break; }
+			left = TW[j].el - TW[j].dur; TW[j].live = false;
+			let nx = TW[j].next;
+			if nx >= 0 { TW[nx].live = true; TW[nx].a = TW[j].b; }
+			j = nx;
+		}
+	}
+}
+struct Run { start int, len int, bold bool, color u32, size f32 }
+var TXT byte[>..] = [];
+var RUNS Run[>..] = [];
+var CSZ f32[>..] = [];
+fn hexv(c byte) u32 { (if c >= 97 { c - 87 } else if c >= 65 { c - 55 } else { c - 48 }) as u32 }
+fn starts(s const byte[:], at int, p const byte[:]) bool { if at + p.len > s.len { return false; } for i in p.len { if s[at + i] != p[i] { return false; } } true }
+fn rich(src const byte[:], size f32, color u32) {
+	TXT.clear(); RUNS.clear(); CSZ.clear();
+	var bs bool[>..] = [false]; var cs u32[>..] = [color]; var ss f32[>..] = [size]; var kind int[>..] = [];
+	var at = 0;
+	while at < src.len {
+		var tag = false;
+		if src[at] == 60 {
+			var e = at; while e < src.len && src[e] != 62 { e += 1; }
+			if e < src.len {
+				tag = true;
+				if starts(src, at, "<b>") { bs.push(true); cs.push(cs[cs.len - 1]); ss.push(ss[ss.len - 1]); kind.push(0); }
+				else if starts(src, at, "<color=#") && e - at == 14 { var v u32 = 0; for k in 6 { v = v * 16 + hexv(src[at + 8 + k]); } bs.push(bs[bs.len - 1]); cs.push(v); ss.push(ss[ss.len - 1]); kind.push(1); }
+				else if starts(src, at, "<size=") { var v f32 = 0.0; for k in at + 6..e { v = v * 10.0 + (src[k] - 48) as f32; } bs.push(bs[bs.len - 1]); cs.push(cs[cs.len - 1]); ss.push(v); kind.push(2); }
+				else if src[at + 1] == 47 && kind.len > 0 { bs.pop(); cs.pop(); ss.pop(); kind.pop(); }
+				else { tag = false; }
+			}
+			if tag { at = e + 1; continue; }
+		}
+		let b = bs[bs.len - 1]; let c = cs[cs.len - 1]; let z = ss[ss.len - 1];
+		if RUNS.len == 0 || RUNS[RUNS.len - 1].bold != b || RUNS[RUNS.len - 1].color != c || RUNS[RUNS.len - 1].size != z || RUNS[RUNS.len - 1].start + RUNS[RUNS.len - 1].len != TXT.len { RUNS.push(Run { start: TXT.len, len: 0, bold: b, color: c, size: z }); }
+		RUNS[RUNS.len - 1].len += 1; TXT.push(src[at]); CSZ.push(z);
+		at += 1;
+	}
+}
+var LINES int[>..] = [];
+fn char_w(i int) f32 { sdf_text_w(TXT[i..i + 1], CSZ[i]) }
+fn span_w(a int, b int) f32 { var w f32 = 0.0; for i in a..b { w += char_w(i); } w }
+fn wrap(width f32) {
+	LINES.clear();
+	var ls = 0; var i = 0;
+	while i <= TXT.len {
+		if i == TXT.len || TXT[i] == 10 { LINES.push(ls); LINES.push(i); ls = i + 1; i += 1; continue; }
+		if TXT[i] == 32 { i += 1; continue; }
+		var e = i; while e < TXT.len && TXT[e] != 32 && TXT[e] != 10 { e += 1; }
+		if span_w(ls, e) > width && i > ls { var le = i; while le > ls && TXT[le - 1] == 32 { le -= 1; } LINES.push(ls); LINES.push(le); ls = i; }
+		i = e;
+	}
+}
+var SK byte[>..][>..] = []; var SV byte[>..][>..] = []; var LOCALE byte[>..] = [];
+fn set_locale(l const byte[:]) { LOCALE.clear(); LOCALE.append(l); }
+fn put_string(locale const byte[:], key const byte[:], v const byte[:]) { let k = str(locale, ":", key); for i in SK.len { if SK[i][..] == k[..] { SV[i].clear(); SV[i].append(v); return; } } SK.push(copy(k)); var c byte[>..] = []; c.append(v); SV.push(copy(c)); }
+fn find_string(locale const byte[:], key const byte[:]) int { let k = str(locale, ":", key); for i in SK.len { if SK[i][..] == k[..] { return i; } } -1 }
+fn tr(key const byte[:], names byte[>..][>..]&, vals byte[>..][>..]&) byte[>..] {
+	var i = find_string(LOCALE[..], key);
+	if i < 0 { var d = 0; while d < LOCALE.len && LOCALE[d] != 45 && LOCALE[d] != 95 { d += 1; } i = find_string(LOCALE[..d], key); }
+	var out byte[>..] = [];
+	if i < 0 { out.push(91); out.append(key); out.push(93); return out; }
+	let s = SV[i][..];
+	var at = 0;
+	while at < s.len {
+		if s[at] == 123 && at + 1 < s.len && s[at + 1] == 123 { out.push(123); at += 2; continue; }
+		if s[at] == 125 && at + 1 < s.len && s[at + 1] == 125 { out.push(125); at += 2; continue; }
+		if s[at] == 123 {
+			var e = at + 1; while e < s.len && s[e] != 125 { e += 1; }
+			let nm = s[at + 1..e];
+			var hit = false;
+			for k in names.len { if names[k][..] == nm { out.append(vals[k][..]); hit = true; break; } }
+			if !hit { out.append(s[at..min(e + 1, s.len)]); }
+			at = e + 1; continue;
+		}
+		out.push(s[at]); at += 1;
+	}
+	out
+}
+struct PanVtx { pos float2, loc float2, half float2, rb float2, fill byte[4], edge byte[4] }
+struct HudProj { proj gfx::mat4 }
+var PAN_READY = false; var PAN_PIPE gfx::Pipeline; var PAN_VB gfx::Buffer; var PAN_CAP = 0;
+var TEXTS byte[>..][>..] = [];
+fn set_text(n int, s const byte[:]) { var c byte[>..] = []; c.append(s); TEXTS.push(copy(c)); N[n].text = TEXTS.len - 1; }
+fn rgba(c float4, a f32) byte[4] { [(clamp(c.x, 0.0, 1.0) * 255.0 + 0.5) as byte, (clamp(c.y, 0.0, 1.0) * 255.0 + 0.5) as byte, (clamp(c.z, 0.0, 1.0) * 255.0 + 0.5) as byte, (clamp(c.w * a, 0.0, 1.0) * 255.0 + 0.5) as byte] }
+fn alpha_of(n int) f32 { var a f32 = 1.0; var p = n; while p >= 0 { a *= N[p].opacity; p = N[p].parent; } a }
+fn shown(n int) bool { var p = n; while p >= 0 { if !N[p].visible { return false; } p = N[p].parent; } true }
+fn draw(target gfx::Texture, w int, h int, clear bool, bg float4) {
+	if !PAN_READY {
+		var d = gfx::PipelineDesc { cull: gfx::CULL_NONE, depth_test: false, depth_write: false, blend: gfx::BLEND_ALPHA };
+		d.formats[4] = gfx::VERTEX_UBYTE4_NORM; d.formats[5] = gfx::VERTEX_UBYTE4_NORM;
+		PAN_PIPE = gfx::pipeline(embed_shader("shaders/hud_panel.vert"), embed_shader("shaders/hud_panel.frag"), d);
+		PAN_READY = true;
+	}
+	var vs PanVtx[>..] = []; var tv TextVtx[>..] = [];
+	for n in N.len {
+		if !shown(n) { continue; }
+		let a = alpha_of(n); let s = N[n].scale;
+		let cx = N[n].x + N[n].w * 0.5 + N[n].ox; let cy = N[n].y + N[n].h * 0.5 + N[n].oy;
+		let hx = N[n].w * 0.5 * s; let hy = N[n].h * 0.5 * s;
+		if N[n].color.w > 0.0 || N[n].bw > 0.0 {
+			let f = rgba(N[n].color, a); let e = rgba(N[n].border, a); let rb = float2 { N[n].radius * s, N[n].bw * s }; let hh = float2 { hx, hy };
+			let x0 = cx - hx - 1.0; let x1 = cx + hx + 1.0; let y0 = cy - hy - 1.0; let y1 = cy + hy + 1.0;
+			let p0 = PanVtx { pos: float2 { x0, y0 }, loc: float2 { x0 - cx, y0 - cy }, half: hh, rb: rb, fill: f, edge: e };
+			let p1 = PanVtx { pos: float2 { x1, y0 }, loc: float2 { x1 - cx, y0 - cy }, half: hh, rb: rb, fill: f, edge: e };
+			let p2 = PanVtx { pos: float2 { x1, y1 }, loc: float2 { x1 - cx, y1 - cy }, half: hh, rb: rb, fill: f, edge: e };
+			let p3 = PanVtx { pos: float2 { x0, y1 }, loc: float2 { x0 - cx, y1 - cy }, half: hh, rb: rb, fill: f, edge: e };
+			vs.append([p0, p1, p2, p0, p2, p3]);
+		}
+		if N[n].text >= 0 {
+			rich(TEXTS[N[n].text][..], 16.0 * s, 0xffffff as u32);
+			wrap(N[n].w * s - 2.0 * N[n].pd * s);
+			var ly = cy - hy + N[n].pd * s; var l = 0;
+			while l < LINES.len {
+				let a0 = LINES[l]; let e0 = LINES[l + 1];
+				var lh f32 = 0.0; for i in a0..e0 { lh = max(lh, CSZ[i]); }
+				ly += lh * 1.25;
+				var lx = cx - hx + N[n].pd * s;
+				for r in RUNS {
+					let ra = max(r.start, a0); let re = min(r.start + r.len, e0);
+					if ra >= re { continue; }
+					let c = float4 { ((r.color >> 16) & 255) as f32 / 255.0, ((r.color >> 8) & 255) as f32 / 255.0, (r.color & 255) as f32 / 255.0, 1.0 };
+					sdf_text(tv, lx, ly, r.size, TXT[ra..re], rgba(c, a), if r.bold { 1 } else { 0 }, false);
+					lx += span_w(ra, re);
+				}
+				l += 2;
+			}
+		}
+	}
+	let t0 = gfx::Texture { 0 };
+	if clear { guard gfx::begin_pass(gfx::PassDesc { color: [target, t0, t0, t0], clear_color: true, color_value: bg, .. }) else { return; } gfx::end_pass(); }
+	if vs.len > 0 {
+		if vs.len > PAN_CAP { if PAN_CAP > 0 { gfx::release(PAN_VB); } PAN_CAP = max(vs.len, 4096); PAN_VB = gfx::buffer(gfx::BUFFER_VERTEX as int, PAN_CAP * 40, []); }
+		gfx::update_buffer(PAN_VB, 0, bytes_of(vs)[..vs.len * 40]);
+		guard gfx::begin_pass(gfx::PassDesc { color: [target, t0, t0, t0], clear_color: false, .. }) else { return; }
+		gfx::bind(PAN_PIPE);
+		gfx::uniforms(gfx::VERTEX as int, 0, HudProj { proj: gfx::ortho(0.0, w as f32, h as f32, 0.0, -1.0, 1.0) });
+		gfx::bind_vertex_buffer(PAN_VB);
+		gfx::draw(vs.len);
+		gfx::end_pass();
+	}
+	sdf_draw(target, w, h, tv);
+}
