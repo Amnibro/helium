@@ -26,6 +26,6 @@ step hud sh -c 'gunzip -c hc/test/hud/trees.txt.gz > "$1/trees.txt" && HC_LIB=hc
 step edit sh -c 'HC_LIB=hc/lib "$0" build hc/test/edit/edit_test.amni -o "$1/edit" 2>/dev/null && "$1/edit" && HC_LIB=hc/lib "$0" build hc/apps/editor/editor.amni -o "$1/editor" 2>/dev/null' "$HN" "$W"
 step touch sh -c 'HC_LIB=hc/lib "$0" build hc/test/mobile/touch_test.amni -o "$1/touch" 2>/dev/null && "$1/touch"' "$HN" "$W"
 step scal sh -c 'HC_LIB=hc/lib "$0" build hc/test/mobile/scal_test.amni -o "$1/scal" 2>/dev/null && "$1/scal" && HC_LIB=hc/lib "$0" build hc/apps/mobile/mobile.amni -o "$1/mobile" 2>/dev/null' "$HN" "$W"
-step import_up sh -c 'HC_LIB=hc/lib "$0" build hc/test/import_up/app/main.amni -o "$1/iu" 2>/dev/null && "$1/iu" | grep -q "parent directory" && ! HC_LIB=hc/lib "$0" build hc/test/import_up/bad.amni -o "$1/iub" 2>&1 | grep -q "runtime error"' "$HN" "$W"
+step import_up sh -c 'HC_LIB=hc/lib "$0" build hc/test/import_up/app/main.amni -o "$1/iu" 2>/dev/null && "$1/iu" | grep -q "parent directory" && ! HC_LIB=hc/lib "$0" build hc/test/import_up/bad.amni -o "$1/iub" 2>&1 | grep -q "runtime error" && ! HC_LIB=hc/lib "$0" build hc/test/import_up/kw.amni -o "$1/iub" 2>&1 | grep -q "runtime error"' "$HN" "$W"
 [ -n "${HELIUM_GFX_TEST:-}" ] && step gfx tools/hc/gfxtest.sh "$HN"
 [ $fail -eq 0 ] && echo "ci: ok" || echo "ci: FAILED"; exit $fail

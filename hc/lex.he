@@ -31,6 +31,7 @@ struct Ov { p0 int, p1 int, t0 int, t1 int }
 var OVS Ov[>..]
 var OVB byte[>..]
 nm(id int) const byte[:]:
+	if id < 0 || id >= NM.len { return NAMES[..0] }
 	x := NM[id]; NAMES[(x.s as int)..x.s + x.n]
 hash(s const byte[:]) u64:
 	h u64 ~= 1469598103934665603; for c s { h = (h ^ c) * 1099511628211 } h

@@ -1,0 +1,2 @@
+import gfx.hud;
+fn main() { hud::pad(1, 2.0); }
