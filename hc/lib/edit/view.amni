@@ -1,0 +1,26 @@
+namespace editview;
+import std;
+import gfx;
+import gfx.linalg;
+import gfx.gltf;
+import gfx.shapes;
+import gfx.scene3d;
+import edit.scene;
+var KEYS int[>..] = []; var ASSETS int[>..] = [];
+fn key(e edit::Ent) int { e.kind * 16777216 + (((e.color.x * 255.0 + 0.5) as int) & 255) * 65536 + (((e.color.y * 255.0 + 0.5) as int) & 255) * 256 + (((e.color.z * 255.0 + 0.5) as int) & 255) }
+fn asset(e edit::Ent) int {
+	let k = key(e);
+	for i in KEYS.len { if KEYS[i] == k { return ASSETS[i]; } }
+	var m = shapes::material(e.color, 0.0, 0.6); m.double_sided = e.kind == edit::PLANE;
+	let a = if e.kind == edit::CUBE { shapes::cube(float3 { 0.5, 0.5, 0.5 }, m) } else if e.kind == edit::SPHERE { shapes::sphere(0.5, 64, 32, m) } else { shapes::plane(0.5, m) };
+	KEYS.push(k); ASSETS.push(a); a
+}
+fn reset() { KEYS.clear(); ASSETS.clear(); s3d::items.clear(); s3d::lights.clear(); gltf::reset(); s3d::forget(); }
+fn camera(c edit::Cam) { s3d::view = s3d::Camera { eye: c.eye, target: c.target, up: c.up, fov_y: c.fov_y, near: 0.1, far: 200.0 }; }
+fn sync() {
+	s3d::items.clear(); s3d::lights.clear();
+	for e in edit::E {
+		if e.kind == edit::LIGHT { let m = edit::world(e.id); s3d::add_light(float3 { m.c3.x, m.c3.y, m.c3.z }, float3 { e.color.x * 4.0, e.color.y * 4.0, e.color.z * 4.0 }, 8.0); continue; }
+		s3d::place(s3d::add(asset(e)), edit::world(e.id));
+	}
+}

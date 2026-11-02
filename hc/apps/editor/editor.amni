@@ -1,0 +1,201 @@
+import std;
+import os;
+import math;
+import gfx;
+import gfx.linalg;
+import gfx.scene3d;
+import gfx.sdf_font;
+import ui;
+import edit.scene;
+import edit.view;
+let W = 1280; let H = 800;
+let MOVE = 0; let TURN = 1; let SIZE = 2;
+var CAM = edit::Cam { eye: float3 { 7.0, 5.0, 9.0 }, target: float3 { 0.0, 0.5, 0.0 }, up: float3 { 0.0, 1.0, 0.0 }, fov_y: 0.9, w: 1280.0, h: 800.0 };
+var SEL = -1; var MODE = MOVE; var SNAP = false; var AXIS = -1; var GRAB_X = 0.0; var GRAB_Y = 0.0; var START edit::Ent;
+var PATH byte[>..] = []; var NAME byte[>..] = []; var DIRTY = true; var STATUS byte[>..] = [];
+var PROP_DRAG = false;
+fn axis_of(k int) edit::R3 { edit::R3 { if k == 0 { 1.0 } else { 0.0 }, if k == 1 { 1.0 } else { 0.0 }, if k == 2 { 1.0 } else { 0.0 } } }
+fn pivot() edit::R3 { let m = edit::world(SEL); edit::R3 { m.c3.x as real, m.c3.y as real, m.c3.z as real } }
+fn gsize(p edit::R3) real { let d = edit::rsub(p, edit::r3(CAM.eye)); sqrt(edit::rdot(d, d)) * 0.16 }
+fn seg_dist(px real, py real, ax real, ay real, bx real, by real) real { let dx = bx - ax; let dy = by - ay; let l = dx * dx + dy * dy; let t = if l > 0.0 { clamp(((px - ax) * dx + (py - ay) * dy) / l, 0.0, 1.0) } else { 0.0 }; let qx = ax + dx * t - px; let qy = ay + dy * t - py; sqrt(qx * qx + qy * qy) }
+fn ring_pt(p edit::R3, k int, a real, r real) edit::R3 { let u = axis_of((k + 1) % 3); let v = axis_of((k + 2) % 3); edit::radd(p, edit::radd(edit::rmul(u, cos(a) * r), edit::rmul(v, sin(a) * r))) }
+fn hover_axis(mx real, my real) int {
+	if SEL < 0 || edit::idx(SEL) < 0 { return -1; }
+	let p = pivot(); let g = gsize(p); let x0, y0 = edit::project(CAM, p);
+	var best = -1; var bd = 9.0;
+	for k in 3 {
+		if MODE == TURN {
+			for s in 48 { let ax, ay = edit::project(CAM, ring_pt(p, k, s as real * 0.1309, g)); let bx, by = edit::project(CAM, ring_pt(p, k, (s + 1) as real * 0.1309, g)); let d = seg_dist(mx, my, ax, ay, bx, by); if d < bd { bd = d; best = k; } }
+		} else { let x1, y1 = edit::project(CAM, edit::radd(p, edit::rmul(axis_of(k), g))); let d = seg_dist(mx, my, x0, y0, x1, y1); if d < bd { bd = d; best = k; } }
+	}
+	best
+}
+fn quad(vs TextVtx[>..]&, ax real, ay real, bx real, by real, w real, c byte[4]) {
+	let dx = bx - ax; let dy = by - ay; let l = max(sqrt(dx * dx + dy * dy), 1.0e-6); let nx = -dy / l * w * 0.5; let ny = dx / l * w * 0.5;
+	let n = float2 { -1.0, -1.0 };
+	let p0 = TextVtx { pos: float2 { (ax + nx) as f32, (ay + ny) as f32 }, uv: n, col: c }; let p1 = TextVtx { pos: float2 { (bx + nx) as f32, (by + ny) as f32 }, uv: n, col: c };
+	let p2 = TextVtx { pos: float2 { (bx - nx) as f32, (by - ny) as f32 }, uv: n, col: c }; let p3 = TextVtx { pos: float2 { (ax - nx) as f32, (ay - ny) as f32 }, uv: n, col: c };
+	vs.append([p0, p1, p2, p0, p2, p3]);
+}
+fn draw_gizmo(target gfx::Texture, hot int) {
+	if SEL < 0 || edit::idx(SEL) < 0 { return; }
+	var vs TextVtx[>..] = [];
+	let p = pivot(); let g = gsize(p); let x0, y0 = edit::project(CAM, p);
+	let cols = [[230 as byte, 60, 60, 255], [80 as byte, 210, 80, 255], [70 as byte, 120, 240, 255]];
+	for k in 3 {
+		let c = if k == hot || k == AXIS { [255 as byte, 220, 40, 255] } else { cols[k] };
+		if MODE == TURN { for s in 48 { let ax, ay = edit::project(CAM, ring_pt(p, k, s as real * 0.1309, g)); let bx, by = edit::project(CAM, ring_pt(p, k, (s + 1) as real * 0.1309, g)); quad(vs, ax, ay, bx, by, 3.0, c); } }
+		else {
+			let x1, y1 = edit::project(CAM, edit::radd(p, edit::rmul(axis_of(k), g)));
+			quad(vs, x0, y0, x1, y1, 3.0, c);
+			if MODE == SIZE { sdf_rect(vs, (x1 - 5.0) as f32, (y1 - 5.0) as f32, 10.0, 10.0, c); } else { let dx = x1 - x0; let dy = y1 - y0; let l = max(sqrt(dx * dx + dy * dy), 1.0); quad(vs, x1 - dx / l * 12.0, y1 - dy / l * 12.0, x1, y1, 9.0, c); }
+		}
+	}
+	sdf_draw(target, W, H, vs);
+}
+fn add_shape(kind int, name const byte[:]) { var e = edit::ent(kind, name); e.t = float3 { 0.0, if kind == edit::PLANE { 0.0 } else { 0.5 }, 0.0 }; e.color = if kind == edit::LIGHT { float3 { 1.0, 0.9, 0.7 } } else { float3 { 0.75, 0.75, 0.78 } }; if kind == edit::LIGHT { e.t.y = 3.0; } SEL = edit::add(e); DIRTY = true; }
+fn demo() {
+	edit::reset();
+	var g = edit::ent(edit::PLANE, "Ground"); g.s = float3 { 20.0, 1.0, 20.0 }; g.color = float3 { 0.45, 0.47, 0.42 }; let _g = edit::add(g);
+	var a = edit::ent(edit::CUBE, "Crate"); a.t = float3 { -1.5, 0.5, 0.0 }; a.color = float3 { 0.8, 0.5, 0.25 }; let ca = edit::add(a);
+	var b = edit::ent(edit::SPHERE, "Orb"); b.t = float3 { 0.0, 1.0, 0.0 }; b.parent = ca; b.color = float3 { 0.3, 0.6, 0.9 }; let _b = edit::add(b);
+	var c = edit::ent(edit::CUBE, "Pillar"); c.t = float3 { 2.0, 1.0, -1.0 }; c.s = float3 { 0.6, 2.0, 0.6 }; c.color = float3 { 0.85, 0.85, 0.8 }; SEL = edit::add(c);
+	var l = edit::ent(edit::LIGHT, "Lamp"); l.t = float3 { 0.0, 3.0, 2.0 }; l.color = float3 { 1.0, 0.8, 0.6 }; let _l = edit::add(l);
+	while edit::undo() {} while edit::redo() {}
+	edit::OPS.clear(); edit::SA.clear(); edit::SB.clear(); edit::CUR = 0;
+}
+fn depth(id int) int { var d = 0; var p = edit::E[edit::idx(id)].parent; while p >= 0 && d < 32 { d += 1; let i = edit::idx(p); if i < 0 { break; } p = edit::E[i].parent; } d }
+fn kind_name(k int) const byte[:] { if k == edit::CUBE { "cube" } else if k == edit::SPHERE { "sphere" } else if k == edit::PLANE { "plane" } else { "light" } }
+fn save_doc() { var t byte[>..] = []; edit::save(t); if write_file(PATH[..], t[..]) { STATUS.clear(); STATUS.append(str("Saved ", PATH[..])); } else { STATUS.clear(); STATUS.append(str("Could not save ", PATH[..])); } }
+fn load_doc() bool { var t byte[>..] = []; if !read_file(PATH[..], t) { return false; } let ok = edit::load(t[..]); DIRTY = true; SEL = -1; ok }
+fn prop(c ui::Context, label const byte[:], v f32&, lo f32, hi f32, step f32) bool { ui::property_float(c, label, lo, v, hi, step, step * 0.5) }
+fn panels(c ui::Context) {
+	if ui::begin(c, "Outliner", ui::rect(8, 40, 250, 420), (ui::WINDOW_BORDER | ui::WINDOW_TITLE | ui::WINDOW_MOVABLE | ui::WINDOW_SCALABLE) as int) {
+		ui::layout_row_dynamic(c, 26.0, 4);
+		if ui::button_label(c, "Cube") { add_shape(edit::CUBE, "Cube"); }
+		if ui::button_label(c, "Sphere") { add_shape(edit::SPHERE, "Sphere"); }
+		if ui::button_label(c, "Plane") { add_shape(edit::PLANE, "Plane"); }
+		if ui::button_label(c, "Light") { add_shape(edit::LIGHT, "Light"); }
+		ui::layout_row_dynamic(c, 22.0, 1);
+		for e in edit::E {
+			var on = e.id == SEL;
+			var ind byte[>..] = []; for d in depth(e.id) { ind.append("    "); }
+			if ui::selectable_label(c, str(ind[..], e.name[..], "  (", kind_name(e.kind), ")")[..], ui::TEXT_LEFT as int, on) { SEL = if on { e.id } else { -1 }; }
+		}
+	}
+	ui::end(c);
+	if ui::begin(c, "Details", ui::rect(W - 347, 40, 339, 470), (ui::WINDOW_BORDER | ui::WINDOW_TITLE | ui::WINDOW_MOVABLE | ui::WINDOW_SCALABLE) as int) {
+		let i = if SEL >= 0 { edit::idx(SEL) } else { -1 };
+		if i < 0 { ui::layout_row_dynamic(c, 22.0, 1); ui::label(c, "Nothing selected", ui::TEXT_LEFT as int); }
+		else {
+			var e = edit::E[i]; var changed = false;
+			ui::layout_row_dynamic(c, 22.0, 1);
+			NAME.clear(); NAME.append(e.name[..]);
+			let _r = ui::edit_string(c, ui::EDIT_FIELD as int, NAME, ui::FILTER_DEFAULT as int);
+			if NAME[..] != e.name[..] { e.name = NAME[..min(NAME.len, 64)]; changed = true; }
+			ui::label(c, "Location", ui::TEXT_LEFT as int);
+			ui::layout_row_dynamic(c, 24.0, 3);
+			changed = prop(c, "#X", e.t.x, -1000.0, 1000.0, 0.05) || changed; changed = prop(c, "#Y", e.t.y, -1000.0, 1000.0, 0.05) || changed; changed = prop(c, "#Z", e.t.z, -1000.0, 1000.0, 0.05) || changed;
+			ui::layout_row_dynamic(c, 22.0, 1); ui::label(c, "Scale", ui::TEXT_LEFT as int);
+			ui::layout_row_dynamic(c, 24.0, 3);
+			changed = prop(c, "#X ", e.s.x, 0.01, 1000.0, 0.05) || changed; changed = prop(c, "#Y ", e.s.y, 0.01, 1000.0, 0.05) || changed; changed = prop(c, "#Z ", e.s.z, 0.01, 1000.0, 0.05) || changed;
+			ui::layout_row_dynamic(c, 22.0, 1); ui::label(c, "Colour", ui::TEXT_LEFT as int);
+			ui::layout_row_dynamic(c, 24.0, 3);
+			changed = prop(c, "#R", e.color.x, 0.0, 1.0, 0.01) || changed; changed = prop(c, "#G", e.color.y, 0.0, 1.0, 0.01) || changed; changed = prop(c, "#B", e.color.z, 0.0, 1.0, 0.01) || changed;
+			ui::layout_row_dynamic(c, 22.0, 1);
+			ui::label(c, str("Parent: ", if e.parent < 0 { str("none") } else { str(edit::E[edit::idx(e.parent)].name[..]) })[..], ui::TEXT_LEFT as int);
+			ui::layout_row_dynamic(c, 26.0, 2);
+			if ui::button_label(c, "Unparent") { let _ok = edit::reparent(e.id, -1); DIRTY = true; }
+			if ui::button_label(c, "Delete") { edit::remove(e.id); SEL = -1; DIRTY = true; }
+			if changed { if !PROP_DRAG { edit::drag_begin(); PROP_DRAG = true; } edit::set(e); DIRTY = true; }
+		}
+		if PROP_DRAG && !gfx::mouse_down(1) { edit::drag_end(); PROP_DRAG = false; }
+	}
+	ui::end(c);
+	if ui::begin(c, "Toolbar", ui::rect(0, 0, W, 34), ui::WINDOW_BORDER as int) {
+		ui::layout_row_dynamic(c, 22.0, 10);
+		if ui::button_label(c, "Save") { save_doc(); }
+		if ui::button_label(c, "Undo") { let _u = edit::undo(); DIRTY = true; }
+		if ui::button_label(c, "Redo") { let _r = edit::redo(); DIRTY = true; }
+		if ui::option_label(c, "Move (W)", MODE == MOVE) { MODE = MOVE; }
+		if ui::option_label(c, "Rotate (E)", MODE == TURN) { MODE = TURN; }
+		if ui::option_label(c, "Scale (R)", MODE == SIZE) { MODE = SIZE; }
+		var sn = SNAP; let _s = ui::checkbox_label(c, "Snap", sn); SNAP = sn;
+		ui::label(c, STATUS[..], ui::TEXT_LEFT as int);
+	}
+	ui::end(c);
+}
+fn apply_drag(mx real, my real) {
+	let p = pivot(); let a = axis_of(AXIS);
+	var e = START;
+	if MODE == MOVE {
+		let d = edit::drag_axis(CAM, p, a, GRAB_X, GRAB_Y, mx, my);
+		let w0 = edit::world(SEL); let nw = edit::radd(p, edit::rmul(a, d));
+		var tw = [nw.x, nw.y, nw.z]; if SNAP { for k in 3 { if k == AXIS { tw[k] = edit::snap(tw[k], 0.25); } } }
+		let pw = if START.parent >= 0 { edit::world(START.parent) } else { gfx::mat4_identity };
+		let l = linalg::point(linalg::inverse(pw), float3 { tw[0] as f32, tw[1] as f32, tw[2] as f32 });
+		let _w = w0; e.t = l;
+	} else if MODE == TURN {
+		var ang = edit::drag_rotate(CAM, p, a, GRAB_X, GRAB_Y, mx, my) * 57.29577951308232;
+		if SNAP { ang = edit::snap(ang, 15.0); }
+		let pw = if START.parent >= 0 { edit::world(START.parent) } else { gfx::mat4_identity };
+		let la = linalg::unit3(linalg::direction(linalg::inverse(pw), float3 { a.x as f32, a.y as f32, a.z as f32 }));
+		e.r = linalg::qnorm(linalg::qmul(linalg::qaxis(la, (ang * 0.017453292519943295) as f32), START.r));
+	} else {
+		var f = edit::drag_scale(CAM, p, a, GRAB_X, GRAB_Y, mx, my); f = max(f, 0.01);
+		if AXIS == 0 { e.s.x = START.s.x * f as f32; } else if AXIS == 1 { e.s.y = START.s.y * f as f32; } else { e.s.z = START.s.z * f as f32; }
+	}
+	edit::set(e); DIRTY = true;
+}
+fn orbit(dx f32, dy f32) {
+	let t = edit::r3(CAM.target); let v = edit::rsub(edit::r3(CAM.eye), t); let r = sqrt(edit::rdot(v, v));
+	var yaw = atan2(v.z, v.x) + dx as real * 0.008; var pitch = asin(clamp(v.y / r, -0.99, 0.99)) + dy as real * 0.008; pitch = clamp(pitch, -1.45, 1.45);
+	CAM.eye = float3 { (t.x + r * cos(pitch) * cos(yaw)) as f32, (t.y + r * sin(pitch)) as f32, (t.z + r * cos(pitch) * sin(yaw)) as f32 };
+}
+fn zoom(k f32) { let t = CAM.target; CAM.eye = float3 { t.x + (CAM.eye.x - t.x) * k, t.y + (CAM.eye.y - t.y) * k, t.z + (CAM.eye.z - t.z) * k }; }
+fn pan(dx f32, dy f32) { let f, s, u = edit::basis(CAM); let _f = f; let v = edit::rsub(edit::r3(CAM.eye), edit::r3(CAM.target)); let k = sqrt(edit::rdot(v, v)) * 0.0015; let m = edit::radd(edit::rmul(s, -dx as real * k), edit::rmul(u, dy as real * k)); CAM.eye = float3 { CAM.eye.x + m.x as f32, CAM.eye.y + m.y as f32, CAM.eye.z + m.z as f32 }; CAM.target = float3 { CAM.target.x + m.x as f32, CAM.target.y + m.y as f32, CAM.target.z + m.z as f32 }; }
+fn frame(c ui::Context, target gfx::Texture, interactive bool) {
+	if interactive {
+		ui::input_from_gfx(c);
+		let mp = gfx::mouse_pos(); let mx = mp.x as real; let my = mp.y as real;
+		let over_ui = ui::window_is_any_hovered(c);
+		let ctrl = gfx::key_down("Left Ctrl") || gfx::key_down("Right Ctrl");
+		if AXIS >= 0 { if gfx::mouse_down(1) { apply_drag(mx, my); } else { edit::drag_end(); AXIS = -1; } }
+		else if gfx::mouse_pressed(1) && !over_ui {
+			let h = hover_axis(mx, my);
+			if h >= 0 { AXIS = h; GRAB_X = mx; GRAB_Y = my; START = edit::E[edit::idx(SEL)]; edit::drag_begin(); } else { SEL = edit::pick(CAM, mx, my); }
+		}
+		if !over_ui { let md = gfx::mouse_delta(); if gfx::mouse_down(3) { orbit(md.x, md.y); } if gfx::mouse_down(2) { pan(md.x, md.y); } let wh = gfx::mouse_wheel(); if wh != 0.0 { zoom(if wh > 0.0 { 0.9 } else { 1.0 / 0.9 }); } }
+		if !ui::item_is_any_active(c) {
+			if gfx::key_pressed("W") && !ctrl { MODE = MOVE; } if gfx::key_pressed("E") { MODE = TURN; } if gfx::key_pressed("R") { MODE = SIZE; }
+			if ctrl && gfx::key_pressed("Z") { let _u = edit::undo(); DIRTY = true; } if ctrl && gfx::key_pressed("Y") { let _r = edit::redo(); DIRTY = true; }
+			if ctrl && gfx::key_pressed("S") { save_doc(); }
+			if gfx::key_pressed("Delete") && SEL >= 0 { edit::remove(SEL); SEL = -1; DIRTY = true; }
+			if gfx::key_pressed("F") && SEL >= 0 { let p = pivot(); let d = float3 { CAM.eye.x - CAM.target.x, CAM.eye.y - CAM.target.y, CAM.eye.z - CAM.target.z }; CAM.target = float3 { p.x as f32, p.y as f32, p.z as f32 }; CAM.eye = float3 { CAM.target.x + d.x, CAM.target.y + d.y, CAM.target.z + d.z }; }
+		}
+	} else { ui::input_begin(c); ui::input_end(c); }
+	panels(c);
+	editview::camera(CAM); editview::sync();
+	s3d::render(target);
+	let mp = gfx::mouse_pos();
+	draw_gizmo(target, if interactive { hover_axis(mp.x as real, mp.y as real) } else { -1 });
+	ui::render(c, target);
+}
+fn main() {
+	if arg_count() > 1 { arg(1, PATH); } else { PATH.append("scene.json"); }
+	var shot byte[>..] = []; let headless = env("EDIT_SHOT", shot);
+	if headless { if !gfx::open_headless(64, 64) { print("editor: no GPU device"); exit(1); } } else if !gfx::open("Helium Editor", W, H) { print("editor: cannot open a window: ", gfx::error()[..]); exit(1); }
+	if !load_doc() { demo(); }
+	if headless { SEL = edit::E[edit::E.len - 2].id; }
+	s3d::sky = s3d::Sky { zenith: float3 { 0.3, 0.45, 0.75 }, horizon: float3 { 0.7, 0.75, 0.8 }, ground: float3 { 0.25, 0.24, 0.22 }, ambient: 1.0, draw: true };
+	s3d::init(W, H);
+	let c = ui::create(16.0);
+	if headless {
+		let t = gfx::render_target(W, H, gfx::RGBA8);
+		for k in 3 { frame(c, t, false); }
+		let _s = gfx::save_png(t, shot[..]);
+		print("editor: shot saved to ", shot[..]);
+	} else { while gfx::frame() { frame(c, gfx::screen(), true); gfx::present(); } }
+	editview::reset();
+	gfx::close();
+}

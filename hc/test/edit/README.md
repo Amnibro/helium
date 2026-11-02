@@ -35,3 +35,34 @@ and a `gfx.scene3d` viewport.
   six well-separated hues: at 400 random pixels at least 2 px from any silhouette (decided with
   the pick), the rendered pixel's nearest hue is the picked entity's hue, or the sky when the
   pick is empty, at **at least 98 %** of pixels.
+
+## Results (2026-11-02, RX 9060 XT for E6)
+
+| Bar | Result |
+| --- | --- |
+| E1 | **PASS**: 200 documents, 31035 entities, 0 differences |
+| E2 | **PASS**: 50 x 400 ops, 0 failures; 100-update drag = 1 step |
+| E3 | **PASS**: 2000 / 2000 clicks agree, 0 unexplained |
+| E4 | **PASS**: worst translate 3.8e-14, plane 7.3e-15, rotate 5.8e-15 rad, scale 1.0e-13; snapping exact |
+| E5 | **PASS**: world vs reference 2.4e-6; keep-world reparent translation 1.9e-6, rotation 5.3e-7 |
+| E6 | **PASS**: 400 / 400 pixels match the pick |
+
+Honest notes:
+
+* Every bar passed on its first run.
+* E3 as registered is weak: only 153 of its 2000 random clicks hit an object. A **post-hoc** E3b
+  uses the same bar with clicks aimed at object centres (+-15 px): 1999 / 2000 agree (1255 on
+  objects), the one difference has a matching neighbour pixel. E3b is gated too.
+* E4 reading of "hidden" handles: axis drags (translate, scale) skip axes within 10 degrees of
+  the view direction; plane drags and rotation rings skip planes within 10 degrees of edge-on,
+  which is when those handles degenerate. Drags whose points fall behind the camera are skipped.
+* The editor app was checked with a headless screenshot (`EDIT_SHOT=out.png`), not driven with
+  real mouse input; interactive dragging is untested by these bars.
+
+## Editor app
+
+`hc/apps/editor/editor.amni [scene.json]`: outliner (add cube, sphere, plane, light; click to
+select, indented by parent), details (name, location, scale, colour, unparent, delete), toolbar
+(save, undo, redo, move/rotate/scale, snap). Viewport: left click selects or drags a gizmo
+handle, right drag orbits, middle drag pans, wheel zooms; W/E/R modes, Ctrl+Z/Ctrl+Y, Ctrl+S,
+Delete, F to focus. Scenes save as JSON (`edit::save`/`edit::load`).

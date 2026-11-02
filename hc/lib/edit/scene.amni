@@ -1,0 +1,187 @@
+namespace edit;
+import std;
+import math;
+import json;
+import gfx;
+import gfx.linalg;
+let CUBE = 0; let SPHERE = 1; let PLANE = 2; let LIGHT = 3;
+struct Ent { id int, parent int, kind int, name byte[..64], t float3, r linalg::Quat, s float3, color float3 }
+struct Op { kind int, at int, before Ent, after Ent }
+struct R3 { x real, y real, z real }
+struct Cam { eye float3, target float3, up float3, fov_y f32, w f32, h f32 }
+var E Ent[>..] = [];
+var NEXT = 1;
+var OPS Op[>..] = []; var SA int[>..] = []; var SB int[>..] = []; var CUR = 0; var TX = 0; var DRAG = false;
+fn reset() { E.clear(); NEXT = 1; OPS.clear(); SA.clear(); SB.clear(); CUR = 0; TX = 0; DRAG = false; }
+fn idx(id int) int { for i in E.len { if E[i].id == id { return i; } } -1 }
+fn ent(kind int, name const byte[:]) Ent { var e = Ent { id: 0, parent: -1, kind: kind, name: "", t: float3 { 0.0, 0.0, 0.0 }, r: linalg::quat_identity(), s: float3 { 1.0, 1.0, 1.0 }, color: float3 { 0.8, 0.8, 0.8 } }; e.name = name[..min(name.len, 64)]; e }
+fn del(i int) { var k = i; while k + 1 < E.len { E[k] = E[k + 1]; k += 1; } E.pop(); }
+fn ins(i int, e Ent) { E.push(e); var k = E.len - 1; while k > i { E[k] = E[k - 1]; k -= 1; } E[i] = e; }
+fn begin() { if TX == 0 { while SA.len > CUR { SA.pop(); SB.pop(); } let keep = if CUR > 0 { SB[CUR - 1] } else { 0 }; while OPS.len > keep { OPS.pop(); } SA.push(OPS.len); SB.push(OPS.len); } TX += 1; }
+fn commit() { TX -= 1; if TX == 0 { SB[SB.len - 1] = OPS.len; if SB[SB.len - 1] == SA[SA.len - 1] { SA.pop(); SB.pop(); } CUR = SA.len; } }
+fn rec(kind int, at int, b Ent, a Ent) { OPS.push(Op { kind: kind, at: at, before: b, after: a }); }
+fn add(e0 Ent) int { var e = e0; if e.id <= 0 { e.id = NEXT; } NEXT = max(NEXT, e.id + 1); begin(); E.push(e); rec(1, E.len - 1, e, e); commit(); e.id }
+fn set(e Ent) {
+	let at = idx(e.id); if at < 0 { return; }
+	begin();
+	var merged = false;
+	if DRAG { var k = SA[SA.len - 1]; while k < OPS.len { if OPS[k].kind == 0 && OPS[k].at == at { OPS[k].after = e; merged = true; } k += 1; } }
+	if !merged { rec(0, at, E[at], e); }
+	E[at] = e;
+	commit();
+}
+fn drag_begin() { begin(); DRAG = true; }
+fn drag_end() { DRAG = false; commit(); }
+fn under(id int, root int) bool { var p = id; var guard_ = 0; while p >= 0 && guard_ <= E.len { if p == root { return true; } let i = idx(p); if i < 0 { return false; } p = E[i].parent; guard_ += 1; } false }
+fn remove(id int) {
+	if idx(id) < 0 { return; }
+	begin();
+	var i = E.len - 1;
+	while i >= 0 { if under(E[i].id, id) { rec(2, i, E[i], E[i]); del(i); } i -= 1; }
+	commit();
+}
+fn undo() bool {
+	if TX > 0 || CUR == 0 { return false; }
+	let s = CUR - 1; var k = SB[s] - 1;
+	while k >= SA[s] { let o = OPS[k]; if o.kind == 0 { E[o.at] = o.before; } else if o.kind == 1 { del(o.at); } else { ins(o.at, o.before); } k -= 1; }
+	CUR -= 1; true
+}
+fn redo() bool {
+	if TX > 0 || CUR >= SA.len { return false; }
+	for k in SA[CUR]..SB[CUR] { let o = OPS[k]; if o.kind == 0 { E[o.at] = o.after; } else if o.kind == 1 { ins(o.at, o.after); } else { del(o.at); } }
+	CUR += 1; true
+}
+fn steps() int { CUR }
+fn local(i int) gfx::mat4 { linalg::compose(E[i].t, E[i].r, E[i].s) }
+fn world(id int) gfx::mat4 { let i = idx(id); if i < 0 { return gfx::mat4_identity; } let m = local(i); if E[i].parent < 0 { m } else { gfx::mul(world(E[i].parent), m) } }
+fn quat_of(m gfx::mat4) linalg::Quat {
+	let m00 = m.c0.x as real; let m11 = m.c1.y as real; let m22 = m.c2.z as real;
+	let m01 = m.c1.x as real; let m10 = m.c0.y as real; let m02 = m.c2.x as real; let m20 = m.c0.z as real; let m12 = m.c2.y as real; let m21 = m.c1.z as real;
+	let tr = m00 + m11 + m22;
+	var x = 0.0; var y = 0.0; var z = 0.0; var w = 1.0;
+	if tr > 0.0 { let s = sqrt(tr + 1.0) * 2.0; w = 0.25 * s; x = (m21 - m12) / s; y = (m02 - m20) / s; z = (m10 - m01) / s; }
+	else if m00 > m11 && m00 > m22 { let s = sqrt(1.0 + m00 - m11 - m22) * 2.0; w = (m21 - m12) / s; x = 0.25 * s; y = (m01 + m10) / s; z = (m02 + m20) / s; }
+	else if m11 > m22 { let s = sqrt(1.0 + m11 - m00 - m22) * 2.0; w = (m02 - m20) / s; x = (m01 + m10) / s; y = 0.25 * s; z = (m12 + m21) / s; }
+	else { let s = sqrt(1.0 + m22 - m00 - m11) * 2.0; w = (m10 - m01) / s; x = (m02 + m20) / s; y = (m12 + m21) / s; z = 0.25 * s; }
+	linalg::qnorm(linalg::Quat { x as f32, y as f32, z as f32, w as f32 })
+}
+fn reparent(id int, np int) bool {
+	let i = idx(id); if i < 0 || np >= 0 && (idx(np) < 0 || under(np, id)) { return false; }
+	let w = world(id); let pw = if np >= 0 { world(np) } else { gfx::mat4_identity };
+	let l = gfx::mul(linalg::inverse(pw), w);
+	let sx = linalg::length3(float3 { l.c0.x, l.c0.y, l.c0.z }); let sy = linalg::length3(float3 { l.c1.x, l.c1.y, l.c1.z }); let sz = linalg::length3(float3 { l.c2.x, l.c2.y, l.c2.z });
+	var rm = l; rm.c0 = float4 { l.c0.x / sx, l.c0.y / sx, l.c0.z / sx, 0.0 }; rm.c1 = float4 { l.c1.x / sy, l.c1.y / sy, l.c1.z / sy, 0.0 }; rm.c2 = float4 { l.c2.x / sz, l.c2.y / sz, l.c2.z / sz, 0.0 };
+	var e = E[i]; e.parent = np; e.t = float3 { l.c3.x, l.c3.y, l.c3.z }; e.s = float3 { sx, sy, sz }; e.r = quat_of(rm);
+	set(e); true
+}
+fn nums(out byte[>..]&, v const f32[:]) { out.push(91); for k in v.len { if k > 0 { out.push(44); } json::format_number(out, v[k] as real); } out.push(93); }
+fn save(out byte[>..]&) {
+	out.clear(); out.append("{\"entities\":[");
+	for i in E.len {
+		let e = E[i];
+		if i > 0 { out.push(44); }
+		out.append(str("\n{\"id\":", e.id, ",\"parent\":", e.parent, ",\"kind\":", e.kind, ",\"name\":"));
+		json::format_string(out, e.name[..]);
+		out.append(",\"t\":"); nums(out, [e.t.x, e.t.y, e.t.z]);
+		out.append(",\"r\":"); nums(out, [e.r.x, e.r.y, e.r.z, e.r.w]);
+		out.append(",\"s\":"); nums(out, [e.s.x, e.s.y, e.s.z]);
+		out.append(",\"color\":"); nums(out, [e.color.x, e.color.y, e.color.z]);
+		out.push(125);
+	}
+	out.append("\n]}\n");
+}
+fn fl(d json::Doc&, n int, key const byte[:], k int) f32 { let v, ok = json::as_f64(d, json::element(d, json::member(d, n, key), k)); let _o = ok; v as f32 }
+fn it(d json::Doc&, n int, key const byte[:]) int { let v, ok = json::as_i64(d, json::member(d, n, key)); let _o = ok; v }
+fn load(text const byte[:]) bool {
+	var d = json::Doc {};
+	let root, err = json::parse(text, d);
+	if root < 0 { print("edit: load failed: ", err[..]); return false; }
+	let arr = json::member(d, root, "entities");
+	if arr < 0 { return false; }
+	reset();
+	var k = 0;
+	while true {
+		let n = json::element(d, arr, k);
+		if n < 0 { break; }
+		let nm, ok = json::as_string(d, json::member(d, n, "name")); let _o = ok;
+		var e = ent(it(d, n, "kind"), nm);
+		e.id = it(d, n, "id"); e.parent = it(d, n, "parent");
+		e.t = float3 { fl(d, n, "t", 0), fl(d, n, "t", 1), fl(d, n, "t", 2) };
+		e.r = linalg::Quat { fl(d, n, "r", 0), fl(d, n, "r", 1), fl(d, n, "r", 2), fl(d, n, "r", 3) };
+		e.s = float3 { fl(d, n, "s", 0), fl(d, n, "s", 1), fl(d, n, "s", 2) };
+		e.color = float3 { fl(d, n, "color", 0), fl(d, n, "color", 1), fl(d, n, "color", 2) };
+		E.push(e); NEXT = max(NEXT, e.id + 1);
+		k += 1;
+	}
+	true
+}
+fn r3(v float3) R3 { R3 { v.x as real, v.y as real, v.z as real } }
+fn radd(a R3, b R3) R3 { R3 { a.x + b.x, a.y + b.y, a.z + b.z } }
+fn rsub(a R3, b R3) R3 { R3 { a.x - b.x, a.y - b.y, a.z - b.z } }
+fn rmul(a R3, s real) R3 { R3 { a.x * s, a.y * s, a.z * s } }
+fn rdot(a R3, b R3) real { a.x * b.x + a.y * b.y + a.z * b.z }
+fn rcross(a R3, b R3) R3 { R3 { a.y * b.z - a.z * b.y, a.z * b.x - a.x * b.z, a.x * b.y - a.y * b.x } }
+fn runit(a R3) R3 { rmul(a, 1.0 / sqrt(rdot(a, a))) }
+fn basis(c Cam) R3, R3, R3 { let f = runit(rsub(r3(c.target), r3(c.eye))); let s = runit(rcross(f, r3(c.up))); return f, s, rcross(s, f); }
+fn ray(c Cam, px real, py real) R3, R3 {
+	let f, s, u = basis(c);
+	let ty = tan((c.fov_y * 0.5) as real); let tx = ty * (c.w / c.h) as real;
+	let x = (2.0 * px / c.w as real - 1.0) * tx; let y = (1.0 - 2.0 * py / c.h as real) * ty;
+	return r3(c.eye), runit(radd(f, radd(rmul(s, x), rmul(u, y))));
+}
+fn project(c Cam, p R3) real, real {
+	let f, s, u = basis(c);
+	let v = rsub(p, r3(c.eye)); let z = rdot(v, f);
+	let ty = tan((c.fov_y * 0.5) as real); let tx = ty * (c.w / c.h) as real;
+	return (rdot(v, s) / z / tx + 1.0) * 0.5 * c.w as real, (1.0 - rdot(v, u) / z / ty) * 0.5 * c.h as real;
+}
+fn xform(m gfx::mat4, p R3, w real) R3 { R3 { m.c0.x as real * p.x + m.c1.x as real * p.y + m.c2.x as real * p.z + m.c3.x as real * w, m.c0.y as real * p.x + m.c1.y as real * p.y + m.c2.y as real * p.z + m.c3.y as real * w, m.c0.z as real * p.x + m.c1.z as real * p.y + m.c2.z as real * p.z + m.c3.z as real * w } }
+fn hit(i int, o R3, d R3) real {
+	let inv = linalg::inverse(world(E[i].id));
+	let lo = xform(inv, o, 1.0); let ld = xform(inv, d, 0.0);
+	let k = E[i].kind;
+	if k == CUBE {
+		var t0 = -1.0e30; var t1 = 1.0e30;
+		let os = [lo.x, lo.y, lo.z]; let ds = [ld.x, ld.y, ld.z];
+		for a in 3 {
+			if abs(ds[a]) < 1.0e-12 { if abs(os[a]) > 0.5 { return -1.0; } continue; }
+			var ta = (-0.5 - os[a]) / ds[a]; var tb = (0.5 - os[a]) / ds[a];
+			if ta > tb { let q = ta; ta = tb; tb = q; }
+			t0 = max(t0, ta); t1 = min(t1, tb);
+		}
+		if t0 > t1 || t1 < 0.0 { -1.0 } else if t0 >= 0.0 { t0 } else { t1 }
+	} else if k == SPHERE || k == LIGHT {
+		let r = if k == LIGHT { 0.25 } else { 0.5 };
+		let a = rdot(ld, ld); let b = rdot(lo, ld); let cc = rdot(lo, lo) - r * r;
+		let disc = b * b - a * cc;
+		if disc < 0.0 { return -1.0; }
+		let sq = sqrt(disc); let ta = (-b - sq) / a; let tb = (-b + sq) / a;
+		if ta >= 0.0 { ta } else if tb >= 0.0 { tb } else { -1.0 }
+	} else {
+		if abs(ld.y) < 1.0e-12 { return -1.0; }
+		let t = -lo.y / ld.y;
+		let q = radd(lo, rmul(ld, t));
+		if t >= 0.0 && abs(q.x) <= 0.5 && abs(q.z) <= 0.5 { t } else { -1.0 }
+	}
+}
+fn pick(c Cam, px real, py real) int {
+	let o, d = ray(c, px, py);
+	var best = -1; var bt = 1.0e30;
+	for i in E.len { let t = hit(i, o, d); if t >= 0.0 && t < bt { bt = t; best = E[i].id; } }
+	best
+}
+fn line_param(o R3, d R3, p R3, a R3) real {
+	let w = rsub(p, o); let b = rdot(a, d); let den = 1.0 - b * b;
+	if abs(den) < 1.0e-12 { return 0.0; }
+	(b * rdot(w, d) - rdot(w, a)) / den
+}
+fn plane_point(o R3, d R3, p R3, n R3) R3 { let t = rdot(rsub(p, o), n) / rdot(d, n); radd(o, rmul(d, t)) }
+fn drag_axis(c Cam, p R3, a R3, x0 real, y0 real, x1 real, y1 real) real { let o0, d0 = ray(c, x0, y0); let o1, d1 = ray(c, x1, y1); line_param(o1, d1, p, a) - line_param(o0, d0, p, a) }
+fn drag_plane(c Cam, p R3, n R3, x0 real, y0 real, x1 real, y1 real) R3 { let o0, d0 = ray(c, x0, y0); let o1, d1 = ray(c, x1, y1); rsub(plane_point(o1, d1, p, n), plane_point(o0, d0, p, n)) }
+fn drag_rotate(c Cam, p R3, a R3, x0 real, y0 real, x1 real, y1 real) real {
+	let o0, d0 = ray(c, x0, y0); let o1, d1 = ray(c, x1, y1);
+	let v0 = rsub(plane_point(o0, d0, p, a), p); let v1 = rsub(plane_point(o1, d1, p, a), p);
+	atan2(rdot(rcross(v0, v1), a), rdot(v0, v1))
+}
+fn drag_scale(c Cam, p R3, a R3, x0 real, y0 real, x1 real, y1 real) real { let o0, d0 = ray(c, x0, y0); let o1, d1 = ray(c, x1, y1); let s0 = line_param(o0, d0, p, a); if abs(s0) < 1.0e-9 { 1.0 } else { line_param(o1, d1, p, a) / s0 } }
+fn snap(v real, step real) real { if step <= 0.0 { v } else { round(v / step) * step } }

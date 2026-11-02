@@ -23,5 +23,6 @@ step net sh -c 'HC_LIB=hc/lib "$0" build hc/test/net/net_test.amni -o "$1/net" 2
 step stream sh -c 'HC_LIB=hc/lib "$0" build hc/test/stream/stream_test.amni -o "$1/st" 2>/dev/null && STREAM_DIR="$1/stream" "$1/st"' "$HN" "$W"
 step audio3d sh -c 'HC_LIB=hc/lib "$0" build hc/test/audio3d/audio3d_test.amni -o "$1/a3" 2>/dev/null && "$1/a3"' "$HN" "$W"
 step hud sh -c 'gunzip -c hc/test/hud/trees.txt.gz > "$1/trees.txt" && HC_LIB=hc/lib "$0" build hc/test/hud/hud_test.amni -o "$1/hud" 2>/dev/null && HUD_TREES="$1/trees.txt" "$1/hud"' "$HN" "$W"
+step edit sh -c 'HC_LIB=hc/lib "$0" build hc/test/edit/edit_test.amni -o "$1/edit" 2>/dev/null && "$1/edit" && HC_LIB=hc/lib "$0" build hc/apps/editor/editor.amni -o "$1/editor" 2>/dev/null' "$HN" "$W"
 [ -n "${HELIUM_GFX_TEST:-}" ] && step gfx tools/hc/gfxtest.sh "$HN"
 [ $fail -eq 0 ] && echo "ci: ok" || echo "ci: FAILED"; exit $fail

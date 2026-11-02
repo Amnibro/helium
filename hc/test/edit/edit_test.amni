@@ -3,6 +3,8 @@ import math;
 import gfx;
 import gfx.linalg;
 import edit.scene;
+import edit.view;
+import gfx.scene3d;
 var FAILS = 0;
 fn check(ok bool, what const byte[:]) { if ok { print("PASS ", what); } else { print("FAIL ", what); FAILS += 1; } }
 var SEED = 777;
@@ -17,7 +19,7 @@ fn rf() f32 {
 	let e = rnd() % 77 - 40;
 	(sg * rng(1.0, 3.4) * pow(10.0, e as real)) as f32
 }
-fn bits(x f32) int { std_bits(x as real) }
+fn bits(x f32) int { std_bits(x as real) as int }
 fn rquat() linalg::Quat { linalg::qnorm(linalg::Quat { rng(-1.0, 1.0) as f32, rng(-1.0, 1.0) as f32, rng(-1.0, 1.0) as f32, rng(0.1, 1.0) as f32 }) }
 fn rname() byte[>..] { var s byte[>..] = []; let n = rnd() % 41; let pool = "ab\"\\ Z9_-é"; for k in n { let m = rnd() % 5; s.push(if m == 0 { (1 + rnd() % 31) as byte } else if m == 1 { (128 + rnd() % 128) as byte } else { pool[rnd() % pool.len] }); } s }
 fn same(a edit::Ent, b edit::Ent) bool {
@@ -135,14 +137,15 @@ fn march(c edit::Cam, px real, py real, invs gfx::mat4[>..]&) int {
 	}
 	-1
 }
-fn e3() bool {
+fn e3(aim bool) bool {
 	var agree = 0; var total = 0; var unexplained = 0; var hits = 0;
 	for sc in 20 {
 		rand_scene(6 + rnd() % 5);
 		let c = rand_cam();
 		var invs gfx::mat4[>..] = []; for i in edit::E.len { invs.push(linalg::inverse(edit::world(edit::E[i].id))); }
 		for k in 100 {
-			let x = rnd() % 320; let y = rnd() % 240;
+			var x = rnd() % 320; var y = rnd() % 240;
+			if aim { let m = edit::world(edit::E[rnd() % edit::E.len].id); let cx, cy = edit::project(c, edit::R3 { m.c3.x as real, m.c3.y as real, m.c3.z as real }); x = clamp((cx as int) + rnd() % 31 - 15, 0, 319); y = clamp((cy as int) + rnd() % 31 - 15, 0, 239); }
 			let px = x as real + 0.5; let py = y as real + 0.5;
 			let a = edit::pick(c, px, py); let r = march(c, px, py, invs);
 			total += 1; if r >= 0 { hits += 1; }
@@ -152,7 +155,7 @@ fn e3() bool {
 			if !near { unexplained += 1; print("E3 scene ", sc, " click ", x, ",", y, " pick ", a, " reference ", r); }
 		}
 	}
-	print("E3 picking: ", agree, " / ", total, " agree (", hits, " on objects), ", unexplained, " disagreements without a neighbouring match");
+	print(if aim { "E3b aimed clicks (post-hoc): " } else { "E3 picking: " }, agree, " / ", total, " agree (", hits, " on objects), ", unexplained, " disagreements without a neighbouring match");
 	agree * 100 >= total * 99 && unexplained == 0
 }
 fn rotv(v edit::R3, a edit::R3, th real) edit::R3 { edit::radd(edit::radd(edit::rmul(v, cos(th)), edit::rmul(edit::rcross(a, v), sin(th))), edit::rmul(a, edit::rdot(a, v) * (1.0 - cos(th)))) }
@@ -247,11 +250,63 @@ fn e5() bool {
 	print("E5 hierarchy: world vs reference worst ", we, "; keep-world reparent translation ", wt, ", rotation ", wr);
 	we <= 1.0e-4 && wt <= 1.0e-4 && wr <= 1.0e-4
 }
+fn hue_of(r real, g real, b real) real, real {
+	let mx = max(r, max(g, b)); let mn = min(r, min(g, b));
+	if mx <= 0.0 { return -1.0, 0.0; }
+	let sat = (mx - mn) / mx;
+	if mx - mn < 1.0e-9 { return -1.0, sat; }
+	var h = if mx == r { (g - b) / (mx - mn) } else if mx == g { 2.0 + (b - r) / (mx - mn) } else { 4.0 + (r - g) / (mx - mn) };
+	h *= 60.0; if h < 0.0 { h += 360.0; }
+	return h, sat;
+}
+fn e6() int {
+	if !gfx::open_headless(64, 64) { print("E6 skipped (no device: ", gfx::error()[..], ")"); return -1; }
+	let W = 320; let H = 240;
+	let hues = [float3 { 1.0, 0.08, 0.08 }, float3 { 0.9, 0.9, 0.08 }, float3 { 0.08, 1.0, 0.08 }, float3 { 0.08, 0.9, 0.9 }, float3 { 0.08, 0.08, 1.0 }, float3 { 0.9, 0.08, 0.9 }];
+	var agree = 0; var total = 0;
+	for sc in 2 {
+		rand_scene(6);
+		for i in edit::E.len { edit::E[i].color = hues[i % 6]; }
+		let c = rand_cam();
+		editview::reset();
+		s3d::sky = s3d::Sky { zenith: float3 { 0.5, 0.5, 0.5 }, horizon: float3 { 0.5, 0.5, 0.5 }, ground: float3 { 0.5, 0.5, 0.5 }, ambient: 1.0, draw: true };
+		s3d::look.bloom = 0.0; s3d::temporal = 0;
+		editview::camera(c); editview::sync();
+		s3d::init(W, H);
+		let out = gfx::render_target(W, H, gfx::RGBA8);
+		s3d::render(out);
+		let px = gfx::read_pixels(out);
+		var o byte[>..] = []; if env("EDIT_PNG", o) { let _s = gfx::save_png(out, str(o[..], sc, ".png")[..]); }
+		var n = 0;
+		while n < 200 {
+			let x = 2 + rnd() % (W - 4); let y = 2 + rnd() % (H - 4);
+			let id = edit::pick(c, x as real + 0.5, y as real + 0.5);
+			var edge = false;
+			for dy in -2..3 { for dx in -2..3 { if edit::pick(c, (x + dx) as real + 0.5, (y + dy) as real + 0.5) != id { edge = true; } } }
+			if edge { continue; }
+			n += 1; total += 1;
+			let k = (y * W + x) * 4;
+			let h, sat = hue_of(px[k] as real, px[k + 1] as real, px[k + 2] as real);
+			var cls = -1;
+			if sat >= 0.25 && h >= 0.0 { var bd = 1.0e9; for j in 6 { let dd = abs(h - j as real * 60.0); let d = min(dd, 360.0 - dd); if d < bd { bd = d; cls = j; } } }
+			let want = if id < 0 { -1 } else { (edit::idx(id)) % 6 };
+			if cls == want { agree += 1; } else if total - agree <= 8 { print("E6 scene ", sc, " pixel ", x, ",", y, " rgb ", px[k], " ", px[k + 1], " ", px[k + 2], " class ", cls, " pick class ", want); }
+		}
+		gfx::release(out);
+	}
+	editview::reset();
+	gfx::close();
+	print("E6 viewport: ", agree, " / ", total, " pixels agree with the pick");
+	if agree * 100 >= total * 98 { 1 } else { 0 }
+}
 fn main() {
 	check(e1(), "E1 save/load bit-identical, text byte-identical");
 	check(e2(), "E2 undo all / redo all exact, new op clears redo, drag is one step");
-	check(e3(), "E3 picking agrees with ray-march reference");
+	check(e3(false), "E3 picking agrees with ray-march reference");
+	check(e3(true), "E3b (post-hoc) same bar with clicks aimed at objects");
 	check(e4(), "E4 gizmo drags recover intent; snapping exact");
 	check(e5(), "E5 hierarchy world matrices and keep-world reparent");
+	let g = e6();
+	if g >= 0 { check(g == 1, "E6 rendered hue matches the pick at >= 98 % of pixels"); }
 	if FAILS == 0 { print("edit: ok"); } else { print("edit: FAILED ", FAILS); exit(1); }
 }
