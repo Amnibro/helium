@@ -1,0 +1,34 @@
+namespace net
+use std
+use ffi
+extern "libc.so.6" {
+	c_socket(d i32, t i32, p i32) i32 = "socket";
+	c_bind(fd i32, a uint, l u32) i32 = "bind";
+	c_sendto(fd i32, b uint, n uint, f i32, a uint, l u32) int = "sendto";
+	c_recvfrom(fd i32, b uint, n uint, f i32, a uint, l uint) int = "recvfrom";
+	c_close(fd i32) i32 = "close";
+	c_getsockname(fd i32, a uint, l uint) i32 = "getsockname";
+}
+var SA byte[>..]
+var SL byte[>..]
+var RB byte[>..]
+sa(ip u32, port int):
+	SA.clear(); SA.resize(16, 0); SA[0] = 2; SA[2] = ((port >> 8) & 255) as! byte; SA[3] = (port & 255) as! byte; SA[4] = ((ip >> 24) & 255) as! byte; SA[5] = ((ip >> 16) & 255) as! byte; SA[6] = ((ip >> 8) & 255) as! byte; SA[7] = (ip & 255) as! byte
+ipv4(a int, b int, c int, d int) u32: ((a << 24) | (b << 16) | (c << 8) | d) as! u32
+udp_open(port int) int:
+	fd := c_socket(2, 2 | 2048, 0) as int; if fd < 0 { return -1 }
+	sa(0 as u32, port); if c_bind(fd as i32, ffi::ptr(SA[..]), 16 as! u32) < 0 { c_close(fd as i32); return -1 }
+	fd
+udp_port(fd int) int:
+	SA.clear(); SA.resize(16, 0); SL.clear(); SL.resize(4, 0); SL[0] = 16
+	if c_getsockname(fd as i32, ffi::ptr(SA[..]), ffi::ptr(SL[..])) < 0 { return -1 }
+	(SA[2] as int << 8) | SA[3] as int
+udp_send(fd int, ip u32, port int, data const byte[:]) bool:
+	sa(ip, port); c_sendto(fd as i32, ffi::ptr(data), data.len as uint, 0, ffi::ptr(SA[..]), 16 as! u32) == data.len
+udp_recv(fd int, out byte[>..]&) int, u32, int:
+	RB.resize(2048, 0); SA.clear(); SA.resize(16, 0); SL.clear(); SL.resize(4, 0); SL[0] = 16
+	n := c_recvfrom(fd as i32, ffi::ptr(RB[..]), 2048 as uint, 64, ffi::ptr(SA[..]), ffi::ptr(SL[..]))
+	if n < 0 { return -1, 0 as u32, 0 }
+	out.clear(); out.append(RB[..n])
+	return n, ((SA[4] as int << 24) | (SA[5] as int << 16) | (SA[6] as int << 8) | SA[7] as int) as! u32, (SA[2] as int << 8) | SA[3] as int
+udp_close(fd int): c_close(fd as i32)

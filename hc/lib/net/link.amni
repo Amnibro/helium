@@ -1,0 +1,158 @@
+namespace net;
+import vec;
+struct Ep { seq int, rack int, rbits int, next_id int, recv_next int, rtt f32, last_send int, need_ack bool, sent_bytes int, recv_bytes int, resend bool }
+struct Out { ep int, id int, off int, len int, sent_at int, live bool }
+struct Pk { ep int, seq int, at int, m0 int, mn int, acked bool }
+struct In { ep int, id int, off int, len int, live bool }
+var EPS Ep[>..] = [];
+var OUTS Out[>..] = []; var OPOOL byte[>..] = [];
+var PKS Pk[>..] = []; var PKM int[>..] = []; var PKR int[>..] = [];
+var INS In[>..] = []; var IPOOL byte[>..] = [];
+var UQ_EP int[>..] = []; var UQ_OFF int[>..] = []; var UQ_LEN int[>..] = []; var UPOOL byte[>..] = [];
+var DQ_EP int[>..] = []; var DQ_OFF int[>..] = []; var DQ_LEN int[>..] = []; var DPOOL byte[>..] = []; var DQ_HEAD int[>..] = [];
+let MTU = 1400;
+let RING = 1024;
+fn put8(o byte[>..]&, v int) { o.push((v & 255) as byte); }
+fn put16(o byte[>..]&, v int) { o.push((v & 255) as byte); o.push(((v >> 8) & 255) as byte); }
+fn put32(o byte[>..]&, v int) { put16(o, v & 65535); put16(o, (v >> 16) & 65535); }
+fn put32_at(o byte[>..]&, at int, v int) { for k in 4 { o[at + k] = ((v >> (8 * k)) & 255) as byte; } }
+fn get16(b const byte[:], at int) int { b[at] as int | (b[at + 1] as int << 8) }
+fn get32(b const byte[:], at int) int { get16(b, at) | (get16(b, at + 2) << 16) }
+fn expand(v int, r int) int { r + ((v - r + 32768) & 65535) - 32768 }
+fn ep_new() int {
+	EPS.push(Ep { seq: 0, rack: -1, rbits: 0, next_id: 0, recv_next: 0, rtt: 100.0, last_send: -100000, need_ack: false, sent_bytes: 0, recv_bytes: 0, resend: true });
+	for k in RING { PKR.push(-1); }
+	DQ_HEAD.push(0);
+	EPS.len - 1
+}
+fn ep_rtt(e int) f32 { EPS[e].rtt }
+fn ep_bytes(e int) int, int { return EPS[e].sent_bytes, EPS[e].recv_bytes; }
+fn send_reliable(e int, data const byte[:]) {
+	OUTS.push(Out { ep: e, id: EPS[e].next_id, off: OPOOL.len, len: data.len, sent_at: -1, live: true });
+	OPOOL.append(data);
+	EPS[e].next_id += 1;
+}
+fn send_unreliable(e int, data const byte[:]) { UQ_EP.push(e); UQ_OFF.push(UPOOL.len); UQ_LEN.push(data.len); UPOOL.append(data); }
+fn pending(e int) int { var n = 0; for o in OUTS { if o.live && o.ep == e { n += 1; } } n }
+fn compact() {
+	var live = 0;
+	for o in OUTS { if o.live { live += 1; } }
+	if OUTS.len < 256 || live * 2 > OUTS.len { return; }
+	var no Out[>..] = []; var np byte[>..] = []; var map int[>..] = []; map.resize(OUTS.len, -1);
+	for k in OUTS.len { let o = OUTS[k]; if o.live { map[k] = no.len; no.push(Out { ep: o.ep, id: o.id, off: np.len, len: o.len, sent_at: o.sent_at, live: true }); np.append(OPOOL[o.off..o.off + o.len]); } }
+	for k in PKM.len { if PKM[k] >= 0 && PKM[k] < map.len { PKM[k] = map[PKM[k]]; } }
+	OUTS = copy(no); OPOOL = copy(np);
+}
+fn ep_write(e int, now int, out byte[>..]&) bool {
+	out.clear();
+	let ep = EPS[e];
+	put8(out, 4); put16(out, ep.seq & 65535); put16(out, if ep.rack >= 0 { ep.rack & 65535 } else { 0 }); put32(out, ep.rbits);
+	put8(out, if ep.rack >= 0 { 1 } else { 0 });
+	let hdr = out.len;
+	let rto = max(ep.rtt * 1.5, 30.0) as int + 10;
+	let m0 = PKM.len;
+	for k in OUTS.len {
+		let o = OUTS[k];
+		if !o.live || o.ep != e { continue; }
+		if o.sent_at >= 0 && (!ep.resend || now - o.sent_at < rto) { continue; }
+		if out.len + 5 + o.len > MTU { break; }
+		put8(out, 1); put16(out, o.id & 65535); put16(out, o.len); out.append(OPOOL[o.off..o.off + o.len]);
+		OUTS[k].sent_at = now;
+		PKM.push(k);
+	}
+	var k = 0;
+	var keep_ep int[>..] = []; var keep_off int[>..] = []; var keep_len int[>..] = [];
+	while k < UQ_EP.len {
+		if UQ_EP[k] == e && out.len + 3 + UQ_LEN[k] <= MTU { put8(out, 2); put16(out, UQ_LEN[k]); out.append(UPOOL[UQ_OFF[k]..UQ_OFF[k] + UQ_LEN[k]]); }
+		else if UQ_LEN[k] + 13 <= MTU { keep_ep.push(UQ_EP[k]); keep_off.push(UQ_OFF[k]); keep_len.push(UQ_LEN[k]); }
+		k += 1;
+	}
+	UQ_EP = copy(keep_ep); UQ_OFF = copy(keep_off); UQ_LEN = copy(keep_len);
+	if UQ_EP.len == 0 { UPOOL.clear(); }
+	if out.len == hdr && !ep.need_ack && now - ep.last_send < 100 { out.clear(); PKM.resize(m0, 0); return false; }
+	let old = PKR[e * RING + ep.seq % RING];
+	if old >= 0 { PKS[old].acked = true; }
+	PKR[e * RING + ep.seq % RING] = PKS.len;
+	PKS.push(Pk { ep: e, seq: ep.seq, at: now, m0: m0, mn: PKM.len - m0, acked: false });
+	EPS[e].seq += 1; EPS[e].last_send = now; EPS[e].need_ack = false; EPS[e].sent_bytes += out.len;
+	compact();
+	true
+}
+fn acked(e int, s int, now int) {
+	if s < 0 { return; }
+	let p = PKR[e * RING + s % RING];
+	if p < 0 || PKS[p].seq != s || PKS[p].acked { return; }
+	PKS[p].acked = true;
+	let sample = (now - PKS[p].at) as f32;
+	EPS[e].rtt = EPS[e].rtt * 0.875 + sample * 0.125;
+	for k in PKS[p].mn { let o = PKM[PKS[p].m0 + k]; if o >= 0 && o < OUTS.len && OUTS[o].ep == e { OUTS[o].live = false; } }
+}
+fn deliver(e int, data const byte[:]) { DQ_EP.push(e); DQ_OFF.push(DPOOL.len); DQ_LEN.push(data.len); DPOOL.append(data); }
+fn ep_read(e int, now int, pkt const byte[:]) bool {
+	if pkt.len < 10 || pkt[0] != 4 { return false; }
+	EPS[e].recv_bytes += pkt.len;
+	let s = expand(get16(pkt, 1), max(EPS[e].rack, 0));
+	var dup = false;
+	let r = EPS[e].rack;
+	if r < 0 || s > r {
+		let sh = if r < 0 { 64 } else { s - r };
+		EPS[e].rbits = if sh >= 33 { 0 } else { (((EPS[e].rbits << 1) | 1) << (sh - 1)) & 0xffffffff };
+		if r < 0 { EPS[e].rbits = 0; }
+		EPS[e].rack = s;
+	} else {
+		let d = r - s;
+		if d == 0 || d > 32 { dup = true; } else { if (EPS[e].rbits >> (d - 1)) & 1 != 0 { dup = true; } EPS[e].rbits = EPS[e].rbits | (1 << (d - 1)); }
+	}
+	EPS[e].need_ack = true;
+	if pkt[9] != 0 {
+		let a = expand(get16(pkt, 3), EPS[e].seq - 1);
+		let bits = get32(pkt, 5);
+		acked(e, a, now);
+		for i in 32 { if (bits >> i) & 1 != 0 { acked(e, a - 1 - i, now); } }
+	}
+	var at = 10;
+	while at + 3 <= pkt.len {
+		let ty = pkt[at] as int;
+		if ty == 1 {
+			if at + 5 > pkt.len { break; }
+			let id = expand(get16(pkt, at + 1), EPS[e].recv_next); let n = get16(pkt, at + 3);
+			let b = at + 5; at = b + n;
+			if at > pkt.len { break; }
+			if id < EPS[e].recv_next { continue; }
+			if id == EPS[e].recv_next {
+				deliver(e, pkt[b..b + n]); EPS[e].recv_next += 1;
+				var more = true;
+				while more {
+					more = false;
+					for k in INS.len { if INS[k].live && INS[k].ep == e && INS[k].id == EPS[e].recv_next { deliver(e, IPOOL[INS[k].off..INS[k].off + INS[k].len]); INS[k].live = false; EPS[e].recv_next += 1; more = true; } }
+				}
+			} else {
+				var have = false;
+				for x in INS { if x.live && x.ep == e && x.id == id { have = true; } }
+				if !have { INS.push(In { ep: e, id: id, off: IPOOL.len, len: n, live: true }); IPOOL.append(pkt[b..b + n]); }
+			}
+		} else if ty == 2 {
+			let n = get16(pkt, at + 1); let b = at + 3; at = b + n;
+			if at > pkt.len { break; }
+			if !dup { deliver(e, pkt[b..b + n]); }
+		} else { break; }
+	}
+	var live = false;
+	for x in INS { if x.live { live = true; } }
+	if !live { INS.clear(); IPOOL.clear(); }
+	true
+}
+fn poll(e int, out byte[>..]&) bool {
+	var k = DQ_HEAD[e];
+	while k < DQ_EP.len && DQ_EP[k] != e { k += 1; }
+	if k >= DQ_EP.len { DQ_HEAD[e] = DQ_EP.len; return false; }
+	out.clear(); out.append(DPOOL[DQ_OFF[k]..DQ_OFF[k] + DQ_LEN[k]]);
+	DQ_EP[k] = -1;
+	var h = DQ_HEAD[e];
+	while h < DQ_EP.len && DQ_EP[h] != e { h += 1; }
+	DQ_HEAD[e] = h;
+	var all = true;
+	for x in DQ_EP { if x >= 0 { all = false; } }
+	if all { DQ_EP.clear(); DQ_OFF.clear(); DQ_LEN.clear(); DPOOL.clear(); for i in DQ_HEAD.len { DQ_HEAD[i] = 0; } }
+	true
+}

@@ -1,0 +1,151 @@
+namespace net;
+import vec;
+import net.link;
+let HIST = 64;
+var S_F int[>..] = []; var S_M int[>..] = [];
+var H_tick int[>..] = []; var H_n int[>..] = []; var H_ids int[>..] = []; var H_vals i32[>..] = [];
+var C_n int[>..] = []; var C_ids int[>..] = []; var C_vals i32[>..] = [];
+var S_hoff int[>..] = []; var S_coff int[>..] = []; var S_cv int[>..] = [];
+fn quant(x f32) i32 { floor(x * 1024.0 + 0.5) as i32 }
+fn dequant(v i32) f32 { v as f32 / 1024.0 }
+fn store_new(fields int, max_entities int) int {
+	let s = S_F.len;
+	S_F.push(fields); S_M.push(max_entities);
+	S_hoff.push(H_tick.len);
+	S_coff.push(C_ids.len); S_cv.push(C_vals.len);
+	for k in HIST { H_tick.push(-1); H_n.push(0); }
+	H_ids.resize(H_ids.len + HIST * max_entities, 0); H_vals.resize(H_vals.len + HIST * max_entities * fields, 0);
+	C_n.push(0); C_ids.resize(C_ids.len + max_entities, 0); C_vals.resize(C_vals.len + max_entities * fields, 0);
+	s
+}
+fn hslot(s int, tick int) int { S_hoff[s] + tick % HIST }
+fn ids_base(s int) int { var b = 0; for k in s { b += HIST * S_M[k]; } b }
+fn vals_base(s int) int { var b = 0; for k in s { b += HIST * S_M[k] * S_F[k]; } b }
+fn row(s int, slot int) int { ids_base(s) + (slot - S_hoff[s]) * S_M[s] }
+fn vrow(s int, slot int) int { vals_base(s) + (slot - S_hoff[s]) * S_M[s] * S_F[s] }
+fn set(s int, id int, vals const i32[:]) {
+	let c = S_coff[s]; let f = S_F[s]; let n = C_n[s];
+	var i = 0;
+	while i < n && C_ids[c + i] < id { i += 1; }
+	if i >= n || C_ids[c + i] != id {
+		if n >= S_M[s] { return; }
+		var j = n;
+		while j > i { C_ids[c + j] = C_ids[c + j - 1]; for k in f { C_vals[S_cv[s] + (j) * f + k] = C_vals[S_cv[s] + (j - 1) * f + k]; } j -= 1; }
+		C_ids[c + i] = id; C_n[s] = n + 1;
+	}
+	for k in f { C_vals[S_cv[s] + (i) * f + k] = vals[k]; }
+}
+fn remove(s int, id int) {
+	let c = S_coff[s]; let f = S_F[s]; let n = C_n[s];
+	var i = 0;
+	while i < n && C_ids[c + i] != id { i += 1; }
+	if i >= n { return; }
+	for j in i..n - 1 { C_ids[c + j] = C_ids[c + j + 1]; for k in f { C_vals[S_cv[s] + (j) * f + k] = C_vals[S_cv[s] + (j + 1) * f + k]; } }
+	C_n[s] = n - 1;
+}
+fn commit(s int, tick int) {
+	let sl = hslot(s, tick); let r = row(s, sl); let vr = vrow(s, sl); let c = S_coff[s]; let f = S_F[s];
+	H_tick[sl] = tick; H_n[sl] = C_n[s];
+	for i in C_n[s] { H_ids[r + i] = C_ids[c + i]; for k in f { H_vals[vr + i * f + k] = C_vals[S_cv[s] + (i) * f + k]; } }
+}
+fn has(s int, tick int) bool { tick >= 0 && H_tick[hslot(s, tick)] == tick }
+fn putv(o byte[>..]&, v int) { var u = v; while u >= 128 { o.push(((u & 127) | 128) as byte); u = u >> 7; } o.push(u as byte); }
+fn getv(b const byte[:], at int&) int { var v = 0; var sh = 0; while at < b.len { let x = b[at] as int; at += 1; v = v | ((x & 127) << sh); sh += 7; if x < 128 { break; } } v }
+fn zz(v int) int { if v >= 0 { v * 2 } else { -v * 2 - 1 } }
+fn unzz(u int) int { if u & 1 == 0 { u / 2 } else { -(u + 1) / 2 } }
+fn encode(s int, tick int, base int, out byte[>..]&) bool {
+	out.clear();
+	if !has(s, tick) { return false; }
+	let b = if base >= 0 && has(s, base) && base < tick { base } else { -1 };
+	let f = S_F[s];
+	put32(out, tick); put32(out, if b >= 0 { b } else { -1 });
+	let sn = hslot(s, tick); let rn = row(s, sn); let vn = vrow(s, sn); let nn = H_n[sn];
+	var rb = 0; var vb = 0; var nb = 0;
+	if b >= 0 { let sb = hslot(s, b); rb = row(s, sb); vb = vrow(s, sb); nb = H_n[sb]; }
+	var i = 0; var j = 0;
+	while i < nn || j < nb {
+		let a = if i < nn { H_ids[rn + i] } else { 1 << 40 };
+		let c = if j < nb { H_ids[rb + j] } else { 1 << 40 };
+		if a < c { putv(out, a); out.push(1); for k in f { putv(out, zz(H_vals[vn + i * f + k] as int)); } i += 1; }
+		else if c < a { putv(out, c); out.push(3); j += 1; }
+		else {
+			var m = 0;
+			for k in f { if H_vals[vn + i * f + k] != H_vals[vb + j * f + k] { m = m | (1 << k); } }
+			if m != 0 { putv(out, a); out.push(2); putv(out, m); for k in f { if (m >> k) & 1 != 0 { putv(out, zz(H_vals[vn + i * f + k] as int - H_vals[vb + j * f + k] as int)); } } }
+			i += 1; j += 1;
+		}
+	}
+	true
+}
+fn decode(s int, data const byte[:]) int {
+	if data.len < 8 { return -1; }
+	let tick = get32(data, 0); var b = get32(data, 4);
+	if b == 0xffffffff { b = -1; }
+	if b >= 0 && !has(s, b) { return -1; }
+	let f = S_F[s]; let c = S_coff[s];
+	C_n[s] = 0;
+	if b >= 0 { let sb = hslot(s, b); let rb = row(s, sb); let vb = vrow(s, sb); C_n[s] = H_n[sb]; for i in H_n[sb] { C_ids[c + i] = H_ids[rb + i]; for k in f { C_vals[S_cv[s] + (i) * f + k] = H_vals[vb + i * f + k]; } } }
+	var at = 8;
+	var tmp i32[>..] = []; tmp.resize(f, 0);
+	while at < data.len {
+		let id = getv(data, at);
+		if at >= data.len { break; }
+		let kind = data[at] as int; at += 1;
+		if kind == 1 { for k in f { tmp[k] = unzz(getv(data, at)) as i32; } set(s, id, tmp[..]); }
+		else if kind == 3 { remove(s, id); }
+		else if kind == 2 {
+			let m = getv(data, at);
+			var i = 0;
+			while i < C_n[s] && C_ids[c + i] != id { i += 1; }
+			if i >= C_n[s] { return -1; }
+			for k in f { if (m >> k) & 1 != 0 { C_vals[S_cv[s] + (i) * f + k] = (C_vals[S_cv[s] + (i) * f + k] as int + unzz(getv(data, at))) as i32; } }
+		} else { return -1; }
+	}
+	commit(s, tick);
+	tick
+}
+fn get(s int, tick int, id int, out i32[>..]&) bool {
+	out.clear();
+	if !has(s, tick) { return false; }
+	let sl = hslot(s, tick); let r = row(s, sl); let vr = vrow(s, sl); let f = S_F[s];
+	for i in H_n[sl] { if H_ids[r + i] == id { for k in f { out.push(H_vals[vr + i * f + k]); } return true; } }
+	false
+}
+fn snap_equal(a int, ta int, b int, tb int) bool {
+	if !has(a, ta) || !has(b, tb) || S_F[a] != S_F[b] { return false; }
+	let sa = hslot(a, ta); let sb = hslot(b, tb); let f = S_F[a];
+	if H_n[sa] != H_n[sb] { return false; }
+	let ra = row(a, sa); let rb = row(b, sb); let va = vrow(a, sa); let vb = vrow(b, sb);
+	for i in H_n[sa] { if H_ids[ra + i] != H_ids[rb + i] { return false; } for k in f { if H_vals[va + i * f + k] != H_vals[vb + i * f + k] { return false; } } }
+	true
+}
+fn latest(s int) int { var t = -1; for k in HIST { t = max(t, H_tick[S_hoff[s] + k]); } t }
+fn interp(s int, t f32, id int, out f32[>..]&) bool {
+	out.clear();
+	var lo = -1; var hi = -1;
+	for k in HIST { let x = H_tick[S_hoff[s] + k]; if x < 0 { continue; } if x as f32 <= t && x > lo { lo = x; } if x as f32 > t && (hi < 0 || x < hi) { hi = x; } }
+	if lo < 0 || hi < 0 { return false; }
+	var a i32[>..] = []; var b i32[>..] = [];
+	if !get(s, lo, id, a) || !get(s, hi, id, b) { return false; }
+	let u = (t - lo as f32) / (hi - lo) as f32;
+	for k in a.len { out.push(dequant(a[k]) + (dequant(b[k]) - dequant(a[k])) * u); }
+	true
+}
+var PR_F int[>..] = []; var PR_seq int[>..] = []; var PR_vals f32[>..] = []; var PR_off int[>..] = [];
+let PR_CAP = 256;
+fn pred_new(fields int) int { PR_F.push(fields); PR_off.push(PR_seq.len); for k in PR_CAP { PR_seq.push(-1); } for k in PR_CAP * fields { PR_vals.push(0.0); } PR_F.len - 1 }
+fn pvals_base(r int) int { var b = 0; for k in r { b += PR_CAP * PR_F[k]; } b }
+fn pred_push(r int, seq int, vals const f32[:]) { let sl = seq % PR_CAP; PR_seq[PR_off[r] + sl] = seq; let vb = pvals_base(r) + sl * PR_F[r]; for k in PR_F[r] { PR_vals[vb + k] = vals[k]; } }
+fn pred_after(r int, acked int, out_seq int[>..]&) { out_seq.clear(); for k in PR_CAP { let q = PR_seq[PR_off[r] + k]; if q > acked { out_seq.push(q); } } var i = 1; while i < out_seq.len { var j = i; while j > 0 && out_seq[j - 1] > out_seq[j] { let t = out_seq[j]; out_seq[j] = out_seq[j - 1]; out_seq[j - 1] = t; j -= 1; } i += 1; } }
+fn pred_get(r int, seq int, out f32[>..]&) bool { out.clear(); let sl = seq % PR_CAP; if PR_seq[PR_off[r] + sl] != seq { return false; } let vb = pvals_base(r) + sl * PR_F[r]; for k in PR_F[r] { out.push(PR_vals[vb + k]); } true }
+var AR_s int[>..] = []; var AR_v f32[>..] = [];
+fn arrival(s int, now_ticks f32, tick int) { AR_s.push(s); AR_v.push(now_ticks - tick as f32); if AR_s.len > 4096 { var ns int[>..] = []; var nv f32[>..] = []; for k in AR_s.len / 2..AR_s.len { ns.push(AR_s[k]); nv.push(AR_v[k]); } AR_s = copy(ns); AR_v = copy(nv); } }
+fn render_time(s int, now_ticks f32) f32 {
+	var v f32[>..] = [];
+	var k = AR_s.len - 1;
+	while k >= 0 && v.len < 64 { if AR_s[k] == s { v.push(AR_v[k]); } k -= 1; }
+	if v.len == 0 { return now_ticks - 4.0; }
+	var i = 1;
+	while i < v.len { var j = i; while j > 0 && v[j - 1] > v[j] { let t = v[j]; v[j] = v[j - 1]; v[j - 1] = t; j -= 1; } i += 1; }
+	now_ticks - v[min((v.len as f32 * 0.95) as int, v.len - 1)] - 1.0
+}

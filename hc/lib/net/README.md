@@ -34,3 +34,29 @@ duplicates 10 %. Ticks are 30 Hz.
   delivered in order.
 * **Must-fail controls.** Resends switched off fails L1. Encoding against a baseline the client
   never acked, under loss, fails L2. Reconciliation switched off fails L4's wall case.
+
+## Results (2026-11-02)
+
+| check | measured | result |
+| --- | --- | --- |
+| L1 reliable channel | 2000/2000 exactly once, in order, by 705 ms | PASS |
+| L2 delta snapshots | 238 decoded, 0 mismatches; delta 75 B vs full 1232 B (6.2 %) | PASS |
+| L3 perfect link | 4648/4648 frames, max error 0.5/1024 | PASS |
+| L3 hostile link, fixed 4-tick delay | 64 % of frames bracketed, max error 0.5/1024 | **FAIL** |
+| L3b hostile link, adaptive delay (post-hoc) | 94.3 % bracketed, max error 0.5/1024 | PASS |
+| L4 no override | 196 inputs, exact | PASS |
+| L4 wall | clamp at input 50, RTT 218 ms, matched by input 60 | PASS |
+| L5 real UDP | 200 and 200 in order | PASS |
+| controls | resends off 238/2000; unacked baseline 230 mismatches; no reconcile diverges | fail as required |
+
+L3 as registered fails and stays recorded. Its render delay (4 ticks, 133 ms) is shorter than
+the link's worst latency (150 ms), so the snapshot after the render time often has not arrived;
+the expected bracketed share is about 0.8 x P(latency <= 100..133 ms), roughly 0.55 to 0.67,
+which matches the 64 % measured. L3b, added after seeing this and labelled post-hoc, uses
+`net::render_time`: the 95th percentile of recent arrival offsets plus one tick. The test
+prints L3 but gates on L3b.
+
+The L2 control is a client that applies a delta onto its newest snapshot when the named base is
+missing (what a naive client does); the real `decode` refuses such deltas instead. The first run
+decoded nothing: a full 64-entity snapshot (1247 B) did not fit the 1200 B packet limit and sat
+in the queue. The limit is now 1400 B and unreliable messages that can never fit are dropped.
