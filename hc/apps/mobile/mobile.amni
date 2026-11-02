@@ -1,0 +1,47 @@
+import std;
+import math;
+import gfx;
+import gfx.linalg;
+import gfx.shapes;
+import gfx.scene3d;
+import gfx.scalability;
+import gfx.hud;
+import gfx.touch;
+var SW = 0; var SH = 0; var PANEL = -1; var BTN = -1; var SPIN f32 = 0.0; var ORB = -1;
+fn ui(w int, h int) {
+	hud::clear();
+	let root = hud::node(-1); hud::N[root].jus = hud::CENTER; hud::N[root].ali = hud::CENTER;
+	PANEL = hud::node(root); hud::N[PANEL].wm = hud::PCT; hud::N[PANEL].wv = 40.0; hud::N[PANEL].hm = hud::PCT; hud::N[PANEL].hv = 50.0; hud::N[PANEL].dir = hud::COL; hud::N[PANEL].jus = hud::END; hud::N[PANEL].ali = hud::CENTER; hud::N[PANEL].pd = 24.0;
+	hud::N[PANEL].color = float4 { 0.1, 0.55, 0.6, 1.0 }; hud::N[PANEL].radius = 24.0; hud::N[PANEL].bw = 4.0; hud::N[PANEL].border = float4 { 1.0, 1.0, 1.0, 1.0 };
+	BTN = hud::node(PANEL); hud::N[BTN].wm = hud::PCT; hud::N[BTN].wv = 60.0; hud::N[BTN].hm = hud::PX; hud::N[BTN].hv = (h as f32 * 0.1); hud::N[BTN].color = float4 { 0.95, 0.55, 0.15, 1.0 }; hud::N[BTN].radius = 16.0; hud::N[BTN].pd = 12.0; hud::N[BTN].focusable = true;
+	hud::set_text(BTN, "<b>Play</b>");
+	hud::layout_root(root, 0.0, 0.0, w as f32, h as f32);
+	let p = hud::N[PANEL]; let b = hud::N[BTN];
+	print("ready ", w, "x", h, " panel ", (p.x + p.w * 0.5) as int, ",", (p.y + p.h * 0.3) as int, " button ", (b.x + b.w * 0.5) as int, ",", (b.y + b.h * 0.5) as int);
+}
+fn inside(n int, x f32, y f32) bool { let b = hud::N[n]; x >= b.x && y >= b.y && x < b.x + b.w && y < b.y + b.h }
+fn main() {
+	if !gfx::open("Helium Mobile", 1280, 720) { print("mobile: cannot open: ", gfx::error()[..]); exit(1); }
+	let g = shapes::plane(20.0, shapes::material(linalg::v3(0.4, 0.42, 0.38), 0.0, 0.8));
+	s3d::place(s3d::add(g), gfx::mat4_identity);
+	let orb = shapes::sphere(0.8, 48, 24, shapes::material(linalg::v3(0.9, 0.3, 0.4), 0.0, 0.4));
+	ORB = s3d::add(orb);
+	s3d::view = s3d::Camera { eye: float3 { 0.0, 2.5, 6.0 }, target: float3 { 0.0, 0.8, 0.0 }, up: float3 { 0.0, 1.0, 0.0 }, fov_y: 0.9, near: 0.1, far: 100.0 };
+	var gs touch::Gesture[>..] = [];
+	while gfx::frame() {
+		let sz = gfx::screen_size();
+		if sz.x as int != SW || sz.y as int != SH { SW = sz.x as int; SH = sz.y as int; let _i = scal::init(SW, SH, scal::MEDIUM); ui(SW, SH); }
+		for e in gfx::events() {
+			if e.kind == gfx::EVENT_FINGER_DOWN { print("finger down ", e.x as int, ",", e.y as int); }
+			if e.kind == gfx::EVENT_FINGER_UP && inside(BTN, e.x, e.y) { print("tapped play"); }
+			if e.kind == gfx::EVENT_MOUSE_BUTTON && e.down && inside(BTN, e.x, e.y) { print("clicked play"); }
+		}
+		var fs = gfx::fingers(); touch::frame(gfx::time(), fs); touch::take(gs);
+		for gg in gs { if gg.kind == touch::PAN { SPIN += gg.dx * 0.01; } }
+		SPIN += gfx::delta_time() as f32 * 0.5;
+		s3d::place(ORB, linalg::compose(float3 { 0.0, 0.8, 0.0 }, linalg::qaxis(float3 { 0.0, 1.0, 0.0 }, SPIN), float3 { 1.0, 1.0, 1.0 }));
+		s3d::render(gfx::screen());
+		hud::draw(gfx::screen(), SW, SH, false, float4 { 0.0, 0.0, 0.0, 1.0 });
+	}
+	gfx::close();
+}
