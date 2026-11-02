@@ -1,0 +1,179 @@
+// anim/space: 1D and 2D blend spaces. A blend space turns one or two
+// parameters (e.g. speed, or velocity x/z) into weights over sample clips.
+//  1D: samples sorted on x; piecewise-linear weights between neighbours.
+//  2D: Delaunay triangulation of the sample points (Bowyer 1981 / Watson
+//      1981 incremental insertion) and barycentric weights in the containing
+//      triangle; outside the hull the point is projected onto the nearest
+//      hull edge. Both are continuous in the parameters, so a smoothly
+//      changing parameter never makes a weight jump. Clean-room; see DESIGN.md.
+namespace anim;
+import vec;
+import math;
+import anim.math;
+import anim.clip;
+
+let SPACE_MAX = 16;
+let SPACE_TRI = 48;
+
+struct Space {
+	dims i32,               // 1 or 2
+	n i32,
+	clip i32[16], x f32[16], y f32[16],
+	ntri i32, tri i32[144], // 3 sample indices per triangle (2D)
+	rate_match bool,        // scale playback so root speed matches param x
+	rate_min f32, rate_max f32,
+}
+fn space1d() Space { var s = default<Space>(); s.dims = 1; s.rate_min = 0.5; s.rate_max = 2.5; s }
+fn space2d() Space { var s = default<Space>(); s.dims = 2; s.rate_min = 0.5; s.rate_max = 2.5; s }
+fn space_add(s Space&, clip int, x f32, y f32 = 0.0) {
+	assert(s.n < SPACE_MAX);
+	s.clip[s.n] = clip as i32; s.x[s.n] = x; s.y[s.n] = y; s.n += 1;
+}
+
+// Sorts 1D samples by x; triangulates 2D samples.
+fn space_build(s Space&) {
+	if s.dims == 1 {
+		// insertion sort on x (n <= 16)
+		for i in 1..s.n {
+			var k = i;
+			while k > 0 && s.x[k - 1] > s.x[k] {
+				let cx = s.x[k]; s.x[k] = s.x[k - 1]; s.x[k - 1] = cx;
+				let cc = s.clip[k]; s.clip[k] = s.clip[k - 1]; s.clip[k - 1] = cc;
+				k -= 1;
+			}
+		}
+		return;
+	}
+	delaunay(s);
+}
+
+// Circumcircle test: is (px, py) strictly inside the circle through a, b, c?
+fn in_circle(ax f32, ay f32, bx f32, by f32, cx f32, cy f32, px f32, py f32) bool {
+	let adx = (ax - px) as real; let ady = (ay - py) as real;
+	let bdx = (bx - px) as real; let bdy = (by - py) as real;
+	let cdx = (cx - px) as real; let cdy = (cy - py) as real;
+	let det = (adx * adx + ady * ady) * (bdx * cdy - cdx * bdy)
+		- (bdx * bdx + bdy * bdy) * (adx * cdy - cdx * ady)
+		+ (cdx * cdx + cdy * cdy) * (adx * bdy - bdx * ady);
+	let orient = ((bx - ax) * (cy - ay) - (by - ay) * (cx - ax)) as real;
+	if orient > 0.0 { det > 1.0e-12 } else { det < -1.0e-12 }
+}
+
+// Bowyer-Watson: start from a super-triangle, insert each point, remove the
+// triangles whose circumcircle contains it, re-fan the hole's boundary.
+fn delaunay(s Space&) {
+	var px = [0.0 as f32; 19];
+	var py = [0.0 as f32; 19];
+	var lo_x = s.x[0]; var hi_x = s.x[0]; var lo_y = s.y[0]; var hi_y = s.y[0];
+	for i in s.n {
+		px[i] = s.x[i]; py[i] = s.y[i];
+		lo_x = min(lo_x, s.x[i]); hi_x = max(hi_x, s.x[i]); lo_y = min(lo_y, s.y[i]); hi_y = max(hi_y, s.y[i]);
+	}
+	let span = max(max(hi_x - lo_x, hi_y - lo_y), 1.0e-3) * 20.0;
+	let mx = (lo_x + hi_x) * 0.5; let my = (lo_y + hi_y) * 0.5;
+	let n = s.n;
+	px[n] = mx - span; py[n] = my - span;
+	px[n + 1] = mx + span; py[n + 1] = my - span;
+	px[n + 2] = mx; py[n + 2] = my + span;
+	var tri = [0 as i32; 192];
+	var nt = 1;
+	tri[0] = n as i32; tri[1] = (n + 1) as i32; tri[2] = (n + 2) as i32;
+	for p in n {
+		var edges = [0 as i32; 192];
+		var ne = 0;
+		var t = 0;
+		while t < nt {
+			let a = tri[t * 3]; let b = tri[t * 3 + 1]; let c = tri[t * 3 + 2];
+			if in_circle(px[a], py[a], px[b], py[b], px[c], py[c], px[p], py[p]) {
+				// collect its edges; an edge shared by two removed triangles cancels
+				for e in 3 {
+					let u = tri[t * 3 + e];
+					let v = tri[t * 3 + (e + 1) % 3];
+					var dup = -1;
+					for k in ne { if (edges[k * 2] == v && edges[k * 2 + 1] == u) || (edges[k * 2] == u && edges[k * 2 + 1] == v) { dup = k; } }
+					if dup >= 0 {
+						edges[dup * 2] = edges[(ne - 1) * 2]; edges[dup * 2 + 1] = edges[(ne - 1) * 2 + 1]; ne -= 1;
+					} else { edges[ne * 2] = u; edges[ne * 2 + 1] = v; ne += 1; }
+				}
+				nt -= 1;
+				tri[t * 3] = tri[nt * 3]; tri[t * 3 + 1] = tri[nt * 3 + 1]; tri[t * 3 + 2] = tri[nt * 3 + 2];
+			} else { t += 1; }
+		}
+		for k in ne {
+			tri[nt * 3] = edges[k * 2]; tri[nt * 3 + 1] = edges[k * 2 + 1]; tri[nt * 3 + 2] = p as i32;
+			nt += 1;
+		}
+	}
+	// keep triangles that use no super-triangle vertex and have area
+	s.ntri = 0;
+	for t in nt {
+		let a = tri[t * 3]; let b = tri[t * 3 + 1]; let c = tri[t * 3 + 2];
+		if a >= n || b >= n || c >= n { continue; }
+		let area = (px[b] - px[a]) * (py[c] - py[a]) - (py[b] - py[a]) * (px[c] - px[a]);
+		if abs(area) < 1.0e-9 { continue; }
+		if s.ntri < SPACE_TRI {
+			s.tri[s.ntri * 3] = a; s.tri[s.ntri * 3 + 1] = b; s.tri[s.ntri * 3 + 2] = c;
+			s.ntri += 1;
+		}
+	}
+}
+
+// Weights per sample (w[i] for sample i), summing to 1.
+fn space_weights(s Space&, x f32, y f32, w f32[16]&) {
+	for i in 16 { w[i] = 0.0; }
+	if s.n == 0 { return; }
+	if s.n == 1 { w[0] = 1.0; return; }
+	if s.dims == 1 {
+		if x <= s.x[0] { w[0] = 1.0; return; }
+		if x >= s.x[s.n - 1] { w[s.n - 1] = 1.0; return; }
+		for i in s.n - 1 {
+			if x >= s.x[i] && x <= s.x[i + 1] {
+				let d = s.x[i + 1] - s.x[i];
+				let a = if d > 1.0e-6 { (x - s.x[i]) / d } else { 0.0 };
+				w[i] = 1.0 - a; w[i + 1] = a;
+				return;
+			}
+		}
+		return;
+	}
+	// inside a triangle: barycentric
+	for t in s.ntri {
+		let a = s.tri[t * 3]; let b = s.tri[t * 3 + 1]; let c = s.tri[t * 3 + 2];
+		let v0x = s.x[b] - s.x[a]; let v0y = s.y[b] - s.y[a];
+		let v1x = s.x[c] - s.x[a]; let v1y = s.y[c] - s.y[a];
+		let v2x = x - s.x[a]; let v2y = y - s.y[a];
+		let den = v0x * v1y - v1x * v0y;
+		let wb = (v2x * v1y - v1x * v2y) / den;
+		let wc = (v0x * v2y - v2x * v0y) / den;
+		let wa = 1.0 - wb - wc;
+		if wa >= -1.0e-5 && wb >= -1.0e-5 && wc >= -1.0e-5 {
+			w[a] = max(wa, 0.0); w[b] = max(wb, 0.0); w[c] = max(wc, 0.0);
+			let sum = w[a] + w[b] + w[c];
+			w[a] /= sum; w[b] /= sum; w[c] /= sum;
+			return;
+		}
+	}
+	// outside: nearest point on any triangle edge (that is the hull boundary)
+	var best = 1.0e30 as f32;
+	var bi = 0; var bj = 0; var bt = 0.0 as f32;
+	for t in s.ntri {
+		for e in 3 {
+			let i = s.tri[t * 3 + e];
+			let j = s.tri[t * 3 + (e + 1) % 3];
+			let ex = s.x[j] - s.x[i]; let ey = s.y[j] - s.y[i];
+			let l2 = ex * ex + ey * ey;
+			let u = if l2 > 1.0e-12 { clamp(((x - s.x[i]) * ex + (y - s.y[i]) * ey) / l2, 0.0, 1.0) } else { 0.0 };
+			let qx = s.x[i] + ex * u - x; let qy = s.y[i] + ey * u - y;
+			let d = qx * qx + qy * qy;
+			if d < best { best = d; bi = i; bj = j; bt = u; }
+		}
+	}
+	if s.ntri == 0 {
+		// degenerate (collinear) set: nearest sample
+		for i in s.n {
+			let d = (s.x[i] - x) * (s.x[i] - x) + (s.y[i] - y) * (s.y[i] - y);
+			if d < best { best = d; bi = i; bj = i; bt = 0.0; }
+		}
+	}
+	w[bi] += 1.0 - bt; w[bj] += bt;
+}

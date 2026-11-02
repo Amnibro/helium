@@ -1,0 +1,96 @@
+// anim/skin: skinning palettes (model * inverse bind, as column-major 4x4)
+// and linear-blend CPU skinning of a glTF mesh primitive. On the GPU the
+// palette is what gets uploaded; the CPU path is for tests, tools and the
+// software renderer. Clean-room; see DESIGN.md.
+namespace anim;
+import vec;
+import math;
+import anim.math;
+import anim.pose;
+import anim.gltf;
+
+struct Palette { n i32, m M4[128] }
+struct SkinMesh { base int, nv int, ok bool }
+var SK_P float3[>..];
+var SK_N float3[>..];
+var SK_T float4[>..];  // glTF TANGENT: xyz + handedness w (+-1)
+var SK_J i32[>..];     // 4 skeleton joint indices per vertex
+var SK_W float4[>..];
+
+fn skin_bank_clear() { SK_P.clear(); SK_N.clear(); SK_T.clear(); SK_J.clear(); SK_W.clear(); }
+
+fn palette(sk Skeleton&, m Model&, out Palette&) {
+	out.n = sk.n;
+	for j in sk.n { out.m[j] = m4_mul(m4_of(m.x[j]), sk.inv_bind[j]); }
+}
+
+// Loads POSITION/NORMAL/TANGENT/JOINTS_0/WEIGHTS_0 of mesh `mesh` primitive `prim`
+// from the open GLB (after glb_skeleton, which maps skin joints).
+fn glb_skin_mesh(mesh int, prim int) SkinMesh {
+	var r = default<SkinMesh>();
+	let pr = jel(jm(jel(jtop("meshes"), mesh), "primitives"), prim);
+	let at = jm(pr, "attributes");
+	let pi = jint(jm(at, "POSITION"), -1);
+	let ni = jint(jm(at, "NORMAL"), -1);
+	let ti = jint(jm(at, "TANGENT"), -1);
+	let ji = jint(jm(at, "JOINTS_0"), -1);
+	let wi = jint(jm(at, "WEIGHTS_0"), -1);
+	if pi < 0 || ji < 0 || wi < 0 { return r; }
+	let pa = accessor(pi); let ja = accessor(ji); let wa = accessor(wi);
+	var na = default<Accessor>();
+	if ni >= 0 { na = accessor(ni); }
+	var ta = default<Accessor>();
+	if ti >= 0 { ta = accessor(ti); }
+	r.base = SK_P.len; r.nv = pa.count;
+	for v in pa.count {
+		SK_P.push(acc_v3(pa, v));
+		SK_N.push(if ni >= 0 { acc_v3(na, v) } else { float3 { 0.0, 1.0, 0.0 } });
+		SK_T.push(if ti >= 0 { acc_v4(ta, v) } else { float4 { 1.0, 0.0, 0.0, 1.0 } });
+		for c in 4 { SK_J.push(SKIN_JOINT[acc_i(ja, v, c)]); }
+		var w = acc_v4(wa, v);
+		let s = w.x + w.y + w.z + w.w;
+		if s > 1.0e-6 { w = w / s; }
+		SK_W.push(w);
+	}
+	r.ok = true;
+	r
+}
+
+// Linear blend skinning of every vertex. The weighted 3x4 matrix
+// A = sum_k w_k M_k is formed once per vertex (same arithmetic as
+// skin.comp), then:
+//   p' = A p
+//   t' = normalize(A3 t.xyz), w' = w * sign(det A3)
+//   n' = normalize(cof(A3) n * sign(det A3))
+// where A3 is the upper 3x3 and cof(A3) = det(A3) * inverse-transpose(A3):
+// rows r1 x r2, r2 x r0, r0 x r1 of the rows r0..r2 of A3. This keeps n'
+// perpendicular to t' under non-uniform joint scale, where A3 n would not.
+// The glTF bitangent is cross(n, t) * w; under a reflection (det A3 < 0)
+// cross(n', t') points against A3 b, so w flips with the sign of det A3 to
+// keep b' = cross(n', t') * w' along A3 b (normal maps stay right-handed).
+fn skin_cpu(mesh SkinMesh, pal Palette&, out_p float3[>..]&, out_n float3[>..]&, out_t float4[>..]&) {
+	out_p.clear(); out_n.clear(); out_t.clear();
+	for v in mesh.nv {
+		let i = mesh.base + v;
+		let w = SK_W[i];
+		var m = [0.0 as f32; 12];   // rows of A: (m[0..4]), (m[4..8]), (m[8..12])
+		for k in 4 {
+			let wk = if k == 0 { w.x } else if k == 1 { w.y } else if k == 2 { w.z } else { w.w };
+			if wk != 0.0 {
+				let a = pal.m[SK_J[i * 4 + k] as int].m;
+				for r in 3 { m[r * 4] += a[r] * wk; m[r * 4 + 1] += a[4 + r] * wk; m[r * 4 + 2] += a[8 + r] * wk; m[r * 4 + 3] += a[12 + r] * wk; }
+			}
+		}
+		let r0 = float3 { m[0], m[1], m[2] }; let r1 = float3 { m[4], m[5], m[6] }; let r2 = float3 { m[8], m[9], m[10] };
+		let p = SK_P[i]; let n = SK_N[i]; let t4 = SK_T[i];
+		out_p.push(float3 { dot(r0, p) + m[3], dot(r1, p) + m[7], dot(r2, p) + m[11] });
+		let t = float3 { t4.x, t4.y, t4.z };
+		let c0 = cross(r1, r2); let c1 = cross(r2, r0); let c2 = cross(r0, r1);
+		let sg = if dot(r0, c0) < 0.0 { -1.0 } else { 1.0 };
+		out_n.push(skin_unit(float3 { dot(c0, n), dot(c1, n), dot(c2, n) } * sg));
+		out_t.push(skin_unit4(float3 { dot(r0, t), dot(r1, t), dot(r2, t) }, t4.w * sg));
+	}
+}
+// normalize, with 0 for a degenerate vector (no NaN); skin.comp does the same
+fn skin_unit(v float3) float3 { v * (1.0 / sqrt(max(dot(v, v), 1.0e-30))) }
+fn skin_unit4(v float3, w f32) float4 { let u = skin_unit(v); float4 { u.x, u.y, u.z, w } }

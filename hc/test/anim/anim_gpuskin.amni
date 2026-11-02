@@ -1,0 +1,17 @@
+// GPU skinning correctness test + 32-character bench (headless, Vulkan compute).
+// HC_LIB=hc/lib build/hcn hc/test/anim/anim_gpuskin.amni -- <hero.glb> <skin.spv> [frames] [device-index]
+// Build skin.spv first: build/hcn --spv hc/lib/anim/skin.comp <skin.spv>
+// (program args go after "--"; a bare path is taken as hcn's output file)
+import os;
+import gskin_body;
+fn pint(s const byte[:]) int { var v = 0; for c in s.len { v = v * 10 + (s[c] as int - 48); } v }
+fn main() {
+	var path byte[>..] = []; var spv byte[>..] = []; var nf byte[>..] = []; var dv byte[>..] = [];
+	if arg_count() < 3 { print("usage: anim_gpuskin.amni -- <hero.glb> <skin.spv> [frames] [device]"); exit(2); }
+	arg(1, path); arg(2, spv);
+	var frames = 600; var pick = -1;
+	if arg_count() > 3 { arg(3, nf); frames = pint(nf[..]); }
+	if arg_count() > 4 { arg(4, dv); pick = pint(dv[..]); }
+	let f = anim::gs_main(path[..], spv[..], frames, pick);
+	if f != 0 { exit(f); }
+}

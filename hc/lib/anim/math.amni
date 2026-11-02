@@ -1,0 +1,140 @@
+// anim/math: quaternions and rigid transforms for the animation runtime.
+// Clean-room: written from the textbook definitions (Hamilton product,
+// q v q*, nlerp/slerp as in Shoemake 1985 "Animating rotation with
+// quaternion curves"), not from any engine. Quaternions are float4
+// {x, y, z, w} with w the scalar part; all rotations are unit quaternions.
+namespace anim;
+import vec;
+import math;
+
+let QI = float4 { 0.0, 0.0, 0.0, 1.0 };
+let V0 = float3 { 0.0, 0.0, 0.0 };
+let V1 = float3 { 1.0, 1.0, 1.0 };
+
+fn v3(x f32, y f32, z f32) float3 { float3 { x, y, z } }
+fn q4(x f32, y f32, z f32, w f32) float4 { float4 { x, y, z, w } }
+
+// Hamilton product a*b: rotating by b, then by a.
+fn qmul(a float4, b float4) float4 {
+	float4 {
+		a.w * b.x + a.x * b.w + a.y * b.z - a.z * b.y,
+		a.w * b.y - a.x * b.z + a.y * b.w + a.z * b.x,
+		a.w * b.z + a.x * b.y - a.y * b.x + a.z * b.w,
+		a.w * b.w - a.x * b.x - a.y * b.y - a.z * b.z }
+}
+fn qconj(q float4) float4 { float4 { 0.0 - q.x, 0.0 - q.y, 0.0 - q.z, q.w } }
+fn qdot(a float4, b float4) f32 { a.x * b.x + a.y * b.y + a.z * b.z + a.w * b.w }
+fn qneg(q float4) float4 { float4 { 0.0 - q.x, 0.0 - q.y, 0.0 - q.z, 0.0 - q.w } }
+fn qnorm(q float4) float4 {
+	let l2 = qdot(q, q);
+	if l2 < 1.0e-20 { return QI; }
+	let k = 1.0 / sqrt(l2);
+	float4 { q.x * k, q.y * k, q.z * k, q.w * k }
+}
+// v rotated by unit q: v + 2w(u x v) + 2 u x (u x v), u = q.xyz.
+fn qrot(q float4, v float3) float3 {
+	let u = float3 { q.x, q.y, q.z };
+	let t = cross(u, v) * 2.0;
+	v + t * q.w + cross(u, t)
+}
+fn qaxis(axis float3, angle f32) float4 {
+	let l = length(axis);
+	if l < 1.0e-12 { return QI; }
+	let s = sin(angle * 0.5) / l;
+	float4 { axis.x * s, axis.y * s, axis.z * s, cos(angle * 0.5) }
+}
+// The shortest rotation taking direction a onto direction b.
+fn qfromto(a float3, b float3) float4 {
+	let la = length(a);
+	let lb = length(b);
+	if la < 1.0e-12 || lb < 1.0e-12 { return QI; }
+	let na = a / la;
+	let nb = b / lb;
+	let d = dot(na, nb);
+	if d < -0.999999 {
+		// opposite: any axis perpendicular to a
+		var ax = cross(float3 { 1.0, 0.0, 0.0 }, na);
+		if length_sq(ax) < 1.0e-6 { ax = cross(float3 { 0.0, 1.0, 0.0 }, na); }
+		return qaxis(ax, 3.14159265);
+	}
+	let c = cross(na, nb);
+	qnorm(float4 { c.x, c.y, c.z, 1.0 + d })
+}
+// Angle (radians, 0..pi) of the rotation taking a to b.
+fn qangle(a float4, b float4) f32 {
+	let d = min(abs(qdot(a, b)), 1.0);
+	2.0 * acos(d)
+}
+// Normalized linear interpolation on the shorter arc.
+fn nlerp(a float4, b float4, t f32) float4 {
+	var bb = b;
+	if qdot(a, b) < 0.0 { bb = qneg(b); }
+	qnorm(float4 { a.x + (bb.x - a.x) * t, a.y + (bb.y - a.y) * t, a.z + (bb.z - a.z) * t, a.w + (bb.w - a.w) * t })
+}
+// Spherical linear interpolation on the shorter arc (Shoemake 1985).
+fn slerp(a float4, b float4, t f32) float4 {
+	var bb = b;
+	var d = qdot(a, b);
+	if d < 0.0 { bb = qneg(b); d = 0.0 - d; }
+	if d > 0.9995 { return nlerp(a, bb, t); }
+	let th = acos(d);
+	let s = sin(th);
+	let wa = sin((1.0 - t) * th) / s;
+	let wb = sin(t * th) / s;
+	float4 { a.x * wa + bb.x * wb, a.y * wa + bb.y * wb, a.z * wa + bb.z * wb, a.w * wa + bb.w * wb }
+}
+// Rotation about +Y (yaw), and the yaw of a rotation's forward (+Z) axis.
+fn qyaw(yaw f32) float4 { float4 { 0.0, sin(yaw * 0.5), 0.0, cos(yaw * 0.5) } }
+fn yaw_of(q float4) f32 { let f = qrot(q, float3 { 0.0, 0.0, 1.0 }); atan2(f.x, f.z) }
+
+// A rigid transform with non-uniform scale: p' = t + r (s * p).
+struct Xf { t float3, r float4, s float3 }
+let XI = Xf { V0, QI, V1 };
+fn xf_point(x Xf, p float3) float3 { x.t + qrot(x.r, p * x.s) }
+fn xf_dir(x Xf, v float3) float3 { qrot(x.r, v) }
+// parent * child (scale is treated per axis; exact for uniform scale and
+// for the usual animation case of scale only on leaves).
+fn xf_mul(a Xf, b Xf) Xf { Xf { xf_point(a, b.t), qmul(a.r, b.r), a.s * b.s } }
+fn xf_inv(a Xf) Xf {
+	let ir = qconj(a.r);
+	let is = float3 { 1.0 / a.s.x, 1.0 / a.s.y, 1.0 / a.s.z };
+	Xf { qrot(ir, a.t * -1.0) * is, ir, is }
+}
+
+// Column-major 4x4 matrix (glTF / GPU layout).
+struct M4 { m f32[16] }
+fn m4_of(x Xf) M4 {
+	let q = x.r;
+	let xx = q.x * q.x; let yy = q.y * q.y; let zz = q.z * q.z;
+	let xy = q.x * q.y; let xz = q.x * q.z; let yz = q.y * q.z;
+	let wx = q.w * q.x; let wy = q.w * q.y; let wz = q.w * q.z;
+	var o = M4 { [0.0; 16] };
+	o.m[0] = (1.0 - 2.0 * (yy + zz)) * x.s.x; o.m[1] = 2.0 * (xy + wz) * x.s.x; o.m[2] = 2.0 * (xz - wy) * x.s.x;
+	o.m[4] = 2.0 * (xy - wz) * x.s.y; o.m[5] = (1.0 - 2.0 * (xx + zz)) * x.s.y; o.m[6] = 2.0 * (yz + wx) * x.s.y;
+	o.m[8] = 2.0 * (xz + wy) * x.s.z; o.m[9] = 2.0 * (yz - wx) * x.s.z; o.m[10] = (1.0 - 2.0 * (xx + yy)) * x.s.z;
+	o.m[12] = x.t.x; o.m[13] = x.t.y; o.m[14] = x.t.z; o.m[15] = 1.0;
+	o
+}
+fn m4_mul(a M4, b M4) M4 {
+	var o = M4 { [0.0; 16] };
+	for c in 4 {
+		for r in 4 {
+			o.m[c * 4 + r] = a.m[r] * b.m[c * 4] + a.m[4 + r] * b.m[c * 4 + 1] + a.m[8 + r] * b.m[c * 4 + 2] + a.m[12 + r] * b.m[c * 4 + 3];
+		}
+	}
+	o
+}
+fn m4_point(a M4, p float3) float3 {
+	float3 { a.m[0] * p.x + a.m[4] * p.y + a.m[8] * p.z + a.m[12],
+		a.m[1] * p.x + a.m[5] * p.y + a.m[9] * p.z + a.m[13],
+		a.m[2] * p.x + a.m[6] * p.y + a.m[10] * p.z + a.m[14] }
+}
+fn m4_dir(a M4, p float3) float3 {
+	float3 { a.m[0] * p.x + a.m[4] * p.y + a.m[8] * p.z,
+		a.m[1] * p.x + a.m[5] * p.y + a.m[9] * p.z,
+		a.m[2] * p.x + a.m[6] * p.y + a.m[10] * p.z }
+}
+fn smoothstep01(x f32) f32 { let t = clamp(x, 0.0, 1.0); t * t * (3.0 - 2.0 * t) }
+// C2 "smootherstep" 6t^5 - 15t^4 + 10t^3 (Perlin 2002): zero 1st and 2nd
+// derivative at both ends, so a crossfade adds no acceleration kink.
+fn smootherstep01(x f32) f32 { let t = clamp(x, 0.0, 1.0); t * t * t * (t * (t * 6.0 - 15.0) + 10.0) }
