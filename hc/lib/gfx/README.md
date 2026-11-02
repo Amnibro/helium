@@ -446,7 +446,7 @@ makes that a failure). `GPU_LOCK=<file>` serializes the GPU part on shared
 machines. `tools/hc/ci.sh` runs it only when `HELIUM_GFX_TEST=1`. The test binary
 needs SDL3 even for the CPU part (see Known gaps).
 
-### GTAO results (GI part 3b; RX 9060 XT, RADV)
+### GTAO results (GI part 3b; RX 9060 XT, RADV; `results/2026-11-02_rx9060xt_radv_420344b_gtao.txt`, clean worktree, full gfxtest ok)
 
 `ao_mode = 1` switches the AO pass from the hemisphere SSAO (`ao_mode = 0`, still the
 default, so the shipped look and both goldens are unchanged) to GTAO with bent normals
