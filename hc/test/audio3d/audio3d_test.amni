@@ -1,0 +1,167 @@
+import std;
+import math;
+import audio;
+var FAILS = 0;
+fn check(ok bool, what const byte[:]) { if ok { print("PASS ", what); } else { print("FAIL ", what); FAILS += 1; } }
+let R = 48000;
+fn sine(f real, secs real, amp real) f32[>..] { var x f32[>..] = []; let n = (secs * R as real) as int; for i in n { x.push((amp * sin(6.283185307179586 * f * i as real / R as real)) as f32); } x }
+var SEED = 99;
+fn noise(secs real) f32[>..] { var x f32[>..] = []; let n = (secs * R as real) as int; for i in n { SEED = (SEED * 1103515245 + 12345) % 2147483648; x.push(((SEED as real / 2147483648.0) * 1.6 - 0.8) as f32); } x }
+fn fresh() { audio::close(); audio::open_offline(R); audio::set_listener(0.0, 0.0, 0.0, 0.0, 0.0, -1.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0); audio::set_spatial(true, true, true); audio::set_reverb(0.0, 0.7, 0.3); }
+fn render(secs real) f32[>..] { var o f32[>..] = []; o.resize(((secs * R as real) as int) * 2, 0.0); audio::render(o[..]); o }
+fn rms(o const f32[:], ch int, a int, b int) real { var e = 0.0; for f in a..b { let x = if ch < 0 { (o[f * 2] as real + o[f * 2 + 1] as real) } else { o[f * 2 + ch] as real }; e += x * x; } sqrt(e / (b - a) as real) }
+fn a1() bool {
+	var r0 = 0.0; var worst = 0.0;
+	for k in 4 {
+		let d = [1.0, 2.0, 4.0, 8.0][k];
+		fresh(); audio::set_spatial(false, false, true);
+		let s = audio::create_sound(sine(440.0, 1.0, 0.5)[..], R, 1);
+		audio::play3d(s, 0.0, 0.0, -d, 1.0, 1.0, false, 1.0, 1000.0, 1.0);
+		let o = render(0.5);
+		let r = rms(o[..], -1, 4800, 24000);
+		if k == 0 { r0 = r; }
+		worst = max(worst, abs((r / r0) * d - 1.0));
+	}
+	print("A1 rolloff: worst deviation from 1/d ", worst * 100.0, " %");
+	worst <= 0.02
+}
+fn a2() bool {
+	var es real[>..] = []; var sides = true;
+	for k in 13 {
+		let th = (-90.0 + 15.0 * k as real) * 0.017453292519943295;
+		fresh(); audio::set_spatial(false, false, true);
+		let s = audio::create_sound(sine(440.0, 1.0, 0.5)[..], R, 1);
+		audio::play3d(s, 2.0 * sin(th), 0.0, -2.0 * cos(th), 1.0, 1.0, false, 1.0, 1000.0, 1.0);
+		let o = render(0.5);
+		let l = rms(o[..], 0, 4800, 24000); let r = rms(o[..], 1, 4800, 24000);
+		es.push(l * l + r * r);
+		if th < -0.01 && !(l > r) { sides = false; } if th > 0.01 && !(r > l) { sides = false; }
+	}
+	var m = 0.0; for e in es { m += e; } m /= es.len as real;
+	var w = 0.0; for e in es { w = max(w, abs(e / m - 1.0)); }
+	print("A2 equal power: worst deviation ", w * 100.0, " %, sides correct ", sides);
+	w <= 0.02 && sides
+}
+fn lag_of(o const f32[:]) int {
+	var best = 0; var bv = -1.0e30;
+	for lag in -60..61 {
+		var c = 0.0;
+		for f in 4800..28800 { let g = f - lag; c += o[f * 2] as real * o[g * 2 + 1] as real; }
+		if c > bv { bv = c; best = lag; }
+	}
+	best
+}
+fn a3() bool {
+	fresh();
+	let s = audio::create_sound(noise(1.0)[..], R, 1);
+	audio::play3d(s, 2.0, 0.0, 0.0, 1.0, 1.0, false, 1.0, 1000.0, 1.0);
+	let o = render(0.7);
+	let l90 = lag_of(o[..]);
+	fresh();
+	let s2 = audio::create_sound(noise(1.0)[..], R, 1);
+	audio::play3d(s2, 0.0, 0.0, -2.0, 1.0, 1.0, false, 1.0, 1000.0, 1.0);
+	let o2 = render(0.7);
+	let l0 = lag_of(o2[..]);
+	print("A3 ITD: lag at 90 deg right ", l90, " samples (L late if positive), straight ahead ", l0);
+	abs(l90 - 32) <= 1 && l0 == 0
+}
+fn freq(o const f32[:], a int, b int) real {
+	var first = -1.0; var last = -1.0; var n = 0;
+	for f in a..b - 1 { let x0 = o[f * 2] as real; let x1 = o[(f + 1) * 2] as real; if x0 < 0.0 && x1 >= 0.0 { let t = f as real + x0 / (x0 - x1); if first < 0.0 { first = t; } last = t; n += 1; } }
+	if n < 2 { return 0.0; }
+	(n - 1) as real / ((last - first) / R as real)
+}
+fn a4() bool {
+	var fs = [0.0, 0.0];
+	for k in 2 {
+		fresh();
+		let s = audio::create_sound(sine(1000.0, 2.0, 0.5)[..], R, 1);
+		let v = audio::play3d(s, 0.0, 0.0, -100.0, 1.0, 1.0, false, 1.0, 1000.0, 1.0);
+		audio::set_voice3d(v, 0.0, 0.0, -100.0, 0.0, 0.0, if k == 0 { 34.3 } else { -34.3 }, 0.0, 0.0, 0);
+		let o = render(0.5);
+		fs[k] = freq(o[..], 2400, 24000);
+	}
+	print("A4 Doppler: approaching ", fs[0], " Hz (1111.1), receding ", fs[1], " Hz (909.1)");
+	abs(fs[0] - 1111.111) <= 2.0 && abs(fs[1] - 909.091) <= 2.0
+}
+fn a5() bool {
+	var loss = [0.0, 0.0];
+	for k in 2 {
+		var e = [0.0, 0.0];
+		for oc in 2 {
+			fresh();
+			let s = audio::create_sound(sine(if k == 0 { 4000.0 } else { 200.0 }, 1.0, 0.5)[..], R, 1);
+			let v = audio::play3d(s, 0.0, 0.0, -1.0, 1.0, 1.0, false, 1.0, 1000.0, 1.0);
+			audio::set_voice3d(v, 0.0, 0.0, -1.0, 0.0, 0.0, 0.0, oc as real, 0.0, 0);
+			let o = render(0.5);
+			e[oc] = rms(o[..], -1, 4800, 24000);
+		}
+		loss[k] = 20.0 * log(e[0] / e[1]) / log(10.0);
+	}
+	print("A5 occlusion: 4 kHz loses ", loss[0], " dB, 200 Hz loses ", loss[1], " dB, difference ", loss[0] - loss[1]);
+	loss[0] - loss[1] >= 12.0
+}
+fn tail(wet real, room real) real, real {
+	fresh(); audio::set_reverb(wet, room, 0.3);
+	var imp f32[>..] = []; imp.resize(R, 0.0); imp[0] = 1.0;
+	let s = audio::create_sound(imp[..], R, 1);
+	let v = audio::play(s, 1.0, 0.0, 1.0, false);
+	audio::set_send(v, 1.0, 0);
+	let o = render(1.0);
+	var d = 0.0; for f in 0..240 { d += o[f * 2] as real * o[f * 2] as real + o[f * 2 + 1] as real * o[f * 2 + 1] as real; }
+	var t = 0.0; for f in 4800..14400 { t += o[f * 2] as real * o[f * 2] as real + o[f * 2 + 1] as real * o[f * 2 + 1] as real; }
+	var edc real[>..] = []; edc.resize(R, 0.0);
+	var acc = 0.0; var f = R - 1;
+	while f >= 240 { acc += o[f * 2] as real * o[f * 2] as real + o[f * 2 + 1] as real * o[f * 2 + 1] as real; edc[f] = acc; f -= 1; }
+	let e0 = edc[240]; var t5 = -1; var t25 = -1;
+	for g in 240..R { if t5 < 0 && edc[g] <= e0 * 0.31622776601683794 { t5 = g; } if t25 < 0 && edc[g] <= e0 * 0.0031622776601683794 { t25 = g; } }
+	let rt = if t5 >= 0 && t25 >= 0 { 3.0 * (t25 - t5) as real / R as real } else { -1.0 };
+	return 10.0 * log(max(t, 1.0e-300) / d) / log(10.0), rt;
+}
+fn a6() bool {
+	let db, rt0 = tail(0.3, 0.7);
+	let db0, rtx = tail(0.0, 0.7);
+	let _r = rt0 + rtx;
+	let d1, r5 = tail(0.3, 0.5); let d2, r7 = tail(0.3, 0.7); let d3, r9 = tail(0.3, 0.9);
+	let _d = d1 + d2 + d3;
+	print("A6 reverb: tail ", db, " dB (>= -40), dry tail ", db0, " dB (< -90), RT60 at room 0.5/0.7/0.9: ", r5, " / ", r7, " / ", r9, " s");
+	db >= -40.0 && db0 < -90.0 && r5 > 0.0 && r5 < r7 && r7 < r9
+}
+fn a7(limit bool) int, real, real {
+	fresh(); audio::set_spatial(true, true, limit);
+	let s = audio::create_sound(sine(440.0, 1.0, 1.0)[..], R, 1);
+	for k in 8 { audio::play(s, 1.0, 0.0, 1.0, false); }
+	let o = render(0.5);
+	var hot = 0; var pk = 0.0;
+	for x in o { if abs(x as real) >= 0.999 { hot += 1; } pk = max(pk, abs(x as real)); }
+	return hot, rms(o[..], 0, 4800, 24000), pk;
+}
+fn a8() bool {
+	fresh();
+	let s = audio::create_sound(sine(440.0, 1.0, 0.1)[..], R, 1);
+	var vs audio::Voice[>..] = []; var vol real[>..] = [];
+	for k in 80 { SEED = (SEED * 1103515245 + 12345) % 2147483648; let v = 0.05 + 0.9 * SEED as real / 2147483648.0; vol.push(v); vs.push(audio::play(s, v as f32, 0.0, 1.0, true)); }
+	var lo_on = 1.0e30; var hi_off = -1.0; var on = 0;
+	for k in 80 { if vs[k].id != 0 && audio::playing(vs[k]) { lo_on = min(lo_on, vol[k]); on += 1; } else { hi_off = max(hi_off, vol[k]); } }
+	print("A8 stealing: ", on, " playing, quietest playing ", lo_on, ", loudest refused or stolen ", hi_off);
+	on == 64 && lo_on >= hi_off
+}
+fn main() {
+	check(a1(), "A1 rolloff within 2 % of 1/d");
+	check(a2(), "A2 equal power within 2 %, sides correct");
+	check(a3(), "A3 ITD 32 +-1 samples at 90 deg, 0 ahead");
+	check(a4(), "A4 Doppler within 2 Hz");
+	check(a5(), "A5 occlusion: 4 kHz loses >= 12 dB more than 200 Hz");
+	check(a6(), "A6 reverb tail, dry silence, RT60 rises with room size");
+	let h, r, p = a7(true);
+	let ref = 0.99 / sqrt(2.0);
+	print("A7 limiter: ", h, " samples >= 0.999, peak ", p, ", RMS ", r, " vs ", ref, " (", 20.0 * log(r / ref) / log(10.0), " dB)");
+	check(h == 0 && abs(20.0 * log(r / ref) / log(10.0)) <= 3.0, "A7 limiter: no sample reaches 0.999, RMS within 3 dB");
+	let h0, r0, p0 = a7(false);
+	let _q = r0 + p0;
+	print("A7 control hard clip: ", h0, " samples at +-1");
+	check(h0 > 1000, "A7 control: hard clip fails");
+	check(a8(), "A8 every playing voice at least as audible as every refused or stolen one");
+	audio::close();
+	if FAILS == 0 { print("audio3d: ok"); } else { print("audio3d: FAILED ", FAILS); exit(1); }
+}

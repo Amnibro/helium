@@ -21,5 +21,6 @@ step warn tools/hc/warntest.sh "$HN"
 step nav sh -c 'HC_LIB=hc/lib "$0" build hc/test/nav/nav_test.amni -o "$1/nt" 2>/dev/null && "$1/nt"' "$HN" "$W"
 step net sh -c 'HC_LIB=hc/lib "$0" build hc/test/net/net_test.amni -o "$1/net" 2>/dev/null && "$1/net"' "$HN" "$W"
 step stream sh -c 'HC_LIB=hc/lib "$0" build hc/test/stream/stream_test.amni -o "$1/st" 2>/dev/null && STREAM_DIR="$1/stream" "$1/st"' "$HN" "$W"
+step audio3d sh -c 'HC_LIB=hc/lib "$0" build hc/test/audio3d/audio3d_test.amni -o "$1/a3" 2>/dev/null && "$1/a3"' "$HN" "$W"
 [ -n "${HELIUM_GFX_TEST:-}" ] && step gfx tools/hc/gfxtest.sh "$HN"
 [ $fail -eq 0 ] && echo "ci: ok" || echo "ci: FAILED"; exit $fail

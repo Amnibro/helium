@@ -30,3 +30,17 @@ All offline at 48 kHz, mono sources, listener at the origin facing -z.
 * **A8 stealing.** 80 voices at random volumes into 64 slots: every voice still playing is at
   least as audible as every voice that was refused or stolen.
 * **A9 compatibility.** `hc/test/audio_offline.he` output unchanged (hetest).
+
+## Results (2026-11-02, first run)
+
+| check | measured | result |
+| --- | --- | --- |
+| A1 rolloff | 0.0 % off 1/d | PASS |
+| A2 equal power | 0.006 % spread, sides correct | PASS |
+| A3 ITD | 32 samples at 90 deg, 0 ahead | PASS |
+| A4 Doppler | 1111.111 Hz / 909.091 Hz | PASS |
+| A5 occlusion | 4 kHz -29.9 dB vs 200 Hz -8.2 dB (21.8 dB apart) | PASS |
+| A6 reverb | tail -17.4 dB, dry tail silent; RT60 0.48 / 0.82 / 2.01 s | PASS |
+| A7 limiter | 0 samples >= 0.999, peak 0.983, RMS +0.34 dB; hard clip 44 240 at +-1 | PASS |
+| A8 stealing | 64 playing, quietest 0.1961 >= loudest dropped 0.1954 | PASS |
+| A9 compatibility | hetest 111 pass (audio_offline unchanged on C, native, debug) | PASS |

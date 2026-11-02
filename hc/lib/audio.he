@@ -1,6 +1,7 @@
 namespace audio
 use std
 use ffi
+use math
 MAIN_THREAD := true
 extern fmod(x real, y real) real
 MAX_SOUNDS := 256 as i32
@@ -8,7 +9,7 @@ MAX_VOICES := 64 as i32
 struct Sound { id uint }
 struct Voice { id uint }
 struct Snd { id uint, pcm f32[>..], frames int, rate int, ch int }
-struct Vc { id uint, snd int, pos real, vol f32, pan f32, pitch f32, lp bool, end int }
+struct Vc { id uint, snd int, pos real, vol f32, pan f32, pitch f32, lp bool, end int, d3 bool, px real, py real, pz real, vx real, vy real, vz real, mind real, maxd real, roll real, occ real, send real, bus int, gl real, gr real, fl real, fr real, sl real, sr real }
 struct Spec { format i32, channels i32, freq i32 }
 extern "libSDL3.so.0" {
 	sdl_init(flags u32) bool = "SDL_InitSubSystem";
@@ -34,30 +35,127 @@ fail(m const byte[:]) bool: ERR.clear(); ERR.append(m); false
 sdl_fail() bool: fail(ffi::cstr(sdl_error())[..])
 okrate(r int) bool: r >= 8000 && r <= 192000
 okpar(v f32, p f32, q f32) bool: v >= 0.0 && v <= 1.0 && p >= -1.0 && p <= 1.0 && q >= 0.125 && q <= 8.0 || fail("volume must be 0..1, pan -1..1, and pitch 0.125..8 (all finite)")
+vc0() Vc: Vc{0, 0, 0.0, 0.0, 0.0, 0.0, false, -1, false, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 1.0, 1000.0, 1.0, 0.0, 0.0, 0, -1.0, -1.0, 0.0, 0.0, 0.0, 0.0}
+var LP real[>..] = [0.0, 0.0, 0.0]
+var LF real[>..] = [0.0, 0.0, -1.0]
+var LU real[>..] = [0.0, 1.0, 0.0]
+var LV real[>..] = [0.0, 0.0, 0.0]
+var BUSV f32[>..] = [1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0]
+var ITD = true
+var SHADOW = true
+var LIMIT = true
+var LTHR = 0.98
+var LG = 1.0
+var WET = 0.0
+var ROOM = 0.7
+var DAMP = 0.3
+var SEND f32[>..] = []
+var CB real[>..] = []
+var CI int[>..] = []
+var CF real[>..] = []
+var AB real[>..] = []
+var AI int[>..] = []
+CT := [1116, 1188, 1277, 1356, 1422, 1491, 1557, 1617]
+AT := [556, 441, 341, 225]
+set_listener(x real, y real, z real, fx real, fy real, fz real, ux real, uy real, uz real, vx real, vy real, vz real): LP[0] = x; LP[1] = y; LP[2] = z; LF[0] = fx; LF[1] = fy; LF[2] = fz; LU[0] = ux; LU[1] = uy; LU[2] = uz; LV[0] = vx; LV[1] = vy; LV[2] = vz
+set_bus(b int, v f32): if b >= 0 && b < 8 { BUSV[b] = v }
+set_reverb(wet real, room real, damp real): WET = wet; ROOM = room; DAMP = damp
+set_spatial(itd bool, shadow bool, limit bool): ITD = itd; SHADOW = shadow; LIMIT = limit
+rv_init():
+	if CB.len > 0: return
+	sc := RATE as real / 44100.0
+	for c 16: n := ((CT[c % 8] + (if c >= 8 { 23 } else { 0 })) as real * sc) as int; CI.push(CB.len); for k n { CB.push(0.0) } CF.push(0.0)
+	CI.push(CB.len)
+	for a 8: n := ((AT[a % 4] + (if a >= 4 { 23 } else { 0 })) as real * sc) as int; AI.push(AB.len); for k n { AB.push(0.0) }
+	AI.push(AB.len)
+var CP int[>..] = []
+var AP int[>..] = []
+reverb(out f32[:], n int):
+	rv_init()
+	while CP.len < 16: CP.push(0)
+	while AP.len < 8: AP.push(0)
+	fb := 0.7 + 0.28 * (ROOM - 0.5) / 0.5; fb = if fb > 0.98 { 0.98 } else { if fb < 0.5 { 0.5 } else { fb } }
+	for f n:
+		x := SEND[f] as real * 0.015
+		for ch 2:
+			acc ~= 0.0
+			for c 8: k := ch * 8 + c; b := CI[k]; m := CI[k + 1] - b; y := CB[b + CP[k]]; CF[k] = y * (1.0 - DAMP) + CF[k] * DAMP; CB[b + CP[k]] = x + CF[k] * fb; CP[k] = (CP[k] + 1) % m; acc += y
+			for a 4: k := ch * 4 + a; b := AI[k]; m := AI[k + 1] - b; bo := AB[b + AP[k]]; o := bo - acc; AB[b + AP[k]] = acc + bo * 0.5; AP[k] = (AP[k] + 1) % m; acc = o
+			out[f * 2 + ch] += (acc * WET * 3.0) as f32
+audible(v Vc) real:
+	if !v.d3: return v.vol as real
+	dx := v.px - LP[0]; dy := v.py - LP[1]; dz := v.pz - LP[2]; d := sqrt(dx * dx + dy * dy + dz * dz)
+	dc := if d < v.mind { v.mind } else { if d > v.maxd { v.maxd } else { d } }
+	v.vol as real * pow(v.mind / dc, v.roll) * (1.0 - 0.5 * v.occ)
 nid() uint: if NEXT == 0xFFFFFFFFFFFFFFFF { fail("audio handle ids exhausted"); return 0 } NEXT += 1; NEXT
 slots():
 	while SND.len < MAX_SOUNDS: SND.push(Snd{0, [], 0, 0, 0})
-	while VC.len < MAX_VOICES: VC.push(Vc{0, 0, 0.0, 0.0, 0.0, 0.0, false, -1})
+	while VC.len < MAX_VOICES: VC.push(vc0())
 find_sound(h Sound) int:
 	for s, i SND: if h.id != 0 && s.id == h.id { return i }
 	fail("a sound that is null, released, or was never created"); -1
 find_voice(h Voice) int:
 	for v, i VC: if h.id != 0 && v.id == h.id { return i }
 	-1
+mix3(vi int, out f32[:], n int):
+	let v .= VC[vi]; let s .= SND[v.snd]; c := s.ch
+	dx := v.px - LP[0]; dy := v.py - LP[1]; dz := v.pz - LP[2]; d := sqrt(dx * dx + dy * dy + dz * dz)
+	rx := LF[1] * LU[2] - LF[2] * LU[1]; ry := LF[2] * LU[0] - LF[0] * LU[2]; rz := LF[0] * LU[1] - LF[1] * LU[0]; rl := sqrt(rx * rx + ry * ry + rz * rz)
+	sx := (dx * rx + dy * ry + dz * rz) / (if rl > 0.0 { rl } else { 1.0 }); sf := dx * LF[0] + dy * LF[1] + dz * LF[2]
+	hd := sqrt(sx * sx + sf * sf); pn := if hd > 1.0e-9 { sx / hd } else { 0.0 }
+	dc := if d < v.mind { v.mind } else { if d > v.maxd { v.maxd } else { d } }
+	g := v.vol as real * pow(v.mind / dc, v.roll) * (1.0 - 0.5 * v.occ) * BUSV[v.bus] as real
+	an := (pn + 1.0) * 0.7853981633974483; gl := g * cos(an); gr := g * sin(an)
+	if v.gl < 0.0: v.gl = gl; v.gr = gr
+	ux := if d > 1.0e-9 { dx / d } else { 0.0 }; uy := if d > 1.0e-9 { dy / d } else { 0.0 }; uz := if d > 1.0e-9 { dz / d } else { 0.0 }
+	dp ~= (343.0 + LV[0] * ux + LV[1] * uy + LV[2] * uz) / (343.0 + v.vx * ux + v.vy * uy + v.vz * uz); dp = if dp > 2.0 { 2.0 } else { if dp < 0.5 { 0.5 } else { dp } }
+	step := s.rate as real / RATE as real * v.pitch as real * dp
+	ap := if pn < 0.0 { -pn } else { pn }
+	itd := if ITD { 0.0875 / 343.0 * (asin(if ap > 1.0 { 1.0 } else { ap }) + ap) * s.rate as real * v.pitch as real } else { 0.0 }
+	co := 1.0 - v.occ * 0.95; ao := exp(-6.283185307179586 * (20000.0 * co * co + 200.0) / RATE as real); ash := exp(-6.283185307179586 * (20000.0 - (if SHADOW { 16000.0 * ap } else { 0.0 })) / RATE as real)
+	al := if pn > 0.0 { ash } else { 0.0 }; ar := if pn < 0.0 { ash } else { 0.0 }
+	for f n:
+		t := f as real / n as real; ga := v.gl + (gl - v.gl) * t; gb := v.gr + (gr - v.gr) * t
+		pl := v.pos - (if pn > 0.0 { itd } else { 0.0 }); pr := v.pos - (if pn < 0.0 { itd } else { 0.0 })
+		xl ~= 0.0; xr ~= 0.0
+		for e 2:
+			q := if e == 0 { pl } else { pr }
+			if q >= 0.0 || v.lp:
+				qq := if q < 0.0 { fmod(q + s.frames as real * 64.0, s.frames as real) } else { q }; a := qq as int; b ~= a + 1; if b >= s.frames { b = if v.lp { 0 } else { a } }
+				fr := qq - a as real; o := if e == 0 { 0 } else { c - 1 }; y := s.pcm[a * c + o] as real + (s.pcm[b * c + o] as real - s.pcm[a * c + o] as real) * fr
+				if e == 0 { xl = y } else { xr = y }
+		v.fl = xl + (v.fl - xl) * ao; v.fr = xr + (v.fr - xr) * ao
+		v.sl = v.fl + (v.sl - v.fl) * al; v.sr = v.fr + (v.sr - v.fr) * ar
+		out[f * 2] += (v.sl * ga) as f32; out[f * 2 + 1] += (v.sr * gb) as f32
+		if v.send > 0.0 { SEND[f] += ((v.sl + v.sr) * 0.5 * g * v.send) as f32 }
+		v.pos += step
+		if v.pos >= s.frames as real: if v.lp { v.pos = fmod(v.pos, s.frames as real) } else { if OFFLINE { v.id = 0 } else { v.end = PUT + f + 1 } break }
+	v.gl = gl; v.gr = gr
 mix(out f32[:]):
 	for i out.len: out[i] = 0.0
 	n := out.len / 2
+	SEND.resize(n, 0.0); for i n { SEND[i] = 0.0 }
 	for vi VC.len:
 		if VC[vi].id == 0 || VC[vi].end >= 0: continue
+		if VC[vi].d3 { mix3(vi, out, n); continue }
 		let v .= VC[vi]; let s .= SND[v.snd]; c := s.ch
 		step := s.rate as real / RATE as real * v.pitch as real
-		l := v.vol * (if v.pan > 0.0 { 1.0 - v.pan } else { 1.0 }); r := v.vol * (if v.pan < 0.0 { 1.0 + v.pan } else { 1.0 })
+		l := v.vol * (if v.pan > 0.0 { 1.0 - v.pan } else { 1.0 }) * BUSV[v.bus]; r := v.vol * (if v.pan < 0.0 { 1.0 + v.pan } else { 1.0 }) * BUSV[v.bus]
 		for f n:
 			a := v.pos as int; b ~= a + 1; if b == s.frames { b = if v.lp { 0 } else { a } }
 			fr := (v.pos - a as real) as f32; l0 := s.pcm[a * c]; l1 := s.pcm[b * c]; r0 := s.pcm[a * c + c - 1]; r1 := s.pcm[b * c + c - 1]
 			out[f * 2] += (l0 + (l1 - l0) * fr) * l; out[f * 2 + 1] += (r0 + (r1 - r0) * fr) * r
+			if v.send > 0.0 { SEND[f] += ((l0 + (l1 - l0) * fr) * (l + r) * 0.5 * v.send as f32) }
 			v.pos += step
 			if v.pos >= s.frames as real: if v.lp { v.pos = fmod(v.pos, s.frames as real) } else { if OFFLINE { v.id = 0 } else { v.end = PUT + f + 1 } break }
+	if WET > 0.0 { reverb(out, n) }
+	if LIMIT:
+		rel := 1.0 - exp(-1.0 / (0.05 * RATE as real))
+		for f n:
+			a := out[f * 2] as real; b := out[f * 2 + 1] as real; pk := if (if a < 0.0 { -a } else { a }) > (if b < 0.0 { -b } else { b }) { if a < 0.0 { -a } else { a } } else { if b < 0.0 { -b } else { b } }
+			tg := if pk * LG > LTHR { LTHR / pk } else { 1.0 }
+			LG = if tg < LG { tg } else { LG + (1.0 - LG) * rel }; if LG > tg { LG = tg }
+			if LG < 1.0 { out[f * 2] = (a * LG) as f32; out[f * 2 + 1] = (b * LG) as f32 }
 	for i out.len: x := out[i]; out[i] = if x > 1.0 { 1.0 } else { if x < -1.0 { -1.0 } else { x } }
 pump():
 	if STREAM == 0: return
@@ -80,7 +178,7 @@ open(sample_rate int = 48000) bool: open_raw(sample_rate, false)
 open_offline(sample_rate int = 48000) bool: open_raw(sample_rate, true)
 close():
 	if STREAM != 0: sdl_destroy(STREAM); STREAM = 0; sdl_quit(0x10)
-	SND.clear(); VC.clear(); slots(); OPEN = false
+	SND.clear(); VC.clear(); slots(); OPEN = false; LG = 1.0; CB.clear(); CI.clear(); CF.clear(); AB.clear(); AI.clear(); CP.clear(); AP.clear()
 error_into(out byte[:]) int:
 	for i min(ERR.len, out.len): out[i] = ERR[i]
 	ERR.len
@@ -100,11 +198,28 @@ release_sound(sound Sound) bool:
 	k := find_sound(sound); if k < 0: return false
 	for vi VC.len: if VC[vi].id != 0 && VC[vi].snd == k { VC[vi].id = 0; VC[vi].end = -1 }
 	SND[k] = Snd{0, [], 0, 0, 0}; pump(); true
+slot_for(aud real) int:
+	j ~= -1; for v, i VC: if v.id == 0 && j < 0 { j = i }
+	if j >= 0: return j
+	lo ~= -1; la ~= 0.0; for v, i VC: if v.id != 0 && v.end < 0 { a := audible(v); if lo < 0 || a < la { lo = i; la = a } }
+	if lo >= 0 && aud > la { VC[lo].id = 0; VC[lo].end = -1; return lo }
+	-1
 play_raw(sound Sound, volume f32, pan f32, pitch f32, looping bool) Voice:
 	k := find_sound(sound); if k < 0 || !okpar(volume, pan, pitch): return Voice{0}
-	j ~= -1; for v, i VC: if v.id == 0 && j < 0 { j = i }
+	j := slot_for(volume as real)
 	if j < 0: fail("all 64 voice slots are playing"); return Voice{0}
-	id := nid(); if id != 0 { VC[j] = Vc{id, k, 0.0, volume, pan, pitch, looping, -1} } pump(); Voice{id}
+	id := nid(); if id != 0 { VC[j] = vc0(); VC[j].id = id; VC[j].snd = k; VC[j].vol = volume; VC[j].pan = pan; VC[j].pitch = pitch; VC[j].lp = looping } pump(); Voice{id}
+play3d(sound Sound, x real, y real, z real, volume f32 = 1.0, pitch f32 = 1.0, looping bool = false, min_dist real = 1.0, max_dist real = 1000.0, rolloff real = 1.0) Voice:
+	k := find_sound(sound); if k < 0 || !okpar(volume, 0.0, pitch): return Voice{0}
+	t ~= vc0(); t.d3 = true; t.vol = volume; t.px = x; t.py = y; t.pz = z; t.mind = min_dist; t.maxd = max_dist; t.roll = rolloff
+	j := slot_for(audible(t))
+	if j < 0: fail("all 64 voice slots are playing"); return Voice{0}
+	id := nid(); if id != 0 { t.id = id; t.snd = k; t.pitch = pitch; t.lp = looping; VC[j] = t } pump(); Voice{id}
+set_voice3d(voice Voice, x real, y real, z real, vx real, vy real, vz real, occlusion real, send real, bus int) bool:
+	k := find_voice(voice); if k < 0: return fail("voice is no longer playing")
+	VC[k].px = x; VC[k].py = y; VC[k].pz = z; VC[k].vx = vx; VC[k].vy = vy; VC[k].vz = vz; VC[k].occ = if occlusion < 0.0 { 0.0 } else { if occlusion > 1.0 { 1.0 } else { occlusion } }; VC[k].send = send; VC[k].bus = if bus >= 0 && bus < 8 { bus } else { 0 }; true
+set_send(voice Voice, send real, bus int) bool: k := find_voice(voice); if k < 0 { return fail("voice is no longer playing") } VC[k].send = send; VC[k].bus = if bus >= 0 && bus < 8 { bus } else { 0 }; true
+voice_count() int: n ~= 0; for v VC { if v.id != 0 && v.end < 0 { n += 1 } } n
 play(sound Sound, volume f32 = 1.0, pan f32 = 0.0, pitch f32 = 1.0, looping bool = false) Voice: play_raw(sound, volume, pan, pitch, looping)
 playing(voice Voice) bool: pump(); find_voice(voice) >= 0
 stop(voice Voice): k := find_voice(voice); if k >= 0 { VC[k].id = 0; VC[k].end = -1 }
