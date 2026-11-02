@@ -1,0 +1,4 @@
+// error: cannot assign field mode through a reference
+struct In { mode byte[], k real }
+fn load(inp In&) { inp.mode = copy("fin"); }
+fn main() { var i = In{ mode: "", k: 0.0 }; load(i); }

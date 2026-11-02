@@ -1,0 +1,19 @@
+use os
+use math
+main():
+	s ~= 88172645463325252
+	n ~= 0
+	acc u64 ~= 0
+	while n < 200000:
+		s = s ^ (s << 13); s = s ^ (s >> 7); s = s ^ (s << 17)
+		k := n % 5
+		a := ((s >> 11) as real) * 0x1p-53
+		s = s ^ (s << 13); s = s ^ (s >> 7); s = s ^ (s << 17)
+		b := ((s >> 11) as real) * 0x1p-53
+		y := if k == 0 { a * 2.0 - 1.0 } else { if k == 1 { (a - 0.5) * 1000.0 } else { if k == 2 { a * 1e-5 } else { if k == 3 { (a - 0.5) * 1e7 } else { a - 0.5 } } } }
+		x := if k == 4 { 1.0 } else { b * 2.0 - 1.0 }
+		r := atan2(y, x)
+		t := atan(y / (b + 0.01))
+		acc = (acc << 1 | acc >> 63) ^ (r as! u64) ^ ((t as! u64) << 7)
+		n += 1
+	print(acc)

@@ -119,6 +119,9 @@ rt_d2d(bits u64) u64, int:
 		loop: pd := vp / 10; md := vm / 10; if pd <= md { break } up = vr % 10 >= 5; vr = vr / 10; vp = pd; vm = md; rm += 1
 		out = vr + (if vr == vm || up { (1) as u64 } else { (0) as u64 })
 	return out, e10 + rm
+rt_float_dec(v real, e int&) u64:
+	if v == 0.0: e = 0; return 0
+	m, x := rt_d2d(rt_db(v)); e = x; m
 rt_f2d(bits u64) u64, int:
 	ma := bits & 0x7FFFFF; ie := (bits >> 23 & 0xFF) as int
 	e2 := if ie == 0 { 1 - 127 - 23 - 2 } else { ie - 127 - 23 - 2 }; m2 := if ie == 0 { ma } else { ma | ((1) as u64) << 23 }
@@ -473,6 +476,43 @@ rt_expq(x real, xl real, eb real) real, bool:
 	th := rt_bd(RT_EXT[2 * j]); tl := rt_bd(RT_EXT[2 * j + 1]); ah := th * eh; sh, sl := dd_s(th, ah); h, l := dd_s(sh, sl + rt_fma(th, eh, -ah) + th * el + tl + tl * eh)
 	e := h * (1.0842021724855044e-19 + eb); f1 := h + (l + e)
 	return f1 * rt_bd(((ki >> 7) + 1023) as u64 << 52), f1 == h + (l - e)
+rt_expqh(x real) real, real:
+	kf := rt_ffl(x * rt_bd(RT_EIL) + 0.5); ki := kf as int; j := ki & 127; lh := rt_bd(RT_ELH); p := kf * lh; r, rl := dd_s(x - p, -(rt_fma(kf, lh, -p) + kf * rt_bd(RT_ELL)))
+	eh, el := dd_s(r, r * r * (0.5 + r * (0.16666666666666666 + r * (0.041666666666666664 + r * (0.008333333333333333 + r * 0.001388888888888889)))) + rl)
+	th := rt_bd(RT_EXT[2 * j]); tl := rt_bd(RT_EXT[2 * j + 1]); ah := th * eh; sh, sl := dd_s(th, ah); h, l := dd_s(sh, sl + rt_fma(th, eh, -ah) + th * el + tl + tl * eh); sc := rt_bd(((ki >> 7) + 1023) as u64 << 52)
+	return h * sc, l * sc
+rt_expddh(xh real, xl real) real, real:
+	k := rt_ffl(xh * RT_IL2H + 0.5); ph := k * RT_L2H; r1, r2 := dd_add(xh, xl, -ph, -rt_fma(k, RT_L2H, -ph)); qh := k * RT_L2L; rh, rl := dd_add(r1, r2, -qh, -rt_fma(k, RT_L2L, -qh))
+	zh := rh / 256.0; zl := rl / 256.0; th ~= 1.0; tl ~= 0.0; i ~= 11
+	while i >= 1: mh, ml := dd_mul(zh, zl, th, tl); dh, dl := dd_divd(mh, ml, i as real); h, l := dd_add(1.0, 0.0, dh, dl); th = h; tl = l; i -= 1
+	for _ 8: h, l := dd_mul(th, tl, th, tl); th = h; tl = l
+	return rt_ldx(th, k as int), rt_ldx(tl, k as int)
+rt_hyp(ax real, w int, acc bool) real, real:
+	eh, el := if acc { rt_expddh(if w == 0 { 2.0 * ax } else { ax }, 0.0) } else { rt_expqh(if w == 0 { 2.0 * ax } else { ax }) }
+	if w == 0: nh, nl := dd_add(eh, el, -1.0, 0.0); dh, dl := dd_add(eh, el, 1.0, 0.0); h, l := dd_div(nh, nl, dh, dl); return h, l
+	ih, il := dd_div(1.0, 0.0, eh, el); h, l := dd_add(eh, el, if w == 1 { -ih } else { ih }, if w == 1 { -il } else { il }); return h * 0.5, l * 0.5
+rt_hypf(x real, w int) real:
+	if x != x: return x
+	neg := rt_db(x) >> 63 != 0; ax := if neg { -x } else { x }
+	if w == 2 && ax < 0x1p-27: return 1.0
+	if w != 2 && ax < 0x1p-27: return x
+	if w == 0 && ax >= 22.0: return rt_sgn(neg, 1.0)
+	if w != 0 && ax >= 40.0: gh, gl := dd_add(ax, 0.0, -RT_L2H, -RT_L2L); r := rt_expdd(gh, gl); return if w == 1 { rt_sgn(neg, r) } else { r }
+	h ~= 0.0; l ~= 0.0; e ~= 0.0
+	if w != 2 && ax < 0.0625:
+		z := ax * ax; p := if w == 0 { z * (-0.3333333333333333 + z * (0.13333333333333333 + z * (-0.05396825396825397 + z * (0.021869488536155203 + z * (-0.008863235529902197 + z * (0.003592128036572481 + z * (-0.0014558343870513183 + z * 0.000590027440945586))))))) } else { z * (0.16666666666666666 + z * (0.008333333333333333 + z * (0.0001984126984126984 + z * (2.7557319223985893e-06 + z * 2.505210838544172e-08)))) }
+		sh, sl := dd_s(ax, ax * p); h = sh; l = sl; e = ax * 0x1p-58
+	else:
+		fh, fl := rt_hyp(ax, w, false); h = fh; l = fl; e = fh * 0x1p-57
+	f := h + (l + e)
+	if f != h + (l - e): ah, al := rt_hyp(ax, w, true); return if w == 2 { ah + al } else { rt_sgn(neg, ah + al) }
+	if w == 2 { f } else { rt_sgn(neg, f) }
+rt_tanh(x real) real: rt_hypf(x, 0)
+rt_sinh(x real) real: rt_hypf(x, 1)
+rt_cosh(x real) real: rt_hypf(x, 2)
+rt_tanhf(x f32) f32: rt_hypf(x as real, 0) as f32
+rt_sinhf(x f32) f32: rt_hypf(x as real, 1) as f32
+rt_coshf(x f32) f32: rt_hypf(x as real, 2) as f32
 rt_exp(x real) real:
 	if x > -708.0 && x < 709.0: r, ok := rt_expq(x, 0.0, 0.0); if ok { return r }
 	rt_expdd(x, 0.0)
@@ -551,8 +591,18 @@ rt_atdd(t0h real, t0l real) real, real:
 rt_at2(yh real, yl real, xh real, xl real) real, real:
 	if yh <= xh: qh, ql := dd_div(yh, yl, xh, xl); h, l := rt_atdd(qh, ql); return h, l
 	qh, ql := dd_div(xh, xl, yh, yl); ah, al := rt_atdd(qh, ql); h, l := dd_add(RT_P1, RT_P2, -ah, -al); return h, l
+RT_ATT u64[130] := [0x0000000000000000, 0x0000000000000000, 0x3F8FFF555BBB729B, 0xBC2220C39D4DFF50, 0x3F9FFD55BBA97625, 0xBC35EC431444912C, 0x3FA7FB818430DA2A, 0xBC086EF8F794F105, 0x3FAFF55BB72CFDEA, 0xBC3C934D86D23F1D, 0x3FB3F59F0E7C559D, 0x3C5AC4CE285DF847, 0x3FB7EE182602F10F, 0xBC5CFB654C0C3D98, 0x3FBBE39EBE6F07C3, 0x3C5F7B8F29A05987, 0x3FBFD5BA9AAC2F6E, 0xBC4CD37686760C17, 0x3FC1E1FAFB043727, 0xBC4B485914DACF8C, 0x3FC3D6EEE8C6626C, 0x3C661A3B0CE9281B, 0x3FC5C9811E3EC26A, 0xBC5054AB2C010F3D, 0x3FC7B97B4BCE5B02, 0x3C5347B0B4F881CA, 0x3FC9A6A8E96C8626, 0x3C4CF601E7B4348E, 0x3FCB90D7529260A2, 0x3C217B10D2E0E5AB, 0x3FCD77D5DF205736, 0x3C6C648D1534597E, 0x3FCF5B75F92C80DD, 0x3C68AB6E3CF7AFBD, 0x3FD09DC597D86362, 0x3C762E47390CB865, 0x3FD18BF5A30BF178, 0x3C630CA4748B1BF9, 0x3FD278372057EF46, 0xBC7077CDD36DFC81, 0x3FD362773707EBCC, 0xBC6963A544B672D8, 0x3FD44AA436C2AF0A, 0xBC75D5E43C55B3BA, 0x3FD530AD9951CD4A, 0xBC62566480884082, 0x3FD614840309CFE2, 0xBC7A725715711F00, 0x3FD6F61941E4DEF1, 0xBC7C63AAE6F6E918, 0x3FD7D5604B63B3F7, 0x3C769C885C2B249A, 0x3FD8B24D394A1B25, 0x3C7B6D0BA3748FA8, 0x3FD98CD5454D6B18, 0x3C79E6C988FD0A77, 0x3FDA64EEC3CC23FD, 0xBC724DEC1B50B7FF, 0x3FDB3A911DA65C6C, 0x3C7AE187B1CA5040, 0x3FDC0DB4C94EC9F0, 0xBC7CC1CE70934C34, 0x3FDCDE53432C1351, 0xBC7A2CFA4418F1AD, 0x3FDDAC670561BB4F, 0x3C7A2B7F222F65E2, 0x3FDE77EB7F175A34, 0x3C70E53DC1BF3435, 0x3FDF40DD0B541418, 0xBC6A3992DC382A23, 0x3FE0039C73C1A40C, 0xBC8B32C949C9D593, 0x3FE0657E94DB30D0, 0xBC7D5B495F6349E6, 0x3FE0C6145B5B43DA, 0x3C5974FA13B5404F, 0x3FE1255D9BFBD2A9, 0xBC52BDAEE1C0EE35, 0x3FE1835A88BE7C13, 0x3C8C621CEC00C301, 0x3FE1E00BABDEFEB4, 0xBC5928DF287A668F, 0x3FE23B71E2CC9E6A, 0x3C6C421C9F38224E, 0x3FE2958E59308E31, 0xBC709E73B0C6C087, 0x3FE2EE628406CBCA, 0x3C8C5D5E9FF0CF8D, 0x3FE345F01CCE37BB, 0x3C81021137C71102, 0x3FE39C391CD4171A, 0xBC82304331D8BF46, 0x3FE3F13FB89E96F4, 0x3C7ECF8B492644F0, 0x3FE445065B795B56, 0xBC7F76D0163F79C8, 0x3FE4978FA3269EE1, 0x3C72419A87F2A458, 0x3FE4E8DE5BB6EC04, 0x3C84A33DBEB3796C, 0x3FE538F57B89061F, 0xBC81BB74ABDA520C, 0x3FE587D81F732FBB, 0xBC75E5C9D8C5A950, 0x3FE5D58987169B18, 0x3C60028E4BC5E7CA, 0x3FE6220D115D7B8E, 0xBC62B785350EE8C1, 0x3FE66D663923E087, 0xBC76EA6FEBE8BBBA, 0x3FE6B798920B3D99, 0xBC8A80386188C50E, 0x3FE700A7C5784634, 0xBC78C34D25AADEF6, 0x3FE748978FBA8E0F, 0x3C47B2A6165884A1, 0x3FE78F6BBD5D315E, 0x3C8406A089803740, 0x3FE7D528289FA093, 0x3C8560821E2F3AA9, 0x3FE819D0B7158A4D, 0xBC7BF76229D3B917, 0x3FE85D69576CC2C5, 0x3C66B66E7FC8B8C3, 0x3FE89FF5FF57F1F8, 0xBC855B9A5E177A1B, 0x3FE8E17AA99CC05E, 0xBC7EC182AB042F61, 0x3FE921FB54442D18, 0x3C81A62633145C07]
+rt_atq(qh real, ql real) real, real, real:
+	if !(qh >= 0x1p-900): return qh, ql, rt_inf(false)
+	i := rt_ffl(qh * 64.0 + 0.5) as int; c := i as real * 0.015625; nh, nl := dd_s(qh - c, ql); mh, ml := dd_mul(qh, ql, c, 0.0); dh, dl := dd_add(1.0, 0.0, mh, ml); uh, ul := dd_div(nh, nl, dh, dl)
+	z := uh * uh; p := z * (-0.3333333333333333 + z * (0.2 + z * (-0.14285714285714285 + z * 0.1111111111111111)))
+	h, l := dd_add(rt_bd(RT_ATT[2 * i]), rt_bd(RT_ATT[2 * i + 1]), uh, ul + uh * p)
+	return h, l, (if uh < 0.0 { -uh } else { uh }) * 0x1p-62 + h * 0x1p-98
+rt_at2q(y real, x real) real, real, real:
+	if y <= x: qh, ql := dd_div(y, 0.0, x, 0.0); h, l, e := rt_atq(qh, ql); return h, l, e
+	qh, ql := dd_div(x, 0.0, y, 0.0); ah, al, e := rt_atq(qh, ql); h, l := dd_add(RT_P1, RT_P2, -ah, -al); return h, l, e + h * 0x1p-100
 rt_sgn(neg bool, v real) real: if neg: -v else: v
-rt_atan(x real) real: if x != x { return x } neg := rt_db(x) >> 63 != 0; ax := if neg { -x } else { x }; if ax == rt_inf(false) { return rt_sgn(neg, RT_P1) } h, l := rt_at2(ax, 0.0, 1.0, 0.0); rt_sgn(neg, h + l)
+rt_atan(x real) real: if x != x { return x } neg := rt_db(x) >> 63 != 0; ax := if neg { -x } else { x }; if ax == rt_inf(false) { return rt_sgn(neg, RT_P1) } if ax > 0x1p-900 { fh, fl, fe := rt_at2q(ax, 1.0); f := fh + (fl + fe); if f == fh + (fl - fe) { return rt_sgn(neg, f) } } h, l := rt_at2(ax, 0.0, 1.0, 0.0); rt_sgn(neg, h + l)
 rt_atan2(y real, x real) real:
 	if x != x || y != y: return x + y
 	ny := rt_db(y) >> 63 != 0; nx := rt_db(x) >> 63 != 0; ay := if ny { -y } else { y }; ax := if nx { -x } else { x }; inf := rt_inf(false)
@@ -560,6 +610,12 @@ rt_atan2(y real, x real) real:
 	if ax == 0.0: return rt_sgn(ny, RT_P1)
 	if ax == inf: if ay == inf { h, l := if nx { dd_mul(RT_P1, RT_P2, 1.5, 0.0) } else { dd_mul(RT_P1, RT_P2, 0.5, 0.0) }; return rt_sgn(ny, h + l) } return rt_sgn(ny, if nx { RT_P1 * 2.0 } else { 0.0 })
 	if ay == inf: return rt_sgn(ny, RT_P1)
+	if ay > 0x1p-900 && ax > 0x1p-900:
+		h0, l0, e0 := rt_at2q(ay, ax)
+		fh ~= h0; fl ~= l0; fe ~= e0
+		if nx { h2, l2 := dd_add(2.0 * RT_P1, 2.0 * RT_P2, -h0, -l0); fh = h2; fl = l2; fe = e0 + h2 * 0x1p-100 }
+		f := fh + (fl + fe)
+		if f == fh + (fl - fe): return rt_sgn(ny, f)
 	h, l := rt_at2(ay, 0.0, ax, 0.0)
 	if nx: h2, l2 := dd_add(2.0 * RT_P1, 2.0 * RT_P2, -h, -l); return rt_sgn(ny, h2 + l2)
 	rt_sgn(ny, h + l)

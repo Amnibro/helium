@@ -1,0 +1,5 @@
+// error: cannot pass a read-only slice
+fn g(s byte[:]) { s[0] = 1; }
+fn lower_all(s byte[:]) { for &c in s { c = 'a'; } }
+fn f(name const byte[:]) { g(name); }
+fn main() { f("Hi"); lower_all("Hi"); }

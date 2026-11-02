@@ -1,0 +1,17 @@
+use os
+use json
+use binary
+main():
+	s u64 ~= 88172645463325252
+	d byte[>..] ~= []
+	out byte[>..] ~= []
+	n ~= 0
+	while n < 3000:
+		s = s ^ (s << 13); s = s ^ (s >> 7); s = s ^ (s << 17)
+		b := if n % 3 == 0 { s } else { (s & (0x800FFFFFFFFFFFFF as u64)) | (((1023 - 40 + (s >> 52) % 80) as u64) << 52) }
+		v := binary::f64_from_bits(b)
+		if v == v && v - v == 0.0:
+			e := json::digits_of(v, d)
+			format(out, b, " ", d, " ", e, "\n")
+		n += 1
+	write_stdout(out)

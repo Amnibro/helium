@@ -236,6 +236,13 @@ conv_ok(f int, t int, n int) bool:
 	if b.k == TY_ARR && a.k == TY_ARR && a.a == b.a: return true
 	if b.k == TY_ARR && a.k == TY_SLICE && a.a == b.a: return true
 	false
+thru_ref(e int) bool:
+	c ~= e
+	while ND[c].k as int == N_DOT || ND[c].k as int == N_IDX:
+		c = ND[c].a as int
+		t := at(c)
+		if t > 0 && TY[t].k == TY_REF: return true
+	false
 is_construct(n int) bool:
 	k := ND[n].k; k == N_CALL || k == N_ARR || k == N_STR
 recursive commit(n int, t int):
@@ -1082,6 +1089,7 @@ recursive ck_vdecl(n int):
 			else:
 				if TY[it].k == TY_FLIT && lf & (LV_VAR | LV_REF) == 0: lf = lf | LV_FLET
 				t = default_t(init)
+				if TY[t].k == TY_VOID: cerr(init, "this expression has no value (the call returns nothing), so there is nothing to bind"); return
 				if intloc(n, init, t): conv(init, T_I64); t = T_I64
 				if TY[t].k == TY_MULTI: t = TYL[TY[t].l] as int
 				if TY[t].k == TY_VARIANT && ND[init].k == N_DOT && lf & LV_VAR != 0: t = t_enum(TY[t].a as int, false); set_cv(init, t)
@@ -1127,6 +1135,7 @@ recursive ck_assign(n int):
 			rt := ck(x.b, tt)
 			if TY[rt].k == TY_NULL: commit(x.b, tt); return
 			if TY[rt].k == TY_REF: conv(x.b, tt); return
+		if ND[x.a].k as int == N_DOT && !is_fixed(d) && TY[d].k != TY_REF && TY[d].k != TY_SLICE && !(TY[d].k == TY_ARR && is_grow(d)) && thru_ref(x.a): m byte[>..] ~= []; format(m, "cannot assign field ", nm(ND[x.a].s as int), " through a reference: it is stored inline with a variable size (", tn(d), "), so only the variable that owns the struct can replace it; make the field growable (T[>..]) or build and return a new struct"); cerr(n, m[..]); return
 		ck(x.b, d); conv(x.b, d)
 		return
 	if (TY[d].k == TY_STRUCT || TY[d].k == TY_ARR) && !FILES[TK[x.t].f].he && o != T_ASSIGN:

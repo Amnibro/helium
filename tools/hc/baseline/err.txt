@@ -1,0 +1,4 @@
+bind_no_value.amni
+const_slice_written.amni
+missing_return.amni
+varsize_field_through_ref.amni

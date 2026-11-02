@@ -37,7 +37,7 @@ AT_END := 1
 AT_WORD_EDGE := 2
 AT_NOT_WORD_EDGE := 3
 
-struct Regex { prog Op[>..] = [], sets ByteSet[>..] = [], groups int = 1 }
+struct Regex { prog Op[>..] = [], sets ByteSet[>..] = [], groups int = 1, first int = -1 }
 
 struct Parser {
 	pat const byte[:],
@@ -325,7 +325,34 @@ build(pattern byte[:], err byte[>..]&) Regex:
 	lay_out(re, p.tree[..], root)
 	op(re, OP_SAVE, 1, 0)
 	op(re, OP_MATCH, 0, 0)
+	starts(re)
 	re
+
+# when every match must begin with a byte from one known set, keeps that set
+# so a search can skip the bytes no match can start with
+starts(re Regex&):
+	on bool[256] ~= [false; 256]
+	seen bool[>..] ~= []
+	seen.resize(re.prog.len, false)
+	stack int[>..] ~= [0]
+	while stack.len > 0:
+		pc := stack.pop()
+		if seen[pc]: continue
+		seen[pc] = true
+		o := re.prog[pc]
+		if o.kind == OP_MATCH: return
+		if o.kind == OP_JMP:
+			stack.push(o.a)
+		else if o.kind == OP_SPLIT:
+			stack.push(o.a)
+			stack.push(o.b)
+		else if o.kind == OP_SAVE || o.kind == OP_ASSERT:
+			stack.push(pc + 1)
+		else:
+			for b 256:
+				if re.sets[o.a].members[b]: on[b] = true
+	re.first = re.sets.len
+	re.sets.push(ByteSet{on})
 
 # compiles pattern; a bad pattern stops the program with the reason
 compile(pattern byte[:]) Regex:
@@ -383,9 +410,15 @@ machine(re Regex&) Machine:
 
 # the first match starting at or after from; its slots are left in m.best
 run(re Regex&, m Machine&, text byte[:], from int) bool:
+	if m.seen.len < re.prog.len || m.width != 2 * re.groups:
+		w := 2 * re.groups
+		m.seen.clear(); m.seen.resize(re.prog.len, -1); m.work.clear(); m.work.resize(w, -1); m.best.clear(); m.best.resize(w, -1); m.width = w; m.stamp = 0
 	m.now.pcs.clear(); m.now.slots.clear()
 	found ~= false
 	i ~= from
+	if re.first >= 0:
+		while i < text.len && !re.sets[re.first].members[text[i]]: i += 1
+		if i >= text.len: return false
 	m.stamp += 1
 	while true:
 		if !found:
@@ -395,6 +428,9 @@ run(re Regex&, m Machine&, text byte[:], from int) bool:
 			# no thread lives here; a new start may still work further on
 			if found || i >= text.len: break
 			i += 1
+			if re.first >= 0:
+				while i < text.len && !re.sets[re.first].members[text[i]]: i += 1
+				if i >= text.len: break
 			m.stamp += 1
 			continue
 		m.stamp += 1
@@ -410,8 +446,8 @@ run(re Regex&, m Machine&, text byte[:], from int) bool:
 				for k m.width: m.work[k] = m.now.slots[t * m.width + k]
 				follow(re, m, m.later, pc + 1, text, i + 1)
 		if i >= text.len: break
-		m.now.pcs = m.later.pcs
-		m.now.slots = m.later.slots
+		m.now.pcs.clear(); m.now.pcs.append(m.later.pcs[..])
+		m.now.slots.clear(); m.now.slots.append(m.later.slots[..])
 		i += 1
 	found
 

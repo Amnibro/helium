@@ -404,6 +404,7 @@ static uint64_t hr_f2d(uint32_t bits, int *ex) {
 	}
 	*ex = e10 + rm; return out;
 }
+static uint64_t hr_float_dec(double v, int64_t *e) { if (v == 0) { *e = 0; return 0; } uint64_t b; memcpy(&b, &v, 8); int x; uint64_t u = hr_d2d(b, &x); *e = x; return u; }
 static void hr_fflt(hrv *o, double v, int f32) {
 	if (v != v) { hr_fc(o, "nan"); return; }
 	if (isinf(v)) { hr_fc(o, v > 0 ? "inf" : "-inf"); return; }
@@ -574,6 +575,12 @@ static inline double hr_rsqrt_est(double x) { return (double)hr_rsqrtf_est((floa
 #define hr_atan2f atan2f
 #define hr_exp exp
 #define hr_expf expf
+#define hr_tanh tanh
+#define hr_sinh sinh
+#define hr_cosh cosh
+#define hr_tanhf tanhf
+#define hr_sinhf sinhf
+#define hr_coshf coshf
 #define hr_log log
 #define hr_logf logf
 #define hr_log2 log2

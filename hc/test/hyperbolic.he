@@ -1,0 +1,11 @@
+use math
+main():
+	s ~= 88172645463325252
+	n ~= 0
+	while n < 3000:
+		s = s ^ (s << 13); s = s ^ (s >> 7); s = s ^ (s << 17)
+		a := ((s >> 11) as real) * 0x1p-53
+		k := n % 6
+		x := if k == 0 { (a - 0.5) * 0.2 } else { if k == 1 { (a - 0.5) * 4.0 } else { if k == 2 { (a - 0.5) * 60.0 } else { if k == 3 { (a - 0.5) * 1e-6 } else { if k == 4 { (a - 0.5) * 1500.0 } else { (a - 0.5) * 30.0 } } } } }
+		print(x, " ", tanh(x), " ", sinh(x), " ", cosh(x))
+		n += 1
