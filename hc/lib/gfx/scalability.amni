@@ -1,0 +1,17 @@
+namespace scal;
+import std;
+import gfx;
+import gfx.scene3d;
+let LOW = 0; let MEDIUM = 1; let HIGH = 2; let EPIC = 3;
+var level = 2;
+fn scale_of(l int) f32 { if l == LOW { 0.5 } else if l == MEDIUM { 0.75 } else { 1.0 } }
+fn apply(l int) {
+	level = l;
+	s3d::sun.shadows = true;
+	s3d::sun.map_size = if l == LOW { 1024 } else if l == MEDIUM { 1024 } else if l == HIGH { 2048 } else { 4096 };
+	s3d::look.ssao = l != LOW; s3d::look.ao_samples = if l == MEDIUM { 8 } else { 16 }; s3d::ao_mode = if l == EPIC { 1 } else { 0 };
+	s3d::look.bloom = if l == LOW { 0.0 } else { 0.6 };
+	s3d::gi_on = l == EPIC; s3d::temporal = if l == EPIC { 1 } else { 0 };
+}
+fn init(w int, h int, l int) bool { apply(l); let s = scale_of(l); s3d::init(max((w as f32 * s) as int, 1), max((h as f32 * s) as int, 1), w, h) }
+fn pick(budget_ms f32, ms f32[4]) int { var best = LOW; for l in 4 { if ms[l] <= budget_ms { best = l; } } best }

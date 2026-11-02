@@ -1,0 +1,51 @@
+import std;
+import math;
+import gfx;
+import gfx.linalg;
+import gfx.shapes;
+import gfx.scene3d;
+import gfx.scalability;
+var SEED = 99;
+fn rnd() int { SEED = (SEED * 1103515245 + 12345) % 2147483648; SEED }
+fn uni() f32 { (rnd() as real / 2147483648.0) as f32 }
+fn scene() {
+	s3d::items.clear(); s3d::lights.clear();
+	let g = shapes::plane(30.0, shapes::material(linalg::v3(0.5, 0.5, 0.48), 0.0, 0.8));
+	s3d::place(s3d::add(g), gfx::mat4_identity);
+	for k in 60 {
+		let m = shapes::material(linalg::v3(0.2 + 0.7 * uni(), 0.2 + 0.7 * uni(), 0.2 + 0.7 * uni()), if k % 5 == 0 { 1.0 } else { 0.0 }, 0.2 + 0.7 * uni());
+		let a = if k % 2 == 0 { shapes::sphere(0.5, 48, 24, m) } else { shapes::cube(float3 { 0.45, 0.45, 0.45 }, m) };
+		s3d::place(s3d::add(a), linalg::compose(float3 { -9.0 + 18.0 * uni(), 0.5 + 2.0 * uni(), -9.0 + 18.0 * uni() }, linalg::qnorm(linalg::Quat { uni(), uni(), uni(), 1.0 }), float3 { 1.0, 1.0, 1.0 }));
+	}
+	for k in 4 { s3d::add_light(float3 { -6.0 + 4.0 * k as f32, 2.5, 3.0 }, float3 { 4.0, 3.0, 2.0 }, 9.0); }
+	s3d::view = s3d::Camera { eye: float3 { 0.0, 6.0, 14.0 }, target: float3 { 0.0, 0.5, 0.0 }, up: float3 { 0.0, 1.0, 0.0 }, fov_y: 0.9, near: 0.1, far: 200.0 };
+}
+fn main() {
+	if !gfx::open_headless(64, 64) { print("M3 skipped (no device: ", gfx::error()[..], ")"); return; }
+	let W = 1280; let H = 720;
+	scene();
+	let out = gfx::render_target(W, H, gfx::RGBA8);
+	var ms f32[4] = [0.0; 4]; var ok = true;
+	var one byte[>..] = []; one.resize(4, 0);
+	let names = ["low", "medium", "high", "epic"];
+	for l in 4 {
+		let _i = scal::init(W, H, l);
+		for k in 10 { s3d::render(out); let _r = gfx::read_texture(out, gfx::Region { w: 1, h: 1, .. }, one[..]); }
+		let t0 = gfx::time();
+		for k in 60 { s3d::render(out); let _r = gfx::read_texture(out, gfx::Region { w: 1, h: 1, .. }, one[..]); }
+		ms[l] = ((gfx::time() - t0) * 1000.0 / 60.0) as f32;
+		let px = gfx::read_pixels(out);
+		var s = 0.0; var s2 = 0.0; var bad = 0; let n = W * H;
+		for i in n { let y = (0.2126 * px[i * 4] as real + 0.7152 * px[i * 4 + 1] as real + 0.0722 * px[i * 4 + 2] as real) / 255.0; s += y; s2 += y * y; }
+		let mean = s / n as real; let sd = sqrt(max(s2 / n as real - mean * mean, 0.0));
+		var o byte[>..] = []; if env("SCAL_PNG", o) { let _p = gfx::save_png(out, str(o[..], names[l], ".png")[..]); }
+		print("M3 ", names[l], ": ", ms[l], " ms/frame, luminance mean ", mean, " sd ", sd);
+		if !(sd > 0.02) || mean != mean { ok = false; }
+		let _b = bad;
+	}
+	gfx::release(out);
+	gfx::close();
+	let order = ms[0] < ms[1] && ms[1] < ms[2] && ms[2] <= ms[3];
+	print("M3 low / epic = ", ms[0] / ms[3] * 100.0, " %; order low < medium < high <= epic: ", order, "; auto pick at 16.6 ms: ", names[scal::pick(16.6, ms)]);
+	if ok && order && ms[0] <= 0.4 * ms[3] { print("PASS M3 scalability"); print("scal: ok"); } else { print("FAIL M3 scalability"); exit(1); }
+}
