@@ -446,7 +446,7 @@ makes that a failure). `GPU_LOCK=<file>` serializes the GPU part on shared
 machines. `tools/hc/ci.sh` runs it only when `HELIUM_GFX_TEST=1`. The test binary
 needs SDL3 even for the CPU part (see Known gaps).
 
-### GI part 1 results (gap-map item 3; RX 9060 XT, RADV)
+### GI part 1 results (gap-map item 3; RX 9060 XT, RADV; `results/2026-11-02_rx9060xt_radv_44a84bd_gi1.txt`, clean worktree, full gfxtest ok)
 
 Three pieces, all off by default (`gi_on`, `rt_shadows`):
 
