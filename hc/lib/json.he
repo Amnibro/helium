@@ -8,7 +8,14 @@ HEXCHARS := "0123456789abcdef"
 
 # s with the escapes JSON needs: quote, backslash and control bytes
 format_escaped(out byte[>..]&, s byte[:]):
-	for c s:
+	i ~= 0
+	while i < s.len:
+		j ~= i
+		while j < s.len && s[j] >= 0x20 && s[j] != '"' && s[j] != '\\': j += 1
+		if j > i: out.append(s[i..j])
+		if j >= s.len: return
+		c := s[j]
+		i = j + 1
 		if c == '"': out.append("\\\"")
 		else if c == '\\': out.append("\\\\")
 		else if c == '\n': out.append("\\n")
@@ -20,7 +27,6 @@ format_escaped(out byte[>..]&, s byte[:]):
 			out.append("\\u00")
 			out.push(HEXCHARS[(c >> 4) as int])
 			out.push(HEXCHARS[(c & 15) as int])
-		else: out.push(c)
 format_string(out byte[>..]&, s byte[:]):
 	out.push('"')
 	format_escaped(out, s)
