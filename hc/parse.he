@@ -1057,9 +1057,11 @@ ptop():
 		nx()
 		n := mk(N_IMPORT, st)
 		if is(T_DOT): ND[n].fl = 1
+		else if is(T_DOTDOT): ND[n].fl = 2
 		path byte[>..] ~= []
-		path.append(nm(ident("import")))
-		while is(T_DOT): path.push('/'); path.append(nm(ident("import")))
+		v0 := ident("import"); if v0 < 0: return
+		path.append(nm(v0))
+		while is(T_DOT): v1 := ident("import"); if v1 < 0 { return } path.push('/'); path.append(nm(v1))
 		{ q_ := intern(path); ND[n].s = q_ }
 		if at_from() || at_word(NAME_FROM): nx(); if tk() != T_STR { perr("expected the package's source, a string, after from") } ND[n].a = P; nx()
 		semi("import")

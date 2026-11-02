@@ -21,6 +21,8 @@ public class HeliumActivity extends SDLActivity {
             root.mkdirs();
             Os.setenv("HELIUM_ASSETS", root.getAbsolutePath(), true);
             Os.setenv("HELIUM_DATA", getFilesDir().getAbsolutePath(), true);
+            Bundle x = getIntent() != null ? getIntent().getExtras() : null;
+            if (x != null && (getApplicationInfo().flags & android.content.pm.ApplicationInfo.FLAG_DEBUGGABLE) != 0) for (String k : x.keySet()) if (k.startsWith("env.") && x.get(k) != null) Os.setenv(k.substring(4), String.valueOf(x.get(k)), true);
         } catch (Exception e) { e.printStackTrace(); }
         super.onCreate(b);
     }

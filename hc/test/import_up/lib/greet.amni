@@ -1,0 +1,2 @@
+namespace greet;
+fn hello() const byte[:] { "hello from a parent directory" }

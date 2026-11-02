@@ -226,7 +226,7 @@ recursive ftop(n int, cl bool):
 	if k == N_STRUCT: fw("struct "); fnsq(n); qn(x.s); fgens(x.d); fw(" { "); ffields(n); fw(" }"); if !cl { fw("\n") } return
 	if k == N_ENUM: fw("enum "); fnsq(n); qn(x.s); fgens(x.d); fw(" { "); for i x.n { if i > 0 { fw(", ") } v := kid(n, i); qn(ND[v].s); if ND[v].fl & 1 != 0 { fw(" { "); ffields(v); fw(" }") } } fw(" }"); if !cl { fw("\n") } return
 	if k == N_ALIAS: fw("type "); fnsq(n); qn(x.s); fw(" = "); fty(x.b); if !cl { fw("\n") } return
-	if k == N_IMPORT: fw("use "); if x.fl & 1 != 0 { fw(".") } for c nm(x.s) { FO.push(if c == '/' { '.' } else { c }) } if x.a >= 0 { fw(" from "); fw(tok_text(x.a)) } if !cl { fw("\n") } return
+	if k == N_IMPORT: fw("use "); if x.fl & 1 != 0 { fw(".") } if x.fl & 2 != 0 { fw("..") } for c nm(x.s) { FO.push(if c == '/' { '.' } else { c }) } if x.a >= 0 { fw(" from "); fw(tok_text(x.a)) } if !cl { fw("\n") } return
 	if k == N_VDECL: fvdecl(n); if !cl { fw("\n") } return
 	fw("?top?\n");
 emit(f int, out const byte[:]) bool:

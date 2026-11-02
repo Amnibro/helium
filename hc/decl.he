@@ -140,14 +140,16 @@ recursive try_ext(p const byte[:], pk int) int:
 lib_path(name const byte[:]) byte[..1024]:
 	p byte[..1024] ~= []; p.append(LIBDIR); p.push('/'); p.append(name); p.append(".he"); if !file_exists(p[..]) { p.resize(p.len - 3); p.append(".amni"); }; p
 imp_rel(t int) bool:
-	for n IMPS { if ND[n].t == t && ND[n].k == N_IMPORT { return ND[n].fl == 1 } } false
+	for n IMPS { if ND[n].t == t && ND[n].k == N_IMPORT { return ND[n].fl != 0 } } false
+imp_up(t int) bool:
+	for n IMPS { if ND[n].t == t && ND[n].k == N_IMPORT { return ND[n].fl == 2 } } false
 recursive load_import(name int, from int, t int) int:
 	p byte[..1024] ~= []
 	rel := t >= 0 && from >= 0 && from < FILES.len && imp_rel(t); fnm := nm(FILES[from].name); sl ~= -1; if rel:
 		for c, i fnm:
 			if c == '/': sl = i
 	fp := if from >= 0 && from < FPKG.len { FPKG[from] as int } else { -1 }
-	if sl >= 0 { p.append(fnm[..sl]); } else { if fp >= 0 { p.append(nm(PKS[fp].root)); } else { p.append(ROOTDIR); } } p.push('/'); p.append(nm(name))
+	if sl >= 0 { p.append(fnm[..sl]); } else { if fp >= 0 { p.append(nm(PKS[fp].root)); } else { p.append(ROOTDIR); } } if rel && imp_up(t) { p.append("/..") } p.push('/'); p.append(nm(name))
 	bl := !rel && blessed(nm(name)).len > 0; lb := lib_path(nm(name)); lo := fp >= 0 && nm(PKS[fp].key).len > 6 && nm(PKS[fp].key)[..6] == "local/"; r ~= if bl && fp >= 0 && !lo && file_exists(lb[..]) { try_load(lb[..], -1) } else { -1 }
 	if r == -1: r = try_ext(p[..], fp)
 	if r == -1 && bl && file_exists(lb[..]): r = try_load(lb[..], -1)
