@@ -22,7 +22,8 @@ VERTEX_UINT := 9 as u8; VERTEX_UINT2 := 10 as u8; VERTEX_UINT3 := 11 as u8; VERT
 VERTEX_SHORT2 := 16 as u8; VERTEX_SHORT4 := 17 as u8; VERTEX_USHORT2_NORM := 18 as u8; VERTEX_USHORT4_NORM := 19 as u8; VERTEX_HALF2 := 20 as u8; VERTEX_HALF4 := 21 as u8
 LOAD_MIPS := 1 as i32; LOAD_SRGB := 2 as i32
 MOUSE_LEFT := 1 as i32; MOUSE_MIDDLE := 2 as i32; MOUSE_RIGHT := 3 as i32; MOUSE_X1 := 4 as i32; MOUSE_X2 := 5 as i32
-EVENT_KEY := 1 as i32; EVENT_TEXT := 2 as i32; EVENT_MOUSE_MOTION := 3 as i32; EVENT_MOUSE_BUTTON := 4 as i32; EVENT_MOUSE_WHEEL := 5 as i32; EVENT_FOCUS_GAINED := 6 as i32; EVENT_FOCUS_LOST := 7 as i32
+EVENT_KEY := 1 as i32; EVENT_TEXT := 2 as i32; EVENT_MOUSE_MOTION := 3 as i32; EVENT_MOUSE_BUTTON := 4 as i32; EVENT_MOUSE_WHEEL := 5 as i32; EVENT_FOCUS_GAINED := 6 as i32; EVENT_FOCUS_LOST := 7 as i32; EVENT_FINGER_DOWN := 8 as i32; EVENT_FINGER_MOTION := 9 as i32; EVENT_FINGER_UP := 10 as i32
+struct Finger { id int, x f32, y f32 }
 MOD_SHIFT := 1 as i32; MOD_CTRL := 2 as i32; MOD_ALT := 4 as i32; MOD_GUI := 8 as i32
 struct Buffer { id u32 }
 struct Texture { id u32 }
@@ -222,6 +223,7 @@ var WH = 0
 var WPW = 0
 var WPH = 0
 var EVS Event[>..] = []
+var FINGERS Finger[>..] = []
 var INJ byte[>..][>..] = []
 var INJEV u32 = 0
 var CLIP byte[>..] = []
@@ -464,6 +466,14 @@ frame_raw() bool:
 		if t == 1027:
 			if !FOC: continue
 			WHEEL += f32at(EVB[..], 28); k := ev(5); EVS[k].x = f32at(EVB[..], 24); EVS[k].y = f32at(EVB[..], 28); continue
+		if t >= 1792 && t <= 1795:
+			fid := (u64at(EVB[..], 24) ^ (u64at(EVB[..], 16) << 20)) as int; fx := f32at(EVB[..], 32) * SW as f32; fy := f32at(EVB[..], 36) * SH as f32; fk ~= -1
+			for f, i FINGERS { if f.id == fid { fk = i } }
+			if t == 1792 && fk < 0: FINGERS.push(Finger{fid, fx, fy}); fk = FINGERS.len - 1
+			if fk >= 0: FINGERS[fk].x = fx; FINGERS[fk].y = fy
+			k := ev(if t == 1792 { 8 } else if t == 1794 { 9 } else { 10 }); EVS[k].button = (fid & 0x7fffffff) as i32; EVS[k].x = fx; EVS[k].y = fy
+			if (t == 1793 || t == 1795) && fk >= 0: FINGERS[fk] = FINGERS[FINGERS.len - 1]; FINGERS.pop()
+			continue
 		if t == 524 || t == 525: MIN = t == 524; continue
 		if t == 526 || t == 527: if u32at(EVB[..], 16) as u32 == (if WIN != 0 { s_wid(WIN) } else { 0 }) { focus(t == 526) } continue
 		if t == 518: update_input_scale(); continue
@@ -534,6 +544,7 @@ inject_mouse(x f32, y f32, button int, down bool):
 events_into(out Event[:]) int:
 	for i min(EVS.len, out.len): out[i] = EVS[i]
 	EVS.len
+fingers() Finger[>..]: o Finger[>..] ~= []; o.append(FINGERS[..]); o
 events() Event[>..]: o Event[>..] ~= []; o.append(EVS[..]); o
 text_input(on bool):
 	if !need("text_input") || WIN == 0: return

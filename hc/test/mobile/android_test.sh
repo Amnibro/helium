@@ -12,8 +12,11 @@ timeout 180 "$ADB" -s "$D" wait-for-device || { echo "M2: emulator did not come 
 for i in $(seq 120); do [ "$("$ADB" -s "$D" shell getprop sys.boot_completed 2>/dev/null | tr -d '\r')" = 1 ] && break; sleep 2; done
 "$ADB" -s "$D" install -r "$APK" >/dev/null || { echo "M2: install failed"; exit 1; }
 "$ADB" -s "$D" logcat -c
-"$ADB" -s "$D" shell am start -n $PKG/org.amniscient.helium.HeliumActivity >/dev/null
-READY=""; for i in $(seq 60); do READY=$("$ADB" -s "$D" logcat -d -s helium:I | grep -o 'ready .*' | tail -1); [ -n "$READY" ] && break; sleep 1; done
+sleep 20
+READY=""; for try in 1 2 3; do
+	"$ADB" -s "$D" shell am start -n $PKG/org.amniscient.helium.HeliumActivity >/dev/null
+	for i in $(seq 40); do READY=$("$ADB" -s "$D" logcat -d -s helium:I | grep -o 'ready .*' | tail -1); [ -n "$READY" ] && break 2; [ $i -gt 5 ] && [ -z "$("$ADB" -s "$D" shell pidof $PKG | tr -d '\r')" ] && { echo "M2 launch $try: process ended before ready (relaunching)"; break; }; sleep 1; done
+done
 [ -n "$READY" ] || { echo "M2: app never logged ready"; "$ADB" -s "$D" logcat -d | grep -iE "helium|SDL|FATAL|crash" | tail -20; exit 1; }
 echo "M2 $READY"
 sleep 3

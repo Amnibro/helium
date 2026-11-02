@@ -19,7 +19,7 @@ fn hyp(x f32, y f32) f32 { sqrt((x * x + y * y) as real) as f32 }
 fn reset() { OUT.clear(); ST = NONE; PREVN = 0; PEND = false; }
 fn frame(t real, fs gfx::Finger[>..]&) {
 	let n = fs.len;
-	if PEND && t - PT > double_gap && (n == 0 || ST != MAYBE) { emit(TAP, PX, PY, 0.0, 0.0, 1.0, 0.0, 0); PEND = false; }
+	if PEND && (PREVN == 0 && n == 0 && t - PT > double_gap || ST == PANNING || ST == PINCHING || ST == ROTATING || ST == WAIT) { emit(TAP, PX, PY, 0.0, 0.0, 1.0, 0.0, 0); PEND = false; }
 	if PREVN == 0 && n > 0 { ST = MAYBE; T0 = t; MAXN = n; ID0 = fs[0].id; SX = fs[0].x; SY = fs[0].y; LX = SX; LY = SY; TWO = false; HT.clear(); HX.clear(); HY.clear(); }
 	MAXN = max(MAXN, n);
 	let i0 = find(fs, ID0);
