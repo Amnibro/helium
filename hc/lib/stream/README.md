@@ -21,3 +21,29 @@ Requests carry a generation so bytes for a cell dropped mid-load are discarded.
   for 5 s after settling: no cell is loaded more than once.
 * **Must-fail controls.** Loading synchronously on the main thread fails S2. unload_r = load_r
   fails S5.
+
+## Results (2026-11-02)
+
+| check | measured | result |
+| --- | --- | --- |
+| S1 coverage | 0 misses over 540 frames | PASS |
+| S2 main-thread cost | p99 0.25 ms, max 0.52 ms | PASS |
+| S3 memory | peak 2 097 102 B (budget 2 097 152) | PASS |
+| S4 contents | 111 loads, 0 byte errors | PASS |
+| S5 hysteresis, 2 MB budget | 0 reloads, control also 0 | vacuous |
+| S5b hysteresis, 4 MB budget (post-hoc) | 1 load; control without hysteresis 5 | PASS |
+| S2 control on tmpfs | sync p99 0.09 ms, max 0.71 ms | **does not fail** |
+| S2 control, 4 ms storage latency (post-hoc) | sync p99 8.2 ms, max 204 ms; threaded p99 0.16 ms | fails as required |
+
+Two of the registered controls could not discriminate in this setup, and that stays recorded:
+
+* The test files sit on tmpfs, so synchronous reads take microseconds and the sync control
+  passes S2. With `io_delay_ms = 4` (emulated per-file storage latency, added post-hoc) the
+  threaded loader still passes S2 and the synchronous one fails it badly.
+* At the registered 2 MB budget the cells near the load radius never load (the budget is full of
+  nearer cells), so the oscillation loads nothing with or without hysteresis. S5b, post-hoc,
+  repeats it with a 4 MB budget.
+
+First-run fixes: S1 missed 7 inner cells because far cells held the budget and blocked nearer
+loads; a nearer request now evicts a loaded cell more than one cell farther away. The first S4
+count was a test bug (`read_file` appends; the buffer was not cleared).

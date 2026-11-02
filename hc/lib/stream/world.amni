@@ -1,0 +1,108 @@
+namespace stream;
+import std;
+import os;
+struct Req { id int, gen int, delay int, path byte[..128] }
+struct Chunk { id int, gen int, off int, n int, total int, data byte[..8192] }
+var cell_m f32 = 25.0;
+var load_r f32 = 100.0;
+var unload_r f32 = 125.0;
+var inner_r f32 = 50.0;
+var budget = 2 << 20;
+var frame_bytes = 1 << 20;
+var max_inflight = 8;
+var sync = false;
+var io_delay_ms = 0;
+var gw = 0; var gh = 0; var ox f32 = 0.0; var oz f32 = 0.0;
+var PATHS byte[>..][>..] = [];
+var STATE int[>..] = []; var GEN int[>..] = []; var GOT int[>..] = []; var LOADS int[>..] = [];
+var DATA byte[>..][>..] = [];
+var WORKERS int[>..] = [];
+var resident = 0;
+var inflight = 0;
+var NEW int[>..] = [];
+thread_fn loader(chunk: int) {
+	loop {
+		let j = qget<Req>();
+		guard j.id >= 0 else { break; }
+		if j.delay > 0 { sleep_ms(j.delay); }
+		var b byte[>..] = [];
+		if !read_file(j.path[..], b) { var c = Chunk { id: j.id, gen: j.gen, off: 0, n: 0, total: -1, data: [0; 8192] }; qput(c); continue; }
+		var off = 0;
+		var c = Chunk { id: j.id, gen: j.gen, off: 0, n: 0, total: b.len, data: [0; 8192] };
+		while true {
+			let n = min(chunk, b.len - off);
+			c.off = off; c.n = n;
+			for i in n { c.data[i] = b[off + i]; }
+			qput(c);
+			off += n;
+			if off >= b.len { break; }
+		}
+	}
+}
+fn grid(w int, h int, origin_x f32, origin_z f32, cell f32) {
+	gw = w; gh = h; ox = origin_x; oz = origin_z; cell_m = cell;
+	PATHS.clear(); PATHS.resize(w * h, []); DATA.clear(); DATA.resize(w * h, []);
+	STATE.clear(); STATE.resize(w * h, 0); GEN.clear(); GEN.resize(w * h, 0); GOT.clear(); GOT.resize(w * h, 0); LOADS.clear(); LOADS.resize(w * h, 0);
+	resident = 0; inflight = 0;
+}
+fn cell_path(cx int, cz int, path const byte[:]) { PATHS[cz * gw + cx].clear(); PATHS[cz * gw + cx].append(path); }
+fn start(workers int) { for w in workers { WORKERS.push(thread_spawn(loader, 8192)); } }
+fn stop() { for w in WORKERS { qput(Req { id: -1, gen: 0, delay: 0, path: "" }); } for id in WORKERS { thread_wait(id); } WORKERS.clear(); }
+fn dist(k int, x f32, z f32) f32 {
+	let cx = ox + ((k % gw) as f32 + 0.5) * cell_m; let cz = oz + ((k / gw) as f32 + 0.5) * cell_m;
+	let dx = max(abs(x - cx) - cell_m * 0.5, 0.0); let dz = max(abs(z - cz) - cell_m * 0.5, 0.0);
+	sqrt(dx * dx + dz * dz)
+}
+fn drop_cell(k int) {
+	if STATE[k] == 1 { inflight -= 1; }
+	if STATE[k] == 2 { resident -= DATA[k].len; }
+	STATE[k] = 0; GEN[k] += 1; GOT[k] = 0; DATA[k].clear();
+}
+fn loaded(k int) bool { STATE[k] == 2 }
+fn bytes(k int) const byte[:] { DATA[k][..] }
+fn load_count(k int) int { LOADS[k] }
+fn take_new(out int[>..]&) { out.clear(); out.append(NEW[..]); NEW.clear(); }
+fn finish(k int) { STATE[k] = 2; inflight -= 1; resident += DATA[k].len; LOADS[k] += 1; NEW.push(k); }
+fn update(x f32, z f32) {
+	let n = gw * gh;
+	for k in n { if STATE[k] != 0 && dist(k, x, z) > unload_r { drop_cell(k); } }
+	var moved = 0;
+	while moved < frame_bytes {
+		let c, ok = qget<Chunk>(0);
+		if !ok { break; }
+		if c.id < 0 || c.id >= n || c.gen != GEN[c.id] || STATE[c.id] != 1 { continue; }
+		if c.total < 0 { STATE[c.id] = 0; inflight -= 1; continue; }
+		if DATA[c.id].len < c.total { DATA[c.id].resize(c.total, 0); }
+		for i in c.n { DATA[c.id][c.off + i] = c.data[i]; }
+		GOT[c.id] += c.n; moved += c.n;
+		if GOT[c.id] >= c.total { finish(c.id); }
+	}
+	while resident > budget {
+		var far = -1; var fd f32 = -1.0;
+		for k in n { if STATE[k] == 2 { let d = dist(k, x, z); if d > inner_r && d > fd { fd = d; far = k; } } }
+		if far < 0 { break; }
+		drop_cell(far);
+	}
+	while inflight < max_inflight {
+		var best = -1; var bd f32 = 1.0e30;
+		for k in n { if STATE[k] == 0 && PATHS[k].len > 0 { let d = dist(k, x, z); if d <= load_r && d < bd { bd = d; best = k; } } }
+		if best < 0 { break; }
+		if bd > inner_r && resident + 65536 * (inflight + 1) > budget {
+			var far = -1; var fd f32 = bd + cell_m;
+			for k in n { if STATE[k] == 2 { let d = dist(k, x, z); if d > fd { fd = d; far = k; } } }
+			if far < 0 { break; }
+			drop_cell(far);
+		}
+		STATE[best] = 1; inflight += 1; GOT[best] = 0;
+		if sync {
+			DATA[best].clear();
+			if io_delay_ms > 0 { sleep_ms(io_delay_ms); }
+			if read_file(PATHS[best][..], DATA[best]) { finish(best); } else { STATE[best] = 0; inflight -= 1; }
+		} else {
+			var r = Req { id: best, gen: GEN[best], delay: io_delay_ms, path: "" };
+			r.path = PATHS[best][..];
+			qput(r);
+		}
+	}
+}
+fn resident_bytes() int { resident }
