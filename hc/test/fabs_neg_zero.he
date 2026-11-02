@@ -1,0 +1,5 @@
+use math
+main():
+	z := -0.0
+	f f32 := -0.0
+	print(fabs(z), " ", fabs(-2.5), " ", fabs(z * 3.0), " ", abs(f), " ", abs(-7), " ", abs(0), " ", abs(0.0 / 0.0))

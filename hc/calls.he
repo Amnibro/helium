@@ -251,6 +251,7 @@ recursive check_inst0(i int):
 	tail := ND[body].a
 	if rt >= 0:
 		if tail >= 0 && rt != T_VOID && t != T_VOID && !ends(tail): conv(tail, rt); ret_esc(tail, rt)
+		if rt != T_VOID && !FI_[i].rinf && ND[node].fl & F_EXTERN == 0 && (tail < 0 || t == T_VOID) && !ends(body): m byte[>..] ~= []; format(m, nm(FI_[i].name as int), " must return ", tn(rt), " but can reach its end without a value (a trailing ; makes the last expression a statement)"); cerr(node, m[..])
 	else:
 		if FI_[i].ret < 0:
 			if tail >= 0 && t != T_VOID:

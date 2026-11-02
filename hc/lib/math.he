@@ -46,6 +46,13 @@ extern exp(x f32) f32 = "hr_expf"
 extern log(x f32) f32 = "hr_logf"
 extern log2(x f32) f32 = "hr_log2f"
 extern log10(x f32) f32 = "hr_log10f"
+fabs(x real) real: if x <= 0.0 { 0.0 - x } else { x }
+extern tanh(x real) real = "hr_tanh"
+extern sinh(x real) real = "hr_sinh"
+extern cosh(x real) real = "hr_cosh"
+extern tanh(x f32) f32 = "hr_tanhf"
+extern sinh(x f32) f32 = "hr_sinhf"
+extern cosh(x f32) f32 = "hr_coshf"
 
 # angle units
 radians(d real) real: d * (PI / 180.0)
@@ -53,6 +60,14 @@ degrees(r real) real: r * (180.0 / PI)
 # classification: NaN is the only value unequal to itself, and an
 # infinity is the only non-NaN value whose difference with itself is NaN
 is_nan(x real) bool: x != x
+powi(x real, n int) real:
+	r ~= 1.0; a ~= x; k ~= if n < 0 { -n } else { n }
+	while true:
+		if k & 1 == 1: r = r * a
+		k = k >> 1
+		if k == 0: break
+		a = a * a
+	if n < 0 { 1.0 / r } else { r }
 is_inf(x real) bool: x == x && x - x != 0.0
 is_finite(x real) bool: x - x == 0.0
 # length of (x, y), scaled so the squares cannot overflow

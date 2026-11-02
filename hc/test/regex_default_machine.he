@@ -1,0 +1,7 @@
+use regex
+main():
+	err byte[>..] ~= []
+	re := regex::compile("([0-9]+)\\.([0-9]{2})", err)
+	m ~= default<regex::Machine>()
+	ok := regex::run(re, m, "was 4.99 now 3.49", 9)
+	print(ok, " ", m.best)

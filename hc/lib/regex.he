@@ -383,6 +383,9 @@ machine(re Regex&) Machine:
 
 # the first match starting at or after from; its slots are left in m.best
 run(re Regex&, m Machine&, text byte[:], from int) bool:
+	if m.seen.len < re.prog.len || m.width != 2 * re.groups:
+		w := 2 * re.groups
+		m.seen.clear(); m.seen.resize(re.prog.len, -1); m.work.clear(); m.work.resize(w, -1); m.best.clear(); m.best.resize(w, -1); m.width = w; m.stamp = 0
 	m.now.pcs.clear(); m.now.slots.clear()
 	found ~= false
 	i ~= from

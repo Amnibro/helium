@@ -62,9 +62,10 @@ digits_of(v real, digits byte[>..]&) int:
 	(if e > 0 { e - 1 } else { -1 - lead }) + shift
 
 # a finite number in its shortest exact form: plain decimals for 1e-5 up to
-# 1e16, with ".0" on whole values, and d.ddde<n> outside that range. JSON has
+# 1e16, with ".0" on whole values, and d.ddde<n> outside that range (d.ddde+<n>
+# for positive n with plus_exp, as serde_json writes it). JSON has
 # no NaN or infinity, so those come out as null
-format_number(out byte[>..]&, v real):
+format_number(out byte[>..]&, v real, plus_exp bool = false):
 	if v != v || v - v != 0.0:
 		out.append("null")
 		return
@@ -80,6 +81,7 @@ format_number(out byte[>..]&, v real):
 			out.push('.')
 			out.append(d[1..])
 		out.push('e')
+		if plus_exp && e > 0: out.push('+')
 		format(out, e)
 	else if e < 0:
 		out.append("0.")

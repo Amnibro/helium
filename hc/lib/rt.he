@@ -473,6 +473,43 @@ rt_expq(x real, xl real, eb real) real, bool:
 	th := rt_bd(RT_EXT[2 * j]); tl := rt_bd(RT_EXT[2 * j + 1]); ah := th * eh; sh, sl := dd_s(th, ah); h, l := dd_s(sh, sl + rt_fma(th, eh, -ah) + th * el + tl + tl * eh)
 	e := h * (1.0842021724855044e-19 + eb); f1 := h + (l + e)
 	return f1 * rt_bd(((ki >> 7) + 1023) as u64 << 52), f1 == h + (l - e)
+rt_expqh(x real) real, real:
+	kf := rt_ffl(x * rt_bd(RT_EIL) + 0.5); ki := kf as int; j := ki & 127; lh := rt_bd(RT_ELH); p := kf * lh; r, rl := dd_s(x - p, -(rt_fma(kf, lh, -p) + kf * rt_bd(RT_ELL)))
+	eh, el := dd_s(r, r * r * (0.5 + r * (0.16666666666666666 + r * (0.041666666666666664 + r * (0.008333333333333333 + r * 0.001388888888888889)))) + rl)
+	th := rt_bd(RT_EXT[2 * j]); tl := rt_bd(RT_EXT[2 * j + 1]); ah := th * eh; sh, sl := dd_s(th, ah); h, l := dd_s(sh, sl + rt_fma(th, eh, -ah) + th * el + tl + tl * eh); sc := rt_bd(((ki >> 7) + 1023) as u64 << 52)
+	return h * sc, l * sc
+rt_expddh(xh real, xl real) real, real:
+	k := rt_ffl(xh * RT_IL2H + 0.5); ph := k * RT_L2H; r1, r2 := dd_add(xh, xl, -ph, -rt_fma(k, RT_L2H, -ph)); qh := k * RT_L2L; rh, rl := dd_add(r1, r2, -qh, -rt_fma(k, RT_L2L, -qh))
+	zh := rh / 256.0; zl := rl / 256.0; th ~= 1.0; tl ~= 0.0; i ~= 11
+	while i >= 1: mh, ml := dd_mul(zh, zl, th, tl); dh, dl := dd_divd(mh, ml, i as real); h, l := dd_add(1.0, 0.0, dh, dl); th = h; tl = l; i -= 1
+	for _ 8: h, l := dd_mul(th, tl, th, tl); th = h; tl = l
+	return rt_ldx(th, k as int), rt_ldx(tl, k as int)
+rt_hyp(ax real, w int, acc bool) real, real:
+	eh, el := if acc { rt_expddh(if w == 0 { 2.0 * ax } else { ax }, 0.0) } else { rt_expqh(if w == 0 { 2.0 * ax } else { ax }) }
+	if w == 0: nh, nl := dd_add(eh, el, -1.0, 0.0); dh, dl := dd_add(eh, el, 1.0, 0.0); h, l := dd_div(nh, nl, dh, dl); return h, l
+	ih, il := dd_div(1.0, 0.0, eh, el); h, l := dd_add(eh, el, if w == 1 { -ih } else { ih }, if w == 1 { -il } else { il }); return h * 0.5, l * 0.5
+rt_hypf(x real, w int) real:
+	if x != x: return x
+	neg := rt_db(x) >> 63 != 0; ax := if neg { -x } else { x }
+	if w == 2 && ax < 0x1p-27: return 1.0
+	if w != 2 && ax < 0x1p-27: return x
+	if w == 0 && ax >= 22.0: return rt_sgn(neg, 1.0)
+	if w != 0 && ax >= 40.0: gh, gl := dd_add(ax, 0.0, -RT_L2H, -RT_L2L); r := rt_expdd(gh, gl); return if w == 1 { rt_sgn(neg, r) } else { r }
+	h ~= 0.0; l ~= 0.0; e ~= 0.0
+	if w != 2 && ax < 0.0625:
+		z := ax * ax; p := if w == 0 { z * (-0.3333333333333333 + z * (0.13333333333333333 + z * (-0.05396825396825397 + z * (0.021869488536155203 + z * (-0.008863235529902197 + z * (0.003592128036572481 + z * (-0.0014558343870513183 + z * 0.000590027440945586))))))) } else { z * (0.16666666666666666 + z * (0.008333333333333333 + z * (0.0001984126984126984 + z * (2.7557319223985893e-06 + z * 2.505210838544172e-08)))) }
+		sh, sl := dd_s(ax, ax * p); h = sh; l = sl; e = ax * 0x1p-58
+	else:
+		fh, fl := rt_hyp(ax, w, false); h = fh; l = fl; e = fh * 0x1p-57
+	f := h + (l + e)
+	if f != h + (l - e): ah, al := rt_hyp(ax, w, true); return if w == 2 { ah + al } else { rt_sgn(neg, ah + al) }
+	if w == 2 { f } else { rt_sgn(neg, f) }
+rt_tanh(x real) real: rt_hypf(x, 0)
+rt_sinh(x real) real: rt_hypf(x, 1)
+rt_cosh(x real) real: rt_hypf(x, 2)
+rt_tanhf(x f32) f32: rt_hypf(x as real, 0) as f32
+rt_sinhf(x f32) f32: rt_hypf(x as real, 1) as f32
+rt_coshf(x f32) f32: rt_hypf(x as real, 2) as f32
 rt_exp(x real) real:
 	if x > -708.0 && x < 709.0: r, ok := rt_expq(x, 0.0, 0.0); if ok { return r }
 	rt_expdd(x, 0.0)

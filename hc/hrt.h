@@ -574,6 +574,12 @@ static inline double hr_rsqrt_est(double x) { return (double)hr_rsqrtf_est((floa
 #define hr_atan2f atan2f
 #define hr_exp exp
 #define hr_expf expf
+#define hr_tanh tanh
+#define hr_sinh sinh
+#define hr_cosh cosh
+#define hr_tanhf tanhf
+#define hr_sinhf sinhf
+#define hr_coshf coshf
 #define hr_log log
 #define hr_logf logf
 #define hr_log2 log2
