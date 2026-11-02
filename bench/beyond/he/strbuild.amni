@@ -1,0 +1,17 @@
+// strbuild: write n numbers (xorshift32 % 1000000) comma separated into one string,
+// then split it on commas and parse every field back. Prints length, count and sum.
+import os;
+fn arg_n(d int) int { if arg_count() < 2 { return d; } var s byte[>..] = []; arg(1, s); let n, ok = parse_int(s[..]); if ok { n } else { d } }
+var rs u32 = 2463534242;
+fn rnd() u32 { rs ^= rs << 13; rs ^= rs >> 17; rs ^= rs << 5; rs }
+fn main() {
+	let n = arg_n(1000);
+	var s byte[>..] = [];
+	for i in n {
+		if i > 0 { s.push(','); }
+		format(s, rnd() % 1000000);
+	}
+	var count = 0; var sum = 0;
+	each_split(s[..], ',') { let v, ok = parse_int(it); sum += v; count++; };
+	print(s.len, " ", count, " ", sum);
+}

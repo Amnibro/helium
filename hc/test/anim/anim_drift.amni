@@ -1,0 +1,10 @@
+// Foot-drift test: HC_LIB=hc/lib build/hcn hc/test/anim/anim_drift.amni -- [hero.glb]
+// (program args go after "--"; a bare path is taken as hcn's output file)
+import os;
+import drift_body;
+fn main() {
+	var path byte[>..] = [];
+	if arg_count() > 1 { arg(1, path); } else { path.append("/workspace/bake/r4/base/jk-h02.glb"); }
+	let f = anim::drift_main(path[..]);
+	if f != 0 { exit(1); }
+}

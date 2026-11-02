@@ -1,0 +1,35 @@
+gpuskin bench  2026-11-01 02:48:12 EST  host Antman-PC  frames 120
+hcn /home/anmire/kim7_gate/build/hcn
+glb sha256 before: OK (2 files)
+skin.spv 8692 bytes (hcn --spv)
+spirv-val version: SPIRV-Tools v2026.4 v2026.4.rc2-0-gef96ed763
+$ spirv-val --target-env vulkan1.1 '/tmp/gpuskin_bench.1793519292731532296/skin.spv'
+spirv-val: OK
+
+WARNING: radv is not a conformant Vulkan implementation, testing use only.
+gpuskin /home/anmire/kim7_gate/glb/jk-h02.glb  device 'AMD Radeon RX 9060 XT (RADV GFX1200)' (type 2)  joints 56  verts 30000  chars 32
+  correctness: 7680000 skinned vertices (32 chars x 8 frames, odd chars non-uniformly scaled 1.4/0.7/1.15) vs CPU skin_cpu:
+    max |dp| 4.851466428590356e-07 m (char 15 vert 14833), max |dn| 3.6024543987878133e-06, max |dt| 6.99085262567678e-07, max |dw| 0.0  tol 0.0001 m / 0.0001
+    n'.t' invariant (7680000 checks, rest |n.t| < 1e-5): max |n'.t'| 1.448206603527069e-06 (tol 0.001); control, linear 3x3 normals on scaled chars: 0.9918135404586792 (trips, as expected), 3754643 checks > 0.01; unscaled chars: 0.998798668384552, 481519 checks > 0.01 (blended rotations shear A3 too)
+    -> PASS
+  bench 120 frames, 32 chars x 30000 verts:
+    anim tick (CPU)        avg 0.3768102666666667 ms
+    palette pack (CPU)     avg 0.009708283333333328 ms
+    gpu skin submit+wait   avg 0.22837610833333333 ms  worst 0.516084 ms
+    gpu skin (timestamps)  avg 0.15190300000000004 ms
+    frame (serialized)     avg 0.6148946583333335 ms  worst 1.2096719999999999 ms -> 1626.2948237515857 fps
+
+WARNING: radv is not a conformant Vulkan implementation, testing use only.
+gpuskin /home/anmire/kim7_gate/glb/bfme-hr01.glb  device 'AMD Radeon RX 9060 XT (RADV GFX1200)' (type 2)  joints 65  verts 23691  chars 32
+  correctness: 6064896 skinned vertices (32 chars x 8 frames, odd chars non-uniformly scaled 1.4/0.7/1.15) vs CPU skin_cpu:
+    max |dp| 4.768953658640385e-07 m (char 18 vert 22972), max |dn| 1.4379427284438862e-06, max |dt| 1.3366474149734131e-06, max |dw| 0.0  tol 0.0001 m / 0.0001
+    n'.t' invariant (6064896 checks, rest |n.t| < 1e-5): max |n'.t'| 3.2782554626464844e-07 (tol 0.001); control, linear 3x3 normals on scaled chars: 0.998954176902771 (trips, as expected), 2936293 checks > 0.01; unscaled chars: 0.9877834320068359, 395159 checks > 0.01 (blended rotations shear A3 too)
+    -> PASS
+  bench 120 frames, 32 chars x 23691 verts:
+    anim tick (CPU)        avg 0.4050675666666667 ms
+    palette pack (CPU)     avg 0.009167899999999998 ms
+    gpu skin submit+wait   avg 0.19135188333333328 ms  worst 0.461731 ms
+    gpu skin (timestamps)  avg 0.11764700000000006 ms
+    frame (serialized)     avg 0.60558735 ms  worst 0.8886160000000001 ms -> 1651.2894465183265 fps
+glb sha256 after: OK (2 files)
+done 02:48:18 EST  rc 0

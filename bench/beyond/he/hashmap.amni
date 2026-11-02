@@ -1,0 +1,19 @@
+// hashmap: n inserts of xorshift32 keys mod n/2 (value += i), then n lookups of keys mod n.
+// Prints entry count, sum of found values and miss count. Uses the standard dictionary.
+import os;
+import dictionary;
+fn arg_n(d int) int { if arg_count() < 2 { return d; } var s byte[>..] = []; arg(1, s); let n, ok = parse_int(s[..]); if ok { n } else { d } }
+var rs u32 = 2463534242;
+fn rnd() u32 { rs ^= rs << 13; rs ^= rs >> 17; rs ^= rs << 5; rs }
+fn main() {
+	let n = arg_n(1000);
+	var m = dictionary<u32, int> {};
+	let half = (n / 2) as u32;
+	for i in n { update(m, rnd() % half, 0) { it += i; }; }
+	var sum = 0; var miss = 0;
+	for i in n {
+		let v = get(m, rnd() % n as u32);
+		if v { sum += v; } else { miss++; }
+	}
+	print(m.count, " ", sum, " ", miss);
+}

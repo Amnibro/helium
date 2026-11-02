@@ -1,0 +1,34 @@
+// bintrees: arena binary trees. Nodes are index pairs in one array; each tree is built
+// bottom-up into the arena after the long-lived tree and released by resetting the top.
+import os;
+fn arg_n(d int) int { if arg_count() < 2 { return d; } var s byte[>..] = []; arg(1, s); let n, ok = parse_int(s[..]); if ok { n } else { d } }
+var L i32[>..];
+var R i32[>..];
+var top i32;
+recursive fn build(d int) i32 {
+	let i = top; top += 1;
+	if d > 0 { let l = build(d - 1); let r = build(d - 1); L[i] = l; R[i] = r; }
+	else { L[i] = -1; R[i] = -1; }
+	i
+}
+recursive fn check(i i32) int { if L[i] < 0 { 1 } else { 1 + check(L[i]) + check(R[i]) } }
+fn main() {
+	var maxd = arg_n(10);
+	if maxd < 6 { maxd = 6; }
+	let cap = (2 << (maxd + 1)) + (2 << maxd);
+	L.resize(cap, 0); R.resize(cap, 0);
+	let s = build(maxd + 1);
+	print("stretch tree of depth ", maxd + 1, "\t check: ", check(s));
+	top = 0;
+	let lived = build(maxd);
+	let mark = top;
+	var d = 4;
+	while d <= maxd {
+		let iters = 1 << (maxd - d + 4);
+		var c = 0;
+		for k in iters { top = mark; c += check(build(d)); }
+		print(iters, "\t trees of depth ", d, "\t check: ", c);
+		d += 2;
+	}
+	print("long lived tree of depth ", maxd, "\t check: ", check(lived));
+}

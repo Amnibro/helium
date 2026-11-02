@@ -1,0 +1,26 @@
+// matmul: n x n f64 matrix product, i-k-j loop order. Prints the sum and one element.
+import os;
+fn arg_n(d int) int { if arg_count() < 2 { return d; } var s byte[>..] = []; arg(1, s); let n, ok = parse_int(s[..]); if ok { n } else { d } }
+fn main() {
+	let n = arg_n(100);
+	var a real[>..] = []; a.resize(n * n, 0.0);
+	var b real[>..] = []; b.resize(n * n, 0.0);
+	var c real[>..] = []; c.resize(n * n, 0.0);
+	for i in n {
+		for j in n {
+			a[i * n + j] = ((i * 31 + j * 17) % 100) as real / 100.0;
+			b[i * n + j] = ((i * 13 + j * 29) % 100) as real / 50.0 - 1.0;
+		}
+	}
+	for i in n {
+		for k in n {
+			let aik = a[i * n + k];
+			for j in n { c[i * n + j] += aik * b[k * n + j]; }
+		}
+	}
+	var s = 0.0;
+	for i in n * n { s += c[i]; }
+	var o byte[>..] = [];
+	format_flt(o, s, 6); o.push(' '); format_flt(o, c[(n / 2) * n + n / 3], 9);
+	print(o);
+}

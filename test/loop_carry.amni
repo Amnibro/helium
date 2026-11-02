@@ -1,0 +1,78 @@
+import std;
+import os;
+fn show(tag const byte[:], v real) {
+	var line byte[>..] = [];
+	line.append(tag);
+	line.push(' ');
+	format_flt(line, v, 17);
+	print(line);
+}
+fn esc(cr real, ci real) real {
+	var zr = 0.0; var zi = 0.0; var n = 0.0;
+	for i in 60 {
+		let tr = zr * zr - zi * zi + cr;
+		let ti = 2.0 * zr * zi + ci;
+		zr = tr; zi = ti;
+		if zr * zr + zi * zi > 4.0 { break; }
+		n = n + 1.0;
+	}
+	return n + zr * 0.001;
+}
+fn swapped(a0 real) real {
+	var x = a0; var y = 0.5; var s = 0.0;
+	for i in 40 {
+		s = s + x * y;
+		x = x * 0.75 + 0.1;
+		s = s + y * x;
+	}
+	return s;
+}
+fn condredef(a0 real) real {
+	var x = a0; var s = 0.0;
+	for i in 30 {
+		s = s + x * x;
+		if i % 3 == 0 { x = x + 0.25; }
+		s = s - x * x * 0.5;
+	}
+	return s;
+}
+fn skipped(a0 real) real {
+	var x = a0; var s = 0.0;
+	for i in 30 {
+		s = s + x * x;
+		x = x * 0.9 + 0.05;
+		if i % 4 == 1 { continue; }
+		s = s + x * x;
+	}
+	return s;
+}
+fn twodef(a0 real) real {
+	var x = a0; var s = 0.0;
+	for i in 25 {
+		s = s + x * x;
+		x = x + 0.5;
+		x = x * 0.8;
+		s = s + x * x;
+	}
+	return s;
+}
+fn nested(a0 real) real {
+	var x = a0; var s = 0.0;
+	for i in 12 {
+		s = s + x * x;
+		x = x * 0.97 + 0.01;
+		for j in i { s = s + 0.001 * j as real; }
+		s = s + x * x;
+	}
+	return s;
+}
+fn main() {
+	var t = 0.0;
+	for k in 40 { t = t + esc(-1.5 + 0.05 * k as real, 0.3 - 0.01 * k as real); }
+	show("esc", t);
+	show("swapped", swapped(1.25));
+	show("condredef", condredef(0.7));
+	show("skipped", skipped(1.1));
+	show("twodef", twodef(0.9));
+	show("nested", nested(1.3));
+}

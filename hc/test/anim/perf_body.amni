@@ -1,0 +1,93 @@
+// Perf test body (entry: anim_perf.amni).
+namespace anim;
+import vec;
+import math;
+import os;
+import anim.math;
+import anim.pose;
+import anim.clip;
+import anim.space;
+import anim.machine;
+import anim.ik;
+import anim.gltf;
+import anim.skin;
+import anim.gold;
+
+let NCHAR = 32;
+let PDT = 1.0 / 60.0;
+var CHARS Character[>..];
+
+// each character runs its own speed/action script, phase-shifted, so the
+// crowd covers idle, walk, the walk->run blend, run, actions and interrupts
+fn crowd_drive(i int, t f32, ch Character&) {
+	let ph = t + (i as f32) * 0.37;
+	let cyc = ph - floor(ph / 12.0) * 12.0;
+	ch.cmd = if cyc < 2.0 { 0.0 } else if cyc < 5.0 { 1.5 } else if cyc < 8.0 { 3.0 } else { 5.5 };
+	let a = ph - floor(ph / 7.0) * 7.0;
+	ch.m.params[P_ACT] = if a < PDT { 1.0 } else { 0.0 };
+	let b = ph - floor(ph / 11.0) * 11.0;
+	ch.m.params[P_ACT2] = if b < PDT { 1.0 } else { 0.0 };
+}
+
+fn perf_main(path const byte[:], frames int) i32 {
+	clip_bank_clear(); skin_bank_clear();
+	if !glb_open(path) { print("cannot open ", path); return 2; }
+	var sk = default<Skeleton>();
+	glb_skeleton(sk, 0);
+	glb_clips(sk, "", 30.0, "root");
+	var r = default<GoldRig>(); var d = default<MachineDef>();
+	if !gold_setup(sk, "", r, d) { print("setup failed: ", r.err[..]); return 2; }
+	// every skinned primitive of every mesh
+	var meshes SkinMesh[>..];
+	var nv = 0;
+	for mi in jlen(jtop("meshes")) {
+		let prims = jm(jel(jtop("meshes"), mi), "primitives");
+		for pi in jlen(prims) {
+			let sm = glb_skin_mesh(mi, pi);
+			if sm.ok { meshes.push(sm); nv += sm.nv; }
+		}
+	}
+	print("perf ", path, "  joints ", sk.n, "  clips ", clip_count(), "  skinned prims ", meshes.len, "  verts ", nv, "  chars ", NCHAR, "  frames ", frames);
+	CHARS.clear();
+	for i in NCHAR {
+		var ch = default<Character>();
+		gold_char(r, d, ch, float3 { (i % 8) as f32 * 2.0, 0.0, (i / 8) as f32 * 2.0 }, (i as f32) * 0.4);
+		CHARS.push(ch);
+	}
+	// warm-up 2 s
+	var t = 0.0 as f32;
+	for f in 120 { for i in NCHAR { crowd_drive(i, t, CHARS[i]); gold_update(sk, r, d, CHARS[i], PDT, true); } t += PDT; }
+	// anim only (incl. palette), per-frame timings
+	var worst = 0.0; var total = 0.0;
+	for f in frames {
+		let c0 = clock_ns();
+		for i in NCHAR { crowd_drive(i, t, CHARS[i]); gold_update(sk, r, d, CHARS[i], PDT, true); }
+		let ms = (clock_ns() - c0) as real * 1.0e-6;
+		total += ms; if ms > worst { worst = ms; }
+		t += PDT;
+	}
+	let avg = total / (frames as real);
+	// sanity: the crowd really is in different states and moved
+	var nst = [0; 4]; var moved = 0;
+	for i in NCHAR {
+		let c = CHARS[i].m.cur as int; if c >= 0 && c < 4 { nst[c] += 1; }
+		let p0 = float3 { (i % 8) as f32 * 2.0, 0.0, (i / 8) as f32 * 2.0 };
+		if length(CHARS[i].xf.t - p0) > 0.5 { moved += 1; }
+	}
+	print("  crowd at end: loco ", nst[r.st_loco as int], " act ", nst[r.st_act as int], " act2 ", nst[r.st_act2 as int], "; moved >0.5 m: ", moved, "/", NCHAR);
+	print("  anim (32 chars, blend+machine+additive+root+IK+palette): avg ", avg, " ms/frame  worst ", worst, " ms  (budget 16.67 ms)");
+	// CPU skinning of all 32 (positions + normals), fewer frames
+	var op float3[>..]; var on float3[>..]; var ot float4[>..];
+	let sf = max(frames / 10, 10);
+	var stot = 0.0; var sworst = 0.0;
+	for f in sf {
+		let c0 = clock_ns();
+		for i in NCHAR { for k in meshes.len { skin_cpu(meshes[k], CHARS[i].pal, op, on, ot); } }
+		let ms = (clock_ns() - c0) as real * 1.0e-6;
+		stot += ms; if ms > sworst { sworst = ms; }
+	}
+	let savg = stot / (sf as real);
+	print("  cpu skinning (32 x ", nv, " verts): avg ", savg, " ms/frame  worst ", sworst, " ms");
+	print("  anim+cpu skin: ", avg + savg, " ms/frame -> ", 1000.0 / (avg + savg), " fps;  anim only -> ", 1000.0 / avg, " fps");
+	0
+}

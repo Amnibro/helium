@@ -1,0 +1,49 @@
+// regex: backtracking matcher for literals . * + ? ^ $ (Pike style, leftmost, any match),
+// run over n generated lines for six patterns. Prints the match count of each pattern.
+import os;
+fn arg_n(d int) int { if arg_count() < 2 { return d; } var s byte[>..] = []; arg(1, s); let n, ok = parse_int(s[..]); if ok { n } else { d } }
+var rs u32 = 2463534242;
+fn rnd() u32 { rs ^= rs << 13; rs ^= rs >> 17; rs ^= rs << 5; rs }
+var RE byte[>..];
+var B byte[>..];
+var T0 int; var TL int;
+fn one(c byte, t int) bool { t < TL && (c == '.' || c == B[T0 + t]) }
+recursive fn here(r int, t int) bool {
+	let rl = RE.len;
+	if r == rl { return true; }
+	if r + 1 < rl && RE[r + 1] == '*' { return star(RE[r], r + 2, t); }
+	if r + 1 < rl && RE[r + 1] == '+' { return one(RE[r], t) && star(RE[r], r + 2, t + 1); }
+	if r + 1 < rl && RE[r + 1] == '?' { if one(RE[r], t) && here(r + 2, t + 1) { return true; } return here(r + 2, t); }
+	if RE[r] == '$' && r + 1 == rl { return t == TL; }
+	if one(RE[r], t) { return here(r + 1, t + 1); }
+	false
+}
+recursive fn star(c byte, r int, t0 int) bool {
+	var t = t0;
+	loop { if here(r, t) { return true; } if !one(c, t) { return false; } t++; }
+}
+fn matches() bool {
+	if RE.len > 0 && RE[0] == '^' { return here(1, 0); }
+	for t in TL + 1 { if here(0, t) { return true; } }
+	false
+}
+fn main() {
+	let n = arg_n(1000);
+	let pats = ["ab*c", "^a.*f$", "c.d.e", "fa+b?c", "e.*e.*e.*a", "dd*ee*ff*a$"];
+	var off int[>..] = [];
+	for i in n {
+		off.push(B.len);
+		let k = 20 + (rnd() % 40) as int;
+		for j in k { B.push(('a' as u32 + rnd() % 6) as! byte); }
+	}
+	off.push(B.len);
+	var o byte[>..] = [];
+	for q in 6 {
+		RE.clear(); RE.append(pats[q]);
+		var c = 0;
+		for i in n { T0 = off[i]; TL = off[i + 1] - off[i]; if matches() { c++; } }
+		if q > 0 { o.push(' '); }
+		format(o, c);
+	}
+	print(o);
+}

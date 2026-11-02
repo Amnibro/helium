@@ -1,0 +1,46 @@
+// anim/skin.comp: linear blend skinning, one invocation per (vertex, character).
+// A = sum_k w_k M_k (3x4 rows), p' = A p, t' = normalize(A3 t.xyz) with
+// t.w' = t.w * sign(det A3) (the glTF bitangent cross(n,t)*w stays along
+// A3 b under a reflection), n' = normalize(cof(A3) n * sign(det A3)) where
+// cof(A3) = det(A3) * inverse-transpose(A3) has rows r1 x r2, r2 x r0,
+// r0 x r1 (correct under non-uniform scale). Same arithmetic as the CPU reference skin_cpu.
+// Palette rows are the top 3 rows of model * inverse-bind. Layout: see
+// gpuskin.he. Clean-room.
+// Build: hcn --spv skin.comp skin.spv   (Helium's own GLSL compiler)
+#version 450
+layout(local_size_x = 64) in;
+layout(std430, set = 0, binding = 0) readonly buffer Rest { vec4 rest[]; };
+layout(std430, set = 0, binding = 1) readonly buffer Wts { vec4 wts[]; };
+layout(std430, set = 0, binding = 2) readonly buffer Jts { uint jts[]; };
+layout(std430, set = 0, binding = 3) readonly buffer Pal { vec4 pal[]; };
+layout(std430, set = 0, binding = 4) readonly buffer Par { uint par[]; };
+layout(std430, set = 0, binding = 5) writeonly buffer Out { vec4 outv[]; };
+vec3 unit(vec3 v) { return v * inversesqrt(max(dot(v, v), 1.0e-30)); }
+void main() {
+	uint v = gl_GlobalInvocationID.x;
+	uint c = gl_GlobalInvocationID.y;
+	uint nv = par[0];
+	if (v >= nv) return;
+	uint nj = par[1];
+	vec4 p = rest[v * 3u];
+	vec4 n = rest[v * 3u + 1u];
+	vec4 t = rest[v * 3u + 2u];
+	vec4 w = wts[v];
+	uint jj = jts[v];
+	uint b = c * nj * 3u;
+	uint i0 = b + (jj & 255u) * 3u;
+	uint i1 = b + ((jj >> 8u) & 255u) * 3u;
+	uint i2 = b + ((jj >> 16u) & 255u) * 3u;
+	uint i3 = b + ((jj >> 24u) & 255u) * 3u;
+	vec4 r0 = pal[i0] * w.x + pal[i1] * w.y + pal[i2] * w.z + pal[i3] * w.w;
+	vec4 r1 = pal[i0 + 1u] * w.x + pal[i1 + 1u] * w.y + pal[i2 + 1u] * w.z + pal[i3 + 1u] * w.w;
+	vec4 r2 = pal[i0 + 2u] * w.x + pal[i1 + 2u] * w.y + pal[i2 + 2u] * w.z + pal[i3 + 2u] * w.w;
+	vec3 c0 = cross(r1.xyz, r2.xyz);
+	vec3 c1 = cross(r2.xyz, r0.xyz);
+	vec3 c2 = cross(r0.xyz, r1.xyz);
+	float sg = dot(r0.xyz, c0) < 0.0 ? -1.0 : 1.0;
+	uint o = (c * nv + v) * 3u;
+	outv[o] = vec4(dot(r0, p), dot(r1, p), dot(r2, p), 1.0);
+	outv[o + 1u] = vec4(unit(vec3(dot(c0, n.xyz), dot(c1, n.xyz), dot(c2, n.xyz)) * sg), 0.0);
+	outv[o + 2u] = vec4(unit(vec3(dot(r0.xyz, t.xyz), dot(r1.xyz, t.xyz), dot(r2.xyz, t.xyz))), t.w * sg);
+}

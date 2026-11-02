@@ -1,0 +1,321 @@
+// anim/ik: analytic two-bone IK (law of cosines, pole vector), FABRIK chain
+// IK (Aristidou & Lasenby 2011, "FABRIK: A fast, iterative solver for the
+// Inverse Kinematics problem", Graphical Models 73(5)), and a foot-planting
+// helper (ground following, contact locking, pelvis drop). All solvers work
+// in character (model) space on a pose plus its FK result, and write local
+// rotations back into the pose; call fk() again afterwards. Clean-room.
+namespace anim;
+import vec;
+import math;
+import anim.math;
+import anim.pose;
+
+fn safe_norm(v float3, fallback float3) float3 { let l = length(v); if l > 1.0e-9 { v / l } else { fallback } }
+fn acos_c(x f32) f32 { acos(clamp(x, -1.0, 1.0)) }
+// Rotation that rotates point p about pivot c by q.
+fn rot_about(q float4, c float3, p float3) float3 { c + qrot(q, p - c) }
+
+let SOFT_K f32 = 0.97;
+
+// Soft reach map, fixed per limb: d <= s = SOFT_K*reach is unchanged; above
+// it d' = s + w*tanh((d - s)/w), w = reach - s. tanh has slope 1 and
+// curvature 0 at 0, so the map is C2 at s, monotone, and always < reach.
+fn soft_reach(d f32, reach f32) f32 {
+	let s = reach * SOFT_K;
+	if d <= s { return d; }
+	let w = reach - s;
+	let x = (d - s) / w;
+	s + w * (1.0 - 2.0 / (exp(2.0 * x) + 1.0))
+}
+// interior knee angle (law of cosines) for a root->end distance d
+fn knee_angle(l1 f32, l2 f32, d f32) f32 { acos_c((d * d - l1 * l1 - l2 * l2) / (-2.0 * l1 * l2)) }
+
+// Two-bone IK on the chain a -> b -> c (b's parent must be a, c's parent b).
+// target: where c should go; pole: a point the middle joint should bend
+// toward; weight blends the result; keep_end keeps c's model orientation.
+// Returns the remaining distance |c - target| after solving (0 if reached).
+fn two_bone_ik(sk Skeleton&, p Pose&, m Model&, a i32, b i32, c i32, target float3, pole float3, weight f32, keep_end bool) f32 {
+	if weight <= 0.0 { return 0.0; }
+	let pa = m.x[a].t; let pb = m.x[b].t; let pc = m.x[c].t;
+	let l1 = length(pb - pa);
+	let l2 = length(pc - pb);
+	let reach = l1 + l2;
+	let dt = length(target - pa);
+	// Near full extension acos(..) has an unbounded slope, so a hard clamp
+	// turns millimetres of target motion into thigh/shin pops. The knee is
+	// therefore solved on a fixed C2 soft map of the distance (soft_reach):
+	// legs straighter than SOFT_K of their reach are bent slightly, always,
+	// so the change is a smooth function of the pose and never toggles.
+	let lo = abs(l1 - l2) + 1.0e-4;
+	let kt = knee_angle(l1, l2, clamp(soft_reach(dt, reach), lo, reach));
+	// current and wanted interior angles at a (between a->c and a->b) and b
+	let ac = safe_norm(pc - pa, float3 { 0.0, -1.0, 0.0 });
+	let ab = safe_norm(pb - pa, ac);
+	let ba = ab * -1.0;
+	let bc = safe_norm(pc - pb, ac);
+	let b1 = clamp(kt, 1.0e-3, PI);
+	let d = max(sqrt(max(l1 * l1 + l2 * l2 - 2.0 * l1 * l2 * cos(b1), 0.0)), lo);
+	let a1 = acos_c((l2 * l2 - l1 * l1 - d * d) / (-2.0 * l1 * d));
+	// bend plane normal from the pole (stable), not from the current knee:
+	// an animated knee that passes through straight (hyperextends) would
+	// flip cross(ac, ab) and with it the solved bend side
+	var n = cross(ac, pole - pa);
+	if length_sq(n) < 1.0e-10 { n = cross(ac, ab); }
+	if length_sq(n) < 1.0e-10 { n = cross(ac, float3 { 1.0, 0.0, 0.0 }); }
+	n = normalize(n);
+	// signed current angles about n, measured in the bend plane (the plane
+	// normal to n): a knee bent away from the pole side is past straight,
+	// so its interior angle is 2pi - b0 (and -a0 at a). Measuring in the
+	// plane keeps them continuous when the animated knee swings sideways
+	// across the pole plane (a sign test on the 3D angles jumped by 2*a0 and
+	// 2*(pi - b0) there: a one-frame thigh/shin pop of a near-straight leg)
+	let ac_p = safe_norm(ac - n * dot(ac, n), ac);
+	let ab_p = safe_norm(ab - n * dot(ab, n), ab);
+	let bc_p = safe_norm(bc - n * dot(bc, n), bc);
+	let ba_p = ab_p * -1.0;
+	let a0s = atan2(dot(cross(ac_p, ab_p), n), dot(ac_p, ab_p));
+	var b0s = atan2(dot(cross(ba_p, bc_p), n), dot(ba_p, bc_p));
+	if b0s < 0.0 { b0s += 2.0 * PI; }
+	let q0 = qaxis(n, a1 - a0s);          // opens the angle at a
+	let q1 = qaxis(n, b1 - b0s);          // opens the angle at b
+	// apply the bends: c moves about b by q1, then everything about a by q0
+	let pc1 = rot_about(q0, pa, rot_about(q1, pb, pc));
+	let pb1 = rot_about(q0, pa, pb);
+	// swing a so that a->c points at the target
+	let q2 = qfromto(pc1 - pa, target - pa);
+	let pb2 = rot_about(q2, pa, pb1);
+	// twist about a->target so that b lies in the plane through the pole
+	let axis = safe_norm(target - pa, ac);
+	let kb = pb2 - pa; let kp = pole - pa;
+	let kb_p = kb - axis * dot(kb, axis);
+	let kp_p = kp - axis * dot(kp, axis);
+	var q3 = QI;
+	if length_sq(kb_p) > 1.0e-10 && length_sq(kp_p) > 1.0e-10 {
+		let u = normalize(kb_p); let v = normalize(kp_p);
+		let ang = atan2(dot(cross(u, v), axis), dot(u, v));
+		q3 = qaxis(axis, ang);
+	}
+	let qa = qmul(q3, qmul(q2, q0));      // world delta applied at a
+	let ra = qnorm(qmul(qa, m.x[a].r));
+	let rb = qnorm(qmul(qa, qmul(q1, m.x[b].r)));
+	let la = local_rot_from_model(sk, m, a, ra);
+	let lb = qnorm(qmul(qconj(ra), rb));
+	p.r[a] = nlerp(p.r[a], la, weight);
+	p.r[b] = nlerp(p.r[b], lb, weight);
+	if keep_end {
+		let lc = qnorm(qmul(qconj(rb), m.x[c].r));
+		p.r[c] = nlerp(p.r[c], lc, weight);
+	}
+	let end = rot_about(q3, pa, rot_about(q2, pa, pc1));
+	length(end - target)
+}
+
+// FABRIK on a joint chain (each joint's parent is the previous one).
+// Returns the final end-effector error and the iterations used.
+struct FabrikResult { error f32, iters i32 }
+fn fabrik(sk Skeleton&, p Pose&, m Model&, chain i32[:], target float3, tol f32, max_iter i32, weight f32, keep_end bool) FabrikResult {
+	let n = chain.len;
+	if n < 2 || weight <= 0.0 { return FabrikResult { 0.0, 0 }; }
+	var pos = [V0; 32];
+	var len = [0.0 as f32; 32];
+	var total = 0.0 as f32;
+	for i in n { pos[i] = m.x[chain[i]].t; }
+	for i in n - 1 { len[i] = length(pos[i + 1] - pos[i]); total += len[i]; }
+	let root = pos[0];
+	var iters = 0;
+	if length(target - root) >= total {
+		// unreachable: stretch toward the target
+		for i in n - 1 {
+			let dir = safe_norm(target - pos[i], float3 { 0.0, -1.0, 0.0 });
+			pos[i + 1] = pos[i] + dir * len[i];
+		}
+		iters = 1;
+	} else {
+		while iters < max_iter && length(pos[n - 1] - target) > tol {
+			// backward: end effector to the target, walk to the root
+			pos[n - 1] = target;
+			var i = n - 2;
+			while i >= 0 {
+				let dir = safe_norm(pos[i] - pos[i + 1], float3 { 0.0, 1.0, 0.0 });
+				pos[i] = pos[i + 1] + dir * len[i];
+				i -= 1;
+			}
+			// forward: root back to its place, walk to the end
+			pos[0] = root;
+			for k in n - 1 {
+				let dir = safe_norm(pos[k + 1] - pos[k], float3 { 0.0, -1.0, 0.0 });
+				pos[k + 1] = pos[k] + dir * len[k];
+			}
+			iters += 1;
+		}
+	}
+	// rotations: from the root down, turn each bone onto its solved direction
+	var cur_t = [V0; 32];
+	var cur_r = [QI; 32];
+	for i in n { cur_t[i] = m.x[chain[i]].t; cur_r[i] = m.x[chain[i]].r; }
+	let end_r = cur_r[n - 1];
+	for i in n - 1 {
+		let dq = qfromto(cur_t[i + 1] - cur_t[i], pos[i + 1] - cur_t[i]);
+		for k in i..n {
+			if k > i { cur_t[k] = rot_about(dq, cur_t[i], cur_t[k]); }
+			cur_r[k] = qnorm(qmul(dq, cur_r[k]));
+		}
+	}
+	if keep_end { cur_r[n - 1] = end_r; }
+	for i in n {
+		let j = chain[i];
+		let l = if i == 0 { local_rot_from_model(sk, m, j, cur_r[0]) } else { qnorm(qmul(qconj(cur_r[i - 1]), cur_r[i])) };
+		p.r[j] = nlerp(p.r[j], l, weight);
+	}
+	FabrikResult { length(pos[n - 1] - target), iters as i32 }
+}
+
+// ---- foot planting --------------------------------------------------------
+// Per leg: joints, how high the ankle sits above the sole, and lock state.
+struct Leg {
+	hip i32, knee i32, ankle i32,
+	sole f32 = 0.08,       // ankle height above ground when the foot is flat
+	locked bool = false,
+	lock_pos float3 = V0,  // world position held while locked
+	lock_w f32 = 0.0,
+	prev float3 = V0,      // last world ankle position (for contact speed)
+	has_prev bool = false,
+	err f32 = 0.0,
+	out_w float3 = V0,     // last world ankle target actually solved for
+	out_v float3 = V0,     // its velocity (m/s)
+	prev_tw float3 = V0,   // last unlocked (anim + ground) target
+	prev_tw_v float3 = V0, // and its velocity
+	has_out bool = false,
+	// knee-forward direction in the knee joint's frame, captured the first
+	// time the leg is clearly bent; gives a pole that follows the shin and
+	// does not flip when the animated knee passes through straight
+	fwd_k float3 = V0,
+	has_fwd bool = false,
+	// release: the offset (output - anim target) at the moment of release is
+	// decayed to zero by a quintic matching offset and velocity (inertialization)
+	releasing bool = false,
+	rel_t f32 = 0.0, rel_T f32 = 0.0,
+	rel_x0 float3 = V0, rel_v0 float3 = V0,
+}
+struct PlantCfg {
+	contact_h f32 = 0.04,   // ankle within this of its sole height = contact
+	contact_v f32 = 0.35,   // and moving slower than this (m/s, world)
+	lock_rate f32 = 8.0,    // engage: lock weight per second (eased 1/8 s)
+	release_t f32 = 0.3,    // release: offset decay time (s)
+	lock_max f32 = 1.0,     // ceiling on the lock weight (callers fade locking out at speed)
+	max_drop f32 = 0.35,    // pelvis may drop at most this far
+	pelvis i32 = -1,
+}
+// ground_y: world ground height under each leg (caller samples its terrain).
+// char_xf: the character's world transform. Returns the pelvis drop used.
+fn plant_feet(sk Skeleton&, p Pose&, m Model&, legs Leg[2]&, ground_y f32[2], char_xf Xf, cfg PlantCfg, dt f32) f32 {
+	let inv = xf_inv(char_xf);
+	// how far each foot's ground is above/below the character's ground plane
+	var off = [0.0 as f32; 2];
+	for i in 2 { off[i] = ground_y[i] - char_xf.t.y; }
+	let drop = clamp(min(min(off[0], off[1]), 0.0), 0.0 - cfg.max_drop, 0.0);
+	if cfg.pelvis >= 0 && drop < 0.0 {
+		p.t[cfg.pelvis] = p.t[cfg.pelvis] + qrot(qconj(m.x[sk.parent[cfg.pelvis]].r), float3 { 0.0, drop, 0.0 });
+		fk(sk, p, m);
+	}
+	for i in 2 {
+		let lg = legs[i];
+		let ank = m.x[lg.ankle].t;
+		let ank_w = xf_point(char_xf, ank);
+		let h = ank.y - lg.sole;                 // anim height above its ground
+		var v = 0.0 as f32;
+		if lg.has_prev && dt > 0.0 { let dv = ank_w - lg.prev; v = length(float3 { dv.x, 0.0, dv.z }) / dt; }
+		legs[i].prev = ank_w; legs[i].has_prev = true;
+		let contact = h < cfg.contact_h && v < cfg.contact_v;
+		// unlocked target: the anim ankle carried onto this foot's ground
+		let tw0 = float3 { ank_w.x, ank_w.y + off[i], ank_w.z };
+		let tw0_v = if lg.has_out && dt > 0.0 { (tw0 - lg.prev_tw) / dt } else { V0 };
+		legs[i].prev_tw = tw0; legs[i].prev_tw_v = tw0_v;
+		if contact && !lg.locked {
+			legs[i].locked = true;
+			// lock where the foot is drawn now (continuous: weight starts at 0)
+			let here = if lg.has_out { lg.out_w } else { tw0 };
+			legs[i].lock_pos = float3 { here.x, ground_y[i] + lg.sole, here.z };
+		}
+		if !contact && lg.locked {
+			legs[i].locked = false;
+			if lg.has_out && dt > 0.0 {
+				// hand the remaining offset to the inertializer and drop the lock
+				legs[i].releasing = true; legs[i].rel_t = 0.0; legs[i].rel_T = cfg.release_t;
+				// offset and its velocity as of the previous frame; the decay is
+				// then first evaluated one step in (rel_t = dt below)
+				legs[i].rel_x0 = lg.out_w - lg.prev_tw;
+				legs[i].rel_v0 = lg.out_v - lg.prev_tw_v;
+			}
+			legs[i].lock_w = 0.0;
+		}
+		if legs[i].locked { legs[i].lock_w = approach_f(legs[i].lock_w, 1.0, cfg.lock_rate, dt); }
+		// base = unlocked target + decaying release offset
+		var base = tw0;
+		if legs[i].releasing {
+			legs[i].rel_t += dt;
+			if legs[i].rel_t >= legs[i].rel_T { legs[i].releasing = false; }
+			else { base = base + inert_offset(legs[i].rel_x0, legs[i].rel_v0, legs[i].rel_t, legs[i].rel_T); }
+		}
+		// eased lock weight: zero slope at both ends
+		let lw = smootherstep01(legs[i].lock_w) * clamp(cfg.lock_max, 0.0, 1.0);
+		let lp = legs[i].lock_pos;
+		let tw = base + (float3 { lp.x, ground_y[i] + lg.sole + max(h, 0.0), lp.z } - base) * lw;
+		legs[i].out_v = if legs[i].has_out && dt > 0.0 { (tw - lg.out_w) / dt } else { V0 };
+		legs[i].out_w = tw; legs[i].has_out = true;
+		let t = xf_point(inv, tw);
+		// always solve (no skip when the target sits on the animated ankle):
+		// the soft reach map changes near-straight legs, and switching the
+		// solver on and off would switch that change on and off
+		if lg.knee < 0 { legs[i].err = 0.0; continue; }
+		// pole: in front of the knee. Its direction is the bend direction as
+		// seen in the knee's own frame (captured once while clearly bent), so
+		// it moves with the shin and stays on the front through straight legs
+		let pa = m.x[lg.hip].t; let pb = m.x[lg.knee].t;
+		let mid = (pa + ank) * 0.5;
+		let bv = pb - mid;
+		let lleg = length(pb - pa) + length(ank - pb);
+		// the hinge axis is kept in the thigh's frame, refreshed while the
+		// knee is clearly bent; near straight (and through hyperextension)
+		// the pole comes from that stored hinge instead of the knee itself
+		let acn = safe_norm(ank - pa, float3 { 0.0, -1.0, 0.0 });
+		let bf = length(bv) / max(lleg, 1.0e-6);
+		let bn = safe_norm(bv, float3 { 0.0, 0.0, 1.0 });
+		var bend = bn;
+		if bf > 0.15 {
+			legs[i].fwd_k = qrot(qconj(m.x[sk.parent[lg.knee]].r), safe_norm(cross(acn, pb - pa), float3 { 1.0, 0.0, 0.0 }));
+			legs[i].has_fwd = true;
+		} else if lg.has_fwd {
+			let st = safe_norm(cross(qrot(m.x[sk.parent[lg.knee]].r, lg.fwd_k), acn), bn);
+			let w = smootherstep01((bf - 0.03) / 0.12) * smootherstep01(dot(bn, st));
+			bend = safe_norm(st + (bn - st) * w, st);
+		}
+		let pole = pb + bend * 0.5;
+		legs[i].err = two_bone_ik(sk, p, m, lg.hip, lg.knee, lg.ankle, t, pole, 1.0, true);
+		fk(sk, p, m);
+	}
+	drop
+}
+// Inertialization offset (D. Bollo, "Inertialization: High-Performance
+// Animation Transitions in Gears of War", GDC 2016): a quintic x(t) with
+// x(0)=x0, x'(0)=v0, x''(0)=0 and x, x', x'' all zero at t1. Per axis.
+fn inert_axis(x0 f32, v0 f32, t f32, t1 f32) f32 {
+	var T = t1;
+	// keep the decay from overshooting when moving away: shorten T (Bollo)
+	if x0 * v0 < 0.0 { T = min(T, abs(-5.0 * x0 / v0)); }
+	if T <= 1.0e-5 || t >= T { return 0.0; }
+	let T2 = T * T; let T3 = T2 * T; let T4 = T3 * T; let T5 = T4 * T;
+	let A = 0.0 - (6.0 * v0 * T + 12.0 * x0) / (2.0 * T5);
+	let B = (16.0 * v0 * T + 30.0 * x0) / (2.0 * T4);
+	let C = 0.0 - (12.0 * v0 * T + 20.0 * x0) / (2.0 * T3);
+	let t2 = t * t;
+	((A * t + B) * t + C) * t2 * t + v0 * t + x0
+}
+fn inert_offset(x0 float3, v0 float3, t f32, t1 f32) float3 {
+	float3 { inert_axis(x0.x, v0.x, t, t1), inert_axis(x0.y, v0.y, t, t1), inert_axis(x0.z, v0.z, t, t1) }
+}
+fn approach_f(x f32, target f32, rate f32, dt f32) f32 {
+	let d = target - x;
+	let step = rate * dt;
+	if abs(d) <= step { target } else if d > 0.0 { x + step } else { x - step }
+}

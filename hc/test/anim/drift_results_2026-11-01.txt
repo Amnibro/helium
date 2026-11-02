@@ -1,0 +1,260 @@
+foot drift sweep  2026-11-01 07:48 AST  box (CPU only)  source: hc/test/anim/drift_body.amni + anim_drift.amni as committed with this file (runtime lib at 58d9d457 + the R3-L1 skin change, which the drift test does not use)
+command per file: HC_LIB=hc/lib build/hcn build hc/test/anim/anim_drift.amni -o anim_drift; anim_drift <file.glb>  (39 files, 6 in parallel)
+39/39 exit 0, 39/39 PASS; GLB sha256 identical before and after. LOD and mobile variants print the same numbers as their base rig (outputs identical apart from the path); only the 8 base rigs are listed in full.
+
+foot drift /workspace/bake/r4/base/jk-h02.glb  walk 1.3945454 m/s natural, run 3.9640908 m/s natural, band 1.8-4.2  toe joints true
+  noIK   v 1.3945454  body 1.3945436  steps 10  slip 0.052641947 m/s (mean 0.049403943)  drift 5.264195 mm/100ms  ratio 0.037748512
+  noIK   v 1.8  body 1.7999933  steps 13  slip 0.08815005 m/s (mean 0.081749745)  drift 8.815004 mm/100ms  ratio 0.04897243
+  noIK   v 2.4  body 2.1935544  steps 13  slip 0.15397747 m/s (mean 0.13835053)  drift 15.397748 mm/100ms  ratio 0.07019542
+  noIK   v 3.0  body 2.7125995  steps 13  slip 0.28333983 m/s (mean 0.26560986)  drift 28.333982 mm/100ms  ratio 0.10445325
+  noIK   v 3.6  body 3.367668  steps 15  slip 0.40325484 m/s (mean 0.38736168)  drift 40.325485 mm/100ms  ratio 0.11974305
+  noIK   v 4.2  body 4.1991673  steps 16  slip 0.5327423 m/s (mean 0.49619883)  drift 53.274235 mm/100ms  ratio 0.12686856
+  noIK   v 6.0  body 6.000683  steps 23  slip 0.82667446 m/s (mean 0.7825843)  drift 82.66745 mm/100ms  ratio 0.1377634
+  IK     v 1.3945454  body 1.3945436  steps 10  slip 0.042179063 m/s (mean 0.03912011)  drift 4.2179065 mm/100ms  ratio 0.030245781
+  IK     v 1.8  body 1.7999933  steps 13  slip 0.07601072 m/s (mean 0.04717181)  drift 7.6010723 mm/100ms  ratio 0.042228334
+  IK     v 2.4  body 2.1935544  steps 13  slip 0.1390246 m/s (mean 0.0953221)  drift 13.90246 mm/100ms  ratio 0.06337869
+  IK     v 3.0  body 2.7125995  steps 13  slip 0.2863704 m/s (mean 0.26257068)  drift 28.637041 mm/100ms  ratio 0.105570465
+  IK     v 3.6  body 3.367668  steps 15  slip 0.40822187 m/s (mean 0.39051914)  drift 40.82219 mm/100ms  ratio 0.12121797
+  IK     v 4.2  body 4.1991673  steps 16  slip 0.51840097 m/s (mean 0.48517525)  drift 51.8401 mm/100ms  ratio 0.12345328
+  IK     v 6.0  body 6.000683  steps 23  slip 0.8197941 m/s (mean 0.7804214)  drift 81.979416 mm/100ms  ratio 0.13661681
+  skate  v 1.3945454  body 2.7890825  steps 10  slip 0.79265505 m/s (mean 0.78857976)  drift 79.26551 mm/100ms  ratio 0.2841992
+  skate  v 1.8  body 3.600026  steps 13  slip 1.1057199 m/s (mean 1.0890713)  drift 110.572 mm/100ms  ratio 0.30714223
+  skate  v 2.4  body 4.5936103  steps 13  slip 1.7606529 m/s (mean 1.7446139)  drift 176.06529 mm/100ms  ratio 0.38328305
+  skate  v 3.0  body 5.712587  steps 13  slip 2.420827 m/s (mean 2.3979027)  drift 242.0827 mm/100ms  ratio 0.4237707
+  skate  v 3.6  body 6.967709  steps 15  slip 3.1017258 m/s (mean 3.074595)  drift 310.1726 mm/100ms  ratio 0.4451572
+  skate  v 4.2  body 8.399159  steps 16  slip 3.8488038 m/s (mean 3.8184679)  drift 384.8804 mm/100ms  ratio 0.45823678
+  skate  v 6.0  body 12.000619  steps 23  slip 5.9834886 m/s (mean 5.9144444)  drift 598.34894 mm/100ms  ratio 0.49859834
+  blend v 2.4  ratio 0.07019542  end-line 0.06844647  excess 0.0017489493
+  blend v 3.0  ratio 0.10445325  end-line 0.0879205  excess 0.016532749
+  blend v 3.6  ratio 0.11974305  end-line 0.10739453  excess 0.012348518
+drift PASS  /workspace/bake/r4/base/jk-h02.glb  band ratio 2.4/3.0/3.6 0.07019542 0.10445325 0.11974305  worst blend excess 0.016532749  IK worst 0.004967034 m/s  control min +0.5306483 x v
+
+foot drift /workspace/bake/r4/base/jk-h04.glb  walk 1.2027272 m/s natural, run 3.4172728 m/s natural, band 1.8-4.2  toe joints true
+  noIK   v 1.2027272  body 1.202721  steps 10  slip 0.040659502 m/s (mean 0.03749969)  drift 4.0659504 mm/100ms  ratio 0.033806264
+  noIK   v 1.8  body 1.7999955  steps 15  slip 0.09206882 m/s (mean 0.08550235)  drift 9.206882 mm/100ms  ratio 0.051149473
+  noIK   v 2.4  body 2.1937158  steps 15  slip 0.16642292 m/s (mean 0.15197743)  drift 16.642292 mm/100ms  ratio 0.07586348
+  noIK   v 3.0  body 2.7128208  steps 16  slip 0.298029 m/s (mean 0.27978465)  drift 29.802902 mm/100ms  ratio 0.10985945
+  noIK   v 3.6  body 3.3681245  steps 17  slip 0.43646535 m/s (mean 0.41082764)  drift 43.646538 mm/100ms  ratio 0.12958705
+  noIK   v 4.2  body 4.200013  steps 19  slip 0.53361887 m/s (mean 0.5075908)  drift 53.36189 mm/100ms  ratio 0.12705171
+  noIK   v 6.0  body 6.000528  steps 28  slip 0.90035886 m/s (mean 0.8464166)  drift 90.03589 mm/100ms  ratio 0.1500466
+  IK     v 1.2027272  body 1.202721  steps 10  slip 0.025544576 m/s (mean 0.021758279)  drift 2.554458 mm/100ms  ratio 0.021238988
+  IK     v 1.8  body 1.7999955  steps 15  slip 0.054793168 m/s (mean 0.04389812)  drift 5.479317 mm/100ms  ratio 0.030440724
+  IK     v 2.4  body 2.1937158  steps 15  slip 0.10183224 m/s (mean 0.08053546)  drift 10.183225 mm/100ms  ratio 0.04641998
+  IK     v 3.0  body 2.7128208  steps 16  slip 0.2984689 m/s (mean 0.28574046)  drift 29.84689 mm/100ms  ratio 0.1100216
+  IK     v 3.6  body 3.3681245  steps 17  slip 0.44227338 m/s (mean 0.41137567)  drift 44.22734 mm/100ms  ratio 0.13131148
+  IK     v 4.2  body 4.200013  steps 19  slip 0.5253684 m/s (mean 0.499932)  drift 52.536842 mm/100ms  ratio 0.12508732
+  IK     v 6.0  body 6.000528  steps 28  slip 0.90164644 m/s (mean 0.84936893)  drift 90.16465 mm/100ms  ratio 0.1502612
+  skate  v 1.2027272  body 2.4054427  steps 10  slip 0.69180316 m/s (mean 0.68428004)  drift 69.18032 mm/100ms  ratio 0.2875991
+  skate  v 1.8  body 3.6000264  steps 15  slip 1.1577606 m/s (mean 1.1491822)  drift 115.77607 mm/100ms  ratio 0.3215978
+  skate  v 2.4  body 4.5937567  steps 15  slip 1.8264074 m/s (mean 1.8122079)  drift 182.64075 mm/100ms  ratio 0.3975847
+  skate  v 3.0  body 5.7127905  steps 16  slip 2.5093896 m/s (mean 2.4869275)  drift 250.93898 mm/100ms  ratio 0.43925813
+  skate  v 3.6  body 6.9681344  steps 17  slip 3.2252924 m/s (mean 3.2045972)  drift 322.52927 mm/100ms  ratio 0.46286312
+  skate  v 4.2  body 8.400004  steps 19  slip 4.0025997 m/s (mean 3.97528)  drift 400.26 mm/100ms  ratio 0.4764997
+  skate  v 6.0  body 12.000464  steps 28  slip 6.1662006 m/s (mean 6.116825)  drift 616.6201 mm/100ms  ratio 0.5138302
+  blend v 2.4  ratio 0.07586348  end-line 0.07012504  excess 0.005738437
+  blend v 3.0  ratio 0.10985945  end-line 0.0891006  excess 0.020758852
+  blend v 3.6  ratio 0.12958705  end-line 0.108076155  excess 0.021510899
+drift PASS  /workspace/bake/r4/base/jk-h04.glb  band ratio 2.4/3.0/3.6 0.07586348 0.10985945 0.12958705  worst blend excess 0.021510899  IK worst 0.0058080256 m/s  control min +0.54138935 x v
+
+foot drift /workspace/bake/r4/base/jk-h06.glb  walk 1.5672727 m/s natural, run 4.453636 m/s natural, band 1.8-4.2  toe joints true
+  noIK   v 1.5672727  body 1.5672686  steps 10  slip 0.05673441 m/s (mean 0.04802958)  drift 5.673441 mm/100ms  ratio 0.036199544
+  noIK   v 1.8  body 1.7999952  steps 11  slip 0.07376031 m/s (mean 0.06666586)  drift 7.3760314 mm/100ms  ratio 0.04097806
+  noIK   v 2.4  body 2.1937768  steps 11  slip 0.115825236 m/s (mean 0.10773807)  drift 11.582524 mm/100ms  ratio 0.052797183
+  noIK   v 3.0  body 2.7129824  steps 11  slip 0.25173464 m/s (mean 0.23318361)  drift 25.173466 mm/100ms  ratio 0.0927889
+  noIK   v 3.6  body 3.3679266  steps 13  slip 0.3803664 m/s (mean 0.35812142)  drift 38.03664 mm/100ms  ratio 0.11293786
+  noIK   v 4.2  body 4.200274  steps 14  slip 0.52507216 m/s (mean 0.49618)  drift 52.50722 mm/100ms  ratio 0.12500903
+  noIK   v 6.0  body 5.9998837  steps 21  slip 0.83104515 m/s (mean 0.7622549)  drift 83.10452 mm/100ms  ratio 0.13851021
+  IK     v 1.5672727  body 1.5672686  steps 10  slip 0.046247542 m/s (mean 0.037825216)  drift 4.6247544 mm/100ms  ratio 0.029508369
+  IK     v 1.8  body 1.7999952  steps 11  slip 0.0649491 m/s (mean 0.052375816)  drift 6.4949107 mm/100ms  ratio 0.03608293
+  IK     v 2.4  body 2.1937768  steps 11  slip 0.12618063 m/s (mean 0.11107618)  drift 12.618064 mm/100ms  ratio 0.057517532
+  IK     v 3.0  body 2.7129824  steps 11  slip 0.2609854 m/s (mean 0.23920645)  drift 26.098541 mm/100ms  ratio 0.09619871
+  IK     v 3.6  body 3.3679266  steps 13  slip 0.38169196 m/s (mean 0.36023238)  drift 38.169197 mm/100ms  ratio 0.11333144
+  IK     v 4.2  body 4.200274  steps 14  slip 0.521155 m/s (mean 0.49473777)  drift 52.115505 mm/100ms  ratio 0.124076426
+  IK     v 6.0  body 5.9998837  steps 21  slip 0.8228592 m/s (mean 0.7562174)  drift 82.28593 mm/100ms  ratio 0.13714586
+  skate  v 1.5672727  body 3.1345365  steps 10  slip 0.9120428 m/s (mean 0.8994951)  drift 91.204285 mm/100ms  ratio 0.29096577
+  skate  v 1.8  body 3.600027  steps 11  slip 1.0771856 m/s (mean 1.070913)  drift 107.718575 mm/100ms  ratio 0.29921597
+  skate  v 2.4  body 4.5937896  steps 11  slip 1.7335714 m/s (mean 1.7255658)  drift 173.35715 mm/100ms  ratio 0.37737283
+  skate  v 3.0  body 5.7129593  steps 11  slip 2.384774 m/s (mean 2.3724718)  drift 238.4774 mm/100ms  ratio 0.41743234
+  skate  v 3.6  body 6.9679465  steps 13  slip 3.0602722 m/s (mean 3.0402753)  drift 306.02722 mm/100ms  ratio 0.43919283
+  skate  v 4.2  body 8.400265  steps 14  slip 3.7726233 m/s (mean 3.7542984)  drift 377.26236 mm/100ms  ratio 0.44910768
+  skate  v 6.0  body 11.999821  steps 21  slip 5.8418794 m/s (mean 5.801009)  drift 584.188 mm/100ms  ratio 0.48683056
+  blend v 2.4  ratio 0.052797183  end-line 0.06198581  excess -0.009188626
+  blend v 3.0  ratio 0.0927889  end-line 0.08299355  excess 0.009795345
+  blend v 3.6  ratio 0.11293786  end-line 0.10400128  excess 0.008936577
+drift PASS  /workspace/bake/r4/base/jk-h06.glb  band ratio 2.4/3.0/3.6 0.052797183 0.0927889 0.11293786  worst blend excess 0.009795345  IK worst 0.010355398 m/s  control min +0.5457305 x v
+
+foot drift /workspace/asset-audit/arena-wire/bfme/assets/models/bfme-hr01.glb  walk 1.4588791 m/s natural, run 4.146288 m/s natural, band 1.8-4.2  toe joints true
+  noIK   v 1.4588791  body 1.4588828  steps 10  slip 0.054795835 m/s (mean 0.047027487)  drift 5.479584 mm/100ms  ratio 0.037560135
+  noIK   v 1.8  body 1.7999924  steps 12  slip 0.077193715 m/s (mean 0.072535135)  drift 7.719372 mm/100ms  ratio 0.042885575
+  noIK   v 2.4  body 2.1940026  steps 12  slip 0.12349093 m/s (mean 0.11080792)  drift 12.349093 mm/100ms  ratio 0.05628568
+  noIK   v 3.0  body 2.7122972  steps 13  slip 0.2533824 m/s (mean 0.23631081)  drift 25.338242 mm/100ms  ratio 0.09341986
+  noIK   v 3.6  body 3.3688247  steps 14  slip 0.3874015 m/s (mean 0.3631508)  drift 38.74015 mm/100ms  ratio 0.11499604
+  noIK   v 4.2  body 4.2005787  steps 16  slip 0.54142326 m/s (mean 0.5026125)  drift 54.142326 mm/100ms  ratio 0.12889254
+  noIK   v 6.0  body 6.0017824  steps 23  slip 0.8239382 m/s (mean 0.76888025)  drift 82.39382 mm/100ms  ratio 0.13728225
+  IK     v 1.4588791  body 1.4588828  steps 10  slip 0.046862323 m/s (mean 0.040099002)  drift 4.6862326 mm/100ms  ratio 0.03212206
+  IK     v 1.8  body 1.7999924  steps 12  slip 0.07708015 m/s (mean 0.056728985)  drift 7.7080154 mm/100ms  ratio 0.042822488
+  IK     v 2.4  body 2.1940026  steps 12  slip 0.1393595 m/s (mean 0.11038562)  drift 13.935951 mm/100ms  ratio 0.06351838
+  IK     v 3.0  body 2.7122972  steps 13  slip 0.2588369 m/s (mean 0.24298845)  drift 25.883692 mm/100ms  ratio 0.09543087
+  IK     v 3.6  body 3.3688247  steps 14  slip 0.3888212 m/s (mean 0.36568663)  drift 38.882122 mm/100ms  ratio 0.115417466
+  IK     v 4.2  body 4.2005787  steps 16  slip 0.5384969 m/s (mean 0.49555528)  drift 53.849693 mm/100ms  ratio 0.12819588
+  IK     v 6.0  body 6.0017824  steps 23  slip 0.81594205 m/s (mean 0.76426077)  drift 81.59421 mm/100ms  ratio 0.13594995
+  skate  v 1.4588791  body 2.9177806  steps 10  slip 0.8465989 m/s (mean 0.83549386)  drift 84.6599 mm/100ms  ratio 0.29015166
+  skate  v 1.8  body 3.6000264  steps 12  slip 1.0943046 m/s (mean 1.0879773)  drift 109.430466 mm/100ms  ratio 0.30397126
+  skate  v 2.4  body 4.5940347  steps 12  slip 1.7536478 m/s (mean 1.7460098)  drift 175.36479 mm/100ms  ratio 0.3817228
+  skate  v 3.0  body 5.7122917  steps 13  slip 2.4185221 m/s (mean 2.3993497)  drift 241.85223 mm/100ms  ratio 0.4233891
+  skate  v 3.6  body 6.9688516  steps 14  slip 3.1006649 m/s (mean 3.079222)  drift 310.0665 mm/100ms  ratio 0.44493198
+  skate  v 4.2  body 8.400567  steps 16  slip 3.8373308 m/s (mean 3.8110433)  drift 383.7331 mm/100ms  ratio 0.45679426
+  skate  v 6.0  body 12.0017185  steps 23  slip 5.9083405 m/s (mean 5.875266)  drift 590.8341 mm/100ms  ratio 0.4922912
+  blend v 2.4  ratio 0.05628568  end-line 0.06438732  excess -0.008101642
+  blend v 3.0  ratio 0.09341986  end-line 0.085889064  excess 0.0075307935
+  blend v 3.6  ratio 0.11499604  end-line 0.107390806  excess 0.0076052323
+drift PASS  /workspace/asset-audit/arena-wire/bfme/assets/models/bfme-hr01.glb  band ratio 2.4/3.0/3.6 0.05628568 0.09341986 0.11499604  worst blend excess 0.0076052323  IK worst 0.015868574 m/s  control min +0.54274756 x v
+
+foot drift /workspace/asset-audit/arena-wire/bfme/assets/models/bfme-hr02.glb  walk 1.226058 m/s natural, run 3.484586 m/s natural, band 1.8-4.2  toe joints true
+  noIK   v 1.226058  body 1.2260609  steps 10  slip 0.044983376 m/s (mean 0.037436415)  drift 4.4983377 mm/100ms  ratio 0.03668935
+  noIK   v 1.8  body 1.7999943  steps 15  slip 0.0929419 m/s (mean 0.085916586)  drift 9.29419 mm/100ms  ratio 0.051634554
+  noIK   v 2.4  body 2.1935823  steps 15  slip 0.14504836 m/s (mean 0.13535936)  drift 14.504837 mm/100ms  ratio 0.06612397
+  noIK   v 3.0  body 2.7126143  steps 16  slip 0.2830684 m/s (mean 0.26360983)  drift 28.30684 mm/100ms  ratio 0.104352616
+  noIK   v 3.6  body 3.367841  steps 16  slip 0.42255643 m/s (mean 0.39778388)  drift 42.255646 mm/100ms  ratio 0.12546805
+  noIK   v 4.2  body 4.199634  steps 18  slip 0.54366475 m/s (mean 0.5299444)  drift 54.36648 mm/100ms  ratio 0.12945527
+  noIK   v 6.0  body 5.9999995  steps 27  slip 0.89307934 m/s (mean 0.83965236)  drift 89.307945 mm/100ms  ratio 0.14884657
+  IK     v 1.226058  body 1.2260609  steps 10  slip 0.022182666 m/s (mean 0.016088556)  drift 2.2182667 mm/100ms  ratio 0.01809263
+  IK     v 1.8  body 1.7999943  steps 15  slip 0.06879593 m/s (mean 0.03952336)  drift 6.8795934 mm/100ms  ratio 0.038220078
+  IK     v 2.4  body 2.1935823  steps 15  slip 0.09281176 m/s (mean 0.07334072)  drift 9.2811775 mm/100ms  ratio 0.04231059
+  IK     v 3.0  body 2.7126143  steps 16  slip 0.28114417 m/s (mean 0.26013964)  drift 28.11442 mm/100ms  ratio 0.10364325
+  IK     v 3.6  body 3.367841  steps 16  slip 0.42632416 m/s (mean 0.40122697)  drift 42.63242 mm/100ms  ratio 0.12658678
+  IK     v 4.2  body 4.199634  steps 18  slip 0.53772837 m/s (mean 0.52272815)  drift 53.772842 mm/100ms  ratio 0.12804171
+  IK     v 6.0  body 5.9999995  steps 27  slip 0.89336365 m/s (mean 0.84013563)  drift 89.336365 mm/100ms  ratio 0.14889395
+  skate  v 1.226058  body 2.4521163  steps 10  slip 0.715039 m/s (mean 0.70519525)  drift 71.50391 mm/100ms  ratio 0.2916008
+  skate  v 1.8  body 3.600026  steps 15  slip 1.1578153 m/s (mean 1.1509031)  drift 115.78154 mm/100ms  ratio 0.32161304
+  skate  v 2.4  body 4.593614  steps 15  slip 1.8290583 m/s (mean 1.8132999)  drift 182.90584 mm/100ms  ratio 0.39817414
+  skate  v 3.0  body 5.712607  steps 16  slip 2.506854 m/s (mean 2.4856765)  drift 250.68542 mm/100ms  ratio 0.43882838
+  skate  v 3.6  body 6.967867  steps 16  slip 3.2192528 m/s (mean 3.1960566)  drift 321.92532 mm/100ms  ratio 0.4620141
+  skate  v 4.2  body 8.399623  steps 18  slip 3.978555 m/s (mean 3.9659984)  drift 397.85553 mm/100ms  ratio 0.47365877
+  skate  v 6.0  body 11.999936  steps 27  slip 6.1309133 m/s (mean 6.0797315)  drift 613.0914 mm/100ms  ratio 0.5109122
+  blend v 2.4  ratio 0.06612397  end-line 0.071089745  excess -0.0049657747
+  blend v 3.0  ratio 0.104352616  end-line 0.09054492  excess 0.013807699
+  blend v 3.6  ratio 0.12546805  end-line 0.11000009  excess 0.015467957
+drift PASS  /workspace/asset-audit/arena-wire/bfme/assets/models/bfme-hr02.glb  band ratio 2.4/3.0/3.6 0.06612397 0.104352616 0.12546805  worst blend excess 0.015467957  IK worst 0.0037677288 m/s  control min +0.5465122 x v
+
+foot drift /workspace/asset-audit/arena-wire/bfme/assets/models/bfme-hr03.glb  walk 1.4575905 m/s natural, run 4.1426253 m/s natural, band 1.8-4.2  toe joints true
+  noIK   v 1.4575905  body 1.4575828  steps 10  slip 0.052857567 m/s (mean 0.04651432)  drift 5.285757 mm/100ms  ratio 0.03626385
+  noIK   v 1.8  body 1.7999961  steps 12  slip 0.078941114 m/s (mean 0.07297678)  drift 7.8941116 mm/100ms  ratio 0.043856267
+  noIK   v 2.4  body 2.1940062  steps 12  slip 0.12132696 m/s (mean 0.10620394)  drift 12.132697 mm/100ms  ratio 0.05529928
+  noIK   v 3.0  body 2.7123008  steps 13  slip 0.25212404 m/s (mean 0.23261715)  drift 25.212406 mm/100ms  ratio 0.09295578
+  noIK   v 3.6  body 3.3688357  steps 14  slip 0.38232067 m/s (mean 0.3585809)  drift 38.23207 mm/100ms  ratio 0.11348748
+  noIK   v 4.2  body 4.200592  steps 16  slip 0.5336439 m/s (mean 0.49516752)  drift 53.36439 mm/100ms  ratio 0.12704016
+  noIK   v 6.0  body 6.0018053  steps 23  slip 0.81318456 m/s (mean 0.7578318)  drift 81.31846 mm/100ms  ratio 0.13549
+  IK     v 1.4575905  body 1.4575828  steps 10  slip 0.045348573 m/s (mean 0.038809642)  drift 4.5348577 mm/100ms  ratio 0.031112175
+  IK     v 1.8  body 1.7999961  steps 12  slip 0.064556785 m/s (mean 0.0561952)  drift 6.455679 mm/100ms  ratio 0.035864957
+  IK     v 2.4  body 2.1940062  steps 12  slip 0.12699296 m/s (mean 0.10225979)  drift 12.699297 mm/100ms  ratio 0.05788177
+  IK     v 3.0  body 2.7123008  steps 13  slip 0.2574322 m/s (mean 0.23900771)  drift 25.74322 mm/100ms  ratio 0.09491285
+  IK     v 3.6  body 3.3688357  steps 14  slip 0.38552442 m/s (mean 0.3610024)  drift 38.552444 mm/100ms  ratio 0.114438474
+  IK     v 4.2  body 4.200592  steps 16  slip 0.53532326 m/s (mean 0.48895332)  drift 53.53233 mm/100ms  ratio 0.12743996
+  IK     v 6.0  body 6.0018053  steps 23  slip 0.8077619 m/s (mean 0.7537869)  drift 80.77619 mm/100ms  ratio 0.13458648
+  skate  v 1.4575905  body 2.9151852  steps 10  slip 0.8439625 m/s (mean 0.83291996)  drift 84.396255 mm/100ms  ratio 0.28950563
+  skate  v 1.8  body 3.600027  steps 12  slip 1.0927974 m/s (mean 1.0873905)  drift 109.279755 mm/100ms  ratio 0.30355254
+  skate  v 2.4  body 4.594038  steps 12  slip 1.7553474 m/s (mean 1.7442805)  drift 175.53476 mm/100ms  ratio 0.38209248
+  skate  v 3.0  body 5.712293  steps 13  slip 2.4069393 m/s (mean 2.3984008)  drift 240.69392 mm/100ms  ratio 0.4213613
+  skate  v 3.6  body 6.968862  steps 14  slip 3.101387 m/s (mean 3.0786552)  drift 310.13873 mm/100ms  ratio 0.44503492
+  skate  v 4.2  body 8.400581  steps 16  slip 3.8339088 m/s (mean 3.8139873)  drift 383.3909 mm/100ms  ratio 0.45638612
+  skate  v 6.0  body 12.001744  steps 23  slip 5.910089 m/s (mean 5.877426)  drift 591.0089 mm/100ms  ratio 0.49243584
+  blend v 2.4  ratio 0.05529928  end-line 0.06465225  excess -0.009352971
+  blend v 3.0  ratio 0.09295578  end-line 0.08544822  excess 0.0075075626
+  blend v 3.6  ratio 0.11348748  end-line 0.10624419  excess 0.0072432905
+drift PASS  /workspace/asset-audit/arena-wire/bfme/assets/models/bfme-hr03.glb  band ratio 2.4/3.0/3.6 0.05529928 0.09295578 0.11348748  worst blend excess 0.0075075626  IK worst 0.005665995 m/s  control min +0.5427484 x v
+
+foot drift /workspace/asset-audit/arena-wire/bfme/assets/models/bfme-hr04.glb  walk 1.4722059 m/s natural, run 4.184164 m/s natural, band 1.8-4.2  toe joints true
+  noIK   v 1.4722059  body 1.4722067  steps 10  slip 0.05887283 m/s (mean 0.05235262)  drift 5.887283 mm/100ms  ratio 0.039989512
+  noIK   v 1.8  body 1.7999924  steps 12  slip 0.08133363 m/s (mean 0.07764263)  drift 8.133363 mm/100ms  ratio 0.04518554
+  noIK   v 2.4  body 2.1939714  steps 12  slip 0.12618424 m/s (mean 0.11679575)  drift 12.618425 mm/100ms  ratio 0.05751408
+  noIK   v 3.0  body 2.7122211  steps 12  slip 0.2603555 m/s (mean 0.23955996)  drift 26.035553 mm/100ms  ratio 0.09599347
+  noIK   v 3.6  body 3.3687139  steps 14  slip 0.38955605 m/s (mean 0.36078742)  drift 38.95561 mm/100ms  ratio 0.1156394
+  noIK   v 4.2  body 4.2004085  steps 15  slip 0.5393377 m/s (mean 0.48997796)  drift 53.933773 mm/100ms  ratio 0.12840125
+  noIK   v 6.0  body 6.000927  steps 23  slip 0.81264406 m/s (mean 0.7508592)  drift 81.26441 mm/100ms  ratio 0.13541976
+  IK     v 1.4722059  body 1.4722067  steps 10  slip 0.047363278 m/s (mean 0.042885058)  drift 4.736328 mm/100ms  ratio 0.032171622
+  IK     v 1.8  body 1.7999924  steps 12  slip 0.071721606 m/s (mean 0.06564227)  drift 7.1721606 mm/100ms  ratio 0.039845504
+  IK     v 2.4  body 2.1939714  steps 12  slip 0.13893561 m/s (mean 0.114032395)  drift 13.893561 mm/100ms  ratio 0.06332608
+  IK     v 3.0  body 2.7122211  steps 12  slip 0.26956025 m/s (mean 0.24692321)  drift 26.956028 mm/100ms  ratio 0.099387266
+  IK     v 3.6  body 3.3687139  steps 14  slip 0.39093181 m/s (mean 0.36273187)  drift 39.09318 mm/100ms  ratio 0.11604779
+  IK     v 4.2  body 4.2004085  steps 15  slip 0.5342732 m/s (mean 0.48102775)  drift 53.427322 mm/100ms  ratio 0.12719554
+  IK     v 6.0  body 6.000927  steps 23  slip 0.8069417 m/s (mean 0.74555606)  drift 80.69417 mm/100ms  ratio 0.13446951
+  skate  v 1.4722059  body 2.9444058  steps 10  slip 0.8538243 m/s (mean 0.8420374)  drift 85.38243 mm/100ms  ratio 0.28998187
+  skate  v 1.8  body 3.600026  steps 12  slip 1.089432 m/s (mean 1.0822573)  drift 108.94321 mm/100ms  ratio 0.30261782
+  skate  v 2.4  body 4.594004  steps 12  slip 1.7476782 m/s (mean 1.7413993)  drift 174.76782 mm/100ms  ratio 0.3804259
+  skate  v 3.0  body 5.712219  steps 12  slip 2.4132214 m/s (mean 2.3929799)  drift 241.32214 mm/100ms  ratio 0.42246652
+  skate  v 3.6  body 6.968739  steps 14  slip 3.0872352 m/s (mean 3.0724566)  drift 308.72354 mm/100ms  ratio 0.44301203
+  skate  v 4.2  body 8.400399  steps 15  slip 3.819958 m/s (mean 3.7978215)  drift 381.99582 mm/100ms  ratio 0.45473528
+  skate  v 6.0  body 12.000866  steps 23  slip 5.9101996 m/s (mean 5.8668056)  drift 591.01996 mm/100ms  ratio 0.4924811
+  blend v 2.4  ratio 0.05751408  end-line 0.06598948  excess -0.0084754005
+  blend v 3.0  ratio 0.09599347  end-line 0.0867934  excess 0.009200066
+  blend v 3.6  ratio 0.1156394  end-line 0.10759732  excess 0.008042082
+drift PASS  /workspace/asset-audit/arena-wire/bfme/assets/models/bfme-hr04.glb  band ratio 2.4/3.0/3.6 0.05751408 0.09599347 0.1156394  worst blend excess 0.009200066  IK worst 0.012751371 m/s  control min +0.5399731 x v
+
+foot drift /workspace/asset-audit/arena-wire/bfme/assets/models/bfme-hr05.glb  walk 1.0648333 m/s natural, run 3.0263681 m/s natural, band 1.8-4.2  toe joints true
+  noIK   v 1.0648333  body 1.0648348  steps 10  slip 0.041528624 m/s (mean 0.037983887)  drift 4.1528625 mm/100ms  ratio 0.03900006
+  noIK   v 1.8  body 1.7999926  steps 17  slip 0.11286303 m/s (mean 0.10476308)  drift 11.2863035 mm/100ms  ratio 0.06270194
+  noIK   v 2.4  body 2.193672  steps 17  slip 0.16006598 m/s (mean 0.1480823)  drift 16.006598 mm/100ms  ratio 0.07296714
+  noIK   v 3.0  body 2.7119455  steps 18  slip 0.28002688 m/s (mean 0.2708012)  drift 28.00269 mm/100ms  ratio 0.10325682
+  noIK   v 3.6  body 3.3670292  steps 19  slip 0.4342058 m/s (mean 0.40658757)  drift 43.42058 mm/100ms  ratio 0.12895814
+  noIK   v 4.2  body 4.1988087  steps 22  slip 0.5577406 m/s (mean 0.5121054)  drift 55.774063 mm/100ms  ratio 0.13283306
+  noIK   v 6.0  body 6.000204  steps 31  slip 0.9152681 m/s (mean 0.8743804)  drift 91.52682 mm/100ms  ratio 0.15253949
+  IK     v 1.0648333  body 1.0648348  steps 10  slip 0.012026151 m/s (mean 0.0064391955)  drift 1.2026153 mm/100ms  ratio 0.011293911
+  IK     v 1.8  body 1.7999926  steps 17  slip 0.06055154 m/s (mean 0.051416107)  drift 6.0551543 mm/100ms  ratio 0.03363988
+  IK     v 2.4  body 2.193672  steps 17  slip 0.08436966 m/s (mean 0.05655987)  drift 8.436967 mm/100ms  ratio 0.03846047
+  IK     v 3.0  body 2.7119455  steps 18  slip 0.2870783 m/s (mean 0.27151075)  drift 28.707832 mm/100ms  ratio 0.105856955
+  IK     v 3.6  body 3.3670292  steps 19  slip 0.43799183 m/s (mean 0.41015473)  drift 43.799183 mm/100ms  ratio 0.13008258
+  IK     v 4.2  body 4.1988087  steps 22  slip 0.55370975 m/s (mean 0.507406)  drift 55.37098 mm/100ms  ratio 0.13187306
+  IK     v 6.0  body 6.000204  steps 31  slip 0.91727763 m/s (mean 0.8789274)  drift 91.72777 mm/100ms  ratio 0.15287441
+  skate  v 1.0648333  body 2.129652  steps 10  slip 0.6153508 m/s (mean 0.6069482)  drift 61.535084 mm/100ms  ratio 0.28894427
+  skate  v 1.8  body 3.6000268  steps 17  slip 1.2121233 m/s (mean 1.2044841)  drift 121.21233 mm/100ms  ratio 0.3366984
+  skate  v 2.4  body 4.593704  steps 17  slip 1.8961185 m/s (mean 1.8807291)  drift 189.61185 mm/100ms  ratio 0.4127646
+  skate  v 3.0  body 5.7119384  steps 18  slip 2.5857131 m/s (mean 2.5742378)  drift 258.57132 mm/100ms  ratio 0.45268574
+  skate  v 3.6  body 6.9670553  steps 19  slip 3.3237696 m/s (mean 3.2996852)  drift 332.37698 mm/100ms  ratio 0.4770695
+  skate  v 4.2  body 8.398802  steps 22  slip 4.107764 m/s (mean 4.079016)  drift 410.7764 mm/100ms  ratio 0.48908925
+  skate  v 6.0  body 12.000139  steps 31  slip 6.28944 m/s (mean 6.2320576)  drift 628.94403 mm/100ms  ratio 0.52411395
+  blend v 2.4  ratio 0.07296714  end-line 0.08023473  excess -0.007267587
+  blend v 3.0  ratio 0.10325682  end-line 0.0977675  excess 0.0054893196
+  blend v 3.6  ratio 0.12895814  end-line 0.11530028  excess 0.013657853
+drift PASS  /workspace/asset-audit/arena-wire/bfme/assets/models/bfme-hr05.glb  band ratio 2.4/3.0/3.6 0.07296714 0.10325682 0.12895814  worst blend excess 0.013657853  IK worst 0.0070514083 m/s  control min +0.53888446 x v
+
+all 39 summary lines:
+drift PASS  /workspace/asset-audit/arena-wire/bfme/assets/models/bfme-hr01.glb  band ratio 2.4/3.0/3.6 0.05628568 0.09341986 0.11499604  worst blend excess 0.0076052323  IK worst 0.015868574 m/s  control min +0.54274756 x v
+drift PASS  /workspace/asset-audit/arena-wire/bfme/assets/models/bfme-hr01.lod1.glb  band ratio 2.4/3.0/3.6 0.05628568 0.09341986 0.11499604  worst blend excess 0.0076052323  IK worst 0.015868574 m/s  control min +0.54274756 x v
+drift PASS  /workspace/asset-audit/arena-wire/bfme/assets/models/bfme-hr01.lod2.glb  band ratio 2.4/3.0/3.6 0.05628568 0.09341986 0.11499604  worst blend excess 0.0076052323  IK worst 0.015868574 m/s  control min +0.54274756 x v
+drift PASS  /workspace/asset-audit/arena-wire/bfme/assets/models/bfme-hr01.mobile.glb  band ratio 2.4/3.0/3.6 0.05628568 0.09341986 0.11499604  worst blend excess 0.0076052323  IK worst 0.015868574 m/s  control min +0.54274756 x v
+drift PASS  /workspace/asset-audit/arena-wire/bfme/assets/models/bfme-hr01.mobile.lod1.glb  band ratio 2.4/3.0/3.6 0.05628568 0.09341986 0.11499604  worst blend excess 0.0076052323  IK worst 0.015868574 m/s  control min +0.54274756 x v
+drift PASS  /workspace/asset-audit/arena-wire/bfme/assets/models/bfme-hr01.mobile.lod2.glb  band ratio 2.4/3.0/3.6 0.05628568 0.09341986 0.11499604  worst blend excess 0.0076052323  IK worst 0.015868574 m/s  control min +0.54274756 x v
+drift PASS  /workspace/asset-audit/arena-wire/bfme/assets/models/bfme-hr02.glb  band ratio 2.4/3.0/3.6 0.06612397 0.104352616 0.12546805  worst blend excess 0.015467957  IK worst 0.0037677288 m/s  control min +0.5465122 x v
+drift PASS  /workspace/asset-audit/arena-wire/bfme/assets/models/bfme-hr02.lod1.glb  band ratio 2.4/3.0/3.6 0.06612397 0.104352616 0.12546805  worst blend excess 0.015467957  IK worst 0.0037677288 m/s  control min +0.5465122 x v
+drift PASS  /workspace/asset-audit/arena-wire/bfme/assets/models/bfme-hr02.lod2.glb  band ratio 2.4/3.0/3.6 0.06612397 0.104352616 0.12546805  worst blend excess 0.015467957  IK worst 0.0037677288 m/s  control min +0.5465122 x v
+drift PASS  /workspace/asset-audit/arena-wire/bfme/assets/models/bfme-hr02.mobile.glb  band ratio 2.4/3.0/3.6 0.06612397 0.104352616 0.12546805  worst blend excess 0.015467957  IK worst 0.0037677288 m/s  control min +0.5465122 x v
+drift PASS  /workspace/asset-audit/arena-wire/bfme/assets/models/bfme-hr02.mobile.lod1.glb  band ratio 2.4/3.0/3.6 0.06612397 0.104352616 0.12546805  worst blend excess 0.015467957  IK worst 0.0037677288 m/s  control min +0.5465122 x v
+drift PASS  /workspace/asset-audit/arena-wire/bfme/assets/models/bfme-hr02.mobile.lod2.glb  band ratio 2.4/3.0/3.6 0.06612397 0.104352616 0.12546805  worst blend excess 0.015467957  IK worst 0.0037677288 m/s  control min +0.5465122 x v
+drift PASS  /workspace/asset-audit/arena-wire/bfme/assets/models/bfme-hr03.glb  band ratio 2.4/3.0/3.6 0.05529928 0.09295578 0.11348748  worst blend excess 0.0075075626  IK worst 0.005665995 m/s  control min +0.5427484 x v
+drift PASS  /workspace/asset-audit/arena-wire/bfme/assets/models/bfme-hr03.lod1.glb  band ratio 2.4/3.0/3.6 0.05529928 0.09295578 0.11348748  worst blend excess 0.0075075626  IK worst 0.005665995 m/s  control min +0.5427484 x v
+drift PASS  /workspace/asset-audit/arena-wire/bfme/assets/models/bfme-hr03.lod2.glb  band ratio 2.4/3.0/3.6 0.05529928 0.09295578 0.11348748  worst blend excess 0.0075075626  IK worst 0.005665995 m/s  control min +0.5427484 x v
+drift PASS  /workspace/asset-audit/arena-wire/bfme/assets/models/bfme-hr03.mobile.glb  band ratio 2.4/3.0/3.6 0.05529928 0.09295578 0.11348748  worst blend excess 0.0075075626  IK worst 0.005665995 m/s  control min +0.5427484 x v
+drift PASS  /workspace/asset-audit/arena-wire/bfme/assets/models/bfme-hr03.mobile.lod1.glb  band ratio 2.4/3.0/3.6 0.05529928 0.09295578 0.11348748  worst blend excess 0.0075075626  IK worst 0.005665995 m/s  control min +0.5427484 x v
+drift PASS  /workspace/asset-audit/arena-wire/bfme/assets/models/bfme-hr03.mobile.lod2.glb  band ratio 2.4/3.0/3.6 0.05529928 0.09295578 0.11348748  worst blend excess 0.0075075626  IK worst 0.005665995 m/s  control min +0.5427484 x v
+drift PASS  /workspace/asset-audit/arena-wire/bfme/assets/models/bfme-hr04.glb  band ratio 2.4/3.0/3.6 0.05751408 0.09599347 0.1156394  worst blend excess 0.009200066  IK worst 0.012751371 m/s  control min +0.5399731 x v
+drift PASS  /workspace/asset-audit/arena-wire/bfme/assets/models/bfme-hr04.lod1.glb  band ratio 2.4/3.0/3.6 0.05751408 0.09599347 0.1156394  worst blend excess 0.009200066  IK worst 0.012751371 m/s  control min +0.5399731 x v
+drift PASS  /workspace/asset-audit/arena-wire/bfme/assets/models/bfme-hr04.lod2.glb  band ratio 2.4/3.0/3.6 0.05751408 0.09599347 0.1156394  worst blend excess 0.009200066  IK worst 0.012751371 m/s  control min +0.5399731 x v
+drift PASS  /workspace/asset-audit/arena-wire/bfme/assets/models/bfme-hr04.mobile.glb  band ratio 2.4/3.0/3.6 0.05751408 0.09599347 0.1156394  worst blend excess 0.009200066  IK worst 0.012751371 m/s  control min +0.5399731 x v
+drift PASS  /workspace/asset-audit/arena-wire/bfme/assets/models/bfme-hr04.mobile.lod1.glb  band ratio 2.4/3.0/3.6 0.05751408 0.09599347 0.1156394  worst blend excess 0.009200066  IK worst 0.012751371 m/s  control min +0.5399731 x v
+drift PASS  /workspace/asset-audit/arena-wire/bfme/assets/models/bfme-hr04.mobile.lod2.glb  band ratio 2.4/3.0/3.6 0.05751408 0.09599347 0.1156394  worst blend excess 0.009200066  IK worst 0.012751371 m/s  control min +0.5399731 x v
+drift PASS  /workspace/asset-audit/arena-wire/bfme/assets/models/bfme-hr05.glb  band ratio 2.4/3.0/3.6 0.07296714 0.10325682 0.12895814  worst blend excess 0.013657853  IK worst 0.0070514083 m/s  control min +0.53888446 x v
+drift PASS  /workspace/asset-audit/arena-wire/bfme/assets/models/bfme-hr05.lod1.glb  band ratio 2.4/3.0/3.6 0.07296714 0.10325682 0.12895814  worst blend excess 0.013657853  IK worst 0.0070514083 m/s  control min +0.53888446 x v
+drift PASS  /workspace/asset-audit/arena-wire/bfme/assets/models/bfme-hr05.lod2.glb  band ratio 2.4/3.0/3.6 0.07296714 0.10325682 0.12895814  worst blend excess 0.013657853  IK worst 0.0070514083 m/s  control min +0.53888446 x v
+drift PASS  /workspace/asset-audit/arena-wire/bfme/assets/models/bfme-hr05.mobile.glb  band ratio 2.4/3.0/3.6 0.07296714 0.10325682 0.12895814  worst blend excess 0.013657853  IK worst 0.0070514083 m/s  control min +0.53888446 x v
+drift PASS  /workspace/asset-audit/arena-wire/bfme/assets/models/bfme-hr05.mobile.lod1.glb  band ratio 2.4/3.0/3.6 0.07296714 0.10325682 0.12895814  worst blend excess 0.013657853  IK worst 0.0070514083 m/s  control min +0.53888446 x v
+drift PASS  /workspace/asset-audit/arena-wire/bfme/assets/models/bfme-hr05.mobile.lod2.glb  band ratio 2.4/3.0/3.6 0.07296714 0.10325682 0.12895814  worst blend excess 0.013657853  IK worst 0.0070514083 m/s  control min +0.53888446 x v
+drift PASS  /workspace/bake/r4/base/jk-h02.glb  band ratio 2.4/3.0/3.6 0.07019542 0.10445325 0.11974305  worst blend excess 0.016532749  IK worst 0.004967034 m/s  control min +0.5306483 x v
+drift PASS  /workspace/bake/r4/base/jk-h02.lod1.glb  band ratio 2.4/3.0/3.6 0.07019542 0.10445325 0.11974305  worst blend excess 0.016532749  IK worst 0.004967034 m/s  control min +0.5306483 x v
+drift PASS  /workspace/bake/r4/base/jk-h02.lod2.glb  band ratio 2.4/3.0/3.6 0.07019542 0.10445325 0.11974305  worst blend excess 0.016532749  IK worst 0.004967034 m/s  control min +0.5306483 x v
+drift PASS  /workspace/bake/r4/base/jk-h04.glb  band ratio 2.4/3.0/3.6 0.07586348 0.10985945 0.12958705  worst blend excess 0.021510899  IK worst 0.0058080256 m/s  control min +0.54138935 x v
+drift PASS  /workspace/bake/r4/base/jk-h04.lod1.glb  band ratio 2.4/3.0/3.6 0.07586348 0.10985945 0.12958705  worst blend excess 0.021510899  IK worst 0.0058080256 m/s  control min +0.54138935 x v
+drift PASS  /workspace/bake/r4/base/jk-h04.lod2.glb  band ratio 2.4/3.0/3.6 0.07586348 0.10985945 0.12958705  worst blend excess 0.021510899  IK worst 0.0058080256 m/s  control min +0.54138935 x v
+drift PASS  /workspace/bake/r4/base/jk-h06.glb  band ratio 2.4/3.0/3.6 0.052797183 0.0927889 0.11293786  worst blend excess 0.009795345  IK worst 0.010355398 m/s  control min +0.5457305 x v
+drift PASS  /workspace/bake/r4/base/jk-h06.lod1.glb  band ratio 2.4/3.0/3.6 0.052797183 0.0927889 0.11293786  worst blend excess 0.009795345  IK worst 0.010355398 m/s  control min +0.5457305 x v
+drift PASS  /workspace/bake/r4/base/jk-h06.lod2.glb  band ratio 2.4/3.0/3.6 0.052797183 0.0927889 0.11293786  worst blend excess 0.009795345  IK worst 0.010355398 m/s  control min +0.5457305 x v
