@@ -1,0 +1,69 @@
+# fixpoint of the waste checker's whot_all shape: while chg: if (lp || ARR[fi]) && mark(c): chg = true
+# (bool array, int array and nested-closure forms; must match the C backend)
+use os
+var E i32[>..]
+var F i32[>..]
+var HB bool[>..]
+var HI i32[>..]
+find(c int) int:
+	for x, i F: if x as int == c { return i }
+	-1
+markb(c int) bool:
+	j := find(c); if j < 0 || HB[j]: return false
+	HB[j] = true
+	true
+marki(c int) bool:
+	j := find(c); if j < 0 || HI[j] != 0: return false
+	HI[j] = 1
+	true
+hotb():
+	ne := E.len / 3
+	HB.clear(); HB.resize(F.len, false)
+	chg ~= true
+	while chg:
+		chg = false
+		for k ne:
+			lp := E[3 * k + 2] != 0
+			fi := E[3 * k] as int
+			if (lp || HB[fi]) && markb(E[3 * k + 1] as int): chg = true
+	for x HB: print(x, " ")
+hoti():
+	ne := E.len / 3
+	HI.clear(); HI.resize(F.len, 0)
+	chg ~= true
+	while chg:
+		chg = false
+		for k ne:
+			lp := E[3 * k + 2] != 0
+			fi := E[3 * k] as int
+			if (lp || HI[fi] != 0) && marki(E[3 * k + 1] as int): chg = true
+	for x HI: print(x, " ")
+hotl():
+	ne := E.len / 3
+	h bool[>..] ~= []; h.resize(F.len, false)
+	mk(c int) bool:
+		j := find(c); if j < 0 || h[j]: return false
+		h[j] = true
+		true
+	chg ~= true
+	while chg:
+		chg = false
+		for k ne:
+			lp := E[3 * k + 2] != 0
+			fi := E[3 * k] as int
+			if (lp || h[fi]) && mk(E[3 * k + 1] as int): chg = true
+	for x h: print(x, " ")
+main():
+	n := 40
+	for i n: F.push((i * 10) as i32)
+	sd ~= 12345
+	for k 120:
+		sd = (sd * 1103515245 + 12345) % 2147483648
+		E.push(((sd >> 8) % n) as i32)
+		sd = (sd * 1103515245 + 12345) % 2147483648
+		E.push((((sd >> 8) % (n + 3)) * 10) as i32)
+		sd = (sd * 1103515245 + 12345) % 2147483648
+		E.push(if (sd >> 8) % 9 == 0 { 1 } else { 0 })
+	hotb()
+	hoti()
+	hotl()

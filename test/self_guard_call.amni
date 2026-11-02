@@ -1,0 +1,22 @@
+import std;
+import os;
+// Self-recursive calls get the callee's entry guard copied to the call site: the cheap exit
+// is taken in the caller and only the slow side calls. Covers a guard whose fast side is the
+// fall-through, one whose fast side is the branch target, a guard that loads from an array,
+// and a two-parameter guard whose result is not a parameter.
+var L i32[>..];
+recursive fn fib(n int) int { if n < 2 { n } else { fib(n - 1) + fib(n - 2) } }
+recursive fn tri(n int) int { if n > 0 { n + tri(n - 1) } else { 0 } }
+recursive fn leaves(i int) int { if L[i] < 0 { 1 } else { leaves(L[i]) + leaves(L[i] + 1) } }
+recursive fn ack(m int, n int) int { if m == 0 { n + 1 } else if n == 0 { ack(m - 1, 1) } else { ack(m - 1, ack(m, n - 1)) } }
+recursive fn pw(b int, e int) int { if e == 0 { 1 + b - b } else { b * pw(b, e - 1) } }
+fn main() {
+	let n = args().len;
+	L.resize(15, -1);
+	for i in 7 { L[i] = (2 * i + 1) as i32; }
+	var o byte[>..] = [];
+	for k in 12 { format(o, fib(k + n - 1), " ", tri(k + n - 2), " ", pw(3, k + n - 1), "\n"); }
+	format(o, leaves(0), " ", leaves(3), " ", leaves(14), "\n");
+	format(o, ack(2, 3 + n - 1), " ", ack(3, 3 + n - 1), "\n");
+	print(o);
+}

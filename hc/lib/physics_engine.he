@@ -1337,13 +1337,13 @@ find_dup(src const float3[:], i int, cs f32, tol f32, mp dictionary<u64, int>&, 
 			for dz 3:
 				h := dat(mp, ckey(bx + dx - 1, by + dy - 1, bz + dz - 1))
 				if h >= 0:
-					n ~= mp.slots[h].val
+					n ~= mp.vals[h]
 					while n >= 0:
 						o := src[nv[n]]
 						if fabs(v.x - o.x) <= tol && fabs(v.y - o.y) <= tol && fabs(v.z - o.z) <= tol: return nv[n]
 						n = nn[n]
 	k := ckey(bx, by, bz); h := dat(mp, k)
-	if h >= 0 { nv.push(i); nn.push(mp.slots[h].val); mp.slots[h].val = nv.len - 1 } else { insert(mp, k, nv.len); nv.push(i); nn.push(-1) }
+	if h >= 0 { nv.push(i); nn.push(mp.vals[h]); mp.vals[h] = nv.len - 1 } else { insert(mp, k, nv.len); nv.push(i); nn.push(-1) }
 	-1
 weld_verts(src const float3[:], ix const int[:], tol f32, dv float3[>..]&, di int[>..]&):
 	mp ~= dictionary<u64, int>{..}; nv int[>..] ~= []; nn int[>..] ~= []; vm int[>..] ~= []
@@ -1417,7 +1417,7 @@ ident_edges(m MeshD&):
 		es.push(MEdge{min(t.i1, t.i2), max(t.i1, t.i2), i, -1, 1, 0, 255}); es.push(MEdge{min(t.i2, t.i3), max(t.i2, t.i3), i, -1, 1, 1, 255}); es.push(MEdge{min(t.i3, t.i1), max(t.i3, t.i1), i, -1, 1, 2, 255})
 	for i es.len:
 		e := es[i]; k := ((e.v1 as! u64) << 32) | (e.v2 as! u64); h := dat(mp, k)
-		if h < 0 { insert(mp, k, i) } else { o := mp.slots[h].val; if es[o].n == 1 { es[o].t2 = e.t1; es[o].e2 = e.e1 } es[o].n += 1 }
+		if h < 0 { insert(mp, k, i) } else { o := mp.vals[h]; if es[o].n == 1 { es[o].t2 = e.t1; es[o].e2 = e.e1 } es[o].n += 1 }
 	for e es:
 		if e.n == 2:
 			t2 := m.t[e.t2]; t1 := m.t[e.t1]; op := if e.e2 == 0 { t2.i3 } else if e.e2 == 1 { t2.i1 } else { t2.i2 }

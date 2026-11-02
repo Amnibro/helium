@@ -1,0 +1,5 @@
+// fib: naive doubly recursive Fibonacci (call overhead).
+import os;
+fn arg_n(d int) int { if arg_count() < 2 { return d; } var s byte[>..] = []; arg(1, s); let n, ok = parse_int(s[..]); if ok { n } else { d } }
+recursive fn fib(n int) int { if n < 2 { n } else { fib(n - 1) + fib(n - 2) } }
+fn main() { print(fib(arg_n(30))); }
