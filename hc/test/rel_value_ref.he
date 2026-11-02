@@ -1,0 +1,9 @@
+struct N { v int, nx N&<u32>? }
+follow(n N) int: if n.nx: n.nx.v else: -1
+main():
+	a N[>..] ~= []
+	a.push(N{1, null})
+	a.push(N{2, null})
+	a[0].nx .= a[1]
+	c := a[0]
+	print(follow(a[0]), " ", follow(a[1]), " ", if c.nx { c.nx.v } else { -1 })

@@ -692,7 +692,7 @@ pdeq(bd int) int, int:
 	while q < TK.len && q < t0 + 200: kq := TK[q].k as int; if kq == T_LP || kq == T_LB || kq == T_LC { dp++ } if kq == T_RP || kq == T_RB || kq == T_RC { if dp == 0 { break } dp-- } if dp == 0 && (kq == T_ASSIGN || kq == T_DOTASSIGN) && eq < 0 { eq = if kq == T_ASSIGN { q } else { -2 } } if dp == 0 && kq == T_SEMI { break } q++
 	return eq, q
 prc(e int, t int, bd int):
-	if !PCH || e < 0 || t <= 0 || TY[t].k as int == TY_REF || TY[t].k as int == TY_SLICE || !hrel(t, 7) || pbwr(e): return
+	if !PCH || e < 0 || t <= 0 || TY[t].k as int == TY_REF || TY[t].k as int == TY_SLICE || !hrel(t, 7) || pbwr(e) || FILES[TK[ND[e].t].f].he: return
 	m byte[>..] ~= []; m.append("copying a value of type "); m.append(tn(t)); m.append(", which contains self-relative references, is not supported; construct it in place")
 	k := ND[e].k as int; rc := prcl(e)
 	if bd >= 0 && ND[bd].a < 0 && (k == N_ID || k == N_DOT || k == N_IDX || rc):
@@ -926,8 +926,13 @@ recursive nwe(e int):
 		if o == T_DOTASSIGN && x > -9999 && nopt(x): nwe(b); nu := nnull(b); if nu { ndel(x) } else { nadd(x) } if NSUM && nu && (x < 0 || LVS[x].cfn != PI as i32) { while NKL.len <= PI { NKL.push([]) } if !NKL[PI].contains(x as i32) { NKL[PI].push(x as i32) } } return
 		if !(ND[a].k as int == N_ID) || o != T_ASSIGN && o != T_DOTASSIGN: nwe(a)
 		nwe(b); if (o == T_ASSIGN || o == T_DOTASSIGN) && ND[a].k as int == N_ID && rk(a) == R_LOCAL { nadd(-200000 - rv(a)) } if o == T_ASSIGN { nlet(e, a) } if o != T_DOTASSIGN || ND[a].k as int != N_ID { nrw(e, a, false); npwset(a, false) } if o == T_ASSIGN && (ND[a].k as int != N_ID || dtn(a) >= 0) { nsl(b) } return
+var HEPROV = -1
+pskip(f int) bool:
+	if HEPROV < 0: v byte[>..] ~= []; HEPROV = if env("HC_HEPROV", v) && v.len > 0 { if v[0] == '2' { 2 } else if v[0] == '0' { 0 } else { 1 } } else { 0 }
+	FILES[f].he && (HEPROV == 0 || HEPROV == 1 && plib(f) || plib(f) && nm(FILES[f].name as int).ends_with("/rt.he"))
+plib(f int) bool: p := nm(FILES[f].name as int); p.len > LIBDIR.len && p[..LIBDIR.len] == LIBDIR[..]
 nwfn(i int):
-	f := FI_[i]; if f.node < 0 || FILES[TK[ND[f.node].t].f].he: return
+	f := FI_[i]; if f.node < 0 || pskip(TK[ND[f.node].t].f as int): return
 	fv := ND[f.node].k as int == N_FUNVAL; bd := if fv { ND[f.node].a as int } else { ND[f.node].c as int }
 	if !fv && (ND[f.node].k as int != N_FN || f.st != 2 || ND[f.node].fl & F_EXTERN != 0) || bd < 0: return
 	sa := AOWN; sc := CFN; AOWN = i; CFN = i; if fv && at(bd) < 0 { AOWN = sa; CFN = sc; return } PI = i; NFV = fv; if !fv { for j ND[f.node].n { p := kid(f.node as int, j); if rk(p) == R_LOCAL { lroset(rv(p), tpc(ND[p].a as int)) } } } NNS.clear(); NBF.clear(); NBH.clear(); NCF.clear(); NCH.clear(); NDX.clear(); NDXH = false; nwe(bd); if !ends(bd) { ndex() } if NSUM { while NDA.len <= i { NDA.push([]) } NDA[i] = if NDXH { ncpy(NDX) } else { [] } } AOWN = sa; CFN = sc
@@ -941,7 +946,7 @@ nwall():
 pcpd(e int) bool: k := ND[e].k as int; k == N_IF && ND[e].c >= 0 || k == N_BLOCK || k == N_EBLOCK || k == N_MATCH || k == N_LOOP
 pcop(e int): if PCH && e >= 0 && pcpd(e) { t := pdr(at(e)); if t > 0 && !isrs(t) && TY[t].k as int != TY_REF && TY[t].k as int != TY_VOID && !is_fixed(t) { pctail(e, t) } }
 pcopy(e int, dt int):
-	if !PCH || e < 0 || dt <= 0 || isrs(dt) || TY[dt].k as int == TY_REF || TY[dt].k as int == TY_VOID || is_fixed(dt): return
+	if !PCH || e < 0 || dt <= 0 || isrs(dt) || TY[dt].k as int == TY_REF || TY[dt].k as int == TY_VOID || is_fixed(dt) || FILES[TK[ND[e].t].f].he: return
 	if pcpd(e): pctail(e, dt); return
 	cl := ND[e].k as int == N_CALL && rk(e) == R_FN && rref(FI_[rv(e)].ret as int)
 	t := pdr(at(e)); if t <= 0 || is_fixed(t) || TY[t].k as int == TY_VARINT || !plv(e) && !cl: return
@@ -957,7 +962,7 @@ recursive pctail(e int, dt int):
 	if k == N_UN && ND[e].op as int == T_AND && ND[e].a >= 0: pcopy(ND[e].a as int, dt); return
 	pcopy(e, dt)
 pvfn(i int):
-	f := FI_[i]; if f.node < 0 || FILES[TK[ND[f.node].t].f].he: return
+	f := FI_[i]; if f.node < 0 || pskip(TK[ND[f.node].t].f as int): return
 	fv := ND[f.node].k as int == N_FUNVAL; bd := if fv { ND[f.node].a as int } else { ND[f.node].c as int }
 	if !fv && (ND[f.node].k as int != N_FN || f.st != 2 || ND[f.node].fl & F_EXTERN != 0) || bd < 0: return
 	sa := AOWN; sc := CFN; AOWN = i; CFN = i; PI = i; PVK = 1; PBS.clear(); PBJ.clear(); PLP.clear(); PBK.clear(); for a PTL { pcset0(a as int) } PTL.clear(); SHR[i] = 0; PSG[i] = 0; SHG[i].clear(); PPR[i].clear(); while PPN.len <= i { PPN.push([]) } PPN[i].clear(); while PGN.len <= i { PGN.push([]) } PGN[i].clear(); while PRG.len <= i { PRG.push([]) } if i < PPW.len { PPW[i].clear() } if i < PCW.len { PCW[i].clear() } for j ND[f.node].n { q9 := kid(f.node as int, j); if rk(q9) == R_LOCAL { pgrow(rv(q9)); PXM[rv(q9)] = 0 } }
@@ -1001,7 +1006,7 @@ recursive pdx(n int, s i64) i64:
 	if k == N_CONT: return -1
 	r
 pdaf(i int):
-	f := FI_[i]; if f.node < 0 || ND[f.node].k as int != N_FN || f.st != 2 || ND[f.node].fl & F_EXTERN != 0 || ND[f.node].c < 0 || FILES[TK[ND[f.node].t].f].he: return
+	f := FI_[i]; if f.node < 0 || ND[f.node].k as int != N_FN || f.st != 2 || ND[f.node].fl & F_EXTERN != 0 || ND[f.node].c < 0 || pskip(TK[ND[f.node].t].f as int): return
 	sa := AOWN; AOWN = i; PDV.clear(); PDK.clear(); PDQ.clear(); PDAC = 0; fq := f.node as int; e := NEND[fq] as int; na ~= 0; ok ~= true
 	for j in (fq + 1)..e:
 		k := ND[j].k as int; if k == N_FN || k == N_FUNVAL || k == N_CFOR { ok = false; break }
@@ -1031,14 +1036,14 @@ recursive pgr(n int, g i32[>..]&, c i32[>..]&):
 pglob():
 	GRD.clear(); GRC.clear(); for _ FI_.len { GRD.push([]); GRC.push([]) }
 	sa := AOWN
-	for i FI_.len: f := FI_[i]; if f.node >= 0 && ND[f.node].k as int == N_FN && f.st == 2 && ND[f.node].c >= 0 && !FILES[TK[ND[f.node].t].f].he { AOWN = i; pgr(ND[f.node].c as int, GRD[i], GRC[i]) }
+	for i FI_.len: f := FI_[i]; if f.node >= 0 && ND[f.node].k as int == N_FN && f.st == 2 && ND[f.node].c >= 0 && !pskip(TK[ND[f.node].t].f as int) { AOWN = i; pgr(ND[f.node].c as int, GRD[i], GRC[i]) }
 	for _ 7:
 		ch ~= false
 		for i FI_.len: for c GRC[i] { if c as int != i { for x GRD[c] { if !GRD[i].contains(x) { GRD[i].push(x); ch = true } } } }
 		if !ch: break
 	AOWN = GLOBI
 	for d, di DC:
-		if d.k as int != D_GLOBAL || FILES[d.file].he: continue
+		if d.k as int != D_GLOBAL || pskip(d.file as int): continue
 		vn := d.node as int; if ND[vn].k as int != N_VDECL || ND[vn].b < 0: continue
 		g i32[>..] ~= []; c i32[>..] ~= []; pgr(ND[vn].b as int, g, c); for x c { for y GRD[x] { if !g.contains(y) { g.push(y) } } }
 		for x g:
@@ -1098,9 +1103,9 @@ prov_program() bool:
 	nlc byte[>..] ~= []; if env("HC_NOPROV", nlc): return true
 	GST.clear(); GCP.clear(); PSH.clear(); PSO.clear(); PRM.clear(); PRM.resize(FI_.len, 0); SHR.clear(); SHR.resize(FI_.len, 0); PSG.clear(); PSG.resize(FI_.len, 0); PPW.clear(); PCW.clear(); SHG.clear(); PPR.clear(); PPN.clear(); PGN.clear(); PRG.clear(); for _ FI_.len { SHG.push([]); PPR.push([]); PPN.push([]); PGN.push([]); PRG.push([]) } PCH = false
 	p0 i64[>..] ~= []; GRR.clear(); GRU.clear(); PSGG.clear(); sg := AOWN; AOWN = GLOBI
-	for d, di DC: if d.k as int == D_GLOBAL && !FILES[d.file].he && ND[d.node].k as int == N_VDECL && ND[d.node].b >= 0 && ND[ND[d.node].b].n > 0 { t := global_type(di); if t > 0 && (TY[t].k as int == TY_REF && TY[t].c < 0 || TY[t].k as int == TY_SLICE) { e := kid(ND[d.node].b as int, 0); q := pl(e); if TY[t].k as int == TY_SLICE && q.v <= -3 && pgsid(q.v as int) && ND[e].k as int != N_NULL { m byte[>..] ~= []; m.append("storing a reference into "); pidn(q.v as int, m); m.append(", which holds a grow-shrink array: such a reference lives in a variable, is passed down or returned, and is never stored (§5.2)"); cerr(e, m[..]) } if ND[e].k as int != N_NULL { grrw(di, if q.d == -2 && q.v <= -3 { q.v as int } else { -9 }) } } }
+	for d, di DC: if d.k as int == D_GLOBAL && !pskip(d.file as int) && ND[d.node].k as int == N_VDECL && ND[d.node].b >= 0 && ND[ND[d.node].b].n > 0 { t := global_type(di); if t > 0 && (TY[t].k as int == TY_REF && TY[t].c < 0 || TY[t].k as int == TY_SLICE) { e := kid(ND[d.node].b as int, 0); q := pl(e); if TY[t].k as int == TY_SLICE && q.v <= -3 && pgsid(q.v as int) && ND[e].k as int != N_NULL { m byte[>..] ~= []; m.append("storing a reference into "); pidn(q.v as int, m); m.append(", which holds a grow-shrink array: such a reference lives in a variable, is passed down or returned, and is never stored (§5.2)"); cerr(e, m[..]) } if ND[e].k as int != N_NULL { grrw(di, if q.d == -2 && q.v <= -3 { q.v as int } else { -9 }) } } }
 	pnconst()
-	for d, di DC: if d.k as int == D_GLOBAL && !FILES[d.file].he && ND[d.node].k as int == N_VDECL && ND[d.node].b >= 0 && ND[ND[d.node].b].n > 0 { t := global_type(di); if t > 0 && (isrs(t) || hold(t)) { e := kid(ND[d.node].b as int, 0); if isrs(t) { pgst(e, -3 - di, e) } else { q := pvin(t, e); if q.v <= -3 && q.v as int != -3 - di { GST.push(q.v); GST.push((-3 - di) as i32); GST.push(e as i32) } } } }
+	for d, di DC: if d.k as int == D_GLOBAL && !pskip(d.file as int) && ND[d.node].k as int == N_VDECL && ND[d.node].b >= 0 && ND[ND[d.node].b].n > 0 { t := global_type(di); if t > 0 && (isrs(t) || hold(t)) { e := kid(ND[d.node].b as int, 0); if isrs(t) { pgst(e, -3 - di, e) } else { q := pvin(t, e); if q.v <= -3 && q.v as int != -3 - di { GST.push(q.v); GST.push((-3 - di) as i32); GST.push(e as i32) } } } }
 	AOWN = sg
 	for _ 7:
 		CGE.clear(); p0.clear(); for x PRM { p0.push(x) } for x SHR { p0.push(x) } for x PSG { p0.push(x) } for x SHG { p0.push(x.len as i64) } for x PPR { p0.push(x.len as i64) } for x PGN { p0.push(x.len as i64) } for x PRG { p0.push(x.len as i64) } for i PRM.len { p0.push(ppwsum(i)) } c0 := pcwlen(); for i FI_.len { pvfn(i) } same ~= pcwlen() == c0; for i PRM.len { if ppwsum(i) != p0[7 * PRM.len + i] { same = false } } for i PRM.len { if PRM[i] != p0[i] || SHR[i] != p0[PRM.len + i] || PSG[i] != p0[2 * PRM.len + i] || SHG[i].len as i64 != p0[3 * PRM.len + i] || PPR[i].len as i64 != p0[4 * PRM.len + i] || PGN[i].len as i64 != p0[5 * PRM.len + i] || PRG[i].len as i64 != p0[6 * PRM.len + i] { same = false } } if same { break }

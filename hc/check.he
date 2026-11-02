@@ -1090,7 +1090,7 @@ recursive ck_vdecl(n int):
 				else:
 					if TY[t].k == TY_REF && TY[t].c < 0 && TY[t].fl & RF_OPT == 0 && (is_fixed(TY[t].a as int) || TY[TY[t].a].k == TY_VARINT) && !has_rel(TY[t].a as int): t = TY[t].a as int; set_cv(init, t)
 					else:
-						if TY[t].k != TY_REF && TY[t].k != TY_SLICE && TY[t].k != TY_VARINT && !is_fixed(t) && names_store(init): t = t_ref(t, 0)
+						if TY[t].k != TY_REF && TY[t].k != TY_SLICE && TY[t].k != TY_VARINT && (!is_fixed(t) || FILES[TK[ND[n].t].f].he && TY[t].k == TY_STRUCT && has_rel(t)) && names_store(init): t = t_ref(t, 0)
 	else:
 		if t < 0: cerr(n, "a declaration needs a type or an initializer"); t = T_ERRT else: ck_defs(t)
 	if byref && TY[t].k != TY_REF: t = t_ref(t, 0)

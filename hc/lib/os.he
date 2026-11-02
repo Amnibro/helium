@@ -35,12 +35,13 @@ extern env(name const byte[:], out byte[>..]&) bool = "hr_os_getenv"
 extern run_command(command const byte[:]) int = "hr_os_run"
 extern trim_memory() bool = "hr_trim_memory"
 # every command-line argument, the program name first
+var ARGV_TEXT byte[>..]
 args() byte[:][>..]:
 	all byte[:][>..] ~= []
 	for i arg_count():
-		one byte[>..] ~= []
-		arg(i, one)
-		all.push(one)
+		s := ARGV_TEXT.len
+		arg(i, ARGV_TEXT)
+		all.push(ARGV_TEXT[s..])
 	all
 
 # time

@@ -1068,8 +1068,9 @@ big_div_small(a uint[>..]&, k uint) uint:
 	r
 # v with exactly `decimals` digits after the point. Exact: the double is
 # m * 2^e2, so v * 10^d is computed as a big integer and rounded half to
-# even once; a negative count prints the shortest form instead
-format_flt(out byte[>..]&, v real, decimals int):
+# even once (away from zero with away, as JavaScript's toFixed does); a
+# negative count prints the shortest form instead
+format_flt(out byte[>..]&, v real, decimals int, away bool = false):
 	if v != v: out.append("nan"); return
 	if v - v != 0.0: out.append(if v < 0.0 { "-inf" } else { "inf" }); return
 	if decimals < 0: format(out, v); return
@@ -1088,7 +1089,7 @@ format_flt(out byte[>..]&, v real, decimals int):
 			sticky = sticky || half
 			half = n[0] & 1 == 1
 			big_shr1(n)
-		if half && (sticky || n[0] & 1 == 1): big_mul_add(n, 1, 1)
+		if half && (sticky || away || n[0] & 1 == 1): big_mul_add(n, 1, 1)
 	rev byte[>..] ~= []
 	while true:
 		rev.push(DIGITS[big_div_small(n, 10) as int])
@@ -1100,9 +1101,9 @@ format_flt(out byte[>..]&, v real, decimals int):
 		if k == decimals: out.push('.')
 		k -= 1
 		out.push(rev[k])
-fmt(x real, d int) byte[>..]:
+fmt(x real, d int, away bool = false) byte[>..]:
 	out byte[>..] ~= []
-	format_flt(out, x, d)
+	format_flt(out, x, d, away)
 	out
 # an f-string field of width w with no alignment given: x is the value
 # and t its text; strings go left, everything else right, as in Python

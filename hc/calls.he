@@ -176,7 +176,7 @@ recursive sig_inst(i int):
 	for j ND[node].n:
 		p := kid(node, j)
 		t ~= -1
-		if ND[p].a >= 0: t = decode_rel(rtype(ND[p].a, ns))
+		if ND[p].a >= 0: t = decode_rel(rtype(ND[p].a, ns)); if FILES[TK[ND[node].t].f].he && TY[t].k == TY_STRUCT && has_rel(t) { t = t_ref(t, RF_CONST) }
 		else:
 			t = gb_find(upname(p)); if t < 0: t = T_ERRT
 		pts.push(t)
@@ -1148,6 +1148,7 @@ lib_file(f int) bool: n := nm(FILES[f].name); LIBDIR.len > 0 && n.len > LIBDIR.l
 all_typed(f int) bool:
 	for j ND[f].n: if ND[kid(f, j)].a < 0 { return false }
 	true
+var CHKALL = false
 check_program() bool:
 	GLOBI = new_inst(-1, 0, ND.len, -1)
 	FI_[GLOBI].st = 2
@@ -1158,7 +1159,7 @@ check_program() bool:
 		if d.k as int == D_GLOBAL && d.file == 0: global_type(i)
 	for d DC: if d.k as int == D_FN && ND[d.node].fl & F_EXPORT != 0 && ND[d.node].d < 0 { EXPN.push(d.node) }
 	if md >= 0: get_inst(DC[md].node, BINDS.len, 0, -1, -1)
-	if LSPM: for d DC { fq := d.node as int; if d.k as int == D_FN && ND[fq].d < 0 && ND[fq].fl & (F_EXTERN | F_NESTED) == 0 && ND[fq].c >= 0 && !lib_file(d.file as int) && all_typed(fq) { get_inst(fq, BINDS.len, 0, -1, -1) } }
+	if LSPM || CHKALL: for d DC { fq := d.node as int; if d.k as int == D_FN && ND[fq].d < 0 && ND[fq].fl & (F_EXTERN | F_NESTED) == 0 && ND[fq].c >= 0 && !lib_file(d.file as int) && all_typed(fq) { get_inst(fq, BINDS.len, 0, -1, -1) } }
 	for x EXPN: get_inst(x, BINDS.len, 0, -1, -1)
 	for d XROOTS: get_inst(DC[d].node, BINDS.len, 0, -1, -1)
 	for d, i DC:

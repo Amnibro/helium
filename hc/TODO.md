@@ -31,6 +31,9 @@ Status as of 2026-10-27 (gate 97, the old C++ compiler deleted).
 - No `;` at line ends; `x := e` declares, `x ~= e` declares a variable; `fn` is optional; `for i xs` and `for x T in xs`; `use m`; `#` comments.
 - A statement-position block discards its tail value. A function with no result type still infers it from its tail, so end such bodies with `;` when the tail is not the result.
 - An untyped local whose initializer is a narrower integer (not a cast) is `int`.
+- A parameter or a local copied from a place whose type holds self-relative references binds a read-only reference instead (a copy's links would be measured from the copy).
+- Lifetime checks (dangling slices and references, shrinking while borrowed) are off for `.he` by default because the full pass is slow on very large `.he` programs such as hc itself. `HC_HEPROV=1` turns them on for user `.he` files (libraries stay exempt; `=2` checks libraries too). Gold always sets it.
+- `hc check --all` also checks every typed function nothing calls yet, so a module can be checked through an empty `main`.
 - An int converts implicitly to a narrower int at assignments, typed declarations, returns and fields; debug builds check that it fits, exactly like `as`. Arguments still need a cast (overload matching does not narrow).
 
 Converters:
