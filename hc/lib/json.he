@@ -393,8 +393,10 @@ K_NUM := 3
 K_STR := 4
 K_ARR := 5
 K_OBJ := 6
-struct Node { kind int = 0, num real = 0.0, whole int = 0, text byte[>..] = [], name byte[>..] = [], first int = -1, next int = -1, count int = 0 }
-struct Doc { nodes Node[>..] = [] }
+struct Node { kind int = 0, num real = 0.0, whole int = 0, at int = 0, len int = 0, nat int = 0, nlen int = 0, first int = -1, next int = -1, count int = 0 }
+struct Doc { nodes Node[>..] = [], pool byte[>..] = [] }
+text_of(d Doc&, n int) const byte[:]: d.pool[d.nodes[n].at..d.nodes[n].at + d.nodes[n].len]
+key_of(d Doc&, n int) const byte[:]: d.pool[d.nodes[n].nat..d.nodes[n].nat + d.nodes[n].nlen]
 
 add_node(d Doc&, kind int) int:
 	d.nodes.push(Node{kind: kind})
@@ -414,7 +416,7 @@ value(r Reader&, d Doc&, depth int) int:
 	if c == '{':
 		n := add_node(d, K_OBJ)
 		last ~= -1
-		each_member(r) { key => k := value(r, d, depth + 1); if k >= 0 { d.nodes[k].name.append(key); last = attach(d, n, last, k) } }
+		each_member(r) { key => k := value(r, d, depth + 1); if k >= 0 { d.nodes[k].nat = d.pool.len; d.nodes[k].nlen = key.len; d.pool.append(key); last = attach(d, n, last, k) } }
 		return n
 	if c == '[':
 		n := add_node(d, K_ARR)
@@ -425,7 +427,9 @@ value(r Reader&, d Doc&, depth int) int:
 		n := add_node(d, K_STR)
 		s byte[>..] ~= []
 		decode(r, s)
-		d.nodes[n].text.append(s[..])
+		d.nodes[n].at = d.pool.len
+		d.nodes[n].len = s.len
+		d.pool.append(s[..])
 		return n
 	if c == 't' || c == 'f':
 		n := add_node(d, K_BOOL)
@@ -455,6 +459,7 @@ value(r Reader&, d Doc&, depth int) int:
 # parses text into d (cleared first): the root index and "" or -1 and why
 parse(text const byte[:], d Doc&) int, byte[>..]:
 	d.nodes.clear()
+	d.pool.clear()
 	r ~= reader(text)
 	root := value(r, d, 0)
 	if !finish(r): return -1, message(r)
@@ -465,7 +470,7 @@ member(d Doc&, n int, key byte[:]) int:
 	if n < 0 || d.nodes[n].kind != K_OBJ: return -1
 	c ~= d.nodes[n].first
 	while c >= 0:
-		if d.nodes[c].name == key: return c
+		if key_of(d, c) == key: return c
 		c = d.nodes[c].next
 	-1
 # element k of array n, or -1
@@ -477,7 +482,7 @@ element(d Doc&, n int, k int) int:
 		c = d.nodes[c].next
 		i += 1
 	c
-name_of(d Doc&, c int) const byte[:]: if c < 0 { "" } else { d.nodes[c].name[..] }
+name_of(d Doc&, c int) const byte[:]: if c < 0 { "" } else { key_of(d, c) }
 count(d Doc&, n int) int: if n < 0 { 0 } else { d.nodes[n].count }
 # calls the block with each child of n
 each<F>(d Doc&, n int):
@@ -497,7 +502,7 @@ as_bool(d Doc&, n int) bool, bool:
 	if kind(d, n) == K_BOOL: return d.nodes[n].whole == 1, true
 	return false, false
 as_string(d Doc&, n int) const byte[:], bool:
-	if kind(d, n) == K_STR: return d.nodes[n].text[..], true
+	if kind(d, n) == K_STR: return text_of(d, n), true
 	return "", false
 is_null(d Doc&, n int) bool: kind(d, n) == K_NULL
 
@@ -509,11 +514,11 @@ format_node(out byte[>..]&, d Doc&, n int) int:
 		c ~= d.nodes[n].first
 		while c >= 0:
 			if c != d.nodes[n].first: out.push(',')
-			if k == K_OBJ: format_key(out, d.nodes[c].name[..])
+			if k == K_OBJ: format_key(out, key_of(d, c))
 			format_node(out, d, c)
 			c = d.nodes[c].next
 		out.push(if k == K_OBJ { '}' } else { ']' })
-	else if k == K_STR: format_string(out, d.nodes[n].text[..])
+	else if k == K_STR: format_string(out, text_of(d, n))
 	else if k == K_INT: format(out, d.nodes[n].whole)
 	else if k == K_NUM: format_number(out, d.nodes[n].num)
 	else if k == K_BOOL: format_bool(out, d.nodes[n].whole == 1)

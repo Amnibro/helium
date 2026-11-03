@@ -118,7 +118,7 @@ fn get(d json::Doc&, n int, key const byte[:]) int {
 	if n < 0 || d.nodes[n].kind != json::K_OBJ { return -1; }
 	var c = d.nodes[n].first;
 	while c >= 0 {
-		if d.nodes[c].name == key { return c; }
+		if json::name_of(d, c) == key { return c; }
 		c = d.nodes[c].next;
 	}
 	-1
@@ -142,7 +142,7 @@ fn truth(d json::Doc&, n int, key const byte[:], fallback bool) bool {
 fn word(d json::Doc&, n int, key const byte[:]) const byte[:] {
 	let c = get(d, n, key);
 	if c < 0 || d.nodes[c].kind != json::K_STR { return ""; }
-	d.nodes[c].text[..]
+	json::text_of(d, c)
 }
 
 fn children_of(d json::Doc&, n int, out int[>..]&) {
@@ -347,7 +347,7 @@ fn load_bytes(data const byte[:], dir const byte[:]) int {
 	var list int[>..] = [];
 	children_of(d, get(d, root, "extensionsRequired"), list);
 	for e in list {
-		let ext = d.nodes[e].text[..];
+		let ext = json::text_of(d, e);
 		if ext != "KHR_materials_emissive_strength" && ext != "KHR_materials_unlit" && ext != "KHR_mesh_quantization" {
 			return fail(str("gltf: required extension ", ext, " is not supported"));
 		}
