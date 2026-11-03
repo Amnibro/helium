@@ -75,6 +75,8 @@ digits_of(v real, digits byte[>..]&) int:
 # for positive n with plus_exp, as serde_json writes it). JSON has
 # no NaN or infinity, so those come out as null
 strip_zeros(m0 u64, x int&) u64:
+	r0 := m0 * 0xCCCCCCCCCCCCCCCD
+	if (r0 >> 1 | r0 << 63) > 1844674407370955161: return m0
 	m ~= m0
 	r ~= m * 0xE4A4D1417CD9A041
 	r = r >> 16 | r << 48
@@ -92,24 +94,11 @@ strip_zeros(m0 u64, x int&) u64:
 	r = r >> 1 | r << 63
 	if r <= 1844674407370955161: m = r; x += 1
 	m
+P10D u64[20] := [1, 10, 100, 1000, 10000, 100000, 1000000, 10000000, 100000000, 1000000000, 10000000000, 100000000000, 1000000000000, 10000000000000, 100000000000000, 1000000000000000, 10000000000000000, 100000000000000000, 1000000000000000000, 10000000000000000000]
 dlen17(v u64) int:
-	if v >= 10000000000000000: return 17
-	if v >= 1000000000000000: return 16
-	if v >= 100000000000000: return 15
-	if v >= 10000000000000: return 14
-	if v >= 1000000000000: return 13
-	if v >= 100000000000: return 12
-	if v >= 10000000000: return 11
-	if v >= 1000000000: return 10
-	if v >= 100000000: return 9
-	if v >= 10000000: return 8
-	if v >= 1000000: return 7
-	if v >= 100000: return 6
-	if v >= 10000: return 5
-	if v >= 1000: return 4
-	if v >= 100: return 3
-	if v >= 10: return 2
-	1
+	b := 64 - clz(v)
+	n := (b * 1233) >> 12
+	n + (if v >= P10D[n] { 1 } else { 0 })
 swar8(x u64) u64:
 	v := x / 10000 | (x % 10000) << 32
 	q := (v * 10486 >> 20) & 0x7F0000007F
@@ -130,11 +119,14 @@ format_number(out byte[>..]&, v real, plus_exp bool = false):
 	nd := dlen17(m)
 	e := x + nd - 1
 	var o byte[64]
-	hi := m / 100000000
-	h1 := hi / 100000000
-	store_u64le(o, 24, swar8(hi - h1 * 100000000))
-	store_u64le(o, 32, swar8(m - hi * 100000000))
-	o[23] = (48 + h1 as int) as byte
+	if nd <= 8:
+		store_u64le(o, 32, swar8(m))
+	else:
+		hi := m / 100000000
+		h1 := hi / 100000000
+		store_u64le(o, 24, swar8(hi - h1 * 100000000))
+		store_u64le(o, 32, swar8(m - hi * 100000000))
+		o[23] = (48 + h1 as int) as byte
 	a ~= 40 - nd
 	z ~= 40
 	if e < -5 || e >= 16:
