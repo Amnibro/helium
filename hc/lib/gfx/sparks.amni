@@ -36,6 +36,17 @@ fn init(count int) bool {
 	true
 }
 
+// Kills every particle (a new scene); call outside any pass.
+fn clear() {
+	if capacity == 0 { return; }
+	var zero byte[>..] = [];
+	for k in capacity * 64 { zero.push(0); }
+	gfx::update_buffer(buf, 0, zero[..]);
+	pending.clear();
+	pending_slot.clear();
+	next = 0;
+}
+
 // One particle: life in seconds, size shrinking from size0 to size1.
 fn emit(pos float3, vel float3, life f32, rgba float4, size0 f32, size1 f32) {
 	if capacity == 0 { return; }

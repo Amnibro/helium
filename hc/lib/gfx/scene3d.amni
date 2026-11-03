@@ -46,7 +46,7 @@ struct Light { pos float3, range f32, rgb float3, kind int }   // kind 0 point (
 struct Sky { zenith float3, horizon float3, ground float3, ambient f32, draw bool }
 struct Look { exposure f32, white f32, bloom f32, bloom_cut f32, desaturate f32, ssao bool, ao_radius f32, ao_power f32, ao_samples int }
 struct Item { asset int, place gfx::mat4, prev_place gfx::mat4, anim int, time f32, visible bool, anim2 int = -1, time2 f32 = 0.0, blend f32 = 1.0, bend_node int = -1, bend linalg::Quat = linalg::Quat { 0.0, 0.0, 0.0, 1.0 }, track int[4] = [-1, -1, -1, -1], tracked gfx::mat4[4] = [gfx::mat4_identity, gfx::mat4_identity, gfx::mat4_identity, gfx::mat4_identity] }
-struct Batch { prim int, item int, node int, joint_base int, model gfx::mat4, depth f32, mode int, prev_model gfx::mat4, prev_joint_base int }
+struct Batch { prim int, item int, node int, joint_base int, model gfx::mat4, depth f32, mode int, prev_model gfx::mat4, prev_joint_base int, vis bool }
 
 struct DrawU { model gfx::mat4, model_normal gfx::mat4, view_proj gfx::mat4, prev_model gfx::mat4, deform float4, weights_lo float4, weights_hi float4, misc float4, cur_vp gfx::mat4, prev_vp gfx::mat4 }
 struct FrameU {
@@ -593,6 +593,25 @@ fn find_prev(key int) int {
 	-1
 }
 
+// false when the box lies wholly outside one clip plane (camera passes only; shadows keep it)
+fn in_view(m gfx::mat4, lo float3, hi float3) bool {
+	var out = [0, 0, 0, 0, 0, 0];
+	for k in 8 {
+		let p = linalg::v3(if k & 1 == 0 { lo.x } else { hi.x }, if k & 2 == 0 { lo.y } else { hi.y }, if k & 4 == 0 { lo.z } else { hi.z });
+		let x = m.c0.x * p.x + m.c1.x * p.y + m.c2.x * p.z + m.c3.x;
+		let y = m.c0.y * p.x + m.c1.y * p.y + m.c2.y * p.z + m.c3.y;
+		let z = m.c0.z * p.x + m.c1.z * p.y + m.c2.z * p.z + m.c3.z;
+		let w = m.c0.w * p.x + m.c1.w * p.y + m.c2.w * p.z + m.c3.w;
+		if x < -w { out[0] += 1; }
+		if x > w { out[1] += 1; }
+		if y < -w { out[2] += 1; }
+		if y > w { out[3] += 1; }
+		if z < 0.0 { out[4] += 1; }
+		if z > w { out[5] += 1; }
+	}
+	for o in out { if o == 8 { return false; } }
+	true
+}
 fn gather() {
 	batch.clear();
 	joints.clear();
@@ -631,7 +650,7 @@ fn gather() {
 				let model = if joint_base >= 0 { gfx::mat4_identity } else { motion::world[ni] };
 				let c = linalg::point(model, linalg::mix3(pr.lo, pr.hi, 0.5));
 				let d = linalg::dot3(linalg::v3(c.x - view.eye.x, c.y - view.eye.y, c.z - view.eye.z), forward());
-				batch.push(Batch { pi, ii, ni, joint_base, model, d, material_of(pi).alpha_mode, prev_model, prev_base });
+				batch.push(Batch { pi, ii, ni, joint_base, model, d, material_of(pi).alpha_mode, prev_model, prev_base, joint_base >= 0 || in_view(gfx::mul(view_proj, model), pr.lo, pr.hi) });
 			}
 		}
 	}
@@ -830,6 +849,7 @@ fn gi_scene() {
 		let pr = gltf::prims[b.prim];
 		if pr.targets > 0 { continue; }
 		let m = material_of(b.prim);
+		if m.no_gi { continue; }
 		let tex = if m.base_tex.texture >= 0 && gltf::textures[m.base_tex.texture].image >= 0 { image_avg(gltf::textures[m.base_tex.texture].image) } else { float3 { 1.0, 1.0, 1.0 } };
 		let mt = if m.mr_tex.texture >= 0 { 0.0 } else { m.metallic };
 		let k = 1.0 - mt;
@@ -945,6 +965,7 @@ fn shadow_pass() {
 		for b in batch {
 			if b.mode == gltf::ALPHA_BLEND { continue; }
 			let m = material_of(b.prim);
+			if m.no_shadow { continue; }
 			gfx::uniforms(gfx::VERTEX, 0, draw_uniforms(b, vp));
 			gfx::uniforms(gfx::FRAGMENT, 0, cut_of(m));
 			bind_slot(0, m.base_tex, true, white);
@@ -986,7 +1007,7 @@ fn ao_pass() {
 	var current = -1;
 	bind_geometry();
 	for b in batch {
-		if b.mode == gltf::ALPHA_BLEND { continue; }
+		if b.mode == gltf::ALPHA_BLEND || !b.vis { continue; }
 		let m = material_of(b.prim);
 		let want = if m.double_sided { 1 } else { 0 };
 		if want != current {
@@ -1042,7 +1063,7 @@ fn surface_of(m gltf::Material) SurfaceU {
 		base: m.base,
 		emissive: x4(m.emissive, if m.unlit { 1.0 } else { 0.0 }),
 		params: f4(m.metallic, m.roughness, if m.normal_tex.texture < 0 || gltf::textures[m.normal_tex.texture].image < 0 { 0.0 } else { m.normal_scale }, m.occlusion_strength),
-		alpha: f4(m.alpha_mode as f32, m.alpha_cutoff, if m.double_sided { 1.0 } else { 0.0 }, 0.0),
+		alpha: f4(m.alpha_mode as f32, m.alpha_cutoff, if m.double_sided && !m.keep_normal { 1.0 } else { 0.0 }, 0.0),
 		uv_sets: f4(m.base_tex.uv as f32, m.mr_tex.uv as f32, m.normal_tex.uv as f32, m.occlusion_tex.uv as f32),
 		uv_sets2: f4(m.emissive_tex.uv as f32, debug_view as f32, ((if multiscatter { 1 } else { 0 }) + 2 * furnace_mode) as f32, furnace_scale),
 		tri: f4(m.tri, if m.top_base.texture < 0 { 0.0 } else { m.top }, m.top_scale, m.top_sharp),
@@ -1081,7 +1102,7 @@ fn color_pass() {
 		gfx::bind(if pass == 0 { pipe_lit } else { pipe_lit_two });
 		bind_geometry();
 		for b in batch {
-			if b.mode == gltf::ALPHA_BLEND { continue; }
+			if b.mode == gltf::ALPHA_BLEND || !b.vis { continue; }
 			if material_of(b.prim).double_sided != (pass == 1) { continue; }
 			draw_lit(b);
 		}

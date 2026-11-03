@@ -152,6 +152,7 @@ fn reset_scene() {
 	s3d::lights.clear();
 	gltf::reset();
 	s3d::forget();
+	sparks::clear();
 }
 
 // ---- furnace: energy of the GGX BRDF in a uniform white environment
