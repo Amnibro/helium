@@ -401,36 +401,37 @@ dedup<A>(xs A&):
 # so it never holds more than 64 of them. Not stable.
 
 sort<T, F>(xs T[:]):
-	pend int[128] ~= [0; 128]
-	top ~= 0
-	lo ~= 0; hi ~= xs.len
-	while true:
-		while hi - lo > 12:
-			mid := lo + (hi - lo - 1) / 2
-			# order xs[lo], xs[mid], xs[hi - 1]
-			if F(xs[mid], xs[lo]): swap_at(xs, mid, lo)
-			if F(xs[hi - 1], xs[mid]):
-				swap_at(xs, hi - 1, mid)
+	if xs.len > 12:
+		pend int[128] ~= [0; 128]
+		top ~= 0
+		lo ~= 0; hi ~= xs.len
+		while true:
+			while hi - lo > 12:
+				mid := lo + (hi - lo - 1) / 2
+				# order xs[lo], xs[mid], xs[hi - 1]
 				if F(xs[mid], xs[lo]): swap_at(xs, mid, lo)
-			pv T := xs[mid]
-			i ~= lo - 1; j ~= hi
-			while true:
-				i += 1
-				while F(xs[i], pv): i += 1
-				j -= 1
-				while F(pv, xs[j]): j -= 1
-				if i >= j: break
-				swap_at(xs, i, j)
-			# [lo, j] and [j + 1, hi): wait on the larger, keep going on the smaller
-			if j + 1 - lo > hi - j - 1:
-				pend[top] = lo; pend[top + 1] = j + 1; top += 2
-				lo = j + 1
-			else:
-				pend[top] = j + 1; pend[top + 1] = hi; top += 2
-				hi = j + 1
-		if top == 0: break
-		top -= 2
-		lo = pend[top]; hi = pend[top + 1]
+				if F(xs[hi - 1], xs[mid]):
+					swap_at(xs, hi - 1, mid)
+					if F(xs[mid], xs[lo]): swap_at(xs, mid, lo)
+				pv T := xs[mid]
+				i ~= lo - 1; j ~= hi
+				while true:
+					i += 1
+					while F(xs[i], pv): i += 1
+					j -= 1
+					while F(pv, xs[j]): j -= 1
+					if i >= j: break
+					swap_at(xs, i, j)
+				# [lo, j] and [j + 1, hi): wait on the larger, keep going on the smaller
+				if j + 1 - lo > hi - j - 1:
+					pend[top] = lo; pend[top + 1] = j + 1; top += 2
+					lo = j + 1
+				else:
+					pend[top] = j + 1; pend[top + 1] = hi; top += 2
+					hi = j + 1
+			if top == 0: break
+			top -= 2
+			lo = pend[top]; hi = pend[top + 1]
 	for k 1..xs.len:
 		v T := xs[k]
 		m ~= k
