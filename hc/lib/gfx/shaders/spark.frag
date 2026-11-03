@@ -5,5 +5,5 @@ void main() {
 	float d2 = dot(in_corner, in_corner);
 	if (d2 > 1.0) discard;
 	float glow = (1.0 - d2) * (1.0 - d2);
-	out_rgba = vec4(in_rgba.rgb * in_rgba.a * glow, 0.0);
+	out_rgba = vec4(in_rgba.rgb * in_rgba.a * glow, 1.0);
 }

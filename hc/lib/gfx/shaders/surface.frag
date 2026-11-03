@@ -17,13 +17,16 @@ layout(set = 2, binding = 3) uniform sampler2D tex_occlusion;
 layout(set = 2, binding = 4) uniform sampler2D tex_emissive;
 layout(set = 2, binding = 5) uniform sampler2DArrayShadow tex_shadow;
 layout(set = 2, binding = 6) uniform sampler2D tex_ao;
-layout(std430, set = 2, binding = 7) readonly buffer Nodes { vec4 bvh_nodes[]; };
-layout(std430, set = 2, binding = 8) readonly buffer Tris { vec4 bvh_tris[]; };
-layout(std430, set = 2, binding = 9) readonly buffer Irr { vec4 probe_irr[]; };
-layout(std430, set = 2, binding = 10) readonly buffer Dist { vec2 probe_dist[]; };
+layout(set = 2, binding = 7) uniform sampler2D tex_top_base;
+layout(set = 2, binding = 8) uniform sampler2D tex_top_mr;
+layout(set = 2, binding = 9) uniform sampler2D tex_top_normal;
+layout(std430, set = 2, binding = 10) readonly buffer Nodes { vec4 bvh_nodes[]; };
+layout(std430, set = 2, binding = 11) readonly buffer Tris { vec4 bvh_tris[]; };
+layout(std430, set = 2, binding = 12) readonly buffer Irr { vec4 probe_irr[]; };
+layout(std430, set = 2, binding = 13) readonly buffer Dist { vec2 probe_dist[]; };
 
 const int CASCADES = 3;
-const int MAX_LIGHTS = 8;
+const int MAX_LIGHTS = 16;
 
 layout(set = 3, binding = 0) uniform Frame {
 	mat4 cascade_mat[CASCADES];
@@ -52,6 +55,8 @@ layout(set = 3, binding = 1) uniform Surface {
 	vec4 alpha;           // x mode (0 opaque, 1 mask, 2 blend), y cutoff, z double sided
 	vec4 uv_sets;         // which UV set each texture reads: base, mr, normal, occlusion
 	vec4 uv_sets2;        // x emissive, y debug view (see scene3d.debug_view), z multiscatter on + 2 * furnace control mode, w furnace control scale
+	vec4 tri;             // x world triplanar tiles per unit (0 = mesh UVs), y top layer coverage, z top layer tiles per unit, w top edge sharpness
+	vec4 top_tint;        // top layer colour factor
 };
 
 layout(location = 0) out vec4 out_rgba;
@@ -132,6 +137,18 @@ float sun_visibility(vec3 p, vec3 n) {
 	vec2 uv = vec2(ndc.x * 0.5 + 0.5, 0.5 - ndc.y * 0.5);
 	if (any(lessThan(uv, vec2(0.0))) || any(greaterThan(uv, vec2(1.0)))) return 1.0;
 	float lit = 0.0;
+	// to_sun.w - 1 = penumbra radius in world units: rotated Poisson taps, the noise left to TAA
+	float soft = to_sun.w - 1.0;
+	if (soft > 0.0) {
+		const vec2 pd[12] = vec2[](vec2(-0.326, -0.406), vec2(-0.840, -0.074), vec2(-0.696, 0.457), vec2(-0.203, 0.621), vec2(0.962, -0.195), vec2(0.473, -0.480),
+			vec2(0.519, 0.767), vec2(0.185, -0.893), vec2(0.507, 0.064), vec2(0.896, 0.412), vec2(-0.322, -0.933), vec2(-0.792, -0.598));
+		float ruv = max(soft * row0 * 0.5, 1.5 * texel);
+		float ang = 6.2831853 * fract(52.9829189 * fract(dot(gl_FragCoord.xy, vec2(0.06711056, 0.00583715))));
+		mat2 rot = mat2(cos(ang), sin(ang), -sin(ang), cos(ang));
+		float bias = 0.0008 * (1.0 + 0.25 * ruv / texel);
+		for (int i = 0; i < 12; i++) lit += texture(tex_shadow, vec4(uv + rot * pd[i] * ruv, float(c), ndc.z - bias));
+		return lit / 12.0;
+	}
 	for (int y = -1; y <= 1; y++)
 		for (int x = -1; x <= 1; x++)
 			lit += texture(tex_shadow, vec4(uv + vec2(x, y) * texel, float(c), ndc.z - 0.0008));
@@ -161,6 +178,23 @@ vec3 ambient_light(vec3 n, vec3 v, vec3 l, vec3 base_rgb, float metal, float rou
 
 void main() {
 	vec4 tint = base * in_col * texture(tex_base, pick_uv(uv_sets.x));
+	// world-aligned layers: triplanar base and a top layer on up-facing surfaces
+	vec3 gw = normalize(in_nrm);
+	bool tp = tri.x > 0.0;
+	vec3 tw = pow(abs(gw), vec3(4.0));
+	tw /= tw.x + tw.y + tw.z;
+	vec2 ux = in_world.zy * tri.x;
+	vec2 uy = in_world.xz * tri.x;
+	vec2 uz = in_world.xy * tri.x;
+	vec2 ut = in_world.xz * tri.z;
+	if (tp) tint = base * in_col * (texture(tex_base, ux) * tw.x + texture(tex_base, uy) * tw.y + texture(tex_base, uz) * tw.z);
+	float topf = 0.0;
+	if (tri.y > 0.0) {
+		vec4 tc = top_tint * texture(tex_top_base, ut);
+		float hb = dot(tc.rgb - tint.rgb, vec3(0.333)) * 1.5;
+		topf = clamp((gw.y - 1.0 + tri.y + hb * 0.25) * tri.w, 0.0, 1.0) * in_col.a;
+		tint = mix(tint, vec4(tc.rgb, tint.a), topf);
+	}
 	if (alpha.x > 0.5 && alpha.x < 1.5 && tint.a < alpha.y) discard;
 	if (emissive.w > 0.5) { out_rgba = vec4(tint.rgb, alpha.x > 1.5 ? tint.a : 1.0); return; }
 
@@ -192,11 +226,28 @@ void main() {
 	vec3 tn = texture(tex_normal, uvn).xyz * 2.0 - 1.0;
 	tn.xy *= params.z;
 	n = normalize(mat3(t, b, n) * tn);
-
 	vec4 mr = texture(tex_mr, pick_uv(uv_sets.y));
+	if (tp) {
+		vec3 nx = texture(tex_normal, ux).xyz * 2.0 - 1.0;
+		vec3 ny = texture(tex_normal, uy).xyz * 2.0 - 1.0;
+		vec3 nz = texture(tex_normal, uz).xyz * 2.0 - 1.0;
+		nx.xy *= params.z; ny.xy *= params.z; nz.xy *= params.z;
+		nx = vec3(nx.xy + gw.zy, abs(nx.z) * gw.x);
+		ny = vec3(ny.xy + gw.xz, abs(ny.z) * gw.y);
+		nz = vec3(nz.xy + gw.xy, abs(nz.z) * gw.z);
+		n = normalize(nx.zyx * tw.x + ny.xzy * tw.y + nz.xyz * tw.z);
+		if (!gl_FrontFacing && alpha.z > 0.5) n = -n;
+		mr = texture(tex_mr, ux) * tw.x + texture(tex_mr, uy) * tw.y + texture(tex_mr, uz) * tw.z;
+	}
+	if (topf > 0.0) {
+		vec3 nt = texture(tex_top_normal, ut).xyz * 2.0 - 1.0;
+		nt = normalize(vec3(nt.x + gw.x, abs(nt.z) * gw.y, nt.y + gw.z));
+		n = normalize(mix(n, nt, topf));
+		mr = mix(mr, texture(tex_top_mr, ut), topf);
+	}
 	float metal = clamp(params.x * mr.b, 0.0, 1.0);
 	float rough = clamp(params.y * mr.g, 0.03, 1.0);
-	float occ = 1.0 + params.w * (texture(tex_occlusion, pick_uv(uv_sets.w)).r - 1.0);
+	float occ = 1.0 + params.w * ((tp ? mr.r : texture(tex_occlusion, pick_uv(uv_sets.w)).r) - 1.0);
 	if (eye.w > 0.5) occ *= texture(tex_ao, gl_FragCoord.xy * screen.xy).r;
 
 	vec3 albedo = tint.rgb * (1.0 - metal);

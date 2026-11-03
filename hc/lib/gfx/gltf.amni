@@ -44,7 +44,9 @@ struct Material {
 	normal_tex TexRef, normal_scale f32,
 	occlusion_tex TexRef, occlusion_strength f32,
 	emissive float3, emissive_tex TexRef,
-	alpha_mode int, alpha_cutoff f32, double_sided bool, unlit bool, name Span
+	alpha_mode int, alpha_cutoff f32, double_sided bool, unlit bool, name Span,
+	tri f32 = 0.0, top f32 = 0.0, top_scale f32 = 0.0, top_sharp f32 = 8.0,
+	top_base TexRef = TexRef { -1, 0 }, top_mr TexRef = TexRef { -1, 0 }, top_normal TexRef = TexRef { -1, 0 }, top_tint float4 = float4 { 1.0, 1.0, 1.0, 1.0 }
 }
 struct Primitive { vfirst int, vcount int, ifirst int, icount int, material int, mfirst int, targets int, lo float3, hi float3, tangents bool, skinned bool }
 struct Mesh { prims Span, weights Span, name Span }
@@ -452,7 +454,8 @@ fn load_bytes(data const byte[:], dir const byte[:]) int {
 			alpha_cutoff: num(d, m, "alphaCutoff", 0.5) as f32,
 			double_sided: truth(d, m, "doubleSided", false),
 			unlit: get(d, ext, "KHR_materials_unlit") >= 0,
-			name: keep_name(word(d, m, "name"))
+			name: keep_name(word(d, m, "name")),
+			..
 		});
 	}
 	asset.materials.count = materials.len - asset.materials.first;
@@ -743,6 +746,16 @@ fn add_primitive(d json::Doc&, p int, mat_base int, mat_count int) bool {
 
 // ---- lookups
 
+fn add_texture_file(path const byte[:]) int {
+	var raw byte[>..] = [];
+	if !read_file(path, raw) { return -1; }
+	let im = decode_image(raw[..]);
+	if !im.ok { return -1; }
+	images.push(im);
+	textures.push(Texture { images.len - 1, false, false, true, 10497, 10497 });
+	textures.len - 1
+}
+
 fn find_node(asset int, name const byte[:]) int {
 	let a = assets[asset];
 	for k in a.nodes.count { if text_of(nodes[a.nodes.first + k].name) == name { return a.nodes.first + k; } }
@@ -760,6 +773,6 @@ fn default_material() Material {
 		base: float4 { 1.0, 1.0, 1.0, 1.0 }, base_tex: TexRef { -1, 0 }, metallic: 1.0, roughness: 1.0, mr_tex: TexRef { -1, 0 },
 		normal_tex: TexRef { -1, 0 }, normal_scale: 1.0, occlusion_tex: TexRef { -1, 0 }, occlusion_strength: 1.0,
 		emissive: float3 { 0.0, 0.0, 0.0 }, emissive_tex: TexRef { -1, 0 }, alpha_mode: ALPHA_OPAQUE, alpha_cutoff: 0.5,
-		double_sided: false, unlit: false, name: Span { 0, 0 }
+		double_sided: false, unlit: false, name: Span { 0, 0 }, ..
 	}
 }

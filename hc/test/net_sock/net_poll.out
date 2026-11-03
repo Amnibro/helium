@@ -1,0 +1,8 @@
+true 127.0.0.1:8080 false false 127.0.0.1:1
+client 0 echoed 'client 0'
+client 1 echoed 'client 1'
+client 2 echoed 'client 2'
+accepted 3 replies 3
+timeout true 0
+blocking 0 1 0
+connection refused; not supported on this target; socket error

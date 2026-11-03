@@ -1,0 +1,17 @@
+listen true port true
+connect true
+accept ready 1
+accepted true again true
+writable 4 connected 0
+nodelay 0
+peer is local true true
+empty would block (AGAIN)
+sent 5
+recv 5 hello
+big 200000 same true
+eof 0
+still listening true
+closed listener: connection refused
+bad host invalid argument
+bad handle bad handle
+in use address in use

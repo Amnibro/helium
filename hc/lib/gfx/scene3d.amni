@@ -35,25 +35,26 @@ import gfx.fx;
 import gfx.rt;
 
 let CASCADES = 3;
-let MAX_LIGHTS = 8;
+let MAX_LIGHTS = 16;
+let GI_LIGHTS = 8;
 let GLOW_LEVELS = 5;
 let MSAA = 4;
 
 struct Camera { eye float3, target float3, up float3, fov_y f32, near f32, far f32 }
-struct Sun { to_sun float3, rgb float3, shadows bool, shadow_far f32, map_size int }
+struct Sun { to_sun float3, rgb float3, shadows bool, shadow_far f32, map_size int, soft f32 = 0.0 }
 struct Light { pos float3, range f32, rgb float3, kind int }   // kind 0 point (1 spot is reserved)
 struct Sky { zenith float3, horizon float3, ground float3, ambient f32, draw bool }
 struct Look { exposure f32, white f32, bloom f32, bloom_cut f32, desaturate f32, ssao bool, ao_radius f32, ao_power f32, ao_samples int }
-struct Item { asset int, place gfx::mat4, prev_place gfx::mat4, anim int, time f32, visible bool }
+struct Item { asset int, place gfx::mat4, prev_place gfx::mat4, anim int, time f32, visible bool, anim2 int = -1, time2 f32 = 0.0, blend f32 = 1.0, bend_node int = -1, bend linalg::Quat = linalg::Quat { 0.0, 0.0, 0.0, 1.0 }, track int[4] = [-1, -1, -1, -1], tracked gfx::mat4[4] = [gfx::mat4_identity, gfx::mat4_identity, gfx::mat4_identity, gfx::mat4_identity] }
 struct Batch { prim int, item int, node int, joint_base int, model gfx::mat4, depth f32, mode int, prev_model gfx::mat4, prev_joint_base int }
 
 struct DrawU { model gfx::mat4, model_normal gfx::mat4, view_proj gfx::mat4, prev_model gfx::mat4, deform float4, weights_lo float4, weights_hi float4, misc float4, cur_vp gfx::mat4, prev_vp gfx::mat4 }
 struct FrameU {
 	cascade_mat gfx::mat4[3], cascade_far float4, eye float4, view_dir float4, to_sun float4, sun_rgb float4,
-	zenith float4, horizon float4, ground float4, screen float4, light_pos float4[8], light_rgb float4[8], gi float4, gi_origin float4, gi_step float4, gi_dims float4
+	zenith float4, horizon float4, ground float4, screen float4, light_pos float4[16], light_rgb float4[16], gi float4, gi_origin float4, gi_step float4, gi_dims float4
 }
 struct GiU { origin float4, step float4, dims float4, rot0 float4, rot1 float4, rot2 float4, params float4, to_sun float4, sun_rgb float4, zenith float4, horizon float4, ground float4, light_pos float4[8], light_rgb float4[8] }
-struct SurfaceU { base float4, emissive float4, params float4, alpha float4, uv_sets float4, uv_sets2 float4 }
+struct SurfaceU { base float4, emissive float4, params float4, alpha float4, uv_sets float4, uv_sets2 float4, tri float4, top_tint float4 }
 struct CutU { base float4, alpha float4, uv_sets float4 }
 struct CutViewU { base float4, alpha float4, uv_sets float4, view gfx::mat4 }
 struct SkyU { inv_view_proj gfx::mat4, prev_view_proj gfx::mat4, to_sun float4, sun_rgb float4, zenith float4, horizon float4, ground float4 }
@@ -66,6 +67,9 @@ struct DofU { size float4, lens float4, tune float4 }
 struct TexelU { texel float4 }
 struct GlowU { texel float4, cut float4 }
 struct GradeU { tone float4 }
+struct FogU { inv_view_proj gfx::mat4, cascade_mat gfx::mat4[3], cascade_far float4, eye float4, view_dir float4, to_sun float4, sun_rgb float4, ambient float4, params float4, params2 float4, light_pos float4[16], light_rgb float4[16] }
+struct QuadG { p float4[4], c float4[4], prm float4 }
+struct QuadViewU { view_proj gfx::mat4, right float4, up float4 }
 struct TemporalU { in_size float4, out_size float4, jitter float4, tune float4, reject float4 }
 
 var view Camera = Camera { eye: float3 { 0.0, 1.5, 5.0 }, target: float3 { 0.0, 0.5, 0.0 }, up: float3 { 0.0, 1.0, 0.0 }, fov_y: 0.9, near: 0.1, far: 200.0 };
@@ -99,11 +103,18 @@ var gi_hysteresis f32 = 0.97;
 var gi_bias f32 = 0.3;
 var gi_max_dist f32 = 0.0;
 var gi_updates_per_frame = 1;
+var gi_interval = 1;
+var shadow_reach f32 = 0.0;
 var gi_built = false;
 var gi_np = 0;
 var gi_nr = 0;
 var gi_updates = 0;
 var gi_lo float3 = float3 { 0.0, 0.0, 0.0 };
+// optional probe volume; off = the whole scene's bounds
+var gi_box = false;
+var gi_box_lo float3 = float3 { 0.0, 0.0, 0.0 };
+var gi_box_hi float3 = float3 { 0.0, 0.0, 0.0 };
+var img_avg float4[>..] = [];
 var gi_step float3 = float3 { 1.0, 1.0, 1.0 };
 var gi_irr gfx::Buffer;
 var gi_dist gfx::Buffer;
@@ -147,6 +158,21 @@ var shadow_test_cycle_all = false;
 // and never cycles at all (reported only: does the driver serialise frames anyway)
 var shadow_test_cycle_never = false;
 var lights Light[>..] = [];
+var fog_on = false;
+var fog_density f32 = 0.03;
+var fog_falloff f32 = 0.25;
+var fog_height f32 = 0.0;
+var fog_far f32 = 60.0;
+var fog_steps = 32;
+var fog_g f32 = 0.6;
+var fog_ambient float3 = float3 { 0.05, 0.06, 0.07 };
+var fog_sun f32 = 1.0;
+var pipe_fog gfx::Pipeline;
+var quads QuadG[>..] = [];
+var quad_buf gfx::Buffer;
+var quad_cap = 0;
+var pipe_quad_add gfx::Pipeline;
+var pipe_quad_mul gfx::Pipeline;
 var items Item[>..] = [];
 var batch Batch[>..] = [];
 
@@ -242,12 +268,68 @@ fn none() gfx::Texture { gfx::Texture { 0 } }
 // ---- scene editing
 
 fn add(asset int) int {
-	items.push(Item { asset: asset, place: gfx::mat4_identity, prev_place: gfx::mat4_identity, anim: -1, time: 0.0, visible: true });
+	items.push(Item { asset: asset, place: gfx::mat4_identity, prev_place: gfx::mat4_identity, anim: -1, time: 0.0, visible: true, .. });
 	items.len - 1
 }
 fn place(item int, m gfx::mat4) { items[item].place = m; }
-fn animate(item int, anim int, time f32) { items[item].anim = anim; items[item].time = time; }
+fn animate(item int, anim int, time f32) { items[item].anim = anim; items[item].time = time; items[item].anim2 = -1; }
+fn crossfade(item int, from int, from_time f32, to int, to_time f32, w f32) { items[item].anim2 = from; items[item].time2 = from_time; items[item].anim = to; items[item].time = to_time; items[item].blend = w; }
+fn bend(item int, node int, q linalg::Quat) { items[item].bend_node = node; items[item].bend = q; }
+fn track(item int, slot int, node int) { items[item].track[slot] = node; }
+fn tracked(item int, slot int) gfx::mat4 { items[item].tracked[slot] }
+fn pose(ii int) {
+	let it = items[ii];
+	motion::rest(it.asset);
+	if it.anim2 >= 0 { motion::apply(it.anim2, it.time2, 1.0); }
+	if it.anim >= 0 { motion::apply(it.anim, it.time, if it.anim2 >= 0 { it.blend } else { 1.0 }); }
+	if it.bend_node >= 0 { motion::pose_r[it.bend_node] = linalg::qmul(motion::pose_r[it.bend_node], it.bend); }
+	motion::update(it.asset, it.place);
+	for t in 4 { if it.track[t] >= 0 { items[ii].tracked[t] = motion::world[it.track[t]]; } }
+}
 fn add_light(pos float3, rgb float3, range f32) { lights.push(Light { pos, range, rgb, 0 }); }
+fn quad(a float3, b float3, c float3, d float3, ca float4, cb float4, cc float4, cd float4, shape int) { quads.push(QuadG { [x4(a, 1.0), x4(b, 1.0), x4(c, 1.0), x4(d, 1.0)], [ca, cb, cc, cd], f4(shape as f32, 0.0, 0.0, 0.0) }); }
+fn glow_line(a float3, b float3, w f32, rgb float3) {
+	let mid = (a + b) * 0.5;
+	let ab = b - a;
+	let em = view.eye - mid;
+	var side = linalg::cross3(ab, em);
+	let l = sqrt(linalg::dot3(side, side));
+	if l < 1.0e-6 { return; }
+	let sn = clamp(l / max(sqrt(linalg::dot3(ab, ab)) * sqrt(linalg::dot3(em, em)), 1.0e-6), 0.2, 1.0);
+	side = side * (w * 0.5 * sn / l);
+	let c = x4(rgb, 1.0);
+	quad(a - side, a + side, b + side, b - side, c, c, c, c, 0);
+}
+fn ground_mark(p float3, r f32, rgb float3, a f32, shape int) {
+	let c = x4(rgb, a);
+	quad(linalg::v3(p.x - r, p.y, p.z - r), linalg::v3(p.x - r, p.y, p.z + r), linalg::v3(p.x + r, p.y, p.z + r), linalg::v3(p.x + r, p.y, p.z - r), c, c, c, c, shape);
+}
+var quad_nadd = 0;
+fn quad_upload() {
+	if quads.len == 0 { return; }
+	var o QuadG[>..] = [];
+	for q in quads { if q.prm.x < 7.5 { o.push(q); } }
+	quad_nadd = o.len;
+	for q in quads { if q.prm.x >= 7.5 { o.push(q); } }
+	if o.len > quad_cap {
+		if quad_cap > 0 { gfx::release(quad_buf); }
+		quad_cap = max(o.len * 2, 256);
+		quad_buf = gfx::buffer(gfx::BUFFER_STORAGE, quad_cap * 144, []);
+	}
+	gfx::update_buffer(quad_buf, 0, bytes_of(o)[..o.len * 144]);
+}
+fn quad_draw(mul bool) {
+	let first = if mul { quad_nadd } else { 0 };
+	let n = if mul { quads.len - quad_nadd } else { quad_nadd };
+	if n <= 0 { return; }
+	gfx::bind(if mul { pipe_quad_mul } else { pipe_quad_add });
+	gfx::bind_storage_buffer(gfx::VERTEX, 0, quad_buf);
+	let fwd = forward();
+	let right = linalg::unit3(linalg::cross3(fwd, view.up));
+	let up = linalg::cross3(right, fwd);
+	gfx::uniforms(gfx::VERTEX, 0, QuadViewU { view_proj, x4(right, 0.0), x4(up, 0.0) });
+	gfx::draw(n * 6, 1, first * 6, 0);
+}
 fn hdr_target() gfx::Texture { hdr }
 // Valid after a frame that wrote motion (motion_wanted()); a null handle before any.
 fn motion_target() gfx::Texture { motion_tex }
@@ -365,6 +447,9 @@ fn init(w int, h int, ow int, oh int) bool {
 	pipe_mblur = gfx::pipeline(scr, embed_shader("shaders/mblur.frag"));
 	pipe_dof = gfx::pipeline(scr, embed_shader("shaders/dof.frag"));
 	pipe_gtao_blur = gfx::pipeline(scr, embed_shader("shaders/gtao_blur.frag"));
+	pipe_fog = gfx::pipeline(scr, embed_shader("shaders/fog.frag"));
+	pipe_quad_add = gfx::pipeline(embed_shader("shaders/quad.vert"), embed_shader("shaders/quad.frag"), gfx::PipelineDesc { depth_test: true, depth_write: false, blend: gfx::BLEND_ADD, depth_compare: gfx::COMPARE_LESS_EQUAL });
+	pipe_quad_mul = gfx::pipeline(embed_shader("shaders/quad.vert"), embed_shader("shaders/quad.frag"), gfx::PipelineDesc { depth_test: true, depth_write: false, blend: gfx::BLEND_MULTIPLY, depth_compare: gfx::COMPARE_LESS_EQUAL });
 	pipe_gi_trace = gfx::compute_pipeline(embed_shader("shaders/gi_trace.comp"));
 	pipe_gi_update = gfx::compute_pipeline(embed_shader("shaders/gi_update.comp"));
 	gi_dummy = gfx::buffer(gfx::BUFFER_STORAGE | gfx::BUFFER_COMPUTE_READ, 64, []);
@@ -461,6 +546,9 @@ fn warm_textures() {
 		warm(m.mr_tex, false);
 		warm(m.normal_tex, false);
 		warm(m.occlusion_tex, false);
+		warm(m.top_base, true);
+		warm(m.top_mr, false);
+		warm(m.top_normal, false);
 	}
 }
 
@@ -513,9 +601,7 @@ fn gather() {
 	cur_bases.clear();
 	for it, ii in items {
 		if !it.visible || it.asset < 0 { continue; }
-		motion::rest(it.asset);
-		if it.anim >= 0 { motion::apply(it.anim, it.time, 1.0); }
-		motion::update(it.asset, it.place);
+		pose(ii);
 		let a = gltf::assets[it.asset];
 		var palette gfx::mat4[>..] = [];
 		for k in a.nodes.count {
@@ -678,7 +764,7 @@ fn setup_cascades() {
 		let texel = 2.0 * r / shadow_size as f32;
 		cl.x = linalg::f(floor((cl.x / texel) as real)) * texel;
 		cl.y = linalg::f(floor((cl.y / texel) as real)) * texel;
-		let proj = gfx::ortho(cl.x - r, cl.x + r, cl.y - r, cl.y + r, -cl.z - r * 4.0, -cl.z + r);
+		let proj = gfx::ortho(cl.x - r, cl.x + r, cl.y - r, cl.y + r, -cl.z - max(r * 4.0, shadow_reach), -cl.z + max(r, shadow_reach));
 		cascade_vp.push(gfx::mul(proj, light_rot));
 		a = b;
 	}
@@ -693,7 +779,7 @@ fn fill_frame() {
 	frame_u.cascade_far = f4(cascade_end[0], cascade_end[1], cascade_end[2], 1.0 / shadow_size as f32);
 	frame_u.eye = x4(view.eye, if look.ssao { 1.0 } else { 0.0 });
 	frame_u.view_dir = x4(fwd, 0.0);
-	frame_u.to_sun = x4(linalg::unit3(sun.to_sun), if sun.shadows { 1.0 } else { 0.0 });
+	frame_u.to_sun = x4(linalg::unit3(sun.to_sun), if sun.shadows { 1.0 + max(sun.soft, 0.0) } else { 0.0 });
 	frame_u.sun_rgb = x4(sun.rgb, 0.0);
 	frame_u.zenith = x4(sky.zenith, 0.0);
 	frame_u.horizon = x4(sky.horizon, 0.0);
@@ -716,6 +802,27 @@ fn fill_frame() {
 	frame_u.gi_step = x4(gi_step, gi_bias);
 	frame_u.gi_dims = f4(gi_dims[0] as f32, gi_dims[1] as f32, gi_dims[2] as f32, gi_rays as f32);
 }
+// mean linear colour of an image, sampled on a sparse grid; the bounce albedo
+fn image_avg(image int) float3 {
+	while img_avg.len <= image { img_avg.push(float4 { 0.0, 0.0, 0.0, -1.0 }); }
+	if img_avg[image].w >= 0.0 { return linalg::v3(img_avg[image].x, img_avg[image].y, img_avg[image].z); }
+	let im = gltf::images[image];
+	let n = im.width * im.height;
+	let stride = max(1, n / 4096);
+	var acc = float3 { 0.0, 0.0, 0.0 };
+	var cnt = 0;
+	var i = 0;
+	while i < n {
+		let b = im.pixels.first + i * 4;
+		let r = gltf::pixels[b] as f32 / 255.0; let g = gltf::pixels[b + 1] as f32 / 255.0; let bl = gltf::pixels[b + 2] as f32 / 255.0;
+		acc = acc + float3 { r * r, g * g, bl * bl };
+		cnt += 1;
+		i += stride;
+	}
+	let a = if cnt > 0 { acc * (1.0 / cnt as f32) } else { float3 { 1.0, 1.0, 1.0 } };
+	img_avg[image] = float4 { a.x, a.y, a.z, 1.0 };
+	a
+}
 fn gi_scene() {
 	rt::clear();
 	for b in batch {
@@ -723,24 +830,29 @@ fn gi_scene() {
 		let pr = gltf::prims[b.prim];
 		if pr.targets > 0 { continue; }
 		let m = material_of(b.prim);
-		let k = 1.0 - m.metallic;
-		let rgb = linalg::v3(m.base.x * k, m.base.y * k, m.base.z * k);
+		let tex = if m.base_tex.texture >= 0 && gltf::textures[m.base_tex.texture].image >= 0 { image_avg(gltf::textures[m.base_tex.texture].image) } else { float3 { 1.0, 1.0, 1.0 } };
+		let mt = if m.mr_tex.texture >= 0 { 0.0 } else { m.metallic };
+		let k = 1.0 - mt;
+		let rgb = linalg::v3(m.base.x * k * tex.x, m.base.y * k * tex.y, m.base.z * k * tex.z);
 		var t = 0;
 		while t + 2 < pr.icount {
 			var q float3[3] = [float3 { 0.0, 0.0, 0.0 }; 3];
+			var vc = float3 { 0.0, 0.0, 0.0 };
 			for c in 3 {
-				let vi = (pr.vfirst + gltf::indices[pr.ifirst + t + c] as int) * gltf::VERTEX_FLOATS + gltf::AT_POS;
+				let vb = (pr.vfirst + gltf::indices[pr.ifirst + t + c] as int) * gltf::VERTEX_FLOATS;
+				let vi = vb + gltf::AT_POS;
 				q[c] = linalg::point(b.model, linalg::v3(gltf::verts[vi], gltf::verts[vi + 1], gltf::verts[vi + 2]));
+				vc = vc + linalg::v3(gltf::verts[vb + gltf::AT_COL], gltf::verts[vb + gltf::AT_COL + 1], gltf::verts[vb + gltf::AT_COL + 2]) * (1.0 / 3.0);
 			}
-			rt::add(q[0], q[1], q[2], rgb);
+			rt::add(q[0], q[1], q[2], linalg::v3(rgb.x * vc.x, rgb.y * vc.y, rgb.z * vc.z));
 			t += 3;
 		}
 	}
 	rt::build();
 	rt::upload();
 	if rt::ready {
-		let lo = linalg::v3(rt::nodes[0], rt::nodes[1], rt::nodes[2]);
-		let hi = linalg::v3(rt::nodes[4], rt::nodes[5], rt::nodes[6]);
+		let lo = if gi_box { gi_box_lo } else { linalg::v3(rt::nodes[0], rt::nodes[1], rt::nodes[2]) };
+		let hi = if gi_box { gi_box_hi } else { linalg::v3(rt::nodes[4], rt::nodes[5], rt::nodes[6]) };
 		gi_lo = lo;
 		gi_step = linalg::v3((hi.x - lo.x) / gi_dims[0] as f32, (hi.y - lo.y) / gi_dims[1] as f32, (hi.z - lo.z) / gi_dims[2] as f32);
 	}
@@ -774,13 +886,14 @@ fn gi_pass() {
 	if !(gi_on || rt_shadows) { return; }
 	if !gi_built { gi_scene(); }
 	if !gi_on || !gi_have || !rt::ready { return; }
+	if gi_updates > 8 && gi_interval > 1 && frames % gi_interval != 0 { return; }
 	let np = gi_np; let nr = gi_nr;
 	let maxd = if gi_max_dist > 0.0 { gi_max_dist } else { 1.5 * linalg::f(sqrt((gi_step.x * gi_step.x + gi_step.y * gi_step.y + gi_step.z * gi_step.z) as real)) };
 	for u in gi_updates_per_frame {
 		var g = gi_rot(gi_updates);
 		g.origin = frame_u.gi_origin; g.step = x4(gi_step, gi_bias); g.dims = f4(gi_dims[0] as f32, gi_dims[1] as f32, gi_dims[2] as f32, nr as f32);
 		g.to_sun = frame_u.to_sun; g.sun_rgb = frame_u.sun_rgb; g.zenith = frame_u.zenith; g.horizon = frame_u.horizon; g.ground = frame_u.ground;
-		for k in MAX_LIGHTS { g.light_pos[k] = frame_u.light_pos[k]; g.light_rgb[k] = frame_u.light_rgb[k]; }
+		for k in GI_LIGHTS { g.light_pos[k] = frame_u.light_pos[k]; g.light_rgb[k] = frame_u.light_rgb[k]; }
 		g.params = f4(sky.ambient, if gi_updates > 0 { 1.0 } else { 0.0 }, maxd, frame_u.screen.z);
 		guard gfx::begin_compute([gi_rays_buf]) else { return; }
 		gfx::bind(pipe_gi_trace);
@@ -854,7 +967,7 @@ fn sky_u() SkyU {
 fn ao_pass() {
 	let mv = motion_wanted();
 	nd_ran = false;
-	if !look.ssao && !mv && dof_aperture <= 0.0 && !(fx::ready() && fx::wants_depth()) { return; }
+	if !look.ssao && !mv && !fog_on && dof_aperture <= 0.0 && !(fx::ready() && fx::wants_depth()) { return; }
 	nd_ran = true;
 	let gia = gi_on && gi_ao && gi_built && gi_have;
 	let gt = look.ssao && (ao_mode == 1 || gia);
@@ -931,7 +1044,9 @@ fn surface_of(m gltf::Material) SurfaceU {
 		params: f4(m.metallic, m.roughness, if m.normal_tex.texture < 0 || gltf::textures[m.normal_tex.texture].image < 0 { 0.0 } else { m.normal_scale }, m.occlusion_strength),
 		alpha: f4(m.alpha_mode as f32, m.alpha_cutoff, if m.double_sided { 1.0 } else { 0.0 }, 0.0),
 		uv_sets: f4(m.base_tex.uv as f32, m.mr_tex.uv as f32, m.normal_tex.uv as f32, m.occlusion_tex.uv as f32),
-		uv_sets2: f4(m.emissive_tex.uv as f32, debug_view as f32, ((if multiscatter { 1 } else { 0 }) + 2 * furnace_mode) as f32, furnace_scale)
+		uv_sets2: f4(m.emissive_tex.uv as f32, debug_view as f32, ((if multiscatter { 1 } else { 0 }) + 2 * furnace_mode) as f32, furnace_scale),
+		tri: f4(m.tri, if m.top_base.texture < 0 { 0.0 } else { m.top }, m.top_scale, m.top_sharp),
+		top_tint: m.top_tint
 	}
 }
 
@@ -947,6 +1062,9 @@ fn draw_lit(b Batch) {
 	bind_slot(4, m.emissive_tex, true, white);
 	gfx::bind_texture(gfx::FRAGMENT, 5, shadow_map, smp_shadow);
 	gfx::bind_texture(gfx::FRAGMENT, 6, if look.ssao { ao } else { white }, smp_point);
+	bind_slot(7, m.top_base, true, white);
+	bind_slot(8, m.top_mr, false, white);
+	bind_slot(9, m.top_normal, false, flat_normal);
 	gi_bind();
 	draw_prim(b);
 }
@@ -986,6 +1104,8 @@ fn color_pass() {
 	let fwd = forward();
 	let right = linalg::unit3(linalg::cross3(fwd, view.up));
 	let up = linalg::cross3(right, fwd);
+	quad_draw(true);
+	quad_draw(false);
 	sparks::draw(view_proj, right, up);
 	fx::draw(view_proj, view_mat, right, up, nd, nd_ran, 1.0);
 	gfx::end_pass();
@@ -1009,6 +1129,28 @@ fn lens_tiles(src gfx::Texture, mode f32) {
 	gfx::end_pass();
 }
 fn lens_swap() { let t = hdr; hdr = fx; fx = t; }
+fn fog_pass() {
+	if !fog_on || !nd_ran { return; }
+	guard gfx::begin_pass(gfx::PassDesc { color: [fx, none(), none(), none()], .. }) else { return; }
+	gfx::bind(pipe_fog);
+	gfx::bind_texture(gfx::FRAGMENT, 0, hdr, smp_point);
+	gfx::bind_texture(gfx::FRAGMENT, 1, nd, smp_point);
+	gfx::bind_texture(gfx::FRAGMENT, 2, shadow_map, smp_shadow);
+	var u FogU;
+	u.inv_view_proj = linalg::inverse(view_proj);
+	u.cascade_mat[0] = frame_u.cascade_mat[0]; u.cascade_mat[1] = frame_u.cascade_mat[1]; u.cascade_mat[2] = frame_u.cascade_mat[2];
+	u.cascade_far = frame_u.cascade_far; u.eye = frame_u.eye; u.view_dir = frame_u.view_dir; u.to_sun = frame_u.to_sun;
+	u.sun_rgb = x4(sun.rgb * fog_sun, 0.0);
+	u.ambient = x4(fog_ambient, 0.0);
+	u.params = f4(fog_density, fog_falloff, fog_height, fog_far);
+	u.params2 = f4(fog_steps as f32, (frames % 64) as f32, fog_g, frame_u.screen.z);
+	for k in MAX_LIGHTS { u.light_pos[k] = frame_u.light_pos[k]; u.light_rgb[k] = frame_u.light_rgb[k]; }
+	gfx::uniforms(gfx::FRAGMENT, 0, u);
+	gfx::draw(3);
+	gfx::end_pass();
+	lens_swap();
+}
+
 fn lens_pass() {
 	let k = lens_tile_px;
 	if motion_blur > 0.0 && motion_tex.id != 0 {
@@ -1125,11 +1267,14 @@ fn render(target gfx::Texture) {
 	shadow_pass();
 	ao_pass();
 	if fx::ready() && fx_dt > 0.0 { fx::simulate(fx_dt, nd, nd_ran, view_mat, view_proj_nj); }
+	quad_upload();
 	color_pass();
+	fog_pass();
 	lens_pass();
 	temporal_pass();
 	glow_pass();
 	grade_pass(target);
 	for i in items.len { items[i].prev_place = items[i].place; }
+	quads.clear();
 	frames += 1;
 }

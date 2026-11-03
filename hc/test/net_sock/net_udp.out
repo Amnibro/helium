@@ -1,0 +1,11 @@
+bound true
+local true
+nothing would block (AGAIN)
+sent empty 0
+got 10 'datagram 0' from loopback true port true
+got 10 'datagram 1' from loopback true port true
+got 10 'datagram 2' from loopback true port true
+got 0 '' from loopback true port true
+reply 4
+pong 4 pong true
+bad addr invalid argument
