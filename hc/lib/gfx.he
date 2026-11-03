@@ -101,6 +101,8 @@ extern "libSDL3.so.0" {
 	s_relm(w uint, on bool) bool = "SDL_SetWindowRelativeMouseMode";
 	s_flushev(t u32) = "SDL_FlushEvent";
 	s_poll(e uint) bool = "SDL_PollEvent";
+	s_opengp(id u32) uint = "SDL_OpenGamepad";
+	s_fullscr(w uint, on bool) bool = "SDL_SetWindowFullscreen";
 	s_push(e uint) bool = "SDL_PushEvent";
 	s_regev(n i32) u32 = "SDL_RegisterEvents";
 	s_ns() uint = "SDL_GetTicksNS";
@@ -205,6 +207,11 @@ var CRB = 0
 var QUIT = false
 var KEYS bool[>..] = []
 var PK bool[>..] = []
+var PADX f32[>..] = []
+var PADB bool[>..] = []
+var PADP bool[>..] = []
+PAD_A := 0; PAD_B := 1; PAD_X := 2; PAD_Y := 3; PAD_BACK := 4; PAD_START := 6; PAD_LB := 9; PAD_RB := 10; PAD_UP := 11; PAD_DOWN := 12; PAD_LEFT := 13; PAD_RIGHT := 14
+AXIS_LX := 0; AXIS_LY := 1; AXIS_RX := 2; AXIS_RY := 3; AXIS_LT := 4; AXIS_RT := 5
 var RK bool[>..] = []
 var BTN = 0
 var PBTN = 0
@@ -311,7 +318,7 @@ bslot(b Buffer) int: tget(TBUF, b.id)
 reset():
 	DEV = 0; WIN = 0; VIDI = false; SHF = 0; FLAGS = 0; SCR = Texture{0}; SCRD = Texture{0}; SW = 0; SH = 0; CMD = 0; PASS = 0; CPASS = 0; TG = Tg{0, [0; 4], 0, false, 0}; PIPE = -1; COMP = -1
 	for k 3 { SB[k] = 0; TB[k] = 0; BB[k] = 0; UP[k] = 0 } VBB = 0; IXB = false; CRT = 0; CRB = 0; QUIT = false; BTN = 0; PBTN = 0; RBTN = 0
-	KEYS.clear(); PK.clear(); RK.clear(); KEYS.resize(512, false); PK.resize(512, false); RK.resize(512, false); CLK.clear(); CLK.resize(32, 0)
+	KEYS.clear(); PK.clear(); RK.clear(); KEYS.resize(512, false); PK.resize(512, false); RK.resize(512, false); PADX.clear(); PADX.resize(6, 0.0); PADB.clear(); PADB.resize(16, false); PADP.clear(); PADP.resize(16, false); CLK.clear(); CLK.resize(32, 0)
 	MX = 0.0; MY = 0.0; MDX = 0.0; MDY = 0.0; WHEEL = 0.0; MIN = false; FOC = false; MREL = false; CURV = false; WW = 0; WH = 0; WPW = 0; WPH = 0
 	EVS.clear(); INJ.clear(); INJEV = 0; CLIP.clear(); START = 0; LAST = 0; DELTA = 0.0; FRAMES = 0
 	tclear(TBUF, "buffer"); tclear(TTEX, "texture"); tclear(TSMP, "sampler"); tclear(TPIP, "pipeline"); tclear(TCMP, "compute pipeline")
@@ -394,7 +401,7 @@ start(win0 bool, title const byte[:], width int, height int, flags int) bool:
 		if windowed: return sdl_fail("initializing SDL video")
 		s_hint(ffi::ptr("SDL_VIDEO_DRIVER\0"), ffi::ptr("offscreen\0")); ok := s_init(32); s_rhint(ffi::ptr("SDL_VIDEO_DRIVER\0"))
 		if !ok: return sdl_fail("initializing SDL video")
-	VIDI = true; debug ~= flags & 32 != 0; dv byte[>..] ~= []
+	VIDI = true; s_init(0x2000); debug ~= flags & 32 != 0; dv byte[>..] ~= []
 	if env("HELIUM_GFX_DEBUG", dv) || env("GOOSE_GFX_DEBUG", dv): debug = atoi(dv[..]) != 0
 	DEV = s_mkdev(18, debug, 0)
 	if DEV == 0: fail(str("no GPU device: ", sdlerr())); close_raw(); return false
@@ -460,10 +467,13 @@ frame_raw() bool:
 	if !need("frame"): return false
 	if PASS != 0 || CPASS != 0: misuse(str("frame() inside a ", pname(), " pass: end the pass first")); return false
 	if WIN != 0 && FRAMES > 0: present()
-	if WIN != 0 { submit() } else { submit_paced() } for k 512 { PK[k] = false; RK[k] = false } PBTN = 0; RBTN = 0; MDX = 0.0; MDY = 0.0; WHEEL = 0.0; EVS.clear(); resized ~= false; ep := ffi::ptr(EVB[..])
+	if WIN != 0 { submit() } else { submit_paced() } for k 512 { PK[k] = false; RK[k] = false } for k 16 { PADP[k] = false } PBTN = 0; RBTN = 0; MDX = 0.0; MDY = 0.0; WHEEL = 0.0; EVS.clear(); resized ~= false; ep := ffi::ptr(EVB[..])
 	while s_poll(ep):
 		t := u32at(EVB[..], 0)
 		if t == 256 || t == 528: QUIT = true; continue
+		if t == 1619: s_opengp(u32at(EVB[..], 16) as u32); continue
+		if t == 1616: if FOC { a := u8at(EVB[..], 20); v ~= u16at(EVB[..], 24); if v >= 32768 { v -= 65536 } if a < 6 { PADX[a] = clamp(v as f32 / 32767.0, -1.0, 1.0) } } continue
+		if t == 1617 || t == 1618: if FOC { b := u8at(EVB[..], 20); if b < 16 { if t == 1617 && !PADB[b] { PADP[b] = true } PADB[b] = t == 1617 } } continue
 		if t == 768 || t == 769: if FOC { key_event(u32at(EVB[..], 24), u32at(EVB[..], 28), EVB[36] != 0, EVB[37] != 0) } continue
 		if t == 771: if FOC { text_events(u64at(EVB[..], 24)) } continue
 		if t == 1024:
@@ -548,6 +558,16 @@ inject_key(name const byte[:], down bool) bool:
 	sc := scancode_of(name)
 	if sc == 0: return false
 	evw(if down { 768 } else { 769 }); w32(EVW, 24, sc); w32(EVW, 28, s_key(sc as i32, 0, false) as int); EVW[36] = if down { 1 } else { 0 }; s_push(ffi::ptr(EVW[..]))
+set_fullscreen(on bool) bool: WIN != 0 && s_fullscr(WIN, on)
+pad_axis(a int) f32: if a >= 0 && a < PADX.len { PADX[a] } else { 0.0 }
+pad_down(b int) bool: b >= 0 && b < PADB.len && PADB[b]
+pad_pressed(b int) bool: b >= 0 && b < PADP.len && PADP[b]
+inject_pad_axis(a int, v f32) bool:
+	if !need("inject_pad_axis") || a < 0 || a > 5: return false
+	q := (clamp(v, -1.0, 1.0) * 32767.0) as int; evw(1616); EVW[20] = a as byte; EVW[24] = (q & 255) as byte; EVW[25] = ((q >> 8) & 255) as byte; s_push(ffi::ptr(EVW[..]))
+inject_pad_button(b int, down bool) bool:
+	if !need("inject_pad_button") || b < 0 || b > 15: return false
+	evw(if down { 1617 } else { 1618 }); EVW[20] = b as byte; EVW[21] = if down { 1 } else { 0 }; s_push(ffi::ptr(EVW[..]))
 inject_mouse(x f32, y f32, button int, down bool):
 	if !need("inject_mouse"): return
 	evw(1024); w32(EVW, 20, 0xFFFFFFF0); w32(EVW, 28, f32b(x) as int); w32(EVW, 32, f32b(y) as int); w32(EVW, 36, f32b(x - MX) as int); w32(EVW, 40, f32b(y - MY) as int); s_push(ffi::ptr(EVW[..]))
