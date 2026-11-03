@@ -11,6 +11,12 @@ format_escaped(out byte[>..]&, s byte[:]):
 	i ~= 0
 	while i < s.len:
 		j ~= i
+		while j + 8 <= s.len:
+			w := load_u64le(s, j)
+			q := w ^ 0x2222222222222222
+			b := w ^ 0x5C5C5C5C5C5C5C5C
+			if ((w - 0x2020202020202020) & ~w | (q - 0x0101010101010101) & ~q | (b - 0x0101010101010101) & ~b) & 0x8080808080808080 != 0: break
+			j += 8
 		while j < s.len && s[j] >= 0x20 && s[j] != '"' && s[j] != '\\': j += 1
 		if j > i: out.append(s[i..j])
 		if j >= s.len: return
@@ -70,41 +76,19 @@ digits_of(v real, digits byte[>..]&) int:
 	digits.append(t[k..e])
 	x + 23 - k
 
-# a finite number in its shortest exact form: plain decimals for 1e-5 up to
-# 1e16, with ".0" on whole values, and d.ddde<n> outside that range (d.ddde+<n>
-# for positive n with plus_exp, as serde_json writes it). JSON has
-# no NaN or infinity, so those come out as null
-strip_zeros(m0 u64, x int&) u64:
-	r0 := m0 * 0xCCCCCCCCCCCCCCCD
-	if (r0 >> 1 | r0 << 63) > 1844674407370955161: return m0
-	m ~= m0
-	r ~= m * 0xE4A4D1417CD9A041
-	r = r >> 16 | r << 48
-	if r <= 1844: m = r; x += 16
-	r = m * 0xC767074B22E90E21
-	r = r >> 8 | r << 56
-	if r <= 184467440737: m = r; x += 8
-	r = m * 0xD288CE703AFB7E91
-	r = r >> 4 | r << 60
-	if r <= 1844674407370955: m = r; x += 4
-	r = m * 0x8F5C28F5C28F5C29
-	r = r >> 2 | r << 62
-	if r <= 184467440737095516: m = r; x += 2
-	r = m * 0xCCCCCCCCCCCCCCCD
-	r = r >> 1 | r << 63
-	if r <= 1844674407370955161: m = r; x += 1
-	m
 P10D u64[20] := [1, 10, 100, 1000, 10000, 100000, 1000000, 10000000, 100000000, 1000000000, 10000000000, 100000000000, 1000000000000, 10000000000000, 100000000000000, 1000000000000000, 10000000000000000, 100000000000000000, 1000000000000000000, 10000000000000000000]
 dlen17(v u64) int:
 	b := 64 - clz(v)
 	n := (b * 1233) >> 12
 	n + (if v >= P10D[n] { 1 } else { 0 })
 swar8(x u64) u64:
-	v := x / 10000 | (x % 10000) << 32
-	q := (v * 10486 >> 20) & 0x7F0000007F
-	v2 := q | (v - q * 100) << 16
-	t := (v2 * 103 >> 10) & 0xF000F000F000F
-	(t | (v2 - t * 10) << 8) + 0x3030303030303030
+	v := (x << 32) - 0x270FFFFFFFFF * (x * 109951163 >> 40)
+	w := (v << 16) - 0x63FFFF * ((v * 10486 >> 20) & 0x7F0000007F)
+	(w << 8) - 0x9FF * ((w * 103 >> 10) & 0xF000F000F000F) + 0x3030303030303030
+# a finite number in its shortest exact form: plain decimals for 1e-5 up to
+# 1e16, with ".0" on whole values, and d.ddde<n> outside that range (d.ddde+<n>
+# for positive n with plus_exp, as serde_json writes it). JSON has
+# no NaN or infinity, so those come out as null
 format_number(out byte[>..]&, v real, plus_exp bool = false):
 	if v != v || v - v != 0.0:
 		out.append("null")
@@ -115,20 +99,28 @@ format_number(out byte[>..]&, v real, plus_exp bool = false):
 		return
 	x ~= 0
 	m ~= float_dec(v, x)
-	m = strip_zeros(m, x)
-	nd := dlen17(m)
-	e := x + nd - 1
+	nr := dlen17(m)
+	e := x + nr - 1
 	var o byte[64]
-	if nd <= 8:
-		store_u64le(o, 32, swar8(m))
+	tz ~= 0
+	if nr <= 8:
+		lw := swar8(m)
+		store_u64le(o, 32, lw)
+		tz = clz(lw ^ 0x3030303030303030) >> 3
 	else:
 		hi := m / 100000000
 		h1 := hi / 100000000
-		store_u64le(o, 24, swar8(hi - h1 * 100000000))
-		store_u64le(o, 32, swar8(m - hi * 100000000))
+		hw := swar8(hi - h1 * 100000000)
+		lw := swar8(m - hi * 100000000)
+		store_u64le(o, 24, hw)
+		store_u64le(o, 32, lw)
 		o[23] = (48 + h1 as int) as byte
-	a ~= 40 - nd
-	z ~= 40
+		t := lw ^ 0x3030303030303030
+		u := hw ^ 0x3030303030303030
+		tz = if t != 0 { clz(t) >> 3 } else if u != 0 { 8 + (clz(u) >> 3) } else { 16 }
+	nd := nr - tz
+	a ~= 40 - nr
+	z ~= 40 - tz
 	if e < -5 || e >= 16:
 		a -= 1
 		o[a] = o[a + 1]
@@ -152,11 +144,8 @@ format_number(out byte[>..]&, v real, plus_exp bool = false):
 		o[z] = (48 + ae % 10) as byte
 		z += 1
 	else if e < 0:
-		for j -1 - e:
-			a -= 1
-			o[a] = '0'
-		a -= 2
-		o[a] = '0'
+		store_u64le(o, a - 8, 0x3030303030303030)
+		a += e - 1
 		o[a + 1] = '.'
 	else if nd <= e + 1:
 		store_u64le(o, 40, 0x3030303030303030)
@@ -166,9 +155,13 @@ format_number(out byte[>..]&, v real, plus_exp bool = false):
 		o[z + 1] = '0'
 		z += 2
 	else:
-		for j e + 1: o[a - 1 + j] = o[a + j]
-		a -= 1
-		o[a + e + 1] = '.'
+		q := a + e + 1
+		w1 := load_u64le(o, q)
+		w2 := load_u64le(o, q + 8)
+		store_u64le(o, q + 1, w1)
+		store_u64le(o, q + 9, w2)
+		o[q] = '.'
+		z += 1
 	if neg:
 		a -= 1
 		o[a] = '-'

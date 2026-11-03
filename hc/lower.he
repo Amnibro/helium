@@ -274,13 +274,16 @@ var SINKA i32[>..<]; var SINKT i32[>..<]
 recursive lsink(n int, addr int, t int): SINKA.push(addr); SINKT.push(t); lbranch(n, -2); SINKA.pop(); SINKT.pop();
 sinkv(n int, si int):
 	st := SINKT[si]; lstore(SINKA[si], n, st); if TY[st].k != TY_REF && TY[st].k != TY_SLICE: lsrc(n, SINKA[si], st);
+NORZ ~= -1
 recursive lres_len(n int, b int, va int, ca int, cw int, eb int, cap int, nn int, e int, total int):
 	es := tsz(e); cur := ldw(ca, 0, cw)
 	dk := needs_drop(e) && !is_vimg(e); bs := if eb >= 0 { eb } else { ldw(va, 0, 3) }
 	if b == B_POPN: lguard(n, bin(B_AND, 3, lcmp(nn, imm(0), CC_GE), lcmp(nn, cur, CC_LE), -1), "pop_n past the length"); if dk { k0 := bin(B_SUB, 3, cur, nn, -1); ldrop_each(bin(B_ADD, 3, bs, bin(B_MUL, 3, k0, imm(es), -1), -1), nn, e) } stw(ca, 0, bin(B_SUB, 3, cur, nn, -1), cw); return
 	if cap >= 0: lguard(n, bin(B_AND, 3, lcmp(nn, imm(0), CC_GE), lcmp(nn, cap, CC_LE), -1), "resize past a limited array's capacity") else: lguard(n, lcmp(nn, imm(0), CC_GE), "resize to a negative length")
-	rv0 := if total > 2 && is_rel(e) { lrefv(barg(n, 2)) } else { -1 }
-	fx := if total > 2 && rv0 < 0 { q := nv(); ir(I_SLOT, 8, q, -1, -1, slot(es, tal(e))); lstore(q, barg(n, 2), e); q } else { -1 }
+	if NORZ < 0 { nb byte[>..] ~= []; NORZ = if env("HC_NORZ", nb) { 1 } else { 0 } }
+	zv ~= 1 as i64; zk ~= false; if total > 2 && is_scal(e) && NORZ == 0 { a1, _, k1 := cval(barg(n, 2)); zv = a1; zk = k1 } tf := total > 2 && !(zk && zv == 0)
+	rv0 := if tf && is_rel(e) { lrefv(barg(n, 2)) } else { -1 }
+	fx := if tf && rv0 < 0 { q := nv(); ir(I_SLOT, 8, q, -1, -1, slot(es, tal(e))); lstore(q, barg(n, 2), e); q } else { -1 }
 	l0 := nlbl(); lend := nlbl(); ir(I_BNZ, 3, -1, lcmp(nn, cur, CC_G), -1, l0); if dk { ldrop_each(bin(B_ADD, 3, bs, bin(B_MUL, 3, nn, imm(es), -1), -1), bin(B_SUB, 3, cur, nn, -1), e) } stw(ca, 0, nn, cw); ir(I_JMP, 3, -1, -1, -1, lend); ir(I_LBL, 3, -1, -1, -1, l0)
 	cnt := bin(B_SUB, 3, nn, cur, -1)
 	p := if cap >= 0 { stw(ca, 0, nn, cw); bin(B_ADD, 3, eb, bin(B_MUL, 3, cur, imm(es), -1), -1) } else { lgrow(va, cnt, es) }
