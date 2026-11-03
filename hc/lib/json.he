@@ -484,6 +484,8 @@ element(d Doc&, n int, k int) int:
 		c = d.nodes[c].next
 		i += 1
 	c
+name_of(d Doc&, c int) const byte[:]: if c < 0 { "" } else { d.nodes[c].name[..] }
+count(d Doc&, n int) int: if n < 0 { 0 } else { d.nodes[n].count }
 # calls the block with each child of n
 each<F>(d Doc&, n int):
 	c ~= if n < 0 { -1 } else { d.nodes[n].first }
