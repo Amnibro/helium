@@ -325,6 +325,14 @@ cmd() uint:
 submit() bool:
 	if CMD == 0: return true
 	c := CMD; CMD = 0; s_submit(c) || sdl_fail("submitting commands")
+var HF0 uint = 0
+var HF1 uint = 0
+fence_wait(f uint): if f != 0 { U8S[3] = f; s_waitf(DEV, true, pu(3), 1); s_relf(DEV, f) }
+submit_paced():
+	if CMD == 0: return
+	c := CMD; CMD = 0; f := s_submitf(c)
+	if f == 0: sdl_fail("submitting commands"); return
+	fence_wait(HF0); HF0 = HF1; HF1 = f
 finish() bool:
 	c := cmd(); if c == 0: return false
 	CMD = 0; f := s_submitf(c)
@@ -406,7 +414,7 @@ open(title const byte[:], width int, height int, flags int = 0) bool: start(true
 open_headless(width int, height int, flags int = 0) bool: start(false, "", width, height, flags)
 close_raw():
 	if DEV != 0:
-		if PASS != 0 { s_epass(PASS) } if CPASS != 0 { s_ecomp(CPASS) } PASS = 0; CPASS = 0; submit(); s_idle(DEV); release_pipelines(); release_resources()
+		if PASS != 0 { s_epass(PASS) } if CPASS != 0 { s_ecomp(CPASS) } PASS = 0; CPASS = 0; submit(); s_idle(DEV); fence_wait(HF0); fence_wait(HF1); HF0 = 0; HF1 = 0; release_pipelines(); release_resources()
 		if WIN != 0 { s_unclaim(DEV, WIN) } s_rmdev(DEV)
 	if WIN != 0: s_relm(WIN, false); s_showc(); s_rmwin(WIN)
 	if VIDI: s_quit(32)
@@ -452,7 +460,7 @@ frame_raw() bool:
 	if !need("frame"): return false
 	if PASS != 0 || CPASS != 0: misuse(str("frame() inside a ", pname(), " pass: end the pass first")); return false
 	if WIN != 0 && FRAMES > 0: present()
-	submit(); for k 512 { PK[k] = false; RK[k] = false } PBTN = 0; RBTN = 0; MDX = 0.0; MDY = 0.0; WHEEL = 0.0; EVS.clear(); resized ~= false; ep := ffi::ptr(EVB[..])
+	if WIN != 0 { submit() } else { submit_paced() } for k 512 { PK[k] = false; RK[k] = false } PBTN = 0; RBTN = 0; MDX = 0.0; MDY = 0.0; WHEEL = 0.0; EVS.clear(); resized ~= false; ep := ffi::ptr(EVB[..])
 	while s_poll(ep):
 		t := u32at(EVB[..], 0)
 		if t == 256 || t == 528: QUIT = true; continue
@@ -721,18 +729,27 @@ read_texture<T>(t Texture, out T[>..]&) bool:
 	info := texture_info(t); raw byte[>..] ~= []; raw.resize(texel_size(info.format) * info.width as int * info.height as int * (if info.kind == 2 { info.depth as int } else { 1 }), 0)
 	ok := read_texture(t, Region{}, raw[..]); append_as(raw[..], out); ok
 read_pixels(t Texture) byte[>..]: px byte[>..] ~= []; read_texture(t, px); px
-save_png_raw(t Texture, path const byte[:]) bool:
-	if !need("save_png"): return false
+struct Shot { w int = 0, h int = 0, pf int = 0, px byte[>..] = [] }
+grab(t Texture) Shot:
+	g ~= Shot{}
+	if !need("grab"): return g
 	i := tslot(t)
-	if i < 0 || !readable(TEXS[i], "save_png"): return false
+	if i < 0 || !readable(TEXS[i], "grab"): return g
 	f := TEXS[i].fmt; pf := if f == 4 || f == 52 { 376840196 } else { if f == 12 { 372645892 } else { 0 } }
-	if pf == 0: return misuse("save_png: only an RGBA8, RGBA8_SRGB or BGRA8 texture")
+	if pf == 0: misuse("grab: only an RGBA8, RGBA8_SRGB or BGRA8 texture"); return g
 	o ~= CTReg{0, 0, 0, 0, 0, 0, 0, 0, 0}
-	if !region(TEXS[i], Region{}, o, "save_png"): return false
-	w := o.w as int; h := o.h as int; px byte[>..] ~= []; px.resize(w * h * 4, 0); ok ~= download_texture(o, px[..], "save_png")
-	if ok && t.id == SCR.id: k ~= 3; while k < px.len { px[k] = 255; k += 4 }
-	if ok: surf := s_mksurf(w as i32, h as i32, pf as u32, ffi::ptr(px[..]), (w * 4) as i32); ok = surf != 0 && s_savepng(surf, cz(path, 1024)); if !ok { sdl_fail("save_png") } s_rmsurf(surf)
+	if !region(TEXS[i], Region{}, o, "grab"): return g
+	w := o.w as int; h := o.h as int; g.px.resize(w * h * 4, 0)
+	if !download_texture(o, g.px[..], "grab"): g.px.clear(); return g
+	if t.id == SCR.id: k ~= 3; while k < g.px.len { g.px[k] = 255; k += 4 }
+	g.w = w; g.h = h; g.pf = pf; g
+save_shot(g Shot&, path const byte[:]) bool:
+	if g.px.len == 0 || g.px.len != g.w * g.h * 4: return misuse("save_shot: an empty or failed grab")
+	surf := s_mksurf(g.w as i32, g.h as i32, g.pf as u32, ffi::ptr(g.px[..]), (g.w * 4) as i32); ok := surf != 0 && s_savepng(surf, cz(path, 1024)); if !ok { sdl_fail("save_png") } s_rmsurf(surf)
 	ok
+save_png_raw(t Texture, path const byte[:]) bool:
+	g ~= grab(t)
+	g.px.len > 0 && save_shot(g, path)
 save_png(t Texture, path const byte[:]) bool: ok := save_png_raw(t, path); check(); ok
 screenshot(path const byte[:]) bool: save_png(screen(), path)
 load_texture(path const byte[:], flags int) Texture:
