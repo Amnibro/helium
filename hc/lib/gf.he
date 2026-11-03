@@ -1,0 +1,64 @@
+# gf: arithmetic in GF(2^8) with the AES polynomial (x^8 + x^4 + x^3 + x + 1)
+# over whole byte buffers, plus the AES S-box and MixColumns step. Uses the
+# CPU's GFNI and VAES instructions when it has them.
+namespace gf
+use std
+var K = -1
+var EXP byte[512]
+var LOG byte[256]
+var SB byte[256]
+var ISB byte[256]
+init():
+	K = rt_vk_cpu()
+	x ~= 1
+	for i 255:
+		EXP[i] = x as byte
+		EXP[i + 255] = x as byte
+		LOG[x] = i as byte
+		x = x ^ (x << 1) ^ (if x & 0x80 != 0 { 0x11B } else { 0 })
+	for v 256:
+		b := if v == 0 { 0 } else { EXP[255 - LOG[v] as int] as int }
+		s := (b ^ (b << 1 | b >> 7) ^ (b << 2 | b >> 6) ^ (b << 3 | b >> 5) ^ (b << 4 | b >> 4) ^ 0x63) & 255
+		SB[v] = s as byte
+		ISB[s] = v as byte
+# a times b in the field
+mul(a int, b int) int:
+	if K < 0: init()
+	if a == 0 || b == 0 { 0 } else { EXP[LOG[a] as int + LOG[b] as int] as int }
+# out[at..at+64] = XOR over j < 16 of vecs[vat+64j .. +64] times, byte by byte,
+# the 4-byte group s[sat + 4*((j+rot)%16) ..] repeated across the 64 bytes.
+# out must not overlap vecs or s
+inline dot64(out byte[:], at int, vecs const byte[:], vat int, s const byte[:], sat int, rot int = 0):
+	o := out[at..at + 64]
+	v := vecs[vat..vat + 1024]
+	g := s[sat..sat + 64]
+	if K == 1 { rt_vk_gfdot(ptr(o), ptr(v), ptr(g), rot & 15) } else { dots(o, v, g, rot) }
+dots(o byte[:], v const byte[:], g const byte[:], rot int):
+	if K < 0: init()
+	if K == 1:
+		rt_vk_gfdot(ptr(o), ptr(v), ptr(g), rot & 15)
+		return
+	for k 64:
+		a ~= 0
+		for j 16: a ^= mul(v[64 * j + k] as int, g[4 * ((j + rot) & 15) + (k & 3)] as int)
+		o[k] = a as byte
+# each 4-byte group of buf[at..at+n]: S-box on every byte, then AES MixColumns
+mix(buf byte[:], at int, n int): mixk(buf, at, n, 0)
+# the inverse: InvMixColumns, then the inverse S-box
+mix_inv(buf byte[:], at int, n int): mixk(buf, at, n, 1)
+inline mixk(buf byte[:], at int, n int, inv int):
+	b := buf[at..at + n]
+	if K == 1 && n % 64 == 0 { rt_vk_aesmix(ptr(b), n, inv) } else { mixs(b, n, inv) }
+mixs(b byte[:], n int, inv int):
+	if K < 0: init()
+	if K == 1 && n % 64 == 0:
+		rt_vk_aesmix(ptr(b), n, inv)
+		return
+	m := if inv == 0 { [2, 3, 1, 1] } else { [14, 11, 13, 9] }
+	for q n / 4:
+		var c int[4]
+		for r 4: c[r] = if inv == 0 { SB[b[4 * q + r]] as int } else { b[4 * q + r] as int }
+		for r 4:
+			o ~= 0
+			for k 4: o ^= mul(m[k], c[(r + k) & 3])
+			b[4 * q + r] = if inv == 0 { o as byte } else { ISB[o] }

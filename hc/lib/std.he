@@ -667,6 +667,12 @@ each_word<F>(s byte[:]):
 	while at < s.len:
 		while at < s.len && is_space(s[at]): at += 1
 		b := at
+		while at + 8 <= s.len:
+			w := load_u64le(s, at)
+			q := w ^ 0x2020202020202020
+			x := w & 0x7F7F7F7F7F7F7F7F
+			if ((q - 0x0101010101010101) & ~q | 0x8D8D8D8D8D8D8D8D - x & ~w & x + 0x7777777777777777) & 0x8080808080808080 != 0: break
+			at += 8
 		while at < s.len && !is_space(s[at]): at += 1
 		if at > b: F(s[b..at])
 split(s byte[:], sep byte) const byte[:][>..]:
@@ -1057,6 +1063,59 @@ pyb(n int, b int, p const byte[:]) byte[>..]:
 	out.append(p)
 	format_uint(out, if n < 0 { 0 - n as! uint } else { n as uint }, b)
 	out
+# b as lowercase hex, two digits a byte
+hexw(t uint) uint:
+	s := t & 0xFF | (t & 0xFF00) << 8 | (t & 0xFF0000) << 16 | (t & 0xFF000000) << 24
+	n := s >> 4 & 0x000F000F000F000F | (s & 0x000F000F000F000F) << 8
+	n + 0x3030303030303030 + ((n + 0x0606060606060606) >> 4 & 0x0101010101010101) * 39
+hex_encode(out byte[>..]&, b const byte[:]):
+	o ~= out.len
+	out.resize(o + 2 * b.len + 16, 0)
+	i ~= 0
+	while i + 8 <= b.len:
+		w := load_u64le(b, i)
+		store_u64le(out, o, hexw(w & 0xFFFFFFFF))
+		store_u64le(out, o + 8, hexw(w >> 32))
+		i += 8
+		o += 16
+	while i < b.len:
+		store_u64le(out, o, hexw(b[i] as uint))
+		i += 1
+		o += 2
+	out.resize(o)
+# hex digits (either case) to bytes; false, with out unchanged, on an odd
+# length or a non-hex character
+hex_decode(s const byte[:], out byte[>..]&) bool:
+	if s.len % 2 != 0: return false
+	st := out.len
+	o ~= st
+	out.resize(st + s.len / 2 + 8, 0)
+	i ~= 0
+	while i + 8 <= s.len:
+		l := load_u64le(s, i) | 0x2020202020202020
+		x := l & 0x7F7F7F7F7F7F7F7F
+		d := (0xB9B9B9B9B9B9B9B9 - x & ~l & x + 0x5050505050505050 | 0xE6E6E6E6E6E6E6E6 - x & ~l & x + 0x1F1F1F1F1F1F1F1F) & 0x8080808080808080
+		if d != 0x8080808080808080:
+			out.resize(st)
+			return false
+		v := (l & 0x0F0F0F0F0F0F0F0F) + (l >> 6 & 0x0101010101010101) * 9
+		p := (v & 0x00FF00FF00FF00FF) << 4 | v >> 8 & 0x00FF00FF00FF00FF
+		q := (p | p >> 8) & 0x0000FFFF0000FFFF
+		store_u64le(out, o, (q | q >> 16) & 0xFFFFFFFF)
+		i += 8
+		o += 4
+	while i < s.len:
+		h := hexd(s[i])
+		g := hexd(s[i + 1])
+		if h < 0 || g < 0:
+			out.resize(st)
+			return false
+		out[o] = (h * 16 + g) as byte
+		i += 2
+		o += 1
+	out.resize(o)
+	true
+hexd(c byte) int: if c >= '0' && c <= '9' { (c - '0') as int } else if c >= 'a' && c <= 'f' { (c - 'a') as int + 10 } else if c >= 'A' && c <= 'F' { (c - 'A') as int + 10 } else { -1 }
 hex(n int) byte[>..]: pyb(n, 16, "0x")
 oct(n int) byte[>..]: pyb(n, 8, "0o")
 bin(n int) byte[>..]: pyb(n, 2, "0b")
