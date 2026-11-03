@@ -762,6 +762,28 @@ fn find_node(asset int, name const byte[:]) int {
 	-1
 }
 
+fn in_place(anim int, node int) f32 {
+	var drift f32 = 0.0;
+	if anim < 0 || anim >= animations.len || node < 0 { return 0.0; }
+	let an = animations[anim];
+	for k in an.channels.count {
+		let c = channels[an.channels.first + k];
+		if c.node != node || c.path != PATH_T || c.width != 3 || c.interp == STEP_CUBIC || c.times.count < 2 { continue; }
+		let n = c.times.count;
+		let v = c.values.first;
+		let t0 = floats[c.times.first];
+		let span = max(floats[c.times.first + n - 1] - t0, 0.000001);
+		let dx = floats[v + (n - 1) * 3] - floats[v];
+		let dz = floats[v + (n - 1) * 3 + 2] - floats[v + 2];
+		for j in n {
+			let f = (floats[c.times.first + j] - t0) / span;
+			floats[v + j * 3] -= dx * f;
+			floats[v + j * 3 + 2] -= dz * f;
+		}
+		drift = sqrt(dx * dx + dz * dz);
+	}
+	drift
+}
 fn find_animation(asset int, name const byte[:]) int {
 	let a = assets[asset];
 	for k in a.animations.count { if text_of(animations[a.animations.first + k].name) == name { return a.animations.first + k; } }
