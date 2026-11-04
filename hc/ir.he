@@ -98,7 +98,7 @@ xg(v int) int:
 	else:
 		-1
 NOSM ~= false; var REGOF i32[>..<]; var SWB i32[>..<]; var SWR i32[>..<]; SWE ~= -1; var RUSED i32[>..<]; var VZERO i32[>..<]; var CNV int; var VSI i32[>..<]
-var MUSE i8[>..<]; var MSLOT i32[>..<]; DSN ~= -1
+var MUSE i8[>..<]; var MSLOT i32[>..<]; var MPIN i8[>..<]; var LDEP i32[>..<]; DSN ~= -1
 var RPV i32[>..<]
 nv() int:
 	if NV == 0 { RPV.clear() } NV++; NV - 1

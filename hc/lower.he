@@ -311,7 +311,7 @@ recursive lrefv(n int) int:
 atc(n int) int:
 	if ND[n].k as int == N_CALL && rk(n) == R_FN { r := FI_[rv(n)].ret; if r >= 0 { return r } } at(n)
 newmark() int:
-	MUSE.push(0); MSLOT.push(-1); MUSE.len - 1
+	MUSE.push(0); MSLOT.push(-1); MPIN.push(0); MUSE.len - 1
 mark_use(m int):
 	if MUSE[m] == 0 { MUSE[m] = 1; MSLOT[m] = slot(8, 8) } if DSN < 0: DSN = gslot(lookup(intern("RT_DS"), -1, D_GLOBAL)) + 8
 dsuse():
@@ -797,7 +797,7 @@ recursive needs_drop(t int) bool:
 	if NOVDK == 0 { ev byte[>..] ~= []; NOVDK = if env("HC_NOVD", ev) { 1 } else { 2 } }
 	if t < 0 { return false } if is_res(t) { return true } k := TY[t].k; if k == TY_STRUCT && (!lvst(t) || NOVDK == 2) { si := TY[t].a; for j STI[si].fnum { ft := SFI[STI[si].f0 as int + j].ty; if ft >= 0 && TY[ft].k != TY_REF && needs_drop(ft) { return true } } return false } if k == TY_ARR && (is_fix(t) || is_lim(t)) { return needs_drop(TY[t].a) } false
 recursive ldrop(a int, t int):
-	if t == -2: ir(I_DSR, 3, -1, a, -1, 0); return
+	if t == -2: if MPIN[a] == 0 { ir(I_DSR, 3, -1, a, -1, 0) } return
 	if t == -3: rtcall("rt_sink_set", [a as i32]); return
 	if is_res(t): e := TY[t].a as int; if !nseq(t) && needs_drop(e) && !is_vimg(e) { ldrop_each(ldw(a, 0, 3), ldw(a, 8, 3), e) } rtcall("rt_rdropz", [a as i32, imm(if nseq(t) { 1 } else { max(tsz(e), 1) }) as i32]); return
 	k := TY[t].k
@@ -1406,6 +1406,7 @@ drop_stmp(th int): i ~= STMP.len; while i > th { i -= 2; ldrop(tmpa(STMP[i]), ST
 var RETV2 int
 recursive lvdecl(n int):
 	x := ND[n]
+	v0d := rv(n); for i max(x.n, 1) { while LDEP.len <= v0d + i { LDEP.push(-1) } LDEP[v0d + i] = MSTK.len }
 	if x.n > 1:
 		v0 := rv(n); init := kid(x.b, 0); mt := at(init)
 		if mt >= 0 && TY[mt].k == TY_MULTI: tp := nv(); ir(I_SLOT, 8, tp, -1, -1, slot(tsz(mt), tal(mt))); lstore(tp, init, mt); for i x.n { t := LVS[v0 + i].ty; a := nv(); ir(I_SLOT, 8, a, -1, -1, lslot(v0 + i)); ea := addi(tp, moff(mt, i)); ir(I_COPY, 3, a, if TY[mel(mt, i)].k == TY_REF && TY[t].k != TY_REF { ldw(ea, 0, 3) } else { ea }, imm(tsz(t)), 0); own_drop(a, t) } return
@@ -1432,8 +1433,17 @@ recursive lcopy_into(dd int, src int, t int) bool:
 	if is_res(t): sp, sn := lsl(src); e := TY[t].a as int; rtcall("rt_rfrom", [dd as i32, sp as i32, sn as i32, imm(tsz(e)) as i32]); if pneeds(e) { i, lt, le := lloop(ldw(dd, 8, 3)); lwalk(1, bin(B_ADD, 3, ldw(dd, 0, 3), bin(B_MUL, 3, i, imm(tsz(e)), -1), -1), -1, e); lloop_end(i, lt, le) } return true
 	if hvimg(t) || is_fixed(t) || pneeds(t) || TY[t].k == TY_ENUM: ir(I_COPY, 3, dd, laddr(src), imm(tsz(t)), 0); lwalk(1, dd, -1, t); return true
 	false
+recursive pin_assign(a int):
+	if ND[a].k as int == N_LIST: for i ND[a].n { pin_assign(kid(a, i)) } return
+	t := deref(at(a)); if !(hvimg(t) || is_vval(t)): return
+	c ~= a; while ND[c].k as int == N_DOT || ND[c].k as int == N_IDX { c = ND[c].a as int }
+	if ND[c].k as int != N_ID || rk(c) != R_LOCAL: return
+	v := rv(c); if LVS[v].cfn != CUR || TY[LVS[v].ty].k == TY_REF: return
+	d := if v < LDEP.len && LDEP[v] >= 0 { LDEP[v] } else { 1 }
+	for i d..MSTK.len { MPIN[MSTK[i]] = 1 }
 recursive lassign(n int):
 	x := ND[n]; o := x.op; a := x.a; b := x.b
+	pin_assign(a)
 	if ND[a].k as int == N_LIST:
 		na := ND[a].n; tv i32[>..<] ~= []
 		if ND[b].k as int == N_LIST:
