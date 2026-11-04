@@ -1,0 +1,4 @@
+// error: cannot replace v through a reference
+struct In { mode byte[], k real }
+fn set(v byte[]&) { v = copy("fin"); }
+fn main() { var i = In{ mode: "", k: 0.0 }; set(i.mode); }
