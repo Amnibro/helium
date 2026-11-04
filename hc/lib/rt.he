@@ -684,7 +684,7 @@ rt_scq(rh real, rl real, c bool) real, real:
 	ph := ca * yh; h, e1 := dd_s(sa, ph); r1, r2 := dd_s(h, e1 + rt_fma(ca, yh, -ph) + sl + sa * cy + ca * sy + cl * yh); return r1, r2
 rt_trig(x real, w int) real:
 	b := rt_db(x) << 1
-	if b == 0: return if w == 1 { 1.0 } else { 0.0 }
+	if b == 0: return if w == 1 { 1.0 } else { x }
 	if w != 2 && b < 0x8360000000000000:
 		kf := if b < 0x7FD243F6A8885A30 { 0.0 } else { rt_ffl(x * 0.6366197723675814 + 0.5) }; ph := kf * RT_P1; rh0, rl1 := dd_s(x - ph, -(rt_fma(kf, RT_P1, -ph) + kf * RT_P2)); rl0 := rl1 - kf * RT_P3
 		k0 := (kf as int + w) & 3; h0, l0 := rt_scq(rh0, rl0, k0 & 1 != 0); e0 := (if h0 < 0.0 { -h0 } else { h0 }) * 2.168404344971009e-19 + (if kf < 0.0 { -kf } else { kf }) * 7.888609052210118e-31; f0 := h0 + (l0 + e0)
