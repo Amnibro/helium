@@ -744,8 +744,10 @@ rt_acos(x real) real: if !(x >= -1.0 && x <= 1.0) { return rt_bd(0x7FF8000000000
 rt_sinf(x f32) f32: rt_sin(x as real) as f32
 rt_cosf(x f32) f32: rt_cos(x as real) as f32
 rt_tanf(x f32) f32: rt_tan(x as real) as f32
-rt_asinf(x f32) f32: rt_asin(x as real) as f32
-rt_acosf(x f32) f32: rt_acos(x as real) as f32
+rt_f32ok(r real) bool: b := rt_db(r); a := b & 0x7FFFFFFFFFFFFFFF; d := (b & 0x1FFFFFFF) as int - 0x10000000; a >= 0x3810000000000000 && a < 0x47E0000000000000 && (d > 64 || d < -64)
+rt_asr(z real) real: z * (1.66666666666666657415e-01 + z * (-3.25565818622400915405e-01 + z * (2.01212532134862925881e-01 + z * (-4.00555345006794114027e-02 + z * (7.91534994289814532176e-04 + z * 3.47933107596021167570e-05))))) / (1.0 + z * (-2.40339491173441421878e+00 + z * (2.02094576023350569471e+00 + z * (-6.88283971605453293030e-01 + z * 7.70381505559019352791e-02))))
+rt_asinf(x f32) f32: d := x as real; a := if d < 0.0 { -d } else { d }; if a <= 1.0 { r := if a < 0.5 { d + d * rt_asr(d * d) } else { z := (1.0 - a) * 0.5; q := rt_fsq(z); w := 2.0 * (RT_P1 * 0.5 + RT_P2 * 0.5) - 2.0 * (q + q * rt_asr(z)); if d < 0.0 { -w } else { w } }; if rt_f32ok(r) { return r as f32 } } rt_asin(d) as f32
+rt_acosf(x f32) f32: d := x as real; if d >= -1.0 && d <= 1.0 { r := if d < -0.5 { z := (1.0 + d) * 0.5; q := rt_fsq(z); 2.0 * RT_P1 - 2.0 * (q + q * rt_asr(z)) } else { if d > 0.5 { z := (1.0 - d) * 0.5; q := rt_fsq(z); 2.0 * (q + q * rt_asr(z)) } else { RT_P1 - (d + d * rt_asr(d * d)) } }; if rt_f32ok(r) { return r as f32 } } rt_acos(d) as f32
 rt_atanf(x f32) f32: rt_atan(x as real) as f32
 rt_atan2f(y f32, x f32) f32: rt_atan2(y as real, x as real) as f32
 rt_expf(x f32) f32: rt_exp(x as real) as f32
