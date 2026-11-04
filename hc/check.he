@@ -1163,7 +1163,7 @@ recursive ck_assign(n int):
 			if TY[rt].k == TY_REF: conv(x.b, tt); return
 		if ND[x.a].k as int == N_DOT && !is_fixed(d) && TY[d].k != TY_REF && TY[d].k != TY_SLICE && !(TY[d].k == TY_ARR && is_grow(d)) && thru_ref(x.a): m byte[>..] ~= []; format(m, "cannot assign field ", nm(ND[x.a].s as int), " through a reference: it is stored inline with a variable size (", tn(d), "), so only the variable that owns the struct can replace it; make the field growable (T[>..]) or build and return a new struct"); cerr(n, m[..]); return
 		if d == T_U8 && ND[x.b].k as int == N_CALL && ND[x.b].n == 1 && ND[ND[x.b].a].k as int == N_ID && ND[ND[x.b].a].s == NAME_STR && py1(kid(x.b, 0)): ND[x.b] = ND[kid(x.b, 0)]
-		if ND[x.a].k as int == N_ID && TY[tt].k == TY_REF && TY[d].k == TY_ARR && !is_grow(d) && !is_fixed(d): m byte[>..] ~= []; format(m, "cannot replace ", nm(ND[x.a].s as int), " through a reference: a ", tn(d), " may be stored inline in a struct or array, where a value of another size would overwrite its neighbours (rewrite: return the new value, or make the field growable, ", tn(TY[d].a as int), "[>..])"); cerr(n, m[..])
+		if ND[x.a].k as int == N_ID && TY[tt].k == TY_REF && hvimg(d): m byte[>..] ~= []; format(m, "cannot replace ", nm(ND[x.a].s as int), " through a reference: a ", tn(d), " holds immutable arrays that live in this call's memory or inline in the caller's struct, so the caller would see freed or overlapping memory (rewrite: return the new value, assign its fields one by one, or make the arrays growable, T[>..])"); cerr(n, m[..])
 		ck(x.b, d); conv(x.b, d)
 		return
 	if (TY[d].k == TY_STRUCT || TY[d].k == TY_ARR) && !FILES[TK[x.t].f].he && o != T_ASSIGN:
