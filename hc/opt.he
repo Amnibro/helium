@@ -776,7 +776,7 @@ inline_into(fi int, fsz i32[>..<]&, mx int):
 			if y.d >= 0: y.d = y.d + vb
 			if op == I_LBL || op == I_JMP || op == I_BZ || op == I_BNZ: l := y.c as int; if lm[l] < 0 { lm[l] = nlbl() } y.c = lm[l]
 			if op == I_SLOT: y.c += sbase as i64
-			if op == I_DSS || op == I_DSR: m := y.a; k ~= -1; for q, qi mm { if q == m { k = mo[qi] } } if k < 0 { MUSE.push(MUSE[m]); MSLOT.push(if MSLOT[m] >= 0 { MSLOT[m] + sbase as i32 } else { -1 }); k = MUSE.len - 1; mm.push(m); mo.push(k) } y.a = k; IR.push(y); continue
+			if op == I_DSS || op == I_DSR: m := y.a; k ~= -1; for q, qi mm { if q == m { k = mo[qi] } } if k < 0 { MUSE.push(MUSE[m]); MPIN.push(if m < MPIN.len { MPIN[m] } else { 0 as i8 }); MSLOT.push(if MSLOT[m] >= 0 { MSLOT[m] + sbase as i32 } else { -1 }); k = MUSE.len - 1; mm.push(m); mo.push(k) } y.a = k; IR.push(y); continue
 			if op == I_CALL || op == I_CALLR || op == I_SYS: a0 := ARGL.len; for q y.b { ARGL.push(ARGL[y.a as int + q] + vb) } y.a = a0; if op == I_CALLR { y.c = (y.c as int + vb) as i64 } if op == I_CALL && y.l >= 0 { y.l = y.l + vb } IR.push(y); continue
 			if y.a >= 0 && op != I_IMM && op != I_SLOT && op != I_GADDR && op != I_RADDR && op != I_FADDR: y.a = y.a + vb
 			if y.b >= 0 && (usesb(op) || op == I_ST || op == I_ZERO || op == I_COPY || op == I_RET): y.b = y.b + vb
