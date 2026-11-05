@@ -1,0 +1,37 @@
+layout(local_size_x = 8, local_size_y = 8) in;
+layout(set = 0, binding = 0) uniform sampler2D src;
+layout(set = 0, binding = 1, rgba8) uniform readonly image2D rimg;
+layout(std430, set = 0, binding = 2) readonly buffer In { uint inp[]; };
+layout(set = 1, binding = 0, rgba16f) uniform image2D wimg;
+layout(set = 1, binding = 1, r32f) uniform image2D rwimg;
+layout(std430, set = 1, binding = 2) buffer Count { uint counts[]; };
+layout(std430, set = 1, binding = 3) buffer Out { int outv[]; };
+layout(set = 2, binding = 0) uniform U { vec4 info; };
+shared uint tile[64];
+shared int total;
+void main() {
+	uint li = gl_LocalInvocationIndex;
+	tile[li] = inp[gl_GlobalInvocationID.x];
+	if (li == 0u) { atomicExchange(total, 0); }
+	barrier();
+	atomicAdd(tile[li ^ 1u], 1u);
+	memoryBarrierShared();
+	barrier();
+	int old = atomicMax(total, int(tile[li]));
+	atomicMin(counts[0], tile[li]);
+	atomicOr(counts[1], 2u);
+	atomicAnd(counts[2], 3u);
+	atomicXor(counts[3], li);
+	uint prev = atomicCompSwap(counts[4], 0u, li);
+	counts[5] = prev;
+	counts[6] += 1u;
+	ivec2 p = ivec2(gl_GlobalInvocationID.xy);
+	vec4 a = imageLoad(rimg, p) + textureLod(src, vec2(p) / vec2(imageSize(rimg)), 0.0);
+	imageStore(wimg, p, a);
+	float r = imageLoad(rwimg, p).x;
+	imageStore(rwimg, p, vec4(r + 1.0));
+	memoryBarrierBuffer();
+	memoryBarrier();
+	groupMemoryBarrier();
+	outv[li] = old + total + int(gl_WorkGroupID.y) + int(gl_LocalInvocationID.x) + outv.length() + int(info.x);
+}
