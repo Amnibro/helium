@@ -336,7 +336,12 @@ flush_raw():
 	finish()
 flush(): flush_raw(); check()
 texfmt(f int) int:
-	if f == 20: return if DEV != 0 && s_texok(DEV, 60, 0, 5) { 60 } else { 59 }
+	if f == 20:
+		if DEV == 0: return 59
+		for u in [5, 4]:
+			for d in [60, 59, 58]:
+				if s_texok(DEV, d as i32, 0, u as u32): return d
+		return 59
 	if f >= 1 && f < 20 { TFMT[f] } else { -1 }
 isdepth(f int) bool: f >= 58 && f <= 62
 stage_name(s int) byte[>..]: copy(if s == 0 { "vertex" } else { if s == 1 { "fragment" } else { "compute" } })
