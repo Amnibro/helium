@@ -57,11 +57,20 @@ layout(set = 3, binding = 1) uniform Surface {
 	vec4 uv_sets2;        // x emissive, y debug view (see scene3d.debug_view), z multiscatter on + 2 * furnace control mode, w furnace control scale
 	vec4 tri;             // x world triplanar tiles per unit (0 = mesh UVs), y top layer coverage, z top layer tiles per unit, w top edge sharpness
 	vec4 top_tint;        // top layer colour factor
+	vec4 xm_base;
+	vec4 xm_mr;
+	vec4 xm_nrm;
+	vec4 xm_occ;
+	vec4 xm_emi;
+	vec4 xo0;
+	vec4 xo1;
+	vec4 xo2;
 };
 
 layout(location = 0) out vec4 out_rgba;
 
 vec2 pick_uv(float set) { return set > 0.5 ? in_uv.zw : in_uv.xy; }
+vec2 xuv(float set, vec4 m, vec2 o) { vec2 u = pick_uv(set); return vec2(dot(m.xy, u), dot(m.zw, u)) + o; }
 
 // Single-scatter directional albedo of the specular lobe from ms_lut.glsl (16-bit
 // unorm pairs), bilinear (columns are sqrt(n.v), rows roughness): x = E(n.v, rough)
@@ -177,7 +186,7 @@ vec3 ambient_light(vec3 n, vec3 v, vec3 l, vec3 base_rgb, float metal, float rou
 }
 
 void main() {
-	vec4 tint = base * in_col * texture(tex_base, pick_uv(uv_sets.x));
+	vec4 tint = base * in_col * texture(tex_base, xuv(uv_sets.x, xm_base, xo0.xy));
 	// world-aligned layers: triplanar base and a top layer on up-facing surfaces
 	vec3 gw = normalize(in_nrm);
 	bool tp = tri.x > 0.0;
@@ -204,7 +213,7 @@ void main() {
 	// tangent frame: from the vertex tangent, or from screen derivatives when absent
 	vec3 t;
 	vec3 b;
-	vec2 uvn = pick_uv(uv_sets.z);
+	vec2 uvn = xuv(uv_sets.z, xm_nrm, xo1.xy);
 	if (abs(in_tan.w) > 0.5) {
 		t = normalize(in_tan.xyz - n * dot(n, in_tan.xyz));
 		b = cross(n, t) * in_tan.w;
@@ -226,7 +235,7 @@ void main() {
 	vec3 tn = texture(tex_normal, uvn).xyz * 2.0 - 1.0;
 	tn.xy *= params.z;
 	n = normalize(mat3(t, b, n) * tn);
-	vec4 mr = texture(tex_mr, pick_uv(uv_sets.y));
+	vec4 mr = texture(tex_mr, xuv(uv_sets.y, xm_mr, xo0.zw));
 	if (tp) {
 		vec3 nx = texture(tex_normal, ux).xyz * 2.0 - 1.0;
 		vec3 ny = texture(tex_normal, uy).xyz * 2.0 - 1.0;
@@ -247,7 +256,7 @@ void main() {
 	}
 	float metal = clamp(params.x * mr.b, 0.0, 1.0);
 	float rough = clamp(params.y * mr.g, 0.03, 1.0);
-	float occ = 1.0 + params.w * ((tp ? mr.r : texture(tex_occlusion, pick_uv(uv_sets.w)).r) - 1.0);
+	float occ = 1.0 + params.w * ((tp ? mr.r : texture(tex_occlusion, xuv(uv_sets.w, xm_occ, xo1.zw)).r) - 1.0);
 	if (eye.w > 0.5) occ *= texture(tex_ao, gl_FragCoord.xy * screen.xy).r;
 
 	vec3 albedo = tint.rgb * (1.0 - metal);
@@ -292,7 +301,7 @@ void main() {
 	vec3 ambient = ambient_light(n, v, l, tint.rgb, metal, rough, gi_irr, use_gi) * (use_gi ? (gi.z > 0.5 ? occ : 1.0) : occ * screen.w);
 	rgb += ambient;
 
-	rgb += emissive.rgb * texture(tex_emissive, pick_uv(uv_sets2.x)).rgb;
+	rgb += emissive.rgb * texture(tex_emissive, xuv(uv_sets2.x, xm_emi, xo2.xy)).rgb;
 	out_rgba = vec4(rgb, alpha.x > 1.5 ? tint.a : 1.0);
 
 	int dbg = int(uv_sets2.y + 0.5);
