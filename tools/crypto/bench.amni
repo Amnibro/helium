@@ -1,0 +1,48 @@
+import std;
+import os;
+import crypto.hash;
+import crypto.aead;
+import crypto.c25519;
+import crypto.ecc;
+import crypto.rsa;
+fn report(name const byte[:], t0 real, n int) { let ms = (clock() - t0) * 1000.0 / n as real; print(name, ": ", (ms * 1000.0) as int, " us"); }
+fn main() {
+	let mb = crypto::random_bytes(1 << 20);
+	let key = crypto::random_bytes(32);
+	let nonce = crypto::random_bytes(12);
+	var t0 = clock();
+	for i in 3 { let o, ok = crypto::aead_seal(crypto::AES_GCM, key[..], nonce[..], "", mb[..]); }
+	report("AES-256-GCM seal 1 MB", t0, 3);
+	t0 = clock();
+	for i in 3 { let o, ok = crypto::aead_seal(crypto::CHACHA20_POLY1305, key[..], nonce[..], "", mb[..]); }
+	report("ChaCha20-Poly1305 seal 1 MB", t0, 3);
+	t0 = clock();
+	for i in 3 { let o = crypto::sha256(mb[..]); }
+	report("SHA-256 1 MB", t0, 3);
+	t0 = clock();
+	for i in 20 { let o = crypto::x25519_base(key[..]); }
+	report("X25519", t0, 20);
+	let sig = crypto::ed25519_sign(key[..], "hello");
+	let epk = crypto::ed25519_public(key[..]);
+	t0 = clock();
+	for i in 20 { let ok = crypto::ed25519_verify(epk[..], "hello", sig[..]); }
+	report("Ed25519 verify", t0, 20);
+	for c in [crypto::P256, crypto::P384] {
+		let d = crypto::ec_generate(c);
+		let pk, ok = crypto::ec_public(c, d[..]);
+		let kind = if c == crypto::P256 { crypto::SHA256 } else { crypto::SHA384 };
+		t0 = clock();
+		for i in 10 { let s, ok2 = crypto::ecdsa_sign(c, kind, d[..], "hello"); }
+		report(if c == crypto::P256 { "P-256 sign" } else { "P-384 sign" }, t0, 10);
+		let s, ok2 = crypto::ecdsa_sign(c, kind, d[..], "hello");
+		t0 = clock();
+		for i in 10 { let v = crypto::ecdsa_verify(c, kind, pk[..], "hello", s[..]); }
+		report(if c == crypto::P256 { "P-256 verify" } else { "P-384 verify" }, t0, 10);
+		t0 = clock();
+		for i in 10 { let z, ok3 = crypto::ecdh(c, d[..], pk[..]); }
+		report(if c == crypto::P256 { "P-256 ECDH" } else { "P-384 ECDH" }, t0, 10);
+	}
+	t0 = clock();
+	let o, ok = crypto::pbkdf2(crypto::SHA256, "correct horse", "haven-e2e-wrapping-v3", 600000, 32);
+	report("PBKDF2-SHA256 600k", t0, 1);
+}

@@ -110,7 +110,58 @@ def suite_rsa():
             s1 = key.sign(m, padding.PKCS1v15(), HC[k]()); s2 = key.sign(m, padding.PSS(padding.MGF1(HC[k]()), HL[k]().digest_size), HC[k]())
             add('rsa-openssl', f'RV {k} {n} {e} {h(m)} {s1.hex()}', lambda o: o == '1'); add('rsa-openssl', f'RP {k} {k} {HL[k]().digest_size} {n} {e} {h(m)} {s2.hex()}', lambda o: o == '1')
             add('rsa-openssl', f'RV {k} {n} {e} {h(m + b"x")} {s1.hex()}', lambda o: o == '0'); add('rsa-openssl', f'RP {k} {k} {HL[k]().digest_size} {n} {e} {h(m + b"x")} {s2.hex()}', lambda o: o == '0')
-SUITES = {'rsa': suite_rsa, '25519': suite_25519, 'aead': suite_aead, 'hash': suite_hash, 'hmac': suite_hmac, 'hkdf': suite_hkdf}
+from cryptography.hazmat.primitives.asymmetric import ec
+from cryptography.hazmat.primitives.asymmetric.utils import decode_dss_signature
+CV = {1: (ec.SECP256R1(), 32), 2: (ec.SECP384R1(), 48)}
+def suite_ecc():
+    for name, cid in (('ecdsa_secp256r1_sha256_test', 1), ('ecdsa_secp384r1_sha384_test', 2)):
+        for g in json.load(open(f'{W}/{name}.json'))['testGroups']:
+            pk = g['publicKey']['uncompressed']; k = K[g['sha']]
+            for t in g['tests']: add('ecdsa-der-wycheproof', f"PVD {cid} {k} {pk} {t['msg'] or '-'} {t['sig'] or '-'}", lambda o, r=t['result']: wy_ok(r, o))
+    for name, cid in (('ecdsa_secp256r1_sha256_p1363_test', 1), ('ecdsa_secp384r1_sha384_p1363_test', 2)):
+        for g in json.load(open(f'{W}/{name}.json'))['testGroups']:
+            pk = g['publicKey']['uncompressed']; k = K[g['sha']]
+            for t in g['tests']: add('ecdsa-raw-wycheproof', f"PV {cid} {k} {pk} {t['msg'] or '-'} {t['sig'] or '-'}", lambda o, r=t['result']: wy_ok(r, o))
+    for name, cid in (('ecdh_secp256r1_ecpoint_test', 1), ('ecdh_secp384r1_ecpoint_test', 2)):
+        sz = CV[cid][1]
+        for g in json.load(open(f'{W}/{name}.json'))['testGroups']:
+            for t in g['tests']:
+                d = int(t['private'], 16)
+                if d.bit_length() > 8 * sz: continue
+                r = t['result']
+                add('ecdh-wycheproof', f"PD {cid} {d.to_bytes(sz, 'big').hex()} {t['public'] or '-'}", lambda o, r=r, e=t['shared']: o == e if r == 'valid' else o == 'ERR' if r == 'invalid' else o in (e, 'ERR'))
+    add('ecdsa-rfc6979', 'PS 1 2 c9afa9d845ba75166b5c215767b1d6934e50c3db36e89b127b8a622b120f6721 73616d706c65', lambda o: o == 'efd48b2aacb6a8fd1140dd9cd45e81d69d2c877b56aaf991c34d0ea84eaf3716f7cb1c942d657c41d436c7a1b6e29f65f3e900dbb9aff4064dc4ab2f843acda8')
+    for cid, (cv, sz) in CV.items():
+        for _ in range(60):
+            key = ec.generate_private_key(cv); d = key.private_numbers().private_value.to_bytes(sz, 'big'); pub = key.public_key().public_bytes(ser.Encoding.X962, ser.PublicFormat.UncompressedPoint)
+            comp = key.public_key().public_bytes(ser.Encoding.X962, ser.PublicFormat.CompressedPoint); peer = ec.generate_private_key(cv)
+            ppub = peer.public_key().public_bytes(ser.Encoding.X962, ser.PublicFormat.UncompressedPoint); pcomp = peer.public_key().public_bytes(ser.Encoding.X962, ser.PublicFormat.CompressedPoint)
+            sh = key.exchange(ec.ECDH(), peer.public_key()).hex()
+            add('ecc-openssl', f'PK {cid} {d.hex()}', lambda o, e=pub.hex(): o == e)
+            add('ecc-openssl', f'PD {cid} {d.hex()} {ppub.hex()}', lambda o, e=sh: o == e)
+            add('ecc-openssl', f'PD {cid} {d.hex()} {pcomp.hex()}', lambda o, e=sh: o == e)
+            k = rng.choice((2, 3, 4)); m = bytes(rng.randrange(256) for _ in range(rng.randrange(0, 200)))
+            der = key.sign(m, ec.ECDSA(HC[k](), deterministic_signing=True)); r, s = decode_dss_signature(der); raw = (r.to_bytes(sz, 'big') + s.to_bytes(sz, 'big')).hex()
+            add('ecc-openssl', f'PS {cid} {k} {d.hex()} {h(m)}', lambda o, e=raw: o == e)
+            rnd = key.sign(m, ec.ECDSA(HC[k]())); 
+            add('ecc-openssl', f'PVD {cid} {k} {pub.hex()} {h(m)} {rnd.hex()}', lambda o: o == '1')
+            add('ecc-openssl', f'PVD {cid} {k} {comp.hex()} {h(m)} {rnd.hex()}', lambda o: o == '1')
+            add('ecc-openssl', f'PVD {cid} {k} {pub.hex()} {h(m + b"!")} {rnd.hex()}', lambda o: o == '0')
+        def gen_ok(o, cv=cv, sz=sz):
+            d, p = o.split(); return ec.derive_private_key(int(d, 16), cv).public_key().public_bytes(ser.Encoding.X962, ser.PublicFormat.UncompressedPoint).hex() == p
+        for _ in range(5): add('ecc-keygen', f'PG {cid}', gen_ok)
+    add('random', 'RB 64', lambda o: len(o) == 257 and o[:128] != o[129:] and o[:128] != '0' * 128)
+def suite_pbkdf2():
+    for g in json.load(open(f'{W}/pbkdf2_hmacsha256_test.json'))['testGroups']:
+        for t in g['tests']:
+            if t['iterationCount'] > 100000: continue
+            add('pbkdf2-wycheproof', f"KD 2 {t['password'] or '-'} {t['salt'] or '-'} {t['iterationCount']} {t['dkLen']}", lambda o, r=t['result'], e=t['dk']: wy_ok('valid', '1' if o == e else '0') if r == 'valid' else o != e)
+    for k in (1, 2, 3, 4):
+        for _ in range(8):
+            pw, salt = bytes(rng.randrange(256) for _ in range(rng.randrange(0, 150))), bytes(rng.randrange(256) for _ in range(rng.randrange(0, 40))); it = rng.choice((1, 2, 5, 1000, 4096)); n = rng.randrange(1, 100)
+            add('pbkdf2-openssl', f'KD {k} {h(pw)} {h(salt)} {it} {n}', lambda o, e=hashlib.pbkdf2_hmac(HL[k]().name, pw, salt, it, n).hex(): o == e)
+    add('pbkdf2-haven', f"KD 2 {b'correct horse'.hex()} {b'haven-e2e-wrapping-v3'.hex()} 600000 32", lambda o, e=hashlib.pbkdf2_hmac('sha256', b'correct horse', b'haven-e2e-wrapping-v3', 600000, 32).hex(): o == e)
+SUITES = {'pbkdf2': suite_pbkdf2, 'ecc': suite_ecc, 'rsa': suite_rsa, '25519': suite_25519, 'aead': suite_aead, 'hash': suite_hash, 'hmac': suite_hmac, 'hkdf': suite_hkdf}
 for n, f in SUITES.items():
     if not only or n in only: f()
 with tempfile.NamedTemporaryFile('w', delete=False, suffix='.txt') as fh:

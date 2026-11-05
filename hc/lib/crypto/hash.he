@@ -97,3 +97,22 @@ ct_eq(a const byte[:], b const byte[:]) bool:
 	d ~= 0 as byte
 	for i a.len: d |= a[i] ^ b[i]
 	d == 0
+hmac_states(kind int, key const byte[:]) Hash, Hash:
+	bs := block_size(kind); k byte[>..] ~= []
+	if key.len > bs { k.append(digest(kind, key)[..]) } else { k.append(key) }
+	k.resize(bs, 0); ip byte[>..] ~= []; op byte[>..] ~= []
+	for i bs: ip.push(k[i] ^ 0x36); op.push(k[i] ^ 0x5C)
+	hi ~= hash_new(kind); hash_update(hi, ip[..]); ho ~= hash_new(kind); hash_update(ho, op[..])
+	return hi, ho
+hmac_with(hi const Hash&, ho const Hash&, m const byte[:]) byte[>..]: a ~= copy(hi); hash_update(a, m); x := hash_final(a); b ~= copy(ho); hash_update(b, x); hash_final(b)
+pbkdf2(kind int, pw const byte[:], salt const byte[:], iters int, n int) byte[>..], bool:
+	out byte[>..] ~= []
+	if iters < 1 || n < 1 || hash_size(kind) == 0: return out, false
+	hi, ho := hmac_states(kind, pw); i ~= 1
+	while out.len < n:
+		m byte[>..] ~= []; m.append(salt); for k 4 { m.push((i >> (24 - 8 * k)) as! byte) }
+		u ~= hmac_with(hi, ho, m); t ~= copy(u)
+		for j 1..iters: u = hmac_with(hi, ho, u); for b t.len { t[b] ^= u[b] }
+		out.append(t[..]); i += 1
+	out.resize(n, 0)
+	return out, true
