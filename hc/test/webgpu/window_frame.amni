@@ -1,0 +1,33 @@
+import gfx;
+import gfx.linalg;
+import gfx.gltf;
+import gfx.scene3d;
+fn main() {
+	var model byte[>..] = [];
+	var out byte[>..] = [];
+	arg(1, model);
+	arg(2, out);
+	let a = gltf::load(model[..]);
+	if a < 0 || !gfx::open("helium webgpu window", 320, 240) { print("window_frame: ", gltf::error(), gfx::error()[..]); return; }
+	let it = s3d::add(a);
+	s3d::place(it, gfx::mat4_identity);
+	s3d::view = s3d::Camera { eye: float3 { 1.5, 1.6, 3.5 }, target: float3 { 0.0, 0.6, 0.0 }, up: float3 { 0.0, 1.0, 0.0 }, fov_y: 0.9, near: 0.05, far: 60.0 };
+	s3d::temporal = 0;
+	let sz = gfx::screen_size();
+	s3d::init(sz.x as int, sz.y as int);
+	var k = 0;
+	var space = -1;
+	var w = -1;
+	var clicks = 0;
+	while gfx::frame() && k < 140 {
+		if k == 7 { gfx::inject_key("Space", true); }
+		if gfx::key_pressed("Space") && space < 0 { space = k; }
+		if gfx::key_pressed("W") && w < 0 { w = k; }
+		if gfx::mouse_pressed(gfx::MOUSE_LEFT) { clicks += 1; }
+		s3d::render(gfx::screen());
+		k += 1;
+		if space >= 0 && w >= 0 && clicks > 0 && k > 21 { break; }
+	}
+	print("window_frame: ", gfx::screen_size().x, "x", gfx::screen_size().y, " frames ", gfx::frame_count(), " injected Space at ", space, " page W at ", w, " clicks ", clicks, " mouse ", gfx::mouse_pos().x as int, ",", gfx::mouse_pos().y as int, " saved ", gfx::save_png(gfx::screen(), out[..]));
+	gfx::close();
+}

@@ -1,0 +1,40 @@
+import gfx;
+import gfx.linalg;
+import gfx.gltf;
+import gfx.scene3d;
+import gfx.shapes;
+fn num(s const byte[:]) f32 {
+	var v real = 0.0;
+	var neg = false;
+	var frac real = 0.0;
+	for c in s { if c == '-' { neg = true; } else if c == '.' { frac = 1.0; } else if c >= '0' && c <= '9' { if frac > 0.0 { frac = frac / 10.0; v = v + (c - '0') as real * frac; } else { v = v * 10.0 + (c - '0') as real; } } }
+	(if neg { -v } else { v }) as f32
+}
+fn arg_of(i int) byte[>..] { var a byte[>..] = []; arg(i, a); a }
+fn main() {
+	if arg_count() < 12 { print("usage: scene_frame model.glb out.png width height eye_x eye_y eye_z target_x target_y target_z fov anim_time [gi]"); return; }
+	let model = arg_of(1);
+	let out_path = arg_of(2);
+	let a = gltf::load(model[..]);
+	if a < 0 { print("scene_frame: ", gltf::error()); return; }
+	let w = num(arg_of(3)[..]) as int;
+	let h = num(arg_of(4)[..]) as int;
+	if !gfx::open_headless(w, h) { print("scene_frame: no device: ", gfx::error()[..]); return; }
+	let floor = s3d::add(shapes::plane(4.0, shapes::material(linalg::v3(0.55, 0.55, 0.52), 0.0, 0.8)));
+	s3d::place(floor, gfx::mat4_identity);
+	let it = s3d::add(a);
+	s3d::place(it, gfx::mat4_identity);
+	if gltf::assets[a].animations.count > 0 { s3d::animate(it, gltf::assets[a].animations.first, num(arg_of(12)[..])); }
+	s3d::view = s3d::Camera { eye: float3 { num(arg_of(5)[..]), num(arg_of(6)[..]), num(arg_of(7)[..]) }, target: float3 { num(arg_of(8)[..]), num(arg_of(9)[..]), num(arg_of(10)[..]) }, up: float3 { 0.0, 1.0, 0.0 }, fov_y: num(arg_of(11)[..]), near: 0.05, far: 60.0 };
+	s3d::sun = s3d::Sun { to_sun: float3 { 0.75, 0.6, -0.45 }, rgb: float3 { 3.0, 2.85, 2.6 }, shadows: true, shadow_far: 20.0, map_size: 2048 };
+	s3d::temporal = 0;
+	let gi = arg_count() > 13 && arg_of(13)[..] == "1";
+	s3d::gi_on = gi;
+	s3d::rt_shadows = gi;
+	s3d::gi_updates_per_frame = 8;
+	s3d::init(w, h);
+	let out = gfx::render_target(w, h, gfx::RGBA8);
+	for k in if gi { 7 } else { 2 } { s3d::render(out); }
+	print("scene_frame: ", model[..], " ", w, "x", h, " gi ", gi, " saved ", gfx::save_png(out, out_path[..]), " on ", gfx::driver()[..]);
+	gfx::close();
+}

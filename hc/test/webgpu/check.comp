@@ -1,0 +1,9 @@
+layout(local_size_x = 64) in;
+layout(std430, set = 0, binding = 0) readonly buffer In { uint src[]; };
+layout(std430, set = 1, binding = 0) buffer Out { uint dst[]; };
+layout(std430, set = 1, binding = 1) buffer Sum { uint total[]; };
+layout(set = 2, binding = 0) uniform U { vec4 info; };
+void main() {
+	uint i = gl_GlobalInvocationID.x;
+	if (i < uint(info.x)) { dst[i] = src[i] * 3u + uint(info.y); atomicAdd(total[0], src[i]); }
+}

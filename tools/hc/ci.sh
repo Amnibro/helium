@@ -30,4 +30,5 @@ step import_up sh -c 'HC_LIB=hc/lib "$0" build hc/test/import_up/app/main.amni -
 step net_sock sh -c 'for t in net_tcp net_udp net_poll; do HC_LIB=hc/lib "$0" build hc/test/net_sock/$t.he -o "$1/$t" 2>/dev/null && "$1/$t" | cmp -s - hc/test/net_sock/$t.out || exit 1; done' "$HN" "$W"
 [ -n "${HELIUM_GFX_TEST:-}" ] && step gfx tools/hc/gfxtest.sh "$HN"
 [ -n "${HELIUM_WGSL_TEST:-}" ] && step wgsl node tools/hc/wgsltest.mjs "$HN"
+[ -n "${HELIUM_WEBGPU_TEST:-}" ] && step webgpu sh -c '${GPU_LOCK:+flock "$GPU_LOCK"} node tools/hc/webgputest.mjs "$0"' "$HN"
 [ $fail -eq 0 ] && echo "ci: ok" || echo "ci: FAILED"; exit $fail

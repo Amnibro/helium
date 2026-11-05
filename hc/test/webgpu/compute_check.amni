@@ -1,0 +1,28 @@
+import gfx;
+fn main() {
+	if !gfx::open_headless(64, 64) { print("compute_check: no device: ", gfx::error()[..]); return; }
+	let n = 1000;
+	var src u32[>..] = [];
+	var want u32 = 0;
+	for i in n { src.push((i * 7 % 13) as u32); want += (i * 7 % 13) as u32; }
+	let rw = gfx::BUFFER_STORAGE | gfx::BUFFER_COMPUTE_READ | gfx::BUFFER_COMPUTE_WRITE;
+	let a = gfx::buffer(gfx::BUFFER_STORAGE | gfx::BUFFER_COMPUTE_READ, bytes_of(src)[..n * 4]);
+	var z byte[>..] = [];
+	z.resize(n * 4, 0);
+	let b = gfx::buffer(rw, n * 4, z[..]);
+	let s = gfx::buffer(rw, 4, z[..4]);
+	let cp = gfx::compute_pipeline(embed_shader("check.comp"));
+	if !gfx::begin_compute([b, s]) { print("compute_check: begin_compute failed"); return; }
+	gfx::bind(cp);
+	gfx::bind_storage_buffer(gfx::COMPUTE, 0, a);
+	gfx::uniforms(gfx::COMPUTE, 0, float4 { n as f32, 5.0, 0.0, 0.0 });
+	gfx::dispatch((n + 63) / 64, 1, 1);
+	gfx::end_compute();
+	var out u32[>..] = [];
+	var tot u32[>..] = [];
+	let ok = gfx::read_buffer(b, out, n) && gfx::read_buffer(s, tot, 1);
+	var bad = 0;
+	for i in n { if out[i] != src[i] * 3 + 5 { bad += 1; } }
+	print("compute_check: ", if ok && bad == 0 && tot[0] == want { "ok" } else { "FAIL" }, " ", n, " values, ", bad, " wrong, atomic sum ", tot[0], " want ", want, " on ", gfx::driver()[..]);
+	gfx::close();
+}
