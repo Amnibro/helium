@@ -44,7 +44,7 @@ struct Camera { eye float3, target float3, up float3, fov_y f32, near f32, far f
 struct Sun { to_sun float3, rgb float3, shadows bool, shadow_far f32, map_size int, soft f32 = 0.0 }
 struct Light { pos float3, range f32, rgb float3, kind int }   // kind 0 point (1 spot is reserved)
 struct Sky { zenith float3, horizon float3, ground float3, ambient f32, draw bool }
-struct Look { exposure f32, white f32, bloom f32, bloom_cut f32, desaturate f32, ssao bool, ao_radius f32, ao_power f32, ao_samples int }
+struct Look { exposure f32, white f32, bloom f32, bloom_cut f32, desaturate f32, ssao bool, ao_radius f32, ao_power f32, ao_samples int, curve int = 0 }
 struct NodeOv { item int, node int, t float3, r linalg::Quat, sc float3 }
 struct WeightOv { item int, node int, k int, w f32 }
 struct Item { asset int, place gfx::mat4, prev_place gfx::mat4, anim int, time f32, visible bool, anim2 int = -1, time2 f32 = 0.0, blend f32 = 1.0, bend_node int = -1, bend linalg::Quat = linalg::Quat { 0.0, 0.0, 0.0, 1.0 }, track int[4] = [-1, -1, -1, -1], tracked gfx::mat4[4] = [gfx::mat4_identity, gfx::mat4_identity, gfx::mat4_identity, gfx::mat4_identity] }
@@ -68,7 +68,7 @@ struct MblurU { size float4, tune float4 }
 struct DofU { size float4, lens float4, tune float4 }
 struct TexelU { texel float4 }
 struct GlowU { texel float4, cut float4 }
-struct GradeU { tone float4 }
+struct GradeU { tone float4, mode float4 }
 struct FogU { inv_view_proj gfx::mat4, cascade_mat gfx::mat4[3], cascade_far float4, eye float4, view_dir float4, to_sun float4, sun_rgb float4, ambient float4, params float4, params2 float4, light_pos float4[16], light_rgb float4[16] }
 struct QuadG { p float4[4], c float4[4], prm float4 }
 struct QuadViewU { view_proj gfx::mat4, right float4, up float4 }
@@ -1300,7 +1300,7 @@ fn grade_pass(target gfx::Texture) {
 	gfx::bind(pipe_grade);
 	gfx::bind_texture(gfx::FRAGMENT, 0, resolved(), smp_point);
 	gfx::bind_texture(gfx::FRAGMENT, 1, if look.bloom > 0.0 { glow[0] } else { white }, smp_linear);
-	gfx::uniforms(gfx::FRAGMENT, 0, GradeU { tone: f4(look.exposure, look.white, look.bloom, look.desaturate) });
+	gfx::uniforms(gfx::FRAGMENT, 0, GradeU { tone: f4(look.exposure, look.white, look.bloom, look.desaturate), mode: f4(look.curve as f32, 0.0, 0.0, 0.0) });
 	gfx::draw(3);
 	gfx::end_pass();
 }
