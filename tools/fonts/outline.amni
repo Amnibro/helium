@@ -1,0 +1,19 @@
+import std;
+import os;
+import ttf;
+fn main() {
+	let a = args();
+	var d byte[>..] = [];
+	if !read_file(a[1], d) { print("no font"); exit(1); }
+	let fo = ttf::font_offset(d, parse_int(a[2]));
+	if fo < 0 { print("no such font"); exit(1); }
+	var f = ttf::Info { d: d, fo: fo };
+	if !ttf::init(f) { print("bad font"); exit(1); }
+	let step = parse_int(a[3]);
+	var g = 0;
+	while g < f.ngl {
+		print("G ", g);
+		for v in ttf::shape(f, g) { print(v.t, " ", v.x, " ", v.y, " ", v.cx, " ", v.cy, " ", v.cx1, " ", v.cy1); }
+		g += step;
+	}
+}

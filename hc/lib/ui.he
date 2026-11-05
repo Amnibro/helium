@@ -261,7 +261,7 @@ struct Scroll { x u32, y u32 }
 struct Image { texture u32 = 0, w u16 = 0, h u16 = 0, region u16[4] = [0; 4] }
 struct NineSlice { img Image, l u16, t u16, r u16, b u16 }
 struct Cursor { img Image, size float2, offset float2 }
-struct FontConfig { oversample_h byte = 1, oversample_v byte = 1, pixel_snap bool = false, merge_mode bool = false, spacing float2 = float2{0.0, 0.0}, ranges i32 = 0, fallback_glyph u32 = 63 }
+struct FontConfig { oversample_h byte = 1, oversample_v byte = 1, pixel_snap bool = false, merge_mode bool = false, spacing float2 = float2{0.0, 0.0}, ranges i32 = 0, fallback_glyph u32 = 63, kerning bool = true, font_index i32 = 0 }
 struct FontInfo { height f32, ascent f32, descent f32, glyph_count i32, fallback_codepoint u32 }
 struct FontGlyph { codepoint u32, xadvance f32, x0 f32, y0 f32, x1 f32, y1 f32, w f32, h f32, u0 f32, v0 f32, u1 f32, v1 f32 }
 struct Mouse { pos float2, prev float2, delta float2, scroll_delta float2, grab bool, grabbed bool, ungrab bool }
@@ -291,9 +291,9 @@ struct StyleWindow { header StyleWindowHeader, fixed_background StyleItem, backg
 struct Style { text StyleText, link StyleLink, button StyleButton, contextual_button StyleButton, menu_button StyleButton, option StyleToggle, checkbox StyleToggle, selectable StyleSelectable, slider StyleSlider, knob StyleKnob, progress StyleProgress, property StyleProperty, edit StyleEdit, chart StyleChart, scrollh StyleScrollbar, scrollv StyleScrollbar, tab StyleTab, combo StyleCombo, window StyleWindow }
 B85 := "7])#######hV0qs'/###[),##/l:$#Q6>##5[n42>c-TH`->>#/e>11NNV=Bv(*:.F?uu#(gRU.o0XGH`$vhLG1hxt9?W`#,5LsCp#-i>.r$<$6pD>Lb';9Crc6tgXmKVeU2cD4Eo3R/2*>]b(MC;$jPfY.;h^`IWM9<Lh2TlS+f-s$o6Q<BWH`YiU.xfLq$N;$0iR/GX:U(jcW2p/W*q?-qmnUCI;jHSAiFWM.R*kU@C=GH?a9wp8f$e.-4^Qg1)Q-GL(lf(r/7GrRgwV%MS=C#`8ND>Qo#t'X#(v#Y9w0#1D$CIf;W'#pWUPXOuxXuU(H9M(1<q-UE31#^-V'8IRUo7Qf./L>=Ke$$'5F%)]0^#0X@U.a<r:QLtFsLcL6##lOj)#.Y5<-R&KgLwqJfLgN&;Q?gI^#DY2uLi@^rMl9t=cWq6##weg>$FBjVQTSDgEKnIS7EM9>ZY9w0#L;>>#Mx&4Mvt//L[MkA#W@lK.N'[0#7RL_&#w+F%HtG9M#XL`N&.,GM4Pg;-<nLENhvx>-VsM.M0rJfLH2eTM`*oJMHRC`NkfimM2J,W-jXS:)r0wK#@Fge$U>`w'N7G#$#fB#$E^$#:9:hk+eOe--6x)F7*E%?76%^GMHePW-Z5l'&GiF#$956:rS?dA#fiK:)Yr+`&#0j@'DbG&#^$PG.Ll+DNa<XCMKEV*N)LN/N*b=%Q6pia-Xg8I$<MR&,VdJe$<(7G;Ckl'&hF;;$<_=X(b.RS%%)###MPBuuE1V:v&cX&#2m#(&cV]`k9OhLMbn%s$G2,B$BfD3X*sp5#l,$R#]x_X1xKX%b5U*[r5iMfUo9U`N99hG)tm+/Us9pG)XPu`<0s-)WTt(gCRxIg(%6sfh=ktMKn3j)<6<b5Sk_/0(^]AaN#(p/L>&VZ>1i%h1S9u5o@YaaW$e+b<TWFn/Z:Oh(Cx2$lNEoN^e)#CFY@@I;BOQ*sRwZtZxRcU7uW6CXow0i(?$Q[cjOd[P4d)]>ROPOpxTO7Stwi1::iB1q)C_=dV26J;2,]7op$]uQr@_V7$q^%lQwtuHY]=DX,n3L#0PHDO4f9>dC@O>HBuKPpP*E,N+b3L#lpR/MrTEH.IAQk.a>D[.e;mc.x]Ip.PH^'/aqUO/$1WxLoW0[iLA<QT;5HKD+@qQ'NQ(3_PLhE48R.qAPSwQ0/WK?Z,[x?-J;jQTWA0X@KJ(_Y8N-:/M74:/-ZpKrUss?d#dZq]DAbkU*JqkL+nwX@@47`5>w=4h(9.`GCRUxHPeR`5Mjol(dUWxZa(>STrPkrJiWx`5U7F#.g*jrohGg`cg:lSTvEY/EV_7H4Q9[Z%cnv;JQYZ5q.l7Zeas:HOIZOB?G<Nald$qs]@]L<J7bR*>gv:[7MI2k).'2($5FNP&EQ(,)U]W]+fh18.vsai00);D3@4ku5P?DP8aJt+;qUM]=+b'8@;mViBKx0DE[-auGl8:PJ&Dj+M6OC]O^((##]`0i)drT;-7X`=-H3[igUnPG-NZlo.#k@h#=Ork$m>a>$-?Tm$UV(?#P6YY#'/###xe7q.73rI3*pP/$1>s9)W,JrM7SN]'/4C#v$U`0#V.[0>xQsH$fEmPMgY2u7Kh(G%siIfLSoS+MK2eTM$=5,M8p`A.;_R%#u[K#$x4AG8.kK/HSB==-'Ie/QTtG?-.*^N-4B/ZM_3YlQC7(p7q)&](`6_c)$/*JL(L-^(]$wIM`dPtOdGA,U3:w2M-0<q-]L_?^)1vw'.,MRsqVr.L;aN&#/EgJ)PBc[-f>+WomX2u7lqM2iEumMTcsF?-aT=Z-97UEnXglEn1K-bnEO`guFt(c%=;Am_Qs@jLooI&NX;]0#j4#F14;gl8-GQpgwhrq8'=l_f-b49'UOqkLu7-##oDY2L(te+Mch&gLYtJ,MEtJfLh'x'M=$CS-ZZ%P]8bZ>#S?YY#%Q&q'3^Fw&?D)UDNrocM3A76//oL?#h7gl85[qW/NDOk%16ij;+:1a'iNIdb-ou8.P*w,v5#EI$TWS>Pot-R*H'-SEpA:g)f+O$%%`kA#G=8RMmG1&O`>to8bC]T&$,n.LoO>29sp3dt-52U%VM#q7'DHpg+#Z9%H[K<L%a2E-grWVM3@2=-k22tL]4$##6We'8UJCKE[d_=%wI;'6X-GsLX4j^SgJ$##R*w,vP3wK#iiW&#*h^D&R?jp7+/u&#(AP##XU8c$fSYW-J95_-Dp[g9wcO&#M-h1OcJlc-*vpw0xUX&#OQFKNX@QI'IoPp7nb,QU//MQ&ZDkKP)X<WSVL(68uVl&#c'[0#(s1X&xm$Y%B7*K:eDA323j998GXbA#pwMs-jgD$9QISB-A_(aN4xoFM^@C58D0+Q+q3n0#3U1InDjF682-SjMXJK)(h$hxua_K]ul92%'BOU&#BRRh-slg8KDlr:%L71Ka:.A;%YULjDPmL<LYs8i#XwJOYaKPKc1h:'9Ke,g)b),78=I39B;xiY$bgGw-&.Zi9InXDuYa%G*f2Bq7mn9^#p1vv%#(Wi-;/Z5ho;#2:;%d&#x9v68C5g?ntX0X)pT`;%pB3q7mgGN)3%(P8nTd5L7GeA-GL@+%J3u2:(Yf>et`e;)f#Km8&+DC$I46>#Kr]]u-[=99tts1.qb#q72g1WJO81q+eN'03'eM>&1XxY-caEnOj%2n8)),?ILR5^.Ibn<-X-Mq7[a82Lq:F&#ce+S9wsCK*x`569E8ew'He]h:sI[2LM$[guka3ZRd6:t%IG:;$%YiJ:Nq=?eAw;/:nnDq0(CYcMpG)qLN4$##&J<j$UpK<Q4a1]MupW^-sj_$%[HK%'F####QRZJ::Y3EGl4'@%FkiAOg#p[##O`gukTfBHagL<LHw%q&OV0##F=6/:chIm0@eCP8X]:kFI%hl8hgO@RcBhS-@Qb$%+m=hPDLg*%K8ln(wcf3/'DW-$.lR?n[nCH-eXOONTJlh:.RYF%3'p6sq:UIMA945&^HFS87@$EP2iG<-lCO$%c`uKGD3rC$x0BL8aFn--`ke%#HMP'vh1/R&O_J9'um,.<tx[@%wsJk&bUT2`0uMv7gg#qp/ij.L56'hl;.s5CUrxjOM7-##.l+Au'A&O:-T72L]P`&=;ctp'XScX*rU.>-XTt,%OVU4)S1+R-#dg0/Nn?Ku1^0f$B*P:Rowwm-`0PKjYDDM'3]d39VZHEl4,.j']Pk-M.h^&:0FACm$maq-&sgw0t7/6(^xtk%LuH88Fj-ekm>GA#_>568x6(OFRl-IZp`&b,_P'$M<Jnq79VsJW/mWS*PUiq76;]/NM_>hLbxfc$mj`,O;&%W2m`Zh:/)Uetw:aJ%]K9h:TcF]u_-Sj9,VK3M.*'&0D[Ca]J9gp8,kAW]%(?A%R$f<->Zts'^kn=-^@c4%-pY6qI%J%1IGxfLU9CP8cbPlXv);C=b),<2mOvP8up,UVf3839acAWAW-W?#ao/^#%KYo8fRULNd2.>%m]UK:n%r$'sw]J;5pAoO_#2mO3n,'=H5(etHg*`+RLgv>=4U8guD$I%D:W>-r5V*%j*W:Kvej.Lp$<M-SGZ':+Q_k+uvOSLiEo(<aD/K<CCc`'Lx>'?;++O'>()jLR-^u68PHm8ZFWe+ej8h:9r6L*0//c&iH&R8pRbA#Kjm%upV1g:a_#Ur7FuA#(tRh#.Y5K+@?3<-8m0$PEn;J:rh6?I6uG<-`wMU'ircp0LaE_OtlMb&1#6T.#FDKu#1Lw%u%+GM+X'e?YLfjM[VO0MbuFp7;>Q&#WIo)0@F%q7c#4XAXN-U&VB<HFF*qL($/V,;(kXZejWO`<[5??ewY(*9=%wDc;,u<'9t3W-(H1th3+G]ucQ]kLs7df($/*JL]@*t7Bu_G3_7mp7<iaQjO@.kLg;x3B0lqp7Hf,^Ze7-##@/c58Mo(3;knp0%)A7?-W+eI'o8)b<nKnw'Ho8C=Y>pqB>0ie&jhZ[?iLR@@_AvA-iQC(=ksRZRVp7`.=+NpBC%rh&3]R:8XDmE5^V8O(x<<aG/1N$#FX$0V5Y6x'aErI3I$7x%E`v<-BY,)%-?Psf*l?%C3.mM(=/M0:JxG'?7WhH%o'a<-80g0NBxoO(GH<dM]n.+%q@jH?f.UsJ2Ggs&4<-e47&Kl+f//9@`b+?.TeN_&B8Ss?v;^Trk;f#YvJkl&w$]>-+k?'(<S:68tq*WoDfZu';mM?8X[ma8W%*`-=;D.(nc7/;)g:T1=^J$&BRV(-lTmNB6xqB[@0*o.erM*<SWF]u2=st-*(6v>^](H.aREZSi,#1:[IXaZFOm<-ui#qUq2$##Ri;u75OK#(RtaW-K-F`S+cF]uN`-KMQ%rP/Xri.LRcB##=YL3BgM/3MD?@f&1'BW-)Ju<L25gl8uhVm1hL$##*8###'A3/LkKW+(^rWX?5W_8g)a(m&K8P>#bmmWCMkk&#TR`C,5d>g)F;t,4:@_l8G/5h4vUd%&%950:VXD'QdWoY-F$BtUwmfe$YqL'8(PWX(P?^@Po3$##`MSs?DWBZ/S>+4%>fX,VWv/w'KD`LP5IbH;rTV>n3cEK8U#bX]l-/V+^lj3;vlMb&[5YQ8#pekX9JP3XUC72L,,?+Ni&co7ApnO*5NK,((W-i:$,kp'UDAO(G0Sq7MVjJsbIu)'Z,*[>br5fX^:FPAWr-m2KgL<LUN098kTF&#lvo58=/vjDo;.;)Ka*hLR#/k=rKbxuV`>Q_nN6'8uTG&#1T5g)uLv:873UpTLgH+#FgpH'_o1780Ph8KmxQJ8#H72L4@768@Tm&Qh4CB/5OvmA&,Q&QbUoi$a_%3M01H)4x7I^&KQVgtFnV+;[Pc>[m4k//,]1?#`VY[Jr*3&&slRfLiVZJ:]?=K3Sw=[$=uRB?3xk48@aeg<Z'<$#4H)6,>e0jT6'N#(q%.O=?2S]u*(m<-V8J'(1)G][68hW$5'q[GC&5j`TE?m'esFGNRM)j,ffZ?-qx8;->g4t*:CIP/[Qap7/9'#(1sao7w-.qNUdkJ)tCF&#B^;xGvn2r9FEPFFFcL@.iFNkTve$m%#QvQS8U@)2Z+3K:AKM5isZ88+dKQ)W6>J%CL<KE>`.d*(B`-n8D9oK<Up]c$X$(,)M8Zt7/[rdkqTgl-0cuGMv'?>-XV1q['-5k'cAZ69e;D_?$ZPP&s^+7])$*$#@QYi9,5P&#9r+$%CE=68>K8r0=dSC%%(@p7.m7jilQ02'0-VWAg<a/''3u.=4L$Y)6k/K:_[3=&jvL<L0C/2'v:^;-DIBW,B4E68:kZ;%?8(Q8BH=kO65BW?xSG&#@uU,DS*,?.+(o(#1vCS8#CHF>TlGW'b)Tq7VT9q^*^$$.:&N@@$&)WHtPm*5_rO0&e%K&#-30j(E4#'Zb.o/(Tpm$>K'f@[PvFl,hfINTNU6u'0pao7%XUp9]5.>%h`8_=VYbxuel.NTSsJfLacFu3B'lQSu/m6-Oqem8T+oE--$0a/k]uj9EwsG>%veR*hv^BFpQj:K'#SJ,sB-'#](j.Lg92rTw-*n%@/;39rrJF,l#qV%OrtBeC6/,;qB3ebNW[?,Hqj2L.1NP&GjUR=1D8QaS3Up&@*9wP?+lo7b?@%'k4`p0Z$22%K3+iCZj?XJN4Nm&+YF]u@-W$U%VEQ/,,>>#)D<h#`)h0:<Q6909ua+&VU%n2:cG3FJ-%@Bj-DgLr`Hw&HAKjKjseK</xKT*)B,N9X3]krc12t'pgTV(Lv-tL[xg_%=M_q7a^x?7Ubd>#%8cY#YZ?=,`Wdxu/ae&#w6)R89tI#6@s'(6Bf7a&?S=^ZI_kS&ai`&=tE72L_D,;^R)7[$s<Eh#c&)q.MXI%#v9ROa5FZO%sF7q7Nwb&#ptUJ:aqJe$Sl68%.D###EC><?-aF&#RNQv>o8lKN%5/$(vdfq7+ebA#u1p]ovUKW&Y%q]'>$1@-[xfn$7ZTp7mM,G,Ko7a&Gu%G[RMxJs[0MM%wci.LFDK)(<c`Q8N)jEIF*+?P2a8g%)$q]o2aH8C&<SibC/q,(e:v;-b#6[$NtDZ84Je2KNvB#$P5?tQ3nt(0d=j.LQf./Ll33+(;q3L-w=8dX$#WF&uIJ@-bfI>%:_i2B5CsR8&9Z&#=mPEnm0f`<&c)QL5uJ#%u%lJj+D-r;BoF&#4DoS97h5g)E#o:&S4weDF,9^Hoe`h*L+_a*NrLW-1pG_&2UdB86e%B/:=>)N4xeW.*wft-;$'58-ESqr<b?UI(_%@[P46>#U`'6AQ]m&6/`Z>#S?YY#Vc;r7U2&326d=w&H####?TZ`*4?&.MK?LP8Vxg>$[QXc%QJv92.(Db*B)gb*BM9dM*hJMAo*c&#b0v=Pjer]$gG&JXDf->'StvU7505l9$AFvgYRI^&<^b68?j#q9QX4SM'RO#&sL1IM.rJfLUAj221]d##DW=m83u5;'bYx,*Sl0hL(W;;$doB&O/TQ:(Z^xBdLjL<Lni;''X.`$#8+1GD:k$YUWsbn8ogh6rxZ2Z9]%nd+>V#*8U_72Lh+2Q8Cj0i:6hp&$C/:p(HK>T8Y[gHQ4`4)'$Ab(Nof%V'8hL&#<NEdtg(n'=S1A(Q1/I&4([%dM`,Iu'1:_hL>SfD07&6D<fp8dHM7/g+tlPN9J*rKaPct&?'uBCem^jn%9_K)<,C5K3s=5g&GmJb*[SYq7K;TRLGCsM-$$;S%:Y@r7AK0pprpL<Lrh,q7e/%KWK:50I^+m'vi`3?%Zp+<-d+$L-Sv:@.o19n$s0&39;kn;S%BSq*$3WoJSCLweV[aZ'MQIjO<7;X-X;&+dMLvu#^UsGEC9WEc[X(wI7#2.(F0jV*eZf<-Qv3J-c+J5AlrB#$p(H68LvEA'q3n0#m,[`*8Ft)FcYgEud]CWfm68,(aLA$@EFTgLXoBq/UPlp7:d[/;r_ix=:TF`S5H-b<LI&HY(K=h#)]Lk$K14lVfm:x$H<3^Ql<M`$OhapBnkup'D#L$Pb_`N*g]2e;X/Dtg,bsj&K#2[-:iYr'_wgH)NUIR8a1n#S?Yej'h8^58UbZd+^FKD*T@;6A7aQC[K8d-(v6GI$x:T<&'Gp5Uf>@M.*J:;$-rv29'M]8qMv-tLp,'886iaC=Hb*YJoKJ,(j%K=H`K.v9HggqBIiZu'QvBT.#=)0ukruV&.)3=(^1`o*Pj4<-<aN((^7('#Z0wK#5GX@7u][`*S^43933A4rl][`*O4CgLEl]v$1Q3AeF37dbXk,.)vj#x'd`;qgbQR%FW,2(?LO=s%Sc68%NP'##Aotl8x=BE#j1UD([3$M(]UI2LX3RpKN@;/#f'f/&_mt&F)XdF<9t4)Qa.*kTLwQ'(TTB9.xH'>#MJ+gLq9-##@HuZPN0]u:h7.T..G:;$/Usj(T7`Q8tT72LnYl<-qx8;-HV7Q-&Xdx%1a,hC=0u+HlsV>nuIQL-5<N?)NBS)QN*_I,?&)2'IM%L3I)X((e/dl2&8'<M:^#M*Q+[T.Xri.LYS3v%fF`68h;b-X[/En'CR.q7E)p'/kle2HM,u;^%OKC-N+Ll%F9CF<Nf'^#t2L,;27W:0O@6##U6W7:$rJfLWHj$#)woqBefIZ.PK<b*t7ed;p*_m;4ExK#h@&]>_>@kXQtMacfD.m-VAb8;IReM3$wf0''hra*so568'Ip&vRs849'MRYSp%:t:h5qSgwpEr$B>Q,;s(C#$)`svQuF$##-D,##,g68@2[T;.XSdN9Qe)rpt._K-#5wF)sP'##p#C0c%-Gb%hd+<-j'Ai*x&&HMkT]C'OSl##5RG[JXaHN;d'uA#x._U;.`PU@(Z3dt4r152@:v,'R.Sj'w#0<-;kPI)FfJ&#AYJ&#//)>-k=m=*XnK$>=)72L]0I%>.G690a:$##<,);?;72#?x9+d;^V'9;jY@;)br#q^YQpx:X#Te$Z^'=-=bGhLf:D6&bNwZ9-ZD#n^9HhLMr5G;']d&6'wYmTFmL<LD)F^%[tC'8;+9E#C$g%#5Y>q9wI>P(9mI[>kC-ekLC/R&CH+s'B;K-M6$EB%is00:+A4[7xks.LrNk0&E)wILYF@2L'0Nb$+pv<(2.768/FrY&h$^3i&@+G%JT'<-,v`3;_)I9M^AE]CN?Cl2AZg+%4iTpT3<n-&%H%b<FDj2M<hH=&Eh<2Len$b*aTX=-8QxN)k11IM1c^j%9s<L<NFSo)B?+<-(GxsF,^-Eh@$4dXhN$+#rxK8'je'D7k`e;)2pYwPA'_p9&@^18ml1^[@g4t*[JOa*[=Qp7(qJ_oOL^('7fB&Hq-:sf,sNj8xq^>$U4O]GKx'm9)b@p7YsvK3w^YR-CdQ*:Ir<($u&)#(&?L9Rg3H)4fiEp^iI9O8KnTj,]H?D*r7'M;PwZ9K0E^k&-cpI;.p/6_vwoFMV<->#%Xi.LxVnrU(4&8/P+:hLSKj$#U%]49t'I:rgMi'FL@a:0Y-uA[39',(vbma*hU%<-SRF`Tt:542R_VV$p@[p8DV[A,?1839FWdF<TddF<9Ah-6&9tWoDlh]&1SpGMq>Ti1O*H&#(AL8[_P%.M>v^-))qOT*F5Cq0`Ye%+$B6i:7@0IX<N+T+0MlMBPQ*Vj>SsD<U4JHY8kD2)2fU/M#$e.)T4,_=8hLim[&);?UkK'-x?'(:siIfL<$pFM`i<?%W(mGDHM%>iWP,##P`%/L<eXi:@Z9C.7o=@(pXdAO/NLQ8lPl+HPOQa8wD8=^GlPa8TKI1CjhsCTSLJM'/Wl>-S(qw%sf/@%#B6;/U7K]uZbi^Oc^2n<bhPmUkMw>%t<)'mEVE''n`WnJra$^TKvX5B>;_aSEK',(hwa0:i4G?.Bci.(X[?b*($,=-n<.Q%`(X=?+@Am*Js0&=3bh8K]mL<LoNs'6,'85`0?t/'_U59@]ddF<#LdF<eWdF<OuN/45rY<-L@&#+fm>69=Lb,OcZV/);TTm8VI;?%OtJ<(b4mq7M6:u?KRdF<gR@2L=FNU-<b[(9c/ML3m;Z[$oF3g)GAWqpARc=<ROu7cL5l;-[A]%/+fsd;l#SafT/f*W]0=O'$(Tb<[)*@e775R-:Yob%g*>l*:xP?Yb.5)%w_I?7uk5JC+FS(m#i'k.'a0i)9<7b'fs'59hq$*5Uhv##pi^8+hIEBF`nvo`;'l0.^S1<-wUK2/Coh58KKhLjM=SO*rfO`+qC`W-On.=AJ56>>i2@2LH6A:&5q`?9I3@@'04&p2/LVa*T-4<-i3;M9UvZd+N7>b*eIwg:CC)c<>nO&#<IGe;__.thjZl<%w(Wk2xmp4Q@I#I9,DF]u7-P=.-_:YJ]aS@V?6*C()dOp7:WL,b&3Rg/.cmM9&r^>$(>.Z-I&J(Q0Hd5Q%7Co-b`-c<N(6r@ip+AurK<m86QIth*#v;-OBqi+L7wDE-Ir8K['m+DDSLwK&/.?-V%U_%3:qKNu$_b*B-kp7NaD'QdWQPKYq[@>P)hI;*_F]u`Rb[.j8_Q/<&>uu+VsH$sM9TA%?)(vmJ80),P7E>)tjD%2L=-t#fK[%`v=Q8<FfNkgg^oIbah*#8/Qt$F&:K*-(N/'+1vMB,u()-a.VUU*#[e%gAAO(S>WlA2);Sa>gXm8YB`1d@K#n]76-a$U,mF<fX]idqd)<3,]J7JmW4`6]uks=4-72L(jEk+:bJ0M^q-8Dm_Z?0olP1C9Sa&H[d&c$ooQUj]Exd*3ZM@-WGW2%s',B-_M%>%Ul:#/'xoFM9QX-$.QN'>[%$Z$uF6pA6Ki2O5:8w*vP1<-1`[G,)-m#>0`P&#eb#.3i)rtB61(o'$?X3B</R90;eZ]%Ncq;-Tl]#F>2Qft^ae_5tKL9MUe9b*sLEQ95C&`=G?@Mj=wh*'3E>=-<)Gt*Iw)'QG:`@IwOf7&]1i'S01B+Ev/Nac#9S;=;YQpg_6U`*kVY39xK,[/6Aj7:'1Bm-_1EYfa1+o&o4hp7KN_Q(OlIo@S%;jVdn0'1<Vc52=u`3^o-n1'g4v58Hj&6_t7$##?M)c<$bgQ_'SY((-xkA#Y(,p'H9rIVY-b,'%bCPF7.J<Up^,(dU1VY*5#WkTU>h19w,WQhLI)3S#f$2(eb,jr*b;3Vw]*7NH%$c4Vs,eD9>XW8?N]o+(*pgC%/72LV-u<Hp,3@e^9UB1J+ak9-TN/mhKPg+AJYd$MlvAF_jCK*.O-^(63adMT->W%iewS8W6m2rtCpo'RS1R84=@paTKt)>=%&1[)*vp'u+x,VrwN;&]kuO9JDbg=pO$J*.jVe;u'm0dr9l,<*wMK*Oe=g8lV_KEBFkO'oU]^=[-792#ok,)i]lR8qQ2oA8wcRCZ^7w/Njh;?.stX?Q1>S1q4Bn$)K1<-rGdO'$Wr.Lc.CG)$/*JL4tNR/,SVO3,aUw'DJN:)Ss;wGn9A32ijw%FL+Z0Fn.U9;reSq)bmI32U==5ALuG&#Vf1398/pVo1*c-(aY168o<`JsSbk-,1N;$>0:OUas(3:8Z972LSfF8eb=c-;>SPw7.6hn3m`9^Xkn(r.qS[0;T%&Qc=+STRxX'q1BNk3&*eu2;&8q$&x>Q#Q7^Tf+6<(d%ZVmj2bDi%.3L2n+4W'$PiDDG)g,r%+?,$@?uou5tSe2aN_AQU*<h`e-GI7)?OK2A.d7_c)?wQ5AS@DL3r#7fSkgl6-++D:'A,uq7SvlB$pcpH'q3n0#_%dY#xCpr-l<F0NR@-##FEV6NTF6##$l84N1w?AO>'IAOURQ##V^Fv-XFbGM7Fl(N<3DhLGF%q.1rC$#:T__&Pi68%0xi_&[qFJ(77j_&JWoF.V735&T,[R*:xFR*K5>>#`bW-?4Ne_&6Ne_&6Ne_&n`kr-#GJcM6X;uM6X;uM(.a..^2TkL%oR(#;u.T%fAr%4tJ8&><1=GHZ_+m9/#H1F^R#SC#*N=BA9(D?v[UiFY>>^8p,KKF.W]L29uLkLlu/+4T<XoIB&hx=T1PcDaB&;HH+-AFr?(m9HZV)FKS8JCw;SD=6[^/DZUL`EUDf]GGlG&>w$)F./^n3+rlo+DB;5sIYGNk+i1t-69Jg--0pao7Sm#K)pdHW&;LuDNH@H>#/X-TI(;P>#,Gc>#0Su>#4`1?#8lC?#<xU?#@.i?#D:%@#HF7@#LRI@#P_[@#Tkn@#Xw*A#]-=A#a9OA#d<F&#*;G##.GY##2Sl##6`($#:l:$#>xL$#B.`$#F:r$#JF.%#NR@%#R_R%#Vke%#Zww%#_-4&#3^Rh%Sflr-k'MS.o?.5/sWel/wpEM0%3'/1)K^f1-d>G21&v(35>V`39V7A4=onx4A1OY5EI0;6Ibgr6M$HS7Q<)58C5w,;WoA*#[%T*#`1g*#d=#+#hI5+#lUG+#pbY+#tnl+#x$),#&1;,#*=M,#.I`,#2Ur,#6b.-#;w[H#iQtA#m^0B#qjBB#uvTB##-hB#'9$C#+E6C#/QHC#3^ZC#7jmC#;v)D#?,<D#C8ND#GDaD#KPsD#O]/E#g1A5#KA*1#gC17#MGd;#8(02#L-d3#rWM4#Hga1#,<w0#T.j<#O#'2#CYN1#qa^:#_4m3#o@/=#eG8=#t8J5#`+78#4uI-#m3B2#SB[8#Q0@8#i[*9#iOn8#1Nm;#^sN9#qh<9#:=x-#P;K2#$%X9#bC+.#Rg;<#mN=.#MTF.#RZO.#2?)4#Y#(/#[)1/#b;L/#dAU/#0Sv;#lY$0#n`-0#sf60#(F24#wrH0#%/e0#TmD<#%JSMFove:CTBEXI:<eh2g)B,3h2^G3i;#d3jD>)4kMYD4lVu`4m`:&5niUA5@(A5BA1]PBB:xlBCC=2CDLXMCEUtiCf&0g2'tN?PGT4CPGT4CPGT4CPGT4CPGT4CPGT4CPGT4CPGT4CPGT4CPGT4CPGT4CPGT4CPGT4CP-qekC`.9kEg^+F$kwViFJTB&5KTB&5KTB&5KTB&5KTB&5KTB&5KTB&5KTB&5KTB&5KTB&5KTB&5KTB&5KTB&5KTB&5KTB&5o,^<-28ZI'O?;xpO?;xpO?;xpO?;xpO?;xpO?;xpO?;xpO?;xpO?;xpO?;xpO?;xpO?;xpO?;xpO?;xp;7q-#lLYI:xvD=#"
 CURSOR_MASK := "..-         -XXXXXXX-    X    -           X           -XXXXXXX          -          XXXXXXX..-         -X.....X-   X.X   -          X.X          -X.....X          -          X.....X---         -XXX.XXX-  X...X  -         X...X         -X....X           -           X....XX           -  X.X  - X.....X -        X.....X        -X...X            -            X...XXX          -  X.X  -X.......X-       X.......X       -X..X.X           -           X.X..XX.X         -  X.X  -XXXX.XXXX-       XXXX.XXXX       -X.X X.X          -          X.X X.XX..X        -  X.X  -   X.X   -          X.X          -XX   X.X         -         X.X   XXX...X       -  X.X  -   X.X   -    XX    X.X    XX    -      X.X        -        X.X      X....X      -  X.X  -   X.X   -   X.X    X.X    X.X   -       X.X       -       X.X       X.....X     -  X.X  -   X.X   -  X..X    X.X    X..X  -        X.X      -      X.X        X......X    -  X.X  -   X.X   - X...XXXXXX.XXXXXX...X -         X.X   XX-XX   X.X         X.......X   -  X.X  -   X.X   -X.....................X-          X.X X.X-X.X X.X          X........X  -  X.X  -   X.X   - X...XXXXXX.XXXXXX...X -           X.X..X-X..X.X           X.........X -XXX.XXX-   X.X   -  X..X    X.X    X..X  -            X...X-X...X            X..........X-X.....X-   X.X   -   X.X    X.X    X.X   -           X....X-X....X           X......XXXXX-XXXXXXX-   X.X   -    XX    X.X    XX    -          X.....X-X.....X          X...X..X    ---------   X.X   -          X.X          -          XXXXXXX-XXXXXXX          X..X X..X   -       -XXXX.XXXX-       XXXX.XXXX       ------------------------------------X.X  X..X   -       -X.......X-       X.......X       -    XX           XX    -           XX    X..X  -       - X.....X -        X.....X        -   X.X           X.X   -                 X..X          -  X...X  -         X...X         -  X..X           X..X  -                  XX           -   X.X   -          X.X          - X...XXXXXXXXXXXXX...X -           ------------        -    X    -           X           -X.....................X-                               ----------------------------------- X...XXXXXXXXXXXXX...X -                                                                 -  X..X           X..X  -                                                                 -   X.X           X.X   -                                                                 -    XX           XX    -           "
-struct Cfg { ti ttf::Info, size f32, ho int, vo int, snap bool, spx f32, rg u32[>..], fb u32, rlo int = 0, nr int = 0, klo int = 0 }
+struct Cfg { ti ttf::Info, size f32, ho int, vo int, snap bool, spx f32, rg u32[>..], fb u32, rlo int = 0, nr int = 0, klo int = 0, kern bool = true, ks f32 = 0.0 }
 struct AF { cfgs int[>..], height f32 = 0.0, ascent f32 = 0.0, descent f32 = 0.0, goff int = 0, gcnt int = 0, scale f32 = 1.0, hh f32 = 0.0, fbcp u32 = 0, fbg int = -1 }
-struct Atl { cfg Cfg[>..], af AF[>..], fid u32[>..], baked bool = false, px byte[>..], w int = 0, h int = 0, tex u32 = 0, nuv float2 = float2{0.0, 0.0}, scale f32 = 1.0, sizes f32[>..], gl FontGlyph[>..], cx int = 0, cy int = 0, ccx int = 0, ccy int = 0 }
+struct Atl { cfg Cfg[>..], af AF[>..], fid u32[>..], baked bool = false, px byte[>..], w int = 0, h int = 0, tex u32 = 0, nuv float2 = float2{0.0, 0.0}, scale f32 = 1.0, sizes f32[>..], gl FontGlyph[>..], cx int = 0, cy int = 0, ccx int = 0, ccy int = 0, gc int[>..] = [], gg int[>..] = [] }
 struct FR { atl u32, fi int }
 var ERR byte[>..] = []
 var MIS = 0
@@ -363,13 +363,15 @@ glyph_ranges_into(which int, out u32[:]) int:
 	r := range_of(b); copy_out(r[..], out)
 glyph_ranges(which int) u32[>..]: out u32[>..] ~= []; out.resize(glyph_ranges_into(which, out[..]), 0); glyph_ranges_into(which, out[..]); out
 be(d const byte[:], o int) int: ttf::ru32(d, o)
-plausible(d const byte[:]) bool:
+plausible(d const byte[:], index int) bool:
 	if d.len < 12: return false
-	tag := be(d, 0)
+	fo := if be(d, 0) == 0x74746366 { if be(d, 8) > 0x7FFF || 12 + 4 * be(d, 8) > d.len { -1 } else { ttf::font_offset(d, index) } } else if index == 0 { 0 } else { -1 }
+	if fo < 0 || fo + 12 > d.len: return false
+	tag := be(d, fo)
 	if tag != 0x00010000 && tag != 0x74727565 && tag != 0x4F54544F: return false
-	n := ttf::ru16(d, 4)
-	if 12 + n * 16 > d.len: return false
-	for i n: o := be(d, 12 + i * 16 + 8); sz := be(d, 12 + i * 16 + 12); if o > d.len || sz > d.len - o { return false }
+	n := ttf::ru16(d, fo + 4)
+	if fo + 12 + n * 16 > d.len: return false
+	for i n: o := be(d, fo + 12 + i * 16 + 8); sz := be(d, fo + 12 + i * 16 + 12); if o > d.len || sz > d.len - o { return false }
 	true
 proggy() byte[:]:
 	if PROGGY.len > 0: return PROGGY[..]
@@ -420,12 +422,12 @@ add_font(h FontAtlas, src int, data const byte[:], height f32, g FontConfig, ran
 	blob byte[>..] ~= []
 	if src == 0: blob.append(proggy())
 	else if src == 1:
-		if !plausible(data): misuse(str(fw, ": ", data.len, " bytes that are not a TrueType or OpenType font")); return none
+		if !plausible(data, g.font_index as int): misuse(str(fw, ": ", data.len, " bytes that are not a TrueType or OpenType font, or have no font ", g.font_index)); return none
 		blob.append(data)
 	else:
 		if !read_file(data, blob): fail(str("cannot open font file ", data)); return none
-		if !plausible(blob[..]): fail(str(data, " is not a TrueType or OpenType font")); return none
-	ci := a.cfg.len; a.cfg.push(Cfg{ttf::Info{blob}, height, oh, ov, g.pixel_snap, g.spacing.x, rg, g.fallback_glyph})
+		if !plausible(blob[..], g.font_index as int): fail(str(data, " is not a TrueType or OpenType font, or has no font ", g.font_index)); return none
+	ci := a.cfg.len; a.cfg.push(Cfg{ttf::Info{blob}, height, oh, ov, g.pixel_snap, g.spacing.x, rg, g.fallback_glyph}); a.cfg[ci].kern = g.kerning; a.cfg[ci].ti.fo = ttf::font_offset(blob[..], g.font_index as int)
 	if g.merge_mode: a.af[0].cfgs.push(ci); return Font{a.fid[0]}
 	a.af.push(AF{[ci]}); id u32 := gfx::tadd(TFNT); gfx::put(FNT, gfx::ix(id), FR{h.id, a.af.len - 1}); a.fid.push(id); Font{id}
 add_default_font(a FontAtlas, height f32, config FontConfig, ranges const u32[:]) Font: add_font(a, 0, [], height, config, ranges, "ui::add_default_font")
@@ -439,6 +441,9 @@ add_font_from_file(a FontAtlas, path const byte[:], height f32, config FontConfi
 add_font_from_file(a FontAtlas, path const byte[:], height f32) Font: add_font_from_file(a, path, height, FontConfig{})
 order(a Atl&) int[>..]: o int[>..] ~= []; for f a.af { o.append(f.cfgs[..]) } o
 pow2(v0 int) int: v ~= v0 - 1; v |= v >> 1; v |= v >> 2; v |= v >> 4; v |= v >> 8; v |= v >> 16; (v + 1) & 0xFFFFFFFF
+kadj(a Atl&, i int, j int) f32:
+	if i < 0 || j < 0 || i >= a.gc.len || j >= a.gc.len || a.gc[i] != a.gc[j] || !a.cfg[a.gc[i]].kern: return 0.0
+	let q .= a.cfg[a.gc[i]]; ttf::kern(q.ti, a.gg[i], a.gg[j]) as f32 * q.ks
 find_in(a Atl&, f AF&, u u32) int:
 	tot ~= 0
 	for c f.cfgs: let r .= a.cfg[c].rg; for k r.len / 2 { if u >= r[2 * k] && u <= r[2 * k + 1] { return f.goff + tot + (u - r[2 * k]) as int } tot += (r[2 * k + 1] - r[2 * k]) as int + 1 }
@@ -457,18 +462,18 @@ nk_bake(a Atl&) bool:
 		for k n: if rs[q.klo + k].p { ht = max(ht, rs[q.klo + k].y + rs[q.klo + k].h) }
 	ht = pow2(ht); s.px.resize(w * ht, 0); s.h = ht
 	for c od: let q .= a.cfg[c]; ttf::oversample(s, q.ho, q.vo); ttf::render(s, q.ti, rg, q.rlo, q.nr, rs, q.klo, cd)
-	a.gl.clear(); gn ~= 0; ipw := 1.0 / w as f32; iph := 1.0 / ht as f32
+	a.gl.clear(); a.gc.clear(); a.gg.clear(); gn ~= 0; ipw := 1.0 / w as f32; iph := 1.0 / ht as f32
 	for fi a.af.len:
 		let f .= a.af[fi]
 		for c, ki f.cfgs:
-			let q .= a.cfg[c]; fs := ttf::scale_for(q.ti, q.size); vm := ttf::vmetrics(q.ti); gc ~= 0
+			let q .= a.cfg[c]; fs := ttf::scale_for(q.ti, q.size); q.ks = fs; vm := ttf::vmetrics(q.ti); gc ~= 0
 			if ki == 0: f.height = q.size; f.ascent = vm.x as f32 * fs; f.descent = vm.y as f32 * fs; f.goff = gn; f.gcnt = 0
 			for k q.nr:
 				r := rg[q.rlo + k]
 				for j r.n:
 					pc := cd[r.cd + j]; dx := 0.0 as f32; x0 := dx + pc.xoff; y0 := dx + pc.yoff; x1 := dx + pc.xoff2; y1 := dx + pc.yoff2; ya := y0 + (f.ascent + 0.5); yb := y1 + (f.ascent + 0.5); xa ~= pc.xadv + q.spx
 					if q.snap: xa = ((xa + 0.5) as int) as f32
-					a.gl.push(FontGlyph{(r.first + j) as u32, xa, x0, ya, x1, yb, x1 - x0 + 0.5, yb - ya, pc.x0 as f32 * ipw, pc.y0 as f32 * iph, pc.x1 as f32 * ipw, pc.y1 as f32 * iph}); gc += 1
+					a.gl.push(FontGlyph{(r.first + j) as u32, xa, x0, ya, x1, yb, x1 - x0 + 0.5, yb - ya, pc.x0 as f32 * ipw, pc.y0 as f32 * iph, pc.x1 as f32 * ipw, pc.y1 as f32 * iph}); a.gc.push(c); a.gg.push(ttf::glyph_index(q.ti, r.first + j)); gc += 1
 			f.gcnt += gc; gn += gc
 	m := CURSOR_MASK; n ~= 0
 	for y 27: for x 90 { o0 := (a.cx + x) + (a.cy + y) * w; s.px[o0] = if m[n] == '.' { 255 } else { 0 }; s.px[o0 + 1 + 90] = if m[n] == 'X' { 255 } else { 0 }; n += 1 }
@@ -544,11 +549,11 @@ utf_decode(t const byte[:], at int, clen int, u int&) int:
 	u = if !(ud >= UTFMIN[ln] && ud < UTFMAX[ln]) || ud >= 0xD800 && ud < 0xDFFF { 0xFFFD } else { ud }; ln
 nk_text_width(a Atl&, f AF&, height f32, t const byte[:]) f32:
 	if t.len == 0: return 0.0
-	sc := height / f.height; u ~= 0; tl ~= utf_decode(t, 0, t.len, u); gl ~= tl; w ~= 0.0 as f32
+	sc := height / f.height; u ~= 0; tl ~= utf_decode(t, 0, t.len, u); gl ~= tl; w ~= 0.0 as f32; pi ~= -1
 	if gl == 0: return 0.0
 	while tl <= t.len && gl != 0:
 		if u == 0xFFFD: break
-		w += a.gl[find_in(a, f, u as u32)].xadvance * sc; gl = utf_decode(t, tl, t.len - tl, u); tl += gl
+		gi := find_in(a, f, u as u32); w += (a.gl[gi].xadvance + kadj(a, pi, gi)) * sc; pi = gi; gl = utf_decode(t, tl, t.len - tl, u); tl += gl
 	w
 text_width(h Font, text const byte[:]) f32:
 	k := baked_font(h, "ui::text_width"); if k < 0: return 0.0
@@ -1645,11 +1650,11 @@ add_text(u UC&, fid u32, r Rect, t const byte[:], fh f32, fg0 Color):
 	tb byte[>..] ~= []; tb.append(t); tb.push(0)
 	x ~= r.x; tl ~= 0; cp ~= 0; nx ~= 0; gl ~= utf_decode(tb[..], 0, t.len, cp)
 	if gl == 0: return
-	fg ~= fg0; fg.a = galpha(fg.a); sc := fh / f.height
+	fg ~= fg0; fg.a = galpha(fg.a); sc := fh / f.height; pi ~= -1
 	while tl < t.len && gl != 0:
 		if cp == 0xFFFD: break
 		ng := utf_decode(tb[..], tl + gl, min(t.len - tl, tb.len - tl - gl), nx)
-		g := a.gl[find_in(a, f, cp as u32)]
+		gi := find_in(a, f, cp as u32); g := a.gl[gi]; x += kadj(a, pi, gi) * sc; pi = gi
 		gx := x + g.x0 * sc; gy := r.y + g.y0 * sc
 		rect_uv(u, float2{gx, gy}, float2{gx + (g.x1 - g.x0) * sc, gy + (g.y1 - g.y0) * sc}, float2{g.u0, g.v0}, float2{g.u1, g.v1}, fg)
 		tl += gl; x += g.xadvance * sc; gl = ng; cp = nx
@@ -2712,21 +2717,24 @@ ed_bounds(t const byte[:], at int, bl int, rh f32, fid u32, stop bool, g int&) f
 	if bl <= 0: return float2{0.0, rh}
 	r ~= 0; gl ~= ed_dec(t, at, bl, r)
 	if gl == 0: return float2{0.0, 0.0}
-	gw ~= fwid(fid, t[at..at + gl]); g = 0; lw ~= 0.0 as f32; sx ~= 0.0 as f32; sy ~= 0.0 as f32; tl ~= 0
+	g = 0; lw ~= 0.0 as f32; sx ~= 0.0 as f32; sy ~= 0.0 as f32; tl ~= 0; pv ~= -1
 	while tl < bl && gl != 0:
 		if r == 10:
-			sx = mx(sx, lw); sy += rh; lw = 0.0; g += 1
+			sx = mx(sx, lw); sy += rh; lw = 0.0; g += 1; pv = -1
 			if stop: break
 			tl += 1; gl = ed_dec(t, at + tl, bl - tl, r)
 		else if r == 13: tl += 1; g += 1; gl = ed_dec(t, at + tl, bl - tl, r)
-		else: g += 1; tl += gl; lw += gw; gl = ed_dec(t, at + tl, bl - tl, r); gw = fwid(fid, t[at + tl..at + tl + gl])
+		else: g += 1; lw += kw(fid, t, pv, at + tl, at + tl + gl); pv = at + tl; tl += gl; gl = ed_dec(t, at + tl, bl - tl, r)
 	if sx < lw: sx = lw
 	if lw > 0.0 || sy == 0.0: sy += rh
 	float2{sx, sy}
 ed_row(e TE&, st int, rh f32, fid u32) TR:
 	r ~= 0; l ~= 0; off := ed_at(e, 0, st, r, l); bl := if off < 0 || !ed_ok(e) { -1 } else { e.b.len - off }
 	g ~= 0; sz := ed_bounds(e.b, max(off, 0), bl, rh, fid, true, g); TR{0.0, sz.x, sz.y, 0.0, sz.y, g}
-ed_gw(e TE&, ls int, ci int, fid u32) f32: r ~= 0; l ~= 0; o := ed_at(e, 0, ls + ci, r, l); if o < 0 { 0.0 } else { fwid(fid, e.b[o..o + l]) }
+kw(fid u32, t const byte[:], ps int, cs int, ce int) f32: if ps < 0 || ps >= cs { fwid(fid, t[cs..ce]) } else { fwid(fid, t[ps..ce]) - fwid(fid, t[ps..cs]) }
+ed_gw(e TE&, ls int, ci int, fid u32) f32:
+	r ~= 0; l ~= 0; o := ed_at(e, 0, ls + ci, r, l); pr ~= 0; pl ~= 0; po := if ci > 0 { ed_at(e, 0, ls + ci - 1, pr, pl) } else { -1 }
+	if o < 0 { 0.0 } else { kw(fid, e.b, if pr == 10 { -1 } else { po }, o, o + l) }
 ed_locate(e TE&, x f32, y f32, fid u32, rh f32) int:
 	n := e.len; by ~= 0.0 as f32; i ~= 0; rr ~= TR{0.0, 0.0, 0.0, 0.0, 0.0, 0}
 	while i < n:
@@ -2962,14 +2970,14 @@ ed_draw(u UC&, bi int, st StyleEdit&, px f32, py f32, xo f32, t const byte[:], a
 	if bl <= 0: return
 	bgf := rgb_factor(bg, st.color_factor); r ~= 0; gl ~= ed_dec(t, at, bl, r)
 	if gl == 0: return
-	tl ~= 0; lw ~= 0.0 as f32; ls ~= 0; lo ~= 0.0 as f32; lc ~= 0
+	tl ~= 0; lw ~= 0.0 as f32; ls ~= 0; lo ~= 0.0 as f32; lc ~= 0; pv ~= -1
 	while tl < bl && gl != 0:
 		if r == 10:
 			lb := Rect{px + (if lc == 0 { xo } else { 0.0 }), py + lo, lw, rh}
 			if sel: fill_rect_b(u, bi, lb, 0.0, bgf)
-			widget_text(u, bi, lb, t[at + ls..at + tl], float2{0.0, 0.0}, bg, fg, 18, fid); tl += 1; lc += 1; lw = 0.0; ls = tl; lo += rh; gl = ed_dec(t, at + tl, bl - tl, r)
+			widget_text(u, bi, lb, t[at + ls..at + tl], float2{0.0, 0.0}, bg, fg, 18, fid); tl += 1; lc += 1; lw = 0.0; ls = tl; lo += rh; pv = -1; gl = ed_dec(t, at + tl, bl - tl, r)
 		else if r == 13: tl += 1; gl = ed_dec(t, at + tl, bl - tl, r)
-		else: lw += fwid(fid, t[at + tl..at + tl + gl]); tl += gl; gl = ed_dec(t, at + tl, bl - tl, r)
+		else: lw += kw(fid, t, pv, at + tl, at + tl + gl); pv = at + tl; tl += gl; gl = ed_dec(t, at + tl, bl - tl, r)
 	if lw > 0.0:
 		lb := Rect{px + (if lc == 0 { xo } else { 0.0 }), py + lo, lw, rh}
 		if sel: fill_rect_b(u, bi, lb, 0.0, bgf)
@@ -3032,14 +3040,14 @@ do_edit(u UC&, s u32&, bi int, b Rect, fl int, filt int, fit bool, e TE&, st Sty
 		tn ~= 1; cp0 ~= -1; sb0 ~= -1; se0 ~= -1; cx ~= 0.0 as f32; cy ~= 0.0 as f32; s0x ~= 0.0 as f32; s0y ~= 0.0 as f32; s1x ~= 0.0 as f32; s1y ~= 0.0 as f32; tsy ~= 0.0 as f32
 		sa0 := min(e.ss, e.se); sz0 := max(e.ss, e.se); lw ~= 0.0 as f32
 		if ed_ok(e) && ln != 0:
-			r ~= 0; gl ~= ed_dec(e.b, 0, ln, r); gw ~= fwid(fid, e.b[..gl]); tl ~= 0; gs ~= 0; rb ~= 0; g ~= 0
+			r ~= 0; gl ~= ed_dec(e.b, 0, ln, r); tl ~= 0; gs ~= 0; rb ~= 0; g ~= 0; pv ~= -1
 			while tl < ln && gl != 0:
 				if cp0 < 0 && gs == e.cursor: cy = (tn - 1) as f32 * rh; cx = ed_bounds(e.b, rb, tl - rb, rh, fid, true, g).x; cp0 = tl
 				if sb0 < 0 && e.ss != e.se && gs == sa0: s0y = max(tn - 1, 0) as f32 * rh; s0x = ed_bounds(e.b, rb, tl - rb, rh, fid, true, g).x; sb0 = tl
 				if se0 < 0 && e.ss != e.se && gs == sz0: s1y = (tn - 1) as f32 * rh; s1x = ed_bounds(e.b, rb, tl - rb, rh, fid, true, g).x; se0 = tl
-				if r == 10: tn += 1; lw = 0.0; tl += 1; gs += 1; rb = tl
-				else: gs += 1; tl += gl; lw += gw
-				gl = ed_dec(e.b, tl, ln - tl, r); gw = fwid(fid, e.b[tl..tl + gl])
+				if r == 10: tn += 1; lw = 0.0; tl += 1; gs += 1; rb = tl; pv = -1
+				else: lw += kw(fid, e.b, pv, tl, tl + gl); pv = tl; gs += 1; tl += gl
+				gl = ed_dec(e.b, tl, ln - tl, r)
 			tsy = tn as f32 * rh
 			if cp0 < 0 && e.cursor == e.len: cx = lw; cy = tsy - rh
 		if cf:

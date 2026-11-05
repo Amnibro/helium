@@ -1,0 +1,25 @@
+import std;
+import os;
+import ttf;
+fn main() {
+	let a = args();
+	var d byte[>..] = [];
+	if !read_file(a[1], d) { print("no font"); exit(1); }
+	var f = ttf::Info { d: d };
+	if !ttf::init(f) { print("bad font"); exit(1); }
+	let px = 96.0 as f32;
+	let s = px / ttf::ru16(f.d[..], f.head + 18) as f32;
+	for cp in 33..127 {
+		let g = ttf::glyph_index(f, cp);
+		let b = ttf::bbox(f, g, s, s, 0.0, 0.0);
+		let w = b.x1 - b.x0;
+		let h = b.y1 - b.y0;
+		var buf byte[>..] = [];
+		buf.resize(max(w * h, 1), 0);
+		ttf::glyph_bitmap(f, buf, 0, w, h, w, s, s, g);
+		var ink = 0;
+		var hs = 7;
+		for v in buf { ink += v as int; hs = (hs * 31 + v as int) & 0xFFFFFFF; }
+		print(cp, " ", w, " ", h, " ", ink, " ", hs);
+	}
+}
