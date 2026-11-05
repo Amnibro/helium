@@ -41,6 +41,7 @@ compile(a const byte[:], o const byte[:], native bool, chk bool) bool:
 	true
 web_host(o const byte[:]) bool:
 	h byte[>..] ~= []; format(h, LIBDIR, "/../web/web.js"); js byte[>..] ~= []; if !read_file(h[..], js): return true
+	h.clear(); format(h, LIBDIR, "/../web/gpu.js"); read_file(h[..], js)
 	d ~= o.len; while d > 0 && o[d - 1] != '/' { d-- } p byte[>..] ~= []; p.append(o[..d]); p.append("helium.js"); old byte[>..] ~= []; if read_file(p[..], old) && old[..] == js[..]: return true
 	if !write_file(p[..], js[..]): print("cannot write ", p[..]); return false
 	true

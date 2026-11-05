@@ -405,7 +405,7 @@ start(win0 bool, title const byte[:], width int, height int, flags int) bool:
 	if env("HELIUM_GFX_DEBUG", dv) || env("GOOSE_GFX_DEBUG", dv): debug = atoi(dv[..]) != 0
 	DEV = s_mkdev(18, debug, 0)
 	if DEV == 0: fail(str("no GPU device: ", sdlerr())); close_raw(); return false
-	have := s_fmts(DEV); SHF = if have & 2 != 0 { 2 } else { if have & 4 != 0 { 4 } else { 16 } }
+	have := s_fmts(DEV); SHF = if have & 2 != 0 { 2 } else { if have & 4 != 0 { 4 } else { if have & 64 != 0 { 64 } else { 16 } } }
 	pw ~= width; ph ~= height; WW = 1; WH = 1; WPW = 1; WPH = 1
 	if windowed:
 		wf := 8192 | (if flags & 1 != 0 { 32 } else { 0 }) | (if flags & 2 != 0 { 8 } else { 0 }) | (if flags & 4 != 0 { 1 } else { 0 })
@@ -836,6 +836,7 @@ read_blob(b const byte[:], o Info&) bool:
 shader_code(b const byte[:], o Info&, code byte[>..]&) byte[:]:
 	if SHF == 2: code.append(b[o.so..o.so + o.ss]); return "main\0"
 	if SHF == 16: code.append(b[o.mo..o.mo + o.ms + 1]); return "main0\0"
+	if SHF == 64: code.append(b); return "main\0"
 	misuse("no shader format this device takes"); ""
 fnv(b const byte[:]) uint:
 	h ~= 0xcbf29ce484222325 as uint

@@ -90,6 +90,76 @@ and image parameters. Two things behave differently: `c ? a : b` evaluates both 
 spuriously, so call it in a retry loop. Derivatives in non-uniform control flow are
 allowed (`diagnostic(off, derivative_uniformity)`), as GLSL allows them.
 
+### In the browser (WebGPU)
+
+`hc build --web prog.amni -o app.wasm` writes `helium.js` from `hc/web/web.js` followed by
+`hc/web/gpu.js`, which implements the SDL3 GPU functions `gfx.he` imports on WebGPU, so a
+gfx program runs in the browser unchanged. When the module imports `SDL_CreateGPUDevice`,
+`start()` requests a high-performance adapter and a device (with its full limits and
+`float32-filterable`, `float32-blendable`, `rg11b10ufloat-renderable` and
+`depth32float-stencil8` when offered) before it instantiates the module.
+
+* Shaders: `SDL_GetGPUShaderFormats` answers 64, a format bit SDL leaves unused, and
+  `gfx.he` then hands `SDL_CreateGPUShader` the whole version 2 blob. The page takes the
+  WGSL text and the binding table from it and builds each pipeline's four bind group
+  layouts (vertex 0 and 1, fragment 2 and 3; compute 0, 1 and 2). SDL slots map to
+  bindings by the rule above: in a resource group, binding / 2 below the sampler count is
+  a sampler slot, then storage texture slots, then storage buffer slots.
+* Uniforms: `SDL_Push*UniformData` copies into 1 MiB uniform buffers (256-byte steps)
+  owned by the command buffer, bound with dynamic offsets and written with
+  `queue.writeBuffer` just before the submit, so every draw sees what was pushed before it.
+* Copies: uploads go through a staging buffer copied inside the command encoder (rows
+  padded to 256 bytes for textures), so they keep their order against earlier passes in
+  the same command buffer. Transfer buffers live in wasm memory (`mmap`).
+* MSAA: WebGPU has 1 and 4 samples only; 2 and 8 become 4. Blits, `generate_mips` and the
+  swapchain blit are a small render pipeline per target format (3D and integer textures
+  get no generated mips). Depth bias is rounded to an integer, as WebGPU takes it.
+* Window: `gfx::open` draws into `<canvas data-helium>` (or `start({canvas})`), or a new
+  canvas of the asked size in CSS pixels. Pointer, wheel, key, focus and touch events
+  become SDL events; key events count only when the canvas, `body` or `html` has them.
+  Text input, relative mouse (pointer lock), cursor hiding, fullscreen and a clipboard
+  mirror (written to `navigator.clipboard`, read from paste events) work; gamepads,
+  `load_texture` by path (decode with `codec_png`) and other present modes do not.
+* Files: `start({files: {path: bytes}, args, env})` gives the program a read-write
+  in-memory file system and its argv/environment, so `gltf::load(path)` and `os::arg`
+  work; `save_png` and `write_file` land in `rt.files`.
+
+Waiting. The page cannot block, so gfx waits use JSPI (`WebAssembly.Suspending`,
+Chrome 137+): `start()` enters `he_start`, `he_frame` and `he_event` through
+`WebAssembly.promising`, and `SDL_WaitForGPUFences`, `SDL_WaitForGPUIdle` and
+`SDL_WaitAndAcquireGPUSwapchainTexture` suspend the program instead. So `read_texture`,
+`read_buffer`, `grab`, `save_png` and `flush` return real data, and a native-style
+`while gfx::frame() { ... }` loop runs one frame per `requestAnimationFrame` (headless
+frames wait for the GPU, as natively). Programs that use `web::frames` and an exported
+`he_frame` work too; there the swapchain image is taken at once. While the program is
+suspended no other export runs (events queue), and `rt.done` resolves when `main`
+returns. `rt.call` on any other export may not wait. Without JSPI (or with
+`start({jspi: false})`) nothing blocks: fences report done, readback copies whatever
+download has finished, which for gfx's read-right-after-submit calls is zeros, and a
+blocking frame loop would hang the page, so such a browser needs `he_frame`.
+
+`flock ~/ai/.rv/gpu.lock node tools/hc/webgputest.mjs build/hcn` (ci.sh with
+`HELIUM_WEBGPU_TEST=1`) builds `hc/test/webgpu/scene_frame.amni` natively and for the web
+and renders the same frame on Vulkan and in headless Chrome: `scene.glb` (skinned and
+textured, a floor, sun shadows, SSAO, bloom, TAA off) and Amni-Companion's `holo.glb`.
+It needs PSNR > 30 dB (an RMS error of 8 levels: a missing shadow, texture or light, or a
+wrong binding, costs far more, while another shader compiler's rounding or MSAA coverage
+would stay well above it) and no WebGPU validation error. It also runs
+`hc/test/webgpu/window_frame.amni` (a blocking frame loop in a canvas, an injected key, a
+page keydown and click, and the canvas contents against `screen()`) and
+`hc/test/webgpu/compute_check.amni` (read-only and read-write storage buffers, a uniform
+block and an atomic in a compute pass, read back), which must print the same natively.
+Images land in `build/webgputest/`. On an RX 9060 XT (RADV, Chrome 154 on Dawn/Vulkan) the
+scene and the canvas match bit for bit (PSNR infinite).
+
+Two cases cannot run in a `--web` build yet and are reported as BLOCKED: `holo.glb`
+(its decoded textures are one 93 MB `gltf::pixels` array) and the scene with GI and ray
+traced shadows on. Each grow-only array owns a region that never moves; on wasm32 the
+first 2 GiB of address space is cut into 32 MiB regions (`-DGS_STACK_RESERVE`) and the
+rest into at most 4 MiB ones, and a scene3d program with GI holds over 100 arrays. They
+need a web runtime with more address space (memory64) or loaders that keep large data out
+of single arrays.
+
 ### Motion vectors, TAA and upscaling
 
 When temporal runs (or `s3d::motion_vectors = true`), the colour pass writes a
