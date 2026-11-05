@@ -11,7 +11,7 @@ var LERR byte[>..]; var BCB byte[>..]
 var SOFF i64[>..<]; var SSZ i64[>..<]; var SAL i64[>..<]
 var GOFF i32[>..<]
 var RETV int; var RETL int; var RETK int; var CUR int
-lerr(n int, m const byte[:]): if LERR.len > 0 { return } x := TK[if n >= 0 { max(ND[n].t as int, 0) } else { 0 }]; LERR.append(nm(FILES[x.f].name)); format(LERR, ":", x.line, ": error: native backend: ", m);
+lerr(n int, m const byte[:]): if LERR.len > 0 { return } err_at(n, CURI, "native backend: ", m, LERR)
 locs(n int) int:
 	x := TK[max(ND[n].t as int, 0)]; b byte[>..] ~= []; b.append(nm(FILES[x.f].name)); format(b, ":", x.line); loc_id(b[..])
 recursive tsz(t int) int:
@@ -443,11 +443,13 @@ recursive lefl(d int, p int, e int, un bool) int:
 	for i ENI[ei].vnum:
 		si := vsi(ei, i); if si >= 0: ln := nlbl(); ir(I_BZ, 3, -1, lcmp(tg, imm(i), CC_E), -1, ln); dd := if d >= 0 { addi(d, tz) } else { -1 }; fb := FLB; if fb >= 0 { FLB = addi(fb, tz) } ir(I_MOV, 3, r, addi(if un { lunflat(dd, addi(p, tz), t_struct(si)) } else { lflat(dd, addi(p, tz), t_struct(si)) }, tz), -1, 0); FLB = fb; ir(I_JMP, 3, -1, -1, -1, le); ir(I_LBL, 3, -1, -1, -1, ln)
 	ir(I_LBL, 3, -1, -1, -1, le); r
+KEEPF ~= false
 recursive lfa(n int) int:
-	x := ND[n]; bt := at(x.a); d := deref(bt); si := ssi(d); b := if TY[bt].k == TY_REF { lptr(x.a) } else { laddr(x.a) }; if !lvst(t_struct(si)) { return addi(b, foff(si, rv(n))) }
+	kf := KEEPF; KEEPF = false
+	x := ND[n]; bt := at(x.a); d := deref(bt); si := ssi(d); KEEPF = ND[x.a].k as int == N_DOT && TY[bt].k != TY_REF; b := if TY[bt].k == TY_REF { lptr(x.a) } else { laddr(x.a) }; KEEPF = false; if !lvst(t_struct(si)) { return addi(b, foff(si, rv(n))) }
 	r := nv(); lu := nlbl(); le := nlbl(); ir(I_BZ, 3, -1, bin(B_AND, 3, b, imm(1 << 62), -1), -1, lu)
 	o ~= lmk(b, d); f0 := STI[si].f0 as int; for j rv(n) { f := SFI[f0 + j]; o = if f.ty < 0 { addi(o, max(f.padn as int, 0)) } else { bin(B_ADD, 3, o, lunflat(-1, o, f.ty as int), -1) } }
-	ft := SFI[f0 + rv(n)].ty as int; if hvs(ft) && TY[ft].k == TY_ENUM { o = ltag(o) } else if fvar(ft) && !flsame(ft) { q := nv(); ir(I_SLOT, 8, q, -1, -1, slot(max(tsz(ft), 8), max(tal(ft), 8))); lunflat(q, o, ft); o = q } ir(I_MOV, 3, r, o, -1, 0); ir(I_JMP, 3, -1, -1, -1, le)
+	ft := SFI[f0 + rv(n)].ty as int; if hvs(ft) && TY[ft].k == TY_ENUM || kf && lvst(ft) { o = ltag(o) } else if fvar(ft) && !flsame(ft) { q := nv(); ir(I_SLOT, 8, q, -1, -1, slot(max(tsz(ft), 8), max(tal(ft), 8))); lunflat(q, o, ft); o = q } ir(I_MOV, 3, r, o, -1, 0); ir(I_JMP, 3, -1, -1, -1, le)
 	ir(I_LBL, 3, -1, -1, -1, lu); ir(I_MOV, 3, r, addi(b, foff(si, rv(n))), -1, 0); ir(I_LBL, 3, -1, -1, -1, le); r
 lsqof(a int, cnt int, e int) int:
 	es := tsz(e); z ~= imm(0); dsuse(); b0 := rtcall("rt_dsput", [imm(0) as i32]); for i cnt { FLB = bin(B_ADD, 3, b0, z, -1); z = bin(B_ADD, 3, z, lflat(-1, addi(a, i * es), e), -1) } FLB = -1; o := rtcall("rt_dsput", [z as i32]); c ~= o; for i cnt { c = bin(B_ADD, 3, c, lflat(c, addi(a, i * es), e), -1) } o

@@ -304,12 +304,24 @@ same_binds(i int, b0 int, bn int) bool:
 	true
 on_chain(i int, b int) bool:
 	j ~= b; while j >= 0 { if j == i { return true } j = if FI_[j].bown >= 0 { FI_[j].bown as int } else { FI_[j].par as int } } false
+var ISITE i32[>..]
+var ISOWN i32[>..]
+ISN ~= -1
+user_site(i int) int:
+	j ~= i; h ~= 0
+	while j >= 0 && j < ISITE.len && ISITE[j] >= 0 && h < 16: s := ISITE[j] as int; if !lib_file(TK[ND[s].t].f as int) { return s } j = ISOWN[j] as int; h++
+	-1
+err_at(n int, inst int, pre const byte[:], m const byte[:], out byte[>..]&):
+	x := TK[if n >= 0 { max(ND[n].t as int, 0) } else { 0 }]; us := if lib_file(x.f as int) && inst >= 0 { user_site(inst) } else { -1 }; y := if us >= 0 { TK[ND[us].t] } else { x }
+	out.append(nm(FILES[y.f].name)); format(out, ":", y.line, ": error: ", pre, m)
+	if us >= 0: format(out, " (inside ", nm(FI_[inst].name), ", ", nm(FILES[x.f].name), ":", x.line, ", which this call instantiates; rewrite the call without it: iterate the array, push copy(x) of each element to keep into a new growable array, then assign that array back)")
 recursive get_inst(node int, b0 int, bn int, blk int, bown int) int:
 	par := if ND[node].fl & F_NESTED != 0 { AOWN } else { -1 }
 	xb i32[>..<] ~= []; xb.append(XBS[..]); XBS.clear()
 	for f, i FI_:
 		if f.node as int == node && f.blk as int == blk && (blk == -1 && (!f.dy || on_chain(i, bown)) || f.bown as int == bown) && f.par as int == par && same_binds(i, b0, bn) && xb_same(i, xb[..]) && !DEFE.contains(i as i32): return i
 	i := new_inst(node, node, NEND[node] as int, par)
+	while ISITE.len <= i { ISITE.push(-1); ISOWN.push(-1) } ISITE[i] = ISN as i32; ISOWN[i] = AOWN as i32
 	FI_[i].g0 = GBS.len as i32
 	for j bn: GBS.push(BINDS[b0 + j])
 	FI_[i].gn = bn as i32
@@ -675,6 +687,7 @@ note_caps_of(i int):
 recursive case_inst(n int, name int, s int, an int, j int, t int, blk int, bown int) int:
 	ARGW[s + j] = t
 	fnode, b0, bn := resolve(n, name, ns_of(n), s, an, blk, ND[n].c, false)
+	ISN = n
 	inst := if fnode >= 0 { get_inst(fnode, b0, bn, blk, if blk >= 0 { bown } else { AOWN }) } else { -1 }
 	BINDS.pop_n(BINDS.len - b0)
 	inst
@@ -775,6 +788,7 @@ recursive call_fn(n int, name int, recv int, want int) int:
 	if an > np0: ntya := if ND[n].c >= 0 { ND[ND[n].c].n as int } else { 0 }; for k an - np0 { fnm := ND[DIDX[s + np0 + k]].s; bg2 := block_binding(fnm); XBS.push(xcall(fnode, ntya, k)); XBS.push((if bg2 >= 0 { FI_[bg2].blk as int } else { -2 - fnm })); XBS.push((if bg2 >= 0 { FI_[bg2].bown as int } else { AOWN })) } while FNA.len <= n { FNA.push(0) } FNA[n] = fna(n) + an - np0; an = np0
 	lm := lit_mask(fnode, s, an)
 	if lm != 0: BINDS.push(Gb{LPN as i32, lm})
+	ISN = n
 	inst ~= get_inst(fnode, b0, BINDS.len - b0, blk, bown)
 	BINDS.pop_n(BINDS.len - b0)
 	ex := exp_of(inst); if ex >= 0 { inst = ex }

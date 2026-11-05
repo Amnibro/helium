@@ -12,7 +12,7 @@ var GERR byte[>..]
 INTC := ["int8_t", "int16_t", "int32_t", "int64_t", "uint8_t", "uint16_t", "uint32_t", "uint64_t"]
 ow(s const byte[:]): O.append(s);
 oi(v i64): format(O, v);
-gerr(n int, m const byte[:]): if GERR.len > 0 { return } x := TK[ND[max(n, 0)].t]; GERR.append(nm(FILES[x.f].name)); format(GERR, ":", x.line, ": error: ", m);
+gerr(n int, m const byte[:]): if GERR.len > 0 { return } err_at(max(n, 0), GCF, "", m, GERR);
 cn_grow():
 	while CNO.len < TY.len: CNO.push(-1); CNL.push(0); CST.push(0); HFN.push(0); HEQ.push(0)
 fwd(s0 int): TF.append("typedef struct "); TF.append(CN[s0..]); TF.push(' '); TF.append(CN[s0..]); TF.append(";\n");
