@@ -13,7 +13,7 @@ gltf meshes 2 nodes 4 roots 3 materials 2 images 1 skins 1 animations 1 skipped 
   image 4x4 sum 721154210
 anim rotation 0 0 707 707 weight 1000
 anim joint -1000 2000 0
-pose override rotation 707 0 707 weight 250
+pose override rotation 707 0 707 weight 250 w20 500 max 64
 pose cleared true overrides 0
 sphere asset 1 indices 768 verts 153
 text width 9600 verts 72

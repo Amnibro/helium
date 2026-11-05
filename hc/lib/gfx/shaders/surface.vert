@@ -19,11 +19,10 @@ layout(set = 1, binding = 0) uniform Draw {
 	mat4 view_proj;
 	mat4 prev_model;     // last frame's model matrix (velocity)
 	vec4 deform;         // x joint base (-1 none), y morph first, z targets, w first vertex
-	vec4 weights_lo;
-	vec4 weights_hi;
 	vec4 misc;           // x vertex count, y last frame's joint base (-1: reuse this frame's)
 	mat4 cur_vp;         // this frame's view-projection without the sub-pixel jitter
 	mat4 prev_vp;        // last frame's view-projection without jitter
+	vec4 weights[16];    // morph weights, four per vec4
 };
 
 layout(location = 0) out vec3 out_world;
@@ -47,7 +46,7 @@ mat4 skin(int base) {
 }
 
 float morph_weight(int t) {
-	return t < 4 ? weights_lo[t] : weights_hi[t - 4];
+	return weights[t >> 2][t & 3];
 }
 
 void main() {
@@ -57,9 +56,10 @@ void main() {
 	if (targets > 0) {
 		int local_v = gl_VertexIndex - int(deform.w);
 		int count = int(misc.x);
-		for (int t = 0; t < targets && t < 8; t++) {
-			int e = (int(deform.y) + t * count + local_v) * 2;
+		for (int t = 0; t < targets && t < 64; t++) {
 			float w = morph_weight(t);
+			if (w == 0.0) continue;
+			int e = (int(deform.y) + t * count + local_v) * 2;
 			p += morph_data[e].xyz * w;
 			n += morph_data[e + 1].xyz * w;
 		}

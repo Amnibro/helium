@@ -7,7 +7,7 @@ import gfx;
 import gfx.linalg;
 import gfx.gltf;
 
-let MAX_WEIGHTS = 8;
+let MAX_WEIGHTS = 64;
 
 var pose_t float3[>..];
 var pose_r linalg::Quat[>..];

@@ -132,9 +132,10 @@ fn cpu_checks() {
 	s3d::animate(item, anim, 1.0);
 	s3d::set_node(item, bone, linalg::v3(0.0, 0.0, 0.0), linalg::Quat { 0.7071068, 0.0, 0.0, 0.7071068 }, linalg::v3(1.0, 1.0, 1.0));
 	s3d::set_weight(item, gltf::find_node(a, "strip"), 0, 0.25);
+	s3d::set_weight(item, gltf::find_node(a, "strip"), 20, 0.5);
 	s3d::pose(item);
 	let ro = motion::pose_r[bone];
-	print("pose override rotation ", milli(ro.x), " ", milli(ro.z), " ", milli(ro.w), " weight ", milli(motion::weight(gltf::find_node(a, "strip"), 0)));
+	print("pose override rotation ", milli(ro.x), " ", milli(ro.z), " ", milli(ro.w), " weight ", milli(motion::weight(gltf::find_node(a, "strip"), 0)), " w20 ", milli(motion::weight(gltf::find_node(a, "strip"), 20)), " max ", motion::MAX_WEIGHTS);
 	s3d::clear_pose(item);
 	s3d::pose(item);
 	let rc = motion::pose_r[bone];

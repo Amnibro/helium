@@ -50,7 +50,7 @@ struct WeightOv { item int, node int, k int, w f32 }
 struct Item { asset int, place gfx::mat4, prev_place gfx::mat4, anim int, time f32, visible bool, anim2 int = -1, time2 f32 = 0.0, blend f32 = 1.0, bend_node int = -1, bend linalg::Quat = linalg::Quat { 0.0, 0.0, 0.0, 1.0 }, track int[4] = [-1, -1, -1, -1], tracked gfx::mat4[4] = [gfx::mat4_identity, gfx::mat4_identity, gfx::mat4_identity, gfx::mat4_identity] }
 struct Batch { prim int, item int, node int, joint_base int, model gfx::mat4, depth f32, mode int, prev_model gfx::mat4, prev_joint_base int, vis bool }
 
-struct DrawU { model gfx::mat4, model_normal gfx::mat4, view_proj gfx::mat4, prev_model gfx::mat4, deform float4, weights_lo float4, weights_hi float4, misc float4, cur_vp gfx::mat4, prev_vp gfx::mat4 }
+struct DrawU { model gfx::mat4, model_normal gfx::mat4, view_proj gfx::mat4, prev_model gfx::mat4, deform float4, misc float4, cur_vp gfx::mat4, prev_vp gfx::mat4, weights float4[16] }
 struct FrameU {
 	cascade_mat gfx::mat4[3], cascade_far float4, eye float4, view_dir float4, to_sun float4, sun_rgb float4,
 	zenith float4, horizon float4, ground float4, screen float4, light_pos float4[16], light_rgb float4[16], gi float4, gi_origin float4, gi_step float4, gi_dims float4
@@ -699,16 +699,16 @@ fn gather() {
 
 fn forward() float3 { linalg::unit3(linalg::v3(view.target.x - view.eye.x, view.target.y - view.eye.y, view.target.z - view.eye.z)) }
 
+fn mw(node int, j int, n int) f32 { if j < n && j < motion::MAX_WEIGHTS { motion::weight(node, j) } else { 0.0 } }
 fn draw_uniforms(b Batch, vp gfx::mat4) DrawU {
 	let pr = gltf::prims[b.prim];
-	var w f32[8] = [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0];
-	for j in min(pr.targets, 8) { w[j] = motion::weight(b.node, j); }
+	var w float4[16] = [float4 { 0.0, 0.0, 0.0, 0.0 }; 16];
+	for q in min((pr.targets + 3) / 4, 16) { w[q] = float4 { mw(b.node, q * 4, pr.targets), mw(b.node, q * 4 + 1, pr.targets), mw(b.node, q * 4 + 2, pr.targets), mw(b.node, q * 4 + 3, pr.targets) }; }
 	DrawU {
 		model: b.model, model_normal: linalg::normal_matrix(b.model), view_proj: vp, prev_model: b.prev_model,
 		deform: f4(b.joint_base as f32, pr.mfirst as f32, pr.targets as f32, pr.vfirst as f32),
-		weights_lo: f4(w[0], w[1], w[2], w[3]), weights_hi: f4(w[4], w[5], w[6], w[7]),
 		misc: f4(pr.vcount as f32, b.prev_joint_base as f32, 0.0, 0.0),
-		cur_vp: view_proj_nj, prev_vp: prev_view_proj
+		cur_vp: view_proj_nj, prev_vp: prev_view_proj, weights: w
 	}
 }
 
