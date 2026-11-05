@@ -46,7 +46,7 @@ struct Material {
 	emissive float3, emissive_tex TexRef,
 	alpha_mode int, alpha_cutoff f32, double_sided bool, unlit bool, name Span,
 	tri f32 = 0.0, top f32 = 0.0, top_scale f32 = 0.0, top_sharp f32 = 8.0,
-	top_base TexRef = TexRef { -1, 0 }, top_mr TexRef = TexRef { -1, 0 }, top_normal TexRef = TexRef { -1, 0 }, top_tint float4 = float4 { 1.0, 1.0, 1.0, 1.0 }, no_gi bool = false, no_shadow bool = false, keep_normal bool = false
+	top_base TexRef = TexRef { -1, 0 }, top_mr TexRef = TexRef { -1, 0 }, top_normal TexRef = TexRef { -1, 0 }, top_tint float4 = float4 { 1.0, 1.0, 1.0, 1.0 }, no_gi bool = false, no_shadow bool = false, keep_normal bool = false, sheen float3 = float3 { 0.0, 0.0, 0.0 }, sheen_rough f32 = 0.0
 }
 struct Primitive { vfirst int, vcount int, ifirst int, icount int, material int, mfirst int, targets int, lo float3, hi float3, tangents bool, skinned bool }
 struct Mesh { prims Span, weights Span, name Span }
@@ -356,7 +356,7 @@ fn load_bytes(data const byte[:], dir const byte[:]) int {
 	children_of(d, get(d, root, "extensionsRequired"), list);
 	for e in list {
 		let ext = json::text_of(d, e);
-		if ext != "KHR_materials_emissive_strength" && ext != "KHR_materials_unlit" && ext != "KHR_mesh_quantization" && ext != "KHR_texture_transform" {
+		if ext != "KHR_materials_emissive_strength" && ext != "KHR_materials_unlit" && ext != "KHR_mesh_quantization" && ext != "KHR_texture_transform" && ext != "KHR_materials_sheen" {
 			return fail(str("gltf: required extension ", ext, " is not supported"));
 		}
 	}
@@ -444,6 +444,8 @@ fn load_bytes(data const byte[:], dir const byte[:]) int {
 		let ext = get(d, m, "extensions");
 		let strength = num(d, get(d, ext, "KHR_materials_emissive_strength"), "emissiveStrength", 1.0) as f32;
 		let normal = get(d, m, "normalTexture");
+		let sh = get(d, ext, "KHR_materials_sheen");
+		let sc = get(d, sh, "sheenColorFactor");
 		let occl = get(d, m, "occlusionTexture");
 		let mode = word(d, m, "alphaMode");
 		materials.push(Material {
@@ -463,6 +465,8 @@ fn load_bytes(data const byte[:], dir const byte[:]) int {
 			double_sided: truth(d, m, "doubleSided", false),
 			unlit: get(d, ext, "KHR_materials_unlit") >= 0,
 			name: keep_name(word(d, m, "name")),
+			sheen: float3 { item_num(d, sc, 0, 0.0) as f32, item_num(d, sc, 1, 0.0) as f32, item_num(d, sc, 2, 0.0) as f32 },
+			sheen_rough: num(d, sh, "sheenRoughnessFactor", 0.0) as f32,
 			..
 		});
 	}

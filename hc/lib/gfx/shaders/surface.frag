@@ -65,11 +65,19 @@ layout(set = 3, binding = 1) uniform Surface {
 	vec4 xo0;
 	vec4 xo1;
 	vec4 xo2;
+	vec4 sheen;
 };
 
 layout(location = 0) out vec4 out_rgba;
 
 vec2 pick_uv(float set) { return set > 0.5 ? in_uv.zw : in_uv.xy; }
+vec3 sheen_term(vec3 n, vec3 v, vec3 l, vec3 e) {
+	float n_l = max(dot(n, l), 0.0);
+	if (n_l <= 0.0 || max(max(sheen.r, sheen.g), sheen.b) <= 0.0) return vec3(0.0);
+	float n_v = max(dot(n, v), 1e-4), n_h = max(dot(n, normalize(v + l)), 0.0), ia = 1.0 / max(sheen.a * sheen.a, 0.07);
+	return sheen.rgb * ((2.0 + ia) * pow(max(1.0 - n_h * n_h, 0.0), 0.5 * ia) / (2.0 * PI_F)) / (4.0 * (n_l + n_v - n_l * n_v)) * e * n_l;
+}
+float sheen_keep() { return 1.0 - max(max(sheen.r, sheen.g), sheen.b) * 0.17; }
 vec2 xuv(float set, vec4 m, vec2 o) { vec2 u = pick_uv(set); return vec2(dot(m.xy, u), dot(m.zw, u)) + o; }
 
 // Single-scatter directional albedo of the specular lobe from ms_lut.glsl (16-bit
@@ -281,7 +289,7 @@ void main() {
 	vec3 gn = normalize(in_nrm);
 	if (!gl_FrontFacing && alpha.z > 0.5) gn = -gn;
 	vec3 rp = in_world + gn * 2e-3;
-	rgb += light_term(n, v, l, sun_rgb.rgb, albedo, f0_spec, rough, ms, kd) * (gi.y > 0.5 && to_sun.w > 0.5 ? (dot(gn, l) > 0.0 && gi_visible(rp, l, 1e4) ? 1.0 : 0.0) : sun_visibility(in_world, normalize(in_nrm)));
+	rgb += (light_term(n, v, l, sun_rgb.rgb, albedo, f0_spec, rough, ms, kd) * sheen_keep() + sheen_term(n, v, l, sun_rgb.rgb)) * (gi.y > 0.5 && to_sun.w > 0.5 ? (dot(gn, l) > 0.0 && gi_visible(rp, l, 1e4) ? 1.0 : 0.0) : sun_visibility(in_world, normalize(in_nrm)));
 	int count = int(screen.z);
 	for (int i = 0; i < MAX_LIGHTS; i++) {
 		if (i >= count) break;
@@ -289,7 +297,8 @@ void main() {
 		float dist = length(d);
 		vec3 ld = d / max(dist, 1e-4);
 		if (gi.y > 0.5 && (dot(gn, ld) <= 0.0 || !gi_visible(rp, ld, dist - 2e-3))) continue;
-		rgb += light_term(n, v, ld, light_rgb[i].rgb * range_falloff(dist, light_pos[i].w), albedo, f0_spec, rough, ms, kd);
+		vec3 le = light_rgb[i].rgb * range_falloff(dist, light_pos[i].w);
+		rgb += light_term(n, v, ld, le, albedo, f0_spec, rough, ms, kd) * sheen_keep() + sheen_term(n, v, ld, le);
 	}
 
 	// furnace control hook (scene3d.furnace_scale, 1 in normal use): scales the direct
