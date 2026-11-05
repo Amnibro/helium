@@ -41,6 +41,55 @@ s3d::render(target);                 // RGBA8 target; s3d::hdr_target() is the l
 The scene is plain data (`view`, `sun`, `sky`, `look`, `lights`, `items`) that the
 caller edits between frames. After `gltf::reset()` call `s3d::forget()`.
 
+### WebGPU (WGSL)
+
+hc's shader compiler writes WGSL beside SPIR-V, MSL and HLSL, so these shaders can run on
+WebGPU in the browser. `hc --wgsl shaders/surface.frag out.wgsl` prints one shader and
+`hc --blob file out` writes the blob `embed_shader` embeds. A shader WGSL cannot express
+still builds natively; its blob carries empty WGSL and `hc --wgsl` names the reason.
+`node tools/hc/wgsltest.mjs build/hcn` has headless Chrome compile every shader here and in
+`hc/test/wgsl` and build each pipeline this library makes from them, with the layout below.
+
+Bindings follow SDL_GPU's sets, so one GPU pipeline layout serves every backend:
+
+* `@group` is the GLSL `set`. Vertex: 0 samplers, then storage textures, then storage
+  buffers; 1 uniform blocks. Fragment: 2 and 3 the same way. Compute: 0 samplers, read-only
+  storage textures, read-only storage buffers; 1 read-write storage textures, then
+  read-write storage buffers; 2 uniform blocks. A render pipeline has four bind groups, the
+  vertex shader's 0 and 1 and the fragment shader's 2 and 3.
+* `@binding` is twice the GLSL binding. A `sampler2D` at binding b is a texture at 2b and
+  its sampler at 2b + 1; every other resource is at 2b.
+* Uniform blocks are `var<uniform>` structs named `cf_ub_<Block>` (std140 matches WGSL's
+  uniform layout for the vec4/mat4 members gfx uses). Buffer blocks are `var<storage, read>`
+  when `readonly`, else `var<storage, read_write>`, of `array<T>`, or `array<atomic<T>>`
+  when the shader calls atomics on it. Storage images are `read`, `write` or `read_write`
+  by what the shader does with them.
+* The entry point is `main`. Vertex inputs keep their locations; vertex outputs and
+  fragment inputs keep theirs, with `@interpolate(flat)` on `flat` and integer ones.
+
+Blob version 2 (all little-endian): `GSHD`; u16 version; u8 stage (0 vertex, 1 fragment,
+2 compute); u8 vertex input count; u32 x3 workgroup size; u16 x6 samplers, read-only and
+read-write storage textures, read-only and read-write storage buffers, uniform blocks;
+u32 offset and size of SPIR-V, MSL, HLSL and WGSL (each text is followed by a 0 byte);
+u16 WGSL binding count, u16 0; then at byte 68 a u32 std140 size per uniform block, a
+(location, type) byte pair per vertex input, and four bytes per WGSL binding: group,
+binding, kind, info. Kinds: 1 uniform buffer (info: its uniform slot), 2 read-only and
+3 read-write storage buffer, 4 float, 5 uint and 6 depth texture (info: 0 2d, 1 cube, 2 3d,
+3 2d-array), 7 filtering and 8 comparison sampler, 9 write-only, 10 read-only and
+11 read-write storage texture (info: 1 rgba32float, 2 rgba16float, 3 r32float, 4 rgba8unorm,
+6 rg32float, 7 rg16float, 9 r16float, 32 rgba8uint, 33 r32uint). Vertex input types: 3
+float, 6/9/12 vec2/3/4, 1 int and 4/7/10 ivec2/3/4, 2 uint and 5/8/11 uvec2/3/4.
+
+What WGSL output rejects (a WGSL-only error): overloaded functions, 64-bit integers, mat2
+in a uniform block, matrix or bool stage inputs and outputs, `inverse()`, the comma
+operator, an assignment inside an expression, a `++`/`--` in a condition or a postfix one in a returned
+value, a `for` that declares several variables, a `switch` case that falls through,
+sampling a `usampler2D` (use `texelFetch`), atomics on struct fields or vector components,
+and image parameters. Two things behave differently: `c ? a : b` evaluates both sides
+(WGSL `select`), and `atomicCompSwap` is `atomicCompareExchangeWeak`, which may fail
+spuriously, so call it in a retry loop. Derivatives in non-uniform control flow are
+allowed (`diagnostic(off, derivative_uniformity)`), as GLSL allows them.
+
 ### Motion vectors, TAA and upscaling
 
 When temporal runs (or `s3d::motion_vectors = true`), the colour pass writes a

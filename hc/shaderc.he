@@ -1944,7 +1944,7 @@ reset():
 	TYNAMES = dictionary<int, int>{..}; ARRTY = dictionary<u64, int>{..}; IMGTY = dictionary<int, int>{..}; TYIDS = dictionary<int, int>{..}; PTRIDS = dictionary<u64, int>{..}; CONSTIDS = dictionary<u64, int>{..}; C64IDS = dictionary<u64, int>{..}; NEEDI64 = false; FNTYIDS = dictionary<u64, int>{..}
 	LAIDS = dictionary<int, int>{..}; LAIDA = dictionary<int, int>{..}; LAIDE = dictionary<int, int>{..}; SAMPIMG = dictionary<int, int>{..}; SCD = dictionary<u64, int>{..}; FNS = dictionary<int, int>{..}
 	SNAMES.clear(); SDECOS.clear(); SGLOB.clear(); SFUNCS.clear(); SBODY.clear(); SLOCALS.clear(); SIFACE.clear(); SCN.clear(); SCM.clear(); SFILES.clear(); AHEAD.clear()
-	RSAMP.clear(); RIMG.clear(); RBUF.clear(); RBLK.clear(); RMEM.clear(); RINP.clear(); ERRM.clear(); MSLO.clear(); HLSLO.clear()
+	RSAMP.clear(); RIMG.clear(); RBUF.clear(); RBLK.clear(); RMEM.clear(); RINP.clear(); ERRM.clear(); MSLO.clear(); HLSLO.clear(); WGSLO.clear(); WGERR.clear(); WB.clear(); TPW = false
 	NEXTID = 1; GLSLEXT = 0; NEEDIQ = false; NEEDEF = false; CURRT = -1; FHASRET = false; BTERM = false; BRKT = 0; CONTT = 0; ENTRYF = 0; PVVAR = 0; LSIZE[0] = 0; LSIZE[1] = 0; LSIZE[2] = 0; FIDX = 0; LP = 0; LLINE = 1
 cspv(src const byte[:], stage int, spv u32[>..]&) bool:
 	reset(); STAGE = stage; initins(); ok ~= true
@@ -1960,7 +1960,7 @@ cspv(src const byte[:], stage int, spv u32[>..]&) bool:
 		adv(); gentop()
 		if ENTRYF == 0: serr(0, "no 'void main()' entry point defined")
 		if stage == ST_COMP && LSIZE[0] == 0: serr(0, "compute shaders must declare layout(local_size_x = ..., ...) in;")
-		emithlsl(); HLSLO.clear(); HLSLO.append(TPO[..]); emitmsl(); MSLO.clear(); MSLO.append(TPO[..]); spv.append(assemble()[..])
+		emithlsl(); HLSLO.clear(); HLSLO.append(TPO[..]); emitmsl(); MSLO.clear(); MSLO.append(TPO[..]); wgslout(); spv.append(assemble()[..])
 	exception::try<int>(body) { e => ok = false }
 	ok
 var MSLO byte[>..]
@@ -2011,6 +2011,7 @@ var RNT int[>..]
 var SHD int[>..]
 var SHM int[>..]
 hlslty(t int) const byte[:]:
+	if TPW: return wgslty(t)
 	y := TY[t]; k := y.k; c := y.cols
 	if k == T_VOID: return "void"
 	if k == T_BOOL: return "bool"
@@ -2028,10 +2029,10 @@ tppush(): SHM.push(SHD.len)
 tppop(): m := SHM.pop(); while SHD.len > m { SHD.pop() }
 tpname(n int) int:
 	i ~= SHD.len - 1; while i >= 0 { if SHD[i] == n { return n } i -= 1 }
-	for f, j RNF: if f == n { return RNT[j] }
+	j ~= RNF.len - 1; while j >= 0 { if RNF[j] == n { return RNT[j] } j -= 1 }
 	n
 tpind(): for i TPI { TPO.push('\t') }
-tpvar(t int, n const byte[:]): if TY[t].k == T_ARR { format(TPO, hlslty(TY[t].el), " ", n, "[", TY[t].cols, "]") } else { format(TPO, hlslty(t), " ", n) }
+tpvar(t int, n const byte[:]): if TPW { format(TPO, n, ": ", wgslty(t)) } else if TY[t].k == T_ARR { format(TPO, hlslty(TY[t].el), " ", n, "[", TY[t].cols, "]") } else { format(TPO, hlslty(t), " ", n) }
 tpopstr(op int) const byte[:]: if op == P_SHL { "<<" } else if op == P_SHR { ">>" } else if op == P_LE { "<=" } else if op == P_GE { ">=" } else if op == P_EQ { "==" } else if op == P_NE { "!=" } else if op == P_AND { "&&" } else if op == P_OR { "||" } else if op == P_ADDA { "+=" } else if op == P_SUBA { "-=" } else if op == P_MULA { "*=" } else if op == P_DIVA { "/=" } else if op == P_MODA { "%=" } else if op == P_ANDA { "&=" } else if op == P_ORA { "|=" } else if op == P_XORA { "^=" } else if op == P_SHLA { "<<=" } else if op == P_SHRA { ">>=" } else if op == '=' { "=" } else if op == '+' { "+" } else if op == '-' { "-" } else if op == '*' { "*" } else if op == '/' { "/" } else if op == '%' { "%" } else if op == '&' { "&" } else if op == '|' { "|" } else if op == '^' { "^" } else if op == '<' { "<" } else if op == '>' { ">" } else if op == ',' { "," } else { "?" }
 tpprec(op int) int: if op == '*' || op == '/' || op == '%' { 13 } else if op == '+' || op == '-' { 12 } else if op == P_SHL || op == P_SHR { 11 } else if op == '<' || op == '>' || op == P_LE || op == P_GE { 10 } else if op == P_EQ || op == P_NE { 9 } else if op == '&' { 8 } else if op == '^' { 7 } else if op == '|' { 6 } else if op == P_AND { 5 } else if op == P_OR { 4 } else if op == ',' { 1 } else if isassign(op) { 2 } else { 0 }
 tpnum(t int) bool: if t < 0 { false } else { k := TY[elty(t)].k; k == T_INT || k == T_UINT || k == T_FLOAT }
@@ -2073,23 +2074,28 @@ recursive tpnode(e int, prec int):
 	else if k == E_BOOL:
 		TPO.append(if x.bv { "true" } else { "false" })
 	else if k == E_REF:
-		TPO.append(snm(tpname(x.name)))
+		if TPW && WAT.contains(x.name) && TY[x.rt].k != T_ARR { TPO.append("atomicLoad(&"); wlv(e); TPO.push(')') } else { TPO.append(wid(tpname(x.name))) }
 	else if k == E_MEM:
 		bd := tpnamedbuf(e)
 		if bd >= 0: format(TPO, snm(DC[bd].inst), "_", snm(DC[bd].mnm[0])); return
-		tpexpr(x.l, 15); format(TPO, ".", snm(x.name))
+		tpexpr(x.l, 15); TPO.push('.'); wmem(x.l, x.name)
 	else if k == E_IDX:
 		bt := tprt(x.l)
+		if TPW && EX[x.l].k == E_REF && WAT.contains(EX[x.l].name): TPO.append("atomicLoad(&"); wlv(e); TPO.push(')'); return
 		if TPH && bt >= 0 && TY[bt].k == T_MAT: TPO.append("transpose("); tpexpr(x.l, 0); TPO.append(")["); tpexpr(x.r, 0); TPO.push(']'); return
 		tpexpr(x.l, 15); TPO.push('['); tpexpr(x.r, 0); TPO.push(']')
 	else if k == E_LEN:
 		bt := tprt(x.l); bd := tpnamedbuf(x.l)
-		if bt >= 0 && TY[bt].k == T_ARR && TY[bt].cols >= 0 { format(TPO, TY[bt].cols) } else if TPH && bd >= 0 { format(TPO, "int(", snm(DC[bd].inst), "_", snm(DC[bd].mnm[0]), "_len())") } else if TPH && EX[x.l].k == E_REF { format(TPO, "int(", snm(EX[x.l].name), "_len())") } else { TPO.push('0') }
+		if bt >= 0 && TY[bt].k == T_ARR && TY[bt].cols >= 0 { format(TPO, TY[bt].cols) } else if TPW { TPO.append("i32(arrayLength(&"); if bd >= 0 { format(TPO, snm(DC[bd].inst), "_", snm(DC[bd].mnm[0])) } else { TPO.append(wid(tpname(EX[x.l].name))) } TPO.append("))") } else if TPH && bd >= 0 { format(TPO, "int(", snm(DC[bd].inst), "_", snm(DC[bd].mnm[0]), "_len())") } else if TPH && EX[x.l].k == E_REF { format(TPO, "int(", snm(EX[x.l].name), "_len())") } else { TPO.push('0') }
 	else if k == E_CALL:
-		if TPH { hlslcall(e) } else { mslcall(e) }
+		if TPH { hlslcall(e) } else if TPW { wgslcall(e) } else { mslcall(e) }
 	else if k == E_UN:
 		op := x.op
 		if op == P_INC || op == P_DEC:
+			if TPW:
+				hz := WHO.contains(e); tpexpr(x.l, if hz { prec } else { 15 })
+				if !hz: TPO.append(if op == P_INC { "++" } else { "--" })
+				return
 			mp := if x.post { 15 } else { 14 }; pa := mp < prec
 			if pa: TPO.push('(')
 			if x.post { tpexpr(x.l, 15); TPO.append(if op == P_INC { "++" } else { "--" }) } else { TPO.append(if op == P_INC { "++" } else { "--" }); tpexpr(x.l, 14) }
@@ -2101,8 +2107,15 @@ recursive tpnode(e int, prec int):
 		if pa: TPO.push(')')
 	else if k == E_BIN:
 		op := x.op; l := x.l; r := x.r; mp := tpprec(op); pa := mp < prec
+		if TPW && op == ',': serr(x.line, "the comma operator is not supported in WGSL output")
 		if pa: TPO.push('(')
 		if isassign(op):
+			if TPW && (EX[l].k == E_IDX && EX[EX[l].l].k == E_REF && WAT.contains(EX[EX[l].l].name) || EX[l].k == E_REF && WAT.contains(EX[l].name)):
+				af := if op == '=' { "atomicStore" } else if op == P_ADDA { "atomicAdd" } else if op == P_SUBA { "atomicSub" } else if op == P_ANDA { "atomicAnd" } else if op == P_ORA { "atomicOr" } else if op == P_XORA { "atomicXor" } else { "" }
+				if af.len == 0: serr(x.line, "this assignment to an atomic variable is not supported in WGSL output")
+				format(TPO, af, "(&"); wlv(l); TPO.append(", "); tpexpr(r, 2); TPO.push(')')
+				if pa: TPO.push(')')
+				return
 			if TPH && op == P_MULA:
 				rt := tprt(r)
 				if rt >= 0 && TY[rt].k == T_MAT:
@@ -2115,11 +2128,12 @@ recursive tpnode(e int, prec int):
 			else:
 				lt := tprt(l); rt := tprt(r); tg ~= -1
 				if tpnum(lt) && tpnum(rt) && TY[elty(lt)].k != TY[elty(rt)].k && op != P_SHLA && op != P_SHRA: tg = vecty(elty(lt), ncomp(rt))
+				if TPW && (op == P_SHLA || op == P_SHRA) && TY[elty(rt)].k == T_INT: tg = vecty(TUINT, ncomp(rt))
 				if tg >= 0 { tpexprto(r, tg, 2) } else { tpexpr(r, 2) }
 		else if op == P_AND || op == P_OR || op == ',':
-			tpexpr(l, mp)
+			tpexpr(l, if TPW { 9 } else { mp })
 			if op == ',' { TPO.append(", ") } else { format(TPO, " ", tpopstr(op), " ") }
-			tpexpr(r, mp + 1)
+			tpexpr(r, if TPW { 9 } else { mp + 1 })
 		else:
 			lt := tprt(l); rt := tprt(r)
 			if TPH && op == '*':
@@ -2132,11 +2146,19 @@ recursive tpnode(e int, prec int):
 			if tpnum(lt) && tpnum(rt) && op != P_SHL && op != P_SHR:
 				lk := elty(lt); rk := elty(rt)
 				if TY[lk].k != TY[rk].k: el := if prank(lk) >= prank(rk) { lk } else { rk }; ltg = vecty(el, ncomp(lt)); rtg = vecty(el, ncomp(rt))
-			if ltg >= 0 { tpexprto(l, ltg, mp) } else { tpexpr(l, mp) }
+			sh := op == P_SHL || op == P_SHR
+			if TPW && sh && rt >= 0 && TY[elty(rt)].k == T_INT: rtg = vecty(TUINT, ncomp(rt))
+			wp := if !TPW { -1 } else if sh || op == '&' || op == '|' || op == '^' { 14 } else if mp == 9 || mp == 10 { 11 } else { -1 }
+			lp := if wp >= 0 { wp } else { mp }; rp := if wp >= 0 { wp } else { mp + 1 }
+			if ltg >= 0 { tpexprto(l, ltg, lp) } else { tpexpr(l, lp) }
 			format(TPO, " ", tpopstr(op), " ")
-			if rtg >= 0 { tpexprto(r, rtg, mp + 1) } else { tpexpr(r, mp + 1) }
+			if rtg >= 0 { tpexprto(r, rtg, rp) } else { tpexpr(r, rp) }
 		if pa: TPO.push(')')
 	else if k == E_COND:
+		if TPW:
+			t ~= x.rt; if t < 0 { t = tprt(x.l) }
+			if t >= 0 && (TY[t].k == T_STRUCT || TY[t].k == T_MAT): format(TPO, "cf_select_", if TY[t].k == T_STRUCT { wid(TY[t].name) } else { ["m2", "m3", "m4"][TY[t].cols - 2] }, "("); tpexpr(x.c, 2); TPO.append(", "); tpexprto(x.l, t, 2); TPO.append(", "); tpexprto(x.r, t, 2); TPO.push(')'); return
+			TPO.append("select("); tpexprto(x.r, t, 2); TPO.append(", "); tpexprto(x.l, t, 2); TPO.append(", "); tpexpr(x.c, 2); TPO.push(')'); return
 		if TPH:
 			t ~= tprt(x.l); if t < 0 { t = tprt(x.r) }
 			if t >= 0 && TY[t].k == T_STRUCT: format(TPO, "cf_select_", snm(TY[t].name), "("); tpexpr(x.c, 2); TPO.append(", "); tpexpr(x.l, 2); TPO.append(", "); tpexpr(x.r, 2); TPO.push(')'); return
@@ -2147,12 +2169,21 @@ recursive tpnode(e int, prec int):
 	return
 tpinit(e int):
 	x := EX[e]
-	if x.k == E_CALL && x.asz != -1:
+	if !TPW && x.k == E_CALL && x.asz != -1:
 		el := lookty(x.name); TPO.append("{ ")
 		for a, i x.args: if i > 0 { TPO.append(", ") } tpexprto(a, el, 2)
 		TPO.append(" }"); return
 	tpexpr(e, 2)
 tpdecl(s int):
+	if TPW:
+		n ~= s
+		while n >= 0:
+			y := ST[n]
+			if n != s: TPO.append(";\n"); tpind()
+			format(TPO, "var ", wid(y.name), ": ", wgslty(y.ty)); SHD.push(y.name)
+			if y.init >= 0: TPO.append(" = "); tpinit(y.init)
+			n = y.nx
+		return
 	x := ST[s]; tpvar(x.ty, snm(x.name)); SHD.push(x.name)
 	if x.init >= 0: TPO.append(" = "); tpinit(x.init)
 	n ~= x.nx
@@ -2174,6 +2205,7 @@ recursive tpif(s int):
 		if ST[x.b].k == S_IF { TPO.append("else "); tpif(x.b) } else { TPO.append("else\n"); tpblock(x.b) }
 	return
 recursive tpstmt(s int):
+	if TPW && wstmt(s): return
 	x := ST[s]; k := x.k
 	if k == S_BLOCK:
 		tpblock(s)
@@ -2281,8 +2313,13 @@ hlslcall(e int):
 	TPO.push(')')
 recursive hvexpr(e int, root bool):
 	x := EX[e]
-	if x.k == E_REF && snm(x.name) == "gl_NumWorkGroups": serr(x.line, "gl_NumWorkGroups is not supported in HLSL output")
-	if x.k == E_CALL:
+	if TPW && x.k == E_CALL && x.args.len > 0:
+		n := snm(x.name); q := EX[x.args[0]]
+		if n.len > 6 && n[..6] == "atomic": if q.k == E_IDX && EX[q.l].k == E_REF { WAT.push(EX[q.l].name) } else if q.k == E_REF { WAT.push(q.name) } else { serr(x.line, str("'", n, "' on a struct field or vector component is not supported in WGSL output")) }
+		if q.k == E_REF && n == "imageLoad": WIL.push(q.name)
+		if q.k == E_REF && n == "imageStore": WIS.push(q.name)
+	if !TPW && x.k == E_REF && snm(x.name) == "gl_NumWorkGroups": serr(x.line, "gl_NumWorkGroups is not supported in HLSL output")
+	if !TPW && x.k == E_CALL:
 		n := snm(x.name); t := lookty(x.name)
 		if t >= 0 && TY[t].k == T_STRUCT: for ft TY[t].fty { if TY[ft].k == T_ARR { serr(x.line, str("constructors for structs with array fields are not supported in HLSL/MSL output ('", n, "')")) } }
 		if x.asz != -1 && !root: serr(x.line, "array constructors outside declaration initializers are not supported in HLSL output")
@@ -2313,7 +2350,8 @@ recursive hvstmt(s int):
 		if x.e >= 0: hvexpr(x.e, false)
 	return
 structfac(t int):
-	y := TY[t]; n := snm(y.name)
+	y := TY[t]; n := wid(y.name)
+	if TPW: format(TPO, "fn cf_select_", n, "(c_: bool, a_: ", n, ", b_: ", n, ") -> ", n, " { if (c_) { return a_; } return b_; }\n"); return
 	if TPH: format(TPO, n, " cf_select_", n, "(bool c_, ", n, " a_, ", n, " b_) { if (c_) return a_; return b_; }\n")
 	for ft y.fty: if TY[ft].k == T_ARR { return }
 	format(TPO, n, " cf_make_", n, "(")
@@ -2344,9 +2382,9 @@ hlslfunc(d int):
 HLSL_PRE := "// Generated by cute_spirv.h (HLSL SM 5.1 transpiler backend).\nfloat cf_mod(float x, float y) { return x - y * floor(x / y); }\nfloat2 cf_mod(float2 x, float2 y) { return x - y * floor(x / y); }\nfloat3 cf_mod(float3 x, float3 y) { return x - y * floor(x / y); }\nfloat4 cf_mod(float4 x, float4 y) { return x - y * floor(x / y); }\nfloat2 cf_mod(float2 x, float y) { return x - y * floor(x / y); }\nfloat3 cf_mod(float3 x, float y) { return x - y * floor(x / y); }\nfloat4 cf_mod(float4 x, float y) { return x - y * floor(x / y); }\nint2 cf_texsize(Texture2D<float4> t, int lod) { uint w, h, l; t.GetDimensions((uint)lod, w, h, l); return int2(w, h); }\nint2 cf_texsize(Texture2D<uint4> t, int lod) { uint w, h, l; t.GetDimensions((uint)lod, w, h, l); return int2(w, h); }\nint2 cf_texsize(TextureCube<float4> t, int lod) { uint w, h, l; t.GetDimensions((uint)lod, w, h, l); return int2(w, h); }\nint3 cf_texsize(Texture2DArray<float4> t, int lod) { uint w, h, e, l; t.GetDimensions((uint)lod, w, h, e, l); return int3(w, h, e); }\nint3 cf_texsize(Texture3D<float4> t, int lod) { uint w, h, d, l; t.GetDimensions((uint)lod, w, h, d, l); return int3(w, h, d); }\nfloat2x2 cf_diag2(float s) { return float2x2(s, 0, 0, s); }\nfloat3x3 cf_diag3(float s) { return float3x3(s, 0, 0, 0, s, 0, 0, 0, s); }\nfloat4x4 cf_diag4(float s) { return float4x4(s, 0, 0, 0, 0, s, 0, 0, 0, 0, s, 0, 0, 0, 0, s); }\nuint cf_packHalf2x16(float2 v) { return f32tof16(v.x) | (f32tof16(v.y) << 16); }\nfloat2 cf_unpackHalf2x16(uint u) { return float2(f16tof32(u & 0xFFFFu), f16tof32(u >> 16)); }\nuint cf_packUnorm4x8(float4 v) { uint4 p = (uint4)round(saturate(v) * 255.0); return p.x | (p.y << 8) | (p.z << 16) | (p.w << 24); }\nfloat4 cf_unpackUnorm4x8(uint u) { return float4(u & 0xFFu, (u >> 8) & 0xFFu, (u >> 16) & 0xFFu, u >> 24) / 255.0; }\nuint cf_packSnorm4x8(float4 v) { int4 p = (int4)round(clamp(v, -1.0, 1.0) * 127.0); return (uint)(p.x & 0xFF) | ((uint)(p.y & 0xFF) << 8) | ((uint)(p.z & 0xFF) << 16) | ((uint)(p.w & 0xFF) << 24); }\nfloat4 cf_unpackSnorm4x8(uint u) { int4 p = int4(u << 24, u << 16, u << 8, u) >> 24; return clamp((float4)p / 127.0, -1.0, 1.0); }\nuint cf_packUnorm2x16(float2 v) { uint2 p = (uint2)round(saturate(v) * 65535.0); return p.x | (p.y << 16); }\nfloat2 cf_unpackUnorm2x16(uint u) { return float2(u & 0xFFFFu, u >> 16) / 65535.0; }\nuint cf_packSnorm2x16(float2 v) { int2 p = (int2)round(clamp(v, -1.0, 1.0) * 32767.0); return (uint)(p.x & 0xFFFF) | ((uint)(p.y & 0xFFFF) << 16); }\nfloat2 cf_unpackSnorm2x16(uint u) { int2 p = int2(u << 16, u) >> 16; return clamp((float2)p / 32767.0, -1.0, 1.0); }\nstatic uint cf_atomic_scratch_u; static int cf_atomic_scratch_i;\n"
 tpclear(): TPO.clear(); RNF.clear(); RNT.clear(); SHD.clear(); SHM.clear(); TPI = 0
 ioloop(isin bool, pre const byte[:], suf const byte[:], fl bool):
-	for d DECLS: y := DC[d]; if y.k == D_INOUT && y.isin == isin { TPO.push('\t'); if fl && y.flat { TPO.append("nointerpolation ") } tpvar(y.ty, snm(y.name)); format(TPO, pre, y.loc, suf) }
+	for d DECLS: y := DC[d]; if y.k == D_INOUT && y.isin == isin { TPO.push('\t'); if TPW { format(TPO, "@location(", y.loc, ") ", if fl && y.flat { "@interpolate(flat) " } else { "" }) } else if fl && y.flat { TPO.append("nointerpolation ") } tpvar(y.ty, wid(y.name)); if TPW { TPO.append(",\n") } else { format(TPO, pre, y.loc, suf) } }
 ioassign(isin bool, fmt0 const byte[:], fmt1 const byte[:], fmt2 const byte[:]):
-	for d DECLS: y := DC[d]; if y.k == D_INOUT && y.isin == isin { format(TPO, fmt0, snm(y.name), fmt1, snm(y.name), fmt2) }
+	for d DECLS: y := DC[d]; if y.k == D_INOUT && y.isin == isin { format(TPO, fmt0, wid(y.name), fmt1, wid(y.name), fmt2) }
 emithlsl():
 	for d DECLS:
 		y := DC[d]
@@ -2635,6 +2673,243 @@ emitmsl():
 		TPO.append("\treturn cf_out;\n}\n")
 	else:
 		TPO.append("}\n")
+var TPW = false
+var WGSLO byte[>..]
+var WGERR byte[>..]
+var WAT int[>..]
+var WIL int[>..]
+var WIS int[>..]
+var WHO int[>..]
+var WB int[>..]
+var WTN = 0
+WRES := ["alias", "break", "case", "const", "const_assert", "continue", "continuing", "default", "diagnostic", "discard", "else", "enable", "false", "fn", "for", "if", "let", "loop", "override", "requires", "return", "struct", "switch", "true", "var", "while", "NULL", "Self", "abstract", "active", "alignas", "alignof", "as", "asm", "asm_fragment", "async", "attribute", "auto", "await", "become", "cast", "catch", "class", "co_await", "co_return", "co_yield", "coherent", "column_major", "common", "compile", "compile_fragment", "concept", "const_cast", "consteval", "constexpr", "constinit", "crate", "debugger", "decltype", "delete", "demote", "demote_to_helper", "do", "dynamic_cast", "enum", "explicit", "export", "extends", "extern", "external", "fallthrough", "filter", "final", "finally", "friend", "from", "fxgroup", "get", "goto", "groupshared", "highp", "impl", "implements", "import", "inline", "instanceof", "interface", "layout", "lowp", "macro", "macro_rules", "match", "mediump", "meta", "mod", "module", "move", "mut", "mutable", "namespace", "new", "nil", "noexcept", "noinline", "nointerpolation", "non_coherent", "noncoherent", "noperspective", "null", "nullptr", "of", "operator", "package", "packoffset", "partition", "pass", "patch", "pixelfragment", "precise", "precision", "premerge", "priv", "protected", "pub", "public", "readonly", "ref", "regardless", "register", "reinterpret_cast", "require", "resource", "restrict", "self", "set", "shared", "sizeof", "smooth", "snorm", "static", "static_assert", "static_cast", "std", "subroutine", "super", "target", "template", "this", "thread_local", "throw", "trait", "try", "type", "typedef", "typeid", "typename", "typeof", "union", "unless", "unorm", "unsafe", "unsized", "use", "using", "varying", "virtual", "volatile", "wgsl", "where", "with", "writeonly", "yield", "array", "atomic", "ptr", "f16", "f32", "i32", "u32", "sampler", "sampler_comparison", "select", "bitcast", "arrayLength", "atomicLoad", "atomicStore", "atomicSub", "atomicCompareExchangeWeak", "workgroupBarrier", "storageBarrier", "inverseSqrt", "dpdx", "dpdy", "atan2", "textureSample", "textureSampleLevel", "textureSampleGrad", "textureSampleCompare", "textureSampleCompareLevel", "textureLoad", "textureStore", "textureDimensions", "textureNumLayers", "pack4x8unorm", "pack4x8snorm", "pack2x16unorm", "pack2x16snorm", "pack2x16float", "unpack4x8unorm", "unpack4x8snorm", "unpack2x16unorm", "unpack2x16snorm", "unpack2x16float"]
+wid(n int) const byte[:]:
+	s := snm(n)
+	if !TPW || !WRES.contains(s): return s
+	t byte[>..] ~= []; format(t, s, "_"); snm(sid(t[..]))
+wgsle(t int) const byte[:]:
+	y := TY[t]; k := y.k; c := y.cols
+	if (k == T_INT || k == T_UINT) && y.rows == 64: serr(0, "64-bit integers are not supported in WGSL output")
+	if k == T_VEC: return [["vec2<f32>", "vec3<f32>", "vec4<f32>"], ["vec2<i32>", "vec3<i32>", "vec4<i32>"], ["vec2<u32>", "vec3<u32>", "vec4<u32>"], ["vec2<bool>", "vec3<bool>", "vec4<bool>"]][if TY[y.el].k == T_FLOAT { 0 } else if TY[y.el].k == T_INT { 1 } else if TY[y.el].k == T_UINT { 2 } else { 3 }][c - 2]
+	if k == T_MAT: return ["mat2x2<f32>", "mat3x3<f32>", "mat4x4<f32>"][c - 2]
+	if k == T_STRUCT { wid(y.name) } else if k == T_BOOL { "bool" } else if k == T_INT { "i32" } else if k == T_UINT { "u32" } else if k == T_FLOAT { "f32" } else { "void" }
+wgslty(t int) const byte[:]:
+	if TY[t].k != T_ARR: return wgsle(t)
+	s byte[>..] ~= []; format(s, "array<", wgsle(TY[t].el)); if TY[t].cols >= 0 { format(s, ", ", TY[t].cols) } s.push('>'); snm(sid(s[..]))
+wtexty(t int) const byte[:]: c := TY[t].cols; if c == SD_2DS { "texture_depth_2d" } else if c == SD_CUBES { "texture_depth_cube" } else if c == SD_2DAS { "texture_depth_2d_array" } else if c == SD_CUBE { "texture_cube<f32>" } else if c == SD_3D { "texture_3d<f32>" } else if c == SD_2DA { "texture_2d_array<f32>" } else if TY[t].el >= 0 && TY[TY[t].el].k == T_UINT { "texture_2d<u32>" } else { "texture_2d<f32>" }
+wsmpty(t int) const byte[:]: if isshadow(t) { "sampler_comparison" } else { "sampler" }
+wfmt(f int) const byte[:]: if f == 1 { "rgba32float" } else if f == 2 { "rgba16float" } else if f == 3 { "r32float" } else if f == 4 { "rgba8unorm" } else if f == 32 { "rgba8uint" } else if f == 33 { "r32uint" } else if f == 6 { "rg32float" } else if f == 7 { "rg16float" } else { "r16float" }
+wsc(c byte) byte: if c == 's' { 'x' } else if c == 't' { 'y' } else if c == 'p' { 'z' } else if c == 'q' { 'w' } else { c }
+wmem(b int, n int):
+	bt := tprt(b)
+	if TPW && bt >= 0 && TY[bt].k == T_VEC: for c snm(n) { TPO.push(wsc(c)) } return
+	TPO.append(wid(n))
+wb(g int, b int, k int, i int): WB.push(g); WB.push(b); WB.push(k); WB.push(i)
+wlv(e int): x := EX[e]; if x.k == E_IDX { TPO.append(wid(tpname(EX[x.l].name))); TPO.push('['); tpexpr(x.r, 0); TPO.push(']') } else { TPO.append(wid(tpname(x.name))) }
+wly(e int): TPO.append("i32(floor(("); tpexpr(e, 0); TPO.append(").z + 0.5))")
+wco(e int, sw const byte[:]): TPO.push('('); tpexpr(e, 0); TPO.append(sw)
+wtexcall(e int):
+	x := EX[e]; n := snm(x.name); a := x.args[..]; s := wid(EX[a[0]].name); st := EX[a[0]].rt; sd := TY[st].cols; sh := isshadow(st); fr := STAGE == ST_FRAG; ar := sd == SD_2DA || sd == SD_2DAS
+	if n == "textureSize":
+		format(TPO, if ar { "vec3<i32>(vec2<i32>(" } else if sd == SD_3D { "vec3<i32>(" } else { "vec2<i32>(" }, "textureDimensions(", s, "_tex, "); tpexpr(a[1], 2); TPO.push(')')
+		if ar: format(TPO, "), i32(textureNumLayers(", s, "_tex))")
+		TPO.push(')'); return
+	if n == "texelFetch":
+		format(TPO, "textureLoad(", s, "_tex, ")
+		if ar { wco(a[1], ").xy, ("); tpexpr(a[1], 0); TPO.append(").z") } else { tpexpr(a[1], 2) }
+		TPO.append(", "); tpexpr(a[2], 2); TPO.push(')'); return
+	if TY[st].el >= 0 && TY[TY[st].el].k == T_UINT: serr(x.line, str("'", n, "' on a usampler2D is not supported in WGSL output (WebGPU cannot filter integer textures; use texelFetch)"))
+	cmp := sh && n != "textureOffset"
+	format(TPO, if cmp { if fr && n == "texture" { "textureSampleCompare(" } else { "textureSampleCompareLevel(" } } else if n == "textureGrad" { "textureSampleGrad(" } else if n == "textureLod" || !fr { "textureSampleLevel(" } else { "textureSample(" }, s, "_tex, ", s, "_smp, ")
+	if cmp && sd == SD_2DS { wco(a[1], ").xy, "); wco(a[1], ").z") } else if cmp && sd == SD_CUBES { wco(a[1], ").xyz, "); wco(a[1], ").w") } else if ar { wco(a[1], ").xy, "); wly(a[1]); if cmp { TPO.append(", "); wco(a[1], ").w") } } else { tpexpr(a[1], 2) }
+	if !cmp && n == "textureLod" { TPO.append(", "); tpexpr(a[2], 2) } else if !cmp && n == "textureGrad" { TPO.append(", "); tpexpr(a[2], 2); TPO.append(", "); tpexpr(a[3], 2) } else if !cmp && !fr { TPO.append(", 0.0") }
+	if n == "textureOffset": TPO.append(", "); tpexpr(a[2], 2)
+	TPO.push(')')
+wgslcall(e int):
+	x := EX[e]; n := snm(x.name); a := x.args[..]; argc := a.len; ct := lookty(x.name)
+	if x.asz != -1:
+		format(TPO, "array<", wgslty(ct), ", ", if x.asz > 0 { x.asz } else { argc }, ">(")
+		for q, i a { if i > 0 { TPO.append(", ") } tpexprto(q, ct, 2) }
+		TPO.push(')'); return
+	if ct >= 0:
+		y := TY[ct]; a0 := tprt(a[0])
+		if y.k == T_MAT && argc == 1: format(TPO, "cf_diag", y.cols, "("); tpexprto(a[0], TFLOAT, 2); TPO.push(')'); return
+		if isscal(ct) && isvec(a0): format(TPO, wgslty(ct), "(("); tpexpr(a[0], 0); TPO.append(").x)"); return
+		if isvec(ct) && argc == 1 && isvec(a0) && TY[a0].cols > y.cols: format(TPO, wgslty(ct), "(("); tpexpr(a[0], 0); format(TPO, ").", ["xy", "xyz"][y.cols - 2], ")"); return
+		format(TPO, wgslty(ct), "(")
+		for q, i a:
+			if i > 0: TPO.append(", ")
+			qt := tprt(q); tpexprto(q, if y.k == T_STRUCT { y.fty[i] } else if isscal(ct) || argc == 1 && isvec(qt) { qt } else if y.k == T_MAT { vecty(TFLOAT, ncomp(qt)) } else { vecty(y.el, ncomp(qt)) }, 2)
+		TPO.push(')'); return
+	fh := dgi(FNS, x.name)
+	if fh >= 0:
+		format(TPO, wid(x.name), "(")
+		for q, i a:
+			if i > 0: TPO.append(", ")
+			if i < SY[fh].pq.len && SY[fh].pq[i] != 0 { TPO.push('&'); tpexpr(q, 15) } else if issampref(q) { s := wid(EX[q].name); format(TPO, s, "_tex, ", s, "_smp") } else { tpexpr(q, 2) }
+		TPO.push(')'); return
+	if argc >= 1 && issampref(a[0]): wtexcall(e); return
+	if n == "imageLoad": TPO.append("textureLoad("); tpargs(a, 0); TPO.push(')'); return
+	if n == "imageStore": TPO.append("textureStore("); tpargs(a, 0); TPO.push(')'); return
+	if n == "imageSize": TPO.append("vec2<i32>(textureDimensions("); tpexpr(a[0], 2); TPO.append("))"); return
+	rel := hlslrel(n)
+	if rel.len > 0: TPO.push('('); tpexpr(a[0], 11); format(TPO, " ", rel, " "); tpexpr(a[1], 11); TPO.push(')'); return
+	if n == "not": TPO.append("!("); tpexpr(a[0], 0); TPO.push(')'); return
+	if n == "barrier" || n == "groupMemoryBarrier" || n == "memoryBarrierShared": TPO.append("workgroupBarrier()"); return
+	if n == "memoryBarrier" || n == "memoryBarrierBuffer": TPO.append("storageBarrier()"); return
+	if n == "atomicCompSwap": TPO.append("atomicCompareExchangeWeak(&"); wlv(a[0]); TPO.append(", "); tpexpr(a[1], 2); TPO.append(", "); tpexpr(a[2], 2); TPO.append(").old_value"); return
+	if n.len > 6 && n[..6] == "atomic": format(TPO, n, "(&"); wlv(a[0]); TPO.append(", "); tpexpr(a[1], 2); TPO.push(')'); return
+	if n == "isnan" || n == "isinf":
+		c := ncomp(tprt(a[0])); u := wgslty(vecty(TUINT, c))
+		format(TPO, "((bitcast<", u, ">("); tpexpr(a[0], 0); format(TPO, ") & ", u, "(2147483647u)) ", if n == "isnan" { ">" } else { "==" }, " ", u, "(2139095040u))"); return
+	bt := if n == "floatBitsToInt" { TINT } else if n == "floatBitsToUint" { TUINT } else if n == "intBitsToFloat" || n == "uintBitsToFloat" { TFLOAT } else { -1 }
+	if bt >= 0: format(TPO, "bitcast<", wgslty(vecty(bt, ncomp(tprt(a[0])))), ">("); tpexpr(a[0], 0); TPO.push(')'); return
+	if n == "inverse": serr(x.line, "inverse() is not supported in WGSL output")
+	if n == "mix" && argc == 3 && TY[elty(tprt(a[2]))].k == T_BOOL: TPO.append("select("); tpargs(a, 0); TPO.push(')'); return
+	fr := ["inversesqrt", "dFdx", "dFdy", "packUnorm4x8", "packSnorm4x8", "packUnorm2x16", "packSnorm2x16", "packHalf2x16", "unpackUnorm4x8", "unpackSnorm4x8", "unpackUnorm2x16", "unpackSnorm2x16", "unpackHalf2x16"]
+	to := ["inverseSqrt", "dpdx", "dpdy", "pack4x8unorm", "pack4x8snorm", "pack2x16unorm", "pack2x16snorm", "pack2x16float", "unpack4x8unorm", "unpack4x8snorm", "unpack2x16unorm", "unpack2x16snorm", "unpack2x16float"]
+	tc ~= 1; for q a { c := ncomp(tprt(q)); if c > tc { tc = c } }
+	ri ~= -1; for f, i fr { if f == n { ri = i } }
+	if n == "mod" { format(TPO, "cf_mod", tc, "(") } else if ri >= 0 { format(TPO, to[ri], "(") } else if n == "atan" && argc == 2 { TPO.append("atan2(") } else { format(TPO, n, "(") }
+	for q, i a:
+		if i > 0: TPO.append(", ")
+		t := if EX[q].want >= 0 { EX[q].want } else { tprt(q) }
+		if tc > 1 && ncomp(t) == 1 && !(n == "refract" && i == 2) { format(TPO, wgslty(vecty(elty(t), tc)), "("); tpexpr(q, 2); TPO.push(')') } else { tpexpr(q, 2) }
+	TPO.push(')')
+recursive wcol(e int, root bool):
+	x := EX[e]; k := x.k
+	if k == E_UN && (x.op == P_INC || x.op == P_DEC) && !root: WHO.push(e)
+	if k == E_BIN && isassign(x.op) && !root: serr(x.line, "an assignment inside an expression is not supported in WGSL output")
+	if k == E_BIN || k == E_IDX { wcol(x.l, false); wcol(x.r, false) } else if k == E_UN || k == E_MEM || k == E_LEN { wcol(x.l, false) } else if k == E_COND { wcol(x.c, false); wcol(x.l, false); wcol(x.r, false) } else if k == E_CALL { for q x.args { wcol(q, false) } }
+	return
+wswz(e int) bool:
+	x := EX[e]
+	if x.k != E_BIN || !isassign(x.op) || EX[x.l].k != E_MEM: return false
+	m := EX[x.l]; bt := tprt(m.l); sw := snm(m.name)
+	if bt < 0 || TY[bt].k != T_VEC || sw.len < 2: return false
+	lt := tprt(x.l); tt := if x.op == '=' { lt } else { vecty(elty(lt), ncomp(tprt(x.r))) }
+	tpind(); TPO.append("{\n"); TPI += 1; tpind(); format(TPO, "let cf_t", WTN, ": ", wgslty(tt), " = "); tpexprto(x.r, tt, 2); TPO.append(";\n")
+	for c, i sw:
+		tpind(); tpexpr(m.l, 15); TPO.push('.'); TPO.push(wsc(c)); format(TPO, " ", tpopstr(x.op), " cf_t", WTN)
+		if ncomp(tt) > 1: TPO.push('.'); TPO.push("xyzw"[i])
+		TPO.append(";\n")
+	TPI -= 1; tpind(); TPO.append("}\n"); WTN += 1; true
+recursive wends(s int) bool: x := ST[s]; if x.k == S_RET { true } else if x.k == S_BLOCK { x.blk.len > 0 && wends(x.blk[x.blk.len - 1]) } else if x.k == S_IF { x.b >= 0 && wends(x.a) && wends(x.b) } else { false }
+recursive wstmt(s int) bool:
+	x := ST[s]; k := x.k
+	if k == S_IF || k == S_WHILE || k == S_DO || k == S_SWITCH || k == S_FOR:
+		WHO.clear()
+		if x.e >= 0: wcol(x.e, false)
+		if k == S_FOR && x.it >= 0: wcol(x.it, true)
+		if WHO.len > 0: serr(x.line, "'++' and '--' inside a condition are not supported in WGSL output")
+		if k == S_FOR && x.a >= 0 && ST[x.a].k == S_DECL && ST[x.a].nx >= 0: serr(x.line, "a for loop that declares several variables is not supported in WGSL output")
+		if k == S_DO:
+			tpind(); TPO.append("loop\n"); tpind(); TPO.append("{\n"); TPI += 1; tppush()
+			if ST[x.b].k == S_BLOCK { for b ST[x.b].blk { tpstmt(b) } } else { tpstmt(x.b) }
+			tpind(); TPO.append("continuing\n"); tpind(); TPO.append("{\n"); tpind(); TPO.append("\tbreak if !("); tpexpr(x.e, 0); TPO.append(");\n"); tpind(); TPO.append("}\n")
+			tppop(); TPI -= 1; tpind(); TPO.append("}\n"); return true
+		if k != S_SWITCH: return false
+		tpind(); TPO.append("switch ("); tpexpr(x.e, 0); TPO.append(")\n"); tpind(); TPO.append("{\n"); tppush(); hd ~= false
+		for g, gi x.grps:
+			y := GRP[g]; tpind()
+			if y.labels.len > 0: TPO.append("case "); for lb, j y.labels { if j > 0 { TPO.append(", ") } format(TPO, lb as! i32) }
+			if y.def: TPO.append(if y.labels.len > 0 { ", default" } else { "default" }); hd = true
+			TPO.append(":\n"); tpind(); TPO.append("{\n"); TPI += 1; for t y.sts { tpstmt(t) } TPI -= 1; tpind(); TPO.append("}\n")
+			lk := if y.sts.len > 0 { ST[y.sts[y.sts.len - 1]].k } else { -1 }
+			if gi + 1 < x.grps.len && lk != S_BREAK && lk != S_RET && lk != S_CONT && lk != S_DISCARD: serr(x.line, "a switch case that falls through is not supported in WGSL output")
+		if !hd: tpind(); TPO.append("default:\n"); tpind(); TPO.append("{\n"); tpind(); TPO.append("}\n")
+		tppop(); tpind(); TPO.append("}\n"); return true
+	if k != S_DECL && k != S_EXPR && k != S_RET: return false
+	WHO.clear()
+	if k == S_DECL { n ~= s; while n >= 0 { if ST[n].init >= 0 { wcol(ST[n].init, false) } n = ST[n].nx } } else if x.e >= 0 { wcol(x.e, true) }
+	if WHO.len == 0: return k == S_EXPR && wswz(x.e)
+	for h WHO: if !EX[h].post { tpind(); tpexpr(EX[h].l, 0); TPO.append(if EX[h].op == P_INC { "++;\n" } else { "--;\n" }) }
+	tpind()
+	if k == S_DECL { tpdecl(s) } else if k == S_RET { TPO.append("return "); tpexpr(x.e, 0) } else { tpexpr(x.e, 0) }
+	TPO.append(";\n")
+	for h WHO: if EX[h].post { if k == S_RET { serr(x.line, "a postfix '++' or '--' in a return is not supported in WGSL output") } tpind(); tpexpr(EX[h].l, 0); TPO.append(if EX[h].op == P_INC { "++;\n" } else { "--;\n" }) }
+	WHO.clear(); true
+wfunc(d int):
+	y := DC[d]; mn := snm(y.name) == "main"; nr := RNF.len
+	format(TPO, "fn ", if mn { "cf_main_" } else { wid(y.name) }, "("); tppush()
+	for t, i y.pty:
+		if i > 0: TPO.append(", ")
+		pn := wid(y.pnm[i])
+		if TY[t].k == T_IMG: serr(y.line, "image2D function parameters are not supported in WGSL output")
+		if TY[t].k == T_SAMP:
+			format(TPO, pn, "_tex: ", wtexty(t), ", ", pn, "_smp: ", wsmpty(t)); SHD.push(y.pnm[i])
+		else if y.pq[i] != 0:
+			format(TPO, pn, ": ptr<function, ", wgslty(t), ">"); r byte[>..] ~= []; format(r, "(*", pn, ")"); tprename(y.pnm[i], sid(r[..]))
+		else:
+			format(TPO, "cf_a_", pn, ": ", wgslty(t)); SHD.push(y.pnm[i])
+	TPO.push(')')
+	if y.ty != TVOID: format(TPO, " -> ", wgslty(y.ty))
+	TPO.append("\n{\n"); TPI = 1
+	for t, i y.pty: if y.pq[i] == 0 && !opq(t) { pn := wid(y.pnm[i]); format(TPO, "\tvar ", pn, ": ", wgslty(t), " = cf_a_", pn, ";\n") }
+	bl := ST[y.body].blk.len; for b ST[y.body].blk { tpstmt(b) }
+	if y.ty != TVOID && (bl == 0 || !wends(ST[y.body].blk[bl - 1])): format(TPO, "\treturn ", wgslty(y.ty), "();\n")
+	TPO.append("}\n"); TPI = 0; tppop(); while RNF.len > nr { RNF.pop(); RNT.pop() }
+WGSL_PRE := "// Generated by hc (WGSL backend).\ndiagnostic(off, derivative_uniformity);\nfn cf_mod1(x: f32, y: f32) -> f32 { return x - y * floor(x / y); }\nfn cf_mod2(x: vec2<f32>, y: vec2<f32>) -> vec2<f32> { return x - y * floor(x / y); }\nfn cf_mod3(x: vec3<f32>, y: vec3<f32>) -> vec3<f32> { return x - y * floor(x / y); }\nfn cf_mod4(x: vec4<f32>, y: vec4<f32>) -> vec4<f32> { return x - y * floor(x / y); }\nfn cf_diag2(s: f32) -> mat2x2<f32> { return mat2x2<f32>(s, 0.0, 0.0, s); }\nfn cf_diag3(s: f32) -> mat3x3<f32> { return mat3x3<f32>(s, 0.0, 0.0, 0.0, s, 0.0, 0.0, 0.0, s); }\nfn cf_diag4(s: f32) -> mat4x4<f32> { return mat4x4<f32>(s, 0.0, 0.0, 0.0, 0.0, s, 0.0, 0.0, 0.0, 0.0, s, 0.0, 0.0, 0.0, 0.0, s); }\nfn cf_select_m2(c: bool, a: mat2x2<f32>, b: mat2x2<f32>) -> mat2x2<f32> { if (c) { return a; } return b; }\nfn cf_select_m3(c: bool, a: mat3x3<f32>, b: mat3x3<f32>) -> mat3x3<f32> { if (c) { return a; } return b; }\nfn cf_select_m4(c: bool, a: mat4x4<f32>, b: mat4x4<f32>) -> mat4x4<f32> { if (c) { return a; } return b; }\n"
+emitwgsl():
+	WAT.clear(); WIL.clear(); WIS.clear(); WB.clear(); TPW = true
+	for d DECLS:
+		y := DC[d]
+		if y.k == D_FUNC: hvstmt(y.body); for q DECLS { if q < d && DC[q].k == D_FUNC && DC[q].name == y.name { serr(y.line, str("overloaded functions are not supported in WGSL output ('", snm(y.name), "')")) } }
+		if y.k == D_BLOCK && !y.isbuf: for t y.mty { m := if TY[t].k == T_ARR { TY[t].el } else { t }; if TY[m].k == T_MAT && TY[m].cols == 2 { serr(y.line, "mat2 in a uniform block is not supported in WGSL output") } }
+		if y.k == D_INOUT && (TY[y.ty].k == T_MAT || TY[elty(y.ty)].k == T_BOOL): serr(y.line, str("'", snm(y.name), "': matrix and bool stage inputs and outputs are not supported in WGSL output"))
+	tpclear(); TPH = false; TPM = false; TPW = true; TPO.append(WGSL_PRE)
+	for d DECLS: y := DC[d]; if y.k == D_BLOCK && !y.isbuf && y.inst < 0 { for m y.mnm { r byte[>..] ~= []; format(r, wid(y.name), ".", wid(m)); tprename(m, sid(r[..])) } }
+	TPO.append(if STAGE == ST_VERT { "var<private> gl_Position: vec4<f32>;\nvar<private> gl_VertexIndex: i32;\nvar<private> gl_InstanceIndex: i32;\n" } else if STAGE == ST_FRAG { "var<private> gl_FragCoord: vec4<f32>;\nvar<private> gl_FrontFacing: bool;\n" } else { "var<private> gl_GlobalInvocationID: vec3<u32>;\nvar<private> gl_LocalInvocationID: vec3<u32>;\nvar<private> gl_WorkGroupID: vec3<u32>;\nvar<private> gl_NumWorkGroups: vec3<u32>;\nvar<private> gl_LocalInvocationIndex: u32;\n" })
+	for d DECLS:
+		y := DC[d]; k := y.k; n := wid(y.name); g := y.set; b := y.bind * 2
+		if k == D_STRUCT:
+			format(TPO, "\nstruct ", n, "\n{\n"); for ft, j TY[y.ty].fty { TPO.push('\t'); tpvar(ft, wid(TY[y.ty].fnm[j])); TPO.append(",\n") } TPO.append("}\n"); structfac(y.ty)
+		else if k == D_GLOBAL:
+			format(TPO, if y.isc { "const " } else { "var<private> " }, n, ": ", wgslty(y.ty))
+			if y.init >= 0: TPO.append(" = "); tpinit(y.init)
+			TPO.append(";\n")
+		else if k == D_INOUT:
+			format(TPO, "var<private> ", n, ": ", wgslty(y.ty), ";\n")
+		else if k == D_BLOCK && y.isbuf:
+			at := WAT.contains(y.mnm[0]); format(TPO, "@group(", g, ") @binding(", b, ") var<storage, ", if y.ro { "read" } else { "read_write" }, "> ")
+			if y.inst >= 0 { format(TPO, snm(y.inst), "_", snm(y.mnm[0])) } else { TPO.append(wid(y.mnm[0])) }
+			format(TPO, ": array<", if at { "atomic<" } else { "" }, wgslty(TY[y.mty[0]].el), if at { ">" } else { "" }, ">;\n"); wb(g, b, if y.ro { 2 } else { 3 }, 0)
+		else if k == D_BLOCK:
+			format(TPO, "\nstruct cf_ub_", n, "\n{\n"); for m, j y.mty { TPO.push('\t'); tpvar(m, wid(y.mnm[j])); TPO.append(",\n") }
+			format(TPO, "}\n@group(", g, ") @binding(", b, ") var<uniform> ", if y.inst >= 0 { wid(y.inst) } else { n }, ": cf_ub_", n, ";\n"); wb(g, b, 1, y.bind)
+		else if k == D_OPAQUE && TY[y.ty].k == T_SAMP:
+			c := TY[y.ty].cols; sh := isshadow(y.ty); format(TPO, "@group(", g, ") @binding(", b, ") var ", n, "_tex: ", wtexty(y.ty), ";\n@group(", g, ") @binding(", b + 1, ") var ", n, "_smp: ", wsmpty(y.ty), ";\n")
+			wb(g, b, if sh { 6 } else if TY[y.ty].el >= 0 && TY[TY[y.ty].el].k == T_UINT { 5 } else { 4 }, if c == SD_CUBE || c == SD_CUBES { 1 } else if c == SD_3D { 2 } else if c == SD_2DA || c == SD_2DAS { 3 } else { 0 }); wb(g, b + 1, if sh { 8 } else { 7 }, 0)
+		else if k == D_OPAQUE:
+			ld := WIL.contains(y.name) || y.ro; wr := WIS.contains(y.name); f := TY[y.ty].cols
+			format(TPO, "@group(", g, ") @binding(", b, ") var ", n, ": texture_storage_2d<", wfmt(f), ", ", if ld && wr { "read_write" } else if ld { "read" } else { "write" }, ">;\n"); wb(g, b, if ld && wr { 11 } else if ld { 10 } else { 9 }, f)
+		else if k == D_SHARED:
+			at := WAT.contains(y.name); el := if TY[y.ty].k == T_ARR { TY[y.ty].el } else { y.ty }
+			format(TPO, "var<workgroup> ", n, ": ", if TY[y.ty].k == T_ARR { "array<" } else { "" }, if at { "atomic<" } else { "" }, wgslty(el), if at { ">" } else { "" })
+			if TY[y.ty].k == T_ARR: format(TPO, ", ", TY[y.ty].cols, ">")
+			TPO.append(";\n")
+		else if k == D_FUNC:
+			TPO.push('\n'); wfunc(d)
+	ni ~= 0; no ~= 0; for d DECLS { if DC[d].k == D_INOUT { if DC[d].isin { ni += 1 } else { no += 1 } } }
+	vs := STAGE == ST_VERT; fs := STAGE == ST_FRAG
+	if vs || fs:
+		if ni > 0: format(TPO, "\nstruct ", if vs { "cf_vs_in" } else { "cf_ps_in" }, "\n{\n"); ioloop(true, "", "", true); TPO.append("}\n")
+		if vs || no > 0: format(TPO, "\nstruct ", if vs { "cf_vs_out\n{\n\t@builtin(position) cf_position: vec4<f32>,\n" } else { "cf_ps_out\n{\n" }); ioloop(false, "", "", vs); TPO.append("}\n")
+		TPO.append(if vs { "@vertex\nfn main(" } else { "@fragment\nfn main(@builtin(position) cf_position: vec4<f32>, @builtin(front_facing) cf_front: bool" })
+		if ni > 0: TPO.append(if vs { "cf_in: cf_vs_in, " } else { ", cf_in: cf_ps_in" })
+		TPO.append(if vs { "@builtin(vertex_index) cf_vid: u32, @builtin(instance_index) cf_iid: u32) -> cf_vs_out\n{\n" } else if no > 0 { ") -> cf_ps_out\n{\n" } else { ")\n{\n" })
+		ioassign(true, "\t", " = cf_in.", ";\n")
+		TPO.append(if vs { "\tgl_VertexIndex = i32(cf_vid);\n\tgl_InstanceIndex = i32(cf_iid);\n\tcf_main_();\n\tvar cf_out: cf_vs_out;\n\tcf_out.cf_position = gl_Position;\n" } else { "\tgl_FragCoord = cf_position;\n\tgl_FrontFacing = cf_front;\n\tcf_main_();\n" })
+		if vs || no > 0: TPO.append(if vs { "" } else { "\tvar cf_out: cf_ps_out;\n" }); ioassign(false, "\tcf_out.", " = ", ";\n"); TPO.append("\treturn cf_out;\n")
+		TPO.append("}\n")
+	else:
+		format(TPO, "@compute @workgroup_size(", LSIZE[0], ", ", LSIZE[1], ", ", LSIZE[2], ")\nfn main(@builtin(global_invocation_id) cf_dtid: vec3<u32>, @builtin(local_invocation_id) cf_gtid: vec3<u32>, @builtin(workgroup_id) cf_gid: vec3<u32>, @builtin(num_workgroups) cf_nwg: vec3<u32>, @builtin(local_invocation_index) cf_gidx: u32)\n{\n\tgl_GlobalInvocationID = cf_dtid;\n\tgl_LocalInvocationID = cf_gtid;\n\tgl_WorkGroupID = cf_gid;\n\tgl_NumWorkGroups = cf_nwg;\n\tgl_LocalInvocationIndex = cf_gidx;\n\tcf_main_();\n}\n")
+wgslout():
+	ok ~= true
+	body(): emitwgsl()
+	exception::try<int>(body) { e => ok = false }
+	TPW = false
+	if ok { WGSLO.append(TPO[..]) } else { WGERR.append(ERRM[..]); ERRM.clear(); WB.clear() }
 struct Cls { what const byte[:], set int, first int, count int }
 stname(st int) const byte[:]: if st == ST_VERT { "vertex" } else if st == ST_FRAG { "fragment" } else { "compute" }
 chkcls(path const byte[:], st int, c Cls, rs const RRes[:], rule const byte[:], err byte[>..]&) bool:
@@ -2672,22 +2947,31 @@ chkin(path const byte[:], err byte[>..]&) bool:
 pu16(b byte[>..]&, v int): b.push((v & 255) as byte); b.push((v >> 8 & 255) as byte)
 pu32(b byte[>..]&, v int): pu16(b, v & 65535); pu16(b, v >> 16 & 65535)
 blob(st int, spv const u32[:], b byte[>..]&):
-	b.append("GSHD"); pu16(b, 1); b.push(st as byte); b.push(RINP.len as byte)
+	b.append("GSHD"); pu16(b, 2); b.push(st as byte); b.push(RINP.len as byte)
 	for i 3: pu32(b, if st == ST_COMP { LSIZE[i] } else { 0 })
 	iro ~= 0; for r RIMG { if r.ro { iro += 1 } } bro ~= 0; for r RBUF { if r.ro { bro += 1 } }
 	pu16(b, RSAMP.len); pu16(b, iro); pu16(b, RIMG.len - iro); pu16(b, bro); pu16(b, RBUF.len - bro); pu16(b, RBLK.len)
-	nu := RBLK.len; off ~= (56 + 4 * nu + 2 * RINP.len + 3) & ~3; so := off; off += spv.len * 4; mo := off; off += MSLO.len + 1; ho := off
-	pu32(b, so); pu32(b, spv.len * 4); pu32(b, mo); pu32(b, MSLO.len); pu32(b, ho); pu32(b, HLSLO.len)
+	nu := RBLK.len; off ~= (68 + 4 * nu + 2 * RINP.len + WB.len + 3) & ~3; so := off; off += spv.len * 4; mo := off; off += MSLO.len + 1; ho := off; off += HLSLO.len + 1
+	pu32(b, so); pu32(b, spv.len * 4); pu32(b, mo); pu32(b, MSLO.len); pu32(b, ho); pu32(b, HLSLO.len); pu32(b, off); pu32(b, WGSLO.len); pu16(b, WB.len / 4); pu16(b, 0)
 	for k nu: sz ~= 0; for x RBLK { if x.bind == k { sz = x.size } } pu32(b, sz)
 	for x RINP: b.push(x.loc as byte); b.push(x.ty as byte)
+	for v WB: b.push(v as byte)
 	while b.len < so: b.push(0)
 	for w spv: pu32(b, w as int)
-	b.append(MSLO[..]); b.push(0); b.append(HLSLO[..]); b.push(0)
-compile_blob(stage int, path const byte[:], src const byte[:], out byte[>..]&, err byte[>..]&) bool:
+	b.append(MSLO[..]); b.push(0); b.append(HLSLO[..]); b.push(0); b.append(WGSLO[..]); b.push(0)
+shstage(path const byte[:]) int: if path.len > 5 && path[^5..] == ".vert" { 0 } else if path.len > 5 && path[^5..] == ".frag" { 1 } else if path.len > 5 && path[^5..] == ".comp" { 2 } else { -1 }
+cfile(stage int, path const byte[:], src const byte[:], spv u32[>..]&, err byte[>..]&) bool:
 	INCDIR.clear(); sl ~= path.len; while sl > 0 && path[sl - 1] != '/' && path[sl - 1] != '\\' { sl -= 1 } INCDIR.append(path[..sl])
+	if cspv(src, stage, spv): return true
+	emsg(path, ERRM[..], err); false
+emsg(path const byte[:], m const byte[:], err byte[>..]&): if m.len >= 7 && m[..7] == "shader:" { err.append(path); err.push(':'); err.append(m[7..]) } else { err.append(m) }
+compile_blob(stage int, path const byte[:], src const byte[:], out byte[>..]&, err byte[>..]&) bool:
 	spv u32[>..] ~= []
-	if !cspv(src, stage, spv):
-		if ERRM.len >= 7 && ERRM[..7] == "shader:" { err.append(path); err.push(':'); err.append(ERRM[7..]) } else { err.append(ERRM[..]) }
-		return false
+	if !cfile(stage, path, src, spv, err): return false
 	if !chkbind(path, stage, err) || stage == ST_VERT && !chkin(path, err): return false
 	blob(stage, spv[..], out); true
+wgsl_file(stage int, path const byte[:], src const byte[:], out byte[>..]&, err byte[>..]&) bool:
+	spv u32[>..] ~= []
+	if !cfile(stage, path, src, spv, err): return false
+	if WGSLO.len == 0: emsg(path, WGERR[..], err); return false
+	out.append(WGSLO[..]); true

@@ -823,14 +823,14 @@ release(s Sampler):
 	if i < 0: return
 	s_rmsmp(DEV, SMPS[i]); trem(TSMP, s.id)
 read_blob(b const byte[:], o Info&) bool:
-	if b.len < 56 || b[..4] != "GSHD": return misuse("not a shader: pass what embed_shader returns")
+	if b.len < 68 || b[..4] != "GSHD": return misuse("not a shader: pass what embed_shader returns")
 	ver := u16at(b, 4)
-	if ver != 1: return misuse(str("a shader blob of version ", ver, ", where this gfx reads version 1"))
+	if ver != 2: return misuse(str("a shader blob of version ", ver, ", where this gfx reads version 2"))
 	o.stage = b[6] as int; o.nin = b[7] as int; for k 3 { o.ls[k] = u32at(b, 8 + 4 * k) }
 	o.nsmp = u16at(b, 20); o.nstro = u16at(b, 22); o.nstrw = u16at(b, 24); o.nsbro = u16at(b, 26); o.nsbrw = u16at(b, 28); o.nub = u16at(b, 30)
-	o.so = u32at(b, 32); o.ss = u32at(b, 36); o.mo = u32at(b, 40); o.ms = u32at(b, 44); ho := u32at(b, 48); hs := u32at(b, 52)
-	if o.stage > 2 || o.nub > 4 || o.nin > 16 || o.so + o.ss > b.len || o.mo + o.ms >= b.len || ho + hs >= b.len: return misuse("a damaged shader blob")
-	p ~= 56; for k o.nub { o.usz[k] = u32at(b, p); p += 4 }
+	o.so = u32at(b, 32); o.ss = u32at(b, 36); o.mo = u32at(b, 40); o.ms = u32at(b, 44); ho := u32at(b, 48); hs := u32at(b, 52); wo := u32at(b, 56); ws := u32at(b, 60)
+	if o.stage > 2 || o.nub > 4 || o.nin > 16 || o.so + o.ss > b.len || o.mo + o.ms >= b.len || ho + hs >= b.len || wo + ws >= b.len: return misuse("a damaged shader blob")
+	p ~= 68; for k o.nub { o.usz[k] = u32at(b, p); p += 4 }
 	for k o.nin: o.inl[k] = b[p] as int; o.inty[k] = b[p + 1] as int; p += 2
 	true
 shader_code(b const byte[:], o Info&, code byte[>..]&) byte[:]:
