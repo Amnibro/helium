@@ -7,7 +7,7 @@ layout(location = 4) in vec4 in_col;
 layout(location = 5) in vec4 in_cur;    // unjittered clip position, this frame
 layout(location = 6) in vec4 in_prev;   // unjittered clip position, last frame
 layout(set = 2, binding = 0) uniform sampler2D tex_base;
-layout(set = 3, binding = 0) uniform Cutout { vec4 base; vec4 alpha; vec4 uv_sets; mat4 view; };
+layout(set = 3, binding = 0) uniform Cutout { vec4 base; vec4 alpha; vec4 uv_sets; vec4 xm; vec4 xo; mat4 view; };
 layout(location = 0) out vec4 out_nd;
 // xy: uv now minus uv last frame (x right, y down); z: view depth now; w: view depth of
 // the same surface point last frame (clip w). A point that was behind the camera last
@@ -16,7 +16,8 @@ layout(location = 1) out vec4 out_motion;
 layout(location = 2) out vec4 out_depth;
 void main() {
 	if (alpha.x > 0.5 && alpha.x < 1.5) {
-		vec2 uv = uv_sets.x > 0.5 ? in_uv.zw : in_uv.xy;
+		vec2 u0 = uv_sets.x > 0.5 ? in_uv.zw : in_uv.xy;
+		vec2 uv = vec2(dot(xm.xy, u0), dot(xm.zw, u0)) + xo.xy;
 		if (base.a * in_col.a * texture(tex_base, uv).a < alpha.y) discard;
 	}
 	vec3 n = normalize(in_nrm);

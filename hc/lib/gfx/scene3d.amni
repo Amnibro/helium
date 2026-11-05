@@ -45,6 +45,8 @@ struct Sun { to_sun float3, rgb float3, shadows bool, shadow_far f32, map_size i
 struct Light { pos float3, range f32, rgb float3, kind int }   // kind 0 point (1 spot is reserved)
 struct Sky { zenith float3, horizon float3, ground float3, ambient f32, draw bool }
 struct Look { exposure f32, white f32, bloom f32, bloom_cut f32, desaturate f32, ssao bool, ao_radius f32, ao_power f32, ao_samples int }
+struct NodeOv { item int, node int, t float3, r linalg::Quat, sc float3 }
+struct WeightOv { item int, node int, k int, w f32 }
 struct Item { asset int, place gfx::mat4, prev_place gfx::mat4, anim int, time f32, visible bool, anim2 int = -1, time2 f32 = 0.0, blend f32 = 1.0, bend_node int = -1, bend linalg::Quat = linalg::Quat { 0.0, 0.0, 0.0, 1.0 }, track int[4] = [-1, -1, -1, -1], tracked gfx::mat4[4] = [gfx::mat4_identity, gfx::mat4_identity, gfx::mat4_identity, gfx::mat4_identity] }
 struct Batch { prim int, item int, node int, joint_base int, model gfx::mat4, depth f32, mode int, prev_model gfx::mat4, prev_joint_base int, vis bool }
 
@@ -54,9 +56,9 @@ struct FrameU {
 	zenith float4, horizon float4, ground float4, screen float4, light_pos float4[16], light_rgb float4[16], gi float4, gi_origin float4, gi_step float4, gi_dims float4
 }
 struct GiU { origin float4, step float4, dims float4, rot0 float4, rot1 float4, rot2 float4, params float4, to_sun float4, sun_rgb float4, zenith float4, horizon float4, ground float4, light_pos float4[8], light_rgb float4[8] }
-struct SurfaceU { base float4, emissive float4, params float4, alpha float4, uv_sets float4, uv_sets2 float4, tri float4, top_tint float4 }
-struct CutU { base float4, alpha float4, uv_sets float4 }
-struct CutViewU { base float4, alpha float4, uv_sets float4, view gfx::mat4 }
+struct SurfaceU { base float4, emissive float4, params float4, alpha float4, uv_sets float4, uv_sets2 float4, tri float4, top_tint float4, xm_base float4, xm_mr float4, xm_nrm float4, xm_occ float4, xm_emi float4, xo0 float4, xo1 float4, xo2 float4, sheen float4 }
+struct CutU { base float4, alpha float4, uv_sets float4, xm float4, xo float4 }
+struct CutViewU { base float4, alpha float4, uv_sets float4, xm float4, xo float4, view gfx::mat4 }
 struct SkyU { inv_view_proj gfx::mat4, prev_view_proj gfx::mat4, to_sun float4, sun_rgb float4, zenith float4, horizon float4, ground float4 }
 struct AoU { lens float4, tune float4 }
 struct GtaoU { lens float4, tune float4, size float4 }
@@ -283,8 +285,29 @@ fn pose(ii int) {
 	if it.anim2 >= 0 { motion::apply(it.anim2, it.time2, 1.0); }
 	if it.anim >= 0 { motion::apply(it.anim, it.time, if it.anim2 >= 0 { it.blend } else { 1.0 }); }
 	if it.bend_node >= 0 { motion::pose_r[it.bend_node] = linalg::qmul(motion::pose_r[it.bend_node], it.bend); }
+	for o in node_ov { if o.item == ii { motion::pose_t[o.node] = o.t; motion::pose_r[o.node] = o.r; motion::pose_s[o.node] = o.sc; } }
+	for o in weight_ov { if o.item == ii { motion::pose_w[o.node * motion::MAX_WEIGHTS + o.k] = o.w; } }
 	motion::update(it.asset, it.place);
 	for t in 4 { if it.track[t] >= 0 { items[ii].tracked[t] = motion::world[it.track[t]]; } }
+}
+var node_ov NodeOv[>..] = [];
+var weight_ov WeightOv[>..] = [];
+fn set_node(item int, node int, t float3, r linalg::Quat, sc float3) {
+	for o, k in node_ov { if o.item == item && o.node == node { node_ov[k] = NodeOv { item, node, t, r, sc }; return; } }
+	node_ov.push(NodeOv { item, node, t, r, sc });
+}
+fn set_weight(item int, node int, k int, w f32) {
+	if k < 0 || k >= motion::MAX_WEIGHTS { return; }
+	for o, j in weight_ov { if o.item == item && o.node == node && o.k == k { weight_ov[j].w = w; return; } }
+	weight_ov.push(WeightOv { item, node, k, w });
+}
+fn clear_pose(item int) {
+	var j = 0;
+	for k in node_ov.len { if node_ov[k].item != item { node_ov[j] = node_ov[k]; j += 1; } }
+	while node_ov.len > j { node_ov.pop(); }
+	j = 0;
+	for k in weight_ov.len { if weight_ov[k].item != item { weight_ov[j] = weight_ov[k]; j += 1; } }
+	while weight_ov.len > j { weight_ov.pop(); }
 }
 fn add_light(pos float3, rgb float3, range f32) { lights.push(Light { pos, range, rgb, 0 }); }
 fn quad(a float3, b float3, c float3, d float3, ca float4, cb float4, cc float4, cd float4, shape int) { quads.push(QuadG { [x4(a, 1.0), x4(b, 1.0), x4(c, 1.0), x4(d, 1.0)], [ca, cb, cc, cd], f4(shape as f32, 0.0, 0.0, 0.0) }); }
@@ -476,6 +499,8 @@ fn init(w int, h int, ow int, oh int) bool {
 // Call after gltf::reset(): drops GPU copies of geometry and images so the next
 // frame uploads the new pools.
 fn forget() {
+	node_ov.clear();
+	weight_ov.clear();
 	for t in tex_srgb { if t.id != 0 { gfx::release(t); } }
 	for t in tex_linear { if t.id != 0 { gfx::release(t); } }
 	tex_srgb.clear();
@@ -583,7 +608,7 @@ fn material_of(prim int) gltf::Material {
 }
 
 fn cut_of(m gltf::Material) CutU {
-	CutU { base: m.base, alpha: f4(m.alpha_mode as f32, m.alpha_cutoff, if m.double_sided { 1.0 } else { 0.0 }, 0.0), uv_sets: f4(m.base_tex.uv as f32, 0.0, 0.0, 0.0) }
+	CutU { base: m.base, alpha: f4(m.alpha_mode as f32, m.alpha_cutoff, if m.double_sided { 1.0 } else { 0.0 }, 0.0), uv_sets: f4(m.base_tex.uv as f32, 0.0, 0.0, 0.0), xm: m.base_tex.m, xo: f4(m.base_tex.o.x, m.base_tex.o.y, 0.0, 0.0) }
 }
 
 // ---- per-frame flattening
@@ -1017,7 +1042,7 @@ fn ao_pass() {
 		}
 		let c = cut_of(m);
 		gfx::uniforms(gfx::VERTEX, 0, draw_uniforms(b, view_proj));
-		gfx::uniforms(gfx::FRAGMENT, 0, CutViewU { base: c.base, alpha: c.alpha, uv_sets: c.uv_sets, view: view_mat });
+		gfx::uniforms(gfx::FRAGMENT, 0, CutViewU { base: c.base, alpha: c.alpha, uv_sets: c.uv_sets, xm: c.xm, xo: c.xo, view: view_mat });
 		bind_slot(0, m.base_tex, true, white);
 		draw_prim(b);
 	}
@@ -1067,7 +1092,10 @@ fn surface_of(m gltf::Material) SurfaceU {
 		uv_sets: f4(m.base_tex.uv as f32, m.mr_tex.uv as f32, m.normal_tex.uv as f32, m.occlusion_tex.uv as f32),
 		uv_sets2: f4(m.emissive_tex.uv as f32, debug_view as f32, ((if multiscatter { 1 } else { 0 }) + 2 * furnace_mode) as f32, furnace_scale),
 		tri: f4(m.tri, if m.top_base.texture < 0 { 0.0 } else { m.top }, m.top_scale, m.top_sharp),
-		top_tint: m.top_tint
+		top_tint: m.top_tint,
+		xm_base: m.base_tex.m, xm_mr: m.mr_tex.m, xm_nrm: m.normal_tex.m, xm_occ: m.occlusion_tex.m, xm_emi: m.emissive_tex.m,
+		xo0: f4(m.base_tex.o.x, m.base_tex.o.y, m.mr_tex.o.x, m.mr_tex.o.y), xo1: f4(m.normal_tex.o.x, m.normal_tex.o.y, m.occlusion_tex.o.x, m.occlusion_tex.o.y), xo2: f4(m.emissive_tex.o.x, m.emissive_tex.o.y, 0.0, 0.0),
+		sheen: x4(m.sheen, m.sheen_rough)
 	}
 }
 
