@@ -1163,7 +1163,7 @@ recursive lbuiltin1(n int, b int, dst int, total int) int:
 	if b == B_PUSH || b == B_APPEND || b == B_POP || b == B_CLEAR || b == B_RESIZE || b == B_POPN:
 		rc := barg(n, 0); d := deref(at(rc)); e := TY[d].a; es := tsz(e)
 		if nseq(d):
-			if !is_res(d) || b != B_PUSH && b != B_APPEND && b != B_CLEAR: lerr(n, "this operation on an array of variable-size elements natively"); return imm(0)
+			if !is_res(d) || b != B_PUSH && b != B_APPEND && b != B_CLEAR: lerr(n, vseq_msg(d, b)[..]); return imm(0)
 			va := laddr(rc); src := barg(n, 1)
 			if b == B_CLEAR: stw(va, 8, imm(0), 3); stw(va, 16, imm(0), 3); return imm(0)
 			if b == B_PUSH: return lsqpush(va, src, e)

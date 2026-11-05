@@ -388,7 +388,7 @@ recursive resolve(n int, name int, ns int, a0 int, an int, blk int, tyargs int, 
 		if worst < 2 && gen: worst = max(worst, 1)
 		if worst == 99: BINDS.pop_n(BINDS.len - b0); continue
 		user := !is_std_node(fnode); loc := cns >= 0 && fns == cns
-		if worst < bestr || worst == bestr && user && !bestuser || worst == bestr && user == bestuser && loc && !bestloc || worst == bestr && user == bestuser && loc == bestloc && !gen && bestgen: best = fnode; bestr = worst; bestb0 = b0; bestbn = BINDS.len - b0; tie = false; bestuser = user; bestgen = gen; bestloc = loc
+		if worst < bestr || worst == bestr && user && !bestuser || worst == bestr && user == bestuser && !gen && bestgen || worst == bestr && user == bestuser && gen == bestgen && loc && !bestloc: best = fnode; bestr = worst; bestb0 = b0; bestbn = BINDS.len - b0; tie = false; bestuser = user; bestgen = gen; bestloc = loc
 		else:
 			if worst == bestr && user == bestuser && loc == bestloc && gen == bestgen && (ND[best].fl & F_EXTERN == 0 || ND[fnode].fl & F_EXTERN == 0): tie = true
 	CANDS.pop_n(CANDS.len - c0)

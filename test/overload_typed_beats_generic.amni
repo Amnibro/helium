@@ -1,0 +1,10 @@
+import ov_ns.mod;
+struct Typed { k int }
+struct Plain { k int }
+fn imp(r Typed&, b const byte[:]) { print("typed "); }
+fn main() {
+	var t = ovns::Box<Typed> { rules: Typed { k: 0 } };
+	var p = ovns::Box<Plain> { rules: Plain { k: 0 } };
+	var c = ovns::Ck { blob: [] };
+	ovns::via_ref(t, c); ovns::via_local(t); ovns::via_slice(t, c.blob[..]); ovns::via_ref(p, c);
+}

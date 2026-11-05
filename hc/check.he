@@ -252,6 +252,12 @@ thru_ref(e int) bool:
 		t := at(c)
 		if t > 0 && TY[t].k == TY_REF: return true
 	false
+vseq_msg(d int, b int) byte[>..]:
+	op := if b == B_PUSH { "push" } else if b == B_APPEND { "append" } else if b == B_POP { "pop" } else if b == B_CLEAR { "clear" } else if b == B_RESIZE { "resize" } else { "pop_n" }
+	m byte[>..] ~= []
+	format(m, op, " on ", tn(d), " is not supported yet: its elements have variable size")
+	if !is_res(d): format(m, " and the array is not growable (rewrite: build a growable ", tn(TY[d].a as int), "[>..] local with push, then store copy(local) in the ", tn(d), " field)")
+	m
 lost_w(e int) int:
 	c ~= e
 	while ND[c].k as int == N_DOT || ND[c].k as int == N_IDX:
@@ -1176,7 +1182,7 @@ recursive ck_assign(n int):
 			rt := ck(x.b, tt)
 			if TY[rt].k == TY_NULL: commit(x.b, tt); return
 			if TY[rt].k == TY_REF: conv(x.b, tt); return
-		if ND[x.a].k as int == N_DOT && !is_fixed(d) && TY[d].k != TY_REF && TY[d].k != TY_SLICE && !(TY[d].k == TY_ARR && is_grow(d)) && thru_ref(x.a): m byte[>..] ~= []; format(m, "cannot assign field ", nm(ND[x.a].s as int), " through a reference: it is stored inline with a variable size (", tn(d), "), so only the variable that owns the struct can replace it; make the field growable (T[>..]) or build and return a new struct"); cerr(n, m[..]); return
+		if ND[x.a].k as int == N_DOT && !is_fixed(d) && TY[d].k != TY_REF && TY[d].k != TY_SLICE && !(TY[d].k == TY_ARR && is_grow(d)) && thru_ref(x.a): m byte[>..] ~= []; format(m, "cannot assign field ", nm(ND[x.a].s as int), " through a reference: it is stored inline with a variable size (", tn(d), "), so only the variable that owns the struct can replace it (rewrite: assign its fields one by one, where growable T[>..] fields can be replaced whole, as ", nm(ND[x.a].s as int), ".f = copy(src.f); returning a new struct only helps if every caller stores it)"); cerr(n, m[..]); return
 		if d == T_U8 && ND[x.b].k as int == N_CALL && ND[x.b].n == 1 && ND[ND[x.b].a].k as int == N_ID && ND[ND[x.b].a].s == NAME_STR && py1(kid(x.b, 0)): ND[x.b] = ND[kid(x.b, 0)]
 		if ND[x.a].k as int == N_ID && TY[tt].k == TY_REF && hvimg(d): m byte[>..] ~= []; format(m, "cannot replace ", nm(ND[x.a].s as int), " through a reference: a ", tn(d), " holds immutable arrays that live in this call's memory or inline in the caller's struct, so the caller would see freed or overlapping memory (rewrite: return the new value instead, as fn f(..) T, or make the arrays growable, T[>..])"); cerr(n, m[..])
 		ck(x.b, d); conv(x.b, d)

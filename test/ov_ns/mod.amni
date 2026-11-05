@@ -1,0 +1,7 @@
+namespace ovns;
+struct Box<R> { rules R }
+struct Ck { blob byte[>..] }
+fn imp(r, b const byte[:]) { print("default "); }
+fn via_ref<R>(m Box<R>&, c Ck&) { imp(m.rules, c.blob); }
+fn via_local<R>(m Box<R>&) { var g byte[>..] = []; imp(m.rules, g); }
+fn via_slice<R>(m Box<R>&, b const byte[:]) { imp(m.rules, b); }
