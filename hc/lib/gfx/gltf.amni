@@ -52,7 +52,7 @@ struct Primitive { vfirst int, vcount int, ifirst int, icount int, material int,
 struct Mesh { prims Span, weights Span, name Span }
 struct Node { parent int, mesh int, skin int, children Span, t float3, r linalg::Quat, s float3, matrix gfx::mat4, has_matrix bool, weights Span, name Span }
 struct Texture { image int, mag_nearest bool, min_nearest bool, mipmaps bool, wrap_s int, wrap_t int }
-struct Image { width int, height int, pixels Span, ok bool }
+struct Image { width int, height int, pixels Span, ok bool, coded Span = Span { 0, 0 } }
 struct Skin { joints Span, inverse_binds Span, skeleton int, name Span }
 struct Channel { node int, path int, interp int, times Span, values Span, width int }
 struct Animation { channels Span, duration f32, name Span }
@@ -65,6 +65,10 @@ var floats f32[>..];
 var ints int[>..];
 var matrices gfx::mat4[>..];
 var pixels byte[>..];
+var lazy_pixels = false;
+var coded byte[>..];
+var decoded byte[>..];
+var decoded_of = -1;
 var names byte[>..];
 var meshes Mesh[>..];
 var prims Primitive[>..];
@@ -99,7 +103,7 @@ fn fail(msg const byte[:]) int {
 
 fn reset() {
 	verts.clear(); indices.clear(); morphs.clear(); floats.clear(); ints.clear(); matrices.clear();
-	pixels.clear(); names.clear(); meshes.clear(); prims.clear(); nodes.clear(); materials.clear();
+	pixels.clear(); coded.clear(); decoded.clear(); decoded_of = -1; names.clear(); meshes.clear(); prims.clear(); nodes.clear(); materials.clear();
 	textures.clear(); images.clear(); skins.clear(); channels.clear(); animations.clear(); assets.clear();
 	problem.clear(); skipped_prims.clear();
 }
@@ -303,7 +307,54 @@ fn texref(d json::Doc&, n int, tex_base int) TexRef {
 	TexRef { if i < 0 { -1 } else { tex_base + i }, whole(d, x, "texCoord", whole(d, n, "texCoord", 0)), float4 { c * sx, -s * sy, s * sx, c * sy }, float2 { item_num(d, of, 0, 0.0) as f32, item_num(d, of, 1, 0.0) as f32 } }
 }
 
+fn need_pixels(i int) {
+	let im = images[i];
+	if im.coded.count > 0 && decoded_of != i {
+		decoded.clear();
+		let src = coded[im.coded.first..im.coded.first + im.coded.count];
+		var w = 0;
+		var h = 0;
+		var ok = false;
+		if codec_png::is_png(src) {
+			let a, b, c = codec_png::decode(src, decoded);
+			w = a; h = b; ok = c;
+		} else {
+			let a, b, c = codec_jpeg::decode(src, decoded);
+			w = a; h = b; ok = c;
+		}
+		if !ok || w != im.width || h != im.height || decoded.len != w * h * 4 {
+			decoded.clear();
+			decoded.resize(im.width * im.height * 4, 255 as byte);
+		}
+		decoded_of = i;
+	}
+}
+
+fn image_pixels(i int) const byte[:] {
+	let im = images[i];
+	if im.coded.count == 0 { return pixels[im.pixels.first..im.pixels.first + im.pixels.count]; }
+	if decoded_of != i { return pixels[0..0]; }
+	decoded[..]
+}
+
 fn decode_image(data const byte[:]) Image {
+	if lazy_pixels {
+		var w = 0;
+		var h = 0;
+		var ok = false;
+		if codec_png::is_png(data) {
+			let a, b, c = codec_png::size(data);
+			w = a; h = b; ok = c;
+		} else {
+			let a, b, c = codec_jpeg::size(data);
+			w = a; h = b; ok = c;
+		}
+		if ok {
+			let at = coded.len;
+			coded.append(data);
+			return Image { width: w, height: h, pixels: Span { 0, 0 }, ok: true, coded: Span { at, data.len } };
+		}
+	}
 	var px byte[>..] = [];
 	var w = 0;
 	var h = 0;

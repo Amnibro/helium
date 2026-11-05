@@ -24,6 +24,23 @@ fn is_jpeg(b const byte[:]) bool { b.len >= 3 && b[0] == 0xFF && b[1] == 0xD8 &&
 
 fn be16(b const byte[:], o int) int { (b[o] as int) << 8 | b[o + 1] as int }
 
+fn size(b const byte[:]) int, int, bool {
+	if !is_jpeg(b) { return 0, 0, false; }
+	var o = 2;
+	while o + 9 <= b.len {
+		if b[o] != 0xFF { o += 1; continue; }
+		let m = b[o + 1] as int;
+		if m == 0xFF || m == 0x01 || (m >= 0xD0 && m <= 0xD8) { o += if m == 0xFF { 1 } else { 2 }; continue; }
+		if m >= 0xC0 && m <= 0xCF && m != 0xC4 && m != 0xC8 && m != 0xCC {
+			let h = be16(b, o + 5);
+			let w = be16(b, o + 7);
+			return w, h, w > 0 && h > 0;
+		}
+		o += 2 + be16(b, o + 2);
+	}
+	return 0, 0, false;
+}
+
 fn make_table(t Table&, counts const byte[:], syms const byte[:]) {
 	var code = 0;
 	var k = 0;

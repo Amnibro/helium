@@ -15,6 +15,7 @@ fn main() {
 	if arg_count() < 12 { print("usage: scene_frame model.glb out.png width height eye_x eye_y eye_z target_x target_y target_z fov anim_time [gi]"); return; }
 	let model = arg_of(1);
 	let out_path = arg_of(2);
+	gltf::lazy_pixels = true;
 	let a = gltf::load(model[..]);
 	if a < 0 { print("scene_frame: ", gltf::error()); return; }
 	let w = num(arg_of(3)[..]) as int;

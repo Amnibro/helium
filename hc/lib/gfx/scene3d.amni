@@ -551,7 +551,8 @@ fn image_texture(image int, srgb bool) gfx::Texture {
 	let im = gltf::images[image];
 	let mips = mip_count(im.width, im.height);
 	let t = gfx::texture(gfx::TextureDesc { format: if srgb { gfx::RGBA8_SRGB } else { gfx::RGBA8 }, usage: gfx::SAMPLED | gfx::COLOR_TARGET, width: im.width as i32, height: im.height as i32, mips: mips as i32 });
-	gfx::update_texture(t, gltf::pixels[im.pixels.first..im.pixels.first + im.pixels.count]);
+	gltf::need_pixels(image);
+	gfx::update_texture(t, gltf::image_pixels(image));
 	if mips > 1 { gfx::generate_mips(t); }
 	if srgb { tex_srgb[image] = t; } else { tex_linear[image] = t; }
 	t
@@ -852,13 +853,15 @@ fn image_avg(image int) float3 {
 	if img_avg[image].w >= 0.0 { return linalg::v3(img_avg[image].x, img_avg[image].y, img_avg[image].z); }
 	let im = gltf::images[image];
 	let n = im.width * im.height;
+	gltf::need_pixels(image);
+	let px = gltf::image_pixels(image);
 	let stride = max(1, n / 4096);
 	var acc = float3 { 0.0, 0.0, 0.0 };
 	var cnt = 0;
 	var i = 0;
 	while i < n {
-		let b = im.pixels.first + i * 4;
-		let r = gltf::pixels[b] as f32 / 255.0; let g = gltf::pixels[b + 1] as f32 / 255.0; let bl = gltf::pixels[b + 2] as f32 / 255.0;
+		let b = i * 4;
+		let r = px[b] as f32 / 255.0; let g = px[b + 1] as f32 / 255.0; let bl = px[b + 2] as f32 / 255.0;
 		acc = acc + float3 { r * r, g * g, bl * bl };
 		cnt += 1;
 		i += stride;

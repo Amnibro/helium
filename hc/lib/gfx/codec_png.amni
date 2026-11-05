@@ -10,6 +10,13 @@ fn is_png(b const byte[:]) bool {
 	b.len >= 8 && b[0] == 137 && b[1] == 'P' && b[2] == 'N' && b[3] == 'G' && b[4] == 13 && b[5] == 10 && b[6] == 26 && b[7] == 10
 }
 
+fn size(b const byte[:]) int, int, bool {
+	if !is_png(b) || b.len < 24 { return 0, 0, false; }
+	let w = be32(b, 16);
+	let h = be32(b, 20);
+	return w, h, w > 0 && h > 0;
+}
+
 // Samples per pixel for each PNG colour type (PNG spec 11.2.2); 0 = invalid.
 fn samples_per_pixel(ctype int) int {
 	if ctype == 0 || ctype == 3 { return 1; }

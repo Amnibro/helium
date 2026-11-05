@@ -99,6 +99,9 @@ fn cpu_checks() {
 	var jpg byte[>..] = [];
 	let jw, jh, jok = codec_jpeg::decode(embed_file("fixtures/photo420.jpg"), jpg);
 	print("jpeg ", jw, "x", jh, " ", jok, " sum ", checksum(jpg[..]));
+	let pw, ph, pok = codec_png::size(embed_file("fixtures/palette.png"));
+	let qw, qh, qok = codec_jpeg::size(embed_file("fixtures/photo420.jpg"));
+	print("header sizes ", pw == w && ph == h && pok, " ", qw == jw && qh == jh && qok);
 	var raw byte[>..] = [];
 	print("inflate stored ", zlib::inflate([0x78 as byte, 0x01, 0x01, 0x03, 0x00, 0xFC, 0xFF, 0x61, 0x62, 0x63, 0x02, 0x4D, 0x01, 0x27], raw), " ", raw[..]);
 
@@ -110,7 +113,8 @@ fn cpu_checks() {
 	for pr in gltf::prims { print("  prim verts ", pr.vcount, " indices ", pr.icount, " targets ", pr.targets, " skinned ", pr.skinned, " tangents ", pr.tangents); }
 	for mt in gltf::materials { print("  material ", gltf::text_of(mt.name), " mode ", mt.alpha_mode, " metal ", milli(mt.metallic), " rough ", milli(mt.roughness), " emissive ", milli(mt.emissive.x), " ", milli(mt.emissive.y), " two-sided ", mt.double_sided); }
 	let im = gltf::images[0];
-	print("  image ", im.width, "x", im.height, " sum ", checksum(gltf::pixels[im.pixels.first..im.pixels.first + im.pixels.count]));
+	let sum0 = checksum(gltf::pixels[im.pixels.first..im.pixels.first + im.pixels.count]);
+	print("  image ", im.width, "x", im.height, " sum ", sum0);
 
 	// animation
 	let anim = gltf::find_animation(a, "wave");
@@ -146,6 +150,13 @@ fn cpu_checks() {
 	var vs TextVtx[>..] = [];
 	sdf_text(vs, 10.0, 20.0, 24.0, "Helium", [255, 255, 255, 255], 0, false);
 	print("text width ", round((sdf_text_w("Helium", 24.0) * 100.0) as real) as int, " verts ", vs.len);
+	gltf::reset();
+	gltf::lazy_pixels = true;
+	let la = gltf::load_bytes(embed_file("fixtures/scene.glb"), "");
+	let li = gltf::assets[la].images.first;
+	gltf::need_pixels(li);
+	print("lazy image same ", checksum(gltf::image_pixels(li)) == sum0, " resident bytes ", gltf::pixels.len, " coded ", gltf::coded.len > 0);
+	gltf::lazy_pixels = false;
 	gltf::reset();
 }
 
