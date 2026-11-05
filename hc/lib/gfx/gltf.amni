@@ -461,6 +461,21 @@ fn load_bytes(data const byte[:], dir const byte[:]) int {
 		images.push(decode_image(raw[..]));
 	}
 	asset.images.count = images.len - asset.images.first;
+	if lazy_pixels {
+		var big_png = -1;
+		var big_jpg = -1;
+		for k in asset.images.count {
+			let j = asset.images.first + k;
+			let im = images[j];
+			if im.coded.count > 0 {
+				let png = codec_png::is_png(coded[im.coded.first..im.coded.first + im.coded.count]);
+				let b = if png { big_png } else { big_jpg };
+				if b < 0 || im.width * im.height > images[b].width * images[b].height { if png { big_png = j; } else { big_jpg = j; } }
+			}
+		}
+		if big_jpg >= 0 { need_pixels(big_jpg); }
+		if big_png >= 0 { need_pixels(big_png); }
+	}
 
 	// textures with their samplers
 	var samplers int[>..] = [];

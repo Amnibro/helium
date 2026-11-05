@@ -152,13 +152,16 @@ block and an atomic in a compute pass, read back), which must print the same nat
 Images land in `build/webgputest/`. On an RX 9060 XT (RADV, Chrome 154 on Dawn/Vulkan) the
 scene and the canvas match bit for bit (PSNR infinite).
 
-Two cases cannot run in a `--web` build yet and are reported as BLOCKED: `holo.glb`
-(its decoded textures are one 93 MB `gltf::pixels` array) and the scene with GI and ray
-traced shadows on. Each grow-only array owns a region that never moves; on wasm32 the
-first 2 GiB of address space is cut into 32 MiB regions (`-DGS_STACK_RESERVE`) and the
-rest into at most 4 MiB ones, and a scene3d program with GI holds over 100 arrays. They
-need a web runtime with more address space (memory64) or loaders that keep large data out
-of single arrays.
+Each grow-only array owns a region that never moves. On wasm32 the first 2 GiB of address
+space is cut into 32 MiB regions (`-DGS_STACK_RESERVE`) and the rest into at most 4 MiB
+ones, and a scene3d program holds about 125 arrays, so an array first touched late gets a
+small region. `holo.glb` runs (bit for bit) because `scene_frame` sets
+`gltf::lazy_pixels`: images stay coded, `gltf::need_pixels(i)` decodes one at a time into
+one shared buffer, the decoders keep their scratch (`codec_png::idat`/`raw`,
+`codec_jpeg::planes`) across calls, and loading warms them on the largest PNG and JPEG
+while 32 MiB regions are left. The scene with GI and ray traced shadows on is still
+BLOCKED: `gfx::buffer` in `gi_scene` lands in a 4 MiB region. Region layout also sets the
+page's wasm memory (about 2.3 GiB for holo), so phones need a smarter web region policy.
 
 ### Motion vectors, TAA and upscaling
 
