@@ -148,7 +148,7 @@ export async function start(o = {}) {
   const meta = new Uint8Array(WebAssembly.Module.customSections(mod, 'he.mem')[0] || new ArrayBuffer(5)), pages = meta[0] | meta[1] << 8 | meta[2] << 16 | meta[3] << 24;
   mem = new WebAssembly.Memory({ initial: pages, maximum: 65536, shared: meta[4] === 1 });
   if (WebAssembly.Module.imports(mod).some(i => i.name === 'SDL_CreateGPUDevice')) { G = sdlgpu({ u8, dv, mmap, munmap: unmap, files, canvas: () => o.canvas || document.querySelector('canvas[data-helium]'), canWait: () => jspi, saved: o.onsave }); jspi = !!WebAssembly.Suspending && o.jspi !== false; await G.init(); for (const [k, f] of Object.entries(G.env)) env[k] = jspi && G.waiting.includes(k) ? new WebAssembly.Suspending(f) : f; }
-  const imports = { env: new Proxy({ ...env, memory: mem }, { get: (t, n) => t[n] || ((...a) => { console.warn('helium: missing import', n, a); return 0; }) }) };
+  const imports = { env: new Proxy({ ...env, ...(o.imports || {}), memory: mem }, { get: (t, n) => t[n] || ((...a) => { console.warn('helium: missing import', n, a); return 0; }) }) };
   ex = (await WebAssembly.instantiate(mod, imports)).exports;
   if (jspi) for (const k of ['he_start', 'he_frame', 'he_event']) if (ex[k]) px[k] = WebAssembly.promising(ex[k]);
   const argv = o.args || ['app'], envs = Object.entries(o.env || {}).map(([k, v]) => k + '=' + v), strs = [...argv, ...envs].map(x => te.encode(x + '\0')), hdr = 8 * (argv.length + envs.length + 3), base = mmap(hdr + strs.reduce((k, b) => k + b.length, 0));
@@ -156,5 +156,5 @@ export async function start(o = {}) {
   pw(argv.length); strs.forEach((b, i) => { if (i === argv.length) pw(0); u8().set(b, sq); pw(sq); sq += b.length; }); if (!envs.length) pw(0); pw(0);
   const done = Promise.resolve(run('he_start', [BigInt(base)]));
   drain();
-  return { exports: ex, handle: nh, get: i => H[i], fire, call: (f, ...a) => { const r = busy ? undefined : run(f, a); drain(); return r; }, files, done, gpu: () => G?.stats() };
+  return { exports: ex, handle: nh, get: i => H[i], fire, call: (f, ...a) => { const r = busy ? undefined : run(f, a); drain(); return r; }, files, done, mem: () => mem, gpu: () => G?.stats() };
 }
