@@ -1308,7 +1308,10 @@ fn grade_pass(target gfx::Texture) {
 
 // Renders the scene into target (RGBA8, COLOR_TARGET, the output size given to init).
 fn render(target gfx::Texture) {
-	if !ready { return; }
+	if render_begin() { render_end(target); }
+}
+fn render_begin() bool {
+	if !ready { return false; }
 	upload_geometry();
 	setup_view();
 	setup_cascades();
@@ -1323,6 +1326,9 @@ fn render(target gfx::Texture) {
 	quad_upload();
 	color_pass();
 	fog_pass();
+	true
+}
+fn render_end(target gfx::Texture) {
 	lens_pass();
 	temporal_pass();
 	glow_pass();
