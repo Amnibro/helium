@@ -252,6 +252,19 @@ thru_ref(e int) bool:
 		t := at(c)
 		if t > 0 && TY[t].k == TY_REF: return true
 	false
+lost_w(e int) int:
+	c ~= e
+	while ND[c].k as int == N_DOT || ND[c].k as int == N_IDX:
+		c = ND[c].a as int
+		t := at(c)
+		if t > 0 && (TY[t].k == TY_REF || TY[t].k == TY_SLICE || TY[t].k == TY_ARR && is_grow(t)): return -1
+	if ND[c].k as int != N_ID || rk(c) != R_LOCAL || CFN < 0: return -1
+	v := rv(c)
+	l := LVS[v]
+	if l.fl & LV_PARAM == 0 || l.fl & LV_VAR != 0 || l.cfn != CFN as i32 || FI_[CFN].ret as int != T_VOID: return -1
+	k := TY[l.ty].k
+	if (k == TY_STRUCT || k == TY_ARR) && is_fixed(l.ty as int): return v
+	-1
 is_construct(n int) bool:
 	k := ND[n].k; k == N_CALL || k == N_ARR || k == N_STR
 recursive commit(n int, t int):
@@ -1155,6 +1168,8 @@ recursive ck_assign(n int):
 	tt := ck(x.a, -1)
 	d := deref(tt)
 	if o == T_PLUSEQ && x.c >= 0 && TY[d].k == TY_ARR && is_grow(d): ND[n] = ND[x.c]; cstmt(n); return
+	lw := if ND[x.a].k as int == N_DOT || ND[x.a].k as int == N_IDX { lost_w(x.a) } else { -1 }
+	if lw >= 0: m byte[>..] ~= []; format(m, "this write is lost: ", nm(LVS[lw].name as int), " is a by-value parameter, a copy of the caller's ", tn(LVS[lw].ty as int), ", and ", nm(FI_[CFN].name as int), " returns nothing (take it by reference, ", nm(LVS[lw].name as int), " ", tn(LVS[lw].ty as int), "&, or write var ", nm(LVS[lw].name as int), " for a deliberate local copy)"); cerr(n, m[..]); return
 	if o == T_ASSIGN:
 		if pend_local(x.a): rt := ck(x.b, -1); dr := deref(rt); if TY[dr].k == TY_ARR || TY[dr].k == TY_SLICE { complete(x.a, TY[dr].a) } conv(x.b, deref(at(x.a))); return
 		if TY[tt].k == TY_REF && is_opt(tt):
