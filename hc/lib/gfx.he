@@ -105,6 +105,8 @@ extern "libSDL3.so.0" {
 	s_regev(n i32) u32 = "SDL_RegisterEvents";
 	s_ns() uint = "SDL_GetTicksNS";
 	s_tstart(w uint) bool = "SDL_StartTextInput";
+	s_platform() uint = "SDL_GetPlatform";
+	s_dscale(w uint) f32 = "SDL_GetWindowDisplayScale";
 	s_tstop(w uint) bool = "SDL_StopTextInput";
 	s_step(p uint, n uint) u32 = "SDL_StepUTF8";
 	s_scn(n uint) i32 = "SDL_GetScancodeFromName";
@@ -556,6 +558,8 @@ events_into(out Event[:]) int:
 	EVS.len
 fingers() Finger[>..]: o Finger[>..] ~= []; o.append(FINGERS[..]); o
 events() Event[>..]: o Event[>..] ~= []; o.append(EVS[..]); o
+display_scale() f32: if WIN == 0 { 1.0 } else { k := s_dscale(WIN); if k > 0.0 { k } else { 1.0 } }
+touch_first() bool: p := ffi::cstr(s_platform()); p == "Android" || p == "iOS"
 text_input(on bool):
 	if !need("text_input") || WIN == 0: return
 	if on { s_tstart(WIN) } else { s_tstop(WIN) }

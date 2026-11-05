@@ -6,6 +6,8 @@ use gfx
 use os
 use ttf
 MAIN_THREAD := true
+var EDIT_SEEN = false
+var HELD int3[>..] = []
 WINDOW_BORDER i32 := 1
 WINDOW_MOVABLE i32 := 2
 WINDOW_SCALABLE i32 := 4
@@ -2983,6 +2985,7 @@ do_edit(u UC&, s u32&, bi int, b Rect, fl int, filt int, fit bool, e TE&, st Sty
 	rh := if ml { fht(fid) + st.row_padding } else { ar.h }
 	oc := cbget(u, bi).clip; cl := unify(oc, ar.x, ar.y, ar.x + ar.w, ar.y + ar.h); ps := e.active
 	if hin && i.mb[0].clicked != 0 && i.mb[0].down: e.active = inbox(i.pos.x, i.pos.y, b)
+	if e.active: EDIT_SEEN = true
 	sa ~= false; cf ~= false; hv ~= false
 	if !ps && e.active:
 		ox := e.sbx; oy := e.sby; ed_clear(e, ml, filt, fit); e.sbx = ox; e.sby = oy
@@ -3912,7 +3915,7 @@ link_label_no_underline(c Context, text const byte[:], align int) bool:
 edit_string<T>(c Context, flags int, text T&, filter int) int:
 	buffer byte[>..] ~= []
 	buffer.append(text)
-	buffer.resize(text.cap + 1, 0)
+	buffer.resize(max(text.cap, text.len + 256) + 1, 0)
 	len ~= text.len
 	r := edit_string(c, flags, buffer, len, filter)
 	text.resize(0)
@@ -4127,12 +4130,15 @@ input_gfx_key(c Context, e gfx::Event):
 		;
 input_from_gfx(c Context):
 	if renderer.opened != gfx::open_count(): make_renderer()
-	if !renderer.text_input:
-		gfx::text_input(true)
-		renderer.text_input = true
+	want := EDIT_SEEN || !gfx::touch_first(); EDIT_SEEN = false
+	if want != renderer.text_input:
+		gfx::text_input(want)
+		renderer.text_input = want
 	text, copied_some := copied(c)
 	if copied_some: gfx::set_clipboard(text)
 	input_begin(c)
+	for u in HELD: input_button(c, u.x as int, u.y as int, u.z as int, false)
+	HELD.clear(); pressed ~= 0
 	for e gfx::events():
 		x := floor(e.x) as! int
 		y := floor(e.y) as! int
@@ -4141,7 +4147,10 @@ input_from_gfx(c Context):
 		else if e.kind == gfx::EVENT_MOUSE_BUTTON:
 			b := match e.button { 1 => BUTTON_LEFT, 2 => BUTTON_MIDDLE, 3 => BUTTON_RIGHT, 4 => BUTTON_X1, 5 => BUTTON_X2, _ => -1 }
 			if b == BUTTON_LEFT && e.clicks > 1: input_button(c, BUTTON_DOUBLE, x, y, e.down)
-			if b >= 0: input_button(c, b, x, y, e.down)
+			if b >= 0 && !e.down && pressed & (1 << b) != 0: HELD.push(int3{b as i32, x as i32, y as i32})
+			else if b >= 0:
+				if e.down: pressed |= 1 << b
+				input_button(c, b, x, y, e.down)
 		else if e.kind == gfx::EVENT_MOUSE_WHEEL:
 			input_scroll(c, float2{e.x, e.y});
 		else if e.kind == gfx::EVENT_TEXT:
