@@ -1,0 +1,72 @@
+namespace crypto
+use std
+struct Mont { n u32[>..] = [], k int = 0, n0 u32 = 0, rr u32[>..] = [], one u32[>..] = [], bits int = 0 }
+bn_from(b const byte[:], k int) u32[>..]:
+	o u32[>..] ~= []; o.resize(k, 0)
+	for i b.len: j := b.len - 1 - i; if j / 4 < k { o[j / 4] |= (b[i] as u32) << (8 * (j % 4)) }
+	o
+bn_bytes(a const u32[:], n int) byte[>..]:
+	o byte[>..] ~= []
+	for i n: j := n - 1 - i; o.push(if j / 4 < a.len { (a[j / 4] >> (8 * (j % 4))) as! byte } else { 0 })
+	o
+bn_cmp(a const u32[:], b const u32[:]) int:
+	i ~= max(a.len, b.len) - 1
+	while i >= 0:
+		x u32 := if i < a.len { a[i] } else { 0 }; y u32 := if i < b.len { b[i] } else { 0 }
+		if x != y: return if x < y { -1 } else { 1 }
+		i -= 1
+	0
+bn_zero(a const u32[:]) bool: d u32 ~= 0; for v a { d |= v } d == 0
+bn_bits(a const u32[:]) int:
+	i ~= a.len - 1
+	while i >= 0 && a[i] == 0: i -= 1
+	if i < 0: return 0
+	v u32 ~= a[i]; n ~= 0
+	while v != 0: v >>= 1; n += 1
+	32 * i + n
+bn_bit(a const u32[:], i int) int: ((a[i >> 5] >> (i & 31)) & 1) as int
+sub_mask(a const u32[:], b const u32[:]) u32[>..], u32:
+	o u32[>..] ~= []; br u64 ~= 0
+	for i a.len: d := (a[i] as u64) - (b[i] as u64) - br; o.push(d as! u32); br = (d >> 63) & 1
+	return o, (0 - br) as! u32
+csel(m u32, a const u32[:], b const u32[:]) u32[>..]: o u32[>..] ~= []; nm := m ^ 0xFFFFFFFF; for i a.len { o.push((a[i] & m) | (b[i] & nm)) } o
+cswap(a u32[>..]&, b u32[>..]&, bit int): m u32 := 0 - (bit as u32); for i a.len { t u32 := m & (a[i] ^ b[i]); a[i] ^= t; b[i] ^= t }
+mont_new(nb const byte[:]) Mont:
+	k := (nb.len + 3) / 4; m ~= Mont{k: k}; m.n = bn_from(nb, k); m.bits = bn_bits(m.n[..]); x u32 ~= 1
+	for i 5: x = x * (2 - m.n[0] * x)
+	m.n0 = 0 - x; r u32[>..] ~= []; r.resize(k, 0); r[0] = 1
+	for i 64 * k: r = mdbl(m, r[..])
+	m.rr = r; o u32[>..] ~= []; o.resize(k, 0); o[0] = 1; m.one = mmul(m, o[..], m.rr[..]); m
+mdbl(m const Mont&, a const u32[:]) u32[>..]:
+	o u32[>..] ~= []; c u32 ~= 0
+	for v a: o.push((v << 1) | c); c = v >> 31
+	s, br := sub_mask(o[..], m.n[..]); csel(br & (c - 1), o[..], s[..])
+madd(m const Mont&, a const u32[:], b const u32[:]) u32[>..]:
+	o u32[>..] ~= []; c u64 ~= 0
+	for i m.k: t := (a[i] as u64) + (b[i] as u64) + c; o.push(t as! u32); c = t >> 32
+	s, br := sub_mask(o[..], m.n[..]); csel(br & ((c as u32) - 1), o[..], s[..])
+msub(m const Mont&, a const u32[:], b const u32[:]) u32[>..]:
+	d, br := sub_mask(a, b); o u32[>..] ~= []; c u64 ~= 0
+	for i m.k: t := (d[i] as u64) + ((m.n[i] & br) as u64) + c; o.push(t as! u32); c = t >> 32
+	o
+mmul(m const Mont&, a const u32[:], b const u32[:]) u32[>..]:
+	k := m.k; t u64[>..] ~= []; t.resize(k + 2, 0)
+	for i k:
+		c u64 ~= 0; bi := b[i] as u64
+		for j k: s := t[j] + (a[j] as u64) * bi + c; t[j] = s & 0xFFFFFFFF; c = s >> 32
+		s ~= t[k] + c; t[k] = s & 0xFFFFFFFF; t[k + 1] = s >> 32
+		q := ((t[0] as! u32) * m.n0) as u64; s = t[0] + q * (m.n[0] as u64); c = s >> 32
+		for j 1..k: s = t[j] + q * (m.n[j] as u64) + c; t[j - 1] = s & 0xFFFFFFFF; c = s >> 32
+		s = t[k] + c; t[k - 1] = s & 0xFFFFFFFF; t[k] = t[k + 1] + (s >> 32)
+	o u32[>..] ~= []
+	for j k: o.push(t[j] as! u32)
+	sb, br := sub_mask(o[..], m.n[..]); csel(br & ((t[k] as! u32) - 1), o[..], sb[..])
+to_mont(m const Mont&, a const u32[:]) u32[>..]: mmul(m, a, m.rr[..])
+from_mont(m const Mont&, a const u32[:]) u32[>..]: o u32[>..] ~= []; o.resize(m.k, 0); o[0] = 1; mmul(m, a, o[..])
+mpow(m const Mont&, a const u32[:], e const u32[:]) u32[>..]:
+	r ~= copy(m.one); i ~= bn_bits(e) - 1
+	while i >= 0: r = mmul(m, r[..], r[..]); if bn_bit(e, i) == 1 { r = mmul(m, r[..], a) } i -= 1
+	r
+minv(m const Mont&, a const u32[:]) u32[>..]:
+	two u32[>..] ~= []; two.resize(m.k, 0); two[0] = 2; e, br := sub_mask(m.n[..], two[..]); mpow(m, a, e[..])
+reduce_once(m const Mont&, a const u32[:]) u32[>..]: s, br := sub_mask(a, m.n[..]); csel(br, a, s[..])
