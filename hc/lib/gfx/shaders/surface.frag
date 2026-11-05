@@ -66,6 +66,7 @@ layout(set = 3, binding = 1) uniform Surface {
 	vec4 xo1;
 	vec4 xo2;
 	vec4 sheen;
+	vec4 misc;
 };
 
 layout(location = 0) out vec4 out_rgba;
@@ -194,6 +195,7 @@ vec3 ambient_light(vec3 n, vec3 v, vec3 l, vec3 base_rgb, float metal, float rou
 }
 
 void main() {
+	if (misc.x > 0.0) { out_rgba = vec4(0.0, 0.0, 0.0, misc.x * (1.0 - sun_visibility(in_world, normalize(in_nrm)))); return; }
 	vec4 tint = base * in_col * texture(tex_base, xuv(uv_sets.x, xm_base, xo0.xy));
 	// world-aligned layers: triplanar base and a top layer on up-facing surfaces
 	vec3 gw = normalize(in_nrm);
