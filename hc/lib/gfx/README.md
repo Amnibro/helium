@@ -159,8 +159,9 @@ small region. `holo.glb` runs (bit for bit) because `scene_frame` sets
 `gltf::lazy_pixels`: images stay coded, `gltf::need_pixels(i)` decodes one at a time into
 one shared buffer, the decoders keep their scratch (`codec_png::idat`/`raw`,
 `codec_jpeg::planes`) across calls, and loading warms them on the largest PNG and JPEG
-while 32 MiB regions are left. The scene with GI and ray traced shadows on is still
-BLOCKED: `gfx::buffer` in `gi_scene` lands in a 4 MiB region. Region layout also sets the
+while 32 MiB regions are left. The scene with GI and ray traced shadows on runs too
+(bit for bit): `gfx::buffer` zero-fills through the mapped transfer buffer in 1 MiB
+steps instead of one buffer-sized array. Region layout also sets the
 page's wasm memory (about 2.3 GiB for holo), so phones need a smarter web region policy.
 
 ### Motion vectors, TAA and upscaling

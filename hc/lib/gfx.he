@@ -616,7 +616,7 @@ upload_buffer(buf uint, off int, data const byte[:], zeros int, fresh bool, cyc 
 	tb := transfer(total, true)
 	if tb == 0: if fresh { s_cancel(c) } return false
 	p := s_map(DEV, tb, false); ffi::write(p, data)
-	if zeros > 0: z byte[>..] ~= []; z.resize(zeros, 0); ffi::write(p + data.len as uint, z[..])
+	if zeros > 0: z byte[>..] ~= []; z.resize(min(zeros, 1 << 20), 0); o ~= 0; while o < zeros { k := min(zeros - o, z.len); ffi::write(p + (data.len + o) as uint, z[..k]); o += k }
 	s_unmap(DEV, tb); cp := s_bcopy(c); src ~= CLoc{tb, 0}; dst ~= CBReg{buf, off as u32, total as u32}; s_upb(cp, pp(src), pp(dst), cyc); s_ecopy(cp); s_rmtb(DEV, tb); copy_done(c, fresh)
 buffer(usage int, size int, data const byte[:]) Buffer:
 	h ~= Buffer{0}
