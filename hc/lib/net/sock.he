@@ -12,6 +12,7 @@ extern "libc.so.6" {
 	k_sendto(fd i32, b uint, n uint, f i32, a uint, l u32) int = "sendto";
 	k_recvfrom(fd i32, b uint, n uint, f i32, a uint, l uint) int = "recvfrom";
 	k_close(fd i32) i32 = "close";
+	k_shutdown(fd i32, how i32) i32 = "shutdown";
 	k_setsockopt(fd i32, lv i32, o i32, v uint, l u32) i32 = "setsockopt";
 	k_getsockopt(fd i32, lv i32, o i32, v uint, l uint) i32 = "getsockopt";
 	k_getsockname(fd i32, a uint, l uint) i32 = "getsockname";
@@ -44,6 +45,9 @@ ERR := 8
 HUP := 16
 ANY := 0
 LOOPBACK := 0x7F000001
+SHUT_RD := 0
+SHUT_WR := 1
+SHUT_RDWR := 2
 struct Addr { ip int, port int }
 struct Poll { n int, tags int[64], fds int[64] }
 var KA byte[>..]
@@ -85,6 +89,7 @@ udp_raw(ip int, port int) int:
 	fd
 send_to_raw(h int, ip int, port int, data const byte[:]) int: ka(ip, port); n := k_sendto(h as i32, ffi::ptr(data), data.len as uint, 16384, ffi::ptr(KA[..]), 16 as! u32); if n < 0 { err() } else { n }
 close(h int) int: if k_close(h as i32) < 0 { err() } else { 0 }
+shutdown(h int, how int) int: if k_shutdown(h as i32, how as i32) < 0 { err() } else { 0 }
 nodelay(h int, on bool) int: r := opt(h, 6, 1, if on { 1 } else { 0 }); if r < 0 { err() } else { 0 }
 blocking(h int, on bool) int:
 	f := k_fcntl(h as i32, 3, 0) as int; if f < 0 { return err() }
