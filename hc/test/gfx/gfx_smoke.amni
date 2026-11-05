@@ -124,6 +124,18 @@ fn cpu_checks() {
 	motion::joints(0, pal);
 	let moved = linalg::point(pal[1], linalg::v3(0.0, 2.0, 0.0));
 	print("anim joint ", milli(moved.x), " ", milli(moved.y), " ", milli(moved.z));
+	let item = s3d::add(a);
+	s3d::animate(item, anim, 1.0);
+	s3d::set_node(item, bone, linalg::v3(0.0, 0.0, 0.0), linalg::Quat { 0.7071068, 0.0, 0.0, 0.7071068 }, linalg::v3(1.0, 1.0, 1.0));
+	s3d::set_weight(item, gltf::find_node(a, "strip"), 0, 0.25);
+	s3d::pose(item);
+	let ro = motion::pose_r[bone];
+	print("pose override rotation ", milli(ro.x), " ", milli(ro.z), " ", milli(ro.w), " weight ", milli(motion::weight(gltf::find_node(a, "strip"), 0)));
+	s3d::clear_pose(item);
+	s3d::pose(item);
+	let rc = motion::pose_r[bone];
+	print("pose cleared ", rc.x == r.x && rc.y == r.y && rc.z == r.z && rc.w == r.w, " overrides ", s3d::node_ov.len + s3d::weight_ov.len);
+	s3d::items.clear();
 
 	// shapes
 	let before = gltf::indices.len;

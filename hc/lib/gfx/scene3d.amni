@@ -45,6 +45,8 @@ struct Sun { to_sun float3, rgb float3, shadows bool, shadow_far f32, map_size i
 struct Light { pos float3, range f32, rgb float3, kind int }   // kind 0 point (1 spot is reserved)
 struct Sky { zenith float3, horizon float3, ground float3, ambient f32, draw bool }
 struct Look { exposure f32, white f32, bloom f32, bloom_cut f32, desaturate f32, ssao bool, ao_radius f32, ao_power f32, ao_samples int }
+struct NodeOv { item int, node int, t float3, r linalg::Quat, sc float3 }
+struct WeightOv { item int, node int, k int, w f32 }
 struct Item { asset int, place gfx::mat4, prev_place gfx::mat4, anim int, time f32, visible bool, anim2 int = -1, time2 f32 = 0.0, blend f32 = 1.0, bend_node int = -1, bend linalg::Quat = linalg::Quat { 0.0, 0.0, 0.0, 1.0 }, track int[4] = [-1, -1, -1, -1], tracked gfx::mat4[4] = [gfx::mat4_identity, gfx::mat4_identity, gfx::mat4_identity, gfx::mat4_identity] }
 struct Batch { prim int, item int, node int, joint_base int, model gfx::mat4, depth f32, mode int, prev_model gfx::mat4, prev_joint_base int, vis bool }
 
@@ -283,8 +285,29 @@ fn pose(ii int) {
 	if it.anim2 >= 0 { motion::apply(it.anim2, it.time2, 1.0); }
 	if it.anim >= 0 { motion::apply(it.anim, it.time, if it.anim2 >= 0 { it.blend } else { 1.0 }); }
 	if it.bend_node >= 0 { motion::pose_r[it.bend_node] = linalg::qmul(motion::pose_r[it.bend_node], it.bend); }
+	for o in node_ov { if o.item == ii { motion::pose_t[o.node] = o.t; motion::pose_r[o.node] = o.r; motion::pose_s[o.node] = o.sc; } }
+	for o in weight_ov { if o.item == ii { motion::pose_w[o.node * motion::MAX_WEIGHTS + o.k] = o.w; } }
 	motion::update(it.asset, it.place);
 	for t in 4 { if it.track[t] >= 0 { items[ii].tracked[t] = motion::world[it.track[t]]; } }
+}
+var node_ov NodeOv[>..] = [];
+var weight_ov WeightOv[>..] = [];
+fn set_node(item int, node int, t float3, r linalg::Quat, sc float3) {
+	for o, k in node_ov { if o.item == item && o.node == node { node_ov[k] = NodeOv { item, node, t, r, sc }; return; } }
+	node_ov.push(NodeOv { item, node, t, r, sc });
+}
+fn set_weight(item int, node int, k int, w f32) {
+	if k < 0 || k >= motion::MAX_WEIGHTS { return; }
+	for o, j in weight_ov { if o.item == item && o.node == node && o.k == k { weight_ov[j].w = w; return; } }
+	weight_ov.push(WeightOv { item, node, k, w });
+}
+fn clear_pose(item int) {
+	var j = 0;
+	for k in node_ov.len { if node_ov[k].item != item { node_ov[j] = node_ov[k]; j += 1; } }
+	while node_ov.len > j { node_ov.pop(); }
+	j = 0;
+	for k in weight_ov.len { if weight_ov[k].item != item { weight_ov[j] = weight_ov[k]; j += 1; } }
+	while weight_ov.len > j { weight_ov.pop(); }
 }
 fn add_light(pos float3, rgb float3, range f32) { lights.push(Light { pos, range, rgb, 0 }); }
 fn quad(a float3, b float3, c float3, d float3, ca float4, cb float4, cc float4, cd float4, shape int) { quads.push(QuadG { [x4(a, 1.0), x4(b, 1.0), x4(c, 1.0), x4(d, 1.0)], [ca, cb, cc, cd], f4(shape as f32, 0.0, 0.0, 0.0) }); }
@@ -476,6 +499,8 @@ fn init(w int, h int, ow int, oh int) bool {
 // Call after gltf::reset(): drops GPU copies of geometry and images so the next
 // frame uploads the new pools.
 fn forget() {
+	node_ov.clear();
+	weight_ov.clear();
 	for t in tex_srgb { if t.id != 0 { gfx::release(t); } }
 	for t in tex_linear { if t.id != 0 { gfx::release(t); } }
 	tex_srgb.clear();
