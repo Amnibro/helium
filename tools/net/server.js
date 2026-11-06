@@ -1,5 +1,5 @@
 const http = require('http'), https = require('https'), fs = require('fs'), { WebSocketServer } = require('ws'), { Server } = require('socket.io')
-const [port, cert, key] = process.argv.slice(2)
+const [port, cert, key, mode] = process.argv.slice(2)
 const body = n => { const b = Buffer.alloc(n); for (let i = 0; i < n; i++) b[i] = (i * 31 + 7) & 255; return b }
 const handler = (req, res) => {
   const m = req.url.match(/^\/(len|chunk|close|echo|status)\/(\d+)/)
@@ -13,7 +13,7 @@ const handler = (req, res) => {
 }
 const srv = cert ? https.createServer({ cert: fs.readFileSync(cert), key: fs.readFileSync(key) }, handler) : http.createServer(handler)
 const wss = new WebSocketServer({ noServer: true })
-const io = new Server(srv, { pingInterval: 2000, pingTimeout: 2000 })
+const io = new Server(srv, { pingInterval: 2000, pingTimeout: 2000, ...(mode === 'pollonly' ? { transports: ['polling'] } : {}) })
 io.use((s, next) => s.handshake.auth.token === 't0k' ? next() : next(new Error('bad token')))
 io.on('connection', s => {
   s.emit('welcome', { sid: s.id, text: 'héllo ✓' })

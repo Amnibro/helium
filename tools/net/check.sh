@@ -9,7 +9,7 @@ PIN=$(openssl x509 -in self.pem -pubkey -noout | openssl pkey -pubin -outform DE
 sha() { python3 -c "import hashlib,sys;n=int(sys.argv[1]);print(hashlib.sha256(bytes((i*31+7)&255 for i in range(n))).hexdigest())" "$1"; }
 serve() { local port=$1; shift; NODE_PATH="$NM" node "$D/server.js" $port "$@" >"srv$port.log" 2>&1 & PIDS+=($!); for i in $(seq 70); do grep -q ready "srv$port.log" 2>/dev/null && return; sleep 0.1; done; echo "server on $port did not start"; exit 1; }
 t() { local name=$1 want=$2; shift 2; n=$((n + 1)); local out; out=$(timeout 90 "$@" 2>&1 | tr '\n' ' '); if [[ "$out" == *"$want"* ]]; then printf 'ok    %-30s\n' "$name"; else printf 'FAIL  %-30s %s\n' "$name" "${out:0:300}"; fail=1; fi; }
-P=$((20000 + RANDOM % 20000)); serve $P; serve $((P + 1)) self.pem self.key
+P=$((20000 + RANDOM % 20000)); serve $P; serve $((P + 1)) self.pem self.key; serve $((P + 2)) "" "" pollonly; serve $((P + 3)) self.pem self.key pollonly
 for mode in plain tls; do
 	[ $mode = plain ] && B=http://127.0.0.1:$P WB=ws://127.0.0.1:$P E=() || B=https://localhost:$((P + 1)) WB=wss://localhost:$((P + 1)) E=(env PIN=$PIN)
 	for c in len/0 len/1 len/1000000 chunk/1 chunk/777777 close/12345; do k=${c#*/}; t "$mode GET $c" "status=200 len=$k sha=$(sha $k)" "${E[@]}" ./nc http GET $B/$c; done
@@ -21,6 +21,9 @@ for mode in plain tls; do
 	t "$mode Socket.IO suite" 'echoed [1,"two",{"three":[3,3.5,null,true]}] ack [42,"sum"] thanks ["helium"] alive after heartbeats: true sio ok end=3' "${E[@]}" ./nc sio $B t0k
 	t "$mode Socket.IO refused" "bad token" "${E[@]}" ./nc sio $B nope
 done
+t "plain Socket.IO long-polling fallback" 'echoed [1,"two",{"three":[3,3.5,null,true]}] ack [42,"sum"] thanks ["helium"] alive after heartbeats: true sio ok end=3' ./nc sio http://127.0.0.1:$((P + 2)) t0k
+t "tls Socket.IO long-polling fallback" 'echoed [1,"two",{"three":[3,3.5,null,true]}] ack [42,"sum"] thanks ["helium"] alive after heartbeats: true sio ok end=3' env PIN=$PIN ./nc sio https://localhost:$((P + 3)) t0k
+t "polling refused token" "bad token" ./nc sio http://127.0.0.1:$((P + 2)) nope
 t "self-signed without pin refused" "ERR certificate rejected (1)" ./nc http GET https://localhost:$((P + 1))/len/1
 t "untrusted reports SPKI pin" "pin=$PIN" ./nc http GET https://localhost:$((P + 1))/len/1
 t "pin for another key refused" "ERR certificate rejected" env PIN=$(printf %064d 0) ./nc http GET https://localhost:$((P + 1))/len/1
