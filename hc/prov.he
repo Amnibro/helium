@@ -67,12 +67,13 @@ pbind(v int) Pv:
 	if l.fl & (LV_PARAM | LV_BLKP) != 0 || l.cfn != PI as i32: Pv{0, v as i32, if !pown(v) { 0 } else { (1 as i64) << min(pidx(v), 30) | PXM[v] }}
 	else: { if PMXON && v < PVRS.len && (isrs(l.ty as int) || hold(l.ty as int)) { if !isrs(l.ty as int) { PMXF = if PMXF == -1 { v } else { -2 } } for x PVRS[v] { if x != -1 && !PMX.contains(x) { PMX.push(x) } } } Pv{PBD[v], PBV[v], PBM[v]} }
 pidx(v int) int: nd := FI_[PI].node as int; for j ND[nd].n { if rv(kid(nd, j)) == v { return j } } if ND[nd].k as int == N_FUNVAL && rk(nd) == R_LOCAL && rv(nd) == v { 0 } else { 62 }
+pfrng(v int) bool: l := LVS[v]; d := l.node as int; it := if d >= 0 && ND[d].k as int == N_FOR { ND[d].a as int } else { -1 }; t := if it >= 0 { at(it) } else { -1 }; l.fl & LV_REF == 0 && !rref(l.ty as int) && it >= 0 && (ND[d].s as int != l.name as int || t >= 0 && (TY[t].k as int == TY_INT || TY[t].k as int == TY_ILIT))
 recursive pl(n int) Pv:
 	k := ND[n].k as int; if at(n) < 0 && rk(n) == R_NONE { return pnone() }
 	if k == N_ID:
 		r := rk(n); if r == R_GLOBAL { return if TY[global_type(rv(n))].k as int == TY_REF { pnone() } else { Pv{-2, (-3 - rv(n)) as i32, 0} } } if r == R_CONST { return Pv{-2, -1, 0} } if r != R_LOCAL { return ptemp() }
 		v := rv(n); l := LVS[v]
-		if rref(l.ty as int) || l.fl & LV_FOR != 0: return pbind(v)
+		if rref(l.ty as int) || l.fl & LV_FOR != 0 && !pfrng(v): return pbind(v)
 		if l.fl & (LV_PARAM | LV_BLKP) != 0: return Pv{2, v as i32, 0}
 		return Pv{pdep(v) as i32, v as i32, 0}
 	if k == N_DOT || k == N_IDX || k == N_SLICE:
@@ -312,7 +313,7 @@ pstore(n int, src Pv, dst Pv):
 	if src.d > dst.d && !(dst.d == 0 && src.d == 0): m byte[>..] ~= []; m.append("storing a reference rooted at "); pname(src, m); m.append(", which does not outlive the destination (§9.2)"); cerr(n, m[..])
 pret(n int, e int):
 	if e < 0: return
-	t := at(e); rt := FI_[PI].ret as int; if !(ND[e].k as int == N_ID && rk(e) == R_LOCAL && !is_fixed(rt) && LVS[rv(e)].cfn == PI as i32) { prc(e, rt, -1) } if !isrs(rt) && !hold(rt): return
+	t := at(e); rt := FI_[PI].ret as int; if !(ND[e].k as int == N_ID && rk(e) == R_LOCAL && !is_fixed(rt) && LVS[rv(e)].cfn == PI as i32) { prc(e, rt, -1) } if !isrs(rt) && !hold(rt) && !rref(rt): return
 	if !isrs(rt): for v in 0..LVS.len { if LVS[v].cfn == PI as i32 && LVS[v].fl & LV_PARAM != 0 && !pgsid(v) && pdir(e, v) { pgnadd(PI, pidx(v), e, LVS[v].name as int) } }
 	p := pvin(rt, e)
 	PRM[PI] = PRM[PI] | p.m
