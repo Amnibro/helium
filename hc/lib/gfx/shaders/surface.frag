@@ -166,7 +166,7 @@ float sun_pcss(vec2 uv, float zd, int c, float row0, vec3 n) {
 	for (int i = 0; i < 32; i++) {
 		vec2 o = vogel(i, 32, rot) * (i == 0 ? 0.0 : r0 * pow(max(rs / r0, 1.0), float(i) / 31.0) / sqrt((float(i) + 0.5) / 32.0));
 		float d = texelFetch(tex_shadow_raw, ivec3(clamp(ivec2((uv + o) / texel), ivec2(0), dim), c), 0).r;
-		float zt = zr + dot(g, o) - bias;
+		float zt = min(zr + dot(g, o), 0.99999) - bias;
 		float w = d < zt ? clamp(2.0 - 2.0 * length(o) / max((zt - d) * kw, 1.5 * texel), 0.0, 1.0) : 0.0;
 		zb += w * d;
 		nb += w;
@@ -176,7 +176,7 @@ float sun_pcss(vec2 uv, float zd, int c, float row0, vec3 n) {
 	float lit = 0.0;
 	for (int i = 0; i < 28; i++) {
 		vec2 o = vogel(i, 28, rot + 1.3) * rf;
-		lit += texture(tex_shadow, vec4(uv + o, float(c), zr + dot(g, o) - bias));
+		lit += texture(tex_shadow, vec4(uv + o, float(c), min(zr + dot(g, o), 0.99999) - bias));
 	}
 	return mix(1.0, lit / 28.0, clamp(nb, 0.0, 1.0));
 }
@@ -218,7 +218,7 @@ float sun_visibility(vec3 p, vec3 n) {
 	float row0 = length(vec3(cascade_mat[c][0][0], cascade_mat[c][1][0], cascade_mat[c][2][0]));
 	vec3 q = p + n * (1.5 * 2.0 * texel / row0);
 	vec4 s = cascade_mat[c] * vec4(q, 1.0);
-	vec3 ndc = s.xyz / s.w;
+	vec3 ndc = vec3(s.xy / s.w, min(s.z / s.w, 0.99999));
 	vec2 uv = vec2(ndc.x * 0.5 + 0.5, 0.5 - ndc.y * 0.5);
 	if (any(lessThan(uv, vec2(0.0))) || any(greaterThan(uv, vec2(1.0)))) return 1.0;
 	if (view_dir.w > 0.0) return sun_pcss(uv, ndc.z, c, row0, n);
