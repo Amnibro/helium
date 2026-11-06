@@ -575,6 +575,7 @@ fn warm_textures() {
 		warm(m.top_base, true);
 		warm(m.top_mr, false);
 		warm(m.top_normal, false);
+		warm(m.detail, false);
 	}
 }
 

@@ -119,7 +119,7 @@ vec3 mat_term(vec3 n, vec3 v, vec3 l, vec3 e, vec3 albedo, vec3 f0, float rough,
 		float nl = dot(n, l);
 		vec3 dif = kd * albedo / PI_F * clamp((nl + w) / (1.0 + w), 0.0, 1.0) * e;
 		vec3 fz = sheen.rgb * e * shade_a.y * pow(1.0 - max(dot(n, v), 0.0), 3.0) * clamp((nl + 0.5) / 1.5, 0.0, 1.0);
-		return ((dif + shade_a.z * light_term(n, v, l, e, vec3(0.0), f0, rough, ms, kd)) * sheen_keep() + sheen_term(n, v, l, e) + fz) * vis;
+		return ((dif + shade_a.z * light_term(n, v, l, e, vec3(0.0), f0, rough, ms, kd)) * sheen_keep() + sheen_term(n, v, l, e) + fz) * vis * q.cav;
 	}
 	return (light_term(n, v, l, e, albedo, f0, rough, ms, kd) * sheen_keep() + sheen_term(n, v, l, e)) * vis;
 }
@@ -335,7 +335,8 @@ void main() {
 	vec3 nm = n;
 	vec4 dt = texture(tex_top_normal, xuv(uv_sets.x, xm_det, xo_det.xy));
 	float dmask = model == 1 ? mr.b : 1.0;
-	Mat q = Mat(nm, normalize(in_nrm), in_uv.z > 0.0 ? in_uv.z : length(fwidth(normalize(in_nrm))) / max(length(fwidth(in_world)), 1e-6), in_uv.z > 0.0 ? in_uv.w : 1.0, 1.0);
+	float dcurv = length(fwidth(normalize(in_nrm))) / max(length(fwidth(in_world)), 1e-6);
+	Mat q = Mat(nm, normalize(in_nrm), in_uv.z > 0.0 ? max(in_uv.z, 0.0) : dcurv, in_uv.z > 0.0 ? max(in_uv.w, 0.0005) : 1.0, 1.0);
 	if (!gl_FrontFacing && alpha.z > 0.5) q.gn = -q.gn;
 	if (model > 0) {
 		n = normalize(n + (t * (dt.x * 2.0 - 1.0) + b * (dt.y * 2.0 - 1.0)) * shade_b.x * dmask);
@@ -345,6 +346,7 @@ void main() {
 	float rough = clamp(params.y * mr.g * (model > 0 ? mix(1.0, 0.5 + dt.b, dmask) : 1.0), 0.03, 1.0);
 	float occ = 1.0 + params.w * ((tp ? mr.r : texture(tex_occlusion, xuv(uv_sets.w, xm_occ, xo1.zw)).r) - 1.0);
 	if (eye.w > 0.5) occ *= texture(tex_ao, gl_FragCoord.xy * screen.xy).r;
+	if (model > 0) occ *= model == 3 ? q.cav : mix(1.0, q.cav, 0.5);
 
 	vec3 albedo = tint.rgb * (1.0 - metal);
 	vec3 f0 = mix(vec3(model == 1 ? shade_c.x : 0.04), tint.rgb, metal);
