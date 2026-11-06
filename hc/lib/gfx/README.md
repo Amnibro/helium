@@ -229,16 +229,24 @@ light and background, ACES, no bloom. `studio_soft(float3 { 0.8, 0.81, 0.84 }, 2
 the light-grey OpenMOSS concept look; put the character on a shadow catcher (a blended,
 `no_shadow` plane with `catcher` > 0) so the floor stays the background colour.
 
-E3 gate results (RX 9060 XT, RADV, Mesa 26.2.4; clean worktree at 9e4b174):
-`gfxtest.sh` ok, goldens unchanged (spheres 52.83 dB, shipped look 56.02 dB, the same as
-the last recorded run 44a84bd); `webgputest.mjs` 0 failures (scene_e3 bit for bit,
-holo_e3 85.67 dB). GPU time at 1920x1080 (`look_bench`, Holo under the Amni-Companion
-studio light, 200 frames, median):
+E3 gate results (RX 9060 XT, RADV, Mesa 26.2.4; clean worktree at f73abda,
+`results/2026-11-06_rx9060xt_radv_f73abda_e3.txt`): `gfxtest.sh` ok, goldens unchanged
+(spheres 52.83 dB, shipped look 56.02 dB, the same as the last recorded run 44a84bd);
+`webgputest.mjs` 0 failures (scene_e3 bit for bit, holo_e3 85.67 dB). GPU time at
+1920x1080 (`look_bench`, Holo under the Amni-Companion studio light, 30 warmup + 200
+frames, median; bar: E3 total <= 1.5 ms):
 
 | camera | none | + PCSS + fit | + contact | + shadowed rim and fill spots | E3 total |
 | --- | --- | --- | --- | --- | --- |
-| face close-up | 3.100 ms | 3.869 | 3.899 | 4.464 | +1.364 ms |
-| full body | 1.719 ms | 2.413 | 2.570 | 2.897 | +1.178 ms |
+| face close-up | 3.054 ms | 3.819 | 3.912 | 4.190 | +1.136 ms |
+| full body | 1.717 ms | 2.410 | 2.564 | 2.935 | +1.217 ms |
+
+Seen in the renders: PCSS reproduces the hard 8192^2 reference's shadow shapes (hair over
+the face, nose, chin on the neck, skirt hem on the thighs) with penumbras that widen with
+distance from the caster; the coarse full-body cascade's blotchy hem shadow becomes a
+clean soft one with `fit`. Contact rays mostly add the lash line on the upper lids, the
+nostril and lip creases and self-shadowing between hair cards. Without TAA a wide key
+(0.17 rad and up) shows faint fixed-pattern banding inside large penumbras.
 
 ## Where later features attach
 
