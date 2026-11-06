@@ -161,21 +161,24 @@ float sun_pcss(vec2 uv, float zd, int c, float row0, vec3 n) {
 	float bias = zs * texel / row0 + 2e-6;
 	ivec2 dim = ivec2(textureSize(tex_shadow_raw, 0).xy) - 1;
 	float zb = 0.0, nb = 0.0;
-	for (int i = 0; i < 20; i++) {
-		vec2 o = vogel(i, 20, rot) * rs;
+	float kw = tn * row0 * 0.5 / zs;
+	float r0 = 0.5 * texel;
+	for (int i = 0; i < 32; i++) {
+		vec2 o = vogel(i, 32, rot) * (i == 0 ? 0.0 : r0 * pow(max(rs / r0, 1.0), float(i) / 31.0) / sqrt((float(i) + 0.5) / 32.0));
 		float d = texelFetch(tex_shadow_raw, ivec3(clamp(ivec2((uv + o) / texel), ivec2(0), dim), c), 0).r;
 		float zt = zr + dot(g, o) - bias;
-		zb += d < zt ? d : 0.0;
-		nb += d < zt ? 1.0 : 0.0;
+		float w = d < zt ? clamp(2.0 - 2.0 * length(o) / max((zt - d) * kw, 1.5 * texel), 0.0, 1.0) : 0.0;
+		zb += w * d;
+		nb += w;
 	}
-	if (nb < 0.5) return 1.0;
-	float rf = clamp((zr - zb / nb) / zs * tn * row0 * 0.5, texel, rs);
+	if (nb < 1e-3) return 1.0;
+	float rf = clamp((zr - zb / nb) * kw, texel, rs);
 	float lit = 0.0;
 	for (int i = 0; i < 28; i++) {
 		vec2 o = vogel(i, 28, rot + 1.3) * rf;
 		lit += texture(tex_shadow, vec4(uv + o, float(c), zr + dot(g, o) - bias));
 	}
-	return lit / 28.0;
+	return mix(1.0, lit / 28.0, clamp(nb, 0.0, 1.0));
 }
 float local_visibility(int i, vec3 p, vec3 n) {
 	vec4 sh = light_shd[i];

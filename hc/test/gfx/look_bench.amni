@@ -78,11 +78,18 @@ fn features(f const byte[:]) {
 		s3d::lights[0].shadows = true;
 		s3d::lights[1].shadows = true;
 	}
+	if has(f, "direct") { s3d::debug_view = 5; }
+	if has(f, "noshadow") { s3d::sun.shadows = false; }
+	if has(f, "hires") { s3d::sun.map_size = 8192; }
+	if has(f, "sunonly") {
+		s3d::lights.clear();
+		s3d::sky.ambient = 0.0;
+	}
 }
 fn main() {
 	let a = args();
-	let w, wok = parse_int(a[3]);
-	let h, hok = parse_int(a[4]);
+	let w = num(a[3]) as int;
+	let h = num(a[4]) as int;
 	gltf::lazy_pixels = true;
 	if !gfx::open_headless(w, h) {
 		print("look_bench: no device: ", gfx::error());
@@ -101,22 +108,20 @@ fn main() {
 		let fl = s3d::add(shapes::plane(3.0, fm));
 		s3d::place(fl, gfx::mat4_identity);
 	}
-	s3d::view = s3d::Camera {
-		eye: float3 { num(a[5]) as f32, num(a[6]) as f32, num(a[7]) as f32 },
-		target: float3 { num(a[8]) as f32, num(a[9]) as f32, num(a[10]) as f32 },
-		up: float3 { 0.0, 1.0, 0.0 },
-		fov_y: num(a[11]) as f32,
-		near: 0.05,
-		far: 100.0,
-	};
+	let eye = float3 { num(a[5]) as f32, num(a[6]) as f32, num(a[7]) as f32 };
+	let target = float3 { num(a[8]) as f32, num(a[9]) as f32, num(a[10]) as f32 };
+	s3d::view = s3d::Camera { eye: eye, target: target, up: float3 { 0.0, 1.0, 0.0 }, fov_y: num(a[11]) as f32, near: 0.05, far: 100.0 };
 	studio();
 	features(a[12]);
 	s3d::init(w, h);
 	let out = gfx::render_target(w, h, gfx::RGBA8);
-	let first_frames = if s3d::temporal != 0 { 48 } else { 3 };
-	for i in first_frames {
+	let frames = if s3d::temporal != 0 { 48 } else { 3 };
+	for i in frames {
 		s3d::render(out);
 		gfx::flush();
+	}
+	if has(a[12], "info") {
+		print("look_bench: cascades live ", s3d::cascade_live, " ends ", s3d::cascade_end[0], " ", s3d::cascade_end[1], " ", s3d::cascade_end[2]);
 	}
 	if a[2] != "-" {
 		gfx::save_png(out, a[2]);
@@ -132,14 +137,12 @@ fn main() {
 		env("HELIUM_GPUTIME", log);
 		let have_log = log.len > 0;
 		var before real[>..] = [];
-		var all real[>..] = [];
-		var each real[>..] = [];
-		var wall real[>..] = [];
 		var first = 0;
 		if have_log {
 			gpu_ns(log[..], before);
 			first = before.len;
 		}
+		var wall real[>..] = [];
 		for i in n {
 			let t = gfx::time();
 			s3d::render(out);
@@ -148,12 +151,14 @@ fn main() {
 		}
 		print("look_bench: ", a[12], " wall ms median ", median(copy(wall)), " p95 ", p95(copy(wall)));
 		if have_log {
+			var all real[>..] = [];
 			gpu_ns(log[..], all);
 			let k = all.len - first;
 			if k == 0 || k % n != 0 {
 				print("look_bench: gpu submits cannot be split");
 			} else {
 				let per = k / n;
+				var each real[>..] = [];
 				for f in n {
 					var s = 0.0;
 					for j in per { s += all[first + f * per + j]; }

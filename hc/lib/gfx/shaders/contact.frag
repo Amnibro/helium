@@ -13,10 +13,11 @@ void main() {
 	vec3 n = texelFetch(tex_nd, x, 0).xyz;
 	vec3 l = sun_v.xyz;
 	if (z <= 0.0 || dot(n, l) <= 0.0) { out_rg = vec4(a, 1.0, 0.0, 1.0); return; }
-	vec3 p = view_pos(gl_FragCoord.xy + jit.xy, z) + n * (z * 0.0015);
+	float fp = 2.0 * z * lens.y / jit.w;
+	vec3 p = view_pos(gl_FragCoord.xy + jit.xy, z) + n * (1.5 * fp);
 	int steps = int(tune.x);
 	float j = tune.w > 0.5 ? fract(52.9829189 * fract(dot(gl_FragCoord.xy, vec2(0.06711056, 0.00583715)))) : 0.5;
-	float bias = z * 0.0007;
+	float bias = max(z * 0.0007, fp);
 	float occ = 0.0;
 	for (int i = 0; i < 32; i++) {
 		if (i >= steps) break;
@@ -30,7 +31,7 @@ void main() {
 		if (any(lessThan(y, ivec2(0))) || any(greaterThan(y, lim))) break;
 		float zs = texelFetch(tex_depth, y, 0).r;
 		float dz = zq - zs;
-		float hit = zs > 0.0 ? clamp((dz - bias) / bias, 0.0, 1.0) * clamp((tune.y - dz) / (0.5 * tune.y), 0.0, 1.0) : 0.0;
+		float hit = zs > 0.0 ? clamp((dz - bias) / (2.0 * bias), 0.0, 1.0) * clamp((tune.y - dz) / (0.5 * tune.y), 0.0, 1.0) : 0.0;
 		occ = max(occ, hit * (1.0 - t * t));
 	}
 	out_rg = vec4(a, 1.0 - occ, 0.0, 1.0);
