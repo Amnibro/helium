@@ -1,0 +1,2 @@
+fn f(a int[3]) int[:] { a[..] }
+fn main() { print(f([1, 2, 3])); }

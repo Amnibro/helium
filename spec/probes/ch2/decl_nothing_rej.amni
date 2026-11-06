@@ -1,0 +1,1 @@
+fn main() { var q; print(q); }

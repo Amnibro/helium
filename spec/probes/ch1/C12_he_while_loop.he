@@ -1,0 +1,8 @@
+fn main():
+    n := 0
+    while n < 3:
+        n += 1
+    loop:
+        n += 10
+        break
+    print(n)

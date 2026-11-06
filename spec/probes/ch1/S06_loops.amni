@@ -1,0 +1,9 @@
+fn main() {
+	var n = 0;
+	let k = loop { n += 7; if n % 5 == 0 { break n; } };
+	for x, i in [10, 20, 30] { if i == 1 { continue; } print(i, ":", x, " "); }
+	for i in 2..5 { n += i; }
+	for i in 3 { n += i; }
+	while n > 100 { n /= 2; }
+	print(k, " ", n);
+}

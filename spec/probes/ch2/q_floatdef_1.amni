@@ -1,0 +1,1 @@
+fn main() { let f = 0.1; let d = f - 0.1; print(d == 0.0, " ", d); }

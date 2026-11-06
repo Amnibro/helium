@@ -1,0 +1,2 @@
+fn chk(n int) { guard n > 0 else { print("neg "); } print("pos "); }
+fn main() { chk(-1); chk(2); }

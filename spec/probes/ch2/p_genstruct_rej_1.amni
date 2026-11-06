@@ -1,0 +1,1 @@
+struct Pair<T> { a T, b T } fn main() { let p = Pair { 1, 2 }; print(p.a); }

@@ -1,0 +1,1 @@
+fn same(a, b) { a } fn main() { let i = 1; print(same(2.0, i)); }

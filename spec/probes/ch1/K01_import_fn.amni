@@ -1,0 +1,2 @@
+import math;
+fn main() { print(sqrt(16.0)); }

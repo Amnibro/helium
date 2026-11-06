@@ -1,0 +1,2 @@
+fn scale<T>(x T, by T = 2) T { x * by }
+fn main() { print(scale(21), " ", scale(1.5), " ", scale(3, 4)); }

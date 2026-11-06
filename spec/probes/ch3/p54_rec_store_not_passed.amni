@@ -1,0 +1,11 @@
+var keep int = 0;
+recursive fn f(n int, p int&) int {
+	if n == 0 { return 0; }
+	var r .= p;
+	r += 1;
+	f(n - 1, keep)
+}
+fn main() {
+	var v = 5;
+	print(f(3, v));
+}

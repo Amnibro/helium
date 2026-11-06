@@ -1,0 +1,1 @@
+fn main() { let x uint = 0xFFFFFFFFFFFFFFFF; print(x); }

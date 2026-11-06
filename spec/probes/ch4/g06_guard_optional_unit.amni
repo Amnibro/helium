@@ -1,0 +1,3 @@
+struct Node { v int }
+fn show(p Node?) { guard p else { print("none "); } print("v=", p.v); }
+fn main() { let q Node? = null; show(q); print(" done"); }

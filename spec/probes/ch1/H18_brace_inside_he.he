@@ -1,0 +1,4 @@
+fn main():
+    xs := [1, 2]
+    if xs.len == 2 { print("braced") }
+    print(xs[0])

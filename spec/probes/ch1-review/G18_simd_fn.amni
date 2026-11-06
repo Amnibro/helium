@@ -1,0 +1,2 @@
+simd fn f(n int) int { n }
+fn main() { print(f(4), "\n"); }

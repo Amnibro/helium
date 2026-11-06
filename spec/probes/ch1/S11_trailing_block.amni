@@ -1,0 +1,7 @@
+fn main() {
+	let xs int[5] = [4, 8, 15, 16, 23];
+	let evens = xs.filter() { it % 2 == 0 };
+	let doubled = xs.map() { it * 2 };
+	let total = fold(xs, 0) { acc, x => acc + x };
+	print(evens, " ", doubled, " ", total);
+}

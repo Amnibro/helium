@@ -1,0 +1,2 @@
+fn bad() int& { var v = 1; v }
+fn main() { var r .= bad(); print(r); }

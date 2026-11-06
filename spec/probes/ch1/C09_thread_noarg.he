@@ -1,0 +1,5 @@
+thread_fn worker():
+    print(7)
+fn main():
+    id := thread_spawn(worker)
+    thread_wait(id)

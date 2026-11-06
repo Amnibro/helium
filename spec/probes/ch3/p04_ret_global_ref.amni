@@ -1,0 +1,5 @@
+var g int[>..] = [1, 2];
+fn f() int& { g[0] }
+fn main() {
+	print(f());
+}

@@ -1,0 +1,1 @@
+const g int = 3; fn main() { print(g); }

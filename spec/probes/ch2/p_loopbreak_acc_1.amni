@@ -1,0 +1,1 @@
+fn main() { let x = block { break 1; 2 }; print(x); }

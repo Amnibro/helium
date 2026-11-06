@@ -1,0 +1,5 @@
+main():
+    print("""
+if hello
+""", "|", 7, "\n")
+    print("after\n")

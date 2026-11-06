@@ -1,0 +1,2 @@
+fn main() { print(f(3), "\n"); }
+checkfree inline fn f(n int) int { n }

@@ -1,0 +1,2 @@
+enum C { Red, Green }
+fn main() { let c = C.Green; print(match c { C::Red => 1, _ => 2 }, "\n"); }

@@ -1,0 +1,1 @@
+fn main() { let f = 1.0e30; let n = f as int; let m = 1.0e19 as int; let k = -1.0e30 as int; let q = 3.9 as int; print(n, " ", m, " ", k, " ", q); }

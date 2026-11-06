@@ -1,0 +1,4 @@
+fn g() int:
+    2
+fn main():
+    print(1 < g() < 3)

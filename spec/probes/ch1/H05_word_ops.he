@@ -1,0 +1,4 @@
+fn main():
+    a := true
+    b := false
+    print(a and not b, " ", a or b, " ", not a or b)

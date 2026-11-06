@@ -1,0 +1,6 @@
+struct P:
+    x real
+    y real
+fn main():
+    p := P { x: 1.0, y: 2.0 }
+    print(p.y)

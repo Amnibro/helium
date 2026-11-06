@@ -1,0 +1,1 @@
+fn main() { print((-1) as u8, " ", -2.7 as int, " ", 2.7 as u8, " ", 3.9 as i8); }

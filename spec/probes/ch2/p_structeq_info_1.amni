@@ -1,0 +1,1 @@
+struct S { xs int[2] } fn main() { let a = S { xs: [1, 2] }; print(a == a); }

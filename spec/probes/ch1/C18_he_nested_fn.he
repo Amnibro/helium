@@ -1,0 +1,6 @@
+fn main():
+    total ~= 0
+    fn add(n int):
+        total += n
+    add(4)
+    print(total)

@@ -1,0 +1,3 @@
+struct Node { v int }
+fn f(p Node?) int { if p { p.v } else { -1 } }
+fn main() { let q Node? = null; print(f(q)); }

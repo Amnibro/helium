@@ -1,0 +1,1 @@
+fn s(xs int[:]) int { xs.len } fn main() { print(s([1, 2, 3])); }

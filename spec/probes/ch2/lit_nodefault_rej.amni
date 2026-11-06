@@ -1,0 +1,2 @@
+struct V { a int, b int = 2 }
+fn main() { let v = V { }; print(v.a); }

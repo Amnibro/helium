@@ -1,0 +1,1 @@
+fn main() { let x int[:] = 5; print(x.len); }

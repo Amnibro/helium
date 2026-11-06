@@ -1,0 +1,3 @@
+use math
+fn main():
+    print(floor(2.5))

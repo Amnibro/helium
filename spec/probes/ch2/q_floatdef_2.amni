@@ -1,0 +1,1 @@
+fn main() { let f = 0.1; let g f32 = f; print(g); }

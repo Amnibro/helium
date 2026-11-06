@@ -1,0 +1,5 @@
+fn find(xs int[:], t int) int { each_hit(xs, t); return -1; }
+fn each_hit(xs int[:], t int) { for x in xs { if x == t { return; } } }
+fn first_multiple_of_7(lo int, hi int) int { each_step(lo, hi, 3) { if it % 7 == 0 { return it; } }; return -1; }
+fn each_step<F>(lo int, hi int, step int = 1) { var i = lo; while i < hi { F(i); i += step; } }
+fn main() { print(first_multiple_of_7(10, 40), " ", find([1, 2], 2)); }

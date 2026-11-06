@@ -1,0 +1,2 @@
+fn w(a byte[:]) { a[0] = 120; }
+fn main() { w("abc"); }

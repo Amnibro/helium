@@ -1,0 +1,2 @@
+enum Shape { Circle { r real }, Dot }
+fn main() { let s = Shape.Circle; print("x"); }

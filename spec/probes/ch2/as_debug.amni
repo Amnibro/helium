@@ -1,0 +1,1 @@
+fn main() { let a = 300; let b = a as i8; print(b); }

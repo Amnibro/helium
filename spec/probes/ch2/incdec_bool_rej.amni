@@ -1,0 +1,1 @@
+fn main() { var b bool = true; b++; print(b); }

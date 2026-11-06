@@ -1,0 +1,1 @@
+fn main() { let x = 300; let f = -3.7; let g = 3.7; print(x as u8, " ", f as int, " ", g as int, "\n"); }

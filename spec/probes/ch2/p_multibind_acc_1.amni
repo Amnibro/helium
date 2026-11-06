@@ -1,0 +1,1 @@
+fn d(a int, b int) int, bool { return a / b, true; } fn main() { var q, ok = d(7, 2); q = 9; print(q, " ", ok); }

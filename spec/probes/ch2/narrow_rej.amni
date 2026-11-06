@@ -1,0 +1,1 @@
+fn main() { let a int = 9; let b i16 = a; print(b); }

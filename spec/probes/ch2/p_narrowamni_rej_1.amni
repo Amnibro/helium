@@ -1,0 +1,1 @@
+fn g() int { 5 } fn main() { let b i8 = g(); print(b); }

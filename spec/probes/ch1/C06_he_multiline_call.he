@@ -1,0 +1,7 @@
+fn add3(a int, b int, c int) int:
+    a + b + c
+fn main():
+    print(add3(
+        1,
+        2,
+        3))

@@ -1,0 +1,2 @@
+fn main() { print(f(3), "\n"); }
+lut checkfree fn f(n u8) int { n as int }

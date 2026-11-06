@@ -1,0 +1,12 @@
+struct Node { v int, next Node? }
+fn first(xs int[:], m int) int? { for &x in xs { if x >= m { return x; } } return null; }
+fn main() {
+	var a int[>..] = [1, 2];
+	var b int[..4] = [];
+	var c int[varint] = [3];
+	let d int[3] = [1, 2, 3];
+	var e byte[..16] = [];
+	let n = Node { v: 1, next: null };
+	let f = first(a, 2);
+	print(a.len, b.cap, c.len, d[2], e.len, n.v, f);
+}

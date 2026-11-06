@@ -1,0 +1,2 @@
+thread_fn w() { let v = qget<int>(); print("got ", v); }
+fn main() { qput(41); let id = thread_spawn(w); thread_wait(id); }

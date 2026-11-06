@@ -1,0 +1,2 @@
+fn f(n int) int { let a int[n] = [0; 4]; a.len }
+fn main() { print(f(3)); }

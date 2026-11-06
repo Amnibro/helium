@@ -1,0 +1,6 @@
+fn f(n int) int:
+    match n:
+        0 => 10
+        _ => 20
+fn main():
+    print(f(0), f(4))

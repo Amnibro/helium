@@ -1,0 +1,1 @@
+fn main() { let f real = 2.5; let n int = f; print(n); }

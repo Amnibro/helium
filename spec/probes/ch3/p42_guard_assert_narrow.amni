@@ -1,0 +1,8 @@
+struct N { v int }
+fn f(n N?) int { guard n else { return -1; } n.v }
+fn g(n N?) int { assert(n); n.v }
+fn main() {
+	let a N? = null;
+	let b = N { v: 4 };
+	print(f(a), " ", f(b), " ", g(b));
+}

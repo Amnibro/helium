@@ -1,0 +1,1 @@
+fn main() { let n = 0; let x = match n { 0 => 1, _ => 2.5, }; print(x); }

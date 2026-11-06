@@ -1,0 +1,1 @@
+fn main() { let h int = 1.5; print(h); }

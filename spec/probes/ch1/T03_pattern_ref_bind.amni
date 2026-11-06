@@ -1,0 +1,3 @@
+enum Shape { Circle { r real }, Dot }
+fn grow(s Shape) real { var out = 0.0; match s { Circle &c => { c.r += 1.0; out = c.r; } _ => { out = 0.0; } } out }
+fn main() { var s = Shape.Circle { r: 1.0 }; print(grow(s)); }

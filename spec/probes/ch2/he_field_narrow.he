@@ -1,0 +1,5 @@
+struct P { x i16 }
+fn main():
+	a := 9
+	p := P { x: a }
+	print(p.x)

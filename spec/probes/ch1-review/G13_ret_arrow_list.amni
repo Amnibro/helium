@@ -1,0 +1,2 @@
+fn f() -> int, bool { (1, true) }
+fn main() { let a, b = f(); print(a, b, "\n"); }

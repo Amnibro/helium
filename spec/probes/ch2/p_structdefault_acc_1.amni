@@ -1,0 +1,1 @@
+struct U { kind i32, hp i32 = 100 } fn main() { let u = U { kind: 1, hp: 7 }; print(u.hp); }

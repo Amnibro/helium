@@ -1,0 +1,2 @@
+recursive inline fn f(n int) int { if n <= 1 { 1 } else { n * f(n - 1) } }
+fn main() { print(f(4), "\n"); }

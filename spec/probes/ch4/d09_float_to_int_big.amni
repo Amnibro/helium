@@ -1,0 +1,1 @@
+fn main() { let f = 1.0e30; let n = f as int; print("n=", n); }

@@ -1,0 +1,1 @@
+fn main() { let x = 2; let y = 3 as real; print(x as real / 4.0, " ", y, "\n"); }

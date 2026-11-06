@@ -1,0 +1,1 @@
+fn main() { print(1e3 == 1000.0); let x int = 1e3; print(x); }

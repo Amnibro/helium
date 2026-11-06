@@ -1,0 +1,16 @@
+enum Shape { Circle { r real }, Rect { w real, h real }, Dot }
+fn grade(n int) const byte[:] {
+	match n {
+		0 => "zero",
+		1..10 => "small",
+		10, 20, 30 => "round",
+		_ => "big",
+	}
+}
+fn name(s Shape) const byte[:] {
+	match s {
+		Circle c => if c.r > 1.0 { "big circle" } else { "circle" },
+		Rect, Dot => "other",
+	}
+}
+fn main() { print(grade(0), " ", grade(5), " ", grade(20), " ", grade(99), " ", name(Shape.Circle { r: 2.0 }), " ", name(Shape.Dot)); }

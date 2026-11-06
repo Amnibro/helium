@@ -1,0 +1,1 @@
+fn main() { let a u8 = 255; let b u16 = 65535; let c i8 = -128; let d u32 = 4000000000; let e i32 = -5; let g i16 = -300; print(a, " ", b, " ", c, " ", d, " ", e, " ", g); }

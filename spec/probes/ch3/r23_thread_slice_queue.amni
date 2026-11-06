@@ -1,0 +1,2 @@
+thread_fn w() { let s = qget<int[:]>(); print(s); }
+fn main() { var a int[>..] = [1, 2]; qput(a[..]); let id = thread_spawn(w); thread_wait(id); }

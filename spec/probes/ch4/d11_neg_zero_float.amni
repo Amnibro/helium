@@ -1,0 +1,1 @@
+fn main() { let z = 0.0; let n = -z; print(n, " ", 1.0 / n); }

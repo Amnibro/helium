@@ -1,0 +1,1 @@
+struct A { x int } struct B { x int } fn take(b B) int { b.x } fn main() { let a = A { x: 1 }; print(take(a)); }

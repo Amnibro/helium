@@ -1,0 +1,2 @@
+fn f(a int&, b int&) { a += 1; b += 10; }
+fn main() { var x = 1; f(x, x); print(x); }

@@ -1,0 +1,4 @@
+fn main() {
+	var v int = 300;
+	print(v as! u8);
+}

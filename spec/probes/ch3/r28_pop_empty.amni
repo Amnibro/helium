@@ -1,0 +1,1 @@
+fn main() { var xs int[>..<] = []; print(xs.pop()); }

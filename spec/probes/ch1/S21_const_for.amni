@@ -1,0 +1,2 @@
+struct P { x int, y int }
+fn main() { var t = 0; const for f in fields<P> { t += 1; } print(t); }

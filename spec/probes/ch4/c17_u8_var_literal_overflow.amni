@@ -1,0 +1,1 @@
+fn main() { var b u8 = 300; print(b); }

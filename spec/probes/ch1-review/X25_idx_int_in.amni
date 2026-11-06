@@ -1,0 +1,2 @@
+struct Ix { a int }
+fn main() { let xs int in Ix = [1, 2]; print(xs.len, "\n"); }

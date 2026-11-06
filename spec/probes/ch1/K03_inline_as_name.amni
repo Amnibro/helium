@@ -1,0 +1,1 @@
+fn main() { let inline = 1; let checkfree = 2; let upto = 3; print(inline + checkfree + upto); }

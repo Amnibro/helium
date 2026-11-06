@@ -1,0 +1,2 @@
+fn d(a int, b int) int, bool { if b == 0 { return 0, false; } return a / b, true; }
+fn main() { let q, ok = d(7, 2); print(q, " ", ok); }

@@ -1,0 +1,4 @@
+main():
+    a := true
+    b := false
+    print(not a and b, " ", not b or a, "\n")

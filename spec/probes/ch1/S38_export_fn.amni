@@ -1,0 +1,2 @@
+export fn he_add(a int, b int) int { a + b }
+fn main() { print(he_add(1, 2)); }

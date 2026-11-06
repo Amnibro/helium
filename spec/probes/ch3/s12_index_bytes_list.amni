@@ -1,0 +1,1 @@
+fn main() { var parts byte[][>..] = []; parts.push("ab"); print(parts[0]); }

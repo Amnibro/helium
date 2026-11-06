@@ -1,0 +1,4 @@
+let SIZE = 4;
+var counter int = 0;
+const NAMES int[SIZE] = [1, 2, 3, 4];
+fn main() { counter += SIZE; print(counter, " ", NAMES[3]); }

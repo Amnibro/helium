@@ -1,0 +1,2 @@
+struct S { pad, x int }
+fn main() { let s = S { 4 }; print(s.x, "\n"); }

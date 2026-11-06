@@ -1,0 +1,6 @@
+fn pick() int[:]:
+	a ~= [1, 2, 3]
+	a[..]
+
+fn main():
+	print(pick())

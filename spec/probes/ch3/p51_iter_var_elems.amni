@@ -1,0 +1,5 @@
+fn main() {
+	var xs byte[][>..] = [];
+	xs.push(copy("hi"));
+	for s in xs { print(s); }
+}

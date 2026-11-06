@@ -1,0 +1,2 @@
+fn inc(n int&) { n += 1; }
+fn main() { let v = 1; inc(v); print(v); }

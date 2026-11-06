@@ -1,0 +1,3 @@
+extern fn cos(x real) real
+fn main():
+    print(cos(0.0))

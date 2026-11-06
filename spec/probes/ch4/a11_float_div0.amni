@@ -1,0 +1,1 @@
+fn main() { let z = 0.0; let inf = 1.0 / z; let nan = z / z; print(inf, " ", -inf, " ", nan, " ", nan == nan, " ", nan != nan); }

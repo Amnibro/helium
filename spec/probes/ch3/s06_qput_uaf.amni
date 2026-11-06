@@ -1,0 +1,4 @@
+struct J { p int& }
+fn send() { var v = 3; qput(J { p: v }); }
+thread_fn w() { let j = qget<J>(); print(j.p); }
+fn main() { send(); let id = thread_spawn(w); thread_wait(id); }

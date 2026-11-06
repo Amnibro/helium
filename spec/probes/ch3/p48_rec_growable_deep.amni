@@ -1,0 +1,6 @@
+recursive fn walk(n int) int {
+	if n == 0 { return 0; }
+	var t int[>..] = [n];
+	walk(n - 1) + t[0]
+}
+fn main() { print(walk(1000000)); }

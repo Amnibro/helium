@@ -1,0 +1,1 @@
+fn main() { let c = true; let x = if c { 1 } else { 2.5 }; print(x); }

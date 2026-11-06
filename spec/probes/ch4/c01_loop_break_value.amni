@@ -1,0 +1,1 @@
+fn main() { var n = 0; let k = loop { n += 7; if n % 5 == 0 { break n; } }; let f = block { break 9; }; print(k, " ", f); }

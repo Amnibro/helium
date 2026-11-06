@@ -1,0 +1,1 @@
+fn main() { let f real = 3; let g f32 = 1.5; let n = 2.5 as int; print(f, " ", g, " ", n); }

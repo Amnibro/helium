@@ -1,0 +1,1 @@
+fn main() { let x = 300; print(x as u8, "\n"); print(x as! u8, "\n"); }

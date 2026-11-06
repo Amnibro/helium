@@ -1,0 +1,1 @@
+fn main() { let from = 1; let fields = 2; let types = 3; let variants = 4; let lut = 5; let use = 6; let upto = 7; print(from + fields + types + variants + lut + use + upto, "\n"); }

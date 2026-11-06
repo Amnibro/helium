@@ -1,0 +1,1 @@
+fn w(xs int[:]) { xs[0] = 9; } fn main() { const k int[2] = [1, 2]; w(k); }

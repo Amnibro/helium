@@ -1,0 +1,2 @@
+struct Node { v int, next Node? }
+fn main() { var n Node? = null; print("a"); }

@@ -1,0 +1,2 @@
+struct Pair<T> { a T, b T }
+fn main() { let p = Pair<int> { 1, 2 }; print(p.a + p.b); }

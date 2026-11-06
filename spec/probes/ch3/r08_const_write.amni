@@ -1,0 +1,2 @@
+fn g(s const byte[:]) { s[0] = 'x'; }
+fn main() { g("hi"); }

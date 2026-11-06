@@ -1,0 +1,6 @@
+fn w(a byte[:]) { a[0] = 120; }
+fn main() {
+	var b byte[>..] = copy("abc");
+	w(b[..]);
+	print(b);
+}

@@ -1,0 +1,6 @@
+fn fill(a int[:]) { a[0] = 7; }
+fn main() {
+	let arr int[3] = [1, 2, 3];
+	fill(arr[..]);
+	print(arr);
+}

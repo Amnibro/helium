@@ -1,0 +1,1 @@
+fn main() { var g int[>..] = [1]; let h = g; h.push(2); let c = copy(g); c.push(7); print(g.len, " ", c.len); }

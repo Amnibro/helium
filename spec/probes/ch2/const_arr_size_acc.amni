@@ -1,0 +1,2 @@
+let SIZE = 4;
+fn main() { var a int[SIZE] = [1, 2, 3, 4]; print(a.len); }

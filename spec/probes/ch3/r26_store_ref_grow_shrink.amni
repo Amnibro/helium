@@ -1,0 +1,3 @@
+var q int[>..<] = [1, 2];
+struct C { r int[:] }
+fn main() { var c = C { r: q[..] }; print(c.r); }

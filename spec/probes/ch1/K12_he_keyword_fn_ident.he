@@ -1,0 +1,4 @@
+fn for_each():
+    print(1)
+fn main():
+    for_each()

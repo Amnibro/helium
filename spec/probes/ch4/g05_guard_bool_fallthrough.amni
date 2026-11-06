@@ -1,0 +1,2 @@
+fn f(n int) int { guard n > 0 else { print("bad "); } return 10 / n; }
+fn main() { print(f(0)); print(" done"); }

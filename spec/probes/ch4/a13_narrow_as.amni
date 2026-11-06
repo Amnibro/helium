@@ -1,0 +1,1 @@
+fn main() { let big = 300; print(big as u8, " ", big as! u8); }

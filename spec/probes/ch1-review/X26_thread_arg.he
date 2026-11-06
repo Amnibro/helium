@@ -1,0 +1,4 @@
+thread_fn work(n int):
+    print(n, "\n")
+main():
+    work(4)

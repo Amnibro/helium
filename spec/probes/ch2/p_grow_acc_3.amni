@@ -1,0 +1,1 @@
+struct G5 { v int, a int[>..<] } fn main() { var g = G5 { v: 1, a: [] }; g.a.push(4); print(g.a.len); }

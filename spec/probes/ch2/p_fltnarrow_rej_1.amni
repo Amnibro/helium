@@ -1,0 +1,1 @@
+fn g(x f32) f32 { x } fn main() { let r real = 1.5; print(g(r)); }

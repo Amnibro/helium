@@ -1,0 +1,2 @@
+fn inc(n int&) int { n += 1; n }
+fn main() { var a = 1; let r = a + inc(a); print(r, " ", a); }

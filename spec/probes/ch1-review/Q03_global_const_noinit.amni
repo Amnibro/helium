@@ -1,0 +1,2 @@
+const C real;
+fn main() { print(C, "\n"); }

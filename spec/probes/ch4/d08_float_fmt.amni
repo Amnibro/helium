@@ -1,0 +1,1 @@
+fn main() { let a = 0.1 + 0.2; let b f32 = 16777216.0; let c = b + 1.0; print(a, " ", c == b, " ", 1 / 2, " ", 1.0 / 2); let x real = 3; print(x / 2); }

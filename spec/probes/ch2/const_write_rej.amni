@@ -1,0 +1,1 @@
+fn main() { const k int[3] = [1, 2, 3]; k[0] = 5; print(k[0]); }

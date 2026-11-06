@@ -1,0 +1,2 @@
+type Id = int;
+fn main() { let i Id = 4; print(i); }

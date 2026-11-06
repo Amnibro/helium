@@ -1,0 +1,2 @@
+let X int;
+fn main() { print(X, "\n"); }

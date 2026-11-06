@@ -1,0 +1,1 @@
+fn main() { var c = 0; for i in -3 { c += 1; } for i in 2..5 { c += i * 100; } print(c); }

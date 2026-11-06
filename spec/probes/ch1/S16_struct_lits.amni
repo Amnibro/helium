@@ -1,0 +1,2 @@
+struct Unit { kind i32, hp i32 = 100, name byte[..12] }
+fn main() { let a = Unit { kind: 1, name: "scout" }; let b = Unit { 2, 50, "tank" }; let c = Unit { kind: 3, .. }; print(a.hp, " ", b.hp, " ", c.hp); }

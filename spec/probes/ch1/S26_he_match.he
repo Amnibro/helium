@@ -1,0 +1,9 @@
+enum Shape:
+    Circle r real
+    Dot
+fn name(s Shape) int:
+    match s:
+        Circle c => 1
+        Dot => 2
+fn main():
+    print(name(Shape.Dot))

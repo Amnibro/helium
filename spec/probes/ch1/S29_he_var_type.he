@@ -1,0 +1,4 @@
+fn main():
+    n int ~= 3
+    m := n
+    print(n + m)

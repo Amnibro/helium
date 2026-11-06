@@ -1,0 +1,1 @@
+fn main() { var x = 1; let y = x++; print(y); }

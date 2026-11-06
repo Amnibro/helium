@@ -1,0 +1,1 @@
+fn main() { let a i8 = 100; let c i8 = a + a; print(c); }
