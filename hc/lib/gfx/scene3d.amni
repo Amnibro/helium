@@ -45,7 +45,7 @@ struct Camera { eye float3, target float3, up float3, fov_y f32, near f32, far f
 struct Sun { to_sun float3, rgb float3, shadows bool, shadow_far f32, map_size int, soft f32 = 0.0, angle f32 = 0.0, reach f32 = 1.0, fit bool = false, contact f32 = 0.0 }
 struct Light { pos float3, range f32, rgb float3, kind int, dir float3 = float3 { 0.0, -1.0, 0.0 }, cone f32 = 0.5, edge f32 = 0.2, shadows bool = false, soft f32 = 1.5 }
 struct Sky { zenith float3, horizon float3, ground float3, ambient f32, draw bool }
-struct Look { exposure f32, white f32, bloom f32, bloom_cut f32, desaturate f32, ssao bool, ao_radius f32, ao_power f32, ao_samples int, curve int = 0, auto_exposure bool = false, ae_key f32 = 0.18, ae_low f32 = 0.5, ae_high f32 = 0.95, ae_min f32 = -4.0, ae_max f32 = 4.0, ae_up f32 = 3.0, ae_down f32 = 1.0, ae_center f32 = 3.0 }
+struct Look { exposure f32, white f32, bloom f32, bloom_cut f32, desaturate f32, ssao bool, ao_radius f32, ao_power f32, ao_samples int, curve int = 0, auto_exposure bool = false, ae_key f32 = 0.18, ae_low f32 = 0.5, ae_high f32 = 0.95, ae_min f32 = -4.0, ae_max f32 = 4.0, ae_up f32 = 3.0, ae_down f32 = 1.0, ae_center f32 = 3.0, lut f32 = 0.0 }
 struct NodeOv { item int, node int, t float3, r linalg::Quat, sc float3 }
 struct WeightOv { item int, node int, k int, w f32 }
 struct Item { asset int, place gfx::mat4, prev_place gfx::mat4, anim int, time f32, visible bool, anim2 int = -1, time2 f32 = 0.0, blend f32 = 1.0, bend_node int = -1, bend linalg::Quat = linalg::Quat { 0.0, 0.0, 0.0, 1.0 }, track int[4] = [-1, -1, -1, -1], tracked gfx::mat4[4] = [gfx::mat4_identity, gfx::mat4_identity, gfx::mat4_identity, gfx::mat4_identity] }
@@ -221,6 +221,8 @@ var hist_buf gfx::Buffer;
 var expo_buf gfx::Buffer;
 var expo_fresh = true;
 var exposure_dt f32 = 0.0166667;
+var lut_tex gfx::Texture;
+var lut_n = 0;
 var ae_log_min f32 = -10.0;
 var ae_log_max f32 = 10.0;
 var color_ms gfx::Texture;
@@ -521,6 +523,7 @@ fn init(w int, h int, ow int, oh int) bool {
 	hist_buf = gfx::buffer(rwb, 512, bytes_of(z)[..]);
 	let one f32[4] = [1.0, 0.0, 0.0, 0.0];
 	expo_buf = gfx::buffer(rwb, 16, bytes_of(one)[..]);
+	if lut_n == 0 { identity_lut(17); }
 	smp_linear = gfx::sampler(gfx::LINEAR, gfx::CLAMP);
 	smp_point = gfx::sampler(gfx::NEAREST, gfx::CLAMP);
 	smp_shadow = gfx::shadow_sampler();
@@ -1424,6 +1427,40 @@ fn glow_pass() {
 	}
 }
 
+fn set_lut(rgba const byte[:], n int) bool {
+	if n < 2 || rgba.len < n * n * n * 4 { return false; }
+	if lut_n > 0 { gfx::release(lut_tex); }
+	lut_tex = gfx::texture3d(n, n, n, gfx::RGBA8, gfx::SAMPLED);
+	gfx::update_texture(lut_tex, rgba[..n * n * n * 4]);
+	lut_n = n;
+	true
+}
+fn identity_lut(n int) {
+	var px byte[>..] = [];
+	for b in n { for g in n { for r in n { px.push((r * 255 / (n - 1)) as byte); px.push((g * 255 / (n - 1)) as byte); px.push((b * 255 / (n - 1)) as byte); px.push(255); } } }
+	let _ = set_lut(px[..], n);
+}
+fn lut_strip(rgba const byte[:], w int, h int) bool {
+	let n = h;
+	if n < 2 || w != n * n { return false; }
+	var px byte[>..] = [];
+	for b in n { for g in n { for r in n { let o = (g * w + b * n + r) * 4; px.push(rgba[o]); px.push(rgba[o + 1]); px.push(rgba[o + 2]); px.push(255); } } }
+	set_lut(px[..], n)
+}
+fn lut_cube(text const byte[:]) bool {
+	var n = 0;
+	var vals f32[>..] = [];
+	for line in split(text, '\n') {
+		let w = words(line);
+		if w.len == 0 || w[0][0] == 35 { continue; }
+		if w[0] == "LUT_3D_SIZE" && w.len > 1 { let v, ok = parse_int(w[1]); if ok { n = v; } continue; }
+		if w.len == 3 { var ok = true; for t in w { let v, good = parse_flt(t); if good { vals.push(v as f32); } else { ok = false; } } if !ok { return false; } }
+	}
+	if n < 2 || vals.len < n * n * n * 3 { return false; }
+	var px byte[>..] = [];
+	for i in n * n * n { for c in 3 { px.push((clamp(vals[i * 3 + c], 0.0, 1.0) * 255.0 + 0.5) as byte); } px.push(255); }
+	set_lut(px[..], n)
+}
 fn exposure_pass() {
 	if !look.auto_exposure { expo_fresh = true; return; }
 	let src = resolved();
@@ -1451,8 +1488,9 @@ fn grade_pass(target gfx::Texture) {
 	gfx::bind(pipe_grade);
 	gfx::bind_texture(gfx::FRAGMENT, 0, resolved(), smp_point);
 	gfx::bind_texture(gfx::FRAGMENT, 1, if look.bloom > 0.0 { glow[0] } else { white }, smp_linear);
+	gfx::bind_texture(gfx::FRAGMENT, 2, lut_tex, smp_linear);
 	gfx::bind_storage_buffer(gfx::FRAGMENT, 0, expo_buf);
-	gfx::uniforms(gfx::FRAGMENT, 0, GradeU { tone: f4(look.exposure, look.white, look.bloom, look.desaturate), mode: f4(look.curve as f32, if look.auto_exposure { 1.0 } else { 0.0 }, 0.0, 0.0) });
+	gfx::uniforms(gfx::FRAGMENT, 0, GradeU { tone: f4(look.exposure, look.white, look.bloom, look.desaturate), mode: f4(look.curve as f32, if look.auto_exposure { 1.0 } else { 0.0 }, if lut_n > 0 { clamp(look.lut, 0.0, 1.0) } else { 0.0 }, lut_n as f32) });
 	gfx::draw(3);
 	gfx::end_pass();
 }
