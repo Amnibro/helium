@@ -31,16 +31,14 @@ tcp_resolve(host const byte[:], port int) byte[>..][>..]:
 		if ad != 0 && al > 0 && al <= 128: e byte[>..] ~= []; e.append(int_bytes(le_n(ai[..], 4, 4) as int)[..]); e.append(int_bytes(le_n(ai[..], 12, 4) as int)[..]); e.append(ffi::bytes(ad, al)[..]); out.push(e)
 		node = le_n(ai[..], 40, 8)
 	t_freeaddrinfo(head); out
+tcp_open_at(a const byte[:]) int:
+	fam := le_n(a, 0, 4) as i32; pr := le_n(a, 4, 4) as i32; sa := a[8..]; fd := t_socket(fam, 1, pr) as int
+	if fd < 0: return -1
+	dw := tcp_darwin(); fl := t_fcntl(fd as i32, 3, 0); nb := if dw { 4 } else { 0x800 }; t_fcntl(fd as i32, 4, (fl | nb) as i32); one := int_bytes(1)
+	if dw: t_setsockopt(fd as i32, 0xFFFF, 0x1022, ffi::ptr(one[..]), 4 as u32)
+	t_setsockopt(fd as i32, 6, 1, ffi::ptr(one[..]), 4 as u32); t_connect(fd as i32, ffi::ptr(sa), sa.len as u32); fd
 tcp_open(host const byte[:], port int) int:
-	for a tcp_resolve(host, port):
-		fam := le_n(a[..], 0, 4) as i32; pr := le_n(a[..], 4, 4) as i32; sa := a[8..]; fd := t_socket(fam, 1, pr) as int
-		if fd < 0: continue
-		dw := tcp_darwin(); fl := t_fcntl(fd as i32, 3, 0)
-		nb := if dw { 4 } else { 0x800 }; t_fcntl(fd as i32, 4, (fl | nb) as i32)
-		one := int_bytes(1)
-		if dw: t_setsockopt(fd as i32, 0xFFFF, 0x1022, ffi::ptr(one[..]), 4 as u32)
-		t_setsockopt(fd as i32, 6, 1, ffi::ptr(one[..]), 4 as u32); t_connect(fd as i32, ffi::ptr(sa), sa.len as u32)
-		return fd
+	for a tcp_resolve(host, port): fd := tcp_open_at(a[..]); if fd >= 0 { return fd }
 	-1
 tcp_poll(fd int, ev int, ms int) int:
 	p byte[>..] ~= []; p.append(int_bytes(fd)[..]); p.push(ev as! byte); p.push(0); p.push(0); p.push(0)
