@@ -1812,7 +1812,7 @@ lls(fi int):
 	ce i32[>..<] ~= []; cm i32[>..<] ~= []; cmo i32[>..<] ~= []; cf i8[>..<] ~= []; wl i32[>..<] ~= []; cn i32[>..<] ~= []; us i32[>..<] ~= []; cu i32[>..<] ~= []; cu.resize(nv, 0); s ~= i0
 	for i i0..i1:
 		x := IR[i]; o := x.op as int
-		if o == I_LBL || o == I_JMP || o == I_BZ || o == I_BNZ || o == I_RET || o == I_RET2 || o == I_CALL || o == I_CALLR || o == I_SYS || o == I_VLOOP: s = i + 1; continue
+		if o == I_LBL || o == I_JMP || o == I_BZ || o == I_BNZ || o == I_RET || o == I_RET2 || o == I_CALL || o == I_CALLR || o == I_SYS || o == I_VLOOP || o == I_PARAM: s = i + 1; continue
 		if !(o == I_FUN && x.c & 255 == 12 || o == I_FBIN && x.c == 3 && x.w & 8 != 0) || i - s < 4 || own[i - i0] >= 0: continue
 		for q s..i { opnds(q); for d OD { if d >= 0 && d < nv { pos[d] = q as i32 } } }
 		cn.clear(); wl.clear(); e ~= s; cn.push(i as i32); mb[i - i0] = 1; wl.push(i as i32)
