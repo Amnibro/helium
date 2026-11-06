@@ -231,7 +231,8 @@ vec3 ambient_light(vec3 n, vec3 v, vec3 l, vec3 base_rgb, float metal, float rou
 }
 
 void main() {
-	if (misc.x > 0.0) { out_rgba = vec4(0.0, 0.0, 0.0, misc.x * (1.0 - sun_visibility(in_world, normalize(in_nrm)))); return; }
+	float cst = eye.w > 1.5 ? texture(tex_ao, gl_FragCoord.xy * screen.xy).g : 1.0;
+	if (misc.x > 0.0) { out_rgba = vec4(0.0, 0.0, 0.0, misc.x * (1.0 - sun_visibility(in_world, normalize(in_nrm)) * cst)); return; }
 	vec4 tint = base * in_col * texture(tex_base, xuv(uv_sets.x, xm_base, xo0.xy));
 	// world-aligned layers: triplanar base and a top layer on up-facing surfaces
 	vec3 gw = normalize(in_nrm);
@@ -327,7 +328,7 @@ void main() {
 	vec3 gn = normalize(in_nrm);
 	if (!gl_FrontFacing && alpha.z > 0.5) gn = -gn;
 	vec3 rp = in_world + gn * 2e-3;
-	rgb += (light_term(n, v, l, sun_rgb.rgb, albedo, f0_spec, rough, ms, kd) * sheen_keep() + sheen_term(n, v, l, sun_rgb.rgb)) * (gi.y > 0.5 && to_sun.w > 0.5 ? (dot(gn, l) > 0.0 && gi_visible(rp, l, 1e4) ? 1.0 : 0.0) : sun_visibility(in_world, gn));
+	rgb += (light_term(n, v, l, sun_rgb.rgb, albedo, f0_spec, rough, ms, kd) * sheen_keep() + sheen_term(n, v, l, sun_rgb.rgb)) * (gi.y > 0.5 && to_sun.w > 0.5 ? (dot(gn, l) > 0.0 && gi_visible(rp, l, 1e4) ? 1.0 : 0.0) : sun_visibility(in_world, gn)) * cst;
 	int count = int(screen.z);
 	for (int i = 0; i < MAX_LIGHTS; i++) {
 		if (i >= count) break;
