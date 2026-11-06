@@ -343,6 +343,11 @@ cands_add(name int, ns int):
 		d ~= dmap(qual(ns, name)); while d >= 0: if DC[d].k as int == D_FN { if ngok(d) { CANDS.push(d) } } d = DC[d].next
 	d ~= dmap(name)
 	while d >= 0: if DC[d].k as int == D_FN { if ngok(d) { CANDS.push(d) } } d = DC[d].next
+adl_add(name int, ns int, a0 int, an int):
+	seen i32[>..] ~= []
+	for k an:
+		t := deref(ARGW[a0 + k] as int); k0 := TY[t].k as int; sns := if k0 == TY_STRUCT || k0 == TY_ENUM || k0 == TY_VARIANT { decl_ns(inode(t)) } else { -1 }
+		if sns >= 0 && sns != ns && !seen.contains(sns as i32): seen.push(sns as i32); d ~= dmap(qual(sns, name)); while d >= 0 { if DC[d].k as int == D_FN && ngok(d) { CANDS.push(d) } d = DC[d].next }
 is_std_node(node int) bool:
 	f := node_file(node); sp := lib_path("std"); nm(FILES[f].name) == sp[..]
 fl_peer(fnode int, a0 int, ap int, j int) bool:
@@ -351,6 +356,8 @@ fl_peer(fnode int, a0 int, ap int, j int) bool:
 recursive resolve(n int, name int, ns int, a0 int, an int, blk int, tyargs int, report bool) int, int, int:
 	c0 := CANDS.len
 	cands_add(name, ns)
+	qa, _ := split_q(name)
+	if qa == -1: adl_add(name, ns, a0, an)
 	best ~= -1; bestr ~= 99; bestb0 ~= -1; bestbn ~= 0; tie ~= false; bestuser ~= false; bestgen ~= false; bestloc ~= false
 	nb0 := BINDS.len; cns := if n >= 0 { ns_of(n) } else { -1 }
 	for ci c0..CANDS.len:

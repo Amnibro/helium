@@ -321,6 +321,7 @@ recursive gaddr(n int):
 		k := tmp(pt, is_res(pt))
 		ow("("); ot(k); ow(" = ("); if pt == t { if is_res(t) { gx0(n); } else { gx1(n); } } else { gcv(n, t, pt); } ow("), &"); ot(k); ow(")")
 		return
+	if TY[t].k == TY_VARIANT: et := t_enum(TY[t].a as int, false); k := tmp(et, false); ow("("); ot(k); ow(" = ("); gcv(n, t, et); ow("), &"); ot(k); ow(")"); return
 	k := tmp(t, is_res(t))
 	ow("("); ot(k); ow(" = ("); gxo(n); ow("), &"); ot(k); ow(")");
 recursive gsl(n int, f int):

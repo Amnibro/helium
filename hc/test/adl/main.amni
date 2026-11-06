@@ -1,0 +1,11 @@
+import std;
+import rules;
+import host;
+fn label(x int) const byte[:] { "int" }
+fn main() {
+	var d = rules::Dice { sides: 3 };
+	print(host::total(d));
+	print(host::total(rules::Coin.Tails));
+	print(host::named(d));
+	print(label(4));
+}

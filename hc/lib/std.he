@@ -11,6 +11,7 @@ EULER := 2.718281828459045
 extern popcount(x uint) int = "hr_popcount"
 extern clz(x uint) int = "hr_clz"
 extern ctz(x uint) int = "hr_ctz"
+extern match32_at(s const byte[:], i int, w int) int = "hr_match32"
 extern pow(x real, y real) real = "hr_pow"
 extern pow(x f32, y f32) f32 = "hr_powf"
 extern std_fabs(x real) real = "fabs"
@@ -675,9 +676,9 @@ strip(s byte[:], cs byte[:]) byte[:]: lstrip(rstrip(s, cs), cs)
 each_split<F>(s byte[:], sep byte):
 	from ~= 0; i ~= 0; w := sep as int * 0x010101
 	while i + 32 <= s.len:
-		m ~= rt_match32(s, i, w)
+		m ~= match32_at(s, i, w)
 		while m != 0:
-			j := i + rt_ctz(m as u64); F(s[from..j]); from = j + 1; m = m & (m - 1)
+			j := i + ctz(m as uint); F(s[from..j]); from = j + 1; m = m & (m - 1)
 		i += 32
 	while i < s.len:
 		if s[i] == sep: F(s[from..i]); from = i + 1
