@@ -265,6 +265,24 @@ set 2 binding 2 of `post.frag` (the exposure value is the storage buffer at bind
 Depth of field first packs the view depth into the colour target's alpha
 (`dof_pack.frag`), so each gather tap is one fetch instead of two.
 
+E8 gate results (RX 9060 XT, RADV, Mesa 26.2.4; clean worktree at 995ee62, the same code
+as this branch's head, `results/2026-11-06_rx9060xt_radv_995ee62_e8.txt`): `gfxtest.sh` ok,
+goldens unchanged (52.83 / 56.02 dB), MB1 0.129, MB2 5.7e-4, MB3b 0.226, D1 0.347, D2
+0.18 %; `webgputest.mjs` 0 failures (scene_e8 and holo_e8 bit for bit with exposure, the
+identity LUT, depth of field and motion blur on). GPU time added at 1920x1080 by each
+effect alone (`look_bench`, Holo, 200 frames, median; bar 1.0 ms each):
+
+| camera | none | auto-exposure | LUT | depth of field | motion blur |
+| --- | --- | --- | --- | --- | --- |
+| face close-up | 3.146 ms | -0.02 | +0.01 | +0.85 | +0.96 |
+| full body | 1.717 ms | +0.03 | +0.01 | +0.75 | +0.76 |
+
+Depth of field there is a 4 mm lens radius focused at the camera target (the face is
+about 12 cm in front of it, so it is soft too; a 15 px background circle), motion blur a
+180 degree shutter with the camera orbiting 0.03 rad a frame. Auto-exposure measured 0.78
+(face) and 1.54 (full body) under the studio light, and 0.21 / 0.58 with every light 4x
+brighter (the sky is not scaled, so full body moves less than 4x).
+
 ## Where later features attach
 
 * **Motion blur, reprojection for SSR/GI**: `motion_target()` already holds per-pixel
