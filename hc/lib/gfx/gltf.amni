@@ -46,7 +46,7 @@ struct Material {
 	emissive float3, emissive_tex TexRef,
 	alpha_mode int, alpha_cutoff f32, double_sided bool, unlit bool, name Span,
 	tri f32 = 0.0, top f32 = 0.0, top_scale f32 = 0.0, top_sharp f32 = 8.0,
-	top_base TexRef = TexRef { -1, 0 }, top_mr TexRef = TexRef { -1, 0 }, top_normal TexRef = TexRef { -1, 0 }, top_tint float4 = float4 { 1.0, 1.0, 1.0, 1.0 }, no_gi bool = false, no_shadow bool = false, keep_normal bool = false, sheen float3 = float3 { 0.0, 0.0, 0.0 }, sheen_rough f32 = 0.0, catcher f32 = 0.0
+	top_base TexRef = TexRef { -1, 0 }, top_mr TexRef = TexRef { -1, 0 }, top_normal TexRef = TexRef { -1, 0 }, top_tint float4 = float4 { 1.0, 1.0, 1.0, 1.0 }, no_gi bool = false, no_shadow bool = false, keep_normal bool = false, sheen float3 = float3 { 0.0, 0.0, 0.0 }, sheen_rough f32 = 0.0, catcher f32 = 0.0, shading int = 0, shade_a float4 = float4 { 0.0, 0.0, 0.0, 0.0 }, shade_b float4 = float4 { 0.0, 0.0, 0.0, 0.0 }, shade_c float4 = float4 { 0.0, 0.0, 0.0, 0.0 }, detail TexRef = TexRef { -1, 0 }
 }
 struct Primitive { vfirst int, vcount int, ifirst int, icount int, material int, mfirst int, targets int, lo float3, hi float3, tangents bool, skinned bool }
 struct Mesh { prims Span, weights Span, name Span }
@@ -514,6 +514,8 @@ fn load_bytes(data const byte[:], dir const byte[:]) int {
 		let sc = get(d, sh, "sheenColorFactor");
 		let occl = get(d, m, "occlusionTexture");
 		let mode = word(d, m, "alphaMode");
+		let am = word(d, get(d, m, "extras"), "amni");
+		let sk = if am == "skin" { 1 } else if am == "eye" { 2 } else { 0 };
 		materials.push(Material {
 			base: float4 { item_num(d, bc, 0, 1.0) as f32, item_num(d, bc, 1, 1.0) as f32, item_num(d, bc, 2, 1.0) as f32, item_num(d, bc, 3, 1.0) as f32 },
 			base_tex: texref(d, get(d, pbr, "baseColorTexture"), tb),
@@ -533,6 +535,7 @@ fn load_bytes(data const byte[:], dir const byte[:]) int {
 			name: keep_name(word(d, m, "name")),
 			sheen: float3 { item_num(d, sc, 0, 0.0) as f32, item_num(d, sc, 1, 0.0) as f32, item_num(d, sc, 2, 0.0) as f32 },
 			sheen_rough: num(d, sh, "sheenRoughnessFactor", 0.0) as f32,
+			shading: sk, shade_a: shade_preset(sk, 0), shade_b: shade_preset(sk, 1), shade_c: shade_preset(sk, 2),
 			..
 		});
 	}
@@ -866,6 +869,12 @@ fn find_animation(asset int, name const byte[:]) int {
 	let a = assets[asset];
 	for k in a.animations.count { if text_of(animations[a.animations.first + k].name) == name { return a.animations.first + k; } }
 	-1
+}
+
+fn shade_preset(kind int, part int) float4 {
+	let k = kind * 3 + part;
+	if k == 3 { float4 { 0.0021, 0.0008, 0.00045, 1.2 } } else if k == 4 { float4 { 0.35, 0.1, 0.3, 1.7 } } else if k == 5 { float4 { 0.04, 0.0, 0.0, 0.55 } }
+	else if k == 6 { float4 { 0.705, 0.298, 0.293, 0.703 } } else if k == 7 { float4 { 0.0, 0.0, 1.0, 0.035 } } else if k == 8 { float4 { 0.138, 0.0024, 0.55, 0.35 } } else { float4 { 0.0, 0.0, 0.0, 0.0 } }
 }
 
 fn default_material() Material {

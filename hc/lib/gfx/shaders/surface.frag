@@ -1,6 +1,7 @@
 // Colour pass for glTF metallic-roughness materials.
 #include "lighting.glsl"
 #include "ms_lut.glsl"
+#include "skin_lut.glsl"
 
 layout(location = 0) in vec3 in_world;
 layout(location = 1) in vec3 in_nrm;
@@ -73,6 +74,11 @@ layout(set = 3, binding = 1) uniform Surface {
 	vec4 xo2;
 	vec4 sheen;
 	vec4 misc;
+	vec4 shade_a;
+	vec4 shade_b;
+	vec4 shade_c;
+	vec4 xm_det;
+	vec4 xo_det;
 };
 
 layout(location = 0) out vec4 out_rgba;
@@ -86,6 +92,64 @@ vec3 sheen_term(vec3 n, vec3 v, vec3 l, vec3 e) {
 }
 float sheen_keep() { return 1.0 - max(max(sheen.r, sheen.g), sheen.b) * 0.17; }
 vec2 xuv(float set, vec4 m, vec2 o) { vec2 u = pick_uv(set); return vec2(dot(m.xy, u), dot(m.zw, u)) + o; }
+struct Mat { vec3 nm; vec3 gn; float curv; float thick; float cav; };
+float skin_lut(float c, float s) {
+	float x = clamp(c * 0.5 + 0.5, 0.0, 1.0) * float(SKIN_T - 1);
+	float y = sqrt(clamp(s, 0.0, 1.0)) * float(SKIN_S - 1);
+	int x0 = min(int(x), SKIN_T - 2);
+	int y0 = min(int(y), SKIN_S - 2);
+	int i = y0 * SKIN_T + x0;
+	return mix(mix(SKIN_D[i], SKIN_D[i + 1], x - float(x0)), mix(SKIN_D[i + SKIN_T], SKIN_D[i + SKIN_T + 1], x - float(x0)), y - float(y0));
+}
+vec3 skin_trans(float t, vec3 d) { return 0.25 * (exp(-t / d) + 3.0 * exp(-t / (3.0 * d))); }
+vec3 mat_term(vec3 n, vec3 v, vec3 l, vec3 e, vec3 albedo, vec3 f0, float rough, vec3 ms, vec3 kd, float vis, Mat q) {
+	int model = int(misc.y + 0.5);
+	if (model == 1) {
+		vec3 d = max(shade_a.rgb, vec3(1e-5));
+		vec3 s = d * q.curv;
+		vec3 nr = normalize(mix(q.nm, q.gn, shade_c.w));
+		vec3 sv = pow(vec3(clamp(vis, 0.0, 1.0)), mix(vec3(1.0), d.r / d, 0.15));
+		vec3 dif = vec3(skin_lut(dot(nr, l), s.r), skin_lut(dot(q.nm, l), s.g), skin_lut(dot(q.nm, l), s.b));
+		vec3 spec = mix(light_term(n, v, l, e, vec3(0.0), f0, rough, ms, kd), light_term(n, v, l, e, vec3(0.0), f0, clamp(rough * shade_b.w, 0.03, 1.0), ms, kd), shade_b.z) * q.cav;
+		vec3 tr = skin_trans(q.thick, d) * clamp((0.1 - dot(q.gn, l)) / 1.1, 0.0, 1.0) * shade_a.w;
+		return (kd * albedo / PI_F * (dif * sv * mix(1.0, q.cav, 0.5) + tr)) * e + spec * vis;
+	}
+	if (model == 2) {
+		float w = shade_c.w;
+		vec3 dif = kd * albedo / PI_F * clamp((dot(n, l) + w) / (1.0 + w), 0.0, 1.0) * e;
+		vec3 spec = light_term(n, v, l, e, vec3(0.0), f0, rough, ms, kd) + shade_b.z * light_term(q.gn, v, l, e, vec3(0.0), vec3(0.02), shade_b.w, vec3(1.0), kd);
+		return (dif + spec) * vis;
+	}
+	if (model == 3) {
+		float w = shade_a.x;
+		float nl = dot(n, l);
+		vec3 dif = kd * albedo / PI_F * clamp((nl + w) / (1.0 + w), 0.0, 1.0) * e;
+		vec3 fz = sheen.rgb * e * shade_a.y * pow(1.0 - max(dot(n, v), 0.0), 3.0) * clamp((nl + 0.5) / 1.5, 0.0, 1.0);
+		return ((dif + shade_a.z * light_term(n, v, l, e, vec3(0.0), f0, rough, ms, kd)) * sheen_keep() + sheen_term(n, v, l, e) + fz) * vis * q.cav;
+	}
+	return (light_term(n, v, l, e, albedo, f0, rough, ms, kd) * sheen_keep() + sheen_term(n, v, l, e)) * vis;
+}
+vec2 eye_uv(vec2 uv, vec3 v, vec3 n) {
+	vec3 dpx = dFdx(in_world);
+	vec3 dpy = dFdy(in_world);
+	vec2 dux = dFdx(uv);
+	vec2 duy = dFdy(uv);
+	float det = dux.x * duy.y - duy.x * dux.y;
+	float inv = abs(det) > 1e-20 ? 1.0 / det : 0.0;
+	vec3 tu = (dpx * duy.y - dpy * dux.y) * inv;
+	vec3 bv = (dpy * dux.x - dpx * duy.x) * inv;
+	vec2 c = distance(uv, shade_a.xy) < distance(uv, shade_a.zw) ? shade_a.xy : shade_a.zw;
+	float r = distance(uv, c) / max(shade_c.x, 1e-4);
+	vec3 rr = refract(-v, n, 1.0 / 1.376);
+	vec3 off = rr * (shade_c.y * max(1.0 - r * r, 0.0) / max(dot(-rr, n), 0.2));
+	vec2 o = vec2(dot(off, tu) / max(dot(tu, tu), 1e-12), dot(off, bv) / max(dot(bv, bv), 1e-12));
+	return r < 1.0 ? uv + o : uv;
+}
+float eye_ring(vec2 uv) {
+	vec2 c = distance(uv, shade_a.xy) < distance(uv, shade_a.zw) ? shade_a.xy : shade_a.zw;
+	float r = distance(uv, c) / max(shade_c.x, 1e-4);
+	return 1.0 - shade_c.z * smoothstep(0.72, 0.98, r) * (1.0 - smoothstep(0.98, 1.18, r));
+}
 
 // Single-scatter directional albedo of the specular lobe from ms_lut.glsl (16-bit
 // unorm pairs), bilinear (columns are sqrt(n.v), rows roughness): x = E(n.v, rough)
@@ -265,7 +329,11 @@ vec3 ambient_light(vec3 n, vec3 v, vec3 l, vec3 base_rgb, float metal, float rou
 void main() {
 	float cst = eye.w > 1.5 ? texture(tex_ao, gl_FragCoord.xy * screen.xy).g : 1.0;
 	if (misc.x > 0.0) { out_rgba = vec4(0.0, 0.0, 0.0, misc.x * (1.0 - sun_visibility(in_world, normalize(in_nrm)) * cst)); return; }
-	vec4 tint = base * in_col * texture(tex_base, xuv(uv_sets.x, xm_base, xo0.xy));
+	int model = int(misc.y + 0.5);
+	vec2 buv = xuv(uv_sets.x, xm_base, xo0.xy);
+	if (model == 2) buv = eye_uv(buv, normalize(eye.xyz - in_world), normalize(in_nrm));
+	vec4 tint = base * in_col * texture(tex_base, buv);
+	if (model == 2) tint.rgb *= eye_ring(buv);
 	// world-aligned layers: triplanar base and a top layer on up-facing surfaces
 	vec3 gw = normalize(in_nrm);
 	bool tp = tri.x > 0.0;
@@ -333,13 +401,24 @@ void main() {
 		n = normalize(mix(n, nt, topf));
 		mr = mix(mr, texture(tex_top_mr, ut), topf);
 	}
-	float metal = clamp(params.x * mr.b, 0.0, 1.0);
-	float rough = clamp(params.y * mr.g, 0.03, 1.0);
+	vec3 nm = n;
+	vec4 dt = texture(tex_top_normal, xuv(uv_sets.x, xm_det, xo_det.xy));
+	float dmask = model == 1 ? mr.b : 1.0;
+	float dcurv = length(fwidth(normalize(in_nrm))) / max(length(fwidth(in_world)), 1e-6);
+	Mat q = Mat(nm, normalize(in_nrm), in_uv.z > 0.0 ? max(in_uv.z, 0.0) : dcurv, in_uv.z > 0.0 ? max(in_uv.w, 0.0005) : 1.0, 1.0);
+	if (!gl_FrontFacing && alpha.z > 0.5) q.gn = -q.gn;
+	if (model > 0) {
+		n = normalize(n + (t * (dt.x * 2.0 - 1.0) + b * (dt.y * 2.0 - 1.0)) * shade_b.x * dmask);
+		q.cav = mix(1.0, dt.a, shade_b.y * dmask);
+	}
+	float metal = model == 0 ? clamp(params.x * mr.b, 0.0, 1.0) : 0.0;
+	float rough = clamp(params.y * mr.g * (model > 0 ? mix(1.0, 0.5 + dt.b, dmask) : 1.0), 0.03, 1.0);
 	float occ = 1.0 + params.w * ((tp ? mr.r : texture(tex_occlusion, xuv(uv_sets.w, xm_occ, xo1.zw)).r) - 1.0);
 	if (eye.w > 0.5) occ *= texture(tex_ao, gl_FragCoord.xy * screen.xy).r;
+	if (model > 0) occ *= model == 3 ? q.cav : mix(1.0, q.cav, 0.5);
 
 	vec3 albedo = tint.rgb * (1.0 - metal);
-	vec3 f0 = mix(vec3(0.04), tint.rgb, metal);
+	vec3 f0 = mix(vec3(model == 1 ? shade_c.x : 0.04), tint.rgb, metal);
 	vec3 v = normalize(eye.xyz - in_world);
 	vec3 rgb = vec3(0.0);
 	float n_v = max(dot(n, v), 1e-4);
@@ -360,7 +439,7 @@ void main() {
 	vec3 gn = normalize(in_nrm);
 	if (!gl_FrontFacing && alpha.z > 0.5) gn = -gn;
 	vec3 rp = in_world + gn * 2e-3;
-	rgb += (light_term(n, v, l, sun_rgb.rgb, albedo, f0_spec, rough, ms, kd) * sheen_keep() + sheen_term(n, v, l, sun_rgb.rgb)) * (gi.y > 0.5 && to_sun.w > 0.5 ? (dot(gn, l) > 0.0 && gi_visible(rp, l, 1e4) ? 1.0 : 0.0) : sun_visibility(in_world, gn)) * cst;
+	rgb += mat_term(n, v, l, sun_rgb.rgb, albedo, f0_spec, rough, ms, kd, (gi.y > 0.5 && to_sun.w > 0.5 ? (dot(gn, l) > 0.0 && gi_visible(rp, l, 1e4) ? 1.0 : 0.0) : sun_visibility(in_world, gn)) * cst, q);
 	int count = int(screen.z);
 	for (int i = 0; i < MAX_LIGHTS; i++) {
 		if (i >= count) break;
@@ -369,7 +448,7 @@ void main() {
 		vec3 ld = d / max(dist, 1e-4);
 		if (gi.y > 0.5 && (dot(gn, ld) <= 0.0 || !gi_visible(rp, ld, dist - 2e-3))) continue;
 		vec3 le = light_rgb[i].rgb * range_falloff(dist, light_pos[i].w) * spot_cone(i, ld) * local_visibility(i, in_world, gn);
-		rgb += light_term(n, v, ld, le, albedo, f0_spec, rough, ms, kd) * sheen_keep() + sheen_term(n, v, ld, le);
+		rgb += mat_term(n, v, ld, le, albedo, f0_spec, rough, ms, kd, 1.0, q);
 	}
 
 	// furnace control hook (scene3d.furnace_scale, 1 in normal use): scales the direct
