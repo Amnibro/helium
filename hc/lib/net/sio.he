@@ -1,0 +1,95 @@
+namespace net
+use std
+use json
+use net.tcp
+use net.tls
+use net.http
+use net.ws
+SIO_ERR := -1
+SIO_CONNECTING := 1
+SIO_OPEN := 2
+SIO_CLOSED := 3
+struct Sio { w Ws = Ws{}, st int = 0, auth byte[>..] = [], sid byte[>..] = [], pi real = 25.0, pt real = 20.0, last real = 0.0, next int = 1, evn byte[>..][>..] = [], evd byte[>..][>..] = [], evid int[>..] = [], ei int = 0, ackid int[>..] = [], ackd byte[>..][>..] = [], err byte[>..] = [] }
+sio_open(base const byte[:], auth_json const byte[:]) Sio:
+	s ~= Sio{}; u byte[>..] ~= []
+	if starts_with(base, "https://"): u.append("wss://"); u.append(base[8..])
+	else if starts_with(base, "http://"): u.append("ws://"); u.append(base[7..])
+	else: u.append(base)
+	while u.len > 0 && u[u.len - 1] == '/': u.resize(u.len - 1, 0)
+	u.append("/socket.io/?EIO=4&transport=websocket"); s.auth.append(auth_json); s.w = ws_open(u, ""); s.last = clock(); s
+sio_fail(s Sio&, why const byte[:]) int:
+	if s.st >= 0: s.err.clear(); s.err.append(why); s.st = -1; ws_close(s.w, 1000)
+	SIO_ERR
+num_at(d const byte[:], i0 int) int, int:
+	i ~= i0; v ~= -1
+	while i < d.len && d[i] >= '0' && d[i] <= '9': v = (if v < 0 { 0 } else { v * 10 }) + (d[i] - '0') as int; i += 1
+	return v, i
+args_of(d json::Doc&, root int, skip int) byte[>..]:
+	o byte[>..] ~= ['[']; k ~= 0
+	json::each(d, root) { c => if k >= skip { if o.len > 1 { o.push(',') } json::format_node(o, d, c) } k += 1 }
+	o.push(']'); o
+on_packet(s Sio&, m const byte[:]) int:
+	if m.len == 0: return sio_fail(s, "empty packet")
+	t := m[0]
+	if t == '0':
+		d ~= json::Doc{}; root, e := json::parse(m[1..], d)
+		pi, ok := json::as_f64(d, json::member(d, root, "pingInterval")); pt, ok2 := json::as_f64(d, json::member(d, root, "pingTimeout"))
+		if ok: s.pi = pi / 1000.0
+		if ok2: s.pt = pt / 1000.0
+		c byte[>..] ~= []; c.append("40"); c.append(s.auth[..]); ws_send(s.w, c, false); s.st = 2; return SIO_CONNECTING
+	if t == '2': s.last = clock(); ws_send(s.w, "3", false); return SIO_OPEN
+	if t == '1': s.st = 3; return SIO_CLOSED
+	if t != '4' || m.len < 2: return SIO_OPEN
+	p := m[1]; b ~= 2
+	if b < m.len && m[b] == '/': c := find(m[b..], ","); b = if c < 0 { m.len } else { b + c + 1 }
+	if p == '0':
+		d ~= json::Doc{}; root, e := json::parse(m[b..], d); sid, ok := json::as_string(d, json::member(d, root, "sid")); s.sid.append(sid); s.st = 3; return SIO_OPEN
+	if p == '4':
+		d ~= json::Doc{}; root, e := json::parse(m[b..], d); msg, ok := json::as_string(d, json::member(d, root, "message"))
+		return sio_fail(s, if ok { msg } else { "connection refused" })
+	if p == '1': s.st = 4; return SIO_CLOSED
+	if p != '2' && p != '3': return SIO_OPEN
+	id, b2 := num_at(m, b); d ~= json::Doc{}; root, e := json::parse(m[b2..], d)
+	if root < 0 || json::kind(d, root) != json::K_ARR: return sio_fail(s, "bad event packet")
+	if p == '3': s.ackid.push(id); s.ackd.push(args_of(d, root, 0)); return SIO_OPEN
+	nm, ok := json::as_string(d, json::element(d, root, 0))
+	if !ok: return SIO_OPEN
+	n byte[>..] ~= []; n.append(nm); s.evn.push(n); s.evd.push(args_of(d, root, 1)); s.evid.push(id); SIO_OPEN
+sio_pump(s Sio&) int:
+	if s.st < 0: return SIO_ERR
+	if s.st >= 4: return SIO_CLOSED
+	r := ws_pump(s.w)
+	if r == WS_ERR: return sio_fail(s, s.w.err)
+	m byte[>..] ~= []
+	while ws_next(s.w, m) != 0 && s.st >= 0 && s.st < 4: on_packet(s, m); m.clear()
+	if s.st < 0: return SIO_ERR
+	if r == WS_CLOSED || s.st >= 4: s.st = 4; return SIO_CLOSED
+	if clock() - s.last > s.pi + s.pt: return sio_fail(s, "server stopped answering")
+	if s.st == 3 { SIO_OPEN } else { SIO_CONNECTING }
+packet(s Sio&, kind const byte[:], id int, name const byte[:], args const byte[:]) bool:
+	if s.st != 3: return false
+	p byte[>..] ~= []; p.append(kind)
+	if id >= 0: p.append(str(id))
+	p.push('[')
+	if name.len > 0: json::format_string(p, name)
+	if name.len > 0 && args.len > 0: p.push(',')
+	p.append(args); p.push(']'); ws_send(s.w, p, false)
+sio_emit(s Sio&, name const byte[:], args const byte[:]) bool: packet(s, "42", -1, name, args)
+sio_call(s Sio&, name const byte[:], args const byte[:]) int:
+	id := s.next; s.next += 1
+	if !packet(s, "42", id, name, args): return -1
+	id
+sio_reply(s Sio&, id int, args const byte[:]) bool: packet(s, "43", id, "", args)
+sio_event(s Sio&, name byte[>..]&, args byte[>..]&) int:
+	if s.ei >= s.evn.len: return -2
+	name.clear(); args.clear(); name.append(s.evn[s.ei][..]); args.append(s.evd[s.ei][..]); id := s.evid[s.ei]; s.ei += 1
+	if s.ei == s.evn.len: s.evn.clear(); s.evd.clear(); s.evid.clear(); s.ei = 0
+	id
+sio_ack(s Sio&, id int, out byte[>..]&) bool:
+	for i s.ackid.len:
+		if s.ackid[i] == id: out.append(s.ackd[i][..]); remove_at(s.ackid, i); remove_at(s.ackd, i); return true
+	false
+sio_close(s Sio&):
+	if s.st == 3: ws_send(s.w, "41", false)
+	ws_close(s.w, 1000); if s.st >= 0 { s.st = 4 }
+sio_fd(s const Sio&) int: s.w.c.fd

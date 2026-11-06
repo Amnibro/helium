@@ -13,7 +13,7 @@ TLS_ERR := -1
 TLS_HANDSHAKE := 1
 TLS_OPEN := 2
 TLS_CLOSED := 3
-struct Tls { fd int = -1, host byte[>..] = [], st int = 0, err byte[>..] = [], suite int = 0, hk int = 0, alg int = 0, kl int = 0, rbuf byte[>..] = [], hs byte[>..] = [], tr byte[>..] = [], wbuf byte[>..] = [], rk byte[>..] = [], riv byte[>..] = [], rseq u64 = 0, wk byte[>..] = [], wiv byte[>..] = [], wseq u64 = 0, renc bool = false, wenc bool = false, xpriv byte[>..] = [], ppriv byte[>..] = [], crand byte[>..] = [], sid byte[>..] = [], hsec byte[>..] = [], cs byte[>..] = [], ss byte[>..] = [], hrr bool = false, group int = 0, cookie byte[>..] = [], certs crypto::Cert[>..] = [], verify int = -1, pin byte[>..] = [], creq bool = false, crctx byte[>..] = [], app byte[>..] = [], alpn byte[>..] = [], ccs bool = false, addrs byte[>..][>..] = [], ai int = 0, v12 bool = false, srand byte[>..] = [], ems bool = false, ecs bool = false, pms byte[>..] = [], kpub byte[>..] = [], ms byte[>..] = [] }
+struct Tls { fd int = -1, host byte[>..] = [], st int = 0, err byte[>..] = [], suite int = 0, hk int = 0, alg int = 0, kl int = 0, rbuf byte[>..] = [], hs byte[>..] = [], tr byte[>..] = [], wbuf byte[>..] = [], rk byte[>..] = [], riv byte[>..] = [], rseq u64 = 0, wk byte[>..] = [], wiv byte[>..] = [], wseq u64 = 0, renc bool = false, wenc bool = false, xpriv byte[>..] = [], ppriv byte[>..] = [], crand byte[>..] = [], sid byte[>..] = [], hsec byte[>..] = [], cs byte[>..] = [], ss byte[>..] = [], hrr bool = false, group int = 0, cookie byte[>..] = [], certs crypto::Cert[>..] = [], verify int = -1, pin byte[>..] = [], creq bool = false, crctx byte[>..] = [], app byte[>..] = [], alpn byte[>..] = [], ccs bool = false, addrs byte[>..][>..] = [], ai int = 0, v12 bool = false, srand byte[>..] = [], ems bool = false, ecs bool = false, pms byte[>..] = [], kpub byte[>..] = [], ms byte[>..] = [], plain bool = false }
 var ROOTS crypto::Cert[>..]
 var PINS byte[>..][>..]
 HRR_RAND := "cf21ad74e59a6111be1d8c021e65b891c2a211167abb8c5e079e09e2c8a8339c"
@@ -231,8 +231,9 @@ flush(t Tls&) bool:
 		if n == 0: break
 		rest byte[>..] ~= []; rest.append(t.wbuf[n..]); t.wbuf = rest
 	true
-tls_open(host const byte[:], port int, alpn const byte[:]) Tls:
-	t ~= Tls{}; t.host.append(host); t.alpn.append(alpn); t.addrs = tcp_resolve(host, port)
+tls_open(host const byte[:], port int, alpn const byte[:]) Tls: stream_open(true, host, port, alpn)
+stream_open(secure bool, host const byte[:], port int, alpn const byte[:]) Tls:
+	t ~= Tls{}; t.plain = !secure; t.host.append(host); t.alpn.append(alpn); t.addrs = tcp_resolve(host, port)
 	if t.addrs.len == 0: tl_fail(t, "cannot resolve host"); return t
 	next_addr(t); t
 next_addr(t Tls&) bool:
@@ -250,13 +251,15 @@ tls_pump(t Tls&) int:
 			if !next_addr(t): return tl_fail(t, "connect failed")
 			return TLS_HANDSHAKE
 		if s == 0: return TLS_HANDSHAKE
-		t.st = 1; send_ch(t)
+		if t.plain: t.st = 6
+		else: t.st = 1; send_ch(t)
 	if !flush(t): return tl_fail(t, "send failed")
 	eof ~= false
 	for k 64:
 		n := tcp_recv(t.fd, t.rbuf, 0)
 		if n == 0: break
 		if n < 0: eof = true; break
+	if t.plain: t.app.append(t.rbuf[..]); t.rbuf.clear()
 	while t.rbuf.len >= 5 && t.st >= 0 && t.st != 7:
 		n := g16(t.rbuf, 3)
 		if n > 16640: return tl_fail(t, "record too long")
@@ -270,11 +273,12 @@ tls_pump(t Tls&) int:
 tls_write(t Tls&, d const byte[:]) bool:
 	if t.st != 6: return false
 	i ~= 0
-	while i < d.len: n := min(16384, d.len - i); record(t, 23, d[i..i + n]); i += n
+	if t.plain: t.wbuf.append(d)
+	while !t.plain && i < d.len: n := min(16384, d.len - i); record(t, 23, d[i..i + n]); i += n
 	flush(t)
 tls_read(t Tls&, out byte[>..]&) int: n := t.app.len; out.append(t.app[..]); t.app.clear(); n
 tls_close(t Tls&):
-	if t.st == 6: record(t, 21, [1 as byte, 0][..]); flush(t)
+	if t.st == 6 && !t.plain: record(t, 21, [1 as byte, 0][..]); flush(t)
 	tcp_close(t.fd); t.fd = -1; if t.st >= 0 { t.st = 7 }
 tls_wait(t Tls&, ms int) int:
 	t0 := clock(); r ~= tls_pump(t)

@@ -1,0 +1,117 @@
+namespace net
+use std
+use base64
+use crypto.hash
+use crypto.rand
+use net.tcp
+use net.tls
+use net.http
+WS_ERR := -1
+WS_CONNECTING := 1
+WS_OPEN := 2
+WS_CLOSED := 3
+WS_TEXT := 1
+WS_BINARY := 2
+WS_MAX := 67108864
+struct Ws { c Tls = Tls{}, st int = 0, req byte[>..] = [], key byte[>..] = [], rx byte[>..] = [], frag byte[>..] = [], fop int = 0, msgs byte[>..][>..] = [], kinds int[>..] = [], mi int = 0, err byte[>..] = [], code int = 0, pool byte[>..] = [], pi int = 0, head byte[>..] = [] }
+ws_open(url const byte[:], headers const byte[:]) Ws:
+	w ~= Ws{}; u, ok := url_parse(url)
+	if !ok: w.st = -1; w.err.append("bad URL"); return w
+	k := crypto::random_bytes(16); base64::encode(w.key, k[..])
+	w.req.append("GET "); w.req.append(u.path[..]); w.req.append(" HTTP/1.1\r\nHost: "); w.req.append(host_header(u)[..]); w.req.append("\r\nUpgrade: websocket\r\nConnection: Upgrade\r\nSec-WebSocket-Version: 13\r\nSec-WebSocket-Key: ")
+	w.req.append(w.key[..]); w.req.append("\r\n"); w.req.append(headers); w.req.append("\r\n"); w.c = stream_open(u.secure, u.host, u.port, "http/1.1"); w
+ws_fail(w Ws&, why const byte[:]) int:
+	if w.st >= 0: w.err.clear(); w.err.append(why); w.st = -1; tls_close(w.c)
+	WS_ERR
+mask4(w Ws&) byte[>..]:
+	if w.pi + 4 > w.pool.len: w.pool = crypto::random_bytes(256); w.pi = 0
+	m byte[>..] ~= []; m.append(w.pool[w.pi..w.pi + 4]); w.pi += 4; m
+frame(w Ws&, op int, d const byte[:]):
+	f byte[>..] ~= [(0x80 | op) as! byte]; n := d.len
+	if n < 126: f.push((0x80 | n) as! byte)
+	else if n < 65536: f.push(254); f.push((n >> 8) as! byte); f.push((n & 255) as! byte)
+	else: f.push(255); for i 8 { f.push(((n >> (56 - 8 * i)) & 255) as! byte) }
+	m := mask4(w); f.append(m[..]); o := f.len; f.append(d)
+	for i n: f[o + i] ^= m[i & 3]
+	tls_write(w.c, f)
+utf8_ok(s const byte[:]) bool:
+	i ~= 0
+	while i < s.len:
+		c := s[i] as int; n ~= 0; lo ~= 0x80; hi ~= 0xBF
+		if c < 0x80: i += 1; continue
+		if c >= 0xC2 && c <= 0xDF: n = 1
+		else if c >= 0xE0 && c <= 0xEF: n = 2; lo = if c == 0xE0 { 0xA0 } else { 0x80 }; hi = if c == 0xED { 0x9F } else { 0xBF }
+		else if c >= 0xF0 && c <= 0xF4: n = 3; lo = if c == 0xF0 { 0x90 } else { 0x80 }; hi = if c == 0xF4 { 0x8F } else { 0xBF }
+		else: return false
+		if i + n >= s.len: return false
+		for k n:
+			b := s[i + 1 + k] as int
+			if b < (if k == 0 { lo } else { 0x80 }) || b > (if k == 0 { hi } else { 0xBF }): return false
+		i += 1 + n
+	true
+on_frame(w Ws&, fin bool, op int, p const byte[:]) int:
+	if op >= 8:
+		if !fin || p.len > 125: return ws_fail(w, "bad control frame")
+		if op == 8:
+			w.code = if p.len >= 2 { (p[0] as int) << 8 | p[1] as int } else { 1005 }
+			if p.len == 1 || p.len > 2 && !utf8_ok(p[2..]): return ws_fail(w, "bad close frame")
+			if w.st == 2: cb byte[>..] ~= []; if p.len >= 2 { cb.append(p[..2]) } frame(w, 8, cb[..])
+			w.st = 3; tls_close(w.c); return WS_CLOSED
+		if op == 9: frame(w, 10, p)
+		if op != 9 && op != 10: return ws_fail(w, "unknown control opcode")
+		return WS_OPEN
+	if op != 0 && op != 1 && op != 2: return ws_fail(w, "unknown opcode")
+	if op == 0 && w.fop == 0 || op != 0 && w.fop != 0: return ws_fail(w, "bad fragment sequence")
+	if op != 0: w.fop = op
+	w.frag.append(p)
+	if w.frag.len > WS_MAX: return ws_fail(w, "message too large")
+	if fin:
+		if w.fop == 1 && !utf8_ok(w.frag): return ws_fail(w, "invalid UTF-8 text")
+		w.msgs.push(w.frag); w.kinds.push(w.fop); w.frag = []; w.fop = 0
+	WS_OPEN
+ws_pump(w Ws&) int:
+	if w.st < 0: return WS_ERR
+	if w.st == 3: return WS_CLOSED
+	r := tls_pump(w.c)
+	if r == TLS_ERR: return ws_fail(w, w.c.err)
+	if w.st == 0 && r == TLS_OPEN: tls_write(w.c, w.req); w.st = 1
+	tls_read(w.c, w.rx)
+	if w.st == 1:
+		e := find(w.rx, "\r\n\r\n")
+		if e < 0: return if r == TLS_CLOSED { ws_fail(w, "closed during upgrade") } else { WS_CONNECTING }
+		w.head.append(w.rx[..e]); rest byte[>..] ~= []; rest.append(w.rx[e + 4..]); w.rx = rest; sl := split(w.head, "\r\n")[0]
+		a byte[>..] ~= []; a.append(w.key[..]); a.append("258EAFA5-E914-47DA-95CA-C5AB0DC85B11"); want byte[>..] ~= []; base64::encode(want, crypto::sha1(a)[..])
+		if !starts_with(sl, "HTTP/1.1 101"): return ws_fail(w, str("upgrade refused: ", sl))
+		if http_header(w.head, "sec-websocket-accept")[..] != want[..] || lower(http_header(w.head, "upgrade"))[..] != "websocket": return ws_fail(w, "bad upgrade response")
+		w.st = 2
+	while w.st == 2 && w.rx.len >= 2:
+		b0 := w.rx[0] as int; b1 := w.rx[1] as int; n ~= b1 & 127; o ~= 2
+		if b1 & 128 != 0: return ws_fail(w, "masked frame from server")
+		if b0 & 0x70 != 0: return ws_fail(w, "reserved bits set")
+		if n == 126:
+			if w.rx.len < 4: break
+			n = (w.rx[2] as int) << 8 | w.rx[3] as int; o = 4
+		else if n == 127:
+			if w.rx.len < 10: break
+			n = 0
+			for i 8: n = n << 8 | w.rx[2 + i] as int
+			o = 10
+			if n < 0 || n > WS_MAX: return ws_fail(w, "frame too large")
+		if w.rx.len < o + n: break
+		p byte[>..] ~= []; p.append(w.rx[o..o + n]); rest byte[>..] ~= []; rest.append(w.rx[o + n..]); w.rx = rest
+		if on_frame(w, b0 & 128 != 0, b0 & 15, p[..]) == WS_ERR: return WS_ERR
+	if w.st == 2 && r == TLS_CLOSED: w.st = 3; w.code = 1006; return WS_CLOSED
+	if w.st == 3: return WS_CLOSED
+	if w.st == 2 { WS_OPEN } else { WS_CONNECTING }
+ws_send(w Ws&, d const byte[:], binary bool) bool:
+	if w.st != 2: return false
+	frame(w, if binary { 2 } else { 1 }, d); true
+ws_next(w Ws&, out byte[>..]&) int:
+	if w.mi >= w.msgs.len: return 0
+	out.append(w.msgs[w.mi][..]); k := w.kinds[w.mi]; w.mi += 1
+	if w.mi == w.msgs.len: w.msgs.clear(); w.kinds.clear(); w.mi = 0
+	k
+ws_close(w Ws&, code int):
+	if w.st == 2: cb byte[>..] ~= [(code >> 8) as! byte, (code & 255) as! byte]; frame(w, 8, cb[..])
+	tls_close(w.c); if w.st >= 0 { w.st = 3 }
+ws_fd(w const Ws&) int: w.c.fd
