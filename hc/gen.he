@@ -324,6 +324,7 @@ recursive gaddr(n int):
 	k := tmp(t, is_res(t))
 	ow("("); ot(k); ow(" = ("); gxo(n); ow("), &"); ot(k); ow(")");
 recursive gsl(n int, f int):
+	if TY[f].k == TY_MULTI: R0N = n; gsl(n, TYL[TY[f].l] as int); R0N = -1; return
 	d := deref(f)
 	k := TY[d].k
 	if TY[f].k == TY_REF && TY[f].c < 0:
@@ -1738,7 +1739,7 @@ recursive gvdecl(n int):
 	if is_rel(t): ow("0; "); grel_st_open(t); lv_name(v); grel_st_close(t, init); ow(" "); return
 	if TY[t].k == TY_STRUCT && !is_vst(t) && has_relq(init) && !lv_isptr(v): ow("{0}; "); grel_at(init, -1, v); ow(" "); return
 	if TY[t].k == TY_REF: it := fin(init); if TY[it].k == TY_REF || TY[it].k == TY_NULL { gx(init); } else { gaddr(init); } ow("; "); return
-	if is_res(t) || ownsd(t): gxo(init); ow("; "); return
+	if is_res(t) || ownsd(t): if TY[fin(init)].k == TY_MULTI { R0N = init } gxo(init); R0N = -1; ow("; "); return
 	it := at(init)
 	if TY[it].k == TY_MULTI: if TY[fin(init)].k == TY_MULTI { gx(init); ow(".r0; "); } else { gx(init); ow("; "); } return
 	gx(init); ow("; ");

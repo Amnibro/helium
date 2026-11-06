@@ -1135,6 +1135,7 @@ recursive ck_vdecl(n int):
 				if TY[t].k == TY_VOID: cerr(init, "this expression has no value (the call returns nothing), so there is nothing to bind"); return
 				if pysl(t) && FILES[TK[ND[n].t].f].py: pywrap(init, "pyown"); ck(init, -1); t = default_t(init)
 				if intloc(n, init, t) && !(t == T_U8 && ND[init].k as int == N_IDX && FILES[TK[ND[n].t].f].py): conv(init, T_I64); t = T_I64
+				if TY[t].k == TY_MULTI && TY[t].n > 1: m byte[>..] ~= []; format(m, "this call returns ", TY[t].n, " values but one name binds it, which would keep only the first (rewrite: name every value, using _ for the ones to drop: a, _ := f(...))"); cerr(init, m); return
 				if TY[t].k == TY_MULTI: t = TYL[TY[t].l] as int
 				if TY[t].k == TY_VARIANT && ND[init].k == N_DOT && lf & LV_VAR != 0: t = t_enum(TY[t].a as int, false); set_cv(init, t)
 				if fl & V_PYCOPY != 0 && TY[t].k == TY_REF && TY[t].c < 0 && TY[t].fl & RF_OPT == 0 && !has_rel(TY[t].a as int): t = TY[t].a as int; conv(init, t)

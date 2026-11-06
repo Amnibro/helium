@@ -46,6 +46,11 @@ cfnv(s int, an int) bool:
 			k := ND[DIDX[s + i]].k as int
 			if k != N_ID && k != N_FUNVAL: return true
 	false
+arity_hint(m byte[>..]&, name int, n int, an int):
+	d ~= lookup_q(name, ns_of(n), D_FN); if d < 0 { d = dmap(name); while d >= 0 && DC[d].k as int != D_FN { d = DC[d].next } }
+	if d < 0: return
+	f := DC[d].node as int; e ~= DC[d].next; while e >= 0 { if DC[e].k as int == D_FN && DC[e].node as int != f { return } e = DC[e].next }
+	if ND[f].n != an: format(m, ": declared with ", ND[f].n, " parameters, the call passes ", an)
 has_fn(name int) bool:
 	d ~= dmap(name); while d >= 0 { if DC[d].k as int == D_FN { return true } d = DC[d].next } false
 nscore(q int, at int) i64:
@@ -779,7 +784,7 @@ recursive call_fn(n int, name int, recv int, want int) int:
 	if fnode < 0:
 		BINDS.pop_n(BINDS.len - b0); dr := try_case(n, name, s, an, blk, bown); if dr >= 0: pop_args(s); return dr
 	if fnode < 0:
-		m byte[>..] ~= []; lv9 := find_lv(name); if lv9 >= 0 && LVS[lv9].fl & LV_CFB != 0 { format(m, "const for field accessor is not callable") } else if lv9 >= 0 { format(m, nm(name), " is a variable, not a function") } else if has_fn(name) && cfnv(s, an) { format(m, "a function value must be a function name or block literal") } else if has_fn(name) { format(m, "no matching overload for call to ", nm(name)) } else if lookup_q(name, ns_of(n), D_GLOBAL) >= 0 { format(m, nm(name), " is a variable, not a function") } else { format(m, "unknown function: ", nm(name)) }
+		m byte[>..] ~= []; lv9 := find_lv(name); if lv9 >= 0 && LVS[lv9].fl & LV_CFB != 0 { format(m, "const for field accessor is not callable") } else if lv9 >= 0 { format(m, nm(name), " is a variable, not a function") } else if has_fn(name) && cfnv(s, an) { format(m, "a function value must be a function name or block literal") } else if has_fn(name) || lookup_q(name, ns_of(n), D_FN) >= 0 { format(m, "no matching overload for call to ", nm(name)); arity_hint(m, name, n, an) } else if lookup_q(name, ns_of(n), D_GLOBAL) >= 0 { format(m, nm(name), " is a variable, not a function") } else { format(m, "unknown function: ", nm(name)) }
 		cerr(n, m)
 		pop_args(s)
 		BINDS.pop_n(BINDS.len - b0)
