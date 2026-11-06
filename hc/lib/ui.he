@@ -8,6 +8,14 @@ use ttf
 MAIN_THREAD := true
 var EDIT_SEEN = false
 var HELD int3[>..] = []
+var TD = false
+var TDRAG = false
+var TPEND = false
+var TX0 = 0.0
+var TY0 = 0.0
+var TLY = 0.0
+var TV = 0.0
+var TT0 = 0.0
 WINDOW_BORDER i32 := 1
 WINDOW_MOVABLE i32 := 2
 WINDOW_SCALABLE i32 := 4
@@ -597,7 +605,7 @@ SCOPE_ENDS := ["ui::end", "ui::group_end", "ui::group_scrolled_end", "ui::list_v
 NULL_RECT := Rect{-8192.0, -8192.0, 16384.0, 16384.0}
 struct MB { down bool, clicked u32, pos float2 }
 struct KY { down bool, clicked u32 }
-struct Inp { mb MB[6], pos float2, prev float2, delta float2, sd float2, grab bool, grabbed bool, ungrab bool, keys KY[30], text byte[256], tl int }
+struct Inp { mb MB[6], pos float2, prev float2, delta float2, sd float2, sp float2 = float2{0.0, 0.0}, grab bool, grabbed bool, ungrab bool, keys KY[30], text byte[256], tl int }
 struct CB { begin int, end int, last int, clip Rect, uc bool }
 struct PB { begin int, parent int, last int, end int, active bool }
 struct Pop { win int = -1, ty u32, buf PB, name u32, active bool, combo_count u32, con_count u32, con_old u32, active_con u32, header Rect }
@@ -715,7 +723,7 @@ tlen(t const byte[:], fw const byte[:]) int:
 nk_input_begin(u UC&):
 	let i .= u.inp
 	for b 6: i.mb[b].clicked = 0
-	i.tl = 0; i.sd = float2{0.0, 0.0}; i.prev = i.pos; i.delta = float2{0.0, 0.0}
+	i.tl = 0; i.sd = float2{0.0, 0.0}; i.sp = float2{0.0, 0.0}; i.prev = i.pos; i.delta = float2{0.0, 0.0}
 	for k 30: i.keys[k].clicked = 0
 nk_input_end(u UC&):
 	let i .= u.inp
@@ -761,6 +769,10 @@ input_scroll(c Context, amount float2):
 	k := inp_ctx(c, "ui::input_scroll"); if k < 0: return
 	if !fin(amount.x) || !fin(amount.y): misuse(str("ui::input_scroll: a scroll of ", pg(amount.x as real), ", ", pg(amount.y as real))); return
 	let i .= CT[k].inp; i.sd = float2{i.sd.x + amount.x, i.sd.y + amount.y}
+input_scroll_px(c Context, amount float2):
+	k := inp_ctx(c, "ui::input_scroll_px"); if k < 0: return
+	if !fin(amount.x) || !fin(amount.y): misuse(str("ui::input_scroll_px: a scroll of ", pg(amount.x as real), ", ", pg(amount.y as real))); return
+	let u .= CT[k]; let i .= u.inp; i.sp = float2{i.sp.x + amount.x / u.scale, i.sp.y + amount.y / u.scale}
 input_char(c Context, ch byte):
 	k := inp_ctx(c, "ui::input_char"); if k < 0: return
 	nk_input_glyph(CT[k], [ch, 0, 0, 0])
@@ -1120,7 +1132,7 @@ panel_end(u UC&):
 		if l.footer_height > 0.0: fill_rect_b(u, w, Rect{wn.bounds.x, l.bounds.y + l.bounds.h, wn.bounds.w, l.footer_height}, 0.0, s.window.background)
 	if l.flags & 32 == 0 && l.flags & WIN_MINIMIZED == 0 && wn.sht < 4.0: panel_scrollbars(u, w, pi, hin, sbs, pp)
 	if wn.flags & 128 != 0:
-		hi := i_moved(u.inp) || u.inp.sd.y != 0.0; wh := win_is_hovered(u); aa := u.lws & 2 != 0
+		hi := i_moved(u.inp) || u.inp.sd.y != 0.0 || u.inp.sp.y != 0.0; wh := win_is_hovered(u); aa := u.lws & 2 != 0
 		if !hi && wh || !wh && !aa: wn.sht += u.dt
 		else: wn.sht = 0.0
 	else: wn.sht = 0.0
@@ -1775,6 +1787,15 @@ style_from_table(c Context, table const Color[:]):
 	k := ctx_get(c, "ui::style_from_table"); if k < 0: return
 	if table.len != 32: misuse(str("ui::style_from_table: a table of ", table.len, " colors, where it has one per COLOR_* (32)")); return
 	style_from(CT[k].st, table)
+style_shape(c Context, rounding f32, spacing f32):
+	k := ctx_get(c, "ui::style_shape"); if k < 0: return
+	if !(rounding >= 0.0) || !(spacing > 0.0): misuse("ui::style_shape: rounding must be >= 0 and spacing > 0"); return
+	let s .= CT[k].st; s.button.rounding = rounding; s.button.padding = v2(2.0 * spacing, 2.0 * spacing); s.contextual_button.rounding = rounding; s.edit.rounding = rounding; s.edit.padding = v2(4.0 * spacing, 4.0 * spacing)
+	s.property.rounding = rounding; s.combo.rounding = rounding; s.selectable.rounding = rounding; s.progress.rounding = rounding; s.progress.cursor_rounding = rounding; s.window.group_padding = v2(4.0 * spacing, 4.0 * spacing)
+	s.window.spacing = v2(4.0 * spacing, 4.0 * spacing); s.window.padding = v2(4.0 * spacing, 4.0 * spacing); s.window.min_row_height_padding = 8.0 * spacing
+style_button_text(c Context, col Color):
+	k := ctx_get(c, "ui::style_button_text"); if k < 0: return
+	let b .= CT[k].st.button; b.text_normal = col; b.text_hover = col; b.text_active = col
 default_color_table_into(out Color[:]) int: copy_out(DEFAULT_COLORS[..], out)
 style_get_color_by_name_into(color int, out byte[:]) int:
 	if !enum_ok(color, 32, "ui::style_get_color_by_name", "COLOR_*"): return 0
@@ -2259,8 +2280,9 @@ sb_behavior(u UC&, s u32&, hin bool, hs bool, sc Rect, cur Rect, e0 Rect, e1 Rec
 	if !hin: return off
 	let i .= u.inp; lmd := i.mb[0].down; lmc := i.mb[0].clicked; inc := i_click_down_in(i, 0, cur, true)
 	if i_hover(i, sc): s = WS_HOVER | WS_MOD
-	sd := if vert { i.sd.y } else { i.sd.x }
-	if lmd && inc && lmc == 0:
+	sd := if vert { i.sd.y } else { i.sd.x }; sp := if vert { i.sp.y } else { i.sp.x }
+	if sp != 0.0 && hs: off = clampf(0.0, off - sp, if vert { tgt - sc.h } else { tgt - sc.w })
+	else if lmd && inc && lmc == 0:
 		s = WS_ACTIVED | WS_MOD
 		if vert: off = clampf(0.0, off + (i.delta.y / sc.h) * tgt, tgt - sc.h); i.mb[0].pos.y = sc.y + (off / tgt) * sc.h + cur.h / 2.0
 		else: off = clampf(0.0, off + (i.delta.x / sc.w) * tgt, tgt - sc.w); i.mb[0].pos.x = sc.x + (off / tgt) * sc.w + cur.w / 2.0
@@ -2328,7 +2350,7 @@ panel_scrollbars(u UC&, w int, pi int, hin bool, sbs float2, pp float2):
 	st ~= 0 as u32; sc ~= Rect{l.bounds.x + l.bounds.w + pp.x, l.bounds.y, sbs.x, l.bounds.h}
 	so := do_scrollbar(u, st, w, sc, hs, pget(u, l.oy) as f32, (l.at_y - sc.y) as! i32 as f32, sc.h * 0.10, sc.h * 0.01, u.st.scrollv, hin, true)
 	pset(u, l.oy, so as! u32)
-	if hin && hs: u.inp.sd.y = 0.0
+	if hin && hs: u.inp.sd.y = 0.0; u.inp.sp.y = 0.0
 	st = 0; sc = Rect{l.bounds.x, l.bounds.y + l.bounds.h, l.bounds.w, sbs.y}
 	sx := do_scrollbar(u, st, w, sc, hs, pget(u, l.ox) as f32, (l.max_x - sc.x) as! i32 as f32, l.max_x * 0.05, l.max_x * 0.005, u.st.scrollh, hin, false)
 	pset(u, l.ox, sx as! u32)
@@ -4136,6 +4158,10 @@ input_gfx_key(c Context, e gfx::Event):
 		input_key(c, KEY_PASTE, e.down && cmd);
 	else:
 		;
+touch_cancel(c Context):
+	k := ctx_get(c, "ui::touch_cancel"); if k < 0: return
+	let b .= CT[k].inp.mb[BUTTON_LEFT]; b.down = false; b.clicked = 0; b.pos = float2{-100000.0, -100000.0}
+	for u in HELD: if u.x == BUTTON_LEFT as i32 { HELD.clear() }
 input_from_gfx(c Context):
 	if renderer.opened != gfx::open_count(): make_renderer()
 	want := EDIT_SEEN || !gfx::touch_first(); EDIT_SEEN = false
@@ -4146,14 +4172,26 @@ input_from_gfx(c Context):
 	if copied_some: gfx::set_clipboard(text)
 	input_begin(c)
 	for u in HELD: input_button(c, u.x as int, u.y as int, u.z as int, false)
-	HELD.clear(); pressed ~= 0
+	HELD.clear(); pressed ~= 0; touch := gfx::touch_first(); thr := 10.0 * gfx::display_scale() as real; moved ~= 0.0
+	if touch && TPEND && clock() - TT0 > 0.15: TPEND = false; input_motion(c, TX0 as int, TY0 as int); input_button(c, BUTTON_LEFT, TX0 as int, TY0 as int, true); pressed |= 1
+	if touch && !TD && (TV > 0.5 || TV < -0.5): input_scroll_px(c, float2{0.0, TV as f32}); TV *= 0.93
+	else if !TD: TV = 0.0
 	for e gfx::events():
 		x := floor(e.x) as! int
 		y := floor(e.y) as! int
 		if e.kind == gfx::EVENT_MOUSE_MOTION:
-			input_motion(c, x, y);
+			input_motion(c, x, y)
+			if touch && TD && !TDRAG && (e.y as real - TY0 > thr || TY0 - e.y as real > thr): TDRAG = true; TLY = e.y as real; if TPEND { TPEND = false } else { touch_cancel(c) }
+			if touch && TDRAG: dy := e.y as real - TLY; TLY = e.y as real; moved += dy; input_scroll_px(c, float2{0.0, dy as f32})
+		else if touch && e.kind == gfx::EVENT_MOUSE_BUTTON && e.button == 1 && !e.down && TDRAG:
+			TD = false; TDRAG = false; TV = moved
+		else if touch && e.kind == gfx::EVENT_MOUSE_BUTTON && e.button == 1 && e.down:
+			TD = true; TDRAG = false; TPEND = true; TX0 = e.x as real; TY0 = e.y as real; TLY = TY0; TV = 0.0; TT0 = clock(); input_motion(c, x, y)
+		else if touch && e.kind == gfx::EVENT_MOUSE_BUTTON && e.button == 1 && !e.down && TPEND:
+			TD = false; TPEND = false; input_motion(c, TX0 as int, TY0 as int); input_button(c, BUTTON_LEFT, TX0 as int, TY0 as int, true); HELD.push(int3{BUTTON_LEFT, TX0 as i32, TY0 as i32})
 		else if e.kind == gfx::EVENT_MOUSE_BUTTON:
 			b := match e.button { 1 => BUTTON_LEFT, 2 => BUTTON_MIDDLE, 3 => BUTTON_RIGHT, 4 => BUTTON_X1, 5 => BUTTON_X2, _ => -1 }
+			if touch && b == BUTTON_LEFT: TD = false; TDRAG = false
 			if b == BUTTON_LEFT && e.clicks > 1: input_button(c, BUTTON_DOUBLE, x, y, e.down)
 			if b >= 0 && !e.down && pressed & (1 << b) != 0: HELD.push(int3{b as i32, x as i32, y as i32})
 			else if b >= 0:
