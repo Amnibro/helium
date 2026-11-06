@@ -1,0 +1,22 @@
+layout(local_size_x = 8, local_size_y = 8) in;
+layout(set = 0, binding = 0) uniform sampler2D tex_hdr;
+layout(std430, set = 1, binding = 0) buffer Hist { uint hist[]; };
+layout(set = 2, binding = 0) uniform U { vec4 size; vec4 range; };
+shared uint bins[128];
+void main() {
+	uint li = gl_LocalInvocationIndex;
+	bins[li] = 0u;
+	bins[li + 64u] = 0u;
+	barrier();
+	ivec2 p = ivec2(gl_GlobalInvocationID.xy) * int(size.z) + ivec2(size.w);
+	if (p.x < int(size.x) && p.y < int(size.y)) {
+		float l = dot(texelFetch(tex_hdr, p, 0).rgb, vec3(0.2126, 0.7152, 0.0722));
+		vec2 c = (vec2(p) + 0.5) / size.xy - 0.5;
+		uint w = 1u + uint(range.z * max(1.0 - 2.5 * dot(c, c), 0.0));
+		uint b = l < 1e-6 ? 0u : uint(clamp((log2(l) - range.x) * range.y, 0.0, 0.9999) * 127.0) + 1u;
+		atomicAdd(bins[b], w);
+	}
+	barrier();
+	atomicAdd(hist[li], bins[li]);
+	atomicAdd(hist[li + 64u], bins[li + 64u]);
+}

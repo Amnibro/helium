@@ -45,7 +45,7 @@ struct Camera { eye float3, target float3, up float3, fov_y f32, near f32, far f
 struct Sun { to_sun float3, rgb float3, shadows bool, shadow_far f32, map_size int, soft f32 = 0.0, angle f32 = 0.0, reach f32 = 1.0, fit bool = false, contact f32 = 0.0 }
 struct Light { pos float3, range f32, rgb float3, kind int, dir float3 = float3 { 0.0, -1.0, 0.0 }, cone f32 = 0.5, edge f32 = 0.2, shadows bool = false, soft f32 = 1.5 }
 struct Sky { zenith float3, horizon float3, ground float3, ambient f32, draw bool }
-struct Look { exposure f32, white f32, bloom f32, bloom_cut f32, desaturate f32, ssao bool, ao_radius f32, ao_power f32, ao_samples int, curve int = 0 }
+struct Look { exposure f32, white f32, bloom f32, bloom_cut f32, desaturate f32, ssao bool, ao_radius f32, ao_power f32, ao_samples int, curve int = 0, auto_exposure bool = false, ae_key f32 = 0.18, ae_low f32 = 0.5, ae_high f32 = 0.95, ae_min f32 = -4.0, ae_max f32 = 4.0, ae_up f32 = 3.0, ae_down f32 = 1.0, ae_center f32 = 3.0 }
 struct NodeOv { item int, node int, t float3, r linalg::Quat, sc float3 }
 struct WeightOv { item int, node int, k int, w f32 }
 struct Item { asset int, place gfx::mat4, prev_place gfx::mat4, anim int, time f32, visible bool, anim2 int = -1, time2 f32 = 0.0, blend f32 = 1.0, bend_node int = -1, bend linalg::Quat = linalg::Quat { 0.0, 0.0, 0.0, 1.0 }, track int[4] = [-1, -1, -1, -1], tracked gfx::mat4[4] = [gfx::mat4_identity, gfx::mat4_identity, gfx::mat4_identity, gfx::mat4_identity] }
@@ -72,6 +72,8 @@ struct DofU { size float4, lens float4, tune float4 }
 struct TexelU { texel float4 }
 struct GlowU { texel float4, cut float4 }
 struct GradeU { tone float4, mode float4 }
+struct HistU { size float4, range float4 }
+struct AdaptU { range float4, pct float4, rate float4 }
 struct FogU { inv_view_proj gfx::mat4, cascade_mat gfx::mat4[3], cascade_far float4, eye float4, view_dir float4, to_sun float4, sun_rgb float4, ambient float4, params float4, params2 float4, light_pos float4[16], light_rgb float4[16] }
 struct QuadG { p float4[4], c float4[4], prm float4 }
 struct QuadViewU { view_proj gfx::mat4, right float4, up float4 }
@@ -213,6 +215,14 @@ var pipe_down gfx::Pipeline;
 var pipe_up gfx::Pipeline;
 var pipe_grade gfx::Pipeline;
 var pipe_temporal gfx::Pipeline;
+var pipe_hist gfx::ComputePipeline;
+var pipe_adapt gfx::ComputePipeline;
+var hist_buf gfx::Buffer;
+var expo_buf gfx::Buffer;
+var expo_fresh = true;
+var exposure_dt f32 = 0.0166667;
+var ae_log_min f32 = -10.0;
+var ae_log_max f32 = 10.0;
 var color_ms gfx::Texture;
 var depth_ms gfx::Texture;
 var hdr gfx::Texture;
@@ -504,6 +514,13 @@ fn init(w int, h int, ow int, oh int) bool {
 	pipe_up = gfx::pipeline(scr, embed_shader("shaders/glow_up.frag"), gfx::PipelineDesc { blend: gfx::BLEND_ADD });
 	pipe_grade = gfx::pipeline(scr, embed_shader("shaders/post.frag"));
 	pipe_temporal = gfx::pipeline(scr, embed_shader("shaders/temporal.frag"));
+	pipe_hist = gfx::compute_pipeline(embed_shader("shaders/expo_hist.comp"));
+	pipe_adapt = gfx::compute_pipeline(embed_shader("shaders/expo_adapt.comp"));
+	let rwb = gfx::BUFFER_STORAGE | gfx::BUFFER_COMPUTE_READ | gfx::BUFFER_COMPUTE_WRITE;
+	var z u32[128] = [0; 128];
+	hist_buf = gfx::buffer(rwb, 512, bytes_of(z)[..]);
+	let one f32[4] = [1.0, 0.0, 0.0, 0.0];
+	expo_buf = gfx::buffer(rwb, 16, bytes_of(one)[..]);
 	smp_linear = gfx::sampler(gfx::LINEAR, gfx::CLAMP);
 	smp_point = gfx::sampler(gfx::NEAREST, gfx::CLAMP);
 	smp_shadow = gfx::shadow_sampler();
@@ -1407,12 +1424,35 @@ fn glow_pass() {
 	}
 }
 
+fn exposure_pass() {
+	if !look.auto_exposure { expo_fresh = true; return; }
+	let src = resolved();
+	let span = max(ae_log_max - ae_log_min, 1.0);
+	guard gfx::begin_compute([hist_buf]) else { return; }
+	gfx::bind(pipe_hist);
+	gfx::bind_texture(gfx::COMPUTE, 0, src, smp_point);
+	gfx::uniforms(gfx::COMPUTE, 0, HistU { size: f4(out_width as f32, out_height as f32, 2.0, (frames % 2) as f32), range: f4(ae_log_min, 1.0 / span, max(look.ae_center, 0.0), 0.0) });
+	gfx::dispatch((out_width / 2 + 7) / 8, (out_height / 2 + 7) / 8, 1);
+	gfx::end_compute();
+	guard gfx::begin_compute([hist_buf, expo_buf]) else { return; }
+	gfx::bind(pipe_adapt);
+	gfx::uniforms(gfx::COMPUTE, 0, AdaptU { range: f4(ae_log_min, 1.0 / span, 0.0, look.ae_max), pct: f4(clamp(look.ae_low, 0.0, 1.0), clamp(look.ae_high, 0.0, 1.0), look.ae_key, look.ae_min), rate: f4(look.ae_up, look.ae_down, exposure_dt, if expo_fresh || temporal_reset { 1.0 } else { 0.0 }) });
+	gfx::dispatch(1, 1, 1);
+	gfx::end_compute();
+	expo_fresh = false;
+}
+fn exposure_now() f32 {
+	var v f32[>..] = [];
+	if !gfx::read_buffer(expo_buf, v, 4) { return 1.0; }
+	v[0]
+}
 fn grade_pass(target gfx::Texture) {
 	guard gfx::begin_pass(gfx::PassDesc { color: [target, none(), none(), none()], .. }) else { return; }
 	gfx::bind(pipe_grade);
 	gfx::bind_texture(gfx::FRAGMENT, 0, resolved(), smp_point);
 	gfx::bind_texture(gfx::FRAGMENT, 1, if look.bloom > 0.0 { glow[0] } else { white }, smp_linear);
-	gfx::uniforms(gfx::FRAGMENT, 0, GradeU { tone: f4(look.exposure, look.white, look.bloom, look.desaturate), mode: f4(look.curve as f32, 0.0, 0.0, 0.0) });
+	gfx::bind_storage_buffer(gfx::FRAGMENT, 0, expo_buf);
+	gfx::uniforms(gfx::FRAGMENT, 0, GradeU { tone: f4(look.exposure, look.white, look.bloom, look.desaturate), mode: f4(look.curve as f32, if look.auto_exposure { 1.0 } else { 0.0 }, 0.0, 0.0) });
 	gfx::draw(3);
 	gfx::end_pass();
 }
@@ -1445,6 +1485,7 @@ fn render_end(target gfx::Texture) {
 	lens_pass();
 	temporal_pass();
 	glow_pass();
+	exposure_pass();
 	grade_pass(target);
 	for i in items.len { items[i].prev_place = items[i].place; }
 	quads.clear();

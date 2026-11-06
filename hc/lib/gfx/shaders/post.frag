@@ -5,6 +5,7 @@
 layout(location = 0) in vec2 in_uv;
 layout(set = 2, binding = 0) uniform sampler2D tex_hdr;
 layout(set = 2, binding = 1) uniform sampler2D tex_glow;
+layout(std430, set = 2, binding = 2) readonly buffer Expo { float expo[]; };
 layout(set = 3, binding = 0) uniform Grade { vec4 tone; vec4 mode; }; // exposure, white point, bloom amount, desaturation
 layout(location = 0) out vec4 out_rgba;
 
@@ -16,7 +17,7 @@ float encode_srgb(float x) {
 void main() {
 	vec3 c = texture(tex_hdr, in_uv).rgb;
 	c += texture(tex_glow, in_uv).rgb * tone.z;
-	c *= tone.x;
+	c *= tone.x * (mode.y > 0.5 ? expo[0] : 1.0);
 	if (mode.x > 0.5) {
 		vec3 v = mat3(vec3(0.59719, 0.07600, 0.02840), vec3(0.35458, 0.90834, 0.13383), vec3(0.04823, 0.01566, 0.83777)) * (c / 0.6);
 		v = (v * (v + 0.0245786) - 0.000090537) / (v * (0.983729 * v + 0.4329510) + 0.238081);

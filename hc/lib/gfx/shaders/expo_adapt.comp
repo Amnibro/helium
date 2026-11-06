@@ -1,0 +1,24 @@
+layout(local_size_x = 1) in;
+layout(std430, set = 1, binding = 0) buffer Hist { uint hist[]; };
+layout(std430, set = 1, binding = 1) buffer Expo { float expo[]; };
+layout(set = 2, binding = 0) uniform U { vec4 range; vec4 pct; vec4 rate; };
+void main() {
+	float total = 0.0;
+	for (int i = 0; i < 128; i++) total += float(hist[i]);
+	float lo = total * pct.x, hi = total * pct.y, acc = 0.0, sum = 0.0, wt = 0.0;
+	for (int i = 0; i < 128; i++) {
+		float n = float(hist[i]);
+		float take = max(min(acc + n, hi) - max(acc, lo), 0.0);
+		float lg = i == 0 ? range.x : range.x + (float(i) - 0.5) / (127.0 * range.y);
+		sum += take * lg;
+		wt += take;
+		acc += n;
+		hist[i] = 0u;
+	}
+	float target = wt > 0.0 ? sum / wt : expo[1];
+	float cur = rate.w > 0.5 ? target : expo[1];
+	float k = 1.0 - exp(-rate.z * (target > cur ? rate.x : rate.y));
+	float now = cur + (target - cur) * k;
+	expo[1] = now;
+	expo[0] = clamp(pct.z / exp2(now), exp2(pct.w), exp2(range.w));
+}
