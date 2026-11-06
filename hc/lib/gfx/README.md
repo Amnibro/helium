@@ -200,8 +200,9 @@ they do not move with the jitter; the look+taa test checks that.
 
 ### Soft, contact and local-light shadows (E3)
 
-All off by default; the defaults reproduce the earlier frame exactly (both goldens pass
-unchanged).
+All off by default. With them off the frame is the earlier one except that the sun's
+normal offset now uses the side-flipped normal on double-sided back faces (67 of 786,432
+pixels differ in a 768x1024 Holo render); both goldens pass unchanged.
 
 | setting | default | what it does |
 | --- | --- | --- |
