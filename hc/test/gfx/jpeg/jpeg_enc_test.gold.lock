@@ -1,0 +1,46 @@
+=== 793b3072c0fbafda
+import os;
+import math;
+import gfx.codec_jpeg;
+import gfx.codec_jpeg_enc;
+=== -6d0dda9942c023af
+fn main() {
+	let w = 203;
+	let h = 147;
+	var px byte[>..] = [];
+	for y in h {
+		for x in w {
+			let k = if ((x / 7) + (y / 7)) % 2 == 1 { 40 } else { -40 };
+			px.push(clamp((x * 200) / 202 + 28 + k, 0, 255) as byte);
+			px.push(clamp((y * 200) / 146 + 28 + k, 0, 255) as byte);
+			px.push(clamp(128 + k, 0, 255) as byte);
+			px.push(255 as byte);
+		}
+	}
+	var out byte[>..] = [];
+	let ok = codec_jpeg_enc::encode(px, w, h, 90, out);
+	if ok { print("encoded"); }
+	write_file("jpeg_enc_test.jpg", out);
+	var dec byte[>..] = [];
+	let dw, dh, dok = codec_jpeg::decode(out, dec);
+	if dok { print("decoded ", dw, " ", dh); }
+	var sum = 0.0;
+	for i in w * h {
+		for c in 3 {
+			let a = px[i * 4 + c] as int;
+			let b = dec[i * 4 + c] as int;
+			let d = a - b;
+			sum += (d * d) as real;
+		}
+	}
+	let mse = sum / ((w * h * 3) as real);
+	let psnr = if mse == 0.0 { 99.0 } else { 10.0 * log10(255.0 * 255.0 / mse) };
+	if psnr > 30.0 {
+		print("psnr ok");
+	} else {
+		var s byte[>..] = [];
+		format_flt(s, psnr, 2);
+		print("psnr low ", s);
+	}
+	if out.len * 100 < w * h * 3 * 30 { print("bytes ok"); }
+}

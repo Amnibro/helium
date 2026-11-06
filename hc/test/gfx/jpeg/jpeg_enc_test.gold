@@ -1,0 +1,12 @@
+use std
+into jpeg_enc_test.amni
+
+Imports: os, math, gfx.codec_jpeg and gfx.codec_jpeg_enc. A check of the JPEG encoder against the library's decoder.
+
+`main()`: build a 203 by 147 RGBA test image (odd sizes exercise the partial MCUs): pixel (x, y) has, with the checker term k = 40 when ((x / 7) + (y / 7)) is odd else -40, r = clamp((x * 200) / 202 + 28 + k, 0, 255), g = clamp((y * 200) / 146 + 28 + k, 0, 255), b = clamp(128 + k, 0, 255) (as bytes; a luminance checker over color ramps, the way real textures carry detail), alpha 255. Encode it with `codec_jpeg_enc::encode(px, 203, 147, 90, out)`; print "encoded" when true. Write the bytes with the unqualified `write_file("jpeg_enc_test.jpg", out)`. Decode with `codec_jpeg::decode(out, dec)`; print "decoded " w " " h when it returns ok. Compute the PSNR in dB over the r, g and b channels (10 log10(255^2 / mean squared error)) and print "psnr ok" when it is above 30, else "psnr low " plus the value with 2 decimals. Then print "bytes ok" when the encoded size is below 30 percent of `203 * 147 * 3`.
+
+expect:
+encoded
+decoded 203 147
+psnr ok
+bytes ok

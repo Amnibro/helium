@@ -231,7 +231,7 @@ fn decode(file const byte[:], out byte[>..]&) int, int, bool {
 					for x in 8 {
 						var s f32 = 0.0;
 						for u in 8 { s += B[x * 8 + u] * tmp[y * 8 + u]; }
-						let v = clamp((s + 128.5) as int, 0, 255);
+						let v = clamp((s + 128.5) as! int, 0, 255);
 						planes[pt.offset + (by * 8 + y) * row_len + bx * 8 + x] = v as byte;
 					}
 				}
@@ -311,15 +311,15 @@ fn decode(file const byte[:], out byte[>..]&) int, int, bool {
 		for x in width {
 			let q = (y * width + x) * 4;
 			if nparts == 1 {
-				let g = clamp((at(0, x, y) + 0.5) as int, 0, 255) as byte;
+				let g = clamp((at(0, x, y) + 0.5) as! int, 0, 255) as byte;
 				out[q] = g; out[q + 1] = g; out[q + 2] = g;
 			} else {
 				let yy = at(0, x, y);
 				let cb = at(1, x, y) - 128.0;
 				let cr = at(2, x, y) - 128.0;
-				out[q] = clamp((yy + 1.402 * cr + 0.5) as int, 0, 255) as byte;
-				out[q + 1] = clamp((yy - 0.344136 * cb - 0.714136 * cr + 0.5) as int, 0, 255) as byte;
-				out[q + 2] = clamp((yy + 1.772 * cb + 0.5) as int, 0, 255) as byte;
+				out[q] = clamp((yy + 1.402 * cr + 0.5) as! int, 0, 255) as byte;
+				out[q + 1] = clamp((yy - 0.344136 * cb - 0.714136 * cr + 0.5) as! int, 0, 255) as byte;
+				out[q + 2] = clamp((yy + 1.772 * cb + 0.5) as! int, 0, 255) as byte;
 			}
 			out[q + 3] = 255;
 		}
