@@ -467,7 +467,7 @@ parse(text const byte[:], d Doc&) int, byte[>..]:
 
 # the member of object n named key, or -1
 member(d Doc&, n int, key byte[:]) int:
-	if n < 0 || d.nodes[n].kind != K_OBJ: return -1
+	if n < 0 || n >= d.nodes.len || d.nodes[n].kind != K_OBJ: return -1
 	c ~= d.nodes[n].first
 	while c >= 0:
 		if key_of(d, c) == key: return c
@@ -475,7 +475,7 @@ member(d Doc&, n int, key byte[:]) int:
 	-1
 # element k of array n, or -1
 element(d Doc&, n int, k int) int:
-	if n < 0 || d.nodes[n].kind != K_ARR: return -1
+	if n < 0 || n >= d.nodes.len || d.nodes[n].kind != K_ARR: return -1
 	c ~= d.nodes[n].first
 	i ~= 0
 	while c >= 0 && i < k:
@@ -483,14 +483,14 @@ element(d Doc&, n int, k int) int:
 		i += 1
 	c
 name_of(d Doc&, c int) const byte[:]: if c < 0 { "" } else { key_of(d, c) }
-count(d Doc&, n int) int: if n < 0 { 0 } else { d.nodes[n].count }
+count(d Doc&, n int) int: if n < 0 || n >= d.nodes.len { 0 } else { d.nodes[n].count }
 # calls the block with each child of n
 each<F>(d Doc&, n int):
 	c ~= if n < 0 { -1 } else { d.nodes[n].first }
 	while c >= 0:
 		F(c)
 		c = d.nodes[c].next
-kind(d Doc&, n int) int: if n < 0 { -1 } else { d.nodes[n].kind }
+kind(d Doc&, n int) int: if n < 0 || n >= d.nodes.len { -1 } else { d.nodes[n].kind }
 as_f64(d Doc&, n int) real, bool:
 	k := kind(d, n)
 	if k == K_NUM || k == K_INT: return d.nodes[n].num, true
@@ -505,6 +505,76 @@ as_string(d Doc&, n int) const byte[:], bool:
 	if kind(d, n) == K_STR: return text_of(d, n), true
 	return "", false
 is_null(d Doc&, n int) bool: kind(d, n) == K_NULL
+
+# builders for documents assembled or edited in code; text is copied into the pool first, so it may be a slice of the same document
+set_name(d Doc&, n int, key const byte[:]):
+	k byte[>..] ~= []
+	k.append(key)
+	d.nodes[n].nat = d.pool.len
+	d.nodes[n].nlen = k.len
+	d.pool.append(k[..])
+new_obj(d Doc&) int: add_node(d, K_OBJ)
+new_arr(d Doc&) int: add_node(d, K_ARR)
+new_null(d Doc&) int: add_node(d, K_NULL)
+new_str(d Doc&, s const byte[:]) int:
+	t byte[>..] ~= []
+	t.append(s)
+	n := add_node(d, K_STR)
+	d.nodes[n].at = d.pool.len
+	d.nodes[n].len = t.len
+	d.pool.append(t[..])
+	n
+new_int(d Doc&, v int) int:
+	n := add_node(d, K_INT)
+	d.nodes[n].whole = v
+	d.nodes[n].num = v as real
+	n
+new_num(d Doc&, v real) int:
+	n := add_node(d, K_NUM)
+	d.nodes[n].num = v
+	n
+new_bool(d Doc&, v bool) int:
+	n := add_node(d, K_BOOL)
+	d.nodes[n].whole = if v { 1 } else { 0 }
+	n
+# the last child of n, or -1
+last_of(d Doc&, n int) int:
+	p ~= -1
+	c ~= d.nodes[n].first
+	while c >= 0:
+		p = c
+		c = d.nodes[c].next
+	p
+# appends child to array n, detached from any old siblings; returns the child
+push_element(d Doc&, n int, child int) int:
+	d.nodes[child].next = -1
+	attach(d, n, last_of(d, n), child)
+# sets member key of object n to child, replacing an existing member in place; returns the child
+put_member(d Doc&, n int, key const byte[:], child int) int:
+	set_name(d, child, key)
+	prev ~= -1
+	c ~= d.nodes[n].first
+	while c >= 0:
+		if key_of(d, c) == key_of(d, child):
+			d.nodes[child].next = d.nodes[c].next
+			if prev < 0 { d.nodes[n].first = child } else { d.nodes[prev].next = child }
+			return child
+		prev = c
+		c = d.nodes[c].next
+	d.nodes[child].next = -1
+	attach(d, n, prev, child)
+# removes member key from object n; true when it was there
+drop_member(d Doc&, n int, key const byte[:]) bool:
+	prev ~= -1
+	c ~= d.nodes[n].first
+	while c >= 0:
+		if key_of(d, c) == key:
+			if prev < 0 { d.nodes[n].first = d.nodes[c].next } else { d.nodes[prev].next = d.nodes[c].next }
+			d.nodes[n].count -= 1
+			return true
+		prev = c
+		c = d.nodes[c].next
+	false
 
 # writes node n back out as compact JSON
 format_node(out byte[>..]&, d Doc&, n int) int:
