@@ -283,6 +283,19 @@ about 12 cm in front of it, so it is soft too; a 15 px background circle), motio
 (face) and 1.54 (full body) under the studio light, and 0.21 / 0.58 with every light 4x
 brighter (the sky is not scaled, so full body moves less than 4x).
 
+### Specular occlusion and screen-space reflections (E2)
+
+| setting | default | what it does |
+| --- | --- | --- |
+| `spec_occlusion` | true | occludes ambient specular (sky, probe GI) per lobe. With GTAO bent normals (`ao_mode = 1`, or GI with `gi_ao`) a cone/cone test: the visibility cone around the bent normal (half-angle acos sqrt(1 - visibility)) against the lobe's reflection cone (half-angle 2 atan(alpha), the median of GGX's half-vector spread, doubled), their overlap by the smoothstep approximation of Oat and Sander 2007 over the lobe cone's solid angle. Without bent normals, Lagarde and de Rousiers 2014's fit `pow(n.v + ao, exp2(-16 alpha - 1)) - 1 + ao` on the screen AO. Either is multiplied by the same fit on the material occlusion texture and cavity and by a fade of reflection vectors below the geometric normal's horizon (`(1 + r.n_g)^2`), which keeps normal-mapped creases from reflecting the sky. Diffuse ambient keeps the plain AO product. Off: the earlier frame (ambient specular times AO). |
+| `ssr_on` | false | screen-space reflections, below. |
+| `ssr_steps`, `ssr_thickness`, `ssr_max_dist` | 48, 0.05, 3.0 | trace iterations, how far (scene units) a hit may lie behind the depth buffer, and the longest ray. |
+| `ssr_rough`, `ssr_edge` | 0.5, 0.07 | roughness at which the reflection has faded to the probe/sky value (it starts fading at 0.7 x that), and the screen-edge fade as a fraction of the screen. |
+
+The ambient term knows the material models: skin (E7) gets both specular lobes (the second at `shade_b.w` times the roughness, weight `shade_b.z`) and eyes a cornea lobe on the geometric normal (F0 0.02, roughness `shade_b.w`, weight `shade_b.z`), each with its own specular occlusion and reflection fetch, as the direct lights already had.
+
+Reflections: after the prepass a 7-level pyramid of the largest 1 / view depth per cell is built from `lin_depth` (`hiz.frag`, one R32F texture per level), then `ssr_trace.frag` reflects the view ray about the prepass normal and walks it in screen space with 1 / depth interpolated linearly: a cell whose nearest depth is behind the ray segment is skipped and the walk goes one level coarser, otherwise it advances to where the ray reaches that depth and goes one level finer; at full resolution a hit needs the ray within `ssr_thickness` behind the surface. A hit is faded by the screen edge, the ray length and how squarely it meets the hit surface (back faces count 0), and reprojected to last frame by the motion target (when drawn) or the camera matrices. The surface shader blends each lobe toward last frame's colour at that point with that confidence times its roughness fade, fetched from a mip chain of last frame's resolved image (`ssr_copy.frag` + `generate_mips` after the temporal pass, so with TAA it is the history) at the level of the reflection cone's footprint (2 alpha x hit distance / hit depth, in pixels), so rough reflections blur instead of getting noisy. Blended surfaces get no reflections (the prepass does not draw them). The first frame after `ssr_on`, a resize or a `temporal_reset` uses the probe/sky value only. `debug_view` 9 shows the specular occlusion of the main lobe, 10 the reflection confidence (red) and hit distance / depth (green).
+
 ## Where later features attach
 
 * **Motion blur, reprojection for SSR/GI**: `motion_target()` already holds per-pixel
