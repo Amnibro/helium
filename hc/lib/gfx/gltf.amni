@@ -46,7 +46,7 @@ struct Material {
 	emissive float3, emissive_tex TexRef,
 	alpha_mode int, alpha_cutoff f32, double_sided bool, unlit bool, name Span,
 	tri f32 = 0.0, top f32 = 0.0, top_scale f32 = 0.0, top_sharp f32 = 8.0,
-	top_base TexRef = TexRef { -1, 0 }, top_mr TexRef = TexRef { -1, 0 }, top_normal TexRef = TexRef { -1, 0 }, top_tint float4 = float4 { 1.0, 1.0, 1.0, 1.0 }, no_gi bool = false, no_shadow bool = false, keep_normal bool = false, sheen float3 = float3 { 0.0, 0.0, 0.0 }, sheen_rough f32 = 0.0, catcher f32 = 0.0
+	top_base TexRef = TexRef { -1, 0 }, top_mr TexRef = TexRef { -1, 0 }, top_normal TexRef = TexRef { -1, 0 }, top_tint float4 = float4 { 1.0, 1.0, 1.0, 1.0 }, no_gi bool = false, no_shadow bool = false, keep_normal bool = false, sheen float3 = float3 { 0.0, 0.0, 0.0 }, sheen_rough f32 = 0.0, catcher f32 = 0.0, shading int = 0, shade_a float4 = float4 { 0.0, 0.0, 0.0, 0.0 }, shade_b float4 = float4 { 0.0, 0.0, 0.0, 0.0 }, shade_c float4 = float4 { 0.0, 0.0, 0.0, 0.0 }, detail TexRef = TexRef { -1, 0 }
 }
 struct Primitive { vfirst int, vcount int, ifirst int, icount int, material int, mfirst int, targets int, lo float3, hi float3, tangents bool, skinned bool }
 struct Mesh { prims Span, weights Span, name Span }

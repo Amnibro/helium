@@ -56,7 +56,7 @@ struct FrameU {
 	zenith float4, horizon float4, ground float4, screen float4, light_pos float4[16], light_rgb float4[16], gi float4, gi_origin float4, gi_step float4, gi_dims float4
 }
 struct GiU { origin float4, step float4, dims float4, rot0 float4, rot1 float4, rot2 float4, params float4, to_sun float4, sun_rgb float4, zenith float4, horizon float4, ground float4, light_pos float4[8], light_rgb float4[8] }
-struct SurfaceU { base float4, emissive float4, params float4, alpha float4, uv_sets float4, uv_sets2 float4, tri float4, top_tint float4, xm_base float4, xm_mr float4, xm_nrm float4, xm_occ float4, xm_emi float4, xo0 float4, xo1 float4, xo2 float4, sheen float4, misc float4 }
+struct SurfaceU { base float4, emissive float4, params float4, alpha float4, uv_sets float4, uv_sets2 float4, tri float4, top_tint float4, xm_base float4, xm_mr float4, xm_nrm float4, xm_occ float4, xm_emi float4, xo0 float4, xo1 float4, xo2 float4, sheen float4, misc float4, shade_a float4, shade_b float4, shade_c float4, xm_det float4, xo_det float4 }
 struct CutU { base float4, alpha float4, uv_sets float4, xm float4, xo float4 }
 struct CutViewU { base float4, alpha float4, uv_sets float4, xm float4, xo float4, view gfx::mat4 }
 struct SkyU { inv_view_proj gfx::mat4, prev_view_proj gfx::mat4, to_sun float4, sun_rgb float4, zenith float4, horizon float4, ground float4 }
@@ -1099,7 +1099,8 @@ fn surface_of(m gltf::Material) SurfaceU {
 		xm_base: m.base_tex.m, xm_mr: m.mr_tex.m, xm_nrm: m.normal_tex.m, xm_occ: m.occlusion_tex.m, xm_emi: m.emissive_tex.m,
 		xo0: f4(m.base_tex.o.x, m.base_tex.o.y, m.mr_tex.o.x, m.mr_tex.o.y), xo1: f4(m.normal_tex.o.x, m.normal_tex.o.y, m.occlusion_tex.o.x, m.occlusion_tex.o.y), xo2: f4(m.emissive_tex.o.x, m.emissive_tex.o.y, 0.0, 0.0),
 		sheen: x4(m.sheen, m.sheen_rough),
-		misc: f4(m.catcher, 0.0, 0.0, 0.0)
+		misc: f4(m.catcher, m.shading as f32, 0.0, 0.0),
+		shade_a: m.shade_a, shade_b: m.shade_b, shade_c: m.shade_c, xm_det: m.detail.m, xo_det: f4(m.detail.o.x, m.detail.o.y, 0.0, 0.0)
 	}
 }
 
@@ -1117,7 +1118,7 @@ fn draw_lit(b Batch) {
 	gfx::bind_texture(gfx::FRAGMENT, 6, if look.ssao { ao } else { white }, smp_point);
 	bind_slot(7, m.top_base, true, white);
 	bind_slot(8, m.top_mr, false, white);
-	bind_slot(9, m.top_normal, false, flat_normal);
+	bind_slot(9, if m.shading > 0 { m.detail } else { m.top_normal }, false, flat_normal);
 	gi_bind();
 	draw_prim(b);
 }
