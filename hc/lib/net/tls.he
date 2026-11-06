@@ -252,15 +252,19 @@ tls_pump(t Tls&) int:
 		if s == 0: return TLS_HANDSHAKE
 		t.st = 1; send_ch(t)
 	if !flush(t): return tl_fail(t, "send failed")
+	eof ~= false
 	for k 64:
 		n := tcp_recv(t.fd, t.rbuf, 0)
 		if n == 0: break
-		if n < 0: if t.st == 6 { t.st = 7; tcp_close(t.fd); t.fd = -1; return TLS_CLOSED } return tl_fail(t, "connection closed by peer")
+		if n < 0: eof = true; break
 	while t.rbuf.len >= 5 && t.st >= 0 && t.st != 7:
 		n := g16(t.rbuf, 3)
 		if n > 16640: return tl_fail(t, "record too long")
 		if t.rbuf.len < 5 + n: break
 		rec byte[>..] ~= []; rec.append(t.rbuf[..5 + n]); rest byte[>..] ~= []; rest.append(t.rbuf[5 + n..]); t.rbuf = rest; on_record(t, rec[0] as int, rec[..5], rec[5..])
+	if eof && t.st >= 0 && t.st != 7:
+		if t.st != 6: return tl_fail(t, "connection closed by peer")
+		t.st = 7; tcp_close(t.fd); t.fd = -1; return TLS_CLOSED
 	if t.st >= 0 && t.fd >= 0 && !flush(t): return tl_fail(t, "send failed")
 	tls_state(t)
 tls_write(t Tls&, d const byte[:]) bool:
