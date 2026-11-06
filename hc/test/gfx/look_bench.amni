@@ -86,18 +86,73 @@ fn features(f const byte[:]) {
 		s3d::sky.ambient = 0.0;
 	}
 	if has(f, "soft") { s3d::studio_soft(float3 { 0.8, 0.81, 0.84 }, 2.0); }
+	if has(f, "expo") { s3d::look.auto_exposure = true; }
+	if has(f, "bright") {
+		s3d::sun.rgb = s3d::sun.rgb * float3 { 4.0, 4.0, 4.0 };
+		for &l in s3d::lights {
+			l.rgb = l.rgb * float3 { 4.0, 4.0, 4.0 };
+		}
+	}
+	if has(f, "dof") {
+		let dx = (s3d::view.target.x - s3d::view.eye.x) as real;
+		let dy = (s3d::view.target.y - s3d::view.eye.y) as real;
+		let dz = (s3d::view.target.z - s3d::view.eye.z) as real;
+		s3d::dof_aperture = 0.004;
+		s3d::dof_focus = sqrt(dx * dx + dy * dy + dz * dz) as f32;
+	}
+	if has(f, "mblur") { s3d::motion_blur = 0.5; }
+	if has(f, "lut") {
+		warm_lut();
+		s3d::look.lut = 1.0;
+	}
+	if has(f, "idlut") { s3d::look.lut = 1.0; }
+}
+fn warm_lut() {
+	var px byte[>..] = [];
+	for bi in 17 {
+		for gi in 17 {
+			for ri in 17 {
+				let r = ri as real / 16.0;
+				let g = gi as real / 16.0;
+				let b = bi as real / 16.0;
+				let r2 = min(1.0, r * 1.06 + 0.02);
+				let g2 = g;
+				let b2 = b * 0.88 + 0.03;
+				px.push(floor(r2 * 255.0 + 0.5) as byte);
+				px.push(floor(g2 * 255.0 + 0.5) as byte);
+				px.push(floor(b2 * 255.0 + 0.5) as byte);
+				px.push(255);
+			}
+		}
+	}
+	s3d::set_lut(px[..], 17);
+}
+var eye0 float3;
+var have_eye0 = false;
+fn orbit(k int) {
+	if !have_eye0 {
+		eye0 = s3d::view.eye;
+		have_eye0 = true;
+	}
+	let t = s3d::view.target;
+	let dx = eye0.x - t.x;
+	let dz = eye0.z - t.z;
+	let a = 0.03 * k;
+	let c = cos(a) as f32;
+	let s = sin(a) as f32;
+	s3d::view.eye = float3 { t.x + dx * c + dz * s, eye0.y, t.z - dx * s + dz * c };
 }
 fn main() {
 	let a = args();
 	let w = num(a[3]) as int;
 	let h = num(a[4]) as int;
 	gltf::lazy_pixels = true;
-	if !gfx::open_headless(w, h) {
+	guard gfx::open_headless(w, h) else {
 		print("look_bench: no device: ", gfx::error());
 		return;
 	}
 	let asset = gltf::load(a[1]);
-	if asset < 0 {
+	guard asset >= 0 else {
 		print("look_bench: load failed");
 		return;
 	}
@@ -109,17 +164,34 @@ fn main() {
 		let fl = s3d::add(shapes::plane(3.0, fm));
 		s3d::place(fl, gfx::mat4_identity);
 	}
-	let eye = float3 { num(a[5]) as f32, num(a[6]) as f32, num(a[7]) as f32 };
-	let target = float3 { num(a[8]) as f32, num(a[9]) as f32, num(a[10]) as f32 };
-	s3d::view = s3d::Camera { eye: eye, target: target, up: float3 { 0.0, 1.0, 0.0 }, fov_y: num(a[11]) as f32, near: 0.05, far: 100.0 };
+	s3d::view = s3d::Camera {
+		eye: float3 { num(a[5]) as f32, num(a[6]) as f32, num(a[7]) as f32 },
+		target: float3 { num(a[8]) as f32, num(a[9]) as f32, num(a[10]) as f32 },
+		up: float3 { 0.0, 1.0, 0.0 },
+		fov_y: num(a[11]) as f32,
+		near: 0.05,
+		far: 100.0,
+	};
 	studio();
 	features(a[12]);
 	s3d::init(w, h);
 	let out = gfx::render_target(w, h, gfx::RGBA8);
+	let spin = has(a[12], "mblur");
+	var fk = 0;
+	fn frame() {
+		if spin {
+			orbit(fk);
+			fk += 1;
+		}
+		s3d::render(out);
+	}
 	let frames = if s3d::temporal != 0 { 48 } else { 3 };
 	for i in frames {
-		s3d::render(out);
+		frame();
 		gfx::flush();
+	}
+	if has(a[12], "expo") {
+		print("look_bench: exposure ", s3d::exposure_now());
 	}
 	if has(a[12], "info") {
 		print("look_bench: cascades live ", s3d::cascade_live, " ends ", s3d::cascade_end[0], " ", s3d::cascade_end[1], " ", s3d::cascade_end[2]);
@@ -131,7 +203,7 @@ fn main() {
 	let n = num(a[13]) as int;
 	if n > 0 {
 		for i in 30 {
-			s3d::render(out);
+			frame();
 			gfx::flush();
 		}
 		var log byte[>..] = [];
@@ -146,7 +218,7 @@ fn main() {
 		var wall real[>..] = [];
 		for i in n {
 			let t = gfx::time();
-			s3d::render(out);
+			frame();
 			gfx::flush();
 			wall.push((gfx::time() - t) * 1000.0);
 		}
@@ -161,9 +233,9 @@ fn main() {
 				let per = k / n;
 				var each real[>..] = [];
 				for f in n {
-					var s = 0.0;
-					for j in per { s += all[first + f * per + j]; }
-					each.push(s / 1e6);
+					var sum = 0.0;
+					for j in per { sum += all[first + f * per + j]; }
+					each.push(sum / 1e6);
 				}
 				print("look_bench: ", a[12], " gpu ms median ", median(copy(each)), " p95 ", p95(copy(each)), " (", per, " submits/frame)");
 			}

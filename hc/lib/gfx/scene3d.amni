@@ -206,6 +206,7 @@ var pipe_lens_tile gfx::Pipeline;
 var pipe_lens_near gfx::Pipeline;
 var pipe_mblur gfx::Pipeline;
 var pipe_dof gfx::Pipeline;
+var pipe_dof_pack gfx::Pipeline;
 var fx gfx::Texture;
 var tile_a gfx::Texture;
 var tile_b gfx::Texture;
@@ -504,6 +505,7 @@ fn init(w int, h int, ow int, oh int) bool {
 	pipe_lens_near = gfx::pipeline(scr, embed_shader("shaders/lens_near.frag"));
 	pipe_mblur = gfx::pipeline(scr, embed_shader("shaders/mblur.frag"));
 	pipe_dof = gfx::pipeline(scr, embed_shader("shaders/dof.frag"));
+	pipe_dof_pack = gfx::pipeline(scr, embed_shader("shaders/dof_pack.frag"));
 	pipe_gtao_blur = gfx::pipeline(scr, embed_shader("shaders/gtao_blur.frag"));
 	pipe_fog = gfx::pipeline(scr, embed_shader("shaders/fog.frag"));
 	pipe_quad_add = gfx::pipeline(embed_shader("shaders/quad.vert"), embed_shader("shaders/quad.frag"), gfx::PipelineDesc { depth_test: true, depth_write: false, blend: gfx::BLEND_ADD, depth_compare: gfx::COMPARE_LESS_EQUAL });
@@ -1353,10 +1355,16 @@ fn lens_pass() {
 		lens_tiles(nd, 1.0);
 		let ty = linalg::f(tan((view.fov_y * 0.5) as real));
 		guard gfx::begin_pass(gfx::PassDesc { color: [fx, none(), none(), none()], .. }) else { return; }
-		gfx::bind(pipe_dof);
+		gfx::bind(pipe_dof_pack);
 		gfx::bind_texture(gfx::FRAGMENT, 0, hdr, smp_point);
 		gfx::bind_texture(gfx::FRAGMENT, 1, nd, smp_point);
-		gfx::bind_texture(gfx::FRAGMENT, 2, tile_b, smp_point);
+		gfx::draw(3);
+		gfx::end_pass();
+		lens_swap();
+		guard gfx::begin_pass(gfx::PassDesc { color: [fx, none(), none(), none()], .. }) else { return; }
+		gfx::bind(pipe_dof);
+		gfx::bind_texture(gfx::FRAGMENT, 0, hdr, smp_point);
+		gfx::bind_texture(gfx::FRAGMENT, 1, tile_b, smp_point);
 		gfx::uniforms(gfx::FRAGMENT, 0, DofU { size: f4(width as f32, height as f32, 0.0, k as f32), lens: f4(dof_aperture * height as f32 / (2.0 * ty), dof_focus, dof_max_px, 0.0), tune: f4(dof_samples as f32, 0.0, 0.0, 0.0) });
 		gfx::draw(3);
 		gfx::end_pass();

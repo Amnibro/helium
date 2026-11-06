@@ -248,6 +248,23 @@ clean soft one with `fit`. Contact rays mostly add the lash line on the upper li
 nostril and lip creases and self-shadowing between hair cards. Without TAA a wide key
 (0.17 rad and up) shows faint fixed-pattern banding inside large penumbras.
 
+### Post effects (E8)
+
+All off by default; with them off the frame is unchanged (both goldens pass as before).
+
+| setting | default | what it does |
+| --- | --- | --- |
+| `look.auto_exposure` | false | histogram auto-exposure: a 128-bin log2-luminance histogram of the resolved HDR image (every second pixel, `ae_log_min`..`ae_log_max` = -10..10 EV, centre-weighted by `look.ae_center` = 3), the mean between the `ae_low` (0.5) and `ae_high` (0.95) fractions of the pixel count, exposure = `ae_key` (0.18) / 2^mean, clamped to `ae_min`..`ae_max` (-4..4 EV). `look.exposure` stays as compensation on top. |
+| `look.ae_up`, `look.ae_down`, `exposure_dt` | 3, 1, 1/60 | adaptation speeds (1/s) toward brighter and darker targets; the first frame, a `temporal_reset` and re-enabling snap. `exposure_now()` reads the value back. |
+| `look.lut` | 0 | mix of a 3D grading table applied after the tone curve, on sRGB-encoded values. `set_lut(rgba, n)`, `lut_strip(rgba, w, h)` (n^2 x n strip, blue picks the slice) and `lut_cube(text)` (.cube) load one; init makes a 17^3 identity. |
+| `dof_aperture`, `dof_focus` | 0, 10 | thin-lens depth of field: lens radius and focus distance in scene units (0.004 is about a 50 mm f/6 lens at character scale). `dof_max_px` (24) caps the circle, `dof_samples` (48) the gather; small circles use fewer taps (at least 16, about 1.5 r^2). |
+| `motion_blur`, `mb_samples` | 0, 15 | shutter fraction (0.5 = 180 degrees) and gather taps; needs the motion target, which turns on with it. |
+
+Exposure runs as two compute passes between bloom and grading; the LUT is a 3D texture at
+set 2 binding 2 of `post.frag` (the exposure value is the storage buffer at binding 3).
+Depth of field first packs the view depth into the colour target's alpha
+(`dof_pack.frag`), so each gather tap is one fetch instead of two.
+
 ## Where later features attach
 
 * **Motion blur, reprojection for SSR/GI**: `motion_target()` already holds per-pixel

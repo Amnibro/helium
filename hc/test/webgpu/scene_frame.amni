@@ -31,6 +31,12 @@ fn main() {
 	s3d::temporal = 0;
 	let gi = arg_count() > 13 && arg_of(13)[..] == "1";
 	let e3 = arg_count() > 13 && arg_of(13)[..] == "e3";
+	let e8 = arg_count() > 13 && arg_of(13)[..] == "e8";
+	if e8 {
+		s3d::look.auto_exposure = true; s3d::look.lut = 1.0; s3d::motion_blur = 0.5; s3d::dof_aperture = 0.08;
+		let d = s3d::view.eye - s3d::view.target;
+		s3d::dof_focus = sqrt((d.x * d.x + d.y * d.y + d.z * d.z) as real) as f32;
+	}
 	if e3 {
 		s3d::sun.angle = 0.07; s3d::sun.fit = true; s3d::sun.contact = 0.07;
 		s3d::add_spot(float3 { -3.0, 3.5, -2.0 }, float3 { 0.0, 0.8, 0.0 }, float3 { 40.0, 30.0, 60.0 }, 30.0, 0.4, true);
@@ -41,7 +47,10 @@ fn main() {
 	s3d::gi_updates_per_frame = 8;
 	s3d::init(w, h);
 	let out = gfx::render_target(w, h, gfx::RGBA8);
-	for k in if gi { 7 } else { 2 } { s3d::render(out); }
-	print("scene_frame: ", model[..], " ", w, "x", h, " gi ", gi, " e3 ", e3, " saved ", gfx::save_png(out, out_path[..]), " on ", gfx::driver()[..]);
+	for k in if gi { 7 } else { 2 } {
+		if e8 { s3d::place(it, gfx::translate(float3 { 0.04 * k as f32, 0.0, 0.0 })); }
+		s3d::render(out);
+	}
+	print("scene_frame: ", model[..], " ", w, "x", h, " gi ", gi, " e3 ", e3, " e8 ", e8, " saved ", gfx::save_png(out, out_path[..]), " on ", gfx::driver()[..]);
 	gfx::close();
 }
