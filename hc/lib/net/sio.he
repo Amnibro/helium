@@ -10,13 +10,14 @@ SIO_CONNECTING := 1
 SIO_OPEN := 2
 SIO_CLOSED := 3
 struct Sio { w Ws = Ws{}, st int = 0, auth byte[>..] = [], sid byte[>..] = [], pi real = 25.0, pt real = 20.0, last real = 0.0, next int = 1, evn byte[>..][>..] = [], evd byte[>..][>..] = [], evid int[>..] = [], ei int = 0, ackid int[>..] = [], ackd byte[>..][>..] = [], err byte[>..] = [] }
-sio_open(base const byte[:], auth_json const byte[:]) Sio:
+sio_open(base const byte[:], auth_json const byte[:]) Sio: sio_open_with(base, auth_json, "")
+sio_open_with(base const byte[:], auth_json const byte[:], headers const byte[:]) Sio:
 	s ~= Sio{}; u byte[>..] ~= []
 	if starts_with(base, "https://"): u.append("wss://"); u.append(base[8..])
 	else if starts_with(base, "http://"): u.append("ws://"); u.append(base[7..])
 	else: u.append(base)
 	while u.len > 0 && u[u.len - 1] == '/': u.resize(u.len - 1, 0)
-	u.append("/socket.io/?EIO=4&transport=websocket"); s.auth.append(auth_json); s.w = ws_open(u, ""); s.last = clock(); s
+	u.append("/socket.io/?EIO=4&transport=websocket"); s.auth.append(auth_json); s.w = ws_open(u, headers); s.last = clock(); s
 sio_fail(s Sio&, why const byte[:]) int:
 	if s.st >= 0: s.err.clear(); s.err.append(why); s.st = -1; ws_close(s.w, 1000)
 	SIO_ERR
