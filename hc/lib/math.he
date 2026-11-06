@@ -40,6 +40,7 @@ extern atan2(y f32, x f32) f32 = "hr_atan2f"
 # exponentials and logarithms
 extern exp(x real) real = "hr_exp"
 extern log(x real) real = "hr_log"
+extern log1p(x real) real = "hr_log1p"
 extern log2(x real) real = "hr_log2"
 extern log10(x real) real = "hr_log10"
 extern exp(x f32) f32 = "hr_expf"
