@@ -20,7 +20,7 @@ and in NOTICE). It sits on top of `hc/lib/gfx.he` (SDL3 GPU).
 | `gltf` | `.glb` / `.gltf` loader built on `json.he`: buffers (GLB, data URI, files), accessors incl. sparse and normalized ints, meshes and morph targets, materials (metal-rough, emissive strength, alpha modes, texture transforms), samplers, images, nodes, skins, animations |
 | `motion` | animation sampling (step, linear, slerp, cubic spline), node hierarchy, joint palettes, morph weights |
 | `shapes` | procedural sphere / plane / box assets in the same pools as glTF assets |
-| `scene3d` (`s3d::`) | the frame: cascaded sun shadows, SSAO, MSAA forward shading with point lights and an analytic sky ambient, bloom, tone curve |
+| `scene3d` (`s3d::`) | the frame: cascaded sun shadows (PCF or PCSS, optionally fitted to the casters), contact shadows, shadowed point and spot lights, SSAO, MSAA forward shading with an analytic sky ambient, bloom, tone curve |
 | `sparks` | GPU particles: compute-shader integration with drag, gravity and a bouncing ground plane; additive camera-facing quads |
 | `sdf_font` | signed-distance-field text (glyphs generated at start-up), outline and weight |
 
@@ -198,6 +198,47 @@ Bloom and the tone curve run at the output size after it. Shadow cascades are fi
 to the unjittered view (`setup_cascades` uses only `view` and the render size), so
 they do not move with the jitter; the look+taa test checks that.
 
+### Soft, contact and local-light shadows (E3)
+
+All off by default; the defaults reproduce the earlier frame exactly (both goldens pass
+unchanged).
+
+| setting | default | what it does |
+| --- | --- | --- |
+| `sun.angle` | 0 | angular radius of the key light in radians. > 0 turns on PCSS: a 20-tap blocker search in the raw cascade depth, then a 28-tap comparison filter of radius (receiver - blocker) x tan(angle), so penumbras widen with distance from the caster and harden at contact. 0.02-0.05 is a hard studio spot, 0.07 a medium softbox, 0.17-0.25 a large soft key. |
+| `sun.reach` | 1.0 | how far above a receiver (metres) blockers are searched; caps the widest penumbra at reach x tan(angle). |
+| `sun.fit` | false | fits a cascade to the bounding sphere of the shadow casters (non-blended, `no_shadow` off) when it is smaller than the view slice's sphere; that cascade then runs to `shadow_far` and the later ones are not drawn. A single character keeps about 1.3 mm texels at 2048^2 at any camera distance. |
+| `sun.contact` | 0 | screen-space contact-shadow ray length in metres (0.03-0.07 for faces and clothing). |
+| `contact_steps`, `contact_thick` | 12, 0.02 | ray steps (quadratically spaced) and the depth a hit may be behind (metres). |
+| `Light.kind` 1, `dir`, `cone`, `edge` | point, -, 0.5, 0.2 | spot light: outer half-angle in radians and the fraction of it that fades (`add_spot`). |
+| `Light.shadows`, `soft` | false, 1.5 | a shadowed spot takes one layer of the local shadow atlas and a point six; `soft` is the filter radius in texels. |
+| `local_shadow_size` | 1024 | atlas layer size (12 layers, made on first use). |
+
+Receiver-plane depth from the geometric normal keeps wide kernels on sloped receivers
+free of acne without a large constant bias (the cause of peter-panning at the chin,
+collar, belt and hem); a cascade's comparison depth is clamped below its far plane.
+Kernels rotate per pixel only when TAA runs; without TAA the tap pattern is fixed.
+Contact shadows march the prepass's 32-bit view depth, so they are only as good as what
+the prepass draws: blended surfaces and the strand hair (drawn outside scene3d) cast none.
+
+`studio_soft(bg, key)` sets a soft grey studio in one call: a key "sun" from the front,
+upper right (angular radius 0.22, PCSS, fitted cascades, 4 cm contact rays, rgb = key), a
+low fill from the front left, a flat sky of colour `bg` (darker ground) as the wrap/dome
+light and background, ACES, no bloom. `studio_soft(float3 { 0.8, 0.81, 0.84 }, 2.0)` gives
+the light-grey OpenMOSS concept look; put the character on a shadow catcher (a blended,
+`no_shadow` plane with `catcher` > 0) so the floor stays the background colour.
+
+E3 gate results (RX 9060 XT, RADV, Mesa 26.2.4; clean worktree at 9e4b174):
+`gfxtest.sh` ok, goldens unchanged (spheres 52.83 dB, shipped look 56.02 dB, the same as
+the last recorded run 44a84bd); `webgputest.mjs` 0 failures (scene_e3 bit for bit,
+holo_e3 85.67 dB). GPU time at 1920x1080 (`look_bench`, Holo under the Amni-Companion
+studio light, 200 frames, median):
+
+| camera | none | + PCSS + fit | + contact | + shadowed rim and fill spots | E3 total |
+| --- | --- | --- | --- | --- | --- |
+| face close-up | 3.100 ms | 3.869 | 3.899 | 4.464 | +1.364 ms |
+| full body | 1.719 ms | 2.413 | 2.570 | 2.897 | +1.178 ms |
+
 ## Where later features attach
 
 * **Motion blur, reprojection for SSR/GI**: `motion_target()` already holds per-pixel
@@ -207,10 +248,9 @@ they do not move with the jitter; the look+taa test checks that.
   (`nd`, `lin_depth`), and GTAO (`ao_mode = 1`) writes bent normals (`bent_target()`). The ambient
   term is a single function (`ambient_light()` in `surface.frag`) fed by `Sky`; probe
   irradiance (SH) or a prefiltered cube replaces it without touching the lights.
-* **More cascades, point/spot shadows, PCSS, contact shadows**: `CASCADES` sizes
-  the shadow array and `FrameU.cascade_mat`; `Light.kind` reserves spot lights;
-  the shadow lookup is one function (`sun_visibility()` in `surface.frag`) where a
-  blocker search (PCSS) or a screen-space contact ray can be added.
+* **More cascades, virtual shadow maps**: `CASCADES` sizes the shadow array and
+  `FrameU.cascade_mat`; the sun lookup is `sun_visibility()` / `sun_pcss()` and the
+  local-light lookup `local_visibility()` in `surface.frag` (see the E3 section).
 * **GPU (meshlet) culling**: `gather()` flattens items into `batch`, one record per
   primitive draw with its matrix, bounds centre and sort depth; a compute pass can
   consume that list and write indirect draws instead of the CPU loop in the passes.
@@ -1006,8 +1046,8 @@ pass-through mean error is 0.0106 % (max 0.0488 %).
 ## Known gaps
 
 No progressive JPEG, no point/line primitives (skipped and counted), Adler-32 is
-not verified, ambient is an analytic sky (no image-based lighting yet), spot lights
-are reserved but not shaded. Also:
+not verified, ambient is an analytic sky (no image-based lighting yet), the fog and GI
+passes light spot lights as points (no cone). Also:
 
 * The furnaces do not resolve roughness below 0.3 (metal roughness 0 shows 12.75 %
   mean error on the spheres at 4096 directions); the LUT check covers the shading

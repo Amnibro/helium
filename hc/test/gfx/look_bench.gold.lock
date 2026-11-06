@@ -61,7 +61,7 @@ fn studio() {
 	s3d::look.desaturate = 0.0;
 	s3d::look.curve = 1;
 }
-=== -6a5cf2c808653973
+=== 5fec626dbb974f3d
 fn features(f const byte[:]) {
 	if has(f, "pcss") {
 		s3d::sun.angle = 0.07;
@@ -92,6 +92,7 @@ fn features(f const byte[:]) {
 		s3d::lights.clear();
 		s3d::sky.ambient = 0.0;
 	}
+	if has(f, "soft") { s3d::studio_soft(float3 { 0.8, 0.81, 0.84 }, 2.0); }
 }
 === 37e5022fee416394
 fn main() {

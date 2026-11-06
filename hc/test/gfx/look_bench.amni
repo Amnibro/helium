@@ -85,6 +85,7 @@ fn features(f const byte[:]) {
 		s3d::lights.clear();
 		s3d::sky.ambient = 0.0;
 	}
+	if has(f, "soft") { s3d::studio_soft(float3 { 0.8, 0.81, 0.84 }, 2.0); }
 }
 fn main() {
 	let a = args();

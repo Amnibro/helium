@@ -323,6 +323,13 @@ fn clear_pose(item int) {
 	while weight_ov.len > j { weight_ov.pop(); }
 }
 fn add_light(pos float3, rgb float3, range f32) { lights.push(Light { pos, range, rgb, 0, .. }); }
+fn studio_soft(bg float3, key f32) {
+	sun = Sun { to_sun: linalg::unit3(linalg::v3(0.35, 0.85, 1.0)), rgb: linalg::v3(key, key * 0.985, key * 0.96), shadows: true, shadow_far: 12.0, map_size: 2048, angle: 0.22, reach: 1.5, fit: true, contact: 0.04 };
+	lights.clear();
+	add_light(linalg::v3(-3.5, 1.1, 4.0), linalg::v3(key * 4.0, key * 4.0, key * 4.2), 40.0);
+	sky = Sky { zenith: bg, horizon: bg, ground: bg * 0.55, ambient: 1.0, draw: true };
+	look.exposure = 1.0; look.curve = 1; look.bloom = 0.0; look.desaturate = 0.0; look.ssao = true;
+}
 fn add_spot(pos float3, target float3, rgb float3, range f32, cone f32, shadows bool) { lights.push(Light { pos: pos, range: range, rgb: rgb, kind: 1, dir: linalg::unit3(target - pos), cone: cone, shadows: shadows, .. }); }
 fn quad(a float3, b float3, c float3, d float3, ca float4, cb float4, cc float4, cd float4, shape int) { quads.push(QuadG { [x4(a, 1.0), x4(b, 1.0), x4(c, 1.0), x4(d, 1.0)], [ca, cb, cc, cd], f4(shape as f32, 0.0, 0.0, 0.0) }); }
 fn glow_line(a float3, b float3, w f32, rgb float3) {
