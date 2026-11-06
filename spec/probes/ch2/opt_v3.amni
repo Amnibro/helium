@@ -1,2 +1,2 @@
 fn first(xs int[:]) int? { for &x in xs { if x > 1 { return x; } } return null; }
-fn main() { let r = first([1, 2, 3]); if r { print("found ", r); } }
+fn main() { let xs = [1, 2, 3]; let r = first(xs); if r { print("found ", r); } }

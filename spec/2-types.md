@@ -304,7 +304,7 @@ Evidence: `opt_nonnarrow_rej.amni` (`fn get(p Node?) int { p.v }`, called with `
 Status: KNOWN GAP.
 
 **TY-Opt-Narrow-Use** (gap). A narrowed `T?` parameter used inside its `if` branch (`if p { p.v } else { -1 }`, or `guard p else {...}`) is accepted by the checker and rejected by the native backend: `native backend: this branch reference natively (kind 17, resolved 9)`. A narrowed local works (`opt_v3.amni`).
-Evidence: `opt_v1.amni`, `opt_v2.amni`, `opt_narrow_acc.amni` (native backend rejection); `opt_v3.amni` (`if r { print(r) }` on a local `int?`, accepted, prints `found 2`).
+Evidence: `opt_v1.amni`, `opt_v2.amni`, `opt_narrow_acc.amni` (native backend rejection); `opt_v3.amni` (`if r { print(r) }` on a local `int?`, accepted, prints `found 2`; it binds its array first, since `first([1, 2, 3])` returns a reference into a temporary and is rejected under MEM-4).
 Status: KNOWN GAP (valid per HELIUM.md, rejected by the backend).
 
 **TY-Opt-Store** (gap, root cause open). `var n Node? = null; n = m; print(n.v);` with `m` a `Node` value is accepted, and the release binary segfaults at run time (rc 139). Not reproduced under `--debug`, and the root cause is not found.
