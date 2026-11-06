@@ -88,16 +88,14 @@ fn features(f const byte[:]) {
 	if has(f, "soft") { s3d::studio_soft(float3 { 0.8, 0.81, 0.84 }, 2.0); }
 	if has(f, "expo") { s3d::look.auto_exposure = true; }
 	if has(f, "bright") {
-		s3d::sun.rgb = s3d::sun.rgb * float3 { 4.0, 4.0, 4.0 };
-		for &l in s3d::lights {
-			l.rgb = l.rgb * float3 { 4.0, 4.0, 4.0 };
-		}
+		s3d::sun.rgb = s3d::sun.rgb * 4.0;
+		for &l in s3d::lights { l.rgb = l.rgb * 4.0; }
 	}
 	if has(f, "dof") {
-		let dx = (s3d::view.target.x - s3d::view.eye.x) as real;
-		let dy = (s3d::view.target.y - s3d::view.eye.y) as real;
-		let dz = (s3d::view.target.z - s3d::view.eye.z) as real;
 		s3d::dof_aperture = 0.004;
+		let dx = s3d::view.target.x - s3d::view.eye.x;
+		let dy = s3d::view.target.y - s3d::view.eye.y;
+		let dz = s3d::view.target.z - s3d::view.eye.z;
 		s3d::dof_focus = sqrt(dx * dx + dy * dy + dz * dz) as f32;
 	}
 	if has(f, "mblur") { s3d::motion_blur = 0.5; }
@@ -106,6 +104,11 @@ fn features(f const byte[:]) {
 		s3d::look.lut = 1.0;
 	}
 	if has(f, "idlut") { s3d::look.lut = 1.0; }
+	if has(f, "noso") { s3d::spec_occlusion = false; }
+	if has(f, "ssr") { s3d::ssr_on = true; }
+	if has(f, "dbgso") { s3d::debug_view = 9; }
+	if has(f, "dbgssr") { s3d::debug_view = 10; }
+	if has(f, "ambient") { s3d::debug_view = 4; }
 }
 fn warm_lut() {
 	var px byte[>..] = [];

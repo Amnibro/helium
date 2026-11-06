@@ -23,10 +23,13 @@ layout(set = 2, binding = 8) uniform sampler2D tex_top_mr;
 layout(set = 2, binding = 9) uniform sampler2D tex_top_normal;
 layout(set = 2, binding = 10) uniform sampler2DArray tex_shadow_raw;
 layout(set = 2, binding = 11) uniform sampler2DArrayShadow tex_local_shadow;
-layout(std430, set = 2, binding = 12) readonly buffer Nodes { vec4 bvh_nodes[]; };
-layout(std430, set = 2, binding = 13) readonly buffer Tris { vec4 bvh_tris[]; };
-layout(std430, set = 2, binding = 14) readonly buffer Irr { vec4 probe_irr[]; };
-layout(std430, set = 2, binding = 15) readonly buffer Dist { vec2 probe_dist[]; };
+layout(set = 2, binding = 12) uniform sampler2D tex_bent;
+layout(set = 2, binding = 13) uniform sampler2D tex_ssr;
+layout(set = 2, binding = 14) uniform sampler2D tex_ssr_prev;
+layout(std430, set = 2, binding = 15) readonly buffer Nodes { vec4 bvh_nodes[]; };
+layout(std430, set = 2, binding = 16) readonly buffer Tris { vec4 bvh_tris[]; };
+layout(std430, set = 2, binding = 17) readonly buffer Irr { vec4 probe_irr[]; };
+layout(std430, set = 2, binding = 18) readonly buffer Dist { vec2 probe_dist[]; };
 
 const int CASCADES = 3;
 const int MAX_LIGHTS = 16;
@@ -52,6 +55,8 @@ layout(set = 3, binding = 0) uniform Frame {
 	vec4 light_dir[MAX_LIGHTS];
 	vec4 light_shd[MAX_LIGHTS];
 	mat4 local_mat[LOCAL_LAYERS];
+	vec4 refl;
+	mat4 view_m;
 };
 #include "gi.glsl"
 
@@ -305,25 +310,52 @@ float sun_visibility(vec3 p, vec3 n) {
 	return lit / 9.0;
 }
 
-// Ambient from the analytic sky: its irradiance for the diffuse lobe and the sky
-// along the mirror direction for the specular lobe, blended by a roughness-damped
-// Fresnel weight. The dielectric and metal responses are mixed by metalness, so a
-// white surface returns exactly the environment in a uniform sky (white furnace).
-// Probe irradiance or a prefiltered environment can replace this function.
-vec3 ambient_light(vec3 n, vec3 v, vec3 l, vec3 base_rgb, float metal, float rough, vec3 gi_irr, bool use_gi) {
+float so_lag(float n_v, float ao, float a) { return clamp(pow(n_v + ao, exp2(-16.0 * a - 1.0)) - 1.0 + ao, 0.0, 1.0); }
+float spec_occ(vec3 r, float n_v, float rough, vec3 gn, float occ, float aos, float occm) {
+	if (refl.y < 0.5) return occ;
+	float a = rough * rough;
+	float hz = clamp(1.0 + dot(r, gn), 0.0, 1.0);
+	float s = so_lag(n_v, aos, a);
+	if (refl.y > 1.5) {
+		vec4 bw = texelFetch(tex_bent, ivec2(gl_FragCoord.xy), 0);
+		vec3 bn = normalize((vec4(bw.xyz, 0.0) * view_m).xyz);
+		float av = acos(sqrt(clamp(1.0 - bw.w, 0.0, 1.0)));
+		float as_ = 2.0 * atan(a);
+		float d = acos(clamp(dot(bn, r), -1.0, 1.0));
+		float lo = abs(av - as_);
+		s = clamp((1.0 - cos(min(av, as_))) / max(1.0 - cos(as_), 1e-4) * (1.0 - smoothstep(0.0, 1.0, clamp((d - lo) / max(av + as_ - lo, 1e-4), 0.0, 1.0))), 0.0, 1.0);
+	}
+	return s * so_lag(n_v, occm, a) * hz * hz;
+}
+vec4 amb_lobe(vec3 nn, vec3 v, vec3 l, float rough, vec3 irr, vec3 gi_irr, bool use_gi, vec3 gn, vec3 oc, vec4 sr) {
+	float n_v = max(dot(nn, v), 1e-4);
+	vec3 r = reflect(-v, nn);
+	vec3 env = mix(use_gi ? gi_irr : sky_color(r, l, zenith.rgb, horizon.rgb, ground.rgb, vec3(0.0)), irr, rough * rough) * spec_occ(r, n_v, rough, gn, oc.x, oc.y, oc.z);
+	float w = sr.w * (1.0 - smoothstep(0.7 * refl.z, refl.z, rough));
+	vec3 hit = w > 0.0 ? textureLod(tex_ssr_prev, sr.xy, log2(max(2.0 * rough * rough * sr.z * refl.w, 1.0))).rgb : vec3(0.0);
+	float sw = (1.0 - rough) * (1.0 - rough);
+	return vec4(mix(env, hit, w), pow(1.0 - n_v, 5.0) * sw);
+}
+vec3 ambient_light(vec3 n, vec3 v, vec3 l, vec3 base_rgb, float metal, float rough, vec3 gi_irr, bool use_gi, vec3 gn, vec3 oc, float dao, vec4 sr, Mat q) {
+	int model = int(misc.y + 0.5);
 	vec3 irr = mix(ground.rgb, zenith.rgb, n.y * 0.5 + 0.5);
 	irr = mix(irr, horizon.rgb, 0.5 * (1.0 - abs(n.y)));
 	if (use_gi) irr = gi_irr;
-	vec3 r = reflect(-v, n);
-	vec3 env = use_gi ? gi_irr : sky_color(r, l, zenith.rgb, horizon.rgb, ground.rgb, vec3(0.0));
-	env = mix(env, irr, rough * rough);
-	float n_v = max(dot(n, v), 1e-4);
-	float smooth_w = (1.0 - rough) * (1.0 - rough);
-	float fw = pow(1.0 - n_v, 5.0) * smooth_w;
-	float fd = 0.04 + 0.96 * fw;
-	vec3 fm = base_rgb + (1.0 - base_rgb) * fw;
-	vec3 dielectric = base_rgb * (1.0 - fd) * irr + fd * env;
-	return mix(dielectric, fm * env, metal);
+	vec4 e = amb_lobe(n, v, l, rough, irr, gi_irr, use_gi, gn, oc, sr);
+	float f0d = model == 1 ? shade_c.x : 0.04;
+	float fd = f0d + (1.0 - f0d) * e.w;
+	vec3 spec = fd * e.rgb;
+	if (model == 1) {
+		vec4 e2 = amb_lobe(n, v, l, clamp(rough * shade_b.w, 0.03, 1.0), irr, gi_irr, use_gi, gn, oc, sr);
+		spec = mix(spec, (f0d + (1.0 - f0d) * e2.w) * e2.rgb, shade_b.z);
+	}
+	if (model == 2) {
+		vec4 ec = amb_lobe(q.gn, v, l, shade_b.w, irr, gi_irr, use_gi, gn, oc, sr);
+		spec += shade_b.z * (0.02 + 0.98 * ec.w) * ec.rgb;
+	}
+	vec3 fm = base_rgb + (1.0 - base_rgb) * e.w;
+	vec3 dielectric = base_rgb * (1.0 - fd) * irr * dao + spec;
+	return mix(dielectric, fm * e.rgb, metal);
 }
 
 void main() {
@@ -413,9 +445,10 @@ void main() {
 	}
 	float metal = model == 0 ? clamp(params.x * mr.b, 0.0, 1.0) : 0.0;
 	float rough = clamp(params.y * mr.g * (model > 0 ? mix(1.0, 0.5 + dt.b, dmask) : 1.0), 0.03, 1.0);
-	float occ = 1.0 + params.w * ((tp ? mr.r : texture(tex_occlusion, xuv(uv_sets.w, xm_occ, xo1.zw)).r) - 1.0);
-	if (eye.w > 0.5) occ *= texture(tex_ao, gl_FragCoord.xy * screen.xy).r;
-	if (model > 0) occ *= model == 3 ? q.cav : mix(1.0, q.cav, 0.5);
+	float occm = 1.0 + params.w * ((tp ? mr.r : texture(tex_occlusion, xuv(uv_sets.w, xm_occ, xo1.zw)).r) - 1.0);
+	float aos = eye.w > 0.5 ? texture(tex_ao, gl_FragCoord.xy * screen.xy).r : 1.0;
+	if (model > 0) occm *= model == 3 ? q.cav : mix(1.0, q.cav, 0.5);
+	float occ = occm * aos;
 
 	vec3 albedo = tint.rgb * (1.0 - metal);
 	vec3 f0 = mix(vec3(model == 1 ? shade_c.x : 0.04), tint.rgb, metal);
@@ -457,7 +490,9 @@ void main() {
 	vec3 direct = rgb;
 	bool use_gi = gi.x > 0.5;
 	vec3 gi_irr = use_gi ? gi_irradiance(in_world, n, v, gi_origin, gi_step, gi_dims) : vec3(0.0);
-	vec3 ambient = ambient_light(n, v, l, tint.rgb, metal, rough, gi_irr, use_gi) * (use_gi ? (gi.z > 0.5 ? occ : 1.0) : occ * screen.w);
+	float dao = use_gi ? (gi.z > 0.5 ? occ : 1.0) : occ;
+	vec4 sr = refl.x > 0.5 && alpha.x < 1.5 ? texelFetch(tex_ssr, ivec2(gl_FragCoord.xy), 0) : vec4(0.0);
+	vec3 ambient = ambient_light(n, v, l, tint.rgb, metal, rough, gi_irr, use_gi, gn, vec3(dao, aos, occm), dao, sr, q) * (use_gi ? 1.0 : screen.w);
 	rgb += ambient;
 
 	rgb += emissive.rgb * texture(tex_emissive, xuv(uv_sets2.x, xm_emi, xo2.xy)).rgb;
@@ -472,4 +507,6 @@ void main() {
 	else if (dbg == 6) out_rgba = vec4(vec3(occ), 1.0);
 	else if (dbg == 7) out_rgba = vec4(tint.rgb, 1.0);
 	else if (dbg == 8) out_rgba = vec4(vec3(max(dot(n, v), 0.0)), 1.0);
+	else if (dbg == 9) out_rgba = vec4(vec3(spec_occ(reflect(-v, n), n_v, rough, gn, dao, aos, occm)), 1.0);
+	else if (dbg == 10) out_rgba = vec4(sr.w, sr.z, 0.0, 1.0);
 }
