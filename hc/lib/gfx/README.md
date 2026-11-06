@@ -296,6 +296,18 @@ The ambient term knows the material models: skin (E7) gets both specular lobes (
 
 Reflections: after the prepass a 7-level pyramid of the largest 1 / view depth per cell is built from `lin_depth` (`hiz.frag`, one R32F texture per level), then `ssr_trace.frag` reflects the view ray about the prepass normal and walks it in screen space with 1 / depth interpolated linearly: a cell whose nearest depth is behind the ray segment is skipped and the walk goes one level coarser, otherwise it advances to where the ray reaches that depth and goes one level finer; at full resolution a hit needs the ray within `ssr_thickness` behind the surface. A hit is faded by the screen edge, the ray length and how squarely it meets the hit surface (back faces count 0), and reprojected to last frame by the motion target (when drawn) or the camera matrices. The surface shader blends each lobe toward last frame's colour at that point with that confidence times its roughness fade, fetched from a mip chain of last frame's resolved image (`ssr_copy.frag` + `generate_mips` after the temporal pass, so with TAA it is the history) at the level of the reflection cone's footprint (2 alpha x hit distance / hit depth, in pixels), so rough reflections blur instead of getting noisy. Blended surfaces get no reflections (the prepass does not draw them). The first frame after `ssr_on`, a resize or a `temporal_reset` uses the probe/sky value only. `debug_view` 9 shows the specular occlusion of the main lobe, 10 the reflection confidence (red) and hit distance / depth (green).
 
+With both on their defaults the frame changes only through specular occlusion and the model-aware ambient lobes: the sphere golden reads 52.42 dB and the shipped-look golden 52.68 dB (52.83 and 56.02 before; the shipped look runs SSAO, so Lagarde's fit applies there), so neither golden was retaken.
+
+E2 gate results (RX 9060 XT, RADV, Mesa 26.2.4; clean worktree at 0d063ef, `results/2026-11-06_rx9060xt_radv_0d063ef_e2.txt`): `gfxtest.sh` ok; `webgputest.mjs` 0 failures (scene_e2, a glossy floor with SSR, GTAO and specular occlusion, 105.84 dB; holo_e2 bit for bit); `wgsltest.mjs` 51 modules, 42 pipelines, 0 failures. GPU time at 1920x1080 (`look_bench`, Holo, Amni-Companion studio light, floor, 30 warmup + 200 frames, median; bars: specular occlusion <= +0.3 ms, SSR <= +1.5 ms):
+
+| camera | SSAO, SO off | SSAO, SO on | GTAO, SO off | GTAO, SO on | GTAO, SO, SSR | SO cost (SSAO / GTAO) | SSR cost |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| face close-up | 3.329 ms | 3.198 | 3.566 | 3.628 | 3.900 | -0.13 / +0.06 | +0.27 ms |
+| full body | 1.804 ms | 1.811 | 2.329 | 2.399 | 2.976 | +0.01 / +0.07 | +0.58 ms |
+
+Run-to-run noise at the face is about 0.1 ms. SSR costs more at full body because the floor fills most of the frame and every opaque pixel is traced (roughness is not known before the colour pass; rough pixels then ignore the hit). Seen in the renders: under a bright sky (`studio_soft`) the ambient term loses its sky sheen in the eye sockets, nostrils, lip line, lid creases, ear and under the hair; under the dark Amni-Companion studio sky the change is small (the eye region moves by under 1 %). The cornea picks up the sky and, near the lids, the lids themselves; the chain, plate and buckle reflect the skin and clothing around them. Rays from a camera-facing cornea leave the screen, so its centre shows the sky value.
+Not done: local reflection probes (captured cubemaps with parallax correction). Off-screen reflections fall back to the probe GI irradiance or the analytic sky.
+
 ## Where later features attach
 
 * **Motion blur, reprojection for SSR/GI**: `motion_target()` already holds per-pixel
