@@ -247,6 +247,65 @@ rt_os_run(cmd const byte[:]) int:
 	r ~= -1; if pid > 0: loop: w := sys6(61, pid, iptr(RT_WS[..]), 0, 0, 0, 0); if w == pid { st := RT_WS[0]; r = if st & 127 == 0 { st >> 8 & 255 } else { 128 + (st & 127) }; break } if w != -4: break
 	sys3(11, m, sz, 0); r
 rt_os_time_ns() int: sys3(228, 0, iptr(RT_TS[..]), 0); RT_TS[0] * 1000000000 + RT_TS[1]
+var RT_TZB byte[262144]
+var RT_TZN byte[4096]
+rt_tzbe(o int, n int) int: v ~= 0; for k n { v = (v << 8) | RT_TZB[o + k] as int } if n == 4 && v >= 0x80000000 { v - 0x100000000 } else { v }
+rt_tzdays(y0 int, m int, d int) int: y := if m <= 2 { y0 - 1 } else { y0 }; era := (if y >= 0 { y } else { y - 399 }) / 400; ye := y - era * 400; mp := (m + 9) % 12; doy := (153 * mp + 2) / 5 + d - 1; doe := ye * 365 + ye / 4 - ye / 100 + doy; era * 146097 + doe - 719468
+rt_tzyear(t int) int: z0 := (if t >= 0 { t } else { t - 86399 }) / 86400 + 719468; era := (if z0 >= 0 { z0 } else { z0 - 146096 }) / 146097; doe := z0 - era * 146097; ye := (doe - doe / 1460 + doe / 36524 - doe / 146096) / 365; doy := doe - (365 * ye + ye / 4 - ye / 100); mp := (5 * doy + 2) / 153; ye + era * 400 + (if mp >= 10 { 1 } else { 0 })
+rt_tznum(s const byte[:], i int&) int: v ~= 0; while i < s.len && s[i] >= 48 && s[i] <= 57 { v = v * 10 + (s[i] - 48) as int; i += 1 } v
+rt_tzhms(s const byte[:], i int&) int:
+	g ~= 1; if i < s.len && (s[i] == 43 || s[i] == 45): g = if s[i] == 45 { -1 } else { 1 }; i += 1
+	v ~= rt_tznum(s, i) * 3600
+	if i < s.len && s[i] == 58: i += 1; v += rt_tznum(s, i) * 60
+	if i < s.len && s[i] == 58: i += 1; v += rt_tznum(s, i)
+	g * v
+rt_tzname(s const byte[:], i int&): if i < s.len && s[i] == 60 { while i < s.len && s[i] != 62 { i += 1 } i += 1 } else { while i < s.len && (s[i] >= 65 && s[i] <= 90 || s[i] >= 97 && s[i] <= 122) { i += 1 } }
+rt_tzrule(s const byte[:], i int&, y int) int:
+	if i >= s.len || s[i] != 77: return -1
+	i += 1; m := rt_tznum(s, i); i += 1; w := rt_tznum(s, i); i += 1; wd := rt_tznum(s, i); tm ~= 7200
+	if i < s.len && s[i] == 47: i += 1; tm = rt_tzhms(s, i)
+	first := rt_tzdays(y, m, 1); dim := rt_tzdays(if m == 12 { y + 1 } else { y }, if m == 12 { 1 } else { m + 1 }, 1) - first; day ~= 1 + (wd - (first + 4) % 7 + 7) % 7 + (w - 1) * 7
+	while day > dim: day -= 7
+	(first + day - 1) * 86400 + tm
+rt_tzposix(s const byte[:], t int) int:
+	i ~= 0; rt_tzname(s, i); std := -rt_tzhms(s, i)
+	if i >= s.len || s[i] == 44: return std
+	rt_tzname(s, i); dst ~= std + 3600
+	if i < s.len && s[i] != 44: dst = -rt_tzhms(s, i)
+	if i >= s.len || s[i] != 44: return std
+	i += 1; y := rt_tzyear(t + std); a := rt_tzrule(s, i, y)
+	if a < 0 || i >= s.len || s[i] != 44: return std
+	i += 1; b := rt_tzrule(s, i, y)
+	if b < 0: return std
+	on := a - std; off := b - dst
+	if (on < off && t >= on && t < off) || (on >= off && (t < off || t >= on)) { dst } else { std }
+rt_tzload(path const byte[:]) int:
+	c := rt_path(path, RT_PB); if c == 0 { return 0 } fd := sys3(2, c, 0, 0); if fd < 0 { return 0 } n ~= 0
+	loop: r := sys3(0, fd, ptr(RT_TZB[n..]), 262144 - n); if r <= 0 || n + r >= 262144 { n += max(r, 0); break } n += r
+	sys3(3, fd, 0, 0); n
+rt_tzfile(n int, t int) int:
+	if n < 44 || RT_TZB[0] != 84 || RT_TZB[1] != 90 || RT_TZB[2] != 105 || RT_TZB[3] != 102: return -1000000
+	h ~= 0; w ~= 4
+	if RT_TZB[4] >= 50: h = 44 + rt_tzbe(32, 4) * 5 + rt_tzbe(36, 4) * 6 + rt_tzbe(40, 4) + rt_tzbe(28, 4) * 8 + rt_tzbe(24, 4) + rt_tzbe(20, 4); w = 8
+	if h + 44 > n: return -1000000
+	tc := rt_tzbe(h + 32, 4); ty := rt_tzbe(h + 36, 4); ch := rt_tzbe(h + 40, 4); lp := rt_tzbe(h + 28, 4); ist := rt_tzbe(h + 24, 4); iu := rt_tzbe(h + 20, 4); d := h + 44; ix := d + tc * w; tt := ix + tc; ft := tt + ty * 6 + ch + lp * (w + 4) + ist + iu
+	if ft > n || ty < 1: return -1000000
+	k ~= -1; for j tc { if rt_tzbe(d + j * w, w) <= t { k = j } }
+	if w == 8 && (tc == 0 || k == tc - 1) && ft + 1 < n && RT_TZB[ft] == 10:
+		e ~= ft + 1; while e < n && RT_TZB[e] != 10 { e += 1 }
+		if e > ft + 1: return rt_tzposix(RT_TZB[ft + 1..e], t)
+	ti := if k >= 0 { RT_TZB[ix + k] as int } else { 0 }
+	rt_tzbe(tt + 6 * ti, 4)
+rt_os_utc_offset(t int) int:
+	n ~= -1; e ~= RT_SP + 8 + 8 * (mld(RT_SP) + 1)
+	while mld(e) != 0 && n < 0: p := mld(e); if mld1(p) == 84 && mld1(p + 1) == 90 && mld1(p + 2) == 61 { n = 0; while n < 4000 && mld1(p + 3 + n) != 0 { RT_TZN[n] = mld1(p + 3 + n) as byte; n += 1 } } e += 8
+	s ~= 0; if n > 0 && RT_TZN[0] == 58 { s = 1 }
+	if n > s:
+		pth byte[>..] ~= []
+		if RT_TZN[s] != 47: pth.append("/usr/share/zoneinfo/")
+		pth.append(RT_TZN[s..n]); r := rt_tzfile(rt_tzload(pth), t)
+		return if r > -1000000 { r } else { rt_tzposix(RT_TZN[s..n], t) }
+	r := rt_tzfile(rt_tzload("/etc/localtime"), t); if r > -1000000 { r } else { 0 }
 rt_os_clock_ns() int: sys3(228, 1, iptr(RT_TS[..]), 0); RT_TS[0] * 1000000000 + RT_TS[1]
 rt_os_sleep_ms(ms int): RT_TS[0] = ms / 1000; RT_TS[1] = ms % 1000 * 1000000; sys3(35, iptr(RT_TS[..]), 0, 0);
 rt_os_random_u64() u64: var b u64[1]; if sys3(318, uptr(b[..]), 8, 0) != 8 { return rt_os_time_ns() as! u64 } b[0]

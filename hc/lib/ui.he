@@ -436,7 +436,7 @@ add_font(h FontAtlas, src int, data const byte[:], height f32, g FontConfig, ran
 		if !read_file(data, blob): fail(str("cannot open font file ", data)); return none
 		if !plausible(blob[..], g.font_index as int): fail(str(data, " is not a TrueType or OpenType font, or has no font ", g.font_index)); return none
 	ci := a.cfg.len; a.cfg.push(Cfg{ttf::Info{blob}, height, oh, ov, g.pixel_snap, g.spacing.x, rg, g.fallback_glyph}); a.cfg[ci].kern = g.kerning; a.cfg[ci].ti.fo = ttf::font_offset(blob[..], g.font_index as int)
-	if g.merge_mode: a.af[0].cfgs.push(ci); return Font{a.fid[0]}
+	if g.merge_mode: a.af[a.af.len - 1].cfgs.push(ci); return Font{a.fid[a.fid.len - 1]}
 	a.af.push(AF{[ci]}); id u32 := gfx::tadd(TFNT); gfx::put(FNT, gfx::ix(id), FR{h.id, a.af.len - 1}); a.fid.push(id); Font{id}
 add_default_font(a FontAtlas, height f32, config FontConfig, ranges const u32[:]) Font: add_font(a, 0, [], height, config, ranges, "ui::add_default_font")
 add_default_font(a FontAtlas, height f32, config FontConfig) Font: add_default_font(a, height, config, [])
@@ -454,13 +454,13 @@ kadj(a Atl&, i int, j int) f32:
 	let q .= a.cfg[a.gc[i]]; ttf::kern(q.ti, a.gg[i], a.gg[j]) as f32 * q.ks
 find_in(a Atl&, f AF&, u u32) int:
 	tot ~= 0
-	for c f.cfgs: let r .= a.cfg[c].rg; for k r.len / 2 { if u >= r[2 * k] && u <= r[2 * k + 1] { return f.goff + tot + (u - r[2 * k]) as int } tot += (r[2 * k + 1] - r[2 * k]) as int + 1 }
+	for c f.cfgs: let r .= a.cfg[c].rg; for k r.len / 2 { if u >= r[2 * k] && u <= r[2 * k + 1] { gi := f.goff + tot + (u - r[2 * k]) as int; if gi >= a.gg.len || a.gg[gi] != 0 { return gi } } tot += (r[2 * k + 1] - r[2 * k]) as int + 1 }
 	f.fbg
 nk_bake(a Atl&) bool:
 	od := order(a); tot ~= 0
 	for c od: let r .= a.cfg[c].rg; for k r.len / 2 { tot += (r[2 * k + 1] - r[2 * k]) as int + 1 }
 	for c od: if !ttf::init(a.cfg[c].ti) { return false }
-	s ~= ttf::Ctx{ttf::Pk{[]}, [], 0, 0, 0, 0}; w := if tot > 1000 { 1024 } else { 512 }; ttf::begin(s, w, 1024 * 32, 1); ht ~= 0
+	s ~= ttf::Ctx{ttf::Pk{[]}, [], 0, 0, 0, 0}; w := if tot > 3000 { 2048 } else if tot > 1000 { 1024 } else { 512 }; ttf::begin(s, w, 1024 * 32, 1); ht ~= 0
 	cr ttf::Rc[>..] ~= [ttf::Rc{w: 181, h: 28}]; ttf::oversample(s, 1, 1); ttf::pack_rects(s.pk, cr, 0, 1); ht = max(ht, cr[0].y + cr[0].h); a.cx = cr[0].x; a.cy = cr[0].y
 	rg ttf::Range[>..] ~= []; rs ttf::Rc[>..] ~= []; cd ttf::PC[>..] ~= []
 	for c od:
@@ -2155,6 +2155,19 @@ label(c Context, text const byte[:], align int): k := wid_ctx(c, "ui::label"); i
 label_colored(c Context, text const byte[:], align int, color Color): k := wid_ctx(c, "ui::label_colored"); if k >= 0 { n := tlen(text, "ui::label_colored"); text_colored(CT[k], text[..n], align as u32, color) }
 label_wrap(c Context, text const byte[:]): k := wid_ctx(c, "ui::label_wrap"); if k >= 0 { n := tlen(text, "ui::label_wrap"); text_wrap_colored(CT[k], text[..n], CT[k].st.text.color) }
 label_colored_wrap(c Context, text const byte[:], color Color): k := wid_ctx(c, "ui::label_colored_wrap"); if k >= 0 { n := tlen(text, "ui::label_colored_wrap"); text_wrap_colored(CT[k], text[..n], color) }
+font_height(f Font) f32: if fidx(f.id) < 0 { 0.0 } else { fht(f.id) }
+style_text_padding(c Context, tpad float2) float2: k := ctx_get(c, "ui::style_text_padding"); if k < 0 { float2{0.0, 0.0} } else { old := CT[k].st.text.padding; CT[k].st.text.padding = tpad; old }
+row_spacing(c Context) float2: k := ctx_get(c, "ui::row_spacing"); if k < 0 { float2{0.0, 0.0} } else { CT[k].st.window.spacing }
+group_padding(c Context) float2: k := ctx_get(c, "ui::group_padding"); if k < 0 { float2{0.0, 0.0} } else { CT[k].st.window.group_padding }
+wrap_height(c Context, f Font, s const byte[:], width f32) f32:
+	k := ctx_get(c, "ui::wrap_height")
+	if k < 0 || fidx(f.id) < 0: return 0.0
+	tp := CT[k].st.text.padding; fh := fht(f.id); lw := mx(width, 2.0 * tp.x) - 2.0 * tp.x; seps := [' ' as u32]; g ~= 0; w ~= 0.0 as f32; done ~= 0; n ~= 0
+	while done < s.len:
+		fit := text_clamp(f.id, s[done..], lw, g, w, seps[..])
+		if fit == 0: break
+		done += fit; n += 1
+	(if n < 1 { 1 } else { n }) as f32 * (fh + 2.0 * tp.y) + 3.0 * tp.y + 1.0
 image_w(c Context, img Image, col Color, fw const byte[:]): k := wid_ctx(c, fw); b ~= NULL_RECT; if k >= 0 && widget(CT[k], b) != 0 { draw_image_b(CT[k], CT[k].current, b, img, col) }
 image(c Context, img Image): image_w(c, img, WHITE, "ui::image")
 image_color(c Context, img Image, color Color): image_w(c, img, color, "ui::image_color")
@@ -2349,7 +2362,7 @@ panel_scrollbars(u UC&, w int, pi int, hin bool, sbs float2, pp float2):
 		u.ws[w].scrolled = if hin && (u.inp.sd.y > 0.0 || u.inp.sd.x > 0.0) && hs { 1 } else { 0 }
 	st ~= 0 as u32; sc ~= Rect{l.bounds.x + l.bounds.w + pp.x, l.bounds.y, sbs.x, l.bounds.h}
 	so := do_scrollbar(u, st, w, sc, hs, pget(u, l.oy) as f32, (l.at_y - sc.y) as! i32 as f32, sc.h * 0.10, sc.h * 0.01, u.st.scrollv, hin, true)
-	pset(u, l.oy, so as! u32)
+	pset(u, l.oy, mx(0.0, mn(so, (l.at_y - sc.y) as! i32 as f32 - sc.h)) as! u32)
 	if hin && hs: u.inp.sd.y = 0.0; u.inp.sp.y = 0.0
 	st = 0; sc = Rect{l.bounds.x, l.bounds.y + l.bounds.h, l.bounds.w, sbs.y}
 	sx := do_scrollbar(u, st, w, sc, hs, pget(u, l.ox) as f32, (l.max_x - sc.x) as! i32 as f32, l.max_x * 0.05, l.max_x * 0.005, u.st.scrollh, hin, false)
