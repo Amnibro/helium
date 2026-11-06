@@ -20,10 +20,11 @@ layout(set = 2, binding = 6) uniform sampler2D tex_ao;
 layout(set = 2, binding = 7) uniform sampler2D tex_top_base;
 layout(set = 2, binding = 8) uniform sampler2D tex_top_mr;
 layout(set = 2, binding = 9) uniform sampler2D tex_top_normal;
-layout(std430, set = 2, binding = 10) readonly buffer Nodes { vec4 bvh_nodes[]; };
-layout(std430, set = 2, binding = 11) readonly buffer Tris { vec4 bvh_tris[]; };
-layout(std430, set = 2, binding = 12) readonly buffer Irr { vec4 probe_irr[]; };
-layout(std430, set = 2, binding = 13) readonly buffer Dist { vec2 probe_dist[]; };
+layout(set = 2, binding = 10) uniform sampler2DArray tex_shadow_raw;
+layout(std430, set = 2, binding = 11) readonly buffer Nodes { vec4 bvh_nodes[]; };
+layout(std430, set = 2, binding = 12) readonly buffer Tris { vec4 bvh_tris[]; };
+layout(std430, set = 2, binding = 13) readonly buffer Irr { vec4 probe_irr[]; };
+layout(std430, set = 2, binding = 14) readonly buffer Dist { vec2 probe_dist[]; };
 
 const int CASCADES = 3;
 const int MAX_LIGHTS = 16;
@@ -137,6 +138,40 @@ vec3 diffuse_weight(vec3 f0, vec2 eb, vec3 ms) {
 	return max(1.0 - ms * (f0 * (eb.x - eb.y) + eb.y), vec3(0.0));
 }
 
+vec2 vogel(int i, int k, float rot) { float a = float(i) * 2.39996323 + rot; return vec2(cos(a), sin(a)) * sqrt((float(i) + 0.5) / float(k)); }
+float sun_pcss(vec2 uv, float zd, int c, float row0, vec3 n) {
+	float texel = cascade_far.w;
+	float zr = min(zd, 0.99999);
+	vec3 rx = vec3(cascade_mat[c][0][0], cascade_mat[c][1][0], cascade_mat[c][2][0]);
+	vec3 ry = vec3(cascade_mat[c][0][1], cascade_mat[c][1][1], cascade_mat[c][2][1]);
+	vec3 rz = vec3(cascade_mat[c][0][2], cascade_mat[c][1][2], cascade_mat[c][2][2]);
+	float zs = length(rz);
+	vec3 nn = vec3(dot(rx, n) / dot(rx, rx), dot(ry, n) / dot(ry, ry), dot(rz, n) / dot(rz, rz));
+	vec2 g = vec2(-2.0 * nn.x, 2.0 * nn.y) / (abs(nn.z) > 1e-7 ? nn.z : 1e-7);
+	float gm = 10.0 * zs / row0;
+	g *= min(1.0, gm / max(length(g), 1e-9));
+	float tn = view_dir.w;
+	float rs = max(tn * min(sun_rgb.w, zr / zs) * row0 * 0.5, 2.0 * texel);
+	float rot = gi.w > 0.5 ? 6.2831853 * fract(52.9829189 * fract(dot(gl_FragCoord.xy, vec2(0.06711056, 0.00583715)))) : 0.0;
+	float bias = zs * texel / row0 + 2e-6;
+	ivec2 dim = ivec2(textureSize(tex_shadow_raw, 0).xy) - 1;
+	float zb = 0.0, nb = 0.0;
+	for (int i = 0; i < 20; i++) {
+		vec2 o = vogel(i, 20, rot) * rs;
+		float d = texelFetch(tex_shadow_raw, ivec3(clamp(ivec2((uv + o) / texel), ivec2(0), dim), c), 0).r;
+		float zt = zr + dot(g, o) - bias;
+		zb += d < zt ? d : 0.0;
+		nb += d < zt ? 1.0 : 0.0;
+	}
+	if (nb < 0.5) return 1.0;
+	float rf = clamp((zr - zb / nb) / zs * tn * row0 * 0.5, texel, rs);
+	float lit = 0.0;
+	for (int i = 0; i < 28; i++) {
+		vec2 o = vogel(i, 28, rot + 1.3) * rf;
+		lit += texture(tex_shadow, vec4(uv + o, float(c), zr + dot(g, o) - bias));
+	}
+	return lit / 28.0;
+}
 float sun_visibility(vec3 p, vec3 n) {
 	if (to_sun.w < 0.5) return 1.0;
 	float depth = dot(p - eye.xyz, view_dir.xyz);
@@ -154,6 +189,7 @@ float sun_visibility(vec3 p, vec3 n) {
 	vec3 ndc = s.xyz / s.w;
 	vec2 uv = vec2(ndc.x * 0.5 + 0.5, 0.5 - ndc.y * 0.5);
 	if (any(lessThan(uv, vec2(0.0))) || any(greaterThan(uv, vec2(1.0)))) return 1.0;
+	if (view_dir.w > 0.0) return sun_pcss(uv, ndc.z, c, row0, n);
 	float lit = 0.0;
 	// to_sun.w - 1 = penumbra radius in world units: rotated Poisson taps, the noise left to TAA
 	float soft = to_sun.w - 1.0;
@@ -291,7 +327,7 @@ void main() {
 	vec3 gn = normalize(in_nrm);
 	if (!gl_FrontFacing && alpha.z > 0.5) gn = -gn;
 	vec3 rp = in_world + gn * 2e-3;
-	rgb += (light_term(n, v, l, sun_rgb.rgb, albedo, f0_spec, rough, ms, kd) * sheen_keep() + sheen_term(n, v, l, sun_rgb.rgb)) * (gi.y > 0.5 && to_sun.w > 0.5 ? (dot(gn, l) > 0.0 && gi_visible(rp, l, 1e4) ? 1.0 : 0.0) : sun_visibility(in_world, normalize(in_nrm)));
+	rgb += (light_term(n, v, l, sun_rgb.rgb, albedo, f0_spec, rough, ms, kd) * sheen_keep() + sheen_term(n, v, l, sun_rgb.rgb)) * (gi.y > 0.5 && to_sun.w > 0.5 ? (dot(gn, l) > 0.0 && gi_visible(rp, l, 1e4) ? 1.0 : 0.0) : sun_visibility(in_world, gn));
 	int count = int(screen.z);
 	for (int i = 0; i < MAX_LIGHTS; i++) {
 		if (i >= count) break;
