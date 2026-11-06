@@ -39,10 +39,11 @@ let MAX_LIGHTS = 16;
 let GI_LIGHTS = 8;
 let GLOW_LEVELS = 5;
 let MSAA = 4;
+let LOCAL_LAYERS = 12;
 
 struct Camera { eye float3, target float3, up float3, fov_y f32, near f32, far f32 }
 struct Sun { to_sun float3, rgb float3, shadows bool, shadow_far f32, map_size int, soft f32 = 0.0, angle f32 = 0.0, reach f32 = 1.0, fit bool = false, contact f32 = 0.0 }
-struct Light { pos float3, range f32, rgb float3, kind int }   // kind 0 point (1 spot is reserved)
+struct Light { pos float3, range f32, rgb float3, kind int, dir float3 = float3 { 0.0, -1.0, 0.0 }, cone f32 = 0.5, edge f32 = 0.2, shadows bool = false, soft f32 = 1.5 }
 struct Sky { zenith float3, horizon float3, ground float3, ambient f32, draw bool }
 struct Look { exposure f32, white f32, bloom f32, bloom_cut f32, desaturate f32, ssao bool, ao_radius f32, ao_power f32, ao_samples int, curve int = 0 }
 struct NodeOv { item int, node int, t float3, r linalg::Quat, sc float3 }
@@ -53,7 +54,8 @@ struct Batch { prim int, item int, node int, joint_base int, model gfx::mat4, de
 struct DrawU { model gfx::mat4, model_normal gfx::mat4, view_proj gfx::mat4, prev_model gfx::mat4, deform float4, misc float4, cur_vp gfx::mat4, prev_vp gfx::mat4, weights float4[16] }
 struct FrameU {
 	cascade_mat gfx::mat4[3], cascade_far float4, eye float4, view_dir float4, to_sun float4, sun_rgb float4,
-	zenith float4, horizon float4, ground float4, screen float4, light_pos float4[16], light_rgb float4[16], gi float4, gi_origin float4, gi_step float4, gi_dims float4
+	zenith float4, horizon float4, ground float4, screen float4, light_pos float4[16], light_rgb float4[16], gi float4, gi_origin float4, gi_step float4, gi_dims float4,
+	light_dir float4[16], light_shd float4[16], local_mat gfx::mat4[12]
 }
 struct GiU { origin float4, step float4, dims float4, rot0 float4, rot1 float4, rot2 float4, params float4, to_sun float4, sun_rgb float4, zenith float4, horizon float4, ground float4, light_pos float4[8], light_rgb float4[8] }
 struct SurfaceU { base float4, emissive float4, params float4, alpha float4, uv_sets float4, uv_sets2 float4, tri float4, top_tint float4, xm_base float4, xm_mr float4, xm_nrm float4, xm_occ float4, xm_emi float4, xo0 float4, xo1 float4, xo2 float4, sheen float4, misc float4 }
@@ -230,6 +232,11 @@ var bent_raw gfx::Texture;
 var bent gfx::Texture;
 var ao gfx::Texture;
 var shadow_map gfx::Texture;
+var local_map gfx::Texture;
+var local_size = 0;
+var local_shadow_size = 1024;
+var local_used = 0;
+var local_vp gfx::mat4[>..] = [];
 var shadow_size int = 0;
 var glow gfx::Texture[>..] = [];
 var white gfx::Texture;
@@ -315,7 +322,8 @@ fn clear_pose(item int) {
 	for k in weight_ov.len { if weight_ov[k].item != item { weight_ov[j] = weight_ov[k]; j += 1; } }
 	while weight_ov.len > j { weight_ov.pop(); }
 }
-fn add_light(pos float3, rgb float3, range f32) { lights.push(Light { pos, range, rgb, 0 }); }
+fn add_light(pos float3, rgb float3, range f32) { lights.push(Light { pos, range, rgb, 0, .. }); }
+fn add_spot(pos float3, target float3, rgb float3, range f32, cone f32, shadows bool) { lights.push(Light { pos: pos, range: range, rgb: rgb, kind: 1, dir: linalg::unit3(target - pos), cone: cone, shadows: shadows, .. }); }
 fn quad(a float3, b float3, c float3, d float3, ca float4, cb float4, cc float4, cd float4, shape int) { quads.push(QuadG { [x4(a, 1.0), x4(b, 1.0), x4(c, 1.0), x4(d, 1.0)], [ca, cb, cc, cd], f4(shape as f32, 0.0, 0.0, 0.0) }); }
 fn glow_line(a float3, b float3, w f32, rgb float3) {
 	let mid = (a + b) * 0.5;
@@ -857,15 +865,39 @@ fn fill_frame() {
 	frame_u.horizon = x4(sky.horizon, 0.0);
 	frame_u.ground = x4(sky.ground, 0.0);
 	let count = min(lights.len, MAX_LIGHTS);
+	local_used = 0;
+	local_vp.clear();
 	frame_u.screen = f4(1.0 / width as f32, 1.0 / height as f32, count as f32, sky.ambient);
 	for k in MAX_LIGHTS {
 		if k < count {
 			let l = lights[k];
 			frame_u.light_pos[k] = x4(l.pos, max(l.range, 0.01));
-			frame_u.light_rgb[k] = x4(l.rgb, l.kind as f32);
+			let spot = l.kind == 1;
+			let co = clamp(l.cone, 0.01, 1.5);
+			frame_u.light_rgb[k] = x4(l.rgb, if spot { 1.0 + linalg::f(cos((co * (1.0 - clamp(l.edge, 0.0, 1.0))) as real)) } else { 0.0 });
+			let dv = linalg::unit3(l.dir);
+			frame_u.light_dir[k] = x4(dv, if spot { linalg::f(cos(co as real)) } else { -2.0 });
+			let faces = if spot { 1 } else { 6 };
+			let th = if spot { linalg::f(tan((co as real) + 0.02)) } else { 1.0 + 4.0 / local_shadow_size as f32 };
+			if l.shadows && local_used + faces <= LOCAL_LAYERS {
+				frame_u.light_shd[k] = f4(local_used as f32, faces as f32, 2.0 * th / local_shadow_size as f32, max(l.soft, 0.0));
+				let near = max(0.02, min(0.05, l.range * 0.001));
+				let pr = gfx::perspective(2.0 * linalg::f(atan(th as real)), 1.0, near, l.range);
+				for f in faces {
+					let sg = if f % 2 == 0 { 1.0 } else { -1.0 };
+					let ax = if spot { dv } else { linalg::v3(if f / 2 == 0 { sg } else { 0.0 }, if f / 2 == 1 { sg } else { 0.0 }, if f / 2 == 2 { sg } else { 0.0 }) };
+					let up = if abs(ax.y) > 0.9 { linalg::v3(0.0, 0.0, 1.0) } else { linalg::v3(0.0, 1.0, 0.0) };
+					let vp = gfx::mul(pr, gfx::look_at(l.pos, l.pos + ax, up));
+					local_vp.push(vp);
+					frame_u.local_mat[local_used + f] = vp;
+				}
+				local_used += faces;
+			} else { frame_u.light_shd[k] = f4(-1.0, 0.0, 0.0, 0.0); }
 		} else {
 			frame_u.light_pos[k] = f4(0.0, 0.0, 0.0, 1.0);
 			frame_u.light_rgb[k] = f4(0.0, 0.0, 0.0, 0.0);
+			frame_u.light_dir[k] = f4(0.0, -1.0, 0.0, -2.0);
+			frame_u.light_shd[k] = f4(-1.0, 0.0, 0.0, 0.0);
 		}
 	}
 	let live = gi_built && rt::ready;
@@ -1030,6 +1062,32 @@ fn shadow_pass() {
 	}
 }
 
+fn local_shadow_pass() {
+	if local_used == 0 { return; }
+	if local_size != local_shadow_size {
+		if local_size > 0 { gfx::release(local_map); }
+		local_size = local_shadow_size;
+		local_map = gfx::texture(gfx::TextureDesc { kind: gfx::TEXTURE_2D_ARRAY, format: gfx::DEPTH32F, usage: gfx::DEPTH_TARGET | gfx::SAMPLED, width: local_size as i32, height: local_size as i32, depth: LOCAL_LAYERS as i32 });
+	}
+	for c in local_used {
+		guard gfx::begin_pass(gfx::PassDesc { depth: local_map, layer: c as i32, clear_depth: true, depth_value: 1.0, cycle: (if c == 0 { 1 } else { 2 }) as i32, .. }) else { return; }
+		gfx::bind(pipe_shadow);
+		bind_geometry();
+		let vp = local_vp[c];
+		for b in batch {
+			if b.mode == gltf::ALPHA_BLEND { continue; }
+			let m = material_of(b.prim);
+			if m.no_shadow { continue; }
+			let pr = gltf::prims[b.prim];
+			if b.joint_base < 0 && !in_view(gfx::mul(vp, b.model), pr.lo, pr.hi) { continue; }
+			gfx::uniforms(gfx::VERTEX, 0, draw_uniforms(b, vp));
+			gfx::uniforms(gfx::FRAGMENT, 0, cut_of(m));
+			bind_slot(0, m.base_tex, true, white);
+			draw_prim(b);
+		}
+		gfx::end_pass();
+	}
+}
 fn fullscreen(p gfx::Pipeline) { gfx::bind(p); }
 
 fn sky_u() SkyU {
@@ -1160,6 +1218,7 @@ fn draw_lit(b Batch) {
 	gfx::bind_texture(gfx::FRAGMENT, 5, shadow_map, smp_shadow);
 	gfx::bind_texture(gfx::FRAGMENT, 6, if contact_on() { contact_tex } else if look.ssao { ao } else { white }, smp_point);
 	gfx::bind_texture(gfx::FRAGMENT, 10, shadow_map, smp_point);
+	gfx::bind_texture(gfx::FRAGMENT, 11, if local_size > 0 { local_map } else { shadow_map }, smp_shadow);
 	bind_slot(7, m.top_base, true, white);
 	bind_slot(8, m.top_mr, false, white);
 	bind_slot(9, m.top_normal, false, flat_normal);
@@ -1366,6 +1425,7 @@ fn render_begin() bool {
 	gi_pass();
 	fill_frame();
 	shadow_pass();
+	local_shadow_pass();
 	ao_pass();
 	contact_pass();
 	if fx::ready() && fx_dt > 0.0 { fx::simulate(fx_dt, nd, nd_ran, view_mat, view_proj_nj); }

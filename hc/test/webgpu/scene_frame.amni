@@ -30,12 +30,18 @@ fn main() {
 	s3d::sun = s3d::Sun { to_sun: float3 { 0.75, 0.6, -0.45 }, rgb: float3 { 3.0, 2.85, 2.6 }, shadows: true, shadow_far: 20.0, map_size: 2048 };
 	s3d::temporal = 0;
 	let gi = arg_count() > 13 && arg_of(13)[..] == "1";
+	let e3 = arg_count() > 13 && arg_of(13)[..] == "e3";
+	if e3 {
+		s3d::sun.angle = 0.07; s3d::sun.fit = true; s3d::sun.contact = 0.07;
+		s3d::add_spot(float3 { -3.0, 3.5, -2.0 }, float3 { 0.0, 0.8, 0.0 }, float3 { 40.0, 30.0, 60.0 }, 30.0, 0.4, true);
+		s3d::lights.push(s3d::Light { pos: float3 { 2.0, 1.5, 2.0 }, range: 20.0, rgb: float3 { 6.0, 6.0, 7.0 }, kind: 0, shadows: true, .. });
+	}
 	s3d::gi_on = gi;
 	s3d::rt_shadows = gi;
 	s3d::gi_updates_per_frame = 8;
 	s3d::init(w, h);
 	let out = gfx::render_target(w, h, gfx::RGBA8);
 	for k in if gi { 7 } else { 2 } { s3d::render(out); }
-	print("scene_frame: ", model[..], " ", w, "x", h, " gi ", gi, " saved ", gfx::save_png(out, out_path[..]), " on ", gfx::driver()[..]);
+	print("scene_frame: ", model[..], " ", w, "x", h, " gi ", gi, " e3 ", e3, " saved ", gfx::save_png(out, out_path[..]), " on ", gfx::driver()[..]);
 	gfx::close();
 }

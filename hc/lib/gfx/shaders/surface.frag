@@ -21,13 +21,15 @@ layout(set = 2, binding = 7) uniform sampler2D tex_top_base;
 layout(set = 2, binding = 8) uniform sampler2D tex_top_mr;
 layout(set = 2, binding = 9) uniform sampler2D tex_top_normal;
 layout(set = 2, binding = 10) uniform sampler2DArray tex_shadow_raw;
-layout(std430, set = 2, binding = 11) readonly buffer Nodes { vec4 bvh_nodes[]; };
-layout(std430, set = 2, binding = 12) readonly buffer Tris { vec4 bvh_tris[]; };
-layout(std430, set = 2, binding = 13) readonly buffer Irr { vec4 probe_irr[]; };
-layout(std430, set = 2, binding = 14) readonly buffer Dist { vec2 probe_dist[]; };
+layout(set = 2, binding = 11) uniform sampler2DArrayShadow tex_local_shadow;
+layout(std430, set = 2, binding = 12) readonly buffer Nodes { vec4 bvh_nodes[]; };
+layout(std430, set = 2, binding = 13) readonly buffer Tris { vec4 bvh_tris[]; };
+layout(std430, set = 2, binding = 14) readonly buffer Irr { vec4 probe_irr[]; };
+layout(std430, set = 2, binding = 15) readonly buffer Dist { vec2 probe_dist[]; };
 
 const int CASCADES = 3;
 const int MAX_LIGHTS = 16;
+const int LOCAL_LAYERS = 12;
 
 layout(set = 3, binding = 0) uniform Frame {
 	mat4 cascade_mat[CASCADES];
@@ -46,6 +48,9 @@ layout(set = 3, binding = 0) uniform Frame {
 	vec4 gi_origin;
 	vec4 gi_step;
 	vec4 gi_dims;
+	vec4 light_dir[MAX_LIGHTS];
+	vec4 light_shd[MAX_LIGHTS];
+	mat4 local_mat[LOCAL_LAYERS];
 };
 #include "gi.glsl"
 
@@ -171,6 +176,30 @@ float sun_pcss(vec2 uv, float zd, int c, float row0, vec3 n) {
 		lit += texture(tex_shadow, vec4(uv + o, float(c), zr + dot(g, o) - bias));
 	}
 	return lit / 28.0;
+}
+float local_visibility(int i, vec3 p, vec3 n) {
+	vec4 sh = light_shd[i];
+	if (sh.x < 0.0) return 1.0;
+	vec3 d = p - light_pos[i].xyz;
+	vec3 a = abs(d);
+	int f = sh.y > 1.5 ? (a.x >= a.y && a.x >= a.z ? (d.x > 0.0 ? 0 : 1) : (a.y >= a.z ? (d.y > 0.0 ? 2 : 3) : (d.z > 0.0 ? 4 : 5))) : 0;
+	int layer = int(sh.x) + f;
+	float dist = sh.y > 1.5 ? max(a.x, max(a.y, a.z)) : max(dot(d, light_dir[i].xyz), 1e-3);
+	float off = 1.5 * sh.z * dist;
+	vec4 s = local_mat[layer] * vec4(p + n * off - d / max(length(d), 1e-4) * off, 1.0);
+	if (s.w <= 0.0) return 1.0;
+	vec3 ndc = s.xyz / s.w;
+	vec2 uv = vec2(ndc.x * 0.5 + 0.5, 0.5 - ndc.y * 0.5);
+	if (any(lessThan(uv, vec2(0.0))) || any(greaterThan(uv, vec2(1.0)))) return 1.0;
+	float texel = 1.0 / float(textureSize(tex_local_shadow, 0).x);
+	float rot = gi.w > 0.5 ? 6.2831853 * fract(52.9829189 * fract(dot(gl_FragCoord.xy, vec2(0.06711056, 0.00583715)))) : 0.0;
+	float lit = 0.0;
+	for (int k = 0; k < 12; k++) lit += texture(tex_local_shadow, vec4(uv + vogel(k, 12, rot) * (sh.w * texel), float(layer), ndc.z));
+	return lit / 12.0;
+}
+float spot_cone(int i, vec3 ld) {
+	float co = light_dir[i].w;
+	return co < -1.5 ? 1.0 : smoothstep(co, light_rgb[i].w - 1.0, dot(-ld, light_dir[i].xyz));
 }
 float sun_visibility(vec3 p, vec3 n) {
 	if (to_sun.w < 0.5) return 1.0;
@@ -336,7 +365,7 @@ void main() {
 		float dist = length(d);
 		vec3 ld = d / max(dist, 1e-4);
 		if (gi.y > 0.5 && (dot(gn, ld) <= 0.0 || !gi_visible(rp, ld, dist - 2e-3))) continue;
-		vec3 le = light_rgb[i].rgb * range_falloff(dist, light_pos[i].w);
+		vec3 le = light_rgb[i].rgb * range_falloff(dist, light_pos[i].w) * spot_cone(i, ld) * local_visibility(i, in_world, gn);
 		rgb += light_term(n, v, ld, le, albedo, f0_spec, rough, ms, kd) * sheen_keep() + sheen_term(n, v, ld, le);
 	}
 
