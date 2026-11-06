@@ -105,7 +105,7 @@ vec3 mat_term(vec3 n, vec3 v, vec3 l, vec3 e, vec3 albedo, vec3 f0, float rough,
 		vec3 sv = pow(vec3(clamp(vis, 0.0, 1.0)), sqrt(d.r / d));
 		vec3 dif = vec3(skin_lut(dot(nr, l), s.r), skin_lut(dot(q.nm, l), s.g), skin_lut(dot(q.nm, l), s.b));
 		vec3 spec = mix(light_term(n, v, l, e, vec3(0.0), f0, rough, ms, kd), light_term(n, v, l, e, vec3(0.0), f0, clamp(rough * shade_b.w, 0.03, 1.0), ms, kd), shade_b.z) * q.cav;
-		vec3 tr = skin_trans(q.thick, d) * clamp((0.3 - dot(q.gn, l)) / 1.3, 0.0, 1.0) * shade_a.w;
+		vec3 tr = skin_trans(q.thick, d) * clamp((0.1 - dot(q.gn, l)) / 1.1, 0.0, 1.0) * shade_a.w;
 		return (kd * albedo / PI_F * (dif * sv * mix(1.0, q.cav, 0.5) + tr)) * e + spec * vis;
 	}
 	if (model == 2) {
