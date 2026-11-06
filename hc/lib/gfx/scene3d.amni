@@ -505,7 +505,6 @@ fn drop_ssr() {
 	ssr_prev = none();
 	ssr_have = false;
 }
-
 fn make_shadow_map(size int) {
 	shadow_size = size;
 	shadow_map = gfx::texture(gfx::TextureDesc { kind: gfx::TEXTURE_2D_ARRAY, format: gfx::DEPTH32F, usage: gfx::DEPTH_TARGET | gfx::SAMPLED, width: size as i32, height: size as i32, depth: CASCADES as i32 });

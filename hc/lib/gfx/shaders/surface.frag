@@ -323,7 +323,9 @@ float spec_occ(vec3 r, float n_v, float rough, vec3 gn, float occ, float aos, fl
 		float as_ = 2.0 * atan(a);
 		float d = acos(clamp(dot(bn, r), -1.0, 1.0));
 		float lo = abs(av - as_);
-		s = clamp((1.0 - cos(min(av, as_))) / max(1.0 - cos(as_), 1e-4) * (1.0 - smoothstep(0.0, 1.0, clamp((d - lo) / max(av + as_ - lo, 1e-4), 0.0, 1.0))), 0.0, 1.0);
+		float sm = sin(min(av, as_));
+		float ss = sin(as_);
+		s = clamp(sm * sm / max(ss * ss, 1e-4) * (1.0 - smoothstep(0.0, 1.0, clamp((d - lo) / max(av + as_ - lo, 1e-4), 0.0, 1.0))), 0.0, 1.0);
 	}
 	return s * so_lag(n_v, occm, a) * hz * hz;
 }
