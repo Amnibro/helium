@@ -173,7 +173,8 @@ page's wasm memory (about 2.3 GiB for holo), so phones need a smarter web region
 When temporal runs (or `s3d::motion_vectors = true`), the colour pass writes a
 second target, `s3d::motion_target()` (RGBA16F, render size): xy is the screen
 motion since last frame in uv units (this frame's uv minus last frame's, y down), z
-the view depth, w coverage. Skinned meshes use last frame's joint palette; the sky
+the view depth, w coverage. Skinned meshes use last frame's joint palette and morphed
+ones last frame's weights; the sky
 gives camera-rotation motion only. With both off the motion targets are neither
 allocated nor drawn (they cost about 33 bytes a pixel: a 4x MSAA and a resolved
 RGBA16F image).
@@ -443,6 +444,33 @@ where it passes closest to the mirror direction, so the straight edges follow th
 outline the panel makes in that plane. Fresnel and masking come from each piece's
 lobe-weighted center. The method was chosen on a CPU sweep of 1829 panel, view and
 roughness setups against brute-force integration: worst error 5.2 %, one setup over 5 %.
+
+### Cut-out edges, mip bias, morph motion and light falloff
+
+```
+s3d::alpha_to_coverage = true;
+s3d::mip_bias = -0.5;
+s3d::lights.push(s3d::Light { pos: float3 { 0.0, 2.0, 0.0 }, range: 6.0, rgb: float3 { 400.0, 400.0, 400.0 }, kind: 0, falloff: 1, .. });
+```
+
+* **Smooth cut-out edges.** `s3d::alpha_to_coverage = true` gives materials with the
+  glTF `MASK` alpha mode (leaves, fences, hair cards) a smooth edge: each pixel on the
+  edge covers 0 to 4 of its 4 samples by how far the texture's alpha is past
+  `alpha_cutoff`, measured in pixels. Off (the default) every pixel is fully in or out.
+  It works on native and in the browser and costs nothing where no such material is on
+  screen.
+* **Mip bias.** When the scene renders below the output size (`s3d::init(w, h, out_w,
+  out_h)`), textures are now read at the level the output size would pick, so the
+  upscaled image keeps its texture detail. `s3d::mip_bias_auto = false` turns that off.
+  `s3d::mip_bias` adds a bias of your own on top (in levels: -1 is one level sharper,
+  +1 one level softer). It covers every material texture.
+* **Morph motion.** Motion vectors now follow morph-target changes: each mesh keeps last
+  frame's weights, so faces and blend shapes get correct TAA, upscaling and motion blur.
+* **Light falloff.** `Light.falloff = 1` gives a point or spot light the glTF
+  KHR_lights_punctual falloff (also what three.js uses): `1 / d^2`, faded to zero at
+  `range` by `sat(1 - (d / range)^4)^2`. Lights that come in with a glTF file use it.
+  The default (`falloff = 0`) stays `(1 - d^2 / range^2)^2 / (1 + d^2)`, which is softer
+  up close.
 
 ## Materials, light and finish
 
@@ -1282,6 +1310,29 @@ sun unless stated, every screen effect off.
 * **U5 nothing else changes.** gfxtest goldens > 40 dB and every existing check passes;
   `wgsltest.mjs` and `webgputest.mjs` 0 failures.
 
+### Cut-out edge, mip bias, morph motion and falloff results (2026-11-09, RX 9060 XT, RADV; full gfxtest ok)
+
+| check | measured | bar | result |
+| --- | --- | --- | --- |
+| U1 alpha to coverage, mean error over 372 edge pixels | 0.070 | <= 0.10 | PASS |
+| U1 pixels the reference fills (11,088) / leaves empty (46,100) | at least 1.000 / at most 0.000 | >= 0.99 / <= 0.01 | PASS |
+| U1 control: plain alpha test | 0.224 | >= 0.18 | PASS |
+| U2 mip level at half resolution vs full, 57,600 pixels (levels 0.83 to 3.0) | within 0.055 | +-0.1 | PASS |
+| U2 control: `mip_bias_auto = false` reads one level higher | within 0.063 | +-0.1 | PASS |
+| U3 morph motion at the plane's center (moved 10.21 px) | error 0.010 px | 0.15 px | PASS |
+| U3 next frame, weight unchanged | 0.000 px | 0.01 px | PASS |
+| U3 control: last frame's weights off | 0.000 px | under 0.01 px | PASS |
+| U4 falloff ratio over 506 pixels from 2 to 5.4 m (ratio 1.54 to 3.39) | worst 0.081 % | +-1 % | PASS |
+| U4 pixels past the range (39,916) that are lit | 0 | 0 | PASS |
+| U4 glTF light has `falloff == 1` | true | true | PASS |
+| U5 goldens | 44.92 dB and 41.70 dB | > 40 dB | PASS |
+| U5 wgsltest / webgputest | 0 failures / 0 failures | 0 | PASS |
+
+The U1 and U2 test textures are float textures (RGBA32F and RGBA16F), so 8-bit steps in
+the slow alpha ramp and the gray levels do not move the numbers. The web host now also
+treats a texture as filterable when a shader passes it to a helper function together
+with its sampler.
+
 ### Pre-registered bars (instancing and foliage, E24)
 
 Written before the first GPU run of `instance_checks` in `gfx_smoke.amni`.
@@ -1697,10 +1748,8 @@ pass-through mean error is 0.0106 % (max 0.0488 %).
   treat the panel as its center point. Panels are one color (no textured panels or
   video screens). One rect light covering the whole view costs about 2 ms at
   1280 x 720 on an RX 9060 XT.
-* Not built: alpha to coverage, physical light falloff parity with three.js,
-  caustics, mip bias for upscaling, BC, KTX2, WebP, meshopt
-  and Draco, texture and mesh streaming, GPU instancing, motion vectors for morph
-  targets, and Nanite-class geometry.
+* Not built: caustics, BC, KTX2, WebP, meshopt and Draco, texture and mesh streaming,
+  GPU instancing, and Nanite-class geometry.
 
 No point/line primitives (skipped and counted), Adler-32 is not verified, the fog
 and GI passes light spot lights as points (no cone). Also:
@@ -1730,6 +1779,5 @@ and GI passes light spot lights as points (no cone). Also:
 * TAA ghosting is measured on one slide (about 7 px/frame); fast rotation, thin
   geometry and disocclusion of high-contrast detail are not covered. Sky pixels are
   left out of every image metric, so ghosts over the sky are only reported.
-* Motion vectors ignore morph-target changes (last frame's weights are not kept),
-  and transparent (blended) surfaces write no motion, so the surface behind them is
+* Transparent (blended) surfaces write no motion, so the surface behind them is
   reprojected.

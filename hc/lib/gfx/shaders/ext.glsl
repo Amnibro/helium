@@ -16,8 +16,8 @@ vec4 ext_map(int i) {
 	if (o.z < 0.0) return vec4(1.0);
 	vec2 u = pick_uv(o.w);
 	vec3 c = vec3(dot(x_tm[i].xy, u) + o.x, dot(x_tm[i].zw, u) + o.y, o.z);
-	if (i == 1 || i == 10) return texture(tex_ext_s, c);
-	return texture(tex_ext_l, c);
+	if (i == 1 || i == 10) return smpa(tex_ext_s, c);
+	return smpa(tex_ext_l, c);
 }
 float sheen_e(float n_v, float r) {
 	float x = clamp(n_v, 0.0, 1.0) * float(SHEEN_N - 1);

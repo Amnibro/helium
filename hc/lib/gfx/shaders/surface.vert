@@ -23,6 +23,7 @@ layout(set = 1, binding = 0) uniform Draw {
 	mat4 cur_vp;         // this frame's view-projection without the sub-pixel jitter
 	mat4 prev_vp;        // last frame's view-projection without jitter
 	vec4 weights[16];    // morph weights, four per vec4
+	vec4 prev_weights[16];
 };
 
 layout(location = 0) out vec3 out_world;
@@ -51,6 +52,7 @@ float morph_weight(int t) {
 
 void main() {
 	vec3 p = in_pos;
+	vec3 pp = in_pos;
 	vec3 n = in_nrm;
 	int targets = int(deform.z);
 	if (targets > 0) {
@@ -58,9 +60,11 @@ void main() {
 		int count = int(misc.x);
 		for (int t = 0; t < targets && t < 64; t++) {
 			float w = morph_weight(t);
-			if (w == 0.0) continue;
+			float pw = prev_weights[t >> 2][t & 3];
+			if (w == 0.0 && pw == 0.0) continue;
 			int e = (int(deform.y) + t * count + local_v) * 2;
 			p += morph_data[e].xyz * w;
+			pp += morph_data[e].xyz * pw;
 			n += morph_data[e + 1].xyz * w;
 		}
 	}
@@ -84,6 +88,6 @@ void main() {
 	out_uv = vec4(in_uv0, in_uv1);
 	out_col = in_col;
 	out_cur = cur_vp * w;
-	out_prev = prev_vp * (pm * vec4(p, 1.0));
+	out_prev = prev_vp * (pm * vec4(pp, 1.0));
 	gl_Position = view_proj * w;
 }

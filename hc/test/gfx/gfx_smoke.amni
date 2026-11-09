@@ -3586,6 +3586,238 @@ fn weather_checks() bool {
 }
 let RC_W = 960;
 let RC_H = 540;
+fn dark_scene() {
+	s3d::sky = DEF_SKY; s3d::sky.draw = false; s3d::sky.zenith = float3 { 0.0, 0.0, 0.0 }; s3d::sky.horizon = float3 { 0.0, 0.0, 0.0 }; s3d::sky.ground = float3 { 0.0, 0.0, 0.0 }; s3d::sky.ambient = 0.0;
+	s3d::sun = DEF_SUN; s3d::sun.rgb = float3 { 0.0, 0.0, 0.0 }; s3d::look = DEF_LOOK; s3d::look.ssao = false; s3d::look.bloom = 0.0;
+	s3d::ssr_on = false; s3d::ssgi_on = false; s3d::gi_on = false; s3d::temporal = 0;
+}
+fn sm_tex(wrap int, scale f32) gltf::Material {
+	var m = shapes::material(linalg::v3(1.0, 1.0, 1.0), 0.0, 1.0);
+	var px byte[>..] = [];
+	for k in 64 { px.push(255 as byte); }
+	m.base_tex = gltf::TexRef { texture: gltf::add_texture_rgba(px[..], 4, 4, wrap), uv: 0, m: float4 { scale, 0.0, 0.0, scale }, .. };
+	m.unlit = true;
+	m
+}
+fn sm_swap(m gltf::Material, t gfx::Texture) {
+	let im = gltf::textures[m.base_tex.texture].image;
+	gfx::release(s3d::tex_srgb[im]);
+	s3d::tex_srgb[im] = t;
+}
+fn sm_card(a2c bool, n int) byte[>..] {
+	reset_scene();
+	dark_scene();
+	var m = sm_tex(33071, 1.0);
+	m.alpha_mode = gltf::ALPHA_MASK;
+	m.alpha_cutoff = 0.5;
+	s3d::place(s3d::add(shapes::plane(1.0, m)), gfx::mat4_identity);
+	s3d::view = s3d::Camera { eye: float3 { 0.0, 4.0, 0.0 }, target: float3 { 0.0, 0.0, 0.0 }, up: float3 { 0.0, 0.0, -1.0 }, fov_y: (2.0 * atan(0.25)) as f32, near: 0.1, far: 60.0 };
+	s3d::alpha_to_coverage = a2c;
+	s3d::init(n, n);
+	let out = gfx::render_target(n, n, gfx::RGBA8);
+	s3d::render(out);
+	var f f32[>..] = [];
+	for k in 512 * 512 {
+		let x = ((k % 512) as real + 0.5) / 256.0 - 1.0;
+		let y = ((k / 512) as real + 0.5) / 256.0 - 1.0;
+		for c in 3 { f.push(1.0); }
+		f.push(clamp(1.0 - sqrt(x * x + y * y), 0.0, 1.0) as f32);
+	}
+	let t = gfx::texture(gfx::TextureDesc { format: gfx::RGBA32F, usage: gfx::SAMPLED, width: 512, height: 512 });
+	let _ = gfx::update_texture(t, bytes_of(f)[..f.len * 4]);
+	sm_swap(m, t);
+	s3d::render(out);
+	let px = gfx::read_pixels(s3d::hdr_target());
+	gfx::release(out);
+	s3d::alpha_to_coverage = false;
+	return px;
+}
+fn sm_a2c() bool {
+	let n = 240;
+	let rf = sm_card(false, n * 8);
+	let on = sm_card(true, n);
+	let off = sm_card(false, n);
+	var e_on = 0.0;
+	var e_off = 0.0;
+	var edge = 0;
+	var full = 0;
+	var empty = 0;
+	var full_min = 1.0e9;
+	var empty_max = 0.0;
+	for y in n {
+		for x in n {
+			var s = 0.0;
+			for j in 8 { for i in 8 { s += red(rf[..], (y * 8 + j) * n * 8 + x * 8 + i) as real; } }
+			let r = s / 64.0;
+			let a = red(on[..], y * n + x) as real;
+			if r > 0.02 && r < 0.98 { edge += 1; e_on += abs(a - r); e_off += abs(red(off[..], y * n + x) as real - r); }
+			else if r == 1.0 { full += 1; full_min = min(full_min, a); }
+			else if r == 0.0 { empty += 1; empty_max = max(empty_max, a); }
+		}
+	}
+	let m_on = e_on / max(edge, 1) as real;
+	let m_off = e_off / max(edge, 1) as real;
+	print("gpu: small U1 alpha to coverage: ", edge, " edge pixels, mean error ", r3(m_on), " (bar 0.10), plain alpha test ", r3(m_off), " (control, bar >= 0.18), ", full, " full pixels read at least ", r3(full_min), ", ", empty, " empty pixels read at most ", r3(empty_max));
+	edge > 100 && full > 100 && empty > 100 && m_on <= 0.10 && m_off >= 0.18 && full_min >= 0.99 && empty_max <= 0.01
+}
+fn sm_mips(w int, h int, auto bool) byte[>..] {
+	reset_scene();
+	dark_scene();
+	let m = sm_tex(10497, 64.0);
+	s3d::place(s3d::add(shapes::plane(20.0, m)), gfx::mat4_identity);
+	s3d::view = s3d::Camera { eye: float3 { 0.0, 2.0, 0.0 }, target: float3 { 0.0, 0.0, -3.0 }, up: float3 { 0.0, 1.0, 0.0 }, fov_y: 0.75, near: 0.1, far: 100.0 };
+	s3d::mip_bias_auto = auto;
+	s3d::init(w, h, 640, 360);
+	let out = gfx::render_target(640, 360, gfx::RGBA8);
+	s3d::render(out);
+	let t = gfx::texture(gfx::TextureDesc { format: gfx::RGBA16F, usage: gfx::SAMPLED, width: 256, height: 256, mips: 9 });
+	let hi = [0, 48, 52, 54, 56, 57, 58, 59, 60];
+	for k in 9 {
+		var d byte[>..] = [];
+		let s = 256 >> k;
+		for i in s * s { for c in 4 { d.push(0 as byte); d.push(hi[if c == 3 { 8 } else { k }] as byte); } }
+		let _ = gfx::update_texture(t, gfx::Region { mip: k as i32, .. }, d[..]);
+	}
+	sm_swap(m, t);
+	s3d::render(out);
+	let px = gfx::read_pixels(s3d::hdr_target());
+	gfx::release(out);
+	s3d::mip_bias_auto = true;
+	return px;
+}
+fn sm_mip() bool {
+	let full = sm_mips(640, 360, true);
+	let half = sm_mips(320, 180, true);
+	let ctl = sm_mips(320, 180, false);
+	if full.len != 640 * 360 * 8 || half.len != 320 * 180 * 8 || ctl.len != half.len { print("gpu: small U2 FAILED: target sizes ", full.len, " ", half.len, " ", ctl.len); return false; }
+	var n = 0;
+	var worst = 0.0;
+	var cworst = 0.0;
+	var lo = 1.0e9;
+	var hi = 0.0;
+	for y in 180 {
+		for x in 320 {
+			let i = y * 2 * 640 + x * 2;
+			let l0 = 2.0 * (red(full[..], i) as real + red(full[..], i + 1) as real + red(full[..], i + 640) as real + red(full[..], i + 641) as real);
+			if l0 < 0.5 || l0 > 5.0 { continue; }
+			n += 1;
+			lo = min(lo, l0);
+			hi = max(hi, l0);
+			worst = max(worst, abs(8.0 * red(half[..], y * 320 + x) as real - l0));
+			cworst = max(cworst, abs(8.0 * red(ctl[..], y * 320 + x) as real - l0 - 1.0));
+		}
+	}
+	print("gpu: small U2 mip bias: ", n, " pixels, levels ", r2(lo), " to ", r2(hi), ", half resolution reads the full resolution level within ", r3(worst), " (bar 0.1), without the bias it reads one level higher within ", r3(cworst), " (control, bar 0.1)");
+	n >= 10000 && worst <= 0.1 && cworst <= 0.1
+}
+fn sm_morph(still bool) float3 {
+	reset_scene();
+	dark_scene();
+	s3d::motion_vectors = true;
+	let a = shapes::plane(0.5, shapes::material(linalg::v3(0.8, 0.8, 0.8), 0.0, 0.5));
+	for k in 4 { for j in 8 { gltf::morphs.push(if j == 0 { 0.3 } else if j == 1 { 0.2 } else { 0.0 }); } }
+	gltf::prims[gltf::prims.len - 1].targets = 1;
+	let it = s3d::add(a);
+	s3d::place(it, gfx::mat4_identity);
+	s3d::view = s3d::Camera { eye: float3 { 0.0, 3.0, 3.0 }, target: float3 { 0.0, 0.0, 0.0 }, up: float3 { 0.0, 1.0, 0.0 }, fov_y: 0.8, near: 0.1, far: 60.0 };
+	s3d::init(320, 240);
+	let out = gfx::render_target(320, 240, gfx::RGBA8);
+	s3d::render(out);
+	let before = to_uv(s3d::view_proj_nj, float3 { 0.0, 0.0, 0.0 });
+	s3d::test_morph_still = still;
+	s3d::set_weight(it, gltf::assets[a].nodes.first, 0, 0.5);
+	s3d::render(out);
+	let now = to_uv(s3d::view_proj_nj, float3 { 0.15, 0.1, 0.0 });
+	let x = (now.x * 320.0) as int;
+	let y = (now.y * 240.0) as int;
+	let mv = gfx::read_pixels(s3d::motion_target());
+	let m = motion_at(mv[..], 320, x, y);
+	s3d::render(out);
+	let mv3 = gfx::read_pixels(s3d::motion_target());
+	let m3 = motion_at(mv3[..], 320, x, y);
+	gfx::release(out);
+	s3d::test_morph_still = false;
+	s3d::motion_vectors = false;
+	float3 { max(abs(m.x * 320.0 - (now.x - before.x) * 320.0), abs(m.y * 240.0 - (now.y - before.y) * 240.0)), max(abs(m.x * 320.0), abs(m.y * 240.0)), max(abs(m3.x * 320.0), abs(m3.y * 240.0)) }
+}
+fn sm_motion() bool {
+	let a = sm_morph(false);
+	let c = sm_morph(true);
+	print("gpu: small U3 morph motion: moved ", r2(a.y as real), " px, error ", r3(a.x as real), " px (bar 0.15), next frame at rest ", r3(a.z as real), " px (bar 0.01), last frame's weights off ", r3(c.y as real), " px (control, under 0.01)");
+	a.x <= 0.15 && a.y > 1.0 && a.z <= 0.01 && c.y < 0.01
+}
+fn sm_fall(mode int) byte[>..] {
+	reset_scene();
+	dark_scene();
+	s3d::place(s3d::add(shapes::cube(float3 { 20.0, 0.1, 20.0 }, shapes::material(linalg::v3(1.0, 1.0, 1.0), 0.0, 1.0))), gfx::translate(float3 { 0.0, -0.1, 0.0 }));
+	s3d::lights.push(s3d::Light { pos: float3 { 0.0, 2.0, 0.0 }, range: 6.0, rgb: float3 { 400.0, 400.0, 400.0 }, kind: 0, falloff: mode, .. });
+	s3d::view = s3d::Camera { eye: float3 { 0.0, 14.0, 0.0 }, target: float3 { 0.0, 0.0, 0.0 }, up: float3 { 0.0, 0.0, -1.0 }, fov_y: 0.5, near: 0.1, far: 100.0 };
+	s3d::init(640, 360);
+	let out = gfx::render_target(640, 360, gfx::RGBA8);
+	s3d::render(out);
+	let px = gfx::read_pixels(s3d::hdr_target());
+	gfx::release(out);
+	return px;
+}
+fn sm_falloff() bool {
+	let a = sm_fall(1);
+	let b = sm_fall(0);
+	let o = to_uv(s3d::view_proj_nj, float3 { 0.0, 0.0, 0.0 });
+	let ex = to_uv(s3d::view_proj_nj, float3 { 1.0, 0.0, 0.0 });
+	let ez = to_uv(s3d::view_proj_nj, float3 { 0.0, 0.0, 1.0 });
+	let ax = (ex.x - o.x) as real;
+	let bx = (ex.y - o.y) as real;
+	let az = (ez.x - o.x) as real;
+	let bz = (ez.y - o.y) as real;
+	let det = ax * bz - az * bx;
+	var n = 0;
+	var worst = 0.0;
+	var far = 0;
+	var lit = 0;
+	var r_lo = 1.0e9;
+	var r_hi = 0.0;
+	for y in 360 {
+		for x in 640 {
+			let du = (x as real + 0.5) / 640.0 - o.x as real;
+			let dv = (y as real + 0.5) / 360.0 - o.y as real;
+			let wx = (du * bz - dv * az) / det;
+			let wz = (dv * ax - du * bx) / det;
+			let d = sqrt(4.0 + wx * wx + wz * wz);
+			let i = y * 640 + x;
+			if d > 6.0 { far += 1; if red(a[..], i) != 0.0 || red(b[..], i) != 0.0 { lit += 1; } continue; }
+			if y != 180 || d < 2.0 || d > 5.4 { continue; }
+			let t = d / 6.0;
+			let p = clamp(1.0 - t * t * t * t, 0.0, 1.0);
+			let q = 1.0 - t * t;
+			let want = (p * p / max(d * d, 0.01)) / (q * q / (1.0 + d * d));
+			let got = red(a[..], i) as real / max(red(b[..], i) as real, 1.0e-9);
+			n += 1;
+			r_lo = min(r_lo, want);
+			r_hi = max(r_hi, want);
+			worst = max(worst, abs(got / want - 1.0));
+		}
+	}
+	reset_scene();
+	let g = gltf::load_bytes("{\"asset\":{\"version\":\"2.0\"},\"extensionsUsed\":[\"KHR_lights_punctual\"],\"extensions\":{\"KHR_lights_punctual\":{\"lights\":[{\"type\":\"point\",\"intensity\":100,\"range\":6}]}},\"nodes\":[{\"translation\":[0,2,0],\"extensions\":{\"KHR_lights_punctual\":{\"light\":0}}}],\"scenes\":[{\"nodes\":[0]}],\"scene\":0}", "");
+	if g < 0 { print("gpu: small U4 FAILED: light file ", gltf::error()); return false; }
+	s3d::place(s3d::add(g), gfx::mat4_identity);
+	s3d::init(64, 64);
+	let out = gfx::render_target(64, 64, gfx::RGBA8);
+	s3d::render(out);
+	gfx::release(out);
+	let gl = s3d::lights.len == 1 && s3d::lights[0].falloff == 1;
+	print("gpu: small U4 light falloff: ", n, " pixels from 2 to 5.4 m, ratio ", r3(r_lo), " to ", r3(r_hi), ", worst error ", r3(worst * 100.0), " % (bar 1), ", far, " pixels past the range, ", lit, " lit (bar 0), glTF light falloff ", gl);
+	n > 100 && worst <= 0.01 && far > 1000 && lit == 0 && gl
+}
+fn small_checks() bool {
+	half_table();
+	let a = sm_a2c();
+	let b = sm_mip();
+	let c = sm_motion();
+	let d = sm_falloff();
+	if !(a && b && c && d) { print("gpu: small FAILED"); }
+	a && b && c && d
+}
 fn rc_light(k int) {
 	s3d::lights.clear();
 	if k == 0 { s3d::add_rect(float3 { 0.0, 2.0, -1.0 }, float3 { 0.0, 1.0, -1.0 }, float3 { 1.0, 0.0, 0.0 }, 2.0, 1.0, float3 { 4.0, 4.0, 4.0 }, 1000.0, false); }
@@ -3598,9 +3830,7 @@ fn rc_setup(k int, base f32, metal f32, rough f32, w int, h int) {
 	let g = shapes::cube(float3 { 20.0, 0.1, 20.0 }, shapes::material(linalg::v3(base, base, base), metal, rough));
 	s3d::place(s3d::add(g), gfx::translate(float3 { 0.0, -0.1, 0.0 }));
 	s3d::view = s3d::Camera { eye: float3 { 0.0, 1.6, 5.0 }, target: float3 { 0.0, 0.0, -1.0 }, up: float3 { 0.0, 1.0, 0.0 }, fov_y: 0.75, near: 0.1, far: 100.0 };
-	s3d::sky = DEF_SKY; s3d::sky.draw = false; s3d::sky.zenith = float3 { 0.0, 0.0, 0.0 }; s3d::sky.horizon = float3 { 0.0, 0.0, 0.0 }; s3d::sky.ground = float3 { 0.0, 0.0, 0.0 }; s3d::sky.ambient = 0.0;
-	s3d::sun = DEF_SUN; s3d::sun.rgb = float3 { 0.0, 0.0, 0.0 }; s3d::look = DEF_LOOK; s3d::look.ssao = false; s3d::look.bloom = 0.0;
-	s3d::ssr_on = false; s3d::ssgi_on = false; s3d::gi_on = false; s3d::temporal = 0;
+	dark_scene();
 	rc_light(k);
 	s3d::init(w, h);
 }
@@ -4016,7 +4246,7 @@ fn gpu_checks(dir const byte[:], golden const byte[:]) bool {
 	var only byte[>..] = [];
 	let _ = env("GFX_ONLY", only);
 	if only.len > 0 {
-		let ok = if only[..] == "gtao" { gtao_checks() } else if only[..] == "gi" { gi_checks() } else if only[..] == "mblur" { mb_checks() } else if only[..] == "dof" { dof_checks() } else if only[..] == "fx" { fx_checks() } else if only[..] == "tsr" { tsr_checks(dir) } else if only[..] == "probe" { probe_checks(dir) } else if only[..] == "ssgi" { ssgi_checks() } else if only[..] == "decal" { decal_checks() } else if only[..] == "weather" { weather_checks() } else if only[..] == "rect" { rect_checks() } else { shadow_checks() };
+		let ok = if only[..] == "gtao" { gtao_checks() } else if only[..] == "gi" { gi_checks() } else if only[..] == "mblur" { mb_checks() } else if only[..] == "dof" { dof_checks() } else if only[..] == "fx" { fx_checks() } else if only[..] == "tsr" { tsr_checks(dir) } else if only[..] == "probe" { probe_checks(dir) } else if only[..] == "ssgi" { ssgi_checks() } else if only[..] == "decal" { decal_checks() } else if only[..] == "weather" { weather_checks() } else if only[..] == "rect" { rect_checks() } else if only[..] == "small" { small_checks() } else { shadow_checks() };
 		let e = gfx::error();
 		if e.len > 0 { print("gpu: gfx error ", e[..]); return false; }
 		return ok;
@@ -4182,6 +4412,7 @@ fn gpu_checks(dir const byte[:], golden const byte[:]) bool {
 	if !decal_checks() { good = false; }
 	if !weather_checks() { good = false; }
 	if !rect_checks() { good = false; }
+	if !small_checks() { good = false; }
 	let err = gfx::error();
 	if err.len > 0 { print("gpu: gfx error ", err[..]); good = false; }
 	good

@@ -33,7 +33,7 @@ struct ComputePipeline { id u32 }
 struct TextureDesc { kind i32 = 0, format i32 = 1, usage i32 = 1, width i32, height i32, depth i32 = 1, mips i32 = 1, samples i32 = 1 }
 struct Region { mip i32 = 0, layer i32 = 0, x i32 = 0, y i32 = 0, z i32 = 0, w i32 = 0, h i32 = 0, d i32 = 0 }
 struct SamplerDesc { min_filter i32 = 1, mag_filter i32 = 1, mip_filter i32 = 1, wrap_u i32 = 0, wrap_v i32 = 0, wrap_w i32 = 0, max_anisotropy f32 = 1.0, compare i32 = 0 }
-struct PipelineDesc { primitive i32 = 0, cull i32 = 0, clockwise bool = false, wireframe bool = false, depth_test bool = false, depth_write bool = false, depth_compare i32 = 2, blend i32 = 0, instance_location i32 = -1, depth_bias f32 = 0.0, depth_bias_slope f32 = 0.0, formats u8[16] = [0; 16] }
+struct PipelineDesc { primitive i32 = 0, cull i32 = 0, clockwise bool = false, wireframe bool = false, depth_test bool = false, depth_write bool = false, depth_compare i32 = 2, blend i32 = 0, instance_location i32 = -1, depth_bias f32 = 0.0, depth_bias_slope f32 = 0.0, formats u8[16] = [0; 16], alpha_to_coverage bool = false }
 struct Event { kind i32, scancode i32, keycode i32, mods i32, down bool, repeat bool, button i32, clicks i32, codepoint u32, x f32, y f32 }
 struct PassDesc { color Texture[4] = [Texture{0}; 4], resolve Texture[4] = [Texture{0}; 4], depth Texture = Texture{0}, layer i32 = 0, mip i32 = 0, clear_color bool = true, clear_depth bool = true, color_value float4 = float4{0.0, 0.0, 0.0, 1.0}, depth_value f32 = 1.0, cycle i32 = 0 }
 struct mat4 { c0 float4, c1 float4, c2 float4, c3 float4 }
@@ -52,7 +52,7 @@ struct CSh { size uint, code uint, entry uint, fmt u32, stage i32, nsmp u32, nst
 struct CVB { slot u32, pitch u32, rate i32, step u32 }
 struct CVA { loc u32, slot u32, fmt i32, off u32 }
 struct CCTD { fmt i32, sc i32, dc i32, cop i32, sa i32, da i32, aop i32, wm u8, eb bool, ewm bool, pad 5 }
-struct CGP { vs uint, fs uint, vbd uint, nvb u32, pad 4, va uint, nva u32, pad 4, prim i32, fill i32, cull i32, ff i32, dbc f32, dbcl f32, dbs f32, edb bool, edc bool, pad 2, sc i32, smask u32, emask bool, pad 3, dcmp i32, pad 32, cmask u8, wmask u8, edt bool, edw bool, est bool, pad 3, ctd uint, nct u32, dsf i32, hds bool, pad 7, props u32, pad 4 }
+struct CGP { vs uint, fs uint, vbd uint, nvb u32, pad 4, va uint, nva u32, pad 4, prim i32, fill i32, cull i32, ff i32, dbc f32, dbcl f32, dbs f32, edb bool, edc bool, pad 2, sc i32, smask u32, emask bool, a2c bool, pad 2, dcmp i32, pad 32, cmask u8, wmask u8, edt bool, edw bool, est bool, pad 3, ctd uint, nct u32, dsf i32, hds bool, pad 7, props u32, pad 4 }
 struct CCP { size uint, code uint, entry uint, fmt u32, nsmp u32, nrost u32, nrosb u32, nrwst u32, nrwsb u32, nub u32, tx u32, ty u32, tz u32, props u32, pad 4 }
 struct CVP { x f32, y f32, w f32, h f32, mn f32, mx f32 }
 struct CRect { x i32, y i32, w i32, h i32 }
@@ -878,17 +878,17 @@ vertex_layout(p PipS&) bool:
 		for c cols: p.attrs.push(CVA{(l + c) as u32, slot as u32, VF[f] as i32, off[slot] as u32}); off[slot] += VSZ[f]
 	for slot 2: if off[slot] != 0 { p.vbufs.push(CVB{slot as u32, off[slot] as u32, slot as i32, 0}); p.vmask |= 1 << slot }
 	true
-cctd(fmt int, mode int) CCTD:
+cctd(fmt int, mode int, rgb bool) CCTD:
 	f := if mode == 1 { [7, 8, 2, 8] } else { if mode == 2 { [7, 2, 1, 2] } else { if mode == 3 { [2, 8, 2, 8] } else { if mode == 4 { [5, 1, 1, 2] } else { [0, 0, 0, 0] } } } }
-	CCTD{fmt as i32, f[0] as i32, f[1] as i32, 1, f[2] as i32, f[3] as i32, 1, 0, mode != 0, false}
+	CCTD{fmt as i32, f[0] as i32, f[1] as i32, 1, f[2] as i32, f[3] as i32, 1, if rgb { 7 } else { 0 }, mode != 0, rgb}
 teq(a Tg&, b Tg&) bool: a.nc == b.nc && a.c[0] == b.c[0] && a.c[1] == b.c[1] && a.c[2] == b.c[2] && a.c[3] == b.c[3] && a.d == b.d && a.hd == b.hd && a.sc == b.sc
 pipeline_for(pi int) uint:
 	let p .= PIPS[pi]
 	for t, k p.vt: if teq(t, TG) { return p.vp[k] }
 	if p.vt.len == 8: misuse("a pipeline drawn into more than 8 different combinations of target formats"); return 0
 	d := p.desc; cols CCTD[>..] ~= []
-	for i TG.nc: cols.push(cctd(TG.c[i], d.blend as int))
-	ci ~= CGP{SHS[p.vs].sh, SHS[p.fs].sh, ffi::ptr(bytes_of(p.vbufs[..])), p.vbufs.len as u32, ffi::ptr(bytes_of(p.attrs[..])), p.attrs.len as u32, d.primitive, if d.wireframe { 1 } else { 0 }, d.cull, if d.clockwise { 1 } else { 0 }, d.depth_bias, 0.0, d.depth_bias_slope, d.depth_bias != 0.0 || d.depth_bias_slope != 0.0, true, TG.sc as i32, 0, false, if d.depth_compare != 0 { d.depth_compare } else { 2 }, 0, 0, d.depth_test && TG.hd, d.depth_write && TG.hd, false, ffi::ptr(bytes_of(cols[..])), TG.nc as u32, TG.d as i32, TG.hd, 0}
+	for i TG.nc: cols.push(cctd(TG.c[i], d.blend as int, d.alpha_to_coverage && TG.sc > 0))
+	ci ~= CGP{SHS[p.vs].sh, SHS[p.fs].sh, ffi::ptr(bytes_of(p.vbufs[..])), p.vbufs.len as u32, ffi::ptr(bytes_of(p.attrs[..])), p.attrs.len as u32, d.primitive, if d.wireframe { 1 } else { 0 }, d.cull, if d.clockwise { 1 } else { 0 }, d.depth_bias, 0.0, d.depth_bias_slope, d.depth_bias != 0.0 || d.depth_bias_slope != 0.0, true, TG.sc as i32, 0, false, d.alpha_to_coverage && TG.sc > 0, if d.depth_compare != 0 { d.depth_compare } else { 2 }, 0, 0, d.depth_test && TG.hd, d.depth_write && TG.hd, false, ffi::ptr(bytes_of(cols[..])), TG.nc as u32, TG.d as i32, TG.hd, 0}
 	gp := s_mkgp(DEV, pp(ci))
 	if gp == 0: misuse(str("creating a pipeline: ", sdlerr())); return 0
 	p.vt.push(TG); p.vp.push(gp); gp
