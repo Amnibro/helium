@@ -274,6 +274,7 @@ float local_visibility(vec4 sh, vec3 lp, vec3 ldir, vec3 p, vec3 n) {
 	for (int k = 0; k < 12; k++) lit += texture(tex_local_shadow, vec4(uv + vogel(k, 12, rot) * (sh.w * texel), float(layer), ndc.z));
 	return lit / 12.0;
 }
+float mr_grain(vec3 p) { vec3 r = fract(floor(p * 7.0) * 0.1031); r += dot(r, r.zyx + 31.32); return fract((r.x + r.y) * r.z); }
 float spot_cone(float inner, float co, vec3 ldir, vec3 ld) {
 	return co < -1.5 ? 1.0 : smoothstep(co, inner - 1.0, dot(-ld, ldir));
 }
@@ -508,6 +509,16 @@ void main() {
 	if (model > 0) occm *= model == 3 ? q.cav : mix(1.0, q.cav, 0.5);
 	float occ = occm * aos;
 
+	if (cluster2.z > 0.0 || cluster2.w > 0.0) {
+		float up = smoothstep(0.15, 0.75, n0.y);
+		float wet = cluster2.z * mix(0.45, 1.0, up);
+		tint.rgb *= mix(1.0, mix(0.55, 1.0, metal), wet);
+		rough = mix(rough, min(rough, 0.07 + 0.25 * rough * (1.0 - up)), wet);
+		float sn = cluster2.w * smoothstep(0.25, 0.7, n0.y + 0.15 * (mr_grain(in_world) - 0.5));
+		tint.rgb = mix(tint.rgb, vec3(0.87, 0.9, 0.93), sn);
+		rough = mix(rough, 0.55, sn);
+		metal *= 1.0 - sn;
+	}
 	vec3 albedo = tint.rgb * (1.0 - metal);
 	vec3 f0 = mix(vec3(model == 1 ? shade_c.x : 0.04), tint.rgb, metal);
 	vec3 v = normalize(eye.xyz - in_world);

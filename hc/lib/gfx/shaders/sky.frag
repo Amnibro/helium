@@ -8,6 +8,7 @@ void main() {
 	vec4 b = inv_view_proj * vec4(in_uv.x * 2.0 - 1.0, 1.0 - in_uv.y * 2.0, 1.0, 1.0);
 	vec3 dir = normalize(b.xyz / b.w - a.xyz / a.w);
 	if (to_sun.w > 0.5) { out_rgba = vec4(horizon.rgb, 1.0); return; }   // sky drawing off: flat clear colour
+	if (env.x > 1.5) { float sd = dot(dir, normalize(to_sun.xyz)); out_rgba = vec4(textureLod(tex_env, vec3(env_rot.x * dir.x + env_rot.y * dir.z, dir.y, env_rot.x * dir.z - env_rot.y * dir.x), env_rot.z).rgb * env.y + sun_rgb.rgb * 64.0 * smoothstep(0.99985, 0.99993, sd), 1.0); return; }
 	if (env.x > 0.5) { out_rgba = vec4(textureLod(tex_env, vec3(env_rot.x * dir.x + env_rot.y * dir.z, dir.y, env_rot.x * dir.z - env_rot.y * dir.x), env_rot.z).rgb * env.y, 1.0); return; }
 	vec3 c = sky_color(dir, normalize(to_sun.xyz), zenith.rgb, horizon.rgb, ground.rgb, sun_rgb.rgb);
 	float s = dot(dir, normalize(to_sun.xyz));

@@ -4,7 +4,8 @@ import math;
 import gfx.linalg;
 import gfx.codec_hdr;
 namespace envmap;
-var on = false;
+var on bool = false;
+var physical bool = false;
 var intensity f32 = 1.0;
 var rotation f32 = 0.0;
 var blur f32 = 0.0;
@@ -16,7 +17,7 @@ var smp gfx::Sampler;
 var smp_wrap gfx::Sampler;
 var pipe_equi gfx::Pipeline;
 var pipe_ggx gfx::Pipeline;
-var ready = false;
+var ready bool = false;
 var lv int = 0;
 struct EnvU { p float4 }
 fn setup() {
@@ -66,22 +67,89 @@ fn filter(raw gfx::Texture, n int) {
 		faces(cube, m, pipe_ggx, raw, smp, rough, count, n as f32);
 	}
 }
+fn sun_color(to_sun float3, power f32, haze f32) float3 {
+	let oy = 6360.2;
+	let ty = to_sun.y as real;
+	let hz = sqrt(max(1.0 - ty * ty, 0.0));
+	let b = oy * ty;
+	let c = 6360.2 * 6360.2 - 6360.0 * 6360.0;
+	if b < 0.0 && b * b > c { return float3 { 0.0, 0.0, 0.0 }; }
+	let far = -b + sqrt(b * b - (6360.2 * 6360.2 - 6460.0 * 6460.0));
+	let step = far / 64.0;
+	var dr = 0.0;
+	var dg = 0.0;
+	var db = 0.0;
+	for i in 64 {
+		let t = (i as real + 0.5) * step;
+		let px = hz * t;
+		let py = oy + ty * t;
+		let h = sqrt(px * px + py * py) - 6360.0;
+		let r = exp(-h / 8.0);
+		let m = (haze as real) * exp(-h / 1.2);
+		let z = max(1.0 - abs(h - 25.0) / 15.0, 0.0);
+		dr += (5.802e-3 * r + 4.44e-3 * m + 0.650e-3 * z) * step;
+		dg += (13.558e-3 * r + 4.44e-3 * m + 1.881e-3 * z) * step;
+		db += (33.1e-3 * r + 4.44e-3 * m + 0.085e-3 * z) * step;
+	}
+	let pw = power as real;
+	float3 { (pw * exp(-dr)) as f32, (pw * exp(-dg)) as f32, (pw * exp(-db)) as f32 }
+}
+struct EnvSkyU { p float4, sun float4, cloud float4 }
+var pipe_ms gfx::Pipeline;
+var pipe_sky gfx::Pipeline;
+var sky_ready bool = false;
+fn mip_count(n int) int {
+	var c = 0;
+	var x = n;
+	while x >= 1 { c++; x /= 2; }
+	c
+}
+fn setup_sky() {
+	if sky_ready { return; }
+	pipe_ms = gfx::pipeline(embed_shader("shaders/screen.vert"), embed_shader("shaders/env_ms.frag"));
+	pipe_sky = gfx::pipeline(embed_shader("shaders/screen.vert"), embed_shader("shaders/env_sky.frag"));
+	sky_ready = true;
+}
+fn set_sky(to_sun float3, power f32, haze f32, clouds f32, n int, wind_x f32, wind_z f32) {
+	setup();
+	setup_sky();
+	let ms = gfx::texture(gfx::TextureDesc { kind: gfx::TEXTURE_2D, format: gfx::RGBA16F, usage: gfx::SAMPLED | gfx::COLOR_TARGET, width: 32, height: 32 });
+	if gfx::begin_pass(gfx::PassDesc { color: [ms, gfx::Texture { 0 }, gfx::Texture { 0 }, gfx::Texture { 0 }], .. }) {
+		gfx::bind(pipe_ms);
+		gfx::uniforms(gfx::FRAGMENT, 0, EnvU { p: float4 { 0.0, 0.0, 0.18, haze } });
+		gfx::draw(3);
+		gfx::end_pass();
+	}
+	let raw = gfx::texture(gfx::TextureDesc { kind: gfx::TEXTURE_CUBE, format: gfx::RGBA16F, usage: gfx::SAMPLED | gfx::COLOR_TARGET, width: n as i32, height: n as i32, mips: mip_count(n) as i32 });
+	for f in 0..6 {
+		guard gfx::begin_pass(gfx::PassDesc { color: [raw, gfx::Texture { 0 }, gfx::Texture { 0 }, gfx::Texture { 0 }], layer: f as i32, .. }) else { continue; }
+		gfx::bind(pipe_sky);
+		gfx::bind_texture(gfx::FRAGMENT, 0, ms, smp);
+		gfx::uniforms(gfx::FRAGMENT, 0, EnvSkyU { p: float4 { f as f32, 0.2, 0.18, haze }, sun: float4 { to_sun.x, to_sun.y, to_sun.z, power }, cloud: float4 { clouds, wind_x, wind_z, 0.0 } });
+		gfx::draw(3);
+		gfx::end_pass();
+	}
+	gfx::generate_mips(raw);
+	filter(raw, n);
+	gfx::release(ms);
+	gfx::release(raw);
+	on = true;
+	physical = true;
+}
 fn set_equirect(rgba const f32[:], w int, h int) {
 	setup();
 	var bytes byte[>..] = [];
 	codec_hdr::half_pixels(rgba, bytes);
 	let t = gfx::texture(gfx::TextureDesc { kind: gfx::TEXTURE_2D, format: gfx::RGBA16F, usage: gfx::SAMPLED, width: w as i32, height: h as i32 });
 	gfx::update_texture(t, bytes[..]);
-	var mips = 0;
-	var x = size;
-	while x >= 1 { mips++; x /= 2; }
-	let raw = gfx::texture(gfx::TextureDesc { kind: gfx::TEXTURE_CUBE, format: gfx::RGBA16F, usage: gfx::SAMPLED | gfx::COLOR_TARGET, width: size as i32, height: size as i32, mips: mips as i32 });
+	let raw = gfx::texture(gfx::TextureDesc { kind: gfx::TEXTURE_CUBE, format: gfx::RGBA16F, usage: gfx::SAMPLED | gfx::COLOR_TARGET, width: size as i32, height: size as i32, mips: mip_count(size) as i32 });
 	faces(raw, 0, pipe_equi, t, smp_wrap, 0.0, 0.0, 0.0);
 	gfx::generate_mips(raw);
 	filter(raw, size);
 	gfx::release(t);
 	gfx::release(raw);
 	on = true;
+	physical = false;
 }
 fn load(path const byte[:]) bool {
 	var bytes byte[>..] = [];

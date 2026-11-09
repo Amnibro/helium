@@ -60,7 +60,7 @@ struct FrameU {
 	zenith float4, horizon float4, ground float4, screen float4, light_pos float4[16], light_rgb float4[16], gi float4, gi_origin float4, gi_step float4, gi_dims float4,
 	light_dir float4[16], light_shd float4[16], local_mat gfx::mat4[12], refl float4, view_m gfx::mat4, env float4, env_rot float4, vp gfx::mat4, cluster float4, cluster2 float4
 }
-struct GiU { origin float4, step float4, dims float4, rot0 float4, rot1 float4, rot2 float4, params float4, to_sun float4, sun_rgb float4, zenith float4, horizon float4, ground float4, light_pos float4[8], light_rgb float4[8] }
+struct GiU { origin float4, step float4, dims float4, rot0 float4, rot1 float4, rot2 float4, params float4, to_sun float4, sun_rgb float4, zenith float4, horizon float4, ground float4, light_pos float4[8], light_rgb float4[8], env float4, env_rot float4 }
 struct SurfaceU { base float4, emissive float4, params float4, alpha float4, uv_sets float4, uv_sets2 float4, tri float4, top_tint float4, xm_base float4, xm_mr float4, xm_nrm float4, xm_occ float4, xm_emi float4, xo0 float4, xo1 float4, xo2 float4, sheen float4, misc float4, shade_a float4, shade_b float4, shade_c float4, xm_det float4, xo_det float4, top_lay float4 }
 struct ExtU { ior float4, spec float4, coat float4, trans float4, atten float4, aniso float4, irid float4, tm float4[13], to float4[13] }
 struct CutU { base float4, alpha float4, uv_sets float4, xm float4, xo float4 }
@@ -78,7 +78,7 @@ struct GlowU { texel float4, cut float4 }
 struct GradeU { tone float4, mode float4, lens float4, color float4, frame float4 }
 struct HistU { size float4, range float4 }
 struct AdaptU { range float4, pct float4, rate float4 }
-struct FogU { inv_view_proj gfx::mat4, cascade_mat gfx::mat4[3], cascade_far float4, eye float4, view_dir float4, to_sun float4, sun_rgb float4, ambient float4, params float4, params2 float4, light_pos float4[16], light_rgb float4[16] }
+struct FogU { inv_view_proj gfx::mat4, cascade_mat gfx::mat4[3], cascade_far float4, eye float4, view_dir float4, to_sun float4, sun_rgb float4, ambient float4, params float4, params2 float4, light_pos float4[16], light_rgb float4[16], env float4, env_rot float4 }
 struct QuadG { p float4[4], c float4[4], prm float4 }
 struct QuadViewU { view_proj gfx::mat4, right float4, up float4 }
 struct SsrU { lens float4, jit float4, tune float4, edge float4, inv_view gfx::mat4, prev_vp gfx::mat4 }
@@ -282,6 +282,8 @@ var smp_point gfx::Sampler;
 var smp_shadow gfx::Sampler;
 var smp_cache gfx::Sampler[>..] = [];
 var spec_aa = true;
+var wet f32 = 0.0;
+var snow f32 = 0.0;
 var light_data float4[>..] = [];
 var light_xr float4[>..] = [];
 var cluster_words u32[>..] = [];
@@ -829,6 +831,12 @@ fn in_view(m gfx::mat4, lo float3, hi float3) bool {
 	for o in out { if o == 8 { return false; } }
 	true
 }
+fn atmosphere(to_sun float3, power f32, haze f32, clouds f32) {
+	let d = linalg::unit3(to_sun);
+	sun.to_sun = d;
+	sun.rgb = envmap::sun_color(d, power, haze);
+	envmap::set_sky(d, power, haze, clouds, envmap::size, 0.0, 0.0);
+}
 fn item_lights(ii int) {
 	let a = gltf::assets[items[ii].asset];
 	var k = items[ii].light_base;
@@ -1103,11 +1111,11 @@ fn fill_frame() {
 	frame_u.gi_origin = x4(linalg::v3(gi_lo.x + gi_step.x * 0.5, gi_lo.y + gi_step.y * 0.5, gi_lo.z + gi_step.z * 0.5), if gi_rt_visibility { 1.0 } else { 0.0 });
 	frame_u.gi_step = x4(gi_step, gi_bias);
 	frame_u.gi_dims = f4(gi_dims[0] as f32, gi_dims[1] as f32, gi_dims[2] as f32, gi_rays as f32);
-	frame_u.env = f4(if envmap::on { 1.0 } else { 0.0 }, envmap::intensity, envmap::spec_lod(), envmap::irr_lod());
+	frame_u.env = f4(if !envmap::on { 0.0 } else if envmap::physical { 2.0 } else { 1.0 }, envmap::intensity, envmap::spec_lod(), envmap::irr_lod());
 	frame_u.env_rot = f4(linalg::f(cos(envmap::rotation as real)), linalg::f(sin(envmap::rotation as real)), envmap::blur * envmap::spec_lod(), if spec_aa { 1.0 } else { 0.0 });
 	frame_u.vp = view_proj;
 	frame_u.cluster = f4(clusters::CX as f32, clusters::CY as f32, clusters::CZ as f32, 0.0);
-	frame_u.cluster2 = f4(view.near, clusters::CZ as f32 / linalg::f(log((view.far / view.near) as real)), 0.0, 0.0);
+	frame_u.cluster2 = f4(view.near, clusters::CZ as f32 / linalg::f(log((view.far / view.near) as real)), wet, snow);
 }
 // mean linear colour of an image, sampled on a sparse grid; the bounce albedo
 fn image_avg(image int) float3 {
@@ -1202,11 +1210,13 @@ fn gi_pass() {
 	for u in gi_updates_per_frame {
 		var g = gi_rot(gi_updates);
 		g.origin = frame_u.gi_origin; g.step = x4(gi_step, gi_bias); g.dims = f4(gi_dims[0] as f32, gi_dims[1] as f32, gi_dims[2] as f32, nr as f32);
+		g.env = frame_u.env; g.env_rot = frame_u.env_rot;
 		g.to_sun = frame_u.to_sun; g.sun_rgb = frame_u.sun_rgb; g.zenith = frame_u.zenith; g.horizon = frame_u.horizon; g.ground = frame_u.ground;
 		for k in GI_LIGHTS { g.light_pos[k] = frame_u.light_pos[k]; g.light_rgb[k] = frame_u.light_rgb[k]; }
 		g.params = f4(sky.ambient, if gi_updates > 0 { 1.0 } else { 0.0 }, maxd, frame_u.screen.z);
 		guard gfx::begin_compute([gi_rays_buf]) else { return; }
 		gfx::bind(pipe_gi_trace);
+		gfx::bind_texture(gfx::COMPUTE, 0, envmap::texture(), envmap::smp);
 		gfx::bind_storage_buffer(gfx::COMPUTE, 0, rt::node_buf);
 		gfx::bind_storage_buffer(gfx::COMPUTE, 1, rt::tri_buf);
 		gfx::bind_storage_buffer(gfx::COMPUTE, 2, gi_irr);
@@ -1619,6 +1629,7 @@ fn fog_pass() {
 	gfx::bind_texture(gfx::FRAGMENT, 0, hdr, smp_point);
 	gfx::bind_texture(gfx::FRAGMENT, 1, nd, smp_point);
 	gfx::bind_texture(gfx::FRAGMENT, 2, shadow_map, smp_shadow);
+	gfx::bind_texture(gfx::FRAGMENT, 3, envmap::texture(), envmap::smp);
 	var u FogU;
 	u.inv_view_proj = linalg::inverse(view_proj);
 	u.cascade_mat[0] = frame_u.cascade_mat[0]; u.cascade_mat[1] = frame_u.cascade_mat[1]; u.cascade_mat[2] = frame_u.cascade_mat[2];
@@ -1627,6 +1638,8 @@ fn fog_pass() {
 	u.ambient = x4(fog_ambient, 0.0);
 	u.params = f4(fog_density, fog_falloff, fog_height, fog_far);
 	u.params2 = f4(fog_steps as f32, (frames % 64) as f32, fog_g, frame_u.screen.z);
+	u.env = frame_u.env;
+	u.env_rot = frame_u.env_rot;
 	for k in MAX_LIGHTS { u.light_pos[k] = frame_u.light_pos[k]; u.light_rgb[k] = frame_u.light_rgb[k]; }
 	gfx::uniforms(gfx::FRAGMENT, 0, u);
 	gfx::draw(3);
