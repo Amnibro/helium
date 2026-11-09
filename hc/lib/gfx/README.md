@@ -1489,6 +1489,24 @@ The factor is the floor's color with `s3d::caustics.on` divided by its color wit
   `scene_caust` (the test scene under 1.2 m of water) matching native under
   webgputest's usual bar.
 
+### Caustics results (2026-11-09, RX 9060 XT, RADV; full gfxtest ok)
+
+| Bar | Result | Bar value |
+| --- | --- | --- |
+| K1 formula, floor 1 m deep | 100.0 % of samples within 2 %, median error 0.018 % | at least 99 %, at most 0.5 % |
+| K1 formula, floor 3 m deep | 100.0 % of samples within 2 %, median error 0.019 % | at least 99 %, at most 0.5 % |
+| K2 energy, mean factor | 1.000 at 0.5 m, 1.001 at 1 m, 1.008 at 3 m | within 2 %, 2 %, 5 % of 1 |
+| K3 focus, standard deviation | 0.06 at 0.5 m, 0.12 at 1 m, 0.425 at 3 m | growing, at least 0.05 at 1 m |
+| K4 scope | 188,784 floor pixels outside the footprint and 600 on a block above the surface: 0 changed; inside, 28,916 of 28,916 changed | 0 changed |
+| K5 sun absorption, flat water 2 m deep | worst channel 0.011 % from `exp(-absorb * path)` | within 1 % |
+| K5 control, straight-down path | 6.85 % off: fails as it must | must fail |
+| K6 time | same time twice differs by 0; 2 s later correlates 0.103 | 0, below 0.5 |
+| K7 water item | picture from the item against numbers set by hand: 0 / 255; level and waves read back equal; factor spread 0.478 | at most 1 / 255, equal, above 0.02 |
+| K8 cost, 1280 x 720 floor under water | 0.49 ms a frame without, 0.77 ms with: 0.28 ms added | at most 1.0 ms |
+| K9 goldens | 44.92 dB and 41.7 dB | above 40 dB |
+| K9 wgsltest | 63 modules, 54 pipelines, 0 failures | 0 failures |
+| K9 webgputest, with the new `scene_caust` | 17 scenes, 0 failures; `scene_caust` identical to native | 0 failures |
+
 ### Instancing and foliage results (2026-11-09, RX 9060 XT, RADV; full gfxtest ok)
 
 | Bar | Result | Bar value |
@@ -1895,8 +1913,11 @@ pass-through mean error is 0.0106 % (max 0.0488 %).
   draw every copy (culling is for the camera passes). A copy moved with
   `s3d::set_instance` writes no object motion that frame. Wind moves positions only;
   normals keep their rest direction.
-* Not built: caustics, BC, KTX2, WebP, meshopt and Draco, texture and mesh streaming,
-  and Nanite-class geometry.
+* Caustics: one level body of water, lit by the sun only (local lights get none). Each
+  point takes one bundle of rays, so past the depth where the lines first cross the
+  overlapping sheets are not summed. The water itself shows no light shafts.
+* Not built: BC, KTX2, WebP, meshopt and Draco, texture and mesh streaming, and
+  Nanite-class geometry.
 
 No point/line primitives (skipped and counted), Adler-32 is not verified, the fog
 and GI passes light spot lights as points (no cone). Also:
