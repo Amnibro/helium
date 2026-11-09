@@ -884,6 +884,30 @@ about 100 % busy; an A/B of T7 alone under the same load gave main dc74467f 0.45
 and 1.50 ms and this branch 1.09, 1.16, 0.45, 0.45 and 1.12 ms, so T7 is re-run on a quiet
 GPU before merging.
 
+### Pre-registered bars (screen-space GI, E2)
+
+Written before the first GPU run of the SSGI checks (`ssgi_checks` in `gfx_smoke.amni`).
+Scene, reference, gate and regions are GI part 1's (the Cornell box against the
+65536 spp path tracer, 512 x 512 box-filtered to 128 x 128, G1/G2a/G2b as defined
+there). Direct light is the same as GI part 1's control (`rt_shadows` on, `gi_on` off,
+black sky, bloom off, 32 frames); the only change is `ssgi_on = true` with its defaults
+(4 rays per half-resolution pixel, 32 steps, `ssgi_dist` 10, thickness 0.25). On record
+from GI part 1, that control scores G1 0.5633, G2a 0.6867, G2b 0.9789; the BVH probe
+GI scores 0.0561 / 0.065 / 0.0882. Screen-space GI cannot see surfaces that are off
+screen or hidden, so its bars sit between the two:
+
+* **S1 overall.** G1 <= **0.20**.
+* **S2 ceiling.** G2a <= **0.25** (its bounce light comes from the floor and walls, all
+  on screen).
+* **S3 shadowed.** G2b <= **0.5 x** the control's (light behind the blocks comes partly
+  from faces the camera cannot see).
+* **S4 nothing changes without SSGI.** gfxtest goldens > 40 dB; `webgputest.mjs` 0
+  failures with `scene_e2` (SSR now shares its ray march with SSGI) still matching
+  native; a new `scene_ssgi` must match native under webgputest's usual bar.
+* **Must-fail control.** SSGI with `ssgi_intensity = 0` (its occlusion still applied,
+  no bounce light) must fail S1.
+* Reported, no bar: wall-clock frame time at 1280 x 720 with SSGI on and off.
+
 ### Motion blur and depth of field results (2026-11-02, RX 9060 XT, RADV)
 
 Both are off by default (`motion_blur = 0`, `dof_aperture = 0`) and run as one HDR pass each
