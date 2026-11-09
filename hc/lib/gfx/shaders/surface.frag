@@ -18,9 +18,9 @@ layout(set = 2, binding = 3) uniform sampler2D tex_occlusion;
 layout(set = 2, binding = 4) uniform sampler2D tex_emissive;
 layout(set = 2, binding = 5) uniform sampler2DArrayShadow tex_shadow;
 layout(set = 2, binding = 6) uniform sampler2D tex_ao;
-layout(set = 2, binding = 7) uniform sampler2D tex_top_base;
-layout(set = 2, binding = 8) uniform sampler2D tex_top_mr;
-layout(set = 2, binding = 9) uniform sampler2D tex_top_normal;
+layout(set = 2, binding = 7) uniform sampler2DArray tex_ext_l;
+layout(set = 2, binding = 8) uniform sampler2DArray tex_ext_s;
+layout(set = 2, binding = 9) uniform sampler2D tex_trans;
 layout(set = 2, binding = 10) uniform sampler2DArray tex_shadow_raw;
 layout(set = 2, binding = 11) uniform sampler2DArrayShadow tex_local_shadow;
 layout(set = 2, binding = 12) uniform sampler2D tex_bent;
@@ -60,6 +60,7 @@ layout(set = 3, binding = 0) uniform Frame {
 	mat4 view_m;
 	vec4 env;
 	vec4 env_rot;
+	mat4 vp;
 };
 #include "gi.glsl"
 
@@ -87,17 +88,14 @@ layout(set = 3, binding = 1) uniform Surface {
 	vec4 shade_c;
 	vec4 xm_det;
 	vec4 xo_det;
+	vec4 top_lay;
 };
 
 layout(location = 0) out vec4 out_rgba;
 
 vec2 pick_uv(float set) { return set > 0.5 ? in_uv.zw : in_uv.xy; }
-vec3 sheen_term(vec3 n, vec3 v, vec3 l, vec3 e) {
-	float n_l = max(dot(n, l), 0.0);
-	if (n_l <= 0.0 || max(max(sheen.r, sheen.g), sheen.b) <= 0.0) return vec3(0.0);
-	float n_v = max(dot(n, v), 1e-4), n_h = max(dot(n, normalize(v + l)), 0.0), ia = 1.0 / max(sheen.a * sheen.a, 0.07);
-	return sheen.rgb * ((2.0 + ia) * pow(max(1.0 - n_h * n_h, 0.0), 0.5 * ia) / (2.0 * PI_F)) / (4.0 * (n_l + n_v - n_l * n_v)) * e * n_l;
-}
+#include "ext.glsl"
+vec3 sheen_term(vec3 n, vec3 v, vec3 l, vec3 e) { return sheen_lobe(n, v, l, e, sheen.rgb, sheen.a); }
 float sheen_keep() { return 1.0 - max(max(sheen.r, sheen.g), sheen.b) * 0.17; }
 vec2 xuv(float set, vec4 m, vec2 o) { vec2 u = pick_uv(set); return vec2(dot(m.xy, u), dot(m.zw, u)) + o; }
 struct Mat { vec3 nm; vec3 gn; float curv; float thick; float cav; };
@@ -110,7 +108,8 @@ float skin_lut(float c, float s) {
 	return mix(mix(SKIN_D[i], SKIN_D[i + 1], x - float(x0)), mix(SKIN_D[i + SKIN_T], SKIN_D[i + SKIN_T + 1], x - float(x0)), y - float(y0));
 }
 vec3 skin_trans(float t, vec3 d) { return 0.25 * (exp(-t / d) + 3.0 * exp(-t / (3.0 * d))); }
-vec3 mat_term(vec3 n, vec3 v, vec3 l, vec3 e, vec3 albedo, vec3 f0, float rough, vec3 ms, vec3 kd, float vis, Mat q) {
+vec3 mat_term(vec3 n, vec3 v, vec3 l, vec3 e, vec3 albedo, vec3 f0, float rough, vec3 ms, vec3 kd, float vis, Mat q, ExtS x) {
+	if (misc.z > 0.5) return ext_term(n, v, l, e, albedo, f0, rough, ms, kd, vis, x);
 	int model = int(misc.y + 0.5);
 	if (model == 1) {
 		vec3 d = max(shade_a.rgb, vec3(1e-5));
@@ -363,24 +362,50 @@ vec3 ambient_light(vec3 n, vec3 v, vec3 l, vec3 base_rgb, float metal, float rou
 	return mix(dielectric, fm * e.rgb, metal);
 }
 vec3 env_dir(vec3 d) { return vec3(env_rot.x * d.x + env_rot.y * d.z, d.y, env_rot.x * d.z - env_rot.y * d.x); }
+vec3 env_irr(vec3 n) {
+	if (env.x > 0.5) return textureLod(tex_env, env_dir(n), env.w).rgb * env.y;
+	return mix(mix(ground.rgb, zenith.rgb, n.y * 0.5 + 0.5), horizon.rgb, 0.5 * (1.0 - abs(n.y))) * screen.w;
+}
 vec3 env_lobe(vec3 nn, vec3 v, float rough, vec3 gn, vec3 oc, vec4 sr) {
 	vec3 r = reflect(-v, nn);
-	vec3 e = textureLod(tex_env, env_dir(normalize(mix(r, nn, rough * rough))), rough * env.z).rgb * env.y * spec_occ(r, max(dot(nn, v), 1e-4), rough, gn, oc.x, oc.y, oc.z);
+	vec3 d = normalize(mix(r, nn, rough * rough));
+	vec3 e = (env.x > 0.5 ? textureLod(tex_env, env_dir(d), rough * env.z).rgb * env.y : mix(sky_color(d, normalize(to_sun.xyz), zenith.rgb, horizon.rgb, ground.rgb, vec3(0.0)), env_irr(nn), rough * rough) * screen.w) * spec_occ(r, max(dot(nn, v), 1e-4), rough, gn, oc.x, oc.y, oc.z);
 	float w = sr.w * (1.0 - smoothstep(0.7 * refl.z, refl.z, rough));
 	return w > 0.0 ? mix(e, textureLod(tex_ssr_prev, sr.xy, log2(max(2.0 * rough * rough * sr.z * refl.w, 1.0))).rgb, w) : e;
 }
-vec3 env_ef(vec3 f0, vec2 eb, vec3 ms) { return ms * (f0 * (eb.x - eb.y) + eb.y); }
-vec3 ambient_env(vec3 n, vec3 v, vec3 albedo, vec3 f0, float rough, vec2 eb, vec3 ms, vec3 kd, vec3 gi_irr, bool use_gi, vec3 gn, vec3 oc, float dao, vec4 sr, Mat q) {
+vec3 env_ef(vec3 f0, float f90, vec2 eb, vec3 ms) { return ms * (f0 * (eb.x - eb.y) + f90 * eb.y); }
+vec3 transmitted(vec3 n, vec3 v, float rough, vec3 tint, vec3 ef, ExtS x) {
+	vec3 ray = refract(-v, n, 1.0 / x_ior.x) * x.thick * misc.w;
+	vec4 c = vp * vec4(in_world + ray, 1.0);
+	vec2 uv = clamp(vec2(c.x / c.w * 0.5 + 0.5, 0.5 - c.y / c.w * 0.5), vec2(0.0), vec2(1.0));
+	float lw = log2(float(textureSize(tex_trans, 0).x));
+	float lod = min(lw * rough * clamp(x_ior.x * 2.0 - 2.0, 0.0, 1.0), lw - 4.0);
+	vec3 att = x_trans.z > 0.0 ? exp(log(max(x_atten.rgb, vec3(1e-4))) / x_trans.z * length(ray)) : vec3(1.0);
+	return (1.0 - ef) * textureLod(tex_trans, uv, lod).rgb * att * tint;
+}
+vec3 ambient_env(vec3 n, vec3 v, vec3 base_rgb, vec3 albedo, vec3 f0, float rough, vec2 eb, vec3 ms, vec3 kd, vec3 gi_irr, bool use_gi, vec3 gn, vec3 oc, vec4 sr, Mat q, ExtS x) {
 	int model = int(misc.y + 0.5);
+	float dao = oc.x;
 	float n_v = max(dot(n, v), 1e-4);
-	vec3 irr = use_gi ? gi_irr : textureLod(tex_env, env_dir(n), env.w).rgb * env.y;
-	vec3 spec = env_lobe(n, v, rough, gn, oc, sr) * env_ef(f0, eb, ms);
+	vec3 irr = use_gi ? gi_irr : env_irr(n);
+	vec3 nb = n;
+	if (x.aniso > 0.0) nb = normalize(mix(normalize(cross(cross(x.tb, v), x.tb)), n, pow(1.0 - x.aniso * (1.0 - rough), 4.0)));
+	vec3 ef = env_ef(f0, x.f90, eb, ms);
+	vec3 spec = env_lobe(nb, v, rough, gn, oc, sr) * ef;
 	if (model == 1) {
 		float r2 = clamp(rough * shade_b.w, 0.03, 1.0);
-		spec = mix(spec, env_lobe(n, v, r2, gn, oc, sr) * env_ef(f0, ms_lut(n_v, r2), ms), shade_b.z);
+		spec = mix(spec, env_lobe(n, v, r2, gn, oc, sr) * env_ef(f0, 1.0, ms_lut(n_v, r2), ms), shade_b.z);
 	}
-	if (model == 2) spec += shade_b.z * env_lobe(q.gn, v, shade_b.w, gn, oc, sr) * env_ef(vec3(0.02), ms_lut(max(dot(q.gn, v), 1e-4), shade_b.w), vec3(1.0));
-	return albedo * max(kd, vec3(0.0)) * irr * dao + spec;
+	if (model == 2) spec += shade_b.z * env_lobe(q.gn, v, shade_b.w, gn, oc, sr) * env_ef(vec3(0.02), 1.0, ms_lut(max(dot(q.gn, v), 1e-4), shade_b.w), vec3(1.0));
+	vec3 rgb = albedo * max(kd, vec3(0.0)) * irr * dao * (1.0 - x.trans) + spec;
+	if (x.trans > 0.0) rgb += x.trans * transmitted(n, v, rough, base_rgb, ef, x);
+	float sm = vmax3(x.sheen_c);
+	if (sm > 0.0) rgb = rgb * (1.0 - sm * sheen_e(n_v, x.sheen_r)) + x.sheen_c * sheen_e(n_v, x.sheen_r) * irr * dao;
+	if (x.coat > 0.0) {
+		float cv = max(dot(x.coat_n, v), 1e-4);
+		rgb = rgb * (1.0 - x.coat * (0.04 + 0.96 * pow(1.0 - cv, 5.0))) + x.coat * env_lobe(x.coat_n, v, x.coat_r, gn, oc, sr) * env_ef(vec3(0.04), 1.0, ms_lut(cv, x.coat_r), vec3(1.0));
+	}
+	return rgb;
 }
 
 void main() {
@@ -403,7 +428,7 @@ void main() {
 	if (tp) tint = base * in_col * (texture(tex_base, ux) * tw.x + texture(tex_base, uy) * tw.y + texture(tex_base, uz) * tw.z);
 	float topf = 0.0;
 	if (tri.y > 0.0) {
-		vec4 tc = top_tint * texture(tex_top_base, ut);
+		vec4 tc = top_tint * texture(tex_ext_s, vec3(ut, top_lay.x));
 		float hb = dot(tc.rgb - tint.rgb, vec3(0.333)) * 1.5;
 		topf = clamp((gw.y - 1.0 + tri.y + hb * 0.25) * tri.w, 0.0, 1.0) * in_col.a;
 		tint = mix(tint, vec4(tc.rgb, tint.a), topf);
@@ -436,7 +461,9 @@ void main() {
 		t = dot(t, t) > 1e-16 ? normalize(t) : normalize(cross(abs(n.y) < 0.99 ? vec3(0.0, 1.0, 0.0) : vec3(1.0, 0.0, 0.0), n));
 		b = cross(n, t) * (dot(cross(n, t), -bv) < 0.0 ? -1.0 : 1.0);
 	}
+	vec3 n0 = n;
 	vec3 tn = texture(tex_normal, uvn).xyz * 2.0 - 1.0;
+	float tl = length(tn);
 	tn.xy *= params.z;
 	n = normalize(mat3(t, b, n) * tn);
 	vec4 mr = texture(tex_mr, xuv(uv_sets.y, xm_mr, xo0.zw));
@@ -453,13 +480,13 @@ void main() {
 		mr = texture(tex_mr, ux) * tw.x + texture(tex_mr, uy) * tw.y + texture(tex_mr, uz) * tw.z;
 	}
 	if (topf > 0.0) {
-		vec3 nt = texture(tex_top_normal, ut).xyz * 2.0 - 1.0;
+		vec3 nt = texture(tex_ext_l, vec3(ut, top_lay.z)).xyz * 2.0 - 1.0;
 		nt = normalize(vec3(nt.x + gw.x, abs(nt.z) * gw.y, nt.y + gw.z));
 		n = normalize(mix(n, nt, topf));
-		mr = mix(mr, texture(tex_top_mr, ut), topf);
+		mr = mix(mr, texture(tex_ext_l, vec3(ut, top_lay.y)), topf);
 	}
 	vec3 nm = n;
-	vec4 dt = texture(tex_top_normal, xuv(uv_sets.x, xm_det, xo_det.xy));
+	vec4 dt = texture(tex_ext_l, vec3(xuv(uv_sets.x, xm_det, xo_det.xy), top_lay.w));
 	float dmask = model == 1 ? mr.b : 1.0;
 	float dcurv = length(fwidth(normalize(in_nrm))) / max(length(fwidth(in_world)), 1e-6);
 	Mat q = Mat(nm, normalize(in_nrm), in_uv.z > 0.0 ? max(in_uv.z, 0.0) : dcurv, in_uv.z > 0.0 ? max(in_uv.w, 0.0005) : 1.0, 1.0);
@@ -470,6 +497,10 @@ void main() {
 	}
 	float metal = model == 0 ? clamp(params.x * mr.b, 0.0, 1.0) : 0.0;
 	float rough = clamp(params.y * mr.g * (model > 0 ? mix(1.0, 0.5 + dt.b, dmask) : 1.0), 0.03, 1.0);
+	if (env_rot.w > 0.5) {
+		vec3 dn = max(abs(dFdx(n0)), abs(dFdy(n0)));
+		rough = min(max(rough, 0.0525) + max(dn.x, max(dn.y, dn.z)) + clamp(0.25 * (1.0 / max(tl, 0.25) - 1.03), 0.0, 0.1) * params.z, 1.0);
+	}
 	float occm = 1.0 + params.w * ((tp ? mr.r : texture(tex_occlusion, xuv(uv_sets.w, xm_occ, xo1.zw)).r) - 1.0);
 	float aos = eye.w > 0.5 ? texture(tex_ao, gl_FragCoord.xy * screen.xy).r : 1.0;
 	if (model > 0) occm *= model == 3 ? q.cav : mix(1.0, q.cav, 0.5);
@@ -478,6 +509,41 @@ void main() {
 	vec3 albedo = tint.rgb * (1.0 - metal);
 	vec3 f0 = mix(vec3(model == 1 ? shade_c.x : 0.04), tint.rgb, metal);
 	vec3 v = normalize(eye.xyz - in_world);
+	ExtS x = ExtS(n0, 0.0, 0.03, 0.0, 0.0, t, 0.0, b, 1.0, sheen.rgb, sheen.a);
+	if (misc.z > 0.5) {
+		float sf = x_ior.y * ext_map(0).a;
+		float fd = ((x_ior.x - 1.0) / (x_ior.x + 1.0));
+		f0 = mix(min(vec3(fd * fd) * x_spec.rgb * ext_map(1).rgb, vec3(1.0)) * sf, tint.rgb, metal);
+		x.f90 = mix(sf, 1.0, metal);
+		x.coat = x_coat.x * ext_map(2).r;
+		x.coat_r = clamp(x_coat.y * ext_map(3).g, 0.03, 1.0);
+		if (x_to[4].z >= 0.0) {
+			vec3 cn = ext_map(4).xyz * 2.0 - 1.0;
+			cn.xy *= x_coat.z;
+			x.coat_n = normalize(mat3(t, b, n0) * cn);
+		}
+		x.trans = x_trans.x * ext_map(5).r;
+		x.thick = x_trans.y * ext_map(6).g;
+		x.sheen_c = sheen.rgb * ext_map(10).rgb;
+		x.sheen_r = clamp(sheen.a * ext_map(11).a, 0.0, 1.0);
+		if (x_aniso.x > 0.0) {
+			vec4 am = ext_map(7);
+			vec2 ad = x_to[7].z >= 0.0 ? am.rg * 2.0 - 1.0 : vec2(1.0, 0.0);
+			float as_ = x_to[7].z >= 0.0 ? am.b : 1.0;
+			x.aniso = clamp(x_aniso.x * as_, 0.0, 1.0);
+			vec2 ar = vec2(x_aniso.y * ad.x - x_aniso.z * ad.y, x_aniso.z * ad.x + x_aniso.y * ad.y);
+			x.ta = normalize(t * ar.x + b * ar.y);
+			x.tb = normalize(cross(n, x.ta));
+		}
+		float ix = x_irid.x * ext_map(8).r;
+		if (ix > 0.0) {
+			float nvi = max(dot(n, v), 1e-4);
+			vec3 fi = irid_f0(x_irid.y, nvi, mix(x_irid.z, x_irid.w, ext_map(9).g), f0);
+			float xi = 1.0 - nvi;
+			float xi5 = xi * xi * xi * xi * xi;
+			f0 = mix(f0, clamp((fi - vec3(xi5)) / max(1.0 - xi5, 1e-4), vec3(0.0), vec3(1.0)), ix);
+		}
+	}
 	vec3 rgb = vec3(0.0);
 	float n_v = max(dot(n, v), 1e-4);
 	vec2 eb = ms_lut(n_v, rough);
@@ -489,7 +555,7 @@ void main() {
 	bool ms_on = mode - 2 * control == 1;
 	float e_ms = ms_e(n_v, rough, eb.x);
 	vec3 ms = ms_factor(f0, e_ms, ms_on);
-	vec3 kd = diffuse_weight(f0, eb, ms);
+	vec3 kd = max(1.0 - ms * (f0 * (eb.x - eb.y) + x.f90 * eb.y), vec3(0.0));
 	vec3 f0_spec = f0;
 	if (control == 1) { f0_spec = mix(vec3(1.0), tint.rgb, metal); ms = ms_factor(f0_spec, e_ms, ms_on); }
 	if (control == 2) kd = vec3(-1.0);
@@ -497,7 +563,7 @@ void main() {
 	vec3 gn = normalize(in_nrm);
 	if (!gl_FrontFacing && alpha.z > 0.5) gn = -gn;
 	vec3 rp = in_world + gn * 2e-3;
-	rgb += mat_term(n, v, l, sun_rgb.rgb, albedo, f0_spec, rough, ms, kd, (gi.y > 0.5 && to_sun.w > 0.5 ? (dot(gn, l) > 0.0 && gi_visible(rp, l, 1e4) ? 1.0 : 0.0) : sun_visibility(in_world, gn)) * cst, q);
+	rgb += mat_term(n, v, l, sun_rgb.rgb, albedo, f0_spec, rough, ms, kd, (gi.y > 0.5 && to_sun.w > 0.5 ? (dot(gn, l) > 0.0 && gi_visible(rp, l, 1e4) ? 1.0 : 0.0) : sun_visibility(in_world, gn)) * cst, q, x);
 	int count = int(screen.z);
 	for (int i = 0; i < MAX_LIGHTS; i++) {
 		if (i >= count) break;
@@ -506,7 +572,7 @@ void main() {
 		vec3 ld = d / max(dist, 1e-4);
 		if (gi.y > 0.5 && (dot(gn, ld) <= 0.0 || !gi_visible(rp, ld, dist - 2e-3))) continue;
 		vec3 le = light_rgb[i].rgb * range_falloff(dist, light_pos[i].w) * spot_cone(i, ld) * local_visibility(i, in_world, gn);
-		rgb += mat_term(n, v, ld, le, albedo, f0_spec, rough, ms, kd, 1.0, q);
+		rgb += mat_term(n, v, ld, le, albedo, f0_spec, rough, ms, kd, 1.0, q, x);
 	}
 
 	// furnace control hook (scene3d.furnace_scale, 1 in normal use): scales the direct
@@ -516,8 +582,8 @@ void main() {
 	bool use_gi = gi.x > 0.5;
 	vec3 gi_irr = use_gi ? gi_irradiance(in_world, n, v, gi_origin, gi_step, gi_dims) : vec3(0.0);
 	float dao = use_gi ? (gi.z > 0.5 ? occ : 1.0) : occ;
-	vec4 sr = refl.x > 0.5 && alpha.x < 1.5 ? texelFetch(tex_ssr, ivec2(gl_FragCoord.xy), 0) : vec4(0.0);
-	vec3 ambient = env.x > 0.5 ? ambient_env(n, v, albedo, f0, rough, eb, ms, kd, gi_irr, use_gi, gn, vec3(dao, aos, occm), dao, sr, q) : ambient_light(n, v, l, tint.rgb, metal, rough, gi_irr, use_gi, gn, vec3(dao, aos, occm), dao, sr, q) * (use_gi ? 1.0 : screen.w);
+	vec4 sr = refl.x > 0.5 && alpha.x < 1.5 && x.trans <= 0.0 ? texelFetch(tex_ssr, ivec2(gl_FragCoord.xy), 0) : vec4(0.0);
+	vec3 ambient = env.x > 0.5 || misc.z > 0.5 ? ambient_env(n, v, tint.rgb, albedo, f0, rough, eb, ms, kd, gi_irr, use_gi, gn, vec3(dao, aos, occm), sr, q, x) : ambient_light(n, v, l, tint.rgb, metal, rough, gi_irr, use_gi, gn, vec3(dao, aos, occm), dao, sr, q) * (use_gi ? 1.0 : screen.w);
 	rgb += ambient;
 
 	rgb += emissive.rgb * texture(tex_emissive, xuv(uv_sets2.x, xm_emi, xo2.xy)).rgb;

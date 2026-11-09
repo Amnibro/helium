@@ -46,7 +46,13 @@ struct Material {
 	emissive float3, emissive_tex TexRef,
 	alpha_mode int, alpha_cutoff f32, double_sided bool, unlit bool, name Span,
 	tri f32 = 0.0, top f32 = 0.0, top_scale f32 = 0.0, top_sharp f32 = 8.0,
-	top_base TexRef = TexRef { -1, 0 }, top_mr TexRef = TexRef { -1, 0 }, top_normal TexRef = TexRef { -1, 0 }, top_tint float4 = float4 { 1.0, 1.0, 1.0, 1.0 }, no_gi bool = false, no_shadow bool = false, keep_normal bool = false, sheen float3 = float3 { 0.0, 0.0, 0.0 }, sheen_rough f32 = 0.0, catcher f32 = 0.0, shading int = 0, shade_a float4 = float4 { 0.0, 0.0, 0.0, 0.0 }, shade_b float4 = float4 { 0.0, 0.0, 0.0, 0.0 }, shade_c float4 = float4 { 0.0, 0.0, 0.0, 0.0 }, detail TexRef = TexRef { -1, 0 }
+	top_base TexRef = TexRef { -1, 0 }, top_mr TexRef = TexRef { -1, 0 }, top_normal TexRef = TexRef { -1, 0 }, top_tint float4 = float4 { 1.0, 1.0, 1.0, 1.0 }, no_gi bool = false, no_shadow bool = false, keep_normal bool = false, sheen float3 = float3 { 0.0, 0.0, 0.0 }, sheen_rough f32 = 0.0, catcher f32 = 0.0, shading int = 0, shade_a float4 = float4 { 0.0, 0.0, 0.0, 0.0 }, shade_b float4 = float4 { 0.0, 0.0, 0.0, 0.0 }, shade_c float4 = float4 { 0.0, 0.0, 0.0, 0.0 }, detail TexRef = TexRef { -1, 0 },
+	ext bool = false, ior f32 = 1.5, spec_f f32 = 1.0, spec_c float3 = float3 { 1.0, 1.0, 1.0 }, spec_tex TexRef = TexRef { -1, 0 }, spec_c_tex TexRef = TexRef { -1, 0 },
+	coat f32 = 0.0, coat_r f32 = 0.0, coat_ns f32 = 1.0, coat_tex TexRef = TexRef { -1, 0 }, coat_r_tex TexRef = TexRef { -1, 0 }, coat_n_tex TexRef = TexRef { -1, 0 },
+	trans f32 = 0.0, trans_tex TexRef = TexRef { -1, 0 }, thick f32 = 0.0, thick_tex TexRef = TexRef { -1, 0 }, att_d f32 = 0.0, att_c float3 = float3 { 1.0, 1.0, 1.0 },
+	aniso f32 = 0.0, aniso_rot f32 = 0.0, aniso_tex TexRef = TexRef { -1, 0 },
+	irid f32 = 0.0, irid_ior f32 = 1.3, irid_min f32 = 100.0, irid_max f32 = 400.0, irid_tex TexRef = TexRef { -1, 0 }, irid_t_tex TexRef = TexRef { -1, 0 },
+	sheen_c_tex TexRef = TexRef { -1, 0 }, sheen_r_tex TexRef = TexRef { -1, 0 }
 }
 struct Primitive { vfirst int, vcount int, ifirst int, icount int, material int, mfirst int, targets int, lo float3, hi float3, tangents bool, skinned bool }
 struct Mesh { prims Span, weights Span, name Span }
@@ -407,7 +413,7 @@ fn load_bytes(data const byte[:], dir const byte[:]) int {
 	children_of(d, get(d, root, "extensionsRequired"), list);
 	for e in list {
 		let ext = json::text_of(d, e);
-		if ext != "KHR_materials_emissive_strength" && ext != "KHR_materials_unlit" && ext != "KHR_mesh_quantization" && ext != "KHR_texture_transform" && ext != "KHR_materials_sheen" {
+		if ext != "KHR_materials_emissive_strength" && ext != "KHR_materials_unlit" && ext != "KHR_mesh_quantization" && ext != "KHR_texture_transform" && ext != "KHR_materials_sheen" && ext != "KHR_materials_ior" && ext != "KHR_materials_specular" && ext != "KHR_materials_clearcoat" && ext != "KHR_materials_transmission" && ext != "KHR_materials_volume" && ext != "KHR_materials_anisotropy" && ext != "KHR_materials_iridescence" {
 			return fail(str("gltf: required extension ", ext, " is not supported"));
 		}
 	}
@@ -538,6 +544,46 @@ fn load_bytes(data const byte[:], dir const byte[:]) int {
 			shading: sk, shade_a: shade_preset(sk, 0), shade_b: shade_preset(sk, 1), shade_c: shade_preset(sk, 2),
 			..
 		});
+		let mx .= materials[materials.len - 1];
+		let xi = get(d, ext, "KHR_materials_ior");
+		let xs = get(d, ext, "KHR_materials_specular");
+		let xc = get(d, ext, "KHR_materials_clearcoat");
+		let xt = get(d, ext, "KHR_materials_transmission");
+		let xv = get(d, ext, "KHR_materials_volume");
+		let xa = get(d, ext, "KHR_materials_anisotropy");
+		let xr = get(d, ext, "KHR_materials_iridescence");
+		mx.ext = sh >= 0 || xi >= 0 || xs >= 0 || xc >= 0 || xt >= 0 || xa >= 0 || xr >= 0;
+		mx.ior = num(d, xi, "ior", 1.5) as f32;
+		mx.spec_f = num(d, xs, "specularFactor", 1.0) as f32;
+		let sc2 = get(d, xs, "specularColorFactor");
+		mx.spec_c = float3 { item_num(d, sc2, 0, 1.0) as f32, item_num(d, sc2, 1, 1.0) as f32, item_num(d, sc2, 2, 1.0) as f32 };
+		mx.spec_tex = texref(d, get(d, xs, "specularTexture"), tb);
+		mx.spec_c_tex = texref(d, get(d, xs, "specularColorTexture"), tb);
+		mx.coat = num(d, xc, "clearcoatFactor", 0.0) as f32;
+		mx.coat_r = num(d, xc, "clearcoatRoughnessFactor", 0.0) as f32;
+		mx.coat_tex = texref(d, get(d, xc, "clearcoatTexture"), tb);
+		mx.coat_r_tex = texref(d, get(d, xc, "clearcoatRoughnessTexture"), tb);
+		let cnt = get(d, xc, "clearcoatNormalTexture");
+		mx.coat_n_tex = texref(d, cnt, tb);
+		mx.coat_ns = num(d, cnt, "scale", 1.0) as f32;
+		mx.trans = num(d, xt, "transmissionFactor", 0.0) as f32;
+		mx.trans_tex = texref(d, get(d, xt, "transmissionTexture"), tb);
+		mx.thick = num(d, xv, "thicknessFactor", 0.0) as f32;
+		mx.thick_tex = texref(d, get(d, xv, "thicknessTexture"), tb);
+		mx.att_d = num(d, xv, "attenuationDistance", 0.0) as f32;
+		let ac = get(d, xv, "attenuationColor");
+		mx.att_c = float3 { item_num(d, ac, 0, 1.0) as f32, item_num(d, ac, 1, 1.0) as f32, item_num(d, ac, 2, 1.0) as f32 };
+		mx.aniso = num(d, xa, "anisotropyStrength", 0.0) as f32;
+		mx.aniso_rot = num(d, xa, "anisotropyRotation", 0.0) as f32;
+		mx.aniso_tex = texref(d, get(d, xa, "anisotropyTexture"), tb);
+		mx.irid = num(d, xr, "iridescenceFactor", 0.0) as f32;
+		mx.irid_ior = num(d, xr, "iridescenceIor", 1.3) as f32;
+		mx.irid_min = num(d, xr, "iridescenceThicknessMinimum", 100.0) as f32;
+		mx.irid_max = num(d, xr, "iridescenceThicknessMaximum", 400.0) as f32;
+		mx.irid_tex = texref(d, get(d, xr, "iridescenceTexture"), tb);
+		mx.irid_t_tex = texref(d, get(d, xr, "iridescenceThicknessTexture"), tb);
+		mx.sheen_c_tex = texref(d, get(d, sh, "sheenColorTexture"), tb);
+		mx.sheen_r_tex = texref(d, get(d, sh, "sheenRoughnessTexture"), tb);
 	}
 	asset.materials.count = materials.len - asset.materials.first;
 

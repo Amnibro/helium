@@ -16,47 +16,52 @@ fn arg_of(i int) byte[>..] {
 	out
 }
 fn main() {
-	if arg_count() - 1 < 11 {
-		print("usage: vis_frame model.glb out.png width height eyex eyey eyez tx ty tz fov_y [env=path,...]");
+	if arg_count() < 12 {
+		print("usage: vis_frame model.glb out.png width height eye_x eye_y eye_z target_x target_y target_z fov_y [features]");
 		return;
 	}
 	let path = arg_of(1);
 	let outp = arg_of(2);
-	gltf::lazy_pixels = true;
-	let asset = gltf::load(path);
-	if asset < 0 {
-		print(gltf::error());
-		return;
-	}
 	let w, wok = parse_int(arg_of(3));
 	let h, hok = parse_int(arg_of(4));
-	gfx::open_headless(w, h);
-	let inst = s3d::add(asset);
 	let eye = float3 { num(arg_of(5)), num(arg_of(6)), num(arg_of(7)) };
 	let target = float3 { num(arg_of(8)), num(arg_of(9)), num(arg_of(10)) };
 	let fov = num(arg_of(11));
-	let d = distance(eye, target);
-	s3d::view = s3d::Camera { eye: eye, target: target, up: float3 { 0.0, 1.0, 0.0 }, fov_y: fov, near: d * 0.01, far: d * 10.0 };
+	gltf::lazy_pixels = true;
+	let model = gltf::load(path);
+	if model < 0 {
+		print(gltf::error());
+		return;
+	}
+	gfx::open_headless(w, h);
+	let inst = s3d::add(model);
+	s3d::place(inst, gfx::mat4_identity);
+	let dx = eye.x - target.x;
+	let dy = eye.y - target.y;
+	let dz = eye.z - target.z;
+	let dist = sqrt(dx * dx + dy * dy + dz * dz) as f32;
+	s3d::view = s3d::Camera { eye: eye, target: target, up: float3 { 0.0, 1.0, 0.0 }, fov_y: fov, near: dist * 0.01, far: dist * 10.0 };
 	s3d::sun.shadows = false;
 	s3d::sun.rgb = float3 { 0.0, 0.0, 0.0 };
 	s3d::sky = s3d::Sky { zenith: float3 { 0.5, 0.5, 0.5 }, horizon: float3 { 0.5, 0.5, 0.5 }, ground: float3 { 0.5, 0.5, 0.5 }, ambient: 1.0, draw: true };
 	s3d::look.curve = 1;
 	s3d::look.bloom = 0.0;
 	s3d::look.ssao = false;
-	if arg_count() > 12 {
-		let feats = arg_of(12);
-		for word in split(feats, ',') {
-			if starts_with(word, "env=") {
-				let p = word[4..];
-				if !envmap::load(p) { print(p); }
-				s3d::sky.draw = true;
-			}
+	let feats = arg_of(12);
+	for word in split(feats, ',') {
+		if starts_with(word, "env=") {
+			let p = word[4..];
+			if !envmap::load(p) { print(p); }
+			s3d::sky.draw = true;
+		} else if starts_with(word, "dbg=") {
+			let n, ok = parse_int(word[4..]);
+			s3d::debug_view = n;
 		}
 	}
 	s3d::init(w, h);
-	let target_tex = gfx::render_target(w, h, gfx::RGBA8);
-	for i in 2 { s3d::render(target_tex); }
-	let saved = gfx::save_png(target_tex, outp);
+	let tex = gfx::render_target(w, h, gfx::RGBA8);
+	for i in 2 { s3d::render(tex); }
+	let saved = gfx::save_png(tex, outp);
 	print("vis_frame: ", saved, " ", gfx::driver());
 	gfx::close();
 }
