@@ -1,12 +1,13 @@
 layout(local_size_x = 64) in;
 #include "fx_common.glsl"
 layout(set = 0, binding = 0) uniform sampler2D tex_nd;
-layout(std430, set = 0, binding = 1) readonly buffer Emits { vec4 emits[]; };
+layout(set = 0, binding = 1) uniform sampler2D tex_sh;
+layout(std430, set = 0, binding = 2) readonly buffer Emits { vec4 emits[]; };
 layout(std430, set = 1, binding = 0) buffer Parts { Part parts[]; };
 layout(std430, set = 1, binding = 1) buffer Dead { int dead[]; };
 layout(std430, set = 1, binding = 2) buffer Alive { uint alive[]; };
 layout(std430, set = 1, binding = 3) buffer Keys { float keys[]; };
-layout(set = 2, binding = 0) uniform U { vec4 info; vec4 gravity; mat4 view_proj; mat4 view; vec4 screen; };
+layout(set = 2, binding = 0) uniform U { vec4 info; vec4 gravity; mat4 view_proj; mat4 view; vec4 screen; vec4 shelter; };
 void main() {
 	uint i = gl_GlobalInvocationID.x;
 	if (i >= uint(info.x)) return;
@@ -15,7 +16,7 @@ void main() {
 	float dt = info.y;
 	q.pos.w += dt;
 	if (q.pos.w >= q.vel.w) { q.vel.w = 0.0; parts[i] = q; int c = atomicAdd(dead[0], 1); dead[c + 1] = int(i); return; }
-	int em = (int(q.misc.x)) * 11;
+	int em = (int(q.misc.x)) * 13;
 	vec3 g = gravity.xyz * emits[em + 4].x;
 	float k = emits[em + 4].y;
 	vec3 v = q.vel.xyz;
@@ -39,6 +40,15 @@ void main() {
 				}
 			}
 		}
+	}
+	vec4 wx = emits[em + 11];
+	if (wx.y > 0.5) {
+		if (screen.y < 0.5) { vec3 c = emits[em].xyz; vec3 hs = max(emits[em + 1].xyz, vec3(1e-4)); np = c + mod(np - c + hs, 2.0 * hs) - hs; }
+		float h = -1.0e30;
+		if (shelter.w > 0.5) { ivec2 sz = textureSize(tex_sh, 0); ivec2 ti = ivec2(floor(((np.xz - shelter.xy) * shelter.z + 0.5) * vec2(sz))); if (ti.x >= 0 && ti.y >= 0 && ti.x < sz.x && ti.y < sz.y) h = texelFetch(tex_sh, ti, 0).r; }
+		float ts = (h - np.y) / max(-nv.y, 1e-3);
+		q.misc.z = np.y > h ? 0.0 : (ts < wx.z ? 1.0 : 2.0);
+		q.misc.w = h;
 	}
 	q.pos.xyz = np; q.vel.xyz = nv;
 	parts[i] = q;

@@ -20,7 +20,7 @@ for (const [name, p, blob] of files) {
 	for (let k = 0; k < nwb; k++, q += 4) binds.push({ group: b[q], binding: b[q + 1], kind: b[q + 2], info: b[q + 3] });
 	S.push({ name, stage: b[6], wgsl: b.toString('utf8', wo, wo + ws), binds, inputs });
 }
-const has = n => S.some(s => s.name === n), P = S.filter(s => s.stage === 1).map(s => { const f = s.name.replace(/_frag$/, ''); return [has(f + '_vert') ? f + '_vert' : ['depth_only', 'normals'].includes(f) ? 'surface_vert' : 'screen_vert', s.name]; });
+const has = n => S.some(s => s.name === n), P = S.filter(s => s.stage === 1).map(s => { const f = s.name.replace(/_frag$/, ''); return [has(f + '_vert') ? f + '_vert' : ['depth_only', 'normals', 'shelter'].includes(f) ? 'surface_vert' : 'screen_vert', s.name]; });
 const page = async (S, P) => {
 	const ad = await navigator.gpu.requestAdapter(), dev = await ad.requestDevice(), M = {}, out = { mods: {}, pipes: {} }, by = Object.fromEntries(S.map(s => [s.name, s]));
 	const FMT = { 1: 'rgba32float', 2: 'rgba16float', 3: 'r32float', 4: 'rgba8unorm', 32: 'rgba8uint', 33: 'r32uint', 6: 'rg32float', 7: 'rg16float', 9: 'r16float' }, DIM = ['2d', 'cube', '3d', '2d-array', 'cube-array'];

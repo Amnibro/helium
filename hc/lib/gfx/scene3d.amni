@@ -324,6 +324,12 @@ var spec_aa = true;
 var wet f32 = 0.0;
 var world_time f32 = 0.0;
 var snow f32 = 0.0;
+var shelter = true;
+var shelter_res = 512;
+var shelter_size = 0;
+var shelter_map gfx::Texture;
+var shelter_depth gfx::Texture;
+var pipe_shelter gfx::Pipeline;
 var light_data float4[>..] = [];
 var light_xr float4[>..] = [];
 var cluster_words u32[>..] = [];
@@ -637,6 +643,7 @@ fn init(w int, h int, ow int, oh int) bool {
 	sd.depth_bias = 1.5;
 	sd.depth_bias_slope = 2.0;
 	pipe_shadow = gfx::pipeline(vs, embed_shader("shaders/depth_only.frag"), sd);
+	pipe_shelter = gfx::pipeline(vs, embed_shader("shaders/shelter.frag"), surface_desc(gfx::CULL_NONE, gfx::BLEND_NONE, true));
 	pipe_normals = gfx::pipeline(vs, embed_shader("shaders/normals.frag"), surface_desc(gfx::CULL_BACK, gfx::BLEND_NONE, true));
 	pipe_normals_two = gfx::pipeline(vs, embed_shader("shaders/normals.frag"), surface_desc(gfx::CULL_NONE, gfx::BLEND_NONE, true));
 	pipe_sky = gfx::pipeline(scr, embed_shader("shaders/sky.frag"));
@@ -1413,6 +1420,30 @@ fn shadow_pass() {
 	}
 }
 
+fn shelter_pass() {
+	fx::eye = view.eye;
+	fx::shelter_box = f4(0.0, 0.0, 0.0, 0.0);
+	let e, top = fx::weather_bounds(view.eye);
+	if !shelter || e <= 0.0 { return; }
+	if shelter_size != shelter_res {
+		if shelter_size > 0 { gfx::release(shelter_map); gfx::release(shelter_depth); }
+		shelter_size = shelter_res;
+		shelter_map = gfx::render_target(shelter_size, shelter_size, gfx::R32F);
+		shelter_depth = gfx::texture(gfx::TextureDesc { format: gfx::DEPTH32F, usage: gfx::DEPTH_TARGET, width: shelter_size as i32, height: shelter_size as i32 });
+	}
+	let tx = 2.0 * e / (shelter_size - 4) as f32;
+	let he = tx * shelter_size as f32 * 0.5;
+	let cx = floor(view.eye.x / tx) * tx; let cz = floor(view.eye.z / tx) * tx;
+	let hi = top + 100.0;
+	let vp = gfx::mat4 { c0: f4(1.0 / he, 0.0, 0.0, 0.0), c1: f4(0.0, 0.0, -1.0 / 400.0, 0.0), c2: f4(0.0, -1.0 / he, 0.0, 0.0), c3: f4(-cx / he, cz / he, hi / 400.0, 1.0) };
+	guard gfx::begin_pass(gfx::PassDesc { color: [shelter_map, none(), none(), none()], depth: shelter_depth, color_value: f4(-1.0e30, 0.0, 0.0, 1.0), cycle: 1, .. }) else { return; }
+	gfx::bind(pipe_shelter);
+	bind_geometry();
+	for b in batch { let m = material_of(b.prim); if m.no_shadow { continue; } gfx::uniforms(gfx::VERTEX, 0, draw_uniforms(b, vp)); gfx::uniforms(gfx::FRAGMENT, 0, cut_of(m)); bind_slot(0, m.base_tex, true, white); draw_prim(b); }
+	gfx::end_pass();
+	fx::shelter_tex = shelter_map;
+	fx::shelter_box = f4(cx, cz, 0.5 / he, 1.0);
+}
 fn local_shadow_pass() {
 	if local_used == 0 { return; }
 	if local_size != local_shadow_size {
@@ -1750,7 +1781,7 @@ fn color_pass() {
 		quad_draw(true);
 		quad_draw(false);
 		sparks::draw(view_proj, right, up);
-		fx::draw(view_proj, view_mat, right, up, nd, nd_ran, 1.0);
+		fx::draw(view_proj, view_mat, right, up, nd, nd_ran, 1.0, width, height);
 	}
 	gfx::end_pass();
 }
@@ -2079,7 +2110,7 @@ fn render_begin() bool {
 	contact_pass();
 	ssr_pass();
 	ssgi_pass();
-	if fx::ready() && fx_dt > 0.0 { fx::simulate(fx_dt, nd, nd_ran, view_mat, view_proj_nj); }
+	if fx::ready() && fx_dt > 0.0 { shelter_pass(); fx::simulate(fx_dt, nd, nd_ran, view_mat, view_proj_nj); }
 	quad_upload();
 	color_pass();
 	fog_pass();

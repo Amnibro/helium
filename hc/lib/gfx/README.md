@@ -25,6 +25,7 @@ and in NOTICE). It sits on top of `hc/lib/gfx.he` (SDL3 GPU).
 | `shapes` | procedural sphere / plane / box assets in the same pools as glTF assets |
 | `scene3d` (`s3d::`) | the frame: cascaded sun shadows (PCF or PCSS, optionally fitted to the casters), contact shadows, shadowed point and spot lights, SSAO, MSAA forward shading with an analytic sky ambient, bloom, tone curve |
 | `sparks` | GPU particles: compute-shader integration with drag, gravity and a bouncing ground plane; additive camera-facing quads |
+| `fx` | GPU particles with emitters, curl noise, depth collision, sorting, soft fades, streaks, and rain and snow that follow the camera and stay out from under roofs |
 | `sdf_font` | signed-distance-field text (glyphs generated at start-up), outline and weight |
 
 ## Using it
@@ -375,6 +376,43 @@ and metal overrides chain in the order the decals were added. Lookups use gradie
 the pixel's world position, so the mip level matches a texture painted onto the surface.
 Blended (transparent) and unlit surfaces take no decals. There is no extra pass and no
 G-buffer.
+
+### Rain and snow (E6)
+
+Rain and snow are `gfx.fx` particles kept in a box that rides along with the camera, so a few
+tens of thousands of drops fill the view wherever it goes.
+
+```
+fx::init(65536);
+fx::burst(fx::add(fx::rain()), 40000);   // or fx::snow()
+s3d::fx_dt = 1.0 / 60.0;                 // the step time, each frame
+s3d::wet = 0.7;                          // optional: wet surfaces (s3d::snow for snow cover)
+```
+
+`fx::rain()` and `fx::snow()` return ordinary emitters with these fields set, so any of them
+can be changed before `fx::add` (or later with `fx::set`):
+
+| field | rain | snow | what it does |
+| --- | --- | --- | --- |
+| `wrap` | true | true | particles stay inside the box `pos` +- `size`: one that leaves through a side comes back through the opposite side, so the count and the spread stay even |
+| `follow` | true | true | the box is centered on the camera; `pos` is then an offset from it |
+| `size` | 12, 8, 12 | 12, 8, 12 | half size of the box in meters |
+| `dir`, `speed_min`, `speed_max` | down, 9 m/s | down, 1 m/s | fall speed; gravity is off, so drops fall at their final speed |
+| `curl`, `curl_scale` | 0 | 0.6, 0.35 | swirling drift |
+| `stretch` | 1/30 s | 0 | draws each particle as a streak along its path over this many seconds (any emitter can use it, sparks too) |
+| `splash`, `splash_size`, `splash_rgba` | 0.12 s, 0.05 m, pale | 0 | how long a drop splashes where it lands, and the splash's size and color |
+| `colors`, `sizes` | pale blue-grey, 7 mm | white, 12 mm | as for any emitter; rain adds light, snow is blended |
+
+How it works: each frame, before the particles move, the scene is drawn once from straight
+above into a 512 x 512 height map around the camera (`s3d::shelter_res`; `s3d::shelter =
+false` turns it off). A particle above the height under it is falling. One that has just
+passed below it is splashing for `splash` seconds, drawn as a small fading blob on the
+surface, and after that it is hidden until the box brings it back in at the top. So rain
+never falls under roofs, trees or bridges, and the number of splashes matches the rain
+reaching the ground. Surfaces marked `no_shadow` do not stop rain. A streak is built on
+the screen: the drop's path over `stretch` seconds is projected, and the quad covers it
+exactly, as wide as the drop. Snowflakes are blended without sorting (they are all one
+color), so snow costs no sort.
 
 ## Materials, light and finish
 
@@ -841,8 +879,8 @@ geometry (soft particles). `s3d::fx_dt` runs it after the prepass each frame.
 | F5 control: unsorted | 0.65 | must be > 0.05 | fails |
 | F6 soft particles | step ratio 0.42 | <= 0.5 | PASS |
 
-Reported: 1 000 000 live particles, 3.2 ms per 640 x 360 frame for spawn, simulate and draw
-(2.1 ms with the simulation off), wall clock including a readback sync.
+Reported: 1 000 000 live additive particles, 3.2 ms per 640 x 360 frame for spawn, simulate
+and draw (2.2 ms with the simulation off), wall clock including a readback sync.
 
 The first F5 run measured 0.088: the test drew 0.05 m squares, so the far ones covered under a
 pixel and the centre 3 x 3 the reference composites over was not covered. The bar names no
@@ -1080,6 +1118,35 @@ on. "Falling" drops are those not splashing.
   checks pass; `wgsltest.mjs` and `webgputest.mjs` 0 failures, with a new `scene_rain`
   (rain over the e2 scene) matching native under webgputest's usual bar.
 * Reported, no bar: frame time at 1280 x 720 with and without the 40,000-drop rain.
+
+### Rain and snow results (2026-11-09, RX 9060 XT, RADV; full gfxtest ok)
+
+| check | measured | bar | result |
+| --- | --- | --- | --- |
+| W1 even after the camera moves | worst cell 3.6 % off the mean (2610 .. 2764 drops) | <= 10 % | PASS |
+| W1 control: wrap off | every cell empty | must fail | fails |
+| W2 under the roof | 0 drops at every frame | == 0 | PASS |
+| W2 open column | 1.02 x expected | >= 0.8 | PASS |
+| W2 control: shelter off | 182 drops under the roof | must fail | fails |
+| W3 splashes | 1.003 x rho v A tau (2700 vs 2693) | 0.9 .. 1.1 | PASS |
+| W3 control: splashes off | 0 | must fail | fails |
+| W4 streak 3 m | 34.29 px vs 34.29 px (+0.01 %) | +-5 % | PASS |
+| W4 streak 6 m | 17.08 px vs 17.14 px (-0.34 %) | +-5 % | PASS |
+| W4 streak 12 m | 8.24 px vs 8.57 px (-3.9 %) | +-5 % | PASS |
+| W4 streak 6 m, blown sideways | 19.62 px vs 19.61 px (+0.03 %) | +-5 % | PASS |
+| W4 control: no streak | 4.6, 2.3, 1.4, 2.3 px | must fail | fails |
+| W5 snow speed | 0.972 m/s (10 388 flakes) | 0.95 .. 1.05 | PASS |
+| W6 goldens | 44.9 dB, shipped look 41.7 dB | > 40 dB | PASS |
+| W6 fx checks F1 .. F6 | all pass | as before | PASS |
+| W6 `wgsltest.mjs` | 63 modules, 54 pipelines, 0 failures | 0 | PASS |
+| W6 `webgputest.mjs` | 14 scenes, 0 failures; `scene_rain` identical to native | 0 | PASS |
+
+Open-air density (4.33 drops per m3) is counted between y = 3.5 and 9.2 m, which is 0.5 m
+above the roof and 0.5 m under the box's top. The 12 m streak is about 1 px wide, so its
+brightness profile is sampled the most coarsely of the four.
+
+Reported: 1280 x 720 frame 2.78 ms without weather and 3.50 ms with 40 000 drops of rain
+(+0.72 ms: height map, simulation and streaks), wall clock, best of 2 x 60 frames.
 
 ### Motion blur and depth of field results (2026-11-02, RX 9060 XT, RADV)
 
@@ -1450,6 +1517,11 @@ pass-through mean error is 0.0106 % (max 0.0488 %).
   camera, takes about 2 s at 60 fps to build up several bounces, and costs about as
   much as the rest of a simple frame at 1280 x 720: the Hi-Z walk picks its level
   with a branch over eight textures, which diverges across a wave.
+* Rain and snow: shelter is straight down, so rain blown sideways still stops at a roof's
+  edge, and the height map is one texel (5 cm with the default box) coarse. The map is
+  redrawn every frame. Drops and splashes take their color from the emitter, not from the
+  sun and sky, and puddle ripples are not drawn (the `wet` and `snow` sliders change the
+  surfaces separately).
 * Decals: every opaque pixel tests every decal's box (no clustering yet; 64 heavily
   overlapping decals add about 0.3 ms at 1280 x 720). Images are resampled into the
   1024 x 1024 array layers, so finer detail is lost. The depth prepass, SSAO, SSR and
@@ -1457,7 +1529,7 @@ pass-through mean error is 0.0106 % (max 0.0488 %).
   none, and decals cannot glow.
 * Not built: alpha to coverage, rectangular area
   lights (spot and sphere stand in), physical light falloff parity with three.js,
-  rain and snow particles, caustics, mip bias for upscaling, BC, KTX2, WebP, meshopt
+  caustics, mip bias for upscaling, BC, KTX2, WebP, meshopt
   and Draco, texture and mesh streaming, GPU instancing, motion vectors for morph
   targets, and Nanite-class geometry.
 

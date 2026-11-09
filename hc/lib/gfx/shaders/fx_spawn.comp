@@ -13,7 +13,7 @@ void main() {
 	if (d <= 0) { atomicAdd(dead[0], 1); return; }
 	uint slot = uint(dead[d]);
 	uint s = fx_hash(t * 9781u + uint(info.y) * 6271u + 17u);
-	int em = (e) * 11;
+	int em = (e) * 13;
 	vec3 p = emits[em + 0].xyz;
 	int shape = int(emits[em + 0].w);
 	if (shape == 1) { vec3 q = vec3(0.0); for (int r = 0; r < 16; r++) { q = vec3(fx_rnd(s), fx_rnd(s), fx_rnd(s)) * 2.0 - 1.0; if (dot(q, q) <= 1.0) break; } p += q * emits[em + 1].x; }

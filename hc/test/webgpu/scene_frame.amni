@@ -3,6 +3,7 @@ import gfx.linalg;
 import gfx.gltf;
 import gfx.scene3d;
 import gfx.shapes;
+import gfx.fx;
 fn num(s const byte[:]) f32 {
 	var v real = 0.0;
 	var neg = false;
@@ -32,7 +33,7 @@ fn main() {
 	let gi = arg_count() > 13 && arg_of(13)[..] == "1";
 	let e3 = arg_count() > 13 && arg_of(13)[..] == "e3";
 	let e8 = arg_count() > 13 && arg_of(13)[..] == "e8";
-	let e2 = arg_count() > 13 && (arg_of(13)[..] == "e2" || arg_of(13)[..] == "decal");
+	let e2 = arg_count() > 13 && (arg_of(13)[..] == "e2" || arg_of(13)[..] == "decal" || arg_of(13)[..] == "rain");
 	if e2 { s3d::ssr_on = true; s3d::ao_mode = 1; }
 	let sg = arg_count() > 13 && arg_of(13)[..] == "ssgi";
 	if sg { s3d::ssgi_on = true; }
@@ -49,6 +50,7 @@ fn main() {
 		}
 		let _ = s3d::add_decal(s3d::Decal { pos: float3 { 0.5, 0.0, 1.0 }, rot: linalg::qaxis(float3 { 0.0, 1.0, 0.0 }, 0.5), size: float3 { 1.2, 0.6, 1.2 }, base: gltf::add_texture_rgba(px[..], 64, 64, 33071), rough: 0.8, .. });
 	}
+	if arg_count() > 13 && arg_of(13)[..] == "rain" { let _ = fx::init(65536); fx::burst(fx::add(fx::rain()), 20000); s3d::fx_dt = 1.0 / 60.0; }
 	if arg_count() > 13 && arg_of(13)[..] == "probe" { s3d::add_probe(float3 { 0.0, 1.0, 0.0 }, float3 { -2.0, 0.0, -2.0 }, float3 { 2.0, 2.5, 2.0 }, 0.5); }
 	if e8 {
 		s3d::look.auto_exposure = true; s3d::look.lut = 1.0; s3d::motion_blur = 0.5; s3d::dof_aperture = 0.08;

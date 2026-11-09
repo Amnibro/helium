@@ -2,9 +2,9 @@ namespace fx;
 import gfx;
 import math;
 struct Part { pos float4, vel float4, misc float4 }
-struct Emitter { pos float3, shape int, size float3, rate f32, dir float3, speed_min f32, speed_max f32, life_min f32, life_max f32, spread f32, gravity f32, drag f32, curl f32, curl_scale f32, collide bool, restitution f32, soft f32, alpha bool, colors float4[4], sizes float4, on bool }
+struct Emitter { pos float3, shape int, size float3, rate f32, dir float3, speed_min f32, speed_max f32, life_min f32, life_max f32, spread f32, gravity f32, drag f32, curl f32, curl_scale f32, collide bool, restitution f32, soft f32, alpha bool, colors float4[4], sizes float4, on bool, stretch f32 = 0.0, wrap bool = false, follow bool = false, splash f32 = 0.0, splash_size f32 = 0.05, splash_rgba float4 = float4 { 1.0, 1.0, 1.0, 1.0 } }
 struct SpawnU { info float4, counts float4[4] }
-struct SimU { info float4, gravity float4, view_proj gfx::mat4, view gfx::mat4, screen float4 }
+struct SimU { info float4, gravity float4, view_proj gfx::mat4, view gfx::mat4, screen float4, shelter float4 }
 struct SortU { info float4 }
 struct ViewU { view_proj gfx::mat4, view gfx::mat4, right float4, up float4, mode float4 }
 struct FragU { screen float4, mode float4 }
@@ -24,6 +24,10 @@ var sorting = true;
 var square = false;
 var frame = 0;
 var dirty = true;
+var eye float3 = float3 { 0.0, 0.0, 0.0 };
+var shelter_tex gfx::Texture;
+var shelter_box float4 = float4 { 0.0, 0.0, 0.0, 0.0 };
+var test_no_wrap = false;
 fn ready() bool { capacity > 0 }
 fn pow2(n int) int { var p = 64; while p < n { p *= 2; } p }
 fn init(count int) bool {
@@ -43,8 +47,8 @@ fn init(count int) bool {
 	alive = gfx::buffer(rw, (sort_n + 1) * 4, zz[..]);
 	keys = gfx::buffer(rw, sort_n * 4, zz[..sort_n * 4]);
 	var ze byte[>..] = [];
-	ze.resize(MAXE * 176, 0);
-	emit_buf = gfx::buffer(gfx::BUFFER_STORAGE | gfx::BUFFER_COMPUTE_READ, MAXE * 176, ze[..]);
+	ze.resize(MAXE * 208, 0);
+	emit_buf = gfx::buffer(gfx::BUFFER_STORAGE | gfx::BUFFER_COMPUTE_READ, MAXE * 208, ze[..]);
 	p_clear = gfx::compute_pipeline(embed_shader("shaders/fx_clear.comp"));
 	p_spawn = gfx::compute_pipeline(embed_shader("shaders/fx_spawn.comp"));
 	p_sim = gfx::compute_pipeline(embed_shader("shaders/fx_sim.comp"));
@@ -57,7 +61,14 @@ fn init(count int) bool {
 	true
 }
 fn emitter() Emitter {
-	Emitter { pos: float3 { 0.0, 0.0, 0.0 }, shape: 0, size: float3 { 0.0, 0.0, 0.0 }, rate: 0.0, dir: float3 { 0.0, 1.0, 0.0 }, speed_min: 1.0, speed_max: 1.0, life_min: 1.0, life_max: 1.0, spread: 0.0, gravity: 1.0, drag: 0.0, curl: 0.0, curl_scale: 1.0, collide: false, restitution: 0.5, soft: 0.0, alpha: false, colors: [float4 { 1.0, 1.0, 1.0, 1.0 }; 4], sizes: float4 { 0.1, 0.1, 0.1, 0.1 }, on: true }
+	Emitter { pos: float3 { 0.0, 0.0, 0.0 }, shape: 0, size: float3 { 0.0, 0.0, 0.0 }, rate: 0.0, dir: float3 { 0.0, 1.0, 0.0 }, speed_min: 1.0, speed_max: 1.0, life_min: 1.0, life_max: 1.0, spread: 0.0, gravity: 1.0, drag: 0.0, curl: 0.0, curl_scale: 1.0, collide: false, restitution: 0.5, soft: 0.0, alpha: false, colors: [float4 { 1.0, 1.0, 1.0, 1.0 }; 4], sizes: float4 { 0.1, 0.1, 0.1, 0.1 }, on: true, .. }
+}
+fn rain() Emitter { var e = emitter(); e.shape = 2; e.size = float3 { 12.0, 8.0, 12.0 }; e.dir = float3 { 0.0, -1.0, 0.0 }; e.speed_min = 9.0; e.speed_max = 9.0; e.life_min = 1.0e9; e.life_max = 1.0e9; e.gravity = 0.0; e.wrap = true; e.follow = true; e.stretch = 1.0 / 30.0; e.splash = 0.12; e.splash_size = 0.05; e.colors = [float4 { 0.55, 0.6, 0.65, 0.3 }; 4]; e.splash_rgba = float4 { 0.55, 0.6, 0.65, 0.5 }; e.sizes = float4 { 0.007, 0.007, 0.007, 0.007 }; e }
+fn snow() Emitter { var e = rain(); e.speed_min = 1.0; e.speed_max = 1.0; e.curl = 0.6; e.curl_scale = 0.35; e.stretch = 0.0; e.splash = 0.0; e.alpha = true; e.colors = [float4 { 0.95, 0.95, 1.0, 0.85 }; 4]; e.sizes = float4 { 0.012, 0.012, 0.012, 0.012 }; e }
+fn weather_bounds(at float3) f32, f32 {
+	var x f32 = 0.0; var top f32 = -1.0e30;
+	for m in emitters { if m.on && m.wrap { let c = if m.follow { m.pos + at } else { m.pos }; x = max(x, max(abs(c.x - at.x) + m.size.x, abs(c.z - at.z) + m.size.z)); top = max(top, c.y + m.size.y); } }
+	return x, top;
 }
 fn add(e Emitter) int { if emitters.len >= MAXE { return -1; } emitters.push(e); acc.push(0.0); bursts.push(0); dirty = true; emitters.len - 1 }
 fn set(i int, e Emitter) { emitters[i] = e; dirty = true; }
@@ -67,10 +78,11 @@ fn wants_depth() bool { for e in emitters { if e.on && (e.collide || e.soft > 0.
 fn upload_emitters() {
 	var f f32[>..] = [];
 	for e in emitters {
-		f.append([e.pos.x, e.pos.y, e.pos.z, e.shape as f32, e.size.x, e.size.y, e.size.z, e.rate, e.dir.x, e.dir.y, e.dir.z, e.speed_min, e.speed_max, e.life_min, e.life_max, e.spread]);
+		let p = if e.follow { e.pos + eye } else { e.pos };
+		f.append([p.x, p.y, p.z, e.shape as f32, e.size.x, e.size.y, e.size.z, e.rate, e.dir.x, e.dir.y, e.dir.z, e.speed_min, e.speed_max, e.life_min, e.life_max, e.spread]);
 		f.append([e.gravity, e.drag, e.curl, e.curl_scale, if e.collide { 1.0 } else { 0.0 }, e.restitution, e.soft, if e.alpha { 1.0 } else { 0.0 }]);
 		for c in e.colors { f.append([c.x, c.y, c.z, c.w]); }
-		f.append([e.sizes.x, e.sizes.y, e.sizes.z, e.sizes.w]);
+		f.append([e.sizes.x, e.sizes.y, e.sizes.z, e.sizes.w, e.stretch, if e.wrap { 1.0 } else { 0.0 }, e.splash, e.splash_size, e.splash_rgba.x, e.splash_rgba.y, e.splash_rgba.z, e.splash_rgba.w]);
 	}
 	if f.len > 0 { gfx::update_buffer(emit_buf, 0, bytes_of(f)[..f.len * 4]); }
 	dirty = false;
@@ -90,7 +102,9 @@ fn spawn_counts(dt f32) int, float4[4] {
 }
 fn simulate(dt f32, nd gfx::Texture, have_nd bool, view gfx::mat4, view_proj gfx::mat4) {
 	if capacity == 0 { return; }
-	if dirty { upload_emitters(); }
+	var fol = false;
+	for e in emitters { if e.follow { fol = true; } }
+	if dirty || fol { upload_emitters(); }
 	frame += 1;
 	let total, counts = spawn_counts(dt);
 	let ab = [alive, keys];
@@ -112,12 +126,13 @@ fn simulate(dt f32, nd gfx::Texture, have_nd bool, view gfx::mat4, view_proj gfx
 	guard gfx::begin_compute(mb[..]) else { return; }
 	gfx::bind(p_sim);
 	gfx::bind_texture(gfx::COMPUTE, 0, nd, smp);
+	gfx::bind_texture(gfx::COMPUTE, 1, if shelter_box.w > 0.5 { shelter_tex } else { nd }, smp);
 	gfx::bind_storage_buffer(gfx::COMPUTE, 0, emit_buf);
-	gfx::uniforms(gfx::COMPUTE, 0, SimU { float4 { capacity as f32, dt, 0.0, 0.0 }, float4 { gravity.x, gravity.y, gravity.z, 0.0 }, view_proj, view, float4 { 0.0, 0.0, if have_nd { 1.0 } else { 0.0 }, thickness } });
+	gfx::uniforms(gfx::COMPUTE, 0, SimU { float4 { capacity as f32, dt, 0.0, 0.0 }, float4 { gravity.x, gravity.y, gravity.z, 0.0 }, view_proj, view, float4 { 0.0, if test_no_wrap { 1.0 } else { 0.0 }, if have_nd { 1.0 } else { 0.0 }, thickness }, shelter_box });
 	gfx::dispatch(capacity / 64, 1, 1);
 	gfx::end_compute();
 	var need = false;
-	for e in emitters { if e.alpha { need = true; } }
+	for e in emitters { if e.alpha && !e.wrap { need = true; } }
 	if sorting && need {
 		var k = 2;
 		while k <= sort_n {
@@ -134,7 +149,7 @@ fn simulate(dt f32, nd gfx::Texture, have_nd bool, view gfx::mat4, view_proj gfx
 		}
 	}
 }
-fn draw(view_proj gfx::mat4, view gfx::mat4, right float3, up float3, nd gfx::Texture, have_nd bool, scale f32) {
+fn draw(view_proj gfx::mat4, view gfx::mat4, right float3, up float3, nd gfx::Texture, have_nd bool, scale f32, w int, h int) {
 	if capacity == 0 || emitters.len == 0 { return; }
 	for m in 2 {
 		var any = false;
@@ -145,7 +160,7 @@ fn draw(view_proj gfx::mat4, view gfx::mat4, right float3, up float3, nd gfx::Te
 		gfx::bind_storage_buffer(gfx::VERTEX, 1, alive);
 		gfx::bind_storage_buffer(gfx::VERTEX, 2, emit_buf);
 		gfx::bind_texture(gfx::FRAGMENT, 0, nd, smp);
-		gfx::uniforms(gfx::VERTEX, 0, ViewU { view_proj, view, float4 { right.x, right.y, right.z, 0.0 }, float4 { up.x, up.y, up.z, 0.0 }, float4 { m as f32, 0.0, 0.0, 0.0 } });
+		gfx::uniforms(gfx::VERTEX, 0, ViewU { view_proj, view, float4 { right.x, right.y, right.z, 0.0 }, float4 { up.x, up.y, up.z, 0.0 }, float4 { m as f32, 0.0, w as f32, h as f32 } });
 		gfx::uniforms(gfx::FRAGMENT, 0, FragU { float4 { 0.0, 0.0, if have_nd { 1.0 } else { 0.0 }, scale }, float4 { m as f32, if square { 1.0 } else { 0.0 }, 0.0, 0.0 } });
 		gfx::draw(capacity * 6);
 	}

@@ -2837,7 +2837,7 @@ fn dof_checks() bool {
 	s3d::look = DEF_LOOK; s3d::sun = DEF_SUN; s3d::sky = DEF_SKY;
 	d1 && d2 && c1
 }
-fn fx_fresh() { if !fx::ready() { fx::init(262144); } fx::clear_emitters(); fx::reset(); fx::sorting = true; fx::square = false; fx::gravity = float3 { 0.0, -9.8, 0.0 }; }
+fn fx_fresh() { if !fx::ready() { fx::init(262144); } fx::clear_emitters(); fx::reset(); fx::sorting = true; fx::square = false; fx::gravity = float3 { 0.0, -9.8, 0.0 }; fx::test_no_wrap = false; }
 fn fx_run(n int) { let I = gfx::mat4_identity; for k in n { fx::simulate(1.0 / 60.0, s3d::nd_target(), false, I, I); } }
 fn fx_f1() bool {
 	var worst = 0.0;
@@ -3387,6 +3387,203 @@ fn decal_checks() bool {
 	s3d::clear_decals();
 	p1 && p2 && p3 && pk
 }
+let WX_W = 960;
+let WX_H = 540;
+fn wx_scene() {
+	reset_scene();
+	let g = shapes::cube(float3 { 20.0, 0.1, 20.0 }, shapes::material(linalg::v3(0.4, 0.4, 0.4), 0.0, 0.8));
+	s3d::place(s3d::add(g), gfx::translate(float3 { 0.0, -0.1, 0.0 }));
+	let r = shapes::cube(float3 { 2.0, 0.1, 2.0 }, shapes::material(linalg::v3(0.5, 0.3, 0.2), 0.0, 0.7));
+	s3d::place(s3d::add(r), gfx::translate(float3 { 5.0, 2.9, 0.0 }));
+	s3d::view = s3d::Camera { eye: float3 { 0.0, 1.7, 8.0 }, target: float3 { 0.0, 1.5, 0.0 }, up: float3 { 0.0, 1.0, 0.0 }, fov_y: 0.75, near: 0.1, far: 100.0 };
+	s3d::sky = DEF_SKY; s3d::sun = DEF_SUN; s3d::look = DEF_LOOK; s3d::look.ssao = false; s3d::look.bloom = 0.0;
+	s3d::ssr_on = false; s3d::ssgi_on = false; s3d::gi_on = false; s3d::temporal = 0; s3d::shelter = true;
+}
+fn wx_start(e fx::Emitter, n int, w int, h int) gfx::Texture {
+	fx_fresh();
+	fx::burst(fx::add(e), n);
+	s3d::init(w, h);
+	s3d::fx_dt = 1.0 / 60.0;
+	gfx::render_target(w, h, gfx::RGBA8)
+}
+fn wx_cells(nowrap bool) real {
+	wx_scene();
+	let out = wx_start(fx::rain(), 40000, WX_W, WX_H);
+	fx::test_no_wrap = nowrap;
+	for f in 120 { s3d::render(out); }
+	for f in 120 { let t = (f + 1) as f32 / 120.0; s3d::view.eye = float3 { 30.0 * t, 1.7, 8.0 + 15.0 * t }; s3d::view.target = float3 { 30.0 * t, 1.5, 15.0 * t }; s3d::render(out); }
+	s3d::fx_dt = 0.0;
+	fx::test_no_wrap = false;
+	gfx::release(out);
+	var ps fx::Part[>..] = [];
+	fx::read_parts(ps);
+	var c real[>..] = [];
+	c.resize(8, 0.0);
+	for p in ps {
+		if p.vel.w <= 0.0 || p.misc.z != 0.0 { continue; }
+		let x = p.pos.x as real - 30.0; let y = p.pos.y as real; let z = p.pos.z as real - 23.0;
+		if abs(x) > 12.0 || abs(z) > 12.0 || y < 0.5 || y > 9.2 { continue; }
+		c[(if x < 0.0 { 0 } else { 1 }) + (if z < 0.0 { 0 } else { 2 }) + (if y < 4.85 { 0 } else { 4 })] += 1.0;
+	}
+	var m = 0.0; var lo = 1.0e30; var hi = 0.0;
+	for k in 8 { m += c[k] / 8.0; lo = min(lo, c[k]); hi = max(hi, c[k]); }
+	let d = if m > 0.0 { max(hi - m, m - lo) / m } else { 1.0e9 };
+	print("gpu: weather W1", if nowrap { " control (wrap off)" } else { "" }, ": falling drops per cell min ", lo, " max ", hi, " mean ", m, ", worst deviation ", r4(d * 100.0), " %");
+	d
+}
+fn wx_shelter(shel bool, spl bool, shot bool) real, real, real {
+	wx_scene();
+	s3d::shelter = shel;
+	var e = fx::rain();
+	e.splash = if spl { 0.12 } else { 0.0 };
+	let out = wx_start(e, 40000, WX_W, WX_H);
+	for f in 120 { s3d::render(out); }
+	var under = 0.0; var open = 0.0; var rho = 0.0; var spc = 0.0;
+	var ps fx::Part[>..] = [];
+	for s in 10 {
+		for f in 6 { s3d::render(out); }
+		fx::read_parts(ps);
+		var u = 0.0; var o = 0.0; var a = 0.0; var q = 0.0;
+		for p in ps {
+			if p.vel.w <= 0.0 { continue; }
+			if p.misc.z == 1.0 { q += 1.0; }
+			if p.misc.z != 0.0 { continue; }
+			let x = p.pos.x as real; let y = p.pos.y as real; let z = p.pos.z as real;
+			if y > 0.0 && y < 2.8 && abs(z) <= 1.75 && abs(x - 5.0) <= 1.75 { u += 1.0; }
+			if y > 0.0 && y < 2.8 && abs(z) <= 1.75 && abs(x + 5.0) <= 1.75 { o += 1.0; }
+			if y > 3.5 && y < 9.2 { a += 1.0; }
+		}
+		under = max(under, u); open += o / 10.0; rho += a / (24.0 * 24.0 * 5.7) / 10.0; spc += q / 10.0;
+	}
+	if shot { print("gpu: weather rain frame ", gfx::save_png(out, path(OUT_DIR[..], "weather_rain.png")[..])); }
+	s3d::fx_dt = 0.0;
+	s3d::shelter = true;
+	gfx::release(out);
+	let ro = max(rho, 1.0e-9);
+	print("gpu: weather run shelter ", shel, " splashes ", spl, ": open-air density ", r4(rho), " /m3, most under roof ", under, ", open column ", r4(open), " (expected ", r4(rho * 3.5 * 3.5 * 2.8), "), splashing ", r4(spc), " (expected ", r4(rho * 9.0 * 576.0 * 0.12), ")");
+	return under, open / (ro * 3.5 * 3.5 * 2.8), spc / (ro * 9.0 * 576.0 * 0.12);
+}
+fn wx_px(q float3) real, real {
+	let f = linalg::unit3(s3d::view.target - s3d::view.eye);
+	let r = linalg::unit3(linalg::cross3(f, s3d::view.up));
+	let u = linalg::cross3(r, f);
+	let d = q - s3d::view.eye;
+	let ty = tan(0.375); let tx = ty * WX_W as real / WX_H as real;
+	let z = linalg::dot3(d, f) as real;
+	return (linalg::dot3(d, r) as real / (z * tx) + 1.0) * WX_W as real * 0.5, (1.0 - linalg::dot3(d, u) as real / (z * ty)) * WX_H as real * 0.5;
+}
+fn wx_streak(dist f32, v float3, st f32) real, real {
+	reset_scene();
+	let g = shapes::cube(float3 { 0.1, 0.1, 0.1 }, shapes::material(linalg::v3(0.0, 0.0, 0.0), 0.0, 1.0));
+	s3d::place(s3d::add(g), gfx::translate(float3 { 0.0, 1.7, 30.0 }));
+	s3d::view = s3d::Camera { eye: float3 { 0.0, 1.7, 8.0 }, target: float3 { 0.0, 1.5, 0.0 }, up: float3 { 0.0, 1.0, 0.0 }, fov_y: 0.75, near: 0.1, far: 100.0 };
+	s3d::sky = DEF_SKY; s3d::sky.draw = false; s3d::sky.zenith = float3 { 0.0, 0.0, 0.0 }; s3d::sky.horizon = float3 { 0.0, 0.0, 0.0 }; s3d::sky.ground = float3 { 0.0, 0.0, 0.0 }; s3d::sky.ambient = 0.0;
+	s3d::sun = DEF_SUN; s3d::sun.rgb = float3 { 0.0, 0.0, 0.0 }; s3d::look = DEF_LOOK; s3d::look.ssao = false; s3d::look.bloom = 0.0;
+	s3d::ssr_on = false; s3d::ssgi_on = false; s3d::gi_on = false; s3d::temporal = 0;
+	let f = linalg::unit3(s3d::view.target - s3d::view.eye);
+	let e0 = s3d::view.eye;
+	let p = float3 { e0.x + f.x * dist, e0.y + f.y * dist, e0.z + f.z * dist };
+	let sp = sqrt(linalg::dot3(v, v) as real) as f32;
+	fx_fresh();
+	var e = fx::emitter();
+	e.pos = p; e.dir = v; e.speed_min = sp; e.speed_max = sp; e.life_min = 1.0e9; e.life_max = 1.0e9; e.gravity = 0.0; e.sizes = float4 { 0.02, 0.02, 0.02, 0.02 }; e.stretch = st;
+	fx::burst(fx::add(e), 1);
+	s3d::init(WX_W, WX_H);
+	let out = gfx::render_target(WX_W, WX_H, gfx::RGBA8);
+	s3d::fx_dt = 1.0e-6;
+	s3d::render(out);
+	s3d::fx_dt = 0.0;
+	let px = gfx::read_pixels(s3d::hdr_target());
+	gfx::release(out);
+	let bg = gi_half(px[..], 8, 0, 0) as real;
+	var sw = 0.0; var sx = 0.0; var sy = 0.0; var sxx = 0.0; var syy = 0.0; var sxy = 0.0;
+	for j in WX_H { for i in WX_W {
+		let w = max(gi_half(px[..], 8, j * WX_W + i, 0) as real - bg, 0.0);
+		let x = i as real + 0.5; let y = j as real + 0.5;
+		sw += w; sx += w * x; sy += w * y; sxx += w * x * x; syy += w * y * y; sxy += w * x * y;
+	} }
+	let ws = max(sw, 1.0e-12);
+	let mx = sx / ws; let my = sy / ws;
+	let cxx = sxx / ws - mx * mx; let cyy = syy / ws - my * my; let cxy = sxy / ws - mx * my;
+	let lm = (cxx + cyy) * 0.5 + sqrt(max((cxx - cyy) * (cxx - cyy) * 0.25 + cxy * cxy, 0.0));
+	let h = st * 0.5;
+	let ax, ay = wx_px(float3 { p.x - v.x * h, p.y - v.y * h, p.z - v.z * h });
+	let bx, by = wx_px(float3 { p.x + v.x * h, p.y + v.y * h, p.z + v.z * h });
+	let want = sqrt((bx - ax) * (bx - ax) + (by - ay) * (by - ay)) * 0.5;
+	return sqrt(8.0 * max(lm, 0.0)), want;
+}
+fn wx_snow() real {
+	wx_scene();
+	let out = wx_start(fx::snow(), 20000, WX_W, WX_H);
+	var a fx::Part[>..] = [];
+	var b fx::Part[>..] = [];
+	for f in 60 { s3d::render(out); }
+	fx::read_parts(a);
+	for f in 60 { s3d::render(out); }
+	fx::read_parts(b);
+	s3d::fx_dt = 0.0;
+	gfx::release(out);
+	var s = 0.0; var n = 0;
+	for k in min(a.len, b.len) {
+		if a[k].vel.w <= 0.0 || b[k].vel.w <= 0.0 || a[k].misc.z != 0.0 || b[k].misc.z != 0.0 { continue; }
+		let dx = (b[k].pos.x - a[k].pos.x) as real; let dy = (b[k].pos.y - a[k].pos.y) as real; let dz = (b[k].pos.z - a[k].pos.z) as real;
+		if abs(dx) > 12.0 || abs(dz) > 12.0 || abs(dy) > 8.0 { continue; }
+		s += dy; n += 1;
+	}
+	let v = -s / max(n, 1) as real;
+	print("gpu: weather W5 snow: ", n, " flakes falling at both reads, mean downward speed ", r4(v), " m/s");
+	v
+}
+fn weather_checks() bool {
+	half_table();
+	let w1 = wx_cells(false);
+	let w1c = wx_cells(true);
+	let p1 = w1 <= 0.1; let c1 = !(w1c <= 0.1);
+	let u, o, sr = wx_shelter(true, true, true);
+	let uc, oc, src = wx_shelter(false, true, false);
+	let un, on, srn = wx_shelter(true, false, false);
+	let p2 = u == 0.0 && o >= 0.8; let c2 = !(uc == 0.0 && oc >= 0.8);
+	let p3 = abs(sr - 1.0) <= 0.1; let c3 = !(abs(srn - 1.0) <= 0.1);
+	print("gpu: weather W1 even after the camera moves: worst cell ", r4(w1 * 100.0), " % (bar <= 10 %) ", if p1 { "PASS" } else { "FAIL" }, "; control (wrap off) ", if c1 { "fails (good)" } else { "does NOT fail" });
+	print("gpu: weather W2 shelter: most under roof ", u, " (bar == 0), open column ", r4(o), " x expected (bar >= 0.8) ", if p2 { "PASS" } else { "FAIL" }, "; control (shelter off) ", uc, " under roof, ", if c2 { "fails (good)" } else { "does NOT fail" });
+	print("gpu: weather W3 splashes: ", r4(sr), " x rho v A tau (bar 0.9 .. 1.1) ", if p3 { "PASS" } else { "FAIL" }, "; control (splashes off) ", r4(srn), " x, ", if c3 { "fails (good)" } else { "does NOT fail" });
+	let ds = [3.0, 6.0, 12.0, 6.0];
+	var p4 = true; var c4 = false;
+	for k in 4 {
+		let v = if k == 3 { float3 { 5.0, -9.0, 0.0 } } else { float3 { 0.0, -9.0, 0.0 } };
+		let m, w = wx_streak(ds[k] as f32, v, 1.0 / 30.0);
+		let mc, wc = wx_streak(ds[k] as f32, v, 0.0);
+		let ok = abs(m / w - 1.0) <= 0.05; let bad = abs(mc / w - 1.0) > 0.05;
+		p4 = p4 && ok; c4 = c4 || bad;
+		print("gpu: weather W4 streak ", ds[k], " m", if k == 3 { " blown sideways" } else { "" }, ": half length ", r4(m), " px, projected ", r4(w), " px, error ", r4((m / w - 1.0) * 100.0), " % (bar +-5 %) ", if ok { "PASS" } else { "FAIL" }, "; no streak ", r4(mc), " px");
+	}
+	print("gpu: weather W4 streak length ", if p4 { "PASS" } else { "FAIL" }, "; control (no streak) ", if c4 { "fails (good)" } else { "does NOT fail" });
+	let v5 = wx_snow();
+	let p5 = abs(v5 - 1.0) <= 0.05;
+	print("gpu: weather W5 snow speed ", r4(v5), " m/s (bar 0.95 .. 1.05) ", if p5 { "PASS" } else { "FAIL" });
+	wx_scene();
+	s3d::init(1280, 720);
+	let tout = gfx::render_target(1280, 720, gfx::RGBA8);
+	var times real[>..] = [1e9, 1e9];
+	for kk in 4 {
+		let k = kk % 2;
+		fx_fresh();
+		if k == 1 { fx::burst(fx::add(fx::rain()), 40000); }
+		s3d::fx_dt = if k == 1 { 1.0 / 60.0 } else { 0.0 };
+		for f in 10 { s3d::render(tout); }
+		let _ = gfx::read_pixels(tout);
+		let t0 = gfx::time();
+		for f in 60 { s3d::render(tout); }
+		let _ = gfx::read_pixels(tout);
+		times[k] = min(times[k], (gfx::time() - t0) / 60.0 * 1000.0);
+	}
+	gfx::release(tout);
+	s3d::fx_dt = 0.0;
+	fx::clear_emitters();
+	print("gpu: weather frame time 1280x720 (wall clock, best of 2 x 60 frames, reported): no weather ", r3(times[0]), " ms; 40,000 drops of rain ", r3(times[1]), " ms (+", r3(times[1] - times[0]), ")");
+	s3d::look = DEF_LOOK; s3d::sun = DEF_SUN; s3d::sky = DEF_SKY;
+	p1 && c1 && p2 && c2 && p3 && c3 && p4 && c4 && p5
+}
 fn gi_checks() bool {
 	var rad real[>..] = [];
 	var mask real[>..] = [];
@@ -3632,7 +3829,7 @@ fn gpu_checks(dir const byte[:], golden const byte[:]) bool {
 	var only byte[>..] = [];
 	let _ = env("GFX_ONLY", only);
 	if only.len > 0 {
-		let ok = if only[..] == "gtao" { gtao_checks() } else if only[..] == "gi" { gi_checks() } else if only[..] == "mblur" { mb_checks() } else if only[..] == "dof" { dof_checks() } else if only[..] == "fx" { fx_checks() } else if only[..] == "tsr" { tsr_checks(dir) } else if only[..] == "probe" { probe_checks(dir) } else if only[..] == "ssgi" { ssgi_checks() } else if only[..] == "decal" { decal_checks() } else { shadow_checks() };
+		let ok = if only[..] == "gtao" { gtao_checks() } else if only[..] == "gi" { gi_checks() } else if only[..] == "mblur" { mb_checks() } else if only[..] == "dof" { dof_checks() } else if only[..] == "fx" { fx_checks() } else if only[..] == "tsr" { tsr_checks(dir) } else if only[..] == "probe" { probe_checks(dir) } else if only[..] == "ssgi" { ssgi_checks() } else if only[..] == "decal" { decal_checks() } else if only[..] == "weather" { weather_checks() } else { shadow_checks() };
 		let e = gfx::error();
 		if e.len > 0 { print("gpu: gfx error ", e[..]); return false; }
 		return ok;
@@ -3796,6 +3993,7 @@ fn gpu_checks(dir const byte[:], golden const byte[:]) bool {
 	if !probe_checks(dir) { good = false; }
 	if !ssgi_checks() { good = false; }
 	if !decal_checks() { good = false; }
+	if !weather_checks() { good = false; }
 	let err = gfx::error();
 	if err.len > 0 { print("gpu: gfx error ", err[..]); good = false; }
 	good
