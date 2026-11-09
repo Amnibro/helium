@@ -414,6 +414,36 @@ the screen: the drop's path over `stretch` seconds is projected, and the quad co
 exactly, as wide as the drop. Snowflakes are blended without sorting (they are all one
 color), so snow costs no sort.
 
+### Rect area lights (E4)
+
+A rect light is a flat glowing rectangle: a softbox, a window, a ceiling panel or a TV.
+
+```
+s3d::add_rect(float3 { 0.0, 2.5, 0.0 }, float3 { 0.0, 0.0, 0.0 }, float3 { 1.0, 0.0, 0.0 }, 2.0, 1.0, float3 { 8.0, 8.0, 8.0 }, 12.0, true);
+```
+
+`add_rect(pos, target, axis, width, height, rgb, range, shadows)` centers the rectangle
+at `pos` and turns it to face `target`. `width` runs along `axis` (taken flat onto the
+panel; when `axis` points the way the panel faces, a sideways axis is picked) and
+`height` across it. It lights only the side it faces. `rgb` is the intensity straight
+out of the panel: from far away it lights like a point light with the same `rgb`, and
+up close it gives the broad, soft falloff and the long, shaped highlights of a real
+panel. Its brightness per square meter is `rgb / (width x height)`, so a smaller panel
+with the same `rgb` is brighter to look at. `range` fades it out as for point lights.
+The fields are `Light.width`, `height` and `axis`; any light with both `width` and
+`height` above 0 is a rect light. With `kind` 1 and a `cone` it is also cut to a cone
+like a spot (barn doors), and a shadowed one then takes one atlas layer instead of six.
+
+How it works, with no lookup tables: the panel is first cut to the part above the
+surface's horizon. Diffuse light is exact: Lambert's form factor of that polygon,
+summed edge by edge. Specular light is computed in the GGX slope plane, where the share
+of microfacets that reflect the view toward a straight-edged region has a closed form
+(one `atan` per edge). The panel is split into 3 x 3 pieces, and each edge is also split
+where it passes closest to the mirror direction, so the straight edges follow the curved
+outline the panel makes in that plane. Fresnel and masking come from each piece's
+lobe-weighted center. The method was chosen on a CPU sweep of 1829 panel, view and
+roughness setups against brute-force integration: worst error 5.2 %, one setup over 5 %.
+
 ## Materials, light and finish
 
 `gltf` reads the core metal-rough model plus `KHR_materials_clearcoat`, `sheen`,
@@ -1183,6 +1213,39 @@ kept when its reference is at least 5 % of the render's highest reference.
 * Reported, no bar: frame time at 1280 x 720 with one rect light and with one point
   light in the same place.
 
+### Rect area light results (2026-11-09, RX 9060 XT, RADV; full gfxtest ok)
+
+| check | measured | bar | result |
+| --- | --- | --- | --- |
+| R1 diffuse, all four lights | worst 0.17 % | +-2 % | PASS |
+| R1 control: one point at the center sending I cos(theta) | worst 61.35 % | must fail | fails |
+| R2 specular, worst kept pixel | 8.69 % | +-10 % | PASS |
+| R2 specular, kept pixels within +-5 % | 99.7 % of 1652 | >= 95 % | PASS |
+| R2 control: one straight-edged polygon | worst 237.76 %, 66.34 % within +-5 % | must fail | fails |
+| R3 behind L3 | 237 pixels, every one exactly 0 | == 0 | PASS |
+| R4 goldens | 44.92 dB, shipped look 41.7 dB | > 40 dB | PASS |
+| R4 every other gfxtest check | all pass | as before | PASS |
+| R4 `wgsltest.mjs` | 63 modules, 54 pipelines, 0 failures | 0 | PASS |
+| R4 `webgputest.mjs` | 15 scenes, 0 failures; `scene_rect` 105.84 dB vs native | 0 | PASS |
+
+Worst error per light, over its materials:
+
+| light | diffuse | diffuse control | specular | specular control |
+| --- | --- | --- | --- | --- |
+| L1 2 x 1 m facing down | 0.10 % | 18.15 % | 2.93 % | 237.76 % |
+| L2 1 x 1 m tilted 45 deg | 0.17 % | 8.39 % | 1.80 % | 59.57 % |
+| L3 1 x 1 m upright through the floor | 0.10 % | 61.35 % | 8.69 % | 58.93 % |
+| L4 0.25 x 0.25 m facing down | 0.08 % | 2.00 % | 0.43 % | 4.86 % |
+
+The largest specular errors are under L3, the panel standing on the floor, where the
+floor sees it nearly edge-on. `scene_rect` puts two rect lights (a warm 1.5 x 0.7 m
+panel with shadows overhead and a cool 0.8 x 0.8 m panel at the side) over the e2
+scene with the sun dimmed.
+
+Reported: 1280 x 720 with the floor filling most of the view under L1, one rect light
+3.02 ms and one point light at its center 0.92 ms on an idle card (3.34 and 2.43 ms
+during the full gfxtest run).
+
 ### Motion blur and depth of field results (2026-11-02, RX 9060 XT, RADV)
 
 Both are off by default (`motion_blur = 0`, `dof_aperture = 0`) and run as one HDR pass each
@@ -1562,8 +1625,13 @@ pass-through mean error is 0.0106 % (max 0.0488 %).
   1024 x 1024 array layers, so finer detail is lost. The depth prepass, SSAO, SSR and
   SSGI see the surface's own normal, not the decal's. Transparent and unlit surfaces take
   none, and decals cannot glow.
-* Not built: alpha to coverage, rectangular area
-  lights (spot and sphere stand in), physical light falloff parity with three.js,
+* Rect lights: clearcoat, sheen and skin's second lobe take the base lobe's panel
+  integral through one direction (the reflection of the lobe-weighted center), so their
+  panel highlights are close but not exact. Shadows, fog, GI and ray-traced visibility
+  treat the panel as its center point. Panels are one color (no textured panels or
+  video screens). One rect light covering the whole view costs about 2 ms at
+  1280 x 720 on an RX 9060 XT.
+* Not built: alpha to coverage, physical light falloff parity with three.js,
   caustics, mip bias for upscaling, BC, KTX2, WebP, meshopt
   and Draco, texture and mesh streaming, GPU instancing, motion vectors for morph
   targets, and Nanite-class geometry.

@@ -304,6 +304,99 @@ float mr_grain(vec3 p) { vec3 r = fract(floor(p * 7.0) * 0.1031); r += dot(r, r.
 float spot_cone(float inner, float co, vec3 ldir, vec3 ld) {
 	return co < -1.5 ? 1.0 : smoothstep(co, inner - 1.0, dot(-ld, ldir));
 }
+vec2 rect_slope(vec3 p, vec3 v, vec3 n, vec3 tx, vec3 tz) {
+	vec3 h = normalize(v + normalize(p));
+	return vec2(dot(h, tx), dot(h, tz)) / max(dot(h, n), 1e-6);
+}
+void rect_light(vec3 d, vec3 ld, vec4 la, vec4 lr, vec3 n, vec3 v, vec3 f0, float rough, out vec4 dif, out vec3 spec, out vec3 lrep) {
+	vec3 ex = lr.xyz * (la.z * 0.5);
+	vec3 ey = cross(ld, lr.xyz) * (la.w * 0.5);
+	bool naive = lr.w > 0.5;
+	vec3 tx = normalize(cross(n, abs(n.y) < 0.99 ? vec3(0.0, 1.0, 0.0) : vec3(1.0, 0.0, 0.0)));
+	vec3 tz = cross(tx, n);
+	float nv = max(dot(n, v), 1e-4);
+	float al = max(rough * rough, 0.002);
+	float a2 = al * al;
+	int sub = naive ? 1 : 3;
+	vec3 rf = 2.0 * dot(n, v) * n - v;
+	vec3 o[5];
+	vec3 fv = vec3(0.0);
+	vec3 cen = vec3(0.0);
+	spec = vec3(0.0);
+	dif = vec4(0.0);
+	for (int s = -1; s < sub * sub; s++) {
+		vec3 hx = s < 0 ? ex : ex / float(sub);
+		vec3 hy = s < 0 ? ey : ey / float(sub);
+		vec3 c = s < 0 ? d : d + hx * (float(s % sub) * 2.0 + 1.0 - float(sub)) + hy * (float(s / sub) * 2.0 + 1.0 - float(sub));
+		int k = 0;
+		for (int e = 0; e < 4; e++) {
+			vec3 a = c + hx * (e == 1 || e == 2 ? 1.0 : -1.0) + hy * (e >= 2 ? 1.0 : -1.0);
+			vec3 b = c + hx * (e == 0 || e == 1 ? 1.0 : -1.0) + hy * (e == 1 || e == 2 ? 1.0 : -1.0);
+			float da = dot(n, a);
+			float db = dot(n, b);
+			if (da >= 0.0) { o[k] = a; k++; }
+			if ((da >= 0.0 && db < 0.0) || (da < 0.0 && db >= 0.0)) { o[k] = a + (b - a) * (da / (da - db)); k++; }
+		}
+		if (k < 3) continue;
+		if (s < 0) {
+			if (naive) {
+				vec3 l0 = normalize(d);
+				dif = vec4(l0, la.z * la.w * max(dot(-l0, ld), 0.0) * max(dot(n, l0), 0.0) / max(dot(d, d), 1e-8));
+				continue;
+			}
+			for (int i = 0; i < k; i++) {
+				vec3 a = normalize(o[i]);
+				vec3 b = normalize(o[(i + 1) % k]);
+				vec3 cr = cross(a, b);
+				float sl = length(cr);
+				fv += sl > 1e-7 ? cr * (atan(sl, dot(a, b)) / sl) : vec3(0.0);
+			}
+			float ir = 0.5 * dot(fv, n);
+			dif = length(fv) > 1e-9 ? vec4(normalize(fv) * sign(ir), abs(ir)) : vec4(0.0);
+			continue;
+		}
+		if (dot(n, v) <= 1e-4) continue;
+		float m = 0.0;
+		vec2 mc = vec2(0.0);
+		vec2 p0 = rect_slope(o[0], v, n, tx, tz);
+		vec2 pa = p0;
+		for (int i = 0; i < k; i++) {
+			vec3 a = o[i];
+			vec3 b = o[(i + 1) % k];
+			vec3 mm = cross(a, b);
+			vec3 rp = rf - mm * (dot(mm, rf) / max(dot(mm, mm), 1e-30));
+			float den = dot(rp, cross(b - a, mm));
+			float tc = abs(den) > 1e-30 ? -dot(rp, cross(a, mm)) / den : -1.0;
+			bool crit = !naive && tc > 0.02 && tc < 0.98 && dot(a + (b - a) * tc, rf) > 0.0;
+			for (int t = 0; t < 2; t++) {
+				if (t == 0 && !crit) continue;
+				vec2 pb = t == 0 ? rect_slope(a + (b - a) * tc, v, n, tx, tz) : (i == k - 1 ? p0 : rect_slope(b, v, n, tx, tz));
+				vec2 eg = pb - pa;
+				float el = length(eg);
+				if (el > 1e-9) {
+					vec2 u = eg / el;
+					float dd = pa.x * u.y - pa.y * u.x;
+					float ss = sqrt(dd * dd + a2);
+					float dl = atan(dot(pb, u) / ss) - atan(dot(pa, u) / ss);
+					m += dd / ss * dl;
+					mc += vec2(-u.y, u.x) * (a2 / ss * dl);
+				}
+				pa = pb;
+			}
+		}
+		if (abs(m) < 1e-9) continue;
+		vec2 cs = mc / m;
+		vec3 h = normalize(n + tx * cs.x + tz * cs.y);
+		float vh = max(dot(v, h), 0.0);
+		float nl = max(dot(n, 2.0 * vh * h - v), 1e-6);
+		spec += abs(m) * (0.5 / PI_F) * smith_g(nl, nv, rough) * vh / (nv * max(dot(n, h), 1e-6)) * schlick_f(f0, vh);
+		cen += vec3(cs, 1.0) * abs(m);
+	}
+	vec3 hc = normalize(n + (cen.z > 0.0 ? (tx * cen.x + tz * cen.y) / cen.z : vec3(0.0)));
+	lrep = 2.0 * dot(v, hc) * hc - v;
+	float lu = dot(n, lrep);
+	lrep = lu < 0.02 ? normalize(lrep + n * (0.02 - lu)) : lrep;
+}
 float sun_visibility(vec3 p, vec3 n) {
 	if (to_sun.w < 0.5) return 1.0;
 	float depth = dot(p - eye.xyz, view_dir.xyz);
@@ -715,7 +808,7 @@ void main() {
 		int lfirst = int(head >> 8u);
 		int lcount = int(head & 255u);
 		for (int li = 0; li < lcount; li++) {
-			int i = int(lcell[lfirst + li]) * 5;
+			int i = int(lcell[lfirst + li]) * 6;
 			vec4 lp = lrec[i];
 			vec4 lc = lrec[i + 1];
 			vec4 lx = lrec[i + 2];
@@ -725,8 +818,19 @@ void main() {
 			vec3 ld = d / max(dist, 1e-4);
 			if (gi.y > 0.5 && (dot(gn, ld) <= 0.0 || !gi_visible(rp, ld, dist - 2e-3))) continue;
 			float fq = clamp(1.0 - (dist * dist) / (lp.w * lp.w), 0.0, 1.0);
-			float fall = la.x > 0.0 ? fq * fq / (dist * dist + la.x * la.x) : range_falloff(dist, lp.w);
+			bool rect = la.z > 0.0 && la.w > 0.0;
+			if (rect && dot(d, lx.xyz) >= 0.0) continue;
+			float fall = rect ? fq * fq / (la.z * la.w) : (la.x > 0.0 ? fq * fq / (dist * dist + la.x * la.x) : range_falloff(dist, lp.w));
 			vec3 le = lc.rgb * fall * spot_cone(lc.w, lx.w, lx.xyz, ld) * local_visibility(lrec[i + 3], lp.xyz, lx.xyz, in_world, gn);
+			if (rect) {
+				vec4 rd;
+				vec3 rs;
+				vec3 rl;
+				rect_light(d, lx.xyz, la, lrec[i + 5], n, v, f0_spec, rough, rd, rs, rl);
+				if (rd.w > 0.0) rgb += mat_term(n, v, rd.xyz, le * (rd.w / max(dot(n, rd.xyz), 1e-4)), albedo, f0_spec, rough, vec3(0.0), kd, 1.0, q, x);
+				if (max(rs.r, max(rs.g, rs.b)) > 0.0) rgb += mat_term(n, v, rl, le * rs / max(light_term(n, v, rl, vec3(1.0), vec3(0.0), f0_spec, rough, vec3(1.0), kd), vec3(1e-12)), vec3(0.0), f0_spec, rough, ms, kd, 1.0, q, x);
+				continue;
+			}
 			if (la.x <= 0.0 && la.y <= 0.0) { rgb += mat_term(n, v, ld, le, albedo, f0_spec, rough, ms, kd, 1.0, q, x); continue; }
 			vec3 rv = reflect(-v, n);
 			vec3 dl = d;

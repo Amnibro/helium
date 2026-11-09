@@ -3584,6 +3584,193 @@ fn weather_checks() bool {
 	s3d::look = DEF_LOOK; s3d::sun = DEF_SUN; s3d::sky = DEF_SKY;
 	p1 && c1 && p2 && c2 && p3 && c3 && p4 && c4 && p5
 }
+let RC_W = 960;
+let RC_H = 540;
+fn rc_light(k int) {
+	s3d::lights.clear();
+	if k == 0 { s3d::add_rect(float3 { 0.0, 2.0, -1.0 }, float3 { 0.0, 1.0, -1.0 }, float3 { 1.0, 0.0, 0.0 }, 2.0, 1.0, float3 { 4.0, 4.0, 4.0 }, 1000.0, false); }
+	if k == 1 { s3d::add_rect(float3 { 0.0, 1.5, -3.0 }, float3 { 0.0, 0.7928932, -2.2928932 }, float3 { 1.0, 0.0, 0.0 }, 1.0, 1.0, float3 { 2.0, 2.0, 2.0 }, 1000.0, false); }
+	if k == 2 { s3d::add_rect(float3 { -1.5, 0.3, -1.0 }, float3 { -0.5, 0.3, -1.0 }, float3 { 0.0, 0.0, 1.0 }, 1.0, 1.0, float3 { 2.0, 2.0, 2.0 }, 1000.0, false); }
+	if k == 3 { s3d::add_rect(float3 { 0.5, 1.0, 0.0 }, float3 { 0.5, 0.0, 0.0 }, float3 { 1.0, 0.0, 0.0 }, 0.25, 0.25, float3 { 0.125, 0.125, 0.125 }, 1000.0, false); }
+}
+fn rc_setup(k int, base f32, metal f32, rough f32, w int, h int) {
+	reset_scene();
+	let g = shapes::cube(float3 { 20.0, 0.1, 20.0 }, shapes::material(linalg::v3(base, base, base), metal, rough));
+	s3d::place(s3d::add(g), gfx::translate(float3 { 0.0, -0.1, 0.0 }));
+	s3d::view = s3d::Camera { eye: float3 { 0.0, 1.6, 5.0 }, target: float3 { 0.0, 0.0, -1.0 }, up: float3 { 0.0, 1.0, 0.0 }, fov_y: 0.75, near: 0.1, far: 100.0 };
+	s3d::sky = DEF_SKY; s3d::sky.draw = false; s3d::sky.zenith = float3 { 0.0, 0.0, 0.0 }; s3d::sky.horizon = float3 { 0.0, 0.0, 0.0 }; s3d::sky.ground = float3 { 0.0, 0.0, 0.0 }; s3d::sky.ambient = 0.0;
+	s3d::sun = DEF_SUN; s3d::sun.rgb = float3 { 0.0, 0.0, 0.0 }; s3d::look = DEF_LOOK; s3d::look.ssao = false; s3d::look.bloom = 0.0;
+	s3d::ssr_on = false; s3d::ssgi_on = false; s3d::gi_on = false; s3d::temporal = 0;
+	rc_light(k);
+	s3d::init(w, h);
+}
+fn rc_render(k int, base f32, metal f32, rough f32) byte[>..] {
+	rc_setup(k, base, metal, rough, RC_W, RC_H);
+	let out = gfx::render_target(RC_W, RC_H, gfx::RGBA8);
+	s3d::render(out);
+	let px = gfx::read_pixels(s3d::hdr_target());
+	gfx::release(out);
+	return px;
+}
+fn rc_int(px real, py real, pz real, vx real, vy real, vz real, l s3d::Light, rough real, f0 real, m int) real, real {
+	let ax = s3d::rect_axis(l);
+	let dv = linalg::unit3(l.dir);
+	let bx = linalg::cross3(dv, ax);
+	let hw = l.width as real * 0.5;
+	let hh = l.height as real * 0.5;
+	let al = max(rough * rough, 0.002);
+	let a2 = al * al;
+	let k = rough * rough * 0.5;
+	let nv = max(vy, 1.0e-4);
+	let g1v = nv / (nv * (1.0 - k) + k);
+	let da = 4.0 * hw * hh / (m * m) as real;
+	var s = 0.0;
+	var sd = 0.0;
+	for i in m {
+		let u = (2.0 * (i as real + 0.5) / m as real - 1.0) * hw;
+		for j in m {
+			let w = (2.0 * (j as real + 0.5) / m as real - 1.0) * hh;
+			let qx = l.pos.x as real + ax.x as real * u + bx.x as real * w - px;
+			let qy = l.pos.y as real + ax.y as real * u + bx.y as real * w - py;
+			let qz = l.pos.z as real + ax.z as real * u + bx.z as real * w - pz;
+			let r2 = qx * qx + qy * qy + qz * qz;
+			let il = 1.0 / sqrt(r2);
+			let lx = qx * il; let ly = qy * il; let lz = qz * il;
+			let cl = -(lx * dv.x as real + ly * dv.y as real + lz * dv.z as real);
+			if cl <= 0.0 || ly <= 0.0 { continue; }
+			let g = cl / r2 * da;
+			sd += ly * g;
+			let hx0 = vx + lx; let hy0 = vy + ly; let hz0 = vz + lz;
+			let ih = 1.0 / sqrt(hx0 * hx0 + hy0 * hy0 + hz0 * hz0);
+			let nh = max(hy0 * ih, 0.0);
+			let vh = max((vx * hx0 + vy * hy0 + vz * hz0) * ih, 0.0);
+			let t = nh * nh * (a2 - 1.0) + 1.0;
+			let fm = 1.0 - vh;
+			let f = f0 + (1.0 - f0) * fm * fm * fm * fm * fm;
+			s += f * a2 / (3.14159265 * t * t) * (ly / (ly * (1.0 - k) + k)) * g1v / (4.0 * ly * nv + 1.0e-4) * ly * g;
+		}
+	}
+	return s, sd;
+}
+fn rect_checks() bool {
+	half_table();
+	if !gz_load_lut() { print("gpu: rect FAILED: GFX_MS_LUT unset or not a 32x32 ms_lut.glsl (tools/hc/gfxtest.sh sets it)"); return false; }
+	let roughs = [0.1, 0.2, 0.35, 0.5, 0.75, 1.0, 0.5, 1.0];
+	let names = ["L1 2x1 down", "L2 1x1 tilted", "L3 1x1 upright through the floor", "L4 0.25x0.25 down"];
+	let fy = tan(0.375);
+	var w1 = [0.0, 0.0];
+	var w2 = [0.0, 0.0];
+	var n2 = [0, 0];
+	var n2in = [0, 0];
+	var z3 = 0.0;
+	var nb3 = 0;
+	for k in 4 {
+		rc_light(k);
+		let l = s3d::lights[0];
+		let le = l.rgb.x as real / (l.width * l.height) as real;
+		for mi in 8 {
+			let rough = roughs[mi];
+			let metal = mi < 6;
+			let f0 = if metal { 1.0 } else { 0.04 };
+			let m = if rough <= 0.2 { 600 } else { 300 };
+			var pi int[>..] = [];
+			var rs real[>..] = [];
+			var rd real[>..] = [];
+			var xs real[>..] = [];
+			var ps = 0.0;
+			var pd = 0.0;
+			for b in 13 {
+				for a in 24 {
+					let i = 20 + 40 * a;
+					let j = 20 + 40 * b;
+					let sx = ((i as real + 0.5) / RC_W as real * 2.0 - 1.0) * fy * RC_W as real / RC_H as real;
+					let sy = (1.0 - (j as real + 0.5) / RC_H as real * 2.0) * fy;
+					let fx0 = 0.0; let fy0 = -1.6; let fz0 = -6.0;
+					let fl = sqrt(fx0 * fx0 + fy0 * fy0 + fz0 * fz0);
+					let fwx = fx0 / fl; let fwy = fy0 / fl; let fwz = fz0 / fl;
+					let rl = sqrt(fwz * fwz + fwx * fwx);
+					let rx = -fwz / rl; let rz = fwx / rl;
+					let ux = -rz * fwy; let uy = rz * fwx - rx * fwz; let uz = rx * fwy;
+					let dx = fwx + rx * sx + ux * sy; let dy = fwy + uy * sy; let dz = fwz + rz * sx + uz * sy;
+					if dy >= -1.0e-6 { continue; }
+					let t = -1.6 / dy;
+					let px = dx * t; let pz = 5.0 + dz * t;
+					let vl = sqrt(px * px + 1.6 * 1.6 + (5.0 - pz) * (5.0 - pz));
+					let vx = -px / vl; let vy = 1.6 / vl; let vz = (5.0 - pz) / vl;
+					let s, sd = rc_int(px, 0.0, pz, vx, vy, vz, l, rough, f0, m);
+					let cx = l.pos.x as real - px; let cy = l.pos.y as real; let cz = l.pos.z as real - pz;
+					let fq = clamp(1.0 - (cx * cx + cy * cy + cz * cz) / (l.range * l.range) as real, 0.0, 1.0);
+					let nv = max(vy, 1.0e-4);
+					let e, bb = gz_eb(nv, rough);
+					let ems = gz_ems(nv, rough, e);
+					let ms = 1.0 + f0 * (1.0 / max(ems, 0.25) - 1.0);
+					let kd = max(1.0 - ms * (f0 * (e - bb) + bb), 0.0);
+					pi.push(j * RC_W + i);
+					rs.push(le * fq * fq * ms * s);
+					rd.push(le * fq * fq * kd * 0.8 / 3.14159265 * sd);
+					xs.push(px);
+					ps = max(ps, le * fq * fq * ms * s);
+					pd = max(pd, le * fq * fq * kd * 0.8 / 3.14159265 * sd);
+				}
+			}
+			for ctl in 2 {
+				s3d::test_rect_naive = ctl == 1;
+				let pa = if metal { rc_render(k, 1.0, 1.0, rough as f32) } else { rc_render(k, 0.8, 0.0, rough as f32) };
+				let pb = if metal { copy(pa) } else { rc_render(k, 0.0, 0.0, rough as f32) };
+				var gw1 = 0.0;
+				var gw2 = 0.0;
+				for q, c in pi {
+					let va = gi_half(pa[..], 8, q, 0) as real;
+					let vb = gi_half(pb[..], 8, q, 0) as real;
+					if !metal && rd[c] >= 0.05 * pd {
+						let e1 = abs((va - vb) / rd[c] - 1.0);
+						gw1 = max(gw1, e1);
+					}
+					if rs[c] >= 0.05 * ps {
+						let e2 = abs(vb / rs[c] - 1.0);
+						gw2 = max(gw2, e2);
+						n2[ctl] += 1;
+						n2in[ctl] += if e2 <= 0.05 { 1 } else { 0 };
+					}
+					if ctl == 0 && k == 2 && (mi == 3 || !metal) && xs[c] < -1.501 {
+						nb3 += 1;
+						z3 = max(z3, max(abs(va), max(abs(gi_half(pa[..], 8, q, 1) as real), abs(gi_half(pa[..], 8, q, 2) as real))));
+					}
+				}
+				w1[ctl] = max(w1[ctl], gw1);
+				w2[ctl] = max(w2[ctl], gw2);
+				if metal { print("gpu: rect ", names[k], " metal rough ", rough, if ctl == 1 { " (control)" } else { "" }, ": specular worst ", pct(gw2), " %"); }
+				else { print("gpu: rect ", names[k], " dielectric rough ", rough, if ctl == 1 { " (control)" } else { "" }, ": diffuse worst ", pct(gw1), " %, specular worst ", pct(gw2), " %"); }
+			}
+		}
+	}
+	s3d::test_rect_naive = false;
+	let p1 = w1[0] <= 0.02; let c1 = !(w1[1] <= 0.02);
+	let f2 = n2in[0] as real / max(n2[0], 1) as real;
+	let f2c = n2in[1] as real / max(n2[1], 1) as real;
+	let p2 = w2[0] <= 0.1 && f2 >= 0.95; let c2 = !(w2[1] <= 0.1 && f2c >= 0.95);
+	let p3 = nb3 > 0 && z3 == 0.0;
+	print("gpu: rect R1 diffuse: worst ", pct(w1[0]), " % (bar +-2 %) ", if p1 { "PASS" } else { "FAIL" }, "; control (one point at the center) worst ", pct(w1[1]), " %, ", if c1 { "fails (good)" } else { "does NOT fail" });
+	print("gpu: rect R2 specular: worst ", pct(w2[0]), " % (bar +-10 %), ", pct(f2), " % of ", n2[0], " kept pixels within +-5 % (bar >= 95 %) ", if p2 { "PASS" } else { "FAIL" }, "; control (one straight-edged polygon) worst ", pct(w2[1]), " %, ", pct(f2c), " % within 5 %, ", if c2 { "fails (good)" } else { "does NOT fail" });
+	print("gpu: rect R3 one-sided: ", nb3, " pixels behind the light, largest value ", z3, " (bar exactly 0) ", if p3 { "PASS" } else { "FAIL" });
+	var times real[>..] = [1e9, 1e9];
+	let tout = gfx::render_target(1280, 720, gfx::RGBA8);
+	for kk in 4 {
+		let kind = kk % 2;
+		rc_setup(0, 0.8, 0.0, 0.5, 1280, 720);
+		if kind == 1 { s3d::lights.clear(); s3d::add_light(float3 { 0.0, 2.0, -1.0 }, float3 { 4.0, 4.0, 4.0 }, 1000.0); }
+		for f in 10 { s3d::render(tout); }
+		let _ = gfx::read_pixels(tout);
+		let t0 = gfx::time();
+		for f in 60 { s3d::render(tout); }
+		let _ = gfx::read_pixels(tout);
+		times[kind] = min(times[kind], (gfx::time() - t0) / 60.0 * 1000.0);
+	}
+	gfx::release(tout);
+	print("gpu: rect frame time 1280x720 (wall clock, best of 2 x 60 frames, reported): one rect light ", r3(times[0]), " ms; one point light ", r3(times[1]), " ms");
+	s3d::look = DEF_LOOK; s3d::sun = DEF_SUN; s3d::sky = DEF_SKY;
+	p1 && c1 && p2 && c2 && p3
+}
 fn gi_checks() bool {
 	var rad real[>..] = [];
 	var mask real[>..] = [];
@@ -3829,7 +4016,7 @@ fn gpu_checks(dir const byte[:], golden const byte[:]) bool {
 	var only byte[>..] = [];
 	let _ = env("GFX_ONLY", only);
 	if only.len > 0 {
-		let ok = if only[..] == "gtao" { gtao_checks() } else if only[..] == "gi" { gi_checks() } else if only[..] == "mblur" { mb_checks() } else if only[..] == "dof" { dof_checks() } else if only[..] == "fx" { fx_checks() } else if only[..] == "tsr" { tsr_checks(dir) } else if only[..] == "probe" { probe_checks(dir) } else if only[..] == "ssgi" { ssgi_checks() } else if only[..] == "decal" { decal_checks() } else if only[..] == "weather" { weather_checks() } else { shadow_checks() };
+		let ok = if only[..] == "gtao" { gtao_checks() } else if only[..] == "gi" { gi_checks() } else if only[..] == "mblur" { mb_checks() } else if only[..] == "dof" { dof_checks() } else if only[..] == "fx" { fx_checks() } else if only[..] == "tsr" { tsr_checks(dir) } else if only[..] == "probe" { probe_checks(dir) } else if only[..] == "ssgi" { ssgi_checks() } else if only[..] == "decal" { decal_checks() } else if only[..] == "weather" { weather_checks() } else if only[..] == "rect" { rect_checks() } else { shadow_checks() };
 		let e = gfx::error();
 		if e.len > 0 { print("gpu: gfx error ", e[..]); return false; }
 		return ok;
@@ -3994,6 +4181,7 @@ fn gpu_checks(dir const byte[:], golden const byte[:]) bool {
 	if !ssgi_checks() { good = false; }
 	if !decal_checks() { good = false; }
 	if !weather_checks() { good = false; }
+	if !rect_checks() { good = false; }
 	let err = gfx::error();
 	if err.len > 0 { print("gpu: gfx error ", err[..]); good = false; }
 	good

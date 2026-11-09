@@ -47,7 +47,7 @@ let HIZ_LEVELS = 7;
 
 struct Camera { eye float3, target float3, up float3, fov_y f32, near f32, far f32 }
 struct Sun { to_sun float3, rgb float3, shadows bool, shadow_far f32, map_size int, soft f32 = 0.0, angle f32 = 0.0, reach f32 = 1.0, fit bool = false, contact f32 = 0.0 }
-struct Light { pos float3, range f32, rgb float3, kind int, dir float3 = float3 { 0.0, -1.0, 0.0 }, cone f32 = 0.5, edge f32 = 0.2, shadows bool = false, soft f32 = 1.5, radius f32 = 0.0, length f32 = 0.0 }
+struct Light { pos float3, range f32, rgb float3, kind int, dir float3 = float3 { 0.0, -1.0, 0.0 }, cone f32 = 0.5, edge f32 = 0.2, shadows bool = false, soft f32 = 1.5, radius f32 = 0.0, length f32 = 0.0, width f32 = 0.0, height f32 = 0.0, axis float3 = float3 { 1.0, 0.0, 0.0 } }
 struct Sky { zenith float3, horizon float3, ground float3, ambient f32, draw bool }
 struct Look { exposure f32, white f32, bloom f32, bloom_cut f32, desaturate f32, ssao bool, ao_radius f32, ao_power f32, ao_samples int, curve int = 0, auto_exposure bool = false, ae_key f32 = 0.18, ae_low f32 = 0.5, ae_high f32 = 0.95, ae_min f32 = -4.0, ae_max f32 = 4.0, ae_up f32 = 3.0, ae_down f32 = 1.0, ae_center f32 = 3.0, lut f32 = 0.0, vignette f32 = 0.0, chroma f32 = 0.0, grain f32 = 0.0, sharpen f32 = 0.0, saturation f32 = 1.0, contrast f32 = 1.0, warmth f32 = 0.0 }
 struct NodeOv { item int, node int, t float3, r linalg::Quat, sc float3 }
@@ -182,6 +182,7 @@ var furnace_scale f32 = 1.0;
 // Test hook for the furnace controls that must fail, 0 in normal use: 1 gives dielectrics
 // F0 = 1 in the specular lobe only, 2 weights diffuse by the older per-light 1 - F(v.h).
 var furnace_mode = 0;
+var test_rect_naive = false;
 // Temporal accumulation. 0 off (unless the output is upscaled), 1 on.
 var temporal = 0;
 var temporal_blend f32 = 0.0625;     // weight of a new frame on a still pixel
@@ -446,6 +447,12 @@ fn studio_soft(bg float3, key f32) {
 	add_light(linalg::v3(-3.5, 1.1, 4.0), linalg::v3(key * 4.0, key * 4.0, key * 4.2), 40.0);
 	sky = Sky { zenith: bg, horizon: bg, ground: bg * 0.55, ambient: 1.0, draw: true };
 	look.exposure = 1.0; look.curve = 1; look.bloom = 0.0; look.desaturate = 0.0; look.ssao = true;
+}
+fn add_rect(pos float3, target float3, axis float3, width f32, height f32, rgb float3, range f32, shadows bool) { lights.push(Light { pos: pos, range: range, rgb: rgb, kind: 0, dir: linalg::unit3(target - pos), shadows: shadows, width: width, height: height, axis: axis, .. }); }
+fn rect_axis(l Light) float3 {
+	let dv = linalg::unit3(l.dir);
+	let a = l.axis - dv * linalg::dot3(l.axis, dv);
+	return if linalg::dot3(a, a) > 1.0e-6 { linalg::unit3(a) } else { linalg::unit3(linalg::cross3(dv, if abs(dv.y) < 0.9 { linalg::v3(0.0, 1.0, 0.0) } else { linalg::v3(1.0, 0.0, 0.0) })) };
 }
 fn add_spot(pos float3, target float3, rgb float3, range f32, cone f32, shadows bool) { lights.push(Light { pos: pos, range: range, rgb: rgb, kind: 1, dir: linalg::unit3(target - pos), cone: cone, shadows: shadows, .. }); }
 fn quad(a float3, b float3, c float3, d float3, ca float4, cb float4, cc float4, cd float4, shape int) { quads.push(QuadG { [x4(a, 1.0), x4(b, 1.0), x4(c, 1.0), x4(d, 1.0)], [ca, cb, cc, cd], f4(shape as f32, 0.0, 0.0, 0.0) }); }
@@ -1341,7 +1348,8 @@ fn light_upload() {
 		light_data.push(x4(l.rgb, if spot { 1.0 + linalg::f(cos((co * (1.0 - clamp(l.edge, 0.0, 1.0))) as real)) } else { 0.0 }));
 		light_data.push(x4(linalg::unit3(l.dir), if spot { linalg::f(cos(co as real)) } else { -2.0 }));
 		light_data.push(if k < MAX_LIGHTS { frame_u.light_shd[k] } else { f4(-1.0, 0.0, 0.0, 0.0) });
-		light_data.push(f4(l.radius, l.length, 0.0, 0.0));
+		light_data.push(f4(l.radius, l.length, l.width, l.height));
+		light_data.push(x4(rect_axis(l), if test_rect_naive { 1.0 } else { 0.0 }));
 	}
 	if light_data.len == 0 { light_data.push(f4(0.0, 0.0, 0.0, 0.0)); }
 	frame_u.decal = f4(light_data.len as f32, decals.len as f32, 0.0, 0.0);

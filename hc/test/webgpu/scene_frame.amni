@@ -22,7 +22,7 @@ fn main() {
 	let w = num(arg_of(3)[..]) as int;
 	let h = num(arg_of(4)[..]) as int;
 	if !gfx::open_headless(w, h) { print("scene_frame: no device: ", gfx::error()[..]); return; }
-	let floor = s3d::add(shapes::plane(4.0, shapes::material(linalg::v3(0.55, 0.55, 0.52), 0.0, if arg_count() > 13 && (arg_of(13)[..] == "e2" || arg_of(13)[..] == "probe" || arg_of(13)[..] == "decal") { 0.17 } else { 0.8 })));
+	let floor = s3d::add(shapes::plane(4.0, shapes::material(linalg::v3(0.55, 0.55, 0.52), 0.0, if arg_count() > 13 && (arg_of(13)[..] == "e2" || arg_of(13)[..] == "probe" || arg_of(13)[..] == "decal" || arg_of(13)[..] == "rect") { 0.17 } else { 0.8 })));
 	s3d::place(floor, gfx::mat4_identity);
 	let it = s3d::add(a);
 	s3d::place(it, gfx::mat4_identity);
@@ -33,7 +33,7 @@ fn main() {
 	let gi = arg_count() > 13 && arg_of(13)[..] == "1";
 	let e3 = arg_count() > 13 && arg_of(13)[..] == "e3";
 	let e8 = arg_count() > 13 && arg_of(13)[..] == "e8";
-	let e2 = arg_count() > 13 && (arg_of(13)[..] == "e2" || arg_of(13)[..] == "decal" || arg_of(13)[..] == "rain");
+	let e2 = arg_count() > 13 && (arg_of(13)[..] == "e2" || arg_of(13)[..] == "decal" || arg_of(13)[..] == "rain" || arg_of(13)[..] == "rect");
 	if e2 { s3d::ssr_on = true; s3d::ao_mode = 1; }
 	let sg = arg_count() > 13 && arg_of(13)[..] == "ssgi";
 	if sg { s3d::ssgi_on = true; }
@@ -51,6 +51,11 @@ fn main() {
 		let _ = s3d::add_decal(s3d::Decal { pos: float3 { 0.5, 0.0, 1.0 }, rot: linalg::qaxis(float3 { 0.0, 1.0, 0.0 }, 0.5), size: float3 { 1.2, 0.6, 1.2 }, base: gltf::add_texture_rgba(px[..], 64, 64, 33071), rough: 0.8, .. });
 	}
 	if arg_count() > 13 && arg_of(13)[..] == "rain" { let _ = fx::init(65536); fx::burst(fx::add(fx::rain()), 20000); s3d::fx_dt = 1.0 / 60.0; }
+	if arg_count() > 13 && arg_of(13)[..] == "rect" {
+		s3d::sun.rgb = float3 { 0.3, 0.28, 0.26 };
+		s3d::add_rect(float3 { -1.0, 2.2, 0.5 }, float3 { -1.0, 0.0, 0.5 }, float3 { 1.0, 0.0, 0.0 }, 1.5, 0.7, float3 { 20.0, 18.0, 15.0 }, 15.0, true);
+		s3d::add_rect(float3 { 1.5, 1.2, 1.5 }, float3 { 0.0, 0.6, 0.0 }, float3 { 0.0, 1.0, 0.0 }, 0.8, 0.8, float3 { 8.0, 10.0, 16.0 }, 15.0, false);
+	}
 	if arg_count() > 13 && arg_of(13)[..] == "probe" { s3d::add_probe(float3 { 0.0, 1.0, 0.0 }, float3 { -2.0, 0.0, -2.0 }, float3 { 2.0, 2.5, 2.0 }, 0.5); }
 	if e8 {
 		s3d::look.auto_exposure = true; s3d::look.lut = 1.0; s3d::motion_blur = 0.5; s3d::dof_aperture = 0.08;
