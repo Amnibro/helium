@@ -1489,6 +1489,48 @@ The factor is the floor's color with `s3d::caustics.on` divided by its color wit
   `scene_caust` (the test scene under 1.2 m of water) matching native under
   webgputest's usual bar.
 
+### Pre-registered bars (compressed textures, E10)
+
+Written before the first GPU run of `texture_checks` in `gfx_smoke.amni`. Image M is a
+1024 x 1024 marble made in the test: `n` is five octaves of value noise, the color is
+`mix((0.75, 0.6, 0.45), (0.2, 0.25, 0.35), n)` times a grain of 0.9 to 1.0, the height
+is `n`, and the normal map is the height's slope. PSNR is over the 8-bit channels a
+format stores.
+* **T1 hardware decode.** 4,096 random blocks per format, drawn 1:1 from a GPU texture
+  and read back, against `bc::decode` on the CPU. BC7 (512 blocks of each of its eight
+  modes): identical. BC4 and BC5: at most 1 / 255 apart. BC1 and BC3: at most 2 / 255.
+  Control: the same compare with the CPU blocks shifted by one must fail.
+* **T2 encoders.** `bc::encode` then `bc::decode` on image M: BC7 at least 40 dB, BC1
+  at least 32 dB and at least 3 dB below BC7, BC3 alpha (the height as alpha) and BC4
+  (the height) at least 40 dB, BC5 normal map at most 1 degree mean angular error. On
+  the golden spheres picture: BC7 at least 40 dB, BC1 at least 33 dB. 4,096 random
+  solid colors: BC7 within 1 / 255 on every channel, BC4 exact, BC1 within 4 / 255.
+* **T3 KTX2.** Each format with a full mip chain written by `ktx2::write` and read back:
+  size, format, level count and every level's bytes identical. A file whose levels are
+  zlib streams reads identical too. Cut short at 64 places, with a wrong first byte, a
+  level count of 0 or 99, a level offset past the end, and marked BasisLZ or Zstandard:
+  `ktx2::read` or `ktx2::level` says no and nothing crashes. Control: the untouched
+  file reads.
+* **T4 scene.** A lit scene of objects wearing image M (color and normal map) at
+  1280 x 720, textures compressed on load against uncompressed: at least 40 dB, with
+  `s3d::texture_bytes()` at most 0.26 of the uncompressed figure. Control: the same
+  compare with the textures replaced by flat gray must fail.
+* **T5 no BC on the device.** The T4 picture with the GPU's BC support switched off
+  (blocks decoded on the CPU into RGBA8) against the picture with it on: at most
+  2 / 255 at every pixel.
+* **T6 cache.** With a cache folder set, a first load encodes and writes one file per
+  texture; a second load encodes nothing, draws the identical picture (difference 0)
+  and readies its textures at least 5 times faster. Control: with one cache file cut
+  short, that texture alone is encoded again and the picture is still identical.
+* **T7 KTX2 in glTF.** A model whose image is a KTX2 file (BC7 with mips) draws
+  identical (difference 0) to the same file loaded from the cache; one marked BasisLZ
+  counts as a bad image, draws white and nothing crashes.
+* **T8 speed.** One thread: image M to BC7 with all mips in at most 2 s, to BC1 in at
+  most 1 s. The T4 frame with compressed textures takes at most 0.2 ms longer than
+  with uncompressed ones (best of 2 x 40 frames each way).
+* **T9 gates.** As U5, plus a new `scene_bc` (the test scene with textures compressed on
+  load) in webgputest.
+
 ### Caustics results (2026-11-09, RX 9060 XT, RADV; full gfxtest ok)
 
 | Bar | Result | Bar value |
