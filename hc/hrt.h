@@ -498,6 +498,7 @@ static void hr_os_write_stdout(hsl s) { hr_ob_put(s.p, s.n); }
 static void hr_os_write_stderr(hsl s) { hr_flush(); fwrite(s.p, 1, (size_t)s.n, stderr); }
 static void hr_os_flush_stdout(void) { hr_flush(); }
 static int64_t hr_os_time_ns(void) { struct timespec t; clock_gettime(CLOCK_REALTIME, &t); return (int64_t)t.tv_sec * 1000000000 + t.tv_nsec; }
+static int64_t hr_os_utc_offset(int64_t t) { time_t s = (time_t)t; struct tm l; if (!localtime_r(&s, &l)) return 0; return (int64_t)l.tm_gmtoff; }
 static int64_t hr_os_clock_ns(void) { struct timespec t; clock_gettime(CLOCK_MONOTONIC, &t); return (int64_t)t.tv_sec * 1000000000 + t.tv_nsec; }
 static void hr_os_sleep_ms(int64_t ms) { struct timespec t = { ms / 1000, (ms % 1000) * 1000000 }; nanosleep(&t, 0); }
 static uint64_t hr_os_random_u64(void) { uint64_t v = 0; int fd = open("/dev/urandom", O_RDONLY); if (fd >= 0) { if (read(fd, &v, 8) != 8) v = (uint64_t)hr_os_time_ns(); close(fd); } return v; }

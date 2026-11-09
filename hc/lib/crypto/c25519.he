@@ -1,0 +1,117 @@
+namespace crypto
+use std
+use crypto.hash
+GF0 int[16] := [0; 16]
+GF1 int[16] := [1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
+K121665 int[16] := [0xDB41, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
+ED_D int[16] := [0x78A3, 0x1359, 0x4DCA, 0x75EB, 0xD8AB, 0x4141, 0xA4D, 0x70, 0xE898, 0x7779, 0x4079, 0x8CC7, 0xFE73, 0x2B6F, 0x6CEE, 0x5203]
+ED_D2 int[16] := [0xF159, 0x26B2, 0x9B94, 0xEBD6, 0xB156, 0x8283, 0x149A, 0xE0, 0xD130, 0xEEF3, 0x80F2, 0x198E, 0xFCE7, 0x56DF, 0xD9DC, 0x2406]
+ED_X int[16] := [0xD51A, 0x8F25, 0x2D60, 0xC956, 0xA7B2, 0x9525, 0xC760, 0x692C, 0xDC5C, 0xFDD6, 0xE231, 0xC0A4, 0x53FE, 0xCD6E, 0x36D3, 0x2169]
+ED_Y int[16] := [0x6658, 0x6666, 0x6666, 0x6666, 0x6666, 0x6666, 0x6666, 0x6666, 0x6666, 0x6666, 0x6666, 0x6666, 0x6666, 0x6666, 0x6666, 0x6666]
+ED_I int[16] := [0xA0B0, 0x4A0E, 0x1B27, 0xC4EE, 0xE478, 0xAD2F, 0x1806, 0x2F43, 0xD7A7, 0x3DFB, 0x99, 0x2B4D, 0xDF0B, 0x4FC1, 0x2480, 0x2B83]
+ED_L int[32] := [0xED, 0xD3, 0xF5, 0x5C, 0x1A, 0x63, 0x12, 0x58, 0xD6, 0x9C, 0xF7, 0xA2, 0xDE, 0xF9, 0xDE, 0x14, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x10]
+struct Ep { x int[16] = [0; 16], y int[16] = [0; 16], z int[16] = [0; 16], t int[16] = [0; 16] }
+car(o int[16]&):
+	for i 16:
+		o[i] += 1 << 16; c := o[i] >> 16
+		if i < 15 { o[i + 1] += c - 1 } else { o[0] += 38 * (c - 1) }
+		o[i] -= c << 16
+fsel(p int[16]&, q int[16]&, b int):
+	c := 0 - b
+	for i 16: t := c & (p[i] ^ q[i]); p[i] ^= t; q[i] ^= t
+fa(a int[16], b int[16]) int[16]: o int[16] ~= [0; 16]; for i 16 { o[i] = a[i] + b[i] } o
+fz(a int[16], b int[16]) int[16]: o int[16] ~= [0; 16]; for i 16 { o[i] = a[i] - b[i] } o
+fm(a int[16], b int[16]) int[16]:
+	t int[31] ~= [0; 31]; o int[16] ~= [0; 16]
+	for i 16: for j 16 { t[i + j] += a[i] * b[j] }
+	for i 15: t[i] += 38 * t[i + 16]
+	for i 16: o[i] = t[i]
+	car(o); car(o); o
+fs(a int[16]) int[16]: fm(a, a)
+finv(i int[16]) int[16]:
+	c ~= i; a ~= 253
+	while a >= 0: c = fs(c); if a != 2 && a != 4 { c = fm(c, i) } a -= 1
+	c
+fpow2523(i int[16]) int[16]:
+	c ~= i; a ~= 250
+	while a >= 0: c = fs(c); if a != 1 { c = fm(c, i) } a -= 1
+	c
+fpack(n int[16]) byte[>..]:
+	t ~= n; m int[16] ~= [0; 16]; car(t); car(t); car(t)
+	for j 2:
+		m[0] = t[0] - 0xFFED
+		for i 1..15: m[i] = t[i] - 0xFFFF - ((m[i - 1] >> 16) & 1); m[i - 1] &= 0xFFFF
+		m[15] = t[15] - 0x7FFF - ((m[14] >> 16) & 1); b := (m[15] >> 16) & 1; m[14] &= 0xFFFF; fsel(t, m, 1 - b)
+	o byte[>..] ~= []
+	for i 16: o.push((t[i] & 0xFF) as! byte); o.push((t[i] >> 8) as! byte)
+	o
+funpack(n const byte[:]) int[16]: o int[16] ~= [0; 16]; for i 16 { o[i] = n[2 * i] as int + ((n[2 * i + 1] as int) << 8) } o[15] &= 0x7FFF; o
+fneq(a int[16], b int[16]) bool: !ct_eq(fpack(a)[..], fpack(b)[..])
+fpar(a int[16]) int: (fpack(a)[0] & 1) as int
+x25519(k const byte[:], u const byte[:]) byte[>..]:
+	z byte[32] ~= [0; 32]
+	for i 32: z[i] = k[i]
+	z[31] = (z[31] & 127) | 64; z[0] &= 248; x := funpack(u); a ~= GF1; b ~= x; c ~= GF0; d ~= GF1; i ~= 254
+	while i >= 0:
+		r := ((z[i >> 3] >> (i & 7)) & 1) as int; fsel(a, b, r); fsel(c, d, r)
+		e ~= fa(a, c); a = fz(a, c); c = fa(b, d); b = fz(b, d); d = fs(e); f := fs(a); a = fm(c, a); c = fm(b, e); e = fa(a, c); a = fz(a, c); b = fs(a); c = fz(d, f); a = fm(c, K121665); a = fa(a, d); c = fm(c, a); a = fm(d, f); d = fm(b, x); b = fs(e)
+		fsel(a, b, r); fsel(c, d, r); i -= 1
+	fpack(fm(a, finv(c)))
+x25519_base(k const byte[:]) byte[>..]: nine byte[>..] ~= [9]; nine.resize(32, 0); x25519(k, nine[..])
+epadd(p Ep&, q Ep):
+	a ~= fm(fz(p.y, p.x), fz(q.y, q.x)); b := fm(fa(p.x, p.y), fa(q.x, q.y)); c := fm(fm(p.t, q.t), ED_D2); d0 := fm(p.z, q.z); d := fa(d0, d0)
+	e := fz(b, a); f := fz(d, c); g := fa(d, c); h := fa(b, a); p.x = fm(e, f); p.y = fm(h, g); p.z = fm(g, f); p.t = fm(e, h)
+epswap(p Ep&, q Ep&, b int): fsel(p.x, q.x, b); fsel(p.y, q.y, b); fsel(p.z, q.z, b); fsel(p.t, q.t, b)
+eppack(p Ep) byte[>..]: zi := finv(p.z); tx := fm(p.x, zi); ty := fm(p.y, zi); r ~= fpack(ty); r[31] ^= (fpar(tx) << 7) as! byte; r
+epmul(q0 Ep, s const byte[:]) Ep:
+	p ~= Ep{x: GF0, y: GF1, z: GF1, t: GF0}; q ~= q0; i ~= 255
+	while i >= 0: b := ((s[i >> 3] >> (i & 7)) & 1) as int; epswap(p, q, b); epadd(q, p); pp := p; epadd(p, pp); epswap(p, q, b); i -= 1
+	p
+epbase(s const byte[:]) Ep: epmul(Ep{x: ED_X, y: ED_Y, z: GF1, t: fm(ED_X, ED_Y)}, s)
+modl(x int[64]&) byte[>..]:
+	i ~= 63
+	while i >= 32:
+		c ~= 0; j ~= i - 32
+		while j < i - 12: x[j] += c - 16 * x[i] * ED_L[j - (i - 32)] as int; c = (x[j] + 128) >> 8; x[j] -= c << 8; j += 1
+		x[j] += c; x[i] = 0; i -= 1
+	c ~= 0
+	for j 32: x[j] += c - (x[31] >> 4) * ED_L[j] as int; c = x[j] >> 8; x[j] &= 255
+	for j 32: x[j] -= c * ED_L[j] as int
+	r byte[>..] ~= []
+	for k 32: x[k + 1] += x[k] >> 8; r.push((x[k] & 255) as! byte)
+	r
+reduce64(h const byte[:]) byte[>..]: x int[64] ~= [0; 64]; for i 64 { x[i] = h[i] as int } modl(x)
+ed_secret(seed const byte[:]) byte[>..]: d ~= sha512(seed[..32]); d[0] &= 248; d[31] &= 127; d[31] |= 64; d
+ed25519_public(seed const byte[:]) byte[>..]: eppack(epbase(ed_secret(seed)[..32]))
+ed25519_sign(seed const byte[:], m const byte[:]) byte[>..]:
+	d := ed_secret(seed); pk := eppack(epbase(d[..32])); rm byte[>..] ~= []; rm.append(d[32..64]); rm.append(m); r := reduce64(sha512(rm[..])[..])
+	sig ~= eppack(epbase(r[..])); hm byte[>..] ~= []; hm.append(sig[..]); hm.append(pk[..]); hm.append(m); h := reduce64(sha512(hm[..])[..]); x int[64] ~= [0; 64]
+	for i 32: x[i] = r[i] as int
+	for i 32: for j 32 { x[i + j] += (h[i] as int) * (d[j] as int) }
+	sig.append(modl(x)[..]); sig
+unpackneg(p const byte[:], r Ep&) bool:
+	r.z = GF1; r.y = funpack(p); num ~= fs(r.y); den ~= fm(num, ED_D); num = fz(num, r.z); den = fa(r.z, den)
+	den2 := fs(den); den4 := fs(den2); den6 := fm(den4, den2); t ~= fm(den6, num); t = fm(t, den); t = fpow2523(t); t = fm(t, num); t = fm(t, den); t = fm(t, den); r.x = fm(t, den)
+	chk ~= fm(fs(r.x), den)
+	if fneq(chk, num): r.x = fm(r.x, ED_I)
+	chk = fm(fs(r.x), den)
+	if fneq(chk, num): return false
+	if fpar(r.x) == ((p[31] >> 7) as int): r.x = fz(GF0, r.x)
+	r.t = fm(r.x, r.y); true
+small_order(q Ep) bool:
+	p ~= q
+	for i 3: pp := p; epadd(p, pp)
+	zi := finv(p.z); !fneq(fm(p.x, zi), GF0)
+s_canonical(s const byte[:]) bool:
+	i ~= 31
+	while i >= 0:
+		if s[i] < ED_L[i]: return true
+		if s[i] > ED_L[i]: return false
+		i -= 1
+	false
+ed25519_verify(pk const byte[:], m const byte[:], sig const byte[:]) bool:
+	if pk.len != 32 || sig.len != 64 || !s_canonical(sig[32..]): return false
+	q ~= Ep{}
+	if !unpackneg(pk, q) || small_order(q): return false
+	hm byte[>..] ~= []; hm.append(sig[..32]); hm.append(pk); hm.append(m); h := reduce64(sha512(hm[..])[..])
+	p ~= epmul(q, h[..]); epadd(p, epbase(sig[32..])); ct_eq(eppack(p)[..], sig[..32])

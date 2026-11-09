@@ -1,0 +1,143 @@
+namespace net
+use std
+use json
+use net.tcp
+use net.tls
+use net.http
+use net.ws
+SIO_ERR := -1
+SIO_CONNECTING := 1
+SIO_OPEN := 2
+SIO_CLOSED := 3
+struct Sio { w Ws = Ws{}, st int = 0, auth byte[>..] = [], sid byte[>..] = [], pi real = 25.0, pt real = 20.0, last real = 0.0, next int = 1, evn byte[>..][>..] = [], evd byte[>..][>..] = [], evid int[>..] = [], ei int = 0, ackid int[>..] = [], ackd byte[>..][>..] = [], err byte[>..] = [], poll bool = false, base byte[>..] = [], hdrs byte[>..] = [], esid byte[>..] = [], outq byte[>..] = [], hq Http[>..] = [], getting bool = false, posting bool = false }
+sio_open(base const byte[:], auth_json const byte[:]) Sio: sio_open_with(base, auth_json, "")
+sio_open_with(base const byte[:], auth_json const byte[:], headers const byte[:]) Sio: sio_open_mode(base, auth_json, headers, false)
+sio_open_mode(base const byte[:], auth_json const byte[:], headers const byte[:], polling bool) Sio:
+	s ~= Sio{}; u byte[>..] ~= []; s.base.append(base); s.hdrs.append(headers)
+	while s.base.len > 0 && s.base[s.base.len - 1] == '/': s.base.resize(s.base.len - 1, 0)
+	if starts_with(base, "https://"): u.append("wss://"); u.append(base[8..])
+	else if starts_with(base, "http://"): u.append("ws://"); u.append(base[7..])
+	else: u.append(base)
+	while u.len > 0 && u[u.len - 1] == '/': u.resize(u.len - 1, 0)
+	u.append("/socket.io/?EIO=4&transport=websocket"); s.auth.append(auth_json); s.last = clock()
+	if polling: go_poll(s)
+	else: s.w = ws_open(u, headers)
+	s
+poll_url(s Sio&) byte[>..]:
+	u byte[>..] ~= []; u.append(s.base[..]); u.append("/socket.io/?EIO=4&transport=polling")
+	if s.esid.len > 0: u.append("&sid="); u.append(s.esid[..])
+	u
+go_poll(s Sio&):
+	while s.hq.len < 2: s.hq.push(Http{})
+	s.poll = true; s.esid.clear(); s.hq[0] = http_start("GET", poll_url(s), s.hdrs, ""); s.getting = true; s.last = clock()
+tx(s Sio&, pkt const byte[:]):
+	if !s.poll: ws_send(s.w, pkt, false); return
+	if s.outq.len > 0: s.outq.push(0x1e)
+	s.outq.append(pkt)
+poll_pump(s Sio&) int:
+	if s.getting:
+		r := http_pump(s.hq[0])
+		if r == HTTP_ERR: return sio_fail(s, str("polling: ", s.hq[0].err))
+		if r == HTTP_DONE:
+			s.getting = false
+			if s.hq[0].status != 200: return sio_fail(s, str("polling: HTTP ", s.hq[0].status, " ", s.hq[0].body))
+			st ~= 0
+			for i s.hq[0].body.len + 1:
+				if i == s.hq[0].body.len || s.hq[0].body[i] == 0x1e:
+					if i > st && s.st >= 0 && s.st < 4: on_packet(s, s.hq[0].body[st..i])
+					st = i + 1
+	if !s.getting && s.esid.len > 0 && s.st >= 0 && s.st < 4: s.hq[0] = http_start("GET", poll_url(s), s.hdrs, ""); s.getting = true
+	if s.posting:
+		r := http_pump(s.hq[1])
+		if r == HTTP_ERR: return sio_fail(s, str("polling send: ", s.hq[1].err))
+		if r == HTTP_DONE: s.posting = false; if s.hq[1].status != 200 { return sio_fail(s, str("polling send: HTTP ", s.hq[1].status)) }
+	if !s.posting && s.outq.len > 0 && s.esid.len > 0:
+		h byte[>..] ~= []; h.append(s.hdrs[..]); h.append("Content-Type: text/plain;charset=UTF-8\r\n"); s.hq[1] = http_start("POST", poll_url(s), h, s.outq); s.outq.clear(); s.posting = true
+	SIO_OPEN
+sio_fail(s Sio&, why const byte[:]) int:
+	if s.st >= 0: s.err.clear(); s.err.append(why); s.st = -1; if s.poll { tls_close(s.hq[0].c); tls_close(s.hq[1].c) } else { ws_close(s.w, 1000) }
+	SIO_ERR
+num_at(d const byte[:], i0 int) int, int:
+	i ~= i0; v ~= -1
+	while i < d.len && d[i] >= '0' && d[i] <= '9': v = (if v < 0 { 0 } else { v * 10 }) + (d[i] - '0') as int; i += 1
+	return v, i
+args_of(d json::Doc&, root int, skip int) byte[>..]:
+	o byte[>..] ~= ['[']; k ~= 0
+	json::each(d, root) { c => if k >= skip { if o.len > 1 { o.push(',') } json::format_node(o, d, c) } k += 1 }
+	o.push(']'); o
+on_packet(s Sio&, m const byte[:]) int:
+	if m.len == 0: return sio_fail(s, "empty packet")
+	t := m[0]
+	if t == '0':
+		d ~= json::Doc{}; root, e := json::parse(m[1..], d)
+		pi, ok := json::as_f64(d, json::member(d, root, "pingInterval")); pt, ok2 := json::as_f64(d, json::member(d, root, "pingTimeout"))
+		if ok: s.pi = pi / 1000.0
+		if ok2: s.pt = pt / 1000.0
+		es, ok3 := json::as_string(d, json::member(d, root, "sid")); s.esid.clear(); s.esid.append(es)
+		c byte[>..] ~= []; c.append("40"); c.append(s.auth[..]); tx(s, c); s.st = 2; return SIO_CONNECTING
+	if t == '2': s.last = clock(); tx(s, "3"); return SIO_OPEN
+	if t == '1': s.st = 3; return SIO_CLOSED
+	if t != '4' || m.len < 2: return SIO_OPEN
+	p := m[1]; b ~= 2
+	if b < m.len && m[b] == '/': c := find(m[b..], ","); b = if c < 0 { m.len } else { b + c + 1 }
+	if p == '0':
+		d ~= json::Doc{}; root, e := json::parse(m[b..], d); sid, ok := json::as_string(d, json::member(d, root, "sid")); s.sid.append(sid); s.st = 3; return SIO_OPEN
+	if p == '4':
+		d ~= json::Doc{}; root, e := json::parse(m[b..], d); msg, ok := json::as_string(d, json::member(d, root, "message"))
+		return sio_fail(s, if ok { msg } else { "connection refused" })
+	if p == '1': s.st = 4; return SIO_CLOSED
+	if p != '2' && p != '3': return SIO_OPEN
+	id, b2 := num_at(m, b); d ~= json::Doc{}; root, e := json::parse(m[b2..], d)
+	if root < 0 || json::kind(d, root) != json::K_ARR: return sio_fail(s, "bad event packet")
+	if p == '3': s.ackid.push(id); s.ackd.push(args_of(d, root, 0)); return SIO_OPEN
+	nm, ok := json::as_string(d, json::element(d, root, 0))
+	if !ok: return SIO_OPEN
+	n byte[>..] ~= []; n.append(nm); s.evn.push(n); s.evd.push(args_of(d, root, 1)); s.evid.push(id); SIO_OPEN
+sio_pump(s Sio&) int:
+	if s.st < 0: return SIO_ERR
+	if s.st >= 4: return SIO_CLOSED
+	if s.poll:
+		if poll_pump(s) == SIO_ERR: return SIO_ERR
+		if s.st >= 4: return SIO_CLOSED
+		if clock() - s.last > s.pi + s.pt: return sio_fail(s, "server stopped answering")
+		return if s.st == 3 { SIO_OPEN } else { SIO_CONNECTING }
+	r := ws_pump(s.w)
+	if r != WS_ERR && s.st == 0 && clock() - s.last > 7.0: ws_close(s.w, 1000); go_poll(s); return SIO_CONNECTING
+	if r == WS_ERR && s.st == 0 && (starts_with(s.w.err, "upgrade refused") || s.w.err[..] == "closed during upgrade" || s.w.err[..] == "bad upgrade response"): go_poll(s); return SIO_CONNECTING
+	if r == WS_ERR: return sio_fail(s, s.w.err)
+	m byte[>..] ~= []
+	while ws_next(s.w, m) != 0 && s.st >= 0 && s.st < 4: on_packet(s, m); m.clear()
+	if s.st < 0: return SIO_ERR
+	if r == WS_CLOSED || s.st >= 4: s.st = 4; return SIO_CLOSED
+	if clock() - s.last > s.pi + s.pt: return sio_fail(s, "server stopped answering")
+	if s.st == 3 { SIO_OPEN } else { SIO_CONNECTING }
+packet(s Sio&, kind const byte[:], id int, name const byte[:], args const byte[:]) bool:
+	if s.st != 3: return false
+	p byte[>..] ~= []; p.append(kind)
+	if id >= 0: p.append(str(id))
+	p.push('[')
+	if name.len > 0: json::format_string(p, name)
+	if name.len > 0 && args.len > 0: p.push(',')
+	p.append(args); p.push(']'); tx(s, p); true
+sio_emit(s Sio&, name const byte[:], args const byte[:]) bool: packet(s, "42", -1, name, args)
+sio_call(s Sio&, name const byte[:], args const byte[:]) int:
+	id := s.next; s.next += 1
+	if !packet(s, "42", id, name, args): return -1
+	id
+sio_reply(s Sio&, id int, args const byte[:]) bool: packet(s, "43", id, "", args)
+sio_event(s Sio&, name byte[>..]&, args byte[>..]&) int:
+	if s.ei >= s.evn.len: return -2
+	name.clear(); args.clear(); name.append(s.evn[s.ei][..]); args.append(s.evd[s.ei][..]); id := s.evid[s.ei]; s.ei += 1
+	if s.ei == s.evn.len: s.evn.clear(); s.evd.clear(); s.evid.clear(); s.ei = 0
+	id
+sio_ack(s Sio&, id int, out byte[>..]&) bool:
+	for i s.ackid.len:
+		if s.ackid[i] == id: out.append(s.ackd[i][..]); remove_at(s.ackid, i); remove_at(s.ackd, i); return true
+	false
+sio_close(s Sio&):
+	if s.st == 3: tx(s, "41")
+	if s.poll && s.outq.len > 0 && s.esid.len > 0: h byte[>..] ~= []; h.append(s.hdrs[..]); h.append("Content-Type: text/plain;charset=UTF-8\r\n"); f ~= http_fetch("POST", poll_url(s), h, s.outq, 3000)
+	if s.poll: tls_close(s.hq[0].c); tls_close(s.hq[1].c)
+	else: ws_close(s.w, 1000)
+	if s.st >= 0 { s.st = 4 }
+sio_fd(s const Sio&) int: if !s.poll { s.w.c.fd } else if s.posting && s.hq[1].c.fd >= 0 { s.hq[1].c.fd } else { s.hq[0].c.fd }

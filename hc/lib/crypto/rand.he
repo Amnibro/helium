@@ -1,0 +1,18 @@
+namespace crypto
+use std
+use ffi
+extern "libc.so.6" {
+	c_ropen(p uint, f i32) i32 = "open";
+	c_rread(fd i32, b uint, n uint) int = "read";
+	c_rclose(fd i32) i32 = "close";
+}
+random_bytes(n int) byte[>..]:
+	o byte[>..] ~= []; o.resize(n, 0); path byte[>..] ~= []; path.append("/dev/urandom"); path.push(0)
+	fd := c_ropen(ffi::ptr(path[..]), 0x80000) as int
+	if fd < 0: abort("crypto: cannot open /dev/urandom")
+	i ~= 0
+	while i < n:
+		k := c_rread(fd as i32, ffi::ptr(o[i..]), (n - i) as uint)
+		if k <= 0: c_rclose(fd as i32); abort("crypto: /dev/urandom read failed")
+		i += k
+	c_rclose(fd as i32); o

@@ -1,0 +1,99 @@
+namespace net
+use std
+use json
+use net.tcp
+use net.tls
+HTTP_ERR := -1
+HTTP_PENDING := 0
+HTTP_DONE := 1
+struct Url { secure bool = false, host byte[>..] = [], port int = 0, path byte[>..] = [] }
+struct Http { c Tls = Tls{}, st int = 0, req byte[>..] = [], status int = 0, head byte[>..] = [], body byte[>..] = [], raw byte[>..] = [], clen int = -1, chunked bool = false, nobody bool = false, err byte[>..] = [], deadline real = 0.0 }
+url_parse(u const byte[:]) Url, bool:
+	r ~= Url{}; s ~= 0
+	if starts_with(u, "https://") || starts_with(u, "wss://"): r.secure = true
+	s = find(u, "://") + 3
+	if s < 3: return r, false
+	e ~= s
+	while e < u.len && u[e] != '/' && u[e] != '?' && u[e] != '#': e += 1
+	hp := u[s..e]; c ~= -1; hs ~= 0; he ~= hp.len
+	if hp.len > 0 && hp[0] == '[': he = find(hp, "]"); hs = 1; c = if he + 1 < hp.len && hp[he + 1] == ':' { he + 1 } else { -1 }
+	else: for i hp.len { if hp[i] == ':' { c = i } } he = if c >= 0 { c } else { hp.len }
+	if he <= hs: return r, false
+	r.host.append(hp[hs..he]); r.port = if r.secure { 443 } else { 80 }
+	if c >= 0: p, ok := parse_int(hp[c + 1..]); if !ok || p <= 0 || p > 65535 { return r, false } r.port = p
+	if e < u.len && u[e] == '/': r.path.append(u[e..])
+	else: r.path.push('/'); r.path.append(u[e..])
+	h := find(r.path, "#")
+	if h >= 0: r.path.resize(h, 0)
+	return r, true
+host_header(u const Url&) byte[>..]:
+	o byte[>..] ~= []; v6 := find(u.host, ":") >= 0
+	if v6: o.push('[')
+	o.append(u.host[..])
+	if v6: o.push(']')
+	if u.port != (if u.secure { 443 } else { 80 }): o.push(':'); o.append(str(u.port))
+	o
+http_start(method const byte[:], url const byte[:], headers const byte[:], body const byte[:]) Http:
+	h ~= Http{}; u, ok := url_parse(url)
+	if !ok: h.st = -1; h.err.append("bad URL"); return h
+	h.nobody = method == "HEAD"; h.req.append(method); h.req.push(' '); h.req.append(u.path[..]); h.req.append(" HTTP/1.1\r\nHost: "); h.req.append(host_header(u)[..])
+	h.req.append("\r\nConnection: close\r\nAccept-Encoding: identity\r\n")
+	if body.len > 0 || method == "POST" || method == "PUT" || method == "PATCH": h.req.append("Content-Length: "); h.req.append(str(body.len)); h.req.append("\r\n")
+	h.req.append(headers); h.req.append("\r\n"); h.req.append(body); h.c = stream_open(u.secure, u.host, u.port, "http/1.1"); h
+http_header(head const byte[:], name const byte[:]) byte[>..]:
+	o byte[>..] ~= []; ln := lower(name)
+	for l split(head, "\r\n"):
+		c := find(l, ":")
+		if c > 0 && lower(trim(l[..c]))[..] == ln[..]: o.append(trim(l[c + 1..])); return o
+	o
+dechunk(h Http&) bool:
+	while true:
+		e := find(h.raw, "\r\n")
+		if e < 0: return false
+		sl ~= e; sc := find(h.raw[..e], ";")
+		if sc >= 0: sl = sc
+		n, ok := parse_int(trim(h.raw[..sl]), 16)
+		if !ok || n < 0: h.st = -1; h.err.append("bad chunk"); return true
+		if n == 0: return find(h.raw[e..], "\r\n\r\n") >= 0
+		if h.raw.len < e + 2 + n + 2: return false
+		h.body.append(h.raw[e + 2..e + 2 + n]); rest byte[>..] ~= []; rest.append(h.raw[e + 4 + n..]); h.raw = rest
+	false
+http_pump(h Http&) int:
+	if h.st < 0: return HTTP_ERR
+	if h.st == 3: return HTTP_DONE
+	r := tls_pump(h.c)
+	if r == TLS_ERR: h.st = -1; h.err = copy(h.c.err); return HTTP_ERR
+	if h.st == 0 && r == TLS_OPEN: tls_write(h.c, h.req); h.st = 1
+	tls_read(h.c, h.raw)
+	if h.st == 1:
+		e := find(h.raw, "\r\n\r\n")
+		if e >= 0:
+			h.head.append(h.raw[..e]); rest byte[>..] ~= []; rest.append(h.raw[e + 4..]); h.raw = rest; sl := split(h.head, "\r\n")[0]; p := split(sl, ' ')
+			st ~= 0; ok ~= false
+			if p.len >= 2: st, ok = parse_int(p[1])
+			if !ok || !starts_with(sl, "HTTP/1."): h.st = -1; h.err.append("bad HTTP response"); return HTTP_ERR
+			h.status = st; cl := http_header(h.head, "content-length"); h.chunked = find(lower(http_header(h.head, "transfer-encoding"))[..], "chunked") >= 0
+			if cl.len > 0: n, ok2 := parse_int(cl); h.clen = if ok2 { n } else { -1 }
+			if h.nobody || st == 204 || st == 304 || st < 200: h.clen = 0
+			h.st = 2
+	if h.st == 2:
+		if h.chunked:
+			if dechunk(h): h.st = if h.st < 0 { -1 } else { 3 }
+		else: h.body.append(h.raw[..]); h.raw.clear(); if h.clen >= 0 && h.body.len >= h.clen { h.body.resize(h.clen, 0); h.st = 3 }
+	if h.st == 3: tls_close(h.c); return HTTP_DONE
+	if r == TLS_CLOSED:
+		if h.st == 2 && h.clen < 0 && !h.chunked: h.st = 3; return HTTP_DONE
+		h.st = -1; h.err.append("connection closed early"); return HTTP_ERR
+	HTTP_PENDING
+http_wait(h Http&, ms int) int:
+	t0 := clock(); r ~= http_pump(h)
+	while r == HTTP_PENDING && (clock() - t0) * 1000.0 < ms as real:
+		if h.c.fd >= 0: tcp_poll(h.c.fd, 1, 20)
+		r = http_pump(h)
+	if r == HTTP_PENDING: h.st = -1; h.err.append("timed out"); tls_close(h.c); r = HTTP_ERR
+	r
+http_fetch(method const byte[:], url const byte[:], headers const byte[:], body const byte[:], ms int) Http: h ~= http_start(method, url, headers, body); http_wait(h, ms); h
+http_json(method const byte[:], url const byte[:], token const byte[:], body const byte[:], ms int) Http:
+	hd byte[>..] ~= []; hd.append("Content-Type: application/json\r\nAccept: application/json\r\n")
+	if token.len > 0: hd.append("Authorization: Bearer "); hd.append(token); hd.append("\r\n")
+	http_fetch(method, url, hd, body, ms)

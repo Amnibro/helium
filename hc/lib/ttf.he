@@ -1,8 +1,9 @@
 namespace ttf
 use std
 use math
-struct Info { d byte[>..], loca int = 0, head int = 0, glyf int = 0, hhea int = 0, hmtx int = 0, imap int = 0, ngl int = 0, ilf int = 0 }
-struct V { t int, x int, y int, cx int, cy int }
+struct Info { d byte[>..], loca int = 0, head int = 0, glyf int = 0, hhea int = 0, hmtx int = 0, imap int = 0, ngl int = 0, ilf int = 0, fo int = 0, cff int = 0, cs int = 0, gsb int = 0, sub int = 0, fda int = 0, fds int = 0, kst int = 0, kpp int[>..] = [], kpl int[>..] = [], kleg int = 0, kk int[>..] = [], kv int[>..] = [], kn int = 0 }
+struct V { t int, x int, y int, cx int, cy int, cx1 int = 0, cy1 int = 0 }
+struct Cs { x f32 = 0.0, y f32 = 0.0, fx f32 = 0.0, fy f32 = 0.0, vs V[>..] = [] }
 struct Pt { x f32, y f32 }
 struct E { x0 f32, y0 f32, x1 f32, y1 f32, inv bool }
 struct A { nx int, fx f32, fdx f32, fdy f32, dir f32, sy f32, ey f32 }
@@ -18,13 +19,20 @@ ru16(d const byte[:], o int) int: (d[o] as int) << 8 | d[o + 1] as int
 w16(v int) int: ((v + 32768) & 0xFFFF) - 32768
 rs16(d const byte[:], o int) int: w16(ru16(d, o))
 ru32(d const byte[:], o int) int: ru16(d, o) << 16 | ru16(d, o + 2)
-find_table(d const byte[:], tag const byte[:]) int:
-	for i ru16(d, 4): l := 12 + 16 * i; if d[l] == tag[0] && d[l + 1] == tag[1] && d[l + 2] == tag[2] && d[l + 3] == tag[3] { return ru32(d, l + 8) }
+font_offset(d const byte[:], index int) int:
+	if d.len < 12: return -1
+	if d[0] == 't' && d[1] == 't' && d[2] == 'c' && d[3] == 'f': return if index >= 0 && index < ru32(d, 8) && 16 + 4 * index <= d.len { ru32(d, 12 + 4 * index) } else { -1 }
+	if index == 0 { 0 } else { -1 }
+font_count(d const byte[:]) int: if d.len >= 12 && d[0] == 't' && d[1] == 't' && d[2] == 'c' && d[3] == 'f' { ru32(d, 8) } else if d.len >= 12 { 1 } else { 0 }
+find_table(d const byte[:], fo int, tag const byte[:]) int:
+	for i ru16(d, fo + 4): l := fo + 12 + 16 * i; if d[l] == tag[0] && d[l + 1] == tag[1] && d[l + 2] == tag[2] && d[l + 3] == tag[3] { return ru32(d, l + 8) }
 	0
 init(f Info&) bool:
-	d := f.d[..]; cm := find_table(d, "cmap"); f.loca = find_table(d, "loca"); f.head = find_table(d, "head"); f.glyf = find_table(d, "glyf"); f.hhea = find_table(d, "hhea"); f.hmtx = find_table(d, "hmtx")
-	if cm == 0 || f.head == 0 || f.hhea == 0 || f.hmtx == 0 || f.glyf == 0 || f.loca == 0: return false
-	t := find_table(d, "maxp"); f.ngl = if t != 0 { ru16(d, t + 4) } else { 0xffff }; f.imap = 0
+	d := f.d[..]; cm := find_table(d, f.fo, "cmap"); f.loca = find_table(d, f.fo, "loca"); f.head = find_table(d, f.fo, "head"); f.glyf = find_table(d, f.fo, "glyf"); f.hhea = find_table(d, f.fo, "hhea"); f.hmtx = find_table(d, f.fo, "hmtx")
+	f.cff = find_table(d, f.fo, "CFF ")
+	if cm == 0 || f.head == 0 || f.hhea == 0 || f.hmtx == 0 || (f.cff == 0 && (f.glyf == 0 || f.loca == 0)): return false
+	if f.glyf == 0 && !cff_init(f): return false
+	t := find_table(d, f.fo, "maxp"); f.ngl = if t != 0 { ru16(d, t + 4) } else { 0xffff }; f.imap = 0
 	for i ru16(d, cm + 2):
 		er := cm + 4 + 8 * i; p := ru16(d, er)
 		if p == 3 { e := ru16(d, er + 2); if e == 1 || e == 10 { f.imap = cm + ru32(d, er + 4) } } else if p == 0 { f.imap = cm + ru32(d, er + 4) }
@@ -56,6 +64,7 @@ gofs(f Info&, g int) int:
 	d := f.d[..]; g1 := if f.ilf == 0 { f.glyf + ru16(d, f.loca + g * 2) * 2 } else { f.glyf + ru32(d, f.loca + g * 4) }; g2 := if f.ilf == 0 { f.glyf + ru16(d, f.loca + g * 2 + 2) * 2 } else { f.glyf + ru32(d, f.loca + g * 4 + 4) }
 	if g1 == g2 { -1 } else { g1 }
 gbox(f Info&, g int, b B4&) bool:
+	if f.cs != 0: return cff_box(f, g, b)
 	o := gofs(f, g); if o < 0: return false
 	d := f.d[..]; b = B4{rs16(d, o + 2), rs16(d, o + 4), rs16(d, o + 6), rs16(d, o + 8)}; true
 hmetrics(f Info&, g int) int2:
@@ -70,6 +79,7 @@ close(vs V[>..]&, n int, wo bool, so bool, sx int, sy int, scx int, scy int, cx 
 	k + 1
 xf(m f32, a f32, b f32, c f32, x int, y int) int: w16((m * (a * x as f32 + b * y as f32 + c)) as int)
 shape(f Info&, g int) V[>..]:
+	if f.cs != 0: return cff_shape(f, g)
 	vs V[>..] ~= []; o := gofs(f, g)
 	if o < 0: return vs
 	d := f.d[..]; nc := rs16(d, o)
@@ -123,6 +133,14 @@ curve(ps Pt[>..]&, x0 f32, y0 f32, x1 f32, y1 f32, x2 f32, y2 f32, fs f32, n int
 	mx := (x0 + 2.0 * x1 + x2) / 4.0; my := (y0 + 2.0 * y1 + y2) / 4.0; dx := (x0 + x2) / 2.0 - mx; dy := (y0 + y2) / 2.0 - my
 	if n > 16: return
 	if dx * dx + dy * dy > fs { curve(ps, x0, y0, (x0 + x1) / 2.0, (y0 + y1) / 2.0, mx, my, fs, n + 1); curve(ps, mx, my, (x1 + x2) / 2.0, (y1 + y2) / 2.0, x2, y2, fs, n + 1) } else { ps.push(Pt{x2, y2}) }
+cubic(ps Pt[>..]&, x0 f32, y0 f32, x1 f32, y1 f32, x2 f32, y2 f32, x3 f32, y3 f32, fs f32, n int):
+	if n > 16: return
+	a := x1 - x0; b := y1 - y0; c := x2 - x1; e := y2 - y1; g := x3 - x2; h := y3 - y2; dx := x3 - x0; dy := y3 - y0
+	ll := sqrt(a * a + b * b) + sqrt(c * c + e * e) + sqrt(g * g + h * h); sl := sqrt(dx * dx + dy * dy)
+	if ll * ll - sl * sl <= fs: ps.push(Pt{x3, y3}); return
+	x01 := (x0 + x1) / 2.0; y01 := (y0 + y1) / 2.0; x12 := (x1 + x2) / 2.0; y12 := (y1 + y2) / 2.0; x23 := (x2 + x3) / 2.0; y23 := (y2 + y3) / 2.0
+	xa := (x01 + x12) / 2.0; ya := (y01 + y12) / 2.0; xb := (x12 + x23) / 2.0; yb := (y12 + y23) / 2.0; mx := (xa + xb) / 2.0; my := (ya + yb) / 2.0
+	cubic(ps, x0, y0, x01, y01, xa, ya, mx, my, fs, n + 1); cubic(ps, mx, my, xb, yb, x23, y23, x3, y3, fs, n + 1)
 lt(a E, b E) bool: a.y0 < b.y0
 qs(e E[>..]&, b0 int, n0 int):
 	b ~= b0; n ~= n0
@@ -202,7 +220,7 @@ raster(px byte[>..]&, base int, w int, h int, stride int, vs V[:], sx f32, sy f3
 	nm ~= 0; for v vs { if v.t == 1 { nm += 1 } }
 	if nm == 0: return
 	for v vs:
-		if v.t == 1 { if cn >= 0 { wc.push(ps.len - st) } cn += 1; st = ps.len; x = v.x as f32; y = v.y as f32; ps.push(Pt{x, y}) } else if v.t == 2 { x = v.x as f32; y = v.y as f32; ps.push(Pt{x, y}) } else if v.t == 3 { curve(ps, x, y, v.cx as f32, v.cy as f32, v.x as f32, v.y as f32, fs, 0); x = v.x as f32; y = v.y as f32 }
+		if v.t == 1 { if cn >= 0 { wc.push(ps.len - st) } cn += 1; st = ps.len; x = v.x as f32; y = v.y as f32; ps.push(Pt{x, y}) } else if v.t == 2 { x = v.x as f32; y = v.y as f32; ps.push(Pt{x, y}) } else if v.t == 3 { curve(ps, x, y, v.cx as f32, v.cy as f32, v.x as f32, v.y as f32, fs, 0); x = v.x as f32; y = v.y as f32 } else if v.t == 4 { cubic(ps, x, y, v.cx as f32, v.cy as f32, v.cx1 as f32, v.cy1 as f32, v.x as f32, v.y as f32, fs, 0); x = v.x as f32; y = v.y as f32 }
 	wc.push(ps.len - st)
 	e E[>..] ~= []; m ~= 0; ysi := -sy
 	for c wc:
@@ -306,3 +324,257 @@ render(s Ctx&, f Info&, rg Range[>..]&, rlo int, nr int, rs Rc[>..]&, lo int, cd
 			else: ok = false
 			k += 1
 	s.ho = oh; s.vo = ov; ok
+cov(d const byte[:], o int, g int) int:
+	fm := ru16(d, o); n := ru16(d, o + 2); lo ~= 0; hi ~= n - 1
+	while lo <= hi:
+		m := (lo + hi) >> 1
+		if fm == 1:
+			v := ru16(d, o + 4 + 2 * m)
+			if v == g: return m
+			if v < g { lo = m + 1 } else { hi = m - 1 }
+		else:
+			r := o + 4 + 6 * m; st := ru16(d, r); en := ru16(d, r + 2)
+			if g < st { hi = m - 1 } else if g > en { lo = m + 1 } else { return ru16(d, r + 4) + g - st }
+	-1
+cls(d const byte[:], o int, g int) int:
+	fm := ru16(d, o)
+	if fm == 1: st := ru16(d, o + 2); n := ru16(d, o + 4); return if g >= st && g < st + n { ru16(d, o + 6 + 2 * (g - st)) } else { 0 }
+	n := ru16(d, o + 2); lo ~= 0; hi ~= n - 1
+	while lo <= hi:
+		m := (lo + hi) >> 1; r := o + 4 + 6 * m; st := ru16(d, r); en := ru16(d, r + 2)
+		if g < st { hi = m - 1 } else if g > en { lo = m + 1 } else { return ru16(d, r + 4) }
+	0
+vsz(vf int) int: n ~= 0; for b 8 { if vf & (1 << b) != 0 { n += 1 } } n * 2
+xadv(d const byte[:], o int, vf int) int: if vf & 4 == 0 { 0 } else { k ~= 0; for b 2 { if vf & (1 << b) != 0 { k += 2 } } rs16(d, o + k) }
+kern_setup(f Info&):
+	f.kst = 1; d := f.d[..]; f.kleg = find_table(d, f.fo, "kern"); gp := find_table(d, f.fo, "GPOS")
+	if gp == 0: return
+	fl := gp + ru16(d, gp + 6); ll := gp + ru16(d, gp + 8); seen bool[>..] ~= []; seen.resize(ru16(d, ll), false)
+	for i ru16(d, fl):
+		r := fl + 2 + 6 * i
+		if d[r] != 'k' || d[r + 1] != 'e' || d[r + 2] != 'r' || d[r + 3] != 'n': continue
+		ft := fl + ru16(d, r + 4)
+		for j ru16(d, ft + 2):
+			li := ru16(d, ft + 4 + 2 * j)
+			if li >= seen.len || seen[li]: continue
+			seen[li] = true; lk := ll + ru16(d, ll + 2 + 2 * li); ty := ru16(d, lk)
+			for k ru16(d, lk + 4):
+				st ~= lk + ru16(d, lk + 6 + 2 * k)
+				if ty == 9: if ru16(d, st + 2) != 2 { continue } st = st + ru32(d, st + 4)
+				else if ty != 2: continue
+				f.kpp.push(st); f.kpl.push(li)
+pair(d const byte[:], st int, g1 int, g2 int) int, bool:
+	fm := ru16(d, st); ci := cov(d, st + ru16(d, st + 2), g1)
+	if ci < 0: return 0, false
+	v1 := ru16(d, st + 4); v2 := ru16(d, st + 6); s1 := vsz(v1); s2 := vsz(v2)
+	if fm == 1:
+		ps := st + ru16(d, st + 10 + 2 * ci); n := ru16(d, ps); rl := 2 + s1 + s2; lo ~= 0; hi ~= n - 1
+		while lo <= hi:
+			m := (lo + hi) >> 1; r := ps + 2 + rl * m; sg := ru16(d, r)
+			if sg == g2: return xadv(d, r + 2, v1), true
+			if sg < g2 { lo = m + 1 } else { hi = m - 1 }
+		return 0, false
+	if fm != 2: return 0, false
+	c1 := cls(d, st + ru16(d, st + 8), g1); c2 := cls(d, st + ru16(d, st + 10), g2); n1 := ru16(d, st + 12); n2 := ru16(d, st + 14)
+	if c1 >= n1 || c2 >= n2: return 0, true
+	return xadv(d, st + 16 + (c1 * n2 + c2) * (s1 + s2), v1), true
+legacy(d const byte[:], t int, g1 int, g2 int) int:
+	if ru16(d, t) != 0: return 0
+	o ~= t + 4; tot ~= 0
+	for i ru16(d, t + 2):
+		ln := ru16(d, o + 2); cv := ru16(d, o + 4)
+		if cv >> 8 == 0 && cv & 1 != 0:
+			n := ru16(d, o + 6); lo ~= 0; hi ~= n - 1; key := g1 << 16 | g2
+			while lo <= hi:
+				m := (lo + hi) >> 1; r := o + 14 + 6 * m; kv := ru32(d, r)
+				if kv == key: tot += rs16(d, r + 4); break
+				if kv < key { lo = m + 1 } else { hi = m - 1 }
+		o += ln
+	tot
+kern_raw(f Info&, g1 int, g2 int) int:
+	if f.kst == 0: kern_setup(f)
+	d := f.d[..]; tot ~= 0
+	done ~= -1
+	for st, i f.kpp:
+		if f.kpl[i] == done: continue
+		v, hit := pair(d, st, g1, g2)
+		if hit: tot += v; done = f.kpl[i]
+	if f.kpp.len == 0 && f.kleg != 0: tot = legacy(d, f.kleg, g1, g2)
+	tot
+kern(f Info&, g1 int, g2 int) int:
+	if g1 <= 0 || g2 <= 0: return 0
+	if f.kst == 0: kern_setup(f)
+	if f.kpp.len == 0 && f.kleg == 0: return 0
+	if f.kk.len == 0: f.kk.resize(4096, -1); f.kv.resize(4096, 0)
+	key := g1 << 16 | g2; m := f.kk.len - 1; h ~= (key * 0x9E3779B1) & m
+	while f.kk[h] != -1:
+		if f.kk[h] == key: return f.kv[h]
+		h = (h + 1) & m
+	v := kern_raw(f, g1, g2)
+	if f.kn * 4 >= f.kk.len * 3: f.kk.clear(); f.kv.clear(); f.kk.resize(4096, -1); f.kv.resize(4096, 0); f.kn = 0; h = (key * 0x9E3779B1) & 4095
+	f.kk[h] = key; f.kv[h] = v; f.kn += 1
+	v
+rofs(d const byte[:], p int, sz int) int: v ~= 0; for k sz { v = v << 8 | d[p + k] as int } v
+ix_item(d const byte[:], o int, i int) int, int:
+	sz := d[o + 2] as int; n := ru16(d, o); b := o + 2 + (n + 1) * sz; a := rofs(d, o + 3 + i * sz, sz)
+	return b + a, rofs(d, o + 3 + (i + 1) * sz, sz) - a
+ix_end(d const byte[:], o int) int: n := ru16(d, o); if n == 0 { o + 2 } else { sz := d[o + 2] as int; o + 2 + (n + 1) * sz + rofs(d, o + 3 + n * sz, sz) }
+dnum(d const byte[:], p int) int, int:
+	b0 := d[p] as int
+	if b0 >= 32 && b0 <= 246: return b0 - 139, p + 1
+	if b0 >= 247 && b0 <= 250: return (b0 - 247) * 256 + d[p + 1] as int + 108, p + 2
+	if b0 >= 251 && b0 <= 254: return -(b0 - 251) * 256 - d[p + 1] as int - 108, p + 2
+	if b0 == 28: return rs16(d, p + 1), p + 3
+	if b0 == 29: v := ru32(d, p + 1); return (if v >= 0x80000000 { v - 0x100000000 } else { v }), p + 5
+	return 0, p + 1
+dict_get(d const byte[:], st int, n int, key int) int[>..]:
+	p ~= st; e := st + n; ops int[>..] ~= []
+	while p < e:
+		b := d[p] as int
+		if b < 22:
+			k ~= b; p += 1
+			if b == 12: k = 0x100 | d[p] as int; p += 1
+			if k == key: return ops
+			ops.clear()
+		else if b == 30:
+			p += 1
+			while p < e { v := d[p] as int; p += 1; if v & 0xF == 0xF || v >> 4 == 0xF { break } }
+			ops.push(0)
+		else:
+			v, np := dnum(d, p); ops.push(v); p = np
+	ops.clear(); ops
+priv_subrs(f Info&, st int, n int) int:
+	d := f.d[..]; pv := dict_get(d, st, n, 18)
+	if pv.len < 2 || pv[0] == 0 || pv[1] == 0: return 0
+	so := dict_get(d, f.cff + pv[1], pv[0], 19)
+	if so.len < 1 || so[0] == 0 { 0 } else { f.cff + pv[1] + so[0] }
+cff_init(f Info&) bool:
+	d := f.d[..]; c := f.cff
+	if c + 4 > d.len: return false
+	ni := c + d[c + 2] as int; ti := ix_end(d, ni)
+	if ru16(d, ti) < 1: return false
+	ts, tn := ix_item(d, ti, 0); si := ix_end(d, ti); f.gsb = ix_end(d, si)
+	cs := dict_get(d, ts, tn, 17); ct := dict_get(d, ts, tn, 0x106); fa := dict_get(d, ts, tn, 0x124); fs := dict_get(d, ts, tn, 0x125)
+	if cs.len < 1 || cs[0] == 0 || ct.len > 0 && ct[0] != 2: return false
+	f.sub = priv_subrs(f, ts, tn); f.cs = c + cs[0]
+	if fa.len > 0 && fa[0] != 0:
+		if fs.len < 1 || fs[0] == 0: f.cs = 0; return false
+		f.fda = c + fa[0]; f.fds = c + fs[0]
+	true
+subr(d const byte[:], ix int, n0 int) int, int:
+	if ix == 0: return 0, 0
+	cnt := ru16(d, ix); bias := if cnt < 1240 { 107 } else if cnt < 33900 { 1131 } else { 32768 }; n := n0 + bias
+	if n < 0 || n >= cnt: return 0, 0
+	return ix_item(d, ix, n)
+cid_subrs(f Info&, g int) int:
+	d := f.d[..]; fm := d[f.fds] as int; sel ~= -1
+	if fm == 0: sel = d[f.fds + 1 + g] as int
+	else if fm == 3:
+		nr := ru16(d, f.fds + 1); st ~= ru16(d, f.fds + 3)
+		for i nr:
+			v := d[f.fds + 5 + 3 * i] as int; en := ru16(d, f.fds + 6 + 3 * i)
+			if g >= st && g < en: sel = v; break
+			st = en
+	if sel < 0 || sel >= ru16(d, f.fda): return 0
+	ds, dn := ix_item(d, f.fda, sel); priv_subrs(f, ds, dn)
+cv(c Cs&, t int, x f32, y f32, cx f32, cy f32, cx1 f32, cy1 f32): c.vs.push(V{t, w16(x as int), w16(y as int), w16(cx as int), w16(cy as int), w16(cx1 as int), w16(cy1 as int)})
+cclose(c Cs&): if c.fx != c.x || c.fy != c.y { cv(c, 2, c.fx, c.fy, 0.0, 0.0, 0.0, 0.0) }
+cmove(c Cs&, dx f32, dy f32): cclose(c); c.x += dx; c.y += dy; c.fx = c.x; c.fy = c.y; cv(c, 1, c.x, c.y, 0.0, 0.0, 0.0, 0.0)
+cline(c Cs&, dx f32, dy f32): c.x += dx; c.y += dy; cv(c, 2, c.x, c.y, 0.0, 0.0, 0.0, 0.0)
+ccurve(c Cs&, a f32, b f32, p f32, q f32, e f32, h f32): x1 := c.x + a; y1 := c.y + b; x2 := x1 + p; y2 := y1 + q; c.x = x2 + e; c.y = y2 + h; cv(c, 4, c.x, c.y, x1, y1, x2, y2)
+cff_shape(f Info&, g int) V[>..]:
+	c ~= Cs{}; d := f.d[..]; bad ~= true
+	if g < 0 || g >= ru16(d, f.cs): return c.vs
+	p0, n0 := ix_item(d, f.cs, g); p ~= p0; e ~= p0 + n0; s f32[48] ~= [0.0; 48]; sp ~= 0; rp int[10] ~= [0; 10]; re int[10] ~= [0; 10]; rh ~= 0
+	hdr ~= true; mb ~= 0; subs ~= f.sub; hs ~= false
+	while p < e:
+		b0 := d[p] as int; p += 1; i ~= 0; clr ~= true
+		if b0 == 28 || b0 >= 32:
+			if sp >= 48: break
+			if b0 == 255 { v := ru32(d, p); p += 4; s[sp] = (if v >= 0x80000000 { v - 0x100000000 } else { v }) as f32 / 65536.0 } else { v, np := dnum(d, p - 1); p = np; s[sp] = v as f32 }
+			sp += 1; clr = false
+		else if b0 == 19 || b0 == 20:
+			if hdr: mb += sp / 2
+			hdr = false; p += (mb + 7) / 8
+		else if b0 == 1 || b0 == 3 || b0 == 18 || b0 == 23: mb += sp / 2
+		else if b0 == 21:
+			hdr = false
+			if sp < 2: break
+			cmove(c, s[sp - 2], s[sp - 1])
+		else if b0 == 4 || b0 == 22:
+			hdr = false
+			if sp < 1: break
+			if b0 == 4 { cmove(c, 0.0, s[sp - 1]) } else { cmove(c, s[sp - 1], 0.0) }
+		else if b0 == 5:
+			if sp < 2: break
+			while i + 1 < sp: cline(c, s[i], s[i + 1]); i += 2
+		else if b0 == 6 || b0 == 7:
+			if sp < 1: break
+			h ~= b0 == 6
+			while i < sp: if h { cline(c, s[i], 0.0) } else { cline(c, 0.0, s[i]) } h = !h; i += 1
+		else if b0 == 30 || b0 == 31:
+			if sp < 4: break
+			h ~= b0 == 31
+			while i + 3 < sp:
+				l := if sp - i == 5 { s[i + 4] } else { 0.0 }
+				if h { ccurve(c, s[i], 0.0, s[i + 1], s[i + 2], l, s[i + 3]) } else { ccurve(c, 0.0, s[i], s[i + 1], s[i + 2], s[i + 3], l) }
+				h = !h; i += 4
+		else if b0 == 8:
+			if sp < 6: break
+			while i + 5 < sp: ccurve(c, s[i], s[i + 1], s[i + 2], s[i + 3], s[i + 4], s[i + 5]); i += 6
+		else if b0 == 24:
+			if sp < 8: break
+			while i + 5 < sp - 2: ccurve(c, s[i], s[i + 1], s[i + 2], s[i + 3], s[i + 4], s[i + 5]); i += 6
+			if i + 1 >= sp: break
+			cline(c, s[i], s[i + 1])
+		else if b0 == 25:
+			if sp < 8: break
+			while i + 1 < sp - 6: cline(c, s[i], s[i + 1]); i += 2
+			if i + 5 >= sp: break
+			ccurve(c, s[i], s[i + 1], s[i + 2], s[i + 3], s[i + 4], s[i + 5])
+		else if b0 == 26 || b0 == 27:
+			if sp < 4: break
+			q ~= 0.0 as f32
+			if sp & 1 != 0: q = s[i]; i += 1
+			while i + 3 < sp:
+				if b0 == 27 { ccurve(c, s[i], q, s[i + 1], s[i + 2], s[i + 3], 0.0) } else { ccurve(c, q, s[i], s[i + 1], s[i + 2], 0.0, s[i + 3]) }
+				q = 0.0; i += 4
+		else if b0 == 10 || b0 == 29:
+			if b0 == 10 && !hs: hs = true; if f.fds != 0 { subs = cid_subrs(f, g) }
+			if sp < 1 || rh >= 10: break
+			sp -= 1; rp[rh] = p; re[rh] = e; rh += 1
+			sa, sn := subr(d, if b0 == 10 { subs } else { f.gsb }, s[sp] as int)
+			if sn == 0: break
+			p = sa; e = sa + sn; clr = false
+		else if b0 == 11:
+			if rh <= 0: break
+			rh -= 1; p = rp[rh]; e = re[rh]; clr = false
+		else if b0 == 14: cclose(c); bad = false; break
+		else if b0 == 12:
+			b1 := d[p] as int; p += 1
+			if b1 == 34:
+				if sp < 7: break
+				ccurve(c, s[0], 0.0, s[1], s[2], s[3], 0.0); ccurve(c, s[4], 0.0, s[5], -s[2], s[6], 0.0)
+			else if b1 == 35:
+				if sp < 13: break
+				ccurve(c, s[0], s[1], s[2], s[3], s[4], s[5]); ccurve(c, s[6], s[7], s[8], s[9], s[10], s[11])
+			else if b1 == 36:
+				if sp < 9: break
+				ccurve(c, s[0], s[1], s[2], s[3], s[4], 0.0); ccurve(c, s[5], 0.0, s[6], s[7], s[8], -(s[1] + s[3] + s[7]))
+			else if b1 == 37:
+				if sp < 11: break
+				dx := s[0] + s[2] + s[4] + s[6] + s[8]; dy := s[1] + s[3] + s[5] + s[7] + s[9]; ax := if dx < 0.0 { -dx } else { dx }; ay := if dy < 0.0 { -dy } else { dy }
+				ccurve(c, s[0], s[1], s[2], s[3], s[4], s[5]); ccurve(c, s[6], s[7], s[8], s[9], if ax > ay { s[10] } else { -dx }, if ax > ay { -dy } else { s[10] })
+			else: break
+		else: break
+		if clr: sp = 0
+	if bad: c.vs.clear()
+	c.vs
+cff_box(f Info&, g int, b B4&) bool:
+	vs := cff_shape(f, g)
+	if vs.len == 0: return false
+	b = B4{vs[0].x, vs[0].y, vs[0].x, vs[0].y}
+	for v vs:
+		b.x0 = min(b.x0, v.x); b.y0 = min(b.y0, v.y); b.x1 = max(b.x1, v.x); b.y1 = max(b.y1, v.y)
+		if v.t == 4: b.x0 = min(b.x0, min(v.cx, v.cx1)); b.y0 = min(b.y0, min(v.cy, v.cy1)); b.x1 = max(b.x1, max(v.cx, v.cx1)); b.y1 = max(b.y1, max(v.cy, v.cy1))
+	true

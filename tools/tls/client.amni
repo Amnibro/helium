@@ -1,0 +1,31 @@
+import std;
+import os;
+import net.tls;
+import crypto.hash;
+fn main() {
+	let a = args();
+	var pem byte[>..] = [];
+	read_file(a[3], pem);
+	net::tls_add_roots(pem[..]);
+	if a.len > 6 { var p byte[>..] = []; hex_decode(a[6], p); net::tls_pin(p[..]); }
+	let port, ok = parse_int(a[2]);
+	var t = net::tls_open(a[1], port, "http/1.1");
+	let r = net::tls_wait(t, 15000);
+	var pin byte[>..] = [];
+	hex_encode(pin, t.pin[..]);
+	if r != net::TLS_OPEN { print("FAIL verify=", t.verify, " pin=", pin, " err=", t.err); exit(1); }
+	var req byte[>..] = [];
+	req.append("GET "); req.append(a[4]); req.append(" HTTP/1.0\r\nHost: "); req.append(a[1]); req.append("\r\n\r\n");
+	net::tls_write(t, req[..]);
+	var resp byte[>..] = [];
+	let t0 = clock();
+	let kick, ok2 = parse_int(a[5]);
+	var sent = 0;
+	while net::tls_pump(t) == net::TLS_OPEN && clock() - t0 < 20.0 { net::tls_read(t, resp); net::tcp_poll(t.fd, 1, 20); }
+	net::tls_read(t, resp);
+	let hdr = find(resp[..], "\r\n\r\n");
+	let body = if hdr >= 0 { resp[hdr + 4..] } else { resp[..0] };
+	var h byte[>..] = [];
+	hex_encode(h, crypto::sha256(body)[..]);
+	print("OK suite=", hex(t.suite), " group=", hex(t.group), " hrr=", if t.hrr { 1 } else { 0 }, " verify=", t.verify, " end=", net::tls_state(t), " body=", body.len, " sha=", h, " err=", t.err);
+}

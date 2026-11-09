@@ -1,0 +1,288 @@
+namespace net
+use std
+use os
+use crypto.hash
+use crypto.aead
+use crypto.c25519
+use crypto.ecc
+use crypto.rsa
+use crypto.x509
+use crypto.rand
+use net.tcp
+TLS_ERR := -1
+TLS_HANDSHAKE := 1
+TLS_OPEN := 2
+TLS_CLOSED := 3
+struct Tls { fd int = -1, host byte[>..] = [], st int = 0, err byte[>..] = [], suite int = 0, hk int = 0, alg int = 0, kl int = 0, rbuf byte[>..] = [], hs byte[>..] = [], tr byte[>..] = [], wbuf byte[>..] = [], rk byte[>..] = [], riv byte[>..] = [], rseq u64 = 0, wk byte[>..] = [], wiv byte[>..] = [], wseq u64 = 0, renc bool = false, wenc bool = false, xpriv byte[>..] = [], ppriv byte[>..] = [], crand byte[>..] = [], sid byte[>..] = [], hsec byte[>..] = [], cs byte[>..] = [], ss byte[>..] = [], hrr bool = false, group int = 0, cookie byte[>..] = [], certs crypto::Cert[>..] = [], verify int = -1, pin byte[>..] = [], creq bool = false, crctx byte[>..] = [], app byte[>..] = [], alpn byte[>..] = [], ccs bool = false, addrs byte[>..][>..] = [], ai int = 0, v12 bool = false, srand byte[>..] = [], ems bool = false, ecs bool = false, pms byte[>..] = [], kpub byte[>..] = [], ms byte[>..] = [], plain bool = false }
+var ROOTS crypto::Cert[>..]
+var PINS byte[>..][>..]
+HRR_RAND := "cf21ad74e59a6111be1d8c021e65b891c2a211167abb8c5e079e09e2c8a8339c"
+tls_add_roots(pem const byte[:]) int: c := crypto::x509_pem(pem); ROOTS.append(c[..]); c.len
+tls_pin(spki_sha256 const byte[:]): p byte[>..] ~= []; p.append(spki_sha256); PINS.push(p)
+p16(b byte[>..]&, v int): b.push(((v >> 8) & 255) as! byte); b.push((v & 255) as! byte)
+p24(b byte[>..]&, v int): b.push(((v >> 16) & 255) as! byte); p16(b, v)
+g16(b const byte[:], i int) int: (b[i] as int) << 8 | b[i + 1] as int
+g24(b const byte[:], i int) int: (b[i] as int) << 16 | g16(b, i + 1)
+tl_ext(e byte[>..]&, ty int, body const byte[:]): p16(e, ty); p16(e, body.len); e.append(body)
+hsmsg(ty int, body const byte[:]) byte[>..]: m byte[>..] ~= [ty as! byte]; p24(m, body.len); m.append(body); m
+label(kind int, sec const byte[:], lb const byte[:], ctx const byte[:], n int) byte[>..]:
+	info byte[>..] ~= []; p16(info, n); info.push((6 + lb.len) as! byte); info.append("tls13 "); info.append(lb); info.push(ctx.len as! byte); info.append(ctx)
+	o, ok := crypto::hkdf_expand(kind, sec, info[..], n); o
+tl_fail(t Tls&, why const byte[:]) int:
+	if t.st >= 0: t.err.clear(); t.err.append(why); t.st = -1; tcp_close(t.fd); t.fd = -1
+	TLS_ERR
+record(t Tls&, ty int, d const byte[:]):
+	if !t.wenc:
+		t.wbuf.push(ty as! byte); t.wbuf.push(3); t.wbuf.push(if ty == 22 && !t.hrr && t.st <= 1 { 1 } else { 3 }); p16(t.wbuf, d.len); t.wbuf.append(d); return
+	if t.v12:
+		ad := seq8(t.wseq); aad byte[>..] ~= []; aad.append(ad[..]); aad.push(ty as! byte); aad.push(3); aad.push(3); p16(aad, d.len); gcm := t.alg == crypto::AES_GCM
+		ct, ok := crypto::aead_seal(t.alg, t.wk, nonce12(t.wiv, ad[..], t.wseq, gcm), aad, d); t.wseq += 1; n := ct.len + (if gcm { 8 } else { 0 })
+		t.wbuf.push(ty as! byte); t.wbuf.push(3); t.wbuf.push(3); p16(t.wbuf, n)
+		if gcm: t.wbuf.append(ad[..])
+		t.wbuf.append(ct[..]); return
+	inner byte[>..] ~= []; inner.append(d); inner.push(ty as! byte); hdr byte[>..] ~= [23, 3, 3]; p16(hdr, inner.len + 16); nonce ~= copy(t.wiv)
+	for i 8: nonce[4 + i] ^= (t.wseq >> (56 - 8 * i)) as! byte
+	ct, ok := crypto::aead_seal(t.alg, t.wk, nonce, hdr, inner); t.wseq += 1; t.wbuf.append(hdr[..]); t.wbuf.append(ct[..])
+prf(kind int, sec const byte[:], lb const byte[:], seed const byte[:], n int) byte[>..]:
+	sd byte[>..] ~= []; sd.append(lb); sd.append(seed); a ~= copy(sd); o byte[>..] ~= []
+	while o.len < n: a = crypto::hmac(kind, sec, a); m byte[>..] ~= []; m.append(a[..]); m.append(sd[..]); o.append(crypto::hmac(kind, sec, m)[..])
+	o.resize(n, 0); o
+seq8(v u64) byte[>..]: o byte[>..] ~= []; for i 8 { o.push((v >> (56 - 8 * i)) as! byte) } o
+nonce12(iv const byte[:], explicit const byte[:], seq u64, gcm bool) byte[>..]:
+	if gcm: o byte[>..] ~= []; o.append(iv[..4]); o.append(explicit); return o
+	o ~= copy(iv)
+	for i 8: o[4 + i] ^= (seq >> (56 - 8 * i)) as! byte
+	o
+set_read(t Tls&, sec const byte[:]): t.rk = label(t.hk, sec, "key", "", t.kl); t.riv = label(t.hk, sec, "iv", "", 12); t.rseq = 0; t.renc = true
+set_write(t Tls&, sec const byte[:]): t.wk = label(t.hk, sec, "key", "", t.kl); t.wiv = label(t.hk, sec, "iv", "", 12); t.wseq = 0; t.wenc = true
+send_ch(t Tls&):
+	if t.crand.len == 0: t.crand = crypto::random_bytes(32); t.sid = crypto::random_bytes(32); t.xpriv = crypto::random_bytes(32); t.ppriv = crypto::ec_generate(crypto::P256)
+	b byte[>..] ~= [3, 3]; b.append(t.crand[..]); b.push(32); b.append(t.sid[..]); p16(b, 18); b.append([0x13 as byte, 3, 0x13, 1, 0x13, 2, 0xCC, 0xA9, 0xCC, 0xA8, 0xC0, 0x2B, 0xC0, 0x2F, 0xC0, 0x2C, 0xC0, 0x30][..]); b.push(1); b.push(0); e byte[>..] ~= []
+	sn byte[>..] ~= []; p16(sn, t.host.len + 3); sn.push(0); p16(sn, t.host.len); sn.append(t.host[..]); tl_ext(e, 0, sn[..])
+	tl_ext(e, 10, [0 as byte, 6, 0, 0x1D, 0, 0x17, 0, 0x18][..]); tl_ext(e, 11, [1 as byte, 0][..])
+	tl_ext(e, 13, [0 as byte, 18, 4, 3, 5, 3, 8, 4, 8, 5, 8, 6, 8, 7, 4, 1, 5, 1, 6, 1][..]); tl_ext(e, 43, [4 as byte, 3, 4, 3, 3][..]); tl_ext(e, 23, []); tl_ext(e, 0xFF01, [0 as byte][..]); tl_ext(e, 45, [1 as byte, 1][..])
+	ks byte[>..] ~= []
+	if t.group == 0 || t.group == 0x1D: p16(ks, 0x1D); p16(ks, 32); ks.append(crypto::x25519_base(t.xpriv)[..])
+	if t.group == 0 || t.group == 0x17: p16(ks, 0x17); p16(ks, 65); pk, ok := crypto::ec_public(crypto::P256, t.ppriv); ks.append(pk[..])
+	if t.group == 0x18: pk, ok := crypto::ec_public(crypto::P384, t.ppriv); p16(ks, 0x18); p16(ks, 97); ks.append(pk[..])
+	kx byte[>..] ~= []; p16(kx, ks.len); kx.append(ks[..]); tl_ext(e, 51, kx[..])
+	if t.alpn.len > 0: a byte[>..] ~= []; p16(a, t.alpn.len + 1); a.push(t.alpn.len as! byte); a.append(t.alpn[..]); tl_ext(e, 16, a[..])
+	if t.cookie.len > 0: tl_ext(e, 44, t.cookie[..])
+	p16(b, e.len); b.append(e[..]); m := hsmsg(1, b[..]); t.tr.append(m[..]); record(t, 22, m[..])
+on_sh(t Tls&, b const byte[:], raw const byte[:]) int:
+	if b.len < 38: return tl_fail(t, "short ServerHello")
+	sl := b[34] as int; o ~= 35 + sl
+	if o + 5 > b.len || sl > 32: return tl_fail(t, "bad ServerHello")
+	cs := g16(b, o); o += 3; el := g16(b, o); o += 2; ver ~= 0; grp ~= 0; key byte[>..] ~= []; ck byte[>..] ~= []
+	if o + el > b.len: return tl_fail(t, "ServerHello length")
+	e := o + el
+	while o + 4 <= e:
+		ty := g16(b, o); n := g16(b, o + 2); v := b[o + 4..o + 4 + n]; o += 4 + n
+		if ty == 43 && n == 2: ver = g16(v, 0)
+		if ty == 51 && n >= 2: grp = g16(v, 0); if n >= 4 { key.append(v[4..]) }
+		if ty == 44: ck.append(v)
+	if ver == 0 && g16(b, 0) == 0x0303 && t.group == 0:
+		if b[26..34] == [0x44 as byte, 0x4F, 0x57, 0x4E, 0x47, 0x52, 0x44, 1][..]: return tl_fail(t, "TLS downgrade detected")
+		if cs != 0xCCA9 && cs != 0xCCA8 && cs != 0xC02B && cs != 0xC02F && cs != 0xC02C && cs != 0xC030: return tl_fail(t, "TLS 1.2 cipher suite")
+		o = 35 + sl + 3 + 2; t.ems = false
+		while o + 4 <= e: if g16(b, o) == 23 { t.ems = true } o += 4 + g16(b, o + 2)
+		t.v12 = true; t.srand.clear(); t.srand.append(b[2..34]); t.suite = cs; t.hk = if cs == 0xC02C || cs == 0xC030 { crypto::SHA384 } else { crypto::SHA256 }; t.alg = if cs == 0xCCA9 || cs == 0xCCA8 { crypto::CHACHA20_POLY1305 } else { crypto::AES_GCM }
+		t.kl = if cs == 0xC02B || cs == 0xC02F { 16 } else { 32 }; t.ecs = cs == 0xCCA9 || cs == 0xC02B || cs == 0xC02C; t.st = 12; return TLS_HANDSHAKE
+	if ver != 0x0304: return tl_fail(t, "server does not offer TLS 1.3 or 1.2")
+	if sl != 32 || b[35..67] != t.sid[..]: return tl_fail(t, "ServerHello session id mismatch")
+	if cs >= 0xC000: return tl_fail(t, "TLS 1.2 suite with TLS 1.3")
+	isr byte[>..] ~= []; hex_encode(isr, b[2..34]); t.suite = cs; t.hk = if cs == 0x1302 { crypto::SHA384 } else { crypto::SHA256 }; t.alg = if cs == 0x1303 { crypto::CHACHA20_POLY1305 } else { crypto::AES_GCM }; t.kl = if cs == 0x1301 { 16 } else { 32 }
+	if isr[..] == HRR_RAND:
+		if t.hrr || grp != 0x17 && grp != 0x18 && grp != 0x1D: return tl_fail(t, "bad HelloRetryRequest")
+		h := crypto::digest(t.hk, t.tr[..t.tr.len - raw.len]); nt byte[>..] ~= [254, 0, 0, h.len as! byte]; nt.append(h[..]); nt.append(raw); t.tr = nt; t.hrr = true; t.group = grp; t.cookie = ck
+		if grp == 0x18: t.ppriv = crypto::ec_generate(crypto::P384)
+		send_ch(t); return TLS_HANDSHAKE
+	if t.group != 0 && grp != t.group || key.len == 0: return tl_fail(t, "ServerHello key share")
+	sh byte[>..] ~= []; ok ~= false
+	if grp == 0x1D: sh = crypto::x25519(t.xpriv, key[..]); z ~= 0 as byte; for c sh { z |= c } ok = key.len == 32 && z != 0
+	else if grp == 0x17 && t.group != 0x18: sh2, ok2 := crypto::ecdh(crypto::P256, t.ppriv, key[..]); sh = sh2; ok = ok2
+	else if grp == 0x18: sh3, ok3 := crypto::ecdh(crypto::P384, t.ppriv, key[..]); sh = sh3; ok = ok3
+	if !ok: return tl_fail(t, "key exchange failed")
+	hl := crypto::hash_size(t.hk); z byte[>..] ~= []; z.resize(hl, 0); early := crypto::hkdf_extract(t.hk, "", z[..]); d1 := label(t.hk, early, "derived", crypto::digest(t.hk, ""), hl)
+	t.hsec = crypto::hkdf_extract(t.hk, d1, sh); th := crypto::digest(t.hk, t.tr); t.cs = label(t.hk, t.hsec, "c hs traffic", th, hl); t.ss = label(t.hk, t.hsec, "s hs traffic", th, hl)
+	set_read(t, t.ss); t.st = 2; TLS_HANDSHAKE
+ske_ok(t Tls&, sc int, sig const byte[:], m const byte[:]) bool:
+	let k .= t.certs[0]
+	if t.ecs != (k.kalg != crypto::KEY_RSA): return false
+	if sc == 0x0401 || sc == 0x0501 || sc == 0x0601: hk := (sc >> 8) - 2; return k.kalg == crypto::KEY_RSA && crypto::rsa_pkcs1_verify(hk, k.rn, k.re, m, sig)
+	if sc >= 0x0804 && sc <= 0x0806: hk := sc - 0x0802; return k.kalg == crypto::KEY_RSA && crypto::rsa_pss_verify(hk, hk, crypto::hash_size(hk), k.rn, k.re, m, sig)
+	if sc == 0x0403 || sc == 0x0503 || sc == 0x0603: hk := (sc >> 8) - 2; return k.kalg == crypto::KEY_EC && k.kcurve != 0 && crypto::ecdsa_verify_der(k.kcurve, hk, k.kpub, m, sig)
+	if sc == 0x0807: return k.kalg == crypto::KEY_ED25519 && crypto::ed25519_verify(k.kpub, m, sig)
+	false
+cv_ok(t Tls&, scheme int, sig const byte[:], th const byte[:]) bool:
+	if t.certs.len == 0: return false
+	let k .= t.certs[0]; m byte[>..] ~= []; m.resize(64, 0x20); m.append("TLS 1.3, server CertificateVerify"); m.push(0); m.append(th)
+	if scheme == 0x0403: return k.kalg == crypto::KEY_EC && k.kcurve == crypto::P256 && crypto::ecdsa_verify_der(crypto::P256, crypto::SHA256, k.kpub, m[..], sig)
+	if scheme == 0x0503: return k.kalg == crypto::KEY_EC && k.kcurve == crypto::P384 && crypto::ecdsa_verify_der(crypto::P384, crypto::SHA384, k.kpub, m[..], sig)
+	if scheme >= 0x0804 && scheme <= 0x0806: hk := scheme - 0x0802; return k.kalg == crypto::KEY_RSA && crypto::rsa_pss_verify(hk, hk, crypto::hash_size(hk), k.rn, k.re, m[..], sig)
+	if scheme == 0x0807: return k.kalg == crypto::KEY_ED25519 && crypto::ed25519_verify(k.kpub, m[..], sig)
+	false
+on_hs(t Tls&, ty int, b const byte[:], raw const byte[:]) int:
+	before := crypto::digest(if t.hk == 0 { crypto::SHA256 } else { t.hk }, t.tr)
+	t.tr.append(raw)
+	if t.st == 1: return if ty == 2 { on_sh(t, b, raw) } else { tl_fail(t, "expected ServerHello") }
+	if t.st == 2:
+		if ty != 8: return tl_fail(t, "expected EncryptedExtensions")
+		t.st = 3; return TLS_HANDSHAKE
+	if t.st == 3 && ty == 13: t.creq = true; t.crctx.clear(); t.crctx.append(b[1..1 + b[0] as int]); return TLS_HANDSHAKE
+	if t.st == 3 || t.st == 12:
+		if ty != 11 || b.len < 3: return tl_fail(t, "expected Certificate")
+		o ~= if t.v12 { 0 } else { 1 + b[0] as int }; e := o + 3 + g24(b, o); o += 3
+		while o + 3 <= e && o + 3 <= b.len:
+			n := g24(b, o); o += 3
+			if o + n > b.len: return tl_fail(t, "bad Certificate")
+			c, ok := crypto::x509_parse(b[o..o + n])
+			if !ok: return tl_fail(t, "unparsable certificate")
+			t.certs.push(c); o += n
+			if !t.v12: o += 2 + g16(b, o)
+		if t.certs.len == 0: return tl_fail(t, "empty Certificate")
+		t.pin = crypto::sha256(t.certs[0].spki); t.verify = crypto::x509_verify(t.certs, t.host, time() as int, ROOTS)
+		pinned ~= false
+		for p PINS: if p[..] == t.pin[..] { pinned = true }
+		if t.verify != crypto::X509_OK && !pinned: return tl_fail(t, str("certificate rejected (", t.verify, ")"))
+		t.st = if t.v12 { 13 } else { 4 }; return TLS_HANDSHAKE
+	if t.st == 13:
+		if ty != 12 || b.len < 8 || b[0] != 3: return tl_fail(t, "expected ServerKeyExchange")
+		grp := g16(b, 1); pl := b[3] as int; o := 4 + pl
+		if o + 4 > b.len: return tl_fail(t, "bad ServerKeyExchange")
+		sc := g16(b, o); sig := b[o + 4..]; sd byte[>..] ~= []; sd.append(t.crand[..]); sd.append(t.srand[..]); sd.append(b[..o])
+		if sig.len != g16(b, o + 2) || !ske_ok(t, sc, sig, sd[..]): return tl_fail(t, "ServerKeyExchange signature failed")
+		pt := b[4..4 + pl]; ok ~= false
+		if grp == 0x1D: t.pms = crypto::x25519(t.xpriv, pt); z ~= 0 as byte; for c t.pms { z |= c } ok = pt.len == 32 && z != 0; t.kpub = crypto::x25519_base(t.xpriv)
+		else if grp == 0x17: p2, o2 := crypto::ecdh(crypto::P256, t.ppriv, pt); t.pms = p2; ok = o2; k2, o3 := crypto::ec_public(crypto::P256, t.ppriv); t.kpub = k2
+		else if grp == 0x18: d := crypto::ec_generate(crypto::P384); p2, o2 := crypto::ecdh(crypto::P384, d, pt); t.pms = p2; ok = o2; k2, o3 := crypto::ec_public(crypto::P384, d); t.kpub = k2
+		if !ok: return tl_fail(t, "key exchange failed")
+		t.st = 14; return TLS_HANDSHAKE
+	if t.st == 14 && ty == 13: t.creq = true; return TLS_HANDSHAKE
+	if t.st == 14:
+		if ty != 14: return tl_fail(t, "expected ServerHelloDone")
+		if t.creq: cm byte[>..] ~= []; p24(cm, 0); m := hsmsg(11, cm[..]); t.tr.append(m[..]); record(t, 22, m[..])
+		kb byte[>..] ~= [t.kpub.len as! byte]; kb.append(t.kpub[..]); ck := hsmsg(16, kb[..]); t.tr.append(ck[..]); record(t, 22, ck[..])
+		rnd byte[>..] ~= []; rnd.append(t.crand[..]); rnd.append(t.srand[..])
+		t.ms = if t.ems { prf(t.hk, t.pms, "extended master secret", crypto::digest(t.hk, t.tr), 48) } else { prf(t.hk, t.pms, "master secret", rnd[..], 48) }
+		sr byte[>..] ~= []; sr.append(t.srand[..]); sr.append(t.crand[..]); il := if t.alg == crypto::AES_GCM { 4 } else { 12 }; kb2 := prf(t.hk, t.ms, "key expansion", sr[..], 2 * t.kl + 2 * il)
+		t.wbuf.append([20 as byte, 3, 3, 0, 1, 1][..]); t.wk.clear(); t.wk.append(kb2[..t.kl]); t.rk.clear(); t.rk.append(kb2[t.kl..2 * t.kl]); t.wiv.clear(); t.wiv.append(kb2[2 * t.kl..2 * t.kl + il]); t.riv.clear(); t.riv.append(kb2[2 * t.kl + il..])
+		t.wseq = 0; t.wenc = true; fin := hsmsg(20, prf(t.hk, t.ms, "client finished", crypto::digest(t.hk, t.tr), 12)); t.tr.append(fin[..]); record(t, 22, fin[..]); t.st = 15
+		return TLS_HANDSHAKE
+	if t.st == 16:
+		if ty != 20 || !crypto::ct_eq(b, prf(t.hk, t.ms, "server finished", before, 12)): return tl_fail(t, "server Finished failed")
+		t.st = 6; return TLS_OPEN
+	if t.st == 4:
+		if ty != 15 || b.len < 4 || !cv_ok(t, g16(b, 0), b[4..4 + g16(b, 2)], before): return tl_fail(t, "CertificateVerify failed")
+		t.st = 5; return TLS_HANDSHAKE
+	if t.st == 5:
+		hl := crypto::hash_size(t.hk)
+		if ty != 20 || !crypto::ct_eq(b, crypto::hmac(t.hk, label(t.hk, t.ss, "finished", "", hl), before)): return tl_fail(t, "server Finished failed")
+		z byte[>..] ~= []; z.resize(hl, 0); ms := crypto::hkdf_extract(t.hk, label(t.hk, t.hsec, "derived", crypto::digest(t.hk, ""), hl), z[..]); th := crypto::digest(t.hk, t.tr)
+		cap := label(t.hk, ms, "c ap traffic", th, hl); sap := label(t.hk, ms, "s ap traffic", th, hl); set_read(t, sap); t.ss = sap
+		t.wbuf.append([20 as byte, 3, 3, 0, 1, 1][..]); set_write(t, t.cs)
+		if t.creq: cm byte[>..] ~= [t.crctx.len as! byte]; cm.append(t.crctx[..]); p24(cm, 0); m := hsmsg(11, cm[..]); t.tr.append(m[..]); record(t, 22, m[..])
+		fin := hsmsg(20, crypto::hmac(t.hk, label(t.hk, t.cs, "finished", "", hl), crypto::digest(t.hk, t.tr))); record(t, 22, fin[..]); set_write(t, cap); t.cs = cap; t.st = 6
+		return TLS_OPEN
+	if t.st == 6:
+		if t.v12: return TLS_OPEN
+		if ty == 24 && b.len == 1:
+			hl := crypto::hash_size(t.hk); t.ss = label(t.hk, t.ss, "traffic upd", "", hl); set_read(t, t.ss)
+			if b[0] == 1: record(t, 22, hsmsg(24, [0 as byte][..])[..]); t.cs = label(t.hk, t.cs, "traffic upd", "", hl); set_write(t, t.cs)
+		return TLS_OPEN
+	tl_fail(t, "unexpected handshake message")
+on_record(t Tls&, ty0 int, hdr const byte[:], body const byte[:]) int:
+	ty ~= ty0; pt byte[>..] ~= []
+	if ty == 20 && t.st == 15 && body.len == 1 && body[0] == 1: t.rseq = 0; t.renc = true; t.st = 16; return TLS_HANDSHAKE
+	if ty == 20: return if t.st >= 1 && t.st <= 5 && body.len == 1 && body[0] == 1 { TLS_HANDSHAKE } else { tl_fail(t, "unexpected ChangeCipherSpec") }
+	if t.renc && t.v12:
+		gcm := t.alg == crypto::AES_GCM; ex := if gcm { 8 } else { 0 }
+		if body.len < ex + 16: return tl_fail(t, "short record")
+		ad := seq8(t.rseq); aad byte[>..] ~= []; aad.append(ad[..]); aad.push(ty as! byte); aad.push(3); aad.push(3); p16(aad, body.len - ex - 16)
+		p, ok := crypto::aead_open(t.alg, t.rk, nonce12(t.riv, body[..ex], t.rseq, gcm), aad, body[ex..])
+		if !ok: return tl_fail(t, "bad record MAC")
+		t.rseq += 1; pt.append(p[..])
+	else if t.renc:
+		if ty != 23: return tl_fail(t, "plaintext record after keys")
+		nonce ~= copy(t.riv)
+		for i 8: nonce[4 + i] ^= (t.rseq >> (56 - 8 * i)) as! byte
+		p, ok := crypto::aead_open(t.alg, t.rk, nonce, hdr, body)
+		if !ok: return tl_fail(t, "bad record MAC")
+		t.rseq += 1; n ~= p.len
+		while n > 0 && p[n - 1] == 0: n -= 1
+		if n == 0: return tl_fail(t, "empty inner record")
+		ty = p[n - 1] as int; pt.append(p[..n - 1])
+	else: pt.append(body)
+	if ty == 21:
+		if pt.len >= 2 && pt[1] == 0: t.st = 7; tcp_close(t.fd); t.fd = -1; return TLS_CLOSED
+		return tl_fail(t, str("alert ", if pt.len >= 2 { pt[1] as int } else { -1 }))
+	if ty == 23: if t.st != 6 { return tl_fail(t, "early application data") } t.app.append(pt[..]); return TLS_OPEN
+	if ty != 22: return tl_fail(t, "unknown record type")
+	t.hs.append(pt[..]); r ~= TLS_HANDSHAKE
+	while t.hs.len >= 4 && t.st >= 0:
+		n := g24(t.hs, 1)
+		if t.hs.len < 4 + n: break
+		raw byte[>..] ~= []; raw.append(t.hs[..4 + n]); rest byte[>..] ~= []; rest.append(t.hs[4 + n..]); t.hs = rest; r = on_hs(t, raw[0] as int, raw[4..], raw[..])
+	r
+flush(t Tls&) bool:
+	while t.wbuf.len > 0:
+		n := tcp_send(t.fd, t.wbuf)
+		if n < 0: return false
+		if n == 0: break
+		rest byte[>..] ~= []; rest.append(t.wbuf[n..]); t.wbuf = rest
+	true
+tls_open(host const byte[:], port int, alpn const byte[:]) Tls: stream_open(true, host, port, alpn)
+stream_open(secure bool, host const byte[:], port int, alpn const byte[:]) Tls:
+	t ~= Tls{}; t.plain = !secure; t.host.append(host); t.alpn.append(alpn); t.addrs = tcp_resolve(host, port)
+	if t.addrs.len == 0: tl_fail(t, "cannot resolve host"); return t
+	next_addr(t); t
+next_addr(t Tls&) bool:
+	while t.ai < t.addrs.len:
+		t.fd = tcp_open_at(t.addrs[t.ai]); t.ai += 1
+		if t.fd >= 0: return true
+	false
+tls_state(t const Tls&) int: if t.st < 0 { TLS_ERR } else if t.st == 7 { TLS_CLOSED } else if t.st == 6 { TLS_OPEN } else { TLS_HANDSHAKE }
+tls_pump(t Tls&) int:
+	if t.st < 0 || t.st == 7: return tls_state(t)
+	if t.st == 0:
+		s := tcp_status(t.fd, 0)
+		if s < 0:
+			tcp_close(t.fd); t.fd = -1
+			if !next_addr(t): return tl_fail(t, "connect failed")
+			return TLS_HANDSHAKE
+		if s == 0: return TLS_HANDSHAKE
+		if t.plain: t.st = 6
+		else: t.st = 1; send_ch(t)
+	if !flush(t): return tl_fail(t, "send failed")
+	eof ~= false
+	for k 64:
+		n := tcp_recv(t.fd, t.rbuf, 0)
+		if n == 0: break
+		if n < 0: eof = true; break
+	if t.plain: t.app.append(t.rbuf[..]); t.rbuf.clear()
+	while t.rbuf.len >= 5 && t.st >= 0 && t.st != 7:
+		n := g16(t.rbuf, 3)
+		if n > 16640: return tl_fail(t, "record too long")
+		if t.rbuf.len < 5 + n: break
+		rec byte[>..] ~= []; rec.append(t.rbuf[..5 + n]); rest byte[>..] ~= []; rest.append(t.rbuf[5 + n..]); t.rbuf = rest; on_record(t, rec[0] as int, rec[..5], rec[5..])
+	if eof && t.st >= 0 && t.st != 7:
+		if t.st != 6: return tl_fail(t, "connection closed by peer")
+		t.st = 7; tcp_close(t.fd); t.fd = -1; return TLS_CLOSED
+	if t.st >= 0 && t.fd >= 0 && !flush(t): return tl_fail(t, "send failed")
+	tls_state(t)
+tls_write(t Tls&, d const byte[:]) bool:
+	if t.st != 6: return false
+	i ~= 0
+	if t.plain: t.wbuf.append(d)
+	while !t.plain && i < d.len: n := min(16384, d.len - i); record(t, 23, d[i..i + n]); i += n
+	flush(t)
+tls_read(t Tls&, out byte[>..]&) int: n := t.app.len; out.append(t.app[..]); t.app.clear(); n
+tls_close(t Tls&):
+	if t.st == 6 && !t.plain: record(t, 21, [1 as byte, 0][..]); flush(t)
+	tcp_close(t.fd); t.fd = -1; if t.st >= 0 { t.st = 7 }
+tls_wait(t Tls&, ms int) int:
+	t0 := clock(); r ~= tls_pump(t)
+	while r == TLS_HANDSHAKE && (clock() - t0) * 1000.0 < ms as real:
+		if t.fd >= 0: tcp_poll(t.fd, 1, 20)
+		r = tls_pump(t)
+	r

@@ -46,6 +46,7 @@ args() byte[:][>..]:
 
 # time
 extern time_ns() int = "hr_os_time_ns"
+extern utc_offset(unix_seconds int) int = "hr_os_utc_offset"
 extern clock_ns() int = "hr_os_clock_ns"
 extern sleep_ms(ms int) = "hr_os_sleep_ms"
 extern random_seed() uint = "hr_os_random_u64"
