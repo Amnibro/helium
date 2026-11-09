@@ -1246,6 +1246,72 @@ Reported: 1280 x 720 with the floor filling most of the view under L1, one rect 
 3.02 ms and one point light at its center 0.92 ms on an idle card (3.34 and 2.43 ms
 during the full gfxtest run).
 
+### Pre-registered bars (cut-out edges, mip bias, morph motion, light falloff)
+
+Written before the first GPU run of `small_checks` in `gfx_smoke.amni`. Black sky, no
+sun unless stated, every screen effect off.
+* **U1 alpha to coverage.** A 2 x 2 m unlit white card with a 512 x 512 texture whose
+  alpha falls linearly from 1 at the center to 0 at the card's edge, alpha mode MASK,
+  cutoff 0.5, facing the camera and filling a 240 x 240 target. The reference is the same
+  card rendered at 1920 x 1920 with the plain alpha test and averaged over 8 x 8 blocks.
+  Edge pixels are those whose reference lies in 0.02 .. 0.98. With
+  `s3d::alpha_to_coverage = true`: mean absolute error over edge pixels **<= 0.10**,
+  every pixel whose reference is exactly 1 reads **>= 0.99** and exactly 0 reads
+  **<= 0.01**. Control: `alpha_to_coverage = false` (the alpha test) must have a mean
+  absolute error **>= 0.18** on the same pixels.
+* **U2 mip bias.** A floor with a texture whose mip k is the flat gray k / 8 (uploaded
+  per level), unlit, seen at a slant. The sampled level is 8 x the red channel. Rendered
+  at 640 x 360 it gives a level per pixel, L0. Rendered at 320 x 180 for a 640 x 360
+  output (temporal upscaling) the level at the matching point must be within **+-0.1**
+  of L0 on every pixel with 0.5 <= L0 <= 5. Control: `s3d::mip_bias_auto = false` must
+  read L0 + 1 within +-0.1 on those pixels, which fails the bar.
+* **U3 morph motion.** A 1 x 1 m plane whose one morph target moves every vertex by
+  (0.3, 0.2, 0). The weight goes 0 to 0.5 between two frames, nothing else moves. The
+  motion vector at the plane's center must be within **0.15 px** of the projected
+  displacement at 320 x 240, and on a third frame with the weight unchanged within
+  **0.01 px** of zero. Control: `s3d::test_morph_still = true` (last frame's weights
+  taken as this frame's) must read under 0.01 px on the second frame, which fails.
+* **U4 light falloff.** A point light 2 m above a rough white floor, range 6 m, rendered
+  once with `falloff: 1` and once with the default. For floor pixels on a line through
+  the point under the light, with distance d from the light between 2 and 5.4 m, the
+  ratio of the two renders must be within **+-1 %** of
+  `[sat(1 - (d/r)^4)^2 / max(d^2, 0.01)] / [(1 - d^2/r^2)^2 / (1 + d^2)]`, three.js's
+  and KHR_lights_punctual's curve over the engine's default one. Every floor pixel
+  farther than the range reads **exactly 0** in both. A light loaded from a glTF file's
+  KHR_lights_punctual block has `falloff == 1` (CPU check).
+* **U5 nothing else changes.** gfxtest goldens > 40 dB and every existing check passes;
+  `wgsltest.mjs` and `webgputest.mjs` 0 failures.
+
+### Pre-registered bars (instancing and foliage, E24)
+
+Written before the first GPU run of `instance_checks` in `gfx_smoke.amni`.
+* **F1 same picture.** 512 copies of a 16 x 8 sphere of radius 0.12 on a jittered grid
+  with random turn and scale, sun with shadows, SSAO on. Drawn as one
+  `s3d::add_instances` item against 512 separate items, 640 x 360: the 8-bit outputs
+  differ by **at most 2 / 255** in any channel of any pixel, PSNR **>= 60 dB**.
+* **F2 culling.** 4,096 copies spread over a 60 x 60 m field around a camera that sees
+  part of it. Every copy whose center projects inside the screen and in front of the
+  near plane is drawn (**0 missed**), fewer than **60 %** of the copies are drawn, and
+  the image with `s3d::instance_cull = false` is **identical** (max difference 0).
+* **F3 level of detail.** The same field with a second, coarser mesh beyond 15 m:
+  the counts drawn at each level equal the CPU's count of in-view copies nearer and
+  farther than 15 m **exactly**, and the triangles submitted fall below the single-level
+  count.
+* **F4 wind.** One blade 1 m tall and 4 cm wide, `sway` 1, wind along +x with strength
+  0.2, viewed side on at 640 x 360. The blade's top row of covered pixels moves from its
+  still position by the CPU value of the documented sway formula within **+-0.5 px** at
+  three times, its bottom row by **<= 0.1 px**, and the motion vector at the tip between
+  two frames 1/60 s apart is within **0.15 px** of the CPU displacement. Control:
+  `sway` 0 moves the tip by under 0.1 px, which fails.
+* **F5 interaction.** A pusher sphere of radius 0.5 m centered 0.2 m from the same blade
+  (no wind) moves its tip away by the CPU value of the documented formula within
+  **+-0.5 px**; a second blade 1 m outside the sphere moves **0 px**.
+* **F6 speed.** 20,000 copies of the F1 sphere in view at 1280 x 720, shadows on: the
+  instanced frame is at least **10 x** faster than the same copies as separate items
+  (wall clock, best of 2 x 20 frames). Reported: 100,000 blades with wind.
+* **F7 nothing else changes.** As U5, with a new `scene_inst` (a field of instanced
+  blades with wind over the test scene) matching native under webgputest's usual bar.
+
 ### Motion blur and depth of field results (2026-11-02, RX 9060 XT, RADV)
 
 Both are off by default (`motion_blur = 0`, `dof_aperture = 0`) and run as one HDR pass each
