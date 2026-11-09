@@ -1418,6 +1418,22 @@ Written before the first GPU run of `instance_checks` in `gfx_smoke.amni`.
 * **F7 nothing else changes.** As U5, with a new `scene_inst` (a field of instanced
   blades with wind over the test scene) matching native under webgputest's usual bar.
 
+### Instancing and foliage results (2026-11-09, RX 9060 XT, RADV; full gfxtest ok)
+
+| Bar | Result | Bar value |
+| --- | --- | --- |
+| F1 same picture, 512 copies as one set against 512 items | worst channel difference 1 / 255, PSNR 106.53 dB | at most 2 / 255, at least 60 dB |
+| F2 culling, 4,096 copies over 60 x 60 m | 876 with their center on screen, 0 missed, 895 drawn (21.85 %), image with culling off differs by 0 | 0 missed, under 60 %, difference 0 |
+| F3 two levels, far level beyond 15 m | near 180 (CPU 180), far 715 (CPU 715), 91,840 triangles against 229,120 at one level | counts equal, fewer triangles |
+| F4 wind, 1 m blade, sway 1, strength 0.2 | tip moved at least 10.75 px, worst tip error 0.062 px, bottom row 0.0 px, tip motion vector -2.065 px against -2.115 px | 0.5 px, 0.1 px, 0.15 px |
+| F4 control, sway 0 | tip moved 0.0 px, tip error 23.996 px: fails as it must | must fail |
+| F5 pusher of radius 0.5 m, 0.2 m from the blade | tip pushed 59.5 px against 59.99 px, blade 1 m outside moved 0.0 px | 0.5 px, 0 px |
+| F6 speed, 20,000 spheres in view at 1280 x 720 with shadows | one set 11.13 ms a frame, 20,000 items 295.77 ms: 26.57 x | at least 10 x |
+| F6 reported, 100,000 blades with wind, all in view | 3.79 ms a frame | reported |
+| F7 goldens | 44.92 dB and 41.7 dB | above 40 dB |
+| F7 wgsltest | 63 modules, 54 pipelines, 0 failures | 0 failures |
+| F7 webgputest, with the new `scene_inst` | 16 scenes, 0 failures; `scene_inst` identical to native | 0 failures |
+
 ### Motion blur and depth of field results (2026-11-02, RX 9060 XT, RADV)
 
 Both are off by default (`motion_blur = 0`, `dof_aperture = 0`) and run as one HDR pass each
@@ -1803,8 +1819,13 @@ pass-through mean error is 0.0106 % (max 0.0488 %).
   treat the panel as its center point. Panels are one color (no textured panels or
   video screens). One rect light covering the whole view costs about 2 ms at
   1280 x 720 on an RX 9060 XT.
+* Instanced copies: they are not part of the ray-traced scene, so they cast no ray-traced
+  shadows and add nothing to probe GI. Skinned assets cannot be instanced. Shadow passes
+  draw every copy (culling is for the camera passes). A copy moved with
+  `s3d::set_instance` writes no object motion that frame. Wind moves positions only;
+  normals keep their rest direction.
 * Not built: caustics, BC, KTX2, WebP, meshopt and Draco, texture and mesh streaming,
-  GPU instancing, and Nanite-class geometry.
+  and Nanite-class geometry.
 
 No point/line primitives (skipped and counted), Adler-32 is not verified, the fog
 and GI passes light spot lights as points (no cone). Also:
