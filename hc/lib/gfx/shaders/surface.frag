@@ -73,6 +73,10 @@ layout(set = 3, binding = 0) uniform Frame {
 	vec4 probe_hi[MAX_PROBES];
 	vec4 ssgi;
 	vec4 decal;
+	vec4 caust;
+	vec4 caust_w;
+	vec4 caust_box;
+	vec4 caust_abs;
 };
 #include "gi.glsl"
 
@@ -109,15 +113,15 @@ vec2 pom_off = vec2(0.0);
 vec4 smp(sampler2D s, vec2 uv) { if (xo2.z == 1.0) return texture(s, uv); return textureGrad(s, uv, dFdx(uv) * xo2.z, dFdy(uv) * xo2.z); }
 vec4 smpa(sampler2DArray s, vec3 uv) { if (xo2.z == 1.0) return texture(s, uv); return textureGrad(s, uv, dFdx(uv.xy) * xo2.z, dFdy(uv.xy) * xo2.z); }
 vec2 pick_uv(float set) { return (set > 0.5 ? in_uv.zw : in_uv.xy) + pom_off; }
-vec2 water_grad(vec2 p, float tm) {
+vec2 water_grad_w(vec2 p, float tm, vec3 wb) {
 	vec2 g = vec2(0.0);
 	vec2 q = p;
-	float f = shade_b.x;
-	float a = shade_b.y;
+	float f = wb.x;
+	float a = wb.y;
 	float ang = 0.7;
 	for (int i = 0; i < 11; i++) {
 		vec2 d = vec2(cos(ang), sin(ang));
-		float ph = dot(q, d) * f + tm * sqrt(9.81 * f) * shade_b.z;
+		float ph = dot(q, d) * f + tm * sqrt(9.81 * f) * wb.z;
 		g += d * a * cos(ph);
 		q += d * sin(ph) * a / f * 0.5;
 		f *= 1.31;
@@ -125,6 +129,28 @@ vec2 water_grad(vec2 p, float tm) {
 		ang += 2.4;
 	}
 	return g;
+}
+vec2 water_grad(vec2 p, float tm) { return water_grad_w(p, tm, shade_b.xyz); }
+vec2 caust_bend(vec2 s) {
+	vec2 g = water_grad_w(s, cluster.w, caust_w.xyz);
+	vec3 r = refract(-to_sun.xyz, normalize(vec3(-g.x, 1.0, -g.y)), 0.75);
+	return r.xz / max(-r.y, 0.05);
+}
+vec3 sun_under(vec3 p) {
+	float d = caust.x - p.y;
+	if (caust_abs.w < 0.5 || d <= 0.0 || to_sun.y <= 0.0) return vec3(1.0);
+	vec3 r0 = refract(-to_sun.xyz, vec3(0.0, 1.0, 0.0), 0.75);
+	vec2 c0 = r0.xz / max(-r0.y, 0.05);
+	vec2 s0 = p.xz - c0 * d;
+	if (s0.x < caust_box.x || s0.y < caust_box.y || s0.x > caust_box.z || s0.y > caust_box.w) return vec3(1.0);
+	float k = d * caust.z;
+	vec2 s = s0 - (caust_bend(s0) - c0) * k;
+	s = s0 - (caust_bend(s) - c0) * k;
+	vec2 b = caust_bend(s);
+	vec2 jx = vec2(1.0, 0.0) + (caust_bend(s + vec2(0.01, 0.0)) - b) * (k * 100.0);
+	vec2 jz = vec2(0.0, 1.0) + (caust_bend(s + vec2(0.0, 0.01)) - b) * (k * 100.0);
+	float i = 1.0 / max(abs(jx.x * jz.y - jx.y * jz.x), 1.0 / caust.w);
+	return exp(-caust_abs.rgb * (d / max(-r0.y, 0.05))) * (1.0 + caust.y * (i - 1.0));
 }
 #include "ext.glsl"
 vec3 sheen_term(vec3 n, vec3 v, vec3 l, vec3 e) { return sheen_lobe(n, v, l, e, sheen.rgb, sheen.a); }
@@ -808,7 +834,7 @@ void main() {
 	vec3 gn = normalize(in_nrm);
 	if (!gl_FrontFacing && alpha.z > 0.5) gn = -gn;
 	vec3 rp = in_world + gn * 2e-3;
-	rgb += mat_term(n, v, l, sun_rgb.rgb, albedo, f0_spec, rough, ms, kd, (gi.y > 0.5 && to_sun.w > 0.5 ? (dot(gn, l) > 0.0 && gi_visible(rp, l, 1e4) ? 1.0 : 0.0) : sun_visibility(in_world, gn)) * cst, q, x);
+	rgb += mat_term(n, v, l, sun_rgb.rgb * sun_under(in_world), albedo, f0_spec, rough, ms, kd, (gi.y > 0.5 && to_sun.w > 0.5 ? (dot(gn, l) > 0.0 && gi_visible(rp, l, 1e4) ? 1.0 : 0.0) : sun_visibility(in_world, gn)) * cst, q, x);
 	if (screen.z > 0.5) {
 		int cx = clamp(int(gl_FragCoord.x * screen.x * cluster.x), 0, int(cluster.x) - 1);
 		int cy = clamp(int(gl_FragCoord.y * screen.y * cluster.y), 0, int(cluster.y) - 1);

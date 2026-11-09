@@ -69,6 +69,7 @@ fn main() {
 		s3d::instances[set].sway = 1.0;
 		s3d::wind = s3d::Wind { dir: float3 { 1.0, 0.0, 0.3 }, strength: 0.25, speed: 2.0, time: 0.7 };
 	}
+	if arg_count() > 13 && arg_of(13)[..] == "caust" { s3d::caustics = s3d::Caustics { on: true, manual: true, focus: 3.0, level: 1.2, lo: float3 { -4.0, 1.2, -4.0 }, hi: float3 { 4.0, 1.2, 4.0 }, .. }; s3d::world_time = 1.5; }
 	if arg_count() > 13 && arg_of(13)[..] == "probe" { s3d::add_probe(float3 { 0.0, 1.0, 0.0 }, float3 { -2.0, 0.0, -2.0 }, float3 { 2.0, 2.5, 2.0 }, 0.5); }
 	if e8 {
 		s3d::look.auto_exposure = true; s3d::look.lut = 1.0; s3d::motion_blur = 0.5; s3d::dof_aperture = 0.08;

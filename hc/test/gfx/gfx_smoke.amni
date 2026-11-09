@@ -4085,6 +4085,297 @@ fn instance_checks() bool {
 	if !(a && b && c && d && e && f) { print("gpu: inst FAILED"); }
 	a && b && c && d && e && f
 }
+var CA_L float3 = float3 { 0.5, 0.8660254, 0.0 };
+fn ca_grad(px real, pz real, tm real, w float4) real, real {
+	var gx real = 0.0;
+	var gz real = 0.0;
+	var qx = px;
+	var qz = pz;
+	var f = w.x as real;
+	var a = w.y as real;
+	var ang real = 0.7;
+	for i in 11 {
+		let dx = cos(ang);
+		let dz = sin(ang);
+		let ph = (qx * dx + qz * dz) * f + tm * sqrt(9.81 * f) * w.z as real;
+		gx += dx * a * cos(ph);
+		gz += dz * a * cos(ph);
+		qx += dx * sin(ph) * a / f * 0.5;
+		qz += dz * sin(ph) * a / f * 0.5;
+		f *= 1.31;
+		a *= 0.87;
+		ang += 2.4;
+	}
+	return gx, gz;
+}
+fn ca_bend(sx real, sz real, tm real, w float4) real, real {
+	let gx, gz = ca_grad(sx, sz, tm, w);
+	let nl = sqrt(gx * gx + 1.0 + gz * gz);
+	let ni = (gx * CA_L.x as real - CA_L.y as real + gz * CA_L.z as real) / nl;
+	let m = 0.75 * ni + sqrt(1.0 - 0.5625 * (1.0 - ni * ni));
+	let ry = -0.75 * CA_L.y as real - m / nl;
+	let dn = max(-ry, 0.05);
+	return (-0.75 * CA_L.x as real + m * gx / nl) / dn, (-0.75 * CA_L.z as real + m * gz / nl) / dn;
+}
+fn ca_cos() real {
+	let ni = -CA_L.y as real;
+	let m = 0.75 * ni + sqrt(1.0 - 0.5625 * (1.0 - ni * ni));
+	0.75 * CA_L.y as real + m
+}
+fn ca_factor(x real, z real, d real, tm real) real {
+	let c = s3d::caustics;
+	let c0x, c0z = ca_bend(0.0, 0.0, 0.0, float4 { 1.0, 0.0, 0.0, 0.0 });
+	let k = d * c.focus as real;
+	let s0x = x - c0x * d;
+	let s0z = z - c0z * d;
+	if s0x < c.lo.x as real || s0z < c.lo.z as real || s0x > c.hi.x as real || s0z > c.hi.z as real { return 1.0; }
+	var sx = s0x;
+	var sz = s0z;
+	for it in 2 {
+		let ix, iz = ca_bend(sx, sz, tm, c.waves);
+		sx = s0x - (ix - c0x) * k;
+		sz = s0z - (iz - c0z) * k;
+	}
+	let bx, bz = ca_bend(sx, sz, tm, c.waves);
+	let ax, az = ca_bend(sx + 0.01, sz, tm, c.waves);
+	let ex, ez = ca_bend(sx, sz + 0.01, tm, c.waves);
+	let det = (1.0 + (ax - bx) * k * 100.0) * (1.0 + (ez - bz) * k * 100.0) - (az - bz) * k * 100.0 * (ex - bx) * k * 100.0;
+	1.0 + c.strength as real * (1.0 / max(abs(det), 1.0 / c.cap as real) - 1.0)
+}
+fn ca_scene(d f32, half f32, w int, h int, height f32) {
+	reset_scene();
+	dark_scene();
+	s3d::sun.to_sun = CA_L; s3d::sun.rgb = float3 { 3.0, 3.0, 3.0 }; s3d::sun.shadows = false;
+	s3d::world_time = 0.0;
+	s3d::place(s3d::add(shapes::cube(float3 { 40.0, 0.1, 40.0 }, shapes::material(linalg::v3(1.0, 1.0, 1.0), 0.0, 1.0))), gfx::translate(float3 { 0.0, -d - 0.1, 0.0 }));
+	s3d::caustics = s3d::Caustics { on: true, manual: true, lo: float3 { -half, 0.0, -half }, hi: float3 { half, 0.0, half }, .. };
+	s3d::view = s3d::Camera { eye: float3 { 0.0, height, 0.0 }, target: float3 { 0.0, -d, 0.0 }, up: float3 { 0.0, 0.0, -1.0 }, fov_y: 0.9, near: 0.05, far: 80.0 };
+	s3d::init(w, h);
+	IN_OUT = gfx::render_target(w, h, gfx::RGBA8);
+}
+fn ca_shot(on bool) byte[>..] {
+	s3d::caustics.on = on;
+	s3d::render(IN_OUT);
+	gfx::read_pixels(s3d::hdr_target())
+}
+fn ca_ratio(a const byte[:], b const byte[:], n int, ch int) f32[>..] {
+	var out f32[>..] = [];
+	for i in n {
+		let off = HALF[(b[i * 8 + ch * 2] as int) | ((b[i * 8 + ch * 2 + 1] as int) << 8)];
+		out.push(if off > 0.001 { HALF[(a[i * 8 + ch * 2] as int) | ((a[i * 8 + ch * 2 + 1] as int) << 8)] / off } else { -1.0 });
+	}
+	out
+}
+fn ca_world(d f32, x int, y int) real, real {
+	let m = s3d::view_proj;
+	let o = to_uv(m, float3 { 0.0, -d, 0.0 });
+	let ux = to_uv(m, float3 { 1.0, -d, 0.0 });
+	let uz = to_uv(m, float3 { 0.0, -d, 1.0 });
+	let ax = (ux.x - o.x) as real; let ay = (ux.y - o.y) as real; let bx = (uz.x - o.x) as real; let by = (uz.y - o.y) as real;
+	let u = ((x as real + 0.5) / s3d::width as real) - o.x as real;
+	let v = ((y as real + 0.5) / s3d::height as real) - o.y as real;
+	let det = ax * by - ay * bx;
+	return (u * by - v * bx) / det, (ax * v - ay * u) / det;
+}
+fn ca_stats(f const f32[:], div real) real, real {
+	var s real = 0.0;
+	var s2 real = 0.0;
+	var n = 0;
+	for v in f { if v >= 0.0 { s += v as real / div; s2 += (v as real / div) * (v as real / div); n += 1; } }
+	let mean = s / max(n, 1) as real;
+	return mean, sqrt(max(s2 / max(n, 1) as real - mean * mean, 0.0));
+}
+fn ca_formula(d f32) real, real {
+	ca_scene(d, 30.0, 640, 360, 14.0);
+	let off = ca_shot(false);
+	let on = ca_shot(true);
+	gfx::release(IN_OUT);
+	let path = d as real / ca_cos();
+	var errs real[>..] = [];
+	var good = 0;
+	var n = 0;
+	for ch in 3 {
+		let r = ca_ratio(on[..], off[..], 640 * 360, ch);
+		let ab = exp(-(if ch == 0 { s3d::caustics.absorb.x } else if ch == 1 { s3d::caustics.absorb.y } else { s3d::caustics.absorb.z }) as real * path);
+		for y in 120 {
+			for x in 213 {
+				let i = (y * 3 + 1) * 640 + x * 3 + 1;
+				if r[i] < 0.0 { continue; }
+				let wx, wz = ca_world(d, x * 3 + 1, y * 3 + 1);
+				let want = ab * ca_factor(wx, wz, d as real, 0.0);
+				let e = abs(r[i] as real - want) / want;
+				if ch == 1 { errs.push(e); }
+				if e <= 0.02 { good += 1; }
+				n += 1;
+			}
+		}
+	}
+	sort_reals(errs);
+	return 100.0 * good as real / max(n, 1) as real, 100.0 * errs[errs.len / 2];
+}
+fn ca_spread(d f32, tm f32) f32[>..] {
+	ca_scene(d, 30.0, 640, 360, 14.0);
+	s3d::world_time = tm;
+	let off = ca_shot(false);
+	let on = ca_shot(true);
+	gfx::release(IN_OUT);
+	s3d::world_time = 0.0;
+	ca_ratio(on[..], off[..], 640 * 360, 2)
+}
+fn ca_k1() bool {
+	let p1, m1 = ca_formula(1.0);
+	let p3, m3 = ca_formula(3.0);
+	let ok = p1 >= 99.0 && p3 >= 99.0 && m1 <= 0.5 && m3 <= 0.5;
+	print("gpu: caustics K1 formula: floor 1 m deep ", r2(p1), " % of samples within 2 % of the CPU value (bar 99), median error ", r3(m1), " % (bar 0.5); 3 m deep ", r2(p3), " %, median ", r3(m3), " %", if ok { "" } else { " FAILED" });
+	ok
+}
+fn ca_k23() bool {
+	let cs = ca_cos();
+	let a = ca_spread(0.5, 0.0);
+	let ma, sa = ca_stats(a[..], exp(-0.07 * 0.5 / cs));
+	let b = ca_spread(1.0, 0.0);
+	let mb, sb = ca_stats(b[..], exp(-0.07 * 1.0 / cs));
+	let c = ca_spread(3.0, 0.0);
+	let mc, sc = ca_stats(c[..], exp(-0.07 * 3.0 / cs));
+	let ok2 = abs(ma - 1.0) <= 0.02 && abs(mb - 1.0) <= 0.02 && abs(mc - 1.0) <= 0.05;
+	let ok3 = sa < sb && sb < sc && sb >= 0.05;
+	print("gpu: caustics K2 energy: mean factor ", r3(ma), " at 0.5 m, ", r3(mb), " at 1 m (bar 1 +- 0.02), ", r3(mc), " at 3 m (bar 1 +- 0.05)", if ok2 { "" } else { " FAILED" });
+	print("gpu: caustics K3 focus: standard deviation ", r3(sa), " at 0.5 m, ", r3(sb), " at 1 m (bar >= 0.05), ", r3(sc), " at 3 m, growing with depth", if ok3 { "" } else { " FAILED" });
+	let d = ca_spread(1.0, 2.0);
+	let md, sd = ca_stats(d[..], exp(-0.07 * 1.0 / cs));
+	var cov real = 0.0;
+	var n = 0;
+	for i in b.len { if b[i] >= 0.0 && d[i] >= 0.0 { cov += (b[i] as real / exp(-0.07 / cs) - mb) * (d[i] as real / exp(-0.07 / cs) - md); n += 1; } }
+	let corr = cov / max(n, 1) as real / max(sb * sd, 1.0e-9);
+	let e = ca_spread(1.0, 0.0);
+	var worst f32 = 0.0;
+	for i in b.len { worst = max(worst, abs(b[i] - e[i])); }
+	let ok6 = worst == 0.0 && corr < 0.5;
+	print("gpu: caustics K6 time: same time twice differs by ", worst, " (bar 0), pattern 2 s later correlates ", r3(corr), " (bar < 0.5)", if ok6 { "" } else { " FAILED" });
+	ok2 && ok3 && ok6
+}
+fn ca_k4() bool {
+	ca_scene(1.0, 4.0, 640, 360, 14.0);
+	s3d::place(s3d::add(shapes::cube(float3 { 0.5, 1.0, 0.5 }, shapes::material(linalg::v3(1.0, 1.0, 1.0), 0.0, 1.0))), gfx::translate(float3 { 0.0, -0.5, 1.5 }));
+	let off = ca_shot(false);
+	let on = ca_shot(true);
+	gfx::release(IN_OUT);
+	let c0x, c0z = ca_bend(0.0, 0.0, 0.0, float4 { 1.0, 0.0, 0.0, 0.0 });
+	var outside = 0;
+	var inside = 0;
+	var changed = 0;
+	var top = 0;
+	var bad = 0;
+	for y in 360 {
+		for x in 640 {
+			let i = y * 640 + x;
+			var same = true;
+			for k in 8 { if on[i * 8 + k] != off[i * 8 + k] { same = false; } }
+			let wx, wz = ca_world(1.0, x, y);
+			let tx, tz = ca_world(-0.5, x, y);
+			let blk = abs(tx) < 0.45 && abs(tz - 1.5) < 0.45;
+			let near = abs(wx) < 1.6 && abs(wz - 1.5) < 2.2;
+			let sx = wx - c0x; let sz = wz - c0z;
+			if blk { top += 1; if !same { bad += 1; } }
+			else if near { continue; }
+			else if abs(sx) > 4.1 || abs(sz) > 4.1 { outside += 1; if !same { bad += 1; } }
+			else if abs(sx) < 3.9 && abs(sz) < 3.9 { inside += 1; if !same { changed += 1; } }
+		}
+	}
+	let ok = bad == 0 && outside > 5000 && top > 100 && changed * 10 > inside * 9;
+	print("gpu: caustics K4 scope: ", outside, " floor pixels outside the water's footprint and ", top, " on a block above the surface, ", bad, " changed (bar 0); inside the footprint ", changed, " of ", inside, " changed", if ok { "" } else { " FAILED" });
+	ok
+}
+fn ca_k5() bool {
+	ca_scene(2.0, 30.0, 640, 360, 14.0);
+	s3d::caustics.waves = float4 { 1.1, 0.0, 1.0, 0.0 };
+	let off = ca_shot(false);
+	let on = ca_shot(true);
+	gfx::release(IN_OUT);
+	var err real = 0.0;
+	var ctl real = 0.0;
+	for ch in 3 {
+		let r = ca_ratio(on[..], off[..], 640 * 360, ch);
+		let m, s = ca_stats(r[..], 1.0);
+		let ab = (if ch == 0 { s3d::caustics.absorb.x } else if ch == 1 { s3d::caustics.absorb.y } else { s3d::caustics.absorb.z }) as real;
+		err = max(err, abs(m - exp(-ab * 2.0 / ca_cos())) / exp(-ab * 2.0 / ca_cos()));
+		ctl = max(ctl, abs(m - exp(-ab * 2.0)) / exp(-ab * 2.0));
+	}
+	let ok = err <= 0.01 && ctl > 0.01;
+	print("gpu: caustics K5 sun absorption: flat water 2 m deep, worst channel ", r3(100.0 * err), " % from exp(-absorb * path) (bar 1), control with a straight-down path ", r3(100.0 * ctl), " % off", if ctl > 0.01 { ", fails as it must" } else { " FAILED to fail" }, if err <= 0.01 { "" } else { " FAILED" });
+	ok
+}
+fn ca_water(manual bool) byte[>..] {
+	reset_scene();
+	dark_scene();
+	s3d::sun.to_sun = CA_L; s3d::sun.rgb = float3 { 3.0, 3.0, 3.0 }; s3d::sun.shadows = false;
+	s3d::world_time = 0.0;
+	s3d::place(s3d::add(shapes::cube(float3 { 40.0, 0.1, 40.0 }, shapes::material(linalg::v3(1.0, 1.0, 1.0), 0.0, 1.0))), gfx::translate(float3 { 0.0, -3.1, 0.0 }));
+	s3d::place(s3d::add(shapes::water(7.0)), gfx::translate(float3 { 0.5, 0.25, -0.5 }));
+	s3d::caustics = if manual { s3d::Caustics { on: true, manual: true, level: 0.25, lo: float3 { -6.5, 0.25, -7.5 }, hi: float3 { 7.5, 0.25, 6.5 }, .. } } else { s3d::Caustics { on: true, .. } };
+	s3d::view = s3d::Camera { eye: float3 { 0.0, -0.3, 0.0 }, target: float3 { 0.0, -3.0, 0.0 }, up: float3 { 0.0, 0.0, -1.0 }, fov_y: 0.9, near: 0.05, far: 80.0 };
+	s3d::init(640, 360);
+	let out = gfx::render_target(640, 360, gfx::RGBA8);
+	s3d::render(out);
+	let px = gfx::read_pixels(out);
+	CA_HDR = gfx::read_pixels(s3d::hdr_target());
+	gfx::release(out);
+	px
+}
+var CA_HDR byte[>..] = [];
+fn ca_k7() bool {
+	let a = ca_water(false);
+	let c = s3d::caustics;
+	let on = copy(CA_HDR);
+	s3d::caustics.on = false;
+	let out = gfx::render_target(640, 360, gfx::RGBA8);
+	s3d::render(out);
+	let off = gfx::read_pixels(s3d::hdr_target());
+	gfx::release(out);
+	let r = ca_ratio(on[..], off[..], 640 * 360, 2);
+	let m, sd = ca_stats(r[..], 1.0);
+	let b = ca_water(true);
+	var worst = 0;
+	for i in a.len { worst = max(worst, abs(a[i] as int - b[i] as int)); }
+	let read = c.level == 0.25 && c.waves.x == 1.1 && c.waves.y == 0.062 && c.waves.z == 1.0 && c.lo.x == -6.5 && c.hi.z == 6.5;
+	let ok = worst <= 1 && read && sd / m > 0.02;
+	print("gpu: caustics K7 water item: picture from the item against the same numbers set by hand differs by ", worst, " / 255 (bar 1), level and waves read back ", if read { "equal" } else { "DIFFERENT" }, ", factor spread ", r3(sd / m), " (bar > 0.02)", if ok { "" } else { " FAILED" });
+	ok
+}
+fn ca_time(on bool) real {
+	ca_scene(1.0, 60.0, 1280, 720, 9.0);
+	s3d::caustics.on = on;
+	for k in 3 { s3d::render(IN_OUT); }
+	let warm = gfx::read_pixels(IN_OUT);
+	var best real = 1.0e30;
+	for r in 2 {
+		let t0 = clock_ns();
+		for k in 40 { s3d::render(IN_OUT); }
+		let px = gfx::read_pixels(IN_OUT);
+		best = min(best, (clock_ns() - t0) as real / 4.0e7);
+	}
+	gfx::release(IN_OUT);
+	best
+}
+fn ca_k8() bool {
+	let a = ca_time(false);
+	let b = ca_time(true);
+	let ok = b - a <= 1.0;
+	print("gpu: caustics K8 cost: 1280 x 720 floor under water ", r2(a), " ms a frame without, ", r2(b), " ms with, added ", r2(b - a), " ms (bar 1.0)", if ok { "" } else { " FAILED" });
+	ok
+}
+fn caustic_checks() bool {
+	half_table();
+	let a = ca_k1();
+	let b = ca_k23();
+	let c = ca_k4();
+	let d = ca_k5();
+	let e = ca_k7();
+	let f = ca_k8();
+	s3d::caustics = s3d::Caustics { .. };
+	if !(a && b && c && d && e && f) { print("gpu: caustics FAILED"); }
+	a && b && c && d && e && f
+}
 fn rc_light(k int) {
 	s3d::lights.clear();
 	if k == 0 { s3d::add_rect(float3 { 0.0, 2.0, -1.0 }, float3 { 0.0, 1.0, -1.0 }, float3 { 1.0, 0.0, 0.0 }, 2.0, 1.0, float3 { 4.0, 4.0, 4.0 }, 1000.0, false); }
@@ -4513,7 +4804,7 @@ fn gpu_checks(dir const byte[:], golden const byte[:]) bool {
 	var only byte[>..] = [];
 	let _ = env("GFX_ONLY", only);
 	if only.len > 0 {
-		let ok = if only[..] == "gtao" { gtao_checks() } else if only[..] == "gi" { gi_checks() } else if only[..] == "mblur" { mb_checks() } else if only[..] == "dof" { dof_checks() } else if only[..] == "fx" { fx_checks() } else if only[..] == "tsr" { tsr_checks(dir) } else if only[..] == "probe" { probe_checks(dir) } else if only[..] == "ssgi" { ssgi_checks() } else if only[..] == "decal" { decal_checks() } else if only[..] == "weather" { weather_checks() } else if only[..] == "rect" { rect_checks() } else if only[..] == "small" { small_checks() } else if only[..] == "inst" { instance_checks() } else { shadow_checks() };
+		let ok = if only[..] == "gtao" { gtao_checks() } else if only[..] == "gi" { gi_checks() } else if only[..] == "mblur" { mb_checks() } else if only[..] == "dof" { dof_checks() } else if only[..] == "fx" { fx_checks() } else if only[..] == "tsr" { tsr_checks(dir) } else if only[..] == "probe" { probe_checks(dir) } else if only[..] == "ssgi" { ssgi_checks() } else if only[..] == "decal" { decal_checks() } else if only[..] == "weather" { weather_checks() } else if only[..] == "rect" { rect_checks() } else if only[..] == "small" { small_checks() } else if only[..] == "inst" { instance_checks() } else if only[..] == "caust" { caustic_checks() } else { shadow_checks() };
 		let e = gfx::error();
 		if e.len > 0 { print("gpu: gfx error ", e[..]); return false; }
 		return ok;
@@ -4681,6 +4972,7 @@ fn gpu_checks(dir const byte[:], golden const byte[:]) bool {
 	if !rect_checks() { good = false; }
 	if !small_checks() { good = false; }
 	if !instance_checks() { good = false; }
+	if !caustic_checks() { good = false; }
 	let err = gfx::error();
 	if err.len > 0 { print("gpu: gfx error ", err[..]); good = false; }
 	good

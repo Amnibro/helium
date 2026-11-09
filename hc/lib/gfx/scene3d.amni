@@ -54,6 +54,7 @@ struct NodeOv { item int, node int, t float3, r linalg::Quat, sc float3 }
 struct WeightOv { item int, node int, k int, w f32 }
 struct Item { asset int, place gfx::mat4, prev_place gfx::mat4, anim int, time f32, visible bool, anim2 int = -1, time2 f32 = 0.0, blend f32 = 1.0, bend_node int = -1, bend linalg::Quat = linalg::Quat { 0.0, 0.0, 0.0, 1.0 }, track int[4] = [-1, -1, -1, -1], tracked gfx::mat4[4] = [gfx::mat4_identity, gfx::mat4_identity, gfx::mat4_identity, gfx::mat4_identity], light_base int = -1, sway f32 = 0.0, top f32 = 0.0 }
 struct InstSet { asset int, first int, count int, lod_asset int = -1, lod_distance f32 = 0.0, sway f32 = 0.0, visible bool = true, top f32 = 0.0, c float3 = float3 { 0.0, 0.0, 0.0 }, r f32 = 0.0, lo float3 = float3 { 0.0, 0.0, 0.0 }, hi float3 = float3 { 0.0, 0.0, 0.0 }, ia int[2] = [0, 0], na int[2] = [0, 0], iv int[2] = [0, 0], nv int[2] = [0, 0] }
+struct Caustics { on bool = false, manual bool = false, strength f32 = 1.0, focus f32 = 1.0, cap f32 = 7.0, level f32 = 0.0, waves float4 = float4 { 1.1, 0.062, 1.0, 0.7 }, absorb float3 = float3 { 0.45, 0.09, 0.07 }, lo float3 = float3 { -1.0e9, 0.0, -1.0e9 }, hi float3 = float3 { 1.0e9, 0.0, 1.0e9 } }
 struct Wind { dir float3 = float3 { 1.0, 0.0, 0.0 }, strength f32 = 0.0, speed f32 = 1.0, time f32 = 0.0 }
 struct Batch { prim int, item int, node int, joint_base int, model gfx::mat4, depth f32, mode int, prev_model gfx::mat4, prev_joint_base int, vis bool, trans bool, wb int, pwb int, inst int, lod int }
 
@@ -62,7 +63,7 @@ struct FrameU {
 	cascade_mat gfx::mat4[3], cascade_far float4, eye float4, view_dir float4, to_sun float4, sun_rgb float4,
 	zenith float4, horizon float4, ground float4, screen float4, light_pos float4[16], light_rgb float4[16], gi float4, gi_origin float4, gi_step float4, gi_dims float4,
 	light_dir float4[16], light_shd float4[16], local_mat gfx::mat4[12], refl float4, view_m gfx::mat4, env float4, env_rot float4, vp gfx::mat4, cluster float4, cluster2 float4,
-	probe_n float4, probe_pos float4[8], probe_lo float4[8], probe_hi float4[8], ssgi float4, decal float4
+	probe_n float4, probe_pos float4[8], probe_lo float4[8], probe_hi float4[8], ssgi float4, decal float4, caust float4, caust_w float4, caust_box float4, caust_abs float4
 }
 struct GiU { origin float4, step float4, dims float4, rot0 float4, rot1 float4, rot2 float4, params float4, to_sun float4, sun_rgb float4, zenith float4, horizon float4, ground float4, light_pos float4[8], light_rgb float4[8], env float4, env_rot float4 }
 struct SurfaceU { base float4, emissive float4, params float4, alpha float4, uv_sets float4, uv_sets2 float4, tri float4, top_tint float4, xm_base float4, xm_mr float4, xm_nrm float4, xm_occ float4, xm_emi float4, xo0 float4, xo1 float4, xo2 float4, sheen float4, misc float4, shade_a float4, shade_b float4, shade_c float4, xm_det float4, xo_det float4, top_lay float4 }
@@ -384,6 +385,7 @@ var xbuf_cap int = 0;
 var idbuf gfx::Buffer;
 var idbuf_cap int = 0;
 var fr float4[6] = [float4 { 0.0, 0.0, 0.0, 0.0 }; 6];
+var caustics Caustics = Caustics { .. };
 var wind Wind = Wind { dir: float3 { 1.0, 0.0, 0.0 }, strength: 0.0, speed: 1.0, time: 0.0 };
 var wind_prev f32 = 0.0;
 var wind_fresh = true;
@@ -1425,6 +1427,27 @@ fn fill_frame() {
 	frame_u.vp = view_proj;
 	frame_u.cluster = f4(clusters::CX as f32, clusters::CY as f32, clusters::CZ as f32, world_time);
 	frame_u.cluster2 = f4(view.near, clusters::CZ as f32 / linalg::f(log((view.far / view.near) as real)), wet, snow);
+	var cf = caustics.manual;
+	if caustics.on && !cf {
+		for b in batch {
+			if cf || b.item < 0 || !b.trans || material_of(b.prim).shading != 4 { continue; }
+			let pr = gltf::prims[b.prim];
+			var lo = linalg::v3(1.0e30, 1.0e30, 1.0e30);
+			var hi = linalg::v3(-1.0e30, -1.0e30, -1.0e30);
+			for c in 8 {
+				let q = linalg::point(b.model, corner(pr.lo, pr.hi, c));
+				lo = linalg::v3(min(lo.x, q.x), min(lo.y, q.y), min(lo.z, q.z));
+				hi = linalg::v3(max(hi.x, q.x), max(hi.y, q.y), max(hi.z, q.z));
+			}
+			let wm = material_of(b.prim);
+			caustics.level = hi.y; caustics.lo = lo; caustics.hi = hi; caustics.waves = wm.shade_b; caustics.absorb = linalg::v3(wm.shade_a.x, wm.shade_a.y, wm.shade_a.z);
+			cf = true;
+		}
+	}
+	frame_u.caust = f4(caustics.level, clamp(caustics.strength, 0.0, 1.0), caustics.focus, max(caustics.cap, 1.0));
+	frame_u.caust_w = f4(caustics.waves.x, caustics.waves.y, caustics.waves.z, 0.0);
+	frame_u.caust_box = f4(caustics.lo.x, caustics.lo.z, caustics.hi.x, caustics.hi.z);
+	frame_u.caust_abs = f4(caustics.absorb.x, caustics.absorb.y, caustics.absorb.z, if caustics.on && cf { 1.0 } else { 0.0 });
 	let np = if capturing { cap_np } else if probe_gen != envmap::gen { 0 } else { min(probes.len, MAX_PROBES) };
 	frame_u.ssgi = f4(0.0, 0.0, 0.0, 0.0);
 	frame_u.refl = f4(0.0, frame_u.refl.y, frame_u.refl.z, frame_u.refl.w);

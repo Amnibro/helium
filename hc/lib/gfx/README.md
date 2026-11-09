@@ -527,6 +527,46 @@ s3d::pushers.push(float4 { player.x, player.y, player.z, 0.5 });
   a two-sided strip standing on the ground, `width` wide at the base and `tip` wide at
   the top.
 
+### Caustics and sunlight under water (E7)
+
+```
+s3d::place(s3d::add(shapes::water(7.0)), gfx::translate(float3 { 0.0, 0.0, 0.0 }));
+s3d::caustics.on = true;
+s3d::world_time = now;
+```
+
+* **What it does.** With `s3d::caustics.on`, everything below the water's surface that
+  the sun reaches gets the moving bright lines the waves focus onto it, and the sun's
+  light is absorbed along its path down through the water. The pattern comes from the
+  same waves the water surface shows, so the two always agree. It is worked out per
+  pixel in the color pass: no extra pass, no texture.
+* **Where the water is.** By default the first water item in the scene (a material with
+  `extras.amni = "water"`, or `shapes::water(half)`) gives the surface level, its
+  footprint, its waves and its absorption; they can be read back from `s3d::caustics`
+  after a frame. Set `s3d::caustics.manual = true` to give `level`, `lo`, `hi`,
+  `waves` and `absorb` yourself, for example when the water is drawn some other way.
+  The surface is taken as level, and only one body of water is used.
+* **The formula.** `L` is the unit direction to the sun, `eta` is 0.75 (air to water).
+  A sun ray entering at surface point `s` bends by the surface normal there,
+  `n(s) = normalize(-g.x, 1, -g.y)` with `g` the wave slope, into
+  `r = refract(-L, n(s), eta)`, and travels `b(s) = r.xz / -r.y` sideways per meter
+  of depth. Flat water gives the constant `b0`. A point `P` at depth
+  `d = level - P.y` would be lit through `s0 = P.xz - b0 * d` under flat water. With
+  `k = d * focus`, the entry point is refined twice,
+  `s = s0 - (b(s) - b0) * k` starting from `s0`, and the brightness is one over the
+  area stretch of the rays there:
+
+  `J = I + k * db/ds` (by differences 0.01 m apart), `c = 1 / max(|det J|, 1 / cap)`
+
+  `sun light at P = sun * exp(-absorb * d / -r0.y) * (1 + strength * (c - 1))`
+
+  where `r0` is the flat-water `r`. Nothing changes above the surface, where `s0` falls
+  outside the footprint (`lo` to `hi` in x and z), or with the sun below the horizon.
+* **Knobs.** `strength` (0 to 1) fades the pattern without touching the absorption.
+  `focus` scales how fast the pattern sharpens with depth: 1 is physical, larger gives
+  pool-like lines in shallow water with gentle waves. `cap` (7 by default) is the
+  brightest a line can get. `s3d::world_time` moves the waves.
+
 ## Materials, light and finish
 
 `gltf` reads the core metal-rough model plus `KHR_materials_clearcoat`, `sheen`,

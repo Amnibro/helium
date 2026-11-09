@@ -85,6 +85,12 @@ fn plane(half f32, m gltf::Material) int {
 }
 
 // Axis-aligned box centred on the origin.
+fn water(half f32) int {
+	var m = material(linalg::v3(1.0, 1.0, 1.0), 0.0, 0.05);
+	m.trans = 1.0; m.shading = 4; m.double_sided = true;
+	m.shade_a = gltf::shade_preset(4, 0); m.shade_b = gltf::shade_preset(4, 1); m.shade_c = gltf::shade_preset(4, 2);
+	plane(half, m)
+}
 fn blade(height f32, width f32, tip f32, segments int, m gltf::Material) int {
 	let vfirst = gltf::verts.len / gltf::VERTEX_FLOATS;
 	let ifirst = gltf::indices.len;
