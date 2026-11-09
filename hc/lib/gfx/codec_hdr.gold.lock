@@ -1,0 +1,135 @@
+=== -3a802db177f28c80
+namespace codec_hdr;
+import math;
+var scales f32[256];
+var scales_ready bool = false;
+=== 5210e8ea05c05f79
+fn is_hdr(b const byte[:]) bool {
+	b.len >= 2 && b[0] == '#' && b[1] == '?'
+}
+=== -750d25ad14ba3afe
+fn next_line(b const byte[:], at int&) const byte[:], bool {
+	var i = at;
+	while i < b.len && b[i] != '\n' { i++; }
+	if i >= b.len { return b[at..at], false; }
+	let s = b[at..i];
+	at = i + 1;
+	return s, true;
+}
+fn decode(b const byte[:], out f32[>..]&) int, int, bool {
+	out.clear();
+	if !scales_ready {
+		for e in 256 { scales[e] = pow(2.0, (e - 136) as real) as f32; }
+		scales_ready = true;
+	}
+	var at = 0;
+	loop {
+		let line, ok = next_line(b, at);
+		guard ok else { return 0, 0, false; }
+		if line.len == 0 { break; }
+		if starts_with(line, "FORMAT=") {
+			if line[7..] != "32-bit_rle_rgbe" { return 0, 0, false; }
+		}
+	}
+	let rline, rok = next_line(b, at);
+	guard rok else { return 0, 0, false; }
+	let parts = words(rline);
+	var h = 0;
+	var w = 0;
+	var count = 0;
+	for p, i in parts {
+		count++;
+		if i == 0 {
+			if p != "-Y" { return 0, 0, false; }
+		} else if i == 1 {
+			let n, nok = parse_int(p);
+			guard nok else { return 0, 0, false; }
+			h = n;
+		} else if i == 2 {
+			if p != "+X" { return 0, 0, false; }
+		} else if i == 3 {
+			let n, nok = parse_int(p);
+			guard nok else { return 0, 0, false; }
+			w = n;
+		}
+	}
+	if count != 4 { return 0, 0, false; }
+	if h <= 0 || w <= 0 || h > 32768 || w > 32768 { return 0, 0, false; }
+	var scan byte[>..] = [];
+	scan.resize(w * 4, 0);
+	for y in h {
+		if w >= 8 && w <= 32767 && at + 4 <= b.len && b[at] == 2 && b[at + 1] == 2 && b[at + 2] == (w >> 8) && b[at + 3] == (w & 255) {
+			at += 4;
+			for c in 4 {
+				var x = 0;
+				while x < w {
+					guard at < b.len else { return 0, 0, false; }
+					let cnt = b[at] as int;
+					at++;
+					if cnt > 128 {
+						let n = cnt - 128;
+						guard at < b.len else { return 0, 0, false; }
+						if x + n > w { return 0, 0, false; }
+						let v = b[at];
+						at++;
+						for k in n { scan[(x + k) * 4 + c] = v; }
+						x += n;
+					} else {
+						if x + cnt > w { return 0, 0, false; }
+						if at + cnt > b.len { return 0, 0, false; }
+						for k in cnt { scan[(x + k) * 4 + c] = b[at + k]; }
+						at += cnt;
+						x += cnt;
+					}
+				}
+			}
+		} else {
+			if at + w * 4 > b.len { return 0, 0, false; }
+			for k in w * 4 { scan[k] = b[at + k]; }
+			at += w * 4;
+		}
+		for x in w {
+			let e = scan[x * 4 + 3] as int;
+			if e == 0 {
+				out.push(0.0);
+				out.push(0.0);
+				out.push(0.0);
+				out.push(1.0);
+			} else {
+				let s = scales[e];
+				out.push((scan[x * 4] as f32 + 0.5) * s);
+				out.push((scan[x * 4 + 1] as f32 + 0.5) * s);
+				out.push((scan[x * 4 + 2] as f32 + 0.5) * s);
+				out.push(1.0);
+			}
+		}
+	}
+	return w, h, true;
+}
+=== 5690ef420040052f
+fn half_pixels(rgba const f32[:], out byte[>..]&) {
+	out.clear();
+	for v in rgba {
+		var x f32[1];
+		x[0] = v;
+		let xb = bytes_of(x);
+		let bits = (xb[0] as int) | ((xb[1] as int) << 8) | ((xb[2] as int) << 16) | ((xb[3] as int) << 24);
+		let sign = (bits >> 31) & 1;
+		let ex = (bits >> 23) & 255;
+		let mant = bits & 8388607;
+		var h = 0;
+		if ex == 255 && mant != 0 {
+			h = 0;
+		} else if sign != 0 {
+			h = 0;
+		} else if ex == 255 || v >= 65504.0 {
+			h = 31743;
+		} else if ex < 113 {
+			h = 0;
+		} else {
+			h = ((ex - 112) << 10) + (mant >> 13) + ((mant >> 12) & 1);
+		}
+		out.push((h & 255) as byte);
+		out.push(((h >> 8) & 255) as byte);
+	}
+}

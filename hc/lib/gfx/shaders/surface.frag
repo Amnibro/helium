@@ -26,10 +26,11 @@ layout(set = 2, binding = 11) uniform sampler2DArrayShadow tex_local_shadow;
 layout(set = 2, binding = 12) uniform sampler2D tex_bent;
 layout(set = 2, binding = 13) uniform sampler2D tex_ssr;
 layout(set = 2, binding = 14) uniform sampler2D tex_ssr_prev;
-layout(std430, set = 2, binding = 15) readonly buffer Nodes { vec4 bvh_nodes[]; };
-layout(std430, set = 2, binding = 16) readonly buffer Tris { vec4 bvh_tris[]; };
-layout(std430, set = 2, binding = 17) readonly buffer Irr { vec4 probe_irr[]; };
-layout(std430, set = 2, binding = 18) readonly buffer Dist { vec2 probe_dist[]; };
+layout(set = 2, binding = 15) uniform samplerCube tex_env;
+layout(std430, set = 2, binding = 16) readonly buffer Nodes { vec4 bvh_nodes[]; };
+layout(std430, set = 2, binding = 17) readonly buffer Tris { vec4 bvh_tris[]; };
+layout(std430, set = 2, binding = 18) readonly buffer Irr { vec4 probe_irr[]; };
+layout(std430, set = 2, binding = 19) readonly buffer Dist { vec2 probe_dist[]; };
 
 const int CASCADES = 3;
 const int MAX_LIGHTS = 16;
@@ -57,6 +58,8 @@ layout(set = 3, binding = 0) uniform Frame {
 	mat4 local_mat[LOCAL_LAYERS];
 	vec4 refl;
 	mat4 view_m;
+	vec4 env;
+	vec4 env_rot;
 };
 #include "gi.glsl"
 
@@ -359,6 +362,26 @@ vec3 ambient_light(vec3 n, vec3 v, vec3 l, vec3 base_rgb, float metal, float rou
 	vec3 dielectric = base_rgb * (1.0 - fd) * irr * dao + spec;
 	return mix(dielectric, fm * e.rgb, metal);
 }
+vec3 env_dir(vec3 d) { return vec3(env_rot.x * d.x + env_rot.y * d.z, d.y, env_rot.x * d.z - env_rot.y * d.x); }
+vec3 env_lobe(vec3 nn, vec3 v, float rough, vec3 gn, vec3 oc, vec4 sr) {
+	vec3 r = reflect(-v, nn);
+	vec3 e = textureLod(tex_env, env_dir(normalize(mix(r, nn, rough * rough))), rough * env.z).rgb * env.y * spec_occ(r, max(dot(nn, v), 1e-4), rough, gn, oc.x, oc.y, oc.z);
+	float w = sr.w * (1.0 - smoothstep(0.7 * refl.z, refl.z, rough));
+	return w > 0.0 ? mix(e, textureLod(tex_ssr_prev, sr.xy, log2(max(2.0 * rough * rough * sr.z * refl.w, 1.0))).rgb, w) : e;
+}
+vec3 env_ef(vec3 f0, vec2 eb, vec3 ms) { return ms * (f0 * (eb.x - eb.y) + eb.y); }
+vec3 ambient_env(vec3 n, vec3 v, vec3 albedo, vec3 f0, float rough, vec2 eb, vec3 ms, vec3 kd, vec3 gi_irr, bool use_gi, vec3 gn, vec3 oc, float dao, vec4 sr, Mat q) {
+	int model = int(misc.y + 0.5);
+	float n_v = max(dot(n, v), 1e-4);
+	vec3 irr = use_gi ? gi_irr : textureLod(tex_env, env_dir(n), env.w).rgb * env.y;
+	vec3 spec = env_lobe(n, v, rough, gn, oc, sr) * env_ef(f0, eb, ms);
+	if (model == 1) {
+		float r2 = clamp(rough * shade_b.w, 0.03, 1.0);
+		spec = mix(spec, env_lobe(n, v, r2, gn, oc, sr) * env_ef(f0, ms_lut(n_v, r2), ms), shade_b.z);
+	}
+	if (model == 2) spec += shade_b.z * env_lobe(q.gn, v, shade_b.w, gn, oc, sr) * env_ef(vec3(0.02), ms_lut(max(dot(q.gn, v), 1e-4), shade_b.w), vec3(1.0));
+	return albedo * max(kd, vec3(0.0)) * irr * dao + spec;
+}
 
 void main() {
 	float cst = eye.w > 1.5 ? texture(tex_ao, gl_FragCoord.xy * screen.xy).g : 1.0;
@@ -494,7 +517,7 @@ void main() {
 	vec3 gi_irr = use_gi ? gi_irradiance(in_world, n, v, gi_origin, gi_step, gi_dims) : vec3(0.0);
 	float dao = use_gi ? (gi.z > 0.5 ? occ : 1.0) : occ;
 	vec4 sr = refl.x > 0.5 && alpha.x < 1.5 ? texelFetch(tex_ssr, ivec2(gl_FragCoord.xy), 0) : vec4(0.0);
-	vec3 ambient = ambient_light(n, v, l, tint.rgb, metal, rough, gi_irr, use_gi, gn, vec3(dao, aos, occm), dao, sr, q) * (use_gi ? 1.0 : screen.w);
+	vec3 ambient = env.x > 0.5 ? ambient_env(n, v, albedo, f0, rough, eb, ms, kd, gi_irr, use_gi, gn, vec3(dao, aos, occm), dao, sr, q) : ambient_light(n, v, l, tint.rgb, metal, rough, gi_irr, use_gi, gn, vec3(dao, aos, occm), dao, sr, q) * (use_gi ? 1.0 : screen.w);
 	rgb += ambient;
 
 	rgb += emissive.rgb * texture(tex_emissive, xuv(uv_sets2.x, xm_emi, xo2.xy)).rgb;

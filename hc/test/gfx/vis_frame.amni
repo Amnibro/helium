@@ -1,0 +1,62 @@
+import os;
+import gfx;
+import math;
+import gfx.linalg;
+import gfx.gltf;
+import gfx.envmap;
+import gfx.scene3d;
+fn num(s const byte[:]) f32 {
+	let v, ok = parse_flt(s);
+	if !ok { return 0.0; }
+	v as f32
+}
+fn arg_of(i int) byte[>..] {
+	var out byte[>..] = [];
+	for a, k in args() { if k == i { out.append(a); } }
+	out
+}
+fn main() {
+	if arg_count() - 1 < 11 {
+		print("usage: vis_frame model.glb out.png width height eyex eyey eyez tx ty tz fov_y [env=path,...]");
+		return;
+	}
+	let path = arg_of(1);
+	let outp = arg_of(2);
+	gltf::lazy_pixels = true;
+	let asset = gltf::load(path);
+	if asset < 0 {
+		print(gltf::error());
+		return;
+	}
+	let w, wok = parse_int(arg_of(3));
+	let h, hok = parse_int(arg_of(4));
+	gfx::open_headless(w, h);
+	let inst = s3d::add(asset);
+	let eye = float3 { num(arg_of(5)), num(arg_of(6)), num(arg_of(7)) };
+	let target = float3 { num(arg_of(8)), num(arg_of(9)), num(arg_of(10)) };
+	let fov = num(arg_of(11));
+	let d = distance(eye, target);
+	s3d::view = s3d::Camera { eye: eye, target: target, up: float3 { 0.0, 1.0, 0.0 }, fov_y: fov, near: d * 0.01, far: d * 10.0 };
+	s3d::sun.shadows = false;
+	s3d::sun.rgb = float3 { 0.0, 0.0, 0.0 };
+	s3d::sky = s3d::Sky { zenith: float3 { 0.5, 0.5, 0.5 }, horizon: float3 { 0.5, 0.5, 0.5 }, ground: float3 { 0.5, 0.5, 0.5 }, ambient: 1.0, draw: true };
+	s3d::look.curve = 1;
+	s3d::look.bloom = 0.0;
+	s3d::look.ssao = false;
+	if arg_count() > 12 {
+		let feats = arg_of(12);
+		for word in split(feats, ',') {
+			if starts_with(word, "env=") {
+				let p = word[4..];
+				if !envmap::load(p) { print(p); }
+				s3d::sky.draw = true;
+			}
+		}
+	}
+	s3d::init(w, h);
+	let target_tex = gfx::render_target(w, h, gfx::RGBA8);
+	for i in 2 { s3d::render(target_tex); }
+	let saved = gfx::save_png(target_tex, outp);
+	print("vis_frame: ", saved, " ", gfx::driver());
+	gfx::close();
+}

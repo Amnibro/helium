@@ -1,0 +1,10 @@
+use std
+into codec_hdr.amni
+
+Namespace codec_hdr; imports math. Reads Radiance RGBE images (.hdr, the Radiance file format as documented by Greg Ward).
+
+`is_hdr(b const byte[:]) bool` is true when `b` starts with the bytes "#?".
+
+`decode(b const byte[:], out f32[>..]&) int, int, bool` returns width, height, ok and fills `out` (cleared first) with 4 floats per pixel in file order (red, green, blue, 1.0), top row first. The text header ends at the first empty line; a `FORMAT=` line other than `32-bit_rle_rgbe` is a failure. The next line must be `-Y <height> +X <width>` with both positive and at most 32768, otherwise failure. Each scanline is new-style run-length data when the width is from 8 to 32767 and its first 4 bytes are 2, 2, width >> 8, width & 255: then for each of the 4 channels in turn, read a count byte c; c > 128 means the next byte repeats c - 128 times, otherwise c literal bytes follow; a run past the width or data past the end of `b` is a failure. Any other scanline is width flat 4-byte pixels. A pixel with exponent byte e of 0 is black; otherwise each channel byte v gives `(v + 0.5) * 2^(e - 136)`, computed through one table of 256 f32 scales built on the first use. Reuse one scanline byte buffer for all rows.
+
+`half_pixels(rgba const f32[:], out byte[>..]&)` clears `out` and appends each float as a little-endian IEEE 754 binary16: read each float's IEEE 754 bits from the 4 little-endian bytes of a local `var x f32[1]` holding it, through `bytes_of(x)` (there is no to_bits function); NaN and negative values become 0, values at or above 65504 become 0x7BFF, values below 2^-14 become 0, otherwise the exponent minus 112 goes in the top bits and the mantissa is rounded to nearest with the carry allowed to increment the exponent.

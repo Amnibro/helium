@@ -33,6 +33,7 @@ import gfx.motion;
 import gfx.sparks;
 import gfx.fx;
 import gfx.rt;
+import gfx.envmap;
 
 let CASCADES = 3;
 let MAX_LIGHTS = 16;
@@ -56,13 +57,13 @@ struct DrawU { model gfx::mat4, model_normal gfx::mat4, view_proj gfx::mat4, pre
 struct FrameU {
 	cascade_mat gfx::mat4[3], cascade_far float4, eye float4, view_dir float4, to_sun float4, sun_rgb float4,
 	zenith float4, horizon float4, ground float4, screen float4, light_pos float4[16], light_rgb float4[16], gi float4, gi_origin float4, gi_step float4, gi_dims float4,
-	light_dir float4[16], light_shd float4[16], local_mat gfx::mat4[12], refl float4, view_m gfx::mat4
+	light_dir float4[16], light_shd float4[16], local_mat gfx::mat4[12], refl float4, view_m gfx::mat4, env float4, env_rot float4
 }
 struct GiU { origin float4, step float4, dims float4, rot0 float4, rot1 float4, rot2 float4, params float4, to_sun float4, sun_rgb float4, zenith float4, horizon float4, ground float4, light_pos float4[8], light_rgb float4[8] }
 struct SurfaceU { base float4, emissive float4, params float4, alpha float4, uv_sets float4, uv_sets2 float4, tri float4, top_tint float4, xm_base float4, xm_mr float4, xm_nrm float4, xm_occ float4, xm_emi float4, xo0 float4, xo1 float4, xo2 float4, sheen float4, misc float4, shade_a float4, shade_b float4, shade_c float4, xm_det float4, xo_det float4 }
 struct CutU { base float4, alpha float4, uv_sets float4, xm float4, xo float4 }
 struct CutViewU { base float4, alpha float4, uv_sets float4, xm float4, xo float4, view gfx::mat4 }
-struct SkyU { inv_view_proj gfx::mat4, prev_view_proj gfx::mat4, to_sun float4, sun_rgb float4, zenith float4, horizon float4, ground float4 }
+struct SkyU { inv_view_proj gfx::mat4, prev_view_proj gfx::mat4, to_sun float4, sun_rgb float4, zenith float4, horizon float4, ground float4, env float4, env_rot float4 }
 struct AoU { lens float4, tune float4 }
 struct ContactU { lens float4, jit float4, sun_v float4, tune float4 }
 struct GtaoU { lens float4, tune float4, size float4 }
@@ -539,6 +540,7 @@ fn init(w int, h int, ow int, oh int) bool {
 	pipe_normals = gfx::pipeline(vs, embed_shader("shaders/normals.frag"), surface_desc(gfx::CULL_BACK, gfx::BLEND_NONE, true));
 	pipe_normals_two = gfx::pipeline(vs, embed_shader("shaders/normals.frag"), surface_desc(gfx::CULL_NONE, gfx::BLEND_NONE, true));
 	pipe_sky = gfx::pipeline(scr, embed_shader("shaders/sky.frag"));
+	envmap::setup();
 	pipe_sky_motion = gfx::pipeline(scr, embed_shader("shaders/sky_motion.frag"));
 	pipe_ao = gfx::pipeline(scr, embed_shader("shaders/ssao.frag"));
 	pipe_ao_blur = gfx::pipeline(scr, embed_shader("shaders/ssao_blur.frag"));
@@ -981,6 +983,8 @@ fn fill_frame() {
 	frame_u.gi_origin = x4(linalg::v3(gi_lo.x + gi_step.x * 0.5, gi_lo.y + gi_step.y * 0.5, gi_lo.z + gi_step.z * 0.5), if gi_rt_visibility { 1.0 } else { 0.0 });
 	frame_u.gi_step = x4(gi_step, gi_bias);
 	frame_u.gi_dims = f4(gi_dims[0] as f32, gi_dims[1] as f32, gi_dims[2] as f32, gi_rays as f32);
+	frame_u.env = f4(if envmap::on { 1.0 } else { 0.0 }, envmap::intensity, envmap::spec_lod(), envmap::irr_lod());
+	frame_u.env_rot = f4(linalg::f(cos(envmap::rotation as real)), linalg::f(sin(envmap::rotation as real)), envmap::blur * envmap::spec_lod(), 0.0);
 }
 // mean linear colour of an image, sampled on a sparse grid; the bounce albedo
 fn image_avg(image int) float3 {
@@ -1168,7 +1172,7 @@ fn fullscreen(p gfx::Pipeline) { gfx::bind(p); }
 
 fn sky_u() SkyU {
 	let to_sun = linalg::unit3(sun.to_sun);
-	SkyU { inv_view_proj: linalg::inverse(view_proj_nj), prev_view_proj: prev_view_proj, to_sun: x4(to_sun, if sky.draw { 0.0 } else { 1.0 }), sun_rgb: x4(sun.rgb, 0.0), zenith: x4(sky.zenith, 0.0), horizon: x4(sky.horizon, 0.0), ground: x4(sky.ground, 0.0) }
+	SkyU { inv_view_proj: linalg::inverse(view_proj_nj), prev_view_proj: prev_view_proj, to_sun: x4(to_sun, if sky.draw { 0.0 } else { 1.0 }), sun_rgb: x4(sun.rgb, 0.0), zenith: x4(sky.zenith, 0.0), horizon: x4(sky.horizon, 0.0), ground: x4(sky.ground, 0.0), env: frame_u.env, env_rot: frame_u.env_rot }
 }
 
 // Prepass: normal + depth (nd) for SSAO, and the motion target when it is wanted. Both
@@ -1347,6 +1351,7 @@ fn draw_lit(b Batch) {
 	gfx::bind_texture(gfx::FRAGMENT, 12, if bent_ran { bent } else { white }, smp_point);
 	gfx::bind_texture(gfx::FRAGMENT, 13, if ssr_on && ssr_hit.id != 0 { ssr_hit } else { white }, smp_point);
 	gfx::bind_texture(gfx::FRAGMENT, 14, if ssr_on && ssr_hit.id != 0 { ssr_prev } else { white }, smp_linear);
+	gfx::bind_texture(gfx::FRAGMENT, 15, envmap::texture(), envmap::smp);
 	gi_bind();
 	draw_prim(b);
 }
@@ -1356,6 +1361,7 @@ fn color_pass() {
 	guard gfx::begin_pass(gfx::PassDesc { color: [color_ms, none(), none(), none()], resolve: [hdr, none(), none(), none()], depth: depth_ms, color_value: clear, .. }) else { return; }
 	// with sky drawing off the sky pass writes the flat clear colour
 	gfx::bind(pipe_sky);
+	gfx::bind_texture(gfx::FRAGMENT, 0, envmap::texture(), envmap::smp);
 	gfx::uniforms(gfx::FRAGMENT, 0, sky_u());
 	gfx::draw(3);
 	// opaque and cut-out, single- then double-sided
