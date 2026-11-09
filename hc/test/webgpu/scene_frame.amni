@@ -34,6 +34,8 @@ fn main() {
 	let e8 = arg_count() > 13 && arg_of(13)[..] == "e8";
 	let e2 = arg_count() > 13 && arg_of(13)[..] == "e2";
 	if e2 { s3d::ssr_on = true; s3d::ao_mode = 1; }
+	let sg = arg_count() > 13 && arg_of(13)[..] == "ssgi";
+	if sg { s3d::ssgi_on = true; }
 	if arg_count() > 13 && arg_of(13)[..] == "probe" { s3d::add_probe(float3 { 0.0, 1.0, 0.0 }, float3 { -2.0, 0.0, -2.0 }, float3 { 2.0, 2.5, 2.0 }, 0.5); }
 	if e8 {
 		s3d::look.auto_exposure = true; s3d::look.lut = 1.0; s3d::motion_blur = 0.5; s3d::dof_aperture = 0.08;
@@ -51,7 +53,7 @@ fn main() {
 	if arg_count() > 13 && arg_of(13)[..] == "taa" { s3d::temporal = 1; s3d::ao_mode = 1; }
 	s3d::init(w, h);
 	let out = gfx::render_target(w, h, gfx::RGBA8);
-	for k in if gi { 7 } else if e2 { 3 } else { 2 } {
+	for k in if gi || sg { 7 } else if e2 { 3 } else { 2 } {
 		if e8 { s3d::place(it, gfx::translate(float3 { 0.04 * k as f32, 0.0, 0.0 })); }
 		s3d::render(out);
 	}

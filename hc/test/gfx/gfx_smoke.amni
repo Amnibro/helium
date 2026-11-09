@@ -1336,6 +1336,8 @@ const T8_STILL_BAR = 0.25;    // still scene: rejection on vs off, mean abs /255
 // "Pre-registered bars (GI part 1)"): the renderer's linear HDR Cornell box, box-filtered
 // to 128 x 128, against hc/test/gfx/gi/cornell_ref.txt.gz (Helium CPU path tracer).
 // Metric: mean over the region's pixels of |Y_render - Y_ref| / Y_ref (Rec. 709 luminance).
+const SSGI_S1 = 0.20;
+const SSGI_S2 = 0.25;
 const GI_BAR = 0.10;            // G1 all gated pixels, G2a ceiling, G2b shadowed (not directly lit)
 const GI_REF_NOISE_BAR = 0.01;  // reference: mean luminance rel. standard error must be below this
 const GI_MIN_REGION = 1000;     // each region needs this many gated pixels or the check fails
@@ -3100,23 +3102,94 @@ fn gi_line(tag const byte[:], y const real[:], yr const real[:], gate const byte
 	print("gpu: gi ", tag, ": G1 all ", r4(g1), " (", n1, " px), G2a ceiling ", r4(g2a), " (", n2a, " px), G2b shadowed ", r4(g2b), " (", n2b, " px, signed ", r4(b2b), "); directly lit (reported) ", r4(dl), " (", nl, " px)");
 	g1 < GI_BAR && g2a < GI_BAR && g2b < GI_BAR && n2a >= GI_MIN_REGION && n2b >= GI_MIN_REGION
 }
-fn gi_checks() bool {
+fn gi_load(rad real[>..]&, mask real[>..]&, yr real[>..]&) real {
 	half_table();
 	var raw byte[>..] = [];
-	var rad real[>..] = [];
-	var mask real[>..] = [];
-	if !gi_gunzip("cornell_ref.txt.gz", raw) { print("gpu: gi FAILED: cannot read cornell_ref.txt.gz (GFX_GI_DIR)"); return false; }
+	if !gi_gunzip("cornell_ref.txt.gz", raw) { print("gpu: gi FAILED: cannot read cornell_ref.txt.gz (GFX_GI_DIR)"); return -1.0; }
 	gi_nums(raw[..], rad);
 	var mp byte[>..] = [];
 	raw.clear();
-	if !env("GFX_GI_MASK", mp) || !read_file(mp[..], raw) { print("gpu: gi FAILED: GFX_GI_MASK unset or unreadable (gfxtest.sh writes it with cornell_pt mask)"); return false; }
+	if !env("GFX_GI_MASK", mp) || !read_file(mp[..], raw) { print("gpu: gi FAILED: GFX_GI_MASK unset or unreadable (gfxtest.sh writes it with cornell_pt mask)"); return -1.0; }
 	gi_nums(raw[..], mask);
 	let np = cornell::REF_W * cornell::REF_H;
-	if rad.len != np * 5 || mask.len != np * 3 { print("gpu: gi FAILED: reference sizes ", rad.len, " ", mask.len); return false; }
+	if rad.len != np * 5 || mask.len != np * 3 { print("gpu: gi FAILED: reference sizes ", rad.len, " ", mask.len); return -1.0; }
 	var se = 0.0; var nse = 0;
-	var yr real[>..] = [];
 	for k in np { yr.push(0.2126 * rad[k * 5 + 1] + 0.7152 * rad[k * 5 + 2] + 0.0722 * rad[k * 5 + 3]); if rad[k * 5 + 4] > 0.0 { se += rad[k * 5 + 4]; nse += 1; } }
-	let noise = if nse > 0 { se / nse as real } else { 1.0 };
+	if nse > 0 { se / nse as real } else { 1.0 }
+}
+fn ssgi_checks() bool {
+	var rad real[>..] = [];
+	var mask real[>..] = [];
+	var yr real[>..] = [];
+	if gi_load(rad, mask, yr) < 0.0 { return false; }
+	let gate = gi_gate(rad[..]);
+	cornell_scene();
+	s3d::look = DEF_LOOK;
+	s3d::look.bloom = 0.0;
+	s3d::sky = sky_of(0.0, 0.0, 0.0, false);
+	s3d::gi_on = false;
+	s3d::rt_shadows = true;
+	s3d::ssgi_on = true;
+	let px = gi_frame(512, 512, 32);
+	let y = gi_lum(px[..], 512);
+	let _ = gi_line("SSGI on", y[..], yr[..], gate, mask[..]);
+	let s1, n1 = gi_score(y[..], yr[..], gate, mask[..], 0);
+	let s2, n2 = gi_score(y[..], yr[..], gate, mask[..], 1);
+	let s3, n3 = gi_score(y[..], yr[..], gate, mask[..], 2);
+	s3d::ssgi_intensity = 0.0;
+	let kpx = gi_frame(512, 512, 32);
+	let ky = gi_lum(kpx[..], 512);
+	let k1, kn = gi_score(ky[..], yr[..], gate, mask[..], 0);
+	s3d::ssgi_intensity = 1.0;
+	s3d::ssgi_on = false;
+	let cpx = gi_frame(512, 512, 32);
+	let cy = gi_lum(cpx[..], 512);
+	let _ = gi_line("SSGI control GI off", cy[..], yr[..], gate, mask[..]);
+	let c3, cn3 = gi_score(cy[..], yr[..], gate, mask[..], 2);
+	let p1 = s1 <= SSGI_S1;
+	let p2 = s2 <= SSGI_S2;
+	let p3 = s3 <= 0.5 * c3;
+	let pk = k1 > SSGI_S1;
+	print("gpu: ssgi S1 overall ", r4(s1), " (bar <= ", SSGI_S1, ") ", if p1 { "PASS" } else { "FAIL" });
+	print("gpu: ssgi S2 ceiling ", r4(s2), " (bar <= ", SSGI_S2, ") ", if p2 { "PASS" } else { "FAIL" });
+	print("gpu: ssgi S3 shadowed ", r4(s3), " vs control ", r4(c3), " (bar <= 0.5 x) ", if p3 { "PASS" } else { "FAIL" });
+	print("gpu: ssgi control (no bounce light, occlusion kept) S1 ", r4(k1), if pk { " fails S1 (good)" } else { " PASSES S1 (gate not discriminating: FAIL)" });
+	var img byte[>..] = [];
+	img.append("P5\n384 128\n255\n");
+	for j in cornell::REF_H { for k in 3 { for i in cornell::REF_W {
+		let q = j * cornell::REF_W + i;
+		let v = if k == 0 { sqrt(yr[q]) } else if k == 1 { sqrt(y[q]) } else if gate[q] == 0 { 0.5 } else { 0.5 + 0.5 * clamp((y[q] - yr[q]) / yr[q] / 0.3, -1.0, 1.0) };
+		img.push(clamp(round(v * 255.0), 0.0, 255.0) as int as byte);
+	} } }
+	let ip = path(OUT_DIR[..], "ssgi_ref_render_err.pgm");
+	print("gpu: ssgi image ", ip[..], " ", write_file(ip[..], img[..]));
+	s3d::init(1280, 720);
+	let tout = gfx::render_target(1280, 720, gfx::RGBA8);
+	var tt real[>..] = [];
+	for m in 2 {
+		s3d::ssgi_on = m == 0;
+		for f in 10 { s3d::render(tout); }
+		let _ = gfx::read_pixels(tout);
+		let t0 = gfx::time();
+		for f in 60 { s3d::render(tout); }
+		let _ = gfx::read_pixels(tout);
+		tt.push((gfx::time() - t0) / 60.0 * 1000.0);
+	}
+	gfx::release(tout);
+	print("gpu: ssgi frame time 1280x720 Cornell (wall clock, 60 frames, reported): on ", r3(tt[0]), " ms, off ", r3(tt[1]), " ms");
+	s3d::ssgi_on = false;
+	s3d::rt_shadows = false;
+	s3d::sky = DEF_SKY;
+	s3d::sun = DEF_SUN;
+	s3d::look = DEF_LOOK;
+	p1 && p2 && p3 && pk
+}
+fn gi_checks() bool {
+	var rad real[>..] = [];
+	var mask real[>..] = [];
+	var yr real[>..] = [];
+	let noise = gi_load(rad, mask, yr);
+	if noise < 0.0 { return false; }
 	let g0 = noise < GI_REF_NOISE_BAR;
 	print("gpu: gi G0 reference mean luminance rel. standard error ", r4(noise * 100.0), " % (bar < ", GI_REF_NOISE_BAR * 100.0, " %) ", if g0 { "PASS" } else { "FAIL" });
 	let gate = gi_gate(rad[..]);
@@ -3356,7 +3429,7 @@ fn gpu_checks(dir const byte[:], golden const byte[:]) bool {
 	var only byte[>..] = [];
 	let _ = env("GFX_ONLY", only);
 	if only.len > 0 {
-		let ok = if only[..] == "gtao" { gtao_checks() } else if only[..] == "gi" { gi_checks() } else if only[..] == "mblur" { mb_checks() } else if only[..] == "dof" { dof_checks() } else if only[..] == "fx" { fx_checks() } else if only[..] == "tsr" { tsr_checks(dir) } else if only[..] == "probe" { probe_checks(dir) } else { shadow_checks() };
+		let ok = if only[..] == "gtao" { gtao_checks() } else if only[..] == "gi" { gi_checks() } else if only[..] == "mblur" { mb_checks() } else if only[..] == "dof" { dof_checks() } else if only[..] == "fx" { fx_checks() } else if only[..] == "tsr" { tsr_checks(dir) } else if only[..] == "probe" { probe_checks(dir) } else if only[..] == "ssgi" { ssgi_checks() } else { shadow_checks() };
 		let e = gfx::error();
 		if e.len > 0 { print("gpu: gfx error ", e[..]); return false; }
 		return ok;
@@ -3518,6 +3591,7 @@ fn gpu_checks(dir const byte[:], golden const byte[:]) bool {
 	if !dof_checks() { good = false; }
 	if !fx_checks() { good = false; }
 	if !probe_checks(dir) { good = false; }
+	if !ssgi_checks() { good = false; }
 	let err = gfx::error();
 	if err.len > 0 { print("gpu: gfx error ", err[..]); good = false; }
 	good

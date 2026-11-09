@@ -322,7 +322,20 @@ E2 gate results (RX 9060 XT, RADV, Mesa 26.2.4; clean worktree at 0d063ef, `resu
 | full body | 1.804 ms | 1.811 | 2.329 | 2.399 | 2.976 | +0.01 / +0.07 | +0.58 ms |
 
 Run-to-run noise at the face is about 0.1 ms. SSR costs more at full body because the floor fills most of the frame and every opaque pixel is traced (roughness is not known before the colour pass; rough pixels then ignore the hit). Seen in the renders: under a bright sky (`studio_soft`) the ambient term loses its sky sheen in the eye sockets, nostrils, lip line, lid creases, ear and under the hair; under the dark Amni-Companion studio sky the change is small (the eye region moves by under 1 %). The cornea picks up the sky and, near the lids, the lids themselves; the chain, plate and buckle reflect the skin and clothing around them. Rays from a camera-facing cornea leave the screen, so its centre shows the sky value.
-Not done: local reflection probes (captured cubemaps with parallax correction). Off-screen reflections fall back to the probe GI irradiance or the analytic sky.
+Off-screen reflections fall back to the reflection probe whose box holds the point, else the probe GI irradiance or the analytic sky.
+
+Screen-space GI: bounce light from what the camera sees, for scenes without the BVH GI (`gi_on`).
+
+| setting | default | what it does |
+| --- | --- | --- |
+| `ssgi_on` | false | screen-space bounce light and occlusion. Ignored while `gi_on` is set and during probe captures. |
+| `ssgi_rays`, `ssgi_steps` | 4, 64 | rays per half-resolution pixel per frame (up to 16) and march iterations per ray (up to 128). Below about 48 steps long rays give up and the bounce light fades. |
+| `ssgi_dist`, `ssgi_thickness` | 10, 0.05 | longest ray in scene units; how far behind the depth buffer a hit may lie, as a fraction of the pixel's own depth, so it works at any scene scale. |
+| `ssgi_intensity`, `ssgi_ao` | 1.0, 1.0 | bounce light scale; how strongly the rays' visibility darkens ambient light. While SSGI is on, that visibility replaces the screen AO (0 means no occlusion). |
+| `ssgi_frames`, `ssgi_edge` | 17, 0.02 | frames in the temporal average; fade of hits near the screen edge, as a fraction of the screen. |
+
+At half resolution `ssgi_trace.frag` casts `ssgi_rays` cosine-distributed rays per pixel, rotated per pixel and per frame, and walks each through the reflections' Hi-Z pyramid (`hiz_march.glsl`, now shared with `ssr_trace.frag`; SSGI starts one level coarser because it runs at half resolution). At a front-face hit it reads last frame's linear colour there, reprojected like a reflection, so light bounces once per frame and builds up to several bounces over the history. Rays that leave the screen count as open (their share is the visibility, which scales the ambient term: sky, probe or GI irradiance); rays that run out of steps are left out of both averages. `ssgi_accum.frag` averages over `ssgi_frames` frames with motion reprojection and a 5 % depth test, and `ssgi_up.comp` upsamples with a 3 x 3 depth- and normal-aware filter into a storage buffer (binding 22) that `surface.frag` reads per pixel: diffuse adds `albedo x kd x bounce`. Last frame's colour comes from the same copy SSR uses (`ssr_prev`); its mip chain is only built when SSR is on.
+
 
 ## Materials, light and finish
 
@@ -908,6 +921,43 @@ screen or hidden, so its bars sit between the two:
   no bounce light) must fail S1.
 * Reported, no bar: wall-clock frame time at 1280 x 720 with SSGI on and off.
 
+The first run changed nothing: SSGI scored exactly the control's numbers. Clearing a
+scene sets `temporal_reset`, and only the TAA pass cleared it, so with TAA off it stayed
+set and last frame's colour never counted as valid. `temporal_pass` now clears it when TAA
+is off too (this also brings SSR back in TAA-off renders after a scene clear). Then, before
+the final run: the march starts at Hi-Z level 1 and returns why it stopped, rays out of
+steps are left out instead of counted as dark (a third of rays ran out at 32 steps),
+`ssgi_steps` 32 -> 64, thickness 0.25 scene units -> 0.05 x depth, and SSGI got its own
+edge fade (0.02; it had borrowed `ssr_edge` 0.07). The history fetch also read a quarter
+of a half-resolution texel off, so every frame's bilinear read moved the stored light down
+and right; with 17 frames of history the bounce light sat about 8 pixels from the
+geometry that cast it. Bars unchanged.
+
+Results (RX 9060 XT, RADV, `GFX_ONLY=ssgi`, cold start, 32 frames):
+
+| check | value | bar | result |
+| --- | --- | --- | --- |
+| S1 overall G1 | 0.1721 | <= 0.20 | pass |
+| S2 ceiling G2a | 0.2322 | <= 0.25 | pass |
+| S3 shadowed G2b | 0.3402 = 0.35 x control 0.9789 | <= 0.5 x | pass |
+| control, no bounce light | 0.5633 | must fail S1 | fails (good) |
+
+Bounces keep building after 32 frames: at 128 frames G1 0.1299, G2a 0.1834, G2b 0.2326
+(shadowed signed error -0.34 at 32 frames, -0.22 at 128). The BVH GI still does better
+(0.0561 / 0.065 / 0.0882): the shadowed floor beside the blocks gets light from faces
+the camera cannot see. GPU time at 1280 x 720 (Cornell, 60 frames, timestamp layer)
+while another process held the GPU about 100 % busy, so read the differences, not the
+totals: off 5.28 ms per frame, on 10.16; 1 step 6.85 (the fixed passes, about 1.6 ms),
+16 steps 7.39, 32 steps 9.11; 1 ray 7.61, 2 rays 8.71. To be re-measured on a quiet GPU.
+
+S4: `gfxtest.sh` sphere golden 44.92 dB and shipped-look golden 41.7 dB (bar > 40, both
+the same as before SSGI), S1-S3 again in the full run (0.1724 / 0.2324 / 0.3406);
+`wgsltest.mjs` 62 modules, 53 pipelines, 0 failures; `webgputest.mjs` 12 scenes, 0
+failures, with `scene_e2` (SSR through the shared march) and the new `scene_ssgi` (the
+e2 scene with SSGI on, 7 frames) both matching native exactly. T7 failed again at
+1.66 ms with the GPU busy, as in the probe run; it is still re-run on a quiet GPU before
+merging.
+
 ### Motion blur and depth of field results (2026-11-02, RX 9060 XT, RADV)
 
 Both are off by default (`motion_blur = 0`, `dof_aperture = 0`) and run as one HDR pass each
@@ -1273,6 +1323,10 @@ pass-through mean error is 0.0106 % (max 0.0488 %).
 * Reflection probes do not update by themselves when geometry or lights move (call
   `recapture()`), leave glass, particles and quads out of the capture, and light a whole
   box's diffuse with the irradiance at the probe's position.
+* Screen-space GI misses light from surfaces that are off screen or face away from the
+  camera, takes about 2 s at 60 fps to build up several bounces, and costs about as
+  much as the rest of a simple frame at 1280 x 720: the Hi-Z walk picks its level
+  with a branch over eight textures, which diverges across a wave.
 * Not built: alpha to coverage, decals, rectangular area
   lights (spot and sphere stand in), physical light falloff parity with three.js,
   rain and snow particles, caustics, mip bias for upscaling, BC, KTX2, WebP, meshopt

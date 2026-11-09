@@ -33,6 +33,7 @@ layout(std430, set = 2, binding = 18) readonly buffer Irr { vec4 probe_irr[]; };
 layout(std430, set = 2, binding = 19) readonly buffer Dist { vec2 probe_dist[]; };
 layout(std430, set = 2, binding = 20) readonly buffer LightRecs { vec4 lrec[]; };
 layout(std430, set = 2, binding = 21) readonly buffer LightCells { uint lcell[]; };
+layout(std430, set = 2, binding = 22) readonly buffer SsgiPx { uvec2 ssgi_px[]; };
 
 const int CASCADES = 3;
 const int MAX_LIGHTS = 16;
@@ -70,6 +71,7 @@ layout(set = 3, binding = 0) uniform Frame {
 	vec4 probe_pos[MAX_PROBES];
 	vec4 probe_lo[MAX_PROBES];
 	vec4 probe_hi[MAX_PROBES];
+	vec4 ssgi;
 };
 #include "gi.glsl"
 
@@ -593,7 +595,9 @@ void main() {
 		rough = min(max(rough, 0.0525) + max(dn.x, max(dn.y, dn.z)) + clamp(0.25 * (1.0 / max(tl, 0.25) - 1.03), 0.0, 0.1) * params.z, 1.0);
 	}
 	float occm = 1.0 + params.w * ((tp ? mr.r : texture(tex_occlusion, xuv(uv_sets.w, xm_occ, xo1.zw)).r) - 1.0);
-	float aos = eye.w > 0.5 ? texture(tex_ao, gl_FragCoord.xy * screen.xy).r : 1.0;
+	uvec2 sgq = ssgi.x > 0.5 && alpha.x < 1.5 ? ssgi_px[int(gl_FragCoord.y) * int(ssgi.y) + int(gl_FragCoord.x)] : uvec2(0u, packHalf2x16(vec2(0.0, -1.0)));
+	vec4 sg = vec4(unpackHalf2x16(sgq.x), unpackHalf2x16(sgq.y));
+	float aos = sg.w >= 0.0 ? mix(1.0, sg.w, ssgi.w) : (eye.w > 0.5 ? texture(tex_ao, gl_FragCoord.xy * screen.xy).r : 1.0);
 	if (model > 0) occm *= model == 3 ? q.cav : mix(1.0, q.cav, 0.5);
 	float occ = occm * aos;
 
@@ -727,7 +731,7 @@ void main() {
 	}
 	vec4 sr = refl.x > 0.5 && alpha.x < 1.5 && x.trans <= 0.0 ? texelFetch(tex_ssr, ivec2(gl_FragCoord.xy), 0) : vec4(0.0);
 	vec3 ambient = env.x > 0.5 || misc.z > 0.5 || probe_n.x > 0.5 ? ambient_env(n, v, tint.rgb, albedo, f0, rough, eb, ms, kd, gi_irr, use_gi, gn, vec3(dao, aos, occm), sr, q, x) : ambient_light(n, v, l, tint.rgb, metal, rough, gi_irr, use_gi, gn, vec3(dao, aos, occm), dao, sr, q) * (use_gi ? 1.0 : screen.w);
-	rgb += ambient;
+	rgb += ambient + (sg.w >= 0.0 ? albedo * max(kd, vec3(0.0)) * occm * sg.rgb * ssgi.z * (1.0 - x.trans) : vec3(0.0));
 
 	rgb += emissive.rgb * texture(tex_emissive, xuv(uv_sets2.x, xm_emi, xo2.xy)).rgb;
 	if (is_water) {
