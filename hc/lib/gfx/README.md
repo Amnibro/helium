@@ -1576,6 +1576,53 @@ format stores.
 * **T9 gates.** As U5, plus a new `scene_bc` (the test scene with textures compressed on
   load) in webgputest.
 
+### Texture streaming bars (E10, registered before the first run)
+
+Scene R: 8 boxes 1 m wide in a row running away from the camera, 4 m apart, each
+wearing its own 1024 x 1024 color image and its own normal map (image M with a different
+tint per box): 16 textures, packed to BC7 on load. Four camera spots at 1280 x 720:
+near (3 m in front of the first box), middle (20 m), far (80 m) and side (beside the
+row, looking along it at a flat angle). "Full" means the same scene with streaming off.
+"Settled" means `s3d::tex_wait` is on, so every level a frame wants is loaded before it
+is drawn.
+
+* **S1 same picture.** Streamed and settled against full at all four spots: at most
+  2 / 255 at every pixel. At the far spot `s3d::texture_bytes()` is at most 0.1 of the
+  full figure. Control: with every texture held at its smallest size the near spot must
+  differ by more than 2 / 255.
+* **S2 memory follows the camera.** Near, then far: for `s3d::tex_hold - 1` frames the
+  memory stays at the near figure; one frame later it equals the figure of a scene
+  started at the far spot. Back at the near spot and settled, the picture is again
+  within 2 / 255 of full.
+* **S3 budget.** With `s3d::tex_budget` at 0.4 of the near spot's settled memory, a
+  120-frame flight from far to near never has `texture_bytes()` above the budget, and
+  ends with `s3d::tex_starved` above 0. With a budget below what the smallest sizes
+  take, memory equals the smallest sizes' total and the frame still draws. Control: the
+  same flight with no budget must go above that figure.
+* **S4 upload cap.** With `s3d::tex_upload_cap` at 1 MiB, after a jump from far to near
+  every frame either uploads at most the cap or makes exactly one step of one texture,
+  and everything wanted is loaded within 40 frames. Control: the same jump settled in
+  one frame must upload more than the cap in more than one step.
+* **S5 first frame.** Started at the far spot with a warm cache, the first frame reads
+  at most 0.1 of the cache files' bytes, uploads at most 0.1 of the bytes a full load
+  uploads, and spends no more time making textures than a full load. Control: the full
+  load reads every byte.
+* **S6 damaged cache.** One cache file cut to 0.6 of its length (its start is intact):
+  moving near packs that one texture again (`s3d::tex_encoded` up by exactly 1), and
+  the settled picture is within 2 / 255 of full. Control: with untouched files nothing
+  is packed again.
+* **S7 cost.** Settled at the near spot, the streaming work takes at most 0.1 ms a
+  frame (mean of 100 frames).
+* **S8 other sources.** With no cache folder, and with a model whose images are KTX2
+  files: settled pictures at the near and far spots within 2 / 255 of full, far memory
+  at most 0.1 of full.
+* **S9 reading part of a file.** `read_file_range` on a 100,000-byte file: 10 bytes
+  from the start, 10 from the middle, a range that runs 5 bytes past the end (5 bytes
+  come back), a start past the end (no bytes), a missing file (false); every result
+  equals the same bytes from `read_file`. Run on the native, C and web backends.
+* **S10 gates.** As U5, plus a new `scene_stream` (textures compressed, streamed and
+  settled) in webgputest.
+
 ### Compressed texture results (2026-11-09, RX 9060 XT, RADV; full gfxtest ok)
 
 | Bar | Result | Bar value |
