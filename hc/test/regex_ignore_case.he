@@ -1,0 +1,14 @@
+use regex
+show(p byte[:], t byte[:], fold bool):
+	re ~= if fold { regex::compile_ignore_case(p) } else { regex::compile(p) }
+	a, b := regex::find(re, t)
+	print(p, " ", t, " ", a, " ", b)
+main():
+	show("HeLLo", "say hello", true)
+	show("HeLLo", "say hello", false)
+	show("(?i)[a-c]+X", "zzABcx!", false)
+	show("\\bWORLD\\b", "big world", true)
+	show("[^a-z]+", "abcDEF1", true)
+	show("\\W", "Ab_c-d", true)
+	show("[^A-Z]+", "abcDEF1", true)
+	show("[^x]", "XxXa", true)
