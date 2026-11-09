@@ -10,6 +10,8 @@ import gfx;
 import gfx.linalg;
 import gfx.codec_png;
 import gfx.codec_jpeg;
+import gfx.bc;
+import gfx.ktx2;
 
 // One vertex is 26 floats: position 3, normal 3, uv0 2, uv1 2, tangent 4,
 // color 4, joints 4, weights 4.
@@ -60,7 +62,7 @@ struct PLight { kind int, rgb float3, range f32, inner f32, outer f32 }
 struct Mesh { prims Span, weights Span, name Span }
 struct Node { parent int, mesh int, skin int, children Span, t float3, r linalg::Quat, s float3, matrix gfx::mat4, has_matrix bool, weights Span, name Span, light int = -1 }
 struct Texture { image int, mag_nearest bool, min_nearest bool, mipmaps bool, wrap_s int, wrap_t int }
-struct Image { width int, height int, pixels Span, ok bool, coded Span = Span { 0, 0 } }
+struct Image { width int, height int, pixels Span, ok bool, coded Span = Span { 0, 0 }, ktx bool = false }
 struct Skin { joints Span, inverse_binds Span, skeleton int, name Span }
 struct Channel { node int, path int, interp int, times Span, values Span, width int }
 struct Animation { channels Span, duration f32, name Span }
@@ -325,7 +327,12 @@ fn need_pixels(i int) {
 		var w = 0;
 		var h = 0;
 		var ok = false;
-		if codec_png::is_png(src) {
+		if im.ktx {
+			let info = ktx2::read(src);
+			var lv byte[>..] = [];
+			ok = ktx2::level(src, info, 0, lv) && (if info.kind == 0 { decoded.append(lv[..]); true } else { bc::decode(info.kind, lv[..], info.width, info.height, decoded) });
+			w = info.width; h = info.height;
+		} else if codec_png::is_png(src) {
 			let a, b, c = codec_png::decode(src, decoded);
 			w = a; h = b; ok = c;
 		} else {
@@ -348,7 +355,16 @@ fn image_pixels(i int) const byte[:] {
 	decoded[..]
 }
 
+fn image_file(i int) const byte[:] { coded[images[i].coded.first..images[i].coded.first + images[i].coded.count] }
 fn decode_image(data const byte[:]) Image {
+	if ktx2::is_ktx2(data) {
+		let info = ktx2::read(data);
+		if info.ok {
+			let at = coded.len;
+			coded.append(data);
+			return Image { width: info.width, height: info.height, pixels: Span { 0, 0 }, ok: true, coded: Span { at, data.len }, ktx: true };
+		}
+	}
 	if lazy_pixels {
 		var w = 0;
 		var h = 0;
@@ -504,7 +520,7 @@ fn load_bytes(data const byte[:], dir const byte[:]) int {
 		for k in asset.images.count {
 			let j = asset.images.first + k;
 			let im = images[j];
-			if im.coded.count > 0 {
+			if im.coded.count > 0 && !im.ktx {
 				let png = codec_png::is_png(coded[im.coded.first..im.coded.first + im.coded.count]);
 				let b = if png { big_png } else { big_jpg };
 				if b < 0 || im.width * im.height > images[b].width * images[b].height { if png { big_png = j; } else { big_jpg = j; } }
@@ -942,6 +958,7 @@ fn add_image(im Image, wrap int) int {
 	textures.push(Texture { images.len - 1, false, false, true, wrap, wrap });
 	textures.len - 1
 }
+fn add_texture_ktx2(file const byte[:], wrap int) int { add_image(decode_image(file), wrap) }
 fn add_texture_rgba(px const byte[:], w int, h int, wrap int) int {
 	let at = pixels.len;
 	pixels.append(px);

@@ -35,6 +35,9 @@ import gfx.fx;
 import gfx.rt;
 import gfx.envmap;
 import gfx.clusters;
+import gfx.bc;
+import gfx.ktx2;
+import os;
 
 let CASCADES = 3;
 let MAX_LIGHTS = 16;
@@ -364,6 +367,15 @@ var trans_h = 0;
 var smp_trans gfx::Sampler;
 var tex_srgb gfx::Texture[>..] = [];
 var tex_linear gfx::Texture[>..] = [];
+var tex_compress = false;
+var tex_gpu_bc = true;
+var tex_cache byte[>..] = [];
+var tex_encoded = 0;
+var tex_cached = 0;
+var tex_mem = 0;
+var tex_ns = 0;
+fn texture_bytes() int { tex_mem }
+fn set_texture_cache(dir const byte[:]) { tex_cache.clear(); tex_cache.append(dir); }
 var vbuf gfx::Buffer;
 var ibuf gfx::Buffer;
 var mbuf gfx::Buffer;
@@ -817,6 +829,7 @@ fn forget() {
 	for t in tex_linear { if t.id != 0 { gfx::release(t); } }
 	tex_srgb.clear();
 	tex_linear.clear();
+	tex_mem = 0;
 	ext_map.clear();
 	ext_src.clear();
 	decals.clear();
@@ -866,15 +879,92 @@ fn mip_count(w int, h int) int {
 	n
 }
 
+fn chain_bytes(kind int, w int, h int, levels int) int {
+	var n = 0;
+	for k in levels { n += ktx2::level_size(kind, w, h, k); }
+	n
+}
+fn tex_path(image int, srgb bool, out byte[>..]&) {
+	let im = gltf::images[image];
+	if im.coded.count == 0 { gltf::need_pixels(image); }
+	let src = if im.coded.count > 0 { gltf::image_file(image) } else { gltf::image_pixels(image) };
+	var a = 2166136261;
+	var b = 7;
+	for c in src { a = ((a ^ c as int) * 16777619) & 0xFFFFFFFF; b = (b * 31 + c as int + 7) & 0xFFFFFFFFFFFF; }
+	out.append(tex_cache[..]);
+	out.push('/');
+	for k in 20 { let v = (if k < 8 { a >> (28 - 4 * k) } else { b >> (44 - 4 * (k - 8)) }) & 15; out.push((if v < 10 { '0' as int + v } else { 'a' as int + v - 10 }) as byte); }
+	out.append(str("_", im.width, "x", im.height, if srgb { "s" } else { "l" }, ".ktx2")[..]);
+}
+fn tex_bake(image int, srgb bool, file byte[>..]&) bool {
+	let im = gltf::images[image];
+	let mips = mip_count(im.width, im.height);
+	var path byte[>..] = [];
+	if tex_cache.len > 0 {
+		tex_path(image, srgb, path);
+		file.clear();
+		if read_file(path[..], file) {
+			let info = ktx2::read(file[..]);
+			if info.ok && info.kind == bc::BC7 && info.width == im.width && info.height == im.height && info.levels == mips && info.srgb == srgb { tex_cached += 1; return true; }
+		}
+		file.clear();
+	}
+	gltf::need_pixels(image);
+	var cur byte[>..] = [];
+	cur.append(gltf::image_pixels(image));
+	var data byte[>..] = [];
+	var blk byte[>..] = [];
+	var nxt byte[>..] = [];
+	var w = im.width;
+	var h = im.height;
+	for k in mips {
+		if !bc::encode(bc::BC7, cur[..], w, h, blk) { return false; }
+		data.append(blk[..]);
+		if k + 1 < mips { let nw, nh = bc::halve(cur[..], w, h, srgb, nxt); cur.clear(); cur.append(nxt[..]); w = nw; h = nh; }
+	}
+	if !ktx2::write(bc::BC7, srgb, im.width, im.height, mips, data[..], false, file) { return false; }
+	tex_encoded += 1;
+	if path.len > 0 { let _ = make_dir(tex_cache[..]); let _ = write_file_atomic(path[..], file[..]); }
+	true
+}
+fn ktx_texture(file const byte[:], srgb bool) gfx::Texture {
+	let info = ktx2::read(file);
+	if !info.ok { return none(); }
+	let fmt = if info.kind == bc::BC1 { if srgb { gfx::BC1_SRGB } else { gfx::BC1 } } else if info.kind == bc::BC3 { if srgb { gfx::BC3_SRGB } else { gfx::BC3 } } else if info.kind == bc::BC4 { gfx::BC4 } else if info.kind == bc::BC5 { gfx::BC5 } else if info.kind == bc::BC7 { if srgb { gfx::BC7_SRGB } else { gfx::BC7 } } else if srgb { gfx::RGBA8_SRGB } else { gfx::RGBA8 };
+	let gpu = info.kind != 0 && tex_gpu_bc && info.width % 4 == 0 && info.height % 4 == 0 && gfx::format_supported(fmt);
+	let full = mip_count(info.width, info.height);
+	let regen = !gpu && info.levels == 1 && full > 1;
+	let t = gfx::texture(gfx::TextureDesc { format: if gpu { fmt } else if srgb { gfx::RGBA8_SRGB } else { gfx::RGBA8 }, usage: if regen { gfx::SAMPLED | gfx::COLOR_TARGET } else { gfx::SAMPLED }, width: info.width as i32, height: info.height as i32, mips: (if regen { full } else { info.levels }) as i32 });
+	var lv byte[>..] = [];
+	var px byte[>..] = [];
+	for n in info.levels {
+		if ktx2::level(file, info, n, lv) {
+			if gpu || info.kind == 0 { gfx::update_texture(t, gfx::Region { mip: n as i32, .. }, lv[..]); }
+			else if bc::decode(info.kind, lv[..], max(info.width >> n, 1), max(info.height >> n, 1), px) { gfx::update_texture(t, gfx::Region { mip: n as i32, .. }, px[..]); }
+		}
+	}
+	if regen { gfx::generate_mips(t); }
+	tex_mem += if gpu { chain_bytes(info.kind, info.width, info.height, info.levels) } else { chain_bytes(0, info.width, info.height, if regen { full } else { info.levels }) };
+	t
+}
 fn image_texture(image int, srgb bool) gfx::Texture {
 	let have = if srgb { tex_srgb[image] } else { tex_linear[image] };
 	if have.id != 0 { return have; }
 	let im = gltf::images[image];
-	let mips = mip_count(im.width, im.height);
-	let t = gfx::texture(gfx::TextureDesc { format: if srgb { gfx::RGBA8_SRGB } else { gfx::RGBA8 }, usage: gfx::SAMPLED | gfx::COLOR_TARGET, width: im.width as i32, height: im.height as i32, mips: mips as i32 });
-	gltf::need_pixels(image);
-	gfx::update_texture(t, gltf::image_pixels(image));
-	if mips > 1 { gfx::generate_mips(t); }
+	let t0 = clock_ns();
+	var t = none();
+	var file byte[>..] = [];
+	if im.ktx { t = ktx_texture(gltf::image_file(image), srgb); }
+	else if tex_compress && im.ok && im.width % 4 == 0 && im.height % 4 == 0 && tex_bake(image, srgb, file) { t = ktx_texture(file[..], srgb); }
+	if t.id == 0 {
+		let mips = mip_count(im.width, im.height);
+		t = gfx::texture(gfx::TextureDesc { format: if srgb { gfx::RGBA8_SRGB } else { gfx::RGBA8 }, usage: gfx::SAMPLED | gfx::COLOR_TARGET, width: im.width as i32, height: im.height as i32, mips: mips as i32 });
+		gltf::need_pixels(image);
+		gfx::update_texture(t, gltf::image_pixels(image));
+		if mips > 1 { gfx::generate_mips(t); }
+		tex_mem += chain_bytes(0, im.width, im.height, mips);
+	}
+	tex_ns += clock_ns() - t0;
 	if srgb { tex_srgb[image] = t; } else { tex_linear[image] = t; }
 	t
 }

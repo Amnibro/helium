@@ -70,6 +70,22 @@ fn main() {
 		s3d::wind = s3d::Wind { dir: float3 { 1.0, 0.0, 0.3 }, strength: 0.25, speed: 2.0, time: 0.7 };
 	}
 	if arg_count() > 13 && arg_of(13)[..] == "caust" { s3d::caustics = s3d::Caustics { on: true, manual: true, focus: 3.0, level: 1.2, lo: float3 { -4.0, 1.2, -4.0 }, hi: float3 { 4.0, 1.2, 4.0 }, .. }; s3d::world_time = 1.5; }
+	if arg_count() > 13 && arg_of(13)[..] == "bc" {
+		s3d::tex_compress = true;
+		var px byte[>..] = [];
+		for k in 256 * 256 {
+			let x = (k % 256) as f32;
+			let y = (k / 256) as f32;
+			let ring = 0.5 + 0.5 * sin(sqrt(((x - 128.0) * (x - 128.0) + (y - 128.0) * (y - 128.0)) as real) * 0.35) as f32;
+			px.push((60.0 + 180.0 * ring) as int as byte);
+			px.push((40.0 + 0.7 * x) as int as byte);
+			px.push((220.0 - 0.7 * y) as int as byte);
+			px.push(255);
+		}
+		var m = shapes::material(linalg::v3(1.0, 1.0, 1.0), 0.0, 0.7);
+		m.base_tex = gltf::TexRef { texture: gltf::add_texture_rgba(px[..], 256, 256, 10497), uv: 0, .. };
+		s3d::place(s3d::add(shapes::cube(float3 { 0.45, 0.45, 0.45 }, m)), gfx::translate(float3 { 1.1, 0.45, 0.9 }));
+	}
 	if arg_count() > 13 && arg_of(13)[..] == "probe" { s3d::add_probe(float3 { 0.0, 1.0, 0.0 }, float3 { -2.0, 0.0, -2.0 }, float3 { 2.0, 2.5, 2.0 }, 0.5); }
 	if e8 {
 		s3d::look.auto_exposure = true; s3d::look.lut = 1.0; s3d::motion_blur = 0.5; s3d::dof_aperture = 0.08;
@@ -91,6 +107,6 @@ fn main() {
 		if e8 { s3d::place(it, gfx::translate(float3 { 0.04 * k as f32, 0.0, 0.0 })); }
 		s3d::render(out);
 	}
-	print("scene_frame: ", model[..], " ", w, "x", h, " gi ", gi, " e3 ", e3, " e8 ", e8, " e2 ", e2, " saved ", gfx::save_png(out, out_path[..]), " on ", gfx::driver()[..]);
+	print("scene_frame: ", model[..], " ", w, "x", h, " gi ", gi, " e3 ", e3, " e8 ", e8, " e2 ", e2, " compressed textures ", s3d::tex_encoded, " saved ", gfx::save_png(out, out_path[..]), " on ", gfx::driver()[..]);
 	gfx::close();
 }

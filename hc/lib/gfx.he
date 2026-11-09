@@ -11,7 +11,7 @@ BUFFER_VERTEX := 1 as i32; BUFFER_INDEX := 2 as i32; BUFFER_INDIRECT := 4 as i32
 TEXTURE_2D := 0 as i32; TEXTURE_2D_ARRAY := 1 as i32; TEXTURE_3D := 2 as i32; TEXTURE_CUBE := 3 as i32; TEXTURE_CUBE_ARRAY := 4 as i32
 SAMPLED := 1 as i32; COLOR_TARGET := 2 as i32; DEPTH_TARGET := 4 as i32; STORAGE_READ := 8 as i32; COMPUTE_READ := 16 as i32; COMPUTE_WRITE := 32 as i32; COMPUTE_READ_WRITE := 64 as i32
 RGBA8 := 1 as i32; BGRA8 := 2 as i32; RGBA8_SRGB := 3 as i32; R8 := 4 as i32; RG8 := 5 as i32; RGBA16F := 6 as i32; RGBA32F := 7 as i32; R16F := 8 as i32; RG16F := 9 as i32; R32F := 10 as i32
-RG32F := 11 as i32; R32UI := 12 as i32; RGBA8UI := 13 as i32; RGB10A2 := 14 as i32; RG11B10F := 15 as i32; DEPTH16 := 16 as i32; DEPTH24 := 17 as i32; DEPTH32F := 18 as i32; DEPTH24_STENCIL8 := 19 as i32; DEPTH := 20 as i32
+RG32F := 11 as i32; R32UI := 12 as i32; RGBA8UI := 13 as i32; RGB10A2 := 14 as i32; RG11B10F := 15 as i32; DEPTH16 := 16 as i32; DEPTH24 := 17 as i32; DEPTH32F := 18 as i32; DEPTH24_STENCIL8 := 19 as i32; DEPTH := 20 as i32; BC1 := 21 as i32; BC1_SRGB := 22 as i32; BC3 := 23 as i32; BC3_SRGB := 24 as i32; BC4 := 25 as i32; BC5 := 26 as i32; BC7 := 27 as i32; BC7_SRGB := 28 as i32
 NEAREST := 0 as i32; LINEAR := 1 as i32; REPEAT := 0 as i32; MIRROR := 1 as i32; CLAMP := 2 as i32
 COMPARE_NEVER := 1 as i32; COMPARE_LESS := 2 as i32; COMPARE_EQUAL := 3 as i32; COMPARE_LESS_EQUAL := 4 as i32; COMPARE_GREATER := 5 as i32; COMPARE_NOT_EQUAL := 6 as i32; COMPARE_GREATER_EQUAL := 7 as i32; COMPARE_ALWAYS := 8 as i32
 TRIANGLES := 0 as i32; TRIANGLE_STRIP := 1 as i32; LINES := 2 as i32; LINE_STRIP := 3 as i32; POINTS := 4 as i32
@@ -265,6 +265,7 @@ VF := [0, 9, 10, 11, 12, 1, 2, 3, 4, 5, 6, 7, 8, 20, 18, 16, 21, 22, 27, 28, 29,
 VSZ := [0, 4, 8, 12, 16, 4, 8, 12, 16, 4, 8, 12, 16, 4, 4, 4, 4, 8, 4, 8, 4, 8]
 VK := "_ffffiiiiuuuuffuiiffff"
 TFMT := [0, 4, 12, 52, 2, 3, 29, 32, 27, 28, 30, 31, 40, 36, 8, 33, 58, 59, 60, 61]
+TBC := [13, 54, 15, 56, 16, 17, 18, 57]
 ALN := [226, 226, 230, 230, 227, 227, 227, 231, 231, 231, 101]
 ALS := ["Left Alt", "Left Option", "Right Alt", "Right Option", "Left GUI", "Left Command", "Left Windows", "Right GUI", "Right Command", "Right Windows", "Application"]
 pp<T>(x T&) uint: ffi::ptr(bytes_of(x))
@@ -359,8 +360,9 @@ texfmt(f int) int:
 			for d in [60, 59, 58]:
 				if s_texok(DEV, d as i32, 0, u as u32): return d
 		return 59
-	if f >= 1 && f < 20 { TFMT[f] } else { -1 }
+	if f >= 1 && f < 20 { TFMT[f] } else { if f >= 21 && f <= 28 { TBC[f - 21] } else { -1 } }
 isdepth(f int) bool: f >= 58 && f <= 62
+isblock(f int) bool: (f >= 13 && f <= 18) || (f >= 54 && f <= 57)
 stage_name(s int) byte[>..]: copy(if s == 0 { "vertex" } else { if s == 1 { "fragment" } else { "compute" } })
 pname() byte[>..]: copy(if PASS != 0 { "render" } else { "compute" })
 scrtex(h Texture&, fmt int, usage int, gf int, w int, hh int) bool:
@@ -692,7 +694,9 @@ create_texture(desc TextureDesc) Texture:
 	dep := isdepth(fmt)
 	if dep != (usage & 4 != 0): misuse(if dep { "a depth format needs DEPTH_TARGET usage" } else { "DEPTH_TARGET usage needs a depth format" }); return h
 	if sm > 1 && (kind != 0 || mips != 1 || usage & ~6 != 0): misuse("a multisampled texture is a 2D target with one mip, drawn into and resolved, not sampled or stored to"); return h
-	if mips > 1 && usage & 1 != 0 && !dep: usage |= 2
+	blk := isblock(fmt)
+	if blk && (kind == 2 || sm > 1 || usage != 1 || w % 4 != 0 || ht % 4 != 0): misuse("a block-compressed texture is sampled only, not 3D or multisampled, with a width and height that are multiples of 4"); return h
+	if mips > 1 && usage & 1 != 0 && !dep && !blk: usage |= 2
 	if !s_texok(DEV, fmt as i32, kind as i32, usage as u32): fail(str("this device does not support texture format ", desc.format, " with usage ", usage)); return h
 	ci ~= CTex{kind as i32, fmt as i32, usage as u32, w as u32, ht as u32, (if kind == 3 { 6 } else { dp }) as u32, mips as u32, nsamp(sm) as i32, 0}
 	tex := s_mktex(DEV, pp(ci))
@@ -714,18 +718,19 @@ region(s TexS&, r const Region&, o CTReg&, what const byte[:]) bool:
 	mw := mipsz(s.d.width as int, mip); mh := mipsz(s.d.height as int, mip); md := if kind == 2 { mipsz(s.d.depth as int, mip) } else { 1 }
 	o = CTReg{s.tex, mip as u32, lay as u32, 0, 0, 0, mw as u32, mh as u32, md as u32}
 	if r.w == 0: return true
+	if isblock(s.fmt): return misuse(str(what, ": a block-compressed texture is updated a whole mip at a time"))
 	x := r.x as int; y := r.y as int; z := r.z as int; w := r.w as int; h := if r.h != 0 { r.h as int } else { 1 }; dd := if r.d != 0 { r.d as int } else { 1 }
 	if x < 0 || y < 0 || z < 0 || w < 0 || h < 0 || dd < 0 || x + w > mw || y + h > mh || z + dd > md: return misuse(str(what, ": region ", x, ",", y, ",", z, " + ", w, " x ", h, " x ", dd, " is outside the ", mw, " x ", mh, " x ", md, " mip"))
 	o = CTReg{s.tex, mip as u32, lay as u32, x as u32, y as u32, z as u32, w as u32, h as u32, dd as u32}; true
 texbytes(s TexS&, o CTReg&, n int, what const byte[:]) bool:
-	want := s_bsz(s.fmt as i32) as int * o.w as int * o.h as int * o.d as int
+	want := if isblock(s.fmt) { s_bsz(s.fmt as i32) as int * ((o.w as int + 3) / 4) * ((o.h as int + 3) / 4) * o.d as int } else { s_bsz(s.fmt as i32) as int * o.w as int * o.h as int * o.d as int }
 	n == want || misuse(str(what, ": ", n, " bytes for a ", o.w, " x ", o.h, " x ", o.d, " region of ", want))
-upload_texture(o CTReg&, data const byte[:], fresh bool, what const byte[:]) bool:
+upload_texture(o CTReg&, data const byte[:], fresh bool, blk bool, what const byte[:]) bool:
 	c := copy_cmd(fresh, what)
 	if c == 0: return false
 	tb := transfer(data.len, true)
 	if tb == 0: if fresh { s_cancel(c) } return false
-	p := s_map(DEV, tb, false); ffi::write(p, data); s_unmap(DEV, tb); cp := s_bcopy(c); src ~= CTTI{tb, 0, o.w, o.h}; s_upt(cp, pp(src), pp(o), false); s_ecopy(cp); s_rmtb(DEV, tb); copy_done(c, fresh)
+	p := s_map(DEV, tb, false); ffi::write(p, data); s_unmap(DEV, tb); cp := s_bcopy(c); src ~= CTTI{tb, 0, if blk { 0 as u32 } else { o.w }, if blk { 0 as u32 } else { o.h }}; s_upt(cp, pp(src), pp(o), false); s_ecopy(cp); s_rmtb(DEV, tb); copy_done(c, fresh)
 update_texture_region(t Texture, rg const Region&, data const byte[:]) bool:
 	if !need("update_texture"): return false
 	i := tslot(t)
@@ -733,7 +738,7 @@ update_texture_region(t Texture, rg const Region&, data const byte[:]) bool:
 	if TEXS[i].d.samples > 1: return misuse("update_texture: a multisampled texture")
 	o ~= CTReg{0, 0, 0, 0, 0, 0, 0, 0, 0}
 	if !region(TEXS[i], rg, o, "update_texture") || !texbytes(TEXS[i], o, data.len, "update_texture"): return false
-	upload_texture(o, data, false, "update_texture")
+	upload_texture(o, data, false, isblock(TEXS[i].fmt), "update_texture")
 update_texture(t Texture, rg Region, data const byte[:]) bool: update_texture_region(t, rg, data)
 update_texture(t Texture, data const byte[:]) bool: update_texture(t, Region{}, data)
 download_texture(o CTReg&, out byte[:], what const byte[:]) bool:
@@ -746,6 +751,7 @@ download_texture(o CTReg&, out byte[:], what const byte[:]) bool:
 	s_rmtb(DEV, tb); ok
 readable(s TexS&, what const byte[:]) bool:
 	if s.d.samples > 1: return misuse(str(what, ": a multisampled texture; read the texture it resolves to"))
+	if isblock(s.fmt): return misuse(str(what, ": a block-compressed texture cannot be read back"))
 	!isdepth(s.fmt) || misuse(str(what, ": a depth texture cannot be read back"))
 read_texture_into(t Texture, rg const Region&, out byte[:]) bool:
 	if !need("read_texture"): return false
@@ -794,7 +800,7 @@ load_texture(path const byte[:], flags int) Texture:
 	if i >= 0:
 		all := ffi::bytes(u64at(hd[..], 24), pitch * ht); tight byte[>..] ~= []
 		for y ht: tight.append(all[y * pitch..y * pitch + w * 4])
-		o ~= CTReg{0, 0, 0, 0, 0, 0, 0, 0, 0}; region(TEXS[i], Region{}, o, "load_texture"); ok := upload_texture(o, tight[..], true, "load_texture")
+		o ~= CTReg{0, 0, 0, 0, 0, 0, 0, 0, 0}; region(TEXS[i], Region{}, o, "load_texture"); ok := upload_texture(o, tight[..], true, false, "load_texture")
 		if ok && TEXS[i].d.mips > 1: c := s_acq(DEV); if c != 0 { s_mips(c, TEXS[i].tex); s_submit(c) }
 		if !ok: release(h); h.id = 0
 	s_rmsurf(rgba); h
@@ -802,8 +808,9 @@ generate_mips(t Texture):
 	if !need("generate_mips"): return
 	i := tslot(t)
 	if i < 0: return
-	if TEXS[i].d.mips < 2 || TEXS[i].usage & 1 == 0: misuse("generate_mips: a sampled texture with more than one mip"); return
+	if TEXS[i].d.mips < 2 || TEXS[i].usage & 1 == 0 || isblock(TEXS[i].fmt): misuse("generate_mips: a sampled texture with more than one mip"); return
 	c := copy_cmd(false, "generate_mips"); if c != 0 { s_mips(c, TEXS[i].tex) }
+format_supported(format i32) bool: need("format_supported") && texfmt(format as int) >= 0 && s_texok(DEV, texfmt(format as int) as i32, 0, 1)
 texture_info(t Texture) TextureDesc: i := tfind(TTEX, t.id); if i < 0 { TextureDesc{width: 0, height: 0} } else { TEXS[i].d }
 release(t Texture):
 	if !need("release_texture"): return

@@ -567,6 +567,51 @@ s3d::world_time = now;
   pool-like lines in shallow water with gentle waves. `cap` (7 by default) is the
   brightest a line can get. `s3d::world_time` moves the waves.
 
+### Compressed textures (E10)
+
+```
+s3d::tex_compress = true;
+s3d::set_texture_cache("cache/textures");
+let a = gltf::load("model.glb");
+```
+
+* **What it does.** With `s3d::tex_compress`, every model texture whose sides are
+  multiples of 4 is packed to BC7 with its whole mip chain the first time it is drawn.
+  The GPU then holds 8 bits a pixel instead of 32, a quarter of the memory, and decodes
+  the blocks itself while sampling. Textures with other sizes stay RGBA8.
+* **The cache.** `s3d::set_texture_cache(dir)` saves each packed texture as a `.ktx2`
+  file named from a hash of the image, its size and whether it is sRGB. The next load
+  reads the file and packs nothing. A file that is cut short or damaged is packed again
+  and written over. `set_texture_cache("")` turns the cache off.
+* **KTX2 in models.** A glTF image may be a KTX 2.0 file, by uri or in a buffer view,
+  holding RGBA8, BC1, BC3, BC4, BC5 or BC7 with its mip levels, stored plain or as zlib
+  streams; it goes to the GPU as it is. `gltf::add_texture_ktx2(file, wrap)` adds one
+  from bytes. Files packed with BasisLZ or Zstandard are counted in `gltf::bad_images`
+  and draw white.
+* **Devices without BC.** When `gfx::format_supported(gfx::BC7)` is false (most phones),
+  the blocks are decoded on the CPU into RGBA8 on load: the same picture, with no memory
+  saved. `s3d::tex_gpu_bc = false` forces that path.
+* **Numbers to read.** `s3d::texture_bytes()` is the GPU memory the scene's model
+  textures take, mips included. `s3d::tex_encoded` and `s3d::tex_cached` count textures
+  packed and textures read from the cache; `s3d::tex_ns` is the time spent making
+  textures, in nanoseconds.
+* **By hand.** `gfx.bc` packs and unpacks blocks: `bc::encode(kind, rgba, w, h, out)`,
+  `bc::decode(kind, blocks, w, h, out)` and `bc::halve(rgba, w, h, srgb, out)` for the
+  next mip, with `kind` one of `bc::BC1`, `BC3`, `BC4`, `BC5`, `BC7`. `gfx.ktx2` reads
+  and writes the files: `ktx2::write`, `ktx2::read`, `ktx2::level`. On the GPU side the
+  formats are `gfx::BC1`, `BC1_SRGB`, `BC3`, `BC3_SRGB`, `BC4`, `BC5`, `BC7` and
+  `BC7_SRGB`: make one with `gfx::texture2d(w, h, gfx::BC7, gfx::SAMPLED)` and give
+  `gfx::update_texture` one whole mip of blocks at a time. Block textures are sampled
+  only, their sides are multiples of 4, and they cannot be read back or have mips
+  generated.
+* **The encoders.** BC7 blocks use mode 6: one color line per block with 7-bit red,
+  green, blue and alpha ends plus a shared low bit each, and 16 steps along it. The line
+  starts on the main axis of the block's colors, then two least-squares rounds move the
+  ends to where the chosen steps fit best. BC1 does the same with RGB565 ends and 4
+  steps; BC4 and BC5 take the smallest and largest value as ends and 8 steps.
+* **BC4 and BC5 values.** The steps between the two ends sit halfway between the exact
+  fraction and the 6-bit weights some GPUs use, so the CPU decode is within 1/255 of
+  either kind of hardware.
 ## Materials, light and finish
 
 `gltf` reads the core metal-rough model plus `KHR_materials_clearcoat`, `sheen`,
@@ -1531,6 +1576,30 @@ format stores.
 * **T9 gates.** As U5, plus a new `scene_bc` (the test scene with textures compressed on
   load) in webgputest.
 
+### Compressed texture results (2026-11-09, RX 9060 XT, RADV; full gfxtest ok)
+
+| Bar | Result | Bar value |
+| --- | --- | --- |
+| T1 hardware decode, BC1 and BC3 | largest difference 2 / 255 over 4,096 random blocks each | at most 2 / 255 |
+| T1 hardware decode, BC4 and BC5 | largest difference 1 / 255 | at most 1 / 255 |
+| T1 hardware decode, BC7 | 0 / 255, 8 of 8 block modes identical | 0 |
+| T1 control, blocks shifted by one | 255 / 255 in every format: fails as it must | must fail |
+| T2 image M | BC7 55.47 dB, BC1 43.75 dB, BC3 alpha 66.69 dB, BC4 84.85 dB, BC5 normals 0.239 degrees mean | 40, 32 (and 3 below BC7), 40, 40 dB, 1 degree |
+| T2 spheres, 480 x 360 | BC7 51.53 dB, BC1 41.98 dB | 40 dB, 33 dB |
+| T2 4,096 solid colors | BC7 1 / 255, BC4 0, BC1 4 / 255 | 1, 0, 4 |
+| T3 KTX2 | 6 of 6 formats identical with 7 levels, 6 of 6 as zlib streams, 858 of 858 damaged files refused, untouched files read | all, all, all |
+| T4 scene, 1280 x 720 | 51.24 dB against uncompressed; texture memory 2,796,256 of 11,184,808 bytes = 0.25 | at least 40 dB, at most 0.26 |
+| T4 control, flat gray textures | 22.71 dB: fails as it must | must fail |
+| T5 no BC on the device | CPU decode against the GPU's decode: 0 / 255; memory back to 11,184,808 bytes | at most 2 / 255 |
+| T6 cache | first load packed 2 and wrote 2 files in 344.75 ms; second load packed 0 and read 2 in 10.24 ms, 33.68 times faster; picture difference 0 | 0 packed, at least 5 times, 0 |
+| T6 control, one file cut short | 1 packed again, 1 read, difference 0 | 1, 0 |
+| T7 KTX2 in glTF | BC7 KTX2 image against the same file from the cache: 0; marked BasisLZ: 1 bad image, drawn white | 0, 1 |
+| T8 speed, one thread | image M with all mips to BC7 in 0.18 s, to BC1 in 0.09 s | at most 2 s, 1 s |
+| T8 frame, 1280 x 720 | 1.39 ms uncompressed, 1.33 ms compressed | at most 0.2 ms added |
+| T9 goldens | 44.92 dB and 41.7 dB | above 40 dB |
+| T9 wgsltest | 63 modules, 54 pipelines, 0 failures | 0 failures |
+| T9 webgputest, with the new `scene_bc` | 18 scenes, 0 failures; `scene_bc` identical to native | 0 failures |
+
 ### Caustics results (2026-11-09, RX 9060 XT, RADV; full gfxtest ok)
 
 | Bar | Result | Bar value |
@@ -1958,8 +2027,12 @@ pass-through mean error is 0.0106 % (max 0.0488 %).
 * Caustics: one level body of water, lit by the sun only (local lights get none). Each
   point takes one bundle of rays, so past the depth where the lines first cross the
   overlapping sheets are not summed. The water itself shows no light shafts.
-* Not built: BC, KTX2, WebP, meshopt and Draco, texture and mesh streaming, and
-  Nanite-class geometry.
+* Compressed textures: the BC7 encoder uses one block mode (mode 6). Images whose
+  sides are not multiples of 4 stay RGBA8. Devices without BC (most phones) draw the
+  same picture from RGBA8 with no memory saved; ASTC and ETC2 are not built. KTX2 files
+  packed with BasisLZ or Zstandard are not read.
+* Not built: WebP, meshopt and Draco, texture and mesh streaming, and Nanite-class
+  geometry.
 
 No point/line primitives (skipped and counted), Adler-32 is not verified, the fog
 and GI passes light spot lights as points (no cone). Also:

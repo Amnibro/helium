@@ -74,6 +74,8 @@ import gfx.sdf_font;
 import gfx.cornell;
 import gfx.rt;
 import gfx.fx;
+import gfx.bc;
+import gfx.ktx2;
 
 fn milli(v f32) int { round((v * 1000.0) as real) as int }
 
@@ -4376,6 +4378,422 @@ fn caustic_checks() bool {
 	if !(a && b && c && d && e && f) { print("gpu: caustics FAILED"); }
 	a && b && c && d && e && f
 }
+var TX_C byte[>..] = [];
+var TX_A byte[>..] = [];
+var TX_N byte[>..] = [];
+var TX_S = 1;
+var TX_SMP gfx::Sampler;
+fn tx_rand() int { TX_S = (TX_S * 1103515245 + 12345) & 0x7fffffff; (TX_S >> 8) & 0xFF }
+fn tx_lat(x int, y int, o int, wrap int) real {
+	var v = ((x % wrap) * 73856093) ^ ((y % wrap) * 19349663) ^ ((o + 1) * 83492791);
+	v = ((v ^ (v >> 13)) * 1274126177) & 0x7fffffff;
+	((v ^ (v >> 16)) & 0xFFFF) as real / 65535.0
+}
+fn tx_noise(px int, py int, cell int, o int) real {
+	let wrap = 1024 / cell;
+	let x = px / cell;
+	let y = py / cell;
+	let fx = (px % cell) as real / cell as real;
+	let fy = (py % cell) as real / cell as real;
+	let ux = fx * fx * (3.0 - 2.0 * fx);
+	let uy = fy * fy * (3.0 - 2.0 * fy);
+	let a = tx_lat(x, y, o, wrap) + (tx_lat(x + 1, y, o, wrap) - tx_lat(x, y, o, wrap)) * ux;
+	let b = tx_lat(x, y + 1, o, wrap) + (tx_lat(x + 1, y + 1, o, wrap) - tx_lat(x, y + 1, o, wrap)) * ux;
+	a + (b - a) * uy
+}
+fn tx_image() {
+	if TX_C.len > 0 { return; }
+	var n real[>..] = [];
+	for k in 1024 * 1024 {
+		var s = 0.0;
+		var amp = 0.5;
+		for o in 5 { s += amp * tx_noise(k % 1024, k / 1024, 128 >> o, o); amp = amp * 0.5; }
+		n.push(s / 0.96875);
+	}
+	for k in 1024 * 1024 {
+		let x = k % 1024;
+		let y = k / 1024;
+		let g = 0.9 + 0.1 * tx_noise(x, y, 16, 9);
+		let v = n[k];
+		let hb = round(255.0 * v) as int as byte;
+		for ch in 3 {
+			let a = if ch == 0 { 0.75 } else if ch == 1 { 0.6 } else { 0.45 };
+			let b = if ch == 0 { 0.2 } else if ch == 1 { 0.25 } else { 0.35 };
+			let c = round(255.0 * (a + (b - a) * v) * g) as int as byte;
+			TX_C.push(c); TX_A.push(c);
+		}
+		TX_C.push(255); TX_A.push(hb);
+		let sx = (n[y * 1024 + (x + 1) % 1024] - n[y * 1024 + (x + 1023) % 1024]) * 20.0;
+		let sy = (n[((y + 1) % 1024) * 1024 + x] - n[((y + 1023) % 1024) * 1024 + x]) * 20.0;
+		let l = sqrt(sx * sx + sy * sy + 1.0);
+		TX_N.push(round(127.5 - 127.5 * sx / l) as int as byte);
+		TX_N.push(round(127.5 - 127.5 * sy / l) as int as byte);
+		TX_N.push(round(127.5 + 127.5 / l) as int as byte);
+		TX_N.push(255);
+	}
+}
+fn tx_psnr(a const byte[:], b const byte[:], mask int) real {
+	var se real = 0.0;
+	var n = 0;
+	for i in min(a.len, b.len) {
+		if (mask >> (i & 3)) & 1 == 0 { continue; }
+		let d = (a[i] as int - b[i] as int) as real;
+		se += d * d;
+		n += 1;
+	}
+	if a.len != b.len || n == 0 { return 0.0; }
+	if se == 0.0 { return 99.0; }
+	10.0 * log10(255.0 * 255.0 / (se / n as real))
+}
+fn tx_worst(a const byte[:], b const byte[:], mask int) int {
+	var w = if a.len == b.len && a.len > 0 { 0 } else { 255 };
+	for i in min(a.len, b.len) { if (mask >> (i & 3)) & 1 != 0 { w = max(w, abs(a[i] as int - b[i] as int)); } }
+	w
+}
+fn tx_round(kind int, px const byte[:], w int, h int, mask int) real {
+	var blk byte[>..] = [];
+	var back byte[>..] = [];
+	if !bc::encode(kind, px, w, h, blk) || !bc::decode(kind, blk[..], w, h, back) { return 0.0; }
+	tx_psnr(px, back[..], mask)
+}
+fn tx_show(fmt i32, data const byte[:]) byte[>..] {
+	let t = gfx::texture2d(256, 256, fmt, gfx::SAMPLED);
+	gfx::update_texture(t, data);
+	let out = gfx::render_target(256, 256, gfx::RGBA8);
+	if gfx::begin_pass(gfx::PassDesc { color: [out, gfx::Texture { id: 0 }, gfx::Texture { id: 0 }, gfx::Texture { id: 0 }], .. }) { gfx::bind(s3d::pipe_ext_copy); gfx::bind_texture(gfx::FRAGMENT, 0, t, TX_SMP); gfx::draw(3); gfx::end_pass(); }
+	let px = gfx::read_pixels(out);
+	gfx::release(t); gfx::release(out);
+	px
+}
+fn tx_t1() bool {
+	s3d::init(256, 256);
+	TX_SMP = gfx::sampler(gfx::NEAREST, gfx::CLAMP);
+	let kinds = [bc::BC1, bc::BC3, bc::BC4, bc::BC5, bc::BC7];
+	let fmts = [gfx::BC1, gfx::BC3, gfx::BC4, gfx::BC5, gfx::BC7];
+	let bars = [2, 2, 1, 1, 0];
+	var good = true;
+	TX_S = 7;
+	for f in 5 {
+		if !gfx::format_supported(fmts[f]) { print("gpu: textures T1 hardware decode: BC", kinds[f], " is not offered by this device FAILED"); good = false; continue; }
+		let bb = bc::block_bytes(kinds[f]);
+		var data byte[>..] = [];
+		for k in 4096 * bb { data.push(tx_rand() as byte); }
+		if kinds[f] == bc::BC7 { for k in 4096 { let m = k / 512; let keep = 0xFF ^ ((2 << m) - 1); let b0 = data[k * 16] as int; data[k * 16] = ((b0 & keep) | (1 << m)) as byte; } }
+		let gpu = tx_show(fmts[f], data[..]);
+		var cpu byte[>..] = [];
+		let dec = bc::decode(kinds[f], data[..], 256, 256, cpu);
+		var shifted byte[>..] = [];
+		shifted.append(data[bb..]);
+		shifted.append(data[..bb]);
+		var ctl byte[>..] = [];
+		let _ = bc::decode(kinds[f], shifted[..], 256, 256, ctl);
+		let w = tx_worst(gpu[..], cpu[..], 15);
+		let wc = tx_worst(gpu[..], ctl[..], 15);
+		var modes = 0;
+		if kinds[f] == bc::BC7 { for m in 8 { if tx_worst(gpu[m * 32 * 1024..(m + 1) * 32 * 1024], cpu[m * 32 * 1024..(m + 1) * 32 * 1024], 15) == 0 { modes += 1; } } }
+		let ok = dec && w <= bars[f] && wc > bars[f];
+		good = good && ok;
+		let note byte[>..] = if kinds[f] == bc::BC7 { str(", modes identical ", modes, " of 8") } else { "" };
+		print("gpu: textures T1 hardware decode: BC", kinds[f], " 4,096 random blocks, GPU against bc::decode largest difference ", w, " / 255 (bar ", bars[f], ")", note[..], ", control with the blocks shifted by one ", wc, if wc > bars[f] { ", fails as it must" } else { " FAILED to fail" }, if ok { "" } else { " FAILED" });
+	}
+	good
+}
+fn tx_angle(a const byte[:], b const byte[:]) real {
+	var sum = 0.0;
+	for k in a.len / 4 {
+		let ax = a[k * 4] as real / 127.5 - 1.0;
+		let ay = a[k * 4 + 1] as real / 127.5 - 1.0;
+		let az = a[k * 4 + 2] as real / 127.5 - 1.0;
+		let al = sqrt(ax * ax + ay * ay + az * az);
+		let bx = b[k * 4] as real / 127.5 - 1.0;
+		let by = b[k * 4 + 1] as real / 127.5 - 1.0;
+		let bz = sqrt(max(1.0 - bx * bx - by * by, 0.0));
+		let bl = sqrt(bx * bx + by * by + bz * bz);
+		sum += acos(clamp((ax * bx + ay * by + az * bz) / (al * bl), -1.0, 1.0));
+	}
+	sum / (a.len / 4) as real * 57.29577951308232
+}
+fn tx_solid(kind int, mask int) int {
+	var px byte[>..] = [];
+	TX_S = 11;
+	for k in 4096 { let r = tx_rand(); let g = tx_rand(); let b = tx_rand(); let a = tx_rand(); for i in 16 { px.push(r as byte); px.push(g as byte); px.push(b as byte); px.push(a as byte); } }
+	var worst = 0;
+	var blk byte[>..] = [];
+	var back byte[>..] = [];
+	for k in 4096 {
+		if !bc::encode(kind, px[k * 64..k * 64 + 64], 4, 4, blk) || !bc::decode(kind, blk[..], 4, 4, back) { return 255; }
+		worst = max(worst, tx_worst(px[k * 64..k * 64 + 64], back[..], mask));
+	}
+	worst
+}
+fn tx_t2() bool {
+	let b7 = tx_round(bc::BC7, TX_C[..], 1024, 1024, 15);
+	let b1 = tx_round(bc::BC1, TX_C[..], 1024, 1024, 7);
+	let b3 = tx_round(bc::BC3, TX_A[..], 1024, 1024, 8);
+	let b4 = tx_round(bc::BC4, TX_A[..], 1024, 1024, 1);
+	var blk byte[>..] = [];
+	var back byte[>..] = [];
+	let n5 = bc::encode(bc::BC5, TX_N[..], 1024, 1024, blk) && bc::decode(bc::BC5, blk[..], 1024, 1024, back);
+	let ang = if n5 { tx_angle(TX_N[..], back[..]) } else { 180.0 };
+	var file byte[>..] = [];
+	var sp byte[>..] = [];
+	var s7 = 0.0;
+	var s1 = 0.0;
+	var sw = 0;
+	var sh = 0;
+	if read_file(GOLDEN[..], file) {
+		let w, h, ok = codec_png::decode(file[..], sp);
+		if ok { sw = w; sh = h; s7 = tx_round(bc::BC7, sp[..], w, h, 15); s1 = tx_round(bc::BC1, sp[..], w, h, 7); }
+	}
+	let c7 = tx_solid(bc::BC7, 15);
+	let c4 = tx_solid(bc::BC4, 1);
+	let c1 = tx_solid(bc::BC1, 7);
+	let ok = b7 >= 40.0 && b1 >= 32.0 && b7 - b1 >= 3.0 && b3 >= 40.0 && b4 >= 40.0 && ang <= 1.0 && s7 >= 40.0 && s1 >= 33.0 && c7 <= 1 && c4 == 0 && c1 <= 4;
+	print("gpu: textures T2 encoders: image M BC7 ", r2(b7), " dB (bar 40), BC1 ", r2(b1), " dB (bar 32, and 3 below BC7), BC3 alpha ", r2(b3), " dB (bar 40), BC4 ", r2(b4), " dB (bar 40), BC5 normals ", r3(ang), " degrees mean (bar 1); spheres ", sw, " x ", sh, " BC7 ", r2(s7), " dB (bar 40), BC1 ", r2(s1), " dB (bar 33); 4,096 solid colors BC7 ", c7, " / 255 (bar 1), BC4 ", c4, " (bar 0), BC1 ", c1, " (bar 4)", if ok { "" } else { " FAILED" });
+	ok
+}
+fn tx_put32(f byte[>..]&, at int, v int) { for k in 4 { f[at + k] = ((v >> (8 * k)) & 0xFF) as byte; } }
+fn tx_t3() bool {
+	let kinds = [0, bc::BC1, bc::BC3, bc::BC4, bc::BC5, bc::BC7];
+	var same = 0;
+	var zsame = 0;
+	var refused = 0;
+	var tried = 0;
+	var ctl = true;
+	TX_S = 23;
+	for f in 6 {
+		var data byte[>..] = [];
+		var total = 0;
+		for n in 7 { total += ktx2::level_size(kinds[f], 64, 32, n); }
+		for k in total { data.push(tx_rand() as byte); }
+		for z in 2 {
+			var file byte[>..] = [];
+			var all = ktx2::write(kinds[f], f % 2 == 1, 64, 32, 7, data[..], z == 1, file);
+			let info = ktx2::read(file[..]);
+			all = all && info.ok && info.kind == kinds[f] && info.width == 64 && info.height == 32 && info.levels == 7 && info.scheme == (if z == 1 { 3 } else { 0 }) && (info.srgb == (f % 2 == 1) || kinds[f] == bc::BC4 || kinds[f] == bc::BC5);
+			var at = 0;
+			var lv byte[>..] = [];
+			for n in 7 {
+				let sz = ktx2::level_size(kinds[f], 64, 32, n);
+				all = all && ktx2::level(file[..], info, n, lv) && lv.len == sz && tx_worst(lv[..], data[at..at + sz], 15) == 0;
+				at += sz;
+			}
+			if all { if z == 1 { zsame += 1; } else { same += 1; } }
+			ctl = ctl && info.ok;
+			for c in 64 {
+				tried += 1;
+				if !ktx2::read(file[..(file.len * c / 64)]).ok { refused += 1; }
+			}
+			for c in 7 {
+				var bad byte[>..] = [];
+				bad.append(file[..]);
+				if c == 0 { bad[0] = 0x4B; }
+				if c == 1 { tx_put32(bad, 40, 0); }
+				if c == 2 { tx_put32(bad, 40, 99); }
+				if c == 3 { tx_put32(bad, 80, file.len + 1); }
+				if c == 4 { tx_put32(bad, 44, 1); }
+				if c == 5 { tx_put32(bad, 44, 2); }
+				if c == 6 { tx_put32(bad, 88, 0x7fffffff); tx_put32(bad, 92, 0x7fffffff); }
+				tried += 1;
+				let bi = ktx2::read(bad[..]);
+				if !bi.ok && ((c != 4 && c != 5) || bi.error == ktx2::E_SCHEME) { refused += 1; }
+			}
+			if z == 1 {
+				var bad byte[>..] = [];
+				bad.append(file[..]);
+				bad[file.len - 9] = bad[file.len - 9] ^ 0x55;
+				tried += 1;
+				let bi = ktx2::read(bad[..]);
+				if !bi.ok || !ktx2::level(bad[..], bi, 0, lv) { refused += 1; }
+			}
+		}
+	}
+	let ok = same == 6 && zsame == 6 && refused == tried && ctl;
+	print("gpu: textures T3 KTX2: ", same, " of 6 formats read back identical with 7 levels, ", zsame, " of 6 as zlib streams, ", refused, " of ", tried, " damaged files refused (cut short, wrong first byte, level count 0 and 99, level past the end, BasisLZ, Zstandard, a changed zlib byte), untouched files read ", if ctl { "yes" } else { "NO" }, if ok { "" } else { " FAILED" });
+	ok
+}
+fn tx_scene(compress bool, gpu bool, gray bool, cache const byte[:], w int, h int) {
+	reset_scene();
+	dark_scene();
+	s3d::sky = DEF_SKY; s3d::sun = DEF_SUN; s3d::sun.shadows = false;
+	s3d::tex_compress = compress; s3d::tex_gpu_bc = gpu; s3d::set_texture_cache(cache);
+	var flat byte[>..] = [];
+	var up byte[>..] = [];
+	if gray { for k in 1024 * 1024 { flat.push(128); flat.push(128); flat.push(128); flat.push(255); up.push(128); up.push(128); up.push(255); up.push(255); } }
+	var m = shapes::material(linalg::v3(1.0, 1.0, 1.0), 0.0, 0.6);
+	m.base_tex = gltf::TexRef { texture: gltf::add_texture_rgba(if gray { flat[..] } else { TX_C[..] }, 1024, 1024, 10497), uv: 0, m: float4 { 2.0, 0.0, 0.0, 2.0 }, .. };
+	m.normal_tex = gltf::TexRef { texture: gltf::add_texture_rgba(if gray { up[..] } else { TX_N[..] }, 1024, 1024, 10497), uv: 0, m: float4 { 2.0, 0.0, 0.0, 2.0 }, .. };
+	s3d::place(s3d::add(shapes::plane(7.0, m)), gfx::mat4_identity);
+	s3d::place(s3d::add(shapes::cube(float3 { 0.7, 0.7, 0.7 }, m)), gfx::translate(float3 { -1.3, 0.7, 0.0 }));
+	s3d::place(s3d::add(shapes::sphere(0.8, 48, 24, m)), gfx::translate(float3 { 1.3, 0.8, 0.3 }));
+	s3d::view = s3d::Camera { eye: float3 { 0.0, 2.2, 4.5 }, target: float3 { 0.0, 0.6, 0.0 }, up: float3 { 0.0, 1.0, 0.0 }, fov_y: 0.8, near: 0.05, far: 80.0 };
+	s3d::init(w, h);
+	IN_OUT = gfx::render_target(w, h, gfx::RGBA8);
+}
+fn tx_shot(compress bool, gpu bool, gray bool, cache const byte[:]) byte[>..] {
+	tx_scene(compress, gpu, gray, cache, 1280, 720);
+	s3d::render(IN_OUT);
+	let px = gfx::read_pixels(IN_OUT);
+	gfx::release(IN_OUT);
+	px
+}
+var TX_REF byte[>..] = [];
+var TX_BC byte[>..] = [];
+fn tx_t45() bool {
+	TX_REF = tx_shot(false, true, false, "");
+	let raw = s3d::texture_bytes();
+	TX_BC = tx_shot(true, true, false, "");
+	let small = s3d::texture_bytes();
+	let p = psnr(TX_REF[..], TX_BC[..]);
+	let gray = tx_shot(false, true, true, "");
+	let pc = psnr(TX_REF[..], gray[..]);
+	let ratio = small as real / max(raw, 1) as real;
+	let a = p >= 40.0 && ratio <= 0.26 && pc < 40.0;
+	print("gpu: textures T4 scene: 1280 x 720 with image M compressed on load against uncompressed ", r2(p), " dB (bar 40), texture memory ", small, " of ", raw, " bytes = ", r3(ratio), " (bar 0.26), control with flat gray textures ", r2(pc), " dB", if pc < 40.0 { ", fails as it must" } else { " FAILED to fail" }, if a { "" } else { " FAILED" });
+	let cpu = tx_shot(true, false, false, "");
+	let w = tx_worst(TX_BC[..], cpu[..], 15);
+	let b = w <= 2 && s3d::texture_bytes() == raw;
+	print("gpu: textures T5 no BC on the device: blocks decoded on the CPU against the GPU's own decode, largest difference ", w, " / 255 (bar 2), texture memory back to ", s3d::texture_bytes(), " bytes", if b { "" } else { " FAILED" });
+	a && b
+}
+fn tx_t6() bool {
+	var dir byte[>..] = [];
+	dir.append(OUT_DIR[..]);
+	dir.append("/texcache");
+	tx_scene(true, true, false, dir[..], 1280, 720);
+	var pc byte[>..] = [];
+	var pn byte[>..] = [];
+	s3d::tex_path(0, true, pc);
+	s3d::tex_path(1, false, pn);
+	let _ = delete_file(pc[..]);
+	let _ = delete_file(pn[..]);
+	gfx::release(IN_OUT);
+	var e0 = s3d::tex_encoded;
+	var c0 = s3d::tex_cached;
+	s3d::tex_ns = 0;
+	let first = tx_shot(true, true, false, dir[..]);
+	let t1 = s3d::tex_ns as real / 1.0e6;
+	let enc1 = s3d::tex_encoded - e0;
+	let files = (if file_exists(pc[..]) { 1 } else { 0 }) + (if file_exists(pn[..]) { 1 } else { 0 });
+	e0 = s3d::tex_encoded; c0 = s3d::tex_cached; s3d::tex_ns = 0;
+	let second = tx_shot(true, true, false, dir[..]);
+	let t2 = s3d::tex_ns as real / 1.0e6;
+	let enc2 = s3d::tex_encoded - e0;
+	let hit2 = s3d::tex_cached - c0;
+	let d2 = tx_worst(first[..], second[..], 15);
+	var whole byte[>..] = [];
+	let got = read_file(pn[..], whole);
+	let cut = got && write_file(pn[..], whole[..whole.len / 2]);
+	e0 = s3d::tex_encoded; c0 = s3d::tex_cached;
+	let third = tx_shot(true, true, false, dir[..]);
+	let enc3 = s3d::tex_encoded - e0;
+	let hit3 = s3d::tex_cached - c0;
+	let d3 = tx_worst(first[..], third[..], 15);
+	let d0 = tx_worst(first[..], TX_BC[..], 15);
+	let ok = enc1 == 2 && files == 2 && enc2 == 0 && hit2 == 2 && d2 == 0 && t1 >= 5.0 * t2 && cut && enc3 == 1 && hit3 == 1 && d3 == 0 && d0 == 0;
+	print("gpu: textures T6 cache: first load encoded ", enc1, " textures and wrote ", files, " files in ", r2(t1), " ms; second load encoded ", enc2, ", read ", hit2, " from the cache in ", r2(t2), " ms (", r2(t1 / max(t2, 0.001)), " times faster, bar 5), picture difference ", d2, " (bar 0), against no cache ", d0, "; control with one file cut short: encoded ", enc3, " (want 1), read ", hit3, ", difference ", d3, if ok { "" } else { " FAILED" });
+	ok
+}
+fn tx_gltf(image const byte[:]) byte[>..] {
+	reset_scene();
+	dark_scene();
+	s3d::sky = DEF_SKY; s3d::sun = DEF_SUN; s3d::sun.shadows = false;
+	var dir byte[>..] = [];
+	dir.append(OUT_DIR[..]);
+	dir.append("/");
+	let json = str("{\"asset\":{\"version\":\"2.0\"},\"scene\":0,\"scenes\":[{\"nodes\":[0]}],\"nodes\":[{\"mesh\":0}],\"meshes\":[{\"primitives\":[{\"attributes\":{\"POSITION\":1,\"NORMAL\":2,\"TEXCOORD_0\":3},\"indices\":0,\"material\":0}]}],\"materials\":[{\"pbrMetallicRoughness\":{\"baseColorTexture\":{\"index\":0},\"metallicFactor\":0,\"roughnessFactor\":0.8}}],\"textures\":[{\"source\":0}],\"images\":[{\"uri\":\"", image, "\"}],\"buffers\":[{\"uri\":\"tx_quad.bin\",\"byteLength\":140}],\"bufferViews\":[{\"buffer\":0,\"byteOffset\":0,\"byteLength\":12},{\"buffer\":0,\"byteOffset\":12,\"byteLength\":48},{\"buffer\":0,\"byteOffset\":60,\"byteLength\":48},{\"buffer\":0,\"byteOffset\":108,\"byteLength\":32}],\"accessors\":[{\"bufferView\":0,\"componentType\":5123,\"count\":6,\"type\":\"SCALAR\"},{\"bufferView\":1,\"componentType\":5126,\"count\":4,\"type\":\"VEC3\",\"min\":[-1,0,0],\"max\":[1,2,0]},{\"bufferView\":2,\"componentType\":5126,\"count\":4,\"type\":\"VEC3\"},{\"bufferView\":3,\"componentType\":5126,\"count\":4,\"type\":\"VEC2\"}]}");
+	let a = gltf::load_bytes(json[..], dir[..]);
+	if a < 0 { print("gpu: textures T7 model did not load: ", gltf::error()); return []; }
+	s3d::place(s3d::add(a), gfx::mat4_identity);
+	s3d::view = s3d::Camera { eye: float3 { 0.0, 1.0, 3.0 }, target: float3 { 0.0, 1.0, 0.0 }, up: float3 { 0.0, 1.0, 0.0 }, fov_y: 0.8, near: 0.05, far: 80.0 };
+	s3d::init(640, 360);
+	let out = gfx::render_target(640, 360, gfx::RGBA8);
+	s3d::render(out);
+	let px = gfx::read_pixels(out);
+	gfx::release(out);
+	px
+}
+fn tx_t7() bool {
+	var dir byte[>..] = [];
+	dir.append(OUT_DIR[..]);
+	dir.append("/texcache");
+	let idx = [0 as u16, 1, 2, 0, 2, 3];
+	let geo = [-1.0 as f32, 0.0, 0.0, 1.0, 0.0, 0.0, 1.0, 2.0, 0.0, -1.0, 2.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 1.0, 0.0, 0.0, 1.0, 0.0, 0.0, 1.0, 0.0, 1.0, 1.0, 1.0, 1.0, 0.0, 0.0, 0.0];
+	var bin byte[>..] = [];
+	bin.append(bytes_of(idx));
+	bin.append(bytes_of(geo));
+	let wrote = write_file(path(OUT_DIR[..], "tx_quad.bin")[..], bin[..]) && codec_png::write(path(OUT_DIR[..], "tx_m.png")[..], 1024, 1024, 4, TX_C[..]);
+	s3d::tex_compress = true; s3d::tex_gpu_bc = true; s3d::set_texture_cache(dir[..]);
+	let from_cache = tx_gltf("tx_m.png");
+	var pc byte[>..] = [];
+	s3d::tex_path(0, true, pc);
+	var file byte[>..] = [];
+	let have = read_file(pc[..], file) && write_file(path(OUT_DIR[..], "tx_m.ktx2")[..], file[..]);
+	s3d::tex_compress = false; s3d::set_texture_cache("");
+	let e0 = s3d::tex_encoded;
+	let direct = tx_gltf("tx_m.ktx2");
+	let is_ktx = gltf::images.len > 0 && gltf::images[0].ktx && s3d::tex_encoded == e0;
+	let d = tx_worst(from_cache[..], direct[..], 15);
+	if file.len > 48 { tx_put32(file, 44, 1); }
+	let wb = write_file(path(OUT_DIR[..], "tx_basis.ktx2")[..], file[..]);
+	let bad0 = gltf::bad_images;
+	let white = tx_gltf("tx_basis.ktx2");
+	let bad = gltf::bad_images - bad0;
+	let one = gltf::images.len > 0 && gltf::images[0].width == 1 && !gltf::images[0].ktx;
+	let ok = wrote && have && is_ktx && d == 0 && wb && bad == 1 && one && white.len == 640 * 360 * 4 && tx_worst(white[..], direct[..], 15) > 0;
+	print("gpu: textures T7 KTX2 in glTF: a model with a BC7 KTX2 image (", file.len, " bytes, read as KTX2 ", is_ktx, ") against the same file from the cache, difference ", d, " (bar 0); marked BasisLZ: bad images ", bad, " (want 1), drawn white ", one, if ok { "" } else { " FAILED" });
+	ok
+}
+fn tx_time(compress bool) real {
+	tx_scene(compress, true, false, "", 1280, 720);
+	for k in 3 { s3d::render(IN_OUT); }
+	let warm = gfx::read_pixels(IN_OUT);
+	var best real = 1.0e30;
+	for r in 2 {
+		let t0 = clock_ns();
+		for k in 40 { s3d::render(IN_OUT); }
+		let px = gfx::read_pixels(IN_OUT);
+		best = min(best, (clock_ns() - t0) as real / 4.0e7);
+	}
+	gfx::release(IN_OUT);
+	best
+}
+fn tx_chain(kind int) real {
+	let t0 = clock_ns();
+	var cur byte[>..] = [];
+	cur.append(TX_C[..]);
+	var blk byte[>..] = [];
+	var nxt byte[>..] = [];
+	var w = 1024;
+	var h = 1024;
+	for k in 11 {
+		let _ = bc::encode(kind, cur[..], w, h, blk);
+		if k < 10 { let nw, nh = bc::halve(cur[..], w, h, true, nxt); cur.clear(); cur.append(nxt[..]); w = nw; h = nh; }
+	}
+	(clock_ns() - t0) as real / 1.0e9
+}
+fn tx_t8() bool {
+	let s7 = tx_chain(bc::BC7);
+	let s1 = tx_chain(bc::BC1);
+	let a = tx_time(false);
+	let b = tx_time(true);
+	let ok = s7 <= 2.0 && s1 <= 1.0 && b - a <= 0.2;
+	print("gpu: textures T8 speed: image M with all mips to BC7 in ", r2(s7), " s (bar 2), to BC1 in ", r2(s1), " s (bar 1) on one thread; 1280 x 720 frame ", r2(a), " ms uncompressed, ", r2(b), " ms compressed, added ", r2(b - a), " ms (bar 0.2)", if ok { "" } else { " FAILED" });
+	ok
+}
+fn texture_checks() bool {
+	tx_image();
+	let a = tx_t1();
+	let b = tx_t2();
+	let c = tx_t3();
+	let d = tx_t45();
+	let e = tx_t6();
+	let f = tx_t7();
+	let g = tx_t8();
+	s3d::tex_compress = false; s3d::tex_gpu_bc = true; s3d::set_texture_cache("");
+	if !(a && b && c && d && e && f && g) { print("gpu: textures FAILED"); }
+	a && b && c && d && e && f && g
+}
 fn rc_light(k int) {
 	s3d::lights.clear();
 	if k == 0 { s3d::add_rect(float3 { 0.0, 2.0, -1.0 }, float3 { 0.0, 1.0, -1.0 }, float3 { 1.0, 0.0, 0.0 }, 2.0, 1.0, float3 { 4.0, 4.0, 4.0 }, 1000.0, false); }
@@ -4804,7 +5222,7 @@ fn gpu_checks(dir const byte[:], golden const byte[:]) bool {
 	var only byte[>..] = [];
 	let _ = env("GFX_ONLY", only);
 	if only.len > 0 {
-		let ok = if only[..] == "gtao" { gtao_checks() } else if only[..] == "gi" { gi_checks() } else if only[..] == "mblur" { mb_checks() } else if only[..] == "dof" { dof_checks() } else if only[..] == "fx" { fx_checks() } else if only[..] == "tsr" { tsr_checks(dir) } else if only[..] == "probe" { probe_checks(dir) } else if only[..] == "ssgi" { ssgi_checks() } else if only[..] == "decal" { decal_checks() } else if only[..] == "weather" { weather_checks() } else if only[..] == "rect" { rect_checks() } else if only[..] == "small" { small_checks() } else if only[..] == "inst" { instance_checks() } else if only[..] == "caust" { caustic_checks() } else { shadow_checks() };
+		let ok = if only[..] == "gtao" { gtao_checks() } else if only[..] == "gi" { gi_checks() } else if only[..] == "mblur" { mb_checks() } else if only[..] == "dof" { dof_checks() } else if only[..] == "fx" { fx_checks() } else if only[..] == "tsr" { tsr_checks(dir) } else if only[..] == "probe" { probe_checks(dir) } else if only[..] == "ssgi" { ssgi_checks() } else if only[..] == "decal" { decal_checks() } else if only[..] == "weather" { weather_checks() } else if only[..] == "rect" { rect_checks() } else if only[..] == "small" { small_checks() } else if only[..] == "inst" { instance_checks() } else if only[..] == "caust" { caustic_checks() } else if only[..] == "tex" { texture_checks() } else { shadow_checks() };
 		let e = gfx::error();
 		if e.len > 0 { print("gpu: gfx error ", e[..]); return false; }
 		return ok;
@@ -4973,6 +5391,7 @@ fn gpu_checks(dir const byte[:], golden const byte[:]) bool {
 	if !small_checks() { good = false; }
 	if !instance_checks() { good = false; }
 	if !caustic_checks() { good = false; }
+	if !texture_checks() { good = false; }
 	let err = gfx::error();
 	if err.len > 0 { print("gpu: gfx error ", err[..]); good = false; }
 	good

@@ -1,0 +1,296 @@
+import gfx.zlib;
+import gfx.bc;
+namespace ktx2;
+struct Info { ok bool = false, kind int, srgb bool, width int, height int, levels int, scheme int, error int = 0 }
+let E_NONE = 0;
+let E_SHORT = 1;
+let E_MAGIC = 2;
+let E_FORMAT = 3;
+let E_SHAPE = 4;
+let E_SCHEME = 5;
+let E_LEVEL = 6;
+fn level_size(kind int, w int, h int, n int) int {
+	let lw = max(w >> n, 1);
+	let lh = max(h >> n, 1);
+	if kind == 0 { return lw * lh * 4; }
+	bc::size(kind, lw, lh)
+}
+fn is_ktx2(file const byte[:]) bool {
+	if file.len < 12 { return false; }
+	let id byte[12] = [0xAB, 0x4B, 0x54, 0x58, 0x20, 0x32, 0x30, 0xBB, 0x0D, 0x0A, 0x1A, 0x0A];
+	for i in 12 { if file[i] != id[i] { return false; } }
+	true
+}
+fn rd32(f const byte[:], at int) int {
+	(f[at] as int) | ((f[at + 1] as int) << 8) | ((f[at + 2] as int) << 16) | ((f[at + 3] as int) << 24)
+}
+fn rd64(f const byte[:], at int) int {
+	let lo = rd32(f, at);
+	let hi = rd32(f, at + 4);
+	if hi >= 0x80000000 { return -1; }
+	lo | (hi << 32)
+}
+fn vk_kind(vk int) int {
+	match vk {
+		37, 43 => 0,
+		131, 132, 133, 134 => 1,
+		137, 138 => 3,
+		139 => 4,
+		141 => 5,
+		145, 146 => 7,
+		_ => -1,
+	}
+}
+fn ktx_fail(code int) Info {
+	Info { error: code, .. }
+}
+fn read(file const byte[:]) Info {
+	if file.len < 80 { return ktx_fail(E_SHORT); }
+	if !is_ktx2(file) { return ktx_fail(E_MAGIC); }
+	let vk = rd32(file, 12);
+	let kind = vk_kind(vk);
+	if kind < 0 { return ktx_fail(E_FORMAT); }
+	let srgb = vk == 43 || vk == 132 || vk == 134 || vk == 138 || vk == 146;
+	let w = rd32(file, 20);
+	let h = rd32(file, 24);
+	let depth = rd32(file, 28);
+	let layers = rd32(file, 32);
+	let faces = rd32(file, 36);
+	let lc = rd32(file, 40);
+	let scheme = rd32(file, 44);
+	var full = 1;
+	var m = max(w, h);
+	while m > 1 { m = m >> 1; full++; }
+	if w < 1 || w > 16384 || h < 1 || h > 16384 || depth != 0 || layers != 0 || faces != 1 || lc < 1 || lc > full {
+		return ktx_fail(E_SHAPE);
+	}
+	if scheme != 0 && scheme != 3 { return ktx_fail(E_SCHEME); }
+	if file.len < 80 + 24 * lc { return ktx_fail(E_SHORT); }
+	for i in lc {
+		let off = rd64(file, 80 + 24 * i);
+		let len = rd64(file, 88 + 24 * i);
+		let unc = rd64(file, 96 + 24 * i);
+		let want = level_size(kind, w, h, i);
+		if off < 0 || len <= 0 || unc < 0 { return ktx_fail(E_LEVEL); }
+		if off > file.len || len > file.len - off { return ktx_fail(E_LEVEL); }
+		if unc != want { return ktx_fail(E_LEVEL); }
+		if scheme == 0 && len != want { return ktx_fail(E_LEVEL); }
+	}
+	Info { ok: true, kind: kind, srgb: srgb, width: w, height: h, levels: lc, scheme: scheme, error: E_NONE }
+}
+fn adler32(data const byte[:]) int {
+	var a = 1;
+	var b = 0;
+	for x in data {
+		a = (a + (x as int)) % 65521;
+		b = (b + a) % 65521;
+	}
+	b * 65536 + a
+}
+fn level(file const byte[:], info Info, n int, out byte[>..]&) bool {
+	out.clear();
+	if !info.ok { return false; }
+	if n < 0 || n >= info.levels { return false; }
+	if file.len < 80 + 24 * (n + 1) { return false; }
+	let off = rd64(file, 80 + 24 * n);
+	let len = rd64(file, 88 + 24 * n);
+	if off < 0 || len < 0 || off > file.len || len > file.len - off { return false; }
+	if info.scheme == 0 {
+		out.append(file[off..off + len]);
+		return true;
+	}
+	if info.scheme != 3 { return false; }
+	if len < 4 { return false; }
+	let ok = zlib::inflate(file[off..off + len], out);
+	if !ok {
+		out.clear();
+		return false;
+	}
+	if out.len != level_size(info.kind, info.width, info.height, n) {
+		out.clear();
+		return false;
+	}
+	let e = off + len;
+	let want = ((file[e - 4] as int) << 24) | ((file[e - 3] as int) << 16) | ((file[e - 2] as int) << 8) | (file[e - 1] as int);
+	if adler32(out[0..out.len]) != want {
+		out.clear();
+		return false;
+	}
+	true
+}
+fn put16(out byte[>..]&, v int) {
+	out.push((v & 0xFF) as! byte);
+	out.push(((v >> 8) & 0xFF) as! byte);
+}
+fn put32(out byte[>..]&, v int) {
+	put16(out, v & 0xFFFF);
+	put16(out, (v >> 16) & 0xFFFF);
+}
+fn put32be(out byte[>..]&, v int) {
+	out.push(((v >> 24) & 0xFF) as! byte);
+	out.push(((v >> 16) & 0xFF) as! byte);
+	out.push(((v >> 8) & 0xFF) as! byte);
+	out.push((v & 0xFF) as! byte);
+}
+fn put64(out byte[>..]&, v int) {
+	put32(out, v & 0xFFFFFFFF);
+	put32(out, (v >> 32) & 0xFFFFFFFF);
+}
+fn sample_count(kind int) int {
+	match kind {
+		0 => 4,
+		1, 4, 7 => 1,
+		3, 5 => 2,
+		_ => 0,
+	}
+}
+fn vk_of(kind int, srgb bool) int {
+	match kind {
+		0 => if srgb { 43 } else { 37 },
+		1 => if srgb { 132 } else { 131 },
+		3 => if srgb { 138 } else { 137 },
+		4 => 139,
+		5 => 141,
+		_ => if srgb { 146 } else { 145 },
+	}
+}
+fn put_sample(out byte[>..]&, bit_off int, bits int, channel int, upper int) {
+	put16(out, bit_off);
+	out.push((bits - 1) as! byte);
+	out.push(channel as! byte);
+	for i in 4 { out.push(0 as! byte); }
+	put32(out, 0);
+	put32(out, upper);
+}
+fn put_dfd(out byte[>..]&, kind int, srgb bool) {
+	let ns = sample_count(kind);
+	var model = 1;
+	var plane = 4;
+	var dim = 0;
+	match kind {
+		1 => { model = 128; plane = 8; dim = 3; },
+		3 => { model = 130; plane = 16; dim = 3; },
+		4 => { model = 131; plane = 8; dim = 3; },
+		5 => { model = 132; plane = 16; dim = 3; },
+		7 => { model = 134; plane = 16; dim = 3; },
+		_ => { model = 1; plane = 4; dim = 0; },
+	}
+	put32(out, 4 + 24 + 16 * ns);
+	put32(out, 0);
+	put16(out, 2);
+	put16(out, 24 + 16 * ns);
+	out.push(model as! byte);
+	out.push(1 as! byte);
+	out.push((if srgb { 2 } else { 1 }) as! byte);
+	out.push(0 as! byte);
+	out.push(dim as! byte);
+	out.push(dim as! byte);
+	out.push(0 as! byte);
+	out.push(0 as! byte);
+	out.push(plane as! byte);
+	for i in 7 { out.push(0 as! byte); }
+	match kind {
+		0 => {
+			let alpha = if srgb { 31 } else { 15 };
+			put_sample(out, 0, 8, 0, 255);
+			put_sample(out, 8, 8, 1, 255);
+			put_sample(out, 16, 8, 2, 255);
+			put_sample(out, 24, 8, alpha, 255);
+		},
+		1, 4 => { put_sample(out, 0, 64, 0, 0xFFFFFFFF); },
+		3 => {
+			put_sample(out, 0, 64, 15, 0xFFFFFFFF);
+			put_sample(out, 64, 64, 0, 0xFFFFFFFF);
+		},
+		5 => {
+			put_sample(out, 0, 64, 0, 0xFFFFFFFF);
+			put_sample(out, 64, 64, 1, 0xFFFFFFFF);
+		},
+		_ => { put_sample(out, 0, 128, 0, 0xFFFFFFFF); },
+	}
+}
+fn stored_len(len int, deflate bool) int {
+	if !deflate { return len; }
+	let chunks = max((len + 65534) / 65535, 1);
+	2 + chunks * 5 + len + 4
+}
+fn write(kind int, srgb bool, w int, h int, levels int, data const byte[:], deflate bool, out byte[>..]&) bool {
+	out.clear();
+	let ns = sample_count(kind);
+	if ns == 0 { return false; }
+	if w < 1 || w > 16384 || h < 1 || h > 16384 { return false; }
+	var full = 1;
+	var m = max(w, h);
+	while m > 1 { m = m >> 1; full++; }
+	if levels < 1 || levels > full { return false; }
+	var sz int[16] = [0; 16];
+	var src int[16] = [0; 16];
+	var off int[16] = [0; 16];
+	var total = 0;
+	for i in levels {
+		sz[i] = level_size(kind, w, h, i);
+		src[i] = total;
+		total += sz[i];
+	}
+	if data.len < total { return false; }
+	let dfd_off = 80 + 24 * levels;
+	let dfd_len = 4 + 24 + 16 * ns;
+	let al = if deflate { 1 } else { 16 };
+	var pos = dfd_off + dfd_len;
+	var j = levels - 1;
+	while j >= 0 {
+		pos = (pos + al - 1) / al * al;
+		off[j] = pos;
+		pos += stored_len(sz[j], deflate);
+		j--;
+	}
+	let id byte[12] = [0xAB, 0x4B, 0x54, 0x58, 0x20, 0x32, 0x30, 0xBB, 0x0D, 0x0A, 0x1A, 0x0A];
+	for i in 12 { out.push(id[i]); }
+	put32(out, vk_of(kind, srgb));
+	put32(out, 1);
+	put32(out, w);
+	put32(out, h);
+	put32(out, 0);
+	put32(out, 0);
+	put32(out, 1);
+	put32(out, levels);
+	put32(out, if deflate { 3 } else { 0 });
+	put32(out, dfd_off);
+	put32(out, dfd_len);
+	put32(out, 0);
+	put32(out, 0);
+	put64(out, 0);
+	put64(out, 0);
+	for i in levels {
+		put64(out, off[i]);
+		put64(out, stored_len(sz[i], deflate));
+		put64(out, sz[i]);
+	}
+	put_dfd(out, kind, srgb);
+	var k = levels - 1;
+	while k >= 0 {
+		while out.len < off[k] { out.push(0 as! byte); }
+		let len = sz[k];
+		let s = src[k];
+		if !deflate {
+			out.append(data[s..s + len]);
+		} else {
+			out.push(0x78 as! byte);
+			out.push(0x01 as! byte);
+			var p = 0;
+			while p < len {
+				let c = min(65535, len - p);
+				var lastb byte = 0;
+				if p + c >= len { lastb = 1; }
+				out.push(lastb);
+				put16(out, c);
+				put16(out, c ^ 0xFFFF);
+				out.append(data[s + p..s + p + c]);
+				p += c;
+			}
+			put32be(out, adler32(data[s..s + len]));
+		}
+		k--;
+	}
+	true
+}
