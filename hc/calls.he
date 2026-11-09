@@ -1145,7 +1145,7 @@ nzr(t int, m byte[>..]&) bool:
 		m.resize(n0, 0)
 	false
 var XROOTS i32[>..]
-lib_file(f int) bool: n := nm(FILES[f].name); LIBDIR.len > 0 && n.len > LIBDIR.len && n[..LIBDIR.len] == LIBDIR[..]
+lib_file(f int) bool: n := nm(FILES[f].name); r := ROOTDIR.len; LIBDIR.len > 0 && n.len > LIBDIR.len && n[..LIBDIR.len] == LIBDIR[..] && !(n.len > r + 1 && n[..r] == ROOTDIR[..] && n[r] == '/' && !contains(n[r + 1..], "/"))
 all_typed(f int) bool:
 	for j ND[f].n: if ND[kid(f, j)].a < 0 { return false }
 	true
