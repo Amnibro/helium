@@ -205,7 +205,8 @@ recursive has_valret(n int) bool:
 	x := ND[n]; k := x.k
 	if k == N_RET: return x.n > 0 && x.s < 0
 	if k == N_FN || k == N_CFOR: return k == N_CFOR && has_valret(x.c)
-	if k == N_INT || k == N_FLT || k == N_STR || k == N_ID: return false
+	if k == N_FOR: return has_valret(x.a) || has_valret(x.b) || has_valret(x.d)
+	if k == N_INT || k == N_FLT || k == N_STR || k == N_ID || k == N_EXT: return false
 	if k >= 40 && k < 50: return false
 	if has_valret(x.a) || has_valret(x.b) || has_valret(x.c) || has_valret(x.d): return true
 	if k == N_BLOCK || k == N_CALL || k == N_MATCH || k == N_ARM || k == N_LIST || k == N_ARR || k == N_SLIT || k == N_RET:
