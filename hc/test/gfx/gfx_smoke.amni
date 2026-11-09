@@ -69,6 +69,7 @@ import gfx.motion;
 import gfx.shapes;
 import gfx.sparks;
 import gfx.scene3d;
+import gfx.envmap;
 import gfx.sdf_font;
 import gfx.cornell;
 import gfx.rt;
@@ -3231,6 +3232,119 @@ fn gtao_checks() bool {
 	if e2.len > 0 { print("gpu: gfx error ", e2[..]); return false; }
 	a1 && a2 && a3 && c1 && c3
 }
+const R1_BAR = 0.15;
+const R2_RATIO = 1.5;
+var PR_FLOOR = -1;
+fn probe_scene() {
+	reset_scene();
+	envmap::on = false;
+	let wall = [linalg::v3(0.8, 0.15, 0.1), linalg::v3(0.1, 0.7, 0.2), linalg::v3(0.15, 0.25, 0.85), linalg::v3(0.85, 0.75, 0.15)];
+	s3d::place(s3d::add(shapes::cube(float3 { 3.0, 1.5, 0.05 }, shapes::material(wall[0], 0.0, 0.8))), gfx::translate(float3 { 0.0, 1.5, -3.05 }));
+	s3d::place(s3d::add(shapes::cube(float3 { 3.0, 1.5, 0.05 }, shapes::material(wall[1], 0.0, 0.8))), gfx::translate(float3 { 0.0, 1.5, 3.05 }));
+	s3d::place(s3d::add(shapes::cube(float3 { 0.05, 1.5, 3.1 }, shapes::material(wall[2], 0.0, 0.8))), gfx::translate(float3 { -3.05, 1.5, 0.0 }));
+	s3d::place(s3d::add(shapes::cube(float3 { 0.05, 1.5, 3.1 }, shapes::material(wall[3], 0.0, 0.8))), gfx::translate(float3 { 3.05, 1.5, 0.0 }));
+	s3d::place(s3d::add(shapes::cube(float3 { 3.1, 0.05, 3.1 }, shapes::material(linalg::v3(0.8, 0.8, 0.8), 0.0, 0.8))), gfx::translate(float3 { 0.0, 3.05, 0.0 }));
+	PR_FLOOR = s3d::add(shapes::cube(float3 { 3.0, 0.05, 3.0 }, shapes::material(linalg::v3(1.0, 1.0, 1.0), 1.0, 0.05)));
+	s3d::place(PR_FLOOR, gfx::translate(float3 { 0.0, -0.05, 0.0 }));
+	s3d::add_light(float3 { 0.0, 2.7, 0.0 }, float3 { 6.0, 6.0, 6.0 }, 9.0);
+	s3d::sky = s3d::Sky { zenith: float3 { 0.5, 0.8, 1.7 }, horizon: float3 { 1.4, 1.5, 1.7 }, ground: float3 { 0.5, 0.45, 0.4 }, ambient: 1.0, draw: true };
+	s3d::sun.rgb = float3 { 0.0, 0.0, 0.0 };
+	s3d::sun.shadows = false;
+	s3d::look.ssao = false;
+	s3d::look.bloom = 0.0;
+	s3d::temporal = 0;
+	s3d::ssr_on = false;
+}
+fn probe_cam(m f32) { s3d::view = s3d::Camera { eye: float3 { 0.0, 1.6 * m, 2.5 }, target: float3 { 0.0, 0.3 * m, -2.0 }, up: float3 { 0.0, m, 0.0 }, fov_y: 0.9, near: 0.05, far: 50.0 }; }
+fn probe_frame(out gfx::Texture, dir const byte[:], name const byte[:]) byte[>..] {
+	s3d::render(out);
+	let px = gfx::read_pixels(s3d::hdr_target());
+	let _ = gfx::save_png(out, path(dir, name)[..]);
+	px
+}
+fn probe_err(a const byte[:], r const byte[:], w int, h int) real {
+	var num = 0.0;
+	var den = 0.0;
+	for y in (h * 60 / 100)..(h * 95 / 100) {
+		for x in (w * 15 / 100)..(w * 85 / 100) {
+			for c in 3 {
+				let v = gi_half(a, 8, y * w + x, c) as real;
+				let q = gi_half(r, 8, y * w + (w - 1 - x), c) as real;
+				num += abs(v - q);
+				den += q;
+			}
+		}
+	}
+	if den > 0.0 { num / den } else { 1.0 }
+}
+fn probe_checks(dir const byte[:]) bool {
+	half_table();
+	let w = 640;
+	let h = 360;
+	let son = envmap::on;
+	probe_scene();
+	s3d::init(w, h);
+	let out = gfx::render_target(w, h, gfx::RGBA8);
+	probe_cam(-1.0);
+	s3d::items[PR_FLOOR].visible = false;
+	let rf = probe_frame(out, dir, "probe_ref.png");
+	s3d::items[PR_FLOOR].visible = true;
+	probe_cam(1.0);
+	let off = probe_frame(out, dir, "probe_off.png");
+	s3d::probe_bounces = 1;
+	s3d::add_probe(float3 { 0.0, 1.5, 0.0 }, float3 { -3.0, 0.0, -3.0 }, float3 { 3.0, 3.0, 3.0 }, 0.25);
+	let t0 = clock_ns();
+	let on = probe_frame(out, dir, "probe_on1.png");
+	let tc = (clock_ns() - t0) as real / 1000000.0;
+	s3d::probe_parallax = false;
+	let np = probe_frame(out, dir, "probe_noparallax.png");
+	s3d::probe_parallax = true;
+	probe_cam(-1.0);
+	s3d::items[PR_FLOOR].visible = false;
+	let rf1 = probe_frame(out, dir, "probe_ref1.png");
+	s3d::items[PR_FLOOR].visible = true;
+	probe_cam(1.0);
+	s3d::probe_bounces = 3;
+	s3d::recapture();
+	let t3 = clock_ns();
+	let on3 = probe_frame(out, dir, "probe_on.png");
+	let tc3 = (clock_ns() - t3) as real / 1000000.0;
+	probe_cam(-1.0);
+	s3d::items[PR_FLOOR].visible = false;
+	let rf3 = probe_frame(out, dir, "probe_ref3.png");
+	s3d::items[PR_FLOOR].visible = true;
+	probe_cam(1.0);
+	let t1 = clock_ns();
+	for k in 30 { s3d::render(out); }
+	let _ = gfx::read_pixels(out);
+	let fon = (clock_ns() - t1) as real / 30000000.0;
+	s3d::clear_probes();
+	let t2 = clock_ns();
+	for k in 30 { s3d::render(out); }
+	let _ = gfx::read_pixels(out);
+	let foff = (clock_ns() - t2) as real / 30000000.0;
+	let e1 = probe_err(on[..], rf[..], w, h);
+	let e2 = probe_err(np[..], rf[..], w, h);
+	let e0 = probe_err(off[..], rf[..], w, h);
+	let e3 = probe_err(on3[..], rf3[..], w, h);
+	let e4 = probe_err(on[..], rf1[..], w, h);
+	let r1 = e1 <= R1_BAR;
+	let r1b = e3 <= R1_BAR;
+	let rb = e4 >= R2_RATIO * e3;
+	let r2 = e2 >= R2_RATIO * e1;
+	let c1 = e0 > R1_BAR;
+	print("gpu: probe R1 floor vs mirror ", r4(e1), " (bar <= ", R1_BAR, ") ", if r1 { "PASS" } else { "FAIL" });
+	print("gpu: probe R2 no parallax ", r4(e2), " = ", r3(e2 / max(e1, 1e-9)), " x (bar >= ", R2_RATIO, " x) ", if r2 { "PASS" } else { "FAIL" });
+	print("gpu: probe control (probes off) ", r4(e0), " ", if c1 { "fails R1 (good)" } else { "PASSES R1 (FAIL)" });
+	print("gpu: probe R1b 3 bounces vs lit mirror ", r4(e3), " (bar <= ", R1_BAR, ") ", if r1b { "PASS" } else { "FAIL" });
+	print("gpu: probe R4 1 bounce vs lit mirror ", r4(e4), " = ", r3(e4 / max(e3, 1e-9)), " x (bar >= ", R2_RATIO, " x) ", if rb { "PASS" } else { "FAIL" });
+	print("gpu: probe capture + first frame ", r3(tc), " ms (1 bounce), ", r3(tc3), " ms (3 bounces); frame with probe ", r3(fon), " ms, without ", r3(foff), " ms");
+	gfx::release(out);
+	envmap::on = son;
+	s3d::look = DEF_LOOK; s3d::sun = DEF_SUN; s3d::sky = DEF_SKY;
+	s3d::probe_bounces = 3;
+	r1 && r2 && c1 && r1b && rb
+}
 fn gpu_checks(dir const byte[:], golden const byte[:]) bool {
 	var good = true;
 	// GFX_MAKE_GOLDEN: unset or 0 runs the checks, 1 writes both goldens and stops
@@ -3242,7 +3356,7 @@ fn gpu_checks(dir const byte[:], golden const byte[:]) bool {
 	var only byte[>..] = [];
 	let _ = env("GFX_ONLY", only);
 	if only.len > 0 {
-		let ok = if only[..] == "gtao" { gtao_checks() } else if only[..] == "gi" { gi_checks() } else if only[..] == "mblur" { mb_checks() } else if only[..] == "dof" { dof_checks() } else if only[..] == "fx" { fx_checks() } else { shadow_checks() };
+		let ok = if only[..] == "gtao" { gtao_checks() } else if only[..] == "gi" { gi_checks() } else if only[..] == "mblur" { mb_checks() } else if only[..] == "dof" { dof_checks() } else if only[..] == "fx" { fx_checks() } else if only[..] == "tsr" { tsr_checks(dir) } else if only[..] == "probe" { probe_checks(dir) } else { shadow_checks() };
 		let e = gfx::error();
 		if e.len > 0 { print("gpu: gfx error ", e[..]); return false; }
 		return ok;
@@ -3403,6 +3517,7 @@ fn gpu_checks(dir const byte[:], golden const byte[:]) bool {
 	if !mb_checks() { good = false; }
 	if !dof_checks() { good = false; }
 	if !fx_checks() { good = false; }
+	if !probe_checks(dir) { good = false; }
 	let err = gfx::error();
 	if err.len > 0 { print("gpu: gfx error ", err[..]); good = false; }
 	good

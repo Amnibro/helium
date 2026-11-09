@@ -627,6 +627,7 @@ SD_2DA := 3
 SD_2DS := 4
 SD_CUBES := 5
 SD_2DAS := 6
+SD_CUBEA := 7
 struct Ty { k int, el int = -1, cols int = 0, rows int = 0, name int = -1, fnm int[>..] = [], fty int[>..] = [] }
 E_FLT := 0
 E_INT := 1
@@ -700,6 +701,8 @@ var TS3D = 0
 var TS2DA = 0
 var TS2DS = 0
 var TSCUBES = 0
+var TSCUBEA = 0
+var NEEDCA = false
 var TS2DAS = 0
 var TYNAMES = dictionary<int, int>{..}
 var ARRTY = dictionary<u64, int>{..}
@@ -772,9 +775,10 @@ recursive tyid(t int) int:
 		st := tyid(if y.cols == 32 || y.cols == 33 { TUINT } else { TFLOAT }); emitw(SGLOB, SOP_TYPEIMAGE, [id, st, 1, 0, 0, 0, 2, y.cols])
 	else if y.k == T_SAMP:
 		st := tyid(if y.el >= 0 { y.el } else { TFLOAT }); img := nid(); c := y.cols
-		dim := if c == SD_CUBE || c == SD_CUBES { 3 } else if c == SD_3D { 2 } else { 1 }
+		dim := if c == SD_CUBE || c == SD_CUBES || c == SD_CUBEA { 3 } else if c == SD_3D { 2 } else { 1 }
 		dep := if c == SD_2DS || c == SD_CUBES || c == SD_2DAS { 1 } else { 0 }
-		arr := if c == SD_2DA || c == SD_2DAS { 1 } else { 0 }
+		arr := if c == SD_2DA || c == SD_2DAS || c == SD_CUBEA { 1 } else { 0 }
+		if c == SD_CUBEA: NEEDCA = true
 		emitw(SGLOB, SOP_TYPEIMAGE, [img, st, dim, dep, arr, 0, 1, 0]); emit2(SGLOB, SOP_TYPESAMPLEDIMAGE, id, img); insert(SAMPIMG, t, img)
 	insert(TYIDS, t, id); id
 ptridraw(tid int, st int) int:
@@ -1027,7 +1031,7 @@ tyname(t int) const byte[:]:
 	if k == T_INT: return if TY[t].rows == 64 { "int64_t" } else { "int" }
 	if k == T_UINT: return if TY[t].rows == 64 { "uint64_t" } else { "uint" }
 	if k == T_FLOAT: return "float"
-	if k == T_SAMP: return if c == SD_CUBE { "samplerCube" } else if c == SD_3D { "sampler3D" } else if c == SD_2DA { "sampler2DArray" } else if c == SD_2DS { "sampler2DShadow" } else if c == SD_CUBES { "samplerCubeShadow" } else if c == SD_2DAS { "sampler2DArrayShadow" } else if y.el >= 0 && TY[y.el].k == T_UINT { "usampler2D" } else { "sampler2D" }
+	if k == T_SAMP: return if c == SD_CUBE { "samplerCube" } else if c == SD_CUBEA { "samplerCubeArray" } else if c == SD_3D { "sampler3D" } else if c == SD_2DA { "sampler2DArray" } else if c == SD_2DS { "sampler2DShadow" } else if c == SD_CUBES { "samplerCubeShadow" } else if c == SD_2DAS { "sampler2DArrayShadow" } else if y.el >= 0 && TY[y.el].k == T_UINT { "usampler2D" } else { "sampler2D" }
 	if k == T_ARR: return "array"
 	if k == T_STRUCT: return snm(y.name)
 	if k == T_IMG: return "image2D"
@@ -1236,7 +1240,7 @@ genintrin(e int, ii int) Val:
 		if k == I_FETCH && sd != SD_2D && sd != SD_2DA && sd != SD_3D: serr(line, str("texelFetch requires a sampler2D, sampler2DArray, or sampler3D (GLSL defines no texelFetch for ", tyname(st), ")"))
 		if k == I_TEXOFF && sd != SD_2D && sd != SD_2DA: serr(line, "textureOffset requires a sampler2D or sampler2DArray")
 		v4 := if TY[st].el >= 0 && TY[TY[st].el].k == T_UINT { TUVEC[2] } else { TVEC[2] }
-		ct := if sd == SD_2D { TVEC[0] } else if sd == SD_CUBES || sd == SD_2DAS { TVEC[2] } else { TVEC[1] }
+		ct := if sd == SD_2D { TVEC[0] } else if sd == SD_CUBES || sd == SD_2DAS || sd == SD_CUBEA { TVEC[2] } else { TVEC[1] }
 		frag := STAGE == ST_FRAG
 		if k == I_TEX:
 			co := rvalas(a[1], ct); r := nid()
@@ -1261,14 +1265,14 @@ genintrin(e int, ii int) Val:
 			emitw(SBODY, SOP_IMAGESAMPLEEXPLICITLOD, [tyid(v4), r, smp, co, 2, lod]); return rv(v4, r)
 		if k == I_TEXGRAD:
 			if sd == SD_CUBES || sd == SD_2DAS: serr(line, str("textureGrad is not supported with ", tyname(st), " (comparison fetches are level-zero on every backend; use texture())"))
-			gt := if sd == SD_CUBE || sd == SD_3D { TVEC[1] } else { TVEC[0] }
+			gt := if sd == SD_CUBE || sd == SD_3D || sd == SD_CUBEA { TVEC[1] } else { TVEC[0] }
 			co := rvalas(a[1], ct); dx := rvalas(a[2], gt); dy := rvalas(a[3], gt); r := nid()
 			if shadow:
 				xy := nid(); emitw(SBODY, SOP_VECTORSHUFFLE, [tyid(TVEC[0]), xy, co, co, 0, 1]); dr := nid(); ft := tyid(TFLOAT); emit4(SBODY, SOP_COMPOSITEEXTRACT, ft, dr, co, 2)
 				emitw(SBODY, SOP_IMAGESAMPLEDREFEXPLICITLOD, [tyid(TFLOAT), r, smp, xy, dr, 4, dx, dy]); return rv(TFLOAT, r)
 			emitw(SBODY, SOP_IMAGESAMPLEEXPLICITLOD, [tyid(v4), r, smp, co, 4, dx, dy]); return rv(v4, r)
 		tyid(st); itid := dgi(SAMPIMG, st); img := nid(); emit3(SBODY, SOP_IMAGE, itid, img, smp)
-		three := sd == SD_2DA || sd == SD_3D || sd == SD_2DAS
+		three := sd == SD_2DA || sd == SD_3D || sd == SD_2DAS || sd == SD_CUBEA
 		if k == I_FETCH:
 			co := rvalas(a[1], if three { TIVEC[1] } else { TIVEC[0] }); lod := rvalas(a[2], TINT); r := nid()
 			emitw(SBODY, SOP_IMAGEFETCH, [tyid(v4), r, img, co, 2, lod]); return rv(v4, r)
@@ -1918,10 +1922,10 @@ regty(n const byte[:], t int): insert(TYNAMES, sid(n), t)
 inittypes():
 	TVOID = nty(Ty{T_VOID}); TBOOL = nty(Ty{T_BOOL}); TINT = nty(Ty{T_INT}); TUINT = nty(Ty{T_UINT}); TFLOAT = nty(Ty{T_FLOAT})
 	for i 3: TVEC[i] = nty(Ty{T_VEC, TFLOAT, i + 2}); TIVEC[i] = nty(Ty{T_VEC, TINT, i + 2}); TUVEC[i] = nty(Ty{T_VEC, TUINT, i + 2}); TBVEC[i] = nty(Ty{T_VEC, TBOOL, i + 2}); TMAT[i] = nty(Ty{T_MAT, TFLOAT, i + 2, i + 2})
-	TSAMP = nty(Ty{T_SAMP, TFLOAT, SD_2D}); TUSAMP = nty(Ty{T_SAMP, TUINT, SD_2D}); TSCUBE = nty(Ty{T_SAMP, TFLOAT, SD_CUBE}); TS3D = nty(Ty{T_SAMP, TFLOAT, SD_3D}); TS2DA = nty(Ty{T_SAMP, TFLOAT, SD_2DA}); TS2DS = nty(Ty{T_SAMP, TFLOAT, SD_2DS}); TSCUBES = nty(Ty{T_SAMP, TFLOAT, SD_CUBES}); TS2DAS = nty(Ty{T_SAMP, TFLOAT, SD_2DAS})
+	TSAMP = nty(Ty{T_SAMP, TFLOAT, SD_2D}); TUSAMP = nty(Ty{T_SAMP, TUINT, SD_2D}); TSCUBE = nty(Ty{T_SAMP, TFLOAT, SD_CUBE}); TS3D = nty(Ty{T_SAMP, TFLOAT, SD_3D}); TS2DA = nty(Ty{T_SAMP, TFLOAT, SD_2DA}); TS2DS = nty(Ty{T_SAMP, TFLOAT, SD_2DS}); TSCUBES = nty(Ty{T_SAMP, TFLOAT, SD_CUBES}); TS2DAS = nty(Ty{T_SAMP, TFLOAT, SD_2DAS}); TSCUBEA = nty(Ty{T_SAMP, TFLOAT, SD_CUBEA})
 	TI64 = nty(Ty{T_INT, -1, 0, 64}); TU64 = nty(Ty{T_UINT, -1, 0, 64}); regty("bool", TBOOL); regty("int", TINT); regty("uint", TUINT); regty("float", TFLOAT); regty("int64_t", TI64); regty("uint64_t", TU64)
 	for p, i ["vec", "ivec", "uvec", "bvec"]: for j 3 { n byte[>..] ~= []; n.append(p); n.push(('2' + j) as byte); regty(n[..], [TVEC[j], TIVEC[j], TUVEC[j], TBVEC[j]][i]) }
-	regty("sampler2D", TSAMP); regty("usampler2D", TUSAMP); regty("samplerCube", TSCUBE); regty("sampler3D", TS3D); regty("sampler2DArray", TS2DA); regty("sampler2DShadow", TS2DS); regty("samplerCubeShadow", TSCUBES); regty("sampler2DArrayShadow", TS2DAS)
+	regty("sampler2D", TSAMP); regty("usampler2D", TUSAMP); regty("samplerCube", TSCUBE); regty("sampler3D", TS3D); regty("sampler2DArray", TS2DA); regty("sampler2DShadow", TS2DS); regty("samplerCubeShadow", TSCUBES); regty("sampler2DArrayShadow", TS2DAS); regty("samplerCubeArray", TSCUBEA)
 	regty("mat2", TMAT[0]); regty("mat3", TMAT[1]); regty("mat4", TMAT[2]); regty("image2D", nty(Ty{T_IMG, -1, -1}))
 builtin(n const byte[:], t int, b int):
 	pt := ptrid(t, SC_INPUT); vr := nid(); emit3(SGLOB, SOP_VARIABLE, pt, vr, SC_INPUT); emit3(SDECOS, SOP_DECORATE, vr, DEC_BUILTIN, b); nameid(vr, n); addsym(sid(n), SY_VAR, t, vr, SC_INPUT, 0); SIFACE.push(vr as! u32)
@@ -1933,6 +1937,7 @@ assemble() u32[>..]:
 	m u32[>..] ~= [0x07230203 as u32, 0x00010300 as u32, 0 as u32, NEXTID as! u32, 0 as u32]; emit1(m, SOP_CAPABILITY, 1)
 	if NEEDIQ: emit1(m, SOP_CAPABILITY, 50)
 	if NEEDEF: emit1(m, SOP_CAPABILITY, 49)
+	if NEEDCA: emit1(m, SOP_CAPABILITY, 45)
 	if NEEDI64: emit1(m, SOP_CAPABILITY, 11)
 	emitstr(m, SOP_EXTINSTIMPORT, [GLSLEXT], "GLSL.std.450"); emit2(m, SOP_MEMORYMODEL, 0, 1)
 	w u32[>..] ~= [(if STAGE == ST_FRAG { 4 } else if STAGE == ST_COMP { 5 } else { 0 }) as! u32, ENTRYF as! u32]; pushstr(w, "main"); w.append(SIFACE[..])
@@ -1945,7 +1950,7 @@ reset():
 	LAIDS = dictionary<int, int>{..}; LAIDA = dictionary<int, int>{..}; LAIDE = dictionary<int, int>{..}; SAMPIMG = dictionary<int, int>{..}; SCD = dictionary<u64, int>{..}; FNS = dictionary<int, int>{..}
 	SNAMES.clear(); SDECOS.clear(); SGLOB.clear(); SFUNCS.clear(); SBODY.clear(); SLOCALS.clear(); SIFACE.clear(); SCN.clear(); SCM.clear(); SFILES.clear(); AHEAD.clear()
 	RSAMP.clear(); RIMG.clear(); RBUF.clear(); RBLK.clear(); RMEM.clear(); RINP.clear(); ERRM.clear(); MSLO.clear(); HLSLO.clear(); WGSLO.clear(); WGERR.clear(); WB.clear(); TPW = false
-	NEXTID = 1; GLSLEXT = 0; NEEDIQ = false; NEEDEF = false; CURRT = -1; FHASRET = false; BTERM = false; BRKT = 0; CONTT = 0; ENTRYF = 0; PVVAR = 0; LSIZE[0] = 0; LSIZE[1] = 0; LSIZE[2] = 0; FIDX = 0; LP = 0; LLINE = 1
+	NEXTID = 1; GLSLEXT = 0; NEEDIQ = false; NEEDEF = false; NEEDCA = false; CURRT = -1; FHASRET = false; BTERM = false; BRKT = 0; CONTT = 0; ENTRYF = 0; PVVAR = 0; LSIZE[0] = 0; LSIZE[1] = 0; LSIZE[2] = 0; FIDX = 0; LP = 0; LLINE = 1
 cspv(src const byte[:], stage int, spv u32[>..]&) bool:
 	reset(); STAGE = stage; initins(); ok ~= true
 	body():
@@ -2255,10 +2260,10 @@ hlslren(n const byte[:]) const byte[:]:
 	""
 hlslrel(n const byte[:]) const byte[:]: if n == "lessThan" { "<" } else if n == "lessThanEqual" { "<=" } else if n == "greaterThan" { ">" } else if n == "greaterThanEqual" { ">=" } else if n == "equal" { "==" } else if n == "notEqual" { "!=" } else { "" }
 hlslatom(n const byte[:]) const byte[:]: if n == "atomicAdd" { "InterlockedAdd" } else if n == "atomicMin" { "InterlockedMin" } else if n == "atomicMax" { "InterlockedMax" } else if n == "atomicAnd" { "InterlockedAnd" } else if n == "atomicOr" { "InterlockedOr" } else if n == "atomicXor" { "InterlockedXor" } else { "" }
-hlslstex(t int) const byte[:]: c := TY[t].cols; if c == SD_CUBE || c == SD_CUBES { "TextureCube<float4>" } else if c == SD_3D { "Texture3D<float4>" } else if c == SD_2DA || c == SD_2DAS { "Texture2DArray<float4>" } else if c == SD_2DS { "Texture2D<float4>" } else if TY[t].el >= 0 && TY[TY[t].el].k == T_UINT { "Texture2D<uint4>" } else { "Texture2D<float4>" }
+hlslstex(t int) const byte[:]: c := TY[t].cols; if c == SD_CUBE || c == SD_CUBES { "TextureCube<float4>" } else if c == SD_CUBEA { "TextureCubeArray<float4>" } else if c == SD_3D { "Texture3D<float4>" } else if c == SD_2DA || c == SD_2DAS { "Texture2DArray<float4>" } else if c == SD_2DS { "Texture2D<float4>" } else if TY[t].el >= 0 && TY[TY[t].el].k == T_UINT { "Texture2D<uint4>" } else { "Texture2D<float4>" }
 isshadow(t int) bool: c := TY[t].cols; c == SD_2DS || c == SD_CUBES || c == SD_2DAS
 hlslssmp(t int) const byte[:]: if isshadow(t) { "SamplerComparisonState" } else { "SamplerState" }
-mslstex(t int) const byte[:]: c := TY[t].cols; if c == SD_CUBE { "texturecube<float>" } else if c == SD_3D { "texture3d<float>" } else if c == SD_2DA { "texture2d_array<float>" } else if c == SD_2DS { "depth2d<float>" } else if c == SD_CUBES { "depthcube<float>" } else if c == SD_2DAS { "depth2d_array<float>" } else if TY[t].el >= 0 && TY[TY[t].el].k == T_UINT { "texture2d<uint>" } else { "texture2d<float>" }
+mslstex(t int) const byte[:]: c := TY[t].cols; if c == SD_CUBE { "texturecube<float>" } else if c == SD_CUBEA { "texturecube_array<float>" } else if c == SD_3D { "texture3d<float>" } else if c == SD_2DA { "texture2d_array<float>" } else if c == SD_2DS { "depth2d<float>" } else if c == SD_CUBES { "depthcube<float>" } else if c == SD_2DAS { "depth2d_array<float>" } else if TY[t].el >= 0 && TY[TY[t].el].k == T_UINT { "texture2d<uint>" } else { "texture2d<float>" }
 tpargs(a const int[:], from int):
 	for i a.len - from: if i > 0 { TPO.append(", ") } tpexpr(a[from + i], 2)
 issampref(e int) bool: EX[e].k == E_REF && EX[e].rt >= 0 && TY[EX[e].rt].k == T_SAMP
@@ -2489,13 +2494,13 @@ mslcall(e int):
 			if a0 >= 0 && TY[a0].k == T_VEC && TY[a0].cols > y.cols: TPO.push('('); tpexpr(a[0], 15); format(TPO, ").", ["xy", "xyz", "xyzw"][y.cols - 2]); return
 		format(TPO, hlslty(ct), "("); tpargs(a, 0); TPO.push(')'); return
 	if argc >= 1 && issampref(a[0]):
-		s := snm(EX[a[0]].name); ng := STAGE != ST_FRAG; sd := TY[EX[a[0]].rt].cols; sh := isshadow(EX[a[0]].rt); ar := sd == SD_2DA; lv := if ng { ", level(0)" } else { "" }
+		s := snm(EX[a[0]].name); ng := STAGE != ST_FRAG; sd := TY[EX[a[0]].rt].cols; sh := isshadow(EX[a[0]].rt); ar := sd == SD_2DA || sd == SD_CUBEA; ca := sd == SD_CUBEA; lv := if ng { ", level(0)" } else { "" }
 		if sd == SD_2DAS && n == "texture": format(TPO, s, "_tex.sample_compare(", s, "_smp, ("); tpexpr(a[1], 2); TPO.append(").xy, uint(rint(("); tpexpr(a[1], 2); TPO.append(").z)), ("); tpexpr(a[1], 2); format(TPO, ").w", lv, ")"); return
 		if sh && (n == "texture" || n == "textureLod" || n == "textureGrad"):
 			mc := sd == SD_CUBES; format(TPO, s, "_tex.sample_compare(", s, "_smp, ("); tpexpr(a[1], 2); TPO.append(if mc { ").xyz, (" } else { ").xy, (" }); tpexpr(a[1], 2); format(TPO, if mc { ").w" } else { ").z" }, lv, ")"); return
 		if ar && (n == "texture" || n == "textureLod" || n == "textureGrad"):
-			format(TPO, s, "_tex.sample(", s, "_smp, ("); tpexpr(a[1], 2); TPO.append(").xy, uint(rint(("); tpexpr(a[1], 2); TPO.append(").z))")
-			if n == "textureLod" { TPO.append(", level("); tpexpr(a[2], 2); TPO.push(')') } else if n == "textureGrad" { TPO.append(", gradient2d("); tpexpr(a[2], 2); TPO.append(", "); tpexpr(a[3], 2); TPO.push(')') } else { TPO.append(lv) }
+			format(TPO, s, "_tex.sample(", s, "_smp, ("); tpexpr(a[1], 2); TPO.append(if ca { ").xyz, uint(rint((" } else { ").xy, uint(rint((" }); tpexpr(a[1], 2); TPO.append(if ca { ").w))" } else { ").z))" })
+			if n == "textureLod" { TPO.append(", level("); tpexpr(a[2], 2); TPO.push(')') } else if n == "textureGrad" { TPO.append(if ca { ", gradientcube(" } else { ", gradient2d(" }); tpexpr(a[2], 2); TPO.append(", "); tpexpr(a[3], 2); TPO.push(')') } else { TPO.append(lv) }
 			TPO.push(')'); return
 		if n == "texture": format(TPO, s, "_tex.sample(", s, "_smp, "); tpexpr(a[1], 2); format(TPO, lv, ")"); return
 		if n == "textureLod": format(TPO, s, "_tex.sample(", s, "_smp, "); tpexpr(a[1], 2); TPO.append(", level("); tpexpr(a[2], 2); TPO.append("))"); return
@@ -2696,7 +2701,7 @@ wgsle(t int) const byte[:]:
 wgslty(t int) const byte[:]:
 	if TY[t].k != T_ARR: return wgsle(t)
 	s byte[>..] ~= []; format(s, "array<", wgsle(TY[t].el)); if TY[t].cols >= 0 { format(s, ", ", TY[t].cols) } s.push('>'); snm(sid(s[..]))
-wtexty(t int) const byte[:]: c := TY[t].cols; if c == SD_2DS { "texture_depth_2d" } else if c == SD_CUBES { "texture_depth_cube" } else if c == SD_2DAS { "texture_depth_2d_array" } else if c == SD_CUBE { "texture_cube<f32>" } else if c == SD_3D { "texture_3d<f32>" } else if c == SD_2DA { "texture_2d_array<f32>" } else if TY[t].el >= 0 && TY[TY[t].el].k == T_UINT { "texture_2d<u32>" } else { "texture_2d<f32>" }
+wtexty(t int) const byte[:]: c := TY[t].cols; if c == SD_2DS { "texture_depth_2d" } else if c == SD_CUBES { "texture_depth_cube" } else if c == SD_2DAS { "texture_depth_2d_array" } else if c == SD_CUBE { "texture_cube<f32>" } else if c == SD_CUBEA { "texture_cube_array<f32>" } else if c == SD_3D { "texture_3d<f32>" } else if c == SD_2DA { "texture_2d_array<f32>" } else if TY[t].el >= 0 && TY[TY[t].el].k == T_UINT { "texture_2d<u32>" } else { "texture_2d<f32>" }
 wsmpty(t int) const byte[:]: if isshadow(t) { "sampler_comparison" } else { "sampler" }
 wfmt(f int) const byte[:]: if f == 1 { "rgba32float" } else if f == 2 { "rgba16float" } else if f == 3 { "r32float" } else if f == 4 { "rgba8unorm" } else if f == 32 { "rgba8uint" } else if f == 33 { "r32uint" } else if f == 6 { "rg32float" } else if f == 7 { "rg16float" } else { "r16float" }
 wsc(c byte) byte: if c == 's' { 'x' } else if c == 't' { 'y' } else if c == 'p' { 'z' } else if c == 'q' { 'w' } else { c }
@@ -2706,7 +2711,7 @@ wmem(b int, n int):
 	TPO.append(wid(n))
 wb(g int, b int, k int, i int): WB.push(g); WB.push(b); WB.push(k); WB.push(i)
 wlv(e int): x := EX[e]; if x.k == E_IDX { TPO.append(wid(tpname(EX[x.l].name))); TPO.push('['); tpexpr(x.r, 0); TPO.push(']') } else { TPO.append(wid(tpname(x.name))) }
-wly(e int): TPO.append("i32(floor(("); tpexpr(e, 0); TPO.append(").z + 0.5))")
+wly(e int, w bool): TPO.append("i32(floor(("); tpexpr(e, 0); TPO.append(if w { ").w + 0.5))" } else { ").z + 0.5))" })
 wco(e int, sw const byte[:]): TPO.push('('); tpexpr(e, 0); TPO.append(sw)
 wtexcall(e int):
 	x := EX[e]; n := snm(x.name); a := x.args[..]; s := wid(EX[a[0]].name); st := EX[a[0]].rt; sd := TY[st].cols; sh := isshadow(st); fr := STAGE == ST_FRAG; ar := sd == SD_2DA || sd == SD_2DAS
@@ -2721,7 +2726,7 @@ wtexcall(e int):
 	if TY[st].el >= 0 && TY[TY[st].el].k == T_UINT: serr(x.line, str("'", n, "' on a usampler2D is not supported in WGSL output (WebGPU cannot filter integer textures; use texelFetch)"))
 	cmp := sh && n != "textureOffset"
 	format(TPO, if cmp { if fr && n == "texture" { "textureSampleCompare(" } else { "textureSampleCompareLevel(" } } else if n == "textureGrad" { "textureSampleGrad(" } else if n == "textureLod" || !fr { "textureSampleLevel(" } else { "textureSample(" }, s, "_tex, ", s, "_smp, ")
-	if cmp && sd == SD_2DS { wco(a[1], ").xy, "); wco(a[1], ").z") } else if cmp && sd == SD_CUBES { wco(a[1], ").xyz, "); wco(a[1], ").w") } else if ar { wco(a[1], ").xy, "); wly(a[1]); if cmp { TPO.append(", "); wco(a[1], ").w") } } else { tpexpr(a[1], 2) }
+	if cmp && sd == SD_2DS { wco(a[1], ").xy, "); wco(a[1], ").z") } else if cmp && sd == SD_CUBES { wco(a[1], ").xyz, "); wco(a[1], ").w") } else if sd == SD_CUBEA { wco(a[1], ").xyz, "); wly(a[1], true) } else if ar { wco(a[1], ").xy, "); wly(a[1], false); if cmp { TPO.append(", "); wco(a[1], ").w") } } else { tpexpr(a[1], 2) }
 	if !cmp && n == "textureLod" { TPO.append(", "); tpexpr(a[2], 2) } else if !cmp && n == "textureGrad" { TPO.append(", "); tpexpr(a[2], 2); TPO.append(", "); tpexpr(a[3], 2) } else if !cmp && !fr { TPO.append(", 0.0") }
 	if n == "textureOffset": TPO.append(", "); tpexpr(a[2], 2)
 	TPO.push(')')
@@ -2879,7 +2884,7 @@ emitwgsl():
 			format(TPO, "}\n@group(", g, ") @binding(", b, ") var<uniform> ", if y.inst >= 0 { wid(y.inst) } else { n }, ": cf_ub_", n, ";\n"); wb(g, b, 1, y.bind)
 		else if k == D_OPAQUE && TY[y.ty].k == T_SAMP:
 			c := TY[y.ty].cols; sh := isshadow(y.ty); format(TPO, "@group(", g, ") @binding(", b, ") var ", n, "_tex: ", wtexty(y.ty), ";\n@group(", g, ") @binding(", b + 1, ") var ", n, "_smp: ", wsmpty(y.ty), ";\n")
-			wb(g, b, if sh { 6 } else if TY[y.ty].el >= 0 && TY[TY[y.ty].el].k == T_UINT { 5 } else { 4 }, if c == SD_CUBE || c == SD_CUBES { 1 } else if c == SD_3D { 2 } else if c == SD_2DA || c == SD_2DAS { 3 } else { 0 }); wb(g, b + 1, if sh { 8 } else { 7 }, 0)
+			wb(g, b, if sh { 6 } else if TY[y.ty].el >= 0 && TY[TY[y.ty].el].k == T_UINT { 5 } else { 4 }, if c == SD_CUBE || c == SD_CUBES { 1 } else if c == SD_3D { 2 } else if c == SD_2DA || c == SD_2DAS { 3 } else if c == SD_CUBEA { 4 } else { 0 }); wb(g, b + 1, if sh { 8 } else { 7 }, 0)
 		else if k == D_OPAQUE:
 			ld := WIL.contains(y.name) || y.ro; wr := WIS.contains(y.name); f := TY[y.ty].cols
 			format(TPO, "@group(", g, ") @binding(", b, ") var ", n, ": texture_storage_2d<", wfmt(f), ", ", if ld && wr { "read_write" } else if ld { "read" } else { "write" }, ">;\n"); wb(g, b, if ld && wr { 11 } else if ld { 10 } else { 9 }, f)

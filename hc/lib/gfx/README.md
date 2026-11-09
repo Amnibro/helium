@@ -299,6 +299,19 @@ The ambient term knows the material models: skin (E7) gets both specular lobes (
 
 Reflections: after the prepass a 7-level pyramid of the largest 1 / view depth per cell is built from `lin_depth` (`hiz.frag`, one R32F texture per level), then `ssr_trace.frag` reflects the view ray about the prepass normal and walks it in screen space with 1 / depth interpolated linearly: a cell whose nearest depth is behind the ray segment is skipped and the walk goes one level coarser, otherwise it advances to where the ray reaches that depth and goes one level finer; at full resolution a hit needs the ray within `ssr_thickness` behind the surface. A hit is faded by the screen edge, the ray length and how squarely it meets the hit surface (back faces count 0), and reprojected to last frame by the motion target (when drawn) or the camera matrices. The surface shader blends each lobe toward last frame's colour at that point with that confidence times its roughness fade, fetched from a mip chain of last frame's resolved image (`ssr_copy.frag` + `generate_mips` after the temporal pass, so with TAA it is the history) at the level of the reflection cone's footprint (2 alpha x hit distance / hit depth, in pixels), so rough reflections blur instead of getting noisy. Blended surfaces get no reflections (the prepass does not draw them). The first frame after `ssr_on`, a resize or a `temporal_reset` uses the probe/sky value only. `debug_view` 9 shows the specular occlusion of the main lobe, 10 the reflection confidence (red) and hit distance / depth (green).
 
+Local reflection probes: indoors the sky is the wrong thing to reflect, so a probe captures the room around it and stands in for the sky inside its box.
+
+| setting | default | what it does |
+| --- | --- | --- |
+| `add_probe(pos, lo, hi, fade)` | none | adds a probe captured from `pos` and box-projected onto the box `lo`..`hi` (put the box on the room's inner walls). Full weight inside the box, fading out over `fade` scene units outside it. Up to 8; where boxes overlap the smaller one wins and the larger fills in. |
+| `clear_probes()`, `recapture()` | | drop every probe; capture again after geometry or lights move. Probes recapture by themselves when the sky changes. |
+| `probe_res` | 256 | capture size per cube face. |
+| `probe_bounces` | 3 | capture passes; each is shaded with the previous pass's probes, so light bounces around the room. |
+| `probe_parallax` | true | box projection; off, the probe is sampled as if infinitely far away. |
+| `probe_intensity`, `probe_near` | 1.0, 0.05 | brightness of probe light; near plane of the capture camera. |
+
+The sky cube is now a cube array (`envmap::cube`, `TEXTURE_CUBE_ARRAY`): cube 0 is the sky, cube k + 1 is probe k, all at the sky's size and mip chain (`envmap::size`, 512 by default: about 17 MB of RGBA16F per probe, 4 MB at 256). A capture renders the scene from the probe's position into six 90-degree faces at `probe_res` (sun cascades refit per face; SSR, AO, temporal, transmission, particles and quads off), reprojects each face into a cube (`probe_copy.frag`) and runs the sky's GGX prefilter into the probe's layers. The last bounce keeps the previous bounce's diffuse level, so walls seen in a reflection are lit exactly like the walls themselves (without that, a mirror floor showed the walls brighter than they are; R1b below). In `surface.frag` a probe replaces the sky for reflections, box-projected from the shading point, and for diffuse ambient unless GI is on. A scene with probes uses the full ambient model (`ambient_env`) everywhere. `samplerCubeArray` is new in shaderc for SPIR-V (`SampledCubeArray`), MSL, HLSL and WGSL, and so is `gfx::TEXTURE_CUBE_ARRAY` natively and in the browser.
+
 With both on their defaults the frame changes only through specular occlusion and the model-aware ambient lobes: the sphere golden reads 52.42 dB and the shipped-look golden 52.68 dB (52.83 and 56.02 before; the shipped look runs SSAO, so Lagarde's fit applies there), so neither golden was retaken.
 
 E2 gate results (RX 9060 XT, RADV, Mesa 26.2.4; clean worktree at 0d063ef, `results/2026-11-06_rx9060xt_radv_0d063ef_e2.txt`): `gfxtest.sh` ok; `webgputest.mjs` 0 failures (scene_e2, a glossy floor with SSR, GTAO and specular occlusion, 105.84 dB; holo_e2 bit for bit); `wgsltest.mjs` 51 modules, 42 pipelines, 0 failures. GPU time at 1920x1080 (`look_bench`, Holo, Amni-Companion studio light, floor, 30 warmup + 200 frames, median; bars: specular occlusion <= +0.3 ms, SSR <= +1.5 ms):
@@ -844,6 +857,33 @@ with `probe_bounces = 1`, as registered.
 * **R4 bounces earn their place.** The R1b metric with `probe_bounces = 1` must be
   **>= 1.5 x** the default's.
 
+Results (RX 9060 XT, RADV, 640 x 360, `GFX_ONLY=probe`):
+
+| check | value | bar | result |
+| --- | --- | --- | --- |
+| R1 mirror match, 1 bounce | 0.0304 | <= 0.15 | pass |
+| R2 no parallax / parallax | 0.4761 / 0.0304 = 15.68 x | >= 1.5 x | pass |
+| control, probes off | 1.6734 | must fail R1 | fails (good) |
+| R1b, 3 bounces vs lit mirror | 0.0485 | <= 0.15 | pass |
+| R4, 1 bounce vs lit mirror | 0.9058 = 18.69 x | >= 1.5 x | pass |
+
+The first 3-bounce run failed R1b (0.3121): every pass also refilters the probe's diffuse
+level, so the last capture saw walls lit by the second bounce's irradiance while the frame
+lit them with the third's, and the reflection came out darker than the walls. The last
+bounce now keeps the previous bounce's diffuse level (`envmap::filter(..., irr)` skips the
+irradiance mip), so the frame lights walls with the same irradiance the capture used. Same
+bar, second run 0.0485. Capture plus first frame: about 80 ms at 1 bounce, 109 ms at 3;
+frame time 0.338 ms with the probe and 0.31 ms without (30-frame mean, 640 x 360).
+
+R3: `gfxtest.sh` sphere golden 44.92 dB and shipped-look golden 41.7 dB (bar > 40), CPU
+output unchanged; `wgsltest.mjs` 59 modules, 50 pipelines, 0 failures (its own view
+dimension table needed `cube-array`, like `gpu.js`); `webgputest.mjs` 0 failures, plus a new
+`scene_probe` (the e2 floor with one probe) that matches native exactly. In that gfxtest run
+T7 (TSR resolve GPU p95 < 0.5 ms) failed at 1.39 ms while two other processes kept the GPU
+about 100 % busy; an A/B of T7 alone under the same load gave main dc74467f 0.45, 0.61, 1.16
+and 1.50 ms and this branch 1.09, 1.16, 0.45, 0.45 and 1.12 ms, so T7 is re-run on a quiet
+GPU before merging.
+
 ### Motion blur and depth of field results (2026-11-02, RX 9060 XT, RADV)
 
 Both are off by default (`motion_blur = 0`, `dof_aperture = 0`) and run as one HDR pass each
@@ -1206,7 +1246,10 @@ pass-through mean error is 0.0106 % (max 0.0488 %).
   goes black. Screen-space reflections on the same groove show chevrons from its facets
   when the surface is rougher than about 0.25. Amni-CAD sets `spec_occlusion = false`
   and `ssr_rough = 0.4`; the engine defaults are unchanged.
-* Not built: alpha to coverage, decals, local reflection probes, rectangular area
+* Reflection probes do not update by themselves when geometry or lights move (call
+  `recapture()`), leave glass, particles and quads out of the capture, and light a whole
+  box's diffuse with the irradiance at the probe's position.
+* Not built: alpha to coverage, decals, rectangular area
   lights (spot and sphere stand in), physical light falloff parity with three.js,
   rain and snow particles, caustics, mip bias for upscaling, BC, KTX2, WebP, meshopt
   and Draco, texture and mesh streaming, GPU instancing, motion vectors for morph

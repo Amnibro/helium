@@ -3,7 +3,7 @@ layout(location = 0) in vec2 in_uv;
 layout(set = 2, binding = 0) uniform sampler2D tex_hdr;
 layout(set = 2, binding = 1) uniform sampler2D tex_nd;
 layout(set = 2, binding = 2) uniform sampler2DArrayShadow tex_shadow;
-layout(set = 2, binding = 3) uniform samplerCube tex_env;
+layout(set = 2, binding = 3) uniform samplerCubeArray tex_env;
 layout(set = 3, binding = 0) uniform Fog {
 	mat4 inv_view_proj;
 	mat4 cascade_mat[3];
@@ -49,7 +49,7 @@ void main() {
 	vec3 acc = vec3(0.0);
 	float tr = 1.0;
 	int count = int(params2.w);
-	vec3 amb = env.x > 0.5 ? textureLod(tex_env, vec3(env_rot.x * dir.x + env_rot.y * dir.z, dir.y, env_rot.x * dir.z - env_rot.y * dir.x), env.w).rgb * env.y : ambient.rgb;
+	vec3 amb = env.x > 0.5 ? textureLod(tex_env, vec4(env_rot.x * dir.x + env_rot.y * dir.z, dir.y, env_rot.x * dir.z - env_rot.y * dir.x, 0.0), env.w).rgb * env.y : ambient.rgb;
 	for (int i = 0; i < 64; i++) {
 		if (i >= steps) break;
 		vec3 p = eye.xyz + dir * ((float(i) + jit) * dt);

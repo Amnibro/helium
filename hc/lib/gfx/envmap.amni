@@ -19,14 +19,20 @@ var pipe_equi gfx::Pipeline;
 var pipe_ggx gfx::Pipeline;
 var ready bool = false;
 var lv int = 0;
+var cubes int = 0;
+var cube_n int = 0;
+var gen int = 0;
+var pipe_copy gfx::Pipeline;
+struct CopyU { p float4 }
 struct EnvU { p float4 }
 fn setup() {
 	if ready { return; }
 	pipe_equi = gfx::pipeline(embed_shader("shaders/screen.vert"), embed_shader("shaders/env_equi.frag"));
 	pipe_ggx = gfx::pipeline(embed_shader("shaders/screen.vert"), embed_shader("shaders/env_ggx.frag"));
+	pipe_copy = gfx::pipeline(embed_shader("shaders/screen.vert"), embed_shader("shaders/env_copy.frag"));
 	smp = gfx::sampler(gfx::LINEAR, gfx::CLAMP);
 	smp_wrap = gfx::sampler(gfx::SamplerDesc { min_filter: gfx::LINEAR, mag_filter: gfx::LINEAR, mip_filter: gfx::LINEAR, wrap_u: gfx::REPEAT, wrap_v: gfx::CLAMP, wrap_w: gfx::CLAMP });
-	dummy = gfx::texture(gfx::TextureDesc { kind: gfx::TEXTURE_CUBE, format: gfx::RGBA8, usage: gfx::SAMPLED, width: 1, height: 1 });
+	dummy = gfx::texture(gfx::TextureDesc { kind: gfx::TEXTURE_CUBE_ARRAY, format: gfx::RGBA8, usage: gfx::SAMPLED, width: 1, height: 1, depth: 6 });
 	let zeros byte[4] = [0; 4];
 	for f in 0..6 {
 		gfx::update_texture(dummy, gfx::Region { layer: f as i32, w: 1, h: 1, d: 1 }, zeros[..]);
@@ -39,9 +45,9 @@ fn levels(s int) int {
 	while x >= 16 { n++; x /= 2; }
 	max(n, 2)
 }
-fn faces(t gfx::Texture, m int, p gfx::Pipeline, src gfx::Texture, s gfx::Sampler, rough f32, count f32, src_size f32) {
+fn faces(t gfx::Texture, m int, p gfx::Pipeline, src gfx::Texture, s gfx::Sampler, rough f32, count f32, src_size f32, base int) {
 	for f in 0..6 {
-		guard gfx::begin_pass(gfx::PassDesc { color: [t, gfx::Texture { 0 }, gfx::Texture { 0 }, gfx::Texture { 0 }], layer: f as i32, mip: m as i32, .. }) else { continue; }
+		guard gfx::begin_pass(gfx::PassDesc { color: [t, gfx::Texture { 0 }, gfx::Texture { 0 }, gfx::Texture { 0 }], layer: (base + f) as i32, mip: m as i32, .. }) else { continue; }
 		gfx::bind(p);
 		gfx::bind_texture(gfx::FRAGMENT, 0, src, s);
 		gfx::uniforms(gfx::FRAGMENT, 0, EnvU { p: float4 { f as f32, rough, count, src_size } });
@@ -49,13 +55,35 @@ fn faces(t gfx::Texture, m int, p gfx::Pipeline, src gfx::Texture, s gfx::Sample
 		gfx::end_pass();
 	}
 }
-fn filter(raw gfx::Texture, n int) {
-	if cube.id == 0 || lv != levels(n) {
-		if cube.id != 0 { gfx::release(cube); }
-		lv = levels(n);
-		cube = gfx::texture(gfx::TextureDesc { kind: gfx::TEXTURE_CUBE, format: gfx::RGBA16F, usage: gfx::SAMPLED | gfx::COLOR_TARGET, width: n as i32, height: n as i32, mips: lv as i32 });
+fn make(n int, k int) {
+	setup();
+	let old = cube;
+	let keep = if old.id != 0 && cube_n == n { cubes } else { 0 };
+	lv = levels(n);
+	cube_n = n;
+	cubes = k;
+	cube = gfx::texture(gfx::TextureDesc { kind: gfx::TEXTURE_CUBE_ARRAY, format: gfx::RGBA16F, usage: gfx::SAMPLED | gfx::COLOR_TARGET, width: n as i32, height: n as i32, depth: (k * 6) as i32, mips: lv as i32 });
+	for c in min(keep, k) {
+		for m in 0..lv {
+			for f in 0..6 {
+				guard gfx::begin_pass(gfx::PassDesc { color: [cube, gfx::Texture { 0 }, gfx::Texture { 0 }, gfx::Texture { 0 }], layer: (c * 6 + f) as i32, mip: m as i32, .. }) else { continue; }
+				gfx::bind(pipe_copy);
+				gfx::bind_texture(gfx::FRAGMENT, 0, old, smp);
+				gfx::uniforms(gfx::FRAGMENT, 0, CopyU { p: float4 { f as f32, c as f32, m as f32, 0.0 } });
+				gfx::draw(3);
+				gfx::end_pass();
+			}
+		}
 	}
-	for m in 0..lv {
+	if old.id != 0 { gfx::release(old); }
+	if keep == 0 { gen += 1; }
+}
+fn reserve(k int) {
+	if cube.id == 0 { make(size, k); } else if cubes < k { make(cube_n, k); }
+}
+fn filter(raw gfx::Texture, n int, at int, irr bool) {
+	if cube.id == 0 || cube_n != n { make(n, max(cubes, at + 1)); } else if cubes <= at { make(n, at + 1); }
+	for m in 0..(if irr { lv } else { lv - 1 }) {
 		var rough f32 = m as f32 / (lv - 2) as f32;
 		var count f32 = samples as f32;
 		if m == lv - 1 {
@@ -64,8 +92,9 @@ fn filter(raw gfx::Texture, n int) {
 		} else if m == 0 {
 			rough = 0.0;
 		}
-		faces(cube, m, pipe_ggx, raw, smp, rough, count, n as f32);
+		faces(cube, m, pipe_ggx, raw, smp, rough, count, n as f32, at * 6);
 	}
+	if at == 0 { gen += 1; }
 }
 fn sun_color(to_sun float3, power f32, haze f32) float3 {
 	let oy = 6360.2;
@@ -130,7 +159,7 @@ fn set_sky(to_sun float3, power f32, haze f32, clouds f32, n int, wind_x f32, wi
 		gfx::end_pass();
 	}
 	gfx::generate_mips(raw);
-	filter(raw, n);
+	filter(raw, n, 0, true);
 	gfx::release(ms);
 	gfx::release(raw);
 	on = true;
@@ -143,9 +172,9 @@ fn set_equirect(rgba const f32[:], w int, h int) {
 	let t = gfx::texture(gfx::TextureDesc { kind: gfx::TEXTURE_2D, format: gfx::RGBA16F, usage: gfx::SAMPLED, width: w as i32, height: h as i32 });
 	gfx::update_texture(t, bytes[..]);
 	let raw = gfx::texture(gfx::TextureDesc { kind: gfx::TEXTURE_CUBE, format: gfx::RGBA16F, usage: gfx::SAMPLED | gfx::COLOR_TARGET, width: size as i32, height: size as i32, mips: mip_count(size) as i32 });
-	faces(raw, 0, pipe_equi, t, smp_wrap, 0.0, 0.0, 0.0);
+	faces(raw, 0, pipe_equi, t, smp_wrap, 0.0, 0.0, 0.0, 0);
 	gfx::generate_mips(raw);
-	filter(raw, size);
+	filter(raw, size, 0, true);
 	gfx::release(t);
 	gfx::release(raw);
 	on = true;
@@ -162,7 +191,7 @@ fn load(path const byte[:]) bool {
 }
 fn texture() gfx::Texture {
 	setup();
-	if on && cube.id != 0 { cube } else { dummy }
+	if (on || cubes > 1) && cube.id != 0 { cube } else { dummy }
 }
 fn spec_lod() f32 { (lv - 2) as f32 }
 fn irr_lod() f32 { (lv - 1) as f32 }

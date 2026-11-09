@@ -1,6 +1,6 @@
 #include "lighting.glsl"
 layout(local_size_x = 64) in;
-layout(set = 0, binding = 0) uniform samplerCube tex_env;
+layout(set = 0, binding = 0) uniform samplerCubeArray tex_env;
 layout(std430, set = 0, binding = 1) readonly buffer Nodes { vec4 bvh_nodes[]; };
 layout(std430, set = 0, binding = 2) readonly buffer Tris { vec4 bvh_tris[]; };
 layout(std430, set = 0, binding = 3) readonly buffer Irr { vec4 probe_irr[]; };
@@ -28,7 +28,7 @@ void main() {
 	vec3 d = gi_dir(r, nr);
 	int tri;
 	float t = gi_any(o, d, 1e4, false, tri);
-	if (tri < 0) { rays[id] = vec4(env.x > 0.5 ? textureLod(tex_env, vec3(env_rot.x * d.x + env_rot.y * d.z, d.y, env_rot.x * d.z - env_rot.y * d.x), env.w - 1.0).rgb * env.y : sky_color(d, to_sun.xyz, zenith.rgb, horizon.rgb, ground.rgb, vec3(0.0)) * params.x, 1e4); return; }
+	if (tri < 0) { rays[id] = vec4(env.x > 0.5 ? textureLod(tex_env, vec4(env_rot.x * d.x + env_rot.y * d.z, d.y, env_rot.x * d.z - env_rot.y * d.x, 0.0), env.w - 1.0).rgb * env.y : sky_color(d, to_sun.xyz, zenith.rgb, horizon.rgb, ground.rgb, vec3(0.0)) * params.x, 1e4); return; }
 	vec3 e1 = bvh_tris[tri * 4 + 1].xyz;
 	vec3 e2 = bvh_tris[tri * 4 + 2].xyz;
 	vec3 alb = bvh_tris[tri * 4 + 3].rgb;

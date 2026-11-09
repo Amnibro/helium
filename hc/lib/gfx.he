@@ -8,7 +8,7 @@ MAIN_THREAD := true
 WINDOW_RESIZABLE := 1 as i32; WINDOW_HIDDEN := 2 as i32; WINDOW_FULLSCREEN := 4 as i32; NO_VSYNC := 16 as i32; DEBUG := 32 as i32
 VERTEX := 0 as i32; FRAGMENT := 1 as i32; COMPUTE := 2 as i32
 BUFFER_VERTEX := 1 as i32; BUFFER_INDEX := 2 as i32; BUFFER_INDIRECT := 4 as i32; BUFFER_STORAGE := 8 as i32; BUFFER_COMPUTE_READ := 16 as i32; BUFFER_COMPUTE_WRITE := 32 as i32
-TEXTURE_2D := 0 as i32; TEXTURE_2D_ARRAY := 1 as i32; TEXTURE_3D := 2 as i32; TEXTURE_CUBE := 3 as i32
+TEXTURE_2D := 0 as i32; TEXTURE_2D_ARRAY := 1 as i32; TEXTURE_3D := 2 as i32; TEXTURE_CUBE := 3 as i32; TEXTURE_CUBE_ARRAY := 4 as i32
 SAMPLED := 1 as i32; COLOR_TARGET := 2 as i32; DEPTH_TARGET := 4 as i32; STORAGE_READ := 8 as i32; COMPUTE_READ := 16 as i32; COMPUTE_WRITE := 32 as i32; COMPUTE_READ_WRITE := 64 as i32
 RGBA8 := 1 as i32; BGRA8 := 2 as i32; RGBA8_SRGB := 3 as i32; R8 := 4 as i32; RG8 := 5 as i32; RGBA16F := 6 as i32; RGBA32F := 7 as i32; R16F := 8 as i32; RG16F := 9 as i32; R32F := 10 as i32
 RG32F := 11 as i32; R32UI := 12 as i32; RGBA8UI := 13 as i32; RGB10A2 := 14 as i32; RG11B10F := 15 as i32; DEPTH16 := 16 as i32; DEPTH24 := 17 as i32; DEPTH32F := 18 as i32; DEPTH24_STENCIL8 := 19 as i32; DEPTH := 20 as i32
@@ -677,11 +677,12 @@ create_texture(desc TextureDesc) Texture:
 	if !need("texture"): return h
 	fmt := texfmt(desc.format as int); kind := desc.kind as int; w := desc.width as int; ht := desc.height as int; dp ~= desc.depth as int; sm ~= desc.samples as int; mips ~= desc.mips as int
 	if fmt < 0: misuse(str("texture format ", desc.format, " is not one of gfx's formats")); return h
-	if kind < 0 || kind > 3: misuse(str("texture kind ", desc.kind, " is not one of TEXTURE_2D, _2D_ARRAY, _3D or _CUBE")); return h
+	if kind < 0 || kind > 4: misuse(str("texture kind ", desc.kind, " is not one of TEXTURE_2D, _2D_ARRAY, _3D, _CUBE or _CUBE_ARRAY")); return h
 	if w < 1 || ht < 1 || w > 16384 || ht > 16384: misuse(str("a texture of ", w, " x ", ht)); return h
-	if kind == 3 && w != ht: misuse(str("a cube texture must be square, not ", w, " x ", ht)); return h
+	if (kind == 3 || kind == 4) && w != ht: misuse(str("a cube texture must be square, not ", w, " x ", ht)); return h
 	if kind == 0 || kind == 3: dp = 1
 	if dp < 1 || dp > 2048: misuse(str("a texture ", if kind == 2 { "depth" } else { "layer count" }, " of ", dp)); return h
+	if kind == 4 && dp % 6 != 0: misuse(str("a cube array texture needs 6 layers per cube, not ", dp)); return h
 	if sm != 2 && sm != 4 && sm != 8: sm = 1
 	largest := max(max(w, ht), if kind == 2 { dp } else { 0 }); chain ~= 1
 	while largest >> chain != 0: chain += 1
@@ -708,7 +709,7 @@ texture_array(width int, height int, layers int, format i32, usage i32) Texture:
 region(s TexS&, r const Region&, o CTReg&, what const byte[:]) bool:
 	kind := s.d.kind as int; mips := s.d.mips as int; mip := r.mip as int; lay := r.layer as int
 	if mip < 0 || mip >= mips: return misuse(str(what, ": mip ", mip, " of a texture with ", mips))
-	layers := if kind == 3 { 6 } else { if kind == 1 { s.d.depth as int } else { 1 } }
+	layers := if kind == 3 { 6 } else { if kind == 1 || kind == 4 { s.d.depth as int } else { 1 } }
 	if lay < 0 || lay >= layers: return misuse(str(what, ": layer ", lay, " of a texture with ", layers))
 	mw := mipsz(s.d.width as int, mip); mh := mipsz(s.d.height as int, mip); md := if kind == 2 { mipsz(s.d.depth as int, mip) } else { 1 }
 	o = CTReg{s.tex, mip as u32, lay as u32, 0, 0, 0, mw as u32, mh as u32, md as u32}
