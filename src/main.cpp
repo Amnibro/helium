@@ -706,6 +706,7 @@ R"(  --diagnostics json    Print the errors and warnings as JSON on stdout, and
                         found from where goose is by default.
   --update              Fetch packages at a tag or branch again (a commit is
                         never fetched again).
+  --ptr32               Lay out the C for a 32-bit target (32-bit ARM with -o file.c).
   --stack-reserve size  Address space reserved per data stack, from 64K, with a
                         K, M, G or T suffix (default 2G).
   --stacks              Report the data stacks the program and each worker can
@@ -1123,6 +1124,7 @@ int Main(int argc, char **argv) {
         else if (arg == "--unsafe-no-rf-check") norfcheck = true;
         else if (arg == "--jit") forcejit = true;
         else if (arg == "--standalone") standalone = true;
+        else if (arg == "--ptr32") gs_target_ptr = 4;
         else if (arg == "--web") web = true;
         else if (arg == "--multi-test") multitest = true;
         else if (arg == "--gen-runtime-header") {

@@ -87,6 +87,8 @@ struct RelFacts {
     bool apart = false;
 };
 
+inline int64_t gs_target_ptr = 8;
+
 struct CodeGen {
     Ast &ast;
 
@@ -1528,7 +1530,7 @@ struct CodeGen {
             for (auto &c : inc) if (c == '\\') c = '/';
             Append(includes, "#include \"", inc, "\"\n");
         }
-        Append(head, "\n/* ---- types ---- */\n#pragma pack(push, 1)\n", tdecls, pdata,
+        Append(head, "\ntypedef char gs_target_ptr_check[sizeof(void *) == ", gs_target_ptr, " ? 1 : -1];\n/* ---- types ---- */\n#pragma pack(push, 1)\n", tdecls, pdata,
                "#pragma pack(pop)\n\n/* ---- data ---- */\n", data);
         Append(result, "\n/* ---- includes ---- */\n", includes,
                "\n/* ---- extern prototypes ---- */\n", externs,

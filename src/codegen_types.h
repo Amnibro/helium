@@ -247,8 +247,8 @@ inline int64_t CodeGen::PadAlign(TypeExpr *t) {
         case TY_REF: return t->ref->lenstorage >= 0 ?
                             (t->ref->lenstorage == IS_VARINT ? 1
                                                              : IntSize((IntStorage)t->ref->lenstorage))
-                            : 8;
-        case TY_SLICE: return 8;
+                            : gs_target_ptr;
+        case TY_SLICE: return gs_target_ptr;
         default: return 1;
     }
 }
@@ -304,8 +304,8 @@ inline int64_t CodeGen::FixedSize(TypeExpr *t) {
                 assert(t->ref->lenstorage != IS_VARINT);
                 return IntSize((IntStorage)t->ref->lenstorage);
             }
-            return IsResz(t->ref->sub) ? 16 : 8;
-        case TY_SLICE: return 16;
+            return IsResz(t->ref->sub) ? 2 * gs_target_ptr : gs_target_ptr;
+        case TY_SLICE: return gs_target_ptr + 8;
         case TY_STRUCT: {
             // An empty struct takes the one byte C gives it.
             auto sz = StructLayout(SI(t)).size;
