@@ -330,10 +330,17 @@ s3d::lights.push(s3d::Light { pos: p, range: 5.0, rgb: c, radius: 0.1, length: 0
 s3d::wet = 0.5; s3d::snow = 0.0; s3d::world_time = t;
 ```
 
+The final pass adds triangular dither of up to one 8-bit level, in the encoded image,
+so slow gradients such as a clear sky don't show bands.
+
 Lights use clustered forward shading, so hundreds of unshadowed lights are allowed;
 the first 16 get shadow maps and fog. The sun convention matches three.js: the shader
 divides by pi, so `sun.rgb` equals a three.js directional light's intensity times its
 color.
+
+Extra lights cost little until there are hundreds. `look_bench` with Holo at 1920 x 1080
+on an RX 9060 XT, with another program using about half the card, median wall time per
+frame: base lights 2.5 ms, 8 more 3.2 ms, 64 more 5.2 ms, 512 more 16.1 ms.
 
 For a still image, set `s3d::temporal = 1` and render about 32 times. The temporal
 pass only anti-aliases when it is on, and a single frame leaves jagged silhouettes.
@@ -1163,16 +1170,19 @@ pass-through mean error is 0.0106 % (max 0.0488 %).
 * Sheen renders brighter than three.js on the chair and toy car (the likely cause, its
   low fit, is unproven), and the clearcoat fixture's base tiles are brighter
   (R 185 against 143), cause not found. See the PSNR table in hc/test/gfx/results.
-* Frame time with many lights is unmeasured; 8, 64 and 512 lights render correctly.
+* Metal cavities: with GTAO bent normals, `spec_occlusion` treats a blocked reflection
+  as black, but a real metal cavity reflects itself, so the undercut of a machined part
+  goes black. Screen-space reflections on the same groove show chevrons from its facets
+  when the surface is rougher than about 0.25. Amni-CAD sets `spec_occlusion = false`
+  and `ssr_rough = 0.4`; the engine defaults are unchanged.
 * Not built: alpha to coverage, decals, local reflection probes, rectangular area
   lights (spot and sphere stand in), physical light falloff parity with three.js,
   rain and snow particles, caustics, mip bias for upscaling, BC, KTX2, WebP, meshopt
   and Draco, texture and mesh streaming, GPU instancing, motion vectors for morph
   targets, and Nanite-class geometry.
 
-No progressive JPEG, no point/line primitives (skipped and counted), Adler-32 is
-not verified, ambient is an analytic sky (no image-based lighting yet), the fog and GI
-passes light spot lights as points (no cone). Also:
+No point/line primitives (skipped and counted), Adler-32 is not verified, the fog
+and GI passes light spot lights as points (no cone). Also:
 
 * The furnaces do not resolve roughness below 0.3 (metal roughness 0 shows 12.75 %
   mean error on the spheres at 4096 directions); the LUT check covers the shading

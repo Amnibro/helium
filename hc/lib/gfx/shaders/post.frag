@@ -14,9 +14,11 @@ float encode_srgb(float x) {
 	x = clamp(x, 0.0, 1.0);
 	return x <= 0.0031308 ? 12.92 * x : 1.055 * pow(x, 1.0 / 2.4) - 0.055;
 }
+float hash_px(vec2 p) { vec3 q = fract(vec3(p.xyx) * 0.1031); q += dot(q, q.yzx + 33.33); return fract((q.x + q.y) * q.z); }
 vec4 graded(vec3 o) {
 	vec3 e = vec3(encode_srgb(o.r), encode_srgb(o.g), encode_srgb(o.b));
-	return vec4(mode.z > 0.0 ? mix(e, texture(tex_lut, e * ((mode.w - 1.0) / mode.w) + 0.5 / mode.w).rgb, mode.z) : e, 1.0);
+	vec2 px = in_uv * frame.xy;
+	return vec4((mode.z > 0.0 ? mix(e, texture(tex_lut, e * ((mode.w - 1.0) / mode.w) + 0.5 / mode.w).rgb, mode.z) : e) + (hash_px(px) + hash_px(px + 17.3) - 1.0) / 255.0, 1.0);
 }
 
 vec3 agx(vec3 c) {
@@ -39,7 +41,6 @@ vec3 neutral(vec3 c) {
 	r *= np / peak;
 	return mix(r, vec3(np), 1.0 - 1.0 / (0.15 * (peak - np) + 1.0));
 }
-float hash_px(vec2 p) { vec3 q = fract(vec3(p.xyx) * 0.1031); q += dot(q, q.yzx + 33.33); return fract((q.x + q.y) * q.z); }
 void main() {
 	vec2 cen = in_uv - 0.5;
 	vec3 c;
