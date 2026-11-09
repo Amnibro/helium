@@ -31,7 +31,7 @@ Options: `--debug` (overflow, range and tag checks naming the source line), `-DN
 
 Two syntaxes with the same semantics: `.amni` (braces and `;`) and `.he` (indentation, no `;`, `x := e`, `fn` optional), which hc and its library are written in. [HELIUM.md](HELIUM.md) teaches the whole language in about 3.9k tokens; `hc/TODO.md` §0 lists what `.he` changes.
 
-The library in `hc/lib` is Helium throughout: `std`, `os`, `math`, `json`, `regex`, `dictionary`, `csv`, `base64`, `binary`, `ffi`, `gf` (GF(2^8) and AES-round math over byte buffers, on the CPU's GFNI and VAES instructions when present); `gfx` straight on SDL3's GPU API with a GLSL to SPIR-V/MSL/HLSL shader compiler inside hc; `ui` (a port of Nuklear); `physics` (a port of Box3D); `audio`; `web` and `webgl` for the browser. `std`, `os`, `math`, `json`, `regex`, `dictionary`, `csv`, `binary`, `ffi`, `exception` and `vec` are being rewritten and are not in this repository yet, so the bootstrap does not build until `std` is back.
+The library in `hc/lib` is Helium throughout: `std`, `os`, `math`, `json`, `regex`, `dictionary`, `base64`, `binary`, `ffi`, `gf` (GF(2^8) and AES-round math over byte buffers, on the CPU's GFNI and VAES instructions when present); `crypto` (hashes, authenticated encryption, X25519, Ed25519, ECDSA, RSA verification, X.509); `net` (sockets, TCP, TLS, HTTP, WebSocket, Socket.IO); `gfx` straight on SDL3's GPU API with a GLSL to SPIR-V/MSL/HLSL shader compiler inside hc; `ui` (a port of Nuklear); `physics` (a port of Box3D); `audio`; `web` and `webgl` for the browser.
 
 ## Performance
 
