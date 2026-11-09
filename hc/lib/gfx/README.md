@@ -813,6 +813,26 @@ thin lens, scatter-as-gather disk). Test aperture 0.15, focus 7.5 (the middle sp
   0.5 px: mean |dof - sharp| <= **1 %** of their mean luminance.
 * **Must-fail control.** The same frame with the focus distance doubled must fail D1.
 
+### Pre-registered bars (local reflection probes, E2)
+
+Written before the first GPU run of the probe checks (`probe_checks` in `gfx_smoke.amni`).
+Scene: a closed room 6 x 3 x 6 m with four walls in distinct colours and a white ceiling,
+lit by one point light near the ceiling; outside, a bright sky with ambient 1 and the sun
+off. Floor: metal, base colour 1.0, roughness 0.05. SSR, AO, bloom and temporal off. One
+probe at (0, 1.5, 0) whose box is the room interior, fade 0.25 m. Camera inside at
+(0, 1.6, 2.5) looking down toward the far wall. Compared in linear HDR (`hdr_target`).
+* **R1 mirror match.** Reference: the room seen from the camera mirrored through the floor
+  plane, floor hidden, probes off, columns flipped (a perfect mirror). Region: rows 60-95 %,
+  columns 15-85 % (floor only). Metric: sum |probe - ref| / sum ref over RGB. Bar: **<= 0.15**.
+* **R2 parallax correction earns its place.** The same frame with `probe_parallax = false`:
+  its R1 metric must be **>= 1.5 x** the corrected one.
+* **R3 nothing changes without probes.** gfxtest's sphere goldens keep PSNR > 40 dB,
+  `webgputest.mjs` and `wgsltest.mjs` 0 failures (the env cube is now a cube array).
+* **Must-fail control.** Probes off (the floor reflects the sky through the walls) must
+  fail R1.
+* Reported, no bar: capture time for one probe at `probe_res` 256, frame time with the
+  probe on and off.
+
 ### Motion blur and depth of field results (2026-11-02, RX 9060 XT, RADV)
 
 Both are off by default (`motion_blur = 0`, `dof_aperture = 0`) and run as one HDR pass each
