@@ -91,7 +91,7 @@ static uint8_t *hr_map(int64_t s) { s = (s + 16383) & ~(int64_t)16383; void *p =
 static void hr_rtedit(const uint8_t *s, int64_t c, hr_ch *ch) { pthread_mutex_lock(&hr_smu); hr_rtab *o = hr_rt; int64_t n = o ? o->n : 0, k = 0, put = s != NULL; hr_rtab *t = malloc(sizeof *t + (size_t)(n + 1) * sizeof(hr_ret)); for (int64_t i = 0; i <= n; i++) { if (put && (i == n || o->e[i].s > s)) { t->e[k++] = (hr_ret){ s, s + c, ch }; put = 0; } if (i < n && (s || o->e[i].ch != ch)) t->e[k++] = o->e[i]; } t->n = k; if (!k) { free(t); t = NULL; } __atomic_store_n(&hr_rt, t, __ATOMIC_RELEASE); if (o) { free(hr_rold[hr_roldn & 63]); hr_rold[hr_roldn++ & 63] = o; } pthread_mutex_unlock(&hr_smu); }
 static void hr_unmap(uint8_t *b) { hr_ch *ch = ((hr_ch **)b)[-2]; int64_t c = hr_rcap(b); if (ch) hr_rtedit(NULL, 0, ch); munmap(b - 16384, (size_t)(16384 + c + HR_GRD)); if (ch) { for (int64_t i = 0; i < ch->n; i++) munmap(ch->mb[i] - 16384, (size_t)(16384 + ch->mc[i] + HR_GRD)); free(ch->mb); free(ch->mc); free(ch); } }
 static __attribute__((noinline, cold, pure)) uint8_t *hr_regrow(uint8_t *b, int64_t x, const char *loc) {
-	int64_t c = hr_rcap(b), s = c; if (x > HR_RSZ) hr_die("array grew past its reservation", loc); while (s < x) s *= 4; s = s < HR_RSZ ? s : HR_RSZ;
+	int64_t c = hr_rcap(b), s = c; if (x > HR_RSZ) hr_die("array grew past its reservation; build with -DGS_STACK_RESERVE=<bytes> to raise it", loc); while (s < x) s *= 4; s = s < HR_RSZ ? s : HR_RSZ;
 	uint8_t *nb = hr_map(s); vm_address_t a = (vm_address_t)nb; vm_prot_t cp, mp;
 	if (vm_remap(mach_task_self(), &a, (vm_size_t)c, 0, VM_FLAGS_FIXED | VM_FLAGS_OVERWRITE, mach_task_self(), (vm_address_t)b, FALSE, &cp, &mp, VM_INHERIT_NONE) != KERN_SUCCESS || a != (vm_address_t)nb) hr_die("could not grow an array's storage", loc);
 	hr_ch *ch = ((hr_ch **)b)[-2]; if (!ch) ch = calloc(1, sizeof *ch);
@@ -108,7 +108,7 @@ static int64_t hr_rmin = HR_RSZ; static uint8_t **hr_sb; static int64_t *hr_ss, 
 static int64_t hr_rcap(const uint8_t *b) { int64_t c = HR_RSZ; pthread_mutex_lock(&hr_smu); for (int64_t i = 0; i < hr_sn; i++) if (hr_sb[i] == b) { c = hr_ss[i]; break; } pthread_mutex_unlock(&hr_smu); return c; }
 static void hr_unmap(uint8_t *b) { int64_t c = HR_RSZ; pthread_mutex_lock(&hr_smu); for (int64_t i = 0; i < hr_sn; i++) if (hr_sb[i] == b) { c = hr_ss[i]; hr_sb[i] = hr_sb[--hr_sn]; hr_ss[i] = hr_ss[hr_sn]; break; } pthread_mutex_unlock(&hr_smu); munmap(b, (size_t)c + 65536); }
 static __attribute__((noinline, cold, pure)) int hr_ovbad(const uint8_t *b, int64_t x) { return x > hr_rcap(b); }
-#define HR_OVER(b, x, loc) do { if (HR_UNLIKELY((x) > __atomic_load_n(&hr_rmin, __ATOMIC_RELAXED)) && hr_ovbad((b), (x))) hr_die("array grew past its reservation", (loc)); } while (0)
+#define HR_OVER(b, x, loc) do { if (HR_UNLIKELY((x) > __atomic_load_n(&hr_rmin, __ATOMIC_RELAXED)) && hr_ovbad((b), (x))) hr_die("array grew past its reservation; build with -DGS_STACK_RESERVE=<bytes> to raise it", (loc)); } while (0)
 static uint8_t *hr_take(void) {
 	if (hr_nfree) return hr_free[--hr_nfree];
 	int64_t s = __atomic_load_n(&hr_rmin, __ATOMIC_RELAXED); void *p;
