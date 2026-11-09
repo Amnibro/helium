@@ -1046,6 +1046,41 @@ jobs; reported): 0 decals 1.29 ms, 1 decal +0.06 ms, 16 +0.14 ms, 64 +0.31 ms. A
 boxes overlap so most floor pixels sit inside about 14 of them. The same run passed T7
 (TSR resolve GPU p95 0.448 ms, bar < 0.5 ms).
 
+### Pre-registered bars (rain and snow, E6)
+
+Written before the first GPU run of the weather checks (`weather_checks` in
+`gfx_smoke.amni`). Scene: a 40 x 40 m ground at y = 0 and a 4 x 4 m roof slab 0.2 m
+thick with its top at y = 3, centered over (5, 0); camera at (0, 1.7, 8) looking at
+(0, 1.5, 0), fov 0.75, 960 x 540, 1/60 s steps. Rain: 40,000 drops falling straight down
+at 9 m/s in a box 24 x 16 x 24 m centered on the camera, splashes lasting 0.12 s, shelter
+on. "Falling" drops are those not splashing.
+* **W1 even after the camera moves.** After 2 s of rain the camera flies 30 m along x and
+  15 m along z in 2 s at constant height. Then the open air of the box (above y = 0.5,
+  below 0.5 m under its top) is cut into 2 x 2 x 2 equal cells: every cell's count of
+  falling drops within **+-10 %** of the cells' mean. Control: wrapping off must fail W1.
+* **W2 shelter.** Camera still, after 2 s of rain, at 10 frames 6 frames apart: falling
+  drops under the roof (its footprint shrunk by 0.25 m on each side, 0 < y < 2.8)
+  **== 0** at every frame, and an open column of the same size centered over (-5, 0)
+  holds on average **at least 0.8 x** the open-air density times its volume. Control:
+  shelter off must fail W2.
+* **W3 splashes match the rain.** Same frames: the mean number of splashing drops within
+  **+-10 %** of rho x v x A x tau (rho the mean density of falling drops in the box's
+  open air, v = 9 m/s, A = 24 x 24 m, tau = 0.12 s), which is how many land per second
+  times how long each splash lasts. Control: splashes off must fail W3.
+* **W4 streak length.** A single drop rendered alone on black with a 1/30 s streak: the
+  streak's half length measured from the image (sqrt(8) times the standard deviation of
+  brightness along its long axis, which is exact for the particle's (1 - r^2)^2 falloff)
+  within **+-5 %** of the drop's half length projected to the screen, for drops 3, 6 and
+  12 m away falling straight down and one 6 m away blown sideways (velocity (5, -9, 0)).
+  Control: no streak must fail W4.
+* **W5 snow keeps its speed.** 20,000 snowflakes falling at 1 m/s with curl turbulence:
+  over 1 s the mean downward speed from their positions, flakes that wrapped or landed
+  left out, within **+-5 %** of 1 m/s.
+* **W6 nothing changes without weather.** gfxtest goldens > 40 dB and the existing fx
+  checks pass; `wgsltest.mjs` and `webgputest.mjs` 0 failures, with a new `scene_rain`
+  (rain over the e2 scene) matching native under webgputest's usual bar.
+* Reported, no bar: frame time at 1280 x 720 with and without the 40,000-drop rain.
+
 ### Motion blur and depth of field results (2026-11-02, RX 9060 XT, RADV)
 
 Both are off by default (`motion_blur = 0`, `dof_aperture = 0`) and run as one HDR pass each
