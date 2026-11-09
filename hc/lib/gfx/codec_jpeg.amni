@@ -1,6 +1,6 @@
-// codec_jpeg: baseline sequential JPEG decoding to RGBA8 (ITU-T T.81, JFIF color).
+// codec_jpeg: baseline and progressive JPEG decoding to RGBA8 (ITU-T T.81, JFIF color).
 // Huffman-coded 8-bit DCT with any sampling factors and restart intervals; grayscale or YCbCr.
-// Progressive, arithmetic-coded, lossless and CMYK files are reported as not decodable.
+// Arithmetic-coded, lossless and CMYK files are reported as not decodable.
 namespace codec_jpeg;
 import math;
 
@@ -21,6 +21,24 @@ let ZIGZAG = [0, 1, 8, 16, 9, 2, 3, 10, 17, 24, 32, 25, 18, 11, 4, 5, 12, 19, 26
 	35, 42, 49, 56, 57, 50, 43, 36, 29, 22, 15, 23, 30, 37, 44, 51, 58, 59, 52, 45, 38, 31, 39, 46, 53, 60, 61, 54, 47, 55, 62, 63];
 
 var planes byte[>..];
+var coefs i16[>..];
+fn idct(offset int, row_len int, bx int, by int, coef f32[64]&, tmp f32[64]&, B const f32[64]&) {
+	for x in 8 {
+		for y in 8 {
+			var s f32 = 0.0;
+			for v in 8 { s += B[y * 8 + v] * coef[v * 8 + x]; }
+			tmp[y * 8 + x] = s;
+		}
+	}
+	for y in 8 {
+		for x in 8 {
+			var s f32 = 0.0;
+			for u in 8 { s += B[x * 8 + u] * tmp[y * 8 + u]; }
+			let v = clamp((s + 128.5) as! int, 0, 255);
+			planes[offset + (by * 8 + y) * row_len + bx * 8 + x] = v as byte;
+		}
+	}
+}
 fn is_jpeg(b const byte[:]) bool { b.len >= 3 && b[0] == 0xFF && b[1] == 0xD8 && b[2] == 0xFF }
 
 fn be16(b const byte[:], o int) int { (b[o] as int) << 8 | b[o + 1] as int }
@@ -86,6 +104,7 @@ fn decode(file const byte[:], out byte[>..]&) int, int, bool {
 	var mcux = 0;
 	var mcuy = 0;
 	var frame = false;
+	var progressive = false;
 	let B = basis();
 	var o = 2;
 	var done = false;
@@ -123,8 +142,9 @@ fn decode(file const byte[:], out byte[>..]&) int, int, bool {
 			}
 		} else if m == 0xDD {
 			restart = be16(file, seg);
-		} else if m == 0xC0 || m == 0xC1 {
+		} else if m >= 0xC0 && m <= 0xC2 {
 			if file[seg] != 8 { return 0, 0, false; }
+			progressive = m == 0xC2;
 			height = be16(file, seg + 1);
 			width = be16(file, seg + 3);
 			nparts = file[seg + 5] as int;
@@ -146,9 +166,10 @@ fn decode(file const byte[:], out byte[>..]&) int, int, bool {
 				total += parts[i].blocks_x * parts[i].blocks_y * 64;
 			}
 			planes.resize(total, 0 as byte);
+			if progressive { coefs.clear(); coefs.resize(total, 0 as i16); }
 			frame = true;
-		} else if m >= 0xC2 && m <= 0xCF && m != 0xC4 && m != 0xC8 && m != 0xCC {
-			return 0, 0, false; // progressive, lossless or arithmetic
+		} else if m >= 0xC3 && m <= 0xCF && m != 0xC4 && m != 0xC8 && m != 0xCC {
+			return 0, 0, false; // lossless or arithmetic
 		} else if m == 0xDA {
 			if !frame { return 0, 0, false; }
 			let ns = file[seg] as int;
@@ -218,25 +239,86 @@ fn decode(file const byte[:], out byte[>..]&) int, int, bool {
 					coef[ZIGZAG[k]] = (extend(bits(s), s) * quant[qt + k]) as f32;
 					k += 1;
 				}
-				// separable inverse DCT: columns then rows
-				for x in 8 {
-					for y in 8 {
-						var s f32 = 0.0;
-						for v in 8 { s += B[y * 8 + v] * coef[v * 8 + x]; }
-						tmp[y * 8 + x] = s;
+				idct(pt.offset, pt.blocks_x * 8, bx, by, coef, tmp, B);
+				true
+			}
+			let ss = file[seg + 1 + ns * 2] as int;
+			let se = file[seg + 2 + ns * 2] as int;
+			let ah = (file[seg + 3 + ns * 2] as int) >> 4;
+			let al = (file[seg + 3 + ns * 2] as int) & 15;
+			var eobrun = 0;
+			fn refine(at int, p1 int, m1 int) {
+				let c = coefs[at] as int;
+				if bit() == 1 && (c & p1) == 0 { let d = if c >= 0 { p1 } else { m1 }; coefs[at] = (c + d) as i16; }
+			}
+			fn pblock(ci int, bx int, by int) bool {
+				let pt .= parts[ci];
+				let base = pt.offset + (by * pt.blocks_x + bx) * 64;
+				if ss == 0 {
+					if ah > 0 { if bit() == 1 { coefs[base] = ((coefs[base] as int) | (1 << al)) as i16; } return true; }
+					if !tables[pt.dc_table].ready { return false; }
+					let t = huff(tables[pt.dc_table]);
+					if t < 0 || t > 11 { return false; }
+					pt.dc_prev += extend(bits(t), t);
+					coefs[base] = (pt.dc_prev << al) as i16;
+					return true;
+				}
+				let ac .= tables[4 + pt.ac_table];
+				if !ac.ready { return false; }
+				var k = ss;
+				if ah == 0 {
+					if eobrun > 0 { eobrun -= 1; return true; }
+					while k <= se {
+						let rs = huff(ac);
+						if rs < 0 { return false; }
+						let r = rs >> 4;
+						let n = rs & 15;
+						if n == 0 {
+							if r < 15 { eobrun = (1 << r) - 1 + bits(r); break; }
+							k += 16;
+							continue;
+						}
+						k += r;
+						if k > 63 { return false; }
+						coefs[base + ZIGZAG[k]] = (extend(bits(n), n) << al) as i16;
+						k += 1;
+					}
+					return true;
+				}
+				let p1 = 1 << al;
+				let m1 = -p1;
+				if eobrun == 0 {
+					while k <= se {
+						let rs = huff(ac);
+						if rs < 0 { return false; }
+						var r = rs >> 4;
+						let n = rs & 15;
+						var val = 0;
+						if n == 0 {
+							if r < 15 { eobrun = (1 << r) + bits(r); break; }
+						} else { val = if bit() == 1 { p1 } else { m1 }; }
+						while k <= se {
+							let at = base + ZIGZAG[k];
+							if coefs[at] != 0 { refine(at, p1, m1); }
+							else {
+								if r == 0 { if val != 0 { coefs[at] = val as i16; } k += 1; break; }
+								r -= 1;
+							}
+							k += 1;
+						}
 					}
 				}
-				let row_len = pt.blocks_x * 8;
-				for y in 8 {
-					for x in 8 {
-						var s f32 = 0.0;
-						for u in 8 { s += B[x * 8 + u] * tmp[y * 8 + u]; }
-						let v = clamp((s + 128.5) as! int, 0, 255);
-						planes[pt.offset + (by * 8 + y) * row_len + bx * 8 + x] = v as byte;
+				if eobrun > 0 {
+					while k <= se {
+						let at = base + ZIGZAG[k];
+						if coefs[at] != 0 { refine(at, p1, m1); }
+						k += 1;
 					}
+					eobrun -= 1;
 				}
 				true
 			}
+			fn scan_unit(ci int, bx int, by int) bool { if progressive { pblock(ci, bx, by) } else { unit(ci, bx, by) } }
 			fn resync() {
 				// byte-align, step over an RSTn marker, reset predictions
 				nbits = 0;
@@ -244,6 +326,7 @@ fn decode(file const byte[:], out byte[>..]&) int, int, bool {
 				while p + 1 < file.len && !(file[p] == 0xFF && file[p + 1] >= 0xD0 && file[p + 1] <= 0xD7) { p += 1; }
 				if p + 1 < file.len { p += 2; }
 				for i in nparts { parts[i].dc_prev = 0; }
+				eobrun = 0;
 			}
 			if ns == 1 {
 				// non-interleaved: blocks cover the component itself
@@ -254,7 +337,7 @@ fn decode(file const byte[:], out byte[>..]&) int, int, bool {
 				for by in ch {
 					for bx in cw {
 						if restart > 0 && count > 0 && count % restart == 0 { resync(); }
-						if !unit(ci, bx, by) { return 0, 0, false; }
+						if !scan_unit(ci, bx, by) { return 0, 0, false; }
 						count += 1;
 					}
 				}
@@ -267,7 +350,7 @@ fn decode(file const byte[:], out byte[>..]&) int, int, bool {
 							let ci = scan[i];
 							for v in parts[ci].vsamp {
 								for h in parts[ci].hsamp {
-									if !unit(ci, mx * parts[ci].hsamp + h, my * parts[ci].vsamp + v) { return 0, 0, false; }
+									if !scan_unit(ci, mx * parts[ci].hsamp + h, my * parts[ci].vsamp + v) { return 0, 0, false; }
 								}
 							}
 						}
@@ -283,6 +366,21 @@ fn decode(file const byte[:], out byte[>..]&) int, int, bool {
 		o = end;
 	}
 	if !frame { return 0, 0, false; }
+	if progressive {
+		var coef f32[64] = [0.0; 64];
+		var tmp f32[64] = [0.0; 64];
+		for i in nparts {
+			let pt = parts[i];
+			let qt = pt.qtable * 64;
+			for by in pt.blocks_y {
+				for bx in pt.blocks_x {
+					let base = pt.offset + (by * pt.blocks_x + bx) * 64;
+					for k in 64 { coef[ZIGZAG[k]] = ((coefs[base + ZIGZAG[k]] as int) * (quant[qt + k] as int)) as f32; }
+					idct(pt.offset, pt.blocks_x * 8, bx, by, coef, tmp, B);
+				}
+			}
+		}
+	}
 	out.clear();
 	out.resize(width * height * 4, 0 as byte);
 	// full-resolution components are read directly; subsampled ones are interpolated
