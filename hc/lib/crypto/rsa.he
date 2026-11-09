@@ -1,0 +1,43 @@
+namespace crypto
+use std
+use crypto.hash
+use crypto.bn
+strip0(b const byte[:]) const byte[:]: i ~= 0; while i < b.len && b[i] == 0 { i += 1 } b[i..]
+digest_info(kind int) byte[>..]:
+	o byte[>..] ~= []
+	hex_decode(if kind == SHA1 { "3021300906052b0e03021a05000414" } else if kind == SHA256 { "3031300d060960864801650304020105000420" } else if kind == SHA384 { "3041300d060960864801650304020205000430" } else { "3051300d060960864801650304020305000440" }, o)
+	o
+rsa_public(n0 const byte[:], e const byte[:], sig const byte[:]) byte[>..], bool:
+	n := strip0(n0); o byte[>..] ~= []
+	if n.len < 64 || n.len > 1024 || n[n.len - 1] & 1 == 0 || sig.len != n.len || e.len == 0 || e.len > 8: return o, false
+	m := mont_new(n); s := bn_from(sig, m.k)
+	if bn_cmp(s[..], m.n[..]) >= 0: return o, false
+	x := from_mont(m, mpow(m, to_mont(m, s[..])[..], bn_from(e, (e.len + 3) / 4)[..])[..])
+	return bn_bytes(x[..], n.len), true
+rsa_pkcs1_verify(kind int, n const byte[:], e const byte[:], msg const byte[:], sig const byte[:]) bool:
+	em, ok := rsa_public(n, e, sig)
+	if !ok: return false
+	di := digest_info(kind); hm := digest(kind, msg); want byte[>..] ~= [0, 1]
+	if em.len < di.len + hm.len + 11: return false
+	while want.len < em.len - di.len - hm.len - 1: want.push(0xFF)
+	want.push(0); want.append(di[..]); want.append(hm[..]); ct_eq(em[..], want[..])
+mgf1(kind int, seed const byte[:], n int) byte[>..]:
+	o byte[>..] ~= []; c ~= 0
+	while o.len < n:
+		b byte[>..] ~= []; b.append(seed); for i 4 { b.push((c >> (24 - 8 * i)) as! byte) }
+		o.append(digest(kind, b[..])[..]); c += 1
+	o.resize(n, 0); o
+rsa_pss_verify(kind int, mgf int, slen int, n0 const byte[:], e const byte[:], msg const byte[:], sig const byte[:]) bool:
+	em0, ok := rsa_public(n0, e, sig)
+	if !ok: return false
+	n := strip0(n0); mb := 8 * (n.len - 1) + bn_bits([n[0] as u32][..]) - 1; el := (mb + 7) / 8; hl := hash_size(kind); mh := digest(kind, msg)
+	if el < hl + slen + 2 || em0.len - el > 1 || em0.len > el && em0[0] != 0: return false
+	em := em0[em0.len - el..]
+	if em[el - 1] != 0xBC: return false
+	db ~= mgf1(mgf, em[el - hl - 1..el - 1], el - hl - 1); top := 8 * el - mb; tm := (0xFF >> top) as! byte
+	if em[0] & (tm ^ 0xFF) != 0: return false
+	for i db.len: db[i] ^= em[i]
+	db[0] &= tm; ps := el - hl - slen - 2
+	for i ps: if db[i] != 0 { return false }
+	if db[ps] != 1: return false
+	hb byte[>..] ~= [0, 0, 0, 0, 0, 0, 0, 0]; hb.append(mh[..]); hb.append(db[db.len - slen..]); ct_eq(digest(kind, hb[..])[..], em[el - hl - 1..el - 1])

@@ -107,6 +107,8 @@ extern "libSDL3.so.0" {
 	s_regev(n i32) u32 = "SDL_RegisterEvents";
 	s_ns() uint = "SDL_GetTicksNS";
 	s_tstart(w uint) bool = "SDL_StartTextInput";
+	s_platform() uint = "SDL_GetPlatform";
+	s_dscale(w uint) f32 = "SDL_GetWindowDisplayScale";
 	s_tstop(w uint) bool = "SDL_StopTextInput";
 	s_step(p uint, n uint) u32 = "SDL_StepUTF8";
 	s_scn(n uint) i32 = "SDL_GetScancodeFromName";
@@ -351,7 +353,12 @@ flush_raw():
 	finish()
 flush(): flush_raw(); check()
 texfmt(f int) int:
-	if f == 20: return if DEV != 0 && s_texok(DEV, 60, 0, 5) { 60 } else { 59 }
+	if f == 20:
+		if DEV == 0: return 59
+		for u in [5, 4]:
+			for d in [60, 59, 58]:
+				if s_texok(DEV, d as i32, 0, u as u32): return d
+		return 59
 	if f >= 1 && f < 20 { TFMT[f] } else { -1 }
 isdepth(f int) bool: f >= 58 && f <= 62
 stage_name(s int) byte[>..]: copy(if s == 0 { "vertex" } else { if s == 1 { "fragment" } else { "compute" } })
@@ -579,6 +586,8 @@ events_into(out Event[:]) int:
 	EVS.len
 fingers() Finger[>..]: o Finger[>..] ~= []; o.append(FINGERS[..]); o
 events() Event[>..]: o Event[>..] ~= []; o.append(EVS[..]); o
+display_scale() f32: if WIN == 0 { 1.0 } else { k := s_dscale(WIN); if k > 0.0 { k } else { 1.0 } }
+touch_first() bool: p := ffi::cstr(s_platform()); p == "Android" || p == "iOS"
 text_input(on bool):
 	if !need("text_input") || WIN == 0: return
 	if on { s_tstart(WIN) } else { s_tstop(WIN) }

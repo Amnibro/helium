@@ -1,0 +1,125 @@
+namespace crypto
+use std
+use crypto.hash
+use crypto.bn
+use crypto.rand
+P256 := 1
+P384 := 2
+struct Curve { size int = 0, p Mont = Mont{}, n Mont = Mont{}, b u32[>..] = [], gx u32[>..] = [], gy u32[>..] = [], sq u32[>..] = [] }
+struct Pj { x u32[>..] = [], y u32[>..] = [], z u32[>..] = [] }
+var CV Curve[>..]
+hexb(s const byte[:]) byte[>..]: o byte[>..] ~= []; hex_decode(s, o); o
+curves():
+	if CV.len > 0: return
+	for i 2:
+		a := i == 0
+		p := hexb(if a { "ffffffff00000001000000000000000000000000ffffffffffffffffffffffff" } else { "fffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffeffffffff0000000000000000ffffffff" })
+		n := hexb(if a { "ffffffff00000000ffffffffffffffffbce6faada7179e84f3b9cac2fc632551" } else { "ffffffffffffffffffffffffffffffffffffffffffffffffc7634d81f4372ddf581a0db248b0a77aecec196accc52973" })
+		b := hexb(if a { "5ac635d8aa3a93e7b3ebbd55769886bc651d06b0cc53b0f63bce3c3e27d2604b" } else { "b3312fa7e23ee7e4988e056be3f82d19181d9c6efe8141120314088f5013875ac656398d8a2ed19d2a85c8edd3ec2aef" })
+		gx := hexb(if a { "6b17d1f2e12c4247f8bce6e563a440f277037d812deb33a0f4a13945d898c296" } else { "aa87ca22be8b05378eb1c71ef320ad746e1d3b628ba79b9859f741e082542a385502f25dbf55296c3a545e3872760ab7" })
+		gy := hexb(if a { "4fe342e2fe1a7f9b8ee7eb4a7c0f9e162bce33576b315ececbb6406837bf51f5" } else { "3617de4a96262c6f5d9e98bf9292dc29f8f41dbd289a147ce9da3113b5f0b8c00a60b1ce1d7e819d7a431d7c90ea0e5f" })
+		c ~= Curve{size: p.len}; c.p = mont_new(p); c.n = mont_new(n); k := c.p.k
+		c.b = to_mont(c.p, bn_from(b, k)); c.gx = to_mont(c.p, bn_from(gx, k)); c.gy = to_mont(c.p, bn_from(gy, k))
+		e ~= copy(c.p.n); cy u64 ~= 1
+		for j k: t := (e[j] as u64) + cy; e[j] = t as! u32; cy = t >> 32
+		for j k: e[j] = (e[j] >> 2) | (if j + 1 < k { e[j + 1] << 30 } else { 0 })
+		c.sq = e; CV.push(c)
+zeros(k int) u32[>..]: o u32[>..] ~= []; o.resize(k, 0); o
+ecadd(c const Curve&, p const Pj&, q const Pj&) Pj:
+	let F .= c.p
+	t0 ~= mmul(F, p.x, q.x); t1 ~= mmul(F, p.y, q.y); t2 ~= mmul(F, p.z, q.z); t3 ~= mmul(F, madd(F, p.x, p.y), madd(F, q.x, q.y)); t4 ~= madd(F, t0, t1); t3 = msub(F, t3, t4)
+	t4 = mmul(F, madd(F, p.y, p.z), madd(F, q.y, q.z)); x3 ~= madd(F, t1, t2); t4 = msub(F, t4, x3); x3 = mmul(F, madd(F, p.x, p.z), madd(F, q.x, q.z)); y3 ~= madd(F, t0, t2); y3 = msub(F, x3, y3)
+	z3 ~= mmul(F, c.b, t2); x3 = msub(F, y3, z3); z3 = madd(F, x3, x3); x3 = madd(F, x3, z3); z3 = msub(F, t1, x3); x3 = madd(F, t1, x3); y3 = mmul(F, c.b, y3); t1 = madd(F, t2, t2); t2 = madd(F, t1, t2)
+	y3 = msub(F, y3, t2); y3 = msub(F, y3, t0); t1 = madd(F, y3, y3); y3 = madd(F, t1, y3); t1 = madd(F, t0, t0); t0 = madd(F, t1, t0); t0 = msub(F, t0, t2); t1 = mmul(F, t4, y3); t2 = mmul(F, t0, y3)
+	y3 = mmul(F, x3, z3); y3 = madd(F, y3, t2); x3 = mmul(F, t3, x3); x3 = msub(F, x3, t1); z3 = mmul(F, t4, z3); t1 = mmul(F, t3, t0); z3 = madd(F, z3, t1)
+	Pj{x3, y3, z3}
+ecmul(c const Curve&, p const Pj&, k const u32[:]) Pj:
+	r0 ~= Pj{zeros(c.p.k), copy(c.p.one), zeros(c.p.k)}; r1 ~= copy(p); i ~= c.n.bits - 1
+	while i >= 0:
+		b := bn_bit(k, i); cswap(r0.x, r1.x, b); cswap(r0.y, r1.y, b); cswap(r0.z, r1.z, b)
+		r1 = ecadd(c, r0, r1); r0 = ecadd(c, r0, r0)
+		cswap(r0.x, r1.x, b); cswap(r0.y, r1.y, b); cswap(r0.z, r1.z, b); i -= 1
+	r0
+gen(c const Curve&) Pj: Pj{copy(c.gx), copy(c.gy), copy(c.p.one)}
+affine_x(c const Curve&, p const Pj&) u32[>..]: from_mont(c.p, mmul(c.p, p.x, minv(c.p, p.z)))
+ec_encode(c const Curve&, p const Pj&) byte[>..]:
+	zi := minv(c.p, p.z); o byte[>..] ~= [4]
+	o.append(bn_bytes(from_mont(c.p, mmul(c.p, p.x, zi)), c.size)); o.append(bn_bytes(from_mont(c.p, mmul(c.p, p.y, zi)), c.size)); o
+ec_decode(c const Curve&, b const byte[:]) Pj, bool:
+	sz := c.size; k := c.p.k; bad := Pj{}
+	if !(b.len == 1 + 2 * sz && b[0] == 4) && !(b.len == 1 + sz && (b[0] == 2 || b[0] == 3)): return bad, false
+	x := bn_from(b[1..1 + sz], k)
+	if bn_cmp(x, c.p.n) >= 0: return bad, false
+	xm := to_mont(c.p, x); x3 := mmul(c.p, mmul(c.p, xm, xm), xm); rhs := madd(c.p, msub(c.p, x3, madd(c.p, madd(c.p, xm, xm), xm)), c.b); ym ~= zeros(k)
+	if b[0] == 4:
+		y := bn_from(b[1 + sz..], k)
+		if bn_cmp(y, c.p.n) >= 0: return bad, false
+		ym = to_mont(c.p, y)
+	else:
+		ym = mpow(c.p, rhs, c.sq); yn := from_mont(c.p, ym)
+		if ((yn[0] & 1) as int) != ((b[0] & 1) as int): ym = msub(c.p, zeros(k), ym)
+	if bn_cmp(mmul(c.p, ym, ym), rhs) != 0: return bad, false
+	return Pj{xm, ym, copy(c.p.one)}, true
+scalar(c const Curve&, d const byte[:]) u32[>..], bool:
+	s := bn_from(d, c.n.k)
+	if d.len != c.size || bn_zero(s) || bn_cmp(s, c.n.n) >= 0: return s, false
+	return s, true
+ec_public(id int, priv const byte[:]) byte[>..], bool:
+	curves(); let c .= CV[id - 1]; d, ok := scalar(c, priv); e byte[>..] ~= []
+	if !ok: return e, false
+	return ec_encode(c, ecmul(c, gen(c), d)), true
+ec_generate(id int) byte[>..]:
+	curves(); let c .= CV[id - 1]
+	loop:
+		d := random_bytes(c.size); s, ok := scalar(c, d)
+		if ok: return d
+ecdh(id int, priv const byte[:], peer const byte[:]) byte[>..], bool:
+	curves(); let c .= CV[id - 1]; e byte[>..] ~= []; d, ok := scalar(c, priv); q, ok2 := ec_decode(c, peer)
+	if !ok || !ok2: return e, false
+	r := ecmul(c, q, d)
+	if bn_zero(r.z): return e, false
+	return bn_bytes(affine_x(c, r), c.size), true
+hash_int(c const Curve&, h const byte[:]) u32[>..]: reduce_once(c.n, bn_from(if h.len > c.size { h[..c.size] } else { h }, c.n.k))
+ec_verify_core(c const Curve&, kind int, pub const byte[:], msg const byte[:], r const u32[:], s const u32[:]) bool:
+	q, ok := ec_decode(c, pub)
+	if !ok || bn_zero(r) || bn_zero(s) || bn_cmp(r, c.n.n) >= 0 || bn_cmp(s, c.n.n) >= 0: return false
+	e := hash_int(c, digest(kind, msg)); w := minv(c.n, to_mont(c.n, s)); u1 := from_mont(c.n, mmul(c.n, to_mont(c.n, e), w)); u2 := from_mont(c.n, mmul(c.n, to_mont(c.n, r), w))
+	x := ecadd(c, ecmul(c, gen(c), u1), ecmul(c, q, u2))
+	if bn_zero(x.z): return false
+	bn_cmp(reduce_once(c.n, affine_x(c, x)), r) == 0
+ecdsa_verify(id int, kind int, pub const byte[:], msg const byte[:], sig const byte[:]) bool:
+	curves(); let c .= CV[id - 1]; sz := c.size
+	if sig.len != 2 * sz: return false
+	ec_verify_core(c, kind, pub, msg, bn_from(sig[..sz], c.n.k), bn_from(sig[sz..], c.n.k))
+der_int(b const byte[:], i int, sz int) const byte[:], int, bool:
+	e := b[..0]
+	if i + 2 > b.len || b[i] != 2: return e, 0, false
+	l := b[i + 1] as int
+	if l == 0 || l >= 0x80 || i + 2 + l > b.len: return e, 0, false
+	v := b[i + 2..i + 2 + l]
+	if v[0] & 0x80 != 0 || l > 1 && v[0] == 0 && v[1] & 0x80 == 0: return e, 0, false
+	u := if v[0] == 0 { v[1..] } else { v }
+	if u.len > sz: return e, 0, false
+	return u, i + 2 + l, true
+ecdsa_verify_der(id int, kind int, pub const byte[:], msg const byte[:], der const byte[:]) bool:
+	curves(); let c .= CV[id - 1]
+	if der.len < 8 || der[0] != 0x30 || der[1] >= 0x80 || der[1] as int != der.len - 2: return false
+	r, i, ok := der_int(der, 2, c.size); s, j, ok2 := der_int(der, i, c.size)
+	ok && ok2 && j == der.len && ec_verify_core(c, kind, pub, msg, bn_from(r, c.n.k), bn_from(s, c.n.k))
+rfc6979(c const Curve&, kind int, d const byte[:], h1 const byte[:]) u32[>..]:
+	hl := hash_size(kind); v byte[>..] ~= []; k byte[>..] ~= []; v.resize(hl, 1); k.resize(hl, 0); hm := bn_bytes(hash_int(c, h1), c.size)
+	for round 2:
+		m byte[>..] ~= []; m.append(v[..]); m.push(round as! byte); m.append(d); m.append(hm[..]); k = hmac(kind, k, m); v = hmac(kind, k, v)
+	loop:
+		t byte[>..] ~= []
+		while t.len < c.size: v = hmac(kind, k, v); t.append(v[..])
+		x := bn_from(t[..c.size], c.n.k)
+		if !bn_zero(x) && bn_cmp(x, c.n.n) < 0: return x
+		m byte[>..] ~= []; m.append(v[..]); m.push(0); k = hmac(kind, k, m); v = hmac(kind, k, v)
+ecdsa_sign(id int, kind int, priv const byte[:], msg const byte[:]) byte[>..], bool:
+	curves(); let c .= CV[id - 1]; d, ok := scalar(c, priv); o byte[>..] ~= []
+	if !ok: return o, false
+	h1 := digest(kind, msg); e := hash_int(c, h1); k := rfc6979(c, kind, priv, h1); r := reduce_once(c.n, affine_x(c, ecmul(c, gen(c), k)))
+	sm := mmul(c.n, minv(c.n, to_mont(c.n, k)), madd(c.n, to_mont(c.n, e), mmul(c.n, to_mont(c.n, r), to_mont(c.n, d)))); s := from_mont(c.n, sm)
+	if bn_zero(r) || bn_zero(s): return o, false
+	o.append(bn_bytes(r, c.size)); o.append(bn_bytes(s, c.size)); return o, true

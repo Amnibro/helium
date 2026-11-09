@@ -1,0 +1,18 @@
+import std;
+import os;
+import ttf;
+fn cps() int[>..] { var r int[>..] = []; for c in 33..127 { r.push(c); } for c in 161..384 { if c != 173 { r.push(c); } } r }
+fn main() {
+	let RANGE = cps();
+	var d byte[>..] = [];
+	if !read_file(args()[1], d) { print("no font"); exit(1); }
+	var f = ttf::Info { d: d };
+	if !ttf::init(f) { print("bad font"); exit(1); }
+	for a in RANGE {
+		let g1 = ttf::glyph_index(f, a);
+		for b in RANGE {
+			let k = ttf::kern(f, g1, ttf::glyph_index(f, b));
+			if k != 0 { print(a, " ", b, " ", k); }
+		}
+	}
+}

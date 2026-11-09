@@ -12,6 +12,10 @@ var CGE i32[>..]
 var PFT (i32[>..])[>..]
 var CYR (u64[>..])[>..]
 var CTH i64[>..]
+var PLVF int
+var PLVO i32[>..]
+var PLVT i32[>..]
+var PLVN i32[>..]
 var SHG (i32[>..])[>..]
 var PPR (i32[>..])[>..]
 var PPN (i32[>..])[>..]
@@ -509,13 +513,30 @@ pagap(a int, v int, st int) bool:
 	j = fq + 1
 	while j < e: { x := ND[j]; if x.k as int == N_ID && rk(j) == R_LOCAL && rv(j) == a && x.t as int > st && x.t as int < fu { return true } j += 1 }
 	false
-plive(st int, v int, lp int, cut int, rs int) bool:
-	fq := FI_[PI].node as int; j ~= fq + 1; e := NEND[fq] as int; dt := ND[LVS[v].node].t as int
+pltab():
+	if PLVF == PI + 1: return
+	PLVF = PI + 1; fq := FI_[PI].node as int; e := NEND[fq] as int; n := LVS.len
+	PLVO.clear(); PLVO.resize(n + 1, 0); j ~= fq + 1
 	while j < e:
 		x := ND[j]; if x.k as int == N_FN && j < NEND.len && NEND[j] > j { j = NEND[j] as int; continue }
-		if x.k as int == N_ID && rk(j) == R_LOCAL && rv(j) == v: t := x.t as int; if t > st && t <= cut || t > rs || lp >= 0 && t >= lp && t < st && dt < lp { return true }
+		if x.k as int == N_ID && rk(j) == R_LOCAL: v := rv(j); if v >= 0 && v < n { PLVO[v + 1] += 1 }
 		j += 1
-	false
+	for v n { PLVO[v + 1] += PLVO[v] }
+	PLVT.clear(); PLVT.resize(PLVO[n] as int, 0); PLVN.clear(); PLVN.resize(n, 0); j = fq + 1
+	while j < e:
+		x := ND[j]; if x.k as int == N_FN && j < NEND.len && NEND[j] > j { j = NEND[j] as int; continue }
+		if x.k as int == N_ID && rk(j) == R_LOCAL: v := rv(j); if v >= 0 && v < n { k ~= PLVO[v] as int + PLVN[v] as int; PLVN[v] += 1; t := x.t as int; while k > PLVO[v] as int && PLVT[k - 1] as int > t { PLVT[k] = PLVT[k - 1]; k -= 1 } PLVT[k] = t as i32 }
+		j += 1
+plb(a int, b int, t int) int:
+	lo ~= a; hi ~= b
+	while lo < hi: m := (lo + hi) >> 1; if PLVT[m] as int < t { lo = m + 1 } else { hi = m }
+	lo
+plive(st int, v int, lp int, cut int, rs int) bool:
+	pltab(); if v < 0 || v >= LVS.len: return false
+	a := PLVO[v] as int; b := PLVO[v + 1] as int; if a == b: return false
+	if PLVT[b - 1] as int > rs: return true
+	k := plb(a, b, st + 1); if k < b && PLVT[k] as int <= cut: return true
+	lp >= 0 && (ND[LVS[v].node].t as int) < lp && plb(a, b, lp) < b && PLVT[plb(a, b, lp)] as int < st
 recursive pcont(e int, p int) bool:
 	if e < 0 || p < 0: return false
 	if e == p || TY[e].k == TY[p].k && TY[e].k as int == TY_INT && TY[e].s == TY[p].s: return true
@@ -1103,6 +1124,7 @@ pnconst():
 prov_program() bool:
 	if NERR > 0: return false
 	nlc byte[>..] ~= []; if env("HC_NOPROV", nlc): return true
+	PLVF = 0
 	GST.clear(); GCP.clear(); PSH.clear(); PSO.clear(); PRM.clear(); PRM.resize(FI_.len, 0); SHR.clear(); SHR.resize(FI_.len, 0); PSG.clear(); PSG.resize(FI_.len, 0); PPW.clear(); PCW.clear(); SHG.clear(); PPR.clear(); PPN.clear(); PGN.clear(); PRG.clear(); for _ FI_.len { SHG.push([]); PPR.push([]); PPN.push([]); PGN.push([]); PRG.push([]) } PCH = false
 	p0 i64[>..] ~= []; GRR.clear(); GRU.clear(); PSGG.clear(); sg := AOWN; AOWN = GLOBI
 	for d, di DC: if d.k as int == D_GLOBAL && !pskip(d.file as int) && ND[d.node].k as int == N_VDECL && ND[d.node].b >= 0 && ND[ND[d.node].b].n > 0 { t := global_type(di); if t > 0 && (TY[t].k as int == TY_REF && TY[t].c < 0 || TY[t].k as int == TY_SLICE) { e := kid(ND[d.node].b as int, 0); q := pl(e); if TY[t].k as int == TY_SLICE && q.v <= -3 && pgsid(q.v as int) && ND[e].k as int != N_NULL { m byte[>..] ~= []; m.append("storing a reference into "); pidn(q.v as int, m); m.append(", which holds a grow-shrink array: such a reference lives in a variable, is passed down or returned, and is never stored (§5.2)"); cerr(e, m[..]) } if ND[e].k as int != N_NULL { grrw(di, if q.d == -2 && q.v <= -3 { q.v as int } else { -9 }) } } }
