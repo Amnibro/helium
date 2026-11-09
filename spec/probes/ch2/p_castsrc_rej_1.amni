@@ -1,0 +1,1 @@
+fn main() { let b = 5 as bool; print(b); }

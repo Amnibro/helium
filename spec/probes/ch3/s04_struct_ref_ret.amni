@@ -1,0 +1,3 @@
+struct H { t int&, w int }
+fn mk() H { var v = 1; H { t: v, w: 2 } }
+fn main() { let h = mk(); print(h.t); }

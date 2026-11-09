@@ -1,0 +1,4 @@
+fn main():
+    n := 5
+    if n > 2: print("big") else: print("small")
+    if n > 9: print("x") elif n > 4: print("mid") else: print("low")

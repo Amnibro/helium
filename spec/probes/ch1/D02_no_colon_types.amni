@@ -1,0 +1,3 @@
+struct P { x real, let y real, const z real }
+fn add(a int, b int) int { a + b }
+fn main() { var n int = 4; let p = P { 1.0, 2.0, 3.0 }; print(add(n, 1), " ", p.y); }

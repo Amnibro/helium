@@ -1,0 +1,4 @@
+# leading comment
+fn main():
+    # inside
+    print(1)  # trailing

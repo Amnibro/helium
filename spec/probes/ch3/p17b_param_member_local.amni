@@ -1,0 +1,6 @@
+struct P { x int }
+fn f(p P) int { p.x = 1; p.x }
+fn main() {
+	var q = P { x: 0 };
+	print(f(q), " ", q.x);
+}

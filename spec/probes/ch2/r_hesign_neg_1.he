@@ -1,0 +1,4 @@
+fn main():
+    a := -1
+    b u8 := a
+    print(b)

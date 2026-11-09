@@ -1,0 +1,2 @@
+var gp int& = 0;
+fn main() { print(gp); }

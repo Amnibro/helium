@@ -1,0 +1,1 @@
+fn o(a i8) int { 1 } fn o(a int) int { 2 } fn main() { print(o(5)); }

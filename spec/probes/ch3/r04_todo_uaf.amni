@@ -1,0 +1,2 @@
+fn f(src int[>..]&) int[:] { var l = src; l }
+fn main() { var g int[>..] = [1, 2]; let s = f(g); print(s); }

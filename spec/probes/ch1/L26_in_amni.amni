@@ -1,0 +1,1 @@
+fn main() { let xs = [1, 2]; print(2 in xs); }

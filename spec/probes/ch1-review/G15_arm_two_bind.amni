@@ -1,0 +1,2 @@
+enum S { Circle { r int, q int } }
+fn main() { let s = S.Circle { r: 1, q: 2 }; print(match s { Circle a b => a, }, "\n"); }

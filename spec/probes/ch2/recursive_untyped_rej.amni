@@ -1,0 +1,2 @@
+recursive fn fact(n int) { if n <= 1 { return 1; } n * fact(n - 1) }
+fn main() { print(fact(5)); }

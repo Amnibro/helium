@@ -1,0 +1,5 @@
+fn f(c bool, p int[:]) int[:] {
+	var a int[>..] = [1, 2];
+	if c { p } else { a[..] }
+}
+fn main() { print(f(false, [5, 6])); }

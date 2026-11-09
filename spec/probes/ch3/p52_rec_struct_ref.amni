@@ -1,0 +1,10 @@
+struct H { r int& }
+recursive fn f(n int, p int&) int {
+	if n == 0 { return p; }
+	var h = H { r: p };
+	f(n - 1, h.r)
+}
+fn main() {
+	var v = 5;
+	print(f(3, v));
+}

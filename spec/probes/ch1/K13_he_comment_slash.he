@@ -1,0 +1,3 @@
+fn main():
+    // not a comment in .he
+    print(1)

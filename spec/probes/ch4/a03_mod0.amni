@@ -1,0 +1,1 @@
+fn main() { let z = 0; print(7 % z); }

@@ -1,0 +1,1 @@
+fn main() { let and = 1; let or = 2; print(and + or, "\n"); }

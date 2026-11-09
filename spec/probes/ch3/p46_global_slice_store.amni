@@ -1,0 +1,7 @@
+var base int[3] = [1, 2, 3];
+var gs int[:] = base[..];
+fn f() {
+	var a int[>..] = [9];
+	gs = a[..];
+}
+fn main() { f(); print(gs); }

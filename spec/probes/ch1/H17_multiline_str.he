@@ -1,0 +1,6 @@
+fn main():
+    s := """
+        hello
+        world
+        """
+    print(s)

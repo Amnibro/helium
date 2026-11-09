@@ -1,0 +1,1 @@
+fn o(a real) int { 2 } fn o(a int) int { 1 } fn main() { print(o(2)); }

@@ -1,0 +1,2 @@
+fn h(a i8) int { a as int }
+fn main() { let x int = 1; print(h(x)); }

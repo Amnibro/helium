@@ -1,0 +1,10 @@
+recursive fn f(n int, p int&, q int&) int {
+	if n == 0 { return q; }
+	q .= p;
+	f(n - 1, p, q)
+}
+fn main() {
+	var v = 5;
+	var w = 0;
+	print(f(3, v, w));
+}

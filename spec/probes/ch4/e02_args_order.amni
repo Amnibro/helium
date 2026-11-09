@@ -1,0 +1,4 @@
+var log int = 0;
+fn tag(v int, s int) int { log = log * 10 + s; v }
+fn f(a int, b int, c int) int { a * 100 + b * 10 + c }
+fn main() { let r = f(tag(1, 1), tag(2, 2), tag(3, 3)); print(r, " ", log); }

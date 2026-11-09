@@ -1,0 +1,5 @@
+fn g(x i8) int:
+    1
+fn main():
+    a := 9
+    print(g(a))

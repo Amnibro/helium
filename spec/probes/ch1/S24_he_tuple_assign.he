@@ -1,0 +1,7 @@
+fn two() int, int:
+    return 1, 2
+fn main():
+    a ~= 0
+    b ~= 0
+    a, b = two()
+    print(a, b)

@@ -1,0 +1,2 @@
+struct Node { v int, next Node? }
+fn main() { let m = Node { v: 4, next: null }; var n Node? = null; n = m; print(n.v); }

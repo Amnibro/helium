@@ -1,8 +1,9 @@
 // codec_png: PNG decoding to 8-bit RGBA (PNG specification, ISO/IEC 15948).
 // Handles every color type and bit bit_depth, palettes with tRNS, and Adam7 interlacing.
-// 16-bit samples keep their high byte.
+// 16-bit samples keep their high byte. encode/write produce 8-bit PNGs with stored (uncompressed) deflate blocks.
 namespace codec_png;
 import gfx.zlib;
+import os;
 
 var idat byte[>..];
 var raw byte[>..];
@@ -157,4 +158,104 @@ fn decode(file const byte[:], out byte[>..]&) int, int, bool {
 		}
 	}
 	return w, h, true;
+}
+var crc_table u32[256];
+var crc_ready bool = false;
+fn crc32(data const byte[:]) u32 {
+	if !crc_ready {
+		for i in 256 {
+			var c u32 = i as u32;
+			for k in 8 {
+				if (c & 1) == 1 { c = 0xEDB88320 ^ (c >> 1); } else { c = c >> 1; }
+			}
+			crc_table[i] = c;
+		}
+		crc_ready = true;
+	}
+	var crc u32 = 0xFFFFFFFF;
+	for b in data {
+		crc = crc_table[((crc ^ b) & 0xFF) as int] ^ (crc >> 8);
+	}
+	crc ^ 0xFFFFFFFF
+}
+fn adler32(data const byte[:]) u32 {
+	var a u32 = 1;
+	var b u32 = 0;
+	for x in data {
+		a = (a + x) % 65521;
+		b = (b + a) % 65521;
+	}
+	(b << 16) | a
+}
+fn put_be32(out byte[>..]&, v u32) {
+	out.push((v >> 24) as! byte);
+	out.push((v >> 16) as! byte);
+	out.push((v >> 8) as! byte);
+	out.push(v as! byte);
+}
+fn put_chunk(out byte[>..]&, kind const byte[:], data const byte[:]) {
+	put_be32(out, data.len as u32);
+	let start = out.len;
+	out.append(kind);
+	out.append(data);
+	let c = crc32(out[start..]);
+	put_be32(out, c);
+}
+fn encode(w int, h int, channels int, px const byte[:], out byte[>..]&) {
+	out.push(137);
+	out.push(80);
+	out.push(78);
+	out.push(71);
+	out.push(13);
+	out.push(10);
+	out.push(26);
+	out.push(10);
+	var hd byte[>..] = [];
+	put_be32(hd, w as u32);
+	put_be32(hd, h as u32);
+	let ct = match channels {
+		1 => 0,
+		2 => 4,
+		3 => 2,
+		_ => 6,
+	};
+	hd.push(8);
+	hd.push(ct as! byte);
+	hd.push(0);
+	hd.push(0);
+	hd.push(0);
+	put_chunk(out, "IHDR", hd);
+	let stride = w * channels;
+	var raw byte[>..] = [];
+	for y in h {
+		raw.push(0);
+		raw.append(px[y * stride..(y + 1) * stride]);
+	}
+	var z byte[>..] = [];
+	z.push(0x78);
+	z.push(0x01);
+	let total = raw.len;
+	var pos = 0;
+	var first = true;
+	while first || pos < total {
+		first = false;
+		let n = min(65535, total - pos);
+		if pos + n >= total { z.push(1); } else { z.push(0); }
+		let nn = n ^ 0xFFFF;
+		z.push((n & 0xFF) as! byte);
+		z.push(((n >> 8) & 0xFF) as! byte);
+		z.push((nn & 0xFF) as! byte);
+		z.push(((nn >> 8) & 0xFF) as! byte);
+		z.append(raw[pos..pos + n]);
+		pos += n;
+	}
+	put_be32(z, adler32(raw));
+	put_chunk(out, "IDAT", z);
+	var empty byte[>..] = [];
+	put_chunk(out, "IEND", empty);
+}
+fn write(path const byte[:], w int, h int, channels int, px const byte[:]) bool {
+	var buf byte[>..] = [];
+	encode(w, h, channels, px, buf);
+	write_file(path, buf)
 }

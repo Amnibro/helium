@@ -1,0 +1,23 @@
+import std;
+import math;
+fn spread(a real, b real, n int, out real[>..]&) {
+	out.clear();
+	let step = (b - a) / ((n - 1) as real);
+	for i in n - 1 { out.push((i as real) * step + a); }
+	out.push(b);
+}
+fn corners(cx real, cy real, out real[>..]&) {
+	out.clear();
+	let a0 = [0.0, 1.0, 2.0, 3.0];
+	var t real[>..] = [];
+	for q in 4 {
+		spread(a0[q], a0[q] + PI / 2.0, 13, t);
+		out.push(cx);
+		out.push(cy + t[12]);
+	}
+}
+fn main() {
+	var o real[>..] = [];
+	corners(0.25, 1.0, o);
+	print(str(o[0], " ", o[6], " ", o[7], "\n"));
+}

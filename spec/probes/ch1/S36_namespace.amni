@@ -1,0 +1,3 @@
+namespace geo;
+struct Pt { x int }
+fn main() { let p = geo::Pt { x: 3 }; print(p.x); }

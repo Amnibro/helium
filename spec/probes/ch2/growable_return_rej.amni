@@ -1,0 +1,2 @@
+fn mk() int[>..] { var t int[>..] = []; t.push(1); t }
+fn main() { let g = mk(); print(g.len); }

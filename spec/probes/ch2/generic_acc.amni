@@ -1,0 +1,3 @@
+fn id<T>(x T) T { x }
+fn idu(x) { x }
+fn main() { print(id(3), " ", id(2.5), " ", idu("s")); }

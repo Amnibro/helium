@@ -1,0 +1,1 @@
+fn main() { var xs int[>..] = [1, 2, 3]; let s = xs[0..2]; for i in 100000 { xs.push(i); } print(s[0]); }

@@ -1,0 +1,3 @@
+struct J { p int& }
+thread_fn w() { let j = qget<J>(); print(j.p); }
+fn main() { var v = 3; qput(J { p: v }); let id = thread_spawn(w); thread_wait(id); }

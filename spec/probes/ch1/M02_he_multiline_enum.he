@@ -1,0 +1,6 @@
+enum Shape:
+    Circle { r real },
+    Dot
+fn main():
+    s := Shape.Dot
+    print(1)

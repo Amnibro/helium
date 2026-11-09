@@ -1,0 +1,1 @@
+var g int; fn main() { g = 3; print(g); }

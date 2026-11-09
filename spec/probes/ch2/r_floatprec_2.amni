@@ -1,0 +1,1 @@
+fn main() { let f = 0.1; let back real = f; print(back == 0.1); }

@@ -1,0 +1,1 @@
+fn main() { var s = 65; let one = 1; print(one << s, " ", 256 >> 66, " ", -8 >> 1); }

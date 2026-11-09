@@ -1,0 +1,2 @@
+fn main() { print(f(3), "\n"); }
+export simd fn f(n int) int { n }

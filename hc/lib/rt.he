@@ -535,6 +535,16 @@ rt_lgq(x real) real, real:
 rt_log(x real) real:
 	if x >= 2.2250738585072014e-308 && x < 1.7976931348623157e308: h, l := rt_lgq(x); e := (if h < 0.0 { -h } else { h }) * 1.0842021724855044e-19; f := h + (l + e); if f == h + (l - e) { return f }
 	if x != x || x <= 0.0 || x == rt_inf(false) { return rt_lgsp(x) } h, l := rt_logdd(x); h + l
+rt_log1p(x real) real:
+	if x != x || x == rt_inf(false): return x
+	if x <= -1.0: return if x == -1.0 { rt_inf(true) } else { (x - x) / (x - x) }
+	if (if x < 0.0 { -x } else { x }) < 0x1p-54: return x
+	u, lo := dd_s(1.0, x)
+	h, l := rt_logdd(u)
+	ch := lo / u
+	cl := rt_fma(0.0 - ch, u, lo) / u - ch * ch * 0.5
+	sh, sl := dd_add(h, l, ch, cl)
+	sh + sl
 rt_log2(x real) real: if x != x || x <= 0.0 || x == rt_inf(false) { return rt_lgsp(x) } e, mh, ml := rt_lgm(x); h, l := dd_mul(mh, ml, RT_IL2H, RT_IL2L); h2, l2 := dd_add(e as real, 0.0, h, l); h2 + l2
 rt_log10(x real) real: if x != x || x <= 0.0 || x == rt_inf(false) { return rt_lgsp(x) } h, l := rt_logdd(x); h2, l2 := dd_mul(h, l, RT_IL10H, RT_IL10L); h2 + l2
 rt_isint(y real) bool: rt_ffl(y) == y

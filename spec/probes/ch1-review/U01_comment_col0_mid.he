@@ -1,0 +1,4 @@
+main(): # entry
+    x := 1
+# note at col 0
+    print(x, "\n")

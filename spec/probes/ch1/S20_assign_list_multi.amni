@@ -1,0 +1,2 @@
+fn two() int, int { return 1, 2; }
+fn main() { var a = 0; var b = 0; a, b = two(); print(a + b); }

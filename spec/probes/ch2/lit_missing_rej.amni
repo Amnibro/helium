@@ -1,0 +1,2 @@
+struct Q { a int, b int }
+fn main() { let q = Q { a: 1 }; print(q.a); }

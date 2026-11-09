@@ -1,0 +1,1 @@
+fn main() { var t int[] = [1, 2]; let u = t; u[0] = 9; print(t[0]); }

@@ -1,0 +1,1 @@
+fn main() { let x = 0x1.8; print(x, "\n"); }

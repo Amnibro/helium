@@ -1,0 +1,1 @@
+fn main() { var m int = -9223372036854775807 - 1; var d int = -1; print("q=", m / d); }

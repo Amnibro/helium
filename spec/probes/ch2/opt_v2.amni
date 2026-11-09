@@ -1,0 +1,3 @@
+struct Node { v int, next Node? }
+fn get(p Node?) int { guard p else { return -1; } p.v }
+fn main() { print(get(null), " ", get(Node { v: 5, next: null })); }

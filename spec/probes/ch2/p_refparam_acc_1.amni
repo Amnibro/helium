@@ -1,0 +1,1 @@
+struct P { x int } fn inc(n int&) { n += 1; } fn main() { var p = P { x: 1 }; inc(p.x); print(p.x); }

@@ -1,0 +1,2 @@
+struct Unit { kind i32, hp i32 = 100 }
+fn main() { let a = Unit { kind: 1, 5 }; print(a.hp); }

@@ -1,0 +1,3 @@
+var g int = 0;
+fn bump() int { g += 1; g }
+fn main() { g = 0; let r = g + bump(); print(r, " ", g); g = 0; let s = bump() + g; print(s, " ", g); }

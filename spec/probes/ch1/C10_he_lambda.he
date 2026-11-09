@@ -1,0 +1,4 @@
+fn main():
+    xs := [1, 2, 3]
+    ys := xs.map() { it * 2 }
+    print(ys)

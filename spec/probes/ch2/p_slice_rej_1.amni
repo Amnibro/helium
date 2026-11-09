@@ -1,0 +1,1 @@
+fn w(xs int[:]) int { xs.len } fn main() { var a i32[3] = [1, 2, 3]; print(w(a)); }

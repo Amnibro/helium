@@ -1,0 +1,2 @@
+fn mk() int[>..] { var a int[>..] = [1, 2, 3]; a }
+fn main() { let s = mk()[..]; print(s); }

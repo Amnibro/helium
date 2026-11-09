@@ -1,0 +1,3 @@
+fn main():
+	b i8 := 300
+	print(b)

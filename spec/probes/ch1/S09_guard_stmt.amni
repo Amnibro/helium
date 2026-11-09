@@ -1,0 +1,2 @@
+fn half(n int) int { guard n % 2 == 0 else { return -1; } n / 2 }
+fn main() { print(half(8), " ", half(3)); }

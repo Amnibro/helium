@@ -1,0 +1,12 @@
+fn main():
+    xs := [10, 20, 30]
+    for x in xs:
+        print(x)
+    for i xs:
+        print(i)
+    for x int in xs:
+        print(x)
+    for x, i in xs:
+        print(i, x)
+    for i in 2:
+        print(i)

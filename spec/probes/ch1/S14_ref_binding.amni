@@ -1,0 +1,8 @@
+fn main() {
+	var xs int[>..] = [10, 20, 30];
+	var r .= xs[0];
+	r = 11;
+	r .= xs[2];
+	r += 1;
+	print(xs, " ", r .== xs[2], " ", r .!= xs[1]);
+}

@@ -1,0 +1,2 @@
+fn f(s const int[>..]&) { s.push(1); }
+fn main() { var xs int[>..] = []; f(xs); print(xs); }

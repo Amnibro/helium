@@ -1,0 +1,1 @@
+fn main() { var budget = 0; fn spend(n int) { budget += n; } spend(5); print(budget); }

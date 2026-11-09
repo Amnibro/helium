@@ -1,0 +1,1 @@
+fn main() { let f = 1.0e30; let g = -2.7; print(g as int, " ", (f as int) == (f as int)); print("ok"); }

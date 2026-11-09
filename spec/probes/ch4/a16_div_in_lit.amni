@@ -1,0 +1,1 @@
+fn main() { var k = 0; let r = if k != 0 { 10 / k } else { -1 }; print(r); }

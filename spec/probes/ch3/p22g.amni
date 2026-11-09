@@ -1,0 +1,2 @@
+fn lower_all(s byte[:]) { for &c in s { c = 97; } }
+fn main() { lower_all("Hi"); }

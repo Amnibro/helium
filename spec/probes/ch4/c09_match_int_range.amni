@@ -1,0 +1,2 @@
+fn grade(n int) int { match n { 0 => 0, 1..10 => 1, 10, 20, 30 => 2, _ => 3, } }
+fn main() { print(grade(0), grade(5), grade(20), grade(99)); }

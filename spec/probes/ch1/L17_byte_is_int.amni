@@ -1,0 +1,1 @@
+fn main() { let b byte = 'a'; let c int = 'a'; print(b, " ", c); }

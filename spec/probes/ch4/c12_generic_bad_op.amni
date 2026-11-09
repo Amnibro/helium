@@ -1,0 +1,2 @@
+fn bad<T>(x T) T { x + "s" }
+fn main() { print(bad(1)); }

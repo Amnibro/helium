@@ -1,0 +1,1 @@
+fn r(xs byte[:]) int { xs.len } fn main() { print(r("abc")); }

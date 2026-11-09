@@ -1,0 +1,4 @@
+fn main():
+	a := 9
+	n := 1
+	print(a, n)

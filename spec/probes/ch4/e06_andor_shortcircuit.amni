@@ -1,0 +1,3 @@
+var log int = 0;
+fn tag(v bool, s int) bool { log = log * 10 + s; v }
+fn main() { let a = tag(false, 1) && tag(true, 2); let b = tag(true, 3) || tag(true, 4); let c = tag(true, 5) && tag(false, 6) || tag(true, 7); print(a, " ", b, " ", c, " ", log); }

@@ -1,0 +1,1 @@
+fn main() { let x = 0x.8p1; print(x, "\n"); }

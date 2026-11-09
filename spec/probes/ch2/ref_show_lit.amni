@@ -1,0 +1,2 @@
+fn show(n int&) { print(n); }
+fn main() { show(5); print(" done"); }

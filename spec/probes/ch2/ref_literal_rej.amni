@@ -1,0 +1,2 @@
+fn inc(n int&) { n += 1; }
+fn main() { inc(5); }

@@ -1,0 +1,1 @@
+fn main() { print("bye"); exit(7); }

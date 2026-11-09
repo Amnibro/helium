@@ -1,0 +1,2 @@
+struct H { a u8, pad 3, b u32 }
+fn main() { let h = H { 1, 2 }; print(h.b); }

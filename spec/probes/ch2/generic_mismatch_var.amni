@@ -1,0 +1,2 @@
+fn same<T>(a T, b T) T { a }
+fn main() { let i = 1; print(same(i, 2.0)); }

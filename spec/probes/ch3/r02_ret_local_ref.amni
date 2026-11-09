@@ -1,0 +1,2 @@
+fn pick() int& { var v = 5; return v; }
+fn main() { print(pick()); }

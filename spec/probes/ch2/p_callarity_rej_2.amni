@@ -1,0 +1,1 @@
+fn g(a int, b int = 2) int { a + b } fn main() { print(g(1, 2, 3)); }

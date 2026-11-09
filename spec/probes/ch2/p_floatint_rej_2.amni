@@ -1,0 +1,1 @@
+fn g(x int) int { x } fn main() { print(g(2.0)); }

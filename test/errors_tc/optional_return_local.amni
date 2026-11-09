@@ -1,0 +1,6 @@
+// error: returning a reference rooted in i, which dies with this function
+fn find(xs int[:], v int) int? {
+	for i in xs.len { if xs[i] == v { return i; } }
+	return null;
+}
+fn main() { let xs = [7, 8]; let r = find(xs, 8); if r { print(r); } }

@@ -1,0 +1,1 @@
+fn same(a, b) { b } fn main() { print(same(1.5, 2)); }

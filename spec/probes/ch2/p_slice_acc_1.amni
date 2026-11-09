@@ -1,0 +1,1 @@
+fn w(xs int[:]) { xs[0] = 9; } fn main() { var a int[3] = [1, 2, 3]; w(a); print(a[0]); }

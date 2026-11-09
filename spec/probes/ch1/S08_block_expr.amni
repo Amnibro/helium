@@ -1,0 +1,5 @@
+fn main() {
+	let found = block { guard 4 > 0 else { break -1; } 4 * 10 };
+	let kind = if found > 3 { "big" } else { "small" };
+	print(found, " ", kind);
+}

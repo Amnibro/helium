@@ -1,0 +1,9 @@
+fn main() {
+	var a0 int[3] = [1, 2, 3];
+	var s int[:] = a0[..];
+	for i in 1 {
+		var a int[3] = [4, 5, 6];
+		s = a[..];
+	}
+	print(s);
+}

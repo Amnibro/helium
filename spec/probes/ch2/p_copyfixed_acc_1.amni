@@ -1,0 +1,1 @@
+struct S { xs int[2] } fn main() { let a = S { xs: [1, 2] }; var b = a; b.xs[0] = 9; print(a.xs[0], " ", b.xs[0]); }

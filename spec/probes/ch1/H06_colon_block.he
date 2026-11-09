@@ -1,0 +1,7 @@
+fn f(n int) int:
+    if n > 2:
+        n * 10
+    else:
+        n
+fn main():
+    print(f(3), " ", f(1))

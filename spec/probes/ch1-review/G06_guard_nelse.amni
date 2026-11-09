@@ -1,0 +1,2 @@
+fn f(x int) int { guard x > 0; x * 2 }
+fn main() { print(f(4), "\n"); }

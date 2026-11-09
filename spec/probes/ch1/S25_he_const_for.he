@@ -1,0 +1,5 @@
+fn main():
+    t ~= 0
+    const for <k> in [1, 2, 3]:
+        t += k
+    print(t)

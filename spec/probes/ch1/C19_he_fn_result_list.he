@@ -1,0 +1,5 @@
+fn dm(a int, b int) int, bool:
+    return a / b, true
+fn main():
+    q, ok := dm(9, 3)
+    print(q, ok)

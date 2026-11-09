@@ -1,0 +1,1 @@
+fn main() { var x int = 4611686018427387904; let y = x * 2; print("y=", y); }

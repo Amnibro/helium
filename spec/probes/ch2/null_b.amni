@@ -1,0 +1,2 @@
+struct Node { v int, next Node? }
+fn main() { let m = Node { v: 4, next: null }; if m.next { print("no") } else { print("end ", m.v) } }

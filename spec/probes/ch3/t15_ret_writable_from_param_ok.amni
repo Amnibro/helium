@@ -1,0 +1,2 @@
+fn first(xs int[>..]&) int& { xs[0] }
+fn main() { var xs int[>..] = [7]; var r = first(xs); r = 8; print(xs); }

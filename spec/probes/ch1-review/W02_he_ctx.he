@@ -1,0 +1,4 @@
+main():
+    pass := 1
+    from := 2
+    print(pass + from, "\n")

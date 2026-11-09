@@ -1,0 +1,1 @@
+fn same(a, b) { b } fn main() { let x i8 = 1; print(same(x, 300)); }

@@ -1,0 +1,1 @@
+fn main() { let ys int[>..] = [1]; ys = [5]; print(ys); }

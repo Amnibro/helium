@@ -4,6 +4,8 @@
 
 Helium is designed and implemented by Anthony Reffelt ([Amniscient](https://github.com/Amnibro)). Its compiler, `hc`, is written in Helium and builds itself. It writes x86-64 executables directly (its own code generator, optimizer and ELF writer, no C compiler, assembler or linker), WebAssembly for the browser and node, or C.
 
+A draft formal specification, derived from `hc` and backed by test programs, is in [spec/](spec/README.md). Nothing in it is proven yet; it lists the known gaps where `hc` accepts programs the rules forbid.
+
 ## Build
 
 ```bash

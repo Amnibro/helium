@@ -1,0 +1,2 @@
+fn pick() int[:] { var a int[>..] = [1, 2, 3]; return a[..]; }
+fn main() { print(pick()); }

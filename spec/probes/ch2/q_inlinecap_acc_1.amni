@@ -1,0 +1,1 @@
+struct H { v int, a int[..4] } fn main() { var h = H { v: 1, a: [] }; h.a.push(4); print(h.a.len); }

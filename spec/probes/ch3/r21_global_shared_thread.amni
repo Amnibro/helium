@@ -1,0 +1,3 @@
+var g int[>..] = [];
+thread_fn w() { g.push(1); }
+fn main() { let id = thread_spawn(w); thread_wait(id); print(g); }

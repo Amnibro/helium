@@ -1,0 +1,2 @@
+extern "libm.so.6" { fn cos(x real) real; }
+fn main() { print(cos(0.0)); }

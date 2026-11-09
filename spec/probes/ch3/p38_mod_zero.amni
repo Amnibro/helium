@@ -1,0 +1,4 @@
+fn main() {
+	var z = 0;
+	print(5 % z);
+}

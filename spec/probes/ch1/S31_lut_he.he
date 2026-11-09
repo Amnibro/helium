@@ -1,0 +1,4 @@
+lut fn sq(n u16) int:
+    n as int * n as int
+fn main():
+    print(sq(7))

@@ -1,0 +1,2 @@
+fn total(xs int[:]) int { var t = 0; for x in xs { t += x; } t }
+fn main() { let a int[3] = [1, 2, 3]; var g int[>..] = [4]; print(total(a), " ", total(g)); }

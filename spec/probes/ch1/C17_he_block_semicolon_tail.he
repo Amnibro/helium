@@ -1,0 +1,4 @@
+fn f() int:
+    y := 2; y * 3
+fn main():
+    print(f())

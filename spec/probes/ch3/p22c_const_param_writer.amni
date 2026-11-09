@@ -1,0 +1,3 @@
+fn w(a byte[:]) { a[0] = 120; }
+fn f(name const byte[:]) { w(name); }
+fn main() { f("Hi"); }

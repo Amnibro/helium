@@ -1,0 +1,4 @@
+main():
+    x := 1
+    guard x > 0
+    print(x, "\n")

@@ -1,0 +1,3 @@
+var counter int = 0;
+thread_fn w() { counter += 5; }
+fn main() { let id = thread_spawn(w); thread_wait(id); print("counter=", counter); }

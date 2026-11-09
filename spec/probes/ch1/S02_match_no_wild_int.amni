@@ -1,0 +1,2 @@
+fn f(n int) int { match n { 0 => 1, 1 => 2 } }
+fn main() { print(f(1)); }

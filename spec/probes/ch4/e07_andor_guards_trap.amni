@@ -1,0 +1,1 @@
+fn main() { let xs int[>..] = []; if xs.len > 0 && xs[0] == 1 { print("yes"); } else { print("no short-circuit ok"); } let n = 0; print(n == 0 || 10 / n > 1); }

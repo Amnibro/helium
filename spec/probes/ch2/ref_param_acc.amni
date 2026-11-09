@@ -1,0 +1,2 @@
+fn inc(n int&) { n += 1; }
+fn main() { var c = 0; inc(c); inc(c); print(c); }

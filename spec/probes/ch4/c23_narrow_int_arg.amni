@@ -1,0 +1,2 @@
+fn f(x u8) int { 7 }
+fn main() { let n = 3; print(f(n)); }
