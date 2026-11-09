@@ -45,13 +45,16 @@ struct Parser {
 	tree Tree[>..] = [],
 	sets ByteSet[>..] = [],
 	groups int = 1,
-	err byte[>..] = []
+	err byte[>..] = [],
+	fold bool = false
 }
 
 node(p Parser&, kind int, a int, b int) int:
 	p.tree.push(Tree{kind, a, b, 0, 0, true})
 	p.tree.len - 1
+both_cases(on bool[256]&): for c 26 { u := ('A' + c) as byte; l := ('a' + c) as byte; if on[u] || on[l] { on[u] = true; on[l] = true } }
 set_node(p Parser&, s ByteSet) int:
+	if p.fold: both_cases(s.members)
 	p.sets.push(s)
 	node(p, T_SET, p.sets.len - 1, 0)
 problem(p Parser&, what const byte[:]):
@@ -140,6 +143,7 @@ parse_class(p Parser&) int:
 		while v <= hi as int:
 			on[v] = true
 			v += 1
+	if p.fold: both_cases(on)
 	if negate:
 		for v 256: on[v] = !on[v]
 	set_node(p, ByteSet{on})
@@ -308,8 +312,9 @@ lay_out(re Regex&, tree Tree[:], t int) int:
 			for s holes: order(re, s, s + 1, re.prog.len, n.greedy)
 	re.prog.len
 
-build(pattern byte[:], err byte[>..]&) Regex:
-	p ~= Parser{pat: pattern}
+build(pattern byte[:], err byte[>..]&, fold bool) Regex:
+	lead := pattern.len >= 4 && pattern[..4] == "(?i)"
+	p ~= Parser{pat: pattern, at: if lead { 4 } else { 0 }, fold: fold || lead}
 	root := alternation(p)
 	if p.err.len == 0 && p.at < pattern.len: problem(p, "unmatched )")
 	re ~= Regex{}
@@ -355,11 +360,17 @@ starts(re Regex&):
 # compiles pattern; a bad pattern stops the program with the reason
 compile(pattern byte[:]) Regex:
 	err byte[>..] ~= []
-	re := build(pattern, err)
+	re := build(pattern, err, false)
 	if err.len > 0: abort(err[..])
 	re
 # compiles pattern; a bad pattern leaves the reason in err and matches nothing
-compile(pattern byte[:], err byte[>..]&) Regex: build(pattern, err)
+compile(pattern byte[:], err byte[>..]&) Regex: build(pattern, err, false)
+compile_ignore_case(pattern byte[:], err byte[>..]&) Regex: build(pattern, err, true)
+compile_ignore_case(pattern byte[:]) Regex:
+	err byte[>..] ~= []
+	re := build(pattern, err, true)
+	if err.len > 0: abort(err[..])
+	re
 
 # ---- the machine
 

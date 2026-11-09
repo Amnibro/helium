@@ -1,0 +1,12 @@
+into js.he
+namespace js
+lang he
+use json, math
+
+Each function here copies one JavaScript built-in on a double exactly. A number's shortest digits are the fewest decimal digits that read back as the same double: `json::digits_of(x, digits)` fills them for the size of x and returns e, where the size is d1.d2d3... times 10 to the e, and n below is e + 1.
+
+`num_str(x)` is JavaScript's String(x): NaN, Infinity or -Infinity; 0 for both zeros; otherwise a minus sign for negatives, then the shortest digits d1..dk with the point after n digits written as plain digits when n is from 1 to 21 (zeros added after the digits as needed), as "0." and -n zeros then the digits when n is from -5 to 0, and otherwise as d1, a point and the other digits if any, "e", a + or - sign and n - 1.
+
+`to_fixed(x, digits)` is JavaScript's x.toFixed(digits) for digits from 0 to 100: "NaN" for NaN, `num_str(x)` when the size of x is at least 1e21, and otherwise the exact value of x rounded to that many decimals, a tie going away from zero, written as `math::fabs` of x with exactly that many decimals and a minus sign in front when x is below zero, so -0.001 with 2 decimals is "-0.00" and -0 is "0.00".
+
+`locale_string(x, max_digits)` is JavaScript's x.toLocaleString("en-US", { maximumFractionDigits: max_digits }) with the minimum left at 0: "NaN", "∞" or "-∞" for those values, and otherwise x's shortest digits rounded to at most max_digits decimals, a tie going away from zero, with trailing zero decimals and a bare point dropped, the whole part grouped in threes with commas, and a minus sign whenever x is negative or -0, even when it rounds to 0.

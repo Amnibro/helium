@@ -858,6 +858,7 @@ recursive ck_ret(n int) int:
 	x := ND[n]
 	f := if x.s >= 0 { find_from_fn(x.s) } else { ret_fn() }
 	if f < 0:
+		if x.s >= 0 && SPECR && (anyfn(x.s as int) || find_lv(x.s as int) >= 0): for i x.n { ck(kid(n, i), -1) } return T_VOID
 		if x.s >= 0: m byte[>..] ~= []; if anyfn(x.s as int) || find_lv(x.s as int) >= 0 { format(m, "return from ", nm(x.s as int), ": no enclosing call of ", nm(x.s as int), " on this compile-time call path") } else { format(m, "return from ", nm(x.s as int), ": unknown function") } cerr(n, m); return T_VOID
 		cerr(n, "return outside of a function"); return T_VOID
 	if f != CFN: FI_[CFN].lr = true; FI_[f].tg = true; set_x(n, f); dyt_add(CFN, f) else: set_x(n, -1)

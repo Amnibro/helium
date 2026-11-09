@@ -1,0 +1,28 @@
+=== 572ec2013fa73dfd
+use json
+use tiles.py
+main():
+	for t INTS:
+		n, ok := py::int_of(t)
+		print("int [", t, "] ", n, " ", ok)
+	for t FLOATS:
+		x, ok := py::float_of(t)
+		print("float [", t, "] ", pyfmt(x), " ", ok)
+	for t JSONS:
+		d ~= default<json::Doc>()
+		root, err := json::parse(t, d)
+		n, ok := py::int_of(d, root)
+		print("json ", t, " int=", n, ",", ok, " str=", py::str_of(d, root), " truthy=", py::truthy(d, root))
+	for t ISOS:
+		us, ok := py::fromisoformat(t)
+		print("iso [", t, "] ", us, " ", ok)
+	for t ADDRS:
+		names byte[>..][>..] ~= []
+		addrs byte[>..][>..] ~= []
+		py::getaddresses(t, names, addrs)
+		line byte[>..] ~= []
+		format(line, "addr [", t, "] ", names.len, ":")
+		for nm, i names:
+			for ad, j addrs:
+				if i == j: format(line, " (", nm, "|", ad, ")")
+		print(line);

@@ -1,0 +1,709 @@
+=== 7863c666370abe82
+use json
+use math
+
+is_ws(c byte) bool: c == 32 || (c >= 9 && c <= 13)
+
+strip_ws(s const byte[:]) const byte[:]:
+	a ~= 0
+	b ~= s.len
+	while a < b && is_ws(s[a]): a += 1
+	while b > a && is_ws(s[b - 1]): b -= 1
+	s[a..b]
+
+scan_digits(s const byte[:], i int, out byte[>..]&) int:
+	j ~= i
+	while j < s.len:
+		c := s[j]
+		if c >= 48 && c <= 57:
+			out.push(c)
+			j += 1
+		else if c == 95 && j > i && j + 1 < s.len && s[j + 1] >= 48 && s[j + 1] <= 57 && s[j - 1] >= 48 && s[j - 1] <= 57:
+			j += 1
+		else:
+			break
+	j
+=== -6ba24204688e74db
+int_of(text const byte[:]) int, bool:
+	s := strip_ws(text)
+	i ~= 0
+	neg ~= false
+	if s.len > 0 && (s[0] == 43 || s[0] == 45):
+		neg = s[0] == 45
+		i = 1
+	d byte[>..] ~= []
+	e := scan_digits(s, i, d)
+	if d.len == 0 || e != s.len: return 0, false
+	v uint ~= 0
+	for c d:
+		dg uint := c - 48
+		if v > 1844674407370955161 || (v == 1844674407370955161 && dg > 5): return 0, false
+		v = v * 10 + dg
+	if neg:
+		if v > 9223372036854775808: return 0, false
+		return (0 - v) as! int, true
+	if v > 9223372036854775807: return 0, false
+	return v as! int, true
+=== -4fabfc630210c620
+int_of(d json::Doc&, node int) int, bool:
+	k := json::kind(d, node)
+	if k == json::K_BOOL:
+		b, ok := json::as_bool(d, node)
+		if b: return 1, ok
+		return 0, ok
+	if k == json::K_INT:
+		v, ok := json::as_i64(d, node)
+		return v, ok
+	if k == json::K_NUM:
+		f, ok := json::as_f64(d, node)
+		if !ok: return 0, false
+		if is_nan(f - f): return 0, false
+		if f >= 9223372036854775808.0 || f < -9223372036854775808.0: return 0, false
+		return f as! int, true
+	if k == json::K_STR:
+		s, ok := json::as_string(d, node)
+		if !ok: return 0, false
+		return int_of(s)
+	return 0, false
+=== 1ecab96a15ea2b06
+float_of(text const byte[:]) real, bool:
+	s := strip_ws(text)
+	i ~= 0
+	if s.len > 0 && (s[0] == 43 || s[0] == 45): i = 1
+	cl byte[>..] ~= []
+	if i > 0: cl.push(s[0])
+	rest := s[i..]
+	low byte[>..] ~= []
+	for c rest:
+		if c >= 65 && c <= 90:
+			low.push(c + 32)
+		else:
+			low.push(c)
+	if low == "inf" || low == "infinity" || low == "nan":
+		cl.append(low)
+		v, ok := parse_flt(cl)
+		return v, ok
+	j ~= scan_digits(s, i, cl)
+	nint := cl.len - i
+	ndig ~= nint
+	if j < s.len && s[j] == 46:
+		if nint == 0: cl.push(48)
+		cl.push(46)
+		before := cl.len
+		j = scan_digits(s, j + 1, cl)
+		fr := cl.len - before
+		if fr == 0: cl.push(48)
+		ndig += fr
+	if ndig == 0: return 0.0, false
+	if j < s.len && (s[j] == 101 || s[j] == 69):
+		cl.push(101)
+		k ~= j + 1
+		if k < s.len && (s[k] == 43 || s[k] == 45):
+			cl.push(s[k])
+			k += 1
+		before := cl.len
+		j = scan_digits(s, k, cl)
+		if cl.len == before: return 0.0, false
+	if j != s.len: return 0.0, false
+	v, ok := parse_flt(cl)
+	return v, ok
+=== -2abb66b0b7d33a84
+put_repr(out byte[>..]&, s const byte[:]):
+	tmp byte[>..] ~= []
+	tmp.append(s)
+	r := pyrepr(tmp)
+	out.append(r)
+	return
+
+put_bool(out byte[>..]&, d json::Doc&, node int):
+	b, ok := json::as_bool(d, node)
+	if b:
+		out.append("True")
+	else:
+		out.append("False")
+	return
+
+put_num(out byte[>..]&, d json::Doc&, node int):
+	k := json::kind(d, node)
+	if k == json::K_INT:
+		v, ok := json::as_i64(d, node)
+		if ok:
+			r := pyfmt(v)
+			out.append(r)
+		else:
+			out.append(json::text_of(d, node))
+	else:
+		f, ok := json::as_f64(d, node)
+		r := pyfmt(f)
+		out.append(r)
+	return
+
+recursive fn repr_into(out byte[>..]&, d json::Doc&, node int, scratch int[>..]&):
+	k := json::kind(d, node)
+	if k == json::K_NULL:
+		out.append("None")
+		return
+	if k == json::K_BOOL:
+		put_bool(out, d, node)
+		return
+	if k == json::K_INT || k == json::K_NUM:
+		put_num(out, d, node)
+		return
+	if k == json::K_STR:
+		s, ok := json::as_string(d, node)
+		put_repr(out, s)
+		return
+	isobj := k == json::K_OBJ
+	start := scratch.len
+	json::each(d, node) { scratch.push(it); }
+	cnt := scratch.len - start
+	if isobj:
+		out.push(123)
+	else:
+		out.push(91)
+	for i cnt:
+		c := scratch[start + i]
+		if i > 0: out.append(", ")
+		if isobj:
+			put_repr(out, json::name_of(d, c))
+			out.append(": ")
+		repr_into(out, d, c, scratch)
+	if isobj:
+		out.push(125)
+	else:
+		out.push(93)
+	scratch.pop_n(cnt)
+	return
+
+str_of(d json::Doc&, node int) byte[>..]:
+	out byte[>..] ~= []
+	if json::kind(d, node) == json::K_STR:
+		s, ok := json::as_string(d, node)
+		out.append(s)
+		return out
+	scratch int[>..] ~= []
+	repr_into(out, d, node, scratch)
+	return out
+=== 347e0563befafe87
+truthy(d json::Doc&, node int) bool:
+	k := json::kind(d, node)
+	if k == json::K_NULL: return false
+	if k == json::K_BOOL:
+		b, ok := json::as_bool(d, node)
+		return b
+	if k == json::K_INT:
+		v, ok := json::as_i64(d, node)
+		if ok: return v != 0
+		return true
+	if k == json::K_NUM:
+		f, ok := json::as_f64(d, node)
+		return f != 0.0
+	if k == json::K_STR:
+		s, ok := json::as_string(d, node)
+		return s.len > 0
+	if k == json::K_ARR || k == json::K_OBJ:
+		return json::count(d, node) > 0
+	return true
+=== 40232ded65764ef9
+struct Hms { h int, m int, s int, us int }
+
+num_at(s const byte[:], at int, n int) int:
+	if at + n > s.len: return -1
+	v ~= 0
+	for i n:
+		c := s[at + i]
+		if c < 48 || c > 57: return -1
+		v = v * 10 + (c - 48)
+	v
+
+is_leap(y int) bool: y % 4 == 0 && (y % 100 != 0 || y % 400 == 0)
+
+month_days(y int, m int) int:
+	if m == 2:
+		if is_leap(y): return 29
+		return 28
+	if m == 4 || m == 6 || m == 9 || m == 11: return 30
+	31
+
+days_from_civil(y int, m int, d int) int:
+	yy := if m <= 2 { y - 1 } else { y }
+	era := yy / 400
+	yoe := yy - era * 400
+	mp := (m + 9) % 12
+	doy := (153 * mp + 2) / 5 + d - 1
+	doe := yoe * 365 + yoe / 4 - yoe / 100 + doy
+	era * 146097 + doe - 719468
+
+iso_week_days(y int, w int, d int) int, bool:
+	if y < 1 || y > 9999 || w < 1 || w > 53 || d < 1 || d > 7: return 0, false
+	j1 := days_from_civil(y, 1, 1)
+	if w == 53:
+		w1 := (j1 + 3) % 7
+		if !(w1 == 3 || (w1 == 2 && is_leap(y))): return 0, false
+	j4 := j1 + 3
+	mon := j4 - (j4 + 3) % 7
+	r := mon + (w - 1) * 7 + d - 1
+	if r > days_from_civil(9999, 12, 31): return 0, false
+	return r, true
+
+date_end(s const byte[:]) int:
+	n := s.len
+	if n < 7: return -1
+	if n == 7: return 7
+	if s[4] == 45:
+		if s[5] == 87:
+			if n > 8 && s[8] == 45:
+				if n == 9: return -1
+				if n > 10 && s[10] >= 48 && s[10] <= 57: return 8
+				return 10
+			return 8
+		return 10
+	if s[4] == 87:
+		idx ~= 7
+		while idx < n && s[idx] >= 48 && s[idx] <= 57: idx += 1
+		if idx < 9: return idx
+		if idx % 2 == 0: return 7
+		return 8
+	8
+
+parse_date(s const byte[:], de int) int, bool:
+	y := num_at(s, 0, 4)
+	if y < 1: return 0, false
+	ext := s[4] == 45
+	p := if ext { 5 } else { 4 }
+	if p >= de: return 0, false
+	if s[p] == 87:
+		w := num_at(s, p + 1, 2)
+		q ~= p + 3
+		d ~= 1
+		if q < de:
+			if (s[q] == 45) != ext: return 0, false
+			if ext: q += 1
+			d = num_at(s, q, 1)
+			q += 1
+		if q != de || w < 0 || d < 0: return 0, false
+		r, ok := iso_week_days(y, w, d)
+		return r, ok
+	m := num_at(s, p, 2)
+	q ~= p + 2
+	if q >= de: return 0, false
+	if (s[q] == 45) != ext: return 0, false
+	if ext: q += 1
+	dd := num_at(s, q, 2)
+	if m < 1 || m > 12 || dd < 1 || q + 2 != de: return 0, false
+	if dd > month_days(y, m): return 0, false
+	return days_from_civil(y, m, dd), true
+
+parse_hms(t const byte[:]) Hms, bool:
+	bad := Hms{0, 0, 0, 0}
+	n := t.len
+	h := num_at(t, 0, 2)
+	if h < 0: return bad, false
+	m ~= 0
+	sec ~= 0
+	pos ~= 2
+	has_sep ~= false
+	if pos < n && t[pos] == 58: has_sep = true
+	if pos < n && (t[pos] == 58 || (t[pos] >= 48 && t[pos] <= 57)):
+		if has_sep: pos += 1
+		m = num_at(t, pos, 2)
+		if m < 0: return bad, false
+		pos += 2
+		if pos < n && (t[pos] == 58 || (t[pos] >= 48 && t[pos] <= 57)):
+			if has_sep:
+				if t[pos] != 58: return bad, false
+				pos += 1
+			else:
+				if t[pos] == 58: return bad, false
+			sec = num_at(t, pos, 2)
+			if sec < 0: return bad, false
+			pos += 2
+	us ~= 0
+	if pos < n:
+		if t[pos] != 46 && t[pos] != 44: return bad, false
+		pos += 1
+		rem := n - pos
+		if rem < 1: return bad, false
+		take := if rem >= 6 { 6 } else { rem }
+		f ~= num_at(t, pos, take)
+		if f < 0: return bad, false
+		for i 6 - take: f *= 10
+		for i take..rem:
+			c := t[pos + i]
+			if c < 48 || c > 57: return bad, false
+		us = f
+	return Hms{h, m, sec, us}, true
+
+fromisoformat(text const byte[:]) int, bool:
+	de := date_end(text)
+	if de < 0 || de > text.len: return 0, false
+	days, dok := parse_date(text, de)
+	if !dok: return 0, false
+	tod ~= 0
+	offset ~= 0
+	if de < text.len:
+		b := text[de]
+		sl ~= 1
+		if b >= 240:
+			sl = 4
+		else if b >= 224:
+			sl = 3
+		else if b >= 192:
+			sl = 2
+		if de + sl > text.len: return 0, false
+		tstr := text[de + sl..]
+		if tstr.len < 2: return 0, false
+		tz ~= -1
+		for i tstr.len:
+			c := tstr[i]
+			if c == 45 || c == 43 || c == 90:
+				tz = i
+				break
+		end := if tz >= 0 { tz } else { tstr.len }
+		tpart := tstr[..end]
+		hm, ok := parse_hms(tpart)
+		if !ok: return 0, false
+		if hm.m > 59 || hm.s > 59: return 0, false
+		if hm.h == 24:
+			if hm.m != 0 || hm.s != 0 || hm.us != 0: return 0, false
+		else if hm.h > 23:
+			return 0, false
+		tod = ((hm.h * 60 + hm.m) * 60 + hm.s) * 1000000 + hm.us
+		if tz >= 0:
+			z := tstr[tz..]
+			if z[0] == 90:
+				if z.len != 1: return 0, false
+			else:
+				zh, zok := parse_hms(z[1..])
+				if !zok: return 0, false
+				tot := ((zh.h * 60 + zh.m) * 60 + zh.s) * 1000000 + zh.us
+				if tot >= 86400000000: return 0, false
+				if z[0] == 45:
+					offset = 0 - tot
+				else:
+					offset = tot
+	return days * 86400000000 + tod - offset, true
+=== -6b3b029891262ace
+var g_f byte[>..]
+var g_pos int = 0
+var g_cm byte[>..]
+var g_ncm int = 0
+var g_ws byte[>..]
+var g_pname byte[>..]
+var g_pn int = 0
+var g_pfl int = 0
+is_special(c byte) bool: c == 40 || c == 41 || c == 60 || c == 62 || c == 64 || c == 44 || c == 58 || c == 59 || c == 46 || c == 34 || c == 91 || c == 93
+is_atomend(c byte) bool: c == 32 || c == 9 || c == 13 || c == 10 || is_special(c)
+is_phraseend(c byte) bool: c != 46 && is_atomend(c)
+is_blank(c byte) bool: c == 32 || (c >= 9 && c <= 13) || (c >= 28 && c <= 31)
+recursive fn read_comment(out byte[>..]&):
+	g_pos += 1
+	q ~= false
+	while g_pos < g_f.len:
+		c byte := g_f[g_pos]
+		if q:
+			out.push(c)
+			q = false
+			g_pos += 1
+		else if c == 41 || c == 13:
+			g_pos += 1
+			break
+		else if c == 40:
+			read_comment(out)
+		else if c == 92:
+			q = true
+			g_pos += 1
+		else:
+			out.push(c)
+			g_pos += 1
+	return
+read_plain(out byte[>..]&, endc byte):
+	g_pos += 1
+	q ~= false
+	while g_pos < g_f.len:
+		c byte := g_f[g_pos]
+		if q:
+			out.push(c)
+			q = false
+		else if c == endc || c == 13:
+			g_pos += 1
+			break
+		else if c == 92:
+			q = true
+		else:
+			out.push(c)
+		g_pos += 1
+	return
+ad_comment():
+	if g_ncm > 0: g_cm.push(32)
+	g_ncm += 1
+	read_comment(g_cm)
+	return
+ad_goto():
+	g_ws.clear()
+	while g_pos < g_f.len:
+		c byte := g_f[g_pos]
+		if c == 32 || c == 9:
+			g_ws.push(c)
+			g_pos += 1
+		else if c == 10 || c == 13:
+			g_pos += 1
+		else if c == 40:
+			ad_comment()
+		else:
+			break
+	return
+ad_atom(out byte[>..]&, phrase bool):
+	while g_pos < g_f.len:
+		c byte := g_f[g_pos]
+		stop := if phrase { is_phraseend(c) } else { is_atomend(c) }
+		if stop: break
+		out.push(c)
+		g_pos += 1
+	return
+ph_start():
+	if g_pn > 0: g_pname.push(32)
+	g_pn += 1
+	return
+ph_end():
+	if g_pn == 1: g_pfl = g_pname.len
+	return
+ad_phrases():
+	g_pname.clear()
+	g_pn = 0
+	g_pfl = 0
+	while g_pos < g_f.len:
+		c byte := g_f[g_pos]
+		if c == 32 || c == 9 || c == 13 || c == 10:
+			g_pos += 1
+		else if c == 34:
+			ph_start()
+			read_plain(g_pname, 34)
+			ph_end()
+		else if c == 40:
+			ad_comment()
+		else if is_phraseend(c):
+			break
+		else:
+			ph_start()
+			ad_atom(g_pname, true)
+			ph_end()
+	return
+ad_domain(out byte[>..]&):
+	while g_pos < g_f.len:
+		c byte := g_f[g_pos]
+		if c == 32 || c == 9:
+			g_pos += 1
+		else if c == 40:
+			ad_comment()
+		else if c == 91:
+			out.push(91)
+			read_plain(out, 93)
+			out.push(93)
+		else if c == 46:
+			g_pos += 1
+			out.push(46)
+		else if c == 64:
+			out.clear()
+			return
+		else if is_atomend(c):
+			break
+		else:
+			ad_atom(out, false)
+	return
+pop_blank(asb byte[>..]&, starts int[>..]&):
+	if starts.len == 0: return
+	st := starts[starts.len - 1]
+	ok ~= true
+	for i st..asb.len:
+		if !is_blank(asb[i]): ok = false
+	if ok:
+		asb.pop_n(asb.len - st)
+		starts.pop_n(1)
+	return
+ad_spec(out byte[>..]&):
+	asb byte[>..] ~= []
+	starts int[>..] ~= []
+	ad_goto()
+	while g_pos < g_f.len:
+		pw ~= true
+		c byte := g_f[g_pos]
+		if c == 46:
+			pop_blank(asb, starts)
+			starts.push(asb.len)
+			asb.push(46)
+			g_pos += 1
+			pw = false
+		else if c == 34:
+			starts.push(asb.len)
+			asb.push(34)
+			qb byte[>..] ~= []
+			read_plain(qb, 34)
+			for ch qb:
+				if ch == 92 || ch == 34: asb.push(92)
+				asb.push(ch)
+			asb.push(34)
+		else if is_atomend(c):
+			pop_blank(asb, starts)
+			break
+		else:
+			starts.push(asb.len)
+			ad_atom(asb, false)
+		ad_goto()
+		if pw && g_ws.len > 0:
+			starts.push(asb.len)
+			asb.append(g_ws)
+	if g_pos >= g_f.len || g_f[g_pos] != 64:
+		out.append(asb)
+		return
+	asb.push(64)
+	g_pos += 1
+	ad_goto()
+	dom byte[>..] ~= []
+	ad_domain(dom)
+	if dom.len == 0: return
+	asb.append(dom)
+	out.append(asb)
+	return
+ad_route(out byte[>..]&):
+	junk byte[>..] ~= []
+	expect ~= false
+	g_pos += 1
+	ad_goto()
+	while g_pos < g_f.len:
+		if expect:
+			junk.clear()
+			ad_domain(junk)
+			expect = false
+		else:
+			c byte := g_f[g_pos]
+			if c == 62:
+				g_pos += 1
+				break
+			else if c == 64:
+				g_pos += 1
+				expect = true
+			else if c == 58:
+				g_pos += 1
+			else:
+				ad_spec(out)
+				g_pos += 1
+				break
+		ad_goto()
+	return
+add_pair(names byte[>..][>..]&, addrs byte[>..][>..]&, n const byte[:], a const byte[:]):
+	bad ~= false
+	for c a:
+		if c == 91: bad = true
+	let e .= names.push([])
+	let f .= addrs.push([])
+	if !bad:
+		e.append(n)
+		f.append(a)
+	return
+ad_case_spec(names byte[>..][>..]&, addrs byte[>..][>..]&):
+	a byte[>..] ~= []
+	ad_spec(a)
+	add_pair(names, addrs, g_cm, a)
+	return
+ad_case_route(names byte[>..][>..]&, addrs byte[>..][>..]&):
+	a byte[>..] ~= []
+	ad_route(a)
+	nm byte[>..] ~= []
+	nm.append(g_pname)
+	if g_ncm > 0:
+		nm.append(" (")
+		nm.append(g_cm)
+		nm.push(41)
+	add_pair(names, addrs, nm, a)
+	return
+recursive fn ad_address(names byte[>..][>..]&, addrs byte[>..][>..]&):
+	g_cm.clear()
+	g_ncm = 0
+	ad_goto()
+	oldpos := g_pos
+	ad_phrases()
+	ad_goto()
+	if g_pos >= g_f.len:
+		if g_pn > 0: add_pair(names, addrs, g_cm, g_pname[..g_pfl])
+	else:
+		c byte := g_f[g_pos]
+		if c == 46 || c == 64:
+			g_pos = oldpos
+			ad_case_spec(names, addrs)
+		else if c == 58:
+			g_pos += 1
+			while g_pos < g_f.len:
+				ad_goto()
+				if g_pos < g_f.len && g_f[g_pos] == 59:
+					g_pos += 1
+					break
+				ad_address(names, addrs)
+		else if c == 60:
+			ad_case_route(names, addrs)
+		else if g_pn > 0:
+			add_pair(names, addrs, g_cm, g_pname[..g_pfl])
+		else if is_special(c):
+			g_pos += 1
+	ad_goto()
+	if g_pos < g_f.len && g_f[g_pos] == 44: g_pos += 1
+	return
+ad_parse(header const byte[:], names byte[>..][>..]&, addrs byte[>..][>..]&):
+	g_f.clear()
+	g_f.append(header)
+	g_pos = 0
+	while g_pos < g_f.len:
+		before := names.len
+		ad_address(names, addrs)
+		if names.len == before: add_pair(names, addrs, "", "")
+	return
+strip_esc(s const byte[:], c byte, out byte[>..]&):
+	i ~= 0
+	while i < s.len:
+		if s[i] == 92 && i + 1 < s.len && s[i + 1] == c:
+			i += 2
+		else:
+			out.push(s[i])
+			i += 1
+	return
+count_commas(s const byte[:], a int, b int) int:
+	n ~= 0
+	for i a..b:
+		if s[i] == 44: n += 1
+	n
+expected_count(addr const byte[:]) int:
+	start ~= 0
+	op ~= -1
+	commas ~= 0
+	for pos addr.len:
+		ch := addr[pos]
+		if ch == 34:
+			if op < 0:
+				op = pos
+			else if !(pos - 1 > 0 && addr[pos - 1] == 92):
+				commas += count_commas(addr, start, op)
+				start = pos + 1
+				op = -1
+	if start < addr.len: commas += count_commas(addr, start, addr.len)
+	1 + commas
+getaddresses(header const byte[:], names byte[>..][>..]&, addrs byte[>..][>..]&):
+	t1 byte[>..] ~= []
+	strip_esc(header, 40, t1)
+	t2 byte[>..] ~= []
+	strip_esc(t1, 41, t2)
+	opens ~= 0
+	closes ~= 0
+	for c t2:
+		if c == 40: opens += 1
+		if c == 41: closes += 1
+	if opens != closes:
+		add_pair(names, addrs, "", "")
+		return
+	n0 := names.len
+	ad_parse(header, names, addrs)
+	got := names.len - n0
+	if got != expected_count(header):
+		names.pop_n(got)
+		addrs.pop_n(got)
+		add_pair(names, addrs, "", "")
+	return

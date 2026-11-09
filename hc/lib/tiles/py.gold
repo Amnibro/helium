@@ -1,0 +1,20 @@
+into py.he
+namespace py
+lang he
+use json
+
+Each function here copies one Python 3 built-in exactly. Python's whitespace is space, tab, newline, carriage return, form feed and vertical tab. A JSON value is a node of a `json::Doc`, given as the doc and the node index; its kind is `json::kind` (K_NULL, K_BOOL, K_INT, K_NUM for floats, K_STR, K_ARR, K_OBJ).
+
+`int_of(text)` is Python's int() of a str. It returns the int and true, or 0 and false where Python raises ValueError. After stripping whitespace the text is an optional + or - and then ASCII digits, where a single underscore may sit between two digits; leading zeros are fine. A number that does not fit in a signed 64-bit int also gives 0 and false.
+
+`int_of(d, node)` is Python's int() of a JSON value: a bool gives 1 or 0, an int itself, a float is cut toward zero (0 and false when it is not finite or does not fit in 64 bits), a str goes through `int_of(text)`, and null, a list or an object give 0 and false.
+
+`float_of(text)` is Python's float() of a str: the number and true, or 0.0 and false where Python raises ValueError. After stripping whitespace the text is an optional sign and then either inf, infinity or nan in any letter case, or digits with an optional point and fraction (at least one digit in all) and an optional exponent of e or E, an optional sign and digits. A single underscore may sit between two digits. The value is `parse_flt` of the text without its underscores.
+
+`str_of(d, node)` is Python's str() of a JSON value: None, True, False, a number like `pyfmt`, a str unchanged, and a list or object as Python's repr, `[a, b]` and `{'key': value}` with ", " between items and ": " after keys, strings inside written by `pyrepr`, nested values the same way.
+
+`truthy(d, node)` is Python's truth of a JSON value: null, false, 0, 0.0, an empty str, an empty list and an empty object are false, anything else is true.
+
+`fromisoformat(text)` is Python's datetime.fromisoformat as microseconds since 1970-01-01 UTC: the int and true, or 0 and false where Python raises ValueError. A time without a zone counts as UTC. The text is a date, then optionally any one separator character and a time, then optionally a zone. The date is YYYY-MM-DD or YYYYMMDD, or an ISO week date YYYY-Www or YYYY-Www-D (also without dashes), where week 1 holds the year's first Thursday and D is 1 for Monday to 7, Monday when left out. The time is HH, HH:MM, HH:MM:SS or HHMM, HHMMSS, with an optional fraction after a point or comma of one or more digits, of which the first 6 count. The zone is Z, or + or - and then HH, HH:MM, HHMM, HH:MM:SS or HHMMSS with an optional fraction. Month, day, hour 0 to 23, minute and second 0 to 59 must be valid, except that 24:00 with no seconds or fraction above zero is the next day's midnight, and a zone must be under 24 hours.
+
+`getaddresses(header, names, addrs)` is Python's email.utils.getaddresses of a one-item list, with its default strict checks: it appends each pair's display name to `names` and its address to `addrs`, in order; both are growable lists of growable strings, so callers can index them. Each pair is one comma-separated item of the RFC 2822 address list: an addr-spec with an optional comment in parentheses that becomes the name when there is no other, or a phrase followed by an angle-bracket address with an optional route, or a group "name: items;" whose items are listed in place. Quoted strings keep their content with backslash escapes removed, and a quoted string left open runs to the end. The name is the phrase words joined by single spaces, a comment inside the phrase kept with its parentheses, and the address is the local part, "@" and the domain with whitespace and comments dropped. Strict checks turn the whole result into one empty pair: parentheses that do not balance, a parsed address containing "[", or a pair count other than one plus the number of commas outside quoted strings.
