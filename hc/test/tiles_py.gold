@@ -1,0 +1,13 @@
+into tiles_py.he
+lang he
+use tiles.py, json
+
+```he
+INTS := ["42", " -7 ", "+3", "1_000", "1__0", "_1", "1_", "007", "3.0", "0x10", "", "-", "9223372036854775807", "9223372036854775808", "-9223372036854775808", " 12 34"]
+FLOATS := [" 1.5 ", "1e3", "-inf", "Infinity", "+nan", "1_0.5", ".5", "5.", "1e", "abc", "", "1_", "+.5e-2", " 3 ", "1e1_0", "-0", "1e400", "0x1p3"]
+JSONS := ["null", "true", "false", "0", "3", "-2.9", "2.9", "1.0", "1e-05", "1e300", "\"\"", "\"12\"", "\" 5 \"", "\"x\"", "\"0\"", "[]", "[0]", "[1, \"a\", null, true, 2.5]", "{}", "{\"k\": [1], \"s\": \"it's\", \"q\": \"say \\\"hi\\\"\"}"]
+ISOS := ["2026-11-02T12:00:00+00:00", "2026-11-02", "2026-11-02T12:00:00Z", "2026-11-02 12:00", "2026-11-02T12:00:00.123+05:30", "20261102T120000", "2026-11-02T12", "2026-13-01", "2026-02-29", "2024-02-29T23:59:59.999999", "bad", "2026-11-02T12:00:00-07:00", "2026-W45-1", "2026W451", "2026-W45", "2026-11-02T12:00:00.1234567", "2026-11-02T12:00:00,5", "2026-11-02X12:30", "2026-11-02T1230", "2026-11-02T24:00", "2026-11-02T12:00+0530", "2026-11-02T12:00+05", "2026-11-02T12:00:00+05:30:15", "2026-11-02T12:00:00+24:00", "1970-01-01", "0001-01-01", "2026-11-02T12:00:00.", "2026-11-2"]
+ADDRS := ["Ann <ann@x.com>, me@amni.com", "\"Doe, John\" <john@x.com>", "", "bob@corp.io", "Bob (comment) <b@x.com>", "b@x.com (Bob)", "<a@b.com>", "Group: a@b.com, c@d.com;", "undisclosed-recipients:;", "Bob (a, b) <b@x.com>", "\"Unclosed <u@x.com>", "Ann (unbalanced <ann@x.com>", "a@b.com,,c@d.com", "Bob <@route:b@x.com>", "\"A \\\"quoted\\\" name\" <q@x.com>", "Ann Lee  <ann.lee@x.com> , Bob <bob@y.org>", "x@[1.2.3.4]", "Billing Team <billing@acme.com>", "ME@Amni.com, alerts@bank.com", "plainword"]
+```
+
+The program prints one line per case, the lists in the order above. An int case prints "int [", the text, "] ", then the number and true or false from `py::int_of`. A float case prints "float [", the text, "] ", the number like `pyfmt` and the flag from `py::float_of`. A JSON case parses the text with `json::parse` and prints "json ", the text, " int=", the number, a comma and the flag from `py::int_of` of the root, then " str=" and `py::str_of`, then " truthy=" and `py::truthy`. An ISO case prints "iso [", the text, "] ", then the microseconds and flag from `py::fromisoformat`. An address case passes the text and two new empty lists to `py::getaddresses`, which fills them with names and addresses, and prints "addr [", the text, "] ", the pair count and ":", then " (", name, "|", address and ")" for each pair. Flags print as true or false.

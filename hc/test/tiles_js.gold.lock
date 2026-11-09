@@ -1,0 +1,20 @@
+=== 2c6a96d37f84670f
+use tiles.js
+
+split_case(s const byte[:]) real, int:
+	at ~= 0
+	while s[at] != ' ': at++
+	v, ok := parse_flt(s[..at])
+	n, ok2 := parse_int(s[at + 1..])
+	return v, n
+
+main():
+	for s NUMS:
+		v, ok := parse_flt(s)
+		print("num [", s, "] ", js::num_str(v))
+	for s FIXED:
+		v, n := split_case(s)
+		print("fixed [", s, "] ", js::to_fixed(v, n))
+	for s LOC:
+		v, n := split_case(s)
+		print("loc [", s, "] ", js::locale_string(v, n));

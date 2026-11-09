@@ -1,0 +1,102 @@
+int [42] 42 true
+int [ -7 ] -7 true
+int [+3] 3 true
+int [1_000] 1000 true
+int [1__0] 0 false
+int [_1] 0 false
+int [1_] 0 false
+int [007] 7 true
+int [3.0] 0 false
+int [0x10] 0 false
+int [] 0 false
+int [-] 0 false
+int [9223372036854775807] 9223372036854775807 true
+int [9223372036854775808] 0 false
+int [-9223372036854775808] -9223372036854775808 true
+int [ 12 34] 0 false
+float [ 1.5 ] 1.5 true
+float [1e3] 1000.0 true
+float [-inf] -inf true
+float [Infinity] inf true
+float [+nan] nan true
+float [1_0.5] 10.5 true
+float [.5] 0.5 true
+float [5.] 5.0 true
+float [1e] 0.0 false
+float [abc] 0.0 false
+float [] 0.0 false
+float [1_] 0.0 false
+float [+.5e-2] 0.005 true
+float [ 3 ] 3.0 true
+float [1e1_0] 10000000000.0 true
+float [-0] -0.0 true
+float [1e400] inf true
+float [0x1p3] 0.0 false
+json null int=0,false str=None truthy=false
+json true int=1,true str=True truthy=true
+json false int=0,true str=False truthy=false
+json 0 int=0,true str=0 truthy=false
+json 3 int=3,true str=3 truthy=true
+json -2.9 int=-2,true str=-2.9 truthy=true
+json 2.9 int=2,true str=2.9 truthy=true
+json 1.0 int=1,true str=1.0 truthy=true
+json 1e-05 int=0,true str=1e-05 truthy=true
+json 1e300 int=0,false str=1e+300 truthy=true
+json "" int=0,false str= truthy=false
+json "12" int=12,true str=12 truthy=true
+json " 5 " int=5,true str= 5  truthy=true
+json "x" int=0,false str=x truthy=true
+json "0" int=0,true str=0 truthy=true
+json [] int=0,false str=[] truthy=false
+json [0] int=0,false str=[0] truthy=true
+json [1, "a", null, true, 2.5] int=0,false str=[1, 'a', None, True, 2.5] truthy=true
+json {} int=0,false str={} truthy=false
+json {"k": [1], "s": "it's", "q": "say \"hi\""} int=0,false str={'k': [1], 's': "it's", 'q': 'say "hi"'} truthy=true
+iso [2026-11-02T12:00:00+00:00] 1793620800000000 true
+iso [2026-11-02] 1793577600000000 true
+iso [2026-11-02T12:00:00Z] 1793620800000000 true
+iso [2026-11-02 12:00] 1793620800000000 true
+iso [2026-11-02T12:00:00.123+05:30] 1793601000123000 true
+iso [20261102T120000] 1793620800000000 true
+iso [2026-11-02T12] 1793620800000000 true
+iso [2026-13-01] 0 false
+iso [2026-02-29] 0 false
+iso [2024-02-29T23:59:59.999999] 1709251199999999 true
+iso [bad] 0 false
+iso [2026-11-02T12:00:00-07:00] 1793646000000000 true
+iso [2026-W45-1] 1793577600000000 true
+iso [2026W451] 1793577600000000 true
+iso [2026-W45] 1793577600000000 true
+iso [2026-11-02T12:00:00.1234567] 1793620800123456 true
+iso [2026-11-02T12:00:00,5] 1793620800500000 true
+iso [2026-11-02X12:30] 1793622600000000 true
+iso [2026-11-02T1230] 1793622600000000 true
+iso [2026-11-02T24:00] 1793664000000000 true
+iso [2026-11-02T12:00+0530] 1793601000000000 true
+iso [2026-11-02T12:00+05] 1793602800000000 true
+iso [2026-11-02T12:00:00+05:30:15] 1793600985000000 true
+iso [2026-11-02T12:00:00+24:00] 0 false
+iso [1970-01-01] 0 true
+iso [0001-01-01] -62135596800000000 true
+iso [2026-11-02T12:00:00.] 0 false
+iso [2026-11-2] 0 false
+addr [Ann <ann@x.com>, me@amni.com] 2: (Ann|ann@x.com) (|me@amni.com)
+addr ["Doe, John" <john@x.com>] 1: (Doe, John|john@x.com)
+addr [] 1: (|)
+addr [bob@corp.io] 1: (|bob@corp.io)
+addr [Bob (comment) <b@x.com>] 1: (Bob (comment)|b@x.com)
+addr [b@x.com (Bob)] 1: (Bob|b@x.com)
+addr [<a@b.com>] 1: (|a@b.com)
+addr [Group: a@b.com, c@d.com;] 2: (|a@b.com) (|c@d.com)
+addr [undisclosed-recipients:;] 1: (|)
+addr [Bob (a, b) <b@x.com>] 1: (|)
+addr ["Unclosed <u@x.com>] 1: (|Unclosed <u@x.com>)
+addr [Ann (unbalanced <ann@x.com>] 1: (|)
+addr [a@b.com,,c@d.com] 3: (|a@b.com) (|) (|c@d.com)
+addr [Bob <@route:b@x.com>] 1: (Bob|b@x.com)
+addr ["A \"quoted\" name" <q@x.com>] 1: (A "quoted" name|q@x.com)
+addr [Ann Lee  <ann.lee@x.com> , Bob <bob@y.org>] 2: (Ann Lee|ann.lee@x.com) (Bob|bob@y.org)
+addr [x@[1.2.3.4]] 1: (|)
+addr [Billing Team <billing@acme.com>] 1: (Billing Team|billing@acme.com)
+addr [ME@Amni.com, alerts@bank.com] 2: (|ME@Amni.com) (|alerts@bank.com)
+addr [plainword] 1: (|plainword)
