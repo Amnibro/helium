@@ -21,7 +21,10 @@ const mmap = len => {
   try {
     const n = N(C64[2]);
     for (let k = 0; k < n; k++) { const a = N(C64[FL + 2 * k]), l = N(C64[FL + 2 * k + 1]); if (l >= len) { if (l === len) { C64[FL + 2 * k] = C64[FL + 2 * (n - 1)]; C64[FL + 2 * k + 1] = C64[FL + 2 * (n - 1) + 1]; C64[2] = BigInt(n - 1); } else { C64[FL + 2 * k] = BigInt(a + len); C64[FL + 2 * k + 1] = BigInt(l - len); } sync(); u8.fill(0, a, a + len); return a; } }
-    const old = mem.grow(len / 65536); sync(); return old * 65536;
+    if (N(C64[3]) + len <= N(C64[4])) { const b = N(C64[3]); C64[3] = BigInt(b + len); return b; }
+    const want = len / 65536, chunk = shared ? Math.max(want, 16384) : want; let old;
+    try { old = mem.grow(chunk); if (chunk > want) { C64[3] = BigInt((old + want) * 65536); C64[4] = BigInt((old + chunk) * 65536); } } catch { old = mem.grow(want); }
+    sync(); return old * 65536;
   } catch { return -12; } finally { unlock(); }
 };
 const munmap = (a, len) => { a = N(a); len = Math.ceil(N(len) / 65536) * 65536; if (a % 65536 || len <= 0) return; lock(); const n = N(C64[2]); if (n < FCAP) { C64[FL + 2 * n] = BigInt(a); C64[FL + 2 * n + 1] = BigInt(len); C64[2] = BigInt(n + 1); } unlock(); };
