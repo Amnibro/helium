@@ -47,6 +47,7 @@ fn main() {
 	s3d::gi_on = gi;
 	s3d::rt_shadows = gi;
 	s3d::gi_updates_per_frame = 8;
+	if arg_count() > 13 && arg_of(13)[..] == "taa" { s3d::temporal = 1; s3d::ao_mode = 1; }
 	s3d::init(w, h);
 	let out = gfx::render_target(w, h, gfx::RGBA8);
 	for k in if gi { 7 } else if e2 { 3 } else { 2 } {

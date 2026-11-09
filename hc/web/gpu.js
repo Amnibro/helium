@@ -119,7 +119,7 @@ function sdlgpu(R) {
       [window, 'focus', () => ev(526)], [window, 'blur', () => ev(527)], [document, 'paste', e => { clip = e.clipboardData?.getData('text') ?? clip; }],
       [window, 'keydown', e => { if (!mine(e)) return; const sc = scOf(e.code); if (sc) { e.preventDefault(); key(768, sc, e); } if (textOn && e.key.length === 1 && !e.ctrlKey && !e.metaKey) { const p = page() + 8192 + (tring++ & 31) * 256, b = te.encode(e.key).subarray(0, 255); u8().set(b, p); u8()[p + b.length] = 0; ev(771).setBigUint64(24, BigInt(p), true); } }],
       [window, 'keyup', e => { if (!mine(e)) return; const sc = scOf(e.code); if (sc) { e.preventDefault(); key(769, sc, e); } }]];
-    for (const [t, k, f] of L) t.addEventListener(k, f, { passive: k !== 'wheel' && k !== 'keydown' && k !== 'keyup' && k !== 'contextmenu' });
+    if (R.input !== false) for (const [t, k, f] of L) t.addEventListener(k, f, { passive: k !== 'wheel' && k !== 'keydown' && k !== 'keyup' && k !== 'contextmenu' });
     W.off = () => { for (const [t, k, f] of L) t.removeEventListener(k, f); };
   };
   const key = (t, sc, e) => { const q = ev(t); q.setUint32(24, sc, true); q.setUint32(28, keyOf(sc), true); q.setUint16(32, (e.shiftKey ? 1 : 0) | (e.ctrlKey ? 0x40 : 0) | (e.altKey ? 0x100 : 0) | (e.metaKey ? 0x400 : 0), true); q.setUint8(36, t === 768 ? 1 : 0); q.setUint8(37, e.repeat ? 1 : 0); };
@@ -224,7 +224,7 @@ function sdlgpu(R) {
     env,
     waiting: ['SDL_WaitForGPUFences', 'SDL_WaitForGPUIdle', 'SDL_WaitAndAcquireGPUSwapchainTexture'],
     init: async () => { try { const ad = await navigator.gpu?.requestAdapter({ powerPreference: 'high-performance' }); if (!ad) return; const L = {}; for (const k in ad.limits) if (typeof ad.limits[k] === 'number') L[k] = ad.limits[k]; dev = await ad.requestDevice({ requiredFeatures: ['float32-filterable', 'float32-blendable', 'rg11b10ufloat-renderable', 'depth32float-stencil8'].filter(f => ad.features.has(f)), requiredLimits: L }); info = ad.info; dev.onuncapturederror = e => { nfail++; if (nfail <= 7) console.error('webgpu:', e.error.message); }; } catch (e) { err = String(e && e.message || e); } },
-    raf: on => { raf = on; }, stats: () => ({ errors: nfail, gpu: info ? `${info.vendor} ${info.architecture} ${info.description}`.trim() : '' }), idle: () => dev ? dev.queue.onSubmittedWorkDone() : Promise.resolve()
+    raf: on => { raf = on; }, close: () => { for (const o of O.values()) o?.off?.(); dev?.destroy(); dev = null; }, stats: () => ({ errors: nfail, gpu: info ? `${info.vendor} ${info.architecture} ${info.description}`.trim() : '' }), idle: () => dev ? dev.queue.onSubmittedWorkDone() : Promise.resolve()
   };
   function bset(p, st, k, s, b, n) { const S = g(p).st[st]; for (let i = 0; i < n; i++) S[k][s + i] = k === 'smp' ? { t: g(r64(b, 16 * i)), s: g(r64(b, 16 * i + 8)) } : g(r64(b, 8 * i)); }
   function upush(c, st, slot, p, n) { const C = g(c); if (!C.cur || C.off + n > RING) { C.cur = chunk(); C.cur.used = 0; C.ub.push(C.cur); C.off = 0; } C.cur.cpu.set(u8().subarray(N(p), N(p) + n), C.off); C.push[st][slot] = { k: C.cur, off: C.off }; C.cur.used = C.off + n; C.off = al(C.off + n, 256); }

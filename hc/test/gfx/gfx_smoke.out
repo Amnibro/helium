@@ -3,6 +3,7 @@ qslerp w 924
 inverse ok true
 png 37x23 true sum 845791653
 jpeg 61x45 true sum 444578738
+progressive jpeg 61x45 true same as baseline true
 header sizes true true
 inflate stored true abc
 gltf meshes 2 nodes 4 roots 3 materials 2 images 1 skins 1 animations 1 skipped 1

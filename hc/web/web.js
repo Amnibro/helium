@@ -1,7 +1,7 @@
 const td = new TextDecoder(), te = new TextEncoder(), N = Number;
 export async function start(o = {}) {
   const url = o.wasm || document.querySelector('script[data-wasm]')?.dataset.wasm || 'app.wasm';
-  let ex = null, mem = null, busy = 0, cur = null, frames = false, raf = 0, dead = false, gl = null, list = [], obuf = '', ebuf = '';
+  let closed = false, ex = null, mem = null, busy = 0, cur = null, frames = false, raf = 0, dead = false, gl = null, list = [], obuf = '', ebuf = '';
   const q = [], H = [null, document, window, document.body, document.documentElement], hix = new Map(H.map((v, i) => [v, i])), free = [], fetches = new Map(), jsres = new Map(), timers = new Map(), holes = [];
   hix.delete(null);
   let nid = 1, nfd = 3, G = null, jspi = false, px = {};
@@ -14,13 +14,13 @@ export async function start(o = {}) {
   const wst = (p, n) => { u8().fill(0, p, p + 144); dv().setUint32(p + 24, 0o100644, true); dv().setBigInt64(p + 48, BigInt(n), true); };
   const put = (r, v) => { const b = typeof v === 'string' ? te.encode(v) : v, p = ex.he_grow(r, b.length); u8().set(b, p); return b.length; };
   const out = (s, err) => { let b = (err ? ebuf : obuf) + s, i; while ((i = b.indexOf('\n')) >= 0) { (err ? console.error : console.log)(b.slice(0, i)); b = b.slice(i + 1); } err ? ebuf = b : obuf = b; };
-  const fail = e => { if (e && e.helium_exit !== undefined) { dead = true; frames = false; return; } dead = true; frames = false; console.error('helium trapped:', e); o.onerror?.(e); };
+  const fail = e => { if (closed) return; if (e && e.helium_exit !== undefined) { dead = true; frames = false; return; } dead = true; frames = false; console.error('helium trapped:', e); o.onerror?.(e); };
   const run = (f, a) => { if (dead || !ex[f]) return; busy++; let r; try { r = (px[f] || ex[f])(...a); } catch (e) { busy--; fail(e); return; } if (r instanceof Promise) return r.then(v => v, fail).finally(() => { busy--; drain(); }); busy--; return r; };
   const drain = () => { while (!busy && q.length && !dead) { const [f, a, c] = q.shift(); cur = c; run(f, a); cur = null; } };
   const fire = (tag, kind, c) => { q.push(['he_event', [tag, kind], c]); drain(); };
   const evc = () => cur || {};
   const ev = () => evc().e || {};
-  const loop = t => { raf = 0; if (!frames || dead) return; if (!busy) { G?.raf(1); run('he_frame', [t]); G?.raf(0); drain(); } if (frames) raf = requestAnimationFrame(loop); };
+  const loop = t => { raf = 0; if (!frames || dead) return; if (!busy) { G?.raf(1); run('he_frame', [t]); G?.raf(0); drain(); } if (frames) raf = (o.raf || requestAnimationFrame)(loop); };
   const now = () => performance.now();
   const unmap = (p, l) => { l = Math.ceil(l / 65536) * 65536; if (p % 65536 === 0 && l > 0) holes.push([p, l]); };
   const mmap = len => { len = Math.ceil(len / 65536) * 65536; const k = holes.findIndex(h => h[1] >= len); if (k >= 0) { const [a, l] = holes[k]; if (l === len) holes.splice(k, 1); else holes[k] = [a + len, l - len]; u8().fill(0, a, a + len); return a; } try { return mem.grow(len / 65536) * 65536; } catch { return -12; } };
@@ -71,7 +71,7 @@ export async function start(o = {}) {
     sys,
     he_log: (p, n) => console.log(S(p, n)), he_warn: (p, n) => console.warn(S(p, n)), he_error: (p, n) => console.error(S(p, n)),
     he_now: now, he_epoch_ms: () => Date.now(),
-    he_frames: on => { frames = !!on; if (frames && !raf) raf = requestAnimationFrame(loop); },
+    he_frames: on => { frames = !!on; if (frames && !raf) raf = (o.raf || requestAnimationFrame)(loop); },
     he_timer: (ms, tag) => { const id = nid++; timers.set(id, setTimeout(() => { timers.delete(id); fire(tag, 2, { id }); }, ms)); return id; },
     he_clear_timer: id => { clearTimeout(timers.get(id)); timers.delete(id); },
     he_win_w: () => innerWidth, he_win_h: () => innerHeight, he_dpr: () => devicePixelRatio || 1, he_device_memory: () => navigator.deviceMemory || 0,
@@ -147,7 +147,7 @@ export async function start(o = {}) {
   const res = await fetch(url), bytes = await res.arrayBuffer(), mod = await WebAssembly.compile(bytes);
   const meta = new Uint8Array(WebAssembly.Module.customSections(mod, 'he.mem')[0] || new ArrayBuffer(5)), pages = meta[0] | meta[1] << 8 | meta[2] << 16 | meta[3] << 24;
   mem = new WebAssembly.Memory({ initial: pages, maximum: 65536, shared: meta[4] === 1 });
-  if (WebAssembly.Module.imports(mod).some(i => i.name === 'SDL_CreateGPUDevice')) { G = sdlgpu({ u8, dv, mmap, munmap: unmap, files, canvas: () => o.canvas || document.querySelector('canvas[data-helium]'), canWait: () => jspi, saved: o.onsave }); jspi = !!WebAssembly.Suspending && o.jspi !== false; await G.init(); for (const [k, f] of Object.entries(G.env)) env[k] = jspi && G.waiting.includes(k) ? new WebAssembly.Suspending(f) : f; }
+  if (WebAssembly.Module.imports(mod).some(i => i.name === 'SDL_CreateGPUDevice')) { G = sdlgpu({ u8, dv, mmap, munmap: unmap, files, canvas: () => o.canvas || document.querySelector('canvas[data-helium]'), canWait: () => jspi, saved: o.onsave, input: o.input }); jspi = !!WebAssembly.Suspending && o.jspi !== false; await G.init(); for (const [k, f] of Object.entries(G.env)) env[k] = jspi && G.waiting.includes(k) ? new WebAssembly.Suspending(f) : f; }
   const imports = { env: new Proxy({ ...env, ...(o.imports || {}), memory: mem }, { get: (t, n) => t[n] || ((...a) => { console.warn('helium: missing import', n, a); return 0; }) }) };
   ex = (await WebAssembly.instantiate(mod, imports)).exports;
   if (jspi) for (const k of ['he_start', 'he_frame', 'he_event']) if (ex[k]) px[k] = WebAssembly.promising(ex[k]);
@@ -156,5 +156,5 @@ export async function start(o = {}) {
   pw(argv.length); strs.forEach((b, i) => { if (i === argv.length) pw(0); u8().set(b, sq); pw(sq); sq += b.length; }); if (!envs.length) pw(0); pw(0);
   const done = Promise.resolve(run('he_start', [BigInt(base)]));
   drain();
-  return { exports: ex, handle: nh, get: i => H[i], fire, call: (f, ...a) => { const r = busy ? undefined : run(f, a); drain(); return r; }, files, done, mem: () => mem, gpu: () => G?.stats() };
+  return { exports: ex, handle: nh, get: i => H[i], fire, call: (f, ...a) => { const r = busy ? undefined : run(f, a); drain(); return r; }, files, done, mem: () => mem, gpu: () => G?.stats(), alive: () => !dead, close: () => { closed = dead = true; frames = false; raf = 0; G?.close(); } };
 }

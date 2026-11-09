@@ -388,6 +388,30 @@ fn decode_image(data const byte[:]) Image {
 	Image { w, h, Span { at, px.len }, ok }
 }
 
+fn presize(d json::Doc&, root int) {
+	var acc int[>..] = [];
+	var ms int[>..] = [];
+	var ps int[>..] = [];
+	children_of(d, get(d, root, "accessors"), acc);
+	children_of(d, get(d, root, "meshes"), ms);
+	var nv = 0;
+	var ni = 0;
+	for m in ms {
+		ps.clear();
+		children_of(d, get(d, m, "primitives"), ps);
+		for p in ps {
+			let at = get(d, p, "attributes");
+			let a = whole(d, at, "POSITION", -1);
+			let i = whole(d, p, "indices", -1);
+			let ic = if i >= 0 && i < acc.len { whole(d, acc[i], "count", 0) } else { 0 };
+			nv += if whole(d, at, "NORMAL", -1) < 0 { ic } else if a >= 0 && a < acc.len { whole(d, acc[a], "count", 0) } else { 0 };
+			ni += ic;
+		}
+	}
+	let vn = (nv + nv / 2 + 65536) * VERTEX_FLOATS;
+	if verts.len == 0 && nv * VERTEX_FLOATS * 4 > 8 << 20 { verts.resize(vn, 0.0); verts.clear(); }
+	if indices.len == 0 && ni * 4 > 8 << 20 { indices.resize(ni + ni / 2 + 65536, 0 as u32); indices.clear(); }
+}
 fn load_bytes(data const byte[:], dir const byte[:]) int {
 	blob.clear(); buf_at.clear(); buf_len.clear(); view_at.clear(); view_len.clear(); view_stride.clear(); accessor_node.clear();
 	if skipped_prims.len == 0 { skipped_prims.push(0); }
@@ -415,6 +439,7 @@ fn load_bytes(data const byte[:], dir const byte[:]) int {
 	if root < 0 { return fail(str("gltf: ", why)); }
 	let version = word(d, get(d, root, "asset"), "version");
 	if version.len == 0 || version[0] != '2' { return fail(str("gltf: unsupported asset version '", version, "'")); }
+	presize(d, root);
 	var list int[>..] = [];
 	children_of(d, get(d, root, "extensionsRequired"), list);
 	for e in list {

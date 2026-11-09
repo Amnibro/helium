@@ -16,7 +16,10 @@ and in NOTICE). It sits on top of `hc/lib/gfx.he` (SDL3 GPU).
 | `linalg` | vectors, quaternions, TRS compose, 4x4 inverse, look-at / perspective / ortho helpers |
 | `zlib` | inflate (stored, fixed and dynamic Huffman blocks) |
 | `codec_png` | PNG decode: all colour types and bit depths, palette + tRNS, Adam7 |
-| `codec_jpeg` | baseline JPEG decode: Huffman, 4:4:4 / 4:2:2 / 4:2:0, restart markers |
+| `codec_jpeg` | baseline and progressive JPEG decode: Huffman, 4:4:4 / 4:2:2 / 4:2:0, restart markers |
+| `codec_hdr` | Radiance `.hdr` decode (flat and run-length scanlines) to RGBA float and half float |
+| `envmap` | image and physical-sky environment lighting: equirect to cube, GGX prefilter, Hillaire 2020 multi-scatter sky, cloud layer, `sun_color` |
+| `clusters` | clustered forward light grid, 16 x 9 x 24 cells, with the light and cell records the surface shader reads |
 | `gltf` | `.glb` / `.gltf` loader built on `json.he`: buffers (GLB, data URI, files), accessors incl. sparse and normalized ints, meshes and morph targets, materials (metal-rough, emissive strength, alpha modes, texture transforms), samplers, images, nodes, skins, animations |
 | `motion` | animation sampling (step, linear, slerp, cubic spline), node hierarchy, joint palettes, morph weights |
 | `shapes` | procedural sphere / plane / box assets in the same pools as glTF assets |
@@ -307,6 +310,46 @@ E2 gate results (RX 9060 XT, RADV, Mesa 26.2.4; clean worktree at 0d063ef, `resu
 
 Run-to-run noise at the face is about 0.1 ms. SSR costs more at full body because the floor fills most of the frame and every opaque pixel is traced (roughness is not known before the colour pass; rough pixels then ignore the hit). Seen in the renders: under a bright sky (`studio_soft`) the ambient term loses its sky sheen in the eye sockets, nostrils, lip line, lid creases, ear and under the hair; under the dark Amni-Companion studio sky the change is small (the eye region moves by under 1 %). The cornea picks up the sky and, near the lids, the lids themselves; the chain, plate and buckle reflect the skin and clothing around them. Rays from a camera-facing cornea leave the screen, so its centre shows the sky value.
 Not done: local reflection probes (captured cubemaps with parallax correction). Off-screen reflections fall back to the probe GI irradiance or the analytic sky.
+
+## Materials, light and finish
+
+`gltf` reads the core metal-rough model plus `KHR_materials_clearcoat`, `sheen`,
+`transmission`, `volume`, `ior`, `specular`, `iridescence`, `anisotropy`,
+`emissive_strength`, `unlit`, and `KHR_lights_punctual`. Two Helium extras sit on
+a material: `extras.amni = "water"` gives animated water, and
+`extras.height = {index, scale}` gives parallax occlusion from a height map.
+`gltf::bad_images` counts textures that failed to decode.
+
+```
+s3d::look.curve = 1;                  // 0 Reinhard, 1 ACES, 2 AgX, 3 Neutral
+s3d::look.vignette = 0.2;             // also chroma, grain, sharpen, saturation, contrast, warmth
+envmap::load("/m/studio.hdr");        // or envmap::set_equirect(rgba, w, h)
+envmap::rotation = 0.5;               // also on, intensity, blur, size, samples
+s3d::atmosphere(to_sun, 3.5, 1.0, 0.3);   // to_sun, power, haze, clouds: sky, sun color and light
+s3d::lights.push(s3d::Light { pos: p, range: 5.0, rgb: c, radius: 0.1, length: 0.5, .. });   // sphere and tube lights
+s3d::wet = 0.5; s3d::snow = 0.0; s3d::world_time = t;
+```
+
+Lights use clustered forward shading, so hundreds of unshadowed lights are allowed;
+the first 16 get shadow maps and fog. The sun convention matches three.js: the shader
+divides by pi, so `sun.rgb` equals a three.js directional light's intensity times its
+color.
+
+For a still image, set `s3d::temporal = 1` and render about 32 times. The temporal
+pass only anti-aliases when it is on, and a single frame leaves jagged silhouettes.
+Raise `look.ao_samples` and `gtao_steps` too: the default 4 slices leave faint radial
+streaks under a model on a plain floor. Keep the scene near unit size: shadow bias and
+contact shadow lengths are in meters.
+
+### Browser memory
+
+Each growable array gets a fixed region on first growth, since a `wasm32` memory has
+only 4 GiB of address space and regions never move. An array's first growth gets a
+region that fits it (32 MiB minimum while over 2 GiB remains, less after that). Later
+growth past the region stops the program with "array grew past its region". So pre-size
+large arrays on their first use: `T.resize(n, 0); T.clear();`. `read_file`,
+`codec_hdr` and `gltf` already do. Models up to about 2.7 million triangles load, since
+`gltf` still grows some per-primitive arrays one element at a time.
 
 ## Where later features attach
 
@@ -1065,6 +1108,9 @@ pass-through mean error is 0.0106 % (max 0.0488 %).
 
 ## References
 
+* Hillaire, "A Scalable and Production Ready Sky and Atmosphere Rendering Technique", EGSR 2020 (multi-scatter table).
+* Belcour and Barla, "A Practical Extension to Microfacet Theory for the Modeling of Varying Iridescence", SIGGRAPH 2017.
+
 * B. Walter, S. Marschner, H. Li, K. Torrance, "Microfacet Models for Refraction
   through Rough Surfaces", EGSR 2007 (GGX distribution).
 * C. Schlick, "An Inexpensive BRDF Model for Physically-based Rendering",
@@ -1113,6 +1159,16 @@ pass-through mean error is 0.0106 % (max 0.0488 %).
   (MIT; `hash12` in `ssao.frag`).
 
 ## Known gaps
+
+* Sheen renders brighter than three.js on the chair and toy car (the likely cause, its
+  low fit, is unproven), and the clearcoat fixture's base tiles are brighter
+  (R 185 against 143), cause not found. See the PSNR table in hc/test/gfx/results.
+* Frame time with many lights is unmeasured; 8, 64 and 512 lights render correctly.
+* Not built: alpha to coverage, decals, local reflection probes, rectangular area
+  lights (spot and sphere stand in), physical light falloff parity with three.js,
+  rain and snow particles, caustics, mip bias for upscaling, BC, KTX2, WebP, meshopt
+  and Draco, texture and mesh streaming, GPU instancing, motion vectors for morph
+  targets, and Nanite-class geometry.
 
 No progressive JPEG, no point/line primitives (skipped and counted), Adler-32 is
 not verified, ambient is an analytic sky (no image-based lighting yet), the fog and GI

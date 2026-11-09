@@ -99,6 +99,9 @@ fn cpu_checks() {
 	var jpg byte[>..] = [];
 	let jw, jh, jok = codec_jpeg::decode(embed_file("fixtures/photo420.jpg"), jpg);
 	print("jpeg ", jw, "x", jh, " ", jok, " sum ", checksum(jpg[..]));
+	var jprog byte[>..] = [];
+	let gw, gh, gok = codec_jpeg::decode(embed_file("fixtures/photo420_prog.jpg"), jprog);
+	print("progressive jpeg ", gw, "x", gh, " ", gok, " same as baseline ", checksum(jprog[..]) == checksum(jpg[..]));
 	let pw, ph, pok = codec_png::size(embed_file("fixtures/palette.png"));
 	let qw, qh, qok = codec_jpeg::size(embed_file("fixtures/photo420.jpg"));
 	print("header sizes ", pw == w && ph == h && pok, " ", qw == jw && qh == jh && qok);

@@ -52,6 +52,8 @@ fn decode(b const byte[:], out f32[>..]&) int, int, bool {
 	}
 	if count != 4 { return 0, 0, false; }
 	if h <= 0 || w <= 0 || h > 32768 || w > 32768 { return 0, 0, false; }
+	if out.len < w * h * 4 { out.resize(w * h * 4, 0.0); }
+	out.clear();
 	var scan byte[>..] = [];
 	scan.resize(w * 4, 0);
 	for y in h {
@@ -104,6 +106,7 @@ fn decode(b const byte[:], out f32[>..]&) int, int, bool {
 	return w, h, true;
 }
 fn half_pixels(rgba const f32[:], out byte[>..]&) {
+	if out.len < rgba.len * 2 { out.resize(rgba.len * 2, 0); }
 	out.clear();
 	for v in rgba {
 		var x f32[1];

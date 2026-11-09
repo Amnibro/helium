@@ -27,7 +27,7 @@ rt_dlbind():
 		if h == 0: rt_es("helium runtime error: cannot load "); rt_esz(nm); rt_es(" ("); rt_esz(sp); rt_es("): "); e := ccall0(mld(g + 16)); if e != 0 { rt_esz(e); } else { rt_es("unknown error"); } rt_dlx()
 		for k nb: q := b0 + 24 * k; if mld(q) == l: sy := RT_DLR + mld(q + 8); f := ccall2(mld(g + 8), h, sy); if f == 0 && op { f = rt_dlmiss() } if f == 0 { rt_es("helium runtime error: "); rt_esz(nm); rt_es(" ("); rt_esz(sp); rt_es(") has no symbol "); rt_esz(sy); rt_dlx() } mst(RT_DLB + mld(q + 16), f)
 struct RtV { b int, n int, top int, fl int, fln int, flc int }
-var RT_RSZ int; var RT_SBUD int; var RT_TIER int; var RT_TEND int
+var RT_RSZ int; var RT_SBUD int; var RT_TIER int; var RT_TEND int; var RT_WANT int
 var RT_FREE int[4096]
 var RT_NFREE int
 var RT_OUT RtV; var RT_SINK int
@@ -66,7 +66,12 @@ rt_nard(v int, c int, loc const byte[:]):
 	rt_es(if w & 12 == 0 { " as i" } else { " as u" }); rt_ei(8 << (w & 3)); rt_fail(loc)
 rt_oob(i int, n int, loc const byte[:]): rt_es("helium runtime error: index "); rt_ei(i); rt_es(" out of bounds (length "); rt_ei(n); rt_es(")"); rt_fail(loc);
 rt_take() int: if RT_NFREE > 0 { RT_NFREE -= 1; return RT_FREE[RT_NFREE] } rt_map()
-rt_tsz() int: r := (1 << 32) - RT_TEND; if r >= 1 << 31 { return RT_RSZ } z ~= 1 << 18; while z * 512 <= r && z * 2 <= RT_RSZ { z *= 2 } z
+rt_take_for(want int) int:
+	if RT_TIER == 0 { return rt_take() }
+	q ~= RT_NFREE - 1
+	while q >= 0: b := RT_FREE[q]; if rt_lim(b) >= want { RT_NFREE -= 1; RT_FREE[q] = RT_FREE[RT_NFREE]; return b } q -= 1
+	RT_WANT = want; b := rt_map(); RT_WANT = 0; b
+rt_tsz() int: r := (1 << 32) - RT_TEND; if r >= 1 << 31 { return max(RT_RSZ, RT_WANT) } z ~= 1 << 18; while z * 512 <= r && z * 2 <= RT_RSZ { z *= 2 } max(z, RT_WANT)
 rt_map() int:
 	z := if RT_TIER != 0 { rt_tsz() } else { RT_RSZ }; h := if RT_TIER != 0 { 65536 } else { 0 }
 	a := if RT_TIER != 0 { 0 } else { 1 << 21 }; m := sys6(9, 0, z + 65536 + h + a, 3, 0x4022, -1, 0); if m < 0 && m > -4096 { rt_es("helium runtime error: out of address space\n"); rt_write(2, RT_EB[..RT_EN]); sys3(231, 1, 0, 0) }
@@ -76,7 +81,7 @@ rt_lim(b int) int: if RT_TIER != 0 { mld(b - 8) } else { RT_RSZ }
 rt_unmap(b int): h := if RT_TIER != 0 { 65536 } else { 0 }; sys3(11, b - h, rt_lim(b) + 65536 + h, 0);
 rt_tss() int: if RT_TIER == 0 { return 64 << 20 } r := (1 << 32) - RT_TEND; z ~= 1 << 20; while z * 512 <= r && z < 16 << 20 { z *= 2 } z
 rt_give(b int, used int): if b == 0 { return } if RT_DBG > 0 { for q RT_NFREE { if RT_FREE[q] == b { rt_es("helium runtime error: a region was released twice"); rt_dlx() } } } if used > 1 << 20 { sys3(28, b + 65536, min(used, rt_lim(b)) - 65536 + 4095 & -4096, 8) } if RT_NFREE < 4096: RT_FREE[RT_NFREE] = b; RT_NFREE += 1 else: rt_unmap(b);
-rt_grow(va int, k int, esz int) int: b ~= mld(va); if b == 0 { b = rt_take(); mst(va, b) } n := mld(va + 8); mst(va + 8, n + k); if (n + k) * esz > rt_lim(b) { rt_die(5, "push") } b + n * esz
+rt_grow(va int, k int, esz int) int: b ~= mld(va); if b == 0 { b = rt_take_for(k * esz); mst(va, b) } n := mld(va + 8); mst(va + 8, n + k); if (n + k) * esz > rt_lim(b) { rt_die(5, "push") } b + n * esz
 rt_rdrop(v RtV&): rt_rdropz(v, 64)
 rt_rdropz(v RtV&, esz int): rt_give(v.b, max(v.n * esz, v.top)); rt_give(v.fl, v.fln * 16); v.b = 0; v.n = 0; v.top = 0; v.fl = 0; v.fln = 0; v.flc = 0
 rt_rfrom(v RtV&, p int, n int, esz int): v.b = 0; v.n = 0; v.top = 0; v.fl = 0; v.fln = 0; v.flc = 0; if n > 0: d := rt_grow(vptr(v), n, esz); mcopy(d, p, n * esz);
@@ -204,8 +209,8 @@ rt_os_getenv(name const byte[:], out int) bool:
 rt_os_read_file(path const byte[:], out int) bool:
 	c := rt_path(path, RT_PB); if c == 0 { return false } fd := sys3(2, c, 0, 0); if fd < 0: return false
 	if sys3(5, fd, ptr(RT_ST[..]), 0) == 0 && RT_ST[25] & 0xF0 == 0x40: sys3(3, fd, 0, 0); return false
-	ch := if RT_TIER != 0 && sys3(5, fd, ptr(RT_ST[..]), 0) == 0 { min(max(mld(ptr(RT_ST[48..])) + 1, 4096), 1 << 20) } else { 1 << 20 }
-	loop: d := rt_grow(out, ch, 1); r := sys3(0, fd, d, ch); mst(out + 8, mld(out + 8) - ch + max(r, 0)); if r < 0 { sys3(3, fd, 0, 0); return false } if r == 0: break
+	ch ~= if RT_TIER != 0 && sys3(5, fd, ptr(RT_ST[..]), 0) == 0 { mld(ptr(RT_ST[48..])) + 65536 } else { 1 << 20 }
+	loop: d := rt_grow(out, ch, 1); r := sys3(0, fd, d, ch); mst(out + 8, mld(out + 8) - ch + max(r, 0)); if r < 0 { sys3(3, fd, 0, 0); return false } if r == 0 { break } if RT_TIER != 0 { ch = 4096 }
 	sys3(3, fd, 0, 0); true
 rt_wfile(c int, data const byte[:], flags int) bool: if c == 0 { return false } fd := sys3(2, c, 0x41 | flags, 420); if fd < 0 { return false } o ~= 0; while o < data.len { w := sys3(1, fd, ptr(data[o..]), data.len - o); if w <= 0 { sys3(3, fd, 0, 0); return false } o += w } sys3(3, fd, 0, 0) == 0
 rt_os_write_file(p const byte[:], d const byte[:]) bool: rt_wfile(rt_path(p, RT_PB), d, 0x200)
