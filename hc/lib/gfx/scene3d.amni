@@ -34,6 +34,7 @@ import gfx.sparks;
 import gfx.fx;
 import gfx.rt;
 import gfx.envmap;
+import gfx.clusters;
 
 let CASCADES = 3;
 let MAX_LIGHTS = 16;
@@ -45,19 +46,19 @@ let HIZ_LEVELS = 7;
 
 struct Camera { eye float3, target float3, up float3, fov_y f32, near f32, far f32 }
 struct Sun { to_sun float3, rgb float3, shadows bool, shadow_far f32, map_size int, soft f32 = 0.0, angle f32 = 0.0, reach f32 = 1.0, fit bool = false, contact f32 = 0.0 }
-struct Light { pos float3, range f32, rgb float3, kind int, dir float3 = float3 { 0.0, -1.0, 0.0 }, cone f32 = 0.5, edge f32 = 0.2, shadows bool = false, soft f32 = 1.5 }
+struct Light { pos float3, range f32, rgb float3, kind int, dir float3 = float3 { 0.0, -1.0, 0.0 }, cone f32 = 0.5, edge f32 = 0.2, shadows bool = false, soft f32 = 1.5, radius f32 = 0.0, length f32 = 0.0 }
 struct Sky { zenith float3, horizon float3, ground float3, ambient f32, draw bool }
-struct Look { exposure f32, white f32, bloom f32, bloom_cut f32, desaturate f32, ssao bool, ao_radius f32, ao_power f32, ao_samples int, curve int = 0, auto_exposure bool = false, ae_key f32 = 0.18, ae_low f32 = 0.5, ae_high f32 = 0.95, ae_min f32 = -4.0, ae_max f32 = 4.0, ae_up f32 = 3.0, ae_down f32 = 1.0, ae_center f32 = 3.0, lut f32 = 0.0 }
+struct Look { exposure f32, white f32, bloom f32, bloom_cut f32, desaturate f32, ssao bool, ao_radius f32, ao_power f32, ao_samples int, curve int = 0, auto_exposure bool = false, ae_key f32 = 0.18, ae_low f32 = 0.5, ae_high f32 = 0.95, ae_min f32 = -4.0, ae_max f32 = 4.0, ae_up f32 = 3.0, ae_down f32 = 1.0, ae_center f32 = 3.0, lut f32 = 0.0, vignette f32 = 0.0, chroma f32 = 0.0, grain f32 = 0.0, sharpen f32 = 0.0, saturation f32 = 1.0, contrast f32 = 1.0, warmth f32 = 0.0 }
 struct NodeOv { item int, node int, t float3, r linalg::Quat, sc float3 }
 struct WeightOv { item int, node int, k int, w f32 }
-struct Item { asset int, place gfx::mat4, prev_place gfx::mat4, anim int, time f32, visible bool, anim2 int = -1, time2 f32 = 0.0, blend f32 = 1.0, bend_node int = -1, bend linalg::Quat = linalg::Quat { 0.0, 0.0, 0.0, 1.0 }, track int[4] = [-1, -1, -1, -1], tracked gfx::mat4[4] = [gfx::mat4_identity, gfx::mat4_identity, gfx::mat4_identity, gfx::mat4_identity] }
+struct Item { asset int, place gfx::mat4, prev_place gfx::mat4, anim int, time f32, visible bool, anim2 int = -1, time2 f32 = 0.0, blend f32 = 1.0, bend_node int = -1, bend linalg::Quat = linalg::Quat { 0.0, 0.0, 0.0, 1.0 }, track int[4] = [-1, -1, -1, -1], tracked gfx::mat4[4] = [gfx::mat4_identity, gfx::mat4_identity, gfx::mat4_identity, gfx::mat4_identity], light_base int = -1 }
 struct Batch { prim int, item int, node int, joint_base int, model gfx::mat4, depth f32, mode int, prev_model gfx::mat4, prev_joint_base int, vis bool, trans bool }
 
 struct DrawU { model gfx::mat4, model_normal gfx::mat4, view_proj gfx::mat4, prev_model gfx::mat4, deform float4, misc float4, cur_vp gfx::mat4, prev_vp gfx::mat4, weights float4[16] }
 struct FrameU {
 	cascade_mat gfx::mat4[3], cascade_far float4, eye float4, view_dir float4, to_sun float4, sun_rgb float4,
 	zenith float4, horizon float4, ground float4, screen float4, light_pos float4[16], light_rgb float4[16], gi float4, gi_origin float4, gi_step float4, gi_dims float4,
-	light_dir float4[16], light_shd float4[16], local_mat gfx::mat4[12], refl float4, view_m gfx::mat4, env float4, env_rot float4, vp gfx::mat4
+	light_dir float4[16], light_shd float4[16], local_mat gfx::mat4[12], refl float4, view_m gfx::mat4, env float4, env_rot float4, vp gfx::mat4, cluster float4, cluster2 float4
 }
 struct GiU { origin float4, step float4, dims float4, rot0 float4, rot1 float4, rot2 float4, params float4, to_sun float4, sun_rgb float4, zenith float4, horizon float4, ground float4, light_pos float4[8], light_rgb float4[8] }
 struct SurfaceU { base float4, emissive float4, params float4, alpha float4, uv_sets float4, uv_sets2 float4, tri float4, top_tint float4, xm_base float4, xm_mr float4, xm_nrm float4, xm_occ float4, xm_emi float4, xo0 float4, xo1 float4, xo2 float4, sheen float4, misc float4, shade_a float4, shade_b float4, shade_c float4, xm_det float4, xo_det float4, top_lay float4 }
@@ -74,7 +75,7 @@ struct MblurU { size float4, tune float4 }
 struct DofU { size float4, lens float4, tune float4 }
 struct TexelU { texel float4 }
 struct GlowU { texel float4, cut float4 }
-struct GradeU { tone float4, mode float4 }
+struct GradeU { tone float4, mode float4, lens float4, color float4, frame float4 }
 struct HistU { size float4, range float4 }
 struct AdaptU { range float4, pct float4, rate float4 }
 struct FogU { inv_view_proj gfx::mat4, cascade_mat gfx::mat4[3], cascade_far float4, eye float4, view_dir float4, to_sun float4, sun_rgb float4, ambient float4, params float4, params2 float4, light_pos float4[16], light_rgb float4[16] }
@@ -211,6 +212,7 @@ var height int = 0;
 var pipe_lit gfx::Pipeline;
 var pipe_lit_two gfx::Pipeline;     // double sided
 var pipe_blend gfx::Pipeline;
+var pipe_blend_back gfx::Pipeline;
 var pipe_shadow gfx::Pipeline;
 var pipe_normals gfx::Pipeline;
 var pipe_normals_two gfx::Pipeline;
@@ -280,6 +282,13 @@ var smp_point gfx::Sampler;
 var smp_shadow gfx::Sampler;
 var smp_cache gfx::Sampler[>..] = [];
 var spec_aa = true;
+var light_data float4[>..] = [];
+var light_xr float4[>..] = [];
+var cluster_words u32[>..] = [];
+var light_buf gfx::Buffer;
+var cluster_buf gfx::Buffer;
+var light_cap = 0;
+var cluster_cap = 0;
 var ext_size = 1024;
 var ext_arr gfx::Texture[2] = [gfx::Texture { 0 }, gfx::Texture { 0 }];
 var ext_cap int[2] = [0, 0];
@@ -550,7 +559,8 @@ fn init(w int, h int, ow int, oh int) bool {
 	let scr = embed_shader("shaders/screen.vert");
 	pipe_lit = gfx::pipeline(vs, fs, surface_desc(gfx::CULL_BACK, gfx::BLEND_NONE, true));
 	pipe_lit_two = gfx::pipeline(vs, fs, surface_desc(gfx::CULL_NONE, gfx::BLEND_NONE, true));
-	pipe_blend = gfx::pipeline(vs, fs, surface_desc(gfx::CULL_NONE, gfx::BLEND_ALPHA, false));
+	pipe_blend = gfx::pipeline(vs, fs, surface_desc(gfx::CULL_BACK, gfx::BLEND_ALPHA, false));
+	pipe_blend_back = gfx::pipeline(vs, fs, surface_desc(gfx::CULL_FRONT, gfx::BLEND_ALPHA, false));
 	var sd = surface_desc(gfx::CULL_NONE, gfx::BLEND_NONE, true);
 	sd.depth_bias = 1.5;
 	sd.depth_bias_slope = 2.0;
@@ -619,6 +629,10 @@ fn forget() {
 	for t in tex_linear { if t.id != 0 { gfx::release(t); } }
 	tex_srgb.clear();
 	tex_linear.clear();
+	ext_map.clear();
+	ext_src.clear();
+	ext_cnt[0] = 0;
+	ext_cnt[1] = 0;
 	if uploaded_verts >= 0 { uploaded_verts = -2; }
 	if uploaded_indices >= 0 { uploaded_indices = -2; }
 	if uploaded_morphs >= 0 { uploaded_morphs = -2; }
@@ -815,6 +829,28 @@ fn in_view(m gfx::mat4, lo float3, hi float3) bool {
 	for o in out { if o == 8 { return false; } }
 	true
 }
+fn item_lights(ii int) {
+	let a = gltf::assets[items[ii].asset];
+	var k = items[ii].light_base;
+	let first = k < 0;
+	for q in a.nodes.count {
+		let ni = a.nodes.first + q;
+		let li = gltf::nodes[ni].light;
+		if li < 0 { continue; }
+		if first && items[ii].light_base < 0 { items[ii].light_base = lights.len; k = lights.len; }
+		let pl = gltf::plights[li];
+		let w = motion::world[ni];
+		let pos = linalg::point(w, linalg::v3(0.0, 0.0, 0.0));
+		let dir = linalg::unit3(linalg::direction(w, linalg::v3(0.0, 0.0, -1.0)));
+		if pl.kind == 0 { sun.to_sun = linalg::v3(-dir.x, -dir.y, -dir.z); sun.rgb = pl.rgb; continue; }
+		if first {
+			let reach = if pl.range > 0.0 { pl.range } else { linalg::f(sqrt((max(pl.rgb.x, max(pl.rgb.y, pl.rgb.z)) * 1000.0) as real)) };
+			lights.push(Light { pos: pos, range: reach, rgb: pl.rgb, kind: if pl.kind == 2 { 1 } else { 0 }, dir: dir, cone: pl.outer, edge: 1.0 - pl.inner / max(pl.outer, 1e-3), radius: 0.01, .. });
+		} else { lights[k].pos = pos; lights[k].dir = dir; }
+		k += 1;
+	}
+	if first && items[ii].light_base < 0 { items[ii].light_base = lights.len; }
+}
 fn gather() {
 	batch.clear();
 	joints.clear();
@@ -824,6 +860,7 @@ fn gather() {
 	for it, ii in items {
 		if !it.visible || it.asset < 0 { continue; }
 		pose(ii);
+		item_lights(ii);
 		let a = gltf::assets[it.asset];
 		var palette gfx::mat4[>..] = [];
 		for k in a.nodes.count {
@@ -1069,6 +1106,8 @@ fn fill_frame() {
 	frame_u.env = f4(if envmap::on { 1.0 } else { 0.0 }, envmap::intensity, envmap::spec_lod(), envmap::irr_lod());
 	frame_u.env_rot = f4(linalg::f(cos(envmap::rotation as real)), linalg::f(sin(envmap::rotation as real)), envmap::blur * envmap::spec_lod(), if spec_aa { 1.0 } else { 0.0 });
 	frame_u.vp = view_proj;
+	frame_u.cluster = f4(clusters::CX as f32, clusters::CY as f32, clusters::CZ as f32, 0.0);
+	frame_u.cluster2 = f4(view.near, clusters::CZ as f32 / linalg::f(log((view.far / view.near) as real)), 0.0, 0.0);
 }
 // mean linear colour of an image, sampled on a sparse grid; the bounce albedo
 fn image_avg(image int) float3 {
@@ -1185,12 +1224,47 @@ fn gi_pass() {
 		gi_updates += 1;
 	}
 }
+fn light_upload() {
+	if lights.len == 0 && cluster_cap > 0 && cluster_words.len == 0 { return; }
+	light_data.clear();
+	light_xr.clear();
+	for l, k in lights {
+		let spot = l.kind == 1;
+		let co = clamp(l.cone, 0.01, 1.5);
+		light_xr.push(x4(l.pos, max(l.range, 0.01)));
+		light_data.push(x4(l.pos, max(l.range, 0.01)));
+		light_data.push(x4(l.rgb, if spot { 1.0 + linalg::f(cos((co * (1.0 - clamp(l.edge, 0.0, 1.0))) as real)) } else { 0.0 }));
+		light_data.push(x4(linalg::unit3(l.dir), if spot { linalg::f(cos(co as real)) } else { -2.0 }));
+		light_data.push(if k < MAX_LIGHTS { frame_u.light_shd[k] } else { f4(-1.0, 0.0, 0.0, 0.0) });
+		light_data.push(f4(l.radius, l.length, 0.0, 0.0));
+	}
+	if light_data.len == 0 { light_data.push(f4(0.0, 0.0, 0.0, 0.0)); }
+	let ty = linalg::f(tan((view.fov_y * 0.5) as real));
+	clusters::build(view_mat, ty * width as f32 / height as f32, ty, view.near, view.far, light_xr[..], cluster_words);
+	let lb = bytes_of(light_data);
+	if lb.len > light_cap {
+		if light_cap > 0 { gfx::release(light_buf); }
+		light_cap = lb.len * 2;
+		light_buf = gfx::buffer(gfx::BUFFER_STORAGE, light_cap, []);
+	}
+	gfx::update_buffer(light_buf, lb[..]);
+	let cb = bytes_of(cluster_words);
+	if cb.len > cluster_cap {
+		if cluster_cap > 0 { gfx::release(cluster_buf); }
+		cluster_cap = cb.len * 2;
+		cluster_buf = gfx::buffer(gfx::BUFFER_STORAGE, cluster_cap, []);
+	}
+	gfx::update_buffer(cluster_buf, cb[..]);
+	if lights.len == 0 { cluster_words.clear(); }
+}
 fn gi_bind() {
 	let live = gi_built && rt::ready;
 	gfx::bind_storage_buffer(gfx::FRAGMENT, 0, if live { rt::node_buf } else { gi_dummy });
 	gfx::bind_storage_buffer(gfx::FRAGMENT, 1, if live { rt::tri_buf } else { gi_dummy });
 	gfx::bind_storage_buffer(gfx::FRAGMENT, 2, if live && gi_have { gi_irr } else { gi_dummy });
 	gfx::bind_storage_buffer(gfx::FRAGMENT, 3, if live && gi_have { gi_dist } else { gi_dummy });
+	gfx::bind_storage_buffer(gfx::FRAGMENT, 4, light_buf);
+	gfx::bind_storage_buffer(gfx::FRAGMENT, 5, cluster_buf);
 }
 
 // ---- passes
@@ -1492,7 +1566,7 @@ fn color_pass() {
 	}
 	// blended, far to near
 	var order int[>..] = [];
-	for b, i in batch { if b.mode == gltf::ALPHA_BLEND { order.push(i); } }
+	for b, i in batch { if b.mode == gltf::ALPHA_BLEND && b.vis { order.push(i); } }
 	for i in 1..order.len {
 		var j = i;
 		while j > 0 && batch[order[j - 1]].depth < batch[order[j]].depth {
@@ -1500,10 +1574,15 @@ fn color_pass() {
 			j -= 1;
 		}
 	}
-	if order.len > 0 {
+	for i in order {
+		if material_of(batch[i].prim).double_sided {
+			gfx::bind(pipe_blend_back);
+			bind_geometry();
+			draw_lit(batch[i]);
+		}
 		gfx::bind(pipe_blend);
 		bind_geometry();
-		for i in order { draw_lit(batch[i]); }
+		draw_lit(batch[i]);
 	}
 	let fwd = forward();
 	let right = linalg::unit3(linalg::cross3(fwd, view.up));
@@ -1712,11 +1791,11 @@ fn exposure_now() f32 {
 fn grade_pass(target gfx::Texture) {
 	guard gfx::begin_pass(gfx::PassDesc { color: [target, none(), none(), none()], .. }) else { return; }
 	gfx::bind(pipe_grade);
-	gfx::bind_texture(gfx::FRAGMENT, 0, resolved(), smp_point);
+	gfx::bind_texture(gfx::FRAGMENT, 0, resolved(), if look.chroma > 0.0 { smp_linear } else { smp_point });
 	gfx::bind_texture(gfx::FRAGMENT, 1, if look.bloom > 0.0 { glow[0] } else { white }, smp_linear);
 	gfx::bind_texture(gfx::FRAGMENT, 2, lut_tex, smp_linear);
 	gfx::bind_storage_buffer(gfx::FRAGMENT, 0, expo_buf);
-	gfx::uniforms(gfx::FRAGMENT, 0, GradeU { tone: f4(look.exposure, look.white, look.bloom, look.desaturate), mode: f4(look.curve as f32, if look.auto_exposure { 1.0 } else { 0.0 }, if lut_n > 0 { clamp(look.lut, 0.0, 1.0) } else { 0.0 }, lut_n as f32) });
+	gfx::uniforms(gfx::FRAGMENT, 0, GradeU { tone: f4(look.exposure, look.white, look.bloom, look.desaturate), mode: f4(look.curve as f32, if look.auto_exposure { 1.0 } else { 0.0 }, if lut_n > 0 { clamp(look.lut, 0.0, 1.0) } else { 0.0 }, lut_n as f32), lens: f4(look.vignette, look.chroma, look.grain, look.sharpen), color: f4(look.saturation, look.contrast, look.warmth, 0.0), frame: f4(out_width as f32, out_height as f32, (frames % 1024) as f32, 0.0) });
 	gfx::draw(3);
 	gfx::end_pass();
 }
@@ -1735,6 +1814,7 @@ fn render_begin() bool {
 	fill_frame();
 	gi_pass();
 	fill_frame();
+	light_upload();
 	shadow_pass();
 	local_shadow_pass();
 	ao_pass();

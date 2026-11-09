@@ -31,6 +31,8 @@ layout(std430, set = 2, binding = 16) readonly buffer Nodes { vec4 bvh_nodes[]; 
 layout(std430, set = 2, binding = 17) readonly buffer Tris { vec4 bvh_tris[]; };
 layout(std430, set = 2, binding = 18) readonly buffer Irr { vec4 probe_irr[]; };
 layout(std430, set = 2, binding = 19) readonly buffer Dist { vec2 probe_dist[]; };
+layout(std430, set = 2, binding = 20) readonly buffer LightRecs { vec4 lrec[]; };
+layout(std430, set = 2, binding = 21) readonly buffer LightCells { uint lcell[]; };
 
 const int CASCADES = 3;
 const int MAX_LIGHTS = 16;
@@ -61,6 +63,8 @@ layout(set = 3, binding = 0) uniform Frame {
 	vec4 env;
 	vec4 env_rot;
 	mat4 vp;
+	vec4 cluster;
+	vec4 cluster2;
 };
 #include "gi.glsl"
 
@@ -251,14 +255,13 @@ float sun_pcss(vec2 uv, float zd, int c, float row0, vec3 n) {
 	}
 	return mix(1.0, lit / 28.0, clamp(nb, 0.0, 1.0));
 }
-float local_visibility(int i, vec3 p, vec3 n) {
-	vec4 sh = light_shd[i];
+float local_visibility(vec4 sh, vec3 lp, vec3 ldir, vec3 p, vec3 n) {
 	if (sh.x < 0.0) return 1.0;
-	vec3 d = p - light_pos[i].xyz;
+	vec3 d = p - lp;
 	vec3 a = abs(d);
 	int f = sh.y > 1.5 ? (a.x >= a.y && a.x >= a.z ? (d.x > 0.0 ? 0 : 1) : (a.y >= a.z ? (d.y > 0.0 ? 2 : 3) : (d.z > 0.0 ? 4 : 5))) : 0;
 	int layer = int(sh.x) + f;
-	float dist = sh.y > 1.5 ? max(a.x, max(a.y, a.z)) : max(dot(d, light_dir[i].xyz), 1e-3);
+	float dist = sh.y > 1.5 ? max(a.x, max(a.y, a.z)) : max(dot(d, ldir), 1e-3);
 	float off = 1.5 * sh.z * dist;
 	vec4 s = local_mat[layer] * vec4(p + n * off - d / max(length(d), 1e-4) * off, 1.0);
 	if (s.w <= 0.0) return 1.0;
@@ -271,9 +274,8 @@ float local_visibility(int i, vec3 p, vec3 n) {
 	for (int k = 0; k < 12; k++) lit += texture(tex_local_shadow, vec4(uv + vogel(k, 12, rot) * (sh.w * texel), float(layer), ndc.z));
 	return lit / 12.0;
 }
-float spot_cone(int i, vec3 ld) {
-	float co = light_dir[i].w;
-	return co < -1.5 ? 1.0 : smoothstep(co, light_rgb[i].w - 1.0, dot(-ld, light_dir[i].xyz));
+float spot_cone(float inner, float co, vec3 ldir, vec3 ld) {
+	return co < -1.5 ? 1.0 : smoothstep(co, inner - 1.0, dot(-ld, ldir));
 }
 float sun_visibility(vec3 p, vec3 n) {
 	if (to_sun.w < 0.5) return 1.0;
@@ -564,17 +566,49 @@ void main() {
 	if (!gl_FrontFacing && alpha.z > 0.5) gn = -gn;
 	vec3 rp = in_world + gn * 2e-3;
 	rgb += mat_term(n, v, l, sun_rgb.rgb, albedo, f0_spec, rough, ms, kd, (gi.y > 0.5 && to_sun.w > 0.5 ? (dot(gn, l) > 0.0 && gi_visible(rp, l, 1e4) ? 1.0 : 0.0) : sun_visibility(in_world, gn)) * cst, q, x);
-	int count = int(screen.z);
-	for (int i = 0; i < MAX_LIGHTS; i++) {
-		if (i >= count) break;
-		vec3 d = light_pos[i].xyz - in_world;
-		float dist = length(d);
-		vec3 ld = d / max(dist, 1e-4);
-		if (gi.y > 0.5 && (dot(gn, ld) <= 0.0 || !gi_visible(rp, ld, dist - 2e-3))) continue;
-		vec3 le = light_rgb[i].rgb * range_falloff(dist, light_pos[i].w) * spot_cone(i, ld) * local_visibility(i, in_world, gn);
-		rgb += mat_term(n, v, ld, le, albedo, f0_spec, rough, ms, kd, 1.0, q, x);
+	if (screen.z > 0.5) {
+		int cx = clamp(int(gl_FragCoord.x * screen.x * cluster.x), 0, int(cluster.x) - 1);
+		int cy = clamp(int(gl_FragCoord.y * screen.y * cluster.y), 0, int(cluster.y) - 1);
+		int cz = clamp(int(log(max(dot(in_world - eye.xyz, view_dir.xyz), 1e-4) / cluster2.x) * cluster2.y), 0, int(cluster.z) - 1);
+		uint head = lcell[(cz * int(cluster.y) + cy) * int(cluster.x) + cx];
+		int lfirst = int(head >> 8u);
+		int lcount = int(head & 255u);
+		for (int li = 0; li < lcount; li++) {
+			int i = int(lcell[lfirst + li]) * 5;
+			vec4 lp = lrec[i];
+			vec4 lc = lrec[i + 1];
+			vec4 lx = lrec[i + 2];
+			vec4 la = lrec[i + 4];
+			vec3 d = lp.xyz - in_world;
+			float dist = length(d);
+			vec3 ld = d / max(dist, 1e-4);
+			if (gi.y > 0.5 && (dot(gn, ld) <= 0.0 || !gi_visible(rp, ld, dist - 2e-3))) continue;
+			float fq = clamp(1.0 - (dist * dist) / (lp.w * lp.w), 0.0, 1.0);
+			float fall = la.x > 0.0 ? fq * fq / (dist * dist + la.x * la.x) : range_falloff(dist, lp.w);
+			vec3 le = lc.rgb * fall * spot_cone(lc.w, lx.w, lx.xyz, ld) * local_visibility(lrec[i + 3], lp.xyz, lx.xyz, in_world, gn);
+			if (la.x <= 0.0 && la.y <= 0.0) { rgb += mat_term(n, v, ld, le, albedo, f0_spec, rough, ms, kd, 1.0, q, x); continue; }
+			vec3 rv = reflect(-v, n);
+			vec3 dl = d;
+			float aa = max(rough * rough, 0.002);
+			float nrm = 1.0;
+			if (la.y > 0.0) {
+				vec3 ax = lx.xyz * la.y;
+				vec3 l0 = d - ax * 0.5;
+				float rl = dot(rv, ax);
+				dl = l0 + ax * clamp((dot(rv, l0) * rl - dot(l0, ax)) / max(dot(ax, ax) - rl * rl, 1e-5), 0.0, 1.0);
+				float ta = clamp(aa + la.y * 0.5 / max(length(dl), 1e-3), 0.0, 1.0);
+				nrm *= aa / ta;
+			}
+			if (la.x > 0.0) {
+				vec3 cr = dot(dl, rv) * rv - dl;
+				dl += cr * clamp(la.x / max(length(cr), 1e-5), 0.0, 1.0);
+				float sa = clamp(aa + la.x * 0.5 / max(length(dl), 1e-3), 0.0, 1.0);
+				nrm *= (aa / sa) * (aa / sa);
+			}
+			rgb += mat_term(n, v, ld, le, albedo, f0_spec, rough, vec3(0.0), kd, 1.0, q, x);
+			rgb += mat_term(n, v, normalize(dl), le * nrm, vec3(0.0), f0_spec, rough, ms, kd, 1.0, q, x);
+		}
 	}
-
 	// furnace control hook (scene3d.furnace_scale, 1 in normal use): scales the direct
 	// light so the furnace test can check that it notices a non-conserving BRDF
 	rgb *= uv_sets2.w;

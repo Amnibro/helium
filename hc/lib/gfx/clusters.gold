@@ -1,0 +1,14 @@
+use std
+into clusters.amni
+
+Namespace clusters; imports gfx and math. Assigns point-like lights to a view-frustum grid for clustered forward shading.
+
+Module constants: `CX = 16`, `CY = 9`, `CZ = 24`, `MAX_PER = 255`. Module vars, kept between calls so no call allocates once they have grown: `counts int[>..]`, `pair_c int[>..]`, `pair_l int[>..]`.
+
+`build(view gfx::mat4, tan_x f32, tan_y f32, near f32, far f32, lights const float4[:], out u32[>..]&)` fills `out` from scratch. `lights[i]` holds a world position in x, y, z and the range in w. The grid has `CX * CY * CZ` cells; a cell's index is `(z * CY + y) * CX + x`, where x runs left to right across the screen, y top to bottom, and z through exponential depth slices: slice k covers view depths `near * (far / near)^(k / CZ)` to `near * (far / near)^((k + 1) / CZ)`. `out` holds one header word per cell followed by the light indices, and a header word is `(offset << 8) | count`, where offset is the absolute index in `out` of the cell's first light index and count is at most `MAX_PER`, dropping the rest of that cell's lights. A cell with no lights has header word 0.
+
+To place a light: its view position is `vx = view.c0.x * px + view.c1.x * py + view.c2.x * pz + view.c3.x`, `vy` the same with the `.y` fields, `vz` the same with the `.z` fields, and its depth is `d = -vz`. Skip it when `d + r < near` or `d - r > far`. For each slice k from the slice of `max(d - r, near)` to the slice of `min(d + r, far)` (clamped to 0..CZ-1): with zn and zf the slice's depth bounds, `dz` is 0 when zn <= d <= zf and otherwise the smaller of `abs(d - zn)` and `abs(d - zf)`; skip the slice when `dz >= r`; `rc = sqrt(r * r - dz * dz)`. Horizontal extent in normalized screen coordinates is the union over z in {zn, zf} of `(vx - rc) / (z * tan_x)` to `(vx + rc) / (z * tan_x)`, and the vertical extent likewise with vy and tan_y. Skip the slice when the extent misses -1..1 on either axis. Cell x runs from `floor((xlo * 0.5 + 0.5) * CX)` to `floor((xhi * 0.5 + 0.5) * CX)` and y from `floor((1 - yhi) * 0.5 * CY)` to `floor((1 - ylo) * 0.5 * CY)`, each clamped to the grid. Compute these in f32. Add the pair (cell, light index) to `pair_c` and `pair_l` and count it in `counts`.
+
+Finish with a counting sort so each cell's light indices are consecutive and in increasing light order: resize `out` to the cell count plus the total of the clamped counts, write the headers, then walk the pairs in order, writing each index at its cell's next free position and dropping pairs past `MAX_PER`.
+
+`fn main()` is not part of this library; do not write one.

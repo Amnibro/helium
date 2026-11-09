@@ -55,8 +55,9 @@ struct Material {
 	sheen_c_tex TexRef = TexRef { -1, 0 }, sheen_r_tex TexRef = TexRef { -1, 0 }
 }
 struct Primitive { vfirst int, vcount int, ifirst int, icount int, material int, mfirst int, targets int, lo float3, hi float3, tangents bool, skinned bool }
+struct PLight { kind int, rgb float3, range f32, inner f32, outer f32 }
 struct Mesh { prims Span, weights Span, name Span }
-struct Node { parent int, mesh int, skin int, children Span, t float3, r linalg::Quat, s float3, matrix gfx::mat4, has_matrix bool, weights Span, name Span }
+struct Node { parent int, mesh int, skin int, children Span, t float3, r linalg::Quat, s float3, matrix gfx::mat4, has_matrix bool, weights Span, name Span, light int = -1 }
 struct Texture { image int, mag_nearest bool, min_nearest bool, mipmaps bool, wrap_s int, wrap_t int }
 struct Image { width int, height int, pixels Span, ok bool, coded Span = Span { 0, 0 } }
 struct Skin { joints Span, inverse_binds Span, skeleton int, name Span }
@@ -72,6 +73,7 @@ var ints int[>..];
 var matrices gfx::mat4[>..];
 var pixels byte[>..];
 var lazy_pixels = false;
+var bad_images = 0;
 var coded byte[>..];
 var decoded byte[>..];
 var decoded_of = -1;
@@ -80,6 +82,7 @@ var meshes Mesh[>..];
 var prims Primitive[>..];
 var nodes Node[>..];
 var materials Material[>..];
+var plights PLight[>..];
 var textures Texture[>..];
 var images Image[>..];
 var skins Skin[>..];
@@ -329,6 +332,7 @@ fn need_pixels(i int) {
 			w = a; h = b; ok = c;
 		}
 		if !ok || w != im.width || h != im.height || decoded.len != w * h * 4 {
+			bad_images += 1;
 			decoded.clear();
 			decoded.resize(im.width * im.height * 4, 255 as byte);
 		}
@@ -373,6 +377,7 @@ fn decode_image(data const byte[:]) Image {
 		w = a; h = b; ok = c;
 	}
 	if !ok || px.len != w * h * 4 {
+		bad_images += 1;
 		px.clear();
 		px.append([255 as byte, 255, 255, 255]);
 		w = 1; h = 1; ok = false;
@@ -413,7 +418,7 @@ fn load_bytes(data const byte[:], dir const byte[:]) int {
 	children_of(d, get(d, root, "extensionsRequired"), list);
 	for e in list {
 		let ext = json::text_of(d, e);
-		if ext != "KHR_materials_emissive_strength" && ext != "KHR_materials_unlit" && ext != "KHR_mesh_quantization" && ext != "KHR_texture_transform" && ext != "KHR_materials_sheen" && ext != "KHR_materials_ior" && ext != "KHR_materials_specular" && ext != "KHR_materials_clearcoat" && ext != "KHR_materials_transmission" && ext != "KHR_materials_volume" && ext != "KHR_materials_anisotropy" && ext != "KHR_materials_iridescence" {
+		if ext != "KHR_materials_emissive_strength" && ext != "KHR_materials_unlit" && ext != "KHR_mesh_quantization" && ext != "KHR_texture_transform" && ext != "KHR_materials_sheen" && ext != "KHR_materials_ior" && ext != "KHR_materials_specular" && ext != "KHR_materials_clearcoat" && ext != "KHR_materials_transmission" && ext != "KHR_materials_volume" && ext != "KHR_materials_anisotropy" && ext != "KHR_materials_iridescence" && ext != "KHR_lights_punctual" {
 			return fail(str("gltf: required extension ", ext, " is not supported"));
 		}
 	}
@@ -587,6 +592,16 @@ fn load_bytes(data const byte[:], dir const byte[:]) int {
 	}
 	asset.materials.count = materials.len - asset.materials.first;
 
+	let plight_base = plights.len;
+	var plist0 int[>..] = [];
+	children_of(d, get(d, get(d, get(d, root, "extensions"), "KHR_lights_punctual"), "lights"), plist0);
+	for pl in plist0 {
+		let ty = word(d, pl, "type");
+		let col = get(d, pl, "color");
+		let inten = num(d, pl, "intensity", 1.0) as f32;
+		let sp = get(d, pl, "spot");
+		plights.push(PLight { if ty == "directional" { 0 } else if ty == "spot" { 2 } else { 1 }, float3 { item_num(d, col, 0, 1.0) as f32 * inten, item_num(d, col, 1, 1.0) as f32 * inten, item_num(d, col, 2, 1.0) as f32 * inten }, num(d, pl, "range", 0.0) as f32, num(d, sp, "innerConeAngle", 0.0) as f32, num(d, sp, "outerConeAngle", 0.7853981) as f32 });
+	}
 	// meshes
 	asset.meshes.first = meshes.len;
 	children_of(d, get(d, root, "meshes"), list);
@@ -619,6 +634,8 @@ fn load_bytes(data const byte[:], dir const byte[:]) int {
 		};
 		let mi = whole(d, n, "mesh", -1);
 		if mi >= 0 && mi < asset.meshes.count { node.mesh = asset.meshes.first + mi; }
+		let lref = whole(d, get(d, get(d, n, "extensions"), "KHR_lights_punctual"), "light", -1);
+		if lref >= 0 { node.light = plight_base + lref; }
 		let ch = get(d, n, "children");
 		if ch >= 0 {
 			for i in d.nodes[ch].count {

@@ -2,7 +2,7 @@
 // The sky is infinitely far away: only camera rotation moves it on screen. Its view
 // depth, now and last frame, is written as 60000 (inside the fp16 range).
 layout(location = 0) in vec2 in_uv;
-layout(set = 3, binding = 0) uniform Sky { mat4 inv_view_proj; mat4 prev_view_proj; vec4 to_sun; vec4 sun_rgb; vec4 zenith; vec4 horizon; vec4 ground; };
+layout(set = 3, binding = 0) uniform Sky { mat4 inv_view_proj; mat4 prev_view_proj; vec4 to_sun; vec4 sun_rgb; vec4 zenith; vec4 horizon; vec4 ground; vec4 env; vec4 env_rot; };
 layout(location = 0) out vec4 out_nd;
 layout(location = 1) out vec4 out_motion;
 void main() {

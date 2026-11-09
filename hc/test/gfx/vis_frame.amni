@@ -20,48 +20,86 @@ fn main() {
 		print("usage: vis_frame model.glb out.png width height eye_x eye_y eye_z target_x target_y target_z fov_y [features]");
 		return;
 	}
-	let path = arg_of(1);
-	let outp = arg_of(2);
-	let w, wok = parse_int(arg_of(3));
-	let h, hok = parse_int(arg_of(4));
+	var path = arg_of(1);
+	var outp = arg_of(2);
+	var a3 = arg_of(3);
+	var a4 = arg_of(4);
+	let w, wok = parse_int(a3);
+	let h, hok = parse_int(a4);
 	let eye = float3 { num(arg_of(5)), num(arg_of(6)), num(arg_of(7)) };
 	let target = float3 { num(arg_of(8)), num(arg_of(9)), num(arg_of(10)) };
 	let fov = num(arg_of(11));
 	gltf::lazy_pixels = true;
-	let model = gltf::load(path);
-	if model < 0 {
+	let id = gltf::load(path);
+	if id < 0 {
 		print(gltf::error());
 		return;
 	}
 	gfx::open_headless(w, h);
-	let inst = s3d::add(model);
-	s3d::place(inst, gfx::mat4_identity);
-	let dx = eye.x - target.x;
-	let dy = eye.y - target.y;
-	let dz = eye.z - target.z;
-	let dist = sqrt(dx * dx + dy * dy + dz * dz) as f32;
-	s3d::view = s3d::Camera { eye: eye, target: target, up: float3 { 0.0, 1.0, 0.0 }, fov_y: fov, near: dist * 0.01, far: dist * 10.0 };
+	s3d::place(s3d::add(id), gfx::mat4_identity);
+	let d = distance(eye, target);
+	s3d::view = s3d::Camera { eye: eye, target: target, up: float3 { 0.0, 1.0, 0.0 }, fov_y: fov, near: d * 0.01, far: d * 10.0, .. };
 	s3d::sun.shadows = false;
 	s3d::sun.rgb = float3 { 0.0, 0.0, 0.0 };
-	s3d::sky = s3d::Sky { zenith: float3 { 0.5, 0.5, 0.5 }, horizon: float3 { 0.5, 0.5, 0.5 }, ground: float3 { 0.5, 0.5, 0.5 }, ambient: 1.0, draw: true };
+	let grey = float3 { 0.5, 0.5, 0.5 };
+	s3d::sky = s3d::Sky { zenith: grey, horizon: grey, ground: grey, ambient: 1.0, draw: true, .. };
 	s3d::look.curve = 1;
 	s3d::look.bloom = 0.0;
 	s3d::look.ssao = false;
-	let feats = arg_of(12);
-	for word in split(feats, ',') {
-		if starts_with(word, "env=") {
-			let p = word[4..];
-			if !envmap::load(p) { print(p); }
-			s3d::sky.draw = true;
-		} else if starts_with(word, "dbg=") {
-			let n, ok = parse_int(word[4..]);
-			s3d::debug_view = n;
+	if arg_count() > 12 {
+		var feat = arg_of(12);
+		let words = split(feat, ',');
+		for word in words {
+			if starts_with(word, "env=") {
+				let ep = word[4..];
+				if !envmap::load(ep) { print(ep); }
+				s3d::sky.draw = true;
+			} else if starts_with(word, "dbg=") {
+				let n, ok = parse_int(word[4..]);
+				s3d::debug_view = n;
+			} else if starts_with(word, "curve=") {
+				let n, ok = parse_int(word[6..]);
+				s3d::look.curve = n as i32;
+			} else if starts_with(word, "vignette=") {
+				s3d::look.vignette = num(word[9..]);
+			} else if starts_with(word, "chroma=") {
+				s3d::look.chroma = num(word[7..]);
+			} else if starts_with(word, "grain=") {
+				s3d::look.grain = num(word[6..]);
+			} else if starts_with(word, "sharpen=") {
+				s3d::look.sharpen = num(word[8..]);
+			} else if word == "nosky" {
+				s3d::sky.draw = false;
+			} else if starts_with(word, "sun=") {
+				let r = num(word[4..]);
+				s3d::sun.rgb = float3 { r, r, r };
+				s3d::sun.shadows = true;
+				s3d::sun.shadow_far = 3.0 * d;
+			} else if starts_with(word, "lights=") {
+				let n, ok = parse_int(word[7..]);
+				let dr = d as real;
+				for k in n {
+					let kr = k as real;
+					let p = float3 {
+						target.x + (dr * (0.5 * sin(kr * 12.9898))) as f32,
+						target.y + (dr * (0.5 * sin(kr * 78.233))) as f32,
+						target.z + (dr * (0.5 * sin(kr * 37.719))) as f32
+					};
+					let sc = dr * dr * 0.05;
+					let c = float3 {
+						((0.5 + 0.5 * sin(kr * 1.7)) * sc) as f32,
+						((0.5 + 0.5 * sin(kr * 2.9)) * sc) as f32,
+						((0.5 + 0.5 * sin(kr * 4.3)) * sc) as f32
+					};
+					s3d::lights.push(s3d::Light { pos: p, range: 0.35 * d, rgb: c, kind: 0, radius: 0.02 * d, .. });
+				}
+			}
 		}
 	}
 	s3d::init(w, h);
-	let tex = gfx::render_target(w, h, gfx::RGBA8);
-	for i in 2 { s3d::render(tex); }
-	let saved = gfx::save_png(tex, outp);
+	let rt = gfx::render_target(w, h, gfx::RGBA8);
+	for i in 2 { s3d::render(rt); }
+	let saved = gfx::save_png(rt, outp);
 	print("vis_frame: ", saved, " ", gfx::driver());
 	gfx::close();
 }
