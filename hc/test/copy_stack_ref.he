@@ -1,0 +1,10 @@
+struct A { s real, k int, l int[..], z bool }
+st(a const A&):
+	b ~= copy(a)
+	b.l.push(9)
+	print(b.l.len, " ", a.l.len, " ", b.l[0], " ", a.l[0], " ", b.s, " ", b.k)
+main():
+	a ~= A { 2.5, 7, [..8], true }
+	a.l.push(3)
+	a.l.push(4)
+	st(a)
