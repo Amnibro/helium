@@ -3184,6 +3184,209 @@ fn ssgi_checks() bool {
 	s3d::look = DEF_LOOK;
 	p1 && p2 && p3 && pk
 }
+const DEC_W = 640;
+const DEC_H = 360;
+const DEC_D1 = 0.04;
+const DEC_D3 = 0.05;
+fn dec_lin(b int) real { let c = b as real / 255.0; if c <= 0.04045 { c / 12.92 } else { pow((c + 0.055) / 1.055, 2.4) } }
+fn dec_enc(x real) byte { let c = clamp(x, 0.0, 1.0); dec_b(if c <= 0.0031308 { c * 12.92 } else { 1.055 * pow(c, 1.0 / 2.4) - 0.055 }) }
+fn dec_b(x real) byte { clamp(round(x * 255.0), 0.0, 255.0) as int as byte }
+fn dec_q() linalg::Quat { linalg::qaxis(linalg::v3(0.0, 1.0, 0.0), 0.34906585) }
+fn dec_local(wx real, wz real) real, real {
+	let ax = linalg::qrotate(dec_q(), linalg::v3(1.0, 0.0, 0.0));
+	let az = linalg::qrotate(dec_q(), linalg::v3(0.0, 0.0, 1.0));
+	return ((wx - 0.2) * ax.x as real + (wz + 0.1) * ax.z as real) / 0.75, ((wx - 0.2) * az.x as real + (wz + 0.1) * az.z as real) / 0.75;
+}
+fn dec_image(nrm bool) byte[>..] {
+	var px byte[>..] = [];
+	for y in 128 { for x in 128 {
+		let fx = x as real + 0.5 - 64.0;
+		let fy = y as real + 0.5 - 64.0;
+		let r = sqrt(fx * fx + fy * fy);
+		var gx = 0.0;
+		var gy = 0.0;
+		for k in 9 {
+			let dx = x as real + 0.5 - (40.0 + (k % 3) as real * 24.0);
+			let dy = y as real + 0.5 - (40.0 + (k / 3) as real * 24.0);
+			let q = max(1.0 - (dx * dx + dy * dy) / 196.0, 0.0);
+			gx -= 36.0 * q * dx / 196.0;
+			gy -= 36.0 * q * dy / 196.0;
+		}
+		let l = sqrt(gx * gx + gy * gy + 1.0);
+		let ring = r >= 24.0 && r < 30.0;
+		let tab = x >= 44 && x < 60 && y >= 26 && y < 36;
+		let cut = x >= 70 && x < 82 && y >= 30 && y < 98;
+		px.push(if nrm { dec_b(0.5 - 0.5 * gx / l) } else if tab { 40 as byte } else if ring { 30 as byte } else { 225 as byte });
+		px.push(if nrm { dec_b(0.5 + 0.5 * gy / l) } else if tab { 170 as byte } else if ring { 50 as byte } else { 110 as byte });
+		px.push(if nrm { dec_b(0.5 + 0.5 / l) } else if tab { 60 as byte } else if ring { 150 as byte } else { 35 as byte });
+		px.push(if nrm { if r < 48.0 { 255 as byte } else { 0 as byte } } else if cut { 0 as byte } else { dec_b(clamp((44.0 - r) / 8.0, 0.0, 1.0)) });
+	} }
+	px
+}
+fn dec_tap(im const byte[:], u real, v real, c int, srgb bool) real {
+	let x = u * 128.0 - 0.5;
+	let y = v * 128.0 - 0.5;
+	let x0 = floor(x);
+	let y0 = floor(y);
+	var s = 0.0;
+	for k in 4 {
+		let xi = clamp(x0 as int + k % 2, 0, 127);
+		let yi = clamp(y0 as int + k / 2, 0, 127);
+		let w = (if k % 2 == 1 { x - x0 } else { 1.0 - (x - x0) }) * (if k / 2 == 1 { y - y0 } else { 1.0 - (y - y0) });
+		let b = im[(yi * 128 + xi) * 4 + c] as int;
+		s += w * (if srgb && c < 3 { dec_lin(b) } else { b as real / 255.0 });
+	}
+	s
+}
+fn dec_floor(im const byte[:], mode int) int {
+	let ax = linalg::qrotate(dec_q(), linalg::v3(1.0, 0.0, 0.0));
+	let az = linalg::qrotate(dec_q(), linalg::v3(0.0, 0.0, 1.0));
+	let fl = 128.0 / 255.0 * 2.0 - 1.0;
+	var px byte[>..] = [];
+	for ty in 1024 { for tx in 1024 {
+		let lx, lz = dec_local(-2.0 + 4.0 * (tx as real + 0.5) / 1024.0, -2.0 + 4.0 * (ty as real + 0.5) / 1024.0);
+		let ins = mode > 0 && abs(lx) <= 1.0 && abs(lz) <= 1.0;
+		let g = if (tx / 64 + ty / 64) % 2 == 0 { 70 } else { 150 };
+		let u = lx * 0.5 + 0.5;
+		let v = lz * 0.5 + 0.5;
+		let a = if ins { dec_tap(im, u, v, 3, mode == 1) } else { 0.0 };
+		let n0 = if ins && mode == 2 { dec_tap(im, u, v, 0, false) * 2.0 - 1.0 } else { 0.0 };
+		let n1 = if ins && mode == 2 { dec_tap(im, u, v, 1, false) * 2.0 - 1.0 } else { 0.0 };
+		let n2 = if ins && mode == 2 { dec_tap(im, u, v, 2, false) * 2.0 - 1.0 } else { 1.0 };
+		let wx = ax.x as real * n0 - az.x as real * n1;
+		let wz = ax.z as real * n0 - az.z as real * n1;
+		for c in 3 {
+			px.push(if mode == 2 { dec_b(0.5 + 0.5 * (if c == 0 { fl + (wx - fl) * a } else if c == 1 { fl + (-wz - fl) * a } else { 1.0 + (n2 - 1.0) * a })) } else { dec_enc(dec_lin(g) + ((if ins { dec_tap(im, u, v, c, true) } else { 0.0 }) - dec_lin(g)) * a) });
+		}
+		px.push(255 as byte);
+	} }
+	gltf::add_texture_rgba(px[..], 1024, 1024, 10497)
+}
+fn decal_scene(mode int) {
+	reset_scene();
+	let ci = dec_image(false);
+	let ni = dec_image(true);
+	var m = shapes::material(linalg::v3(1.0, 1.0, 1.0), 0.0, 0.6);
+	m.base_tex = gltf::TexRef { texture: dec_floor(ci[..], if mode == 2 { 1 } else { 0 }), uv: 0 };
+	if mode == 4 { m.normal_tex = gltf::TexRef { texture: dec_floor(ni[..], 2), uv: 0 }; }
+	let _ = s3d::add(shapes::plane(2.0, m));
+	if mode == 1 || mode == 3 { let _ = s3d::add_decal(s3d::Decal { pos: float3 { 0.2, 0.0, -0.1 }, rot: dec_q(), size: float3 { 1.5, 1.0, 1.5 }, base: if mode == 1 { gltf::add_texture_rgba(ci[..], 128, 128, 33071) } else { -1 }, normal: if mode == 3 { gltf::add_texture_rgba(ni[..], 128, 128, 33071) } else { -1 }, .. }); }
+	s3d::view = s3d::Camera { eye: float3 { 0.0, 2.2, 2.7 }, target: float3 { 0.0, 0.0, 0.0 }, up: float3 { 0.0, 1.0, 0.0 }, fov_y: 0.75, near: 0.1, far: 60.0 };
+	s3d::sky = DEF_SKY;
+	s3d::sun = DEF_SUN;
+	s3d::look = DEF_LOOK;
+	s3d::look.ssao = false;
+	s3d::look.bloom = 0.0;
+	s3d::ssr_on = false;
+	s3d::ssgi_on = false;
+	s3d::gi_on = false;
+	s3d::temporal = 0;
+}
+fn dec_regions() byte[>..] {
+	let ty = tan(0.375);
+	let tx = ty * DEC_W as real / DEC_H as real;
+	let fz = -2.7 / sqrt(2.2 * 2.2 + 2.7 * 2.7);
+	let fy = -2.2 / sqrt(2.2 * 2.2 + 2.7 * 2.7);
+	var ins byte[>..] = [];
+	for j in DEC_H { for i in DEC_W {
+		let nx = ((i as real + 0.5) / DEC_W as real * 2.0 - 1.0) * tx;
+		let ny = (1.0 - (j as real + 0.5) / DEC_H as real * 2.0) * ty;
+		let dy = fy + ny * -fz;
+		let dz = fz + ny * fy;
+		let t = if dy < 0.0 { -2.2 / dy } else { -1.0 };
+		let px = nx * t;
+		let pz = 2.7 + dz * t;
+		let lx, lz = dec_local(px, pz);
+		ins.push(if t > 0.0 && abs(px) <= 2.0 && abs(pz) <= 2.0 && abs(lx) <= 1.0 && abs(lz) <= 1.0 { 1 as byte } else { 0 as byte });
+	} }
+	var reg byte[>..] = [];
+	for j in DEC_H { for i in DEC_W {
+		var n = 0;
+		for k in 25 { n += ins[clamp(j + k / 5 - 2, 0, DEC_H - 1) * DEC_W + clamp(i + k % 5 - 2, 0, DEC_W - 1)] as int; }
+		reg.push(if n == 25 { 1 as byte } else if n == 0 { 2 as byte } else { 0 as byte });
+	} }
+	reg
+}
+fn dec_err(a const byte[:], b const byte[:], reg const byte[:], want int) real, real {
+	var se = 0.0;
+	var sr = 0.0;
+	var mx = 0.0;
+	for p in DEC_W * DEC_H {
+		if reg[p] as int != want { continue; }
+		for c in 3 {
+			let d = abs(gi_half(a, 8, p, c) as real - gi_half(b, 8, p, c) as real);
+			se += d;
+			sr += gi_half(b, 8, p, c) as real;
+			mx = max(mx, d);
+		}
+	}
+	return se / max(sr, 1e-9), mx;
+}
+fn decal_checks() bool {
+	half_table();
+	let reg = dec_regions();
+	var n1 = 0;
+	var n2 = 0;
+	for p in DEC_W * DEC_H { n1 += if reg[p] as int == 1 { 1 } else { 0 }; n2 += if reg[p] as int == 2 { 1 } else { 0 }; }
+	decal_scene(1);
+	let pa = gi_frame(DEC_W, DEC_H, 3);
+	decal_scene(0);
+	let pn = gi_frame(DEC_W, DEC_H, 3);
+	decal_scene(2);
+	let pr = gi_frame(DEC_W, DEC_H, 3);
+	decal_scene(3);
+	let pb = gi_frame(DEC_W, DEC_H, 3);
+	decal_scene(4);
+	let pq = gi_frame(DEC_W, DEC_H, 3);
+	let e1, m1 = dec_err(pa[..], pr[..], reg[..], 1);
+	let e2, m2 = dec_err(pa[..], pn[..], reg[..], 2);
+	let e3, m3 = dec_err(pb[..], pq[..], reg[..], 1);
+	let ek, mk = dec_err(pn[..], pr[..], reg[..], 1);
+	let en, mn = dec_err(pn[..], pq[..], reg[..], 1);
+	let p1 = e1 <= DEC_D1;
+	let p2 = m2 == 0.0;
+	let p3 = e3 <= DEC_D3;
+	let pk = ek > DEC_D1;
+	print("gpu: decal regions: inside ", n1, " px, outside ", n2, " px");
+	print("gpu: decal D1 color ", r4(e1), " (bar <= ", DEC_D1, ", max px ", r4(m1), ") ", if p1 { "PASS" } else { "FAIL" });
+	print("gpu: decal D2 outside max diff ", m2, " (bar == 0) ", if p2 { "PASS" } else { "FAIL" });
+	print("gpu: decal D3 normal ", r4(e3), " (bar <= ", DEC_D3, ", max px ", r4(m3), ") ", if p3 { "PASS" } else { "FAIL" });
+	print("gpu: decal control (decals off) D1 ", r4(ek), if pk { " fails D1 (good)" } else { " PASSES D1 (gate not discriminating: FAIL)" });
+	print("gpu: decal D3 effect size (reported): plain floor vs normal reference ", r4(en), " (max px ", r4(mn), ")");
+	var img byte[>..] = [];
+	img.append("P6\n1920 720\n255\n");
+	for row in 2 { for j in DEC_H { for k in 3 { for i in DEC_W { for c in 3 {
+		let p = j * DEC_W + i;
+		let x = gi_half(if row == 0 { pa[..] } else { pb[..] }, 8, p, c) as real;
+		let y = gi_half(if row == 0 { pr[..] } else { pq[..] }, 8, p, c) as real;
+		img.push(if k == 2 { dec_b(0.5 + 2.0 * (x - y) / max(y, 0.05)) } else { dec_enc((if k == 0 { x } else { y }) / (1.0 + (if k == 0 { x } else { y }))) });
+	} } } } }
+	let ip = path(OUT_DIR[..], "decal_cmp.ppm");
+	print("gpu: decal image ", ip[..], " (rows: color, normal; decal | reference | signed relative error, mid-grey 0, white +25 %) ", write_file(ip[..], img[..]));
+	decal_scene(0);
+	let ci = dec_image(false);
+	let dt = gltf::add_texture_rgba(ci[..], 128, 128, 33071);
+	s3d::init(1280, 720);
+	let tout = gfx::render_target(1280, 720, gfx::RGBA8);
+	var times real[>..] = [1e9, 1e9, 1e9, 1e9];
+	let counts = [0, 1, 16, 64];
+	for kk in 8 {
+		let k = kk % 4;
+		s3d::clear_decals();
+		let g = max(ceil(sqrt(counts[k] as real)), 1.0) as int;
+		for q in counts[k] { let _ = s3d::add_decal(s3d::Decal { pos: float3 { linalg::f(-1.6 + 3.2 * ((q % g) as real + 0.5) / g as real), 0.0, linalg::f(-1.6 + 3.2 * ((q / g) as real + 0.5) / g as real) }, rot: dec_q(), size: float3 { 1.5, 1.0, 1.5 }, base: dt, .. }); }
+		for f in 10 { s3d::render(tout); }
+		let _ = gfx::read_pixels(tout);
+		let t0 = gfx::time();
+		for f in 60 { s3d::render(tout); }
+		let _ = gfx::read_pixels(tout);
+		times[k] = min(times[k], (gfx::time() - t0) / 60.0 * 1000.0);
+	}
+	gfx::release(tout);
+	print("gpu: decal frame time 1280x720 (wall clock, best of 2 x 60 frames, decals in a grid over the floor, reported): 0 decals ", r3(times[0]), " ms; 1 ", r3(times[1]), " ms (+", r3(times[1] - times[0]), "); 16 ", r3(times[2]), " ms (+", r3(times[2] - times[0]), "); 64 ", r3(times[3]), " ms (+", r3(times[3] - times[0]), ")");
+	s3d::clear_decals();
+	p1 && p2 && p3 && pk
+}
 fn gi_checks() bool {
 	var rad real[>..] = [];
 	var mask real[>..] = [];
@@ -3429,7 +3632,7 @@ fn gpu_checks(dir const byte[:], golden const byte[:]) bool {
 	var only byte[>..] = [];
 	let _ = env("GFX_ONLY", only);
 	if only.len > 0 {
-		let ok = if only[..] == "gtao" { gtao_checks() } else if only[..] == "gi" { gi_checks() } else if only[..] == "mblur" { mb_checks() } else if only[..] == "dof" { dof_checks() } else if only[..] == "fx" { fx_checks() } else if only[..] == "tsr" { tsr_checks(dir) } else if only[..] == "probe" { probe_checks(dir) } else if only[..] == "ssgi" { ssgi_checks() } else { shadow_checks() };
+		let ok = if only[..] == "gtao" { gtao_checks() } else if only[..] == "gi" { gi_checks() } else if only[..] == "mblur" { mb_checks() } else if only[..] == "dof" { dof_checks() } else if only[..] == "fx" { fx_checks() } else if only[..] == "tsr" { tsr_checks(dir) } else if only[..] == "probe" { probe_checks(dir) } else if only[..] == "ssgi" { ssgi_checks() } else if only[..] == "decal" { decal_checks() } else { shadow_checks() };
 		let e = gfx::error();
 		if e.len > 0 { print("gpu: gfx error ", e[..]); return false; }
 		return ok;
@@ -3592,6 +3795,7 @@ fn gpu_checks(dir const byte[:], golden const byte[:]) bool {
 	if !fx_checks() { good = false; }
 	if !probe_checks(dir) { good = false; }
 	if !ssgi_checks() { good = false; }
+	if !decal_checks() { good = false; }
 	let err = gfx::error();
 	if err.len > 0 { print("gpu: gfx error ", err[..]); good = false; }
 	good

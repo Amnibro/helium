@@ -72,6 +72,7 @@ layout(set = 3, binding = 0) uniform Frame {
 	vec4 probe_lo[MAX_PROBES];
 	vec4 probe_hi[MAX_PROBES];
 	vec4 ssgi;
+	vec4 decal;
 };
 #include "gi.glsl"
 
@@ -578,6 +579,42 @@ void main() {
 		n = normalize(mix(n, nt, topf));
 		mr = mix(mr, texture(tex_ext_l, vec3(ut, top_lay.y)), topf);
 	}
+	vec4 dk = vec4(1.0, 0.0, 1.0, 0.0);
+	if (decal.y > 0.5 && alpha.x < 1.5) {
+		vec3 wx = dFdx(in_world);
+		vec3 wy = dFdy(in_world);
+		vec3 dg = gl_FrontFacing || alpha.z < 0.5 ? normalize(in_nrm) : -normalize(in_nrm);
+		int dc = int(decal.y + 0.5);
+		int db = int(decal.x + 0.5);
+		for (int i = 0; i < 4096; i++) {
+			if (i >= dc) break;
+			int o = db + i * 5;
+			vec4 d0 = lrec[o];
+			vec4 d1 = lrec[o + 1];
+			vec4 d2 = lrec[o + 2];
+			vec4 d3 = lrec[o + 3];
+			vec3 lp = in_world - d0.xyz;
+			vec3 l = vec3(dot(lp, d1.xyz), dot(lp, d2.xyz), dot(lp, d3.xyz));
+			if (max(abs(l.x), max(abs(l.y), abs(l.z))) > 1.0) continue;
+			vec4 d4 = lrec[o + 4];
+			vec3 ay = normalize(d2.xyz);
+			float a = d2.w * smoothstep(d4.x, d4.y, dot(dg, ay));
+			vec2 du = l.xz * 0.5 + 0.5;
+			vec2 gx = vec2(dot(wx, d1.xyz), dot(wx, d3.xyz)) * 0.5;
+			vec2 gy = vec2(dot(wy, d1.xyz), dot(wy, d3.xyz)) * 0.5;
+			vec4 c = d0.w >= 0.0 ? textureGrad(tex_ext_s, vec3(du, d0.w), gx, gy) : vec4(0.0);
+			vec4 m = d1.w >= 0.0 ? textureGrad(tex_ext_l, vec3(du, d1.w), gx, gy) : vec4(0.5, 0.5, 1.0, 0.0);
+			float ca = a * (d0.w >= 0.0 ? c.a : m.a);
+			tint.rgb = mix(tint.rgb, c.rgb, d0.w >= 0.0 ? ca : 0.0);
+			float na = d1.w >= 0.0 ? ca : 0.0;
+			vec3 dn = m.xyz * 2.0 - 1.0;
+			tl = mix(tl, length(dn), na);
+			dn.xy *= d3.w;
+			n = normalize(mix(n, normalize(d1.xyz) * dn.x - normalize(d3.xyz) * dn.y + ay * dn.z, na));
+			dk = d4.z >= 0.0 ? vec4(dk.x * (1.0 - ca), mix(dk.y, d4.z, ca), dk.zw) : dk;
+			dk = d4.w >= 0.0 ? vec4(dk.xy, dk.z * (1.0 - ca), mix(dk.w, d4.w, ca)) : dk;
+		}
+	}
 	vec3 nm = n;
 	vec4 dt = texture(tex_ext_l, vec3(xuv(uv_sets.x, xm_det, xo_det.xy), top_lay.w));
 	float dmask = model == 1 ? mr.b : 1.0;
@@ -590,6 +627,7 @@ void main() {
 	}
 	float metal = model == 0 ? clamp(params.x * mr.b, 0.0, 1.0) : 0.0;
 	float rough = clamp(params.y * mr.g * (model > 0 ? mix(1.0, 0.5 + dt.b, dmask) : 1.0), 0.03, 1.0);
+	if (decal.y > 0.5) { rough = clamp(rough * dk.x + dk.y, 0.03, 1.0); metal = clamp(metal * dk.z + dk.w, 0.0, 1.0); }
 	if (env_rot.w > 0.5) {
 		vec3 dn = max(abs(dFdx(n0)), abs(dFdy(n0)));
 		rough = min(max(rough, 0.0525) + max(dn.x, max(dn.y, dn.z)) + clamp(0.25 * (1.0 / max(tl, 0.25) - 1.03), 0.0, 0.1) * params.z, 1.0);

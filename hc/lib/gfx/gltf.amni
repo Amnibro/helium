@@ -935,9 +935,17 @@ fn add_texture_file(path const byte[:]) int {
 	if !read_file(path, raw) { return -1; }
 	let im = decode_image(raw[..]);
 	if !im.ok { return -1; }
+	add_image(im, 10497)
+}
+fn add_image(im Image, wrap int) int {
 	images.push(im);
-	textures.push(Texture { images.len - 1, false, false, true, 10497, 10497 });
+	textures.push(Texture { images.len - 1, false, false, true, wrap, wrap });
 	textures.len - 1
+}
+fn add_texture_rgba(px const byte[:], w int, h int, wrap int) int {
+	let at = pixels.len;
+	pixels.append(px);
+	add_image(Image { width: w, height: h, pixels: Span { first: at, count: px.len }, ok: true }, wrap)
 }
 
 fn find_node(asset int, name const byte[:]) int {

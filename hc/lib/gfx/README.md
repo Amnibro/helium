@@ -337,6 +337,45 @@ Screen-space GI: bounce light from what the camera sees, for scenes without the 
 At half resolution `ssgi_trace.frag` casts `ssgi_rays` cosine-distributed rays per pixel, rotated per pixel and per frame, and walks each through the reflections' Hi-Z pyramid (`hiz_march.glsl`, now shared with `ssr_trace.frag`; SSGI starts one level coarser because it runs at half resolution). At a front-face hit it reads last frame's linear colour there, reprojected like a reflection, so light bounces once per frame and builds up to several bounces over the history. Rays that leave the screen count as open (their share is the visibility, which scales the ambient term: sky, probe or GI irradiance); rays that run out of steps are left out of both averages. `ssgi_accum.frag` averages over `ssgi_frames` frames with motion reprojection and a 5 % depth test, and `ssgi_up.comp` upsamples with a 3 x 3 depth- and normal-aware filter into a storage buffer (binding 22) that `surface.frag` reads per pixel: diffuse adds `albedo x kd x bounce`. Last frame's colour comes from the same copy SSR uses (`ssr_prev`); its mip chain is only built when SSR is on.
 
 
+### Decals (E7)
+
+A decal presses a picture, a normal map or both onto whatever lies inside a box, like a
+sticker pushed straight down: markings, dirt, labels and damage without touching the
+meshes' own textures.
+
+```
+let img = gltf::add_texture_rgba(px[..], 128, 128, 33071);
+let d = s3d::add_decal(s3d::Decal { pos: float3 { 0.2, 0.0, -0.1 }, rot: linalg::qaxis(float3 { 0.0, 1.0, 0.0 }, 0.35), size: float3 { 1.5, 1.0, 1.5 }, base: img, .. });
+```
+
+| field | default | what it does |
+| --- | --- | --- |
+| `pos`, `rot`, `size` | (none), identity, 1 x 1 x 1 | the box: center, turn and full size. It projects along its own -y, onto surfaces facing its +y; its x runs along the image's width (u) and its z along the image's height (v). |
+| `base` | -1 | color image (a `gltf` texture index, read as sRGB); its alpha is the coverage. -1: none. |
+| `normal` | -1 | tangent-space normal map (glTF convention: green points up the image). On its own its alpha is the coverage; with `base`, the color image's alpha covers both. |
+| `opacity` | 1 | multiplies the coverage. |
+| `normal_scale` | 1 | strength of the normal map's tilt. |
+| `rough`, `metal` | -1, -1 | when 0 or more, replace the surface's roughness or metalness under the decal, by coverage. |
+| `fade_lo`, `fade_hi` | 0.1, 0.3 | the decal fades on surfaces turned away from it: full where the cosine between the surface normal and the box's +y is at least `fade_hi`, gone below `fade_lo`, so it does not smear down walls. |
+
+`clear_decals()` removes them all, and `s3d::decals[i]` can be changed in place (to move
+one each frame, for example). `gltf::add_texture_rgba(px, w, h, wrap)` adds raw RGBA8
+pixels as a texture (`wrap` is a glTF wrap code, 33071 for clamp); `add_texture_file`
+loads a PNG or JPEG.
+
+How it works: decal images go into the same 1024 x 1024 texture arrays as the material
+extension maps, registered and mip-mapped before the first pass of the frame. Each
+decal's box is written into the light record buffer after the lights (five vec4s: center
+and color layer; the three axes scaled by 2 / size, with the normal layer, the opacity and
+the normal strength; then the fades and overrides). The surface shader of every opaque
+surface walks the list after its own textures. A point inside a box gets its uv from the
+box's axes; the color is mixed over the base color by coverage before lighting, the
+normal is mixed toward the decal's normal (turned into the box's frame), and roughness
+and metal overrides chain in the order the decals were added. Lookups use gradients from
+the pixel's world position, so the mip level matches a texture painted onto the surface.
+Blended (transparent) and unlit surfaces take no decals. There is no extra pass and no
+G-buffer.
+
 ## Materials, light and finish
 
 `gltf` reads the core metal-rough model plus `KHR_materials_clearcoat`, `sheen`,
@@ -955,22 +994,22 @@ the same as before SSGI), S1-S3 again in the full run (0.1724 / 0.2324 / 0.3406)
 `wgsltest.mjs` 62 modules, 53 pipelines, 0 failures; `webgputest.mjs` 12 scenes, 0
 failures, with `scene_e2` (SSR through the shared march) and the new `scene_ssgi` (the
 e2 scene with SSGI on, 7 frames) both matching native exactly. T7 failed again at
-1.66 ms with the GPU busy, as in the probe run; it is still re-run on a quiet GPU before
-merging.
+1.66 ms with the GPU busy, as in the probe run; the decal gate run (below) passed it at
+0.448 ms with the GPU quieter.
 
 ### Pre-registered bars (deferred decals, E7)
 
 Written before the first GPU run of the decal checks (`decal_checks` in `gfx_smoke.amni`).
 Scene: a 4 x 4 m floor (`shapes::plane`, roughness 0.6, metal 0) under the default sun
 and sky; AO, SSR, SSGI, bloom and temporal off; camera at (0, 2.2, 2.7) looking at the
-origin; 640 x 360. The floor's base colour is a 1024 x 1024 grey checker (16 cells a
-side). Decal: a 128 x 128 RGBA image made in the test (a coloured disc with a soft alpha
+origin; 640 x 360. The floor's base color is a 1024 x 1024 grey checker (16 cells a
+side). Decal: a 128 x 128 RGBA image made in the test (a colored disc with a soft alpha
 edge, a darker ring and a hard-edged cut-out bar), projected straight down by a box
 1.5 m wide and deep and 1 m tall, centred at (0.2, 0, -0.1), turned 20 degrees about y.
 Compared in linear HDR (`hdr_target`).
-* **D1 colour decal match.** Reference: no decal; the floor's texture is instead the
+* **D1 color decal match.** Reference: no decal; the floor's texture is instead the
   checker with the decal composited over it on the CPU (each texel's floor point taken
-  into the decal box, the image sampled bilinearly, alpha over in linear colour), same
+  into the decal box, the image sampled bilinearly, alpha over in linear color), same
   size and sampling as the plain checker. Region: pixels whose floor point lies inside
   the box's footprint by at least 2 pixels. Metric: sum |decal - ref| / sum ref over RGB.
   Bar: **<= 0.04**.
@@ -982,11 +1021,30 @@ Compared in linear HDR (`hdr_target`).
   composited in the same way, turned into the floor's tangent frame. Same region and
   metric. Bar: **<= 0.05**.
 * **D4 nothing changes without decals.** gfxtest goldens > 40 dB and `webgputest.mjs` 0
-  failures; a new `scene_decal` (the e2 scene with one colour decal on the floor) must
+  failures; a new `scene_decal` (the e2 scene with one color decal on the floor) must
   match native under webgputest's usual bar.
 * **Must-fail control.** Decals off must fail D1.
 * Reported, no bar: GPU time of the decal pass at 1280 x 720 with 1, 16 and 64 decals
   over the view.
+
+### Decal results (2026-11-09, RX 9060 XT, RADV; full gfxtest ok)
+
+| check | result | bar |
+| --- | --- | --- |
+| D1 color decal | 0.0023 (worst pixel 0.046) | <= 0.04: PASS |
+| D2 outside the box | 0, bit for bit over 204,514 pixels | == 0: PASS |
+| D3 normal decal | 0.0008 (worst pixel 0.0066) | <= 0.05: PASS |
+| must-fail control, decals off | 0.2842 | fails D1, as required |
+| D4 | goldens 44.92 / 41.7 dB; `wgsltest.mjs` 62 modules, 53 pipelines, 0 failures; `webgputest.mjs` 13 scenes, 0 failures, `scene_decal` identical to native | PASS |
+
+The D1 and D3 region holds 22,587 pixels. The normal decal moves the image by 0.068
+(plain floor against its reference), so D3's match is about 85 times tighter than the
+effect it measures. The comparison image is `decal_cmp.ppm` in the gfxtest output folder
+(rows: color, normal; decal, reference, signed error). Frame time at 1280 x 720 with the
+decals in a grid over the floor (wall clock, best of 2 x 60 frames, GPU shared with other
+jobs; reported): 0 decals 1.29 ms, 1 decal +0.06 ms, 16 +0.14 ms, 64 +0.31 ms. At 64 the
+boxes overlap so most floor pixels sit inside about 14 of them. The same run passed T7
+(TSR resolve GPU p95 0.448 ms, bar < 0.5 ms).
 
 ### Motion blur and depth of field results (2026-11-02, RX 9060 XT, RADV)
 
@@ -1357,7 +1415,12 @@ pass-through mean error is 0.0106 % (max 0.0488 %).
   camera, takes about 2 s at 60 fps to build up several bounces, and costs about as
   much as the rest of a simple frame at 1280 x 720: the Hi-Z walk picks its level
   with a branch over eight textures, which diverges across a wave.
-* Not built: alpha to coverage, decals, rectangular area
+* Decals: every opaque pixel tests every decal's box (no clustering yet; 64 heavily
+  overlapping decals add about 0.3 ms at 1280 x 720). Images are resampled into the
+  1024 x 1024 array layers, so finer detail is lost. The depth prepass, SSAO, SSR and
+  SSGI see the surface's own normal, not the decal's. Transparent and unlit surfaces take
+  none, and decals cannot glow.
+* Not built: alpha to coverage, rectangular area
   lights (spot and sphere stand in), physical light falloff parity with three.js,
   rain and snow particles, caustics, mip bias for upscaling, BC, KTX2, WebP, meshopt
   and Draco, texture and mesh streaming, GPU instancing, motion vectors for morph

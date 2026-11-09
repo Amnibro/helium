@@ -21,7 +21,7 @@ fn main() {
 	let w = num(arg_of(3)[..]) as int;
 	let h = num(arg_of(4)[..]) as int;
 	if !gfx::open_headless(w, h) { print("scene_frame: no device: ", gfx::error()[..]); return; }
-	let floor = s3d::add(shapes::plane(4.0, shapes::material(linalg::v3(0.55, 0.55, 0.52), 0.0, if arg_count() > 13 && (arg_of(13)[..] == "e2" || arg_of(13)[..] == "probe") { 0.17 } else { 0.8 })));
+	let floor = s3d::add(shapes::plane(4.0, shapes::material(linalg::v3(0.55, 0.55, 0.52), 0.0, if arg_count() > 13 && (arg_of(13)[..] == "e2" || arg_of(13)[..] == "probe" || arg_of(13)[..] == "decal") { 0.17 } else { 0.8 })));
 	s3d::place(floor, gfx::mat4_identity);
 	let it = s3d::add(a);
 	s3d::place(it, gfx::mat4_identity);
@@ -32,10 +32,23 @@ fn main() {
 	let gi = arg_count() > 13 && arg_of(13)[..] == "1";
 	let e3 = arg_count() > 13 && arg_of(13)[..] == "e3";
 	let e8 = arg_count() > 13 && arg_of(13)[..] == "e8";
-	let e2 = arg_count() > 13 && arg_of(13)[..] == "e2";
+	let e2 = arg_count() > 13 && (arg_of(13)[..] == "e2" || arg_of(13)[..] == "decal");
 	if e2 { s3d::ssr_on = true; s3d::ao_mode = 1; }
 	let sg = arg_count() > 13 && arg_of(13)[..] == "ssgi";
 	if sg { s3d::ssgi_on = true; }
+	if arg_count() > 13 && arg_of(13)[..] == "decal" {
+		var px byte[>..] = [];
+		for k in 64 * 64 {
+			let x = (k % 64) as f32 - 31.5;
+			let y = (k / 64) as f32 - 31.5;
+			let r = sqrt((x * x + y * y) as real) as f32;
+			px.push((if r < 14.0 { 30 } else { 220 }) as byte);
+			px.push((if r < 14.0 { 60 } else { 120 }) as byte);
+			px.push((if r < 14.0 { 160 } else { 40 }) as byte);
+			px.push(clamp((30.0 - r) * 64.0, 0.0, 255.0) as int as byte);
+		}
+		let _ = s3d::add_decal(s3d::Decal { pos: float3 { 0.5, 0.0, 1.0 }, rot: linalg::qaxis(float3 { 0.0, 1.0, 0.0 }, 0.5), size: float3 { 1.2, 0.6, 1.2 }, base: gltf::add_texture_rgba(px[..], 64, 64, 33071), rough: 0.8, .. });
+	}
 	if arg_count() > 13 && arg_of(13)[..] == "probe" { s3d::add_probe(float3 { 0.0, 1.0, 0.0 }, float3 { -2.0, 0.0, -2.0 }, float3 { 2.0, 2.5, 2.0 }, 0.5); }
 	if e8 {
 		s3d::look.auto_exposure = true; s3d::look.lut = 1.0; s3d::motion_blur = 0.5; s3d::dof_aperture = 0.08;
