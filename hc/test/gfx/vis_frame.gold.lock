@@ -18,16 +18,16 @@ fn arg_of(i int) byte[>..] {
 	for a, k in args() { if k == i { out.append(a); } }
 	out
 }
-=== 7c9bca1346775195
+=== 366f92b0f1be953b
 fn main() {
 	if arg_count() - 1 < 11 {
-		print("usage: vis_frame model.glb out.png width height eyex eyey eyez tx ty tz fov_y [features]");
+		print("usage: vis_frame model.glb out.png width height eye_x eye_y eye_z target_x target_y target_z fov_y [features]");
 		return;
 	}
 	let path = arg_of(1);
 	let outp = arg_of(2);
-	let w, okw = parse_int(arg_of(3));
-	let h, okh = parse_int(arg_of(4));
+	let w, wok = parse_int(arg_of(3));
+	let h, hok = parse_int(arg_of(4));
 	let ex = num(arg_of(5));
 	let ey = num(arg_of(6));
 	let ez = num(arg_of(7));
@@ -43,65 +43,87 @@ fn main() {
 	}
 	gfx::open_headless(w, h);
 	s3d::place(s3d::add(id), gfx::mat4_identity);
-	let ddx = (ex - tx) as real;
-	let ddy = (ey - ty) as real;
-	let ddz = (ez - tz) as real;
-	let d = sqrt(ddx * ddx + ddy * ddy + ddz * ddz);
-	s3d::view = s3d::Camera { eye: float3 { ex, ey, ez }, target: float3 { tx, ty, tz }, up: float3 { 0.0, 1.0, 0.0 }, fov_y: fov, near: (d * 0.01) as f32, far: (d * 10.0) as f32, .. };
+	let dx = (ex - tx) as real;
+	let dy = (ey - ty) as real;
+	let dz = (ez - tz) as real;
+	let d real = sqrt(dx * dx + dy * dy + dz * dz);
+	let df = d as f32;
+	s3d::view = s3d::Camera { eye: float3 { ex, ey, ez }, target: float3 { tx, ty, tz }, up: float3 { 0.0, 1.0, 0.0 }, fov_y: fov, near: df * 0.01, far: df * 10.0, .. };
 	s3d::sun.shadows = false;
 	s3d::sun.rgb = float3 { 0.0, 0.0, 0.0 };
-	s3d::sky = s3d::Sky { zenith: float3 { 0.5, 0.5, 0.5 }, horizon: float3 { 0.5, 0.5, 0.5 }, ground: float3 { 0.5, 0.5, 0.5 }, ambient: 1.0, draw: true, .. };
+	let g = float3 { 0.5, 0.5, 0.5 };
+	s3d::sky = s3d::Sky { zenith: g, horizon: g, ground: g, ambient: 1.0, draw: true, .. };
 	s3d::look.curve = 1;
 	s3d::look.bloom = 0.0;
 	s3d::look.ssao = false;
 	if arg_count() - 1 >= 12 {
 		let feats = arg_of(12);
-		for word in split(feats, ',') {
-			if starts_with(word, "env=") {
-				let p = word[4..];
+		let parts = split(feats, ',');
+		for wd in parts {
+			if starts_with(wd, "env=") {
+				let p = wd[4..];
 				if !envmap::load(p) { print(p); }
 				s3d::sky.draw = true;
-			} else if starts_with(word, "dbg=") {
-				let n, ok = parse_int(word[4..]);
+			} else if starts_with(wd, "dbg=") {
+				let n, ok = parse_int(wd[4..]);
 				s3d::debug_view = n;
-			} else if starts_with(word, "curve=") {
-				let n, ok = parse_int(word[6..]);
-				s3d::look.curve = n as i32;
-			} else if starts_with(word, "vignette=") {
-				s3d::look.vignette = num(word[9..]);
-			} else if starts_with(word, "chroma=") {
-				s3d::look.chroma = num(word[7..]);
-			} else if starts_with(word, "grain=") {
-				s3d::look.grain = num(word[6..]);
-			} else if starts_with(word, "sharpen=") {
-				s3d::look.sharpen = num(word[8..]);
-			} else if starts_with(word, "sky=") {
-				let parts = split(word[4..], ':');
-				let e, oke = parse_flt(parts[0]);
-				let a, oka = parse_flt(parts[1]);
-				let er = e * PI / 180.0;
-				let ar = a * PI / 180.0;
-				let dir = float3 { (cos(er) * cos(ar)) as f32, sin(er) as f32, (cos(er) * sin(ar)) as f32 };
-				s3d::atmosphere(dir, num(parts[2]), num(parts[3]), num(parts[4]));
-			} else if starts_with(word, "wet=") {
-				s3d::wet = num(word[4..]);
-			} else if starts_with(word, "snow=") {
-				s3d::snow = num(word[5..]);
-			} else if word == "nosky" {
+			} else if starts_with(wd, "curve=") {
+				let n, ok = parse_int(wd[6..]);
+				s3d::look.curve = n;
+			} else if starts_with(wd, "vignette=") {
+				s3d::look.vignette = num(wd[9..]);
+			} else if starts_with(wd, "chroma=") {
+				s3d::look.chroma = num(wd[7..]);
+			} else if starts_with(wd, "grain=") {
+				s3d::look.grain = num(wd[6..]);
+			} else if starts_with(wd, "sharpen=") {
+				s3d::look.sharpen = num(wd[8..]);
+			} else if starts_with(wd, "sky=") {
+				let vals = split(wd[4..], ':');
+				var e f32 = 0.0;
+				var a f32 = 0.0;
+				var power f32 = 0.0;
+				var haze f32 = 0.0;
+				var clouds f32 = 0.0;
+				for v, k in vals {
+					if k == 0 { e = num(v); }
+					else if k == 1 { a = num(v); }
+					else if k == 2 { power = num(v); }
+					else if k == 3 { haze = num(v); }
+					else if k == 4 { clouds = num(v); }
+				}
+				let er real = (e as real) * PI / 180.0;
+				let ar real = (a as real) * PI / 180.0;
+				s3d::atmosphere(float3 { (cos(er) * cos(ar)) as f32, sin(er) as f32, (cos(er) * sin(ar)) as f32 }, power, haze, clouds);
+			} else if starts_with(wd, "wet=") {
+				s3d::wet = num(wd[4..]);
+			} else if starts_with(wd, "snow=") {
+				s3d::snow = num(wd[5..]);
+			} else if starts_with(wd, "time=") {
+				s3d::world_time = num(wd[5..]);
+			} else if wd == "nosky" {
 				s3d::sky.draw = false;
-			} else if starts_with(word, "sun=") {
-				let r = num(word[4..]);
+			} else if starts_with(wd, "sun=") {
+				let r = num(wd[4..]);
 				s3d::sun.rgb = float3 { r, r, r };
 				s3d::sun.shadows = true;
-				s3d::sun.shadow_far = (3.0 * d) as f32;
-			} else if starts_with(word, "lights=") {
-				let cnt, okc = parse_int(word[7..]);
-				for i in cnt {
-					let k = i as real;
-					let p = float3 { (tx as real + d * 0.5 * sin(k * 12.9898)) as f32, (ty as real + d * 0.5 * sin(k * 78.233)) as f32, (tz as real + d * 0.5 * sin(k * 37.719)) as f32 };
-					let sc = d * d * 0.05;
-					let c = float3 { ((0.5 + 0.5 * sin(k * 1.7)) * sc) as f32, ((0.5 + 0.5 * sin(k * 2.9)) * sc) as f32, ((0.5 + 0.5 * sin(k * 4.3)) * sc) as f32 };
-					s3d::lights.push(s3d::Light { pos: p, range: (0.35 * d) as f32, rgb: c, kind: 0, radius: (0.02 * d) as f32, .. });
+				s3d::sun.shadow_far = 3.0 * df;
+			} else if starts_with(wd, "lights=") {
+				let cnt, ok = parse_int(wd[7..]);
+				for ki in cnt {
+					let k real = ki as real;
+					let p = float3 {
+						tx + (d * (0.5 * sin(k * 12.9898))) as f32,
+						ty + (d * (0.5 * sin(k * 78.233))) as f32,
+						tz + (d * (0.5 * sin(k * 37.719))) as f32
+					};
+					let s = d * d * 0.05;
+					let c = float3 {
+						((0.5 + 0.5 * sin(k * 1.7)) * s) as f32,
+						((0.5 + 0.5 * sin(k * 2.9)) * s) as f32,
+						((0.5 + 0.5 * sin(k * 4.3)) * s) as f32
+					};
+					s3d::lights.push(s3d::Light { pos: p, range: 0.35 * df, rgb: c, kind: 0, radius: 0.02 * df, .. });
 				}
 			}
 		}

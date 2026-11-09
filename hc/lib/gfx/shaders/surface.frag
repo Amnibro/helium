@@ -97,7 +97,25 @@ layout(set = 3, binding = 1) uniform Surface {
 
 layout(location = 0) out vec4 out_rgba;
 
-vec2 pick_uv(float set) { return set > 0.5 ? in_uv.zw : in_uv.xy; }
+vec2 pom_off = vec2(0.0);
+vec2 pick_uv(float set) { return (set > 0.5 ? in_uv.zw : in_uv.xy) + pom_off; }
+vec2 water_grad(vec2 p, float tm) {
+	vec2 g = vec2(0.0);
+	vec2 q = p;
+	float f = shade_b.x;
+	float a = shade_b.y;
+	float ang = 0.7;
+	for (int i = 0; i < 11; i++) {
+		vec2 d = vec2(cos(ang), sin(ang));
+		float ph = dot(q, d) * f + tm * sqrt(9.81 * f) * shade_b.z;
+		g += d * a * cos(ph);
+		q += d * sin(ph) * a / f * 0.5;
+		f *= 1.31;
+		a *= 0.87;
+		ang += 2.4;
+	}
+	return g;
+}
 #include "ext.glsl"
 vec3 sheen_term(vec3 n, vec3 v, vec3 l, vec3 e) { return sheen_lobe(n, v, l, e, sheen.rgb, sheen.a); }
 float sheen_keep() { return 1.0 - max(max(sheen.r, sheen.g), sheen.b) * 0.17; }
@@ -415,6 +433,35 @@ void main() {
 	float cst = eye.w > 1.5 ? texture(tex_ao, gl_FragCoord.xy * screen.xy).g : 1.0;
 	if (misc.x > 0.0) { out_rgba = vec4(0.0, 0.0, 0.0, misc.x * (1.0 - sun_visibility(in_world, normalize(in_nrm)) * cst)); return; }
 	int model = int(misc.y + 0.5);
+	bool is_water = model == 4;
+	if (is_water) model = 0;
+	if (misc.z > 0.5 && x_to[12].z >= 0.0 && x_ior.z > 0.0 && abs(in_tan.w) > 0.5) {
+		vec3 nw = normalize(in_nrm);
+		vec3 vw = normalize(eye.xyz - in_world);
+		vec3 tw0 = normalize(in_tan.xyz - nw * dot(nw, in_tan.xyz));
+		vec3 bw0 = cross(nw, tw0) * in_tan.w;
+		vec3 vt = vec3(dot(vw, tw0), dot(vw, bw0), max(dot(vw, nw), 0.08));
+		vec2 u0 = pick_uv(x_to[12].w);
+		vec2 uh = vec2(dot(x_tm[12].xy, u0) + x_to[12].x, dot(x_tm[12].zw, u0) + x_to[12].y);
+		float hlod = max(log2(max(length(fwidth(uh)) * float(textureSize(tex_ext_l, 0).x), 1.0)), 0.0);
+		int st = int(mix(40.0, 10.0, vt.z));
+		float ds = 1.0 / float(st);
+		vec2 du = vec2(-vt.x, vt.y) / vt.z * x_ior.z * ds;
+		vec2 off = vec2(0.0);
+		float dep = 0.0;
+		float hd = 1.0 - textureLod(tex_ext_l, vec3(uh, x_to[12].z), hlod).r;
+		float pd = hd;
+		for (int i = 0; i < st; i++) {
+			if (dep >= hd) break;
+			off += du;
+			dep += ds;
+			pd = hd;
+			hd = 1.0 - textureLod(tex_ext_l, vec3(uh + off, x_to[12].z), hlod).r;
+		}
+		float ga = hd - dep;
+		float gb = pd - (dep - ds);
+		pom_off = off - du * clamp(ga / min(ga - gb, -1e-5), 0.0, 1.0);
+	}
 	vec2 buv = xuv(uv_sets.x, xm_base, xo0.xy);
 	if (model == 2) buv = eye_uv(buv, normalize(eye.xyz - in_world), normalize(in_nrm));
 	vec4 tint = base * in_col * texture(tex_base, buv);
@@ -463,6 +510,12 @@ void main() {
 		t = tu - n * dot(n, tu);
 		t = dot(t, t) > 1e-16 ? normalize(t) : normalize(cross(abs(n.y) < 0.99 ? vec3(0.0, 1.0, 0.0) : vec3(1.0, 0.0, 0.0), n));
 		b = cross(n, t) * (dot(cross(n, t), -bv) < 0.0 ? -1.0 : 1.0);
+	}
+	if (is_water) {
+		vec2 wg = water_grad(in_world.xz, cluster.w);
+		n = normalize(n + vec3(-wg.x, 0.0, -wg.y));
+		t = normalize(t - n * dot(n, t));
+		b = cross(n, t) * (dot(cross(n, t), b) < 0.0 ? -1.0 : 1.0);
 	}
 	vec3 n0 = n;
 	vec3 tn = texture(tex_normal, uvn).xyz * 2.0 - 1.0;
@@ -627,11 +680,29 @@ void main() {
 	bool use_gi = gi.x > 0.5;
 	vec3 gi_irr = use_gi ? gi_irradiance(in_world, n, v, gi_origin, gi_step, gi_dims) : vec3(0.0);
 	float dao = use_gi ? (gi.z > 0.5 ? occ : 1.0) : occ;
+	float wdz = 0.0;
+	if (is_water) {
+		vec4 wc = vp * vec4(in_world, 1.0);
+		vec2 wuv = vec2(wc.x / wc.w * 0.5 + 0.5, 0.5 - wc.y / wc.w * 0.5);
+		float zw = dot(in_world - eye.xyz, view_dir.xyz);
+		float zs = textureLod(tex_trans, clamp(wuv + n.xz * 0.02, vec2(0.0), vec2(1.0)), 0.0).a;
+		wdz = zs > 0.0 ? max(zs - zw, 0.0) : 7.0;
+		x.thick = min(wdz, 2.0);
+		tint.rgb = exp(-shade_a.rgb * max(wdz, 0.02));
+	}
 	vec4 sr = refl.x > 0.5 && alpha.x < 1.5 && x.trans <= 0.0 ? texelFetch(tex_ssr, ivec2(gl_FragCoord.xy), 0) : vec4(0.0);
 	vec3 ambient = env.x > 0.5 || misc.z > 0.5 ? ambient_env(n, v, tint.rgb, albedo, f0, rough, eb, ms, kd, gi_irr, use_gi, gn, vec3(dao, aos, occm), sr, q, x) : ambient_light(n, v, l, tint.rgb, metal, rough, gi_irr, use_gi, gn, vec3(dao, aos, occm), dao, sr, q) * (use_gi ? 1.0 : screen.w);
 	rgb += ambient;
 
 	rgb += emissive.rgb * texture(tex_emissive, xuv(uv_sets2.x, xm_emi, xo2.xy)).rgb;
+	if (is_water) {
+		vec3 sky_i = env.x > 0.5 ? textureLod(tex_env, env_dir(vec3(0.0, 1.0, 0.0)), env.w).rgb * env.y : sky_color(vec3(0.0, 1.0, 0.0), normalize(to_sun.xyz), zenith.rgb, horizon.rgb, ground.rgb, vec3(0.0));
+		vec3 lit = sky_i + sun_rgb.rgb * max(to_sun.y, 0.0) * 0.318309886;
+		rgb += shade_c.rgb * (vec3(1.0) - tint.rgb) * lit;
+		float nz = water_grad(in_world.xz * 3.1, cluster.w * 0.7).x * 7.0 + 0.5;
+		float foam = shade_b.w * smoothstep(0.32, 0.0, wdz + 0.14 * nz);
+		rgb = mix(rgb, vec3(0.87) * lit, clamp(foam, 0.0, 1.0));
+	}
 	out_rgba = vec4(rgb, alpha.x > 1.5 ? tint.a : 1.0);
 
 	int dbg = int(uv_sets2.y + 0.5);

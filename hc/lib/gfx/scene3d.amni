@@ -213,6 +213,7 @@ var pipe_lit gfx::Pipeline;
 var pipe_lit_two gfx::Pipeline;     // double sided
 var pipe_blend gfx::Pipeline;
 var pipe_blend_back gfx::Pipeline;
+var pipe_trans_copy gfx::Pipeline;
 var pipe_shadow gfx::Pipeline;
 var pipe_normals gfx::Pipeline;
 var pipe_normals_two gfx::Pipeline;
@@ -283,6 +284,7 @@ var smp_shadow gfx::Sampler;
 var smp_cache gfx::Sampler[>..] = [];
 var spec_aa = true;
 var wet f32 = 0.0;
+var world_time f32 = 0.0;
 var snow f32 = 0.0;
 var light_data float4[>..] = [];
 var light_xr float4[>..] = [];
@@ -306,7 +308,6 @@ var trans_tex gfx::Texture;
 var trans_w = 0;
 var trans_h = 0;
 var smp_trans gfx::Sampler;
-var pipe_trans_copy gfx::Pipeline;
 var tex_srgb gfx::Texture[>..] = [];
 var tex_linear gfx::Texture[>..] = [];
 var vbuf gfx::Buffer;
@@ -610,6 +611,7 @@ fn init(w int, h int, ow int, oh int) bool {
 	smp_ext = gfx::sampler(gfx::SamplerDesc { min_filter: gfx::LINEAR, mag_filter: gfx::LINEAR, mip_filter: gfx::LINEAR, wrap_u: gfx::REPEAT, wrap_v: gfx::REPEAT, wrap_w: gfx::CLAMP, max_anisotropy: 8.0 });
 	smp_trans = gfx::sampler(gfx::SamplerDesc { min_filter: gfx::LINEAR, mag_filter: gfx::LINEAR, mip_filter: gfx::LINEAR, wrap_u: gfx::CLAMP, wrap_v: gfx::CLAMP, wrap_w: gfx::CLAMP });
 	pipe_ext_copy = gfx::pipeline(scr, embed_shader("shaders/ext_copy.frag"));
+	pipe_trans_copy = gfx::pipeline(embed_shader("shaders/screen.vert"), embed_shader("shaders/trans_copy.frag"));
 	white = pixel_texture([255, 255, 255, 255], gfx::RGBA8);
 	flat_normal = pixel_texture([128, 128, 255, 255], gfx::RGBA8);
 	make_targets(w, h, ow, oh);
@@ -738,7 +740,7 @@ fn ext_set(u ExtU&, i int, r gltf::TexRef, s int) {
 }
 fn ext_of(m gltf::Material) ExtU {
 	var u ExtU;
-	u.ior = f4(m.ior, m.spec_f, 0.0, 0.0);
+	u.ior = f4(m.ior, m.spec_f, m.height_scale, 0.0);
 	u.spec = x4(m.spec_c, 0.0);
 	u.coat = f4(m.coat, m.coat_r, m.coat_ns, 0.0);
 	u.trans = f4(m.trans, m.thick, m.att_d, 0.0);
@@ -746,7 +748,7 @@ fn ext_of(m gltf::Material) ExtU {
 	u.aniso = f4(m.aniso, linalg::f(cos(m.aniso_rot as real)), linalg::f(sin(m.aniso_rot as real)), 0.0);
 	u.irid = f4(m.irid, m.irid_ior, m.irid_min, m.irid_max);
 	ext_set(u, 0, m.spec_tex, 0); ext_set(u, 1, m.spec_c_tex, 1); ext_set(u, 2, m.coat_tex, 0); ext_set(u, 3, m.coat_r_tex, 0); ext_set(u, 4, m.coat_n_tex, 0); ext_set(u, 5, m.trans_tex, 0); ext_set(u, 6, m.thick_tex, 0);
-	ext_set(u, 7, m.aniso_tex, 0); ext_set(u, 8, m.irid_tex, 0); ext_set(u, 9, m.irid_t_tex, 0); ext_set(u, 10, m.sheen_c_tex, 1); ext_set(u, 11, m.sheen_r_tex, 0);
+	ext_set(u, 7, m.aniso_tex, 0); ext_set(u, 8, m.irid_tex, 0); ext_set(u, 9, m.irid_t_tex, 0); ext_set(u, 10, m.sheen_c_tex, 1); ext_set(u, 11, m.sheen_r_tex, 0); ext_set(u, 12, m.height_tex, 0);
 	u
 }
 // Textures are created on first use; uploads must happen outside render passes,
@@ -765,7 +767,7 @@ fn warm_textures() {
 		ext_need(m.detail, 0);
 		if m.ext {
 			ext_need(m.spec_tex, 0); ext_need(m.spec_c_tex, 1); ext_need(m.coat_tex, 0); ext_need(m.coat_r_tex, 0); ext_need(m.coat_n_tex, 0); ext_need(m.trans_tex, 0); ext_need(m.thick_tex, 0);
-			ext_need(m.aniso_tex, 0); ext_need(m.irid_tex, 0); ext_need(m.irid_t_tex, 0); ext_need(m.sheen_c_tex, 1); ext_need(m.sheen_r_tex, 0);
+			ext_need(m.aniso_tex, 0); ext_need(m.irid_tex, 0); ext_need(m.irid_t_tex, 0); ext_need(m.sheen_c_tex, 1); ext_need(m.sheen_r_tex, 0); ext_need(m.height_tex, 0);
 		}
 	}
 	ext_finish();
@@ -1114,7 +1116,7 @@ fn fill_frame() {
 	frame_u.env = f4(if !envmap::on { 0.0 } else if envmap::physical { 2.0 } else { 1.0 }, envmap::intensity, envmap::spec_lod(), envmap::irr_lod());
 	frame_u.env_rot = f4(linalg::f(cos(envmap::rotation as real)), linalg::f(sin(envmap::rotation as real)), envmap::blur * envmap::spec_lod(), if spec_aa { 1.0 } else { 0.0 });
 	frame_u.vp = view_proj;
-	frame_u.cluster = f4(clusters::CX as f32, clusters::CY as f32, clusters::CZ as f32, 0.0);
+	frame_u.cluster = f4(clusters::CX as f32, clusters::CY as f32, clusters::CZ as f32, world_time);
 	frame_u.cluster2 = f4(view.near, clusters::CZ as f32 / linalg::f(log((view.far / view.near) as real)), wet, snow);
 }
 // mean linear colour of an image, sampled on a sparse grid; the bounce albedo
@@ -1352,7 +1354,9 @@ fn ao_pass() {
 	let cs = contact_on();
 	bent_ran = false;
 	mt_ran = false;
-	if !look.ssao && !mv && !cs && !ssr_on && !fog_on && dof_aperture <= 0.0 && !(fx::ready() && fx::wants_depth()) { return; }
+	var water = false;
+	for b in batch { if b.trans && b.vis && material_of(b.prim).shading == 4 { water = true; } }
+	if !water && !look.ssao && !mv && !cs && !ssr_on && !fog_on && dof_aperture <= 0.0 && !(fx::ready() && fx::wants_depth()) { return; }
 	nd_ran = true;
 	let gia = gi_on && gi_ao && gi_built && gi_have;
 	let gt = look.ssao && (ao_mode == 1 || gia);
@@ -1536,8 +1540,9 @@ fn trans_capture() {
 		trans_h = height;
 	}
 	guard gfx::begin_pass(gfx::PassDesc { color: [trans_tex, none(), none(), none()], .. }) else { return; }
-	gfx::bind(pipe_ssr_copy);
+	gfx::bind(pipe_trans_copy);
 	gfx::bind_texture(gfx::FRAGMENT, 0, hdr, smp_linear);
+	gfx::bind_texture(gfx::FRAGMENT, 1, nd, smp_point);
 	gfx::draw(3);
 	gfx::end_pass();
 	gfx::generate_mips(trans_tex);
