@@ -833,6 +833,17 @@ probe at (0, 1.5, 0) whose box is the room interior, fade 0.25 m. Camera inside 
 * Reported, no bar: capture time for one probe at `probe_res` 256, frame time with the
   probe on and off.
 
+Added after the first run (R1 0.0304, R2 15.68 x, control 1.6734, all with a one-bounce
+capture), before the multi-bounce run. The first run's frames showed the floor reflecting
+walls brighter than the walls themselves: the probe lights the walls' diffuse inside its
+box, while the capture saw them lit by the sky. Captures now repeat `probe_bounces` times
+(default 3), each pass shaded with the previous one's probes. R1, R2 and the control run
+with `probe_bounces = 1`, as registered.
+* **R1b consistency at the default bounces.** Reference: the mirrored camera with the
+  probe on (floor hidden, probe not recaptured). Same region and metric. Bar: **<= 0.15**.
+* **R4 bounces earn their place.** The R1b metric with `probe_bounces = 1` must be
+  **>= 1.5 x** the default's.
+
 ### Motion blur and depth of field results (2026-11-02, RX 9060 XT, RADV)
 
 Both are off by default (`motion_blur = 0`, `dof_aperture = 0`) and run as one HDR pass each
