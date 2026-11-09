@@ -1148,6 +1148,41 @@ brightness profile is sampled the most coarsely of the four.
 Reported: 1280 x 720 frame 2.78 ms without weather and 3.50 ms with 40 000 drops of rain
 (+0.72 ms: height map, simulation and streaks), wall clock, best of 2 x 60 frames.
 
+### Pre-registered bars (rect area lights, E4)
+
+Written before the first GPU run of the rect-light checks (`rect_checks` in
+`gfx_smoke.amni`). Scene: a 40 x 40 m floor with its top at y = 0, camera at (0, 1.6, 5)
+looking at (0, 0, -1), fov 0.75, 960 x 540, black sky, no sun, no ambient, every screen
+effect off. One light at a time, range 1000 m:
+* L1: 2 x 1 m facing straight down at (0, 2, -1), long side along x.
+* L2: 1 x 1 m at (0, 1.5, -3), tilted 45 degrees to face the camera side.
+* L3: 1 x 1 m standing upright through the floor at (-1.5, 0.3, -1), facing +x, so its
+  lower 0.2 m is below the floor.
+* L4: 0.25 x 0.25 m facing down at (0.5, 1, 0).
+
+Materials: white metal (F = 1) at roughness 0.1, 0.2, 0.35, 0.5, 0.75 and 1, and a
+dielectric at roughness 0.5 and 1 rendered twice, with albedo 0.8 and with albedo 0.
+Pixels are sampled on a grid every 40 px. The reference for a pixel is a CPU brute-force
+integral over the light's surface of the shader's own lighting for that pixel's floor
+point and view: GGX, Smith with Schlick-GGX, Schlick Fresnel, and the multiple-scatter
+factor and diffuse weight replayed from the LUT the way N3 does. It uses 600 x 600
+samples for roughness <= 0.2 and 300 x 300 otherwise, times the range window. A pixel is
+kept when its reference is at least 5 % of the render's highest reference.
+* **R1 diffuse.** The dielectric's albedo 0.8 render minus its albedo 0 render (the
+  specular cancels exactly), all four lights: every kept pixel within **+-2 %**. Control:
+  the light treated as one point at its center sending I cos(theta) must fail R1.
+* **R2 specular.** The six metals and the dielectric's albedo 0 renders, all four lights:
+  every kept pixel within **+-10 %**, and at least **95 %** of kept pixels within
+  **+-5 %**. Control: the light's half-vector region taken as one straight-edged polygon
+  (no sub-rects, no edge tessellation) must fail R2.
+* **R3 one-sided.** L3 with the roughness 0.5 metal and with the albedo 0.8 dielectric:
+  every sampled floor pixel behind the light's plane (x < -1.501) reads **exactly 0**.
+* **R4 nothing else changes.** gfxtest goldens > 40 dB and every existing check passes;
+  `wgsltest.mjs` and `webgputest.mjs` 0 failures, with a new `scene_rect` (one rect light
+  over the e2 scene) matching native under webgputest's usual bar.
+* Reported, no bar: frame time at 1280 x 720 with one rect light and with one point
+  light in the same place.
+
 ### Motion blur and depth of field results (2026-11-02, RX 9060 XT, RADV)
 
 Both are off by default (`motion_blur = 0`, `dof_aperture = 0`) and run as one HDR pass each
