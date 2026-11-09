@@ -472,6 +472,61 @@ s3d::lights.push(s3d::Light { pos: float3 { 0.0, 2.0, 0.0 }, range: 6.0, rgb: fl
   The default (`falloff = 0`) stays `(1 - d^2 / range^2)^2 / (1 + d^2)`, which is softer
   up close.
 
+### Instancing, grass and wind (E24)
+
+```
+let grass = shapes::blade(0.5, 0.03, 0.0, 3, shapes::material(linalg::v3(0.25, 0.55, 0.2), 0.0, 0.7));
+let set = s3d::add_instances(grass, mats[..]);
+s3d::instances[set].sway = 1.0;
+s3d::instances[set].lod_asset = low_grass;
+s3d::instances[set].lod_distance = 15.0;
+s3d::wind = s3d::Wind { dir: float3 { 1.0, 0.0, 0.3 }, strength: 0.2, speed: 2.0, time: now };
+s3d::pushers.push(float4 { player.x, player.y, player.z, 0.5 });
+```
+
+* **Many copies in one draw.** `s3d::add_instances(asset, mats)` draws one copy of the
+  asset per matrix and returns the set's index. Each primitive of the asset is one draw
+  call for the whole set, in every pass (shadows, depth, color, motion). Copies are lit,
+  shadowed and fogged like items. `s3d::set_instance(set, k, m)` moves one copy,
+  `s3d::instances[set].visible = false` hides the set, `s3d::clear_instances()` removes
+  every set. Skinned assets cannot be instanced; use items for those.
+* **Culling.** Every frame each copy is tested on the CPU against the camera's six
+  planes with a sphere around it (the asset's box, scaled by the copy's largest axis
+  scale). A copy wholly behind one plane is not drawn in the camera passes. Shadow
+  passes draw every copy, so a copy behind the camera still casts its shadow.
+  `s3d::instance_cull = false` turns the test off. For a set that sways, the sphere
+  grows by `1 + 2 * sway * wind.strength`, plus the largest pusher radius.
+  `s3d::instance_drawn(set, level)` gives the number of copies drawn last frame,
+  `s3d::instance_list(set, level)` their indices and `s3d::instance_triangles(set)` the
+  triangles sent.
+* **Two levels of detail.** With `lod_asset` set, a copy whose sphere center is
+  `lod_distance` meters or more from the eye is drawn with that asset instead. Both
+  assets should have the same size and node layout.
+* **Wind.** `sway` above 0 bends the copies in the wind, in the vertex stage, so it
+  costs no CPU time per copy. With `o` the copy's origin, `H` the asset's top (its
+  highest y at rest) times the copy's y scale, and `t = sat((y - o.y) / H)` for a
+  vertex at world height `y`:
+
+  `offset = wind_dir * strength * (0.6 + 0.4 * sin(time * speed + 0.7 * (o.x + o.z))) * t^2 * sway * H`
+
+  `wind_dir` is `wind.dir` flattened to the ground and normalized. The base stays put
+  and the tip moves most; each copy is out of step with its neighbors by its place.
+  Advance `s3d::wind.time` yourself (in seconds). Motion vectors follow the sway, so
+  TAA, upscaling and motion blur stay sharp. `s3d::sway(item, amount)` gives the same
+  sway to a single item.
+* **Pushing grass aside.** Each entry of `s3d::pushers` is a sphere (center and radius;
+  the first 4 are used). For a vertex of a swaying copy, take the point `a` on the
+  copy's upright axis at the vertex's height. When `a` is inside a sphere, at distance
+  `l` from its center, the vertex also moves by
+
+  `offset = away * (radius - l) * t^2 * min(sway, 1)`
+
+  where `away` is the level direction from the sphere's center to `a`. Clear and
+  refill `s3d::pushers` each frame as things move.
+* **`shapes::blade(height, width, tip, segments, material)`** makes one blade of grass:
+  a two-sided strip standing on the ground, `width` wide at the base and `tip` wide at
+  the top.
+
 ## Materials, light and finish
 
 `gltf` reads the core metal-rough model plus `KHR_materials_clearcoat`, `sheen`,

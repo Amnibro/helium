@@ -3818,6 +3818,273 @@ fn small_checks() bool {
 	if !(a && b && c && d) { print("gpu: small FAILED"); }
 	a && b && c && d
 }
+var IN_M gfx::mat4[>..] = [];
+var IN_SET int = 0;
+var IN_OUT gfx::Texture;
+fn ih(k int) f32 {
+	var x = (k * 1103515245 + 12345) & 2147483647;
+	x = (x * 1103515245 + 12345) & 2147483647;
+	((x >> 12) & 65535) as f32 / 65536.0
+}
+fn im_at(x f32, y f32, z f32, a f32, s f32, sy f32) gfx::mat4 {
+	let c = cos(a as real) as f32;
+	let sn = sin(a as real) as f32;
+	gfx::mat4 { c0: float4 { s * c, 0.0, -s * sn, 0.0 }, c1: float4 { 0.0, sy, 0.0, 0.0 }, c2: float4 { s * sn, 0.0, s * c, 0.0 }, c3: float4 { x, y, z, 1.0 } }
+}
+fn in_field(n int, cols int, sx f32, sz f32, x0 f32, z0 f32, r f32) gfx::mat4[>..] {
+	var m gfx::mat4[>..] = [];
+	for k in n {
+		let s = 0.7 + 0.6 * ih(k * 4 + 2);
+		let sy = s * (0.7 + 0.6 * ih(k * 4 + 3));
+		m.push(im_at(x0 + ((k % cols) as f32 + 0.15 + 0.7 * ih(k * 4)) * sx, r * sy, z0 + ((k / cols) as f32 + 0.15 + 0.7 * ih(k * 4 + 1)) * sz, 7.0 * ih(k * 4 + 5), s, sy));
+	}
+	m
+}
+fn in_scene(w int, h int, eye float3, target float3, fov f32, far f32) {
+	reset_scene();
+	s3d::sky = DEF_SKY; s3d::sun = DEF_SUN; s3d::look = DEF_LOOK;
+	s3d::sun.to_sun = float3 { 0.5, 0.8, 0.3 }; s3d::sun.rgb = float3 { 3.0, 2.85, 2.6 }; s3d::sun.shadows = true; s3d::sun.shadow_far = far;
+	s3d::look.ssao = true; s3d::temporal = 0; s3d::ssr_on = false; s3d::ssgi_on = false; s3d::gi_on = false; s3d::motion_vectors = false;
+	s3d::wind = s3d::Wind { dir: float3 { 1.0, 0.0, 0.0 }, strength: 0.0, speed: 1.0, time: 0.0 };
+	s3d::instance_cull = true;
+	s3d::place(s3d::add(shapes::cube(float3 { 60.0, 0.1, 60.0 }, shapes::material(linalg::v3(0.5, 0.5, 0.45), 0.0, 0.8))), gfx::translate(float3 { 0.0, -0.1, 0.0 }));
+	s3d::view = s3d::Camera { eye: eye, target: target, up: float3 { 0.0, 1.0, 0.0 }, fov_y: fov, near: 0.1, far: 200.0 };
+	s3d::init(w, h);
+}
+fn in_two(w int, h int) byte[>..] {
+	let out = gfx::render_target(w, h, gfx::RGBA8);
+	s3d::frames = 0;
+	s3d::render(out);
+	s3d::render(out);
+	let px = gfx::read_pixels(out);
+	gfx::release(out);
+	px
+}
+fn in_f1(inst bool) byte[>..] {
+	in_scene(640, 360, float3 { 0.0, 3.5, 6.0 }, float3 { 0.0, 0.0, 0.0 }, 0.75, 20.0);
+	let a = shapes::sphere(0.12, 16, 8, shapes::material(linalg::v3(0.8, 0.3, 0.2), 0.0, 0.5));
+	let m = in_field(512, 32, 0.3, 0.3, -4.8, -2.4, 0.12);
+	if inst { let _ = s3d::add_instances(a, m[..]); } else { for k in m.len { s3d::place(s3d::add(a), m[k]); } }
+	in_two(640, 360)
+}
+fn in_same() bool {
+	let a = in_f1(false);
+	let b = in_f1(true);
+	var worst = 0;
+	for i in a.len { worst = max(worst, abs(a[i] as int - b[i] as int)); }
+	let p = psnr(a[..], b[..]);
+	let ok = worst <= 2 && p >= 60.0;
+	print("gpu: inst F1 same picture: 512 copies as one instance set against 512 items, worst channel difference ", worst, " / 255 (bar 2), PSNR ", r2(p), " dB (bar 60)", if ok { "" } else { " FAILED" });
+	ok
+}
+fn in_f2(cull bool, lod bool) byte[>..] {
+	in_scene(640, 360, float3 { 0.0, 1.7, 0.0 }, float3 { 0.0, 1.0, -10.0 }, 0.9, 40.0);
+	s3d::look.ssao = false;
+	let m = shapes::material(linalg::v3(0.3, 0.6, 0.25), 0.0, 0.6);
+	let a = shapes::sphere(0.12, 16, 8, m);
+	let b = shapes::sphere(0.12, 8, 4, m);
+	IN_M = in_field(4096, 64, 0.9375, 0.9375, -30.0, -30.0, 0.12);
+	IN_SET = s3d::add_instances(a, IN_M[..]);
+	if lod { s3d::instances[IN_SET].lod_asset = b; s3d::instances[IN_SET].lod_distance = 15.0; }
+	s3d::instance_cull = cull;
+	let px = in_two(640, 360);
+	s3d::instance_cull = true;
+	px
+}
+fn in_cull() bool {
+	let a = in_f2(true, false);
+	let list = s3d::instance_list(IN_SET, 0);
+	var seen byte[>..] = [];
+	for k in IN_M.len { seen.push(0 as byte); }
+	for k in list { seen[k] = 1 as byte; }
+	var inside = 0;
+	var missed = 0;
+	for k in IN_M.len {
+		let u = to_uv(s3d::view_proj, float3 { IN_M[k].c3.x, IN_M[k].c3.y, IN_M[k].c3.z });
+		if u.z > 0.1 && u.x >= 0.0 && u.x <= 1.0 && u.y >= 0.0 && u.y <= 1.0 { inside += 1; if seen[k] == 0 { missed += 1; } }
+	}
+	let drawn = list.len;
+	let b = in_f2(false, false);
+	let all = s3d::instance_drawn(IN_SET, 0);
+	var worst = 0;
+	for i in a.len { worst = max(worst, abs(a[i] as int - b[i] as int)); }
+	let ok = missed == 0 && inside > 100 && drawn * 100 < 60 * IN_M.len && all == IN_M.len && worst == 0;
+	print("gpu: inst F2 culling: ", IN_M.len, " copies, ", inside, " with their center on screen, ", missed, " of those missed (bar 0), ", drawn, " drawn = ", r2(100.0 * drawn as real / IN_M.len as real), " % (bar < 60), ", all, " drawn with culling off, worst difference between the two images ", worst, " (bar 0)", if ok { "" } else { " FAILED" });
+	ok
+}
+fn in_lod() bool {
+	let px = in_f2(true, true);
+	let n0 = s3d::instance_drawn(IN_SET, 0);
+	let n1 = s3d::instance_drawn(IN_SET, 1);
+	let m = s3d::view_proj;
+	var pl real[24] = [0.0; 24];
+	for c in 4 {
+		let col = if c == 0 { m.c0 } else if c == 1 { m.c1 } else if c == 2 { m.c2 } else { m.c3 };
+		pl[c] = (col.w + col.x) as real; pl[4 + c] = (col.w - col.x) as real; pl[8 + c] = (col.w + col.y) as real; pl[12 + c] = (col.w - col.y) as real; pl[16 + c] = col.z as real; pl[20 + c] = (col.w - col.z) as real;
+	}
+	let pr = gltf::prims[gltf::meshes[gltf::nodes[gltf::assets[s3d::instances[IN_SET].asset].nodes.first].mesh].prims.first];
+	let rad = 0.5 * sqrt(((pr.hi.x - pr.lo.x) * (pr.hi.x - pr.lo.x) + (pr.hi.y - pr.lo.y) * (pr.hi.y - pr.lo.y) + (pr.hi.z - pr.lo.z) * (pr.hi.z - pr.lo.z)) as real);
+	var c0 = 0;
+	var c1 = 0;
+	for k in IN_M.len {
+		let q = IN_M[k];
+		let sc = sqrt(max((q.c0.x * q.c0.x + q.c0.y * q.c0.y + q.c0.z * q.c0.z) as real, max((q.c1.x * q.c1.x + q.c1.y * q.c1.y + q.c1.z * q.c1.z) as real, (q.c2.x * q.c2.x + q.c2.y * q.c2.y + q.c2.z * q.c2.z) as real)));
+		var see = true;
+		for p in 6 {
+			let l = sqrt(pl[p * 4] * pl[p * 4] + pl[p * 4 + 1] * pl[p * 4 + 1] + pl[p * 4 + 2] * pl[p * 4 + 2]);
+			if (pl[p * 4] * q.c3.x as real + pl[p * 4 + 1] * q.c3.y as real + pl[p * 4 + 2] * q.c3.z as real + pl[p * 4 + 3]) / l < -rad * sc { see = false; }
+		}
+		let dx = (q.c3.x - s3d::view.eye.x) as real; let dy = (q.c3.y - s3d::view.eye.y) as real; let dz = (q.c3.z - s3d::view.eye.z) as real;
+		if see { if dx * dx + dy * dy + dz * dz >= 225.0 { c1 += 1; } else { c0 += 1; } }
+	}
+	let tris = s3d::instance_triangles(IN_SET);
+	let one = (n0 + n1) * pr.icount / 3;
+	let ok = n0 == c0 && n1 == c1 && n0 > 50 && n1 > 50 && tris < one;
+	print("gpu: inst F3 level of detail: near level drawn ", n0, " (CPU ", c0, "), far level beyond 15 m drawn ", n1, " (CPU ", c1, "), ", tris, " triangles against ", one, " at one level", if ok { "" } else { " FAILED" });
+	ok
+}
+fn in_row(px const byte[:], w int, h int, x0 int, x1 int, top bool) float3 {
+	var row = -1;
+	for q in h {
+		let y = if top { q } else { h - 1 - q };
+		var hit = false;
+		for x in x1 - x0 { if red(px, y * w + x0 + x) > 0.5 { hit = true; } }
+		if hit { row = y; break; }
+	}
+	if row < 0 { return float3 { -1.0, 0.0, 0.0 }; }
+	var sx real = 0.0;
+	var sv real = 0.0;
+	for x in x1 - x0 { let v = red(px, row * w + x0 + x) as real; sx += ((x0 + x) as real + 0.5) * v; sv += v; }
+	float3 { row as f32, (sx / sv) as f32, sv as f32 }
+}
+fn in_blades(sway f32, two bool) {
+	reset_scene();
+	dark_scene();
+	s3d::motion_vectors = true;
+	s3d::wind = s3d::Wind { dir: float3 { 1.0, 0.0, 0.0 }, strength: 0.0, speed: 8.0, time: 0.0 };
+	var m = shapes::material(linalg::v3(1.0, 1.0, 1.0), 0.0, 1.0);
+	m.unlit = true;
+	let a = shapes::blade(1.0, 0.04, 0.04, 8, m);
+	var mats gfx::mat4[>..] = [gfx::mat4_identity];
+	if two { mats.push(gfx::translate(float3 { 1.3, 0.0, 0.0 })); }
+	IN_SET = s3d::add_instances(a, mats[..]);
+	s3d::instances[IN_SET].sway = sway;
+	let cx = if two { 0.65 } else { 0.0 };
+	s3d::view = s3d::Camera { eye: float3 { cx, 0.5, 3.0 }, target: float3 { cx, 0.5, 0.0 }, up: float3 { 0.0, 1.0, 0.0 }, fov_y: 0.583, near: 0.1, far: 50.0 };
+	s3d::init(640, 360);
+	IN_OUT = gfx::render_target(640, 360, gfx::RGBA8);
+}
+fn in_shot() byte[>..] {
+	s3d::render(IN_OUT);
+	gfx::read_pixels(s3d::hdr_target())
+}
+fn in_tip(vp gfx::mat4, time real) f32 { to_uv(vp, float3 { (0.2 * (0.6 + 0.4 * sin(time * 8.0))) as f32, 1.0, 0.0 }).x * 640.0 }
+fn in_wind(sway f32) float4 {
+	in_blades(sway, false);
+	let still = in_shot();
+	let t0 = in_row(still[..], 640, 360, 0, 640, true);
+	let b0 = in_row(still[..], 640, 360, 0, 640, false);
+	let vp = s3d::view_proj_nj;
+	let base = to_uv(vp, float3 { 0.0, 1.0, 0.0 }).x * 640.0;
+	s3d::wind.strength = 0.2;
+	var err f32 = 0.0;
+	var bot f32 = 0.0;
+	var move f32 = 1.0e30;
+	let times = [0.0, 0.4, 1.3];
+	for tm in times {
+		s3d::wind.time = tm as f32;
+		let px = in_shot();
+		let t1 = in_row(px[..], 640, 360, 0, 640, true);
+		let b1 = in_row(px[..], 640, 360, 0, 640, false);
+		err = max(err, abs(t1.y - t0.y - (in_tip(vp, tm) - base)));
+		bot = max(bot, abs(b1.y - b0.y));
+		move = min(move, abs(t1.y - t0.y));
+	}
+	s3d::wind.time = 0.4;
+	let warm = in_shot();
+	s3d::wind.time = 0.4 + 1.0 / 60.0;
+	let px = in_shot();
+	let tr = in_row(px[..], 640, 360, 0, 640, true);
+	let mv = gfx::read_pixels(s3d::motion_target());
+	let got = motion_at(mv[..], 640, tr.y as int, tr.x as int + 2).x * 640.0;
+	let want = in_tip(vp, 0.4 + 1.0 / 60.0) - in_tip(vp, 0.4);
+	gfx::release(IN_OUT);
+	s3d::motion_vectors = false;
+	s3d::wind.strength = 0.0;
+	print("gpu: inst F4 wind, sway ", r2(sway as real), ": tip moved at least ", r2(move as real), " px, worst tip error ", r3(err as real), " px (bar 0.5), bottom row moved ", r3(bot as real), " px (bar 0.1), tip motion vector ", r3(got as real), " px against ", r3(want as real), " px (bar 0.15)");
+	float4 { err, bot, abs(got - want), move }
+}
+fn in_sway() bool {
+	let a = in_wind(1.0);
+	let c = in_wind(0.0);
+	let ok = a.x <= 0.5 && a.y <= 0.1 && a.z <= 0.15 && a.w > 5.0;
+	let ctl = c.w < 0.1 && c.x > 0.5;
+	print("gpu: inst F4 wind: ", if ok { "ok" } else { "FAILED" }, ", control with sway 0 ", if ctl { "stays still and fails the check as it must" } else { "FAILED to fail" });
+	ok && ctl
+}
+fn in_push() bool {
+	in_blades(1.0, true);
+	let a = in_shot();
+	s3d::pushers.push(float4 { -0.2, 1.0, 0.0, 0.5 });
+	let b = in_shot();
+	s3d::pushers.clear();
+	gfx::release(IN_OUT);
+	s3d::motion_vectors = false;
+	let vp = s3d::view_proj_nj;
+	let xs = (to_uv(vp, float3 { 0.8, 1.0, 0.0 }).x * 640.0) as int;
+	let a0 = in_row(a[..], 640, 360, 0, xs, true);
+	let a1 = in_row(b[..], 640, 360, 0, xs, true);
+	let b0 = in_row(a[..], 640, 360, xs, 640, true);
+	let b1 = in_row(b[..], 640, 360, xs, 640, true);
+	let want = (to_uv(vp, float3 { 0.3, 1.0, 0.0 }).x - to_uv(vp, float3 { 0.0, 1.0, 0.0 }).x) * 640.0;
+	let err = abs(a1.y - a0.y - want);
+	let far = abs(b1.y - b0.y);
+	let ok = a0.x >= 0.0 && b0.x >= 0.0 && err <= 0.5 && far == 0.0 && b1.x == b0.x;
+	print("gpu: inst F5 interaction: tip pushed ", r2((a1.y - a0.y) as real), " px against ", r2(want as real), " px, error ", r3(err as real), " px (bar 0.5), blade 1 m outside the pusher moved ", r3(far as real), " px (bar 0)", if ok { "" } else { " FAILED" });
+	ok
+}
+fn in_time(inst bool, blades bool) real {
+	in_scene(1280, 720, float3 { 0.0, 30.0, 20.0 }, float3 { 0.0, 0.0, 0.0 }, 0.9, 70.0);
+	var gm = shapes::material(linalg::v3(0.25, 0.55, 0.2), 0.0, 0.7);
+	let a = if blades { shapes::blade(0.5, 0.03, 0.0, 3, gm) } else { shapes::sphere(0.12, 16, 8, shapes::material(linalg::v3(0.8, 0.3, 0.2), 0.0, 0.5)) };
+	let m = if blades { in_field(100000, 400, 0.075, 0.06, -15.0, -7.5, 0.0) } else { in_field(20000, 200, 0.15, 0.15, -15.0, -7.5, 0.12) };
+	if inst { IN_SET = s3d::add_instances(a, m[..]); s3d::instances[IN_SET].sway = if blades { 1.0 } else { 0.0 }; } else { for k in m.len { s3d::place(s3d::add(a), m[k]); } }
+	if blades { s3d::wind.strength = 0.15; s3d::wind.speed = 2.0; }
+	let out = gfx::render_target(1280, 720, gfx::RGBA8);
+	for k in 3 { s3d::render(out); }
+	let warm = gfx::read_pixels(out);
+	var best real = 1.0e30;
+	for r in 2 {
+		let t0 = clock_ns();
+		for k in 20 { s3d::wind.time = s3d::wind.time + 1.0 / 60.0; s3d::render(out); }
+		let px = gfx::read_pixels(out);
+		best = min(best, (clock_ns() - t0) as real / 2.0e7);
+	}
+	gfx::release(out);
+	best
+}
+fn in_speed() bool {
+	let fast = in_time(true, false);
+	let seen = s3d::instance_drawn(IN_SET, 0);
+	let slow = in_time(false, false);
+	let grass = in_time(true, true);
+	let blades = s3d::instance_drawn(IN_SET, 0);
+	let ok = seen == 20000 && slow >= 10.0 * fast;
+	print("gpu: inst F6 speed: 20000 spheres at 1280 x 720 with shadows, ", seen, " in view, one instance set ", r2(fast), " ms a frame, 20000 items ", r2(slow), " ms, ", r2(slow / fast), " x (bar 10)", if ok { "" } else { " FAILED" });
+	print("gpu: inst F6 reported: 100000 blades with wind, ", blades, " in view, ", r2(grass), " ms a frame");
+	ok
+}
+fn instance_checks() bool {
+	half_table();
+	let a = in_same();
+	let b = in_cull();
+	let c = in_lod();
+	let d = in_sway();
+	let e = in_push();
+	let f = in_speed();
+	if !(a && b && c && d && e && f) { print("gpu: inst FAILED"); }
+	a && b && c && d && e && f
+}
 fn rc_light(k int) {
 	s3d::lights.clear();
 	if k == 0 { s3d::add_rect(float3 { 0.0, 2.0, -1.0 }, float3 { 0.0, 1.0, -1.0 }, float3 { 1.0, 0.0, 0.0 }, 2.0, 1.0, float3 { 4.0, 4.0, 4.0 }, 1000.0, false); }
@@ -4246,7 +4513,7 @@ fn gpu_checks(dir const byte[:], golden const byte[:]) bool {
 	var only byte[>..] = [];
 	let _ = env("GFX_ONLY", only);
 	if only.len > 0 {
-		let ok = if only[..] == "gtao" { gtao_checks() } else if only[..] == "gi" { gi_checks() } else if only[..] == "mblur" { mb_checks() } else if only[..] == "dof" { dof_checks() } else if only[..] == "fx" { fx_checks() } else if only[..] == "tsr" { tsr_checks(dir) } else if only[..] == "probe" { probe_checks(dir) } else if only[..] == "ssgi" { ssgi_checks() } else if only[..] == "decal" { decal_checks() } else if only[..] == "weather" { weather_checks() } else if only[..] == "rect" { rect_checks() } else if only[..] == "small" { small_checks() } else { shadow_checks() };
+		let ok = if only[..] == "gtao" { gtao_checks() } else if only[..] == "gi" { gi_checks() } else if only[..] == "mblur" { mb_checks() } else if only[..] == "dof" { dof_checks() } else if only[..] == "fx" { fx_checks() } else if only[..] == "tsr" { tsr_checks(dir) } else if only[..] == "probe" { probe_checks(dir) } else if only[..] == "ssgi" { ssgi_checks() } else if only[..] == "decal" { decal_checks() } else if only[..] == "weather" { weather_checks() } else if only[..] == "rect" { rect_checks() } else if only[..] == "small" { small_checks() } else if only[..] == "inst" { instance_checks() } else { shadow_checks() };
 		let e = gfx::error();
 		if e.len > 0 { print("gpu: gfx error ", e[..]); return false; }
 		return ok;
@@ -4413,6 +4680,7 @@ fn gpu_checks(dir const byte[:], golden const byte[:]) bool {
 	if !weather_checks() { good = false; }
 	if !rect_checks() { good = false; }
 	if !small_checks() { good = false; }
+	if !instance_checks() { good = false; }
 	let err = gfx::error();
 	if err.len > 0 { print("gpu: gfx error ", err[..]); good = false; }
 	good
