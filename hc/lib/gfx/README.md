@@ -1418,6 +1418,37 @@ Written before the first GPU run of `instance_checks` in `gfx_smoke.amni`.
 * **F7 nothing else changes.** As U5, with a new `scene_inst` (a field of instanced
   blades with wind over the test scene) matching native under webgputest's usual bar.
 
+### Pre-registered bars (caustics, E7)
+
+Written before the first GPU run of `caustic_checks` in `gfx_smoke.amni`. Scene K: a
+white matte floor under water whose surface is at y = 0, the `water` preset's waves,
+the sun 30 degrees off vertical as the only light, viewed straight down at 640 x 360.
+The factor is the floor's color with `s3d::caustics.on` divided by its color without.
+* **K1 formula.** Floor 1 m and 3 m deep: at 99 % of pixels or more, each color channel
+  of the factor is within 2 % of the CPU's value of the documented formula at that
+  pixel's world position, and the median error is at most 0.5 %.
+* **K2 energy.** The mean of the factor (absorption divided out) over the view is
+  within 2 % of 1 at 0.5 m and 1 m, and within 5 % at 3 m.
+* **K3 focus.** The factor's standard deviation grows with depth (0.5 m < 1 m < 3 m)
+  and is at least 0.05 at 1 m.
+* **K4 scope.** With the water's footprint set to 8 x 8 m, floor pixels whose sun ray
+  crosses the surface more than 0.1 m outside it, and the top of a block standing above
+  the surface, are identical with caustics on and off (largest difference 0).
+* **K5 sun absorption.** Flat water (wave slope 0), floor 2 m deep: each channel of the
+  factor equals `exp(-absorb * 2 / cos(refracted angle))` within 1 %. Control: the same
+  check against a straight-down path (`exp(-absorb * 2)`) must fail.
+* **K6 time.** Two frames at the same water time are identical (largest difference 0);
+  the factor images at times 2 s apart correlate below 0.5.
+* **K7 water item.** With a water item in the scene and nothing set by hand, the floor
+  seen from under water matches the picture drawn with the same numbers set by hand
+  (8-bit, at most 1 / 255), the surface level and waves read back equal the item's, and
+  the factor's standard deviation is above 0.02.
+* **K8 cost.** A floor filling a 1280 x 720 view 1 m under water: caustics add at most
+  1.0 ms a frame (wall clock, best of 2 x 40 frames each way).
+* **K9** as U5 (goldens, existing checks, wgsltest, webgputest unchanged) plus a new
+  `scene_caust` (the test scene under 1.2 m of water) matching native under
+  webgputest's usual bar.
+
 ### Instancing and foliage results (2026-11-09, RX 9060 XT, RADV; full gfxtest ok)
 
 | Bar | Result | Bar value |
