@@ -13,6 +13,7 @@ function sdlgpu(R) {
   const F = {}; '2 r8unorm 1,3 rg8unorm 2,4 rgba8unorm 4,8 rgb10a2unorm 4,12 bgra8unorm 4,21 r8snorm 1,22 rg8snorm 2,23 rgba8snorm 4,27 r16float 2,28 rg16float 4,29 rgba16float 8,30 r32float 4,31 rg32float 8,32 rgba32float 16,33 rg11b10ufloat 4,34 r8uint 1,35 rg8uint 2,36 rgba8uint 4,37 r16uint 2,38 rg16uint 4,39 rgba16uint 8,40 r32uint 4,41 rg32uint 8,42 rgba32uint 16,43 r8sint 1,44 rg8sint 2,45 rgba8sint 4,46 r16sint 2,47 rg16sint 4,48 rgba16sint 8,49 r32sint 4,50 rg32sint 8,51 rgba32sint 16,52 rgba8unorm-srgb 4,53 bgra8unorm-srgb 4,58 depth16unorm 2,59 depth24plus 4,60 depth32float 4,61 depth24plus-stencil8 4,62 depth32float-stencil8 8'.split(',').forEach(s => { const [k, f, b] = s.split(' '); F[k] = [f, +b]; });
   const VF = [, 'sint32', 'sint32x2', 'sint32x3', 'sint32x4', 'uint32', 'uint32x2', 'uint32x3', 'uint32x4', 'float32', 'float32x2', 'float32x3', 'float32x4', 'sint8x2', 'sint8x4', 'uint8x2', 'uint8x4', 'snorm8x2', 'snorm8x4', 'unorm8x2', 'unorm8x4', 'sint16x2', 'sint16x4', 'uint16x2', 'uint16x4', 'snorm16x2', 'snorm16x4', 'unorm16x2', 'unorm16x4', 'float16x2', 'float16x4'];
   const CMP = [, 'never', 'less', 'equal', 'less-equal', 'greater', 'not-equal', 'greater-equal', 'always'], BF = [, 'zero', 'one', 'src', 'one-minus-src', 'dst', 'one-minus-dst', 'src-alpha', 'one-minus-src-alpha', 'dst-alpha', 'one-minus-dst-alpha', 'constant', 'one-minus-constant', 'src-alpha-saturated'], BO = [, 'add', 'subtract', 'reverse-subtract', 'min', 'max'];
+  const dead = []; let live = 0;
   const TOPO = ['triangle-list', 'triangle-strip', 'line-list', 'line-strip', 'point-list'], DIM = ['2d', 'cube', '3d', '2d-array'], SFMT = { 1: 'rgba32float', 2: 'rgba16float', 3: 'r32float', 4: 'rgba8unorm', 6: 'rg32float', 7: 'rg16float', 9: 'r16float', 32: 'rgba8uint', 33: 'r32uint' };
   const MS = n => n > 0 ? 4 : 1;
   const SC = ',,,,A,B,C,D,E,F,G,H,I,J,K,L,M,N,O,P,Q,R,S,T,U,V,W,X,Y,Z,1,2,3,4,5,6,7,8,9,0,Return,Escape,Backspace,Tab,Space,-,=,[,],\\,#,;,\',`,{,.,/,CapsLock,F1,F2,F3,F4,F5,F6,F7,F8,F9,F10,F11,F12,PrintScreen,ScrollLock,Pause,Insert,Home,PageUp,Delete,End,PageDown,Right,Left,Down,Up,Numlock,Keypad /,Keypad *,Keypad -,Keypad +,Keypad Enter,Keypad 1,Keypad 2,Keypad 3,Keypad 4,Keypad 5,Keypad 6,Keypad 7,Keypad 8,Keypad 9,Keypad 0,Keypad .,NonUSBackslash,Application,Power,Keypad =,F13,F14,F15,F16,F17,F18,F19,F20,F21,F22,F23,F24'.split(',').map(s => s === '{' ? ',' : s);
@@ -38,7 +39,7 @@ function sdlgpu(R) {
   const submit = c => {
     if (!dev || !c) return Promise.resolve();
     for (const k of c.ub) dev.queue.writeBuffer(k.g, 0, k.cpu, 0, al(k.used, 4));
-    dev.queue.submit([c.enc.finish()]); ring.push(...c.ub); for (const b of c.st) b.destroy();
+    dev.queue.submit([c.enc.finish()]); ring.push(...c.ub); for (const b of c.st) b.destroy(); if (--live <= 0) { live = 0; for (const b of dead.splice(0)) b.destroy(); }
     for (const d of c.downs) d.p = d.buf.mapAsync(GPUMapMode.READ).then(() => { d.ok = 1; }, e => { d.ok = 2; err = String(e); });
     const p = Promise.all([dev.queue.onSubmittedWorkDone(), ...c.downs.map(d => d.p)]); waits.push(p); p.then(() => waits.splice(waits.indexOf(p), 1)); return p;
   };
@@ -131,19 +132,19 @@ function sdlgpu(R) {
     SDL_GPUTextureSupportsFormat: (d, f, t, u) => F[f] && (!(u & 120) || /^(rgba8(unorm|snorm|uint|sint)|(rgba16|rgba32|r32|rg32)(float|uint|sint))$/.test(F[f][0])) && (!(u & 4) || F[f][0].startsWith('depth')) ? 1 : 0,
     SDL_GPUTextureFormatTexelBlockSize: f => F[f]?.[1] || 0,
     SDL_CreateGPUTexture: (d, p) => tex(r32(p, 8), s32(p, 4), s32(p, 0), r32(p, 12), r32(p, 16), r32(p, 20), r32(p, 24), s32(p, 28)),
-    SDL_ReleaseGPUTexture: (d, h) => { const t = g(h); if (t && !t.sw) { t.g.destroy(); del(h); } },
+    SDL_ReleaseGPUTexture: (d, h) => { const t = g(h); if (t && !t.sw) { dead.push(t.g); del(h); } },
     SDL_CreateGPUSampler: (d, p) => { const fl = ['nearest', 'linear'], A = ['repeat', 'mirror-repeat', 'clamp-to-edge'], mi = s32(p, 0), ma = s32(p, 4), mm = s32(p, 8), an = u8()[N(p) + 44] && mi && ma && mm ? Math.min(16, Math.max(1, Math.floor(rf(p, 28)))) : 1; return nh({ g: dev.createSampler({ minFilter: fl[mi], magFilter: fl[ma], mipmapFilter: fl[mm], addressModeU: A[s32(p, 12)], addressModeV: A[s32(p, 16)], addressModeW: A[s32(p, 20)], lodMinClamp: rf(p, 36), lodMaxClamp: rf(p, 40), compare: u8()[N(p) + 45] ? CMP[s32(p, 32)] : undefined, maxAnisotropy: an }), id: nid++ }); },
     SDL_ReleaseGPUSampler: (d, h) => del(h),
     SDL_CreateGPUBuffer: (d, p) => { const u = r32(p, 0), B = GPUBufferUsage; return nh({ g: dev.createBuffer({ size: al(r32(p, 4), 4), usage: (u & 1 ? B.VERTEX : 0) | (u & 2 ? B.INDEX : 0) | (u & 4 ? B.INDIRECT : 0) | (u & 56 ? B.STORAGE : 0) | B.COPY_SRC | B.COPY_DST }), id: nid++ }); },
-    SDL_ReleaseGPUBuffer: (d, h) => { g(h)?.g.destroy(); del(h); },
+    SDL_ReleaseGPUBuffer: (d, h) => { const t = g(h); if (t) dead.push(t.g); del(h); },
     SDL_CreateGPUTransferBuffer: (d, p) => { const n = r32(p, 4), a = R.mmap(n); return a < 0 ? fail('out of memory for a transfer buffer') : nh({ up: r32(p, 0) === 0, n, ptr: a, downs: [] }); },
     SDL_ReleaseGPUTransferBuffer: (d, h) => { const t = g(h); if (!t) return; R.munmap(t.ptr, t.n); for (const x of t.downs) x.buf.destroy(); O.delete(N(h)); },
     SDL_MapGPUTransferBuffer: (d, h) => { const t = g(h); if (!t) return 0n; t.downs = t.downs.filter(x => { if (x.ok !== 1) return true; const m = new Uint8Array(x.buf.getMappedRange()), o = u8(); for (let r = 0; r < x.rows; r++) o.set(m.subarray(r * x.ar, r * x.ar + x.row), t.ptr + x.off + r * x.prow); x.buf.unmap(); x.buf.destroy(); return false; }); return BigInt(t.ptr); },
     SDL_UnmapGPUTransferBuffer: () => {},
-    SDL_AcquireGPUCommandBuffer: () => dev ? nh(cmd()) : fail('gfx: no device'),
+    SDL_AcquireGPUCommandBuffer: () => { if (!dev) return fail('gfx: no device'); live++; return nh(cmd()); },
     SDL_SubmitGPUCommandBuffer: c => { submit(g(c)); O.delete(N(c)); return 1; },
     SDL_SubmitGPUCommandBufferAndAcquireFence: c => { const f = { done: false }; f.p = submit(g(c)).then(() => { f.done = true; }); O.delete(N(c)); return nh(f); },
-    SDL_CancelGPUCommandBuffer: c => { const C = g(c); if (C) { for (const b of C.st) b.destroy(); ring.push(...C.ub); } O.delete(N(c)); return 1; },
+    SDL_CancelGPUCommandBuffer: c => { const C = g(c); if (C) { for (const b of C.st) b.destroy(); ring.push(...C.ub); live = Math.max(0, live - 1); } O.delete(N(c)); return 1; },
     SDL_WaitForGPUFences: (d, all, p, n) => { const fs = []; for (let i = 0; i < n; i++) { const f = g(r64(p, 8 * i)); if (f && !f.done) fs.push(f.p); } return fs.length && R.canWait() ? (all ? Promise.all(fs) : Promise.race(fs)).then(() => 1) : 1; },
     SDL_ReleaseGPUFence: (d, f) => { O.delete(N(f)); }, SDL_WaitForGPUIdle: () => R.canWait() && dev ? Promise.all([dev.queue.onSubmittedWorkDone(), ...waits]).then(() => 1) : 1,
     SDL_BeginGPUCopyPass: c => nh({ c: g(c) }), SDL_EndGPUCopyPass: p => { O.delete(N(p)); },
