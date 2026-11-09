@@ -46,3 +46,6 @@ main():
 	print(nums)
 	big, eb := json::parse("[9223372036854775807, 9223372036854775808, -9223372036854775808, 1e2]", d)
 	json::each(d, big) { i => print(json::kind(d, i), " ", json::as_f64(d, i)) }
+	json::each(d, big) { i => print(json::as_u64(d, i)) }
+	big2, eb2 := json::parse("[18446744073709551615, 18446744073709551616, 1.5]", d)
+	json::each(d, big2) { i => print(json::kind(d, i), " ", json::as_u64(d, i)) }

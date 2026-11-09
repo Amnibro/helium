@@ -340,6 +340,9 @@ each_member<F>(r Reader&):
 		return
 	name byte[>..] ~= []
 	while ok(r):
+		if peek(r) != '"':
+			fail(r, "expected a key")
+			return
 		if !decode(r, name) || !expect(r, ':'): return
 		at := r.pos
 		F(name[..])
@@ -393,13 +396,13 @@ K_NUM := 3
 K_STR := 4
 K_ARR := 5
 K_OBJ := 6
-struct Node { kind int = 0, num real = 0.0, whole int = 0, at int = 0, len int = 0, nat int = 0, nlen int = 0, first int = -1, next int = -1, count int = 0 }
-struct Doc { nodes Node[>..] = [], pool byte[>..] = [] }
+struct DocNode { kind int = 0, num real = 0.0, whole int = 0, at int = 0, len int = 0, nat int = 0, nlen int = 0, first int = -1, next int = -1, count int = 0 }
+struct Doc { nodes DocNode[>..] = [], pool byte[>..] = [] }
 text_of(d Doc&, n int) const byte[:]: d.pool[d.nodes[n].at..d.nodes[n].at + d.nodes[n].len]
 key_of(d Doc&, n int) const byte[:]: d.pool[d.nodes[n].nat..d.nodes[n].nat + d.nodes[n].nlen]
 
 add_node(d Doc&, kind int) int:
-	d.nodes.push(Node{kind: kind})
+	d.nodes.push(DocNode{kind: kind})
 	d.nodes.len - 1
 
 # links child after prev under parent; returns the child
@@ -453,8 +456,21 @@ value(r Reader&, d Doc&, depth int) int:
 			d.nodes[n].num = v as real
 			return n
 	n := add_node(d, K_NUM)
+	if !fr:
+		u, w := digits_u64(r.text, start, e)
+		if w { d.nodes[n].whole = u as! int }
 	d.nodes[n].num = read_number(r)
 	n
+digits_u64(text const byte[:], from int, to int) uint, bool:
+	if to <= from || to - from > 1 && text[from] == '0' || to - from > 20: return 0, false
+	v uint ~= 0
+	for i from..to:
+		c := text[i]
+		if c < '0' || c > '9': return 0, false
+		d := (c - '0') as uint
+		if v > (18446744073709551615 - d) / 10: return 0, false
+		v = v * 10 + d
+	return v, true
 
 # parses text into d (cleared first): the root index and "" or -1 and why
 parse(text const byte[:], d Doc&) int, byte[>..]:
@@ -497,6 +513,10 @@ as_f64(d Doc&, n int) real, bool:
 	return 0.0, false
 as_i64(d Doc&, n int) int, bool:
 	if kind(d, n) == K_INT: return d.nodes[n].whole, true
+	return 0, false
+as_u64(d Doc&, n int) uint, bool:
+	k := kind(d, n)
+	if k == K_INT && d.nodes[n].whole >= 0 || k == K_NUM && d.nodes[n].whole != 0: return d.nodes[n].whole as! uint, true
 	return 0, false
 as_bool(d Doc&, n int) bool, bool:
 	if kind(d, n) == K_BOOL: return d.nodes[n].whole == 1, true
@@ -594,3 +614,69 @@ format_node(out byte[>..]&, d Doc&, n int) int:
 	else if k == K_BOOL: format_bool(out, d.nodes[n].whole == 1)
 	else: format_null(out)
 	out.len
+struct Node { next Node&<u32>?, first Node&<u32>?, key const byte[:], val Value }
+enum Value { Null, Bool { v bool }, Int { v int }, UInt { v uint }, Num { v real }, Str { s const byte[:] }, Arr { count int }, Obj { count int } }
+value_of(n DocNode&, pool const byte[:]) Value:
+	k := n.kind
+	if k == K_BOOL: return Value.Bool{n.whole == 1}
+	if k == K_INT: return Value.Int{n.whole}
+	if k == K_NUM: return if n.whole != 0 { Value.UInt{n.whole as! uint} } else { Value.Num{n.num} }
+	if k == K_STR: return Value.Str{pool[n.at..n.at + n.len]}
+	if k == K_ARR: return Value.Arr{n.count}
+	if k == K_OBJ: return Value.Obj{n.count}
+	Value.Null
+parse(text const byte[:], doc Node[>..]&, decoded byte[>..]&) Node?, byte[>..]:
+	d ~= Doc{}
+	root, err := parse(text, d)
+	if root < 0: return null, err
+	base := doc.len
+	at := decoded.len
+	decoded.append(d.pool[..])
+	pool := decoded[at..]
+	for i 0..d.nodes.len:
+		n := d.nodes[i]
+		doc.push(Node{null, null, pool[n.nat..n.nat + n.nlen], value_of(n, pool)})
+	for i 0..d.nodes.len:
+		n := d.nodes[i]
+		if n.first >= 0: doc[base + i].first .= doc[base + n.first]
+		if n.next >= 0: doc[base + i].next .= doc[base + n.next]
+	out Node? ~= null
+	out .= doc[base + root]
+	return out, str("")
+member(n Node?, key byte[:]) Node?:
+	if !n: return null
+	match n.val:
+		Obj => {}
+		_ => { return null }
+	c ~= n.first
+	while c: if c.key == key { return c }; c .= c.next
+	null
+each<F>(n Node&): c ~= n.first; while c { F(c); c .= c.next }
+as_f64(n Node?) real, bool:
+	if !n: return 0.0, false
+	match n.val:
+		Num x => { return x.v, true }
+		Int i => { return i.v, true }
+		UInt u => { return u.v, true }
+		_ => { return 0.0, false }
+as_i64(n Node?) int, bool:
+	if !n: return 0, false
+	match n.val:
+		Int i => { return i.v, true }
+		_ => { return 0, false }
+as_u64(n Node?) uint, bool:
+	if !n: return 0, false
+	match n.val:
+		Int i => { if i.v >= 0 { return i.v as uint, true }; return 0, false }
+		UInt u => { return u.v, true }
+		_ => { return 0, false }
+as_bool(n Node?) bool, bool:
+	if !n: return false, false
+	match n.val:
+		Bool b => { return b.v, true }
+		_ => { return false, false }
+as_string(n Node?) const byte[:], bool:
+	if !n: return "", false
+	match n.val:
+		Str t => { return t.s, true }
+		_ => { return "", false }

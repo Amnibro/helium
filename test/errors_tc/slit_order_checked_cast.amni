@@ -1,0 +1,3 @@
+// error: field initializers must follow declaration order
+struct T { a i32, b i32 }
+fn main(n int) int { let t = T { b: n as i32, a: 1 as i32 }; return t.a as int; }

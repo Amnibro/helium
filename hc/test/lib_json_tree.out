@@ -1,0 +1,40 @@
+|obj 4
+ a|int 1
+ b|arr 5
+  |true
+  |null
+  |str xé
+
+  |num 1.5
+  |obj 1
+   c|arr 0
+ kAy|num -300.0
+ a|int 2
+|arr 6
+ |int 9223372036854775807
+ |uint 9223372036854775808
+ |uint 18446744073709551615
+ |num 1.8446744073709552e19
+ |int -1
+ |num 0.5
+
+0 0 true
+bad is null
+1, true
+-300.0, true
+"", false
+false, false
+arrays have no members
+9223372036854775807, true
+9223372036854775808, true
+18446744073709551615, true
+0, false
+0, false
+0, false
+9.223372036854776e+18, true
+9.223372036854776e+18, true
+1.8446744073709552e+19, true
+1.8446744073709552e+19, true
+-1.0, true
+0.5, true
+25442

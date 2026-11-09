@@ -976,7 +976,7 @@ recursive init_order_safe(n int, callee int) bool:
 		lossless := false
 		if from >= 0 && to >= 0 && TY[from].k == TY_INT && TY[to].k == TY_INT:
 			fs := is_signed(from); ts := is_signed(to); fb := ibits(from); tb := ibits(to)
-			lossless = (fs == ts && tb >= fb) || (!fs && ts && tb > fb)
+			lossless = x.fl & 1 == 1 || (fs == ts && tb >= fb) || (!fs && ts && tb > fb)
 		if !lossless && (to < 0 || TY[to].k != TY_FLT): return false
 		return init_order_safe(x.a as int, callee)
 	if k == N_CALL:
