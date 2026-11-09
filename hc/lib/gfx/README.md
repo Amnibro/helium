@@ -958,6 +958,36 @@ e2 scene with SSGI on, 7 frames) both matching native exactly. T7 failed again a
 1.66 ms with the GPU busy, as in the probe run; it is still re-run on a quiet GPU before
 merging.
 
+### Pre-registered bars (deferred decals, E7)
+
+Written before the first GPU run of the decal checks (`decal_checks` in `gfx_smoke.amni`).
+Scene: a 4 x 4 m floor (`shapes::plane`, roughness 0.6, metal 0) under the default sun
+and sky; AO, SSR, SSGI, bloom and temporal off; camera at (0, 2.2, 2.7) looking at the
+origin; 640 x 360. The floor's base colour is a 1024 x 1024 grey checker (16 cells a
+side). Decal: a 128 x 128 RGBA image made in the test (a coloured disc with a soft alpha
+edge, a darker ring and a hard-edged cut-out bar), projected straight down by a box
+1.5 m wide and deep and 1 m tall, centred at (0.2, 0, -0.1), turned 20 degrees about y.
+Compared in linear HDR (`hdr_target`).
+* **D1 colour decal match.** Reference: no decal; the floor's texture is instead the
+  checker with the decal composited over it on the CPU (each texel's floor point taken
+  into the decal box, the image sampled bilinearly, alpha over in linear colour), same
+  size and sampling as the plain checker. Region: pixels whose floor point lies inside
+  the box's footprint by at least 2 pixels. Metric: sum |decal - ref| / sum ref over RGB.
+  Bar: **<= 0.04**.
+* **D2 nothing outside the box.** Pixels whose floor point lies more than 2 pixels
+  outside the footprint: max |decal - no decal| over RGB **== 0** (bit for bit).
+* **D3 normal decal match.** The same box with a normal-only decal (a 128 x 128
+  tangent-space map of round bumps, alpha 1 inside a disc, 0 outside). Reference: the
+  floor with a normal texture that is flat except where the decal's normals are
+  composited in the same way, turned into the floor's tangent frame. Same region and
+  metric. Bar: **<= 0.05**.
+* **D4 nothing changes without decals.** gfxtest goldens > 40 dB and `webgputest.mjs` 0
+  failures; a new `scene_decal` (the e2 scene with one colour decal on the floor) must
+  match native under webgputest's usual bar.
+* **Must-fail control.** Decals off must fail D1.
+* Reported, no bar: GPU time of the decal pass at 1280 x 720 with 1, 16 and 64 decals
+  over the view.
+
 ### Motion blur and depth of field results (2026-11-02, RX 9060 XT, RADV)
 
 Both are off by default (`motion_blur = 0`, `dof_aperture = 0`) and run as one HDR pass each
