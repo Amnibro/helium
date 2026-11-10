@@ -1,0 +1,19 @@
+Q2 junk listening true
+Q2 junk open true
+Q3 suite 4865 true
+Q3 suite 4866 true
+Q3 suite 4867 true
+Q3 control pin true
+Q3 control alpn true
+Q5 stream limit true
+Q5 connection limit true
+Q5 resumes true
+Q5 control true
+Q7 streams true
+Q7 credit true
+Q7 control true
+Q7 reset true
+Q7 stop true
+Q8 idle true
+Q8 keep-alive true
+Q8 key update true

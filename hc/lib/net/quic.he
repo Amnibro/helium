@@ -1,0 +1,429 @@
+namespace net
+use crypto.hash
+use crypto.aead
+use crypto.ecc
+use crypto.rand
+use net.tls
+use net.quic_wire
+QUIC_HANDSHAKE := 0
+QUIC_OPEN := 1
+QUIC_CLOSING := 2
+QUIC_DRAINING := 3
+QUIC_CLOSED := 4
+QMAXD := 1200
+struct QStream { id int = 0, sbuf byte[>..] = [], sh int = 0, sbase int = 0, snext int = 0, sw int = 0, sfin bool = false, fsent bool = false, facked bool = false, sack int[>..] = [], rtx int[>..] = [], smax int = 0, srst int = -1, sstop int = -1, rbuf byte[>..] = [], rh int = 0, rbase int = 0, rgot int[>..] = [], rhi int = 0, rfin int = -1, rmax int = 0, rwin int = 0, rrst int = -1, rstop int = -1, fl int = 0, freed bool = false }
+struct QSent { pn int = 0, t real = 0.0, size int = 0, fr int[>..] = [] }
+struct QSpace { rx QKeys = QKeys{}, tx QKeys = QKeys{}, rok bool = false, tok bool = false, npn int = 0, rlarge int = -1, rfl int = 0, rxr int[>..] = [], ackn int = 0, ooo bool = false, ackt real = 0.0, rlt real = 0.0, sent QSent[>..] = [], lacked int = -1, losst real = 0.0, lastae real = 0.0, probe int = 0 }
+struct Quic { srv bool = false, state int = 0, now real = 0.0, host byte[>..] = [], alpn byte[>..] = [], cert byte[>..] = [], key byte[>..] = [], pin byte[>..] = [], only int = 0, tls Tls[>..] = [], tls_on bool = false, hk bool = false, ak bool = false, sp QSpace[>..] = [], st QStream[>..] = [], scid byte[>..] = [], dcid byte[>..] = [], odcid byte[>..] = [], lp QParams = QParams{}, pp QParams = QParams{}, pp_ok bool = false, hs bool = false, conf bool = false, valid bool = false, got1 bool = false, rxb int = 0, txb int = 0, phase int = 0, nrx QKeys = QKeys{}, srtt real = 0.333, rttvar real = 0.1665, minrtt real = 0.0, rtt1 bool = false, lrtt real = 0.0, ptoc int = 0, cwnd int = 12000, ssth int = 4611686018427387903, infl int = 0, rect real = -1.0, tlast real = 0.0, txmax int = 0, txdata int = 0, rxmax int = 0, rxdata int = 0, rxread int = 0, cwin int = 0, mxob int = 0, mxou int = 0, nob int = 0, nou int = 0, mxib int = 0, mxiu int = 0, nib int = 0, niu int = 0, pend int = 0, newst int[>..] = [], prsp byte[>..] = [], retire int[>..] = [], dseq int = 0, err int = -1, eapp bool = false, elocal bool = false, ereason byte[>..] = [], cpend bool = false, closet real = 0.0, idle real = 0.0, tidle real = 0.0, keep real = 0.0, test int = 0, rr int = 0, nacc int = 0, asr bool = false }
+qk_set(d QKeys&, s const QKeys&): d.alg = s.alg; d.hk = s.hk; d.sec = copy(s.sec); d.key = copy(s.key); d.iv = copy(s.iv); d.hp = copy(s.hp)
+rs_add(r int[>..]&, lo int, hi int):
+	if lo >= hi: return
+	if r.len == 0 || lo > r[r.len - 1]: r.push(lo); r.push(hi); return
+	if lo >= r[r.len - 2]: r[r.len - 1] = max(r[r.len - 1], hi); return
+	n int[>..] ~= []; a ~= lo; b ~= hi; put ~= false; k := r.len / 2
+	for i k:
+		x := r[2 * i]; y := r[2 * i + 1]
+		if y < a { n.push(x); n.push(y) } else if x > b { if !put { n.push(a); n.push(b); put = true } n.push(x); n.push(y) } else { a = min(a, x); b = max(b, y) }
+	if !put: n.push(a); n.push(b)
+	r = n
+rs_has(r int[>..]&, v int) bool:
+	k := r.len / 2
+	for i k:
+		if v >= r[2 * i] && v < r[2 * i + 1]: return true
+	false
+rs_gap(r int[>..]&, lo int, hi int) int, int:
+	a ~= lo; e ~= hi; k := r.len / 2
+	for i k:
+		if r[2 * i] <= a && r[2 * i + 1] > a: a = r[2 * i + 1]
+	if a >= hi: return hi, hi
+	for i k:
+		if r[2 * i] > a && r[2 * i] < e: e = r[2 * i]
+	return a, e
+rs_shift(r int[>..]&): n int[>..] ~= []; n.append(r[2..]); r = n
+qs_new(id int, smax int, rwin int) QStream: s ~= QStream{}; s.id = id; s.smax = smax; s.rmax = rwin; s.rwin = rwin; s
+qs_write(s QStream&, d const byte[:]):
+	if s.sh > 65536 && s.sh * 2 > s.sbuf.len: n byte[>..] ~= []; n.append(s.sbuf[s.sh..]); s.sbuf = n; s.sh = 0
+	s.sbuf.append(d); s.sw += d.len
+qs_acked(s QStream&, off int, n int, fin bool):
+	if fin: s.facked = true
+	rs_add(s.sack, off, off + n)
+	while s.sack.len > 0 && s.sack[0] <= s.sbase:
+		e := s.sack[1]; rs_shift(s.sack)
+		if e > s.sbase: s.sh += e - s.sbase; s.sbase = e
+qs_recv(s QStream&, off int, d const byte[:]):
+	end := off + d.len; lo := max(off, s.rbase)
+	if lo >= end: return
+	if lo == s.rbase + s.rbuf.len - s.rh: s.rbuf.append(d[lo - off..]); rs_add(s.rgot, lo, end); return
+	need := s.rh + end - s.rbase; n := end - lo; at := s.rh + lo - s.rbase
+	if s.rbuf.len < need: s.rbuf.resize(need, 0)
+	for i n: s.rbuf[at + i] = d[lo - off + i]
+	rs_add(s.rgot, lo, end)
+qs_avail(s const QStream&) int: if s.rgot.len > 0 && s.rgot[0] <= s.rbase && s.rgot[1] > s.rbase { s.rgot[1] - s.rbase } else { 0 }
+qs_take(s QStream&, out byte[>..]&) int:
+	n := qs_avail(s)
+	if n == 0: return 0
+	out.append(s.rbuf[s.rh..s.rh + n]); s.rh += n; s.rbase += n
+	if s.rh == s.rbuf.len: s.rbuf.clear(); s.rh = 0; return n
+	if s.rh > 65536 && s.rh * 2 > s.rbuf.len: b byte[>..] ~= []; b.append(s.rbuf[s.rh..]); s.rbuf = b; s.rh = 0
+	n
+q_pto(q const Quic&, s int) real: q.srtt + max(4.0 * q.rttvar, 0.001) + (if s == 2 { q.pp.v[11] as real / 1000.0 } else { 0.0 })
+q_end(q Quic&, app bool, code int, why const byte[:]):
+	if q.state >= QUIC_CLOSING: return
+	q.err = code; q.eapp = app; q.elocal = true; q.ereason.clear(); q.ereason.append(why); q.state = QUIC_CLOSING; q.cpend = true; q.closet = q.now + 3.0 * q_pto(q, 2)
+q_drop(q Quic&, s int):
+	if !q.sp[s].tok && !q.sp[s].rok: return
+	for p q.sp[s].sent: q.infl -= p.size
+	q.sp[s].sent.clear(); q.sp[s].tok = false; q.sp[s].rok = false; q.sp[s].losst = 0.0; q.sp[s].probe = 0; q.sp[s].ackn = 0; q.ptoc = 0
+q_new(srv bool, now real) Quic:
+	q ~= Quic{}; q.srv = srv; q.now = now; q.tidle = now; q.tlast = now; q.lp = qtp_new(); q.pp = qtp_new(); q.scid = crypto::random_bytes(8)
+	q.lp.v[1] = 30000; q.lp.v[4] = 1048576; q.lp.v[5] = 262144; q.lp.v[6] = 262144; q.lp.v[7] = 262144; q.lp.v[8] = 100; q.lp.v[9] = 100; q.lp.iscid.append(q.scid[..])
+	for i 3: s ~= QSpace{}; q.sp.push(s); c ~= qs_new(-1 - i, 0, 0); q.st.push(c)
+	q
+quic_client(host const byte[:], alpn const byte[:], pin const byte[:], now real) Quic:
+	q ~= q_new(false, now); q.host.append(host); q.alpn.append(alpn); q.pin.append(pin); q.dcid = crypto::random_bytes(8); q.odcid = copy(q.dcid)
+	qk_set(q.sp[0].tx, qk_initial(q.dcid[..], false)); qk_set(q.sp[0].rx, qk_initial(q.dcid[..], true)); q.sp[0].rok = true; q.sp[0].tok = true; q
+quic_server(cert const byte[:], key const byte[:], alpn const byte[:], now real) Quic: q ~= q_new(true, now); q.cert.append(cert); q.key.append(key); q.alpn.append(alpn); q
+q_pull(q Quic&):
+	for l 3:
+		if q.tls[0].qo[l].len > 0: qs_write(q.st[l], q.tls[0].qo[l][..]); q.tls[0].qo[l].clear()
+	n := q.tls[0].qs.len; c := if q.srv { 1 } else { 0 }
+	if n >= 2 && !q.hk: q.hk = true; qk_set(q.sp[1].tx, qk_from(q.tls[0].suite, q.tls[0].qs[c][..])); qk_set(q.sp[1].rx, qk_from(q.tls[0].suite, q.tls[0].qs[1 - c][..])); q.sp[1].rok = true; q.sp[1].tok = true
+	if n >= 4 && !q.ak: q.ak = true; qk_set(q.sp[2].tx, qk_from(q.tls[0].suite, q.tls[0].qs[2 + c][..])); qk_set(q.sp[2].rx, qk_from(q.tls[0].suite, q.tls[0].qs[3 - c][..])); q.sp[2].rok = true; q.sp[2].tok = true; qk_set(q.nrx, qk_update(q.sp[2].rx))
+	if !q.pp_ok && q.tls[0].ptp.len > 0:
+		p, ok := qtp_get(q.tls[0].ptp[..], !q.srv)
+		if !ok || !(p.iscid[..] == q.dcid[..]) || !q.srv && !(p.odcid[..] == q.odcid[..]): q_end(q, false, 8, "bad transport parameters"); return
+		a := q.lp.v[1]; b := p.v[1]; q.idle = (if a == 0 { b } else if b == 0 { a } else { min(a, b) }) as real / 1000.0
+		q.txmax = p.v[4]; q.mxob = p.v[8]; q.mxou = p.v[9]; q.pp.v = copy(p.v); q.pp_ok = true
+	if tls_state(q.tls[0]) == TLS_ERR: q_end(q, false, 256 + q.tls[0].alert, q.tls[0].err[..]); return
+	if !q.hs && tls_state(q.tls[0]) == TLS_OPEN:
+		q.hs = true; q.state = QUIC_OPEN
+		if q.srv: q.conf = true; q.pend |= 8; q_drop(q, 1)
+q_tls(q Quic&):
+	q.rxmax = q.lp.v[4]; q.cwin = q.lp.v[4]; q.mxib = q.lp.v[8]; q.mxiu = q.lp.v[9]
+	if q.srv: q.lp.odcid = copy(q.odcid)
+	tp := qtp_put(q.lp, q.srv); q.tls.push(tls_quic(q.srv, q.host, q.alpn, tp, q.cert, q.key)); q.tls[0].want.append(q.pin[..]); q.tls[0].only = q.only; q.tls_on = true; tls_start(q.tls[0]); q_pull(q)
+q_find(q const Quic&, id int) int:
+	n := q.st.len
+	for i n:
+		if q.st[i].id == id: return i
+	-1
+q_stream(q Quic&, id int) int:
+	i := q_find(q, id)
+	if i >= 0: return i
+	uni := (id & 2) != 0; k := id >> 2; c ~= if uni { q.niu } else { q.nib }
+	if (id & 1) == (if q.srv { 1 } else { 0 }): q_end(q, false, 5, "stream not open"); return -1
+	if k >= (if uni { q.mxiu } else { q.mxib }): q_end(q, false, 4, "stream limit"); return -1
+	while c <= k: sid := (c << 2) | (id & 3); s ~= qs_new(sid, if uni { 0 } else { q.pp.v[5] }, q.lp.v[if uni { 7 } else { 6 }]); q.st.push(s); q.newst.push(sid); c += 1
+	if uni: q.niu = c
+	if !uni: q.nib = c
+	q.st.len - 1
+quic_open(q Quic&, bidi bool) int:
+	n := if bidi { q.nob } else { q.nou }
+	if !q.ak || !q.pp_ok || q.state >= QUIC_CLOSING || n >= (if bidi { q.mxob } else { q.mxou }) && (q.test & 2) == 0: return -1
+	id := (n << 2) | (if bidi { 0 } else { 2 }) | (if q.srv { 1 } else { 0 }); s ~= qs_new(id, q.pp.v[if bidi { 6 } else { 7 }], if bidi { q.lp.v[5] } else { 0 }); q.st.push(s)
+	if bidi: q.nob += 1
+	if !bidi: q.nou += 1
+	id
+q_credit(q Quic&):
+	if q.rxmax - q.rxread < q.cwin / 2: q.rxmax = q.rxread + q.cwin; q.pend |= 1
+q_done(q Quic&, i int):
+	id := q.st[i].id; uni := (id & 2) != 0
+	if id < 0 || q.st[i].freed || (id & 1) == (if q.srv { 1 } else { 0 }): return
+	rd := q.st[i].rrst >= 0 || q.st[i].rfin >= 0 && q.st[i].rbase == q.st[i].rfin; sd := uni || q.st[i].facked || q.st[i].srst >= 0
+	if !rd || !sd: return
+	q.st[i].freed = true
+	if uni: q.mxiu += 1; q.pend |= 4
+	if !uni: q.mxib += 1; q.pend |= 2
+q_sdata(q Quic&, i int, off int, d const byte[:], fin bool):
+	end := off + d.len; rfin := q.st[i].rfin
+	if rfin >= 0 && (end > rfin || fin && end != rfin) || fin && end < q.st[i].rhi: q_end(q, false, 6, "final size changed"); return
+	if fin: q.st[i].rfin = end
+	if end > q.st[i].rhi: q.rxdata += end - q.st[i].rhi; q.st[i].rhi = end
+	if q.st[i].rhi > q.st[i].rmax || q.rxdata > q.rxmax: q_end(q, false, 3, "flow control limit exceeded"); return
+	if q.st[i].rrst < 0: qs_recv(q.st[i], off, d)
+q_requeue(q Quic&, s int, i int):
+	k := q.sp[s].sent[i].fr.len / 4
+	for j k:
+		a := q.sp[s].sent[i].fr[4 * j]; b := q.sp[s].sent[i].fr[4 * j + 1]; c := q.sp[s].sent[i].fr[4 * j + 2]; e := q.sp[s].sent[i].fr[4 * j + 3]
+		if a >= 0:
+			q.st[a].rtx.push(b); q.st[a].rtx.push(c)
+			if e == 1 && !q.st[a].facked: q.st[a].fsent = false
+		if a == -1: q.pend |= b
+		if a == -2: q.st[b].fl |= c
+		if a == -4: q.retire.push(b)
+q_compact(q Quic&, s int):
+	keep QSent[>..] ~= []
+	for p q.sp[s].sent:
+		if p.pn >= 0: x ~= QSent{}; x.pn = p.pn; x.t = p.t; x.size = p.size; x.fr = copy(p.fr); keep.push(x)
+	q.sp[s].sent = keep
+q_lost(q Quic&, s int):
+	q.sp[s].losst = 0.0; la := q.sp[s].lacked; delay := max(1.125 * max(q.srtt, q.lrtt), 0.001); n := q.sp[s].sent.len; big ~= -1.0
+	if la >= 0 && (q.test & 4) == 0:
+		for i n:
+			pn := q.sp[s].sent[i].pn; t := q.sp[s].sent[i].t
+			if pn < 0 || pn > la: continue
+			if t <= q.now - delay || la >= pn + 3:
+				q_requeue(q, s, i); q.infl -= q.sp[s].sent[i].size; q.sp[s].sent[i].pn = -1; big = max(big, t)
+			else if q.sp[s].losst == 0.0 || t + delay < q.sp[s].losst: q.sp[s].losst = t + delay
+	q_compact(q, s)
+	if big > q.rect: q.rect = q.now; q.ssth = max(q.cwnd / 2, 2 * QMAXD); q.cwnd = q.ssth
+q_ack(q Quic&, s int, f const QFrame&):
+	if f.a >= q.sp[s].npn || f.rg.len == 0 || f.rg[0] > f.a: q_end(q, false, 10, "acknowledgment of a packet never sent"); return
+	iv int[>..] ~= []; hi ~= f.a; lo ~= hi - f.rg[0]; k := (f.rg.len - 1) / 2; n := q.sp[s].sent.len; any ~= false; lt ~= -1.0
+	iv.push(lo); iv.push(hi)
+	for j k:
+		hi = lo - f.rg[1 + 2 * j] - 2; lo = hi - f.rg[2 + 2 * j]
+		if lo < 0: q_end(q, false, 7, "bad acknowledgment range"); return
+		iv.push(lo); iv.push(hi)
+	m := iv.len / 2
+	for i n:
+		pn := q.sp[s].sent[i].pn; hit ~= false; sz := q.sp[s].sent[i].size
+		for j m:
+			if pn >= iv[2 * j] && pn <= iv[2 * j + 1]: hit = true
+		if !hit: continue
+		any = true; q.infl -= sz; fk := q.sp[s].sent[i].fr.len / 4
+		if pn == f.a: lt = q.sp[s].sent[i].t
+		if q.sp[s].sent[i].t > q.rect: q.cwnd += if q.cwnd < q.ssth { sz } else { QMAXD * sz / q.cwnd }
+		for j fk:
+			a := q.sp[s].sent[i].fr[4 * j]
+			if a >= 0: qs_acked(q.st[a], q.sp[s].sent[i].fr[4 * j + 1], q.sp[s].sent[i].fr[4 * j + 2], q.sp[s].sent[i].fr[4 * j + 3] == 1); q_done(q, a)
+		q.sp[s].sent[i].pn = -1
+	if !any: return
+	q.sp[s].lacked = max(q.sp[s].lacked, f.a); q.ptoc = 0
+	if lt >= 0.0:
+		r := max(q.now - lt, 0.000001); ad := if s == 2 { min((f.b << q.pp.v[10]) as real / 1000000.0, q.pp.v[11] as real / 1000.0) } else { 0.0 }; q.lrtt = r
+		if !q.rtt1: q.rtt1 = true; q.minrtt = r; q.srtt = r; q.rttvar = r / 2.0
+		else:
+			q.minrtt = min(q.minrtt, r); x := if r >= q.minrtt + ad { r - ad } else { r }; d := if q.srtt > x { q.srtt - x } else { x - q.srtt }; q.rttvar = 0.75 * q.rttvar + 0.25 * d; q.srtt = 0.875 * q.srtt + 0.125 * x
+	q_lost(q, s)
+q_frame(q Quic&, s int, f const QFrame&):
+	t := f.ty
+	if t == 2: q_ack(q, s, f); return
+	if t == 6:
+		if f.a + f.data.len > q.st[s].rbase + 65536: q_end(q, false, 13, "handshake buffer exceeded"); return
+		buf byte[>..] ~= []; qs_recv(q.st[s], f.a, f.data[..])
+		if qs_take(q.st[s], buf) > 0: tls_feed(q.tls[0], s, buf[..]); q_pull(q)
+		return
+	if t == 28 || t == 29: q.err = f.a; q.eapp = t == 29; q.elocal = false; q.ereason = copy(f.data); q.state = QUIC_DRAINING; q.closet = q.now + 3.0 * q_pto(q, 2); return
+	if t == 30:
+		if q.srv: q_end(q, false, 10, "handshake done from a client"); return
+		if !q.conf: q.conf = true; q_drop(q, 1)
+		return
+	if t == 16: q.txmax = max(q.txmax, f.a); return
+	if t == 18: q.mxob = max(q.mxob, f.a); return
+	if t == 19: q.mxou = max(q.mxou, f.a); return
+	if t == 26: q.prsp = copy(f.data); return
+	if t == 24:
+		if f.b > q.dseq && f.a >= f.b: q.retire.push(q.dseq); q.dseq = f.a; q.dcid = copy(f.data)
+		return
+	if !(t == 4 || t == 5 || t == 8 || t == 17): return
+	i := q_stream(q, f.a)
+	if i < 0: return
+	if t == 8: q_sdata(q, i, f.b, f.data[..], f.fin)
+	if t == 17: q.st[i].smax = max(q.st[i].smax, f.b)
+	if t == 5 && q.st[i].srst < 0: q.st[i].sstop = f.b; q.st[i].srst = f.b; q.st[i].fl |= 2
+	if t == 4:
+		q_sdata(q, i, f.c, "", true)
+		if q.st[i].rrst < 0 && q.state < QUIC_CLOSING: q.st[i].rrst = f.b; q.rxread += q.st[i].rhi - q.st[i].rbase; q_credit(q); q_done(q, i)
+q_open(q Quic&, s int, p const byte[:], pno int) QOpen:
+	r := qp_open(q.sp[s].rx, p, pno, q.sp[s].rlarge)
+	if r.ok || s != 2 || !q.conf: return r
+	u := qp_open(q.nrx, p, pno, q.sp[s].rlarge)
+	if !u.ok || ((u.first >> 2) & 1) == q.phase: return r
+	qk_set(q.sp[2].rx, q.nrx); qk_set(q.sp[2].tx, qk_update(q.sp[2].tx)); qk_set(q.nrx, qk_update(q.sp[2].rx)); q.phase = 1 - q.phase; u
+quic_rekey(q Quic&) bool:
+	if !q.conf || q.state != QUIC_OPEN: return false
+	qk_set(q.sp[2].rx, q.nrx); qk_set(q.sp[2].tx, qk_update(q.sp[2].tx)); qk_set(q.nrx, qk_update(q.sp[2].rx)); q.phase = 1 - q.phase; true
+q_packet(q Quic&, p const byte[:], dlen int) int:
+	h := qh_parse(p, 8)
+	if !h.ok || h.lg && (h.ver != 1 || h.ty == 3): return 0
+	s := if !h.lg { 2 } else if h.ty == 0 { 0 } else { 1 }
+	if h.lg && h.ty == 1: return h.stop
+	if q.srv && !q.got1:
+		if s != 0 || dlen < 1200 || h.dcid.len < 8: return 0
+		q.odcid = copy(h.dcid); q.dcid = copy(h.scid); qk_set(q.sp[0].rx, qk_initial(q.odcid[..], false)); qk_set(q.sp[0].tx, qk_initial(q.odcid[..], true)); q.sp[0].rok = true; q.sp[0].tok = true
+	if !(h.dcid[..] == q.scid[..]) && !(q.srv && s == 0 && h.dcid[..] == q.odcid[..]): return h.stop
+	if !q.sp[s].rok || s == 2 && !q.hs && q.srv: return h.stop
+	r := q_open(q, s, p[..h.stop], h.pno)
+	if !r.ok || r.pn < q.sp[s].rfl || rs_has(q.sp[s].rxr, r.pn): return h.stop
+	if q.srv && !q.got1: q.got1 = true; q_tls(q)
+	if !q.srv && !q.got1 && h.lg: q.got1 = true; q.dcid = copy(h.scid)
+	if q.srv && s == 1: q.valid = true; q_drop(q, 0)
+	q.tidle = q.now; q.asr = false; o ~= 0; ae ~= false
+	if r.data.len == 0: q_end(q, false, 10, "empty packet")
+	while o < r.data.len && q.state < QUIC_CLOSING:
+		f, e := qf_get(r.data[..], o)
+		if e < 0: q_end(q, false, 7, "bad frame"); break
+		t := f.ty
+		if s < 2 && !(t == 0 || t == 1 || t == 2 || t == 6 || t == 28): q_end(q, false, 10, "frame not allowed at this level"); break
+		if !(t == 0 || t == 2 || t == 28 || t == 29): ae = true
+		q_frame(q, s, f); o = e
+	if r.pn > q.sp[s].rlarge:
+		if ae && r.pn != q.sp[s].rlarge + 1: q.sp[s].ooo = true
+		q.sp[s].rlarge = r.pn; q.sp[s].rlt = q.now
+	else if ae: q.sp[s].ooo = true
+	rs_add(q.sp[s].rxr, r.pn, r.pn + 1)
+	while q.sp[s].rxr.len > 64: q.sp[s].rfl = q.sp[s].rxr[1]; rs_shift(q.sp[s].rxr)
+	if ae && q.sp[s].ackn == 0: q.sp[s].ackt = q.now + 0.025
+	if ae: q.sp[s].ackn += 1
+	h.stop
+quic_recv(q Quic&, d const byte[:], now real):
+	q.now = now; o ~= 0
+	if q.state == QUIC_CLOSING: q.cpend = true
+	if q.state >= QUIC_CLOSING: return
+	q.rxb += d.len
+	while o < d.len && q.state < QUIC_CLOSING:
+		n := q_packet(q, d[o..], d.len)
+		if n <= 0: break
+		o += n
+q_ackf(q Quic&, s int, b byte[>..]&):
+	r := q.sp[s].rxr.len; f ~= QFrame{}; hi := q.sp[s].rxr[r - 1]; lo ~= q.sp[s].rxr[r - 2]; cnt := min(r / 2 - 1, 16)
+	f.ty = 2; f.a = hi - 1; f.b = if s == 2 { (((q.now - q.sp[s].rlt) * 1000000.0) as int) >> q.lp.v[10] } else { 0 }; f.rg.push(hi - 1 - lo)
+	for j cnt: i := r - 4 - 2 * j; f.rg.push(lo - q.sp[s].rxr[i + 1] - 1); f.rg.push(q.sp[s].rxr[i + 1] - 1 - q.sp[s].rxr[i]); lo = q.sp[s].rxr[i]
+	qf_put(b, f)
+q_emit(q Quic&, i int, b byte[>..]&, room int, rec QSent&):
+	crypto := i < 3
+	while room - b.len >= 32:
+		off ~= q.st[i].snext; n ~= 0; fresh ~= true; cap := room - b.len - 20
+		if q.st[i].rtx.len >= 2:
+			l := q.st[i].rtx.pop(); a := q.st[i].rtx.pop(); lo, hi := rs_gap(q.st[i].sack, max(a, q.st[i].sbase), a + l)
+			if lo >= hi: continue
+			off = lo; n = min(hi - lo, cap); fresh = false
+			if lo + n < a + l: q.st[i].rtx.push(lo + n); q.st[i].rtx.push(a + l - lo - n)
+		else:
+			av := q.st[i].sw - off; n = min(cap, if crypto || (q.test & 1) != 0 { av } else { min(av, min(q.st[i].smax - off, q.txmax - q.txdata)) })
+		fin := !crypto && q.st[i].sfin && !q.st[i].fsent && off + max(n, 0) == q.st[i].sw
+		if n <= 0 && !fin: break
+		n = max(n, 0); f ~= QFrame{}; at := q.st[i].sh + off - q.st[i].sbase
+		f.ty = if crypto { 6 } else { 8 }; f.a = if crypto { off } else { q.st[i].id }; f.b = off; f.fin = fin; f.data.append(q.st[i].sbuf[at..at + n]); qf_put(b, f)
+		if fresh: q.st[i].snext += n
+		if fresh && !crypto: q.txdata += n
+		if fin: q.st[i].fsent = true
+		rec.fr.push(i); rec.fr.push(off); rec.fr.push(n); rec.fr.push(if fin { 1 } else { 0 })
+q_ctl(b byte[>..]&, ty int, x int, y int, z int): f ~= QFrame{}; f.ty = ty; f.a = x; f.b = y; f.c = z; qf_put(b, f)
+q_note(rec QSent&, a int, x int, y int): rec.fr.push(a); rec.fr.push(x); rec.fr.push(y); rec.fr.push(0)
+q_app(q Quic&, b byte[>..]&, room int, rec QSent&):
+	n := q.st.len - 3
+	if (q.pend & 8) != 0: b.push(30)
+	if (q.pend & 1) != 0: q_ctl(b, 16, q.rxmax, 0, 0)
+	if (q.pend & 2) != 0: q_ctl(b, 18, q.mxib, 0, 0)
+	if (q.pend & 4) != 0: q_ctl(b, 19, q.mxiu, 0, 0)
+	if q.pend != 0: q_note(rec, -1, q.pend, 0); q.pend = 0
+	if q.prsp.len == 8: b.push(27); b.append(q.prsp[..]); q.prsp.clear(); q_note(rec, -3, 0, 0)
+	while q.retire.len > 0 && room - b.len > 64: x := q.retire.pop(); q_ctl(b, 25, x, 0, 0); q_note(rec, -4, x, 0)
+	for k n:
+		i := 3 + (q.rr + k) % n; fl := q.st[i].fl
+		if room - b.len < 64: break
+		if (fl & 1) != 0: q_ctl(b, 17, q.st[i].id, q.st[i].rmax, 0)
+		if (fl & 2) != 0: q_ctl(b, 4, q.st[i].id, q.st[i].srst, q.st[i].snext)
+		if (fl & 4) != 0: q_ctl(b, 5, q.st[i].id, q.st[i].rstop, 0)
+		if fl != 0: q_note(rec, -2, i, fl); q.st[i].fl = 0
+		if q.st[i].srst < 0: q_emit(q, i, b, room, rec)
+	q.rr += 1
+q_frames(q Quic&, s int, room int, rec QSent&) byte[>..]:
+	b byte[>..] ~= []; ack := q.sp[s].ackn > 0 && q.sp[s].rxr.len > 0; can := s < 2 || q.sp[s].probe > 0 || q.infl + QMAXD <= q.cwnd
+	if ack: q_ackf(q, s, b)
+	al := b.len
+	if can: q_emit(q, s, b, room, rec)
+	if can && s == 2 && q.hs && room - b.len > 100: q_app(q, b, room, rec)
+	if b.len == al && (q.sp[s].probe > 0 || s == 2 && q.keep > 0.0 && q.hs && q.now >= max(q.tlast, q.tidle) + q.keep): b.push(1); q_note(rec, -9, 0, 0)
+	if b.len == al && !(ack && (s < 2 || q.sp[s].ackn >= 2 || q.sp[s].ooo || q.now >= q.sp[s].ackt)): b.clear(); return b
+	if ack: q.sp[s].ackn = 0; q.sp[s].ooo = false
+	if q.sp[s].probe > 0 && b.len > al: q.sp[s].probe -= 1
+	b
+q_closef(q Quic&, s int) byte[>..]:
+	b byte[>..] ~= []; f ~= QFrame{}; app := q.eapp && s == 2
+	f.ty = if app { 29 } else { 28 }; f.a = if q.eapp && !app { 12 } else { q.err }
+	if app || !q.eapp: f.data.append(q.ereason[..])
+	qf_put(b, f); b
+q_min(a real, b real) real: if a == 0.0 || b < a { b } else { a }
+q_timer(q const Quic&) real, int, bool:
+	t ~= 0.0; sp ~= 0; f := (1 << min(q.ptoc, 10)) as real
+	for s 3:
+		l := q.sp[s].losst
+		if l > 0.0 && (t == 0.0 || l < t): t = l; sp = s
+	if t > 0.0: return t, sp, true
+	if q.srv && !q.valid && 3 * q.rxb - q.txb < QMAXD: return 0.0, 0, false
+	for s 3:
+		x := q.sp[s].lastae + q_pto(q, s) * f
+		if q.sp[s].sent.len > 0 && q.sp[s].tok && (s < 2 || q.conf) && (t == 0.0 || x < t): t = x; sp = s
+	if t == 0.0 && !q.srv && !q.conf && q.tls_on: sp = if q.sp[1].tok { 1 } else { 0 }; t = q.tlast + q_pto(q, sp) * f
+	return t, sp, false
+q_timers(q Quic&):
+	now := q.now
+	if q.state == QUIC_CLOSED: return
+	if q.state >= QUIC_CLOSING:
+		if now >= q.closet: q.state = QUIC_CLOSED
+		return
+	if q.idle > 0.0 && now >= q.tidle + q.idle || !q.hs && now >= q.tidle + 10.0: q.state = QUIC_CLOSED; q.err = -2; return
+	t, s, loss := q_timer(q)
+	if t == 0.0 || now < t || (q.test & 4) != 0: return
+	if loss: q_lost(q, s); return
+	q.ptoc += 1; q.sp[s].probe = 2
+	if q.sp[s].sent.len > 0: q_requeue(q, s, 0)
+quic_timeout(q const Quic&) real:
+	if q.state == QUIC_CLOSED: return 0.0
+	if q.state >= QUIC_CLOSING: return q.closet
+	t, s, loss := q_timer(q); r ~= if (q.test & 4) != 0 { 0.0 } else { t }
+	for i 3:
+		if q.sp[i].ackn > 0 && q.sp[i].tok: r = q_min(r, if i == 2 { q.sp[i].ackt } else { q.now })
+	if q.idle > 0.0 || !q.hs: r = q_min(r, q.tidle + (if q.idle > 0.0 { q.idle } else { 10.0 }))
+	if q.keep > 0.0 && q.hs: r = q_min(r, max(q.tlast, q.tidle) + q.keep)
+	r
+quic_send(q Quic&, out byte[>..]&, now real) bool:
+	out.clear(); q.now = now; q_timers(q)
+	if q.state >= QUIC_DRAINING || q.state == QUIC_CLOSING && !q.cpend || q.srv && !q.got1: return false
+	if !q.srv && !q.tls_on: q_tls(q)
+	if q.srv && !q.valid && 3 * q.rxb - q.txb < QMAXD: return false
+	pls byte[>..][>..] ~= []; sps int[>..] ~= []; pns int[>..] ~= []; aes int[>..] ~= []; total ~= 0; ini ~= false; closing := q.state == QUIC_CLOSING; hsk ~= false
+	for s 3:
+		ovh := (if s == 2 { 1 + q.dcid.len } else { 9 + q.dcid.len + q.scid.len + (if s == 0 { 1 } else { 0 }) }) + 20; room := QMAXD - total - ovh
+		if !q.sp[s].tok || room < 64: continue
+		rec ~= QSent{}; pl := if closing { q_closef(q, s) } else { q_frames(q, s, room, rec) }
+		if pl.len == 0: continue
+		ae := rec.fr.len > 0; rec.pn = q.sp[s].npn; rec.t = now; q.sp[s].npn += 1; sps.push(s); pns.push(rec.pn); aes.push(if ae { 1 } else { 0 }); total += ovh + pl.len; pls.push(pl)
+		if s == 0 && (ae || !q.srv): ini = true
+		if s == 1: hsk = true
+		if ae: q.sp[s].sent.push(rec); q.sp[s].lastae = now; q.tlast = now
+		if ae && !q.asr: q.asr = true; q.tidle = now
+	n := pls.len
+	if n == 0: return false
+	if ini && total < QMAXD: pls[n - 1].resize(pls[n - 1].len + QMAXD - total, 0)
+	for i n:
+		s := sps[i]; hdr := if s == 2 { qh_short(q.dcid[..], q.phase, 4, pns[i]) } else { qh_long(if s == 0 { 0 } else { 2 }, q.dcid[..], q.scid[..], "", 4, pns[i], pls[i].len) }
+		pkt := qp_seal(q.sp[s].tx, hdr[..], 4, pns[i], pls[i][..]); out.append(pkt[..])
+		if aes[i] == 1: k := q.sp[s].sent.len - 1; q.sp[s].sent[k].size = pkt.len; q.infl += pkt.len
+	q.txb += out.len
+	if closing: q.cpend = false
+	if hsk && !q.srv: q_drop(q, 0)
+	true
+quic_state(q const Quic&) int: q.state
+quic_close(q Quic&, code int, why const byte[:]): q_end(q, true, code, why)
+quic_write(q Quic&, id int, d const byte[:]) bool:
+	i := q_find(q, id)
+	if i < 3 || q.st[i].sfin || q.st[i].srst >= 0 || q.state >= QUIC_CLOSING: return false
+	qs_write(q.st[i], d); true
+quic_fin(q Quic&, id int) bool:
+	i := q_find(q, id)
+	if i < 3 || q.st[i].srst >= 0: return false
+	q.st[i].sfin = true; true
+quic_read(q Quic&, id int, out byte[>..]&) int:
+	i := q_find(q, id)
+	if i < 3: return -1
+	n := qs_take(q.st[i], out); q.rxread += n; q_credit(q)
+	if q.st[i].rfin < 0 && q.st[i].rmax - q.st[i].rbase < q.st[i].rwin / 2: q.st[i].rmax = q.st[i].rbase + q.st[i].rwin; q.st[i].fl |= 1
+	q_done(q, i); n
+quic_stream(q const Quic&, id int) int:
+	i := q_find(q, id)
+	if i < 3: return -1
+	(if qs_avail(q.st[i]) > 0 { 1 } else { 0 }) | (if q.st[i].rfin >= 0 && q.st[i].rbase == q.st[i].rfin { 2 } else { 0 }) | (if q.st[i].rrst >= 0 { 4 } else { 0 }) | (if q.st[i].sstop >= 0 { 8 } else { 0 }) | (if q.st[i].facked { 16 } else { 0 })
+quic_unsent(q const Quic&, id int) int: i := q_find(q, id); if i < 3 { 0 } else { q.st[i].sw - q.st[i].sbase }
+quic_reset(q Quic&, id int, code int):
+	i := q_find(q, id)
+	if i >= 3 && q.st[i].srst < 0: q.st[i].srst = code; q.st[i].fl |= 2
+quic_stop(q Quic&, id int, code int):
+	i := q_find(q, id)
+	if i >= 3 && q.st[i].rstop < 0: q.st[i].rstop = code; q.st[i].fl |= 4
+quic_accept(q Quic&) int:
+	if q.nacc >= q.newst.len: return -1
+	q.nacc += 1; q.newst[q.nacc - 1]

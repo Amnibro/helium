@@ -1,0 +1,212 @@
+into conn.he
+lang he
+use os, crypto.x509, crypto.ecc, crypto.hash, net.quic
+
+```he
+struct Sim { now real = 0.0, nc int = 0, ns int = 0, last real = 0.0, amp bool = true, first int = 0 }
+pump(c net::Quic&, s net::Quic&, m Sim&) bool:
+	d byte[>..] ~= []; any ~= false; go ~= true
+	while go:
+		go = false
+		while net::quic_send(c, d, m.now):
+			if m.nc == 0: m.first = d.len
+			m.nc += 1; m.last = m.now; go = true; net::quic_recv(s, d[..], m.now)
+		while net::quic_send(s, d, m.now):
+			m.ns += 1; m.last = m.now; go = true
+			if !s.valid && s.txb > 3 * s.rxb: m.amp = false
+			net::quic_recv(c, d[..], m.now)
+		any = any || go
+	any
+tick(c net::Quic&, s net::Quic&, m Sim&):
+	if pump(c, s, m): return
+	a := net::quic_timeout(c); b := net::quic_timeout(s); t ~= m.now + 0.01
+	if a > 0.0: t = min(t, a)
+	if b > 0.0: t = min(t, b)
+	m.now = max(t, m.now + 0.0005)
+data(n int, seed int) byte[>..]: b byte[>..] ~= []; for i n { b.push(((i * 7 + i / 251 + seed) % 251) as! byte) } b
+pair(cert const byte[:], key const byte[:], pin const byte[:], alpn const byte[:]) net::Quic, net::Quic: c ~= net::quic_client("amni-lan", alpn, pin, 0.0); s ~= net::quic_server(cert, key, "amni-v1", 0.0); return c, s
+shake(c net::Quic&, s net::Quic&, m Sim&) bool:
+	for r 2000:
+		tick(c, s, m)
+		if c.conf && s.hs || c.state >= net::QUIC_CLOSING || s.state >= net::QUIC_CLOSING: break
+	c.conf && s.hs && c.state == net::QUIC_OPEN && s.state == net::QUIC_OPEN
+echo(c net::Quic&, s net::Quic&, m Sim&, id int, n int, seed int) bool:
+	msg := data(n, seed); got byte[>..] ~= []; back byte[>..] ~= []; fin ~= false
+	net::quic_write(c, id, msg[..]); net::quic_fin(c, id)
+	for r 400000:
+		tick(c, s, m); k := net::quic_read(s, id, got)
+		if k > 0: net::quic_write(s, id, got[got.len - k..])
+		if !fin && k >= 0 && (net::quic_stream(s, id) & 2) != 0: net::quic_fin(s, id); fin = true
+		net::quic_read(c, id, back)
+		if (net::quic_stream(c, id) & 2) != 0 || c.state != net::QUIC_OPEN || s.state != net::QUIC_OPEN: break
+	fin && got[..] == msg[..] && back[..] == msg[..] && (net::quic_stream(c, id) & 2) != 0
+q3(suite int, cert const byte[:], key const byte[:]) bool:
+	c, s ~= pair(cert, key, crypto::sha256(cert), "amni-v1"); m ~= Sim{}; c.only = suite
+	h := shake(c, s, m); al := str(c.tls[0].sel) == "amni-v1" && str(s.tls[0].sel) == "amni-v1" && c.tls[0].suite == suite; id := net::quic_open(c, true); e := echo(c, s, m, id, 1048576, suite)
+	net::quic_close(c, 7, "bye"); pump(c, s, m); cl := s.err == 7 && s.eapp && !s.elocal && str(s.ereason) == "bye" && s.state == net::QUIC_DRAINING
+	for r 2000: tick(c, s, m)
+	ok := h && al && m.first >= 1200 && m.amp && e && cl && c.state == net::QUIC_CLOSED && s.state == net::QUIC_CLOSED
+	if !ok: print("  q3 ", h, al, " first ", m.first, " amp ", m.amp, " echo ", e, " close ", cl, " ", c.state, s.state, " err ", c.err, " ", s.err, " ", str(c.ereason), "|", str(s.ereason))
+	ok
+q3c(cert const byte[:], key const byte[:], pin const byte[:], alpn const byte[:]) int, bool:
+	c, s ~= pair(cert, key, pin, alpn); m ~= Sim{}; h := shake(c, s, m)
+	return c.err, c.elocal
+settle(c net::Quic&, s net::Quic&, m Sim&): for r 50 { tick(c, s, m) }
+sent(q net::Quic&, id int) int: q.st[net::q_find(q, id)].snext
+q5(cert const byte[:], key const byte[:]) bool, bool, bool:
+	c, s ~= pair(cert, key, crypto::sha256(cert), "amni-v1"); m ~= Sim{}; s.lp.v[4] = 600000; h := shake(c, s, m); ids int[>..] ~= []; got byte[>..][>..] ~= []; all ~= true
+	for j 4: ids.push(net::quic_open(c, true)); e byte[>..] ~= []; got.push(e)
+	net::quic_write(c, ids[0], data(1048576, 50)[..]); net::quic_fin(c, ids[0]); settle(c, s, m); a := h && sent(c, ids[0]) == 262144 && c.txdata == 262144
+	for j 3: net::quic_write(c, ids[j + 1], data(1048576, 51 + j)[..]); net::quic_fin(c, ids[j + 1])
+	settle(c, s, m); b := c.txdata == 600000 && sent(c, ids[0]) + sent(c, ids[1]) + sent(c, ids[2]) + sent(c, ids[3]) == 600000 && c.state == net::QUIC_OPEN && s.state == net::QUIC_OPEN
+	for r 200000:
+		tick(c, s, m); done ~= true
+		for j 4: net::quic_read(s, ids[j], got[j]); done = done && (net::quic_stream(s, ids[j]) & 2) != 0
+		if done || s.state != net::QUIC_OPEN: break
+	for j 4: all = all && got[j][..] == data(1048576, 50 + j)[..]
+	if !(a && b && all): print("  q5 ", h, a, b, all, " ", sent(c, ids[0]), " ", c.txdata, " ", c.err, " ", s.err, " ", str(s.ereason))
+	return a, b, all
+q5c(cert const byte[:], key const byte[:]) bool:
+	c, s ~= pair(cert, key, crypto::sha256(cert), "amni-v1"); m ~= Sim{}; c.test = 1; h := shake(c, s, m); id := net::quic_open(c, true); net::quic_write(c, id, data(1048576, 9)[..]); settle(c, s, m)
+	h && s.err == 3 && s.elocal && !s.eapp && c.err == 3 && !c.elocal
+wr(q net::Quic&, id int, seed int): net::quic_write(q, id, data(2000 + 13 * (id >> 2), id + seed)[..]); net::quic_fin(q, id)
+q7(cert const byte[:], key const byte[:]) bool, bool:
+	c, s ~= pair(cert, key, crypto::sha256(cert), "amni-v1"); m ~= Sim{}; h := shake(c, s, m); cr byte[>..][>..] ~= []; sr byte[>..][>..] ~= []; opened ~= true; all ~= true
+	for i 400: e byte[>..] ~= []; cr.push(e); f byte[>..] ~= []; sr.push(f)
+	for k 100: opened = opened && net::quic_open(c, true) == 4 * k && net::quic_open(c, false) == 4 * k + 2 && net::quic_open(s, true) == 4 * k + 1 && net::quic_open(s, false) == 4 * k + 3
+	full := net::quic_open(c, true) < 0 && net::quic_open(c, false) < 0 && net::quic_open(s, true) < 0 && net::quic_open(s, false) < 0
+	for k 100: wr(c, 4 * k, 0); wr(c, 4 * k + 2, 0); wr(s, 4 * k + 1, 1000); wr(s, 4 * k + 3, 1000)
+	for r 20000:
+		tick(c, s, m); a ~= net::quic_accept(s); b ~= net::quic_accept(c); done ~= true
+		while a >= 0: if (a & 2) == 0 { wr(s, a, 1000) } a = net::quic_accept(s)
+		while b >= 0: if (b & 2) == 0 { wr(c, b, 0) } b = net::quic_accept(c)
+		for i 400:
+			if (i & 3) != 3: net::quic_read(s, i, sr[i]); done = done && (net::quic_stream(s, i) & 2) != 0
+			if (i & 3) != 2: net::quic_read(c, i, cr[i]); done = done && (net::quic_stream(c, i) & 2) != 0
+		if done || c.state != net::QUIC_OPEN || s.state != net::QUIC_OPEN: break
+	for i 400:
+		if (i & 3) != 3: all = all && sr[i][..] == data(2000 + 13 * (i >> 2), i)[..]
+		if (i & 3) != 2: all = all && cr[i][..] == data(2000 + 13 * (i >> 2), i + 1000)[..]
+	settle(c, s, m); more := net::quic_open(c, true) == 400 && net::quic_open(c, false) == 402 && net::quic_open(s, true) == 401 && net::quic_open(s, false) == 403
+	if !(h && opened && full && all && more): print("  q7 ", h, opened, full, all, more, " ", c.state, s.state, " ", c.err, " ", s.err, " ", str(c.ereason), "|", str(s.ereason), " ", c.mxob, " ", c.mxou, " ", s.mxob, " ", s.mxou)
+	return h && opened && all, full && more
+q7c(cert const byte[:], key const byte[:]) bool:
+	c, s ~= pair(cert, key, crypto::sha256(cert), "amni-v1"); m ~= Sim{}; c.test = 2; h := shake(c, s, m)
+	for k 101: id := net::quic_open(c, true); net::quic_write(c, id, "x")
+	settle(c, s, m); h && s.err == 4 && s.elocal && c.err == 4 && !c.elocal
+q7r(cert const byte[:], key const byte[:]) bool, bool:
+	c, s ~= pair(cert, key, crypto::sha256(cert), "amni-v1"); m ~= Sim{}; h := shake(c, s, m); a := net::quic_open(c, true); b := net::quic_open(c, true); buf byte[>..] ~= []
+	net::quic_write(c, a, data(5000, 1)[..]); net::quic_write(c, b, data(5000, 2)[..]); settle(c, s, m); net::quic_read(s, a, buf); net::quic_read(s, b, buf); before := buf.len == 10000 && (net::quic_stream(s, a) & 4) == 0
+	net::quic_reset(c, a, 77); net::quic_stop(s, b, 99); settle(c, s, m)
+	rs := before && (net::quic_stream(s, a) & 4) != 0 && s.st[net::q_find(s, a)].rrst == 77 && !net::quic_write(c, a, "more")
+	st := (net::quic_stream(c, b) & 8) != 0 && c.st[net::q_find(c, b)].sstop == 99 && !net::quic_write(c, b, "more") && (net::quic_stream(s, b) & 4) != 0 && s.st[net::q_find(s, b)].rrst == 99
+	return h && rs && c.state == net::QUIC_OPEN && s.state == net::QUIC_OPEN, st
+q8i(cert const byte[:], key const byte[:], keep real) bool:
+	c, s ~= pair(cert, key, crypto::sha256(cert), "amni-v1"); m ~= Sim{}; c.lp.v[1] = 3000; s.lp.v[1] = 3000; c.keep = keep; h := shake(c, s, m); tc ~= 0.0; ts ~= 0.0
+	while m.now < 30.0:
+		tick(c, s, m)
+		if tc == 0.0 && c.state == net::QUIC_CLOSED: tc = m.now
+		if ts == 0.0 && s.state == net::QUIC_CLOSED: ts = m.now
+	p := net::q_pto(c, 2); lo := m.last + 3.0 - p; hi := m.last + 3.0 + p
+	ok := if keep > 0.0 { h && c.state == net::QUIC_OPEN && s.state == net::QUIC_OPEN } else { h && tc >= lo && tc <= hi && ts >= lo && ts <= hi && c.err == -2 && s.err == -2 }
+	if !ok: print("  q8i ", h, " tc ", tc, " ts ", ts, " last ", m.last, " pto ", p, " ", c.state, s.state, " ", c.err, " ", s.err)
+	ok
+q8k(cert const byte[:], key const byte[:]) bool:
+	c, s ~= pair(cert, key, crypto::sha256(cert), "amni-v1"); m ~= Sim{}; h := shake(c, s, m); e1 := echo(c, s, m, net::quic_open(c, true), 200000, 1)
+	k1 := net::quic_rekey(c); e2 := echo(c, s, m, net::quic_open(c, true), 200000, 2); p1 := c.phase == 1 && s.phase == 1
+	k2 := net::quic_rekey(s); e3 := echo(c, s, m, net::quic_open(c, true), 200000, 3); p2 := c.phase == 0 && s.phase == 0
+	ok := h && e1 && k1 && e2 && p1 && k2 && e3 && p2 && c.state == net::QUIC_OPEN && s.state == net::QUIC_OPEN
+	if !ok: print("  q8k ", h, e1, k1, e2, p1, k2, e3, p2, " ", c.err, " ", s.err, " ", str(c.ereason), "|", str(s.ereason))
+	ok
+struct Rng { x int = 1 }
+rn(r Rng&, n int) int: r.x = (r.x * 1103515245 + 12345) & 0x7fffffff; (r.x >> 8) % n
+rv(r Rng&) int: k := rn(r, 4); if k == 0 { rn(r, 8) } else if k == 1 { rn(r, 300) } else if k == 2 { rn(r, 2000000) } else { (rn(r, 8388608) << 39) | rn(r, 8388608) }
+rb(r Rng&, n int) byte[>..]: b byte[>..] ~= []; for i n { b.push(rn(r, 256) as! byte) } b
+junkf(r Rng&) byte[>..]:
+	b byte[>..] ~= []; k := 1 + rn(r, 5); mode := rn(r, 4)
+	if mode == 3: return rb(r, 1 + rn(r, 60))
+	for i k:
+		f ~= net::QFrame{}; f.ty = rn(r, 31); f.a = rv(r); f.b = rv(r); f.c = rv(r); f.fin = rn(r, 2) == 1; f.data = rb(r, rn(r, 40)); f.tok = rb(r, 16); nr := 1 + 2 * rn(r, 3)
+		for j nr: f.rg.push(rn(r, 50))
+		net::qf_put(b, f)
+	if mode == 2 && b.len > 0: b[rn(r, b.len)] = rn(r, 256) as! byte
+	b
+sane(q const net::Quic&, live int) bool: q.state == live && q.err == -1 || (q.state == net::QUIC_CLOSING || q.state == net::QUIC_DRAINING) && q.err >= 0
+drain(q net::Quic&) bool:
+	d byte[>..] ~= []
+	for i 64:
+		if !net::quic_send(q, d, 0.0): return true
+	false
+mutate(r Rng&, d const byte[:]) byte[>..]:
+	b byte[>..] ~= []; k := rn(r, 5); b.append(d)
+	if k == 0: return b
+	if k == 1: b[rn(r, b.len)] ^= (1 << rn(r, 8)) as! byte; return b
+	if k == 2: n := rn(r, b.len); b.resize(n, 0); return b
+	if k == 3: e := rb(r, 1 + rn(r, 40)); b.append(e[..]); return b
+	i := rn(r, b.len); n := min(b.len - i, 1 + rn(r, 8))
+	for j n: b[i + j] = rn(r, 256) as! byte
+	b
+jlisten(cert const byte[:], key const byte[:], n1 int, n2 int) bool, int:
+	r ~= Rng{}; ok ~= true; s ~= net::quic_server(cert, key, "amni-v1", 0.0); shut ~= 0
+	for i n1:
+		d ~= rb(r, 1 + rn(r, 1400))
+		if rn(r, 2) == 0: d[0] = (0xc0 | rn(r, 64)) as! byte
+		if rn(r, 4) == 0 && d.len > 5: d[1] = 0; d[2] = 0; d[3] = 0; d[4] = 1
+		net::quic_recv(s, d[..], 0.0); ok = ok && s.state == net::QUIC_HANDSHAKE && s.err == -1 && !s.got1 && drain(s)
+	for i n2:
+		t ~= net::quic_server(cert, key, "amni-v1", 0.0); id := rb(r, 8); pl ~= junkf(r); pl.resize(1160, 0); k := net::qk_initial(id[..], false); h := net::qh_long(0, id[..], rb(r, 8)[..], "", 4, i, pl.len); p := net::qp_seal(k, h[..], 4, i, pl[..])
+		net::quic_recv(t, p[..], 0.0); ok = ok && p.len >= 1200 && t.got1 && sane(t, net::QUIC_HANDSHAKE) && drain(t)
+		if t.state != net::QUIC_HANDSHAKE: shut += 1
+	return ok, shut
+jopen(cert const byte[:], key const byte[:], n3 int, n4 int) bool, int, int:
+	r ~= Rng{}; r.x = 77; ok ~= true; c, s ~= pair(cert, key, crypto::sha256(cert), "amni-v1"); m ~= Sim{}; h := shake(c, s, m); caught byte[>..][>..] ~= []; d byte[>..] ~= []; shut ~= 0; kept ~= 0
+	id := net::quic_open(c, true); net::quic_write(c, id, data(40000, 3)[..])
+	while net::quic_send(c, d, m.now): x byte[>..] ~= []; x.append(d[..]); caught.push(x); net::quic_recv(s, d[..], m.now)
+	settle(c, s, m); got byte[>..] ~= []; net::quic_read(s, id, got); n0 := got.len
+	for i n3:
+		j byte[>..] ~= []
+		if rn(r, 3) == 0: j.append(rb(r, 1 + rn(r, 1400))[..])
+		else: j.append(mutate(r, caught[rn(r, caught.len)][..])[..])
+		net::quic_recv(s, j[..], m.now); ok = ok && s.state == net::QUIC_OPEN && s.err == -1
+		if i % 1000 == 0: ok = ok && drain(s)
+	e := echo(c, s, m, net::quic_open(c, true), 50000, 4); net::quic_read(s, id, got); ok = ok && h && e && caught.len > 3 && got.len == n0 && n0 > 0
+	base ~= copy(s); pn ~= c.sp[2].npn + 1000
+	for i n4:
+		pl := junkf(r); hd := net::qh_short(s.scid[..], c.phase, 4, pn); p := net::qp_seal(c.sp[2].tx, hd[..], 4, pn, pl[..]); pn += 1
+		net::quic_recv(s, p[..], m.now); ok = ok && sane(s, net::QUIC_OPEN) && drain(s)
+		if s.state != net::QUIC_OPEN: shut += 1; s = copy(base)
+		else: kept += 1
+	return ok, shut, kept
+main():
+	priv := crypto::ec_generate(crypto::P256); cert, okc := crypto::x509_self_signed("amni-lan", priv[..], (time() as int) - 3600, 30); pin := crypto::sha256(cert)
+	a, sa := jlisten(cert[..], priv[..], 60000, 40000); print("Q2 junk listening ", a && sa > 100)
+	b, sb, kb := jopen(cert[..], priv[..], 60000, 40000); print("Q2 junk open ", b && sb > 100 && kb > 100)
+	for su [0x1301, 0x1302, 0x1303]: print("Q3 suite ", su, " ", q3(su, cert[..], priv[..]))
+	e1, l1 := q3c(cert[..], priv[..], crypto::sha256("x")[..], "amni-v1"); print("Q3 control pin ", e1 == 256 + 42 && l1)
+	e2, l2 := q3c(cert[..], priv[..], pin[..], "other"); print("Q3 control alpn ", e2 == 0x178 && !l2)
+	a5, b5, d5 := q5(cert[..], priv[..]); print("Q5 stream limit ", a5); print("Q5 connection limit ", b5); print("Q5 resumes ", d5); print("Q5 control ", q5c(cert[..], priv[..]))
+	a7, b7 := q7(cert[..], priv[..]); print("Q7 streams ", a7); print("Q7 credit ", b7); print("Q7 control ", q7c(cert[..], priv[..]))
+	r7, s7 := q7r(cert[..], priv[..]); print("Q7 reset ", r7); print("Q7 stop ", s7)
+	print("Q8 idle ", q8i(cert[..], priv[..], 0.0)); print("Q8 keep-alive ", q8i(cert[..], priv[..], 1.0)); print("Q8 key update ", q8k(cert[..], priv[..]))
+```
+
+expect:
+Q2 junk listening true
+Q2 junk open true
+Q3 suite 4865 true
+Q3 suite 4866 true
+Q3 suite 4867 true
+Q3 control pin true
+Q3 control alpn true
+Q5 stream limit true
+Q5 connection limit true
+Q5 resumes true
+Q5 control true
+Q7 streams true
+Q7 credit true
+Q7 control true
+Q7 reset true
+Q7 stop true
+Q8 idle true
+Q8 keep-alive true
+Q8 key update true
