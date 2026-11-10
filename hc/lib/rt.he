@@ -212,6 +212,12 @@ rt_os_read_file(path const byte[:], out int) bool:
 	ch ~= if RT_TIER != 0 && sys3(5, fd, ptr(RT_ST[..]), 0) == 0 { mld(ptr(RT_ST[48..])) + 65536 } else { 1 << 20 }
 	loop: d := rt_grow(out, ch, 1); r := sys3(0, fd, d, ch); mst(out + 8, mld(out + 8) - ch + max(r, 0)); if r < 0 { sys3(3, fd, 0, 0); return false } if r == 0 { break } if RT_TIER != 0 { ch = 4096 }
 	sys3(3, fd, 0, 0); true
+rt_os_read_file_range(path const byte[:], off int, n int, out int) bool:
+	c := rt_path(path, RT_PB); if c == 0 || off < 0 || n < 0 { return false } fd := sys3(2, c, 0, 0); if fd < 0: return false
+	if sys3(8, fd, off, 0) < 0: sys3(3, fd, 0, 0); return false
+	left ~= n; ok ~= true
+	while left > 0: d := rt_grow(out, left, 1); r := sys3(0, fd, d, left); mst(out + 8, mld(out + 8) - left + max(r, 0)); if r < 0 { ok = false } if r <= 0 { break } left -= r
+	sys3(3, fd, 0, 0); ok
 rt_wfile(c int, data const byte[:], flags int) bool: if c == 0 { return false } fd := sys3(2, c, 0x41 | flags, 420); if fd < 0 { return false } o ~= 0; while o < data.len { w := sys3(1, fd, ptr(data[o..]), data.len - o); if w <= 0 { sys3(3, fd, 0, 0); return false } o += w } sys3(3, fd, 0, 0) == 0
 rt_os_write_file(p const byte[:], d const byte[:]) bool: rt_wfile(rt_path(p, RT_PB), d, 0x200)
 rt_os_append_file(p const byte[:], d const byte[:]) bool: rt_wfile(rt_path(p, RT_PB), d, 0x400)

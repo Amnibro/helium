@@ -4,6 +4,7 @@ use std
 
 # whole files
 extern read_file(path const byte[:], out byte[>..]&) bool = "hr_os_read_file"
+extern read_file_range(path const byte[:], offset int, count int, out byte[>..]&) bool = "hr_os_read_file_range"
 extern write_file(path const byte[:], data const byte[:]) bool = "hr_os_write_file"
 extern write_file_atomic(path const byte[:], data const byte[:]) bool = "hr_os_write_file_atomic"
 extern append_file(path const byte[:], data const byte[:]) bool = "hr_os_append_file"

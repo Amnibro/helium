@@ -457,6 +457,13 @@ static bool hr_os_read_file(hsl path, hrv *out) {
 	for (;;) { hr_rinit(out); HR_OVER(out->b, out->n + (1 << 20), "read"); ssize_t r = read(fd, out->b + out->n, 1 << 20); if (r < 0) { close(fd); return false; } if (r == 0) break; out->n += r; }
 	close(fd); return true;
 }
+static bool hr_os_read_file_range(hsl path, int64_t off, int64_t n, hrv *out) {
+	HR_CS(c, path); int fd = open(c, O_RDONLY); HR_CSF(c);
+	if (fd < 0) return false;
+	if (off < 0 || n < 0 || lseek(fd, (off_t)off, SEEK_SET) < 0) { close(fd); return false; }
+	while (n > 0) { int64_t k = n < (1 << 20) ? n : (1 << 20); hr_rinit(out); HR_OVER(out->b, out->n + k, "read"); ssize_t r = read(fd, out->b + out->n, (size_t)k); if (r < 0) { close(fd); return false; } if (r == 0) break; out->n += r; n -= r; }
+	close(fd); return true;
+}
 static bool hr_wfile(hsl path, hsl data, int flags) {
 	HR_CS(c, path); int fd = open(c, O_WRONLY | O_CREAT | flags, 0644); HR_CSF(c);
 	if (fd < 0) return false;
