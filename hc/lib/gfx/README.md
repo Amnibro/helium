@@ -2276,8 +2276,8 @@ over 4 km, 1280 x 720, glow and temporal off. Values are read from
 * **V1 the shadow map matches the clouds seen.** For 25 ground points on a 5 x 5
   grid 400 m apart, a camera at the point looks at the sun: the cloud pass's
   transmittance at the middle pixel against the shadow map's value for that point.
-  Mean absolute difference at most **0.05**, with at least 3 points below 0.5 and
-  3 above (cover moves in steps of 0.05 from 0.5 until both groups exist; V2, V3 and
+  Mean absolute difference at most **0.05**, with at least 7 points below 0.5 and
+  7 above (cover moves in steps of 0.05 from 0.5 until both groups exist; V2, V3 and
   V4 run at that cover). Control: shadow map built with the clouds moved 1 km: mean
   difference at least **0.15**.
 * **V2 ground shadows follow the map.** A ground plane seen from 1.4 km straight
