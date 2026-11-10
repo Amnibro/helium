@@ -2361,6 +2361,68 @@ V1's group size (first 3 on each side), V6's view and its clear-sky comparison, 
 V7's factor were changed after the first runs; each change was committed before the
 run that used it.
 
+### Volumetric fog bars (E6, registered before the first GPU run)
+
+Fog upgrades: drifting noise in the fog's density (`s3d::fog_noise`), local fog
+volumes (`s3d::fog_volumes`), and local lights that keep their spot cone and their
+shadow maps inside fog. Unless stated: 1280 x 720, no geometry, sky drawing off,
+environment map off, sun color 0, glow and temporal off, camera at (0, 2, 0) looking
+along +z with a 1.0 rad vertical field of view, fog falloff 0, fog far 30, 64 steps,
+fog ambient (1, 1, 1), no noise. Values are read from `s3d::hdr_target()` and divided
+by one unit: the frame-center value with fog density 50 and nothing else (fog too
+thick to see through under the same ambient light). A block is the mean of a group
+of pixels, named by the column and row of its center and its size. "Within 5% of X"
+for a block means its value differs from its own reference by at most 0.05 x X.
+
+* **H1 a volume's optical depth.** Fog density 0, one box volume centered at
+  (0, 2, 10), half size (1, 1, 2), density 0.5, soft 0. The 8 x 8 block at the frame
+  center reads 1 - e^(-2) = 0.8647 within 1%; the 8 x 8 block 200 pixels to its
+  right reads at most 0.001. Control: with the volume's density 0 the center block
+  reads at most 0.001.
+* **H2 volume color inside global fog.** Fog density 0.05, the H1 volume with color
+  (1, 0.5, 0.25). The center block reads 0.9698 red, 0.6989 green and 0.5634 blue,
+  each within 2%: the closed form for 8 m of fog, 4 m of fog plus volume, then 18 m
+  of fog, where the share of each color scattered in the overlap is
+  (0.05 + 0.5 x color) / 0.55. Control: with a white volume, blue reads more than
+  10% from 0.5634.
+* **H3 round volume with soft edges.** Fog density 0, one round volume at
+  (0, 2, 10), half size (2, 1, 2), density 0.3, soft 0.5. The center block reads
+  1 - e^(-0.9) = 0.5934 within 2% (the density along the central ray integrates to
+  0.9). Along the center row, 8 x 8 blocks every 8 pixels from the center to 320
+  pixels right: no block is more than 0.005 above the block before it, and the last
+  reads at most 0.001. Control: with soft 0 the center reads 1 - e^(-1.2) = 0.6988.
+* **H4 noise.** Fog density 0.05, far 20, noise size 20, wind 0. Over the 3,600
+  blocks of 16 x 16 pixels: with noise 0 the standard deviation over the mean is at
+  most 0.005; with noise 1 it is at least 0.05 and the frame mean is within 10% of
+  the noise-0 frame's. Control: the noise-0 frame fails the 0.05 bar.
+* **H5 wind.** H4 with noise 1 and wind (1, 0, 0). Mean absolute difference of the
+  block values over the frame mean: time 80 against time 0 at most 0.01 (the noise
+  repeats every 4 x noise size = 80 m along x); control: time 40 against time 0 at
+  least 0.03.
+* **H6 spot cone in fog.** Fog density 0.05, far 20, fog ambient 0, one spot light
+  at (-3, 2, 7) aimed at (0, 2, 7), color (50, 50, 50), range 12, cone 0.3, edge
+  0.2, no shadows. Blocks of 24 x 4 pixels at column 640, rows 360, 320, 284 and
+  240, and at column 840, row 360, each against a CPU integral of the same
+  single-scattering model along the ray through the block's center (20,000 steps):
+  each within 5% of the row-360 reference, and row 240 (outside the cone) at most
+  1% of it. Control: the same light as a point light reads more than 1% at row 240.
+* **H7 local light shadows in fog.** H6 plus a box with center (-1.5, 2.6, 7) and
+  half size (0.05, 0.6, 1); the CPU integral tests the path from each sample to the
+  light against the box. Spot with shadows on: block (640, 320) reads at most 2% of
+  H6's row-360 reference, and block (640, 400) is within 5% of that reference. A
+  point light with shadows at the same place, same color and range: blocks
+  (640, 320), (640, 400) and (840, 320) are each within 5% of the largest of their
+  three CPU values. Control: the spot with shadows off reads more than 2% at
+  (640, 320).
+* **H8 cost.** The H7 spot scene with fog density 0.05, far 20 and 32 steps: the
+  frame with noise 1, four soft box volumes (half size 1, density 0.3, soft 0.5, at
+  x = -3 and 3, z = 10 and 15, y = 2) and the spot's shadows on costs at most 2 ms
+  more than the frame with noise 0, no volumes and shadows off.
+* **H9 browser.** `scene_fog` in `webgputest` (fog with noise, one volume and a
+  shadowed spot over the test scene) matches the native frame by that tool's bar.
+* **H10 the rest.** `gfxtest`, `wgsltest` and `webgputest` pass; the goldens do not
+  move.
+
 ### Volumetric cloud results (2026-11-10, RX 9060 XT, RADV; another program using the whole card)
 
 | Bar | Result | Bar value |
