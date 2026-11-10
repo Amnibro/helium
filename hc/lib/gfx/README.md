@@ -1751,6 +1751,46 @@ have a green channel above both others by 40 / 255; "red" pixels the same for re
   closed-form value 0.8 x 4 x 0.2487 = 0.796 (the view factor from a point to a
   parallel square). Control: with the glow at 0 it is below 0.05 of that value.
 
+### Meshlet and cluster LOD bars (E1, registered before the first GPU run)
+
+Mesh B: a ball of radius 1 with smooth bumps 0.04 high, 512 by 256 quads: 262,144
+triangles, 261,120 of them with area. 1280 x 720, `s3d::meshlets` on and
+`s3d::meshlet_px` at 1 unless a bar says so. A "cut" is the set of clusters picked for
+one error value.
+
+* **N1 clusters.** Every cluster has at most 128 triangles. Level 0 holds every
+  triangle with area exactly once. The coarsest cut has at most 1 / 100 of them.
+  Building mesh B takes at most 5 s on one core.
+* **N2 no cracks.** Mesh B is closed. For 16 error values spread evenly on a log scale
+  from the smallest cluster error above 0 to the largest, every edge of the cut is
+  shared by exactly two triangles. Control: a cut made with error 0 on one side of the
+  plane x = 0 and the largest error on the other has open edges.
+* **N3 the error is honest.** On a 128 by 64 ball with the same bumps, for 4 of those
+  error values `e`, every 4th vertex of the mesh is at most `2 e` from the cut's
+  surface.
+* **N4 same picture close up.** Mesh B 480 pixels tall, lit by the sun and the sky:
+  against `s3d::meshlets` off the mean difference is at most 1 / 255 and at most 0.005
+  of the pixels are more than 8 / 255 apart, with at most 1 / 4 of the triangles drawn.
+  Control: at `s3d::meshlet_px` 64 the picture fails those.
+* **N5 far away.** Mesh B 40 pixels tall: at most 1 / 100 of the triangles are drawn,
+  the ball's pixels overlap those of the full mesh with IoU at least 0.9, and their
+  mean colors differ by at most 4 / 255 in every channel.
+* **N6 the GPU pass picks what the CPU picks.** From 8 camera spots, the frame drawn
+  from the GPU's list equals the frame drawn from the same selection made on the CPU
+  (`s3d::meshlet_cpu`): 0 / 255.
+* **N7 culling.** With mesh B behind the camera nothing of it is in the camera's list,
+  and its shadow on the floor in view overlaps the full mesh's shadow with IoU at
+  least 0.97. With mesh B in view, `s3d::meshlet_cone` on draws at most 0.9 of the
+  triangles it draws when off, and the frame is the same: 0 / 255.
+* **N8 shadows.** Mesh B in view over a floor: its shadow overlaps the full mesh's
+  shadow with IoU at least 0.97.
+* **N9 cost.** 64 copies of mesh B (16.7 million triangles) standing 3 to 60 m from the
+  camera on the RX 9060 XT: the frame time with meshlets on is at most half of the
+  frame time with them off (mean of 100 frames, best of 3).
+* **N10 off is free, and gates.** With `s3d::meshlets` off both goldens stay above
+  40 dB and every earlier check passes as before. gfxtest, wgsltest and webgputest
+  pass, with a new `scene_meshlet` in webgputest that matches the native frame.
+
 ### Ray-traced reflection results (2026-11-09, RX 9060 XT, RADV; full gfxtest ok)
 
 | Bar | Result | Bar value |
