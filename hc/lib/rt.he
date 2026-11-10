@@ -114,7 +114,9 @@ rt_vk_aesmix(p int, n int, inv int):
 		var c int[4]
 		for r 4: c[r] = if inv == 0 { rt_gsb(mld1(p + 4 * q + r), false) } else { mld1(p + 4 * q + r) }
 		for r 4: o ~= 0; for k 4 { o ^= rt_gm(m[k], c[(r + k) & 3]) } mst1(p + 4 * q + r, if inv == 0 { o } else { rt_gsb(o, true) })
-rt_vk_gfdots(d int, v int, s int, p int, r int, m int): for y 16 { q := 64 * (mld1(p + y) & 15); if m == 0 { rt_vk_gfdotr(d + 64 * y, v, s + q, mld1(r + y) & 15, 0) } else { rt_vk_gfdotr(d + q, v, s + 64 * y, 0, mld1(r + y) & 15) } }
+rt_vk_gfdots(d int, v int, s int, p int, r int, m int): for y 16 { if m == 3 { for k 64 { a ~= 0; for j 16 { a ^= rt_gm(mld1(v + 64 * (mld1(p + j) & 15) + 4 * (((k >> 2) + mld1(r + j)) & 15) + (k & 3)), mld1(s + 64 * y + 4 * j + (k & 3))) } mst1(d + 64 * y + k, a) } } else if m == 0 { rt_vk_gfdotr(d + 64 * y, v, s + 64 * (mld1(p + y) & 15), mld1(r + y) & 15, 0) } else if m == 1 { rt_vk_gfdotr(d + 64 * (mld1(p + y) & 15), v, s + 64 * y, 0, mld1(r + y) & 15) } else { rt_vk_gfdotr(d + 64 * y, v, s + 64 * y, 0, 0) } }
+rt_vk_ord16(d int, s int): for y 16 { a := mld1(s + 2 * y) | (mld1(s + 2 * y + 1) << 8); c ~= 0; for z 16 { b := mld1(s + 2 * z) | (mld1(s + 2 * z + 1) << 8); c += if b < a || (b == a && z < y) { 1 } else { 0 } } mst1(d + c, y) }
+rt_vk_xor(d int, s int, n int): for i n { mst1(d + i, mld1(d + i) ^ mld1(s + i)) }
 rt_vk_span(p int, n int) int:
 	i ~= 0
 	while i < n:

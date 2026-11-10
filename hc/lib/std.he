@@ -34,6 +34,8 @@ extern std_zdec(b uint, e int&) uint = "hr_zdec"
 extern std_vk_span(p uint, n int) int = "hr_vk_span"
 extern std_vk_hexenc(d uint, s uint, n int) = "hr_vk_hexenc"
 extern std_vk_hexdec(d uint, s uint, n int) int = "hr_vk_hexdec"
+extern std_vk_ord16(d uint, s uint) = "hr_vk_ord16"
+extern std_vk_xor(d uint, s uint, n int) = "hr_vk_xor"
 
 min<T>(a T, b T) T: if b < a { b } else { a }
 max<T>(a T, b T) T: if a < b { b } else { a }
@@ -681,6 +683,30 @@ HXK ~= -1
 inline hxk() bool:
 	if HXK < 0: HXK = std_vk_cpu()
 	HXK == 1
+# order16: sorts sixteen keys without moving them. keys holds the sixteen
+# as little-endian 16-bit numbers; out[i] becomes the index (0 to 15) of
+# the i-th smallest, and equal keys keep their index order
+inline order16(out byte[:], keys const byte[:]):
+	o := out[..16]
+	k := keys[..32]
+	if hxk():
+		std_vk_ord16(std_ptr(o), std_ptr(k))
+		return
+	for y 16:
+		a := (k[2 * y] as int) | ((k[2 * y + 1] as int) << 8)
+		c ~= 0
+		for z 16:
+			b := (k[2 * z] as int) | ((k[2 * z + 1] as int) << 8)
+			c += if b < a || (b == a && z < y) { 1 } else { 0 }
+		o[c] = y as byte
+# xor_bytes: dst[i] ^= src[i] for every byte of dst; src must be at least
+# as long as dst and must not partly overlap it
+inline xor_bytes(dst byte[:], src const byte[:]):
+	s := src[..dst.len]
+	if hxk():
+		std_vk_xor(std_ptr(dst), std_ptr(s), dst.len)
+		return
+	for i dst.len: dst[i] ^= s[i]
 each_split<F>(s byte[:], sep byte[:]):
 	from ~= 0; at ~= 0
 	while sep.len > 0 && at + sep.len <= s.len:

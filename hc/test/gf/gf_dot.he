@@ -1,4 +1,5 @@
 use std
+use os
 use gf
 sum(b const byte[:]) int:
 	h ~= 7
@@ -62,10 +63,10 @@ main():
 		fill(perm[..], 1000 + t)
 		fill(rots[..], 2000 + t)
 		if t % 2 == 0 { for y 16 { perm[y] = ((y * 7 + t) & 15) as byte } }
-		for m 3:
+		for m 4:
 			fill(o1[..], 5)
 			fill(o2[..], 5)
-			if m == 2 { gf::dot16(o1[..], vecs[..], blk[..]) } else { gf::dot16(o1[..], vecs[..], blk[..], perm[..], rots[..], m) }
+			if m == 2 { gf::dot16(o1[..], vecs[..], blk[..]) } else { gf::dot16(o1[..], vecs[..], blk[..], perm[..], rots[..], if m == 3 { 2 } else { m }) }
 			for y 16:
 				p := (perm[y] as int) & 15
 				if m == 0 { gf::dot64(o2[..], 64 * y, vecs[..], 0, blk[..], 64 * p, rots[y] as int) } else if m == 1 { gf::dot64(o2[..], 64 * p, vecs[..], 0, blk[..], 64 * y, 0, rots[y] as int) } else { gf::dot64(o2[..], 64 * y, vecs[..], 0, blk[..], 64 * y) }
@@ -75,3 +76,23 @@ main():
 	print("dot16 gather ", sum(o1[..]))
 	gf::dot16(o1[..], vecs[..], blk[..], perm[..], rots[..], 1)
 	print("dot16 scatter ", sum(o1[..]))
+	gv byte[1024] ~= [0; 1024]
+	bad = 0
+	for t 40:
+		fill(perm[..], 3000 + t)
+		fill(rots[..], 4000 + t)
+		for j 16 { for i 64 { gv[64 * j + i] = vecs[64 * ((perm[j] as int) & 15) + 4 * (((i >> 2) + (rots[j] as int)) & 15) + (i & 3)] } }
+		gf::dot16(o1[..], vecs[..], blk[..], perm[..], rots[..], 3)
+		gf::dot16(o2[..], gv[..], blk[..])
+		for k 1024: bad += if o1[k] != o2[k] { 1 } else { 0 }
+	print("dot16 moved vecs mismatches ", bad)
+	arg := args()
+	bad = 0
+	if rt_vk_cpu() == 1 || (arg.len > 1 && arg[1] == "HC_NOVK"):
+		for m 4:
+			fill(o1[..], 5)
+			fill(o2[..], 5)
+			gf::dot16(o1[..], vecs[..], blk[..], perm[..], rots[..], m)
+			rt_vk_gfdots(ptr(o2[..]), ptr(vecs[..]), ptr(blk[..]), ptr(perm[..]), ptr(rots[..]), m)
+			for k 1024: bad += if o1[k] != o2[k] { 1 } else { 0 }
+	print("direct mismatches ", bad)

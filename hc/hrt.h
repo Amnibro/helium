@@ -529,6 +529,8 @@ static int64_t hr_vk_cpu(void) { return 0; }
 static int64_t hr_vk_span(uint64_t p, int64_t n) { (void)p; (void)n; return 0; }
 static void hr_vk_hexenc(uint64_t d, uint64_t s, int64_t n) { (void)d; (void)s; (void)n; }
 static int64_t hr_vk_hexdec(uint64_t d, uint64_t s, int64_t n) { (void)d; (void)s; (void)n; return 0; }
+static void hr_vk_ord16(uint64_t d, uint64_t s) { (void)d; (void)s; }
+static void hr_vk_xor(uint64_t d, uint64_t s, int64_t n) { (void)d; (void)s; (void)n; }
 static uint32_t hr_f32_bits(float x) { uint32_t b; memcpy(&b, &x, 4); return b; }
 static float hr_f32_from_bits(uint32_t b) { float x; memcpy(&x, &b, 4); return x; }
 static uint64_t hr_f64_bits(double x) { uint64_t b; memcpy(&b, &x, 8); return b; }
