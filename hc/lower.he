@@ -84,11 +84,11 @@ nf_of(i int) int:
 lslot(v int) int:
 	while LSLOT.len < LVS.len { LSLOT.push(-1) } if LSLOT[v] < 0 { t := LVS[v].ty; LSLOT[v] = slot(tsz(t), tal(t)) } LSLOT[v] as int
 gslot(d int) int:
-	while GOFF.len < GLT.len { GOFF.push(-1) } if GOFF[d] < 0 { t := GLT[d]; BSS = al(BSS, tal(t)); GOFF[d] = BSS; BSS += tsz(t) } GOFF[d] as int
+	while GOFF.len < GLT.len { GOFF.push(-1) } if GOFF[d] < 0 { t := GLT[d]; BSS = al(BSS, if tsz(t) >= 64 && a64(1) { max(tal(t), 64) } else { tal(t) }); GOFF[d] = BSS; BSS += tsz(t) } GOFF[d] as int
 var CAPSL i32[>..<]
 CURI ~= -1; LRF ~= -1; var LRVO i32[>..<]; var LRDO i32[>..<]
 bss(sz int, a int) int:
-	BSS = al(BSS, max(a, 1)); o := BSS; BSS += max(sz, 1); o
+	BSS = al(BSS, max(a, if sz >= 64 && a64(1) { 64 } else { 1 })); o := BSS; BSS += max(sz, 1); o
 lrflag() int:
 	if LRF < 0 { LRF = bss(8, 8) } d := nv(); ir(I_GADDR, 8, d, -1, -1, LRF); d
 lrval(f0 int) int:
@@ -1606,7 +1606,7 @@ lower_fn(i int):
 	pq i32[>..<] ~= []
 	sret := is_agg(rt); sp := nv(); if sret: ir(I_PARAM, 3, sp, -1, -1, 0); pi = 1
 	for j ND[node].n:
-		pt := ptype_of(i, j); for q if is_pair(pt) { 2 } else { 1 }: r := nv(); ir(I_PARAM, if !is_pair(pt) && isf(pt) && !env("HC_NOFP", FNKB) { wof(pt) } else { 3 }, r, -1, -1, pi); pi++; pq.push(r)
+		pt := ptype_of(i, j); for q if is_pair(pt) { 2 } else { 1 }: r := nv(); ir(I_PARAM, if !is_pair(pt) && isf(pt) && !env("HC_NOFP", FNKB) { wof(pt) } else { 3 }, r, -1, -1, pi); if q == 0 && TY[pt].k == TY_SLICE && is_scal(TY[pt].a) { IR[IR.len - 1].b = -2 } pi++; pq.push(r)
 	CAPSL.clear(); while CAPSL.len < LVS.len { CAPSL.push(-1) } cq i32[>..<] ~= []
 	for cp CAPS:
 		if cp.inst == i: r := nv(); ir(I_PARAM, 3, r, -1, -1, pi); pi++; cq.push(r); cq.push(cp.lv)

@@ -1,0 +1,55 @@
+use std
+cnt(k const int[:], y int) int:
+	c ~= 0
+	for z 16:
+		if k[z] < k[y]: c += 1
+	c
+cnx(k const int[:], y int) int:
+	c ~= 0
+	for z 16: c += if k[z] < k[y] { 1 } else { 0 }
+	c
+flag(a int, b int) int:
+	f ~= 7
+	if a < b: f = 42
+	f
+big(a int, b int) int:
+	f ~= -1
+	if a == b: f = 1 << 40
+	f
+chain(a int, b int) int:
+	f ~= 0
+	if a < b: f = 1
+	if a > b: f = 2
+	if a == b: f = 3
+	f
+late(a int, b int) int:
+	f ~= 5
+	g := a * 3
+	if g > b: f = 9
+	f + g
+far(a int, b int) int:
+	f ~= 5
+	if a > 3: f = a
+	if a < b: f = 11
+	f
+fl(a int, b int) real:
+	f ~= 1.5
+	if a < b: f = 2.25
+	f
+by(a int, b int) byte:
+	f byte ~= 200
+	if a < b: f = 17
+	f
+main():
+	k int[16] ~= [0; 16]
+	x ~= 7
+	s ~= 0
+	bad ~= 0
+	for t 2000:
+		for i 16 { x = (x * 1103515245 + 12345) & 0x7FFFFFFF; k[i] = x >> 8 & 31 }
+		for y 16 { a := cnt(k[..], y); b := cnx(k[..], y); s += a * (y + 1); if a != b { bad += 1 } }
+		a := k[0]
+		b := k[1]
+		s += flag(a, b) + chain(a, b) * 3 + late(a, b) + far(a, b) + by(a, b) as int + (fl(a, b) * 4.0) as int
+		s = (s + big(a, b)) & 0xFFFFFFFFFFFF
+	print("sum ", s, " mismatches ", bad)

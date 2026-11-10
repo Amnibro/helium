@@ -27,21 +27,45 @@ mul(a int, b int) int:
 	if a == 0 || b == 0 { 0 } else { EXP[LOG[a] as int + LOG[b] as int] as int }
 # out[at..at+64] = XOR over j < 16 of vecs[vat+64j .. +64] times, byte by byte,
 # the 4-byte group s[sat + 4*((j+rot)%16) ..] repeated across the 64 bytes.
+# With orot from 0 to 15 the result is turned up by that many 4-byte groups
+# before it is stored: result byte k lands at out[at + (k + 4*orot) % 64].
 # out must not overlap vecs or s
-inline dot64(out byte[:], at int, vecs const byte[:], vat int, s const byte[:], sat int, rot int = 0):
+inline dot64(out byte[:], at int, vecs const byte[:], vat int, s const byte[:], sat int, rot int = 0, orot int = -1):
 	o := out[at..at + 64]
 	v := vecs[vat..vat + 1024]
 	g := s[sat..sat + 64]
-	if K == 1 { rt_vk_gfdot(ptr(o), ptr(v), ptr(g), rot & 15) } else { dots(o, v, g, rot) }
-dots(o byte[:], v const byte[:], g const byte[:], rot int):
+	if K != 1 { dots(o, v, g, rot, orot) } else if orot < 0 { rt_vk_gfdot(ptr(o), ptr(v), ptr(g), rot & 15) } else { rt_vk_gfdotr(ptr(o), ptr(v), ptr(g), rot & 15, orot & 15) }
+# sixteen dot64 products at once over whole 1024-byte blocks: row y of out
+# is the dot64 of vecs with row y of s, a row being 64 bytes
+inline dot16(out byte[:], vecs const byte[:], s const byte[:]): dot16(out, vecs, s, "\x00\x01\x02\x03\x04\x05\x06\x07\x08\x09\x0A\x0B\x0C\x0D\x0E\x0F", "\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0", 1)
+# the same with the rows moved. mode 0 gathers: row y of out is the dot64 of
+# vecs with row perm[y] of s, taken with dot64's rot set to rot[y]. mode 1
+# scatters: row y of s goes to row perm[y] of out, with dot64's orot set to
+# rot[y]. perm and rot hold 16 bytes, each used modulo 16.
+# out must not overlap vecs or s
+inline dot16(out byte[:], vecs const byte[:], s const byte[:], perm const byte[:], rot const byte[:], mode int = 0):
+	o := out[..1024]
+	v := vecs[..1024]
+	g := s[..1024]
+	p := perm[..16]
+	r := rot[..16]
 	if K < 0: init()
 	if K == 1:
-		rt_vk_gfdot(ptr(o), ptr(v), ptr(g), rot & 15)
+		rt_vk_gfdots(ptr(o), ptr(v), ptr(g), ptr(p), ptr(r), mode)
+		return
+	for y 16:
+		a := 64 * ((p[y] as int) & 15)
+		if mode == 0 { dots(o[64 * y..64 * y + 64], v, g[a..a + 64], r[y] as int, -1) } else { dots(o[a..a + 64], v, g[64 * y..64 * y + 64], 0, r[y] as int) }
+dots(o byte[:], v const byte[:], g const byte[:], rot int, orot int):
+	if K < 0: init()
+	sh := if orot < 0 { 0 } else { 4 * (orot & 15) }
+	if K == 1:
+		rt_vk_gfdotr(ptr(o), ptr(v), ptr(g), rot & 15, sh / 4)
 		return
 	for k 64:
 		a ~= 0
 		for j 16: a ^= mul(v[64 * j + k] as int, g[4 * ((j + rot) & 15) + (k & 3)] as int)
-		o[k] = a as byte
+		o[(k + sh) & 63] = a as byte
 # each 4-byte group of buf[at..at+n]: S-box on every byte, then AES MixColumns
 mix(buf byte[:], at int, n int): mixk(buf, at, n, 0)
 # the inverse: InvMixColumns, then the inverse S-box

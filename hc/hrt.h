@@ -520,6 +520,15 @@ static int64_t hr_match16(hsl s, int64_t i, int64_t w) { return hr_bm16((int64_t
 static int64_t hr_match32(hsl s, int64_t i, int64_t w) { return hr_match16(s, i, w) | (hr_match16(s, i + 16, w) << 16); }
 static int64_t hr_match_set32(hsl s, int64_t i, const void *set) { const bool *m = set; int64_t r = 0; for (int k = 0; k < 32; k++) if (m[s.p[i + k]]) r |= (int64_t)1 << k; return r; }
 static bool hr_simd256(void) { return false; }
+static uint64_t hr_mulhi(uint64_t a, uint64_t b) { return (uint64_t)((unsigned __int128)a * b >> 64); }
+static uint64_t hr_ld8(int64_t p) { uint64_t v; memcpy(&v, (const void *)(uintptr_t)p, 8); return v; }
+static void hr_st8(int64_t p, uint64_t v) { memcpy((void *)(uintptr_t)p, &v, 8); }
+static void hr_st1(int64_t p, int64_t v) { *(uint8_t *)(uintptr_t)p = (uint8_t)v; }
+static uint64_t hr_zdec(uint64_t b, int64_t *e) { int x; uint64_t u = hr_d2d(b, &x); *e = x; return u; }
+static int64_t hr_vk_cpu(void) { return 0; }
+static int64_t hr_vk_span(uint64_t p, int64_t n) { (void)p; (void)n; return 0; }
+static void hr_vk_hexenc(uint64_t d, uint64_t s, int64_t n) { (void)d; (void)s; (void)n; }
+static int64_t hr_vk_hexdec(uint64_t d, uint64_t s, int64_t n) { (void)d; (void)s; (void)n; return 0; }
 static uint32_t hr_f32_bits(float x) { uint32_t b; memcpy(&b, &x, 4); return b; }
 static float hr_f32_from_bits(uint32_t b) { float x; memcpy(&x, &b, 4); return x; }
 static uint64_t hr_f64_bits(double x) { uint64_t b; memcpy(&b, &x, 8); return b; }

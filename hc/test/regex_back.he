@@ -1,0 +1,63 @@
+use std
+use regex
+var SEED uint = 88172645463325252
+rnd(n int) int:
+	SEED = SEED ^ SEED << 13
+	SEED = SEED ^ SEED >> 7
+	SEED = SEED ^ SEED << 17
+	((SEED >> 11) % (n as uint)) as int
+gen(out byte[>..]&, depth int):
+	parts := 1 + rnd(3)
+	for a parts:
+		if a > 0: out.push('|')
+		items := rnd(5)
+		for b items:
+			k := rnd(if depth > 0 { 14 } else { 11 })
+			if k < 4: out.push(('a' + rnd(3)) as byte)
+			elif k == 4: out.push('.')
+			elif k == 5: out.append(["[ab]", "[^a]", "\\w", "\\s", "[a-c ]", "\\d", "\\W"][rnd(7)])
+			elif k == 7: out.append(["^", "$", "\\b", "\\B"][rnd(4)])
+			elif k == 8: out.push(' ')
+			elif k == 9: out.push(('a' + rnd(2)) as byte)
+			elif k == 10: out.push('c')
+			elif k == 11 || k == 12:
+				out.push('(')
+				gen(out, depth - 1)
+				out.push(')')
+			else:
+				out.append("(?:")
+				gen(out, depth - 1)
+				out.push(')')
+			if k != 7 && rnd(3) == 0:
+				out.append(["*", "+", "?", "{2}", "{1,3}", "{0,2}", "{2,}", "*?", "+?", "??", "{1,3}?"][rnd(11)])
+main():
+	n := 3000
+	bad ~= 0; pats ~= 0; runs ~= 0; hits ~= 0
+	pat byte[>..] ~= []
+	txt byte[>..] ~= []
+	err byte[>..] ~= []
+	for t n:
+		pat.clear()
+		gen(pat, 2)
+		re := if rnd(7) == 0 { regex::compile_ignore_case(pat[..], err) } else { regex::compile(pat[..], err) }
+		if err.len > 0: continue
+		pats += 1
+		ma ~= regex::machine(re)
+		mb ~= regex::machine(re)
+		for u 7:
+			txt.clear()
+			tl := rnd(if u == 0 { 2 } else { 24 })
+			for c tl: txt.push(["a", "b", "c", " ", "a", "b", "A", "\n", "7", "_"][rnd(10)][0])
+			for from txt.len + 1:
+				ra := regex::pike(re, ma, txt[..], from)
+				rb := regex::back(re, mb, txt[..], from)
+				runs += 1
+				same ~= ra == rb
+				if ra && rb:
+					hits += 1
+					for k ma.width: if ma.best[k] != mb.best[k] { same = false }
+				for w mb.vis: if w != 0 { same = false }
+				if !same:
+					bad += 1
+					if bad <= 5: print("BAD pat [", pat, "] text [", txt, "] from ", from, " pike ", ra, " ", ma.best[0], ",", ma.best[1], " back ", rb, " ", mb.best[0], ",", mb.best[1])
+	print("patterns ", pats, " runs ", runs, " hits ", hits, " bad ", bad)

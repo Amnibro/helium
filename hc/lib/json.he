@@ -89,39 +89,30 @@ swar8(x u64) u64:
 # 1e16, with ".0" on whole values, and d.ddde<n> outside that range (d.ddde+<n>
 # for positive n with plus_exp, as serde_json writes it). JSON has
 # no NaN or infinity, so those come out as null
-format_number(out byte[>..]&, v real, plus_exp bool = false):
-	if v != v || v - v != 0.0:
-		out.append("null")
-		return
-	neg := std_bits(v) >> 63 == 1
-	if v == 0.0:
-		out.append(if neg { "-0.0" } else { "0.0" })
-		return
+inline format_number(out byte[>..]&, v real, plus_exp bool = false):
+	b := std_bits(v)
+	if b << 1 == 0 { out.append(if b >> 63 == 1 { "-0.0" } else { "0.0" }) } else if b << 1 >= 0xFFE0000000000000 { out.append("null") } else { format_finite(out, b, plus_exp) }
+format_finite(out byte[>..]&, b uint, plus_exp bool):
 	x ~= 0
-	m ~= float_dec(v, x)
+	m := std_zdec(b, x)
 	nr := dlen17(m)
 	e := x + nr - 1
-	var o byte[64]
-	tz ~= 0
-	if nr <= 8:
-		lw := swar8(m)
-		store_u64le(o, 32, lw)
-		tz = clz(lw ^ 0x3030303030303030) >> 3
-	else:
-		hi := m / 100000000
-		h1 := hi / 100000000
-		hw := swar8(hi - h1 * 100000000)
-		lw := swar8(m - hi * 100000000)
-		store_u64le(o, 24, hw)
-		store_u64le(o, 32, lw)
-		o[23] = (48 + h1 as int) as byte
-		t := lw ^ 0x3030303030303030
-		u := hw ^ 0x3030303030303030
-		tz = if t != 0 { clz(t) >> 3 } else if u != 0 { 8 + (clz(u) >> 3) } else { 16 }
+	var o byte[56]
+	p := std_ptr(o) as! int
+	hi := m / 100000000
+	h1 := hi / 100000000
+	hw := swar8(hi - h1 * 100000000)
+	lw := swar8(m - hi * 100000000)
+	std_st8(p + 16, hw)
+	std_st8(p + 24, lw)
+	std_st1(p + 15, 48 + h1 as int)
+	t := lw ^ 0x3030303030303030
+	u := hw ^ 0x3030303030303030
+	tz := if t != 0 { clz(t) >> 3 } else if u != 0 { 8 + (clz(u) >> 3) } else { 16 }
 	nd := nr - tz
-	a ~= 40 - nr
-	z ~= 40 - tz
-	if e < -5 || e >= 16:
+	a ~= 32 - nr
+	z ~= 32 - tz
+	if (e + 5) as! uint >= 21:
 		a -= 1
 		o[a] = o[a + 1]
 		if nd > 1 { o[a + 1] = '.' } else { z = a + 1 }
@@ -144,27 +135,26 @@ format_number(out byte[>..]&, v real, plus_exp bool = false):
 		o[z] = (48 + ae % 10) as byte
 		z += 1
 	else if e < 0:
-		store_u64le(o, a - 8, 0x3030303030303030)
+		std_st8(p + a - 8, 0x3030303030303030)
 		a += e - 1
-		o[a + 1] = '.'
+		std_st1(p + a + 1, 46)
 	else if nd <= e + 1:
-		store_u64le(o, 40, 0x3030303030303030)
-		store_u64le(o, 48, 0x3030303030303030)
+		std_st8(p + 32, 0x3030303030303030)
+		std_st8(p + 40, 0x3030303030303030)
 		z += e + 1 - nd
-		o[z] = '.'
-		o[z + 1] = '0'
+		std_st1(p + z, 46)
+		std_st1(p + z + 1, 48)
 		z += 2
 	else:
-		q := a + e + 1
-		w1 := load_u64le(o, q)
-		w2 := load_u64le(o, q + 8)
-		store_u64le(o, q + 1, w1)
-		store_u64le(o, q + 9, w2)
-		o[q] = '.'
+		q := p + a + e + 1
+		w1 := std_ld8(q)
+		w2 := std_ld8(q + 8)
+		std_st8(q + 1, w1)
+		std_st8(q + 9, w2)
+		std_st1(q, 46)
 		z += 1
-	if neg:
-		a -= 1
-		o[a] = '-'
+	std_st1(p + a - 1, 45)
+	a -= (b >> 63) as int
 	out.append(o[a..z])
 
 # ---- reading, one value at a time

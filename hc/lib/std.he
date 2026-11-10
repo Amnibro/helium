@@ -24,6 +24,16 @@ extern pyout(s const byte[:]) = "hr_pyout"
 extern store_u64le(s byte[:], at int, v uint) = "hr_store_u64le"
 extern load_u64le(s const byte[:], at int) uint = "hr_load_u64le"
 extern std_from_bits(b uint) real = "hr_f64_from_bits"
+extern std_mulhi(a uint, b uint) uint = "hr_mulhi"
+extern std_vk_cpu() int = "hr_vk_cpu"
+extern std_ptr(s const byte[:]) uint = "hr_ffi_ptr"
+extern std_ld8(p int) uint = "hr_ld8"
+extern std_st8(p int, v uint) = "hr_st8"
+extern std_st1(p int, v int) = "hr_st1"
+extern std_zdec(b uint, e int&) uint = "hr_zdec"
+extern std_vk_span(p uint, n int) int = "hr_vk_span"
+extern std_vk_hexenc(d uint, s uint, n int) = "hr_vk_hexenc"
+extern std_vk_hexdec(d uint, s uint, n int) int = "hr_vk_hexdec"
 
 min<T>(a T, b T) T: if b < a { b } else { a }
 max<T>(a T, b T) T: if a < b { b } else { a }
@@ -667,6 +677,10 @@ each_split<F>(s byte[:], sep byte):
 			F(s[from..i])
 			from = i + 1
 	F(s[from..])
+HXK ~= -1
+inline hxk() bool:
+	if HXK < 0: HXK = std_vk_cpu()
+	HXK == 1
 each_split<F>(s byte[:], sep byte[:]):
 	from ~= 0; at ~= 0
 	while sep.len > 0 && at + sep.len <= s.len:
@@ -678,6 +692,9 @@ each_word<F>(s byte[:]):
 		while at < s.len && is_space(s[at]): at += 1
 		b := at
 		while at + 8 <= s.len:
+			if at - b == 64 && at + 64 <= s.len && hxk():
+				at += std_vk_span(std_ptr(s[at..]), (s.len - at) / 64 * 64)
+				break
 			w := load_u64le(s, at)
 			q := w ^ 0x2020202020202020
 			x := w & 0x7F7F7F7F7F7F7F7F
@@ -1083,6 +1100,10 @@ hex_encode(out byte[>..]&, b const byte[:]):
 	o ~= out.len
 	out.resize(o + 2 * b.len + 16, 0)
 	i ~= 0
+	if b.len >= 32 && hxk():
+		i = b.len / 32 * 32
+		std_vk_hexenc(std_ptr(out[o..]), std_ptr(b), i)
+		o += 2 * i
 	while i + 8 <= b.len:
 		w := load_u64le(b, i)
 		store_u64le(out, o, hexw(w & 0xFFFFFFFF))
@@ -1102,10 +1123,18 @@ hex_decode(s const byte[:], out byte[>..]&) bool:
 	o ~= st
 	out.resize(st + s.len / 2 + 8, 0)
 	i ~= 0
+	if s.len >= 64 && hxk():
+		i = s.len / 64 * 64
+		if std_vk_hexdec(std_ptr(out[o..]), std_ptr(s), i) == 0:
+			out.resize(st)
+			return false
+		o += i / 2
 	while i + 8 <= s.len:
-		l := load_u64le(s, i) | 0x2020202020202020
+		w := load_u64le(s, i)
+		l := w | 0x2020202020202020
 		x := l & 0x7F7F7F7F7F7F7F7F
-		d := (0xB9B9B9B9B9B9B9B9 - x & ~l & x + 0x5050505050505050 | 0xE6E6E6E6E6E6E6E6 - x & ~l & x + 0x1F1F1F1F1F1F1F1F) & 0x8080808080808080
+		y := w & 0x7F7F7F7F7F7F7F7F
+		d := ((0xB9B9B9B9B9B9B9B9 - y) & (y + 0x5050505050505050) | (0xE6E6E6E6E6E6E6E6 - x) & (x + 0x1F1F1F1F1F1F1F1F)) & ~w & 0x8080808080808080
 		if d != 0x8080808080808080:
 			out.resize(st)
 			return false
@@ -1140,6 +1169,30 @@ big_div_small(a uint[>..]&, k uint) uint:
 		r = cur % k
 		i -= 1
 	r
+# the size of v rounded to `decimals` digits after the point, as its whole
+# part and its decimals as an integer below 10^decimals. Exact: a tie goes to
+# even, or away from zero with away. False for a size of 2^53 or more, inf,
+# nan, or a count outside 0 to 18
+fixed_parts(v real, decimals int, away bool = false) uint, uint, bool:
+	bits := std_bits(v)
+	ex := (bits >> 52 & 0x7ff) as int
+	if ex >= 1075 || decimals < 0 || decimals > 18: return 0, 0, false
+	c := if ex == 0 { bits & 0xfffffffffffff } else { bits & 0xfffffffffffff | 1 << 52 }
+	k := if ex == 0 { 1073 } else { 1074 - ex }
+	ip ~= if k < 52 { c >> k + 1 } else { 0 }
+	p := POW10[decimals] as uint
+	a := if k < 52 { c & ((2) as uint << k) - 1 } else { c }
+	hi := std_mulhi(a, p)
+	lo := a * p
+	x ~= lo
+	st ~= false
+	if k >= 117: x = 0
+	elif k >= 64: x = hi >> k - 64; st = lo != 0 || k > 64 && hi << 128 - k != 0
+	elif k > 0: x = hi << 64 - k | lo >> k; st = lo << 64 - k != 0
+	q ~= x >> 1
+	if x & 1 == 1 && (st || away || (if decimals == 0 { ip } else { q }) & 1 == 1): q += 1
+	if q == p: ip += 1; q = 0
+	return ip, q, true
 # v with exactly `decimals` digits after the point. Exact: the double is
 # m * 2^e2, so v * 10^d is computed as a big integer and rounded half to
 # even once (away from zero with away, as JavaScript's toFixed does); a
@@ -1149,6 +1202,18 @@ format_flt(out byte[>..]&, v real, decimals int, away bool = false):
 	if v - v != 0.0: out.append(if v < 0.0 { "-inf" } else { "inf" }); return
 	if decimals < 0: format(out, v); return
 	bits := std_bits(v)
+	wp, fp, fast := fixed_parts(v, decimals, away)
+	if fast:
+		var o byte[48]
+		z ~= 48; ip ~= wp; fr ~= fp
+		for i decimals: z -= 1; o[z] = (48 + fr % 10) as! byte; fr /= 10
+		if decimals > 0: z -= 1; o[z] = '.'
+		while true:
+			z -= 1; o[z] = (48 + ip % 10) as! byte; ip /= 10
+			if ip == 0: break
+		o[z - 1] = '-'; z -= (bits >> 63) as int
+		out.append(o[z..48])
+		return
 	ex := (bits >> 52 & 0x7ff) as int
 	m ~= bits & 0xfffffffffffff
 	e2 ~= -1074

@@ -28,6 +28,7 @@ step touch sh -c 'HC_LIB=hc/lib "$0" build hc/test/mobile/touch_test.amni -o "$1
 step scal sh -c 'HC_LIB=hc/lib "$0" build hc/test/mobile/scal_test.amni -o "$1/scal" 2>/dev/null && "$1/scal" && HC_LIB=hc/lib "$0" build hc/apps/mobile/mobile.amni -o "$1/mobile" 2>/dev/null' "$HN" "$W"
 step import_up sh -c 'HC_LIB=hc/lib "$0" build hc/test/import_up/app/main.amni -o "$1/iu" 2>/dev/null && "$1/iu" | grep -q "parent directory" && ! HC_LIB=hc/lib "$0" build hc/test/import_up/bad.amni -o "$1/iub" 2>&1 | grep -q "runtime error" && ! HC_LIB=hc/lib "$0" build hc/test/import_up/kw.amni -o "$1/iub" 2>&1 | grep -q "runtime error"' "$HN" "$W"
 step net_sock sh -c 'for t in net_tcp net_udp net_poll; do HC_LIB=hc/lib "$0" build hc/test/net_sock/$t.he -o "$1/$t" 2>/dev/null && "$1/$t" | cmp -s - hc/test/net_sock/$t.out || exit 1; done' "$HN" "$W"
+step gf sh -c 'for v in HC_VK HC_NOVK HC_NOA64; do for t in gf/gf_dot hex_vk words_vk; do env "$v=1" HC_LIB=hc/lib "$0" build hc/test/$t.he -o "$1/gf" 2>/dev/null && "$1/gf" $v | cmp -s - hc/test/$t.out || exit 1; done; done' "$HN" "$W"
 [ -n "${HELIUM_GFX_TEST:-}" ] && step gfx tools/hc/gfxtest.sh "$HN"
 [ -n "${HELIUM_WGSL_TEST:-}" ] && step wgsl node tools/hc/wgsltest.mjs "$HN"
 [ -n "${HELIUM_WEBGPU_TEST:-}" ] && step webgpu sh -c '${GPU_LOCK:+flock "$GPU_LOCK"} node tools/hc/webgputest.mjs "$0"' "$HN"

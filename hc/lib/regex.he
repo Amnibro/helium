@@ -3,7 +3,10 @@
 # instructions, and a Pike machine runs every live thread in lockstep over
 # the text, so time is linear in the text. Threads keep a priority order, so
 # the match chosen is the leftmost one and, among those, the one a
-# backtracking matcher would find first.
+# backtracking matcher would find first. A short text is searched by
+# backtracking instead, which marks every instruction and position it has
+# tried so none is tried twice: the same answer in the same linear time,
+# with far less work per byte.
 #
 # syntax: literals, ., [...] and [^...] with ranges, \d \w \s \D \W \S,
 # \n \t \r \f \v \xHH, groups (...) and (?:...), |, * + ? {m} {m,} {m,n}
@@ -375,7 +378,9 @@ compile_ignore_case(pattern byte[:]) Regex:
 # ---- the machine
 
 struct Threads { pcs int[>..] = [], slots int[>..] = [] }
-struct Machine { now Threads, later Threads, seen int[>..], stamp int, work int[>..], best int[>..], width int }
+struct Machine { now Threads, later Threads, seen int[>..], stamp int, work int[>..], best int[>..], width int, vis u32[>..], stk int[>..] }
+# the most instruction and position pairs the backtracking search may mark
+BACK_BITS := 1 << 21
 
 holds(cond int, text byte[:], i int) bool:
 	if cond == AT_START: return i == 0
@@ -415,13 +420,100 @@ machine(re Regex&) Machine:
 	work.resize(w, -1)
 	best int[>..] ~= []
 	best.resize(w, -1)
-	Machine{Threads{}, Threads{}, seen, 0, work, best, w}
+	Machine{Threads{}, Threads{}, seen, 0, work, best, w, [], []}
 
 # the first match starting at or after from; its slots are left in m.best
 run(re Regex&, m Machine&, text byte[:], from int) bool:
 	if m.seen.len < re.prog.len || m.width != 2 * re.groups:
 		w := 2 * re.groups
 		m.seen.clear(); m.seen.resize(re.prog.len, -1); m.work.clear(); m.work.resize(w, -1); m.best.clear(); m.best.resize(w, -1); m.width = w; m.stamp = 0
+	if from <= text.len && re.prog.len * (text.len - from + 1) <= BACK_BITS { back(re, m, text, from) } else { pike(re, m, text, from) }
+
+# true when the instruction at pc takes a byte and the one at i is not in its set
+inline stuck(prog Op[:], sets ByteSet[:], text byte[:], pc int, i int) bool:
+	o := prog[pc]
+	o.kind == OP_SET && (i >= text.len || !sets[o.a].members[text[i]])
+
+# makes vis long enough for that many bits
+inline room(m Machine&, bits int):
+	if ((bits + 31) >> 5) > m.vis.len: m.vis.resize(max(2 * m.vis.len, (bits + 31) >> 5), 0)
+
+# run by backtracking: one start after another, depth first in priority
+# order. vis holds a bit per instruction and position already tried, stk the
+# branches still to try and the slots to put back on the way to them. Each
+# start goes in after the opening save, with its slot already set, a pattern
+# that opens with ^ is tried at the start of the text only, and a branch whose
+# first byte cannot match is never queued. vis grows as the search moves on
+# and only the part it reached is wiped at the end
+back(re Regex&, m Machine&, text byte[:], from int) bool:
+	np := re.prog.len
+	if m.stk.len < 128: m.stk.resize(128, 0)
+	prog := re.prog[..]
+	sets := re.sets[..]
+	vis ~= m.vis[..]
+	work := m.work[..]
+	stk ~= m.stk[..]
+	if prog[0].kind != OP_SAVE: return false
+	for k work.len: work[k] = -1
+	first := re.first
+	found ~= false
+	hi ~= from - 1
+	s ~= from
+	last := if prog[1].kind == OP_ASSERT && prog[1].a == AT_START { 0 } else { text.len }
+	while s <= last && !found:
+		if first >= 0:
+			while s < text.len && !sets[first].members[text[s]]: s += 1
+			if s >= text.len || s > last: break
+		if s > hi { hi = s; room(m, (s - from + 1) * np); vis = m.vis[..] }
+		work[0] = s
+		stk[0] = 1; stk[1] = s
+		sp ~= 2
+		while sp > 0 && !found:
+			sp -= 2
+			pc ~= stk[sp]
+			i ~= stk[sp + 1]
+			if pc < 0:
+				work[-1 - pc] = i
+				continue
+			while true:
+				bit := (i - from) * np + pc
+				w := vis[bit >> 5]
+				mask := (1 as u32) << (bit & 31)
+				if w & mask != 0: break
+				vis[bit >> 5] = w | mask
+				o := prog[pc]
+				if o.kind == OP_SET:
+					if i >= text.len || !sets[o.a].members[text[i]]: break
+					pc += 1; i += 1
+					if i > hi { hi = i; room(m, (i - from + 1) * np); vis = m.vis[..] }
+				else if o.kind == OP_SPLIT:
+					if stuck(prog, sets, text, o.a, i):
+						pc = o.b
+					else:
+						if !stuck(prog, sets, text, o.b, i):
+							if sp + 2 > stk.len { m.stk.resize(2 * stk.len, 0); stk = m.stk[..] }
+							stk[sp] = o.b; stk[sp + 1] = i; sp += 2
+						pc = o.a
+				else if o.kind == OP_JMP:
+					pc = o.a
+				else if o.kind == OP_SAVE:
+					if sp + 2 > stk.len { m.stk.resize(2 * stk.len, 0); stk = m.stk[..] }
+					stk[sp] = -1 - o.a; stk[sp + 1] = work[o.a]; sp += 2
+					work[o.a] = i
+					pc += 1
+				else if o.kind == OP_ASSERT:
+					if !holds(o.a, text, i): break
+					pc += 1
+				else:
+					for k work.len: m.best[k] = work[k]
+					found = true
+					break
+		s += 1
+	for k (np * (hi - from + 1) + 31) >> 5: vis[k] = 0
+	found
+
+# run by the Pike machine, for a text too long to mark
+pike(re Regex&, m Machine&, text byte[:], from int) bool:
 	m.now.pcs.clear(); m.now.slots.clear()
 	found ~= false
 	i ~= from
