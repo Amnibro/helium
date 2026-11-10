@@ -1673,6 +1673,53 @@ is drawn.
 * **S10 gates.** As U5, plus a new `scene_stream` (textures compressed, streamed and
   settled) in webgputest.
 
+### Ray-traced reflection bars (E2, registered before the first run)
+
+Scene M: a mirror floor (metal, white, roughness 0) 12 m square under the sky and the
+sun, a red box 1 m wide standing on it in view, and a green box 1 m wide floating above
+the top edge of the frame, so the box is out of view and its reflection in the floor is
+on screen. The reference for a mirror is the same scene without the floor, drawn by a
+camera mirrored through the floor plane, with the rows flipped. 1280 x 720,
+`s3d::rt_reflect` on, SSR, AO and temporal AA off unless a bar says so. "Green" pixels
+have a green channel above both others by 40 / 255; "red" pixels the same for red.
+
+* **R1 an object out of view is reflected.** The green pixels of the frame and of the
+  reference overlap with IoU at least 0.9, and their mean colors differ by at most
+  16 / 255 in every channel. Control: with `rt_reflect` off the frame has no green
+  pixel.
+* **R2 the sky is still the sky.** Pixels that are neither green nor red in the
+  reference, nor within 2 pixels of one that is, and not red in the frame: at most
+  2 / 255 from the frame with `rt_reflect` off.
+* **R3 screen-space hits are kept.** With SSR on as well, R1 still holds, and of the
+  pixels where SSR alone draws the red box's reflection (red in the SSR-only frame, not
+  red with both off) at least 0.8 are within 2 / 255 of the SSR-only frame.
+* **R4 a closed room is reflected, not the sky.** A closed dark gray room with one lamp
+  and the mirror floor, the sky bright outside: over the floor's pixels the mean
+  brightness is within 0.25 of the mirrored reference's mean. Control: with
+  `rt_reflect` off and specular occlusion off it is more than 2 times the reference.
+* **R5 rough surfaces are left alone.** With the floor's roughness at `s3d::rt_rough`
+  or above, the frame equals the frame with `rt_reflect` off: 0 / 255. At half that
+  roughness the green box's reflection is still there (at least half as many green
+  pixels as at roughness 0) and blurred: in a band of 16 rows through its middle, the
+  columns where between 0.1 and 0.9 of the pixels are green are at least 2 times as
+  many as at roughness 0.
+* **R6 off is free.** With `rt_reflect` off both goldens stay above 40 dB and every
+  earlier check passes as before.
+* **R7 cost.** At 1280 x 720 on the RX 9060 XT, frame time with `rt_reflect` on minus
+  off (mean of 100 frames, best of 3): at most 1 ms on scene M, and at most 4 ms with a
+  20,000-triangle sphere in place of the green box.
+* **R8 gates.** gfxtest, wgsltest and webgputest pass, with a new `scene_rtr` in
+  webgputest that matches the native frame.
+* **R9 metal is not black in a reflection.** With a gold metal box (roughness 0.5) in
+  place of the green box, the mean brightness of its reflection is between 0.5 and 2
+  times the mirrored reference's. Control: with the box's color black it is below 0.5
+  times.
+* **R10 glowing surfaces light the scene through the probes.** Sky and sun off, GI on:
+  a 2 m square panel glowing at 4 units, 1.95 m above a gray floor (albedo 0.8) and
+  parallel to it. The floor's brightness under the panel's center is within 0.35 of the
+  closed-form value 0.8 x 4 x 0.2487 = 0.796 (the view factor from a point to a
+  parallel square). Control: with the glow at 0 it is below 0.05 of that value.
+
 ### Texture streaming results (2026-11-09, RX 9060 XT, RADV; full gfxtest ok)
 
 | Bar | Result | Bar value |
