@@ -2263,6 +2263,59 @@ red channel of the frame before tone mapping (`s3d::hdr_target()`).
   40 dB and Z8 and Z9 pass. gfxtest, wgsltest and webgputest pass, with `scene_cloth`
   drawn as a 3/1 twill: strength 0.7, 28 threads a UV unit, weft lightness 0.5.
 
+### Volumetric cloud bars (E6, registered before the first GPU run)
+
+Real-time clouds (`s3d::clouds.on`): a pass marches the cloud slab for every sky
+pixel, a cloud shadow map holds the sun's transmittance `T` through the clouds for
+ground points, surfaces and fog take their sunlight times `T`. Unless stated: sky
+from `s3d::atmosphere(to_sun, 3.5, 1.0, 0.5)`, sun 45 degrees up, cover 0.5, slab
+from 1.5 km to 3.5 km above y = 0, 1,000 world units a km, shadow map 512 x 512
+over 4 km, 1280 x 720, glow and temporal off. Values are read from
+`s3d::hdr_target()` unless a bar names the final frame.
+
+* **V1 the shadow map matches the clouds seen.** For 25 ground points on a 5 x 5
+  grid 400 m apart, a camera at the point looks at the sun: the cloud pass's
+  transmittance at the middle pixel against the shadow map's value for that point.
+  Mean absolute difference at most **0.05**, with at least 3 points below 0.5 and
+  3 above (cover moves in steps of 0.05 from 0.5 until both groups exist). Control:
+  shadow map built with the clouds moved 1 km: mean difference at least **0.15**.
+* **V2 ground shadows follow the map.** A ground plane seen from 1.4 km straight
+  above with a 1.6 rad field of view, sky ambient 0: red with cloud shadows over
+  red without, at each pixel of the middle 400 x 400, against `T` at that pixel's
+  ground point (bilinear from the read-back map): mean absolute difference at most
+  **0.02**, and the ratio's standard deviation at least **0.1**. Control: shadow
+  strength 0: ratio within 0.002 of 1 at every pixel.
+* **V3 wind moves the shadows.** Wind 10 m/s along +x, world time 31.25 s later
+  (40 texels): the later map shifted back by 40 texels against the earlier map,
+  mean absolute difference at most **0.02** over the overlap. Control: no shift,
+  at least **0.05**.
+* **V4 light shafts in fog.** No geometry, sky drawing off, fog density 0.002,
+  falloff 0, far 2,000 m, 64 steps, fog ambient 0, camera 2 m up looking level, at
+  right angles to the sun: the standard deviation of the column means over their
+  mean is at least **0.05** with cloud shadows and at most **0.005** without; with
+  cover 0 the frame's mean is within **1%** of the frame without clouds.
+* **V5 a clear sky is unchanged.** Cover 0 with clouds on against clouds off:
+  every pixel of the final frame within **1 / 255**.
+* **V6 only sky pixels change.** A box in front of the clouds, cloud shadows off:
+  the box's pixels with clouds on against clouds off differ by **0 / 255** in the
+  final frame, and at least **30%** of the sky pixels differ by more than 8 / 255.
+* **V7 clouds are lit, not gray.** Sun behind the camera, camera pitched 30 degrees
+  up: the mean luminance of thick cloud (pass transmittance below 0.1) is at least
+  **1.5 x** the mean luminance of clear sky in the same frame (transmittance above
+  0.99), and its 95th percentile is at most **1.2 x** the luminance of a white
+  diffuse surface facing the sun. Control: sunlight on the clouds 0 (sky light
+  only): below 1.5 x.
+* **V8 detail.** The V7 view, final frame: the mean absolute luma difference
+  between horizontally adjacent sky pixels is at least **2 x** that of the baked
+  cloud layer of the environment map at the same cover.
+* **V9 cost.** The V7 view and the V2 view each cost at most **2 ms** a frame more
+  with clouds on than off.
+* **V10 nothing else moved.** With `clouds.on` false: goldens above 40 dB and every
+  earlier check passes. gfxtest, wgsltest and webgputest pass, with a new
+  `scene_clouds` (clouds, their ground shadows and fog shafts over the test scene)
+  matching native under webgputest's usual bar. The cloud layer baked into the
+  environment map takes the same shape as the real-time clouds; no golden draws it.
+
 ### Skin scattering results (2026-11-09, RX 9060 XT, RADV; full gfxtest ok)
 
 Differences are shares of the plateau, listed for red, green and blue. Controls list
