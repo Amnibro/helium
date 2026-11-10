@@ -1867,13 +1867,17 @@ dup_later(n int, i int) bool:
 recursive gmove(c int):
 	if movable_local(c): v := rv(c); p := nt(); ow("({ "); ct(LVS[v].ty); ow(" _mv"); oi(p); ow(" = "); lv_name(v); ow("; memset(&"); lv_name(v); ow(", 0, sizeof "); lv_name(v); format(O, "); _mv", p, "; })"); return
 	gxo(c);
+recursive gret_items(n int, rt int):
+	ow("({ "); ct(rt); ow(" _rr = {0}; ")
+	for p 2 { for i ND[n].n as int { c := kid(n, i); held := dropk(fin(c)) > 0 && movable_local(c) && !dup_later(n, i); if held == (p == 1) { format(O, "_rr.r", i, " = "); if dropk(fin(c)) > 0 { if dup_later(n, i) { gxo(c); } else { gmove(c); } } else { gx(c); } ow("; ") } } }
+	ow("_rr; })")
 recursive gret(n int):
 	x := ND[n]
 	lt := ax(n)
 	if lt >= 0 && lt != GCF:
 		rt0 := FI_[lt].ret
 		ow("{ ")
-		if x.n > 1: format(O, "_lrv", lrkey(lt), " = ("); ct(rt0); ow("){ "); for i x.n { if i > 0 { ow(", ") } c := kid(n, i); if dropk(fin(c)) > 0 { if dup_later(n, i) { gxo(c); } else { gmove(c); } } else { gx(c); } } ow(" }; ")
+		if x.n > 1: format(O, "_lrv", lrkey(lt), " = "); gret_items(n, rt0); ow("; ")
 		else:
 			if x.n == 1: format(O, "_lrv", lrkey(lt), " = "); c := kid(n, 0); if dropk(rt0) > 0 { gmove(c); } else { gx(c); } ow("; ")
 		format(O, "hr_lr = ", lrkey(lt) + 1, "; "); gdummy(); ow(" }")
@@ -1881,7 +1885,7 @@ recursive gret(n int):
 	if x.n == 0: ow("return;"); return
 	f := if lt >= 0 { lt } else { ret_fn() }
 	rt := FI_[f].ret
-	if x.n > 1: q := nt(); if mvv(rt) { ow("{ "); ct(rt); format(O, " _r", q, " = "); } else { ow("return "); } ow("("); ct(rt); ow("){ "); for i x.n { if i > 0 { ow(", ") } c := kid(n, i); if dropk(fin(c)) > 0 { if dup_later(n, i) { gxo(c); } else { gmove(c); } } else { gx(c); } } ow(" };"); if mvv(rt) { gmvret(rt, q) } return
+	if x.n > 1: q := nt(); if mvv(rt) { ow("{ "); ct(rt); format(O, " _r", q, " = "); } else { ow("return "); } gret_items(n, rt); ow(";"); if mvv(rt) { gmvret(rt, q) } return
 	c := kid(n, 0)
 	if is_vval(rt): gvret(c, rt); return
 	if mvv(rt): gmvcall(c, rt); return
