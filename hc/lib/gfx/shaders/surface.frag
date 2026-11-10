@@ -222,7 +222,8 @@ vec3 mat_term(vec3 n, vec3 v, vec3 l, vec3 e, vec3 albedo, vec3 f0, float rough,
 		vec3 fz = sheen.rgb * e * shade_a.y * rim(n, v, nl);
 		return ((dif + shade_a.z * light_term(n, v, l, e, vec3(0.0), f0, rough, ms, kd)) * sheen_keep() + sheen_term(n, v, l, e) + fz) * vis * q.cav;
 	}
-	return (light_term(n, v, l, e, albedo, f0, rough, ms, kd) * sheen_keep() + sheen_term(n, v, l, e)) * vis;
+	vec3 tr = model == 5 ? albedo * shade_a.rgb * e * clamp((shade_a.w - dot(n, l)) / ((1.0 + shade_a.w) * (1.0 + shade_a.w)), 0.0, 1.0) * 0.36 / (PI_F * pow(1.0 - 0.64 * pow(clamp(-dot(v, l), 0.0, 1.0), 2.0), 2.0)) : vec3(0.0);
+	return (light_term(n, v, l, e, albedo, f0, rough, ms, kd) * sheen_keep() + sheen_term(n, v, l, e) + tr) * vis;
 }
 vec2 eye_uv(vec2 uv, vec3 v, vec3 n) {
 	vec3 dpx = dFdx(in_world);
@@ -634,6 +635,7 @@ vec3 ambient_light(vec3 n, vec3 v, vec3 l, vec3 base_rgb, float metal, float rou
 	}
 	vec3 fm = base_rgb + (1.0 - base_rgb) * e.w;
 	vec3 dielectric = base_rgb * (1.0 - fd) * irr * dao + spec;
+	if (model == 5) dielectric += base_rgb * shade_a.rgb * (use_gi ? gi_irr : mix(mix(ground.rgb, zenith.rgb, 0.5 - n.y * 0.5), horizon.rgb, 0.5 * (1.0 - abs(n.y))) * screen.w) * dao;
 	return mix(dielectric, fm * e.rgb, metal);
 }
 vec3 env_dir(vec3 d) { return vec3(env_rot.x * d.x + env_rot.y * d.z, d.y, env_rot.x * d.z - env_rot.y * d.x); }
@@ -765,6 +767,7 @@ vec3 ambient_env(vec3 n, vec3 v, vec3 base_rgb, vec3 albedo, vec3 f0, float roug
 	}
 	if (model == 2) spec += shade_b.z * env_lobe(q.gn, v, shade_b.w, gn, oc, sr, vec4(0.0)) * env_ef(vec3(0.02), 1.0, ms_lut(max(dot(q.gn, v), 1e-4), shade_b.w), vec3(1.0));
 	vec3 rgb = albedo * max(kd, vec3(0.0)) * irr * dao * (1.0 - x.trans) + spec;
+	if (model == 5) rgb += albedo * shade_a.rgb * (use_gi ? gi_irr : env_irr(-n)) * dao;
 	if (x.trans > 0.0) rgb += x.trans * transmitted(n, v, rough, base_rgb, ef, x);
 	float sm = vmax3(x.sheen_c);
 	if (sm > 0.0) rgb = rgb * (1.0 - sm * sheen_e(n_v, x.sheen_r)) + x.sheen_c * sheen_e(n_v, x.sheen_r) * irr * dao;
@@ -1044,6 +1047,7 @@ void main() {
 	uvec2 sgq = ssgi.x > 0.5 && alpha.x < 1.5 ? ssgi_px[int(gl_FragCoord.y) * int(ssgi.y) + int(gl_FragCoord.x)] : uvec2(0u, packHalf2x16(vec2(0.0, -1.0)));
 	vec4 sg = vec4(unpackHalf2x16(sgq.x), unpackHalf2x16(sgq.y));
 	float aos = sg.w >= 0.0 ? mix(1.0, sg.w, ssgi.w) : (eye.w > 0.5 ? texture(tex_ao, gl_FragCoord.xy * screen.xy).r : 1.0);
+	if (model == 5) aos = mix(aos, 1.0, shade_b.x);
 	if (model > 0) occm *= model == 3 ? q.cav : mix(1.0, q.cav, 0.5);
 	float occ = occm * aos;
 
@@ -1130,7 +1134,7 @@ void main() {
 	vec3 gn = normalize(in_nrm);
 	if (!gl_FrontFacing && alpha.z > 0.5) gn = -gn;
 	vec3 rp = in_world + gn * 2e-3;
-	rgb += mat_term(n, v, l, sun_rgb.rgb * sun_under(in_world), albedo, f0_spec, rough, ms, kd, (gi.y > 0.5 && to_sun.w > 0.5 ? (dot(gn, l) > 0.0 && gi_visible(rp, l, 1e4) ? 1.0 : 0.0) : sun_visibility(in_world, gn)) * cst, q, x);
+	rgb += mat_term(n, v, l, sun_rgb.rgb * sun_under(in_world), albedo, f0_spec, rough, ms, kd, (gi.y > 0.5 && to_sun.w > 0.5 ? ((model == 5 || dot(gn, l) > 0.0) && gi_visible(rp, l, 1e4) ? 1.0 : 0.0) : sun_visibility(in_world, model == 5 && dot(gn, l) < 0.0 ? -gn : gn)) * cst, q, x);
 	if (screen.z > 0.5) {
 		int cx = clamp(int(gl_FragCoord.x * screen.x * cluster.x), 0, int(cluster.x) - 1);
 		int cy = clamp(int(gl_FragCoord.y * screen.y * cluster.y), 0, int(cluster.y) - 1);

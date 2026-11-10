@@ -3926,6 +3926,53 @@ fn puddle_checks() bool {
 	s3d::look = DEF_LOOK; s3d::sun = DEF_SUN; s3d::sky = DEF_SKY;
 	g && d && h
 }
+fn fo_box(px const byte[:], x0 int, y0 int, x1 int, y1 int) real, real, real { var r = 0.0; var g = 0.0; var b = 0.0; for yy in y1 - y0 { for xx in x1 - x0 { let i = ((y0 + yy) * 512 + x0 + xx) * 4; r += px[i] as real; g += px[i + 1] as real; b += px[i + 2] as real; } } let n = ((x1 - x0) * (y1 - y0)) as real; return r / n, g / n, b / n; }
+fn fo_leaf(model int, lift f32) gltf::Material { var m = shapes::material(linalg::v3(0.12, 0.3, 0.06), 0.0, 0.7); m.double_sided = true; m.shading = model; m.shade_a = float4 { 0.8, 1.0, 0.4, 0.5 }; m.shade_b = float4 { lift, 0.0, 0.0, 0.0 }; m }
+fn fo_shot(t gfx::Texture, model int, lift f32, wall bool, eye float3, up float3) byte[>..] {
+	reset_scene();
+	s3d::place(s3d::add(shapes::plane(0.5, fo_leaf(model, lift))), gfx::mat4_identity);
+	if wall { s3d::place(s3d::add(shapes::cube(float3 { 0.1, 0.5, 0.5 }, shapes::material(linalg::v3(0.5, 0.5, 0.5), 0.0, 0.8))), gfx::translate(linalg::v3(0.6, 0.5, 0.0))); }
+	pd_cam(eye, float3 { 0.0, 0.0, 0.0 }, up);
+	shoot(2, t); gfx::read_pixels(t)
+}
+fn foliage_checks() bool {
+	reset_scene();
+	s3d::sky = s3d::Sky { zenith: float3 { 1.5, 1.5, 1.5 }, horizon: float3 { 1.0, 1.0, 1.0 }, ground: float3 { 0.2, 0.2, 0.2 }, ambient: 0.05, draw: false };
+	s3d::sun = DEF_SUN; s3d::sun.to_sun = linalg::unit3(linalg::v3(-0.05, 1.0, 0.03)); s3d::sun.shadows = true; s3d::look = DEF_LOOK; s3d::look.ssao = false; s3d::look.bloom = 0.0;
+	s3d::ssr_on = false; s3d::ssgi_on = false; s3d::gi_on = false; s3d::temporal = 0; s3d::wet = 0.0; s3d::snow = 0.0; s3d::puddles = 0.0; s3d::fx_dt = 0.0;
+	let _ = s3d::add(shapes::plane(0.5, fo_leaf(0, 0.0))); s3d::init(512, 512);
+	let t = gfx::render_target(512, 512, gfx::RGBA8);
+	let below = float3 { 0.0, -2.0, 0.0 }; let zup = float3 { 0.0, 0.0, 1.0 };
+	let p0 = fo_shot(t, 0, 0.0, false, below, zup); let p5 = fo_shot(t, 5, 0.0, false, below, zup);
+	let r0, g0, b0 = fo_box(p0[..], 224, 224, 288, 288); let r5, g5, b5 = fo_box(p5[..], 224, 224, 288, 288);
+	let l1 = g5 >= 3.0 * max(g0, 1.0) && g5 > r5 && r5 > b5;
+	print("gpu: foliage FL1 leaf lit from behind, seen from its dark side: green ", r3(g0), " plain, ", r3(g5), " as foliage (bar >= 3 times plain), red ", r3(r5), ", blue ", r3(b5), " (bar green > red > blue)", hr_pass(l1));
+	let _ = codec_png::write(path(OUT_DIR[..], "foliage_back.png")[..], 512, 512, 4, p5[..]);
+	let q0 = fo_shot(t, 0, 0.0, false, float3 { 0.0, 2.0, 0.0 }, zup); let q5 = fo_shot(t, 5, 0.0, false, float3 { 0.0, 2.0, 0.0 }, zup);
+	let d2 = pd_diff(q0[..], q5[..]);
+	let l2 = d2 <= 1.0;
+	print("gpu: foliage FL2 the same leaf seen from its lit side: mean change ", r3(d2), " levels against plain (bar <= 1)", hr_pass(l2));
+	let ps = fo_shot(t, 5, 0.0, false, float3 { 0.0, -1.0, 1.732 }, float3 { 0.0, 1.0, 0.0 });
+	let rs, gs, bs = fo_box(ps[..], 224, 224, 288, 288);
+	let l3 = g5 >= 1.5 * gs && gs > g0;
+	print("gpu: foliage FL3 light through the leaf: green ", r3(g5), " looking toward the sun, ", r3(gs), " from 60 degrees off (bar >= 1.5 times, and above plain ", r3(g0), ")", hr_pass(l3));
+	s3d::sky.ambient = 1.0; s3d::sun.rgb = float3 { 0.0, 0.0, 0.0 };
+	let u0 = fo_shot(t, 0, 0.0, false, below, zup); let u5 = fo_shot(t, 5, 0.0, false, below, zup);
+	let ru0, gu0, bu0 = fo_box(u0[..], 224, 224, 288, 288); let ru5, gu5, bu5 = fo_box(u5[..], 224, 224, 288, 288);
+	let l4 = gu5 >= 1.5 * gu0;
+	print("gpu: foliage FL4 sky light only, leaf seen from below: green ", r3(gu0), " plain, ", r3(gu5), " as foliage (bar >= 1.5 times)", hr_pass(l4));
+	let top = float3 { 0.0, 3.0, 0.0 }; let zdn = float3 { 0.0, 0.0, -1.0 };
+	let a0 = fo_shot(t, 5, 0.0, true, top, zdn);
+	s3d::look.ssao = true;
+	let a1 = fo_shot(t, 5, 0.0, true, top, zdn); let a2 = fo_shot(t, 5, 1.0, true, top, zdn); let a3 = fo_shot(t, 5, 0.5, true, top, zdn);
+	s3d::look.ssao = false;
+	let ra, ga, ba = fo_box(a0[..], 321, 196, 360, 316); let rb, gb, bb = fo_box(a1[..], 321, 196, 360, 316); let rc, gc, bc = fo_box(a2[..], 321, 196, 360, 316); let rd, gd, bd = fo_box(a3[..], 321, 196, 360, 316);
+	let l5 = ga - gb >= 3.0 && abs(ga - gc) <= 1.0 && gd > gb && gd < gc;
+	print("gpu: foliage FL5 leaf beside a wall, screen occlusion: green ", r3(ga), " with occlusion off, ", r3(gb), " with it on (bar >= 3 lower), ", r3(gd), " at lift 0.5 (bar between), ", r3(gc), " at lift 1 (bar within 1 of off)", hr_pass(l5));
+	gfx::release(t);
+	s3d::look = DEF_LOOK; s3d::sun = DEF_SUN; s3d::sky = DEF_SKY;
+	l1 && l2 && l3 && l4 && l5
+}
 fn weather_checks() bool {
 	half_table();
 	let w1 = wx_cells(false);
@@ -8322,7 +8369,7 @@ fn gpu_checks(dir const byte[:], golden const byte[:]) bool {
 	var only byte[>..] = [];
 	let _ = env("GFX_ONLY", only);
 	if only.len > 0 {
-		let ok = if only[..] == "puddle" { puddle_checks() } else if only[..] == "vfx" { vfx_checks() } else if only[..] == "fx" { fx_checks() } else if only[..] == "lights" { lights_checks() } else if only[..] == "day" { day_checks() } else if only[..] == "hair" { hair_checks() } else if only[..] == "gtao" { gtao_checks() } else if only[..] == "gi" { gi_checks() } else if only[..] == "mblur" { mb_checks() } else if only[..] == "dof" { dof_checks() } else if only[..] == "fx" { fx_checks() } else if only[..] == "tsr" { tsr_checks(dir) } else if only[..] == "probe" { probe_checks(dir) } else if only[..] == "ssgi" { ssgi_checks() } else if only[..] == "decal" { decal_checks() } else if only[..] == "weather" { weather_checks() } else if only[..] == "rect" { rect_checks() } else if only[..] == "small" { small_checks() } else if only[..] == "inst" { instance_checks() } else if only[..] == "caust" { caustic_checks() } else if only[..] == "tex" { texture_checks() } else if only[..] == "stream" { stream_checks() } else if only[..] == "rtr" { rtr_checks() } else if only[..] == "meshlet" { meshlet_checks() } else if only[..] == "sss" { sss_checks() } else if only[..] == "cloth" { cloth_checks() } else if only[..] == "cloud" { cloud_checks() } else if only[..] == "vfog" { fog_checks() } else if only[..] == "sea" { sea_checks() } else if only[..] == "vsm" { vsm_checks() } else { shadow_checks() };
+		let ok = if only[..] == "foliage" { foliage_checks() } else if only[..] == "puddle" { puddle_checks() } else if only[..] == "vfx" { vfx_checks() } else if only[..] == "fx" { fx_checks() } else if only[..] == "lights" { lights_checks() } else if only[..] == "day" { day_checks() } else if only[..] == "hair" { hair_checks() } else if only[..] == "gtao" { gtao_checks() } else if only[..] == "gi" { gi_checks() } else if only[..] == "mblur" { mb_checks() } else if only[..] == "dof" { dof_checks() } else if only[..] == "fx" { fx_checks() } else if only[..] == "tsr" { tsr_checks(dir) } else if only[..] == "probe" { probe_checks(dir) } else if only[..] == "ssgi" { ssgi_checks() } else if only[..] == "decal" { decal_checks() } else if only[..] == "weather" { weather_checks() } else if only[..] == "rect" { rect_checks() } else if only[..] == "small" { small_checks() } else if only[..] == "inst" { instance_checks() } else if only[..] == "caust" { caustic_checks() } else if only[..] == "tex" { texture_checks() } else if only[..] == "stream" { stream_checks() } else if only[..] == "rtr" { rtr_checks() } else if only[..] == "meshlet" { meshlet_checks() } else if only[..] == "sss" { sss_checks() } else if only[..] == "cloth" { cloth_checks() } else if only[..] == "cloud" { cloud_checks() } else if only[..] == "vfog" { fog_checks() } else if only[..] == "sea" { sea_checks() } else if only[..] == "vsm" { vsm_checks() } else { shadow_checks() };
 		let e = gfx::error();
 		if e.len > 0 { print("gpu: gfx error ", e[..]); return false; }
 		return mark(only[..], ok) && submit_checks(false);
@@ -8491,6 +8538,7 @@ fn gpu_checks(dir const byte[:], golden const byte[:]) bool {
 	if !mark("decal", decal_checks()) { good = false; }
 	if !mark("weather", weather_checks()) { good = false; }
 	if !mark("puddle", puddle_checks()) { good = false; }
+	if !mark("foliage", foliage_checks()) { good = false; }
 	if !mark("rect", rect_checks()) { good = false; }
 	if !mark("small", small_checks()) { good = false; }
 	if !mark("instance", instance_checks()) { good = false; }

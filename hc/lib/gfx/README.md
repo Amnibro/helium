@@ -1162,6 +1162,33 @@ the internal bounce) plus scattered light from the strands in front; the hair's 
 comes from a 512 x 512 map of four depth layers drawn from the sun for each groom, and the
 scene's shadow map shadows the hair too. Up to four point lights reach it.
 
+### Foliage
+
+Leaves, needles and grass blades are thin, so light goes through them. A foliage
+material (`shading = 5`) adds that to the standard surface:
+
+```
+var leaf = shapes::material(linalg::v3(0.12, 0.3, 0.06), 0.0, 0.7);
+leaf.double_sided = true;
+leaf.shading = 5;
+leaf.shade_a = float4 { 0.8, 1.0, 0.4, 0.5 };
+leaf.shade_b = float4 { 0.6, 0.0, 0.0, 0.0 };
+```
+
+| Field | Meaning |
+|---|---|
+| `shade_a.rgb` | Color of the light that passes through, as a share of the base color. Leaves pass yellow-green: about 0.8, 1.0, 0.4. |
+| `shade_a.w` | Wrap: how far around the leaf the through-light reaches. 0.5 is a good start. |
+| `shade_b.x` | How much of the screen-space occlusion is lifted, 0 to 1. Dense grass and needles occlude each other on screen until they turn black; 0.5 to 0.7 keeps them readable. |
+
+The sun and other lights behind a leaf light the side that faces the camera, strongest
+when looking toward the light (a wide forward lobe, 0.36 / (pi (1 - 0.64 c^2)^2) with c
+the cosine between the view and the light direction, times the wrapped angle to the
+light). Sky and environment light from behind come through with the same color. The
+sun's shadow is looked up from the lit side, so a back-lit leaf does not shadow itself.
+The side that faces the light looks as it did. Foliage shading does not combine with
+`ext` materials.
+
 ### Fabric weave (E13)
 
 A cloth material (`shading = 3`) can show its threads without any texture:
@@ -2075,6 +2102,27 @@ brightness profile is sampled the most coarsely of the four.
 
 Reported: 1280 x 720 frame 2.78 ms without weather and 3.50 ms with 40 000 drops of rain
 (+0.72 ms: height map, simulation and streaks), wall clock, best of 2 x 60 frames.
+
+### Foliage bars (registered before the first GPU run)
+
+Foliage scene: one 1 m double-sided leaf (base 0.12, 0.3, 0.06, roughness 0.7,
+through-color 0.8, 1.0, 0.4, wrap 0.5), sun overhead, sky ambient 0.05, 512 x 512, values
+are the mean green level over the middle 64 x 64 pixels unless stated.
+
+* **FL1 back light.** Seen from the dark side, the foliage leaf must be at least 3
+  times as bright as the plain one, with green above red above blue. Measured 10.8
+  plain, 164.2 as foliage (red 99.3, blue 46.5).
+* **FL2 lit side.** Seen from the lit side, foliage and plain must differ by at most 1
+  level on average. Measured 0.07.
+* **FL3 view angle.** Looking toward the sun through the leaf must be at least 1.5
+  times as bright as from 60 degrees off, and that must still be above plain. Measured
+  164.2 and 91.3.
+* **FL4 sky from behind.** With sky light only (ambient 1, sun off), the underside must
+  be at least 1.5 times as bright as plain. Measured 70.5 plain, 163.6 as foliage.
+* **FL5 occlusion lift.** A leaf beside a 1 m wall under sky light: screen occlusion
+  must darken the strip next to the wall by at least 3 levels at lift 0, lift 1 must be
+  within 1 level of occlusion off, and lift 0.5 must land between. Measured 166.2 off,
+  153.2 on, 160.2 at 0.5, 166.2 at 1.
 
 ### Puddle, lens drop and camera bars (registered before the first GPU run; U1 uses 0.2 m puddles so the view holds about 2,000 of them, U5 and N6 compare the fastest of 255 alternating frames because another program was using the GPU, and N5 also checks the direction)
 
