@@ -1,0 +1,45 @@
+use os
+use crypto.x509
+use crypto.ecc
+use net.sock
+use net.quic
+use net.quic_ep
+path(d const byte[:], n const byte[:]) byte[>..]: p byte[>..] ~= []; format(p, d, "/", n); p
+drive(e net::QEp&, d const byte[:], mode int, size int) int:
+	rc := path(d, "rc"); t0 := clock(); res ~= 0; tmp byte[>..] ~= []; got ~= 0; fin ~= false; shut ~= false; uni int[>..] ~= []
+	while !file_exists(rc[..]) && clock() - t0 < 25.0:
+		net::qe_poll(e, 5)
+		for i e.c.len:
+			if e.c[i].len == 0: continue
+			if net::quic_state(e.c[i][0]) == net::QUIC_OPEN: res |= 1
+			if mode == 0:
+				tmp.clear(); n := net::quic_read(e.c[i][0], 0, tmp)
+				if n > 0: net::quic_write(e.c[i][0], 0, tmp[..]); got += n
+				if n >= 0 && !fin && (net::quic_stream(e.c[i][0], 0) & 2) != 0: fin = true; net::quic_fin(e.c[i][0], 0)
+				if !shut && got >= size && net::quic_unsent(e.c[i][0], 0) == 0: shut = true; net::quic_close(e.c[i][0], 0, "done")
+			else:
+				id ~= net::quic_accept(e.c[i][0])
+				while id >= 0: uni.push(id); id = net::quic_accept(e.c[i][0])
+				for k uni.len:
+					if uni[k] < 0 || (uni[k] & 3) != 2: continue
+					tmp.clear(); n := net::quic_read(e.c[i][0], uni[k], tmp)
+					if n > 0: res |= if tmp[0] == 0 { 2 } else { 0 }; uni[k] = -1
+				if !shut && (res & 2) != 0: shut = true; net::quic_close(e.c[i][0], 256, "")
+	for k 20: net::qe_poll(e, 5)
+	res | (if got == size { 4 } else { 0 })
+main():
+	a := args(); d := if a.len > 1 { a[1] } else { "/tmp/helium-quic-interop" }; make_dir(d); priv := crypto::ec_generate(crypto::P256); cert, okc := crypto::x509_self_signed("amni-lan", priv[..], (time() as int) - 3600, 30); p8, ok8 := crypto::pkcs8_ec(priv[..])
+	write_file(path(d, "cert.der")[..], cert[..]); cv byte[>..] ~= []; format(cv, "openssl x509 -inform der -in ", d, "/cert.der -out ", d, "/cert.pem"); run_command(cv[..])
+	msg byte[>..] ~= []
+	for i 81920: msg.push(if i % 64 == 63 { 10 as byte } else { ('0' as int + (i * 7 + i / 64) % 10) as! byte })
+	write_file(path(d, "data")[..], msg[..])
+	for trial 3:
+		e ~= net::qe_bind(net::addr("127.0.0.1", 0)); net::qe_serve(e, cert[..], p8[..], if trial == 0 { "amni-v1" } else if trial == 1 { "h3" } else { "other-v1" }); port := net::qe_port(e); cmd byte[>..] ~= []
+		delete_file(path(d, "rc")[..]); delete_file(path(d, "out")[..])
+		if trial == 1: format(cmd, "( timeout 12 curl -s --http3-only --cacert ", d, "/cert.pem --resolve amni-lan:", port, ":127.0.0.1 --max-time 7 https://amni-lan:", port, "/ > ", d, "/out 2> ", d, "/err; echo $? > ", d, "/rc ) &")
+		else: format(cmd, "( (cat ", d, "/data; sleep 2) | timeout 20 openssl s_client -quic -alpn amni-v1 -connect 127.0.0.1:", port, " -CAfile ", d, "/cert.pem -verify_return_error -verify_hostname amni-lan -servername amni-lan -quiet -nocommands > ", d, "/out 2> ", d, "/err; echo $? > ", d, "/rc ) &")
+		run_command(cmd[..]); res := drive(e, d, if trial == 1 { 1 } else { 0 }, msg.len); out byte[>..] ~= []; read_file(path(d, "out")[..], out); rc byte[>..] ~= []; read_file(path(d, "rc")[..], rc); net::qe_close(e)
+		if trial == 0: print("Q10 openssl echo ", res == 5 && out[..] == msg[..])
+		if trial == 1: print("Q10 curl control stream ", (res & 3) == 3)
+		if trial == 2: print("Q10 control other name ", (res & 1) == 0 && out.len == 0 && rc.len > 0 && rc[0] != '0')
+		if a.len > 2: print("info trial ", trial, " res ", res, " out ", out.len, " rc ", rc[..])

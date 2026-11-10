@@ -13,7 +13,8 @@ QUIC_CLOSED := 4
 QMAXD := 1200
 struct QStream { id int = 0, sbuf byte[>..] = [], sh int = 0, sbase int = 0, snext int = 0, sw int = 0, sfin bool = false, fsent bool = false, facked bool = false, sack int[>..] = [], rtx int[>..] = [], smax int = 0, srst int = -1, sstop int = -1, rbuf byte[>..] = [], rh int = 0, rbase int = 0, rgot int[>..] = [], rhi int = 0, rfin int = -1, rmax int = 0, rwin int = 0, rrst int = -1, rstop int = -1, fl int = 0, freed bool = false }
 struct QSent { pn int = 0, t real = 0.0, size int = 0, fr int[>..] = [] }
-struct QSpace { rx QKeys = QKeys{}, tx QKeys = QKeys{}, rok bool = false, tok bool = false, npn int = 0, rlarge int = -1, rfl int = 0, rxr int[>..] = [], ackn int = 0, ooo bool = false, ackt real = 0.0, rlt real = 0.0, sent QSent[>..] = [], lacked int = -1, losst real = 0.0, lastae real = 0.0, probe int = 0 }
+struct QRec { pn int = 0, t real = 0.0, size int = 0, fo int = 0, fc int = 0 }
+struct QSpace { rx QKeys = QKeys{}, tx QKeys = QKeys{}, rok bool = false, tok bool = false, npn int = 0, rlarge int = -1, rfl int = 0, rxr int[>..] = [], ackn int = 0, ooo bool = false, ackt real = 0.0, rlt real = 0.0, sent QRec[>..] = [], fr int[>..] = [], lacked int = -1, losst real = 0.0, lastae real = 0.0, probe int = 0 }
 struct Quic { srv bool = false, state int = 0, now real = 0.0, host byte[>..] = [], alpn byte[>..] = [], cert byte[>..] = [], key byte[>..] = [], pin byte[>..] = [], only int = 0, tls Tls[>..] = [], tls_on bool = false, hk bool = false, ak bool = false, sp QSpace[>..] = [], st QStream[>..] = [], scid byte[>..] = [], dcid byte[>..] = [], odcid byte[>..] = [], lp QParams = QParams{}, pp QParams = QParams{}, pp_ok bool = false, hs bool = false, conf bool = false, valid bool = false, got1 bool = false, rxb int = 0, txb int = 0, phase int = 0, nrx QKeys = QKeys{}, srtt real = 0.333, rttvar real = 0.1665, minrtt real = 0.0, rtt1 bool = false, lrtt real = 0.0, ptoc int = 0, cwnd int = 12000, ssth int = 4611686018427387903, infl int = 0, rect real = -1.0, tlast real = 0.0, txmax int = 0, txdata int = 0, rxmax int = 0, rxdata int = 0, rxread int = 0, cwin int = 0, mxob int = 0, mxou int = 0, nob int = 0, nou int = 0, mxib int = 0, mxiu int = 0, nib int = 0, niu int = 0, pend int = 0, newst int[>..] = [], prsp byte[>..] = [], retire int[>..] = [], dseq int = 0, err int = -1, eapp bool = false, elocal bool = false, ereason byte[>..] = [], cpend bool = false, closet real = 0.0, idle real = 0.0, tidle real = 0.0, keep real = 0.0, test int = 0, rr int = 0, nacc int = 0, asr bool = false }
 qk_set(d QKeys&, s const QKeys&): d.alg = s.alg; d.hk = s.hk; d.sec = copy(s.sec); d.key = copy(s.key); d.iv = copy(s.iv); d.hp = copy(s.hp)
 rs_add(r int[>..]&, lo int, hi int):
@@ -73,7 +74,7 @@ q_end(q Quic&, app bool, code int, why const byte[:]):
 q_drop(q Quic&, s int):
 	if !q.sp[s].tok && !q.sp[s].rok: return
 	for p q.sp[s].sent: q.infl -= p.size
-	q.sp[s].sent.clear(); q.sp[s].tok = false; q.sp[s].rok = false; q.sp[s].losst = 0.0; q.sp[s].probe = 0; q.sp[s].ackn = 0; q.ptoc = 0
+	q.sp[s].sent.clear(); q.sp[s].fr.clear(); q.sp[s].tok = false; q.sp[s].rok = false; q.sp[s].losst = 0.0; q.sp[s].probe = 0; q.sp[s].ackn = 0; q.ptoc = 0
 q_new(srv bool, now real) Quic:
 	q ~= Quic{}; q.srv = srv; q.now = now; q.tidle = now; q.tlast = now; q.lp = qtp_new(); q.pp = qtp_new(); q.scid = crypto::random_bytes(8)
 	q.lp.v[1] = 30000; q.lp.v[4] = 1048576; q.lp.v[5] = 262144; q.lp.v[6] = 262144; q.lp.v[7] = 262144; q.lp.v[8] = 100; q.lp.v[9] = 100; q.lp.iscid.append(q.scid[..])
@@ -142,9 +143,9 @@ q_sdata(q Quic&, i int, off int, d const byte[:], fin bool):
 	if q.st[i].rhi > q.st[i].rmax || q.rxdata > q.rxmax: q_end(q, false, 3, "flow control limit exceeded"); return
 	if q.st[i].rrst < 0: qs_recv(q.st[i], off, d)
 q_requeue(q Quic&, s int, i int):
-	k := q.sp[s].sent[i].fr.len / 4
+	k := q.sp[s].sent[i].fc / 4; o := q.sp[s].sent[i].fo
 	for j k:
-		a := q.sp[s].sent[i].fr[4 * j]; b := q.sp[s].sent[i].fr[4 * j + 1]; c := q.sp[s].sent[i].fr[4 * j + 2]; e := q.sp[s].sent[i].fr[4 * j + 3]
+		a := q.sp[s].fr[o + 4 * j]; b := q.sp[s].fr[o + 4 * j + 1]; c := q.sp[s].fr[o + 4 * j + 2]; e := q.sp[s].fr[o + 4 * j + 3]
 		if a >= 0:
 			q.st[a].rtx.push(b); q.st[a].rtx.push(c)
 			if e == 1 && !q.st[a].facked: q.st[a].fsent = false
@@ -152,10 +153,10 @@ q_requeue(q Quic&, s int, i int):
 		if a == -2: q.st[b].fl |= c
 		if a == -4: q.retire.push(b)
 q_compact(q Quic&, s int):
-	keep QSent[>..] ~= []
+	keep QRec[>..] ~= []; nf int[>..] ~= []
 	for p q.sp[s].sent:
-		if p.pn >= 0: x ~= QSent{}; x.pn = p.pn; x.t = p.t; x.size = p.size; x.fr = copy(p.fr); keep.push(x)
-	q.sp[s].sent = keep
+		if p.pn >= 0: keep.push(QRec { pn: p.pn, t: p.t, size: p.size, fo: nf.len, fc: p.fc }); nf.append(q.sp[s].fr[p.fo..p.fo + p.fc])
+	q.sp[s].sent = keep; q.sp[s].fr = nf
 q_lost(q Quic&, s int):
 	q.sp[s].losst = 0.0; la := q.sp[s].lacked; delay := max(1.125 * max(q.srtt, q.lrtt), 0.001); n := q.sp[s].sent.len; big ~= -1.0
 	if la >= 0 && (q.test & 4) == 0:
@@ -181,12 +182,12 @@ q_ack(q Quic&, s int, f const QFrame&):
 		for j m:
 			if pn >= iv[2 * j] && pn <= iv[2 * j + 1]: hit = true
 		if !hit: continue
-		any = true; q.infl -= sz; fk := q.sp[s].sent[i].fr.len / 4
+		any = true; q.infl -= sz; fk := q.sp[s].sent[i].fc / 4; fo := q.sp[s].sent[i].fo
 		if pn == f.a: lt = q.sp[s].sent[i].t
 		if q.sp[s].sent[i].t > q.rect: q.cwnd += if q.cwnd < q.ssth { sz } else { QMAXD * sz / q.cwnd }
 		for j fk:
-			a := q.sp[s].sent[i].fr[4 * j]
-			if a >= 0: qs_acked(q.st[a], q.sp[s].sent[i].fr[4 * j + 1], q.sp[s].sent[i].fr[4 * j + 2], q.sp[s].sent[i].fr[4 * j + 3] == 1); q_done(q, a)
+			a := q.sp[s].fr[fo + 4 * j]
+			if a >= 0: qs_acked(q.st[a], q.sp[s].fr[fo + 4 * j + 1], q.sp[s].fr[fo + 4 * j + 2], q.sp[s].fr[fo + 4 * j + 3] == 1); q_done(q, a)
 		q.sp[s].sent[i].pn = -1
 	if !any: return
 	q.sp[s].lacked = max(q.sp[s].lacked, f.a); q.ptoc = 0
@@ -384,7 +385,7 @@ quic_send(q Quic&, out byte[>..]&, now real) bool:
 		ae := rec.fr.len > 0; rec.pn = q.sp[s].npn; rec.t = now; q.sp[s].npn += 1; sps.push(s); pns.push(rec.pn); aes.push(if ae { 1 } else { 0 }); total += ovh + pl.len; pls.push(pl)
 		if s == 0 && (ae || !q.srv): ini = true
 		if s == 1: hsk = true
-		if ae: q.sp[s].sent.push(rec); q.sp[s].lastae = now; q.tlast = now
+		if ae: q.sp[s].sent.push(QRec { pn: rec.pn, t: now, size: 0, fo: q.sp[s].fr.len, fc: rec.fr.len }); q.sp[s].fr.append(rec.fr[..]); q.sp[s].lastae = now; q.tlast = now
 		if ae && !q.asr: q.asr = true; q.tidle = now
 	n := pls.len
 	if n == 0: return false
