@@ -363,5 +363,7 @@ fn reset() {
 	for k in capacity { d.push((capacity - 1 - k) as i32); }
 	gfx::update_buffer(dead, 0, bytes_of(d)[..d.len * 4]);
 	for k in acc.len { acc[k] = 0.0; bursts[k] = 0; }
+	var zc byte[>..] = []; zc.resize(9 * 20, 0);
+	gfx::update_buffer(alive, 0, zc[..4]); gfx::update_buffer(events, 0, zc[..4]); gfx::update_buffer(events, (1 + EVN * 8) * 4, zc[..4]); gfx::update_buffer(args, 0, zc[..]);
 }
 fn release() { if capacity == 0 { return; } for b in [parts, dead, alive, keys, emit_buf, events, trail, mesh_idx, args] { gfx::release(b); } if mesh_ready { gfx::release(mesh_buf); } mesh_ready = false; trail_full = false; mesh_used = 0; mesh_first.clear(); mesh_n.clear(); capacity = 0; clear_emitters(); }

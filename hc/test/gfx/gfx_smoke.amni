@@ -3239,6 +3239,7 @@ fn vfx_checks() bool {
 	let v7 = nw == 100000 && n0w == 100000 && with - bare <= 7.0;
 	print("gpu: vfx V7 cost: ", nw, " live particles, ", r3(with), " ms a frame with trails, ", r3(bare), " ms without, trails ", r3(with - bare), " ms (bar <= 7)", hr_pass(v7));
 	gfx::release(IN_OUT);
+	fx_fresh();
 	s3d::look = DEF_LOOK; s3d::sun = DEF_SUN; s3d::sky = DEF_SKY;
 	v1 && v2 && v3 && v4 && v5 && v6 && v7
 }
