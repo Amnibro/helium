@@ -810,6 +810,52 @@ the camera.
 A skin, cloth or eye material without a detail map keeps the roughness it was
 given.
 
+### Cloth (E13)
+
+Any mesh can be simulated as cloth. `shapes::sheet(n, corner, u, v, material)` makes
+a flat sheet of n x n vertices that spans the edges `u` and `v` from `corner`:
+
+```
+var m = shapes::material(linalg::v3(0.2, 0.35, 0.8), 0.0, 0.8);
+m.double_sided = true;
+let flag = shapes::sheet(33, float3 { -0.5, 2.0, 0.0 }, float3 { 1.0, 0.0, 0.0 }, float3 { 0.0, -1.0, 0.0 }, m);
+let k = s3d::add_cloth(flag);
+let _ = s3d::add(flag);
+for i in 33 { cloth::pin(s3d::cloths[k].c, i, i as real / 32.0 - 0.5, 2.0, 0.0); }
+cloth::ball(0.0, 1.2, 0.3, 0.25);
+cloth::ground(0.0);
+```
+
+and once a frame, before `s3d::render`:
+
+```
+s3d::step_cloth(k, 1.0 / 60.0, float3 { 0.0, 0.0, 3.0 });
+```
+
+`s3d::add_cloth(asset)` turns the asset's first mesh part into cloth and returns the
+cloth's number in `s3d::cloths`, or -1 for a skinned or morphed mesh. Vertices at the
+same position share one particle, so texture seams do not tear. `s3d::step_cloth(k,
+dt, wind)` advances the cloth by `dt` seconds in a wind given in m/s and hands the new
+shape to the renderer. The cloth draws in every pass a mesh draws in: depth, sun and
+local-light shadow maps, and motion vectors, so TAA and motion blur follow it.
+
+* Pins: `cloth::pin(c, vertex, x, y, z)` holds a vertex at a point and
+  `cloth::unpin(c, vertex)` lets it go, with `c = s3d::cloths[k].c`. Pin again with a
+  new point each frame to carry the cloth along. A pinned cloth keeps every particle
+  within its rest distance of the nearest pin, which stops it from stretching under
+  fast moves.
+* Colliders: `cloth::ball(x, y, z, r)`, `cloth::pill(ax, ay, az, bx, by, bz, r)` and
+  `cloth::ground(y)`, shared by every cloth. To move them, call
+  `cloth::clear_colliders()` and add them again before the step.
+* Settings, on `cloth::cloths[c]`: `density` (kg per square meter), `gravity`,
+  `thickness`, `damping`, `air` and `drag` for the wind, `friction`, `stretch` and
+  `bend` (0 is rigid), `substeps` and `limit` (the distance limit to the pins).
+
+The simulation runs in the item's own space: leave the item's placement at identity,
+or give pins, colliders and wind in that space. One step of a 65 x 65 sheet takes
+about 2.4 ms on one core. The solver, `gfx.cloth`, does not depend on the renderer
+and can be used alone: `cloth::make`, `cloth::step` and `cloth::write`.
+
 ## Materials, light and finish
 
 `gltf` reads the core metal-rough model plus `KHR_materials_clearcoat`, `sheen`,
@@ -2183,6 +2229,30 @@ all three frames.
 | Y6 cost | 1.63 ms without, 1.75 ms with: 0.12 ms more | at most 0.3 ms |
 | Y7 nothing else moved | goldens 44.92 dB and 41.7 dB; X1 to X7 pass with both strengths 0; wgsltest 67 modules, 58 pipelines, 0 failures; webgputest 22 scenes, 0 failures, `scene_sss` with strength 0.7 and fuzz 0.35 matches the native frame exactly on WebGPU | pass |
 
+### Cloth results (2026-11-10, RX 9060 XT, RADV; Ryzen, one core for the solver)
+
+| Bar | Result | Bar value |
+| --- | --- | --- |
+| Z1 edges keep their length | longest edge 1.00001 times its rest length | at most 1.03 |
+| Z1 control, 1 substep without the pin limit | 3.70 | above 1.03 |
+| Z2 it comes to rest | mean speed 0.0007 m/s after 10 s, every position finite | below 0.02 m/s |
+| Z2 control, 0.5 s after the start | 1.07 m/s | above 0.02 m/s |
+| Z3 nothing passes through a sphere | nearest particle 0.305 m from the center; 446 particles touching at the end | at least 0.304 m; at least 100 |
+| Z3 control, no sphere | a particle comes within 0.009 m of the center; the sheet ends lying on the ground | within 0.2 m; lying |
+| Z4 nothing passes through a capsule | nearest particle 0.105 m from the segment | at least 0.104 m |
+| Z4 control, no capsule | 0.009 m | within 0.05 m |
+| Z5 pins hold and the cloth follows | pins off their targets by 0 m; bottom row moved 0.998 m | at most 0.000001 m; at least 0.8 m |
+| Z5 control, no pins | the sheet's mean x moved less than 0.000001 m | less than 0.01 m |
+| Z6 wind | bottom row at z 0.919 m | at least 0.2 m |
+| Z6 control, no wind | 0.0 m | at most 0.001 m |
+| Z7 normals follow the shape | 4.69 degrees from the sphere's on average | at most 15 |
+| Z7 control, rest normals | 56.36 degrees | above 15 |
+| Z8 the picture is the simulated shape | identical to the plain mesh of that step: no pixel differs | at least 50 dB, at most 2 / 255 |
+| Z8 control, rest shape | 21.13 dB | below 30 dB |
+| Z9 motion vectors | 0.002 pixels from the shift on average over 133,956 pixels | at most 0.05 |
+| Z9 control, last step ignored | 7.317 pixels | above 1 |
+| Z10 cost | 2.37 ms a step for 4,225 particles | at most 4 ms |
+
 ### Meshlet results (2026-11-09, RX 9060 XT, RADV; full gfxtest ok)
 
 | Bar | Result | Bar value |
@@ -2668,6 +2738,12 @@ pass-through mean error is 0.0106 % (max 0.0488 %).
   facing away from the camera (an ear lit from behind) is not gathered, and blended or
   cut-out skin materials are not scattered. Pores are one
   pattern for all skin, laid out in UV space; they are not shaped per body region.
+* Cloth: a cloth does not collide with itself or with another cloth, so folds can pass
+  through each other. Colliders are spheres, capsules and one ground plane, not
+  meshes. The solver runs on one CPU core, in the item's own space. Ray-traced
+  shadows, reflections and GI see the rest shape. Tangents keep their rest direction,
+  so a normal map on a strongly folded cloth is lit slightly off. Cloth meshes are
+  not drawn as meshlets. Hair strands are not built.
 * Sheen renders brighter than three.js on the chair and toy car (the likely cause, its
   low fit, is unproven), and the clearcoat fixture's base tiles are brighter
   (R 185 against 143), cause not found. See the PSNR table in hc/test/gfx/results.
