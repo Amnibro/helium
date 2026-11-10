@@ -56,7 +56,7 @@ struct Look { exposure f32, white f32, bloom f32, bloom_cut f32, desaturate f32,
 struct NodeOv { item int, node int, t float3, r linalg::Quat, sc float3 }
 struct WeightOv { item int, node int, k int, w f32 }
 struct Item { asset int, place gfx::mat4, prev_place gfx::mat4, anim int, time f32, visible bool, anim2 int = -1, time2 f32 = 0.0, blend f32 = 1.0, bend_node int = -1, bend linalg::Quat = linalg::Quat { 0.0, 0.0, 0.0, 1.0 }, track int[4] = [-1, -1, -1, -1], tracked gfx::mat4[4] = [gfx::mat4_identity, gfx::mat4_identity, gfx::mat4_identity, gfx::mat4_identity], light_base int = -1, sway f32 = 0.0, top f32 = 0.0 }
-struct InstSet { asset int, first int, count int, lod_asset int = -1, lod_distance f32 = 0.0, sway f32 = 0.0, visible bool = true, top f32 = 0.0, c float3 = float3 { 0.0, 0.0, 0.0 }, r f32 = 0.0, lo float3 = float3 { 0.0, 0.0, 0.0 }, hi float3 = float3 { 0.0, 0.0, 0.0 }, ia int[2] = [0, 0], na int[2] = [0, 0], iv int[2] = [0, 0], nv int[2] = [0, 0] }
+struct InstSet { asset int, first int, count int, lod_asset int = -1, lod_distance f32 = 0.0, sway f32 = 0.0, visible bool = true, top f32 = 0.0, c float3 = float3 { 0.0, 0.0, 0.0 }, r f32 = 0.0, lo float3 = float3 { 0.0, 0.0, 0.0 }, hi float3 = float3 { 0.0, 0.0, 0.0 }, ia int[2] = [0, 0], na int[2] = [0, 0], iv int[2] = [0, 0], nv int[2] = [0, 0], smax f32 = 1.0 }
 struct Caustics { on bool = false, manual bool = false, strength f32 = 1.0, focus f32 = 1.0, cap f32 = 7.0, level f32 = 0.0, waves float4 = float4 { 1.1, 0.062, 1.0, 0.7 }, absorb float3 = float3 { 0.45, 0.09, 0.07 }, lo float3 = float3 { -1.0e9, 0.0, -1.0e9 }, hi float3 = float3 { 1.0e9, 0.0, 1.0e9 } }
 struct Wind { dir float3 = float3 { 1.0, 0.0, 0.0 }, strength f32 = 0.0, speed f32 = 1.0, time f32 = 0.0 }
 struct Batch { prim int, item int, node int, joint_base int, model gfx::mat4, depth f32, mode int, prev_model gfx::mat4, prev_joint_base int, vis bool, trans bool, wb int, pwb int, inst int, lod int }
@@ -374,6 +374,24 @@ var tex_encoded = 0;
 var tex_cached = 0;
 var tex_mem = 0;
 var tex_ns = 0;
+var tex_stream = false;
+var tex_budget = 0;
+var tex_upload_cap = 4194304;
+var tex_hold = 30;
+var tex_wait = false;
+var tex_stream_bias = 0;
+var tex_streamed = 0;
+var tex_steps = 0;
+var tex_pending = 0;
+var tex_starved = 0;
+var tex_read = 0;
+var tex_stream_ns = 0;
+struct TexStream { on bool, src int, info ktx2::Info, gpu bool, top int, want int, tail int, idle int, low int, tgt int, at int, len int, lv int }
+var streams TexStream[>..] = [];
+var stream_pool byte[>..] = [];
+var stream_lv int[>..] = [];
+var stream_mem = 0;
+var uv_dens f32[>..] = [];
 fn texture_bytes() int { tex_mem }
 fn set_texture_cache(dir const byte[:]) { tex_cache.clear(); tex_cache.append(dir); }
 var vbuf gfx::Buffer;
@@ -830,6 +848,11 @@ fn forget() {
 	tex_srgb.clear();
 	tex_linear.clear();
 	tex_mem = 0;
+	streams.clear();
+	stream_pool.clear();
+	stream_lv.clear();
+	stream_mem = 0;
+	uv_dens.clear();
 	ext_map.clear();
 	ext_src.clear();
 	decals.clear();
@@ -890,25 +913,26 @@ fn tex_path(image int, srgb bool, out byte[>..]&) {
 	let src = if im.coded.count > 0 { gltf::image_file(image) } else { gltf::image_pixels(image) };
 	var a = 2166136261;
 	var b = 7;
-	for c in src { a = ((a ^ c as int) * 16777619) & 0xFFFFFFFF; b = (b * 31 + c as int + 7) & 0xFFFFFFFFFFFF; }
+	let words = src.len / 4;
+	for k in words { let v = src[k * 4] as int | (src[k * 4 + 1] as int << 8) | (src[k * 4 + 2] as int << 16) | (src[k * 4 + 3] as int << 24); a = ((a ^ v) * 16777619) & 0xFFFFFFFF; b = (b * 31 + v + 7) & 0xFFFFFFFFFFFF; }
+	for c in src[words * 4..] { a = ((a ^ c as int) * 16777619) & 0xFFFFFFFF; b = (b * 31 + c as int + 7) & 0xFFFFFFFFFFFF; }
 	out.append(tex_cache[..]);
 	out.push('/');
 	for k in 20 { let v = (if k < 8 { a >> (28 - 4 * k) } else { b >> (44 - 4 * (k - 8)) }) & 15; out.push((if v < 10 { '0' as int + v } else { 'a' as int + v - 10 }) as byte); }
 	out.append(str("_", im.width, "x", im.height, if srgb { "s" } else { "l" }, ".ktx2")[..]);
 }
-fn tex_bake(image int, srgb bool, file byte[>..]&) bool {
+fn tex_bake(image int, srgb bool, path const byte[:], file byte[>..]&, mode int) bool {
 	let im = gltf::images[image];
 	let mips = mip_count(im.width, im.height);
-	var path byte[>..] = [];
-	if tex_cache.len > 0 {
-		tex_path(image, srgb, path);
+	if path.len > 0 && mode < 2 {
 		file.clear();
-		if read_file(path[..], file) {
-			let info = ktx2::read(file[..]);
+		if (if mode == 1 { read_file_range(path, 0, 512, file) } else { read_file(path, file) }) {
+			tex_read += file.len;
+			let info = if mode == 1 { ktx2::head(file[..]) } else { ktx2::read(file[..]) };
 			if info.ok && info.kind == bc::BC7 && info.width == im.width && info.height == im.height && info.levels == mips && info.srgb == srgb { tex_cached += 1; return true; }
 		}
-		file.clear();
 	}
+	file.clear();
 	gltf::need_pixels(image);
 	var cur byte[>..] = [];
 	cur.append(gltf::image_pixels(image));
@@ -924,17 +948,20 @@ fn tex_bake(image int, srgb bool, file byte[>..]&) bool {
 	}
 	if !ktx2::write(bc::BC7, srgb, im.width, im.height, mips, data[..], false, file) { return false; }
 	tex_encoded += 1;
-	if path.len > 0 { let _ = make_dir(tex_cache[..]); let _ = write_file_atomic(path[..], file[..]); }
+	if path.len > 0 { let _ = make_dir(tex_cache[..]); let _ = write_file_atomic(path, file[..]); }
 	true
+}
+fn tex_format(kind int, srgb bool) i32 {
+	if kind == bc::BC1 { if srgb { gfx::BC1_SRGB } else { gfx::BC1 } } else if kind == bc::BC3 { if srgb { gfx::BC3_SRGB } else { gfx::BC3 } } else if kind == bc::BC4 { gfx::BC4 } else if kind == bc::BC5 { gfx::BC5 } else if kind == bc::BC7 { if srgb { gfx::BC7_SRGB } else { gfx::BC7 } } else if srgb { gfx::RGBA8_SRGB } else { gfx::RGBA8 }
 }
 fn ktx_texture(file const byte[:], srgb bool) gfx::Texture {
 	let info = ktx2::read(file);
 	if !info.ok { return none(); }
-	let fmt = if info.kind == bc::BC1 { if srgb { gfx::BC1_SRGB } else { gfx::BC1 } } else if info.kind == bc::BC3 { if srgb { gfx::BC3_SRGB } else { gfx::BC3 } } else if info.kind == bc::BC4 { gfx::BC4 } else if info.kind == bc::BC5 { gfx::BC5 } else if info.kind == bc::BC7 { if srgb { gfx::BC7_SRGB } else { gfx::BC7 } } else if srgb { gfx::RGBA8_SRGB } else { gfx::RGBA8 };
+	let fmt = tex_format(info.kind, srgb);
 	let gpu = info.kind != 0 && tex_gpu_bc && info.width % 4 == 0 && info.height % 4 == 0 && gfx::format_supported(fmt);
 	let full = mip_count(info.width, info.height);
 	let regen = !gpu && info.levels == 1 && full > 1;
-	let t = gfx::texture(gfx::TextureDesc { format: if gpu { fmt } else if srgb { gfx::RGBA8_SRGB } else { gfx::RGBA8 }, usage: if regen { gfx::SAMPLED | gfx::COLOR_TARGET } else { gfx::SAMPLED }, width: info.width as i32, height: info.height as i32, mips: (if regen { full } else { info.levels }) as i32 });
+	let t = gfx::texture(gfx::TextureDesc { format: if gpu { fmt } else { tex_format(0, srgb) }, usage: if regen { gfx::SAMPLED | gfx::COLOR_TARGET } else { gfx::SAMPLED }, width: info.width as i32, height: info.height as i32, mips: (if regen { full } else { info.levels }) as i32 });
 	var lv byte[>..] = [];
 	var px byte[>..] = [];
 	for n in info.levels {
@@ -947,18 +974,135 @@ fn ktx_texture(file const byte[:], srgb bool) gfx::Texture {
 	tex_mem += if gpu { chain_bytes(info.kind, info.width, info.height, info.levels) } else { chain_bytes(0, info.width, info.height, if regen { full } else { info.levels }) };
 	t
 }
+fn stream_chain(s TexStream, n int) int { stream_lv[s.lv + n * 3 + 2] }
+fn stream_tail(w int, h int, levels int, blocks bool) int {
+	var t = 0;
+	while t + 1 < levels && max(w >> (t + 1), h >> (t + 1)) >= 128 && (!blocks || ((w >> (t + 1)) % 4 == 0 && (h >> (t + 1)) % 4 == 0)) { t += 1; }
+	t
+}
+fn stream_fetch(si int, a int, b int, out byte[>..]&) bool {
+	let s = streams[si];
+	out.clear();
+	if a < 0 || b < a { return false; }
+	if s.src == 1 {
+		let ok = read_file_range(stream_pool[s.at..s.at + s.len], a, b - a, out);
+		tex_read += out.len;
+		return ok && out.len == b - a;
+	}
+	if s.src == 0 {
+		let f = gltf::image_file(si / 2);
+		if b > f.len { return false; }
+		out.append(f[a..b]);
+		return true;
+	}
+	if b > s.len { return false; }
+	out.append(stream_pool[s.at + a..s.at + b]);
+	true
+}
+fn stream_build(si int, top int) {
+	let s = streams[si];
+	let image = si / 2;
+	let srgb = si % 2 == 1;
+	let n = s.info.levels;
+	var a = stream_lv[s.lv + top * 3];
+	var b = a + stream_lv[s.lv + top * 3 + 1];
+	for k in top..n { a = min(a, stream_lv[s.lv + k * 3]); b = max(b, stream_lv[s.lv + k * 3] + stream_lv[s.lv + k * 3 + 1]); }
+	var buf byte[>..] = [];
+	var lv byte[>..] = [];
+	var px byte[>..] = [];
+	var good = stream_fetch(si, a, b, buf);
+	let t = gfx::texture(gfx::TextureDesc { format: if s.gpu { tex_format(s.info.kind, srgb) } else { tex_format(0, srgb) }, usage: gfx::SAMPLED, width: max(s.info.width >> top, 1) as i32, height: max(s.info.height >> top, 1) as i32, mips: (n - top) as i32 });
+	var up = 0;
+	for attempt in 2 {
+		if good && (attempt == 0 || up == 0) {
+			up = 0;
+			for k in top..n {
+				let o = stream_lv[s.lv + k * 3] - a;
+				let l = stream_lv[s.lv + k * 3 + 1];
+				if good && o >= 0 && o + l <= buf.len && ktx2::unpack(buf[o..o + l], s.info, k, lv) {
+					if s.gpu || s.info.kind == 0 { gfx::update_texture(t, gfx::Region { mip: (k - top) as i32, .. }, lv[..]); up += lv.len; }
+					else if bc::decode(s.info.kind, lv[..], max(s.info.width >> k, 1), max(s.info.height >> k, 1), px) { gfx::update_texture(t, gfx::Region { mip: (k - top) as i32, .. }, px[..]); up += px.len; }
+				} else { good = false; }
+			}
+		}
+		if !good && attempt == 0 && s.src == 1 {
+			var path byte[>..] = [];
+			path.append(stream_pool[s.at..s.at + s.len]);
+			good = tex_bake(image, srgb, path[..], buf, 2);
+			a = 0;
+			up = 0;
+			if good { for k in n { let o, l = ktx2::span(buf[..], s.info, k); stream_lv[s.lv + k * 3] = o; stream_lv[s.lv + k * 3 + 1] = l; } }
+		}
+	}
+	let old = if srgb { tex_srgb[image] } else { tex_linear[image] };
+	if s.top >= 0 {
+		if old.id != 0 { gfx::release(old); }
+		tex_mem -= stream_chain(s, s.top);
+		stream_mem -= stream_chain(s, s.top);
+	}
+	tex_mem += stream_chain(s, top);
+	stream_mem += stream_chain(s, top);
+	if srgb { tex_srgb[image] = t; } else { tex_linear[image] = t; }
+	streams[si].top = top;
+	tex_streamed += up;
+	tex_steps += 1;
+}
+fn stream_open(image int, srgb bool) bool {
+	let im = gltf::images[image];
+	var file byte[>..] = [];
+	var path byte[>..] = [];
+	var src = 0;
+	if im.ktx {
+		let f = gltf::image_file(image);
+		if !ktx2::read(f).ok { return false; }
+		file.append(f[..min(f.len, 512)]);
+	} else if tex_compress && im.ok && im.width % 4 == 0 && im.height % 4 == 0 {
+		if stream_tail(im.width, im.height, mip_count(im.width, im.height), tex_gpu_bc && gfx::format_supported(tex_format(bc::BC7, srgb))) == 0 { return false; }
+		if tex_cache.len > 0 { tex_path(image, srgb, path); }
+		if !tex_bake(image, srgb, path[..], file, 1) { return false; }
+		src = if path.len > 0 { 1 } else { 2 };
+	} else { return false; }
+	let info = ktx2::head(file[..]);
+	if !info.ok { return false; }
+	let gpu = info.kind != 0 && tex_gpu_bc && info.width % 4 == 0 && info.height % 4 == 0 && gfx::format_supported(tex_format(info.kind, srgb));
+	let tail = stream_tail(info.width, info.height, info.levels, gpu);
+	if tail == 0 { return false; }
+	let si = image * 2 + (if srgb { 1 } else { 0 });
+	while streams.len <= si { streams.push(TexStream { on: false, .. }); }
+	streams[si] = TexStream { on: true, src: src, info: info, gpu: gpu, top: -1, want: tail, tail: tail, idle: 0, low: tail, tgt: tail, at: stream_pool.len, len: if src == 1 { path.len } else if src == 2 { file.len } else { 0 }, lv: stream_lv.len };
+	if src == 1 { stream_pool.append(path[..]); } else if src == 2 { stream_pool.append(file[..]); }
+	let base = stream_lv.len;
+	for k in info.levels { let o, l = ktx2::span(file[..], info, k); stream_lv.push(o); stream_lv.push(l); stream_lv.push(0); }
+	var sum = 0;
+	for j in info.levels {
+		let k = info.levels - 1 - j;
+		sum += ktx2::level_size(if gpu { info.kind } else { 0 }, info.width, info.height, k);
+		stream_lv[base + k * 3 + 2] = sum;
+	}
+	stream_build(si, tail);
+	true
+}
+fn stream_at(image int, srgb bool) int {
+	let si = image * 2 + (if srgb { 1 } else { 0 });
+	if si < streams.len && streams[si].on { si } else { -1 }
+}
 fn image_texture(image int, srgb bool) gfx::Texture {
 	let have = if srgb { tex_srgb[image] } else { tex_linear[image] };
 	if have.id != 0 { return have; }
 	let im = gltf::images[image];
 	let t0 = clock_ns();
+	if tex_stream && stream_open(image, srgb) { tex_ns += clock_ns() - t0; return if srgb { tex_srgb[image] } else { tex_linear[image] }; }
 	var t = none();
 	var file byte[>..] = [];
+	var path byte[>..] = [];
 	if im.ktx { t = ktx_texture(gltf::image_file(image), srgb); }
-	else if tex_compress && im.ok && im.width % 4 == 0 && im.height % 4 == 0 && tex_bake(image, srgb, file) { t = ktx_texture(file[..], srgb); }
+	else if tex_compress && im.ok && im.width % 4 == 0 && im.height % 4 == 0 {
+		if tex_cache.len > 0 { tex_path(image, srgb, path); }
+		if tex_bake(image, srgb, path[..], file, 0) { t = ktx_texture(file[..], srgb); }
+	}
 	if t.id == 0 {
 		let mips = mip_count(im.width, im.height);
-		t = gfx::texture(gfx::TextureDesc { format: if srgb { gfx::RGBA8_SRGB } else { gfx::RGBA8 }, usage: gfx::SAMPLED | gfx::COLOR_TARGET, width: im.width as i32, height: im.height as i32, mips: mips as i32 });
+		t = gfx::texture(gfx::TextureDesc { format: tex_format(0, srgb), usage: gfx::SAMPLED | gfx::COLOR_TARGET, width: im.width as i32, height: im.height as i32, mips: mips as i32 });
 		gltf::need_pixels(image);
 		gfx::update_texture(t, gltf::image_pixels(image));
 		if mips > 1 { gfx::generate_mips(t); }
@@ -967,6 +1111,146 @@ fn image_texture(image int, srgb bool) gfx::Texture {
 	tex_ns += clock_ns() - t0;
 	if srgb { tex_srgb[image] = t; } else { tex_linear[image] = t; }
 	t
+}
+fn full_texture(image int, srgb bool) gfx::Texture {
+	let t = image_texture(image, srgb);
+	let si = stream_at(image, srgb);
+	if si < 0 { return t; }
+	let s = streams[si];
+	var n = 0;
+	while n < s.tail && max(s.info.width >> (n + 1), s.info.height >> (n + 1)) >= ext_size { n += 1; }
+	if s.top > n { stream_build(si, n); }
+	streams[si].idle = 0;
+	if srgb { tex_srgb[image] } else { tex_linear[image] }
+}
+fn uv_density(prim int, set int) f32 {
+	while uv_dens.len <= prim * 2 + 1 { uv_dens.push(-1.0); }
+	if uv_dens[prim * 2 + set] >= 0.0 { return uv_dens[prim * 2 + set]; }
+	let pr = gltf::prims[prim];
+	let uo = 7 + 2 * set - 1;
+	var best real = 1.0e30;
+	for t in pr.icount / 3 {
+		let a = (pr.vfirst + gltf::indices[pr.ifirst + t * 3] as int) * gltf::VERTEX_FLOATS;
+		let b = (pr.vfirst + gltf::indices[pr.ifirst + t * 3 + 1] as int) * gltf::VERTEX_FLOATS;
+		let c = (pr.vfirst + gltf::indices[pr.ifirst + t * 3 + 2] as int) * gltf::VERTEX_FLOATS;
+		let e1 = linalg::v3(gltf::verts[b] - gltf::verts[a], gltf::verts[b + 1] - gltf::verts[a + 1], gltf::verts[b + 2] - gltf::verts[a + 2]);
+		let e2 = linalg::v3(gltf::verts[c] - gltf::verts[a], gltf::verts[c + 1] - gltf::verts[a + 1], gltf::verts[c + 2] - gltf::verts[a + 2]);
+		let l1 = sqrt(linalg::dot3(e1, e1) as real);
+		let x2 = if l1 > 0.0 { linalg::dot3(e2, e1) as real / l1 } else { 0.0 };
+		let y2 = sqrt(max(linalg::dot3(e2, e2) as real - x2 * x2, 0.0));
+		if l1 > 1.0e-12 && y2 > 1.0e-12 {
+			let ax = (gltf::verts[b + uo] - gltf::verts[a + uo]) as real / l1;
+			let ay = (gltf::verts[b + uo + 1] - gltf::verts[a + uo + 1]) as real / l1;
+			let bx = ((gltf::verts[c + uo] - gltf::verts[a + uo]) as real - ax * x2) / y2;
+			let by = ((gltf::verts[c + uo + 1] - gltf::verts[a + uo + 1]) as real - ay * x2) / y2;
+			let tt = ax * ax + ay * ay + bx * bx + by * by;
+			let dd = abs(ax * by - ay * bx);
+			let big = sqrt((tt + sqrt(max(tt * tt - 4.0 * dd * dd, 0.0))) * 0.5);
+			best = min(best, if big > 0.0 { dd / big } else { 0.0 });
+		}
+	}
+	uv_dens[prim * 2 + set] = if best > 1.0e29 { 0.0 } else { best as f32 };
+	uv_dens[prim * 2 + set]
+}
+fn stream_reach(b Batch, pr gltf::Primitive) f32 {
+	var lo = linalg::v3(1.0e30, 1.0e30, 1.0e30);
+	var hi = linalg::v3(-1.0e30, -1.0e30, -1.0e30);
+	if b.inst >= 0 { lo = instances[b.inst].lo; hi = instances[b.inst].hi; }
+	else {
+		for k in 8 {
+			let c = linalg::point(b.model, linalg::v3(if k & 1 == 0 { pr.lo.x } else { pr.hi.x }, if k & 2 == 0 { pr.lo.y } else { pr.hi.y }, if k & 4 == 0 { pr.lo.z } else { pr.hi.z }));
+			lo = linalg::v3(min(lo.x, c.x), min(lo.y, c.y), min(lo.z, c.z));
+			hi = linalg::v3(max(hi.x, c.x), max(hi.y, c.y), max(hi.z, c.z));
+		}
+	}
+	let dx = max(max(lo.x - view.eye.x, view.eye.x - hi.x), 0.0);
+	let dy = max(max(lo.y - view.eye.y, view.eye.y - hi.y), 0.0);
+	let dz = max(max(lo.z - view.eye.z, view.eye.z - hi.z), 0.0);
+	let r = max(linalg::f(sqrt((dx * dx + dy * dy + dz * dz) as real)) - linalg::f(sqrt((lens_offset.x * lens_offset.x + lens_offset.y * lens_offset.y) as real)), view.near);
+	let m = b.model;
+	let g01 = abs(m.c0.x * m.c1.x + m.c0.y * m.c1.y + m.c0.z * m.c1.z);
+	let g02 = abs(m.c0.x * m.c2.x + m.c0.y * m.c2.y + m.c0.z * m.c2.z);
+	let g12 = abs(m.c1.x * m.c2.x + m.c1.y * m.c2.y + m.c1.z * m.c2.z);
+	let g = max(m.c0.x * m.c0.x + m.c0.y * m.c0.y + m.c0.z * m.c0.z + g01 + g02, max(m.c1.x * m.c1.x + m.c1.y * m.c1.y + m.c1.z * m.c1.z + g01 + g12, m.c2.x * m.c2.x + m.c2.y * m.c2.y + m.c2.z * m.c2.z + g02 + g12));
+	r / max(linalg::f(sqrt(g as real)) * (if b.inst >= 0 { instances[b.inst].smax } else { 1.0 }), 1.0e-20)
+}
+fn stream_wants() {
+	let ty = linalg::f(tan((view.fov_y * 0.5) as real));
+	let asp = width as f32 / max(height, 1) as f32;
+	let px = 2.0 * ty / max(height, 1) as f32 / (1.0 + ty * ty * (1.0 + asp * asp)) * mip_scale();
+	for b in batch {
+		let m = material_of(b.prim);
+		let pr = gltf::prims[b.prim];
+		let zero = pr.skinned || pr.targets > 0 || b.joint_base >= 0 || m.height_tex.texture >= 0;
+		var f f32 = -1.0;
+		for r, slot in [m.base_tex, m.emissive_tex, m.mr_tex, m.normal_tex, m.occlusion_tex] {
+			if r.texture < 0 || gltf::textures[r.texture].image < 0 { continue; }
+			let t = gltf::textures[r.texture];
+			let si = stream_at(t.image, slot < 2);
+			if si < 0 { continue; }
+			let s = streams[si];
+			var lv = 0;
+			if !zero && t.mipmaps && t.mag_nearest == t.min_nearest {
+				if f < 0.0 { f = stream_reach(b, pr) * px; }
+				let tt = (r.m.x * r.m.x + r.m.y * r.m.y + r.m.z * r.m.z + r.m.w * r.m.w) as real;
+				let dd = abs(r.m.x * r.m.w - r.m.y * r.m.z) as real;
+				let big = sqrt((tt + sqrt(max(tt * tt - 4.0 * dd * dd, 0.0))) * 0.5);
+				var rho = f as real * uv_density(b.prim, min(max(r.uv, 0), 1)) as real * (if big > 0.0 { dd / big } else { 0.0 }) * min(s.info.width, s.info.height) as real;
+				lv = -1;
+				while rho >= 2.0 && lv < 30 { rho = rho * 0.5; lv += 1; }
+			}
+			lv = clamp(lv + tex_stream_bias, 0, s.tail);
+			if lv < s.want { streams[si].want = lv; }
+		}
+	}
+}
+fn stream_update() {
+	if streams.len == 0 { return; }
+	let t0 = clock_ns();
+	let wait = tex_wait || capturing;
+	for s, i in streams { if s.on { streams[i].want = s.tail; } }
+	stream_wants();
+	var total = tex_mem - stream_mem;
+	for s, i in streams {
+		if !s.on { continue; }
+		var tgt = s.top;
+		if s.want <= s.top { streams[i].idle = 0; streams[i].low = s.tail; tgt = s.want; }
+		else {
+			let low = min(s.low, s.want);
+			streams[i].low = low;
+			if !capturing { streams[i].idle = s.idle + 1; if s.idle + 1 >= tex_hold { tgt = low; } }
+		}
+		streams[i].tgt = tgt;
+		total += stream_chain(s, tgt);
+	}
+	if tex_budget > 0 && total > tex_budget && !capturing {
+		for s, i in streams { if s.on && s.tgt < s.want { total += stream_chain(s, s.want) - stream_chain(s, s.tgt); streams[i].tgt = s.want; } }
+		var more = true;
+		while total > tex_budget && more {
+			var mx = 0;
+			for s in streams { if s.on && s.tgt < s.tail { mx = max(mx, stream_chain(s, s.tgt)); } }
+			more = mx > 0;
+			if more { for s, i in streams { if total > tex_budget && s.on && s.tgt < s.tail && stream_chain(s, s.tgt) == mx { total += stream_chain(s, s.tgt + 1) - mx; streams[i].tgt = s.tgt + 1; } } }
+		}
+	}
+	let steps0 = tex_steps;
+	let up0 = tex_streamed;
+	for s, i in streams {
+		if s.on && s.tgt > s.top && (wait || tex_steps == steps0 || tex_streamed - up0 + stream_chain(s, s.tgt) <= tex_upload_cap) { stream_build(i, s.tgt); }
+	}
+	for s, i in streams {
+		if !s.on || s.tgt >= s.top { continue; }
+		var n = s.tgt;
+		if !wait {
+			while n < s.top && tex_streamed - up0 + stream_chain(s, n) > tex_upload_cap { n += 1; }
+			if n == s.top && tex_steps == steps0 { n = s.top - 1; }
+		}
+		if n < s.top && (tex_budget <= 0 || capturing || tex_mem + stream_chain(s, n) - stream_chain(s, s.top) <= tex_budget) { stream_build(i, n); }
+	}
+	tex_pending = 0;
+	tex_starved = 0;
+	for s in streams { if s.on { if s.top != s.tgt { tex_pending += 1; } if s.tgt > s.want { tex_starved += 1; } } }
+	if !capturing { tex_stream_ns = clock_ns() - t0; }
 }
 
 fn warm(r gltf::TexRef, srgb bool) {
@@ -988,7 +1272,7 @@ fn ext_make(s int, cap int) {
 	ext_fill(s, 0, white);
 	if s == 0 { ext_fill(s, 1, flat_normal); }
 	for k in ext_src.len / 3 {
-		if ext_src[k * 3] == s { ext_fill(s, ext_src[k * 3 + 2], image_texture(ext_src[k * 3 + 1], s == 1)); }
+		if ext_src[k * 3] == s { ext_fill(s, ext_src[k * 3 + 2], full_texture(ext_src[k * 3 + 1], s == 1)); }
 	}
 }
 fn ext_need(r gltf::TexRef, s int) {
@@ -1001,7 +1285,7 @@ fn ext_need(r gltf::TexRef, s int) {
 	ext_cnt[s] = lay + 1;
 	ext_map[im * 2 + s] = lay;
 	ext_src.push(s); ext_src.push(im); ext_src.push(lay);
-	if lay >= ext_cap[s] { ext_make(s, max(ext_cap[s] * 2, 4)); } else { ext_fill(s, lay, image_texture(im, s == 1)); }
+	if lay >= ext_cap[s] { ext_make(s, max(ext_cap[s] * 2, 4)); } else { ext_fill(s, lay, full_texture(im, s == 1)); }
 }
 fn ext_finish() {
 	for s in 2 {
@@ -1033,6 +1317,7 @@ fn ext_of(m gltf::Material) ExtU {
 // Textures are created on first use; uploads must happen outside render passes,
 // so every texture the batch will sample is created before the first pass.
 fn warm_textures() {
+	if !capturing { tex_streamed = 0; tex_steps = 0; }
 	for b in batch {
 		let m = material_of(b.prim);
 		warm(m.base_tex, true);
@@ -1050,6 +1335,7 @@ fn warm_textures() {
 		}
 	}
 	for d in decals { ext_need(gltf::TexRef { texture: d.base, uv: 0 }, 1); ext_need(gltf::TexRef { texture: d.normal, uv: 0 }, 0); }
+	stream_update();
 	ext_finish();
 }
 
@@ -1173,6 +1459,9 @@ fn gather_instances() {
 			}
 			instances[si].lo = lo;
 			instances[si].hi = hi;
+			var sm f32 = 0.0;
+			for k in s.count { sm = max(sm, inst_c[s.first + k].w); }
+			instances[si].smax = if s.r > 0.0 { sm / s.r } else { 1.0 };
 		}
 		inst_t0.clear(); inst_t1.clear(); inst_t2.clear(); inst_t3.clear();
 		let grow = 1.0 + 2.0 * s.sway * wind.strength;

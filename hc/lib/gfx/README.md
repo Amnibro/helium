@@ -612,6 +612,56 @@ let a = gltf::load("model.glb");
 * **BC4 and BC5 values.** The steps between the two ends sit halfway between the exact
   fraction and the 6-bit weights some GPUs use, so the CPU decode is within 1/255 of
   either kind of hardware.
+### Texture streaming (E10)
+
+```
+s3d::tex_compress = true;
+s3d::tex_stream = true;
+s3d::set_texture_cache("cache/textures");
+s3d::tex_budget = 256 * 1024 * 1024;
+```
+
+* **What it does.** With `s3d::tex_stream`, a compressed texture starts at a small size
+  (its mips from 128 pixels down) and the larger sizes are loaded when the camera gets
+  close enough to show them, and dropped again when it has been far away for a while.
+  The picture is the same as with every texture fully loaded: a size is in memory
+  before any pixel can sample it.
+* **Which textures.** Textures packed by `s3d::tex_compress` and KTX2 images in models,
+  256 pixels or larger. Plain RGBA8 textures (sides not multiples of 4) are loaded
+  whole, as are textures on skinned or morphed meshes, on materials with a height map,
+  and textures whose sampler has mips off.
+* **Where the bytes come from.** With a cache folder, only the start of each `.ktx2`
+  file is read on load and each larger size is read from the file when it is wanted
+  (`read_file_range`). With no cache folder the packed file is kept in memory. KTX2
+  images in a model are read from the model's bytes.
+* **`s3d::tex_budget`** is a limit in bytes on `s3d::texture_bytes()`; 0 means no limit.
+  When the wanted sizes do not fit, the largest textures in memory give up one size at a
+  time until they do. The smallest sizes always stay, so a budget below their total
+  still draws. `s3d::tex_starved` counts the textures drawn smaller than wanted.
+* **`s3d::tex_upload_cap`** (4 MiB) limits the bytes sent to the GPU in one frame, so a
+  camera cut spreads its loading over a few frames; until a size arrives the texture
+  draws from the size it has. A frame may always make one step, so a size larger than
+  the cap still loads.
+* **`s3d::tex_hold`** (30) is the number of frames a size stays in memory after the
+  camera stops needing it.
+* **`s3d::tex_wait`** loads everything a frame wants before drawing it, whatever the
+  cap: use it for stills and offline frames. Probe captures always wait.
+* **`s3d::tex_stream_bias`** shifts every wanted size by whole steps: 1 loads half the
+  size, 2 a quarter.
+* **Numbers to read.** `s3d::tex_streamed` and `s3d::tex_steps` are the bytes uploaded
+  and the size changes made in the last frame, `s3d::tex_pending` the textures still on
+  their way to the wanted size, `s3d::tex_read` the bytes read from cache files so far,
+  and `s3d::tex_stream_ns` the time the last frame spent deciding and loading.
+* **How a size is chosen.** For each drawn mesh: the distance from the camera to its
+  bounding box, the size of a pixel at that distance, and the mesh's densest UV mapping
+  give the fewest texels one pixel can cover. The size loaded is one step larger than
+  that calls for. The view direction is not used, so turning the camera loads nothing
+  new.
+* **By hand.** `ktx2::head(prefix)` reads the header and level table from the first
+  bytes of a file, `ktx2::span(prefix, info, n)` gives the offset and stored length of
+  level `n`, and `ktx2::unpack(stored, info, n, out)` turns one level's stored bytes
+  into blocks. `read_file_range(path, offset, count, out)` reads part of a file.
+
 ## Materials, light and finish
 
 `gltf` reads the core metal-rough model plus `KHR_materials_clearcoat`, `sheen`,
@@ -1623,6 +1673,31 @@ is drawn.
 * **S10 gates.** As U5, plus a new `scene_stream` (textures compressed, streamed and
   settled) in webgputest.
 
+### Texture streaming results (2026-11-09, RX 9060 XT, RADV; full gfxtest ok)
+
+| Bar | Result | Bar value |
+| --- | --- | --- |
+| S1 same picture | 16 of 16 textures streamed; against full at the far, middle, side and near spots: 0 / 255 | at most 2 / 255 |
+| S1 far memory | 349,952 of 22,370,048 bytes = 0.016 | at most 0.1 |
+| S1 control, every texture at its smallest size | near spot differs by 17 / 255: fails as it must | must fail |
+| S2 memory follows the camera | near 4,806,400 bytes; moved far: unchanged for 29 of 29 frames, one frame later 349,952 (a scene started far: 349,952); back near 4,806,400, picture 0 / 255 | hold, equal, at most 2 / 255 |
+| S3 budget of 1,922,560 bytes | 120-frame flight peaked at 1,791,744 bytes and ended with 4 textures starved | never above, above 0 |
+| S3 budget of 1,000 bytes | memory 349,952 bytes, the smallest sizes' total; the frame equals the all-smallest frame | equal, draws |
+| S3 control, no budget | peaked at 4,806,400 bytes: fails as it must | must fail |
+| S4 upload cap of 1 MiB | 2 frames above the cap, each one step of one texture (largest 1,398,128 bytes); all loaded after 6 frames | one step, at most 40 frames |
+| S4 control, settled in one frame | 4,718,912 bytes in 12 steps: fails as it must | must fail |
+| S5 first frame, warm cache | read 358,144 of 22,376,448 file bytes = 0.016; uploaded 349,952 of 22,370,048 bytes = 0.016; 22.35 ms making textures against 27.65 ms for a full load (best of 3 each) | at most 0.1, 0.1, no slower |
+| S5 control, full load | read 22,376,448 bytes, every byte | must read all |
+| S6 damaged cache | file cut from 1,398,528 to 839,116 bytes: moving near packed 1 texture again, picture 0 / 255, file back to 1,398,528 bytes | 1, at most 2 / 255 |
+| S6 control, untouched files | 0 packed again, picture 0 / 255 | 0 |
+| S7 cost | 0.002 ms a frame | at most 0.1 ms |
+| S8 no cache folder | 16 packed in memory, 16 streamed: 0 / 255; far memory 0.016 of full | at most 2 / 255, 0.1 |
+| S8 KTX2 images in the model | 16 streamed: 0 / 255 against the same scene unstreamed; far memory 349,952 of 22,370,048 bytes = 0.016 | at most 2 / 255, 0.1 |
+| S9 reading part of a file | 5 of 5 ranges equal on the native, C and web backends | all |
+| S10 goldens | 44.92 dB and 41.7 dB | above 40 dB |
+| S10 wgsltest | 63 modules, 54 pipelines, 0 failures | 0 failures |
+| S10 webgputest, with the new `scene_stream` | 19 scenes, 0 failures; `scene_stream` identical to native | 0 failures |
+
 ### Compressed texture results (2026-11-09, RX 9060 XT, RADV; full gfxtest ok)
 
 | Bar | Result | Bar value |
@@ -1638,7 +1713,7 @@ is drawn.
 | T4 scene, 1280 x 720 | 51.24 dB against uncompressed; texture memory 2,796,256 of 11,184,808 bytes = 0.25 | at least 40 dB, at most 0.26 |
 | T4 control, flat gray textures | 22.71 dB: fails as it must | must fail |
 | T5 no BC on the device | CPU decode against the GPU's decode: 0 / 255; memory back to 11,184,808 bytes | at most 2 / 255 |
-| T6 cache | first load packed 2 and wrote 2 files in 344.75 ms; second load packed 0 and read 2 in 10.24 ms, 33.68 times faster; picture difference 0 | 0 packed, at least 5 times, 0 |
+| T6 cache | first load packed 2 and wrote 2 files in 357.62 ms; second load packed 0 and read 2 in 3.4 ms, 105.32 times faster; picture difference 0 | 0 packed, at least 5 times, 0 |
 | T6 control, one file cut short | 1 packed again, 1 read, difference 0 | 1, 0 |
 | T7 KTX2 in glTF | BC7 KTX2 image against the same file from the cache: 0; marked BasisLZ: 1 bad image, drawn white | 0, 1 |
 | T8 speed, one thread | image M with all mips to BC7 in 0.18 s, to BC1 in 0.09 s | at most 2 s, 1 s |
@@ -2078,8 +2153,12 @@ pass-through mean error is 0.0106 % (max 0.0488 %).
   sides are not multiples of 4 stay RGBA8. Devices without BC (most phones) draw the
   same picture from RGBA8 with no memory saved; ASTC and ETC2 are not built. KTX2 files
   packed with BasisLZ or Zstandard are not read.
-* Not built: WebP, meshopt and Draco, texture and mesh streaming, and Nanite-class
-  geometry.
+* Texture streaming: sizes are read and unpacked on the render thread, so a large step
+  can lengthen the frame it lands in. What is loaded follows the camera's distance
+  only. Skinned and morphed meshes, height-mapped materials, plain RGBA8 textures and
+  textures under 256 pixels are loaded whole. A texture used by a decal or an array
+  layer is loaded at the array's size.
+* Not built: WebP, meshopt and Draco, mesh streaming, and Nanite-class geometry.
 
 No point/line primitives (skipped and counted), Adler-32 is not verified, the fog
 and GI passes light spot lights as points (no cone). Also:

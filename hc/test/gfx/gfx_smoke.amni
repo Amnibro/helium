@@ -4794,6 +4794,267 @@ fn texture_checks() bool {
 	if !(a && b && c && d && e && f && g) { print("gpu: textures FAILED"); }
 	a && b && c && d && e && f && g
 }
+var ST_PX byte[>..] = [];
+var ST_FILES byte[>..] = [];
+var ST_AT int[>..] = [];
+var ST_FULL byte[>..] = [];
+var ST_SMALL byte[>..] = [];
+var ST_MEM int[4] = [0, 0, 0, 0];
+let ST_N = 1280 * 720 * 4;
+fn st_pixels() {
+	if ST_PX.len > 0 { return; }
+	tx_image();
+	for k in 8 {
+		for i in 1024 * 1024 { ST_PX.push((TX_C[i * 4] as int * (255 - 20 * k) / 255) as byte); ST_PX.push((TX_C[i * 4 + 1] as int * (160 + 12 * k) / 255) as byte); ST_PX.push((TX_C[i * 4 + 2] as int * (128 + 18 * k) / 255) as byte); ST_PX.push(255); }
+		for i in 1024 * 1024 { let j = (i - i % 1024 + (i % 1024 + 128 * k) % 1024) * 4; ST_PX.append(TX_N[j..j + 4]); }
+	}
+}
+fn st_scene(stream bool, cache const byte[:], ktx bool) {
+	reset_scene();
+	dark_scene();
+	s3d::sky = DEF_SKY; s3d::sun = DEF_SUN; s3d::sun.shadows = false;
+	s3d::tex_compress = true; s3d::tex_gpu_bc = true; s3d::set_texture_cache(cache);
+	s3d::tex_stream = stream; s3d::tex_budget = 0; s3d::tex_upload_cap = 4194304; s3d::tex_hold = 30; s3d::tex_wait = false; s3d::tex_stream_bias = 0;
+	for k in 8 {
+		var m = shapes::material(linalg::v3(1.0, 1.0, 1.0), 0.0, 0.6);
+		let a = k * 2 * 4194304;
+		m.base_tex = gltf::TexRef { texture: if ktx { gltf::add_texture_ktx2(ST_FILES[ST_AT[k * 2]..ST_AT[k * 2 + 1]], 10497) } else { gltf::add_texture_rgba(ST_PX[a..a + 4194304], 1024, 1024, 10497) }, uv: 0, .. };
+		m.normal_tex = gltf::TexRef { texture: if ktx { gltf::add_texture_ktx2(ST_FILES[ST_AT[k * 2 + 1]..ST_AT[k * 2 + 2]], 10497) } else { gltf::add_texture_rgba(ST_PX[a + 4194304..a + 8388608], 1024, 1024, 10497) }, uv: 0, .. };
+		s3d::place(s3d::add(shapes::cube(float3 { 0.5, 0.5, 0.5 }, m)), gfx::translate(float3 { 0.0, 0.5, -4.0 * k as f32 }));
+	}
+	s3d::init(1280, 720);
+	IN_OUT = gfx::render_target(1280, 720, gfx::RGBA8);
+}
+fn st_eye(eye float3, target float3) { s3d::view = s3d::Camera { eye: eye, target: target, up: float3 { 0.0, 1.0, 0.0 }, fov_y: 0.8, near: 0.05, far: 200.0 }; }
+fn st_spot(k int) { st_eye(if k == 0 { float3 { 0.0, 0.8, 3.5 } } else if k == 1 { float3 { 0.0, 0.8, 20.5 } } else if k == 2 { float3 { 0.0, 0.8, 80.5 } } else { float3 { 0.9, 0.6, 3.0 } }, if k == 3 { float3 { 0.55, 0.5, -28.0 } } else { float3 { 0.0, 0.5, -14.0 } }); }
+fn st_frame() byte[>..] { s3d::render(IN_OUT); gfx::read_pixels(IN_OUT) }
+fn st_done() { gfx::release(IN_OUT); }
+fn st_on() int { var c = 0; for s in s3d::streams { if s.on { c += 1; } } c }
+fn st_files() bool {
+	ST_FILES.clear(); ST_AT.clear(); ST_AT.push(0);
+	var ok = true;
+	for i in 16 {
+		var p byte[>..] = [];
+		var f byte[>..] = [];
+		s3d::tex_path(i, i % 2 == 0, p);
+		if !read_file(p[..], f) { ok = false; }
+		ST_FILES.append(f[..]);
+		ST_AT.push(ST_FILES.len);
+	}
+	ok
+}
+fn st_s1(dir const byte[:]) bool {
+	let order = [2, 1, 3, 0];
+	st_scene(false, dir, false);
+	ST_FULL.clear();
+	for j in 4 { st_spot(order[j]); let px = st_frame(); ST_FULL.append(px[..]); }
+	ST_MEM[0] = s3d::texture_bytes();
+	let got = st_files();
+	st_done();
+	st_scene(true, dir, false);
+	s3d::tex_wait = true;
+	var worst = 0;
+	for j in 4 { st_spot(order[j]); let px = st_frame(); if j == 0 { ST_MEM[1] = s3d::texture_bytes(); } worst = max(worst, tx_worst(px[..], ST_FULL[j * ST_N..(j + 1) * ST_N], 15)); }
+	let on = st_on();
+	st_done();
+	st_scene(true, dir, false);
+	s3d::tex_wait = true; s3d::tex_stream_bias = 99;
+	st_spot(0);
+	ST_SMALL = st_frame();
+	ST_MEM[3] = s3d::texture_bytes();
+	st_done();
+	let ctl = tx_worst(ST_SMALL[..], ST_FULL[3 * ST_N..4 * ST_N], 15);
+	let ratio = ST_MEM[1] as real / max(ST_MEM[0], 1) as real;
+	let ok = got && on == 16 && worst <= 2 && ratio <= 0.1 && ctl > 2;
+	print("gpu: streaming S1 same picture: scene R with ", on, " of 16 textures streamed, settled against full at the far, middle, side and near spots, largest difference ", worst, " / 255 (bar 2); far memory ", ST_MEM[1], " of ", ST_MEM[0], " bytes = ", r3(ratio), " (bar 0.1); control with every texture at its smallest size, near spot differs by ", ctl, " / 255", if ctl > 2 { ", fails as it must" } else { " FAILED to fail" }, if ok { "" } else { " FAILED" });
+	ok
+}
+fn st_s2(dir const byte[:]) bool {
+	st_scene(true, dir, false);
+	s3d::tex_wait = true; st_spot(0); s3d::render(IN_OUT);
+	ST_MEM[2] = s3d::texture_bytes();
+	s3d::tex_wait = false; st_spot(2);
+	var held = 0;
+	for k in s3d::tex_hold - 1 { s3d::render(IN_OUT); if s3d::texture_bytes() == ST_MEM[2] { held += 1; } }
+	s3d::render(IN_OUT);
+	let after = s3d::texture_bytes();
+	s3d::tex_wait = true; st_spot(0);
+	let px = st_frame();
+	let back = s3d::texture_bytes();
+	st_done();
+	let d = tx_worst(px[..], ST_FULL[3 * ST_N..4 * ST_N], 15);
+	let ok = held == s3d::tex_hold - 1 && ST_MEM[2] > ST_MEM[1] && after == ST_MEM[1] && d <= 2 && back == ST_MEM[2];
+	print("gpu: streaming S2 memory follows the camera: near settled ", ST_MEM[2], " bytes; moved far, memory unchanged for ", held, " of ", s3d::tex_hold - 1, " frames, one frame later ", after, " bytes (a scene started far: ", ST_MEM[1], "); back near and settled ", back, " bytes, picture against full ", d, " / 255 (bar 2)", if ok { "" } else { " FAILED" });
+	ok
+}
+fn st_flight(dir const byte[:], budget int) int, int {
+	st_scene(true, dir, false);
+	s3d::tex_budget = budget;
+	var peak = 0;
+	for k in 120 {
+		st_eye(float3 { 0.0, 0.8, 80.5 - 77.0 * k as f32 / 119.0 }, float3 { 0.0, 0.5, -14.0 });
+		s3d::render(IN_OUT);
+		peak = max(peak, s3d::texture_bytes());
+	}
+	let starved = s3d::tex_starved;
+	st_done();
+	return peak, starved;
+}
+fn st_s3(dir const byte[:]) bool {
+	let budget = ST_MEM[2] * 4 / 10;
+	let peak, starved = st_flight(dir, budget);
+	let free, s0 = st_flight(dir, 0);
+	st_scene(true, dir, false);
+	s3d::tex_budget = 1000; s3d::tex_wait = true; st_spot(0);
+	let px = st_frame();
+	let tiny = s3d::texture_bytes();
+	st_done();
+	let d = tx_worst(px[..], ST_SMALL[..], 15);
+	let ok = peak <= budget && starved > 0 && free > budget && s0 == 0 && tiny == ST_MEM[3] && d == 0;
+	print("gpu: streaming S3 budget: ", budget, " bytes (0.4 of near settled), 120-frame flight far to near peaked at ", peak, " bytes and ended with ", starved, " textures starved (want above 0); budget of 1000 bytes: memory ", tiny, " bytes (smallest sizes ", ST_MEM[3], "), picture against the all-smallest frame ", d, " (bar 0); control with no budget peaked at ", free, " bytes", if free > budget { ", above the budget as it must" } else { " FAILED to go above" }, if ok { "" } else { " FAILED" });
+	ok
+}
+fn st_s4(dir const byte[:]) bool {
+	let cap = 1048576;
+	st_scene(true, dir, false);
+	s3d::tex_upload_cap = cap;
+	st_spot(2); s3d::render(IN_OUT); st_spot(0);
+	var bad = 0;
+	var over = 0;
+	var done = -1;
+	var most = 0;
+	for k in 40 {
+		s3d::render(IN_OUT);
+		if s3d::tex_streamed > cap { over += 1; if s3d::tex_steps != 1 { bad += 1; } }
+		most = max(most, s3d::tex_streamed);
+		if done < 0 && s3d::tex_pending == 0 { done = k + 1; }
+	}
+	let mem = s3d::texture_bytes();
+	st_done();
+	st_scene(true, dir, false);
+	s3d::tex_upload_cap = cap;
+	st_spot(2); s3d::render(IN_OUT); st_spot(0); s3d::tex_wait = true; s3d::render(IN_OUT);
+	let cu = s3d::tex_streamed;
+	let cs = s3d::tex_steps;
+	st_done();
+	let ok = bad == 0 && done > 0 && mem == ST_MEM[2] && cu > cap && cs > 1;
+	print("gpu: streaming S4 upload cap: 1 MiB cap, jump far to near: ", over, " frames above the cap, each a single step of one texture (", bad, " were not), largest frame ", most, " bytes, everything loaded after ", done, " frames (bar 40), memory ", mem, " bytes (near settled ", ST_MEM[2], "); control settled in one frame uploads ", cu, " bytes in ", cs, " steps", if cu > cap && cs > 1 { ", breaks the cap as it must" } else { " FAILED to break the cap" }, if ok { "" } else { " FAILED" });
+	ok
+}
+fn st_s5(dir const byte[:]) bool {
+	var fr = 0;
+	var ft = 0;
+	var fu = 0;
+	var sr = 0;
+	var sn = 0;
+	var su = 0;
+	for r in 3 {
+		st_scene(false, dir, false);
+		st_spot(2);
+		s3d::tex_read = 0; s3d::tex_ns = 0;
+		s3d::render(IN_OUT);
+		fr = s3d::tex_read;
+		ft = if r == 0 { s3d::tex_ns } else { min(ft, s3d::tex_ns) };
+		fu = s3d::texture_bytes();
+		st_done();
+		st_scene(true, dir, false);
+		st_spot(2);
+		s3d::tex_read = 0; s3d::tex_ns = 0;
+		s3d::render(IN_OUT);
+		sr = s3d::tex_read;
+		sn = if r == 0 { s3d::tex_ns + s3d::tex_stream_ns } else { min(sn, s3d::tex_ns + s3d::tex_stream_ns) };
+		su = s3d::tex_streamed;
+		st_done();
+	}
+	let total = ST_AT[16];
+	let ok = fr == total && sr * 10 <= total && su * 10 <= fu && su > 0 && sn <= ft;
+	print("gpu: streaming S5 first frame at the far spot, warm cache: read ", sr, " of ", total, " cache bytes = ", r3(sr as real / max(total, 1) as real), " (bar 0.1), uploaded ", su, " of ", fu, " bytes = ", r3(su as real / max(fu, 1) as real), " (bar 0.1), texture time ", r2(sn as real / 1.0e6), " ms against ", r2(ft as real / 1.0e6), " ms for the full load (best of 3 each); control full load read ", fr, " bytes", if fr == total { ", every byte" } else { " FAILED to read every byte" }, if ok { "" } else { " FAILED" });
+	ok
+}
+fn st_jump(dir const byte[:]) int, int {
+	st_scene(true, dir, false);
+	st_spot(2); s3d::render(IN_OUT);
+	let e0 = s3d::tex_encoded;
+	s3d::tex_wait = true; st_spot(0);
+	let px = st_frame();
+	st_done();
+	return s3d::tex_encoded - e0, tx_worst(px[..], ST_FULL[3 * ST_N..4 * ST_N], 15);
+}
+fn st_s6(dir const byte[:]) bool {
+	let c, cd = st_jump(dir);
+	var p byte[>..] = [];
+	s3d::tex_path(0, true, p);
+	var whole byte[>..] = [];
+	let cut = read_file(p[..], whole) && write_file(p[..], whole[..whole.len * 6 / 10]);
+	let e, d = st_jump(dir);
+	var again byte[>..] = [];
+	let fixed = read_file(p[..], again) && again.len == whole.len;
+	let ok = c == 0 && cd <= 2 && cut && e == 1 && d <= 2 && fixed;
+	print("gpu: streaming S6 damaged cache: one file cut from ", whole.len, " to ", whole.len * 6 / 10, " bytes, moving near packed ", e, " texture again (want 1), settled picture against full ", d, " / 255 (bar 2), file back to ", again.len, " bytes; control with untouched files packed ", c, " (want 0), picture ", cd, if ok { "" } else { " FAILED" });
+	ok
+}
+fn st_s7(dir const byte[:]) bool {
+	st_scene(true, dir, false);
+	s3d::tex_wait = true; st_spot(0);
+	for k in 3 { s3d::render(IN_OUT); }
+	var ns = 0;
+	for k in 100 { s3d::render(IN_OUT); ns += s3d::tex_stream_ns; }
+	st_done();
+	let ms = ns as real / 1.0e8;
+	let ok = ms <= 0.1;
+	print("gpu: streaming S7 cost: settled at the near spot the streaming work takes ", r3(ms), " ms a frame, mean of 100 (bar 0.1)", if ok { "" } else { " FAILED" });
+	ok
+}
+fn st_two(stream bool, ktx bool, out byte[>..]&) int {
+	st_scene(stream, "", ktx);
+	s3d::tex_wait = true;
+	st_spot(2);
+	let a = st_frame();
+	let mem = s3d::texture_bytes();
+	st_spot(0);
+	let b = st_frame();
+	st_done();
+	out.clear();
+	out.append(a[..]);
+	out.append(b[..]);
+	mem
+}
+fn st_s8() bool {
+	var nc byte[>..] = [];
+	let e0 = s3d::tex_encoded;
+	let m1 = st_two(true, false, nc);
+	let enc = s3d::tex_encoded - e0;
+	let on1 = st_on();
+	let d1 = max(tx_worst(nc[..ST_N], ST_FULL[..ST_N], 15), tx_worst(nc[ST_N..], ST_FULL[3 * ST_N..4 * ST_N], 15));
+	var kf byte[>..] = [];
+	var ks byte[>..] = [];
+	let mf = st_two(false, true, kf);
+	let mk = st_two(true, true, ks);
+	let on2 = st_on();
+	let isk = gltf::images.len == 16 && gltf::images[0].ktx && gltf::images[15].ktx;
+	let d2 = tx_worst(kf[..], ks[..], 15);
+	let ok = enc == 16 && on1 == 16 && d1 <= 2 && m1 * 10 <= ST_MEM[0] && isk && on2 == 16 && d2 <= 2 && mk * 10 <= mf && s3d::tex_encoded - e0 == 16;
+	print("gpu: streaming S8 other sources: no cache folder (", enc, " textures packed in memory, ", on1, " streamed): far and near against full ", d1, " / 255 (bar 2), far memory ", m1, " of ", ST_MEM[0], " bytes = ", r3(m1 as real / max(ST_MEM[0], 1) as real), " (bar 0.1); scene R with its 16 images given as BC7 KTX2 files (", on2, " streamed): far and near against the same scene unstreamed ", d2, " / 255 (bar 2), far memory ", mk, " of ", mf, " bytes = ", r3(mk as real / max(mf, 1) as real), " (bar 0.1)", if ok { "" } else { " FAILED" });
+	ok
+}
+fn stream_checks() bool {
+	st_pixels();
+	var dir byte[>..] = [];
+	dir.append(OUT_DIR[..]);
+	dir.append("/streamcache");
+	let a = st_s1(dir[..]);
+	let b = st_s2(dir[..]);
+	let c = st_s3(dir[..]);
+	let d = st_s4(dir[..]);
+	let e = st_s5(dir[..]);
+	let f = st_s6(dir[..]);
+	let g = st_s7(dir[..]);
+	let h = st_s8();
+	s3d::tex_compress = false; s3d::tex_stream = false; s3d::tex_wait = false; s3d::tex_budget = 0; s3d::tex_upload_cap = 4194304; s3d::tex_stream_bias = 0; s3d::set_texture_cache("");
+	ST_PX.clear(); ST_FILES.clear(); ST_FULL.clear(); ST_SMALL.clear();
+	if !(a && b && c && d && e && f && g && h) { print("gpu: streaming FAILED"); }
+	a && b && c && d && e && f && g && h
+}
 fn rc_light(k int) {
 	s3d::lights.clear();
 	if k == 0 { s3d::add_rect(float3 { 0.0, 2.0, -1.0 }, float3 { 0.0, 1.0, -1.0 }, float3 { 1.0, 0.0, 0.0 }, 2.0, 1.0, float3 { 4.0, 4.0, 4.0 }, 1000.0, false); }
@@ -5222,7 +5483,7 @@ fn gpu_checks(dir const byte[:], golden const byte[:]) bool {
 	var only byte[>..] = [];
 	let _ = env("GFX_ONLY", only);
 	if only.len > 0 {
-		let ok = if only[..] == "gtao" { gtao_checks() } else if only[..] == "gi" { gi_checks() } else if only[..] == "mblur" { mb_checks() } else if only[..] == "dof" { dof_checks() } else if only[..] == "fx" { fx_checks() } else if only[..] == "tsr" { tsr_checks(dir) } else if only[..] == "probe" { probe_checks(dir) } else if only[..] == "ssgi" { ssgi_checks() } else if only[..] == "decal" { decal_checks() } else if only[..] == "weather" { weather_checks() } else if only[..] == "rect" { rect_checks() } else if only[..] == "small" { small_checks() } else if only[..] == "inst" { instance_checks() } else if only[..] == "caust" { caustic_checks() } else if only[..] == "tex" { texture_checks() } else { shadow_checks() };
+		let ok = if only[..] == "gtao" { gtao_checks() } else if only[..] == "gi" { gi_checks() } else if only[..] == "mblur" { mb_checks() } else if only[..] == "dof" { dof_checks() } else if only[..] == "fx" { fx_checks() } else if only[..] == "tsr" { tsr_checks(dir) } else if only[..] == "probe" { probe_checks(dir) } else if only[..] == "ssgi" { ssgi_checks() } else if only[..] == "decal" { decal_checks() } else if only[..] == "weather" { weather_checks() } else if only[..] == "rect" { rect_checks() } else if only[..] == "small" { small_checks() } else if only[..] == "inst" { instance_checks() } else if only[..] == "caust" { caustic_checks() } else if only[..] == "tex" { texture_checks() } else if only[..] == "stream" { stream_checks() } else { shadow_checks() };
 		let e = gfx::error();
 		if e.len > 0 { print("gpu: gfx error ", e[..]); return false; }
 		return ok;
@@ -5392,6 +5653,7 @@ fn gpu_checks(dir const byte[:], golden const byte[:]) bool {
 	if !instance_checks() { good = false; }
 	if !caustic_checks() { good = false; }
 	if !texture_checks() { good = false; }
+	if !stream_checks() { good = false; }
 	let err = gfx::error();
 	if err.len > 0 { print("gpu: gfx error ", err[..]); good = false; }
 	good
