@@ -2277,8 +2277,9 @@ over 4 km, 1280 x 720, glow and temporal off. Values are read from
   grid 400 m apart, a camera at the point looks at the sun: the cloud pass's
   transmittance at the middle pixel against the shadow map's value for that point.
   Mean absolute difference at most **0.05**, with at least 3 points below 0.5 and
-  3 above (cover moves in steps of 0.05 from 0.5 until both groups exist). Control:
-  shadow map built with the clouds moved 1 km: mean difference at least **0.15**.
+  3 above (cover moves in steps of 0.05 from 0.5 until both groups exist; V2, V3 and
+  V4 run at that cover). Control: shadow map built with the clouds moved 1 km: mean
+  difference at least **0.15**.
 * **V2 ground shadows follow the map.** A ground plane seen from 1.4 km straight
   above with a 1.6 rad field of view, sky ambient 0: red with cloud shadows over
   red without, at each pixel of the middle 400 x 400, against `T` at that pixel's
@@ -2296,15 +2297,16 @@ over 4 km, 1280 x 720, glow and temporal off. Values are read from
   cover 0 the frame's mean is within **1%** of the frame without clouds.
 * **V5 a clear sky is unchanged.** Cover 0 with clouds on against clouds off:
   every pixel of the final frame within **1 / 255**.
-* **V6 only sky pixels change.** A box in front of the clouds, cloud shadows off:
+* **V6 only sky pixels change.** A box in front of the clouds, camera pitched 15
+  degrees up, cloud shadows off:
   the box's pixels with clouds on against clouds off differ by **0 / 255** in the
   final frame, and at least **30%** of the sky pixels differ by more than 8 / 255.
 * **V7 clouds are lit, not gray.** Sun behind the camera, camera pitched 30 degrees
   up: the mean luminance of thick cloud (pass transmittance below 0.1) is at least
-  **1.5 x** the mean luminance of clear sky in the same frame (transmittance above
+  **3 x** the mean luminance of clear sky in the same frame (transmittance above
   0.99), and its 95th percentile is at most **1.2 x** the luminance of a white
   diffuse surface facing the sun. Control: sunlight on the clouds 0 (sky light
-  only): below 1.5 x.
+  only): below 3 x.
 * **V8 detail.** The V7 view, final frame: the mean absolute luma difference
   between horizontally adjacent sky pixels is at least **2 x** that of the baked
   cloud layer of the environment map at the same cover.
