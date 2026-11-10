@@ -77,6 +77,7 @@ struct CutViewU { base float4, alpha float4, uv_sets float4, xm float4, xo float
 struct SkyU { inv_view_proj gfx::mat4, prev_view_proj gfx::mat4, to_sun float4, sun_rgb float4, zenith float4, horizon float4, ground float4, env float4, env_rot float4 }
 struct AoU { lens float4, tune float4 }
 struct ContactU { lens float4, jit float4, sun_v float4, tune float4 }
+struct SssU { lens float4, tune float4, ctr float4, prof float4[8], tap float4[64] }
 struct GtaoU { lens float4, tune float4, size float4 }
 struct TileU { size float4, lens float4, mode float4 }
 struct NearU { size float4, mode float4 }
@@ -254,6 +255,27 @@ var pipe_cut_two gfx::Pipeline;
 var pipe_blend gfx::Pipeline;
 var pipe_blend_back gfx::Pipeline;
 var pipe_trans_copy gfx::Pipeline;
+var sss_on = false;
+var sss_taps = 64;
+var sss_lod f32 = 5.0;
+var sss_depth = true;
+var sss_ran = false;
+var sss_live = false;
+var sss_mode = 0;
+var sss_np = 0;
+var sss_built = 0;
+var sss_w = 0;
+var sss_h = 0;
+var sss_levels = 1;
+var sss_ps f32 = 0.0;
+var sss_u SssU;
+var sss_irr gfx::Texture;
+var sss_set gfx::Texture;
+var sss_out gfx::Texture;
+var pipe_sss gfx::Pipeline;
+var pipe_sss_two gfx::Pipeline;
+var pipe_sss_set gfx::Pipeline;
+var pipe_sss_blur gfx::Pipeline;
 struct Probe { pos float3, lo float3, hi float3, fade f32 }
 struct Decal { pos float3, rot linalg::Quat = linalg::Quat { 0.0, 0.0, 0.0, 1.0 }, size float3 = float3 { 1.0, 1.0, 1.0 }, base int = -1, normal int = -1, opacity f32 = 1.0, normal_scale f32 = 1.0, rough f32 = -1.0, metal f32 = -1.0, fade_lo f32 = 0.1, fade_hi f32 = 0.3 }
 var decals Decal[>..] = [];
@@ -859,6 +881,10 @@ fn init(w int, h int, ow int, oh int) bool {
 	smp_trans = gfx::sampler(gfx::SamplerDesc { min_filter: gfx::LINEAR, mag_filter: gfx::LINEAR, mip_filter: gfx::LINEAR, wrap_u: gfx::CLAMP, wrap_v: gfx::CLAMP, wrap_w: gfx::CLAMP });
 	pipe_ext_copy = gfx::pipeline(scr, embed_shader("shaders/ext_copy.frag"));
 	pipe_trans_copy = gfx::pipeline(embed_shader("shaders/screen.vert"), embed_shader("shaders/trans_copy.frag"));
+	pipe_sss = gfx::pipeline(vs, fs, surface_desc(gfx::CULL_BACK, gfx::BLEND_NONE, false));
+	pipe_sss_two = gfx::pipeline(vs, fs, surface_desc(gfx::CULL_NONE, gfx::BLEND_NONE, false));
+	pipe_sss_set = gfx::pipeline(scr, embed_shader("shaders/sss_setup.frag"));
+	pipe_sss_blur = gfx::pipeline(scr, embed_shader("shaders/sss.frag"));
 	pipe_probe_copy = gfx::pipeline(scr, embed_shader("shaders/probe_copy.frag"));
 	white = pixel_texture([255, 255, 255, 255], gfx::RGBA8);
 	flat_normal = pixel_texture([128, 128, 255, 255], gfx::RGBA8);
@@ -2313,14 +2339,15 @@ fn ao_pass() {
 	bent_ran = false;
 	mt_ran = false;
 	var water = false;
-	for b in batch { if b.trans && b.vis && material_of(b.prim).shading == 4 { water = true; } }
-	if !water && !look.ssao && !mv && !cs && !ssr_on && !ssgi_live() && !fog_on && dof_aperture <= 0.0 && !(fx::ready() && fx::wants_depth()) { return; }
+	sss_live = false;
+	for b in batch { if b.trans && b.vis && material_of(b.prim).shading == 4 { water = true; } if sss_on && !capturing && sss_draws(b) { sss_live = true; } }
+	if !water && !sss_live && !look.ssao && !mv && !cs && !ssr_on && !ssgi_live() && !fog_on && dof_aperture <= 0.0 && !(fx::ready() && fx::wants_depth()) { return; }
 	nd_ran = true;
 	let gia = gi_on && gi_ao && gi_built && gi_have;
 	let gt = look.ssao && (ao_mode == 1 || gia);
 	let ar = if gia { min(gi_step.x, min(gi_step.y, gi_step.z)) } else { look.ao_radius };
 	let ap = if gia { 1.0 } else { look.ao_power };
-	let ld = gt || cs || ssr_on || ssgi_live();
+	let ld = gt || cs || ssr_on || ssgi_live() || sss_live;
 	if mv || ld { make_motion(); }
 	mt_ran = mv || ld;
 	let mt = if mt_ran { motion_tex } else { none() };
@@ -2503,7 +2530,7 @@ fn surface_of(m gltf::Material) SurfaceU {
 		xo0: f4(m.base_tex.o.x, m.base_tex.o.y, m.mr_tex.o.x, m.mr_tex.o.y), xo1: f4(m.normal_tex.o.x, m.normal_tex.o.y, m.occlusion_tex.o.x, m.occlusion_tex.o.y), xo2: f4(m.emissive_tex.o.x, m.emissive_tex.o.y, mip_scale(), 0.0),
 		sheen: x4(m.sheen, m.sheen_rough),
 		misc: f4(m.catcher, m.shading as f32, if m.ext { 1.0 } else { 0.0 }, 1.0),
-		shade_a: m.shade_a, shade_b: m.shade_b, shade_c: m.shade_c, xm_det: m.detail.m, xo_det: f4(m.detail.o.x, m.detail.o.y, 0.0, 0.0),
+		shade_a: m.shade_a, shade_b: m.shade_b, shade_c: m.shade_c, xm_det: m.detail.m, xo_det: f4(m.detail.o.x, m.detail.o.y, if sss_mode > 0 && sss_skin(m) { sss_mode as f32 } else { 0.0 }, if sss_mode == 1 { (sss_find(sss_dist(m)) % 8) as f32 } else if sss_mode == 2 { sss_dist(m).w * sss_ps } else { 0.0 }),
 		top_lay: f4(ext_layer(m.top_base, 1, 0), ext_layer(m.top_mr, 0, 0), ext_layer(m.top_normal, 0, 1), ext_layer(m.detail, 0, 1))
 	}
 }
@@ -2527,7 +2554,8 @@ fn draw_lit(b Batch) {
 	gfx::bind_texture(gfx::FRAGMENT, 11, if local_size > 0 { local_map } else { shadow_map }, smp_shadow);
 	gfx::bind_texture(gfx::FRAGMENT, 7, ext_arr[0], smp_ext);
 	gfx::bind_texture(gfx::FRAGMENT, 8, ext_arr[1], smp_ext);
-	gfx::bind_texture(gfx::FRAGMENT, 9, if trans_tex.id != 0 { trans_tex } else { white }, smp_trans);
+	let sk = sss_mode == 2 && sss_skin(m);
+	gfx::bind_texture(gfx::FRAGMENT, 9, if sk { sss_out } else if trans_tex.id != 0 { trans_tex } else { white }, if sk { smp_point } else { smp_trans });
 	gfx::bind_texture(gfx::FRAGMENT, 12, if bent_ran { bent } else { white }, smp_point);
 	gfx::bind_texture(gfx::FRAGMENT, 13, if ssr_on && ssr_hit.id != 0 { ssr_hit } else { white }, smp_point);
 	gfx::bind_texture(gfx::FRAGMENT, 14, if ssr_on && ssr_hit.id != 0 { ssr_prev } else { white }, smp_linear);
@@ -2536,6 +2564,74 @@ fn draw_lit(b Batch) {
 	draw_prim(b);
 }
 
+fn sss_skin(m gltf::Material) bool { m.shading == 1 && !m.ext && m.alpha_mode == gltf::ALPHA_OPAQUE }
+fn sss_draws(b Batch) bool { b.vis && !b.trans && b.mode != gltf::ALPHA_BLEND && sss_skin(material_of(b.prim)) }
+fn sss_dist(m gltf::Material) float4 { let a = max(m.shade_a.x, 0.00001); let b = max(m.shade_a.y, 0.00001); let c = max(m.shade_a.z, 0.00001); f4(a, b, c, max(a, max(b, c))) }
+fn sss_find(d float4) int { var k = 0; while k < sss_np && (sss_u.prof[k].x != d.x || sss_u.prof[k].y != d.y || sss_u.prof[k].z != d.z) { k += 1; } k }
+fn sss_target() gfx::Texture { sss_out }
+fn sss_plain() gfx::Texture { sss_irr }
+fn sss_pass() {
+	sss_ran = false;
+	if !sss_on || capturing || !nd_ran || !sss_live { return; }
+	if sss_w != width || sss_h != height {
+		if sss_w > 0 { for t in [sss_irr, sss_set, sss_out] { gfx::release(t); } }
+		sss_levels = min(mip_count(width, height), 6);
+		sss_irr = gfx::render_target(width, height, gfx::RGBA16F);
+		sss_set = gfx::texture(gfx::TextureDesc { format: gfx::RGBA16F, usage: gfx::SAMPLED | gfx::COLOR_TARGET, width: width as i32, height: height as i32, mips: sss_levels as i32 });
+		sss_out = gfx::render_target(width, height, gfx::RGBA16F);
+		sss_w = width;
+		sss_h = height;
+	}
+	let n = min(max(sss_taps, 1), 64);
+	if sss_built != n {
+		for i in n {
+			let c = 1.0 - (i as real + 0.5) / n as real;
+			let a = pow(2.0 * c + sqrt(4.0 * c * c + 1.0), 1.0 / 3.0);
+			let x = -3.0 * log(a - 1.0 / a);
+			let k = x / (exp(-x) + exp(-x / 3.0));
+			let th = i as real * 2.39996322972865332;
+			sss_u.tap[i] = f4(linalg::f(x * cos(th)), linalg::f(x * sin(th)), linalg::f(k), linalg::f(0.5 * log(8.0 * PI * k / n as real) / log(2.0) - 0.25));
+		}
+		sss_built = n;
+	}
+	sss_np = 0;
+	for b in batch { if sss_draws(b) { let d = sss_dist(material_of(b.prim)); let k = sss_find(d); if k == sss_np && sss_np < 8 { sss_u.prof[k] = d; sss_np += 1; } } }
+	sss_ps = height as f32 / (2.0 * linalg::f(tan((view.fov_y * 0.5) as real)));
+	sss_u.lens = f4(sss_ps, width as f32, height as f32, n as f32);
+	sss_u.tune = f4(min(sss_lod, (sss_levels - 1) as f32), 0.25, if sss_depth { 1.0 } else { 0.0 }, if temporal_on() { (1 + frames % 128) as f32 } else { 0.0 });
+	sss_u.ctr = f4(width as f32 * 0.5 - jitter.x, height as f32 * 0.5 - jitter.y, 0.0, 0.0);
+	inst_all = false;
+	ext_pushed = false;
+	guard gfx::begin_pass(gfx::PassDesc { color: [sss_irr, none(), none(), none()], depth: nd_depth, clear_depth: false, color_value: f4(0.0, 0.0, 0.0, 0.0), .. }) else { return; }
+	sss_mode = 1;
+	for pass in 2 {
+		var bound = false;
+		for b in batch {
+			if !sss_draws(b) || material_of(b.prim).double_sided != (pass == 1) { continue; }
+			if !bound { gfx::bind(if pass == 0 { pipe_sss } else { pipe_sss_two }); bind_geometry(); bound = true; }
+			draw_lit(b);
+		}
+	}
+	sss_mode = 0;
+	gfx::end_pass();
+	guard gfx::begin_pass(gfx::PassDesc { color: [sss_set, none(), none(), none()], .. }) else { return; }
+	gfx::bind(pipe_sss_set);
+	gfx::bind_texture(gfx::FRAGMENT, 0, sss_irr, smp_point);
+	gfx::bind_texture(gfx::FRAGMENT, 1, lin_depth, smp_point);
+	gfx::uniforms(gfx::FRAGMENT, 0, sss_u);
+	gfx::draw(3);
+	gfx::end_pass();
+	if sss_levels > 1 { gfx::generate_mips(sss_set); }
+	guard gfx::begin_pass(gfx::PassDesc { color: [sss_out, none(), none(), none()], .. }) else { return; }
+	gfx::bind(pipe_sss_blur);
+	gfx::bind_texture(gfx::FRAGMENT, 0, sss_irr, smp_point);
+	gfx::bind_texture(gfx::FRAGMENT, 1, sss_set, smp_trans);
+	gfx::bind_texture(gfx::FRAGMENT, 2, lin_depth, smp_point);
+	gfx::uniforms(gfx::FRAGMENT, 0, sss_u);
+	gfx::draw(3);
+	gfx::end_pass();
+	sss_ran = true;
+}
 fn trans_capture() {
 	if trans_w != width || trans_h != height {
 		if trans_tex.id != 0 { gfx::release(trans_tex); }
@@ -2561,6 +2657,7 @@ fn color_pass() {
 	gfx::bind_texture(gfx::FRAGMENT, 0, envmap::texture(), envmap::smp);
 	gfx::uniforms(gfx::FRAGMENT, 0, sky_u());
 	gfx::draw(3);
+	sss_mode = if sss_ran && !capturing { 2 } else { 0 };
 	// opaque and cut-out, single- then double-sided
 	for pass in if alpha_to_coverage { 4 } else { 2 } {
 		let pp = if pass == 0 { pipe_lit } else if pass == 1 { pipe_lit_two } else if pass == 2 { pipe_cut } else { pipe_cut_two };
@@ -2572,6 +2669,7 @@ fn color_pass() {
 			draw_lit(b);
 		}
 	}
+	sss_mode = 0;
 	var any_trans = false;
 	for b in batch { if b.trans && b.vis { any_trans = true; } }
 	if any_trans && !capturing {
@@ -2944,6 +3042,7 @@ fn render_begin() bool {
 	ssgi_pass();
 	if fx::ready() && fx_dt > 0.0 { shelter_pass(); fx::simulate(fx_dt, nd, nd_ran, view_mat, view_proj_nj); }
 	quad_upload();
+	sss_pass();
 	color_pass();
 	fog_pass();
 	true

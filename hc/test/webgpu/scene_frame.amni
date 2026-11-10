@@ -105,6 +105,7 @@ fn main() {
 	s3d::rt_shadows = gi;
 	s3d::gi_updates_per_frame = 8;
 	if arg_count() > 13 && arg_of(13)[..] == "rtr" { s3d::rt_reflect = true; }
+	if arg_count() > 13 && arg_of(13)[..] == "sss" { var skin = shapes::material(linalg::v3(0.9, 0.72, 0.62), 0.0, 0.5); skin.shading = 1; skin.shade_a = gltf::shade_preset(1, 0); skin.shade_b = gltf::shade_preset(1, 1); skin.shade_c = gltf::shade_preset(1, 2); s3d::sss_on = true; s3d::place(s3d::add(shapes::sphere(0.1, 48, 24, skin)), gfx::translate(float3 { 1.409, 1.448, 2.908 })); }
 	if arg_count() > 13 && arg_of(13)[..] == "meshlet" { s3d::meshlets = true; s3d::place(s3d::add(shapes::sphere(0.5, 128, 64, shapes::material(linalg::v3(0.2, 0.7, 0.3), 0.0, 0.7))), gfx::translate(float3 { 1.1, 0.5, 0.9 })); }
 	if arg_count() > 13 && arg_of(13)[..] == "taa" { s3d::temporal = 1; s3d::ao_mode = 1; }
 	s3d::init(w, h);
@@ -116,6 +117,6 @@ fn main() {
 	let mcam, mall, mlost = s3d::meshlet_stats();
 	var son = 0;
 	for s in s3d::streams { if s.on { son += 1; } }
-	print("scene_frame: ", model[..], " ", w, "x", h, " gi ", gi, " e3 ", e3, " e8 ", e8, " e2 ", e2, " compressed textures ", s3d::tex_encoded, " streamed textures ", son, " meshlet triangles ", mcam, " saved ", gfx::save_png(out, out_path[..]), " on ", gfx::driver()[..]);
+	print("scene_frame: ", model[..], " ", w, "x", h, " gi ", gi, " e3 ", e3, " e8 ", e8, " e2 ", e2, " compressed textures ", s3d::tex_encoded, " streamed textures ", son, " meshlet triangles ", mcam, " skin pass ", s3d::sss_ran, " saved ", gfx::save_png(out, out_path[..]), " on ", gfx::driver()[..]);
 	gfx::close();
 }

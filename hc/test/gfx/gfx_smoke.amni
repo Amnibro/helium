@@ -5139,8 +5139,8 @@ fn rr_mean(px const byte[:], mask const byte[:]) real {
 	for i in mask.len { if mask[i] != 0 { s += rr_lum(px, i); n++; } }
 	if n > 0 { s / n as real } else { 0.0 }
 }
-fn rr_time(on bool) real {
-	s3d::rt_reflect = on;
+fn rr_time(on bool) real { s3d::rt_reflect = on; frame_ms() }
+fn frame_ms() real {
 	var best = 1e9;
 	for rep in 3 {
 		shoot(10, IN_OUT);
@@ -5891,6 +5891,233 @@ fn meshlet_checks() bool {
 const SUB_BAR_MS = 500.0;
 var SUB_LOG byte[>..] = [];
 var SUB_AT = 0;
+var SK_EY = 0.3;
+var SK_EZ = 0.0;
+var SK_C = 1.0;
+var SK_S = 0.0;
+var SK_PS = 914.57;
+var SK_IMG real[>..] = [];
+fn sk_mat() gltf::Material { var m = shapes::material(linalg::v3(1.0, 1.0, 1.0), 0.0, 1.0); m.shading = 1; m.shade_a = gltf::shade_preset(1, 0); m.shade_b = gltf::shade_preset(1, 1); m.shade_c = gltf::shade_preset(1, 2); m }
+fn sk_cam(dist real, tilt real) {
+	SK_PS = 360.0 / tan(0.375);
+	SK_C = cos(tilt);
+	SK_S = sin(tilt);
+	SK_EY = dist * SK_C;
+	SK_EZ = dist * SK_S;
+	s3d::view = s3d::Camera { eye: float3 { 0.0, linalg::f(SK_EY), linalg::f(SK_EZ) }, target: float3 { 0.0, 0.0, 0.0 }, up: float3 { 0.0, 0.0, -1.0 }, fov_y: 0.75, near: 0.02, far: 20.0 };
+}
+fn sk_sheet(dist real, tilt real, gain f32) {
+	reset_scene();
+	dark_scene();
+	let _ = s3d::add(shapes::plane(2.0, sk_mat()));
+	s3d::lights.push(s3d::Light { pos: float3 { 0.0, 0.1, 0.0 }, range: 1.0, rgb: float3 { gain, gain, gain }, kind: 1, cone: linalg::f(atan2(0.0199, 0.1)), edge: linalg::f(1.0 - atan2(0.0195, 0.1) / atan2(0.0199, 0.1)), .. });
+	sk_cam(dist, tilt);
+}
+fn sk_un(px real, py real) real, real, real { let a = (px - 640.0) / SK_PS; let b = (360.0 - py) / SK_PS; let t = -SK_EY / (SK_S * b - SK_C); return t * a, SK_EZ - t * (SK_S + SK_C * b), t; }
+fn sk_pr(x real, z real) real, real { let vz = z - SK_EZ; let zc = SK_EY * SK_C - vz * SK_S; return 640.0 + SK_PS * x / zc, 360.0 + SK_PS * (SK_EY * SK_S + vz * SK_C) / zc; }
+fn sk_bil(x real, y real) real {
+	let x0 = floor(x - 0.5);
+	let y0 = floor(y - 0.5);
+	let ax = x - 0.5 - x0;
+	let ay = y - 0.5 - y0;
+	let xa = min(max(x0 as int, 0), 1279);
+	let xb = min(max(x0 as int + 1, 0), 1279);
+	let ya = min(max(y0 as int, 0), 719) * 1280;
+	let yb = min(max(y0 as int + 1, 0), 719) * 1280;
+	(SK_IMG[ya + xa] * (1.0 - ax) + SK_IMG[ya + xb] * ax) * (1.0 - ay) + (SK_IMG[yb + xa] * (1.0 - ax) + SK_IMG[yb + xb] * ax) * ay
+}
+fn sk_ref(px int, py int, dc real) real {
+	let x0, z0, t0 = sk_un(px as real + 0.5, py as real + 0.5);
+	var sw = 0.0;
+	var sv = 0.0;
+	for j in 240 {
+		let r = (j as real + 0.5) * dc / 8.0;
+		let w = exp(-r / dc) + exp(-r / (3.0 * dc));
+		let na = min(max((6.283185307179586 * r * SK_PS / t0 / 0.7) as int + 1, 8), 160);
+		var a = 0.0;
+		let cd = cos(6.283185307179586 / na as real);
+		let sd = sin(6.283185307179586 / na as real);
+		var cx = r * cos(j as real * 2.39996322972865332);
+		var cz = r * sin(j as real * 2.39996322972865332);
+		for k in na { let sx, sy = sk_pr(x0 + cx, z0 + cz); a += sk_bil(sx, sy); let nx = cx * cd - cz * sd; cz = cz * cd + cx * sd; cx = nx; }
+		sw += w;
+		sv += w * a / na as real;
+	}
+	sv / sw
+}
+fn sk_low(v real[>..]&, k int) real { min(v[k * 3], min(v[k * 3 + 1], v[k * 3 + 2])) }
+fn sk_x1(dist real, tilt real, sx int) bool {
+	sk_sheet(dist, tilt, 1.0);
+	shoot(2, IN_OUT);
+	let plain = gfx::read_pixels(s3d::sss_plain());
+	let scat = gfx::read_pixels(s3d::sss_target());
+	s3d::sss_depth = false;
+	shoot(2, IN_OUT);
+	let flat = gfx::read_pixels(s3d::sss_target());
+	s3d::sss_depth = true;
+	var px int[>..] = [];
+	var y = 0;
+	while y < 720 { var x = 0; while x < 1280 { let wx, wz, t = sk_un(x as real + 0.5, y as real + 0.5); if abs(sqrt(wx * wx + wz * wz) - 0.0197) <= 0.0084 { px.push(y * 1280 + x); } x += sx; } y += sx + 1; }
+	var top real[>..] = [];
+	var sum real[>..] = [];
+	top.resize(12, 0.0);
+	sum.resize(12, 0.0);
+	if SK_IMG.len == 0 { SK_IMG.resize(921600, 0.0); }
+	var pr = 0.0;
+	for c in 3 {
+		let d = if c == 0 { 0.0021 } else if c == 1 { 0.0008 } else { 0.00045 };
+		for i in 921600 { SK_IMG[i] = gi_half(plain[..], 8, i, c) as real; }
+		let pl = SK_IMG[461440];
+		pr = if c == 0 { pl } else { pr };
+		for i in px {
+			let ra = sk_ref(i % 1280, i / 1280, d);
+			let rb = sk_ref(i % 1280, i / 1280, 2.0 * d);
+			let s = gi_half(scat[..], 8, i, c) as real;
+			let e = [abs(s - ra), abs(SK_IMG[i] - ra), abs(s - rb), abs(gi_half(flat[..], 8, i, c) as real - ra)];
+			for k in 4 { top[k * 3 + c] = max(top[k * 3 + c], e[k] / pl); sum[k * 3 + c] += e[k] / pl / px.len as real; }
+		}
+	}
+	let ok = max(top[0], max(top[1], top[2])) <= 0.04 && max(sum[0], max(sum[1], sum[2])) <= 0.01 && sk_low(top, 1) > 0.04 && sk_low(sum, 1) > 0.01 && sk_low(top, 2) > 0.04 && sk_low(sum, 2) > 0.01 && (tilt == 0.0 || (sk_low(top, 3) > 0.04 && sk_low(sum, 3) > 0.01));
+	print("gpu: sss X1 ", r2(dist), " m, swung ", round(tilt * 180.0 / PI), " degrees, ", px.len, " pixels, plateau ", r4(pr), ": largest ", r4(top[0]), " ", r4(top[1]), " ", r4(top[2]), " (bar <= 0.04), mean ", r4(sum[0]), " ", r4(sum[1]), " ", r4(sum[2]), " (bar <= 0.01); controls, least channel, largest and mean: plain ", r4(sk_low(top, 1)), " ", r4(sk_low(sum, 1)), ", twice the distances ", r4(sk_low(top, 2)), " ", r4(sk_low(sum, 2)), ", depth off ", r4(sk_low(top, 3)), " ", r4(sk_low(sum, 3)), if ok { " PASS" } else { " FAIL" });
+	ok
+}
+fn sk_sum(px const byte[:], c int) real { var s = 0.0; for y in 340 { for x in 340 { s += gi_half(px, 8, (190 + y) * 1280 + 470 + x, c) as real; } } s }
+fn sk_x26() bool {
+	sk_sheet(0.3, 0.0, 1.0);
+	shoot(2, IN_OUT);
+	let plain = gfx::read_pixels(s3d::sss_plain());
+	let scat = gfx::read_pixels(s3d::sss_target());
+	let on = gfx::read_pixels(s3d::hdr_target());
+	let shot = gfx::read_pixels(IN_OUT);
+	s3d::sss_on = false;
+	shoot(2, IN_OUT);
+	let off = gfx::read_pixels(s3d::hdr_target());
+	let bare = gfx::read_pixels(IN_OUT);
+	let _ = codec_png::write(path(OUT_DIR[..], "sss_sheet_on.png")[..], 1280, 720, 4, shot[..]) && codec_png::write(path(OUT_DIR[..], "sss_sheet_off.png")[..], 1280, 720, 4, bare[..]);
+	s3d::sss_on = true;
+	sk_sheet(0.3, 0.0, 0.95);
+	shoot(2, IN_OUT);
+	let dim = gfx::read_pixels(s3d::sss_target());
+	var rat real[>..] = [];
+	for c in 3 { let p = sk_sum(plain[..], c); rat.push(sk_sum(scat[..], c) / p); rat.push(sk_sum(dim[..], c) / p); }
+	let x2 = abs(rat[0] - 1.0) <= 0.01 && abs(rat[2] - 1.0) <= 0.01 && abs(rat[4] - 1.0) <= 0.01 && abs(rat[1] - 1.0) > 0.01 && abs(rat[3] - 1.0) > 0.01 && abs(rat[5] - 1.0) > 0.01;
+	print("gpu: sss X2 scattered sum over plain sum ", r4(rat[0]), " ", r4(rat[2]), " ", r4(rat[4]), " (bar within 0.01 of 1); control light 5% dimmer ", r4(rat[1]), " ", r4(rat[3]), " ", r4(rat[5]), if x2 { " PASS" } else { " FAIL" });
+	var x = 640;
+	while x < 1270 && gi_half(plain[..], 8, 460800 + x, 0) as real >= 0.001 * gi_half(plain[..], 8, 461440, 0) as real { x += 1; }
+	let i = 460800 + x + 3;
+	let red = gi_half(on[..], 8, i, 0) as real / gi_half(on[..], 8, 461440, 0) as real;
+	let blue = gi_half(on[..], 8, i, 0) as real / max(gi_half(on[..], 8, i, 2) as real, 1e-9);
+	let dark = gi_half(off[..], 8, i, 0) as real / gi_half(off[..], 8, 461440, 0) as real;
+	let x6 = red >= 0.15 && blue >= 2.0 && dark <= 0.01;
+	print("gpu: sss X6 pixel ", x + 3, " on the middle row: red ", r4(red), " of the middle (bar >= 0.15), red over blue ", r2(blue), " (bar >= 2); control off: red ", r4(dark), " of the middle (bar <= 0.01)", if x6 { " PASS" } else { " FAIL" });
+	x2 && x6
+}
+fn sk_x3() bool {
+	reset_scene();
+	dark_scene();
+	sk_cam(0.35, 0.0);
+	let _ = s3d::add(shapes::plane(2.0, sk_mat()));
+	s3d::place(s3d::add(shapes::cube(float3 { linalg::f(9.075 / SK_PS), 0.0005, 0.03 }, sk_mat())), gfx::translate(float3 { 0.0, 0.0495, 0.0 }));
+	s3d::lights.push(s3d::Light { pos: float3 { -0.0707, 0.1207, 0.0 }, range: 1.0, rgb: float3 { 1.0, 1.0, 1.0 }, kind: 1, dir: float3 { 0.7071, -0.7071, 0.0 }, cone: 0.17, edge: 0.1, .. });
+	shoot(2, IN_OUT);
+	let plain = gfx::read_pixels(s3d::sss_plain());
+	let on = gfx::read_pixels(s3d::sss_target());
+	s3d::sss_depth = false;
+	shoot(2, IN_OUT);
+	let off = gfx::read_pixels(s3d::sss_target());
+	s3d::sss_depth = true;
+	let mid = max(gi_half(on[..], 8, 461440, 0) as real, 1e-9);
+	var top = 0.0;
+	var mean = 0.0;
+	for y in 41 { for x in 10 { let i = (340 + y) * 1280 + 600 + x; top = max(top, gi_half(on[..], 8, i, 0) as real / mid); mean += gi_half(off[..], 8, i, 0) as real / mid / 410.0; } }
+	let edge = gi_half(plain[..], 8, 461409, 0) as real <= 0.001 * mid && gi_half(plain[..], 8, 461410, 0) as real >= 0.5 * mid;
+	let ok = edge && top <= 0.02 && mean > 0.1;
+	print("gpu: sss X3 card from pixel 610 ", edge, ", wall pixels 600 to 609 on 41 rows: largest ", r4(top), " of the card's middle (bar <= 0.02); control depth off: mean ", r4(mean), " (bar > 0.1)", if ok { " PASS" } else { " FAIL" });
+	ok
+}
+fn sk_ball(glow f32, at float3) {
+	reset_scene();
+	s3d::sky = DEF_SKY;
+	s3d::sun = DEF_SUN;
+	s3d::look = DEF_LOOK;
+	s3d::look.bloom = 0.0;
+	s3d::ssr_on = false;
+	s3d::ssgi_on = false;
+	s3d::gi_on = false;
+	s3d::temporal = 0;
+	var m = sk_mat();
+	m.emissive = float3 { 0.0, glow, 0.0 };
+	let _ = s3d::add(shapes::plane(4.0, shapes::material(linalg::v3(0.5, 0.5, 0.5), 0.0, 0.7)));
+	s3d::place(s3d::add(shapes::sphere(0.1, 48, 24, m)), gfx::translate(at));
+	s3d::place(s3d::add(shapes::sphere(0.1, 48, 24, shapes::material(linalg::v3(0.7, 0.2, 0.2), 0.0, 0.5))), gfx::translate(float3 { 0.12, 0.1, 0.0 }));
+	s3d::view = s3d::Camera { eye: float3 { 0.0, 0.25, 0.7 }, target: float3 { 0.0, 0.1, 0.0 }, up: float3 { 0.0, 1.0, 0.0 }, fov_y: 0.75, near: 0.02, far: 50.0 };
+}
+fn sk_apart(a const byte[:], b const byte[:]) int { var top = 0; for i in a.len { let d = a[i] as int - b[i] as int; top = if i % 4 == 3 { top } else { max(top, max(d, -d)) }; } top }
+fn sk_pair() int { s3d::sss_on = false; let off = rr_frame(2); s3d::sss_on = true; let on = rr_frame(2); sk_apart(on[..], off[..]) }
+fn sk_x45() bool {
+	sk_ball(0.0, float3 { -0.12, 0.1, 0.0 });
+	s3d::sss_on = false;
+	let off = rr_frame(2);
+	let again = rr_frame(2);
+	s3d::sss_on = true;
+	let on = rr_frame(2);
+	sk_ball(50.0, float3 { -0.12, 0.1, 0.0 });
+	s3d::sss_on = false;
+	let lit = rr_frame(2);
+	s3d::sss_on = true;
+	var skin = 0;
+	var changed = 0;
+	var top = 0;
+	for i in 921600 {
+		var d = 0;
+		var g = 0;
+		for c in 3 { let a = on[i * 4 + c] as int - off[i * 4 + c] as int; let b = lit[i * 4 + c] as int - off[i * 4 + c] as int; d = max(d, max(a, -a)); g = max(g, max(b, -b)); }
+		skin += if g > 0 { 1 } else { 0 };
+		changed += if g > 0 && d > 0 { 1 } else { 0 };
+		top = if g > 0 { top } else { max(top, d) };
+	}
+	let same = sk_apart(off[..], again[..]) == 0;
+	let _ = codec_png::write(path(OUT_DIR[..], "sss_ball_on.png")[..], 1280, 720, 4, on[..]) && codec_png::write(path(OUT_DIR[..], "sss_ball_off.png")[..], 1280, 720, 4, off[..]);
+	let x4 = same && top == 0 && changed > 1000;
+	print("gpu: sss X4 pixels without skin: largest change ", top, " / 255 (bar 0), frame repeats ", same, "; control skin pixels changed ", changed, " of ", skin, " (bar > 1000)", if x4 { " PASS" } else { " FAIL" });
+	sk_ball(0.0, float3 { 0.0, 0.1, 5.0 });
+	let none = sk_pair();
+	let ran = s3d::sss_ran;
+	sk_sheet(5.0, 0.0, 1.0);
+	let far = sk_pair();
+	sk_sheet(0.3, 0.0, 1.0);
+	let near = sk_pair();
+	let x5 = !ran && none == 0 && far <= 1 && near > 8;
+	print("gpu: sss X5 no skin in view: pass ran ", ran, ", change ", none, " / 255 (bar 0); sheet 5 m away: change ", far, " / 255 (bar <= 1); control 0.3 m: change ", near, " / 255 (bar > 8)", if x5 { " PASS" } else { " FAIL" });
+	x4 && x5
+}
+fn sk_x7() bool {
+	sk_sheet(0.3, 0.0, 1.0);
+	s3d::sss_on = false;
+	let base = frame_ms();
+	s3d::sss_on = true;
+	let full = frame_ms();
+	s3d::sss_taps = 16;
+	let few = frame_ms();
+	s3d::sss_taps = 64;
+	let ok = full - base <= 4.0;
+	print("gpu: sss X7 frame ", r2(base), " ms off, ", r2(full), " ms on with 64 taps: ", r2(full - base), " ms more (bar <= 4), ", r2(few - base), " ms more with 16 taps", if ok { " PASS" } else { " FAIL" });
+	ok
+}
+fn sss_checks() bool {
+	half_table();
+	s3d::init(1280, 720);
+	IN_OUT = gfx::render_target(1280, 720, gfx::RGBA8);
+	s3d::sss_on = true;
+	var good = true;
+	for cfg in 4 { good = sk_x1(if cfg == 0 { 0.15 } else if cfg == 2 { 0.6 } else { 0.3 }, if cfg == 3 { PI / 3.0 } else { 0.0 }, if cfg == 0 { 6 } else if cfg == 2 { 2 } else { 3 }) && good; }
+	good = sk_x26() && good;
+	good = sk_x3() && good;
+	good = sk_x45() && good;
+	good = sk_x7() && good;
+	s3d::sss_on = false;
+	good
+}
 fn shoot(n int, t gfx::Texture) { for k in n { s3d::render(t); gfx::flush(); } }
 fn sub_since(at int) int, real, int {
 	gfx::flush();
@@ -5946,7 +6173,7 @@ fn gpu_checks(dir const byte[:], golden const byte[:]) bool {
 	var only byte[>..] = [];
 	let _ = env("GFX_ONLY", only);
 	if only.len > 0 {
-		let ok = if only[..] == "gtao" { gtao_checks() } else if only[..] == "gi" { gi_checks() } else if only[..] == "mblur" { mb_checks() } else if only[..] == "dof" { dof_checks() } else if only[..] == "fx" { fx_checks() } else if only[..] == "tsr" { tsr_checks(dir) } else if only[..] == "probe" { probe_checks(dir) } else if only[..] == "ssgi" { ssgi_checks() } else if only[..] == "decal" { decal_checks() } else if only[..] == "weather" { weather_checks() } else if only[..] == "rect" { rect_checks() } else if only[..] == "small" { small_checks() } else if only[..] == "inst" { instance_checks() } else if only[..] == "caust" { caustic_checks() } else if only[..] == "tex" { texture_checks() } else if only[..] == "stream" { stream_checks() } else if only[..] == "rtr" { rtr_checks() } else if only[..] == "meshlet" { meshlet_checks() } else { shadow_checks() };
+		let ok = if only[..] == "gtao" { gtao_checks() } else if only[..] == "gi" { gi_checks() } else if only[..] == "mblur" { mb_checks() } else if only[..] == "dof" { dof_checks() } else if only[..] == "fx" { fx_checks() } else if only[..] == "tsr" { tsr_checks(dir) } else if only[..] == "probe" { probe_checks(dir) } else if only[..] == "ssgi" { ssgi_checks() } else if only[..] == "decal" { decal_checks() } else if only[..] == "weather" { weather_checks() } else if only[..] == "rect" { rect_checks() } else if only[..] == "small" { small_checks() } else if only[..] == "inst" { instance_checks() } else if only[..] == "caust" { caustic_checks() } else if only[..] == "tex" { texture_checks() } else if only[..] == "stream" { stream_checks() } else if only[..] == "rtr" { rtr_checks() } else if only[..] == "meshlet" { meshlet_checks() } else if only[..] == "sss" { sss_checks() } else { shadow_checks() };
 		let e = gfx::error();
 		if e.len > 0 { print("gpu: gfx error ", e[..]); return false; }
 		return mark(only[..], ok) && submit_checks(false);
@@ -6120,6 +6347,7 @@ fn gpu_checks(dir const byte[:], golden const byte[:]) bool {
 	if !mark("stream", stream_checks()) { good = false; }
 	if !mark("rtr", rtr_checks()) { good = false; }
 	if !mark("meshlet", meshlet_checks()) { good = false; }
+	if !mark("sss", sss_checks()) { good = false; }
 	if !submit_checks(true) { good = false; }
 	let err = gfx::error();
 	if err.len > 0 { print("gpu: gfx error ", err[..]); good = false; }

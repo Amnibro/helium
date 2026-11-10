@@ -744,6 +744,41 @@ s3d::meshlet_px = 1.0;
   draws with the five numbers of an indexed draw read from a buffer.
 * **Web.** The same passes run on WebGPU.
 
+### Skin scattering (E7)
+
+Light that enters skin comes back out a few millimeters away, farther for red than for
+blue. That softens shadow edges on a face and gives them a red rim.
+`s3d::sss_on = true` turns this on for every opaque material that uses the skin shading
+model.
+
+```
+var skin = shapes::material(linalg::v3(0.9, 0.72, 0.62), 0.0, 0.5);
+skin.shading = 1;
+skin.shade_a = gltf::shade_preset(1, 0);
+skin.shade_b = gltf::shade_preset(1, 1);
+skin.shade_c = gltf::shade_preset(1, 2);
+s3d::sss_on = true;
+```
+
+* **What it does.** The diffuse light on skin is drawn into its own target, spread with
+  the normalized Burley diffusion profile and the material's three scatter distances
+  (2.1, 0.8 and 0.45 mm for red, green and blue in the preset), and put back in the
+  main pass. The spread is measured on the surface, in world units, so it keeps its
+  size when the camera moves or the surface turns away. Highlights and everything that
+  is not skin stay as they were.
+* **`s3d::sss_taps`** (64) is the number of samples per pixel. 16 costs less and shows
+  more noise up close.
+* **`s3d::sss_depth`** (on) keeps light from crossing a step in depth, so a hand in
+  front of a face does not bleed onto it.
+* **Distance.** The pass fades out as the scatter distance gets smaller than a pixel:
+  at 1280 x 720 with a vertical field of view of 0.75 it is at full strength closer
+  than about 1.3 m and off beyond about 3.8 m. With no skin close enough, the pass does
+  not run and the frame is the same as with `sss_on` off. `s3d::sss_ran` tells whether
+  it ran in the last frame.
+* **Reading it back.** `s3d::sss_plain()` is the diffuse light before the pass and
+  `s3d::sss_target()` the same light after it.
+* **Web.** The same passes run on WebGPU.
+
 ## Materials, light and finish
 
 `gltf` reads the core metal-rough model plus `KHR_materials_clearcoat`, `sheen`,
@@ -1957,6 +1992,33 @@ edge.
   and every earlier check passes as before. gfxtest, wgsltest and webgputest pass, with
   a new `scene_sss` in webgputest that matches the native frame.
 
+### Skin scattering results (2026-11-09, RX 9060 XT, RADV; full gfxtest ok)
+
+Differences are shares of the plateau, listed for red, green and blue. Controls list
+the least of the three channels, largest then mean.
+
+| Bar | Result | Bar value |
+| --- | --- | --- |
+| X1 profile, 0.15 m | 1,838 pixels: largest 0.0178 0.0082 0.0094, mean 0.0045 0.0027 0.0023 | 0.04, 0.01 |
+| X1 profile, 0.3 m | 1,609 pixels: largest 0.0134 0.008 0.0078, mean 0.0039 0.0024 0.0019 | 0.04, 0.01 |
+| X1 profile, 0.6 m | 810 pixels: largest 0.0117 0.0076 0.0077, mean 0.0032 0.0021 0.0014 | 0.04, 0.01 |
+| X1 profile, 0.3 m swung 60 degrees | 811 pixels: largest 0.0185 0.0105 0.0102, mean 0.0065 0.003 0.002 | 0.04, 0.01 |
+| X1 control, plain light against the reference | 0.3404 / 0.0385, 0.3464 / 0.0385, 0.3437 / 0.0402, 0.3477 / 0.0405 | above 0.04 / 0.01 |
+| X1 control, reference with twice the distances | 0.0981 / 0.0376, 0.1013 / 0.0376, 0.106 / 0.0378, 0.1046 / 0.0376 | above 0.04 / 0.01 |
+| X1 control, depth off on the swung sheet | 0.0909 / 0.0233 | above 0.04 / 0.01 |
+| X2 energy | scattered sum over plain sum 1.0037 0.9995 0.9994 | within 0.01 of 1 |
+| X2 control, light 5% dimmer | 0.9535 0.9494 0.9494 | more than 0.01 from 1 |
+| X3 no bleeding across a gap | largest 0.0002 of the card's middle on the wall behind it | at most 0.02 |
+| X3 control, depth off | mean 0.2613 | above 0.1 |
+| X4 only skin changes | pixels without skin: largest change 0 / 255; the frame repeats exactly | 0 |
+| X4 control | 22,696 of 53,142 skin pixels changed | above 1,000 |
+| X5 free when there is nothing to do | no skin in view: the pass did not run, change 0 / 255; sheet 5 m away: change 0 / 255 | 0, at most 1 |
+| X5 control, sheet 0.3 m away | change 93 / 255 | above 8 |
+| X6 the look | 3 pixels past the disc's edge: red 0.2258 of the middle, 3.2 times blue | at least 0.15, 2 |
+| X6 control, pass off | red 0.0 of the middle | at most 0.01 |
+| X7 cost | 1.8 ms off, 3.44 ms on with 64 taps: 1.64 ms more; 1.14 ms more with 16 taps | at most 4 ms |
+| X8 nothing else moved | goldens above 40 dB; gfxtest ok; wgsltest 67 modules, 58 pipelines, 0 failures; webgputest 22 scenes, 0 failures, `scene_sss` matches the native frame exactly on WebGPU | pass |
+
 ### Meshlet results (2026-11-09, RX 9060 XT, RADV; full gfxtest ok)
 
 | Bar | Result | Bar value |
@@ -2438,6 +2500,9 @@ pass-through mean error is 0.0106 % (max 0.0488 %).
 
 ## Known gaps
 
+* Skin scattering gathers light from what the camera sees: light that enters on a side
+  facing away from the camera (an ear lit from behind) is not gathered, and blended or
+  cut-out skin materials are not scattered. Pores and peach fuzz are not built.
 * Sheen renders brighter than three.js on the chair and toy car (the likely cause, its
   low fit, is unproven), and the clearcoat fixture's base tiles are brighter
   (R 185 against 143), cause not found. See the PSNR table in hc/test/gfx/results.

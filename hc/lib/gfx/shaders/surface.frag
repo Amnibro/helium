@@ -111,6 +111,9 @@ layout(set = 3, binding = 1) uniform Surface {
 layout(location = 0) out vec4 out_rgba;
 
 vec2 pom_off = vec2(0.0);
+vec3 sss_d = vec3(0.0);
+vec3 sss_k = vec3(1.0);
+float sss_w = 1.0;
 vec4 smp(sampler2D s, vec2 uv) { if (xo2.z == 1.0) return texture(s, uv); return textureGrad(s, uv, dFdx(uv) * xo2.z, dFdy(uv) * xo2.z); }
 vec4 smpa(sampler2DArray s, vec3 uv) { if (xo2.z == 1.0) return texture(s, uv); return textureGrad(s, uv, dFdx(uv.xy) * xo2.z, dFdy(uv.xy) * xo2.z); }
 vec2 pick_uv(float set) { return (set > 0.5 ? in_uv.zw : in_uv.xy) + pom_off; }
@@ -178,6 +181,7 @@ vec3 mat_term(vec3 n, vec3 v, vec3 l, vec3 e, vec3 albedo, vec3 f0, float rough,
 		vec3 dif = vec3(skin_lut(dot(nr, l), s.r), skin_lut(dot(q.nm, l), s.g), skin_lut(dot(q.nm, l), s.b));
 		vec3 spec = mix(light_term(n, v, l, e, vec3(0.0), f0, rough, ms, kd), light_term(n, v, l, e, vec3(0.0), f0, clamp(rough * shade_b.w, 0.03, 1.0), ms, kd), shade_b.z) * q.cav;
 		vec3 tr = skin_trans(q.thick, d) * clamp((0.1 - dot(q.gn, l)) / 1.1, 0.0, 1.0) * shade_a.w;
+		if (xo_det.z > 0.5) { if (sss_w > 0.5) sss_d += e / PI_F * ((xo_det.z < 1.5 ? vec3(max(dot(q.nm, l), 0.0) * clamp(vis, 0.0, 1.0)) : dif * sv) * mix(1.0, q.cav, 0.5) + tr); if (xo_det.z < 1.5) return vec3(0.0); }
 		return (kd * albedo / PI_F * (dif * sv * mix(1.0, q.cav, 0.5) + tr)) * e + spec * vis;
 	}
 	if (model == 2) {
@@ -502,6 +506,7 @@ vec3 ambient_light(vec3 n, vec3 v, vec3 l, vec3 base_rgb, float metal, float rou
 	vec4 e = amb_lobe(n, v, l, rough, irr, gi_irr, use_gi, gn, oc, sr, rr);
 	float f0d = model == 1 ? shade_c.x : 0.04;
 	float fd = f0d + (1.0 - f0d) * e.w;
+	if (model == 1 && xo_det.z > 0.5) { sss_d += irr * dao * (1.0 - fd) / max(sss_k, vec3(1e-5)); if (xo_det.z < 1.5) return vec3(0.0); }
 	vec3 spec = fd * e.rgb;
 	if (model == 1) {
 		vec4 e2 = amb_lobe(n, v, l, clamp(rough * shade_b.w, 0.03, 1.0), irr, gi_irr, use_gi, gn, oc, sr, vec4(0.0));
@@ -573,6 +578,7 @@ vec3 ambient_env(vec3 n, vec3 v, vec3 base_rgb, vec3 albedo, vec3 f0, float roug
 	float dao = oc.x;
 	float n_v = max(dot(n, v), 1e-4);
 	vec3 irr = use_gi ? gi_irr : env_irr(n);
+	if (model == 1 && xo_det.z > 0.5) { sss_d += irr * dao; if (xo_det.z < 1.5) return vec3(0.0); }
 	vec3 nb = n;
 	if (x.aniso > 0.0) nb = normalize(mix(normalize(cross(cross(x.tb, v), x.tb)), n, pow(1.0 - x.aniso * (1.0 - rough), 4.0)));
 	vec3 ef = env_ef(f0, x.f90, eb, ms);
@@ -890,6 +896,7 @@ void main() {
 	vec3 f0_spec = f0;
 	if (control == 1) { f0_spec = mix(vec3(1.0), tint.rgb, metal); ms = ms_factor(f0_spec, e_ms, ms_on); }
 	if (control == 2) kd = vec3(-1.0);
+	sss_k = max(kd, vec3(0.0));
 	vec3 l = normalize(to_sun.xyz);
 	vec3 gn = normalize(in_nrm);
 	if (!gl_FrontFacing && alpha.z > 0.5) gn = -gn;
@@ -925,7 +932,7 @@ void main() {
 				vec3 rl;
 				rect_light(d, lx.xyz, la, lrec[i + 5], n, v, f0_spec, rough, rd, rs, rl);
 				if (rd.w > 0.0) rgb += mat_term(n, v, rd.xyz, le * (rd.w / max(dot(n, rd.xyz), 1e-4)), albedo, f0_spec, rough, vec3(0.0), kd, 1.0, q, x);
-				if (max(rs.r, max(rs.g, rs.b)) > 0.0) rgb += mat_term(n, v, rl, le * rs / max(light_term(n, v, rl, vec3(1.0), vec3(0.0), f0_spec, rough, vec3(1.0), kd), vec3(1e-12)), vec3(0.0), f0_spec, rough, ms, kd, 1.0, q, x);
+				if (max(rs.r, max(rs.g, rs.b)) > 0.0) { sss_w = 0.0; rgb += mat_term(n, v, rl, le * rs / max(light_term(n, v, rl, vec3(1.0), vec3(0.0), f0_spec, rough, vec3(1.0), kd), vec3(1e-12)), vec3(0.0), f0_spec, rough, ms, kd, 1.0, q, x); sss_w = 1.0; }
 				continue;
 			}
 			if (la.x <= 0.0 && la.y <= 0.0) { rgb += mat_term(n, v, ld, le, albedo, f0_spec, rough, ms, kd, 1.0, q, x); continue; }
@@ -948,12 +955,15 @@ void main() {
 				nrm *= (aa / sa) * (aa / sa);
 			}
 			rgb += mat_term(n, v, ld, le, albedo, f0_spec, rough, vec3(0.0), kd, 1.0, q, x);
+			sss_w = 0.0;
 			rgb += mat_term(n, v, normalize(dl), le * nrm, vec3(0.0), f0_spec, rough, ms, kd, 1.0, q, x);
+			sss_w = 1.0;
 		}
 	}
 	// furnace control hook (scene3d.furnace_scale, 1 in normal use): scales the direct
 	// light so the furnace test can check that it notices a non-conserving BRDF
 	rgb *= uv_sets2.w;
+	sss_d *= uv_sets2.w;
 	vec3 direct = rgb;
 	bool use_gi = gi.x > 0.5;
 	vec3 gi_irr = use_gi ? gi_irradiance(in_world, n, v, gi_origin, gi_step, gi_dims) : vec3(0.0);
@@ -970,8 +980,16 @@ void main() {
 	}
 	vec4 sr = refl.x > 0.5 && alpha.x < 1.5 && x.trans <= 0.0 ? texelFetch(tex_ssr, ivec2(gl_FragCoord.xy), 0) : vec4(0.0);
 	if (rtr.x > 0.5 && rough < rtr.y && alpha.x < 1.5 && x.trans <= 0.0 && sr.w < 0.999) x.rr = rt_refl(rp, n, gn, v, rough);
-	vec3 ambient = env.x > 0.5 || misc.z > 0.5 || probe_n.x > 0.5 ? ambient_env(n, v, tint.rgb, albedo, f0, rough, eb, ms, kd, gi_irr, use_gi, gn, vec3(dao, aos, occm), sr, q, x) : ambient_light(n, v, l, tint.rgb, metal, rough, gi_irr, use_gi, gn, vec3(dao, aos, occm), dao, sr, x.rr, q);
+	vec3 ambient = vec3(0.0);
+	if (env.x > 0.5 || misc.z > 0.5 || probe_n.x > 0.5) ambient = ambient_env(n, v, tint.rgb, albedo, f0, rough, eb, ms, kd, gi_irr, use_gi, gn, vec3(dao, aos, occm), sr, q, x);
+	else ambient = ambient_light(n, v, l, tint.rgb, metal, rough, gi_irr, use_gi, gn, vec3(dao, aos, occm), dao, sr, x.rr, q);
 	rgb += ambient + (sg.w >= 0.0 ? albedo * max(kd, vec3(0.0)) * occm * sg.rgb * ssgi.z * (1.0 - x.trans) : vec3(0.0));
+	if (xo_det.z > 0.5) {
+		if (sg.w >= 0.0) sss_d += occm * sg.rgb * ssgi.z;
+		if (xo_det.z < 1.5) { out_rgba = vec4(sss_d, 1.0 + xo_det.w); return; }
+		vec4 sb = texelFetch(tex_trans, ivec2(gl_FragCoord.xy), 0);
+		if (sb.a > 0.5) rgb += clamp(xo_det.w / max(dot(in_world - eye.xyz, view_dir.xyz), 1e-4) - 0.5, 0.0, 1.0) * albedo * sss_k * (sb.rgb - sss_d);
+	}
 
 	rgb += emissive.rgb * smp(tex_emissive, xuv(uv_sets2.x, xm_emi, xo2.xy)).rgb;
 	if (is_water) {
