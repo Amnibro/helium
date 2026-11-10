@@ -1992,6 +1992,52 @@ edge.
   and every earlier check passes as before. gfxtest, wgsltest and webgputest pass, with
   a new `scene_sss` in webgputest that matches the native frame.
 
+### Skin pore and fuzz bars (E7, registered before the first GPU run)
+
+Pores are a pattern computed in the shader, in the material's UV space: jittered cells,
+700 per UV unit, and a coarser set at 175 per UV unit, each with a round pit. The pits
+tilt the normal that highlights use and darken their floor; the darkening averages 1,
+so the pattern does not change the mean diffuse light. `shade_c.y` of a skin material
+is the strength. Where a cell covers fewer than 4 pixels its pits fade out, gone at 2
+pixels, and their slopes widen the highlight instead. A negative `shade_c.y` keeps the
+pits at every distance; the tests use it as a control. Fuzz is the rim term of the
+cloth model with `shade_c.z` as its strength.
+
+Sheet Q: a flat square sheet 0.3 m wide (one UV unit) with the skin preset, base color
+0.02 so that the highlight carries the picture, roughness 0.4, lit by one white spot light 0.2 m from the sheet's middle, swung 30
+degrees from the sheet's normal, wide enough to light the whole view. No sun, no sky,
+bloom off, `s3d::sss_on` off. 1280 x 720, vertical field of view 0.75, the camera on
+the normal through the middle. "Near" is 0.05 m away (a fine cell covers 7.8 pixels),
+"far" is 1.2 m away (a coarse cell covers 1.3 pixels). Values are the red channel of
+the frame before tone mapping (`s3d::hdr_target()`).
+
+* **Y1 pits show up close.** Near, over the middle 400 x 400 pixels: the standard
+  deviation over the mean is at least 0.05 with `shade_c.y` 0.7. Control: at most
+  0.005 with strength 0.
+* **Y2 the mean diffuse light stays.** Near, the plain diffuse light
+  (`s3d::sss_plain()`, `sss_on` on) summed over the middle 400 x 400 pixels with
+  strength 0.7 is within 1% of the sum with strength 0. Control: a light 5% dimmer
+  must fail.
+* **Y3 no noise far away.** Far, over the middle 100 x 100 pixels: the standard
+  deviation over the mean with strength 0.7 is at most 0.002 above the value with
+  strength 0. Control: strength -0.7 (no fade) is at least 0.01 above the value with
+  strength 0.7.
+* **Y4 the far highlight follows the near one.** Over the middle 20 mm square, `near`
+  is the mean with strength 0.7 over the mean with strength 0 at 0.05 m, and `far` the
+  same ratio at 1.2 m. `near` is at least 0.05 away from 1, and `far` is closer to
+  `near` than to 1. Control: strength 0 at 1.2 m gives a ratio of 1, which fails.
+* **Y5 fuzz lights the rim only.** The X4 scene (skin ball 0.1 m in radius, 0.7 m from
+  the camera, sun and sky), `sss_on` off, `shade_c.z` 0.35 against 0. Skin pixels
+  within 4 pixels of the ball's outline rise by at least 3 / 255 on average; skin
+  pixels within 48 pixels of the ball's middle change by at most 1 / 255; pixels
+  without skin change by 0 / 255. Control: `shade_c.z` 0 twice gives 0 / 255
+  everywhere, so the rim bar fails.
+* **Y6 cost.** Sheet Q near, filling the frame, strength 0.7 and fuzz 0.35 against
+  both 0: at most 0.3 ms more a frame.
+* **Y7 nothing else moved.** With both strengths 0 (the preset), the goldens stay above
+  40 dB and X1 to X7 pass. gfxtest, wgsltest and webgputest
+  pass, with `scene_sss` drawn with strength 0.7 and fuzz 0.35.
+
 ### Skin scattering results (2026-11-09, RX 9060 XT, RADV; full gfxtest ok)
 
 Differences are shares of the plateau, listed for red, green and blue. Controls list
