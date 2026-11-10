@@ -971,7 +971,7 @@ When a ray crosses volumes, half of its samples are placed between the first and
 the last volume it touches (all of them when the global density is 0), so a small
 volume stays sharp in a long view. With `s3d::temporal` on, the sample positions are
 jittered from frame to frame and the temporal pass averages them. Noise, four
-volumes and a shadowed spot light together add about 0.6 ms at 1280 x 720 with 32
+volumes and a shadowed spot light together add 0.3 to 0.6 ms at 1280 x 720 with 32
 steps on an RX 9060 XT.
 
 ## Materials, light and finish
@@ -2490,6 +2490,28 @@ for a block means its value differs from its own reference by at most 0.05 x X.
 | V8 detail | 2.33 times the baked layer | at least 2 |
 | V9 cost | 1.44 ms more in the sky view, 0.79 ms more in the ground view | at most 2 ms each |
 | V10 nothing else moved | goldens 44.92 dB and 41.7 dB; gfxtest, wgsltest and webgputest pass, `scene_clouds` identical to the native frame | goldens above 40 dB, all pass, `scene_clouds` above 30 dB |
+
+### Volumetric fog results (2026-11-10, RX 9060 XT, RADV; full gate run)
+
+| Bar | Result | Bar value |
+| --- | --- | --- |
+| H1 a volume's optical depth | center 0.8643 against 0.8647; 0 beside the volume | within 1%, at most 0.001 |
+| H1 control, density 0 | 0 | at most 0.001 |
+| H2 volume color inside global fog | 0.9697, 0.6987, 0.5630 against 0.9698, 0.6989, 0.5634 | within 2% each |
+| H2 control, white volume | blue 0.9697 | more than 10% from 0.5634 |
+| H3 round volume with soft edges | center 0.5927 against 0.5934; largest rise along the row 0; 0 at 320 pixels | within 2%, at most 0.005, at most 0.001 |
+| H3 control, soft 0 | center 0.6985 | more than 2% from 0.5934 |
+| H4 noise | spread 0.118 with noise 1, 0 with noise 0; frame mean 1.05 times the noise-0 frame | at least 0.05, at most 0.005, within 10% |
+| H5 wind | no difference after 80 s | at most 0.01 |
+| H5 control, 40 s | 0.136 | at least 0.03 |
+| H6 spot cone in fog | worst block 1.4% of the center value from the CPU integral; 0 outside the cone | at most 5%, at most 1% |
+| H6 control, point light | 3.5 times the center value outside the cone | above 1% |
+| H7 spot shadow in fog | 0 behind the box; lit side 0.1% from the CPU integral | at most 2%, at most 5% |
+| H7 point light shadow in fog | worst block 0.02% of the largest value from the CPU integral | at most 5% |
+| H7 control, shadows off | 0.85 of the open center value behind the box | above 2% |
+| H8 cost | 0.28 ms more (0.39 and 0.59 ms in two other runs) | at most 2 ms |
+| H9 browser | `scene_fog` passes; 25 scenes, 0 failures | above 30 dB |
+| H10 the rest | goldens 44.92 dB and 41.7 dB; gfxtest, wgsltest and webgputest pass | goldens above 40 dB, all pass |
 
 ### Skin scattering results (2026-11-09, RX 9060 XT, RADV; full gfxtest ok)
 
