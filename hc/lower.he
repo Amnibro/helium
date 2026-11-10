@@ -841,7 +841,7 @@ recursive lblk(b int, d int):
 	x := ND[b]
 	if x.k as int != N_BLOCK: if d == -2 && !ends(b) { sinkv(b, SINKA.len - 1); } else { if d >= 0 && !ends(b) { ir(I_MOV, 3, d, ltail(b), -1, 0); } else { lstmt(b); } } return
 	h := DROPS.len
-	bm := if !is_vval(fin(b)) && !is_vval(at(b)) { m := newmark(); ir(I_DSS, 3, -1, m, -1, 0); MSTK.push(m); DROPS.push(m); DROPS.push(-2); m } else { -1 }
+	bm := if !hvimg(fin(b)) && !hvimg(at(b)) { m := newmark(); ir(I_DSS, 3, -1, m, -1, 0); MSTK.push(m); DROPS.push(m); DROPS.push(-2); m } else { -1 }
 	lt := LTREF; LTREF = false; for i x.n { lstmt(kid(b, i)) } LTREF = lt
 	if x.a >= 0 && !dead(x.a):
 		tl := x.a; if d == -2 && !ends(tl) && at(tl) != T_VOID: sinkv(tl, SINKA.len - 1)
@@ -916,7 +916,7 @@ recursive lblkcall(n int, dst int) int:
 is_agg(t int) bool:
 	t >= 0 && t != T_VOID && TY[t].k != TY_VOID && !is_scal(t) && !is_pair(t)
 recursive lcall_to(n int, dst int) int:
-	if is_vimg(atc(n)): dsuse()
+	if hvimg(atc(n)): dsuse()
 	r := rk(n)
 	if r == R_BUILTIN: return lbuiltin_to(n, rv(n), dst)
 	if r == R_BLOCK: return lblkcall(n, dst)

@@ -38,6 +38,7 @@ vok(n int, t int) bool:
 is_seq(t int) bool:
 	(TY[t].k == TY_ARR || TY[t].k == TY_SLICE) && is_vval(TY[t].a)
 DSU ~= 0
+GKEEP ~= false
 LITQ ~= -1
 var HRG byte[>..]
 var HRS byte[>..]
@@ -1542,7 +1543,7 @@ recursive gx0(n int):
 	if k == N_AS: t := at(n); ft := TY[fin(x.a)].k; chk := x.fl & 1 == 0 && TY[t].k == TY_INT && !(ft == TY_INT && widens(fin(x.a), t)); if chk && (ft == TY_FLT || ft == TY_FLIT) { ow("HR_CF2I("); ct(t); ow(", "); gx(x.a); ow(", "); wloc(n); ow(")"); return } if chk && ft == TY_INT { ow("HR_CI2I("); ct(t); ow(", "); gx(x.a); ow(", "); wloc(n); ow(")"); return } if TY[t].k == TY_INT && (ft == TY_FLT || ft == TY_FLIT) { ow("(("); ct(t); ow(")hr_f2i("); gx(x.a); ow("))"); return } ow("(("); ct(t); ow(")("); gx(x.a); ow("))"); return
 	if k == N_ARR: garr(n); return
 	if k == N_SLIT: gslit(n); return
-	if k == N_CALL: if is_vval(at(n)) || mvv(at(n)) { DSU++ } gcall(n); return
+	if k == N_CALL: if hvimg(at(n)) { DSU++ } gcall(n); return
 	if k == N_BLOCK: if is_res(at(n)) { r := nt(); ow("({ "); ct(at(n)); ow(" _r"); oi(r); ow("; "); gblk(n, r, false); ow(" _r"); oi(r); ow("; })"); return } ow("({ "); gblk(n, -1, at(n) != T_VOID); ow(" })"); return
 	if k == N_IF || k == N_MATCH || k == N_EBLOCK || k == N_LOOP:
 		t := at(n)
@@ -1589,7 +1590,7 @@ recursive gblk(b int, res int, val bool):
 	bsp := O.len; bdu := DSU; GPIN.push(0)
 	gblk1(b, res, val)
 	pin := GPIN[GPIN.len - 1] != 0; GPIN.resize(GPIN.len - 1)
-	if !pin && DSU > bdu && !is_vval(fin(b)) && !is_vval(at(b)): SCR2.clear(); SCR2.append(O[bsp..]); O.resize(bsp); ow("int64_t _bm"); oi(nt()); ow(" __attribute__((cleanup(hr_dsr))) = hr_ds.n; "); O.append(SCR2[..]);
+	if !pin && !GKEEP && DSU > bdu && !hvimg(fin(b)) && !hvimg(at(b)): SCR2.clear(); SCR2.append(O[bsp..]); O.resize(bsp); ow("int64_t _bm"); oi(nt()); ow(" __attribute__((cleanup(hr_dsr))) = hr_ds.n; "); O.append(SCR2[..]);
 recursive gblk1(b int, res int, val bool):
 	x := ND[b]
 	for i x.n: gstmt(kid(b, i))
@@ -2042,7 +2043,7 @@ gen_fn(i int):
 	gsig(i)
 	PR.append(O[s0..]); PR.append(";\n")
 	ow(" {\n")
-	fsp := O.len; du0 := DSU
+	fsp := O.len; du0 := DSU; GKEEP = hvimg(FI_[i].ret) && !is_vval(FI_[i].ret) && !mvv(FI_[i].ret)
 	for j ND[node].n:
 		p := kid(node, j); v := rv(p); pt := ptype_of(i, j); if dropk(pt) > 0: ct(pt); ow(" "); lv_name(v); cleanup_of(pt); ow(" = "); lv_name(v); ow("_in;\n")
 	body := ND[node].c
@@ -2060,7 +2061,7 @@ gen_fn(i int):
 			if TDS.len > td: SCR.clear(); SCR.append(O[sp..]); O.resize(sp); ow("{ "); O.append(TDS[td..]); TDS.resize(td); O.append(SCR[..]); ow("}\n")
 		else: gstmt(tl)
 	ow("}\n")
-	if DSU > du0 || is_vval(rt) || mvv(rt): SCR2.clear(); SCR2.append(O[fsp..]); O.resize(fsp); ow(if is_vval(rt) || mvv(rt) { "int64_t _fm __attribute__((cleanup(hr_dsf))) = hr_ds.n;\n" } else { "int64_t _fm __attribute__((cleanup(hr_dsr))) = hr_ds.n;\n" }); O.append(SCR2[..]);
+	if !GKEEP && (DSU > du0 || is_vval(rt) || mvv(rt)): SCR2.clear(); SCR2.append(O[fsp..]); O.resize(fsp); ow(if is_vval(rt) || mvv(rt) { "int64_t _fm __attribute__((cleanup(hr_dsf))) = hr_ds.n;\n" } else { "int64_t _fm __attribute__((cleanup(hr_dsr))) = hr_ds.n;\n" }); O.append(SCR2[..]);
 gen_program(out byte[>..]&) bool:
 	O.clear()
 	lkd i32[>..<] ~= []; for f, i FI_:
