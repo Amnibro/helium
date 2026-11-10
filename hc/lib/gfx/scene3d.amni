@@ -55,7 +55,7 @@ struct Camera { eye float3, target float3, up float3, fov_y f32, near f32, far f
 struct Sun { to_sun float3, rgb float3, shadows bool, shadow_far f32, map_size int, soft f32 = 0.0, angle f32 = 0.0, reach f32 = 1.0, fit bool = false, contact f32 = 0.0, virt bool = false, texel f32 = 0.0005, pool int = 8192, sharp f32 = 1.0 }
 struct Light { pos float3, range f32, rgb float3, kind int, dir float3 = float3 { 0.0, -1.0, 0.0 }, cone f32 = 0.5, edge f32 = 0.2, shadows bool = false, soft f32 = 1.5, radius f32 = 0.0, length f32 = 0.0, width f32 = 0.0, height f32 = 0.0, axis float3 = float3 { 1.0, 0.0, 0.0 }, falloff int = 0 }
 struct Sky { zenith float3, horizon float3, ground float3, ambient f32, draw bool }
-struct Look { exposure f32, white f32, bloom f32, bloom_cut f32, desaturate f32, ssao bool, ao_radius f32, ao_power f32, ao_samples int, curve int = 0, auto_exposure bool = false, ae_key f32 = 0.18, ae_low f32 = 0.5, ae_high f32 = 0.95, ae_min f32 = -4.0, ae_max f32 = 4.0, ae_up f32 = 3.0, ae_down f32 = 1.0, ae_center f32 = 3.0, lut f32 = 0.0, vignette f32 = 0.0, chroma f32 = 0.0, grain f32 = 0.0, sharpen f32 = 0.0, saturation f32 = 1.0, contrast f32 = 1.0, warmth f32 = 0.0 }
+struct Look { exposure f32, white f32, bloom f32, bloom_cut f32, desaturate f32, ssao bool, ao_radius f32, ao_power f32, ao_samples int, curve int = 0, auto_exposure bool = false, ae_key f32 = 0.18, ae_low f32 = 0.5, ae_high f32 = 0.95, ae_min f32 = -4.0, ae_max f32 = 4.0, ae_up f32 = 3.0, ae_down f32 = 1.0, ae_center f32 = 3.0, lut f32 = 0.0, vignette f32 = 0.0, chroma f32 = 0.0, grain f32 = 0.0, sharpen f32 = 0.0, saturation f32 = 1.0, contrast f32 = 1.0, warmth f32 = 0.0, lens_rain f32 = 0.0, letterbox f32 = 0.0 }
 struct NodeOv { item int, node int, t float3, r linalg::Quat, sc float3 }
 struct WeightOv { item int, node int, k int, w f32 }
 struct Item { asset int, place gfx::mat4, prev_place gfx::mat4, anim int, time f32, visible bool, anim2 int = -1, time2 f32 = 0.0, blend f32 = 1.0, bend_node int = -1, bend linalg::Quat = linalg::Quat { 0.0, 0.0, 0.0, 1.0 }, track int[4] = [-1, -1, -1, -1], tracked gfx::mat4[4] = [gfx::mat4_identity, gfx::mat4_identity, gfx::mat4_identity, gfx::mat4_identity], light_base int = -1, sway f32 = 0.0, top f32 = 0.0 }
@@ -73,7 +73,7 @@ struct FrameU {
 	cascade_mat gfx::mat4[3], cascade_far float4, eye float4, view_dir float4, to_sun float4, sun_rgb float4,
 	zenith float4, horizon float4, ground float4, screen float4, light_pos float4[16], light_rgb float4[16], gi float4, gi_origin float4, gi_step float4, gi_dims float4,
 	light_dir float4[16], light_shd float4[16], local_mat gfx::mat4[12], refl float4, view_m gfx::mat4, env float4, env_rot float4, vp gfx::mat4, cluster float4, cluster2 float4,
-	probe_n float4, probe_pos float4[8], probe_lo float4[8], probe_hi float4[8], ssgi float4, decal float4, caust float4, caust_w float4, caust_box float4, caust_abs float4, rtr float4, vsm_rot gfx::mat4, vsm_zrow float4, vsm float4, vsm_x float4
+	probe_n float4, probe_pos float4[8], probe_lo float4[8], probe_hi float4[8], ssgi float4, decal float4, caust float4, caust_w float4, caust_box float4, caust_abs float4, rtr float4, vsm_rot gfx::mat4, vsm_zrow float4, vsm float4, vsm_x float4, rain float4
 }
 struct GiU { origin float4, step float4, dims float4, rot0 float4, rot1 float4, rot2 float4, params float4, to_sun float4, sun_rgb float4, zenith float4, horizon float4, ground float4, light_pos float4[8], light_rgb float4[8], env float4, env_rot float4 }
 struct SurfaceU { base float4, emissive float4, params float4, alpha float4, uv_sets float4, uv_sets2 float4, tri float4, top_tint float4, xm_base float4, xm_mr float4, xm_nrm float4, xm_occ float4, xm_emi float4, xo0 float4, xo1 float4, xo2 float4, sheen float4, misc float4, shade_a float4, shade_b float4, shade_c float4, xm_det float4, xo_det float4, top_lay float4 }
@@ -91,7 +91,7 @@ struct MblurU { size float4, tune float4 }
 struct DofU { size float4, lens float4, tune float4 }
 struct TexelU { texel float4 }
 struct GlowU { texel float4, cut float4 }
-struct GradeU { tone float4, mode float4, lens float4, color float4, frame float4 }
+struct GradeU { tone float4, mode float4, lens float4, color float4, frame float4, drops float4 }
 struct HistU { size float4, range float4 }
 struct AdaptU { range float4, pct float4, rate float4 }
 struct FogVolume { pos float3, half float3 = float3 { 1.0, 1.0, 1.0 }, density f32 = 0.5, rgb float3 = float3 { 1.0, 1.0, 1.0 }, soft f32 = 0.25, round bool = false }
@@ -380,6 +380,9 @@ var smp_shadow gfx::Sampler;
 var smp_cache gfx::Sampler[>..] = [];
 var spec_aa = true;
 var wet f32 = 0.0;
+var ripples f32 = 0.0;
+var puddles f32 = 0.0;
+var puddle_size f32 = 1.7;
 var world_time f32 = 0.0;
 var snow f32 = 0.0;
 var shelter = true;
@@ -639,6 +642,19 @@ fn instance_triangles(set int) int {
 	let s = instances[set];
 	for b in batch { if b.inst == set { n += gltf::prims[b.prim].icount / 3 * s.nv[b.lod]; } }
 	n
+}
+fn handheld(c Camera, t f32, amount f32) Camera {
+	if amount == 0.0 { return c; }
+	let dx = c.target.x - c.eye.x; let dy = c.target.y - c.eye.y; let dz = c.target.z - c.eye.z;
+	let f = linalg::unit3(linalg::v3(dx, dy, dz)); let r = linalg::unit3(linalg::cross3(f, c.up)); let u = linalg::cross3(r, f);
+	let a = (amount * 0.0087) as real; let s = t as real; let d = linalg::length3(linalg::v3(dx, dy, dz));
+	let yaw = linalg::f(a * (0.55 * sin(1.9 * s + 1.3) + 0.3 * sin(5.3 * s + 4.1) + 0.15 * sin(9.7 * s + 0.7)));
+	let pit = linalg::f(a * (0.55 * sin(2.3 * s + 2.9) + 0.3 * sin(4.7 * s + 0.4) + 0.15 * sin(8.9 * s + 5.2)));
+	let rol = linalg::f(a * 0.5 * sin(1.3 * s + 3.7));
+	var o = c;
+	o.target = linalg::v3(c.eye.x + (f.x + r.x * yaw + u.x * pit) * d, c.eye.y + (f.y + r.y * yaw + u.y * pit) * d, c.eye.z + (f.z + r.z * yaw + u.z * pit) * d);
+	o.up = linalg::v3(u.x + r.x * rol, u.y + r.y * rol, u.z + r.z * rol);
+	o
 }
 fn animate(item int, anim int, time f32) { items[item].anim = anim; items[item].time = time; items[item].anim2 = -1; }
 fn crossfade(item int, from int, from_time f32, to int, to_time f32, w f32) { items[item].anim2 = from; items[item].time2 = from_time; items[item].anim = to; items[item].time = to_time; items[item].blend = w; }
@@ -2145,6 +2161,7 @@ fn fill_frame() {
 	frame_u.vp = view_proj;
 	frame_u.cluster = f4(clusters::CX as f32, clusters::CY as f32, clusters::CZ as f32, world_time);
 	frame_u.cluster2 = f4(view.near, clusters::CZ as f32 / linalg::f(log((view.far / view.near) as real)), wet, snow);
+	frame_u.rain = f4(ripples, puddles, max(puddle_size, 0.01), 0.0);
 	var cf = caustics.manual;
 	sea_on = cf;
 	if cf { sea_level = caustics.level; sea_lo = caustics.lo; sea_hi = caustics.hi; sea_waves = caustics.waves; sea_absorb = caustics.absorb; sea_scatter = sea.scatter; }
@@ -3413,7 +3430,7 @@ fn grade_pass(target gfx::Texture) {
 	gfx::bind_texture(gfx::FRAGMENT, 1, if look.bloom > 0.0 { glow[0] } else { white }, smp_linear);
 	gfx::bind_texture(gfx::FRAGMENT, 2, lut_tex, smp_linear);
 	gfx::bind_storage_buffer(gfx::FRAGMENT, 0, expo_buf);
-	gfx::uniforms(gfx::FRAGMENT, 0, GradeU { tone: f4(look.exposure, look.white, look.bloom, look.desaturate), mode: f4(look.curve as f32, if look.auto_exposure { 1.0 } else { 0.0 }, if lut_n > 0 { clamp(look.lut, 0.0, 1.0) } else { 0.0 }, lut_n as f32), lens: f4(look.vignette, look.chroma, look.grain, look.sharpen), color: f4(look.saturation, look.contrast, look.warmth, 0.0), frame: f4(out_width as f32, out_height as f32, (frames % 1024) as f32, 0.0) });
+	gfx::uniforms(gfx::FRAGMENT, 0, GradeU { tone: f4(look.exposure, look.white, look.bloom, look.desaturate), mode: f4(look.curve as f32, if look.auto_exposure { 1.0 } else { 0.0 }, if lut_n > 0 { clamp(look.lut, 0.0, 1.0) } else { 0.0 }, lut_n as f32), lens: f4(look.vignette, look.chroma, look.grain, look.sharpen), color: f4(look.saturation, look.contrast, look.warmth, 0.0), frame: f4(out_width as f32, out_height as f32, (frames % 1024) as f32, 0.0), drops: f4(look.lens_rain, world_time, 0.0, look.letterbox) });
 	gfx::draw(3);
 	gfx::end_pass();
 }

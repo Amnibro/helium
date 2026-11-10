@@ -503,6 +503,35 @@ the screen: the drop's path over `stretch` seconds is projected, and the quad co
 exactly, as wide as the drop. Snowflakes are blended without sorting (they are all one
 color), so snow costs no sort.
 
+### Puddles, rain on the lens and camera feel
+
+Standing water with rain rings, water drops on the lens, a film-shaped frame and the sway
+of a hand-held camera. All of it is off by default.
+
+| Setting | What it does | Default |
+| --- | --- | --- |
+| `s3d::puddles` | Share of level ground under standing water, 0 to 1. A puddle is mirror smooth and darkens the ground under it the way `wet` 1 does. Puddles form only where the ground is within about 10 degrees of level. | 0 |
+| `s3d::puddle_size` | Typical puddle width in meters. | 1.7 |
+| `s3d::ripples` | Rain rings on the puddles, from 0 (still water) to 1 (heavy rain). Rings start at random points, spread, fade and move with `s3d::world_time`. | 0 |
+| `look.lens_rain` | Water drops on the lens, 0 to 1. Each drop shows the scene behind it upside down, as a real drop does. Large drops run down the frame; small ones dry and new ones land. | 0 |
+| `look.letterbox` | Frame shape as width over height (2.39 is wide-screen film). Rows outside that shape are black. 0 turns it off. | 0 |
+| `s3d::handheld(camera, t, amount)` | Returns the camera with the small sway of a hand-held shot at time `t` in seconds. Amount 1 sways about a third of a degree. Amount 0 returns the camera unchanged, and the same `t` always gives the same camera. | |
+
+```
+s3d::wet = 0.7;
+s3d::puddles = 0.4;
+s3d::ripples = 0.8;
+s3d::look.lens_rain = 0.3;
+s3d::look.letterbox = 2.39;
+s3d::view = s3d::handheld(shot, s3d::world_time, 1.0);
+```
+
+Puddles and rings are part of the surface shader, so they need no extra pass and no
+texture. Rings are drawn where one pixel covers less than about 1 to 4 cm of ground;
+farther away a rained-on puddle is shown slightly rougher instead, which is how a
+rippled surface looks from a distance. Lens drops and the letterbox are part of the final
+grading pass.
+
 ### Effects (E9)
 
 `gfx.fx` emitters can start other emitters, leave trails, draw meshes and be written as
@@ -2041,6 +2070,66 @@ brightness profile is sampled the most coarsely of the four.
 
 Reported: 1280 x 720 frame 2.78 ms without weather and 3.50 ms with 40 000 drops of rain
 (+0.72 ms: height map, simulation and streaks), wall clock, best of 2 x 60 frames.
+
+### Puddle, lens drop and camera bars (registered before the first GPU run; U1 uses 0.2 m puddles so the view holds about 2,000 of them, U5 and N6 compare the fastest of 255 alternating frames because another program was using the GPU, and N5 also checks the direction)
+
+Puddle scene: a 20 m matte floor (albedo 0.4, roughness 0.8), sun near overhead, sky
+ambient 0.05, no post effects, 512 x 512, camera 12 m straight above unless stated.
+
+* **U1 puddle share.** `puddles` 0.25, 0.5 and 0.75: the share of floor pixels on the
+  puddle side of the midpoint between the dry and the all-puddle brightness is within 0.05
+  of the setting. Control: `puddles` 0 gives the dry frame exactly.
+* **U2 level ground only.** The same floor tilted 20 degrees at `puddles` 0.75: share at
+  most 0.02.
+* **U3 ripples move.** Camera at eye height looking along the floor toward the sun, all
+  puddle: two frames 0.1 s apart differ by a mean of at least 0.5 (of 255) over the floor
+  at `ripples` 1, by exactly 0 at `ripples` 0, and `ripples` 0.3 changes less than
+  `ripples` 1.
+* **U4 ripples stay in puddles.** `puddles` 0, `wet` 1, `ripples` 1: two frames 0.1 s
+  apart are identical.
+* **U5 cost.** The floor filling a 1280 x 720 frame, all puddle, `ripples` 1 against
+  `puddles` 0: at most 0.3 ms more a frame.
+* **N1 off is off.** `look.lens_rain` 0 and `look.letterbox` 0 leave every golden image
+  unchanged (the GPU test group passes).
+* **N2 share.** Sky filling a 640 x 360 frame as a vertical ramp: the share of pixels a
+  drop changes rises from `lens_rain` 0.25 to 0.5 to 1 and is between 0.15 and 0.6 at 1.
+* **N3 a drop shows the scene upside down.** In the same frame the mean vertical
+  brightness slope over pixels inside drops has the opposite sign to the slope outside.
+* **N4 drops sit on the lens.** Turning the camera 30 degrees leaves the set of changed
+  pixels at least 0.9 the same (intersection over union).
+* **N5 drops run.** The set of changed pixels is at least 0.9 the same 1/60 s later and at
+  most 0.8 the same 3 s later. After 0.25 s it matches better moved 5 rows down than moved
+  5 rows up.
+* **N6 cost.** `lens_rain` 1 at 1280 x 720: at most 0.2 ms more a frame.
+* **H1 hand-held camera.** `s3d::handheld(camera, t, 1.0)` at 60 samples a second for
+  20 s: the view direction is between 0.2 and 0.7 degrees (root mean square) from the
+  steady one, moves at most 0.05 degrees between samples, and averages within 0.1 degrees
+  of steady. Amount 0 returns the camera unchanged, and the same `t` gives the same camera.
+* **H2 letterbox.** `look.letterbox = 2.39` at 1280 x 720: the top 92 and the bottom 92
+  rows are black and every other pixel is unchanged.
+* **X1 nothing else moved.** gfxtest passes; wgsltest and webgputest report 0 failures.
+
+### Puddle, lens drop and camera results (2026-11-10, RX 9060 XT, RADV)
+
+| Bar | Result | Bar value |
+| --- | --- | --- |
+| U1 puddle share | 0.247, 0.497 and 0.741 at 0.25, 0.5 and 0.75 | within 0.05 |
+| U1 control, `puddles` 0 | the dry frame exactly, whatever the size, ripples and time | identical |
+| U2 floor tilted 20 degrees | 0 | at most 0.02 |
+| U3 ripples move | 0.772 at 1 over the whole frame, 0.194 at 0.3, 0 at 0 | at least 0.5; less; 0 |
+| U4 ripples stay in puddles | 0 | 0 |
+| U5 cost | 0.16 to 0.32 ms in seven runs with another program holding the GPU at 100 % | at most 0.3 ms |
+| N2 share of the frame | 0.049, 0.108 and 0.198 at 0.25, 0.5 and 1 | rising; 0.15 to 0.6 at 1 |
+| N3 upside down | slope 0.019 outside drops, -1.761 inside | opposite signs |
+| N4 camera turned 30 degrees | 1.0 the same | at least 0.9 |
+| N5 drops run | 0.948 the same after 1/60 s, 0.323 after 3 s; 0.265 moved down against 0.117 moved up | at least 0.9; at most 0.8; down |
+| N6 cost | 0.07 to 0.13 ms in seven runs with another program holding the GPU at 100 % | at most 0.2 ms |
+| H1 hand-held camera | 0.325 degrees, largest step 0.043, mean off by 0.008; amount 0 unchanged; repeats | 0.2 to 0.7; at most 0.05; at most 0.1 |
+| H2 letterbox | 184 black rows, the rest unchanged | 184; unchanged |
+| N1 and X1 | gfxtest passes; wgsltest 84 modules, 71 pipelines, 0 failures; webgputest 26 scenes, a window and a compute check, 0 failures | all pass |
+
+With 0.4 m puddles the same view holds a quarter as many and U1 reads 0.289, 0.554 and
+0.773: the share is exact over a large area and varies over a small one.
 
 ### Pre-registered bars (rect area lights, E4)
 
@@ -3684,8 +3773,10 @@ pass-through mean error is 0.0106 % (max 0.0488 %).
 * Rain and snow: shelter is straight down, so rain blown sideways still stops at a roof's
   edge, and the height map is one texel (5 cm with the default box) coarse. The map is
   redrawn every frame. Drops and splashes take their color from the emitter, not from the
-  sun and sky, and puddle ripples are not drawn (the `wet` and `snow` sliders change the
-  surfaces separately).
+  sun and sky. Puddles, rain rings, `wet` and `snow` do not know about shelter, so ground
+  under a roof gets them too. Puddle shapes come from a noise pattern, not from the height
+  of the ground. `shapes::sea` water gets no rain rings. Lens drops do not blur what is
+  behind them and do not catch highlights.
 * Decals: every opaque pixel tests every decal's box (no clustering yet; 64 heavily
   overlapping decals add about 0.3 ms at 1280 x 720). Images are resampled into the
   1024 x 1024 array layers, so finer detail is lost. The depth prepass, SSAO, SSR and

@@ -7,7 +7,7 @@ layout(set = 2, binding = 0) uniform sampler2D tex_hdr;
 layout(set = 2, binding = 1) uniform sampler2D tex_glow;
 layout(set = 2, binding = 2) uniform sampler3D tex_lut;
 layout(std430, set = 2, binding = 3) readonly buffer Expo { float expo[]; };
-layout(set = 3, binding = 0) uniform Grade { vec4 tone; vec4 mode; vec4 lens; vec4 color; vec4 frame; }; // exposure, white point, bloom amount, desaturation
+layout(set = 3, binding = 0) uniform Grade { vec4 tone; vec4 mode; vec4 lens; vec4 color; vec4 frame; vec4 drops; }; // exposure, white point, bloom amount, desaturation
 layout(location = 0) out vec4 out_rgba;
 
 float encode_srgb(float x) {
@@ -18,7 +18,7 @@ float hash_px(vec2 p) { vec3 q = fract(vec3(p.xyx) * 0.1031); q += dot(q, q.yzx 
 vec4 graded(vec3 o) {
 	vec3 e = vec3(encode_srgb(o.r), encode_srgb(o.g), encode_srgb(o.b));
 	vec2 px = in_uv * frame.xy;
-	return vec4((mode.z > 0.0 ? mix(e, texture(tex_lut, e * ((mode.w - 1.0) / mode.w) + 0.5 / mode.w).rgb, mode.z) : e) + (hash_px(px) + hash_px(px + 17.3) - 1.0) / 255.0, 1.0);
+	return vec4((mode.z > 0.0 ? mix(e, texture(tex_lut, e * ((mode.w - 1.0) / mode.w) + 0.5 / mode.w).rgb, mode.z) : e) + (hash_px(px) + hash_px(px + 17.3) - 1.0) / 255.0, 1.0) * vec4(vec3(drops.w > 0.0 && abs(in_uv.y - 0.5) * drops.w * frame.y > 0.5 * frame.x ? 0.0 : 1.0), 1.0);
 }
 
 vec3 agx(vec3 c) {
@@ -41,22 +41,48 @@ vec3 neutral(vec3 c) {
 	r *= np / peak;
 	return mix(r, vec3(np), 1.0 - 1.0 / (0.15 * (peak - np) + 1.0));
 }
+vec3 lens_drop(vec2 uv, float asp, float amt, float t) {
+	vec3 o = vec3(0.0, 0.0, 1.0);
+	for (int l = 2; l >= 0; l--) {
+		float n = l == 0 ? 7.0 : (l == 1 ? 15.0 : 29.0);
+		vec2 q = vec2(uv.x * asp, uv.y) * n + float(l) * 3.7;
+		float col = floor(q.x);
+		if (l == 0) q.y -= t * n * (0.02 + 0.1 * hash_px(vec2(col, 7.7))) - hash_px(vec2(col, 2.9));
+		vec2 id = floor(q);
+		float life = 7.0 + 5.0 * hash_px(id + 11.3);
+		float lt = t / life + hash_px(id + 5.1);
+		float ph = l == 0 ? 0.5 : fract(lt);
+		vec2 rid = id + (l == 0 ? 0.0 : floor(lt)) * 0.37;
+		if (hash_px(rid + 1.7) > amt * 0.7) continue;
+		vec2 d = q - (id + 0.5 + (vec2(hash_px(rid + 3.1), hash_px(rid + 8.3)) - 0.5) * 0.2);
+		float r = 0.17 + 0.17 * hash_px(rid + 4.9);
+		vec2 dn = vec2(d.x * (0.85 + 0.3 * hash_px(rid + 2.3)), d.y * (1.0 + 0.12 * d.y / r)) / r;
+		float k = length(dn);
+		if (k >= 1.0) continue;
+		float m = smoothstep(1.0, 0.9, k) * smoothstep(0.0, 0.1, ph) * smoothstep(1.0, 0.8, ph);
+		o = vec3(mix(o.xy, vec2(dn.x / asp, dn.y) * (-0.08 - 0.3 * k * k), m), mix(o.z, 1.0 - 0.35 * smoothstep(0.8, 1.0, k), m));
+	}
+	return o;
+}
 void main() {
 	vec2 cen = in_uv - 0.5;
+	vec2 suv = in_uv; float dk = 1.0;
+	if (drops.x > 0.0) { vec3 ld = lens_drop(in_uv, frame.x / frame.y, drops.x, drops.y); suv = clamp(in_uv + ld.xy, vec2(0.001), vec2(0.999)); dk = ld.z; }
 	vec3 c;
 	if (lens.y > 0.0) {
 		vec2 cd = cen * dot(cen, cen) * lens.y;
-		c = vec3(textureLod(tex_hdr, in_uv + cd, 0.0).r + textureLod(tex_glow, in_uv + cd, 0.0).r * tone.z, textureLod(tex_hdr, in_uv, 0.0).g + textureLod(tex_glow, in_uv, 0.0).g * tone.z, textureLod(tex_hdr, in_uv - cd, 0.0).b + textureLod(tex_glow, in_uv - cd, 0.0).b * tone.z);
+		c = vec3(textureLod(tex_hdr, suv + cd, 0.0).r + textureLod(tex_glow, suv + cd, 0.0).r * tone.z, textureLod(tex_hdr, suv, 0.0).g + textureLod(tex_glow, suv, 0.0).g * tone.z, textureLod(tex_hdr, suv - cd, 0.0).b + textureLod(tex_glow, suv - cd, 0.0).b * tone.z);
 	} else {
-		c = texture(tex_hdr, in_uv).rgb;
-		c += texture(tex_glow, in_uv).rgb * tone.z;
+		c = texture(tex_hdr, suv).rgb;
+		c += texture(tex_glow, suv).rgb * tone.z;
 	}
 	if (lens.w > 0.0) {
 		vec2 tx = 1.0 / vec2(textureSize(tex_hdr, 0));
 		float lc = log(max(dot(c, vec3(0.2126, 0.7152, 0.0722)), 1e-4));
-		float la = 0.25 * (log(max(dot(textureLod(tex_hdr, in_uv + vec2(tx.x, 0.0), 0.0).rgb, vec3(0.2126, 0.7152, 0.0722)), 1e-4)) + log(max(dot(textureLod(tex_hdr, in_uv - vec2(tx.x, 0.0), 0.0).rgb, vec3(0.2126, 0.7152, 0.0722)), 1e-4)) + log(max(dot(textureLod(tex_hdr, in_uv + vec2(0.0, tx.y), 0.0).rgb, vec3(0.2126, 0.7152, 0.0722)), 1e-4)) + log(max(dot(textureLod(tex_hdr, in_uv - vec2(0.0, tx.y), 0.0).rgb, vec3(0.2126, 0.7152, 0.0722)), 1e-4)));
+		float la = 0.25 * (log(max(dot(textureLod(tex_hdr, suv + vec2(tx.x, 0.0), 0.0).rgb, vec3(0.2126, 0.7152, 0.0722)), 1e-4)) + log(max(dot(textureLod(tex_hdr, suv - vec2(tx.x, 0.0), 0.0).rgb, vec3(0.2126, 0.7152, 0.0722)), 1e-4)) + log(max(dot(textureLod(tex_hdr, suv + vec2(0.0, tx.y), 0.0).rgb, vec3(0.2126, 0.7152, 0.0722)), 1e-4)) + log(max(dot(textureLod(tex_hdr, suv - vec2(0.0, tx.y), 0.0).rgb, vec3(0.2126, 0.7152, 0.0722)), 1e-4)));
 		c *= exp(clamp((lc - la) * lens.w, -0.5, 0.5));
 	}
+	c *= dk;
 	c *= tone.x * (mode.y > 0.5 ? expo[0] : 1.0);
 	if (lens.x > 0.0) c *= mix(1.0, 1.0 - smoothstep(0.1, 0.9, dot(cen, cen) * 2.0), lens.x);
 	if (color.z != 0.0) c *= vec3(1.0 + color.z, 1.0, 1.0 - color.z);

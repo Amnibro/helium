@@ -83,6 +83,7 @@ layout(set = 3, binding = 0) uniform Frame {
 	vec4 vsm_zrow;
 	vec4 vsm;
 	vec4 vsm_x;
+	vec4 rain;
 };
 #include "gi.glsl"
 
@@ -358,6 +359,32 @@ float local_visibility(vec4 sh, vec3 lp, vec3 ldir, vec3 p, vec3 n) {
 	return lit / 12.0;
 }
 float mr_grain(vec3 p) { vec3 r = fract(floor(p * 7.0) * 0.1031); r += dot(r, r.zyx + 31.32); return fract((r.x + r.y) * r.z); }
+float pd_hash(vec2 p) { vec3 q = fract(vec3(p.xyx) * 0.1031); q += dot(q, q.yzx + 33.33); return fract((q.x + q.y) * q.z); }
+float pd_val(vec2 p) { vec2 i = floor(p); vec2 f = fract(p); f = f * f * (3.0 - 2.0 * f); return mix(mix(pd_hash(i), pd_hash(i + vec2(1.0, 0.0)), f.x), mix(pd_hash(i + vec2(0.0, 1.0)), pd_hash(i + vec2(1.0, 1.0)), f.x), f.y); }
+float pd_noise(vec2 p) { return 0.7 * pd_val(p) + 0.3 * pd_val(p * 2.7 + 13.7); }
+float pd_cut(float p) { float s = 0.5 - clamp(p, 0.0, 1.0); float a = abs(s) * 8.0; float g = a < 1.0 ? 0.0577 * a : (a < 2.0 ? mix(0.0577, 0.1201, a - 1.0) : (a < 3.0 ? mix(0.1201, 0.197, a - 2.0) : mix(0.197, 0.52, a - 3.0))); return 0.5 + sign(s) * g; }
+vec3 pd_hash3(vec2 p) { vec3 q = fract(vec3(p.xyx) * vec3(0.1031, 0.103, 0.0973)); q += dot(q, q.yxz + 33.33); return fract((q.xxy + q.yzz) * q.zyx); }
+vec2 pd_ripple(vec2 p, float t, float amt) {
+	vec2 g = vec2(0.0);
+	for (int l = 0; l < 2; l++) {
+		float s = l == 0 ? 0.27 : 0.41;
+		vec2 q = p / s + float(l) * 7.31; vec2 ci = floor(q) - step(fract(q), vec2(0.5));
+		for (int i = 0; i < 4; i++) {
+			vec2 c = ci + vec2(float(i & 1), float(i / 2));
+			vec3 h = pd_hash3(c + 3.7);
+			float tt = t * (1.1 + 0.5 * h.x) + h.x * 17.0;
+			float cyc = floor(tt); float tau = tt - cyc;
+			vec3 j = fract(h.yzx + cyc * vec3(0.7549, 0.5798, 0.4142));
+			if (j.z > amt) continue;
+			vec2 d = (q - c - 0.25 - 0.5 * j.xy) * s; float dl = length(d);
+			float x0 = dl - tau * (0.75 * s - 0.07);
+			if (abs(x0) > 0.07) continue;
+			float e = exp(-x0 * x0 * 1100.0) * (1.0 - tau) * (1.0 - tau);
+			g += d / max(dl, 1e-5) * (0.0025 * e * (-2200.0 * x0 * cos(157.1 * x0) - 157.1 * sin(157.1 * x0)));
+		}
+	}
+	return g;
+}
 vec2 rect_slope(vec3 p, vec3 v, vec3 n, vec3 tx, vec3 tz) {
 	vec3 h = normalize(v + normalize(p));
 	return vec2(dot(h, tx), dot(h, tz)) / max(dot(h, n), 1e-6);
@@ -901,6 +928,7 @@ void main() {
 		b = cross(n, t) * (dot(cross(n, t), b) < 0.0 ? -1.0 : 1.0);
 	}
 	vec3 n0 = n;
+	float pd_fw = fwidth(in_world.x) + fwidth(in_world.z);
 	vec3 tn = smp(tex_normal, uvn).xyz * 2.0 - 1.0;
 	float tl = length(tn);
 	tn.xy *= params.z;
@@ -1019,11 +1047,18 @@ void main() {
 	if (model > 0) occm *= model == 3 ? q.cav : mix(1.0, q.cav, 0.5);
 	float occ = occm * aos;
 
-	if (cluster2.z > 0.0 || cluster2.w > 0.0) {
+	if (cluster2.z > 0.0 || cluster2.w > 0.0 || rain.y > 0.0) {
 		float up = smoothstep(0.15, 0.75, n0.y);
-		float wet = cluster2.z * mix(0.45, 1.0, up);
+		float pud = rain.y > 0.0 ? smoothstep(-0.015, 0.015, pd_noise(in_world.xz / rain.z) - pd_cut(rain.y)) * smoothstep(0.985, 0.998, n0.y) : 0.0;
+		float wet = max(cluster2.z * mix(0.45, 1.0, up), pud);
 		tint.rgb *= mix(1.0, mix(0.55, 1.0, metal), wet);
 		rough = mix(rough, min(rough, 0.07 + 0.25 * rough * (1.0 - up)), wet);
+		if (pud > 0.0) {
+			float near = rain.x > 0.0 ? 1.0 - smoothstep(0.01, 0.04, pd_fw) : 0.0;
+			vec2 rg = near > 0.0 ? pd_ripple(in_world.xz, cluster.w, rain.x) * near : vec2(0.0);
+			n = normalize(mix(n, normalize(vec3(-rg.x, 1.0, -rg.y)), pud));
+			rough = mix(rough, mix(0.02, 0.09, rain.x * (1.0 - near)), pud);
+		}
 		float sn = cluster2.w * smoothstep(0.25, 0.7, n0.y + 0.15 * (mr_grain(in_world) - 0.5));
 		tint.rgb = mix(tint.rgb, vec3(0.87, 0.9, 0.93), sn);
 		rough = mix(rough, 0.55, sn);

@@ -3726,6 +3726,178 @@ fn wx_snow() real {
 	print("gpu: weather W5 snow: ", n, " flakes falling at both reads, mean downward speed ", r4(v), " m/s");
 	v
 }
+fn pd_scene(tilt real) {
+	reset_scene();
+	let g = shapes::cube(float3 { 20.0, 0.1, 20.0 }, shapes::material(linalg::v3(0.4, 0.4, 0.4), 0.0, 0.8));
+	let c = linalg::f(cos(tilt)); let s = linalg::f(sin(tilt));
+	s3d::place(s3d::add(g), gfx::mat4 { c0: float4 { 1.0, 0.0, 0.0, 0.0 }, c1: float4 { 0.0, c, s, 0.0 }, c2: float4 { 0.0, -s, c, 0.0 }, c3: float4 { 0.0, -0.1, 0.0, 1.0 } });
+	s3d::sky = DEF_SKY; s3d::sun = DEF_SUN; s3d::look = DEF_LOOK; s3d::look.ssao = false; s3d::look.bloom = 0.0; s3d::sky.ambient = 0.05;
+	s3d::sun.to_sun = linalg::unit3(linalg::v3(0.2, 1.0, 0.1));
+	s3d::ssr_on = false; s3d::ssgi_on = false; s3d::gi_on = false; s3d::temporal = 0; s3d::wet = 0.0; s3d::snow = 0.0; s3d::fx_dt = 0.0;
+}
+fn pd_cam(eye float3, target float3, up float3) { s3d::view = s3d::Camera { eye: eye, target: target, up: up, fov_y: 0.75, near: 0.1, far: 100.0 }; }
+fn pd_shot(t gfx::Texture, p f32, r f32, time f32) byte[>..] { s3d::puddles = p; s3d::ripples = r; s3d::world_time = time; shoot(1, t); gfx::read_pixels(t) }
+fn pd_lens(t gfx::Texture, amount f32, time f32) byte[>..] { s3d::look.lens_rain = amount; s3d::world_time = time; shoot(1, t); gfx::read_pixels(t) }
+fn pd_lum(px const byte[:], i int) real { (px[i * 4] as real + px[i * 4 + 1] as real + px[i * 4 + 2] as real) / 3.0 }
+fn pd_mean(px const byte[:]) real { var s = 0.0; let m = px.len / 4; for i in m { s += pd_lum(px, i); } s / m as real }
+fn pd_share(px const byte[:], dry real, full real) real { let mid = (dry + full) / 2.0; var n = 0; let m = px.len / 4; for i in m { if (full < dry) == (pd_lum(px, i) < mid) { n += 1; } } n as real / m as real }
+fn pd_diff(a const byte[:], b const byte[:]) real { var s = 0.0; for i in a.len { let d = a[i] as real - b[i] as real; s += if d < 0.0 { -d } else { d }; } s / a.len as real }
+fn pd_pair(t gfx::Texture, lens bool) real, real {
+	shoot(3, t); var on = 1000.0; var off = 1000.0;
+	for k in 510 {
+		let w = k % 2 == 0; let v = if w { 1.0 } else { 0.0 };
+		if lens { s3d::look.lens_rain = v; } else { s3d::puddles = v; s3d::ripples = v; }
+		let a = gfx::time(); shoot(1, t); let _ = gfx::read_pixels(t); let ms = (gfx::time() - a) * 1000.0;
+		if w { on = min(on, ms); } else { off = min(off, ms); }
+	}
+	return on, off;
+}
+fn pd_mask(clean const byte[:], px const byte[:], out bool[>..]&) real { out.clear(); var n = 0; for i in px.len / 4 { var c = false; for k in 3 { let d = px[i * 4 + k] as int - clean[i * 4 + k] as int; if d > 2 || d < -2 { c = true; } } out.push(c); if c { n += 1; } } n as real / (px.len / 4) as real }
+fn pd_iou(a bool[>..]&, b bool[>..]&) real { var i = 0; var u = 0; for k in a.len { if a[k] && b[k] { i += 1; } if a[k] || b[k] { u += 1; } } if u == 0 { 0.0 } else { i as real / u as real } }
+fn pd_iou_dy(a bool[>..]&, b bool[>..]&, w int, h int, dy int) real { var i = 0; var u = 0; for y in h { let sy = y - dy; for x in w { let p = if sy >= 0 && sy < h { a[sy * w + x] } else { false }; let q = b[y * w + x]; if p && q { i += 1; } if p || q { u += 1; } } } if u == 0 { 0.0 } else { i as real / u as real } }
+fn pd_slope(px const byte[:], m bool[>..]&, w int, h int, inside bool) real { var s = 0.0; var n = 0; for y in h - 1 { for x in w { let i = y * w + x; if m[i] == inside && m[i + w] == inside { s += pd_lum(px, i + w) - pd_lum(px, i); n += 1; } } } if n == 0 { 0.0 } else { s / n as real } }
+fn pd_sky(yaw real) {
+	reset_scene();
+	s3d::sky = s3d::Sky { zenith: float3 { 0.2, 0.2, 0.2 }, horizon: float3 { 1.5, 1.5, 1.5 }, ground: float3 { 0.5, 0.5, 0.5 }, ambient: 1.0, draw: true };
+	s3d::sun = DEF_SUN; s3d::sun.to_sun = linalg::unit3(linalg::v3(0.0, 0.3, 1.0)); s3d::look = DEF_LOOK; s3d::look.ssao = false; s3d::look.bloom = 0.0;
+	s3d::ssr_on = false; s3d::ssgi_on = false; s3d::gi_on = false; s3d::temporal = 0; s3d::wet = 0.0; s3d::snow = 0.0; s3d::puddles = 0.0; s3d::ripples = 0.0; s3d::fx_dt = 0.0;
+	pd_cam(float3 { 0.0, 1.7, 0.0 }, float3 { linalg::f(sin(yaw)), 2.54, -linalg::f(cos(yaw)) }, float3 { 0.0, 1.0, 0.0 });
+}
+fn pd_ground() bool {
+	pd_scene(0.0); s3d::init(512, 512);
+	let t = gfx::render_target(512, 512, gfx::RGBA8);
+	pd_cam(float3 { 0.0, 12.0, 0.0 }, float3 { 0.0, 0.0, 0.0 }, float3 { 0.0, 0.0, -1.0 });
+	s3d::puddle_size = 0.2;
+	let dry = pd_shot(t, 0.0, 0.0, 0.0);
+	s3d::puddle_size = 0.9;
+	let dry2 = pd_shot(t, 0.0, 1.0, 3.0);
+	s3d::puddle_size = 0.2;
+	let full = pd_shot(t, 1.0, 0.0, 0.0);
+	let d = pd_mean(dry[..]); let f = pd_mean(full[..]);
+	let q1 = pd_shot(t, 0.25, 0.0, 0.0); let q2 = pd_shot(t, 0.5, 0.0, 0.0); let q3 = pd_shot(t, 0.75, 0.0, 0.0);
+	let a1 = pd_share(q1[..], d, f); let a2 = pd_share(q2[..], d, f); let a3 = pd_share(q3[..], d, f);
+	let same = pd_diff(dry[..], dry2[..]) == 0.0;
+	let u1 = a1 >= 0.2 && a1 <= 0.3 && a2 >= 0.45 && a2 <= 0.55 && a3 >= 0.7 && a3 <= 0.8 && same && f != d;
+	print("gpu: puddle U1 share: ", r3(a1), " at 0.25, ", r3(a2), " at 0.5, ", r3(a3), " at 0.75 (bar within 0.05); dry ", r3(d), ", all puddle ", r3(f), "; puddles 0 unchanged by size and ripples: ", same, hr_pass(u1));
+	let _ = codec_png::write(path(OUT_DIR[..], "puddle_top.png")[..], 512, 512, 4, q2[..]);
+	pd_scene(0.349);
+	pd_cam(float3 { 0.0, 12.0, 0.0 }, float3 { 0.0, 0.0, 0.0 }, float3 { 0.0, 0.0, -1.0 });
+	let td = pd_shot(t, 0.0, 0.0, 0.0); let tp = pd_shot(t, 0.75, 0.0, 0.0);
+	let tm = pd_mean(td[..]);
+	let a4 = pd_share(tp[..], tm, tm + f - d);
+	let u2 = a4 <= 0.02;
+	print("gpu: puddle U2 floor tilted 20 degrees at 0.75: share ", r3(a4), " (bar <= 0.02)", hr_pass(u2));
+	pd_scene(0.0); s3d::sun.to_sun = linalg::unit3(linalg::v3(0.0, 0.5, -1.0)); s3d::puddle_size = 1.7;
+	pd_cam(float3 { 0.0, 1.7, 8.0 }, float3 { 0.0, 0.0, 0.0 }, float3 { 0.0, 1.0, 0.0 });
+	let r1a = pd_shot(t, 1.0, 1.0, 5.0); let r1b = pd_shot(t, 1.0, 1.0, 5.1);
+	let r0a = pd_shot(t, 1.0, 0.0, 5.0); let r0b = pd_shot(t, 1.0, 0.0, 5.1);
+	let r3a = pd_shot(t, 1.0, 0.3, 5.0); let r3b = pd_shot(t, 1.0, 0.3, 5.1);
+	let m1 = pd_diff(r1a[..], r1b[..]); let m0 = pd_diff(r0a[..], r0b[..]); let m3 = pd_diff(r3a[..], r3b[..]);
+	let u3 = m1 >= 0.5 && m0 == 0.0 && m3 < m1 && m3 > 0.0;
+	print("gpu: puddle U3 ripples, frames 0.1 s apart: mean change ", r3(m1), " at 1 (bar >= 0.5 over the floor; measured over the whole frame), ", r3(m3), " at 0.3 (bar less), ", m0, " at 0 (bar 0)", hr_pass(u3));
+	let _ = codec_png::write(path(OUT_DIR[..], "puddle_rain.png")[..], 512, 512, 4, r1a[..]);
+	s3d::wet = 1.0;
+	let w0 = pd_shot(t, 0.0, 1.0, 5.0); let w1 = pd_shot(t, 0.0, 1.0, 5.1);
+	s3d::wet = 0.0;
+	let m4 = pd_diff(w0[..], w1[..]);
+	let u4 = m4 == 0.0;
+	print("gpu: puddle U4 wet 1, puddles 0, ripples 1, frames 0.1 s apart: change ", m4, " (bar 0)", hr_pass(u4));
+	gfx::release(t);
+	s3d::init(1280, 720);
+	let big = gfx::render_target(1280, 720, gfx::RGBA8);
+	pd_cam(float3 { 0.0, 3.0, 0.0 }, float3 { 0.0, 0.0, 0.0 }, float3 { 0.0, 0.0, -1.0 });
+	let with, bare = pd_pair(big, false);
+	s3d::puddles = 0.0; s3d::ripples = 0.0;
+	let u5 = with - bare <= 0.3;
+	print("gpu: puddle U5 cost at 1280 x 720: ", r3(with), " ms all puddle with ripples, ", r3(bare), " ms without: ", r3(with - bare), " ms more (bar <= 0.3; fastest of 255 alternating frames each)", hr_pass(u5));
+	gfx::release(big);
+	u1 && u2 && u3 && u4 && u5
+}
+fn pd_drops() bool {
+	pd_sky(0.0); s3d::init(640, 360);
+	let t = gfx::render_target(640, 360, gfx::RGBA8);
+	let clean = pd_lens(t, 0.0, 10.0);
+	let l25 = pd_lens(t, 0.25, 10.0); let l50 = pd_lens(t, 0.5, 10.0); let l100 = pd_lens(t, 1.0, 10.0);
+	let soon = pd_lens(t, 1.0, 10.0 + 1.0 / 60.0); let late = pd_lens(t, 1.0, 13.0); let mid = pd_lens(t, 1.0, 10.25); var mm bool[>..] = []; let _ = pd_mask(clean[..], mid[..], mm);
+	var m25 bool[>..] = []; var m50 bool[>..] = []; var m100 bool[>..] = []; var ms bool[>..] = []; var ml bool[>..] = []; var my bool[>..] = [];
+	let s25 = pd_mask(clean[..], l25[..], m25); let s50 = pd_mask(clean[..], l50[..], m50); let s100 = pd_mask(clean[..], l100[..], m100);
+	let _ = pd_mask(clean[..], soon[..], ms); let _ = pd_mask(clean[..], late[..], ml);
+	let n2 = s25 > 0.0 && s25 < s50 && s50 < s100 && s100 >= 0.15 && s100 <= 0.7 - 0.1;
+	print("gpu: puddle N2 lens drops change ", r3(s25), " of the frame at 0.25, ", r3(s50), " at 0.5, ", r3(s100), " at 1 (bar rising, 0.15 to 0.6 at 1)", hr_pass(n2));
+	let so = pd_slope(l100[..], m100, 640, 360, false); let si = pd_slope(l100[..], m100, 640, 360, true);
+	let n3 = so * si < 0.0;
+	print("gpu: puddle N3 brightness slope down the frame: ", r3(so), " outside drops, ", r3(si), " inside (bar opposite signs)", hr_pass(n3));
+	let _ = codec_png::write(path(OUT_DIR[..], "lens_sky.png")[..], 640, 360, 4, l100[..]);
+	pd_sky(0.5236);
+	let clean2 = pd_lens(t, 0.0, 10.0); let turned = pd_lens(t, 1.0, 10.0);
+	let _ = pd_mask(clean2[..], turned[..], my);
+	let i4 = pd_iou(m100, my);
+	let n4 = i4 >= 0.9;
+	print("gpu: puddle N4 camera turned 30 degrees: changed pixels ", r3(i4), " the same (bar >= 0.9)", hr_pass(n4));
+	let i5 = pd_iou(m100, ms); let i5l = pd_iou(m100, ml);
+	let dn = pd_iou_dy(m100, mm, 640, 360, 5); let up = pd_iou_dy(m100, mm, 640, 360, -5);
+	let n5 = i5 >= 0.9 && i5l <= 0.8 && dn > up;
+	print("gpu: puddle N5 changed pixels ", r3(i5), " the same 1/60 s later (bar >= 0.9), ", r3(i5l), " 3 s later (bar <= 0.8); after 0.25 s the set matches ", r3(dn), " moved 5 rows down and ", r3(up), " moved up (drops run down)", hr_pass(n5));
+	gfx::release(t);
+	wx_scene(); s3d::fx_dt = 0.0; s3d::init(1280, 720);
+	let big = gfx::render_target(1280, 720, gfx::RGBA8);
+	s3d::look.lens_rain = 1.0; s3d::world_time = 10.0;
+	shoot(1, big);
+	let shot = gfx::read_pixels(big);
+	let _ = codec_png::write(path(OUT_DIR[..], "lens_rain.png")[..], 1280, 720, 4, shot[..]);
+	let with, bare = pd_pair(big, true);
+	s3d::look.lens_rain = 0.0; shoot(1, big);
+	let n7 = with - bare <= 0.2;
+	print("gpu: puddle N6 lens drops cost at 1280 x 720: ", r3(with), " ms against ", r3(bare), " ms: ", r3(with - bare), " ms more (bar <= 0.2; fastest of 255 alternating frames each)", hr_pass(n7));
+	let a = gfx::read_pixels(big);
+	s3d::look.letterbox = 2.39;
+	shoot(1, big);
+	let b = gfx::read_pixels(big);
+	s3d::look.letterbox = 0.0;
+	var black = 0; var same = true;
+	for y in 720 {
+		var z = true; var eq = true;
+		for x in 1280 { let i = (y * 1280 + x) * 4; if b[i] != 0 || b[i + 1] != 0 || b[i + 2] != 0 { z = false; } if b[i] != a[i] || b[i + 1] != a[i + 1] || b[i + 2] != a[i + 2] { eq = false; } }
+		let bar = y < 92 || y >= 628;
+		if bar && z { black += 1; }
+		if !bar && !eq { same = false; }
+	}
+	let h2 = black == 184 && same;
+	print("gpu: puddle H2 letterbox 2.39 at 1280 x 720: ", black, " black rows (bar 184), the rest unchanged: ", same, hr_pass(h2));
+	gfx::release(big);
+	n2 && n3 && n4 && n5 && n7 && h2
+}
+fn pd_hand() bool {
+	let c = s3d::Camera { eye: float3 { 0.0, 1.7, 8.0 }, target: float3 { 0.0, 1.5, 0.0 }, up: float3 { 0.0, 1.0, 0.0 }, fov_y: 0.75, near: 0.1, far: 100.0 };
+	let f0 = linalg::unit3(linalg::v3(c.target.x - c.eye.x, c.target.y - c.eye.y, c.target.z - c.eye.z));
+	var sq = 0.0; var step = 0.0; var mx = 0.0; var my = 0.0; var mz = 0.0; var prev = f0;
+	for k in 1200 {
+		let h = s3d::handheld(c, k as f32 / 60.0, 1.0);
+		let f = linalg::unit3(linalg::v3(h.target.x - h.eye.x, h.target.y - h.eye.y, h.target.z - h.eye.z));
+		let a = linalg::length3(linalg::cross3(f0, f)) as real * 57.29578;
+		let st = linalg::length3(linalg::cross3(prev, f)) as real * 57.29578;
+		sq += a * a; mx += f.x as real; my += f.y as real; mz += f.z as real;
+		if k > 0 && st > step { step = st; }
+		prev = f;
+	}
+	let rms = sqrt(sq / 1200.0);
+	let off = linalg::length3(linalg::cross3(f0, linalg::unit3(linalg::v3(linalg::f(mx), linalg::f(my), linalg::f(mz))))) as real * 57.29578;
+	let z = s3d::handheld(c, 3.0, 0.0); let p = s3d::handheld(c, 3.0, 1.0); let q = s3d::handheld(c, 3.0, 1.0);
+	let same = z.target.x == c.target.x && z.target.y == c.target.y && z.target.z == c.target.z && z.up.x == c.up.x && z.up.y == c.up.y && z.up.z == c.up.z;
+	let rep = p.target.x == q.target.x && p.target.y == q.target.y && p.target.z == q.target.z && p.up.x == q.up.x;
+	let ok = rms >= 0.2 && rms <= 0.7 && step <= 0.05 && off <= 0.1 && same && rep;
+	print("gpu: puddle H1 hand-held camera: ", r3(rms), " degrees rms (bar 0.2 to 0.7), largest step ", r3(step), " (bar <= 0.05), mean off by ", r3(off), " (bar <= 0.1), amount 0 unchanged: ", same, ", repeats: ", rep, hr_pass(ok));
+	ok
+}
+fn puddle_checks() bool {
+	half_table();
+	let g = pd_ground();
+	let d = pd_drops();
+	let h = pd_hand();
+	s3d::puddles = 0.0; s3d::ripples = 0.0; s3d::puddle_size = 1.7; s3d::world_time = 0.0; s3d::wet = 0.0;
+	s3d::look = DEF_LOOK; s3d::sun = DEF_SUN; s3d::sky = DEF_SKY;
+	g && d && h
+}
 fn weather_checks() bool {
 	half_table();
 	let w1 = wx_cells(false);
@@ -8101,7 +8273,7 @@ fn gpu_checks(dir const byte[:], golden const byte[:]) bool {
 	var only byte[>..] = [];
 	let _ = env("GFX_ONLY", only);
 	if only.len > 0 {
-		let ok = if only[..] == "vfx" { vfx_checks() } else if only[..] == "fx" { fx_checks() } else if only[..] == "lights" { lights_checks() } else if only[..] == "day" { day_checks() } else if only[..] == "hair" { hair_checks() } else if only[..] == "gtao" { gtao_checks() } else if only[..] == "gi" { gi_checks() } else if only[..] == "mblur" { mb_checks() } else if only[..] == "dof" { dof_checks() } else if only[..] == "fx" { fx_checks() } else if only[..] == "tsr" { tsr_checks(dir) } else if only[..] == "probe" { probe_checks(dir) } else if only[..] == "ssgi" { ssgi_checks() } else if only[..] == "decal" { decal_checks() } else if only[..] == "weather" { weather_checks() } else if only[..] == "rect" { rect_checks() } else if only[..] == "small" { small_checks() } else if only[..] == "inst" { instance_checks() } else if only[..] == "caust" { caustic_checks() } else if only[..] == "tex" { texture_checks() } else if only[..] == "stream" { stream_checks() } else if only[..] == "rtr" { rtr_checks() } else if only[..] == "meshlet" { meshlet_checks() } else if only[..] == "sss" { sss_checks() } else if only[..] == "cloth" { cloth_checks() } else if only[..] == "cloud" { cloud_checks() } else if only[..] == "vfog" { fog_checks() } else if only[..] == "sea" { sea_checks() } else if only[..] == "vsm" { vsm_checks() } else { shadow_checks() };
+		let ok = if only[..] == "puddle" { puddle_checks() } else if only[..] == "vfx" { vfx_checks() } else if only[..] == "fx" { fx_checks() } else if only[..] == "lights" { lights_checks() } else if only[..] == "day" { day_checks() } else if only[..] == "hair" { hair_checks() } else if only[..] == "gtao" { gtao_checks() } else if only[..] == "gi" { gi_checks() } else if only[..] == "mblur" { mb_checks() } else if only[..] == "dof" { dof_checks() } else if only[..] == "fx" { fx_checks() } else if only[..] == "tsr" { tsr_checks(dir) } else if only[..] == "probe" { probe_checks(dir) } else if only[..] == "ssgi" { ssgi_checks() } else if only[..] == "decal" { decal_checks() } else if only[..] == "weather" { weather_checks() } else if only[..] == "rect" { rect_checks() } else if only[..] == "small" { small_checks() } else if only[..] == "inst" { instance_checks() } else if only[..] == "caust" { caustic_checks() } else if only[..] == "tex" { texture_checks() } else if only[..] == "stream" { stream_checks() } else if only[..] == "rtr" { rtr_checks() } else if only[..] == "meshlet" { meshlet_checks() } else if only[..] == "sss" { sss_checks() } else if only[..] == "cloth" { cloth_checks() } else if only[..] == "cloud" { cloud_checks() } else if only[..] == "vfog" { fog_checks() } else if only[..] == "sea" { sea_checks() } else if only[..] == "vsm" { vsm_checks() } else { shadow_checks() };
 		let e = gfx::error();
 		if e.len > 0 { print("gpu: gfx error ", e[..]); return false; }
 		return mark(only[..], ok) && submit_checks(false);
@@ -8269,6 +8441,7 @@ fn gpu_checks(dir const byte[:], golden const byte[:]) bool {
 	if !mark("ssgi", ssgi_checks()) { good = false; }
 	if !mark("decal", decal_checks()) { good = false; }
 	if !mark("weather", weather_checks()) { good = false; }
+	if !mark("puddle", puddle_checks()) { good = false; }
 	if !mark("rect", rect_checks()) { good = false; }
 	if !mark("small", small_checks()) { good = false; }
 	if !mark("instance", instance_checks()) { good = false; }
