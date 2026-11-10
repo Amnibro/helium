@@ -43,6 +43,7 @@ import os;
 
 let CASCADES = 3;
 let MAX_LIGHTS = 16;
+let MAX_FOG_VOLUMES = 8;
 let MAX_PROBES = 8;
 let GI_LIGHTS = 8;
 let GLOW_LEVELS = 5;
@@ -92,7 +93,8 @@ struct GlowU { texel float4, cut float4 }
 struct GradeU { tone float4, mode float4, lens float4, color float4, frame float4 }
 struct HistU { size float4, range float4 }
 struct AdaptU { range float4, pct float4, rate float4 }
-struct FogU { inv_view_proj gfx::mat4, cascade_mat gfx::mat4[3], cascade_far float4, eye float4, view_dir float4, to_sun float4, sun_rgb float4, ambient float4, params float4, params2 float4, light_pos float4[16], light_rgb float4[16], env float4, env_rot float4, cl_u float4, cl_v float4, cl float4 }
+struct FogVolume { pos float3, half float3 = float3 { 1.0, 1.0, 1.0 }, density f32 = 0.5, rgb float3 = float3 { 1.0, 1.0, 1.0 }, soft f32 = 0.25, round bool = false }
+struct FogU { inv_view_proj gfx::mat4, cascade_mat gfx::mat4[3], cascade_far float4, eye float4, view_dir float4, to_sun float4, sun_rgb float4, ambient float4, params float4, params2 float4, light_pos float4[16], light_rgb float4[16], env float4, env_rot float4, cl_u float4, cl_v float4, cl float4, light_dir float4[16], light_shd float4[16], local_mat gfx::mat4[12], vol_pos float4[8], vol_half float4[8], vol_rgb float4[8], vol float4, wind float4 }
 struct QuadG { p float4[4], c float4[4], prm float4 }
 struct QuadViewU { view_proj gfx::mat4, right float4, up float4 }
 struct SsrU { lens float4, jit float4, tune float4, edge float4, inv_view gfx::mat4, prev_vp gfx::mat4 }
@@ -241,6 +243,11 @@ var fog_steps = 32;
 var fog_g f32 = 0.6;
 var fog_ambient float3 = float3 { 0.05, 0.06, 0.07 };
 var fog_sun f32 = 1.0;
+var fog_lights f32 = 1.0;
+var fog_noise f32 = 0.0;
+var fog_noise_size f32 = 20.0;
+var fog_wind float3 = float3 { 0.0, 0.0, 0.0 };
+var fog_volumes FogVolume[>..] = [];
 var pipe_fog gfx::Pipeline;
 var quads QuadG[>..] = [];
 var quad_buf gfx::Buffer;
@@ -2838,6 +2845,7 @@ fn lens_tiles(src gfx::Texture, mode f32) {
 fn lens_swap() { let t = hdr; hdr = fx; fx = t; }
 fn fog_pass() {
 	if !fog_on || !nd_ran { return; }
+	let nt = envmap::noise_tex();
 	guard gfx::begin_pass(gfx::PassDesc { color: [fx, none(), none(), none()], .. }) else { return; }
 	gfx::bind(pipe_fog);
 	gfx::bind_texture(gfx::FRAGMENT, 0, hdr, smp_point);
@@ -2845,6 +2853,8 @@ fn fog_pass() {
 	gfx::bind_texture(gfx::FRAGMENT, 2, shadow_map, smp_shadow);
 	gfx::bind_texture(gfx::FRAGMENT, 3, envmap::texture(), envmap::smp);
 	gfx::bind_texture(gfx::FRAGMENT, 4, if cloud_shadow_on() { cloud_shadow_tex } else { white }, smp_linear);
+	gfx::bind_texture(gfx::FRAGMENT, 5, nt, envmap::smp_noise);
+	gfx::bind_texture(gfx::FRAGMENT, 6, if local_size > 0 { local_map } else { shadow_map }, smp_shadow);
 	var u FogU;
 	u.inv_view_proj = linalg::inverse(view_proj);
 	u.cascade_mat[0] = frame_u.cascade_mat[0]; u.cascade_mat[1] = frame_u.cascade_mat[1]; u.cascade_mat[2] = frame_u.cascade_mat[2];
@@ -2856,7 +2866,19 @@ fn fog_pass() {
 	u.env = frame_u.env;
 	u.env_rot = frame_u.env_rot;
 	u.cl_u = cloud_cu; u.cl_v = cloud_cv; u.cl = f4(if cloud_shadow_on() { clouds.shadow } else { 0.0 }, 0.0, 0.0, 0.0);
-	for k in MAX_LIGHTS { u.light_pos[k] = frame_u.light_pos[k]; u.light_rgb[k] = frame_u.light_rgb[k]; }
+	for k in MAX_LIGHTS { u.light_pos[k] = frame_u.light_pos[k]; u.light_rgb[k] = frame_u.light_rgb[k]; u.light_dir[k] = frame_u.light_dir[k]; u.light_shd[k] = frame_u.light_shd[k]; }
+	for k in LOCAL_LAYERS { u.local_mat[k] = frame_u.local_mat[k]; }
+	let nv = min(fog_volumes.len, MAX_FOG_VOLUMES);
+	for k in MAX_FOG_VOLUMES {
+		if k < nv {
+			let v = fog_volumes[k];
+			u.vol_pos[k] = x4(v.pos, max(v.density, 0.0));
+			u.vol_half[k] = f4(max(v.half.x, 1e-4), max(v.half.y, 1e-4), max(v.half.z, 1e-4), clamp(v.soft, 0.0, 1.0));
+			u.vol_rgb[k] = x4(v.rgb, if v.round { 1.0 } else { 0.0 });
+		} else { u.vol_pos[k] = f4(0.0, 0.0, 0.0, 0.0); u.vol_half[k] = f4(1.0, 1.0, 1.0, 0.0); u.vol_rgb[k] = f4(0.0, 0.0, 0.0, 0.0); }
+	}
+	u.vol = f4(nv as f32, clamp(fog_noise, 0.0, 1.0), 1.0 / max(fog_noise_size, 1e-3), max(fog_lights, 0.0));
+	u.wind = x4(fog_wind * (world_time / max(fog_noise_size, 1e-3)), 0.0);
 	gfx::uniforms(gfx::FRAGMENT, 0, u);
 	gfx::draw(3);
 	gfx::end_pass();

@@ -6671,6 +6671,220 @@ fn vc_v9() bool {
 	print("gpu: cloud V9 cost: sky view ", r2(a0), " ms without, ", r2(a1), " ms with (", r2(a1 - a0), " ms more), ground view ", r2(g0), " ms without, ", r2(g1), " ms with (", r2(g1 - g0), " ms more; bar <= 2 each)", if ok { " PASS" } else { " FAIL" });
 	ok
 }
+fn vf_world() {
+	reset_scene();
+	s3d::fog_volumes.clear();
+	s3d::sky = DEF_SKY; s3d::sun = DEF_SUN; s3d::look = DEF_LOOK; s3d::look.bloom = 0.0; s3d::look.ssao = false;
+	s3d::ssr_on = false; s3d::ssgi_on = false; s3d::gi_on = false; s3d::temporal = 0; s3d::sss_on = false;
+	s3d::clouds = s3d::Clouds { on: false };
+	s3d::sky.draw = false; s3d::sky.ambient = 0.0; s3d::sky.zenith = float3 { 0.0, 0.0, 0.0 }; s3d::sky.horizon = float3 { 0.0, 0.0, 0.0 }; s3d::sky.ground = float3 { 0.0, 0.0, 0.0 };
+	s3d::sun.rgb = float3 { 0.0, 0.0, 0.0 }; s3d::sun.shadows = false;
+	envmap::on = false;
+	s3d::world_time = 0.0;
+	s3d::fog_on = true; s3d::fog_density = 0.0; s3d::fog_falloff = 0.0; s3d::fog_height = 0.0; s3d::fog_far = 30.0; s3d::fog_steps = 64; s3d::fog_g = 0.0; s3d::fog_sun = 1.0;
+	s3d::fog_ambient = float3 { 1.0, 1.0, 1.0 }; s3d::fog_noise = 0.0; s3d::fog_noise_size = 20.0; s3d::fog_wind = float3 { 0.0, 0.0, 0.0 }; s3d::fog_lights = 1.0;
+	vc_cam(float3 { 0.0, 2.0, 0.0 }, float3 { 0.0, 0.0, 1.0 }, float3 { 0.0, 1.0, 0.0 }, 1.0);
+}
+fn vf_blk(px const byte[:], cx int, cy int, w int, h int, c int) real {
+	var s = 0.0;
+	for y in h { for x in w { s += gi_half(px, 8, (cy - h / 2 + y) * 1280 + cx - w / 2 + x, c) as real; } }
+	s / (w * h) as real
+}
+fn vf_still(name const byte[:]) { let st = gfx::read_pixels(IN_OUT); print("gpu: vfog still ", codec_png::write(path(OUT_DIR[..], name)[..], 1280, 720, 4, st[..])); }
+fn vf_vol(den f32, soft f32, round bool, half float3, rgb float3) byte[>..] {
+	s3d::fog_volumes.clear();
+	s3d::fog_volumes.push(s3d::FogVolume { pos: float3 { 0.0, 2.0, 10.0 }, half: half, density: den, rgb: rgb, soft: soft, round: round });
+	rr_hdr(2)
+}
+fn vf_h1(unit real) bool {
+	vf_world();
+	let a = vf_vol(0.5, 0.0, false, float3 { 1.0, 1.0, 2.0 }, float3 { 1.0, 1.0, 1.0 });
+	let c = vf_blk(a[..], 640, 360, 8, 8, 0) / unit;
+	let o = vf_blk(a[..], 840, 360, 8, 8, 0) / unit;
+	let z = vf_vol(0.0, 0.0, false, float3 { 1.0, 1.0, 2.0 }, float3 { 1.0, 1.0, 1.0 });
+	let cz = vf_blk(z[..], 640, 360, 8, 8, 0) / unit;
+	let ex = 1.0 - exp(-2.0);
+	let ok = abs(c / ex - 1.0) <= 0.01 && o <= 0.001 && cz <= 0.001;
+	print("gpu: vfog H1 box volume, density 0.5 over 4 m: center ", r4(c), " against ", r4(ex), " (bar within 1%), 200 px right ", r4(o), " (bar <= 0.001); control density 0: ", r4(cz), " (bar <= 0.001)", if ok { " PASS" } else { " FAIL" });
+	ok
+}
+fn vf_e2(tint real) real { 1.0 - exp(-0.4) + exp(-0.4) * (0.05 + 0.5 * tint) / 0.55 * (1.0 - exp(-2.2)) + exp(-2.6) * (1.0 - exp(-0.9)) }
+fn vf_h2(unit real) bool {
+	vf_world();
+	s3d::fog_density = 0.05;
+	let a = vf_vol(0.5, 0.0, false, float3 { 1.0, 1.0, 2.0 }, float3 { 1.0, 0.5, 0.25 });
+	let r = vf_blk(a[..], 640, 360, 8, 8, 0) / unit;
+	let g = vf_blk(a[..], 640, 360, 8, 8, 1) / unit;
+	let b = vf_blk(a[..], 640, 360, 8, 8, 2) / unit;
+	let wt = vf_vol(0.5, 0.0, false, float3 { 1.0, 1.0, 2.0 }, float3 { 1.0, 1.0, 1.0 });
+	let bw = vf_blk(wt[..], 640, 360, 8, 8, 2) / unit;
+	let ok = abs(r / vf_e2(1.0) - 1.0) <= 0.02 && abs(g / vf_e2(0.5) - 1.0) <= 0.02 && abs(b / vf_e2(0.25) - 1.0) <= 0.02 && abs(bw / vf_e2(0.25) - 1.0) > 0.1;
+	print("gpu: vfog H2 colored volume in fog: center ", r4(r), " ", r4(g), " ", r4(b), " against ", r4(vf_e2(1.0)), " ", r4(vf_e2(0.5)), " ", r4(vf_e2(0.25)), " (bar within 2% each); control white volume: blue ", r4(bw), " (must be more than 10% off)", if ok { " PASS" } else { " FAIL" });
+	ok
+}
+fn vf_h3(unit real) bool {
+	vf_world();
+	let a = vf_vol(0.3, 0.5, true, float3 { 2.0, 1.0, 2.0 }, float3 { 1.0, 1.0, 1.0 });
+	vf_still("vfog_round.png");
+	let c = vf_blk(a[..], 640, 360, 8, 8, 0) / unit;
+	var up = 0.0; var prev = c; var last = c;
+	for k in 1..41 { last = vf_blk(a[..], 640 + k * 8, 360, 8, 8, 0) / unit; up = max(up, last - prev); prev = last; }
+	let h = vf_vol(0.3, 0.0, true, float3 { 2.0, 1.0, 2.0 }, float3 { 1.0, 1.0, 1.0 });
+	let ch = vf_blk(h[..], 640, 360, 8, 8, 0) / unit;
+	let ex = 1.0 - exp(-0.9);
+	let ok = abs(c / ex - 1.0) <= 0.02 && up <= 0.005 && last <= 0.001 && abs(ch / ex - 1.0) > 0.02;
+	print("gpu: vfog H3 round soft volume: center ", r4(c), " against ", r4(ex), " (bar within 2%), largest rise along the row ", r4(up), " (bar <= 0.005), 320 px right ", r4(last), " (bar <= 0.001); control soft 0: center ", r4(ch), " (must be more than 2% off)", if ok { " PASS" } else { " FAIL" });
+	ok
+}
+fn vf_noise(k f32, wind f32, t f32, name const byte[:]) real[>..] {
+	vf_world();
+	s3d::fog_density = 0.05; s3d::fog_far = 20.0; s3d::fog_noise = k; s3d::fog_wind = float3 { wind, 0.0, 0.0 }; s3d::world_time = t;
+	let px = rr_hdr(2);
+	if name.len > 0 { vf_still(name); }
+	var o real[>..] = [];
+	for by in 45 { for bx in 80 { o.push(vf_blk(px[..], bx * 16 + 8, by * 16 + 8, 16, 16, 0)); } }
+	o
+}
+fn vf_stat(a const real[:]) real, real {
+	var s = 0.0; var q = 0.0;
+	for v in a { s += v; q += v * v; }
+	let m = s / a.len as real;
+	return m, sqrt(max(q / a.len as real - m * m, 0.0)) / max(m, 1e-12);
+}
+fn vf_diff(a const real[:], b const real[:]) real {
+	var d = 0.0; var s = 0.0;
+	for i in a.len { d += abs(a[i] - b[i]); s += b[i]; }
+	d / max(s, 1e-12)
+}
+fn vf_h45() bool {
+	let a0 = vf_noise(0.0, 0.0, 0.0, "");
+	let a1 = vf_noise(1.0, 0.0, 0.0, "vfog_noise.png");
+	let m0, s0 = vf_stat(a0[..]);
+	let m1, s1 = vf_stat(a1[..]);
+	let h4 = s0 <= 0.005 && s1 >= 0.05 && abs(m1 / m0 - 1.0) <= 0.1;
+	print("gpu: vfog H4 noise, spread of 3600 block means over their mean: ", r4(s0), " at noise 0 (bar <= 0.005), ", r4(s1), " at noise 1 (bar >= 0.05); frame mean ", r4(m1 / m0), " x the noise-0 frame (bar within 10%)", if h4 { " PASS" } else { " FAIL" });
+	let b0 = vf_noise(1.0, 1.0, 0.0, "");
+	let b40 = vf_noise(1.0, 1.0, 40.0, "");
+	let b80 = vf_noise(1.0, 1.0, 80.0, "");
+	let d80 = vf_diff(b80[..], b0[..]);
+	let d40 = vf_diff(b40[..], b0[..]);
+	let h5 = d80 <= 0.01 && d40 >= 0.03;
+	print("gpu: vfog H5 wind 1 m/s along x: time 80 against time 0 differs by ", r4(d80), " (bar <= 0.01); control time 40: ", r4(d40), " (bar >= 0.03)", if h5 { " PASS" } else { " FAIL" });
+	h4 && h5
+}
+fn vf_slab(o real, e real, lo real, hi real, a real, b real) real, real {
+	if abs(e) < 1e-12 { if o < lo || o > hi { return 1.0, 0.0; } return a, b; }
+	let u = (lo - o) / e;
+	let v = (hi - o) / e;
+	return max(a, min(u, v)), min(b, max(u, v));
+}
+fn vf_hit(px real, py real, pz real) bool {
+	let a1, b1 = vf_slab(px, -3.0 - px, -1.55, -1.45, 0.0, 1.0);
+	let a2, b2 = vf_slab(py, 2.0 - py, 2.0, 3.2, a1, b1);
+	let a3, b3 = vf_slab(pz, 7.0 - pz, 6.0, 8.0, a2, b2);
+	a3 <= b3
+}
+fn vf_ref(cx int, cy int, spot bool, box bool) real {
+	let th = tan(0.5);
+	let sx = if to_uv(s3d::view_proj_nj, float3 { 1.0, 2.0, 10.0 }).x > 0.5 { 1.0 } else { -1.0 };
+	let dx = sx * (cx as real / 640.0 - 1.0) * th * 1280.0 / 720.0;
+	let dy = (1.0 - cy as real / 360.0) * th;
+	let n = sqrt(dx * dx + dy * dy + 1.0);
+	let c0 = cos(0.3);
+	let c1 = cos(0.24);
+	var s = 0.0;
+	for i in 20000 {
+		let t = (i as real + 0.5) * 0.001;
+		let px = dx / n * t;
+		let py = 2.0 + dy / n * t;
+		let pz = t / n;
+		let d2 = (px + 3.0) * (px + 3.0) + (py - 2.0) * (py - 2.0) + (pz - 7.0) * (pz - 7.0);
+		let q = max(1.0 - d2 / 144.0, 0.0);
+		let u = clamp(((px + 3.0) / max(sqrt(d2), 1e-9) - c0) / (c1 - c0), 0.0, 1.0);
+		let cone = if spot { u * u * (3.0 - 2.0 * u) } else { 1.0 };
+		let vis = if box && vf_hit(px, py, pz) { 0.0 } else { 1.0 };
+		s += 0.05 * exp(-0.05 * t) * 50.0 * q * q / (1.0 + d2) * cone * vis * 0.0795774715 * 0.001;
+	}
+	s
+}
+fn vf_spot(spot bool, shad bool, box bool) byte[>..] {
+	vf_world();
+	s3d::fog_density = 0.05; s3d::fog_far = 20.0; s3d::fog_ambient = float3 { 0.0, 0.0, 0.0 };
+	if box { s3d::place(s3d::add(shapes::cube(float3 { 0.05, 0.6, 1.0 }, shapes::material(linalg::v3(0.5, 0.5, 0.5), 0.0, 0.8))), gfx::translate(float3 { -1.5, 2.6, 7.0 })); }
+	s3d::lights.push(s3d::Light { pos: float3 { -3.0, 2.0, 7.0 }, range: 12.0, rgb: float3 { 50.0, 50.0, 50.0 }, kind: if spot { 1 } else { 0 }, dir: float3 { 1.0, 0.0, 0.0 }, cone: 0.3, edge: 0.2, shadows: shad, .. });
+	rr_hdr(2)
+}
+fn vf_h67(unit real) bool {
+	let a = vf_spot(true, false, false);
+	vf_still("vfog_spot.png");
+	let r0 = vf_ref(640, 360, true, false);
+	let rows = [360, 320, 284, 240];
+	var worst = 0.0; var out = 0.0;
+	for y in rows { let g = vf_blk(a[..], 640, y, 24, 4, 0) / unit; worst = max(worst, abs(g - vf_ref(640, y, true, false)) / r0); out = g / r0; }
+	let gs = vf_blk(a[..], 840, 360, 24, 4, 0) / unit;
+	worst = max(worst, abs(gs - vf_ref(840, 360, true, false)) / r0);
+	let pt = vf_spot(false, false, false);
+	let po = vf_blk(pt[..], 640, 240, 24, 4, 0) / unit / r0;
+	let h6 = worst <= 0.05 && out <= 0.01 && po > 0.01;
+	print("gpu: vfog H6 spot cone in fog, 5 blocks against the CPU integral: center ", r4(vf_blk(a[..], 640, 360, 24, 4, 0) / unit), " against ", r4(r0), ", side ", r4(gs), " against ", r4(vf_ref(840, 360, true, false)), ", worst difference ", r4(worst), " of the center (bar <= 0.05), outside the cone ", r4(out), " (bar <= 0.01); control point light outside: ", r4(po), " (must be above 0.01)", if h6 { " PASS" } else { " FAIL" });
+	let b = vf_spot(true, true, true);
+	vf_still("vfog_shadow.png");
+	let sh = vf_blk(b[..], 640, 320, 24, 4, 0) / unit / r0;
+	let lit = abs(vf_blk(b[..], 640, 400, 24, 4, 0) / unit - vf_ref(640, 400, true, true)) / r0;
+	let c = vf_spot(true, false, true);
+	let cs = vf_blk(c[..], 640, 320, 24, 4, 0) / unit / r0;
+	let p = vf_spot(false, true, true);
+	let p1 = vf_ref(640, 320, false, true);
+	let p2 = vf_ref(640, 400, false, true);
+	let p3 = vf_ref(840, 320, false, true);
+	let top = max(p1, max(p2, p3));
+	let g1 = vf_blk(p[..], 640, 320, 24, 4, 0) / unit;
+	let g2 = vf_blk(p[..], 640, 400, 24, 4, 0) / unit;
+	let g3 = vf_blk(p[..], 840, 320, 24, 4, 0) / unit;
+	let pw = max(abs(g1 - p1), max(abs(g2 - p2), abs(g3 - p3))) / top;
+	let h7 = sh <= 0.02 && lit <= 0.05 && cs > 0.02 && pw <= 0.05;
+	print("gpu: vfog H7 local shadows in fog: spot, behind the box ", r4(sh), " of the open center (bar <= 0.02), lit side off by ", r4(lit), " (bar <= 0.05); point light ", r4(g1), " ", r4(g2), " ", r4(g3), " against ", r4(p1), " ", r4(p2), " ", r4(p3), ", worst ", r4(pw), " of the largest (bar <= 0.05); control spot shadows off: ", r4(cs), " (must be above 0.02)", if h7 { " PASS" } else { " FAIL" });
+	h6 && h7
+}
+fn vf_h8() bool {
+	let a = vf_spot(true, false, true);
+	s3d::fog_steps = 32;
+	let t0 = frame_ms();
+	let b = vf_spot(true, true, true);
+	s3d::fog_steps = 32; s3d::fog_noise = 1.0;
+	for k in 4 { s3d::fog_volumes.push(s3d::FogVolume { pos: float3 { if k % 2 == 0 { -3.0 } else { 3.0 }, 2.0, if k < 2 { 10.0 } else { 15.0 } }, density: 0.3, soft: 0.5, .. }); }
+	let t1 = frame_ms();
+	vf_still("vfog_all.png");
+	let ok = t1 - t0 <= 2.0;
+	print("gpu: vfog H8 cost: plain fog ", r2(t0), " ms a frame, with noise, 4 volumes and spot shadows ", r2(t1), " ms (", r2(t1 - t0), " ms more; bar <= 2)", if ok { " PASS" } else { " FAIL" });
+	ok
+}
+fn fog_checks() bool {
+	half_table();
+	s3d::init(1280, 720);
+	IN_OUT = gfx::render_target(1280, 720, gfx::RGBA8);
+	let son = envmap::on;
+	let fo = s3d::fog_on; let fd = s3d::fog_density; let ff = s3d::fog_falloff; let fh = s3d::fog_height; let fr = s3d::fog_far; let fs = s3d::fog_steps; let fg = s3d::fog_g; let fa = s3d::fog_ambient;
+	vf_world();
+	s3d::fog_density = 50.0;
+	let u = rr_hdr(2);
+	let unit = vf_blk(u[..], 640, 360, 8, 8, 0);
+	print("gpu: vfog unit (opaque fog under ambient 1): ", r4(unit));
+	let h1 = vf_h1(unit);
+	let h2 = vf_h2(unit);
+	let h3 = vf_h3(unit);
+	let h45 = vf_h45();
+	let h67 = vf_h67(unit);
+	let h8 = vf_h8();
+	reset_scene();
+	s3d::fog_volumes.clear();
+	s3d::fog_noise = 0.0; s3d::fog_wind = float3 { 0.0, 0.0, 0.0 };
+	s3d::world_time = 0.0;
+	envmap::on = son;
+	s3d::fog_on = fo; s3d::fog_density = fd; s3d::fog_falloff = ff; s3d::fog_height = fh; s3d::fog_far = fr; s3d::fog_steps = fs; s3d::fog_g = fg; s3d::fog_ambient = fa;
+	s3d::sky = DEF_SKY; s3d::sun = DEF_SUN; s3d::look = DEF_LOOK;
+	h1 && h2 && h3 && h45 && h67 && h8
+}
 fn cloud_checks() bool {
 	half_table();
 	s3d::init(1280, 720);
@@ -6738,7 +6952,7 @@ fn gpu_checks(dir const byte[:], golden const byte[:]) bool {
 	var only byte[>..] = [];
 	let _ = env("GFX_ONLY", only);
 	if only.len > 0 {
-		let ok = if only[..] == "gtao" { gtao_checks() } else if only[..] == "gi" { gi_checks() } else if only[..] == "mblur" { mb_checks() } else if only[..] == "dof" { dof_checks() } else if only[..] == "fx" { fx_checks() } else if only[..] == "tsr" { tsr_checks(dir) } else if only[..] == "probe" { probe_checks(dir) } else if only[..] == "ssgi" { ssgi_checks() } else if only[..] == "decal" { decal_checks() } else if only[..] == "weather" { weather_checks() } else if only[..] == "rect" { rect_checks() } else if only[..] == "small" { small_checks() } else if only[..] == "inst" { instance_checks() } else if only[..] == "caust" { caustic_checks() } else if only[..] == "tex" { texture_checks() } else if only[..] == "stream" { stream_checks() } else if only[..] == "rtr" { rtr_checks() } else if only[..] == "meshlet" { meshlet_checks() } else if only[..] == "sss" { sss_checks() } else if only[..] == "cloth" { cloth_checks() } else if only[..] == "cloud" { cloud_checks() } else { shadow_checks() };
+		let ok = if only[..] == "gtao" { gtao_checks() } else if only[..] == "gi" { gi_checks() } else if only[..] == "mblur" { mb_checks() } else if only[..] == "dof" { dof_checks() } else if only[..] == "fx" { fx_checks() } else if only[..] == "tsr" { tsr_checks(dir) } else if only[..] == "probe" { probe_checks(dir) } else if only[..] == "ssgi" { ssgi_checks() } else if only[..] == "decal" { decal_checks() } else if only[..] == "weather" { weather_checks() } else if only[..] == "rect" { rect_checks() } else if only[..] == "small" { small_checks() } else if only[..] == "inst" { instance_checks() } else if only[..] == "caust" { caustic_checks() } else if only[..] == "tex" { texture_checks() } else if only[..] == "stream" { stream_checks() } else if only[..] == "rtr" { rtr_checks() } else if only[..] == "meshlet" { meshlet_checks() } else if only[..] == "sss" { sss_checks() } else if only[..] == "cloth" { cloth_checks() } else if only[..] == "cloud" { cloud_checks() } else if only[..] == "vfog" { fog_checks() } else { shadow_checks() };
 		let e = gfx::error();
 		if e.len > 0 { print("gpu: gfx error ", e[..]); return false; }
 		return mark(only[..], ok) && submit_checks(false);
@@ -6915,6 +7129,7 @@ fn gpu_checks(dir const byte[:], golden const byte[:]) bool {
 	if !mark("sss", sss_checks()) { good = false; }
 	if !mark("cloth", cloth_checks()) { good = false; }
 	if !mark("cloud", cloud_checks()) { good = false; }
+	if !mark("vfog", fog_checks()) { good = false; }
 	if !submit_checks(true) { good = false; }
 	let err = gfx::error();
 	if err.len > 0 { print("gpu: gfx error ", err[..]); good = false; }

@@ -53,6 +53,9 @@ float range_falloff(float d, float range) {
 	float q = clamp(1.0 - (d * d) / (range * range), 0.0, 1.0);
 	return q * q / (1.0 + d * d);
 }
+float spot_cone(float inner, float co, vec3 ldir, vec3 ld) {
+	return co < -1.5 ? 1.0 : smoothstep(co, inner - 1.0, dot(-ld, ldir));
+}
 
 // Analytic sky: a zenith/horizon gradient, a darker ground, and a glow around the sun.
 vec3 sky_color(vec3 dir, vec3 to_sun, vec3 zenith, vec3 horizon, vec3 ground, vec3 sun_rgb) {

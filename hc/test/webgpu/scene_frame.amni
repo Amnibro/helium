@@ -111,6 +111,7 @@ fn main() {
 	if arg_count() > 13 && arg_of(13)[..] == "meshlet" { s3d::meshlets = true; s3d::place(s3d::add(shapes::sphere(0.5, 128, 64, shapes::material(linalg::v3(0.2, 0.7, 0.3), 0.0, 0.7))), gfx::translate(float3 { 1.1, 0.5, 0.9 })); }
 	if arg_count() > 13 && arg_of(13)[..] == "taa" { s3d::temporal = 1; s3d::ao_mode = 1; }
 	s3d::init(w, h);
+	if arg_count() > 13 && arg_of(13)[..] == "fog" { s3d::fog_on = true; s3d::fog_density = 0.08; s3d::fog_falloff = 0.0; s3d::fog_far = 20.0; s3d::fog_steps = 48; s3d::fog_lights = 8.0; s3d::fog_ambient = float3 { 0.1, 0.11, 0.13 }; s3d::fog_noise = 1.0; s3d::fog_noise_size = 4.0; s3d::fog_volumes.push(s3d::FogVolume { pos: float3 { 0.0, 0.4, 0.0 }, half: float3 { 2.0, 0.5, 2.0 }, density: 0.7, rgb: float3 { 0.6, 0.8, 1.0 }, soft: 0.7, round: true }); s3d::add_spot(float3 { 2.0, 3.0, 1.5 }, float3 { 0.0, 0.4, 0.0 }, float3 { 60.0, 52.0, 40.0 }, 9.0, 0.35, true); }
 	if arg_count() > 13 && arg_of(13)[..] == "clouds" { s3d::atmosphere(float3 { 0.7071, 0.5657, -0.4243 }, 3.5, 1.0, 0.0); s3d::clouds = s3d::Clouds { on: true, cover: 0.7 }; }
 	let out = gfx::render_target(w, h, gfx::RGBA8);
 	for k in if gi || sg { 7 } else if e2 { 3 } else { 2 } {

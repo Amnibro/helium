@@ -351,9 +351,6 @@ float local_visibility(vec4 sh, vec3 lp, vec3 ldir, vec3 p, vec3 n) {
 	return lit / 12.0;
 }
 float mr_grain(vec3 p) { vec3 r = fract(floor(p * 7.0) * 0.1031); r += dot(r, r.zyx + 31.32); return fract((r.x + r.y) * r.z); }
-float spot_cone(float inner, float co, vec3 ldir, vec3 ld) {
-	return co < -1.5 ? 1.0 : smoothstep(co, inner - 1.0, dot(-ld, ldir));
-}
 vec2 rect_slope(vec3 p, vec3 v, vec3 n, vec3 tx, vec3 tz) {
 	vec3 h = normalize(v + normalize(p));
 	return vec2(dot(h, tx), dot(h, tz)) / max(dot(h, n), 1e-6);

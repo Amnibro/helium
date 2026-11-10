@@ -926,6 +926,54 @@ With `s3d::temporal` on, the march start is jittered from frame to frame and the
 temporal pass averages it. A sky full of clouds costs about 1.5 ms at 1280 x 720 on
 an RX 9060 XT.
 
+### Volumetric fog (E6)
+
+```
+s3d::fog_on = true;
+s3d::fog_density = 0.03;
+s3d::fog_noise = 0.7;
+s3d::fog_wind = float3 { 0.5, 0.0, 0.2 };
+s3d::fog_volumes.push(s3d::FogVolume { pos: float3 { 0.0, 0.5, 0.0 }, half: float3 { 4.0, 0.5, 4.0 }, density: 0.4, soft: 0.5, round: true });
+s3d::world_time = t;
+```
+
+With `fog_on` a full-screen pass marches each pixel's ray from the camera to the
+surface it sees and adds the light the fog scatters toward the camera: sunlight
+through the sun's shadow maps and the cloud shadow map, ambient light, and the first
+16 local lights, each with its range, its spot cone and its shadow maps. A shadowed
+spot light draws a visible beam, and objects cut dark shafts out of it. Settings:
+
+* `fog_density` (0.03): how much light a world unit of fog takes out, at and below
+  `fog_height` (0). Above that height the density falls by `fog_falloff` (0.25) per
+  world unit, as an exponential; 0 gives the same fog at every height.
+* `fog_far` (60): where the march ends when no surface is nearer. `fog_steps` (32):
+  samples a ray, up to 64.
+* `fog_g` (0.6): how much of the sunlight the fog scatters forward, toward a viewer
+  facing the sun; 0 scatters it evenly. Local lights scatter evenly. `fog_sun` (1)
+  scales the sunlight in fog and `fog_lights` (1) the local lights, to make beams
+  stronger or weaker without changing the light on surfaces.
+* `fog_ambient`: ambient light on the fog. With an environment map on, the fog takes
+  the environment's light instead.
+* `fog_noise` (0): 0 is even fog. At 1 a noise pattern thins the fog to nothing in
+  places and doubles it in others. `fog_noise_size` (20) is the size of the
+  pattern's fine layer in world units; a second layer is four times larger.
+  `fog_wind` is how far the pattern drifts each second of `s3d::world_time`, in
+  world units.
+* `fog_volumes`: local fog on top of the global fog, which may be 0. The first 8 are
+  used. A `FogVolume` has a center `pos`, a `half` size along x, y and z, a
+  `density` (0.5), the color `rgb` (white) its fog scatters, `soft` (0.25) and
+  `round` (false). A volume is a box along the world axes, or the ellipsoid inside
+  that box with `round`. `soft` is the share of the way from the edge to the center
+  over which the density rises to full; 0 is a hard edge. The noise applies to
+  volumes too.
+
+When a ray crosses volumes, half of its samples are placed between the first and
+the last volume it touches (all of them when the global density is 0), so a small
+volume stays sharp in a long view. With `s3d::temporal` on, the sample positions are
+jittered from frame to frame and the temporal pass averages them. Noise, four
+volumes and a shadowed spot light together add about 0.6 ms at 1280 x 720 with 32
+steps on an RX 9060 XT.
+
 ## Materials, light and finish
 
 `gltf` reads the core metal-rough model plus `KHR_materials_clearcoat`, `sheen`,
@@ -2365,8 +2413,8 @@ run that used it.
 
 Fog upgrades: drifting noise in the fog's density (`s3d::fog_noise`), local fog
 volumes (`s3d::fog_volumes`), and local lights that keep their spot cone and their
-shadow maps inside fog. Unless stated: 1280 x 720, no geometry, sky drawing off,
-environment map off, sun color 0, glow and temporal off, camera at (0, 2, 0) looking
+shadow maps inside fog. Unless stated: 1280 x 720, no geometry, sky drawing off
+with a black background, environment map off, sun color 0, glow and temporal off, camera at (0, 2, 0) looking
 along +z with a 1.0 rad vertical field of view, fog falloff 0, fog far 30, 64 steps,
 fog ambient (1, 1, 1), no noise. Values are read from `s3d::hdr_target()` and divided
 by one unit: the frame-center value with fog density 50 and nothing else (fog too
@@ -3100,8 +3148,8 @@ pass-through mean error is 0.0106 % (max 0.0488 %).
   reflections and GI use the full mesh.
 * Not built: WebP, meshopt and Draco, and mesh streaming.
 
-No point/line primitives (skipped and counted), Adler-32 is not verified, the fog
-and GI passes light spot lights as points (no cone). Also:
+No point/line primitives (skipped and counted), Adler-32 is not verified, the GI
+pass lights spot lights as points (no cone). Also:
 
 * The furnaces do not resolve roughness below 0.3 (metal roughness 0 shows 12.75 %
   mean error on the spheres at 4096 directions); the LUT check covers the shading
