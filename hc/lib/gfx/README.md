@@ -2382,6 +2382,7 @@ steep ends of each pass lie in the darkened gaps and are left out.
 | W5 the far highlight follows the near one | near 1.2196, far 1.1775 | near at least 0.05 from 1, far closer to near than to 1 |
 | W5 control, strength 0 | 1.0 | fails |
 | W6 cost | 1.47 ms without, 1.42 ms with: no measurable cost | at most 0.3 ms |
+| W7 nothing else moved | with strength 0 the goldens stay at 44.92 dB and 41.7 dB and Z8 and Z9 pass; gfxtest passes, wgsltest 67 modules and 58 pipelines with 0 failures, webgputest 23 scenes with 0 failures and `scene_cloth` drawn as the 3/1 twill | goldens above 40 dB, all pass |
 
 ### Cloth results (2026-11-10, RX 9060 XT, RADV; Ryzen, one core for the solver)
 
@@ -2406,6 +2407,7 @@ steep ends of each pass lie in the darkened gaps and are left out.
 | Z9 motion vectors | 0.002 pixels from the shift on average over 133,956 pixels | at most 0.05 |
 | Z9 control, last step ignored | 7.317 pixels | above 1 |
 | Z10 cost | 2.37 ms a step for 4,225 particles | at most 4 ms |
+| Z11 nothing else moved | goldens 44.92 dB and 41.7 dB; gfxtest, wgsltest and webgputest pass, `scene_cloth` identical to the native frame | goldens above 40 dB, all pass, `scene_cloth` above 30 dB |
 
 ### Meshlet results (2026-11-09, RX 9060 XT, RADV; full gfxtest ok)
 
