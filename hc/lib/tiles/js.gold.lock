@@ -89,3 +89,34 @@ locale_string(x real, max_digits int) byte[>..]:
 		out.push('.')
 		for i p..fe: out.push(ds[i])
 	return out
+=== 15ca667ca982da76
+fixed_locale(x real, digits int, or_zero bool = false) byte[>..]:
+	if digits >= 0 && digits <= 15:
+		w, f, ok := fixed_parts(fabs(x), digits, true)
+		if ok && w < json::P10D[15 - digits]:
+			buf byte[32] ~= [0; 32]
+			at ~= 32
+			ff ~= f
+			nd ~= digits
+			while nd > 0 && ff % 10 == 0: ff /= 10; nd -= 1
+			for i nd: at -= 1; buf[at] = (48 + ff % 10) as byte; ff /= 10
+			if nd > 0: at -= 1; buf[at] = '.'
+			ww ~= w
+			c ~= 0
+			if ww == 0: at -= 1; buf[at] = '0'
+			while ww > 0:
+				if c > 0 && c % 3 == 0: at -= 1; buf[at] = ','
+				at -= 1
+				buf[at] = (48 + ww % 10) as byte
+				ww /= 10
+				c += 1
+			if x < 0.0 && !(or_zero && w == 0 && f == 0): at -= 1; buf[at] = '-'
+			res byte[>..] ~= []
+			res.append(buf[at..])
+			return res
+	s := to_fixed(x, digits)
+	pv, pok := parse_flt(s)
+	v ~= pv
+	if is_inf(x): v = x
+	if or_zero && (is_nan(v) || v == 0.0): v = 0.0
+	return locale_string(v, digits)

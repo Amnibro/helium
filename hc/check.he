@@ -40,7 +40,12 @@ new_inst(node int, lo int, hi int, par int) int:
 	n := hi - lo
 	AT.resize(AT.len + n, -1); AC.resize(AC.len + n, -1); AK.resize(AK.len + n, 0); AV.resize(AV.len + n, -1); AX.resize(AX.len + n, -1); AD.resize(AD.len + n, 0)
 	i
+var GHI int = 1 << 60; var XAB i32[>..]
+xaix(k int) int:
+	while XAB.len <= k: XAB.push(AT.len as i32); AT.push(-1); AC.push(-1); AK.push(0); AV.push(-1); AX.push(-1); AD.push(0)
+	XAB[k] as int
 aix(n int) int:
+	if n >= GHI: return xaix(n - GHI)
 	i ~= AOWN
 	while i >= 0: f := FI_[i]; if n >= f.lo && n < f.hi { return f.ab + n - f.lo } i = f.par
 	g := FI_[GLOBI]
@@ -215,6 +220,10 @@ recursive conv(n int, t int) bool:
 	if fk == TY_NULL && tkd == TY_REF && TY[t].fl & RF_OPT != 0: commit(n, t); return true
 	if conv_ok(f, t, n): set_cv(n, t); return true
 	if fk == TY_INT && tkd == TY_INT && !OLDLOC && FILES[TK[ND[n].t].f].he: set_cvn(n, t); return true
+	if (f == T_U8 || fk == TY_REF && TY[f].a == T_U8) && (is_byte_arr(t) || tkd == TY_REF && is_byte_arr(TY[t].a)) && FILES[TK[ND[n].t].f].py: pywrap(n, "pych"); ck(n, t); return conv(n, t)
+	if fk == TY_STRLIT && t == T_U8 && py1(n): pylit(n); ck(n, t); return conv(n, t)
+	if fk == TY_BOOL && tkd == TY_INT && FILES[TK[ND[n].t].f].py: pywrap(n, "pybi"); ck(n, t); return conv(n, t)
+	if pysl(f) && pylist(t) && is_byte_arr(TY[t].a) && FILES[TK[ND[n].t].f].py: pywrap(n, "pyown"); ck(n, t); return conv(n, t)
 	if fk == TY_NULL: m byte[>..] ~= []; format(m, "null is only a value of optional types, not ", tn(t)); cerr(n, m); return false
 	m byte[>..] ~= []; fi := fk == TY_INT || fk == TY_ILIT; ff := fk == TY_FLT || fk == TY_FLIT; format(m, "expected a value of type ", tn(t), ", got ", if fk == TY_ILIT { "i64" } else if fk == TY_FLIT { "f64" } else { tn(f) }, if fi && tkd == TY_INT { " (narrowing and sign changes require an explicit `as`)" } else if ff && tkd == TY_INT { " (a float converts to an integer only with an explicit `as`)" } else if ff && tkd == TY_FLT && f != t && tn(t) == "f32" { " (f64 to f32 requires an explicit `as f32` to round the value)" } else { "" }); cerr(n, m)
 	false
@@ -327,6 +336,11 @@ unify(n int, a int, b int) int:
 	m byte[>..] ~= []; format(m, "operands of ", tok_text(ND[n].t), " have no common type: ", tn(da), " and ", tn(db), " (convert one with `as`)"); cerr(n, m)
 	T_ERRT
 pagg(t int) bool: k := TY[t].k; k == TY_STRUCT || k == TY_ARR || k == TY_SLICE
+pywrap(n int, f const byte[:]): m := mk(N_INT, ND[n].t); ND[m] = ND[n]; c := mkcall(intern(f), ND[n].t, m, -1); ND[n] = ND[c]
+pylit(n int): t := ND[n].t as int; k ~= TK[t]; k.k = T_INT as u8; k.v = STRS[TK[t].v] as i64; k.uns = false; TK.push(k); ND[n].k = N_INT as u8; ND[n].t = (TK.len - 1) as i32
+py1(n int) bool: ND[n].k as int == N_STR && TK[ND[n].t].w == 1 && FILES[TK[ND[n].t].f].py
+pysl(t int) bool: pylist(t) && TY[TY[t].a].k == TY_SLICE && TY[TY[t].a].a == T_U8
+pylist(t int) bool: k := TY[t].k; k == TY_SLICE || k == TY_ARR && TY[t].s != A_FIXED as u8
 recursive ewl(t int) int:
 	x := TY[t]; k := x.k
 	if k == TY_INT || k == TY_FLT: return t
@@ -385,6 +399,12 @@ recursive ck_bin(n int, want int) int:
 		set_x(n, 1)
 		return set_t(n, T_BOOL)
 	if o == T_PLUS && x.c >= 0 && (TY[da].k == TY_STRLIT || is_byte_arr(da)) && (TY[db].k == TY_STRLIT || is_byte_arr(db)): ND[n] = ND[x.c]; return ck(n, want)
+	if FILES[TK[x.t].f].py && (o == T_PLUS || o == T_MINUS || o == T_MUL) && (TY[da].k == TY_BOOL || TY[db].k == TY_BOOL): if TY[da].k == TY_BOOL { pywrap(a, "pybi") } if TY[db].k == TY_BOOL { pywrap(b, "pybi") } return ck(n, want)
+	if FILES[TK[x.t].f].py && (cmp || o == T_PLUS || o == T_MINUS) && (py1(a) && TY[db].k == TY_INT && db != T_U8 || py1(b) && TY[da].k == TY_INT && da != T_U8): pylit(if py1(a) { a } else { b }); return ck(n, want)
+	if cmp && FILES[TK[x.t].f].py && (da == T_U8 && (TY[db].k == TY_STRLIT || is_byte_arr(db)) || db == T_U8 && (TY[da].k == TY_STRLIT || is_byte_arr(da))): sw := db == T_U8; on := if sw { a } else { b }; if py1(on) { pylit(on) } else { pywrap(if sw { b } else { a }, "pych") } return ck(n, want)
+	if FILES[TK[x.t].f].py && o == T_MUL && (da == T_U8 && ND[a].k as int != N_INT && (ND[b].k as int == N_INT || db != T_U8 && (TY[db].k == TY_INT || TY[db].k == TY_ILIT)) || db == T_U8 && ND[b].k as int != N_INT && (ND[a].k as int == N_INT || da != T_U8 && (TY[da].k == TY_INT || TY[da].k == TY_ILIT))): pywrap(if da == T_U8 && ND[a].k as int != N_INT { a } else { b }, "pych"); return ck(n, want)
+	if FILES[TK[x.t].f].py && (o == T_PLUS && x.c >= 0 && pylist(da) && pylist(db) || o == T_MUL && (pylist(da) && (TY[db].k == TY_INT || TY[db].k == TY_ILIT) || pylist(db) && (TY[da].k == TY_INT || TY[da].k == TY_ILIT))):
+		c := if o == T_PLUS { x.c as int } else { sw := pylist(db); mkcall(intern("repeat"), x.t, if sw { b } else { a }, if sw { a } else { b }) }; ND[n] = ND[c]; return ck(n, want)
 	if o == T_PLUS && x.c >= 0 && nm(ND[ND[x.c].a].s) == "concat" && (TY[da].k == TY_STRLIT || is_byte_arr(da) || da == T_U8) && (TY[db].k == TY_STRLIT || is_byte_arr(db) || db == T_U8): ND[n] = ND[x.c]; return ck(n, want)
 	if cmp && o != T_EQ && o != T_NEQ && (TY[da].k == TY_STRLIT || is_byte_arr(da)) && (TY[db].k == TY_STRLIT || is_byte_arr(db)): if TY[da].k == TY_STRLIT { set_t(a, TT_STR) } if TY[db].k == TY_STRLIT { set_t(b, TT_STR) } set_x(n, 4); return set_t(n, T_BOOL)
 	if cmp && o != T_EQ && o != T_NEQ && TY[da].k == TY_STRUCT && FILES[TK[x.t].f].py && (starts_with(nm(STI[TY[da].a].name as int), "tuple") || nm(STI[TY[da].a].name as int) == "dictionary_slot"):
@@ -574,6 +594,7 @@ recursive ck_dot(n int, want int) int:
 		v := ENV[ENI[TY[d].a].v0 + TY[d].c]
 		if v.si >= 0:
 			fi := sfield(v.si, name); if fi >= 0: set_r(n, R_FIELD, fi); set_x(n, v.si); return set_t(n, decode_rel(SFI[STI[v.si].f0 + fi].ty))
+	if (k == TY_ARR || k == TY_SLICE) && FILES[TK[x.t].f].py && nm(name).len == 2 && nm(name)[0] == 'f' && nm(name)[1] >= '0' && nm(name)[1] <= '3': c := mkcall(intern(str("pyf", nm(name)[1..])), x.t, a, -1); ND[n] = ND[c]; return ck(n, want)
 	m byte[>..] ~= []; format(m, "no field ", nm(name), " in ", tn(d)); cerr(n, m)
 	set_t(n, T_ERRT)
 rtype_name_enum(de int) int:
@@ -606,6 +627,7 @@ recursive ck_slice(n int, want int) int:
 	if x.b >= 0: ck(x.b, T_I64); conv(x.b, T_I64)
 	if x.c >= 0: ck(x.c, T_I64); conv(x.c, T_I64)
 	k := TY[d].k
+	if (k == TY_ARR || k == TY_SLICE) && TY[d].a != T_U8 && x.fl & 16 == 0 && FILES[TK[x.t].f].py: ND[n].fl |= 16; pywrap(n, "list"); return ck(n, want)
 	if k == TY_ARR: return set_t(n, t_slice(TY[d].a, false))
 	if k == TY_SLICE: return set_t(n, d)
 	m byte[>..] ~= []; format(m, "cannot slice ", tn(d)); cerr(n, m)
@@ -741,6 +763,7 @@ recursive conv_breaks(n int, t int):
 	if k == N_BLOCK || k == N_MATCH || k == N_LIST || k == N_ARR || k == N_SLIT || k == N_RET:
 		for i x.n: c := kid(n, i); conv_breaks(c, t); if k == N_MATCH { conv_breaks(ND[c].b, t) }
 recursive ck_for(n int) int:
+	if ND[ND[n].a].k as int == N_SLICE: ND[ND[n].a].fl |= 16
 	x := ND[n]
 	m := SCOPE.len
 	et ~= T_I64
@@ -1091,15 +1114,17 @@ recursive ck_vdecl(n int):
 				if TY[it].k == TY_FLIT && lf & (LV_VAR | LV_REF) == 0: lf = lf | LV_FLET
 				t = default_t(init)
 				if TY[t].k == TY_VOID: cerr(init, "this expression has no value (the call returns nothing), so there is nothing to bind"); return
-				if intloc(n, init, t): conv(init, T_I64); t = T_I64
+				if pysl(t) && FILES[TK[ND[n].t].f].py: pywrap(init, "pyown"); ck(init, -1); t = default_t(init)
+				if intloc(n, init, t) && !(t == T_U8 && ND[init].k as int == N_IDX && FILES[TK[ND[n].t].f].py): conv(init, T_I64); t = T_I64
 				if TY[t].k == TY_MULTI: t = TYL[TY[t].l] as int
 				if TY[t].k == TY_VARIANT && ND[init].k == N_DOT && lf & LV_VAR != 0: t = t_enum(TY[t].a as int, false); set_cv(init, t)
+				if fl & V_PYCOPY != 0 && TY[t].k == TY_REF && TY[t].c < 0 && TY[t].fl & RF_OPT == 0 && !has_rel(TY[t].a as int): t = TY[t].a as int; conv(init, t)
 				if byref || ND[init].k == N_UN && ND[init].op as int == T_AND:
 					if TY[t].k != TY_REF: t = t_ref(t, 0)
 				else:
 					if TY[t].k == TY_REF && TY[t].c < 0 && TY[t].fl & RF_OPT == 0 && (is_fixed(TY[t].a as int) || TY[TY[t].a].k == TY_VARINT) && !has_rel(TY[t].a as int): t = TY[t].a as int; set_cv(init, t)
 					else:
-						if TY[t].k != TY_REF && TY[t].k != TY_SLICE && TY[t].k != TY_VARINT && (!is_fixed(t) || FILES[TK[ND[n].t].f].he && TY[t].k == TY_STRUCT && has_rel(t)) && names_store(init): t = t_ref(t, 0)
+						if TY[t].k != TY_REF && TY[t].k != TY_SLICE && TY[t].k != TY_VARINT && (!is_fixed(t) || FILES[TK[ND[n].t].f].he && TY[t].k == TY_STRUCT && has_rel(t)) && names_store(init) && fl & V_PYCOPY == 0: t = t_ref(t, 0)
 	else:
 		if t < 0: cerr(n, "a declaration needs a type or an initializer"); t = T_ERRT else: ck_defs(t)
 	if byref && TY[t].k != TY_REF: t = t_ref(t, 0)
@@ -1137,6 +1162,7 @@ recursive ck_assign(n int):
 			if TY[rt].k == TY_NULL: commit(x.b, tt); return
 			if TY[rt].k == TY_REF: conv(x.b, tt); return
 		if ND[x.a].k as int == N_DOT && !is_fixed(d) && TY[d].k != TY_REF && TY[d].k != TY_SLICE && !(TY[d].k == TY_ARR && is_grow(d)) && thru_ref(x.a): m byte[>..] ~= []; format(m, "cannot assign field ", nm(ND[x.a].s as int), " through a reference: it is stored inline with a variable size (", tn(d), "), so only the variable that owns the struct can replace it; make the field growable (T[>..]) or build and return a new struct"); cerr(n, m[..]); return
+		if d == T_U8 && ND[x.b].k as int == N_CALL && ND[x.b].n == 1 && ND[ND[x.b].a].k as int == N_ID && ND[ND[x.b].a].s == NAME_STR && py1(kid(x.b, 0)): ND[x.b] = ND[kid(x.b, 0)]
 		ck(x.b, d); conv(x.b, d)
 		return
 	if (TY[d].k == TY_STRUCT || TY[d].k == TY_ARR) && !FILES[TK[x.t].f].he && o != T_ASSIGN:

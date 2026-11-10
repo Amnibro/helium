@@ -118,13 +118,22 @@ items<K, V>(d dictionary<K, V>&) dictionary_slot<K, V>[>..]:
 truthy<K, V>(d dictionary<K, V>&) bool: d.count > 0
 
 # helpers the Python dialect lowers to
-slot_lt<K, V>(a dictionary_slot<K, V>, b dictionary_slot<K, V>) bool:
-	if a.key == b.key { a.val < b.val } else { a.key < b.key }
+slot_lt<K, V>(a dictionary_slot<K, V>, b dictionary_slot<K, V>) bool: a.key < b.key
+sorted<K, V>(d dictionary<K, V>&) K[>..]:
+	o ~= keys(d)
+	sort(o[..])
+	o
+sorted<K, V, F>(d dictionary<K, V>&) K[>..]:
+	o ~= keys(d)
+	sort(o[..]) { a, b => F(a, b) }
+	o
+list<K, V>(d dictionary<K, V>&) K[>..]: keys(d)
 sorted<K, V>(xs dictionary_slot<K, V>[:]) dictionary_slot<K, V>[>..]:
 	o dictionary_slot<K, V>[>..] ~= []
 	o.append(xs)
 	sort(o) { a, b => slot_lt(a, b) }
 	o
+pydel<K, V>(d dictionary<K, V>&, k K): remove(d, k)
 set_add<K>(d dictionary<K, bool>&, k K): insert(d, k, true)
 set<T>(xs T[:]) dictionary<T, bool>:
 	d ~= dictionary<T, bool>{}

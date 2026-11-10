@@ -1,10 +1,15 @@
-# W3 negatives: different arguments, an impure callee, a repeat guarded by &&, and a cheap accessor
+# W3 negatives: different arguments, an impure callee, a repeat guarded by &&, a cheap accessor,
+# and two different slices of one array
 use os
 tri(x int) int:
 	s ~= 0
 	for i x: s += i
 	s
 sq(x int) int: x * x + 1
+total(s const byte[:]) int:
+	t ~= 0
+	for x s: t += x as int
+	t
 noisy(x int) int:
 	print("!")
 	x
@@ -14,4 +19,7 @@ main():
 	c := noisy(a) + noisy(a)
 	d := a > 0 && tri(a) > 3 && tri(a) < 100
 	e := sq(a) + sq(a)
-	print(b, " ", c, " ", d, " ", e)
+	w := "abcdef"
+	f := total(w[..a - 5]) - total(w[a - 5..])
+	g := total(w[2..]) + total(w[^2..])
+	print(b, " ", c, " ", d, " ", e, " ", f, " ", g)
