@@ -1184,14 +1184,14 @@ fn taa_checks(dir const byte[:]) bool {
 				let t = k as f32 / 39.0;
 				s3d::view.eye = float3 { -1.5 + 3.0 * t, 0.3, 7.5 };
 				s3d::view.target = float3 { -0.5 + 1.0 * t, 0.0, 0.0 };
-				s3d::render(out);
+				s3d::render(out); gfx::flush();
 			}
 			let moved = gfx::read_pixels(out);
 			let pm = path(dir, if scene == 0 { if pass == 0 { "taa_moving_sky.png" } else { "taa_moving_sky_noclip.png" } } else { if pass == 0 { "taa_moving.png" } else { "taa_moving_noclip.png" } });
 			print("gpu: taa png ", pm[..], " ", gfx::save_png(out, pm[..]));
 			if pass == 0 {
 				s3d::temporal_reset = true;
-				for k in 48 { s3d::render(out); }
+				shoot(48, out);
 				ref_still = gfx::read_pixels(out);
 				mask_end = geo_mask(w, h);
 				let pr = path(dir, if scene == 0 { "taa_moving_sky_ref.png" } else { "taa_moving_ref.png" });
@@ -1275,7 +1275,7 @@ fn tsr_checks(dir const byte[:]) bool {
 	s3d::temporal = 1;
 	s3d::init(1920, 1080);
 	s3d::temporal_reset = true;
-	for k in 32 { s3d::render(out); }
+	shoot(32, out);
 	let native = gfx::read_pixels(out);
 	let mask = geo_mask(1920, 1080);
 	let pn = path(dir, "tsr_native1080.png");
@@ -1284,7 +1284,7 @@ fn tsr_checks(dir const byte[:]) bool {
 
 	s3d::init(1280, 720, 1920, 1080);
 	s3d::temporal_reset = true;
-	for k in 32 { s3d::render(out); }
+	shoot(32, out);
 	let up = gfx::read_pixels(out);
 	let pu = path(dir, "tsr_720to1080.png");
 	print("gpu: tsr png ", pu[..], " ", gfx::save_png(out, pu[..]));
@@ -1845,7 +1845,7 @@ fn mat_diff(a gfx::mat4, b gfx::mat4) f32 {
 fn taa_frames(out gfx::Texture, n int) byte[>..] {
 	s3d::temporal = 1;
 	s3d::temporal_reset = true;
-	for k in n { s3d::render(out); }
+	shoot(n, out);
 	gfx::read_pixels(out)
 }
 
@@ -1883,7 +1883,7 @@ fn look_taa_checks(dir const byte[:]) bool {
 	var moved = 0;
 	var worst f32 = 0.0;
 	for k in 16 {
-		s3d::render(out);
+		s3d::render(out); gfx::flush();
 		if mat_diff(vp0, s3d::view_proj) > 0.0 { moved += 1; }
 		for c in base.len { worst = max(worst, mat_diff(base[c], s3d::cascade_vp[c])); }
 	}
@@ -2051,8 +2051,8 @@ fn gh_frames(cs int, out gfx::Texture) byte[>..] {
 	gh_pose(cs, 0);
 	s3d::temporal = 1;
 	s3d::temporal_reset = true;
-	for k in GH_CONVERGE { s3d::render(out); }
-	for j in GH_MOVES { gh_pose(cs, j + 1); s3d::render(out); }
+	shoot(GH_CONVERGE, out);
+	for j in GH_MOVES { gh_pose(cs, j + 1); s3d::render(out); gfx::flush(); }
 	gfx::read_pixels(out)
 }
 
@@ -2061,7 +2061,7 @@ fn gh_reference(cs int, out gfx::Texture) byte[>..] {
 	gh_pose(cs, GH_MOVES);
 	s3d::temporal = 1;
 	s3d::temporal_reset = true;
-	for k in GH_REF_FRAMES { s3d::render(out); }
+	shoot(GH_REF_FRAMES, out);
 	gfx::read_pixels(out)
 }
 
@@ -2930,7 +2930,7 @@ fn fx_f4() bool {
 		let i = fx::add(e);
 		fx::burst(i, 2000);
 		s3d::fx_dt = 1.0 / 60.0;
-		for f in 120 { s3d::render(out); }
+		shoot(120, out);
 		s3d::fx_dt = 0.0;
 		var ps fx::Part[>..] = [];
 		fx::read_parts(ps);
@@ -3037,14 +3037,14 @@ fn fx_perf() {
 	s3d::fx_dt = 1.0 / 60.0;
 	s3d::render(out); let _ = fx::alive_count();
 	let t0 = clock_ns();
-	for f in 60 { s3d::render(out); }
+	shoot(60, out);
 	let n = fx::alive_count();
 	let t1 = clock_ns();
 	s3d::fx_dt = 0.0;
 	s3d::fx_dt = 0.0; fx::sorting = false;
 	s3d::render(out); let _ = fx::alive_count();
 	let t2 = clock_ns();
-	for f in 60 { s3d::render(out); }
+	shoot(60, out);
 	let _ = fx::alive_count();
 	let t3 = clock_ns();
 	print("gpu: fx reported: ", n, " live particles, frame ", ((t1 - t0) / 60) as real / 1.0e6, " ms with spawn+simulate+draw vs ", ((t3 - t2) / 60) as real / 1.0e6, " ms draw only (640x360 floor scene, wall clock incl. readback sync)");
@@ -3063,7 +3063,7 @@ fn fx_checks() bool {
 fn gi_frame(rw int, rh int, frames int) byte[>..] {
 	s3d::init(rw, rh);
 	let out = gfx::render_target(rw, rh, gfx::RGBA8);
-	for f in frames { s3d::render(out); }
+	shoot(frames, out);
 	let px = gfx::read_pixels(s3d::hdr_target());
 	gfx::release(out);
 	px
@@ -3170,10 +3170,10 @@ fn ssgi_checks() bool {
 	var tt real[>..] = [];
 	for m in 2 {
 		s3d::ssgi_on = m == 0;
-		for f in 10 { s3d::render(tout); }
+		shoot(10, tout);
 		let _ = gfx::read_pixels(tout);
 		let t0 = gfx::time();
-		for f in 60 { s3d::render(tout); }
+		shoot(60, tout);
 		let _ = gfx::read_pixels(tout);
 		tt.push((gfx::time() - t0) / 60.0 * 1000.0);
 	}
@@ -3377,10 +3377,10 @@ fn decal_checks() bool {
 		s3d::clear_decals();
 		let g = max(ceil(sqrt(counts[k] as real)), 1.0) as int;
 		for q in counts[k] { let _ = s3d::add_decal(s3d::Decal { pos: float3 { linalg::f(-1.6 + 3.2 * ((q % g) as real + 0.5) / g as real), 0.0, linalg::f(-1.6 + 3.2 * ((q / g) as real + 0.5) / g as real) }, rot: dec_q(), size: float3 { 1.5, 1.0, 1.5 }, base: dt, .. }); }
-		for f in 10 { s3d::render(tout); }
+		shoot(10, tout);
 		let _ = gfx::read_pixels(tout);
 		let t0 = gfx::time();
-		for f in 60 { s3d::render(tout); }
+		shoot(60, tout);
 		let _ = gfx::read_pixels(tout);
 		times[k] = min(times[k], (gfx::time() - t0) / 60.0 * 1000.0);
 	}
@@ -3412,7 +3412,7 @@ fn wx_cells(nowrap bool) real {
 	wx_scene();
 	let out = wx_start(fx::rain(), 40000, WX_W, WX_H);
 	fx::test_no_wrap = nowrap;
-	for f in 120 { s3d::render(out); }
+	shoot(120, out);
 	for f in 120 { let t = (f + 1) as f32 / 120.0; s3d::view.eye = float3 { 30.0 * t, 1.7, 8.0 + 15.0 * t }; s3d::view.target = float3 { 30.0 * t, 1.5, 15.0 * t }; s3d::render(out); }
 	s3d::fx_dt = 0.0;
 	fx::test_no_wrap = false;
@@ -3439,11 +3439,11 @@ fn wx_shelter(shel bool, spl bool, shot bool) real, real, real {
 	var e = fx::rain();
 	e.splash = if spl { 0.12 } else { 0.0 };
 	let out = wx_start(e, 40000, WX_W, WX_H);
-	for f in 120 { s3d::render(out); }
+	shoot(120, out);
 	var under = 0.0; var open = 0.0; var rho = 0.0; var spc = 0.0;
 	var ps fx::Part[>..] = [];
 	for s in 10 {
-		for f in 6 { s3d::render(out); }
+		shoot(6, out);
 		fx::read_parts(ps);
 		var u = 0.0; var o = 0.0; var a = 0.0; var q = 0.0;
 		for p in ps {
@@ -3519,9 +3519,9 @@ fn wx_snow() real {
 	let out = wx_start(fx::snow(), 20000, WX_W, WX_H);
 	var a fx::Part[>..] = [];
 	var b fx::Part[>..] = [];
-	for f in 60 { s3d::render(out); }
+	shoot(60, out);
 	fx::read_parts(a);
-	for f in 60 { s3d::render(out); }
+	shoot(60, out);
 	fx::read_parts(b);
 	s3d::fx_dt = 0.0;
 	gfx::release(out);
@@ -3572,10 +3572,10 @@ fn weather_checks() bool {
 		fx_fresh();
 		if k == 1 { fx::burst(fx::add(fx::rain()), 40000); }
 		s3d::fx_dt = if k == 1 { 1.0 / 60.0 } else { 0.0 };
-		for f in 10 { s3d::render(tout); }
+		shoot(10, tout);
 		let _ = gfx::read_pixels(tout);
 		let t0 = gfx::time();
-		for f in 60 { s3d::render(tout); }
+		shoot(60, tout);
 		let _ = gfx::read_pixels(tout);
 		times[k] = min(times[k], (gfx::time() - t0) / 60.0 * 1000.0);
 	}
@@ -4053,12 +4053,12 @@ fn in_time(inst bool, blades bool) real {
 	if inst { IN_SET = s3d::add_instances(a, m[..]); s3d::instances[IN_SET].sway = if blades { 1.0 } else { 0.0 }; } else { for k in m.len { s3d::place(s3d::add(a), m[k]); } }
 	if blades { s3d::wind.strength = 0.15; s3d::wind.speed = 2.0; }
 	let out = gfx::render_target(1280, 720, gfx::RGBA8);
-	for k in 3 { s3d::render(out); }
+	shoot(3, out);
 	let warm = gfx::read_pixels(out);
 	var best real = 1.0e30;
 	for r in 2 {
 		let t0 = clock_ns();
-		for k in 20 { s3d::wind.time = s3d::wind.time + 1.0 / 60.0; s3d::render(out); }
+		for k in 20 { s3d::wind.time = s3d::wind.time + 1.0 / 60.0; s3d::render(out); gfx::flush(); }
 		let px = gfx::read_pixels(out);
 		best = min(best, (clock_ns() - t0) as real / 2.0e7);
 	}
@@ -4347,12 +4347,12 @@ fn ca_k7() bool {
 fn ca_time(on bool) real {
 	ca_scene(1.0, 60.0, 1280, 720, 9.0);
 	s3d::caustics.on = on;
-	for k in 3 { s3d::render(IN_OUT); }
+	shoot(3, IN_OUT);
 	let warm = gfx::read_pixels(IN_OUT);
 	var best real = 1.0e30;
 	for r in 2 {
 		let t0 = clock_ns();
-		for k in 40 { s3d::render(IN_OUT); }
+		shoot(40, IN_OUT);
 		let px = gfx::read_pixels(IN_OUT);
 		best = min(best, (clock_ns() - t0) as real / 4.0e7);
 	}
@@ -4746,12 +4746,12 @@ fn tx_t7() bool {
 }
 fn tx_time(compress bool) real {
 	tx_scene(compress, true, false, "", 1280, 720);
-	for k in 3 { s3d::render(IN_OUT); }
+	shoot(3, IN_OUT);
 	let warm = gfx::read_pixels(IN_OUT);
 	var best real = 1.0e30;
 	for r in 2 {
 		let t0 = clock_ns();
-		for k in 40 { s3d::render(IN_OUT); }
+		shoot(40, IN_OUT);
 		let px = gfx::read_pixels(IN_OUT);
 		best = min(best, (clock_ns() - t0) as real / 4.0e7);
 	}
@@ -4875,7 +4875,7 @@ fn st_s2(dir const byte[:]) bool {
 	ST_MEM[2] = s3d::texture_bytes();
 	s3d::tex_wait = false; st_spot(2);
 	var held = 0;
-	for k in s3d::tex_hold - 1 { s3d::render(IN_OUT); if s3d::texture_bytes() == ST_MEM[2] { held += 1; } }
+	for k in s3d::tex_hold - 1 { s3d::render(IN_OUT); gfx::flush(); if s3d::texture_bytes() == ST_MEM[2] { held += 1; } }
 	s3d::render(IN_OUT);
 	let after = s3d::texture_bytes();
 	s3d::tex_wait = true; st_spot(0);
@@ -4893,7 +4893,7 @@ fn st_flight(dir const byte[:], budget int) int, int {
 	var peak = 0;
 	for k in 120 {
 		st_eye(float3 { 0.0, 0.8, 80.5 - 77.0 * k as f32 / 119.0 }, float3 { 0.0, 0.5, -14.0 });
-		s3d::render(IN_OUT);
+		s3d::render(IN_OUT); gfx::flush();
 		peak = max(peak, s3d::texture_bytes());
 	}
 	let starved = s3d::tex_starved;
@@ -4924,7 +4924,7 @@ fn st_s4(dir const byte[:]) bool {
 	var done = -1;
 	var most = 0;
 	for k in 40 {
-		s3d::render(IN_OUT);
+		s3d::render(IN_OUT); gfx::flush();
 		if s3d::tex_streamed > cap { over += 1; if s3d::tex_steps != 1 { bad += 1; } }
 		most = max(most, s3d::tex_streamed);
 		if done < 0 && s3d::tex_pending == 0 { done = k + 1; }
@@ -4996,9 +4996,9 @@ fn st_s6(dir const byte[:]) bool {
 fn st_s7(dir const byte[:]) bool {
 	st_scene(true, dir, false);
 	s3d::tex_wait = true; st_spot(0);
-	for k in 3 { s3d::render(IN_OUT); }
+	shoot(3, IN_OUT);
 	var ns = 0;
-	for k in 100 { s3d::render(IN_OUT); ns += s3d::tex_stream_ns; }
+	for k in 100 { s3d::render(IN_OUT); gfx::flush(); ns += s3d::tex_stream_ns; }
 	st_done();
 	let ms = ns as real / 1.0e8;
 	let ok = ms <= 0.1;
@@ -5089,8 +5089,8 @@ fn rr_room(mode int, flip bool) {
 	s3d::rt_reflect = false; s3d::spec_occlusion = true;
 	s3d::init(1280, 720);
 }
-fn rr_frame(n int) byte[>..] { for k in n { s3d::render(IN_OUT); } gfx::read_pixels(IN_OUT) }
-fn rr_hdr(n int) byte[>..] { for k in n { s3d::render(IN_OUT); } gfx::read_pixels(s3d::hdr_target()) }
+fn rr_frame(n int) byte[>..] { shoot(n, IN_OUT); gfx::read_pixels(IN_OUT) }
+fn rr_hdr(n int) byte[>..] { shoot(n, IN_OUT); gfx::read_pixels(s3d::hdr_target()) }
 fn rr_flip(p const byte[:], bpp int) byte[>..] {
 	var o byte[>..] = [];
 	for y in 720 { o.append(p[(719 - y) * 1280 * bpp..(720 - y) * 1280 * bpp]); }
@@ -5143,10 +5143,10 @@ fn rr_time(on bool) real {
 	s3d::rt_reflect = on;
 	var best = 1e9;
 	for rep in 3 {
-		for k in 10 { s3d::render(IN_OUT); }
+		shoot(10, IN_OUT);
 		let w = gfx::read_pixels(IN_OUT);
 		let t = gfx::time();
-		for k in 100 { s3d::render(IN_OUT); }
+		shoot(100, IN_OUT);
 		let e = gfx::read_pixels(IN_OUT);
 		best = min(best, (gfx::time() - t) * 10.0);
 	}
@@ -5462,10 +5462,10 @@ fn rect_checks() bool {
 		let kind = kk % 2;
 		rc_setup(0, 0.8, 0.0, 0.5, 1280, 720);
 		if kind == 1 { s3d::lights.clear(); s3d::add_light(float3 { 0.0, 2.0, -1.0 }, float3 { 4.0, 4.0, 4.0 }, 1000.0); }
-		for f in 10 { s3d::render(tout); }
+		shoot(10, tout);
 		let _ = gfx::read_pixels(tout);
 		let t0 = gfx::time();
-		for f in 60 { s3d::render(tout); }
+		shoot(60, tout);
 		let _ = gfx::read_pixels(tout);
 		times[kind] = min(times[kind], (gfx::time() - t0) / 60.0 * 1000.0);
 	}
@@ -5505,17 +5505,17 @@ fn gi_checks() bool {
 	s3d::gi_updates_per_frame = 1;
 	s3d::init(1280, 720);
 	let tout = gfx::render_target(1280, 720, gfx::RGBA8);
-	for f in 10 { s3d::render(tout); }
+	shoot(10, tout);
 	let _ = gfx::read_pixels(tout);
 	let t0 = gfx::time();
-	for f in 60 { s3d::render(tout); }
+	shoot(60, tout);
 	let _ = gfx::read_pixels(tout);
 	let gt = (gfx::time() - t0) / 60.0 * 1000.0;
 	s3d::gi_on = false; s3d::rt_shadows = false;
-	for f in 10 { s3d::render(tout); }
+	shoot(10, tout);
 	let _ = gfx::read_pixels(tout);
 	let t1 = gfx::time();
-	for f in 60 { s3d::render(tout); }
+	shoot(60, tout);
 	let _ = gfx::read_pixels(tout);
 	let ot = (gfx::time() - t1) / 60.0 * 1000.0;
 	gfx::release(tout);
@@ -5678,12 +5678,12 @@ fn probe_checks(dir const byte[:]) bool {
 	s3d::items[PR_FLOOR].visible = true;
 	probe_cam(1.0);
 	let t1 = clock_ns();
-	for k in 30 { s3d::render(out); }
+	shoot(30, out);
 	let _ = gfx::read_pixels(out);
 	let fon = (clock_ns() - t1) as real / 30000000.0;
 	s3d::clear_probes();
 	let t2 = clock_ns();
-	for k in 30 { s3d::render(out); }
+	shoot(30, out);
 	let _ = gfx::read_pixels(out);
 	let foff = (clock_ns() - t2) as real / 30000000.0;
 	let e1 = probe_err(on[..], rf[..], w, h);
@@ -5739,7 +5739,7 @@ fn ml_scene(floor bool, shadows bool, at float3, to_sun float3) int {
 	s3d::init(1280, 720);
 	it
 }
-fn ml_frame(on bool, px f32) byte[>..] { s3d::meshlets = on; s3d::meshlet_px = px; for k in 3 { s3d::render(IN_OUT); } gfx::read_pixels(IN_OUT) }
+fn ml_frame(on bool, px f32) byte[>..] { s3d::meshlets = on; s3d::meshlet_px = px; shoot(3, IN_OUT); gfx::read_pixels(IN_OUT) }
 fn ml_empty(it int) byte[>..] { s3d::items[it].visible = false; let e = ml_frame(false, 1.0); s3d::items[it].visible = true; e }
 fn ml_apart(a const byte[:], b const byte[:]) real, real, int {
 	var s = 0; var n = 0; var top = 0;
@@ -5770,10 +5770,10 @@ fn ml_time(on bool) real {
 	s3d::meshlets = on;
 	var best = 1e9;
 	for rep in 3 {
-		for k in 10 { s3d::render(IN_OUT); }
+		shoot(10, IN_OUT);
 		let w = gfx::read_pixels(IN_OUT);
 		let t = gfx::time();
-		for k in 100 { s3d::render(IN_OUT); }
+		shoot(100, IN_OUT);
 		let e = gfx::read_pixels(IN_OUT);
 		best = min(best, (gfx::time() - t) * 10.0);
 	}
@@ -5888,6 +5888,52 @@ fn meshlet_checks() bool {
 	if !good { print("gpu: meshlet FAILED"); }
 	good
 }
+const SUB_BAR_MS = 500.0;
+var SUB_LOG byte[>..] = [];
+var SUB_AT = 0;
+fn shoot(n int, t gfx::Texture) { for k in n { s3d::render(t); gfx::flush(); } }
+fn sub_since(at int) int, real, int {
+	gfx::flush();
+	var ns real[>..] = [];
+	gputime_lines(SUB_LOG[..], ns);
+	var top = 0.0;
+	var slow = 0;
+	for k in at..ns.len { top = max(top, ns[k]); if ns[k] > 1.0e8 { slow += 1; } }
+	return ns.len, top / 1.0e6, slow;
+}
+fn mark(name const byte[:], ok bool) bool {
+	if SUB_LOG.len == 0 { return ok; }
+	let n, top, slow = sub_since(SUB_AT);
+	print("gpu: submits ", name, ": ", n - SUB_AT, ", longest ", r2(top), " ms, ", slow, " above 100 ms");
+	SUB_AT = n;
+	ok
+}
+fn submit_checks(full bool) bool {
+	if SUB_LOG.len == 0 { print("gpu: submit length not measured (run under tools/hc/gputime)"); return !full; }
+	let n, top, slow = sub_since(0);
+	let fake = path(OUT_DIR[..], "gputime_control.log");
+	var ctl real[>..] = [];
+	if write_file(fake[..], "submit 1 2000000\nsubmit 1 900000000\nsubmit 3 4000000\n") { gputime_lines(fake[..], ctl); }
+	var ctop = 0.0;
+	for v in ctl { ctop = max(ctop, v / 1.0e6); }
+	let b1 = n > 0 && top <= SUB_BAR_MS && ctop > SUB_BAR_MS;
+	print("gpu: submit length B1: ", n, " submits, longest ", r2(top), " ms (bar <= ", SUB_BAR_MS, " ms), ", slow, " above 100 ms; control (a log holding one 900 ms submit) reads ", r2(ctop), " ms and must fail the bar: ", if b1 { "PASS" } else { "FAIL" });
+	sphere_grid();
+	s3d::init(1280, 720);
+	let out = gfx::render_target(1280, 720, gfx::RGBA8);
+	shoot(4, out);
+	let a, ta, sa = sub_since(0);
+	for k in 12 { s3d::render(out); }
+	let b, one, sb = sub_since(a);
+	shoot(12, out);
+	let c, each, sc = sub_since(b);
+	gfx::release(out);
+	reset_scene();
+	s3d::look = DEF_LOOK; s3d::sun = DEF_SUN; s3d::sky = DEF_SKY;
+	let b2 = b - a == 1 && c - b >= 12 && one >= 4.0 * each;
+	print("gpu: submit length B2 control: 12 frames in one command buffer read as ", b - a, " submit(s), longest ", r3(one), " ms; flushed one by one ", c - b, " submits, longest ", r3(each), " ms (bar: one submit, at least 4 times the longest single frame): ", if b2 { "PASS" } else { "FAIL" });
+	b1 && b2
+}
 fn gpu_checks(dir const byte[:], golden const byte[:]) bool {
 	var good = true;
 	// GFX_MAKE_GOLDEN: unset or 0 runs the checks, 1 writes both goldens and stops
@@ -5896,15 +5942,16 @@ fn gpu_checks(dir const byte[:], golden const byte[:]) bool {
 		if mg.len != 1 || (mg[0] != 48 && mg[0] != 49) { print("gpu: FAILED: GFX_MAKE_GOLDEN must be 0 or 1, got ", mg[..]); return false; }
 		if mg[0] == 49 { return make_goldens(); }
 	}
+	let _ = env("HELIUM_GPUTIME", SUB_LOG);
 	var only byte[>..] = [];
 	let _ = env("GFX_ONLY", only);
 	if only.len > 0 {
 		let ok = if only[..] == "gtao" { gtao_checks() } else if only[..] == "gi" { gi_checks() } else if only[..] == "mblur" { mb_checks() } else if only[..] == "dof" { dof_checks() } else if only[..] == "fx" { fx_checks() } else if only[..] == "tsr" { tsr_checks(dir) } else if only[..] == "probe" { probe_checks(dir) } else if only[..] == "ssgi" { ssgi_checks() } else if only[..] == "decal" { decal_checks() } else if only[..] == "weather" { weather_checks() } else if only[..] == "rect" { rect_checks() } else if only[..] == "small" { small_checks() } else if only[..] == "inst" { instance_checks() } else if only[..] == "caust" { caustic_checks() } else if only[..] == "tex" { texture_checks() } else if only[..] == "stream" { stream_checks() } else if only[..] == "rtr" { rtr_checks() } else if only[..] == "meshlet" { meshlet_checks() } else { shadow_checks() };
 		let e = gfx::error();
 		if e.len > 0 { print("gpu: gfx error ", e[..]); return false; }
-		return ok;
+		return mark(only[..], ok) && submit_checks(false);
 	}
-	if !furnace(FURNACE_K) { good = false; }
+	if !mark("furnace", furnace(FURNACE_K)) { good = false; }
 
 	sphere_grid();
 	s3d::init(480, 360);
@@ -6046,32 +6093,34 @@ fn gpu_checks(dir const byte[:], golden const byte[:]) bool {
 	print("gpu: frame mean ", mean, " range ", lo, "..", hi);
 	if mean < 30 || mean > 225 || hi - lo < 120 { good = false; }
 	gfx::release(frame);
-	if !motion_checks() { good = false; }
-	if !taa_checks(dir) { good = false; }
-	if !tsr_checks(dir) { good = false; }
-	if !shadow_checks() { good = false; }
-	if !look_taa_checks(dir) { good = false; }
-	if !ghost_checks() { good = false; }
-	if !t8_still() { good = false; }
-	if !s5_inflight() { good = false; }
-	if !s6_layers() { good = false; }
-	if !gtao_checks() { good = false; }
-	if !gi_checks() { good = false; }
-	if !mb_checks() { good = false; }
-	if !dof_checks() { good = false; }
-	if !fx_checks() { good = false; }
-	if !probe_checks(dir) { good = false; }
-	if !ssgi_checks() { good = false; }
-	if !decal_checks() { good = false; }
-	if !weather_checks() { good = false; }
-	if !rect_checks() { good = false; }
-	if !small_checks() { good = false; }
-	if !instance_checks() { good = false; }
-	if !caustic_checks() { good = false; }
-	if !texture_checks() { good = false; }
-	if !stream_checks() { good = false; }
-	if !rtr_checks() { good = false; }
-	if !meshlet_checks() { good = false; }
+	let _ = mark("goldens, timing, frame", true);
+	if !mark("motion", motion_checks()) { good = false; }
+	if !mark("taa", taa_checks(dir)) { good = false; }
+	if !mark("tsr", tsr_checks(dir)) { good = false; }
+	if !mark("shadow", shadow_checks()) { good = false; }
+	if !mark("look_taa", look_taa_checks(dir)) { good = false; }
+	if !mark("ghost", ghost_checks()) { good = false; }
+	if !mark("t8_still", t8_still()) { good = false; }
+	if !mark("s5_inflight", s5_inflight()) { good = false; }
+	if !mark("s6_layers", s6_layers()) { good = false; }
+	if !mark("gtao", gtao_checks()) { good = false; }
+	if !mark("gi", gi_checks()) { good = false; }
+	if !mark("mb", mb_checks()) { good = false; }
+	if !mark("dof", dof_checks()) { good = false; }
+	if !mark("fx", fx_checks()) { good = false; }
+	if !mark("probe", probe_checks(dir)) { good = false; }
+	if !mark("ssgi", ssgi_checks()) { good = false; }
+	if !mark("decal", decal_checks()) { good = false; }
+	if !mark("weather", weather_checks()) { good = false; }
+	if !mark("rect", rect_checks()) { good = false; }
+	if !mark("small", small_checks()) { good = false; }
+	if !mark("instance", instance_checks()) { good = false; }
+	if !mark("caustic", caustic_checks()) { good = false; }
+	if !mark("texture", texture_checks()) { good = false; }
+	if !mark("stream", stream_checks()) { good = false; }
+	if !mark("rtr", rtr_checks()) { good = false; }
+	if !mark("meshlet", meshlet_checks()) { good = false; }
+	if !submit_checks(true) { good = false; }
 	let err = gfx::error();
 	if err.len > 0 { print("gpu: gfx error ", err[..]); good = false; }
 	good

@@ -4,7 +4,7 @@ R=$(cd "$(dirname "$0")/../.." && pwd); cd "$R"
 B=${BUILD:-$R/build}; W=${CI_DIR:-$B/ci}; rm -rf "${W:?}"; mkdir -p "$W"
 [ -x "$B/hcn" ] && [ -x "$B/hc" ] && [ -z "${REBUILD:-}" ] || BUILD="$B" hc/bootstrap.sh || exit 1
 HN=${HC:-$B/hcn}; HC_=${HCC:-$B/hc}; fail=0
-step() { local n=$1; shift; local o; o=$("$@" 2>&1); local r=$?; printf '%-9s %s\n' "$n" "$(printf '%s\n' "$o" | grep -v '^$' | if [[ $n =~ ^(native|c|web)$ ]]; then head -1; else tail -1; fi)"; [ $r -eq 0 ] || fail=1; }
+step() { local n=$1; shift; local o; o=$("$@" 2>&1); local r=$?; printf '%-9s %s\n' "$n" "$(printf '%s\n' "$o" | grep -v '^$' | if [[ $n =~ ^(native|c|web)$ ]]; then head -1; else tail -1; fi)"; [ $r -eq 0 ] || { fail=1; printf '%s\n' "$o" | grep -v '^$' | tail -n 15 | sed 's/^/    /'; }; }
 base() { local l=$1 r=$2 f=$3; grep -P "^(pass|gpu)\t" "$r" | cut -f2 | sort > "$W/$l.pass"; [ -f "$f" ] && { local lost; lost=$(comm -23 "$f" "$W/$l.pass"); [ -z "$lost" ] || { echo "$l lost: $lost"; fail=1; }; }; }
 step native env HC_NATIVE=1 nice -n 19 timeout 2400 python3 tools/hc/difftest.py . "$HN" "$W/native"; base native "$W/native/report.txt" tools/hc/baseline/native.txt
 step c nice -n 19 timeout 2400 python3 tools/hc/difftest.py . "$HC_" "$W/c"; base c "$W/c/report.txt" tools/hc/baseline/c.txt
@@ -28,7 +28,7 @@ step touch sh -c 'HC_LIB=hc/lib "$0" build hc/test/mobile/touch_test.amni -o "$1
 step scal sh -c 'HC_LIB=hc/lib "$0" build hc/test/mobile/scal_test.amni -o "$1/scal" 2>/dev/null && "$1/scal" && HC_LIB=hc/lib "$0" build hc/apps/mobile/mobile.amni -o "$1/mobile" 2>/dev/null' "$HN" "$W"
 step import_up sh -c 'HC_LIB=hc/lib "$0" build hc/test/import_up/app/main.amni -o "$1/iu" 2>/dev/null && "$1/iu" | grep -q "parent directory" && ! HC_LIB=hc/lib "$0" build hc/test/import_up/bad.amni -o "$1/iub" 2>&1 | grep -q "runtime error" && ! HC_LIB=hc/lib "$0" build hc/test/import_up/kw.amni -o "$1/iub" 2>&1 | grep -q "runtime error"' "$HN" "$W"
 step net_sock sh -c 'for t in net_tcp net_udp net_poll; do HC_LIB=hc/lib "$0" build hc/test/net_sock/$t.he -o "$1/$t" 2>/dev/null && "$1/$t" | cmp -s - hc/test/net_sock/$t.out || exit 1; done' "$HN" "$W"
-[ -n "${HELIUM_GFX_TEST:-}" ] && step gfx tools/hc/gfxtest.sh "$HN"
+[ -n "${HELIUM_GFX_TEST:-}" ] && step gfx env GFX_OUT="${GFX_OUT:-$W/gfx}" tools/hc/gfxtest.sh "$HN"
 [ -n "${HELIUM_WGSL_TEST:-}" ] && step wgsl node tools/hc/wgsltest.mjs "$HN"
 [ -n "${HELIUM_WEBGPU_TEST:-}" ] && step webgpu sh -c '${GPU_LOCK:+flock "$GPU_LOCK"} node tools/hc/webgputest.mjs "$0"' "$HN"
 [ $fail -eq 0 ] && echo "ci: ok" || echo "ci: FAILED"; exit $fail

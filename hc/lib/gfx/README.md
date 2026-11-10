@@ -45,6 +45,13 @@ s3d::render(target);                 // RGBA8 target; s3d::hdr_target() is the l
 The scene is plain data (`view`, `sun`, `sky`, `look`, `lights`, `items`) that the
 caller edits between frames. After `gltf::reset()` call `s3d::forget()`.
 
+`s3d::render` records a frame into the current command buffer. The GPU starts on it at
+the next `gfx::frame()`, `gfx::flush()`, `gfx::submit()` or pixel readback. A windowed
+app calls `gfx::frame()` once per frame. A headless loop that renders many frames calls
+`gfx::flush()` after each `s3d::render`, so each frame is its own short GPU job: frames
+recorded back to back are one job, and a driver resets a job that runs past its time
+limit (2 s by default in current Linux amdgpu).
+
 ### WebGPU (WGSL)
 
 hc's shader compiler writes WGSL beside SPIR-V, MSL and HLSL, so these shaders can run on
@@ -942,6 +949,31 @@ large arrays on their first use: `T.resize(n, 0); T.clear();`. `read_file`,
      the shipped look must settle (< 0.5/255) and stay within 2/255 mean of the
      TAA-off frame (bloom then reads the temporal result); 720p -> 1080p with the
      shipped look must settle and reach >= 30 dB against native 1080p TAA.
+   * **Submit length.** Loops that render many frames submit each frame on its own
+     (`gfx::flush()` after `s3d::render`), so no check queues a long GPU job. After
+     each group of checks the run prints its number of GPU submits, the longest one
+     and how many took more than 100 ms, read from the gputime log, and the longest
+     submit of the whole run is gated (B1 below). `tools/hc/ci.sh` keeps the run's
+     output (`gfx_smoke.txt`, `gputime.log`, `results.txt`, the PNGs) in its work
+     directory under `gfx/`.
+
+### Submit length bars (registered before the first measured run)
+
+A GPU submit is one job for the driver, and the driver limits how long one job may
+run (2 s by default in current Linux amdgpu; past that it resets the queue and the
+application loses its device). The test run keeps every job far below that limit.
+
+* **B1.** The longest single GPU submit of the whole run, read from the gputime log,
+  is at most 500 ms. Control: the same reading of a log the test writes itself, holding
+  one 900 ms submit between two short ones, must fail the bar.
+* **B2 (control for the method).** Twelve frames of the 1280x720 sphere grid recorded
+  into one command buffer must read as exactly one submit, at least 4 times as long as
+  the longest submit of the same twelve frames flushed one by one. This shows that the
+  log reports a batched job as one long submit.
+* Reported, not gated: per group of checks, the number of submits, the longest submit
+  and the number above 100 ms.
+* A full run with no gputime log fails. A `GFX_ONLY` run without the layer prints
+  "not measured" and passes.
 
 ### Pre-registered bars (gfx-review2)
 
