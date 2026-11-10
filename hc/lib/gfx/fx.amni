@@ -2,22 +2,47 @@ namespace fx;
 import gfx;
 import math;
 struct Part { pos float4, vel float4, misc float4 }
-struct Emitter { pos float3, shape int, size float3, rate f32, dir float3, speed_min f32, speed_max f32, life_min f32, life_max f32, spread f32, gravity f32, drag f32, curl f32, curl_scale f32, collide bool, restitution f32, soft f32, alpha bool, colors float4[4], sizes float4, on bool, stretch f32 = 0.0, wrap bool = false, follow bool = false, splash f32 = 0.0, splash_size f32 = 0.05, splash_rgba float4 = float4 { 1.0, 1.0, 1.0, 1.0 } }
-struct SpawnU { info float4, counts float4[4] }
+struct Emitter { pos float3, shape int, size float3, rate f32, dir float3, speed_min f32, speed_max f32, life_min f32, life_max f32, spread f32, gravity f32, drag f32, curl f32, curl_scale f32, collide bool, restitution f32, soft f32, alpha bool, colors float4[4], sizes float4, on bool, stretch f32 = 0.0, wrap bool = false, follow bool = false, splash f32 = 0.0, splash_size f32 = 0.05, splash_rgba float4 = float4 { 1.0, 1.0, 1.0, 1.0 }, on_death int = -1, on_death_n int = 0, on_hit int = -1, on_hit_n int = 0, inherit f32 = 0.0, trail f32 = 0.0, mesh int = -1, spin f32 = 0.0 }
+struct SpawnU { info float4, counts float4[8] }
 struct SimU { info float4, gravity float4, view_proj gfx::mat4, view gfx::mat4, screen float4, shelter float4 }
 struct SortU { info float4 }
 struct ViewU { view_proj gfx::mat4, view gfx::mat4, right float4, up float4, mode float4 }
 struct FragU { screen float4, mode float4 }
-let MAXE = 16;
+struct ArgsU { info float4, m float4[9] }
+struct LitU { to_sun float4, sun float4, ambient float4 }
+let MAXE = 32;
+let EVN = 2048;
+let EVK = 32;
+let TP = 9;
+let MV = 120000;
+let MS = 8;
 var capacity = 0;
 var sort_n = 0;
-var parts gfx::Buffer; var dead gfx::Buffer; var alive gfx::Buffer; var keys gfx::Buffer; var emit_buf gfx::Buffer;
-var p_clear gfx::ComputePipeline; var p_spawn gfx::ComputePipeline; var p_sim gfx::ComputePipeline; var p_sort gfx::ComputePipeline;
-var pipe_add gfx::Pipeline; var pipe_alpha gfx::Pipeline;
+var parts gfx::Buffer; var dead gfx::Buffer; var alive gfx::Buffer; var keys gfx::Buffer; var emit_buf gfx::Buffer; var events gfx::Buffer; var trail gfx::Buffer; var mesh_buf gfx::Buffer; var mesh_idx gfx::Buffer; var args gfx::Buffer;
+var trail_full = false;
+var mesh_ready = false;
+var mesh_used = 0;
+var mesh_first int[>..] = [];
+var mesh_n int[>..] = [];
+var sun_dir float3 = float3 { 0.0, 1.0, 0.0 };
+var sun_rgb float3 = float3 { 1.0, 1.0, 1.0 };
+var ambient float3 = float3 { 0.1, 0.1, 0.1 };
+var p_clear gfx::ComputePipeline; var p_spawn gfx::ComputePipeline; var p_sim gfx::ComputePipeline; var p_sort gfx::ComputePipeline; var p_args gfx::ComputePipeline;
+var pipe_add gfx::Pipeline; var pipe_alpha gfx::Pipeline; var pipe_trail_add gfx::Pipeline; var pipe_trail_alpha gfx::Pipeline; var pipe_mesh gfx::Pipeline;
 var smp gfx::Sampler;
 var emitters Emitter[>..] = [];
 var acc f32[>..] = [];
 var bursts int[>..] = [];
+var gone bool[>..] = [];
+var error byte[>..] = [];
+var bad = false;
+var fx_emits Emitter[>..] = [];
+var fx_burst int[>..] = [];
+var fx_first int[>..] = [];
+var fx_n int[>..] = [];
+var play_slots int[>..] = [];
+var play_first int[>..] = [];
+var play_n int[>..] = [];
 var gravity float3 = float3 { 0.0, -9.8, 0.0 };
 var thickness f32 = 0.5;
 var sorting = true;
@@ -47,8 +72,17 @@ fn init(count int) bool {
 	alive = gfx::buffer(rw, (sort_n + 1) * 4, zz[..]);
 	keys = gfx::buffer(rw, sort_n * 4, zz[..sort_n * 4]);
 	var ze byte[>..] = [];
-	ze.resize(MAXE * 208, 0);
-	emit_buf = gfx::buffer(gfx::BUFFER_STORAGE | gfx::BUFFER_COMPUTE_READ, MAXE * 208, ze[..]);
+	ze.resize(MAXE * 240, 0);
+	emit_buf = gfx::buffer(gfx::BUFFER_STORAGE | gfx::BUFFER_COMPUTE_READ, MAXE * 240, ze[..]);
+	var zv byte[>..] = [];
+	zv.resize((2 + EVN * 8 + n) * 4, 0);
+	events = gfx::buffer(rw, (2 + EVN * 8 + n) * 4, zv[..]);
+	trail = gfx::buffer(rw, TP * 16, zv[..TP * 16]);
+	var id i32[>..] = [];
+	for k in MV { id.push(k as i32); }
+	mesh_idx = gfx::buffer(gfx::BUFFER_INDEX, bytes_of(id)[..MV * 4]);
+	args = gfx::buffer(gfx::BUFFER_INDIRECT | gfx::BUFFER_COMPUTE_WRITE, 9 * 20, []);
+	p_args = gfx::compute_pipeline(embed_shader("shaders/fx_args.comp"));
 	p_clear = gfx::compute_pipeline(embed_shader("shaders/fx_clear.comp"));
 	p_spawn = gfx::compute_pipeline(embed_shader("shaders/fx_spawn.comp"));
 	p_sim = gfx::compute_pipeline(embed_shader("shaders/fx_sim.comp"));
@@ -56,6 +90,10 @@ fn init(count int) bool {
 	let vs = embed_shader("shaders/fx.vert"); let fs = embed_shader("shaders/fx.frag");
 	pipe_add = gfx::pipeline(vs, fs, gfx::PipelineDesc { depth_test: true, depth_write: false, blend: gfx::BLEND_ADD, depth_compare: gfx::COMPARE_LESS_EQUAL });
 	pipe_alpha = gfx::pipeline(vs, fs, gfx::PipelineDesc { depth_test: true, depth_write: false, blend: gfx::BLEND_ALPHA, depth_compare: gfx::COMPARE_LESS_EQUAL });
+	let tv = embed_shader("shaders/fx_trail.vert");
+	pipe_trail_add = gfx::pipeline(tv, fs, gfx::PipelineDesc { depth_test: true, depth_write: false, blend: gfx::BLEND_ADD, depth_compare: gfx::COMPARE_LESS_EQUAL });
+	pipe_trail_alpha = gfx::pipeline(tv, fs, gfx::PipelineDesc { depth_test: true, depth_write: false, blend: gfx::BLEND_ALPHA, depth_compare: gfx::COMPARE_LESS_EQUAL });
+	pipe_mesh = gfx::pipeline(embed_shader("shaders/fx_mesh.vert"), embed_shader("shaders/fx_mesh.frag"), gfx::PipelineDesc { depth_test: true, depth_write: true, depth_compare: gfx::COMPARE_LESS_EQUAL });
 	smp = gfx::sampler(gfx::NEAREST, gfx::CLAMP);
 	capacity = n;
 	true
@@ -70,12 +108,107 @@ fn weather_bounds(at float3) f32, f32 {
 	for m in emitters { if m.on && m.wrap { let c = if m.follow { m.pos + at } else { m.pos }; x = max(x, max(abs(c.x - at.x) + m.size.x, abs(c.z - at.z) + m.size.z)); top = max(top, c.y + m.size.y); } }
 	return x, top;
 }
-fn add(e Emitter) int { if emitters.len >= MAXE { return -1; } emitters.push(e); acc.push(0.0); bursts.push(0); dirty = true; emitters.len - 1 }
+fn add(e Emitter) int {
+	for k in emitters.len { if gone[k] { gone[k] = false; emitters[k] = e; acc[k] = 0.0; bursts[k] = 0; dirty = true; return k; } }
+	if emitters.len >= MAXE { return -1; }
+	emitters.push(e); acc.push(0.0); bursts.push(0); gone.push(false); dirty = true;
+	emitters.len - 1
+}
+fn remove(i int) { if i < 0 || i >= emitters.len { return; } gone[i] = true; emitters[i].on = false; emitters[i].rate = 0.0; bursts[i] = 0; dirty = true; }
+fn fail(line int, what const byte[:], word const byte[:]) int { error.clear(); error.append("line "); format(error, line); error.append(what); error.append(word); -1 }
+fn val(t const byte[:]) f32 { let v, ok = parse_flt(t); if !ok { bad = true; } v as f32 }
+fn pick(v const f32[:], k int) f32 { if v.len == 0 { 0.0 } else if k < v.len { v[k] } else { v[v.len - 1] } }
+fn named(text const byte[:], name const byte[:]) int {
+	var k = 0;
+	for line in split(text, '\n') { let w = words(line); if w.len > 1 && w[0] == "emitter" { if w[1] == name { return k; } k += 1; } }
+	-1
+}
+fn effect(text const byte[:]) int {
+	error.clear();
+	var es Emitter[>..] = [];
+	var bs int[>..] = [];
+	var ln = 0;
+	var col = 0;
+	for line in split(text, '\n') {
+		ln += 1;
+		let w = words(line);
+		if w.len == 0 || w[0][0] == 35 { continue; }
+		let k = w[0];
+		if w.len < 2 { return fail(ln, ": missing value after ", k); }
+		if k == "emitter" { es.push(emitter()); bs.push(0); col = 0; continue; }
+		if es.len == 0 { return fail(ln, ": expected emitter, found ", k); }
+		let named_arg = k == "shape" || k == "blend" || k == "on_death" || k == "on_hit";
+		var v f32[>..] = [];
+		bad = false;
+		for j in w.len { if j > (if named_arg { 1 } else { 0 }) { v.push(val(w[j])); } }
+		if bad { return fail(ln, ": not a number after ", k); }
+		let a = pick(v[..], 0); let b = pick(v[..], 1); let c = pick(v[..], 2); let d = pick(v[..], 3);
+		var e = es[es.len - 1];
+		if k == "rate" { e.rate = a; }
+		else if k == "burst" { bs[bs.len - 1] = a as int; }
+		else if k == "shape" { if w[1] == "point" { e.shape = 0; } else if w[1] == "sphere" { e.shape = 1; } else if w[1] == "box" { e.shape = 2; } else { return fail(ln, ": unknown shape ", w[1]); } }
+		else if k == "blend" { if w[1] == "add" { e.alpha = false; } else if w[1] == "alpha" { e.alpha = true; } else { return fail(ln, ": unknown blend ", w[1]); } }
+		else if k == "at" { e.pos = float3 { a, b, c }; }
+		else if k == "volume" { e.size = float3 { a, b, c }; }
+		else if k == "dir" { e.dir = float3 { a, b, c }; }
+		else if k == "spread" { e.spread = a; }
+		else if k == "speed" { e.speed_min = a; e.speed_max = b; }
+		else if k == "life" { e.life_min = a; e.life_max = b; }
+		else if k == "gravity" { e.gravity = a; }
+		else if k == "drag" { e.drag = a; }
+		else if k == "curl" { e.curl = a; e.curl_scale = if v.len > 1 { b } else { 1.0 }; }
+		else if k == "collide" { e.collide = true; e.restitution = a; }
+		else if k == "soft" { e.soft = a; }
+		else if k == "color" { if v.len < 4 { return fail(ln, ": color needs 4 numbers", ""); } for j in 4 { if j >= col { e.colors[j] = float4 { a, b, c, d }; } } col += 1; }
+		else if k == "size" { e.sizes = float4 { a, b, c, d }; }
+		else if k == "stretch" { e.stretch = a; }
+		else if k == "trail" { e.trail = a; }
+		else if k == "mesh" { e.mesh = a as int; }
+		else if k == "spin" { e.spin = a; }
+		else if k == "inherit" { e.inherit = a; }
+		else if k == "on_death" || k == "on_hit" {
+			let t = named(text, w[1]);
+			if t < 0 { return fail(ln, ": no emitter named ", w[1]); }
+			let n = max(a as int, 1);
+			if k == "on_death" { e.on_death = t; e.on_death_n = n; } else { e.on_hit = t; e.on_hit_n = n; }
+		}
+		else { return fail(ln, ": unknown word ", k); }
+		es[es.len - 1] = e;
+	}
+	if es.len == 0 { return fail(ln, ": no emitter", ""); }
+	fx_first.push(fx_emits.len); fx_n.push(es.len);
+	for k in es.len { fx_emits.push(es[k]); fx_burst.push(bs[k]); }
+	fx_first.len - 1
+}
+fn play(effect int, at float3) int {
+	if effect < 0 || effect >= fx_first.len { return -1; }
+	let f = fx_first[effect]; let n = fx_n[effect];
+	var slots int[>..] = [];
+	for k in n { var e = fx_emits[f + k]; e.pos = e.pos + at; let s = add(e); if s < 0 { for q in slots { remove(q); } return -1; } slots.push(s); }
+	for k in n { var e = emitters[slots[k]]; if e.on_death >= 0 { e.on_death = slots[e.on_death]; } if e.on_hit >= 0 { e.on_hit = slots[e.on_hit]; } emitters[slots[k]] = e; bursts[slots[k]] += fx_burst[f + k]; }
+	dirty = true;
+	play_first.push(play_slots.len); play_n.push(n);
+	for q in slots { play_slots.push(q); }
+	play_first.len - 1
+}
+fn stop(handle int) { if handle < 0 || handle >= play_first.len { return; } for k in play_n[handle] { remove(play_slots[play_first[handle] + k]); } play_n[handle] = 0; }
 fn set(i int, e Emitter) { emitters[i] = e; dirty = true; }
 fn burst(i int, n int) { bursts[i] += n; }
-fn clear_emitters() { emitters.clear(); acc.clear(); bursts.clear(); dirty = true; }
+fn clear_emitters() { emitters.clear(); acc.clear(); bursts.clear(); gone.clear(); play_slots.clear(); play_first.clear(); play_n.clear(); dirty = true; }
 fn wants_depth() bool { for e in emitters { if e.on && (e.collide || e.soft > 0.0) { return true; } } false }
+fn mesh(pos const f32[:], nrm const f32[:], idx const int[:]) int {
+	if capacity == 0 || mesh_first.len >= MS || mesh_used + idx.len > MV { return -1; }
+	var f f32[>..] = [];
+	for i in idx { f.append([pos[i * 3], pos[i * 3 + 1], pos[i * 3 + 2], 0.0, nrm[i * 3], nrm[i * 3 + 1], nrm[i * 3 + 2], 0.0]); }
+	if !mesh_ready { var z byte[>..] = []; z.resize(MV * 32, 0); mesh_buf = gfx::buffer(gfx::BUFFER_STORAGE, MV * 32, z[..]); mesh_ready = true; }
+	gfx::update_buffer(mesh_buf, mesh_used * 32, bytes_of(f)[..f.len * 4]);
+	mesh_first.push(mesh_used); mesh_n.push(idx.len); mesh_used += idx.len;
+	mesh_first.len - 1
+}
 fn upload_emitters() {
+	var tr = false;
+	for e in emitters { if e.trail > 0.0 { tr = true; } }
+	if tr && !trail_full { gfx::release(trail); var z byte[>..] = []; z.resize(capacity * TP * 16, 0); trail = gfx::buffer(gfx::BUFFER_STORAGE | gfx::BUFFER_COMPUTE_READ | gfx::BUFFER_COMPUTE_WRITE, capacity * TP * 16, z[..]); trail_full = true; }
 	var f f32[>..] = [];
 	for e in emitters {
 		let p = if e.follow { e.pos + eye } else { e.pos };
@@ -83,12 +216,13 @@ fn upload_emitters() {
 		f.append([e.gravity, e.drag, e.curl, e.curl_scale, if e.collide { 1.0 } else { 0.0 }, e.restitution, e.soft, if e.alpha { 1.0 } else { 0.0 }]);
 		for c in e.colors { f.append([c.x, c.y, c.z, c.w]); }
 		f.append([e.sizes.x, e.sizes.y, e.sizes.z, e.sizes.w, e.stretch, if e.wrap { 1.0 } else { 0.0 }, e.splash, e.splash_size, e.splash_rgba.x, e.splash_rgba.y, e.splash_rgba.z, e.splash_rgba.w]);
+		f.append([e.on_death as f32, e.on_death_n as f32, e.on_hit as f32, e.on_hit_n as f32, e.inherit, e.trail / 7.0, e.mesh as f32, e.spin]);
 	}
 	if f.len > 0 { gfx::update_buffer(emit_buf, 0, bytes_of(f)[..f.len * 4]); }
 	dirty = false;
 }
-fn spawn_counts(dt f32) int, float4[4] {
-	var c float4[4] = [float4 { 0.0, 0.0, 0.0, 0.0 }; 4];
+fn spawn_counts(dt f32) int, float4[8] {
+	var c float4[8] = [float4 { 0.0, 0.0, 0.0, 0.0 }; 8];
 	var total = 0;
 	for k in emitters.len {
 		var n = bursts[k];
@@ -108,9 +242,10 @@ fn simulate(dt f32, nd gfx::Texture, have_nd bool, view gfx::mat4, view_proj gfx
 	frame += 1;
 	let total, counts = spawn_counts(dt);
 	let ab = [alive, keys];
-	guard gfx::begin_compute(ab[..]) else { return; }
+	let cb = [alive, keys, events];
+	guard gfx::begin_compute(cb[..]) else { return; }
 	gfx::bind(p_clear);
-	gfx::uniforms(gfx::COMPUTE, 0, SortU { float4 { sort_n as f32, 0.0, 0.0, 0.0 } });
+	gfx::uniforms(gfx::COMPUTE, 0, SortU { float4 { sort_n as f32, 0.0, 0.0, (1 + EVN * 8) as f32 } });
 	gfx::dispatch(sort_n / 64, 1, 1);
 	gfx::end_compute();
 	if total > 0 {
@@ -118,19 +253,45 @@ fn simulate(dt f32, nd gfx::Texture, have_nd bool, view gfx::mat4, view_proj gfx
 		guard gfx::begin_compute(sb[..]) else { return; }
 		gfx::bind(p_spawn);
 		gfx::bind_storage_buffer(gfx::COMPUTE, 0, emit_buf);
-		gfx::uniforms(gfx::COMPUTE, 0, SpawnU { float4 { total as f32, frame as f32, 0.0, 0.0 }, counts });
+		gfx::bind_storage_buffer(gfx::COMPUTE, 1, events);
+		gfx::uniforms(gfx::COMPUTE, 0, SpawnU { float4 { total as f32, frame as f32, 0.0, EVN as f32 }, counts });
 		gfx::dispatch((total + 63) / 64, 1, 1);
 		gfx::end_compute();
 	}
-	let mb = [parts, dead, alive, keys];
+	let mb = [parts, dead, alive, keys, events, trail];
 	guard gfx::begin_compute(mb[..]) else { return; }
 	gfx::bind(p_sim);
 	gfx::bind_texture(gfx::COMPUTE, 0, nd, smp);
 	gfx::bind_texture(gfx::COMPUTE, 1, if shelter_box.w > 0.5 { shelter_tex } else { nd }, smp);
 	gfx::bind_storage_buffer(gfx::COMPUTE, 0, emit_buf);
-	gfx::uniforms(gfx::COMPUTE, 0, SimU { float4 { capacity as f32, dt, 0.0, 0.0 }, float4 { gravity.x, gravity.y, gravity.z, 0.0 }, view_proj, view, float4 { 0.0, if test_no_wrap { 1.0 } else { 0.0 }, if have_nd { 1.0 } else { 0.0 }, thickness }, shelter_box });
+	gfx::uniforms(gfx::COMPUTE, 0, SimU { float4 { capacity as f32, dt, if trail_full { 1.0 } else { 0.0 }, EVN as f32 }, float4 { gravity.x, gravity.y, gravity.z, 0.0 }, view_proj, view, float4 { 0.0, if test_no_wrap { 1.0 } else { 0.0 }, if have_nd { 1.0 } else { 0.0 }, thickness }, shelter_box });
 	gfx::dispatch(capacity / 64, 1, 1);
 	gfx::end_compute();
+	var ev = false;
+	for e in emitters { if (e.on_death >= 0 && e.on_death_n > 0) || (e.on_hit >= 0 && e.on_hit_n > 0) { ev = true; } }
+	if ev {
+		let sb = [parts, dead];
+		guard gfx::begin_compute(sb[..]) else { return; }
+		gfx::bind(p_spawn);
+		gfx::bind_storage_buffer(gfx::COMPUTE, 0, emit_buf);
+		gfx::bind_storage_buffer(gfx::COMPUTE, 1, events);
+		gfx::uniforms(gfx::COMPUTE, 0, SpawnU { float4 { 0.0, frame as f32, 1.0, EVN as f32 }, counts });
+		gfx::dispatch(EVN * EVK / 64, 1, 1);
+		gfx::end_compute();
+	}
+	if trail_full || mesh_first.len > 0 {
+		var m float4[9] = [float4 { 0.0, 0.0, 0.0, 0.0 }; 9];
+		for k in mesh_first.len { m[k] = float4 { mesh_n[k] as f32, mesh_first[k] as f32, 0.0, 0.0 }; }
+		m[8] = float4 { if trail_full { 48.0 } else { 0.0 }, 0.0, 0.0, 0.0 };
+		let gb = [args];
+		guard gfx::begin_compute(gb[..]) else { return; }
+		gfx::bind(p_args);
+		gfx::bind_storage_buffer(gfx::COMPUTE, 0, alive);
+		gfx::bind_storage_buffer(gfx::COMPUTE, 1, events);
+		gfx::uniforms(gfx::COMPUTE, 0, ArgsU { float4 { (1 + EVN * 8) as f32, 0.0, 0.0, 0.0 }, m });
+		gfx::dispatch(1, 1, 1);
+		gfx::end_compute();
+	}
 	var need = false;
 	for e in emitters { if e.alpha && !e.wrap { need = true; } }
 	if sorting && need {
@@ -151,6 +312,20 @@ fn simulate(dt f32, nd gfx::Texture, have_nd bool, view gfx::mat4, view_proj gfx
 }
 fn draw(view_proj gfx::mat4, view gfx::mat4, right float3, up float3, nd gfx::Texture, have_nd bool, scale f32, w int, h int) {
 	if capacity == 0 || emitters.len == 0 { return; }
+	for k in mesh_first.len {
+		var any = false;
+		for e in emitters { if e.mesh == k { any = true; } }
+		if !any { continue; }
+		gfx::bind(pipe_mesh);
+		gfx::bind_storage_buffer(gfx::VERTEX, 0, parts);
+		gfx::bind_storage_buffer(gfx::VERTEX, 1, events);
+		gfx::bind_storage_buffer(gfx::VERTEX, 2, emit_buf);
+		gfx::bind_storage_buffer(gfx::VERTEX, 3, mesh_buf);
+		gfx::uniforms(gfx::VERTEX, 0, ViewU { view_proj, view, float4 { eye.x, eye.y, eye.z, 0.0 }, float4 { up.x, up.y, up.z, 0.0 }, float4 { k as f32, (1 + EVN * 8) as f32, w as f32, h as f32 } });
+		gfx::uniforms(gfx::FRAGMENT, 0, LitU { float4 { sun_dir.x, sun_dir.y, sun_dir.z, 0.0 }, float4 { sun_rgb.x, sun_rgb.y, sun_rgb.z, 0.0 }, float4 { ambient.x, ambient.y, ambient.z, 0.0 } });
+		gfx::bind_index_buffer(mesh_idx, 4);
+		gfx::draw_indexed_indirect(args, k * 20);
+	}
 	for m in 2 {
 		var any = false;
 		for e in emitters { if e.alpha == (m == 1) { any = true; } }
@@ -163,6 +338,19 @@ fn draw(view_proj gfx::mat4, view gfx::mat4, right float3, up float3, nd gfx::Te
 		gfx::uniforms(gfx::VERTEX, 0, ViewU { view_proj, view, float4 { right.x, right.y, right.z, 0.0 }, float4 { up.x, up.y, up.z, 0.0 }, float4 { m as f32, 0.0, w as f32, h as f32 } });
 		gfx::uniforms(gfx::FRAGMENT, 0, FragU { float4 { 0.0, 0.0, if have_nd { 1.0 } else { 0.0 }, scale }, float4 { m as f32, if square { 1.0 } else { 0.0 }, 0.0, 0.0 } });
 		gfx::draw(capacity * 6);
+		var tr = false;
+		for e in emitters { if e.trail > 0.0 && e.alpha == (m == 1) { tr = true; } }
+		if !tr || !trail_full { continue; }
+		gfx::bind(if m == 0 { pipe_trail_add } else { pipe_trail_alpha });
+		gfx::bind_storage_buffer(gfx::VERTEX, 0, parts);
+		gfx::bind_storage_buffer(gfx::VERTEX, 1, alive);
+		gfx::bind_storage_buffer(gfx::VERTEX, 2, emit_buf);
+		gfx::bind_storage_buffer(gfx::VERTEX, 3, trail);
+		gfx::bind_texture(gfx::FRAGMENT, 0, nd, smp);
+		gfx::uniforms(gfx::VERTEX, 0, ViewU { view_proj, view, float4 { eye.x, eye.y, eye.z, 0.0 }, float4 { up.x, up.y, up.z, 0.0 }, float4 { m as f32, 0.0, w as f32, h as f32 } });
+		gfx::uniforms(gfx::FRAGMENT, 0, FragU { float4 { 0.0, 0.0, if have_nd { 1.0 } else { 0.0 }, scale }, float4 { m as f32, 0.0, 0.0, 0.0 } });
+		gfx::bind_index_buffer(mesh_idx, 4);
+		gfx::draw_indexed_indirect(args, 8 * 20);
 	}
 }
 fn read_parts(out Part[>..]&) bool { out.clear(); gfx::read_buffer(parts, out, capacity) }
@@ -176,4 +364,4 @@ fn reset() {
 	gfx::update_buffer(dead, 0, bytes_of(d)[..d.len * 4]);
 	for k in acc.len { acc[k] = 0.0; bursts[k] = 0; }
 }
-fn release() { if capacity == 0 { return; } for b in [parts, dead, alive, keys, emit_buf] { gfx::release(b); } capacity = 0; emitters.clear(); acc.clear(); bursts.clear(); dirty = true; }
+fn release() { if capacity == 0 { return; } for b in [parts, dead, alive, keys, emit_buf, events, trail, mesh_idx, args] { gfx::release(b); } if mesh_ready { gfx::release(mesh_buf); } mesh_ready = false; trail_full = false; mesh_used = 0; mesh_first.clear(); mesh_n.clear(); capacity = 0; clear_emitters(); }

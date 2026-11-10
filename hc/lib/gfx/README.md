@@ -503,6 +503,81 @@ the screen: the drop's path over `stretch` seconds is projected, and the quad co
 exactly, as wide as the drop. Snowflakes are blended without sorting (they are all one
 color), so snow costs no sort.
 
+### Effects (E9)
+
+`gfx.fx` emitters can start other emitters, leave trails, draw meshes and be written as
+text.
+
+```
+let cube = fx::mesh(pos[..], nrm[..], idx[..]);   // once; -1 when there is no room
+let fire = fx::effect(text[..]);                  // once; -1 with the reason in fx::error
+let h = fx::play(fire, float3 { 3.0, 0.0, -2.0 });
+fx::stop(h);                                      // its emitter slots are free again
+```
+
+| field | what it does |
+| --- | --- |
+| `on_death`, `on_death_n` | when a particle's life ends, start `on_death_n` particles of emitter `on_death` where it was |
+| `on_hit`, `on_hit_n` | the same when a particle hits a surface at more than 0.5 m/s (needs `collide`) |
+| `inherit` | share of the parent's velocity a started particle gets on top of its own |
+| `trail` | seconds of path drawn behind each particle as a ribbon that narrows and fades to its end |
+| `mesh` | a mesh from `fx::mesh` drawn at each particle in place of a square; it is lit by the sun and the sky and hidden by scene geometry |
+| `spin` | turn rate of a mesh particle in radians a second, about an axis of its own |
+
+An effect is a list of emitters, one setting per line. `#` starts a comment line.
+
+```
+emitter shell
+burst 40
+shape sphere
+volume 0.5 0 0
+at 0 1 0
+spread 0.6
+speed 4 7
+life 0.4 0.8
+on_death star 6
+emitter star
+speed 2
+life 0.5
+trail 0.2
+on_death ember 2
+emitter ember
+speed 0
+life 3
+color 1 0.5 0.2 1
+size 0.05
+```
+
+| word | values |
+| --- | --- |
+| `emitter` | a name; the lines after it describe this emitter |
+| `rate`, `burst` | particles a second; particles started at once when the effect plays |
+| `shape` | `point`, `sphere` or `box` |
+| `at`, `volume`, `dir` | x y z: offset from the play point, size of the shape, direction |
+| `spread`, `gravity`, `drag`, `soft`, `stretch`, `trail`, `spin`, `inherit` | one number, as the emitter field of the same name |
+| `speed`, `life` | lowest and highest; one number sets both |
+| `curl` | strength, then scale (1 if left out) |
+| `collide` | bounce, 0 to 1; turns collisions on |
+| `blend` | `add` or `alpha` |
+| `color` | r g b a; the first line sets the whole life, each later line sets the next of the four stops and the ones after it |
+| `size` | up to four sizes over the particle's life |
+| `mesh` | the number `fx::mesh` returned |
+| `on_death`, `on_hit` | the name of an emitter in the same effect, then how many particles (1 if left out) |
+
+`fx::effect` refuses a text it cannot read: it returns -1 and `fx::error` says why, with
+the line (`line 3: unknown word sped`). `fx::play` returns -1 when fewer emitter slots are
+free than the effect needs, and adds nothing.
+
+How it works: the simulation pass writes one record per event into a buffer (place,
+velocity, emitter, count), and a second spawn pass in the same frame starts the children
+from it. Each particle with a trail keeps 9 past positions, one every `trail / 7` seconds,
+and the ribbon is built from them facing the camera. Mesh particles are listed by the
+simulation pass and drawn with one indirect draw per mesh. A small compute pass writes the
+draw counts, so nothing is read back to the CPU.
+
+Limits: 32 emitters, 2,048 events a frame, 32 particles per event, 8 meshes with 120,000
+vertices in all.
+
 ### Many lights (E4)
 
 ```
@@ -2497,6 +2572,25 @@ in the plane z = 0 with its top edge at y = 2 and every vertex of the top edge p
   gfxtest, wgsltest and webgputest pass, with a new `scene_cloth` in webgputest above
   30 dB against the native frame.
 
+### Effects bars (E9, registered before the first GPU run; the V3 scene was restated to render at 1280 x 720 and the V5 scene to a sky ambient of 0.05 after it, bar values unchanged)
+
+`gfx.fx` gains particle events, trails, mesh particles and effects written as text.
+dt = 1/60 s throughout. `GFX_ONLY=vfx` runs only these checks.
+
+| Bar | What is measured | Bar value |
+| --- | --- | --- |
+| V1 death events | 64 particles leave a point at 2 m/s in random directions with no gravity and live 0.5 s; each one's death starts 8 particles of a second emitter that stand still. After 60 steps: live particles; each one's distance from the point | 512; within 0.1 m of 1 m |
+| V1 control | the same with no death event: live particles | 0 |
+| V2 inherited speed | V1 with the second emitter taking all of its parent's velocity: each live particle's distance from the point after 60 steps | within 0.1 m of 2 m |
+| V3 hit events | 200 particles fall 2 m onto the floor with depth collision and no bounce; each hit starts 4 standing particles of a second emitter that live 100 s. After 120 steps: particles of the second emitter; share of them within 0.15 m of the floor | within 5 % of 800; at least 0.99 |
+| V3 control | the same with collision off: particles of the second emitter | 0 |
+| V4 trails | one particle crosses the view at 4 m/s, 5 m from the camera, with a 0.35 s trail: length of the lit run along its path against 1.4 m; brightness of the tail quarter of the run over the head quarter | within 15 %; at most 0.5 |
+| V4 control | the same with no trail: length of the lit run | at most 0.3 m |
+| V5 mesh particles | one still cube particle 0.5 m wide, 5 m from the camera, facing it: pixels it covers against the 6,150 its front face projects to; the same with a sphere of the scene in front of its left half; mean brightness lit from the camera side over lit from behind | within 10 %; 0.4 to 0.6 of the first count; at least 2 |
+| V6 effects as text | an effect of three linked emitters read from text and played at a point, against the same emitters built by hand, after 90 steps: live particles; largest position difference. A text with an unknown word | equal; 0; refused, with the line number in `fx::error` |
+| V7 cost | 100,000 live particles with trails against the same without: added time of a simulated and drawn frame at 1280 x 720 | at most 7 ms |
+| V8 nothing else moved | the earlier particle bars F1 to F6, gfxtest, wgsltest and webgputest | all pass |
+
 ### Many lights bars (E4, registered before the first GPU run; the camera, ambient light and light strength of the field scene and the range factor of the L2 control were restated after it, bar values unchanged)
 
 The light grid lists up to 1,023 lights in each of its 16 x 9 x 24 cells, and a pixel skips
@@ -2936,6 +3030,22 @@ all three frames.
 | Y5 control, fuzz 0 twice | rim rise 0.0 | below 3 |
 | Y6 cost | 1.63 ms without, 1.75 ms with: 0.12 ms more | at most 0.3 ms |
 | Y7 nothing else moved | goldens 44.92 dB and 41.7 dB; X1 to X7 pass with both strengths 0; wgsltest 67 modules, 58 pipelines, 0 failures; webgputest 22 scenes, 0 failures, `scene_sss` with strength 0.7 and fuzz 0.35 matches the native frame exactly on WebGPU | pass |
+
+### Effects results (2026-11-10, RX 9060 XT, RADV)
+
+| Bar | Result | Bar value |
+| --- | --- | --- |
+| V1 death events | 512 live, farthest 0.033 m from 1 m | 512; at most 0.1 m |
+| V1 control, no event | 0 live | 0 |
+| V2 inherited speed | 512 live, farthest 0.033 m from 2 m | 512; at most 0.1 m |
+| V3 hit events | 800 started; all within 0.15 m of the floor | within 5 % of 800; at least 0.99 |
+| V3 control, collisions off | 0 | 0 |
+| V4 trails | lit run 1.45 m; tail quarter 0.07 of the head quarter | within 15 % of 1.4 m; at most 0.5 |
+| V4 control, no trail | 0.17 m | at most 0.3 m |
+| V5 mesh particles | 6,219 pixels; 0.53 of them behind the sphere; brightness 186.8 against 46.0 | within 10 % of 6,150; 0.4 to 0.6; at least 2 times |
+| V6 effects as text | 480 live both ways; position difference 0; `line 3: unknown word sped` | equal; 0; refused with the line |
+| V7 cost | 1.4 ms and 4.1 ms more in two runs (2.9 ms against 1.5 ms; 5.8 ms against 1.7 ms) | at most 7 ms |
+| V8 nothing else moved | F1 to F6 pass; gfxtest passes; wgsltest 84 modules, 71 pipelines, 0 failures; webgputest 26 scenes, 0 failures | all pass |
 
 ### Many lights results (2026-11-10, RX 9060 XT, RADV)
 
@@ -3535,6 +3645,12 @@ pass-through mean error is 0.0106 % (max 0.0488 %).
   shadow on the scene, grooms do not shadow each other, and two grooms that overlap on screen share
   their depth layers. A move of the head without a turn is not carried over to the hair at once, so
   the tips trail by the whole move and catch up.
+* Effects: there is no node-graph editor; effects are written as text or in code. Mesh
+  particles take the sun and a flat sky ambient only, cast no shadows and are not in the
+  depth prepass. Trails are not meant for emitters that `wrap` (rain, snow): a particle
+  that comes back on the far side drags its trail across the box. The order in which
+  events start their particles differs from run to run, so a child emitter with a random
+  spread or speed does not repeat exactly.
 * Many lights: the grid is built on the CPU every frame and its cells grow with distance, so
   far pixels test more lights than near ones. Only the first 16 lights cast shadows or light
   the fog, and hair and particles are not lit through the grid.

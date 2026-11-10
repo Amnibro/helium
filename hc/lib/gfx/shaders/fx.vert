@@ -12,8 +12,9 @@ void main() {
 	gl_Position = vec4(2.0, 2.0, 2.0, 1.0); out_corner = vec2(0.0); out_rgba = vec4(0.0); out_depth_fade = vec2(0.0);
 	if (q >= alive[0]) return;
 	Part p = parts[alive[q + 1u]];
-	int em = (int(p.misc.x)) * 13;
+	int em = (int(p.misc.x)) * 15;
 	if (abs(emits[em + 5].w - mode.x) > 0.5) return;
+	if (emits[em + 14].z > -0.5) return;
 	vec4 wx = emits[em + 11];
 	bool wb = wx.y > 0.5;
 	if (wb && p.misc.z > 1.5) return;

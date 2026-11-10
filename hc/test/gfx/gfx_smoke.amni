@@ -3055,6 +3055,193 @@ fn fx_perf() {
 	fx::release();
 	s3d::look = DEF_LOOK; s3d::sun = DEF_SUN; s3d::sky = DEF_SKY;
 }
+fn vx_ring(inherit f32, link bool) int, real {
+	fx_fresh();
+	var a = fx::emitter();
+	a.spread = 3.1415927; a.speed_min = 2.0; a.speed_max = 2.0; a.life_min = 0.5; a.life_max = 0.5; a.gravity = 0.0;
+	var b = fx::emitter();
+	b.speed_min = 0.0; b.speed_max = 0.0; b.life_min = 100.0; b.life_max = 100.0; b.gravity = 0.0; b.inherit = inherit;
+	if link { a.on_death = 1; a.on_death_n = 8; }
+	let i = fx::add(a); let _ = fx::add(b);
+	fx::burst(i, 64);
+	fx_run(60);
+	var ps fx::Part[>..] = [];
+	fx::read_parts(ps);
+	var n = 0; var worst = 0.0;
+	for p in ps { if p.vel.w <= 0.0 { continue; } n += 1; worst = max(worst, abs(sqrt((p.pos.x * p.pos.x + p.pos.y * p.pos.y + p.pos.z * p.pos.z) as real) - (1.0 + inherit as real))); }
+	return n, worst;
+}
+fn vx_hits(collide bool) int, real {
+	fx_fresh();
+	fx_floor_scene();
+	s3d::init(1280, 720);
+	let out = gfx::render_target(1280, 720, gfx::RGBA8);
+	var a = fx::emitter();
+	a.shape = 1; a.pos = float3 { 0.0, 2.0, 0.0 }; a.size = float3 { 0.5, 0.5, 0.5 }; a.speed_min = 0.0; a.speed_max = 0.0; a.life_min = 100.0; a.life_max = 100.0; a.collide = collide; a.restitution = 0.0; a.sizes = float4 { 0.03, 0.03, 0.03, 0.03 }; a.on_hit = 1; a.on_hit_n = 4;
+	var b = fx::emitter();
+	b.speed_min = 0.0; b.speed_max = 0.0; b.life_min = 100.0; b.life_max = 100.0; b.gravity = 0.0; b.sizes = float4 { 0.03, 0.03, 0.03, 0.03 };
+	let i = fx::add(a); let _ = fx::add(b);
+	fx::burst(i, 200);
+	s3d::fx_dt = 1.0 / 60.0;
+	shoot(120, out);
+	s3d::fx_dt = 0.0;
+	var ps fx::Part[>..] = [];
+	fx::read_parts(ps);
+	var n = 0; var nf = 0;
+	for p in ps { if p.vel.w > 0.0 && p.misc.x > 0.5 { n += 1; if abs(p.pos.y) <= 0.15 { nf += 1; } } }
+	gfx::release(out);
+	return n, nf as real / max(n, 1) as real;
+}
+var VX_CUBE = -1;
+fn vx_stage(sky bool, to_sun float3) byte[>..] {
+	fx_fresh();
+	reset_scene();
+	s3d::sky = DEF_SKY; s3d::sky.draw = sky; s3d::sun = DEF_SUN; s3d::look = DEF_LOOK; s3d::look.bloom = 0.0; s3d::look.ssao = false; s3d::temporal = 0; s3d::sun.shadows = false; s3d::sun.to_sun = to_sun;
+	s3d::view = s3d::Camera { eye: float3 { 0.0, 0.0, 5.0 }, target: float3 { 0.0, 0.0, 0.0 }, up: float3 { 0.0, 1.0, 0.0 }, fov_y: 0.9, near: 0.1, far: 60.0 };
+	if VX_CUBE < 0 {
+		var pos f32[>..] = []; var nrm f32[>..] = []; var idx int[>..] = [];
+		for a in 3 { for s in 2 {
+			let g = if s == 0 { linalg::f(-0.5) } else { linalg::f(0.5) };
+			let base = pos.len / 3;
+			for c in 4 {
+				var p f32[3] = [0.0; 3]; var n f32[3] = [0.0; 3];
+				p[a] = g; n[a] = g * 2.0;
+				p[(a + 1) % 3] = if c == 0 || c == 3 { linalg::f(-0.5) } else { linalg::f(0.5) };
+				p[(a + 2) % 3] = if c < 2 { linalg::f(-0.5) } else { linalg::f(0.5) };
+				for k in 3 { pos.push(p[k]); nrm.push(n[k]); }
+			}
+			for k in [0, 1, 2, 0, 2, 3] { idx.push(base + k); }
+		} }
+		VX_CUBE = fx::mesh(pos[..], nrm[..], idx[..]);
+	}
+	[]
+}
+fn vx_shots(n int) byte[>..] { s3d::fx_dt = 1.0 / 60.0; shoot(n, IN_OUT); s3d::fx_dt = 0.0; gfx::read_pixels(IN_OUT) }
+fn vx_trail(trail f32) real, real {
+	let _ = vx_stage(false, float3 { 0.0, 1.0, 0.0 });
+	shoot(2, IN_OUT);
+	let base = gfx::read_pixels(IN_OUT);
+	var e = fx::emitter();
+	e.pos = float3 { -2.0, 0.0, 0.0 }; e.dir = float3 { 1.0, 0.0, 0.0 }; e.speed_min = 4.0; e.speed_max = 4.0; e.life_min = 100.0; e.life_max = 100.0; e.gravity = 0.0; e.sizes = float4 { 0.1, 0.1, 0.1, 0.1 }; e.colors = [float4 { 2.0, 2.0, 2.0, 1.0 }; 4]; e.trail = trail;
+	fx::burst(fx::add(e), 1);
+	let px = vx_shots(45);
+	if trail > 0.0 { let _ = codec_png::write(path(OUT_DIR[..], "vfx_trail.png")[..], 1280, 720, 4, px[..]); }
+	var col real[>..] = [];
+	var lo = 1280; var hi = -1;
+	for x in 1280 {
+		var s = 0.0;
+		for k in 120 { let i = (300 + k) * 1280 + x; if sk_d(base[..], px[..], i) > 8 { s += vc_l8(px[..], i) - vc_l8(base[..], i); } }
+		if s > 0.0 { lo = min(lo, x); hi = max(hi, x); }
+		col.push(s);
+	}
+	if hi < lo { return 0.0, 0.0; }
+	let q = (hi - lo + 1) / 4;
+	var tail = 0.0; var head = 0.0;
+	for k in q { tail += col[lo + k]; head += col[hi - k]; }
+	return (hi - lo + 1) as real * 10.0 * sin(0.45) / cos(0.45) / 720.0, tail / max(head, 1e-9);
+}
+fn vx_mesh(ball bool, front bool) int, real {
+	let _ = vx_stage(true, float3 { 0.0, 0.0, if front { 1.0 } else { -1.0 } });
+	s3d::sky.ambient = 0.05;
+	if ball { s3d::place(s3d::add(shapes::sphere(1.0, 32, 16, shapes::material(linalg::v3(0.5, 0.5, 0.5), 0.0, 0.8))), gfx::translate(float3 { -1.0, 0.0, 2.0 })); }
+	shoot(2, IN_OUT);
+	let base = gfx::read_pixels(IN_OUT);
+	var e = fx::emitter();
+	e.speed_min = 0.0; e.speed_max = 0.0; e.life_min = 100.0; e.life_max = 100.0; e.gravity = 0.0; e.sizes = float4 { 0.5, 0.5, 0.5, 0.5 }; e.mesh = VX_CUBE;
+	fx::burst(fx::add(e), 1);
+	let px = vx_shots(3);
+	if !ball && front { let _ = codec_png::write(path(OUT_DIR[..], "vfx_mesh.png")[..], 1280, 720, 4, px[..]); }
+	var n = 0; var s = 0.0;
+	for i in 1280 * 720 { if sk_d(base[..], px[..], i) > 8 { n += 1; } }
+	for y in 21 { for x in 21 { s += vc_l8(px[..], (350 + y) * 1280 + 650 + x); } }
+	return n, s / 441.0;
+}
+fn vx_fire_text() byte[>..] { var t byte[>..] = []; t.append("# firework\nemitter shell\nburst 40\nshape sphere\nvolume 0.5 0 0\nat 0 1 0\nspread 0.6\nspeed 4 7\nlife 0.4 0.8\non_death star 6\nemitter star\ndir 1 0 0\nspeed 2\nlife 0.5\ngravity 0.5\non_death ember 2\nemitter ember\nspeed 0\nlife 100\ngravity 0\ncolor 1 0.5 0.2 1\nsize 0.05\n"); t }
+fn vx_live(out f32[>..]&) int { var ps fx::Part[>..] = []; fx::read_parts(ps); out.clear(); var n = 0; for p in ps { if p.vel.w > 0.0 { n += 1; out.push(p.pos.x); out.push(p.pos.y); out.push(p.pos.z); } } n }
+fn vx_fire(text bool, out f32[>..]&) int {
+	fx_fresh();
+	fx::frame = 0;
+	let at = float3 { 3.0, 0.0, -2.0 };
+	if text { if fx::play(fx::effect(vx_fire_text()[..]), at) < 0 { return -1; } }
+	else {
+		var a = fx::emitter(); a.shape = 1; a.size = float3 { 0.5, 0.0, 0.0 }; a.pos = float3 { 3.0, 1.0, -2.0 }; a.spread = 0.6; a.speed_min = 4.0; a.speed_max = 7.0; a.life_min = 0.4; a.life_max = 0.8; a.on_death = 1; a.on_death_n = 6;
+		var b = fx::emitter(); b.pos = at; b.dir = float3 { 1.0, 0.0, 0.0 }; b.speed_min = 2.0; b.speed_max = 2.0; b.life_min = 0.5; b.life_max = 0.5; b.gravity = 0.5; b.on_death = 2; b.on_death_n = 2;
+		var c = fx::emitter(); c.pos = at; c.speed_min = 0.0; c.speed_max = 0.0; c.life_min = 100.0; c.life_max = 100.0; c.gravity = 0.0; c.colors = [float4 { 1.0, 0.5, 0.2, 1.0 }; 4]; c.sizes = float4 { 0.05, 0.05, 0.05, 0.05 };
+		fx::burst(fx::add(a), 40); let _ = fx::add(b); let _ = fx::add(c);
+	}
+	fx_run(90);
+	vx_live(out)
+}
+fn vx_match(a const f32[:], b const f32[:]) real {
+	var used bool[>..] = []; used.resize(b.len / 3, false);
+	var worst = 0.0;
+	for i in a.len / 3 {
+		var best = 1.0e30; var at = -1;
+		for j in b.len / 3 { if used[j] { continue; } let d = abs((a[i * 3] - b[j * 3]) as real) + abs((a[i * 3 + 1] - b[j * 3 + 1]) as real) + abs((a[i * 3 + 2] - b[j * 3 + 2]) as real); if d < best { best = d; at = j; } }
+		if at >= 0 { used[at] = true; worst = max(worst, best); }
+	}
+	worst
+}
+fn vx_cost(trail f32) real, int {
+	let _ = vx_stage(true, float3 { 0.3, 0.8, 0.5 });
+	var e = fx::emitter();
+	e.shape = 2; e.size = float3 { 3.0, 1.5, 1.0 }; e.spread = 3.1415927; e.speed_min = 0.5; e.speed_max = 1.0; e.life_min = 100.0; e.life_max = 100.0; e.gravity = 0.0; e.curl = 0.5; e.sizes = float4 { 0.01, 0.01, 0.01, 0.01 }; e.trail = trail;
+	fx::burst(fx::add(e), 100000);
+	let _ = vx_shots(7);
+	var t real[>..] = [];
+	s3d::fx_dt = 1.0 / 60.0;
+	for _ in 21 { let a = gfx::time(); shoot(1, IN_OUT); let _ = gfx::read_pixels(IN_OUT); t.push((gfx::time() - a) * 1000.0); }
+	s3d::fx_dt = 0.0;
+	let px = gfx::read_pixels(IN_OUT);
+	if trail > 0.0 { let _ = codec_png::write(path(OUT_DIR[..], "vfx_cost.png")[..], 1280, 720, 4, px[..]); }
+	var live f32[>..] = [];
+	let n = vx_live(live);
+	return hr_mid(t), n;
+}
+fn vfx_checks() bool {
+	half_table();
+	s3d::init(64, 64);
+	let n1, w1 = vx_ring(0.0, true);
+	let n0, _ = vx_ring(0.0, false);
+	let v1 = n1 == 512 && w1 <= 0.1 && n0 == 0;
+	print("gpu: vfx V1 death events: ", n1, " live (bar 512), farthest from 1 m ", r3(w1), " m (bar <= 0.1); control with no event: ", n0, " live (bar 0)", hr_pass(v1));
+	let n2, w2 = vx_ring(1.0, true);
+	let v2 = n2 == 512 && w2 <= 0.1;
+	print("gpu: vfx V2 inherited speed: ", n2, " live (bar 512), farthest from 2 m ", r3(w2), " m (bar <= 0.1)", hr_pass(v2));
+	let n3, s3 = vx_hits(true);
+	let c3, _ = vx_hits(false);
+	let v3 = max(n3 - 800, 800 - n3) <= 40 && s3 >= 0.99 && c3 == 0;
+	print("gpu: vfx V3 hit events: ", n3, " started (bar 800 within 5 %), ", r3(s3), " of them within 0.15 m of the floor (bar >= 0.99); control with collision off: ", c3, " (bar 0)", hr_pass(v3));
+	s3d::init(1280, 720);
+	IN_OUT = gfx::render_target(1280, 720, gfx::RGBA8);
+	let run, fade = vx_trail(0.35);
+	let run0, _ = vx_trail(0.0);
+	let v4 = abs(run - 1.4) <= 0.21 && fade <= 0.5 && run0 <= 0.3;
+	print("gpu: vfx V4 trails: lit run ", r3(run), " m (bar 1.4 within 15 %), tail quarter ", r3(fade), " of the head quarter (bar <= 0.5); control with no trail: ", r3(run0), " m (bar <= 0.3)", hr_pass(v4));
+	let n5, lit = vx_mesh(false, true);
+	let h5, _ = vx_mesh(true, true);
+	let _, back = vx_mesh(false, false);
+	let half = h5 as real / max(n5, 1) as real;
+	let v5 = abs(n5 as real - 6150.0) <= 615.0 && half >= 0.4 && half <= 0.6 && lit >= 2.0 * back;
+	print("gpu: vfx V5 mesh particles: ", n5, " pixels covered (bar 6150 within 10 %), ", r3(half), " of them with a sphere over the left half (bar 0.4..0.6), brightness ", r3(lit), " lit from the camera side against ", r3(back), " from behind (bar >= 2 times)", hr_pass(v5));
+	var pa f32[>..] = []; var pb f32[>..] = [];
+	let na = vx_fire(true, pa);
+	let reuse_h = fx::play(0, float3 { 0.0, 0.0, 0.0 });
+	fx::stop(reuse_h);
+	let reuse = fx::play(0, float3 { 0.0, 0.0, 0.0 }) >= 0 && fx::emitters.len == 6 && fx::emitters[3].on_death == 4;
+	let nb = vx_fire(false, pb);
+	let off = vx_match(pa[..], pb[..]);
+	let refused = fx::effect("emitter a\nrate 5\nsped 2\n") == -1 && fx::error[..] == "line 3: unknown word sped";
+	let v6 = na == nb && na > 0 && off == 0.0 && refused && reuse;
+	print("gpu: vfx V6 effects as text: ", na, " live from text, ", nb, " built by hand (bar equal), largest position difference ", r3(off), " m (bar 0), a stopped effect's slots are reused: ", reuse, ", unknown word refused: ", refused, hr_pass(v6));
+	let with, nw = vx_cost(0.35);
+	let bare, n0w = vx_cost(0.0);
+	let v7 = nw == 100000 && n0w == 100000 && with - bare <= 7.0;
+	print("gpu: vfx V7 cost: ", nw, " live particles, ", r3(with), " ms a frame with trails, ", r3(bare), " ms without, trails ", r3(with - bare), " ms (bar <= 7)", hr_pass(v7));
+	gfx::release(IN_OUT);
+	s3d::look = DEF_LOOK; s3d::sun = DEF_SUN; s3d::sky = DEF_SKY;
+	v1 && v2 && v3 && v4 && v5 && v6 && v7
+}
 fn fx_checks() bool {
 	half_table();
 	s3d::init(64, 64);
@@ -7913,7 +8100,7 @@ fn gpu_checks(dir const byte[:], golden const byte[:]) bool {
 	var only byte[>..] = [];
 	let _ = env("GFX_ONLY", only);
 	if only.len > 0 {
-		let ok = if only[..] == "lights" { lights_checks() } else if only[..] == "day" { day_checks() } else if only[..] == "hair" { hair_checks() } else if only[..] == "gtao" { gtao_checks() } else if only[..] == "gi" { gi_checks() } else if only[..] == "mblur" { mb_checks() } else if only[..] == "dof" { dof_checks() } else if only[..] == "fx" { fx_checks() } else if only[..] == "tsr" { tsr_checks(dir) } else if only[..] == "probe" { probe_checks(dir) } else if only[..] == "ssgi" { ssgi_checks() } else if only[..] == "decal" { decal_checks() } else if only[..] == "weather" { weather_checks() } else if only[..] == "rect" { rect_checks() } else if only[..] == "small" { small_checks() } else if only[..] == "inst" { instance_checks() } else if only[..] == "caust" { caustic_checks() } else if only[..] == "tex" { texture_checks() } else if only[..] == "stream" { stream_checks() } else if only[..] == "rtr" { rtr_checks() } else if only[..] == "meshlet" { meshlet_checks() } else if only[..] == "sss" { sss_checks() } else if only[..] == "cloth" { cloth_checks() } else if only[..] == "cloud" { cloud_checks() } else if only[..] == "vfog" { fog_checks() } else if only[..] == "sea" { sea_checks() } else if only[..] == "vsm" { vsm_checks() } else { shadow_checks() };
+		let ok = if only[..] == "vfx" { vfx_checks() } else if only[..] == "fx" { fx_checks() } else if only[..] == "lights" { lights_checks() } else if only[..] == "day" { day_checks() } else if only[..] == "hair" { hair_checks() } else if only[..] == "gtao" { gtao_checks() } else if only[..] == "gi" { gi_checks() } else if only[..] == "mblur" { mb_checks() } else if only[..] == "dof" { dof_checks() } else if only[..] == "fx" { fx_checks() } else if only[..] == "tsr" { tsr_checks(dir) } else if only[..] == "probe" { probe_checks(dir) } else if only[..] == "ssgi" { ssgi_checks() } else if only[..] == "decal" { decal_checks() } else if only[..] == "weather" { weather_checks() } else if only[..] == "rect" { rect_checks() } else if only[..] == "small" { small_checks() } else if only[..] == "inst" { instance_checks() } else if only[..] == "caust" { caustic_checks() } else if only[..] == "tex" { texture_checks() } else if only[..] == "stream" { stream_checks() } else if only[..] == "rtr" { rtr_checks() } else if only[..] == "meshlet" { meshlet_checks() } else if only[..] == "sss" { sss_checks() } else if only[..] == "cloth" { cloth_checks() } else if only[..] == "cloud" { cloud_checks() } else if only[..] == "vfog" { fog_checks() } else if only[..] == "sea" { sea_checks() } else if only[..] == "vsm" { vsm_checks() } else { shadow_checks() };
 		let e = gfx::error();
 		if e.len > 0 { print("gpu: gfx error ", e[..]); return false; }
 		return mark(only[..], ok) && submit_checks(false);
@@ -8076,6 +8263,7 @@ fn gpu_checks(dir const byte[:], golden const byte[:]) bool {
 	if !mark("mb", mb_checks()) { good = false; }
 	if !mark("dof", dof_checks()) { good = false; }
 	if !mark("fx", fx_checks()) { good = false; }
+	if !mark("vfx", vfx_checks()) { good = false; }
 	if !mark("probe", probe_checks(dir)) { good = false; }
 	if !mark("ssgi", ssgi_checks()) { good = false; }
 	if !mark("decal", decal_checks()) { good = false; }

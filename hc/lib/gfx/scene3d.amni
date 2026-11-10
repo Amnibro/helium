@@ -3164,6 +3164,7 @@ fn color_pass() {
 		quad_draw(true);
 		quad_draw(false);
 		sparks::draw(view_proj, right, up);
+		fx::sun_dir = sun.to_sun; fx::sun_rgb = sun.rgb; fx::ambient = float3 { (sky.zenith.x + sky.horizon.x) * 0.5 * sky.ambient, (sky.zenith.y + sky.horizon.y) * 0.5 * sky.ambient, (sky.zenith.z + sky.horizon.z) * 0.5 * sky.ambient };
 		fx::draw(view_proj, view_mat, right, up, nd, nd_ran, 1.0, width, height);
 	}
 	gfx::end_pass();
