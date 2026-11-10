@@ -61,6 +61,9 @@ struct Item { asset int, place gfx::mat4, prev_place gfx::mat4, anim int, time f
 struct InstSet { asset int, first int, count int, lod_asset int = -1, lod_distance f32 = 0.0, sway f32 = 0.0, visible bool = true, top f32 = 0.0, c float3 = float3 { 0.0, 0.0, 0.0 }, r f32 = 0.0, lo float3 = float3 { 0.0, 0.0, 0.0 }, hi float3 = float3 { 0.0, 0.0, 0.0 }, ia int[2] = [0, 0], na int[2] = [0, 0], iv int[2] = [0, 0], nv int[2] = [0, 0], smax f32 = 1.0 }
 struct Caustics { on bool = false, manual bool = false, strength f32 = 1.0, focus f32 = 1.0, cap f32 = 7.0, level f32 = 0.0, waves float4 = float4 { 1.1, 0.062, 1.0, 0.7 }, absorb float3 = float3 { 0.45, 0.09, 0.07 }, lo float3 = float3 { -1.0e9, 0.0, -1.0e9 }, hi float3 = float3 { 1.0e9, 0.0, 1.0e9 } }
 struct Wind { dir float3 = float3 { 1.0, 0.0, 0.0 }, strength f32 = 0.0, speed f32 = 1.0, time f32 = 0.0 }
+struct Clouds { on bool = false, cover f32 = 0.5, base f32 = 1500.0, thick f32 = 2000.0, density f32 = 120.0, scale f32 = 0.001, wind float3 = float3 { 0.0, 0.0, 0.0 }, steps int = 34, sun f32 = 1.0, shadow f32 = 1.0, shadow_size int = 512, shadow_span f32 = 4000.0, ground f32 = 0.0, air f32 = 0.05, res f32 = 0.75 }
+struct CloudU { inv_view_proj gfx::mat4, eye float4, to_sun float4, sun_rgb float4, slab float4, wind float4, env float4, env_rot float4, amb_hi float4, amb_lo float4 }
+struct CloudShadowU { area float4, to_sun float4, slab float4, wind float4 }
 struct Batch { prim int, item int, node int, joint_base int, model gfx::mat4, depth f32, mode int, prev_model gfx::mat4, prev_joint_base int, vis bool, trans bool, wb int, pwb int, inst int, lod int, ml int }
 
 struct DrawU { model gfx::mat4, model_normal gfx::mat4, view_proj gfx::mat4, prev_model gfx::mat4, deform float4, misc float4, cur_vp gfx::mat4, prev_vp gfx::mat4, weights float4[16], prev_weights float4[16], inst float4, sway_o float4, wind float4, wind_t float4, push float4[4], prev_push float4[4] }
@@ -75,9 +78,9 @@ struct SurfaceU { base float4, emissive float4, params float4, alpha float4, uv_
 struct ExtU { ior float4, spec float4, coat float4, trans float4, atten float4, aniso float4, irid float4, tm float4[13], to float4[13] }
 struct CutU { base float4, alpha float4, uv_sets float4, xm float4, xo float4 }
 struct CutViewU { base float4, alpha float4, uv_sets float4, xm float4, xo float4, view gfx::mat4 }
-struct SkyU { inv_view_proj gfx::mat4, prev_view_proj gfx::mat4, to_sun float4, sun_rgb float4, zenith float4, horizon float4, ground float4, env float4, env_rot float4 }
+struct SkyU { inv_view_proj gfx::mat4, prev_view_proj gfx::mat4, to_sun float4, sun_rgb float4, zenith float4, horizon float4, ground float4, env float4, env_rot float4, cloud float4 }
 struct AoU { lens float4, tune float4 }
-struct ContactU { lens float4, jit float4, sun_v float4, tune float4 }
+struct ContactU { lens float4, jit float4, sun_v float4, tune float4, cl_u float4, cl_v float4, cl float4 }
 struct SssU { lens float4, tune float4, ctr float4, prof float4[8], tap float4[64] }
 struct GtaoU { lens float4, tune float4, size float4 }
 struct TileU { size float4, lens float4, mode float4 }
@@ -89,7 +92,7 @@ struct GlowU { texel float4, cut float4 }
 struct GradeU { tone float4, mode float4, lens float4, color float4, frame float4 }
 struct HistU { size float4, range float4 }
 struct AdaptU { range float4, pct float4, rate float4 }
-struct FogU { inv_view_proj gfx::mat4, cascade_mat gfx::mat4[3], cascade_far float4, eye float4, view_dir float4, to_sun float4, sun_rgb float4, ambient float4, params float4, params2 float4, light_pos float4[16], light_rgb float4[16], env float4, env_rot float4 }
+struct FogU { inv_view_proj gfx::mat4, cascade_mat gfx::mat4[3], cascade_far float4, eye float4, view_dir float4, to_sun float4, sun_rgb float4, ambient float4, params float4, params2 float4, light_pos float4[16], light_rgb float4[16], env float4, env_rot float4, cl_u float4, cl_v float4, cl float4 }
 struct QuadG { p float4[4], c float4[4], prm float4 }
 struct QuadViewU { view_proj gfx::mat4, right float4, up float4 }
 struct SsrU { lens float4, jit float4, tune float4, edge float4, inv_view gfx::mat4, prev_vp gfx::mat4 }
@@ -473,6 +476,15 @@ var idbuf gfx::Buffer;
 var idbuf_cap int = 0;
 var fr float4[6] = [float4 { 0.0, 0.0, 0.0, 0.0 }; 6];
 var caustics Caustics = Caustics { .. };
+var clouds Clouds = Clouds { on: false };
+var cloud_tex gfx::Texture;
+var cloud_shadow_tex gfx::Texture;
+var cloud_shadow_n = 0;
+var cloud_res f32 = 0.0;
+var cloud_cu float4;
+var cloud_cv float4;
+var pipe_clouds gfx::Pipeline;
+var pipe_cloud_shadow gfx::Pipeline;
 var wind Wind = Wind { dir: float3 { 1.0, 0.0, 0.0 }, strength: 0.0, speed: 1.0, time: 0.0 };
 var wind_prev f32 = 0.0;
 var wind_fresh = true;
@@ -726,6 +738,7 @@ fn surface_desc(cull i32, blend i32, depth_write bool) gfx::PipelineDesc {
 }
 
 fn drop_targets() {
+	if cloud_tex.id != 0 { gfx::release(cloud_tex); cloud_tex = none(); }
 	for t in [color_ms, depth_ms, hdr, nd, nd_depth, ao_raw, ao, lin_depth, bent_raw, bent, fx, tile_a, tile_b, contact_tex] { gfx::release(t); }
 	drop_motion();
 	drop_ssr();
@@ -885,6 +898,8 @@ fn init(w int, h int, ow int, oh int) bool {
 	pipe_ssgi_accum = gfx::pipeline(scr, embed_shader("shaders/ssgi_accum.frag"));
 	pipe_ssgi_up = gfx::compute_pipeline(embed_shader("shaders/ssgi_up.comp"));
 	pipe_fog = gfx::pipeline(scr, embed_shader("shaders/fog.frag"));
+	pipe_clouds = gfx::pipeline(scr, embed_shader("shaders/clouds.frag"));
+	pipe_cloud_shadow = gfx::pipeline(scr, embed_shader("shaders/cloud_shadow.frag"));
 	pipe_quad_add = gfx::pipeline(embed_shader("shaders/quad.vert"), embed_shader("shaders/quad.frag"), gfx::PipelineDesc { depth_test: true, depth_write: false, blend: gfx::BLEND_ADD, depth_compare: gfx::COMPARE_LESS_EQUAL });
 	pipe_quad_mul = gfx::pipeline(embed_shader("shaders/quad.vert"), embed_shader("shaders/quad.frag"), gfx::PipelineDesc { depth_test: true, depth_write: false, blend: gfx::BLEND_MULTIPLY, depth_compare: gfx::COMPARE_LESS_EQUAL });
 	pipe_gi_trace = gfx::compute_pipeline(embed_shader("shaders/gi_trace.comp"));
@@ -2362,7 +2377,7 @@ fn fullscreen(p gfx::Pipeline) { gfx::bind(p); }
 
 fn sky_u() SkyU {
 	let to_sun = linalg::unit3(sun.to_sun);
-	SkyU { inv_view_proj: linalg::inverse(view_proj_nj), prev_view_proj: prev_view_proj, to_sun: x4(to_sun, if sky.draw { 0.0 } else { 1.0 }), sun_rgb: x4(sun.rgb, 0.0), zenith: x4(sky.zenith, 0.0), horizon: x4(sky.horizon, 0.0), ground: x4(sky.ground, 0.0), env: frame_u.env, env_rot: frame_u.env_rot }
+	SkyU { inv_view_proj: linalg::inverse(view_proj_nj), prev_view_proj: prev_view_proj, to_sun: x4(to_sun, if sky.draw { 0.0 } else { 1.0 }), sun_rgb: x4(sun.rgb, 0.0), zenith: x4(sky.zenith, 0.0), horizon: x4(sky.horizon, 0.0), ground: x4(sky.ground, 0.0), env: frame_u.env, env_rot: frame_u.env_rot, cloud: f4(if clouds_live() { 1.0 } else { 0.0 }, if clouds_live() && envmap::clear_on { 1.0 } else { 0.0 }, 0.0, 0.0) }
 }
 
 // Prepass: normal + depth (nd) for SSAO, and the motion target when it is wanted. Both
@@ -2451,19 +2466,68 @@ fn ao_pass() {
 	gfx::end_pass();
 }
 
-fn contact_on() bool { sun.shadows && sun.contact > 0.0 }
+fn clouds_live() bool { clouds.on && clouds.cover > 0.0 && !capturing }
+fn cloud_shadow_on() bool { clouds_live() && clouds.shadow > 0.0 }
+fn cloud_target() gfx::Texture { cloud_tex }
+fn cloud_shadow_target() gfx::Texture { cloud_shadow_tex }
+fn cloud_view(c float4, m gfx::mat4) float4 { f4(c.x * m.c0.x + c.y * m.c0.y + c.z * m.c0.z, c.x * m.c1.x + c.y * m.c1.y + c.z * m.c1.z, c.x * m.c2.x + c.y * m.c2.y + c.z * m.c2.z, c.x * m.c3.x + c.y * m.c3.y + c.z * m.c3.z + c.w) }
+fn cloud_pass() {
+	if !clouds_live() { return; }
+	let k = clouds.scale;
+	let nt = envmap::noise_tex();
+	let l = linalg::unit3(sun.to_sun);
+	let slab = f4(clouds.base * k, clouds.thick * k, clouds.cover, clouds.density);
+	let off = f4(-clouds.wind.x * world_time * k, -clouds.wind.z * world_time * k, min(clouds.steps, 128) as f32, if temporal_on() { (frames % 64) as f32 } else { -1.0 });
+	if clouds.shadow > 0.0 {
+		if cloud_shadow_tex.id == 0 || cloud_shadow_n != clouds.shadow_size {
+			if cloud_shadow_tex.id != 0 { gfx::release(cloud_shadow_tex); }
+			cloud_shadow_n = clouds.shadow_size;
+			cloud_shadow_tex = gfx::render_target(cloud_shadow_n, cloud_shadow_n, gfx::R16F);
+		}
+		let tx = clouds.shadow_span / cloud_shadow_n as f32;
+		let cx = linalg::f(floor((view.eye.x / tx) as real + 0.5)) * tx;
+		let cz = linalg::f(floor((view.eye.z / tx) as real + 0.5)) * tx;
+		let ly = max(l.y, 0.05);
+		let sp = 1.0 / clouds.shadow_span;
+		cloud_cu = f4(sp, -l.x / ly * sp, 0.0, (l.x / ly * clouds.ground - cx) * sp + 0.5);
+		cloud_cv = f4(0.0, -l.z / ly * sp, sp, (l.z / ly * clouds.ground - cz) * sp + 0.5);
+		if gfx::begin_pass(gfx::PassDesc { color: [cloud_shadow_tex, none(), none(), none()], .. }) {
+			gfx::bind(pipe_cloud_shadow);
+			gfx::bind_texture(gfx::FRAGMENT, 0, nt, envmap::smp_noise);
+			gfx::uniforms(gfx::FRAGMENT, 0, CloudShadowU { area: f4(cx * k, cz * k, clouds.shadow_span * k, clouds.ground * k), to_sun: x4(l, 0.0), slab: slab, wind: off });
+			gfx::draw(3);
+			gfx::end_pass();
+		}
+	}
+	if cloud_tex.id == 0 || cloud_res != clouds.res {
+		if cloud_tex.id != 0 { gfx::release(cloud_tex); }
+		cloud_res = clouds.res;
+		cloud_tex = gfx::render_target(max((width as f32 * cloud_res) as int, 1), max((height as f32 * cloud_res) as int, 1), gfx::RGBA16F);
+	}
+	guard gfx::begin_pass(gfx::PassDesc { color: [cloud_tex, none(), none(), none()], .. }) else { return; }
+	gfx::bind(pipe_clouds);
+	gfx::bind_texture(gfx::FRAGMENT, 0, envmap::clear, envmap::smp);
+	gfx::bind_texture(gfx::FRAGMENT, 1, envmap::texture(), envmap::smp);
+	gfx::bind_texture(gfx::FRAGMENT, 2, nt, envmap::smp_noise);
+	gfx::uniforms(gfx::FRAGMENT, 0, CloudU { inv_view_proj: linalg::inverse(view_proj_nj), eye: x4(view.eye * k, 0.0), to_sun: x4(l, clouds.sun), sun_rgb: x4(sun.rgb, 0.0), slab: slab, wind: off, env: f4(frame_u.env.x, frame_u.env.y, envmap::irr_lod(), clouds.air), env_rot: f4(frame_u.env_rot.x, frame_u.env_rot.y, if envmap::clear_on { 1.0 } else { 0.0 }, frame_u.env_rot.z), amb_hi: x4(sky.zenith * sky.ambient, 0.0), amb_lo: x4(sky.ground * sky.ambient, 0.0) });
+	gfx::draw(3);
+	gfx::end_pass();
+}
+fn contact_on() bool { (sun.shadows && sun.contact > 0.0) || cloud_shadow_on() }
 fn contact_pass() {
 	if !contact_on() || !nd_ran { return; }
 	let ty = linalg::f(tan((view.fov_y * 0.5) as real));
 	let tx = ty * width as f32 / height as f32;
 	let l = linalg::unit3(sun.to_sun);
 	let lv = linalg::unit3(linalg::v3(view_mat.c0.x * l.x + view_mat.c1.x * l.y + view_mat.c2.x * l.z, view_mat.c0.y * l.x + view_mat.c1.y * l.y + view_mat.c2.y * l.z, view_mat.c0.z * l.x + view_mat.c1.z * l.y + view_mat.c2.z * l.z));
+	let vi = linalg::inverse(view_mat);
 	guard gfx::begin_pass(gfx::PassDesc { color: [contact_tex, none(), none(), none()], .. }) else { return; }
 	gfx::bind(pipe_contact);
 	gfx::bind_texture(gfx::FRAGMENT, 0, lin_depth, smp_point);
 	gfx::bind_texture(gfx::FRAGMENT, 1, nd, smp_point);
 	gfx::bind_texture(gfx::FRAGMENT, 2, if look.ssao { ao } else { white }, smp_point);
-	gfx::uniforms(gfx::FRAGMENT, 0, ContactU { lens: f4(tx, ty, 1.0 / width as f32, 1.0 / height as f32), jit: f4(jitter.x, jitter.y, width as f32, height as f32), sun_v: x4(lv, sun.contact), tune: f4(min(contact_steps, 32) as f32, contact_thick, if look.ssao { 1.0 } else { 0.0 }, if temporal_on() { 1.0 } else { 0.0 }) });
+	gfx::bind_texture(gfx::FRAGMENT, 3, if cloud_shadow_on() { cloud_shadow_tex } else { white }, smp_linear);
+	gfx::uniforms(gfx::FRAGMENT, 0, ContactU { lens: f4(tx, ty, 1.0 / width as f32, 1.0 / height as f32), jit: f4(jitter.x, jitter.y, width as f32, height as f32), sun_v: x4(lv, if sun.shadows { sun.contact } else { 0.0 }), tune: f4(min(contact_steps, 32) as f32, contact_thick, if look.ssao { 1.0 } else { 0.0 }, if temporal_on() { 1.0 } else { 0.0 }), cl_u: cloud_view(cloud_cu, vi), cl_v: cloud_view(cloud_cv, vi), cl: f4(if cloud_shadow_on() { clouds.shadow } else { 0.0 }, 0.0, 0.0, 0.0) });
 	gfx::draw(3);
 	gfx::end_pass();
 }
@@ -2692,6 +2756,8 @@ fn color_pass() {
 	// with sky drawing off the sky pass writes the flat clear colour
 	gfx::bind(pipe_sky);
 	gfx::bind_texture(gfx::FRAGMENT, 0, envmap::texture(), envmap::smp);
+	gfx::bind_texture(gfx::FRAGMENT, 1, if clouds_live() { cloud_tex } else { white }, smp_linear);
+	gfx::bind_texture(gfx::FRAGMENT, 2, envmap::clear, envmap::smp);
 	gfx::uniforms(gfx::FRAGMENT, 0, sky_u());
 	gfx::draw(3);
 	sss_mode = if sss_ran && !capturing { 2 } else { 0 };
@@ -2778,6 +2844,7 @@ fn fog_pass() {
 	gfx::bind_texture(gfx::FRAGMENT, 1, nd, smp_point);
 	gfx::bind_texture(gfx::FRAGMENT, 2, shadow_map, smp_shadow);
 	gfx::bind_texture(gfx::FRAGMENT, 3, envmap::texture(), envmap::smp);
+	gfx::bind_texture(gfx::FRAGMENT, 4, if cloud_shadow_on() { cloud_shadow_tex } else { white }, smp_linear);
 	var u FogU;
 	u.inv_view_proj = linalg::inverse(view_proj);
 	u.cascade_mat[0] = frame_u.cascade_mat[0]; u.cascade_mat[1] = frame_u.cascade_mat[1]; u.cascade_mat[2] = frame_u.cascade_mat[2];
@@ -2788,6 +2855,7 @@ fn fog_pass() {
 	u.params2 = f4(fog_steps as f32, (frames % 64) as f32, fog_g, frame_u.screen.z);
 	u.env = frame_u.env;
 	u.env_rot = frame_u.env_rot;
+	u.cl_u = cloud_cu; u.cl_v = cloud_cv; u.cl = f4(if cloud_shadow_on() { clouds.shadow } else { 0.0 }, 0.0, 0.0, 0.0);
 	for k in MAX_LIGHTS { u.light_pos[k] = frame_u.light_pos[k]; u.light_rgb[k] = frame_u.light_rgb[k]; }
 	gfx::uniforms(gfx::FRAGMENT, 0, u);
 	gfx::draw(3);
@@ -3074,6 +3142,7 @@ fn render_begin() bool {
 	shadow_pass();
 	local_shadow_pass();
 	ao_pass();
+	cloud_pass();
 	contact_pass();
 	ssr_pass();
 	ssgi_pass();

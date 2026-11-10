@@ -4,6 +4,7 @@ layout(set = 2, binding = 0) uniform sampler2D tex_hdr;
 layout(set = 2, binding = 1) uniform sampler2D tex_nd;
 layout(set = 2, binding = 2) uniform sampler2DArrayShadow tex_shadow;
 layout(set = 2, binding = 3) uniform samplerCubeArray tex_env;
+layout(set = 2, binding = 4) uniform sampler2D tex_cloud;
 layout(set = 3, binding = 0) uniform Fog {
 	mat4 inv_view_proj;
 	mat4 cascade_mat[3];
@@ -19,8 +20,16 @@ layout(set = 3, binding = 0) uniform Fog {
 	vec4 light_rgb[16];
 	vec4 env;
 	vec4 env_rot;
+	vec4 cl_u;
+	vec4 cl_v;
+	vec4 cl;
 };
 layout(location = 0) out vec4 out_rgba;
+float cloud_t(vec3 p) {
+	vec2 uv = vec2(dot(cl_u.xyz, p) + cl_u.w, dot(cl_v.xyz, p) + cl_v.w);
+	vec2 e = smoothstep(vec2(0.5), vec2(0.45), abs(uv - 0.5));
+	return mix(1.0, textureLod(tex_cloud, uv, 0.0).r, cl.x * e.x * e.y);
+}
 float sun_vis(vec3 p) {
 	if (to_sun.w < 0.5) return 1.0;
 	float depth = dot(p - eye.xyz, view_dir.xyz);
@@ -55,7 +64,7 @@ void main() {
 		vec3 p = eye.xyz + dir * ((float(i) + jit) * dt);
 		float dens = params.x * exp(-params.y * max(p.y - params.z, 0.0));
 		if (dens <= 0.0) continue;
-		vec3 l = sun_rgb.rgb * phase * sun_vis(p) + amb;
+		vec3 l = sun_rgb.rgb * (phase * sun_vis(p) * cloud_t(p)) + amb;
 		for (int k = 0; k < 16; k++) {
 			if (k >= count) break;
 			float d = length(light_pos[k].xyz - p);

@@ -2,8 +2,14 @@ layout(location = 0) in vec2 in_uv;
 layout(set = 2, binding = 0) uniform sampler2D tex_depth;
 layout(set = 2, binding = 1) uniform sampler2D tex_nd;
 layout(set = 2, binding = 2) uniform sampler2D tex_ao;
-layout(set = 3, binding = 0) uniform Contact { vec4 lens; vec4 jit; vec4 sun_v; vec4 tune; };
+layout(set = 2, binding = 3) uniform sampler2D tex_cloud;
+layout(set = 3, binding = 0) uniform Contact { vec4 lens; vec4 jit; vec4 sun_v; vec4 tune; vec4 cl_u; vec4 cl_v; vec4 cl; };
 layout(location = 0) out vec4 out_rg;
+float cloud_t(vec3 p) {
+	vec2 uv = vec2(dot(cl_u.xyz, p) + cl_u.w, dot(cl_v.xyz, p) + cl_v.w);
+	vec2 e = smoothstep(vec2(0.5), vec2(0.45), abs(uv - 0.5));
+	return mix(1.0, textureLod(tex_cloud, uv, 0.0).r, cl.x * e.x * e.y);
+}
 vec3 view_pos(vec2 px, float z) { vec2 c = vec2(px.x * lens.z * 2.0 - 1.0, 1.0 - px.y * lens.w * 2.0); return vec3(c.x * lens.x * z, c.y * lens.y * z, -z); }
 void main() {
 	ivec2 x = ivec2(gl_FragCoord.xy);
@@ -14,8 +20,9 @@ void main() {
 	vec3 l = sun_v.xyz;
 	if (z <= 0.0 || dot(n, l) <= 0.0) { out_rg = vec4(a, 1.0, 0.0, 1.0); return; }
 	float fp = 2.0 * z * lens.y / jit.w;
-	vec3 p = view_pos(gl_FragCoord.xy + jit.xy, z) + n * (1.5 * fp);
-	int steps = int(tune.x);
+	vec3 p0 = view_pos(gl_FragCoord.xy + jit.xy, z);
+	vec3 p = p0 + n * (1.5 * fp);
+	int steps = sun_v.w > 0.0 ? int(tune.x) : 0;
 	float j = tune.w > 0.5 ? fract(52.9829189 * fract(dot(gl_FragCoord.xy, vec2(0.06711056, 0.00583715)))) : 0.5;
 	float bias = max(z * 0.0007, fp);
 	float occ = 0.0;
@@ -34,5 +41,5 @@ void main() {
 		float hit = zs > 0.0 ? clamp((dz - bias) / (2.0 * bias), 0.0, 1.0) * clamp((tune.y - dz) / (0.5 * tune.y), 0.0, 1.0) : 0.0;
 		occ = max(occ, hit * (1.0 - t * t));
 	}
-	out_rg = vec4(a, 1.0 - occ, 0.0, 1.0);
+	out_rg = vec4(a, (1.0 - occ) * cloud_t(p0), 0.0, 1.0);
 }

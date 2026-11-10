@@ -888,6 +888,44 @@ the slopes across the threads widen the highlight, so cloth does not shimmer at 
 distance and keeps the color and highlight it has up close. The weave costs no
 measurable frame time.
 
+### Volumetric clouds (E6)
+
+```
+s3d::atmosphere(to_sun, 3.5, 1.0, 0.5);
+s3d::clouds = s3d::Clouds { on: true, cover: 0.6, wind: float3 { 10.0, 0.0, 0.0 } };
+s3d::world_time = t;
+```
+
+With `clouds.on` a pass marches a layer of cloud for every sky pixel and the sky is
+drawn clear behind it. A second pass keeps a map of how much sunlight gets through
+the clouds around the camera; opaque surfaces and fog multiply their sunlight by it,
+so the ground carries moving cloud shadows and fog shows light shafts. The
+environment map keeps its own baked cloud layer for ambient light and reflections,
+built from the same cloud shape. Settings on `s3d::clouds`:
+
+* `cover` (0.5): 0 is a clear sky, 1 is overcast. At 0 the frame is the same as with
+  clouds off.
+* `base` (1500) and `thick` (2000): the bottom of the layer above y = 0 and its
+  thickness, in world units. `scale` (0.001) is the number of kilometers in a world
+  unit: 0.001 for a scene in meters.
+* `density` (120): how opaque the clouds are. Higher gives harder edges and darker
+  bases.
+* `wind`: world units a second along x and z. Clouds and their shadows move with
+  `s3d::world_time`.
+* `sun` (1): scales the sunlight on the clouds. `air` (0.05): how fast distant
+  clouds fade into the sky, per kilometer.
+* `shadow` (1): strength of the cloud shadows on surfaces and in fog; 0 skips the
+  map. `shadow_size` (512) and `shadow_span` (4000) are the map's side in texels and
+  the world units it covers, centered on the camera; `ground` (0) is the height the
+  map is laid at.
+* `steps` (34): march steps for a sky pixel, up to 128, with two samples a step
+  inside cloud. `res` (0.75): the cloud pass's size as a share of the frame's; the
+  sky pass scales it up with a bicubic filter.
+
+With `s3d::temporal` on, the march start is jittered from frame to frame and the
+temporal pass averages it. A sky full of clouds costs about 1.5 ms at 1280 x 720 on
+an RX 9060 XT.
+
 ## Materials, light and finish
 
 `gltf` reads the core metal-rough model plus `KHR_materials_clearcoat`, `sheen`,
@@ -2319,6 +2357,30 @@ over 4 km, 1280 x 720, glow and temporal off. Values are read from
   matching native under webgputest's usual bar. The cloud layer baked into the
   environment map takes the same shape as the real-time clouds; no golden draws it.
 
+V1's group size (first 3 on each side), V6's view and its clear-sky comparison, and
+V7's factor were changed after the first runs; each change was committed before the
+run that used it.
+
+### Volumetric cloud results (2026-11-10, RX 9060 XT, RADV; another program using the whole card)
+
+| Bar | Result | Bar value |
+| --- | --- | --- |
+| V1 the shadow map matches the clouds seen | mean difference 0.020 at cover 0.7 (14 points below 0.5, 11 above) | at most 0.05, at least 7 on each side |
+| V1 control, clouds moved 1 km | 0.363 | at least 0.15 |
+| V2 ground shadows follow the map | mean difference 0.0002, spread of the ratio 0.313 | at most 0.02, at least 0.1 |
+| V2 control, shadow strength 0 | ratio 1 at every pixel | within 0.002 |
+| V3 wind moves the shadows | no difference after shifting back 40 texels | at most 0.02 |
+| V3 control, no shift | 0.149 | at least 0.05 |
+| V4 light shafts in fog | spread 0.264 with cloud shadows, 0 without; cover 0 mean 1.0 times the frame without clouds | at least 0.05, at most 0.005, within 1% |
+| V5 a clear sky is unchanged | 0 / 255 | at most 1 / 255 |
+| V5 control, cover 0.5 | 164 / 255 | above 1 / 255 |
+| V6 only sky pixels change | 49,980 box pixels identical; 37.4% of the sky pixels changed | 0 / 255, at least 30% |
+| V7 clouds are lit, not gray | thick cloud 6.77 times the clear sky; 95th percentile 1.01 times white | at least 3, at most 1.2 |
+| V7 control, no sunlight on the clouds | 1.89 | below 3 |
+| V8 detail | 2.33 times the baked layer | at least 2 |
+| V9 cost | 1.44 ms more in the sky view, 0.79 ms more in the ground view | at most 2 ms each |
+| V10 nothing else moved | goldens 44.92 dB and 41.7 dB; gfxtest, wgsltest and webgputest pass, `scene_clouds` identical to the native frame | goldens above 40 dB, all pass, `scene_clouds` above 30 dB |
+
 ### Skin scattering results (2026-11-09, RX 9060 XT, RADV; full gfxtest ok)
 
 Differences are shares of the plateau, listed for red, green and blue. Controls list
@@ -2904,6 +2966,13 @@ pass-through mean error is 0.0106 % (max 0.0488 %).
   so a normal map on a strongly folded cloth is lit slightly off. Cloth meshes are
   not drawn as meshlets. The weave is a plain weave or a warp-faced twill (no satin, no knit), and the
   threads' direction does not stretch the highlight. Hair strands are not built.
+* Clouds: one layer of one cloud type (cumulus), shaped by noise alone: there is no
+  weather map to place clouds and no high thin cloud. They are drawn on sky pixels
+  only, so nothing can sit inside a cloud or be hidden by one. Light inside a cloud
+  is four samples toward the sun plus a fitted term for scattering, not a full
+  solution, and local lights do not light clouds. Reflections, probes and ambient
+  light see the environment map's baked layer, which does not move with the wind.
+  Thin cloud edges show some grain without the temporal pass.
 * Sheen renders brighter than three.js on the chair and toy car (the likely cause, its
   low fit, is unproven), and the clearcoat fixture's base tiles are brighter
   (R 185 against 143), cause not found. See the PSNR table in hc/test/gfx/results.

@@ -6405,6 +6405,294 @@ fn sub_since(at int) int, real, int {
 	for k in at..ns.len { top = max(top, ns[k]); if ns[k] > 1.0e8 { slow += 1; } }
 	return ns.len, top / 1.0e6, slow;
 }
+var VC_N = 0;
+var VC_C = 0;
+var VC_COVER f32 = 0.5;
+fn vc_world(baked f32) {
+	reset_scene();
+	s3d::sky = DEF_SKY; s3d::sun = DEF_SUN; s3d::look = DEF_LOOK; s3d::look.bloom = 0.0; s3d::look.ssao = false;
+	s3d::ssr_on = false; s3d::ssgi_on = false; s3d::gi_on = false; s3d::temporal = 0; s3d::fog_on = false; s3d::sss_on = false;
+	s3d::atmosphere(float3 { 0.7071068, 0.7071068, 0.0 }, 3.5, 1.0, baked);
+	s3d::sun.shadows = false;
+	envmap::intensity = 1.0;
+	s3d::world_time = 1.0;
+	s3d::clouds = s3d::Clouds { on: true };
+}
+fn vc_cam(eye float3, dir float3, up float3, fov f32) { s3d::view = s3d::Camera { eye: eye, target: float3 { eye.x + dir.x, eye.y + dir.y, eye.z + dir.z }, up: up, fov_y: fov, near: 1.0, far: 8000.0 }; }
+fn vc_view() { vc_cam(float3 { 0.0, 2.0, 0.0 }, float3 { -0.8660254, 0.5, 0.0 }, float3 { 0.0, 1.0, 0.0 }, 1.0); }
+fn vc_lum(px const byte[:], i int) real { 0.2126 * gi_half(px, 8, i, 0) as real + 0.7152 * gi_half(px, 8, i, 1) as real + 0.0722 * gi_half(px, 8, i, 2) as real }
+fn vc_l8(px const byte[:], i int) real { 0.25 * px[i * 4] as real + 0.625 * px[i * 4 + 1] as real + 0.125 * px[i * 4 + 2] as real }
+fn vc_map(mp const byte[:], x real, z real) real {
+	let u = (s3d::cloud_cu.x as real * x + s3d::cloud_cu.z as real * z + s3d::cloud_cu.w as real) * 512.0 - 0.5;
+	let v = (s3d::cloud_cv.x as real * x + s3d::cloud_cv.z as real * z + s3d::cloud_cv.w as real) * 512.0 - 0.5;
+	let x0 = max(min(floor(u) as int, 510), 0);
+	let y0 = max(min(floor(v) as int, 510), 0);
+	let fx = u - x0 as real;
+	let fy = v - y0 as real;
+	let a = gi_half(mp, 2, y0 * 512 + x0, 0) as real;
+	let b = gi_half(mp, 2, y0 * 512 + x0 + 1, 0) as real;
+	let c = gi_half(mp, 2, y0 * 512 + 512 + x0, 0) as real;
+	let d = gi_half(mp, 2, y0 * 512 + 513 + x0, 0) as real;
+	(a * (1.0 - fx) + b * fx) * (1.0 - fy) + (c * (1.0 - fx) + d * fx) * fy
+}
+fn vc_t(ct const byte[:], x int, y int) real {
+	let cw = (1280.0 * s3d::clouds.res) as int;
+	gi_half(ct, 8, (y * ((720.0 * s3d::clouds.res) as int) / 720) * cw + x * cw / 1280, 3) as real
+}
+fn vc_v1() bool {
+	var cover f32 = 0.5; var lo = 0; var hi = 0; var e = 0.0; var ec = 0.0;
+	for k in 19 {
+		let sg f32 = if k % 2 == 1 { 0.05 } else { -0.05 };
+		cover = 0.5 + sg * ((k + 1) / 2) as f32;
+		vc_world(0.5);
+		s3d::clouds.cover = cover;
+		lo = 0; hi = 0; e = 0.0; ec = 0.0;
+		for i in 25 {
+			let x = (i % 5 - 2) as f32 * 400.0;
+			let z = (i / 5 - 2) as f32 * 400.0;
+			vc_cam(float3 { x, 0.0, z }, float3 { 0.7071068, 0.7071068, 0.0 }, float3 { 0.0, 1.0, 0.0 }, 1.0);
+			s3d::clouds.wind = float3 { 0.0, 0.0, 0.0 };
+			shoot(1, IN_OUT);
+			let ct = gfx::read_pixels(s3d::cloud_target());
+			let mp = gfx::read_pixels(s3d::cloud_shadow_target());
+			let t = vc_t(ct[..], 640, 360);
+			s3d::clouds.wind = float3 { 1000.0, 0.0, 0.0 };
+			shoot(1, IN_OUT);
+			let mc = gfx::read_pixels(s3d::cloud_shadow_target());
+			e += abs(t - vc_map(mp[..], x as real, z as real)) / 25.0;
+			ec += abs(t - vc_map(mc[..], x as real, z as real)) / 25.0;
+			let below = if t < 0.5 { 1 } else { 0 };
+			lo += below; hi += 1 - below;
+		}
+		if lo >= 7 && hi >= 7 { break; }
+	}
+	VC_COVER = cover;
+	let ok = lo >= 7 && hi >= 7 && e <= 0.05 && ec >= 0.15;
+	print("gpu: cloud V1 shadow map against the clouds seen toward the sun from 25 ground points, cover ", r2(cover as real), " (", lo, " below 0.5, ", hi, " above; bar >= 7 each): mean difference ", r4(e), " (bar <= 0.05); control map built with the clouds moved 1 km: ", r4(ec), " (bar >= 0.15)", if ok { " PASS" } else { " FAIL" });
+	ok
+}
+fn vc_ground(mode int) {
+	vc_world(0.5);
+	envmap::intensity = 0.0;
+	s3d::sky.ambient = 0.0;
+	let _ = s3d::add(shapes::plane(4000.0, shapes::material(linalg::v3(1.0, 1.0, 1.0), 0.0, 1.0)));
+	vc_cam(float3 { 0.0, 1400.0, 0.0 }, float3 { 0.0, -1.0, 0.0 }, float3 { 0.0, 0.0, -1.0 }, 1.6);
+	s3d::clouds.cover = VC_COVER;
+	s3d::clouds.on = mode > 0;
+	s3d::clouds.shadow = if mode == 2 { 0.0 } else { 1.0 };
+}
+fn vc_v2() bool {
+	vc_ground(0);
+	let off = rr_hdr(2);
+	vc_ground(2);
+	let ctl = rr_hdr(2);
+	vc_ground(1);
+	let on = rr_hdr(2);
+	let mp = gfx::read_pixels(s3d::cloud_shadow_target());
+	let st = gfx::read_pixels(IN_OUT);
+	print("gpu: cloud ground shadow still ", codec_png::write(path(OUT_DIR[..], "cloud_ground.png")[..], 1280, 720, 4, st[..]));
+	let ps = 360.0 / tan(0.8);
+	var e = 0.0; var s1 = 0.0; var s2 = 0.0; var worst = 0.0;
+	for y in 400 { for x in 400 {
+		let i = (160 + y) * 1280 + 440 + x;
+		let b = max(gi_half(off[..], 8, i, 0) as real, 1e-9);
+		let q = gi_half(on[..], 8, i, 0) as real / b;
+		e += abs(q - vc_map(mp[..], ((x - 200) as real + 0.5) / ps * 1400.0, ((y - 200) as real + 0.5) / ps * 1400.0));
+		s1 += q; s2 += q * q;
+		worst = max(worst, abs(gi_half(ctl[..], 8, i, 0) as real / b - 1.0));
+	} }
+	e = e / 160000.0;
+	let m = s1 / 160000.0;
+	let sd = sqrt(max(s2 / 160000.0 - m * m, 0.0));
+	let ok = e <= 0.02 && sd >= 0.1 && worst <= 0.002;
+	print("gpu: cloud V2 ground from 1.4 km up, middle 400 x 400: red with over red without against the map, mean difference ", r4(e), " (bar <= 0.02), ratio mean ", r4(m), ", spread ", r4(sd), " (bar >= 0.1); control shadow strength 0: at most ", r4(worst), " from 1 (bar <= 0.002)", if ok { " PASS" } else { " FAIL" });
+	ok
+}
+fn vc_v3() bool {
+	vc_world(0.5);
+	vc_cam(float3 { 0.0, 2.0, 0.0 }, float3 { 0.0, 0.0, 1.0 }, float3 { 0.0, 1.0, 0.0 }, 1.0);
+	s3d::clouds.cover = VC_COVER;
+	s3d::clouds.wind = float3 { 10.0, 0.0, 0.0 };
+	s3d::world_time = 0.0;
+	shoot(1, IN_OUT);
+	let a = gfx::read_pixels(s3d::cloud_shadow_target());
+	var mg byte[>..] = [];
+	for i in 262144 { let v = max(min((gi_half(a[..], 2, i, 0) as real * 255.0) as int, 255), 0) as byte; mg.push(v); mg.push(v); mg.push(v); mg.push(255 as byte); }
+	print("gpu: cloud shadow map still ", codec_png::write(path(OUT_DIR[..], "cloud_map.png")[..], 512, 512, 4, mg[..]));
+	s3d::world_time = 31.25;
+	shoot(1, IN_OUT);
+	let b = gfx::read_pixels(s3d::cloud_shadow_target());
+	var e = 0.0; var c = 0.0;
+	for y in 512 { for x in 472 {
+		let p = gi_half(a[..], 2, y * 512 + x, 0) as real;
+		e += abs(gi_half(b[..], 2, y * 512 + x + 40, 0) as real - p);
+		c += abs(gi_half(b[..], 2, y * 512 + x, 0) as real - p);
+	} }
+	e = e / 241664.0; c = c / 241664.0;
+	let ok = e <= 0.02 && c >= 0.05;
+	print("gpu: cloud V3 wind 10 m/s along +x, 31.25 s apart: later map 40 texels back against the earlier one ", r4(e), " (bar <= 0.02); control no shift ", r4(c), " (bar >= 0.05)", if ok { " PASS" } else { " FAIL" });
+	ok
+}
+fn vc_fog(mode int, name const byte[:]) real, real {
+	vc_world(0.5);
+	envmap::intensity = 0.0;
+	s3d::sky.draw = false;
+	s3d::fog_on = true; s3d::fog_density = 0.002; s3d::fog_falloff = 0.0; s3d::fog_height = 0.0; s3d::fog_far = 2000.0; s3d::fog_steps = 64; s3d::fog_g = 0.0; s3d::fog_sun = 1.0;
+	s3d::fog_ambient = float3 { 0.0, 0.0, 0.0 };
+	vc_cam(float3 { 0.0, 2.0, 0.0 }, float3 { 0.0, 0.0, 1.0 }, float3 { 0.0, 1.0, 0.0 }, 1.0);
+	s3d::clouds.on = mode > 0;
+	s3d::clouds.shadow = if mode == 2 { 0.0 } else { 1.0 };
+	s3d::clouds.cover = if mode == 3 { 0.0 } else { VC_COVER };
+	let px = rr_hdr(2);
+	if name.len > 0 { let st = gfx::read_pixels(IN_OUT); print("gpu: cloud fog still ", codec_png::write(path(OUT_DIR[..], name)[..], 1280, 720, 4, st[..])); }
+	var s = 0.0; var q = 0.0;
+	for x in 1280 {
+		var c = 0.0;
+		for y in 720 { c += gi_half(px[..], 8, y * 1280 + x, 0) as real; }
+		c = c / 720.0;
+		s += c; q += c * c;
+	}
+	let m = s / 1280.0;
+	return m, sqrt(max(q / 1280.0 - m * m, 0.0)) / max(m, 1e-12);
+}
+fn vc_v4() bool {
+	let m0, d0 = vc_fog(0, "");
+	let m1, d1 = vc_fog(1, "cloud_fog.png");
+	let m2, d2 = vc_fog(2, "");
+	let m3, d3 = vc_fog(3, "");
+	let ok = d1 >= 0.05 && d2 <= 0.005 && abs(m3 / m0 - 1.0) <= 0.01;
+	print("gpu: cloud V4 fog shafts (same scattering in every direction), spread of the column means over their mean: ", r4(d1), " with cloud shadows (bar >= 0.05), ", r4(d2), " without (bar <= 0.005), ", r4(d0), " clouds off; cover 0 frame mean ", r4(m3 / m0), " x the frame without clouds (bar within 1%)", if ok { " PASS" } else { " FAIL" });
+	ok
+}
+fn vc_v5() bool {
+	vc_world(0.0);
+	vc_view();
+	s3d::clouds.cover = 0.0;
+	let a = rr_frame(2);
+	s3d::clouds.on = false;
+	let b = rr_frame(2);
+	s3d::clouds.on = true;
+	s3d::clouds.cover = 0.5;
+	let c = rr_frame(2);
+	let d = sk_apart(a[..], b[..]);
+	let dc = sk_apart(c[..], b[..]);
+	let ok = d <= 1 && dc > 1;
+	print("gpu: cloud V5 clear sky, cover 0, clouds on against off: largest difference ", d, "/255 (bar <= 1); control cover 0.5: ", dc, "/255 (must fail)", if ok { " PASS" } else { " FAIL" });
+	ok
+}
+fn vc_box(cube bool, on bool, baked f32) byte[>..] {
+	vc_world(baked);
+	s3d::clouds.shadow = 0.0;
+	s3d::clouds.on = on;
+	if cube { s3d::place(s3d::add(shapes::cube(float3 { 1.0, 1.0, 1.0 }, shapes::material(linalg::v3(0.7, 0.2, 0.2), 0.0, 0.5))), gfx::translate(float3 { -6.761481, 3.811733, 0.0 })); }
+	vc_cam(float3 { 0.0, 2.0, 0.0 }, float3 { -0.9659258, 0.258819, 0.0 }, float3 { 0.0, 1.0, 0.0 }, 1.0);
+	rr_frame(2)
+}
+fn vc_v6() bool {
+	let sky = vc_box(false, false, 0.5);
+	let b0 = vc_box(true, false, 0.5);
+	let b1 = vc_box(true, true, 0.5);
+	let c0 = vc_box(true, false, 0.0);
+	var hit byte[>..] = [];
+	for i in 921600 { hit.push(if sk_d(sky[..], b0[..], i) > 0 { 1 as byte } else { 0 as byte }); }
+	var nb = 0; var bd = 0; var ns = 0; var sd = 0;
+	for y in 1..719 { for x in 1..1279 {
+		var c = 0;
+		for k in 9 { c += hit[(y + k / 3 - 1) * 1280 + x + k % 3 - 1] as int; }
+		let df = sk_d(b0[..], b1[..], y * 1280 + x);
+		if c == 9 { nb += 1; bd = max(bd, df); } else if c == 0 { ns += 1; sd += if sk_d(c0[..], b1[..], y * 1280 + x) > 8 { 1 } else { 0 }; }
+	} }
+	let part = sd as real / max(ns, 1) as real;
+	let ok = nb > 1000 && bd == 0 && part >= 0.3;
+	print("gpu: cloud V6 box in front, camera 15 degrees up, cloud shadows off: ", nb, " box pixels differ by at most ", bd, "/255 (bar 0); ", r4(part * 100.0), " % of ", ns, " sky pixels differ by more than 8/255 from the clear sky (bar >= 30 %)", if ok { " PASS" } else { " FAIL" });
+	ok
+}
+fn vc_sky(sun f32, white real) real, real, real {
+	vc_world(0.5);
+	s3d::clouds.sun = sun;
+	vc_view();
+	let hd = rr_hdr(2);
+	let ct = gfx::read_pixels(s3d::cloud_target());
+	var hist int[>..] = [];
+	for i in 4000 { hist.push(0); }
+	var ts = 0.0; var tn = 0; var cs = 0.0; var cn = 0;
+	for y in 720 { for x in 1280 {
+		let t = vc_t(ct[..], x, y);
+		let l = vc_lum(hd[..], y * 1280 + x);
+		if t < 0.1 { ts += l; tn += 1; hist[max(min((l / white * 1000.0) as int, 3999), 0)] += 1; } else if t > 0.99 { cs += l; cn += 1; }
+	} }
+	var acc = 0; var p = 3999;
+	for i in 4000 { acc += hist[i]; if acc * 20 >= tn * 19 { p = i; break; } }
+	VC_N = tn; VC_C = cn;
+	return ts / max(tn, 1) as real, cs / max(cn, 1) as real, (p + 1) as real / 1000.0;
+}
+fn vc_rough(px const byte[:]) real {
+	var s = 0.0;
+	for y in 720 { for x in 1279 { s += abs(vc_l8(px, y * 1280 + x + 1) - vc_l8(px, y * 1280 + x)); } }
+	s / 920880.0
+}
+fn vc_v78() bool {
+	vc_world(0.5);
+	envmap::intensity = 0.0; s3d::sky.ambient = 0.0; s3d::clouds.on = false;
+	s3d::sun.to_sun = float3 { 0.0, 1.0, 0.0 };
+	let _ = s3d::add(shapes::plane(50.0, shapes::material(linalg::v3(1.0, 1.0, 1.0), 0.0, 1.0)));
+	vc_cam(float3 { 10.0, 10.0, 0.0 }, float3 { -0.7071068, -0.7071068, 0.0 }, float3 { 0.0, 1.0, 0.0 }, 1.0);
+	let wp = rr_hdr(2);
+	let white = vc_lum(wp[..], 360 * 1280 + 640);
+	let thick, clear, top = vc_sky(1.0, white);
+	let tn = VC_N; let cn = VC_C;
+	let on = gfx::read_pixels(IN_OUT);
+	print("gpu: cloud still ", codec_png::write(path(OUT_DIR[..], "cloud_sky.png")[..], 1280, 720, 4, on[..]));
+	let dk, dc, dt = vc_sky(0.0, white);
+	let v7 = tn > 1000 && cn > 1000 && thick >= 3.0 * clear && top <= 1.2 && dk < 3.0 * dc;
+	print("gpu: cloud V7 sun behind the camera, 30 degrees up: thick cloud (", tn, " px) ", r4(thick / white), ", clear sky (", cn, " px) ", r4(clear / white), " x a white surface facing the sun: ", r3(thick / max(clear, 1e-9)), " x (bar >= 3), 95th percentile of thick cloud ", r3(top), " x white (bar <= 1.2); control sunlight on clouds 0: ", r3(dk / max(dc, 1e-9)), " x (must fail)", if v7 { " PASS" } else { " FAIL" });
+	s3d::clouds.sun = 1.0;
+	s3d::clouds.on = false;
+	let bk = rr_frame(2);
+	print("gpu: cloud baked still ", codec_png::write(path(OUT_DIR[..], "cloud_baked.png")[..], 1280, 720, 4, bk[..]));
+	let ra = vc_rough(on[..]);
+	let rb = vc_rough(bk[..]);
+	let v8 = ra >= 2.0 * rb;
+	print("gpu: cloud V8 detail, mean luma step between neighbors across: ", r4(ra), " real-time against ", r4(rb), " baked: ", r3(ra / max(rb, 1e-9)), " x (bar >= 2)", if v8 { " PASS" } else { " FAIL" });
+	v7 && v8
+}
+fn vc_v9() bool {
+	vc_world(0.5);
+	vc_view();
+	s3d::clouds.on = false;
+	let a0 = frame_ms();
+	s3d::clouds.on = true;
+	let a1 = frame_ms();
+	vc_ground(0);
+	let g0 = frame_ms();
+	vc_ground(1);
+	let g1 = frame_ms();
+	let ok = a1 - a0 <= 2.0 && g1 - g0 <= 2.0;
+	print("gpu: cloud V9 cost: sky view ", r2(a0), " ms without, ", r2(a1), " ms with (", r2(a1 - a0), " ms more), ground view ", r2(g0), " ms without, ", r2(g1), " ms with (", r2(g1 - g0), " ms more; bar <= 2 each)", if ok { " PASS" } else { " FAIL" });
+	ok
+}
+fn cloud_checks() bool {
+	half_table();
+	s3d::init(1280, 720);
+	IN_OUT = gfx::render_target(1280, 720, gfx::RGBA8);
+	let son = envmap::on; let si = envmap::intensity;
+	let fo = s3d::fog_on; let fd = s3d::fog_density; let ff = s3d::fog_falloff; let fh = s3d::fog_height; let fr = s3d::fog_far; let fs = s3d::fog_steps; let fg = s3d::fog_g; let fa = s3d::fog_ambient;
+	let v1 = vc_v1();
+	let v2 = vc_v2();
+	let v3 = vc_v3();
+	let v4 = vc_v4();
+	let v5 = vc_v5();
+	let v6 = vc_v6();
+	let v78 = vc_v78();
+	let v9 = vc_v9();
+	reset_scene();
+	s3d::clouds = s3d::Clouds { on: false };
+	s3d::world_time = 0.0;
+	envmap::on = son; envmap::intensity = si;
+	s3d::fog_on = fo; s3d::fog_density = fd; s3d::fog_falloff = ff; s3d::fog_height = fh; s3d::fog_far = fr; s3d::fog_steps = fs; s3d::fog_g = fg; s3d::fog_ambient = fa;
+	s3d::sky = DEF_SKY; s3d::sun = DEF_SUN; s3d::look = DEF_LOOK;
+	v1 && v2 && v3 && v4 && v5 && v6 && v78 && v9
+}
 fn mark(name const byte[:], ok bool) bool {
 	if SUB_LOG.len == 0 { return ok; }
 	let n, top, slow = sub_since(SUB_AT);
@@ -6450,7 +6738,7 @@ fn gpu_checks(dir const byte[:], golden const byte[:]) bool {
 	var only byte[>..] = [];
 	let _ = env("GFX_ONLY", only);
 	if only.len > 0 {
-		let ok = if only[..] == "gtao" { gtao_checks() } else if only[..] == "gi" { gi_checks() } else if only[..] == "mblur" { mb_checks() } else if only[..] == "dof" { dof_checks() } else if only[..] == "fx" { fx_checks() } else if only[..] == "tsr" { tsr_checks(dir) } else if only[..] == "probe" { probe_checks(dir) } else if only[..] == "ssgi" { ssgi_checks() } else if only[..] == "decal" { decal_checks() } else if only[..] == "weather" { weather_checks() } else if only[..] == "rect" { rect_checks() } else if only[..] == "small" { small_checks() } else if only[..] == "inst" { instance_checks() } else if only[..] == "caust" { caustic_checks() } else if only[..] == "tex" { texture_checks() } else if only[..] == "stream" { stream_checks() } else if only[..] == "rtr" { rtr_checks() } else if only[..] == "meshlet" { meshlet_checks() } else if only[..] == "sss" { sss_checks() } else if only[..] == "cloth" { cloth_checks() } else { shadow_checks() };
+		let ok = if only[..] == "gtao" { gtao_checks() } else if only[..] == "gi" { gi_checks() } else if only[..] == "mblur" { mb_checks() } else if only[..] == "dof" { dof_checks() } else if only[..] == "fx" { fx_checks() } else if only[..] == "tsr" { tsr_checks(dir) } else if only[..] == "probe" { probe_checks(dir) } else if only[..] == "ssgi" { ssgi_checks() } else if only[..] == "decal" { decal_checks() } else if only[..] == "weather" { weather_checks() } else if only[..] == "rect" { rect_checks() } else if only[..] == "small" { small_checks() } else if only[..] == "inst" { instance_checks() } else if only[..] == "caust" { caustic_checks() } else if only[..] == "tex" { texture_checks() } else if only[..] == "stream" { stream_checks() } else if only[..] == "rtr" { rtr_checks() } else if only[..] == "meshlet" { meshlet_checks() } else if only[..] == "sss" { sss_checks() } else if only[..] == "cloth" { cloth_checks() } else if only[..] == "cloud" { cloud_checks() } else { shadow_checks() };
 		let e = gfx::error();
 		if e.len > 0 { print("gpu: gfx error ", e[..]); return false; }
 		return mark(only[..], ok) && submit_checks(false);
@@ -6626,6 +6914,7 @@ fn gpu_checks(dir const byte[:], golden const byte[:]) bool {
 	if !mark("meshlet", meshlet_checks()) { good = false; }
 	if !mark("sss", sss_checks()) { good = false; }
 	if !mark("cloth", cloth_checks()) { good = false; }
+	if !mark("cloud", cloud_checks()) { good = false; }
 	if !submit_checks(true) { good = false; }
 	let err = gfx::error();
 	if err.len > 0 { print("gpu: gfx error ", err[..]); good = false; }

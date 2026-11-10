@@ -2,29 +2,10 @@
 #include "atmos.glsl"
 layout(location = 0) in vec2 in_uv;
 layout(set = 2, binding = 0) uniform sampler2D tex_src;
+layout(set = 2, binding = 1) uniform sampler3D tex_noise;
+#include "cloud.glsl"
 layout(set = 3, binding = 0) uniform EnvSkyU { vec4 p; vec4 sun; vec4 cloud; };
 layout(location = 0) out vec4 out_rgba;
-float c_hash(vec3 q) {
-	vec3 r = fract(q * 0.1031);
-	r += dot(r, r.zyx + 31.32);
-	return fract((r.x + r.y) * r.z);
-}
-float c_noise(vec3 q) {
-	vec3 i = floor(q);
-	vec3 f = q - i;
-	f = f * f * (3.0 - 2.0 * f);
-	float a = mix(mix(c_hash(i), c_hash(i + vec3(1.0, 0.0, 0.0)), f.x), mix(c_hash(i + vec3(0.0, 1.0, 0.0)), c_hash(i + vec3(1.0, 1.0, 0.0)), f.x), f.y);
-	float b = mix(mix(c_hash(i + vec3(0.0, 0.0, 1.0)), c_hash(i + vec3(1.0, 0.0, 1.0)), f.x), mix(c_hash(i + vec3(0.0, 1.0, 1.0)), c_hash(i + vec3(1.0, 1.0, 1.0)), f.x), f.y);
-	return mix(a, b, f.z);
-}
-float c_dens(vec3 q) {
-	float h = (q.y - 1.5) / 2.0;
-	if (h <= 0.0 || h >= 1.0) return 0.0;
-	vec3 s = (q + vec3(cloud.y, 0.0, cloud.z)) * vec3(0.32, 0.55, 0.32);
-	float n = 0.5 * c_noise(s) + 0.25 * c_noise(s * 2.03 + vec3(7.1)) + 0.125 * c_noise(s * 4.07 + vec3(3.3)) + 0.0625 * c_noise(s * 8.11 + vec3(1.7)) + 0.03125 * c_noise(s * 16.3 + vec3(5.9));
-	return max(n / 0.96875 - (1.0 - cloud.x * 0.7), 0.0) * smoothstep(0.0, 0.14, h) * smoothstep(1.0, 0.35, h) * 42.0;
-}
-float c_hg(float cs, float g) { return 0.0795774715 * (1.0 - g * g) / pow(max(1.0 + g * g - 2.0 * g * cs, 1e-4), 1.5); }
 void main() {
 	vec3 d = normalize(face_dir(int(p.x + 0.5), in_uv * 2.0 - 1.0));
 	vec3 o = vec3(0.0, A_RG + p.y, 0.0);
@@ -66,25 +47,19 @@ void main() {
 		float fade = smoothstep(70.0, 18.0, s0);
 		if (fade > 0.0) {
 			vec3 oc = vec3(0.0, p.y, 0.0);
+			vec4 sl = vec4(1.5, 2.0, cloud.x, 42.0);
 			float dt = (s1 - s0) / 28.0;
 			float ct = 1.0;
 			vec3 cl = vec3(0.0);
 			vec3 sun_t = a_trans(o + vec3(0.0, 2.5, 0.0), ld, mie);
 			vec3 amb = 12.566 * texture(tex_src, vec2(ld.y * 0.5 + 0.5, sqrt(0.025))).rgb;
-			float ph = 0.8 * c_hg(cs, 0.6) + 0.2 * c_hg(cs, -0.3);
 			for (int i = 0; i < 28; i++) {
 				if (ct < 0.01) break;
 				vec3 q = oc + d * (s0 + (float(i) + 0.5) * dt);
-				float de = c_dens(q);
+				float de = c_dens(q, sl, cloud.yz, 1.0);
 				if (de <= 0.0) continue;
-				float od = 0.0;
-				for (int k = 0; k < 4; k++) od += c_dens(q + ld * (0.09 + 0.22 * float(k)));
-				od *= 0.22;
-				float beer = max(exp(-od), 0.7 * exp(-od * 0.25));
-				float pow_t = 1.0 - exp(-2.0 * od - 0.5);
-				vec3 s = (sun_t * ph * 12.566 * beer * pow_t + amb * mix(0.6, 1.7, clamp((q.y - 1.5) / 1.4, 0.0, 1.0))) * 0.0795774715 * 0.97;
 				float stp = exp(-de * dt);
-				cl += ct * s * (1.0 - stp);
+				cl += ct * c_light(q, de, ld, sl, cloud.yz, cs, sun_t, amb * 0.048, amb * 0.135, 1.0) * (1.0 - stp);
 				ct *= stp;
 			}
 			float keep = mix(1.0, ct, fade);
