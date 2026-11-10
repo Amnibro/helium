@@ -37,6 +37,7 @@ import gfx.envmap;
 import gfx.clusters;
 import gfx.bc;
 import gfx.ktx2;
+import gfx.meshlet;
 import os;
 
 let CASCADES = 3;
@@ -59,7 +60,7 @@ struct Item { asset int, place gfx::mat4, prev_place gfx::mat4, anim int, time f
 struct InstSet { asset int, first int, count int, lod_asset int = -1, lod_distance f32 = 0.0, sway f32 = 0.0, visible bool = true, top f32 = 0.0, c float3 = float3 { 0.0, 0.0, 0.0 }, r f32 = 0.0, lo float3 = float3 { 0.0, 0.0, 0.0 }, hi float3 = float3 { 0.0, 0.0, 0.0 }, ia int[2] = [0, 0], na int[2] = [0, 0], iv int[2] = [0, 0], nv int[2] = [0, 0], smax f32 = 1.0 }
 struct Caustics { on bool = false, manual bool = false, strength f32 = 1.0, focus f32 = 1.0, cap f32 = 7.0, level f32 = 0.0, waves float4 = float4 { 1.1, 0.062, 1.0, 0.7 }, absorb float3 = float3 { 0.45, 0.09, 0.07 }, lo float3 = float3 { -1.0e9, 0.0, -1.0e9 }, hi float3 = float3 { 1.0e9, 0.0, 1.0e9 } }
 struct Wind { dir float3 = float3 { 1.0, 0.0, 0.0 }, strength f32 = 0.0, speed f32 = 1.0, time f32 = 0.0 }
-struct Batch { prim int, item int, node int, joint_base int, model gfx::mat4, depth f32, mode int, prev_model gfx::mat4, prev_joint_base int, vis bool, trans bool, wb int, pwb int, inst int, lod int }
+struct Batch { prim int, item int, node int, joint_base int, model gfx::mat4, depth f32, mode int, prev_model gfx::mat4, prev_joint_base int, vis bool, trans bool, wb int, pwb int, inst int, lod int, ml int }
 
 struct DrawU { model gfx::mat4, model_normal gfx::mat4, view_proj gfx::mat4, prev_model gfx::mat4, deform float4, misc float4, cur_vp gfx::mat4, prev_vp gfx::mat4, weights float4[16], prev_weights float4[16], inst float4, sway_o float4, wind float4, wind_t float4, push float4[4], prev_push float4[4] }
 struct FrameU {
@@ -412,6 +413,34 @@ var inst_t2 f32[>..] = [];
 var inst_t3 f32[>..] = [];
 var inst_dirty = true;
 var inst_all = false;
+var meshlets = false;
+var meshlet_px f32 = 1.0;
+var meshlet_cone = true;
+var meshlet_cpu = false;
+var meshlet_min = 4000;
+var meshlet_budget = 8000000;
+var ml_first int[>..] = [];
+var ml_count int[>..] = [];
+var ml_tab f32[>..] = [];
+var ml_rng u32[>..] = [];
+var ml_idx u32[>..] = [];
+var ml_draws f32[>..] = [];
+var ml_bases int[>..] = [];
+var ml_sel u32[>..] = [];
+var ml_tab_buf gfx::Buffer;
+var ml_rng_buf gfx::Buffer;
+var ml_idx_buf gfx::Buffer;
+var ml_draw_buf gfx::Buffer;
+var ml_args_buf gfx::Buffer;
+var ml_out_buf gfx::Buffer;
+var ml_dirty = false;
+var ml_have = false;
+var ml_draw_cap = 0;
+var ml_out_cap = 0;
+var pipe_ml_cull gfx::ComputePipeline;
+var pipe_ml_fit gfx::ComputePipeline;
+struct MlU { eye float4, lod float4, planes float4[6] }
+struct MlFitU { n float4 }
 var instance_cull = true;
 var xbuf gfx::Buffer;
 var xbuf_cap int = 0;
@@ -815,6 +844,8 @@ fn init(w int, h int, ow int, oh int) bool {
 	pipe_temporal = gfx::pipeline(scr, embed_shader("shaders/temporal.frag"));
 	pipe_hist = gfx::compute_pipeline(embed_shader("shaders/expo_hist.comp"));
 	pipe_adapt = gfx::compute_pipeline(embed_shader("shaders/expo_adapt.comp"));
+	pipe_ml_cull = gfx::compute_pipeline(embed_shader("shaders/meshlet_cull.comp"));
+	pipe_ml_fit = gfx::compute_pipeline(embed_shader("shaders/meshlet_fit.comp"));
 	let rwb = gfx::BUFFER_STORAGE | gfx::BUFFER_COMPUTE_READ | gfx::BUFFER_COMPUTE_WRITE;
 	var z u32[128] = [0; 128];
 	hist_buf = gfx::buffer(rwb, 512, bytes_of(z)[..]);
@@ -873,6 +904,8 @@ fn forget() {
 	motion_fresh = true;
 	temporal_reset = true;
 	gi_built = false;
+	ml_first.clear(); ml_count.clear(); ml_tab.clear(); ml_rng.clear(); ml_idx.clear(); ml_draws.clear(); ml_bases.clear();
+	ml_dirty = true;
 }
 
 fn upload_geometry() {
@@ -1500,7 +1533,7 @@ fn gather_instances() {
 				let mesh = gltf::meshes[n.mesh];
 				for pk in mesh.prims.count {
 					let pi = mesh.prims.first + pk;
-					batch.push(Batch { pi, -1, ni, -1, motion::world[ni], d, material_of(pi).alpha_mode, motion::world[ni], -1, instances[si].nv[l] > 0, material_of(pi).trans > 0.0, -1, -1, si, l });
+					batch.push(Batch { pi, -1, ni, -1, motion::world[ni], d, material_of(pi).alpha_mode, motion::world[ni], -1, instances[si].nv[l] > 0, material_of(pi).trans > 0.0, -1, -1, si, l, -1 });
 				}
 			}
 		}
@@ -1523,6 +1556,8 @@ fn gather_instances() {
 }
 fn gather() {
 	batch.clear();
+	ml_draws.clear();
+	ml_bases.clear();
 	joints.clear();
 	cur_keys.clear();
 	cur_models.clear();
@@ -1570,7 +1605,7 @@ fn gather() {
 				let model = if joint_base >= 0 { gfx::mat4_identity } else { motion::world[ni] };
 				let c = linalg::point(model, linalg::mix3(pr.lo, pr.hi, 0.5));
 				let d = linalg::dot3(linalg::v3(c.x - view.eye.x, c.y - view.eye.y, c.z - view.eye.z), forward());
-				batch.push(Batch { pi, ii, ni, joint_base, model, d, material_of(pi).alpha_mode, prev_model, prev_base, joint_base >= 0 || in_view(gfx::mul(view_proj, model), pr.lo, pr.hi), material_of(pi).trans > 0.0, wb, pwb, -1, 0 });
+				batch.push(Batch { pi, ii, ni, joint_base, model, d, material_of(pi).alpha_mode, prev_model, prev_base, joint_base >= 0 || in_view(gfx::mul(view_proj, model), pr.lo, pr.hi), material_of(pi).trans > 0.0, wb, pwb, -1, 0, if joint_base < 0 { meshlet_slot(pi, model, material_of(pi).double_sided) } else { -1 } });
 			}
 		}
 	}
@@ -1591,6 +1626,152 @@ fn gather() {
 	prev_models.clear(); prev_models.append(cur_models[..]);
 	prev_bases.clear(); prev_bases.append(cur_bases[..]);
 	prev_wb.clear(); prev_wb.append(cur_wb[..]);
+	meshlet_select();
+}
+fn meshlet_prepare() {
+	if !meshlets { return; }
+	while ml_count.len < gltf::prims.len { ml_first.push(0); ml_count.push(-1); }
+	let vf = gltf::VERTEX_FLOATS;
+	for pi in gltf::prims.len {
+		if ml_count[pi] >= 0 { continue; }
+		let pr = gltf::prims[pi];
+		let m = material_of(pi);
+		ml_count[pi] = 0;
+		if pr.skinned || pr.targets > 0 || pr.icount / 3 < meshlet_min || m.alpha_mode == gltf::ALPHA_BLEND || m.trans > 0.0 || m.shading == 4 { continue; }
+		var pos f32[>..] = [];
+		pos.resize((pr.vcount * 5 / 2 + 30000) * vf, 0.0);
+		for k in pr.vcount * vf { pos[k] = gltf::verts[pr.vfirst * vf + k]; }
+		meshlet::build(pos[..], vf, gltf::AT_POS, pr.vcount, gltf::indices[pr.ifirst..pr.ifirst + pr.icount]);
+		if meshlet::count == 0 { continue; }
+		let nb = gltf::verts.len / vf - pr.vfirst - pr.vcount;
+		gltf::verts.append(pos[pr.vcount * vf..meshlet::next_v * vf]);
+		ml_first[pi] = ml_rng.len / 2;
+		ml_count[pi] = meshlet::count;
+		let ib = ml_idx.len as u32;
+		for v in meshlet::idx { ml_idx.push(if v as int < pr.vcount { v } else { (v as int + nb) as u32 }); }
+		ml_tab.append(meshlet::tab[..]);
+		for c in meshlet::count { ml_rng.push(meshlet::rng[c * 2] + ib); ml_rng.push(meshlet::rng[c * 2 + 1]); }
+		ml_dirty = true;
+	}
+}
+fn meshlet_slot(pi int, m gfx::mat4, two bool) int {
+	if !meshlets || pi >= ml_count.len || ml_count[pi] <= 0 || ml_bases.len >= 30000 { return -1; }
+	let sx = linalg::f(sqrt((m.c0.x * m.c0.x + m.c0.y * m.c0.y + m.c0.z * m.c0.z) as real));
+	let sy = linalg::f(sqrt((m.c1.x * m.c1.x + m.c1.y * m.c1.y + m.c1.z * m.c1.z) as real));
+	let sz = linalg::f(sqrt((m.c2.x * m.c2.x + m.c2.y * m.c2.y + m.c2.z * m.c2.z) as real));
+	let s = max(sx, max(sy, sz));
+	let det = m.c0.x * (m.c1.y * m.c2.z - m.c1.z * m.c2.y) - m.c1.x * (m.c0.y * m.c2.z - m.c0.z * m.c2.y) + m.c2.x * (m.c0.y * m.c1.z - m.c0.z * m.c1.y);
+	ml_draws.append([m.c0.x, m.c0.y, m.c0.z, m.c0.w, m.c1.x, m.c1.y, m.c1.z, m.c1.w, m.c2.x, m.c2.y, m.c2.z, m.c2.w, m.c3.x, m.c3.y, m.c3.z, m.c3.w, ml_first[pi] as f32, ml_count[pi] as f32, s, if !two && det > 0.0 && min(sx, min(sy, sz)) > 0.99 * s { 1.0 } else { 0.0 }]);
+	ml_bases.push(gltf::prims[pi].vfirst);
+	ml_bases.len - 1
+}
+fn ml_at(d int, c int, r int) float3 {
+	let b = c * meshlet::ROW + r * 4;
+	let o = d * 20;
+	let x = ml_tab[b]; let y = ml_tab[b + 1]; let z = ml_tab[b + 2];
+	float3 { ml_draws[o] * x + ml_draws[o + 4] * y + ml_draws[o + 8] * z + ml_draws[o + 12], ml_draws[o + 1] * x + ml_draws[o + 5] * y + ml_draws[o + 9] * z + ml_draws[o + 13], ml_draws[o + 2] * x + ml_draws[o + 2 + 4] * y + ml_draws[o + 10] * z + ml_draws[o + 14] }
+}
+fn ml_far(p float3, e float4) f32 { linalg::f(sqrt(((p.x - e.x) * (p.x - e.x) + (p.y - e.y) * (p.y - e.y) + (p.z - e.z) * (p.z - e.z)) as real)) }
+fn ml_keep(d int, c int, cam bool, u MlU) bool {
+	let s = ml_draws[d * 20 + 18];
+	let t = c * meshlet::ROW;
+	if ml_tab[t + 16] * s * u.lod.x / max(ml_far(ml_at(d, c, 2), u.eye) - ml_tab[t + 11] * s, u.lod.z) > u.lod.y { return false; }
+	if ml_tab[t + 17] < 1e29 && ml_tab[t + 17] * s * u.lod.x / max(ml_far(ml_at(d, c, 3), u.eye) - ml_tab[t + 15] * s, u.lod.z) <= u.lod.y { return false; }
+	if !cam { return true; }
+	let bw = ml_at(d, c, 0);
+	let br = ml_tab[t + 3] * s;
+	for i in 7 - 1 { if u.planes[i].x * bw.x + u.planes[i].y * bw.y + u.planes[i].z * bw.z + u.planes[i].w < -br { return false; } }
+	if u.lod.w > 0.5 && ml_draws[d * 20 + 19] > 0.5 && ml_tab[t + 7] < 1.5 {
+		let o = d * 20;
+		let ax = ml_tab[t + 4]; let ay = ml_tab[t + 5]; let az = ml_tab[t + 7 - 1];
+		let a = linalg::unit3(float3 { ml_draws[o] * ax + ml_draws[o + 4] * ay + ml_draws[o + 8] * az, ml_draws[o + 1] * ax + ml_draws[o + 5] * ay + ml_draws[o + 9] * az, ml_draws[o + 2] * ax + ml_draws[o + 2 + 4] * ay + ml_draws[o + 10] * az });
+		if (bw.x - u.eye.x) * a.x + (bw.y - u.eye.y) * a.y + (bw.z - u.eye.z) * a.z >= ml_tab[t + 7] * ml_far(bw, u.eye) + br { return false; }
+	}
+	true
+}
+fn ml_plane(a float4, b float4, k f32) float4 {
+	let x = a.x + k * b.x; let y = a.y + k * b.y; let z = a.z + k * b.z;
+	let l = max(linalg::f(sqrt((x * x + y * y + z * z) as real)), 1e-20);
+	float4 { x / l, y / l, z / l, (a.w + k * b.w) / l }
+}
+fn meshlet_select() {
+	let n = ml_bases.len;
+	if n == 0 { return; }
+	if ml_dirty {
+		if ml_have { gfx::release(ml_tab_buf); gfx::release(ml_rng_buf); gfx::release(ml_idx_buf); }
+		let tb = bytes_of(ml_tab); let rb = bytes_of(ml_rng); let xb = bytes_of(ml_idx);
+		ml_tab_buf = gfx::buffer(gfx::BUFFER_COMPUTE_READ, tb.len, tb[..]);
+		ml_rng_buf = gfx::buffer(gfx::BUFFER_COMPUTE_READ, rb.len, rb[..]);
+		ml_idx_buf = gfx::buffer(gfx::BUFFER_COMPUTE_READ, xb.len, xb[..]);
+		ml_dirty = false; ml_have = true;
+	}
+	if n > ml_draw_cap {
+		if ml_draw_cap > 0 { gfx::release(ml_draw_buf); gfx::release(ml_args_buf); }
+		ml_draw_cap = n * 2;
+		ml_draw_buf = gfx::buffer(gfx::BUFFER_COMPUTE_READ, ml_draw_cap * 80, []);
+		ml_args_buf = gfx::buffer(gfx::BUFFER_INDIRECT | gfx::BUFFER_COMPUTE_WRITE, ml_draw_cap * 64, []);
+	}
+	let want = max(meshlet_budget, 1000) / 1000 * 1000;
+	if want != ml_out_cap {
+		if ml_out_cap > 0 { gfx::release(ml_out_buf); }
+		ml_out_cap = want;
+		ml_out_buf = gfx::buffer(gfx::BUFFER_INDEX | gfx::BUFFER_COMPUTE_WRITE, ml_out_cap * 4, []);
+	}
+	gfx::update_buffer(ml_draw_buf, 0, bytes_of(ml_draws)[..n * 80]);
+	var args u32[>..] = [];
+	var most = 0;
+	for k in n * 2 { args.append([0 as u32, 1 as u32, 0 as u32, ml_bases[k / 2] as u32, 0 as u32, 0 as u32, 0 as u32, 0 as u32]); most = max(most, ml_draws[k / 2 * 20 + 17] as int); }
+	let r0 = gfx::row(view_proj, 0); let r1 = gfx::row(view_proj, 1); let r2 = gfx::row(view_proj, 2); let r3 = gfx::row(view_proj, 3);
+	var u = MlU { eye: x4(view.eye, 0.0), lod: f4(height as f32 / (2.0 * linalg::f(tan((view.fov_y * 0.5) as real))), meshlet_px, view.near, if meshlet_cone { 1.0 } else { 0.0 }), planes: [ml_plane(r3, r0, 1.0), ml_plane(r3, r0, -1.0), ml_plane(r3, r1, 1.0), ml_plane(r3, r1, -1.0), ml_plane(r2, r2, 0.0), ml_plane(r3, r2, -1.0)] };
+	if meshlet_cpu {
+		ml_sel.clear();
+		for k in n * 2 {
+			let first = ml_sel.len;
+			let d = k / 2;
+			let cf = ml_draws[d * 20 + 17 - 1] as int;
+			for c in cf..cf + ml_draws[d * 20 + 17] as int { if ml_keep(d, c, k % 2 == 0, u) { let st = ml_rng[c * 2] as int; ml_sel.append(ml_idx[st..st + ml_rng[c * 2 + 1] as int]); } }
+			let cnt = ml_sel.len - first;
+			args[k * 8 + 7 - 1] = cnt as u32;
+			if ml_sel.len > ml_out_cap { ml_sel.resize(first, 0 as u32); continue; }
+			args[k * 8] = cnt as u32;
+			args[k * 8 + 2] = first as u32;
+		}
+		gfx::update_buffer(ml_args_buf, 0, bytes_of(args)[..]);
+		if ml_sel.len > 0 { gfx::update_buffer(ml_out_buf, 0, bytes_of(ml_sel)[..]); }
+		return;
+	}
+	gfx::update_buffer(ml_args_buf, 0, bytes_of(args)[..]);
+	for step in 3 {
+		if step == 1 {
+			guard gfx::begin_compute([ml_args_buf]) else { return; }
+			gfx::bind(pipe_ml_fit);
+			gfx::uniforms(gfx::COMPUTE, 0, MlFitU { n: f4((n * 2) as f32, (ml_out_cap / 1000) as f32, 0.0, 0.0) });
+			gfx::dispatch(1, 1, 1);
+			gfx::end_compute();
+			continue;
+		}
+		guard gfx::begin_compute([ml_args_buf, ml_out_buf]) else { return; }
+		gfx::bind(pipe_ml_cull);
+		gfx::bind_storage_buffer(gfx::COMPUTE, 0, ml_tab_buf);
+		gfx::bind_storage_buffer(gfx::COMPUTE, 1, ml_rng_buf);
+		gfx::bind_storage_buffer(gfx::COMPUTE, 2, ml_idx_buf);
+		gfx::bind_storage_buffer(gfx::COMPUTE, 3, ml_draw_buf);
+		u.eye.w = if step == 0 { 0.0 } else { 1.0 };
+		gfx::uniforms(gfx::COMPUTE, 0, u);
+		gfx::dispatch((most + 31) / 32, n * 2, 1);
+		gfx::end_compute();
+	}
+}
+fn meshlet_stats() int, int, int {
+	var a u32[>..] = [];
+	let n = ml_bases.len * 2;
+	var cam = 0; var all = 0; var lost = 0;
+	if n == 0 || !gfx::read_buffer(ml_args_buf, a, n * 8) { return cam, all, lost; }
+	for k in n {
+		if k % 2 == 0 { cam += a[k * 8] as int / 3; } else { all += a[k * 8] as int / 3; }
+		if a[k * 8 + 7 - 1] > a[k * 8] { lost += 1; }
+	}
+	return cam, all, lost;
 }
 
 fn forward() float3 { linalg::unit3(linalg::v3(view.target.x - view.eye.x, view.target.y - view.eye.y, view.target.z - view.eye.z)) }
@@ -1627,6 +1808,12 @@ fn bind_geometry() {
 }
 
 fn draw_prim(b Batch) {
+	if b.ml >= 0 {
+		gfx::bind_index_buffer(ml_out_buf, 4);
+		gfx::draw_indexed_indirect(ml_args_buf, (b.ml * 2 + (if inst_all { 1 } else { 0 })) * 32);
+		gfx::bind_index_buffer(ibuf, 4);
+		return;
+	}
 	let pr = gltf::prims[b.prim];
 	gfx::draw_indexed(pr.icount, if b.inst < 0 { 1 } else if inst_all { instances[b.inst].na[b.lod] } else { instances[b.inst].nv[b.lod] }, pr.ifirst, pr.vfirst, 0);
 }
@@ -2738,6 +2925,7 @@ fn render(target gfx::Texture) {
 }
 fn render_begin() bool {
 	if !ready { return false; }
+	meshlet_prepare();
 	upload_geometry();
 	if probes_dirty || (probes.len > 0 && probe_gen != envmap::gen) { probe_capture(); }
 	setup_view();

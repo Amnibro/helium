@@ -5708,6 +5708,186 @@ fn probe_checks(dir const byte[:]) bool {
 	s3d::probe_bounces = 3;
 	r1 && r2 && c1 && r1b && rb
 }
+fn ml_ball(around int, down int, m gltf::Material) int {
+	let vfirst = gltf::verts.len / gltf::VERTEX_FLOATS;
+	let ifirst = gltf::indices.len;
+	for j in down + 1 {
+		let th = PI * j as real / down as real;
+		for i in around + 1 {
+			let ph = 2.0 * PI * (i % around) as real / around as real;
+			let st = if j == 0 || j == down { 0.0 } else { sin(th) };
+			let x = st * cos(ph); let y = if j == 0 { 1.0 } else if j == down { -1.0 } else { cos(th) }; let z = -st * sin(ph);
+			let sx = sin(12.0 * x); let sy = sin(12.0 * y); let sz = sin(12.0 * z);
+			let d = 1.0 + 0.04 * sx * sy * sz;
+			let gx = 0.48 * cos(12.0 * x) * sy * sz; let gy = 0.48 * sx * cos(12.0 * y) * sz; let gz = 0.48 * sx * sy * cos(12.0 * z);
+			let gu = gx * x + gy * y + gz * z;
+			shapes::vertex(linalg::v3(linalg::f(x * d), linalg::f(y * d), linalg::f(z * d)), linalg::unit3(linalg::v3(linalg::f(x * d - gx + gu * x), linalg::f(y * d - gy + gu * y), linalg::f(z * d - gz + gu * z))), i as f32 / around as f32, j as f32 / down as f32, float4 { -linalg::f(sin(ph)), 0.0, -linalg::f(cos(ph)), 1.0 });
+		}
+	}
+	for j in down { for i in around { let a = (j * (around + 1) + i) as u32; let b = a + (around + 1) as u32; gltf::indices.append([a, b, a + 1, a + 1, b, b + 1]); } }
+	shapes::finish(vfirst, ifirst, linalg::v3(-1.04, -1.04, -1.04), linalg::v3(1.04, 1.04, 1.04), m)
+}
+fn ml_eye(eye float3, target float3) { s3d::view = s3d::Camera { eye: eye, target: target, up: float3 { 0.0, 1.0, 0.0 }, fov_y: 0.8, near: 0.05, far: 200.0 }; }
+fn ml_scene(floor bool, shadows bool, at float3, to_sun float3) int {
+	reset_scene();
+	dark_scene();
+	s3d::sky = DEF_SKY; s3d::sky.draw = true; s3d::sun = DEF_SUN; s3d::sun.to_sun = linalg::unit3(to_sun); s3d::sun.shadows = shadows;
+	if floor { let _ = s3d::add(shapes::plane(40.0, shapes::material(linalg::v3(0.8, 0.8, 0.8), 0.0, 1.0))); }
+	let it = s3d::add(ml_ball(512, 256, shapes::material(linalg::v3(0.2, 0.8, 0.2), 0.0, 0.7)));
+	s3d::place(it, gfx::translate(at));
+	s3d::meshlets = false; s3d::meshlet_px = 1.0; s3d::meshlet_cone = true; s3d::meshlet_cpu = false;
+	s3d::init(1280, 720);
+	it
+}
+fn ml_frame(on bool, px f32) byte[>..] { s3d::meshlets = on; s3d::meshlet_px = px; for k in 3 { s3d::render(IN_OUT); } gfx::read_pixels(IN_OUT) }
+fn ml_empty(it int) byte[>..] { s3d::items[it].visible = false; let e = ml_frame(false, 1.0); s3d::items[it].visible = true; e }
+fn ml_apart(a const byte[:], b const byte[:]) real, real, int {
+	var s = 0; var n = 0; var top = 0;
+	for i in 1280 * 720 {
+		var w = 0;
+		for c in 3 { let d = a[i * 4 + c] as int - b[i * 4 + c] as int; let m = if d < 0 { -d } else { d }; s += m; w = max(w, m); }
+		if w > 8 { n++; }
+		top = max(top, w);
+	}
+	return s as real / (1280.0 * 720.0 * 3.0), n as real / (1280.0 * 720.0), top;
+}
+fn ml_mask(p const byte[:], e const byte[:], shadow bool) byte[>..] {
+	var m byte[>..] = [];
+	for i in 1280 * 720 {
+		var w = 0;
+		for c in 3 { let d = p[i * 4 + c] as int - e[i * 4 + c] as int; w = max(w, if d < 0 { -d } else { d }); }
+		let g = p[i * 4 + 1] as int;
+		let ball = g > p[i * 4] as int + 8 && g > p[i * 4 + 2] as int + 8;
+		m.push(if (if shadow { !ball && sh_luma(p, i) + 12 <= sh_luma(e, i) } else { w > 8 }) { 1 as byte } else { 0 as byte });
+	}
+	m
+}
+fn ml_n(m const byte[:]) int { var n = 0; for v in m { if v != 0 { n++; } } n }
+fn ml_iou(a const byte[:], b const byte[:]) real { var x = 0; var u = 0; for i in a.len { if a[i] != 0 && b[i] != 0 { x++; } if a[i] != 0 || b[i] != 0 { u++; } } if u > 0 { x as real / u as real } else { 0.0 } }
+fn ml_tall(m const byte[:]) int { var lo = 720; var hi = -1; for i in m.len { if m[i] != 0 { lo = min(lo, i / 1280); hi = max(hi, i / 1280); } } if hi < 0 { 0 } else { hi - lo + 1 } }
+fn ml_mean(p const byte[:], m const byte[:], c int) real { var s = 0; var n = 0; for i in m.len { if m[i] != 0 { s += p[i * 4 + c] as int; n++; } } if n > 0 { s as real / n as real } else { -1000.0 } }
+fn ml_time(on bool) real {
+	s3d::meshlets = on;
+	var best = 1e9;
+	for rep in 3 {
+		for k in 10 { s3d::render(IN_OUT); }
+		let w = gfx::read_pixels(IN_OUT);
+		let t = gfx::time();
+		for k in 100 { s3d::render(IN_OUT); }
+		let e = gfx::read_pixels(IN_OUT);
+		best = min(best, (gfx::time() - t) * 10.0);
+	}
+	best
+}
+fn ml_shadow(tag const byte[:], at float3, to_sun float3, eye float3, target float3, hidden bool) bool {
+	let it = ml_scene(true, true, at, to_sun);
+	ml_eye(eye, target);
+	let e = ml_empty(it);
+	let off = ml_frame(false, 1.0);
+	let on = ml_frame(true, 1.0);
+	let cam, all, lost = s3d::meshlet_stats();
+	let mo = ml_mask(off[..], e[..], true);
+	let mn = ml_mask(on[..], e[..], true);
+	let me = ml_mask(e[..], e[..], true);
+	let iou = ml_iou(mo[..], mn[..]);
+	let ctl = ml_iou(mo[..], me[..]);
+	let ok = iou >= 0.97 && ml_n(mo[..]) >= 2000 && ctl < 0.97 && lost == 0 && all > 0 && (if hidden { cam == 0 } else { cam > 0 });
+	print("gpu: meshlet ", tag, " shadow pixels full mesh ", ml_n(mo[..]), " meshlets ", ml_n(mn[..]), " IoU ", r3(iou), " (bar >= 0.97), camera list ", cam, " triangles", if hidden { " (bar 0)" } else { "" }, ", shadow list ", all, ", control (ball hidden) IoU ", r3(ctl), if ok { " PASS" } else { " FAIL" });
+	ok
+}
+fn meshlet_checks() bool {
+	IN_OUT = gfx::render_target(1280, 720, gfx::RGBA8);
+	var good = true;
+	let sun = float3 { 0.5, 0.8, 0.3 };
+	let o = float3 { 0.0, 0.0, 0.0 };
+	let it = ml_scene(false, false, o, sun);
+	ml_eye(float3 { 0.0, 0.0, 3.79 }, o);
+	let e4 = ml_empty(it);
+	let off4 = ml_frame(false, 1.0);
+	let on4 = ml_frame(true, 1.0);
+	let cam4, all4, lost4 = s3d::meshlet_stats();
+	let mean4, frac4, top4 = ml_apart(off4[..], on4[..]);
+	let far4 = ml_frame(true, 64.0);
+	let camc, allc, lostc = s3d::meshlet_stats();
+	let meanc, fracc, topc = ml_apart(off4[..], far4[..]);
+	let tall4 = ml_tall(ml_mask(off4[..], e4[..], false)[..]);
+	let n4 = mean4 <= 1.0 && frac4 <= 0.005 && cam4 > 0 && cam4 * 4 <= 261120 && lost4 == 0 && !(meanc <= 1.0 && fracc <= 0.005);
+	print("gpu: meshlet N4 ball ", tall4, " px tall: mean difference ", r3(mean4), " / 255 (bar <= 1), pixels more than 8 / 255 apart ", r3(frac4 * 1000.0), " per 1000 (bar <= 5), largest ", top4, ", triangles ", cam4, " of 261120 (bar <= 65280), shadow list ", all4, "; control meshlet_px 64: ", camc, " triangles, mean ", r3(meanc), ", apart ", r3(fracc * 1000.0), " per 1000", if n4 { " PASS" } else { " FAIL" });
+	good = good && n4;
+	s3d::meshlet_cone = false;
+	let nc = ml_frame(true, 1.0);
+	let camn, alln, lostn = s3d::meshlet_stats();
+	s3d::meshlet_cone = true;
+	let meann, fracn, topn = ml_apart(on4[..], nc[..]);
+	let n7b = topn == 0 && cam4 * 10 <= camn * 9;
+	print("gpu: meshlet N7 normal cones: ", cam4, " triangles with, ", camn, " without = ", r3(cam4 as real / max(camn, 1) as real), " (bar <= 0.9), frames apart ", topn, " / 255 (bar 0)", if n7b { " PASS" } else { " FAIL" });
+	good = good && n7b;
+	ml_eye(float3 { 0.0, 0.0, 43.8 }, o);
+	let e5 = ml_empty(it);
+	let off5 = ml_frame(false, 1.0);
+	let on5 = ml_frame(true, 1.0);
+	let cam5, all5, lost5 = s3d::meshlet_stats();
+	let fine5 = ml_frame(true, 0.01);
+	let camf, allf, lostf = s3d::meshlet_stats();
+	let mo5 = ml_mask(off5[..], e5[..], false);
+	let mn5 = ml_mask(on5[..], e5[..], false);
+	let iou5 = ml_iou(mo5[..], mn5[..]);
+	var worst5 = 0.0;
+	for c in 3 { worst5 = max(worst5, abs(ml_mean(off5[..], mo5[..], c) - ml_mean(on5[..], mn5[..], c))); }
+	let n5 = cam5 > 0 && cam5 * 100 <= 261120 && iou5 >= 0.9 && worst5 <= 4.0 && lost5 == 0 && camf * 100 > 261120;
+	print("gpu: meshlet N5 ball ", ml_tall(mo5[..]), " px tall: ", cam5, " triangles (bar <= 2611), ball pixels full mesh ", ml_n(mo5[..]), " meshlets ", ml_n(mn5[..]), " IoU ", r3(iou5), " (bar >= 0.9), mean color apart ", r3(worst5), " / 255 (bar <= 4); control meshlet_px 0.01: ", camf, " triangles", if n5 { " PASS" } else { " FAIL" });
+	good = good && n5;
+	var top6 = 0; var same6 = true; var ctl6 = 0;
+	var line6 byte[>..] = [];
+	for k in 8 {
+		let dist = 1.5 * linalg::f(pow(1.55, k as real));
+		let a = 0.3 + 0.785 * k as real;
+		ml_eye(float3 { dist * linalg::f(sin(a)), 0.3 * dist * (k % 3 - 1) as f32, dist * linalg::f(cos(a)) }, float3 { 0.2 * (k % 2) as f32, 0.0, 0.0 });
+		let g = ml_frame(true, 1.0);
+		let cg, ag, lg = s3d::meshlet_stats();
+		s3d::meshlet_cpu = true;
+		let c = ml_frame(true, 1.0);
+		let cc, ac, lc = s3d::meshlet_stats();
+		if k == 2 { let c8 = ml_frame(true, 8.0); let m8, f8, t8 = ml_apart(g[..], c8[..]); ctl6 = t8; }
+		s3d::meshlet_cpu = false;
+		let m, f, t = ml_apart(g[..], c[..]);
+		top6 = max(top6, t);
+		same6 = same6 && cg == cc && ag == ac && lg == 0 && lc == 0 && cg > 0;
+		line6.append(str(" ", cg, "/", cc));
+	}
+	let n6 = top6 == 0 && same6 && ctl6 > 0;
+	print("gpu: meshlet N6 GPU list vs CPU selection from 8 spots: frames apart ", top6, " / 255 (bar 0), triangles GPU/CPU", line6[..], "; control (CPU at meshlet_px 8) apart ", ctl6, " / 255", if n6 { " PASS" } else { " FAIL" });
+	good = good && n6;
+	if !ml_shadow("N7 ball behind the camera:", float3 { 0.0, 4.0, -1.0 }, float3 { 0.0, 1.0, -2.0 }, float3 { 0.0, 2.0, 2.5 }, float3 { 0.0, 0.0, 8.0 }, true) { good = false; }
+	if !ml_shadow("N8 ball in view:", float3 { 0.0, 1.2, 0.0 }, sun, float3 { 0.0, 2.5, 5.0 }, float3 { 0.0, 0.7, 0.0 }, false) { good = false; }
+	reset_scene();
+	dark_scene();
+	s3d::sky = DEF_SKY; s3d::sky.draw = true; s3d::sun = DEF_SUN; s3d::sun.to_sun = linalg::unit3(sun); s3d::sun.shadows = true;
+	let _ = s3d::add(shapes::plane(80.0, shapes::material(linalg::v3(0.8, 0.8, 0.8), 0.0, 1.0)));
+	let ball = ml_ball(512, 256, shapes::material(linalg::v3(0.2, 0.8, 0.2), 0.0, 0.7));
+	for k in 64 {
+		let d = 3.0 + 57.0 * k as f32 / 63.0;
+		s3d::place(s3d::add(ball), gfx::translate(float3 { (((k * 5) % 8) as f32 - 3.5) / 3.5 * 0.7 * d * 0.75, 1.1, -d }));
+	}
+	ml_eye(float3 { 0.0, 1.5, 0.0 }, float3 { 0.0, 1.0, -10.0 });
+	s3d::meshlets = false; s3d::meshlet_px = 1.0;
+	s3d::init(1280, 720);
+	let t_off = ml_time(false);
+	let off9 = ml_frame(false, 1.0);
+	let t_on = ml_time(true);
+	let on9 = ml_frame(true, 1.0);
+	let cam9, all9, lost9 = s3d::meshlet_stats();
+	let mean9, frac9, top9 = ml_apart(off9[..], on9[..]);
+	let n9 = t_on * 2.0 <= t_off && lost9 == 0 && cam9 > 0;
+	print("gpu: meshlet N9 64 balls, 16.7 M triangles: ", r3(t_off), " ms off, ", r3(t_on), " ms on = ", r3(t_on / t_off), " (bar <= 0.5); camera list ", cam9, " triangles, shadow list ", all9, ", draws dropped by the budget ", lost9, "; frames mean ", r3(mean9), " / 255 apart, ", r3(frac9 * 1000.0), " per 1000 pixels more than 8 / 255", if n9 { " PASS" } else { " FAIL" });
+	good = good && n9;
+	s3d::meshlets = false; s3d::meshlet_px = 1.0; s3d::meshlet_cone = true; s3d::meshlet_cpu = false;
+	gfx::release(IN_OUT);
+	reset_scene();
+	s3d::look = DEF_LOOK; s3d::sun = DEF_SUN; s3d::sky = DEF_SKY;
+	if !good { print("gpu: meshlet FAILED"); }
+	good
+}
 fn gpu_checks(dir const byte[:], golden const byte[:]) bool {
 	var good = true;
 	// GFX_MAKE_GOLDEN: unset or 0 runs the checks, 1 writes both goldens and stops
@@ -5719,7 +5899,7 @@ fn gpu_checks(dir const byte[:], golden const byte[:]) bool {
 	var only byte[>..] = [];
 	let _ = env("GFX_ONLY", only);
 	if only.len > 0 {
-		let ok = if only[..] == "gtao" { gtao_checks() } else if only[..] == "gi" { gi_checks() } else if only[..] == "mblur" { mb_checks() } else if only[..] == "dof" { dof_checks() } else if only[..] == "fx" { fx_checks() } else if only[..] == "tsr" { tsr_checks(dir) } else if only[..] == "probe" { probe_checks(dir) } else if only[..] == "ssgi" { ssgi_checks() } else if only[..] == "decal" { decal_checks() } else if only[..] == "weather" { weather_checks() } else if only[..] == "rect" { rect_checks() } else if only[..] == "small" { small_checks() } else if only[..] == "inst" { instance_checks() } else if only[..] == "caust" { caustic_checks() } else if only[..] == "tex" { texture_checks() } else if only[..] == "stream" { stream_checks() } else if only[..] == "rtr" { rtr_checks() } else { shadow_checks() };
+		let ok = if only[..] == "gtao" { gtao_checks() } else if only[..] == "gi" { gi_checks() } else if only[..] == "mblur" { mb_checks() } else if only[..] == "dof" { dof_checks() } else if only[..] == "fx" { fx_checks() } else if only[..] == "tsr" { tsr_checks(dir) } else if only[..] == "probe" { probe_checks(dir) } else if only[..] == "ssgi" { ssgi_checks() } else if only[..] == "decal" { decal_checks() } else if only[..] == "weather" { weather_checks() } else if only[..] == "rect" { rect_checks() } else if only[..] == "small" { small_checks() } else if only[..] == "inst" { instance_checks() } else if only[..] == "caust" { caustic_checks() } else if only[..] == "tex" { texture_checks() } else if only[..] == "stream" { stream_checks() } else if only[..] == "rtr" { rtr_checks() } else if only[..] == "meshlet" { meshlet_checks() } else { shadow_checks() };
 		let e = gfx::error();
 		if e.len > 0 { print("gpu: gfx error ", e[..]); return false; }
 		return ok;
@@ -5891,6 +6071,7 @@ fn gpu_checks(dir const byte[:], golden const byte[:]) bool {
 	if !texture_checks() { good = false; }
 	if !stream_checks() { good = false; }
 	if !rtr_checks() { good = false; }
+	if !meshlet_checks() { good = false; }
 	let err = gfx::error();
 	if err.len > 0 { print("gpu: gfx error ", err[..]); good = false; }
 	good

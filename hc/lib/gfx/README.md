@@ -693,6 +693,50 @@ s3d::tex_budget = 256 * 1024 * 1024;
   level `n`, and `ktx2::unpack(stored, info, n, out)` turns one level's stored bytes
   into blocks. `read_file_range(path, offset, count, out)` reads part of a file.
 
+### Meshlets and cluster LOD (E1)
+
+```
+s3d::meshlets = true;
+s3d::meshlet_px = 1.0;
+```
+
+* **What it does.** A large static mesh is cut into clusters of at most 128 triangles,
+  and coarser versions of it are built as levels of cluster groups. Each frame a compute
+  pass picks, cluster by cluster, the coarsest triangles whose error is at most
+  `s3d::meshlet_px` pixels on screen, drops the clusters outside the view and the ones
+  facing away, and writes the index list that the passes draw with one indirect draw
+  per mesh. Clusters at different levels meet without cracks.
+* **Which meshes.** Opaque and cut-out meshes of at least `s3d::meshlet_min` (4,000)
+  triangles placed with `s3d::add`. Skinned and morphed meshes, blended and
+  transmissive materials and instance groups draw as before.
+* **When it is built.** On the first frame that draws the mesh with `meshlets` on:
+  2.6 s for 261,120 triangles on one core. The coarser levels use new vertices added
+  after the mesh's own (0.92 times as many for that mesh).
+* **Shadows.** Shadow passes draw the level of detail the camera picked, without the
+  view and facing tests, so a mesh out of view still casts its shadow. A probe capture
+  picks its own level for each face.
+* **`s3d::meshlet_px`** (1) is the largest error allowed, in pixels. A larger value
+  draws fewer triangles.
+* **`s3d::meshlet_cone`** (on) drops clusters that face away from the camera, for
+  single-sided materials on meshes placed without mirroring or uneven scale.
+* **`s3d::meshlet_budget`** (8,000,000) is the room for one frame's index list, in
+  indices of 4 bytes. A mesh whose list does not fit is not drawn in that frame.
+  `s3d::meshlet_stats()` returns the triangles in the camera's list, the triangles in
+  the shadow list, and the number of lists that did not fit.
+* **`s3d::meshlet_cpu`** makes the same selection on the CPU instead of in the compute
+  pass. The tests use it as the reference.
+* **How a level is chosen.** Every cluster carries its own error with a sphere around
+  it, and the error and sphere of the coarser group above it. A cluster is drawn when
+  its own error, seen from the camera, is at most `meshlet_px` and its parent's is
+  larger. All clusters of a group share the parent's numbers, so a group switches as
+  one and its outer edges do not move.
+* **By hand.** `meshlet::build(pos, stride, at, nv, indices)` builds the clusters of
+  any mesh; `meshlet::cut(e, out)` returns the triangles for an error `e` in the
+  mesh's units and `meshlet::cut_tris(e)` counts them. `meshlet::tab`, `meshlet::rng`
+  and `meshlet::idx` hold the cluster table. `gfx::draw_indexed_indirect(args, offset)`
+  draws with the five numbers of an indexed draw read from a buffer.
+* **Web.** The same passes run on WebGPU.
+
 ## Materials, light and finish
 
 `gltf` reads the core metal-rough model plus `KHR_materials_clearcoat`, `sheen`,
@@ -752,9 +796,8 @@ large arrays on their first use: `T.resize(n, 0); T.clear();`. `read_file`,
 * **More cascades, virtual shadow maps**: `CASCADES` sizes the shadow array and
   `FrameU.cascade_mat`; the sun lookup is `sun_visibility()` / `sun_pcss()` and the
   local-light lookup `local_visibility()` in `surface.frag` (see the E3 section).
-* **GPU (meshlet) culling**: `gather()` flattens items into `batch`, one record per
-  primitive draw with its matrix, bounds centre and sort depth; a compute pass can
-  consume that list and write indirect draws instead of the CPU loop in the passes.
+* **Occlusion culling**: `meshlet_cull.comp` tests each cluster's sphere against the
+  view planes; a test against a depth pyramid goes next to that one.
 
 ## Shading notes
 
@@ -1791,6 +1834,30 @@ one error value.
   40 dB and every earlier check passes as before. gfxtest, wgsltest and webgputest
   pass, with a new `scene_meshlet` in webgputest that matches the native frame.
 
+### Meshlet results (2026-11-09, RX 9060 XT, RADV; full gfxtest ok)
+
+| Bar | Result | Bar value |
+| --- | --- | --- |
+| N1 clusters | 4,119 clusters in 12 levels, the largest 128 triangles; level 0 holds 261,120 of 261,120; coarsest cut 126 triangles (1 / 2,072); built in 2.59 s | 128, all, 1 / 100, 5 s |
+| N2 no cracks | 16 cuts from 260,608 down to 126 triangles: 0 open edges | 0 |
+| N2 control, two errors mixed | 928 open edges | above 0 |
+| N3 the error is honest | farthest vertex 0.46 e, 0.72 e, 0.97 e and 1.02 e | at most 2 e |
+| N4 same picture close up | ball 480 pixels tall: mean difference 0.105 / 255; 0.0008 of the pixels more than 8 / 255 apart; 24,989 of 261,120 triangles (0.096) | 1 / 255, 0.005, 1 / 4 |
+| N4 control, `meshlet_px` 64 | 126 triangles: mean 1.6 / 255, 0.077 of the pixels apart: fails as it must | fails |
+| N5 far away | ball 40 pixels tall: 254 triangles (1 / 1,028); IoU 0.979; mean colors 0.47 / 255 apart | 1 / 100, at least 0.9, 4 / 255 |
+| N5 control, `meshlet_px` 0.01 | 72,960 triangles | above 2,611 |
+| N6 GPU list against CPU selection | 8 spots, 1,022 to 38,194 triangles, the same counts on both: 0 / 255 | 0 |
+| N6 control, CPU selection at `meshlet_px` 8 | 78 / 255 apart | above 0 |
+| N7 ball behind the camera | 0 triangles in the camera's list, 26,868 in the shadow list; shadow IoU 0.999 | 0, at least 0.97 |
+| N7 facing test | 24,989 triangles with it, 28,530 without: 0.876; frames 0 / 255 apart | at most 0.9, 0 |
+| N8 shadow in view | IoU 0.994 (27,133 shadow pixels against 27,141) | at least 0.97 |
+| N7 and N8 control, ball hidden | IoU 0 | below 0.97 |
+| N9 cost, 64 balls | 9.46 ms off, 4.10 ms on: 0.43 (run alone: 7.39 ms and 2.37 ms, 0.32); 213,736 triangles in the camera's list and 231,646 in the shadow list in place of 16.7 million; frames 0.27 / 255 apart | at most 0.5 |
+| N10 off is free, and gates | goldens 44.92 dB and 41.7 dB; gfxtest ok; wgsltest 65 modules, 56 pipelines, 0 failures; webgputest 21 scenes, 0 failures, `scene_meshlet` identical to native | above 40 dB, 0 failures |
+
+N1 to N3 run in `hc/test/gfx/meshlet_check.amni`, N4 to N9 in `meshlet_checks`
+(`GFX_ONLY=meshlet`).
+
 ### Ray-traced reflection results (2026-11-09, RX 9060 XT, RADV; full gfxtest ok)
 
 | Bar | Result | Bar value |
@@ -2304,7 +2371,14 @@ pass-through mean error is 0.0106 % (max 0.0488 %).
   detail. One bounce: a mirror seen in a mirror shows ambient light only. Rough
   reflections take one ray per pixel. Blended and transmissive surfaces do not trace.
 * Shadows: virtual shadow maps are not built; the sun uses cascaded shadow maps.
-* Not built: WebP, meshopt and Draco, mesh streaming, and Nanite-class geometry.
+* Meshlets: static opaque and cut-out meshes only; skinned, morphed, blended and
+  transmissive meshes and instance groups draw every triangle. No occlusion culling
+  and no software rasterizer: triangles smaller than a pixel go through the GPU's
+  rasterizer. Clusters are built on the first frame that draws a mesh and are not
+  saved to disk or streamed. Shadow passes use the camera's level of detail. The
+  frame's index list has a fixed size (`meshlet_budget`). Ray-traced shadows,
+  reflections and GI use the full mesh.
+* Not built: WebP, meshopt and Draco, and mesh streaming.
 
 No point/line primitives (skipped and counted), Adler-32 is not verified, the fog
 and GI passes light spot lights as points (no cone). Also:

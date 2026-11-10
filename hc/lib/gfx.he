@@ -172,6 +172,7 @@ extern "libSDL3.so.0" {
 	s_cu(c uint, s u32, d uint, n u32) = "SDL_PushGPUComputeUniformData";
 	s_draw(p uint, nv u32, ni u32, fv u32, fi u32) = "SDL_DrawGPUPrimitives";
 	s_drawi(p uint, nx u32, ni u32, fx u32, vo i32, fi u32) = "SDL_DrawGPUIndexedPrimitives";
+	s_drawii(p uint, b uint, o u32, n u32) = "SDL_DrawGPUIndexedPrimitivesIndirect";
 	s_bcomp(c uint, t uint, nt u32, b uint, nb u32) uint = "SDL_BeginGPUComputePass";
 	s_ecomp(p uint) = "SDL_EndGPUComputePass";
 	s_bcp(p uint, cp uint) = "SDL_BindGPUComputePipeline";
@@ -1096,6 +1097,13 @@ draw_indexed(indices int, instances int, first_index int, vertex_offset int, fir
 	if indices < 0 || instances < 0 || first_index < 0 || first_instance < 0: misuse("draw_indexed: a negative count"); return
 	s_drawi(PASS, indices as u32, instances as u32, first_index as u32, vertex_offset as i32, first_instance as u32)
 draw_indexed(indices int): draw_indexed(indices, 1, 0, 0, 0)
+draw_indexed_indirect(args Buffer, offset int):
+	if !ready_to_draw("draw_indexed_indirect"): return
+	if !IXB: misuse("draw_indexed_indirect with no index buffer bound"); return
+	k := bslot(args)
+	if k < 0: return
+	if BUFS[k].usage & 4 == 0 || offset < 0 || offset % 4 != 0 || offset + 20 > BUFS[k].size: misuse("draw_indexed_indirect: five u32 at a multiple of 4 bytes inside a BUFFER_INDIRECT buffer"); return
+	s_drawii(PASS, BUFS[k].buf, offset as u32, 1)
 draw_indexed_instanced(indices int, instances int): draw_indexed(indices, instances, 0, 0, 0)
 begin_compute(rwb const Buffer[:], rwt const Texture[:]) bool:
 	if !need("begin_compute"): return false

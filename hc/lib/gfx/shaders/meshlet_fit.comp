@@ -1,0 +1,15 @@
+layout(local_size_x = 1) in;
+layout(std430, set = 1, binding = 0) buffer Args { uint ml_args[]; };
+layout(set = 2, binding = 0) uniform U { vec4 n; };
+void main() {
+	uint run = 0u;
+	uint cap = uint(n.y) * 1000u;
+	for (int k = 0; k < int(n.x); k++) {
+		uint c = ml_args[k * 8];
+		ml_args[k * 8 + 6] = c;
+		if (run + c > cap) c = 0u;
+		ml_args[k * 8] = c;
+		ml_args[k * 8 + 2] = run;
+		run += c;
+	}
+}
