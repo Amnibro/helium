@@ -1,0 +1,205 @@
+use std
+into libm.amni
+namespace libm
+driver ../../test/libm/drive_libm.amni
+dialect rust
+
+A port of libm 0.2.16 (musl) single-precision `atan2f`, `atanf`, `sincosf`, `sinf`, `cosf` and `hypotf`, with their kernels. Float bits are read with `binary::f32_bits` and built with `binary::f32_from_bits` (import `binary`). `floor` comes from `math` (import `math`). Floating-point exception side effects (`force_eval!`) are dropped. Every value marked f32 is computed in f32 arithmetic, rounding at each operation. Every value marked f64 is `real`. A cast from f32 to `real` widens exactly. A cast from `real` to f32 rounds to nearest.
+
+struct `Ipio2Row` with one field `v int`. It holds one row of the 2/pi bit table. Each row is 24 bits of 2/pi: row i is the bits from 24*i to 24*i+23 after the binary point.
+
+0xA2F983
+0x6E4E44
+0x1529FC
+0x2757D1
+0xF534DD
+0xC0DB62
+0x95993C
+0x439041
+0xFE5163
+0xABDEBB
+0xC561B7
+0x246E3A
+0x424DD2
+0xE00649
+0x2EEA09
+0xD1921C
+0xFE1DEB
+0x1CB129
+0xA73EE8
+0x8235F5
+0x2EBB44
+0x84E99C
+0x7026B4
+0x5F7E41
+0x3991D6
+0x398353
+0x39F49C
+0x845F8B
+0xBDF928
+0x3B1FF8
+0x97FFDE
+0x05980F
+0xEF2F11
+0x8B5A0A
+0x6D1F6D
+0x367ECF
+0x27CB09
+0xB74F46
+0x3F669E
+0x5FEA2D
+0x7527BA
+0xC7EBE5
+0xF17B3D
+0x0739F7
+0x8A5292
+0xEA6BFB
+0x5FB11F
+0x8D5D08
+0x560330
+0x46FC7B
+0x6BABF0
+0xCFBC20
+0x9AF436
+0x1DA9E3
+0x91615E
+0xE61B08
+0x659985
+0x5F14A0
+0x68408D
+0xFFD880
+0x4D7327
+0x310606
+0x1556CA
+0x73A8C9
+0x60E27B
+0xC08C6B
+
+The table above is the source's 66-entry variant. f32 inputs never index past entry 23 (jv <= 4 and jz < 20), so the source's 690-entry table gives identical results. Module-level `var IPIO2` holds `ipio2_table()`. It is filled once, on first use, and kept.
+
+`PIO2` is a module-level real[8] constant holding pi/2 cut into 24-bit chunks, in this order: 1.57079625129699707031e+00, 7.54978941586159635335e-08, 5.39030252995776476554e-15, 3.28200341580791294123e-22, 1.27065575308067607349e-29, 1.22933308981111328932e-36, 2.73370053816464559624e-44, 2.16741683877804819444e-51.
+
+`scalbn(x real, n int) real` returns x times 2^n. It multiplies x by the double whose bits are (0x3ff+n)<<52. This is exact here, because every caller keeps n inside the normal exponent range.
+
+`k_sinf(x real) f32` uses S1=-0.166666666416265235595, S2=0.0083333293858894631756, S3=-0.000198393348360966317347 and S4=0.0000027183114939898219064. It computes z=x*x, w=z*z, r=S3+z*S4 and s=z*x. It returns ((x+s*(S1+z*S2))+s*w*r) rounded to f32.
+
+`k_cosf(x real) f32` uses C0=-0.499999997251031003120, C1=0.0416666233237390631894, C2=-0.00138867637746099294692 and C3=0.0000243904487962774090654. It computes z=x*x, w=z*z and r=C2+z*C3. It returns (((1.0+z*C0)+w*C1)+(w*z)*r) rounded to f32.
+
+`rem_pio2_large(x real, e0 int) int, real` is the source's rem_pio2_large specialized to the only call it gets: one input piece (jx=0) and prec 0 (jk=jp=3). It returns n&7 and the single result y. The arrays are local `f`, `q` and `fq` (real[20]) and `iq` (int[20]), all starting at zero. Integer math is i32-range `int`. A truncation from real to int truncates toward zero; every such value is in range. Every accumulator `fw` that is summed starts at +0.0. The steps, in order:
+1. jv=(e0-3)/24 with truncating division, raised to 0 if negative. q0=e0-24*(jv+1).
+2. For i in 0..=3: f[i]=IPIO2[jv+i] as real, and q[i]=0.0+x*f[i]. Then set jz=3.
+3. Recompute loop, part one: set i=0 and z=q[jz]. For j from jz down to 1:
+   - fw = trunc(2^-24*z) as real;
+   - iq[i] = trunc(z-2^24*fw);
+   - z = q[j-1]+fw;
+   - i++.
+4. Recompute loop, part two:
+   - z=scalbn(z,q0);
+   - z -= 8.0*floor(z*0.125);
+   - n=trunc(z);
+   - z -= n.
+5. Recompute loop, ih: start with ih=0.
+   - If q0>0: i=iq[jz-1]>>(24-q0); n+=i; iq[jz-1]-=i<<(24-q0); ih=iq[jz-1]>>(23-q0).
+   - Else if q0==0: ih=iq[jz-1]>>23.
+   - Else if z>=0.5: ih=2.
+6. Recompute loop, when ih>0:
+   - Set n+=1 and carry=0.
+   - For i in 0..jz: if carry==0 and iq[i]!=0, set carry=1 and iq[i]=0x1000000-iq[i]. Else if carry!=0, set iq[i]=0xffffff-iq[i].
+   - If q0==1, iq[jz-1]&=0x7fffff. If q0==2, iq[jz-1]&=0x3fffff.
+   - If ih==2: z=1.0-z, and if carry!=0, also z-=scalbn(1.0,q0).
+7. Recompute loop, recomputation test: if z==0.0 and iq[3..jz] ORs to 0 (an empty range gives 0):
+   - Let k=1, and increase k while iq[3-k]==0.
+   - For i in jz+1..=jz+k: f[i]=IPIO2[jv+i] as real and q[i]=0.0+x*f[i].
+   - Set jz+=k and repeat the loop from step 3. Otherwise leave the loop.
+8. If z==0.0: jz-=1 and q0-=24, then repeat jz-=1 and q0-=24 while iq[jz]==0.
+9. Otherwise (z!=0.0): z=scalbn(z,-q0).
+   - If z>=2^24: fw=trunc(2^-24*z) as real; iq[jz]=trunc(z-2^24*fw); jz+=1; q0+=24; iq[jz]=trunc(fw).
+   - Else: iq[jz]=trunc(z).
+10. fw=scalbn(1.0,q0). For i from jz down to 0: q[i]=fw*iq[i], then fw*=2^-24.
+11. For i from jz down to 0: fw=0.0; for k from 0 while k<=3 and k<=jz-i: fw+=PIO2[k]*q[i+k]. Then fq[jz-i]=fw.
+12. fw=0.0. For i from jz down to 0: fw+=fq[i].
+13. y = fw if ih==0, else -fw.
+
+`rem_pio2f(x f32) int, real` uses x64=x as real and ix=f32_bits(x)&0x7fffffff. The constants are:
+- INV_PIO2=6.36619772367581382433e-01
+- PIO2_1=1.57079631090164184570e+00
+- PIO2_1T=1.58932547735281966916e-08
+- TOINT=6755399441055744.0 (1.5/f64::EPSILON)
+
+The cases, in order:
+- If ix<0x4dc90fdb: tmp=x64*INV_PIO2+TOINT and f_n=tmp-TOINT, with no fused or reassociated operations. Return (trunc(f_n), x64-f_n*PIO2_1-f_n*PIO2_1T).
+- If ix>=0x7f800000: return (0, x64-x64).
+- Otherwise: e0=(ix>>23)-150. Let tx be the f32 from bits ix-(e0<<23), widened to real. Call (n,y)=rem_pio2_large(tx,e0). Return (-n,-y) if x's sign bit is set, else (n,y).
+
+`atanf(x f32) f32` works entirely in f32, with ix=f32_bits(x), sign=ix>>31 != 0, then ix&=0x7fffffff. The constants are:
+- ATAN_HI=[4.6364760399e-01, 7.8539812565e-01, 9.8279368877e-01, 1.5707962513e+00]
+- ATAN_LO=[5.0121582440e-09, 3.7748947079e-08, 3.4473217170e-08, 7.5497894159e-08]
+- A_T=[3.3333328366e-01, -1.9999158382e-01, 1.4253635705e-01, -1.0648017377e-01, 6.1687607318e-02]
+
+Argument reduction, in order:
+- If ix>=0x4c800000: return x if it is NaN. Otherwise z=ATAN_HI[3]+2^-120 (bits 0x03800000), and return -z if sign else z.
+- If ix<0x3ee00000: return x when ix<0x39800000. Otherwise id=-1 and x is unchanged.
+- Otherwise x=|x| (clear the sign bit), then:
+  - if ix<0x3f300000: x=(2*x-1)/(2+x), id=0;
+  - else if ix<0x3f980000: x=(x-1)/(x+1), id=1;
+  - else if ix<0x401c0000: x=(x-1.5)/(1+1.5*x), id=2;
+  - else: x=-1/x, id=3.
+
+Then compute:
+- z=x*x;
+- w=z*z;
+- s1=z*(A_T[0]+w*(A_T[2]+w*A_T[4]));
+- s2=w*(A_T[1]+w*A_T[3]).
+
+If id<0, return x-x*(s1+s2). Otherwise z=ATAN_HI[id]-((x*(s1+s2)-ATAN_LO[id])-x), and return -z if sign else z.
+
+`atan2f(y f32, x f32) f32` works in f32, with PI=3.1415927410e+00 and PI_LO=-8.7422776573e-08. The cases, in order:
+1. If x or y is NaN, return y+x (y as the left operand, so with two NaNs the result carries y's quieted payload as the reference build does).
+2. Let ix=f32_bits(x) and iy=f32_bits(y). If ix==0x3f800000, return atanf(y).
+3. Let m=((iy>>31)&1)|((ix>>30)&2). Then ix&=0x7fffffff and iy&=0x7fffffff.
+4. If iy==0: return y when m is 0 or 1, PI when m is 2, and -PI when m is 3.
+5. If ix==0: return -PI/2 if m&1 != 0, else PI/2.
+6. If ix==0x7f800000:
+   - When iy==0x7f800000, return by m: PI/4, -PI/4, 3*PI/4, -3*PI/4.
+   - Otherwise return by m: 0.0, -0.0, PI, -PI.
+7. If ix+(26<<23)<iy or iy==0x7f800000: return -PI/2 if m&1 != 0, else PI/2.
+8. z=0.0 if m&2 != 0 and iy+(26<<23)<ix. Otherwise z=atanf(|y/x|), where the absolute value clears the sign bit.
+9. Return by m: z, -z, PI-(z-PI_LO), (z-PI_LO)-PI.
+
+Module constants: `FRAC_PI_2`=1.5707963267948966; P1=1*FRAC_PI_2, P2=2*FRAC_PI_2, P3=3*FRAC_PI_2 and P4=4*FRAC_PI_2, all real. Each of the next three functions starts from x64=x as real, ix=f32_bits(x)&0x7fffffff, and sign = x's sign bit set. Each tests these cases in order.
+
+`sinf(x f32) f32`:
+- ix<=0x3f490fda: return x if ix<0x39800000, else k_sinf(x64).
+- ix<=0x4016cbe3: return -k_cosf(x64+P1) if sign, else k_cosf(x64-P1).
+- ix<=0x407b53d1: return k_sinf(-(x64+P2)) if sign, else k_sinf(-(x64-P2)).
+- ix<=0x40afeddf: return k_cosf(x64+P3) if sign, else -k_cosf(x64-P3).
+- ix<=0x40e231d5: return k_sinf(x64+P4) if sign, else k_sinf(x64-P4).
+- ix>=0x7f800000: return x-x.
+- Otherwise (n,y)=rem_pio2f(x). By n&3, return k_sinf(y), k_cosf(y), k_sinf(-y) or -k_cosf(y).
+
+`cosf(x f32) f32`:
+- ix<=0x3f490fda: return 1.0 if ix<0x39800000, else k_cosf(x64).
+- ix<=0x4016cbe3: return k_sinf(x64+P1) if sign, else k_sinf(P1-x64).
+- ix<=0x407b53d1: return -k_cosf(x64+P2) if sign, else -k_cosf(x64-P2).
+- ix<=0x40afeddf: return k_sinf(-x64-P3) if sign, else k_sinf(x64-P3).
+- ix<=0x40e231d5: return k_cosf(x64+P4) if sign, else k_cosf(x64-P4).
+- ix>=0x7f800000: return x-x.
+- Otherwise (n,y)=rem_pio2f(x). By n&3, return k_cosf(y), k_sinf(-y), -k_cosf(y) or k_sinf(y).
+
+`sincosf(x f32) f32, f32` returns sin and cos:
+- ix<=0x3f490fda: return (x, 1.0) if ix<0x39800000, else (k_sinf(x64), k_cosf(x64)).
+- ix<=0x4016cbe3: if sign, return (-k_cosf(x64+P1), k_sinf(x64+P1)); else return (k_cosf(P1-x64), k_sinf(P1-x64)).
+- ix<=0x407b53d1: if sign, return (-k_sinf(x64+P2), -k_cosf(x64+P2)); else return (-k_sinf(x64-P2), -k_cosf(x64-P2)).
+- ix<=0x40afeddf: if sign, return (k_cosf(x64+P3), -k_sinf(x64+P3)); else return (-k_cosf(x64-P3), k_sinf(x64-P3)).
+- ix<=0x40e231d5: if sign, return (k_sinf(x64+P4), k_cosf(x64+P4)); else return (k_sinf(x64-P4), k_cosf(x64-P4)).
+- ix>=0x7f800000: let rv=x-x and return (rv, rv).
+- Otherwise (n,y)=rem_pio2f(x), s=k_sinf(y) and c=k_cosf(y). By n&3, return (s,c), (c,-s), (-s,-c) or (-c,s).
+
+`hypotf(x f32, y f32) f32` works in f32.
+1. Clear the sign bit of both bit patterns, giving ux and uy. Swap them so that ux>=uy. Then x=f32_from_bits(ux) and y=f32_from_bits(uy).
+2. If uy==0xff<<23, return y.
+3. If ux>=0xff<<23, or uy==0, or ux-uy>=25<<23, return y+x (y as the left operand, for the same NaN payload reason).
+4. Scale with z=1.0:
+   - If ux>=(0x7f+60)<<23: z=2^90 (bits 0x6c800000), and x and y are each multiplied by 2^-90 (bits 0x12800000).
+   - Else if uy<(0x7f-60)<<23: z=2^-90, and x and y are each multiplied by 2^90.
+5. Compute t=(x64*x64+y64*y64) in real, where x64 and y64 are the widened f32 values, and round t to f32. Return z*sqrt(t), using the correctly rounded f32 square root.
