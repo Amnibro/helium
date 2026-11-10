@@ -2512,9 +2512,11 @@ the CPU in double precision.
   within 3%, where L = 3 x 0.866 / pi x e^(-absorption x 1 / c) and c is the cosine of
   the refracted sun direction from the vertical.
 * **W7 light shafts.** (a) The preset waves at time 3, sun (0.3, 0.9, 0.3) normalized,
-  color 3, camera at (0, -2, 0) looking along +z, field of view 1.0. Over 80 blocks of
-  16 x 240 pixels across the middle rows, the standard deviation of the block means
-  over their mean is at least 0.005 with shafts 1. Control: with shafts 0 it is at most
+  color 3, camera at (0, -2, 0) looking along +z, field of view 1.0, water 40 m
+  across. 80 blocks of 16 x 240 pixels over rows 360 to 599 (level and below, where no
+  ray reaches the surface). Each block's mean with shafts 1 over its mean with shafts
+  0: the standard deviation of the 80 ratios over their mean is at least 0.005.
+  Control: the same measure between two shafts-0 frames, times 3 and 4, is at most
   0.001. (b) W6 (b) with sun shadows on and a slab 4 m x 0.2 m x 4 m floating at
   (0, 0.3, 7), far enough that its shadow covers z from 5 to 9 on the central ray: the
   center block's blue channel is within 5% of the closed form with that stretch unlit,
