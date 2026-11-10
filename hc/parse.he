@@ -642,15 +642,16 @@ recursive pblock(ctx const byte[:]) int:
 	st := P; ex(T_LC, ctx); b := mk(N_BLOCK, st); pbody(b); b
 recursive pbody(b int):
 	s := sub_begin(false)
-	m := wbeg(); pd := PYD.len
+	m := wbeg(); pd := PYD.len; pb := PYB
 	if PYH.len > 0: for w in PYH { v := mk(N_VDECL, P); m2 := wbeg(); WS.push(w); setl(v, m2); ND[v].c = CURNS; ND[v].fl = (V_VAR | V_PEND) as u16; WS.push(v); PYD.push(w) } PYH.clear()
+	PYB = PYD.len; if PYT < 0 { PYT = PYB }
 	loop:
 		STMTL = false; STMTE = false
 		if is(T_RC): break
 		if tk() == T_EOF: perr("expected '}' before end of file"); break
 		if !pstmt(b): break
 	if KEEPEND && P > 0 && tkat(P - 1) == T_RC: while BEND.len <= b { BEND.push(-1) } BEND[b] = P - 1
-	setl(b, m); if PY { PYD.resize(pd) }
+	setl(b, m); if PY { PYD.resize(pd) } PYB = pb
 	sub_end(s);
 pstmt(b int) bool:
 	k := tk()
@@ -877,6 +878,10 @@ var PYS i32[>..]
 var PYG i32[>..]
 var PYF i32[>..]
 var PYSM bool
+var PYB int
+var PYF0 int
+var PYP int
+var PYT int
 pyhoist(ts i32[:], bd int) i32[>..]:
 	a := ts[0] as int; b := ts[ts.len - 1] as int
 	me i32[>..] ~= []; me.resize(b - a + 1, -1); sk i32[>..] ~= []
@@ -942,6 +947,10 @@ pymulti(first int, st int) int:
 	for x, i in vs: WS.push(mkdecl(tn[i], pyval(x), st, 0))
 	for t, i in tl: tv := mkid(tn[i], st); if ND[t].k as int == N_ID && !pyd(ND[t].s) { WS.push(mkdecl(ND[t].s, tv, st, V_VAR)); PYD.push(ND[t].s) } else { a := mk(N_ASSIGN, st); ND[a].op = T_ASSIGN as u8; ND[a].a = t; ND[a].b = tv; WS.push(a) }
 	-1
+pyown(w int) bool:
+	lo := if PYB == PYT { PYP } else { PYF0 }
+	for x, i in PYD { if x as int == w && i >= lo && i < PYB { return true } }
+	false
 pystmt() bool:
 	st := P; k := tk()
 	if pyw(NAME_DEF): WS.push(pydef(true, -1)); return true
@@ -949,7 +958,9 @@ pystmt() bool:
 	if k == T_IDENT && nm(TK[P].v) == "del" && tkat(P + 1) == T_IDENT: nx(); e := pexpr(); semi("del statement"); if ND[e].k as int != N_IDX { perr("del takes one indexed place: del xs[i]") } o ~= ND[e].a as int; ix ~= ND[e].b as int; if ND[o].k as int == N_SLICE && ND[o].fl == 17 { ix = mk(N_UN, st); ND[ix].op = T_MINUS as u8; ND[ix].a = ND[o].b; o = ND[o].a } WS.push(mkcall(intern("pydel"), st, o, ix)); return true
 	if pyw(NAME_GLOBAL) || tk() == T_IDENT && nm(TK[P].v) == "nonlocal": while tk() != T_SEMI && tk() != T_RC && tk() != T_EOF { if tk() == T_IDENT && !pyd(TK[P].v as int) { PYD.push(TK[P].v as i32) } nx() } return true
 	if k == T_IDENT && tkat(P + 1) == T_COLON:
-		w := TK[P].v; nx(); nx(); ty := pyty(1); v := mk(N_VDECL, st); m := wbeg(); WS.push(w); setl(v, m); ND[v].c = CURNS; ND[v].a = ty
+		w := TK[P].v; nx(); nx(); ty := pyty(1)
+		if pyown(w as int): { if is(T_ASSIGN) { pa := PYANN; PYANN = true; e := pexpr(); PYANN = pa; a := mk(N_ASSIGN, st); ND[a].op = T_ASSIGN as u8; ND[a].a = mkid(w as int, st); ND[a].b = pyinit(pyval(e), ty); WS.push(a) } semi("variable declaration"); return true }
+		v := mk(N_VDECL, st); m := wbeg(); WS.push(w); setl(v, m); ND[v].c = CURNS; ND[v].a = ty
 		if is(T_ASSIGN): pa := PYANN; PYANN = true; e := pexpr(); PYANN = pa; il := mk(N_LIST, st); m2 := wbeg(); WS.push(pyinit(pyval(e), ty)); setl(il, m2); ND[v].b = il
 		ND[v].fl = V_VAR as u16; semi("variable declaration"); WS.push(v); PYD.push(w as i32); return true
 	false
@@ -1059,9 +1070,9 @@ recursive pydef(nested bool, cls int) int:
 		a := ND[p].a; if a < 0 { continue } k := pymut(ND[p].s, P, e); ak := ND[a].k as int
 		if k & 1 != 0 && ak == N_TSLICE: ND[a].k = N_TARR as u8; ND[a].op = A_GROW as u8; ND[p].a = mktw(N_TREF, a, ND[a].t, 0)
 		else: if ak == N_TNAME && (k & 3 != 0 || ND[a].s == NAME_DICTIONARY) { ND[p].a = mktw(N_TREF, a, ND[a].t, 0) } else { if k & 4 != 0 { ND[p].fl = 1; if ak == N_TSLICE && ND[a].fl == 1 { ND[a].k = N_TARR as u8; ND[a].op = A_GROW as u8; ND[a].fl = 0 } } }
-	sp := PY; fe0 := PYFE; PYFE = e; d0 := PYD.len; if !nested { PYD.clear() } PY = true; for p in ps { PYD.push(ND[p].s) } hr i32[>..] ~= []; for j P..e + 1 { hr.push(j as i32) } PYH = pyhoist(hr, 1)
+	sp := PY; fe0 := PYFE; PYFE = e; d0 := PYD.len; if !nested { PYD.clear() } PY = true; yf := PYF0; yp := PYP; yt := PYT; yb := PYB; PYF0 = PYD.len; for p in ps { PYD.push(ND[p].s) } PYP = PYD.len; PYT = -1; hr i32[>..] ~= []; for j P..e + 1 { hr.push(j as i32) } PYH = pyhoist(hr, 1)
 	{ q_ := pblock("function body"); ND[n].c = q_ }
-	PY = sp; PYFE = fe0; PYD.resize(d0)
+	PY = sp; PYFE = fe0; PYD.resize(d0); PYF0 = yf; PYP = yp; PYT = yt; PYB = yb
 	ND[n].fl = fl; set_end(n); n
 pyclass():
 	st := P; nx(); w := declname("class declaration")
@@ -1108,7 +1119,7 @@ pymain(st int):
 	for q PYS.len / 2: for j (PYS[2 * q] as int)..(PYS[2 * q + 1] as int) { ts.push(j as i32) }
 	PY = true; PYD.clear(); PYD.append(PYG[..]); PYH = pyhoist(ts, 0); blk := mk(N_BLOCK, st); m := wbeg()
 	for w in PYH: v := mk(N_VDECL, st); m2 := wbeg(); WS.push(w); setl(v, m2); ND[v].c = CURNS; ND[v].fl = (V_VAR | V_PEND) as u16; WS.push(v); PYD.push(w)
-	PYH.clear()
+	PYH.clear(); PYF0 = 0; PYP = PYG.len; PYB = PYD.len; PYT = PYB
 	for q PYS.len / 2: P = PYS[2 * q] as int; while P < PYS[2 * q + 1] && tk() != T_EOF { STMTL = false; STMTE = false; if !pstmt(blk) { break } }
 	STMTL = false; STMTE = false; setl(blk, m); ND[n].c = blk; PY = false; P = TK.len - 1; set_end(n); TOP.push(n)
 ptop():
