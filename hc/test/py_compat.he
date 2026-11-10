@@ -557,3 +557,41 @@ h: list[tuple[int, int]] = []
 heapq.heappush(h, (3, 1))
 heapq.heappush(h, (1, 2))
 print(heapq.heappop(h), len(h))
+def f(n: int, s: str) -> int:
+    parts: list[str] = s.split(",")
+    total: int = 0
+    best: int = -1
+    for p in parts:
+        v: int = int(p)
+        if v > best:
+            best: int = v
+        total: int = total + v
+    if n > 0:
+        n: int = n - 1
+        total: int = total * 2
+    return total + best + n
+def g(s: str) -> int:
+    s: list[str] = s.split()
+    k: int = 0
+    while k < 3:
+        k: int = k + 1
+        if k == 2:
+            flag: bool = True
+            print(flag)
+    return len(s) + k
+rx: int = 0
+rlab: str = "none"
+for ri in range(4):
+    rx: int = rx + ri
+    if ri == 2:
+        rlab: str = "two"
+        rt: float = 1.5
+        print(rt)
+print(f(3, "4,9,2"), g("a b c"), rx, rlab)
+rcount: int = 0
+def bump() -> None:
+    global rcount
+    for j in range(3):
+        rcount = rcount + j
+bump()
+print(rcount)
