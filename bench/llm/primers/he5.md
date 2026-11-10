@@ -37,8 +37,11 @@ print(a, 2 ** 10, 17 // 5, -7 % 3, int("42") + 1, 7 / 2)
 
 ## Differences from Python
 
-- `int` is 64-bit (no big integers); `float` is 64-bit.
-- A character taken from a string (`s[i]`, `for c in s`) is a byte: compare it with `'a'`, use `ord(c)`, `chr(n)`, `c.isdigit()`; `print(c)` prints its code.
+- `int` is 64-bit (no big integers); `float` is 64-bit. A value past 2**63 wraps around without an error, so for big powers, factorials or long digit strings keep the digits in a `list[int]` and do the arithmetic digit by digit.
+- A character taken from a string (`s[i]`, `for c in s`) works as a one-character `str`: compare it with `"a"`, pass it where a `str` is expected, use `ord(c)`, `int(c)`, `c.isdigit()`, `c * 3`; it prints as the character. A list of characters (`list(s)`, `[c for c in s]`) is a `str`.
+- `dict` and `set` loop in no fixed order: loop over `sorted(d)` or keep a list of the keys when order matters.
+- Format text with f-strings; `%` formatting and `.format()` are not available.
 - Containers hold one type: `list[T]`, `dict[K, V]`, `set[T]`, `tuple[A, B]` (up to 4 values). An empty list, dict or set needs a type: `seen: set[str] = set()`.
 - No `None`: start every variable with a value of its type.
-- No classes with methods, inheritance, exceptions, generators with `yield`, `*args`, `**kwargs`, `global`, or imports other than `math`, `dataclasses`, `collections` (`defaultdict`, `Counter`, `deque`) and `heapq`.
+- A `for` loop variable is not visible after its loop: copy it to another variable inside the loop when it is needed later.
+- No classes with methods, inheritance, exceptions, generators with `yield`, `*args`, `**kwargs`, or imports other than `math`, `dataclasses`, `collections` (`defaultdict`, `Counter`, `deque`) and `heapq`.

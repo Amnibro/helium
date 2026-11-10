@@ -45,6 +45,7 @@ rt_pbeg() int: RT_PLS = RT_OUT.n; RT_PD = 1; rt_sink_set(0)
 rt_pend(o int): rt_nl(); RT_PD = 0; rt_sink_set(o);
 rt_app(p int, n int): if n > 0: d := rt_grow(rt_sink(), n, 1); mcopy(d, p, n);
 rt_ps(s const byte[:]): rt_app(ptr(s), s.len);
+rt_pyout(s const byte[:]): rt_ps(s);
 rt_pq(s const byte[:]): rt_ps("\""); rt_ps(s); rt_ps("\"");
 rt_digits(b byte[24]&, u u64) int: v ~= u; i ~= 24; loop { i -= 1; b[i] = (48 + v % 10) as byte; v = v / 10; if v == 0 { break } } i
 rt_pu(u u64): var b byte[24]; i := rt_digits(b, u); rt_ps(b[i..]);

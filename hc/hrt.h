@@ -436,6 +436,7 @@ static inline void hr_println(void) { hr_fb(&hr_ob, '\n'); hr_flush(); }
 #else
 static inline void hr_println(void) { hr_fb(&hr_ob, '\n'); if (hr_ob.n > 65536 || hr_mt) hr_flush(); }
 #endif
+static inline void hr_pyout(hsl s) { hr_ob_put(s.p, s.n); }
 static inline void hr_pb(void) { hr_pls = hr_ob.n; hr_pd = 1; }
 static inline void hr_pe(void) { hr_println(); hr_pd = 0; }
 static inline int64_t hr_mod(int64_t a, int64_t b) { int64_t r = a % b; return r < 0 ? (b < 0 ? r - b : r + b) : r; }

@@ -6,8 +6,8 @@ N_RET := 28; N_BREAK := 29; N_CONT := 30; N_FUNVAL := 31; N_PARAM := 32; N_VDECL
 N_TPRIM := 40; N_TNAME := 41; N_TARR := 42; N_TSLICE := 43; N_TREF := 44; N_TFN := 45; N_TVAR := 46; N_TIDX := 47; N_TCONST := 48
 N_FN := 50; N_STRUCT := 51; N_ENUM := 52; N_ALIAS := 53; N_IMPORT := 54; N_FIELD := 55; N_VARIANT := 56; N_GEN := 57; N_EXT := 58
 A_FIXED := 1; A_VAR := 2; A_LIM := 3; A_GROW := 4; A_GS := 5
-F_EXTERN := 1; F_EXPORT := 2; F_SIMD := 4; F_INLINE := 8; F_REC := 16; F_THREAD := 32; F_CHECKFREE := 64; F_NESTED := 128; F_LUT := 256; F_RETS := 512
-V_VAR := 1; V_CONST := 2; V_BYREF := 4; V_GLOBAL := 8; V_REUSE := 16; V_REUSE_SL := 32; V_RESULTS := 64; V_PEND := 128
+F_EXTERN := 1; F_EXPORT := 2; F_SIMD := 4; F_INLINE := 8; F_REC := 16; F_THREAD := 32; F_CHECKFREE := 64; F_NESTED := 128; F_LUT := 256; F_RETS := 512; F_VOID := 1024
+V_VAR := 1; V_CONST := 2; V_BYREF := 4; V_GLOBAL := 8; V_REUSE := 16; V_REUSE_SL := 32; V_RESULTS := 64; V_PEND := 128; V_PYCOPY := 256; PYFE ~= -1
 struct Node { k u8, op u8, fl u16, t i32, a i32, b i32, c i32, d i32, e i32, s i32, l i32, n i32 }
 var ND Node[>..]
 var LS i32[>..]
@@ -222,6 +222,19 @@ recursive pif() int:
 	if is(K_ELSE):
 		{ q_ := if tk() == K_IF { pif() } else { pblock("else body") }; ND[n].c = q_ }
 	n
+pywr(w int) bool:
+	d ~= 0; j ~= P
+	loop:
+		k := tkat(j)
+		if k == T_EOF: break
+		if k == T_LC: d += 1
+		if k == T_RC: d -= 1; if d == 0 { break }
+		if k == T_IDENT && TK[j].v as int == w && tkat(j - 1) != T_DOT:
+			nk := tkat(j + 1); pk := tkat(j - 1)
+			if nk == T_COLON && (pk == T_SEMI || pk == T_LC || pk == T_RC): return false
+			if pyas(nk) && nk != T_COLON: return d > 1 || nk != T_ASSIGN
+		j += 1
+	false
 pfor() int:
 	st := P; nx()
 	n := mk(N_FOR, st)
@@ -233,20 +246,28 @@ pfor() int:
 	ty_he := he() && in_ahead()
 	if is(T_COLON) || ty_he && tk() != T_COMMA && tk() != K_IN:
 		{ q_ := ptype(); ND[n].l = q_ }
+	dn i32[>..] ~= []; dv ~= -1
 	if is(T_COMMA):
-		{ q_ := ident("for index binding"); ND[n].c = q_ }; if is(T_COLON) || ty_he && tk() != K_IN:
+		if PY && tk() == T_LP { nx(); loop { dn.push(ident("for binding") as i32); if !is(T_COMMA) { break } } ex(T_RP, "for binding"); dv = intern(str("_hc_d", st)); ND[n].c = dv } else { q_ := ident("for index binding"); ND[n].c = q_ }
+		if is(T_COLON) || ty_he && tk() != K_IN:
 			{ q_ := ptype(); ND[n].n = q_ }
 	FORBIND = fb
 	if !he() || tk() == K_IN: ex(K_IN, "for statement")
 	s := sub_begin(true)
 	{ q_ := pyarr(pexpr()); ND[n].a = q_ }
-	if PY && (ND[ND[n].a].k as int == N_ID || ND[ND[n].a].k as int == N_DOT) && ND[n].c < 0: ND[n].e = mkcall(intern("keys"), st, ND[n].a, -1)
+	if PY && (ND[ND[n].a].k as int == N_ID || ND[ND[n].a].k as int == N_DOT || ND[ND[n].a].k as int == N_IDX) && ND[n].c < 0: ND[n].e = mkcall(intern("keys"), st, ND[n].a, -1)
 	fx := forfix(n); r3 := FR3 == n; r3v := FR3V; r3c := FR3RC; r3a := ncpy3(FR3A)
 	if is(T_DOTDOT):
 		{ q_ := pexpr(); ND[n].b = q_ }
 	sub_end(s)
+	nb i32[>..] ~= []; pl := PYD.len
+	if PY: { vis i32[>..] ~= [ND[n].s]; for d in fx { vis.push(kid(d, 0) as i32) } for w in dn { vis.push(w) } for w in vis { if !pyd(w as int) && pywr(w as int) { nb.push(w); PYD.push(w) } } }
 	pb0 := P; { q_ := pblock("for body"); ND[n].d = q_ }
+	PYD.resize(pl)
 	if r3 && r3a.len > 0: { bad ~= false; for q pb0..P { if TK[q].k as int == T_IDENT && r3a.contains(TK[q].v as i32) && (pyas(tkat(q + 1)) && tkat(q + 1) != T_COLON || tkat(q + 1) == T_INC || tkat(q + 1) == T_DEC || tkat(q - 1) == K_FOR || tkat(q - 1) == T_COMMA && tkat(q + 1) == K_IN) { bad = true } } if bad { ND[n].a = r3c; ND[n].s = r3v; fx.clear() } }
+	for w, i in dn: fx.push(mkdecl(w as int, mkdot(mkid(dv, st), intern(str("f", i)), st), st, 0) as i32)
+	for d in fx { if nb.contains(kid(d, 0) as i32) && ND[d].fl & 1 == 0 { il := ND[d].b as int; cp := mkcall(intern("pylv"), st, kid(il, 0), -1); m := wbeg(); WS.push(cp); setl(il, m); ND[d].fl = V_VAR as u16 } }
+	if nb.contains(ND[n].s): { lv := ND[n].s as int; hn := intern(str("_hc_lv", st)); ND[n].s = hn; fx.push(mkdecl(lv, mkcall(intern("pylv"), st, mkid(hn, st), -1), st, V_VAR) as i32) }
 	if fx.len > 0: b := ND[n].d; ss i32[>..] ~= []; ss.append(fx); for i ND[b].n { ss.push(kid(b, i) as i32) } ND[n].d = mkblock(ND[b].t, ss, ND[b].a)
 	n
 called(c int, name int, na int) bool: c >= 0 && ND[c].k as int == N_CALL && ND[c].b < 0 && (ND[ND[c].a].k as int == N_ID && ND[ND[c].a].s == name && ND[c].n == na + 1 || ND[ND[c].a].k as int == N_DOT && ND[ND[c].a].s == name && ND[c].n == na)
@@ -281,12 +302,15 @@ forfix(n int) i32[>..]:
 		t := ND[n].t; it := intern(str("_hc_it", t)); fx.push(mkdecl(ND[n].s, mkdot(mkid(it, t), NAME_KEY, t), t, 0) as i32); fx.push(mkdecl(ND[n].c, mkdot(mkid(it, t), NAME_VAL, t), t, 0) as i32); ND[n].s = it; ND[n].c = -1
 	fx
 recursive pcomp(e int, st int) int:
-	c := intern(str("_hc_comp", st)); fs i32[>..] ~= []; cs i32[>..] ~= []
+	fs i32[>..] ~= []; cs i32[>..] ~= []
 	while is(K_FOR):
 		f := mk(N_FOR, P - 1); ND[f].l = -1; ND[f].n = -1; ND[f].s = ident("for binding"); if is(T_COMMA) { ND[f].c = ident("for index binding") }
 		ex(K_IN, "comprehension"); nt := NOTERN; NOTERN = true; ND[f].a = pyarr(pexpr()); NOTERN = nt; fs.push(f as i32); cs.push(-1)
+		if PY && (ND[ND[f].a].k as int == N_ID || ND[ND[f].a].k as int == N_DOT || ND[ND[f].a].k as int == N_IDX) && ND[f].c < 0: ND[f].e = mkcall(intern("keys"), st, ND[f].a, -1)
 		while is(K_IF): nt2 := NOTERN; NOTERN = true; cs[cs.len - 1] = pyc(pexpr()) as i32; NOTERN = nt2
-	pu := mk(N_CALL, st); ND[pu].a = mkdot(mkid(c, st), NAME_PUSH, st); m := wbeg(); WS.push(e); setl(pu, m)
+	pcompb(e, st, fs[..], cs[..])
+pcompb(e int, st int, fs i32[:], cs i32[:]) int:
+	c := intern(str("_hc_comp", st)); pu := mk(N_CALL, st); ND[pu].a = mkdot(mkid(c, st), NAME_PUSH, st); m := wbeg(); WS.push(e); setl(pu, m)
 	body ~= pu
 	q ~= fs.len - 1
 	while q >= 0:
@@ -355,6 +379,10 @@ binprec(k int) int:
 	if k == T_ANDAND { return 2 } if k == T_OROR: return 1
 	if k == K_IN && he(): return 4
 	0
+recursive pychain(e int) bool:
+	if e < 0 { return false } k := ND[e].k as int; o := ND[e].op as int
+	if k == N_CALL: f := ND[e].a; s := if ND[f].k as int == N_ID { nm(ND[f].s) } else { "" }; if ND[e].b >= 0 || !(s == "len" || s == "abs" || s == "ord" || s == "min" || s == "max") { return false } for i ND[e].n { if !pychain(kid(e, i)) { return false } } return true
+	k <= N_ID || k == N_UN && o == T_MINUS && pychain(ND[e].a) || k == N_BIN && (o == T_PLUS || o == T_MINUS || o == T_MUL) && pychain(ND[e].a) && pychain(ND[e].b) || k == N_DOT && pychain(ND[e].a) || k == N_IDX && pychain(ND[e].a) && pychain(ND[e].b)
 recursive pbin(minp int) int:
 	l ~= pun(); lc ~= -1
 	loop:
@@ -372,7 +400,7 @@ recursive pbin(minp int) int:
 		if PY && op == T_MUL && (ND[l].k as int == N_STR || ND[r].k as int == N_STR): l = if ND[l].k as int == N_STR { mkcall(intern("repeat"), st, l, r) } else { mkcall(intern("repeat"), st, r, l) }; continue
 		if PY && (op == T_ANDAND || op == T_OROR): l = pyc(l); r = pyc(r)
 		if op == K_IN || ni: c := mkcall(NAME_CONTAINS, st, pyarr(r), l); l = if ni { u := mk(N_UN, st); ND[u].op = T_NOT as u8; ND[u].a = c; u } else { c }; continue
-		rc := he() && (op == T_LT || op == T_GT || op == T_LTEQ || op == T_GTEQ) && ND[r].k as int <= N_ID
+		rc := he() && (op == T_LT || op == T_GT || op == T_LTEQ || op == T_GTEQ) && pychain(r)
 		if lc >= 0 && rc: c2 := mk(N_BIN, st); ND[c2].op = op; ND[c2].a = lc; ND[c2].b = r; n2 := mk(N_BIN, st); ND[n2].op = T_ANDAND; ND[n2].a = l; ND[n2].b = c2; l = n2; lc = r; continue
 		n := mk(N_BIN, st); ND[n].op = op; ND[n].a = l; ND[n].b = r; if op == T_PLUS && he() { ND[n].c = mkcall(if PY { intern("concat") } else { NAME_STR }, st, l, r) }
 		l = n; lc = if rc { r } else { -1 }
@@ -414,6 +442,7 @@ pcall(callee int, tyargs int, st int) int:
 	kw i32[>..] ~= []
 	while tk() != T_RP && tk() != T_EOF:
 		if PY && tk() == T_IDENT && tkat(P + 1) == T_ASSIGN: kw.push(TK[P].v as i32); nx(); nx(); kw.push(P as i32); pyskip(); if !is(T_COMMA) { break } continue
+		if PY && tk() == T_MUL: nx(); WS.push(mkcall(intern("pystar"), st, pexpr(), -1)); if !is(T_COMMA) { break } continue
 		g := pexpr(); WS.push(if he() && tk() == K_FOR { pcomp(g, P) } else { g }); if !is(T_COMMA): break
 	ex(T_RP, "call arguments")
 	setl(c, m)
@@ -422,13 +451,18 @@ pcall(callee int, tyargs int, st int) int:
 	if tk() == T_LC && !NOSL && !TK[P].lay:
 		{ q_ := pfunval(); ND[c].b = q_ }; if STMTL: STMTE = true
 	c
+pystep(obj int, lo int, hi int, st int) int:
+	nx(); k := pexpr(); ex(T_RB, "slice"); a := if lo < 0 { mkcall(intern("pynone"), st, -1, -1) } else { lo }; b := if hi < 0 { mkcall(intern("pynone"), st, -1, -1) } else { hi }
+	c := mk(N_CALL, st); ND[c].a = mkid(intern("pystep"), st); m := wbeg(); WS.push(obj); WS.push(a); WS.push(b); WS.push(k); setl(c, m); c
 pindex(obj int) int:
 	st := P; nx()
 	s := sub_begin(false)
 	lo ~= -1; lfe ~= false
 	if he() && tk() == T_CC && tkat(P + 1) == T_MINUS && tkat(P + 2) == T_INT && TK[P + 2].v == 1 && tkat(P + 3) == T_RB: P += 4; sub_end(s); return mkcall(NAME_REVERSED, st, obj, -1)
+	if he() && tk() == T_CC: r_ := pystep(obj, -1, -1, st); sub_end(s); return r_
 	sl ~= tk() == T_DOTDOT || he() && tk() == T_COLON
 	if !sl: lfe = is(T_XOR); lo = pexpr(); sl = tk() == T_DOTDOT || he() && tk() == T_COLON
+	if he() && lo >= 0 && tk() == T_CC: r_ := pystep(obj, lo, -1, st); sub_end(s); return r_
 	if he() && lo >= 0 && ND[lo].k as int == N_UN && ND[lo].op as int == T_MINUS && ND[ND[lo].a].k as int == N_INT: lfe = true; lo = ND[lo].a
 	r ~= -1
 	if sl:
@@ -437,9 +471,11 @@ pindex(obj int) int:
 		if lfe: ND[r].fl = 1
 		if tk() != T_RB:
 			if is(T_XOR) { ND[r].fl |= 2 } { q_ := pexpr(); ND[r].c = q_ }
-			hi := ND[r].c; if he() && ND[hi].k as int == N_UN && ND[hi].op as int == T_MINUS && ND[ND[hi].a].k as int == N_INT: ND[r].fl |= 2; ND[r].c = ND[hi].a
+			hi := ND[r].c
+			if he() && tk() == T_COLON: ng := mk(N_UN, st); ND[ng].op = T_MINUS as u8; ND[ng].a = lo; r_ := pystep(obj, if lfe { ng } else { lo }, hi, st); sub_end(s); return r_
+			if he() && ND[hi].k as int == N_UN && ND[hi].op as int == T_MINUS && ND[ND[hi].a].k as int == N_INT: ND[r].fl |= 2; ND[r].c = ND[hi].a
 	else:
-		if lfe && he(): sr := mk(N_SLICE, st); ND[sr].a = obj; ND[sr].b = lo; ND[sr].fl = 1; z := mk(N_INT, st); r = mk(N_IDX, st); ND[r].a = sr; ND[r].b = z
+		if lfe && he(): sr := mk(N_SLICE, st); ND[sr].a = obj; ND[sr].b = lo; ND[sr].fl = 17; z := mk(N_INT, st); r = mk(N_IDX, st); ND[r].a = sr; ND[r].b = z
 		else:
 			if lfe: perr("'^' bounds are only valid in slices")
 			r = mk(N_IDX, st); ND[r].a = obj; ND[r].b = lo; if he() && (ND[obj].k as int == N_ID || ND[obj].k as int == N_DOT || ND[obj].k as int == N_IDX) { ND[r].c = mkcall(NAME_DICTAT, st, obj, lo) }
@@ -460,6 +496,7 @@ pprim() int:
 	if k == T_LP: nx(); s := sub_begin(false); e := pexpr(); if PY && tk() == T_COMMA { e = pytuple(e, st) } ex(T_RP, "parenthesized expression"); sub_end(s); return e
 	if k == T_LB: return parray()
 	if (k == K_INT || k == K_REAL) && tkat(P + 1) == T_LP && he(): f := mk(N_ID, st); ND[f].s = if k == K_INT { NAME_TOINT } else { NAME_TOREAL }; nx(); nx(); return pcall(f, -1, st)
+	if PY && (k == K_INT || k == K_REAL): nx(); return mkid(if k == K_INT { NAME_TOINT } else { NAME_TOREAL }, st)
 	if PY && k == T_IDENT && tkat(P + 1) == T_LP && pycls(TK[P].v): return pyctor(st)
 	if PY && k == T_IDENT && !pyd(TK[P].v) && (nm(TK[P].v) == "pi" || nm(TK[P].v) == "inf"): w := TK[P].v; nx(); return mkid(intern(if nm(w) == "pi" { "PI" } else { "INF" }), st)
 	if k == T_IDENT || k == T_CC:
@@ -631,11 +668,11 @@ pstmt(b int) bool:
 	st := P
 	if !STMTE:
 		o := tk()
-		if PY && o == T_ASSIGN && ND[e].k as int == N_ID && !pyd(ND[e].s): nx(); r := pyval(pexpr()); semi("assignment statement"); WS.push(mkdecl(ND[e].s, r, st, V_VAR)); PYD.push(ND[e].s as i32); return true
+		if PY && o == T_ASSIGN && ND[e].k as int == N_ID && !pyd(ND[e].s): nx(); r := pyasg(pyval(pexpr()), st); semi("assignment statement"); WS.push(mkdecl(ND[e].s, r, st, if pyrebind(ND[e].s, P) { V_VAR | V_PYCOPY } else { V_VAR })); PYD.push(ND[e].s as i32); return true
 		if PY && o == T_DIVEQ && TK[st].v != 3: nx(); r := pexpr(); semi("assignment statement"); n := mk(N_ASSIGN, st); ND[n].op = T_ASSIGN as u8; ND[n].a = e; ND[n].b = mkcall(NAME_TRUEDIV, st, mkid(ND[e].s, ND[e].t), r); WS.push(n); return true
 		if PY && o == T_COMMA: r := pymulti(e, st); if r >= 0 { WS.push(r) } return true
 		if o == T_ASSIGN || o == T_DOTASSIGN || o == T_PLUSEQ || o == T_MINUSEQ || o == T_MULEQ || o == T_DIVEQ || o == T_MODEQ || o == T_ANDEQ || o == T_OREQ || o == T_XOREQ || o == T_SHLEQ || o == T_SHREQ:
-			nx(); r0 := if PY { pyval(pexpr()) } else { pexpr() }; semi("assignment statement")
+			nx(); r0 := if PY { pyasg(pyval(pexpr()), st) } else { pexpr() }; semi("assignment statement")
 			fd := o == T_DIVEQ && TK[st].v == 3 && ND[e].k as int == N_ID
 			r := if fd { mkcall(NAME_FLOORDIV, st, mkid(ND[e].s, ND[e].t), r0) } else { r0 }
 			n := mk(N_ASSIGN, st); ND[n].op = if fd { T_ASSIGN } else { o }; ND[n].a = e; ND[n].b = r; if o == T_PLUSEQ && he() { ND[n].c = mkcall(NAME_EXTEND, st, e, r) } WS.push(n); return true
@@ -856,7 +893,12 @@ pyhoist(ts i32[:], bd int) i32[>..]:
 		if q >= 0 && s0[q] >= 0 && (j < s0[q] || j > s1[q]): h ~= false; for x in o { if x == w { h = true } } if !h { o.push(w) }
 	o
 pydict(st int) int:
-	nx(); n := mk(N_SLIT, st); m := wbeg(); pr ~= false
+	nx()
+	if tk() != T_RC:
+		p0 := P; k0 := pexpr(); v0 := if is(T_COLON) { pexpr() } else { -1 }
+		if tk() == K_FOR: pf := P; a := pcomp(k0, pf); r := if v0 >= 0 { P = pf; mkcall(intern("dict_from"), st, a, pcomp(v0, pf + 1)) } else { mkcall(intern("set"), st, a, -1) }; ex(T_RC, "comprehension"); return r
+		P = p0
+	n := mk(N_SLIT, st); m := wbeg(); pr ~= false
 	while tk() != T_RC && tk() != T_EOF: WS.push(pexpr()); if is(T_COLON) { pr = true; WS.push(pexpr()) } if !is(T_COMMA) { break }
 	ex(T_RC, "dictionary literal"); setl(n, m); ND[n].fl = (if pr { 2 } else { 4 }) as u16
 	if !PYANN && ND[n].n > 0:
@@ -875,11 +917,21 @@ pyinit(e int, ty int) int:
 		tv := intern(str("_hc_d", st)); lit := mk(N_SLIT, st); ND[lit].a = ty; ss i32[>..] ~= [mkdecl(tv, lit, st, V_VAR) as i32]; pr := ND[e].fl & 2 != 0; i ~= 0
 		while i < ND[e].n: kk := kid(e, i); v := if pr { kid(e, i + 1) } else { mk(N_TRUE, st) }; ix := mk(N_IDX, st); ND[ix].a = mkid(tv, st); ND[ix].b = kk; ND[ix].c = mkcall(NAME_DICTAT, st, ND[ix].a, kk); a := mk(N_ASSIGN, st); ND[a].op = T_ASSIGN as u8; ND[a].a = ix; ND[a].b = pyval(v); ss.push(a as i32); i += if pr { 2 } else { 1 }
 		eb := mk(N_EBLOCK, st); ND[eb].a = mkblock(st, ss, mkid(tv, st)); return eb
-	if k == N_CALL && ND[ND[e].a].k as int == N_ID && ND[e].n == 0: s := nm(ND[ND[e].a].s); if s == "set" || s == "dict" || s == "deque" { if ND[ty].k as int == N_TARR { return mk(N_ARR, st) } lit := mk(N_SLIT, st); ND[lit].a = ty; setl(lit, wbeg()); return lit }
+	if k == N_CALL && ND[ND[e].a].k as int == N_ID && ND[e].n == 0: s := nm(ND[ND[e].a].s); if s == "set" || s == "dict" || s == "deque" || s == "Counter" || s == "counter" || s == "defaultdict" || s == "list" { if ND[ty].k as int == N_TARR { return mk(N_ARR, st) } lit := mk(N_SLIT, st); ND[lit].a = ty; setl(lit, wbeg()); return lit }
 	if k == N_CALL && ND[ND[e].a].k as int == N_ID && ND[e].n == 1 && nm(ND[ND[e].a].s) == "defaultdict": lit := mk(N_SLIT, st); ND[lit].a = ty; setl(lit, wbeg()); return lit
 	e
 pyval(e int) int:
 	k := ND[e].k as int; if k == N_STR { return mkcall(NAME_STR, ND[e].t, e, -1) } if k == N_ID && ND[e].s == NAME_NONE { perr("None is not available: start the variable with a value of its type") } e
+recursive pyasg(r int, st int) int:
+	k := ND[r].k as int
+	if tk() != T_ASSIGN || k != N_ID && k != N_IDX && k != N_DOT: return r
+	nx(); v := pyasg(pyval(pexpr()), st); w := ND[r].s as int
+	if k != N_ID:
+		vk := ND[v].k as int; u ~= v
+		if vk != N_INT && vk != N_FLT && vk != N_TRUE && vk != N_FALSE && vk != N_ID: tn := intern(str("_hc_c", P)); WS.push(mkdecl(tn, v, st, V_VAR)); u = mkid(tn, st)
+		a := mk(N_ASSIGN, st); ND[a].op = T_ASSIGN as u8; ND[a].a = r; ND[a].b = u; WS.push(a); c := mk(N_INT, st); ND[c] = ND[u]; return c
+	if pyd(w): a := mk(N_ASSIGN, st); ND[a].op = T_ASSIGN as u8; ND[a].a = r; ND[a].b = v; WS.push(a) else: WS.push(mkdecl(w, v, st, V_VAR)); PYD.push(w as i32)
+	mkid(w, st)
 pymulti(first int, st int) int:
 	tl i32[>..] ~= [first as i32]; while is(T_COMMA) { tl.push(pexpr() as i32) }
 	ex(T_ASSIGN, "assignment"); vs i32[>..] ~= [pexpr() as i32]; while is(T_COMMA) { vs.push(pexpr() as i32) } semi("assignment statement")
@@ -894,7 +946,8 @@ pystmt() bool:
 	st := P; k := tk()
 	if pyw(NAME_DEF): WS.push(pydef(true, -1)); return true
 	if k == T_STR && (tkat(P + 1) == T_SEMI || tkat(P + 1) == T_RC): nx(); return true
-	if pyw(NAME_GLOBAL) || tk() == T_IDENT && nm(TK[P].v) == "nonlocal": while tk() != T_SEMI && tk() != T_RC && tk() != T_EOF { nx() } return true
+	if k == T_IDENT && nm(TK[P].v) == "del" && tkat(P + 1) == T_IDENT: nx(); e := pexpr(); semi("del statement"); if ND[e].k as int != N_IDX { perr("del takes one indexed place: del xs[i]") } o ~= ND[e].a as int; ix ~= ND[e].b as int; if ND[o].k as int == N_SLICE && ND[o].fl == 17 { ix = mk(N_UN, st); ND[ix].op = T_MINUS as u8; ND[ix].a = ND[o].b; o = ND[o].a } WS.push(mkcall(intern("pydel"), st, o, ix)); return true
+	if pyw(NAME_GLOBAL) || tk() == T_IDENT && nm(TK[P].v) == "nonlocal": while tk() != T_SEMI && tk() != T_RC && tk() != T_EOF { if tk() == T_IDENT && !pyd(TK[P].v as int) { PYD.push(TK[P].v as i32) } nx() } return true
 	if k == T_IDENT && tkat(P + 1) == T_COLON:
 		w := TK[P].v; nx(); nx(); ty := pyty(1); v := mk(N_VDECL, st); m := wbeg(); WS.push(w); setl(v, m); ND[v].c = CURNS; ND[v].a = ty
 		if is(T_ASSIGN): pa := PYANN; PYANN = true; e := pexpr(); PYANN = pa; il := mk(N_LIST, st); m2 := wbeg(); WS.push(pyinit(pyval(e), ty)); setl(il, m2); ND[v].b = il
@@ -926,12 +979,17 @@ pyprint(c int, kw i32[>..], st int) int:
 	sep ~= -1; en ~= -1
 	for q kw.len / 2: kn := nm(kw[2 * q] as int); sv := P; P = kw[2 * q + 1] as int; e := pexpr(); P = sv; if kn == "sep" { sep = e } else if kn == "end" { en = e } else { perr("print takes sep= and end= only") }
 	n := ND[c].n; m := wbeg()
-	for i n: if i > 0 { WS.push(if sep >= 0 { sep } else { pystr(" ", st) }) } WS.push(mkcall(NAME_PYFMT, st, kid(c, i), -1))
+	for i n: if i > 0 { WS.push(if sep >= 0 { sep } else { pystr(" ", st) }) } x := kid(c, i); WS.push(if ND[x].k as int == N_CALL && ND[ND[x].a].k as int == N_ID && nm(ND[ND[x].a].s) == "pystar" { mkcall(ND[ND[x].a].s, st, kid(x, 0), if sep >= 0 { sep } else { pystr(" ", st) }) } else { mkcall(NAME_PYFMT, st, x, -1) })
 	if en < 0: if n == 0 { WS.push(pystr("", st)) } p := mk(N_CALL, st); ND[p].a = mkid(NAME_PRINT, st); setl(p, m); return p
-	WS.push(en); s := mk(N_CALL, st); ND[s].a = mkid(NAME_STR, st); setl(s, m); mkcall(intern("rt_ps"), st, s, -1)
+	WS.push(en); s := mk(N_CALL, st); ND[s].a = mkid(NAME_STR, st); setl(s, m); mkcall(intern("pyout"), st, s, -1)
 pycall(c0 int, kw i32[>..], st int) int:
 	c ~= c0; f := ND[c].a; fk := ND[f].k as int; fs := if fk == N_ID || fk == N_DOT { ND[f].s } else { -1 }; s := if fs >= 0 { nm(fs) } else { "" }
 	if fk == N_ID && fs == NAME_PRINT: return pyprint(c, kw, st)
+	if fk == N_ID && s == "map" && ND[c].n == 2 && ND[kid(c, 0)].k as int == N_ID && !pyd(fs):
+		v := intern(str("_hc_m", st)); f2 := mk(N_FOR, st); ND[f2].l = -1; ND[f2].n = -1; ND[f2].s = v; ND[f2].a = pyarr(kid(c, 1)); ak := ND[ND[f2].a].k as int
+		if ak == N_ID || ak == N_DOT || ak == N_IDX: ND[f2].e = mkcall(intern("keys"), st, ND[f2].a, -1)
+		return pcompb(pycall(mkcall(ND[kid(c, 0)].s, st, mkid(v, st), -1), kw, st), st, [f2 as i32], [-1 as i32])
+	if fk == N_ID && s == "format" && ND[c].n == 2 && !pyd(fs): ND[f].s = intern("pyformat")
 	if fk == N_ID && !pyd(fs):
 		r := if s == "float" { "to_real" } else { if s == "str" && ND[c].n == 1 { "pyfmt" } else { if s == "round" { "pyround" } else { if s == "bool" { "truthy" } else { if s == "Counter" { "counter" } else if s == "divmod" { "pydivmod" } else { if s == "deque" && ND[c].n == 1 { "list" } else { "" } } } } } }
 		if r.len > 0: ND[f].s = intern(r)
@@ -963,6 +1021,14 @@ recursive pyty(c int) int:
 	n := mk(N_TNAME, st); ND[n].s = w; n
 pyend(p0 int) int: d ~= 0; j ~= p0; loop { k := tkat(j); if k == T_LC { d++ } if k == T_RC { d--; if d == 0 { return j } } if k == T_EOF { return j } j++ } j
 pyasg(k int) bool: k == T_ASSIGN || k == T_PLUSEQ || k == T_MINUSEQ || k == T_MULEQ || k == T_DIVEQ || k == T_MODEQ || k == T_ANDEQ || k == T_OREQ || k == T_XOREQ || k == T_SHLEQ || k == T_SHREQ
+pyrebind(w int, a int) bool:
+	j ~= a; top := PYFE < 0
+	loop:
+		k := tkat(j); if k == T_EOF || !top && j >= PYFE { return false }
+		if top && k == T_IDENT && TK[j].v == NAME_DEF && (tkat(j - 1) == T_SEMI || tkat(j - 1) == T_LC || tkat(j - 1) == T_RC): j = pyend(j) + 1; continue
+		if k == T_IDENT && TK[j].v == w && tkat(j + 1) == T_ASSIGN && (tkat(j - 1) == T_SEMI || tkat(j - 1) == T_LC || tkat(j - 1) == T_RC || tkat(j - 1) == T_COLON): return true
+		j++
+	false
 pymut(w int, a int, b int) int:
 	r ~= 0; j ~= a
 	while j < b:
@@ -983,7 +1049,7 @@ recursive pydef(nested bool, cls int) int:
 		WS.push(p); ps.push(p as i32); if !is(T_COMMA): break
 	ex(T_RP, "function declaration"); setl(n, m)
 	if is(T_ARROW):
-		if pyw(NAME_NONE): nx()
+		if pyw(NAME_NONE): nx(); fl |= F_VOID
 		else:
 			fl |= F_RETS; r := mk(N_LIST, P); m2 := wbeg()
 			WS.push(pyty(1))
@@ -993,9 +1059,9 @@ recursive pydef(nested bool, cls int) int:
 		a := ND[p].a; if a < 0 { continue } k := pymut(ND[p].s, P, e); ak := ND[a].k as int
 		if k & 1 != 0 && ak == N_TSLICE: ND[a].k = N_TARR as u8; ND[a].op = A_GROW as u8; ND[p].a = mktw(N_TREF, a, ND[a].t, 0)
 		else: if ak == N_TNAME && (k & 3 != 0 || ND[a].s == NAME_DICTIONARY) { ND[p].a = mktw(N_TREF, a, ND[a].t, 0) } else { if k & 4 != 0 { ND[p].fl = 1; if ak == N_TSLICE && ND[a].fl == 1 { ND[a].k = N_TARR as u8; ND[a].op = A_GROW as u8; ND[a].fl = 0 } } }
-	sp := PY; d0 := PYD.len; if !nested { PYD.clear() } PY = true; for p in ps { PYD.push(ND[p].s) } hr i32[>..] ~= []; for j P..e + 1 { hr.push(j as i32) } PYH = pyhoist(hr, 1)
+	sp := PY; fe0 := PYFE; PYFE = e; d0 := PYD.len; if !nested { PYD.clear() } PY = true; for p in ps { PYD.push(ND[p].s) } hr i32[>..] ~= []; for j P..e + 1 { hr.push(j as i32) } PYH = pyhoist(hr, 1)
 	{ q_ := pblock("function body"); ND[n].c = q_ }
-	PY = sp; PYD.resize(d0)
+	PY = sp; PYFE = fe0; PYD.resize(d0)
 	ND[n].fl = fl; set_end(n); n
 pyclass():
 	st := P; nx(); w := declname("class declaration")

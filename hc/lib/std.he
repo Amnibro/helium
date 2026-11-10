@@ -20,6 +20,7 @@ extern std_ceil(x real) real = "ceil"
 extern std_round(x real) real = "round"
 extern std_bits(x real) uint = "hr_f64_bits"
 extern float_dec(v real, e int&) uint = "hr_float_dec"
+extern pyout(s const byte[:]) = "hr_pyout"
 extern store_u64le(s byte[:], at int, v uint) = "hr_store_u64le"
 extern load_u64le(s const byte[:], at int) uint = "hr_load_u64le"
 extern std_from_bits(b uint) real = "hr_f64_from_bits"
@@ -218,20 +219,20 @@ count(s byte[:], sub byte[:]) int:
 		if s[at..at + sub.len] == sub { n += 1; at += sub.len } else { at += 1 }
 	n
 min<T>(xs T[:]) T:
-	best ~= xs[0]
+	best T ~= xs[0]
 	for x xs: if x < best { best = x }
 	best
 max<T>(xs T[:]) T:
-	best ~= xs[0]
+	best T ~= xs[0]
 	for x xs: if best < x { best = x }
 	best
 # with a block a, b => true when a orders before b
 min<T, F>(xs T[:]) T:
-	best ~= xs[0]
+	best T ~= xs[0]
 	for x xs: if F(x, best) { best = x }
 	best
 max<T, F>(xs T[:]) T:
-	best ~= xs[0]
+	best T ~= xs[0]
 	for x xs: if F(best, x) { best = x }
 	best
 # index of the element with the smallest (largest) key; the block gives the key
@@ -650,6 +651,15 @@ trim(s byte[:]) byte[:]: trim_end(trim_start(s))
 strip(s byte[:]) byte[:]: trim(s)
 lstrip(s byte[:]) byte[:]: trim_start(s)
 rstrip(s byte[:]) byte[:]: trim_end(s)
+lstrip(s byte[:], cs byte[:]) byte[:]:
+	i ~= 0
+	while i < s.len && find(cs, s[i]) >= 0: i += 1
+	s[i..]
+rstrip(s byte[:], cs byte[:]) byte[:]:
+	j ~= s.len
+	while j > 0 && find(cs, s[j - 1]) >= 0: j -= 1
+	s[..j]
+strip(s byte[:], cs byte[:]) byte[:]: lstrip(rstrip(s, cs), cs)
 each_split<F>(s byte[:], sep byte):
 	from ~= 0
 	for c, i s:
@@ -855,6 +865,7 @@ to_int(s byte[:], base int) int:
 	v
 to_int(s const byte[>..]&) int: to_int(s[..])
 to_int<T>(x T) int: x as int
+to_int(x real) int: x as! int
 flt_digit(c byte) bool: c >= '0' && c <= '9'
 
 # Decimal to binary for the cases the fast path cannot do exactly: the
@@ -1259,6 +1270,65 @@ tuple_lt<A, B, C, D>(a tuple4<A, B, C, D>, b tuple4<A, B, C, D>) bool:
 
 range(n int) int[>..]: range(0, n, 1)
 range(a int, b int) int[>..]: range(a, b, 1)
+inline pyrcount(a int, b int, s int) int: if s > 0 { if b > a { (b - a + s - 1) / s } else { 0 } } else { if a > b { (a - b - s - 1) / (0 - s) } else { 0 } }
+pyc1(s byte[:]) byte: s[0]
+pydigit(c byte) int: c as int - 48
+pyown(xs const byte[:][:]) byte[>..][>..]:
+	o byte[>..][>..] ~= []
+	for x in xs: o.push(str(x))
+	o
+pydel<T>(xs T[>..]&, i int): remove_at(xs, if i < 0 { xs.len + i } else { i })
+pybi(b bool) int: if b { 1 } else { 0 }
+pyf0<T>(xs T[:]) T: xs[0]
+pyf1<T>(xs T[:]) T: xs[1]
+pyf2<T>(xs T[:]) T: xs[2]
+pyf3<T>(xs T[:]) T: xs[3]
+pystar<T>(xs T[:], sep byte[:]) byte[>..]:
+	o byte[>..] ~= []
+	for x, i xs: if i > 0 { o.append(sep) } o.append(pyfmt(x))
+	o
+pyformat(n int, spec byte[:]) byte[>..]:
+	w ~= 0; i ~= 0; z := spec.len > 0 && spec[0] == '0'
+	while i < spec.len && spec[i] >= '0' && spec[i] <= '9': w = w * 10 + (spec[i] as int - 48); i += 1
+	t := if i < spec.len { spec[i] } else { 'd' }
+	base := if t == 'b' { 2 } else { if t == 'o' { 8 } else { if t == 'x' || t == 'X' { 16 } else { 10 } } }
+	d byte[>..] ~= []; v ~= if n < 0 { 0 - n } else { n }
+	if v == 0: d.push('0')
+	while v > 0: r := v % base; d.push((if r < 10 { 48 + r } else { (if t == 'X' { 55 } else { 87 }) + r }) as byte); v = v / base
+	o byte[>..] ~= []; p ~= w - d.len - (if n < 0 { 1 } else { 0 })
+	if z && n < 0: o.push('-')
+	while p > 0: o.push(if z { '0' } else { ' ' }); p -= 1
+	if !z && n < 0: o.push('-')
+	j ~= d.len - 1
+	while j >= 0: o.push(d[j]); j -= 1
+	o
+pych(c byte) byte[>..]:
+	out byte[>..] ~= [c]
+	out
+repeat<T>(xs T[:], n int) T[>..]:
+	out T[>..] ~= []
+	for i n: out.append(xs)
+	out
+split(s byte[:], sep byte[:], n int) const byte[:][>..]:
+	out const byte[:][>..] ~= []
+	at ~= 0
+	while n < 0 || out.len < n:
+		p := find(s, sep, at)
+		if p < 0: break
+		out.push(s[at..p]); at = p + sep.len
+	out.push(s[at..])
+	out
+partition(s byte[:], sep byte[:]) tuple3<const byte[:], const byte[:], const byte[:]>:
+	p := find(s, sep, 0)
+	if p < 0 { tuple3<const byte[:], const byte[:], const byte[:]>{f0: s, f1: s[0..0], f2: s[0..0]} } else { tuple3<const byte[:], const byte[:], const byte[:]>{f0: s[..p], f1: s[p..p + sep.len], f2: s[p + sep.len..]} }
+pyg(x real, p int) byte[>..]:
+	a := if x < 0.0 { 0.0 - x } else { x }
+	d ~= max(p, 1) - 1; t ~= a
+	while t >= 10.0 && d > 0: t = t / 10.0; d -= 1
+	while a > 0.0 && t < 1.0 && d < 17: t = t * 10.0; d += 1
+	out ~= fmt(x, d)
+	if find(out[..], '.') >= 0: { while out[out.len - 1] == '0' { out.pop() } if out[out.len - 1] == '.' { out.pop() } }
+	out
 range(a int, b int, s int) int[>..]:
 	out int[>..] ~= []
 	i ~= a
@@ -1300,7 +1370,7 @@ pyround(x real, nd int) real:
 # str() of a value, the way Python prints it
 pyfmt(x int) byte[>..]: str(x)
 pyfmt(b bool) byte[>..]: str(if b { "True" } else { "False" })
-pyfmt(c byte) byte[>..]: str(c as int)
+pyfmt(c byte) byte[>..]: pych(c)
 pyfmt(s byte[:]) byte[>..]: str(s)
 pyfmt(x real) byte[>..]:
 	if x != x: return str("nan")
@@ -1332,6 +1402,27 @@ pyrepr(s byte[:]) byte[>..]:
 	out
 pyrepr(s byte[>..]) byte[>..]: pyrepr(s[..])
 pyrepr<T>(x T) byte[>..]: pyfmt(x)
+pyrepr(c byte) byte[>..]: pyrepr(pych(c)[..])
+pynone() int: 1 << 62
+pylv(x int) int: x
+pylv(x real) real: x
+pylv(x bool) bool: x
+pylv(c byte) byte[>..]: pych(c)
+pylv(s byte[:]) byte[>..]: str(s)
+pylv(s byte[>..]) byte[>..]: str(s[..])
+pylv<T>(xs T[:]) T[>..]: list(xs)
+pylv<T>(xs T[>..]) T[>..]: list(xs[..])
+pystep<T>(xs T[:], lo int, hi int, k int) T[>..]:
+	n := xs.len; o T[>..] ~= []
+	if k > 0:
+		a ~= if lo == 1 << 62 { 0 } else if lo < 0 { max(lo + n, 0) } else { min(lo, n) }
+		b := if hi == 1 << 62 { n } else if hi < 0 { max(hi + n, 0) } else { min(hi, n) }
+		while a < b: o.push(xs[a]); a += k
+	if k < 0:
+		a ~= if lo == 1 << 62 { n - 1 } else if lo < 0 { max(lo + n, -1) } else { min(lo, n - 1) }
+		b := if hi == 1 << 62 { -1 } else if hi < 0 { max(hi + n, -1) } else { min(hi, n - 1) }
+		while a > b: o.push(xs[a]); a += k
+	o
 # the string module's constants
 STR_ascii_lowercase := "abcdefghijklmnopqrstuvwxyz"
 STR_ascii_uppercase := "ABCDEFGHIJKLMNOPQRSTUVWXYZ"

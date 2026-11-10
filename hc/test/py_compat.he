@@ -1,0 +1,559 @@
+def c0() -> None:
+    def inside(r: int, c: int, n: int) -> bool:
+        return 0 <= r < n and 0 <= c < n
+    n: int = 4
+    print(inside(1, 2, 3), inside(3, 0, 3), 1 <= n + 0 < 5, 0 < n - 1 <= 3)
+c0()
+def c1() -> None:
+    d: dict[str, int] = {"b": 2, "a": 1, "c": 3}
+    print(sorted(d))
+    s: set[int] = {3, 1, 2}
+    print(sorted(s), len(list(s)), sorted([x * 2 for x in s]))
+c1()
+def c3() -> None:
+    a: list[int] = [1, 2]
+    b: list[int] = a + [3, 4]
+    print(b, a + a)
+    def ext(xs: list[int]) -> list[int]:
+        return xs + [0]
+    print(ext(a))
+c3()
+def c4() -> None:
+    a: list[int] = [1, 2]
+    c: list[int] = a[:]
+    c.append(9)
+    print(a, c)
+c4()
+def c5() -> None:
+    dash: str = "ab"
+    n: int = 3
+    print(dash * n, 2 * dash, "x" * n, chr(65) * 3)
+    a: list[int] = [1, 2]
+    print(a * 2)
+c5()
+def c6() -> None:
+    def first_letter(w: str) -> str:
+        return w[0].upper()
+    def initial(c: str) -> str:
+        return c + "."
+    w: str = "hello"
+    print(first_letter(w), initial(w[0]))
+c6()
+def c7() -> None:
+    w: str = "hello"
+    print(w[0] == "h", w[1] != "x", w[0] in "aeiou")
+    ch: str = w[1]
+    print(ch, ch.isdigit())
+c7()
+def c8() -> None:
+    acc: str = ""
+    for word in ["four", "score"]:
+        acc += chr(ord(word[0]) - 32)
+    print(acc)
+c8()
+def c9() -> None:
+    print("a=1=2".split("=", 1), "a b  c".split(" ", 1))
+    head, sep, tail = "key=val=x".partition("=")
+    print(head, sep, tail)
+c9()
+def c10() -> None:
+    print(f"{20.0:g} {0.5:g} {123456.0:g} {2.50:g}")
+c10()
+def c11() -> None:
+    w: str = "h3llo"
+    c = w[1]
+    print(c.isdigit(), c.isalpha())
+c11()
+def c12() -> None:
+    words: list[str] = ["bb", "a", "ccc"]
+    print(sorted(words, key=len), max(words, key=len), sorted(words, reverse=True))
+    counts: dict[str, int] = {}
+    for x in words:
+        counts[x] = counts.get(x, 0) + 1
+    for k, v in sorted(counts.items()):
+        print(k, v)
+    print(sum(counts.values()), list(counts.keys()) == sorted(counts))
+c12()
+def c15() -> None:
+    s: str = "hello world"
+    print(s.title(), s.capitalize(), s.startswith("he"), s.index("o"), s.rfind("o"), s.zfill(13), s.center(15, "*"))
+    print(any(c.isupper() for c in s), all(c != "z" for c in s), "".join(sorted(set(s))))
+c15()
+def c16() -> None:
+    for i in range(10, 2, -2):
+        print(i)
+    x: int = 3
+    print([j for j in range(x, 10, 3)], sum(k for k in range(20, x - 1, -5)))
+c16()
+def c18() -> None:
+    grid: list[list[int]] = [[1, 2], [3, 4]]
+    r: int = 1
+    print(0 <= grid[r][0] < 5, 1 < len(grid) <= 2, 0 <= r + 1 < 2, -1 < r * 2 - 1 < 3 < 4)
+c18()
+def c20() -> None:
+    a: list[int] = [1, 2]
+    z: list[int] = []
+    z = z + a
+    z += [5]
+    print(z, a + z, [0] + a, a * 2, 2 * a, [[0] * 2] * 2)
+c20()
+def c21() -> None:
+    s: str = "a1b2"
+    k: int = 2
+    print(s[1] * 3, 2 * s[0], s[2] * k, "-" * 5, "ab" * k)
+    n: int = 0
+    for ch in s:
+        if ch.isdigit():
+            n += int(ch)
+        print(ch * 2, end="")
+    print()
+    print(n, s[0] + s[-1], max(s), min(s), int(s[1]) + int(s[3]), sum(int(d) for d in str(1234)))
+c21()
+def c22() -> None:
+    words: list[str] = ["bb", "a", "ccc"]
+    best = words[0]
+    for w in words:
+        if len(w) > len(best):
+            best = w
+    print(best, words, max(words, key=len), min(words), sorted(words, reverse=True), words)
+    c = words[2][1]
+    print(c, c == "c", c + "x", ord(c), str(c), f"{c}{words[0][0]}")
+c22()
+def c23() -> None:
+    g: list[int] = [1, 2]
+    print(1 < len(g) <= 2, 0 <= g[0] + 1 < abs(-3) < 9)
+    x: float = 1234.5
+    print(f"{x:g} {0.5:g} {100000.0:g}")
+    print("a=b=c".split("=", 1), "k: v".partition(": "), "nope".partition("="))
+    for i in range(10, 0, -3):
+        print(i, end=" ")
+    print(list(range(0, 10, 4)), [v * 2 for v in range(5, 0, -2)])
+c23()
+def c24() -> None:
+    stack: list[str] = []
+    stack.append('(')
+    stack.append("ab")
+    print(stack, len(stack))
+c24()
+def c25() -> None:
+    def f(c: str) -> bool:
+        return c == 'a' or c == 'e'
+    def g(c: str) -> bool:
+        return c >= 'a' and c <= 'z'
+    print(f("a"), f("x"), g("q"), g("Q"))
+    s = "hello world"
+    n = 0
+    for ch in s:
+        if f(ch):
+            n += 1
+    print(n)
+c25()
+def c26() -> None:
+    for v in [3, 1, 4]:
+        print(f"{v}: " + '*' * v)
+    print('-' * 10)
+    w = "x"
+    print('-' + w + '-')
+    words: list[str] = ["a", "b"]
+    print(','.join(words), ' '.join(words))
+c26()
+def c27() -> None:
+    s = "a,b;c"
+    parts = s.replace(';', ',').split(',')
+    print(parts)
+    print(s.find(';'), s.count(','), s.startswith('a'), s.strip('a'))
+    d: dict[str, int] = {}
+    d['x'] = 1
+    d['y'] = 2
+    print(d['x'] + d['y'], 'x' in d, 'z' in d)
+    t = 'q'
+    print(t, t + "r", len(t))
+c27()
+def c29() -> None:
+    x = y = 0
+    zr = zi = 0.0
+    x += 1
+    print(x, y, zr + zi)
+c29()
+def c30() -> None:
+    line = "key=val=x"
+    key, val = line.split("=", 1)
+    print(key, val)
+    a, b, c = "1 2 3".split()
+    print(int(a) + int(b) + int(c))
+    x, y = [10, 20]
+    print(x + y)
+c30()
+def c31() -> None:
+    f = [2, 3, 5]
+    print(*f)
+    r = ["a", "b"]
+    print(*r)
+    print(*f, sep=", ")
+c31()
+def c32() -> None:
+    s = "a:b:c"
+    i = s.find(':', 2)
+    print(i, s.find("b"), s.find("z"), s.index(":"))
+    print(s.rfind(":"), s.find(':'))
+c32()
+def c33() -> None:
+    g = {i: i + 1 for i in range(3)}
+    sq = {i: i * i for i in range(4)}
+    print(g[0], sq[3], len(sq))
+    s = "abcabc"
+    tri = {s[i:i+3] for i in range(len(s) - 2)}
+    print(len(tri))
+c33()
+def c34() -> None:
+    def hanoi(n: int, src: str, dst: str, aux: str):
+        if n == 0:
+            return
+        hanoi(n - 1, src, aux, dst)
+        print(n, src, dst)
+        hanoi(n - 1, aux, dst, src)
+    hanoi(2, "A", "C", "B")
+c34()
+def c35() -> None:
+    for n in [5, 255]:
+        print(format(n, 'b'), format(n, 'o'), format(n, 'x'), format(n, '08b'), bin(n), hex(n))
+    print(f"{5:04b} {255:x} {255:08.3f} {7:>4} {7:<4}| {3.14159:.2f}")
+c35()
+def c36() -> None:
+    pts = [(1, 2), (3, 4)]
+    for (x, y) in pts:
+        print(x + y)
+    for i, (x, y) in enumerate(pts):
+        print(i, x, y)
+c36()
+def c37() -> None:
+    a = "abc"
+    b = "abd"
+    n = 0
+    for i in range(3):
+        n += a[i] != b[i]
+    print(n, 1 + (a[0] == b[0]), sum(1 for i in range(3) if a[i] == b[i]))
+c37()
+def c38() -> None:
+    line = "aa,bb;cc"
+    parts = line.replace(";", ",").split(",")
+    line = "zzzzzzzzzzzzzz" + str(len(parts))
+    print(parts, line)
+    d: dict[str, list[str]] = {}
+    kv = "k=a,b".split("=")
+    d[kv[0]] = kv[1].split(",")
+    rows: list[list[str]] = []
+    for ln in ["a b", "c d"]:
+        rows.append(ln.upper().split())
+    print(d["k"], rows)
+    xs = [5, 7, 9, 11]
+    del xs[1]
+    del xs[-1]
+    e: dict[str, int] = {"a": 1, "b": 2}
+    del e["a"]
+    keys: list[str] = []
+    for k in e:
+        keys.append(k)
+    items = [3, 4]
+    for k, v in e.items():
+        items.append(v)
+    print(xs, e, keys, items)
+c38()
+def c39() -> None:
+    grid = ["#.#", "...", "#.#"]
+    h = len(grid)
+    w = len(grid[0])
+    cnt = 0
+    for r in range(h):
+        for c in range(w):
+            if grid[r][c] == "#":
+                cnt += 1
+    rows = [list(r) for r in grid]
+    rows[1][1] = "X"
+    print(cnt, "".join(rows[1]), ["".join(r) for r in rows])
+    b = [[0] * w for _ in range(h)]
+    c2 = [row[:] for row in b]
+    c2[0][0] = 5
+    print(b[0], c2[0])
+c39()
+def c40() -> None:
+    words = "the quick brown fox".split()
+    best = max(words, key=len)
+    print(best, [w.capitalize() for w in words], " ".join(w[::-1] for w in words), sorted(words, key=lambda w: (-len(w), w)))
+    print(any(w.startswith("q") for w in words), all(len(w) > 2 for w in words), "fox" in words, words.count("the"), words.index("fox"))
+    s = "Hello, World"
+    print(s.lower().count("l"), s.isalpha(), s[0].isupper(), s.title(), s.center(16, "*"), s.zfill(14), s.ljust(14, "."), s.rjust(14))
+c40()
+def c41() -> None:
+    n = 10
+    sieve = [True] * (n + 1)
+    sieve[0] = sieve[1] = False
+    for i in range(2, n + 1):
+        if sieve[i]:
+            for j in range(i * i, n + 1, i):
+                sieve[j] = False
+    print([i for i, p in enumerate(sieve) if p])
+    f = [0] * 3
+    f[0] = f[2] = 1
+    d: dict[str, int] = {}
+    d["a"] = d["b"] = x = len(f) + 1
+    z = [0, 0]
+    z[0] = z[1] = x
+    print(f, sorted(d.items()), x, z)
+c41()
+def c42() -> None:
+    a = [3, 1, 2]
+    b = sorted(a)
+    b.reverse()
+    c = a + b
+    c.insert(0, 9)
+    c.remove(3)
+    x = c.pop()
+    print(a, b, c, x, min(a), max(a), sum(a), len(c), c[-1], c[1:3], list(reversed(a)), list(range(3)), list(zip(a, b)))
+    t = (1, "a")
+    u, v = t
+    print(u, v, t, t[0])
+    print(int(3.7), float(2), str(1.5), 7 // 2, 7 % 3, 2 ** 0.5 > 1.4, 10 / 4, round(2.5), round(3.5), bin(5), hex(255), chr(65), ord("a"))
+c42()
+def c43() -> None:
+    a = [0, 1, 2, 3, 4, 5, 7]
+    s = "abcdefg"
+    print(a[::2], a[1::2], a[1:5:2], a[:4:3], a[::-2], a[5:1:-1], a[-1::-3], a[-2:0:-2], a[::-1], a[10::-4], a[:-3:2])
+    print(s[::2], s[1::2], s[::-1], s[4:1:-1], s[-3::2])
+    d = [int(c) for c in "123456"]
+    print(sum(d[::2]) + 3 * sum(d[1::2]), {"x": "y"}, ("p", 1))
+c43()
+def c44() -> None:
+    nums = [31, 7, 18, 4, 22]
+    best = 100
+    for mask in range(1 << len(nums)):
+        s = 0
+        for i in range(len(nums)):
+            if mask % 2 == 1:
+                s = s + nums[i]
+            mask = mask // 2
+        if abs(82 - 2 * s) < best:
+            best = abs(82 - 2 * s)
+    print(best)
+    for i in range(5):
+        print(i)
+        i += 2
+    for j in range(2, 9):
+        if j % 2 == 0:
+            j = j * 10
+        print(j)
+    def f(n: int) -> int:
+        t = 0
+        for k in range(n):
+            while k > 0:
+                t += k
+                k -= 1
+        return t
+    print(f(5), [x for x in range(3)])
+    for a in range(0, 10, 3):
+        a = a + 1
+        print(a)
+c44()
+def c45() -> None:
+    for m in range(4):
+        s = 0
+        for i in range(2):
+            s += m % 2
+            m = m // 2
+        print(s)
+c45()
+def c46() -> None:
+    xs = [1, 2, 3]
+    for x in xs:
+        if x > 1:
+            x = x * 10
+        print(x)
+    print(xs)
+    ws = ["a", "bb"]
+    for w in ws:
+        if len(w) > 1:
+            w = w + "!"
+        print(w)
+    print(ws)
+    for i, c in enumerate("ab"):
+        if i == 1:
+            c = "z"
+        print(i, c)
+    for i in range(3):
+        pass
+    i = 7
+    print(i)
+    for i in range(2):
+        print(i)
+    d = {"a": 1}
+    for k, v in d.items():
+        if v == 1:
+            v = 5
+        print(k, v)
+    print(d)
+c46()
+def c47() -> None:
+    g = [[1, 2], [3]]
+    for row in g:
+        if len(row) == 1:
+            row = row + [9]
+        print(row)
+    print(g)
+    ws = ["a", "bb", "ccc"]
+    out: list[str] = []
+    for w in ws:
+        w = w.upper()
+        while len(w) < 3:
+            w = w + "-"
+        out.append(w)
+    print(out, ws)
+    ps = [(1, "x"), (2, "y")]
+    for n, s in ps:
+        if n == 2:
+            s = s * 2
+            n += 1
+        print(n, s)
+    print(ps)
+    total = 0
+    for line in "a b\nc d e".split("\n"):
+        line = line.strip()
+        total += len(line.split())
+    print(total)
+c47()
+def c48() -> None:
+    for s in ["1", "22"]:
+        s = int(s)
+        print(s + 1)
+    for c in "aXb":
+        if c == "X":
+            c = c.lower() + "!"
+        print(c)
+    for c in "ab":
+        c += "+"
+        print(c)
+    for x in [1.5, 2.5]:
+        x *= 2
+        print(x)
+    for line in ["a ", " b"]:
+        line = line.strip()
+        print(line)
+    for i in range(3):
+        i = i * 2
+        print(i)
+    d = {"a": 1}
+    for k in d:
+        k += "z"
+        print(k)
+    print(d)
+c48()
+def c49() -> None:
+    print(int(3.7), int(-3.7), int(2.0), int("12"), int(True), int(7), int(1e3))
+    x = 9.99
+    print(int(x * 10), int(x) // 2)
+c49()
+s: str = "a1b2"
+k: int = 2
+print(s[1] * 3, 2 * s[0], s[2] * k, "-" * 5, "ab" * k)
+n: int = 0
+for ch in s:
+    if ch.isdigit():
+        n += int(ch)
+    print(ch * 2, end="")
+print()
+print(n, s[0] + s[-1], max(s), min(s), int(s[1]) + int(s[3]), sum(int(d) for d in str(1234)))
+def hanoi(n: int, a: str, b: str, c: str) -> None:
+    if n == 1:
+        print(a + "->" + b)
+    else:
+        hanoi(n - 1, a, c, b)
+        print(a + "->" + b)
+        hanoi(n - 1, c, b, a)
+def low(s: str) -> list[str]:
+    return s.lower().split(",")
+hanoi(2, "A", "C", "B")
+print(low("A,B"))
+def msort(a: list[int]) -> list[int]:
+    if len(a) < 2:
+        return a
+    m = len(a) // 2
+    l = msort(a[:m])
+    r = msort(a[m:])
+    o: list[int] = []
+    i = j = 0
+    while i < len(l) and j < len(r):
+        if l[i] <= r[j]:
+            o.append(l[i])
+            i += 1
+        else:
+            o.append(r[j])
+            j += 1
+    return o + l[i:] + r[j:]
+a = [1, 2, 3]
+b = a[:]
+b[0] = 9
+b.append(4)
+w = ["x", "yy", "z"]
+t = w[1:]
+t.append("q")
+u = a[-2:]
+u[0] = 0
+print(a, b, a[1:], a[::-1], t, w, u, msort([5, 2, 8, 1]))
+seed = 42
+calls = 0
+def rnd() -> int:
+    global seed, calls
+    seed = (seed * 1103515245 + 12345) % 2147483648
+    calls += 1
+    return seed
+def outer() -> int:
+    total = 0
+    def add(k: int) -> None:
+        nonlocal total
+        total += k
+    add(2)
+    add(5)
+    return total
+print(rnd(), rnd(), calls, outer())
+def perms(xs: list[int], path: list[int], used: list[bool], out: list[list[int]]) -> None:
+    if len(path) == len(xs):
+        out.append(path[:])
+        return
+    for i in range(len(xs)):
+        if not used[i]:
+            used[i] = True
+            path.append(xs[i])
+            perms(xs, path, used, out)
+            path.pop()
+            used[i] = False
+res: list[list[int]] = []
+path0: list[int] = []
+used0 = [False] * 3
+perms([1, 2, 3], path0, used0, res)
+print(res, len(res))
+a = [5, 4, 3, 2, 1]
+print(a[-1], a[-2], sum(a[1:]), max(a[:2]), len(a[2:]), sorted(a[1:4]), a[1:][0], a[:-1], a[::2])
+for x in a[3:]:
+    print(x, end=" ")
+print()
+w = ["a", "b", "c"]
+print(" ".join(w[1:]), w[:2], "hello"[1:3], [s[:1] for s in w])
+half = a[:2]
+half.append(0)
+a[0] = 9
+print(half, a)
+from collections import Counter, defaultdict
+c = Counter("mississippi")
+print(c["s"], sorted(c.items()))
+d: defaultdict[str, list[int]] = defaultdict(list)
+d["a"].append(1)
+d["a"].append(2)
+print(sorted(d.items()), len(d))
+e: dict[str, int] = {}
+e["k"] = e.get("k", 0) + 1
+for k, v in sorted(e.items(), key=lambda kv: -kv[1]):
+    print(k, v)
+import heapq
+h: list[tuple[int, int]] = []
+heapq.heappush(h, (3, 1))
+heapq.heappush(h, (1, 2))
+print(heapq.heappop(h), len(h))

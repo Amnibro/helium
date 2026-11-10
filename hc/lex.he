@@ -89,16 +89,19 @@ pykw(k int) bool: k == K_IMPORT || k == K_IF || k == K_ELSE || k == K_WHILE || k
 qend(s const byte[:], j0 int, q byte) int:
 	j ~= j0; while j < s.len && s[j] != q && s[j] != '\n' { if s[j] == '\\' { j += 1 } j += 1 }; if j < s.len && s[j] == q { j + 1 } else { j }
 he_pre(s const byte[:], o byte[>..]&):
-	i ~= 0
+	i ~= 0; py := pyfile(s)
 	while i < s.len:
 		c := s[i]
 		if c == '#': while i < s.len && s[i] != '\n' { o.push(s[i]); i += 1 }; continue
 		if c == '"' && i + 2 < s.len && s[i + 1] == '"' && s[i + 2] == '"': j ~= i + 3; while j + 2 < s.len && !(s[j] == '"' && s[j + 1] == '"' && s[j + 2] == '"') { j += 1 }; j = min(j + 3, s.len); o.append(s[i..j]); i = j; continue
 		if c == '"': j := qend(s, i + 1, '"'); o.append(s[i..j]); i = j; continue
 		if c == 'f' && i + 1 < s.len && (s[i + 1] == '"' || s[i + 1] == '\'') && (i == 0 || !idc(s[i - 1])): i = fstr(s, i + 1, o); continue
+		if py && c == 'f' && i + 5 < s.len && s[i..i + 5] == "for (" && (i == 0 || !idc(s[i - 1])):
+			j ~= i + 5; while j < s.len && s[j] != ')' && s[j] != '(' && s[j] != '\n' { j += 1 }
+			if j + 3 < s.len && s[j] == ')' && s[j + 1..j + 4] == " in": o.append("for "); o.append(s[i + 5..j]); i = j + 1; continue
 		if c == '\'':
 			j := qend(s, i + 1, '\''); b := s[i + 1..max(j - 1, i + 1)]
-			if b.len == 1 || b.len > 0 && b[0] == '\\': o.append(s[i..j]) else: o.push('"'); for x in b { if x == '"' { o.push('\\') } o.push(x) } o.push('"')
+			if !py && (b.len == 1 || b.len > 0 && b[0] == '\\'): o.append(s[i..j]) else: o.push('"'); for x in b { if x == '"' { o.push('\\') } o.push(x) } o.push('"')
 			i = j; continue
 		o.push(c); i += 1
 fstr(s const byte[:], j0 int, o byte[>..]&) int:
@@ -136,7 +139,8 @@ fspec(o byte[>..]&, e const byte[:], sp const byte[:]):
 	if j < sp.len && sp[j] == '.': j += 1; pr = 0; while j < sp.len && dig(sp[j]) { pr = pr * 10 + (sp[j] - '0'); j += 1 }
 	if j < sp.len: ty = sp[j]
 	v byte[>..] ~= []
-	if ty == 'f' || ty == 'F' || ty == 'e' || ty == 'g' || ty == '%' || ty == 0 && pr >= 0: format(v, "fmt(to_real(", e, ")", if ty == '%' { " * 100.0" } else { "" }, ", ", if pr >= 0 { pr } else { 6 }, ")"); if ty == '%' { s0 := str("str(", v[..], ", \"%\")"); v.clear(); v.append(s0[..]) }
+	if ty == 'g': format(v, "pyg(to_real(", e, "), ", if pr >= 0 { pr } else { 6 }, ")")
+	elif ty == 'f' || ty == 'F' || ty == 'e' || ty == '%' || ty == 0 && pr >= 0: format(v, "fmt(to_real(", e, ")", if ty == '%' { " * 100.0" } else { "" }, ", ", if pr >= 0 { pr } else { 6 }, ")"); if ty == '%' { s0 := str("str(", v[..], ", \"%\")"); v.clear(); v.append(s0[..]) }
 	elif hx && (ty == 'x' || ty == 'b' || ty == 'o'): format(v, if ty == 'x' { "hex(" } else { if ty == 'b' { "bin(" } else { "oct(" } }, e, ")")
 	elif ty == 'x' || ty == 'X' || ty == 'b' || ty == 'o': format(v, if ty == 'X' { "upper(" } else { "" }, "to_base(", e, ", ", if ty == 'b' { 2 } else { if ty == 'o' { 8 } else { 16 } }, ")", if ty == 'X' { ")" } else { "" })
 	else: format(v, "str(", e, ")")
