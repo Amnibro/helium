@@ -856,6 +856,38 @@ or give pins, colliders and wind in that space. One step of a 65 x 65 sheet take
 about 2.4 ms on one core. The solver, `gfx.cloth`, does not depend on the renderer
 and can be used alone: `cloth::make`, `cloth::step` and `cloth::write`.
 
+### Fabric weave (E13)
+
+A cloth material (`shading = 3`) can show its threads without any texture:
+
+```
+var denim = shapes::material(linalg::v3(0.05, 0.1, 0.35), 0.0, 0.8);
+denim.shading = 3;
+denim.shade_a = float4 { 0.25, 0.3, 0.3, 0.0 };
+denim.shade_c = float4 { 0.7, 700.0, 3.0, 0.8 };
+```
+
+`shade_a` holds the cloth model's wrap, fuzz and specular scale. `shade_c` is the
+weave:
+
+* `shade_c.x`: strength (0 is off, the default). The threads tilt the normal and
+  darken the gaps between them; the mean diffuse light does not change.
+* `shade_c.y`: threads a UV unit (700 when it is 0). The detail map's transform
+  (`detail.m`, `detail.o`) scales and moves the pattern as well.
+* `shade_c.z`: how many cells a warp thread (running along v) passes over before it
+  goes under one. 1 is a plain weave; 2 and 3 are twills with diagonal ribs, as in
+  denim.
+* `shade_c.w`: the weft's lightness. The weft threads (running along u) take the
+  base color mixed toward white by this amount, or toward black when it is negative.
+
+Each thread differs a little in brightness from its neighbors, and from very close
+(a cell wider than 14 pixels) the fibers' twist shows as fine slanted streaks. Where
+a cell covers fewer than 4 pixels the threads fade, and by 2 pixels they are gone:
+the color is then the two thread colors mixed by the share of each that shows, and
+the slopes across the threads widen the highlight, so cloth does not shimmer at a
+distance and keeps the color and highlight it has up close. The weave costs no
+measurable frame time.
+
 ## Materials, light and finish
 
 `gltf` reads the core metal-rough model plus `KHR_materials_clearcoat`, `sheen`,
@@ -2278,6 +2310,26 @@ all three frames.
 | Y6 cost | 1.63 ms without, 1.75 ms with: 0.12 ms more | at most 0.3 ms |
 | Y7 nothing else moved | goldens 44.92 dB and 41.7 dB; X1 to X7 pass with both strengths 0; wgsltest 67 modules, 58 pipelines, 0 failures; webgputest 22 scenes, 0 failures, `scene_sss` with strength 0.7 and fuzz 0.35 matches the native frame exactly on WebGPU | pass |
 
+### Fabric weave results (2026-11-10, RX 9060 XT, RADV)
+
+The W3 values include the lamp's own falloff across the patch, which is the same in
+all three frames. The far highlight is widened by the slopes across the threads; the
+steep ends of each pass lie in the darkened gaps and are left out.
+
+| Bar | Result | Bar value |
+| --- | --- | --- |
+| W1 threads show up close | 0.2085 with strength 0.7 | at least 0.03 |
+| W1 control, strength 0 | 0.0002 | at most 0.005 |
+| W2 the mean light stays | sum with strength 0.7 over sum with strength 0: 1.0031 | within 0.01 of 1 |
+| W2 control, light 5% dimmer | 0.953 | more than 0.01 from 1 |
+| W3 no noise far away | 0.0915 with strength 0.7, 0.0915 with strength 0 | at most 0.002 above |
+| W3 control, no fade | 0.8449 | at least 0.01 above 0.0915 |
+| W4 the far color is the mean of the near colors | near 1.8018, far 1.802 | both at least 1.5, far within 4% of near |
+| W4 control, weft lightness 0 | 1.0012 | below 1.5 |
+| W5 the far highlight follows the near one | near 1.2196, far 1.1775 | near at least 0.05 from 1, far closer to near than to 1 |
+| W5 control, strength 0 | 1.0 | fails |
+| W6 cost | 1.47 ms without, 1.42 ms with: no measurable cost | at most 0.3 ms |
+
 ### Cloth results (2026-11-10, RX 9060 XT, RADV; Ryzen, one core for the solver)
 
 | Bar | Result | Bar value |
@@ -2792,7 +2844,8 @@ pass-through mean error is 0.0106 % (max 0.0488 %).
   meshes. The solver runs on one CPU core, in the item's own space. Ray-traced
   shadows, reflections and GI see the rest shape. Tangents keep their rest direction,
   so a normal map on a strongly folded cloth is lit slightly off. Cloth meshes are
-  not drawn as meshlets. Hair strands are not built.
+  not drawn as meshlets. The weave is a plain weave or a warp-faced twill (no satin, no knit), and the
+  threads' direction does not stretch the highlight. Hair strands are not built.
 * Sheen renders brighter than three.js on the chair and toy car (the likely cause, its
   low fit, is unproven), and the clearcoat fixture's base tiles are brighter
   (R 185 against 143), cause not found. See the PSNR table in hc/test/gfx/results.
