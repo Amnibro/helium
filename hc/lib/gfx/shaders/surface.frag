@@ -114,6 +114,8 @@ vec2 pom_off = vec2(0.0);
 vec3 sss_d = vec3(0.0);
 vec3 sss_k = vec3(1.0);
 float sss_w = 1.0;
+float sea_h = 0.0;
+#include "water.glsl"
 vec4 smp(sampler2D s, vec2 uv) { if (xo2.z == 1.0) return texture(s, uv); return textureGrad(s, uv, dFdx(uv) * xo2.z, dFdy(uv) * xo2.z); }
 vec4 smpa(sampler2DArray s, vec3 uv) { if (xo2.z == 1.0) return texture(s, uv); return textureGrad(s, uv, dFdx(uv.xy) * xo2.z, dFdy(uv.xy) * xo2.z); }
 vec2 pick_uv(float set) { return (set > 0.5 ? in_uv.zw : in_uv.xy) + pom_off; }
@@ -573,7 +575,8 @@ vec3 env_lobe(vec3 nn, vec3 v, float rough, vec3 gn, vec3 oc, vec4 sr, vec4 rr) 
 		e = p.rgb + e * p.w;
 	}
 	vec3 eo = e * spec_occ(r, max(dot(nn, v), 1e-4), rough, gn, oc.x, oc.y, oc.z);
-	if (rr.a > 0.5) eo = mix(eo, rr.a > 1.5 ? e : rr.rgb, 1.0 - smoothstep(0.7 * rtr.y, rtr.y, rough));
+	if (rr.a > 2.5) eo = mix(eo, rr.rgb, clamp(rr.a - 3.0, 0.0, 1.0));
+	else if (rr.a > 0.5) eo = mix(eo, rr.a > 1.5 ? e : rr.rgb, 1.0 - smoothstep(0.7 * rtr.y, rtr.y, rough));
 	float w = sr.w * (1.0 - smoothstep(0.7 * refl.z, refl.z, rough));
 	return w > 0.0 ? mix(eo, textureLod(tex_ssr_prev, sr.xy, log2(max(2.0 * rough * rough * sr.z * refl.w, 1.0))).rgb, w) : eo;
 }
@@ -586,6 +589,60 @@ vec3 transmitted(vec3 n, vec3 v, float rough, vec3 tint, vec3 ef, ExtS x) {
 	float lod = min(lw * rough * clamp(x_ior.x * 2.0 - 2.0, 0.0, 1.0), lw - 4.0);
 	vec3 att = x_trans.z > 0.0 ? exp(log(max(x_atten.rgb, vec3(1e-4))) / x_trans.z * length(ray)) : vec3(1.0);
 	return (1.0 - ef) * textureLod(tex_trans, uv, lod).rgb * att * tint;
+}
+vec3 sea_px(vec3 p) {
+	vec4 c = vp * vec4(p, 1.0);
+	vec2 u = clamp(vec2(c.x / c.w * 0.5 + 0.5, 0.5 - c.y / c.w * 0.5), vec2(0.0), vec2(0.9999));
+	return vec3(u, texelFetch(tex_trans, ivec2(u * vec2(textureSize(tex_trans, 0))), 0).a);
+}
+vec4 sea_trace(vec3 ro, vec3 rd) {
+	int n = int(caust_w.w);
+	if (n < 1) return vec4(0.0);
+	vec2 sz = vec2(textureSize(tex_trans, 0));
+	float dz = dot(rd, view_dir.xyz);
+	float z0 = dot(ro - eye.xyz, view_dir.xyz);
+	float tp = 0.0;
+	float zp = 0.0;
+	for (int i = 0; i < n; i++) {
+		float s = float(i + 1) / float(n);
+		float t = 0.02 + 47.0 * s * s;
+		vec4 c = vp * vec4(ro + rd * t, 1.0);
+		if (c.w <= 0.0) break;
+		vec2 uv = vec2(c.x / c.w * 0.5 + 0.5, 0.5 - c.y / c.w * 0.5);
+		if (uv.x < 0.0 || uv.y < 0.0 || uv.x >= 1.0 || uv.y >= 1.0) break;
+		float zs = texelFetch(tex_trans, ivec2(uv * sz), 0).a;
+		float zr = z0 + dz * t;
+		float zt = zs > 0.0 && zr >= zs ? zs : (zp > 0.0 && zr >= zp ? zp : 0.0);
+		if (zt > 0.0 && abs(dz) > 1e-5) {
+			float th = t;
+			vec3 q = vec3(uv, zs);
+			for (int k = 0; k < 4; k++) {
+				th = clamp((zt - z0) / dz, tp, t);
+				q = sea_px(ro + rd * th);
+				if (q.z <= 0.0) break;
+				zt = q.z;
+			}
+			bool ok = q.z > 0.0 && abs(z0 + dz * th - q.z) < 0.002 * q.z + 0.004;
+			if (!ok && zs > 0.0 && zr >= zs) {
+				float lo = tp;
+				float hi = t;
+				for (int k = 0; k < 8; k++) {
+					th = 0.5 * (lo + hi);
+					q = sea_px(ro + rd * th);
+					if (q.z > 0.0 && z0 + dz * th >= q.z) hi = th; else lo = th;
+				}
+				q = sea_px(ro + rd * hi);
+				ok = q.z > 0.0 && abs(z0 + dz * hi - q.z) < 0.002 * q.z + 0.004 + 2.0 * (hi - lo);
+			}
+			if (ok) {
+				vec2 e = smoothstep(vec2(0.0), vec2(0.05), q.xy) * (vec2(1.0) - smoothstep(vec2(0.95), vec2(1.0), q.xy));
+				return vec4(textureLod(tex_trans, q.xy, 0.0).rgb, e.x * e.y);
+			}
+		}
+		tp = t;
+		zp = zs > 0.0 && zr < zs ? zs : 0.0;
+	}
+	return vec4(0.0);
 }
 vec3 ambient_env(vec3 n, vec3 v, vec3 base_rgb, vec3 albedo, vec3 f0, float rough, vec2 eb, vec3 ms, vec3 kd, vec3 gi_irr, bool use_gi, vec3 gn, vec3 oc, vec4 sr, Mat q, ExtS x) {
 	int model = int(misc.y + 0.5);
@@ -758,7 +815,9 @@ void main() {
 		b = cross(n, t) * (dot(cross(n, t), -bv) < 0.0 ? -1.0 : 1.0);
 	}
 	if (is_water) {
-		vec2 wg = water_grad(in_world.xz, cluster.w);
+		vec3 ww = water_wave(in_world.xz, cluster.w, shade_b.xyz, 11);
+		vec2 wg = ww.xy;
+		sea_h = ww.z;
 		n = normalize(n + vec3(-wg.x, 0.0, -wg.y));
 		t = normalize(t - n * dot(n, t));
 		b = cross(n, t) * (dot(cross(n, t), b) < 0.0 ? -1.0 : 1.0);
@@ -1018,7 +1077,19 @@ void main() {
 	vec3 gi_irr = use_gi ? gi_irradiance(in_world, n, v, gi_origin, gi_step, gi_dims) : vec3(0.0);
 	float dao = use_gi ? (gi.z > 0.5 ? occ : 1.0) : occ;
 	float wdz = 0.0;
+	vec3 sea_lit = vec3(0.0);
+	vec3 sea_sky = vec3(0.0);
+	bool sea_under = is_water && dot(v, in_nrm) < 0.0;
 	if (is_water) {
+		vec3 sky_i = env.x > 0.5 ? textureLod(tex_env, vec4(env_dir(vec3(0.0, 1.0, 0.0)), 0.0), env.w).rgb * env.y : sky_color(vec3(0.0, 1.0, 0.0), normalize(to_sun.xyz), zenith.rgb, horizon.rgb, ground.rgb, vec3(0.0));
+		sea_sky = sky_i;
+		sea_lit = sky_i + sun_rgb.rgb * max(to_sun.y, 0.0) * 0.318309886;
+	}
+	if (is_water && !sea_under) {
+		vec3 rd = reflect(-v, n);
+		rd.y = abs(rd.y);
+		vec4 h = sea_trace(in_world, rd);
+		if (h.a > 0.0) x.rr = vec4(h.rgb, 3.0 + h.a);
 		vec4 wc = vp * vec4(in_world, 1.0);
 		vec2 wuv = vec2(wc.x / wc.w * 0.5 + 0.5, 0.5 - wc.y / wc.w * 0.5);
 		float zw = dot(in_world - eye.xyz, view_dir.xyz);
@@ -1030,7 +1101,22 @@ void main() {
 	vec4 sr = refl.x > 0.5 && alpha.x < 1.5 && x.trans <= 0.0 ? texelFetch(tex_ssr, ivec2(gl_FragCoord.xy), 0) : vec4(0.0);
 	if (rtr.x > 0.5 && rough < rtr.y && alpha.x < 1.5 && x.trans <= 0.0 && sr.w < 0.999) x.rr = rt_refl(rp, n, gn, v, rough);
 	vec3 ambient = vec3(0.0);
-	if (env.x > 0.5 || misc.z > 0.5 || probe_n.x > 0.5) ambient = ambient_env(n, v, tint.rgb, albedo, f0, rough, eb, ms, kd, gi_irr, use_gi, gn, vec3(dao, aos, occm), sr, q, x);
+	if (sea_under) {
+		vec3 nu = dot(n, v) < 0.0 ? -n : n;
+		vec3 tr = refract(-v, nu, x_ior.x);
+		bool tir = dot(tr, tr) < 0.5;
+		float fr = tir ? 1.0 : 0.02 + 0.98 * pow(1.0 - max(-dot(tr, nu), 0.0), 5.0);
+		vec3 rd = reflect(-v, nu);
+		rd.y = -abs(rd.y);
+		vec4 h = sea_trace(in_world, rd);
+		float cr = max(-refract(-normalize(to_sun.xyz), vec3(0.0, 1.0, 0.0), 0.75).y, 0.05);
+		ambient = fr * mix(shade_c.rgb * (fract(caust_w.w) > 0.25 ? 1.0 : 0.0) * (sea_sky / (1.0 - rd.y) + (sea_lit - sea_sky) / (1.0 - rd.y / cr)), h.rgb, h.a);
+		if (!tir) {
+			vec4 a = sea_trace(in_world, tr);
+			vec3 up = env.x > 0.5 ? textureLod(tex_env, vec4(env_dir(tr), 0.0), 0.0).rgb * env.y : sky_color(tr, normalize(to_sun.xyz), zenith.rgb, horizon.rgb, ground.rgb, vec3(0.0));
+			ambient += (1.0 - fr) * mix(up, a.rgb, a.a);
+		}
+	} else if (env.x > 0.5 || misc.z > 0.5 || probe_n.x > 0.5) ambient = ambient_env(n, v, tint.rgb, albedo, f0, rough, eb, ms, kd, gi_irr, use_gi, gn, vec3(dao, aos, occm), sr, q, x);
 	else ambient = ambient_light(n, v, l, tint.rgb, metal, rough, gi_irr, use_gi, gn, vec3(dao, aos, occm), dao, sr, x.rr, q);
 	rgb += ambient + (sg.w >= 0.0 ? albedo * max(kd, vec3(0.0)) * occm * sg.rgb * ssgi.z * (1.0 - x.trans) : vec3(0.0));
 	if (xo_det.z > 0.5) {
@@ -1041,13 +1127,11 @@ void main() {
 	}
 
 	rgb += emissive.rgb * smp(tex_emissive, xuv(uv_sets2.x, xm_emi, xo2.xy)).rgb;
-	if (is_water) {
-		vec3 sky_i = env.x > 0.5 ? textureLod(tex_env, vec4(env_dir(vec3(0.0, 1.0, 0.0)), 0.0), env.w).rgb * env.y : sky_color(vec3(0.0, 1.0, 0.0), normalize(to_sun.xyz), zenith.rgb, horizon.rgb, ground.rgb, vec3(0.0));
-		vec3 lit = sky_i + sun_rgb.rgb * max(to_sun.y, 0.0) * 0.318309886;
-		rgb += shade_c.rgb * (vec3(1.0) - tint.rgb) * lit;
+	if (is_water && !sea_under) {
+		rgb += shade_c.rgb * (vec3(1.0) - tint.rgb) * sea_lit;
 		float nz = water_grad(in_world.xz * 3.1, cluster.w * 0.7).x * 7.0 + 0.5;
-		float foam = shade_b.w * smoothstep(0.32, 0.0, wdz + 0.14 * nz);
-		rgb = mix(rgb, vec3(0.87) * lit, clamp(foam, 0.0, 1.0));
+		float foam = shade_b.w * smoothstep(0.32, 0.0, wdz + 0.14 * nz) + shade_c.w * smoothstep(0.3, 0.7, sea_h / max(shade_b.y / shade_b.x * 2.94427, 1e-6)) * clamp(0.5 + 0.5 * nz, 0.4, 1.0);
+		rgb = mix(rgb, vec3(0.87) * sea_lit, clamp(foam, 0.0, 1.0));
 	}
 	out_rgba = vec4(rgb, oa);
 
@@ -1062,4 +1146,5 @@ void main() {
 	else if (dbg == 8) out_rgba = vec4(vec3(max(dot(n, v), 0.0)), 1.0);
 	else if (dbg == 9) out_rgba = vec4(vec3(spec_occ(reflect(-v, n), n_v, rough, gn, dao, aos, occm)), 1.0);
 	else if (dbg == 10) out_rgba = vec4(sr.w, sr.z, 0.0, 1.0);
+	else if (dbg == 11) out_rgba = vec4(in_world, 1.0);
 }

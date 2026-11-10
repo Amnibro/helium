@@ -6859,6 +6859,225 @@ fn vf_h8() bool {
 	print("gpu: vfog H8 cost: plain fog ", r2(t0), " ms a frame, with noise, 4 volumes and spot shadows ", r2(t1), " ms (", r2(t1 - t0), " ms more; bar <= 2)", if ok { " PASS" } else { " FAIL" });
 	ok
 }
+fn se_h(px real, pz real, tm real, w float4) real {
+	var qx = px;
+	var qz = pz;
+	var f = w.x as real;
+	var a = w.y as real;
+	var ang real = 0.7;
+	var h real = 0.0;
+	for i in 11 {
+		let dx = cos(ang);
+		let dz = sin(ang);
+		let s = sin((qx * dx + qz * dz) * f + tm * sqrt(9.81 * f) * w.z as real) * a / f;
+		h += s;
+		qx += dx * s * 0.5;
+		qz += dz * s * 0.5;
+		f *= 1.31;
+		a *= 0.87;
+		ang += 2.4;
+	}
+	h
+}
+fn se_world() { reset_scene(); dark_scene(); s3d::caustics = s3d::Caustics { .. }; s3d::sea = s3d::Sea { .. }; s3d::world_time = 3.0; s3d::debug_view = 0; }
+fn se_floor() { s3d::place(s3d::add(shapes::cube(float3 { 40.0, 0.1, 40.0 }, shapes::material(linalg::v3(0.0, 0.0, 0.0), 0.0, 1.0))), gfx::translate(float3 { 0.0, -3.1, 0.0 })); }
+fn se_sea(swell f32, foam f32) {
+	let a = shapes::sea(7.0, 129);
+	gltf::materials[gltf::materials.len - 1].shade_a.w = swell;
+	gltf::materials[gltf::materials.len - 1].shade_c.w = foam;
+	let _ = s3d::add(a);
+}
+fn se_top() { s3d::view = s3d::Camera { eye: float3 { 0.0, 8.0, 0.0 }, target: float3 { 0.0, 0.0, 0.0 }, up: float3 { 0.0, 0.0, -1.0 }, fov_y: 0.9, near: 0.05, far: 80.0 }; }
+fn se_w123() bool {
+	let wv = float4 { 1.1, 0.062, 1.0, 0.0 };
+	let top = 0.062 / 1.1 * 2.94427;
+	let np = 1280 * 720;
+	se_world();
+	se_sea(1.0, 0.0);
+	se_top();
+	s3d::debug_view = 11;
+	let p = rr_hdr(2);
+	s3d::debug_view = 1;
+	let nm = rr_hdr(2);
+	s3d::debug_view = 0;
+	var in3 = 0;
+	var in0 = 0;
+	var n1 = 0;
+	var nf = 0;
+	var hs f32[>..] = [];
+	for i in np {
+		let x = gi_half(p[..], 8, i, 0) as real;
+		let y = gi_half(p[..], 8, i, 1) as real;
+		let z = gi_half(p[..], 8, i, 2) as real;
+		let h3 = se_h(x, z, 3.0, wv);
+		hs.push((h3 / top) as f32);
+		if abs(y - h3) < 0.005 { in3 += 1; }
+		if abs(y - se_h(x, z, 0.0, wv)) < 0.005 { in0 += 1; }
+		let sx = (se_h(x + 0.001, z, 3.0, wv) - se_h(x - 0.001, z, 3.0, wv)) * 500.0;
+		let sz = (se_h(x, z + 0.001, 3.0, wv) - se_h(x, z - 0.001, 3.0, wv)) * 500.0;
+		let nx = gi_half(nm[..], 8, i, 0) as real * 2.0 - 1.0;
+		let ny = gi_half(nm[..], 8, i, 1) as real * 2.0 - 1.0;
+		let nz = gi_half(nm[..], 8, i, 2) as real * 2.0 - 1.0;
+		let nl = sqrt(nx * nx + ny * ny + nz * nz) + 1e-9;
+		if (ny - sx * nx - sz * nz) / (nl * sqrt(1.0 + sx * sx + sz * sz)) > 0.9998477 { n1 += 1; }
+		if ny / nl > 0.9998477 { nf += 1; }
+	}
+	se_world();
+	se_sea(0.0, 0.0);
+	se_top();
+	s3d::debug_view = 11;
+	let q = rr_hdr(2);
+	s3d::debug_view = 0;
+	var flat real = 0.0;
+	for i in np { flat = max(flat, abs(gi_half(q[..], 8, i, 1) as real)); }
+	let w1 = in3 * 100 >= np * 99 && in0 * 2 < np && flat <= 0.0001;
+	print("gpu: sea W1 height within 5 mm: ", r2(in3 as real * 100.0 / np as real), "% (bar >= 99), against time 0: ", r2(in0 as real * 100.0 / np as real), "% (control < 50), swell 0 largest: ", r4(flat * 1000.0), " mm (control <= 0.1): ", if w1 { "ok" } else { "FAIL" });
+	let w2 = n1 * 100 >= np * 99 && nf * 2 < np;
+	print("gpu: sea W2 normals within 1 degree: ", r2(n1 as real * 100.0 / np as real), "% (bar >= 99), against flat: ", r2(nf as real * 100.0 / np as real), "% (control < 50): ", if w2 { "ok" } else { "FAIL" });
+	var rat real[2] = [0.0, 0.0];
+	for k in 2 {
+		se_world();
+		se_floor();
+		se_sea(1.0, (1 - k) as f32);
+		se_top();
+		s3d::sun.to_sun = CA_L; s3d::sun.rgb = float3 { 3.0, 3.0, 3.0 }; s3d::sun.shadows = false;
+		let f = rr_hdr(2);
+		var hi real = 0.0;
+		var lo real = 0.0;
+		var nh = 0;
+		var nl = 0;
+		for i in np {
+			if hs[i] >= 0.6 { hi += vc_lum(f[..], i); nh += 1; }
+			if hs[i] <= 0.2 { lo += vc_lum(f[..], i); nl += 1; }
+		}
+		rat[k] = (hi / max(nh, 1) as real) / max(lo / max(nl, 1) as real, 1e-9);
+		print("gpu: sea W3 foam ", 1 - k, ": crest pixels ", nh, " mean ", r4(hi / max(nh, 1) as real), ", low pixels ", nl, " mean ", r4(lo / max(nl, 1) as real));
+	}
+	let w3 = rat[0] >= 2.0 && rat[1] <= 1.3;
+	print("gpu: sea W3 crest over low: ", r3(rat[0]), " (bar >= 2), foam 0: ", r3(rat[1]), " (control <= 1.3): ", if w3 { "ok" } else { "FAIL" });
+	w1 && w2 && w3
+}
+fn se_flat(half f32, amp f32, ab float3, sc float3, ior f32) {
+	let a = shapes::water(half);
+	let k = gltf::materials.len - 1;
+	gltf::materials[k].shade_b.y = amp;
+	gltf::materials[k].shade_a.x = ab.x; gltf::materials[k].shade_a.y = ab.y; gltf::materials[k].shade_a.z = ab.z;
+	gltf::materials[k].shade_c.x = sc.x; gltf::materials[k].shade_c.y = sc.y; gltf::materials[k].shade_c.z = sc.z;
+	gltf::materials[k].shade_c.w = 0.0;
+	gltf::materials[k].ior = ior;
+	let _ = s3d::add(a);
+}
+fn se_mirror(panel bool) {
+	se_world();
+	se_floor();
+	se_flat(20.0, 0.0, float3 { 50.0, 50.0, 50.0 }, float3 { 0.0, 0.0, 0.0 }, 1.333);
+	if panel {
+		var m = shapes::material(linalg::v3(0.0, 0.0, 0.0), 0.0, 1.0);
+		m.emissive = float3 { 2.0, 2.0, 2.0 };
+		s3d::place(s3d::add(shapes::cube(float3 { 1.5, 1.0, 0.02 }, m)), gfx::translate(float3 { 0.0, 1.2, 3.02 }));
+	}
+	s3d::view = s3d::Camera { eye: float3 { 0.0, 2.0, -6.0 }, target: float3 { 0.0, 0.5, 0.0 }, up: float3 { 0.0, 1.0, 0.0 }, fov_y: 0.9, near: 0.05, far: 80.0 };
+}
+fn se_w48() bool {
+	se_mirror(true);
+	s3d::debug_view = 11;
+	let p = rr_hdr(2);
+	s3d::debug_view = 0;
+	let t = rr_hdr(2);
+	s3d::sea.under = false;
+	let tu = rr_hdr(2);
+	s3d::sea.under = true;
+	s3d::sea.reflect = false;
+	let o = rr_hdr(2);
+	se_mirror(false);
+	s3d::sea.reflect = false;
+	s3d::sky.zenith = float3 { 2.0, 2.0, 2.0 }; s3d::sky.horizon = float3 { 2.0, 2.0, 2.0 }; s3d::sky.ground = float3 { 2.0, 2.0, 2.0 }; s3d::sky.ambient = 1.0;
+	let r = rr_hdr(2);
+	var wat byte[>..] = [];
+	var ins byte[>..] = [];
+	for i in 1280 * 720 {
+		let x = gi_half(p[..], 8, i, 0) as real;
+		let y = gi_half(p[..], 8, i, 1) as real;
+		let z = gi_half(p[..], 8, i, 2) as real;
+		let w = abs(y) < 0.002 && abs(x) + abs(z) > 0.01;
+		let k = 9.0 / max(z + 6.0, 1e-6);
+		let qy = 2.0 * k - 2.0;
+		wat.push((if w { 1 } else { 0 }) as byte);
+		ins.push((if w && z < 3.0 && abs(x * k) <= 1.5 && qy >= 0.2 && qy <= 2.2 { 1 } else { 0 }) as byte);
+	}
+	var ni = 0;
+	var no = 0;
+	var bi = 0;
+	var bo = 0;
+	var bc = 0;
+	var wi real = 0.0;
+	var wo real = 0.0;
+	var wc real = 0.0;
+	for y in 714 {
+		for x in 1274 {
+			let i = (y + 3) * 1280 + x + 3;
+			if wat[i] as int == 0 { continue; }
+			var s = 0;
+			for dy in 7 { for dx in 7 { s += ins[(y + dy) * 1280 + x + dx] as int; } }
+			if s != 49 && s != 0 { continue; }
+			var e real = 0.0;
+			var c real = 0.0;
+			for ch in 3 {
+				let rv = max(gi_half(r[..], 8, i, ch) as real, 1e-9);
+				let tv = gi_half(t[..], 8, i, ch) as real;
+				e = max(e, if s == 49 { abs(tv - rv) / rv } else { tv / rv });
+				c = max(c, gi_half(o[..], 8, i, ch) as real / rv);
+			}
+			if s == 49 { ni += 1; wi = max(wi, e); wc = max(wc, c); if e > 0.05 { bi += 1; } if c > 0.1 { bc += 1; } }
+			if s == 0 { no += 1; wo = max(wo, e); if e > 0.05 { bo += 1; } }
+		}
+	}
+	let w4 = ni > 1000 && no > 1000 && bi == 0 && bo == 0 && bc == 0;
+	print("gpu: sea W4 inside ", ni, " pixels, off by > 5%: ", bi, " (worst ", r4(wi), "), outside ", no, " pixels above 5%: ", bo, " (worst ", r4(wo), "), reflections off above 10%: ", bc, " (worst ", r4(wc), "): ", if w4 { "ok" } else { "FAIL" });
+	var df = 0;
+	for i in t.len { if t[i] != tu[i] { df += 1; } }
+	print("gpu: sea W8 bytes that differ with sea.under off: ", df, " (bar 0): ", if df == 0 { "ok" } else { "FAIL" });
+	w4 && df == 0
+}
+fn se_w5() bool {
+	var lo real[2] = [9.0, 9.0];
+	var mid real[2] = [9.0, 9.0];
+	var out real[2] = [0.0, 0.0];
+	for k in 2 {
+		se_world();
+		s3d::sky.zenith = float3 { 1.0, 1.0, 1.0 }; s3d::sky.horizon = float3 { 1.0, 1.0, 1.0 }; s3d::sky.ground = float3 { 1.0, 1.0, 1.0 };
+		se_flat(20.0, 0.0, float3 { 0.45, 0.09, 0.07 }, float3 { 0.012, 0.07, 0.08 }, if k == 0 { 1.333 } else { 1.5 });
+		s3d::sea.under = false;
+		s3d::view = s3d::Camera { eye: float3 { 0.0, -1.0, 0.0 }, target: float3 { 0.0, 0.0, 0.0 }, up: float3 { 0.0, 0.0, -1.0 }, fov_y: 2.0, near: 0.05, far: 80.0 };
+		let f = rr_hdr(2);
+		for y in 720 {
+			let a = atan(abs(y as real + 0.5 - 360.0) / 360.0 * tan(1.0)) * 57.29578;
+			let i = y * 1280 + 640;
+			let mn = min(gi_half(f[..], 8, i, 0), min(gi_half(f[..], 8, i, 1), gi_half(f[..], 8, i, 2))) as real;
+			let mx = max(gi_half(f[..], 8, i, 0), max(gi_half(f[..], 8, i, 1), gi_half(f[..], 8, i, 2))) as real;
+			if a >= 10.0 && a <= 35.0 { lo[k] = min(lo[k], mn); }
+			if a >= 44.5 && a <= 45.5 { mid[k] = min(mid[k], mn); out[k] = if k == 1 { max(out[k], mx) } else { out[k] }; }
+			if a >= 51.0 && k == 0 { out[k] = max(out[k], mx); }
+		}
+	}
+	let w5 = lo[0] >= 0.9 && mid[0] >= 0.5 && out[0] <= 0.05 && out[1] <= 0.05;
+	print("gpu: sea W5 lowest at 10 to 35 degrees: ", r4(lo[0]), " (bar >= 0.9), at 45: ", r4(mid[0]), " (bar >= 0.5), highest at 51 and beyond: ", r4(out[0]), " (bar <= 0.05), ior 1.5 at 45: ", r4(out[1]), " (control <= 0.05): ", if w5 { "ok" } else { "FAIL" });
+	w5
+}
+fn sea_checks() bool {
+	half_table();
+	s3d::init(1280, 720);
+	IN_OUT = gfx::render_target(1280, 720, gfx::RGBA8);
+	let cs = s3d::caustics;
+	let wt = s3d::world_time;
+	let a = se_w123();
+	let b = se_w48();
+	let c = se_w5();
+	reset_scene();
+	s3d::caustics = cs; s3d::sea = s3d::Sea { .. }; s3d::world_time = wt; s3d::debug_view = 0;
+	s3d::sky = DEF_SKY; s3d::sun = DEF_SUN; s3d::look = DEF_LOOK;
+	a && b && c
+}
 fn fog_checks() bool {
 	half_table();
 	s3d::init(1280, 720);
@@ -6952,7 +7171,7 @@ fn gpu_checks(dir const byte[:], golden const byte[:]) bool {
 	var only byte[>..] = [];
 	let _ = env("GFX_ONLY", only);
 	if only.len > 0 {
-		let ok = if only[..] == "gtao" { gtao_checks() } else if only[..] == "gi" { gi_checks() } else if only[..] == "mblur" { mb_checks() } else if only[..] == "dof" { dof_checks() } else if only[..] == "fx" { fx_checks() } else if only[..] == "tsr" { tsr_checks(dir) } else if only[..] == "probe" { probe_checks(dir) } else if only[..] == "ssgi" { ssgi_checks() } else if only[..] == "decal" { decal_checks() } else if only[..] == "weather" { weather_checks() } else if only[..] == "rect" { rect_checks() } else if only[..] == "small" { small_checks() } else if only[..] == "inst" { instance_checks() } else if only[..] == "caust" { caustic_checks() } else if only[..] == "tex" { texture_checks() } else if only[..] == "stream" { stream_checks() } else if only[..] == "rtr" { rtr_checks() } else if only[..] == "meshlet" { meshlet_checks() } else if only[..] == "sss" { sss_checks() } else if only[..] == "cloth" { cloth_checks() } else if only[..] == "cloud" { cloud_checks() } else if only[..] == "vfog" { fog_checks() } else { shadow_checks() };
+		let ok = if only[..] == "gtao" { gtao_checks() } else if only[..] == "gi" { gi_checks() } else if only[..] == "mblur" { mb_checks() } else if only[..] == "dof" { dof_checks() } else if only[..] == "fx" { fx_checks() } else if only[..] == "tsr" { tsr_checks(dir) } else if only[..] == "probe" { probe_checks(dir) } else if only[..] == "ssgi" { ssgi_checks() } else if only[..] == "decal" { decal_checks() } else if only[..] == "weather" { weather_checks() } else if only[..] == "rect" { rect_checks() } else if only[..] == "small" { small_checks() } else if only[..] == "inst" { instance_checks() } else if only[..] == "caust" { caustic_checks() } else if only[..] == "tex" { texture_checks() } else if only[..] == "stream" { stream_checks() } else if only[..] == "rtr" { rtr_checks() } else if only[..] == "meshlet" { meshlet_checks() } else if only[..] == "sss" { sss_checks() } else if only[..] == "cloth" { cloth_checks() } else if only[..] == "cloud" { cloud_checks() } else if only[..] == "vfog" { fog_checks() } else if only[..] == "sea" { sea_checks() } else { shadow_checks() };
 		let e = gfx::error();
 		if e.len > 0 { print("gpu: gfx error ", e[..]); return false; }
 		return mark(only[..], ok) && submit_checks(false);
@@ -7130,6 +7349,7 @@ fn gpu_checks(dir const byte[:], golden const byte[:]) bool {
 	if !mark("cloth", cloth_checks()) { good = false; }
 	if !mark("cloud", cloud_checks()) { good = false; }
 	if !mark("vfog", fog_checks()) { good = false; }
+	if !mark("sea", sea_checks()) { good = false; }
 	if !submit_checks(true) { good = false; }
 	let err = gfx::error();
 	if err.len > 0 { print("gpu: gfx error ", err[..]); good = false; }

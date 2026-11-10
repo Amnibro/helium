@@ -32,7 +32,10 @@ layout(set = 1, binding = 0) uniform Draw {
 	vec4 wind_t;
 	vec4 push[4];
 	vec4 prev_push[4];
+	vec4 water;
+	vec4 water_t;
 };
+#include "water.glsl"
 
 layout(location = 0) out vec3 out_world;
 layout(location = 1) out vec3 out_nrm;
@@ -130,6 +133,10 @@ void main() {
 	if (inst.z > 0.0) {
 		w = vec4(bend(w.xyz, so, sh, inst.z, false), 1.0);
 		pw = vec4(bend(pw.xyz, so, sh, inst.z, true), 1.0);
+	}
+	if (water.w > 0.5) {
+		w.y += water_wave(w.xz, water_t.x, water.xyz, 11).z;
+		pw.y += water_wave(pw.xz, water_t.y, water.xyz, 11).z;
 	}
 	out_world = w.xyz;
 	out_nrm = wn;

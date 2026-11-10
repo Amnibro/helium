@@ -94,12 +94,15 @@ fn sheet(n int, o float3, u float3, v float3, m gltf::Material) int {
 }
 
 // Axis-aligned box centred on the origin.
-fn water(half f32) int {
+fn water_material(swell f32) gltf::Material {
 	var m = material(linalg::v3(1.0, 1.0, 1.0), 0.0, 0.05);
-	m.trans = 1.0; m.shading = 4; m.double_sided = true;
+	m.trans = 1.0; m.shading = 4; m.double_sided = true; m.ext = true; m.ior = 1.333; m.no_shadow = true;
 	m.shade_a = gltf::shade_preset(4, 0); m.shade_b = gltf::shade_preset(4, 1); m.shade_c = gltf::shade_preset(4, 2);
-	plane(half, m)
+	m.shade_a.w = swell;
+	m
 }
+fn water(half f32) int { plane(half, water_material(0.0)) }
+fn sea(half f32, n int) int { sheet(n, linalg::v3(-half, 0.0, -half), linalg::v3(2.0 * half, 0.0, 0.0), linalg::v3(0.0, 0.0, 2.0 * half), water_material(1.0)) }
 fn blade(height f32, width f32, tip f32, segments int, m gltf::Material) int {
 	let vfirst = gltf::verts.len / gltf::VERTEX_FLOATS;
 	let ifirst = gltf::indices.len;
