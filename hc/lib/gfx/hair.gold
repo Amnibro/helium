@@ -1,0 +1,288 @@
+use std
+into hair.amni
+
+Namespace `hair`, importing os, binary, gfx, math, gfx.linalg, gfx.gltf, gfx.motion, gfx.scene3d and gfx.shapes. Constants `SIM = 120`, `PARTS = 8`, `BONES = 64`, `LIGHT = 512`. Shared conventions:
+- Vectors are f32 float3 or float4, and matrices are gfx::mat4 with columns c0 to c3.
+- "a times b" for matrices or a matrix and a vector is `gfx::mul`. `inverse`, `unit3`, `dot3`, `cross3`, `point`, `qaxis`, `qmatrix` and `f` are linalg's.
+- A u32 at offset x of a byte slice is `binary::gather(data, x, 4)`. An f32 at x is that value's bits through `binary::f32_from_bits`.
+- "rw" means `gfx::BUFFER_COMPUTE_READ | gfx::BUFFER_COMPUTE_WRITE`, and "read" means `gfx::BUFFER_COMPUTE_READ`.
+- glTF data lives in module lists of `gltf`: `verts` (f32, `gltf::VERTEX_FLOATS` a vertex, with position at `gltf::AT_POS`, normal at `gltf::AT_NRM`, first texture coordinate at `gltf::AT_UV0`, joints at `gltf::AT_JOINT`, weights at `gltf::AT_WEIGHT`), `indices` (u32), `prims`, `meshes`, `nodes`, `skins`, `assets`, `ints`, `matrices`, `materials`, `names`. A `gltf::Span` has exactly the fields `first` and `count`.
+- A `gltf::Primitive` has exactly the fields `vfirst`, `vcount`, `ifirst`, `icount`, `material`, `mfirst`, `targets`, `lo`, `hi`, `tangents`, `skinned`; indices of a primitive are relative to its `vfirst`. A `gltf::Mesh` has `prims` (a Span into `gltf::prims`), `weights` and `name`. A `gltf::Node` has `parent`, `mesh`, `skin`, `children`, `t`, `r`, `s`, `matrix`, `has_matrix`, `weights`, `name`, `light`. A `gltf::Skin` has `joints` (a Span into `gltf::ints` of absolute node indices), `inverse_binds` (a Span into `gltf::matrices`), `skeleton`, `name`. A `gltf::Asset` has `meshes`, `nodes`, `materials`, `textures`, `images`, `skins`, `animations`, `roots` (Spans) and `ok`.
+- `gltf::find_node(asset, name)` gives an absolute node index or -1, and `gltf::text_of(span)` gives a name's bytes. `shapes::finish(vfirst, ifirst, lo, hi, material)` takes two ints, two float3 and a `gltf::Material` value and returns the new asset's index as an int; never cast its arguments or result.
+- The scene is `s3d`: `s3d::items[i]` has `asset`, `place`, `visible`; `s3d::view` has `eye`, `target`, `up`, `fov_y`, `near`, `far`; `s3d::sun` has `to_sun`, `rgb`, `shadows`; `s3d::sky` has `zenith`, `horizon`, `ground`, `ambient`; `s3d::lights[i]` has `pos`, `rgb`, `range`. `motion::world[node]` is a node's world matrix after `s3d::pose(item)`.
+- A groom g is valid when it is in range of `grooms` and its `on` is set. Functions that say they need a valid groom do nothing otherwise.
+- Compute passes go as `gfx::begin_compute` with the written buffers, then `gfx::bind` of the pipeline, uniforms in `gfx::COMPUTE` slot 0, storage buffers by `gfx::bind_storage_buffer(gfx::COMPUTE, slot, buf)`, then `gfx::dispatch`, then `gfx::end_compute`. "ceil(n/64)" means `(n + 63) / 64`.
+
+`HairU` is the shader uniform block, with fields in this exact order: `view_proj`, `view` and `proj` (mat4); `size`, `cam`, `to_sun`, `sun_rgb`, `hair`, `sky`, `params` and `look` (float4); `light_vp` (mat4); `light` (float4); `shadow_vp` (mat4); `mel` (float4); `pl` (8 float4); `shape` and `core` (float4).
+
+`Look` has these fields and defaults:
+- `color` (0.58, 0.38, 0.14), `roughness` 0.42, `spread` 0.3, `width` 0.00007, `slab` 0.004, `clump` 0.004
+- `gain` 1.7, `exposure` 1.0, `scatter` 0.7, `density` 1.0, `shade` 1.0
+- `ambient` (0.22, 0.22, 0.22), `falloff` 40.0, `part` 0.0
+
+`Physics` has these fields and defaults:
+- `gravity` (0, -9.81, 0), `styled` 1.0, `tip` 0.012, `root` 0.35, `bone_tip` 0.08, `bone_root` 0.5
+- `bend` 0.5, `carry` 0.9, `damping` 0.02, `lift` 0.0, `gap_min` 0.0005, `gap_max` 0.004
+
+`Groom` has these fields in order:
+- `on`, `show`, `look`, `phys`, `model`, `prev`, `item`, `anchor`, `anchor_inv`
+- `top` (f32), `center`, `core`, `radius`
+- ints `guides`, `parts`, `cells`; bools `sdf_done`, `reset`, `ask`; ints `strands`, `points`, `segments`, `bones`
+- gfx::Buffers `tgt`, `st`, `gd`, `simb`, `sdfb`, `trib`, `statb`, `pts`, `rest`, `skin`, `matsb`, `segs`, `lfront`, `lacc`
+
+Module vars, each groom owning a slice of every per-groom array:
+- `grooms` and the per-groom arrays: `simv` (float4, SIM per groom), `part_node` (int, PARTS per groom), `part_ib` (mat4, PARTS per groom), `bone_node` (int, BONES per groom), `bone_rest` and `mats` (mat4, BONES per groom), `probe_v` (f32, 8 per groom)
+- screen size `w` and `h` (int 0), `made` false
+- buffers `front` and `acc`, texture `hairt`, sampler `smp`, pipeline `comp`
+- compute pipelines `clear_p`, `raster_p`, `resolve_p`, `skin_p`, `sim_p` and `sdf_p`, all default
+- the growable `raw` bytes and `us` (HairU), reused every frame
+
+`mel_of(c, bn)` gives a float2 of melanin values, computed in real:
+- x is bn and d = 5.969 - 0.215*x + 2.532*x*x - 10.73*x*x*x + 5.574*x*x*x*x + 0.245*x*x*x*x*x.
+- lx, ly and lz are log(max(channel, 0.001))/d for each channel of c, and s0, s1, s2 are their squares.
+- With a = (0.419, 0.697, 1.37) and b = (0.187, 0.4, 1.05): a11 = a0*a0+a1*a1+a2*a2, a12 = a0*b0+a1*b1+a2*b2, a22 = b0*b0+b1*b1+b2*b2, r1 = s0*a0+s1*a1+s2*a2, r2 = s0*b0+s1*b1+s2*b2.
+- det = a11*a22-a12*a12, e = (r1*a22-r2*a12)/det and p = (a11*r2-a12*r1)/det.
+- If e is negative, e becomes 0 and p becomes max(r2/a22, 0). Otherwise, if p is negative, p becomes 0 and e becomes max(r1/a11, 0).
+- The result is (e, p) as f32.
+
+`ready()` runs once, guarded by `made`. It sets `smp` to `gfx::sampler(gfx::NEAREST, gfx::CLAMP)` and `comp` to `gfx::pipeline` of `embed_shader("shaders/strand_comp.vert")` and "shaders/strand_comp.frag" with blend `gfx::BLEND_PREMULTIPLIED`. It then sets each compute pipeline from `embed_shader` of "shaders/strand_X.comp", where X is clear, raster, resolve, skin, sim and sdf in that order.
+This block defines no helper that creates buffers.
+
+`size(nw, nh)`: when `w` is positive, it first releases `front`, `acc` and `hairt`. It then sets `w` and `h` and creates:
+- `front` as an rw buffer of nw*nh*4 bytes;
+- `acc` as an rw buffer of nw*nh*64 bytes;
+- `hairt` as an RGBA16F texture with usage SAMPLED or COMPUTE_WRITE, of nw by nh.
+Every `gfx::buffer(usage, size, data)` call takes the usage first, then the byte size, then the starting bytes.
+
+`load(data, strands)` returns the new groom index, or -1.
+
+The format is the bytes "HMG" and a version byte, then:
+- np as a u32 at 8 and ns as a u32 at 12;
+- np points of 48 bytes from 16, then ns segments of 16 bytes from sb = 16+np*48, ending at e = sb+ns*16;
+- nb as a u32 at e when the version byte is '3' and at least e+4 bytes exist, otherwise nb is 0;
+- nb u32 bone node ids, then np 16-byte skin records starting at k = e+4+nb*4.
+
+It returns -1 in any of these cases:
+- the data is under 16 bytes or the magic is wrong;
+- np is below 2, ns is below 1, or the data is shorter than e;
+- nb exceeds BONES, or nb is positive and the data is shorter than k+np*16.
+
+Otherwise it does the following, creating buffers in exactly this order:
+1. Call `ready()`, take g as the current `grooms` length, and set `s3d::depth_wanted`.
+2. Make a groom: on and show set; default look and phys; model, prev and anchor_inv identity; item and anchor -1; reset set; strands as given; points np, segments ns, bones nb.
+3. Create `pts` and `tgt` as rw buffers of np*48 bytes holding the point bytes, `st` as rw np*32, and `segs` as a read buffer of ns*16 holding the segment bytes.
+4. Append the groom's slices: BONES entries of `bone_node` (the i-th bone id while i is below nb, else -1) with identity `bone_rest` and `mats`; PARTS entries of `part_node` -1 with identity `part_ib`; SIM zero float4s to `simv`; 8 zeros to `probe_v`.
+5. If nb is positive, create `rest` as a read buffer of np*48 point bytes, `skin` as a read buffer of np*16 skin bytes, and `matsb` as a read buffer of nb*64.
+6. Compute the bounds from the point positions (the f32s at point offsets 0, 4 and 8). `top` is their max y, starting from -1e9. `center` is c = sum*(1/np). `radius` is max(f(sqrt of the largest dot3(d,d) as real), 0.01), where d is each point minus c.
+7. Build the guide table from the segments, each holding a point index pi (u32 at +0) and a group (u32 at +4). The first segment, and any whose group differs from the previous segment's, starts a row (pi, 2, 0, 0) and adds point pi's position to the core sum. Any other segment adds 1 to the current row's second entry. `core` = sum*(1/rows).
+8. A row's third entry becomes 1 when nb is positive and any point q from its first entry to first plus count, exclusive, has f32 at k+16q+8 plus f32 at k+16q+12 above 0.001.
+9. Set `guides` to the row count. Create `gd` as a read buffer of rows*16 holding the table as i32s, `statb` as rw rows*16, `simb` as read SIM*16, `sdfb` as rw 16, `trib` as rw 16, `lfront` as rw LIGHT*LIGHT*4 and `lacc` as rw LIGHT*LIGHT*64.
+10. Push the groom and return g.
+Every `gfx::buffer(usage, size, data)` call takes the usage first, then the byte size, then the starting bytes.
+
+`load_file(path, strands)` reads the file with `read_file` and loads it, or returns -1 when the read fails.
+
+`unload(g)` needs a valid groom. It releases tgt, st, gd, simb, sdfb, trib, statb, pts, segs, lfront and lacc in that order, then rest, skin and matsb if the groom has bones, and clears `on`.
+
+`follow(g, item, anchor)`:
+1. Take a, the asset of `s3d::items[item]`, and n0, its first node.
+2. Call `motion::rest(a)` and `motion::update(a, identity)`.
+3. Set the groom's item and anchor. Set anchor_inv to the inverse of `motion::world[anchor]` when anchor is at least 0, else identity.
+4. For each bone i, set `bone_rest` to the inverse of `motion::world[n0 + bone_node of i]`.
+5. Set reset.
+
+`place(g, m)` sets the groom's model. `bone(g, i)` returns the groom's bone_node entry i. `pose(g, i, m)` sets `mats` entry i when i is from 0 to below the groom's bone count. `probe(g, k)` sets the groom's `ask` and returns `probe_v` entry k when k is from 0 to 7, else 0.
+
+`skin_joint(sk, node)` returns the position k in skin sk's joint list (`gltf::ints[first + k]`) holding node, or -1.
+
+`tri_owner(v0, v1, v2)` returns the joint with the largest summed weight. It goes over the three vertices in order and their four joint and weight slots (`AT_JOINT+c` as int and `AT_WEIGHT+c`), summing weight per joint in first-seen order. The first listed joint wins unless a later one is strictly greater.
+
+`tri_box_hit(tl, k, lo, hi)` is true when triangle k of the flat vertex list tl (vertices 3k to 3k+2) overlaps the inclusive box lo to hi. The triangle's own box is its componentwise min and max, grown by 0.035 on every side.
+
+`find_cards(asset, name)`:
+1. Find the first node of the asset that has a mesh whose `gltf::text_of` name equals name; return -1 if there is none.
+2. Take the mesh's first primitive. Return -1 when its vertex count is under 4 or odd, its index count is under 6, or its first six indices are not 0, 1, 2, 1, 3, 2.
+3. Return -1 when any vertex pair (vf+2k, vf+2k+1) has UV0 v values (`AT_UV0+1`) whose absolute difference is at least 0.0001.
+4. Otherwise return the node.
+
+`card_data(asset, n, anchor, data)` turns a card mesh into the format above with version "HMG3". It clears data and returns false when n is negative or the node has no mesh.
+
+Setup:
+- Take the node's first primitive, with first vertex vf and count vc, so pairs = vc/2.
+- sk is the node's skin, and hj is `skin_joint(sk, anchor)` when sk and anchor are both at least 0, else -1.
+- pos(v) is the vertex's `AT_POS` floats and red(v) its `AT_COL` float.
+- uvv(k) is the UV0 v of vertex vf+2k, and cen(k) = (pos(vf+2k) + pos(vf+2k+1))*0.5.
+
+Bone list: when sk is at least 0, scan the vertices in order and their four slots. Each joint j with weight above 0.01, not hj, not yet listed, and while fewer than 64 are listed is added. Its node is `gltf::ints[skin's joints first + j]` minus the asset's first node.
+
+Cards begin at pair 0 and at every pair whose uvv is below the previous pair's, and each runs to the next start or to pairs. A card is kept only when it has at least 2 pairs.
+
+For each pair k of a kept card running from a to e (l = vf+2k, r = l+1), it emits 12 f32s: c, occ, sd, t, nm, 0. Here:
+- c = cen(k) and sd = (pos(r)-pos(l))*0.5;
+- tg = cen(min(k+1, e-1)) - cen(max(k-1, a)), and nm = unit3 of the cross product tg × sd written per component;
+- t = (uvv(k)-uvv(a))/max(uvv(e-1)-uvv(a), 0.000001), and occ = (red(l)+red(r))*0.5.
+
+Bone weights per pair:
+- For each listed bone b, s is the sum, over l then r and their four slots whose joint is that bone, of weight*0.5.
+- Keep the top two starting from b0, b1 = 0 and w0, w1 = 0: s above w0 shifts the first pair (b0, w0) into the second and takes the first; else s above w1 takes the second.
+- Every pair except the card's last emits a segment row (base+k-a, card number, 0, 0). Here base is the card's first point index and the card number counts kept cards before it.
+
+Output, in order:
+1. "HMG3", then i32s for the card count, np and ns.
+2. The point floats, then the segment rows.
+3. An i32 with the bone count, then the bone node ids.
+4. Per point: `f32_from_bits` of b0 and of b1 (as u32), then w0 and w1.
+
+Return true.
+
+`body(g, asset, skin_name, joints, solids)` needs a valid groom.
+1. Take sn from `gltf::find_node(asset, skin_name)`. Return when sn is negative or the node lacks a mesh or a skin; sk is that skin.
+2. For each name in joints, take nd from find_node. When nd is at least 0, k is `skin_joint(sk, nd)` and is at least 0, and fewer than PARTS parts exist, record part number i. Its `part_node` is nd, its `part_ib` is `gltf::matrices[skin's inverse_binds first + k]`, and the part's joint is k.
+3. Every part's box starts at lo = (1e9, 1e9, 1e9) and hi = (-1e9, -1e9, -1e9).
+4. Go over the asset's nodes with a mesh and skin sk whose mesh name is listed in solids, every primitive and every triangle. Vertices are vf plus the index, and positions are the vertex's first three floats.
+5. ow is the last part whose joint equals `tri_owner` of the triangle, else -1. Append (pa, ow), (pb, 0) and (pc, 0) as float4. If ow is at least 0, grow that part's box by the three corners.
+6. Finish with `bake`.
+
+`bake(g, parts, all, lo, hi)` sets up each part p's signed distance grid. It writes simv at o = g*SIM+20+12p, with cells the running total.
+- Defaults are a = 0, cell 0.007, a grid of 2×2×2 and t0 the current triangle count.
+- If lo.x is below hi.x:
+  1. a = lo - 0.035 and b = hi + 0.035 componentwise, with sz = b - a.
+  2. cell = max(0.007, max(sz.x, max(sz.y, sz.z))/63), and each grid size is (sz/cell) as int + 2.
+  3. t0 is the triangle count so far. Append every triangle of all that passes `tri_box_hit` against a and b to the triangle list.
+- Write simv[o] = (a, cell), [o+1] = (gx, gy, gz, cells so far), [o+2] = (t0, triangles added, 0, 0), then add gx*gy*gz to cells.
+
+After all parts:
+1. Release the groom's trib and sdfb and set its parts and cells.
+2. Create trib as a read buffer of max(triangle vertices, 1)*16 bytes holding them.
+3. Create sdfb as rw max(cells, 1)*8.
+4. Clear sdf_done.
+Every `gfx::buffer(usage, size, data)` call takes the usage first, then the byte size, then the starting bytes.
+
+`cards(asset, mesh, anchor, strands)`:
+1. Take n from `find_cards`. Return -1 if n is negative or `card_data` with `find_node(asset, anchor)` fails.
+2. Load the data, giving g.
+3. If g is at least 0 and the first primitive's material is at least 0, set the groom's look color to that material's base xyz.
+4. Return g.
+
+`live(g)` is the groom's on and show both being set.
+
+`uniforms_of(g)` builds the groom's HairU (default otherwise), with im the inverse of the model and sc = f(sqrt(dot3 of model.c0's xyz as real)).
+- `view_proj` is `s3d::view_proj_nj` times the model, `view` is `s3d::view_mat` times the model, and `proj` is `s3d::proj_mat`.
+- `size` = (w, h, strands, segments).
+- `cam` = (point(im, `s3d::view.eye`), sc).
+- ld = unit3 of the xyz of im times (`s3d::sun.to_sun`, 0). `to_sun` = (ld, 1 if `s3d::sun.shadows` else 0).
+- `sun_rgb` = (sun rgb, 0), and `hair` = (look color, roughness).
+- m = mel_of(color, spread) and nl = min(lights count, 4). `mel` = (m.x, m.y, spread, nl).
+- For each of the first nl entries i of `s3d::lights`, pl[2i] = (point(im, pos), range/sc) and pl[2i+1] = (rgb, 0).
+- am = (sky zenith + horizon)*(0.5*sky ambient). `sky` = (look ambient times am per component, falloff).
+- `params` = (slab, gain, clump, width), `look` = (exposure, density, 0, scatter), `shape` = (top, center.z, part, 0) and `core` = (core, 0).
+- reach = radius*1.3 and d = reach*f(1/tan(0.12)). `light_vp` is `gfx::perspective(0.24, 1.0, d-reach, d+reach)` times `gfx::look_at(center+ld*d, center, up)`. up is (1, 0, 0) when the absolute value of ld.y exceeds 0.95, else (0, 1, 0).
+- `light` = (LIGHT, LIGHT, shade, f(256.0/tan(0.12))).
+- `shadow_vp` is `s3d::cascade_vp[0]` times the model.
+
+Clear pass (mode, buffers a and b, count n): a copy of the uniforms with look.z set to mode, writing a and b, using `clear_p`, dispatched ceil(n/64)×1×1. The two buffers reach the shader only through the write list of `gfx::begin_compute([a, b])`; this pass makes no `gfx::bind_storage_buffer` call at all.
+
+Raster pass (mode): lit is mode above 1. It uses a copy of the groom's uniforms with look.z set to mode and runs `raster_p`.
+- It writes the groom's lfront and lacc when lit, else `front` and `acc`.
+- Compute textures are slot 0 `s3d::nd_target()` and slot 1 `s3d::shadow_map`, both with smp.
+- Storage is 0 pts, 1 segs, 2 `front` if lit else lfront, 3 `acc` if lit else lacc.
+- It is dispatched ceil(segments/64)×strands×1.
+
+Tracking a groom that follows an item:
+1. Call `s3d::pose(item)`; n0 is the item asset's first node.
+2. m is `motion::world[anchor]` times anchor_inv when anchor is at least 0, else the item's `place`.
+3. Let mi be the inverse of m alone, taken once. Each bone's `mats` entry is mi times the product (`motion::world[n0 + bone node]` times bone_rest); only m is inverted, never the product.
+4. The model becomes m.
+
+Simulating groom g with dt, using a copy of the groom taken at the start and o = g*SIM:
+
+1. If the groom has bones:
+   1. Upload `bytes_of(mats)` rows g*BONES up to g*BONES+bones into matsb at offset 0.
+   2. Run `skin_p` writing tgt, with default uniforms whose size.w is points, storage 0 rest, 1 skin and 2 matsb, dispatched ceil(points/64).
+2. md is the model's c3 xyz minus prev's. reset is set when the groom's reset is set, dt is at most 0, or dot3(md, md) exceeds 0.25. When reset, prev becomes the model.
+3. Compute the carry rotation, which starts as identity.
+   1. de is the model times the inverse of prev.
+   2. ang = acos(clamp(((de.c0.x+de.c1.y+de.c2.z-1)/2) as real, -1, 1)) as f32, with ax = (de.c1.z-de.c2.y, de.c2.x-de.c0.z, de.c0.y-de.c1.x).
+   3. If not reset and ang exceeds 0.2: kk = 1-0.2/ang.
+   4. qe = qaxis(unit3(ax) when dot3(ax, ax) exceeds 0.000001, else (0, 1, 0), ang*kk). With c as prev's translation, carry = `gfx::translate(c+md*kk)` times (qmatrix(qe) times translate(-c)).
+   5. prev becomes carry times prev.
+4. Write a matrix to simv by its four columns at consecutive entries. The entries are:
+   - o: the model
+   - o+4: im
+   - o+8: (dt, 1 if reset else 0, 0, parts)
+   - o+9: (gravity, guides)
+   - o+10: prev
+   - o+14: (cells, gap_min, gap_max, styled)
+   - o+15: (tip, root, bone_tip, bone_root)
+   - o+16: (bend, carry, 0, damping)
+   - o+17: (lift, top-0.07, top-0.02, 0)
+   - for each part p, with mp = `motion::world[part node]` times part_ib: o+23+12p gets the inverse of mp and o+27+12p gets mp
+   - o+116: carry
+5. Upload simv rows o up to o+SIM into simb.
+6. If sdf_done is not set and cells is positive, run `sdf_p` writing sdfb with storage 0 trib and 1 simb, dispatched ceil(cells/64), then set the groom's sdf_done.
+7. Run `sim_p` writing st, pts and statb, with storage 0 tgt, 1 gd, 2 simb and 3 sdfb, dispatched ceil(guides/64).
+8. Clear reset and set prev to the model.
+9. If ask was set:
+   1. Fill `raw` with guides*16 zero bytes and read statb into it.
+   2. Over the guides, in real, read four u32s per 16-byte row. s0 sums the first and s1 the second; s2 sums the third and mx is its max. s3 sums the fourth minus 1000000000.0.
+   3. With gn = max(guides, 1), set probe_v entries 0 to 4 to s0, s1, s2/gn/1000, mx/1000 and s3/gn/1000. Add 1 to entry 5, set entry 6 to guides, and clear ask.
+
+`draw(dt)`:
+1. Every groom that is on but not shown gets reset. first is the first live groom; return if there is none.
+2. Call `size` when w or h differs from `s3d::width` or `s3d::height`.
+3. Clear `us`. For each groom, if live: track it when its item is at least 0, then simulate. Push its uniforms if live, else a default HairU.
+4. Set `s3d::depth_wanted`, and return unless `s3d::nd_ran`.
+5. Clear pass mode 0 on `front` and `acc` with us[first] and w*h.
+6. For each live groom: a clear pass mode 2 on its lfront and lacc with LIGHT*LIGHT, then raster mode 2, then raster mode 3.
+7. Raster mode 0 for all live grooms, then mode 1 for all.
+8. Resolve: `gfx::begin_compute` with no buffers and `[hairt]`, `resolve_p`, uniforms us[first], storage 0 `acc`, dispatched (w+7)/8 × (h+7)/8 × 1.
+9. If `gfx::begin_pass` succeeds with color `[s3d::hdr_target()` and three `gfx::Texture{0}]` and clear_color false: bind comp, bind `hairt` with smp at `gfx::FRAGMENT` slot 0, `gfx::draw(3)`, end the pass.
+
+`Style` has these fields and defaults: `steps` 12, `length` 0.2, `vary` 0.25, `width` 0.004, `droop` 0.7, `curl` 0.0, `turns` 3.0, `clumps` 0, `clump` 0.5, `seed` 7. The module var `rs` starts at 7. Each `rnd()` call sets rs = (rs*1103515245 + 12345) and 2147483647 (bitwise), then returns (rs >> 7) as f32/16777216.0. `fur()` is a Style with steps 4, length 0.02, vary 0.4, width 0.0015, droop 0.3 and the rest default.
+
+`roots(pos, nrm, idx, lo, hi, count, seed, rp, rn)`:
+1. A triangle is eligible when its area ar = sqrt(dot3(x,x) as real)*0.5, with x = cross3(b-a, c-a), is positive, and its centroid (a+b+c)*(1/3) lies inside the inclusive box lo to hi.
+2. Keep the running real area total of eligible triangles. Return 0 when none are eligible.
+3. Set rs to seed. For each of count roots:
+   1. r = rnd() as real*total. Pick the first eligible triangle whose running total is not below r, by binary search over the whole list.
+   2. u = rnd(), then v = rnd(). If u+v exceeds 1, both become 1 minus themselves.
+   3. Append to rp the blend p0*(1-u-v)+p1*u+p2*v of the corner positions, and to rn the unit3 of the same blend of the normals.
+4. Return count.
+
+`mesh_soup(node, pos, nrm, idx)` returns when node is negative or the node has no mesh. Otherwise, for every primitive of the node's mesh, it appends each vertex's `AT_POS` and `AT_NRM` floats. It also appends each index plus the position count from before that primitive. `mesh_roots(node, lo, hi, count, seed, rp, rn)` builds a soup in local arrays and returns `roots` on it.
+
+`solid(g, node)` needs a valid groom.
+1. Build a soup of the node; return if it has fewer than 3 indices.
+2. List the positions in index order as (p, 0) float4s, along with their box (starting at ±1e9).
+3. Set the groom's first `part_node` to node and its `part_ib` to identity.
+4. Bake one part with that box.
+
+`groom(rp, rn, st, data)` appends a strand file (not clearing data). It uses n roots, k = max(min(steps, 32), 3) points per strand and last = k-1 as f32, and sets rs to st.seed.
+
+Per root i:
+1. len = length*(1-vary*rnd()), then ph = rnd() as real*6.2831853.
+2. nn = unit3(rn[i]) and u = unit3(cross3(nn, h)), where h is (0, 1, 0) when the absolute value of nn.y is below 0.9, else (1, 0, 0). v = cross3(nn, u).
+3. p = rp[i] and dir = unit3(nn+u*0.02). Record nn as the strand's axis.
+4. For each step s, with t = s/last:
+   - When s is positive, dir becomes unit3(dir+(0, -2*droop/last, 0)) and p becomes p+dir*(len/last).
+   - With a = ph+(turns*t) as real*6.2831853, the point is p+(u*f(cos(a))+v*f(sin(a)))*(curl*t).
+
+Clumping applies when nc = min(clumps, n) is positive and clump is positive.
+- For each strand i in order, the leader is the strand j*n/nc, for j below nc, with the strictly smallest dot3 of the root difference, starting from distance 1e9.
+- Each point s moves in place: the point plus (the leader's point s minus the point)*(clump*s/last).
+
+Output per strand i and step s, with t = s/last and c its point:
+- tg is the point at min(s+1, k-1) minus the point at max(s-1, 0), and x = cross3(tg, the axis).
+- sd = unit3(cross3(tg, (1, 0, 0)) if dot3(x, x) is below 1e-12, else x) times width. nm = unit3(cross3(tg, sd)).
+- It emits 12 f32s: c, 0.55+0.45*t, sd, t, nm, 0. Every step below k-1 adds a segment row of i32s (i*k+s, i, 0, 0).
+
+Finally append "HMG2", i32s n, n*k and n*(k-1), the floats and the rows.
+
+`card_mesh(data, m)` validates like `load` and returns -1 on failure: under 16 bytes, wrong magic, np below 2, ns below 1, or the data shorter than sb+ns*16.
+1. v0 is the gltf verts length divided by `VERTEX_FLOATS` and i0 the gltf indices length.
+2. For each point at = 16+48p: c is the f32s at at, at+4 and at+8; sd those at at+16, at+20 and at+24; tn = unit3(sd).
+3. For e = 0 then 1: q = c-sd or c+sd. Call `shapes::vertex(q, the f32s at at+32, at+36, at+40, e as f32, f32 at at+28, (tn, 1))` and grow the box, which starts at ±1e9.
+4. For each segment, with x = 2 times its u32 at sb+16s, append the u32 indices x, x+1, x+2, x+1, x+3, x+2 to `gltf::indices`.
+5. Return `shapes::finish(v0, i0, lo, hi, m)` with no casts: `v0` and `i0` are plain ints, `m` is the `gltf::Material` value the caller passed (the parameter is declared `m gltf::Material`), and the result is already an int.
+
+`points(g, out)` needs a valid groom. It calls `gfx::flush()`, sets out to points*48 zero bytes, and reads the groom's pts buffer into it.
