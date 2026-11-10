@@ -1,0 +1,145 @@
+into tls.he
+lang he
+use os, crypto.x509, crypto.ecc, crypto.hash, net.sock, net.tls
+
+A standalone program that checks the TLS 1.3 server in `net.tls` against the library's own client, OpenSSL and curl, and prints one line per check. Everything named in this paragraph already exists in the imported library modules: this program must not define any of it, and defines only the helpers in the fenced block below and `main`. From `net.tls`, all in namespace `net`: the connection type `net::Tls`; `net::tls_open("127.0.0.1", port, protocol)` starts a client connection and `net::tls_accept(socket, certificate, key, protocol)` wraps an accepted socket as a server (the certificate is DER bytes, the key the raw private key); `net::tls_quic(server bool, host, protocol, parameters, certificate, key)` makes a connection without a socket whose handshake messages are moved by the helper `mem`; `net::tls_state(t)` is one of `net::TLS_HANDSHAKE`, `net::TLS_OPEN`, `net::TLS_CLOSED`, `net::TLS_ERR`. Fields of a `net::Tls` this program sets before the handshake: `want` (bytes: on a client, the SHA-256 the server certificate must have) and `group` (int: on a server, the only key exchange group it accepts). Fields it reads afterwards: `err` (bytes: the error text), `alert` (int), `hrr` (bool: the handshake went through a retry), `sel` (bytes: the agreed protocol), `qs` (a list of byte arrays: the traffic secrets, four after a full handshake), `ptp` (bytes: the peer's parameters). From `net.sock`: `net::listen(net::addr("127.0.0.1", 0))` gives a listening socket and `net::local_port(l)` its port. From `crypto`: `crypto::ec_generate(crypto::P256)` a fresh private key, `crypto::x509_self_signed(name, key, from int, days int)` gives DER bytes and a bool, `crypto::pkcs8_ec(key)` gives bytes and a bool, `crypto::sha256(bytes)` gives bytes. From os, without a namespace: `run_command(text) int`, `write_file(path, bytes) bool`, `read_file(path, out) bool` appends the file to a growable byte array, `time()` the unix time as a real, `sleep(seconds real)`, `args()` the command-line arguments with the program name first.
+
+The helpers, exactly as written here. `sh` runs a command quietly and is true when it succeeds; `bg` starts a command in the background with its output in a file and creates the done file when it ends, after removing a done file left by an earlier run; `path` joins the work directory and a file name; `has` is true when the first bytes contain the second; `wait_file` waits up to some seconds for a file to exist; `acc` accepts the client's connection on the listener; `shake` runs both ends until neither is still in the handshake; `matrix` runs one client and server pair with the given suite and group, sends 1 MiB each way, closes, and is true when everything matched; `serve` accepts one outside client, reads one line (or one HTTP request), answers and closes, and returns what it read; `relay_flip` puts a relay between client and server that flips one bit in the client's last handshake record and is true when the server refuses it; `mem` moves handshake messages between two socketless connections, flipping one bit of the client's Finished message when asked; `fetch` starts `openssl s_server` and is true when the library's client reads its status page over the wanted TLS version; `client_cmd` and `curl_cmd` give the OpenSSL and curl command lines.
+
+```he
+sh(cmd const byte[:]) bool: run_command(str(cmd, " >/dev/null 2>&1")) == 0
+bg(cmd const byte[:], out const byte[:], done const byte[:]): run_command(str("rm -f ", done, "; (", cmd, " > ", out, " 2>/dev/null; touch ", done, ") &"))
+path(dir const byte[:], name const byte[:]) byte[>..]: str(dir, "/", name)
+has(h const byte[:], n const byte[:]) bool:
+	i ~= 0
+	while i + n.len <= h.len:
+		if h[i..i + n.len] == n: return true
+		i += 1
+	false
+wait_file(p const byte[:], secs real) bool:
+	t0 := time(); b byte[>..] ~= []
+	while time() - t0 < secs:
+		if read_file(p, b): return true
+		sleep(0.01)
+	false
+acc(l int, c net::Tls&) int:
+	fd ~= -1; t0 := time()
+	while fd < 0 && time() - t0 < 5.0: net::tls_pump(c); fd = net::accept(l)
+	fd
+shake(c net::Tls&, s net::Tls&):
+	t0 := time()
+	while (net::tls_state(c) == net::TLS_HANDSHAKE || net::tls_state(s) == net::TLS_HANDSHAKE) && time() - t0 < 5.0: net::tls_pump(c); net::tls_pump(s)
+matrix(l int, port int, cert const byte[:], key const byte[:], pin const byte[:], suite int, group int) bool:
+	c ~= net::tls_open("127.0.0.1", port, "amni-v1"); c.only = suite; c.want.append(pin)
+	if group == 0x17: c.group = group
+	s ~= net::tls_accept(acc(l, c), cert, key, "amni-v1")
+	if group == 0x18: s.group = group
+	shake(c, s); msg byte[>..] ~= []; gc byte[>..] ~= []; gs byte[>..] ~= []; i ~= 0; j ~= 0; t0 := time()
+	for x 1048576: msg.push(((x * 7 + x / 255) % 251) as! byte)
+	while (gc.len < msg.len || gs.len < msg.len) && time() - t0 < 30.0 && net::tls_state(c) == net::TLS_OPEN && net::tls_state(s) == net::TLS_OPEN:
+		if i < msg.len && c.wbuf.len < 65536: n := min(16000, msg.len - i); net::tls_write(c, msg[i..i + n]); i += n
+		if j < msg.len && s.wbuf.len < 65536: n := min(16000, msg.len - j); net::tls_write(s, msg[j..j + n]); j += n
+		net::tls_pump(c); net::tls_pump(s); net::tls_read(c, gc); net::tls_read(s, gs)
+	open := net::tls_state(c) == net::TLS_OPEN && net::tls_state(s) == net::TLS_OPEN; net::tls_close(c); t1 := time()
+	while net::tls_state(s) == net::TLS_OPEN && time() - t1 < 5.0: net::tls_pump(s)
+	closed := net::tls_state(s) == net::TLS_CLOSED; net::tls_close(s)
+	open && closed && c.hrr == (group == 0x18) && s.hrr == c.hrr && c.kx == group && s.kx == group && c.suite == suite && s.suite == suite && c.sel[..] == "amni-v1" && s.sel[..] == "amni-v1" && gc[..] == msg[..] && gs[..] == msg[..]
+serve(l int, cert const byte[:], key const byte[:], alpn const byte[:], http bool, secs real) byte[>..]:
+	got byte[>..] ~= []; t0 := time(); fd ~= -1
+	while fd < 0 && time() - t0 < secs:
+		fd = net::accept(l)
+		if fd < 0: sleep(0.005)
+	if fd < 0: return got
+	s ~= net::tls_accept(fd, cert, key, alpn); done ~= false
+	while !done && net::tls_state(s) != net::TLS_ERR && net::tls_state(s) != net::TLS_CLOSED && time() - t0 < secs:
+		net::tls_pump(s); net::tls_read(s, got); n := got.len
+		done = if http { n >= 4 && got[n - 4..] == "\r\n\r\n" } else { n > 0 && got[n - 1] == 10 }
+		if !done: sleep(0.002)
+	body := "hello from helium tls\n"; r := if http { str("HTTP/1.1 200 OK\r\nContent-Type: text/plain\r\nContent-Length: ", body.len, "\r\nConnection: close\r\n\r\n", body) } else { copy(got) }
+	if done:
+		net::tls_write(s, r[..]); k ~= 0
+		while s.wbuf.len > 0 && k < 500: net::tls_pump(s); sleep(0.002); k += 1
+	net::tls_close(s); got
+relay_flip(l int, port int, cert const byte[:], key const byte[:], pin const byte[:]) bool:
+	l2 := net::listen(net::addr("127.0.0.1", 0)); c ~= net::tls_open("127.0.0.1", net::local_port(l2), "amni-v1"); c.want.append(pin); a := acc(l2, c); b := net::connect(net::addr("127.0.0.1", port)); net::nodelay(a, true); net::nodelay(b, true); fd ~= -1; t0 := time()
+	while fd < 0 && time() - t0 < 5.0: fd = net::accept(l)
+	s ~= net::tls_accept(fd, cert, key, "amni-v1"); cb byte[>..] ~= []; sb byte[>..] ~= []; flipped ~= false
+	while net::tls_state(s) == net::TLS_HANDSHAKE && time() - t0 < 5.0:
+		net::tls_pump(c); net::recv(a, cb)
+		while cb.len >= 5 && cb.len >= 5 + (cb[3] as int << 8 | cb[4] as int):
+			n := 5 + (cb[3] as int << 8 | cb[4] as int)
+			if cb[0] == 23 && !flipped: flipped = true; cb[n - 1] ^= 1
+			net::send_all(b, cb[..n]); rest byte[>..] ~= []; rest.append(cb[n..]); cb = rest
+		net::tls_pump(s); sb.clear(); net::recv(b, sb)
+		if sb.len > 0: net::send_all(a, sb[..])
+	t1 := time()
+	while net::tls_state(c) == net::TLS_OPEN && time() - t1 < 2.0:
+		sb.clear(); net::recv(b, sb)
+		if sb.len > 0: net::send_all(a, sb[..])
+		net::tls_pump(c)
+	net::close(a); net::close(b); net::close(l2); flipped && s.err[..] == "bad record MAC" && s.alert == 20 && c.err[..] == "alert 20"
+mem(c net::Tls&, s net::Tls&, flip bool):
+	net::tls_start(c)
+	for r 8:
+		for lv 3:
+			if c.qo[lv].len > 0:
+				d ~= copy(c.qo[lv]); c.qo[lv].clear()
+				if flip && lv == 1: d[d.len - 1] ^= 1
+				net::tls_feed(s, lv, d[..])
+		for lv 3:
+			if s.qo[lv].len > 0:
+				d ~= copy(s.qo[lv]); s.qo[lv].clear(); net::tls_feed(c, lv, d[..])
+fetch(dir const byte[:], pin const byte[:], flag const byte[:], want12 bool) bool:
+	pl := net::listen(net::addr("127.0.0.1", 0)); sp := net::local_port(pl); net::close(pl)
+	bg(str("timeout 20 openssl s_server -accept ", sp, " -cert ", dir, "/cert.pem -key ", dir, "/key.pem -www ", flag, " -naccept 1"), path(dir, "ss.out"), path(dir, "ss.done"))
+	page byte[>..] ~= []; v12 ~= false; tries ~= 0
+	while tries < 70 && page.len == 0:
+		c ~= net::tls_open("127.0.0.1", sp, ""); c.want.append(pin)
+		if net::tls_wait(c, 3000) == net::TLS_OPEN:
+			net::tls_write(c, "GET / HTTP/1.0\r\n\r\n"); t0 := time()
+			while net::tls_state(c) == net::TLS_OPEN && time() - t0 < 4.0: net::tls_pump(c); net::tls_read(c, page); sleep(0.002)
+			net::tls_read(c, page); v12 = c.v12
+		else: sleep(0.1)
+		net::tls_close(c); tries += 1
+	wait_file(path(dir, "ss.done"), 3.0); has(page[..], "HTTP/1.0 200") && has(page[..], if want12 { "New, TLSv1.2" } else { "New, TLSv1.3" }) && v12 == want12
+client_cmd(dir const byte[:], port int) byte[>..]: str("printf 'ping-amni\\n' | timeout 9 openssl s_client -connect 127.0.0.1:", port, " -tls1_3 -CAfile ", dir, "/cert.pem -verify_return_error -verify_hostname amni-lan -alpn amni-v1 -quiet")
+curl_cmd(dir const byte[:], port int) byte[>..]: str("curl -s --http1.1 --cacert ", dir, "/cert.pem --resolve amni-lan:", port, ":127.0.0.1 https://amni-lan:", port, "/hello -m 7 -o ", dir, "/body.txt")
+```
+
+`main` does the following and prints the lines listed after `expect:` in that order. The work directory is the first command-line argument when there is one, otherwise "tls_test.tmp"; create it with `mkdir -p` through `sh`. Make a fresh key, a certificate for the name "amni-lan" valid from one minute before now for 3700 days, and the pin, which is the SHA-256 of the certificate. Write the certificate to "cert.der" and the key's PKCS#8 form to "key.der" in the work directory, then convert both through `sh` with `openssl x509 -inform der -in <dir>/cert.der -out <dir>/cert.pem` and `openssl pkey -inform der -in <dir>/key.der -out <dir>/key.pem`. Open one listener on 127.0.0.1 port 0 and take its port; every check below uses this listener, port, certificate, key and pin unless it says otherwise.
+- For each suite in the order 0x1301, 0x1302, 0x1303 and inside that for each group in the order 0x1D, 0x17, 0x18: print "T3 ", the suite as the text "1301", "1302" or "1303", a space, the group as "x25519", "p256" or "p384 retry", a space, and the result of `matrix`.
+- Start `client_cmd` with `bg`, output file "sc.out" and done file "sc.done" in the work directory; call `serve` with protocol "amni-v1", not HTTP, 9 seconds; wait up to 9 seconds for the done file; read "sc.out". Print "T3 openssl s_client " and whether both what `serve` returned and the file are exactly "ping-amni" followed by a newline.
+- Start `curl_cmd` with `bg`, output file "curl.out" and done file "curl.done"; call `serve` with protocol "http/1.1", HTTP, 9 seconds; wait up to 9 seconds for the done file; read "body.txt". Print "T3 curl " and whether what `serve` returned contains "GET /hello HTTP/1.1" and the file is exactly "hello from helium tls" followed by a newline.
+- Wrong pin: a client for protocol "amni-v1" whose `want` is the SHA-256 of the text "other"; the server is `net::tls_accept(acc(l, c), certificate, key, "amni-v1")`; then `shake`. Print "T3 control wrong pin " and whether the client is in the error state, its error text begins with "certificate rejected" and the server is not open.
+- Wrong key: the same with the right pin on the client, but the server is given a second fresh key with the same certificate. Print "T3 control wrong key " and whether the client is in the error state, its error text is exactly "CertificateVerify failed" and the server is not open.
+- Wrong protocol: the same with the right pin and key, but the client asks for protocol "other". Print "T3 control protocol " and whether the server's error text is exactly "no application protocol", its alert is 120 and the client's error text is exactly "alert 120".
+- Print "T3 control flipped record " and the result of `relay_flip`.
+- Message level: the client is `net::tls_quic(false, "amni-lan", "amni-v1", "client-params", "", "")` with `want` set to the pin, the server `net::tls_quic(true, "", "amni-v1", "server-params", certificate, key)`; call `mem` without flipping. Print "T3 message level " and whether both are open, neither went through a retry, each has four secrets and the four are equal pairwise, the client's peer parameters are "server-params", the server's are "client-params", and both agreed on "amni-v1".
+- The same again with the server's `group` set to 0x18 before `mem`. Print "T3 message level retry " and whether all of the above holds except that both went through a retry.
+- The same as the first message-level run but with flipping. Print "T3 control flipped finished " and whether the client is open, the server is in the error state, its error text is exactly "client Finished failed" and its alert is 51.
+- The same as the first message-level run but the client asks for protocol "other". Print "T3 control protocol message level " and whether the server is in the error state, its error text is exactly "no application protocol" and its alert is 120.
+- Print "T4 tls 1.3 " and the result of `fetch` with the flag "-tls1_3" and false, then "T4 tls 1.2 " and the result of `fetch` with the flag "-tls1_2" and true.
+- At the very end, when no argument was given, remove the work directory with `rm -rf` through `sh`.
+
+expect:
+T3 1301 x25519 true
+T3 1301 p256 true
+T3 1301 p384 retry true
+T3 1302 x25519 true
+T3 1302 p256 true
+T3 1302 p384 retry true
+T3 1303 x25519 true
+T3 1303 p256 true
+T3 1303 p384 retry true
+T3 openssl s_client true
+T3 curl true
+T3 control wrong pin true
+T3 control wrong key true
+T3 control protocol true
+T3 control flipped record true
+T3 message level true
+T3 message level retry true
+T3 control flipped finished true
+T3 control protocol message level true
+T4 tls 1.3 true
+T4 tls 1.2 true
