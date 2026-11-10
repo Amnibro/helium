@@ -10,7 +10,7 @@ layout(set = 3, binding = 2) uniform ExtBlock {
 	vec4 x_tm[13];
 	vec4 x_to[13];
 };
-struct ExtS { vec3 coat_n; float coat; float coat_r; float trans; float thick; vec3 ta; float aniso; vec3 tb; float f90; vec3 sheen_c; float sheen_r; };
+struct ExtS { vec3 coat_n; float coat; float coat_r; float trans; float thick; vec3 ta; float aniso; vec3 tb; float f90; vec3 sheen_c; float sheen_r; vec4 rr; };
 vec4 ext_map(int i) {
 	vec4 o = x_to[i];
 	if (o.z < 0.0) return vec4(1.0);

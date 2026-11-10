@@ -5055,6 +5055,242 @@ fn stream_checks() bool {
 	if !(a && b && c && d && e && f && g && h) { print("gpu: streaming FAILED"); }
 	a && b && c && d && e && f && g && h
 }
+fn rr_box(kind int) int {
+	if kind == 3 { return shapes::sphere(0.5, 100, 100, shapes::material(linalg::v3(0.1, 0.8, 0.1), 0.0, 1.0)); }
+	shapes::cube(float3 { 0.5, 0.5, 0.5 }, if kind == 0 { shapes::material(linalg::v3(0.1, 0.8, 0.1), 0.0, 1.0) } else { shapes::material(if kind == 1 { linalg::v3(1.0, 0.77, 0.34) } else { linalg::v3(0.0, 0.0, 0.0) }, 1.0, 0.5) })
+}
+fn rr_scene(floor bool, rough f32, kind int, flip bool) {
+	reset_scene();
+	dark_scene();
+	s3d::sky = DEF_SKY; s3d::sun = DEF_SUN; s3d::sun.to_sun = linalg::unit3(float3 { 0.3, 0.8, 0.5 }); s3d::sun.shadows = false;
+	if floor { let _ = s3d::add(shapes::plane(6.0, shapes::material(linalg::v3(1.0, 1.0, 1.0), 1.0, rough))); }
+	s3d::place(s3d::add(shapes::cube(float3 { 0.5, 0.5, 0.5 }, shapes::material(linalg::v3(0.8, 0.1, 0.1), 0.0, 1.0))), gfx::translate(float3 { -1.5, 0.5, 0.0 }));
+	s3d::place(s3d::add(rr_box(kind)), gfx::translate(float3 { 1.2, 3.2, -2.0 }));
+	s3d::view = s3d::Camera { eye: float3 { 0.0, if flip { -2.0 } else { 2.0 }, 5.0 }, target: float3 { 0.0, 0.0, 0.0 }, up: float3 { 0.0, 1.0, 0.0 }, fov_y: 0.8, near: 0.05, far: 200.0 };
+	s3d::rt_reflect = false; s3d::rt_rough = 0.3; s3d::rt_reach = 1000.0; s3d::spec_occlusion = true;
+	s3d::init(1280, 720);
+}
+fn rr_room(mode int, flip bool) {
+	reset_scene();
+	dark_scene();
+	s3d::sky = sky_of(1.0, 1.0, 1.0, mode != 2);
+	var g = shapes::material(if mode == 2 { linalg::v3(0.0, 0.0, 0.0) } else { linalg::v3(0.2, 0.2, 0.2) }, 0.0, 1.0);
+	g.unlit = mode == 2;
+	var fm = shapes::material(linalg::v3(1.0, 1.0, 1.0), if mode == 2 { 0.0 } else { 1.0 }, 0.0);
+	fm.unlit = mode == 2;
+	if mode != 0 { let _ = s3d::add(shapes::plane(3.0, fm)); }
+	for k in 5 {
+		let h = if k == 4 { float3 { 3.2, 0.1, 3.2 } } else if k < 2 { float3 { 0.1, 1.5, 3.2 } } else { float3 { 3.2, 1.5, 0.1 } };
+		let p = if k == 4 { float3 { 0.0, 3.1, 0.0 } } else if k < 2 { float3 { if k == 0 { -3.1 } else { 3.1 }, 1.5, 0.0 } } else { float3 { 0.0, 1.5, if k == 2 { -3.1 } else { 3.1 } } };
+		s3d::place(s3d::add(shapes::cube(h, g)), gfx::translate(p));
+	}
+	if mode != 2 { s3d::add_light(float3 { 0.0, 2.6, 2.8 }, float3 { 8.0, 8.0, 8.0 }, 20.0); }
+	s3d::view = s3d::Camera { eye: float3 { 0.0, if flip { -1.5 } else { 1.5 }, 2.5 }, target: float3 { 0.0, 0.0, -1.0 }, up: float3 { 0.0, 1.0, 0.0 }, fov_y: 0.8, near: 0.05, far: 200.0 };
+	s3d::rt_reflect = false; s3d::spec_occlusion = true;
+	s3d::init(1280, 720);
+}
+fn rr_frame(n int) byte[>..] { for k in n { s3d::render(IN_OUT); } gfx::read_pixels(IN_OUT) }
+fn rr_hdr(n int) byte[>..] { for k in n { s3d::render(IN_OUT); } gfx::read_pixels(s3d::hdr_target()) }
+fn rr_flip(p const byte[:], bpp int) byte[>..] {
+	var o byte[>..] = [];
+	for y in 720 { o.append(p[(719 - y) * 1280 * bpp..(720 - y) * 1280 * bpp]); }
+	o
+}
+fn rr_is(p const byte[:], i int, c int) bool {
+	let a = p[i * 4 + c] as int;
+	let b = p[i * 4 + (c + 1) % 3] as int;
+	let d = p[i * 4 + (c + 2) % 3] as int;
+	a > b + 40 && a > d + 40
+}
+fn rr_count(p const byte[:], c int) int { var n = 0; for i in 1280 * 720 { if rr_is(p, i, c) { n++; } } n }
+fn rr_r1(tag const byte[:], f const byte[:], r const byte[:]) bool {
+	var inter = 0; var uni = 0; var nf = 0; var nr = 0;
+	var sf int[3] = [0; 3];
+	var sr int[3] = [0; 3];
+	for i in 1280 * 720 {
+		let a = rr_is(f, i, 1);
+		let b = rr_is(r, i, 1);
+		if a && b { inter++; }
+		if a || b { uni++; }
+		if a { nf++; for c in 3 { sf[c] += f[i * 4 + c] as int; } }
+		if b { nr++; for c in 3 { sr[c] += r[i * 4 + c] as int; } }
+	}
+	let iou = if uni > 0 { inter as real / uni as real } else { 0.0 };
+	var worst = 255.0;
+	if nf > 0 && nr > 0 { worst = 0.0; for c in 3 { worst = max(worst, abs(sf[c] as real / nf as real - sr[c] as real / nr as real)); } }
+	let ok = iou >= 0.9 && worst <= 16.0;
+	print("gpu: rtr ", tag, " green pixels frame ", nf, " reference ", nr, " IoU ", r3(iou), " (bar >= 0.9), mean color apart ", r3(worst), " / 255 (bar <= 16) ", if ok { "PASS" } else { "FAIL" });
+	if nf > 0 && nr > 0 { print("gpu: rtr ", tag, " mean green-pixel color frame ", sf[0] / nf, " ", sf[1] / nf, " ", sf[2] / nf, " reference ", sr[0] / nr, " ", sr[1] / nr, " ", sr[2] / nr); }
+	ok
+}
+fn rr_band(p const byte[:], mid int) int {
+	var n = 0;
+	for x in 1280 {
+		var c = 0;
+		for y in 16 { if rr_is(p, (mid - 8 + y) * 1280 + x, 1) { c++; } }
+		if c * 10 > 16 && c * 10 < 144 { n++; }
+	}
+	n
+}
+fn rr_lum(px const byte[:], i int) real { 0.2126 * gi_half(px, 8, i, 0) as real + 0.7152 * gi_half(px, 8, i, 1) as real + 0.0722 * gi_half(px, 8, i, 2) as real }
+fn rr_mean(px const byte[:], mask const byte[:]) real {
+	var s = 0.0;
+	var n = 0;
+	for i in mask.len { if mask[i] != 0 { s += rr_lum(px, i); n++; } }
+	if n > 0 { s / n as real } else { 0.0 }
+}
+fn rr_time(on bool) real {
+	s3d::rt_reflect = on;
+	var best = 1e9;
+	for rep in 3 {
+		for k in 10 { s3d::render(IN_OUT); }
+		let w = gfx::read_pixels(IN_OUT);
+		let t = gfx::time();
+		for k in 100 { s3d::render(IN_OUT); }
+		let e = gfx::read_pixels(IN_OUT);
+		best = min(best, (gfx::time() - t) * 10.0);
+	}
+	best
+}
+fn rr_glow(g f32) real {
+	reset_scene();
+	dark_scene();
+	let _ = s3d::add(shapes::plane(4.0, shapes::material(linalg::v3(0.8, 0.8, 0.8), 0.0, 1.0)));
+	var m = shapes::material(linalg::v3(0.0, 0.0, 0.0), 0.0, 1.0);
+	m.emissive = float3 { g, g, g };
+	s3d::place(s3d::add(shapes::cube(float3 { 1.0, 0.05, 1.0 }, m)), gfx::translate(float3 { 0.0, 2.0, 0.0 }));
+	s3d::view = s3d::Camera { eye: float3 { 0.0, 1.0, 3.5 }, target: float3 { 0.0, 0.0, 0.0 }, up: float3 { 0.0, 1.0, 0.0 }, fov_y: 0.8, near: 0.05, far: 200.0 };
+	s3d::gi_on = true; s3d::gi_updates_per_frame = 8; s3d::gi_box = true; s3d::gi_box_lo = float3 { -4.0, 0.0, -4.0 }; s3d::gi_box_hi = float3 { 4.0, 2.5, 4.0 };
+	let px = gi_frame(512, 512, 40);
+	s3d::gi_on = false; s3d::gi_updates_per_frame = 1; s3d::gi_box = false;
+	var s = 0.0;
+	for y in 8 { for x in 8 { s += rr_lum(px[..], (252 + y) * 512 + 252 + x); } }
+	s / 64.0
+}
+fn rtr_checks() bool {
+	half_table();
+	IN_OUT = gfx::render_target(1280, 720, gfx::RGBA8);
+	let n = 1280 * 720;
+	rr_scene(false, 0.0, 0, true);
+	let rf0 = rr_frame(2);
+	let rf = rr_flip(rf0[..], 4);
+	rr_scene(true, 0.0, 0, false);
+	let off = rr_frame(2);
+	s3d::rt_reflect = true;
+	let on = rr_frame(2);
+	let wrote = codec_png::write(path(OUT_DIR[..], "rtr_ref.png")[..], 1280, 720, 4, rf[..]) && codec_png::write(path(OUT_DIR[..], "rtr_off.png")[..], 1280, 720, 4, off[..]) && codec_png::write(path(OUT_DIR[..], "rtr_on.png")[..], 1280, 720, 4, on[..]);
+	let goff = rr_count(off[..], 1);
+	let r1 = rr_r1("R1", on[..], rf[..]) && goff == 0;
+	print("gpu: rtr R1 control, rt_reflect off: ", goff, " green pixels (bar 0) ", if goff == 0 { "PASS" } else { "FAIL" }, " images ", wrote);
+	var mk byte[>..] = [];
+	for i in n { mk.push((if rr_is(rf[..], i, 0) || rr_is(rf[..], i, 1) { 1 } else { 0 }) as byte); }
+	var w2 = 0;
+	var n2 = 0;
+	for y in 720 { for x in 1280 {
+		let i = y * 1280 + x;
+		if rr_is(on[..], i, 0) { continue; }
+		var hit = false;
+		for dy in 5 { for dx in 5 {
+			let yy = y + dy - 2;
+			let xx = x + dx - 2;
+			if yy >= 0 && yy < 720 && xx >= 0 && xx < 1280 && mk[yy * 1280 + xx] != 0 { hit = true; }
+		} }
+		if hit { continue; }
+		n2++;
+		for c in 3 { w2 = max(w2, abs(on[i * 4 + c] as int - off[i * 4 + c] as int)); }
+	} }
+	let r2 = w2 <= 2 && n2 > n / 2;
+	print("gpu: rtr R2 sky pixels ", n2, ": worst ", w2, " / 255 from the rt_reflect off frame (bar <= 2) ", if r2 { "PASS" } else { "FAIL" });
+	s3d::ssr_on = true; s3d::rt_reflect = false;
+	let so = rr_frame(4);
+	s3d::rt_reflect = true;
+	let sb = rr_frame(4);
+	s3d::ssr_on = false;
+	var p3 = 0;
+	var k3 = 0;
+	for i in n { if rr_is(so[..], i, 0) && !rr_is(off[..], i, 0) {
+		p3++;
+		var w = 0;
+		for c in 3 { w = max(w, abs(so[i * 4 + c] as int - sb[i * 4 + c] as int)); }
+		if w <= 2 { k3++; }
+	} }
+	let f3 = if p3 > 0 { k3 as real / p3 as real } else { 0.0 };
+	let r3a = rr_r1("R3", sb[..], rf[..]);
+	let r3b = r3a && p3 > 0 && f3 >= 0.8;
+	print("gpu: rtr R3 SSR reflection pixels ", p3, ": ", r3(f3), " within 2 / 255 of the SSR-only frame (bar >= 0.8) ", if r3b { "PASS" } else { "FAIL" }, " image ", codec_png::write(path(OUT_DIR[..], "rtr_ssr.png")[..], 1280, 720, 4, sb[..]));
+	rr_scene(true, 0.3, 0, false);
+	let a5 = rr_frame(2);
+	s3d::rt_reflect = true;
+	let b5 = rr_frame(2);
+	let d5 = tx_worst(a5[..], b5[..], 7);
+	rr_scene(true, 0.15, 0, false);
+	s3d::rt_reflect = true;
+	let h5 = rr_frame(2);
+	let g0 = rr_count(on[..], 1);
+	let g5 = rr_count(h5[..], 1);
+	var ys = 0;
+	for i in n { if rr_is(on[..], i, 1) { ys += i / 1280; } }
+	let mid = if g0 > 0 { ys / g0 } else { 360 };
+	let e0 = rr_band(on[..], mid);
+	let e5 = rr_band(h5[..], mid);
+	let r5 = d5 == 0 && g5 * 2 >= g0 && g0 > 0 && e5 >= 2 * e0 && e5 > 0;
+	print("gpu: rtr R5 roughness 0.3: ", d5, " / 255 from off (bar 0); roughness 0.15: ", g5, " green pixels against ", g0, " at 0 (bar >= half), band columns partly green ", e5, " against ", e0, " (bar >= 2 times) ", if r5 { "PASS" } else { "FAIL" }, " image ", codec_png::write(path(OUT_DIR[..], "rtr_rough.png")[..], 1280, 720, 4, h5[..]));
+	rr_scene(true, 0.0, 0, false);
+	let t0 = rr_time(false);
+	let t1 = rr_time(true);
+	rr_scene(true, 0.0, 3, false);
+	let t2 = rr_time(false);
+	let t3 = rr_time(true);
+	let r7 = t1 - t0 <= 1.0 && t3 - t2 <= 4.0;
+	print("gpu: rtr R7 1280x720 scene M off ", r3(t0), " ms on ", r3(t1), " ms: ", r3(t1 - t0), " ms (bar <= 1); 20,000-triangle sphere (", rt::count(), " triangles in the ray scene) off ", r3(t2), " ms on ", r3(t3), " ms: ", r3(t3 - t2), " ms (bar <= 4) ", if r7 { "PASS" } else { "FAIL" });
+	var gm byte[>..] = [];
+	for i in n { gm.push((if rr_is(rf[..], i, 1) { 1 } else { 0 }) as byte); }
+	rr_scene(false, 0.0, 1, true);
+	let h90 = rr_hdr(2);
+	let h9 = rr_flip(h90[..], 8);
+	rr_scene(true, 0.0, 1, false);
+	s3d::rt_reflect = true;
+	let f9 = rr_hdr(2);
+	rr_scene(true, 0.0, 2, false);
+	s3d::rt_reflect = true;
+	let c9 = rr_hdr(2);
+	let m9r = rr_mean(h9[..], gm[..]);
+	let m9f = rr_mean(f9[..], gm[..]);
+	let m9c = rr_mean(c9[..], gm[..]);
+	let r9 = m9r > 0.0 && m9f >= 0.5 * m9r && m9f <= 2.0 * m9r && m9c < 0.5 * m9r;
+	print("gpu: rtr R9 gold metal box reflection brightness ", r4(m9f), " reference ", r4(m9r), " = ", r3(m9f / max(m9r, 1e-9)), " times (bar 0.5 to 2); control black box ", r3(m9c / max(m9r, 1e-9)), " times (bar < 0.5) ", if r9 { "PASS" } else { "FAIL" });
+	rr_room(2, false);
+	let mf = rr_frame(1);
+	var fmk byte[>..] = [];
+	var nfm = 0;
+	for i in n { let v = mf[i * 4] > 128; fmk.push((if v { 1 } else { 0 }) as byte); if v { nfm++; } }
+	rr_room(0, true);
+	let h40 = rr_hdr(2);
+	let h4 = rr_flip(h40[..], 8);
+	rr_room(1, false);
+	s3d::rt_reflect = true;
+	let f4 = rr_hdr(2);
+	let f4p = rr_frame(1);
+	s3d::rt_reflect = false; s3d::spec_occlusion = false;
+	let c4 = rr_hdr(2);
+	s3d::spec_occlusion = true;
+	let m4r = rr_mean(h4[..], fmk[..]);
+	let m4f = rr_mean(f4[..], fmk[..]);
+	let m4c = rr_mean(c4[..], fmk[..]);
+	let r4ok = nfm > n / 10 && m4r > 0.0 && abs(m4f - m4r) <= 0.25 * m4r && m4c > 2.0 * m4r;
+	print("gpu: rtr R4 room, floor pixels ", nfm, ": brightness ", r4(m4f), " reference ", r4(m4r), " = ", r3(abs(m4f - m4r) / max(m4r, 1e-9)), " apart (bar <= 0.25); control rt_reflect and specular occlusion off ", r3(m4c / max(m4r, 1e-9)), " times the reference (bar > 2) ", if r4ok { "PASS" } else { "FAIL" }, " image ", codec_png::write(path(OUT_DIR[..], "rtr_room.png")[..], 1280, 720, 4, f4p[..]));
+	gfx::release(IN_OUT);
+	s3d::rt_reflect = false;
+	let want = 0.8 * 4.0 * 0.2487;
+	let g10 = rr_glow(4.0);
+	let c10 = rr_glow(0.0);
+	let r10 = abs(g10 - want) <= 0.35 * want && c10 < 0.05 * want;
+	print("gpu: rtr R10 floor under a panel glowing at 4: ", r4(g10), " closed form ", r4(want), " = ", r3(abs(g10 - want) / want), " apart (bar <= 0.35); control glow 0: ", r4(c10), " (bar < ", r4(0.05 * want), ") ", if r10 { "PASS" } else { "FAIL" });
+	s3d::sky = DEF_SKY; s3d::sun = DEF_SUN; s3d::look = DEF_LOOK;
+	let ok = r1 && r2 && r3b && r4ok && r5 && r7 && r9 && r10;
+	if !ok { print("gpu: ray-traced reflections FAILED"); }
+	ok
+}
 fn rc_light(k int) {
 	s3d::lights.clear();
 	if k == 0 { s3d::add_rect(float3 { 0.0, 2.0, -1.0 }, float3 { 0.0, 1.0, -1.0 }, float3 { 1.0, 0.0, 0.0 }, 2.0, 1.0, float3 { 4.0, 4.0, 4.0 }, 1000.0, false); }
@@ -5483,7 +5719,7 @@ fn gpu_checks(dir const byte[:], golden const byte[:]) bool {
 	var only byte[>..] = [];
 	let _ = env("GFX_ONLY", only);
 	if only.len > 0 {
-		let ok = if only[..] == "gtao" { gtao_checks() } else if only[..] == "gi" { gi_checks() } else if only[..] == "mblur" { mb_checks() } else if only[..] == "dof" { dof_checks() } else if only[..] == "fx" { fx_checks() } else if only[..] == "tsr" { tsr_checks(dir) } else if only[..] == "probe" { probe_checks(dir) } else if only[..] == "ssgi" { ssgi_checks() } else if only[..] == "decal" { decal_checks() } else if only[..] == "weather" { weather_checks() } else if only[..] == "rect" { rect_checks() } else if only[..] == "small" { small_checks() } else if only[..] == "inst" { instance_checks() } else if only[..] == "caust" { caustic_checks() } else if only[..] == "tex" { texture_checks() } else if only[..] == "stream" { stream_checks() } else { shadow_checks() };
+		let ok = if only[..] == "gtao" { gtao_checks() } else if only[..] == "gi" { gi_checks() } else if only[..] == "mblur" { mb_checks() } else if only[..] == "dof" { dof_checks() } else if only[..] == "fx" { fx_checks() } else if only[..] == "tsr" { tsr_checks(dir) } else if only[..] == "probe" { probe_checks(dir) } else if only[..] == "ssgi" { ssgi_checks() } else if only[..] == "decal" { decal_checks() } else if only[..] == "weather" { weather_checks() } else if only[..] == "rect" { rect_checks() } else if only[..] == "small" { small_checks() } else if only[..] == "inst" { instance_checks() } else if only[..] == "caust" { caustic_checks() } else if only[..] == "tex" { texture_checks() } else if only[..] == "stream" { stream_checks() } else if only[..] == "rtr" { rtr_checks() } else { shadow_checks() };
 		let e = gfx::error();
 		if e.len > 0 { print("gpu: gfx error ", e[..]); return false; }
 		return ok;
@@ -5654,6 +5890,7 @@ fn gpu_checks(dir const byte[:], golden const byte[:]) bool {
 	if !caustic_checks() { good = false; }
 	if !texture_checks() { good = false; }
 	if !stream_checks() { good = false; }
+	if !rtr_checks() { good = false; }
 	let err = gfx::error();
 	if err.len > 0 { print("gpu: gfx error ", err[..]); good = false; }
 	good

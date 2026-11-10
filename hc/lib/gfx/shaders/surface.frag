@@ -77,6 +77,7 @@ layout(set = 3, binding = 0) uniform Frame {
 	vec4 caust_w;
 	vec4 caust_box;
 	vec4 caust_abs;
+	vec4 rtr;
 };
 #include "gi.glsl"
 
@@ -481,30 +482,33 @@ float spec_occ(vec3 r, float n_v, float rough, vec3 gn, float occ, float aos, fl
 	}
 	return s * so_lag(n_v, occm, a) * hz * hz;
 }
-vec4 amb_lobe(vec3 nn, vec3 v, vec3 l, float rough, vec3 irr, vec3 gi_irr, bool use_gi, vec3 gn, vec3 oc, vec4 sr) {
+vec4 amb_lobe(vec3 nn, vec3 v, vec3 l, float rough, vec3 irr, vec3 gi_irr, bool use_gi, vec3 gn, vec3 oc, vec4 sr, vec4 rr) {
 	float n_v = max(dot(nn, v), 1e-4);
 	vec3 r = reflect(-v, nn);
-	vec3 env = mix(use_gi ? gi_irr : sky_color(r, l, zenith.rgb, horizon.rgb, ground.rgb, vec3(0.0)), irr, rough * rough) * spec_occ(r, n_v, rough, gn, oc.x, oc.y, oc.z);
+	float sa = use_gi ? 1.0 : screen.w;
+	vec3 e0 = mix(use_gi ? gi_irr : sky_color(r, l, zenith.rgb, horizon.rgb, ground.rgb, vec3(0.0)) * sa, irr, rough * rough);
+	vec3 env = e0 * spec_occ(r, n_v, rough, gn, oc.x, oc.y, oc.z);
+	if (rr.a > 0.5) env = mix(env, rr.a > 1.5 ? e0 : rr.rgb, 1.0 - smoothstep(0.7 * rtr.y, rtr.y, rough));
 	float w = sr.w * (1.0 - smoothstep(0.7 * refl.z, refl.z, rough));
-	vec3 hit = w > 0.0 ? textureLod(tex_ssr_prev, sr.xy, log2(max(2.0 * rough * rough * sr.z * refl.w, 1.0))).rgb : vec3(0.0);
+	vec3 hit = w > 0.0 ? textureLod(tex_ssr_prev, sr.xy, log2(max(2.0 * rough * rough * sr.z * refl.w, 1.0))).rgb * sa : vec3(0.0);
 	float sw = (1.0 - rough) * (1.0 - rough);
 	return vec4(mix(env, hit, w), pow(1.0 - n_v, 5.0) * sw);
 }
-vec3 ambient_light(vec3 n, vec3 v, vec3 l, vec3 base_rgb, float metal, float rough, vec3 gi_irr, bool use_gi, vec3 gn, vec3 oc, float dao, vec4 sr, Mat q) {
+vec3 ambient_light(vec3 n, vec3 v, vec3 l, vec3 base_rgb, float metal, float rough, vec3 gi_irr, bool use_gi, vec3 gn, vec3 oc, float dao, vec4 sr, vec4 rr, Mat q) {
 	int model = int(misc.y + 0.5);
 	vec3 irr = mix(ground.rgb, zenith.rgb, n.y * 0.5 + 0.5);
-	irr = mix(irr, horizon.rgb, 0.5 * (1.0 - abs(n.y)));
+	irr = mix(irr, horizon.rgb, 0.5 * (1.0 - abs(n.y))) * screen.w;
 	if (use_gi) irr = gi_irr;
-	vec4 e = amb_lobe(n, v, l, rough, irr, gi_irr, use_gi, gn, oc, sr);
+	vec4 e = amb_lobe(n, v, l, rough, irr, gi_irr, use_gi, gn, oc, sr, rr);
 	float f0d = model == 1 ? shade_c.x : 0.04;
 	float fd = f0d + (1.0 - f0d) * e.w;
 	vec3 spec = fd * e.rgb;
 	if (model == 1) {
-		vec4 e2 = amb_lobe(n, v, l, clamp(rough * shade_b.w, 0.03, 1.0), irr, gi_irr, use_gi, gn, oc, sr);
+		vec4 e2 = amb_lobe(n, v, l, clamp(rough * shade_b.w, 0.03, 1.0), irr, gi_irr, use_gi, gn, oc, sr, vec4(0.0));
 		spec = mix(spec, (f0d + (1.0 - f0d) * e2.w) * e2.rgb, shade_b.z);
 	}
 	if (model == 2) {
-		vec4 ec = amb_lobe(q.gn, v, l, shade_b.w, irr, gi_irr, use_gi, gn, oc, sr);
+		vec4 ec = amb_lobe(q.gn, v, l, shade_b.w, irr, gi_irr, use_gi, gn, oc, sr, vec4(0.0));
 		spec += shade_b.z * (0.02 + 0.98 * ec.w) * ec.rgb;
 	}
 	vec3 fm = base_rgb + (1.0 - base_rgb) * e.w;
@@ -541,7 +545,7 @@ vec3 env_irr(vec3 n) {
 	vec4 p = probe_mix(n, env.w, false);
 	return p.rgb + s * p.w;
 }
-vec3 env_lobe(vec3 nn, vec3 v, float rough, vec3 gn, vec3 oc, vec4 sr) {
+vec3 env_lobe(vec3 nn, vec3 v, float rough, vec3 gn, vec3 oc, vec4 sr, vec4 rr) {
 	vec3 r = reflect(-v, nn);
 	vec3 d = normalize(mix(r, nn, rough * rough));
 	vec3 e = env.x > 0.5 ? textureLod(tex_env, vec4(env_dir(d), 0.0), rough * env.z).rgb * env.y : mix(sky_color(d, normalize(to_sun.xyz), zenith.rgb, horizon.rgb, ground.rgb, vec3(0.0)), env_irr(nn), rough * rough) * screen.w;
@@ -549,9 +553,10 @@ vec3 env_lobe(vec3 nn, vec3 v, float rough, vec3 gn, vec3 oc, vec4 sr) {
 		vec4 p = probe_mix(d, rough * env.z, true);
 		e = p.rgb + e * p.w;
 	}
-	e *= spec_occ(r, max(dot(nn, v), 1e-4), rough, gn, oc.x, oc.y, oc.z);
+	vec3 eo = e * spec_occ(r, max(dot(nn, v), 1e-4), rough, gn, oc.x, oc.y, oc.z);
+	if (rr.a > 0.5) eo = mix(eo, rr.a > 1.5 ? e : rr.rgb, 1.0 - smoothstep(0.7 * rtr.y, rtr.y, rough));
 	float w = sr.w * (1.0 - smoothstep(0.7 * refl.z, refl.z, rough));
-	return w > 0.0 ? mix(e, textureLod(tex_ssr_prev, sr.xy, log2(max(2.0 * rough * rough * sr.z * refl.w, 1.0))).rgb, w) : e;
+	return w > 0.0 ? mix(eo, textureLod(tex_ssr_prev, sr.xy, log2(max(2.0 * rough * rough * sr.z * refl.w, 1.0))).rgb, w) : eo;
 }
 vec3 env_ef(vec3 f0, float f90, vec2 eb, vec3 ms) { return ms * (f0 * (eb.x - eb.y) + f90 * eb.y); }
 vec3 transmitted(vec3 n, vec3 v, float rough, vec3 tint, vec3 ef, ExtS x) {
@@ -571,21 +576,76 @@ vec3 ambient_env(vec3 n, vec3 v, vec3 base_rgb, vec3 albedo, vec3 f0, float roug
 	vec3 nb = n;
 	if (x.aniso > 0.0) nb = normalize(mix(normalize(cross(cross(x.tb, v), x.tb)), n, pow(1.0 - x.aniso * (1.0 - rough), 4.0)));
 	vec3 ef = env_ef(f0, x.f90, eb, ms);
-	vec3 spec = env_lobe(nb, v, rough, gn, oc, sr) * ef;
+	vec3 spec = env_lobe(nb, v, rough, gn, oc, sr, x.rr) * ef;
 	if (model == 1) {
 		float r2 = clamp(rough * shade_b.w, 0.03, 1.0);
-		spec = mix(spec, env_lobe(n, v, r2, gn, oc, sr) * env_ef(f0, 1.0, ms_lut(n_v, r2), ms), shade_b.z);
+		spec = mix(spec, env_lobe(n, v, r2, gn, oc, sr, vec4(0.0)) * env_ef(f0, 1.0, ms_lut(n_v, r2), ms), shade_b.z);
 	}
-	if (model == 2) spec += shade_b.z * env_lobe(q.gn, v, shade_b.w, gn, oc, sr) * env_ef(vec3(0.02), 1.0, ms_lut(max(dot(q.gn, v), 1e-4), shade_b.w), vec3(1.0));
+	if (model == 2) spec += shade_b.z * env_lobe(q.gn, v, shade_b.w, gn, oc, sr, vec4(0.0)) * env_ef(vec3(0.02), 1.0, ms_lut(max(dot(q.gn, v), 1e-4), shade_b.w), vec3(1.0));
 	vec3 rgb = albedo * max(kd, vec3(0.0)) * irr * dao * (1.0 - x.trans) + spec;
 	if (x.trans > 0.0) rgb += x.trans * transmitted(n, v, rough, base_rgb, ef, x);
 	float sm = vmax3(x.sheen_c);
 	if (sm > 0.0) rgb = rgb * (1.0 - sm * sheen_e(n_v, x.sheen_r)) + x.sheen_c * sheen_e(n_v, x.sheen_r) * irr * dao;
 	if (x.coat > 0.0) {
 		float cv = max(dot(x.coat_n, v), 1e-4);
-		rgb = rgb * (1.0 - x.coat * (0.04 + 0.96 * pow(1.0 - cv, 5.0))) + x.coat * env_lobe(x.coat_n, v, x.coat_r, gn, oc, sr) * env_ef(vec3(0.04), 1.0, ms_lut(cv, x.coat_r), vec3(1.0));
+		rgb = rgb * (1.0 - x.coat * (0.04 + 0.96 * pow(1.0 - cv, 5.0))) + x.coat * env_lobe(x.coat_n, v, x.coat_r, gn, oc, sr, vec4(0.0)) * env_ef(vec3(0.04), 1.0, ms_lut(cv, x.coat_r), vec3(1.0));
 	}
 	return rgb;
+}
+
+vec4 rt_refl(vec3 rp, vec3 n, vec3 gn, vec3 v, float rough) {
+	float a = rough * rough;
+	vec3 h = n;
+	if (a > 4e-3) {
+		vec2 px = gl_FragCoord.xy + rtr.w * vec2(47.0, 17.0);
+		float u1 = fract(52.9829189 * fract(dot(px, vec2(0.06711056, 0.00583715))));
+		float u2 = 0.9 * fract(52.9829189 * fract(dot(px.yx + 31.7, vec2(0.06711056, 0.00583715))));
+		float ct = sqrt((1.0 - u2) / (1.0 + (a * a - 1.0) * u2));
+		float st = sqrt(max(1.0 - ct * ct, 0.0));
+		vec3 tg = normalize(cross(abs(n.y) < 0.99 ? vec3(0.0, 1.0, 0.0) : vec3(1.0, 0.0, 0.0), n));
+		h = normalize((tg * cos(6.2831853 * u1) + cross(n, tg) * sin(6.2831853 * u1)) * st + n * ct);
+	}
+	vec3 d = reflect(-v, h);
+	if (dot(d, gn) <= 0.0) d = reflect(-v, n);
+	if (dot(d, gn) <= 0.0) return vec4(0.0);
+	int tri;
+	float t = gi_any(rp, d, rtr.z, false, tri);
+	if (tri < 0) return vec4(0.0, 0.0, 0.0, 2.0);
+	vec4 a0 = bvh_tris[tri * 4];
+	vec4 a1 = bvh_tris[tri * 4 + 1];
+	vec4 a2 = bvh_tris[tri * 4 + 2];
+	vec4 tm = bvh_tris[tri * 4 + 3];
+	vec3 hn = normalize(cross(a1.xyz, a2.xyz));
+	if (dot(hn, d) > 0.0) hn = -hn;
+	vec3 p = rp + d * t + hn * 1e-3;
+	float hm = floor(tm.a) / 255.0;
+	float hr = clamp(fract(tm.a), 0.03, 1.0);
+	vec3 alb = tm.rgb * (1.0 - hm);
+	vec3 f0 = mix(vec3(0.04), tm.rgb, hm);
+	vec3 e = vec3(0.0);
+	int count = int(screen.z);
+	for (int i = 0; i < 8; i++) {
+		if (i >= count) break;
+		vec3 lv = light_pos[i].xyz - p;
+		float dist = length(lv);
+		vec3 ld = lv / max(dist, 1e-4);
+		if (dot(hn, ld) <= 0.0) continue;
+		if (!gi_visible(p, ld, dist - 1e-3)) continue;
+		e += light_term(hn, -d, ld, light_rgb[i].rgb * range_falloff(dist, light_pos[i].w) * spot_cone(light_rgb[i].w, light_dir[i].w, light_dir[i].xyz, ld), alb, f0, hr, vec3(1.0), vec3(1.0));
+	}
+	vec3 sd = normalize(to_sun.xyz);
+	if (dot(hn, sd) > 0.0 && dot(sun_rgb.rgb, vec3(1.0)) > 0.0 && gi_visible(p, sd, 1e4)) e += light_term(hn, -d, sd, sun_rgb.rgb, alb, f0, hr, vec3(1.0), vec3(1.0));
+	vec3 ind = vec3(0.0);
+	if (gi.x > 0.5) ind = gi_irradiance(p, hn, -d, gi_origin, gi_step, gi_dims);
+	else if (env.x > 0.5 || probe_n.x > 0.5) ind = env_irr(hn);
+	else ind = mix(mix(ground.rgb, zenith.rgb, hn.y * 0.5 + 0.5), horizon.rgb, 0.5 * (1.0 - abs(hn.y))) * screen.w;
+	vec3 r2 = normalize(mix(reflect(d, hn), hn, hr * hr));
+	vec3 se = ind;
+	if (gi.x < 0.5 && probe_n.x < 0.5) {
+		if (env.x > 0.5) se = textureLod(tex_env, vec4(env_dir(r2), 0.0), hr * env.z).rgb * env.y;
+		else se = mix(sky_color(r2, sd, zenith.rgb, horizon.rgb, ground.rgb, vec3(0.0)) * screen.w, ind, hr * hr);
+	}
+	return vec4(e + alb * ind + f0 * se + vec3(a0.w, a1.w, a2.w), 1.0);
 }
 
 void main() {
@@ -780,7 +840,7 @@ void main() {
 	vec3 albedo = tint.rgb * (1.0 - metal);
 	vec3 f0 = mix(vec3(model == 1 ? shade_c.x : 0.04), tint.rgb, metal);
 	vec3 v = normalize(eye.xyz - in_world);
-	ExtS x = ExtS(n0, 0.0, 0.03, 0.0, 0.0, t, 0.0, b, 1.0, sheen.rgb, sheen.a);
+	ExtS x = ExtS(n0, 0.0, 0.03, 0.0, 0.0, t, 0.0, b, 1.0, sheen.rgb, sheen.a, vec4(0.0));
 	if (misc.z > 0.5) {
 		float sf = x_ior.y * ext_map(0).a;
 		float fd = ((x_ior.x - 1.0) / (x_ior.x + 1.0));
@@ -909,7 +969,8 @@ void main() {
 		tint.rgb = exp(-shade_a.rgb * max(wdz, 0.02));
 	}
 	vec4 sr = refl.x > 0.5 && alpha.x < 1.5 && x.trans <= 0.0 ? texelFetch(tex_ssr, ivec2(gl_FragCoord.xy), 0) : vec4(0.0);
-	vec3 ambient = env.x > 0.5 || misc.z > 0.5 || probe_n.x > 0.5 ? ambient_env(n, v, tint.rgb, albedo, f0, rough, eb, ms, kd, gi_irr, use_gi, gn, vec3(dao, aos, occm), sr, q, x) : ambient_light(n, v, l, tint.rgb, metal, rough, gi_irr, use_gi, gn, vec3(dao, aos, occm), dao, sr, q) * (use_gi ? 1.0 : screen.w);
+	if (rtr.x > 0.5 && rough < rtr.y && alpha.x < 1.5 && x.trans <= 0.0 && sr.w < 0.999) x.rr = rt_refl(rp, n, gn, v, rough);
+	vec3 ambient = env.x > 0.5 || misc.z > 0.5 || probe_n.x > 0.5 ? ambient_env(n, v, tint.rgb, albedo, f0, rough, eb, ms, kd, gi_irr, use_gi, gn, vec3(dao, aos, occm), sr, q, x) : ambient_light(n, v, l, tint.rgb, metal, rough, gi_irr, use_gi, gn, vec3(dao, aos, occm), dao, sr, x.rr, q);
 	rgb += ambient + (sg.w >= 0.0 ? albedo * max(kd, vec3(0.0)) * occm * sg.rgb * ssgi.z * (1.0 - x.trans) : vec3(0.0));
 
 	rgb += emissive.rgb * smp(tex_emissive, xuv(uv_sets2.x, xm_emi, xo2.xy)).rgb;

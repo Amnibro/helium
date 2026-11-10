@@ -339,6 +339,37 @@ Screen-space GI: bounce light from what the camera sees, for scenes without the 
 At half resolution `ssgi_trace.frag` casts `ssgi_rays` cosine-distributed rays per pixel, rotated per pixel and per frame, and walks each through the reflections' Hi-Z pyramid (`hiz_march.glsl`, now shared with `ssr_trace.frag`; SSGI starts one level coarser because it runs at half resolution). At a front-face hit it reads last frame's linear colour there, reprojected like a reflection, so light bounces once per frame and builds up to several bounces over the history. Rays that leave the screen count as open (their share is the visibility, which scales the ambient term: sky, probe or GI irradiance); rays that run out of steps are left out of both averages. `ssgi_accum.frag` averages over `ssgi_frames` frames with motion reprojection and a 5 % depth test, and `ssgi_up.comp` upsamples with a 3 x 3 depth- and normal-aware filter into a storage buffer (binding 22) that `surface.frag` reads per pixel: diffuse adds `albedo x kd x bounce`. Last frame's colour comes from the same copy SSR uses (`ssr_prev`); its mip chain is only built when SSR is on.
 
 
+### Ray-traced reflections (E2)
+
+```
+s3d::rt_reflect = true;
+s3d::ssr_on = true;
+```
+
+* **What it does.** With `s3d::rt_reflect`, smooth surfaces trace one reflection ray per
+  pixel through the ray scene that probe GI and ray-traced shadows use. They reflect
+  things that are off screen, behind the camera or hidden behind other objects, which
+  SSR cannot see. A ray that leaves the scene shows the sky or the environment map. A
+  ray that hits shows the surface it hit: lit by the sun and the first 8 lights with
+  ray-traced shadows, by the probes, environment or sky for ambient light, plus its own
+  glow.
+* **With SSR.** Turn `s3d::ssr_on` on as well. Where the screen has the answer, SSR shows
+  it with full textures and detail; the traced ray fills in everything else.
+* **`s3d::rt_rough`** (0.3): surfaces rougher than this keep the usual environment
+  reflection, and the traced reflection fades out between 0.7 and 1 times this value.
+  Below roughness 0.06 the surface is a mirror. In between, each pixel's ray is spread
+  by the roughness, which looks grainy in a single frame; temporal AA (`s3d::temporal`)
+  averages it.
+* **`s3d::rt_reach`** (1000): the longest ray, in world units.
+* **What rays can hit.** The static meshes in the scene when the ray scene is built,
+  which happens on the first frame that needs it and again after `s3d::forget()`. Each
+  triangle carries one color (base color times the texture's average times the vertex
+  color) and the material's metalness, roughness and glow.
+* **Glowing surfaces and GI.** With `s3d::gi_on`, a material's `emissive` color now
+  lights the scene through the probes.
+* **In the browser.** The same on WebGPU: `scene_rtr` in webgputest matches the native
+  frame.
+
 ### Decals (E7)
 
 A decal presses a picture, a normal map or both onto whatever lies inside a box, like a
@@ -1720,6 +1751,26 @@ have a green channel above both others by 40 / 255; "red" pixels the same for re
   closed-form value 0.8 x 4 x 0.2487 = 0.796 (the view factor from a point to a
   parallel square). Control: with the glow at 0 it is below 0.05 of that value.
 
+### Ray-traced reflection results (2026-11-09, RX 9060 XT, RADV; full gfxtest ok)
+
+| Bar | Result | Bar value |
+| --- | --- | --- |
+| R1 an object out of view is reflected | 16,267 green pixels against 16,196 in the mirrored reference, IoU 0.983; mean colors 1.3 / 255 apart | at least 0.9, at most 16 / 255 |
+| R1 control, `rt_reflect` off | 0 green pixels | 0 |
+| R2 the sky is still the sky | 832,550 pixels: 0 / 255 from the frame with `rt_reflect` off | at most 2 / 255 |
+| R3 with SSR on | R1 unchanged (IoU 0.983); of 28,468 pixels of the red box's SSR reflection, 1.0 within 2 / 255 of the SSR-only frame | at least 0.9, at least 0.8 |
+| R4 closed room under a bright sky | floor brightness 0.248 against 0.240 in the mirrored reference: 0.034 apart | at most 0.25 |
+| R4 control, `rt_reflect` and specular occlusion off | 4.17 times the reference: fails as it must | above 2 times |
+| R5 roughness 0.3 (`rt_rough`) | 0 / 255 from the frame with `rt_reflect` off | 0 |
+| R5 roughness 0.15 | 16,283 green pixels against 16,267 at roughness 0; 69 partly green columns in the band against 1 | at least half, at least 2 times |
+| R6 off is free | goldens 44.92 dB and 41.7 dB; every earlier check passes | above 40 dB |
+| R7 cost at 1280 x 720 | scene M off 1.368 ms, on 1.490 ms: 0.122 ms; 20,014-triangle sphere off 1.399 ms, on 1.556 ms: 0.157 ms | at most 1 ms and 4 ms |
+| R8 gates | gfxtest ok; wgsltest 63 modules, 54 pipelines, 0 failures; webgputest 20 scenes, 0 failures, `scene_rtr` identical to native | 0 failures |
+| R9 gold metal box | reflection brightness 0.90 times the mirrored reference's | 0.5 to 2 times |
+| R9 control, black box | 0.007 times | below 0.5 times |
+| R10 floor under a panel glowing at 4 | 0.809 against the closed-form 0.796: 0.016 apart | at most 0.35 |
+| R10 control, glow 0 | 0.0 | below 0.040 |
+
 ### Texture streaming results (2026-11-09, RX 9060 XT, RADV; full gfxtest ok)
 
 | Bar | Result | Bar value |
@@ -2205,6 +2256,14 @@ pass-through mean error is 0.0106 % (max 0.0488 %).
   only. Skinned and morphed meshes, height-mapped materials, plain RGBA8 textures and
   textures under 256 pixels are loaded whole. A texture used by a decal or an array
   layer is loaded at the array's size.
+* Ray-traced reflections: the ray scene holds static meshes only; skinned, morphed,
+  instanced and blended meshes and `no_gi` materials are not in it, and it does not
+  follow objects that move. A reflected surface shows one flat color per triangle: no
+  textures, no smooth normals, and metal and roughness textures are not read (those
+  surfaces reflect as rough non-metals). With SSR on, things on screen reflect in full
+  detail. One bounce: a mirror seen in a mirror shows ambient light only. Rough
+  reflections take one ray per pixel. Blended and transmissive surfaces do not trace.
+* Shadows: virtual shadow maps are not built; the sun uses cascaded shadow maps.
 * Not built: WebP, meshopt and Draco, mesh streaming, and Nanite-class geometry.
 
 No point/line primitives (skipped and counted), Adler-32 is not verified, the fog

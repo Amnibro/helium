@@ -22,7 +22,7 @@ fn main() {
 	let w = num(arg_of(3)[..]) as int;
 	let h = num(arg_of(4)[..]) as int;
 	if !gfx::open_headless(w, h) { print("scene_frame: no device: ", gfx::error()[..]); return; }
-	let floor = s3d::add(shapes::plane(4.0, shapes::material(linalg::v3(0.55, 0.55, 0.52), 0.0, if arg_count() > 13 && (arg_of(13)[..] == "e2" || arg_of(13)[..] == "probe" || arg_of(13)[..] == "decal" || arg_of(13)[..] == "rect") { 0.17 } else { 0.8 })));
+	let floor = s3d::add(shapes::plane(4.0, shapes::material(linalg::v3(0.55, 0.55, 0.52), if arg_count() > 13 && arg_of(13)[..] == "rtr" { 1.0 } else { 0.0 }, if arg_count() > 13 && arg_of(13)[..] == "rtr" { 0.05 } else if arg_count() > 13 && (arg_of(13)[..] == "e2" || arg_of(13)[..] == "probe" || arg_of(13)[..] == "decal" || arg_of(13)[..] == "rect") { 0.17 } else { 0.8 })));
 	s3d::place(floor, gfx::mat4_identity);
 	let it = s3d::add(a);
 	s3d::place(it, gfx::mat4_identity);
@@ -104,6 +104,7 @@ fn main() {
 	s3d::gi_on = gi;
 	s3d::rt_shadows = gi;
 	s3d::gi_updates_per_frame = 8;
+	if arg_count() > 13 && arg_of(13)[..] == "rtr" { s3d::rt_reflect = true; }
 	if arg_count() > 13 && arg_of(13)[..] == "taa" { s3d::temporal = 1; s3d::ao_mode = 1; }
 	s3d::init(w, h);
 	let out = gfx::render_target(w, h, gfx::RGBA8);

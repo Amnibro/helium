@@ -66,7 +66,7 @@ struct FrameU {
 	cascade_mat gfx::mat4[3], cascade_far float4, eye float4, view_dir float4, to_sun float4, sun_rgb float4,
 	zenith float4, horizon float4, ground float4, screen float4, light_pos float4[16], light_rgb float4[16], gi float4, gi_origin float4, gi_step float4, gi_dims float4,
 	light_dir float4[16], light_shd float4[16], local_mat gfx::mat4[12], refl float4, view_m gfx::mat4, env float4, env_rot float4, vp gfx::mat4, cluster float4, cluster2 float4,
-	probe_n float4, probe_pos float4[8], probe_lo float4[8], probe_hi float4[8], ssgi float4, decal float4, caust float4, caust_w float4, caust_box float4, caust_abs float4
+	probe_n float4, probe_pos float4[8], probe_lo float4[8], probe_hi float4[8], ssgi float4, decal float4, caust float4, caust_w float4, caust_box float4, caust_abs float4, rtr float4
 }
 struct GiU { origin float4, step float4, dims float4, rot0 float4, rot1 float4, rot2 float4, params float4, to_sun float4, sun_rgb float4, zenith float4, horizon float4, ground float4, light_pos float4[8], light_rgb float4[8], env float4, env_rot float4 }
 struct SurfaceU { base float4, emissive float4, params float4, alpha float4, uv_sets float4, uv_sets2 float4, tri float4, top_tint float4, xm_base float4, xm_mr float4, xm_nrm float4, xm_occ float4, xm_emi float4, xo0 float4, xo1 float4, xo2 float4, sheen float4, misc float4, shade_a float4, shade_b float4, shade_c float4, xm_det float4, xo_det float4, top_lay float4 }
@@ -153,6 +153,9 @@ var fx_dt f32 = 0.0;
 var nd_ran = false;
 var gi_on = false;
 var rt_shadows = false;
+var rt_reflect = false;
+var rt_rough f32 = 0.3;
+var rt_reach f32 = 1000.0;
 var gi_ao = true;
 var gi_rt_visibility = true;
 var gi_dims = [16, 16, 16];
@@ -1798,6 +1801,7 @@ fn fill_frame() {
 	}
 	let live = gi_built && rt::ready;
 	frame_u.gi = f4(if live && gi_on && gi_have { 1.0 } else { 0.0 }, if live && rt_shadows { 1.0 } else { 0.0 }, if gi_ao { 1.0 } else { 0.0 }, if temporal_on() { 1.0 } else { 0.0 });
+	frame_u.rtr = f4(if live && rt_reflect { 1.0 } else { 0.0 }, rt_rough, rt_reach, if temporal_on() { (frames % 64) as f32 } else { 0.0 });
 	frame_u.gi_origin = x4(linalg::v3(gi_lo.x + gi_step.x * 0.5, gi_lo.y + gi_step.y * 0.5, gi_lo.z + gi_step.z * 0.5), if gi_rt_visibility { 1.0 } else { 0.0 });
 	frame_u.gi_step = x4(gi_step, gi_bias);
 	frame_u.gi_dims = f4(gi_dims[0] as f32, gi_dims[1] as f32, gi_dims[2] as f32, gi_rays as f32);
@@ -1871,8 +1875,10 @@ fn gi_scene() {
 		if m.no_gi { continue; }
 		let tex = if m.base_tex.texture >= 0 && gltf::textures[m.base_tex.texture].image >= 0 { image_avg(gltf::textures[m.base_tex.texture].image) } else { float3 { 1.0, 1.0, 1.0 } };
 		let mt = if m.mr_tex.texture >= 0 { 0.0 } else { m.metallic };
-		let k = 1.0 - mt;
-		let rgb = linalg::v3(m.base.x * k * tex.x, m.base.y * k * tex.y, m.base.z * k * tex.z);
+		let rg = if m.mr_tex.texture >= 0 { 1.0 } else { m.roughness };
+		let rgb = linalg::v3(m.base.x * tex.x, m.base.y * tex.y, m.base.z * tex.z);
+		let gt = if m.emissive_tex.texture >= 0 && gltf::textures[m.emissive_tex.texture].image >= 0 { image_avg(gltf::textures[m.emissive_tex.texture].image) } else { float3 { 1.0, 1.0, 1.0 } };
+		let glow = linalg::v3(m.emissive.x * gt.x, m.emissive.y * gt.y, m.emissive.z * gt.z);
 		var t = 0;
 		while t + 2 < pr.icount {
 			var q float3[3] = [float3 { 0.0, 0.0, 0.0 }; 3];
@@ -1883,7 +1889,7 @@ fn gi_scene() {
 				q[c] = linalg::point(b.model, linalg::v3(gltf::verts[vi], gltf::verts[vi + 1], gltf::verts[vi + 2]));
 				vc = vc + linalg::v3(gltf::verts[vb + gltf::AT_COL], gltf::verts[vb + gltf::AT_COL + 1], gltf::verts[vb + gltf::AT_COL + 2]) * (1.0 / 3.0);
 			}
-			rt::add(q[0], q[1], q[2], linalg::v3(rgb.x * vc.x, rgb.y * vc.y, rgb.z * vc.z));
+			rt::add(q[0], q[1], q[2], linalg::v3(rgb.x * vc.x, rgb.y * vc.y, rgb.z * vc.z), mt, rg, glow);
 			t += 3;
 		}
 	}
@@ -1922,7 +1928,7 @@ fn gi_rot(k int) GiU {
 	g
 }
 fn gi_pass() {
-	if !(gi_on || rt_shadows) { return; }
+	if !(gi_on || rt_shadows || rt_reflect) { return; }
 	if !gi_built { gi_scene(); }
 	if !gi_on || !gi_have || !rt::ready { return; }
 	if gi_updates > 8 && gi_interval > 1 && frames % gi_interval != 0 { return; }

@@ -6,6 +6,7 @@ let NODE_FLOATS = 8;
 let TRI_FLOATS = 16;
 var tri_in f32[>..] = [];
 var alb_in f32[>..] = [];
+var mat_in f32[>..] = [];
 var nodes f32[>..] = [];
 var tris f32[>..] = [];
 var order int[>..] = [];
@@ -14,11 +15,12 @@ var node_buf gfx::Buffer;
 var tri_buf gfx::Buffer;
 var has_bufs = false;
 var ready = false;
-fn clear() { tri_in.clear(); alb_in.clear(); ready = false; }
+fn clear() { tri_in.clear(); alb_in.clear(); mat_in.clear(); ready = false; }
 fn count() int { tri_in.len / 9 }
-fn add(a float3, b float3, c float3, rgb float3) {
+fn add(a float3, b float3, c float3, rgb float3, metal f32, rough f32, glow float3) {
 	tri_in.append([a.x, a.y, a.z, b.x, b.y, b.z, c.x, c.y, c.z]);
 	alb_in.append([rgb.x, rgb.y, rgb.z]);
+	mat_in.append([glow.x, glow.y, glow.z, ((min(max(metal, 0.0), 1.0) * 255.0 + 0.5) as int) as f32 + min(max(rough, 0.0), 0.99)]);
 }
 fn tmin(t int, k int) f32 { min(min(tri_in[t * 9 + k], tri_in[t * 9 + 3 + k]), tri_in[t * 9 + 6 + k]) }
 fn tmax(t int, k int) f32 { max(max(tri_in[t * 9 + k], tri_in[t * 9 + 3 + k]), tri_in[t * 9 + 6 + k]) }
@@ -107,8 +109,8 @@ fn build() {
 	}
 	for oi in n {
 		let t = order[oi]; let b = t * 9;
-		tris.append([tri_in[b], tri_in[b + 1], tri_in[b + 2], 0.0, tri_in[b + 3] - tri_in[b], tri_in[b + 4] - tri_in[b + 1], tri_in[b + 5] - tri_in[b + 2], 0.0]);
-		tris.append([tri_in[b + 6] - tri_in[b], tri_in[b + 7] - tri_in[b + 1], tri_in[b + 8] - tri_in[b + 2], 0.0, alb_in[t * 3], alb_in[t * 3 + 1], alb_in[t * 3 + 2], 0.0]);
+		tris.append([tri_in[b], tri_in[b + 1], tri_in[b + 2], mat_in[t * 4], tri_in[b + 3] - tri_in[b], tri_in[b + 4] - tri_in[b + 1], tri_in[b + 5] - tri_in[b + 2], mat_in[t * 4 + 1]]);
+		tris.append([tri_in[b + 6] - tri_in[b], tri_in[b + 7] - tri_in[b + 1], tri_in[b + 8] - tri_in[b + 2], mat_in[t * 4 + 2], alb_in[t * 3], alb_in[t * 3 + 1], alb_in[t * 3 + 2], mat_in[t * 4 + 3]]);
 	}
 	ready = true;
 }

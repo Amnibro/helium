@@ -47,13 +47,13 @@ fn main() {
 	cornell::build();
 	for t in cornell::tri_mat.len {
 		let b = t * 9;
-		rt::add(float3 { cornell::tris[b] as f32, cornell::tris[b + 1] as f32, cornell::tris[b + 2] as f32 }, float3 { cornell::tris[b + 3] as f32, cornell::tris[b + 4] as f32, cornell::tris[b + 5] as f32 }, float3 { cornell::tris[b + 6] as f32, cornell::tris[b + 7] as f32, cornell::tris[b + 8] as f32 }, float3 { 0.73, 0.73, 0.73 });
+		rt::add(float3 { cornell::tris[b] as f32, cornell::tris[b + 1] as f32, cornell::tris[b + 2] as f32 }, float3 { cornell::tris[b + 3] as f32, cornell::tris[b + 4] as f32, cornell::tris[b + 5] as f32 }, float3 { cornell::tris[b + 6] as f32, cornell::tris[b + 7] as f32, cornell::tris[b + 8] as f32 }, float3 { 0.73, 0.73, 0.73 }, 0.0, 1.0, float3 { 0.0, 0.0, 0.0 });
 	}
 	if !run("cornell", 0.1, 5.4, 20000) { ok = false; }
 	rt::clear();
 	for t in 20000 {
 		let cx = rnd() * 10.0; let cy = rnd() * 10.0; let cz = rnd() * 10.0; let s = 0.05 + rnd() * 0.3;
-		rt::add(float3 { cx, cy, cz }, float3 { cx + s * (rnd() - 0.5), cy + s * (rnd() - 0.5), cz + s }, float3 { cx + s, cy + s * (rnd() - 0.5), cz + s * (rnd() - 0.5) }, float3 { 0.5, 0.5, 0.5 });
+		rt::add(float3 { cx, cy, cz }, float3 { cx + s * (rnd() - 0.5), cy + s * (rnd() - 0.5), cz + s }, float3 { cx + s, cy + s * (rnd() - 0.5), cz + s * (rnd() - 0.5) }, float3 { 0.5, 0.5, 0.5 }, 0.0, 1.0, float3 { 0.0, 0.0, 0.0 });
 	}
 	if !run("soup", 0.0, 10.0, 3000) { ok = false; }
 	print(if ok { "bvh: ok" } else { "bvh: FAILED" });
