@@ -5897,7 +5897,9 @@ var SK_C = 1.0;
 var SK_S = 0.0;
 var SK_PS = 914.57;
 var SK_IMG real[>..] = [];
-fn sk_mat() gltf::Material { var m = shapes::material(linalg::v3(1.0, 1.0, 1.0), 0.0, 1.0); m.shading = 1; m.shade_a = gltf::shade_preset(1, 0); m.shade_b = gltf::shade_preset(1, 1); m.shade_c = gltf::shade_preset(1, 2); m }
+var SK_FUZZ f32 = 0.0;
+fn sk_skin(base f32, rough f32, pores f32, fuzz f32) gltf::Material { var m = shapes::material(linalg::v3(base, base, base), 0.0, rough); m.shading = 1; m.shade_a = gltf::shade_preset(1, 0); m.shade_b = gltf::shade_preset(1, 1); m.shade_c = gltf::shade_preset(1, 2); m.shade_c.y = pores; m.shade_c.z = fuzz; m }
+fn sk_mat() gltf::Material { sk_skin(1.0, 1.0, 0.0, SK_FUZZ) }
 fn sk_cam(dist real, tilt real) {
 	SK_PS = 360.0 / tan(0.375);
 	SK_C = cos(tilt);
@@ -6104,6 +6106,126 @@ fn sk_x7() bool {
 	print("gpu: sss X7 frame ", r2(base), " ms off, ", r2(full), " ms on with 64 taps: ", r2(full - base), " ms more (bar <= 4), ", r2(few - base), " ms more with 16 taps", if ok { " PASS" } else { " FAIL" });
 	ok
 }
+fn sk_q(dist real, pores f32, fuzz f32, gain f32) {
+	reset_scene();
+	dark_scene();
+	let _ = s3d::add(shapes::plane(0.15, sk_skin(0.02, 0.4, pores, fuzz)));
+	s3d::lights.push(s3d::Light { pos: float3 { 0.1, 0.1732, 0.0 }, range: 1.0, rgb: float3 { gain, gain, gain }, kind: 1, dir: float3 { -0.5, -0.866, 0.0 }, cone: 0.9, edge: 0.1, .. });
+	sk_cam(dist, 0.0);
+}
+fn sk_stat(px const byte[:], half int, blk int) real, real {
+	let bk = if blk > 0 { blk } else { half * 2 };
+	let nb = half * 2 / bk;
+	var s = 0.0;
+	var dv = 0.0;
+	for by in nb { for bx in nb {
+		var bs = 0.0;
+		var bq = 0.0;
+		var gx = 0.0;
+		var gy = 0.0;
+		for y in bk { for x in bk { let v = gi_half(px, 8, (360 - half + by * bk + y) * 1280 + 640 - half + bx * bk + x, 0) as real; bs += v; bq += v * v; gx += v * (x as real - (bk - 1) as real / 2.0); gy += v * (y as real - (bk - 1) as real / 2.0); } }
+		s += bs;
+		let tilt = if blk > 0 { (gx * gx + gy * gy) * 12.0 / (bk * bk * (bk * bk - 1)) as real } else { 0.0 };
+		dv += bq - bs * bs / (bk * bk) as real - tilt;
+	} }
+	let n = (nb * nb * bk * bk) as real;
+	let m = s / n;
+	return m, sqrt(max(dv / n, 0.0)) / max(m, 1e-12);
+}
+fn sk_qs(dist real, pores f32, gain f32, half int, blk int, plain bool) real, real {
+	sk_q(dist, pores, 0.0, gain);
+	shoot(2, IN_OUT);
+	let px = gfx::read_pixels(if plain { s3d::sss_plain() } else { s3d::hdr_target() });
+	let m, d = sk_stat(px[..], half, blk);
+	return m, d;
+}
+fn sk_y14() bool {
+	s3d::sss_on = false;
+	let n1, d1 = sk_qs(0.05, 0.7, 1.0, 200, 4, false);
+	let n0, d0 = sk_qs(0.05, 0.0, 1.0, 200, 4, false);
+	let y1 = d1 >= 0.05 && d0 <= 0.005;
+	print("gpu: sss Y1 near, middle 400 x 400, deviation from the plane of each 4 x 4 block over mean: ", r4(d1), " with pores 0.7 (bar >= 0.05); control pores 0: ", r4(d0), " (bar <= 0.005)", if y1 { " PASS" } else { " FAIL" });
+	let f1, e1 = sk_qs(1.2, 0.7, 1.0, 50, 0, false);
+	let f0, e0 = sk_qs(1.2, 0.0, 1.0, 50, 0, false);
+	let fc, ec = sk_qs(1.2, -0.7, 1.0, 50, 0, false);
+	let y3 = e1 <= e0 + 0.002 && ec >= e1 + 0.01;
+	print("gpu: sss Y3 far, middle 100 x 100: deviation over mean ", r4(e1), " with pores 0.7, ", r4(e0), " with pores 0 (bar: at most 0.002 above); control no fade: ", r4(ec), " (bar: at least 0.01 above)", if y3 { " PASS" } else { " FAIL" });
+	let a1, b1 = sk_qs(0.05, 0.7, 1.0, 183, 0, false);
+	let a0, b0 = sk_qs(0.05, 0.0, 1.0, 183, 0, false);
+	let c1, g1 = sk_qs(1.2, 0.7, 1.0, 8, 0, false);
+	let c0, g0 = sk_qs(1.2, 0.0, 1.0, 8, 0, false);
+	let near = a1 / a0;
+	let far = c1 / c0;
+	let y4 = abs(near - 1.0) >= 0.05 && abs(far - near) < abs(far - 1.0);
+	print("gpu: sss Y4 middle 20 mm square, pores 0.7 over pores 0: near ", r4(near), " (bar: at least 0.05 from 1), far ", r4(far), " (bar: closer to near than to 1); control pores 0 far: 1.0, fails as required", if y4 { " PASS" } else { " FAIL" });
+	s3d::sss_on = true;
+	let p1, q1 = sk_qs(0.05, 0.7, 1.0, 200, 0, true);
+	let p0, q0 = sk_qs(0.05, 0.0, 1.0, 200, 0, true);
+	let pd, qd = sk_qs(0.05, 0.7, 0.95, 200, 0, true);
+	let y2 = abs(p1 / p0 - 1.0) <= 0.01 && abs(pd / p0 - 1.0) > 0.01;
+	print("gpu: sss Y2 near, plain light, pores 0.7 over pores 0: ", r4(p1 / p0), " (bar within 0.01 of 1); control light 5% dimmer ", r4(pd / p0), if y2 { " PASS" } else { " FAIL" });
+	y1 && y2 && y3 && y4
+}
+fn sk_d(a const byte[:], b const byte[:], i int) int { var top = 0; for c in 3 { let d = a[i * 4 + c] as int - b[i * 4 + c] as int; top = max(top, max(d, -d)); } top }
+fn sk_up(a const byte[:], b const byte[:], i int) int { var s = 0; for c in 3 { s += a[i * 4 + c] as int - b[i * 4 + c] as int; } s }
+fn sk_y5() bool {
+	s3d::sss_on = false;
+	sk_ball(0.0, float3 { -0.12, 0.1, 0.0 });
+	let off = rr_frame(2);
+	let again = rr_frame(2);
+	SK_FUZZ = 0.35;
+	sk_ball(0.0, float3 { -0.12, 0.1, 0.0 });
+	let on = rr_frame(2);
+	SK_FUZZ = 0.0;
+	sk_ball(50.0, float3 { -0.12, 0.1, 0.0 });
+	let lit = rr_frame(2);
+	var mask int[>..] = [];
+	mask.resize(921600, 0);
+	var cx = 0;
+	var cy = 0;
+	var cnt = 0;
+	for i in 921600 { let g = sk_d(lit[..], off[..], i); mask[i] = if g > 0 { 1 } else { 0 }; cx += if g > 0 { i % 1280 } else { 0 }; cy += if g > 0 { i / 1280 } else { 0 }; cnt += mask[i]; }
+	cx = cx / max(cnt, 1);
+	cy = cy / max(cnt, 1);
+	var edge = 0;
+	var rise = 0;
+	var rise0 = 0;
+	var mid = 0;
+	var out = 0;
+	for i in 921600 {
+		let x = i % 1280;
+		let y = i / 1280;
+		let d = sk_d(on[..], off[..], i);
+		out = if mask[i] == 0 { max(out, d) } else { out };
+		mid = if mask[i] == 1 && (x - cx) * (x - cx) + (y - cy) * (y - cy) <= 2304 { max(mid, d) } else { mid };
+		if mask[i] == 1 && x >= 4 && x < 1276 && y >= 4 && y < 716 && mask[i - 4] * mask[i + 4] * mask[i - 5120] * mask[i + 5120] * mask[i - 3843] * mask[i - 3837] * mask[i + 3837] * mask[i + 3843] == 0 { edge += 1; rise += sk_up(on[..], off[..], i); rise0 += sk_up(again[..], off[..], i); }
+	}
+	let up = rise as real / 3.0 / max(edge, 1) as real;
+	let up0 = rise0 as real / 3.0 / max(edge, 1) as real;
+	let ok = up >= 3.0 && mid <= 1 && out == 0 && up0 < 3.0;
+	print("gpu: sss Y5 fuzz 0.35: ", edge, " rim pixels rise ", r2(up), " / 255 on average (bar >= 3), middle largest change ", mid, " / 255 (bar <= 1), pixels without skin ", out, " / 255 (bar 0); control fuzz 0: rim rise ", r2(up0), if ok { " PASS" } else { " FAIL" });
+	ok
+}
+fn sk_shot(pores f32) byte[>..] {
+	reset_scene();
+	dark_scene();
+	var m = sk_skin(1.0, 0.45, pores, 0.0);
+	m.base = float4 { 0.9, 0.72, 0.62, 1.0 };
+	let _ = s3d::add(shapes::plane(0.15, m));
+	s3d::lights.push(s3d::Light { pos: float3 { 0.1, 0.1732, 0.0 }, range: 1.0, rgb: float3 { 0.7, 0.7, 0.7 }, kind: 1, dir: float3 { -0.5, -0.866, 0.0 }, cone: 0.9, edge: 0.1, .. });
+	sk_cam(0.05, 0.0);
+	rr_frame(2)
+}
+fn sk_y6() bool {
+	s3d::sss_on = false;
+	sk_q(0.05, 0.0, 0.0, 1.0);
+	let base = frame_ms();
+	sk_q(0.05, 0.7, 0.35, 1.0);
+	let full = frame_ms();
+	let ok = full - base <= 0.3;
+	print("gpu: sss Y6 sheet filling the frame: ", r2(base), " ms without, ", r2(full), " ms with pores 0.7 and fuzz 0.35: ", r2(full - base), " ms more (bar <= 0.3)", if ok { " PASS" } else { " FAIL" });
+	ok
+}
 fn sss_checks() bool {
 	half_table();
 	s3d::init(1280, 720);
@@ -6115,6 +6237,14 @@ fn sss_checks() bool {
 	good = sk_x3() && good;
 	good = sk_x45() && good;
 	good = sk_x7() && good;
+	good = sk_y14() && good;
+	good = sk_y5() && good;
+	good = sk_y6() && good;
+	s3d::sss_on = true;
+	let pon = sk_shot(0.7);
+	let pof = sk_shot(0.0);
+	s3d::sss_on = false;
+	let _ = codec_png::write(path(OUT_DIR[..], "pore_on.png")[..], 1280, 720, 4, pon[..]) && codec_png::write(path(OUT_DIR[..], "pore_off.png")[..], 1280, 720, 4, pof[..]);
 	s3d::sss_on = false;
 	good
 }

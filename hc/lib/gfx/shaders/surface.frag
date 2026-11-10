@@ -160,7 +160,7 @@ vec3 sun_under(vec3 p) {
 vec3 sheen_term(vec3 n, vec3 v, vec3 l, vec3 e) { return sheen_lobe(n, v, l, e, sheen.rgb, sheen.a); }
 float sheen_keep() { return 1.0 - max(max(sheen.r, sheen.g), sheen.b) * 0.17; }
 vec2 xuv(float set, vec4 m, vec2 o) { vec2 u = pick_uv(set); return vec2(dot(m.xy, u), dot(m.zw, u)) + o; }
-struct Mat { vec3 nm; vec3 gn; float curv; float thick; float cav; };
+struct Mat { vec3 nm; vec3 gn; float curv; float thick; float cav; float pv; };
 float skin_lut(float c, float s) {
 	float x = clamp(c * 0.5 + 0.5, 0.0, 1.0) * float(SKIN_T - 1);
 	float y = sqrt(clamp(s, 0.0, 1.0)) * float(SKIN_S - 1);
@@ -170,6 +170,23 @@ float skin_lut(float c, float s) {
 	return mix(mix(SKIN_D[i], SKIN_D[i + 1], x - float(x0)), mix(SKIN_D[i + SKIN_T], SKIN_D[i + SKIN_T + 1], x - float(x0)), y - float(y0));
 }
 vec3 skin_trans(float t, vec3 d) { return 0.25 * (exp(-t / d) + 3.0 * exp(-t / (3.0 * d))); }
+float skin_r2(float rough, float pv) { float r = sqrt(sqrt(max(rough * rough * rough * rough - pv, 0.0))) * shade_b.w; return pv > 0.0 ? clamp(sqrt(sqrt(r * r * r * r + pv)), 0.03, 1.0) : clamp(rough * shade_b.w, 0.03, 1.0); }
+float rim(vec3 n, vec3 v, float nl) { return pow(1.0 - max(dot(n, v), 0.0), 3.0) * clamp((nl + 0.5) / 1.5, 0.0, 1.0); }
+vec4 pore(vec2 p, float s) {
+	float fade = s < 0.0 ? 1.0 : 1.0 - smoothstep(0.25, 0.5, max(length(dFdx(p)), length(dFdy(p))));
+	ivec2 c = ivec2(floor(p - 0.5));
+	vec3 a = vec3(0.0, 0.0, -0.0706858);
+	for (int k = 0; k < 4; k++) {
+		ivec2 q = c + ivec2(k % 2, k / 2);
+		uint h = (uint(q.x) * 1597334673u) ^ (uint(q.y) * 3812015801u);
+		h = (h ^ (h >> 15u)) * 2246822519u;
+		h = h ^ (h >> 13u);
+		vec2 d = p - vec2(q) - vec2(float(h & 1023u), float((h >> 10u) & 1023u)) / 1023.0;
+		float t = max(1.0 - dot(d, d) / 0.09, 0.0);
+		a += (0.5 + 0.5 * float((h >> 20u) & 1023u) / 1023.0) * vec3(4.0 * t * d / 0.09, t * t);
+	}
+	return vec4(a * fade, fade);
+}
 vec3 mat_term(vec3 n, vec3 v, vec3 l, vec3 e, vec3 albedo, vec3 f0, float rough, vec3 ms, vec3 kd, float vis, Mat q, ExtS x) {
 	if (misc.z > 0.5) return ext_term(n, v, l, e, albedo, f0, rough, ms, kd, vis, x);
 	int model = int(misc.y + 0.5);
@@ -179,10 +196,10 @@ vec3 mat_term(vec3 n, vec3 v, vec3 l, vec3 e, vec3 albedo, vec3 f0, float rough,
 		vec3 nr = normalize(mix(q.nm, q.gn, shade_c.w));
 		vec3 sv = pow(vec3(clamp(vis, 0.0, 1.0)), mix(vec3(1.0), d.r / d, 0.15));
 		vec3 dif = vec3(skin_lut(dot(nr, l), s.r), skin_lut(dot(q.nm, l), s.g), skin_lut(dot(q.nm, l), s.b));
-		vec3 spec = mix(light_term(n, v, l, e, vec3(0.0), f0, rough, ms, kd), light_term(n, v, l, e, vec3(0.0), f0, clamp(rough * shade_b.w, 0.03, 1.0), ms, kd), shade_b.z) * q.cav;
+		vec3 spec = mix(light_term(n, v, l, e, vec3(0.0), f0, rough, ms, kd), light_term(n, v, l, e, vec3(0.0), f0, skin_r2(rough, q.pv), ms, kd), shade_b.z) * q.cav;
 		vec3 tr = skin_trans(q.thick, d) * clamp((0.1 - dot(q.gn, l)) / 1.1, 0.0, 1.0) * shade_a.w;
 		if (xo_det.z > 0.5) { if (sss_w > 0.5) sss_d += e / PI_F * ((xo_det.z < 1.5 ? vec3(max(dot(q.nm, l), 0.0) * clamp(vis, 0.0, 1.0)) : dif * sv) * mix(1.0, q.cav, 0.5) + tr); if (xo_det.z < 1.5) return vec3(0.0); }
-		return (kd * albedo / PI_F * (dif * sv * mix(1.0, q.cav, 0.5) + tr)) * e + spec * vis;
+		return (kd * albedo / PI_F * (dif * sv * mix(1.0, q.cav, 0.5) + tr)) * e + (spec + shade_c.z * e * rim(n, v, dot(n, l))) * vis;
 	}
 	if (model == 2) {
 		float w = shade_c.w;
@@ -194,7 +211,7 @@ vec3 mat_term(vec3 n, vec3 v, vec3 l, vec3 e, vec3 albedo, vec3 f0, float rough,
 		float w = shade_a.x;
 		float nl = dot(n, l);
 		vec3 dif = kd * albedo / PI_F * clamp((nl + w) / (1.0 + w), 0.0, 1.0) * e;
-		vec3 fz = sheen.rgb * e * shade_a.y * pow(1.0 - max(dot(n, v), 0.0), 3.0) * clamp((nl + 0.5) / 1.5, 0.0, 1.0);
+		vec3 fz = sheen.rgb * e * shade_a.y * rim(n, v, nl);
 		return ((dif + shade_a.z * light_term(n, v, l, e, vec3(0.0), f0, rough, ms, kd)) * sheen_keep() + sheen_term(n, v, l, e) + fz) * vis * q.cav;
 	}
 	return (light_term(n, v, l, e, albedo, f0, rough, ms, kd) * sheen_keep() + sheen_term(n, v, l, e)) * vis;
@@ -509,7 +526,7 @@ vec3 ambient_light(vec3 n, vec3 v, vec3 l, vec3 base_rgb, float metal, float rou
 	if (model == 1 && xo_det.z > 0.5) { sss_d += irr * dao * (1.0 - fd) / max(sss_k, vec3(1e-5)); if (xo_det.z < 1.5) return vec3(0.0); }
 	vec3 spec = fd * e.rgb;
 	if (model == 1) {
-		vec4 e2 = amb_lobe(n, v, l, clamp(rough * shade_b.w, 0.03, 1.0), irr, gi_irr, use_gi, gn, oc, sr, vec4(0.0));
+		vec4 e2 = amb_lobe(n, v, l, skin_r2(rough, q.pv), irr, gi_irr, use_gi, gn, oc, sr, vec4(0.0));
 		spec = mix(spec, (f0d + (1.0 - f0d) * e2.w) * e2.rgb, shade_b.z);
 	}
 	if (model == 2) {
@@ -584,7 +601,7 @@ vec3 ambient_env(vec3 n, vec3 v, vec3 base_rgb, vec3 albedo, vec3 f0, float roug
 	vec3 ef = env_ef(f0, x.f90, eb, ms);
 	vec3 spec = env_lobe(nb, v, rough, gn, oc, sr, x.rr) * ef;
 	if (model == 1) {
-		float r2 = clamp(rough * shade_b.w, 0.03, 1.0);
+		float r2 = skin_r2(rough, q.pv);
 		spec = mix(spec, env_lobe(n, v, r2, gn, oc, sr, vec4(0.0)) * env_ef(f0, 1.0, ms_lut(n_v, r2), ms), shade_b.z);
 	}
 	if (model == 2) spec += shade_b.z * env_lobe(q.gn, v, shade_b.w, gn, oc, sr, vec4(0.0)) * env_ef(vec3(0.02), 1.0, ms_lut(max(dot(q.gn, v), 1e-4), shade_b.w), vec3(1.0));
@@ -813,15 +830,24 @@ void main() {
 	vec4 dt = smpa(tex_ext_l, vec3(xuv(uv_sets.x, xm_det, xo_det.xy), top_lay.w));
 	float dmask = model == 1 ? mr.b : 1.0;
 	float dcurv = length(fwidth(normalize(in_nrm))) / max(length(fwidth(in_world)), 1e-6);
-	Mat q = Mat(nm, normalize(in_nrm), in_uv.z > 0.0 ? max(in_uv.z, 0.0) : dcurv, in_uv.z > 0.0 ? max(in_uv.w, 0.0005) : 1.0, 1.0);
+	Mat q = Mat(nm, normalize(in_nrm), in_uv.z > 0.0 ? max(in_uv.z, 0.0) : dcurv, in_uv.z > 0.0 ? max(in_uv.w, 0.0005) : 1.0, 1.0, 0.0);
 	if (!gl_FrontFacing && alpha.z > 0.5) q.gn = -q.gn;
 	if (model > 0) {
 		n = normalize(n + (t * (dt.x * 2.0 - 1.0) + b * (dt.y * 2.0 - 1.0)) * shade_b.x * dmask);
 		q.cav = mix(1.0, dt.a, shade_b.y * dmask);
 	}
+	if (model == 1 && shade_c.y != 0.0) {
+		vec2 pu = xuv(uv_sets.x, xm_det, xo_det.xy);
+		vec4 pa = pore(pu * 700.0, shade_c.y);
+		vec4 pb = pore(pu * 175.0, shade_c.y);
+		n = normalize(n - (t * (pa.x + pb.x) - b * (pa.y + pb.y)) * 0.09 * abs(shade_c.y));
+		q.cav *= max(1.0 - 0.5 * abs(shade_c.y) * (pa.z + pb.z), 0.0);
+		q.pv = 0.0198 * shade_c.y * shade_c.y * (2.0 - pa.w - pb.w);
+	}
 	float metal = model == 0 ? clamp(params.x * mr.b, 0.0, 1.0) : 0.0;
-	float rough = clamp(params.y * mr.g * (model > 0 ? mix(1.0, 0.5 + dt.b, dmask) : 1.0), 0.03, 1.0);
+	float rough = clamp(params.y * mr.g * (model > 0 ? mix(1.0, 0.5 + (top_lay.w == 1.0 ? 0.5 : dt.b), dmask) : 1.0), 0.03, 1.0);
 	if (decal.y > 0.5) { rough = clamp(rough * dk.x + dk.y, 0.03, 1.0); metal = clamp(metal * dk.z + dk.w, 0.0, 1.0); }
+	if (q.pv > 0.0) rough = min(sqrt(sqrt(rough * rough * rough * rough + q.pv)), 1.0);
 	if (env_rot.w > 0.5) {
 		vec3 dn = max(abs(dFdx(n0)), abs(dFdy(n0)));
 		rough = min(max(rough, 0.0525) + max(dn.x, max(dn.y, dn.z)) + clamp(0.25 * (1.0 / max(tl, 0.25) - 1.03), 0.0, 0.1) * params.z, 1.0);

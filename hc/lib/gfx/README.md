@@ -779,6 +779,37 @@ s3d::sss_on = true;
   `s3d::sss_target()` the same light after it.
 * **Web.** The same passes run on WebGPU.
 
+### Skin pores and fuzz (E7)
+
+A skin material can carry pores and a soft rim of fine hair without any texture:
+
+```
+var skin = shapes::material(linalg::v3(0.9, 0.72, 0.62), 0.0, 0.5);
+skin.shading = 1;
+skin.shade_a = gltf::shade_preset(1, 0);
+skin.shade_b = gltf::shade_preset(1, 1);
+skin.shade_c = gltf::shade_preset(1, 2);
+skin.shade_c.y = 0.7;
+skin.shade_c.z = 0.35;
+```
+
+`shade_c.y` is the pore strength (0 is off, the preset value). The pores are computed
+in the shader from the material's UV space: round pits scattered at random, 700 a
+UV unit on average along each axis, plus a coarser set at 175. The pits tilt the normal that highlights use
+and darken their floors; the mean diffuse light does not change. The detail map's
+transform (`detail.m`, `detail.o`) scales and moves the pattern, so a mesh whose UV
+unit is not about 0.3 m can bring the pits back to skin scale. Where a cell covers
+fewer than 4 pixels the pits fade, and by 2 pixels they are gone and their slopes
+widen both highlight lobes instead, so skin does not sparkle at a distance and the
+highlight keeps the brightness it has up close.
+
+`shade_c.z` is the fuzz strength (0 is off). It adds the rim term the cloth model
+uses: white light along the outline on the lit side, nothing where the surface faces
+the camera.
+
+A skin, cloth or eye material without a detail map keeps the roughness it was
+given.
+
 ## Materials, light and finish
 
 `gltf` reads the core metal-rough model plus `KHR_materials_clearcoat`, `sheen`,
@@ -2066,6 +2097,26 @@ the least of the three channels, largest then mean.
 | X7 cost | 1.8 ms off, 3.44 ms on with 64 taps: 1.64 ms more; 1.14 ms more with 16 taps | at most 4 ms |
 | X8 nothing else moved | goldens above 40 dB; gfxtest ok; wgsltest 67 modules, 58 pipelines, 0 failures; webgputest 22 scenes, 0 failures, `scene_sss` matches the native frame exactly on WebGPU | pass |
 
+### Skin pore and fuzz results (2026-11-10, RX 9060 XT, RADV)
+
+The Y3 values include the lamp's own falloff across the patch, which is the same in
+all three frames.
+
+| Bar | Result | Bar value |
+| --- | --- | --- |
+| Y1 pits show up close | 0.3688 with strength 0.7 | at least 0.05 |
+| Y1 control, strength 0 | 0.0002 | at most 0.005 |
+| Y2 the mean diffuse light stays | sum with strength 0.7 over sum with strength 0: 1.0004 | within 0.01 of 1 |
+| Y2 control, light 5% dimmer | 0.9505 | more than 0.01 from 1 |
+| Y3 no noise far away | 0.5309 with strength 0.7, 0.6783 with strength 0 | at most 0.002 above |
+| Y3 control, no fade | 0.8058 | at least 0.01 above 0.5309 |
+| Y4 the far highlight follows the near one | near 1.0728, far 1.0897 | near at least 0.05 from 1, far closer to near than to 1 |
+| Y4 control, strength 0 | 1.0 | fails |
+| Y5 fuzz lights the rim only | 3,243 rim pixels rise 13.92 / 255 on average; middle: largest change 1 / 255; pixels without skin: 0 / 255 | at least 3, at most 1, 0 |
+| Y5 control, fuzz 0 twice | rim rise 0.0 | below 3 |
+| Y6 cost | 1.63 ms without, 1.75 ms with: 0.12 ms more | at most 0.3 ms |
+| Y7 nothing else moved | goldens 44.92 dB and 41.7 dB; X1 to X7 pass with both strengths 0; wgsltest 67 modules, 58 pipelines, 0 failures; webgputest 22 scenes, 0 failures, `scene_sss` with strength 0.7 and fuzz 0.35 matches the native frame exactly on WebGPU | pass |
+
 ### Meshlet results (2026-11-09, RX 9060 XT, RADV; full gfxtest ok)
 
 | Bar | Result | Bar value |
@@ -2549,7 +2600,8 @@ pass-through mean error is 0.0106 % (max 0.0488 %).
 
 * Skin scattering gathers light from what the camera sees: light that enters on a side
   facing away from the camera (an ear lit from behind) is not gathered, and blended or
-  cut-out skin materials are not scattered. Pores and peach fuzz are not built.
+  cut-out skin materials are not scattered. Pores are one
+  pattern for all skin, laid out in UV space; they are not shaped per body region.
 * Sheen renders brighter than three.js on the chair and toy car (the likely cause, its
   low fit, is unproven), and the clearcoat fixture's base tiles are brighter
   (R 185 against 143), cause not found. See the PSNR table in hc/test/gfx/results.
