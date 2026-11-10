@@ -921,6 +921,7 @@ recursive ck_builtin(n int, b int, recv int, want int) int:
 			c := arg(1); ct0 := ck(c, -1); ck0 := TY[ct0].k; e2 := if b == B_APPEND { if ck0 == TY_STRLIT { T_U8 } else { if ck0 == TY_ARRLIT { if ND[c].n > 0 { default_t(kid(c, 0)) } else { T_ERRT } } else { TY[deref(ct0)].a as int } } } else { if ck0 == TY_STRLIT { t_arr(T_U8, A_VAR, -1, 6) } else { if is_pending(ct0) { default_t(c) } else { deref_val(ct0) } } }; if e2 != T_ERRT: complete(r, e2)
 	rt := deref(at(r))
 	e := TY[rt].a
+	if (b == B_PUSH || b == B_APPEND) && vpay_fixed(e as int): m byte[>..] ~= []; format(m, tn(e as int), " has a variable-size payload, which a fixed-mode ", tn(e as int), " keeps on the current scope's data stack, so the stored element would dangle: declare the array as ", tn(e as int), "..[>..] (variable mode) or give the payload byte[>..] fields"); cerr(n, m[..]); return set_t(n, T_ERRT)
 	if b == B_PUSH: if total != 2 { cerr(n, "push takes one value"); return set_t(n, T_ERRT) } c := arg(1); ck(c, e); conv(c, e); return set_t(n, elref(e))
 	if b == B_APPEND: c := arg(1); t := ck(c, t_slice(e, true)); if TY[t].k == TY_STRLIT { set_t(c, TT_STR); } else { if TY[t].k == TY_ARRLIT { conv(c, t_arr(e, A_GROW, -1, -1)); } else { dt := deref(t); if (TY[dt].k == TY_ARR || TY[dt].k == TY_SLICE) && TY[dt].a != e { cerr(c, "append of a different element type") } } } return set_t(n, T_VOID)
 	if b == B_POP: return set_t(n, decode_rel(e))
@@ -1043,7 +1044,7 @@ recursive init_order_safe(n int, callee int) bool:
 		vty := at(init)
 		return init_store_safe(init, vty) && init_order_safe(init, callee)
 	if k == N_ARR:
-		if x.a >= 0: return false
+		if x.a >= 0 || at(n) < 0: return false
 		elem := TY[at(n)].a as int
 		for j x.n { if !init_store_safe(kid(n, j), elem) { return false } }
 	else if k == N_SLIT:

@@ -138,6 +138,14 @@ recursive tclass(t int) int:
 	if k == TY_ARR: a := x.s as int; if a == A_GROW || a == A_GS { return CL_RES } if a == A_VAR { return CL_VAR } if a == A_LIM && x.b < 0 { return CL_VAR } ec := tclass(x.a as int); return if ec > CL_FIXED { CL_VAR } else { CL_FIXED }
 	if k == TY_VARINT || k == TY_REF && x.c == 8: return CL_VAR
 	CL_FIXED
+recursive hasvar(t int) bool:
+	x := TY[t]; k := x.k as int
+	if k == TY_STRUCT: si := x.a as int; for i STI[si].fnum { if hasvar(SFI[STI[si].f0 as int + i].ty as int) { return true } } return false
+	if k == TY_VARIANT: si := ENV[ENI[x.a].v0 as int + x.c as int].si as int; return si >= 0 && hasvar(t_struct(si))
+	if k == TY_ENUM: if x.fl & 1 != 0 { return true } for i ENI[x.a].vnum { if hasvar(t_variant(x.a as int, i)) { return true } } return false
+	if k == TY_ARR: a := x.s as int; return if a == A_GROW || a == A_GS { false } else if a == A_VAR || a == A_LIM && x.b < 0 { true } else { hasvar(x.a as int) }
+	k == TY_VARINT || k == TY_REF && x.c == 8
+vpay_fixed(t int) bool: t > 0 && TY[t].k as int == TY_ENUM && TY[t].fl & 1 == 0 && hasvar(t)
 is_fixed(t int) bool:
 	tclass(t) == CL_FIXED
 is_bytes(t int) bool:

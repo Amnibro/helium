@@ -904,6 +904,7 @@ recursive gcase_arg(pt int):
 	byr := TY[pt].k == TY_REF
 	vt := deref(pt)
 	v := ENV[ENI[TY[vt].a].v0 + DSPV]
+	if TY[vt].k == TY_ENUM: if byr { ow("&") } ow("("); ct(vt); format(O, "){ .tag = ", DSPV); if v.si >= 0 && !STI[v.si].zero { format(O, ", .u.v", DSPV, " = _m", DSPQ, "->u.v", DSPV) } ow(" }"); return
 	if v.si >= 0 && !STI[v.si].zero: if byr { ow("&") } format(O, "_m", DSPQ, "->u.v", DSPV); return
 	if byr { ow("&") } ow("("); ct(vt); ow("){0}");
 recursive gcall_args1(n int, inst int, recv int, op int, on int):

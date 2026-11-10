@@ -866,6 +866,7 @@ recursive lcase(n int, dst int) int:
 	po.push(pre.len as i32)
 	sd := if is_agg(rt) { if dst >= 0 { dst } else { q := nv(); ir(I_SLOT, 8, q, -1, -1, slot(tsz(rt), tal(rt))); if TY[rt].k != TY_MULTI { tmp_drop(q, rt) } q } } else { -1 }
 	vd := rt < 0 || rt == T_VOID; d := if !vd && sd < 0 { nv() } else { -1 }; d2 := if !vd && is_pair(rt) { nv() } else { -1 }
+	for vi vn { pv := deref(ptype_of(DSPL[d0 + 1 + vi] as int, j0)); if TY[pv].k == TY_ENUM && TY[et].fl & 1 != 0 && TY[pv].fl & 1 == 0 && vpay_fixed(pv) { m2 byte[>..] ~= []; format(m2, "passing a variable-mode ", tn(et), " to a fixed-mode ", tn(pv), " parameter is not supported natively yet (its payload has variable-size fields): take ", tn(pv), "..& or match the variants"); lerr(n, m2[..]); return imm(0) } }
 	tag := ldw(lmk(m, et), 0, wof(et)); lend := nlbl()
 	for vi vn:
 		i := DSPL[d0 + 1 + vi] as int; if is_ext(i): lerr(n, "case dispatch to an extern function natively"); return imm(0)
