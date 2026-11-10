@@ -2070,6 +2070,72 @@ the frame before tone mapping (`s3d::hdr_target()`).
   40 dB and X1 to X7 pass. gfxtest, wgsltest and webgputest
   pass, with `scene_sss` drawn with strength 0.7 and fuzz 0.35.
 
+### Cloth bars (E13, registered before the first run)
+
+Cloth is a position-based simulation (XPBD with small steps). Every welded vertex of a
+mesh is a particle. Every triangle edge keeps its rest length, and every pair of
+triangles sharing an edge keeps the distance between its two opposite corners, which
+resists bending. Particles can be pinned to points that move, and a pinned cloth also
+keeps every particle within its rest distance of the nearest pin. Spheres, capsules and
+a ground plane push particles out, with friction. Wind pushes each triangle by the air
+speed along its normal. The solver, `cloth`, does not depend on the renderer.
+`scene3d` draws the result through two morph targets, this step's positions and
+normals and the last step's positions, so depth, shadows and motion vectors follow the
+cloth.
+
+Defaults: 0.2 kg per square meter, gravity 9.81 m/s2, thickness 0.005 m, damping 1 per
+second, air density 1.2 kg/m3 with drag coefficient 1.28, friction 0.5, 60 steps a
+second with 8 substeps each.
+
+Sheet C: a square sheet 1 m wide with 33 x 33 vertices and the defaults. "Hanging" is
+in the plane z = 0 with its top edge at y = 2 and every vertex of the top edge pinned.
+"Flat" is horizontal with its middle at (0, 0.85, 0) and no pins.
+
+* **Z1 edges keep their length.** Sheet C hanging for 3 s: at the end no edge is longer
+  than 1.03 times its rest length. Control: 1 substep a step, without the distance
+  limit to the pins, has an edge longer than that.
+* **Z2 it comes to rest.** Sheet C with the top edge pinned, starting horizontal (in
+  the plane y = 2, reaching toward +z), let go: after 10 s the mean particle speed is
+  below 0.02 m/s and every position is a finite number. Control: 0.5 s after the start
+  the mean speed is above 0.02 m/s.
+* **Z3 nothing passes through a sphere.** Sheet C flat, dropped on a sphere of radius
+  0.3 m at (0, 0.5, 0) over a ground plane at y = 0, for 3 s: after every step every
+  particle is at least radius + thickness - 0.001 m from the sphere's center, and at
+  the end at least 100 particles are within 0.002 m of that distance. Control:
+  without the sphere a particle comes within 0.2 m of where its center was, and at the
+  end every particle lies between 0.004 m and 0.02 m above the ground.
+* **Z4 nothing passes through a capsule.** The same drop on a capsule of radius 0.1 m
+  from (-0.3, 0.5, 0) to (0.3, 0.5, 0): after every step every particle is at least
+  radius + thickness - 0.001 m from the segment. Control: without the capsule a
+  particle comes within 0.05 m of the segment.
+* **Z5 pins hold and the cloth follows.** Sheet C hanging, the pins moving along +x at
+  0.5 m/s for 2 s: after every step every pinned particle is within 0.000001 m of its
+  target, and at the end the mean x of the bottom row has moved at least 0.8 m.
+  Control: without pins the mean x of the sheet moves less than 0.01 m.
+* **Z6 wind.** Sheet C hanging in a wind of 5 m/s along +z for 3 s: the mean z of the
+  bottom row is at least 0.2 m. Control: without wind its absolute value is at most
+  0.001 m.
+* **Z7 normals follow the shape.** At the end of Z3, over the particles within
+  0.002 m of touching the sphere: the angle between the particle's normal and the
+  direction from the sphere's center is at most 15 degrees on average. Control: the
+  sheet's rest normals fail this.
+* **Z8 the picture is the simulated shape.** At the end of Z3, 1280 x 720, sun and
+  sky, shadows on: the frame with the cloth against a frame with a plain mesh built
+  from the particles' positions and normals of that step is at least 50 dB, with no
+  pixel more than 2 / 255 apart. Control: the sheet in its rest shape against the
+  same frame is below 30 dB.
+* **Z9 motion vectors.** Sheet C hanging with every particle pinned, moved 0.02 m
+  along +x between two frames, the camera still on the sheet's normal: over the
+  sheet's pixels the motion vector is within 0.05 pixels of the shift's length on
+  screen on average. Control: with the last step's positions ignored
+  (`s3d::test_morph_still`) the mean error is above 1 pixel.
+* **Z10 cost.** A hanging sheet of 65 x 65 vertices (4,225 particles) in a wind of
+  5 m/s: one step of 8 substeps, with the morph data written, takes at most 4 ms on
+  one core (median of 120 steps).
+* **Z11 nothing else moved.** With no cloth in the scene the goldens stay above 40 dB.
+  gfxtest, wgsltest and webgputest pass, with a new `scene_cloth` in webgputest above
+  30 dB against the native frame.
+
 ### Skin scattering results (2026-11-09, RX 9060 XT, RADV; full gfxtest ok)
 
 Differences are shares of the plateau, listed for red, green and blue. Controls list
