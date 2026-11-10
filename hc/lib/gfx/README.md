@@ -1904,6 +1904,59 @@ one error value.
   40 dB and every earlier check passes as before. gfxtest, wgsltest and webgputest
   pass, with a new `scene_meshlet` in webgputest that matches the native frame.
 
+### Skin scattering bars (E7, registered before the first GPU run)
+
+Sheet P: a flat sheet with the skin preset (scatter distances 2.1, 0.8 and 0.45 mm for
+red, green and blue), white, roughness 1, lit by one white spot light 0.1 m in front of
+it. The light's disc on the sheet has a radius of 19.7 mm and an edge 0.4 mm wide. No
+sun, no sky, bloom off. 1280 x 720, vertical field of view 0.75, `s3d::sss_on` on, 64
+taps. "Plain" is the diffuse light that reaches a pixel before scattering
+(`s3d::sss_plain()`), "scattered" is the same light after the pass
+(`s3d::sss_target()`), and the plateau is the plain value at the middle of the disc.
+
+The reference is made on the CPU from the plain frame: around each probe pixel's point
+on the sheet, the normalized Burley profile `(e^(-r/d) + e^(-r/(3 d))) / (8 pi d r)` is
+integrated in world space over 240 rings `d / 8` wide with up to 160 samples per ring.
+Probe pixels come from a grid with x stride 6, 3 and 2 at 0.15, 0.3 and 0.6 m (y stride
+one more), kept where the pixel's point on the sheet is within 8.4 mm of the disc's
+edge.
+
+* **X1 the profile.** Facing the sheet from 0.15, 0.3 and 0.6 m, and from 0.3 m with
+  the camera swung 60 degrees off the sheet's normal: in every channel the scattered
+  frame is within 0.04 of the plateau of the reference at every probe pixel, and within
+  0.01 of the plateau on average. Controls, each failing both limits in every channel:
+  the plain frame in place of the scattered one; a reference made with twice the
+  scatter distances; in the swung view, `s3d::sss_depth` off.
+* **X2 energy.** Facing the sheet from 0.3 m, over the 340 by 340 pixels around the
+  disc the scattered frame sums to the plain frame's sum within 1% in every channel.
+  Control: with the light 5% dimmer for the scattered frame it does not.
+* **X3 no bleeding across a gap.** A skin card about 20 mm wide at 0.3 m in front of a
+  skin wall at 0.35 m, lit from the left at 45 degrees so the card is lit and the wall
+  next to the card's left edge is dark. On the 41 rows around the card's middle, each
+  of the 10 wall pixels left of the card's edge reads at most 0.02 of the scattered red
+  at the card's middle. Control: with `s3d::sss_depth` off those pixels read more than
+  0.1 of it on average.
+* **X4 only skin changes.** A skin ball next to a ball and a floor of ordinary
+  material, sun and sky light on, bloom, screen-space reflections and GI off: every
+  pixel that shows no skin has the same 8-bit color with `s3d::sss_on` on and off,
+  0 / 255. Control: more than 1,000 skin pixels change.
+* **X5 free when it has nothing to do.** With no skin in view the pass does not run
+  (`s3d::sss_ran` is false) and the frame is the same as with `s3d::sss_on` off,
+  0 / 255. With sheet P 5 m away, where the scatter distance is under half a pixel, on
+  and off differ by at most 1 / 255. Control: at 0.3 m some pixel differs by more than
+  8 / 255.
+* **X6 the look.** Facing the sheet from 0.3 m, in the final picture before tone
+  mapping, 3 pixels past the first dark pixel beside the disc on the middle row (dark:
+  plain below 0.001 of the plateau): red is at least 0.15 of the red at the middle of
+  the disc and at least 2 times blue. Control: with `s3d::sss_on` off red there is at
+  most 0.01 of the middle.
+* **X7 cost.** Sheet P filling the frame from 0.3 m on the RX 9060 XT: the frame time
+  with `s3d::sss_on` on minus off (mean of 100 frames, best of 3) is at most 4 ms at 64
+  taps. The time at 16 taps is reported.
+* **X8 off is free, and gates.** With `s3d::sss_on` off both goldens stay above 40 dB
+  and every earlier check passes as before. gfxtest, wgsltest and webgputest pass, with
+  a new `scene_sss` in webgputest that matches the native frame.
+
 ### Meshlet results (2026-11-09, RX 9060 XT, RADV; full gfxtest ok)
 
 | Bar | Result | Bar value |
