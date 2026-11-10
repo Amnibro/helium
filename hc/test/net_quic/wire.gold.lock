@@ -1,0 +1,123 @@
+=== -0e2317ed98ce8cb
+use net.quic_wire
+use crypto.ecc
+=== 45e673f7d2813e1b
+
+=== -3a50aff2d54a2449
+keys_ok() bool:
+	cid := crypto::hexb("8394c8f03e515708")
+	ck := net::qk_initial(cid[..], false)
+	sk := net::qk_initial(cid[..], true)
+	ok ~= eqh(ck.key[..], "1f369613dd76d5467730efcbe3b1a22d") && eqh(ck.iv[..], "fa044b2f42a3fd3b46fb255c") && eqh(ck.hp[..], "9f50449e04a0e810283a1e9933adedd2") && eqh(ck.sec[..], "c00cf151ca5be075ed0ebfb5c80323c42d6b7db67881289af4008f1f6c357aea")
+	ok = ok && eqh(sk.key[..], "cf3a5331653c364c88f0f379b6067e37") && eqh(sk.iv[..], "0ac1493ca1905853b0bba03e") && eqh(sk.hp[..], "c206b8d9b9f0f37644430b490eeaa314") && eqh(sk.sec[..], "3c199828fd139efd216c155ad844cc81fb82fa8d7446fa7d78be803acdda951b")
+	ok
+client_ok() bool:
+	cid := crypto::hexb("8394c8f03e515708")
+	ck := net::qk_initial(cid[..], false)
+	empty byte[>..] ~= []
+	payload := crypto::hexb(A2_FRAME)
+	payload.resize(1162, 0)
+	hdr := net::qh_long(0, cid[..], empty[..], empty[..], 4, 2, 1162)
+	ok ~= eqh(hdr[..], "c300000001088394c8f03e5157080000449e00000002")
+	pkt := net::qp_seal(ck, hdr[..], 4, 2, payload[..])
+	ok = ok && eqh(pkt[..], A2_PACKET)
+	h := net::qh_parse(pkt[..], 0)
+	ok = ok && h.ok && h.lg && h.ty == 0 && h.dcid[..] == cid[..] && h.pno == 18 && h.stop == 1200
+	o := net::qp_open(ck, pkt[..], 18, -1)
+	ok = ok && o.ok && o.pn == 2 && o.data[..] == payload[..]
+	ok
+server_ok() bool:
+	cid := crypto::hexb("8394c8f03e515708")
+	sk := net::qk_initial(cid[..], true)
+	empty byte[>..] ~= []
+	scid := crypto::hexb("f067a5502a4262b5")
+	payload := crypto::hexb(A3_PAYLOAD)
+	hdr := net::qh_long(0, empty[..], scid[..], empty[..], 2, 1, payload.len)
+	ok ~= eqh(hdr[..], "c1000000010008f067a5502a4262b50040750001")
+	pkt := net::qp_seal(sk, hdr[..], 2, 1, payload[..])
+	ok = ok && eqh(pkt[..], A3_PACKET)
+	h := net::qh_parse(pkt[..], 0)
+	ok = ok && h.ok && h.pno == 18 && h.stop == 135
+	o := net::qp_open(sk, pkt[..], 18, -1)
+	ok = ok && o.ok && o.pn == 1 && o.data[..] == payload[..]
+	ok
+chacha_ok() bool:
+	sec := crypto::hexb("9ac312a7f877468ebe69422748ad00a15443f18203a07d6060f688f30f21632b")
+	k := net::qk_from(0x1303, sec[..])
+	ok ~= eqh(k.key[..], "c6d98ff3441c3fe1b2182094f69caa2ed4b716b65488960a7a984979fb23e1c8") && eqh(k.iv[..], "e0459b3474bdd0e44a41c144") && eqh(k.hp[..], "25a282b9e82f06f21f488917a4fc8f1b73573685608597d0efcb076b0ab7a7a4")
+	u := net::qk_update(k)
+	ok = ok && eqh(u.sec[..], "1223504755036d556342ee9361d253421a826c9ecdf3c7148684b36b714881f9")
+	empty byte[>..] ~= []
+	hdr := net::qh_short(empty[..], 0, 3, 654360564)
+	ok = ok && eqh(hdr[..], "4200bff4")
+	pl byte[>..] ~= [1]
+	pkt := net::qp_seal(k, hdr[..], 3, 654360564, pl[..])
+	ok = ok && eqh(pkt[..], "4cfe4189655e5cd55c41f69080575d7999c25a5bfb")
+	o := net::qp_open(k, pkt[..], 1, 654360563)
+	ok = ok && o.ok && o.pn == 654360564 && o.data[..] == pl[..]
+	ok
+control_ok() bool:
+	cid := crypto::hexb("8394c8f03e515709")
+	k := net::qk_initial(cid[..], false)
+	pkt := crypto::hexb(A2_PACKET)
+	o := net::qp_open(k, pkt[..], 18, -1)
+	!o.ok
+vr(hex const byte[:], v int, n int) bool:
+	b := crypto::hexb(hex)
+	g, nx := net::qv_get(b[..], 0)
+	g == v && nx == n
+varints_ok() bool:
+	ok ~= vr("c2197c5eff14e88c", 151288809941952652, 8) && vr("9d7f3e7d", 494878333, 4) && vr("7bbd", 15293, 2) && vr("25", 37, 1) && vr("4025", 37, 2)
+	vals int[>..] ~= [0, 63, 64, 16383, 16384, 1073741823, 1073741824, 4611686018427387903]
+	lens int[>..] ~= [1, 1, 2, 2, 4, 4, 8, 8]
+	for i vals.len:
+		v := vals[i]
+		l := lens[i]
+		out byte[>..] ~= []
+		ok = ok && net::qv_len(v) == l
+		net::qv_put(out, v)
+		ok = ok && out.len == l
+		g, nx := net::qv_get(out[..], 0)
+		ok = ok && g == v && nx == l
+		if l > 1:
+			g2, n2 := net::qv_get(out[..out.len - 1], 0)
+			ok = ok && g2 == -1
+	ok
+params_ok() bool:
+	p ~= net::qtp_new()
+	p.v[1] = 30000
+	p.v[4] = 1048576
+	p.v[5] = 65536
+	p.v[6] = 65537
+	p.v[7] = 65538
+	p.v[8] = 100
+	p.v[9] = 101
+	p.iscid.append("abcdefgh")
+	p.odcid.append("12345678")
+	s := net::qtp_put(p, true)
+	c := net::qtp_put(p, false)
+	q1, g1 := net::qtp_get(s[..], true)
+	ok ~= g1 && q1.iscid[..] == p.iscid[..] && q1.odcid[..] == p.odcid[..]
+	for i 17: ok = ok && q1.v[i] == p.v[i]
+	q2, g2 := net::qtp_get(c[..], false)
+	ok = ok && g2 && q2.odcid.len == 0
+	for i 17: ok = ok && q2.v[i] == p.v[i]
+	q3, g3 := net::qtp_get(s[..], false)
+	ok = ok && !g3
+	q4, g4 := net::qtp_get(c[..], true)
+	ok = ok && !g4
+	dbl byte[>..] ~= []
+	dbl.append(s[..])
+	dbl.append(s[..])
+	q5, g5 := net::qtp_get(dbl[..], true)
+	ok = ok && !g5
+	ok
+main():
+	print("Q1 keys ", keys_ok())
+	print("Q1 client initial ", client_ok())
+	print("Q1 server initial ", server_ok())
+	print("Q1 chacha20 ", chacha_ok())
+	print("Q1 control ", control_ok())
+	print("Q2 varints ", varints_ok())
+	print("Q2 frames ", frames_ok())
+	print("Q2 parameters ", params_ok());
