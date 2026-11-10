@@ -83,6 +83,15 @@ fn plane(half f32, m gltf::Material) int {
 	gltf::indices.append([0 as u32, 1, 2, 0, 2, 3]);
 	finish(vfirst, ifirst, linalg::v3(-half, 0.0, -half), linalg::v3(half, 0.0, half), m)
 }
+fn sheet(n int, o float3, u float3, v float3, m gltf::Material) int {
+	let vfirst = gltf::verts.len / gltf::VERTEX_FLOATS;
+	let ifirst = gltf::indices.len;
+	let nr = linalg::unit3(linalg::cross3(v, u));
+	let tu = linalg::unit3(u);
+	for j in n { for i in n { let s = i as f32 / (n - 1) as f32; let t = j as f32 / (n - 1) as f32; vertex(linalg::v3(o.x + u.x * s + v.x * t, o.y + u.y * s + v.y * t, o.z + u.z * s + v.z * t), nr, s, t, float4 { tu.x, tu.y, tu.z, 1.0 }); } }
+	for j in n - 1 { for i in n - 1 { let a = (j * n + i) as u32; let b = a + n as u32; gltf::indices.append([a, b, a + 1, a + 1, b, b + 1]); } }
+	finish(vfirst, ifirst, linalg::v3(o.x + min(u.x, 0.0) + min(v.x, 0.0), o.y + min(u.y, 0.0) + min(v.y, 0.0), o.z + min(u.z, 0.0) + min(v.z, 0.0)), linalg::v3(o.x + max(u.x, 0.0) + max(v.x, 0.0), o.y + max(u.y, 0.0) + max(v.y, 0.0), o.z + max(u.z, 0.0) + max(v.z, 0.0)), m)
+}
 
 // Axis-aligned box centred on the origin.
 fn water(half f32) int {

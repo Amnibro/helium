@@ -38,6 +38,7 @@ import gfx.clusters;
 import gfx.bc;
 import gfx.ktx2;
 import gfx.meshlet;
+import gfx.cloth;
 import os;
 
 let CASCADES = 3;
@@ -198,6 +199,8 @@ var alpha_to_coverage = false;
 var mip_bias f32 = 0.0;
 var mip_bias_auto = true;
 var test_morph_still = false;
+struct ClothIt { c int, prim int, stepped bool, shown bool, dirty bool }
+var cloths ClothIt[>..] = [];
 // Temporal accumulation. 0 off (unless the output is upscaled), 1 on.
 var temporal = 0;
 var temporal_blend f32 = 0.0625;     // weight of a new frame on a still pixel
@@ -517,6 +520,34 @@ fn add(asset int) int {
 	items.len - 1
 }
 fn place(item int, m gfx::mat4) { items[item].place = m; }
+fn cloth_of(pi int) int { for k, i in cloths { if k.prim == pi { return i; } } -1 }
+fn add_cloth(asset int) int {
+	let a = gltf::assets[asset];
+	var pi = -1;
+	for k in a.nodes.count { let n = gltf::nodes[a.nodes.first + k]; if pi < 0 && n.mesh >= 0 && gltf::meshes[n.mesh].prims.count > 0 { pi = gltf::meshes[n.mesh].prims.first; } }
+	if pi < 0 || gltf::prims[pi].targets > 0 || gltf::prims[pi].skinned { return -1; }
+	let pr = gltf::prims[pi];
+	let vf = gltf::VERTEX_FLOATS;
+	gltf::prims[pi].mfirst = gltf::morphs.len / gltf::MORPH_FLOATS;
+	gltf::prims[pi].targets = 2;
+	gltf::morphs.resize(gltf::morphs.len + pr.vcount * 2 * gltf::MORPH_FLOATS, 0.0);
+	if pi < ml_count.len { ml_count[pi] = 0; }
+	cloths.push(ClothIt { cloth::make(gltf::verts[pr.vfirst * vf..(pr.vfirst + pr.vcount) * vf], vf, gltf::AT_POS, pr.vcount, gltf::indices[pr.ifirst..pr.ifirst + pr.icount]), pi, false, false, false });
+	cloths.len - 1
+}
+fn step_cloth(k int, dt real, w float3) {
+	let ci = cloths[k];
+	let pr = gltf::prims[ci.prim];
+	let vf = gltf::VERTEX_FLOATS;
+	cloth::step(ci.c, dt, w.x as real, w.y as real, w.z as real);
+	cloth::cloths[ci.c].keep = true;
+	cloth::write(ci.c, gltf::verts[pr.vfirst * vf..(pr.vfirst + pr.vcount) * vf], vf, gltf::AT_POS, gltf::AT_NRM, gltf::morphs[pr.mfirst * gltf::MORPH_FLOATS..(pr.mfirst + pr.vcount * 2) * gltf::MORPH_FLOATS]);
+	let lx, ly, lz, hx, hy, hz = cloth::bounds(ci.c);
+	gltf::prims[ci.prim].lo = linalg::v3(linalg::f(lx), linalg::f(ly), linalg::f(lz));
+	gltf::prims[ci.prim].hi = linalg::v3(linalg::f(hx), linalg::f(hy), linalg::f(hz));
+	cloths[k].stepped = true;
+	cloths[k].dirty = true;
+}
 fn corner(lo float3, hi float3, k int) float3 { linalg::v3(if k & 1 == 0 { lo.x } else { hi.x }, if k & 2 == 0 { lo.y } else { hi.y }, if k & 4 == 0 { lo.z } else { hi.z }) }
 fn asset_box(asset int) float3, float3 {
 	motion::rest(asset);
@@ -903,6 +934,8 @@ fn init(w int, h int, ow int, oh int) bool {
 fn forget() {
 	node_ov.clear();
 	weight_ov.clear();
+	cloths.clear();
+	cloth::reset();
 	for t in tex_srgb { if t.id != 0 { gfx::release(t); } }
 	for t in tex_linear { if t.id != 0 { gfx::release(t); } }
 	tex_srgb.clear();
@@ -954,6 +987,7 @@ fn upload_geometry() {
 		else { let bytes = bytes_of(gltf::morphs); mbuf = gfx::buffer(gfx::BUFFER_STORAGE, bytes.len, bytes[..]); }
 		uploaded_morphs = gltf::morphs.len;
 	}
+	for k, i in cloths { if k.dirty { let pr = gltf::prims[k.prim]; gfx::update_buffer(mbuf, pr.mfirst * 32, bytes_of(gltf::morphs)[pr.mfirst * 32..(pr.mfirst + pr.vcount * 2) * 32]); cloths[i].dirty = false; } }
 	while tex_srgb.len < gltf::images.len { tex_srgb.push(none()); tex_linear.push(none()); }
 }
 
@@ -1590,6 +1624,7 @@ fn gather() {
 	cur_bases.clear();
 	cur_wb.clear();
 	old_w.clear(); old_w.append(cur_w[..]);
+	for k, i in cloths { cloths[i].shown = k.stepped; cloths[i].stepped = false; cloth::cloths[k.c].keep = false; }
 	cur_w.clear();
 	for it, ii in items {
 		if !it.visible || it.asset < 0 { continue; }
@@ -1811,6 +1846,8 @@ fn draw_uniforms(b Batch, vp gfx::mat4) DrawU {
 		w[q] = float4 { mw(cur_w[..], b.wb, q * 4, pr.targets), mw(cur_w[..], b.wb, q * 4 + 1, pr.targets), mw(cur_w[..], b.wb, q * 4 + 2, pr.targets), mw(cur_w[..], b.wb, q * 4 + 3, pr.targets) };
 		pw[q] = if b.pwb >= 0 { float4 { mw(old_w[..], b.pwb, q * 4, pr.targets), mw(old_w[..], b.pwb, q * 4 + 1, pr.targets), mw(old_w[..], b.pwb, q * 4 + 2, pr.targets), mw(old_w[..], b.pwb, q * 4 + 3, pr.targets) } } else { w[q] };
 	}
+	let ck = if pr.targets == 2 { cloth_of(b.prim) } else { -1 };
+	if ck >= 0 { w[0] = f4(1.0, 0.0, 0.0, 0.0); pw[0] = if cloths[ck].shown && !test_morph_still { f4(0.0, 1.0, 0.0, 0.0) } else { w[0] }; }
 	let sw = b.inst < 0 && b.item >= 0 && items[b.item].sway > 0.0;
 	let pl = if sw { items[b.item].place } else { gfx::mat4_identity };
 	DrawU {

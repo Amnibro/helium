@@ -76,6 +76,7 @@ import gfx.rt;
 import gfx.fx;
 import gfx.bc;
 import gfx.ktx2;
+import gfx.cloth;
 
 fn milli(v f32) int { round((v * 1000.0) as real) as int }
 
@@ -6249,6 +6250,111 @@ fn sss_checks() bool {
 	good
 }
 fn shoot(n int, t gfx::Texture) { for k in n { s3d::render(t); gfx::flush(); } }
+fn cl_world(drape bool) {
+	reset_scene();
+	s3d::sky = DEF_SKY;
+	s3d::sun = DEF_SUN;
+	s3d::sun.shadows = true;
+	s3d::look = DEF_LOOK;
+	s3d::look.bloom = 0.0;
+	s3d::ssr_on = false;
+	s3d::ssgi_on = false;
+	s3d::gi_on = false;
+	s3d::temporal = 0;
+	if drape {
+		s3d::place(s3d::add(shapes::plane(4.0, shapes::material(linalg::v3(0.5, 0.5, 0.5), 0.0, 0.7))), gfx::mat4_identity);
+		s3d::place(s3d::add(shapes::sphere(0.3, 48, 24, shapes::material(linalg::v3(0.7, 0.2, 0.2), 0.0, 0.5))), gfx::translate(float3 { 0.0, 0.5, 0.0 }));
+	}
+	s3d::view = s3d::Camera { eye: if drape { float3 { 0.0, 1.3, 1.9 } } else { float3 { 0.0, 1.5, 2.5 } }, target: if drape { float3 { 0.0, 0.45, 0.0 } } else { float3 { 0.0, 1.5, 0.0 } }, up: float3 { 0.0, 1.0, 0.0 }, fov_y: 0.75, near: 0.05, far: 50.0 };
+}
+fn cl_sheet(n int, flat bool) int {
+	var m = shapes::material(linalg::v3(0.2, 0.35, 0.8), 0.0, 0.8);
+	m.double_sided = true;
+	shapes::sheet(n, if flat { float3 { -0.5, 0.85, -0.5 } } else { float3 { -0.5, 2.0, 0.0 } }, float3 { 1.0, 0.0, 0.0 }, if flat { float3 { 0.0, 0.0, 1.0 } } else { float3 { 0.0, -1.0, 0.0 } }, m)
+}
+fn cl_z8() bool {
+	cl_world(true);
+	let a = cl_sheet(33, true);
+	let k = s3d::add_cloth(a);
+	s3d::place(s3d::add(a), gfx::mat4_identity);
+	cloth::ball(0.0, 0.5, 0.0, 0.3);
+	cloth::ground(0.0);
+	for s in 180 { s3d::step_cloth(k, 1.0 / 60.0, float3 { 0.0, 0.0, 0.0 }); }
+	let got = rr_frame(2);
+	let c = s3d::cloths[k].c;
+	var pn f32[>..] = [];
+	for v in 1089 { let i = cloth::particle(c, v) * 3; for j in 3 { pn.push(cloth::pos[i + j] as f32); } for j in 3 { pn.push(cloth::nrm[i + j] as f32); } }
+	let lo = gltf::prims[s3d::cloths[k].prim].lo;
+	let hi = gltf::prims[s3d::cloths[k].prim].hi;
+	cl_world(true);
+	let b = cl_sheet(33, true);
+	let pb = gltf::meshes[gltf::assets[b].meshes.first].prims.first;
+	let vb = gltf::prims[pb].vfirst * gltf::VERTEX_FLOATS;
+	for v in 1089 { for j in 3 { gltf::verts[vb + v * gltf::VERTEX_FLOATS + gltf::AT_POS + j] = pn[v * 6 + j]; gltf::verts[vb + v * gltf::VERTEX_FLOATS + gltf::AT_NRM + j] = pn[v * 6 + 3 + j]; } }
+	gltf::prims[pb].lo = lo;
+	gltf::prims[pb].hi = hi;
+	s3d::place(s3d::add(b), gfx::mat4_identity);
+	let want = rr_frame(2);
+	cl_world(true);
+	s3d::place(s3d::add(cl_sheet(33, true)), gfx::mat4_identity);
+	let rest = rr_frame(2);
+	let db = psnr(got[..], want[..]);
+	let ap = sk_apart(got[..], want[..]);
+	let cdb = psnr(rest[..], want[..]);
+	let ok = db >= 50.0 && ap <= 2 && cdb < 30.0;
+	print("gpu: cloth Z8 cloth frame against a plain mesh of the same step: ", r2(db), " dB (bar >= 50), largest difference ", ap, " / 255 (bar <= 2); control rest shape ", r2(cdb), " dB (bar < 30)", if ok { " PASS" } else { " FAIL" }, " image ", codec_png::write(path(OUT_DIR[..], "cloth_drape.png")[..], 1280, 720, 4, got[..]));
+	ok
+}
+fn cl_z9(still bool) real, int {
+	cl_world(false);
+	let a = cl_sheet(33, false);
+	let k = s3d::add_cloth(a);
+	s3d::place(s3d::add(a), gfx::mat4_identity);
+	let c = s3d::cloths[k].c;
+	for v in 1089 { let i = cloth::particle(c, v) * 3; cloth::pin(c, v, cloth::rest[i], cloth::rest[i + 1], cloth::rest[i + 2]); }
+	s3d::motion_vectors = true;
+	shoot(2, IN_OUT);
+	let before = to_uv(s3d::view_proj_nj, float3 { 0.0, 1.5, 0.0 });
+	for v in 1089 { let i = cloth::particle(c, v) * 3; cloth::pin(c, v, cloth::rest[i] + 0.02, cloth::rest[i + 1], cloth::rest[i + 2]); }
+	s3d::step_cloth(k, 1.0 / 60.0, float3 { 0.0, 0.0, 0.0 });
+	s3d::test_morph_still = still;
+	shoot(1, IN_OUT);
+	let now = to_uv(s3d::view_proj_nj, float3 { 0.02, 1.5, 0.0 });
+	let mv = gfx::read_pixels(s3d::motion_target());
+	s3d::test_morph_still = false;
+	s3d::motion_vectors = false;
+	var e = 0.0;
+	var n = 0;
+	for i in 921600 {
+		let m = motion_at(mv[..], 1280, i % 1280, i / 1280);
+		let dx = ((m.x - (now.x - before.x)) * 1280.0) as real;
+		let dy = ((m.y - (now.y - before.y)) * 720.0) as real;
+		n += if m.z < 1000.0 { 1 } else { 0 };
+		e += if m.z < 1000.0 { sqrt(dx * dx + dy * dy) } else { 0.0 };
+	}
+	return if n > 0 { e / n as real } else { 99.0 }, n;
+}
+fn cloth_checks() bool {
+	half_table();
+	s3d::init(1280, 720);
+	IN_OUT = gfx::render_target(1280, 720, gfx::RGBA8);
+	let z8 = cl_z8();
+	let e, n = cl_z9(false);
+	let ce, cn = cl_z9(true);
+	let z9 = n >= 100000 && e <= 0.05 && ce > 1.0;
+	print("gpu: cloth Z9 motion vectors over ", n, " sheet pixels: ", r3(e), " px from the shift on average (bar <= 0.05); control last step ignored ", r3(ce), " px over ", cn, " (bar > 1)", if z9 { " PASS" } else { " FAIL" });
+	cl_world(false);
+	s3d::place(s3d::add(shapes::plane(4.0, shapes::material(linalg::v3(0.5, 0.5, 0.5), 0.0, 0.7))), gfx::mat4_identity);
+	let fa = cl_sheet(65, false);
+	let fk = s3d::add_cloth(fa);
+	s3d::place(s3d::add(fa), gfx::mat4_identity);
+	for i in 65 { cloth::pin(s3d::cloths[fk].c, i, i as real / 64.0 - 0.5, 2.0, 0.0); }
+	for s in 180 { s3d::step_cloth(fk, 1.0 / 60.0, float3 { 1.5, 0.0, 3.0 }); }
+	s3d::view.eye = float3 { 1.8, 1.6, 2.4 };
+	let fl = rr_frame(2);
+	print("gpu: cloth wind still ", codec_png::write(path(OUT_DIR[..], "cloth_wind.png")[..], 1280, 720, 4, fl[..]));
+	z8 && z9
+}
 fn sub_since(at int) int, real, int {
 	gfx::flush();
 	var ns real[>..] = [];
@@ -6303,7 +6409,7 @@ fn gpu_checks(dir const byte[:], golden const byte[:]) bool {
 	var only byte[>..] = [];
 	let _ = env("GFX_ONLY", only);
 	if only.len > 0 {
-		let ok = if only[..] == "gtao" { gtao_checks() } else if only[..] == "gi" { gi_checks() } else if only[..] == "mblur" { mb_checks() } else if only[..] == "dof" { dof_checks() } else if only[..] == "fx" { fx_checks() } else if only[..] == "tsr" { tsr_checks(dir) } else if only[..] == "probe" { probe_checks(dir) } else if only[..] == "ssgi" { ssgi_checks() } else if only[..] == "decal" { decal_checks() } else if only[..] == "weather" { weather_checks() } else if only[..] == "rect" { rect_checks() } else if only[..] == "small" { small_checks() } else if only[..] == "inst" { instance_checks() } else if only[..] == "caust" { caustic_checks() } else if only[..] == "tex" { texture_checks() } else if only[..] == "stream" { stream_checks() } else if only[..] == "rtr" { rtr_checks() } else if only[..] == "meshlet" { meshlet_checks() } else if only[..] == "sss" { sss_checks() } else { shadow_checks() };
+		let ok = if only[..] == "gtao" { gtao_checks() } else if only[..] == "gi" { gi_checks() } else if only[..] == "mblur" { mb_checks() } else if only[..] == "dof" { dof_checks() } else if only[..] == "fx" { fx_checks() } else if only[..] == "tsr" { tsr_checks(dir) } else if only[..] == "probe" { probe_checks(dir) } else if only[..] == "ssgi" { ssgi_checks() } else if only[..] == "decal" { decal_checks() } else if only[..] == "weather" { weather_checks() } else if only[..] == "rect" { rect_checks() } else if only[..] == "small" { small_checks() } else if only[..] == "inst" { instance_checks() } else if only[..] == "caust" { caustic_checks() } else if only[..] == "tex" { texture_checks() } else if only[..] == "stream" { stream_checks() } else if only[..] == "rtr" { rtr_checks() } else if only[..] == "meshlet" { meshlet_checks() } else if only[..] == "sss" { sss_checks() } else if only[..] == "cloth" { cloth_checks() } else { shadow_checks() };
 		let e = gfx::error();
 		if e.len > 0 { print("gpu: gfx error ", e[..]); return false; }
 		return mark(only[..], ok) && submit_checks(false);
@@ -6478,6 +6584,7 @@ fn gpu_checks(dir const byte[:], golden const byte[:]) bool {
 	if !mark("rtr", rtr_checks()) { good = false; }
 	if !mark("meshlet", meshlet_checks()) { good = false; }
 	if !mark("sss", sss_checks()) { good = false; }
+	if !mark("cloth", cloth_checks()) { good = false; }
 	if !submit_checks(true) { good = false; }
 	let err = gfx::error();
 	if err.len > 0 { print("gpu: gfx error ", err[..]); good = false; }
