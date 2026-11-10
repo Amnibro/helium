@@ -1049,9 +1049,17 @@ void main() {
 
 	if (cluster2.z > 0.0 || cluster2.w > 0.0 || rain.y > 0.0) {
 		float up = smoothstep(0.15, 0.75, n0.y);
-		float pud = rain.y > 0.0 ? smoothstep(-0.015, 0.015, pd_noise(in_world.xz / rain.z) - pd_cut(rain.y)) * smoothstep(0.985, 0.998, n0.y) : 0.0;
+		float pgate = smoothstep(0.985, 0.998, n0.y);
+		float plow = 0.0;
+		if (rain.y > 0.0 && misc.z > 0.5 && x_to[12].z >= 0.0) {
+			vec2 pu = pick_uv(x_to[12].w);
+			vec2 ph = vec2(dot(x_tm[12].xy, pu) + x_to[12].x, dot(x_tm[12].zw, pu) + x_to[12].y);
+			plow = 0.35 * (0.5 - textureLod(tex_ext_l, vec3(ph, x_to[12].z), max(log2(max(length(fwidth(ph)) * float(textureSize(tex_ext_l, 0).x), 1.0)), 0.0)).r);
+			pgate = smoothstep(0.2, 0.5, n0.y);
+		}
+		float pud = rain.y > 0.0 ? smoothstep(-0.015, 0.015, pd_noise(in_world.xz / rain.z) - pd_cut(rain.y) + plow) * pgate : 0.0;
 		float wet = max(cluster2.z * mix(0.45, 1.0, up), pud);
-		tint.rgb *= mix(1.0, mix(0.55, 1.0, metal), wet);
+		tint.rgb *= mix(1.0, mix(0.55, 1.0, max(metal, xo2.w)), wet);
 		rough = mix(rough, min(rough, 0.07 + 0.25 * rough * (1.0 - up)), wet);
 		if (pud > 0.0) {
 			float near = rain.x > 0.0 ? 1.0 - smoothstep(0.01, 0.04, pd_fw) : 0.0;

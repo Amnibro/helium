@@ -463,6 +463,8 @@ var meshlet_cone = true;
 var meshlet_cpu = false;
 var meshlet_min = 4000;
 var meshlet_budget = 8000000;
+var meshlet_grow = true;
+var meshlet_budget_max = 250000000;
 var ml_first int[>..] = [];
 var ml_count int[>..] = [];
 var ml_tab f32[>..] = [];
@@ -478,6 +480,8 @@ var ml_draw_buf gfx::Buffer;
 var ml_args_buf gfx::Buffer;
 var ml_out_buf gfx::Buffer;
 var ml_dirty = false;
+var ml_tick = 0;
+var ml_seen = 0;
 var ml_have = false;
 var ml_draw_cap = 0;
 var ml_out_cap = 0;
@@ -1764,7 +1768,7 @@ fn gather() {
 				let model = if joint_base >= 0 { gfx::mat4_identity } else { motion::world[ni] };
 				let c = linalg::point(model, linalg::mix3(pr.lo, pr.hi, 0.5));
 				let d = linalg::dot3(linalg::v3(c.x - view.eye.x, c.y - view.eye.y, c.z - view.eye.z), forward());
-				batch.push(Batch { pi, ii, ni, joint_base, model, d, material_of(pi).alpha_mode, prev_model, prev_base, joint_base >= 0 || in_view(gfx::mul(view_proj, model), pr.lo, pr.hi), material_of(pi).trans > 0.0, wb, pwb, -1, 0, if joint_base < 0 { meshlet_slot(pi, model, material_of(pi).double_sided) } else { -1 } });
+				batch.push(Batch { pi, ii, ni, joint_base, model, d, material_of(pi).alpha_mode, prev_model, prev_base, joint_base >= 0 || in_view(gfx::mul(view_proj, model), pr.lo, pr.hi), material_of(pi).trans > 0.0, wb, pwb, -1, 0, if joint_base < 0 { meshlet_slot(pi, model, material_of(pi).double_sided, material_of(pi).no_shadow) } else { -1 } });
 			}
 		}
 	}
@@ -1813,14 +1817,14 @@ fn meshlet_prepare() {
 		ml_dirty = true;
 	}
 }
-fn meshlet_slot(pi int, m gfx::mat4, two bool) int {
+fn meshlet_slot(pi int, m gfx::mat4, two bool, quiet bool) int {
 	if !meshlets || pi >= ml_count.len || ml_count[pi] <= 0 || ml_bases.len >= 30000 { return -1; }
 	let sx = linalg::f(sqrt((m.c0.x * m.c0.x + m.c0.y * m.c0.y + m.c0.z * m.c0.z) as real));
 	let sy = linalg::f(sqrt((m.c1.x * m.c1.x + m.c1.y * m.c1.y + m.c1.z * m.c1.z) as real));
 	let sz = linalg::f(sqrt((m.c2.x * m.c2.x + m.c2.y * m.c2.y + m.c2.z * m.c2.z) as real));
 	let s = max(sx, max(sy, sz));
 	let det = m.c0.x * (m.c1.y * m.c2.z - m.c1.z * m.c2.y) - m.c1.x * (m.c0.y * m.c2.z - m.c0.z * m.c2.y) + m.c2.x * (m.c0.y * m.c1.z - m.c0.z * m.c1.y);
-	ml_draws.append([m.c0.x, m.c0.y, m.c0.z, m.c0.w, m.c1.x, m.c1.y, m.c1.z, m.c1.w, m.c2.x, m.c2.y, m.c2.z, m.c2.w, m.c3.x, m.c3.y, m.c3.z, m.c3.w, ml_first[pi] as f32, ml_count[pi] as f32, s, if !two && det > 0.0 && min(sx, min(sy, sz)) > 0.99 * s { 1.0 } else { 0.0 }]);
+	ml_draws.append([m.c0.x, m.c0.y, m.c0.z, m.c0.w, m.c1.x, m.c1.y, m.c1.z, m.c1.w, m.c2.x, m.c2.y, m.c2.z, m.c2.w, m.c3.x, m.c3.y, m.c3.z, m.c3.w, ml_first[pi] as f32, ml_count[pi] as f32, s, (if !two && det > 0.0 && min(sx, min(sy, sz)) > 0.99 * s { 1.0 } else { 0.0 }) + (if quiet { 2.0 } else { 0.0 })]);
 	ml_bases.push(gltf::prims[pi].vfirst);
 	ml_bases.len - 1
 }
@@ -1836,11 +1840,12 @@ fn ml_keep(d int, c int, cam bool, u MlU) bool {
 	let t = c * meshlet::ROW;
 	if ml_tab[t + 16] * s * u.lod.x / max(ml_far(ml_at(d, c, 2), u.eye) - ml_tab[t + 11] * s, u.lod.z) > u.lod.y { return false; }
 	if ml_tab[t + 17] < 1e29 && ml_tab[t + 17] * s * u.lod.x / max(ml_far(ml_at(d, c, 3), u.eye) - ml_tab[t + 15] * s, u.lod.z) <= u.lod.y { return false; }
-	if !cam { return true; }
+	let fl = ml_draws[d * 20 + 19];
+	if !cam { return fl < 1.5; }
 	let bw = ml_at(d, c, 0);
 	let br = ml_tab[t + 3] * s;
 	for i in 7 - 1 { if u.planes[i].x * bw.x + u.planes[i].y * bw.y + u.planes[i].z * bw.z + u.planes[i].w < -br { return false; } }
-	if u.lod.w > 0.5 && ml_draws[d * 20 + 19] > 0.5 && ml_tab[t + 7] < 1.5 {
+	if u.lod.w > 0.5 && (fl > 2.5 || (fl > 0.5 && fl < 1.5)) && ml_tab[t + 7] < 1.5 {
 		let o = d * 20;
 		let ax = ml_tab[t + 4]; let ay = ml_tab[t + 5]; let az = ml_tab[t + 7 - 1];
 		let a = linalg::unit3(float3 { ml_draws[o] * ax + ml_draws[o + 4] * ay + ml_draws[o + 8] * az, ml_draws[o + 1] * ax + ml_draws[o + 5] * ay + ml_draws[o + 9] * az, ml_draws[o + 2] * ax + ml_draws[o + 2 + 4] * ay + ml_draws[o + 10] * az });
@@ -1855,14 +1860,22 @@ fn ml_plane(a float4, b float4, k f32) float4 {
 }
 fn meshlet_select() {
 	let n = ml_bases.len;
-	if n == 0 { return; }
+	if n == 0 { ml_seen = 0; return; }
+	ml_tick += 1;
+	if meshlet_grow && ml_seen > 0 && ml_seen <= ml_draw_cap && ((ml_tick & (ml_tick - 1)) == 0 || ml_tick % 70 == 0) {
+		var a u32[>..] = [];
+		var all = 0; var lost = false;
+		if gfx::read_buffer(ml_args_buf, a, ml_seen * 2 * 8) { for k in ml_seen * 2 { all += a[k * 8 + 7 - 1] as int; lost = lost || a[k * 8 + 7 - 1] > a[k * 8]; } }
+		if lost { meshlet_budget = max(meshlet_budget, min(all / 4 * 5, meshlet_budget_max)); }
+	}
+	ml_seen = n;
 	if ml_dirty {
 		if ml_have { gfx::release(ml_tab_buf); gfx::release(ml_rng_buf); gfx::release(ml_idx_buf); }
 		let tb = bytes_of(ml_tab); let rb = bytes_of(ml_rng); let xb = bytes_of(ml_idx);
 		ml_tab_buf = gfx::buffer(gfx::BUFFER_COMPUTE_READ, tb.len, tb[..]);
 		ml_rng_buf = gfx::buffer(gfx::BUFFER_COMPUTE_READ, rb.len, rb[..]);
 		ml_idx_buf = gfx::buffer(gfx::BUFFER_COMPUTE_READ, xb.len, xb[..]);
-		ml_dirty = false; ml_have = true;
+		ml_dirty = false; ml_have = true; ml_tick = 0;
 	}
 	if n > ml_draw_cap {
 		if ml_draw_cap > 0 { gfx::release(ml_draw_buf); gfx::release(ml_args_buf); }
@@ -1873,7 +1886,7 @@ fn meshlet_select() {
 	let want = max(meshlet_budget, 1000) / 1000 * 1000;
 	if want != ml_out_cap {
 		if ml_out_cap > 0 { gfx::release(ml_out_buf); }
-		ml_out_cap = want;
+		ml_out_cap = want; ml_tick = 0;
 		ml_out_buf = gfx::buffer(gfx::BUFFER_INDEX | gfx::BUFFER_COMPUTE_WRITE, ml_out_cap * 4, []);
 	}
 	gfx::update_buffer(ml_draw_buf, 0, bytes_of(ml_draws)[..n * 80]);
@@ -2996,7 +3009,7 @@ fn surface_of(m gltf::Material) SurfaceU {
 		tri: f4(m.tri, if m.top_base.texture < 0 { 0.0 } else { m.top }, m.top_scale, m.top_sharp),
 		top_tint: m.top_tint,
 		xm_base: m.base_tex.m, xm_mr: m.mr_tex.m, xm_nrm: m.normal_tex.m, xm_occ: m.occlusion_tex.m, xm_emi: m.emissive_tex.m,
-		xo0: f4(m.base_tex.o.x, m.base_tex.o.y, m.mr_tex.o.x, m.mr_tex.o.y), xo1: f4(m.normal_tex.o.x, m.normal_tex.o.y, m.occlusion_tex.o.x, m.occlusion_tex.o.y), xo2: f4(m.emissive_tex.o.x, m.emissive_tex.o.y, mip_scale(), 0.0),
+		xo0: f4(m.base_tex.o.x, m.base_tex.o.y, m.mr_tex.o.x, m.mr_tex.o.y), xo1: f4(m.normal_tex.o.x, m.normal_tex.o.y, m.occlusion_tex.o.x, m.occlusion_tex.o.y), xo2: f4(m.emissive_tex.o.x, m.emissive_tex.o.y, mip_scale(), m.sealed),
 		sheen: x4(m.sheen, m.sheen_rough),
 		misc: f4(m.catcher, m.shading as f32, if m.ext { 1.0 } else { 0.0 }, 1.0),
 		shade_a: m.shade_a, shade_b: m.shade_b, shade_c: m.shade_c, xm_det: m.detail.m, xo_det: f4(m.detail.o.x, m.detail.o.y, if sss_mode > 0 && sss_skin(m) { sss_mode as f32 } else { 0.0 }, if sss_mode == 1 { (sss_find(sss_dist(m)) % 8) as f32 } else if sss_mode == 2 { sss_dist(m).w * sss_ps } else { 0.0 }),

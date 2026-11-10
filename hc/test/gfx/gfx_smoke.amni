@@ -3741,6 +3741,8 @@ fn pd_lens(t gfx::Texture, amount f32, time f32) byte[>..] { s3d::look.lens_rain
 fn pd_lum(px const byte[:], i int) real { (px[i * 4] as real + px[i * 4 + 1] as real + px[i * 4 + 2] as real) / 3.0 }
 fn pd_mean(px const byte[:]) real { var s = 0.0; let m = px.len / 4; for i in m { s += pd_lum(px, i); } s / m as real }
 fn pd_share(px const byte[:], dry real, full real) real { let mid = (dry + full) / 2.0; var n = 0; let m = px.len / 4; for i in m { if (full < dry) == (pd_lum(px, i) < mid) { n += 1; } } n as real / m as real }
+fn pd_half(px const byte[:], dry real, full real, w int, side int) real { let mid = (dry + full) / 2.0; var n = 0; var m = 0; for i in px.len / 4 { let x = i % w; let y = i / w; if (if side == 0 { x < w / 2 } else if side == 1 { x >= w / 2 } else if side == 2 { y < w / 2 } else { y >= w / 2 }) { m += 1; if (full < dry) == (pd_lum(px, i) < mid) { n += 1; } } } n as real / max(m, 1) as real }
+fn pd_gap(px const byte[:], dry real, full real, w int) real { max(abs(pd_half(px, dry, full, w, 0) - pd_half(px, dry, full, w, 1)), abs(pd_half(px, dry, full, w, 2) - pd_half(px, dry, full, w, 3))) }
 fn pd_diff(a const byte[:], b const byte[:]) real { var s = 0.0; for i in a.len { let d = a[i] as real - b[i] as real; s += if d < 0.0 { -d } else { d }; } s / a.len as real }
 fn pd_pair(t gfx::Texture, lens bool) real, real {
 	shoot(3, t); var on = 1000.0; var off = 1000.0;
@@ -3810,8 +3812,34 @@ fn pd_ground() bool {
 	s3d::puddles = 0.0; s3d::ripples = 0.0;
 	let u5 = with - bare <= 0.3;
 	print("gpu: puddle U5 cost at 1280 x 720: ", r3(with), " ms all puddle with ripples, ", r3(bare), " ms without: ", r3(with - bare), " ms more (bar <= 0.3; fastest of 255 alternating frames each)", hr_pass(u5));
+	pd_scene(0.0);
+	var hp byte[>..] = [];
+	for i in 64 * 64 { let v = if i % 64 < 32 { 0 as byte } else { 255 as byte }; hp.append([v, v, v, 255 as byte]); }
+	gltf::materials[gltf::materials.len - 1].ext = true;
+	gltf::materials[gltf::materials.len - 1].height_tex = gltf::TexRef { gltf::add_texture_rgba(hp[..], 64, 64, 10497), 0 };
+	s3d::init(512, 512);
+	let t6 = gfx::render_target(512, 512, gfx::RGBA8);
+	pd_cam(float3 { 0.0, 12.0, 0.0 }, float3 { 0.0, 0.0, 0.0 }, float3 { 0.0, 0.0, -1.0 });
+	s3d::puddle_size = 0.2;
+	let hm = pd_shot(t6, 0.5, 0.0, 0.0);
+	let g6 = pd_gap(hm[..], d, f, 512); let c6 = pd_gap(q2[..], d, f, 512);
+	let u6 = g6 >= 0.4 && c6 <= 0.05;
+	print("gpu: puddle U6 height map, one half low and one half high, puddles 0.5: puddle share differs by ", r3(g6), " between the halves (bar >= 0.4), ", r3(c6), " without a height map (bar <= 0.05)", hr_pass(u6));
+	let _ = codec_png::write(path(OUT_DIR[..], "puddle_height.png")[..], 512, 512, 4, hm[..]);
+	pd_scene(0.0);
+	pd_cam(float3 { 0.0, 12.0, 0.0 }, float3 { 0.0, 0.0, 0.0 }, float3 { 0.0, 0.0, -1.0 });
+	let sd = pd_shot(t6, 0.0, 0.0, 0.0);
+	s3d::wet = 1.0;
+	let sp = pd_shot(t6, 0.0, 0.0, 0.0);
+	gltf::materials[gltf::materials.len - 1].sealed = 1.0;
+	let ss = pd_shot(t6, 0.0, 0.0, 0.0);
+	s3d::wet = 0.0;
+	let dw = pd_mean(sd[..]); let pw = pd_mean(sp[..]); let sw = pd_mean(ss[..]);
+	let u7 = pw <= 0.85 * dw && sw >= 0.93 * dw && sw <= 1.07 * dw;
+	print("gpu: puddle U7 wet 1 floor brightness: dry ", r3(dw), ", porous ", r3(pw), " (bar <= 0.85 of dry), sealed 1 ", r3(sw), " (bar within 0.07 of dry)", hr_pass(u7));
+	gfx::release(t6);
 	gfx::release(big);
-	u1 && u2 && u3 && u4 && u5
+	u1 && u2 && u3 && u4 && u5 && u6 && u7
 }
 fn pd_drops() bool {
 	pd_sky(0.0); s3d::init(640, 360);
@@ -6243,6 +6271,27 @@ fn meshlet_checks() bool {
 	let n9 = t_on * 2.0 <= t_off && lost9 == 0 && cam9 > 0;
 	print("gpu: meshlet N9 64 balls, 16.7 M triangles: ", r3(t_off), " ms off, ", r3(t_on), " ms on = ", r3(t_on / t_off), " (bar <= 0.5); camera list ", cam9, " triangles, shadow list ", all9, ", draws dropped by the budget ", lost9, "; frames mean ", r3(mean9), " / 255 apart, ", r3(frac9 * 1000.0), " per 1000 pixels more than 8 / 255", if n9 { " PASS" } else { " FAIL" });
 	good = good && n9;
+	let _ = ml_scene(true, true, float3 { 0.0, 1.5, 0.0 }, sun);
+	ml_eye(float3 { 0.0, 2.0, 5.0 }, float3 { 0.0, 1.0, 0.0 });
+	let _ = ml_frame(true, 1.0);
+	let cams, alls, losts = s3d::meshlet_stats();
+	gltf::materials[gltf::materials.len - 1].no_shadow = true;
+	let _ = ml_frame(true, 1.0);
+	let camq, allq, lostq = s3d::meshlet_stats();
+	gltf::materials[gltf::materials.len - 1].no_shadow = false;
+	let n10 = alls > 0 && allq == 0 && camq == cams && cams > 0 && losts == 0 && lostq == 0;
+	print("gpu: meshlet N10 no_shadow material: shadow list ", alls, " triangles before, ", allq, " after (bar 0), camera list ", cams, " and ", camq, " (bar equal)", if n10 { " PASS" } else { " FAIL" });
+	good = good && n10;
+	s3d::meshlet_grow = false; s3d::meshlet_budget = 3000;
+	let _ = ml_frame(true, 1.0);
+	let camt, allt, lostt = s3d::meshlet_stats();
+	s3d::meshlet_grow = true; s3d::meshlet_budget = 4000;
+	let _ = ml_frame(true, 1.0);
+	let camg, allg, lostg = s3d::meshlet_stats();
+	let n11 = lostt > 0 && lostg == 0 && camg == cams && allg == alls && s3d::meshlet_budget > 4000;
+	print("gpu: meshlet N11 budget 3000 with meshlet_grow off: ", lostt, " lists dropped (bar > 0); budget 4000 with it on, third frame: ", lostg, " dropped (bar 0), budget now ", s3d::meshlet_budget, ", lists ", camg, " and ", allg, " triangles (bar ", cams, " and ", alls, ")", if n11 { " PASS" } else { " FAIL" });
+	good = good && n11;
+	s3d::meshlet_budget = 8000000;
 	s3d::meshlets = false; s3d::meshlet_px = 1.0; s3d::meshlet_cone = true; s3d::meshlet_cpu = false;
 	gfx::release(IN_OUT);
 	reset_scene();

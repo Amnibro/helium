@@ -510,9 +510,10 @@ of a hand-held camera. All of it is off by default.
 
 | Setting | What it does | Default |
 | --- | --- | --- |
-| `s3d::puddles` | Share of level ground under standing water, 0 to 1. A puddle is mirror smooth and darkens the ground under it the way `wet` 1 does. Puddles form only where the ground is within about 10 degrees of level. | 0 |
+| `s3d::puddles` | Share of level ground under standing water, 0 to 1. A puddle is mirror smooth and darkens the ground under it the way `wet` 1 does. Puddles form only where the ground is within about 10 degrees of level. On a material with a height map (`height_tex`, `ext` on) the low parts of the map fill first and the high parts stand dry out of the water, and the surface may slope up to about 60 degrees. | 0 |
 | `s3d::puddle_size` | Typical puddle width in meters. | 1.7 |
 | `s3d::ripples` | Rain rings on the puddles, from 0 (still water) to 1 (heavy rain). Rings start at random points, spread, fade and move with `s3d::world_time`. | 0 |
+| `sealed` (material field) | How little the material soaks up water, 0 to 1. `wet` and puddles darken a porous surface such as stone or soil; set 1 for leaves, paint or plastic so they turn glossy without going dark. | 0 |
 | `look.lens_rain` | Water drops on the lens, 0 to 1. Each drop shows the scene behind it upside down, as a real drop does. Large drops run down the frame; small ones dry and new ones land. | 0 |
 | `look.letterbox` | Frame shape as width over height (2.39 is wide-screen film). Rows outside that shape are black. 0 turns it off. | 0 |
 | `s3d::handheld(camera, t, amount)` | Returns the camera with the small sway of a hand-held shot at time `t` in seconds. Amount 1 sways about a third of a degree. Amount 0 returns the camera unchanged, and the same `t` always gives the same camera. | |
@@ -932,7 +933,11 @@ s3d::meshlet_px = 1.0;
 * **`s3d::meshlet_cone`** (on) drops clusters that face away from the camera, for
   single-sided materials on meshes placed without mirroring or uneven scale.
 * **`s3d::meshlet_budget`** (8,000,000) is the room for one frame's index list, in
-  indices of 4 bytes. A mesh whose list does not fit is not drawn in that frame.
+  indices of 4 bytes. A mesh whose list does not fit is not drawn in that frame. With
+  `s3d::meshlet_grow` (on) the room is then raised to fit, up to
+  `s3d::meshlet_budget_max` (250,000,000): on the second frame after a scene or budget
+  change and within 70 frames otherwise. A material marked `no_shadow` stays out of
+  the shadow list.
   `s3d::meshlet_stats()` returns the triangles in the camera's list, the triangles in
   the shadow list, and the number of lists that did not fit.
 * **`s3d::meshlet_cpu`** makes the same selection on the CPU instead of in the compute
@@ -2089,6 +2094,11 @@ ambient 0.05, no post effects, 512 x 512, camera 12 m straight above unless stat
   apart are identical.
 * **U5 cost.** The floor filling a 1280 x 720 frame, all puddle, `ripples` 1 against
   `puddles` 0: at most 0.3 ms more a frame.
+* **U6 low ground fills first.** A floor whose height map is 0 on one half and 1 on the
+  other, `puddles` 0.5: the puddle share of the two halves differs by at least 0.4.
+  Control: without a height map the halves differ by at most 0.05.
+* **U7 sealed surfaces.** `wet` 1: the floor is at most 0.85 of its dry brightness;
+  with `sealed` 1 it stays within 0.07 of dry.
 * **N1 off is off.** `look.lens_rain` 0 and `look.letterbox` 0 leave every golden image
   unchanged (the GPU test group passes).
 * **N2 share.** Sky filling a 640 x 360 frame as a vertical ramp: the share of pixels a
@@ -2491,6 +2501,11 @@ one error value.
 * **N9 cost.** 64 copies of mesh B (16.7 million triangles) standing 3 to 60 m from the
   camera on the RX 9060 XT: the frame time with meshlets on is at most half of the
   frame time with them off (mean of 100 frames, best of 3).
+* **N10 no_shadow.** Marking the mesh's material `no_shadow` empties the shadow list and
+  leaves the camera list unchanged.
+* **N11 room grows.** `meshlet_budget` 3000 with `meshlet_grow` off drops lists
+  (control); with it on, the third frame drops none and both lists match the full
+  ones.
 * **N10 off is free, and gates.** With `s3d::meshlets` off both goldens stay above
   40 dB and every earlier check passes as before. gfxtest, wgsltest and webgputest
   pass, with a new `scene_meshlet` in webgputest that matches the native frame.
