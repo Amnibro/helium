@@ -605,6 +605,43 @@ s3d::world_time = now;
   pool-like lines in shallow water with gentle waves. `cap` (7 by default) is the
   brightest a line can get. `s3d::world_time` moves the waves.
 
+### Water: swell, foam, reflections and the view from below (E6 and E7)
+
+```
+let sea = shapes::sea(40.0, 257);
+gltf::materials[gltf::materials.len - 1].shade_c.w = 1.0;
+s3d::place(s3d::add(sea), gfx::translate(float3 { 0.0, 0.0, 0.0 }));
+s3d::world_time = now;
+```
+
+* **Swell.** `shapes::sea(half, n)` is a sheet of `n` x `n` vertices that rise and fall
+  with the waves; `shapes::water(half)` stays a flat plane that only shows the waves in
+  its normals. Both use one sum of 11 waves, the same one the caustics use, so the
+  surface, its normals and the light pattern below always agree. In a material of
+  your own, `shade_a.w = 1` turns the swell on and `shade_b` holds frequency, amplitude,
+  speed and shoreline foam. The highest a crest can reach is
+  `amplitude / frequency * 2.944` (0.17 m with the preset).
+* **Crest foam.** `shade_c.w` (0 to 1) whitens the crests: it fades in from 0.3 to 0.7
+  of the highest possible crest and is broken up by a moving pattern.
+* **Reflections.** The water follows its mirrored ray through the frame's opaque color
+  and depth and shows what the ray hits; where the ray leaves the picture or passes
+  behind something it shows the sky as before. `s3d::sea.reflect` turns this off,
+  `s3d::sea.steps` (24) is the number of steps along the ray.
+* **From below.** The underside of the surface reflects the scene under it, turns into
+  a mirror past the critical angle (48.6 degrees from the vertical for water), and
+  inside that angle shows the sky and the scene above, bent by the surface.
+* **The underwater view.** With the camera below the surface and inside the water's
+  footprint, one extra pass over the frame absorbs each pixel's light along its path
+  through the water (`exp(-absorb * distance)` per channel) and adds the light the
+  water scatters toward the camera: sky light and sunlight, both absorbed on their way
+  down. The sunlight term reads the sun's shadow map where each ray entered the water,
+  so things floating on the surface cut dark shafts, and it is focused by the waves
+  like the caustics, so bright shafts drift through open water. `s3d::sea.under` turns
+  the pass off, `s3d::sea.march` (24) is the number of steps, `s3d::sea.shafts` (0 to
+  1) fades the wave pattern in the shafts. Absorption and scatter come from the water
+  material (`shade_a.rgb`, `shade_c.rgb`); with `s3d::caustics.manual` the scatter is
+  `s3d::sea.scatter`.
+
 ### Compressed textures (E10)
 
 ```
@@ -2533,6 +2570,37 @@ the CPU in double precision.
   `gfxtest`, `wgsltest` and `webgputest` pass; the caustics bars K1 to K9 and the
   goldens do not move.
 
+### Water results (2026-11-10, RX 9060 XT, RADV; another program using the whole card; full gate run)
+
+W4 has a black floor 3 m down in both frames, and its reference frame sets the sky's
+ambient to 1 so the sky reflects at its full radiance. W5 is read per channel. W6 and
+W7 (b) use field of view 0.9 and an 8 x 8 center block; W7 (a) uses luminance.
+
+| Bar | Result | Bar value |
+| --- | --- | --- |
+| W1 wave height | 100.0% of water pixels within 5 mm of the CPU sum | at least 99% |
+| W1 controls | 3.57% against time 0; largest height 0.0 mm with swell 0 | under 50%, at most 0.1 mm |
+| W2 normals | 100.0% within 1 degree | at least 99% |
+| W2 control, flat normal | 3.15% | under 50% |
+| W3 crest foam | crests 0.5511 over lows 0.0266: 20.75 times | at least 2 |
+| W3 control, foam 0 | 0.733 times | at most 1.3 |
+| W4 scene reflections | 32709 pixels inside the mirror image: worst 0.0% off; 555963 outside: worst 1.4% | within 5%, at most 5% |
+| W4 control, reflections off | worst 0.0% | at most 10% |
+| W5 Snell's window | lowest 0.9741 at 10 to 35 degrees; 0.8311 at 45; highest 0.0 at 51 and beyond | at least 0.9, at least 0.5, at most 0.05 |
+| W5 control, index 1.5 | 0.0 at 45 degrees | at most 0.05 |
+| W6 absorption | wall 0.3306, 1.3945, 1.5107 against 0.3306, 1.3954, 1.5116 | within 2% |
+| W6 control, pass off | 2.0 | 2 within 1% |
+| W6 scatter | 0.006105, 0.043834, 0.046204 against 0.006107, 0.04385, 0.04622 | within 3% |
+| W7 light shafts | spread 0.02 across the 80 blocks | at least 0.005 |
+| W7 control, shafts 0 at two times | 0.0 | at most 0.001 |
+| W7 slab shadow | blue 0.035601 against 0.035662 | within 5% |
+| W7 control, sun shadows off | 0.046204, 30% above | more than 15% above |
+| W8 above the water | 0 bytes differ | 0 |
+| W9 cost, surface | 1.79 ms against 1.41 ms: 0.38 ms more | at most 3 ms |
+| W9 cost, underwater pass | 2.35 ms against 0.69 ms: 1.66 ms more | at most 3 ms |
+| W10 browser | `scene_sea` identical to the native frame; 26 scenes, 0 failures | above 30 dB |
+| W10 the rest | caustics K1 to K9 and the goldens unchanged; gfxtest, wgsltest and webgputest pass | all pass |
+
 ### Volumetric cloud results (2026-11-10, RX 9060 XT, RADV; another program using the whole card)
 
 | Bar | Result | Bar value |
@@ -3205,7 +3273,13 @@ pass-through mean error is 0.0106 % (max 0.0488 %).
   normals keep their rest direction.
 * Caustics: one level body of water, lit by the sun only (local lights get none). Each
   point takes one bundle of rays, so past the depth where the lines first cross the
-  overlapping sheets are not summed. The water itself shows no light shafts.
+  overlapping sheets are not summed.
+* Water: reflections come from what is in the picture, so anything off screen or hidden
+  behind something else is missing from them. The underwater view handles one body of
+  water, takes the surface as level at its mean height (a camera inside a wave trough
+  or crest switches at that height, for the whole frame at once), and its shafts are
+  cut only by what the sun's shadow map holds at the surface. Local lights add no
+  scatter under water.
 * Compressed textures: the BC7 encoder uses one block mode (mode 6). Images whose
   sides are not multiples of 4 stay RGBA8. Devices without BC (most phones) draw the
   same picture from RGBA8 with no memory saved; ASTC and ETC2 are not built. KTX2 files
