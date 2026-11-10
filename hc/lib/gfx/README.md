@@ -2013,8 +2013,8 @@ the frame before tone mapping (`s3d::hdr_target()`).
 
 * **Y1 pits show up close.** Near, over the middle 400 x 400 pixels split into
   4 x 4 pixel blocks: the root mean square of each pixel's difference from its
-  block's mean, over the mean of the region, is at least 0.05 with `shade_c.y` 0.7.
-  Control: at most 0.005 with strength 0.
+  block's best-fit plane, over the mean of the region, is at least 0.05 with
+  `shade_c.y` 0.7. Control: at most 0.005 with strength 0.
 * **Y2 the mean diffuse light stays.** Near, the plain diffuse light
   (`s3d::sss_plain()`, `sss_on` on) summed over the middle 400 x 400 pixels with
   strength 0.7 is within 1% of the sum with strength 0. Control: a light 5% dimmer
