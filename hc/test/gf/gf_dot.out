@@ -9,3 +9,5 @@ mix short round trip 256
 dot16 mismatches 0
 dot16 gather 49267819
 dot16 scatter 43984938
+dot16 moved vecs mismatches 0
+direct mismatches 0

@@ -37,11 +37,15 @@ inline dot64(out byte[:], at int, vecs const byte[:], vat int, s const byte[:], 
 	if K != 1 { dots(o, v, g, rot, orot) } else if orot < 0 { rt_vk_gfdot(ptr(o), ptr(v), ptr(g), rot & 15) } else { rt_vk_gfdotr(ptr(o), ptr(v), ptr(g), rot & 15, orot & 15) }
 # sixteen dot64 products at once over whole 1024-byte blocks: row y of out
 # is the dot64 of vecs with row y of s, a row being 64 bytes
-inline dot16(out byte[:], vecs const byte[:], s const byte[:]): dot16(out, vecs, s, "\x00\x01\x02\x03\x04\x05\x06\x07\x08\x09\x0A\x0B\x0C\x0D\x0E\x0F", "\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0", 1)
+inline dot16(out byte[:], vecs const byte[:], s const byte[:]): dot16(out, vecs, s, "\x00\x01\x02\x03\x04\x05\x06\x07\x08\x09\x0A\x0B\x0C\x0D\x0E\x0F", "\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0", 2)
 # the same with the rows moved. mode 0 gathers: row y of out is the dot64 of
 # vecs with row perm[y] of s, taken with dot64's rot set to rot[y]. mode 1
 # scatters: row y of s goes to row perm[y] of out, with dot64's orot set to
 # rot[y]. perm and rot hold 16 bytes, each used modulo 16.
+# mode 3 moves the rows of vecs instead: row j of vecs is taken as row
+# perm[j] of vecs with its 4-byte groups rotated, group i coming from group
+# (i + rot[j]) mod 16. Any other mode leaves the rows where they are and
+# ignores perm and rot.
 # out must not overlap vecs or s
 inline dot16(out byte[:], vecs const byte[:], s const byte[:], perm const byte[:], rot const byte[:], mode int = 0):
 	o := out[..1024]
@@ -53,9 +57,16 @@ inline dot16(out byte[:], vecs const byte[:], s const byte[:], perm const byte[:
 	if K == 1:
 		rt_vk_gfdots(ptr(o), ptr(v), ptr(g), ptr(p), ptr(r), mode)
 		return
+	if mode == 3:
+		for y 16:
+			for k 64:
+				a ~= 0
+				for j 16: a ^= mul(v[64 * ((p[j] as int) & 15) + 4 * (((k >> 2) + (r[j] as int)) & 15) + (k & 3)] as int, g[64 * y + 4 * j + (k & 3)] as int)
+				o[64 * y + k] = a as byte
+		return
 	for y 16:
-		a := 64 * ((p[y] as int) & 15)
-		if mode == 0 { dots(o[64 * y..64 * y + 64], v, g[a..a + 64], r[y] as int, -1) } else { dots(o[a..a + 64], v, g[64 * y..64 * y + 64], 0, r[y] as int) }
+		a := if mode == 0 || mode == 1 { 64 * ((p[y] as int) & 15) } else { 64 * y }
+		if mode == 0 { dots(o[64 * y..64 * y + 64], v, g[a..a + 64], r[y] as int, -1) } else { dots(o[a..a + 64], v, g[64 * y..64 * y + 64], 0, if mode == 1 { r[y] as int } else { -1 }) }
 dots(o byte[:], v const byte[:], g const byte[:], rot int, orot int):
 	if K < 0: init()
 	sh := if orot < 0 { 0 } else { 4 * (orot & 15) }
