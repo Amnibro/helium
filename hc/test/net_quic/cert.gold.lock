@@ -1,0 +1,192 @@
+=== -2a136a88e19b21d
+use os
+use crypto.ecc
+use crypto.hash
+use crypto.rand
+use crypto.x509
+=== 0b9dbbda95766d83
+sh(cmd const byte[:]) bool:
+	c byte[>..] ~= []
+	c.append(cmd)
+	c.append(" >/dev/null 2>&1")
+	run_command(c) == 0
+=== -11178a505a969a9f
+path(dir const byte[:], name const byte[:]) byte[>..]:
+	p byte[>..] ~= []
+	p.append(dir)
+	p.append("/")
+	p.append(name)
+	p
+main():
+	a := args()
+	given := a.len > 1
+	dir byte[>..] ~= []
+	if given:
+		dir.append(a[1])
+	else:
+		dir.append("cert_test.tmp")
+	cmd byte[>..] ~= []
+	cmd.append("mkdir -p ")
+	cmd.append(dir)
+	sh(cmd)
+	signing(dir)
+	certs(dir)
+	if !given:
+		cmd.clear()
+		cmd.append("rm -rf ")
+		cmd.append(dir)
+		sh(cmd)
+=== -612e9aa3d524d365
+signing(dir const byte[:]):
+	key := crypto::hexb("C9AFA9D845BA75166B5C215767B1D6934E50C3DB36E89B127B8A622B120F6721")
+	s1, k1 := crypto::ecdsa_sign(crypto::P256, crypto::SHA256, key, "sample")
+	e1 := crypto::hexb("EFD48B2AACB6A8FD1140DD9CD45E81D69D2C877B56AAF991C34D0EA84EAF3716F7CB1C942D657C41D436C7A1B6E29F65F3E900DBB9AFF4064DC4AB2F843ACDA8")
+	print("T2 sample ", k1 && s1 == e1)
+	s2, k2 := crypto::ecdsa_sign(crypto::P256, crypto::SHA256, key, "test")
+	e2 := crypto::hexb("F1ABB023518351CD71D881567B1EA663ED3EFCF6C5132B354F28D3B0B7D38367019F4113742A2B14BD25926B49C649155F267E60D3814B4C0CC84250E46F0083")
+	print("T2 test ", k2 && s2 == e2)
+	priv := crypto::ec_generate(crypto::P256)
+	pk, kp := crypto::ec_public(crypto::P256, priv)
+	p8, k8 := crypto::pkcs8_ec(priv)
+	write_file(path(dir, "r.der"), p8)
+	cmd byte[>..] ~= []
+	cmd.append("openssl pkey -inform der -in ")
+	cmd.append(dir)
+	cmd.append("/r.der -pubout -out ")
+	cmd.append(dir)
+	cmd.append("/r.pub")
+	sh(cmd)
+	good ~= 0
+	rejected ~= 0
+	ossl ~= 0
+	for i 100:
+		msg := crypto::random_bytes(40)
+		sg, sok := crypto::ecdsa_sign_der(crypto::P256, crypto::SHA256, priv, msg)
+		if sok:
+			if crypto::ecdsa_verify_der(crypto::P256, crypto::SHA256, pk, msg, sg):
+				good += 1
+			m2 := copy(msg)
+			m2[0] = m2[0] ^ 1
+			if !crypto::ecdsa_verify_der(crypto::P256, crypto::SHA256, pk, m2, sg):
+				rejected += 1
+			if i < 5:
+				write_file(path(dir, "m.bin"), msg)
+				write_file(path(dir, "s.bin"), sg)
+				cmd.clear()
+				cmd.append("openssl dgst -sha256 -verify ")
+				cmd.append(dir)
+				cmd.append("/r.pub -signature ")
+				cmd.append(dir)
+				cmd.append("/s.bin ")
+				cmd.append(dir)
+				cmd.append("/m.bin")
+				if sh(cmd):
+					ossl += 1
+	print("T2 random ", good, "/100")
+	print("T2 openssl ", ossl, "/5")
+	print("T2 control rejected ", rejected, "/100");
+=== 0b28a7cee0bdfc65
+certs(dir const byte[:]):
+	priv := crypto::ec_generate(crypto::P256)
+	pk, kp := crypto::ec_public(crypto::P256, priv)
+	from := time() as int
+	der, ok1 := crypto::x509_self_signed("amni-lan", priv, from, 3700)
+	p8, ok2 := crypto::pkcs8_ec(priv)
+	write_file(path(dir, "cert.der"), der)
+	write_file(path(dir, "key.der"), p8)
+	c, ok3 := crypto::x509_parse(der)
+	print("T1 parse ", ok1 && ok2 && ok3)
+	print("T1 self-signed ", crypto::signed_by(c, c))
+	cnt ~= 0
+	hit ~= false
+	for d c.dns:
+		cnt += 1
+		if d == "amni-lan":
+			hit = true
+	print("T1 name ", cnt == 1 && hit)
+	print("T1 key ", c.kalg == crypto::KEY_EC && c.kcurve == crypto::P256 && c.kpub == pk)
+	print("T1 dates ", c.nb == from && c.na == from + 3700 * 86400)
+	k2, cv := crypto::pkcs8_ec_parse(p8)
+	print("T1 pkcs8 ", k2 == priv && cv == crypto::P256)
+	cmd byte[>..] ~= []
+	cmd.append("openssl x509 -inform der -in ")
+	cmd.append(dir)
+	cmd.append("/cert.der -out ")
+	cmd.append(dir)
+	cmd.append("/cert.pem")
+	print("T1 openssl x509 ", sh(cmd))
+	cmd.clear()
+	cmd.append("openssl verify -CAfile ")
+	cmd.append(dir)
+	cmd.append("/cert.pem -verify_hostname amni-lan ")
+	cmd.append(dir)
+	cmd.append("/cert.pem")
+	print("T1 openssl verify ", sh(cmd))
+	cmd.clear()
+	cmd.append("openssl pkey -inform der -in ")
+	cmd.append(dir)
+	cmd.append("/key.der -pubout -outform der -out ")
+	cmd.append(dir)
+	cmd.append("/k.pub")
+	kres := block:
+		guard sh(cmd) else { break false }
+		kb byte[>..] ~= []
+		guard read_file(path(dir, "k.pub"), kb) else { break false }
+		guard kb.len >= 65 else { break false }
+		kb[kb.len - 65..] == c.kpub
+	print("T1 openssl key ", kres)
+	loads := block:
+		cmd.clear()
+		cmd.append("openssl genpkey -algorithm EC -pkeyopt ec_paramgen_curve:P-256 -outform der -out ")
+		cmd.append(dir)
+		cmd.append("/o.der")
+		guard sh(cmd) else { break false }
+		ob byte[>..] ~= []
+		guard read_file(path(dir, "o.der"), ob) else { break false }
+		ok, oc := crypto::pkcs8_ec_parse(ob)
+		guard oc == crypto::P256 else { break false }
+		op, opk := crypto::ec_public(crypto::P256, ok)
+		guard opk else { break false }
+		cmd.clear()
+		cmd.append("openssl pkey -inform der -in ")
+		cmd.append(dir)
+		cmd.append("/o.der -pubout -outform der -out ")
+		cmd.append(dir)
+		cmd.append("/o.pub")
+		guard sh(cmd) else { break false }
+		pb byte[>..] ~= []
+		guard read_file(path(dir, "o.pub"), pb) else { break false }
+		guard pb.len >= 65 else { break false }
+		guard pb[pb.len - 65..] == op else { break false }
+		cmd.clear()
+		cmd.append("openssl pkcs8 -topk8 -nocrypt -inform der -in ")
+		cmd.append(dir)
+		cmd.append("/o.der -outform der -out ")
+		cmd.append(dir)
+		cmd.append("/o8.der")
+		guard sh(cmd) else { break false }
+		o8 byte[>..] ~= []
+		guard read_file(path(dir, "o8.der"), o8) else { break false }
+		k8, c8 := crypto::pkcs8_ec_parse(o8)
+		k8 == ok && c8 == crypto::P256
+	print("T1 openssl key loads ", loads)
+	bad := copy(der)
+	bad[bad.len - 1] = bad[bad.len - 1] ^ 1
+	write_file(path(dir, "bad.der"), bad)
+	bc, bok := crypto::x509_parse(bad)
+	print("T1 control ours ", bok && !crypto::signed_by(bc, c))
+	cmd.clear()
+	cmd.append("openssl x509 -inform der -in ")
+	cmd.append(dir)
+	cmd.append("/bad.der -out ")
+	cmd.append(dir)
+	cmd.append("/bad.pem")
+	x1 := sh(cmd)
+	cmd.clear()
+	cmd.append("openssl verify -CAfile ")
+	cmd.append(dir)
+	cmd.append("/cert.pem ")
+	cmd.append(dir)
+	cmd.append("/bad.pem")
+	x2 := sh(cmd)
+	print("T1 control openssl ", x1 && !x2);

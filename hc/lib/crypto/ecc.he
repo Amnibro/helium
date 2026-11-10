@@ -123,3 +123,13 @@ ecdsa_sign(id int, kind int, priv const byte[:], msg const byte[:]) byte[>..], b
 	sm := mmul(c.n, minv(c.n, to_mont(c.n, k)), madd(c.n, to_mont(c.n, e), mmul(c.n, to_mont(c.n, r), to_mont(c.n, d)))); s := from_mont(c.n, sm)
 	if bn_zero(r) || bn_zero(s): return o, false
 	o.append(bn_bytes(r, c.size)); o.append(bn_bytes(s, c.size)); return o, true
+der_uint(v const byte[:]) byte[>..]:
+	i ~= 0
+	while i + 1 < v.len && v[i] == 0: i += 1
+	p := if v[i] & 0x80 != 0 { 1 } else { 0 }; o byte[>..] ~= [2, (v.len - i + p) as! byte]
+	if p == 1: o.push(0)
+	o.append(v[i..]); o
+ecdsa_sign_der(id int, kind int, priv const byte[:], msg const byte[:]) byte[>..], bool:
+	s, ok := ecdsa_sign(id, kind, priv, msg); o byte[>..] ~= []
+	if !ok: return o, false
+	r := der_uint(s[..s.len / 2]); t := der_uint(s[s.len / 2..]); o.push(0x30); o.push((r.len + t.len) as! byte); o.append(r[..]); o.append(t[..]); return o, true
