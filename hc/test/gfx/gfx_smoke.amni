@@ -6107,10 +6107,10 @@ fn sk_x7() bool {
 	print("gpu: sss X7 frame ", r2(base), " ms off, ", r2(full), " ms on with 64 taps: ", r2(full - base), " ms more (bar <= 4), ", r2(few - base), " ms more with 16 taps", if ok { " PASS" } else { " FAIL" });
 	ok
 }
-fn sk_q(dist real, pores f32, fuzz f32, gain f32) {
+fn sk_q(dist real, m gltf::Material, gain f32) {
 	reset_scene();
 	dark_scene();
-	let _ = s3d::add(shapes::plane(0.15, sk_skin(0.02, 0.4, pores, fuzz)));
+	let _ = s3d::add(shapes::plane(0.15, m));
 	s3d::lights.push(s3d::Light { pos: float3 { 0.1, 0.1732, 0.0 }, range: 1.0, rgb: float3 { gain, gain, gain }, kind: 1, dir: float3 { -0.5, -0.866, 0.0 }, cone: 0.9, edge: 0.1, .. });
 	sk_cam(dist, 0.0);
 }
@@ -6133,8 +6133,8 @@ fn sk_stat(px const byte[:], half int, blk int) real, real {
 	let m = s / n;
 	return m, sqrt(max(dv / n, 0.0)) / max(m, 1e-12);
 }
-fn sk_qs(dist real, pores f32, gain f32, half int, blk int, plain bool) real, real {
-	sk_q(dist, pores, 0.0, gain);
+fn sk_qs(dist real, m gltf::Material, gain f32, half int, blk int, plain bool) real, real {
+	sk_q(dist, m, gain);
 	shoot(2, IN_OUT);
 	let px = gfx::read_pixels(if plain { s3d::sss_plain() } else { s3d::hdr_target() });
 	let m, d = sk_stat(px[..], half, blk);
@@ -6142,27 +6142,27 @@ fn sk_qs(dist real, pores f32, gain f32, half int, blk int, plain bool) real, re
 }
 fn sk_y14() bool {
 	s3d::sss_on = false;
-	let n1, d1 = sk_qs(0.05, 0.7, 1.0, 200, 4, false);
-	let n0, d0 = sk_qs(0.05, 0.0, 1.0, 200, 4, false);
+	let n1, d1 = sk_qs(0.05, sk_skin(0.02, 0.4, 0.7, 0.0), 1.0, 200, 4, false);
+	let n0, d0 = sk_qs(0.05, sk_skin(0.02, 0.4, 0.0, 0.0), 1.0, 200, 4, false);
 	let y1 = d1 >= 0.05 && d0 <= 0.005;
 	print("gpu: sss Y1 near, middle 400 x 400, deviation from the plane of each 4 x 4 block over mean: ", r4(d1), " with pores 0.7 (bar >= 0.05); control pores 0: ", r4(d0), " (bar <= 0.005)", if y1 { " PASS" } else { " FAIL" });
-	let f1, e1 = sk_qs(1.2, 0.7, 1.0, 50, 0, false);
-	let f0, e0 = sk_qs(1.2, 0.0, 1.0, 50, 0, false);
-	let fc, ec = sk_qs(1.2, -0.7, 1.0, 50, 0, false);
+	let f1, e1 = sk_qs(1.2, sk_skin(0.02, 0.4, 0.7, 0.0), 1.0, 50, 0, false);
+	let f0, e0 = sk_qs(1.2, sk_skin(0.02, 0.4, 0.0, 0.0), 1.0, 50, 0, false);
+	let fc, ec = sk_qs(1.2, sk_skin(0.02, 0.4, -0.7, 0.0), 1.0, 50, 0, false);
 	let y3 = e1 <= e0 + 0.002 && ec >= e1 + 0.01;
 	print("gpu: sss Y3 far, middle 100 x 100: deviation over mean ", r4(e1), " with pores 0.7, ", r4(e0), " with pores 0 (bar: at most 0.002 above); control no fade: ", r4(ec), " (bar: at least 0.01 above)", if y3 { " PASS" } else { " FAIL" });
-	let a1, b1 = sk_qs(0.05, 0.7, 1.0, 183, 0, false);
-	let a0, b0 = sk_qs(0.05, 0.0, 1.0, 183, 0, false);
-	let c1, g1 = sk_qs(1.2, 0.7, 1.0, 8, 0, false);
-	let c0, g0 = sk_qs(1.2, 0.0, 1.0, 8, 0, false);
+	let a1, b1 = sk_qs(0.05, sk_skin(0.02, 0.4, 0.7, 0.0), 1.0, 183, 0, false);
+	let a0, b0 = sk_qs(0.05, sk_skin(0.02, 0.4, 0.0, 0.0), 1.0, 183, 0, false);
+	let c1, g1 = sk_qs(1.2, sk_skin(0.02, 0.4, 0.7, 0.0), 1.0, 8, 0, false);
+	let c0, g0 = sk_qs(1.2, sk_skin(0.02, 0.4, 0.0, 0.0), 1.0, 8, 0, false);
 	let near = a1 / a0;
 	let far = c1 / c0;
 	let y4 = abs(near - 1.0) >= 0.05 && abs(far - near) < abs(far - 1.0);
 	print("gpu: sss Y4 middle 20 mm square, pores 0.7 over pores 0: near ", r4(near), " (bar: at least 0.05 from 1), far ", r4(far), " (bar: closer to near than to 1); control pores 0 far: 1.0, fails as required", if y4 { " PASS" } else { " FAIL" });
 	s3d::sss_on = true;
-	let p1, q1 = sk_qs(0.05, 0.7, 1.0, 200, 0, true);
-	let p0, q0 = sk_qs(0.05, 0.0, 1.0, 200, 0, true);
-	let pd, qd = sk_qs(0.05, 0.7, 0.95, 200, 0, true);
+	let p1, q1 = sk_qs(0.05, sk_skin(0.02, 0.4, 0.7, 0.0), 1.0, 200, 0, true);
+	let p0, q0 = sk_qs(0.05, sk_skin(0.02, 0.4, 0.0, 0.0), 1.0, 200, 0, true);
+	let pd, qd = sk_qs(0.05, sk_skin(0.02, 0.4, 0.7, 0.0), 0.95, 200, 0, true);
 	let y2 = abs(p1 / p0 - 1.0) <= 0.01 && abs(pd / p0 - 1.0) > 0.01;
 	print("gpu: sss Y2 near, plain light, pores 0.7 over pores 0: ", r4(p1 / p0), " (bar within 0.01 of 1); control light 5% dimmer ", r4(pd / p0), if y2 { " PASS" } else { " FAIL" });
 	y1 && y2 && y3 && y4
@@ -6219,9 +6219,9 @@ fn sk_shot(pores f32) byte[>..] {
 }
 fn sk_y6() bool {
 	s3d::sss_on = false;
-	sk_q(0.05, 0.0, 0.0, 1.0);
+	sk_q(0.05, sk_skin(0.02, 0.4, 0.0, 0.0), 1.0);
 	let base = frame_ms();
-	sk_q(0.05, 0.7, 0.35, 1.0);
+	sk_q(0.05, sk_skin(0.02, 0.4, 0.7, 0.35), 1.0);
 	let full = frame_ms();
 	let ok = full - base <= 0.3;
 	print("gpu: sss Y6 sheet filling the frame: ", r2(base), " ms without, ", r2(full), " ms with pores 0.7 and fuzz 0.35: ", r2(full - base), " ms more (bar <= 0.3)", if ok { " PASS" } else { " FAIL" });
@@ -6334,10 +6334,51 @@ fn cl_z9(still bool) real, int {
 	}
 	return if n > 0 { e / n as real } else { 99.0 }, n;
 }
+fn wv_mat(base f32, rough f32, wrap f32, spec f32, s f32, twill f32, weft f32) gltf::Material { var m = shapes::material(linalg::v3(base, base, base), 0.0, rough); m.shading = 3; m.shade_a = float4 { wrap, 0.0, spec, 0.0 }; m.shade_c = float4 { s, 700.0, twill, weft }; m }
+fn wv_r(dist real, half int, m gltf::Material, z gltf::Material) real { let a, b = sk_qs(dist, m, 1.0, half, 0, false); let c, d = sk_qs(dist, z, 1.0, half, 0, false); a / c }
+fn wv_checks() bool {
+	s3d::sss_on = false;
+	let n1, d1 = sk_qs(0.05, wv_mat(0.2, 0.8, 0.25, 0.0, 0.7, 1.0, 0.0), 1.0, 200, 8, false);
+	let n0, d0 = sk_qs(0.05, wv_mat(0.2, 0.8, 0.25, 0.0, 0.0, 1.0, 0.0), 1.0, 200, 8, false);
+	let nd, dd = sk_qs(0.05, wv_mat(0.2, 0.8, 0.25, 0.0, 0.7, 1.0, 0.0), 0.95, 200, 8, false);
+	let w1 = d1 >= 0.03 && d0 <= 0.005;
+	print("gpu: weave W1 near, middle 400 x 400, deviation from the plane of each 8 x 8 block over mean: ", r4(d1), " with strength 0.7 (bar >= 0.03); control strength 0: ", r4(d0), " (bar <= 0.005)", if w1 { " PASS" } else { " FAIL" });
+	let w2 = abs(n1 / n0 - 1.0) <= 0.01 && abs(nd / n0 - 1.0) > 0.01;
+	print("gpu: weave W2 near, strength 0.7 over strength 0: ", r4(n1 / n0), " (bar within 0.01 of 1); control light 5% dimmer ", r4(nd / n0), if w2 { " PASS" } else { " FAIL" });
+	let f1, e1 = sk_qs(1.2, wv_mat(0.2, 0.8, 0.25, 0.0, 0.7, 3.0, 0.8), 1.0, 50, 0, false);
+	let f0, e0 = sk_qs(1.2, wv_mat(0.2, 0.8, 0.25, 0.0, 0.0, 3.0, 0.8), 1.0, 50, 0, false);
+	let fc, ec = sk_qs(1.2, wv_mat(0.2, 0.8, 0.25, 0.0, -0.7, 3.0, 0.8), 1.0, 50, 0, false);
+	let w3 = e1 <= e0 + 0.002 && ec >= e1 + 0.01;
+	print("gpu: weave W3 far, middle 100 x 100: deviation over mean ", r4(e1), " with strength 0.7, ", r4(e0), " with strength 0 (bar: at most 0.002 above); control no fade: ", r4(ec), " (bar: at least 0.01 above)", if w3 { " PASS" } else { " FAIL" });
+	let near = wv_r(0.05, 183, wv_mat(0.2, 0.8, 0.25, 0.0, 0.7, 3.0, 0.8), wv_mat(0.2, 0.8, 0.25, 0.0, 0.0, 3.0, 0.8));
+	let far = wv_r(1.2, 8, wv_mat(0.2, 0.8, 0.25, 0.0, 0.7, 3.0, 0.8), wv_mat(0.2, 0.8, 0.25, 0.0, 0.0, 3.0, 0.8));
+	let flat = wv_r(1.2, 8, wv_mat(0.2, 0.8, 0.25, 0.0, 0.7, 3.0, 0.0), wv_mat(0.2, 0.8, 0.25, 0.0, 0.0, 3.0, 0.0));
+	let w4 = near >= 1.5 && far >= 1.5 && abs(far / near - 1.0) <= 0.04 && flat < 1.5;
+	print("gpu: weave W4 twill, weft lightness 0.8, middle 20 mm square, strength 0.7 over strength 0: near ", r4(near), ", far ", r4(far), " (bar: both >= 1.5, far within 4% of near); control weft lightness 0 far: ", r4(flat), " (must fail)", if w4 { " PASS" } else { " FAIL" });
+	let hn = wv_r(0.05, 183, wv_mat(0.02, 0.4, 0.0, 1.0, 0.7, 1.0, 0.0), wv_mat(0.02, 0.4, 0.0, 1.0, 0.0, 1.0, 0.0));
+	let hf = wv_r(1.2, 8, wv_mat(0.02, 0.4, 0.0, 1.0, 0.7, 1.0, 0.0), wv_mat(0.02, 0.4, 0.0, 1.0, 0.0, 1.0, 0.0));
+	let w5 = abs(hn - 1.0) >= 0.05 && abs(hf - hn) < abs(hf - 1.0);
+	print("gpu: weave W5 highlight, middle 20 mm square, strength 0.7 over strength 0: near ", r4(hn), " (bar: at least 0.05 from 1), far ", r4(hf), " (bar: closer to near than to 1); control strength 0 far: 1.0, fails as required", if w5 { " PASS" } else { " FAIL" });
+	sk_q(0.05, wv_mat(0.2, 0.8, 0.25, 0.0, 0.0, 3.0, 0.8), 1.0);
+	let base = frame_ms();
+	sk_q(0.05, wv_mat(0.2, 0.8, 0.25, 0.0, 0.7, 3.0, 0.8), 1.0);
+	let full = frame_ms();
+	let w6 = full - base <= 0.3;
+	print("gpu: weave W6 sheet filling the frame: ", r2(base), " ms without, ", r2(full), " ms with a 3/1 twill at strength 0.7: ", r2(full - base), " ms more (bar <= 0.3)", if w6 { " PASS" } else { " FAIL" });
+	var dm = shapes::material(linalg::v3(0.05, 0.1, 0.35), 0.0, 0.8);
+	dm.shading = 3;
+	dm.shade_a = float4 { 0.25, 0.3, 0.3, 0.0 };
+	dm.shade_c = float4 { 0.7, 700.0, 3.0, 0.8 };
+	sk_q(0.02, dm, 1.0);
+	let st = rr_frame(2);
+	print("gpu: weave twill still ", codec_png::write(path(OUT_DIR[..], "cloth_weave.png")[..], 1280, 720, 4, st[..]));
+	w1 && w2 && w3 && w4 && w5 && w6
+}
 fn cloth_checks() bool {
 	half_table();
 	s3d::init(1280, 720);
 	IN_OUT = gfx::render_target(1280, 720, gfx::RGBA8);
+	let wv = wv_checks();
 	let z8 = cl_z8();
 	let e, n = cl_z9(false);
 	let ce, cn = cl_z9(true);
@@ -6353,7 +6394,7 @@ fn cloth_checks() bool {
 	s3d::view.eye = float3 { 1.8, 1.6, 2.4 };
 	let fl = rr_frame(2);
 	print("gpu: cloth wind still ", codec_png::write(path(OUT_DIR[..], "cloth_wind.png")[..], 1280, 720, 4, fl[..]));
-	z8 && z9
+	z8 && z9 && wv
 }
 fn sub_since(at int) int, real, int {
 	gfx::flush();
