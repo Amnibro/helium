@@ -462,6 +462,7 @@ var meshlet_px f32 = 1.0;
 var meshlet_cone = true;
 var meshlet_cpu = false;
 var meshlet_min = 4000;
+var meshlet_thin f32 = 1.0;
 var meshlet_budget = 8000000;
 var meshlet_grow = true;
 var meshlet_budget_max = 250000000;
@@ -1053,6 +1054,29 @@ fn upload_geometry() {
 	while tex_srgb.len < gltf::images.len { tex_srgb.push(none()); tex_linear.push(none()); }
 }
 
+var cut_keep = true;
+fn cut_of(image int) f32 { if !cut_keep { return linalg::f(-1.0); } for m in gltf::materials { if m.alpha_mode == gltf::ALPHA_MASK && m.base_tex.texture >= 0 && gltf::textures[m.base_tex.texture].image == image { return m.alpha_cutoff; } } linalg::f(-1.0) }
+fn cut_share(px const byte[:], cut f32) real { let t = (cut * 255.0) as real; var n = 0; for i in px.len / 4 { if px[i * 4 + 3] as real >= t { n += 1; } } n as real / max(px.len / 4, 1) as real }
+fn cut_fit(px byte[>..]&, cut f32, want real) {
+	var hist int[>..] = [];
+	hist.resize(256, 0);
+	let m = px.len / 4;
+	for i in m { hist[px[i * 4 + 3] as int] += 1; }
+	var a = 255;
+	var n = hist[255];
+	while a > 1 && (n + hist[a - 1] / 2) as real < want * m as real { a -= 1; n += hist[a]; }
+	let s = clamp(((cut * 255.0) as real + 0.01) / a as real, 0.5, 8.0);
+	for i in m { px[i * 4 + 3] = min((px[i * 4 + 3] as real * s + 0.5) as int, 255) as byte; }
+}
+fn cut_chain(t gfx::Texture, image int, srgb bool, cut f32, mips int) {
+	var cur byte[>..] = [];
+	cur.append(gltf::image_pixels(image));
+	let want = cut_share(cur[..], cut);
+	var nxt byte[>..] = [];
+	var w = gltf::images[image].width;
+	var h = gltf::images[image].height;
+	for k in 1..mips { let nw, nh = bc::halve(cur[..], w, h, srgb, nxt); cur.clear(); cur.append(nxt[..]); w = nw; h = nh; cut_fit(nxt, cut, want); gfx::update_texture(t, gfx::Region { mip: k as i32, .. }, nxt[..]); }
+}
 fn mip_count(w int, h int) int {
 	var n = 1;
 	var s = max(w, h);
@@ -1077,7 +1101,10 @@ fn tex_path(image int, srgb bool, out byte[>..]&) {
 	out.append(tex_cache[..]);
 	out.push('/');
 	for k in 20 { let v = (if k < 8 { a >> (28 - 4 * k) } else { b >> (44 - 4 * (k - 8)) }) & 15; out.push((if v < 10 { '0' as int + v } else { 'a' as int + v - 10 }) as byte); }
-	out.append(str("_", im.width, "x", im.height, if srgb { "s" } else { "l" }, ".ktx2")[..]);
+	let ck = cut_of(image);
+	out.append(str("_", im.width, "x", im.height, if srgb { "s" } else { "l" })[..]);
+	if ck > 0.0 { out.append(str("k", (ck * 100.0) as int)[..]); }
+	out.append(".ktx2");
 }
 fn tex_bake(image int, srgb bool, path const byte[:], file byte[>..]&, mode int) bool {
 	let im = gltf::images[image];
@@ -1099,8 +1126,13 @@ fn tex_bake(image int, srgb bool, path const byte[:], file byte[>..]&, mode int)
 	var nxt byte[>..] = [];
 	var w = im.width;
 	var h = im.height;
+	let cut = cut_of(image);
+	let want = if cut > 0.0 { cut_share(cur[..], cut) } else { 0.0 };
+	var fit byte[>..] = [];
 	for k in mips {
-		if !bc::encode(bc::BC7, cur[..], w, h, blk) { return false; }
+		fit.clear();
+		if cut > 0.0 && k > 0 { fit.append(cur[..]); cut_fit(fit, cut, want); }
+		if !bc::encode(bc::BC7, if fit.len > 0 { fit[..] } else { cur[..] }, w, h, blk) { return false; }
 		data.append(blk[..]);
 		if k + 1 < mips { let nw, nh = bc::halve(cur[..], w, h, srgb, nxt); cur.clear(); cur.append(nxt[..]); w = nw; h = nh; }
 	}
@@ -1263,7 +1295,8 @@ fn image_texture(image int, srgb bool) gfx::Texture {
 		t = gfx::texture(gfx::TextureDesc { format: tex_format(0, srgb), usage: gfx::SAMPLED | gfx::COLOR_TARGET, width: im.width as i32, height: im.height as i32, mips: mips as i32 });
 		gltf::need_pixels(image);
 		gfx::update_texture(t, gltf::image_pixels(image));
-		if mips > 1 { gfx::generate_mips(t); }
+		let cut = cut_of(image);
+		if mips > 1 && cut > 0.0 { cut_chain(t, image, srgb, cut, mips); } else if mips > 1 { gfx::generate_mips(t); }
 		tex_mem += chain_bytes(0, im.width, im.height, mips);
 	}
 	tex_ns += clock_ns() - t0;
@@ -1804,6 +1837,8 @@ fn meshlet_prepare() {
 		var pos f32[>..] = [];
 		pos.resize((pr.vcount * 5 / 2 + 30000) * vf, 0.0);
 		for k in pr.vcount * vf { pos[k] = gltf::verts[pr.vfirst * vf + k]; }
+		meshlet::thin_on = meshlet_thin > 0.0 && m.alpha_mode == gltf::ALPHA_MASK;
+		meshlet::thin_k = 1.0 / max(meshlet_thin, 0.001) as real;
 		meshlet::build(pos[..], vf, gltf::AT_POS, pr.vcount, gltf::indices[pr.ifirst..pr.ifirst + pr.icount]);
 		if meshlet::count == 0 { continue; }
 		let nb = gltf::verts.len / vf - pr.vfirst - pr.vcount;

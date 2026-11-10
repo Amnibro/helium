@@ -3973,6 +3973,98 @@ fn foliage_checks() bool {
 	s3d::look = DEF_LOOK; s3d::sun = DEF_SUN; s3d::sky = DEF_SKY;
 	l1 && l2 && l3 && l4 && l5
 }
+fn ck_tex() int {
+	var px byte[>..] = [];
+	px.resize(512 * 512 * 4, 255);
+	for i in 512 * 512 { px[i * 4 + 3] = 0; }
+	var s = 7;
+	for k in 2600 { s = (s * 1103515245 + 12345) & 0x7FFFFFFF; let x = (s >> 8) % 512; s = (s * 1103515245 + 12345) & 0x7FFFFFFF; let y = (s >> 8) % 500; for j in 12 { px[((y + j) * 512 + x) * 4 + 3] = 255; } }
+	gltf::add_texture_rgba(px[..], 512, 512, 33071)
+}
+fn ck_shot(t gfx::Texture, keep bool, mask bool, dist f32) real {
+	reset_scene();
+	s3d::cut_keep = keep;
+	var m = shapes::material(linalg::v3(1.0, 1.0, 1.0), 0.0, 1.0);
+	m.unlit = true;
+	m.base_tex.texture = ck_tex();
+	if mask { m.alpha_mode = gltf::ALPHA_MASK; m.alpha_cutoff = 0.5; }
+	s3d::place(s3d::add(shapes::plane(1.0, m)), gfx::mat4_identity);
+	pd_cam(float3 { 0.0, dist, 0.0 }, float3 { 0.0, 0.0, 0.0 }, float3 { 0.0, 0.0, -1.0 });
+	shoot(2, t);
+	let px = gfx::read_pixels(t);
+	var n = 0;
+	for i in px.len / 4 { if px[i * 4 + 1] > 60 { n += 1; } }
+	n as real
+}
+fn cutout_checks() bool {
+	reset_scene();
+	s3d::sky = s3d::Sky { zenith: float3 { 0.0, 0.0, 0.0 }, horizon: float3 { 0.0, 0.0, 0.0 }, ground: float3 { 0.0, 0.0, 0.0 }, ambient: 0.0, draw: false };
+	s3d::sun = DEF_SUN; s3d::look = DEF_LOOK; s3d::look.ssao = false; s3d::look.bloom = 0.0; s3d::temporal = 0; s3d::alpha_to_coverage = false;
+	s3d::init(512, 512);
+	let t = gfx::render_target(512, 512, gfx::RGBA8);
+	let nf = ck_shot(t, true, false, 1.5);
+	let n1 = ck_shot(t, true, true, 1.5);
+	let n0 = ck_shot(t, false, true, 1.5);
+	let ff = ck_shot(t, true, false, 12.0);
+	let f1 = ck_shot(t, true, true, 12.0);
+	let f0 = ck_shot(t, false, true, 12.0);
+	let near = n1 / max(nf, 1.0); let far = f1 / max(ff, 1.0); let off = f0 / max(ff, 1.0);
+	let a = near > 0.03 && abs(far - near) <= 0.25 * near && off < 0.5 * near;
+	print("gpu: cutout CK1 thin cut-out pattern: share covered ", r3(near), " up close, ", r3(far), " at one eighth the size (bar within 25% of close), ", r3(off), " with plain mips (control, under half of close)", hr_pass(a));
+	let b = n1 == n0;
+	print("gpu: cutout CK2 close view unchanged: ", n1, " pixels covered with coverage keeping, ", n0, " without (bar equal)", hr_pass(b));
+	s3d::cut_keep = true; s3d::sky = DEF_SKY; s3d::sun = DEF_SUN; s3d::look = DEF_LOOK;
+	a && b
+}
+fn th_shot(t gfx::Texture, mask bool, thin f32, dist f32) real, int {
+	s3d::meshlet_thin = thin;
+	reset_scene();
+	var m = shapes::material(linalg::v3(1.0, 1.0, 1.0), 0.0, 1.0);
+	m.unlit = true;
+	m.double_sided = true;
+	if mask { m.alpha_mode = gltf::ALPHA_MASK; m.alpha_cutoff = 0.5; }
+	let vfirst = gltf::verts.len / gltf::VERTEX_FLOATS;
+	let ifirst = gltf::indices.len;
+	var s = 7;
+	for k in 20000 {
+		s = (s * 1103515245 + 12345) & 0x7FFFFFFF; let x = ((s >> 8) % 10000) as real / 1000.0 - 5.0;
+		s = (s * 1103515245 + 12345) & 0x7FFFFFFF; let z = ((s >> 8) % 10000) as real / 1000.0 - 5.0;
+		s = (s * 1103515245 + 12345) & 0x7FFFFFFF; let a = ((s >> 8) % 6283) as real / 1000.0;
+		let ux = cos(a) * 0.05; let uz = sin(a) * 0.05; let wx = -sin(a) * 0.01; let wz = cos(a) * 0.01;
+		let b = (gltf::verts.len / gltf::VERTEX_FLOATS - vfirst) as u32;
+		for c in 4 { let su = if c == 0 || c == 3 { -1.0 } else { 1.0 }; let sw = if c < 2 { -1.0 } else { 1.0 }; shapes::vertex(linalg::v3(linalg::f(x + su * ux + sw * wx), 0.0, linalg::f(z + su * uz + sw * wz)), linalg::v3(0.0, 1.0, 0.0), 0.0, 0.0, float4 { 1.0, 0.0, 0.0, 1.0 }); }
+		gltf::indices.append([b, b + 1, b + 2, b, b + 2, b + 3]);
+	}
+	s3d::place(s3d::add(shapes::finish(vfirst, ifirst, linalg::v3(-5.1, 0.0, -5.1), linalg::v3(5.1, 0.0, 5.1), m)), gfx::mat4_identity);
+	pd_cam(float3 { 0.0, dist, 0.0 }, float3 { 0.0, 0.0, 0.0 }, float3 { 0.0, 0.0, -1.0 });
+	shoot(3, t);
+	let px = gfx::read_pixels(t);
+	var n = 0;
+	for i in px.len / 4 { if px[i * 4 + 1] > 60 { n += 1; } }
+	let cam, all, lost = s3d::meshlet_stats();
+	return n as real, cam;
+}
+fn thin_checks() bool {
+	reset_scene();
+	s3d::sky = s3d::Sky { zenith: float3 { 0.0, 0.0, 0.0 }, horizon: float3 { 0.0, 0.0, 0.0 }, ground: float3 { 0.0, 0.0, 0.0 }, ambient: 0.0, draw: false };
+	s3d::sun = DEF_SUN; s3d::look = DEF_LOOK; s3d::look.ssao = false; s3d::look.bloom = 0.0; s3d::temporal = 0; s3d::alpha_to_coverage = false;
+	s3d::meshlets = true; s3d::meshlet_px = 1.0;
+	s3d::init(512, 512);
+	let t = gfx::render_target(512, 512, gfx::RGBA8);
+	let p0, t0 = th_shot(t, true, 0.0, 60.0);
+	let p1, t1 = th_shot(t, true, 1.0, 60.0);
+	let a = t0 == 40000 && t1 * 4 <= t0 && abs(p1 - p0) <= 0.15 * p0 && p0 > 500.0;
+	print("gpu: thin TH1 20,000 small cards seen from 60 m: ", t0, " triangles and ", p0, " pixels covered without thinning, ", t1, " triangles and ", p1, " pixels with it (bar at most a quarter of the triangles, pixels within 15%)", hr_pass(a));
+	let q0, u0 = th_shot(t, true, 0.0, 4.0);
+	let q1, u1 = th_shot(t, true, 1.0, 4.0);
+	let b = u0 == u1 && q0 == q1 && u0 > 0;
+	print("gpu: thin TH2 the same cards from 4 m: ", u0, " triangles and ", q0, " pixels without thinning, ", u1, " and ", q1, " with it (bar equal)", hr_pass(b));
+	let r1, v1 = th_shot(t, false, 1.0, 60.0);
+	let c = v1 == 40000;
+	print("gpu: thin TH3 solid (not cut-out) cards from 60 m: ", v1, " triangles drawn (bar 40000, solid meshes are never thinned)", hr_pass(c));
+	s3d::meshlets = false; s3d::meshlet_thin = 1.0; s3d::sky = DEF_SKY; s3d::sun = DEF_SUN; s3d::look = DEF_LOOK;
+	a && b && c
+}
 fn weather_checks() bool {
 	half_table();
 	let w1 = wx_cells(false);
@@ -8369,7 +8461,7 @@ fn gpu_checks(dir const byte[:], golden const byte[:]) bool {
 	var only byte[>..] = [];
 	let _ = env("GFX_ONLY", only);
 	if only.len > 0 {
-		let ok = if only[..] == "foliage" { foliage_checks() } else if only[..] == "puddle" { puddle_checks() } else if only[..] == "vfx" { vfx_checks() } else if only[..] == "fx" { fx_checks() } else if only[..] == "lights" { lights_checks() } else if only[..] == "day" { day_checks() } else if only[..] == "hair" { hair_checks() } else if only[..] == "gtao" { gtao_checks() } else if only[..] == "gi" { gi_checks() } else if only[..] == "mblur" { mb_checks() } else if only[..] == "dof" { dof_checks() } else if only[..] == "fx" { fx_checks() } else if only[..] == "tsr" { tsr_checks(dir) } else if only[..] == "probe" { probe_checks(dir) } else if only[..] == "ssgi" { ssgi_checks() } else if only[..] == "decal" { decal_checks() } else if only[..] == "weather" { weather_checks() } else if only[..] == "rect" { rect_checks() } else if only[..] == "small" { small_checks() } else if only[..] == "inst" { instance_checks() } else if only[..] == "caust" { caustic_checks() } else if only[..] == "tex" { texture_checks() } else if only[..] == "stream" { stream_checks() } else if only[..] == "rtr" { rtr_checks() } else if only[..] == "meshlet" { meshlet_checks() } else if only[..] == "sss" { sss_checks() } else if only[..] == "cloth" { cloth_checks() } else if only[..] == "cloud" { cloud_checks() } else if only[..] == "vfog" { fog_checks() } else if only[..] == "sea" { sea_checks() } else if only[..] == "vsm" { vsm_checks() } else { shadow_checks() };
+		let ok = if only[..] == "cutout" { cutout_checks() } else if only[..] == "thin" { thin_checks() } else if only[..] == "foliage" { foliage_checks() } else if only[..] == "puddle" { puddle_checks() } else if only[..] == "vfx" { vfx_checks() } else if only[..] == "fx" { fx_checks() } else if only[..] == "lights" { lights_checks() } else if only[..] == "day" { day_checks() } else if only[..] == "hair" { hair_checks() } else if only[..] == "gtao" { gtao_checks() } else if only[..] == "gi" { gi_checks() } else if only[..] == "mblur" { mb_checks() } else if only[..] == "dof" { dof_checks() } else if only[..] == "fx" { fx_checks() } else if only[..] == "tsr" { tsr_checks(dir) } else if only[..] == "probe" { probe_checks(dir) } else if only[..] == "ssgi" { ssgi_checks() } else if only[..] == "decal" { decal_checks() } else if only[..] == "weather" { weather_checks() } else if only[..] == "rect" { rect_checks() } else if only[..] == "small" { small_checks() } else if only[..] == "inst" { instance_checks() } else if only[..] == "caust" { caustic_checks() } else if only[..] == "tex" { texture_checks() } else if only[..] == "stream" { stream_checks() } else if only[..] == "rtr" { rtr_checks() } else if only[..] == "meshlet" { meshlet_checks() } else if only[..] == "sss" { sss_checks() } else if only[..] == "cloth" { cloth_checks() } else if only[..] == "cloud" { cloud_checks() } else if only[..] == "vfog" { fog_checks() } else if only[..] == "sea" { sea_checks() } else if only[..] == "vsm" { vsm_checks() } else { shadow_checks() };
 		let e = gfx::error();
 		if e.len > 0 { print("gpu: gfx error ", e[..]); return false; }
 		return mark(only[..], ok) && submit_checks(false);
@@ -8539,6 +8631,8 @@ fn gpu_checks(dir const byte[:], golden const byte[:]) bool {
 	if !mark("weather", weather_checks()) { good = false; }
 	if !mark("puddle", puddle_checks()) { good = false; }
 	if !mark("foliage", foliage_checks()) { good = false; }
+	if !mark("cutout", cutout_checks()) { good = false; }
+	if !mark("thin", thin_checks()) { good = false; }
 	if !mark("rect", rect_checks()) { good = false; }
 	if !mark("small", small_checks()) { good = false; }
 	if !mark("instance", instance_checks()) { good = false; }

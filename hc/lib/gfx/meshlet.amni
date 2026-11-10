@@ -947,6 +947,108 @@ fn group(cur const int[:], groups int[>..]&, gfirst int[>..]&) {
 	}
 	gfirst.push(groups.len);
 }
+var thin_on = false;
+var thin_k = 1.0;
+var thin_isles = 0;
+var thin_width = 0.0;
+var thin_long = 0.0;
+var tmap int[>..];
+fn uf(par int[>..]&, i int) int {
+	var r = i;
+	while par[r] != r { r = par[r]; }
+	var c = i;
+	while par[c] != r { let nx = par[c]; par[c] = r; c = nx; }
+	r
+}
+fn thin(tris const int[:], pos f32[:], stride int, at int, cap int, out int[>..]&) real {
+	out.clear();
+	let nt = tris.len / 3;
+	var maxw = 0;
+	for i in tris.len { maxw = max(maxw, weld[tris[i]]); }
+	while pmap.len <= maxw { pmap.push(-1); }
+	while tmap.len < cap { tmap.push(-1); }
+	var used int[>..] = [];
+	var par int[>..] = [];
+	var loc int[>..] = [];
+	for i in tris.len { let w = weld[tris[i]]; if pmap[w] < 0 { pmap[w] = par.len; par.push(par.len); used.push(w); } loc.push(pmap[w]); }
+	for w in used { pmap[w] = -1; }
+	for t in nt { for q in 2 { let a = uf(par, loc[t * 3 + q]); let b = uf(par, loc[t * 3 + q + 1]); if a != b { par[a] = b; } } }
+	var id int[>..] = [];
+	id.resize(par.len, -1);
+	var ni = 0;
+	var ti int[>..] = [];
+	for t in nt { let r = uf(par, loc[t * 3]); if id[r] < 0 { id[r] = ni; ni += 1; } ti.push(id[r]); }
+	if ni < 2 { return -1.0; }
+	let zero = V3 { x: 0.0, y: 0.0, z: 0.0 };
+	var area real[>..] = [];
+	area.resize(ni, 0.0);
+	var cnt int[>..] = [];
+	cnt.resize(ni, 0);
+	var cen V3[>..] = [];
+	cen.resize(ni, zero);
+	for t in nt {
+		let a = vget(pos, stride, at, tris[t * 3]);
+		let b = vget(pos, stride, at, tris[t * 3 + 1]);
+		let c = vget(pos, stride, at, tris[t * 3 + 2]);
+		let ar = v3len(v3cross(b - a, c - a)) * 0.5 + 1e-30;
+		let k = ti[t];
+		area[k] += ar;
+		cnt[k] += 1;
+		cen[k] = cen[k] + v3sc(a + b + c, ar / 3.0);
+	}
+	var all = 0.0;
+	var kept = 0.0;
+	var keep bool[>..] = [];
+	keep.resize(ni, false);
+	for k in ni { all += area[k]; cen[k] = v3sc(cen[k], 1.0 / area[k]); }
+	for j in (ni + 1) / 2 { let a = j * 2; let b = min(a + 1, ni - 1); let k = if area[b] * cnt[a] as real > area[a] * cnt[b] as real { b } else { a }; keep[k] = true; kept += area[k]; }
+	var far real[>..] = [];
+	far.resize(ni, -1.0);
+	var p1 V3[>..] = [];
+	p1.resize(ni, zero);
+	for i in tris.len { let k = ti[i / 3]; if keep[k] { let p = vget(pos, stride, at, tris[i]); let d = v3len(p - cen[k]); if d > far[k] { far[k] = d; p1[k] = p; } } }
+	var lg real[>..] = [];
+	lg.resize(ni, -1.0);
+	var ax V3[>..] = [];
+	ax.resize(ni, zero);
+	for i in tris.len { let k = ti[i / 3]; if keep[k] { let p = vget(pos, stride, at, tris[i]); let d = v3len(p - p1[k]); if d > lg[k] { lg[k] = d; ax[k] = p - p1[k]; } } }
+	for k in ni { if keep[k] { ax[k] = v3sc(ax[k], 1.0 / max(lg[k], 1e-30)); } }
+	var wd real[>..] = [];
+	wd.resize(ni, 0.0);
+	for i in tris.len { let k = ti[i / 3]; if keep[k] { let d = vget(pos, stride, at, tris[i]) - cen[k]; wd[k] = max(wd[k], v3len(d - v3sc(ax[k], v3dot(d, ax[k])))); } }
+	let f = clamp(all / max(kept, 1e-30), 1.0, 4.0);
+	var made int[>..] = [];
+	var ok = true;
+	var err = 0.0;
+	for i in tris.len {
+		let k = ti[i / 3];
+		if !keep[k] || !ok { continue; }
+		let v = tris[i];
+		if tmap[v] < 0 {
+			if next_v >= cap { ok = false; continue; }
+			let fp = clamp(lg[k] / max(2.0 * wd[k], 1e-30), 1.0, f);
+			let g = sqrt(f / fp);
+			let d = vget(pos, stride, at, v) - cen[k];
+			let al = v3dot(d, ax[k]);
+			let q = cen[k] + v3sc(ax[k], al * g) + v3sc(d - v3sc(ax[k], al), g * fp);
+			for c in stride { pos[next_v * stride + c] = pos[v * stride + c]; }
+			pos[next_v * stride + at] = q.x as f32;
+			pos[next_v * stride + at + 1] = q.y as f32;
+			pos[next_v * stride + at + 2] = q.z as f32;
+			let w = weld[v];
+			if pmap[w] < 0 { pmap[w] = next_v; }
+			weld[next_v] = pmap[w];
+			tmap[v] = next_v;
+			made.push(v);
+			next_v += 1;
+		}
+		out.push(tmap[v]);
+	}
+	for v in made { tmap[v] = -1; pmap[weld[v]] = -1; }
+	if !ok || out.len * 4 > tris.len * 3 { out.clear(); return -1.0; }
+	for k in ni { if keep[k] { err += 2.0 * wd[k] * area[k] / kept; thin_isles += 1; thin_width += 2.0 * wd[k]; thin_long += lg[k]; } }
+	err * thin_k
+}
 fn build(pos f32[:], stride int, at int, nv int, indices const u32[:]) {
 	idx.clear();
 	tab.clear();
@@ -1009,10 +1111,11 @@ fn build(pos f32[:], stride int, at int, nv int, indices const u32[:]) {
 				let left = simp.len / 3;
 				if left * 4 > before * 3 || left == 0 { failed = true; }
 			}
+			var te = -1.0;
 			if failed {
 				next_v = saved;
-				for i in s0..e0 { carried.push(groups[i]); }
-				continue;
+				te = if thin_on { thin(gt, pos, stride, at, cap, simp) } else { -1.0 };
+				if te < 0.0 { next_v = saved; for i in s0..e0 { carried.push(groups[i]); } continue; }
 			}
 			var gs int[>..] = [];
 			for i in s0..e0 {
@@ -1050,7 +1153,7 @@ fn build(pos f32[:], stride int, at int, nv int, indices const u32[:]) {
 			}
 			rad = rad * 1.0001;
 			let need = me * 1.0001 + 1e-12;
-			let ge = max(mx as f32, need as f32);
+			let ge = max((if te >= 0.0 { te } else { mx }) as f32, need as f32);
 			for i in s0..e0 {
 				let b = groups[i] * ROW;
 				tab[b + 12] = ctr.x as f32;

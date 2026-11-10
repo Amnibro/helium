@@ -928,6 +928,13 @@ s3d::meshlet_px = 1.0;
 * **Shadows.** Shadow passes draw the level of detail the camera picked, without the
   view and facing tests, so a mesh out of view still casts its shadow. A probe capture
   picks its own level for each face.
+* **Leaves and blades.** A cut-out mesh made of many separate cards (leaves, needles,
+  grass blades) has no shared edges to collapse, so the usual simplifier cannot reduce
+  it. For those cluster groups the coarser level keeps every other card (of each pair,
+  the one with more area per triangle) and widens the kept ones so the covered area
+  stays the same. Its error is the area-weighted mean width of the kept cards divided
+  by `s3d::meshlet_thin` (1): a larger value thins sooner, 0 turns thinning off. Solid
+  meshes are never thinned.
 * **`s3d::meshlet_px`** (1) is the largest error allowed, in pixels. A larger value
   draws fewer triangles.
 * **`s3d::meshlet_cone`** (on) drops clusters that face away from the camera, for
@@ -1188,6 +1195,15 @@ light). Sky and environment light from behind come through with the same color. 
 sun's shadow is looked up from the lit side, so a back-lit leaf does not shadow itself.
 The side that faces the light looks as it did. Foliage shading does not combine with
 `ext` materials.
+
+**Cut-out textures far away.** A leaf or blade texture is mostly empty, so averaging it
+into smaller mip levels pulls the alpha under the cutoff and thin shapes vanish with
+distance. For the base color texture of a cut-out material (`alpha_mode =
+gltf::ALPHA_MASK`), the alpha of each smaller mip level is scaled (between 0.5 and 8
+times) so the share of texels at or above the material's `alpha_cutoff` stays the same
+as in the full-size image. It lives in the texture, so it holds in every pass, shadows
+included. `s3d::cut_keep` (on) turns it off when set to false before the texture is
+first drawn. Cached BC7 files of these textures carry the cutoff in their name.
 
 ### Fabric weave (E13)
 
@@ -2102,6 +2118,24 @@ brightness profile is sampled the most coarsely of the four.
 
 Reported: 1280 x 720 frame 2.78 ms without weather and 3.50 ms with 40 000 drops of rain
 (+0.72 ms: height map, simulation and streaks), wall clock, best of 2 x 60 frames.
+
+### Cut-out and thinning bars (registered before the first GPU run)
+
+512 x 512, unlit white cards on black, camera straight down. Covered pixels are the
+ones with a green level above 60 of 255.
+
+* **CK1** A 512 x 512 texture of 2,600 dashes of 1 x 12 texels, cutoff 0.5, on a 2 m
+  plane: the covered share of the plane at 12 m (one eighth the size on screen) is
+  within 25% of the share at 1.5 m. Measured 0.103 against 0.113. Control: with
+  `cut_keep` off the far share is under half of the close one (0.006).
+* **CK2** At 1.5 m the same pixels are covered with and without it (29,698 both).
+* **TH1** 20,000 cut-out cards of 0.1 x 0.02 m on a 10 m square seen from 60 m:
+  thinning draws at most a quarter of the triangles and the covered pixel count stays
+  within 15%. Measured 9,957 of 40,000 triangles, 8,414 against 9,141 pixels.
+* **TH2** From 4 m the triangles drawn and the pixels covered are equal with and
+  without thinning (9,582 triangles, 102,360 pixels).
+* **TH3** The same cards with a solid material are never thinned: 40,000 triangles
+  at 60 m.
 
 ### Foliage bars (registered before the first GPU run)
 
