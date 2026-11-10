@@ -7218,6 +7218,91 @@ fn cloud_checks() bool {
 	s3d::sky = DEF_SKY; s3d::sun = DEF_SUN; s3d::look = DEF_LOOK;
 	v1 && v2 && v3 && v4 && v5 && v6 && v78 && v9
 }
+fn vsm_frame(virt bool, n int) byte[>..] { s3d::sun.virt = virt; shoot(n, IN_OUT); gfx::read_pixels(IN_OUT) }
+fn vsm_soft(p const byte[:], e const byte[:], m const byte[:]) int {
+	var lo = 255;
+	for i in m.len { if m[i] != 0 { lo = min(lo, sh_luma(p, i)); } }
+	var n = 0;
+	for i in m.len { let g = p[i * 4 + 1] as int; if g > p[i * 4] as int + 8 && g > p[i * 4 + 2] as int + 8 { continue; } let l = sh_luma(p, i); if l + 7 < sh_luma(e, i) && l > lo + 7 { n++; } }
+	n
+}
+fn vsm_checks() bool {
+	IN_OUT = gfx::render_target(1280, 720, gfx::RGBA8);
+	reset_scene();
+	dark_scene();
+	s3d::sky = DEF_SKY; s3d::sky.draw = true; s3d::sun = DEF_SUN; s3d::sun.to_sun = linalg::unit3(float3 { 0.5, 0.8, 0.3 }); s3d::sun.shadows = true; s3d::sun.map_size = 4096; s3d::sun.shadow_far = 24.0;
+	let green = shapes::material(linalg::v3(0.2, 0.8, 0.2), 0.0, 0.7);
+	let _ = s3d::add(shapes::plane(40.0, shapes::material(linalg::v3(0.8, 0.8, 0.8), 0.0, 1.0)));
+	let a = s3d::add(shapes::sphere(0.5, 64, 32, green));
+	let b = s3d::add(shapes::cube(linalg::v3(0.3, 0.3, 0.3), green));
+	s3d::place(a, gfx::translate(float3 { 0.0, 1.2, 0.0 }));
+	s3d::place(b, gfx::translate(float3 { 2.0, 0.8, -1.0 }));
+	s3d::meshlets = false;
+	s3d::init(1280, 720);
+	ml_eye(float3 { 0.0, 2.5, 5.0 }, float3 { 0.0, 0.7, 0.0 });
+	s3d::items[a].visible = false; s3d::items[b].visible = false;
+	let e = vsm_frame(false, 3);
+	s3d::items[a].visible = true; s3d::items[b].visible = true;
+	let c1 = vsm_frame(false, 3);
+	let v1 = vsm_frame(true, 3);
+	let d1, l1, x1 = s3d::vsm_stats();
+	s3d::vsm_test_blank(true);
+	let k1 = vsm_frame(true, 3);
+	s3d::vsm_test_blank(false);
+	let mc = ml_mask(c1[..], e[..], true); let mv = ml_mask(v1[..], e[..], true); let mk = ml_mask(k1[..], e[..], true);
+	let i1 = ml_iou(mc[..], mv[..]); let ik = ml_iou(mc[..], mk[..]);
+	let o1 = i1 >= 0.97 && ml_n(mc[..]) >= 2000 && ik < 0.5;
+	print("gpu: virtual shadows V1 shadow pixels cascades ", ml_n(mc[..]), " virtual ", ml_n(mv[..]), " IoU ", r3(i1), " (bar >= 0.97); control with a blank page table IoU ", r3(ik), " (bar < 0.5)", if o1 { " PASS" } else { " FAIL" });
+	let o2 = d1 == 0 && l1 > 0 && x1 == 0;
+	print("gpu: virtual shadows V2 still scene, third frame: pages drawn ", d1, " (bar 0), pages in use ", l1, ", pages that did not fit ", x1, " (bar 0)", if o2 { " PASS" } else { " FAIL" });
+	let _ = vsm_frame(true, 3);
+	s3d::place(b, gfx::translate(float3 { 2.3, 0.8, -1.0 }));
+	let v3 = vsm_frame(true, 1);
+	let d3, l3, x3 = s3d::vsm_stats();
+	let c3 = vsm_frame(false, 3);
+	let i3 = ml_iou(ml_mask(c3[..], e[..], true)[..], ml_mask(v3[..], e[..], true)[..]);
+	let o3 = d3 > 0 && d3 * 2 <= l3 && i3 >= 0.97;
+	print("gpu: virtual shadows V3 one box moved: pages drawn ", d3, " of ", l3, " in use (bar > 0 and at most half), IoU ", r3(i3), " (bar >= 0.97)", if o3 { " PASS" } else { " FAIL" });
+	ml_eye(float3 { 3.0, 1.6, 4.0 }, float3 { 0.5, 0.2, -0.5 });
+	s3d::items[a].visible = false; s3d::items[b].visible = false;
+	let e4 = vsm_frame(false, 3);
+	s3d::items[a].visible = true; s3d::items[b].visible = true;
+	let c4 = vsm_frame(false, 3);
+	let v4 = vsm_frame(true, 3);
+	let d4, l4, x4 = s3d::vsm_stats();
+	let i4 = ml_iou(ml_mask(c4[..], e4[..], true)[..], ml_mask(v4[..], e4[..], true)[..]);
+	let o4 = i4 >= 0.97 && x4 == 0 && d4 == 0;
+	print("gpu: virtual shadows V4 camera moved: IoU ", r3(i4), " (bar >= 0.97), pages in use ", l4, ", did not fit ", x4, " (bar 0), drawn on the third frame ", d4, " (bar 0)", if o4 { " PASS" } else { " FAIL" });
+	ml_eye(float3 { -0.75, 0.25, 0.6 }, float3 { -0.75, 0.0, -0.1 });
+	s3d::sun.map_size = 2048; s3d::sun.shadow_far = 60.0;
+	s3d::items[a].visible = false; s3d::items[b].visible = false;
+	let e5 = vsm_frame(false, 3);
+	s3d::items[a].visible = true; s3d::items[b].visible = true;
+	let c5 = vsm_frame(false, 3);
+	let v5 = vsm_frame(true, 3);
+	let d5, l5, x5 = s3d::vsm_stats();
+	let m5 = ml_mask(c5[..], e5[..], true); let n5 = ml_mask(v5[..], e5[..], true);
+	let sc = vsm_soft(c5[..], e5[..], m5[..]); let sv = vsm_soft(v5[..], e5[..], n5[..]);
+	let o5 = ml_n(n5[..]) >= 2000 && sv * 2 <= sc && x5 == 0;
+	print("gpu: virtual shadows V5 close to the shadow edge: half-lit pixels cascades (2048 map, 60 m) ", sc, ", virtual ", sv, " (bar at most half), shadow pixels ", ml_n(n5[..]), ", pages in use ", l5, ", did not fit ", x5, if o5 { " PASS" } else { " FAIL" });
+	ml_eye(float3 { 0.0, 2.5, 5.0 }, float3 { 0.0, 0.7, 0.0 });
+	s3d::sun.map_size = 4096; s3d::sun.shadow_far = 24.0;
+	let h6 = vsm_frame(true, 3);
+	s3d::sun.angle = 0.07;
+	let c6 = vsm_frame(false, 3);
+	let v6 = vsm_frame(true, 3);
+	let d6, l6, x6 = s3d::vsm_stats();
+	s3d::sun.angle = 0.0;
+	let m6 = ml_mask(c6[..], e[..], true); let n6 = ml_mask(v6[..], e[..], true); let mh = ml_mask(h6[..], e[..], true);
+	let s6 = vsm_soft(c6[..], e[..], m6[..]); let t6 = vsm_soft(v6[..], e[..], n6[..]); let sh = vsm_soft(h6[..], e[..], mh[..]);
+	var a6 = 0; var ah = 0; var u6 = 0;
+	for i in m6.len { if m6[i] != 0 || n6[i] != 0 || mh[i] != 0 { u6++; a6 += abs(sh_luma(c6[..], i) - sh_luma(v6[..], i)); ah += abs(sh_luma(c6[..], i) - sh_luma(h6[..], i)); } }
+	let e6 = a6 as real / max(u6, 1) as real; let eh = ah as real / max(u6, 1) as real;
+	let o6 = t6 >= sh * 2 && t6 * 10 >= s6 * 7 && t6 * 10 <= s6 * 14 && e6 * 2.0 <= eh && x6 == 0 && d6 == 0;
+	print("gpu: virtual shadows V6 soft sun (angle 0.07): half-lit pixels cascades ", s6, ", virtual ", t6, " (bar 0.7x to 1.4x of cascades and >= 2x the hard virtual count ", sh, "); mean shade difference from cascades ", r3(e6), ", hard control ", r3(eh), " (bar at most half the control); did not fit ", x6, ", drawn on the third frame ", d6, if o6 { " PASS" } else { " FAIL" });
+	s3d::sun.virt = false;
+	o1 && o2 && o3 && o4 && o5 && o6
+}
 fn mark(name const byte[:], ok bool) bool {
 	if SUB_LOG.len == 0 { return ok; }
 	let n, top, slow, _ = sub_since(SUB_AT);
@@ -7263,7 +7348,7 @@ fn gpu_checks(dir const byte[:], golden const byte[:]) bool {
 	var only byte[>..] = [];
 	let _ = env("GFX_ONLY", only);
 	if only.len > 0 {
-		let ok = if only[..] == "gtao" { gtao_checks() } else if only[..] == "gi" { gi_checks() } else if only[..] == "mblur" { mb_checks() } else if only[..] == "dof" { dof_checks() } else if only[..] == "fx" { fx_checks() } else if only[..] == "tsr" { tsr_checks(dir) } else if only[..] == "probe" { probe_checks(dir) } else if only[..] == "ssgi" { ssgi_checks() } else if only[..] == "decal" { decal_checks() } else if only[..] == "weather" { weather_checks() } else if only[..] == "rect" { rect_checks() } else if only[..] == "small" { small_checks() } else if only[..] == "inst" { instance_checks() } else if only[..] == "caust" { caustic_checks() } else if only[..] == "tex" { texture_checks() } else if only[..] == "stream" { stream_checks() } else if only[..] == "rtr" { rtr_checks() } else if only[..] == "meshlet" { meshlet_checks() } else if only[..] == "sss" { sss_checks() } else if only[..] == "cloth" { cloth_checks() } else if only[..] == "cloud" { cloud_checks() } else if only[..] == "vfog" { fog_checks() } else if only[..] == "sea" { sea_checks() } else { shadow_checks() };
+		let ok = if only[..] == "gtao" { gtao_checks() } else if only[..] == "gi" { gi_checks() } else if only[..] == "mblur" { mb_checks() } else if only[..] == "dof" { dof_checks() } else if only[..] == "fx" { fx_checks() } else if only[..] == "tsr" { tsr_checks(dir) } else if only[..] == "probe" { probe_checks(dir) } else if only[..] == "ssgi" { ssgi_checks() } else if only[..] == "decal" { decal_checks() } else if only[..] == "weather" { weather_checks() } else if only[..] == "rect" { rect_checks() } else if only[..] == "small" { small_checks() } else if only[..] == "inst" { instance_checks() } else if only[..] == "caust" { caustic_checks() } else if only[..] == "tex" { texture_checks() } else if only[..] == "stream" { stream_checks() } else if only[..] == "rtr" { rtr_checks() } else if only[..] == "meshlet" { meshlet_checks() } else if only[..] == "sss" { sss_checks() } else if only[..] == "cloth" { cloth_checks() } else if only[..] == "cloud" { cloud_checks() } else if only[..] == "vfog" { fog_checks() } else if only[..] == "sea" { sea_checks() } else if only[..] == "vsm" { vsm_checks() } else { shadow_checks() };
 		let e = gfx::error();
 		if e.len > 0 { print("gpu: gfx error ", e[..]); return false; }
 		return mark(only[..], ok) && submit_checks(false);
@@ -7415,6 +7500,7 @@ fn gpu_checks(dir const byte[:], golden const byte[:]) bool {
 	if !mark("taa", taa_checks(dir)) { good = false; }
 	if !mark("tsr", tsr_checks(dir)) { good = false; }
 	if !mark("shadow", shadow_checks()) { good = false; }
+	if !mark("vsm", vsm_checks()) { good = false; }
 	if !mark("look_taa", look_taa_checks(dir)) { good = false; }
 	if !mark("ghost", ghost_checks()) { good = false; }
 	if !mark("t8_still", t8_still()) { good = false; }

@@ -34,6 +34,7 @@ layout(std430, set = 2, binding = 19) readonly buffer Dist { vec2 probe_dist[]; 
 layout(std430, set = 2, binding = 20) readonly buffer LightRecs { vec4 lrec[]; };
 layout(std430, set = 2, binding = 21) readonly buffer LightCells { uint lcell[]; };
 layout(std430, set = 2, binding = 22) readonly buffer SsgiPx { uvec2 ssgi_px[]; };
+layout(std430, set = 2, binding = 23) readonly buffer VsmTab { int vsm_tab[]; };
 
 const int CASCADES = 3;
 const int MAX_LIGHTS = 16;
@@ -78,6 +79,10 @@ layout(set = 3, binding = 0) uniform Frame {
 	vec4 caust_box;
 	vec4 caust_abs;
 	vec4 rtr;
+	mat4 vsm_rot;
+	vec4 vsm_zrow;
+	vec4 vsm;
+	vec4 vsm_x;
 };
 #include "gi.glsl"
 
@@ -446,9 +451,77 @@ void rect_light(vec3 d, vec3 ld, vec4 la, vec4 lr, vec3 n, vec3 v, vec3 f0, floa
 	float lu = dot(n, lrep);
 	lrep = lu < 0.02 ? normalize(lrep + n * (0.02 - lu)) : lrep;
 }
+float vsm_fetch(vec2 m, int k, out float t) {
+	int np = int(vsm.w);
+	for (int j = k; j < 12; j++) {
+		t = vsm.x * float(1 << j);
+		ivec2 wt = ivec2(floor(m / t + vec2(vsm_tab[j * 2], vsm_tab[j * 2 + 1]) / 65536.0));
+		ivec2 pg = wt >> 7;
+		if (pg.x < 0 || pg.y < 0 || pg.x > 63 || pg.y > 63) continue;
+		int e = vsm_tab[24 + j * 4096 + pg.y * 64 + pg.x];
+		if (e == 0) continue;
+		if (e < 0) return 2.0;
+		ivec2 o = ivec2((e - 1) % np, (e - 1) / np) * 128 + ivec2(wt.x & 127, 127 - (wt.y & 127));
+		return texelFetch(tex_shadow_raw, ivec3(o, 0), 0).r;
+	}
+	return 2.0;
+}
+float vsm_tap(vec2 m, int k, float zr) {
+	float t;
+	float d = vsm_fetch(m, k, t);
+	return d < zr - vsm_x.z * t ? 0.0 : 1.0;
+}
+float vsm_pcf(vec2 m, int k, float t, float zr) {
+	vec2 f = fract(m / t + vec2(vsm_tab[k * 2], vsm_tab[k * 2 + 1]) / 65536.0 - 0.5);
+	float s = 0.0;
+	for (int y = 0; y < 4; y++) {
+		float wy = y == 0 ? 1.0 - f.y : (y == 3 ? f.y : 1.0);
+		for (int x = 0; x < 4; x++) s += wy * (x == 0 ? 1.0 - f.x : (x == 3 ? f.x : 1.0)) * vsm_tap(m + (vec2(float(x), float(y)) - 1.0 - f) * t, k, zr);
+	}
+	return s / 9.0;
+}
+float vsm_soft(vec2 m, int k, float t, float zr, vec3 n) {
+	vec3 nl = (vsm_rot * vec4(n, 0.0)).xyz;
+	vec2 g = nl.xy / max(nl.z, 0.05) * vsm_x.z;
+	g *= min(1.0, 10.0 * vsm_x.z / max(length(g), 1e-12));
+	float tn = view_dir.w;
+	float rs = max(tn * sun_rgb.w, 2.0 * t);
+	float rot = gi.w > 0.5 ? 6.2831853 * fract(52.9829189 * fract(dot(gl_FragCoord.xy, vec2(0.06711056, 0.00583715)))) : 0.0;
+	float zb = 0.0, nb = 0.0, tj;
+	for (int i = 0; i < 32; i++) {
+		vec2 o = vogel(i, 32, rot) * (i == 0 ? 0.0 : 0.5 * t * pow(max(2.0 * rs / t, 1.0), float(i) / 31.0) / sqrt((float(i) + 0.5) / 32.0));
+		float d = vsm_fetch(m + o, k, tj);
+		float zt = zr + dot(g, o) - vsm_x.z * tj;
+		float w = d < zt ? clamp(2.0 - 2.0 * length(o) / max((zt - d) / vsm_x.z * tn, 1.5 * t), 0.0, 1.0) : 0.0;
+		zb += w * d;
+		nb += w;
+	}
+	if (nb < 1e-3) return 1.0;
+	float rf = clamp((zr - zb / nb) / vsm_x.z * tn, t, rs);
+	float lit = 0.0;
+	if (rf < 2.0 * t) lit = vsm_pcf(m, k, t, zr);
+	else {
+		for (int i = 0; i < 28; i++) {
+			vec2 o = vogel(i, 28, rot + 1.3) * rf;
+			float d = vsm_fetch(m + o, k, tj);
+			lit += d < zr + dot(g, o) - vsm_x.z * tj ? 0.0 : 1.0;
+		}
+		lit /= 28.0;
+	}
+	return mix(1.0, lit, clamp(nb, 0.0, 1.0));
+}
+float sun_vsm(vec3 p, vec3 n, float depth) {
+	int k = clamp(int(floor(log2(max(depth * vsm.y, 0.000001)) + 0.5)), 0, 11);
+	float t = vsm.x * float(1 << k);
+	vec3 r = p + n * (1.5 * t) - eye.xyz;
+	vec2 m = (vsm_rot * vec4(r, 0.0)).xy;
+	float zr = dot(vsm_zrow.xyz, r) + vsm_zrow.w;
+	return view_dir.w > 0.0 ? vsm_soft(m, k, t, zr, n) : vsm_pcf(m, k, t, zr);
+}
 float sun_visibility(vec3 p, vec3 n) {
 	if (to_sun.w < 0.5) return 1.0;
 	float depth = dot(p - eye.xyz, view_dir.xyz);
+	if (vsm_x.x > 0.5) return depth > vsm_x.y ? 1.0 : sun_vsm(p, n, depth);
 	int c = 0;
 	if (depth > cascade_far.x) c = 1;
 	if (depth > cascade_far.y) c = 2;

@@ -260,6 +260,56 @@ clean soft one with `fit`. Contact rays mostly add the lash line on the upper li
 nostril and lip creases and self-shadowing between hair cards. Without TAA a wide key
 (0.17 rad and up) shows faint fixed-pattern banding inside large penumbras.
 
+### Virtual shadow maps (E3)
+
+`sun.virt = true` takes the sun's shadow from a clipmap of cached pages instead of the
+cascades. Off by default; with it off the frame is unchanged. The cascades are still
+drawn while it is on.
+
+| setting | default | what it does |
+| --- | --- | --- |
+| `sun.virt` | false | turns the virtual lookup on (needs `sun.shadows`). |
+| `sun.texel` | 0.0005 | size of a level 0 shadow texel in metres. Level k doubles it k times; 12 levels reach 1.02 m. |
+| `sun.sharp` | 1.0 | shadow texels per screen pixel. 0.5 picks one level coarser everywhere and needs about a quarter of the pages. |
+| `sun.pool` | 8192 | side of the page atlas in texels (a DEPTH32F texture, 256 MiB at 8192, made on first use); 128 x 128 pages, so 4096 pages at the default. |
+
+How it works:
+
+* Each level is a 64 x 64 window of pages around the eye in light space (4.1 m wide at
+  level 0, 8.4 km at level 11). A pixel at view depth d uses level
+  `floor(log2(d * pixel angle / (texel * sharp)) + 0.5)`, about one shadow texel per
+  screen pixel at every distance up to `shadow_far`.
+* Every frame the visible draws mark the pages their boxes cover inside each level's
+  depth range. A marked page with casters over it takes a slot in the atlas. A slot is
+  keyed by level and page position, so it survives camera motion, and it is redrawn only
+  when the casters over it change: each page folds the transform, level of detail and
+  instance-set revision of every caster box that overlaps it into a hash. Skinned,
+  morphed and swaying casters redraw their pages every frame.
+* The page table is an int storage buffer (fragment storage slot 7): 0 = not marked
+  (the lookup tries the next coarser level), -1 = marked with no casters (lit),
+  otherwise slot + 1. `sun_vsm()` in `surface.frag` does the lookup with a 3 x 3
+  bilinear-weighted filter; with `sun.angle` > 0 it runs the same blocker search and
+  variable-radius filter as the cascades (32 + 28 taps), and marking grows by the widest
+  penumbra.
+* `vsm_stats()` returns the pages drawn this frame, the pages in use and the pages that
+  did not fit in the pool.
+
+Limits: casters more than 1024 m from the eye along the sun direction are not drawn into
+pages; a page that does not fit in the pool is lit (the third `vsm_stats()` value counts
+them: raise `pool` or lower `sharp`); `sun.soft`, `sun.fit` and `map_size` shape the
+cascades only.
+
+Measured by the `vsm` check in `gfx_smoke` (1280 x 720, RX 9060 XT, RADV):
+
+| check | result |
+| --- | --- |
+| shadow mask against 4096 cascades over 24 m | IoU 0.988 (0.013 with a blank page table) |
+| still scene, third frame | 0 pages drawn, 728 in use |
+| one box moved | 17 of 728 pages redrawn, IoU 0.989 |
+| camera moved | IoU 0.984, 0 pages drawn on the third frame |
+| half-lit edge pixels seen from 0.25 m above the floor, against 2048 cascades over 60 m | 2,227 against 11,303 |
+| soft sun, `angle` 0.07: half-lit pixels against the cascade filter | 4,277 against 4,271 |
+
 ### Post effects (E8)
 
 All off by default; with them off the frame is unchanged (both goldens pass as before).
@@ -1067,9 +1117,9 @@ large arrays on their first use: `T.resize(n, 0); T.clear();`. `read_file`,
   (`nd`, `lin_depth`), and GTAO (`ao_mode = 1`) writes bent normals (`bent_target()`). The ambient
   term is a single function (`ambient_light()` in `surface.frag`) fed by `Sky`; probe
   irradiance (SH) or a prefiltered cube replaces it without touching the lights.
-* **More cascades, virtual shadow maps**: `CASCADES` sizes the shadow array and
+* **More cascades**: `CASCADES` sizes the shadow array and
   `FrameU.cascade_mat`; the sun lookup is `sun_visibility()` / `sun_pcss()` and the
-  local-light lookup `local_visibility()` in `surface.frag` (see the E3 section).
+  local-light lookup `local_visibility()` in `surface.frag` (see the E3 section); virtual pages are looked up in `sun_vsm()`.
 * **Occlusion culling**: `meshlet_cull.comp` tests each cluster's sphere against the
   view planes; a test against a depth pyramid goes next to that one.
 
@@ -3296,7 +3346,8 @@ pass-through mean error is 0.0106 % (max 0.0488 %).
   surfaces reflect as rough non-metals). With SSR on, things on screen reflect in full
   detail. One bounce: a mirror seen in a mirror shows ambient light only. Rough
   reflections take one ray per pixel. Blended and transmissive surfaces do not trace.
-* Shadows: virtual shadow maps are not built; the sun uses cascaded shadow maps.
+* Shadows: virtual shadow maps cover the sun only; spot and point lights use the local
+  shadow atlas.
 * Meshlets: static opaque and cut-out meshes only; skinned, morphed, blended and
   transmissive meshes and instance groups draw every triangle. No occlusion culling
   and no software rasterizer: triangles smaller than a pixel go through the GPU's

@@ -52,7 +52,7 @@ let LOCAL_LAYERS = 12;
 let HIZ_LEVELS = 7;
 
 struct Camera { eye float3, target float3, up float3, fov_y f32, near f32, far f32 }
-struct Sun { to_sun float3, rgb float3, shadows bool, shadow_far f32, map_size int, soft f32 = 0.0, angle f32 = 0.0, reach f32 = 1.0, fit bool = false, contact f32 = 0.0 }
+struct Sun { to_sun float3, rgb float3, shadows bool, shadow_far f32, map_size int, soft f32 = 0.0, angle f32 = 0.0, reach f32 = 1.0, fit bool = false, contact f32 = 0.0, virt bool = false, texel f32 = 0.0005, pool int = 8192, sharp f32 = 1.0 }
 struct Light { pos float3, range f32, rgb float3, kind int, dir float3 = float3 { 0.0, -1.0, 0.0 }, cone f32 = 0.5, edge f32 = 0.2, shadows bool = false, soft f32 = 1.5, radius f32 = 0.0, length f32 = 0.0, width f32 = 0.0, height f32 = 0.0, axis float3 = float3 { 1.0, 0.0, 0.0 }, falloff int = 0 }
 struct Sky { zenith float3, horizon float3, ground float3, ambient f32, draw bool }
 struct Look { exposure f32, white f32, bloom f32, bloom_cut f32, desaturate f32, ssao bool, ao_radius f32, ao_power f32, ao_samples int, curve int = 0, auto_exposure bool = false, ae_key f32 = 0.18, ae_low f32 = 0.5, ae_high f32 = 0.95, ae_min f32 = -4.0, ae_max f32 = 4.0, ae_up f32 = 3.0, ae_down f32 = 1.0, ae_center f32 = 3.0, lut f32 = 0.0, vignette f32 = 0.0, chroma f32 = 0.0, grain f32 = 0.0, sharpen f32 = 0.0, saturation f32 = 1.0, contrast f32 = 1.0, warmth f32 = 0.0 }
@@ -73,7 +73,7 @@ struct FrameU {
 	cascade_mat gfx::mat4[3], cascade_far float4, eye float4, view_dir float4, to_sun float4, sun_rgb float4,
 	zenith float4, horizon float4, ground float4, screen float4, light_pos float4[16], light_rgb float4[16], gi float4, gi_origin float4, gi_step float4, gi_dims float4,
 	light_dir float4[16], light_shd float4[16], local_mat gfx::mat4[12], refl float4, view_m gfx::mat4, env float4, env_rot float4, vp gfx::mat4, cluster float4, cluster2 float4,
-	probe_n float4, probe_pos float4[8], probe_lo float4[8], probe_hi float4[8], ssgi float4, decal float4, caust float4, caust_w float4, caust_box float4, caust_abs float4, rtr float4
+	probe_n float4, probe_pos float4[8], probe_lo float4[8], probe_hi float4[8], ssgi float4, decal float4, caust float4, caust_w float4, caust_box float4, caust_abs float4, rtr float4, vsm_rot gfx::mat4, vsm_zrow float4, vsm float4, vsm_x float4
 }
 struct GiU { origin float4, step float4, dims float4, rot0 float4, rot1 float4, rot2 float4, params float4, to_sun float4, sun_rgb float4, zenith float4, horizon float4, ground float4, light_pos float4[8], light_rgb float4[8], env float4, env_rot float4 }
 struct SurfaceU { base float4, emissive float4, params float4, alpha float4, uv_sets float4, uv_sets2 float4, tri float4, top_tint float4, xm_base float4, xm_mr float4, xm_nrm float4, xm_occ float4, xm_emi float4, xo0 float4, xo1 float4, xo2 float4, sheen float4, misc float4, shade_a float4, shade_b float4, shade_c float4, xm_det float4, xo_det float4, top_lay float4 }
@@ -620,11 +620,11 @@ fn add_instances(asset int, mats gfx::mat4[:]) int {
 	instances.push(InstSet { asset: asset, first: inst_m.len, count: mats.len, top: hi.y, c: linalg::mix3(lo, hi, 0.5), r: linalg::f(sqrt(linalg::dot3(d, d) as real)) * 0.5, .. });
 	inst_m.append(mats);
 	for k in mats.len { inst_c.push(f4(0.0, 0.0, 0.0, 0.0)); inst_bound(instances.len - 1, k); }
-	inst_dirty = true;
+	inst_dirty = true; inst_rev += 1;
 	instances.len - 1
 }
-fn set_instance(set int, k int, m gfx::mat4) { inst_m[instances[set].first + k] = m; inst_bound(set, k); inst_dirty = true; }
-fn clear_instances() { instances.clear(); inst_m.clear(); inst_c.clear(); inst_dirty = true; }
+fn set_instance(set int, k int, m gfx::mat4) { inst_m[instances[set].first + k] = m; inst_bound(set, k); inst_dirty = true; inst_rev += 1; }
+fn clear_instances() { instances.clear(); inst_m.clear(); inst_c.clear(); inst_dirty = true; inst_rev += 1; }
 fn instance_drawn(set int, lod int) int { instances[set].nv[lod] }
 fn instance_list(set int, lod int) int[>..] {
 	var out int[>..] = [];
@@ -926,6 +926,9 @@ fn init(w int, h int, ow int, oh int) bool {
 	pipe_gi_trace = gfx::compute_pipeline(embed_shader("shaders/gi_trace.comp"));
 	pipe_gi_update = gfx::compute_pipeline(embed_shader("shaders/gi_update.comp"));
 	gi_dummy = gfx::buffer(gfx::BUFFER_STORAGE | gfx::BUFFER_COMPUTE_READ, 64, []);
+	vsm_table = gfx::buffer(gfx::BUFFER_STORAGE, (VSM_HEAD + VSM_LEVELS * 4096) * 4, []);
+	if vsm_tab.len == 0 { for _ in VSM_HEAD + VSM_LEVELS * 4096 { vsm_tab.push(0); } for _ in VSM_LEVELS * 4096 { vsm_mark.push(0); vsm_at.push(-1); } }
+	pipe_vsm_clear = gfx::pipeline(embed_shader("shaders/far.vert"), embed_shader("shaders/empty.frag"), gfx::PipelineDesc { depth_test: true, depth_write: true, depth_compare: gfx::COMPARE_ALWAYS });
 	pipe_bright = gfx::pipeline(scr, embed_shader("shaders/glow_bright.frag"));
 	pipe_down = gfx::pipeline(scr, embed_shader("shaders/glow_down.frag"));
 	pipe_up = gfx::pipeline(scr, embed_shader("shaders/glow_up.frag"), gfx::PipelineDesc { blend: gfx::BLEND_ADD });
@@ -1645,7 +1648,7 @@ fn gather_instances() {
 		if xbuf_cap > 0 { gfx::release(xbuf); }
 		xbuf_cap = max(inst_m.len * 2, 1);
 		xbuf = gfx::buffer(gfx::BUFFER_STORAGE, xbuf_cap * 64, []);
-		inst_dirty = true;
+		inst_dirty = true; inst_rev += 1;
 	}
 	if inst_dirty && inst_m.len > 0 { gfx::update_buffer(xbuf, 0, bytes_of(inst_m)[..inst_m.len * 64]); }
 	inst_dirty = false;
@@ -2039,6 +2042,7 @@ fn setup_cascades() {
 }
 
 fn fill_frame() {
+	vsm_setup();
 	let fwd = forward();
 	frame_u.cascade_mat[0] = cascade_vp[0];
 	frame_u.cascade_mat[1] = cascade_vp[1];
@@ -2303,6 +2307,281 @@ fn light_upload() {
 	gfx::update_buffer(cluster_buf, cb[..]);
 	if lights.len == 0 { cluster_words.clear(); }
 }
+let VSM_LEVELS = 12;
+let VSM_PAGE = 128;
+let VSM_GRID = 64;
+let VSM_HEAD = 24;
+var vsm_face int[24] = [0, 2, 6, 4, 1, 3, 7, 5, 0, 1, 5, 4, 2, 3, 7, 6, 0, 1, 3, 2, 4, 5, 7, 6];
+var vsm_atlas gfx::Texture;
+var vsm_side = 0;
+var vsm_table gfx::Buffer;
+var pipe_vsm_clear gfx::Pipeline;
+var vsm_tab i32[>..] = [];
+var vsm_mark byte[>..] = [];
+var vsm_at int[>..] = [];
+var vsm_key int[>..] = [];
+var vsm_hash int[>..] = [];
+var vsm_seen int[>..] = [];
+var vsm_org int[>..] = [];
+var vsm_r real[>..] = [];
+var vsm_pa real[>..] = [];
+var vsm_pb real[>..] = [];
+var vsm_bc real[>..] = [];
+var vsm_sc real[>..] = [];
+var vsm_bp real[>..] = [];
+var vsm_sp real[>..] = [];
+var vsm_cr real[>..] = [];
+var vsm_ch int[>..] = [];
+var vsm_cb int[>..] = [];
+var vsm_todo int[>..] = [];
+var vsm_t0 real = 0.0005;
+var vsm_zc real = 0.0;
+var vsm_dir float3;
+var vsm_hand = 0;
+var vsm_frame = 0;
+var vsm_drawn = 0;
+var vsm_live = 0;
+var vsm_missed = 0;
+var vsm_wide real = 0.0;
+var vsm_blank = false;
+var vsm_fresh = true;
+var inst_rev = 0;
+fn vsm_planes(c real[>..]&, o real[>..]&) {
+	o.clear();
+	var cx = 0.0; var cy = 0.0; var cz = 0.0;
+	for i in 8 { cx += c[i * 3] * 0.125; cy += c[i * 3 + 1] * 0.125; cz += c[i * 3 + 2] * 0.125; }
+	for f in 6 {
+		let a = vsm_face[f * 4] * 3; let b = vsm_face[f * 4 + 1] * 3; let d = vsm_face[f * 4 + 3] * 3;
+		let ux = c[b] - c[a]; let uy = c[b + 1] - c[a + 1]; let uz = c[b + 2] - c[a + 2];
+		let vx = c[d] - c[a]; let vy = c[d + 1] - c[a + 1]; let vz = c[d + 2] - c[a + 2];
+		var nx = uy * vz - uz * vy; var ny = uz * vx - ux * vz; var nz = ux * vy - uy * vx;
+		let l = sqrt(nx * nx + ny * ny + nz * nz);
+		let s = if l > 0.0 { (if nx * (cx - c[a]) + ny * (cy - c[a + 1]) + nz * (cz - c[a + 2]) > 0.0 { -1.0 } else { 1.0 }) / l } else { 0.0 };
+		nx *= s; ny *= s; nz *= s;
+		o.push(nx); o.push(ny); o.push(nz); o.push(nx * c[a] + ny * c[a + 1] + nz * c[a + 2] + 0.0001);
+	}
+}
+fn vsm_cut(pl real[>..]&) {
+	for q in 6 {
+		if vsm_pa.len == 0 { return; }
+		let nx = pl[q * 4]; let ny = pl[q * 4 + 1]; let nz = pl[q * 4 + 2]; let d = pl[q * 4 + 3];
+		vsm_pb.clear();
+		let n = vsm_pa.len / 3;
+		for i in n {
+			let a = i * 3; let b = ((i + 1) % n) * 3;
+			let da = nx * vsm_pa[a] + ny * vsm_pa[a + 1] + nz * vsm_pa[a + 2] - d;
+			let db = nx * vsm_pa[b] + ny * vsm_pa[b + 1] + nz * vsm_pa[b + 2] - d;
+			if da <= 0.0 { vsm_pb.push(vsm_pa[a]); vsm_pb.push(vsm_pa[a + 1]); vsm_pb.push(vsm_pa[a + 2]); }
+			if (da <= 0.0) != (db <= 0.0) { let t = da / (da - db); for j in 3 { vsm_pb.push(vsm_pa[a + j] + (vsm_pa[b + j] - vsm_pa[a + j]) * t); } }
+		}
+		vsm_pa.clear(); vsm_pa.append(vsm_pb[..]);
+	}
+}
+fn vsm_paint(k int) {
+	let n = vsm_pa.len / 3;
+	if n == 0 { return; }
+	let t = vsm_t0 * (1 << k) as real; let mg = 8.0 + vsm_wide / t;
+	let ox = (vsm_org[k * 2] * VSM_PAGE) as real; let oy = (vsm_org[k * 2 + 1] * VSM_PAGE) as real;
+	vsm_pb.clear();
+	var y0 = 1.0e30; var y1 = -1.0e30;
+	for i in n {
+		let a = i * 3;
+		let y = (vsm_r[3] * vsm_pa[a] + vsm_r[4] * vsm_pa[a + 1] + vsm_r[5] * vsm_pa[a + 2]) / t - oy;
+		vsm_pb.push((vsm_r[0] * vsm_pa[a] + vsm_r[1] * vsm_pa[a + 1] + vsm_r[2] * vsm_pa[a + 2]) / t - ox); vsm_pb.push(y);
+		y0 = min(y0, y); y1 = max(y1, y);
+	}
+	let r0 = max(floor((max(y0, -1.0e9) - mg) / 128.0) as int, 0); let r1 = min(floor((min(y1, 1.0e9) + mg) / 128.0) as int, VSM_GRID - 1);
+	for ry in r0..r1 + 1 {
+		let ya = (ry * VSM_PAGE) as real - mg; let yb = ya + 128.0 + 2.0 * mg;
+		var x0 = 1.0e30; var x1 = -1.0e30;
+		for i in n {
+			let a = i * 2; let b = ((i + 1) % n) * 2;
+			let ay = vsm_pb[a + 1]; let by = vsm_pb[b + 1];
+			if (ay < ya && by < ya) || (ay > yb && by > yb) { continue; }
+			let dy = by - ay; let ax = vsm_pb[a]; let dx = vsm_pb[b] - ax;
+			let ta = if dy == 0.0 { 0.0 } else { min(max((ya - ay) / dy, 0.0), 1.0) };
+			let tb = if dy == 0.0 { 1.0 } else { min(max((yb - ay) / dy, 0.0), 1.0) };
+			x0 = min(x0, min(ax + dx * ta, ax + dx * tb)); x1 = max(x1, max(ax + dx * ta, ax + dx * tb));
+		}
+		if x1 < x0 { continue; }
+		let c0 = max(floor((max(x0, -1.0e9) - mg) / 128.0) as int, 0); let c1 = min(floor((min(x1, 1.0e9) + mg) / 128.0) as int, VSM_GRID - 1);
+		for rx in c0..c1 + 1 { vsm_mark[k * 4096 + ry * VSM_GRID + rx] = 1; }
+	}
+}
+fn vsm_faces(c real[>..]&, pl real[>..]&, k int) {
+	for f in 6 {
+		vsm_pa.clear();
+		for j in 4 { let a = vsm_face[f * 4 + j] * 3; vsm_pa.push(c[a]); vsm_pa.push(c[a + 1]); vsm_pa.push(c[a + 2]); }
+		vsm_cut(pl);
+		vsm_paint(k);
+	}
+}
+fn vsm_mix(h int, x int) int { ((h % 2147483647) * 48271 + (x % 2147483647 + 2147483647) % 2147483647) % 2147483647 }
+fn vsm_box(b Batch, o real[>..]&) {
+	o.clear();
+	let pr = gltf::prims[b.prim];
+	let m = if b.joint_base >= 0 { items[b.item].place } else { b.model };
+	for k in 8 {
+		let q = if b.inst >= 0 { corner(instances[b.inst].lo, instances[b.inst].hi, k) } else { linalg::point(m, corner(pr.lo, pr.hi, k)) };
+		o.push(q.x as real); o.push(q.y as real); o.push(q.z as real);
+	}
+}
+fn vsm_batch_hash(b Batch) int {
+	var h = vsm_mix(vsm_mix(vsm_mix(vsm_mix(7, b.prim), b.lod), b.ml + 1), b.inst + 1);
+	if b.inst >= 0 {
+		let s = instances[b.inst];
+		h = vsm_mix(vsm_mix(vsm_mix(vsm_mix(vsm_mix(h, inst_rev), s.first), s.count), s.na[b.lod]), s.ia[b.lod]);
+		return if s.sway != 0.0 { vsm_mix(h, frames) } else { h };
+	}
+	if b.joint_base >= 0 || b.wb >= 0 || items[b.item].sway != 0.0 { return vsm_mix(h, frames); }
+	let m = b.model;
+	let v f32[12] = [m.c0.x, m.c0.y, m.c0.z, m.c1.x, m.c1.y, m.c1.z, m.c2.x, m.c2.y, m.c2.z, m.c3.x, m.c3.y, m.c3.z];
+	for x in v { h = vsm_mix(h, (x * 65536.0) as int); }
+	h
+}
+fn vsm_reset() {
+	let n = vsm_side / VSM_PAGE * (vsm_side / VSM_PAGE);
+	vsm_key.clear(); vsm_hash.clear(); vsm_seen.clear();
+	for _ in n { vsm_key.push(-1); vsm_hash.push(0); vsm_seen.push(0); }
+	vsm_hand = 0;
+}
+fn vsm_setup() {
+	frame_u.vsm_x = f4(0.0, 0.0, 0.0, 0.0);
+	if !sun.virt || !sun.shadows { return; }
+	let to_sun = linalg::unit3(sun.to_sun);
+	let rot = gfx::look_at(linalg::v3(0.0, 0.0, 0.0), linalg::v3(-to_sun.x, -to_sun.y, -to_sun.z), if abs(to_sun.y) > 0.95 { linalg::v3(1.0, 0.0, 0.0) } else { linalg::v3(0.0, 1.0, 0.0) });
+	vsm_r.clear();
+	let rr f32[9] = [rot.c0.x, rot.c1.x, rot.c2.x, rot.c0.y, rot.c1.y, rot.c2.y, rot.c0.z, rot.c1.z, rot.c2.z];
+	for x in rr { vsm_r.push(x as real); }
+	let ex = view.eye.x as real; let ey = view.eye.y as real; let ez = view.eye.z as real;
+	let lx = vsm_r[0] * ex + vsm_r[1] * ey + vsm_r[2] * ez; let ly = vsm_r[3] * ex + vsm_r[4] * ey + vsm_r[5] * ez;
+	let zc = floor((vsm_r[6] * ex + vsm_r[7] * ey + vsm_r[8] * ez) / 256.0 + 0.5) * 256.0;
+	let moved = vsm_side != sun.pool || vsm_t0 != sun.texel as real || vsm_zc != zc || to_sun.x != vsm_dir.x || to_sun.y != vsm_dir.y || to_sun.z != vsm_dir.z;
+	if vsm_side != sun.pool {
+		if vsm_side > 0 { gfx::release(vsm_atlas); }
+		vsm_atlas = gfx::texture(gfx::TextureDesc { kind: gfx::TEXTURE_2D_ARRAY, format: gfx::DEPTH32F, usage: gfx::DEPTH_TARGET | gfx::SAMPLED, width: sun.pool as i32, height: sun.pool as i32, depth: 1 });
+		vsm_side = sun.pool; vsm_fresh = true;
+	}
+	if moved { vsm_t0 = sun.texel as real; vsm_zc = zc; vsm_dir = to_sun; vsm_reset(); }
+	vsm_wide = if sun.angle > 0.0 { tan(sun.angle as real) * sun.reach as real } else { 0.0 };
+	let s = 2.0 * tan((view.fov_y * 0.5) as real) / height as real / (vsm_t0 * max(sun.sharp, 0.01) as real);
+	vsm_org.clear();
+	for k in VSM_LEVELS {
+		let t = vsm_t0 * (1 << k) as real;
+		let ox = floor(lx / (t * 128.0)) as int - 32; let oy = floor(ly / (t * 128.0)) as int - 32;
+		vsm_org.push(ox); vsm_org.push(oy);
+		vsm_tab[k * 2] = ((lx / t - (ox * VSM_PAGE) as real) * 65536.0) as int as i32;
+		vsm_tab[k * 2 + 1] = ((ly / t - (oy * VSM_PAGE) as real) * 65536.0) as int as i32;
+	}
+	let zm = gfx::mul(gfx::ortho(-1.0, 1.0, -1.0, 1.0, linalg::f(-zc - 1024.0), linalg::f(-zc + 1024.0)), rot);
+	frame_u.vsm_rot = rot;
+	frame_u.vsm_zrow = f4(zm.c0.z, zm.c1.z, zm.c2.z, zm.c0.z * view.eye.x + zm.c1.z * view.eye.y + zm.c2.z * view.eye.z + zm.c3.z);
+	frame_u.vsm = f4(linalg::f(vsm_t0), linalg::f(s), VSM_LEVELS as f32, (vsm_side / VSM_PAGE) as f32);
+	frame_u.vsm_x = f4(1.0, min(sun.shadow_far, view.far), 1.0 / 2048.0, 0.0);
+}
+fn vsm_level(d real, s real) int { clamp(floor(log(max(d * s, 0.000001)) / log(2.0) + 0.5) as int, 0, VSM_LEVELS - 1) }
+fn vsm_cell(sl int) int, int, int, int {
+	let key = vsm_key[sl];
+	let k = key >> 40; let py = ((key >> 20) & 1048575) - 524288; let px = (key & 1048575) - 524288;
+	let rx = px - vsm_org[k * 2]; let ry = py - vsm_org[k * 2 + 1];
+	return k, px, py, if rx >= 0 && ry >= 0 && rx < VSM_GRID && ry < VSM_GRID { k * 4096 + ry * VSM_GRID + rx } else { -1 };
+}
+fn vsm_hit(c int, x0 real, y0 real, x1 real, y1 real) bool { vsm_cr[c * 4] <= x1 && vsm_cr[c * 4 + 2] >= x0 && vsm_cr[c * 4 + 1] <= y1 && vsm_cr[c * 4 + 3] >= y0 }
+fn vsm_marks() {
+	let fwd = forward(); let right = linalg::unit3(linalg::cross3(fwd, view.up)); let up = linalg::cross3(right, fwd);
+	let ty = tan((view.fov_y * 0.5) as real) * 1.02; let tx = ty * width as real / height as real;
+	let s = frame_u.vsm.y as real; let far = frame_u.vsm_x.y as real;
+	let e real[3] = [view.eye.x as real, view.eye.y as real, view.eye.z as real];
+	let f real[3] = [fwd.x as real, fwd.y as real, fwd.z as real];
+	let r real[3] = [right.x as real, right.y as real, right.z as real];
+	let u real[3] = [up.x as real, up.y as real, up.z as real];
+	for b in batch {
+		if !b.vis { continue; }
+		vsm_box(b, vsm_bc);
+		var d0 = 1.0e30; var d1 = -1.0e30;
+		for i in 8 { let d = (vsm_bc[i * 3] - e[0]) * f[0] + (vsm_bc[i * 3 + 1] - e[1]) * f[1] + (vsm_bc[i * 3 + 2] - e[2]) * f[2]; d0 = min(d0, d); d1 = max(d1, d); }
+		d0 = max(d0, view.near as real); d1 = min(d1, far);
+		if d1 <= d0 { continue; }
+		vsm_planes(vsm_bc, vsm_bp);
+		for k in vsm_level(d0 * 0.98, s)..vsm_level(d1 * 1.02, s) + 1 {
+			let a = max(d0, if k == 0 { 0.0 } else { pow(2.0, k as real - 0.5) / s * 0.98 }); let z = min(d1, if k == VSM_LEVELS - 1 { far } else { pow(2.0, k as real + 0.5) / s * 1.02 });
+			if z <= a { continue; }
+			vsm_sc.clear();
+			for i in 8 {
+				let d = if i & 4 == 0 { a } else { z }; let x = (if i & 1 == 0 { -tx } else { tx }) * d; let y = (if i & 2 == 0 { -ty } else { ty }) * d;
+				for j in 3 { vsm_sc.push(e[j] + f[j] * d + r[j] * x + u[j] * y); }
+			}
+			vsm_planes(vsm_sc, vsm_sp);
+			vsm_faces(vsm_bc, vsm_sp, k);
+			vsm_faces(vsm_sc, vsm_bp, k);
+		}
+	}
+}
+fn vsm_update() {
+	vsm_drawn = 0; vsm_missed = 0; vsm_live = 0;
+	if frame_u.vsm_x.x < 0.5 { return; }
+	vsm_frame += 1;
+	for i in VSM_LEVELS * 4096 { vsm_mark[i] = 0; vsm_at[i] = -1; vsm_tab[VSM_HEAD + i] = 0; }
+	if !vsm_blank { vsm_marks(); }
+	vsm_cr.clear(); vsm_ch.clear(); vsm_cb.clear();
+	for i in batch.len {
+		if batch[i].mode == gltf::ALPHA_BLEND || material_of(batch[i].prim).no_shadow { continue; }
+		vsm_box(batch[i], vsm_sc);
+		var lo real[2] = [1.0e30, 1.0e30]; var hi real[2] = [-1.0e30, -1.0e30];
+		for q in 8 { for j in 2 { let v = vsm_r[j * 3] * vsm_sc[q * 3] + vsm_r[j * 3 + 1] * vsm_sc[q * 3 + 1] + vsm_r[j * 3 + 2] * vsm_sc[q * 3 + 2]; lo[j] = min(lo[j], v); hi[j] = max(hi[j], v); } }
+		vsm_cr.push(lo[0]); vsm_cr.push(lo[1]); vsm_cr.push(hi[0]); vsm_cr.push(hi[1]); vsm_ch.push(vsm_batch_hash(batch[i])); vsm_cb.push(i);
+	}
+	for sl in vsm_key.len { if vsm_key[sl] >= 0 { let _, _, _, ix = vsm_cell(sl); if ix >= 0 { vsm_at[ix] = sl; if vsm_mark[ix] == 1 { vsm_seen[sl] = vsm_frame; } } } }
+	vsm_todo.clear();
+	for kk in VSM_LEVELS {
+		let k = VSM_LEVELS - 1 - kk; let t = vsm_t0 * (1 << k) as real; let pm = t * 128.0;
+		for cell in 4096 {
+			let ix = k * 4096 + cell;
+			if vsm_mark[ix] == 0 { continue; }
+			let px = vsm_org[k * 2] + cell % VSM_GRID; let py = vsm_org[k * 2 + 1] + cell / VSM_GRID;
+			var h = 1; var n = 0;
+			for c in vsm_ch.len { if vsm_hit(c, px as real * pm - t, py as real * pm - t, (px + 1) as real * pm + t, (py + 1) as real * pm + t) { h = vsm_mix(h, vsm_ch[c]); n += 1; } }
+			var sl = vsm_at[ix];
+			if n == 0 { vsm_tab[VSM_HEAD + ix] = -1; if sl >= 0 { vsm_key[sl] = -1; } continue; }
+			if sl < 0 {
+				for _ in vsm_key.len { let c = vsm_hand; vsm_hand = (vsm_hand + 1) % vsm_key.len; if vsm_seen[c] != vsm_frame { sl = c; break; } }
+				if sl < 0 { vsm_missed += 1; continue; }
+				if vsm_key[sl] >= 0 { let _, _, _, old = vsm_cell(sl); if old >= 0 { vsm_at[old] = -1; } }
+				vsm_key[sl] = k << 40 | (py + 524288) << 20 | (px + 524288); vsm_hash[sl] = -1;
+			}
+			vsm_seen[sl] = vsm_frame; vsm_tab[VSM_HEAD + ix] = (sl + 1) as i32; vsm_live += 1;
+			if vsm_hash[sl] != h { vsm_hash[sl] = h; vsm_todo.push(sl); }
+		}
+	}
+	gfx::update_buffer(vsm_table, 0, bytes_of(vsm_tab)[..]);
+	if vsm_todo.len == 0 { return; }
+	guard gfx::begin_pass(gfx::PassDesc { depth: vsm_atlas, layer: 0, clear_depth: vsm_fresh, depth_value: 1.0, cycle: 2, .. }) else { vsm_reset(); return; }
+	vsm_fresh = false;
+	let np = vsm_side / VSM_PAGE;
+	for sl in vsm_todo {
+		let k, px, py, _ = vsm_cell(sl);
+		let t = vsm_t0 * (1 << k) as real; let pm = t * 128.0;
+		gfx::viewport((sl % np * VSM_PAGE) as f32, (sl / np * VSM_PAGE) as f32, 128.0, 128.0);
+		gfx::scissor(sl % np * VSM_PAGE, sl / np * VSM_PAGE, VSM_PAGE, VSM_PAGE);
+		gfx::bind(pipe_vsm_clear);
+		gfx::draw(3);
+		gfx::bind(pipe_shadow);
+		bind_geometry();
+		let vp = gfx::mul(gfx::ortho(linalg::f(px as real * pm), linalg::f((px + 1) as real * pm), linalg::f(py as real * pm), linalg::f((py + 1) as real * pm), linalg::f(-vsm_zc - 1024.0), linalg::f(-vsm_zc + 1024.0)), frame_u.vsm_rot);
+		for c in vsm_ch.len {
+			if !vsm_hit(c, px as real * pm - t, py as real * pm - t, (px + 1) as real * pm + t, (py + 1) as real * pm + t) { continue; }
+			let b = batch[vsm_cb[c]]; let m = material_of(b.prim);
+			gfx::uniforms(gfx::VERTEX, 0, draw_uniforms(b, vp));
+			gfx::uniforms(gfx::FRAGMENT, 0, cut_of(m));
+			bind_slot(0, m.base_tex, true, white);
+			draw_prim(b);
+		}
+		vsm_drawn += 1;
+	}
+	gfx::end_pass();
+}
+fn vsm_stats() int, int, int { return vsm_drawn, vsm_live, vsm_missed; }
+fn vsm_test_blank(on bool) { vsm_blank = on; }
 fn gi_bind() {
 	let live = gi_built && rt::ready;
 	gfx::bind_storage_buffer(gfx::FRAGMENT, 0, if live { rt::node_buf } else { gi_dummy });
@@ -2312,6 +2591,7 @@ fn gi_bind() {
 	gfx::bind_storage_buffer(gfx::FRAGMENT, 4, light_buf);
 	gfx::bind_storage_buffer(gfx::FRAGMENT, 5, cluster_buf);
 	gfx::bind_storage_buffer(gfx::FRAGMENT, 6, if frame_u.ssgi.x > 0.5 { ssgi_buf } else { gi_dummy });
+	gfx::bind_storage_buffer(gfx::FRAGMENT, 7, vsm_table);
 }
 
 // ---- passes
@@ -2319,6 +2599,7 @@ fn gi_bind() {
 fn shadow_pass() {
 	if !sun.shadows { return; }
 	inst_all = true;
+	vsm_update();
 	if sun.map_size != shadow_size { gfx::release(shadow_map); make_shadow_map(sun.map_size); }
 	// The whole map is rewritten every frame: cycle it once, on the first cascade's clear,
 	// so a frame still sampling the last map keeps it (frames are submitted without
@@ -2678,7 +2959,7 @@ fn draw_lit(b Batch) {
 	bind_slot(4, m.emissive_tex, true, white);
 	gfx::bind_texture(gfx::FRAGMENT, 5, shadow_map, smp_shadow);
 	gfx::bind_texture(gfx::FRAGMENT, 6, if contact_on() { contact_tex } else if look.ssao { ao } else { white }, smp_point);
-	gfx::bind_texture(gfx::FRAGMENT, 10, shadow_map, smp_point);
+	gfx::bind_texture(gfx::FRAGMENT, 10, if frame_u.vsm_x.x > 0.5 { vsm_atlas } else { shadow_map }, smp_point);
 	gfx::bind_texture(gfx::FRAGMENT, 11, if local_size > 0 { local_map } else { shadow_map }, smp_shadow);
 	gfx::bind_texture(gfx::FRAGMENT, 7, ext_arr[0], smp_ext);
 	gfx::bind_texture(gfx::FRAGMENT, 8, ext_arr[1], smp_ext);
