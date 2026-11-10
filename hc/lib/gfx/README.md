@@ -2182,6 +2182,55 @@ in the plane z = 0 with its top edge at y = 2 and every vertex of the top edge p
   gfxtest, wgsltest and webgputest pass, with a new `scene_cloth` in webgputest above
   30 dB against the native frame.
 
+### Fabric weave bars (E13, registered before the first GPU run)
+
+The weave is a pattern computed in the shader for cloth materials (`shading = 3`), in
+the material's UV space: square cells, `shade_c.y` of them a UV unit (700 when it is
+0), each showing the thread that lies on top there. A warp thread (running along v)
+passes over `shade_c.z` cells in a row and under one: 1, or anything below 1, is a
+plain weave, 2 and 3 are twills with diagonal ribs. A weft thread (running along u)
+shows in the cells in between. Each thread is rounded across its width and dips at
+both ends of its pass. The threads tilt the normal for diffuse light and highlights
+and darken the gaps between them; neither changes the mean diffuse light.
+`shade_c.x` is the strength. `shade_c.w` is the weft's lightness: the weft's color is
+the base color mixed toward white by that amount (toward black when negative). Where
+a cell covers fewer than 4 pixels the threads fade out, gone at 2 pixels: the color
+becomes the two thread colors mixed by the share of each that shows, and the threads'
+slopes widen the highlight instead. A negative `shade_c.x` keeps the threads at every
+distance; the tests use it as a control. Strength 0 leaves a cloth material as it was.
+
+Sheet W: sheet Q of the pore bars (the same sheet, light, camera, frame size and the
+same two distances) with a cloth material: base color 0.2 gray, roughness 0.8, wrap
+0.25 (`shade_a.x`), fuzz 0, specular scale 0 (`shade_a.z`), 700 threads a UV unit. Near
+(0.05 m) a cell covers 7.8 pixels, far (1.2 m) it covers 0.33 pixels. Values are the
+red channel of the frame before tone mapping (`s3d::hdr_target()`).
+
+* **W1 threads show up close.** Near, plain weave, weft lightness 0, over the middle
+  400 x 400 pixels split into 8 x 8 pixel blocks: the root mean square of each
+  pixel's difference from its block's best-fit plane, over the mean of the region, is
+  at least 0.03 with strength 0.7. Control: at most 0.005 with strength 0.
+* **W2 the mean light stays.** Near, plain weave, weft lightness 0: the sum over the
+  middle 400 x 400 pixels with strength 0.7 is within 1% of the sum with strength 0.
+  Control: a light 5% dimmer must fail.
+* **W3 no noise far away.** Far, a 3/1 twill with weft lightness 0.8, over the middle
+  100 x 100 pixels: the standard deviation over the mean with strength 0.7 is at most
+  0.002 above the value with strength 0. Control: strength -0.7 (no fade) is at least
+  0.01 above the value with strength 0.7.
+* **W4 the far color is the mean of the near colors.** A 3/1 twill with weft lightness
+  0.8. Over the middle 20 mm square, `near` is the mean with strength 0.7 over the mean
+  with strength 0 at 0.05 m, and `far` the same ratio at 1.2 m. Both are at least 1.5,
+  and `far` is within 4% of `near`. Control: weft lightness 0 at 1.2 m gives a ratio of
+  1, which fails.
+* **W5 the far highlight follows the near one.** Sheet W with base color 0.02,
+  roughness 0.4, wrap 0 and specular scale 1, plain weave, weft lightness 0, with
+  `near` and `far` as in W4: `near` is at least 0.05 away from 1, and `far` is closer
+  to `near` than to 1. Control: strength 0 at 1.2 m gives a ratio of 1, which fails.
+* **W6 cost.** Sheet W near, filling the frame, a 3/1 twill with weft lightness 0.8
+  and strength 0.7 against strength 0: at most 0.3 ms more a frame.
+* **W7 nothing else moved.** With strength 0 (the preset), the goldens stay above
+  40 dB and Z8 and Z9 pass. gfxtest, wgsltest and webgputest pass, with `scene_cloth`
+  drawn as a 3/1 twill: strength 0.7, 28 threads a UV unit, weft lightness 0.5.
+
 ### Skin scattering results (2026-11-09, RX 9060 XT, RADV; full gfxtest ok)
 
 Differences are shares of the plateau, listed for red, green and blue. Controls list
