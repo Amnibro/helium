@@ -42,7 +42,8 @@ rs_gap(r int[>..]&, lo int, hi int) int, int:
 rs_shift(r int[>..]&): n int[>..] ~= []; n.append(r[2..]); r = n
 qs_new(id int, smax int, rwin int) QStream: s ~= QStream{}; s.id = id; s.smax = smax; s.rmax = rwin; s.rwin = rwin; s
 qs_write(s QStream&, d const byte[:]):
-	if s.sh > 65536 && s.sh * 2 > s.sbuf.len: n byte[>..] ~= []; n.append(s.sbuf[s.sh..]); s.sbuf = n; s.sh = 0
+	if s.sh == s.sbuf.len: s.sbuf.clear(); s.sh = 0
+	else if s.sh > 4096 && s.sh * 2 > s.sbuf.len: n byte[>..] ~= []; n.append(s.sbuf[s.sh..]); s.sbuf = n; s.sh = 0
 	s.sbuf.append(d); s.sw += d.len
 qs_acked(s QStream&, off int, n int, fin bool):
 	if fin: s.facked = true
@@ -64,7 +65,7 @@ qs_take(s QStream&, out byte[>..]&) int:
 	if n == 0: return 0
 	out.append(s.rbuf[s.rh..s.rh + n]); s.rh += n; s.rbase += n
 	if s.rh == s.rbuf.len: s.rbuf.clear(); s.rh = 0; return n
-	if s.rh > 65536 && s.rh * 2 > s.rbuf.len: b byte[>..] ~= []; b.append(s.rbuf[s.rh..]); s.rbuf = b; s.rh = 0
+	if s.rh > 4096 && s.rh * 2 > s.rbuf.len: b byte[>..] ~= []; b.append(s.rbuf[s.rh..]); s.rbuf = b; s.rh = 0
 	n
 q_pto(q const Quic&, s int) real: q.srtt + max(4.0 * q.rttvar, 0.001) + (if s == 2 { q.pp.v[11] as real / 1000.0 } else { 0.0 })
 q_end(q Quic&, app bool, code int, why const byte[:]):
