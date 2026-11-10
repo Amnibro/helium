@@ -456,7 +456,7 @@ float vsm_fetch(vec2 m, int k, out float t) {
 	for (int j = k; j < 12; j++) {
 		t = vsm.x * float(1 << j);
 		ivec2 wt = ivec2(floor(m / t + vec2(vsm_tab[j * 2], vsm_tab[j * 2 + 1]) / 65536.0));
-		ivec2 pg = wt >> 7;
+		ivec2 pg = ivec2(wt.x >> 7, wt.y >> 7);
 		if (pg.x < 0 || pg.y < 0 || pg.x > 63 || pg.y > 63) continue;
 		int e = vsm_tab[24 + j * 4096 + pg.y * 64 + pg.x];
 		if (e == 0) continue;
