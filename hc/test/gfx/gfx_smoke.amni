@@ -77,6 +77,7 @@ import gfx.fx;
 import gfx.bc;
 import gfx.ktx2;
 import gfx.cloth;
+import gfx.hair;
 
 fn milli(v f32) int { round((v * 1000.0) as real) as int }
 
@@ -7303,6 +7304,386 @@ fn vsm_checks() bool {
 	s3d::sun.virt = false;
 	o1 && o2 && o3 && o4 && o5 && o6
 }
+fn hr_world() {
+	for g in hair::grooms.len { hair::unload(g); }
+	reset_scene();
+	s3d::sky = DEF_SKY; s3d::sun = DEF_SUN; s3d::sun.shadows = true; s3d::look = DEF_LOOK; s3d::look.bloom = 0.0; s3d::look.ssao = false;
+	s3d::ssr_on = false; s3d::ssgi_on = false; s3d::gi_on = false; s3d::temporal = 0; s3d::fog_on = false; s3d::sss_on = false;
+}
+fn hr_cam(x f32, y f32, z f32) { s3d::view = s3d::Camera { eye: float3 { x, y + z / 90.0, z }, target: float3 { x, y, 0.0 }, up: float3 { 0.0, 1.0, 0.0 }, fov_y: 0.5, near: 0.05, far: 50.0 }; }
+fn hr_head(at float3, sc f32) int, int {
+	let a = shapes::sphere(0.1, 32, 16, shapes::material(linalg::v3(0.75, 0.6, 0.5), 0.0, 0.6));
+	let it = s3d::add(a);
+	s3d::place(it, gfx::mul(gfx::translate(at), gfx::scale(float3 { sc, sc, sc })));
+	return it, gltf::assets[a].nodes.first as int;
+}
+fn hr_data(node int, st hair::Style, n int, low f32, d byte[>..]&) {
+	var rp float3[>..] = [];
+	var rn float3[>..] = [];
+	let _ = hair::mesh_roots(node, float3 { -1.0, low, -1.0 }, float3 { 1.0, 1.0, 1.0 }, n, 7, rp, rn);
+	hair::groom(rp[..], rn[..], st, d);
+}
+fn hr_frame(dt f32) byte[>..] {
+	if s3d::render_begin() { hair::draw(dt); s3d::render_end(IN_OUT); }
+	gfx::flush();
+	gfx::read_pixels(IN_OUT)
+}
+fn hr_shot() byte[>..] { let _ = hr_frame(0.0); hr_frame(0.0) }
+fn hr_run(n int) { for _ in n { if s3d::render_begin() { hair::draw(1.0 / 60.0); s3d::render_end(IN_OUT); } gfx::flush(); } }
+fn hr_ch(a const byte[:], b const byte[:], thr int, x0 int, x1 int) int, real {
+	var n = 0;
+	var sx = 0.0;
+	for y in 720 { for x in x0..x1 { if sk_d(a, b, y * 1280 + x) > thr { n += 1; sx += x as real; } } }
+	return n, sx / max(n, 1) as real;
+}
+fn hr_far(a const byte[:], b const byte[:], cx real, cy real, r real) int {
+	var n = 0;
+	for y in 720 { for x in 1280 { if (x as real - cx) * (x as real - cx) + (y as real - cy) * (y as real - cy) > r * r && sk_d(a, b, y * 1280 + x) > 2 { n += 1; } } }
+	n
+}
+fn hr_lum(px const byte[:], a const byte[:], b const byte[:], rin real) real {
+	var n = 0;
+	var s = 0.0;
+	let rr = rin * rin;
+	for y in 720 { for x in 1280 { if ((x - 640) * (x - 640) + (y - 360) * (y - 360)) as real > rr && sk_d(a, b, y * 1280 + x) > 8 { n += 1; s += vc_l8(px, y * 1280 + x); } } }
+	s / max(n, 1) as real
+}
+fn hr_tip(g int) real { let _ = hair::probe(g, 2); hr_run(1); hair::probe(g, 2) as real }
+fn hr_f(d const byte[:], at int) real { hair::f32_at(d, at) as real }
+fn hr_pass(ok bool) const byte[:] { if ok { " PASS" } else { " FAIL" } }
+fn hr_mid(v real[>..]&) real {
+	var mid = 0.0;
+	for k in v.len { var less = 0; var same = 0; for j in v.len { if v[j] < v[k] { less += 1; } else if v[j] == v[k] { same += 1; } } if less <= v.len / 2 && less + same > v.len / 2 { mid = v[k]; } }
+	mid
+}
+fn hr_cpu() bool {
+	reset_scene();
+	let _, node = hr_head(float3 { 0.0, 0.0, 0.0 }, 1.0);
+	var d0 byte[>..] = [];
+	var d1 byte[>..] = [];
+	var d2 byte[>..] = [];
+	var d3 byte[>..] = [];
+	hr_data(node, hair::Style { steps: 14, length: 0.16, clumps: 40, curl: 0.004, .. }, 700, 0.02, d0);
+	hr_data(node, hair::Style { steps: 14, length: 0.16, clumps: 40, curl: 0.004, .. }, 700, 0.02, d1);
+	hr_data(node, hair::Style { steps: 14, length: 0.16, clumps: 40, curl: 0.004, seed: 8, .. }, 700, 0.02, d2);
+	var same = d0.len == d1.len;
+	var diff = 0;
+	for i in min(d0.len, d1.len) { if d0[i] != d1[i] { same = false; } if d0[i] != d2[i] { diff += 1; } }
+	let want = 16 + 700 * 14 * 48 + 700 * 13 * 16;
+	let h1 = same && diff > 0 && d0.len == want;
+	print("gpu: hair H1 generator: same seed identical ", same, ", other seed differs in ", diff, " bytes, size ", d0.len, " (bar ", want, ")", hr_pass(h1));
+	let bad = "HMX2000000000000000000000000";
+	let b0 = hair::load("", 12);
+	let b1 = hair::load(bad, 12);
+	let b2 = hair::load(d0[0..d0.len - 16], 12);
+	let b3 = hair::load(d0[..], 12);
+	let h2 = b0 == -1 && b1 == -1 && b2 == -1 && b3 >= 0;
+	print("gpu: hair H2 load: empty ", b0, ", wrong magic ", b1, ", truncated ", b2, " (bar -1 each), whole ", b3, " (bar >= 0)", hr_pass(h2));
+	hair::unload(b3);
+	let c = hair::card_mesh(d0[..], shapes::material(linalg::v3(0.3, 0.2, 0.1), 0.0, 0.5));
+	let cn = hair::find_cards(c, "");
+	let rt = hair::card_data(c, cn, -1, d3);
+	var worst = 0.0;
+	var counts = rt && d3.len >= d0.len;
+	if counts {
+		for i in 12 { if d3[4 + i] != d0[4 + i] { counts = false; } }
+		for p in 700 * 14 { for k in 3 { worst = max(worst, abs(hr_f(d3[..], 16 + p * 48 + k * 4) - hr_f(d0[..], 16 + p * 48 + k * 4))); } }
+	}
+	let vc = gltf::prims[gltf::meshes[gltf::nodes[gltf::assets[c].nodes.first as int].mesh as int].prims.first as int].vcount;
+	let h14 = counts && worst <= 0.00001;
+	print("gpu: hair H14 cards round trip: read back ", rt, ", counts equal ", counts, ", largest point error ", worst, " m (bar <= 0.00001)", hr_pass(h14));
+	HR_VC = vc == 2 * 700 * 14;
+	h1 && h2 && h14
+}
+var HR_VC = false;
+var HR_IT = 0;
+var HR_NODE = 0;
+let HR_AT = float3 { 0.0, 1.6, 0.0 };
+fn hr_r() real { 0.1 * 360.0 / tan(0.25) / 1.8 }
+fn hr_disc() real { 3.14159265 * hr_r() * hr_r() }
+fn hr_style() hair::Style { hair::Style { steps: 14, length: 0.16, clumps: 40, curl: 0.004, .. } }
+fn hr_setup(st hair::Style, n int, strands int, low f32, at float3, sc f32) int {
+	let it, node = hr_head(at, sc);
+	HR_IT = it;
+	HR_NODE = node;
+	var d byte[>..] = [];
+	hr_data(node, st, n, low, d);
+	let g = hair::load(d[..], strands);
+	hair::follow(g, it, -1);
+	g
+}
+fn hr_pair(g int) byte[>..], byte[>..] {
+	let a = hr_shot();
+	hair::grooms[g].show = false;
+	let b = hr_shot();
+	hair::grooms[g].show = true;
+	return a, b;
+}
+fn hr_look() bool {
+	hr_world();
+	hr_cam(0.0, 1.6, 1.8);
+	let g = hr_setup(hr_style(), 700, 12, 0.02, HR_AT, 1.0);
+	let a, b = hr_pair(g);
+	let a2, b2 = hr_pair(g);
+	let _ = codec_png::write(path(OUT_DIR[..], "hair.png")[..], 1280, 720, 4, a[..]);
+	let n, cx = hr_ch(a[..], b[..], 8, 0, 1280);
+	let far = hr_far(a[..], b[..], 640.0, 360.0, 3.2 * hr_r());
+	let n0, _ = hr_ch(b[..], b2[..], 8, 0, 1280);
+	let h3 = n as real / hr_disc() >= 0.4 && far == 0 && n0 == 0;
+	print("gpu: hair H3 coverage: ", n, " changed pixels, ", r3(n as real / hr_disc()), " of the head's disc (bar >= 0.4), ", far, " beyond 3.2 radii (bar 0); control hidden twice ", n0, " (bar 0)", hr_pass(h3));
+	let rep = sk_apart(a[..], a2[..]);
+	print("gpu: hair H12 repeat: largest difference ", rep, " / 255 (bar <= 2)", hr_pass(rep <= 2));
+	let sky = s3d::sky;
+	s3d::sky.zenith = float3 { 0.0, 0.0, 0.0 };
+	s3d::sky.horizon = float3 { 0.0, 0.0, 0.0 };
+	s3d::sky.ground = float3 { 0.0, 0.0, 0.0 };
+	let ka, kb = hr_pair(g);
+	let l1 = hr_lum(ka[..], ka[..], kb[..], hr_r() + 2.0);
+	let rgb = s3d::sun.rgb;
+	s3d::sun.rgb = float3 { 0.0, 0.0, 0.0 };
+	let d = hr_shot();
+	s3d::sun.rgb = rgb;
+	s3d::sky = sky;
+	let ld = hr_lum(d[..], ka[..], kb[..], hr_r() + 2.0);
+	let h9 = ld <= 0.7 * l1;
+	print("gpu: hair H9 sun: mean hair brightness ", r3(ld), " with the sun off, ratio ", r3(ld / max(l1, 0.001)), " (bar <= 0.7)", hr_pass(h9));
+	let wall = s3d::add(shapes::cube(float3 { 0.6, 0.6, 0.01 }, shapes::material(linalg::v3(0.5, 0.5, 0.5), 0.0, 0.7)));
+	s3d::place(wall, gfx::translate(float3 { 0.0, 1.6, 0.6 }));
+	let w1, w0 = hr_pair(g);
+	s3d::items[wall].visible = false;
+	let wd = sk_apart(w1[..], w0[..]);
+	let ws = sk_apart(w1[..], a[..]);
+	let h4 = wd <= 2 && ws > 8;
+	print("gpu: hair H4 wall: largest difference shown vs hidden ", wd, " / 255 (bar <= 2), wall frame vs open frame ", ws, " (must be > 8)", hr_pass(h4));
+	s3d::place(HR_IT, gfx::translate(float3 { 0.3, 1.6, 0.0 }));
+	let m1, m0 = hr_pair(g);
+	let _, cm = hr_ch(m1[..], m0[..], 8, 0, 1280);
+	hair::follow(g, HR_IT, HR_NODE);
+	let k1 = hr_shot();
+	let _, ck = hr_ch(k1[..], m0[..], 8, 0, 1280);
+	hair::grooms[g].item = -1;
+	hair::place(g, gfx::translate(HR_AT));
+	let s1 = hr_shot();
+	let _, cs = hr_ch(s1[..], m0[..], 8, 0, 1280);
+	let h13 = abs(cm - cx - 235.0) <= 15.0 && abs(ck - cm) <= 1.0 && abs(cs - cx) < 40.0;
+	print("gpu: hair H13 follow: center moved ", r3(cm - cx), " px (bar 235 within 15), anchored to the node ", r3(ck - cx), " (bar within 1 of the first); control not following ", r3(cs - cx), " (bar below 40)", hr_pass(h13));
+	h3 && rep <= 2 && h9 && h4 && h13
+}
+fn hr_near(g int) real, bool {
+	var p byte[>..] = [];
+	hair::points(g, p);
+	var best = 1e9;
+	var fin = p.len > 0;
+	for i in p.len / 48 {
+		let x = hr_f(p[..], i * 48);
+		let y = hr_f(p[..], i * 48 + 4);
+		let z = hr_f(p[..], i * 48 + 8);
+		let d = sqrt(x * x + y * y + z * z);
+		fin = fin && d == d && d < 1e6;
+		best = min(best, d);
+	}
+	return best, fin;
+}
+fn hr_sim() bool {
+	hr_world();
+	hr_cam(0.0, 1.6, 1.8);
+	var st = hr_style();
+	st.droop = 0.0;
+	st.clumps = 0;
+	st.curl = 0.0;
+	let g = hr_setup(st, 700, 12, 0.02, HR_AT, 1.0);
+	hr_run(120);
+	let t1 = hr_tip(g);
+	let _ = hair::probe(g, 2);
+	s3d::place(HR_IT, gfx::translate(float3 { 0.1, 1.6, 0.0 }));
+	hr_run(1);
+	let lag = hair::probe(g, 2) as real;
+	hr_run(180);
+	let rest = hr_tip(g);
+	hair::grooms[g].phys = hair::Physics { styled: 0.0, tip: 0.0, root: 0.0, bend: 0.0, .. };
+	hr_run(120);
+	let t0 = hr_tip(g);
+	let h5 = t1 <= 3.0 && t0 >= 10.0;
+	print("gpu: hair H5 style: mean tip offset ", r3(t1), " mm after 120 steps (bar <= 3); control styling and hold 0: ", r3(t0), " mm (bar >= 10)", hr_pass(h5));
+	let h7 = lag >= 5.0 && rest <= 3.0;
+	print("gpu: hair H7 inertia: tip offset ", r3(lag), " mm right after a 0.1 m jump (bar >= 5), ", r3(rest), " mm 180 steps later (bar <= 3)", hr_pass(h7));
+	hr_world();
+	hr_cam(0.0, 1.6, 1.8);
+	let it, node = hr_head(HR_AT, 1.0);
+	var rp float3[>..] = [];
+	var rn float3[>..] = [];
+	for i in 200 {
+		let a = i as real * 0.0314159265;
+		rp.push(float3 { linalg::f(0.02 * cos(a)), 0.09798, linalg::f(0.02 * sin(a)) });
+		rn.push(float3 { linalg::f(cos(a)), 0.0, linalg::f(sin(a)) });
+	}
+	var d byte[>..] = [];
+	hair::groom(rp[..], rn[..], hair::Style { steps: 14, length: 0.16, vary: 0.0, droop: 0.0, .. }, d);
+	let f = hair::load(d[..], 4);
+	hair::follow(f, it, -1);
+	hair::grooms[f].phys = hair::Physics { styled: 0.0, tip: 0.0, root: 0.0, bend: 0.0, .. };
+	hr_run(300);
+	let n0, _ = hr_near(f);
+	hair::solid(f, node);
+	hair::grooms[f].reset = true;
+	hr_run(300);
+	let n1, fin = hr_near(f);
+	let h6 = n1 >= 0.095 && n0 <= 0.085 && fin;
+	print("gpu: hair H6 collision: nearest point to the head's center ", r3(n1 * 1000.0), " mm with the collider (bar >= 95), parts ", hair::grooms[f].parts, ", cells ", hair::grooms[f].cells, "; control without ", r3(n0 * 1000.0), " mm (bar <= 85)", hr_pass(h6));
+	hr_world();
+	var d0 byte[>..] = [];
+	var d1 byte[>..] = [];
+	var px byte[>..] = [];
+	let _, hn = hr_head(float3 { 0.0, 0.0, 0.0 }, 1.0);
+	hr_data(hn, hr_style(), 700, 0.02, d0);
+	let c = hair::card_mesh(d0[..], shapes::material(linalg::v3(0.3, 0.2, 0.1), 0.0, 0.5));
+	let cn = gltf::assets[c].nodes.first as int;
+	let pr = gltf::prims[gltf::meshes[gltf::nodes[cn].mesh as int].prims.first as int];
+	for v in pr.vcount { gltf::verts[(pr.vfirst + v) * gltf::VERTEX_FLOATS + gltf::AT_JOINT] = ((v / 28) % 2) as f32; }
+	let nm = gltf::names.len;
+	gltf::names.append("j0j1");
+	for k in 2 {
+		gltf::nodes.push(gltf::Node { parent: -1, mesh: -1, skin: -1, children: gltf::Span { gltf::ints.len, 0 }, t: float3 { 0.0, 0.0, 0.0 }, r: linalg::quat_identity(), s: float3 { 1.0, 1.0, 1.0 }, matrix: gfx::mat4_identity, has_matrix: false, weights: gltf::Span { gltf::floats.len, 0 }, name: gltf::Span { nm + 2 * k, 2 } });
+		gltf::ints.push(cn + 1 + k);
+		gltf::matrices.push(gfx::mat4_identity);
+	}
+	gltf::assets[c].nodes.count += 2;
+	gltf::assets[c].roots.count += 2;
+	gltf::skins.push(gltf::Skin { gltf::Span { gltf::ints.len - 2, 2 }, gltf::Span { gltf::matrices.len - 2, 2 }, -1, gltf::Span { 0, 0 } });
+	gltf::nodes[cn].skin = gltf::skins.len - 1;
+	let made = hair::card_data(c, hair::find_cards(c, ""), -1, d1);
+	let b = if made { hair::load(d1[..], 4) } else { -1 };
+	var h15 = b >= 0 && hair::grooms[b].bones == 2;
+	var bound = 0.0;
+	var loose = 0.0;
+	var parts = 0;
+	var cells = 0;
+	var fin2 = false;
+	if h15 {
+		let ci = s3d::add(c);
+		s3d::items[ci].visible = false;
+		hair::follow(b, ci, -1);
+		gltf::nodes[cn + 2].t = float3 { 0.05, 0.0, 0.0 };
+		let _ = hr_shot();
+		hair::points(b, px);
+		for p in 700 * 14 {
+			let dx = hr_f(px[..], p * 48) - hr_f(d0[..], 16 + p * 48);
+			let dy = hr_f(px[..], p * 48 + 4) - hr_f(d0[..], 16 + p * 48 + 4);
+			let dz = hr_f(px[..], p * 48 + 8) - hr_f(d0[..], 16 + p * 48 + 8);
+			if (p / 14) % 2 == 1 { bound = max(bound, sqrt((dx - 0.05) * (dx - 0.05) + dy * dy + dz * dz)); } else { loose = max(loose, sqrt(dx * dx + dy * dy + dz * dz)); }
+		}
+		hair::body(b, c, "", ["j0"], [""]);
+		parts = hair::grooms[b].parts;
+		cells = hair::grooms[b].cells;
+		hr_run(10);
+		let _, f2 = hr_near(b);
+		fin2 = f2;
+		h15 = bound <= 0.0005 && loose < 0.0005 && parts == 1 && cells > 0 && fin2;
+	}
+	print("gpu: hair H15 bones: groom ", b, ", worst error of bound points ", bound, " m (bar <= 0.0005), unbound points moved ", loose, " m (bar < 0.0005), collider parts ", parts, " (bar 1), cells ", cells, " (bar > 0), finite ", fin2, hr_pass(h15));
+	h5 && h7 && h6 && h15
+}
+fn hr_psnr(a const byte[:], b const byte[:]) real {
+	let k = (3.2 * hr_r()) as int;
+	var s = 0.0;
+	for y in 360 - k..360 + k { for x in 640 - k..640 + k { for c in 3 { let d = (a[(y * 1280 + x) * 4 + c] as int - b[(y * 1280 + x) * 4 + c] as int) as real; s += d * d; } } }
+	10.0 * log10(65025.0 * (12 * k * k) as real / max(s, 1e-9))
+}
+fn hr_more() bool {
+	hr_world();
+	hr_cam(0.0, 1.6, 1.8);
+	let ga = hr_setup(hr_style(), 700, 12, 0.02, float3 { -0.35, 1.6, 0.0 }, 1.0);
+	let gb = hr_setup(hr_style(), 700, 12, 0.02, float3 { 0.35, 1.6, 0.0 }, 1.0);
+	let both = hr_shot();
+	hair::grooms[gb].show = false;
+	let one = hr_shot();
+	hair::grooms[ga].show = false;
+	let none = hr_shot();
+	let na, _ = hr_ch(both[..], none[..], 8, 0, 640);
+	let nb, _ = hr_ch(both[..], none[..], 8, 640, 1280);
+	let ka, _ = hr_ch(one[..], both[..], 2, 0, 640);
+	let kb, _ = hr_ch(one[..], none[..], 2, 640, 1280);
+	let h10 = na as real / hr_disc() >= 0.4 && nb as real / hr_disc() >= 0.4 && ka == 0 && kb == 0;
+	print("gpu: hair H10 two grooms: ", r3(na as real / hr_disc()), " and ", r3(nb as real / hr_disc()), " of each head's disc changed (bar >= 0.4 each); one hidden: ", ka, " pixels differ on the other's half, ", kb, " on its own half against no hair (bar 0 each)", hr_pass(h10));
+	hr_world();
+	hr_cam(0.0, 1.6, 1.8);
+	s3d::sun.shadows = false;
+	let g = hr_setup(hr_style(), 700, 12, 0.02, HR_AT, 1.0);
+	let s1, s0 = hr_pair(g);
+	s3d::place(HR_IT, gfx::mul(gfx::translate(HR_AT), gfx::scale(float3 { 2.0, 2.0, 2.0 })));
+	hr_cam(0.0, 1.6, 3.6);
+	let s2 = hr_shot();
+	let _ = codec_png::write(path(OUT_DIR[..], "hair_x2.png")[..], 1280, 720, 4, s2[..]);
+	let ps = hr_psnr(s1[..], s2[..]);
+	let pc = hr_psnr(s1[..], s0[..]);
+	let h11 = ps >= 30.0 && pc < 30.0;
+	print("gpu: hair H11 scale: PSNR ", r3(ps), " dB at twice the size and distance (bar >= 30); control hair hidden ", r3(pc), " dB (bar < 30)", hr_pass(h11));
+	s3d::place(HR_IT, gfx::translate(HR_AT));
+	hr_cam(0.0, 1.6, 1.8);
+	s3d::sun.shadows = true;
+	var th real[>..] = [];
+	var t0 real[>..] = [];
+	hr_run(4);
+	for _ in 21 { let t = gfx::time(); hr_run(1); th.push((gfx::time() - t) * 1000.0); }
+	hair::grooms[g].show = false;
+	hr_run(4);
+	for _ in 21 { let t = gfx::time(); hr_run(1); t0.push((gfx::time() - t) * 1000.0); }
+	let cost = hr_mid(th) - hr_mid(t0);
+	let h16 = cost <= 14.0;
+	print("gpu: hair H16 cost: median frame ", r3(hr_mid(th)), " ms with hair, ", r3(hr_mid(t0)), " ms without, hair ", r3(cost), " ms (bar <= 14)", hr_pass(h16));
+	hr_world();
+	hr_cam(0.0, 1.6, 1.8);
+	let _, node = hr_head(HR_AT, 1.0);
+	var d byte[>..] = [];
+	hr_data(node, hr_style(), 700, 0.02, d);
+	let e0 = hr_shot();
+	var m = shapes::material(linalg::v3(0.3, 0.2, 0.1), 0.0, 0.5);
+	m.double_sided = true;
+	s3d::place(s3d::add(hair::card_mesh(d[..], m)), gfx::translate(HR_AT));
+	let e1 = hr_shot();
+	let _ = codec_png::write(path(OUT_DIR[..], "hair_cards.png")[..], 1280, 720, 4, e1[..]);
+	let nc, _ = hr_ch(e1[..], e0[..], 8, 0, 1280);
+	let h17 = HR_VC && nc as real / hr_disc() >= 0.3;
+	print("gpu: hair H17 cards: vertex count is twice the points ", HR_VC, ", ", r3(nc as real / hr_disc()), " of the head's disc changed (bar >= 0.3)", hr_pass(h17));
+	hr_world();
+	hr_cam(0.0, 1.6, 1.8);
+	let f = hr_setup(hair::fur(), 12000, 12, -1.0, HR_AT, 1.0);
+	let f1, f0 = hr_pair(f);
+	let _ = codec_png::write(path(OUT_DIR[..], "hair_fur.png")[..], 1280, 720, 4, f1[..]);
+	let nf, _ = hr_ch(f1[..], f0[..], 8, 0, 1280);
+	let h18 = nf as real / hr_disc() >= 0.7;
+	print("gpu: hair H18 fur: ", r3(nf as real / hr_disc()), " of the head's disc changed (bar >= 0.7)", hr_pass(h18));
+	hr_world();
+	hr_cam(0.0, 1.6, 1.8);
+	s3d::sky.zenith = float3 { 0.0, 0.0, 0.0 };
+	s3d::sky.horizon = float3 { 0.0, 0.0, 0.0 };
+	s3d::sky.ground = float3 { 0.0, 0.0, 0.0 };
+	s3d::sun.shadows = false;
+	let q = hr_setup(hr_style(), 700, 12, 0.02, HR_AT, 1.0);
+	let k1, k0 = hr_pair(q);
+	s3d::sun.to_sun = linalg::unit3(float3 { 1.0, 0.3, 0.2 });
+	let ks = hr_shot();
+	hair::grooms[q].look.shade = 0.0;
+	let kn = hr_shot();
+	let l1 = hr_lum(ks[..], k1[..], k0[..], 0.0);
+	let l0 = hr_lum(kn[..], k1[..], k0[..], 0.0);
+	let _ = codec_png::write(path(OUT_DIR[..], "hair_side.png")[..], 1280, 720, 4, ks[..]);
+	let h8 = l1 <= 0.92 * l0;
+	print("gpu: hair H8 self-shadow: mean hair brightness ", r3(l1), " shadowed, ", r3(l0), " unshadowed, ratio ", r3(l1 / max(l0, 0.001)), " (bar <= 0.92)", hr_pass(h8));
+	h10 && h11 && h16 && h17 && h18 && h8
+}
+fn hair_checks() bool {
+	half_table();
+	s3d::init(1280, 720);
+	IN_OUT = gfx::render_target(1280, 720, gfx::RGBA8);
+	let a = hr_cpu();
+	let b = hr_look();
+	let c = hr_sim();
+	let d = hr_more();
+	for g in hair::grooms.len { hair::unload(g); }
+	print("gpu: hair verdict: data ", a, ", look ", b, ", motion ", c, ", scenes ", d);
+	a && b && c && d
+}
 fn mark(name const byte[:], ok bool) bool {
 	if SUB_LOG.len == 0 { return ok; }
 	let n, top, slow, _ = sub_since(SUB_AT);
@@ -7348,7 +7729,7 @@ fn gpu_checks(dir const byte[:], golden const byte[:]) bool {
 	var only byte[>..] = [];
 	let _ = env("GFX_ONLY", only);
 	if only.len > 0 {
-		let ok = if only[..] == "gtao" { gtao_checks() } else if only[..] == "gi" { gi_checks() } else if only[..] == "mblur" { mb_checks() } else if only[..] == "dof" { dof_checks() } else if only[..] == "fx" { fx_checks() } else if only[..] == "tsr" { tsr_checks(dir) } else if only[..] == "probe" { probe_checks(dir) } else if only[..] == "ssgi" { ssgi_checks() } else if only[..] == "decal" { decal_checks() } else if only[..] == "weather" { weather_checks() } else if only[..] == "rect" { rect_checks() } else if only[..] == "small" { small_checks() } else if only[..] == "inst" { instance_checks() } else if only[..] == "caust" { caustic_checks() } else if only[..] == "tex" { texture_checks() } else if only[..] == "stream" { stream_checks() } else if only[..] == "rtr" { rtr_checks() } else if only[..] == "meshlet" { meshlet_checks() } else if only[..] == "sss" { sss_checks() } else if only[..] == "cloth" { cloth_checks() } else if only[..] == "cloud" { cloud_checks() } else if only[..] == "vfog" { fog_checks() } else if only[..] == "sea" { sea_checks() } else if only[..] == "vsm" { vsm_checks() } else { shadow_checks() };
+		let ok = if only[..] == "hair" { hair_checks() } else if only[..] == "gtao" { gtao_checks() } else if only[..] == "gi" { gi_checks() } else if only[..] == "mblur" { mb_checks() } else if only[..] == "dof" { dof_checks() } else if only[..] == "fx" { fx_checks() } else if only[..] == "tsr" { tsr_checks(dir) } else if only[..] == "probe" { probe_checks(dir) } else if only[..] == "ssgi" { ssgi_checks() } else if only[..] == "decal" { decal_checks() } else if only[..] == "weather" { weather_checks() } else if only[..] == "rect" { rect_checks() } else if only[..] == "small" { small_checks() } else if only[..] == "inst" { instance_checks() } else if only[..] == "caust" { caustic_checks() } else if only[..] == "tex" { texture_checks() } else if only[..] == "stream" { stream_checks() } else if only[..] == "rtr" { rtr_checks() } else if only[..] == "meshlet" { meshlet_checks() } else if only[..] == "sss" { sss_checks() } else if only[..] == "cloth" { cloth_checks() } else if only[..] == "cloud" { cloud_checks() } else if only[..] == "vfog" { fog_checks() } else if only[..] == "sea" { sea_checks() } else if only[..] == "vsm" { vsm_checks() } else { shadow_checks() };
 		let e = gfx::error();
 		if e.len > 0 { print("gpu: gfx error ", e[..]); return false; }
 		return mark(only[..], ok) && submit_checks(false);
@@ -7525,6 +7906,7 @@ fn gpu_checks(dir const byte[:], golden const byte[:]) bool {
 	if !mark("meshlet", meshlet_checks()) { good = false; }
 	if !mark("sss", sss_checks()) { good = false; }
 	if !mark("cloth", cloth_checks()) { good = false; }
+	if !mark("hair", hair_checks()) { good = false; }
 	if !mark("cloud", cloud_checks()) { good = false; }
 	if !mark("vfog", fog_checks()) { good = false; }
 	if !mark("sea", sea_checks()) { good = false; }

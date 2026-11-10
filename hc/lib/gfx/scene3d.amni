@@ -161,6 +161,7 @@ var dof_samples = 48;
 var lens_offset float2 = float2 { 0.0, 0.0 };
 var fx_dt f32 = 0.0;
 var nd_ran = false;
+var depth_wanted = false;
 var gi_on = false;
 var rt_shadows = false;
 var rt_reflect = false;
@@ -2701,7 +2702,7 @@ fn ao_pass() {
 	var water = sea_wet();
 	sss_live = false;
 	for b in batch { if b.trans && b.vis && material_of(b.prim).shading == 4 { water = true; } if sss_on && !capturing && sss_draws(b) { sss_live = true; } }
-	if !water && !sss_live && !look.ssao && !mv && !cs && !ssr_on && !ssgi_live() && !fog_on && dof_aperture <= 0.0 && !(fx::ready() && fx::wants_depth()) { return; }
+	if !depth_wanted && !water && !sss_live && !look.ssao && !mv && !cs && !ssr_on && !ssgi_live() && !fog_on && dof_aperture <= 0.0 && !(fx::ready() && fx::wants_depth()) { return; }
 	nd_ran = true;
 	let gia = gi_on && gi_ao && gi_built && gi_have;
 	let gt = look.ssao && (ao_mode == 1 || gia);

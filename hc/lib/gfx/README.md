@@ -943,6 +943,71 @@ or give pins, colliders and wind in that space. One step of a 65 x 65 sheet take
 about 2.4 ms on one core. The solver, `gfx.cloth`, does not depend on the renderer
 and can be used alone: `cloth::make`, `cloth::step` and `cloth::write`.
 
+### Hair (C11, E13)
+
+`import gfx.hair;` draws hair and fur as strands. A groom is a set of guides; each guide is
+a chain of up to 32 points with a width, and the rasterizer draws a chosen number of
+strands across every guide in a compute pass, so no strand mesh is built. The points are
+simulated on the GPU every frame. One call draws every groom:
+
+```
+if s3d::render_begin() { hair::draw(dt); s3d::render_end(target); }
+```
+
+`hair::draw(dt)` simulates `dt` seconds and adds the hair to the scene's HDR frame, hidden
+by the scene's depth. A `dt` of 0 shows the styled shape as it was made. The module asks
+the scene for its depth pass on its own.
+
+A groom comes from one of three places and is named by the index the call returns (-1 when
+the data is refused):
+
+| Call | What it does |
+| --- | --- |
+| `hair::mesh_roots(node, lo, hi, count, seed, rp, rn)` | scatters `count` root points and normals over the triangles of a mesh node that lie inside a box in the mesh's own space |
+| `hair::groom(rp, rn, style, data)` | grows a guide from every root (`hair::Style`: `steps`, `length`, `vary`, `width`, `droop`, `curl`, `turns`, `clumps`, `clump`, `seed`) and writes the groom's bytes; the same input gives the same bytes |
+| `hair::fur()` | a `Style` for short fur |
+| `hair::load(data, strands)`, `hair::load_file(path, strands)` | makes a groom from those bytes with `strands` strands a guide |
+| `hair::cards(asset, mesh, anchor, strands)` | reads a card mesh from a loaded glTF asset (two vertices a point, the way hair cards are exported) and makes a groom of it; skin weights become bones the guides follow |
+| `hair::card_mesh(data, material)` | the reverse: an ordinary mesh of cards for targets that cannot run the strand passes |
+| `hair::unload(g)` | frees a groom |
+
+Placing and moving it:
+
+| Call | What it does |
+| --- | --- |
+| `hair::follow(g, item, anchor)` | the groom follows a scene item, or one node of it when `anchor` is a node index; bones follow the item's pose |
+| `hair::place(g, m)` | sets the groom's place directly when it follows nothing |
+| `hair::solid(g, node)` | makes a mesh node a collider: its signed distance field is baked once and hair is pushed out of it |
+| `hair::body(g, asset, skin, joints, solids)` | the same for a skinned character: up to 8 parts, each moving with one joint |
+| `hair::points(g, out)` | reads the simulated points back (48 bytes a point, model space) |
+
+`hair::grooms[g].show` hides a groom; a hidden groom starts from its styled shape when it
+is shown again. `hair::grooms[g].look` (`hair::Look`) holds the appearance:
+
+| Field | Default | Meaning |
+| --- | --- | --- |
+| `color` | 0.58, 0.38, 0.14 | the hair's color; it is turned into the two melanin amounts the fiber model absorbs with |
+| `roughness` | 0.42 | width of the highlights along the strand |
+| `width` | 0.00007 | strand width in meters |
+| `gain` | 1.7 | strength of the sun on the hair |
+| `shade` | 1.0 | how much one full layer of strands blocks the direct sun; 0 turns self-shadowing off |
+| `scatter` | 0.7 | strength of the light that reaches a strand through other strands |
+| `density` | 1.0 | how many real fibers a drawn strand stands for in that scattered light |
+| `ambient` | 0.22, 0.22, 0.22 | share of the scene's sky light (the mean of zenith and horizon times `sky.ambient`) the hair picks up |
+| `falloff` | 40 | how fast that sky light fades with depth into the hair, per meter |
+
+`hair::grooms[g].phys` (`hair::Physics`) holds the motion: `gravity`; `styled` (1 cancels
+gravity so the styled shape is the rest shape, 0 lets the hair hang); `root` and `tip`
+(pull toward the styled shape at the root and at the tip; `bone_root` and `bone_tip` for
+guides bound to bones); `bend` (stiffness against bending); `carry` (how much of a turn of
+the head the hair follows at once); `damping`; `gap_min` and `gap_max` (distance kept from
+a collider at the root and at the tip).
+
+The sun's light on the hair is the three-lobe fiber model (reflection, transmission and
+the internal bounce) plus scattered light from the strands in front; the hair's own shadow
+comes from a 512 x 512 map of four depth layers drawn from the sun for each groom, and the
+scene's shadow map shadows the hair too. Up to four point lights reach it.
+
 ### Fabric weave (E13)
 
 A cloth material (`shading = 3`) can show its threads without any texture:
@@ -2387,6 +2452,49 @@ in the plane z = 0 with its top edge at y = 2 and every vertex of the top edge p
   gfxtest, wgsltest and webgputest pass, with a new `scene_cloth` in webgputest above
   30 dB against the native frame.
 
+### Hair bars (C11, E13, registered before the first GPU run; the scenes of H5, H6, H8, H9 and H11 were restated after it, bar values unchanged)
+
+Hair is drawn as strands, not as textured cards. A groom is a set of guide cards; every
+guide is a short chain of points, and the rasterizer draws a chosen number of strands
+across each card in a compute pass. The same points are simulated on the GPU (pinned
+roots, a pull toward the styled shape, gravity, collision with a signed distance field of
+the body), lit with a three-lobe fiber model with melanin color, and shadowed by a depth
+map of the hair itself as seen from the sun. Grooms come from three places: generated
+from a mesh region (`hair::mesh_roots` and `hair::groom`), read from a card mesh in a
+glTF file (`hair::cards`), or loaded from a file (`hair::load_file`).
+
+The test scene is a head-sized sphere (radius 0.1 m) with a generated groom of 700 guides
+of 14 points, 0.16 m long, 12 strands a guide, at 1280 x 720. "Changed" below means a
+pixel whose largest channel difference between two frames is above 8 / 255; "equal" means
+no pixel differs by more than 2 / 255. `GFX_ONLY=hair` runs only these checks.
+
+| Bar | What is measured | Bar value |
+| --- | --- | --- |
+| H1 the generator repeats | two grooms from the same roots, style and seed; one with another seed; the byte size | identical; different; exactly 16 + guides x points x 48 + guides x (points - 1) x 16 |
+| H2 bad data is refused | `hair::load` on empty data, a wrong magic and a truncated groom; a whole groom | -1 three times; an index for the whole one |
+| H3 the hair is there | changed pixels between hair shown and hidden, as a share of the head's disc on screen; changed pixels farther than 3.2 head radii from its center | at least 0.4; none |
+| H3 control, hidden twice | changed pixels between two hidden frames | none |
+| H4 a wall hides it | a wall between the camera and the head: frames with hair shown and hidden | equal |
+| H5 it keeps its style | a straight groom, fully styled, after 120 steps of 1/60 s: mean distance of the tips from the styled shape | at most 3 mm |
+| H5 control, no styling | the same with styling and the three hold strengths (root, tip, bend) at 0 | at least 10 mm |
+| H6 nothing passes through the head | hair lying flat on the crown with styling and hold at 0, 300 steps, with the head as a collider: the nearest simulated point to the head's center | at least 0.095 m |
+| H6 control, no collider | the same without the collider | at most 0.085 m |
+| H7 it lags and settles | the head jumps 0.1 m sideways in one step: mean tip distance right after; and 180 steps later | at least 5 mm; at most 3 mm |
+| H8 the hair shadows itself | black sky, the scene's shadow map off, the sun at the side (toward 1, 0.3, 0.2): mean brightness of the hair pixels at the default `shade` of 1 relative to `shade` 0 | at most 0.92 |
+| H9 the sun lights it | black sky: mean brightness of the hair pixels outside the head's disc with the sun off, relative to the sun on | at most 0.7 |
+| H10 two grooms | two heads 0.7 m apart: share of each head's disc that changes; then one groom is hidden | at least 0.4 each; the other head's half equal to before, the hidden one's half equal to no hair |
+| H11 size does not matter | head, groom and camera distance doubled, sun shadows off: PSNR against the frame at the original size, inside the square of 3.2 head radii around the head | at least 30 dB |
+| H11 control, hair hidden | PSNR between hair shown and hidden at the original size, same square | below 30 dB |
+| H12 the frame repeats | the same still frame drawn twice | equal |
+| H13 it follows its item | the head moves 0.3 m sideways (235 pixels at the head's depth): shift of the changed pixels' center; then the same with the groom anchored to the head's node | 235 within 15 pixels; within 1 pixel of the first |
+| H13 control, not following | the same move with the groom left where it was | a shift below 40 pixels |
+| H14 cards round trip | a card mesh built from a groom, read back with `hair::card_data`: guides, points, segments; largest distance between a point and its original | the same counts; at most 0.00001 m |
+| H15 bones move the hair | a card mesh skinned to two joints and followed, the second joint moved 0.05 m: points bound to it; points bound to the first; then a skinned collider built from the same mesh with `hair::body` | moved 0.05 m within 0.0005; moved less than 0.0005; 1 part, cells above 0, every point finite after 10 steps |
+| H16 cost | median time of a simulated and drawn frame with the test groom (8,400 strands of 13 segments) minus the median without | at most 14 ms |
+| H17 cards for low-end targets | `hair::card_mesh` drawn as an ordinary double-sided mesh: vertex count; changed pixels as a share of the head's disc | 2 x points; at least 0.3 |
+| H18 fur | the short-fur preset over the whole sphere, 12,000 guides of 12 strands: changed pixels as a share of the head's disc | at least 0.7 |
+| H19 nothing else moved | gfxtest, wgsltest and webgputest | all pass |
+
 ### Fabric weave bars (E13, registered before the first GPU run)
 
 The weave is a pattern computed in the shader for cloth materials (`shading = 3`), in
@@ -2739,6 +2847,35 @@ all three frames.
 | Y5 control, fuzz 0 twice | rim rise 0.0 | below 3 |
 | Y6 cost | 1.63 ms without, 1.75 ms with: 0.12 ms more | at most 0.3 ms |
 | Y7 nothing else moved | goldens 44.92 dB and 41.7 dB; X1 to X7 pass with both strengths 0; wgsltest 67 modules, 58 pipelines, 0 failures; webgputest 22 scenes, 0 failures, `scene_sss` with strength 0.7 and fuzz 0.35 matches the native frame exactly on WebGPU | pass |
+
+### Hair results (2026-11-10, RX 9060 XT, RADV)
+
+| Bar | Result | Bar value |
+| --- | --- | --- |
+| H1 generator | identical; 275,044 bytes differ with another seed; 616,016 bytes | identical; different; 616,016 |
+| H2 bad data | -1, -1, -1; index 0 for the whole groom | -1 three times; an index |
+| H3 coverage | 32,748 changed pixels, 1.699 of the head's disc; 0 beyond 3.2 radii | at least 0.4; none |
+| H3 control | 0 | none |
+| H4 wall | largest difference 0 / 255 (the wall frame differs from the open frame by 118) | equal |
+| H5 style | 0.0 mm | at most 3 mm |
+| H5 control | 183.0 mm | at least 10 mm |
+| H6 collision | 0.0999 m, 1 part, 64,000 cells | at least 0.095 m |
+| H6 control | 0.0309 m | at most 0.085 m |
+| H7 lag and settle | 102.2 mm right after the jump; 0.001 mm 180 steps later | at least 5 mm; at most 3 mm |
+| H8 self-shadow | 0.881 (30.1 against 34.2) | at most 0.92 |
+| H9 sun | 0.004 | at most 0.7 |
+| H10 two grooms | 1.706 and 1.685; 0 and 0 pixels differ | at least 0.4 each; equal |
+| H11 size | 79.8 dB | at least 30 dB |
+| H11 control | 25.1 dB | below 30 dB |
+| H12 repeat | 0 / 255 | equal |
+| H13 follow | 237.3 pixels; anchored 237.3 | 235 within 15; within 1 |
+| H13 control | 0.4 pixels | below 40 |
+| H14 cards round trip | same counts; 0.0000000075 m | same; at most 0.00001 m |
+| H15 bones | bound points off by 0.00000001 m; unbound moved 0.0000000075 m; 1 part, 184,320 cells, finite | within 0.0005; below 0.0005; 1 part, cells above 0, finite |
+| H16 cost | 1.69 ms (1.90 ms with hair, 0.21 ms without) | at most 14 ms |
+| H17 cards | 2 x points; 2.511 | 2 x points; at least 0.3 |
+| H18 fur | 1.212 | at least 0.7 |
+| H19 nothing else moved | gfxtest ok; wgsltest 80 modules, 69 pipelines, 0 failures; webgputest 26 scenes, a window and a compute check, 0 failures | all pass |
 
 ### Fabric weave results (2026-11-10, RX 9060 XT, RADV)
 
@@ -3277,7 +3414,10 @@ pass-through mean error is 0.0106 % (max 0.0488 %).
   shadows, reflections and GI see the rest shape. Tangents keep their rest direction,
   so a normal map on a strongly folded cloth is lit slightly off. Cloth meshes are
   not drawn as meshlets. The weave is a plain weave or a warp-faced twill (no satin, no knit), and the
-  threads' direction does not stretch the highlight. Hair strands are not built.
+  threads' direction does not stretch the highlight. Hair: a groom has at most 32 points a guide, 64 bones and 8 collider parts. Strand hair casts no
+  shadow on the scene, grooms do not shadow each other, and two grooms that overlap on screen share
+  their depth layers. A move of the head without a turn is not carried over to the hair at once, so
+  the tips trail by the whole move and catch up.
 * Clouds: one layer of one cloud type (cumulus), shaped by noise alone: there is no
   weather map to place clouds and no high thin cloud. They are drawn on sky pixels
   only, so nothing can sit inside a cloud or be hidden by one. Light inside a cloud
