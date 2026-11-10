@@ -7672,6 +7672,108 @@ fn hr_more() bool {
 	print("gpu: hair H8 self-shadow: mean hair brightness ", r3(l1), " shadowed, ", r3(l0), " unshadowed, ratio ", r3(l1 / max(l0, 0.001)), " (bar <= 0.92)", hr_pass(h8));
 	h10 && h11 && h16 && h17 && h18 && h8
 }
+fn td_world() {
+	reset_scene();
+	s3d::sky = DEF_SKY; s3d::sun = DEF_SUN; s3d::look = DEF_LOOK; s3d::look.bloom = 0.0; s3d::look.ssao = false;
+	s3d::ssr_on = false; s3d::ssgi_on = false; s3d::gi_on = false; s3d::temporal = 0; s3d::fog_on = false; s3d::sss_on = false;
+	s3d::clouds.on = false; s3d::day_bakes = 0; envmap::intensity = 1.0;
+	s3d::place(s3d::add(shapes::plane(40.0, shapes::material(linalg::v3(0.5, 0.5, 0.5), 0.0, 0.8))), gfx::mat4_identity);
+	s3d::place(s3d::add(shapes::sphere(0.5, 32, 16, shapes::material(linalg::v3(0.7, 0.7, 0.7), 0.0, 0.5))), gfx::translate(float3 { 0.0, 0.5, 0.0 }));
+	s3d::view = s3d::Camera { eye: float3 { 0.0, 1.2, 5.0 }, target: float3 { 0.0, 0.9, 0.0 }, up: float3 { 0.0, 1.0, 0.0 }, fov_y: 0.9, near: 0.1, far: 200.0 };
+}
+fn td_deg(y real) real {
+	var lo = -90.0;
+	var hi = 90.0;
+	for _ in 40 { let m = (lo + hi) * 0.5; if sin(m * 0.017453292519943295) < y { lo = m; } else { hi = m; } }
+	(lo + hi) * 0.5
+}
+fn td_draw() real {
+	if s3d::render_begin() { s3d::render_end(IN_OUT); }
+	gfx::flush();
+	let px = gfx::read_pixels(IN_OUT);
+	var s = 0.0;
+	for i in 1280 * 720 { s += vc_l8(px[..], i); }
+	s / 921600.0
+}
+fn td_at(hour f32, moon f32, name const byte[:]) real {
+	let _ = s3d::time_of_day(s3d::Day { hour: hour, moon: moon, .. });
+	let _ = td_draw();
+	let l = td_draw();
+	if name.len > 0 { let px = gfx::read_pixels(IN_OUT); let _ = codec_png::write(path(OUT_DIR[..], name)[..], 1280, 720, 4, px[..]); }
+	l
+}
+fn td_sweep(h0 f32, n int, minutes f32, size int, clouds f32) real, real {
+	var tf real[>..] = [];
+	var tn real[>..] = [];
+	var top = 0.0;
+	var last = -1.0;
+	for k in n {
+		let t = gfx::time();
+		let f = s3d::time_of_day(s3d::Day { hour: h0 + k as f32 * minutes / 60.0, size: size, clouds: clouds, .. });
+		let l = td_draw();
+		if f { tf.push((gfx::time() - t) * 1000.0); } else { tn.push((gfx::time() - t) * 1000.0); }
+		if last >= 0.0 { top = max(top, abs(l - last)); }
+		last = l;
+	}
+	return top, hr_mid(tf) - hr_mid(tn);
+}
+fn day_checks() bool {
+	half_table();
+	s3d::init(1280, 720);
+	IN_OUT = gfx::render_target(1280, 720, gfx::RGBA8);
+	td_world();
+	let s1 = s3d::sun_at(12.0, 172, 40.0, 0.0);
+	let s2 = s3d::sun_at(12.0, 80, 40.0, 0.0);
+	let s3 = s3d::sun_at(6.0, 80, 40.0, 0.0);
+	let s4 = s3d::sun_at(6.0, 80, 40.0, 90.0);
+	let e1 = td_deg(s1.y as real);
+	let e2 = td_deg(s2.y as real);
+	let e3 = td_deg(s3.y as real);
+	let turn = max(abs(s4.x + s3.z), max(abs(s4.y - s3.y), abs(s4.z - s3.x))) as real;
+	let d1 = abs(e1 - 73.44) <= 0.2 && abs(e2 - 50.0) <= 1.0 && s3.x >= 0.99 && abs(e3) <= 1.5 && turn <= 0.001;
+	print("gpu: day D1 sun position: noon day 172 ", r3(e1), " deg (bar 73.44 within 0.2), noon day 80 ", r3(e2), " deg (bar 50 within 1), 06:00 day 80 x ", r3(s3.x as real), " (bar >= 0.99) at ", r3(e3), " deg (bar within 1.5 of 0), turned north off by ", turn, " (bar <= 0.001)", hr_pass(d1));
+	let noon = td_at(12.0, 0.02, "day_noon.png");
+	let rn = s3d::sun.rgb;
+	let l18 = td_at(18.0, 0.02, "");
+	let l19 = td_at(19.0, 0.02, "day_dusk.png");
+	let rd = s3d::sun.rgb;
+	let l20 = td_at(20.25, 0.02, "day_twilight.png");
+	let mid = td_at(0.0, 0.02, "day_night.png");
+	let rm = s3d::sun.rgb;
+	let em = td_deg(s3d::sun.to_sun.y as real);
+	let dark = td_at(0.0, 0.0, "");
+	let d2 = l18 < noon && l20 < l18 && mid >= 0.02 * noon && mid <= 0.35 * noon && dark <= 0.2 * mid;
+	print("gpu: day D2 clock: 12:00 ", r3(noon), ", 18:00 ", r3(l18), ", 19:00 ", r3(l19), ", 20:15 ", r3(l20), " (bar each lower), 00:00 ", r3(mid), " = ", r3(mid / noon), " of noon (bar 0.02..0.35), no moon ", r3(dark), " = ", r3(dark / max(mid, 0.001)), " of moonlit (bar <= 0.2)", hr_pass(d2));
+	let warm = (rd.x / max(rd.z, 1e-9)) as real / (rn.x / max(rn.z, 1e-9)) as real;
+	let d3 = warm >= 2.0;
+	print("gpu: day D3 dusk: red over blue ", r3(warm), " times noon's (bar >= 2)", hr_pass(d3));
+	let ml = ((rm.x + rm.y + rm.z) / max(rn.x + rn.y + rn.z, 1e-9)) as real;
+	let d4 = em > 10.0 && ml > 0.0 && ml <= 0.05;
+	print("gpu: day D4 moon: elevation ", r3(em), " deg (bar > 10), light ", ml, " of noon's (bar > 0, <= 0.05)", hr_pass(d4));
+	s3d::day_bakes = 0;
+	let b0 = s3d::time_of_day(s3d::Day { hour: 15.0, .. });
+	let b1 = s3d::time_of_day(s3d::Day { hour: 15.0, .. });
+	let v0 = s3d::sun.to_sun;
+	let b2 = s3d::time_of_day(s3d::Day { hour: 15.0 + 1.0 / 60.0, .. });
+	let v1 = s3d::sun.to_sun;
+	let b3 = s3d::time_of_day(s3d::Day { hour: 15.0 + 10.0 / 60.0, .. });
+	let moved = v0.x != v1.x || v0.y != v1.y || v0.z != v1.z;
+	let d5 = b0 && !b1 && !b2 && moved && b3 && s3d::day_bakes == 2;
+	print("gpu: day D5 bakes: first ", b0, ", same time ", b1, ", 1 minute later ", b2, " with the sun moved ", moved, ", 10 minutes later ", b3, ", bakes ", s3d::day_bakes, " (bar true, false, false, true, true, 2)", hr_pass(d5));
+	let top, cost = td_sweep(18.0, 301, 1.0, 0, 0.3);
+	var lo = 19.0;
+	var hi = 24.0;
+	for _ in 40 { let m = (lo + hi) * 0.5; if s3d::sun_at(linalg::f(m), 172, 40.0, 0.0).y > -0.12187 { lo = m; } else { hi = m; } }
+	let before = td_at(linalg::f(lo - 1.0 / 60.0), 0.02, "");
+	let after = td_at(linalg::f(lo + 1.0 / 60.0), 0.02, "");
+	let d6 = top <= 7.0 && abs(after - before) <= 3.0;
+	print("gpu: day D6 no jump: largest step ", r3(top), " (bar <= 7), moon takes over at ", r3(lo), " h: ", r3(before), " before, ", r3(after), " after (bar within 3)", hr_pass(d6));
+	let _, small = td_sweep(12.0, 85, 1.0, 128, 0.3);
+	let d7 = cost <= 70.0 && small <= 14.0;
+	print("gpu: day D7 cost: bake ", r3(cost), " ms at 512 (bar <= 70), ", r3(small), " ms at 128 (bar <= 14)", hr_pass(d7));
+	gfx::release(IN_OUT);
+	d1 && d2 && d3 && d4 && d5 && d6 && d7
+}
 fn hair_checks() bool {
 	half_table();
 	s3d::init(1280, 720);
@@ -7729,7 +7831,7 @@ fn gpu_checks(dir const byte[:], golden const byte[:]) bool {
 	var only byte[>..] = [];
 	let _ = env("GFX_ONLY", only);
 	if only.len > 0 {
-		let ok = if only[..] == "hair" { hair_checks() } else if only[..] == "gtao" { gtao_checks() } else if only[..] == "gi" { gi_checks() } else if only[..] == "mblur" { mb_checks() } else if only[..] == "dof" { dof_checks() } else if only[..] == "fx" { fx_checks() } else if only[..] == "tsr" { tsr_checks(dir) } else if only[..] == "probe" { probe_checks(dir) } else if only[..] == "ssgi" { ssgi_checks() } else if only[..] == "decal" { decal_checks() } else if only[..] == "weather" { weather_checks() } else if only[..] == "rect" { rect_checks() } else if only[..] == "small" { small_checks() } else if only[..] == "inst" { instance_checks() } else if only[..] == "caust" { caustic_checks() } else if only[..] == "tex" { texture_checks() } else if only[..] == "stream" { stream_checks() } else if only[..] == "rtr" { rtr_checks() } else if only[..] == "meshlet" { meshlet_checks() } else if only[..] == "sss" { sss_checks() } else if only[..] == "cloth" { cloth_checks() } else if only[..] == "cloud" { cloud_checks() } else if only[..] == "vfog" { fog_checks() } else if only[..] == "sea" { sea_checks() } else if only[..] == "vsm" { vsm_checks() } else { shadow_checks() };
+		let ok = if only[..] == "day" { day_checks() } else if only[..] == "hair" { hair_checks() } else if only[..] == "gtao" { gtao_checks() } else if only[..] == "gi" { gi_checks() } else if only[..] == "mblur" { mb_checks() } else if only[..] == "dof" { dof_checks() } else if only[..] == "fx" { fx_checks() } else if only[..] == "tsr" { tsr_checks(dir) } else if only[..] == "probe" { probe_checks(dir) } else if only[..] == "ssgi" { ssgi_checks() } else if only[..] == "decal" { decal_checks() } else if only[..] == "weather" { weather_checks() } else if only[..] == "rect" { rect_checks() } else if only[..] == "small" { small_checks() } else if only[..] == "inst" { instance_checks() } else if only[..] == "caust" { caustic_checks() } else if only[..] == "tex" { texture_checks() } else if only[..] == "stream" { stream_checks() } else if only[..] == "rtr" { rtr_checks() } else if only[..] == "meshlet" { meshlet_checks() } else if only[..] == "sss" { sss_checks() } else if only[..] == "cloth" { cloth_checks() } else if only[..] == "cloud" { cloud_checks() } else if only[..] == "vfog" { fog_checks() } else if only[..] == "sea" { sea_checks() } else if only[..] == "vsm" { vsm_checks() } else { shadow_checks() };
 		let e = gfx::error();
 		if e.len > 0 { print("gpu: gfx error ", e[..]); return false; }
 		return mark(only[..], ok) && submit_checks(false);
@@ -7910,6 +8012,7 @@ fn gpu_checks(dir const byte[:], golden const byte[:]) bool {
 	if !mark("cloud", cloud_checks()) { good = false; }
 	if !mark("vfog", fog_checks()) { good = false; }
 	if !mark("sea", sea_checks()) { good = false; }
+	if !mark("day", day_checks()) { good = false; }
 	if !submit_checks(true) { good = false; }
 	let err = gfx::error();
 	if err.len > 0 { print("gpu: gfx error ", err[..]); good = false; }

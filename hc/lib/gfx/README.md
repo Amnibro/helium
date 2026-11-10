@@ -943,6 +943,37 @@ or give pins, colliders and wind in that space. One step of a 65 x 65 sheet take
 about 2.4 ms on one core. The solver, `gfx.cloth`, does not depend on the renderer
 and can be used alone: `cloth::make`, `cloth::step` and `cloth::write`.
 
+### Time of day (E6)
+
+```
+var day = s3d::Day { hour: 17.5, day: 172, latitude: 40.0 };
+day.hour += dt / 3600.0;
+let _ = s3d::time_of_day(day);
+```
+
+`s3d::time_of_day(day)` sets the sun's direction and color and the baked sky for a clock
+time, and returns true when it baked the sky. Call it every frame: the sun's direction and
+color follow the clock exactly, and the sky is baked again only after the light has moved
+by `step` degrees or its strength, the haze or the cloud cover has changed.
+
+| Field | Default | Meaning |
+| --- | --- | --- |
+| `hour` | 12 | local solar time in hours; 12 is the sun's highest point |
+| `day` | 172 | day of the year (172 is June 21) |
+| `latitude` | 40 | degrees north; negative for south |
+| `north` | 0 | degrees north is turned from -z toward +x; east is +x at 0 |
+| `power`, `haze`, `clouds` | 3.5, 1, 0.3 | the same as in `s3d::atmosphere` |
+| `moon` | 0.02 | strength of the moon relative to the sun; 0 gives a black night |
+| `step` | 0.5 | degrees the light may move before the sky is baked again |
+| `size` | 0 | cube size of the baked sky; 0 uses `envmap::size` |
+| `samples` | 128 | samples a pixel the blur of the baked sky uses (`s3d::atmosphere` uses 512); the diffuse level uses 4 times as many |
+
+The sun fades as its disc crosses the horizon. Once the disc has set, a full moon opposite
+the sun is the scene's one directional light, dim and red while it is low. The sky keeps
+the glow of the sun until the sun is 7 degrees below the horizon; after that the moon
+lights the sky, at full strength once the sun is 14 degrees below.
+`s3d::sun_at(hour, day, latitude, north)` gives the direction to the sun alone. There are no stars and the moon has no phases.
+
 ### Hair (C11, E13)
 
 `import gfx.hair;` draws hair and fur as strands. A groom is a set of guides; each guide is
@@ -2452,6 +2483,27 @@ in the plane z = 0 with its top edge at y = 2 and every vertex of the top edge p
   gfxtest, wgsltest and webgputest pass, with a new `scene_cloth` in webgputest above
   30 dB against the native frame.
 
+### Time of day bars (E6, registered before the first GPU run; the moon's takeover point in D6 was restated from 10 to 7 degrees after it, bar values unchanged)
+
+`s3d::time_of_day` turns a clock time, a day of the year and a latitude into the sun's
+direction, the sun's color and the baked sky, and into a full moon opposite the sun at
+night. The sky is baked again only after the light has moved by `step` degrees.
+
+The test scene is a gray ground and a sphere at latitude 40 on day 172 (June 21), seen
+toward the north at 1280 x 720 with fixed exposure. "Brightness" is the mean of the frame
+on the 0 to 255 scale. `GFX_ONLY=day` runs only these checks.
+
+| Bar | What is measured | Bar value |
+| --- | --- | --- |
+| D1 sun position | `s3d::sun_at`: elevation at 12:00 on day 172; at 12:00 on day 80; direction and elevation at 06:00 on day 80; the same with north turned 90 degrees | 73.44 within 0.2 degrees; 50 within 1 degree; x at least 0.99 and within 1.5 degrees of the horizon; the same vector turned 90 degrees about up, within 0.001 |
+| D2 the day follows the clock | brightness at 12:00, 18:00 and 20:15 (sun 7.7 degrees below the horizon); at 00:00 with the moon; at 00:00 with `moon` 0 | each lower than the one before; between 0.02 and 0.35 of noon; at most 0.2 of the moonlit frame |
+| D3 dusk is warm | red over blue of `sun.rgb` at 19:00 (sun 4.2 degrees up), relative to noon | at least 2 |
+| D4 the night has a moon | at 00:00: elevation of `sun.to_sun`; mean of `sun.rgb` relative to noon | above 10 degrees; above 0 and at most 0.05 |
+| D5 no needless bake | the same time set twice; then 1 minute later; then 10 minutes later | one bake; no bake but a new sun direction; a bake |
+| D6 no jump | 18:00 to 23:00 in steps of 1 minute: largest change of brightness between two frames; brightness 1 minute before and 1 minute after the moon takes over the sky (sun 7 degrees below the horizon) | at most 7; within 3 |
+| D7 cost | median time of a frame that bakes the sky minus the median of one that does not, at the default 512 cube; the same at `size` 128 | at most 70 ms; at most 14 ms |
+| D8 nothing else moved | gfxtest, wgsltest and webgputest | all pass |
+
 ### Hair bars (C11, E13, registered before the first GPU run; the scenes of H5, H6, H8, H9 and H11 were restated after it, bar values unchanged)
 
 Hair is drawn as strands, not as textured cards. A groom is a set of guide cards; every
@@ -2847,6 +2899,23 @@ all three frames.
 | Y5 control, fuzz 0 twice | rim rise 0.0 | below 3 |
 | Y6 cost | 1.63 ms without, 1.75 ms with: 0.12 ms more | at most 0.3 ms |
 | Y7 nothing else moved | goldens 44.92 dB and 41.7 dB; X1 to X7 pass with both strengths 0; wgsltest 67 modules, 58 pipelines, 0 failures; webgputest 22 scenes, 0 failures, `scene_sss` with strength 0.7 and fuzz 0.35 matches the native frame exactly on WebGPU | pass |
+
+### Time of day results (2026-11-10, RX 9060 XT, RADV)
+
+| Bar | Result | Bar value |
+| --- | --- | --- |
+| D1 sun position | 73.439 degrees; 49.496 degrees; x 1.0 at -0.324 degrees; turned vector off by 0.0 | 73.44 within 0.2; 50 within 1; at least 0.99 within 1.5 of the horizon; within 0.001 |
+| D2 the day follows the clock | 130.5 at 12:00, 88.2 at 18:00, 1.39 at 20:15; 12.3 at 00:00 = 0.094 of noon; 0.124 with no moon = 0.01 of the moonlit frame | each lower; 0.02 to 0.35; at most 0.2 |
+| D3 dusk is warm | 8.76 | at least 2 |
+| D4 the night has a moon | 26.6 degrees; 0.0169 of noon | above 10 degrees; above 0 and at most 0.05 |
+| D5 no needless bake | a bake; no bake; no bake with the sun moved; a bake; 2 bakes in all | one bake; no bake but a new sun direction; a bake |
+| D6 no jump | largest step 3.73; 1.42 before and 1.17 after the moon takes over the sky at 20:10 | at most 7; within 3 |
+| D7 cost | 13.2 ms at 512; 5.8 ms at 128 | at most 70 ms; at most 14 ms |
+| D8 nothing else moved | gfxtest passes; wgsltest 80 modules, 69 pipelines, 0 failures; webgputest 26 scenes, 0 failures | all pass |
+
+The blur of the baked sky takes most of the bake, so `Day.samples` (default 128) sets its
+sample count for bakes made by `s3d::time_of_day`; `envmap::irr_samples` (default 2048)
+is the sample count of the diffuse level for every other bake.
 
 ### Hair results (2026-11-10, RX 9060 XT, RADV)
 
@@ -3418,6 +3487,11 @@ pass-through mean error is 0.0106 % (max 0.0488 %).
   shadow on the scene, grooms do not shadow each other, and two grooms that overlap on screen share
   their depth layers. A move of the head without a turn is not carried over to the hair at once, so
   the tips trail by the whole move and catch up.
+* Time of day: the clock is local solar time (no time zones, no equation of time). The moon
+  is always full and directly opposite the sun, and there are no stars. The sky is dark once
+  the sun is about 6 degrees below the horizon, earlier than a real twilight ends. The sky
+  is baked in steps of `step` degrees, so reflections and ambient light follow the clock in
+  those steps while the sun itself moves every frame.
 * Clouds: one layer of one cloud type (cumulus), shaped by noise alone: there is no
   weather map to place clouds and no high thin cloud. They are drawn on sky pixels
   only, so nothing can sit inside a cloud or be hidden by one. Light inside a cloud

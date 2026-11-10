@@ -1541,6 +1541,46 @@ fn atmosphere(to_sun float3, power f32, haze f32, clouds f32) {
 	sun.rgb = envmap::sun_color(d, power, haze);
 	envmap::set_sky(d, power, haze, clouds, envmap::size, 0.0, 0.0);
 }
+struct Day { hour f32 = 12.0, day int = 172, latitude f32 = 40.0, north f32 = 0.0, power f32 = 3.5, haze f32 = 1.0, clouds f32 = 0.3, moon f32 = 0.02, step f32 = 0.5, size int = 0, samples int = 128 }
+var day_dir float3 = float3 { 0.0, 0.0, 0.0 };
+var day_key float3 = float3 { -1.0, 0.0, 0.0 };
+var day_bakes = 0;
+fn sun_at(hour f32, day int, latitude f32, north f32) float3 {
+	let rad = 0.017453292519943295;
+	let dec = -23.44 * rad * cos(6.283185307179586 * (day as real + 10.0) / 365.0);
+	let ha = 15.0 * rad * (hour as real - 12.0);
+	let lat = latitude as real * rad;
+	let a = north as real * rad;
+	let e = -cos(dec) * sin(ha);
+	let n = cos(lat) * sin(dec) - sin(lat) * cos(dec) * cos(ha);
+	linalg::unit3(float3 { (e * cos(a) + n * sin(a)) as f32, (sin(lat) * sin(dec) + cos(lat) * cos(dec) * cos(ha)) as f32, (e * sin(a) - n * cos(a)) as f32 })
+}
+fn time_of_day(d Day) bool {
+	let s = sun_at(d.hour, d.day, d.latitude, d.north);
+	let low = s.y < -0.00785;
+	let night = s.y < -0.12187;
+	let n = clamp((-0.12187 - s.y) / 0.12005, 0.0, 1.0);
+	let up = clamp((s.y + 0.00785) / 0.01309, 0.0, 1.0);
+	let m = float3 { -s.x, -s.y, -s.z };
+	let to = if night { m } else { s };
+	let pw = if night { d.power * d.moon * n * n * (3.0 - 2.0 * n) } else { d.power };
+	sun.to_sun = if low { linalg::unit3(float3 { m.x, max(m.y, 0.01), m.z }) } else { linalg::unit3(float3 { s.x, max(s.y, 0.01), s.z }) };
+	sun.rgb = if low { envmap::sun_color(m, d.power * d.moon, d.haze) } else { envmap::sun_color(s, d.power * up * up * (3.0 - 2.0 * up), d.haze) };
+	let fresh = day_bakes == 0 || to.x * day_dir.x + to.y * day_dir.y + to.z * day_dir.z < linalg::f(cos(d.step as real * 0.017453292519943295)) || abs(pw - day_key.x) > 0.02 * max(pw, day_key.x) || d.haze != day_key.y || d.clouds != day_key.z;
+	if fresh {
+		let ks = envmap::samples;
+		let ki = envmap::irr_samples;
+		envmap::samples = d.samples;
+		envmap::irr_samples = d.samples * 4;
+		envmap::set_sky(to, pw, d.haze, d.clouds, if d.size > 0 { d.size } else { envmap::size }, 0.0, 0.0);
+		envmap::samples = ks;
+		envmap::irr_samples = ki;
+		day_dir = to;
+		day_key = float3 { pw, d.haze, d.clouds };
+		day_bakes += 1;
+	}
+	fresh
+}
 fn item_lights(ii int) {
 	let a = gltf::assets[items[ii].asset];
 	var k = items[ii].light_base;
