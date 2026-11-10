@@ -2471,6 +2471,66 @@ for a block means its value differs from its own reference by at most 0.05 x X.
 * **H10 the rest.** `gfxtest`, `wgsltest` and `webgputest` pass; the goldens do not
   move.
 
+### Water bars (E6 and E7, registered before the first GPU run)
+
+Unless a bar says otherwise: 1280 x 720, black sky, no ambient, no post effects, the
+water preset (waves 1.1, 0.062, 1.0; absorption 0.45, 0.09, 0.07; scatter 0.012, 0.07,
+0.08), level 0, HDR target read back. "The CPU sum" is the same wave sum evaluated on
+the CPU in double precision.
+
+* **W1 wave height.** `shapes::sea(7, 129)` at time 3, camera 8 m above looking
+  straight down, field of view 0.9, world position written per pixel (debug view 11).
+  At 99% of the water pixels or more the height is within 5 mm of the CPU sum at that
+  pixel's x and z. Controls: against the CPU sum at time 0 fewer than 50% are within
+  5 mm; with swell 0 the largest height is at most 0.1 mm.
+* **W2 normals follow the waves.** The W1 frame's normals (debug view 1) against the
+  central-difference slope of the CPU height field: within 1 degree at 99% of the
+  water pixels or more. Control: against a flat normal fewer than 50% are within
+  1 degree.
+* **W3 crest foam.** The W1 view with sun (0.5, 0.866, 0), color 3, a black floor 3 m
+  down. With crest foam 1 the mean luminance of the pixels whose height is at least 0.6
+  of the largest possible height is at least 2 times that of the pixels at or below
+  0.2. Control: with crest foam 0 the ratio is at most 1.3.
+* **W4 scene reflections.** Flat water (wave amplitude 0, absorption 50, scatter 0),
+  an emissive panel 3 m wide from 0.2 m to 2.2 m above the water at z = 3, camera at
+  (0, 2, -6) looking at (0, 0.5, 0), field of view 0.9. Reference frame: no panel,
+  reflections off, a uniform sky of the panel's radiance. Every water pixel at least
+  3 pixels inside the panel's mirror image (its corners mirrored through the surface
+  and projected on the CPU) is within 5% of the reference frame's same pixel; every
+  water pixel at least 3 pixels outside it reads at most 5% of that. Control: with
+  `sea.reflect` off the pixels inside read at most 10%.
+* **W5 Snell's window.** Flat water, a uniform sky of radiance 1, camera 1 m below the
+  surface looking straight up, field of view 2.0, `sea.under` off. Along the center
+  column: pixels 10 to 35 degrees from the vertical read at least 0.9; pixels at 45
+  degrees read at least 0.5; pixels at 51 degrees or more read at most 0.05. Control:
+  with index of refraction 1.5 the pixels at 45 degrees read at most 0.05.
+* **W6 underwater absorption and scatter.** Flat water 40 m across, camera at
+  (0, -1, 0) looking along +z. (a) No sun, an emissive wall of radiance 2 at z = 4: the
+  center block reads 2 e^(-4 x absorption) per channel within 2%. Control: with
+  `sea.under` off it reads 2 within 1%. (b) No wall, sun (0.5, 0.866, 0), color 3,
+  shafts 0: the center block reads scatter x L x (1 - e^(-20 x absorption)) per channel
+  within 3%, where L = 3 x 0.866 / pi x e^(-absorption x 1 / c) and c is the cosine of
+  the refracted sun direction from the vertical.
+* **W7 light shafts.** (a) The preset waves at time 3, sun (0.3, 0.9, 0.3) normalized,
+  color 3, camera at (0, -2, 0) looking along +z, field of view 1.0. Over 80 blocks of
+  16 x 240 pixels across the middle rows, the standard deviation of the block means
+  over their mean is at least 0.005 with shafts 1. Control: with shafts 0 it is at most
+  0.001. (b) W6 (b) with sun shadows on and a slab 4 m x 0.2 m x 4 m floating at
+  (0, 0.3, 7), far enough that its shadow covers z from 5 to 9 on the central ray: the
+  center block's blue channel is within 5% of the closed form with that stretch unlit,
+  scatter x L x ((1 - e^(-5a)) + (e^(-9a) - e^(-20a))). Control: with sun shadows off
+  it reads more than 15% above that.
+* **W8 above the water nothing changes.** The W4 frame with `sea.under` on and off:
+  no difference in any pixel.
+* **W9 cost.** (a) The W1 sea filling a 1280 x 720 view with swell, crest foam and
+  reflections (24 steps) on costs at most 3 ms more than the same frame with swell 0,
+  foam 0 and reflections off. (b) The W7 (a) frame costs at most 3 ms more with
+  `sea.under` on than off.
+* **W10 browser and the rest.** `scene_sea` in `webgputest` (a sea with swell, foam and
+  reflections over the test scene) matches the native frame by that tool's bar.
+  `gfxtest`, `wgsltest` and `webgputest` pass; the caustics bars K1 to K9 and the
+  goldens do not move.
+
 ### Volumetric cloud results (2026-11-10, RX 9060 XT, RADV; another program using the whole card)
 
 | Bar | Result | Bar value |
