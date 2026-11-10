@@ -975,6 +975,44 @@ application loses its device). The test run keeps every job far below that limit
 * A full run with no gputime log fails. A `GFX_ONLY` run without the layer prints
   "not measured" and passes.
 
+### Submit length results (2026-11-09, RX 9060 XT, RADV; `results/2026-11-09_rx9060xt_radv_b25ffcd_submit.txt`, clean worktree, full gfxtest ok)
+
+| Bar | Result | Bar value |
+| --- | --- | --- |
+| B1 longest submit of the run | 63.82 ms among 116,010 submits; none above 100 ms | at most 500 ms |
+| B1 control, a log holding one 900 ms submit | reads 900.0 ms: fails as it must | fails |
+| B2 twelve frames in one command buffer | 1 submit of 5.057 ms; flushed one by one 13 submits, the longest 0.39 ms: 13 times | one submit, at least 4 times |
+
+Per group of checks, the number of submits and the longest one in ms (none above 100 ms):
+
+| Group | Submits | Longest | Group | Submits | Longest |
+| --- | --- | --- | --- | --- | --- |
+| furnace | 102,472 | 0.58 | dof | 73 | 0.47 |
+| goldens, timing, frame | 783 | 1.22 | fx | 514 | 29.9 |
+| motion | 57 | 0.39 | probe | 90 | 34.53 |
+| taa | 389 | 1.17 | ssgi | 325 | 1.84 |
+| tsr | 808 | 1.4 | decal | 675 | 1.06 |
+| shadow | 600 | 0.97 | weather | 1,581 | 1.32 |
+| look_taa | 539 | 2.16 | rect | 744 | 3.0 |
+| ghost | 1,151 | 1.17 | small | 218 | 2.58 |
+| t8_still | 104 | 0.8 | instance | 255 | 8.55 |
+| s5_inflight | 39 | 0.87 | caustic | 291 | 0.83 |
+| s6_layers | 22 | 0.07 | texture | 352 | 0.98 |
+| gtao | 34 | 1.0 | stream | 1,034 | 11.52 |
+| gi | 234 | 63.82 | rtr | 1,573 | 27.42 |
+| mb | 164 | 0.32 | meshlet | 888 | 11.68 |
+
+Frame-time bars read in the same run, every frame its own submit:
+
+| Bar | Result | Bar value |
+| --- | --- | --- |
+| TSR resolve, 1280x720 to 1920x1080, GPU p95 | 0.236 ms | below 0.5 ms |
+| F6 speed, 20,000 spheres in view at 1280 x 720 with shadows | one set 7.6 ms a frame, 20,000 items 145.51 ms: 19.14 x | at least 10 x |
+| K8 cost, 1280 x 720 floor under water | 0.64 ms a frame without, 1.07 ms with: 0.43 ms added | at most 1.0 ms |
+| T8 frame, 1280 x 720 | 0.64 ms uncompressed, 0.65 ms compressed | at most 0.2 ms added |
+| R7 cost at 1280 x 720 | scene M off 0.529 ms, on 0.678 ms: 0.149 ms; 20,014-triangle sphere off 0.519 ms, on 0.954 ms: 0.434 ms | at most 1 ms and 4 ms |
+| N9 cost, 64 balls | 8.10 ms off, 2.37 ms on: 0.29 | at most 0.5 |
+
 ### Pre-registered bars (gfx-review2)
 
 Each bar below was committed (code and this text) before the GPU run that measures
@@ -1884,7 +1922,7 @@ one error value.
 | N7 facing test | 24,989 triangles with it, 28,530 without: 0.876; frames 0 / 255 apart | at most 0.9, 0 |
 | N8 shadow in view | IoU 0.994 (27,133 shadow pixels against 27,141) | at least 0.97 |
 | N7 and N8 control, ball hidden | IoU 0 | below 0.97 |
-| N9 cost, 64 balls | 9.46 ms off, 4.10 ms on: 0.43 (run alone: 7.39 ms and 2.37 ms, 0.32); 213,736 triangles in the camera's list and 231,646 in the shadow list in place of 16.7 million; frames 0.27 / 255 apart | at most 0.5 |
+| N9 cost, 64 balls | 8.10 ms off, 2.37 ms on: 0.29; 213,736 triangles in the camera's list and 231,646 in the shadow list in place of 16.7 million; frames 0.27 / 255 apart | at most 0.5 |
 | N10 off is free, and gates | goldens 44.92 dB and 41.7 dB; gfxtest ok; wgsltest 65 modules, 56 pipelines, 0 failures; webgputest 21 scenes, 0 failures, `scene_meshlet` identical to native | above 40 dB, 0 failures |
 
 N1 to N3 run in `hc/test/gfx/meshlet_check.amni`, N4 to N9 in `meshlet_checks`
