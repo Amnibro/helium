@@ -503,6 +503,20 @@ the screen: the drop's path over `stretch` seconds is projected, and the quad co
 exactly, as wide as the drop. Snowflakes are blended without sorting (they are all one
 color), so snow costs no sort.
 
+### Many lights (E4)
+
+```
+for p in lamps { s3d::add_light(p, float3 { 2.0, 1.6, 1.0 }, 1.5); }
+```
+
+Any number of point, spot and area lights can be in the scene. Each frame they are sorted
+into a grid of 16 x 9 x 24 cells that follows the camera, and a pixel shades only the
+lights listed in its own cell, skipping any it is out of range of. A cell lists up to 1,023
+lights; `clusters::dropped` counts entries that did not fit in the last frame and
+`clusters::top` is its fullest cell. The cost follows how many lights reach each pixel, so
+keep ranges short: 4,900 lights of range 1.5 m add about 4 ms to a 1280 x 720 frame. The
+first 16 lights can cast shadows and light the fog.
+
 ### Rect area lights (E4)
 
 A rect light is a flat glowing rectangle: a softbox, a window, a ceiling panel or a TV.
@@ -1179,7 +1193,7 @@ s3d::wet = 0.5; s3d::snow = 0.0; s3d::world_time = t;
 The final pass adds triangular dither of up to one 8-bit level, in the encoded image,
 so slow gradients such as a clear sky don't show bands.
 
-Lights use clustered forward shading, so hundreds of unshadowed lights are allowed;
+Lights use clustered forward shading, so thousands of unshadowed lights are allowed;
 the first 16 get shadow maps and fog. The sun convention matches three.js: the shader
 divides by pi, so `sun.rgb` equals a three.js directional light's intensity times its
 color.
@@ -2483,6 +2497,29 @@ in the plane z = 0 with its top edge at y = 2 and every vertex of the top edge p
   gfxtest, wgsltest and webgputest pass, with a new `scene_cloth` in webgputest above
   30 dB against the native frame.
 
+### Many lights bars (E4, registered before the first GPU run; the camera, ambient light and light strength of the field scene and the range factor of the L2 control were restated after it, bar values unchanged)
+
+The light grid lists up to 1,023 lights in each of its 16 x 9 x 24 cells, and a pixel skips
+a listed light it is out of range of before any shading. `clusters::dropped` counts the
+entries that did not fit and `clusters::top` is the fullest cell, both for the last frame.
+
+The field scene is a gray floor with three spheres under 4,900 lights: a 70 x 70 grid 1 m
+apart, 0.4 m above the floor, range 1.5 m, colors by index, every fourth one a spot light
+aimed down. There is no sun and the sky is not drawn. The camera looks down across the field at
+1280 x 720. The crowd
+scene is 700 lights of range 4 m inside a disc 1 m wide, 1 m above the floor.
+`s3d::test_all_lights` makes every pixel test every light, with no grid.
+`GFX_ONLY=lights` runs only these checks.
+
+| Bar | What is measured | Bar value |
+| --- | --- | --- |
+| L1 nothing is dropped | field scene: `clusters::dropped`; `clusters::top` | 0; at most 1,023 |
+| L2 the frame is right | field scene: largest difference of any channel from the frame that tests every light at every pixel; mean brightness against the same scene with no lights; share of pixels at full white | at most 1 / 255; at least 2 times; below a quarter |
+| L2 control | the grid built with every light's range cut to a twentieth (`s3d::test_cluster_range` 0.05): pixels that differ from the every-light frame by more than 8 / 255 | at least 1,000 |
+| L3 a crowded cell | crowd scene: `clusters::top`; `clusters::dropped`; largest difference from the every-light frame; mean brightness | at least 700; 0; at most 1 / 255; between 30 and 220 |
+| L4 cost | field scene: median frame with the 4,900 lights minus the median frame with none; median time on the CPU to pack the lights and build the grid; the every-light frame's time over the grid frame's | at most 17 ms; at most 4 ms; at least 10 times |
+| L5 nothing else moved | gfxtest, wgsltest and webgputest | all pass |
+
 ### Time of day bars (E6, registered before the first GPU run; the moon's takeover point in D6 was restated from 10 to 7 degrees after it, bar values unchanged)
 
 `s3d::time_of_day` turns a clock time, a day of the year and a latitude into the sun's
@@ -2899,6 +2936,17 @@ all three frames.
 | Y5 control, fuzz 0 twice | rim rise 0.0 | below 3 |
 | Y6 cost | 1.63 ms without, 1.75 ms with: 0.12 ms more | at most 0.3 ms |
 | Y7 nothing else moved | goldens 44.92 dB and 41.7 dB; X1 to X7 pass with both strengths 0; wgsltest 67 modules, 58 pipelines, 0 failures; webgputest 22 scenes, 0 failures, `scene_sss` with strength 0.7 and fuzz 0.35 matches the native frame exactly on WebGPU | pass |
+
+### Many lights results (2026-11-10, RX 9060 XT, RADV)
+
+| Bar | Result | Bar value |
+| --- | --- | --- |
+| L1 nothing is dropped | 0 dropped; fullest cell 305 | 0; at most 1,023 |
+| L2 the frame is right | 0 / 255; brightness 106.5 against 37.8; no pixel at full white | at most 1 / 255; at least 2 times; below a quarter |
+| L2 control | 145,329 pixels | at least 1,000 |
+| L3 a crowded cell | fullest cell 700; 0 dropped; 0 / 255; brightness 67.4 | at least 700; 0; at most 1 / 255; between 30 and 220 |
+| L4 cost | 4.3 ms (5.6 ms with the lights, 1.3 ms without); 1.1 ms on the CPU; 16.6 times (91.9 ms) | at most 17 ms; at most 4 ms; at least 10 times |
+| L5 nothing else moved | gfxtest passes; wgsltest 80 modules, 69 pipelines, 0 failures; webgputest 26 scenes, 0 failures | all pass |
 
 ### Time of day results (2026-11-10, RX 9060 XT, RADV)
 
@@ -3487,6 +3535,9 @@ pass-through mean error is 0.0106 % (max 0.0488 %).
   shadow on the scene, grooms do not shadow each other, and two grooms that overlap on screen share
   their depth layers. A move of the head without a turn is not carried over to the hair at once, so
   the tips trail by the whole move and catch up.
+* Many lights: the grid is built on the CPU every frame and its cells grow with distance, so
+  far pixels test more lights than near ones. Only the first 16 lights cast shadows or light
+  the fog, and hair and particles are not lit through the grid.
 * Time of day: the clock is local solar time (no time zones, no equation of time). The moon
   is always full and directly opposite the sun, and there are no stars. The sky is dark once
   the sun is about 6 degrees below the horizon, earlier than a real twilight ends. The sky

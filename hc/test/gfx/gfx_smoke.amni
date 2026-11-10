@@ -7672,6 +7672,88 @@ fn hr_more() bool {
 	print("gpu: hair H8 self-shadow: mean hair brightness ", r3(l1), " shadowed, ", r3(l0), " unshadowed, ratio ", r3(l1 / max(l0, 0.001)), " (bar <= 0.92)", hr_pass(h8));
 	h10 && h11 && h16 && h17 && h18 && h8
 }
+fn ml_world(eye float3, target float3, sky bool) {
+	reset_scene();
+	s3d::sky = DEF_SKY; s3d::sun = DEF_SUN; s3d::look = DEF_LOOK; s3d::look.bloom = 0.0; s3d::look.ssao = false;
+	s3d::ssr_on = false; s3d::ssgi_on = false; s3d::gi_on = false; s3d::temporal = 0; s3d::fog_on = false; s3d::sss_on = false;
+	s3d::clouds.on = false; s3d::sun.rgb = float3 { 0.0, 0.0, 0.0 }; s3d::sun.shadows = false; envmap::on = false; s3d::sky.ambient = if sky { 0.05 } else { 0.005 }; s3d::sky.draw = sky;
+	s3d::place(s3d::add(shapes::plane(45.0, shapes::material(linalg::v3(0.5, 0.5, 0.5), 0.0, 0.7))), gfx::mat4_identity);
+	s3d::place(s3d::add(shapes::sphere(1.0, 32, 16, shapes::material(linalg::v3(0.7, 0.7, 0.7), 0.0, 0.4))), gfx::translate(float3 { -3.0, 1.0, 10.0 }));
+	s3d::place(s3d::add(shapes::sphere(1.0, 32, 16, shapes::material(linalg::v3(0.8, 0.7, 0.3), 1.0, 0.3))), gfx::translate(float3 { 0.0, 1.0, 0.0 }));
+	s3d::place(s3d::add(shapes::sphere(1.0, 32, 16, shapes::material(linalg::v3(0.7, 0.7, 0.7), 0.0, 0.8))), gfx::translate(float3 { 4.0, 1.0, -12.0 }));
+	s3d::view = s3d::Camera { eye: eye, target: target, up: float3 { 0.0, 1.0, 0.0 }, fov_y: 0.9, near: 0.1, far: 200.0 };
+}
+fn ml_field(n int) {
+	for i in n {
+		let p = float3 { (i % 70) as f32 - 34.5, 0.4, (i / 70) as f32 - 34.5 };
+		let c = float3 { 2.0 * (0.25 + 0.75 * ((i * 7) % 5) as f32 / 4.0), 2.0 * (0.25 + 0.75 * ((i * 3) % 8) as f32 / 7.0), 2.0 * (0.25 + 0.75 * ((i * 5) % 3) as f32 / 2.0) };
+		if i % 4 == 3 { s3d::add_spot(p, float3 { p.x, 0.0, p.z }, c, 1.5, 0.9, false); } else { s3d::add_light(p, c, 1.5); }
+	}
+}
+fn ml_crowd(n int) {
+	for i in n {
+		let r = 0.5 * sqrt((i as real + 0.5) / n as real);
+		let a = 2.399963229728653 * i as real;
+		s3d::add_light(float3 { linalg::f(r * cos(a)), 1.0, linalg::f(r * sin(a)) }, float3 { 0.004 + 0.002 * (i % 3) as f32, 0.005, 0.007 - 0.002 * (i % 2) as f32 }, 4.0);
+	}
+}
+fn ml_frame() byte[>..] { if s3d::render_begin() { s3d::render_end(IN_OUT); } gfx::flush(); gfx::read_pixels(IN_OUT) }
+fn ml_ms(n int) real { var t real[>..] = []; for _ in n { let a = gfx::time(); let _ = ml_frame(); t.push((gfx::time() - a) * 1000.0); } hr_mid(t) }
+fn ml_top(a const byte[:], b const byte[:]) int, int { var top = 0; var n = 0; for i in 1280 * 720 { let d = sk_d(a, b, i); top = max(top, d); if d > 8 { n += 1; } } return top, n; }
+fn ml_mean(px const byte[:]) real, real { var s = 0.0; var w = 0; for i in 1280 * 720 { s += vc_l8(px, i); if px[i * 4] == 255 && px[i * 4 + 1] == 255 && px[i * 4 + 2] == 255 { w += 1; } } return s / 921600.0, w as real / 921600.0; }
+fn ml_pair() byte[>..], byte[>..], real {
+	let _ = ml_frame();
+	let a = ml_frame();
+	s3d::test_all_lights = true;
+	let t = gfx::time();
+	let b = ml_frame();
+	let ms = (gfx::time() - t) * 1000.0;
+	s3d::test_all_lights = false;
+	return a, b, ms;
+}
+fn lights_checks() bool {
+	half_table();
+	s3d::init(1280, 720);
+	IN_OUT = gfx::render_target(1280, 720, gfx::RGBA8);
+	let env = envmap::on;
+	ml_world(float3 { 0.0, 7.0, 38.0 }, float3 { 0.0, -4.0, 10.0 }, false);
+	let _ = ml_frame();
+	let none = ml_ms(21);
+	let dark, _ = ml_mean(ml_frame()[..]);
+	ml_field(4900);
+	let fa, fb, brute = ml_pair();
+	let drop = clusters::dropped;
+	let top = clusters::top;
+	let l1 = drop == 0 && top <= 1023;
+	print("gpu: lights L1 nothing dropped: ", s3d::lights.len, " lights, dropped ", drop, " (bar 0), fullest cell ", top, " (bar <= 1023)", hr_pass(l1));
+	let d2, _ = ml_top(fa[..], fb[..]);
+	let lit, white = ml_mean(fa[..]);
+	let _ = codec_png::write(path(OUT_DIR[..], "lights_field.png")[..], 1280, 720, 4, fa[..]);
+	s3d::test_cluster_range = 0.05;
+	let fc = ml_frame();
+	s3d::test_cluster_range = 1.0;
+	let _, miss = ml_top(fc[..], fb[..]);
+	let l2 = d2 <= 1 && lit >= 2.0 * dark && white < 0.25 && miss >= 1000;
+	print("gpu: lights L2 right frame: largest difference ", d2, " / 255 (bar <= 1), brightness ", r3(lit), " against ", r3(dark), " with no lights (bar >= 2 times), full white ", r3(white), " of the frame (bar < 0.25); control grid at a twentieth of the range: ", miss, " pixels differ (bar >= 1000)", hr_pass(l2));
+	let many = ml_ms(21);
+	var tu real[>..] = [];
+	for _ in 21 { let t = gfx::time(); s3d::light_upload(); tu.push((gfx::time() - t) * 1000.0); }
+	let l4 = many - none <= 17.0 && hr_mid(tu) <= 4.0 && brute >= 10.0 * many;
+	print("gpu: lights L4 cost: ", r3(many), " ms with the lights, ", r3(none), " ms without, lights ", r3(many - none), " ms (bar <= 17); pack and grid ", r3(hr_mid(tu)), " ms on the CPU (bar <= 4); every-light frame ", r3(brute), " ms = ", r3(brute / max(many, 0.001)), " times the grid frame (bar >= 10)", hr_pass(l4));
+	ml_world(float3 { 0.0, 2.0, 5.0 }, float3 { 0.0, 0.5, 0.0 }, true);
+	ml_crowd(700);
+	let ca, cb, _ = ml_pair();
+	let ctop = clusters::top;
+	let cdrop = clusters::dropped;
+	let d3, _ = ml_top(ca[..], cb[..]);
+	let cm, _ = ml_mean(ca[..]);
+	let _ = codec_png::write(path(OUT_DIR[..], "lights_crowd.png")[..], 1280, 720, 4, ca[..]);
+	let l3 = ctop >= 700 && cdrop == 0 && d3 <= 1 && cm >= 30.0 && cm <= 220.0;
+	print("gpu: lights L3 crowded cell: fullest cell ", ctop, " (bar >= 700), dropped ", cdrop, " (bar 0), largest difference ", d3, " / 255 (bar <= 1), brightness ", r3(cm), " (bar 30..220)", hr_pass(l3));
+	envmap::on = env;
+	gfx::release(IN_OUT);
+	l1 && l2 && l3 && l4
+}
 fn td_world() {
 	reset_scene();
 	s3d::sky = DEF_SKY; s3d::sun = DEF_SUN; s3d::look = DEF_LOOK; s3d::look.bloom = 0.0; s3d::look.ssao = false;
@@ -7831,7 +7913,7 @@ fn gpu_checks(dir const byte[:], golden const byte[:]) bool {
 	var only byte[>..] = [];
 	let _ = env("GFX_ONLY", only);
 	if only.len > 0 {
-		let ok = if only[..] == "day" { day_checks() } else if only[..] == "hair" { hair_checks() } else if only[..] == "gtao" { gtao_checks() } else if only[..] == "gi" { gi_checks() } else if only[..] == "mblur" { mb_checks() } else if only[..] == "dof" { dof_checks() } else if only[..] == "fx" { fx_checks() } else if only[..] == "tsr" { tsr_checks(dir) } else if only[..] == "probe" { probe_checks(dir) } else if only[..] == "ssgi" { ssgi_checks() } else if only[..] == "decal" { decal_checks() } else if only[..] == "weather" { weather_checks() } else if only[..] == "rect" { rect_checks() } else if only[..] == "small" { small_checks() } else if only[..] == "inst" { instance_checks() } else if only[..] == "caust" { caustic_checks() } else if only[..] == "tex" { texture_checks() } else if only[..] == "stream" { stream_checks() } else if only[..] == "rtr" { rtr_checks() } else if only[..] == "meshlet" { meshlet_checks() } else if only[..] == "sss" { sss_checks() } else if only[..] == "cloth" { cloth_checks() } else if only[..] == "cloud" { cloud_checks() } else if only[..] == "vfog" { fog_checks() } else if only[..] == "sea" { sea_checks() } else if only[..] == "vsm" { vsm_checks() } else { shadow_checks() };
+		let ok = if only[..] == "lights" { lights_checks() } else if only[..] == "day" { day_checks() } else if only[..] == "hair" { hair_checks() } else if only[..] == "gtao" { gtao_checks() } else if only[..] == "gi" { gi_checks() } else if only[..] == "mblur" { mb_checks() } else if only[..] == "dof" { dof_checks() } else if only[..] == "fx" { fx_checks() } else if only[..] == "tsr" { tsr_checks(dir) } else if only[..] == "probe" { probe_checks(dir) } else if only[..] == "ssgi" { ssgi_checks() } else if only[..] == "decal" { decal_checks() } else if only[..] == "weather" { weather_checks() } else if only[..] == "rect" { rect_checks() } else if only[..] == "small" { small_checks() } else if only[..] == "inst" { instance_checks() } else if only[..] == "caust" { caustic_checks() } else if only[..] == "tex" { texture_checks() } else if only[..] == "stream" { stream_checks() } else if only[..] == "rtr" { rtr_checks() } else if only[..] == "meshlet" { meshlet_checks() } else if only[..] == "sss" { sss_checks() } else if only[..] == "cloth" { cloth_checks() } else if only[..] == "cloud" { cloud_checks() } else if only[..] == "vfog" { fog_checks() } else if only[..] == "sea" { sea_checks() } else if only[..] == "vsm" { vsm_checks() } else { shadow_checks() };
 		let e = gfx::error();
 		if e.len > 0 { print("gpu: gfx error ", e[..]); return false; }
 		return mark(only[..], ok) && submit_checks(false);
@@ -8013,6 +8095,7 @@ fn gpu_checks(dir const byte[:], golden const byte[:]) bool {
 	if !mark("vfog", fog_checks()) { good = false; }
 	if !mark("sea", sea_checks()) { good = false; }
 	if !mark("day", day_checks()) { good = false; }
+	if !mark("lights", lights_checks()) { good = false; }
 	if !submit_checks(true) { good = false; }
 	let err = gfx::error();
 	if err.len > 0 { print("gpu: gfx error ", err[..]); good = false; }

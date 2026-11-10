@@ -203,6 +203,8 @@ var furnace_scale f32 = 1.0;
 // F0 = 1 in the specular lobe only, 2 weights diffuse by the older per-light 1 - F(v.h).
 var furnace_mode = 0;
 var test_rect_naive = false;
+var test_all_lights = false;
+var test_cluster_range f32 = 1.0;
 var alpha_to_coverage = false;
 var mip_bias f32 = 0.0;
 var mip_bias_auto = true;
@@ -2307,7 +2309,7 @@ fn light_upload() {
 	for l, k in lights {
 		let spot = l.kind == 1;
 		let co = clamp(l.cone, 0.01, 1.5);
-		light_xr.push(x4(l.pos, max(l.range, 0.01)));
+		light_xr.push(x4(l.pos, max(l.range, 0.01) * test_cluster_range));
 		light_data.push(x4(l.pos, signed_range(l)));
 		light_data.push(x4(l.rgb, if spot { 1.0 + linalg::f(cos((co * (1.0 - clamp(l.edge, 0.0, 1.0))) as real)) } else { 0.0 }));
 		light_data.push(x4(linalg::unit3(l.dir), if spot { linalg::f(cos(co as real)) } else { -2.0 }));
@@ -2316,7 +2318,7 @@ fn light_upload() {
 		light_data.push(x4(rect_axis(l), if test_rect_naive { 1.0 } else { 0.0 }));
 	}
 	if light_data.len == 0 { light_data.push(f4(0.0, 0.0, 0.0, 0.0)); }
-	frame_u.decal = f4(light_data.len as f32, decals.len as f32, 0.0, 0.0);
+	frame_u.decal = f4(light_data.len as f32, decals.len as f32, if test_all_lights { lights.len as f32 } else { 0.0 }, 0.0);
 	for d in decals {
 		let ax = linalg::qrotate(d.rot, linalg::v3(1.0, 0.0, 0.0));
 		let ay = linalg::qrotate(d.rot, linalg::v3(0.0, 1.0, 0.0));

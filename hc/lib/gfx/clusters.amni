@@ -4,7 +4,9 @@ namespace clusters;
 let CX = 16;
 let CY = 9;
 let CZ = 24;
-let MAX_PER = 255;
+let MAX_PER = 1023;
+var dropped = 0;
+var top = 0;
 var counts int[>..];
 var pair_c int[>..];
 var pair_l int[>..];
@@ -71,14 +73,16 @@ fn place(view gfx::mat4, tan_x f32, tan_y f32, near f32, far f32, l float4, li i
 fn finish(out u32[>..]&) {
 	let cells = CX * CY * CZ;
 	var total = 0;
-	for c in cells { total += min(counts[c], MAX_PER); }
+	dropped = 0;
+	top = 0;
+	for c in cells { total += min(counts[c], MAX_PER); dropped += max(counts[c] - MAX_PER, 0); top = max(top, counts[c]); }
 	out.clear();
 	out.resize(cells + total, 0);
 	var off = cells;
 	for c in cells {
 		let n = min(counts[c], MAX_PER);
 		var h u32 = 0;
-		if n > 0 { h = ((off << 8) | n) as u32; }
+		if n > 0 { h = ((off << 10) | n) as u32; }
 		out[c] = h;
 		counts[c] = off;
 		off += n;
@@ -86,7 +90,7 @@ fn finish(out u32[>..]&) {
 	for i in pair_c.len {
 		let c = pair_c[i];
 		let hd = out[c];
-		let end = (hd >> 8) as int + (hd & 255) as int;
+		let end = (hd >> 10) as int + (hd & 1023) as int;
 		if counts[c] < end {
 			out[counts[c]] = pair_l[i] as u32;
 			counts[c] += 1;
