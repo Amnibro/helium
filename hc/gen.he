@@ -59,6 +59,28 @@ is_vval(t int) bool:
 mvv(t int) bool:
 	if t < 0 || TY[t].k != TY_MULTI { return false } for i TY[t].n { if is_vval(TYL[TY[t].l as int + i] as int) { return true } } false
 var PKD i8[>..]
+var GPIN i8[>..]
+var GDEP i32[>..]
+recursive gpin(a int):
+	if ND[a].k as int == N_LIST: for i ND[a].n { gpin(kid(a, i)) } return
+	t := deref(at(a)); if !(hvimg(t) || is_vval(t)): return
+	c ~= a; while ND[c].k as int == N_DOT || ND[c].k as int == N_IDX { c = ND[c].a as int }
+	if ND[c].k as int != N_ID || rk(c) != R_LOCAL: return
+	v := rv(c); if TY[LVS[v].ty].k == TY_REF: return
+	d := if v < GDEP.len && GDEP[v] >= 0 { GDEP[v] as int } else { 0 }
+	for i d..GPIN.len { GPIN[i] = 1 }
+vdot(c int) bool: ND[c].k as int == N_DOT && rk(c) == R_FIELD && TY[at(ND[c].a as int)].k != TY_REF && is_vst(at(ND[c].a as int))
+gvroot(a int) int:
+	c ~= a; while vdot(c) { c = ND[c].a as int }
+	if c != a && ND[c].k as int == N_ID && TY[at(c)].k != TY_REF { c } else { -1 }
+recursive gvset(a int, b int, d int):
+	q := nt(); DSU++; format(O, "{ uint8_t *_n", q, " = "); gxe(b, d); ow("; "); c ~= a; nn byte[..32] ~= []; format(nn, "_n", q)
+	while vdot(c):
+		bs := ND[c].a as int; st := at(bs); si := TY[st].a as int; ft := SFI[STI[si].f0 + rv(c)].ty as int; p := nt(); on byte[..32] ~= []; format(on, "_o", p); fb byte[..32] ~= []; format(fb, "_f", p)
+		fa byte[..512] ~= []; vfa_into(fa, si, rv(c), on[..]); e1 byte[..512] ~= []; vz_into(e1, st, on[..]); e2 byte[..512] ~= []; vz_into(e2, ft, fb[..]); e3 byte[..512] ~= []; vz_into(e3, ft, nn[..])
+		format(O, "{ uint8_t *_o", p, " = "); gx(bs); format(O, "; uint8_t *_f", p, " = ", fa[..], "; _n", q, " = hr_vsplice(_o", p, ", ", e1[..], ", _f", p, ", ", e2[..], ", _n", q, ", ", e3[..], "); } ")
+		c = bs
+	gx(c); format(O, " = _n", q, "; }")
 var VZD i8[>..]
 var VOD i8[>..]
 pk_need(t int): while PKD.len < TY.len { PKD.push(0) } if PKD[t] != 0 { return } PKD[t] = 1; cbody(t); TD.append("typedef struct { "); TD.append(cn(t)); format(TD, " v; } PK", t, ";\n");
@@ -1564,9 +1586,10 @@ recursive gtail(tl int, res int):
 recursive gblk(b int, res int, val bool):
 	x := ND[b]
 	if x.k as int != N_BLOCK: if res >= 0 { gtail(b, res); } else { if val { gx(b); ow(";"); } else { gstmt(b); } } return
-	bsp := O.len; bdu := DSU
+	bsp := O.len; bdu := DSU; GPIN.push(0)
 	gblk1(b, res, val)
-	if DSU > bdu && !is_vval(fin(b)) && !is_vval(at(b)): SCR2.clear(); SCR2.append(O[bsp..]); O.resize(bsp); ow("int64_t _bm"); oi(nt()); ow(" __attribute__((cleanup(hr_dsr))) = hr_ds.n; "); O.append(SCR2[..]);
+	pin := GPIN[GPIN.len - 1] != 0; GPIN.resize(GPIN.len - 1)
+	if !pin && DSU > bdu && !is_vval(fin(b)) && !is_vval(at(b)): SCR2.clear(); SCR2.append(O[bsp..]); O.resize(bsp); ow("int64_t _bm"); oi(nt()); ow(" __attribute__((cleanup(hr_dsr))) = hr_ds.n; "); O.append(SCR2[..]);
 recursive gblk1(b int, res int, val bool):
 	x := ND[b]
 	for i x.n: gstmt(kid(b, i))
@@ -1746,6 +1769,7 @@ recursive gvdecl(n int):
 	if TY[it].k == TY_MULTI: if TY[fin(init)].k == TY_MULTI { gx(init); ow(".r0; "); } else { gx(init); ow("; "); } return
 	gx(init); ow("; ");
 decl_lv(v int):
+	while GDEP.len <= v { GDEP.push(-1) } GDEP[v] = GPIN.len
 	t := LVS[v].ty
 	ct(t); ow(" ")
 	if lv_isptr(v): ow("*")
@@ -1754,6 +1778,7 @@ decl_lv(v int):
 recursive gassign(n int):
 	x := ND[n]
 	o := x.op
+	if x.a >= 0: gpin(x.a)
 	if x.b >= 0 && at(x.b) == T_VOID && ends(x.b): gx0(x.b); ow(";"); return
 	if o == T_ASSIGN && x.b >= 0 && TY[at(x.a)].k == TY_STRUCT && !is_vst(at(x.a)) && has_relq(x.b) && is_place(x.a): grel_at(x.b, x.a, -1); return
 	if o == T_COMMA:
@@ -1785,6 +1810,7 @@ recursive gassign(n int):
 		if TY[tt].k == TY_REF && TY[at(x.b)].k != TY_REF && TY[fin(x.b)].k != TY_REF && TY[at(x.b)].k != TY_NULL: ow("*"); gx0(a); ow(" = "); gx(x.b); ow(";"); return
 		if o == T_ASSIGN && TY[tt].k == TY_REF && TY[tt].fl & RF_OPT == 0 && TY[tt].c < 0 && TY[at(x.b)].k == TY_REF: ow("*"); gx0(a); ow(" = "); gx(x.b); ow(";"); return
 		if ND[a].k == N_ID: gx(a); ow(" = "); gxe(x.b, d); ow(";"); return
+		if is_vval(d) && gvroot(a) >= 0: gvset(a, x.b, d); return
 		q := nt()
 		ow("{ "); ct(d); ow(" *_t"); oi(q); ow(" = &("); gx(a); ow("); *_t"); oi(q); ow(" = "); gxe(x.b, d); ow("; }")
 		return

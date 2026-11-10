@@ -148,6 +148,7 @@ static inline uint8_t *hr_dsmv(uint8_t *p, int64_t m, int64_t sz) { hr_rinit(&hr
 static inline int64_t hr_vszf(const uint8_t *p, int w, int lim, int64_t esz) { return hr_vhd(p, w, lim) + hr_vget(p, w) * esz; }
 static inline void hr_seqapp(hrv *v, const uint8_t *x, int64_t n, int64_t sz) { hr_rinit(v); HR_OVER(v->b, v->top + sz, "append"); memmove(v->b + v->top, x, (size_t)sz); v->top += sz; v->n += n; }
 static inline uint8_t *hr_seqpush(hrv *v, const uint8_t *x, int64_t sz) { hr_rinit(v); HR_OVER(v->b, v->top + sz, "push"); uint8_t *d = v->b + v->top; memmove(d, x, (size_t)sz); v->top += sz; v->n++; return d; }
+static inline uint8_t *hr_vsplice(uint8_t *o, int64_t tot, uint8_t *f, int64_t fz, uint8_t *v, int64_t vz) { o = hr_canonp(o); f = hr_canonp(f); v = hr_canonp(v); int64_t pre = f - o; uint8_t *d = hr_grow(&hr_ds, tot - fz + vz, 1); memcpy(d, o, (size_t)pre); memcpy(d + pre, v, (size_t)vz); memcpy(d + pre + vz, f + fz, (size_t)(tot - pre - fz)); return d; }
 static inline void hr_vplace(int64_t c, uint8_t *f, int64_t sz) { hr_rinit(&hr_ds); uint8_t *d = hr_ds.b + c; f = hr_canonp(f); if (f != d) memmove(d, f, (size_t)sz); hr_ds.n = c + sz; }
 static inline void hr_append(hrv *v, const void *p, int64_t k, int64_t esz) { if (k <= 0) return; uint8_t *d = hr_grow(v, k, esz); memmove(d, p, (size_t)(k * esz)); }
 static inline hsl hr_sl(hrv v) { return (hsl){ v.b, v.n }; }
