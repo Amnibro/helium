@@ -2300,7 +2300,8 @@ over 4 km, 1280 x 720, glow and temporal off. Values are read from
 * **V6 only sky pixels change.** A box in front of the clouds, camera pitched 15
   degrees up, cloud shadows off:
   the box's pixels with clouds on against clouds off differ by **0 / 255** in the
-  final frame, and at least **30%** of the sky pixels differ by more than 8 / 255.
+  final frame, and at least **30%** of the sky pixels differ by more than 8 / 255
+  from the same view under a clear sky.
 * **V7 clouds are lit, not gray.** Sun behind the camera, camera pitched 30 degrees
   up: the mean luminance of thick cloud (pass transmittance below 0.1) is at least
   **3 x** the mean luminance of clear sky in the same frame (transmittance above
