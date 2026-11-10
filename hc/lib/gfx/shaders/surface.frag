@@ -603,6 +603,7 @@ vec4 sea_trace(vec3 ro, vec3 rd) {
 	float z0 = dot(ro - eye.xyz, view_dir.xyz);
 	float tp = 0.0;
 	float zp = 0.0;
+	vec2 pu = sea_px(ro).xy;
 	for (int i = 0; i < n; i++) {
 		float s = float(i + 1) / float(n);
 		float t = 0.02 + 47.0 * s * s;
@@ -626,13 +627,16 @@ vec4 sea_trace(vec3 ro, vec3 rd) {
 			if (!ok && zs > 0.0 && zr >= zs) {
 				float lo = tp;
 				float hi = t;
+				float zl = zp;
 				for (int k = 0; k < 8; k++) {
 					th = 0.5 * (lo + hi);
 					q = sea_px(ro + rd * th);
-					if (q.z > 0.0 && z0 + dz * th >= q.z) hi = th; else lo = th;
+					if (q.z > 0.0 && z0 + dz * th >= q.z) hi = th; else { lo = th; zl = q.z; }
 				}
 				q = sea_px(ro + rd * hi);
-				ok = q.z > 0.0 && abs(z0 + dz * hi - q.z) < 0.002 * q.z + 0.004 + 2.0 * (hi - lo);
+				vec2 dp = (uv - pu) * sz;
+				float z2 = texelFetch(tex_trans, ivec2(clamp(floor(q.xy * sz) + vec2(0.5) + dp / max(max(abs(dp.x), abs(dp.y)), 1e-4), vec2(0.0), sz - vec2(1.0))), 0).a;
+				ok = q.z > 0.0 && abs(z0 + dz * hi - q.z) < 0.002 * q.z + 0.004 + 2.0 * (hi - lo) + (zl > 0.0 && z2 > 0.0 ? min(abs(q.z - zl), 2.0 * abs(z2 - q.z)) : 0.0);
 			}
 			if (ok) {
 				vec2 e = smoothstep(vec2(0.0), vec2(0.05), q.xy) * (vec2(1.0) - smoothstep(vec2(0.95), vec2(1.0), q.xy));
@@ -640,6 +644,7 @@ vec4 sea_trace(vec3 ro, vec3 rd) {
 			}
 		}
 		tp = t;
+		pu = uv;
 		zp = zs > 0.0 && zr < zs ? zs : 0.0;
 	}
 	return vec4(0.0);
@@ -1102,7 +1107,8 @@ void main() {
 	if (rtr.x > 0.5 && rough < rtr.y && alpha.x < 1.5 && x.trans <= 0.0 && sr.w < 0.999) x.rr = rt_refl(rp, n, gn, v, rough);
 	vec3 ambient = vec3(0.0);
 	if (sea_under) {
-		vec3 nu = dot(n, v) < 0.0 ? -n : n;
+		float nv = dot(n, v);
+		vec3 nu = normalize(nv < 0.02 ? n + v * (0.02 - nv) : n);
 		vec3 tr = refract(-v, nu, x_ior.x);
 		bool tir = dot(tr, tr) < 0.5;
 		float fr = tir ? 1.0 : 0.02 + 0.98 * pow(1.0 - max(-dot(tr, nu), 0.0), 5.0);

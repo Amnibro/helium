@@ -7064,6 +7064,94 @@ fn se_w5() bool {
 	print("gpu: sea W5 lowest at 10 to 35 degrees: ", r4(lo[0]), " (bar >= 0.9), at 45: ", r4(mid[0]), " (bar >= 0.5), highest at 51 and beyond: ", r4(out[0]), " (bar <= 0.05), ior 1.5 at 45: ", r4(out[1]), " (control <= 0.05): ", if w5 { "ok" } else { "FAIL" });
 	w5
 }
+fn se_deep(amp f32, wall bool, slab bool) {
+	se_world();
+	se_flat(20.0, amp, float3 { 0.45, 0.09, 0.07 }, float3 { 0.012, 0.07, 0.08 }, 1.333);
+	if wall {
+		var m = shapes::material(linalg::v3(0.0, 0.0, 0.0), 0.0, 1.0);
+		m.emissive = float3 { 2.0, 2.0, 2.0 };
+		s3d::place(s3d::add(shapes::cube(float3 { 4.0, 0.9, 0.02 }, m)), gfx::translate(float3 { 0.0, -1.0, 4.02 }));
+	}
+	if slab { s3d::place(s3d::add(shapes::cube(float3 { 2.0, 0.1, 2.0 }, shapes::material(linalg::v3(0.5, 0.5, 0.5), 0.0, 1.0))), gfx::translate(float3 { 0.0, 0.3, 7.0 })); }
+	s3d::view = s3d::Camera { eye: float3 { 0.0, -1.0, 0.0 }, target: float3 { 0.0, -1.0, 1.0 }, up: float3 { 0.0, 1.0, 0.0 }, fov_y: 0.9, near: 0.05, far: 80.0 };
+}
+fn se_sun(l float3, sh bool) { s3d::sun.to_sun = l; s3d::sun.rgb = float3 { 3.0, 3.0, 3.0 }; s3d::sun.shadows = sh; }
+fn se_cv(a const byte[:], b const byte[:]) real {
+	var r real[80] = [0.0; 80];
+	var m real = 0.0;
+	for k in 80 {
+		var sa real = 0.0;
+		var sb real = 0.0;
+		for y in 240 { for x in 16 { sa += vc_lum(a, (360 + y) * 1280 + k * 16 + x); sb += vc_lum(b, (360 + y) * 1280 + k * 16 + x); } }
+		r[k] = sa / max(sb, 1e-12);
+		m += r[k] / 80.0;
+	}
+	var v real = 0.0;
+	for k in 80 { v += (r[k] - m) * (r[k] - m) / 80.0; }
+	sqrt(v) / max(m, 1e-12)
+}
+fn se_w67() bool {
+	let ab = [0.45, 0.09, 0.07];
+	let sc = [0.012, 0.07, 0.08];
+	se_deep(0.0, true, false);
+	let fa = rr_hdr(2);
+	s3d::sea.under = false;
+	let ga = rr_hdr(2);
+	se_deep(0.0, false, false);
+	se_sun(CA_L, false);
+	s3d::sea.shafts = 0.0;
+	let fb = rr_hdr(2);
+	se_deep(0.0, false, true);
+	se_sun(CA_L, true);
+	s3d::sea.shafts = 0.0;
+	let fs = rr_hdr(2);
+	s3d::sun.shadows = false;
+	let gs = rr_hdr(2);
+	var w6 = true;
+	for ch in 3 {
+		let wa = 2.0 * exp(-4.0 * ab[ch]);
+		let va = vf_blk(fa[..], 640, 360, 8, 8, ch);
+		let ca = vf_blk(ga[..], 640, 360, 8, 8, ch);
+		let wb = sc[ch] * 3.0 * 0.8660254 / 3.14159265 * exp(-ab[ch] / 0.9270248) * (1.0 - exp(-20.0 * ab[ch]));
+		let vb = vf_blk(fb[..], 640, 360, 8, 8, ch);
+		let ok = abs(va - wa) <= 0.02 * wa && abs(ca - 2.0) <= 0.02 && abs(vb - wb) <= 0.03 * wb;
+		print("gpu: sea W6 channel ", ch, ": wall ", r4(va), " (closed form ", r4(wa), ", bar 2%), under off ", r4(ca), " (control 2 within 1%), scatter ", r4(vb * 100.0), " (closed form ", r4(wb * 100.0), " x 0.01, bar 3%): ", if ok { "ok" } else { "FAIL" });
+		w6 = w6 && ok;
+	}
+	let l2 = sc[2] * 3.0 * 0.8660254 / 3.14159265 * exp(-ab[2] / 0.9270248);
+	let ws = l2 * ((1.0 - exp(-5.0 * ab[2])) + (exp(-9.0 * ab[2]) - exp(-20.0 * ab[2])));
+	let vs = vf_blk(fs[..], 640, 360, 8, 8, 2);
+	let cs = vf_blk(gs[..], 640, 360, 8, 8, 2);
+	se_deep(0.062, false, false);
+	s3d::view = s3d::Camera { eye: float3 { 0.0, -2.0, 0.0 }, target: float3 { 0.0, -2.0, 1.0 }, up: float3 { 0.0, 1.0, 0.0 }, fov_y: 1.0, near: 0.05, far: 80.0 };
+	se_sun(float3 { 0.3015113, 0.9045340, 0.3015113 }, false);
+	let s1 = rr_hdr(2);
+	s3d::sea.shafts = 0.0;
+	let s0 = rr_hdr(2);
+	s3d::world_time = 4.0;
+	let s4 = rr_hdr(2);
+	let cv = se_cv(s1[..], s0[..]);
+	let cc = se_cv(s4[..], s0[..]);
+	let w7 = cv >= 0.005 && cc <= 0.001 && abs(vs - ws) <= 0.05 * ws && cs > 1.15 * ws;
+	print("gpu: sea W7 shaft spread across 80 blocks: ", r4(cv), " (bar >= 0.005), shafts 0 at two times: ", r4(cc), " (control <= 0.001); slab shadow blue ", r4(vs * 100.0), " (closed form ", r4(ws * 100.0), " x 0.01, bar 5%), sun shadows off ", r4(cs * 100.0), " (control > ", r4(ws * 115.0), "): ", if w7 { "ok" } else { "FAIL" });
+	s3d::world_time = 3.0;
+	s3d::sea.shafts = 1.0;
+	let on = frame_ms();
+	s3d::sea.under = false;
+	let off = frame_ms();
+	se_world();
+	se_sea(1.0, 1.0);
+	se_top();
+	let full = frame_ms();
+	se_world();
+	se_sea(0.0, 0.0);
+	se_top();
+	s3d::sea.reflect = false;
+	let bare = frame_ms();
+	let w9 = full - bare <= 3.0 && on - off <= 3.0;
+	print("gpu: sea W9 swell, foam and reflections: ", r2(full), " ms against ", r2(bare), " ms bare (bar +3 ms); underwater pass: ", r2(on), " ms against ", r2(off), " ms off (bar +3 ms): ", if w9 { "ok" } else { "FAIL" });
+	w6 && w7 && w9
+}
 fn sea_checks() bool {
 	half_table();
 	s3d::init(1280, 720);
@@ -7073,10 +7161,11 @@ fn sea_checks() bool {
 	let a = se_w123();
 	let b = se_w48();
 	let c = se_w5();
+	let d = se_w67();
 	reset_scene();
 	s3d::caustics = cs; s3d::sea = s3d::Sea { .. }; s3d::world_time = wt; s3d::debug_view = 0;
 	s3d::sky = DEF_SKY; s3d::sun = DEF_SUN; s3d::look = DEF_LOOK;
-	a && b && c
+	a && b && c && d
 }
 fn fog_checks() bool {
 	half_table();
