@@ -2381,6 +2381,15 @@ CPU only.
 | UP2 strands hug the head | share of points before the coil that sit between -1 mm and 15 mm outside the sphere | at least 0.95 |
 | UP2 control, straight lines | the same for 16 evenly spaced points on the straight line from each root to the gather point | below 0.5 |
 
+Results (2026-11-11, CPU):
+
+| check | measured | bar | result |
+| --- | --- | --- | --- |
+| UP1 strands reach the bun | 1.0 | at least 0.95 | PASS |
+| UP1 control, no head | 0.0 | below 0.2 | fails as it should |
+| UP2 strands hug the head | 1.0 | at least 0.95 | PASS |
+| UP2 control, straight lines | 0.174 | below 0.5 | fails as it should |
+
 ### Pre-registered bars (cut-out edges, mip bias, morph motion, light falloff)
 
 Written before the first GPU run of `small_checks` in `gfx_smoke.amni`. Black sky, no

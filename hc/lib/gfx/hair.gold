@@ -240,7 +240,7 @@ Simulating groom g with dt, using a copy of the groom taken at the start and o =
 8. Resolve: `gfx::begin_compute` with no buffers and `[hairt]`, `resolve_p`, uniforms us[first], storage 0 `acc`, dispatched (w+7)/8 × (h+7)/8 × 1.
 9. If `gfx::begin_pass` succeeds with color `[s3d::hdr_target()` and three `gfx::Texture{0}]` and clear_color false: bind comp, bind `hairt` with smp at `gfx::FRAGMENT` slot 0, `gfx::draw(3)`, end the pass.
 
-`Style` has these fields and defaults: `steps` 12, `length` 0.2, `vary` 0.25, `width` 0.004, `droop` 0.7, `curl` 0.0, `turns` 3.0, `clumps` 0, `clump` 0.5, `seed` 7. The module var `rs` starts at 7. Each `rnd()` call sets rs = (rs*1103515245 + 12345) and 2147483647 (bitwise), then returns (rs >> 7) as f32/16777216.0. `fur()` is a Style with steps 4, length 0.02, vary 0.4, width 0.0015, droop 0.3 and the rest default.
+`Style` has these fields and defaults: `steps` 12, `length` 0.2, `vary` 0.25, `width` 0.004, `droop` 0.7, `curl` 0.0, `turns` 3.0, `clumps` 0, `clump` 0.5, `seed` 7, `head` float4 { 0.0, 0.0, 0.0, 0.0 } (an ellipsoid for an updo: center xyz and radius w; radius 0 keeps the gravity growth), `head_scale` float3 { 1.0, 1.0, 1.0 } (the ellipsoid's stretch per axis), `gather` float3 { 0.0, 0.0, 0.0 } (the bun's center) and `bun` 0.03 (the bun's radius). The module var `rs` starts at 7. Each `rnd()` call sets rs = (rs*1103515245 + 12345) and 2147483647 (bitwise), then returns (rs >> 7) as f32/16777216.0. `fur()` is a Style with steps 4, length 0.02, vary 0.4, width 0.0015, droop 0.3 and the rest default.
 
 `roots(pos, nrm, idx, lo, hi, count, seed, rp, rn)`:
 1. A triangle is eligible when its area ar = sqrt(dot3(x,x) as real)*0.5, with x = cross3(b-a, c-a), is positive, and its centroid (a+b+c)*(1/3) lies inside the inclusive box lo to hi.
@@ -268,6 +268,9 @@ Per root i:
 4. For each step s, with t = s/last:
    - When s is positive, dir becomes unit3(dir+(0, -2*droop/last, 0)) and p becomes p+dir*(len/last).
    - With a = ph+(turns*t) as real*6.2831853, the point is p+(u*f(cos(a))+v*f(sin(a)))*(curl*t).
+5. When st.head.w is positive the strand is an updo: compute every point as below instead of step 4's points (steps 1 to 3 still run, so the random sequence of other strands is unchanged when the radius is 0). Let c = (head.x, head.y, head.z) and sc = head_scale*head.w componentwise; q(x) = (x-c) divided componentwise by sc, and back(y) = c+y times sc componentwise. a = q(rp[i]), b = q(gather), ra = length3(a), rb = length3(b), da = a/ra, db = b/rb, and lift = (0.002+0.004*rnd())/head.w. With nb = max(k/3, 2) bun points and ka = k-nb arc points:
+   - For s below ka, with t = s/(ka-1) and m = da*(1-t)+db*t (m = db when its length is below 1e-6), the point is back(unit3(m)*(ra*(1-t)+rb*t+lift*f(sin(t as real*3.14159265)))).
+   - The bun: gb = unit3(gather-c), u2 = unit3(cross3(gb, h2)) with h2 = (0, 1, 0) when the absolute value of gb.y is below 0.9, else (1, 0, 0), and v2 = cross3(gb, u2). For j from 1 to nb, with tt = j/nb and an = ph+(turns*tt) as real*6.2831853, point ka+j-1 is gather+(u2*f(cos(an))+v2*f(sin(an)))*(bun*(1-0.6*tt))+gb*(bun*0.5*tt).
 
 Clumping applies when nc = min(clumps, n) is positive and clump is positive.
 - For each strand i in order, the leader is the strand j*n/nc, for j below nc, with the strictly smallest dot3 of the root difference, starting from distance 1e9.
