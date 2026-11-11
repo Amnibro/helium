@@ -6007,11 +6007,11 @@ fn up_roots(rp float3[>..]&, rn float3[>..]&) {
 		if l > 0.2 && l <= 1.0 && y / l > 0.15 && z / l > -0.4 { let d = float3 { x / l, y / l, z / l }; rp.push(float3 { 0.0, 1.6, 0.0 } + d * 0.09); rn.push(d); }
 	}
 }
-fn up_groom(on bool, g float3, tail f32, curl f32, rise f32, fan f32) byte[>..], float3[>..] {
+fn up_groom(on bool, g float3, tail f32, curl f32, rise f32, fan f32, sweep f32, inner f32) byte[>..], float3[>..] {
 	var rp float3[>..];
 	var rn float3[>..];
 	up_roots(rp, rn);
-	let st = hair::Style { steps: 24, length: 0.3, curl: curl, turns: if curl > 0.0 { 2.0 } else { 3.0 }, head: if on { float4 { 0.0, 1.6, 0.0, 0.09 } } else { float4 { 0.0, 0.0, 0.0, 0.0 } }, gather: g, bun: 0.03, tail: tail, rise: rise, fan: fan, .. };
+	let st = hair::Style { steps: 24, length: 0.3, curl: curl, turns: if curl > 0.0 { 2.0 } else { 3.0 }, head: if on { float4 { 0.0, 1.6, 0.0, 0.09 } } else { float4 { 0.0, 0.0, 0.0, 0.0 } }, gather: g, bun: 0.03, tail: tail, rise: rise, fan: fan, sweep: sweep, inner: inner, .. };
 	var data byte[>..];
 	hair::groom(rp[..], rn[..], st, data);
 	return data, rp;
@@ -6021,7 +6021,7 @@ fn updo_checks() bool {
 	let c = float3 { 0.0, 1.6, 0.0 };
 	var share = [0.0, 0.0, 0.0, 0.0];
 	for on in 2 {
-		let d, rp = up_groom(on == 1, g, 0.0, 0.0, 0.0, 0.12);
+		let d, rp = up_groom(on == 1, g, 0.0, 0.0, 0.0, 0.12, 0.2, 1.0);
 		var near = 0;
 		var hug = 0;
 		var line = 0;
@@ -6052,7 +6052,7 @@ fn tail_checks() bool {
 	var out = [0, 0];
 	var tie = [0, 0];
 	for v in 3 {
-		let d, _ = up_groom(true, if v == 2 { gc } else { gs }, if v == 1 { 0.0 } else { 0.3 }, 0.0, 0.0, 0.12);
+		let d, _ = up_groom(true, if v == 2 { gc } else { gs }, if v == 1 { 0.0 } else { 0.3 }, 0.0, 0.0, 0.12, 0.2, 1.0);
 		let gp = if v == 2 { gc } else { gs };
 		for i in 2000 {
 			if v < 2 && hair::point_at(d[..], i * 24 + 23).y <= gp.y - 0.24 { hang[v] += 1; }
@@ -6073,7 +6073,7 @@ fn tail_checks() bool {
 	print("gpu: tails TT1 tails hang their length: ", r3(h1), " (bar >= 0.99), control bun ", r3(h0), " (bar < 0.2)", if p1 { " PASS" } else { " FAIL" });
 	print("gpu: tails TT2 tails clear the head: ", r3(o1), " (bar >= 0.99), control gather on the crown ", r3(o0), " (bar < 0.99)", if p2 { " PASS" } else { " FAIL" });
 	print("gpu: tails TT3 tied at the gather: ", r3(t1), " (bar >= 0.99), control the tips ", r3(t0), " (bar < 0.2)", if p3 { " PASS" } else { " FAIL" });
-	let dw, _ = up_groom(true, gs, 0.3, 0.02, 0.0, 0.12);
+	let dw, _ = up_groom(true, gs, 0.3, 0.02, 0.0, 0.12, 0.2, 1.0);
 	var tp float3[>..];
 	var ep float3[>..];
 	for i in 2000 { tp.push(hair::point_at(dw[..], i * 24 + 8)); ep.push(hair::point_at(dw[..], i * 24 + 23)); }
@@ -6099,7 +6099,7 @@ fn rise_checks() bool {
 	let gs = float3 { 0.0, 1.6, 0.0 } + linalg::unit3(float3 { 1.0, 0.6, -0.3 }) * 0.12;
 	var up = [0, 0];
 	for v in 2 {
-		let d, _ = up_groom(true, gs, 0.3, 0.0, if v == 0 { 0.03 } else { 0.0 }, 0.12);
+		let d, _ = up_groom(true, gs, 0.3, 0.0, if v == 0 { 0.03 } else { 0.0 }, 0.12, 0.2, 1.0);
 		for i in 2000 {
 			var hi = false;
 			for s in 16 { if hair::point_at(d[..], i * 24 + 8 + s).y >= gs.y + 0.015 { hi = true; } }
@@ -6108,7 +6108,7 @@ fn rise_checks() bool {
 	}
 	var sp = [0.0, 0.0, 0.0, 0.0];
 	for v in 2 {
-		let d, _ = up_groom(true, gs, 0.3, 0.0, 0.0, if v == 0 { 0.3 } else { 0.12 });
+		let d, _ = up_groom(true, gs, 0.3, 0.0, 0.0, if v == 0 { 0.3 } else { 0.12 }, 0.2, 1.0);
 		for e in 2 {
 			let at = if e == 0 { 23 } else { 8 };
 			var m = float3 { 0.0, 0.0, 0.0 };
@@ -6123,11 +6123,36 @@ fn rise_checks() bool {
 	let u0 = (up[1] as real) / 2000.0;
 	let f1 = sp[0] / sp[2];
 	let f0 = sp[1] / sp[3];
+	let c = float3 { 0.0, 1.6, 0.0 };
+	let gh = linalg::unit3(float3 { gs.x - c.x, 0.0, gs.z - c.z });
+	var sw = [0.0, 0.0, 0.0, 0.0];
+	var rc = [0.0, 0.0, 0.0, 0.0];
+	for v in 2 {
+		let d, _ = up_groom(true, gs, 0.3, 0.0, 0.0, 0.12, if v == 0 { 0.4 } else { 0.2 }, 1.0);
+		let e, _ = up_groom(true, gs, 0.3, 0.0, 0.0, 0.3, 0.0, if v == 0 { 0.2 } else { 1.0 });
+		for i in 2000 {
+			let q = hair::point_at(d[..], i * 24 + 23);
+			let q0 = hair::point_at(d[..], i * 24 + 8);
+			sw[v * 2] += linalg::length3(float3 { q.x - c.x, 0.0, q.z - c.z }) as real;
+			sw[v * 2 + 1] += linalg::length3(float3 { q0.x - c.x, 0.0, q0.z - c.z }) as real;
+			let o = linalg::dot3(hair::point_at(e[..], i * 24 + 23) - gs, gh) as real;
+			rc[v * 2] += max(0.0 - o, 0.0);
+			rc[v * 2 + 1] += max(o, 0.0);
+		}
+	}
+	let s1 = sw[0] / sw[2];
+	let s0 = sw[1] / sw[3];
+	let n1 = rc[0] / rc[2];
+	let n0 = rc[1] / rc[3];
 	let p5 = u1 >= 0.9 && u0 < 0.1;
 	let p6 = f1 >= 1.8 && f0 < 1.3;
+	let p7 = s1 >= 1.25 && s0 < 1.15;
+	let p8 = n1 <= 0.3 && n0 > 0.3;
+	print("gpu: rise TT7 sweep moves tails out: ", r3(s1), " (bar >= 1.25), control at the tie ", r3(s0), " (bar < 1.15)", if p7 { " PASS" } else { " FAIL" });
+	print("gpu: rise TT8 inner pulls in the head side: ", r3(n1), " (bar <= 0.3), control the outer side ", r3(n0), " (bar > 0.3)", if p8 { " PASS" } else { " FAIL" });
 	print("gpu: rise TT5 tails spring up: ", r3(u1), " (bar >= 0.9), control rise 0 ", r3(u0), " (bar < 0.1)", if p5 { " PASS" } else { " FAIL" });
 	print("gpu: rise TT6 fan widens tails: ", r3(f1), " (bar >= 1.8), control at the tie ", r3(f0), " (bar < 1.3)", if p6 { " PASS" } else { " FAIL" });
-	p5 && p6
+	p5 && p6 && p7 && p8
 }
 fn drape_checks() bool {
 	let c = float3 { 0.0, 1.6, 0.0 };

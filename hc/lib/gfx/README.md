@@ -2493,6 +2493,32 @@ Results (2026-11-11, CPU):
 | TT6 fan widens tails | 2.2 | at least 1.8 | PASS |
 | TT6 control, at the tie | 1.088 | below 1.3 | fails as it should |
 
+### Pre-registered bars (tail sweep and inner spread: tails that frame the face)
+
+`Style.sweep` (default 0.2) is how far a tail swings out from the head along its length, as a
+share of the tail's length (the outward term becomes gh*(tail*sweep*e)). `Style.inner`
+(default 1) scales the part of a tail's spread that points back toward the head, so a wide
+tail can fan out sideways without crossing the face. Defaults keep every earlier tail
+unchanged. Scene: the tails scene (2000 roots on the 9 cm sphere, gather 12 cm out along
+(1, 0.6, -0.3), tail 0.3, 24 points per strand); gh is the horizontal direction from the
+head's center to the gather point. CPU only.
+
+| bar | measured | pass |
+| --- | --- | --- |
+| TT7 sweep moves tails out | mean horizontal distance of the tail tips from the head's vertical axis with sweep 0.4, divided by the same with sweep 0.2 | at least 1.25 |
+| TT7 control, at the tie | the same ratio for each strand's first tail point | below 1.15 |
+| TT8 inner pulls in the head side | with sweep 0 and fan 0.3, the mean of max(0, -dot(tip - gather, gh)) over the tail tips with inner 0.2, divided by the same with inner 1 | at most 0.3 |
+| TT8 control, the outer side | the same ratio for max(0, dot(tip - gather, gh)) | above 0.3 |
+
+Results (2026-11-11, CPU):
+
+| check | measured | bar | result |
+| --- | --- | --- | --- |
+| TT7 sweep moves tails out | 1.36 | at least 1.25 | PASS |
+| TT7 control, at the tie | 1.065 | below 1.15 | fails as it should |
+| TT8 inner pulls in the head side | 0.2 | at most 0.3 | PASS |
+| TT8 control, the outer side | 1.0 | above 0.3 | fails as it should |
+
 ### Pre-registered bars (cut-out edges, mip bias, morph motion, light falloff)
 
 Written before the first GPU run of `small_checks` in `gfx_smoke.amni`. Black sky, no
