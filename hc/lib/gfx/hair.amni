@@ -31,6 +31,8 @@ struct HairU {
 	pl float4[8],
 	shape float4,
 	core float4,
+	plvp gfx::mat4[4],
+	plx float4[4],
 }
 struct Look {
 	color float3 = float3 { 0.58, 0.38, 0.14 },
@@ -47,6 +49,7 @@ struct Look {
 	ambient float3 = float3 { 0.22, 0.22, 0.22 },
 	falloff f32 = 40.0,
 	part f32 = 0.0,
+	frizz f32 = 0.0,
 }
 struct Physics {
 	gravity float3 = float3 { 0.0, -9.81, 0.0 },
@@ -75,6 +78,8 @@ struct Groom {
 	top f32,
 	center float3,
 	core float3,
+	head f32,
+	lslices int,
 	radius f32,
 	guides int,
 	parts int,
@@ -219,34 +224,20 @@ fn valid(data const byte[:]) bool {
 }
 fn load(data const byte[:], strands int) int {
 	if !valid(data) { return -1; }
+	ready();
+	let g = grooms.len;
+	s3d::depth_wanted = true;
 	let np = u32_at(data, 8);
 	let ns = u32_at(data, 12);
 	let sb = 16 + np*48;
 	let e = sb + ns*16;
 	let nb = bone_count(data, e);
 	let k = e + 4 + nb*4;
-	ready();
-	let g = grooms.len;
-	s3d::depth_wanted = true;
+	var gr = Groom { on: true, show: true, look: Look { .. }, phys: Physics { .. }, model: ident(), prev: ident(), anchor_inv: ident(), item: -1, anchor: -1, reset: true, strands: strands, points: np, segments: ns, bones: nb, .. };
 	var z byte[>..] = [];
-	z.resize(max(LIGHT*LIGHT*64, np*32 + nb*64 + ns*16 + SIM*16 + 64), 0);
-	var gr = default<Groom>();
-	gr.on = true;
-	gr.show = true;
-	gr.look = Look { .. };
-	gr.phys = Physics { .. };
-	gr.model = ident();
-	gr.prev = ident();
-	gr.item = -1;
-	gr.anchor = -1;
-	gr.anchor_inv = ident();
-	gr.reset = true;
-	gr.strands = strands;
-	gr.points = np;
-	gr.segments = ns;
-	gr.bones = nb;
-	gr.pts = gfx::buffer(RW, np*48, data[16..16 + np*48]);
-	gr.tgt = gfx::buffer(RW, np*48, data[16..16 + np*48]);
+	z.resize(max(LIGHT*LIGHT*64, max(np*32, ns*16 + 64)), 0);
+	gr.pts = gfx::buffer(RW, np*48, data[16..sb]);
+	gr.tgt = gfx::buffer(RW, np*48, data[16..sb]);
 	gr.st = gfx::buffer(RW, np*32, z[..np*32]);
 	gr.segs = gfx::buffer(RD, ns*16, data[sb..e]);
 	for i in BONES {
@@ -261,64 +252,84 @@ fn load(data const byte[:], strands int) int {
 	for i in SIM { simv.push(float4 { 0.0, 0.0, 0.0, 0.0 }); }
 	for i in 8 { probe_v.push(0.0); }
 	if nb > 0 {
-		gr.rest = gfx::buffer(RD, np*48, data[16..16 + np*48]);
+		gr.rest = gfx::buffer(RD, np*48, data[16..sb]);
 		gr.skin = gfx::buffer(RD, np*16, data[k..k + np*16]);
 		gr.matsb = gfx::buffer(RD, nb*64, z[..nb*64]);
 	}
 	var top f32 = -1e9;
 	var sum = float3 { 0.0, 0.0, 0.0 };
-	for i in np {
-		let p = point_at(data, i);
-		top = max(top, p.y);
-		sum = sum + p;
+	for p in np {
+		let q = point_at(data, p);
+		top = max(top, q.y);
+		sum = sum + q;
 	}
 	let c = sum * (1.0 / (np as f32));
-	var md f32 = 0.0;
-	for i in np {
-		let d = point_at(data, i) - c;
-		md = max(md, linalg::dot3(d, d));
+	var mx real = 0.0;
+	for p in np {
+		let d = point_at(data, p) - c;
+		mx = max(mx, linalg::dot3(d, d) as real);
 	}
 	gr.top = top;
 	gr.center = c;
-	gr.radius = max(linalg::f(sqrt(md as real)), 0.01);
-	var tab i32[>..] = [];
-	var csum = float3 { 0.0, 0.0, 0.0 };
-	var prevg = -1;
+	gr.radius = max(linalg::f(sqrt(mx)), 0.01);
+	var rows int[>..] = [];
+	var gsum = float3 { 0.0, 0.0, 0.0 };
+	var pg = 0;
 	for s in ns {
 		let pi = u32_at(data, sb + 16*s);
-		let grp = u32_at(data, sb + 16*s + 4);
-		if s == 0 || grp != prevg {
-			tab.push(pi as i32);
-			tab.push(2);
-			tab.push(0);
-			tab.push(0);
-			csum = csum + point_at(data, pi);
+		let gp = u32_at(data, sb + 16*s + 4);
+		if s == 0 || gp != pg {
+			rows.push(pi);
+			rows.push(2);
+			rows.push(0);
+			rows.push(0);
+			gsum = gsum + point_at(data, pi);
 		} else {
-			tab[tab.len - 3] += 1;
+			rows[rows.len - 3] += 1;
 		}
-		prevg = grp;
+		pg = gp;
 	}
-	let rows = tab.len / 4;
-	gr.core = csum * (1.0 / (rows as f32));
+	let nr = rows.len / 4;
+	let fr = nr as f32;
+	var core = gsum * (1.0 / fr);
+	var head f32 = 0.0;
+	for it in 24 {
+		let cc = core;
+		var hs f32 = 0.0;
+		var usum = float3 { 0.0, 0.0, 0.0 };
+		var rsum = float3 { 0.0, 0.0, 0.0 };
+		for r in nr {
+			let rt = point_at(data, rows[4*r]);
+			hs += linalg::length3(rt - cc);
+			usum = usum + linalg::unit3(rt - cc);
+			rsum = rsum + rt;
+		}
+		head = hs / fr;
+		core = (rsum - usum * head) * (1.0 / fr);
+	}
+	gr.core = core;
+	gr.head = head;
 	if nb > 0 {
-		for r in rows {
-			let first = tab[4*r] as int;
-			let cnt = tab[4*r + 1] as int;
-			var any = false;
-			for q in first..first + cnt {
-				if f32_at(data, k + 16*q + 8) + f32_at(data, k + 16*q + 12) > 0.001 { any = true; }
+		for r in nr {
+			let first = rows[4*r];
+			for q in first..first + rows[4*r + 1] {
+				if f32_at(data, k + 16*q + 8) + f32_at(data, k + 16*q + 12) > 0.001 { rows[4*r + 2] = 1; }
 			}
-			if any { tab[4*r + 2] = 1; }
 		}
 	}
-	gr.guides = rows;
-	gr.gd = gfx::buffer(RD, rows*16, bytes_of(tab));
-	gr.statb = gfx::buffer(RW, rows*16, z[..rows*16]);
+	gr.guides = nr;
+	var ri i32[>..] = [];
+	for v in rows { ri.push(v as i32); }
+	var gb byte[>..] = [];
+	gb.append(bytes_of(ri));
+	gr.gd = gfx::buffer(RD, nr*16, gb);
+	gr.statb = gfx::buffer(RW, nr*16, z[..nr*16]);
 	gr.simb = gfx::buffer(RD, SIM*16, z[..SIM*16]);
 	gr.sdfb = gfx::buffer(RW, 16, z[..16]);
 	gr.trib = gfx::buffer(RW, 16, z[..16]);
 	gr.lfront = gfx::buffer(RW, LIGHT*LIGHT*4, z[..LIGHT*LIGHT*4]);
 	gr.lacc = gfx::buffer(RW, LIGHT*LIGHT*64, z[..LIGHT*LIGHT*64]);
+	gr.lslices = 1;
 	grooms.push(gr);
 	g
 }
@@ -749,69 +760,94 @@ fn cards(asset int, mesh const byte[:], anchor const byte[:], strands int) int {
 fn live(g int) bool {
 	g >= 0 && g < grooms.len && grooms[g].on && grooms[g].show
 }
+fn put_uniform(u HairU) {
+	var x HairU[1] = [u];
+	gfx::push_uniforms(gfx::COMPUTE, 0, bytes_of(x));
+}
 fn uniforms_of(g int) HairU {
-	let gr .= grooms[g];
 	var u = default<HairU>();
-	let im = linalg::inverse(gr.model);
-	let c0 = float3 { gr.model.c0.x, gr.model.c0.y, gr.model.c0.z };
-	let sc = linalg::f(sqrt(linalg::dot3(c0, c0) as real));
-	u.view_proj = gfx::mul(s3d::view_proj_nj, gr.model);
-	u.view = gfx::mul(s3d::view_mat, gr.model);
+	let gr .= grooms[g];
+	let m = gr.model;
+	let im = linalg::inverse(m);
+	let sc = linalg::f(sqrt(linalg::dot3(float3 { m.c0.x, m.c0.y, m.c0.z }, float3 { m.c0.x, m.c0.y, m.c0.z }) as real));
+	u.view_proj = gfx::mul(s3d::view_proj_nj, m);
+	u.view = gfx::mul(s3d::view_mat, m);
 	u.proj = s3d::proj_mat;
 	u.size = float4 { w as f32, h as f32, gr.strands as f32, gr.segments as f32 };
-	let eye = linalg::point(im, s3d::view.eye);
-	u.cam = float4 { eye.x, eye.y, eye.z, sc };
-	let ts = s3d::sun.to_sun;
-	let tl = gfx::mul(im, float4 { ts.x, ts.y, ts.z, 0.0 });
-	let ld = linalg::unit3(float3 { tl.x, tl.y, tl.z });
+	let ce = linalg::point(im, s3d::view.eye);
+	u.cam = float4 { ce.x, ce.y, ce.z, sc };
+	let lv = gfx::mul(im, float4 { s3d::sun.to_sun.x, s3d::sun.to_sun.y, s3d::sun.to_sun.z, 0.0 });
+	let ld = linalg::unit3(float3 { lv.x, lv.y, lv.z });
 	u.to_sun = float4 { ld.x, ld.y, ld.z, if s3d::sun.shadows { 1.0 } else { 0.0 } };
-	u.sun_rgb = float4 { s3d::sun.rgb.x, s3d::sun.rgb.y, s3d::sun.rgb.z, 0.0 };
+	u.sun_rgb = float4 { s3d::sun.rgb.x, s3d::sun.rgb.y, s3d::sun.rgb.z, gr.look.frizz };
 	u.hair = float4 { gr.look.color.x, gr.look.color.y, gr.look.color.z, gr.look.roughness };
-	let m = mel_of(gr.look.color, gr.look.spread);
+	let ml = mel_of(gr.look.color, gr.look.spread);
 	let nl = min(s3d::lights.len, 4);
-	u.mel = float4 { m.x, m.y, gr.look.spread, nl as f32 };
+	u.mel = float4 { ml.x, ml.y, gr.look.spread, nl as f32 };
 	for i in nl {
-		let lp = linalg::point(im, s3d::lights[i].pos);
-		u.pl[2*i] = float4 { lp.x, lp.y, lp.z, s3d::lights[i].range / sc };
-		u.pl[2*i + 1] = float4 { s3d::lights[i].rgb.x, s3d::lights[i].rgb.y, s3d::lights[i].rgb.z, 0.0 };
+		let li .= s3d::lights[i];
+		let p = linalg::point(im, li.pos);
+		u.pl[2*i] = float4 { p.x, p.y, p.z, li.range / sc };
+		u.pl[2*i + 1] = float4 { li.rgb.x, li.rgb.y, li.rgb.z, 0.0 };
+		let dv = p - gr.center;
+		let rc = gr.radius * 1.3;
+		let dist = max(linalg::length3(dv), rc * 1.05);
+		let tn = rc / dist;
+		var pp = gfx::perspective(0.24, 1.0, max(dist - rc, dist * 0.05), dist + rc);
+		pp.c0.x = pp.c0.x * linalg::f(tan(0.12)) / tn;
+		pp.c1.y = pp.c1.y * linalg::f(tan(0.12)) / tn;
+		let dn = linalg::unit3(dv);
+		let up = if abs(dn.y) > 0.95 { float3 { 1.0, 0.0, 0.0 } } else { float3 { 0.0, 1.0, 0.0 } };
+		u.plvp[i] = gfx::mul(pp, gfx::look_at(gr.center + dn * dist, gr.center, up));
+		let ex = 0.25 * (li.width * li.width + li.height * li.height + li.length * li.length) + li.radius * li.radius;
+		u.plx[i] = float4 { 256.0 / tn, linalg::f(sqrt(ex as real)) / sc, 0.0, 0.0 };
 	}
 	let am = (s3d::sky.zenith + s3d::sky.horizon) * (0.5 * s3d::sky.ambient);
 	u.sky = float4 { gr.look.ambient.x * am.x, gr.look.ambient.y * am.y, gr.look.ambient.z * am.z, gr.look.falloff };
 	u.params = float4 { gr.look.slab, gr.look.gain, gr.look.clump, gr.look.width };
 	u.look = float4 { gr.look.exposure, gr.look.density, 0.0, gr.look.scatter };
 	u.shape = float4 { gr.top, gr.center.z, gr.look.part, 0.0 };
-	u.core = float4 { gr.core.x, gr.core.y, gr.core.z, 0.0 };
+	u.core = float4 { gr.core.x, gr.core.y, gr.core.z, gr.head };
 	let reach = gr.radius * 1.3;
 	let d = reach * linalg::f(1.0 / tan(0.12));
-	let up = if abs(ld.y) > 0.95 { float3 { 1.0, 0.0, 0.0 } } else { float3 { 0.0, 1.0, 0.0 } };
-	u.light_vp = gfx::mul(gfx::perspective(0.24, 1.0, d - reach, d + reach), gfx::look_at(gr.center + ld * d, gr.center, up));
+	let lup = if abs(ld.y) > 0.95 { float3 { 1.0, 0.0, 0.0 } } else { float3 { 0.0, 1.0, 0.0 } };
+	u.light_vp = gfx::mul(gfx::perspective(0.24, 1.0, d - reach, d + reach), gfx::look_at(gr.center + ld * d, gr.center, lup));
 	u.light = float4 { LIGHT as f32, LIGHT as f32, gr.look.shade, linalg::f(256.0 / tan(0.12)) };
-	u.shadow_vp = gfx::mul(s3d::cascade_vp[0], gr.model);
+	u.shadow_vp = gfx::mul(s3d::cascade_vp[0], m);
 	u
 }
-fn put_uniform(u HairU) {
-	var x HairU[1] = [u];
-	gfx::push_uniforms(gfx::COMPUTE, 0, bytes_of(x));
+fn light_slices(g int, n int) {
+	let gr .= grooms[g];
+	if gr.lslices == n { return; }
+	gfx::release(gr.lfront);
+	gfx::release(gr.lacc);
+	var z byte[>..] = [];
+	z.resize(LIGHT*LIGHT*64*n, 0);
+	gr.lfront = gfx::buffer(RW, LIGHT*LIGHT*4*n, z[..LIGHT*LIGHT*4*n]);
+	gr.lacc = gfx::buffer(RW, LIGHT*LIGHT*64*n, z);
+	gr.lslices = n;
 }
-fn clear_pass(base HairU, mode int, a gfx::Buffer, b gfx::Buffer, n int) {
+fn clear_pass(mode int, a gfx::Buffer, b gfx::Buffer, n int, base HairU) {
 	var u = base;
 	u.look.z = mode as f32;
+	u.shape.w = if mode > 1 { (n / (LIGHT*LIGHT)) as f32 } else { 0.0 };
 	gfx::begin_compute([a, b]);
 	gfx::bind(clear_p);
 	put_uniform(u);
 	gfx::dispatch((n + 63) / 64, 1, 1);
 	gfx::end_compute();
 }
-fn raster_pass(g int, mode int) {
+fn raster_pass(g int, mode int, k int, base HairU) {
 	let gr .= grooms[g];
 	let lit = mode > 1;
-	var u = uniforms_of(g);
+	var u = base;
 	u.look.z = mode as f32;
-	if lit {
-		gfx::begin_compute([gr.lfront, gr.lacc]);
-	} else {
-		gfx::begin_compute([front, acc]);
+	if lit && k > 0 {
+		u.light_vp = u.plvp[k - 1];
+		u.light.w = u.plx[k - 1].x;
 	}
+	u.shape.w = if lit { k as f32 } else { 0.0 };
+	if lit { gfx::begin_compute([gr.lfront, gr.lacc]); } else { gfx::begin_compute([front, acc]); }
 	gfx::bind(raster_p);
 	put_uniform(u);
 	gfx::bind_texture(gfx::COMPUTE, 0, s3d::nd_target(), smp);
@@ -958,21 +994,25 @@ fn draw(dt f32) {
 	}
 	s3d::depth_wanted = true;
 	if !s3d::nd_ran { return; }
-	clear_pass(us[first], 0, front, acc, w*h);
+	clear_pass(0, front, acc, w*h, us[first]);
 	for g in grooms.len {
 		if live(g) {
-			clear_pass(us[g], 2, grooms[g].lfront, grooms[g].lacc, LIGHT*LIGHT);
-			raster_pass(g, 2);
-			raster_pass(g, 3);
+			light_slices(g, 1 + min(s3d::lights.len, 4));
+			clear_pass(2, grooms[g].lfront, grooms[g].lacc, LIGHT*LIGHT*grooms[g].lslices, us[g]);
+			for k in grooms[g].lslices {
+				raster_pass(g, 2, k, us[g]);
+				raster_pass(g, 3, k, us[g]);
+			}
 		}
 	}
 	for g in grooms.len {
-		if live(g) { raster_pass(g, 0); }
+		if live(g) { raster_pass(g, 0, 0, us[g]); }
 	}
 	for g in grooms.len {
-		if live(g) { raster_pass(g, 1); }
+		if live(g) { raster_pass(g, 1, 0, us[g]); }
 	}
-	gfx::begin_compute([], [hairt]);
+	var none gfx::Buffer[>..] = [];
+	gfx::begin_compute(none, [hairt]);
 	gfx::bind(resolve_p);
 	put_uniform(us[first]);
 	gfx::bind_storage_buffer(gfx::COMPUTE, 0, acc);

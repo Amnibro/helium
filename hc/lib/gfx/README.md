@@ -1154,12 +1154,13 @@ is shown again. `hair::grooms[g].look` (`hair::Look`) holds the appearance:
 | `color` | 0.58, 0.38, 0.14 | the hair's color; it is turned into the two melanin amounts the fiber model absorbs with |
 | `roughness` | 0.42 | width of the highlights along the strand |
 | `width` | 0.00007 | strand width in meters |
-| `gain` | 1.7 | strength of the sun on the hair |
+| `gain` | 1.7 | strength of the sun and the lamps on the hair |
 | `shade` | 1.0 | how much one full layer of strands blocks the direct sun; 0 turns self-shadowing off |
 | `scatter` | 0.7 | strength of the light that reaches a strand through other strands |
 | `density` | 1.0 | how many real fibers a drawn strand stands for in that scattered light |
 | `ambient` | 0.22, 0.22, 0.22 | share of the scene's sky light (the mean of zenith and horizon times `sky.ambient`) the hair picks up |
 | `falloff` | 40 | how fast that sky light fades with depth into the hair, per meter |
+| `frizz` | 0 | stray single hairs: at 1, about one strand in seven leaves the surface in an arc that reaches about 1.5 cm at the tip, which catches back light the way real flyaways do |
 
 `hair::grooms[g].phys` (`hair::Physics`) holds the motion: `gravity`; `styled` (1 cancels
 gravity so the styled shape is the rest shape, 0 lets the hair hang); `root` and `tip`
@@ -1171,7 +1172,11 @@ a collider at the root and at the tip).
 The sun's light on the hair is the three-lobe fiber model (reflection, transmission and
 the internal bounce) plus scattered light from the strands in front; the hair's own shadow
 comes from a 512 x 512 map of four depth layers drawn from the sun for each groom, and the
-scene's shadow map shadows the hair too. Up to four point lights reach it.
+scene's shadow map shadows the hair too. Up to four lamps from `s3d::lights` light it the
+same way, each with its own map of four depth layers drawn from the lamp (made when the
+first lamp appears, about 18 MB a lamp), and a sphere fitted to the strand roots stands in
+for the head, so a lamp behind the head lights the outline and not the hair in front. A
+rect, sphere or tube lamp widens the highlights by its size as seen from the strand.
 
 ### Foliage
 
@@ -2829,7 +2834,7 @@ on the 0 to 255 scale. `GFX_ONLY=day` runs only these checks.
 | D7 cost | median time of a frame that bakes the sky minus the median of one that does not, at the default 512 cube; the same at `size` 128 | at most 70 ms; at most 14 ms |
 | D8 nothing else moved | gfxtest, wgsltest and webgputest | all pass |
 
-### Hair bars (C11, E13, registered before the first GPU run; the scenes of H5, H6, H8, H9 and H11 were restated after it, bar values unchanged)
+### Hair bars (C11, E13, registered before the first GPU run; the scenes of H5, H6, H8, H9 and H11 were restated after it, bar values unchanged; H20 and H21 added on 2026-11-11, also before their first run)
 
 Hair is drawn as strands, not as textured cards. A groom is a set of guide cards; every
 guide is a short chain of points, and the rasterizer draws a chosen number of strands
@@ -2871,6 +2876,9 @@ no pixel differs by more than 2 / 255. `GFX_ONLY=hair` runs only these checks.
 | H17 cards for low-end targets | `hair::card_mesh` drawn as an ordinary double-sided mesh: vertex count; changed pixels as a share of the head's disc | 2 x points; at least 0.3 |
 | H18 fur | the short-fur preset over the whole sphere, 12,000 guides of 12 strands: changed pixels as a share of the head's disc | at least 0.7 |
 | H19 nothing else moved | gfxtest, wgsltest and webgputest | all pass |
+| H20 lamps shadow the hair | the H8 scene with the sun off and a lamp 1 m from the head toward (1, 0.3, 0.2): mean brightness of the hair pixels at `shade` 1 relative to `shade` 0 | at most 0.92 |
+| H21 a lamp behind the head lights the outline | black sky, sun off, a lamp 1 m from the head away from the camera (toward 0, 0.3, -1): mean brightness of the hair pixels outside the head's disc relative to the same lamp in front (toward 0, 0.3, 1) | at least 0.1 |
+| H21 control, lamp off | the same with the lamp's color 0 | below 0.1 |
 
 ### Fabric weave bars (E13, registered before the first GPU run)
 

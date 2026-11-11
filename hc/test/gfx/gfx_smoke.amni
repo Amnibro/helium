@@ -8218,7 +8218,31 @@ fn hr_more() bool {
 	let _ = codec_png::write(path(OUT_DIR[..], "hair_side.png")[..], 1280, 720, 4, ks[..]);
 	let h8 = l1 <= 0.92 * l0;
 	print("gpu: hair H8 self-shadow: mean hair brightness ", r3(l1), " shadowed, ", r3(l0), " unshadowed, ratio ", r3(l1 / max(l0, 0.001)), " (bar <= 0.92)", hr_pass(h8));
-	h10 && h11 && h16 && h17 && h18 && h8
+	s3d::sun.rgb = float3 { 0.0, 0.0, 0.0 };
+	hair::grooms[q].look.shade = 1.0;
+	s3d::add_light(HR_AT + linalg::unit3(float3 { 1.0, 0.3, 0.2 }), float3 { 3.0, 3.0, 3.0 }, 10.0);
+	let ps = hr_shot();
+	hair::grooms[q].look.shade = 0.0;
+	let pn = hr_shot();
+	hair::grooms[q].look.shade = 1.0;
+	let m1 = hr_lum(ps[..], k1[..], k0[..], 0.0);
+	let m0 = hr_lum(pn[..], k1[..], k0[..], 0.0);
+	let h20 = m1 <= 0.92 * m0;
+	print("gpu: hair H20 lamp shadow: mean hair brightness ", r3(m1), " shadowed, ", r3(m0), " unshadowed, ratio ", r3(m1 / max(m0, 0.001)), " (bar <= 0.92)", hr_pass(h20));
+	s3d::lights[0].pos = HR_AT + linalg::unit3(float3 { 0.0, 0.3, -1.0 });
+	let bb = hr_shot();
+	s3d::lights[0].pos = HR_AT + linalg::unit3(float3 { 0.0, 0.3, 1.0 });
+	let bf = hr_shot();
+	s3d::lights[0].rgb = float3 { 0.0, 0.0, 0.0 };
+	let bo = hr_shot();
+	s3d::lights.clear();
+	let ob = hr_lum(bb[..], k1[..], k0[..], hr_r() + 2.0);
+	let of = hr_lum(bf[..], k1[..], k0[..], hr_r() + 2.0);
+	let oo = hr_lum(bo[..], k1[..], k0[..], hr_r() + 2.0);
+	let _ = codec_png::write(path(OUT_DIR[..], "hair_back.png")[..], 1280, 720, 4, bb[..]);
+	let h21 = ob >= 0.1 * of && oo < 0.1 * of;
+	print("gpu: hair H21 back lamp: outline brightness ", r3(ob), " lamp behind, ", r3(of), " in front, ratio ", r3(ob / max(of, 0.001)), " (bar >= 0.1); control lamp off ", r3(oo / max(of, 0.001)), " (bar below 0.1)", hr_pass(h21));
+	h10 && h11 && h16 && h17 && h18 && h8 && h20 && h21
 }
 fn ml_world(eye float3, target float3, sky bool) {
 	reset_scene();

@@ -9,16 +9,16 @@ Namespace `hair`, importing os, binary, gfx, math, gfx.linalg, gfx.gltf, gfx.mot
 - glTF data lives in module lists of `gltf`: `verts` (f32, `gltf::VERTEX_FLOATS` a vertex, with position at `gltf::AT_POS`, normal at `gltf::AT_NRM`, first texture coordinate at `gltf::AT_UV0`, joints at `gltf::AT_JOINT`, weights at `gltf::AT_WEIGHT`), `indices` (u32), `prims`, `meshes`, `nodes`, `skins`, `assets`, `ints`, `matrices`, `materials`, `names`. A `gltf::Span` has exactly the fields `first` and `count`.
 - A `gltf::Primitive` has exactly the fields `vfirst`, `vcount`, `ifirst`, `icount`, `material`, `mfirst`, `targets`, `lo`, `hi`, `tangents`, `skinned`; indices of a primitive are relative to its `vfirst`. A `gltf::Mesh` has `prims` (a Span into `gltf::prims`), `weights` and `name`. A `gltf::Node` has `parent`, `mesh`, `skin`, `children`, `t`, `r`, `s`, `matrix`, `has_matrix`, `weights`, `name`, `light`. A `gltf::Skin` has `joints` (a Span into `gltf::ints` of absolute node indices), `inverse_binds` (a Span into `gltf::matrices`), `skeleton`, `name`. A `gltf::Asset` has `meshes`, `nodes`, `materials`, `textures`, `images`, `skins`, `animations`, `roots` (Spans) and `ok`.
 - `gltf::find_node(asset, name)` gives an absolute node index or -1, and `gltf::text_of(span)` gives a name's bytes. `shapes::finish(vfirst, ifirst, lo, hi, material)` takes two ints, two float3 and a `gltf::Material` value and returns the new asset's index as an int; never cast its arguments or result.
-- The scene is `s3d`: `s3d::items[i]` has `asset`, `place`, `visible`; `s3d::view` has `eye`, `target`, `up`, `fov_y`, `near`, `far`; `s3d::sun` has `to_sun`, `rgb`, `shadows`; `s3d::sky` has `zenith`, `horizon`, `ground`, `ambient`; `s3d::lights[i]` has `pos`, `rgb`, `range`. `motion::world[node]` is a node's world matrix after `s3d::pose(item)`.
+- The scene is `s3d`: `s3d::items[i]` has `asset`, `place`, `visible`; `s3d::view` has `eye`, `target`, `up`, `fov_y`, `near`, `far`; `s3d::sun` has `to_sun`, `rgb`, `shadows`; `s3d::sky` has `zenith`, `horizon`, `ground`, `ambient`; `s3d::lights[i]` has `pos`, `rgb`, `range`, `width`, `height`, `length` and `radius`. `motion::world[node]` is a node's world matrix after `s3d::pose(item)`.
 - A groom g is valid when it is in range of `grooms` and its `on` is set. Functions that say they need a valid groom do nothing otherwise.
 - Compute passes go as `gfx::begin_compute` with the written buffers, then `gfx::bind` of the pipeline, uniforms in `gfx::COMPUTE` slot 0, storage buffers by `gfx::bind_storage_buffer(gfx::COMPUTE, slot, buf)`, then `gfx::dispatch`, then `gfx::end_compute`. "ceil(n/64)" means `(n + 63) / 64`.
 
-`HairU` is the shader uniform block, with fields in this exact order: `view_proj`, `view` and `proj` (mat4); `size`, `cam`, `to_sun`, `sun_rgb`, `hair`, `sky`, `params` and `look` (float4); `light_vp` (mat4); `light` (float4); `shadow_vp` (mat4); `mel` (float4); `pl` (8 float4); `shape` and `core` (float4).
+`HairU` is the shader uniform block, with fields in this exact order: `view_proj`, `view` and `proj` (mat4); `size`, `cam`, `to_sun`, `sun_rgb`, `hair`, `sky`, `params` and `look` (float4); `light_vp` (mat4); `light` (float4); `shadow_vp` (mat4); `mel` (float4); `pl` (8 float4); `shape` and `core` (float4); `plvp` (4 mat4); `plx` (4 float4).
 
 `Look` has these fields and defaults:
 - `color` (0.58, 0.38, 0.14), `roughness` 0.42, `spread` 0.3, `width` 0.00007, `slab` 0.004, `clump` 0.004
 - `gain` 1.7, `exposure` 1.0, `scatter` 0.7, `density` 1.0, `shade` 1.0
-- `ambient` (0.22, 0.22, 0.22), `falloff` 40.0, `part` 0.0
+- `ambient` (0.22, 0.22, 0.22), `falloff` 40.0, `part` 0.0, `frizz` 0.0
 
 `Physics` has these fields and defaults:
 - `gravity` (0, -9.81, 0), `styled` 1.0, `tip` 0.012, `root` 0.35, `bone_tip` 0.08, `bone_root` 0.5
@@ -26,7 +26,7 @@ Namespace `hair`, importing os, binary, gfx, math, gfx.linalg, gfx.gltf, gfx.mot
 
 `Groom` has these fields in order:
 - `on`, `show`, `look`, `phys`, `model`, `prev`, `item`, `anchor`, `anchor_inv`
-- `top` (f32), `center`, `core`, `radius`
+- `top` (f32), `center`, `core`, `head` (f32), `lslices` (int), `radius`
 - ints `guides`, `parts`, `cells`; bools `sdf_done`, `reset`, `ask`; ints `strands`, `points`, `segments`, `bones`
 - gfx::Buffers `tgt`, `st`, `gd`, `simb`, `sdfb`, `trib`, `statb`, `pts`, `rest`, `skin`, `matsb`, `segs`, `lfront`, `lacc`
 
@@ -74,9 +74,9 @@ Otherwise it does the following, creating buffers in exactly this order:
 4. Append the groom's slices: BONES entries of `bone_node` (the i-th bone id while i is below nb, else -1) with identity `bone_rest` and `mats`; PARTS entries of `part_node` -1 with identity `part_ib`; SIM zero float4s to `simv`; 8 zeros to `probe_v`.
 5. If nb is positive, create `rest` as a read buffer of np*48 point bytes, `skin` as a read buffer of np*16 skin bytes, and `matsb` as a read buffer of nb*64.
 6. Compute the bounds from the point positions (the f32s at point offsets 0, 4 and 8). `top` is their max y, starting from -1e9. `center` is c = sum*(1/np). `radius` is max(f(sqrt of the largest dot3(d,d) as real), 0.01), where d is each point minus c.
-7. Build the guide table from the segments, each holding a point index pi (u32 at +0) and a group (u32 at +4). The first segment, and any whose group differs from the previous segment's, starts a row (pi, 2, 0, 0) and adds point pi's position to the core sum. Any other segment adds 1 to the current row's second entry. `core` = sum*(1/rows).
+7. Build the guide table from the segments, each holding a point index pi (u32 at +0) and a group (u32 at +4). The first segment, and any whose group differs from the previous segment's, starts a row (pi, 2, 0, 0) and adds point pi's position to the core sum. Any other segment adds 1 to the current row's second entry. `core` = sum*(1/rows). Then fit a sphere to the row roots (each row's first point), 24 rounds: with c the core before the round, `head` = the mean of length3(root minus c), and `core` = (the sum of the roots minus head times the sum of unit3(root minus c))*(1/rows).
 8. A row's third entry becomes 1 when nb is positive and any point q from its first entry to first plus count, exclusive, has f32 at k+16q+8 plus f32 at k+16q+12 above 0.001.
-9. Set `guides` to the row count. Create `gd` as a read buffer of rows*16 holding the table as i32s, `statb` as rw rows*16, `simb` as read SIM*16, `sdfb` as rw 16, `trib` as rw 16, `lfront` as rw LIGHT*LIGHT*4 and `lacc` as rw LIGHT*LIGHT*64.
+9. Set `guides` to the row count. Create `gd` as a read buffer of rows*16 holding the table as i32s, `statb` as rw rows*16, `simb` as read SIM*16, `sdfb` as rw 16, `trib` as rw 16, `lfront` as rw LIGHT*LIGHT*4 and `lacc` as rw LIGHT*LIGHT*64, and set `lslices` to 1.
 10. Push the groom and return g.
 Every `gfx::buffer(usage, size, data)` call takes the usage first, then the byte size, then the starting bytes.
 
@@ -166,23 +166,25 @@ Every `gfx::buffer(usage, size, data)` call takes the usage first, then the byte
 
 `live(g)` is the groom's on and show both being set.
 
-`uniforms_of(g)` builds the groom's HairU (default otherwise), with im the inverse of the model and sc = f(sqrt(dot3 of model.c0's xyz as real)).
+`uniforms_of(g)` builds the groom's HairU (default otherwise), with im the inverse of the model and sc = f(sqrt(dot3 of model.c0's xyz as real)). `put_uniform(u)` puts u in a one-element HairU array x and calls `gfx::push_uniforms(gfx::COMPUTE, 0, bytes_of(x))`; never `gfx::uniforms`, which applies bytes_of itself.
 - `view_proj` is `s3d::view_proj_nj` times the model, `view` is `s3d::view_mat` times the model, and `proj` is `s3d::proj_mat`.
 - `size` = (w, h, strands, segments).
 - `cam` = (point(im, `s3d::view.eye`), sc).
 - ld = unit3 of the xyz of im times (`s3d::sun.to_sun`, 0). `to_sun` = (ld, 1 if `s3d::sun.shadows` else 0).
-- `sun_rgb` = (sun rgb, 0), and `hair` = (look color, roughness).
+- `sun_rgb` = (sun rgb, look frizz), and `hair` = (look color, roughness).
 - m = mel_of(color, spread) and nl = min(lights count, 4). `mel` = (m.x, m.y, spread, nl).
-- For each of the first nl entries i of `s3d::lights`, pl[2i] = (point(im, pos), range/sc) and pl[2i+1] = (rgb, 0).
+- For each of the first nl entries i of `s3d::lights`, pl[2i] = (point(im, pos), range/sc) and pl[2i+1] = (rgb, 0). Each such light also gets a hair shadow view: dv = that point minus center, rc = radius*1.3, dist = max(length3(dv), rc*1.05) and tn = rc/dist; pp is `gfx::perspective(0.24, 1.0, max(dist-rc, dist*0.05), dist+rc)` with pp.c0.x and pp.c1.y each multiplied by f(tan(0.12))/tn; plvp[i] = pp times `gfx::look_at(center+unit3(dv)*dist, center, up)`, up being (1, 0, 0) when the absolute value of unit3(dv).y exceeds 0.95, else (0, 1, 0); plx[i] = (256/tn, f(sqrt of (0.25*(width squared + height squared + length squared) + radius squared) as real)/sc, 0, 0).
 - am = (sky zenith + horizon)*(0.5*sky ambient). `sky` = (look ambient times am per component, falloff).
-- `params` = (slab, gain, clump, width), `look` = (exposure, density, 0, scatter), `shape` = (top, center.z, part, 0) and `core` = (core, 0).
+- `params` = (slab, gain, clump, width), `look` = (exposure, density, 0, scatter), `shape` = (top, center.z, part, 0) and `core` = (core, head).
 - reach = radius*1.3 and d = reach*f(1/tan(0.12)). `light_vp` is `gfx::perspective(0.24, 1.0, d-reach, d+reach)` times `gfx::look_at(center+ld*d, center, up)`. up is (1, 0, 0) when the absolute value of ld.y exceeds 0.95, else (0, 1, 0).
 - `light` = (LIGHT, LIGHT, shade, f(256.0/tan(0.12))).
 - `shadow_vp` is `s3d::cascade_vp[0]` times the model.
 
-Clear pass (mode, buffers a and b, count n): a copy of the uniforms with look.z set to mode, writing a and b, using `clear_p`, dispatched ceil(n/64)×1×1. The two buffers reach the shader only through the write list of `gfx::begin_compute([a, b])`; this pass makes no `gfx::bind_storage_buffer` call at all.
+`light_slices(g, n)`: when the groom's lslices differs from n, release its lfront and lacc, create `lfront` as rw LIGHT*LIGHT*4*n and `lacc` as rw LIGHT*LIGHT*64*n, both from zero bytes, and set lslices to n.
 
-Raster pass (mode): lit is mode above 1. It uses a copy of the groom's uniforms with look.z set to mode and runs `raster_p`.
+Clear pass (mode, buffers a and b, count n): a copy of the uniforms with look.z set to mode and shape.w set to n/(LIGHT*LIGHT) when mode is above 1, else 0, writing a and b, using `clear_p`, dispatched ceil(n/64)×1×1. The two buffers reach the shader only through the write list of `gfx::begin_compute([a, b])`; this pass makes no `gfx::bind_storage_buffer` call at all.
+
+Raster pass (mode, slice k): lit is mode above 1. It uses a copy of the groom's uniforms with look.z set to mode; when lit and k is above 0, `light_vp` becomes plvp[k-1] and light.w becomes plx[k-1].x; shape.w is k when lit, else 0. It runs `raster_p`.
 - It writes the groom's lfront and lacc when lit, else `front` and `acc`.
 - Compute textures are slot 0 `s3d::nd_target()` and slot 1 `s3d::shadow_map`, both with smp.
 - Storage is 0 pts, 1 segs, 2 `front` if lit else lfront, 3 `acc` if lit else lacc.
@@ -233,8 +235,8 @@ Simulating groom g with dt, using a copy of the groom taken at the start and o =
 3. Clear `us`. For each groom, if live: track it when its item is at least 0, then simulate. Push its uniforms if live, else a default HairU.
 4. Set `s3d::depth_wanted`, and return unless `s3d::nd_ran`.
 5. Clear pass mode 0 on `front` and `acc` with us[first] and w*h.
-6. For each live groom: a clear pass mode 2 on its lfront and lacc with LIGHT*LIGHT, then raster mode 2, then raster mode 3.
-7. Raster mode 0 for all live grooms, then mode 1 for all.
+6. For each live groom: light_slices(g, 1 + min(lights count, 4)), a clear pass mode 2 on its lfront and lacc with LIGHT*LIGHT*lslices, then for each slice k below lslices raster mode 2 and then raster mode 3, both with k.
+7. Raster mode 0 with slice 0 for all live grooms, then mode 1 with slice 0 for all.
 8. Resolve: `gfx::begin_compute` with no buffers and `[hairt]`, `resolve_p`, uniforms us[first], storage 0 `acc`, dispatched (w+7)/8 × (h+7)/8 × 1.
 9. If `gfx::begin_pass` succeeds with color `[s3d::hdr_target()` and three `gfx::Texture{0}]` and clear_color false: bind comp, bind `hairt` with smp at `gfx::FRAGMENT` slot 0, `gfx::draw(3)`, end the pass.
 

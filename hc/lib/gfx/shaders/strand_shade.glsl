@@ -19,7 +19,7 @@ float hFr(float ci, float eta) {
 	return st >= 1.0 ? 1.0 : 0.5 * (rpa * rpa + rpe * rpe);
 }
 vec3 hSigma(vec2 m) { return m.x * vec3(0.419, 0.697, 1.37) + m.y * vec3(0.187, 0.4, 1.05); }
-vec3 chiang(vec3 T, vec3 L, vec3 V, vec3 sig, float h, float bm, float bn, float al, out vec3 af, out vec3 ab) {
+vec3 chiang(vec3 T, vec3 L, vec3 V, vec3 sig, float h, float bm, float bn, float al, float ex, out vec3 af, out vec3 ab) {
 	float sto = clamp(dot(V, T), -0.9999, 0.9999), cto = sqrt(1.0 - sto * sto), sti = clamp(dot(L, T), -0.9999, 0.9999), cti = sqrt(1.0 - sti * sti);
 	vec3 n0 = abs(T.y) < 0.9 ? vec3(0.0, 1.0, 0.0) : vec3(1.0, 0.0, 0.0), X = normalize(n0 - T * dot(n0, T)), Y = cross(T, X);
 	float phi = atan(dot(L, Y), dot(L, X)) - atan(dot(V, Y), dot(V, X));
@@ -33,10 +33,11 @@ vec3 chiang(vec3 T, vec3 L, vec3 V, vec3 sig, float h, float bm, float bn, float
 	float v0 = (0.726 * bm + 0.812 * bm * bm + 3.7 * pow(bm, 20.0));
 	v0 *= v0;
 	float s = 0.626657 * (0.265 * bn + 1.194 * bn * bn + 5.372 * pow(bn, 22.0));
+	s = sqrt(s * s + 0.3 * ex);
 	float s0 = sin(al), c0 = sqrt(1.0 - s0 * s0), s1 = 2.0 * c0 * s0, c1 = c0 * c0 - s0 * s0, s2 = 2.0 * c1 * s1, c2 = c1 * c1 - s1 * s1;
-	vec3 r = hMp(cti, abs(cto * c1 + sto * s1), sti, sto * c1 - cto * s1, v0) * A0 * hNp(phi, 0.0, s, go, gt);
-	r += hMp(cti, abs(cto * c0 - sto * s0), sti, sto * c0 + cto * s0, 0.25 * v0) * A1 * hNp(phi, 1.0, s, go, gt);
-	r += hMp(cti, abs(cto * c2 - sto * s2), sti, sto * c2 + cto * s2, 4.0 * v0) * A2 * hNp(phi, 2.0, s, go, gt);
-	r += hMp(cti, cto, sti, sto, 4.0 * v0) * A3 * 0.1591549;
+	vec3 r = hMp(cti, abs(cto * c1 + sto * s1), sti, sto * c1 - cto * s1, v0 + ex) * A0 * hNp(phi, 0.0, s, go, gt);
+	r += hMp(cti, abs(cto * c0 - sto * s0), sti, sto * c0 + cto * s0, 0.25 * v0 + ex) * A1 * hNp(phi, 1.0, s, go, gt);
+	r += hMp(cti, abs(cto * c2 - sto * s2), sti, sto * c2 + cto * s2, 4.0 * v0 + ex) * A2 * hNp(phi, 2.0, s, go, gt);
+	r += hMp(cti, cto, sti, sto, 4.0 * v0 + ex) * A3 * 0.1591549;
 	return r;
 }
