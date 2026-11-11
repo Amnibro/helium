@@ -106,7 +106,17 @@ layout(set = 3, binding = 1) uniform Surface {
 	vec4 xm_det;
 	vec4 xo_det;
 	vec4 top_lay;
+	vec4 sp_a;
+	vec4 sp_m;
+	vec4 sp_n;
+	vec4 sp_s;
+	vec4 sp_p;
+	vec4 sp_t0;
+	vec4 sp_t1;
+	vec4 sp_t2;
+	vec4 sp_t3;
 };
+vec4 sp_tint(int k) { return k == 0 ? sp_t0 : k == 1 ? sp_t1 : k == 2 ? sp_t2 : sp_t3; }
 
 layout(location = 0) out vec4 out_rgba;
 
@@ -683,7 +693,9 @@ void main() {
 	}
 	vec2 buv = xuv(uv_sets.x, xm_base, xo0.xy);
 	if (model == 2) buv = eye_uv(buv, normalize(eye.xyz - in_world), normalize(in_nrm));
-	vec4 tint = base * in_col * smp(tex_base, buv);
+	bool sp = sp_s.x + sp_s.y + sp_s.z + sp_s.w > 0.0;
+	vec4 vc = sp ? vec4(1.0) : in_col;
+	vec4 tint = base * vc * smp(tex_base, buv);
 	if (model == 2) tint.rgb *= eye_ring(buv);
 	// world-aligned layers: triplanar base and a top layer on up-facing surfaces
 	vec3 gw = normalize(in_nrm);
@@ -694,7 +706,34 @@ void main() {
 	vec2 uy = in_world.xz * tri.x;
 	vec2 uz = in_world.xy * tri.x;
 	vec2 ut = in_world.xz * tri.z;
-	if (tp) tint = base * in_col * (smp(tex_base, ux) * tw.x + smp(tex_base, uy) * tw.y + smp(tex_base, uz) * tw.z);
+	if (tp) tint = base * vc * (smp(tex_base, ux) * tw.x + smp(tex_base, uy) * tw.y + smp(tex_base, uz) * tw.z);
+	vec4 spf = vec4(0.0);
+	float spb = 1.0;
+	if (sp) {
+		vec4 w = in_col * smoothstep(sp_p.x - 0.1, sp_p.x + 0.1, gw.y);
+		float wb = max(1.0 - (w.x + w.y + w.z + w.w), 0.0);
+		float eb = wb > 0.001 ? wb + dot(tint.rgb, vec3(0.333)) * 0.5 : -1.0;
+		float mx = eb;
+		vec4 e = vec4(-1.0);
+		vec3 sa[4];
+		for (int k = 0; k < 4; k++) {
+			sa[k] = vec3(0.0);
+			if (sp_s[k] > 0.0 && w[k] > 0.001) {
+				sa[k] = sp_tint(k).rgb * smpa(tex_ext_s, vec3(in_world.xz * sp_s[k], sp_a[k])).rgb;
+				e[k] = w[k] + dot(sa[k], vec3(0.333)) * 0.5;
+				mx = max(mx, e[k]);
+			}
+		}
+		float dp = max(sp_p.y, 0.01);
+		spb = eb < 0.0 ? 0.0 : max(eb - mx + dp, 0.0);
+		for (int k = 0; k < 4; k++) spf[k] = e[k] < 0.0 ? 0.0 : max(e[k] - mx + dp, 0.0);
+		float tot = max(spb + spf.x + spf.y + spf.z + spf.w, 1e-4);
+		spb /= tot;
+		spf /= tot;
+		vec3 c = tint.rgb * spb;
+		for (int k = 0; k < 4; k++) c += sa[k] * spf[k];
+		tint.rgb = c;
+	}
 	float topf = 0.0;
 	if (tri.y > 0.0) {
 		vec4 tc = top_tint * smpa(tex_ext_s, vec3(ut, top_lay.x));
@@ -766,6 +805,20 @@ void main() {
 		nt = normalize(vec3(nt.x + gw.x, abs(nt.z) * gw.y, nt.y + gw.z));
 		n = normalize(mix(n, nt, topf));
 		mr = mix(mr, smpa(tex_ext_l, vec3(ut, top_lay.y)), topf);
+	}
+	if (sp) {
+		vec3 sn = n * spb;
+		vec4 sm = mr * spb;
+		for (int k = 0; k < 4; k++) {
+			if (spf[k] <= 0.0) continue;
+			vec2 u = in_world.xz * sp_s[k];
+			vec3 nt = smpa(tex_ext_l, vec3(u, sp_n[k])).xyz * 2.0 - 1.0;
+			nt.xy *= params.z;
+			sn += normalize(vec3(nt.x + gw.x, abs(nt.z) * gw.y, nt.y + gw.z)) * spf[k];
+			sm += (sp_m[k] < 0.0 ? mr : smpa(tex_ext_l, vec3(u, sp_m[k]))) * spf[k];
+		}
+		n = normalize(sn);
+		mr = sm;
 	}
 	vec4 dk = vec4(1.0, 0.0, 1.0, 0.0);
 	if (decal.y > 0.5 && alpha.x < 1.5) {

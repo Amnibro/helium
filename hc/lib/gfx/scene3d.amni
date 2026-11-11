@@ -70,7 +70,7 @@ struct FrameU {
 	probe_n float4, probe_pos float4[8], probe_lo float4[8], probe_hi float4[8], ssgi float4, decal float4, caust float4, caust_w float4, caust_box float4, caust_abs float4, rtr float4
 }
 struct GiU { origin float4, step float4, dims float4, rot0 float4, rot1 float4, rot2 float4, params float4, to_sun float4, sun_rgb float4, zenith float4, horizon float4, ground float4, light_pos float4[8], light_rgb float4[8], env float4, env_rot float4 }
-struct SurfaceU { base float4, emissive float4, params float4, alpha float4, uv_sets float4, uv_sets2 float4, tri float4, top_tint float4, xm_base float4, xm_mr float4, xm_nrm float4, xm_occ float4, xm_emi float4, xo0 float4, xo1 float4, xo2 float4, sheen float4, misc float4, shade_a float4, shade_b float4, shade_c float4, xm_det float4, xo_det float4, top_lay float4 }
+struct SurfaceU { base float4, emissive float4, params float4, alpha float4, uv_sets float4, uv_sets2 float4, tri float4, top_tint float4, xm_base float4, xm_mr float4, xm_nrm float4, xm_occ float4, xm_emi float4, xo0 float4, xo1 float4, xo2 float4, sheen float4, misc float4, shade_a float4, shade_b float4, shade_c float4, xm_det float4, xo_det float4, top_lay float4, sp_a float4, sp_m float4, sp_n float4, sp_s float4, sp_p float4, sp_t0 float4, sp_t1 float4, sp_t2 float4, sp_t3 float4 }
 struct ExtU { ior float4, spec float4, coat float4, trans float4, atten float4, aniso float4, irid float4, tm float4[13], to float4[13] }
 struct CutU { base float4, alpha float4, uv_sets float4, xm float4, xo float4 }
 struct CutViewU { base float4, alpha float4, uv_sets float4, xm float4, xo float4, view gfx::mat4 }
@@ -1365,6 +1365,7 @@ fn warm_textures() {
 		ext_need(m.top_mr, 0);
 		ext_need(m.top_normal, 0);
 		ext_need(m.detail, 0);
+		for k in 4 { ext_need(m.sp_base[k], 1); ext_need(m.sp_mr[k], 0); ext_need(m.sp_normal[k], 0); }
 		if m.ext {
 			ext_need(m.spec_tex, 0); ext_need(m.spec_c_tex, 1); ext_need(m.coat_tex, 0); ext_need(m.coat_r_tex, 0); ext_need(m.coat_n_tex, 0); ext_need(m.trans_tex, 0); ext_need(m.thick_tex, 0);
 			ext_need(m.aniso_tex, 0); ext_need(m.irid_tex, 0); ext_need(m.irid_t_tex, 0); ext_need(m.sheen_c_tex, 1); ext_need(m.sheen_r_tex, 0); ext_need(m.height_tex, 0);
@@ -2504,7 +2505,12 @@ fn surface_of(m gltf::Material) SurfaceU {
 		sheen: x4(m.sheen, m.sheen_rough),
 		misc: f4(m.catcher, m.shading as f32, if m.ext { 1.0 } else { 0.0 }, 1.0),
 		shade_a: m.shade_a, shade_b: m.shade_b, shade_c: m.shade_c, xm_det: m.detail.m, xo_det: f4(m.detail.o.x, m.detail.o.y, 0.0, 0.0),
-		top_lay: f4(ext_layer(m.top_base, 1, 0), ext_layer(m.top_mr, 0, 0), ext_layer(m.top_normal, 0, 1), ext_layer(m.detail, 0, 1))
+		top_lay: f4(ext_layer(m.top_base, 1, 0), ext_layer(m.top_mr, 0, 0), ext_layer(m.top_normal, 0, 1), ext_layer(m.detail, 0, 1)),
+		sp_a: f4(ext_layer(m.sp_base[0], 1, 0), ext_layer(m.sp_base[1], 1, 0), ext_layer(m.sp_base[2], 1, 0), ext_layer(m.sp_base[3], 1, 0)),
+		sp_m: f4(ext_layer(m.sp_mr[0], 0, -1), ext_layer(m.sp_mr[1], 0, -1), ext_layer(m.sp_mr[2], 0, -1), ext_layer(m.sp_mr[3], 0, -1)),
+		sp_n: f4(ext_layer(m.sp_normal[0], 0, 1), ext_layer(m.sp_normal[1], 0, 1), ext_layer(m.sp_normal[2], 0, 1), ext_layer(m.sp_normal[3], 0, 1)),
+		sp_s: f4(if m.sp_base[0].texture < 0 { 0.0 } else { m.sp_scale.x }, if m.sp_base[1].texture < 0 { 0.0 } else { m.sp_scale.y }, if m.sp_base[2].texture < 0 { 0.0 } else { m.sp_scale.z }, if m.sp_base[3].texture < 0 { 0.0 } else { m.sp_scale.w }),
+		sp_p: f4(m.sp_flat, m.sp_depth, 0.0, 0.0), sp_t0: m.sp_tint[0], sp_t1: m.sp_tint[1], sp_t2: m.sp_tint[2], sp_t3: m.sp_tint[3]
 	}
 }
 
