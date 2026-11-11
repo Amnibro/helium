@@ -120,6 +120,7 @@ vec2 pom_off = vec2(0.0);
 vec3 sss_d = vec3(0.0);
 vec3 sss_k = vec3(1.0);
 float sss_w = 1.0;
+float cor_w = 1.0;
 float sea_h = 0.0;
 #include "water.glsl"
 vec4 smp(sampler2D s, vec2 uv) { if (xo2.z == 1.0) return texture(s, uv); return textureGrad(s, uv, dFdx(uv) * xo2.z, dFdy(uv) * xo2.z); }
@@ -219,7 +220,7 @@ vec3 mat_term(vec3 n, vec3 v, vec3 l, vec3 e, vec3 albedo, vec3 f0, float rough,
 	if (model == 2) {
 		float w = shade_c.w;
 		vec3 dif = kd * albedo / PI_F * clamp((dot(n, l) + w) / (1.0 + w), 0.0, 1.0) * e;
-		vec3 spec = light_term(n, v, l, e, vec3(0.0), f0, rough, ms, kd) + shade_b.z * light_term(q.gn, v, l, e, vec3(0.0), vec3(0.02), shade_b.w, vec3(1.0), kd);
+		vec3 spec = light_term(n, v, l, e, vec3(0.0), f0, rough, ms, kd) + shade_b.z * cor_w * light_term(q.gn, v, l, e, vec3(0.0), vec3(0.02), shade_b.w, vec3(1.0), kd);
 		return (dif + spec) * vis;
 	}
 	if (model == 3) {
@@ -396,6 +397,25 @@ vec2 pd_ripple(vec2 p, float t, float amt) {
 vec2 rect_slope(vec3 p, vec3 v, vec3 n, vec3 tx, vec3 tz) {
 	vec3 h = normalize(v + normalize(p));
 	return vec2(dot(h, tx), dot(h, tz)) / max(dot(h, n), 1e-6);
+}
+vec4 rep_pt(vec3 d, vec3 rv, vec4 la, vec3 ax0, float aa) {
+	vec3 dl = d;
+	float nrm = 1.0;
+	if (la.y > 0.0) {
+		vec3 ax = ax0 * la.y;
+		vec3 l0 = d - ax * 0.5;
+		float rl = dot(rv, ax);
+		dl = l0 + ax * clamp((dot(rv, l0) * rl - dot(l0, ax)) / max(dot(ax, ax) - rl * rl, 1e-5), 0.0, 1.0);
+		float ta = clamp(aa + la.y * 0.5 / max(length(dl), 1e-3), 0.0, 1.0);
+		nrm *= aa / ta;
+	}
+	if (la.x > 0.0) {
+		vec3 cr = dot(dl, rv) * rv - dl;
+		dl += cr * clamp(la.x / max(length(cr), 1e-5), 0.0, 1.0);
+		float sa = clamp(aa + la.x * 0.5 / max(length(dl), 1e-3), 0.0, 1.0);
+		nrm *= (aa / sa) * (aa / sa);
+	}
+	return vec4(dl, nrm);
 }
 void rect_light(vec3 d, vec3 ld, vec4 la, vec4 lr, vec3 n, vec3 v, vec3 f0, float rough, out vec4 dif, out vec3 spec, out vec3 lrep) {
 	vec3 ex = lr.xyz * (la.z * 0.5);
@@ -1173,33 +1193,20 @@ void main() {
 				vec3 rs;
 				vec3 rl;
 				rect_light(d, lx.xyz, la, lrec[i + 5], n, v, f0_spec, rough, rd, rs, rl);
+				if (model == 2) { vec4 cd; vec3 cs; vec3 cl; rect_light(d, lx.xyz, la, lrec[i + 5], q.gn, v, vec3(0.02), shade_b.w, cd, cs, cl); rgb += shade_b.z * le * cs; cor_w = 0.0; }
 				if (rd.w > 0.0) rgb += mat_term(n, v, rd.xyz, le * (rd.w / max(dot(n, rd.xyz), 1e-4)), albedo, f0_spec, rough, vec3(0.0), kd, 1.0, q, x);
 				if (max(rs.r, max(rs.g, rs.b)) > 0.0) { sss_w = 0.0; rgb += mat_term(n, v, rl, le * rs / max(light_term(n, v, rl, vec3(1.0), vec3(0.0), f0_spec, rough, vec3(1.0), kd), vec3(1e-12)), vec3(0.0), f0_spec, rough, ms, kd, 1.0, q, x); sss_w = 1.0; }
+				cor_w = 1.0;
 				continue;
 			}
 			if (la.x <= 0.0 && la.y <= 0.0) { rgb += mat_term(n, v, ld, le, albedo, f0_spec, rough, ms, kd, 1.0, q, x); continue; }
-			vec3 rv = reflect(-v, n);
-			vec3 dl = d;
-			float aa = max(rough * rough, 0.002);
-			float nrm = 1.0;
-			if (la.y > 0.0) {
-				vec3 ax = lx.xyz * la.y;
-				vec3 l0 = d - ax * 0.5;
-				float rl = dot(rv, ax);
-				dl = l0 + ax * clamp((dot(rv, l0) * rl - dot(l0, ax)) / max(dot(ax, ax) - rl * rl, 1e-5), 0.0, 1.0);
-				float ta = clamp(aa + la.y * 0.5 / max(length(dl), 1e-3), 0.0, 1.0);
-				nrm *= aa / ta;
-			}
-			if (la.x > 0.0) {
-				vec3 cr = dot(dl, rv) * rv - dl;
-				dl += cr * clamp(la.x / max(length(cr), 1e-5), 0.0, 1.0);
-				float sa = clamp(aa + la.x * 0.5 / max(length(dl), 1e-3), 0.0, 1.0);
-				nrm *= (aa / sa) * (aa / sa);
-			}
+			vec4 rp = rep_pt(d, reflect(-v, n), la, lx.xyz, max(rough * rough, 0.002));
+			if (model == 2) { vec4 cp = rep_pt(d, reflect(-v, q.gn), la, lx.xyz, max(shade_b.w * shade_b.w, 0.002)); rgb += shade_b.z * light_term(q.gn, v, normalize(cp.xyz), le * cp.w, vec3(0.0), vec3(0.02), shade_b.w, vec3(1.0), kd); cor_w = 0.0; }
 			rgb += mat_term(n, v, ld, le, albedo, f0_spec, rough, vec3(0.0), kd, 1.0, q, x);
 			sss_w = 0.0;
-			rgb += mat_term(n, v, normalize(dl), le * nrm, vec3(0.0), f0_spec, rough, ms, kd, 1.0, q, x);
+			rgb += mat_term(n, v, normalize(rp.xyz), le * rp.w, vec3(0.0), f0_spec, rough, ms, kd, 1.0, q, x);
 			sss_w = 1.0;
+			cor_w = 1.0;
 		}
 	}
 	// furnace control hook (scene3d.furnace_scale, 1 in normal use): scales the direct

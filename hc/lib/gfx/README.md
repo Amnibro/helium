@@ -2303,8 +2303,9 @@ during the full gfxtest run).
 ### Pre-registered bars (eye catchlights from area lamps)
 
 The eye's cornea lobe (roughness `shade_b.w`, about 0.035) is far sharper than the
-eye's base lobe. Under a rect, sphere or tube lamp it was evaluated at the light
-direction picked for the base lobe, so a softbox left no catchlight. Registered on
+eye's base lobe, so under a rect, sphere or tube lamp it gets its own closest point on
+the lamp and its own energy scale, and a softbox leaves a catchlight the shape of the
+lamp. Registered on
 2026-11-11 before the first GPU run. Scene: a 12 mm eye sphere (eye shading, albedo
 0.02, roughness 1, cornea weight 1 at roughness 0.035) at the origin, black sky, sun
 off, one lamp of radiance 20 about 1 m away toward (0.4, 0.4, 0.8), the camera 8 cm in
@@ -2317,6 +2318,18 @@ front, 256 x 256; brightness is the HDR target's luminance.
 | EY2 a sphere lamp leaves a catchlight | a sphere lamp of radius 0.15 m in its place: pixels at brightness 0.1 or more | at least 20 |
 | EY2 control, cornea off | the same with cornea weight 0 | below 5 |
 | EY3 the catchlight is not a spike | the brightest pixel in EY1 and in EY2 over 0.02 times the lamp radiance | between 0.5 and 2.5 |
+
+### Eye catchlight results (2026-11-11, RX 9060 XT, RADV)
+
+| check | measured | bar | result |
+| --- | --- | --- | --- |
+| EY1 rect lamp | 316 pixels | at least 20 | PASS |
+| EY1 control, cornea off | 0 pixels, peak 0.047 | below 5 | fails as it should |
+| EY2 sphere lamp | 260 pixels | at least 20 | PASS |
+| EY2 control, cornea off | 0 pixels, peak 0.037 | below 5 | fails as it should |
+| EY3 peak over 0.02 times the radiance | rect 1.041, sphere 1.152 | 0.5 to 2.5 | PASS |
+| EY3 with the cornea lit at the base lobe's point | rect 179, sphere 1764 | 0.5 to 2.5 | fails |
+| `wgsltest.mjs` | 84 modules, 71 pipelines, 0 failures | 0 | PASS |
 
 ### Pre-registered bars (cut-out edges, mip bias, morph motion, light falloff)
 

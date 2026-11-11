@@ -5884,6 +5884,50 @@ fn rc_int(px real, py real, pz real, vx real, vy real, vz real, l s3d::Light, ro
 	}
 	return s, sd;
 }
+let EY_W = 256;
+fn ey_render(kind int, cw f32) byte[>..] {
+	reset_scene();
+	var m = shapes::material(linalg::v3(0.02, 0.02, 0.02), 0.0, 1.0);
+	m.shading = 2; m.shade_a = float4 { 0.0, 0.0, 1.0, 1.0 }; m.shade_b = float4 { 0.0, 0.0, cw, 0.035 }; m.shade_c = float4 { 0.0001, 0.0, 0.55, 0.35 };
+	s3d::place(s3d::add(shapes::sphere(0.012, 96, 48, m)), gfx::translate(float3 { 0.0, 0.0, 0.0 }));
+	s3d::view = s3d::Camera { eye: float3 { 0.0, 0.0, 0.08 }, target: float3 { 0.0, 0.0, 0.0 }, up: float3 { 0.0, 1.0, 0.0 }, fov_y: 0.35, near: 0.01, far: 10.0 };
+	dark_scene();
+	s3d::lights.clear();
+	let p = linalg::unit3(float3 { 0.4, 0.4, 0.8 });
+	if kind == 0 { s3d::add_rect(p, float3 { 0.0, 0.0, 0.0 }, linalg::unit3(linalg::cross3(float3 { 0.0, 1.0, 0.0 }, p)), 0.3, 0.3, float3 { 1.8, 1.8, 1.8 }, 100.0, false); } else { s3d::lights.push(s3d::Light { pos: p, range: 100.0, rgb: float3 { 1.4137167, 1.4137167, 1.4137167 }, kind: 0, radius: 0.15, .. }); }
+	s3d::init(EY_W, EY_W);
+	let out = gfx::render_target(EY_W, EY_W, gfx::RGBA8);
+	s3d::render(out);
+	let px = gfx::read_pixels(s3d::hdr_target());
+	gfx::release(out);
+	px
+}
+fn ey_stat(px const byte[:]) int, real {
+	var n = 0;
+	var mx = 0.0;
+	for q in EY_W * EY_W {
+		let l = 0.2126 * gi_half(px, 8, q, 0) as real + 0.7152 * gi_half(px, 8, q, 1) as real + 0.0722 * gi_half(px, 8, q, 2) as real;
+		if l >= 0.1 { n += 1; }
+		mx = max(mx, l);
+	}
+	return n, mx;
+}
+fn eye_checks() bool {
+	half_table();
+	if !gz_load_lut() { print("gpu: eye FAILED: GFX_MS_LUT unset or not a 32x32 ms_lut.glsl (tools/hc/gfxtest.sh sets it)"); return false; }
+	var ok = true;
+	for k in 2 {
+		let n1, m1 = ey_stat(ey_render(k, 1.0)[..]);
+		let n0, m0 = ey_stat(ey_render(k, 0.0)[..]);
+		let r = m1 / (0.02 * 20.0);
+		let pass = n1 >= 20 && n0 < 5 && r >= 0.5 && r <= 2.5;
+		print("gpu: eye EY", k + 1, if k == 0 { " rect" } else { " sphere" }, " lamp: catchlight pixels ", n1, " (bar >= 20), control cornea off ", n0, " (bar < 5, its peak ", r3(m0 / (0.02 * 20.0)), "); EY3 peak ", r3(r), " of 0.02 x radiance (bar 0.5 to 2.5)", if pass { " PASS" } else { " FAIL" });
+		ok = ok && pass;
+	}
+	s3d::lights.clear();
+	s3d::sky = DEF_SKY; s3d::sun = DEF_SUN; s3d::look = DEF_LOOK;
+	ok
+}
 fn rect_checks() bool {
 	half_table();
 	if !gz_load_lut() { print("gpu: rect FAILED: GFX_MS_LUT unset or not a 32x32 ms_lut.glsl (tools/hc/gfxtest.sh sets it)"); return false; }
@@ -8485,7 +8529,7 @@ fn gpu_checks(dir const byte[:], golden const byte[:]) bool {
 	var only byte[>..] = [];
 	let _ = env("GFX_ONLY", only);
 	if only.len > 0 {
-		let ok = if only[..] == "cutout" { cutout_checks() } else if only[..] == "thin" { thin_checks() } else if only[..] == "foliage" { foliage_checks() } else if only[..] == "puddle" { puddle_checks() } else if only[..] == "vfx" { vfx_checks() } else if only[..] == "fx" { fx_checks() } else if only[..] == "lights" { lights_checks() } else if only[..] == "day" { day_checks() } else if only[..] == "hair" { hair_checks() } else if only[..] == "gtao" { gtao_checks() } else if only[..] == "gi" { gi_checks() } else if only[..] == "mblur" { mb_checks() } else if only[..] == "dof" { dof_checks() } else if only[..] == "fx" { fx_checks() } else if only[..] == "tsr" { tsr_checks(dir) } else if only[..] == "probe" { probe_checks(dir) } else if only[..] == "ssgi" { ssgi_checks() } else if only[..] == "decal" { decal_checks() } else if only[..] == "weather" { weather_checks() } else if only[..] == "rect" { rect_checks() } else if only[..] == "small" { small_checks() } else if only[..] == "inst" { instance_checks() } else if only[..] == "caust" { caustic_checks() } else if only[..] == "tex" { texture_checks() } else if only[..] == "stream" { stream_checks() } else if only[..] == "rtr" { rtr_checks() } else if only[..] == "meshlet" { meshlet_checks() } else if only[..] == "sss" { sss_checks() } else if only[..] == "cloth" { cloth_checks() } else if only[..] == "cloud" { cloud_checks() } else if only[..] == "vfog" { fog_checks() } else if only[..] == "sea" { sea_checks() } else if only[..] == "vsm" { vsm_checks() } else { shadow_checks() };
+		let ok = if only[..] == "eye" { eye_checks() } else if only[..] == "cutout" { cutout_checks() } else if only[..] == "thin" { thin_checks() } else if only[..] == "foliage" { foliage_checks() } else if only[..] == "puddle" { puddle_checks() } else if only[..] == "vfx" { vfx_checks() } else if only[..] == "fx" { fx_checks() } else if only[..] == "lights" { lights_checks() } else if only[..] == "day" { day_checks() } else if only[..] == "hair" { hair_checks() } else if only[..] == "gtao" { gtao_checks() } else if only[..] == "gi" { gi_checks() } else if only[..] == "mblur" { mb_checks() } else if only[..] == "dof" { dof_checks() } else if only[..] == "fx" { fx_checks() } else if only[..] == "tsr" { tsr_checks(dir) } else if only[..] == "probe" { probe_checks(dir) } else if only[..] == "ssgi" { ssgi_checks() } else if only[..] == "decal" { decal_checks() } else if only[..] == "weather" { weather_checks() } else if only[..] == "rect" { rect_checks() } else if only[..] == "small" { small_checks() } else if only[..] == "inst" { instance_checks() } else if only[..] == "caust" { caustic_checks() } else if only[..] == "tex" { texture_checks() } else if only[..] == "stream" { stream_checks() } else if only[..] == "rtr" { rtr_checks() } else if only[..] == "meshlet" { meshlet_checks() } else if only[..] == "sss" { sss_checks() } else if only[..] == "cloth" { cloth_checks() } else if only[..] == "cloud" { cloud_checks() } else if only[..] == "vfog" { fog_checks() } else if only[..] == "sea" { sea_checks() } else if only[..] == "vsm" { vsm_checks() } else { shadow_checks() };
 		let e = gfx::error();
 		if e.len > 0 { print("gpu: gfx error ", e[..]); return false; }
 		return mark(only[..], ok) && submit_checks(false);
@@ -8658,6 +8702,7 @@ fn gpu_checks(dir const byte[:], golden const byte[:]) bool {
 	if !mark("cutout", cutout_checks()) { good = false; }
 	if !mark("thin", thin_checks()) { good = false; }
 	if !mark("rect", rect_checks()) { good = false; }
+	if !mark("eye", eye_checks()) { good = false; }
 	if !mark("small", small_checks()) { good = false; }
 	if !mark("instance", instance_checks()) { good = false; }
 	if !mark("caustic", caustic_checks()) { good = false; }
