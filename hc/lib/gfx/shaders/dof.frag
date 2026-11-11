@@ -3,7 +3,7 @@ layout(set = 2, binding = 0) uniform sampler2D tex_color;
 layout(set = 2, binding = 1) uniform sampler2D tex_near;
 layout(set = 3, binding = 0) uniform Dof { vec4 size; vec4 lens; vec4 tune; };
 layout(location = 0) out vec4 out_rgba;
-float coc_px(float z) { return min(z > 0.0 ? lens.x * abs(1.0 / z - 1.0 / lens.y) : lens.x / lens.y, lens.z); }
+float coc_px(float z) { float f = lens.y + tune.w; return min(z > 0.0 ? (z < lens.y ? lens.x * (1.0 / z - 1.0 / lens.y) : lens.x * max(1.0 / f - 1.0 / z, 0.0)) : lens.x / f, lens.z); }
 void main() {
 	ivec2 x = ivec2(gl_FragCoord.xy);
 	ivec2 lim = ivec2(size.xy) - 1;
@@ -12,7 +12,7 @@ void main() {
 	if (rmax <= 0.5) { out_rgba = vec4(c.rgb, 1.0); return; }
 	float zc = c.a;
 	float cc = coc_px(zc);
-	float wc = 1.0 / max(cc * cc, 1.0);
+	float wc = (1.0 + tune.y * max(dot(c.rgb, vec3(0.2126, 0.7152, 0.0722)) - tune.z, 0.0)) / max(cc * cc, 1.0);
 	vec3 sum = c.rgb * wc;
 	float w = wc;
 	int n = min(int(tune.x), max(16, int(rmax * rmax * 1.5)));
@@ -29,7 +29,7 @@ void main() {
 		float cs = coc_px(zs);
 		float cov = clamp(cs - d + 0.5, 0.0, 1.0);
 		if (zs > zc && zc > 0.0 || zs <= 0.0 && zc > 0.0) cov *= clamp(cc - d + 0.5, 0.0, 1.0);
-		float ws = cov / max(cs * cs, 1.0);
+		float ws = cov * (1.0 + tune.y * max(dot(cs4.rgb, vec3(0.2126, 0.7152, 0.0722)) - tune.z, 0.0)) / max(cs * cs, 1.0);
 		w += ws;
 		sum += ws * cs4.rgb;
 	}

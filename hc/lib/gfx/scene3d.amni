@@ -149,6 +149,9 @@ var dof_aperture f32 = 0.0;
 var dof_focus f32 = 10.0;
 var dof_max_px f32 = 24.0;
 var dof_samples = 48;
+var dof_bokeh f32 = 0.0;
+var dof_bokeh_cut f32 = 1.0;
+var dof_band f32 = 0.0;
 var lens_offset float2 = float2 { 0.0, 0.0 };
 var fx_dt f32 = 0.0;
 var nd_ran = false;
@@ -2630,7 +2633,7 @@ fn lens_tiles(src gfx::Texture, mode f32) {
 	guard gfx::begin_pass(gfx::PassDesc { color: [tile_a, none(), none(), none()], .. }) else { return; }
 	gfx::bind(pipe_lens_tile);
 	gfx::bind_texture(gfx::FRAGMENT, 0, src, smp_point);
-	gfx::uniforms(gfx::FRAGMENT, 0, TileU { size: f4(width as f32, height as f32, k as f32, 0.0), lens: f4(dof_aperture * height as f32 / (2.0 * ty), dof_focus, dof_max_px, motion_blur), mode: f4(mode, 0.0, 0.0, 0.0) });
+	gfx::uniforms(gfx::FRAGMENT, 0, TileU { size: f4(width as f32, height as f32, k as f32, 0.0), lens: f4(dof_aperture * height as f32 / (2.0 * ty), dof_focus, dof_max_px, motion_blur), mode: f4(mode, dof_band, 0.0, 0.0) });
 	gfx::draw(3);
 	gfx::end_pass();
 	guard gfx::begin_pass(gfx::PassDesc { color: [tile_b, none(), none(), none()], .. }) else { return; }
@@ -2694,7 +2697,7 @@ fn lens_pass() {
 		gfx::bind(pipe_dof);
 		gfx::bind_texture(gfx::FRAGMENT, 0, hdr, smp_point);
 		gfx::bind_texture(gfx::FRAGMENT, 1, tile_b, smp_point);
-		gfx::uniforms(gfx::FRAGMENT, 0, DofU { size: f4(width as f32, height as f32, 0.0, k as f32), lens: f4(dof_aperture * height as f32 / (2.0 * ty), dof_focus, dof_max_px, 0.0), tune: f4(dof_samples as f32, 0.0, 0.0, 0.0) });
+		gfx::uniforms(gfx::FRAGMENT, 0, DofU { size: f4(width as f32, height as f32, 0.0, k as f32), lens: f4(dof_aperture * height as f32 / (2.0 * ty), dof_focus, dof_max_px, 0.0), tune: f4(dof_samples as f32, dof_bokeh, dof_bokeh_cut, dof_band) });
 		gfx::draw(3);
 		gfx::end_pass();
 		lens_swap();
