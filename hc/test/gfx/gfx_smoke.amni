@@ -5994,7 +5994,7 @@ fn dome_checks() bool {
 	print("gpu: dome DN2 two eyes in one mesh: largest error ", r3(e2), " degrees (bar < 2), ", r3(m2), " from the midpoint (control, bar > 10), pieces fit ", f2, if p2 { " PASS" } else { " FAIL" });
 	p1 && p2
 }
-fn up_groom(on bool) byte[>..], float3[>..] {
+fn up_groom(on bool, g float3, tail f32) byte[>..], float3[>..] {
 	var rp float3[>..];
 	var rn float3[>..];
 	var sd = 12345;
@@ -6008,8 +6008,7 @@ fn up_groom(on bool) byte[>..], float3[>..] {
 		let l = linalg::length3(float3 { x, y, z });
 		if l > 0.2 && l <= 1.0 && y / l > 0.15 && z / l > -0.4 { let d = float3 { x / l, y / l, z / l }; rp.push(float3 { 0.0, 1.6, 0.0 } + d * 0.09); rn.push(d); }
 	}
-	let g = float3 { 0.0, 1.6, 0.0 } + linalg::unit3(float3 { 0.0, 0.5, -0.87 }) * 0.095;
-	let st = hair::Style { steps: 24, length: 0.3, head: if on { float4 { 0.0, 1.6, 0.0, 0.09 } } else { float4 { 0.0, 0.0, 0.0, 0.0 } }, gather: g, bun: 0.03, .. };
+	let st = hair::Style { steps: 24, length: 0.3, head: if on { float4 { 0.0, 1.6, 0.0, 0.09 } } else { float4 { 0.0, 0.0, 0.0, 0.0 } }, gather: g, bun: 0.03, tail: tail, .. };
 	var data byte[>..];
 	hair::groom(rp[..], rn[..], st, data);
 	return data, rp;
@@ -6019,7 +6018,7 @@ fn updo_checks() bool {
 	let c = float3 { 0.0, 1.6, 0.0 };
 	var share = [0.0, 0.0, 0.0, 0.0];
 	for on in 2 {
-		let d, rp = up_groom(on == 1);
+		let d, rp = up_groom(on == 1, g, 0.0);
 		var near = 0;
 		var hug = 0;
 		var line = 0;
@@ -6041,6 +6040,37 @@ fn updo_checks() bool {
 	print("gpu: updo UP1 strands reach the bun: ", r3(share[2]), " (bar >= 0.95), control no head ", r3(share[0]), " (bar < 0.2)", if p1 { " PASS" } else { " FAIL" });
 	print("gpu: updo UP2 strands hug the head: ", r3(share[3]), " (bar >= 0.95), control straight lines ", r3(share[1]), " (bar < 0.5)", if p2 { " PASS" } else { " FAIL" });
 	p1 && p2
+}
+fn tail_checks() bool {
+	let c = float3 { 0.0, 1.6, 0.0 };
+	let gs = c + linalg::unit3(float3 { 1.0, 0.6, -0.3 }) * 0.12;
+	let gc = c + float3 { 0.0, 0.12, 0.0 };
+	var hang = [0, 0];
+	var out = [0, 0];
+	var tie = [0, 0];
+	for v in 3 {
+		let d, _ = up_groom(true, if v == 2 { gc } else { gs }, if v == 1 { 0.0 } else { 0.3 });
+		let gp = if v == 2 { gc } else { gs };
+		for i in 2000 {
+			if v < 2 && hair::point_at(d[..], i * 24 + 23).y <= gp.y - 0.24 { hang[v] += 1; }
+			if v == 0 && linalg::length3(hair::point_at(d[..], i * 24 + 8) - gp) <= 0.045 { tie[0] += 1; }
+			if v == 0 && linalg::length3(hair::point_at(d[..], i * 24 + 23) - gp) <= 0.045 { tie[1] += 1; }
+			if v != 1 { for s in 16 { if linalg::length3(hair::point_at(d[..], i * 24 + 8 + s) - c) > 0.09 { out[v / 2] += 1; } } }
+		}
+	}
+	let h1 = (hang[0] as real) / 2000.0;
+	let h0 = (hang[1] as real) / 2000.0;
+	let o1 = (out[0] as real) / 32000.0;
+	let o0 = (out[1] as real) / 32000.0;
+	let t1 = (tie[0] as real) / 2000.0;
+	let t0 = (tie[1] as real) / 2000.0;
+	let p1 = h1 >= 0.99 && h0 < 0.2;
+	let p2 = o1 >= 0.99 && o0 < 0.99;
+	let p3 = t1 >= 0.99 && t0 < 0.2;
+	print("gpu: tails TT1 tails hang their length: ", r3(h1), " (bar >= 0.99), control bun ", r3(h0), " (bar < 0.2)", if p1 { " PASS" } else { " FAIL" });
+	print("gpu: tails TT2 tails clear the head: ", r3(o1), " (bar >= 0.99), control gather on the crown ", r3(o0), " (bar < 0.99)", if p2 { " PASS" } else { " FAIL" });
+	print("gpu: tails TT3 tied at the gather: ", r3(t1), " (bar >= 0.99), control the tips ", r3(t0), " (bar < 0.2)", if p3 { " PASS" } else { " FAIL" });
+	p1 && p2 && p3
 }
 fn rect_checks() bool {
 	half_table();
@@ -8686,7 +8716,7 @@ fn gpu_checks(dir const byte[:], golden const byte[:]) bool {
 	var only byte[>..] = [];
 	let _ = env("GFX_ONLY", only);
 	if only.len > 0 {
-		let ok = if only[..] == "updo" { updo_checks() } else if only[..] == "dome" { dome_checks() } else if only[..] == "eye" { eye_checks() } else if only[..] == "cutout" { cutout_checks() } else if only[..] == "thin" { thin_checks() } else if only[..] == "foliage" { foliage_checks() } else if only[..] == "puddle" { puddle_checks() } else if only[..] == "vfx" { vfx_checks() } else if only[..] == "fx" { fx_checks() } else if only[..] == "lights" { lights_checks() } else if only[..] == "day" { day_checks() } else if only[..] == "hair" { hair_checks() } else if only[..] == "gtao" { gtao_checks() } else if only[..] == "gi" { gi_checks() } else if only[..] == "mblur" { mb_checks() } else if only[..] == "dof" { dof_checks() } else if only[..] == "fx" { fx_checks() } else if only[..] == "tsr" { tsr_checks(dir) } else if only[..] == "probe" { probe_checks(dir) } else if only[..] == "ssgi" { ssgi_checks() } else if only[..] == "decal" { decal_checks() } else if only[..] == "weather" { weather_checks() } else if only[..] == "rect" { rect_checks() } else if only[..] == "small" { small_checks() } else if only[..] == "inst" { instance_checks() } else if only[..] == "caust" { caustic_checks() } else if only[..] == "tex" { texture_checks() } else if only[..] == "stream" { stream_checks() } else if only[..] == "rtr" { rtr_checks() } else if only[..] == "meshlet" { meshlet_checks() } else if only[..] == "sss" { sss_checks() } else if only[..] == "skin" { skin_checks() } else if only[..] == "cloth" { cloth_checks() } else if only[..] == "cloud" { cloud_checks() } else if only[..] == "vfog" { fog_checks() } else if only[..] == "sea" { sea_checks() } else if only[..] == "vsm" { vsm_checks() } else { shadow_checks() };
+		let ok = if only[..] == "updo" { updo_checks() } else if only[..] == "tails" { tail_checks() } else if only[..] == "dome" { dome_checks() } else if only[..] == "eye" { eye_checks() } else if only[..] == "cutout" { cutout_checks() } else if only[..] == "thin" { thin_checks() } else if only[..] == "foliage" { foliage_checks() } else if only[..] == "puddle" { puddle_checks() } else if only[..] == "vfx" { vfx_checks() } else if only[..] == "fx" { fx_checks() } else if only[..] == "lights" { lights_checks() } else if only[..] == "day" { day_checks() } else if only[..] == "hair" { hair_checks() } else if only[..] == "gtao" { gtao_checks() } else if only[..] == "gi" { gi_checks() } else if only[..] == "mblur" { mb_checks() } else if only[..] == "dof" { dof_checks() } else if only[..] == "fx" { fx_checks() } else if only[..] == "tsr" { tsr_checks(dir) } else if only[..] == "probe" { probe_checks(dir) } else if only[..] == "ssgi" { ssgi_checks() } else if only[..] == "decal" { decal_checks() } else if only[..] == "weather" { weather_checks() } else if only[..] == "rect" { rect_checks() } else if only[..] == "small" { small_checks() } else if only[..] == "inst" { instance_checks() } else if only[..] == "caust" { caustic_checks() } else if only[..] == "tex" { texture_checks() } else if only[..] == "stream" { stream_checks() } else if only[..] == "rtr" { rtr_checks() } else if only[..] == "meshlet" { meshlet_checks() } else if only[..] == "sss" { sss_checks() } else if only[..] == "skin" { skin_checks() } else if only[..] == "cloth" { cloth_checks() } else if only[..] == "cloud" { cloud_checks() } else if only[..] == "vfog" { fog_checks() } else if only[..] == "sea" { sea_checks() } else if only[..] == "vsm" { vsm_checks() } else { shadow_checks() };
 		let e = gfx::error();
 		if e.len > 0 { print("gpu: gfx error ", e[..]); return false; }
 		return mark(only[..], ok) && submit_checks(false);
@@ -8862,6 +8892,7 @@ fn gpu_checks(dir const byte[:], golden const byte[:]) bool {
 	if !mark("eye", eye_checks()) { good = false; }
 	if !mark("dome", dome_checks()) { good = false; }
 	if !mark("updo", updo_checks()) { good = false; }
+	if !mark("tails", tail_checks()) { good = false; }
 	if !mark("small", small_checks()) { good = false; }
 	if !mark("instance", instance_checks()) { good = false; }
 	if !mark("caustic", caustic_checks()) { good = false; }

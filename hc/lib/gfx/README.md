@@ -2414,6 +2414,17 @@ twin-tail groom is two grooms, one per side. Scene: the updo scene's 2000 roots,
 | TT3 tied at the gather | share of strands whose first tail point is within 1.5 x bun of the gather point | at least 0.99 |
 | TT3 control, the tips | the same for each strand's last point | below 0.2 |
 
+Results (2026-11-11, CPU):
+
+| check | measured | bar | result |
+| --- | --- | --- | --- |
+| TT1 tails hang their length | 1.0 | at least 0.99 | PASS |
+| TT1 control, tail 0 (the bun) | 0.0 | below 0.2 | fails as it should |
+| TT2 tails clear the head | 1.0 | at least 0.99 | PASS |
+| TT2 control, gather on the crown | 0.461 | below 0.99 | fails as it should |
+| TT3 tied at the gather | 1.0 | at least 0.99 | PASS |
+| TT3 control, the tips | 0.0 | below 0.2 | fails as it should |
+
 ### Pre-registered bars (cut-out edges, mip bias, morph motion, light falloff)
 
 Written before the first GPU run of `small_checks` in `gfx_smoke.amni`. Black sky, no
