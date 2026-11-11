@@ -2395,6 +2395,25 @@ Results (2026-11-11, CPU):
 | UP2 strands hug the head | 1.0 | at least 0.95 | PASS |
 | UP2 control, straight lines | 0.174 | below 0.5 | fails as it should |
 
+### Pre-registered bars (tails: twin tails and ponytails)
+
+`hair::Style` gains `tail`, a tail's length below the gather point (0, the default, keeps the
+bun). With a tail, two thirds of each strand's points hang from the gather point instead of
+coiling: the tail first swings out away from the head, then falls the full length, spreading
+from a tight tie to a few centimeters wide, with `curl` and `turns` waving each strand. A
+twin-tail groom is two grooms, one per side. Scene: the updo scene's 2000 roots, gather point
+12 cm from the center toward (1, 0.6, -0.3) (3 cm off the side of the head), tail 0.3, bun
+0.03, 24 points per strand. CPU only.
+
+| bar | measured | pass |
+| --- | --- | --- |
+| TT1 tails hang their length | share of strands whose last point is at least 0.8 x tail below the gather point | at least 0.99 |
+| TT1 control, tail 0 (the bun) | the same | below 0.2 |
+| TT2 tails clear the head | share of tail points outside the 9 cm sphere | at least 0.99 |
+| TT2 control, gather on the crown | the same with the gather point 12 cm straight above the center | below 0.99 |
+| TT3 tied at the gather | share of strands whose first tail point is within 1.5 x bun of the gather point | at least 0.99 |
+| TT3 control, the tips | the same for each strand's last point | below 0.2 |
+
 ### Pre-registered bars (cut-out edges, mip bias, morph motion, light falloff)
 
 Written before the first GPU run of `small_checks` in `gfx_smoke.amni`. Black sky, no
