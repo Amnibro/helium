@@ -182,18 +182,27 @@ float skin_r2(float rough, float pv) { float r = sqrt(sqrt(max(rough * rough * r
 float rim(vec3 n, vec3 v, float nl) { return pow(1.0 - max(dot(n, v), 0.0), 3.0) * clamp((nl + 0.5) / 1.5, 0.0, 1.0); }
 vec4 pore(vec2 p, float s) {
 	float fade = s < 0.0 ? 1.0 : 1.0 - smoothstep(0.25, 0.5, max(length(dFdx(p)), length(dFdy(p))));
-	ivec2 c = ivec2(floor(p - 0.5));
-	vec3 a = vec3(0.0, 0.0, -0.0706858);
-	for (int k = 0; k < 4; k++) {
-		ivec2 q = c + ivec2(k % 2, k / 2);
+	ivec2 c = ivec2(floor(p));
+	vec2 o[9];
+	int m = 0;
+	for (int k = 0; k < 9; k++) {
+		ivec2 q = c + ivec2(k % 3 - 1, k / 3 - 1);
 		uint h = (uint(q.x) * 1597334673u) ^ (uint(q.y) * 3812015801u);
 		h = (h ^ (h >> 15u)) * 2246822519u;
 		h = h ^ (h >> 13u);
-		vec2 d = p - vec2(q) - vec2(float(h & 1023u), float((h >> 10u) & 1023u)) / 1023.0;
-		float t = max(1.0 - dot(d, d) / 0.09, 0.0);
-		a += (0.5 + 0.5 * float((h >> 20u) & 1023u) / 1023.0) * vec3(4.0 * t * d / 0.09, t * t);
+		o[k] = vec2(q) + 0.15 + 0.7 * vec2(float(h & 1023u), float((h >> 10u) & 1023u)) / 1023.0 - p;
+		if (dot(o[k], o[k]) < dot(o[m], o[m])) m = k;
 	}
-	return vec4(a * fade, fade);
+	float e = 1.0;
+	vec2 g = vec2(0.0);
+	for (int k = 0; k < 9; k++) {
+		vec2 w = o[k] - o[m];
+		float l = max(length(w), 1e-6);
+		float x = k == m ? 1.0 : dot(0.5 * (o[k] + o[m]), w) / l;
+		if (x < e) { e = x; g = w / l; }
+	}
+	float t = max(1.0 - e / 0.12, 0.0);
+	return vec4(vec3(g * (-13.26 * t * (1.0 - t)), t * t * (3.0 - 2.0 * t) - 0.2189) * fade, fade);
 }
 vec3 mat_term(vec3 n, vec3 v, vec3 l, vec3 e, vec3 albedo, vec3 f0, float rough, vec3 ms, vec3 kd, float vis, Mat q, ExtS x) {
 	if (misc.z > 0.5) return ext_term(n, v, l, e, albedo, f0, rough, ms, kd, vis, x);

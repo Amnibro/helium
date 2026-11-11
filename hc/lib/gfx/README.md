@@ -998,7 +998,7 @@ s3d::sss_on = true;
 
 ### Skin pores and fuzz (E7)
 
-A skin material can carry pores and a soft rim of fine hair without any texture:
+A skin material can carry its fine surface relief and a soft rim of fine hair without any texture:
 
 ```
 var skin = shapes::material(linalg::v3(0.9, 0.72, 0.62), 0.0, 0.5);
@@ -1010,13 +1010,16 @@ skin.shade_c.y = 0.7;
 skin.shade_c.z = 0.35;
 ```
 
-`shade_c.y` is the pore strength (0 is off, the preset value). The pores are computed
-in the shader from the material's UV space: round pits scattered at random, 700 a
-UV unit on average along each axis, plus a coarser set at 175. The pits tilt the normal that highlights use
+`shade_c.y` is the relief strength (0 is off, the preset value). The relief is computed
+in the shader from the material's UV space: cells scattered at random, 700 a
+UV unit on average along each axis, plus a coarser set at 175, with a furrow along every
+border between cells. The furrows form the net of small polygons that skin shows up close.
+They tilt the normal that highlights use
 and darken their floors; the mean diffuse light does not change. The detail map's
 transform (`detail.m`, `detail.o`) scales and moves the pattern, so a mesh whose UV
-unit is not about 0.3 m can bring the pits back to skin scale. Where a cell covers
-fewer than 4 pixels the pits fade, and by 2 pixels they are gone and their slopes
+unit is not about 0.3 m can bring the cells back to skin scale (fine cells about 0.25 mm
+wide read as facial skin; a scanned head with a 0.4 m UV unit uses `detail.m` 2.5). Where a cell covers
+fewer than 4 pixels the furrows fade, and by 2 pixels they are gone and their slopes
 widen both highlight lobes instead, so skin does not sparkle at a distance and the
 highlight keeps the brightness it has up close.
 
@@ -2647,13 +2650,16 @@ edge.
 
 ### Skin pore and fuzz bars (E7, registered before the first GPU run)
 
-Pores are a pattern computed in the shader, in the material's UV space: jittered cells,
-700 per UV unit, and a coarser set at 175 per UV unit, each with a round pit. The pits
+Skin relief is a pattern computed in the shader, in the material's UV space: jittered cells,
+700 per UV unit, and a coarser set at 175 per UV unit, with a furrow along every border
+between cells, so the lines form the net of small polygons that skin shows up close. A
+furrow is 0.12 of a cell wide on each side of the border. `detail.m` scales the cells, which
+sets their size on a given model: fine cells about 0.25 mm wide read as facial skin. The furrows
 tilt the normal that highlights use and darken their floor; the darkening averages 1,
 so the pattern does not change the mean diffuse light. `shade_c.y` of a skin material
-is the strength. Where a cell covers fewer than 4 pixels its pits fade out, gone at 2
+is the strength. Where a cell covers fewer than 4 pixels its furrows fade out, gone at 2
 pixels, and their slopes widen the highlight instead. A negative `shade_c.y` keeps the
-pits at every distance; the tests use it as a control. Fuzz is the rim term of the
+furrows at every distance; the tests use it as a control. Fuzz is the rim term of the
 cloth model with `shade_c.z` as its strength.
 
 Sheet Q: a flat square sheet 0.3 m wide (one UV unit) with the skin preset, base color
@@ -2664,7 +2670,7 @@ the normal through the middle. "Near" is 0.05 m away (a fine cell covers 7.8 pix
 "far" is 1.2 m away (a coarse cell covers 1.3 pixels). Values are the red channel of
 the frame before tone mapping (`s3d::hdr_target()`).
 
-* **Y1 pits show up close.** Near, over the middle 400 x 400 pixels split into
+* **Y1 furrows show up close.** Near, over the middle 400 x 400 pixels split into
   4 x 4 pixel blocks: the root mean square of each pixel's difference from its
   block's best-fit plane, over the mean of the region, is at least 0.05 with
   `shade_c.y` 0.7. Control: at most 0.005 with strength 0.
@@ -3204,17 +3210,17 @@ all three frames.
 
 | Bar | Result | Bar value |
 | --- | --- | --- |
-| Y1 pits show up close | 0.3688 with strength 0.7 | at least 0.05 |
+| Y1 furrows show up close | 0.4866 with strength 0.7 | at least 0.05 |
 | Y1 control, strength 0 | 0.0002 | at most 0.005 |
-| Y2 the mean diffuse light stays | sum with strength 0.7 over sum with strength 0: 1.0004 | within 0.01 of 1 |
-| Y2 control, light 5% dimmer | 0.9505 | more than 0.01 from 1 |
+| Y2 the mean diffuse light stays | sum with strength 0.7 over sum with strength 0: 1.0006 | within 0.01 of 1 |
+| Y2 control, light 5% dimmer | 0.9506 | more than 0.01 from 1 |
 | Y3 no noise far away | 0.5309 with strength 0.7, 0.6783 with strength 0 | at most 0.002 above |
-| Y3 control, no fade | 0.8058 | at least 0.01 above 0.5309 |
-| Y4 the far highlight follows the near one | near 1.0728, far 1.0897 | near at least 0.05 from 1, far closer to near than to 1 |
+| Y3 control, no fade | 0.8435 | at least 0.01 above 0.5309 |
+| Y4 the far highlight follows the near one | near 1.1033, far 1.0897 | near at least 0.05 from 1, far closer to near than to 1 |
 | Y4 control, strength 0 | 1.0 | fails |
 | Y5 fuzz lights the rim only | 3,243 rim pixels rise 13.92 / 255 on average; middle: largest change 1 / 255; pixels without skin: 0 / 255 | at least 3, at most 1, 0 |
 | Y5 control, fuzz 0 twice | rim rise 0.0 | below 3 |
-| Y6 cost | 1.63 ms without, 1.75 ms with: 0.12 ms more | at most 0.3 ms |
+| Y6 cost | 0.71 ms without, 0.9 ms with: 0.19 ms more | at most 0.3 ms |
 | Y7 nothing else moved | goldens 44.92 dB and 41.7 dB; X1 to X7 pass with both strengths 0; wgsltest 67 modules, 58 pipelines, 0 failures; webgputest 22 scenes, 0 failures, `scene_sss` with strength 0.7 and fuzz 0.35 matches the native frame exactly on WebGPU | pass |
 
 ### Effects results (2026-11-10, RX 9060 XT, RADV)
