@@ -2300,6 +2300,24 @@ Reported: 1280 x 720 with the floor filling most of the view under L1, one rect 
 3.02 ms and one point light at its center 0.92 ms on an idle card (3.34 and 2.43 ms
 during the full gfxtest run).
 
+### Pre-registered bars (eye catchlights from area lamps)
+
+The eye's cornea lobe (roughness `shade_b.w`, about 0.035) is far sharper than the
+eye's base lobe. Under a rect, sphere or tube lamp it was evaluated at the light
+direction picked for the base lobe, so a softbox left no catchlight. Registered on
+2026-11-11 before the first GPU run. Scene: a 12 mm eye sphere (eye shading, albedo
+0.02, roughness 1, cornea weight 1 at roughness 0.035) at the origin, black sky, sun
+off, one lamp of radiance 20 about 1 m away toward (0.4, 0.4, 0.8), the camera 8 cm in
+front, 256 x 256; brightness is the HDR target's luminance.
+
+| bar | measured | passes when |
+| --- | --- | --- |
+| EY1 a rect lamp leaves a catchlight | a 0.3 m square rect lamp facing the eye: pixels at brightness 0.1 or more | at least 20 |
+| EY1 control, cornea off | the same with cornea weight 0 | below 5 |
+| EY2 a sphere lamp leaves a catchlight | a sphere lamp of radius 0.15 m in its place: pixels at brightness 0.1 or more | at least 20 |
+| EY2 control, cornea off | the same with cornea weight 0 | below 5 |
+| EY3 the catchlight is not a spike | the brightest pixel in EY1 and in EY2 over 0.02 times the lamp radiance | between 0.5 and 2.5 |
+
 ### Pre-registered bars (cut-out edges, mip bias, morph motion, light falloff)
 
 Written before the first GPU run of `small_checks` in `gfx_smoke.amni`. Black sky, no
