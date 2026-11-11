@@ -3343,7 +3343,7 @@ the middle 400 x 400 pixels; gray pores do not change it, color blotches do.
 | SC1 control, the scattering-off frame blurred over a 2 mm (37 pixel) box on the CPU, as scattering blurred the darkening before | 0.0388 | below 0.7 |
 | SC2 skin color varies at the millimeter scale | 0.0308 (before this change: 0.0) | at least 0.01 with strength 1.1 |
 | SC2 control, strength 0 | 0.0 | at most 0.002 |
-| SC3 nothing else moved | pending | X1 to X7 and Y1 to Y6 pass; gfxtest ok; wgsltest and webgputest 0 failures |
+| SC3 nothing else moved | X1 to X7 and Y1 to Y6 pass; goldens 44.92 dB and 41.7 dB; gfxtest ok; wgsltest 84 modules, 71 pipelines, 0 failures; webgputest 26 scenes, 0 failures; c 73 of 78 and web 77 of 78 as before | X1 to X7 and Y1 to Y6 pass; gfxtest ok; wgsltest and webgputest 0 failures |
 
 ### Effects results (2026-11-10, RX 9060 XT, RADV)
 
