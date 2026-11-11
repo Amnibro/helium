@@ -2331,6 +2331,25 @@ front, 256 x 256; brightness is the HDR target's luminance.
 | EY3 with the cornea lit at the base lobe's point | rect 179, sphere 1764 | 0.5 to 2.5 | fails |
 | `wgsltest.mjs` | 84 modules, 71 pipelines, 0 failures | 0 | PASS |
 
+### Pre-registered bars (dome normals for dished eyes)
+
+Many stylized eye meshes dish the iris inward to fake depth. A dish is a concave mirror, so
+the cornea's catchlight lands on the side away from the lamp and breaks into pieces.
+`gltf::dome_normals(asset, mesh name)` splits the named mesh into its connected pieces,
+fits a sphere to each (a second fit leaves out the points that sit off the first sphere,
+which is the dish), and points every normal away from its piece's center. Scene: a
+synthetic eye, the front half of a 12 mm sphere at (0.031, 1.5, 0.1) in 25 rings of 48
+points, whose points within 4.5 mm of the front axis sit up to 1 mm back in a dish and
+carry that dish's normals; error is the angle between a vertex normal and the direction
+from the true center to the vertex. CPU only.
+
+| bar | measured | pass |
+| --- | --- | --- |
+| DN1 one dished eye is domed | largest error after `dome_normals` | below 2 degrees |
+| DN1 control, not domed | largest error before the call | above 10 degrees |
+| DN2 two eyes in one mesh are fit apart | the same with a second eye at x -0.031 in the same primitive | below 2 degrees |
+| DN2 control, one shared center | the error measured from the midpoint between the two true centers | above 10 degrees |
+
 ### Pre-registered bars (cut-out edges, mip bias, morph motion, light falloff)
 
 Written before the first GPU run of `small_checks` in `gfx_smoke.amni`. Black sky, no
