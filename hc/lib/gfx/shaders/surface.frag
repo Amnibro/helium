@@ -201,7 +201,9 @@ vec4 pore(vec2 p, float s) {
 	float il = inversesqrt(max(dot(w, w), 1e-12));
 	float t = max(1.0 - (db - da) * il * 1.25, 0.0);
 	float am = 0.1 + 0.9 * float(((ha ^ hb) >> 20u) & 1023u) / 1023.0;
-	return vec4(vec3(w * (il * am * t * (1.0 - t) * -14.705), am * t * t * (3.0 - 2.0 * t) - 0.3232) * fade, fade);
+	float sp = clamp(1.0 - sqrt(da) / 0.2, 0.0, 1.0);
+	float pit = float((ha >> 5u) & 1023u) < 613.8 ? sp * sp * (3.0 - 2.0 * sp) * (0.6 + 0.4 * float((ha >> 16u) & 15u) / 15.0) : 0.0;
+	return vec4(vec3(w * (il * am * t * (1.0 - t) * -14.705), 0.3 * am * t * t * (3.0 - 2.0 * t) + 1.6 * pit - 0.1261) * fade, fade);
 }
 vec3 mat_term(vec3 n, vec3 v, vec3 l, vec3 e, vec3 albedo, vec3 f0, float rough, vec3 ms, vec3 kd, float vis, Mat q, ExtS x) {
 	if (misc.z > 0.5) return ext_term(n, v, l, e, albedo, f0, rough, ms, kd, vis, x);
@@ -214,7 +216,7 @@ vec3 mat_term(vec3 n, vec3 v, vec3 l, vec3 e, vec3 albedo, vec3 f0, float rough,
 		vec3 dif = vec3(skin_lut(dot(nr, l), s.r), skin_lut(dot(q.nm, l), s.g), skin_lut(dot(q.nm, l), s.b));
 		vec3 spec = mix(light_term(n, v, l, e, vec3(0.0), f0, rough, ms, kd), light_term(n, v, l, e, vec3(0.0), f0, skin_r2(rough, q.pv), ms, kd), shade_b.z) * q.cav;
 		vec3 tr = skin_trans(q.thick, d) * clamp((0.1 - dot(q.gn, l)) / 1.1, 0.0, 1.0) * shade_a.w;
-		if (xo_det.z > 0.5) { if (sss_w > 0.5) sss_d += e / PI_F * ((xo_det.z < 1.5 ? vec3(max(dot(q.nm, l), 0.0) * clamp(vis, 0.0, 1.0)) : dif * sv) * mix(1.0, q.cav, 0.5) + tr); if (xo_det.z < 1.5) return vec3(0.0); }
+		if (xo_det.z > 0.5) { if (sss_w > 0.5) sss_d += e / PI_F * ((xo_det.z < 1.5 ? vec3(max(dot(q.nm, l), 0.0) * clamp(vis, 0.0, 1.0)) : dif * sv) + tr); if (xo_det.z < 1.5) return vec3(0.0); }
 		return (kd * albedo / PI_F * (dif * sv * mix(1.0, q.cav, 0.5) + tr)) * e + (spec + shade_c.z * e * rim(n, v, dot(n, l))) * vis;
 	}
 	if (model == 2) {
@@ -650,7 +652,7 @@ vec3 ambient_light(vec3 n, vec3 v, vec3 l, vec3 base_rgb, float metal, float rou
 	vec4 e = amb_lobe(n, v, l, rough, irr, gi_irr, use_gi, gn, oc, sr, rr);
 	float f0d = model == 1 ? shade_c.x : 0.04;
 	float fd = f0d + (1.0 - f0d) * e.w;
-	if (model == 1 && xo_det.z > 0.5) { sss_d += irr * dao * (1.0 - fd) / max(sss_k, vec3(1e-5)); if (xo_det.z < 1.5) return vec3(0.0); }
+	if (model == 1 && xo_det.z > 0.5) { sss_d += irr * dao * (1.0 - fd) / max(sss_k, vec3(1e-5)) / max(mix(1.0, q.cav, 0.5), 1e-3); if (xo_det.z < 1.5) return vec3(0.0); }
 	vec3 spec = fd * e.rgb;
 	if (model == 1) {
 		vec4 e2 = amb_lobe(n, v, l, skin_r2(rough, q.pv), irr, gi_irr, use_gi, gn, oc, sr, vec4(0.0));
@@ -783,7 +785,7 @@ vec3 ambient_env(vec3 n, vec3 v, vec3 base_rgb, vec3 albedo, vec3 f0, float roug
 	float dao = oc.x;
 	float n_v = max(dot(n, v), 1e-4);
 	vec3 irr = use_gi ? gi_irr : env_irr(n);
-	if (model == 1 && xo_det.z > 0.5) { sss_d += irr * dao; if (xo_det.z < 1.5) return vec3(0.0); }
+	if (model == 1 && xo_det.z > 0.5) { sss_d += irr * dao / max(mix(1.0, q.cav, 0.5), 1e-3); if (xo_det.z < 1.5) return vec3(0.0); }
 	vec3 nb = n;
 	if (x.aniso > 0.0) nb = normalize(mix(normalize(cross(cross(x.tb, v), x.tb)), n, pow(1.0 - x.aniso * (1.0 - rough), 4.0)));
 	vec3 ef = env_ef(f0, x.f90, eb, ms);
@@ -1103,6 +1105,7 @@ void main() {
 		rough = mix(rough, 0.55, sn);
 		metal *= 1.0 - sn;
 	}
+	if (model == 1 && shade_c.y != 0.0) { vec2 mu = xuv(uv_sets.x, xm_det, xo_det.xy); vec2 mw = max(abs(dFdx(mu)), abs(dFdy(mu))); float mo = (pd_noise(mu * 41.0) - 0.5) * (1.0 - smoothstep(0.25, 0.5, max(mw.x, mw.y) * 41.0)); float mf = (pd_noise(mu * 131.0 + 7.1) - 0.5) * (1.0 - smoothstep(0.25, 0.5, max(mw.x, mw.y) * 131.0)); tint.rgb *= max(vec3(1.0) + abs(shade_c.y) * dmask * (mo * vec3(0.15, 0.35, 0.37) + mf * vec3(0.1, 0.16, 0.16)), vec3(0.0)); }
 	vec3 albedo = tint.rgb * (1.0 - metal);
 	vec3 f0 = mix(vec3(model == 1 ? shade_c.x : 0.04), tint.rgb, metal);
 	vec3 v = normalize(eye.xyz - in_world);
@@ -1262,7 +1265,7 @@ void main() {
 	else ambient = ambient_light(n, v, l, tint.rgb, metal, rough, gi_irr, use_gi, gn, vec3(dao, aos, occm), dao, sr, x.rr, q);
 	rgb += ambient + (sg.w >= 0.0 ? albedo * max(kd, vec3(0.0)) * occm * sg.rgb * ssgi.z * (1.0 - x.trans) : vec3(0.0));
 	if (xo_det.z > 0.5) {
-		if (sg.w >= 0.0) sss_d += occm * sg.rgb * ssgi.z;
+		if (sg.w >= 0.0) sss_d += occm / max(mix(1.0, q.cav, 0.5), 1e-3) * sg.rgb * ssgi.z;
 		if (xo_det.z < 1.5) { out_rgba = vec4(sss_d, 1.0 + xo_det.w); return; }
 		vec4 sb = texelFetch(tex_trans, ivec2(gl_FragCoord.xy), 0);
 		if (sb.a > 0.5) rgb += clamp(xo_det.w / max(dot(in_world - eye.xyz, view_dir.xyz), 1e-4) - 0.5, 0.0, 1.0) * albedo * sss_k * (sb.rgb - sss_d);

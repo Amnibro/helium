@@ -3339,10 +3339,10 @@ the middle 400 x 400 pixels; gray pores do not change it, color blotches do.
 
 | Bar | Result | Bar value |
 | --- | --- | --- |
-| SC1 pores keep their contrast with scattering on | pending | deviation from the plane of each 16 x 16 block, scattering on over off: at least 0.7 |
-| SC1 control, the scattered light over its input (where the darkening used to be) | pending | below 0.7 |
-| SC2 skin color varies at the millimeter scale | pending | at least 0.01 with strength 1.1 |
-| SC2 control, strength 0 | pending | at most 0.002 |
+| SC1 pores keep their contrast with scattering on | 0.0519 on, 0.0518 off: 1.0009 (the shader before this change: 0.0041 on, 0.0788 off: 0.0519) | deviation from the plane of each 16 x 16 block, scattering on over off: at least 0.7 |
+| SC1 control, the scattering-off frame blurred over a 2 mm (37 pixel) box on the CPU, as scattering blurred the darkening before | 0.0388 | below 0.7 |
+| SC2 skin color varies at the millimeter scale | 0.0308 (before this change: 0.0) | at least 0.01 with strength 1.1 |
+| SC2 control, strength 0 | 0.0 | at most 0.002 |
 | SC3 nothing else moved | pending | X1 to X7 and Y1 to Y6 pass; gfxtest ok; wgsltest and webgputest 0 failures |
 
 ### Effects results (2026-11-10, RX 9060 XT, RADV)

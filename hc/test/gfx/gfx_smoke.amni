@@ -6821,7 +6821,17 @@ fn sk_q(dist real, m gltf::Material, gain f32) {
 	s3d::lights.push(s3d::Light { pos: float3 { 0.1, 0.1732, 0.0 }, range: 1.0, rgb: float3 { gain, gain, gain }, kind: 1, dir: float3 { -0.5, -0.866, 0.0 }, cone: 0.9, edge: 0.1, .. });
 	sk_cam(dist, 0.0);
 }
-fn sk_stat(px const byte[:], half int, blk int) real, real {
+fn sk_red(px const byte[:], r int) real[>..] {
+	var v real[>..] = [];
+	for i in 921600 { v.push(gi_half(px, 8, i, 0) as real); }
+	for pass in if r > 0 { 2 } else { 0 } {
+		var o real[>..] = [];
+		for i in 921600 { let x = i % 1280; let y = i / 1280; var s = 0.0; for k in 2 * r + 1 { s += v[if pass == 0 { y * 1280 + min(max(x + k - r, 0), 1279) } else { min(max(y + k - r, 0), 719) * 1280 + x }]; } o.push(s / (2 * r + 1) as real); }
+		v = copy(o);
+	}
+	v
+}
+fn sk_stat(px const real[:], half int, blk int) real, real {
 	let bk = if blk > 0 { blk } else { half * 2 };
 	let nb = half * 2 / bk;
 	var s = 0.0;
@@ -6831,7 +6841,7 @@ fn sk_stat(px const byte[:], half int, blk int) real, real {
 		var bq = 0.0;
 		var gx = 0.0;
 		var gy = 0.0;
-		for y in bk { for x in bk { let v = gi_half(px, 8, (360 - half + by * bk + y) * 1280 + 640 - half + bx * bk + x, 0) as real; bs += v; bq += v * v; gx += v * (x as real - (bk - 1) as real / 2.0); gy += v * (y as real - (bk - 1) as real / 2.0); } }
+		for y in bk { for x in bk { let v = px[(360 - half + by * bk + y) * 1280 + 640 - half + bx * bk + x]; bs += v; bq += v * v; gx += v * (x as real - (bk - 1) as real / 2.0); gy += v * (y as real - (bk - 1) as real / 2.0); } }
 		s += bs;
 		let tilt = if blk > 0 { (gx * gx + gy * gy) * 12.0 / (bk * bk * (bk * bk - 1)) as real } else { 0.0 };
 		dv += bq - bs * bs / (bk * bk) as real - tilt;
@@ -6844,7 +6854,7 @@ fn sk_qs(dist real, m gltf::Material, gain f32, half int, blk int, plain bool) r
 	sk_q(dist, m, gain);
 	shoot(2, IN_OUT);
 	let px = gfx::read_pixels(if plain { s3d::sss_plain() } else { s3d::hdr_target() });
-	let m, d = sk_stat(px[..], half, blk);
+	let m, d = sk_stat(sk_red(px[..], 0)[..], half, blk);
 	return m, d;
 }
 fn sk_y14() bool {
@@ -6933,6 +6943,39 @@ fn sk_y6() bool {
 	let ok = full - base <= 0.3;
 	print("gpu: sss Y6 sheet filling the frame: ", r2(base), " ms without, ", r2(full), " ms with pores 0.7 and fuzz 0.35: ", r2(full - base), " ms more (bar <= 0.3)", if ok { " PASS" } else { " FAIL" });
 	ok
+}
+fn sc_hue(px const byte[:], half int) real {
+	var s = 0.0;
+	var q = 0.0;
+	for y in half * 2 { for x in half * 2 { let i = (360 - half + y) * 1280 + 640 - half + x; let v = gi_half(px, 8, i, 1) as real / max(gi_half(px, 8, i, 0) as real, 0.000001); s += v; q += v * v; } }
+	let n = (half * half * 4) as real;
+	sqrt(max(q / n - s * s / (n * n), 0.0)) / (s / n)
+}
+fn skin_checks() bool {
+	half_table();
+	let was = s3d::sss_on;
+	s3d::init(1280, 720);
+	IN_OUT = gfx::render_target(1280, 720, gfx::RGBA8);
+	s3d::sss_on = false;
+	sk_q(0.05, sk_skin(0.8, 1.0, 1.1, 0.0), 1.0);
+	shoot(2, IN_OUT);
+	let off = gfx::read_pixels(s3d::hdr_target());
+	let _, d0 = sk_stat(sk_red(off[..], 0)[..], 200, 16);
+	let _, dc = sk_stat(sk_red(off[..], 18)[..], 200, 16);
+	let h1 = sc_hue(off[..], 200);
+	sk_q(0.05, sk_skin(0.8, 1.0, 0.0, 0.0), 1.0);
+	shoot(2, IN_OUT);
+	let h0 = sc_hue(gfx::read_pixels(s3d::hdr_target())[..], 200);
+	s3d::sss_on = true;
+	let _, d1 = sk_qs(0.05, sk_skin(0.8, 1.0, 1.1, 0.0), 1.0, 200, 16, false);
+	s3d::sss_on = was;
+	let r = d1 / d0;
+	let rc = dc / d0;
+	let s1 = r >= 0.7 && rc < 0.7;
+	let s2 = h1 >= 0.01 && h0 <= 0.002;
+	print("gpu: skin SC1 pores 1.1, deviation from the plane of each 16 x 16 block over mean: ", r4(d1), " scattering on, ", r4(d0), " off: ", r4(r), " (bar >= 0.7); control, the off frame blurred over a 37-pixel (2 mm) box: ", r4(rc), " (bar < 0.7)", if s1 { " PASS" } else { " FAIL" });
+	print("gpu: skin SC2 spread of green over red: ", r4(h1), " with strength 1.1 (bar >= 0.01); control strength 0: ", r4(h0), " (bar <= 0.002)", if s2 { " PASS" } else { " FAIL" });
+	s1 && s2
 }
 fn sss_checks() bool {
 	half_table();
@@ -8643,7 +8686,7 @@ fn gpu_checks(dir const byte[:], golden const byte[:]) bool {
 	var only byte[>..] = [];
 	let _ = env("GFX_ONLY", only);
 	if only.len > 0 {
-		let ok = if only[..] == "updo" { updo_checks() } else if only[..] == "dome" { dome_checks() } else if only[..] == "eye" { eye_checks() } else if only[..] == "cutout" { cutout_checks() } else if only[..] == "thin" { thin_checks() } else if only[..] == "foliage" { foliage_checks() } else if only[..] == "puddle" { puddle_checks() } else if only[..] == "vfx" { vfx_checks() } else if only[..] == "fx" { fx_checks() } else if only[..] == "lights" { lights_checks() } else if only[..] == "day" { day_checks() } else if only[..] == "hair" { hair_checks() } else if only[..] == "gtao" { gtao_checks() } else if only[..] == "gi" { gi_checks() } else if only[..] == "mblur" { mb_checks() } else if only[..] == "dof" { dof_checks() } else if only[..] == "fx" { fx_checks() } else if only[..] == "tsr" { tsr_checks(dir) } else if only[..] == "probe" { probe_checks(dir) } else if only[..] == "ssgi" { ssgi_checks() } else if only[..] == "decal" { decal_checks() } else if only[..] == "weather" { weather_checks() } else if only[..] == "rect" { rect_checks() } else if only[..] == "small" { small_checks() } else if only[..] == "inst" { instance_checks() } else if only[..] == "caust" { caustic_checks() } else if only[..] == "tex" { texture_checks() } else if only[..] == "stream" { stream_checks() } else if only[..] == "rtr" { rtr_checks() } else if only[..] == "meshlet" { meshlet_checks() } else if only[..] == "sss" { sss_checks() } else if only[..] == "cloth" { cloth_checks() } else if only[..] == "cloud" { cloud_checks() } else if only[..] == "vfog" { fog_checks() } else if only[..] == "sea" { sea_checks() } else if only[..] == "vsm" { vsm_checks() } else { shadow_checks() };
+		let ok = if only[..] == "updo" { updo_checks() } else if only[..] == "dome" { dome_checks() } else if only[..] == "eye" { eye_checks() } else if only[..] == "cutout" { cutout_checks() } else if only[..] == "thin" { thin_checks() } else if only[..] == "foliage" { foliage_checks() } else if only[..] == "puddle" { puddle_checks() } else if only[..] == "vfx" { vfx_checks() } else if only[..] == "fx" { fx_checks() } else if only[..] == "lights" { lights_checks() } else if only[..] == "day" { day_checks() } else if only[..] == "hair" { hair_checks() } else if only[..] == "gtao" { gtao_checks() } else if only[..] == "gi" { gi_checks() } else if only[..] == "mblur" { mb_checks() } else if only[..] == "dof" { dof_checks() } else if only[..] == "fx" { fx_checks() } else if only[..] == "tsr" { tsr_checks(dir) } else if only[..] == "probe" { probe_checks(dir) } else if only[..] == "ssgi" { ssgi_checks() } else if only[..] == "decal" { decal_checks() } else if only[..] == "weather" { weather_checks() } else if only[..] == "rect" { rect_checks() } else if only[..] == "small" { small_checks() } else if only[..] == "inst" { instance_checks() } else if only[..] == "caust" { caustic_checks() } else if only[..] == "tex" { texture_checks() } else if only[..] == "stream" { stream_checks() } else if only[..] == "rtr" { rtr_checks() } else if only[..] == "meshlet" { meshlet_checks() } else if only[..] == "sss" { sss_checks() } else if only[..] == "skin" { skin_checks() } else if only[..] == "cloth" { cloth_checks() } else if only[..] == "cloud" { cloud_checks() } else if only[..] == "vfog" { fog_checks() } else if only[..] == "sea" { sea_checks() } else if only[..] == "vsm" { vsm_checks() } else { shadow_checks() };
 		let e = gfx::error();
 		if e.len > 0 { print("gpu: gfx error ", e[..]); return false; }
 		return mark(only[..], ok) && submit_checks(false);
@@ -8827,6 +8870,7 @@ fn gpu_checks(dir const byte[:], golden const byte[:]) bool {
 	if !mark("rtr", rtr_checks()) { good = false; }
 	if !mark("meshlet", meshlet_checks()) { good = false; }
 	if !mark("sss", sss_checks()) { good = false; }
+	if !mark("skin", skin_checks()) { good = false; }
 	if !mark("cloth", cloth_checks()) { good = false; }
 	if !mark("hair", hair_checks()) { good = false; }
 	if !mark("cloud", cloud_checks()) { good = false; }
