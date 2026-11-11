@@ -2363,6 +2363,24 @@ On the Holo and Dex companion models (eye meshes dished about 1 mm, iris normals
 inward) the call fits 4 pieces per model and moves the key lamp's catchlight from the
 lower-left of the pupil to the upper-right, the side the lamp is on.
 
+### Pre-registered bars (updo: strands gathered into a bun)
+
+`hair::Style` gains `head` (an ellipsoid: center xyz and radius w, stretched per axis by
+`head_scale`; radius 0 keeps the old gravity growth), `gather` (the bun's center) and `bun`
+(the bun's radius). With a head, each strand runs over the ellipsoid from its root to the
+gather point, lifted a few millimeters off the surface at mid-length, then coils into a bun
+around the gather point. Scene: 2000 roots on the top and front of a 9 cm sphere at
+(0, 1.6, 0) (directions with y above 0.15 and z above -0.4), root normals radial, gather
+point 9.5 cm from the center toward (0, 0.5, -0.87), bun 0.03, 24 points per strand.
+CPU only.
+
+| bar | measured | pass |
+| --- | --- | --- |
+| UP1 strands reach the bun | share of strands whose last point is within 1.5 x bun of the gather point | at least 0.95 |
+| UP1 control, no head | the same with head radius 0 (gravity growth, length 0.3) | below 0.2 |
+| UP2 strands hug the head | share of points before the coil that sit between -1 mm and 15 mm outside the sphere | at least 0.95 |
+| UP2 control, straight lines | the same for 16 evenly spaced points on the straight line from each root to the gather point | below 0.5 |
+
 ### Pre-registered bars (cut-out edges, mip bias, morph motion, light falloff)
 
 Written before the first GPU run of `small_checks` in `gfx_smoke.amni`. Black sky, no
