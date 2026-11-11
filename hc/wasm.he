@@ -272,16 +272,21 @@ wlr(o byte[>..<]&, c int, hr bool, np int):
 	for w WLW { o.push(0x20); ul(o, WLPM[w] as int) }
 	if hr { o.push(0x20); ul(o, np + 1); o.push(0x20); ul(o, np + 2) }
 	o.push(0x41); sl(o, c); o.push(0x0F)
-wl1(fi int, g const byte[:], od int, nb byte[>..<]&) bool:
+wl1(fi int, g const byte[:], od int, nb byte[>..<]&, b const byte[:], p0 int, p1 int) bool:
 	base := WLBA; WLU.clear(); WLW.clear(); WLX.clear(); if WLPM.len < base + 3 { WLPM.resize(base + 3, -1) }
-	n ~= 0; hr ~= false; q ~= 0; ok ~= true; wm i8[>..<] ~= []; wm.resize(base + 3, 0)
+	n ~= 0; hr ~= false; q ~= 0; ok ~= true; wm i8[>..<] ~= []; wm.resize(base + 3, 0); dm i8[>..<] ~= []; dm.resize(base + 3, 0); ex i8[>..<] ~= []; ex.resize(base + 3, 0); dl i32[>..<] ~= []; fs i32[>..<] ~= []
 	while q < g.len && ok:
 		o := g[q] as int; e := wnx(g, q)
-		if o >= 0x02 && o <= 0x04 { n += 1 } else if o == 0x0B { n -= 1 } else if o >= 0x20 && o <= 0x22 { wrl(g, q + 1); v := WLV; if WLPM[v] < 0 { WLPM[v] = WLU.len as i32; WLU.push(v as i32) } if o != 0x20 && wm[v] == 0 && v < base { wm[v] = 1; WLW.push(v as i32) } } else if o == 0x0C || o == 0x0D { wrl(g, q + 1); d := WLV - n; if d >= od { ok = false } else if d >= 0 { s ~= false; for x WLX { if x as int == d { s = true } } if !s { WLX.push(d as i32) } } } else if o == 0x0E { r ~= wrl(g, q + 1); c := WLV; for k c + 1 { r = wrl(g, r); if WLV >= n { ok = false } } } else if o == 0x12 || o == 0x13 { ok = false } else if o == 0x0F { hr = true }
+		if o >= 0x02 && o <= 0x04 { fs.push(dl.len as i32) } else if (o == 0x05 || o == 0x0B) && fs.len > 0 { while dl.len > fs[fs.len - 1] as int { dm[dl.pop() as int] = 0 } if o == 0x0B { fs.pop() } }
+		if o >= 0x02 && o <= 0x04 { n += 1 } else if o == 0x0B { n -= 1 } else if o >= 0x20 && o <= 0x22 { wrl(g, q + 1); v := WLV; if WLPM[v] < 0 { WLPM[v] = WLU.len as i32; WLU.push(v as i32) } if o == 0x20 { if dm[v] == 0 { ex[v] = 1 } } else if dm[v] == 0 { dm[v] = 1; dl.push(v as i32) } if o != 0x20 && wm[v] == 0 && v < base { wm[v] = 1; WLW.push(v as i32) } } else if o == 0x0C || o == 0x0D { wrl(g, q + 1); d := WLV - n; if d >= od { ok = false } else if d >= 0 { s ~= false; for x WLX { if x as int == d { s = true } } if !s { WLX.push(d as i32) } } } else if o == 0x0E { r ~= wrl(g, q + 1); c := WLV; for k c + 1 { r = wrl(g, r); if WLV >= n { ok = false } } } else if o == 0x12 || o == 0x13 { ok = false } else if o == 0x0F { hr = true }
 		q = e
-	ok = ok && WLU.len <= 900
+	ro i8[>..<] ~= []; ro.resize(base + 3, 0); q = 0
+	while ok && q < b.len: if q == p0 { q = p1 } else { o := b[q] as int; e := wnx(b, q); if o == 0x20 { wrl(b, q + 1); ro[WLV] = 1 } q = e }
+	pv i32[>..<] ~= []; qv i32[>..<] ~= []; rw i32[>..<] ~= []; for w WLW { if ex[w] != 0 || ro[w] != 0 { rw.push(w); ex[w] = 1 } } for v WLU { if ex[v] != 0 { pv.push(v) } else { qv.push(v) } } WLW.clear(); for w rw { WLW.push(w) }
+	ok = ok && pv.len <= 900 && WLW.len <= 900
 	if !ok: for v WLU { WLPM[v] = -1 } return false
-	np := WLU.len; cn := np; ob byte[>..<] ~= []; ul(ob, 2); ul(ob, 1); ob.push(0x7F); ul(ob, 2); ob.push(0x7E); n = 0; q = 0
+	np := pv.len; cn := np; for i np { WLPM[pv[i]] = i as i32 } for j qv.len { WLPM[qv[j]] = (np + 3 + j) as i32 }
+	ob byte[>..<] ~= []; ul(ob, 2 + qv.len); ul(ob, 1); ob.push(0x7F); ul(ob, 2); ob.push(0x7E); for v qv { ul(ob, 1); ob.push(wlt(v as int) as byte) } n = 0; q = 0
 	while q < g.len:
 		o := g[q] as int; e := wnx(g, q)
 		if o >= 0x20 && o <= 0x22:
@@ -302,9 +307,9 @@ wl1(fi int, g const byte[:], od int, nb byte[>..<]&) bool:
 			if o >= 0x02 && o <= 0x04 { n += 1 } else if o == 0x0B { n -= 1 }
 		q = e
 	wlr(ob, 1, hr, np); ob.push(0x0B); ul(WLC, ob.len); WLC.append(ob[..])
-	WLT.push(0x60); ul(WLT, np); for v WLU { WLT.push(wlt(v as int) as byte) } ul(WLT, WLW.len + (if hr { 2 } else { 0 }) + 1); for w WLW { WLT.push(wlt(w as int) as byte) } if hr { WLT.push(0x7E); WLT.push(0x7E) } WLT.push(0x7F)
+	WLT.push(0x60); ul(WLT, np); for v pv { WLT.push(wlt(v as int) as byte) } ul(WLT, WLW.len + (if hr { 2 } else { 0 }) + 1); for w WLW { WLT.push(wlt(w as int) as byte) } if hr { WLT.push(0x7E); WLT.push(0x7E) } WLT.push(0x7F)
 	fx := WOF + WLN; WLN += 1; WLNM.push(fi as i32)
-	nb.push(0x02); nb.push(0x40); nb.push(0x03); nb.push(0x40); for v WLU { nb.push(0x20); ul(nb, v as int) } nb.push(0x10); ul(nb, fx); nb.push(0x21); ul(nb, base)
+	nb.push(0x02); nb.push(0x40); nb.push(0x03); nb.push(0x40); for v pv { nb.push(0x20); ul(nb, v as int) } nb.push(0x10); ul(nb, fx); nb.push(0x21); ul(nb, base)
 	if hr { nb.push(0x21); ul(nb, base + 2); nb.push(0x21); ul(nb, base + 1) }
 	i ~= WLW.len - 1; while i >= 0 { nb.push(0x21); ul(nb, WLW[i] as int); i -= 1 }
 	if hr { nb.push(0x20); ul(nb, base); nb.push(0x41); sl(nb, 2); nb.push(0x46); nb.push(0x04); nb.push(0x40); nb.push(0x20); ul(nb, base + 1); nb.push(0x20); ul(nb, base + 2); nb.push(0x0F); nb.push(0x0B) }
@@ -327,7 +332,7 @@ wlz(fi int, b const byte[:], p0 int, p1 int, od int, out byte[>..<]&) bool:
 			id := WQK; WQK += 1; r := WQE[id] as int; ib byte[>..<] ~= []; ib.append(b[p..e])
 			if wlz(fi, b, e, r - 1, od + lk + 1, ib) { any = true }
 			ib.push(0x0B)
-			if WQO[id] != 0 && wl1(fi, ib[..], od + lk, out) { any = true } else { out.append(ib[..]) }
+			if WQO[id] != 0 && wl1(fi, ib[..], od + lk, out, b, p, r) { any = true } else { out.append(ib[..]) }
 			p = r; continue
 		if o == 0x02 || o == 0x04 { lk += 1 } else if o == 0x0B { lk -= 1 }
 		out.append(b[p..e]); p = e
