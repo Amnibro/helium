@@ -2447,7 +2447,22 @@ strand. CPU only.
 | bar | measured | pass |
 | --- | --- | --- |
 | DR1 strands stay outside the head | share of all points no more than 1 mm inside the sphere | at least 0.99 |
-| DR1 control, no head | the same with head radius 0 (gravity growth without the head) | below 0.9 |
+| DR1 control, straight down | the same for 24 evenly spaced points on the straight line from each root to 25 cm below it | below 0.9 |
+
+The DR1 control is the straight-down line: gravity growth with head radius 0 measured 1.0 on the first run, because those strands turn away from the head without entering it, so it cannot show the measure catching points inside.
+
+Results (2026-11-11, CPU):
+
+| check | measured | bar | result |
+| --- | --- | --- | --- |
+| TT4 neighbors wave together | 0.886 | at least 0.7 | PASS |
+| TT4 control, random partner | 0.013 | below 0.2 | fails as it should |
+| DR1 strands stay outside the head | 1.0 | at least 0.99 | PASS |
+| DR1 control, straight down | 0.609 | below 0.9 | fails as it should |
+| DR2 strands lie on the head | 1.0 | at least 0.95 | PASS |
+| DR2 control, a 3 cm gap | 0.102 | below 0.2 | fails as it should |
+| DR3 strands fall | 1.0 | at least 0.95 | PASS |
+| DR3 control, no gravity | 0.0 | below 0.2 | fails as it should |
 | DR2 strands lie on the head | share of points above the sphere's center that sit between -1 mm and 15 mm outside it | at least 0.95 |
 | DR2 control, a 3 cm gap | the same with drape 0.03 | below 0.2 |
 | DR3 strands fall | share of strands whose last point is below the sphere's center | at least 0.95 |
