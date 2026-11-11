@@ -2350,6 +2350,19 @@ from the true center to the vertex. CPU only.
 | DN2 two eyes in one mesh are fit apart | the same with a second eye at x -0.031 in the same primitive | below 2 degrees |
 | DN2 control, one shared center | the error measured from the midpoint between the two true centers | above 10 degrees |
 
+Results (2026-11-11, CPU):
+
+| check | measured | bar | result |
+| --- | --- | --- | --- |
+| DN1 after `dome_normals` | 1.187 degrees, 1 piece fit | below 2 | PASS |
+| DN1 control, before the call | 21.543 degrees | above 10 | fails as it should |
+| DN2 two eyes in one primitive | 1.187 degrees, 2 pieces fit | below 2 | PASS |
+| DN2 control, midpoint center | 178.813 degrees | above 10 | fails as it should |
+
+On the Holo and Dex companion models (eye meshes dished about 1 mm, iris normals tilted
+inward) the call fits 4 pieces per model and moves the key lamp's catchlight from the
+lower-left of the pupil to the upper-right, the side the lamp is on.
+
 ### Pre-registered bars (cut-out edges, mip bias, morph motion, light falloff)
 
 Written before the first GPU run of `small_checks` in `gfx_smoke.amni`. Black sky, no

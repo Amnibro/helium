@@ -5928,6 +5928,72 @@ fn eye_checks() bool {
 	s3d::sky = DEF_SKY; s3d::sun = DEF_SUN; s3d::look = DEF_LOOK;
 	ok
 }
+fn dn_cap(cx real, base int) {
+	for i in 25 {
+		for j in 48 {
+			let th = (i as real) / 24.0 * 1.5707963267948966;
+			let ph = (j as real) / 48.0 * 6.283185307179586;
+			let r = 0.012 * sin(th);
+			let dish = if r < 0.0045 { 0.001 * (1.0 - r * r / 0.00002025) } else { 0.0 };
+			let sl = 0.002 * r / 0.00002025 - r / sqrt(0.000144 - r * r);
+			let nx = if r < 0.0045 { -sl * cos(ph) } else { sin(th) * cos(ph) };
+			let ny = if r < 0.0045 { -sl * sin(ph) } else { sin(th) * sin(ph) };
+			let nz = if r < 0.0045 { 1.0 } else { cos(th) };
+			let nl = sqrt(nx * nx + ny * ny + nz * nz);
+			let o = gltf::verts.len;
+			for k in gltf::VERTEX_FLOATS { gltf::verts.push(0.0); }
+			gltf::verts[o + gltf::AT_POS] = (cx + r * cos(ph)) as f32;
+			gltf::verts[o + gltf::AT_POS + 1] = (1.5 + r * sin(ph)) as f32;
+			gltf::verts[o + gltf::AT_POS + 2] = (0.1 + 0.012 * cos(th) - dish) as f32;
+			gltf::verts[o + gltf::AT_NRM] = (nx / nl) as f32;
+			gltf::verts[o + gltf::AT_NRM + 1] = (ny / nl) as f32;
+			gltf::verts[o + gltf::AT_NRM + 2] = (nz / nl) as f32;
+		}
+	}
+	for i in 24 { for j in 48 { let a = base + i * 48 + j; let b = base + i * 48 + (j + 1) % 48; gltf::indices.push(a as u32); gltf::indices.push((a + 48) as u32); gltf::indices.push((b + 48) as u32); gltf::indices.push(a as u32); gltf::indices.push((b + 48) as u32); gltf::indices.push(b as u32); } }
+}
+fn dn_asset(two bool) int {
+	let vf = gltf::verts.len / gltf::VERTEX_FLOATS;
+	let ifs = gltf::indices.len;
+	dn_cap(0.031, 0);
+	if two { dn_cap(-0.031, 1200); }
+	let nm = gltf::names.len;
+	gltf::names.append("eyes");
+	gltf::prims.push(gltf::Primitive { vfirst: vf, vcount: gltf::verts.len / gltf::VERTEX_FLOATS - vf, ifirst: ifs, icount: gltf::indices.len - ifs, material: -1, mfirst: 0, targets: 0, lo: float3 { -0.05, 1.4, 0.0 }, hi: float3 { 0.05, 1.6, 0.2 }, tangents: false, skinned: false });
+	gltf::meshes.push(gltf::Mesh { prims: gltf::Span { gltf::prims.len - 1, 1 }, weights: gltf::Span { 0, 0 }, name: gltf::Span { nm, 4 } });
+	let z = gltf::Span { 0, 0 };
+	gltf::assets.push(gltf::Asset { meshes: gltf::Span { gltf::meshes.len - 1, 1 }, nodes: z, materials: z, textures: z, images: z, skins: z, animations: z, roots: z, ok: true });
+	gltf::assets.len - 1
+}
+fn dn_err(a int, mid bool) real {
+	let pr = gltf::prims[gltf::meshes[gltf::assets[a].meshes.first].prims.first];
+	var w = 0.0;
+	for v in pr.vcount {
+		let o = (pr.vfirst + v) * gltf::VERTEX_FLOATS;
+		let x = gltf::verts[o] as real;
+		let dx = x - (if mid { 0.0 } else if x > 0.0 { 0.031 } else { -0.031 });
+		let dy = gltf::verts[o + 1] as real - 1.5;
+		let dz = gltf::verts[o + 2] as real - 0.1;
+		let c = (dx * gltf::verts[o + gltf::AT_NRM] as real + dy * gltf::verts[o + gltf::AT_NRM + 1] as real + dz * gltf::verts[o + gltf::AT_NRM + 2] as real) / sqrt(dx * dx + dy * dy + dz * dz);
+		w = max(w, acos(min(max(c, -1.0), 1.0)) * 57.29577951308232);
+	}
+	w
+}
+fn dome_checks() bool {
+	let a1 = dn_asset(false);
+	let e0 = dn_err(a1, false);
+	let f1 = gltf::dome_normals(a1, "eyes");
+	let e1 = dn_err(a1, false);
+	let a2 = dn_asset(true);
+	let f2 = gltf::dome_normals(a2, "eyes");
+	let e2 = dn_err(a2, false);
+	let m2 = dn_err(a2, true);
+	let p1 = e1 < 2.0 && e0 > 10.0;
+	let p2 = e2 < 2.0 && m2 > 10.0;
+	print("gpu: dome DN1 one dished eye: largest error ", r3(e1), " degrees after (bar < 2), ", r3(e0), " before (control, bar > 10), pieces fit ", f1, if p1 { " PASS" } else { " FAIL" });
+	print("gpu: dome DN2 two eyes in one mesh: largest error ", r3(e2), " degrees (bar < 2), ", r3(m2), " from the midpoint (control, bar > 10), pieces fit ", f2, if p2 { " PASS" } else { " FAIL" });
+	p1 && p2
+}
 fn rect_checks() bool {
 	half_table();
 	if !gz_load_lut() { print("gpu: rect FAILED: GFX_MS_LUT unset or not a 32x32 ms_lut.glsl (tools/hc/gfxtest.sh sets it)"); return false; }
@@ -8529,7 +8595,7 @@ fn gpu_checks(dir const byte[:], golden const byte[:]) bool {
 	var only byte[>..] = [];
 	let _ = env("GFX_ONLY", only);
 	if only.len > 0 {
-		let ok = if only[..] == "eye" { eye_checks() } else if only[..] == "cutout" { cutout_checks() } else if only[..] == "thin" { thin_checks() } else if only[..] == "foliage" { foliage_checks() } else if only[..] == "puddle" { puddle_checks() } else if only[..] == "vfx" { vfx_checks() } else if only[..] == "fx" { fx_checks() } else if only[..] == "lights" { lights_checks() } else if only[..] == "day" { day_checks() } else if only[..] == "hair" { hair_checks() } else if only[..] == "gtao" { gtao_checks() } else if only[..] == "gi" { gi_checks() } else if only[..] == "mblur" { mb_checks() } else if only[..] == "dof" { dof_checks() } else if only[..] == "fx" { fx_checks() } else if only[..] == "tsr" { tsr_checks(dir) } else if only[..] == "probe" { probe_checks(dir) } else if only[..] == "ssgi" { ssgi_checks() } else if only[..] == "decal" { decal_checks() } else if only[..] == "weather" { weather_checks() } else if only[..] == "rect" { rect_checks() } else if only[..] == "small" { small_checks() } else if only[..] == "inst" { instance_checks() } else if only[..] == "caust" { caustic_checks() } else if only[..] == "tex" { texture_checks() } else if only[..] == "stream" { stream_checks() } else if only[..] == "rtr" { rtr_checks() } else if only[..] == "meshlet" { meshlet_checks() } else if only[..] == "sss" { sss_checks() } else if only[..] == "cloth" { cloth_checks() } else if only[..] == "cloud" { cloud_checks() } else if only[..] == "vfog" { fog_checks() } else if only[..] == "sea" { sea_checks() } else if only[..] == "vsm" { vsm_checks() } else { shadow_checks() };
+		let ok = if only[..] == "dome" { dome_checks() } else if only[..] == "eye" { eye_checks() } else if only[..] == "cutout" { cutout_checks() } else if only[..] == "thin" { thin_checks() } else if only[..] == "foliage" { foliage_checks() } else if only[..] == "puddle" { puddle_checks() } else if only[..] == "vfx" { vfx_checks() } else if only[..] == "fx" { fx_checks() } else if only[..] == "lights" { lights_checks() } else if only[..] == "day" { day_checks() } else if only[..] == "hair" { hair_checks() } else if only[..] == "gtao" { gtao_checks() } else if only[..] == "gi" { gi_checks() } else if only[..] == "mblur" { mb_checks() } else if only[..] == "dof" { dof_checks() } else if only[..] == "fx" { fx_checks() } else if only[..] == "tsr" { tsr_checks(dir) } else if only[..] == "probe" { probe_checks(dir) } else if only[..] == "ssgi" { ssgi_checks() } else if only[..] == "decal" { decal_checks() } else if only[..] == "weather" { weather_checks() } else if only[..] == "rect" { rect_checks() } else if only[..] == "small" { small_checks() } else if only[..] == "inst" { instance_checks() } else if only[..] == "caust" { caustic_checks() } else if only[..] == "tex" { texture_checks() } else if only[..] == "stream" { stream_checks() } else if only[..] == "rtr" { rtr_checks() } else if only[..] == "meshlet" { meshlet_checks() } else if only[..] == "sss" { sss_checks() } else if only[..] == "cloth" { cloth_checks() } else if only[..] == "cloud" { cloud_checks() } else if only[..] == "vfog" { fog_checks() } else if only[..] == "sea" { sea_checks() } else if only[..] == "vsm" { vsm_checks() } else { shadow_checks() };
 		let e = gfx::error();
 		if e.len > 0 { print("gpu: gfx error ", e[..]); return false; }
 		return mark(only[..], ok) && submit_checks(false);
@@ -8703,6 +8769,7 @@ fn gpu_checks(dir const byte[:], golden const byte[:]) bool {
 	if !mark("thin", thin_checks()) { good = false; }
 	if !mark("rect", rect_checks()) { good = false; }
 	if !mark("eye", eye_checks()) { good = false; }
+	if !mark("dome", dome_checks()) { good = false; }
 	if !mark("small", small_checks()) { good = false; }
 	if !mark("instance", instance_checks()) { good = false; }
 	if !mark("caustic", caustic_checks()) { good = false; }

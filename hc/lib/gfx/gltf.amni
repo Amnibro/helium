@@ -999,6 +999,97 @@ fn find_animation(asset int, name const byte[:]) int {
 	-1
 }
 
+fn uf_root(up int[>..]&, x int) int {
+	var r = x;
+	while up[r] != r { up[r] = up[up[r]]; r = up[r]; }
+	r
+}
+fn sph_row(i int, x real, y real, z real) real { if i == 0 { 2.0 * x } else if i == 1 { 2.0 * y } else if i == 2 { 2.0 * z } else { 1.0 } }
+fn solve4(m real[>..]&, o int) bool {
+	for c in 4 {
+		var p = c;
+		for r in 4 { if r > c && abs(m[o + r * 4 + c]) > abs(m[o + p * 4 + c]) { p = r; } }
+		if abs(m[o + p * 4 + c]) < 1e-30 { return false; }
+		for j in 5 { let a = if j < 4 { o + c * 4 + j } else { o + 16 + c }; let b = if j < 4 { o + p * 4 + j } else { o + 16 + p }; let t = m[a]; m[a] = m[b]; m[b] = t; }
+		for r in 4 { if r != c { let f = m[o + r * 4 + c] / m[o + c * 4 + c]; for j in 4 { m[o + r * 4 + j] -= f * m[o + c * 4 + j]; } m[o + 16 + r] -= f * m[o + 16 + c]; } }
+	}
+	for c in 4 { m[o + 16 + c] /= m[o + c * 4 + c]; }
+	true
+}
+fn dome_normals(asset int, name const byte[:]) int {
+	let a = assets[asset];
+	var fit = 0;
+	for mi in a.meshes.count {
+		let m = meshes[a.meshes.first + mi];
+		if text_of(m.name) == name {
+			for pk in m.prims.count {
+				let pr = prims[m.prims.first + pk];
+				let n = pr.vcount;
+				var up int[>..];
+				var root int[>..];
+				var err real[>..];
+				var msum real[>..];
+				var acc real[>..];
+				for v in n { up.push(v); err.push(0.0); msum.push(0.0); msum.push(0.0); }
+				for t in pr.icount / 3 { let r0 = uf_root(up, indices[pr.ifirst + t * 3] as int); for e in 2 { let r1 = uf_root(up, indices[pr.ifirst + t * 3 + e + 1] as int); if r1 != r0 { up[r1] = r0; } } }
+				for v in n { root.push(uf_root(up, v)); }
+				for k in n * 24 { acc.push(0.0); }
+				for pass in 2 {
+					for k in n * 24 { acc[k] = 0.0; }
+					for v in n {
+						let o = (pr.vfirst + v) * VERTEX_FLOATS + AT_POS;
+						let x = verts[o] as real;
+						let y = verts[o + 1] as real;
+						let z = verts[o + 2] as real;
+						let b = root[v] * 24;
+						let mr = msum[root[v] * 2] / max(msum[root[v] * 2 + 1], 1.0);
+						if pass == 0 || err[v] <= 2.0 * mr + 1e-9 {
+							let q = x * x + y * y + z * z;
+							for i in 4 { let ri = sph_row(i, x, y, z); acc[b + 16 + i] += ri * q; for j in 4 { acc[b + i * 4 + j] += ri * sph_row(j, x, y, z); } }
+							acc[b + 21] += 1.0;
+						}
+					}
+					for v in n { if root[v] == v { acc[v * 24 + 22] = if acc[v * 24 + 21] >= 10.0 && solve4(acc, v * 24) { 1.0 } else { 0.0 }; msum[v * 2] = 0.0; msum[v * 2 + 1] = 0.0; } }
+					if pass == 1 { for v in n { let b = root[v] * 24; if acc[b + 22] > 0.5 { let o = (pr.vfirst + v) * VERTEX_FLOATS; acc[b + 23] += verts[o + AT_NRM] as real * (verts[o + AT_POS] as real - acc[b + 16]) + verts[o + AT_NRM + 1] as real * (verts[o + AT_POS + 1] as real - acc[b + 17]) + verts[o + AT_NRM + 2] as real * (verts[o + AT_POS + 2] as real - acc[b + 18]); } } for v in n { if root[v] == v && acc[v * 24 + 23] <= 0.0 { acc[v * 24 + 22] = 0.0; } } }
+					for v in n {
+						let b = root[v] * 24;
+						if acc[b + 22] > 0.5 {
+							let o = (pr.vfirst + v) * VERTEX_FLOATS;
+							let dx = verts[o + AT_POS] as real - acc[b + 16];
+							let dy = verts[o + AT_POS + 1] as real - acc[b + 17];
+							let dz = verts[o + AT_POS + 2] as real - acc[b + 18];
+							let d = sqrt(dx * dx + dy * dy + dz * dz);
+							let rad = sqrt(max(acc[b + 19] + acc[b + 16] * acc[b + 16] + acc[b + 17] * acc[b + 17] + acc[b + 18] * acc[b + 18], 0.0));
+							err[v] = abs(d - rad);
+							msum[root[v] * 2] += err[v];
+							msum[root[v] * 2 + 1] += 1.0;
+							if pass == 1 && d > 1e-12 {
+								let nx = dx / d;
+								let ny = dy / d;
+								let nz = dz / d;
+								verts[o + AT_NRM] = nx as f32;
+								verts[o + AT_NRM + 1] = ny as f32;
+								verts[o + AT_NRM + 2] = nz as f32;
+								if pr.tangents {
+									let tn = verts[o + AT_TAN] as real * nx + verts[o + AT_TAN + 1] as real * ny + verts[o + AT_TAN + 2] as real * nz;
+									let tx = verts[o + AT_TAN] as real - nx * tn;
+									let ty = verts[o + AT_TAN + 1] as real - ny * tn;
+									let tz = verts[o + AT_TAN + 2] as real - nz * tn;
+									let tl = max(sqrt(tx * tx + ty * ty + tz * tz), 1e-12);
+									verts[o + AT_TAN] = (tx / tl) as f32;
+									verts[o + AT_TAN + 1] = (ty / tl) as f32;
+									verts[o + AT_TAN + 2] = (tz / tl) as f32;
+								}
+							}
+						}
+					}
+				}
+				for v in n { if root[v] == v && acc[v * 24 + 22] > 0.5 { fit += 1; } }
+			}
+		}
+	}
+	fit
+}
 fn shade_preset(kind int, part int) float4 {
 	let k = kind * 3 + part;
 	if k == 12 { return float4 { 0.45, 0.09, 0.07, 0.0 }; }
