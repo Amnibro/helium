@@ -1067,7 +1067,7 @@ fn draw(dt f32) {
 		gfx::end_pass();
 	}
 }
-=== 0a731e92c989c41a
+=== 7d80f8b941c3f507
 struct Style {
 	steps int = 12,
 	length f32 = 0.2,
@@ -1085,10 +1085,12 @@ struct Style {
 	bun f32 = 0.03,
 	tail f32 = 0.0,
 	drape f32 = 0.0,
+	rise f32 = 0.0,
+	fan f32 = 0.12,
 }
 var rs int = 7;
 fn rnd() f32 {
-	rs = (rs*1103515245 + 12345) & 2147483647;
+	rs = (rs * 1103515245 + 12345) & 2147483647;
 	((rs >> 7) as f32) / 16777216.0
 }
 fn fur() Style {
@@ -1197,28 +1199,31 @@ fn solid(g int, node int) {
 fn strand_k(st Style) int {
 	max(min(st.steps, 32), 3)
 }
-=== 2345cea11f339cec
+=== -3622d2d77a1ffde3
+fn hq(st Style, x float3) float3 {
+	let sc = st.head_scale * st.head.w;
+	float3 { (x.x - st.head.x) / sc.x, (x.y - st.head.y) / sc.y, (x.z - st.head.z) / sc.z }
+}
+fn hback(st Style, y float3) float3 {
+	let sc = st.head_scale * st.head.w;
+	float3 { st.head.x + y.x * sc.x, st.head.y + y.y * sc.y, st.head.z + y.z * sc.z }
+}
+fn dr_of(st Style) f32 {
+	if st.head.w > 0.0 && st.drape > 0.0 { 1.0 + st.drape / st.head.w } else { 0.0 }
+}
+fn shell(st Style, x float3) float3 {
+	let dr = dr_of(st);
+	if dr <= 0.0 { return x; }
+	let qx = hq(st, x);
+	let l = linalg::length3(qx);
+	if l < dr && l > 1e-6 { hback(st, qx * (dr / l)) } else { x }
+}
 fn grow(rp const float3[:], rn const float3[:], st Style, k int, pts float3[>..]&, axes float3[>..]&) {
-	let n = rp.len;
 	let last = (k - 1) as f32;
 	rs = st.seed;
-	let c = float3 { st.head.x, st.head.y, st.head.z };
-	let sc = float3 { st.head_scale.x * st.head.w, st.head_scale.y * st.head.w, st.head_scale.z * st.head.w };
-	let dr f32 = if st.head.w > 0.0 && st.drape > 0.0 { 1.0 + st.drape / st.head.w } else { 0.0 };
-	fn q(x float3) float3 {
-		float3 { (x.x - c.x) / sc.x, (x.y - c.y) / sc.y, (x.z - c.z) / sc.z }
-	}
-	fn back(y float3) float3 {
-		float3 { c.x + y.x * sc.x, c.y + y.y * sc.y, c.z + y.z * sc.z }
-	}
-	fn shell(x float3) float3 {
-		if dr <= 0.0 { return x; }
-		let qq = q(x);
-		let l = linalg::length3(qq);
-		if l < dr && l > 1e-6 { back(qq * (dr / l)) } else { x }
-	}
+	let dr = dr_of(st);
 	let updo = st.head.w > 0.0 && (st.drape <= 0.0 || st.tail > 0.0);
-	for i in n {
+	for i in rp.len {
 		let len = st.length * (1.0 - st.vary * rnd());
 		let ph = (rnd() as real) * 6.2831853;
 		let nn = linalg::unit3(rn[i]);
@@ -1232,58 +1237,60 @@ fn grow(rp const float3[:], rn const float3[:], st Style, k int, pts float3[>..]
 			linalg::unit3(nn + u * 0.02)
 		};
 		axes.push(nn);
+		let base = pts.len;
+		for s in k {
+			let t = (s as f32) / last;
+			if s > 0 {
+				let p0 = shell(st, p);
+				dir = linalg::unit3(dir + float3 { 0.0, -2.0 * st.droop / last, 0.0 });
+				let np = shell(st, p0 + dir * (len / last));
+				if dr > 0.0 && linalg::length3(np - p0) > 1e-7 { dir = linalg::unit3(np - p0); }
+				p = np;
+			}
+			let a = ph + (((st.turns * t) as real) * 6.2831853);
+			pts.push(p + (u * linalg::f(cos(a)) + v * linalg::f(sin(a))) * (st.curl * t));
+		}
 		if updo {
-			let qa = q(rp[i]);
-			let qb = q(st.gather);
-			let ra = linalg::length3(qa);
-			let rb = linalg::length3(qb);
-			let da = qa * (1.0 / ra);
-			let db = qb * (1.0 / rb);
+			let c = float3 { st.head.x, st.head.y, st.head.z };
+			let a = hq(st, rp[i]);
+			let b = hq(st, st.gather);
+			let ra = linalg::length3(a);
+			let rb = linalg::length3(b);
+			let da = a * (1.0 / ra);
+			let db = b * (1.0 / rb);
 			let lift = (0.002 + 0.004 * rnd()) / st.head.w;
 			let nb = if st.tail > 0.0 { k * 2 / 3 } else { max(k / 3, 2) };
 			let ka = k - nb;
 			for s in ka {
 				let t = (s as f32) / ((ka - 1) as f32);
-				let m = da * (1.0 - t) + db * t;
-				let mm = if linalg::length3(m) < 1e-6 { db } else { m };
-				pts.push(back(linalg::unit3(mm) * (ra * (1.0 - t) + rb * t + lift * linalg::f(sin((t as real) * 3.14159265)))));
+				var m = da * (1.0 - t) + db * t;
+				if linalg::length3(m) < 1e-6 { m = db; }
+				pts[base + s] = hback(st, linalg::unit3(m) * (ra * (1.0 - t) + rb * t + lift * linalg::f(sin((t as real) * 3.14159265))));
 			}
+			let gb = linalg::unit3(st.gather - c);
 			if st.tail > 0.0 {
 				let w = rnd();
-				let gb = linalg::unit3(st.gather - c);
-				let gl = float3 { gb.x, 0.0, gb.z };
-				let gh = if linalg::length3(gl) > 0.001 { linalg::unit3(gl) } else { float3 { 1.0, 0.0, 0.0 } };
+				let gxz = float3 { gb.x, 0.0, gb.z };
+				let gh = if linalg::length3(gxz) > 0.001 { linalg::unit3(gxz) } else { float3 { 1.0, 0.0, 0.0 } };
 				let ez = linalg::cross3(float3 { 0.0, 1.0, 0.0 }, gh);
 				for j in 1..nb + 1 {
 					let tt = (j as f32) / (nb as f32);
 					let an = linalg::f(floor(ph * 1.1140846)) * 2.4 + linalg::f(((st.turns * tt) as real) * 6.2831853);
 					let e = 1.0 - (1.0 - tt) * (1.0 - tt);
-					let rr = (st.bun * 0.3 + st.tail * 0.12 * tt * linalg::f(sqrt(tt as real))) * linalg::f(sqrt(w as real));
-					pts.push(shell(st.gather + gh * (st.tail * 0.2 * e) + float3 { 0.0, -st.tail * tt, 0.0 } + (gh * linalg::f(cos(ph)) + ez * linalg::f(sin(ph))) * rr + (ez * linalg::f(sin(an as real)) + gh * (0.5 * linalg::f(cos(an as real)))) * (st.curl * tt)));
+					let rr = (st.bun * 0.3 + st.tail * st.fan * tt * linalg::f(sqrt(tt as real))) * linalg::f(sqrt(w as real));
+					let ra2 = 2.0 * st.rise + 2.0 * linalg::f(sqrt(((st.rise * st.rise + st.rise * st.tail) as real)));
+					let yv = if st.rise <= 0.0 { -st.tail * tt } else { ra2 * tt - (ra2 + st.tail) * tt * tt };
+					pts[base + ka + j - 1] = shell(st, st.gather + gh * (st.tail * 0.2 * e) + float3 { 0.0, yv, 0.0 } + (gh * linalg::f(cos(ph)) + ez * linalg::f(sin(ph))) * rr + (ez * linalg::f(sin(an as real)) + gh * (0.5 * linalg::f(cos(an as real)))) * (st.curl * tt));
 				}
 			} else {
-				let gb = linalg::unit3(st.gather - c);
 				let h2 = if abs(gb.y) < 0.9 { float3 { 0.0, 1.0, 0.0 } } else { float3 { 1.0, 0.0, 0.0 } };
 				let u2 = linalg::unit3(linalg::cross3(gb, h2));
 				let v2 = linalg::cross3(gb, u2);
 				for j in 1..nb + 1 {
 					let tt = (j as f32) / (nb as f32);
-					let an = ph + ((st.turns * tt) as real) * 6.2831853;
-					pts.push(st.gather + (u2 * linalg::f(cos(an)) + v2 * linalg::f(sin(an))) * (st.bun * (1.0 - 0.6 * tt)) + gb * (st.bun * 0.5 * tt));
+					let an = ph + (((st.turns * tt) as real) * 6.2831853);
+					pts[base + ka + j - 1] = st.gather + (u2 * linalg::f(cos(an)) + v2 * linalg::f(sin(an))) * (st.bun * (1.0 - 0.6 * tt)) + gb * (st.bun * 0.5 * tt);
 				}
-			}
-		} else {
-			for s in k {
-				let t = (s as f32) / last;
-				if s > 0 {
-					let p0 = shell(p);
-					dir = linalg::unit3(dir + float3 { 0.0, -2.0 * st.droop / last, 0.0 });
-					let np = shell(p0 + dir * (len / last));
-					if dr > 0.0 && linalg::length3(np - p0) > 1e-7 { dir = linalg::unit3(np - p0); }
-					p = np;
-				}
-				let a = ph + ((st.turns * t) as real) * 6.2831853;
-				pts.push(p + (u * linalg::f(cos(a)) + v * linalg::f(sin(a))) * (st.curl * t));
 			}
 		}
 	}

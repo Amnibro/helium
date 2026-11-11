@@ -2448,6 +2448,10 @@ strand. CPU only.
 | --- | --- | --- |
 | DR1 strands stay outside the head | share of all points no more than 1 mm inside the sphere | at least 0.99 |
 | DR1 control, straight down | the same for 24 evenly spaced points on the straight line from each root to 25 cm below it | below 0.9 |
+| DR2 strands lie on the head | share of points above the sphere's center that sit between -1 mm and 15 mm outside it | at least 0.95 |
+| DR2 control, a 3 cm gap | the same with drape 0.03 | below 0.2 |
+| DR3 strands fall | share of strands whose last point is below the sphere's center | at least 0.95 |
+| DR3 control, no gravity | the same with droop 0 | below 0.2 |
 
 The DR1 control is the straight-down line: gravity growth with head radius 0 measured 1.0 on the first run, because those strands turn away from the head without entering it, so it cannot show the measure catching points inside.
 
@@ -2463,10 +2467,31 @@ Results (2026-11-11, CPU):
 | DR2 control, a 3 cm gap | 0.102 | below 0.2 | fails as it should |
 | DR3 strands fall | 1.0 | at least 0.95 | PASS |
 | DR3 control, no gravity | 0.0 | below 0.2 | fails as it should |
-| DR2 strands lie on the head | share of points above the sphere's center that sit between -1 mm and 15 mm outside it | at least 0.95 |
-| DR2 control, a 3 cm gap | the same with drape 0.03 | below 0.2 |
-| DR3 strands fall | share of strands whose last point is below the sphere's center | at least 0.95 |
-| DR3 control, no gravity | the same with droop 0 | below 0.2 |
+
+### Pre-registered bars (tail rise and fan: tails that spring up from high ties)
+
+`Style.rise` (meters, default 0) makes a tail spring up and out from its tie before it
+falls: the tail's vertical offset becomes a*tt-b*tt*tt with a = 2*rise+2*sqrt(rise*rise+rise*tail)
+and b = a+tail, so it peaks rise above the tie and still ends tail below it. `Style.fan`
+(default 0.12) sets how fast the tail widens: the spread radius term is tail*fan*tt*sqrt(tt).
+Defaults keep every earlier tail unchanged. Scene: the tails scene (2000 roots on the 9 cm
+sphere, gather 12 cm out along (1, 0.6, -0.3), tail 0.3, 24 points per strand). CPU only.
+
+| bar | measured | pass |
+| --- | --- | --- |
+| TT5 tails spring up | share of strands with a tail point at least 1.5 cm above the gather point, with rise 0.03 | at least 0.9 |
+| TT5 control, rise 0 | the same with rise 0 | below 0.1 |
+| TT6 fan widens tails | mean distance of the tail tips from their centroid with fan 0.3, divided by the same with fan 0.12 | at least 1.8 |
+| TT6 control, at the tie | the same ratio for each strand's first tail point | below 1.3 |
+
+Results (2026-11-11, CPU):
+
+| check | measured | bar | result |
+| --- | --- | --- | --- |
+| TT5 tails spring up | 1.0 | at least 0.9 | PASS |
+| TT5 control, rise 0 | 0.0 | below 0.1 | fails as it should |
+| TT6 fan widens tails | 2.2 | at least 1.8 | PASS |
+| TT6 control, at the tie | 1.088 | below 1.3 | fails as it should |
 
 ### Pre-registered bars (cut-out edges, mip bias, morph motion, light falloff)
 
