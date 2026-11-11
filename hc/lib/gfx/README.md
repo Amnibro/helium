@@ -2425,6 +2425,34 @@ Results (2026-11-11, CPU):
 | TT3 tied at the gather | 1.0 | at least 0.99 | PASS |
 | TT3 control, the tips | 0.0 | below 0.2 | fails as it should |
 
+### Pre-registered bars (tail waves and drape: hair that falls over the head)
+
+Tail waves: each tail is split into 7 wedges around its axis, and every strand in a wedge
+waves with the same phase, so a tail reads as wavy ribbons instead of crossing corkscrews.
+Scene: the tails scene with `curl` 0.02 and `turns` 2.
+
+| bar | measured | pass |
+| --- | --- | --- |
+| TT4 neighbors wave together | share of strands whose last point is within 0.25 x curl of the last point of the strand nearest to it at the first tail point | at least 0.7 |
+| TT4 control, random partner | the same with the next strand in the list as the partner | below 0.2 |
+
+Drape: `hair::Style` gains `drape`, a gap in meters. With a head and a positive drape,
+strands grow with gravity (starting downward, along the scalp) and every point is kept at
+least that gap outside the head ellipsoid: a point that lands inside moves straight out from
+the center and the strand's direction follows, so hair falls and slides over the head instead
+of passing through it. Tail points are kept outside the same way. Scene: the updo scene's 2000
+roots on the 9 cm sphere, head = that sphere, drape 0.004, length 0.25, droop 3, 24 points per
+strand. CPU only.
+
+| bar | measured | pass |
+| --- | --- | --- |
+| DR1 strands stay outside the head | share of all points no more than 1 mm inside the sphere | at least 0.99 |
+| DR1 control, no head | the same with head radius 0 (gravity growth without the head) | below 0.9 |
+| DR2 strands lie on the head | share of points above the sphere's center that sit between -1 mm and 15 mm outside it | at least 0.95 |
+| DR2 control, a 3 cm gap | the same with drape 0.03 | below 0.2 |
+| DR3 strands fall | share of strands whose last point is below the sphere's center | at least 0.95 |
+| DR3 control, no gravity | the same with droop 0 | below 0.2 |
+
 ### Pre-registered bars (cut-out edges, mip bias, morph motion, light falloff)
 
 Written before the first GPU run of `small_checks` in `gfx_smoke.amni`. Black sky, no
