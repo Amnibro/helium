@@ -24,6 +24,7 @@ fn spec(n int, ax int, cb f32, cdef bool) f32 {
 	let m = if ax == 0 { N[n].wm } else { N[n].hm }; let v = if ax == 0 { N[n].wv } else { N[n].hv };
 	if m == PX { v } else if m == PCT && cdef { cb * v / 100.0 } else { -1.0 }
 }
+var TEXT_DROP f32 = 0.2;
 fn text_size(n int) float2 { rich(TEXTS[N[n].text][..], 16.0, 0xffffff as u32); var w f32 = 0.0; var hh f32 = 0.0; for i in TXT.len { w += char_w(i); hh = max(hh, CSZ[i]); } float2 { w, hh * 1.55 } }
 fn intrinsic(n int, ax int) f32 {
 	let d = N[n].dir; let p = N[n].pd;
@@ -284,17 +285,18 @@ fn draw(target gfx::Texture, w int, h int, clear bool, bg float4) {
 		if N[n].text >= 0 {
 			rich(TEXTS[N[n].text][..], 16.0 * s, 0xffffff as u32);
 			wrap(N[n].w * s - 2.0 * N[n].pd * s);
-			var ly = cy - hy + N[n].pd * s; var l = 0;
+			let mid = N[n].jus == CENTER && KIDS[n].len == 0; var tot f32 = 0.0; var q = 0; while q < LINES.len { var m f32 = 0.0; for i in LINES[q]..LINES[q + 1] { m = max(m, CSZ[i]); } tot += m * 1.25; q += 2; }
+			var ly = if mid { cy - tot * 0.5 } else { cy - hy + N[n].pd * s }; var l = 0;
 			while l < LINES.len {
 				let a0 = LINES[l]; let e0 = LINES[l + 1];
 				var lh f32 = 0.0; for i in a0..e0 { lh = max(lh, CSZ[i]); }
-				ly += lh * 1.25;
-				var lx = cx - hx + N[n].pd * s;
+				let ty = ly + lh * TEXT_DROP; ly += lh * 1.25;
+				var lx = if mid { cx - span_w(a0, e0) * 0.5 } else { cx - hx + N[n].pd * s };
 				for r in RUNS {
 					let ra = max(r.start, a0); let re = min(r.start + r.len, e0);
 					if ra >= re { continue; }
 					let c = float4 { ((r.color >> 16) & 255) as f32 / 255.0, ((r.color >> 8) & 255) as f32 / 255.0, (r.color & 255) as f32 / 255.0, 1.0 };
-					sdf_text(tv, lx, ly, r.size, TXT[ra..re], rgba(c, a), if r.bold { 1 } else { 0 }, false);
+					sdf_text(tv, lx, ty, r.size, TXT[ra..re], rgba(c, a), if r.bold { 1 } else { 0 }, false);
 					lx += span_w(ra, re);
 				}
 				l += 2;
