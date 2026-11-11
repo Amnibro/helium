@@ -501,7 +501,7 @@ frame_raw() bool:
 			if !FOC: continue
 			WHEEL += f32at(EVB[..], 28); k := ev(5); EVS[k].x = f32at(EVB[..], 24); EVS[k].y = f32at(EVB[..], 28); continue
 		if t >= 1792 && t <= 1795:
-			fid := (u64at(EVB[..], 24) ^ (u64at(EVB[..], 16) << 20)) as int; fx := f32at(EVB[..], 32) * SW as f32; fy := f32at(EVB[..], 36) * SH as f32; fk ~= -1
+			fid := ((u64at(EVB[..], 24) ^ (u64at(EVB[..], 16) << 20)) as int) & 0x7fffffff; fx := f32at(EVB[..], 32) * SW as f32; fy := f32at(EVB[..], 36) * SH as f32; fk ~= -1
 			for f, i FINGERS { if f.id == fid { fk = i } }
 			if t == 1792 && fk < 0: FINGERS.push(Finger{fid, fx, fy}); fk = FINGERS.len - 1
 			if fk >= 0: FINGERS[fk].x = fx; FINGERS[fk].y = fy

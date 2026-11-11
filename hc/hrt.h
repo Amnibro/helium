@@ -317,7 +317,14 @@ static inline int hr_strcmp(hsl a, hsl b) { int64_t n = a.n < b.n ? a.n : b.n; i
 static inline hsl hr_str(const char *s, int64_t n) { return (hsl){ (uint8_t *)s, n }; }
 static inline void hr_ob_put(const void *p, int64_t n) { hr_append(&hr_ob, p, n, 1); if (hr_ob.n > 65536) hr_flush(); }
 static pthread_mutex_t hr_omu = PTHREAD_MUTEX_INITIALIZER;
-static void hr_flush(void) { if (!hr_ob.n) return; if (hr_mt) pthread_mutex_lock(&hr_omu); int64_t o = 0; while (o < hr_ob.n) { ssize_t w = write(1, hr_ob.b + o, (size_t)(hr_ob.n - o)); if (w <= 0) break; o += w; } hr_ob.n = 0; if (hr_mt) pthread_mutex_unlock(&hr_omu); }
+#if defined(__ANDROID__) && defined(HR_LOGCAT)
+#include <android/log.h>
+#endif
+static void hr_flush(void) { if (!hr_ob.n) return; if (hr_mt) pthread_mutex_lock(&hr_omu);
+#if defined(__ANDROID__) && defined(HR_LOGCAT)
+	{ char *z = malloc((size_t)hr_ob.n + 1); memcpy(z, hr_ob.b, (size_t)hr_ob.n); z[hr_ob.n] = 0; __android_log_write(ANDROID_LOG_INFO, "helium", z); free(z); }
+#endif
+	 int64_t o = 0; while (o < hr_ob.n) { ssize_t w = write(1, hr_ob.b + o, (size_t)(hr_ob.n - o)); if (w <= 0) break; o += w; } hr_ob.n = 0; if (hr_mt) pthread_mutex_unlock(&hr_omu); }
 static inline void hr_fb(hrv *o, uint8_t c) { *hr_grow(o, 1, 1) = c; }
 static inline void hr_fs(hrv *o, hsl s) { hr_append(o, s.p, s.n, 1); }
 static inline void hr_fc(hrv *o, const char *s) { hr_append(o, s, (int64_t)strlen(s), 1); }
