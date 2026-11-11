@@ -1303,6 +1303,7 @@ recursive gbuiltin0(n int):
 		else:
 			kid(n, i)
 	p := nt()
+	if b == B_RESERVE: ow("((void)("); gx(arg(1)); ow("))"); return
 	if recv >= 0 && b != B_PRINT && b != B_STR && b != B_FORMAT:
 		rt0 := deref(at(recv)); if TY[rt0].k == TY_ARR && is_seq(rt0):
 			if !is_res(rt0) || b != B_PUSH && b != B_CLEAR && b != B_APPEND: gerr(n, "this operation on an array of variable-size elements is not supported by the self-hosted compiler yet"); return

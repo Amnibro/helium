@@ -27,7 +27,7 @@ rt_dlbind():
 		if h == 0: rt_es("helium runtime error: cannot load "); rt_esz(nm); rt_es(" ("); rt_esz(sp); rt_es("): "); e := ccall0(mld(g + 16)); if e != 0 { rt_esz(e); } else { rt_es("unknown error"); } rt_dlx()
 		for k nb: q := b0 + 24 * k; if mld(q) == l: sy := RT_DLR + mld(q + 8); f := ccall2(mld(g + 8), h, sy); if f == 0 && op { f = rt_dlmiss() } if f == 0 { rt_es("helium runtime error: "); rt_esz(nm); rt_es(" ("); rt_esz(sp); rt_es(") has no symbol "); rt_esz(sy); rt_dlx() } mst(RT_DLB + mld(q + 16), f)
 struct RtV { b int, n int, top int, fl int, fln int, flc int }
-var RT_RSZ int; var RT_SBUD int; var RT_TIER int; var RT_TEND int
+var RT_RSZ int; var RT_SBUD int; var RT_TIER int; var RT_TEND int; var RT_TMAX int
 var RT_FREE int[4096]
 var RT_NFREE int
 var RT_OUT RtV; var RT_SINK int
@@ -65,8 +65,9 @@ rt_nard(v int, c int, loc const byte[:]):
 	w := c >> 8; rt_es("helium runtime error: as conversion out of range (debug): "); if c & 4 != 0 { rt_ei(v) } else { rt_eu(v as! u64) }
 	rt_es(if w & 12 == 0 { " as i" } else { " as u" }); rt_ei(8 << (w & 3)); rt_fail(loc)
 rt_oob(i int, n int, loc const byte[:]): rt_es("helium runtime error: index "); rt_ei(i); rt_es(" out of bounds (length "); rt_ei(n); rt_es(")"); rt_fail(loc);
-rt_take() int: if RT_NFREE > 0 { RT_NFREE -= 1; return RT_FREE[RT_NFREE] } rt_map(0)
-rt_tsz() int: r := (1 << 32) - RT_TEND; if r >= 1 << 31 { return RT_RSZ } z ~= 1 << 18; while z * 512 <= r && z * 2 <= RT_RSZ { z *= 2 } z
+rt_take(w int) int: if RT_TIER == 0 { if RT_NFREE > 0 { RT_NFREE -= 1; return RT_FREE[RT_NFREE] } return rt_map(0) } z := if w > 0 { w + 65535 & -65536 } else { rt_tsz() }; j ~= -1; lj ~= 0; for q RT_NFREE { l := rt_lim(RT_FREE[q]); if l >= z && (j < 0 || l < lj) { j = q; lj = l } } if j < 0 { return rt_map(z) } b := RT_FREE[j]; RT_NFREE -= 1; RT_FREE[j] = RT_FREE[RT_NFREE]; b
+rt_tmx() int: if RT_TMAX == 0 { q := sys3(97, 9, 0, 0); RT_TMAX = if q >= 1 << 24 && q <= 1 << 32 { q } else { 1 << 32 } } RT_TMAX
+rt_tsz() int: r := rt_tmx() - RT_TEND; if r >= RT_RSZ * 64 { return RT_RSZ } z ~= 1 << 18; while z * 128 <= r && z * 2 <= RT_RSZ { z *= 2 } z
 rt_map(w int) int:
 	z := if w > 0 { w } else if RT_TIER != 0 { rt_tsz() } else { RT_RSZ }; h := if RT_TIER != 0 { 65536 } else { 0 }
 	a := if RT_TIER != 0 { 0 } else { 1 << 21 }; m := sys6(9, 0, z + 65536 + h + a, 3, 0x4022, -1, 0); if m < 0 && m > -4096 { rt_es("helium runtime error: out of address space\n"); rt_write(2, RT_EB[..RT_EN]); sys3(231, 1, 0, 0) }
@@ -74,9 +75,11 @@ rt_map(w int) int:
 	if RT_TIER != 0 { RT_TEND = max(RT_TEND, p + h + z + 65536); mst(p + h - 8, z) } p + h
 rt_lim(b int) int: if RT_TIER != 0 { mld(b - 8) } else { RT_RSZ }
 rt_unmap(b int): h := if RT_TIER != 0 { 65536 } else { 0 }; sys3(11, b - h, rt_lim(b) + 65536 + h, 0);
-rt_tss() int: if RT_TIER == 0 { return 64 << 20 } r := (1 << 32) - RT_TEND; z ~= 1 << 20; while z * 512 <= r && z < 16 << 20 { z *= 2 } z
+rt_tss() int: if RT_TIER == 0 { return 64 << 20 } r := rt_tmx() - RT_TEND; z ~= 1 << 20; while z * 512 <= r && z < 16 << 20 { z *= 2 } z
 rt_give(b int, used int): if b == 0 { return } if RT_DBG > 0 { for q RT_NFREE { if RT_FREE[q] == b { rt_es("helium runtime error: a region was released twice"); rt_dlx() } } } if used > 1 << 20 { sys3(28, b + 65536, min(used, rt_lim(b)) - 65536 + 4095 & -4096, 8) } if RT_NFREE < 4096: RT_FREE[RT_NFREE] = b; RT_NFREE += 1 else: rt_unmap(b);
-rt_grow(va int, k int, esz int) int: b ~= mld(va); if b == 0 { b = rt_take(); mst(va, b) } n := mld(va + 8); mst(va + 8, n + k); if (n + k) * esz > rt_lim(b) { if RT_TIER == 0 || n != 0 { rt_die(5, "push") } z ~= rt_lim(b) * 2; while z < k * esz { z *= 2 } rt_give(b, 0); b = rt_map(z); mst(va, b) } b + n * esz
+rt_grow(va int, k int, esz int) int: b ~= mld(va); n := mld(va + 8); w := (n + k) * esz; mst(va + 8, n + k); if b != 0 && w <= rt_lim(b) { return b + n * esz } if RT_TIER == 0 { if b == 0 { b = rt_take(0); mst(va, b) } if w > rt_lim(b) { rt_die(5, "push") } return b + n * esz } if n != 0 { rt_die(5, "push") } rt_give(b, 0); z ~= max(w, 1); if mld(va + 40) == 0 { z = rt_tsz(); while z < w { z *= 2 } } b = rt_take(z); mst(va, b); b + n * esz
+rt_rsv(va int, k int, esz int): if k <= 0 { return } b := mld(va); z := k * esz; if b != 0 && z <= rt_lim(b) { return } if RT_TIER == 0 { if z > RT_RSZ { rt_die(5, "reserve") } return } if mld(va + 8) != 0 { rt_die(5, "reserve") } if b != 0 { rt_give(b, 0) } mst(va, rt_take(z))
+rt_cap(va int, esz int) int: b := mld(va); if b == 0 { return if RT_TIER != 0 { 0 } else { RT_RSZ / esz } } rt_lim(b) / esz
 rt_rdrop(v RtV&): rt_rdropz(v, 64)
 rt_rdropz(v RtV&, esz int): rt_give(v.b, max(v.n * esz, v.top)); rt_give(v.fl, v.fln * 16); v.b = 0; v.n = 0; v.top = 0; v.fl = 0; v.fln = 0; v.flc = 0
 rt_rfrom(v RtV&, p int, n int, esz int): v.b = 0; v.n = 0; v.top = 0; v.fl = 0; v.fln = 0; v.flc = 0; if n > 0: d := rt_grow(vptr(v), n, esz); mcopy(d, p, n * esz);
@@ -302,7 +305,7 @@ rt_vmk(n int, cap int, w int, lim int, esz int) int:
 rt_vfrom(sp int, sn int, w int, lim int, esz int) int: p := rt_vmk(sn, sn, w, lim, esz); mcopy(p + rt_vhd(p, w, lim), sp, sn * esz); p
 rt_vsz(p int, w int, lim int, esz int) int: rt_vhd(p, w, lim) + rt_vget(p, w) * esz
 rt_vret(p int, m int, w int, lim int, esz int) int: rt_vretz(p, m, rt_vsz(p, w, lim, esz))
-rt_vretz(p int, m int, sz int) int: if RT_DS.b == 0 { RT_DS.b = rt_take() } d := RT_DS.b + m; if d != p { mcopy(d, p, sz) } RT_DS.n = m + sz; d
+rt_vretz(p int, m int, sz int) int: if RT_DS.b == 0 { RT_DS.b = rt_take(0) } d := RT_DS.b + m; if d != p { mcopy(d, p, sz) } RT_DS.n = m + sz; d
 rt_vfromz(p int, n int, z int, w int, lim int) int: h := rt_vmk(n, n, w, lim, 0); mcopy(rt_grow(vptr(RT_DS), z, 1), p, z); h
 rt_dsn() int: RT_DS.n
 rt_dsput(z int) int: rt_grow(vptr(RT_DS), z, 1)
@@ -315,8 +318,8 @@ rt_dsplace(c int, p int, z int): d := RT_DS.b + c; if d != p { mcopy(d, p, z) } 
 rt_sqput(v RtV&, z int) int: rt_rinit(v); if v.top + z > rt_lim(v.b) { rt_die(5, "push") } d := v.b + v.top; v.top += z; v.n += 1; d
 rt_sqapp(v RtV&, p int, n int, z int): if z > 0 { rt_rinit(v); if v.top + z > rt_lim(v.b) { rt_die(5, "append") } mcopy(v.b + v.top, p, z) } v.top += z; v.n += n
 rt_sqfrom(v RtV&, p int, n int, z int): v.b = 0; v.n = 0; v.top = 0; v.fl = 0; v.fln = 0; v.flc = 0; rt_sqapp(v, p, n, z);
-rt_rinit(v RtV&): if v.b == 0: v.b = rt_take()
-rt_flp(v RtV&) int: f ~= v.fl; if f == 0 { f = rt_take(); v.fl = f } f
+rt_rinit(v RtV&): if v.b == 0: v.b = rt_take(0)
+rt_flp(v RtV&) int: f ~= v.fl; if f == 0 { f = rt_take(0); v.fl = f } f
 rt_zero(p int, n int): o ~= 0; while o + 8 <= n { mst(p + o, 0); o += 8 } while o < n: mst1(p + o, 0); o += 1
 rt_pslot(v RtV&, esz int) int: n := v.fln - 1; if n >= 0 { v.fln = n; return mld(v.fl + 8 * n) } i := v.n; b := v.b; if b == 0 || (i + 1) * esz > rt_lim(b) { rt_rinit(v); if (i + 1) * esz > rt_lim(v.b) { rt_die(5, "push") } } i
 rt_pcommit(v RtV&, i int): if i == v.n: v.n += 1
@@ -353,7 +356,7 @@ rt_sreal(v RtV&, p int, n int, k int, esz int, loc const byte[:]) int:
 			if ln >= d: if ln == d { rt_flmv(f, 2 * i, 2 * i + 2, 2 * (v.fln - i - 1)); v.fln -= 1 } else { mst(q, e + d); mst(q + 8, ln - d); } rt_zero(v.b + e * esz, d * esz); return idx
 			if e + ln == v.n: rt_flmv(f, 2 * i, 2 * i + 2, 2 * (v.fln - i - 1)); v.fln -= 1; rt_grow(vptr(v), d - ln, esz); rt_zero(v.b + e * esz, d * esz); return idx
 			break
-	t := rt_take(); mcopy(t, p, n * esz); rt_sfree(v, idx, n); r := rt_stake(v, k, esz, loc); mcopy(v.b + r * esz, t, n * esz); rt_give(t, n * esz); r
+	t := rt_take(n * esz); mcopy(t, p, n * esz); rt_sfree(v, idx, n); r := rt_stake(v, k, esz, loc); mcopy(v.b + r * esz, t, n * esz); rt_give(t, n * esz); r
 rt_tobytes(o int, p int, n int): rt_uput(rt_grow(o, rt_ulen(n), 1), n); rt_appto(o, p, n);
 rt_fbhdr(p int, n int, esz int) int: r u64 ~= 0; sh ~= 0; i ~= 0; while i < n && sh < 64 { b := mld1(p + i); r = r | ((b & 127) as! u64) << sh as u64; if b & 128 == 0 { v := r as! int; if v < 0 || i > 0 && b == 0 || v != n - i - 1 || v % esz != 0 { return -1 } return v / esz } i += 1; sh += 7 } -1
 var RT_SH int; RT_TID ~= -1; var RT_REC int
@@ -400,12 +403,12 @@ rt_twait(id int, mv int, loc const byte[:]) bool:
 rt_qapv(bf int, p int, z int): if z < 0 { mcopy(rt_grow(bf, -z, 1), p, -z); return } d := rt_grow(bf, z + 8, 1); mst(d, z); mcopy(d + 8, p, z);
 rt_tgo(r int): mst(r + 96, 1); rt_fwake(r + 96);
 rt_hwt() int: var m u64[16]; k := sys3(204, 0, 128, uptr(m[..])); c ~= 0; if k > 0 { for i 16 { x ~= m[i]; while x != 0 { x = x & x - 1; c += 1 } } } max(1, min(c, RT_SBUD / (RT_RSZ * 4) - 1))
-rt_rdupg(v RtV&, esz int): ob := v.b; ofl := v.fl; v.b = 0; v.fl = 0; if ob != 0 { v.b = rt_take(); mcopy(v.b, ob, if esz == 0 { v.top } else { max(v.n * esz, v.top) }) } if ofl != 0: v.fl = rt_take(); mcopy(v.fl, ofl, v.fln * 16);
+rt_rdupg(v RtV&, esz int): ob := v.b; ofl := v.fl; u := if esz == 0 { v.top } else { max(v.n * esz, v.top) }; fx := v.flc; v.b = 0; v.fl = 0; v.flc = 0; if ob != 0 { v.b = rt_take(if fx != 0 && RT_TIER != 0 { max(u, rt_tsz()) } else { rt_lim(ob) }); mcopy(v.b, ob, u) } if ofl != 0: v.fl = rt_take(rt_lim(ofl)); mcopy(v.fl, ofl, v.fln * 16);
 rt_q(qid int) int: if RT_SH == 0 { RT_SH = rt_map(0); mst(RT_SH + 24, rt_map(0)) } RT_SH + 4096 + (qid & 511) * 64
 rt_qput(qid int, p int, n int) bool:
 	q := rt_q(qid); rt_lock(q)
 	if mld(q + 40) > 0 && mld(q + 8) >= mld(q + 40): rt_unlock(q); return false
-	if mld(q + 16) == 0: mst(q + 16, rt_take())
+	if mld(q + 16) == 0: mst(q + 16, rt_take(0))
 	t := mld(q + 32); b := mld(q + 16); mst(b + t, n); if n > 0: mcopy(b + t + 8, p, n)
 	mst(q + 32, t + 8 + (n + 7 & -8)); mst(q + 8, mld(q + 8) + 1); mst(q + 48, mld(q + 48) + 1); rt_unlock(q); rt_fwake(q + 48)
 	true

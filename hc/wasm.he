@@ -251,7 +251,7 @@ wvloop(a int, b int, k int, d int):
 wret(a int, b int):
 	if WSBA > 0: wb(0x20); ul(WO, WFP); i64c(WSBA); wb(0x7C); wb(0x24); ul(WO, 0)
 	if a >= 0 { lg(a) } else { i64c(0) } if b >= 0 { lg(b) } else { i64c(0) } wb(0x0F)
-var WLC byte[>..<]; var WLT byte[>..<]; var WLNM i32[>..<]; var WLU i32[>..<]; var WLW i32[>..<]; var WLX i32[>..<]; var WLPM i32[>..<]; WLN ~= 0; WOF ~= 0; WLV ~= 0; WLOFF ~= false; var WQS i32[>..<]; var WQE i32[>..<]; var WQP i32[>..<]; var WQB i32[>..<]; var WQO i8[>..<]; WQK ~= 0; WLBA ~= 0
+var WHOT i8[>..<]; var WLC byte[>..<]; var WLT byte[>..<]; var WLNM i32[>..<]; var WLU i32[>..<]; var WLW i32[>..<]; var WLX i32[>..<]; var WLPM i32[>..<]; WLN ~= 0; WOF ~= 0; WLV ~= 0; WLOFF ~= false; var WQS i32[>..<]; var WQE i32[>..<]; var WQP i32[>..<]; var WQB i32[>..<]; var WQO i8[>..<]; WQK ~= 0; WLBA ~= 0
 wsk(b const byte[:], p int) int: q ~= p; while (b[q] as int) & 128 != 0 { q += 1 } q + 1
 wrl(b const byte[:], p int) int: v ~= 0; s ~= 0; q ~= p; loop { x := b[q] as int; q += 1; v = v | (x & 127) << s; s += 7; if x & 128 == 0 { break } } WLV = v; q
 wnx(b const byte[:], p int) int:
@@ -337,9 +337,17 @@ wlz(fi int, b const byte[:], p0 int, p1 int, od int, out byte[>..<]&) bool:
 		if o == 0x02 || o == 0x04 { lk += 1 } else if o == 0x0B { lk -= 1 }
 		out.append(b[p..e]); p = e
 	any
+whot():
+	WHOT.clear(); WHOT.resize(NFS.len, 0); lp i32[>..<] ~= []; lo i32[>..<] ~= []; nb byte[>..] ~= []; hn := env("HC_WLOHOT", nb)
+	if hn: return
+	for f NFS:
+		i0 := f.i0 as int; i1 := f.i1 as int; lp.clear(); lp.resize(LBL.len, -1); lo.clear(); lo.resize(i1 - i0 + 1, 0); for i i0..i1 { if IR[i].op as int == I_LBL { lp[IR[i].c] = i as i32 } }
+		for i i0..i1 { o := IR[i].op as int; if o == I_JMP || o == I_BZ || o == I_BNZ { h := lp[IR[i].c] as int; if h >= i0 && h < i { lo[h - i0] += 1; lo[i + 1 - i0] -= 1 } } }
+		d ~= 0; for i i0..i1 { d += lo[i - i0]; c := IR[i].c; if d > 0 && IR[i].op as int == I_CALL && c >= 0 && c < NFS.len as i64 { WHOT[c] = 1 } }
+	ch ~= true; while ch: ch = false; for f, g NFS: if WHOT[g] != 0: for i (f.i0 as int)..(f.i1 as int): c := IR[i].c; if IR[i].op as int == I_CALL && c >= 0 && c < NFS.len as i64 && WHOT[c] == 0 { WHOT[c] = 1; ch = true }
 wlo(fi int) bool:
 	f := NFS[fi]; q := if f.inst >= 0 { nm(FI_[f.inst].name) } else { "" }
-	if WLOFF || q.len >= 3 && q[..3] == "rt_": return false
+	if WLOFF || WHOT[fi] != 0 || q.len >= 3 && q[..3] == "rt_": return false
 	src byte[>..<] ~= []; src.append(WO[..]); b := src[..]; wlp(b)
 	if WQS.len == 0: return false
 	WLBA = WAR + 12 + VN + VNF + (if WVI > 0 { WVI + WVV } else { 0 }); WQK = 0; nb byte[>..<] ~= []; any := wlz(fi, b, 0, b.len, 0, nb)
@@ -450,7 +458,7 @@ wasm_program(out byte[>..]&) bool:
 	if !drain(): return false
 	gi := lower_ginit(); lower_tglob(); if !drain(): return false
 	if LERR.len > 0: return false
-	noi byte[>..] ~= []; if !env("HC_NOOPT", noi) { gtag(); optimize_all(); vec_all() }
+	noi byte[>..] ~= []; if !env("HC_NOOPT", noi) { gtag(); optimize_all(); vec_all(); if !env("HC_NOWBC", noi) { for fi NFS.len { bce(fi); if !env("HC_NOLB", noi) { lbce(fi) } deadcode(fi) } } }
 	n := NFS.len; WARI.clear(); WARI.resize(n, 0)
 	for f, k NFS: for i (f.i0 as int)..(f.i1 as int) { x := IR[i]; if x.op as int == I_PARAM && x.c + 1 > WARI[k] { WARI[k] = (x.c + 1) as i32 } }
 	for f NFS: for i (f.i0 as int)..(f.i1 as int) { x := IR[i]; if x.op as int == I_CALL && x.c >= 0 && x.b > WARI[x.c] { WARI[x.c] = x.b } }
@@ -466,7 +474,7 @@ wasm_program(out byte[>..]&) bool:
 	WSD.clear(); WSB.clear(); WSL.clear(); wseg(WRO, RO[..]); rz := hdef("GS_STACK_RESERVE")
 	for g ["RT_RSZ", "RT_SBUD", "RT_DBG", "RT_TIER", "RT_TEND"]: v := if g == "RT_TIER" { 1 } else if g == "RT_TEND" { pages * 65536 } else if g == "RT_RSZ" { if rz >= 0 { rz & -4096 } else { 1 << 25 } } else if g == "RT_SBUD" { sb := hdef("GS_STACK_BUDGET"); if sb > 0 { sb } else { 1 << 32 } } else { if DBG { 1 } else { 0 } }; if v > 0 { wgset(g, v) }
 	irw byte[>..] ~= []; dump := env("HC_IR", irw)
-	c byte[>..<] ~= []; WLC.clear(); WLT.clear(); WLNM.clear(); WLN = 0; WOF = WIMP + n + 3 + ne; WLOFF = env("HC_NOWLO", noi)
+	c byte[>..<] ~= []; WLC.clear(); WLT.clear(); WLNM.clear(); WLN = 0; WOF = WIMP + n + 3 + ne; WLOFF = env("HC_NOWLO", noi); whot()
 	for k n: if dump && NFS[k].inst >= 0 && nm(FI_[NFS[k].inst].name) == irw[..] { ir_dump(k) } wfn(k, c)
 	WO.clear(); ul(WO, 0); WAR = 0
 	for k WSD.len: wb(0x41); sl(WO, WSD[k]); wb(0x41); sl(WO, 0); wb(0x41); sl(WO, WSL[k]); wb(0xFC); ul(WO, 8); ul(WO, k); wb(0); wb(0xFC); ul(WO, 9); ul(WO, k)

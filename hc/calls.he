@@ -1,7 +1,7 @@
 use check
 use pkg
 B_PRINT := 1; B_STR := 2; B_FORMAT := 3; B_ASSERT := 4; B_ABORT := 5; B_EXIT := 6; B_COPY := 7; B_DEFAULT := 8; B_LEN := 9
-B_PUSH := 20; B_APPEND := 21; B_POP := 22; B_POPN := 23; B_RESIZE := 24; B_CLEAR := 25; B_INDEXOF := 26; B_CAP := 27
+B_PUSH := 20; B_APPEND := 21; B_POP := 22; B_POPN := 23; B_RESIZE := 24; B_CLEAR := 25; B_INDEXOF := 26; B_CAP := 27; B_RESERVE := 28
 B_TOBYTES := 30; B_BYTESOF := 31; B_FROMBYTES := 32; B_EMBED := 33; B_EMBEDSH := 48
 B_SPAWN := 40; B_SPAWNC := 41; B_TWAIT := 42; B_HWT := 43; B_QPUT := 44; B_QGET := 45; B_QPOLL := 46; B_QLIMIT := 47
 B_ALLOCI := 34; B_ALLOCR := 35; B_FREE := 36; B_ALLOCS := 37; B_FREES := 38; B_REALLOCS := 39
@@ -33,7 +33,7 @@ builtin_of(name const byte[:]) int:
 	-1
 member_of(name const byte[:]) int:
 	if name == "push" { return B_PUSH } if name == "append" { return B_APPEND } if name == "pop" { return B_POP } if name == "pop_n": return B_POPN
-	if name == "resize" { return B_RESIZE } if name == "clear" { return B_CLEAR } if name == "index_of" { return B_INDEXOF } if name == "len": return B_LEN
+	if name == "reserve" { return B_RESERVE } if name == "resize" { return B_RESIZE } if name == "clear" { return B_CLEAR } if name == "index_of" { return B_INDEXOF } if name == "len": return B_LEN
 	if name == "alloc_index" { return B_ALLOCI } if name == "alloc_ref" { return B_ALLOCR } if name == "free": return B_FREE
 	if name == "alloc_slice" { return B_ALLOCS } if name == "free_slice" { return B_FREES } if name == "realloc_slice": return B_REALLOCS
 	-1
@@ -842,7 +842,7 @@ recursive ck_builtin(n int, b int, recv int, want int) int:
 		else:
 			kid(n, i)
 	total := na + (if recv >= 0 && !fm { 1 } else { 0 })
-	need := if b == B_PRINT || b == B_STR || b == B_DEFAULT || b == B_POP || b == B_CLEAR || b == B_HWT || b == B_QGET || b == B_QPOLL { 0 } else { if b == B_REALLOCS { 3 } else { if b == B_PUSH || b == B_APPEND || b == B_POPN || b == B_RESIZE || b == B_INDEXOF || b >= B_ALLOCI && b <= B_REALLOCS { 2 } else { 1 } } }
+	need := if b == B_PRINT || b == B_STR || b == B_DEFAULT || b == B_POP || b == B_CLEAR || b == B_HWT || b == B_QGET || b == B_QPOLL { 0 } else { if b == B_REALLOCS { 3 } else { if b == B_PUSH || b == B_APPEND || b == B_POPN || b == B_RESIZE || b == B_RESERVE || b == B_INDEXOF || b >= B_ALLOCI && b <= B_REALLOCS { 2 } else { 1 } } }
 	if total < need: cerr(n, "too few arguments to a builtin"); return set_t(n, T_ERRT)
 	if b == B_PRINT || b == B_STR:
 		for i total: c := arg(i); t := if recv >= 0 && i == 0 { at(c) } else { ck(c, -1) }; if is_pending(t) { default_t(c) } hook_walk(fin_t(c))
@@ -894,6 +894,7 @@ recursive ck_builtin(n int, b int, recv int, want int) int:
 	if b == B_POP: return set_t(n, decode_rel(e))
 	if b == B_POPN: ck(arg(1), T_I64); conv(arg(1), T_I64); return set_t(n, T_VOID)
 	if b == B_RESIZE: ck(arg(1), T_I64); conv(arg(1), T_I64); if total > 2 { ck(arg(2), e); conv(arg(2), e) } return set_t(n, T_VOID)
+	if b == B_RESERVE: ck(arg(1), T_I64); conv(arg(1), T_I64); return set_t(n, T_VOID)
 	if b == B_CLEAR: return set_t(n, T_VOID)
 	if b == B_INDEXOF: c := arg(1); ck(c, t_ref(e, 0)); conv(c, t_ref(e, 0)); return set_t(n, T_I64)
 	if b == B_ALLOCI || b == B_ALLOCR: c := arg(1); ck(c, e); conv(c, e); return set_t(n, if b == B_ALLOCI { T_I64 } else { elref(e) })
