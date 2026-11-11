@@ -1016,7 +1016,12 @@ UV unit on average along each axis, plus a coarser set at 175, with a soft furro
 borders between cells. Each border has its own depth, from a tenth of the full depth up, so the
 furrows form a broken net of small polygons, as skin shows up close.
 They tilt the normal that highlights use
-and darken their floors; the mean diffuse light does not change. The detail map's
+and darken their floors; about three cells in five also have a round pore opening
+in the middle that darkens the same way. The mean diffuse light does not change. The
+darkening multiplies the surface after subsurface scattering, the way albedo does, so
+scattering softens the light but not the pores. The same strength also varies the skin
+color: two layers of smooth noise, about 41 and 131 cells a UV unit, mostly in green
+and blue, so the blotches read as small changes in blood color, not gray dirt. The detail map's
 transform (`detail.m`, `detail.o`) scales and moves the pattern, so a mesh whose UV
 unit is not about 0.3 m can bring the cells back to skin scale (fine cells about 0.25 mm
 wide read as facial skin; a scanned head with a 0.4 m UV unit uses `detail.m` 2.5). Where a cell covers
@@ -3322,6 +3327,23 @@ all three frames.
 | Y5 control, fuzz 0 twice | rim rise 0.0 | below 3 |
 | Y6 cost | 1.13 ms without, 1.24 ms with: 0.12 ms more | at most 0.3 ms |
 | Y7 nothing else moved | goldens 44.92 dB and 41.7 dB; X1 to X7 pass with both strengths 0; wgsltest 67 modules, 58 pipelines, 0 failures; webgputest 22 scenes, 0 failures, `scene_sss` with strength 0.7 and fuzz 0.35 matches the native frame exactly on WebGPU | pass |
+
+### Skin cavity and color results (2026-11-11, RX 9060 XT, RADV)
+
+Before this change the pore and furrow darkening was part of the light that subsurface
+scattering blurs, so with scattering on it was spread over about 2 mm and skin read as
+smooth wax up close. SC1 measures the red channel, which scatters the farthest, on a
+sheet with albedo 0.8, roughness 1 and pore strength 1.1, 5 cm from the camera, lit
+from 30 degrees off the normal. SC2 measures the spread of green over red (standard deviation over mean) across
+the middle 400 x 400 pixels; gray pores do not change it, color blotches do.
+
+| Bar | Result | Bar value |
+| --- | --- | --- |
+| SC1 pores keep their contrast with scattering on | pending | deviation from the plane of each 16 x 16 block, scattering on over off: at least 0.7 |
+| SC1 control, the scattered light over its input (where the darkening used to be) | pending | below 0.7 |
+| SC2 skin color varies at the millimeter scale | pending | at least 0.01 with strength 1.1 |
+| SC2 control, strength 0 | pending | at most 0.002 |
+| SC3 nothing else moved | pending | X1 to X7 and Y1 to Y6 pass; gfxtest ok; wgsltest and webgputest 0 failures |
 
 ### Effects results (2026-11-10, RX 9060 XT, RADV)
 
