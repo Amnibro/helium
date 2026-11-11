@@ -1012,8 +1012,9 @@ skin.shade_c.z = 0.35;
 
 `shade_c.y` is the relief strength (0 is off, the preset value). The relief is computed
 in the shader from the material's UV space: cells scattered at random, 700 a
-UV unit on average along each axis, plus a coarser set at 175, with a furrow along every
-border between cells. The furrows form the net of small polygons that skin shows up close.
+UV unit on average along each axis, plus a coarser set at 175, with a soft furrow along the
+borders between cells. Each border has its own depth, from a tenth of the full depth up, so the
+furrows form a broken net of small polygons, as skin shows up close.
 They tilt the normal that highlights use
 and darken their floors; the mean diffuse light does not change. The detail map's
 transform (`detail.m`, `detail.o`) scales and moves the pattern, so a mesh whose UV
@@ -2651,9 +2652,10 @@ edge.
 ### Skin pore and fuzz bars (E7, registered before the first GPU run)
 
 Skin relief is a pattern computed in the shader, in the material's UV space: jittered cells,
-700 per UV unit, and a coarser set at 175 per UV unit, with a furrow along every border
+700 per UV unit, and a coarser set at 175 per UV unit, with a soft furrow along the borders
 between cells, so the lines form the net of small polygons that skin shows up close. A
-furrow is 0.12 of a cell wide on each side of the border. `detail.m` scales the cells, which
+furrow is 0.4 of a cell wide on each side of the border, and each border has its own depth,
+from 0.1 to 1 of the full depth, which breaks the net up. `detail.m` scales the cells, which
 sets their size on a given model: fine cells about 0.25 mm wide read as facial skin. The furrows
 tilt the normal that highlights use and darken their floor; the darkening averages 1,
 so the pattern does not change the mean diffuse light. `shade_c.y` of a skin material
@@ -3210,17 +3212,17 @@ all three frames.
 
 | Bar | Result | Bar value |
 | --- | --- | --- |
-| Y1 furrows show up close | 0.4866 with strength 0.7 | at least 0.05 |
+| Y1 furrows show up close | 0.3724 with strength 0.7 | at least 0.05 |
 | Y1 control, strength 0 | 0.0002 | at most 0.005 |
-| Y2 the mean diffuse light stays | sum with strength 0.7 over sum with strength 0: 1.0006 | within 0.01 of 1 |
+| Y2 the mean diffuse light stays | sum with strength 0.7 over sum with strength 0: 1.002 | within 0.01 of 1 |
 | Y2 control, light 5% dimmer | 0.9506 | more than 0.01 from 1 |
 | Y3 no noise far away | 0.5309 with strength 0.7, 0.6783 with strength 0 | at most 0.002 above |
-| Y3 control, no fade | 0.8435 | at least 0.01 above 0.5309 |
-| Y4 the far highlight follows the near one | near 1.1033, far 1.0897 | near at least 0.05 from 1, far closer to near than to 1 |
+| Y3 control, no fade | 0.8809 | at least 0.01 above 0.5309 |
+| Y4 the far highlight follows the near one | near 1.123, far 1.0897 | near at least 0.05 from 1, far closer to near than to 1 |
 | Y4 control, strength 0 | 1.0 | fails |
 | Y5 fuzz lights the rim only | 3,243 rim pixels rise 13.92 / 255 on average; middle: largest change 1 / 255; pixels without skin: 0 / 255 | at least 3, at most 1, 0 |
 | Y5 control, fuzz 0 twice | rim rise 0.0 | below 3 |
-| Y6 cost | 0.71 ms without, 0.9 ms with: 0.19 ms more | at most 0.3 ms |
+| Y6 cost | 1.13 ms without, 1.24 ms with: 0.12 ms more | at most 0.3 ms |
 | Y7 nothing else moved | goldens 44.92 dB and 41.7 dB; X1 to X7 pass with both strengths 0; wgsltest 67 modules, 58 pipelines, 0 failures; webgputest 22 scenes, 0 failures, `scene_sss` with strength 0.7 and fuzz 0.35 matches the native frame exactly on WebGPU | pass |
 
 ### Effects results (2026-11-10, RX 9060 XT, RADV)
