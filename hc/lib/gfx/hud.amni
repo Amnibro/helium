@@ -24,8 +24,10 @@ fn spec(n int, ax int, cb f32, cdef bool) f32 {
 	let m = if ax == 0 { N[n].wm } else { N[n].hm }; let v = if ax == 0 { N[n].wv } else { N[n].hv };
 	if m == PX { v } else if m == PCT && cdef { cb * v / 100.0 } else { -1.0 }
 }
+fn text_size(n int) float2 { rich(TEXTS[N[n].text][..], 16.0, 0xffffff as u32); var w f32 = 0.0; var hh f32 = 0.0; for i in TXT.len { w += char_w(i); hh = max(hh, CSZ[i]); } float2 { w, hh * 1.55 } }
 fn intrinsic(n int, ax int) f32 {
 	let d = N[n].dir; let p = N[n].pd;
+	if N[n].text >= 0 && KIDS[n].len == 0 { let t = text_size(n); return (if ax == 0 { t.x } else { t.y }) + 2.0 * p; }
 	var s f32 = 0.0; var k = 0;
 	for c in KIDS[n] {
 		if N[c].abs { continue; }
