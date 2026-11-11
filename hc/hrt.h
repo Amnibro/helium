@@ -450,17 +450,46 @@ static void hr_os_arg(int64_t i, hrv *out) { if (i >= 0 && i < hr_argc) hr_appen
 static char *hr_cstr(hsl s, char *buf, int64_t cap) { char *c = s.n < cap ? buf : malloc((size_t)s.n + 1); memcpy(c, s.p, (size_t)s.n); c[s.n] = 0; if (s.n >= 4095 || memchr(s.p, 0, (size_t)s.n)) c[0] = 0; return c; }
 #define HR_CS(name, s) char name##_b[512]; char *name = hr_cstr(s, name##_b, 512)
 #define HR_CSF(name) if (name != name##_b) free(name)
+#ifdef __ANDROID__
+#include <jni.h>
+#include <android/asset_manager.h>
+#include <android/asset_manager_jni.h>
+__attribute__((weak)) void *SDL_GetAndroidJNIEnv(void);
+__attribute__((weak)) void *SDL_GetAndroidActivity(void);
+static AAssetManager *hr_am;
+static AAssetManager *hr_assets(void) {
+	if (hr_am || !SDL_GetAndroidJNIEnv || !SDL_GetAndroidActivity) return hr_am;
+	JNIEnv *e = (JNIEnv *)SDL_GetAndroidJNIEnv(); jobject a = (jobject)SDL_GetAndroidActivity(); if (!e || !a) return 0;
+	jclass k = (*e)->GetObjectClass(e, a); jmethodID m = (*e)->GetMethodID(e, k, "getAssets", "()Landroid/content/res/AssetManager;"); jobject o = (*e)->CallObjectMethod(e, a, m);
+	jobject g = (*e)->NewGlobalRef(e, o); hr_am = AAssetManager_fromJava(e, g); (*e)->DeleteLocalRef(e, o); (*e)->DeleteLocalRef(e, k); (*e)->DeleteLocalRef(e, a); return hr_am;
+}
+static AAsset *hr_asset(hsl p) {
+	HR_CS(c, p); const char *s = c; while (!strncmp(s, "./", 2) || !strncmp(s, "../", 3)) s += s[1] == '/' ? 2 : 3;
+	AAssetManager *m = c[0] == '/' || !c[0] ? 0 : hr_assets(); AAsset *a = m ? AAssetManager_open(m, s, AASSET_MODE_RANDOM) : 0; HR_CSF(c); return a;
+}
+static bool hr_asset_read(hsl p, int64_t off, int64_t n, hrv *out) {
+	AAsset *a = hr_asset(p); if (!a) return false;
+	int64_t len = AAsset_getLength64(a); n = n < 0 || off + n > len ? len - off : n;
+	if (off < 0 || n < 0 || AAsset_seek64(a, off, SEEK_SET) < 0) { AAsset_close(a); return false; }
+	while (n > 0) { int64_t k = n < (1 << 20) ? n : (1 << 20); hr_rinit(out); HR_OVER(out->b, out->n + k, "read"); int r = AAsset_read(a, out->b + out->n, (size_t)k); if (r <= 0) break; out->n += r; n -= r; }
+	AAsset_close(a); return true;
+}
+static bool hr_asset_exists(hsl p) { AAsset *a = hr_asset(p); if (a) AAsset_close(a); return a != 0; }
+#else
+static bool hr_asset_read(hsl p, int64_t off, int64_t n, hrv *out) { (void)p; (void)off; (void)n; (void)out; return false; }
+static bool hr_asset_exists(hsl p) { (void)p; return false; }
+#endif
 static bool hr_os_getenv(hsl n, hrv *out) { HR_CS(c, n); char *v = getenv(c); HR_CSF(c); if (!v) return false; hr_append(out, v, (int64_t)strlen(v), 1); return true; }
 static bool hr_os_read_file(hsl path, hrv *out) {
 	HR_CS(c, path); int fd = open(c, O_RDONLY); HR_CSF(c);
-	if (fd < 0) return false;
+	if (fd < 0) return hr_asset_read(path, 0, -1, out);
 	struct stat st; if (fstat(fd, &st) == 0 && S_ISDIR(st.st_mode)) { close(fd); return false; }
 	for (;;) { hr_rinit(out); HR_OVER(out->b, out->n + (1 << 20), "read"); ssize_t r = read(fd, out->b + out->n, 1 << 20); if (r < 0) { close(fd); return false; } if (r == 0) break; out->n += r; }
 	close(fd); return true;
 }
 static bool hr_os_read_file_range(hsl path, int64_t off, int64_t n, hrv *out) {
 	HR_CS(c, path); int fd = open(c, O_RDONLY); HR_CSF(c);
-	if (fd < 0) return false;
+	if (fd < 0) return hr_asset_read(path, off, n, out);
 	if (off < 0 || n < 0 || lseek(fd, (off_t)off, SEEK_SET) < 0) { close(fd); return false; }
 	while (n > 0) { int64_t k = n < (1 << 20) ? n : (1 << 20); hr_rinit(out); HR_OVER(out->b, out->n + k, "read"); ssize_t r = read(fd, out->b + out->n, (size_t)k); if (r < 0) { close(fd); return false; } if (r == 0) break; out->n += r; n -= r; }
 	close(fd); return true;
@@ -481,7 +510,7 @@ static bool hr_os_write_file_atomic(hsl p, hsl d) {
 	if (!hr_wfile((hsl){ (uint8_t *)tb, p.n + 5 }, d, O_TRUNC)) return false;
 	HR_CS(c, p); bool ok = rename(tb, c) == 0; HR_CSF(c); if (!ok) unlink(tb); return ok;
 }
-static bool hr_os_file_exists(hsl p) { HR_CS(c, p); struct stat st; bool r = stat(c, &st) == 0 && !S_ISDIR(st.st_mode); HR_CSF(c); return r; }
+static bool hr_os_file_exists(hsl p) { HR_CS(c, p); struct stat st; bool r = stat(c, &st) == 0 && !S_ISDIR(st.st_mode); HR_CSF(c); return r || hr_asset_exists(p); }
 static bool hr_os_is_dir(hsl p) { HR_CS(c, p); struct stat st; bool r = stat(c, &st) == 0 && S_ISDIR(st.st_mode); HR_CSF(c); return r; }
 static int64_t hr_os_file_mtime(hsl p) { HR_CS(c, p); struct stat st; int64_t r = stat(c, &st) == 0 ? (int64_t)st.st_mtime : -1; HR_CSF(c); return r; }
 static bool hr_os_remove_file(hsl p) { HR_CS(c, p); bool r = unlink(c) == 0; HR_CSF(c); return r; }
