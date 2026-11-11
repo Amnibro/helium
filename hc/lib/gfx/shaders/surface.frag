@@ -664,6 +664,8 @@ void main() {
 	int model = int(misc.y + 0.5);
 	bool is_water = model == 4;
 	if (is_water) model = 0;
+	bool is_puff = model == 5;
+	if (is_puff) model = 0;
 	if (misc.z > 0.5 && x_to[12].z >= 0.0 && x_ior.z > 0.0 && abs(in_tan.w) > 0.5) {
 		vec3 nw = normalize(in_nrm);
 		vec3 vw = normalize(eye.xyz - in_world);
@@ -719,7 +721,8 @@ void main() {
 		for (int k = 0; k < 4; k++) {
 			sa[k] = vec3(0.0);
 			if (sp_s[k] > 0.0 && w[k] > 0.001) {
-				sa[k] = sp_tint(k).rgb * smpa(tex_ext_s, vec3(in_world.xz * sp_s[k], sp_a[k])).rgb;
+				vec3 tx = smpa(tex_ext_s, vec3(in_world.xz * sp_s[k], sp_a[k])).rgb;
+				sa[k] = sp_tint(k).rgb * mix(tx, vec3(dot(tx, vec3(0.2126, 0.7152, 0.0722))), sp_p.z);
 				e[k] = w[k] + dot(sa[k], vec3(0.333)) * 0.5;
 				mx = max(mx, e[k]);
 			}
@@ -776,9 +779,18 @@ void main() {
 		t = dot(t, t) > 1e-16 ? normalize(t) : normalize(cross(abs(n.y) < 0.99 ? vec3(0.0, 1.0, 0.0) : vec3(1.0, 0.0, 0.0), n));
 		b = cross(n, t) * (dot(cross(n, t), -bv) < 0.0 ? -1.0 : 1.0);
 	}
+	float wst = 0.0;
+	float wv = 0.0;
+	vec2 wfp = vec2(0.0);
 	if (is_water) {
+		wst = smoothstep(0.7, 0.3, abs(n.y));
+		wv = clamp(in_uv.y, 0.0, 1.0);
+		vec3 ws = normalize(cross(vec3(0.0, 1.0, 0.0), n) + vec3(1e-5, 0.0, 0.0));
+		vec3 wu = cross(n, ws);
+		wfp = vec2(in_uv.x * 7.0, in_uv.y * 3.7 - cluster.w * 2.2);
 		vec2 wg = water_grad(in_world.xz, cluster.w);
-		n = normalize(n + vec3(-wg.x, 0.0, -wg.y));
+		vec2 fg = water_grad(wfp, cluster.w * 0.3);
+		n = normalize(n + mix(vec3(-wg.x, 0.0, -wg.y), (wu * fg.y - ws * fg.x) * 0.7, wst));
 		t = normalize(t - n * dot(n, t));
 		b = cross(n, t) * (dot(cross(n, t), b) < 0.0 ? -1.0 : 1.0);
 	}
@@ -1018,6 +1030,7 @@ void main() {
 		float zw = dot(in_world - eye.xyz, view_dir.xyz);
 		float zs = textureLod(tex_trans, clamp(wuv + n.xz * 0.02, vec2(0.0), vec2(1.0)), 0.0).a;
 		wdz = zs > 0.0 ? max(zs - zw, 0.0) : 7.0;
+		wdz = mix(wdz, 0.35, wst);
 		x.thick = min(wdz, 2.0);
 		tint.rgb = exp(-shade_a.rgb * max(wdz, 0.02));
 	}
@@ -1032,9 +1045,12 @@ void main() {
 		vec3 lit = sky_i + sun_rgb.rgb * max(to_sun.y, 0.0) * 0.318309886;
 		rgb += shade_c.rgb * (vec3(1.0) - tint.rgb) * lit;
 		float nz = water_grad(in_world.xz * 3.1, cluster.w * 0.7).x * 7.0 + 0.5;
-		float foam = shade_b.w * smoothstep(0.32, 0.0, wdz + 0.14 * nz);
+		float aer = smoothstep(0.3, 1.0, wv * wv);
+		float fs = water_grad(wfp * vec2(2.7, 0.4 + 1.1 * aer), cluster.w * 0.5).x * 5.0 + 0.55;
+		float foam = max(shade_b.w * smoothstep(0.32, 0.0, wdz + 0.14 * nz) * (1.0 - wst), wst * smoothstep(1.0 - 0.65 * aer, 1.25 - 0.5 * aer, fs) * (0.55 + 0.45 * aer));
 		rgb = mix(rgb, vec3(0.87) * lit, clamp(foam, 0.0, 1.0));
 	}
+	if (is_puff) { float ed = clamp(dot(normalize(in_nrm), normalize(eye.xyz - in_world)), 0.0, 1.0); oa *= ed * ed * ed; }
 	out_rgba = vec4(rgb, oa);
 
 	int dbg = int(uv_sets2.y + 0.5);
