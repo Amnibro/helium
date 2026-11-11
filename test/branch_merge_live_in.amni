@@ -1,0 +1,32 @@
+import std;
+fn hits(n int, a int, b int, k int) int {
+	let v = a > b;
+	var c = 0;
+	for i in n { if i == 2 && v && k > 0 { c += 1; } }
+	return c;
+}
+fn scan(s const byte[:], a int, b int) int {
+	let v = a > b;
+	var found = 0;
+	for pass in 3 {
+		var sd = 0;
+		for i in s.len - 1 { if s[i] == '.' { sd = i; } }
+		var at = 0;
+		var hit = false;
+		while at < s.len && !hit && (pass == 0 || pass == 2 && v && sd > 0) {
+			hit = pass == 2 && s[at] == '.';
+			at += 1;
+		}
+		found += if hit { at + pass } else { 0 };
+	}
+	return found;
+}
+fn main() {
+	var s = 0;
+	var t = 0;
+	for k in 7 {
+		s = s * 3 + hits(8, k, 3, k % 2);
+		t = t * 5 + scan("live.mp4.", k, 2);
+	}
+	print(str(s, " ", t));
+}

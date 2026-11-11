@@ -2149,6 +2149,8 @@ scf(fi int):
 		dcs[t] == 1
 	lrun(k int, l i64) bool:
 		q ~= k; while q < i1 && IR[q].op as int == I_LBL { if IR[q].c == l { return true } q = nx(q) } false
+	own(v int, k int) bool:
+		q ~= dp[v] as int; if q < 0 || q >= k { return false } while q < k { if IR[q].op as int == I_LBL && !sk(q) { return false } q++ } true
 	for it 4:
 		nd.clear(); nd.resize(nv, 0); dp.clear(); dp.resize(nv, -1); uc.clear(); uc.resize(nv, 0); z.clear(); z.resize(nv, 1)
 		for i i0..i1:
@@ -2178,8 +2180,10 @@ scf(fi int):
 			if o1 == I_BNZ && o2 == I_BNZ && x.c == y.c { md = B_OR } if o1 == I_BZ && o2 == I_BZ && x.c == y.c && ok(p) && ok(q) { md = B_AND } if o1 == I_BNZ && o2 == I_BZ && lr(j, x.c) { md = B_OR } if o1 == I_BZ && o2 == I_BNZ && lr(j, x.c) && ok(p) && ok(q):
 				md = B_AND
 			if md < 0 || NOSCB || tl[p] + tl[q] > SCMX: i++; continue
+			t := if own(q, j) { q } else { p }
+			if t == p && (uc[p] != 1 || nd[p] != 1 || !own(p, i)): i++; continue
 			for k 1..ps.len: IR[ps[k - 1]] = IR[ps[k]]
-			IR[ps[ps.len - 1]] = Ir{I_BIN as u8, 3, q as i32, p as i32, q as i32, md as i64, -1}; tl[q] = tl[p] + tl[q]; cg = true; i = j + 1
+			IR[ps[ps.len - 1]] = Ir{I_BIN as u8, 3, t as i32, p as i32, q as i32, md as i64, -1}; IR[j].a = t as i32; tl[t] = tl[p] + tl[q]; cg = true; i = j + 1
 		i = i0
 		while i < i1:
 			x := IR[i]; o1 := x.op as int; r := x.a as int
