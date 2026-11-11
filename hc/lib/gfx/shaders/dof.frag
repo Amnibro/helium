@@ -3,7 +3,7 @@ layout(set = 2, binding = 0) uniform sampler2D tex_color;
 layout(set = 2, binding = 1) uniform sampler2D tex_near;
 layout(set = 3, binding = 0) uniform Dof { vec4 size; vec4 lens; vec4 tune; };
 layout(location = 0) out vec4 out_rgba;
-float coc_px(float z) { float f = lens.y + tune.w; return min(z > 0.0 ? (z < lens.y ? lens.x * (1.0 / z - 1.0 / lens.y) : lens.x * max(1.0 / f - 1.0 / z, 0.0)) : lens.x / f, lens.z); }
+float coc_px(float z) { float f = lens.y + tune.w; return min(z > 0.0 ? (z < lens.y ? lens.w * lens.x * (1.0 / z - 1.0 / lens.y) : lens.x * max(1.0 / f - 1.0 / z, 0.0)) : lens.x / f, lens.z); }
 void main() {
 	ivec2 x = ivec2(gl_FragCoord.xy);
 	ivec2 lim = ivec2(size.xy) - 1;
