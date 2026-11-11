@@ -19,6 +19,7 @@ test/float_live_calls.amni
 test/float_minmax_sel.amni
 test/float_neg_cvt.amni
 test/float_neg_pool.amni
+test/float_param_div_sched.amni
 test/float_round_minmax.amni
 test/float_sel_xmm.amni
 test/float_to_int_edges.amni
@@ -56,6 +57,7 @@ test/optimizer/udiv_const_rax.amni
 test/pair_sqrt_div.amni
 test/partial_guard.amni
 test/pool_order.amni
+test/rec_peel.amni
 test/ref_flit.amni
 test/rmw_mem.amni
 test/rotate_u32.amni
@@ -69,3 +71,4 @@ test/typing/slice_to_array_param.amni
 test/umod_pair.amni
 test/vec_zero_dead.amni
 test/vst_ref_if.amni
+test/web_empty_regrow.amni
