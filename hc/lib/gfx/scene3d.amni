@@ -598,6 +598,7 @@ fn add_probe(pos float3, lo float3, hi float3, fade f32) {
 fn clear_probes() { probes.clear(); probes_dirty = true; }
 fn add_decal(d Decal) int { decals.push(d); decals.len - 1 }
 fn clear_decals() { decals.clear(); }
+fn clear_scene() { items.clear(); batch.clear(); lights.clear(); quads.clear(); decals.clear(); node_ov.clear(); weight_ov.clear(); clear_probes(); clear_instances(); temporal_reset = true; }
 fn recapture() { probes_dirty = true; }
 fn probe_vol(p Probe) f32 { (p.hi.x - p.lo.x) * (p.hi.y - p.lo.y) * (p.hi.z - p.lo.z) }
 fn add_light(pos float3, rgb float3, range f32) { lights.push(Light { pos, range, rgb, 0, .. }); }
