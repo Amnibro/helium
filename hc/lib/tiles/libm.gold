@@ -32,7 +32,7 @@ After the loop:
 - Otherwise: z = scalbn(z, -q0). If z is at least 2^24: fw = float(trunc(2^-24*z)), iq[jz] = trunc(z - 2^24*fw), jz increases by 1, q0 increases by 24, iq[jz] = trunc(fw). Otherwise iq[jz] = trunc(z).
 Then fw = scalbn(1.0, q0). For i from jz down to 0: q[i] = fw*iq[i], then fw *= 2^-24.
 For i from jz down to 0: fq[jz-i] is a sum from 0.0 of PIO2[k]*q[i+k], for k from 0 while k is at most jp and at most jz-i.
-Finally fw is a sum from 0.0 of fq[i] for i from jz down to 0, and y0 is fw (negated when ih is nonzero). Then fw = fq[0] - fw, then fq[i] is added to fw for each i from 1 up to jz, and y1 is fw (negated when ih is nonzero).
+Finally fw is a sum from 0.0 of fq[i] for i from jz down to 0, and y0 is fw (negated when ih is nonzero). Then fw = fq[0] - fw, then fq[i] is added to fw for each i from 1 up to jz, and y1 is fw (negated when ih is nonzero). Every float to integer conversion in this block truncates a value that need not be whole, so it is written with the unchecked cast `as!` (for example `(z as! int)`).
 
 rem_pio2(x) yields (n, y0, y1).
 Constants: EPS = 2.2204460492503131e-16, TO_INT = 1.5/EPS, INV_PIO2 = 6.36619772367581382433e-01, PIO2_1 = 1.57079632673412561417e+00, PIO2_1T = 6.07710050650619224932e-11, PIO2_2 = 6.07710050630396597660e-11, PIO2_2T = 2.02226624879595063154e-21, PIO2_3 = 2.02226624871116645580e-21, PIO2_3T = 8.47842766036889956997e-32. sign is bit 63 of x.
@@ -49,7 +49,7 @@ Cases in order:
 - ix at most 0x401c463b: medium if ix is 0x401921fb, else step 4.
 - ix below 0x413921fb: medium.
 - ix at least 0x7ff00000: (0, x-x, x-x).
-- Otherwise: keep x's bits masked with 0x000fffffffffffff, OR in (0x3ff+23) shifted left 52, and call that z. For i from 0 to 1: tx[i] = float(trunc(z)), then z = (z - tx[i])*2^24. tx[2] = z. Drop trailing zero chunks while more than one remains. Run the large reduction with e0 = (ix shifted right 20) - (0x3ff+23). When sign is set, return (-n, -y0, -y1).
+- Otherwise: keep x's bits masked with 0x000fffffffffffff, OR in (0x3ff+23) shifted left 52, and call that z. For i from 0 to 1: tx[i] = float(trunc(z)), then z = (z - tx[i])*2^24. tx[2] = z. Drop trailing zero chunks while more than one remains. Run the large reduction with e0 = (ix shifted right 20) - (0x3ff+23). When sign is set, return (-n, -y0, -y1). Every float to integer conversion in this block truncates a value that need not be whole, so it is written with the unchecked cast `as!` (for example `(z as! int)`).
 
 Kernel sin(x, y, iy): S1 = -1.66666666666666324348e-01, S2 = 8.33333333332248946124e-03, S3 = -1.98412698298579493134e-04, S4 = 2.75573137070700676789e-06, S5 = -2.50507602534068634195e-08, S6 = 1.58969099521155010221e-10.
 z = x*x, w = z*z, r = S2 + z*(S3 + z*S4) + z*w*(S5 + z*S6), v = z*x.

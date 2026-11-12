@@ -15,7 +15,7 @@ Each function here copies one Rust behavior on an f64 exactly as Rust compiles i
 
 `signum(x)` is NaN for NaN, otherwise -1.0 when the sign bit of x is set (also for -0.0) and 1.0 when it is clear.
 
-Rust's float to integer casts truncate toward zero, turn NaN into 0 and saturate at the target type's limits. `to_usize(x)` is `x as usize` on wasm32, where usize is 32 bits, so its range is 0 to 4294967295. `to_u32(x)` has the same range, `to_u16(x)` 0 to 65535, `to_u8(x)` 0 to 255, `to_i32(x)` -2147483648 to 2147483647 and `to_i64(x)` -9223372036854775808 to 9223372036854775807. Each returns an int; a value at or past a limit gives that limit.
+Rust's float to integer casts truncate toward zero, turn NaN into 0 and saturate at the target type's limits. `to_usize(x)` is `x as usize` on wasm32, where usize is 32 bits, so its range is 0 to 4294967295. `to_u32(x)` has the same range, `to_u16(x)` 0 to 65535, `to_u8(x)` 0 to 255, `to_i32(x)` -2147483648 to 2147483647 and `to_i64(x)` -9223372036854775808 to 9223372036854775807. Each returns an int; a value at or past a limit gives that limit. The in-range case truncates with the unchecked cast `as!` (`x as! int`), since x need not be whole.
 
 `POW10` is a global table of 309 reals where entry k is the double nearest 10 to the power k, filled once by `pow10_init()`: for each k, the first result of std's `parse_flt` (which returns a real and a bool) of the text "1e" followed by the decimal digits of k. The table is reserved for 309 entries before it is filled.
 

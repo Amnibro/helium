@@ -76,21 +76,21 @@ signum(x real) real:
 	if neg_bit(x):
 		return -1.0
 	return 1.0
-=== 232facf7c630b706
-sat(x real, lo real, hi real, lo_i int, hi_i int) int:
+=== -6ff1b5603b894098
+sat_int(x real, lo int, hi int) int:
 	if is_nan(x):
 		return 0
-	if x <= lo:
-		return lo_i
-	if x >= hi:
-		return hi_i
-	return x as int
-to_usize(x real) int: sat(x, 0.0, 4294967295.0, 0, 4294967295)
-to_u32(x real) int: sat(x, 0.0, 4294967295.0, 0, 4294967295)
-to_u16(x real) int: sat(x, 0.0, 65535.0, 0, 65535)
-to_u8(x real) int: sat(x, 0.0, 255.0, 0, 255)
-to_i32(x real) int: sat(x, -2147483648.0, 2147483647.0, -2147483648, 2147483647)
-to_i64(x real) int: sat(x, -9223372036854775808.0, 9223372036854775808.0, -9223372036854775807 - 1, 9223372036854775807)
+	if x <= lo as real:
+		return lo
+	if x >= hi as real:
+		return hi
+	return x as! int
+to_u32(x real) int: sat_int(x, 0, 4294967295)
+to_usize(x real) int: to_u32(x)
+to_u16(x real) int: sat_int(x, 0, 65535)
+to_u8(x real) int: sat_int(x, 0, 255)
+to_i32(x real) int: sat_int(x, -2147483648, 2147483647)
+to_i64(x real) int: sat_int(x, -9223372036854775807 - 1, 9223372036854775807)
 === 161891db9e72264e
 var POW10 real[..309]
 pow10_init():

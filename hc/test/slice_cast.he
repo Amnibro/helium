@@ -1,0 +1,14 @@
+var BUF u8[>..]
+main():
+	BUF.push(72)
+	BUF.push(105)
+	BUF.push(33)
+	n := 2
+	s := BUF[..n as int] as const byte[:]
+	print(s)
+	b byte[>..] ~= []
+	b.append("xyz")
+	u := b[1..] as const u8[:]
+	print(u.len, " ", u[0])
+	w := BUF as const byte[:]
+	print(w)

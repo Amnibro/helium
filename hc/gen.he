@@ -1513,6 +1513,7 @@ recursive gx0(n int):
 		gerr(n, "unsupported member"); return
 	if k == N_IDX: gidx(n); return
 	if k == N_SLICE: gslice(n); return
+	if k == N_AS && TY[at(n)].k == TY_SLICE && (TY[deref(fin(x.a))].k == TY_ARR || TY[deref(fin(x.a))].k == TY_SLICE): gsl(x.a, fin(x.a)); return
 	if k == N_AS: t := at(n); ft := TY[fin(x.a)].k; chk := x.fl & 1 == 0 && TY[t].k == TY_INT && !(ft == TY_INT && widens(fin(x.a), t)); if chk && (ft == TY_FLT || ft == TY_FLIT) { ow("HR_CF2I("); ct(t); ow(", "); gx(x.a); ow(", "); wloc(n); ow(")"); return } if chk && ft == TY_INT { ow("HR_CI2I("); ct(t); ow(", "); gx(x.a); ow(", "); wloc(n); ow(")"); return } if TY[t].k == TY_INT && (ft == TY_FLT || ft == TY_FLIT) { ow("(("); ct(t); ow(")hr_f2i("); gx(x.a); ow("))"); return } ow("(("); ct(t); ow(")("); gx(x.a); ow("))"); return
 	if k == N_ARR: garr(n); return
 	if k == N_SLIT: gslit(n); return

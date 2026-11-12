@@ -249,12 +249,18 @@ recursive lsl(n int) int, int:
 	if k == N_IF || k == N_BLOCK || k == N_EBLOCK || k == N_LOOP || k == N_MATCH: a := nv(); ir(I_SLOT, 8, a, -1, -1, slot(16, 8)); lsink(n, a, if TY[t].k == TY_STRLIT { TT_STR } else { t }); return ldw(a, 0, 3), ldw(a, 8, 3)
 	if k == N_ARR:
 		ct := fin(n); at0 := if TY[ct].k == TY_ARR { ct } else { if TY[t].k == TY_ARR { t } else { -1 } }; if at0 >= 0: ft := if is_fix(at0) || is_lim(at0) || is_res(at0) { at0 } else { t_arr(TY[at0].a, A_FIXED, ND[n].n, -1) }; q := nv(); ir(I_SLOT, 8, q, -1, -1, slot(tsz(ft), tal(ft))); lstore(q, n, ft); tmp_drop(q, ft); return lsl_at(q, ft)
+	if k == N_AS && slcast(n): return lsl(ND[n].a)
 	if !is_lplace(n) && TY[t].k != TY_REF && k != N_AS: m byte[>..] ~= []; format(m, "slice from expression kind ", k, " resolved ", rk(n)); lerr(n, m[..]); return imm(0), imm(0)
 	if TY[d].k == TY_SLICE: a := laddr(n); return ldw(a, 0, 3), ldw(a, 8, 3)
 	if is_fix(d): return laddr(n), imm(TY[d].b as int)
 	if is_lim(d): a := laddr(n); return addi(a, lco(d)), ldw(a, 0, lcw(d))
 	if is_res(d): a := laddr(n); return ldp(a, TY[d].a), ldh(a, 8)
 	m byte[>..] ~= []; format(m, "unsupported slice source ", k, " type kind ", TY[d].k); lerr(n, m[..]); return imm(0), imm(0)
+slcast(n int) bool:
+	s := deref(at(ND[n].a)); d := deref(at(n)); sk := TY[s].k
+	if sk != TY_ARR && sk != TY_SLICE || TY[d].k != TY_SLICE: return false
+	if tsz(TY[s].a) != tsz(TY[d].a): lerr(n, "a slice cast between element sizes natively")
+	true
 recursive lslice(n int) int, int:
 	x := ND[n]; a := x.a; if nseq(deref(at(a))) && (x.b >= 0 || x.c >= 0) { lerr(n, "a range of an array of variable-size elements natively") } p, len := lsl(a); es := tsz(TY[deref(at(a))].a)
 	lo0 := if x.b >= 0 { lx(x.b) } else { imm(0) }; hi0 := if x.c >= 0 { lx(x.c) } else { len }
