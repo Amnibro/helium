@@ -1,4 +1,4 @@
-into rust.he
+into rs.he
 namespace rs
 lang he
 use json, math

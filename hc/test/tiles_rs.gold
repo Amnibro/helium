@@ -1,9 +1,9 @@
-into tiles_rust.he
+into tiles_rs.he
 lang he
 use std
 
 ```he
-use tiles.rust
+use tiles.rs
 ```
 
 ```he
