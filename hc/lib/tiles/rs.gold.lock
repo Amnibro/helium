@@ -179,3 +179,60 @@ serde_f64(s const byte[:]) real, bool:
 	if neg:
 		return -f, true
 	return f, true
+=== -3d6387a963c34b7c
+utf8_lossy(out byte[>..]&, s const byte[:]):
+	n := s.len
+	i ~= 0
+	while i < n:
+		c := s[i]
+		if c < 128:
+			out.push(c)
+			i += 1
+			continue
+		need ~= 0
+		lo ~= 128
+		hi ~= 191
+		if c >= 194 && c <= 223:
+			need = 1
+		else if c >= 224 && c <= 239:
+			need = 2
+			if c == 224:
+				lo = 160
+			if c == 237:
+				hi = 159
+		else if c >= 240 && c <= 244:
+			need = 3
+			if c == 240:
+				lo = 144
+			if c == 244:
+				hi = 143
+		if need == 0:
+			out.push(239)
+			out.push(191)
+			out.push(189)
+			i += 1
+			continue
+		j ~= 1
+		ok ~= true
+		while j <= need:
+			if i + j >= n:
+				ok = false
+				break
+			b := s[i + j]
+			l ~= 128
+			h ~= 191
+			if j == 1:
+				l = lo
+				h = hi
+			if b < l || b > h:
+				ok = false
+				break
+			j += 1
+		if ok:
+			out.append(s[i..i + need + 1])
+			i += need + 1
+		else:
+			out.push(239)
+			out.push(191)
+			out.push(189)
+			i += j;
