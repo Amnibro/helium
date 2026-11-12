@@ -77,7 +77,8 @@ rt_lim(b int) int: if RT_TIER != 0 { mld(b - 8) } else { RT_RSZ }
 rt_unmap(b int): h := if RT_TIER != 0 { 65536 } else { 0 }; sys3(11, b - h, rt_lim(b) + 65536 + h, 0);
 rt_tss() int: if RT_TIER == 0 { return 64 << 20 } r := rt_tmx() - RT_TEND; z ~= 1 << 20; while z * 512 <= r && z < 16 << 20 { z *= 2 } z
 rt_give(b int, used int): if b == 0 { return } if RT_DBG > 0 { for q RT_NFREE { if RT_FREE[q] == b { rt_es("helium runtime error: a region was released twice"); rt_dlx() } } } if used > 1 << 20 { sys3(28, b + 65536, min(used, rt_lim(b)) - 65536 + 4095 & -4096, 8) } if RT_NFREE < 4096: RT_FREE[RT_NFREE] = b; RT_NFREE += 1 else: rt_unmap(b);
-rt_grow(va int, k int, esz int) int: b ~= mld(va); n := mld(va + 8); w := (n + k) * esz; mst(va + 8, n + k); if b != 0 && w <= rt_lim(b) { return b + n * esz } if RT_TIER == 0 { if b == 0 { b = rt_take(0); mst(va, b) } if w > rt_lim(b) { rt_die(5, "push") } return b + n * esz } if n != 0 { rt_die(5, "push") } rt_give(b, 0); z ~= max(w, 1); if mld(va + 40) == 0 { z = rt_tsz(); while z < w { z *= 2 } } b = rt_take(z); mst(va, b); b + n * esz
+rt_grow(va int, k int, esz int) int: if k == 0 && mld(va) == 0 { return 0 } rt_grow0(va, k, esz)
+rt_grow0(va int, k int, esz int) int: b ~= mld(va); n := mld(va + 8); w := (n + k) * esz; mst(va + 8, n + k); if b != 0 && w <= rt_lim(b) { return b + n * esz } if RT_TIER == 0 { if b == 0 { b = rt_take(0); mst(va, b) } if w > rt_lim(b) { rt_die(5, "push") } return b + n * esz } if n != 0 { rt_die(5, "push") } rt_give(b, 0); z ~= max(w, 1); if mld(va + 40) == 0 { z = rt_tsz(); while z < w { z *= 2 } } b = rt_take(z); mst(va, b); b + n * esz
 rt_rsv(va int, k int, esz int): if k <= 0 { return } b := mld(va); z := k * esz; if b != 0 && z <= rt_lim(b) { return } if RT_TIER == 0 { if z > RT_RSZ { rt_die(5, "reserve") } return } if mld(va + 8) != 0 { rt_die(5, "reserve") } if b != 0 { rt_give(b, 0) } mst(va, rt_take(z))
 rt_cap(va int, esz int) int: b := mld(va); if b == 0 { return if RT_TIER != 0 { 0 } else { RT_RSZ / esz } } rt_lim(b) / esz
 rt_rdrop(v RtV&): rt_rdropz(v, 64)
@@ -299,16 +300,16 @@ rt_vhd(p int, w int, lim int) int: if w > 0: w * (lim + 1) else: rt_ulen(rt_uget
 rt_vmk(n int, cap int, w int, lim int, esz int) int:
 	if n < 0 || cap < n: rt_abort("array count out of range", "construct")
 	if w > 0 && w < 8 && cap >> w * 8 != 0: rt_abort("too many elements for the array's length field", "construct")
-	p := rt_grow(vptr(RT_DS), (if w > 0 { w * (lim + 1) } else { rt_ulen(n) }) + cap * esz, 1)
+	p := rt_grow0(vptr(RT_DS), (if w > 0 { w * (lim + 1) } else { rt_ulen(n) }) + cap * esz, 1)
 	if w == 0: v ~= n; q ~= p; loop { b := v & 127; v = v >> 7; mst1(q, if v != 0 { b | 128 } else { b }); q += 1; if v == 0 { break } } else: if lim != 0: rt_vput(p, w, cap); rt_vput(p + w, w, n); else: rt_vput(p, w, n);
 	p
 rt_vfrom(sp int, sn int, w int, lim int, esz int) int: p := rt_vmk(sn, sn, w, lim, esz); mcopy(p + rt_vhd(p, w, lim), sp, sn * esz); p
 rt_vsz(p int, w int, lim int, esz int) int: rt_vhd(p, w, lim) + rt_vget(p, w) * esz
 rt_vret(p int, m int, w int, lim int, esz int) int: rt_vretz(p, m, rt_vsz(p, w, lim, esz))
 rt_vretz(p int, m int, sz int) int: if RT_DS.b == 0 { RT_DS.b = rt_take(0) } d := RT_DS.b + m; if d != p { mcopy(d, p, sz) } RT_DS.n = m + sz; d
-rt_vfromz(p int, n int, z int, w int, lim int) int: h := rt_vmk(n, n, w, lim, 0); mcopy(rt_grow(vptr(RT_DS), z, 1), p, z); h
+rt_vfromz(p int, n int, z int, w int, lim int) int: h := rt_vmk(n, n, w, lim, 0); mcopy(rt_grow0(vptr(RT_DS), z, 1), p, z); h
 rt_dsn() int: RT_DS.n
-rt_dsput(z int) int: rt_grow(vptr(RT_DS), z, 1)
+rt_dsput(z int) int: rt_grow0(vptr(RT_DS), z, 1)
 rt_bmnew(n int) int: z := (n + 7) / 8 + 1; p := rt_dsput(z); for i z { mst1(p + i, 0) } p
 rt_bmset(b int, o int): mst1(b + (o >> 3), mld1(b + (o >> 3)) | 1 << (o & 7))
 rt_bmget(b int, o int) int: mld1(b + (o >> 3)) >> (o & 7) & 1

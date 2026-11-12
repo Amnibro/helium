@@ -452,11 +452,12 @@ radix_sort<T>(xs T[:], nb int, sgn bool):
 	n := xs.len
 	if n <= 256 { sort(xs) { a, b => a < b }; return }
 	top := if sgn { nb - 1 } else { -1 }
-	cnt int[>..] ~= []; cnt.resize(nb * 256, 0)
+	cnt int[>..] ~= []; cnt.reserve(nb * 256); cnt.resize(nb * 256, 0)
 	for x xs:
 		k := x as! u64
 		for d nb: cnt[d * 256 + radix_key(k, d, top)] += 1
 	tmp T[>..] ~= []
+	tmp.reserve(n)
 	tmp.append(xs)
 	src T[:] ~= xs; dst T[:] ~= tmp[..]; moved ~= false
 	ofs int[256] ~= [0; 256]
@@ -483,6 +484,7 @@ stable_sort<T, F>(xs T[:]):
 	n := xs.len
 	if n < 2: return
 	tmp T[>..] ~= []
+	tmp.reserve(n)
 	tmp.append(xs)
 	w ~= 1
 	while w < n:
