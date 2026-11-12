@@ -16,7 +16,7 @@ wl(v int) int:
 	if v == -2: return WT0
 	if v == -3: return WT0 + 1
 	WAR + 12 + VMAP[v] as int + (if VF[v] != 0 { VN } else { 0 })
-var VST i32[>..<]; var VEN i32[>..<]; var WLP i32[>..<]; var VKS i8[>..<]; var VKC i64[>..<]
+var VST i32[>..<]; var VEN i32[>..<]; var WLP i32[>..<]; var VKS i8[>..<]; var VKC i64[>..<]; var VUC i32[>..<]; WNOFZ ~= false
 wops(i int, us i32[>..<]&, ds i32[>..<]&):
 	x := IR[i]; op := x.op as int; us.clear(); ds.clear()
 	if op == I_NOP || op == I_LBL || op == I_JMP || op == I_DSS || op == I_DSR: return
@@ -40,11 +40,11 @@ wvote(fi int):
 wext2(v int, h int, p int) bool:
 	s := VST[v]; e := VEN[v]; if s >= 0 && s <= p && e >= h && (s > h || e < p) { VST[v] = min(s as int, h) as i32; VEN[v] = max(e as int, p) as i32; return true } false
 wcolor(fi int):
-	f := NFS[fi]; i0 := f.i0 as int; nv := f.nv as int; VST.clear(); VST.resize(nv, -1); VEN.clear(); VEN.resize(nv, -1); VKS.clear(); VKS.resize(nv, 0); VKC.clear(); VKC.resize(nv, 0); wvote(fi)
+	f := NFS[fi]; i0 := f.i0 as int; nv := f.nv as int; VST.clear(); VST.resize(nv, -1); VEN.clear(); VEN.resize(nv, -1); VKS.clear(); VKS.resize(nv, 0); VKC.clear(); VKC.resize(nv, 0); VUC.clear(); VUC.resize(nv, 0); wvote(fi)
 	us i32[>..<] ~= []; ds i32[>..<] ~= []; lp i32[>..<] ~= []
 	for i i0..(f.i1 as int):
 		wops(i, us, ds)
-		for v us: if VST[v] < 0 { VST[v] = i0 as i32 } VEN[v] = i as i32
+		for v us: if VST[v] < 0 { VST[v] = i0 as i32 } VEN[v] = i as i32; VUC[v] += 1
 		for v ds: if VST[v] < 0 { VST[v] = i as i32 } VEN[v] = i as i32; VKS[v] = if VKS[v] == 0 && IR[i].op as int == I_IMM { 1 } else { 2 }; VKC[v] = IR[i].c
 		op := IR[i].op as int; if (op == I_JMP || op == I_BZ || op == I_BNZ) && WLP[IR[i].c] <= i { lp.push(WLP[IR[i].c]); lp.push(i as i32) }
 	ch ~= lp.len > 0
@@ -426,11 +426,12 @@ recursive wwithin(x int, k int, lp bool):
 	if k > 0: y := if lp { XL[XS[x] + k - 1] as int } else { MCL[MCS[x] + k - 1] as int }; wb(0x02); wb(0x40); CK.push(0); CT.push(y as i32); wwithin(x, k - 1, lp); wb(0x0B); CK.pop(); CT.pop(); wtree(y); return
 	if lp: wb(0x03); wb(0x40); CK.push(1); CT.push(x as i32); wwithin(x, MCN[x] as int, false); wb(0x0B); CK.pop(); CT.pop(); return
 	j ~= BE[x] - 1; while j > BS[x] && IR[j].op as int == I_NOP { j -= 1 }
-	for i (BS[x] as int)..(BE[x] as int): wins(i)
-	op := IR[j].op as int
+	op := IR[j].op as int; p ~= j - 1; while p > BS[x] && IR[p].op as int == I_NOP { p -= 1 }
+	po := if p >= BS[x] && p < j { IR[p].op as int } else { -1 }; fz := !WNOFZ && (op == I_BZ || op == I_BNZ) && (po == I_CMP || po == I_FCMP) && IR[p].d == IR[j].a && IR[j].a >= 0 && VUC[IR[j].a] == 1
+	for i (BS[x] as int)..(BE[x] as int): if !fz || i != p { wins(i) }
 	if op == I_RET: return
 	if op == I_BZ || op == I_BNZ:
-		lg(IR[j].a as int); if op == I_BZ { wb(0x50) } else { i64c(0); wb(0x52) }
+		if fz { y := IR[p]; if po == I_CMP { lg(y.a as int); lg(y.b as int); wcc(y.c as int) } else { fget(y.a as int, y.w as int); fget(y.b as int, y.w as int); wfcmp(y.c as int, y.w as int) } if op == I_BZ { wb(0x45) } } else { lg(IR[j].a as int); if op == I_BZ { wb(0x50) } else { i64c(0); wb(0x52) } }
 		wif(); CK.push(2); CT.push(-1); wbranch(x, BS0[x] as int); wb(0x05); wbranch(x, BS1[x] as int); wb(0x0B); CK.pop(); CT.pop(); return
 	if BNS[x] > 0: wbranch(x, BS0[x] as int); return
 	wb(0x00)
@@ -474,7 +475,7 @@ wasm_program(out byte[>..]&) bool:
 	WSD.clear(); WSB.clear(); WSL.clear(); wseg(WRO, RO[..]); rz := hdef("GS_STACK_RESERVE")
 	for g ["RT_RSZ", "RT_SBUD", "RT_DBG", "RT_TIER", "RT_TEND"]: v := if g == "RT_TIER" { 1 } else if g == "RT_TEND" { pages * 65536 } else if g == "RT_RSZ" { if rz >= 0 { rz & -4096 } else { 1 << 25 } } else if g == "RT_SBUD" { sb := hdef("GS_STACK_BUDGET"); if sb > 0 { sb } else { 1 << 32 } } else { if DBG { 1 } else { 0 } }; if v > 0 { wgset(g, v) }
 	irw byte[>..] ~= []; dump := env("HC_IR", irw)
-	c byte[>..<] ~= []; WLC.clear(); WLT.clear(); WLNM.clear(); WLN = 0; WOF = WIMP + n + 3 + ne; WLOFF = env("HC_NOWLO", noi); whot()
+	c byte[>..<] ~= []; WLC.clear(); WLT.clear(); WLNM.clear(); WLN = 0; WOF = WIMP + n + 3 + ne; WLOFF = env("HC_NOWLO", noi); WNOFZ = env("HC_NOFZ", noi); whot()
 	for k n: if dump && NFS[k].inst >= 0 && nm(FI_[NFS[k].inst].name) == irw[..] { ir_dump(k) } wfn(k, c)
 	WO.clear(); ul(WO, 0); WAR = 0
 	for k WSD.len: wb(0x41); sl(WO, WSD[k]); wb(0x41); sl(WO, 0); wb(0x41); sl(WO, WSL[k]); wb(0xFC); ul(WO, 8); ul(WO, k); wb(0); wb(0xFC); ul(WO, 9); ul(WO, k)
