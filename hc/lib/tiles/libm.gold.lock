@@ -1,0 +1,806 @@
+=== -132df0f2719c620a
+use binary
+TWO24 := 16777216.0
+TWOM24 := 5.9604644775390625e-8
+pow2(e int) real: binary::f64_from_bits(((1023 + e) as uint) << 52)
+TWOM120 := pow2(-120)
+hw(x real) int: (binary::f64_bits(x) >> 32) as int
+lw(x real) int: (binary::f64_bits(x) & 0xffffffff) as int
+hs(x real) int: (hw(x) as! i32) as int
+neg_bit(x real) bool: ((binary::f64_bits(x) >> 63) & 1) != 0
+mk(h int, l int) real: binary::f64_from_bits((((h & 0xffffffff) as uint) << 32) | ((l & 0xffffffff) as uint))
+with_hi(x real, h int) real: mk(h, lw(x))
+with_lo0(x real) real: mk(hw(x), 0)
+hi_only(h int) real: mk(h, 0)
+=== -44cfa9112cf4e3ba
+TWO1023 := pow2(1023)
+TWOM969 := 2.2250738585072014e-308 * 9007199254740992.0
+scalbn(x real, n int) real:
+	y ~= x
+	k ~= n
+	if k > 1023:
+		y *= TWO1023
+		k -= 1023
+		if k > 1023:
+			y *= TWO1023
+			k -= 1023
+			if k > 1023:
+				k = 1023
+	else if k < -1022:
+		y *= TWOM969
+		k += 969
+		if k < -1022:
+			y *= TWOM969
+			k += 969
+			if k < -1022:
+				k = -1022
+	return y * pow2(k)
+=== 137ce8c066a5f9c4
+IPIO2 int[66] := [0xA2F983, 0x6E4E44, 0x1529FC, 0x2757D1, 0xF534DD, 0xC0DB62, 0x95993C, 0x439041, 0xFE5163, 0xABDEBB, 0xC561B7, 0x246E3A, 0x424DD2, 0xE00649, 0x2EEA09, 0xD1921C, 0xFE1DEB, 0x1CB129, 0xA73EE8, 0x8235F5, 0x2EBB44, 0x84E99C, 0x7026B4, 0x5F7E41, 0x3991D6, 0x398353, 0x39F49C, 0x845F8B, 0xBDF928, 0x3B1FF8, 0x97FFDE, 0x05980F, 0xEF2F11, 0x8B5A0A, 0x6D1F6D, 0x367ECF, 0x27CB09, 0xB74F46, 0x3F669E, 0x5FEA2D, 0x7527BA, 0xC7EBE5, 0xF17B3D, 0x0739F7, 0x8A5292, 0xEA6BFB, 0x5FB11F, 0x8D5D08, 0x560330, 0x46FC7B, 0x6BABF0, 0xCFBC20, 0x9AF436, 0x1DA9E3, 0x91615E, 0xE61B08, 0x659985, 0x5F14A0, 0x68408D, 0xFFD880, 0x4D7327, 0x310606, 0x1556CA, 0x73A8C9, 0x60E27B, 0xC08C6B]
+PIO2 real[8] := [1.57079625129699707031e+00, 7.54978941586159635335e-08, 5.39030252995776476554e-15, 3.28200341580791294123e-22, 1.27065575308067607349e-29, 1.22933308981111328932e-36, 2.73370053816464559624e-44, 2.16741683877804819444e-51]
+rem_large(xs real[:], e0 int) int, real, real:
+	f real[20] ~= [0.0; 20]
+	fq real[20] ~= [0.0; 20]
+	q real[20] ~= [0.0; 20]
+	iq int[20] ~= [0; 20]
+	jk := 4
+	jp := 4
+	jx := xs.len - 1
+	jv := max(0, (e0 - 3) / 24)
+	q0 ~= e0 - 24 * (jv + 1)
+	for i 0..(jx + jk + 1):
+		j := jv - jx + i
+		f[i] = if j < 0: 0.0 else: IPIO2[j] as real
+	calc(i int):
+		fw ~= 0.0
+		for j 0..(jx + 1): fw += xs[j] * f[jx + i - j]
+		q[i] = fw;
+	for i 0..(jk + 1): calc(i)
+	jz ~= jk
+	z ~= 0.0
+	fw ~= 0.0
+	ih ~= 0
+	n ~= 0
+	carry ~= 0
+	while true:
+		z = q[jz]
+		i ~= 0
+		j ~= jz
+		while j > 0:
+			fw = ((TWOM24 * z) as int) as real
+			iq[i] = (z - TWO24 * fw) as int
+			z = q[j - 1] + fw
+			i += 1
+			j -= 1
+		z = scalbn(z, q0)
+		z -= 8.0 * floor(z * 0.125)
+		n = z as int
+		z -= n as real
+		ih = 0
+		if q0 > 0:
+			i2 := iq[jz - 1] >> (24 - q0)
+			n += i2
+			iq[jz - 1] = iq[jz - 1] - (i2 << (24 - q0))
+			ih = iq[jz - 1] >> (23 - q0)
+		else if q0 == 0:
+			ih = iq[jz - 1] >> 23
+		else if z >= 0.5:
+			ih = 2
+		if ih > 0:
+			n += 1
+			carry = 0
+			for i2 0..jz:
+				j2 := iq[i2]
+				if carry == 0:
+					if j2 != 0:
+						carry = 1
+						iq[i2] = 0x1000000 - j2
+				else:
+					iq[i2] = 0xffffff - j2
+			if q0 > 0:
+				if q0 == 1:
+					iq[jz - 1] = iq[jz - 1] & 0x7fffff
+				else if q0 == 2:
+					iq[jz - 1] = iq[jz - 1] & 0x3fffff
+			if ih == 2:
+				z = 1.0 - z
+				if carry != 0:
+					z -= scalbn(1.0, q0)
+		if z == 0.0:
+			j3 ~= 0
+			for i2 jk..jz: j3 = j3 | iq[i2]
+			if j3 == 0:
+				k ~= 1
+				while iq[jk - k] == 0: k += 1
+				for i2 (jz + 1)..(jz + k + 1):
+					f[jx + i2] = IPIO2[jv + i2] as real
+					calc(i2)
+				jz += k
+				continue
+		break
+	if z == 0.0:
+		jz -= 1
+		q0 -= 24
+		while iq[jz] == 0:
+			jz -= 1
+			q0 -= 24
+	else:
+		z = scalbn(z, -q0)
+		if z >= TWO24:
+			fw = ((TWOM24 * z) as int) as real
+			iq[jz] = (z - TWO24 * fw) as int
+			jz += 1
+			q0 += 24
+			iq[jz] = fw as int
+		else:
+			iq[jz] = z as int
+	fw = scalbn(1.0, q0)
+	for ii 0..(jz + 1):
+		i := jz - ii
+		q[i] = fw * (iq[i] as real)
+		fw *= TWOM24
+	for ii 0..(jz + 1):
+		i := jz - ii
+		fw = 0.0
+		k ~= 0
+		while k <= jp && k <= jz - i:
+			fw += PIO2[k] * q[i + k]
+			k += 1
+		fq[jz - i] = fw
+	fw = 0.0
+	for ii 0..(jz + 1): fw += fq[jz - ii]
+	y0 := if ih != 0: -fw else: fw
+	fw = fq[0] - fw
+	for i 1..(jz + 1): fw += fq[i]
+	y1 := if ih != 0: -fw else: fw
+	return n & 7, y0, y1
+=== -58aa788dd2c65c8d
+EPS := 2.2204460492503131e-16
+TO_INT := 1.5 / EPS
+INV_PIO2 := 6.36619772367581382433e-01
+PIO2_1 := 1.57079632673412561417e+00
+PIO2_1T := 6.07710050650619224932e-11
+PIO2_2 := 6.07710050630396597660e-11
+PIO2_2T := 2.02226624879595063154e-21
+PIO2_3 := 2.02226624871116645580e-21
+PIO2_3T := 8.47842766036889956997e-32
+rp_medium(x real, ix int) int, real, real:
+	tmp := x * INV_PIO2 + TO_INT
+	f_n := tmp - TO_INT
+	n := f_n as int
+	r ~= x - f_n * PIO2_1
+	w ~= f_n * PIO2_1T
+	y0 ~= r - w
+	ex := ix >> 20
+	ey := ((binary::f64_bits(y0) >> 52) & 0x7ff) as int
+	if ex - ey > 16:
+		t := r
+		w = f_n * PIO2_2
+		r = t - w
+		w = f_n * PIO2_2T - ((t - r) - w)
+		y0 = r - w
+		ey2 := ((binary::f64_bits(y0) >> 52) & 0x7ff) as int
+		if ex - ey2 > 49:
+			t2 := r
+			w = f_n * PIO2_3
+			r = t2 - w
+			w = f_n * PIO2_3T - ((t2 - r) - w)
+			y0 = r - w
+	y1 := (r - y0) - w
+	return n, y0, y1
+rp_step(x real, k int) int, real, real:
+	kf := k as real
+	if !neg_bit(x):
+		z := x - kf * PIO2_1
+		y0 := z - kf * PIO2_1T
+		y1 := (z - y0) - kf * PIO2_1T
+		return k, y0, y1
+	z := x + kf * PIO2_1
+	y0 := z + kf * PIO2_1T
+	y1 := (z - y0) + kf * PIO2_1T
+	return -k, y0, y1
+rem_pio2(x real) int, real, real:
+	ix := hw(x) & 0x7fffffff
+	sign := neg_bit(x)
+	if ix <= 0x400f6a7a:
+		if (ix & 0xfffff) == 0x921fb:
+			a, b, c := rp_medium(x, ix)
+			return a, b, c
+		if ix <= 0x4002d97c:
+			a, b, c := rp_step(x, 1)
+			return a, b, c
+		a, b, c := rp_step(x, 2)
+		return a, b, c
+	if ix <= 0x4015fdbc:
+		if ix == 0x4012d97c:
+			a, b, c := rp_medium(x, ix)
+			return a, b, c
+		a, b, c := rp_step(x, 3)
+		return a, b, c
+	if ix <= 0x401c463b:
+		if ix == 0x401921fb:
+			a, b, c := rp_medium(x, ix)
+			return a, b, c
+		a, b, c := rp_step(x, 4)
+		return a, b, c
+	if ix < 0x413921fb:
+		a, b, c := rp_medium(x, ix)
+		return a, b, c
+	if ix >= 0x7ff00000: return 0, x - x, x - x
+	bits := binary::f64_bits(x)
+	z ~= binary::f64_from_bits((bits & 0x000fffffffffffff) | (((0x3ff + 23) as uint) << 52))
+	tx real[3] ~= [0.0; 3]
+	for i 0..2:
+		tx[i] = (z as int) as real
+		z = (z - tx[i]) * TWO24
+	tx[2] = z
+	nx ~= 3
+	while nx > 1 && tx[nx - 1] == 0.0: nx -= 1
+	n, y0, y1 := rem_large(tx[..nx], (ix >> 20) - (0x3ff + 23))
+	if sign: return -n, -y0, -y1
+	return n, y0, y1
+=== -5c6b5b0a0d7b913
+S1 := -1.66666666666666324348e-01
+S2 := 8.33333333332248946124e-03
+S3 := -1.98412698298579493134e-04
+S4 := 2.75573137070700676789e-06
+S5 := -2.50507602534068634195e-08
+S6 := 1.58969099521155010221e-10
+k_sin(x real, y real, iy int) real:
+	z := x * x
+	w := z * z
+	r := S2 + z * (S3 + z * S4) + z * w * (S5 + z * S6)
+	v := z * x
+	if iy == 0: return x + v * (S1 + z * r)
+	return x - ((z * (0.5 * y - v * r) - y) - v * S1)
+=== 34833723410355da
+C1 := 4.16666666666666019037e-02
+C2 := -1.38888888888741095749e-03
+C3 := 2.48015872894767294178e-05
+C4 := -2.75573143513906633035e-07
+C5 := 2.08757232129817482790e-09
+C6 := -1.13596475577881948265e-11
+k_cos(x real, y real) real:
+	z := x * x
+	w := z * z
+	r := z * (C1 + z * (C2 + z * C3)) + w * w * (C4 + z * (C5 + z * C6))
+	hz := 0.5 * z
+	w2 := 1.0 - hz
+	return w2 + (((1.0 - w2) - hz) + (z * r - x * y))
+=== -bce5e9603cbf427
+TK real[13] := [3.33333333333334091986e-01, 1.33333333333201242699e-01, 5.39682539762260521377e-02, 2.18694882948595424599e-02, 8.86323982359930005737e-03, 3.59207910759131235356e-03, 1.45620945432529025516e-03, 5.88041240820264096874e-04, 2.46463134818469906812e-04, 7.81794442939557092300e-05, 7.14072491382608190305e-05, -1.85586374855275456654e-05, 2.59073051863633712884e-05]
+PIO4 := 7.85398163397448278999e-01
+PIO4_LO := 3.06161699786838301793e-17
+k_tan(x0 real, y0 real, odd int) real:
+	x ~= x0
+	y ~= y0
+	ix := hw(x) & 0x7fffffff
+	big := ix >= 0x3FE59428
+	sign := neg_bit(x0)
+	if big:
+		if sign:
+			x = -x
+			y = -y
+		x = (PIO4 - x) + (PIO4_LO - y)
+		y = 0.0
+	z := x * x
+	w := z * z
+	r ~= TK[1] + w * (TK[3] + w * (TK[5] + w * (TK[7] + w * (TK[9] + w * TK[11]))))
+	v := z * (TK[2] + w * (TK[4] + w * (TK[6] + w * (TK[8] + w * (TK[10] + w * TK[12])))))
+	s := z * x
+	r = y + z * (s * (r + v) + y) + s * TK[0]
+	w2 := x + r
+	if big:
+		s2 := 1.0 - 2.0 * (odd as real)
+		v2 := s2 - 2.0 * (x + (r - w2 * w2 / (w2 + s2)))
+		if sign: return -v2
+		return v2
+	if odd == 0: return w2
+	w0 := with_lo0(w2)
+	v3 := r - (w0 - x)
+	a := -1.0 / w2
+	a0 := with_lo0(a)
+	return a0 + a * (1.0 + a0 * w0 + a0 * v3)
+=== 33c4cb7bc7c4c4bc
+sin(x real) real:
+	ix := hw(x) & 0x7fffffff
+	if ix <= 0x3fe921fb:
+		if ix < 0x3e500000: return x
+		return k_sin(x, 0.0, 0)
+	if ix >= 0x7ff00000: return x - x
+	n, y0, y1 := rem_pio2(x)
+	m := n & 3
+	if m == 0: return k_sin(y0, y1, 1)
+	if m == 1: return k_cos(y0, y1)
+	if m == 2: return -k_sin(y0, y1, 1)
+	return -k_cos(y0, y1)
+=== -7bb9a22476061154
+cos(x real) real:
+	ix := hw(x) & 0x7fffffff
+	if ix <= 0x3fe921fb:
+		if ix < 0x3e46a09e: return 1.0
+		return k_cos(x, 0.0)
+	if ix >= 0x7ff00000: return x - x
+	n, y0, y1 := rem_pio2(x)
+	m := n & 3
+	if m == 0: return k_cos(y0, y1)
+	if m == 1: return -k_sin(y0, y1, 1)
+	if m == 2: return -k_cos(y0, y1)
+	return k_sin(y0, y1, 1)
+=== -66efd8594255aad0
+tan(x real) real:
+	ix := hw(x) & 0x7fffffff
+	if ix <= 0x3fe921fb:
+		if ix < 0x3e400000: return x
+		return k_tan(x, 0.0, 0)
+	if ix >= 0x7ff00000: return x - x
+	n, y0, y1 := rem_pio2(x)
+	return k_tan(y0, y1, n & 1)
+=== 0dfd6080ed5286ce
+ATANHI real[4] := [4.63647609000806093515e-01, 7.85398163397448278999e-01, 9.82793723247329054082e-01, 1.57079632679489655800e+00]
+ATANLO real[4] := [2.26987774529616870924e-17, 3.06161699786838301793e-17, 1.39033110312309984516e-17, 6.12323399573676603587e-17]
+ATC real[11] := [3.33333333333329318027e-01, -1.99999999998764832476e-01, 1.42857142725034663711e-01, -1.11111104054623557880e-01, 9.09088713343650656196e-02, -7.69187620504482999495e-02, 6.66107313738753120669e-02, -5.83357013379057348645e-02, 4.97687799461593236017e-02, -3.65315727442169155270e-02, 1.62858201153657823623e-02]
+atan(x0 real) real:
+	x ~= x0
+	ix := hw(x) & 0x7fffffff
+	sign := neg_bit(x)
+	if ix >= 0x44100000:
+		if x != x: return x
+		if sign: return -ATANHI[3]
+		return ATANHI[3]
+	id ~= -1
+	if ix < 0x3fdc0000:
+		if ix < 0x3e400000: return x
+	else:
+		x = fabs(x)
+		if ix < 0x3fe60000:
+			x = (2.0 * x - 1.0) / (2.0 + x)
+			id = 0
+		else if ix < 0x3ff30000:
+			x = (x - 1.0) / (x + 1.0)
+			id = 1
+		else if ix < 0x40038000:
+			x = (x - 1.5) / (1.0 + 1.5 * x)
+			id = 2
+		else:
+			x = -1.0 / x
+			id = 3
+	z := x * x
+	w := z * z
+	s1 := z * (ATC[0] + w * (ATC[2] + w * (ATC[4] + w * (ATC[6] + w * (ATC[8] + w * ATC[10])))))
+	s2 := w * (ATC[1] + w * (ATC[3] + w * (ATC[5] + w * (ATC[7] + w * ATC[9]))))
+	if id < 0: return x - x * (s1 + s2)
+	r := ATANHI[id] - ((x * (s1 + s2) - ATANLO[id]) - x)
+	if sign: return -r
+	return r
+=== -77d4ce919202e0d0
+A2_PI := 3.1415926535897931160E+00
+A2_PI_LO := 1.2246467991473531772E-16
+atan2(y real, x real) real:
+	if x != x || y != y: return x + y
+	hx := hw(x)
+	lx := lw(x)
+	hy := hw(y)
+	ly := lw(y)
+	if hx == 0x3ff00000 && lx == 0: return atan(y)
+	m := ((hy >> 31) & 1) + 2 * ((hx >> 31) & 1)
+	ix := hx & 0x7fffffff
+	iy := hy & 0x7fffffff
+	if (iy | ly) == 0:
+		if m < 2: return y
+		if m == 2: return A2_PI
+		return -A2_PI
+	if (ix | lx) == 0:
+		if (m & 1) != 0: return -A2_PI / 2.0
+		return A2_PI / 2.0
+	if ix == 0x7ff00000:
+		if iy == 0x7ff00000:
+			if m == 0: return A2_PI / 4.0
+			if m == 1: return -A2_PI / 4.0
+			if m == 2: return 3.0 * A2_PI / 4.0
+			return -3.0 * A2_PI / 4.0
+		if m == 0: return 0.0
+		if m == 1: return -0.0
+		if m == 2: return A2_PI
+		return -A2_PI
+	if ix + 0x4000000 < iy || iy == 0x7ff00000:
+		if (m & 1) != 0: return -A2_PI / 2.0
+		return A2_PI / 2.0
+	z := if (m & 2) != 0 && iy + 0x4000000 < ix: 0.0 else: atan(fabs(y / x))
+	if m == 0: return z
+	if m == 1: return -z
+	if m == 2: return A2_PI - (z - A2_PI_LO)
+	return (z - A2_PI_LO) - A2_PI
+=== 6aab082f7ee8d8e3
+PIO2_HI := 1.57079632679489655800e+00
+PIO2_LO := 6.12323399573676603587e-17
+PS0 := 1.66666666666666657415e-01
+PS1 := -3.25565818622400915405e-01
+PS2 := 2.01212532134862925881e-01
+PS3 := -4.00555345006794114027e-02
+PS4 := 7.91534994289814532176e-04
+PS5 := 3.47933107596021167570e-05
+QS1 := -2.40339491173441421878e+00
+QS2 := 2.02094576023350569471e+00
+QS3 := -6.88283971605453293030e-01
+QS4 := 7.70381505559019352791e-02
+ras_r(z real) real:
+	p := z * (PS0 + z * (PS1 + z * (PS2 + z * (PS3 + z * (PS4 + z * PS5)))))
+	q := 1.0 + z * (QS1 + z * (QS2 + z * (QS3 + z * QS4)))
+	return p / q
+=== 42a0c7662620ebeb
+asin(x real) real:
+	ix := hw(x) & 0x7fffffff
+	if ix >= 0x3ff00000:
+		if fabs(x) == 1.0: return x * PIO2_HI + TWOM120
+		return 0.0 / (x - x)
+	if ix < 0x3fe00000:
+		if ix >= 0x00100000 && ix < 0x3e500000: return x
+		return x + x * ras_r(x * x)
+	z := (1.0 - fabs(x)) * 0.5
+	s := sqrt(z)
+	r := ras_r(z)
+	v ~= 0.0
+	if ix >= 0x3fef3333:
+		v = PIO2_HI - (2.0 * (s + s * r) - PIO2_LO)
+	else:
+		f := with_lo0(s)
+		c := (z - f * f) / (s + f)
+		v = 0.5 * PIO2_HI - ((2.0 * s * r - (PIO2_LO - 2.0 * c)) - (0.5 * PIO2_HI - 2.0 * f))
+	if neg_bit(x): return -v
+	return v
+=== 27015f73675683e7
+acos(x real) real:
+	ix := hw(x) & 0x7fffffff
+	if ix >= 0x3ff00000:
+		if fabs(x) == 1.0:
+			if neg_bit(x): return 2.0 * PIO2_HI + TWOM120
+			return 0.0
+		return 0.0 / (x - x)
+	if ix < 0x3fe00000:
+		if ix <= 0x3c600000: return PIO2_HI + TWOM120
+		return PIO2_HI - (x - (PIO2_LO - x * ras_r(x * x)))
+	if neg_bit(x):
+		z := (1.0 + x) * 0.5
+		s := sqrt(z)
+		w := ras_r(z) * s - PIO2_LO
+		return 2.0 * (PIO2_HI - (s + w))
+	z := (1.0 - x) * 0.5
+	s := sqrt(z)
+	df := with_lo0(s)
+	c := (z - df * df) / (s + df)
+	w := ras_r(z) * s + c
+	return 2.0 * (df + w)
+=== -44e842a2fee91453
+TWO700 := pow2(700)
+TWOM700 := pow2(-700)
+TWOM374 := pow2(-374)
+MINNORM := 2.2250738585072014e-308
+sqr(v real) real, real:
+	c := v * 134217729.0
+	h := (v - c) + c
+	l := v - h
+	hi := v * v
+	lo := ((h * h - hi) + 2.0 * h * l) + l * l
+	return hi, lo
+exact_sign(terms const real[:]) int:
+	e real[12] ~= [0.0; 12]
+	n ~= 0
+	for b terms:
+		q ~= b
+		for i n:
+			s := q + e[i]
+			bb := s - q
+			err := (q - (s - bb)) + (e[i] - bb)
+			e[i] = err
+			q = s
+		e[n] = q
+		n += 1
+	for ii n:
+		i := n - 1 - ii
+		if e[i] > 0.0: return 1
+		if e[i] < 0.0: return -1
+	return 0
+hyp_steps(r real, subn bool) real, real:
+	if subn: return TWOM374, TWOM374
+	bits := binary::f64_bits(r)
+	up := binary::f64_from_bits(bits + 1) - r
+	dn := r - binary::f64_from_bits(bits - 1)
+	return up, dn
+hypot(x0 real, y0 real) real:
+	ux ~= binary::f64_bits(x0) & 0x7fffffffffffffff
+	uy ~= binary::f64_bits(y0) & 0x7fffffffffffffff
+	if ux < uy:
+		t := ux
+		ux = uy
+		uy = t
+	ex := (ux >> 52) as int
+	ey := (uy >> 52) as int
+	x ~= binary::f64_from_bits(ux)
+	y ~= binary::f64_from_bits(uy)
+	if ey == 0x7ff: return y
+	if ex == 0x7ff || uy == 0: return x
+	if ex - ey > 64: return x + y
+	z ~= 1.0
+	if ex > 0x3ff + 510:
+		z = TWO700
+		x *= TWOM700
+		y *= TWOM700
+	else if ey < 0x3ff - 450:
+		z = TWOM700
+		x *= TWO700
+		y *= TWO700
+	hx, lx := sqr(x)
+	hy, ly := sqr(y)
+	r ~= sqrt(((ly + lx) + hy) + hx)
+	subn := z == TWOM700 && z * r < MINNORM
+	if subn: r = (z * r) * TWO700
+	for it 4:
+		u_up, u_dn := hyp_steps(r, subn)
+		hr, lr := sqr(r)
+		tu real[8] := [hx, lx, hy, ly, -hr, -lr, -(r * u_up), -(u_up * u_up * 0.25)]
+		td real[8] := [hx, lx, hy, ly, -hr, -lr, r * u_dn, -(u_dn * u_dn * 0.25)]
+		d_up := exact_sign(tu)
+		d_dn := exact_sign(td)
+		odd := (binary::f64_bits(r) & 1) == 1
+		if d_up > 0:
+			r = r + u_up
+		else if d_dn < 0:
+			r = r - u_dn
+		else if d_up == 0:
+			if odd:
+				r = r + u_up
+			break
+		else if d_dn == 0:
+			if odd:
+				r = r - u_dn
+			break
+		else:
+			break
+	return z * r
+=== 6b45668e337a5a9d
+BP real[2] := [1.0, 1.5]
+DP_H real[2] := [0.0, 5.84962487220764160156e-01]
+DP_L real[2] := [0.0, 1.35003920212974897128e-08]
+TWO53 := 9007199254740992.0
+HUGE := 1.0e300
+TINY := 1.0e-300
+L1 := 5.99999999999994648725e-01
+L2 := 4.28571428578550184252e-01
+L3 := 3.33333329818377432918e-01
+L4 := 2.72728123808534006489e-01
+L5 := 2.30660745775561754067e-01
+L6 := 2.06975017800338417784e-01
+P1 := 1.66666666666666019037e-01
+P2 := -2.77777777770155933842e-03
+P3 := 6.61375632143793436117e-05
+P4 := -1.65339022054652515390e-06
+P5 := 4.13813679705723846039e-08
+PW_LG2 := 6.93147180559945286227e-01
+PW_LG2_H := 6.93147182464599609375e-01
+PW_LG2_L := -1.90465429995776804525e-09
+OVT := 8.0085662595372944372e-17
+CP := 9.61796693925975554329e-01
+CP_H := 9.61796700954437255859e-01
+CP_L := -7.02846165095275826516e-09
+IVLN2 := 1.44269504088896338700e+00
+IVLN2_H := 1.44269502162933349609e+00
+IVLN2_L := 1.92596299112661746887e-08
+pow(x real, y real) real:
+	hx := hs(x)
+	lx := lw(x)
+	hy := hs(y)
+	ly := lw(y)
+	ix := hx & 0x7fffffff
+	iy := hy & 0x7fffffff
+	if (iy | ly) == 0: return 1.0
+	if x == 1.0: return 1.0
+	if x != x || y != y: return x + y
+	yisint ~= 0
+	if hx < 0:
+		if iy >= 0x43400000:
+			yisint = 2
+		else if iy >= 0x3ff00000:
+			k := (iy >> 20) - 0x3ff
+			if k > 20:
+				j := ly >> (52 - k)
+				if (j << (52 - k)) == ly: yisint = 2 - (j & 1)
+			else if ly == 0:
+				j := iy >> (20 - k)
+				if (j << (20 - k)) == iy: yisint = 2 - (j & 1)
+	if ly == 0:
+		if iy == 0x7ff00000:
+			if fabs(x) == 1.0: return 1.0
+			if ix >= 0x3ff00000:
+				if hy >= 0: return y
+				return 0.0
+			if hy >= 0: return 0.0
+			return -y
+		if iy == 0x3ff00000:
+			if hy >= 0: return x
+			return 1.0 / x
+		if hy == 0x40000000: return x * x
+		if hy == 0x3fe00000 && hx >= 0: return sqrt(x)
+	ax := fabs(x)
+	if lx == 0 && (ix == 0x7ff00000 || ix == 0 || ix == 0x3ff00000):
+		z ~= ax
+		if hy < 0: z = 1.0 / z
+		if hx < 0:
+			if ix == 0x3ff00000 && yisint == 0:
+				z = (z - z) / (z - z)
+			else if yisint == 1:
+				z = -z
+		return z
+	s ~= 1.0
+	if hx < 0:
+		if yisint == 0: return (x - x) / (x - x)
+		if yisint == 1: s = -1.0
+	t1 ~= 0.0
+	t2 ~= 0.0
+	n ~= 0
+	if iy > 0x41e00000:
+		if iy > 0x43f00000:
+			if ix <= 0x3fefffff:
+				if hy < 0: return HUGE * HUGE
+				return TINY * TINY
+			if ix >= 0x3ff00000:
+				if hy > 0: return HUGE * HUGE
+				return TINY * TINY
+		if ix < 0x3fefffff:
+			if hy < 0: return s * HUGE * HUGE
+			return s * TINY * TINY
+		if ix > 0x3ff00000:
+			if hy > 0: return s * HUGE * HUGE
+			return s * TINY * TINY
+		t := ax - 1.0
+		w := (t * t) * (0.5 - t * (0.3333333333333333333333 - t * 0.25))
+		u := IVLN2_H * t
+		v := t * IVLN2_L - w * IVLN2
+		t1 = with_lo0(u + v)
+		t2 = v - (t1 - u)
+	else:
+		ixm ~= ix
+		axm ~= ax
+		if ixm < 0x00100000:
+			axm *= TWO53
+			n -= 53
+			ixm = hw(axm)
+		n += (ixm >> 20) - 0x3ff
+		j := ixm & 0xfffff
+		ixm = j | 0x3ff00000
+		k ~= 0
+		if j <= 0x3988E:
+			k = 0
+		else if j < 0xBB67A:
+			k = 1
+		else:
+			k = 0
+			n += 1
+			ixm -= 0x00100000
+		axm = with_hi(axm, ixm)
+		u := axm - BP[k]
+		v := 1.0 / (axm + BP[k])
+		ss := u * v
+		s_h := with_lo0(ss)
+		t_h ~= hi_only(((ixm >> 1) | 0x20000000) + 0x00080000 + (k << 18))
+		t_l ~= axm - (t_h - BP[k])
+		s_l := v * ((u - s_h * t_h) - s_h * t_l)
+		s2 ~= ss * ss
+		r ~= s2 * s2 * (L1 + s2 * (L2 + s2 * (L3 + s2 * (L4 + s2 * (L5 + s2 * L6)))))
+		r += s_l * (s_h + ss)
+		s2 = s_h * s_h
+		t_h = with_lo0((3.0 + s2) + r)
+		t_l = r - ((t_h - 3.0) - s2)
+		u2 := s_h * t_h
+		v2 := s_l * t_h + t_l * ss
+		qh := with_lo0(u2 + v2)
+		ql := v2 - (qh - u2)
+		z_h := CP_H * qh
+		z_l := CP_L * qh + ql * CP + DP_L[k]
+		t := n as real
+		t1 = with_lo0(((z_h + z_l) + DP_H[k]) + t)
+		t2 = z_l - (((t1 - t) - DP_H[k]) - z_h)
+	y1 := with_lo0(y)
+	pl ~= (y - y1) * t1 + y * t2
+	ph ~= y1 * t1
+	z ~= pl + ph
+	j := hs(z)
+	if j >= 0x40900000:
+		if binary::f64_bits(z) != 0x4090000000000000: return s * HUGE * HUGE
+		if pl + OVT > z - ph: return s * HUGE * HUGE
+	else if (j & 0x7fffffff) >= 0x4090cc00:
+		if binary::f64_bits(z) != 0xc090cc0000000000: return s * TINY * TINY
+		if pl <= z - ph: return s * TINY * TINY
+	i := j & 0x7fffffff
+	k2 ~= (i >> 20) - 0x3ff
+	nn ~= 0
+	if i > 0x3fe00000:
+		nn = j + (0x00100000 >> (k2 + 1))
+		k2 = ((nn & 0x7fffffff) >> 20) - 0x3ff
+		tm := hi_only(nn & (-1 - (0x000fffff >> k2)))
+		nn = ((nn & 0x000fffff) | 0x00100000) >> (20 - k2)
+		if j < 0: nn = -nn
+		ph -= tm
+	t3 := with_lo0(pl + ph)
+	u3 := t3 * PW_LG2_H
+	v3 := (pl - (t3 - ph)) * PW_LG2 + t3 * PW_LG2_L
+	z2 := u3 + v3
+	w3 := v3 - (z2 - u3)
+	t4 := z2 * z2
+	t5 := z2 - t4 * (P1 + t4 * (P2 + t4 * (P3 + t4 * (P4 + t4 * P5))))
+	r2 := (z2 * t5) / (t5 - 2.0) - (w3 + z2 * w3)
+	z3 ~= 1.0 - (r2 - z2)
+	jj := hs(z3) + (nn << 20)
+	if (jj >> 20) <= 0:
+		z3 = scalbn(z3, nn)
+	else:
+		z3 = with_hi(z3, jj)
+	return s * z3
+=== -534aa8b2aefa7d0a
+IVLN2HI := 1.44269504072144627571e+00
+IVLN2LO := 1.67517131648865118353e-10
+IVLN10HI := 4.34294481878168880939e-01
+IVLN10LO := 2.50829467116452752298e-11
+LOG10_2HI := 3.01029995663611771306e-01
+LOG10_2LO := 3.69423907715893078616e-13
+LG1 := 6.666666666666735130e-01
+LG2 := 3.999999999940941908e-01
+LG3 := 2.857142874366239149e-01
+LG4 := 2.222219843214978396e-01
+LG5 := 1.818357216161805012e-01
+LG6 := 1.531383769920937332e-01
+LG7 := 1.479819860511658591e-01
+=== 39e319d0a369022b
+lg_reduce(x0 real) bool, real, real, real, int:
+	x ~= x0
+	ui ~= binary::f64_bits(x)
+	hx ~= (ui >> 32) as int
+	k ~= 0
+	if hx < 0x00100000 || (hx >> 31) != 0:
+		if (ui << 1) == 0: return true, -1.0 / (x * x), 0.0, 0.0, 0
+		if (hx >> 31) != 0: return true, (x - x) / 0.0, 0.0, 0.0, 0
+		k -= 54
+		x *= binary::f64_from_bits(0x4350000000000000)
+		ui = binary::f64_bits(x)
+		hx = (ui >> 32) as int
+	else if hx >= 0x7ff00000:
+		return true, x, 0.0, 0.0, 0
+	else if hx == 0x3ff00000 && (ui & 0xffffffff) == 0:
+		return true, 0.0, 0.0, 0.0, 0
+	hx += 0x3ff00000 - 0x3fe6a09e
+	k += (hx >> 20) - 0x3ff
+	hx = (hx & 0x000fffff) + 0x3fe6a09e
+	ui = ((hx as uint) << 32) | (ui & 0xffffffff)
+	x = binary::f64_from_bits(ui)
+	f := x - 1.0
+	hfsq := 0.5 * f * f
+	s := f / (2.0 + f)
+	z := s * s
+	w := z * z
+	t1 := w * (LG2 + w * (LG4 + w * LG6))
+	t2 := z * (LG1 + w * (LG3 + w * (LG5 + w * LG7)))
+	r := t2 + t1
+	hi := with_lo0(f - hfsq)
+	lo := f - hi - hfsq + s * (hfsq + r)
+	return false, 0.0, hi, lo, k
+=== 0687bfa20977b446
+log2(x real) real:
+	done, v, hi, lo, k := lg_reduce(x)
+	if done: return v
+	val_hi := hi * IVLN2HI
+	val_lo ~= (lo + hi) * IVLN2LO + lo * IVLN2HI
+	y := k as real
+	w := y + val_hi
+	val_lo += (y - w) + val_hi
+	return val_lo + w
+=== 02cee698e933d61f
+log10(x real) real:
+	done, v, hi, lo, k := lg_reduce(x)
+	if done: return v
+	val_hi := hi * IVLN10HI
+	dk := k as real
+	y := dk * LOG10_2HI
+	val_lo ~= dk * LOG10_2LO + (lo + hi) * IVLN10LO + lo * IVLN10HI
+	w := y + val_hi
+	val_lo += (y - w) + val_hi
+	return val_lo + w

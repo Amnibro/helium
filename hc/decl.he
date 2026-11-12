@@ -108,7 +108,8 @@ collect(file int, t0 int, t1 int):
 		if k == N_FN:
 			if !(nm(x.s) == "main" && file != 0): dadd(D_FN, n, file, qual(x.a, x.s))
 		if k == N_VDECL: dadd(D_GLOBAL, n, file, qual(x.c, LS[x.l]))
-recursive try_load(path const byte[:], pk int) int:
+recursive try_load(path0 const byte[:], pk int) int:
+	path := if path0.len > 2 && path0[0] == '.' && path0[1] == '/' { path0[2..] } else { path0 }
 	id := intern(path)
 	for f, i FILES:
 		if f.name == id: return i

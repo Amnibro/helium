@@ -1,0 +1,16 @@
+into tiles_rust.he
+lang he
+use std
+
+```he
+use tiles.rust
+```
+
+```he
+NUMS := ["0", "-0", "1", "0.1", "1e21", "1e-7", "1.5e-7", "-1234.5678", "NaN", "inf", "-inf", "100", "1e300", "5e-324", "0.30000000000000004", "123456789.125", "1e16", "12345678901234567890", "2.5", "0.000001", "1.7976931348623157e308", "-0.000123"]
+FIXED := ["1.005 2", "1.45 1", "-1.5 0", "2.5 0", "0.5 0", "1.5 0", "-0 2", "-0.001 2", "1e21 2", "123.456 0", "NaN 2", "inf 3", "-inf 1", "1.255 2", "-2.345 2", "1234.5678 3", "0 0", "1e-10 3", "9.995 2", "0.125 2", "0.375 2", "-0.4 0", "25.4 4", "0.0005 3", "1e300 1", "-0.5 0"]
+CAST := ["-3.5", "NaN", "1e20", "-1e20", "4294967295.9", "4294967296", "65535.5", "255.9", "-2147483648.5", "2147483647.9", "9.3e18", "-9.3e18", "3.99", "-3.99", "inf", "-inf", "0.5", "-0"]
+VALS := ["0", "-0", "1", "-1", "NaN", "inf", "-inf", "2.5", "-0.5"]
+```
+
+The program prints one line per case, the lists in the order above, each number read from its text with `parse_flt`. A NUMS case prints "num [", the text, "] " and `rs::display` of the number. A FIXED case is a number and a count separated by a space and prints "fixed [", the text, "] " and `rs::fixed` of the number with that many decimals. A CAST case prints "cast [", the text, "] " and then, separated by single spaces, `rs::to_usize`, `rs::to_u32`, `rs::to_u16`, `rs::to_u8`, `rs::to_i32` and `rs::to_i64` of the number. Then for every pair a, b of VALS, a running over the outer loop and b over the inner, it prints "mm [", a, " ", b, "] ", `rs::display` of `rs::max` of the two numbers, a space and `rs::display` of `rs::min` of them. Last, for each VALS case it prints "sc [", the text, "] ", `rs::display` of `rs::signum` of it, a space and `rs::display` of `rs::clamp` of it between -1.0 and 1.0.

@@ -1,0 +1,173 @@
+namespace rs
+use json
+use math
+neg_bit(x real) bool: x < 0.0 || (x == 0.0 && 1.0 / x < 0.0)
+dig_char(c byte) byte:
+	if c < 10: return c + '0'
+	return c
+display(out byte[>..]&, x real):
+	if is_nan(x):
+		out.append("NaN")
+		return
+	if is_inf(x):
+		if x < 0.0:
+			out.append("-inf")
+		else:
+			out.append("inf")
+		return
+	if neg_bit(x):
+		out.push('-')
+	if x == 0.0:
+		out.push('0')
+		return
+	digits byte[>..] ~= []
+	e := json::digits_of(fabs(x), digits)
+	n := e + 1
+	cnt := digits.len
+	for i cnt:
+		digits[i] = dig_char(digits[i])
+	if n >= cnt:
+		out.append(digits)
+		for i n - cnt:
+			out.push('0')
+	else if n >= 1:
+		out.append(digits[..n])
+		out.push('.')
+		out.append(digits[n..])
+	else:
+		out.append("0.")
+		for i -n:
+			out.push('0')
+		out.append(digits)
+fixed(out byte[>..]&, x real, decimals int):
+	if is_nan(x):
+		out.append("NaN")
+		return
+	if is_inf(x):
+		if x < 0.0:
+			out.append("-inf")
+		else:
+			out.append("inf")
+		return
+	format_flt(out, x, decimals)
+max(x real, y real) real:
+	if is_nan(y) || x > y:
+		return x
+	return y
+min(x real, y real) real:
+	if is_nan(y) || x < y:
+		return x
+	return y
+clamp(x real, lo real, hi real) real:
+	r ~= x
+	if r < lo:
+		r = lo
+	if r > hi:
+		r = hi
+	return r
+signum(x real) real:
+	if is_nan(x):
+		return x
+	if neg_bit(x):
+		return -1.0
+	return 1.0
+sat(x real, lo real, hi real, lo_i int, hi_i int) int:
+	if is_nan(x):
+		return 0
+	if x <= lo:
+		return lo_i
+	if x >= hi:
+		return hi_i
+	return x as int
+to_usize(x real) int: sat(x, 0.0, 4294967295.0, 0, 4294967295)
+to_u32(x real) int: sat(x, 0.0, 4294967295.0, 0, 4294967295)
+to_u16(x real) int: sat(x, 0.0, 65535.0, 0, 65535)
+to_u8(x real) int: sat(x, 0.0, 255.0, 0, 255)
+to_i32(x real) int: sat(x, -2147483648.0, 2147483647.0, -2147483648, 2147483647)
+to_i64(x real) int: sat(x, -9223372036854775808.0, 9223372036854775808.0, -9223372036854775807 - 1, 9223372036854775807)
+var POW10 real[..309]
+pow10_init():
+	POW10.clear()
+	for k 309:
+		s byte[>..] ~= []
+		format(s, "1e", k)
+		v, ok := parse_flt(s)
+		POW10.push(v)
+serde_f64(s const byte[:]) real, bool:
+	if POW10.len == 0:
+		pow10_init()
+	n := s.len
+	i ~= 0
+	neg ~= false
+	if i < n && s[i] == '-':
+		neg = true
+		i += 1
+	sig uint ~= 0
+	e ~= 0
+	over ~= false
+	while i < n && s[i] >= '0' && s[i] <= '9':
+		d uint := s[i] - '0'
+		if !over && (sig < 1844674407370955161 || (sig == 1844674407370955161 && d <= 5)):
+			sig = sig * 10 + d
+		else:
+			over = true
+			e += 1
+		i += 1
+	if i < n && s[i] == '.':
+		i += 1
+		skip ~= false
+		while i < n && s[i] >= '0' && s[i] <= '9':
+			if !skip:
+				d uint := s[i] - '0'
+				if sig < 1844674407370955161 || (sig == 1844674407370955161 && d <= 5):
+					sig = sig * 10 + d
+					e -= 1
+				else:
+					skip = true
+			i += 1
+	if i < n && (s[i] == 'e' || s[i] == 'E'):
+		i += 1
+		eneg ~= false
+		if i < n && (s[i] == '+' || s[i] == '-'):
+			if s[i] == '-':
+				eneg = true
+			i += 1
+		x ~= 0
+		while i < n && s[i] >= '0' && s[i] <= '9':
+			d int := s[i] - '0'
+			if x >= 214748364 && (x > 214748364 || d > 7):
+				if sig != 0 && !eneg:
+					return 0.0, false
+				if neg:
+					return -0.0, true
+				return 0.0, true
+			x = x * 10 + d
+			i += 1
+		if eneg:
+			e -= x
+		else:
+			e += x
+		if e < -2147483648:
+			e = -2147483648
+		if e > 2147483647:
+			e = 2147483647
+	f ~= sig as real
+	while true:
+		a := if e < 0 { -e } else { e }
+		if a <= 308:
+			if e >= 0:
+				f = f * POW10[e]
+				if is_inf(f):
+					return 0.0, false
+			else:
+				f = f / POW10[-e]
+			break
+		if f == 0.0:
+			break
+		if e >= 0:
+			return 0.0, false
+		f = f / 1e308
+		e += 308
+	if neg:
+		return -f, true
+	return f, true

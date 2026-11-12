@@ -1,0 +1,197 @@
+use std, math
+into libm.he
+namespace libm
+lang he
+dialect rust
+
+Bit-exact port of Rust libm (musl/fdlibm) double functions: IEEE f64 with no fused multiply-add, every formula evaluated in exactly the written grouping, left to right where unparenthesized. Float bits come from `binary::f64_bits` and go back through `binary::f64_from_bits`; Call `sqrt(x)` and `floor(x)` exactly like that: they are global functions, and names such as math::sqrt or math::floor do not exist. The high word of a float is bits 63..32 of its pattern, its low word bits 31..0, and ix is the high word with bit 31 cleared. "w with low word zeroed" and "w with high word h" keep the other half; "0.0 with high word h" is the float whose bits are h shifted left 32. Word arithmetic is 32-bit, and float-to-int truncations are to i32. Shared constants: 2^24, 2^-24 and 2^-120 are exact powers of two. The kernels below and rem_pio2 are internal. Every constant table is a module constant, never built per call.
+
+`scalbn(x, n)` with n a 32-bit int. If n is above 1023, multiply x by 2^1023 and subtract 1023. If n is still above 1023, do it again, then clamp n to 1023. Else if n is below -1022, multiply x by (2^-1022 * 2^53) and add 969. If n is still below -1022, do it again, then clamp n to -1022. The result is x times the float whose bits are (0x3ff + n) shifted left 52.
+
+Large reduction: given 1 to 3 float chunks xs, exponent e0, and prec 1, it yields (n & 7, y0, y1). It uses fixed 20-element local arrays f, fq, q (floats) and iq (i32), with jk = jp = 4 and jx = number of chunks - 1.
+IPIO2 holds 66 values: 0xA2F983, 0x6E4E44, 0x1529FC, 0x2757D1, 0xF534DD, 0xC0DB62, 0x95993C, 0x439041, 0xFE5163, 0xABDEBB, 0xC561B7, 0x246E3A, 0x424DD2, 0xE00649, 0x2EEA09, 0xD1921C, 0xFE1DEB, 0x1CB129, 0xA73EE8, 0x8235F5, 0x2EBB44, 0x84E99C, 0x7026B4, 0x5F7E41, 0x3991D6, 0x398353, 0x39F49C, 0x845F8B, 0xBDF928, 0x3B1FF8, 0x97FFDE, 0x05980F, 0xEF2F11, 0x8B5A0A, 0x6D1F6D, 0x367ECF, 0x27CB09, 0xB74F46, 0x3F669E, 0x5FEA2D, 0x7527BA, 0xC7EBE5, 0xF17B3D, 0x0739F7, 0x8A5292, 0xEA6BFB, 0x5FB11F, 0x8D5D08, 0x560330, 0x46FC7B, 0x6BABF0, 0xCFBC20, 0x9AF436, 0x1DA9E3, 0x91615E, 0xE61B08, 0x659985, 0x5F14A0, 0x68408D, 0xFFD880, 0x4D7327, 0x310606, 0x1556CA, 0x73A8C9, 0x60E27B, 0xC08C6B.
+PIO2 holds 8 values: 1.57079625129699707031e+00, 7.54978941586159635335e-08, 5.39030252995776476554e-15, 3.28200341580791294123e-22, 1.27065575308067607349e-29, 1.22933308981111328932e-36, 2.73370053816464559624e-44, 2.16741683877804819444e-51.
+Setup: jv is the larger of 0 and (e0-3)/24 truncated, and q0 = e0 - 24*(jv+1). For i from 0 to jx+jk, f[i] = IPIO2[jv - jx + i] as a float, or 0 when that index is negative. For i from 0 to jk, q[i] is a sum starting at 0.0, adding xs[j]*f[jx+i-j] for j from 0 to jx; call this "computing q[i]". Set jz = jk.
+Recompute loop:
+z = q[jz]. For j from jz down to 1, with i counting up from 0: fw = float(trunc(2^-24*z)), iq[i] = trunc(z - 2^24*fw), z = q[j-1] + fw.
+Then z = scalbn(z, q0), z is reduced by 8.0*floor(z*0.125), n = trunc(z), and z is reduced by n.
+Set ih = 0, then:
+- If q0 is positive: i = iq[jz-1] shifted right by 24-q0; n increases by i; iq[jz-1] is reduced by i shifted left by 24-q0; ih = iq[jz-1] shifted right by 23-q0.
+- Else if q0 is 0: ih = iq[jz-1] shifted right by 23.
+- Else if z is at least 0.5: ih = 2.
+If ih is positive:
+- n increases by 1. Walk i from 0 below jz with carry 0. While carry is 0, a nonzero iq[i] becomes 0x1000000 - iq[i] and sets carry to 1. After carry is set, each iq[i] becomes 0xffffff - iq[i].
+- Then q0 of 1 masks iq[jz-1] with 0x7fffff, and q0 of 2 masks it with 0x3fffff.
+- If ih is 2: z = 1.0 - z, and if carry is set, z is reduced by scalbn(1.0, q0).
+If z is 0 and the OR of iq[jk] through iq[jz-1] is 0:
+- k is the smallest value from 1 up with iq[jk-k] nonzero.
+- For i from jz+1 to jz+k: f[jx+i] = IPIO2[jv+i], then compute q[i].
+- jz increases by k, and repeat the loop.
+After the loop:
+- If z is 0: decrement jz and subtract 24 from q0, repeating while iq[jz] is 0.
+- Otherwise: z = scalbn(z, -q0). If z is at least 2^24: fw = float(trunc(2^-24*z)), iq[jz] = trunc(z - 2^24*fw), jz increases by 1, q0 increases by 24, iq[jz] = trunc(fw). Otherwise iq[jz] = trunc(z).
+Then fw = scalbn(1.0, q0). For i from jz down to 0: q[i] = fw*iq[i], then fw *= 2^-24.
+For i from jz down to 0: fq[jz-i] is a sum from 0.0 of PIO2[k]*q[i+k], for k from 0 while k is at most jp and at most jz-i.
+Finally fw is a sum from 0.0 of fq[i] for i from jz down to 0, and y0 is fw (negated when ih is nonzero). Then fw = fq[0] - fw, then fq[i] is added to fw for each i from 1 up to jz, and y1 is fw (negated when ih is nonzero).
+
+rem_pio2(x) yields (n, y0, y1).
+Constants: EPS = 2.2204460492503131e-16, TO_INT = 1.5/EPS, INV_PIO2 = 6.36619772367581382433e-01, PIO2_1 = 1.57079632673412561417e+00, PIO2_1T = 6.07710050650619224932e-11, PIO2_2 = 6.07710050630396597660e-11, PIO2_2T = 2.02226624879595063154e-21, PIO2_3 = 2.02226624871116645580e-21, PIO2_3T = 8.47842766036889956997e-32. sign is bit 63 of x.
+Medium:
+tmp = x*INV_PIO2 + TO_INT; f_n = tmp - TO_INT; n = trunc(f_n); r = x - f_n*PIO2_1; w = f_n*PIO2_1T; y0 = r - w.
+Let ey be bits 62..52 of y0 and ex = ix shifted right 20.
+If ex - ey is above 16: t = r; w = f_n*PIO2_2; r = t - w; w = f_n*PIO2_2T - ((t - r) - w); y0 = r - w.
+Then recompute ey, and if ex - ey is above 49, do the same step with PIO2_3 and PIO2_3T.
+y1 = (r - y0) - w.
+Step k, for x positive: z = x - k*PIO2_1; y0 = z - k*PIO2_1T; y1 = (z - y0) - k*PIO2_1T; n = k. For x negative, every minus is a plus and n = -k. The product k*PIO2_1 is computed first.
+Cases in order:
+- ix at most 0x400f6a7a: medium if ix & 0xfffff is 0x921fb, else step 1 if ix is at most 0x4002d97c, else step 2.
+- ix at most 0x4015fdbc: medium if ix is 0x4012d97c, else step 3.
+- ix at most 0x401c463b: medium if ix is 0x401921fb, else step 4.
+- ix below 0x413921fb: medium.
+- ix at least 0x7ff00000: (0, x-x, x-x).
+- Otherwise: keep x's bits masked with 0x000fffffffffffff, OR in (0x3ff+23) shifted left 52, and call that z. For i from 0 to 1: tx[i] = float(trunc(z)), then z = (z - tx[i])*2^24. tx[2] = z. Drop trailing zero chunks while more than one remains. Run the large reduction with e0 = (ix shifted right 20) - (0x3ff+23). When sign is set, return (-n, -y0, -y1).
+
+Kernel sin(x, y, iy): S1 = -1.66666666666666324348e-01, S2 = 8.33333333332248946124e-03, S3 = -1.98412698298579493134e-04, S4 = 2.75573137070700676789e-06, S5 = -2.50507602534068634195e-08, S6 = 1.58969099521155010221e-10.
+z = x*x, w = z*z, r = S2 + z*(S3 + z*S4) + z*w*(S5 + z*S6), v = z*x.
+When iy is 0 the result is x + v*(S1 + z*r). Otherwise it is x - ((z*(0.5*y - v*r) - y) - v*S1).
+
+Kernel cos(x, y): C1 = 4.16666666666666019037e-02, C2 = -1.38888888888741095749e-03, C3 = 2.48015872894767294178e-05, C4 = -2.75573143513906633035e-07, C5 = 2.08757232129817482790e-09, C6 = -1.13596475577881948265e-11.
+z = x*x, w = z*z, r = z*(C1 + z*(C2 + z*C3)) + w*w*(C4 + z*(C5 + z*C6)), hz = 0.5*z, w = 1.0 - hz.
+The result is w + (((1.0 - w) - hz) + (z*r - x*y)).
+
+Kernel tan(x, y, odd): T has 13 values: 3.33333333333334091986e-01, 1.33333333333201242699e-01, 5.39682539762260521377e-02, 2.18694882948595424599e-02, 8.86323982359930005737e-03, 3.59207910759131235356e-03, 1.45620945432529025516e-03, 5.88041240820264096874e-04, 2.46463134818469906812e-04, 7.81794442939557092300e-05, 7.14072491382608190305e-05, -1.85586374855275456654e-05, 2.59073051863633712884e-05. PIO4 = 7.85398163397448278999e-01, PIO4_LO = 3.06161699786838301793e-17.
+big means ix is at least 0x3FE59428. If big: negate x and y when x's sign bit is set, then x = (PIO4 - x) + (PIO4_LO - y) and y = 0.0.
+z = x*x; w = z*z; r = T1 + w*(T3 + w*(T5 + w*(T7 + w*(T9 + w*T11)))); v = z*(T2 + w*(T4 + w*(T6 + w*(T8 + w*(T10 + w*T12))))); s = z*x; r = y + z*(s*(r + v) + y) + s*T0; w = x + r.
+If big: s = 1.0 - 2.0*odd, v = s - 2.0*(x + (r - w*w/(w + s))), and the result is v, negated when the original sign bit was set.
+Else if odd is 0, the result is w.
+Else: w0 = w with low word zeroed, v = r - (w0 - x), a = -1.0/w, a0 = a with low word zeroed, and the result is a0 + a*(1.0 + a0*w0 + a0*v).
+
+`sin(x)`:
+- If ix is at most 0x3fe921fb: return x when ix is below 0x3e500000, else kernel sin(x, 0.0, 0).
+- If ix is at least 0x7ff00000: return x - x.
+- Otherwise use rem_pio2, by n & 3: kernel sin(y0, y1, 1), then kernel cos(y0, y1), then the negated kernel sin, then the negated kernel cos.
+
+`cos(x)`:
+- If ix is at most 0x3fe921fb: return 1.0 when ix is below 0x3e46a09e, else kernel cos(x, 0.0).
+- If ix is at least 0x7ff00000: return x - x.
+- Otherwise use rem_pio2, by n & 3: kernel cos, negated kernel sin(y0, y1, 1), negated kernel cos, kernel sin(y0, y1, 1).
+
+`tan(x)`:
+- If ix is at most 0x3fe921fb: return x when ix is below 0x3e400000, else kernel tan(x, 0.0, 0).
+- If ix is at least 0x7ff00000: return x - x.
+- Otherwise kernel tan(y0, y1, n & 1) from rem_pio2.
+
+`atan(x)`: ATANHI = 4.63647609000806093515e-01, 7.85398163397448278999e-01, 9.82793723247329054082e-01, 1.57079632679489655800e+00. ATANLO = 2.26987774529616870924e-17, 3.06161699786838301793e-17, 1.39033110312309984516e-17, 6.12323399573676603587e-17. AT has 11 values: 3.33333333333329318027e-01, -1.99999999998764832476e-01, 1.42857142725034663711e-01, -1.11111104054623557880e-01, 9.09088713343650656196e-02, -7.69187620504482999495e-02, 6.66107313738753120669e-02, -5.83357013379057348645e-02, 4.97687799461593236017e-02, -3.65315727442169155270e-02, 1.62858201153657823623e-02.
+sign is x's bit 63.
+If ix is at least 0x44100000: return x when x is NaN, else ATANHI[3] negated when sign is set.
+If ix is below 0x3fdc0000: return x when ix is below 0x3e400000, else set id = -1.
+Otherwise x = fabs(x), then:
+- ix below 0x3fe60000: x = (2.0*x - 1.0)/(2.0 + x), id 0.
+- ix below 0x3ff30000: x = (x - 1.0)/(x + 1.0), id 1.
+- ix below 0x40038000: x = (x - 1.5)/(1.0 + 1.5*x), id 2.
+- Otherwise: x = -1.0/x, id 3.
+z = x*x; w = z*z; s1 = z*(AT0 + w*(AT2 + w*(AT4 + w*(AT6 + w*(AT8 + w*AT10))))); s2 = w*(AT1 + w*(AT3 + w*(AT5 + w*(AT7 + w*AT9)))).
+When id is -1 the result is x - x*(s1 + s2). Otherwise it is ATANHI[id] - ((x*(s1 + s2) - ATANLO[id]) - x), negated when sign is set.
+
+`atan2(y, x)`: PI = 3.1415926535897931160E+00, PI_LO = 1.2246467991473531772E-16.
+If either argument is NaN, return x + y. Let hx, lx, hy, ly be the words of x and y.
+If x is exactly 1.0 (high word 0x3ff00000, low word 0), return atan(y).
+m = (bit 31 of hy) + 2*(bit 31 of hx). Then clear bit 31 of both high words.
+If y is ±0: m 0 or 1 gives y, m 2 gives PI, m 3 gives -PI.
+If x is ±0: return -PI/2.0 when m is odd, else PI/2.0.
+If x is infinite (high word 0x7ff00000):
+- If y is infinite too, m 0 to 3 give PI/4.0, -PI/4.0, 3.0*PI/4.0, -3.0*PI/4.0.
+- Otherwise they give 0.0, -0.0, PI, -PI.
+If the x high word + 0x4000000 is below the y high word, or y's high word is 0x7ff00000, return ±PI/2.0 by m's low bit as above.
+z is 0.0 when m has bit 2 set and the y high word + 0x4000000 is below the x high word; otherwise z = atan(fabs(y/x)).
+Results by m: z, -z, PI - (z - PI_LO), (z - PI_LO) - PI.
+
+R(z), shared by asin and acos: p = z*(PS0 + z*(PS1 + z*(PS2 + z*(PS3 + z*(PS4 + z*PS5))))); q = 1.0 + z*(QS1 + z*(QS2 + z*(QS3 + z*QS4))); R(z) = p/q.
+Constants: PIO2_HI = 1.57079632679489655800e+00, PIO2_LO = 6.12323399573676603587e-17, PS0 = 1.66666666666666657415e-01, PS1 = -3.25565818622400915405e-01, PS2 = 2.01212532134862925881e-01, PS3 = -4.00555345006794114027e-02, PS4 = 7.91534994289814532176e-04, PS5 = 3.47933107596021167570e-05, QS1 = -2.40339491173441421878e+00, QS2 = 2.02094576023350569471e+00, QS3 = -6.88283971605453293030e-01, QS4 = 7.70381505559019352791e-02.
+
+`asin(x)`:
+- If ix is at least 0x3ff00000: return x*PIO2_HI + 2^-120 when x is exactly ±1, else 0.0/(x - x).
+- If ix is below 0x3fe00000: return x when ix is from 0x00100000 up to below 0x3e500000; otherwise return x + x*R(x*x). Subnormals take this formula.
+- Otherwise: z = (1.0 - fabs(x))*0.5, s = sqrt(z), r = R(z).
+  - If ix is at least 0x3fef3333: v = PIO2_HI - (2.0*(s + s*r) - PIO2_LO).
+  - Otherwise: f = s with low word zeroed, c = (z - f*f)/(s + f), v = 0.5*PIO2_HI - ((2.0*s*r - (PIO2_LO - 2.0*c)) - (0.5*PIO2_HI - 2.0*f)).
+  - The result is v, negated when x's sign bit is set.
+
+`acos(x)`:
+- If ix is at least 0x3ff00000: when x is exactly ±1, return 2.0*PIO2_HI + 2^-120 for negative x and 0.0 for positive x; otherwise return 0.0/(x - x).
+- If ix is below 0x3fe00000: return PIO2_HI + 2^-120 when ix is at most 0x3c600000, else PIO2_HI - (x - (PIO2_LO - x*R(x*x))).
+- If x is negative: z = (1.0 + x)*0.5, s = sqrt(z), w = R(z)*s - PIO2_LO, and the result is 2.0*(PIO2_HI - (s + w)).
+- Otherwise: z = (1.0 - x)*0.5, s = sqrt(z), df = s with low word zeroed, c = (z - df*df)/(s + df), w = R(z)*s + c, and the result is 2.0*(df + w).
+
+`hypot(x, y)`:
+Clear the sign bits of both bit patterns and swap so x's is the larger. ex and ey are those patterns shifted right 52, and x and y are rebuilt from the patterns.
+- If ey is 0x7ff, return y.
+- If ex is 0x7ff or y's pattern is 0, return x.
+- If ex - ey is above 64, return x + y.
+Set z = 1.0. If ex is above 0x3ff+510: z = 2^700 and x and y are multiplied by 2^-700. Else if ey is below 0x3ff-450: z = 2^-700 and x and y are multiplied by 2^700.
+The square of v is a pair (hi, lo): c = v*134217729.0, h = (v - c) + c, l = v - h, hi = v*v, lo = ((h*h - hi) + 2.0*h*l) + l*l.
+Rust rounds hypot correctly, so this estimate gets an exact correction. Let r = sqrt(((ly + lx) + hy) + hx), the estimate in the scaled range. Steps: when z is 2^-700 and z*r is below 2^-1022 (a subnormal result), set r to (z*r) times 2^700 and both steps u_up and u_dn to 2^-374; otherwise u_up is the next double above r minus r, and u_dn is r minus the next double below r. The exact sign of a sum of reals comes from `exact_sign(terms)`: keep an expansion e (at most 12 reals, n of them, starting empty); for each term b, set q = b, then for each i from 0 to n-1 do the two-sum of q and e[i] (s = q + e[i], bb = s - q, err = (q - (s - bb)) + (e[i] - bb)), store err in e[i] and set q = s; then store q at e[n] and add 1 to n. The sign is the sign of the last nonzero e[i] (0 when all are zero). Correct r at most 4 times: let (hr, lr) be the square of r. D_up is the exact sign of hx, lx, hy, ly, -hr, -lr, -(r*u_up), -(u_up*u_up*0.25). D_dn is the exact sign of hx, lx, hy, ly, -hr, -lr, r*u_dn, -(u_dn*u_dn*0.25). If D_up is positive, r becomes r + u_up; else if D_dn is negative, r becomes r - u_dn; else if D_up is 0, r becomes r + u_up when the lowest bit of r's pattern is 1 (ties go to even), and the correction stops; else if D_dn is 0, r becomes r - u_dn when the lowest bit is 1, and the correction stops; otherwise it stops. After each move the steps are recomputed as above, except that a subnormal result keeps steps 2^-374. The result is z*r.
+
+`pow(x, y)`, constants:
+- BP = 1.0, 1.5; DP_H = 0.0, 5.84962487220764160156e-01; DP_L = 0.0, 1.35003920212974897128e-08.
+- TWO53 = 9007199254740992.0, HUGE = 1.0e300, TINY = 1.0e-300.
+- L1 = 5.99999999999994648725e-01, L2 = 4.28571428578550184252e-01, L3 = 3.33333329818377432918e-01, L4 = 2.72728123808534006489e-01, L5 = 2.30660745775561754067e-01, L6 = 2.06975017800338417784e-01.
+- P1 = 1.66666666666666019037e-01, P2 = -2.77777777770155933842e-03, P3 = 6.61375632143793436117e-05, P4 = -1.65339022054652515390e-06, P5 = 4.13813679705723846039e-08.
+- LG2 = 6.93147180559945286227e-01, LG2_H = 6.93147182464599609375e-01, LG2_L = -1.90465429995776804525e-09, OVT = 8.0085662595372944372e-017.
+- CP = 9.61796693925975554329e-01, CP_H = 9.61796700954437255859e-01, CP_L = -7.02846165095275826516e-09.
+- IVLN2 = 1.44269504088896338700e+00, IVLN2_H = 1.44269502162933349609e+00, IVLN2_L = 1.92596299112661746887e-08.
+hx and hy are signed high words, lx and ly unsigned low words, and ix and iy clear their sign bits.
+1. y is ±0: return 1.0. x is exactly 1.0: return 1.0. Either argument is NaN: return x + y.
+2. yisint starts at 0. When hx is negative:
+   - If iy is at least 0x43400000, yisint is 2.
+   - Else if iy is at least 0x3ff00000, let k = (iy shifted right 20) - 0x3ff.
+   - If k is above 20 and the low 52-k bits of ly are zero, yisint = 2 - (bit 0 of ly shifted right 52-k).
+   - Else if k is at most 20, ly is 0, and the low 20-k bits of iy are zero, yisint = 2 - (bit 0 of iy shifted right 20-k).
+3. When ly is 0:
+   - y infinite (iy is 0x7ff00000): 1.0 when |x| is exactly 1; else when ix is at least 0x3ff00000, y if hy is non-negative and 0.0 otherwise; else 0.0 if hy is non-negative and -y otherwise.
+   - iy is 0x3ff00000: x if hy is non-negative, else 1.0/x.
+   - hy is 0x40000000: x*x.
+   - hy is 0x3fe00000 and hx is non-negative: sqrt(x).
+4. ax = fabs(x). When lx is 0 and ix is 0x7ff00000, 0 or 0x3ff00000:
+   - z = ax, made 1.0/z when hy is negative.
+   - When hx is negative: z = (z - z)/(z - z) if ix is 0x3ff00000 and yisint is 0; else z = -z if yisint is 1.
+   - Return z.
+5. s = 1.0. When hx is negative: return (x - x)/(x - x) if yisint is 0; set s = -1.0 if yisint is 1.
+6. Compute t1 and t2 one of two ways.
+   If iy is above 0x41e00000:
+   - If iy is above 0x43f00000: when ix is at most 0x3fefffff, return HUGE*HUGE if hy is negative else TINY*TINY; when ix is at least 0x3ff00000, return HUGE*HUGE if hy is positive else TINY*TINY.
+   - If ix is below 0x3fefffff: return s*HUGE*HUGE if hy is negative, else s*TINY*TINY.
+   - If ix is above 0x3ff00000: return s*HUGE*HUGE if hy is positive, else s*TINY*TINY.
+   - Otherwise: t = ax - 1.0; w = (t*t)*(0.5 - t*(0.3333333333333333333333 - t*0.25)); u = IVLN2_H*t; v = t*IVLN2_L - w*IVLN2; t1 = (u + v) with low word zeroed; t2 = v - (t1 - u).
+   Otherwise, with n starting at 0:
+   - When ix is below 0x00100000: ax is multiplied by TWO53, n is reduced by 53, and ix becomes ax's high word.
+   - n increases by (ix shifted right 20) - 0x3ff; j = ix & 0xfffff; ix = j | 0x3ff00000.
+   - k is 0 if j is at most 0x3988E, else 1 if j is below 0xBB67A, else k = 0 with n increased by 1 and ix reduced by 0x00100000.
+   - ax = ax with high word ix.
+   - u = ax - BP[k]; v = 1.0/(ax + BP[k]); ss = u*v; s_h = ss with low word zeroed.
+   - t_h = 0.0 with high word `((ix >> 1) | 0x20000000) + 0x00080000 + (k << 18)`; t_l = ax - (t_h - BP[k]); s_l = v*((u - s_h*t_h) - s_h*t_l).
+   - s2 = ss*ss; r = s2*s2*(L1 + s2*(L2 + s2*(L3 + s2*(L4 + s2*(L5 + s2*L6))))); r increases by s_l*(s_h + ss).
+   - s2 = s_h*s_h; t_h = (3.0 + s2 + r) with low word zeroed; t_l = r - ((t_h - 3.0) - s2).
+   - u = s_h*t_h; v = s_l*t_h + t_l*ss; p_h = (u + v) with low word zeroed; p_l = v - (p_h - u).
+   - z_h = CP_H*p_h; z_l = CP_L*p_h + p_l*CP + DP_L[k]; t = float(n).
+   - t1 = (((z_h + z_l) + DP_H[k]) + t) with low word zeroed; t2 = z_l - (((t1 - t) - DP_H[k]) - z_h).
+7. y1 = y with low word zeroed; p_l = (y - y1)*t1 + y*t2; p_h = y1*t1; z = p_l + p_h; j is z's signed high word.
+   - If j is at least 0x40900000: return s*HUGE*HUGE unless z's bits are exactly 0x4090000000000000; also return it if p_l + OVT is above z - p_h.
+   - Else if j with bit 31 cleared is at least 0x4090cc00: return s*TINY*TINY unless z's bits are exactly 0xc090cc0000000000; also return it if p_l is at most z - p_h.
+8. i = j with bit 31 cleared, k = (i shifted right 20) - 0x3ff, n = 0. If i is above 0x3fe00000:
+   - n = j + (0x00100000 shifted right k+1); k = ((n & 0x7fffffff) shifted right 20) - 0x3ff.
+   - t = 0.0 with high word n masked by the complement of (0x000fffff shifted right k).
+   - n = ((n & 0x000fffff) | 0x00100000) shifted right 20-k, negated if j is negative.
+   - p_h is reduced by t.
+9. t = (p_l + p_h) with low word zeroed; u = t*LG2_H; v = (p_l - (t - p_h))*LG2 + t*LG2_L; z = u + v; w = v - (z - u).
+   t = z*z; t1 = z - t*(P1 + t*(P2 + t*(P3 + t*(P4 + t*P5)))); r = (z*t1)/(t1 - 2.0) - (w + z*w); z = 1.0 - (r - z).
+   j = z's signed high word + n shifted left 20. If j shifted right 20 (arithmetic) is at most 0, z = scalbn(z, n); else z = z with high word j.
+   Return s*z.
+
+Constants: `IVLN2HI` = 1.44269504072144627571e+00, `IVLN2LO` = 1.67517131648865118353e-10, `IVLN10HI` = 4.34294481878168880939e-01, `IVLN10LO` = 2.50829467116452752298e-11, `LOG10_2HI` = 3.01029995663611771306e-01, `LOG10_2LO` = 3.69423907715893078616e-13, `LG1` = 6.666666666666735130e-01, `LG2` = 3.999999999940941908e-01, `LG3` = 2.857142874366239149e-01, `LG4` = 2.222219843214978396e-01, `LG5` = 1.818357216161805012e-01, `LG6` = 1.531383769920937332e-01, `LG7` = 1.479819860511658591e-01.
+
+Both functions below are musl's log2 and log10, sharing this reduction on the bits of x, read with `binary::f64_bits` and written back with `binary::f64_from_bits`. Let ui be the 64 bits of x, hx the unsigned top 32 bits, and k start at 0. If hx is below 0x00100000 or its sign bit is set: when ui shifted left by 1 (64-bit) is 0, return -1/(x*x); when the sign bit is set, return (x-x)/0.0; otherwise subtract 54 from k, multiply x by 2^54 (bits 0x4350000000000000), and reload ui and hx. Otherwise, if hx is at least 0x7ff00000, return x; if hx is 0x3ff00000 and the low 32 bits of ui are 0, return 0.0. Then add 0x3ff00000 - 0x3fe6a09e to hx, add (hx >> 20) - 0x3ff to k, set hx to (hx & 0x000fffff) + 0x3fe6a09e, and set x to the double whose top 32 bits are hx and low 32 bits are the low 32 bits of ui. Compute f = x - 1.0, hfsq = 0.5*f*f, s = f/(2.0+f), z = s*s, w = z*z, t1 = w*(LG2+w*(LG4+w*LG6)), t2 = z*(LG1+w*(LG3+w*(LG5+w*LG7))), r = t2+t1. Set hi = f - hfsq with its low 32 bits cleared, and lo = f - hi - hfsq + s*(hfsq+r), evaluated left to right.
+
+`log2(x real) real`: val_hi = hi*IVLN2HI, val_lo = (lo+hi)*IVLN2LO + lo*IVLN2HI, y = k as a real, w = y + val_hi, val_lo increases by (y-w) + val_hi, and the result is val_lo + w.
+
+`log10(x real) real`: val_hi = hi*IVLN10HI, dk = k as a real, y = dk*LOG10_2HI, val_lo = dk*LOG10_2LO + (lo+hi)*IVLN10LO + lo*IVLN10HI, w = y + val_hi, val_lo increases by (y-w) + val_hi, and the result is val_lo + w.
