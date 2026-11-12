@@ -338,7 +338,7 @@ recursive pvstmt(n int):
 		return
 	if k == N_ASSIGN:
 		pvexpr(ND[n].a as int); pvexpr(ND[n].b as int)
-		a := ND[n].a as int; b := ND[n].b as int; o := ND[n].op as int; if a >= 0 && o == T_ASSIGN && ND[a].k as int == N_ID { pshrink(n, a, -1) } if a >= 0 && b >= 0 && o == T_ASSIGN { pcopy(b, at(a)); prc(b, at(a), -1) } if PCH && a >= 0 && b >= 0 && o == T_ASSIGN && ND[a].k as int == N_ID && rk(a) == R_GLOBAL && hold(at(a)) && !isrs(at(a)) && pl(b).v <= -3 && pl(b).v as int != -3 - rv(a) { GCP.push(pl(b).v); GCP.push((-3 - rv(a)) as i32); GCP.push(n as i32) }
+		a := ND[n].a as int; b := ND[n].b as int; o := ND[n].op as int; if a >= 0 && o == T_ASSIGN && ND[a].k as int == N_ID { pshrink(n, a, -1) } if PCH && a >= 0 && b >= 0 && o == T_ASSIGN && ND[a].k as int == N_ID && rk(a) == R_GLOBAL && plit(b) { PIN.push(n as i32); PIN.push((-3 - rv(a)) as i32) } if a >= 0 && b >= 0 && o == T_ASSIGN { pcopy(b, at(a)); prc(b, at(a), -1) } if PCH && a >= 0 && b >= 0 && o == T_ASSIGN && ND[a].k as int == N_ID && rk(a) == R_GLOBAL && hold(at(a)) && !isrs(at(a)) && pl(b).v <= -3 && pl(b).v as int != -3 - rv(a) { GCP.push(pl(b).v); GCP.push((-3 - rv(a)) as i32); GCP.push(n as i32) }
 		if a >= 0 && b >= 0 && prel(a) && ND[a].k as int == N_DOT: prel1(fraw(a), b, pdst(ND[a].a as int), false)
 		if a >= 0 && b >= 0: prels(b, pdst(a), false)
 		if a < 0 || b < 0 || o != T_ASSIGN && o != T_DOTASSIGN || prel(a) { return } t := at(a); if t < 0 { return }
@@ -449,6 +449,7 @@ recursive pvexpr(n int):
 		if c >= 0 && rk(n) == R_BUILTIN && b == B_INDEXOF && ND[c].k as int == N_DOT && ND[c].a >= 0 && ND[n].n > 0: pindexof(n, ND[c].a as int, kid(n, 0))
 		if rk(n) == R_BUILTIN && (b == B_PRINT || b == B_STR || b == B_FORMAT): phook(n, b, c)
 		if rk(n) == R_BUILTIN && c >= 0 && ND[c].k as int == N_DOT && (b == B_CLEAR || b == B_POP || b == B_POPN || b == B_RESIZE): pshrink(n, ND[c].a as int, b)
+		if PCH && rk(n) == R_BUILTIN && b == B_RESERVE && c >= 0 && ND[c].k as int == N_DOT: { ok ~= true; for j ND[n].n { if !pnoc(kid(n, j)) { ok = false } } if ok { PIN.push(n as i32); PIN.push(-1) } }
 		if rk(n) == R_BUILTIN && c >= 0 && ND[c].k as int == N_DOT && (b == B_PUSH || b == B_APPEND): a := pid(ND[c].a as int); if a != -1 && pcnt(a) >= 0 { pcset(a, pcnt(a) + 1) }
 		if rk(n) == R_FN: { ci0 := rv(n); for j in 0..pnarg(n) { a0 := parg(n, j); k0 := ND[a0].k as int; if (k0 == N_SLIT || k0 == N_ARR) && j < FI_[ci0].pn as int { pt0 := ptype_of(ci0, j); pnst(a0, pvin(pt0, a0), pt0) } } }
 		if rk(n) == R_FN && !PCH: { ci1 := rv(n); CGE.push(PI as i32); CGE.push(ci1 as i32); na1 := min(ND[n].n as int, FI_[ci1].pn as int); CGE.push(na1 as i32); for j in 0..na1 { a1 ~= kid(n, j); while ND[a1].k as int == N_SLICE || ND[a1].k as int == N_UN && ND[a1].op as int == T_AND { a1 = ND[a1].a as int } CGE.push(if ND[a1].k as int == N_ID && rk(a1) == R_LOCAL && ppar(rv(a1)) { pidx(rv(a1)) as i32 } else { -1 }) } }
@@ -1021,6 +1022,7 @@ pdaf(i int):
 var GRD (i32[>..])[>..]
 var GST i32[>..]
 var PSH i32[>..]
+var PIN i32[>..]
 var GCP i32[>..]
 var PSO (byte[>..])[>..]
 var GRC (i32[>..])[>..]
@@ -1100,10 +1102,32 @@ pnconst():
 		cn := nm(DC[CONSTD[ci]].name); m byte[>..] ~= []
 		if ND[b].t > ND[u].t: w := TK[ND[u].t]; m.append(cn); m.append(" is bound to a writable reference here, through which it may change, while the "); m.append(kn); m.append(" at "); m.append(nm(FILES[w.f].name)); format(m, ":", w.line, " relies on it keeping its initializer's value (§4.4)"); cerr(b, m[..])
 		else: w := TK[ND[b].t]; m.append("the "); m.append(kn); m.append(" relies on "); m.append(cn); m.append(" keeping its initializer's value, but a writable reference bound to "); m.append(cn); m.append(" at "); m.append(nm(FILES[w.f].name)); format(m, ":", w.line, " may change it (§4.4)"); cerr(u, m[..])
+plit(e int) bool: k := if e >= 0 { ND[e].k as int } else { -1 }; k == N_INT || k == N_FLT || k == N_STR || k == N_TRUE || k == N_FALSE || k == N_NULL || k == N_ARR && ND[e].n == 0
+recursive pnoc(e int) bool:
+	if e < 0 || plit(e): return true
+	k := ND[e].k as int
+	if k == N_ID: return true
+	(k == N_BIN || k == N_UN) && pnoc(ND[e].a as int) && pnoc(ND[e].b as int)
+pgsl(s int, g int) int:
+	for q in 0..(PSH.len / 2) { if PSH[2 * q + 1] as int == s && PSO[q][..] == "clear" { return if PSH[2 * q] as int == g { 2 } else { 1 } } }
+	for q in 0..(PIN.len / 2) { if PIN[2 * q] as int == s { return if PIN[2 * q + 1] as int == g { 2 } else { 1 } } }
+	0
+prst(n int, g int) bool:
+	for p ND.len:
+		if ND[p].k as int != N_BLOCK: continue
+		for i ND[p].n + 1:
+			if (if i < ND[p].n { kid(p, i) } else { ND[p].a as int }) != n: continue
+			j ~= i - 1
+			while j >= 0:
+				r := pgsl(kid(p, j), g)
+				if r != 1: return r == 2
+				j -= 1
+			return false
+	false
 prov_program() bool:
 	if NERR > 0: return false
 	nlc byte[>..] ~= []; if env("HC_NOPROV", nlc): return true
-	GST.clear(); GCP.clear(); PSH.clear(); PSO.clear(); PRM.clear(); PRM.resize(FI_.len, 0); SHR.clear(); SHR.resize(FI_.len, 0); PSG.clear(); PSG.resize(FI_.len, 0); PPW.clear(); PCW.clear(); SHG.clear(); PPR.clear(); PPN.clear(); PGN.clear(); PRG.clear(); for _ FI_.len { SHG.push([]); PPR.push([]); PPN.push([]); PGN.push([]); PRG.push([]) } PCH = false
+	GST.clear(); GCP.clear(); PSH.clear(); PIN.clear(); PSO.clear(); PRM.clear(); PRM.resize(FI_.len, 0); SHR.clear(); SHR.resize(FI_.len, 0); PSG.clear(); PSG.resize(FI_.len, 0); PPW.clear(); PCW.clear(); SHG.clear(); PPR.clear(); PPN.clear(); PGN.clear(); PRG.clear(); for _ FI_.len { SHG.push([]); PPR.push([]); PPN.push([]); PGN.push([]); PRG.push([]) } PCH = false
 	p0 i64[>..] ~= []; GRR.clear(); GRU.clear(); PSGG.clear(); sg := AOWN; AOWN = GLOBI
 	for d, di DC: if d.k as int == D_GLOBAL && !pskip(d.file as int) && ND[d.node].k as int == N_VDECL && ND[d.node].b >= 0 && ND[ND[d.node].b].n > 0 { t := global_type(di); if t > 0 && (TY[t].k as int == TY_REF && TY[t].c < 0 || TY[t].k as int == TY_SLICE) { e := kid(ND[d.node].b as int, 0); q := pl(e); if TY[t].k as int == TY_SLICE && q.v <= -3 && pgsid(q.v as int) && ND[e].k as int != N_NULL { m byte[>..] ~= []; m.append("storing a reference into "); pidn(q.v as int, m); m.append(", which holds a grow-shrink array: such a reference lives in a variable, is passed down or returned, and is never stored (§5.2)"); cerr(e, m[..]) } if ND[e].k as int != N_NULL { grrw(di, if q.d == -2 && q.v <= -3 { q.v as int } else { -9 }) } } }
 	pnconst()
@@ -1117,7 +1141,7 @@ prov_program() bool:
 	pglob()
 	gch ~= true; while gch { gch = false; for c in 0..(GCP.len / 3) { for x in 0..(GST.len / 3) { if GST[3 * x + 1] == GCP[3 * c] { ok ~= true; for y in 0..(GST.len / 3) { if GST[3 * y] == GST[3 * x] && GST[3 * y + 1] == GCP[3 * c + 1] { ok = false } } if ok { GST.push(GST[3 * x]); GST.push(GCP[3 * c + 1]); GST.push(GCP[3 * c + 2]); gch = true } } } } }
 	for q in 0..(PSH.len / 2):
-		a := PSH[2 * q]; bx ~= -1; for x in 0..(GST.len / 3) { if GST[3 * x] == a && (bx < 0 || GST[3 * x + 1] > GST[3 * bx + 1]) { bx = x } }
+		a := PSH[2 * q]; bx ~= -1; for x in 0..(GST.len / 3) { if GST[3 * x] == a && (bx < 0 || GST[3 * x + 1] > GST[3 * bx + 1]) && !prst(PSH[2 * q + 1] as int, GST[3 * x + 1] as int) { bx = x } }
 		for x in 0..(GST.len / 3):
 			if x != bx: continue
 			g := GST[3 * x + 1] as int; w := TK[ND[GST[3 * x + 2]].t]; m byte[>..] ~= []; m.append("cannot "); m.append(PSO[q][..]); m.append(" "); pidn(a as int, m); m.append(": global "); pidn(g, m); m.append(" may hold a reference into it, stored at "); m.append(nm(FILES[w.f].name)); format(m, ":", w.line, " (§5.1)"); cerr(PSH[2 * q + 1] as int, m[..]); break
