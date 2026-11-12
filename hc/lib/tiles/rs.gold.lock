@@ -40,6 +40,51 @@ display(out byte[>..]&, x real):
 		for i -n:
 			out.push('0')
 		out.append(digits)
+=== -13baff996447ae50
+debug(out byte[>..]&, x real):
+	if is_nan(x):
+		out.append("NaN")
+		return
+	if is_inf(x):
+		if x < 0.0:
+			out.append("-inf")
+		else:
+			out.append("inf")
+		return
+	if neg_bit(x):
+		out.push('-')
+	if x == 0.0:
+		out.append("0.0")
+		return
+	a := fabs(x)
+	digits byte[>..] ~= []
+	e := json::digits_of(a, digits)
+	cnt := digits.len
+	for i cnt:
+		digits[i] = dig_char(digits[i])
+	if a < 1e-4 || a >= 1e16:
+		out.push(digits[0])
+		if cnt > 1:
+			out.push('.')
+			out.append(digits[1..])
+		out.push('e')
+		format(out, e)
+		return
+	n := e + 1
+	if n >= cnt:
+		out.append(digits)
+		for i n - cnt:
+			out.push('0')
+		out.append(".0")
+	else if n >= 1:
+		out.append(digits[..n])
+		out.push('.')
+		out.append(digits[n..])
+	else:
+		out.append("0.")
+		for i -n:
+			out.push('0')
+		out.append(digits)
 === 6a636f0239f55550
 fixed(out byte[>..]&, x real, decimals int):
 	if is_nan(x):

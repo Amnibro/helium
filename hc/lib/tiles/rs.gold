@@ -7,6 +7,8 @@ Each function here copies one Rust behavior on an f64 exactly as Rust compiles i
 
 `display(out, x)` appends Rust's `{}` (Display) of x: "NaN", "inf" or "-inf" for those values; otherwise a minus sign when the sign bit of x is set, so -0.0 prints "-0", then the shortest digits of `fabs` of x written as plain decimal, never with an exponent: when n is at least the digit count, the digits followed by n minus the count zeros and no point; when n is from 1 to one less than the count, the digits with a point after the first n; when n is 0 or below, "0.", then -n zeros, then the digits. Zero prints "0".
 
+`debug(out, x)` appends Rust's `{:?}` (Debug) of x: "NaN", "inf" or "-inf" for those values; otherwise a minus sign when the sign bit of x is set, then the shortest digits of `fabs` of x. When x is not zero and `fabs` of x is below 1e-4, or `fabs` of x is at least 1e16, they are written in exponent form: the first digit, then a point and the other digits only when there are more digits, then "e" and e (with a minus sign when e is negative, no plus sign and no padding), so 0.00001 prints "1e-5" and 1.5e16 prints "1.5e16". Otherwise they are written like `display`, except that a whole number gets ".0" after it, so 2.0 prints "2.0" and -0.0 prints "-0.0".
+
 `fixed(out, x, decimals)` appends Rust's `{:.N}` of x with N decimals: "NaN", "inf" or "-inf" for those values, and otherwise std's `format_flt(out, x, decimals)`, which rounds the exact value half to even and writes a minus sign whenever the sign bit is set, so -0.0 and -0.001 at two decimals both print "-0.00".
 
 `max(x, y)` is Rust's f64::max on wasm32: x when y is NaN or x is greater than y, otherwise y, so max(0.0, -0.0) is -0.0. `min(x, y)` is x when y is NaN or x is less than y, otherwise y.
