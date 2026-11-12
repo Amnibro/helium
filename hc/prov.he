@@ -51,6 +51,22 @@ recursive hold(t int) bool:
 	if k == TY_ARR: return hold(x.a as int)
 	false
 isrs(t int) bool: t >= 0 && (TY[t].k == TY_SLICE || TY[t].k == TY_REF && TY[t].c < 0 && TY[t].fl & RF_OPT == 0)
+recursive teqc(x int, y int) bool: x == y || x >= 0 && y >= 0 && TY[x].k == TY[y].k && (TY[x].k as int == TY_SLICE || TY[x].k as int == TY_REF || TY[x].k as int == TY_ARR && TY[x].s == TY[y].s && TY[x].b == TY[y].b) && teqc(TY[x].a as int, TY[y].a as int)
+recursive inl(t int, e int, d int) bool:
+	if t < 0: return false
+	if d > 32 || teqc(t, e): return true
+	x := TY[t]; k := x.k as int
+	if k == TY_STRUCT: si := x.a as int; for j STI[si].fnum { if inl(SFI[STI[si].f0 as int + j].ty as int, e, d + 1) { return true } } return false
+	k == TY_ARR && inl(x.a as int, e, d + 1)
+recursive rin(t int, p int, d int) bool:
+	if t < 0: return false
+	x := TY[t]; k := x.k as int
+	if d > 32: return true
+	if k == TY_SLICE || k == TY_REF: return inl(p, x.a as int, 0) || rin(x.a as int, p, d + 1)
+	if k == TY_STRUCT: si := x.a as int; for j STI[si].fnum { if rin(SFI[STI[si].f0 as int + j].ty as int, p, d + 1) { return true } } return false
+	if k == TY_ARR: return rin(x.a as int, p, d + 1)
+	k == TY_VARIANT || k == TY_ENUM && x.fl != 0 || k == TY_TP || k == TY_FNV
+gin(g int, a int) bool: dg := -3 - g; da := -3 - a; dg < 0 || dg >= DC.len || da < 0 || da >= DC.len || rin(global_type(dg), global_type(da), 0)
 pgrow(v int): while PDEP.len <= v { PDEP.push(-1); PBD.push(-9); PBV.push(-1); PBM.push(0); PVRS.push([]); PBN.push(-1); PXM.push(0) }
 pbset(v int, p Pv, mg bool, nd int):
 	pgrow(v); q := if mg { pmerge(Pv{PBD[v], PBV[v], PBM[v]}, p) } else { p }; PBD[v] = q.d; PBV[v] = q.v; PBM[v] = q.m
@@ -1143,10 +1159,10 @@ prov_program() bool:
 	if NERR == 0: nwall()
 	for i FI_.len { pdaf(i) }
 	pglob()
-	gk i32[>..] ~= []; for x in 0..(GST.len / 3) { if ghold(GST[3 * x + 1] as int) { gk.push(GST[3 * x]); gk.push(GST[3 * x + 1]); gk.push(GST[3 * x + 2]) } } GST.clear(); GST.append(gk)
+	gk i32[>..] ~= []; for x in 0..(GST.len / 3) { if ghold(GST[3 * x + 1] as int) && gin(GST[3 * x + 1] as int, GST[3 * x] as int) { gk.push(GST[3 * x]); gk.push(GST[3 * x + 1]); gk.push(GST[3 * x + 2]) } } GST.clear(); GST.append(gk)
 	gch ~= true; while gch { gch = false; for c in 0..(GCP.len / 3) { for x in 0..(GST.len / 3) { if GST[3 * x + 1] == GCP[3 * c] { ok ~= true; for y in 0..(GST.len / 3) { if GST[3 * y] == GST[3 * x] && GST[3 * y + 1] == GCP[3 * c + 1] { ok = false } } if ok { GST.push(GST[3 * x]); GST.push(GCP[3 * c + 1]); GST.push(GCP[3 * c + 2]); gch = true } } } } }
 	for q in 0..(PSH.len / 2):
-		a := PSH[2 * q]; bx ~= -1; for x in 0..(GST.len / 3) { if GST[3 * x] == a && (bx < 0 || GST[3 * x + 1] > GST[3 * bx + 1]) && !prst(PSH[2 * q + 1] as int, GST[3 * x + 1] as int) { bx = x } }
+		a := PSH[2 * q]; bx ~= -1; for x in 0..(GST.len / 3) { if GST[3 * x] == a && gin(GST[3 * x + 1] as int, a as int) && (bx < 0 || GST[3 * x + 1] > GST[3 * bx + 1]) && !prst(PSH[2 * q + 1] as int, GST[3 * x + 1] as int) { bx = x } }
 		for x in 0..(GST.len / 3):
 			if x != bx: continue
 			g := GST[3 * x + 1] as int; w := TK[ND[GST[3 * x + 2]].t]; m byte[>..] ~= []; m.append("cannot "); m.append(PSO[q][..]); m.append(" "); pidn(a as int, m); m.append(": global "); pidn(g, m); m.append(" may hold a reference into it, stored at "); m.append(nm(FILES[w.f].name)); format(m, ":", w.line, " (§5.1)"); cerr(PSH[2 * q + 1] as int, m[..]); break

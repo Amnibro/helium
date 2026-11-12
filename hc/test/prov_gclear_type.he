@@ -1,0 +1,35 @@
+struct Tool { name const byte[:], dia real }
+struct R { w const byte[:][:], t Tool[:] }
+var TA byte[>..]
+var WS const byte[:][>..]
+var TL Tool[>..]
+keep(s const byte[:]) const byte[:]:
+	n := TA.len
+	TA.append(s)
+	TA[n..TA.len]
+putw(xs const byte[:][:]) const byte[:][:]:
+	n := WS.len
+	WS.append(xs)
+	WS[n..WS.len]
+putt(xs Tool[:]) Tool[:]:
+	n := TL.len
+	TL.append(xs)
+	TL[n..TL.len]
+begin():
+	WS.clear()
+	TL.clear()
+	TA.clear()
+mk() R:
+	ts Tool[>..] ~= []
+	ts.push(Tool{name: keep("cde"), dia: 7.0})
+	r ~= R{w: WS[0..0], t: putt(ts[0..ts.len])}
+	ws const byte[:][>..] ~= []
+	ws.push(keep("ab"))
+	ws.push(r.t[0].name)
+	r.w = putw(ws[0..ws.len])
+	r
+main():
+	for k 2:
+		begin()
+		r := mk()
+		print(r.w.len, " ", r.w[0], " ", r.w[1], " ", r.t[0].name, " ", r.t[0].dia, " ", TA.len)
