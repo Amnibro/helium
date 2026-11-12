@@ -1489,7 +1489,8 @@ recursive lassign(n int):
 	stw(p, 0, r, wof(t));
 recursive nsz(n int, lim int) int:
 	x := ND[n]; k := x.k; if k == N_FUNVAL || k == N_CFOR: return lim + 1
-	c ~= 1; for q [x.a, x.b, x.c, x.d, x.e]:
+	c ~= 1; if k == N_CALL && rk(n) == R_FN { f := rv(n); if f >= 0 && FI_[f].node >= 0 { c += nsz(FI_[f].node, lim - 1) } }
+	for q [x.a, x.b, x.c, x.d, x.e]:
 		if q > n && q < ND.len && c <= lim: c += nsz(q, lim - c)
 	for j x.n { q := LS[x.l as int + j]; if q > n && q < ND.len && c <= lim { c += nsz(q, lim - c) } } c
 u2fb(m u64, mb int, eb int) u64:
