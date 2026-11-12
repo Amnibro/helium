@@ -1102,7 +1102,10 @@ pnconst():
 		cn := nm(DC[CONSTD[ci]].name); m byte[>..] ~= []
 		if ND[b].t > ND[u].t: w := TK[ND[u].t]; m.append(cn); m.append(" is bound to a writable reference here, through which it may change, while the "); m.append(kn); m.append(" at "); m.append(nm(FILES[w.f].name)); format(m, ":", w.line, " relies on it keeping its initializer's value (§4.4)"); cerr(b, m[..])
 		else: w := TK[ND[b].t]; m.append("the "); m.append(kn); m.append(" relies on "); m.append(cn); m.append(" keeping its initializer's value, but a writable reference bound to "); m.append(cn); m.append(" at "); m.append(nm(FILES[w.f].name)); format(m, ":", w.line, " may change it (§4.4)"); cerr(u, m[..])
-plit(e int) bool: k := if e >= 0 { ND[e].k as int } else { -1 }; k == N_INT || k == N_FLT || k == N_STR || k == N_TRUE || k == N_FALSE || k == N_NULL || k == N_ARR && ND[e].n == 0
+recursive plit(e int) bool:
+	k := if e >= 0 { ND[e].k as int } else { -1 }
+	if k == N_SLIT: { for i ND[e].n { fi := kid(e, i); if ND[fi].k as int == N_CFOR || !plit(ND[fi].a as int) { return false } } return true }
+	k == N_INT || k == N_FLT || k == N_STR || k == N_TRUE || k == N_FALSE || k == N_NULL || k == N_ARR && ND[e].n == 0
 recursive pnoc(e int) bool:
 	if e < 0 || plit(e): return true
 	k := ND[e].k as int
@@ -1124,6 +1127,7 @@ prst(n int, g int) bool:
 				j -= 1
 			return false
 	false
+ghold(g int) bool: di := -3 - g; di < 0 || di >= DC.len || hold(global_type(di))
 prov_program() bool:
 	if NERR > 0: return false
 	nlc byte[>..] ~= []; if env("HC_NOPROV", nlc): return true
@@ -1139,6 +1143,7 @@ prov_program() bool:
 	if NERR == 0: nwall()
 	for i FI_.len { pdaf(i) }
 	pglob()
+	gk i32[>..] ~= []; for x in 0..(GST.len / 3) { if ghold(GST[3 * x + 1] as int) { gk.push(GST[3 * x]); gk.push(GST[3 * x + 1]); gk.push(GST[3 * x + 2]) } } GST.clear(); GST.append(gk)
 	gch ~= true; while gch { gch = false; for c in 0..(GCP.len / 3) { for x in 0..(GST.len / 3) { if GST[3 * x + 1] == GCP[3 * c] { ok ~= true; for y in 0..(GST.len / 3) { if GST[3 * y] == GST[3 * x] && GST[3 * y + 1] == GCP[3 * c + 1] { ok = false } } if ok { GST.push(GST[3 * x]); GST.push(GCP[3 * c + 1]); GST.push(GCP[3 * c + 2]); gch = true } } } } }
 	for q in 0..(PSH.len / 2):
 		a := PSH[2 * q]; bx ~= -1; for x in 0..(GST.len / 3) { if GST[3 * x] == a && (bx < 0 || GST[3 * x + 1] > GST[3 * bx + 1]) && !prst(PSH[2 * q + 1] as int, GST[3 * x + 1] as int) { bx = x } }
