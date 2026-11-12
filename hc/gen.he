@@ -324,6 +324,7 @@ recursive gaddr(n int):
 recursive gsl(n int, f int):
 	d := deref(f)
 	k := TY[d].k
+	if k == TY_MULTI && ND[n].k as int == N_CALL && TY[d].n > 0: R0N = n; gsl(n, TYL[TY[d].l] as int); return
 	if TY[f].k == TY_REF && TY[f].c < 0:
 		p := nt()
 		ow("({ "); ct(f); ow(" _t"); oi(p); ow(" = "); gx0(n); ow("; ")
