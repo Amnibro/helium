@@ -337,6 +337,50 @@ fn place_run(s const byte[:], x f32, y f32, size f32, mono bool, bold bool, ital
 	GI.len
 }
 
+var FS ttf::Info = ttf::Info { .. };
+var FBS byte[>..] = [];
+var SAMP byte[>..] = [];
+var SW = 0;
+var SH = 0;
+var SX = 0;
+var SY = 0;
+
+fn sample_open(path const byte[:]) bool {
+	FBS.clear();
+	if !read_file(path, FBS) {
+		var alt byte[>..] = [];
+		alt.append("/workspace/");
+		alt.append(path);
+		FBS.clear();
+		if !read_file(alt[..], FBS) { return false; }
+	}
+	if FBS.len < 12 { return false; }
+	FS = ttf::Info { d: copy(FBS), .. };
+	ttf::init(FS)
+}
+
+fn sample_glyph(cp int, size f32) int, int {
+	let g = ttf::glyph_index(FS, cp);
+	let sc = ttf::scale_for(FS, size);
+	let box = ttf::bbox(FS, g, sc, sc, 0.0, 0.0);
+	var w = box.x1 - box.x0 + 2;
+	var h = box.y1 - box.y0 + 2;
+	if w < 1 { w = 1; }
+	if h < 1 { h = 1; }
+	if w > 96 { w = 96; }
+	if h > 96 { h = 96; }
+	SAMP.resize(w * h, 0);
+	for i in w * h { SAMP[i] = 0 as! byte; }
+	if g > 0 { ttf::glyph_bitmap(FS, SAMP, 0, w, h, w, sc, sc, g); }
+	SW = w; SH = h; SX = box.x0; SY = box.y0;
+	return w, h;
+}
+
+fn sample_alpha(x int, y int) int {
+	if x < 0 || y < 0 || x >= SW || y >= SH { return 0; }
+	SAMP[y * SW + x] as int
+}
+
 fn alpha(id int, x int, y int) int {
 	if x < 0 || y < 0 || x >= C_W[id] || y >= C_H[id] { return 0; }
 	C_AL[C_OFF[id] + y * C_W[id] + x] as int

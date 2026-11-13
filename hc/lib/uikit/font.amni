@@ -18,6 +18,7 @@ fn font_scale(size f32) int {
 }
 
 fn text_advance(s const byte[:], size f32) f32 {
+	if THEME.pixel == 0 && fonts_ready() { return measure_run(s, size, false, false, false); }
 	let sc = font_scale(size);
 	(text::display_width(s) * 6 * sc) as f32
 }

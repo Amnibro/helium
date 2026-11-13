@@ -148,6 +148,35 @@ fn main() {
 	var vel f32 = 0.0;
 	let sprung = uikit::spring_step(0.0 as f32, vel, 1.0 as f32, 0.05 as f32);
 	fail += eqi(if sprung > 0.0 && sprung < 1.0 { 1 } else { 0 }, 1, "spring");
+	fail += eqi(uikit::catalog_count(), 300, "catalog themes");
+	fail += eqi(uikit::genre_count(), 41, "genres");
+	fail += eqi(uikit::icon_count(), 500, "icons");
+	fail += eqi(uikit::fx_count(), 100, "fx count");
+	fail += eqi(uikit::style_count(), 20, "styles");
+	fail += eqi(uikit::pair_count(), 30, "font pairs");
+	var seen_c int[300] = [0; 300];
+	var uniq_c = 0;
+	var bad_c = 0;
+	for i in uikit::catalog_count() {
+		uikit::catalog_set(i);
+		let body = uikit::contrast_ratio(uikit::THEME.ink, uikit::THEME.bg);
+		let surf = uikit::contrast_ratio(uikit::THEME.ink, uikit::THEME.surface);
+		let accent = uikit::contrast_ratio(uikit::THEME.on_accent, uikit::THEME.accent);
+		if body < 4.5 || surf < 4.5 || accent < 3.0 { bad_c += 1; }
+		let s = uikit::theme_signature();
+		var hit = 0;
+		for k in uniq_c { if seen_c[k] == s { hit = 1; } }
+		if hit == 0 && uniq_c < 300 { seen_c[uniq_c] = s; uniq_c += 1; }
+	}
+	fail += eqi(bad_c, 0, "catalog contrast");
+	fail += eqi(uniq_c, 300, "catalog unique");
+	uikit::reset();
+	uikit::theme_set(0, 1);
+	let root = uikit::flex(-1, uikit::DIR_COL);
+	uikit::build_genre(root, 0, 0);
+	uikit::layout_root(root, 0.0, 0.0, 260.0, 900.0);
+	fail += eqi(uikit::overlap_count(), 0, "genre overlap");
+	fail += eqi(uikit::text_clip_count(), 0, "genre clip");
 	print("ui fails ", fail);
 	if fail != 0 { abort("uikit tests failed"); }
 }

@@ -1,0 +1,169 @@
+import os;
+import gfx.codec_png;
+import uikit;
+
+fn save(path const byte[:]) {
+	var buf byte[>..] = [];
+	codec_png::encode(uikit::PW, uikit::PH, 4, uikit::PIX[..], buf);
+	if !write_file(path, buf) { print("write failed ", path); abort("genre write"); }
+	print("wrote ", path, " ", buf.len);
+}
+
+fn font_path(i int, out byte[>..]&) {
+	out.clear();
+	if i >= 20 { out.append("hc/lib/uikit/fonts/"); } else { out.append("hc/lib/uikit/fonts/catalog/"); }
+	out.append(uikit::font_file(i));
+}
+
+fn paint_genre(g int) {
+	uikit::canvas(1400, 820);
+	uikit::fill_rect(0, 0, 1400, 820, 0x101218, 255);
+	for v in 5 {
+		let ti = (g * 7 + v * 13) % 300;
+		uikit::catalog_set(ti);
+		let x = 12 + v * 276;
+		if uikit::THEME.glass != 0 {
+			uikit::fill_rect(x, 24, 48, 220, 0x7C5CFF, 255);
+			uikit::fill_rect(x + 150, 80, 80, 260, 0xE7C27A, 255);
+			uikit::fill_rect(x + 40, 340, 140, 90, 0x3DDC97, 255);
+		}
+		uikit::reset();
+		let root = uikit::flex(-1, uikit::DIR_COL);
+		uikit::build_genre(root, g, v);
+		uikit::layout_root(root, x as f32, 12.0, 260.0, 790.0);
+		let ov = uikit::overlap_count();
+		let cl = uikit::text_clip_count();
+		if ov != 0 || cl != 0 {
+			print("layout ", uikit::genre_slug(g), " v ", v, " overlap ", ov, " clip ", cl);
+			abort("genre layout");
+		}
+		uikit::paint_roots();
+		uikit::draw_text(x, 790, uikit::genre_name(g), 12.0, 0xD0D4DC, 0, -1);
+	}
+	var dir byte[>..] = [];
+	dir.append("docs/ui-gallery/");
+	dir.append(uikit::genre_slug(g));
+	make_dir(dir[..]);
+	var path byte[>..] = [];
+	path.append(dir[..]);
+	path.append("/sheet.png");
+	save(path[..]);
+}
+
+fn paint_icons() {
+	make_dir("docs/ui-gallery/icons");
+	uikit::canvas(1240, 920);
+	uikit::fill_rect(0, 0, 1240, 920, 0x12141A, 255);
+	for i in uikit::icon_count() {
+		let x = (i % 25) * 48 + 10;
+		let y = (i / 25) * 44 + 8;
+		uikit::icon_draw(i, x, y, 32, 0xE8EEF6);
+	}
+	save("docs/ui-gallery/icons/sheet.png");
+}
+
+fn paint_effects() {
+	make_dir("docs/ui-gallery/text");
+	uikit::theme_set(0, 1);
+	uikit::canvas(1400, 760);
+	uikit::fill_rect(0, 0, 1400, 760, uikit::THEME.bg, 255);
+	var name byte[>..] = [];
+	for i in uikit::fx_count() {
+		let col = i % 10;
+		let row = i / 10;
+		let x = 16 + col * 138;
+		let y = 18 + row * 74;
+		uikit::fx_copy(i, name);
+		uikit::fx_draw(i, x, y + 28, "Agate", 26.0, 0x1C1B1F);
+		uikit::draw_text(x, y, name[..], 11.0, 0x5C6570, 0, -1);
+	}
+	save("docs/ui-gallery/text/effects.png");
+}
+
+fn paint_styles() {
+	make_dir("docs/ui-gallery/widgets");
+	uikit::theme_set(0, 0);
+	uikit::canvas(980, 520);
+	uikit::fill_rect(0, 0, 980, 520, uikit::THEME.bg, 255);
+	for i in uikit::style_count() {
+		uikit::reset();
+		let root = uikit::flex(-1, uikit::DIR_COL);
+		let b = uikit::button(root, uikit::style_name(i), i);
+		uikit::set_px(b, 150.0, 36.0);
+		let col = i % 5;
+		let row = i / 5;
+		uikit::layout_root(root, (20 + col * 190) as f32, (20 + row * 120) as f32, 170.0, 50.0);
+		uikit::paint_roots();
+	}
+	save("docs/ui-gallery/widgets/styles.png");
+}
+
+fn paint_fonts() {
+	make_dir("docs/ui-gallery/fonts");
+	uikit::theme_set(0, 1);
+	uikit::canvas(1100, 980);
+	uikit::fill_rect(0, 0, 1100, 980, 0xF7F7F5, 255);
+	var path byte[>..] = [];
+	var loaded = 0;
+	for i in uikit::pair_count() {
+		let y = 16 + i * 32;
+		let body = uikit::pair_body(i);
+		let accent = uikit::pair_accent(i);
+		font_path(body, path);
+		let ok = uikit::sample_open(path[..]);
+		if ok { loaded += 1; }
+		uikit::draw_text(16, y, uikit::font_file(body), 12.0, 0x222222, 0, -1);
+		uikit::draw_text(360, y, uikit::font_file(accent), 12.0, 0x555555, 0, -1);
+		if ok {
+			var pen = 760;
+			let word = "Hamburge";
+			var k = 0;
+			while k < word.len {
+				let cp = word[k] as int;
+				let w, h = uikit::sample_glyph(cp, 22.0);
+				for py in h {
+					for px in w {
+						let a = uikit::sample_alpha(px, py);
+						if a > 0 { uikit::put(pen + px, y + py + 18, 0x111111, a); }
+					}
+				}
+				pen += w + 1;
+				k += 1;
+			}
+		}
+	}
+	print("font pairs drawn ", uikit::pair_count(), " loaded ", loaded);
+	save("docs/ui-gallery/fonts/pairings.png");
+}
+
+fn write_index() {
+	var out byte[>..] = [];
+	out.append("# UI gallery index\n\n");
+	format(out, "Catalog themes: ", uikit::catalog_count(), "\n");
+	format(out, "Curated themes: ", uikit::theme_count(), "\n");
+	format(out, "Genres: ", uikit::genre_count(), " (", uikit::game_genre_count(), " game, ", uikit::genre_count() - uikit::game_genre_count(), " app)\n");
+	format(out, "Variations per genre: 5\n");
+	format(out, "Icons: ", uikit::icon_count(), "\n");
+	format(out, "Text effects: ", uikit::fx_count(), "\n");
+	format(out, "Widget styles: ", uikit::style_count(), "\n");
+	format(out, "Font files in the pairing set: ", uikit::font_file_count(), "\n");
+	format(out, "Font pairings: ", uikit::pair_count(), "\n\n");
+	out.append("## Genres\n\n");
+	for g in uikit::genre_count() {
+		format(out, "- `", uikit::genre_slug(g), "/sheet.png` — ", uikit::genre_name(g), " (ref: ", uikit::genre_ref(g), ")\n");
+	}
+	out.append("\n## Other sheets\n\n");
+	out.append("- `icons/sheet.png`\n- `text/effects.png`\n- `widgets/styles.png`\n- `fonts/pairings.png`\n");
+	if !write_file("docs/ui-gallery/INDEX.md", out[..]) { abort("index write"); }
+}
+
+fn main() {
+	uikit::set_scale(1.0);
+	paint_icons();
+	paint_effects();
+	paint_styles();
+	paint_fonts();
+	for g in uikit::genre_count() { paint_genre(g); }
+	write_index();
+	print("genres done");
+}

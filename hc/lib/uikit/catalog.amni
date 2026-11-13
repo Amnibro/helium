@@ -1,0 +1,459 @@
+// Parameterized catalog: 300 themes, 41 genres, 100 effects, 30 font pairings.
+namespace uikit;
+import uikit.theme;
+import uikit.widgets;
+import uikit.core;
+
+fn hsl(h int, s int, l int) u32 {
+	var hh = h;
+	while hh < 0 { hh += 360; }
+	while hh >= 360 { hh -= 360; }
+	let hf = hh as f32;
+	let sf = s as f32 / 100.0;
+	let lf = l as f32 / 100.0;
+	let c = (1.0 - abs(2.0 * lf - 1.0)) * sf;
+	let hp = hf / 60.0;
+	var hpmod = hp;
+	while hpmod >= 2.0 { hpmod = hpmod - 2.0; }
+	var d = hpmod - 1.0;
+	if d < 0.0 { d = 0.0 - d; }
+	let x = c * (1.0 - d);
+	let m = lf - c / 2.0;
+	var r f32 = 0.0;
+	var g f32 = 0.0;
+	var b f32 = 0.0;
+	let seg = hp as int;
+	if seg == 0 { r = c; g = x; }
+	else if seg == 1 { r = x; g = c; }
+	else if seg == 2 { g = c; b = x; }
+	else if seg == 3 { g = x; b = c; }
+	else if seg == 4 { r = x; b = c; }
+	else { r = c; b = x; }
+	var ri = ((r + m) * 255.0) as int;
+	var gi = ((g + m) * 255.0) as int;
+	var bi = ((b + m) * 255.0) as int;
+	if ri < 0 { ri = 0; } if ri > 255 { ri = 255; }
+	if gi < 0 { gi = 0; } if gi > 255 { gi = 255; }
+	if bi < 0 { bi = 0; } if bi > 255 { bi = 255; }
+	((ri << 16) | (gi << 8) | bi) as u32
+}
+
+fn catalog_count() int { 300 }
+fn catalog_families() int { 15 }
+
+fn catalog_family_name(f int) const byte[:] {
+	if f == 0 { return "ink"; }
+	if f == 1 { return "glass"; }
+	if f == 2 { return "neon"; }
+	if f == 3 { return "parchment"; }
+	if f == 4 { return "brutal"; }
+	if f == 5 { return "pixel"; }
+	if f == 6 { return "tactical"; }
+	if f == 7 { return "arena"; }
+	if f == 8 { return "jrpg"; }
+	if f == 9 { return "horror"; }
+	if f == 10 { return "circuit"; }
+	if f == 11 { return "cozy"; }
+	if f == 12 { return "terminal"; }
+	if f == 13 { return "news"; }
+	"royal"
+}
+
+fn catalog_set(index int) {
+	var i = index;
+	if i < 0 { i = 0; }
+	if i > 299 { i = 299; }
+	let fam = i / 20;
+	let v = i % 20;
+	let dark = v < 10;
+	let hue = (fam * 23 + (v % 10) * 11) % 360;
+	let ah = (hue + 32) % 360;
+	var bg = hsl(hue, if dark { 26 } else { 16 }, if dark { 8 } else { 97 });
+	var surface = hsl(hue, if dark { 20 } else { 10 }, if dark { 14 } else { 100 });
+	let ink = hsl(hue, if dark { 10 } else { 28 }, if dark { 95 } else { 13 });
+	var acc = hsl(ah, 72, 46);
+	var step = 0;
+	while contrast_ratio(0xFFFFFF, acc) < 3.0 && step < 12 {
+		acc = lerp_rgb(acc, 0x000000, 0.18);
+		step += 1;
+	}
+	var rad f32 = 6.0;
+	rad = rad + (v % 5) as f32 * 2.0;
+	var sh = 1;
+	var glass = 0;
+	var pixel = 0;
+	var bw f32 = 1.0;
+	var family = FAM_FLAT;
+	if fam == 1 { glass = 1; family = FAM_GLASS; rad = 14.0; }
+	if fam == 2 || fam == 10 { sh = 3; family = FAM_NEON; rad = 4.0; }
+	if fam == 3 || fam == 8 || fam == 14 { family = FAM_FANTASY; bw = 2.0; }
+	if fam == 4 { sh = 2; family = FAM_BRUTAL; rad = 0.0; bw = 3.0; }
+	if fam == 5 || fam == 12 { pixel = 1; family = FAM_RETRO; rad = 0.0; }
+	if fam == 13 { family = FAM_MINIMAL; rad = 2.0; }
+	if fam == 9 { family = FAM_FLAT; }
+	theme_apply(bg, surface, ink, acc, rad, bw, sh, glass, pixel, 10.0);
+	THEME.family = family;
+	THEME.variant = v;
+	THEME.on_accent = 0xFFFFFF;
+}
+
+fn genre_count() int { 41 }
+fn game_genre_count() int { 24 }
+
+fn genre_slug(g int) const byte[:] {
+	if g == 0 { return "fps"; }
+	if g == 1 { return "royale"; }
+	if g == 2 { return "moba"; }
+	if g == 3 { return "rts"; }
+	if g == 4 { return "jrpg"; }
+	if g == 5 { return "souls"; }
+	if g == 6 { return "mmo"; }
+	if g == 7 { return "racing"; }
+	if g == 8 { return "fighting"; }
+	if g == 9 { return "sports"; }
+	if g == 10 { return "platform"; }
+	if g == 11 { return "roguelike"; }
+	if g == 12 { return "deck"; }
+	if g == 13 { return "survival"; }
+	if g == 14 { return "city"; }
+	if g == 15 { return "horror"; }
+	if g == 16 { return "space"; }
+	if g == 17 { return "fantasy"; }
+	if g == 18 { return "cozy"; }
+	if g == 19 { return "rhythm"; }
+	if g == 20 { return "puzzle"; }
+	if g == 21 { return "novel"; }
+	if g == 22 { return "idle"; }
+	if g == 23 { return "gacha"; }
+	if g == 24 { return "dashboard"; }
+	if g == 25 { return "admin"; }
+	if g == 26 { return "shop"; }
+	if g == 27 { return "social"; }
+	if g == 28 { return "chat"; }
+	if g == 29 { return "media"; }
+	if g == 30 { return "editor"; }
+	if g == 31 { return "settings"; }
+	if g == 32 { return "onboard"; }
+	if g == 33 { return "auth"; }
+	if g == 34 { return "pricing"; }
+	if g == 35 { return "docs"; }
+	if g == 36 { return "calendar"; }
+	if g == 37 { return "kanban"; }
+	if g == 38 { return "maps"; }
+	if g == 39 { return "banking"; }
+	"health"
+}
+
+fn genre_name(g int) const byte[:] {
+	if g == 0 { return "FPS"; }
+	if g == 1 { return "Royale"; }
+	if g == 2 { return "MOBA"; }
+	if g == 3 { return "RTS"; }
+	if g == 4 { return "JRPG"; }
+	if g == 5 { return "Souls"; }
+	if g == 6 { return "MMO"; }
+	if g == 7 { return "Racing"; }
+	if g == 8 { return "Fighting"; }
+	if g == 9 { return "Sports"; }
+	if g == 10 { return "Platform"; }
+	if g == 11 { return "Roguelike"; }
+	if g == 12 { return "Deck"; }
+	if g == 13 { return "Survival"; }
+	if g == 14 { return "City"; }
+	if g == 15 { return "Horror"; }
+	if g == 16 { return "Space"; }
+	if g == 17 { return "Fantasy"; }
+	if g == 18 { return "Cozy"; }
+	if g == 19 { return "Rhythm"; }
+	if g == 20 { return "Puzzle"; }
+	if g == 21 { return "Novel"; }
+	if g == 22 { return "Idle"; }
+	if g == 23 { return "Gacha"; }
+	if g == 24 { return "Dashboard"; }
+	if g == 25 { return "Admin"; }
+	if g == 26 { return "Shop"; }
+	if g == 27 { return "Social"; }
+	if g == 28 { return "Chat"; }
+	if g == 29 { return "Player"; }
+	if g == 30 { return "Editor"; }
+	if g == 31 { return "Settings"; }
+	if g == 32 { return "Onboard"; }
+	if g == 33 { return "Auth"; }
+	if g == 34 { return "Pricing"; }
+	if g == 35 { return "Docs"; }
+	if g == 36 { return "Calendar"; }
+	if g == 37 { return "Kanban"; }
+	if g == 38 { return "Maps"; }
+	if g == 39 { return "Banking"; }
+	"Health"
+}
+
+fn genre_ref(g int) const byte[:] {
+	if g == 0 { return "Valorant, Counter-Strike"; }
+	if g == 1 { return "Fortnite, Apex Legends"; }
+	if g == 2 { return "League of Legends"; }
+	if g == 3 { return "StarCraft II"; }
+	if g == 4 { return "Final Fantasy, Persona"; }
+	if g == 5 { return "Elden Ring"; }
+	if g == 6 { return "World of Warcraft"; }
+	if g == 7 { return "Forza, Mario Kart"; }
+	if g == 8 { return "Street Fighter 6"; }
+	if g == 9 { return "EA FC"; }
+	if g == 10 { return "Celeste, Hollow Knight"; }
+	if g == 11 { return "Hades"; }
+	if g == 12 { return "Slay the Spire"; }
+	if g == 13 { return "Valheim, Minecraft"; }
+	if g == 14 { return "Cities: Skylines"; }
+	if g == 15 { return "Dead by Daylight"; }
+	if g == 16 { return "FTL, Mass Effect"; }
+	if g == 17 { return "Skyrim, Genshin"; }
+	if g == 18 { return "Stardew Valley"; }
+	if g == 19 { return "Hi-Fi Rush"; }
+	if g == 20 { return "Portal, Tetris"; }
+	if g == 21 { return "Steins;Gate, Doki Doki"; }
+	if g == 22 { return "Cookie Clicker"; }
+	if g == 23 { return "Genshin Impact banners"; }
+	if g == 24 { return "Linear, Stripe dashboard"; }
+	if g == 25 { return "Salesforce, Retool"; }
+	if g == 26 { return "Shopify admin"; }
+	if g == 27 { return "Instagram, X"; }
+	if g == 28 { return "iMessage, Discord"; }
+	if g == 29 { return "Apple Music, Spotify"; }
+	if g == 30 { return "VS Code"; }
+	if g == 31 { return "iOS Settings, Windows Settings"; }
+	if g == 32 { return "Notion onboarding"; }
+	if g == 33 { return "Apple ID, Google sign-in"; }
+	if g == 34 { return "Stripe pricing"; }
+	if g == 35 { return "Apple HIG, MDN"; }
+	if g == 36 { return "Google Calendar"; }
+	if g == 37 { return "Trello, Linear boards"; }
+	if g == 38 { return "Google Maps, Apple Maps"; }
+	if g == 39 { return "Revolut, Apple Cash"; }
+	"Apple Health, Fitbit"
+}
+
+fn style_count() int { 20 }
+fn style_name(i int) const byte[:] {
+	if i == 0 { return "filled"; }
+	if i == 1 { return "tonal"; }
+	if i == 2 { return "outline"; }
+	if i == 3 { return "ghost"; }
+	if i == 4 { return "elevated"; }
+	if i == 5 { return "sharp"; }
+	if i == 6 { return "pill"; }
+	if i == 7 { return "square"; }
+	if i == 8 { return "accent-bar"; }
+	if i == 9 { return "split"; }
+	if i == 10 { return "glass"; }
+	if i == 11 { return "neon"; }
+	if i == 12 { return "inset"; }
+	if i == 13 { return "dashed"; }
+	if i == 14 { return "chip"; }
+	if i == 15 { return "underline"; }
+	if i == 16 { return "round"; }
+	if i == 17 { return "brutal"; }
+	if i == 18 { return "soft"; }
+	"quiet"
+}
+
+fn fx_count() int { 100 }
+
+fn fx_copy(i int, out byte[>..]&) {
+	let s = "plain,bold,outline,shadow,glow,gradient,typewriter,wide,underline,strike,stroke-thin,stroke-thick,stroke-red,stroke-gold,stroke-ink,stroke-double,stroke-soft,stroke-hard,stroke-white,stroke-black,shadow-soft,shadow-hard,shadow-long,shadow-cast,shadow-contact,shadow-blue,shadow-warm,shadow-cool,shadow-stack,shadow-drop,glow-cyan,glow-magenta,glow-gold,glow-red,glow-white,bloom,halo,ember-glow,ice-glow,neon-sign,grad-gold,grad-fire,grad-ice,grad-dusk,grad-mint,grad-royal,grad-steel,grad-candy,grad-sunset,grad-mono,bevel,emboss,deboss,chrome,metal,pearl,glass-text,inset-text,letterpress,engrave,fire,ice,neon,lava,poison,holy,shadow-flame,arcane,blood,electric,glitch,glitch-rgb,slice,chromatic,broken,scan,vhs,corrupt,offset,jitter,wave,rainbow,pride,prism,aurora,candy-wave,flag,shimmer,pulse,ribbon,shake,scramble,pop,bounce,crit,heal,damage,title,subtitle,outline-gradient";
+	var n = 0;
+	var start = 0;
+	var p = 0;
+	out.clear();
+	while p <= s.len {
+		if p == s.len || s[p] == 44 {
+			if n == i {
+				for k in start..p { out.push(s[k]); }
+				return;
+			}
+			n += 1;
+			start = p + 1;
+		}
+		p += 1;
+	}
+}
+
+fn font_file_count() int { 22 }
+fn pair_count() int { 30 }
+
+fn font_file(i int) const byte[:] {
+	if i == 0 { return "AtkinsonHyperlegible-Regular.ttf"; }
+	if i == 1 { return "Barlow-Regular.ttf"; }
+	if i == 2 { return "CrimsonPro-Regular.ttf"; }
+	if i == 3 { return "DMMono-Regular.ttf"; }
+	if i == 4 { return "Figtree-Regular.ttf"; }
+	if i == 5 { return "FiraSans-Regular.ttf"; }
+	if i == 6 { return "IBMPlexMono-Regular.ttf"; }
+	if i == 7 { return "IBMPlexSerif-Regular.ttf"; }
+	if i == 8 { return "Karla-Regular.ttf"; }
+	if i == 9 { return "Lato-Regular.ttf"; }
+	if i == 10 { return "Lexend-Regular.ttf"; }
+	if i == 11 { return "LibreFranklin-Regular.ttf"; }
+	if i == 12 { return "Lora-Regular.ttf"; }
+	if i == 13 { return "Nunito-Regular.ttf"; }
+	if i == 14 { return "Outfit-Regular.ttf"; }
+	if i == 15 { return "SourceCodePro-Regular.ttf"; }
+	if i == 16 { return "SpaceGrotesk-Regular.ttf"; }
+	if i == 17 { return "SpaceMono-Regular.ttf"; }
+	if i == 18 { return "Newsreader-Regular.ttf"; }
+	if i == 19 { return "WorkSans-Regular.ttf"; }
+	if i == 20 { return "Inter-Regular.ttf"; }
+	"JetBrainsMono-Regular.ttf"
+}
+
+fn pair_body(i int) int { i % 22 }
+fn pair_accent(i int) int {
+	let a = (i * 5 + 7) % 22;
+	if a == i % 22 { (a + 1) % 22 } else { a }
+}
+
+fn boss_name(g int) const byte[:] {
+	if g % 8 == 0 { return "Warden"; }
+	if g % 8 == 1 { return "Baron"; }
+	if g % 8 == 2 { return "Drake"; }
+	if g % 8 == 3 { return "Titan"; }
+	if g % 8 == 4 { return "Queen"; }
+	if g % 8 == 5 { return "Colossus"; }
+	if g % 8 == 6 { return "Reaper"; }
+	"Oracle"
+}
+
+fn game_kit(col int, g int, look int) {
+	let title = button(col, genre_name(g), look % 20);
+	set_px(title, 216.0, 32.0);
+	let boss = boss_bar(col, 0.64);
+	set_text(boss, boss_name(g));
+	set_px(boss, 216.0, 22.0);
+	let buff = buff_row(col, g);
+	set_px(buff, 216.0, 28.0);
+	let hp = health_bar(col, 0.72, look % 6);
+	set_px(hp, 216.0, 16.0);
+	let mp = mana_bar(col, 0.4, look % 6);
+	set_px(mp, 216.0, 16.0);
+	let mid = flex(col, DIR_ROW);
+	set_gap(mid, 4.0);
+	let map = minimap(mid, look % 6);
+	set_px(map, 104.0, 100.0);
+	N[map].i3 = g;
+	let inv = inventory(mid, 3, 2, look % 6);
+	set_px(inv, 104.0, 100.0);
+	N[inv].i3 = g + 3;
+	let quest = quest_log(col, g);
+	set_text(quest, "Quests");
+	set_px(quest, 216.0, 56.0);
+	let cool = cooldown_row(col, g);
+	set_px(cool, 216.0, 48.0);
+	if g == 7 || g == 9 || g == 19 {
+		let ch = chart(col, g % 7, look % 6);
+		set_px(ch, 216.0, 72.0);
+	} else {
+		let rad = radial(col, 6, g % 6, look % 6);
+		set_px(rad, 216.0, 88.0);
+		N[rad].i3 = g;
+	}
+	let line = dialogue(col, "Hold the gate.", 40, look % 6);
+	set_px(line, 216.0, 48.0);
+	let nums = flex(col, DIR_ROW);
+	set_gap(nums, 4.0);
+	let d0 = damage_number(nums, "128", 0);
+	set_px(d0, 64.0, 28.0);
+	let d1 = damage_number(nums, "256", 1);
+	set_px(d1, 64.0, 28.0);
+	N[d1].val = 0.55;
+	let d2 = damage_number(nums, "+40", 2);
+	set_px(d2, 64.0, 28.0);
+	N[d2].val = 0.8;
+	let menu = flex(col, DIR_ROW);
+	set_gap(menu, 4.0);
+	let p = button(menu, "Play", 0);
+	set_px(p, 64.0, 28.0);
+	let s = button(menu, "Map", 2);
+	set_px(s, 64.0, 28.0);
+	let b = button(menu, "Bag", 5);
+	set_px(b, 64.0, 28.0);
+}
+
+fn app_kit(col int, g int, look int) {
+	let title = button(col, genre_name(g), look % 20);
+	set_px(title, 216.0, 32.0);
+	if g == 33 {
+		let em = text_field(col, "Email", look % 6);
+		set_px(em, 216.0, 32.0);
+		let pw = text_field(col, "Password", look % 6);
+		set_px(pw, 216.0, 32.0);
+		let go = button(col, "Sign in", 0);
+		set_px(go, 216.0, 32.0);
+	} else if g == 31 {
+		let t1 = toggle(col, "Dark", 1, look % 6);
+		set_px(t1, 216.0, 32.0);
+		let t2 = toggle(col, "Motion", 0, look % 6);
+		set_px(t2, 216.0, 32.0);
+		let cp = color_picker(col, 0x3B6FE2, look % 6);
+		set_px(cp, 216.0, 120.0);
+		N[cp].i1 = 210;
+		N[cp].val = 0.7;
+		N[cp].val2 = 0.85;
+	} else if g == 28 {
+		let a = message_bar(col, "On my way", 0);
+		set_px(a, 216.0, 36.0);
+		let c = message_bar(col, "See you there", 2);
+		set_px(c, 216.0, 36.0);
+		let f = text_field(col, "Message", look % 6);
+		set_px(f, 216.0, 32.0);
+	} else if g == 36 {
+		let days = flex(col, DIR_ROW);
+		set_gap(days, 2.0);
+		let n0 = button(days, "M", 2); set_px(n0, 28.0, 28.0);
+		let n1 = button(days, "T", 0); set_px(n1, 28.0, 28.0);
+		let n2 = button(days, "W", 2); set_px(n2, 28.0, 28.0);
+		let n3 = button(days, "T", 2); set_px(n3, 28.0, 28.0);
+		let n4 = button(days, "F", 2); set_px(n4, 28.0, 28.0);
+	} else if g == 38 {
+		let map = minimap(col, 0);
+		set_px(map, 216.0, 140.0);
+		N[map].i3 = 4;
+	} else if g == 37 {
+		let row = flex(col, DIR_ROW);
+		set_gap(row, 4.0);
+		let a = card(row, "To", 2); set_px(a, 68.0, 72.0);
+		let b = card(row, "Now", 0); set_px(b, 68.0, 72.0);
+		let c = card(row, "End", 1); set_px(c, 68.0, 72.0);
+	} else {
+		let ch = chart(col, g % 7, look % 6);
+		set_px(ch, 216.0, 90.0);
+		let tb = table(col, 4, 2, 0);
+		set_px(tb, 216.0, 110.0);
+		table_set(tb, 0, 0, "Ada"); table_set(tb, 0, 1, "12");
+		table_set(tb, 1, 0, "Bea"); table_set(tb, 1, 1, "9");
+		table_set(tb, 2, 0, "Cal"); table_set(tb, 2, 1, "4");
+		table_set(tb, 3, 0, "Dee"); table_set(tb, 3, 1, "7");
+		table_filter(tb, "a");
+		table_pin(tb, 1);
+		table_resize(tb, 0, 80.0);
+	}
+	if g == 26 || g == 34 {
+		let price = button(col, "Buy", 0);
+		set_px(price, 216.0, 32.0);
+	}
+	if g == 32 {
+		let step = flex(col, DIR_ROW);
+		set_gap(step, 6.0);
+		let a = badge(step, "1", 0); set_px(a, 36.0, 28.0);
+		let b = badge(step, "2", 1); set_px(b, 36.0, 28.0);
+		let c = badge(step, "3", 2); set_px(c, 36.0, 28.0);
+	}
+}
+
+fn build_genre(parent int, g int, variation int) int {
+	let col = flex(parent, DIR_COL);
+	set_w(col, 228.0);
+	set_gap(col, 4.0);
+	set_pad(col, 4.0);
+	let look = (g + variation * 3) % 20;
+	if g < 24 { game_kit(col, g, look); } else { app_kit(col, g, look); }
+	col
+}

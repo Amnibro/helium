@@ -15,6 +15,7 @@ let K_PROGRESS = 41; let K_SPIN = 42; let K_SKELETON = 43;
 let K_BADGE = 44; let K_CHIP = 45; let K_TAG = 46; let K_AVATAR = 47; let K_CARD = 48; let K_CRUMB = 49; let K_PAGE = 50; let K_SPLIT = 51;
 let K_HEALTH = 52; let K_MANA = 53; let K_MINI = 54; let K_INV = 55; let K_RADIAL = 56; let K_DIALOGUE = 57; let K_DAMAGE = 58;
 let K_DIV = 59; let K_RATE = 60; let K_MSG = 61; let K_NAV = 62;
+let K_QUEST = 63; let K_BOSS = 64; let K_COOL = 65; let K_BUFF = 66; let K_CHART = 67;
 
 let LOOK_FILLED = 0; let LOOK_TONAL = 1; let LOOK_OUTLINE = 2; let LOOK_GHOST = 3; let LOOK_ELEVATED = 4; let LOOK_SHARP = 5;
 let WM_AUTO = 0; let WM_PX = 1; let WM_PCT = 2;
@@ -80,6 +81,7 @@ fn set_gap(id int, g f32) { N[id].gap = g; }
 fn set_pad(id int, p f32) { N[id].inset = p; }
 fn set_cols(id int, n int) { N[id].cols = n; }
 fn set_px(id int, w f32, h f32) { N[id].wm = WM_PX; N[id].wv = w * SCALE; N[id].hm = WM_PX; N[id].hv = h * SCALE; }
+fn set_w(id int, w f32) { N[id].wm = WM_PX; N[id].wv = w * SCALE; }
 fn set_min_bp(id int, bp int) { N[id].hide_bp = bp; }
 fn set_value(id int, v f32) { N[id].val = v; }
 fn set_value2(id int, v f32) { N[id].val2 = v; }
@@ -177,7 +179,8 @@ recursive fn pref_w(id int) f32 {
 	}
 	if N[id].str_i >= 0 {
 		let tw = text_advance(s_text(N[id].str_i), label_size(id));
-		let extra = if k == K_BUTTON || k == K_CHIP || k == K_TAG || k == K_BADGE { 28.0 * SCALE } else { 8.0 * SCALE };
+		var extra = if k == K_BUTTON || k == K_CHIP || k == K_TAG || k == K_BADGE { 28.0 * SCALE } else { 8.0 * SCALE };
+		if k == K_DAMAGE { extra = extra + 18.0 * SCALE; }
 		let w = tw + extra;
 		if w < 48.0 * SCALE { return 48.0 * SCALE; }
 		return w;
@@ -313,6 +316,22 @@ fn overlap_count() int {
 				if box_hit(KIDS[i][a], KIDS[i][b]) { n += 1; }
 			}
 		}
+	}
+	n
+}
+
+fn text_clip_count() int {
+	var n = 0;
+	for i in N.len {
+		if !shown(i) || N[i].w < 8.0 || N[i].str_i < 0 { continue; }
+		let k = N[i].kind;
+		if k == K_DIALOGUE || k == K_TABLE || k == K_VLIST || k == K_QUEST || k == K_BOSS { continue; }
+		if N[i].effect == 6 { continue; }
+		let s = s_text(N[i].str_i);
+		if s.len == 0 { continue; }
+		let sz = label_size(i);
+		let tw = text_advance(s, sz);
+		if tw > N[i].w - 12.0 * SCALE { n += 1; }
 	}
 	n
 }

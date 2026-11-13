@@ -4,5 +4,7 @@ import uikit.vtext;
 import uikit.theme;
 import uikit.core;
 import uikit.widgets;
+import uikit.icons;
+import uikit.catalog;
 import uikit.paint;
 import uikit.input;

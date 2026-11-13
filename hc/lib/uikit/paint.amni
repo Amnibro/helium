@@ -6,6 +6,8 @@ import uikit.theme;
 import uikit.core;
 import uikit.widgets;
 import uikit.vtext;
+import uikit.icons;
+import uikit.drawx;
 
 var PIX byte[>..] = [];
 var PW = 0;
@@ -105,9 +107,9 @@ fn draw_text(x int, y int, s const byte[:], size f32, rgb u32, effect int, limit
 		TRACK = if effect == 7 { size * 0.08 } else { 0.0 };
 		let n = place_run(s, x as f32, y as f32 + size * 0.80, size, TXT_MONO, TXT_BOLD || effect == 1, TXT_ITAL, limit);
 		if n > 0 {
-			if effect == 2 { blit_run(0x000000, -1, 0, 255); blit_run(0x000000, 1, 0, 255); blit_run(0x000000, 0, -1, 255); blit_run(0x000000, 0, 1, 255); }
-			if effect == 3 { blit_run(0x000000, 2, 2, 150); }
-			if effect == 4 { blit_run(THEME.accent, 0, 0, 90); blit_run(THEME.accent, 1, 0, 70); blit_run(THEME.accent, -1, 0, 70); }
+			if effect == 2 { blit_ring(0x000000, 2, 255); blit_ring(0x000000, 1, 220); }
+			if effect == 3 { blit_shadow(0x000000); }
+			if effect == 4 { blit_ring(THEME.accent, 4, 80); blit_ring(THEME.accent, 2, 140); }
 			if effect == 5 && n > 1 {
 				for i in n {
 					let col = lerp_rgb(rgb, THEME.accent, i as f32 / n as f32);
@@ -217,7 +219,7 @@ fn noise(x int, y int) int {
 fn chrome(x int, y int, w int, h int, look int, hot int, on int) u32, u32 {
 	var fill = THEME.surface;
 	var ink = THEME.ink;
-	let rad = if look == LOOK_SHARP || THEME.pixel != 0 || THEME.family == FAM_BRUTAL { 0 } else { (THEME.radius * SCALE) as int };
+	var rad = if look == LOOK_SHARP || THEME.pixel != 0 || THEME.family == FAM_BRUTAL { 0 } else { (THEME.radius * SCALE) as int };
 	if look == LOOK_FILLED || look == LOOK_ELEVATED { fill = THEME.accent; ink = THEME.on_accent; }
 	else if look == LOOK_TONAL { fill = THEME.surface2; ink = THEME.ink; }
 	else if look == LOOK_OUTLINE || look == LOOK_GHOST || look == LOOK_SHARP { fill = THEME.surface; ink = THEME.ink; }
@@ -231,11 +233,13 @@ fn chrome(x int, y int, w int, h int, look int, hot int, on int) u32, u32 {
 		fill_rect(x + 1, y + (6.0 * SCALE) as int, w, h, 0x000000, 18);
 	}
 	if THEME.shadow == 3 || THEME.family == FAM_NEON {
-		let g = (4.0 * SCALE) as int;
-		round_rect(x - g * 3, y - g * 3, w + g * 6, h + g * 6, rad + g * 2, THEME.accent, 32);
-		round_rect(x - g * 2, y - g * 2, w + g * 4, h + g * 4, rad + g, THEME.accent, 56);
-		round_rect(x - g, y - g, w + g * 2, h + g * 2, rad + 2, THEME.accent, 96);
+		round_rect(x, y, w, h, rad, THEME.accent, 255);
+		let halo = (6.0 * SCALE) as int;
+		blur_rect(x - halo, y - halo, w + halo * 2, h + halo * 2, (3.0 * SCALE) as int);
+		blur_rect(x - halo, y - halo, w + halo * 2, h + halo * 2, (2.0 * SCALE) as int);
 	}
+	if look == 6 || look == 16 { rad = h / 2; }
+	if look == 7 || look == 17 { rad = 0; }
 	if look != LOOK_GHOST {
 		if THEME.family == FAM_FANTASY {
 			for yy in h {
@@ -257,7 +261,19 @@ fn chrome(x int, y int, w int, h int, look int, hot int, on int) u32, u32 {
 		var yy = y;
 		while yy < y + h { if yy % 3 == 2 { fill_rect(x, yy, w, 1, 0x000000, 80); } yy += 1; }
 	}
+	if look == 8 { fill_rect(x, y, (5.0 * SCALE) as int, h, THEME.accent, 255); }
+	if look == 9 { fill_rect(x, y, w / 2, h, THEME.accent, 255); }
+	if look == 12 { fill_rect(x, y + h - (4.0 * SCALE) as int, w, (4.0 * SCALE) as int, 0x000000, 50); }
+	if look == 13 {
+		var dx = x;
+		while dx < x + w { fill_rect(dx, y, 6, (2.0 * SCALE) as int, THEME.accent, 255); dx += 10; }
+	}
+	if look == 15 { fill_rect(x, y + h - (3.0 * SCALE) as int, w, (3.0 * SCALE) as int, THEME.accent, 255); }
 	if THEME.family == FAM_FANTASY {
+		var tick = x + 8;
+		while tick < x + w - 8 { fill_rect(tick, y, 2, 3, THEME.accent, 200); fill_rect(tick, y + h - 3, 2, 3, THEME.accent, 200); tick += 8; }
+		var ticky = y + 8;
+		while ticky < y + h - 8 { fill_rect(x, ticky, 3, 2, THEME.accent, 200); fill_rect(x + w - 3, ticky, 3, 2, THEME.accent, 200); ticky += 8; }
 		let arm = (10.0 * SCALE) as int;
 		let t = if bw > 1 { bw } else { 2 };
 		stroke_rect(x, y, arm, t, THEME.accent, t);
@@ -322,7 +338,7 @@ recursive fn paint_node(id int) {
 		if k == K_BUTTON || k == K_FAB || k == K_SEG || k == K_BADGE || k == K_CHIP || k == K_TAG || k == K_TOAST || k == K_TIP || k == K_MSG || k == K_CRUMB {
 			draw_text(x + 10, y + (h - font_scale(size) * 7) / 2, tx, size, ink, N[id].effect, -1);
 		} else if k == K_ICON {
-			icon(x + 8, y + 8, N[id].i0, ink);
+			icon_draw(N[id].i0, x + 4, y + 4, if h - 8 < 8 { 8 } else { h - 8 }, ink);
 		} else if k == K_LABEL {
 			draw_text(x, y, tx, size, if N[id].fg != 0 { N[id].fg } else { THEME.ink }, N[id].effect, -1);
 		} else if k == K_TOGGLE || k == K_CHECK || k == K_RADIO {
@@ -370,9 +386,10 @@ recursive fn paint_node(id int) {
 			else { TMP.append(tx); }
 			draw_text(x + 8, y + 8, TMP[..], size, THEME.ink, 0, -1);
 		} else if k == K_COLOR {
-			fill_rect(x + 8, y + 8, 24, h - 16, N[id].i0 as u32, 255);
-			fill_rect(x + 40, y + 8, w - 52, 8, 0xFF0000, 255);
-			fill_rect(x + 40, y + 20, w - 52, 8, 0x00FF00, 255);
+			let hue = if N[id].i1 == 0 { 210 } else { N[id].i1 };
+			let ss = if N[id].val <= 0.0 { 0.8 } else { N[id].val };
+			let vv = if N[id].val2 <= 0.0 { 0.9 } else { N[id].val2 };
+			paint_picker(x, y, w, h, hue, ss, vv);
 		} else if k == K_PROGRESS || k == K_HEALTH || k == K_MANA {
 			let col = if k == K_HEALTH { 0xE23B3B } else if k == K_MANA { 0x3B6FE2 } else { THEME.accent };
 			bar(x + 6, y + 4, w - 12, h - 8, N[id].val, col as u32, look);
@@ -395,34 +412,29 @@ recursive fn paint_node(id int) {
 			var s = 0;
 			while s < 5 { fill_rect(x + 8 + s * 16, y + 10, 12, 12, if s < N[id].i0 { THEME.warn } else { THEME.surface2 }, 255); s += 1; }
 		} else if k == K_MINI {
-			fill_rect(x + 8, y + 8, w - 16, h - 16, 0x14301A, 255);
-			fill_rect(x + w / 2, y + h / 2, 6, 6, 0xF2E35A, 255);
-			stroke_rect(x + 8, y + 8, w - 16, h - 16, THEME.accent, 2);
+			paint_minimap(x, y, w, h, N[id].i3);
 		} else if k == K_INV {
-			let cols = if N[id].i0 < 1 { 4 } else { N[id].i0 };
-			let rows = if N[id].i1 < 1 { 3 } else { N[id].i1 };
-			let cw = (w - 16) / cols;
-			let rh = (h - 16) / rows;
-			for r in rows { for c in cols {
-				let sel = if r == 0 && c == N[id].i2 { THEME.accent } else { THEME.border };
-				stroke_rect(x + 8 + c * cw, y + 8 + r * rh, cw - 4, rh - 4, sel, 2);
-			} }
+			paint_inventory(x, y, w, h, N[id].i0, N[id].i1, N[id].i3);
+		} else if k == K_QUEST {
+			paint_quest(x, y, w, h, N[id].i3);
+		} else if k == K_BOSS {
+			paint_boss(x, y, w, h, tx, N[id].val);
+		} else if k == K_BUFF {
+			paint_buffs(x, y, w, h, N[id].i3);
+		} else if k == K_COOL {
+			paint_cooldowns(x, y, w, h, N[id].i3);
+		} else if k == K_CHART {
+			paint_chart(x, y, w, h, N[id].i0);
 		} else if k == K_RADIAL {
-			let count = if N[id].i0 < 3 { 6 } else { N[id].i0 };
-			round_rect(x + w / 2 - 16, y + h / 2 - 16, 32, 32, 16, THEME.surface2, 255);
-			for i in count {
-				let ox = if i % 2 == 0 { -28 } else { 28 };
-				let oy = if i < count / 2 { -28 } else { 28 };
-				let col = if i == N[id].i1 { THEME.accent } else { THEME.border };
-				stroke_rect(x + w / 2 + ox, y + h / 2 + oy, 22, 22, col, 2);
-			}
+			paint_radial(x, y, w, h, N[id].i0, N[id].i1, N[id].i3);
 		} else if k == K_DIALOGUE {
 			let shown = N[id].i0;
 			draw_text(x + 12, y + 12, tx, size, THEME.ink, 6, shown);
 			if N[id].flags & FL_FOCUS != 0 || shown < text::grapheme_count(tx) { fill_rect(x + w - 24, y + h - 16, 8, 8, THEME.accent, 255); }
 		} else if k == K_DAMAGE {
 			let col = if look == 1 { 0xFFE14A } else if look == 2 { 0x5DFF8A } else if look == 3 { 0xC46BFF } else if look == 4 { 0xB0B0B0 } else if look == 5 { 0xFF7A3C } else { 0xFFFFFF };
-			draw_text(x + 4, y + 4, tx, 22.0, col as u32, if look == 4 { 0 } else { 4 }, -1);
+			let stroke = if look == 2 { 0x083018 } else { 0x140800 };
+			text_pop(x + 4, y + h - 6, tx, label_size(id), col as u32, stroke as u32, 1.0 - N[id].val);
 		} else if k == K_STEP {
 			let ps = 14.0 * SCALE;
 			draw_text(x + 8, y + 8, "-", ps, THEME.ink, 0, -1);
@@ -437,11 +449,22 @@ recursive fn paint_node(id int) {
 			var xs int[8] = [0; 8];
 			var acc = x + 4;
 			for c in cols { xs[c] = acc; acc += col_width(id, c, w - 8, cols); }
-			for c in cols { draw_text(xs[c], y + 4, if c == 0 { "Name" } else { "Val" }, 12.0 * SCALE, THEME.muted, 0, -1); }
+			table_query(id, TMP);
+			var head = y + 4;
+			if TMP.len > 0 {
+				fill_rect(x + 4, y + 2, w - 8, (16.0 * SCALE) as int, THEME.surface2, 255);
+				draw_text(x + 8, y + 2, TMP[..], 11.0 * SCALE, THEME.ink, 0, -1);
+				head = y + (18.0 * SCALE) as int;
+			}
+			for c in cols {
+				draw_text(xs[c], head, if c == 0 { "Name" } else { "Val" }, 12.0 * SCALE, THEME.muted, 0, -1);
+				if c > 0 { fill_rect(xs[c] - 3, head, 2, rh, THEME.border, 255); fill_rect(xs[c] - 6, head + 4, 2, rh / 2, THEME.border, 255); }
+			}
+			if pin > 0 { fill_rect(x + 2, head, (4.0 * SCALE) as int, rh, THEME.accent, 255); }
 			let rows = if N[id].i0 < 1 { 0 } else { N[id].i0 };
 			var slot = 0;
 			var shown = 0;
-			var yy = y + rh;
+			var yy = head + rh;
 			while slot < rows && yy + rh <= y + h {
 				let row = table_row(id, slot);
 				slot += 1;
