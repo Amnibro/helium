@@ -14,6 +14,7 @@ fn menu_n(g int) int {
 	if g == 12 { return 4; }
 	if g == 3 { return 4; }
 	if g == 6 { return 4; }
+	if g == 9 { return 4; }
 	4
 }
 fn menu_at(g int, i int) const byte[:] {
@@ -46,7 +47,7 @@ fn menu_at(g int, i int) const byte[:] {
 		if i == 0 { return "Drop"; }
 		if i == 1 { return "Duos"; }
 		if i == 2 { return "Squads"; }
-		if i == 3 { return "Sorenr"; }
+		if i == 3 { return "Stash"; }
 		return "Quit";
 	}
 	if g == 7 {
@@ -59,6 +60,12 @@ fn menu_at(g int, i int) const byte[:] {
 		if i == 0 { return "Versus"; }
 		if i == 1 { return "Arcade"; }
 		if i == 2 { return "Training"; }
+		return "Options";
+	}
+	if g == 9 {
+		if i == 0 { return "Kickoff"; }
+		if i == 1 { return "Season"; }
+		if i == 2 { return "Squad"; }
 		return "Options";
 	}
 	if g == 6 {
@@ -1528,6 +1535,107 @@ fn stage_map_mmo(f int, mode int) {
 	let c = button(f, "Vault", 5); place_at(c, 600.0, by, 240.0, 56.0); set_preset(c, 2);
 }
 
+fn stage_hud_sports(f int, mode int) {
+	var y f32 = 36.0;
+	var mx f32 = 48.0;
+	var my f32 = 760.0;
+	var sx f32 = 1480.0;
+	var sy f32 = 880.0;
+	if mode == 1 { y = 160.0; my = 760.0; mx = 48.0; }
+	else if mode == 2 { mx = 1560.0; my = 760.0; sx = 48.0; }
+	else if mode == 3 { sy = 160.0; sx = 1480.0; my = 760.0; mx = 48.0; }
+	else if mode == 4 { y = 820.0; my = 48.0; sy = 200.0; sx = 1480.0; }
+	let home = label(f, "North  2", 0); place_at(home, 48.0, y, 280.0, 48.0);
+	let clock = label(f, "12:40", 0); place_at(clock, 760.0, y, 400.0, 48.0); mark_anchor(clock);
+	let away = label(f, "South  1", 0); place_at(away, 1560.0, y, 280.0, 48.0);
+	let q = label(f, "Q3", 2); place_at(q, 860.0, y + 56.0, 200.0, 32.0); mark_anchor(q);
+	let poss = label(f, "Ball", 2); place_at(poss, 480.0, y + 100.0, 120.0, 32.0);
+	let bar = health_bar(f, 0.62, 2); place_at(bar, 620.0, y + 108.0, 680.0, 16.0);
+	let foul = label(f, "Fouls  3", 3); place_at(foul, 200.0, y + 100.0, 200.0, 32.0);
+	let who = label(f, "No. 9", 1); place_at(who, sx, sy, 200.0, 36.0);
+	let stam = health_bar(f, 0.45, 0); place_at(stam, sx, sy + 44.0, 280.0, 20.0);
+	let shot = label(f, "24", 0); place_at(shot, sx + 300.0, sy, 80.0, 48.0);
+	let sub = label(f, "Subs  2", 2); place_at(sub, sx, sy + 76.0, 200.0, 32.0);
+	let ball = icon_button(f, 13, 0); place_at(ball, 48.0, y + 56.0, 48.0, 48.0);
+	let coach = label(f, "Coach", 2); place_at(coach, 400.0, 400.0, 200.0, 36.0);
+	let map = minimap(f, 0); place_at(map, mx, my, 280.0, 220.0); N[map].i3 = 9;
+}
+
+fn stage_pause_sports(f int, mode int) {
+	var x f32 = 520.0;
+	var y f32 = 320.0;
+	if mode == 1 { x = 80.0; y = 160.0; }
+	else if mode == 2 { x = 1080.0; y = 160.0; }
+	else if mode == 3 { y = 640.0; }
+	else if mode == 4 { x = 200.0; y = 200.0; }
+	let head = label(f, "Timeout", 0); place_at(head, 700.0, y - 80.0, 520.0, 56.0); mark_anchor(head);
+	let a = button(f, "Resume", 0); place_at(a, x, y, 360.0, 64.0); set_preset(a, 2);
+	let b = button(f, "Replay", 2); place_at(b, x + 384.0, y, 360.0, 64.0); set_preset(b, 2);
+	let c = button(f, "Lineup", 2); place_at(c, x, y + 80.0, 360.0, 64.0); set_preset(c, 2);
+	let d = button(f, "Quit", 5); place_at(d, x + 384.0, y + 80.0, 360.0, 64.0); set_preset(d, 2);
+}
+
+fn stage_shop_sports(f int, mode int) {
+	var x f32 = 200.0;
+	var y f32 = 240.0;
+	if mode == 1 { y = 80.0; }
+	else if mode == 2 { y = 480.0; }
+	else if mode == 3 { x = 80.0; y = 200.0; }
+	else if mode == 4 { x = 360.0; y = 160.0; }
+	let head = label(f, "Kit room", 0); place_at(head, 760.0, y - 80.0, 400.0, 56.0); mark_anchor(head);
+	let a = button(f, "Home  40", 0); place_at(a, x, y, 320.0, 280.0); set_preset(a, 0);
+	let b = button(f, "Away  40", 2); place_at(b, x + 360.0, y, 320.0, 280.0); set_preset(b, 2);
+	let c = button(f, "Ball  12", 2); place_at(c, x + 720.0, y, 320.0, 280.0); set_preset(c, 2);
+	let d = button(f, "Whistle  4", 1); place_at(d, x + 1080.0, y, 320.0, 280.0); set_preset(d, 2);
+}
+
+fn stage_results_sports(f int, mode int) {
+	var y f32 = 160.0;
+	var x f32 = 560.0;
+	if mode == 1 { x = 80.0; y = 160.0; }
+	else if mode == 2 { x = 1040.0; y = 160.0; }
+	else if mode == 3 { y = 400.0; }
+	else if mode == 4 { y = 160.0; x = 240.0; }
+	let head = label(f, "Final", 0); place_at(head, 760.0, 36.0, 400.0, 64.0); mark_anchor(head);
+	let side = label(f, "North", 2); place_at(side, 80.0, 40.0, 200.0, 36.0);
+	let tb = board(f, x, y, "Stat", "North", "South");
+	table_set(tb, 0, 0, "Score"); table_set(tb, 0, 1, "2"); table_set(tb, 0, 2, "1");
+	table_set(tb, 1, 0, "Shots"); table_set(tb, 1, 1, "14"); table_set(tb, 1, 2, "9");
+	table_set(tb, 2, 0, "Fouls"); table_set(tb, 2, 1, "3"); table_set(tb, 2, 2, "6");
+	table_set(tb, 3, 0, "Saves"); table_set(tb, 3, 1, "4"); table_set(tb, 3, 2, "7");
+	table_set(tb, 4, 0, "Corners"); table_set(tb, 4, 1, "5"); table_set(tb, 4, 2, "2");
+	table_set(tb, 5, 0, "Time"); table_set(tb, 5, 1, "90"); table_set(tb, 5, 2, "90");
+	let again = button(f, "Rematch", 0); place_at(again, 80.0, 980.0, 280.0, 64.0); set_preset(again, 2);
+}
+
+fn stage_settings_sports(f int, mode int) {
+	var x f32 = 480.0;
+	var y f32 = 220.0;
+	if mode == 1 { x = 80.0; }
+	else if mode == 2 { x = 1080.0; }
+	else if mode == 3 { y = 520.0; }
+	else if mode == 4 { y = 80.0; }
+	let head = label(f, "Match", 0); place_at(head, x, y, 320.0, 56.0);
+	let a = toggle(f, "Radar", 1, 0); place_at(a, x, y + 80.0, 480.0, 56.0);
+	let b = toggle(f, "Fatigue", 1, 2); place_at(b, x, y + 152.0, 480.0, 56.0);
+	let s = slider(f, 0.5, 0); place_at(s, x, y + 232.0, 480.0, 32.0);
+}
+
+fn stage_map_sports(f int, mode int) {
+	var x f32 = 360.0;
+	var y f32 = 80.0;
+	var by f32 = 920.0;
+	if mode == 1 { by = 80.0; y = 200.0; }
+	else if mode == 2 { x = 80.0; by = 920.0; }
+	else if mode == 3 { x = 480.0; y = 120.0; }
+	else if mode == 4 { y = 48.0; by = 880.0; }
+	let map = minimap(f, 0); place_at(map, x, y, 1200.0, 760.0); N[map].i3 = 9;
+	if mode == 1 { place_at(map, 360.0, 200.0, 1200.0, 760.0); }
+	let a = button(f, "Pitch", 0); place_at(a, 80.0, by, 240.0, 56.0); set_preset(a, 2);
+	let b = button(f, "Bench", 2); place_at(b, 340.0, by, 240.0, 56.0); set_preset(b, 2);
+	let c = button(f, "Tunnel", 2); place_at(c, 600.0, by, 240.0, 56.0); set_preset(c, 2);
+}
+
 fn build_stage(frame int, g int, screen int, mode int) int {
 	N[frame].i0 = g;
 	N[frame].i1 = screen;
@@ -1543,6 +1651,7 @@ fn build_stage(frame int, g int, screen int, mode int) int {
 		else if g == 2 { stage_pause_moba(frame, mode); }
 		else if g == 3 { stage_pause_rts(frame, mode); }
 		else if g == 6 { stage_pause_mmo(frame, mode); }
+		else if g == 9 { stage_pause_sports(frame, mode); }
 		else { stage_pause(frame, g, mode); }
 	}
 	else if screen == 2 {
@@ -1555,6 +1664,7 @@ fn build_stage(frame int, g int, screen int, mode int) int {
 		else if g == 2 { stage_settings_moba(frame, mode); }
 		else if g == 3 { stage_settings_rts(frame, mode); }
 		else if g == 6 { stage_settings_mmo(frame, mode); }
+		else if g == 9 { stage_settings_sports(frame, mode); }
 		else { stage_settings(frame, g, mode); }
 	}
 	else if screen == 3 {
@@ -1567,6 +1677,7 @@ fn build_stage(frame int, g int, screen int, mode int) int {
 		else if g == 12 { stage_hud_deck(frame, mode); }
 		else if g == 3 { stage_hud_rts(frame, mode); }
 		else if g == 6 { stage_hud_mmo(frame, mode); }
+		else if g == 9 { stage_hud_sports(frame, mode); }
 		else { stage_hud_fps(frame, mode); }
 	}
 	else if screen == 4 {
@@ -1579,6 +1690,7 @@ fn build_stage(frame int, g int, screen int, mode int) int {
 		else if g == 2 { stage_shop_moba(frame, mode); }
 		else if g == 3 { stage_shop_rts(frame, mode); }
 		else if g == 6 { stage_shop_mmo(frame, mode); }
+		else if g == 9 { stage_shop_sports(frame, mode); }
 		else { stage_shop_fps(frame, g, mode); }
 	}
 	else if screen == 5 {
@@ -1591,6 +1703,7 @@ fn build_stage(frame int, g int, screen int, mode int) int {
 		else if g == 2 { stage_map_moba(frame, mode); }
 		else if g == 3 { stage_map_rts(frame, mode); }
 		else if g == 6 { stage_map_mmo(frame, mode); }
+		else if g == 9 { stage_map_sports(frame, mode); }
 		else { stage_map_fps(frame, g, mode); }
 	}
 	else if g == 4 { stage_results_jrpg(frame, mode); }
@@ -1602,6 +1715,7 @@ fn build_stage(frame int, g int, screen int, mode int) int {
 	else if g == 2 { stage_results_moba(frame, mode); }
 	else if g == 3 { stage_results_rts(frame, mode); }
 	else if g == 6 { stage_results_mmo(frame, mode); }
+	else if g == 9 { stage_results_sports(frame, mode); }
 	else { stage_results_fps(frame, g, mode); }
 	frame
 }

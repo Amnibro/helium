@@ -592,6 +592,13 @@ fn back_royale(x int, y int, w int, h int) {
 	fill_rect(x, y, w, 8, 0x8A78E0, 160);
 }
 
+fn back_pitch(x int, y int, w int, h int) {
+	fill_rect(x, y, w, h / 3, 0x1A2830, 255);
+	fill_rect(x, y + h / 3, w, h - h / 3, 0x1E4A32, 255);
+	fill_rect(x + w / 6, y + h / 2, w * 2 / 3, h / 4, 0x246044, 255);
+	fill_rect(x + w / 2 - 2, y + h / 2, 4, h / 4, 0xE8E4D0, 180);
+}
+
 fn back_hall(x int, y int, w int, h int) {
 	fill_rect(x, y, w, h, 0x14161C, 255);
 	fill_rect(x, y + h * 3 / 4, w, h - h * 3 / 4, 0x1C1A18, 255);
@@ -678,6 +685,7 @@ fn paint_stage_back(id int, x int, y int, w int, h int) {
 	if g == 1 { back_royale(x, y, w, h); }
 	else if g == 3 { back_rts(x, y, w, h); }
 	else if g == 6 { back_hall(x, y, w, h); }
+	else if g == 9 { back_pitch(x, y, w, h); }
 	else if g == 2 { back_moba(x, y, w, h); }
 	else if g == 4 { back_jrpg(x, y, w, h); }
 	else if g == 5 { back_souls(x, y, w, h); }
