@@ -49,8 +49,8 @@ Module vars, each groom owning a slice of every per-groom array:
 This block defines no helper that creates buffers.
 
 `size(nw, nh)`: when `w` is positive, it first releases `front`, `acc` and `hairt`. It then sets `w` and `h` and creates:
-- `front` as an rw buffer of nw*nh*4 bytes;
-- `acc` as an rw buffer of nw*nh*64 bytes;
+- `front` as an rw buffer of nw*nh*4 bytes, passing an empty slice `[]` as the starting bytes;
+- `acc` as an rw buffer of nw*nh*64 bytes, also from an empty slice `[]` (the clear pass zeroes both every frame, and a zero-filled array of that size is too big for the web target);
 - `hairt` as an RGBA16F texture with usage SAMPLED or COMPUTE_WRITE, of nw by nh.
 Every `gfx::buffer(usage, size, data)` call takes the usage first, then the byte size, then the starting bytes.
 
@@ -76,7 +76,7 @@ Otherwise it does the following, creating buffers in exactly this order:
 6. Compute the bounds from the point positions (the f32s at point offsets 0, 4 and 8). `top` is their max y, starting from -1e9. `center` is c = sum*(1/np). `radius` is max(f(sqrt of the largest dot3(d,d) as real), 0.01), where d is each point minus c.
 7. Build the guide table from the segments, each holding a point index pi (u32 at +0) and a group (u32 at +4). The first segment, and any whose group differs from the previous segment's, starts a row (pi, 2, 0, 0) and adds point pi's position to the core sum. Any other segment adds 1 to the current row's second entry. `core` = sum*(1/rows). Then fit a sphere to the row roots (each row's first point), 24 rounds: with c the core before the round, `head` = the mean of length3(root minus c), and `core` = (the sum of the roots minus head times the sum of unit3(root minus c))*(1/rows).
 8. A row's third entry becomes 1 when nb is positive and any point q from its first entry to first plus count, exclusive, has f32 at k+16q+8 plus f32 at k+16q+12 above 0.001.
-9. Set `guides` to the row count. Create `gd` as a read buffer of rows*16 holding the table as i32s, `statb` as rw rows*16, `simb` as read SIM*16, `sdfb` as rw 16, `trib` as rw 16, `lfront` as rw LIGHT*LIGHT*4 and `lacc` as rw LIGHT*LIGHT*64, and set `lslices` to 1.
+9. Set `guides` to the row count. Create `gd` as a read buffer of rows*16 holding the table as i32s, `statb` as rw rows*16, `simb` as read SIM*16, `sdfb` as rw 16, `trib` as rw 16, `lfront` as rw LIGHT*LIGHT*4 and `lacc` as rw LIGHT*LIGHT*64, both passing an empty slice `[]` as the starting bytes (never a zero-filled array), and set `lslices` to 1. The zero-filled scratch array `z` this function uses for its other buffers is sized `max(65536, max(np*32, ns*16 + 64))`.
 10. Push the groom and return g.
 Every `gfx::buffer(usage, size, data)` call takes the usage first, then the byte size, then the starting bytes.
 
@@ -180,7 +180,7 @@ Every `gfx::buffer(usage, size, data)` call takes the usage first, then the byte
 - `light` = (LIGHT, LIGHT, shade, f(256.0/tan(0.12))).
 - `shadow_vp` is `s3d::cascade_vp[0]` times the model.
 
-`light_slices(g, n)`: when the groom's lslices differs from n, release its lfront and lacc, create `lfront` as rw LIGHT*LIGHT*4*n and `lacc` as rw LIGHT*LIGHT*64*n, both from zero bytes, and set lslices to n.
+`light_slices(g, n)`: when the groom's lslices differs from n, release its lfront and lacc, create `lfront` as rw LIGHT*LIGHT*4*n and `lacc` as rw LIGHT*LIGHT*64*n, both passing an empty slice `[]` as the starting bytes with no scratch array at all (the clear pass zeroes them), and set lslices to n.
 
 Clear pass (mode, buffers a and b, count n): a copy of the uniforms with look.z set to mode and shape.w set to n/(LIGHT*LIGHT) when mode is above 1, else 0, writing a and b, using `clear_p`, dispatched ceil(n/64)×1×1. The two buffers reach the shader only through the write list of `gfx::begin_compute([a, b])`; this pass makes no `gfx::bind_storage_buffer` call at all.
 

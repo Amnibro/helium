@@ -54,7 +54,7 @@ let HIZ_LEVELS = 7;
 struct Camera { eye float3, target float3, up float3, fov_y f32, near f32, far f32 }
 struct Sun { to_sun float3, rgb float3, shadows bool, shadow_far f32, map_size int, soft f32 = 0.0, angle f32 = 0.0, reach f32 = 1.0, fit bool = false, contact f32 = 0.0, virt bool = false, texel f32 = 0.0005, pool int = 8192, sharp f32 = 1.0 }
 struct Light { pos float3, range f32, rgb float3, kind int, dir float3 = float3 { 0.0, -1.0, 0.0 }, cone f32 = 0.5, edge f32 = 0.2, shadows bool = false, soft f32 = 1.5, radius f32 = 0.0, length f32 = 0.0, width f32 = 0.0, height f32 = 0.0, axis float3 = float3 { 1.0, 0.0, 0.0 }, falloff int = 0 }
-struct Sky { zenith float3, horizon float3, ground float3, ambient f32, draw bool }
+struct Sky { zenith float3, horizon float3, ground float3, ambient f32, draw bool, backdrop float3 = float3 { 0.0, 0.0, 0.0 }, backdrop_on bool = false }
 struct Look { exposure f32, white f32, bloom f32, bloom_cut f32, desaturate f32, ssao bool, ao_radius f32, ao_power f32, ao_samples int, curve int = 0, auto_exposure bool = false, ae_key f32 = 0.18, ae_low f32 = 0.5, ae_high f32 = 0.95, ae_min f32 = -4.0, ae_max f32 = 4.0, ae_up f32 = 3.0, ae_down f32 = 1.0, ae_center f32 = 3.0, lut f32 = 0.0, vignette f32 = 0.0, chroma f32 = 0.0, grain f32 = 0.0, sharpen f32 = 0.0, saturation f32 = 1.0, contrast f32 = 1.0, warmth f32 = 0.0, lens_rain f32 = 0.0, letterbox f32 = 0.0 }
 struct NodeOv { item int, node int, t float3, r linalg::Quat, sc float3 }
 struct WeightOv { item int, node int, k int, w f32 }
@@ -2793,7 +2793,7 @@ fn fullscreen(p gfx::Pipeline) { gfx::bind(p); }
 
 fn sky_u() SkyU {
 	let to_sun = linalg::unit3(sun.to_sun);
-	SkyU { inv_view_proj: linalg::inverse(view_proj_nj), prev_view_proj: prev_view_proj, to_sun: x4(to_sun, if sky.draw { 0.0 } else { 1.0 }), sun_rgb: x4(sun.rgb, 0.0), zenith: x4(sky.zenith, 0.0), horizon: x4(sky.horizon, 0.0), ground: x4(sky.ground, 0.0), env: frame_u.env, env_rot: frame_u.env_rot, cloud: f4(if clouds_live() { 1.0 } else { 0.0 }, if clouds_live() && envmap::clear_on { 1.0 } else { 0.0 }, 0.0, 0.0) }
+	SkyU { inv_view_proj: linalg::inverse(view_proj_nj), prev_view_proj: prev_view_proj, to_sun: x4(to_sun, if sky.draw { 0.0 } else { 1.0 }), sun_rgb: x4(sun.rgb, 0.0), zenith: x4(sky.zenith, 0.0), horizon: x4(if sky.backdrop_on && !sky.draw { sky.backdrop } else { sky.horizon }, 0.0), ground: x4(sky.ground, 0.0), env: frame_u.env, env_rot: frame_u.env_rot, cloud: f4(if clouds_live() { 1.0 } else { 0.0 }, if clouds_live() && envmap::clear_on { 1.0 } else { 0.0 }, 0.0, 0.0) }
 }
 
 // Prepass: normal + depth (nd) for SSAO, and the motion target when it is wanted. Both
@@ -3166,7 +3166,7 @@ fn trans_capture() {
 }
 fn color_pass() {
 	inst_all = false;
-	let clear = x4(sky.horizon, 1.0);
+	let clear = x4(if sky.backdrop_on { sky.backdrop } else { sky.horizon }, 1.0);
 	ext_pushed = false;
 	guard gfx::begin_pass(gfx::PassDesc { color: [color_ms, none(), none(), none()], resolve: [hdr, none(), none(), none()], depth: depth_ms, color_value: clear, .. }) else { return; }
 	// with sky drawing off the sky pass writes the flat clear colour
