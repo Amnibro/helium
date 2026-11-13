@@ -17,6 +17,7 @@ fn menu_n(g int) int {
 	if g == 9 { return 4; }
 	if g == 10 { return 4; }
 	if g == 11 { return 4; }
+	if g == 13 { return 4; }
 	4
 }
 fn menu_at(g int, i int) const byte[:] {
@@ -62,6 +63,12 @@ fn menu_at(g int, i int) const byte[:] {
 		if i == 0 { return "Versus"; }
 		if i == 1 { return "Arcade"; }
 		if i == 2 { return "Training"; }
+		return "Options";
+	}
+	if g == 13 {
+		if i == 0 { return "Wake"; }
+		if i == 1 { return "Camp"; }
+		if i == 2 { return "Journal"; }
 		return "Options";
 	}
 	if g == 11 {
@@ -1847,6 +1854,105 @@ fn stage_map_rogue(f int, mode int) {
 	let c = button(f, "Vault", 5); place_at(c, 600.0, by, 240.0, 56.0); set_preset(c, 2);
 }
 
+fn stage_hud_survive(f int, mode int) {
+	var mx f32 = 1600.0;
+	var my f32 = 760.0;
+	var sy f32 = 920.0;
+	if mode == 1 { mx = 48.0; my = 760.0; sy = 200.0; }
+	else if mode == 2 { mx = 48.0; my = 400.0; sy = 920.0; }
+	else if mode == 3 { mx = 1600.0; my = 760.0; sy = 860.0; }
+	else if mode == 4 { mx = 1600.0; my = 400.0; sy = 920.0; }
+	let day = label(f, "Day  4", 0); place_at(day, 760.0, 36.0, 400.0, 48.0); mark_anchor(day);
+	let night = label(f, "Dusk", 2); place_at(night, 1560.0, 40.0, 200.0, 36.0);
+	let hp = label(f, "HP  80", 2); place_at(hp, 48.0, 120.0, 160.0, 32.0);
+	let hb = health_bar(f, 0.8, 0); place_at(hb, 220.0, 124.0, 360.0, 20.0);
+	let food = label(f, "Food", 2); place_at(food, 48.0, 168.0, 160.0, 32.0);
+	let fb = health_bar(f, 0.4, 2); place_at(fb, 220.0, 172.0, 360.0, 20.0);
+	let wet = label(f, "Water", 2); place_at(wet, 48.0, 216.0, 160.0, 32.0);
+	let wb = health_bar(f, 0.62, 1); place_at(wb, 220.0, 220.0, 360.0, 20.0);
+	let warm = label(f, "Warm", 2); place_at(warm, 48.0, 264.0, 160.0, 32.0);
+	let tb = health_bar(f, 0.3, 5); place_at(tb, 220.0, 268.0, 360.0, 20.0);
+	let s0 = icon_button(f, 45, 2); place_at(s0, 640.0, sy, 64.0, 64.0);
+	let s1 = icon_button(f, 4, 2); place_at(s1, 720.0, sy, 64.0, 64.0);
+	let s2 = icon_button(f, 52, 0); place_at(s2, 800.0, sy, 64.0, 64.0);
+	let s3 = icon_button(f, 7, 2); place_at(s3, 880.0, sy, 64.0, 64.0);
+	let map = minimap(f, 0); place_at(map, mx, my, 240.0, 200.0); N[map].i3 = 13;
+}
+
+fn stage_pause_survive(f int, mode int) {
+	var x f32 = 720.0;
+	var y f32 = 280.0;
+	if mode == 1 { x = 80.0; }
+	else if mode == 2 { x = 1360.0; }
+	else if mode == 3 { y = 560.0; }
+	else if mode == 4 { y = 80.0; x = 480.0; }
+	let head = label(f, "Camp", 0); place_at(head, 760.0, y - 72.0, 400.0, 56.0); mark_anchor(head);
+	let a = button(f, "Wake", 0); place_at(a, x, y, 400.0, 64.0); set_preset(a, 2);
+	let b = button(f, "Sleep", 2); place_at(b, x, y + 80.0, 400.0, 64.0); set_preset(b, 2);
+	let c = button(f, "Save", 2); place_at(c, x, y + 160.0, 400.0, 64.0); set_preset(c, 2);
+	let d = button(f, "Quit", 5); place_at(d, x, y + 240.0, 400.0, 64.0); set_preset(d, 2);
+}
+
+fn stage_shop_survive(f int, mode int) {
+	var x f32 = 200.0;
+	var y f32 = 180.0;
+	if mode == 1 { x = 80.0; }
+	else if mode == 2 { x = 1000.0; }
+	else if mode == 3 { y = 480.0; }
+	else if mode == 4 { y = 80.0; x = 400.0; }
+	let head = label(f, "Trader", 0); place_at(head, x, y, 360.0, 56.0);
+	let a = button(f, "Berries  4", 0); place_at(a, x, y + 80.0, 480.0, 64.0); set_preset(a, 2);
+	let b = button(f, "Bandage  6", 2); place_at(b, x, y + 160.0, 480.0, 64.0); set_preset(b, 2);
+	let c = button(f, "Axe  20", 1); place_at(c, x, y + 240.0, 480.0, 64.0); set_preset(c, 2);
+	let buy = button(f, "Trade", 0); place_at(buy, x + 520.0, y + 160.0, 240.0, 64.0); set_preset(buy, 2);
+}
+
+fn stage_results_survive(f int, mode int) {
+	var y f32 = 160.0;
+	var x f32 = 560.0;
+	if mode == 1 { x = 80.0; }
+	else if mode == 2 { x = 1040.0; }
+	else if mode == 3 { y = 400.0; }
+	else if mode == 4 { x = 240.0; }
+	let head = label(f, "Dawn", 0); place_at(head, 760.0, 36.0, 400.0, 64.0); mark_anchor(head);
+	let side = label(f, "Camp", 2); place_at(side, 80.0, 40.0, 200.0, 36.0);
+	let tb = board(f, x, y, "Stat", "You", "Camp");
+	table_set(tb, 0, 0, "Days"); table_set(tb, 0, 1, "4"); table_set(tb, 0, 2, "12");
+	table_set(tb, 1, 0, "Food"); table_set(tb, 1, 1, "6"); table_set(tb, 1, 2, "20");
+	table_set(tb, 2, 0, "Wood"); table_set(tb, 2, 1, "30"); table_set(tb, 2, 2, "80");
+	table_set(tb, 3, 0, "Hunts"); table_set(tb, 3, 1, "2"); table_set(tb, 3, 2, "5");
+	table_set(tb, 4, 0, "Cold"); table_set(tb, 4, 1, "1"); table_set(tb, 4, 2, "0");
+	table_set(tb, 5, 0, "Built"); table_set(tb, 5, 1, "Fire"); table_set(tb, 5, 2, "Hut");
+	let again = button(f, "Continue", 0); place_at(again, 80.0, 980.0, 280.0, 64.0); set_preset(again, 2);
+}
+
+fn stage_settings_survive(f int, mode int) {
+	var x f32 = 480.0;
+	var y f32 = 220.0;
+	if mode == 1 { x = 80.0; }
+	else if mode == 2 { x = 1080.0; }
+	else if mode == 3 { y = 520.0; }
+	else if mode == 4 { y = 80.0; }
+	let head = label(f, "Wild", 0); place_at(head, x, y, 240.0, 56.0);
+	let a = toggle(f, "Hunger", 1, 0); place_at(a, x, y + 80.0, 480.0, 56.0);
+	let b = slider(f, 0.6, 0); place_at(b, x, y + 160.0, 480.0, 32.0);
+	let c = toggle(f, "Wolves", 1, 2); place_at(c, x, y + 216.0, 480.0, 56.0);
+}
+
+fn stage_map_survive(f int, mode int) {
+	var y f32 = 80.0;
+	var by f32 = 920.0;
+	if mode == 1 { by = 80.0; y = 200.0; }
+	else if mode == 2 { y = 120.0; }
+	else if mode == 3 { y = 48.0; by = 880.0; }
+	else if mode == 4 { by = 80.0; y = 200.0; }
+	let map = minimap(f, 0); place_at(map, 240.0, y, 1440.0, 760.0); N[map].i3 = 13;
+	if mode == 1 || mode == 4 { place_at(map, 240.0, 200.0, 1440.0, 720.0); }
+	let a = button(f, "Camp", 0); place_at(a, 80.0, by, 240.0, 56.0); set_preset(a, 2);
+	let b = button(f, "Woods", 2); place_at(b, 340.0, by, 240.0, 56.0); set_preset(b, 2);
+	let c = button(f, "Shore", 2); place_at(c, 600.0, by, 240.0, 56.0); set_preset(c, 2);
+}
+
 fn build_stage(frame int, g int, screen int, mode int) int {
 	N[frame].i0 = g;
 	N[frame].i1 = screen;
@@ -1865,6 +1971,7 @@ fn build_stage(frame int, g int, screen int, mode int) int {
 		else if g == 9 { stage_pause_sports(frame, mode); }
 		else if g == 10 { stage_pause_platform(frame, mode); }
 		else if g == 11 { stage_pause_rogue(frame, mode); }
+		else if g == 13 { stage_pause_survive(frame, mode); }
 		else { stage_pause(frame, g, mode); }
 	}
 	else if screen == 2 {
@@ -1880,6 +1987,7 @@ fn build_stage(frame int, g int, screen int, mode int) int {
 		else if g == 9 { stage_settings_sports(frame, mode); }
 		else if g == 10 { stage_settings_platform(frame, mode); }
 		else if g == 11 { stage_settings_rogue(frame, mode); }
+		else if g == 13 { stage_settings_survive(frame, mode); }
 		else { stage_settings(frame, g, mode); }
 	}
 	else if screen == 3 {
@@ -1895,6 +2003,7 @@ fn build_stage(frame int, g int, screen int, mode int) int {
 		else if g == 9 { stage_hud_sports(frame, mode); }
 		else if g == 10 { stage_hud_platform(frame, mode); }
 		else if g == 11 { stage_hud_rogue(frame, mode); }
+		else if g == 13 { stage_hud_survive(frame, mode); }
 		else { stage_hud_fps(frame, mode); }
 	}
 	else if screen == 4 {
@@ -1910,6 +2019,7 @@ fn build_stage(frame int, g int, screen int, mode int) int {
 		else if g == 9 { stage_shop_sports(frame, mode); }
 		else if g == 10 { stage_shop_platform(frame, mode); }
 		else if g == 11 { stage_shop_rogue(frame, mode); }
+		else if g == 13 { stage_shop_survive(frame, mode); }
 		else { stage_shop_fps(frame, g, mode); }
 	}
 	else if screen == 5 {
@@ -1925,6 +2035,7 @@ fn build_stage(frame int, g int, screen int, mode int) int {
 		else if g == 9 { stage_map_sports(frame, mode); }
 		else if g == 10 { stage_map_platform(frame, mode); }
 		else if g == 11 { stage_map_rogue(frame, mode); }
+		else if g == 13 { stage_map_survive(frame, mode); }
 		else { stage_map_fps(frame, g, mode); }
 	}
 	else if g == 4 { stage_results_jrpg(frame, mode); }
@@ -1939,6 +2050,7 @@ fn build_stage(frame int, g int, screen int, mode int) int {
 	else if g == 9 { stage_results_sports(frame, mode); }
 	else if g == 10 { stage_results_platform(frame, mode); }
 	else if g == 11 { stage_results_rogue(frame, mode); }
+	else if g == 13 { stage_results_survive(frame, mode); }
 	else { stage_results_fps(frame, g, mode); }
 	frame
 }
