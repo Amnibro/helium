@@ -612,16 +612,17 @@ fn write_index() {
 		format(out, "- `", uikit::genre_slug(g), "/` — ", uikit::genre_name(g), " title pause settings hud shop map results (ref: ", uikit::genre_ref(g), ")\n");
 	}
 	out.append("\n## Other sheets\n\n");
-	out.append("- `icons/sheet.png`\n- `text/effects-light.png`\n- `text/effects-dark.png`\n- `widgets/styles.png`\n- `fonts/pairings.png`\n- `motion.apng`\n");
+	out.append("- `OVERVIEW.png`\n- `icons/sheet.png`\n- `text/effects-light.png`\n- `text/effects-dark.png`\n- `widgets/styles.png`\n- `fonts/pairings.png`\n- `motion.apng`\n");
 	out.append("\n## Still weak\n\n");
 	out.append("- All 24 game genres and all 17 app genres are 1920x1080 stages. Each app has its own home, menu, settings, main screen, list, browse, and summary.\n");
 	out.append("- Each genre backdrop has its own sky and ground colors. Cozy is a warm pastel, sports is a bright pitch, space is deep blue with stars, gacha is saturated magenta. Silhouettes are small shapes on the horizon. Scene labels on a light sky or ground are dark. They are still flat shapes, not painted scenes.\n");
 	out.append("- Panels have a gradient, a bevel, and an inner shadow. Bars have segment ticks. Scene text has a one-pixel drop shadow. Results tables use 22px cells. Stage labels and buttons are at least 20px. The tall boss bar no longer paints a second small name.\n");
 	out.append("- Each game genre has its own minimap diagram: roads, rooms, lanes, or nodes drawn as ellipses. It is still a diagram, not a captured level.\n");
 	out.append("- The damage trail shrinks and fades from variation 0 to 4 (a wide bright chip, then a short dull one). It is that offset, not a simulated hit. Other pictograms stay coarse. Ability icons are the nearest metaphor, not spell art.\n");
-	out.append("- Body text is 16 to 18px and titles are 24 or 32px. Chart axis labels are 16px. Cards use a 12px radius, a 1px border, and a blurred shadow on the larger surfaces. Small controls skip the blur.\n");
-	out.append("- Shop drawings are a few shapes (cup, shade, bag, pen, bowl, cloth), not rendered products. The map roads are sine curves and the parks are clusters of ellipses. Kanban avatars are a letter in a circle. The checklist is a count, not a list of items.\n");
-	out.append("- The calendar is a five-week month beside one day. Chat bubbles are one line plus a timestamp. Settings groups are a title, one description line, and two toggles. Several list screens are still full-width rows.\n");
+	out.append("- Body text is 16 to 18px and titles are 24 or 32px. Chart axis labels are 16px. Larger cards use a 12px radius, a 1px border, and a three-pass blur for the shadow. Small controls skip the blur.\n");
+	out.append("- Shop drawings are a few shapes, not rendered products. Ratings are five filled or empty stars. Map roads are sine curves, parks are ellipse clusters, and the pin is a teardrop. Avatars are a face, hair, and eyes. Hair and skin vary by person. The checklist is still a count.\n");
+	out.append("- The calendar is a six-week month beside one day. Chat bubbles are two lines, a time, and two read ticks. List rows have a thumbnail or head, a title, a second line, meta, and an action. Settings groups are still one description line and two toggles.\n");
+	out.append("- `OVERVIEW.png` is one labeled hud-v0 thumbnail per genre.\n");
 	out.append("- Glow and backdrop rectangles are clipped to the widget. `overlap_count` also counts `note_deco` bounds, so a slab painted across another control fails the check.\n");
 	if uikit::icon_named() < uikit::icon_count() {
 		format(out, "- Named pictograms: ", uikit::icon_named(), " of ", uikit::icon_count(), ". The rest are still unique 5x5 silhouettes.\n");
@@ -634,11 +635,56 @@ fn write_index() {
 	if !write_file("docs/ui-gallery/INDEX.md", out[..]) { abort("index write"); }
 }
 
+fn paint_overview() {
+	let cols = 7;
+	let tw = 240;
+	let th = 135;
+	let lab = 28;
+	let gap = 16;
+	let rows = 6;
+	let sheetw = gap + cols * (tw + gap);
+	let sheeth = gap + rows * (th + lab + gap);
+	uikit::canvas(sheetw, sheeth);
+	uikit::fill_rect(0, 0, sheetw, sheeth, 0xF4F6F8, 255);
+	for g in 41 {
+		let col = g % cols;
+		let row = g / cols;
+		let ox = gap + col * (tw + gap);
+		let oy = gap + row * (th + lab + gap);
+		var path byte[>..] = [];
+		path.append("docs/ui-gallery/");
+		path.append(uikit::genre_slug(g));
+		path.append("/hud-v0.png");
+		var file byte[>..] = [];
+		var pix byte[>..] = [];
+		let got = read_file(path[..], file);
+		let sw, sh, ok = codec_png::decode(file[..], pix);
+		if !got || !ok { print("overview miss ", path[..]); }
+		if got && ok && sw >= 8 && sh >= 8 {
+			for y in th {
+				for x in tw {
+					let sx = x * sw / tw;
+					let sy = y * sh / th;
+					let si = (sy * sw + sx) * 4;
+					uikit::put(ox + x, oy + y, ((pix[si] as int) << 16 | (pix[si + 1] as int) << 8 | pix[si + 2] as int) as u32, 255);
+				}
+			}
+		}
+		uikit::draw_text(ox, oy + th + 4, uikit::genre_name(g), 16.0, 0x1C2128, 0, -1);
+	}
+	save("docs/ui-gallery/OVERVIEW.png");
+}
+
 fn main() {
 	uikit::set_scale(1.0);
 	if arg_count() > 1 {
 		var which byte[>..] = [];
 		arg(1, which);
+		if which[..] == "overview" {
+			paint_overview();
+			print("overview done");
+			return;
+		}
 		if which[..] == "icons" {
 			paint_icons();
 			write_index();

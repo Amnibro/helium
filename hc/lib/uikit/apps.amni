@@ -154,7 +154,7 @@ fn app_admin_main(f int) {
 fn col3() f32 { if AW > 1700.0 { return 608.0; } 528.0 }
 fn col2() f32 { if AW > 1700.0 { return 920.0; } 800.0 }
 
-fn product(f int, x f32, y f32, w f32, kind int, name const byte[:], price const byte[:], rate const byte[:]) {
+fn product(f int, x f32, y f32, w f32, kind int, name const byte[:], price const byte[:], stars int) {
 	let c = card(f, "", 2);
 	place_at(c, x, y, w, 280.0);
 	set_pad(c, 12.0); set_gap(c, 8.0);
@@ -162,19 +162,19 @@ fn product(f int, x f32, y f32, w f32, kind int, name const byte[:], price const
 	let n = label(c, name, 2); set_px(n, w - 24.0, 28.0);
 	let row = flex(c, DIR_ROW); set_px(row, w - 24.0, 40.0); set_gap(row, 8.0); set_pad(row, 0.0);
 	let p = label(row, price, 2); set_px(p, 80.0, 36.0);
-	let r = label(row, rate, 4); set_px(r, 72.0, 36.0);
+	let r = rating(row, stars, 0); set_px(r, 96.0, 28.0);
 	let add = button(row, "Add", 0); set_px(add, 72.0, 36.0); set_preset(add, 4);
 }
 
 fn app_shop_main(f int) {
 	let w = col3();
 	let y = AY;
-	product(f, AX, y, w, 0, "Mug", "12", "4.8");
-	product(f, AX + w + 16.0, y, w, 1, "Lamp", "28", "4.6");
-	product(f, AX + (w + 16.0) * 2.0, y, w, 2, "Tote", "18", "4.9");
-	product(f, AX, y + 296.0, w, 3, "Pen", "6", "4.2");
-	product(f, AX + w + 16.0, y + 296.0, w, 4, "Bowl", "22", "4.7");
-	product(f, AX + (w + 16.0) * 2.0, y + 296.0, w, 5, "Cloth", "16", "4.4");
+	product(f, AX, y, w, 0, "Mug", "12", 5);
+	product(f, AX + w + 16.0, y, w, 1, "Lamp", "28", 4);
+	product(f, AX + (w + 16.0) * 2.0, y, w, 2, "Tote", "18", 5);
+	product(f, AX, y + 296.0, w, 3, "Pen", "6", 4);
+	product(f, AX + w + 16.0, y + 296.0, w, 4, "Bowl", "22", 5);
+	product(f, AX + (w + 16.0) * 2.0, y + 296.0, w, 5, "Cloth", "16", 4);
 	let cart = card(f, "", 2); place_at(cart, AX, y + 592.0, AW, 88.0); set_pad(cart, 16.0); set_gap(cart, 8.0);
 	let row = flex(cart, DIR_ROW); set_px(row, AW - 32.0, 48.0); set_gap(row, 16.0); set_pad(row, 0.0);
 	let a = label(row, "Cart  3", 4); set_px(a, 200.0, 36.0);
@@ -201,17 +201,28 @@ fn app_social_main(f int) {
 	app_btn_at(f, "Ada", AX + 648.0, AY + 368.0, 200.0, 48.0, 2);
 }
 
-fn bubble(f int, x f32, y f32, who const byte[:], text const byte[:], time const byte[:], mine int) {
+fn tick_col() u32 {
+	if THEME.ink == 0xF4F6F8 { return 0x6EE7B7; }
+	0x047857
+}
+
+fn bubble(f int, x f32, y f32, who const byte[:], a const byte[:], b const byte[:], time const byte[:], mine int) {
 	if mine == 0 {
 		let av = avatar(f, who, 0); place_at(av, x, y, 40.0, 40.0);
-		let c = card(f, "", 1); place_at(c, x + 48.0, y, 420.0, 80.0); set_pad(c, 12.0); set_gap(c, 4.0);
-		let t = label(c, text, 4); set_px(t, 396.0, 28.0);
-		let s = label(c, time, 5); set_px(s, 160.0, 20.0);
+		let c = card(f, "", 1); place_at(c, x + 48.0, y, 440.0, 112.0); set_pad(c, 12.0); set_gap(c, 4.0);
+		let t = label(c, a, 4); set_px(t, 416.0, 24.0);
+		let u = label(c, b, 4); set_px(u, 416.0, 24.0);
+		let meta = flex(c, DIR_ROW); set_px(meta, 416.0, 20.0); set_gap(meta, 8.0); set_pad(meta, 0.0);
+		let s = label(meta, time, 5); set_px(s, 80.0, 20.0);
+		let k = label(meta, "vv", 5); set_px(k, 40.0, 20.0); N[k].fg = tick_col();
 	} else {
-		let c = card(f, "", 2); place_at(c, x, y, 420.0, 80.0); set_pad(c, 12.0); set_gap(c, 4.0);
-		let t = label(c, text, 4); set_px(t, 396.0, 28.0);
-		let s = label(c, time, 5); set_px(s, 160.0, 20.0);
-		let av = avatar(f, who, 0); place_at(av, x + 428.0, y, 40.0, 40.0);
+		let c = card(f, "", 2); place_at(c, x, y, 440.0, 112.0); set_pad(c, 12.0); set_gap(c, 4.0);
+		let t = label(c, a, 4); set_px(t, 416.0, 24.0);
+		let u = label(c, b, 4); set_px(u, 416.0, 24.0);
+		let meta = flex(c, DIR_ROW); set_px(meta, 416.0, 20.0); set_gap(meta, 8.0); set_pad(meta, 0.0);
+		let s = label(meta, time, 5); set_px(s, 80.0, 20.0);
+		let k = label(meta, "vv", 5); set_px(k, 40.0, 20.0); N[k].fg = tick_col();
+		let av = avatar(f, who, 0); place_at(av, x + 448.0, y, 40.0, 40.0);
 	}
 }
 
@@ -222,14 +233,14 @@ fn app_chat_main(f int) {
 	app_btn_at(f, "Ada", AX, AY + 168.0, 280.0, 48.0, 2);
 	app_btn_at(f, "Bram", AX, AY + 224.0, 280.0, 48.0, 2);
 	let x = AX + 304.0;
-	bubble(f, x, AY, "M", "On my way", "2:14", 0);
-	bubble(f, x + 360.0, AY + 96.0, "Y", "See you at six", "2:15", 1);
-	bubble(f, x, AY + 192.0, "M", "Bring the notes", "2:16", 0);
-	bubble(f, x + 360.0, AY + 288.0, "Y", "Already in the bag", "2:18", 1);
-	bubble(f, x, AY + 384.0, "M", "The gate is open", "2:21", 0);
-	bubble(f, x + 360.0, AY + 480.0, "Y", "Two minutes", "2:22", 1);
-	let box = text_field(f, "Message", 2); place_at(box, x, AY + 576.0, AW - 480.0, 56.0);
-	app_btn_at(f, "Send", AX + AW - 148.0, AY + 576.0, 148.0, 56.0, 0);
+	bubble(f, x, AY, "M", "On my way", "through the harbor.", "2:14", 0);
+	bubble(f, x + 320.0, AY + 120.0, "Y", "See you at six", "by the oak gate.", "2:15", 1);
+	bubble(f, x, AY + 240.0, "M", "Bring the notes", "and the spare key.", "2:16", 0);
+	bubble(f, x + 320.0, AY + 360.0, "Y", "Already in the bag", "next to the lamp.", "2:18", 1);
+	bubble(f, x, AY + 480.0, "M", "The gate is open", "on the mill side.", "2:21", 0);
+	bubble(f, x + 320.0, AY + 600.0, "Y", "Two minutes out", "I can see it.", "2:22", 1);
+	let box = text_field(f, "Message", 2); place_at(box, x, AY + 728.0, AW - 520.0, 56.0);
+	app_btn_at(f, "Send", AX + AW - 148.0, AY + 728.0, 148.0, 56.0, 0);
 }
 
 fn app_media_main(f int) {
@@ -336,43 +347,21 @@ fn app_cal_main(f int) {
 		col += 1;
 	}
 	var row = 0;
-	while row < 5 {
+	while row < 6 {
 		var c = 0;
 		while c < 7 {
-			let n = row * 7 + c + 1;
-			var txt = "1";
-			if n == 2 { txt = "2"; }
-			else if n == 3 { txt = "3"; }
-			else if n == 4 { txt = "4"; }
-			else if n == 5 { txt = "5"; }
-			else if n == 6 { txt = "6"; }
-			else if n == 7 { txt = "7"; }
-			else if n == 8 { txt = "8"; }
-			else if n == 9 { txt = "9"; }
-			else if n == 10 { txt = "10"; }
-			else if n == 11 { txt = "11"; }
-			else if n == 12 { txt = "12"; }
-			else if n == 13 { txt = "13"; }
-			else if n == 14 { txt = "14"; }
-			else if n == 15 { txt = "15"; }
-			else if n == 16 { txt = "16"; }
-			else if n == 17 { txt = "17"; }
-			else if n == 18 { txt = "18"; }
-			else if n == 19 { txt = "19"; }
-			else if n == 20 { txt = "20"; }
-			else if n == 21 { txt = "21"; }
-			else if n == 22 { txt = "22"; }
-			else if n == 23 { txt = "23"; }
-			else if n == 24 { txt = "24"; }
-			else if n == 25 { txt = "25"; }
-			else if n == 26 { txt = "26"; }
-			else if n == 27 { txt = "27"; }
-			else if n == 28 { txt = "28"; }
-			else if n == 29 { txt = "29"; }
-			else if n == 30 { txt = "30"; }
-			else if n > 30 { txt = ""; }
-			let look = if n == 14 { 0 } else { 2 };
-			if n <= 30 { app_btn_at(f, txt, AX + c as f32 * 80.0, AY + 72.0 + row as f32 * 72.0, 72.0, 64.0, look); }
+			let index = row * 7 + c;
+			let d = index - 6;
+			var n = d;
+			var march = 1;
+			if d < 1 { n = 28 + d; march = 0; }
+			else if d > 31 { n = d - 31; march = 0; }
+			TMP.clear();
+			format(TMP, n);
+			let look = if march != 0 && d == 14 { 0 } else if march != 0 { 2 } else { 1 };
+			let cell = button(f, TMP[..], look);
+			place_at(cell, AX + c as f32 * 80.0, AY + 72.0 + row as f32 * 64.0, 72.0, 56.0);
+			set_preset(cell, 4);
 			c += 1;
 		}
 		row += 1;
@@ -475,7 +464,7 @@ fn app_home_body(f int, g int) {
 		return;
 	}
 	if g == 26 {
-		product(f, AX, AY, 640.0, 2, "Tote", "18", "4.9");
+		product(f, AX, AY, 640.0, 2, "Tote", "18", 5);
 		app_btn_at(f, "Mugs", AX + AW - 384.0, AY, 384.0, 80.0, 2);
 		app_btn_at(f, "Lamps", AX + AW - 384.0, AY + 96.0, 384.0, 80.0, 2);
 		app_btn_at(f, "Cloth", AX + AW - 384.0, AY + 192.0, 384.0, 80.0, 2);
@@ -692,50 +681,147 @@ fn app_set_body(f int, g int) {
 	set_group(f, AX + w + 16.0, AY + 248.0, w, "Privacy", "What is stored on this device.", "History", "Analytics");
 }
 
-fn app_rows(f int, a const byte[:], b const byte[:], c const byte[:], d const byte[:]) {
-	app_btn_at(f, a, AX, AY, AW, 56.0, 0);
-	app_btn_at(f, b, AX, AY + 72.0, AW, 56.0, 2);
-	app_btn_at(f, c, AX, AY + 144.0, AW, 56.0, 2);
-	app_btn_at(f, d, AX, AY + 216.0, AW, 56.0, 2);
+fn record(f int, y f32, who const byte[:], pic int, title const byte[:], sub const byte[:], meta const byte[:], action const byte[:]) {
+	let c = card(f, "", 2);
+	place_at(c, AX, y, AW, 96.0);
+	set_pad(c, 12.0); set_gap(c, 12.0);
+	let row = flex(c, DIR_ROW); set_px(row, AW - 24.0, 72.0); set_gap(row, 12.0); set_pad(row, 0.0);
+	if pic >= 0 {
+		let thumb = chart(row, 10 + pic, 2); set_px(thumb, 72.0, 64.0);
+	} else {
+		let av = avatar(row, who, 0); set_px(av, 64.0, 64.0);
+	}
+	let col = flex(row, DIR_COL); set_px(col, 520.0, 64.0); set_gap(col, 4.0); set_pad(col, 0.0);
+	let t = label(col, title, 2); set_px(t, 500.0, 28.0);
+	let s = label(col, sub, 4); set_px(s, 500.0, 24.0);
+	let m = label(row, meta, 4); set_px(m, 240.0, 32.0);
+	let b = button(row, action, 0); set_px(b, 120.0, 40.0); set_preset(b, 4);
 }
 
 fn app_list_body(f int, g int) {
 	if g == 24 {
-		let tb = table(f, 4, 3, 2); place_at(tb, AX, AY, AW, 240.0);
-		table_set(tb, -1, 0, "Board"); table_set(tb, -1, 1, "Open"); table_set(tb, -1, 2, "Who");
-		table_set(tb, 0, 0, "Launch"); table_set(tb, 0, 1, "12"); table_set(tb, 0, 2, "Mira");
-		table_set(tb, 1, 0, "Billing"); table_set(tb, 1, 1, "4"); table_set(tb, 1, 2, "Sol");
-		table_set(tb, 2, 0, "Search"); table_set(tb, 2, 1, "1"); table_set(tb, 2, 2, "Ned");
-		table_set(tb, 3, 0, "Export"); table_set(tb, 3, 1, "3"); table_set(tb, 3, 2, "Ada");
+		record(f, AY, "M", -1, "Launch", "12 open issues", "Today", "Open");
+		record(f, AY + 112.0, "S", -1, "Billing", "4 waiting on Sol", "Tue", "Open");
+		record(f, AY + 224.0, "N", -1, "Search", "1 bug left", "Mon", "Open");
+		record(f, AY + 336.0, "A", -1, "Export", "3 rows to ship", "Fri", "Open");
 		return;
 	}
-	if g == 25 { app_rows(f, "Mira  Owner", "Sol  Admin", "Ned  Staff", "Ada  Staff"); return; }
+	if g == 25 {
+		record(f, AY, "M", -1, "Mira Cole", "Owner of the roster", "Now", "Edit");
+		record(f, AY + 112.0, "S", -1, "Sol", "Admin since spring", "1h", "Edit");
+		record(f, AY + 224.0, "N", -1, "Ned", "Staff on billing", "1d", "Edit");
+		record(f, AY + 336.0, "A", -1, "Ada", "Staff on search", "3d", "Edit");
+		return;
+	}
 	if g == 26 {
-		txrow(f, AX, AY, AW, 7, "Order  104", "Packed", "86");
-		txrow(f, AX, AY + 72.0, AW, 7, "Order  103", "Sent", "42");
-		txrow(f, AX, AY + 144.0, AW, 7, "Order  102", "Open", "18");
+		record(f, AY, "", 2, "Order  104", "Tote and two mugs", "Packed", "View");
+		record(f, AY + 112.0, "", 0, "Order  103", "Lamp for the desk", "Sent", "View");
+		record(f, AY + 224.0, "", 5, "Order  102", "Cloth, still open", "Open", "View");
+		record(f, AY + 336.0, "", 4, "Order  101", "Bowl, paid", "Done", "View");
 		return;
 	}
-	if g == 27 { app_rows(f, "Morning light", "New loaf", "Harbor walk", "Saved"); return; }
-	if g == 28 { app_rows(f, "Mira", "Sol", "Ned", "Ada"); return; }
-	if g == 29 { app_rows(f, "Glass", "Ember", "Tide", "Hearth"); return; }
-	if g == 30 { app_rows(f, "Notes", "Draft", "Plan", "Log"); return; }
-	if g == 31 { app_rows(f, "General", "Sound", "Account", "About"); return; }
-	if g == 32 { app_rows(f, "Name  done", "Place  now", "Ready  later", "Invite"); return; }
-	if g == 33 { app_rows(f, "This phone", "Work laptop", "Tablet", "Sign out others"); return; }
-	if g == 34 { app_rows(f, "Invoice  12", "Invoice  11", "Invoice  10", "Receipt"); return; }
-	if g == 35 { app_rows(f, "Build a screen", "Type", "Color", "Motion"); return; }
-	if g == 36 { app_rows(f, "Wed  11  Review", "Wed  12  Lunch", "Thu  9  Standup", "Fri  3  Ship"); return; }
-	if g == 37 { app_rows(f, "Draft spec", "Layout", "Colors", "Ship notes"); return; }
-	if g == 38 { app_rows(f, "Harbor", "Mill", "Oak", "Station"); return; }
+	if g == 27 {
+		record(f, AY, "M", -1, "Morning light", "On the harbor wall", "2h", "Open");
+		record(f, AY + 112.0, "S", -1, "New loaf", "Still warm", "5h", "Open");
+		record(f, AY + 224.0, "N", -1, "Harbor walk", "Saved for later", "1d", "Open");
+		record(f, AY + 336.0, "A", -1, "Ada", "Mentioned you", "3d", "Open");
+		return;
+	}
+	if g == 28 {
+		record(f, AY, "M", -1, "Mira", "On my way through the harbor", "2:14", "Open");
+		record(f, AY + 112.0, "S", -1, "Sol", "See you at six", "1:02", "Open");
+		record(f, AY + 224.0, "N", -1, "Ned", "Bring the notes", "Mon", "Open");
+		record(f, AY + 336.0, "A", -1, "Ada", "The gate is open", "Fri", "Open");
+		return;
+	}
+	if g == 29 {
+		record(f, AY, "", 1, "Glass", "Side A, four minutes", "Play", "Play");
+		record(f, AY + 112.0, "", 3, "Ember", "Quiet, late", "Queue", "Play");
+		record(f, AY + 224.0, "", 2, "Tide", "Saved offline", "Album", "Play");
+		record(f, AY + 336.0, "", 5, "Hearth", "Last played Friday", "Radio", "Play");
+		return;
+	}
+	if g == 30 {
+		record(f, AY, "", 5, "Notes", "The gate holds", "Today", "Open");
+		record(f, AY + 112.0, "", 3, "Draft", "Line 12, unsaved", "1h", "Open");
+		record(f, AY + 224.0, "", 4, "Plan", "Shared with Sol", "Tue", "Open");
+		record(f, AY + 336.0, "", 0, "Log", "Closed Friday", "Fri", "Open");
+		return;
+	}
+	if g == 36 {
+		record(f, AY, "M", -1, "Review", "Wednesday at 11", "1h", "Open");
+		record(f, AY + 112.0, "S", -1, "Lunch", "Wednesday at 12", "Today", "Open");
+		record(f, AY + 224.0, "N", -1, "Standup", "Thursday at 9", "Thu", "Open");
+		record(f, AY + 336.0, "A", -1, "Ship", "Friday at 3", "Fri", "Open");
+		return;
+	}
+	if g == 37 {
+		record(f, AY, "M", -1, "Draft spec", "Design, 2 of 5", "Fri", "Open");
+		record(f, AY + 112.0, "N", -1, "Layout", "Build, 4 of 6", "Wed", "Open");
+		record(f, AY + 224.0, "A", -1, "Colors", "Build, none done", "Thu", "Open");
+		record(f, AY + 336.0, "B", -1, "Ship notes", "Done, 3 of 3", "Tue", "Open");
+		return;
+	}
+	if g == 38 {
+		record(f, AY, "", 2, "Harbor", "12 minutes away", "Saved", "Go");
+		record(f, AY + 112.0, "", 1, "Mill", "Along the river", "Saved", "Go");
+		record(f, AY + 224.0, "", 5, "Oak", "Near the pin", "Nearby", "Go");
+		record(f, AY + 336.0, "", 0, "Station", "Two stops", "Recent", "Go");
+		return;
+	}
 	if g == 39 {
-		txrow(f, AX, AY, AW, 5, "Harbor", "Today", "-18");
-		txrow(f, AX, AY + 72.0, AW, 11, "Mira", "Tue", "-40");
-		txrow(f, AX, AY + 144.0, AW, 8, "Rent", "Mon", "-900");
-		txrow(f, AX, AY + 216.0, AW, 5, "Pay", "Fri", "+2,400");
+		record(f, AY, "", 0, "Harbor", "Shop, paid today", "-18", "View");
+		record(f, AY + 112.0, "M", -1, "Mira", "Sent Tuesday", "-40", "View");
+		record(f, AY + 224.0, "", 5, "Rent", "Due Monday", "-900", "View");
+		record(f, AY + 336.0, "", 1, "Pay", "Landed Friday", "+2,400", "View");
 		return;
 	}
-	app_rows(f, "Morning walk", "Ride", "Stretch", "Sleep");
+	if g == 40 {
+		record(f, AY, "M", -1, "Morning walk", "32 minutes", "Today", "Log");
+		record(f, AY + 112.0, "S", -1, "Ride", "18 kilometers", "Tue", "Log");
+		record(f, AY + 224.0, "N", -1, "Stretch", "12 minutes", "Mon", "Log");
+		record(f, AY + 336.0, "A", -1, "Sleep", "7 hours", "Fri", "Log");
+		return;
+	}
+	if g == 31 {
+		record(f, AY, "M", -1, "General", "Theme and motion", "On", "Edit");
+		record(f, AY + 112.0, "", 1, "Sound", "Alerts and volume", "On", "Edit");
+		record(f, AY + 224.0, "S", -1, "Account", "mira@northstar", "Sync", "Edit");
+		record(f, AY + 336.0, "", 5, "About", "Version 1.04", "Build", "Edit");
+		return;
+	}
+	if g == 32 {
+		record(f, AY, "M", -1, "Name", "Mira Cole", "Done", "Edit");
+		record(f, AY + 112.0, "", 2, "Place", "Harbor", "Now", "Edit");
+		record(f, AY + 224.0, "S", -1, "Ready", "Invite the team", "Later", "Edit");
+		record(f, AY + 336.0, "N", -1, "Invite", "Two people left", "Open", "Send");
+		return;
+	}
+	if g == 33 {
+		record(f, AY, "", 3, "This phone", "Signed in today", "Now", "Revoke");
+		record(f, AY + 112.0, "", 0, "Work laptop", "Signed in Tuesday", "Tue", "Revoke");
+		record(f, AY + 224.0, "", 5, "Tablet", "Quiet for a week", "7d", "Revoke");
+		record(f, AY + 336.0, "M", -1, "Other sessions", "Sign the rest out", "All", "Revoke");
+		return;
+	}
+	if g == 34 {
+		record(f, AY, "", 0, "Invoice  12", "Plus, this month", "12", "View");
+		record(f, AY + 112.0, "", 1, "Invoice  11", "Plus, last month", "12", "View");
+		record(f, AY + 224.0, "", 2, "Invoice  10", "Team seat added", "28", "View");
+		record(f, AY + 336.0, "", 5, "Receipt", "Paid Friday", "Done", "View");
+		return;
+	}
+	if g == 35 {
+		record(f, AY, "", 5, "Build a screen", "Title, then body", "Start", "Open");
+		record(f, AY + 112.0, "", 3, "Type", "Measure near 70", "Guide", "Open");
+		record(f, AY + 224.0, "", 4, "Color", "One accent", "Guide", "Open");
+		record(f, AY + 336.0, "", 2, "Motion", "Keep it short", "Guide", "Open");
+		return;
+	}
+	record(f, AY, "M", -1, "One", "First saved item", "Today", "Open");
+	record(f, AY + 112.0, "S", -1, "Two", "Second saved item", "Tue", "Open");
+	record(f, AY + 224.0, "N", -1, "Three", "Third saved item", "Mon", "Open");
+	record(f, AY + 336.0, "A", -1, "Four", "Fourth saved item", "Fri", "Open");
 }
 
 fn app_browse_body(f int, g int) {

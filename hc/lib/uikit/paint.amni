@@ -168,7 +168,33 @@ fn draw_text_base(x int, baseline int, s const byte[:], size f32, rgb u32, effec
 	}
 }
 
+fn paint_star(cx int, cy int, r int, rgb u32) {
+	var i = 0;
+	while i < 5 {
+		let a0 = -90 + i * 72;
+		let a1 = a0 + 36;
+		let a2 = a0 + 72;
+		let x0 = cx + cos_milli(a0) * r / 1000;
+		let y0 = cy + sin_milli(a0) * r / 1000;
+		let x1 = cx + cos_milli(a1) * (r / 2) / 1000;
+		let y1 = cy + sin_milli(a1) * (r / 2) / 1000;
+		let x2 = cx + cos_milli(a2) * r / 1000;
+		let y2 = cy + sin_milli(a2) * r / 1000;
+		fill_tri(cx, cy, x0, y0, x1, y1, rgb);
+		fill_tri(cx, cy, x1, y1, x2, y2, rgb);
+		i += 1;
+	}
+}
+
+fn paint_ticks(x int, y int, rgb u32) {
+	stroke_line(x, y + 8, x + 4, y + 12, rgb);
+	stroke_line(x + 4, y + 12, x + 11, y + 3, rgb);
+	stroke_line(x + 8, y + 8, x + 12, y + 12, rgb);
+	stroke_line(x + 12, y + 12, x + 19, y + 3, rgb);
+}
+
 fn draw_text(x int, y int, s const byte[:], size f32, rgb u32, effect int, limit int) {
+	if s.len == 2 && s[0] == 118 && s[1] == 118 { paint_ticks(x, y + 2, rgb); return; }
 	let asc, desc = em_box(size);
 	draw_text_base(x, y + (asc + 0.5) as int, s, size, rgb, effect, limit);
 }
@@ -274,8 +300,10 @@ fn chrome(x int, y int, w int, h int, look int, hot int, on int) u32, u32 {
 	}
 	let a = if THEME.glass != 0 { 120 } else { 255 };
 	if APP_UI != 0 && w >= 160 && h >= 48 {
-		round_rect(x + 4, y + 10, w - 4, h - 6, rad, 0x000000, 90);
-		blur_rect(x - 8, y + 2, w + 20, h + 20, 4);
+		round_rect(x + 4, y + 12, w - 4, h - 4, rad, 0x000000, 110);
+		blur_rect(x - 12, y, w + 28, h + 28, 6);
+		blur_rect(x - 12, y, w + 28, h + 28, 4);
+		blur_rect(x - 12, y, w + 28, h + 28, 2);
 	} else if THEME.family == FAM_BRUTAL || THEME.shadow == 2 { fill_rect(x + (6.0 * SCALE) as int, y + (6.0 * SCALE) as int, w, h, 0x000000, 255); }
 	else if look == LOOK_ELEVATED || THEME.shadow == 1 {
 		fill_rect(x + 2, y + (3.0 * SCALE) as int, w, h, 0x000000, 28);
@@ -472,8 +500,26 @@ recursive fn paint_node(id int) {
 		} else if k == K_SKELETON {
 			fill_rect(x + 8, y + 8, w / 2, 8, THEME.surface2, 255);
 		} else if k == K_AVATAR {
-			round_rect(x + 4, y + 4, h - 8, h - 8, (h - 8) / 2, THEME.accent, 255);
-			draw_text(x + 10, y + 8, tx, size, THEME.on_accent, 1, 2);
+			let seed = if tx.len > 0 { tx[0] as int } else { 0 };
+			let face = h - 10;
+			let cx = x + h / 2;
+			let cy = y + h / 2 + 2;
+			var skin = 0xF1C7A4;
+			var hair = 0x2A2118;
+			if seed % 5 == 1 { skin = 0xE0AC7A; hair = 0xC4A35A; }
+			else if seed % 5 == 2 { skin = 0xC68642; hair = 0x4A2C1A; }
+			else if seed % 5 == 3 { skin = 0x8D5524; hair = 0x1A120C; }
+			else if seed % 5 == 4 { skin = 0xF6D7B0; hair = 0x6B3A2A; }
+			fill_ell(cx, cy - face / 5, face / 2 + 2, face / 2, hair as u32, 255);
+			if seed % 3 == 1 {
+				fill_ell(cx - face / 3, cy, face / 5, face / 3, hair as u32, 255);
+				fill_ell(cx + face / 3, cy, face / 5, face / 3, hair as u32, 255);
+			} else if seed % 3 == 2 {
+				fill_ell(cx, cy - face / 3, face / 3, face / 6, hair as u32, 255);
+			}
+			fill_ell(cx, cy + 2, face / 2 - 1, face / 2 - 2, skin as u32, 255);
+			fill_ell(cx - face / 6, cy, 2, 2, 0x2A2118, 255);
+			fill_ell(cx + face / 6, cy, 2, 2, 0x2A2118, 255);
 		} else if k == K_PAGE {
 			let ps = 14.0 * SCALE;
 			draw_text(x + 8, y + 8, "<", ps, THEME.ink, 0, -1);
@@ -483,7 +529,13 @@ recursive fn paint_node(id int) {
 			draw_text(x + w - (20.0 * SCALE) as int, y + 8, ">", ps, THEME.ink, 0, -1);
 		} else if k == K_RATE {
 			var s = 0;
-			while s < 5 { fill_rect(x + 8 + s * 16, y + 10, 12, 12, if s < N[id].i0 { THEME.warn } else { THEME.surface2 }, 255); s += 1; }
+			while s < 5 {
+				let cx = x + 12 + s * 16;
+				let cy = y + h / 2;
+				let col = if s < N[id].i0 { 0xE0A100 } else { THEME.border };
+				paint_star(cx, cy, 7, col as u32);
+				s += 1;
+			}
 		} else if k == K_MINI {
 			paint_minimap(x, y, w, h, N[id].i3);
 		} else if k == K_INV {

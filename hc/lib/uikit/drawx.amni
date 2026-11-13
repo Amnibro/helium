@@ -467,7 +467,13 @@ fn paint_streets(x int, y int, w int, h int) {
 	draw_text(x + 16, y + 16, "Harbor", 16.0, name as u32, 0, -1);
 	draw_text(x + w / 2, y + h / 3, "Oak", 16.0, name as u32, 0, -1);
 	draw_text(x + w / 5, y + h * 2 / 3, "Mill", 16.0, name as u32, 0, -1);
-	fill_ell(x + w * 2 / 3, y + h / 3, 8, 8, 0xE23B3B, 255);
+	paint_pin(x + w * 2 / 3, y + h / 3);
+}
+
+fn paint_pin(cx int, cy int) {
+	fill_tri(cx - 8, cy - 2, cx + 8, cy - 2, cx, cy + 16, 0xE23B3B);
+	fill_ell(cx, cy - 6, 10, 10, 0xE23B3B, 255);
+	fill_ell(cx, cy - 6, 4, 4, 0xFFFFFF, 255);
 }
 
 fn paint_minimap(x int, y int, w int, h int, seed int) {

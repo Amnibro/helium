@@ -56,6 +56,7 @@ Font pairings: 30
 
 ## Other sheets
 
+- `OVERVIEW.png`
 - `icons/sheet.png`
 - `text/effects-light.png`
 - `text/effects-dark.png`
@@ -70,9 +71,10 @@ Font pairings: 30
 - Panels have a gradient, a bevel, and an inner shadow. Bars have segment ticks. Scene text has a one-pixel drop shadow. Results tables use 22px cells. Stage labels and buttons are at least 20px. The tall boss bar no longer paints a second small name.
 - Each game genre has its own minimap diagram: roads, rooms, lanes, or nodes drawn as ellipses. It is still a diagram, not a captured level.
 - The damage trail shrinks and fades from variation 0 to 4 (a wide bright chip, then a short dull one). It is that offset, not a simulated hit. Other pictograms stay coarse. Ability icons are the nearest metaphor, not spell art.
-- Body text is 16 to 18px and titles are 24 or 32px. Chart axis labels are 16px. Cards use a 12px radius, a 1px border, and a blurred shadow on the larger surfaces. Small controls skip the blur.
-- Shop drawings are a few shapes (cup, shade, bag, pen, bowl, cloth), not rendered products. The map roads are sine curves and the parks are clusters of ellipses. Kanban avatars are a letter in a circle. The checklist is a count, not a list of items.
-- The calendar is a five-week month beside one day. Chat bubbles are one line plus a timestamp. Settings groups are a title, one description line, and two toggles. Several list screens are still full-width rows.
+- Body text is 16 to 18px and titles are 24 or 32px. Chart axis labels are 16px. Larger cards use a 12px radius, a 1px border, and a three-pass blur for the shadow. Small controls skip the blur.
+- Shop drawings are a few shapes, not rendered products. Ratings are five filled or empty stars. Map roads are sine curves, parks are ellipse clusters, and the pin is a teardrop. Avatars are a face, hair, and eyes. Hair and skin vary by person. The checklist is still a count.
+- The calendar is a six-week month beside one day. Chat bubbles are two lines, a time, and two read ticks. List rows have a thumbnail or head, a title, a second line, meta, and an action. Settings groups are still one description line and two toggles.
+- `OVERVIEW.png` is one labeled hud-v0 thumbnail per genre.
 - Glow and backdrop rectangles are clipped to the widget. `overlap_count` also counts `note_deco` bounds, so a slab painted across another control fails the check.
 - All 500 icons are named pictograms. Thin marks (arrows, plus, minus) are geometric on purpose. A few complex metaphors are still coarse.
 - Widget styles are 20 frames on six controls (button, field, toggle, slider, card, badge), not 20 treatments of every chart and table.
