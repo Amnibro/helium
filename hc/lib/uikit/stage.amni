@@ -8,6 +8,10 @@ fn menu_n(g int) int {
 	if g == 2 { return 5; }
 	if g == 4 { return 4; }
 	if g == 5 { return 3; }
+	if g == 1 { return 5; }
+	if g == 7 { return 4; }
+	if g == 8 { return 4; }
+	if g == 12 { return 4; }
 	4
 }
 fn menu_at(g int, i int) const byte[:] {
@@ -35,6 +39,31 @@ fn menu_at(g int, i int) const byte[:] {
 		if i == 0 { return "Continue"; }
 		if i == 1 { return "New Game"; }
 		return "Settings";
+	}
+	if g == 1 {
+		if i == 0 { return "Drop"; }
+		if i == 1 { return "Duos"; }
+		if i == 2 { return "Squads"; }
+		if i == 3 { return "Locker"; }
+		return "Quit";
+	}
+	if g == 7 {
+		if i == 0 { return "Race"; }
+		if i == 1 { return "Career"; }
+		if i == 2 { return "Garage"; }
+		return "Options";
+	}
+	if g == 8 {
+		if i == 0 { return "Versus"; }
+		if i == 1 { return "Arcade"; }
+		if i == 2 { return "Training"; }
+		return "Options";
+	}
+	if g == 12 {
+		if i == 0 { return "Climb"; }
+		if i == 1 { return "Daily"; }
+		if i == 2 { return "Collection"; }
+		return "Options";
 	}
 	if i == 0 { return "Play"; }
 	if i == 1 { return "Continue"; }
@@ -700,6 +729,119 @@ fn stage_results_souls(f int, mode int) {
 	place_at(hum, 80.0, 980.0, 280.0, 40.0);
 }
 
+fn stage_hud_royale(f int, mode int) {
+	var axl f32 = 48.0;
+	if mode == 4 { axl = 360.0; }
+	let alive = label(f, "Alive  42", 1); place_at(alive, axl, 36.0, 280.0, 48.0);
+	let zone = label(f, "Storm  240m", 2);
+	place_at(zone, 800.0, 36.0, 320.0, 40.0);
+	mark_anchor(zone);
+	var mx f32 = 48.0;
+	var my f32 = 100.0;
+	var ms f32 = 240.0;
+	var hx f32 = 48.0;
+	var hy f32 = 900.0;
+	var bx f32 = 760.0;
+	var by f32 = 980.0;
+	var fx f32 = 1640.0;
+	if mode == 1 { ms = 180.0; bx = 800.0; }
+	else if mode == 2 { hy = 820.0; by = 940.0; hx = 640.0; }
+	else if mode == 3 { mx = 80.0; my = 200.0; fx = 1560.0; }
+	else if mode == 4 { mx = 1632.0; my = 48.0; fx = 48.0; hx = 1400.0; }
+	let map = minimap(f, 0); place_at(map, mx, my, ms, ms); N[map].i3 = 1;
+	feed_col(f, fx, 48.0);
+	vitals(f, hx, hy);
+	let row = flex(f, DIR_ROW);
+	set_gap(row, 12.0);
+	set_pad(row, 0.0);
+	place_at(row, bx, by, 328.0, 56.0);
+	let a = icon_button(row, 77, 2); set_px(a, 56.0, 56.0);
+	let b = icon_button(row, 4, 2); set_px(b, 56.0, 56.0);
+	let c = icon_button(row, 1, 2); set_px(c, 56.0, 56.0);
+	let d = icon_button(row, 74, 2); set_px(d, 56.0, 56.0);
+	let e = icon_button(row, 7, 2); set_px(e, 56.0, 56.0);
+}
+
+fn stage_pause_royale(f int, mode int) {
+	var x f32 = 520.0;
+	var y f32 = 280.0;
+	if mode == 1 { x = 80.0; y = 160.0; }
+	else if mode == 2 { x = 1000.0; y = 160.0; }
+	else if mode == 3 { y = 640.0; }
+	else if mode == 4 { y = 80.0; }
+	let head = label(f, "Leave match?", 0); place_at(head, x, y, 640.0, 72.0);
+	let sub = label(f, "Squad of 3 will stay", 2); place_at(sub, x, y + 80.0, 520.0, 40.0);
+	let stay = button(f, "Stay", 0); place_at(stay, x, y + 160.0, 300.0, 80.0); set_preset(stay, 1);
+	let leave = button(f, "Leave", 5); place_at(leave, x + 324.0, y + 160.0, 300.0, 80.0); set_preset(leave, 1);
+}
+
+fn stage_shop_royale(f int, mode int) {
+	var x f32 = 240.0;
+	var y f32 = 80.0;
+	if mode == 1 { x = 80.0; }
+	else if mode == 2 { x = 480.0; y = 200.0; }
+	else if mode == 3 { y = 360.0; }
+	else if mode == 4 { x = 160.0; y = 40.0; }
+	let banner = button(f, "Featured glider", 0); place_at(banner, x, y, 880.0, 112.0); set_preset(banner, 1);
+	let ia = icon_button(f, 13, 0); place_at(ia, x + 108.0, y + 128.0, 64.0, 64.0);
+	let ib = icon_button(f, 11, 0); place_at(ib, x + 412.0, y + 128.0, 64.0, 64.0);
+	let ic = icon_button(f, 45, 0); place_at(ic, x + 716.0, y + 128.0, 64.0, 64.0);
+	let g1 = flex(f, DIR_ROW); set_gap(g1, 24.0); set_pad(g1, 0.0); place_at(g1, x, y + 208.0, 888.0, 140.0);
+	let a = button(g1, "Wrap", 2); set_px(a, 280.0, 140.0); set_preset(a, 2);
+	let b = button(g1, "Emote", 2); set_px(b, 280.0, 140.0); set_preset(b, 2);
+	let c = button(g1, "Pickaxe", 2); set_px(c, 280.0, 140.0); set_preset(c, 2);
+	let buy = button(f, "Equip", 0); place_at(buy, x, y + 364.0, 240.0, 64.0); set_preset(buy, 2);
+}
+
+fn stage_settings_royale(f int, mode int) {
+	var x f32 = 360.0;
+	var y f32 = 200.0;
+	if mode == 1 { x = 80.0; }
+	else if mode == 2 { x = 900.0; }
+	else if mode == 3 { y = 480.0; }
+	else if mode == 4 { y = 80.0; }
+	let head = label(f, "Drop settings", 0); place_at(head, x, y, 520.0, 64.0);
+	let a = label(f, "Look", 2); place_at(a, x, y + 88.0, 200.0, 36.0);
+	let s1 = slider(f, 0.55, 0); place_at(s1, x + 220.0, y + 92.0, 480.0, 28.0);
+	let b = label(f, "Voice", 2); place_at(b, x, y + 160.0, 200.0, 36.0);
+	let s2 = slider(f, 0.8, 2); place_at(s2, x + 220.0, y + 164.0, 480.0, 28.0);
+	let apply = button(f, "Apply", 0); place_at(apply, x, y + 240.0, 240.0, 64.0); set_preset(apply, 2);
+}
+
+fn stage_map_royale(f int, mode int) {
+	var my f32 = 80.0;
+	var mh f32 = 800.0;
+	var by f32 = 920.0;
+	if mode == 1 { my = 200.0; mh = 680.0; by = 80.0; }
+	else if mode == 2 { mh = 720.0; by = 840.0; }
+	else if mode == 3 { my = 48.0; mh = 640.0; by = 720.0; }
+	else if mode == 4 { my = 160.0; mh = 720.0; by = 920.0; }
+	let map = minimap(f, 0); place_at(map, 160.0, my, 1600.0, mh); N[map].i3 = 1;
+	let storm = button(f, "Storm", 5); place_at(storm, 80.0, by, 240.0, 56.0); set_preset(storm, 2);
+	let safe = button(f, "Safe", 0); place_at(safe, 340.0, by, 240.0, 56.0); set_preset(safe, 2);
+	let ping = button(f, "Ping", 2); place_at(ping, 600.0, by, 240.0, 56.0); set_preset(ping, 2);
+}
+
+fn stage_results_royale(f int, mode int) {
+	var y f32 = 160.0;
+	var ry f32 = 640.0;
+	if mode == 1 { y = 80.0; ry = 480.0; }
+	else if mode == 2 { y = 360.0; ry = 160.0; }
+	else if mode == 3 { y = 200.0; ry = 760.0; }
+	else if mode == 4 { y = 80.0; ry = 720.0; }
+	let place = label(f, "3rd", 0);
+	place_at(place, 800.0, y, 320.0, 80.0);
+	mark_anchor(place);
+	let elim = label(f, "12 eliminations", 1); place_at(elim, 720.0, y + 96.0, 480.0, 48.0);
+	let dmg = label(f, "Damage  1840", 2); place_at(dmg, 760.0, y + 156.0, 400.0, 40.0);
+	let rw = label(f, "Rewards", 2); place_at(rw, 160.0, ry, 240.0, 36.0);
+	let row = flex(f, DIR_ROW); set_gap(row, 16.0); set_pad(row, 0.0); place_at(row, 160.0, ry + 48.0, 248.0, 72.0);
+	let a = icon_button(row, 5, 0); set_px(a, 72.0, 72.0);
+	let b = icon_button(row, 13, 2); set_px(b, 72.0, 72.0);
+	let c = icon_button(row, 42, 2); set_px(c, 72.0, 72.0);
+	let again = button(f, "Queue", 0); place_at(again, 1520.0, 960.0, 280.0, 64.0); set_preset(again, 2);
+}
+
 fn build_stage(frame int, g int, screen int, mode int) int {
 	N[frame].i0 = g;
 	N[frame].i1 = screen;
@@ -708,31 +850,37 @@ fn build_stage(frame int, g int, screen int, mode int) int {
 	else if screen == 1 {
 		if g == 4 { stage_pause_jrpg(frame, mode); }
 		else if g == 5 { stage_pause_souls(frame, mode); }
+		else if g == 1 { stage_pause_royale(frame, mode); }
 		else { stage_pause(frame, g, mode); }
 	}
 	else if screen == 2 {
 		if g == 4 { stage_settings_jrpg(frame, mode); }
 		else if g == 5 { stage_settings_souls(frame, mode); }
+		else if g == 1 { stage_settings_royale(frame, mode); }
 		else { stage_settings(frame, g, mode); }
 	}
 	else if screen == 3 {
 		if g == 2 { stage_hud_moba(frame, mode); }
 		else if g == 4 { stage_hud_jrpg(frame, mode); }
 		else if g == 5 { stage_hud_souls(frame, mode); }
+		else if g == 1 { stage_hud_royale(frame, mode); }
 		else { stage_hud_fps(frame, mode); }
 	}
 	else if screen == 4 {
 		if g == 4 { stage_shop_jrpg(frame, mode); }
 		else if g == 5 { stage_shop_souls(frame, mode); }
+		else if g == 1 { stage_shop_royale(frame, mode); }
 		else { stage_shop_fps(frame, g, mode); }
 	}
 	else if screen == 5 {
 		if g == 4 { stage_map_jrpg(frame, mode); }
 		else if g == 5 { stage_map_souls(frame, mode); }
+		else if g == 1 { stage_map_royale(frame, mode); }
 		else { stage_map_fps(frame, g, mode); }
 	}
 	else if g == 4 { stage_results_jrpg(frame, mode); }
 	else if g == 5 { stage_results_souls(frame, mode); }
+	else if g == 1 { stage_results_royale(frame, mode); }
 	else { stage_results_fps(frame, g, mode); }
 	frame
 }
