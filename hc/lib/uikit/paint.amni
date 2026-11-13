@@ -14,6 +14,7 @@ var PW = 0;
 var PH = 0;
 var HIT_GAP f32 = 0.14;
 var HIT_A = 255;
+var APP_UI = 0;
 var CX = 0; var CY = 0; var CW = 0; var CH = 0;
 var SPIN f32 = 0.0;
 var TMP byte[>..] = [];
@@ -330,7 +331,7 @@ fn chrome(x int, y int, w int, h int, look int, hot int, on int) u32, u32 {
 		stroke_rect(x + w - arm, y + h - t, arm, t, THEME.accent, t);
 		stroke_rect(x + w - t, y + h - arm, t, arm, THEME.accent, t);
 	}
-	if look != LOOK_GHOST && w >= 48 && h >= 32 { panel_depth(x, y, w, h); }
+	if APP_UI == 0 && look != LOOK_GHOST && w >= 48 && h >= 32 { panel_depth(x, y, w, h); }
 	return fill, ink;
 }
 
@@ -492,6 +493,7 @@ recursive fn paint_node(id int) {
 		} else if k == K_COOL {
 			paint_cooldowns(x, y, w, h, N[id].i3);
 		} else if k == K_CHART {
+			fill_rect(x + 2, y + 2, w - 4, h - 4, THEME.surface, 255);
 			paint_chart(x, y, w, h, N[id].i0);
 		} else if k == K_RADIAL {
 			paint_radial(x, y, w, h, N[id].i0, N[id].i1, N[id].i3);

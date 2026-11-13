@@ -26,6 +26,7 @@ fn screen_caption(s int) const byte[:] {
 }
 
 fn shape_for(v int) {
+	uikit::APP_UI = 0;
 	uikit::catalog_set(2 + v * 40);
 	uikit::THEME.pixel = 0;
 	if v == 0 {
@@ -218,7 +219,7 @@ fn paint_stage_screen(g int, screen int) {
 	for v in 5 {
 		uikit::canvas(1920, 1080);
 		uikit::fill_rect(0, 0, 1920, 1080, 0x101218, 255);
-		shape_for(v);
+		if g >= 24 { uikit::app_theme(g, v); } else { shape_for(v); }
 		if uikit::text_contrast_fails() != 0 {
 			print("contrast ", uikit::genre_slug(g), " v ", v);
 			abort("contrast");
@@ -618,7 +619,9 @@ fn write_index() {
 	out.append("- Panels have a gradient, a bevel, and an inner shadow. Bars have segment ticks. Scene text has a one-pixel drop shadow. Results tables use 22px cells. Stage labels and buttons are at least 20px. The tall boss bar no longer paints a second small name.\n");
 	out.append("- Each game genre has its own minimap diagram: roads, rooms, lanes, or nodes drawn as ellipses. It is still a diagram, not a captured level.\n");
 	out.append("- The damage trail shrinks and fades from variation 0 to 4 (a wide bright chip, then a short dull one). It is that offset, not a simulated hit. Other pictograms stay coarse. Ability icons are the nearest metaphor, not spell art.\n");
-	out.append("- App home, menu, settings, list, and summary screens share a few recipes and differ mainly by copy and which side the stack sits on. The main screen is the one laid out for that app. Charts are still the simple painters.\n");
+	out.append("- App chrome is a flat surface, a top bar, and a sidebar, with one accent and a light or dark theme. Cards use a soft offset shadow, not a blurred one. Axis labels on charts are 14px. Sparklines have no axes.\n");
+	out.append("- The street map is a regular road grid with a river, two parks, and three names. Kanban cards carry a title, a chip, a letter avatar, and a due date. The calendar main screen is one day of hour labels and event blocks. Banking rows use a pictogram, a name, and an amount.\n");
+	out.append("- Home, menu, list, and summary differ by app, but several lists are still full-width rows and several settings screens are still two toggles, a slider, and a preview card.\n");
 	out.append("- Glow and backdrop rectangles are clipped to the widget. `overlap_count` also counts `note_deco` bounds, so a slab painted across another control fails the check.\n");
 	if uikit::icon_named() < uikit::icon_count() {
 		format(out, "- Named pictograms: ", uikit::icon_named(), " of ", uikit::icon_count(), ". The rest are still unique 5x5 silhouettes.\n");

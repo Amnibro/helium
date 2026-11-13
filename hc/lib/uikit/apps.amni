@@ -1,502 +1,743 @@
-// 16:9 screens for the app genres. Same 1920x1080 grid as the game stages.
+// App chrome on a 1920x1080 grid. Spacing is 8, 12, or 16.
 namespace uikit;
 import uikit.widgets;
 import uikit.core;
 
-fn app_title(f int, text const byte[:]) {
-	let h = label(f, text, 1);
-	place_at(h, 720.0, 36.0, 480.0, 56.0);
-	mark_anchor(h);
+var AX f32 = 256.0;
+var AY f32 = 88.0;
+var AW f32 = 1648.0;
+var SIDE f32 = 0.0;
+
+fn app_accent(g int) u32 {
+	if g == 25 || g == 34 { return 0x4338CA; }
+	if g == 26 || g == 40 { return 0xBE123C; }
+	if g == 27 { return 0xBE185D; }
+	if g == 28 || g == 39 { return 0x047857; }
+	if g == 29 || g == 32 { return 0x6D28D9; }
+	if g == 31 || g == 38 { return 0x0F766E; }
+	if g == 35 { return 0xC2410C; }
+	if g == 36 { return 0xB91C1C; }
+	if g == 37 { return 0x15803D; }
+	0x1D4ED8
 }
 
-fn app_btn(f int, text const byte[:], x f32, y f32, w f32, h f32, look int) int {
-	let b = button(f, text, look);
-	place_at(b, x, y, w, h);
-	set_preset(b, 2);
-	b
+fn app_theme(g int, mode int) {
+	var bg = 0xF6F7F9;
+	var surface = 0xFFFFFF;
+	var ink = 0x1C2128;
+	var s2 = 0xF1F3F6;
+	var border = 0xE2E6EC;
+	if mode >= 3 {
+		bg = 0x12141A;
+		surface = 0x1C2028;
+		ink = 0xF4F6F8;
+		s2 = 0x2A2F3A;
+		border = 0x3A4150;
+	}
+	theme_apply(bg as u32, surface as u32, ink as u32, app_accent(g), 8.0, 1.0, 1, 0, 0, 12.0);
+	THEME.surface2 = s2 as u32;
+	THEME.border = border as u32;
+	THEME.family = FAM_FLAT;
+	THEME.glass = 0;
+	THEME.pixel = 0;
+	THEME.shadow = 1;
+	THEME.radius = 8.0;
+	THEME.border_w = 1.0;
+	APP_UI = 1;
 }
 
-fn app_lab(f int, text const byte[:], x f32, y f32, w f32) int {
-	let a = label(f, text, 2);
-	place_at(a, x, y, w, 40.0);
-	a
+fn app_place(mode int) {
+	if mode == 2 || mode == 4 {
+		AX = 16.0; AY = 88.0; AW = 1888.0; SIDE = -1.0;
+	} else if mode == 1 {
+		AX = 16.0; AY = 88.0; AW = 1648.0; SIDE = 1680.0;
+	} else {
+		AX = 256.0; AY = 88.0; AW = 1648.0; SIDE = 0.0;
+	}
 }
 
-fn app_home(f int, mode int, name const byte[:], a const byte[:], b const byte[:], c const byte[:], d const byte[:]) {
-	app_title(f, name);
-	var x f32 = 1400.0;
-	var y f32 = 240.0;
-	if mode == 1 { x = 80.0; }
-	else if mode == 2 { x = 760.0; y = 640.0; }
-	else if mode == 3 { y = 200.0; x = 80.0; }
-	else if mode == 4 { x = 200.0; y = 720.0; }
-	app_btn(f, a, x, y, 400.0, 64.0, 0);
-	app_btn(f, b, x, y + 80.0, 400.0, 64.0, 2);
-	app_btn(f, c, x, y + 160.0, 400.0, 64.0, 2);
-	app_btn(f, d, x, y + 240.0, 400.0, 64.0, 5);
-	app_lab(f, "v1.04", 1560.0, 1000.0, 240.0);
+fn app_shell(f int, mode int, brand const byte[:], a const byte[:], b const byte[:], c const byte[:], d const byte[:], action const byte[:]) {
+	app_place(mode);
+	if SIDE >= 0.0 {
+		let s = card(f, "", 2);
+		place_at(s, SIDE, 16.0, 240.0, 320.0);
+		set_pad(s, 16.0); set_gap(s, 12.0);
+		let br = label(s, brand, 1); set_px(br, 208.0, 40.0);
+		let n0 = button(s, a, 0); set_px(n0, 208.0, 44.0); set_preset(n0, 2);
+		let n1 = button(s, b, 2); set_px(n1, 208.0, 44.0); set_preset(n1, 2);
+		let n2 = button(s, c, 2); set_px(n2, 208.0, 44.0); set_preset(n2, 2);
+		let n3 = button(s, d, 2); set_px(n3, 208.0, 44.0); set_preset(n3, 2);
+	}
+	let top = card(f, "", 2);
+	place_at(top, AX, 16.0, AW, 56.0);
+	set_pad(top, 12.0); set_gap(top, 12.0);
+	let row = flex(top, DIR_ROW); set_px(row, AW - 24.0, 32.0); set_gap(row, 12.0); set_pad(row, 0.0);
+	let title = label(row, brand, 2); set_px(title, 280.0, 32.0);
+	let find = text_field(row, "Search", 2); set_px(find, 360.0, 32.0);
+	let go = button(row, action, 0); set_px(go, 140.0, 32.0); set_preset(go, 2);
 }
 
-fn app_menu(f int, mode int, name const byte[:], a const byte[:], b const byte[:], c const byte[:], d const byte[:]) {
-	app_title(f, name);
-	var x f32 = 760.0;
-	var y f32 = 200.0;
-	if mode == 1 { x = 80.0; }
-	else if mode == 2 { x = 1400.0; }
-	else if mode == 3 { y = 520.0; }
-	else if mode == 4 { y = 120.0; x = 480.0; }
-	app_btn(f, a, x, y, 400.0, 64.0, 0);
-	app_btn(f, b, x, y + 80.0, 400.0, 64.0, 2);
-	app_btn(f, c, x, y + 160.0, 400.0, 64.0, 2);
-	app_btn(f, d, x, y + 240.0, 400.0, 64.0, 5);
+fn metric(f int, x f32, y f32, w f32, name const byte[:], value const byte[:]) {
+	let c = card(f, "", 2);
+	place_at(c, x, y, w, 144.0);
+	set_pad(c, 16.0); set_gap(c, 8.0);
+	let n = label(c, name, 3); set_px(n, w - 32.0, 24.0);
+	let v = label(c, value, 1); set_px(v, w - 32.0, 36.0);
+	let ch = chart(c, 5, 3); set_px(ch, w - 32.0, 36.0);
 }
 
-fn app_prefs(f int, mode int, name const byte[:], a const byte[:], b const byte[:]) {
-	var x f32 = 640.0;
-	var y f32 = 200.0;
-	if mode == 1 { x = 80.0; }
-	else if mode == 2 { x = 1080.0; }
-	else if mode == 3 { y = 480.0; }
-	else if mode == 4 { y = 120.0; }
-	let head = label(f, name, 1); place_at(head, x, y, 400.0, 56.0);
-	let t1 = toggle(f, a, 1, 0); place_at(t1, x, y + 80.0, 520.0, 64.0);
-	let t2 = toggle(f, b, 0, 2); place_at(t2, x, y + 160.0, 520.0, 64.0);
-	let s = slider(f, 0.6, 0); place_at(s, x, y + 248.0, 520.0, 32.0);
+fn kcard(f int, x f32, y f32, w f32, title const byte[:], tag const byte[:], who const byte[:], due const byte[:]) {
+	let c = card(f, "", 2);
+	place_at(c, x, y, w, 128.0);
+	set_pad(c, 16.0); set_gap(c, 8.0);
+	let t = label(c, title, 2); set_px(t, w - 32.0, 32.0);
+	let row = flex(c, DIR_ROW); set_px(row, w - 32.0, 32.0); set_gap(row, 8.0); set_pad(row, 0.0);
+	let tg = chip(row, tag, 2); set_px(tg, 96.0, 28.0);
+	let av = avatar(row, who, 0); set_px(av, 32.0, 32.0);
+	let d = label(row, due, 3); set_px(d, 120.0, 28.0);
 }
 
-fn app_sum(f int, mode int, name const byte[:], side const byte[:], go const byte[:], h0 const byte[:], h1 const byte[:], h2 const byte[:]) {
-	app_title(f, name);
-	app_lab(f, side, 80.0, 40.0, 280.0);
-	var x f32 = 480.0;
-	var y f32 = 180.0;
-	if mode == 1 { x = 80.0; }
-	else if mode == 2 { x = 1000.0; }
-	else if mode == 3 { y = 360.0; }
-	else if mode == 4 { x = 240.0; y = 200.0; }
-	let tb = table(f, 4, 3, 2);
-	place_at(tb, x, y, 840.0, 240.0);
-	table_set(tb, -1, 0, h0); table_set(tb, -1, 1, h1); table_set(tb, -1, 2, h2);
-	table_set(tb, 0, 0, "Open"); table_set(tb, 0, 1, "12"); table_set(tb, 0, 2, "4");
-	table_set(tb, 1, 0, "Done"); table_set(tb, 1, 1, "9"); table_set(tb, 1, 2, "30");
-	table_set(tb, 2, 0, "Wait"); table_set(tb, 2, 1, "3"); table_set(tb, 2, 2, "1");
-	table_set(tb, 3, 0, "Net"); table_set(tb, 3, 1, "18"); table_set(tb, 3, 2, "27");
-	app_btn(f, go, 80.0, 980.0, 280.0, 64.0, 0);
+fn txrow(f int, x f32, y f32, w f32, icon int, name const byte[:], meta const byte[:], amt const byte[:]) {
+	let c = card(f, "", 2);
+	place_at(c, x, y, w, 64.0);
+	set_pad(c, 12.0); set_gap(c, 12.0);
+	let row = flex(c, DIR_ROW); set_px(row, w - 24.0, 40.0); set_gap(row, 12.0); set_pad(row, 0.0);
+	let ic = icon_button(row, icon, 1); set_px(ic, 40.0, 40.0);
+	let nm = label(row, name, 2); set_px(nm, 320.0, 40.0);
+	let mt = label(row, meta, 3); set_px(mt, 240.0, 40.0);
+	let am = label(row, amt, 2); set_px(am, 160.0, 40.0);
 }
 
-fn app_dash(f int, mode int) {
-	var my f32 = 120.0;
-	var cy f32 = 260.0;
-	var lx f32 = 48.0;
-	var rx f32 = 960.0;
-	if mode == 1 { my = 840.0; cy = 140.0; }
-	else if mode == 2 { lx = 960.0; rx = 48.0; }
-	else if mode == 3 { my = 200.0; cy = 360.0; }
-	else if mode == 4 { my = 140.0; cy = 280.0; }
-	app_title(f, "Northstar");
-	app_btn(f, "Open  12", 48.0, my, 420.0, 100.0, 0);
-	app_btn(f, "Cycle  4d", 492.0, my, 420.0, 100.0, 2);
-	app_btn(f, "Bugs  3", 936.0, my, 420.0, 100.0, 1);
-	app_btn(f, "Ship  80", 1380.0, my, 420.0, 100.0, 2);
-	let ch = chart(f, 0, 0); place_at(ch, lx, cy, 880.0, 400.0);
-	let tb = table(f, 4, 3, 2); place_at(tb, rx, cy, 900.0, 280.0);
+fn panel(f int, x f32, y f32, w f32, h f32, title const byte[:]) int {
+	let c = card(f, "", 2);
+	place_at(c, x, y, w, h);
+	set_pad(c, 16.0); set_gap(c, 8.0);
+	let t = label(c, title, 2); set_px(t, w - 32.0, 28.0);
+	c
+}
+
+fn app_dash_main(f int) {
+	let w = (AW - 48.0) / 4.0;
+	metric(f, AX, AY, w, "Open", "12");
+	metric(f, AX + w + 16.0, AY, w, "Cycle", "4d");
+	metric(f, AX + (w + 16.0) * 2.0, AY, w, "Bugs", "3");
+	metric(f, AX + (w + 16.0) * 3.0, AY, w, "Ship", "80%");
+	let ch = chart(f, 0, 2); place_at(ch, AX, AY + 160.0, AW - 336.0, 400.0);
+	let dn = chart(f, 2, 2); place_at(dn, AX + AW - 320.0, AY + 160.0, 320.0, 400.0);
+	let tb = table(f, 4, 3, 2); place_at(tb, AX, AY + 576.0, AW, 240.0);
 	table_set(tb, -1, 0, "Issue"); table_set(tb, -1, 1, "Who"); table_set(tb, -1, 2, "Age");
 	table_set(tb, 0, 0, "Login"); table_set(tb, 0, 1, "Mira"); table_set(tb, 0, 2, "2d");
 	table_set(tb, 1, 0, "Bill"); table_set(tb, 1, 1, "Sol"); table_set(tb, 1, 2, "5h");
 	table_set(tb, 2, 0, "Search"); table_set(tb, 2, 1, "Ned"); table_set(tb, 2, 2, "1d");
 	table_set(tb, 3, 0, "Export"); table_set(tb, 3, 1, "Ada"); table_set(tb, 3, 2, "4h");
-	app_lab(f, "Live", lx, cy + 420.0, 200.0);
-	app_lab(f, "Queue", rx, cy + 300.0, 200.0);
 }
 
-fn app_admin(f int, mode int) {
-	var y f32 = 140.0;
-	var sx f32 = 1500.0;
-	if mode == 1 { y = 200.0; sx = 48.0; }
-	else if mode == 2 { y = 120.0; }
-	else if mode == 3 { y = 280.0; }
-	else if mode == 4 { sx = 48.0; y = 160.0; }
-	var tx f32 = 48.0;
-	if sx < 200.0 { tx = 480.0; }
-	app_title(f, "Roster");
-	let q = text_field(f, "Find a person", 2); place_at(q, tx, y, 720.0, 56.0);
-	app_btn(f, "Invite", tx + 740.0, y, 220.0, 56.0, 0);
-	let tb = table(f, 5, 3, 2); place_at(tb, tx, y + 80.0, 960.0, 280.0);
+fn app_admin_main(f int) {
+	let q = text_field(f, "Find a person", 2); place_at(q, AX, AY, AW - 240.0, 48.0);
+	let inv = button(f, "Invite", 0); place_at(inv, AX + AW - 220.0, AY, 220.0, 48.0); set_preset(inv, 2);
+	let tb = table(f, 5, 3, 2); place_at(tb, AX, AY + 64.0, AW - 400.0, 320.0);
 	table_set(tb, -1, 0, "Name"); table_set(tb, -1, 1, "Role"); table_set(tb, -1, 2, "Seen");
 	table_set(tb, 0, 0, "Mira"); table_set(tb, 0, 1, "Owner"); table_set(tb, 0, 2, "Now");
 	table_set(tb, 1, 0, "Sol"); table_set(tb, 1, 1, "Admin"); table_set(tb, 1, 2, "1h");
 	table_set(tb, 2, 0, "Ned"); table_set(tb, 2, 1, "Staff"); table_set(tb, 2, 2, "1d");
 	table_set(tb, 3, 0, "Ada"); table_set(tb, 3, 1, "Staff"); table_set(tb, 3, 2, "3d");
 	table_set(tb, 4, 0, "Bram"); table_set(tb, 4, 1, "Guest"); table_set(tb, 4, 2, "9d");
-	app_btn(f, "Owner", sx, y + 80.0, 360.0, 72.0, 0);
-	app_btn(f, "Staff", sx, y + 168.0, 360.0, 72.0, 2);
-	app_btn(f, "Guest", sx, y + 256.0, 360.0, 72.0, 2);
-	app_lab(f, "5 people", tx, y + 376.0, 280.0);
+	let a = button(f, "Owner", 0); place_at(a, AX + AW - 380.0, AY + 64.0, 360.0, 72.0); set_preset(a, 2);
+	let b = button(f, "Staff", 2); place_at(b, AX + AW - 380.0, AY + 152.0, 360.0, 72.0); set_preset(b, 2);
+	let c = button(f, "Guest", 2); place_at(c, AX + AW - 380.0, AY + 240.0, 360.0, 72.0); set_preset(c, 2);
+	let n = label(f, "5 people", 3); place_at(n, AX + AW - 380.0, AY + 328.0, 240.0, 32.0);
 }
 
-fn app_shop(f int, mode int) {
-	var y f32 = 140.0;
-	if mode == 1 { y = 200.0; }
-	else if mode == 3 { y = 240.0; }
-	else if mode == 4 { y = 160.0; }
-	app_title(f, "Harbor");
-	app_btn(f, "Mug  12", 48.0, y, 440.0, 180.0, 2);
-	app_btn(f, "Lamp  28", 512.0, y, 440.0, 180.0, 2);
-	app_btn(f, "Tote  18", 976.0, y, 440.0, 180.0, 0);
-	app_btn(f, "Pen  6", 48.0, y + 200.0, 440.0, 180.0, 2);
-	app_btn(f, "Bowl  22", 512.0, y + 200.0, 440.0, 180.0, 2);
-	app_btn(f, "Cloth  16", 976.0, y + 200.0, 440.0, 180.0, 2);
-	app_btn(f, "Checkout", 1480.0, y, 380.0, 80.0, 0);
-	app_lab(f, "Cart  3", 1480.0, y + 100.0, 280.0);
-	app_lab(f, "Total  86", 1480.0, y + 148.0, 320.0);
+fn col3() f32 { if AW > 1700.0 { return 608.0; } 528.0 }
+fn col2() f32 { if AW > 1700.0 { return 920.0; } 800.0 }
+
+fn app_shop_main(f int) {
+	let w = col3();
+	let y = AY;
+	app_btn_at(f, "Mug  12", AX, y, w, 160.0, 2);
+	app_btn_at(f, "Lamp  28", AX + w + 16.0, y, w, 160.0, 2);
+	app_btn_at(f, "Tote  18", AX + (w + 16.0) * 2.0, y, w, 160.0, 0);
+	app_btn_at(f, "Pen  6", AX, y + 176.0, w, 160.0, 2);
+	app_btn_at(f, "Bowl  22", AX + w + 16.0, y + 176.0, w, 160.0, 2);
+	app_btn_at(f, "Cloth  16", AX + (w + 16.0) * 2.0, y + 176.0, w, 160.0, 2);
+	let cart = card(f, "", 2); place_at(cart, AX, y + 352.0, AW, 96.0); set_pad(cart, 16.0); set_gap(cart, 8.0);
+	let row = flex(cart, DIR_ROW); set_px(row, AW - 32.0, 64.0); set_gap(row, 16.0); set_pad(row, 0.0);
+	let a = label(row, "Cart  3", 2); set_px(a, 240.0, 40.0);
+	let b = label(row, "Total  86", 1); set_px(b, 280.0, 40.0);
+	let pay = button(row, "Checkout", 0); set_px(pay, 200.0, 48.0); set_preset(pay, 2);
 }
 
-fn app_social(f int, mode int) {
-	var y f32 = 140.0;
-	if mode == 1 { y = 220.0; }
-	else if mode == 3 { y = 180.0; }
-	app_title(f, "Field");
-	app_btn(f, "Mira", 48.0, y, 280.0, 64.0, 0);
-	app_btn(f, "Sol", 348.0, y, 280.0, 64.0, 2);
-	app_btn(f, "Ned", 648.0, y, 280.0, 64.0, 2);
-	app_btn(f, "Ada", 948.0, y, 280.0, 64.0, 2);
-	app_btn(f, "Bram", 1248.0, y, 280.0, 64.0, 2);
-	app_btn(f, "Morning light", 200.0, y + 100.0, 700.0, 280.0, 2);
-	app_btn(f, "New loaf", 940.0, y + 100.0, 700.0, 280.0, 2);
-	let box = text_field(f, "Share something", 2); place_at(box, 200.0, y + 420.0, 1100.0, 64.0);
-	app_btn(f, "Post", 1320.0, y + 420.0, 240.0, 64.0, 0);
+fn app_btn_at(f int, text const byte[:], x f32, y f32, w f32, h f32, look int) {
+	let b = button(f, text, look); place_at(b, x, y, w, h); set_preset(b, 2);
 }
 
-fn app_chat(f int, mode int) {
-	var lx f32 = 48.0;
-	var rx f32 = 480.0;
-	if mode == 1 || mode == 4 { lx = 1480.0; rx = 48.0; }
-	app_title(f, "Wire");
-	app_btn(f, "Mira", lx, 140.0, 360.0, 64.0, 0);
-	app_btn(f, "Sol", lx, 216.0, 360.0, 64.0, 2);
-	app_btn(f, "Ned", lx, 292.0, 360.0, 64.0, 2);
-	app_btn(f, "Ada", lx, 368.0, 360.0, 64.0, 2);
-	app_btn(f, "Bram", lx, 444.0, 360.0, 64.0, 2);
-	app_lab(f, "On my way", rx, 160.0, 700.0);
-	app_lab(f, "See you at six", rx, 240.0, 700.0);
-	app_lab(f, "Bring the notes", rx, 320.0, 700.0);
-	let box = text_field(f, "Message", 2); place_at(box, rx, 900.0, 760.0, 64.0);
-	app_btn(f, "Send", rx + 780.0, 900.0, 200.0, 64.0, 0);
+fn app_social_main(f int) {
+	let box = text_field(f, "Share something", 2); place_at(box, AX, AY, AW - 160.0, 56.0);
+	app_btn_at(f, "Post", AX + AW - 144.0, AY, 144.0, 56.0, 0);
+	let a = card(f, "", 2); place_at(a, AX, AY + 72.0, col2(), 280.0); set_pad(a, 16.0); set_gap(a, 12.0);
+	let t1 = label(a, "Mira", 2); set_px(t1, 400.0, 28.0);
+	let p1 = label(a, "Morning light on the harbor.", 3); set_px(p1, 400.0, 48.0);
+	let b = card(f, "", 2); place_at(b, AX + col2() + 16.0, AY + 72.0, col2(), 280.0); set_pad(b, 16.0); set_gap(b, 12.0);
+	let t2 = label(b, "Sol", 2); set_px(t2, 400.0, 28.0);
+	let p2 = label(b, "New loaf, still warm.", 3); set_px(p2, 400.0, 48.0);
+	app_btn_at(f, "Mira", AX, AY + 368.0, 200.0, 48.0, 0);
+	app_btn_at(f, "Sol", AX + 216.0, AY + 368.0, 200.0, 48.0, 2);
+	app_btn_at(f, "Ned", AX + 432.0, AY + 368.0, 200.0, 48.0, 2);
+	app_btn_at(f, "Ada", AX + 648.0, AY + 368.0, 200.0, 48.0, 2);
 }
 
-fn app_media(f int, mode int) {
-	var ax f32 = 480.0;
-	var ay f32 = 160.0;
-	var qx f32 = 1480.0;
-	if mode == 1 { ax = 640.0; qx = 48.0; }
-	else if mode == 2 { ay = 120.0; }
-	else if mode == 4 { qx = 48.0; ax = 520.0; }
-	app_title(f, "Needle");
-	app_btn(f, "Glass", ax, ay, 720.0, 420.0, 2);
-	app_lab(f, "Glass  -  Side A", ax, ay + 440.0, 520.0);
-	app_btn(f, "Back", ax, ay + 500.0, 200.0, 72.0, 2);
-	app_btn(f, "Play", ax + 220.0, ay + 500.0, 240.0, 72.0, 0);
-	app_btn(f, "Next", ax + 480.0, ay + 500.0, 200.0, 72.0, 2);
-	app_btn(f, "Ember", qx, 160.0, 380.0, 64.0, 2);
-	app_btn(f, "Tide", qx, 240.0, 380.0, 64.0, 2);
-	app_btn(f, "Hearth", qx, 320.0, 380.0, 64.0, 0);
+fn app_chat_main(f int) {
+	app_btn_at(f, "Mira", AX, AY, 320.0, 56.0, 0);
+	app_btn_at(f, "Sol", AX, AY + 64.0, 320.0, 56.0, 2);
+	app_btn_at(f, "Ned", AX, AY + 128.0, 320.0, 56.0, 2);
+	app_btn_at(f, "Ada", AX, AY + 192.0, 320.0, 56.0, 2);
+	app_btn_at(f, "Bram", AX, AY + 256.0, 320.0, 56.0, 2);
+	let thread = card(f, "", 2); place_at(thread, AX + 336.0, AY, AW - 336.0, 520.0); set_pad(thread, 16.0); set_gap(thread, 12.0);
+	let a = label(thread, "On my way", 2); set_px(a, 480.0, 32.0);
+	let b = label(thread, "See you at six", 3); set_px(b, 480.0, 32.0);
+	let c = label(thread, "Bring the notes", 2); set_px(c, 480.0, 32.0);
+	let box = text_field(f, "Message", 2); place_at(box, AX + 336.0, AY + 536.0, AW - 500.0, 56.0);
+	app_btn_at(f, "Send", AX + AW - 148.0, AY + 536.0, 148.0, 56.0, 0);
 }
 
-fn app_editor(f int, mode int) {
-	var fx f32 = 48.0;
-	var ax f32 = 360.0;
-	if mode == 1 || mode == 4 { fx = 1560.0; ax = 48.0; }
-	app_title(f, "Quill");
-	app_btn(f, "Notes", fx, 140.0, 280.0, 64.0, 0);
-	app_btn(f, "Draft", fx, 216.0, 280.0, 64.0, 2);
-	app_btn(f, "Plan", fx, 292.0, 280.0, 64.0, 2);
-	app_btn(f, "Log", fx, 368.0, 280.0, 64.0, 2);
-	app_btn(f, "Notes", ax, 120.0, 220.0, 48.0, 0);
-	app_btn(f, "Draft", ax + 240.0, 120.0, 220.0, 48.0, 2);
-	app_btn(f, "Plan", ax + 480.0, 120.0, 220.0, 48.0, 2);
-	let area = text_area(f, "The gate holds.", 2); place_at(area, ax, 184.0, 1120.0, 720.0);
-	app_lab(f, "Line  12", ax, 920.0, 240.0);
+fn app_media_main(f int) {
+	app_btn_at(f, "Glass", AX, AY, 720.0, 400.0, 2);
+	let t = label(f, "Glass  -  Side A", 1); place_at(t, AX, AY + 416.0, 520.0, 40.0);
+	app_btn_at(f, "Back", AX, AY + 472.0, 160.0, 56.0, 2);
+	app_btn_at(f, "Play", AX + 176.0, AY + 472.0, 200.0, 56.0, 0);
+	app_btn_at(f, "Next", AX + 392.0, AY + 472.0, 160.0, 56.0, 2);
+	app_btn_at(f, "Ember", AX + 760.0, AY, 400.0, 64.0, 2);
+	app_btn_at(f, "Tide", AX + 760.0, AY + 80.0, 400.0, 64.0, 2);
+	app_btn_at(f, "Hearth", AX + 760.0, AY + 160.0, 400.0, 64.0, 0);
+	let sp = chart(f, 5, 2); place_at(sp, AX + 760.0, AY + 248.0, 400.0, 80.0);
 }
 
-fn app_sets(f int, mode int) {
-	var x f32 = 200.0;
-	var y f32 = 160.0;
-	if mode == 1 { x = 480.0; }
-	else if mode == 2 { y = 280.0; }
-	else if mode == 4 { x = 480.0; y = 200.0; }
-	app_title(f, "Prefs");
-	let a = toggle(f, "Dark", 1, 0); place_at(a, x, y, 520.0, 64.0);
-	let b = toggle(f, "Motion", 0, 2); place_at(b, x, y + 80.0, 520.0, 64.0);
-	let c = toggle(f, "Sound", 1, 0); place_at(c, x, y + 160.0, 520.0, 64.0);
-	let d = toggle(f, "Tips", 0, 2); place_at(d, x + 560.0, y, 520.0, 64.0);
-	let e = toggle(f, "Large type", 1, 0); place_at(e, x + 560.0, y + 80.0, 520.0, 64.0);
-	let f2 = toggle(f, "Sync", 1, 2); place_at(f2, x + 560.0, y + 160.0, 520.0, 64.0);
-	let s = slider(f, 0.7, 0); place_at(s, x, y + 260.0, 1080.0, 32.0);
-	app_lab(f, "Text size", x, y + 312.0, 280.0);
+fn app_editor_main(f int) {
+	app_btn_at(f, "Notes", AX, AY, 240.0, 48.0, 0);
+	app_btn_at(f, "Draft", AX, AY + 56.0, 240.0, 48.0, 2);
+	app_btn_at(f, "Plan", AX, AY + 112.0, 240.0, 48.0, 2);
+	app_btn_at(f, "Log", AX, AY + 168.0, 240.0, 48.0, 2);
+	app_btn_at(f, "Notes", AX + 256.0, AY, 200.0, 40.0, 0);
+	app_btn_at(f, "Draft", AX + 472.0, AY, 200.0, 40.0, 2);
+	app_btn_at(f, "Plan", AX + 688.0, AY, 200.0, 40.0, 2);
+	let area = text_area(f, "The gate holds.", 2); place_at(area, AX + 256.0, AY + 56.0, AW - 256.0, 640.0);
+	let st = label(f, "Line  12", 3); place_at(st, AX + 256.0, AY + 712.0, 240.0, 32.0);
 }
 
-fn app_onboard(f int, mode int) {
-	var y f32 = 200.0;
-	if mode == 1 { y = 280.0; }
-	else if mode == 3 { y = 160.0; }
-	else if mode == 4 { y = 320.0; }
-	app_title(f, "Welcome");
-	app_btn(f, "1  Name", 160.0, y, 480.0, 280.0, 0);
-	app_btn(f, "2  Place", 720.0, y, 480.0, 280.0, 2);
-	app_btn(f, "3  Ready", 1280.0, y, 480.0, 280.0, 2);
-	let bar = health_bar(f, 0.66, 0); place_at(bar, 360.0, y + 320.0, 1200.0, 24.0);
-	app_lab(f, "Step  2 of 3", 360.0, y + 360.0, 320.0);
-	app_btn(f, "Next", 1120.0, y + 400.0, 240.0, 72.0, 0);
-	app_btn(f, "Skip", 1400.0, y + 400.0, 200.0, 72.0, 2);
+fn app_sets_main(f int) {
+	let a = toggle(f, "Dark", 1, 0); place_at(a, AX, AY, 520.0, 56.0);
+	let b = toggle(f, "Motion", 0, 2); place_at(b, AX, AY + 72.0, 520.0, 56.0);
+	let c = toggle(f, "Sound", 1, 0); place_at(c, AX, AY + 144.0, 520.0, 56.0);
+	let d = toggle(f, "Tips", 0, 2); place_at(d, AX + 560.0, AY, 520.0, 56.0);
+	let e = toggle(f, "Large type", 1, 0); place_at(e, AX + 560.0, AY + 72.0, 520.0, 56.0);
+	let g = toggle(f, "Sync", 1, 2); place_at(g, AX + 560.0, AY + 144.0, 520.0, 56.0);
+	let s = slider(f, 0.7, 0); place_at(s, AX, AY + 224.0, 1080.0, 32.0);
+	let lab = label(f, "Text size", 3); place_at(lab, AX, AY + 272.0, 240.0, 32.0);
 }
 
-fn app_auth(f int, mode int) {
-	var x f32 = 560.0;
-	if mode == 1 { x = 200.0; }
-	else if mode == 2 { x = 880.0; }
-	else if mode == 4 { x = 360.0; }
-	app_title(f, "Sign in");
-	let a = text_field(f, "Email", 2); place_at(a, x, 200.0, 800.0, 64.0);
-	let b = text_field(f, "Password", 2); place_at(b, x, 284.0, 800.0, 64.0);
-	app_btn(f, "Sign in", x, 380.0, 380.0, 72.0, 0);
-	app_btn(f, "Create", x + 420.0, 380.0, 380.0, 72.0, 2);
-	app_btn(f, "Forgot", x, 480.0, 280.0, 56.0, 5);
-	let t = toggle(f, "Remember", 1, 0); place_at(t, x + 320.0, 476.0, 480.0, 64.0);
-	app_lab(f, "Secure", x, 580.0, 240.0);
+fn app_onboard_main(f int) {
+	let w = col3();
+	app_btn_at(f, "1  Name", AX, AY, w, 240.0, 0);
+	app_btn_at(f, "2  Place", AX + w + 16.0, AY, w, 240.0, 2);
+	app_btn_at(f, "3  Ready", AX + (w + 16.0) * 2.0, AY, w, 240.0, 2);
+	let bar = health_bar(f, 0.66, 0); place_at(bar, AX, AY + 264.0, AW, 16.0);
+	let lab = label(f, "Step  2 of 3", 2); place_at(lab, AX, AY + 296.0, 320.0, 32.0);
+	app_btn_at(f, "Next", AX + AW - 360.0, AY + 288.0, 160.0, 48.0, 0);
+	app_btn_at(f, "Skip", AX + AW - 184.0, AY + 288.0, 184.0, 48.0, 2);
 }
 
-fn app_price(f int, mode int) {
-	var y f32 = 180.0;
-	if mode == 1 { y = 240.0; }
-	else if mode == 3 { y = 200.0; }
-	else if mode == 4 { y = 160.0; }
-	app_title(f, "Plans");
-	app_btn(f, "Free  0", 120.0, y, 520.0, 420.0, 2);
-	app_btn(f, "Plus  12", 700.0, y, 520.0, 420.0, 0);
-	app_btn(f, "Team  28", 1280.0, y, 520.0, 420.0, 2);
-	let t = toggle(f, "Annual", 1, 0); place_at(t, 120.0, y + 460.0, 400.0, 64.0);
-	app_lab(f, "Current  Plus", 560.0, y + 472.0, 320.0);
-	app_lab(f, "Save  20", 920.0, y + 472.0, 280.0);
-	app_btn(f, "Choose", 1480.0, y + 452.0, 280.0, 72.0, 0);
+fn app_auth_main(f int) {
+	let x = AX + (AW - 640.0) / 2.0;
+	let cardb = card(f, "", 2); place_at(cardb, x, AY, 640.0, 420.0); set_pad(cardb, 16.0); set_gap(cardb, 12.0);
+	let h = label(cardb, "Sign in", 1); set_px(h, 608.0, 40.0);
+	let a = text_field(cardb, "Email", 2); set_px(a, 608.0, 48.0);
+	let b = text_field(cardb, "Password", 2); set_px(b, 608.0, 48.0);
+	let row = flex(cardb, DIR_ROW); set_px(row, 608.0, 48.0); set_gap(row, 16.0); set_pad(row, 0.0);
+	let go = button(row, "Sign in", 0); set_px(go, 200.0, 48.0); set_preset(go, 2);
+	let cr = button(row, "Create", 2); set_px(cr, 200.0, 48.0); set_preset(cr, 2);
+	let t = toggle(cardb, "Remember", 1, 0); set_px(t, 320.0, 48.0);
+	let fp = button(f, "Forgot", 5); place_at(fp, x, AY + 436.0, 200.0, 48.0); set_preset(fp, 2);
 }
 
-fn app_docs(f int, mode int) {
-	var nx f32 = 48.0;
-	var tx f32 = 1500.0;
-	var bx f32 = 400.0;
-	if mode == 1 || mode == 4 { nx = 1560.0; tx = 48.0; bx = 400.0; }
-	app_title(f, "Guide");
-	app_btn(f, "Start", nx, 140.0, 280.0, 64.0, 0);
-	app_btn(f, "Layout", nx, 216.0, 280.0, 64.0, 2);
-	app_btn(f, "Type", nx, 292.0, 280.0, 64.0, 2);
-	app_btn(f, "Color", nx, 368.0, 280.0, 64.0, 2);
-	app_lab(f, "Build a screen", bx, 152.0, 700.0);
-	app_lab(f, "Place the title, then the body.", bx, 220.0, 900.0);
-	app_lab(f, "Keep the measure near 70 characters.", bx, 280.0, 1000.0);
-	app_btn(f, "On this page", tx, 152.0, 320.0, 64.0, 2);
-	app_btn(f, "Next", tx, 232.0, 320.0, 64.0, 2);
+fn app_price_main(f int) {
+	let w = col3();
+	app_btn_at(f, "Free  0", AX, AY, w, 360.0, 2);
+	app_btn_at(f, "Plus  12", AX + w + 16.0, AY, w, 360.0, 0);
+	app_btn_at(f, "Team  28", AX + (w + 16.0) * 2.0, AY, w, 360.0, 2);
+	let t = toggle(f, "Annual", 1, 0); place_at(t, AX, AY + 376.0, 360.0, 56.0);
+	let cur = label(f, "Current  Plus", 2); place_at(cur, AX + 376.0, AY + 384.0, 320.0, 40.0);
+	app_btn_at(f, "Choose", AX + AW - 240.0, AY + 376.0, 240.0, 56.0, 0);
 }
 
-fn app_cal(f int, mode int) {
-	var y f32 = 160.0;
-	if mode == 1 { y = 360.0; }
-	else if mode == 3 { y = 200.0; }
-	else if mode == 4 { y = 240.0; }
-	app_title(f, "Week");
-	app_btn(f, "Mon", 48.0, y, 248.0, 240.0, 2);
-	app_btn(f, "Tue", 312.0, y, 248.0, 240.0, 2);
-	app_btn(f, "Wed", 576.0, y, 248.0, 240.0, 0);
-	app_btn(f, "Thu", 840.0, y, 248.0, 240.0, 2);
-	app_btn(f, "Fri", 1104.0, y, 248.0, 240.0, 2);
-	app_btn(f, "Sat", 1368.0, y, 248.0, 240.0, 2);
-	app_btn(f, "Sun", 1632.0, y, 248.0, 240.0, 2);
-	app_lab(f, "Wed  14  Review", 48.0, y + 280.0, 480.0);
-	app_btn(f, "Today", 1480.0, y + 268.0, 240.0, 64.0, 0);
+fn app_docs_main(f int) {
+	app_btn_at(f, "Start", AX, AY, 240.0, 48.0, 0);
+	app_btn_at(f, "Layout", AX, AY + 56.0, 240.0, 48.0, 2);
+	app_btn_at(f, "Type", AX, AY + 112.0, 240.0, 48.0, 2);
+	app_btn_at(f, "Color", AX, AY + 168.0, 240.0, 48.0, 2);
+	let body = card(f, "", 2); place_at(body, AX + 256.0, AY, AW - 560.0, 400.0); set_pad(body, 16.0); set_gap(body, 12.0);
+	let h = label(body, "Build a screen", 1); set_px(h, 600.0, 40.0);
+	let p = label(body, "Place the title, then the body.", 3); set_px(p, 600.0, 64.0);
+	let q = label(body, "Keep the measure near 70 characters.", 3); set_px(q, 640.0, 64.0);
+	app_btn_at(f, "On this page", AX + AW - 280.0, AY, 280.0, 48.0, 2);
+	app_btn_at(f, "Next", AX + AW - 280.0, AY + 64.0, 280.0, 48.0, 2);
 }
 
-fn app_kanban(f int, mode int) {
-	var y f32 = 160.0;
-	if mode == 1 { y = 240.0; }
-	else if mode == 3 { y = 200.0; }
-	else if mode == 4 { y = 180.0; }
-	app_title(f, "Board");
-	app_lab(f, "To do", 48.0, y, 240.0);
-	app_lab(f, "Doing", 672.0, y, 240.0);
-	app_lab(f, "Done", 1296.0, y, 240.0);
-	app_btn(f, "Draft spec", 48.0, y + 56.0, 560.0, 160.0, 2);
-	app_btn(f, "Ask Mira", 48.0, y + 232.0, 560.0, 160.0, 2);
-	app_btn(f, "Layout", 672.0, y + 56.0, 560.0, 160.0, 0);
-	app_btn(f, "Colors", 672.0, y + 232.0, 560.0, 160.0, 2);
-	app_btn(f, "Ship notes", 1296.0, y + 56.0, 560.0, 160.0, 2);
-	app_btn(f, "Review", 1296.0, y + 232.0, 560.0, 160.0, 2);
-}
-
-fn app_maps(f int, mode int) {
-	var x f32 = 48.0;
-	var y f32 = 160.0;
-	var px f32 = 1560.0;
-	if mode == 1 { x = 400.0; px = 48.0; }
-	else if mode == 2 { y = 200.0; }
-	else if mode == 4 { y = 180.0; px = 48.0; x = 400.0; }
-	app_title(f, "Atlas");
-	let q = text_field(f, "Search places", 2); place_at(q, 48.0, 108.0, 640.0, 48.0);
-	let map = minimap(f, 0); place_at(map, x, y, 1360.0, 760.0); N[map].i3 = 14;
-	app_btn(f, "Harbor", px, 160.0, 320.0, 64.0, 0);
-	app_btn(f, "Mill", px, 240.0, 320.0, 64.0, 2);
-	app_btn(f, "Park", px, 320.0, 320.0, 64.0, 2);
-	app_btn(f, "Route", px, 400.0, 320.0, 64.0, 0);
-	app_lab(f, "4 pins", px, 480.0, 240.0);
-}
-
-fn app_bank(f int, mode int) {
-	var y f32 = 200.0;
-	if mode == 1 { y = 160.0; }
-	else if mode == 3 { y = 280.0; }
-	app_title(f, "Ledger");
-	let bal = label(f, "12,480", 0); place_at(bal, 80.0, y, 480.0, 72.0);
-	app_lab(f, "Available", 80.0, y + 80.0, 280.0);
-	app_btn(f, "Send", 80.0, y + 160.0, 240.0, 72.0, 0);
-	app_btn(f, "Request", 340.0, y + 160.0, 280.0, 72.0, 2);
-	app_btn(f, "Cards", 640.0, y + 160.0, 240.0, 72.0, 2);
-	app_btn(f, "Save", 900.0, y + 160.0, 240.0, 72.0, 2);
-	let tb = table(f, 4, 3, 2); place_at(tb, 80.0, y + 280.0, 1200.0, 240.0);
-	table_set(tb, -1, 0, "When"); table_set(tb, -1, 1, "Who"); table_set(tb, -1, 2, "Sum");
-	table_set(tb, 0, 0, "Today"); table_set(tb, 0, 1, "Harbor"); table_set(tb, 0, 2, "18");
-	table_set(tb, 1, 0, "Tue"); table_set(tb, 1, 1, "Mira"); table_set(tb, 1, 2, "40");
-	table_set(tb, 2, 0, "Mon"); table_set(tb, 2, 1, "Rent"); table_set(tb, 2, 2, "900");
-	table_set(tb, 3, 0, "Fri"); table_set(tb, 3, 1, "Pay"); table_set(tb, 3, 2, "2400");
-}
-
-fn app_health(f int, mode int) {
-	var y f32 = 160.0;
-	if mode == 1 { y = 220.0; }
-	else if mode == 3 { y = 180.0; }
-	else if mode == 4 { y = 200.0; }
-	app_title(f, "Pulse");
-	app_btn(f, "Move  82", 80.0, y, 480.0, 200.0, 0);
-	app_btn(f, "Sleep  7h", 600.0, y, 480.0, 200.0, 2);
-	app_btn(f, "Heart  62", 1120.0, y, 480.0, 200.0, 1);
-	let ch = chart(f, 1, 0); place_at(ch, 80.0, y + 240.0, 1000.0, 320.0);
-	let bar = health_bar(f, 0.82, 0); place_at(bar, 1120.0, y + 280.0, 640.0, 24.0);
-	app_lab(f, "Goal  82%", 1120.0, y + 320.0, 280.0);
-	app_lab(f, "This week", 80.0, y + 580.0, 280.0);
-}
-
-fn app_list(f int, mode int, g int) {
-	var x f32 = 200.0;
-	var y f32 = 160.0;
-	if mode == 1 { x = 1080.0; }
-	else if mode == 2 { y = 280.0; }
-	else if mode == 3 { x = 80.0; }
-	else if mode == 4 { y = 200.0; x = 640.0; }
-	if g == 24 {
-		app_title(f, "Boards");
-		app_btn(f, "Launch", x, y, 480.0, 72.0, 0);
-		app_btn(f, "Billing", x, y + 88.0, 480.0, 72.0, 2);
-		app_btn(f, "Search", x, y + 176.0, 480.0, 72.0, 2);
-		app_lab(f, "3 boards", x, y + 272.0, 240.0);
-	} else if g == 26 {
-		app_title(f, "Orders");
-		app_btn(f, "Open  4", x, y, 480.0, 72.0, 0);
-		app_btn(f, "Packed  2", x, y + 88.0, 480.0, 72.0, 2);
-		app_btn(f, "Sent  11", x, y + 176.0, 480.0, 72.0, 2);
-		app_lab(f, "Harbor", x, y + 272.0, 240.0);
-	} else if g == 29 {
-		app_title(f, "Library");
-		app_btn(f, "Glass", x, y, 480.0, 72.0, 0);
-		app_btn(f, "Ember", x, y + 88.0, 480.0, 72.0, 2);
-		app_btn(f, "Tide", x, y + 176.0, 480.0, 72.0, 2);
-		app_lab(f, "3 songs", x, y + 272.0, 240.0);
-	} else if g == 39 {
-		app_title(f, "Cards");
-		app_btn(f, "Daily", x, y, 480.0, 72.0, 0);
-		app_btn(f, "Save", x, y + 88.0, 480.0, 72.0, 2);
-		app_btn(f, "Travel", x, y + 176.0, 480.0, 72.0, 2);
-		app_lab(f, "Ledger", x, y + 272.0, 240.0);
-	} else {
-		app_title(f, "List");
-		app_btn(f, "One", x, y, 480.0, 72.0, 0);
-		app_btn(f, "Two", x, y + 88.0, 480.0, 72.0, 2);
-		app_btn(f, "Three", x, y + 176.0, 480.0, 72.0, 2);
-		app_lab(f, "Recent", x, y + 272.0, 240.0);
+fn app_cal_main(f int) {
+	var i = 0;
+	while i < 8 {
+		var txt = "9";
+		if i == 1 { txt = "10"; }
+		else if i == 2 { txt = "11"; }
+		else if i == 3 { txt = "12"; }
+		else if i == 4 { txt = "1"; }
+		else if i == 5 { txt = "2"; }
+		else if i == 6 { txt = "3"; }
+		else if i == 7 { txt = "4"; }
+		let lab = label(f, txt, 3); place_at(lab, AX, AY + i as f32 * 80.0, 64.0, 28.0);
+		i += 1;
 	}
+	app_btn_at(f, "Standup", AX + 80.0, AY + 80.0, 480.0, 64.0, 0);
+	app_btn_at(f, "Review", AX + 80.0, AY + 240.0, 520.0, 144.0, 2);
+	app_btn_at(f, "Lunch", AX + 640.0, AY + 320.0, 400.0, 64.0, 1);
+	let day = label(f, "Wednesday  14", 1); place_at(day, AX + 640.0, AY, 400.0, 40.0);
 }
 
-fn app_browse(f int, mode int, g int) {
-	var y f32 = 140.0;
-	if mode == 1 { y = 240.0; }
-	else if mode == 3 { y = 200.0; }
-	app_title(f, if g == 36 { "Month" } else if g == 35 { "Index" } else if g == 38 { "Places" } else { "Browse" });
-	let ch = chart(f, g % 5, 0); place_at(ch, 80.0, y, 1000.0, 480.0);
-	app_btn(f, "All", 1160.0, y, 280.0, 64.0, 0);
-	app_btn(f, "Mine", 1480.0, y, 280.0, 64.0, 2);
-	app_btn(f, "Week", 1160.0, y + 88.0, 600.0, 64.0, 2);
-	app_lab(f, "Filtered", 1160.0, y + 180.0, 280.0);
+fn app_kanban_main(f int) {
+	let w = 496.0;
+	let x0 = AX;
+	let x1 = AX + 512.0;
+	let x2 = AX + 1024.0;
+	let h0 = label(f, "To do", 2); place_at(h0, x0, AY, 200.0, 32.0);
+	let h1 = label(f, "Doing", 2); place_at(h1, x1, AY, 200.0, 32.0);
+	let h2 = label(f, "Done", 2); place_at(h2, x2, AY, 200.0, 32.0);
+	kcard(f, x0, AY + 48.0, w, "Draft spec", "Design", "M", "Fri 14");
+	kcard(f, x0, AY + 192.0, w, "Ask Mira", "Talk", "S", "Mon 17");
+	kcard(f, x1, AY + 48.0, w, "Layout", "Build", "N", "Wed 12");
+	kcard(f, x1, AY + 192.0, w, "Colors", "Build", "A", "Thu 13");
+	kcard(f, x2, AY + 48.0, w, "Ship notes", "Done", "B", "Tue 11");
+	kcard(f, x2, AY + 192.0, w, "Review", "Done", "M", "Fri 7");
+}
+
+fn app_maps_main(f int) {
+	let map = minimap(f, 2); place_at(map, AX, AY, AW - 336.0, 760.0); N[map].i3 = 38;
+	let side = card(f, "", 2); place_at(side, AX + AW - 320.0, AY, 320.0, 360.0); set_pad(side, 16.0); set_gap(side, 12.0);
+	let h = label(side, "Places", 2); set_px(h, 288.0, 28.0);
+	let a = button(side, "Harbor", 0); set_px(a, 288.0, 44.0); set_preset(a, 2);
+	let b = button(side, "Mill", 2); set_px(b, 288.0, 44.0); set_preset(b, 2);
+	let c = button(side, "Oak", 2); set_px(c, 288.0, 44.0); set_preset(c, 2);
+	let n = label(f, "12 min", 3); place_at(n, AX + AW - 320.0, AY + 376.0, 200.0, 32.0);
+}
+
+fn app_bank_main(f int) {
+	let bal = card(f, "", 2); place_at(bal, AX, AY, 560.0, 140.0); set_pad(bal, 16.0); set_gap(bal, 8.0);
+	let cap = label(bal, "Available", 3); set_px(cap, 400.0, 24.0);
+	let num = label(bal, "12,480", 1); set_px(num, 400.0, 40.0);
+	app_btn_at(f, "Send", AX + 576.0, AY, 200.0, 64.0, 0);
+	app_btn_at(f, "Request", AX + 792.0, AY, 220.0, 64.0, 2);
+	app_btn_at(f, "Cards", AX + 1028.0, AY, 200.0, 64.0, 2);
+	let ch = chart(f, 3, 2); place_at(ch, AX + 576.0, AY + 80.0, AW - 576.0, 200.0);
+	txrow(f, AX, AY + 296.0, AW, 5, "Harbor", "Today", "-18");
+	txrow(f, AX, AY + 368.0, AW, 11, "Mira", "Tue", "-40");
+	txrow(f, AX, AY + 440.0, AW, 8, "Rent", "Mon", "-900");
+	txrow(f, AX, AY + 512.0, AW, 5, "Pay", "Fri", "+2,400");
+}
+
+fn app_health_main(f int) {
+	let w = col3();
+	metric(f, AX, AY, w, "Move", "82");
+	metric(f, AX + w + 16.0, AY, w, "Sleep", "7h");
+	metric(f, AX + (w + 16.0) * 2.0, AY, w, "Heart", "62");
+	let ch = chart(f, 1, 2); place_at(ch, AX, AY + 160.0, AW - 400.0, 320.0);
+	let dn = chart(f, 2, 2); place_at(dn, AX + AW - 384.0, AY + 160.0, 384.0, 320.0);
+	let bar = health_bar(f, 0.82, 0); place_at(bar, AX, AY + 496.0, AW, 16.0);
+	let lab = label(f, "Goal  82%", 2); place_at(lab, AX, AY + 524.0, 240.0, 32.0);
+}
+
+fn home_cards(f int, a const byte[:], b const byte[:], c const byte[:]) {
+	let hero = card(f, "", 2); place_at(hero, AX, AY, AW, 120.0); set_pad(hero, 16.0); set_gap(hero, 8.0);
+	let h = label(hero, a, 1); set_px(h, AW - 32.0, 40.0);
+	let s = label(hero, b, 3); set_px(s, AW - 32.0, 28.0);
+	let w = 496.0;
+	let c0 = card(f, "", 2); place_at(c0, AX, AY + 136.0, w, 112.0); set_pad(c0, 16.0); set_gap(c0, 8.0);
+	let t0 = label(c0, c, 2); set_px(t0, w - 32.0, 32.0);
+	let m0 = label(c0, "Updated today", 3); set_px(m0, w - 32.0, 28.0);
+	let c1 = card(f, "", 2); place_at(c1, AX + 512.0, AY + 136.0, w, 112.0); set_pad(c1, 16.0); set_gap(c1, 8.0);
+	let t1 = label(c1, "Second", 2); set_px(t1, w - 32.0, 32.0);
+	let m1 = label(c1, "2 people", 3); set_px(m1, w - 32.0, 28.0);
+	let c2 = card(f, "", 2); place_at(c2, AX + 1024.0, AY + 136.0, w, 112.0); set_pad(c2, 16.0); set_gap(c2, 8.0);
+	let t2 = label(c2, "Archive", 2); set_px(t2, w - 32.0, 32.0);
+	let m2 = label(c2, "Quiet", 3); set_px(m2, w - 32.0, 28.0);
+}
+
+fn app_home_body(f int, g int) {
+	if g == 24 { home_cards(f, "Good morning", "3 boards need you", "Launch"); return; }
+	if g == 25 {
+		let q = text_field(f, "Find a person", 2); place_at(q, AX, AY, AW - 240.0, 48.0);
+		app_btn_at(f, "Invite", AX + AW - 220.0, AY, 220.0, 48.0, 0);
+		metric(f, AX, AY + 64.0, 400.0, "People", "5");
+		metric(f, AX + 416.0, AY + 64.0, 400.0, "Admins", "2");
+		metric(f, AX + 832.0, AY + 64.0, 400.0, "Guests", "1");
+		return;
+	}
+	if g == 26 {
+		app_btn_at(f, "Tote  18", AX, AY, AW - 400.0, 280.0, 0);
+		app_btn_at(f, "Mugs", AX + AW - 384.0, AY, 384.0, 80.0, 2);
+		app_btn_at(f, "Lamps", AX + AW - 384.0, AY + 96.0, 384.0, 80.0, 2);
+		app_btn_at(f, "Cloth", AX + AW - 384.0, AY + 192.0, 384.0, 80.0, 2);
+		return;
+	}
+	if g == 27 {
+		let box = text_field(f, "What is new?", 2); place_at(box, AX, AY, AW - 160.0, 72.0);
+		app_btn_at(f, "Post", AX + AW - 144.0, AY, 144.0, 72.0, 0);
+		let a = card(f, "", 2); place_at(a, AX, AY + 88.0, AW, 160.0); set_pad(a, 16.0); set_gap(a, 8.0);
+		let t = label(a, "Mira  liked your note", 2); set_px(t, 600.0, 32.0);
+		let s = label(a, "2 hours ago", 3); set_px(s, 240.0, 28.0);
+		return;
+	}
+	if g == 28 {
+		let c = card(f, "", 2); place_at(c, AX + (AW - 640.0) / 2.0, AY + 40.0, 640.0, 280.0); set_pad(c, 16.0); set_gap(c, 16.0);
+		let h = label(c, "Start a chat", 1); set_px(h, 608.0, 48.0);
+		let row = flex(c, DIR_ROW); set_px(row, 608.0, 56.0); set_gap(row, 16.0); set_pad(row, 0.0);
+		let a = button(row, "New", 0); set_px(a, 200.0, 56.0); set_preset(a, 2);
+		let b = button(row, "Join", 2); set_px(b, 200.0, 56.0); set_preset(b, 2);
+		return;
+	}
+	if g == 29 {
+		app_btn_at(f, "Glass", AX, AY, 640.0, 320.0, 2);
+		app_btn_at(f, "Ember", AX + 656.0, AY, 400.0, 96.0, 2);
+		app_btn_at(f, "Tide", AX + 656.0, AY + 112.0, 400.0, 96.0, 0);
+		app_btn_at(f, "Hearth", AX + 656.0, AY + 224.0, 400.0, 96.0, 2);
+		return;
+	}
+	if g == 30 {
+		app_btn_at(f, "Notes", AX, AY, AW, 64.0, 0);
+		app_btn_at(f, "Draft", AX, AY + 80.0, AW, 64.0, 2);
+		app_btn_at(f, "Plan", AX, AY + 160.0, AW, 64.0, 2);
+		app_btn_at(f, "Log", AX, AY + 240.0, AW, 64.0, 2);
+		return;
+	}
+	if g == 31 {
+		let c = card(f, "", 2); place_at(c, AX, AY, 640.0, 200.0); set_pad(c, 16.0); set_gap(c, 8.0);
+		let n = label(c, "Mira Cole", 1); set_px(n, 400.0, 40.0);
+		let m = label(c, "mira@northstar", 3); set_px(m, 400.0, 28.0);
+		app_btn_at(f, "Profile", AX + 656.0, AY, 280.0, 88.0, 0);
+		app_btn_at(f, "Security", AX + 952.0, AY, 280.0, 88.0, 2);
+		app_btn_at(f, "Devices", AX + 656.0, AY + 104.0, 280.0, 88.0, 2);
+		app_btn_at(f, "Billing", AX + 952.0, AY + 104.0, 280.0, 88.0, 2);
+		return;
+	}
+	if g == 32 { app_onboard_main(f); return; }
+	if g == 33 { app_auth_main(f); return; }
+	if g == 34 { app_price_main(f); return; }
+	if g == 35 {
+		let q = text_field(f, "Search the guide", 2); place_at(q, AX, AY, AW, 56.0);
+		app_btn_at(f, "Build a screen", AX, AY + 72.0, AW, 72.0, 2);
+		app_btn_at(f, "Type and measure", AX, AY + 160.0, AW, 72.0, 2);
+		app_btn_at(f, "Color and contrast", AX, AY + 248.0, AW, 72.0, 0);
+		return;
+	}
+	if g == 36 {
+		app_btn_at(f, "Mon", AX, AY, 200.0, 120.0, 2);
+		app_btn_at(f, "Tue", AX + 216.0, AY, 200.0, 120.0, 2);
+		app_btn_at(f, "Wed", AX + 432.0, AY, 200.0, 120.0, 0);
+		app_btn_at(f, "Thu", AX + 648.0, AY, 200.0, 120.0, 2);
+		app_btn_at(f, "Fri", AX + 864.0, AY, 200.0, 120.0, 2);
+		let next = label(f, "Next  Review at 11", 2); place_at(next, AX, AY + 144.0, 480.0, 40.0);
+		return;
+	}
+	if g == 37 {
+		home_cards(f, "Boards", "Pick a board to open", "Launch");
+		return;
+	}
+	if g == 38 {
+		let q = text_field(f, "Search places", 2); place_at(q, AX, AY, AW, 56.0);
+		app_btn_at(f, "Harbor", AX, AY + 72.0, 400.0, 72.0, 0);
+		app_btn_at(f, "Mill", AX + 416.0, AY + 72.0, 400.0, 72.0, 2);
+		app_btn_at(f, "Oak", AX + 832.0, AY + 72.0, 400.0, 72.0, 2);
+		return;
+	}
+	if g == 39 {
+		let bal = card(f, "", 2); place_at(bal, AX, AY, AW, 160.0); set_pad(bal, 16.0); set_gap(bal, 8.0);
+		let cap = label(bal, "Available", 3); set_px(cap, 400.0, 28.0);
+		let num = label(bal, "12,480", 1); set_px(num, 480.0, 48.0);
+		app_btn_at(f, "Send", AX, AY + 176.0, 240.0, 64.0, 0);
+		app_btn_at(f, "Request", AX + 256.0, AY + 176.0, 240.0, 64.0, 2);
+		app_btn_at(f, "Cards", AX + 512.0, AY + 176.0, 240.0, 64.0, 2);
+		return;
+	}
+	metric(f, AX, AY, 496.0, "Move", "82");
+	metric(f, AX + 512.0, AY, 496.0, "Sleep", "7h");
+	metric(f, AX + 1024.0, AY, 496.0, "Heart", "62");
+}
+
+fn app_menu_body(f int, g int) {
+	if g == 24 {
+		let q = text_field(f, "Jump to", 2); place_at(q, AX, AY, 640.0, 48.0);
+		app_btn_at(f, "New issue", AX, AY + 64.0, 640.0, 48.0, 0);
+		app_btn_at(f, "Boards", AX, AY + 120.0, 640.0, 48.0, 2);
+		app_btn_at(f, "People", AX, AY + 176.0, 640.0, 48.0, 2);
+		return;
+	}
+	if g == 25 {
+		let c = card(f, "", 2); place_at(c, AX, AY, 480.0, 160.0); set_pad(c, 16.0); set_gap(c, 8.0);
+		let n = label(c, "Mira Cole", 1); set_px(n, 400.0, 36.0);
+		let r = label(c, "Owner", 3); set_px(r, 200.0, 28.0);
+		app_btn_at(f, "Sign out", AX, AY + 176.0, 240.0, 48.0, 5);
+		return;
+	}
+	if g == 26 {
+		txrow(f, AX, AY, AW, 7, "Tote", "Qty  1", "18");
+		txrow(f, AX, AY + 72.0, AW, 7, "Mug", "Qty  2", "24");
+		app_btn_at(f, "Checkout", AX, AY + 160.0, 240.0, 56.0, 0);
+		return;
+	}
+	if g == 27 {
+		let a = label(f, "Mira liked a note", 2); place_at(a, AX, AY, 640.0, 40.0);
+		let b = label(f, "Sol started a thread", 2); place_at(b, AX, AY + 48.0, 640.0, 40.0);
+		let c = label(f, "Ada mentioned you", 2); place_at(c, AX, AY + 96.0, 640.0, 40.0);
+		app_btn_at(f, "Mark read", AX, AY + 160.0, 240.0, 48.0, 0);
+		return;
+	}
+	if g == 28 {
+		let a = toggle(f, "Online", 1, 0); place_at(a, AX, AY, 400.0, 56.0);
+		let b = toggle(f, "Away", 0, 2); place_at(b, AX, AY + 72.0, 400.0, 56.0);
+		let c = toggle(f, "Quiet", 0, 2); place_at(c, AX, AY + 144.0, 400.0, 56.0);
+		return;
+	}
+	if g == 29 {
+		app_btn_at(f, "Ember", AX, AY, 480.0, 64.0, 2);
+		app_btn_at(f, "Tide", AX, AY + 80.0, 480.0, 64.0, 0);
+		app_btn_at(f, "Hearth", AX, AY + 160.0, 480.0, 64.0, 2);
+		return;
+	}
+	if g == 30 {
+		app_btn_at(f, "Go to file", AX, AY, 480.0, 48.0, 0);
+		app_btn_at(f, "Find in notes", AX, AY + 64.0, 480.0, 48.0, 2);
+		app_btn_at(f, "Command", AX, AY + 128.0, 480.0, 48.0, 2);
+		return;
+	}
+	if g == 33 {
+		app_btn_at(f, "Profile", AX, AY, 400.0, 64.0, 2);
+		app_btn_at(f, "Security", AX, AY + 80.0, 400.0, 64.0, 2);
+		app_btn_at(f, "Sign out", AX, AY + 160.0, 400.0, 64.0, 5);
+		return;
+	}
+	if g == 34 {
+		app_btn_at(f, "Free", AX, AY, 280.0, 120.0, 2);
+		app_btn_at(f, "Plus", AX + 296.0, AY, 280.0, 120.0, 0);
+		app_btn_at(f, "Team", AX + 592.0, AY, 280.0, 120.0, 2);
+		return;
+	}
+	if g == 36 {
+		app_btn_at(f, "Work", AX, AY, 360.0, 64.0, 0);
+		app_btn_at(f, "Personal", AX, AY + 80.0, 360.0, 64.0, 2);
+		app_btn_at(f, "Birthdays", AX, AY + 160.0, 360.0, 64.0, 2);
+		return;
+	}
+	if g == 37 {
+		app_btn_at(f, "Launch", AX, AY, 400.0, 72.0, 0);
+		app_btn_at(f, "Growth", AX + 416.0, AY, 400.0, 72.0, 2);
+		app_btn_at(f, "Archive", AX + 832.0, AY, 400.0, 72.0, 2);
+		return;
+	}
+	if g == 38 {
+		let a = toggle(f, "Transit", 1, 0); place_at(a, AX, AY, 400.0, 56.0);
+		let b = toggle(f, "Parks", 1, 2); place_at(b, AX, AY + 72.0, 400.0, 56.0);
+		let c = toggle(f, "Labels", 0, 2); place_at(c, AX, AY + 144.0, 400.0, 56.0);
+		return;
+	}
+	if g == 39 {
+		app_btn_at(f, "Daily", AX, AY, 480.0, 88.0, 0);
+		app_btn_at(f, "Save", AX + 496.0, AY, 480.0, 88.0, 2);
+		app_btn_at(f, "Travel", AX + 992.0, AY, 480.0, 88.0, 2);
+		return;
+	}
+	if g == 40 {
+		let a = toggle(f, "Move goal", 1, 0); place_at(a, AX, AY, 400.0, 56.0);
+		let b = toggle(f, "Sleep goal", 1, 2); place_at(b, AX, AY + 72.0, 400.0, 56.0);
+		let c = toggle(f, "Share", 0, 2); place_at(c, AX, AY + 144.0, 400.0, 56.0);
+		return;
+	}
+	if g == 31 {
+		app_btn_at(f, "General", AX, AY, 360.0, 56.0, 0);
+		app_btn_at(f, "Sound", AX, AY + 72.0, 360.0, 56.0, 2);
+		app_btn_at(f, "Account", AX, AY + 144.0, 360.0, 56.0, 2);
+		return;
+	}
+	if g == 35 {
+		app_btn_at(f, "History", AX, AY, 400.0, 56.0, 2);
+		app_btn_at(f, "Saved", AX, AY + 72.0, 400.0, 56.0, 2);
+		app_btn_at(f, "Index", AX, AY + 144.0, 400.0, 56.0, 0);
+		return;
+	}
+	app_btn_at(f, "Resume", AX, AY, 320.0, 56.0, 0);
+	app_btn_at(f, "Skip", AX, AY + 72.0, 320.0, 56.0, 2);
+	app_btn_at(f, "Help", AX, AY + 144.0, 320.0, 56.0, 2);
+}
+
+fn app_set_body(f int, g int) {
+	if g == 29 {
+		let a = toggle(f, "Crossfade", 1, 0); place_at(a, AX, AY, 480.0, 56.0);
+		let b = toggle(f, "Offline", 0, 2); place_at(b, AX, AY + 72.0, 480.0, 56.0);
+		let s = slider(f, 0.4, 0); place_at(s, AX, AY + 152.0, 480.0, 32.0);
+		let lab = label(f, "Volume", 3); place_at(lab, AX, AY + 192.0, 200.0, 32.0);
+		return;
+	}
+	if g == 39 {
+		let a = toggle(f, "Push", 1, 0); place_at(a, AX, AY, 480.0, 56.0);
+		let b = toggle(f, "Email", 1, 2); place_at(b, AX, AY + 72.0, 480.0, 56.0);
+		let c = toggle(f, "Large amounts", 0, 2); place_at(c, AX + 512.0, AY, 480.0, 56.0);
+		let lab = label(f, "Alerts", 2); place_at(lab, AX + 512.0, AY + 80.0, 200.0, 32.0);
+		return;
+	}
+	let a = toggle(f, "Alerts", 1, 0); place_at(a, AX, AY, 480.0, 56.0);
+	let b = toggle(f, "Compact", 0, 2); place_at(b, AX, AY + 72.0, 480.0, 56.0);
+	let s = slider(f, 0.6, 0); place_at(s, AX, AY + 152.0, 640.0, 32.0);
+	let cardb = card(f, "", 2); place_at(cardb, AX + 680.0, AY, 480.0, 180.0); set_pad(cardb, 16.0); set_gap(cardb, 8.0);
+	let h = label(cardb, "Preview", 2); set_px(h, 400.0, 28.0);
+	let p = label(cardb, "Neutral surface, one accent.", 3); set_px(p, 420.0, 48.0);
+}
+
+fn app_rows(f int, a const byte[:], b const byte[:], c const byte[:], d const byte[:]) {
+	app_btn_at(f, a, AX, AY, AW, 56.0, 0);
+	app_btn_at(f, b, AX, AY + 72.0, AW, 56.0, 2);
+	app_btn_at(f, c, AX, AY + 144.0, AW, 56.0, 2);
+	app_btn_at(f, d, AX, AY + 216.0, AW, 56.0, 2);
+}
+
+fn app_list_body(f int, g int) {
+	if g == 24 {
+		let tb = table(f, 4, 3, 2); place_at(tb, AX, AY, AW, 240.0);
+		table_set(tb, -1, 0, "Board"); table_set(tb, -1, 1, "Open"); table_set(tb, -1, 2, "Who");
+		table_set(tb, 0, 0, "Launch"); table_set(tb, 0, 1, "12"); table_set(tb, 0, 2, "Mira");
+		table_set(tb, 1, 0, "Billing"); table_set(tb, 1, 1, "4"); table_set(tb, 1, 2, "Sol");
+		table_set(tb, 2, 0, "Search"); table_set(tb, 2, 1, "1"); table_set(tb, 2, 2, "Ned");
+		table_set(tb, 3, 0, "Export"); table_set(tb, 3, 1, "3"); table_set(tb, 3, 2, "Ada");
+		return;
+	}
+	if g == 25 { app_rows(f, "Mira  Owner", "Sol  Admin", "Ned  Staff", "Ada  Staff"); return; }
+	if g == 26 {
+		txrow(f, AX, AY, AW, 7, "Order  104", "Packed", "86");
+		txrow(f, AX, AY + 72.0, AW, 7, "Order  103", "Sent", "42");
+		txrow(f, AX, AY + 144.0, AW, 7, "Order  102", "Open", "18");
+		return;
+	}
+	if g == 27 { app_rows(f, "Morning light", "New loaf", "Harbor walk", "Saved"); return; }
+	if g == 28 { app_rows(f, "Mira", "Sol", "Ned", "Ada"); return; }
+	if g == 29 { app_rows(f, "Glass", "Ember", "Tide", "Hearth"); return; }
+	if g == 30 { app_rows(f, "Notes", "Draft", "Plan", "Log"); return; }
+	if g == 31 { app_rows(f, "General", "Sound", "Account", "About"); return; }
+	if g == 32 { app_rows(f, "Name  done", "Place  now", "Ready  later", "Invite"); return; }
+	if g == 33 { app_rows(f, "This phone", "Work laptop", "Tablet", "Sign out others"); return; }
+	if g == 34 { app_rows(f, "Invoice  12", "Invoice  11", "Invoice  10", "Receipt"); return; }
+	if g == 35 { app_rows(f, "Build a screen", "Type", "Color", "Motion"); return; }
+	if g == 36 { app_rows(f, "Wed  11  Review", "Wed  12  Lunch", "Thu  9  Standup", "Fri  3  Ship"); return; }
+	if g == 37 { app_rows(f, "Draft spec", "Layout", "Colors", "Ship notes"); return; }
+	if g == 38 { app_rows(f, "Harbor", "Mill", "Oak", "Station"); return; }
+	if g == 39 {
+		txrow(f, AX, AY, AW, 5, "Harbor", "Today", "-18");
+		txrow(f, AX, AY + 72.0, AW, 11, "Mira", "Tue", "-40");
+		txrow(f, AX, AY + 144.0, AW, 8, "Rent", "Mon", "-900");
+		txrow(f, AX, AY + 216.0, AW, 5, "Pay", "Fri", "+2,400");
+		return;
+	}
+	app_rows(f, "Morning walk", "Ride", "Stretch", "Sleep");
+}
+
+fn app_browse_body(f int, g int) {
+	if g == 38 { app_maps_main(f); return; }
+	if g == 36 { app_cal_main(f); return; }
+	if g == 37 { app_kanban_main(f); return; }
+	let kind = if g == 24 { 1 } else if g == 40 { 3 } else if g == 29 { 5 } else { 0 };
+	let ch = chart(f, kind, 2); place_at(ch, AX, AY, AW - 320.0, 400.0);
+	app_btn_at(f, "Week", AX + AW - 300.0, AY, 300.0, 48.0, 0);
+	app_btn_at(f, "Month", AX + AW - 300.0, AY + 64.0, 300.0, 48.0, 2);
+	app_btn_at(f, "Year", AX + AW - 300.0, AY + 128.0, 300.0, 48.0, 2);
+}
+
+fn app_sum_body(f int, g int) {
+	if g == 39 {
+		txrow(f, AX, AY, AW, 5, "In", "This month", "+4,200");
+		txrow(f, AX, AY + 72.0, AW, 7, "Out", "This month", "-1,840");
+		let ch = chart(f, 3, 2); place_at(ch, AX, AY + 160.0, AW, 280.0);
+		return;
+	}
+	if g == 26 {
+		metric(f, AX, AY, 480.0, "Revenue", "860");
+		metric(f, AX + 496.0, AY, 480.0, "Orders", "14");
+		let ch = chart(f, 1, 2); place_at(ch, AX, AY + 160.0, AW, 320.0);
+		return;
+	}
+	if g == 40 {
+		let dn = chart(f, 2, 2); place_at(dn, AX, AY, 360.0, 360.0);
+		let ch = chart(f, 0, 2); place_at(ch, AX + 376.0, AY, AW - 376.0, 360.0);
+		let lab = label(f, "Week of  12", 2); place_at(lab, AX, AY + 376.0, 320.0, 32.0);
+		return;
+	}
+	let ch = chart(f, 3, 2); place_at(ch, AX, AY, AW - 360.0, 360.0);
+	metric(f, AX + AW - 344.0, AY, 344.0, "Net", "18");
+	app_btn_at(f, "Export", AX + AW - 344.0, AY + 160.0, 344.0, 56.0, 0);
+}
+
+fn raise_app_type() {
+	for i in N.len {
+		if N[i].preset >= 4 && N[i].preset <= 10 { set_preset(i, 3); }
+	}
 }
 
 fn build_app(frame int, g int, screen int, mode int) int {
 	N[frame].i0 = g;
 	N[frame].i1 = screen;
 	N[frame].i2 = mode;
-	if screen == 0 {
-		if g == 24 { app_home(frame, mode, "Northstar", "Open", "Boards", "Alerts", "Options"); }
-		else if g == 25 { app_home(frame, mode, "Roster", "People", "Roles", "Audit", "Options"); }
-		else if g == 26 { app_home(frame, mode, "Harbor", "Shop", "Orders", "Stock", "Options"); }
-		else if g == 27 { app_home(frame, mode, "Field", "Feed", "Saved", "Profile", "Options"); }
-		else if g == 28 { app_home(frame, mode, "Wire", "Chats", "Calls", "Saved", "Options"); }
-		else if g == 29 { app_home(frame, mode, "Needle", "Listen", "Library", "Radio", "Options"); }
-		else if g == 30 { app_home(frame, mode, "Quill", "Open", "New", "Recent", "Options"); }
-		else if g == 31 { app_home(frame, mode, "Prefs", "General", "Sound", "Account", "Options"); }
-		else if g == 32 { app_home(frame, mode, "Welcome", "Start", "Skip", "Tour", "Options"); }
-		else if g == 33 { app_home(frame, mode, "Sign in", "Enter", "Create", "Help", "Options"); }
-		else if g == 34 { app_home(frame, mode, "Plans", "Free", "Plus", "Team", "Options"); }
-		else if g == 35 { app_home(frame, mode, "Guide", "Start", "Search", "Index", "Options"); }
-		else if g == 36 { app_home(frame, mode, "Week", "Today", "Month", "Agenda", "Options"); }
-		else if g == 37 { app_home(frame, mode, "Board", "Mine", "All", "Archive", "Options"); }
-		else if g == 38 { app_home(frame, mode, "Atlas", "Search", "Saved", "Nearby", "Options"); }
-		else if g == 39 { app_home(frame, mode, "Ledger", "Home", "Cards", "Send", "Options"); }
-		else { app_home(frame, mode, "Pulse", "Today", "Week", "Goals", "Options"); }
-	} else if screen == 1 {
-		if g == 28 { app_menu(frame, mode, "Wire", "Resume", "Mute", "Archive", "Leave"); }
-		else if g == 33 { app_menu(frame, mode, "Account", "Profile", "Security", "Devices", "Sign out"); }
-		else { app_menu(frame, mode, "Menu", "Resume", "Search", "Account", "Quit"); }
-	} else if screen == 2 {
-		if g == 31 { app_sets(frame, mode); }
-		else if g == 29 { app_prefs(frame, mode, "Sound", "Crossfade", "Offline"); }
-		else if g == 39 { app_prefs(frame, mode, "Alerts", "Push", "Email"); }
-		else { app_prefs(frame, mode, "Settings", "Alerts", "Compact"); }
+	var brand = "Northstar";
+	var a = "Home";
+	var b = "Work";
+	var c = "Alerts";
+	var d = "Account";
+	var action = "New";
+	if g == 25 { brand = "Roster"; a = "People"; b = "Roles"; c = "Audit"; d = "Account"; action = "Invite"; }
+	else if g == 26 { brand = "Harbor"; a = "Shop"; b = "Orders"; c = "Stock"; d = "Account"; action = "Cart"; }
+	else if g == 27 { brand = "Field"; a = "Feed"; b = "Saved"; c = "Notes"; d = "Profile"; action = "Post"; }
+	else if g == 28 { brand = "Wire"; a = "Chats"; b = "Calls"; c = "Saved"; d = "Account"; action = "New"; }
+	else if g == 29 { brand = "Needle"; a = "Listen"; b = "Library"; c = "Radio"; d = "Account"; action = "Play"; }
+	else if g == 30 { brand = "Quill"; a = "Files"; b = "Search"; c = "Recent"; d = "Account"; action = "New"; }
+	else if g == 31 { brand = "Prefs"; a = "General"; b = "Sound"; c = "Account"; d = "About"; action = "Save"; }
+	else if g == 32 { brand = "Welcome"; a = "Start"; b = "Steps"; c = "Skip"; d = "Help"; action = "Next"; }
+	else if g == 33 { brand = "Account"; a = "Sign in"; b = "Create"; c = "Help"; d = "About"; action = "Enter"; }
+	else if g == 34 { brand = "Plans"; a = "Pricing"; b = "Billing"; c = "Usage"; d = "Account"; action = "Upgrade"; }
+	else if g == 35 { brand = "Guide"; a = "Start"; b = "Layout"; c = "Type"; d = "Color"; action = "Search"; }
+	else if g == 36 { brand = "Week"; a = "Today"; b = "Month"; c = "Agenda"; d = "Calendars"; action = "New"; }
+	else if g == 37 { brand = "Board"; a = "Mine"; b = "All"; c = "Archive"; d = "Account"; action = "Add"; }
+	else if g == 38 { brand = "Atlas"; a = "Map"; b = "Saved"; c = "Nearby"; d = "Layers"; action = "Search"; }
+	else if g == 39 { brand = "Ledger"; a = "Home"; b = "Cards"; c = "Send"; d = "Account"; action = "Send"; }
+	else if g == 40 { brand = "Pulse"; a = "Today"; b = "Week"; c = "Goals"; d = "Account"; action = "Log"; }
+	app_shell(frame, mode, brand, a, b, c, d, action);
+	if screen == 0 { app_home_body(frame, g); }
+	else if screen == 1 { app_menu_body(frame, g); }
+	else if screen == 2 {
+		if g == 31 { app_sets_main(frame); }
+		else { app_set_body(frame, g); }
 	} else if screen == 3 {
-		if g == 24 { app_dash(frame, mode); }
-		else if g == 25 { app_admin(frame, mode); }
-		else if g == 26 { app_shop(frame, mode); }
-		else if g == 27 { app_social(frame, mode); }
-		else if g == 28 { app_chat(frame, mode); }
-		else if g == 29 { app_media(frame, mode); }
-		else if g == 30 { app_editor(frame, mode); }
-		else if g == 31 { app_sets(frame, mode); }
-		else if g == 32 { app_onboard(frame, mode); }
-		else if g == 33 { app_auth(frame, mode); }
-		else if g == 34 { app_price(frame, mode); }
-		else if g == 35 { app_docs(frame, mode); }
-		else if g == 36 { app_cal(frame, mode); }
-		else if g == 37 { app_kanban(frame, mode); }
-		else if g == 38 { app_maps(frame, mode); }
-		else if g == 39 { app_bank(frame, mode); }
-		else { app_health(frame, mode); }
-	} else if screen == 4 {
-		app_list(frame, mode, g);
-	} else if screen == 5 {
-		app_browse(frame, mode, g);
-	} else if g == 26 {
-		app_sum(frame, mode, "Receipt", "Harbor", "Done", "Item", "Qty", "Sum");
-	} else if g == 39 {
-		app_sum(frame, mode, "Month", "Ledger", "Export", "When", "Who", "Sum");
-	} else if g == 40 {
-		app_sum(frame, mode, "Week", "Pulse", "Share", "Day", "Move", "Sleep");
-	} else {
-		app_sum(frame, mode, "Summary", "This week", "Export", "Item", "Now", "All");
-	}
-	for i in N.len {
-		if N[i].preset >= 4 && N[i].preset <= 10 { set_preset(i, 3); }
-	}
+		if g == 24 { app_dash_main(frame); }
+		else if g == 25 { app_admin_main(frame); }
+		else if g == 26 { app_shop_main(frame); }
+		else if g == 27 { app_social_main(frame); }
+		else if g == 28 { app_chat_main(frame); }
+		else if g == 29 { app_media_main(frame); }
+		else if g == 30 { app_editor_main(frame); }
+		else if g == 31 { app_sets_main(frame); }
+		else if g == 32 { app_onboard_main(frame); }
+		else if g == 33 { app_auth_main(frame); }
+		else if g == 34 { app_price_main(frame); }
+		else if g == 35 { app_docs_main(frame); }
+		else if g == 36 { app_cal_main(frame); }
+		else if g == 37 { app_kanban_main(frame); }
+		else if g == 38 { app_maps_main(frame); }
+		else if g == 39 { app_bank_main(frame); }
+		else { app_health_main(frame); }
+	} else if screen == 4 { app_list_body(frame, g); }
+	else if screen == 5 { app_browse_body(frame, g); }
+	else { app_sum_body(frame, g); }
+	raise_app_type();
 	frame
 }

@@ -410,8 +410,50 @@ fn map_lay(seed int, x int, y int, w int, h int) {
 	}
 }
 
+fn paint_streets(x int, y int, w int, h int) {
+	var paper = 0xE7E4DA;
+	var road = 0xFBFBF8;
+	var major = 0xF0D48A;
+	var park = 0xC5DDB4;
+	var water = 0xB5D0E4;
+	var name = 0x3A4038;
+	if chan_luma(THEME.ink as int) > 150 {
+		paper = 0x171C22;
+		road = 0x2A313C;
+		major = 0x3A3428;
+		park = 0x1C3326;
+		water = 0x1A3044;
+		name = 0xD5D8DE;
+	}
+	fill_rect(x, y, w, h, paper as u32, 255);
+	fill_ell(x + w / 5, y + h / 4, w / 10, h / 8, park as u32, 255);
+	fill_ell(x + w * 3 / 4, y + h / 6, w / 12, h / 10, park as u32, 255);
+	fill_rect(x, y + h / 2 - h / 28, w, h / 14, water as u32, 255);
+	var i = 0;
+	while i < 6 {
+		let yy = y + h / 10 + i * h / 7;
+		let thick = if i == 2 { h / 28 } else { 4 };
+		if thick < 4 { fill_rect(x, yy, w, 4, road as u32, 255); }
+		else { fill_rect(x, yy, w, thick, if i == 2 { major as u32 } else { road as u32 }, 255); }
+		i += 1;
+	}
+	i = 0;
+	while i < 5 {
+		let xx = x + w / 12 + i * w / 6;
+		let thick = if i == 1 { w / 36 } else { 4 };
+		if thick < 4 { fill_rect(xx, y, 4, h, road as u32, 255); }
+		else { fill_rect(xx, y, thick, h, if i == 1 { major as u32 } else { road as u32 }, 255); }
+		i += 1;
+	}
+	draw_text(x + 16, y + 16, "Harbor", 16.0, name as u32, 0, -1);
+	draw_text(x + w / 2, y + h / 3, "Oak", 16.0, name as u32, 0, -1);
+	draw_text(x + w / 5, y + h * 2 / 3, "Mill", 16.0, name as u32, 0, -1);
+	fill_ell(x + w * 2 / 3, y + h / 3, 8, 8, 0xE23B3B, 255);
+}
+
 fn paint_minimap(x int, y int, w int, h int, seed int) {
 	if w < 16 || h < 16 { return; }
+	if seed == 38 { paint_streets(x, y, w, h); return; }
 	var base = 0x1B3328;
 	if seed == 1 { base = 0x0E2430; }
 	else if seed == 2 { base = 0x121A16; }
@@ -620,81 +662,120 @@ fn paint_cooldowns(x int, y int, w int, h int, seed int) {
 	}
 }
 
-fn paint_chart(x int, y int, w int, h int, kind int) {
-	let k = if kind < 0 { 0 } else { kind % 7 };
-	if k == 0 || k == 5 {
-		var px0 = x + 8;
-		var py0 = y + h - 16;
-		let vals = [4, 8, 6, 12, 9, 14, 11];
-		for i in 6 {
-			let x1 = x + 8 + (i + 1) * (w - 16) / 6;
-			let y1 = y + h - 12 - vals[i + 1] * (h - 20) / 16;
-			let y0 = y + h - 12 - vals[i] * (h - 20) / 16;
-			stroke_line(px0, y0, x1, y1, THEME.accent);
-			px0 = x1;
+fn day_lab(i int) const byte[:] {
+	if i == 0 { return "Mon"; }
+	if i == 1 { return "Tue"; }
+	if i == 2 { return "Wed"; }
+	if i == 3 { return "Thu"; }
+	if i == 4 { return "Fri"; }
+	if i == 5 { return "Sat"; }
+	"Sun"
+}
+
+fn chart_y(base int, ph int, v int) int { base - v * ph / 16 }
+
+fn chart_grid(x int, y int, w int, h int, spark int) int, int, int, int {
+	var left = 8;
+	var bot = 8;
+	var top = 8;
+	var right = 8;
+	if spark == 0 && w >= 160 && h >= 120 {
+		left = 44;
+		bot = 28;
+		top = 12;
+		right = 12;
+	}
+	let px = x + left;
+	let py = y + top;
+	let pw = if w > left + right { w - left - right } else { 4 };
+	let ph = if h > top + bot { h - top - bot } else { 4 };
+	let base = py + ph;
+	if spark == 0 && left > 8 {
+		var g = 0;
+		while g <= 4 {
+			let gy = chart_y(base, ph, g * 4);
+			fill_rect(px, gy, pw, 1, THEME.border, 180);
+			TMP.clear();
+			format(TMP, g * 4);
+			draw_text(x + 4, gy - 8, TMP[..], 14.0, THEME.muted, 0, -1);
+			g += 1;
 		}
-	} else if k == 1 {
-		let vals = [8, 14, 6, 11, 9];
-		let bw = (w - 16) / 5;
-		for i in 5 {
-			let bh = vals[i] * (h - 16) / 16;
-			fill_rect(x + 8 + i * bw, y + h - 8 - bh, bw - 4, bh, THEME.accent, 255);
-		}
-	} else if k == 2 {
-		let cx = x + w / 2;
-		let cy = y + h / 2;
-		var r = h / 2 - 6;
-		if w / 4 < r { r = w / 4; }
-		for py in cy - r..cy + r {
-			for px in cx - r..cx + r {
-				let dx = px - cx;
-				let dy = cy - py;
-				if dx * dx + dy * dy > r * r { continue; }
-				let ang = atan2_deg(dy, dx);
-				let col = if ang < 140 { THEME.accent } else if ang < 230 { THEME.ok } else { THEME.warn };
-				put(px, py, col, 255);
-			}
-		}
-	} else if k == 3 {
-		let cx = x + w / 2;
-		let cy = y + h / 2;
-		var r = h / 2 - 8;
-		for i in 5 {
-			let ang = i * 72 - 90;
-			let ox = cos_milli(ang) * r / 1000;
-			let oy = sin_milli(ang) * r / 1000;
-			stroke_line(cx, cy, cx + ox, cy - oy, THEME.border);
-		}
-		stroke_line(cx, cy - r / 2, cx + r / 3, cy - r / 5, THEME.accent);
-		stroke_line(cx + r / 3, cy - r / 5, cx + r / 5, cy + r / 3, THEME.accent);
-		stroke_line(cx + r / 5, cy + r / 3, cx - r / 3, cy + r / 6, THEME.accent);
-		stroke_line(cx - r / 3, cy + r / 6, cx - r / 4, cy - r / 3, THEME.accent);
-		stroke_line(cx - r / 4, cy - r / 3, cx, cy - r / 2, THEME.accent);
-	} else if k == 4 {
-		let cx = x + w / 2;
-		let cy = y + h - 8;
-		var r = h - 16;
-		if w / 2 - 4 < r { r = w / 2 - 4; }
-		for py in cy - r..cy {
-			for px in cx - r..cx + r {
-				let dx = px - cx;
-				let dy = cy - py;
-				let d2 = dx * dx + dy * dy;
-				if d2 > r * r || dy < 0 { continue; }
-				put(px, py, THEME.surface2, 255);
-				let ang = atan2_deg(dy, dx);
-				if ang < 140 { put(px, py, THEME.accent, 255); }
-			}
-		}
-	} else {
-		for row in 4 {
-			for col in 8 {
-				let heat = (row * 3 + col * 5) % 10;
-				let colr = lerp_rgb(0x102030, THEME.accent, heat as f32 / 10.0);
-				fill_rect(x + 6 + col * (w - 12) / 8, y + 6 + row * (h - 12) / 4, (w - 12) / 8 - 2, (h - 12) / 4 - 2, colr, 255);
-			}
+		var i = 0;
+		while i < 7 {
+			draw_text(px + i * pw / 7, base + 6, day_lab(i), 14.0, THEME.muted, 0, -1);
+			i += 1;
 		}
 	}
+	return px, py, pw, ph;
+}
+
+fn chart_series(px int, base int, pw int, ph int, area int) {
+	let vals = [4, 8, 6, 12, 9, 14, 11];
+	var i = 0;
+	while i < 6 {
+		let x0 = px + i * pw / 6;
+		let x1 = px + (i + 1) * pw / 6;
+		let y0 = chart_y(base, ph, vals[i]);
+		let y1 = chart_y(base, ph, vals[i + 1]);
+		if area != 0 {
+			var xx = x0;
+			while xx < x1 {
+				let t = if x1 == x0 { 0 } else { (xx - x0) * 100 / (x1 - x0) };
+				let yy = y0 + (y1 - y0) * t / 100;
+				if base > yy { fill_rect(xx, yy, 1, base - yy, THEME.accent, 70); }
+				xx += 1;
+			}
+		}
+		stroke_line(x0, y0, x1, y1, THEME.accent);
+		stroke_line(x0, y0 + 1, x1, y1 + 1, THEME.accent);
+		i += 1;
+	}
+	fill_ell(px + pw, chart_y(base, ph, vals[6]), 4, 4, THEME.accent, 255);
+}
+
+fn chart_bars(px int, base int, pw int, ph int) {
+	let vals = [6, 11, 8, 14, 9, 12, 7];
+	let bw = pw / 7;
+	var i = 0;
+	while i < 7 {
+		let bh = vals[i] * ph / 16;
+		let bx = px + i * bw + 4;
+		let gap = if bw > 12 { 8 } else { 2 };
+		fill_rect(bx, base - bh, bw - gap, bh, THEME.accent, 255);
+		i += 1;
+	}
+}
+
+fn chart_donut(x int, y int, w int, h int) {
+	let cx = x + w / 2;
+	let cy = y + h / 2;
+	var r = h / 2 - 16;
+	if w / 2 - 16 < r { r = w / 2 - 16; }
+	if r < 16 { return; }
+	let inner = r * 58 / 100;
+	for py in cy - r..cy + r {
+		for px in cx - r..cx + r {
+			let dx = px - cx;
+			let dy = cy - py;
+			let d2 = dx * dx + dy * dy;
+			if d2 > r * r || d2 < inner * inner { continue; }
+			let ang = atan2_deg(dy, dx);
+			let col = if ang < 170 { THEME.accent } else if ang < 280 { THEME.ok } else { THEME.warn };
+			put(px, py, col, 255);
+		}
+	}
+	draw_text(cx - 16, cy - 10, "64", 20.0, THEME.ink, 0, -1);
+}
+
+fn paint_chart(x int, y int, w int, h int, kind int) {
+	let k = if kind < 0 { 0 } else { kind % 7 };
+	if k == 2 && w >= 120 && h >= 120 { chart_donut(x, y, w, h); return; }
+	let spark = if k == 4 || k == 5 || h < 96 || w < 140 { 1 } else { 0 };
+	let px, py, pw, ph = chart_grid(x, y, w, h, spark);
+	let base = py + ph;
+	if k == 1 || k == 6 { chart_bars(px, base, pw, ph); return; }
+	if k == 3 { chart_series(px, base, pw, ph, 1); return; }
+	chart_series(px, base, pw, ph, 0);
 }
 
 fn stroke_line(x0 int, y0 int, x1 int, y1 int, rgb u32) {
@@ -900,6 +981,11 @@ fn paint_stage_back(id int, x int, y int, w int, h int) {
 	let g = N[id].i0;
 	let screen = N[id].i1;
 	let mode = N[id].i2;
+	if g >= 24 {
+		LIGHT_SCENE = 0;
+		fill_rect(x, y, w, h, THEME.bg, 255);
+		return;
+	}
 	if mode <= 0 { HIT_GAP = 0.22; HIT_A = 255; }
 	else if mode == 1 { HIT_GAP = 0.16; HIT_A = 220; }
 	else if mode == 2 { HIT_GAP = 0.11; HIT_A = 180; }

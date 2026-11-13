@@ -70,7 +70,9 @@ Font pairings: 30
 - Panels have a gradient, a bevel, and an inner shadow. Bars have segment ticks. Scene text has a one-pixel drop shadow. Results tables use 22px cells. Stage labels and buttons are at least 20px. The tall boss bar no longer paints a second small name.
 - Each game genre has its own minimap diagram: roads, rooms, lanes, or nodes drawn as ellipses. It is still a diagram, not a captured level.
 - The damage trail shrinks and fades from variation 0 to 4 (a wide bright chip, then a short dull one). It is that offset, not a simulated hit. Other pictograms stay coarse. Ability icons are the nearest metaphor, not spell art.
-- App home, menu, settings, list, and summary screens share a few recipes and differ mainly by copy and which side the stack sits on. The main screen is the one laid out for that app. Charts are still the simple painters.
+- App chrome is a flat surface, a top bar, and a sidebar, with one accent and a light or dark theme. Cards use a soft offset shadow, not a blurred one. Axis labels on charts are 14px. Sparklines have no axes.
+- The street map is a regular road grid with a river, two parks, and three names. Kanban cards carry a title, a chip, a letter avatar, and a due date. The calendar main screen is one day of hour labels and event blocks. Banking rows use a pictogram, a name, and an amount.
+- Home, menu, list, and summary differ by app, but several lists are still full-width rows and several settings screens are still two toggles, a slider, and a preview card.
 - Glow and backdrop rectangles are clipped to the widget. `overlap_count` also counts `note_deco` bounds, so a slab painted across another control fails the check.
 - All 500 icons are named pictograms. Thin marks (arrows, plus, minus) are geometric on purpose. A few complex metaphors are still coarse.
 - Widget styles are 20 frames on six controls (button, field, toggle, slider, card, badge), not 20 treatments of every chart and table.
