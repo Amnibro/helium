@@ -65,7 +65,7 @@ Font pairings: 30
 
 ## Still weak
 
-- FPS and MOBA are real 1920x1080 stages. Screen-anchored HUD text is centered on the frame and the align gate checks that. JRPG, Souls, Royale, Racing, Fighting, and Deck are still the narrow column.
+- FPS, MOBA, and JRPG are real 1920x1080 stages. JRPG pause is a menu grid and the shop is a list plus a detail pane. Souls, Royale, Racing, Fighting, and Deck are still the narrow column.
 - The minimap painter is still the compass disc. The shield glyph still reads a bit like a tag. The skyline is block rectangles.
 
 - Glow and backdrop rectangles are clipped to the widget. `overlap_count` also counts `note_deco` bounds, so a slab painted across another control fails the check.

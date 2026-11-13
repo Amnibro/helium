@@ -6,6 +6,7 @@ import uikit.core;
 fn menu_n(g int) int {
 	if g == 0 { return 5; }
 	if g == 2 { return 5; }
+	if g == 4 { return 4; }
 	4
 }
 fn menu_at(g int, i int) const byte[:] {
@@ -22,6 +23,12 @@ fn menu_at(g int, i int) const byte[:] {
 		if i == 2 { return "Collection"; }
 		if i == 3 { return "Options"; }
 		return "Quit";
+	}
+	if g == 4 {
+		if i == 0 { return "New Game"; }
+		if i == 1 { return "Continue"; }
+		if i == 2 { return "Extras"; }
+		return "Config";
 	}
 	if i == 0 { return "Play"; }
 	if i == 1 { return "Continue"; }
@@ -370,19 +377,237 @@ fn stage_results_fps(f int, g int, mode int) {
 	set_preset(again, 2);
 }
 
+fn member(col int, name const byte[:], hp const byte[:]) {
+	let box = flex(col, DIR_COL);
+	set_gap(box, 4.0);
+	set_pad(box, 0.0);
+	set_px(box, 220.0, 100.0);
+	let n = label(box, name, 2); set_px(n, 220.0, 32.0);
+	let b = health_bar(box, 0.7, 0); set_px(b, 220.0, 20.0);
+	let h = label(box, hp, 3); set_px(h, 220.0, 28.0);
+}
+
+fn party_line(f int, x f32, y f32) {
+	let row = flex(f, DIR_ROW);
+	set_gap(row, 16.0);
+	set_pad(row, 0.0);
+	place_at(row, x, y, 928.0, 100.0);
+	member(row, "Terra", "420");
+	member(row, "Locke", "310");
+	member(row, "Celes", "280");
+	member(row, "Edgar", "190");
+}
+
+fn cmd_menu(f int, x f32, y f32) {
+	let col = flex(f, DIR_COL);
+	set_gap(col, 12.0);
+	set_pad(col, 0.0);
+	place_at(col, x, y, 280.0, 260.0);
+	let a = button(col, "Attack", 0); set_px(a, 280.0, 56.0); set_preset(a, 2);
+	let b = button(col, "Magic", 2); set_px(b, 280.0, 56.0); set_preset(b, 2);
+	let c = button(col, "Item", 2); set_px(c, 280.0, 56.0); set_preset(c, 2);
+	let d = button(col, "Defend", 5); set_px(d, 280.0, 56.0); set_preset(d, 2);
+}
+
+fn turn_row(f int, x f32, y f32) {
+	let row = flex(f, DIR_ROW);
+	set_gap(row, 12.0);
+	set_pad(row, 0.0);
+	place_at(row, x, y, 492.0, 36.0);
+	let a = label(row, "Terra", 3); set_px(a, 100.0, 36.0);
+	let b = label(row, "Boss", 3); set_px(b, 100.0, 36.0); N[b].fg = 0xFFD0C2 as u32;
+	let c = label(row, "Locke", 3); set_px(c, 100.0, 36.0);
+	let d = label(row, "Celes", 3); set_px(d, 100.0, 36.0);
+}
+
+fn stage_hud_jrpg(f int, mode int) {
+	let foe = label(f, "Guard", 1);
+	place_at(foe, 840.0, 36.0, 240.0, 48.0);
+	mark_anchor(foe);
+	let bar = health_bar(f, 0.82, 0);
+	place_at(bar, 760.0, 96.0, 400.0, 24.0);
+	var px f32 = 80.0;
+	var py f32 = 920.0;
+	var cx f32 = 1560.0;
+	var cy f32 = 700.0;
+	var tx f32 = 80.0;
+	var ty f32 = 160.0;
+	if mode == 1 { cx = 80.0; cy = 200.0; tx = 1200.0; }
+	else if mode == 2 { py = 980.0; cx = 1500.0; cy = 860.0; }
+	else if mode == 3 { px = 80.0; py = 200.0; cx = 820.0; cy = 760.0; ty = 160.0; tx = 1200.0; }
+	else if mode == 4 { tx = 80.0; ty = 200.0; cx = 1560.0; cy = 360.0; }
+	if mode == 3 {
+		let col = flex(f, DIR_COL);
+		set_gap(col, 12.0);
+		set_pad(col, 0.0);
+		place_at(col, 80.0, 200.0, 280.0, 520.0);
+		member(col, "Terra", "420");
+		member(col, "Locke", "310");
+		member(col, "Celes", "280");
+		member(col, "Edgar", "190");
+	} else {
+		party_line(f, px, py);
+	}
+	cmd_menu(f, cx, cy);
+	turn_row(f, tx, ty);
+}
+
+fn grid_menu(f int, x f32, y f32, a const byte[:], b const byte[:], c const byte[:], d const byte[:], e const byte[:], g6 const byte[:]) {
+	let grid = flex(f, DIR_COL);
+	set_gap(grid, 16.0);
+	set_pad(grid, 0.0);
+	place_at(grid, x, y, 888.0, 256.0);
+	let r1 = flex(grid, DIR_ROW); set_gap(r1, 24.0); set_pad(r1, 0.0); set_px(r1, 888.0, 120.0);
+	let r2 = flex(grid, DIR_ROW); set_gap(r2, 24.0); set_pad(r2, 0.0); set_px(r2, 888.0, 120.0);
+	let b1 = button(r1, a, 0); set_px(b1, 280.0, 120.0); set_preset(b1, 2);
+	let b2 = button(r1, b, 2); set_px(b2, 280.0, 120.0); set_preset(b2, 2);
+	let b3 = button(r1, c, 2); set_px(b3, 280.0, 120.0); set_preset(b3, 2);
+	let b4 = button(r2, d, 2); set_px(b4, 280.0, 120.0); set_preset(b4, 2);
+	let b5 = button(r2, e, 2); set_px(b5, 280.0, 120.0); set_preset(b5, 2);
+	let b6 = button(r2, g6, 5); set_px(b6, 280.0, 120.0); set_preset(b6, 2);
+}
+
+fn stage_pause_jrpg(f int, mode int) {
+	var x f32 = 516.0;
+	var y f32 = 360.0;
+	if mode == 1 { x = 80.0; y = 200.0; }
+	else if mode == 2 { x = 960.0; y = 180.0; }
+	else if mode == 3 { x = 516.0; y = 700.0; }
+	else if mode == 4 { x = 200.0; y = 80.0; }
+	let head = label(f, "Menu", 0);
+	place_at(head, x, y, 400.0, 56.0);
+	grid_menu(f, x, y + 72.0, "Party", "Items", "Magic", "Equip", "Save", "Quit");
+}
+
+fn stage_settings_jrpg(f int, mode int) {
+	var x f32 = 160.0;
+	var y f32 = 160.0;
+	if mode == 1 { x = 80.0; }
+	else if mode == 2 { x = 720.0; }
+	else if mode == 3 { y = 480.0; }
+	else if mode == 4 { y = 80.0; x = 240.0; }
+	let head = label(f, "Config", 0); place_at(head, x, y, 400.0, 56.0);
+	let a = label(f, "Message", 2); place_at(a, x, y + 80.0, 240.0, 40.0);
+	let b = label(f, "Battle", 2); place_at(b, x, y + 160.0, 240.0, 40.0);
+	let c = label(f, "Cursor", 2); place_at(c, x, y + 240.0, 240.0, 40.0);
+	let s1 = slider(f, 0.35, 0); place_at(s1, x + 280.0, y + 88.0, 480.0, 28.0);
+	let s2 = slider(f, 0.6, 0); place_at(s2, x + 280.0, y + 168.0, 480.0, 28.0);
+	let s3 = slider(f, 0.8, 2); place_at(s3, x + 280.0, y + 248.0, 480.0, 28.0);
+	let apply = button(f, "Save", 0); place_at(apply, x, y + 340.0, 240.0, 64.0); set_preset(apply, 2);
+}
+
+fn ware(col int, name const byte[:], price const byte[:], icon int) {
+	let row = flex(col, DIR_ROW);
+	set_gap(row, 12.0);
+	set_pad(row, 0.0);
+	set_px(row, 640.0, 64.0);
+	let ic = icon_button(row, icon, 3); set_px(ic, 48.0, 48.0);
+	let n = label(row, name, 2); set_px(n, 360.0, 48.0);
+	let p = label(row, price, 2); set_px(p, 160.0, 48.0);
+}
+
+fn stage_shop_jrpg(f int, mode int) {
+	var lx f32 = 80.0;
+	var ly f32 = 160.0;
+	var dx f32 = 820.0;
+	var dy f32 = 160.0;
+	if mode == 1 { lx = 880.0; dx = 80.0; }
+	else if mode == 2 { ly = 560.0; dy = 80.0; dx = 1040.0; }
+	else if mode == 3 { lx = 480.0; dx = 1240.0; dy = 360.0; }
+	else if mode == 4 { ly = 80.0; dy = 520.0; dx = 480.0; }
+	let head = label(f, "Shop", 0); place_at(head, lx, ly - 72.0, 280.0, 56.0);
+	let list = flex(f, DIR_COL);
+	set_gap(list, 12.0);
+	set_pad(list, 0.0);
+	place_at(list, lx, ly, 640.0, 292.0);
+	ware(list, "Potion", "50", 4);
+	ware(list, "Ether", "150", 16);
+	ware(list, "Tent", "200", 6);
+	ware(list, "Phoenix", "500", 15);
+	let detail = card(f, "", 2);
+	set_gap(detail, 16.0);
+	set_pad(detail, 24.0);
+	place_at(detail, dx, dy, 400.0, 400.0);
+	let big = icon_button(detail, 4, 0); set_px(big, 120.0, 120.0);
+	let name = label(detail, "Potion", 1); set_px(name, 352.0, 48.0);
+	let buy = button(detail, "Buy", 0); set_px(buy, 240.0, 64.0); set_preset(buy, 2);
+}
+
+fn stage_map_jrpg(f int, mode int) {
+	var lx f32 = 48.0;
+	var mx f32 = 420.0;
+	var my f32 = 80.0;
+	var mw f32 = 1440.0;
+	var mh f32 = 880.0;
+	if mode == 1 { lx = 1560.0; mx = 48.0; mw = 1440.0; }
+	else if mode == 2 { my = 80.0; mh = 720.0; mw = 1760.0; mx = 80.0; lx = 80.0; }
+	else if mode == 3 { my = 360.0; mh = 640.0; }
+	else if mode == 4 { mx = 480.0; mw = 960.0; mh = 840.0; my = 120.0; }
+	let map = minimap(f, 0); place_at(map, mx, my, mw, mh); N[map].i3 = 4;
+	if mode == 2 {
+		let a = button(f, "Figaro", 0); place_at(a, 80.0, 840.0, 280.0, 56.0); set_preset(a, 2);
+		let b = button(f, "Narshe", 2); place_at(b, 376.0, 840.0, 280.0, 56.0); set_preset(b, 2);
+		let c = button(f, "Vector", 2); place_at(c, 672.0, 840.0, 280.0, 56.0); set_preset(c, 2);
+		let d = button(f, "Airship", 5); place_at(d, 968.0, 840.0, 280.0, 56.0); set_preset(d, 2);
+	} else {
+		let a = button(f, "Figaro", 0); place_at(a, lx, 160.0, 280.0, 64.0); set_preset(a, 2);
+		let b = button(f, "Narshe", 2); place_at(b, lx, 240.0, 280.0, 64.0); set_preset(b, 2);
+		let c = button(f, "Vector", 2); place_at(c, lx, 320.0, 280.0, 64.0); set_preset(c, 2);
+		let d = button(f, "Airship", 5); place_at(d, lx, 400.0, 280.0, 64.0); set_preset(d, 2);
+	}
+}
+
+fn stage_results_jrpg(f int, mode int) {
+	var y f32 = 80.0;
+	var ry f32 = 520.0;
+	if mode == 1 { y = 200.0; ry = 720.0; }
+	else if mode == 2 { y = 40.0; ry = 360.0; }
+	else if mode == 3 { y = 360.0; ry = 160.0; }
+	else if mode == 4 { y = 120.0; ry = 860.0; }
+	let win = label(f, "VICTORY", 0);
+	place_at(win, 760.0, y, 400.0, 64.0);
+	mark_anchor(win);
+	let xp = label(f, "2400 XP", 1);
+	place_at(xp, 800.0, y + 80.0, 320.0, 48.0);
+	party_line(f, 496.0, y + 160.0);
+	let rw = label(f, "Spoils", 2); place_at(rw, 160.0, ry, 200.0, 36.0);
+	let row = flex(f, DIR_ROW);
+	set_gap(row, 16.0);
+	set_pad(row, 0.0);
+	place_at(row, 160.0, ry + 48.0, 248.0, 72.0);
+	let a = icon_button(row, 4, 0); set_px(a, 72.0, 72.0);
+	let b = icon_button(row, 5, 2); set_px(b, 72.0, 72.0);
+	let c = icon_button(row, 43, 2); set_px(c, 72.0, 72.0);
+	let next = button(f, "Onward", 0); place_at(next, 1520.0, 980.0, 280.0, 64.0); set_preset(next, 2);
+}
+
 fn build_stage(frame int, g int, screen int, mode int) int {
 	N[frame].i0 = g;
 	N[frame].i1 = screen;
 	N[frame].i2 = mode;
 	if screen == 0 { stage_title(frame, g, mode); }
-	else if screen == 1 { stage_pause(frame, g, mode); }
-	else if screen == 2 { stage_settings(frame, g, mode); }
+	else if screen == 1 {
+		if g == 4 { stage_pause_jrpg(frame, mode); }
+		else { stage_pause(frame, g, mode); }
+	}
+	else if screen == 2 {
+		if g == 4 { stage_settings_jrpg(frame, mode); }
+		else { stage_settings(frame, g, mode); }
+	}
 	else if screen == 3 {
 		if g == 2 { stage_hud_moba(frame, mode); }
+		else if g == 4 { stage_hud_jrpg(frame, mode); }
 		else { stage_hud_fps(frame, mode); }
 	}
-	else if screen == 4 { stage_shop_fps(frame, g, mode); }
-	else if screen == 5 { stage_map_fps(frame, g, mode); }
+	else if screen == 4 {
+		if g == 4 { stage_shop_jrpg(frame, mode); }
+		else { stage_shop_fps(frame, g, mode); }
+	}
+	else if screen == 5 {
+		if g == 4 { stage_map_jrpg(frame, mode); }
+		else { stage_map_fps(frame, g, mode); }
+	}
+	else if g == 4 { stage_results_jrpg(frame, mode); }
 	else { stage_results_fps(frame, g, mode); }
 	frame
 }
