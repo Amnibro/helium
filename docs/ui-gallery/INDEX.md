@@ -65,7 +65,7 @@ Font pairings: 30
 
 ## Still weak
 
-- FPS, MOBA, JRPG, Souls, Royale, Racing, Fighting, and Deck are real 1920x1080 stages. The other 16 game genres are still the narrow column.
+- FPS, Royale, MOBA, RTS, JRPG, Souls, MMO, Racing, Fighting, and Deck are real 1920x1080 stages. Sports, Platform, Roguelike, Survival, City, Horror, Space, Fantasy, Cozy, Rhythm, Puzzle, Novel, Idle, and Gacha are still the narrow column.
 - Panels have a gradient, a bevel, and an inner shadow. Bars have segment ticks and a fixed damage trail. Scene text has a one-pixel drop shadow. Results on the staged genres are three-column stat tables. The tall boss bar no longer paints a second small name.
 - The minimap is still one terrain diagram, not a top-down of a level. Backdrops are still flat blocks. Other pictograms stay coarse. Ability icons are the nearest metaphor, not spell art. The damage trail is a fixed offset, not a simulated hit.
 - Glow and backdrop rectangles are clipped to the widget. `overlap_count` also counts `note_deco` bounds, so a slab painted across another control fails the check.
