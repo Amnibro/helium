@@ -592,6 +592,15 @@ fn back_royale(x int, y int, w int, h int) {
 	fill_rect(x, y, w, 8, 0x8A78E0, 160);
 }
 
+fn back_town(x int, y int, w int, h int) {
+	fill_rect(x, y, w, h / 3, 0x243040, 255);
+	fill_rect(x, y + h / 3, w, h - h / 3, 0x2A2824, 255);
+	fill_rect(x + 80, y + h / 2, 40, h / 5, 0x1A1816, 255);
+	fill_rect(x + 160, y + h / 2 - 40, 56, h / 4, 0x141210, 255);
+	fill_rect(x + w / 2, y + h / 2 - 20, 36, h / 5, 0x1A1816, 255);
+	fill_rect(x + w - 240, y + h / 2, 80, h / 6, 0x141210, 255);
+}
+
 fn back_wild(x int, y int, w int, h int) {
 	fill_rect(x, y, w, h / 2, 0x1A2430, 255);
 	fill_rect(x, y + h / 2, w, h - h / 2, 0x243028, 255);
@@ -711,6 +720,7 @@ fn paint_stage_back(id int, x int, y int, w int, h int) {
 	else if g == 10 { back_hills(x, y, w, h); }
 	else if g == 11 { back_crypt(x, y, w, h); }
 	else if g == 13 { back_wild(x, y, w, h); }
+	else if g == 14 { back_town(x, y, w, h); }
 	else if g == 2 { back_moba(x, y, w, h); }
 	else if g == 4 { back_jrpg(x, y, w, h); }
 	else if g == 5 { back_souls(x, y, w, h); }

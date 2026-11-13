@@ -18,6 +18,7 @@ fn menu_n(g int) int {
 	if g == 10 { return 4; }
 	if g == 11 { return 4; }
 	if g == 13 { return 4; }
+	if g == 14 { return 4; }
 	4
 }
 fn menu_at(g int, i int) const byte[:] {
@@ -63,6 +64,12 @@ fn menu_at(g int, i int) const byte[:] {
 		if i == 0 { return "Versus"; }
 		if i == 1 { return "Arcade"; }
 		if i == 2 { return "Training"; }
+		return "Options";
+	}
+	if g == 14 {
+		if i == 0 { return "Found"; }
+		if i == 1 { return "Load"; }
+		if i == 2 { return "Atlas"; }
 		return "Options";
 	}
 	if g == 13 {
@@ -1953,6 +1960,104 @@ fn stage_map_survive(f int, mode int) {
 	let c = button(f, "Shore", 2); place_at(c, 600.0, by, 240.0, 56.0); set_preset(c, 2);
 }
 
+fn stage_hud_city(f int, mode int) {
+	var mx f32 = 1600.0;
+	var my f32 = 760.0;
+	var ty f32 = 900.0;
+	if mode == 1 { mx = 48.0; my = 760.0; ty = 900.0; }
+	else if mode == 2 { mx = 48.0; my = 400.0; ty = 900.0; }
+	else if mode == 3 { mx = 1600.0; my = 200.0; ty = 900.0; }
+	else if mode == 4 { mx = 48.0; my = 760.0; ty = 480.0; }
+	let cash = label(f, "Funds  4200", 0); place_at(cash, 48.0, 36.0, 320.0, 48.0);
+	let date = label(f, "May  12", 0); place_at(date, 760.0, 36.0, 400.0, 48.0); mark_anchor(date);
+	let pop = label(f, "People  820", 2); place_at(pop, 1500.0, 40.0, 320.0, 36.0);
+	let r = label(f, "Homes", 2); place_at(r, 48.0, 120.0, 140.0, 32.0);
+	let rb = health_bar(f, 0.7, 0); place_at(rb, 200.0, 124.0, 400.0, 20.0);
+	let c = label(f, "Shops", 2); place_at(c, 48.0, 168.0, 140.0, 32.0);
+	let cb = health_bar(f, 0.4, 2); place_at(cb, 200.0, 172.0, 400.0, 20.0);
+	let i = label(f, "Mills", 2); place_at(i, 48.0, 216.0, 140.0, 32.0);
+	let ib = health_bar(f, 0.25, 1); place_at(ib, 200.0, 220.0, 400.0, 20.0);
+	let a = button(f, "Road", 0); place_at(a, 480.0, ty, 200.0, 56.0); set_preset(a, 2);
+	let b = button(f, "Zone", 2); place_at(b, 700.0, ty, 200.0, 56.0); set_preset(b, 2);
+	let d = button(f, "Clear", 5); place_at(d, 920.0, ty, 200.0, 56.0); set_preset(d, 2);
+	let e = button(f, "Query", 1); place_at(e, 1140.0, ty, 200.0, 56.0); set_preset(e, 2);
+	let map = minimap(f, 0); place_at(map, mx, my, 240.0, 200.0); N[map].i3 = 14;
+}
+
+fn stage_pause_city(f int, mode int) {
+	var x f32 = 560.0;
+	var y f32 = 320.0;
+	if mode == 1 { x = 80.0; y = 160.0; }
+	else if mode == 2 { x = 1080.0; y = 160.0; }
+	else if mode == 3 { y = 640.0; }
+	else if mode == 4 { x = 200.0; y = 200.0; }
+	let head = label(f, "Budget", 0); place_at(head, 700.0, y - 80.0, 520.0, 56.0); mark_anchor(head);
+	let a = button(f, "Resume", 0); place_at(a, x, y, 360.0, 64.0); set_preset(a, 2);
+	let b = button(f, "Taxes", 2); place_at(b, x + 384.0, y, 360.0, 64.0); set_preset(b, 2);
+	let c = button(f, "Loans", 2); place_at(c, x, y + 80.0, 360.0, 64.0); set_preset(c, 2);
+	let d = button(f, "Quit", 5); place_at(d, x + 384.0, y + 80.0, 360.0, 64.0); set_preset(d, 2);
+}
+
+fn stage_shop_city(f int, mode int) {
+	var x f32 = 200.0;
+	var y f32 = 200.0;
+	if mode == 1 { x = 80.0; }
+	else if mode == 2 { x = 960.0; }
+	else if mode == 3 { y = 480.0; }
+	else if mode == 4 { y = 80.0; x = 360.0; }
+	let head = label(f, "Public works", 0); place_at(head, x, y, 480.0, 56.0);
+	let a = button(f, "Clinic  400", 0); place_at(a, x, y + 80.0, 480.0, 64.0); set_preset(a, 2);
+	let b = button(f, "School  600", 2); place_at(b, x, y + 160.0, 480.0, 64.0); set_preset(b, 2);
+	let c = button(f, "Plant  800", 1); place_at(c, x, y + 240.0, 480.0, 64.0); set_preset(c, 2);
+	let buy = button(f, "Fund", 0); place_at(buy, x + 520.0, y + 160.0, 240.0, 64.0); set_preset(buy, 2);
+}
+
+fn stage_results_city(f int, mode int) {
+	var y f32 = 160.0;
+	var x f32 = 560.0;
+	if mode == 1 { x = 80.0; }
+	else if mode == 2 { x = 1040.0; }
+	else if mode == 3 { y = 400.0; }
+	else if mode == 4 { x = 240.0; }
+	let head = label(f, "Year  2", 0); place_at(head, 760.0, 36.0, 400.0, 64.0); mark_anchor(head);
+	let side = label(f, "Millford", 2); place_at(side, 80.0, 40.0, 240.0, 36.0);
+	let tb = board(f, x, y, "Stat", "Now", "Last");
+	table_set(tb, 0, 0, "People"); table_set(tb, 0, 1, "820"); table_set(tb, 0, 2, "640");
+	table_set(tb, 1, 0, "Funds"); table_set(tb, 1, 1, "4200"); table_set(tb, 1, 2, "3100");
+	table_set(tb, 2, 0, "Homes"); table_set(tb, 2, 1, "70%"); table_set(tb, 2, 2, "50%");
+	table_set(tb, 3, 0, "Jobs"); table_set(tb, 3, 1, "40%"); table_set(tb, 3, 2, "30%");
+	table_set(tb, 4, 0, "Roads"); table_set(tb, 4, 1, "12"); table_set(tb, 4, 2, "8");
+	table_set(tb, 5, 0, "Happy"); table_set(tb, 5, 1, "62"); table_set(tb, 5, 2, "55");
+	let again = button(f, "Next year", 0); place_at(again, 80.0, 980.0, 280.0, 64.0); set_preset(again, 2);
+}
+
+fn stage_settings_city(f int, mode int) {
+	var x f32 = 480.0;
+	var y f32 = 220.0;
+	if mode == 1 { x = 80.0; }
+	else if mode == 2 { x = 1080.0; }
+	else if mode == 3 { y = 520.0; }
+	else if mode == 4 { y = 80.0; }
+	let head = label(f, "City", 0); place_at(head, x, y, 240.0, 56.0);
+	let a = toggle(f, "Disasters", 0, 2); place_at(a, x, y + 80.0, 480.0, 56.0);
+	let b = slider(f, 0.5, 0); place_at(b, x, y + 160.0, 480.0, 32.0);
+	let c = toggle(f, "Traffic", 1, 0); place_at(c, x, y + 216.0, 480.0, 56.0);
+}
+
+fn stage_map_city(f int, mode int) {
+	var y f32 = 80.0;
+	var by f32 = 920.0;
+	if mode == 1 { by = 80.0; y = 200.0; }
+	else if mode == 2 { y = 120.0; }
+	else if mode == 3 { y = 48.0; by = 880.0; }
+	else if mode == 4 { by = 80.0; y = 200.0; }
+	let map = minimap(f, 0); place_at(map, 240.0, y, 1440.0, 760.0); N[map].i3 = 14;
+	if mode == 1 || mode == 4 { place_at(map, 240.0, 200.0, 1440.0, 720.0); }
+	let a = button(f, "North", 0); place_at(a, 80.0, by, 240.0, 56.0); set_preset(a, 2);
+	let b = button(f, "Docks", 2); place_at(b, 340.0, by, 240.0, 56.0); set_preset(b, 2);
+	let c = button(f, "Hills", 2); place_at(c, 600.0, by, 240.0, 56.0); set_preset(c, 2);
+}
+
 fn build_stage(frame int, g int, screen int, mode int) int {
 	N[frame].i0 = g;
 	N[frame].i1 = screen;
@@ -1972,6 +2077,7 @@ fn build_stage(frame int, g int, screen int, mode int) int {
 		else if g == 10 { stage_pause_platform(frame, mode); }
 		else if g == 11 { stage_pause_rogue(frame, mode); }
 		else if g == 13 { stage_pause_survive(frame, mode); }
+		else if g == 14 { stage_pause_city(frame, mode); }
 		else { stage_pause(frame, g, mode); }
 	}
 	else if screen == 2 {
@@ -1988,6 +2094,7 @@ fn build_stage(frame int, g int, screen int, mode int) int {
 		else if g == 10 { stage_settings_platform(frame, mode); }
 		else if g == 11 { stage_settings_rogue(frame, mode); }
 		else if g == 13 { stage_settings_survive(frame, mode); }
+		else if g == 14 { stage_settings_city(frame, mode); }
 		else { stage_settings(frame, g, mode); }
 	}
 	else if screen == 3 {
@@ -2004,6 +2111,7 @@ fn build_stage(frame int, g int, screen int, mode int) int {
 		else if g == 10 { stage_hud_platform(frame, mode); }
 		else if g == 11 { stage_hud_rogue(frame, mode); }
 		else if g == 13 { stage_hud_survive(frame, mode); }
+		else if g == 14 { stage_hud_city(frame, mode); }
 		else { stage_hud_fps(frame, mode); }
 	}
 	else if screen == 4 {
@@ -2020,6 +2128,7 @@ fn build_stage(frame int, g int, screen int, mode int) int {
 		else if g == 10 { stage_shop_platform(frame, mode); }
 		else if g == 11 { stage_shop_rogue(frame, mode); }
 		else if g == 13 { stage_shop_survive(frame, mode); }
+		else if g == 14 { stage_shop_city(frame, mode); }
 		else { stage_shop_fps(frame, g, mode); }
 	}
 	else if screen == 5 {
@@ -2036,6 +2145,7 @@ fn build_stage(frame int, g int, screen int, mode int) int {
 		else if g == 10 { stage_map_platform(frame, mode); }
 		else if g == 11 { stage_map_rogue(frame, mode); }
 		else if g == 13 { stage_map_survive(frame, mode); }
+		else if g == 14 { stage_map_city(frame, mode); }
 		else { stage_map_fps(frame, g, mode); }
 	}
 	else if g == 4 { stage_results_jrpg(frame, mode); }
@@ -2051,6 +2161,7 @@ fn build_stage(frame int, g int, screen int, mode int) int {
 	else if g == 10 { stage_results_platform(frame, mode); }
 	else if g == 11 { stage_results_rogue(frame, mode); }
 	else if g == 13 { stage_results_survive(frame, mode); }
+	else if g == 14 { stage_results_city(frame, mode); }
 	else { stage_results_fps(frame, g, mode); }
 	frame
 }
