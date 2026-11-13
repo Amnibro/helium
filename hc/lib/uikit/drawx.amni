@@ -642,8 +642,12 @@ fn paint_boss(x int, y int, w int, h int, name const byte[:], v f32) {
 	if trail > 1.0 { trail = 1.0; }
 	var tw = ((w - 8) as f32 * trail) as int;
 	if tw > w - 8 { tw = w - 8; }
-	let chip = if HIT_A > 200 { 0xFFE7A8 } else if HIT_A > 140 { 0xF0C36A } else { 0xC4A060 };
-	if tw > fw { fill_rect(x + 4 + fw, by, tw - fw, 6, chip as u32, HIT_A); }
+	let chip = if HIT_A > 180 { 0xFFE7A8 } else if HIT_A > 120 { 0xE07040 } else { 0x8A4030 };
+	if tw > fw + 3 {
+		fill_rect(x + 6 + fw, by, tw - fw - 2, 6, chip as u32, HIT_A);
+		fill_rect(x + 4 + fw, by, 2, 6, 0x140C0A, 230);
+		fill_rect(x + 4 + fw, by, 2, 2, 0xFFFFFF, HIT_A);
+	}
 	fill_rect(x + 4, by, fw, 6, 0xE23B3B, 255);
 	fill_rect(x + 4, by, fw, 2, 0xFFB4A8, 180);
 	var tick = 24;

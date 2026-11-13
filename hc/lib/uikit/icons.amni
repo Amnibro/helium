@@ -230,9 +230,132 @@ fn icon_cover(id int, u f32, v f32) int {
 	cover
 }
 
+fn spell_rgb(id int) u32, u32 {
+	let k = if id < 0 { 0 } else { id % 8 };
+	if k == 0 { return 0x8C2A2A, 0xF0B0A0; }
+	if k == 1 { return 0x2A4E86, 0xB7D4F4; }
+	if k == 2 { return 0x2A6A40, 0xB7E2C4; }
+	if k == 3 { return 0x8A6230, 0xF4D7A4; }
+	if k == 4 { return 0x5C3488, 0xD4B4F0; }
+	if k == 5 { return 0x8A3E22, 0xF4C090; }
+	if k == 6 { return 0x1E646C, 0xA8E0E4; }
+	return 0x8A2A58, 0xF0B0C8;
+}
+
+fn spell_plate(x int, y int, s int, body u32, lit u32, shape int) {
+	let cx = x + s / 2;
+	let cy = y + s / 2;
+	if shape == 1 {
+		fill_tri(cx, y, x, cy, cx, y + s, 0x10141C);
+		fill_tri(cx, y, x + s, cy, cx, y + s, 0x10141C);
+		fill_tri(cx, y + 3, x + 3, cy, cx, y + s - 3, body);
+		fill_tri(cx, y + 3, x + s - 3, cy, cx, y + s - 3, body);
+		fill_ell(cx, y + s / 3, s / 5, s / 8, lit, 160);
+	} else if shape == 2 {
+		fill_rect(x, y, s, s, 0x10141C, 255);
+		fill_rect(x + 2, y + 2, s - 4, s - 4, body, 255);
+		fill_rect(x + 3, y + 3, s - 6, s / 3, lit, 150);
+	} else if shape == 3 {
+		fill_ell(cx, cy + s / 10, s / 2, s / 2, 0x10141C, 255);
+		fill_ell(cx, cy + s / 10, s / 2 - 2, s / 2 - 3, body, 255);
+		fill_tri(cx, cy, x + s / 5, cy + s / 8, x + s - s / 5, cy + s / 8, body);
+		fill_ell(cx, cy - s / 8, s / 4, s / 6, lit, 170);
+	} else {
+		fill_ell(cx, cy, s / 2, s / 2, 0x10141C, 255);
+		fill_ell(cx, cy, s / 2 - 2, s / 2 - 2, body, 255);
+		fill_ell(cx, cy - s / 6, s / 3, s / 5, lit, 150);
+	}
+}
+
+fn spell_mark(id int, x int, y int, s int, ink u32) {
+	let cx = x + s / 2;
+	let cy = y + s / 2;
+	if id == 0 {
+		fill_rect(cx - 2, y + s / 6, 4, s * 3 / 5, 0xE8EEF4, 255);
+		fill_rect(cx - 1, y + s / 5, 2, s / 2, 0xFFFFFF, 220);
+		fill_tri(cx, y + 2, cx - 4, y + s / 5, cx + 4, y + s / 5, 0xF4F7FB);
+		fill_rect(cx - s / 5, cy + s / 10, s * 2 / 5, 3, 0xC8A15A, 255);
+		fill_ell(cx, y + s - s / 6, 4, 4, 0xC8A15A, 255);
+	} else if id == 1 || id == 52 {
+		fill_ell(cx, cy - s / 10, s / 3, s / 4, 0xD6E4F4, 255);
+		fill_rect(x + s / 5, cy, s * 3 / 5, s / 5, 0x8AA4C0, 255);
+		fill_rect(cx - s / 6, cy - 2, s / 3, 3, 0x1A2430, 255);
+	} else if id == 2 {
+		fill_ell(cx - s / 8, cy - s / 10, s / 6, s / 6, 0xE23B4A, 255);
+		fill_ell(cx + s / 8, cy - s / 10, s / 6, s / 6, 0xFF6A72, 255);
+		fill_tri(cx, cy + s / 4, cx - s / 4, cy, cx + s / 4, cy, 0xE23B4A);
+	} else if id == 4 || id == 74 {
+		fill_rect(cx - 3, y + s / 5, 6, s / 8, 0xE8EEF4, 255);
+		fill_ell(cx, cy + s / 8, s / 4, s / 3, 0xE8F4FF, 255);
+		fill_ell(cx, cy + s / 6, s / 5, s / 5, 0x3B82F6, 255);
+		fill_rect(cx - 1, cy, 2, s / 5, 0xFFFFFF, 180);
+	} else if id == 5 {
+		fill_ell(cx, cy + s / 8, s / 4, s / 3, 0xE25822, 255);
+		fill_ell(cx, cy, s / 6, s / 4, 0xF0A040, 255);
+		fill_ell(cx, cy - s / 10, s / 10, s / 8, 0xFFF2C8, 255);
+	} else if id == 16 {
+		stroke_line(cx - s / 3, y + s / 5, cx - s / 5, cy, ink);
+		stroke_line(cx - s / 5, cy, cx - s / 3, y + s - s / 5, ink);
+		stroke_line(cx + s / 4, y + s / 4, cx - s / 6, y + s - s / 4, 0xE8C878);
+		fill_tri(cx + s / 4, y + s / 5, cx + s / 3, y + s / 3, cx + s / 8, y + s / 3, 0xF4F0E0);
+	} else if id == 13 || id == 43 {
+		fill_tri(cx, y + s / 5, cx - s / 4, cy, cx + s / 4, cy, 0xF4F7FF);
+		fill_tri(cx, y + s - s / 5, cx - s / 4, cy, cx + s / 4, cy, 0x7AA0E8);
+		fill_rect(cx - 1, y + s / 4, 2, s / 2, 0xFFFFFF, 200);
+	} else if id == 15 {
+		fill_ell(cx, cy - s / 8, s / 3, s / 6, 0xF4E7A0, 255);
+		fill_rect(cx - 2, cy, 4, s / 3, 0x3A3428, 255);
+		fill_ell(cx, cy + s / 4, s / 5, 4, 0x2A241C, 255);
+		fill_ell(cx, cy - s / 6, s / 8, s / 10, 0xFFFFFF, 200);
+	} else if id == 75 || id == 77 {
+		fill_ell(cx, cy, s / 4, s / 4, ink, 255);
+		fill_ell(cx, cy, s / 8, s / 8, 0xFFFFFF, 255);
+		fill_rect(cx - 1, y + s / 6, 2, s * 2 / 3, ink, 255);
+		fill_rect(x + s / 6, cy - 1, s * 2 / 3, 2, ink, 255);
+	} else if id == 78 {
+		fill_rect(x + s / 6, cy - 3, s * 2 / 3, 6, 0xD0D4DC, 255);
+		fill_rect(x + s / 5, cy - 1, s / 2, 2, 0xFFFFFF, 220);
+		fill_rect(cx - 2, cy, 8, s / 4, 0x3A3E46, 255);
+	} else if id == 79 {
+		fill_ell(cx, cy + 2, s / 4, s / 4, 0x3E8A45, 255);
+		fill_ell(cx - s / 10, cy - s / 12, s / 10, s / 12, 0x8ED48A, 255);
+		fill_rect(cx + s / 8, y + s / 5, 3, s / 6, 0xE8E4D0, 255);
+	} else if id == 8 {
+		fill_rect(cx - s / 5, cy, s / 3, s / 4, 0x4A3828, 255);
+		fill_rect(cx - s / 4, cy + s / 8, s / 2, s / 6, 0x3A2C20, 255);
+		fill_rect(cx - s / 5, cy, s / 8, s / 5, 0x6A5040, 255);
+	} else if id % 5 == 0 {
+		stroke_line(x + s / 4, y + s / 4, x + s - s / 4, y + s - s / 4, ink);
+		stroke_line(x + s - s / 4, y + s / 4, x + s / 4, y + s - s / 4, ink);
+		fill_ell(cx, cy, s / 8, s / 8, 0xFFFFFF, 220);
+	} else if id % 5 == 1 {
+		fill_tri(cx, y + s / 5, x + s / 5, y + s - s / 5, x + s - s / 5, y + s - s / 5, ink);
+		fill_ell(cx, cy, 3, 3, 0xFFFFFF, 230);
+	} else if id % 5 == 2 {
+		fill_ell(cx, cy, s / 4, s / 6, ink, 255);
+		fill_ell(cx, cy, s / 8, s / 12, 0xFFFFFF, 230);
+	} else if id % 5 == 3 {
+		fill_rect(cx - 2, y + s / 5, 4, s * 3 / 5, ink, 255);
+		fill_rect(x + s / 5, cy - 2, s * 3 / 5, 4, ink, 255);
+	} else {
+		fill_ell(cx - s / 6, cy, s / 8, s / 8, ink, 255);
+		fill_ell(cx + s / 6, cy - s / 8, s / 8, s / 8, 0xFFFFFF, 220);
+		fill_ell(cx, cy + s / 6, s / 7, s / 7, ink, 255);
+	}
+}
+
+fn paint_spell(id int, x int, y int, s int) {
+	let body, lit = spell_rgb(id);
+	let shape = if id < 0 { 0 } else { id % 4 };
+	spell_plate(x, y, s, body, lit, shape);
+	spell_mark(id, x + 1, y + 1, s, 0x10141C);
+	spell_mark(id, x, y, s, lit);
+}
+
 fn icon_draw(id int, x int, y int, size int, rgb u32) {
 	if size < 2 { return; }
 	let n = if id < 0 { 0 } else if id >= 500 { id % 500 } else { id };
+	if APP_UI == 0 && size >= 16 { paint_spell(n, x, y, size); return; }
 	if icon_len(n) <= 0 {
 		for py in size {
 			for px in size {
