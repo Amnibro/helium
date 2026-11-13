@@ -67,13 +67,15 @@ Font pairings: 30
 ## Still weak
 
 - All 24 game genres and all 17 app genres are 1920x1080 stages. Each app has its own home, menu, settings, main screen, list, browse, and summary.
-- Each genre backdrop has its own sky and ground colors. Cozy is a warm pastel, sports is a bright pitch, space is deep blue with stars, gacha is saturated magenta. Silhouettes are small shapes on the horizon. Scene labels on a light sky or ground are dark. They are still flat shapes, not painted scenes.
-- Panels have a gradient, a bevel, and an inner shadow. Bars have segment ticks. Scene text has a one-pixel drop shadow. Results tables use 22px cells. Stage labels and buttons are at least 20px. The tall boss bar no longer paints a second small name.
-- Each game genre has its own minimap diagram: roads, rooms, lanes, or nodes drawn as ellipses. It is still a diagram, not a captured level.
-- The damage trail shrinks and fades from variation 0 to 4 (a wide bright chip, then a short dull one). It is that offset, not a simulated hit. Other pictograms stay coarse. Ability icons are the nearest metaphor, not spell art.
+- Backdrops are layered scenes: a finer sky gradient, shaded hills with a rim, clouds, towers with windows, and a mottle pass on top of the specks. Hills are still stacked ellipses. Buildings are boxes. It is not a matte painting.
+- Panels have a gradient, a bevel, and an inner shadow. Bars have segment ticks. Scene text has a one-pixel drop shadow. Results tables use 22px cells. Stage labels and buttons are at least 20px.
+- Minimaps are top-down plans: roads with a curb and a center dash, shaded blocks, and terrain lots. Lanes, a track, a pitch, rooms, and a street grid differ per genre. They are diagrams, not lit terrain.
+- Health and armor bars draw a crack, a fading chip, and a flash. The chip shrinks from variation 0 to 4. Mana and progress bars do not chip. It is that offset, not a simulated impact.
+- Game ability icons are colored plates with an outline and a glyph. Sword, shield, flask, flame, bow, and gem are distinct. Many other ids share a glyph. They are not full spell paintings.
 - Body text is 16 to 18px and titles are 24 or 32px. Chart axis labels are 16px. Larger cards use a 12px radius, a 1px border, and a three-pass blur for the shadow. Small controls skip the blur.
-- Shop drawings are a few shapes, not rendered products. Ratings are five filled or empty stars. Map roads are sine curves, parks are ellipse clusters, and the pin is a teardrop. Avatars are a face, hair, and eyes. Hair and skin vary by person. The checklist is still a count.
-- The calendar is a six-week month beside one day. Chat bubbles are two lines, a time, and two read ticks. List rows have a thumbnail or head, a title, a second line, meta, and an action. Settings groups are still one description line and two toggles.
+- Shop products are shaded drawings with a highlight and a shadow. Ratings are five stars. They are not rendered models. Avatars are a face, hair, and eyes.
+- The city map is irregular blocks, a road hierarchy, water, a park, labels, and a red route. Roads are stamped squares. The pin is a teardrop.
+- Settings groups have a description, a select, a segmented control, a slider, a text field, and two toggles. The inner labels repeat across groups. Kanban cards list three checklist items. The calendar is six weeks. Chat bubbles are two lines with read ticks.
 - `OVERVIEW.png` is one labeled hud-v0 thumbnail per genre.
 - Glow and backdrop rectangles are clipped to the widget. `overlap_count` also counts `note_deco` bounds, so a slab painted across another control fails the check.
 - All 500 icons are named pictograms. Thin marks (arrows, plus, minus) are geometric on purpose. A few complex metaphors are still coarse.

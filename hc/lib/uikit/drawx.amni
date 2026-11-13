@@ -526,45 +526,48 @@ fn paint_park(cx int, cy int, rgb u32) {
 }
 
 fn paint_streets(x int, y int, w int, h int) {
-	var paper = 0xE7E4DA;
-	var road = 0xFBFBF8;
-	var major = 0xF0D48A;
-	var park = 0xC5DDB4;
-	var water = 0xB5D0E4;
-	var name = 0x3A4038;
+	var paper = 0xE4E0D4;
+	var road = 0xF7F4EC;
+	var major = 0xE7C56A;
+	var park = 0xB7D39A;
+	var water = 0x8FB8D4;
+	var wall = 0xD5CBBA;
+	var roof = 0xC4B49A;
+	var name = 0x2C332C;
 	if chan_luma(THEME.ink as int) > 150 {
 		paper = 0x171C22;
 		road = 0x2A313C;
-		major = 0x3A3428;
+		major = 0x6A5A32;
 		park = 0x1C3326;
 		water = 0x1A3044;
+		wall = 0x2A3038;
+		roof = 0x3A4450;
 		name = 0xD5D8DE;
 	}
 	fill_rect(x, y, w, h, paper as u32, 255);
-	paint_park(x + w / 4, y + h / 3, park as u32);
-	paint_park(x + w * 3 / 4, y + h / 5, park as u32);
-	paint_park(x + w / 2, y + h * 3 / 4, park as u32);
-	paint_curve(x, y + h / 2, w, h / 10, h / 18, 20, water as u32);
-	paint_curve(x, y + h / 5, w, h / 12, 14, 0, road as u32);
-	paint_curve(x, y + h * 2 / 3, w, h / 9, 18, 80, major as u32);
-	paint_curve(x, y + h / 3, w, h / 14, 10, 160, road as u32);
-	var i = 0;
-	while i < h {
-		let ang = 40 + i * 360 / h;
-		let xx = x + w / 3 + sin_milli(ang) * (w / 10) / 1000;
-		fill_rect(xx, y + i, 12, 3, road as u32, 255);
-		i += 2;
-	}
-	i = 0;
-	while i < h {
-		let ang = i * 280 / h;
-		let xx = x + w * 2 / 3 + sin_milli(ang) * (w / 14) / 1000;
-		fill_rect(xx, y + i, 16, 3, major as u32, 255);
-		i += 2;
-	}
-	draw_text(x + 16, y + 16, "Harbor", 16.0, name as u32, 0, -1);
+	fill_rect(x, y + h * 3 / 5, w / 3, h * 2 / 5, water as u32, 255);
+	fill_ell(x + w / 6, y + h * 3 / 5, w / 5, h / 8, water as u32, 255);
+	fill_rect(x, y + h * 3 / 5, w / 3, 6, 0xFFFFFF, 80);
+	paint_park(x + w * 3 / 4, y + h / 6, park as u32);
+	map_block(x, y, w, h, 8, 6, 16, 12, wall as u32, roof as u32);
+	map_block(x, y, w, h, 28, 8, 14, 16, wall as u32, 0xB08968);
+	map_block(x, y, w, h, 48, 10, 18, 11, wall as u32, roof as u32);
+	map_block(x, y, w, h, 70, 28, 12, 14, wall as u32, 0xA89880);
+	map_block(x, y, w, h, 40, 36, 20, 14, wall as u32, roof as u32);
+	map_block(x, y, w, h, 66, 48, 16, 18, wall as u32, 0xC47A62);
+	map_block(x, y, w, h, 8, 40, 18, 12, wall as u32, roof as u32);
+	map_block(x, y, w, h, 46, 62, 14, 12, wall as u32, roof as u32);
+	map_block(x, y, w, h, 68, 72, 18, 14, wall as u32, 0xB08968);
+	map_road(x, y, w, h, 0, 24, 100, 22, 14, major as u32, road as u32);
+	map_road(x, y, w, h, 0, 58, 100, 64, 12, major as u32, road as u32);
+	map_road(x, y, w, h, 22, 0, 26, 100, 8, road as u32, 0xC8BEA8);
+	map_road(x, y, w, h, 46, 0, 42, 100, 7, road as u32, 0xC8BEA8);
+	map_road(x, y, w, h, 78, 0, 74, 100, 9, road as u32, 0xC8BEA8);
+	map_road(x, y, w, h, 8, 86, 62, 34, 5, 0xE23B3B, 0xE23B3B);
+	draw_text(x + 16, y + 12, "Harbor", 16.0, name as u32, 0, -1);
 	draw_text(x + w / 2, y + h / 3, "Oak", 16.0, name as u32, 0, -1);
 	draw_text(x + w / 5, y + h * 2 / 3, "Mill", 16.0, name as u32, 0, -1);
+	draw_text(x + w * 3 / 4, y + h / 8, "Park", 16.0, name as u32, 0, -1);
 	paint_pin(x + w * 2 / 3, y + h / 3);
 }
 
@@ -899,28 +902,56 @@ fn paint_goods(x int, y int, w int, h int, kind int) {
 	let acc = THEME.accent;
 	let cx = x + w / 2;
 	let cy = y + h / 2;
+	let lit = lerp_rgb(acc, 0xFFFFFF, 0.45 as f32);
+	let shade = lerp_rgb(acc, 0x1A140C, 0.35 as f32);
 	if kind == 0 {
-		fill_rect(cx - 28, cy - 10, 56, 48, acc, 255);
-		fill_ell(cx, cy + 28, 28, 14, acc, 255);
-		fill_ell(cx + 36, cy + 8, 16, 22, ink, 255);
-		fill_ell(cx + 28, cy + 8, 10, 16, THEME.surface, 255);
+		fill_ell(cx, cy + 30, 34, 10, 0x000000, 40);
+		fill_rect(cx - 26, cy - 16, 52, 40, shade, 255);
+		fill_rect(cx - 26, cy - 16, 16, 40, acc, 255);
+		fill_rect(cx - 22, cy - 8, 6, 28, lit, 220);
+		fill_ell(cx, cy + 22, 26, 12, shade, 255);
+		fill_ell(cx, cy - 16, 26, 10, lit, 255);
+		fill_ell(cx, cy - 16, 16, 6, 0x6A3A28, 255);
+		fill_ell(cx + 34, cy + 4, 14, 18, ink, 255);
+		fill_ell(cx + 28, cy + 4, 8, 12, THEME.surface, 255);
 	} else if kind == 1 {
-		fill_rect(cx - 8, cy, 16, 36, ink, 255);
-		fill_ell(cx, cy + 36, 28, 8, ink, 255);
-		fill_ell(cx, cy - 8, 48, 18, acc, 255);
+		fill_ell(cx, cy + 34, 30, 8, 0x000000, 45);
+		fill_rect(cx - 6, cy - 4, 12, 32, ink, 255);
+		fill_rect(cx - 4, cy - 4, 3, 32, lit, 180);
+		fill_ell(cx, cy + 28, 26, 8, shade, 255);
+		fill_ell(cx, cy - 16, 46, 16, shade, 255);
+		fill_ell(cx, cy - 20, 36, 10, acc, 255);
+		fill_ell(cx - 8, cy - 22, 14, 6, lit, 230);
 	} else if kind == 2 {
-		fill_rect(cx - 36, cy - 8, 72, 56, acc, 255);
-		fill_ell(cx - 16, cy - 20, 10, 16, ink, 255);
-		fill_ell(cx + 16, cy - 20, 10, 16, ink, 255);
+		fill_rect(cx - 34, cy + 28, 72, 8, 0x000000, 35);
+		fill_rect(cx - 34, cy - 10, 68, 44, shade, 255);
+		fill_rect(cx - 34, cy - 10, 22, 44, acc, 255);
+		fill_rect(cx - 28, cy - 2, 8, 28, lit, 200);
+		fill_rect(cx - 10, cy + 8, 36, 4, ink, 80);
+		fill_ell(cx - 14, cy - 22, 8, 14, ink, 255);
+		fill_ell(cx + 14, cy - 22, 8, 14, ink, 255);
+		fill_rect(cx - 18, cy - 28, 10, 6, lit, 255);
 	} else if kind == 3 {
-		fill_rect(cx - 40, cy - 4, 80, 8, ink, 255);
-		fill_rect(cx + 28, cy - 8, 16, 16, acc, 255);
+		fill_rect(cx - 42, cy - 2, 78, 8, shade, 255);
+		fill_rect(cx - 42, cy - 2, 78, 3, lit, 255);
+		fill_rect(cx + 24, cy - 10, 18, 18, acc, 255);
+		fill_rect(cx + 26, cy - 8, 6, 10, lit, 230);
+		fill_tri(cx + 42, cy - 2, cx + 52, cy + 2, cx + 42, cy + 6, ink);
 	} else if kind == 4 {
-		fill_ell(cx, cy + 8, 48, 22, acc, 255);
-		fill_ell(cx, cy + 4, 36, 12, THEME.surface, 255);
+		fill_ell(cx, cy + 22, 50, 8, 0x000000, 35);
+		fill_ell(cx, cy + 6, 46, 20, shade, 255);
+		fill_ell(cx, cy + 2, 40, 14, acc, 255);
+		fill_ell(cx - 10, cy - 2, 16, 6, lit, 220);
+		fill_ell(cx, cy + 8, 28, 8, 0x6A3A28, 255);
+		fill_ell(cx, cy - 2, 34, 6, lit, 255);
 	} else {
-		fill_rect(cx - 40, cy - 16, 80, 28, acc, 255);
-		fill_rect(cx - 28, cy + 8, 64, 20, ink, 180);
+		fill_rect(cx - 40, cy + 16, 84, 8, 0x000000, 30);
+		fill_rect(cx - 38, cy - 18, 76, 22, shade, 255);
+		fill_rect(cx - 38, cy - 18, 24, 22, acc, 255);
+		fill_rect(cx - 32, cy - 12, 8, 12, lit, 200);
+		fill_rect(cx - 28, cy + 2, 64, 16, ink, 200);
+		fill_rect(cx - 22, cy + 6, 18, 8, lit, 120);
+		fill_rect(cx + 8, cy - 8, 28, 8, acc, 255);
 	}
 }
 

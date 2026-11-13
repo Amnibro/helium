@@ -86,18 +86,31 @@ fn metric(f int, x f32, y f32, w f32, name const byte[:], value const byte[:]) {
 	let ch = chart(c, 5, 3); set_px(ch, w - 32.0, 36.0);
 }
 
-fn kcard(f int, x f32, y f32, w f32, title const byte[:], tag const byte[:], tag2 const byte[:], who const byte[:], checks const byte[:], due const byte[:]) {
-	let c = card(f, "", 2);
-	place_at(c, x, y, w, 168.0);
-	set_pad(c, 16.0); set_gap(c, 8.0);
-	let t = label(c, title, 2); set_px(t, w - 32.0, 32.0);
-	let tags = flex(c, DIR_ROW); set_px(tags, w - 32.0, 32.0); set_gap(tags, 8.0); set_pad(tags, 0.0);
+fn kitem(parent int, text const byte[:], on int, width f32) {
+	let row = flex(parent, DIR_ROW);
+	set_px(row, width, 24.0); set_gap(row, 8.0); set_pad(row, 0.0);
+	if on != 0 {
+		let k = label(row, "vv", 5); set_px(k, 28.0, 24.0); N[k].fg = tick_col();
+	} else {
+		let k = label(row, "o", 5); set_px(k, 28.0, 24.0);
+	}
+	let t = label(row, text, 4); set_px(t, width - 48.0, 24.0);
+}
+
+fn kcard(f int, x f32, y f32, w f32, title const byte[:], tag const byte[:], tag2 const byte[:], who const byte[:], due const byte[:], a const byte[:], b const byte[:], c const byte[:], done int) {
+	let c0 = card(f, "", 2);
+	place_at(c0, x, y, w, 232.0);
+	set_pad(c0, 16.0); set_gap(c0, 8.0);
+	let t = label(c0, title, 2); set_px(t, w - 32.0, 28.0);
+	let tags = flex(c0, DIR_ROW); set_px(tags, w - 32.0, 28.0); set_gap(tags, 8.0); set_pad(tags, 0.0);
 	let tg = chip(tags, tag, 2); set_px(tg, 88.0, 28.0);
 	let tg2 = chip(tags, tag2, 1); set_px(tg2, 88.0, 28.0);
-	let row = flex(c, DIR_ROW); set_px(row, w - 32.0, 36.0); set_gap(row, 8.0); set_pad(row, 0.0);
-	let av = avatar(row, who, 0); set_px(av, 36.0, 36.0);
-	let ck = label(row, checks, 4); set_px(ck, 80.0, 32.0);
-	let d = label(row, due, 4); set_px(d, 120.0, 32.0);
+	let row = flex(c0, DIR_ROW); set_px(row, w - 32.0, 32.0); set_gap(row, 8.0); set_pad(row, 0.0);
+	let av = avatar(row, who, 0); set_px(av, 32.0, 32.0);
+	let d = label(row, due, 4); set_px(d, 120.0, 28.0);
+	kitem(c0, a, if done > 0 { 1 } else { 0 }, w - 32.0);
+	kitem(c0, b, if done > 1 { 1 } else { 0 }, w - 32.0);
+	kitem(c0, c, if done > 2 { 1 } else { 0 }, w - 32.0);
 }
 
 fn txrow(f int, x f32, y f32, w f32, icon int, name const byte[:], meta const byte[:], amt const byte[:]) {
@@ -269,20 +282,28 @@ fn app_editor_main(f int) {
 
 fn set_group(f int, x f32, y f32, w f32, title const byte[:], desc const byte[:], a const byte[:], b const byte[:]) {
 	let c = card(f, "", 2);
-	place_at(c, x, y, w, 232.0);
+	place_at(c, x, y, w, 416.0);
 	set_pad(c, 16.0); set_gap(c, 8.0);
-	let h = label(c, title, 2); set_px(h, w - 32.0, 32.0);
-	let d = label(c, desc, 4); set_px(d, w - 32.0, 40.0);
-	let t1 = toggle(c, a, 1, 0); set_px(t1, w - 32.0, 48.0);
-	let t2 = toggle(c, b, 0, 2); set_px(t2, w - 32.0, 48.0);
+	let h = label(c, title, 2); set_px(h, w - 32.0, 28.0);
+	let d = label(c, desc, 4); set_px(d, w - 32.0, 28.0);
+	let pick = dropdown(c, "System", 2); set_px(pick, w - 32.0, 36.0);
+	let seg = flex(c, DIR_ROW); set_px(seg, w - 32.0, 36.0); set_gap(seg, 8.0); set_pad(seg, 0.0);
+	let s0 = segmented(seg, "Low", 2); set_px(s0, 96.0, 36.0);
+	let s1 = segmented(seg, "Med", 0); set_px(s1, 96.0, 36.0);
+	let s2 = segmented(seg, "High", 2); set_px(s2, 96.0, 36.0);
+	let lv = label(c, "Level", 4); set_px(lv, w - 32.0, 20.0);
+	let sl = slider(c, 0.62, 2); set_px(sl, w - 32.0, 28.0);
+	let name = text_field(c, "Mira", 2); set_px(name, w - 32.0, 36.0);
+	let t1 = toggle(c, a, 1, 0); set_px(t1, w - 32.0, 40.0);
+	let t2 = toggle(c, b, 0, 2); set_px(t2, w - 32.0, 40.0);
 }
 
 fn app_sets_main(f int) {
 	let w = col2();
 	set_group(f, AX, AY, w, "Appearance", "Theme, motion, and type size.", "Dark", "Motion");
 	set_group(f, AX + w + 16.0, AY, w, "Sound", "Alerts and feedback.", "Sound", "Tips");
-	set_group(f, AX, AY + 248.0, w, "Account", "How this profile syncs.", "Sync", "Large type");
-	set_group(f, AX + w + 16.0, AY + 248.0, w, "Privacy", "What leaves this device.", "Share", "History");
+	set_group(f, AX, AY + 432.0, w, "Account", "How this profile syncs.", "Sync", "Large type");
+	set_group(f, AX + w + 16.0, AY + 432.0, w, "Privacy", "What leaves this device.", "Share", "History");
 }
 
 fn app_onboard_main(f int) {
@@ -394,12 +415,12 @@ fn app_kanban_main(f int) {
 	let h0 = label(f, "To do", 2); place_at(h0, x0, AY, 200.0, 32.0);
 	let h1 = label(f, "Doing", 2); place_at(h1, x1, AY, 200.0, 32.0);
 	let h2 = label(f, "Done", 2); place_at(h2, x2, AY, 200.0, 32.0);
-	kcard(f, x0, AY + 48.0, w, "Draft spec", "Design", "Spec", "M", "2/5", "Fri 14");
-	kcard(f, x0, AY + 232.0, w, "Ask Mira", "Talk", "Block", "S", "1/3", "Mon 17");
-	kcard(f, x1, AY + 48.0, w, "Layout", "Build", "UI", "N", "4/6", "Wed 12");
-	kcard(f, x1, AY + 232.0, w, "Colors", "Build", "UI", "A", "0/2", "Thu 13");
-	kcard(f, x2, AY + 48.0, w, "Ship notes", "Done", "Docs", "B", "3/3", "Tue 11");
-	kcard(f, x2, AY + 232.0, w, "Review", "Done", "QA", "M", "5/5", "Fri 7");
+	kcard(f, x0, AY + 40.0, w, "Draft spec", "Design", "Spec", "M", "Fri 14", "Outline", "Scenes", "Notes", 2);
+	kcard(f, x0, AY + 304.0, w, "Ask Mira", "Talk", "Block", "S", "Mon 17", "Write", "Send", "Wait", 1);
+	kcard(f, x1, AY + 40.0, w, "Layout", "Build", "UI", "N", "Wed 12", "Grid", "Type", "Space", 2);
+	kcard(f, x1, AY + 304.0, w, "Colors", "Build", "UI", "A", "Thu 13", "Ink", "Accent", "Check", 0);
+	kcard(f, x2, AY + 40.0, w, "Ship notes", "Done", "Docs", "B", "Tue 11", "Draft", "Review", "Send", 3);
+	kcard(f, x2, AY + 304.0, w, "Review", "Done", "QA", "M", "Fri 7", "Read", "Mark", "File", 3);
 }
 
 fn app_maps_main(f int) {
@@ -677,8 +698,8 @@ fn app_set_body(f int, g int) {
 	else if g == 40 { t1 = "Goals"; d1 = "Daily move and sleep."; a1 = "Move"; b1 = "Sleep"; t2 = "Sharing"; d2 = "Who can see this week."; a2 = "Share"; b2 = "Coach"; }
 	set_group(f, AX, AY, w, t1, d1, a1, b1);
 	set_group(f, AX + w + 16.0, AY, w, t2, d2, a2, b2);
-	set_group(f, AX, AY + 248.0, w, "Account", "Profile, devices, and sign-in.", "Sync", "Devices");
-	set_group(f, AX + w + 16.0, AY + 248.0, w, "Privacy", "What is stored on this device.", "History", "Analytics");
+	set_group(f, AX, AY + 432.0, w, "Account", "Profile, devices, and sign-in.", "Sync", "Devices");
+	set_group(f, AX + w + 16.0, AY + 432.0, w, "Privacy", "What is stored on this device.", "History", "Analytics");
 }
 
 fn record(f int, y f32, who const byte[:], pic int, title const byte[:], sub const byte[:], meta const byte[:], action const byte[:]) {
