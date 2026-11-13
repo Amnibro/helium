@@ -252,28 +252,58 @@ fn fill_map() {
 	}
 	map = copy(cp2);
 }
-=== 7828fa958c1cc504
-fn vpos(v int) float3 {
-	let b = v * gltf::VERTEX_FLOATS + gltf::AT_POS;
-	float3 { gltf::verts[b], gltf::verts[b + 1], gltf::verts[b + 2] }
+=== -647bc35cce8dc864
+fn visible(ni int, meshes const byte[][:]) bool {
+	let nd = gltf::nodes[ni];
+	if nd.mesh < 0 { return false; }
+	if meshes.len == 0 { return true; }
+	return hair::listed(meshes, gltf::text_of(gltf::meshes[nd.mesh].name));
+}
+fn band(pts const float3[:], cx f32, ylo f32, yhi f32) bool, f32, f32, f32 {
+	var found = false;
+	var half f32 = 0.0;
+	var zlo f32 = 1.0e30;
+	var zhi f32 = -1.0e30;
+	for p in pts {
+		if p.y >= ylo && p.y <= yhi {
+			found = true;
+			half = max(half, abs(p.x - cx));
+			zlo = min(zlo, p.z);
+			zhi = max(zhi, p.z);
+		}
+	}
+	return found, half, zlo, zhi;
 }
 fn measure(asset int, joint const byte[:], meshes const byte[][:]) bool {
 	ok = false;
 	map.clear();
 	sol.clear();
 	let hn = gltf::find_node(asset, joint);
-	let asd = gltf::assets[asset];
+	let ast = gltf::assets[asset];
+	let z = float3 { 0.0, 0.0, 0.0 };
+	var total = 0;
+	for q in ast.nodes.count {
+		let ni = ast.nodes.first + q;
+		if !visible(ni, meshes) { continue; }
+		let mesh = gltf::meshes[gltf::nodes[ni].mesh];
+		for pi in mesh.prims.count {
+			total += gltf::prims[mesh.prims.first + pi].icount;
+		}
+	}
 	var hp float3[>..] = [];
+	hp.resize(total, z);
+	hp.clear();
 	var bp float3[>..] = [];
-	for ni in asd.nodes.first..asd.nodes.first + asd.nodes.count {
+	bp.resize(total, z);
+	bp.clear();
+	for q in ast.nodes.count {
+		let ni = ast.nodes.first + q;
+		if !visible(ni, meshes) { continue; }
 		let nd = gltf::nodes[ni];
-		if nd.mesh < 0 { continue; }
-		let ms = gltf::meshes[nd.mesh];
-		let nm const byte[:] = gltf::text_of(ms.name);
-		if meshes.len > 0 && !hair::listed(meshes, nm) { continue; }
 		if nd.skin < 0 && hn >= 0 { continue; }
-		for pi in ms.prims.first..ms.prims.first + ms.prims.count {
-			let pr = gltf::prims[pi];
+		let mesh = gltf::meshes[nd.mesh];
+		for pi in mesh.prims.count {
+			let pr = gltf::prims[mesh.prims.first + pi];
 			for t in pr.icount / 3 {
 				let v0 = pr.vfirst + (gltf::indices[pr.ifirst + 3 * t] as int);
 				let v1 = pr.vfirst + (gltf::indices[pr.ifirst + 3 * t + 1] as int);
@@ -281,11 +311,15 @@ fn measure(asset int, joint const byte[:], meshes const byte[][:]) bool {
 				var is_head = true;
 				if nd.skin >= 0 {
 					let sk = gltf::skins[nd.skin];
-					is_head = under(gltf::ints[sk.joints.first + hair::tri_owner(v0, v1, v2)], hn);
+					let jn = gltf::ints[sk.joints.first + hair::tri_owner(v0, v1, v2)];
+					is_head = under(jn, hn);
 				}
-				let p0 = vpos(v0);
-				let p1 = vpos(v1);
-				let p2 = vpos(v2);
+				let b0 = v0 * gltf::VERTEX_FLOATS + gltf::AT_POS;
+				let b1 = v1 * gltf::VERTEX_FLOATS + gltf::AT_POS;
+				let b2 = v2 * gltf::VERTEX_FLOATS + gltf::AT_POS;
+				let p0 = float3 { gltf::verts[b0], gltf::verts[b0 + 1], gltf::verts[b0 + 2] };
+				let p1 = float3 { gltf::verts[b1], gltf::verts[b1 + 1], gltf::verts[b1 + 2] };
+				let p2 = float3 { gltf::verts[b2], gltf::verts[b2 + 1], gltf::verts[b2 + 2] };
 				if is_head {
 					hp.push(p0);
 					hp.push(p1);
@@ -299,11 +333,11 @@ fn measure(asset int, joint const byte[:], meshes const byte[][:]) bool {
 		}
 	}
 	if hp.len < 3 { return false; }
-	top = hp[0].y;
-	var xlo f32 = hp[0].x;
-	var xhi f32 = hp[0].x;
+	var ymax f32 = -1.0e30;
+	var xlo f32 = 1.0e30;
+	var xhi f32 = -1.0e30;
 	for p in hp {
-		top = max(top, p.y);
+		ymax = max(ymax, p.y);
 		xlo = min(xlo, p.x);
 		xhi = max(xhi, p.x);
 	}
@@ -312,93 +346,85 @@ fn measure(asset int, joint const byte[:], meshes const byte[][:]) bool {
 	var hw f32 = 0.0;
 	var zlo f32 = 1.0e30;
 	var zhi f32 = -1.0e30;
+	var any_top = false;
 	for p in hp {
-		if p.y > top - 0.42 * W {
+		if p.y > ymax - 0.42 * W {
+			any_top = true;
 			hw = max(hw, abs(p.x - cx));
 			zlo = min(zlo, p.z);
 			zhi = max(zhi, p.z);
 		}
 	}
+	if !any_top {
+		zlo = 0.0;
+		zhi = 0.0;
+	}
+	top = ymax;
 	unit = max(1.33 * hw, 0.02);
 	ctr = float3 { cx, top - unit, (zlo + zhi) / 2.0 };
+	map.clear();
 	map.resize(MW * MH, 0.0);
 	for t in hp.len / 3 {
 		let a = hp[3 * t];
 		let b = hp[3 * t + 1];
 		let c = hp[3 * t + 2];
-		let le = max(length3(b - a), max(length3(c - b), length3(a - c)));
-		let n = clamp(ceil_i(le / (0.04 * unit)), 1, 24);
+		let longest = max(length3(b - a), max(length3(c - b), length3(a - c)));
+		let n = clamp(ceil_i(longest / (0.04 * unit)), 1, 24);
 		for i in 0..n + 1 {
 			for j in 0..n - i + 1 {
 				let s = a + (b - a) * ((i as f32) / (n as f32)) + (c - a) * ((j as f32) / (n as f32));
 				let d = s - ctr;
 				let r = length3(d);
 				if r > 0.00001 {
-					let col = ((floor((atan2(d.x as real, d.z as real) / 6.2831853 + 0.5) * MW) as int) % MW + MW) % MW;
+					let col = (floor((atan2(d.x as real, d.z as real) / 6.2831853 + 0.5) * MW) as int) % MW;
 					let row = clamp(floor((asin_r((d.y / r) as real) / 3.14159265 + 0.5) * MH) as int, 0, MH - 1);
-					let at = row * MW + col;
-					map[at] = max(map[at], r);
+					map[row * MW + col] = max(map[row * MW + col], r);
 				}
 			}
 		}
 	}
 	fill_map();
 	if bp.len > 0 {
-		var bf float3[>..] = [];
+		var bs float3[>..] = [];
+		bs.resize(bp.len, z);
+		bs.clear();
 		for p in bp {
-			if abs(p.x - cx) < 2.6 * unit { bf.push(p); }
+			if abs(p.x - cx) < 2.6 * unit { bs.push(p); }
 		}
-		var sy f32 = top - 3.0 * unit;
-		var found = false;
-		for p in bf {
+		var sy = top - 3.0 * unit;
+		var have_sy = false;
+		for p in bs {
 			let ax = abs(p.x - cx);
 			if ax >= 1.3 * unit && ax <= 1.8 * unit {
-				if !found || p.y > sy {
+				if !have_sy {
 					sy = p.y;
-					found = true;
-				}
-			}
-		}
-		var cnt = 0;
-		var half f32 = 0.0;
-		var z0 f32 = 0.0;
-		var z1 f32 = 0.0;
-		fn add(p float3, y0 f32, y1 f32) {
-			if p.y >= y0 && p.y <= y1 {
-				if cnt == 0 {
-					z0 = p.z;
-					z1 = p.z;
+					have_sy = true;
 				} else {
-					z0 = min(z0, p.z);
-					z1 = max(z1, p.z);
+					sy = max(sy, p.y);
 				}
-				half = max(half, abs(p.x - cx));
-				cnt += 1;
 			}
 		}
-		for p in hp { add(p, sy + 0.25 * unit, sy + 0.6 * unit); }
-		for p in bf { add(p, sy + 0.25 * unit, sy + 0.6 * unit); }
-		var nr f32 = 0.55 * unit;
-		var nz f32 = ctr.z - 0.1 * unit;
-		if cnt > 0 {
-			nr = clamp(half, 0.4 * unit, 0.8 * unit);
-			nz = (z0 + z1) / 2.0;
+		sol.resize(6, z);
+		sol.clear();
+		let f1, h1, a1, c1 = band(hp, cx, sy + 0.25 * unit, sy + 0.6 * unit);
+		let f2, h2, a2, c2 = band(bs, cx, sy + 0.25 * unit, sy + 0.6 * unit);
+		var nr = 0.55 * unit;
+		var nz = ctr.z - 0.1 * unit;
+		if f1 || f2 {
+			nr = clamp(max(h1, h2), 0.4 * unit, 0.8 * unit);
+			nz = (min(a1, a2) + max(c1, c2)) / 2.0;
 		}
 		sol.push(float3 { cx, sy + 0.9 * unit, nz });
 		sol.push(float3 { nr, 1.5 * unit, nr });
-		cnt = 0;
-		half = 0.0;
-		for p in bf { add(p, sy - 1.2 * unit, sy + 0.1 * unit); }
-		if cnt > 0 {
-			sol.push(float3 { cx, sy - 0.75 * unit, (z0 + z1) / 2.0 });
-			sol.push(float3 { half + 0.15 * unit, 0.85 * unit, (z1 - z0) / 2.0 + 0.1 * unit });
+		let fs, hs1, zs0, zs1 = band(bs, cx, sy - 1.2 * unit, sy + 0.1 * unit);
+		if fs {
+			sol.push(float3 { cx, sy - 0.75 * unit, (zs0 + zs1) / 2.0 });
+			sol.push(float3 { hs1 + 0.15 * unit, 0.85 * unit, (zs1 - zs0) / 2.0 + 0.1 * unit });
 		}
-		cnt = 0;
-		half = 0.0;
-		for p in bf { add(p, sy - 4.0 * unit, sy - unit); }
-		if cnt > 0 {
-			sol.push(float3 { cx, sy - 2.8 * unit, (z0 + z1) / 2.0 });
-			sol.push(float3 { half + 0.1 * unit, 2.6 * unit, (z1 - z0) / 2.0 + 0.1 * unit });
+		let fc, hc, zc0, zc1 = band(bs, cx, sy - 4.0 * unit, sy - unit);
+		if fc {
+			sol.push(float3 { cx, sy - 2.8 * unit, (zc0 + zc1) / 2.0 });
+			sol.push(float3 { hc + 0.1 * unit, 2.6 * unit, (zc1 - zc0) / 2.0 + 0.1 * unit });
 		}
 	}
 	ok = true;
@@ -643,62 +669,86 @@ fn make_roots(st Do, out float3[>..]&) {
 		}
 	}
 }
-=== -8c1905c288f3b30
-var s_axes float3[>..];
+=== 3626b6799c4cccb9
+var s_axis float3[>..];
 var s_root float3[>..];
-var s_whole f32[>..];
+var s_len f32[>..];
 var s_head f32[>..];
 var s_grp int[>..];
 var s_lay f32[>..];
 var s_pts float3[>..];
-fn make_strands(st Do, roots const float3[:], k int) {
-	s_axes.clear();
+var s_k int = 4;
+fn make_strands(st Do, roots const float3[:]) {
+	let n = roots.len;
+	let k = clamp(st.points, 4, 32);
+	s_k = k;
+	let z = float3 { 0.0, 0.0, 0.0 };
+	s_axis = [];
+	s_axis.resize(n, z);
+	s_axis.clear();
+	s_root = [];
+	s_root.resize(n, z);
 	s_root.clear();
-	s_whole.clear();
+	s_len = [];
+	s_len.resize(n, 0.0);
+	s_len.clear();
+	s_head = [];
+	s_head.resize(n, 0.0);
 	s_head.clear();
+	s_grp = [];
+	s_grp.resize(n, 0);
 	s_grp.clear();
+	s_lay = [];
+	s_lay.resize(n, 0.0);
 	s_lay.clear();
+	s_pts = [];
+	s_pts.resize(n * k, z);
 	s_pts.clear();
-	var tl1 float3[>..] = [];
-	var tl2 float3[>..] = [];
+	var la float3[>..] = [];
+	la.resize(512, z);
+	la.clear();
+	var lb float3[>..] = [];
+	lb.resize(512, z);
+	lb.clear();
 	if st.tie == 1 || st.tie == 2 {
-		tail_line(st, 1.0, tl1);
-		tail_line(st, -1.0, tl2);
+		tail_line(st, 1.0, la);
+		tail_line(st, -1.0, lb);
 	}
 	var path float3[>..] = [];
-	for ri in roots.len {
-		let d = roots[ri];
+	path.resize(512, z);
+	path.clear();
+	for i in n {
+		let d = roots[i];
 		let lay = hair::rnd() as f32;
 		let lv = hair::rnd() as f32;
 		let pr = hair::rnd() as f32;
 		let ph = (hair::rnd() as f32) * 6.2831853;
 		var s f32 = -1.0;
 		if (skin(d).x - ctr.x) / unit > st.part + 0.06 * (pr - 0.5) { s = 1.0; }
-		let fringe = st.fringe > 0.0 && d.z > 0.3 && abs(d.x) < 0.7 && d.y < line(d) + 0.22 + 0.08 * (lay - 0.5);
+		let fr = st.fringe > 0.0 && d.z > 0.3 && abs(d.x) < 0.7 && d.y < line(d) + 0.22 + 0.08 * (lay - 0.5);
 		var whole f32 = 0.0;
 		var head f32 = 0.0;
 		var grp = 0;
-		if st.tie > 0 && !fringe {
+		if st.tie > 0 && !fr {
 			if d.x < 0.0 {
-				let a, b = tied(st, d, lay, lv, ph, tl2, path);
-				whole = a;
-				head = b;
-				grp = 0;
+				let w, h = tied(st, d, lay, lv, ph, lb, path);
+				whole = w;
+				head = h;
 			} else {
-				let a, b = tied(st, d, lay, lv, ph, tl1, path);
-				whole = a;
-				head = b;
-				grp = 1;
+				let w, h = tied(st, d, lay, lv, ph, la, path);
+				whole = w;
+				head = h;
 			}
+			if d.x < 0.0 { grp = 0; } else { grp = 1; }
 		} else {
-			whole = loose(st, d, fringe, s, lay, lv, path);
+			whole = loose(st, d, fr, s, lay, lv, path);
 			head = 0.0;
-			if fringe { grp = 2; } else if s < 0.0 { grp = 0; } else { grp = 1; }
+			if fr { grp = 2; } else if s < 0.0 { grp = 0; } else { grp = 1; }
 		}
 		resample(path, k, s_pts);
-		s_axes.push(d);
+		s_axis.push(d);
 		s_root.push(path[0]);
-		s_whole.push(whole);
+		s_len.push(whole);
 		s_head.push(head);
 		s_grp.push(grp);
 		s_lay.push(lay);
@@ -726,15 +776,19 @@ fn make_leaders(st Do) {
 		s_lead.push(best);
 	}
 }
-=== -5cc5269ae67716f0
-var s_out float3[>..];
-fn shape_all(st Do, k int) {
-	s_out.clear();
+=== -33e4da51aa6fdd77
+var s_sh float3[>..];
+fn shape(st Do) {
 	let n = s_grp.len;
+	let k = s_k;
+	let z = float3 { 0.0, 0.0, 0.0 };
+	s_sh = [];
+	s_sh.resize(n * k, z);
+	s_sh.clear();
 	for i in n {
 		let jit = (hair::rnd() as f32) - 0.5;
-		let lead = s_lead[i];
-		let r0 = s_root[lead] * (1.5 / unit);
+		let L = s_lead[i];
+		let r0 = s_root[L] * (1.5 / unit);
 		let phw = 6.2831853 * 2.0 * vn(r0, 71);
 		let wamp = st.wave * unit * (0.7 + 0.6 * vn(r0, 75));
 		let wfq = st.waves * (0.85 + 0.3 * vn(r0, 72));
@@ -742,73 +796,76 @@ fn shape_all(st Do, k int) {
 		let phc = 6.2831853 * vn(r0 * 7.3, 91);
 		var hand f32 = -1.0;
 		if vn(r0 * 5.1, 93) > 0.5 { hand = 1.0; }
-		let base = i * k;
 		for e in k {
-			let ip = max(e - 1, 0);
-			let nx = min(e + 1, k - 1);
-			let tg = s_pts[base + nx] - s_pts[base + ip];
-			let sl = s_whole[i] * (e as f32) / ((k - 1) as f32);
-			let ramp = clamp((sl - s_head[i]) / (0.3 * (s_whole[i] - s_head[i]) + 0.15), 0.0, 1.0);
-			var c1 = cross3(tg, s_axes[i]);
-			if dot3(c1, c1) < 0.000000000001 { c1 = cross3(tg, float3 { 1.0, 0.0, 0.0 }); }
-			let b1 = unit3(c1);
+			let sl = s_len[i] * (e as f32) / ((k - 1) as f32);
+			let ramp = clamp((sl - s_head[i]) / (0.3 * (s_len[i] - s_head[i]) + 0.15), 0.0, 1.0);
+			let tg = s_pts[i * k + min(e + 1, k - 1)] - s_pts[i * k + max(e - 1, 0)];
+			var cr = cross3(tg, s_axis[i]);
+			if dot3(cr, cr) < 0.000000000001 { cr = cross3(tg, float3 { 1.0, 0.0, 0.0 }); }
+			let b1 = unit3(cr);
 			let b2 = unit3(cross3(tg, b1));
 			let th = hand * 6.2831853 * st.turns * sl + phc + jit * 1.2;
-			s_out.push(s_pts[base + e] + (b1 * hcos(ac) + b2 * hsin(ac)) * (wamp * ramp * hsin(6.2831853 * wfq * sl + phw + jit * 0.3)) + (b1 * hcos(th) + b2 * hsin(th)) * (st.curl * unit * ramp * (0.75 + 0.5 * s_lay[i])));
+			s_sh.push(s_pts[i * k + e] + (b1 * hcos(ac) + b2 * hsin(ac)) * (wamp * ramp * hsin(6.2831853 * wfq * sl + phw + jit * 0.3)) + (b1 * hcos(th) + b2 * hsin(th)) * (st.curl * unit * ramp * (0.75 + 0.5 * s_lay[i])));
 		}
 	}
-	let snap = copy(s_out);
+	var before float3[>..] = [];
+	before.resize(n * k, z);
+	before.clear();
+	before.append(s_sh);
 	for i in n {
-		let lead = s_lead[i];
-		if lead != i {
+		let L = s_lead[i];
+		if L != i {
 			for e in k {
-				let w = st.clump * 0.85 * hsqrt((e as f32) / ((k - 1) as f32));
-				let p = s_out[i * k + e];
-				s_out[i * k + e] = p + (snap[lead * k + e] - p) * w;
+				let p = before[i * k + e];
+				let amt = st.clump * 0.85 * hsqrt((e as f32) / ((k - 1) as f32));
+				s_sh[i * k + e] = p + (before[L * k + e] - p) * amt;
 			}
 		}
 	}
 	if st.comb != 3 {
 		for i in n {
 			for e in 1..k {
-				s_out[i * k + e] = keep(s_out[i * k + e], 0.008 * unit);
+				s_sh[i * k + e] = keep(s_sh[i * k + e], 0.008 * unit);
 			}
 		}
 	}
 }
-=== 2d9ea6f67ee0d0d9
+=== 265b50de447176fe
 fn grow(st Do, seed int, data byte[>..]&) int {
 	if !ok { return 0; }
 	hair::rs = seed;
 	var roots float3[>..] = [];
 	make_roots(st, roots);
 	if roots.len == 0 { return 0; }
-	let k = clamp(st.points, 4, 32);
-	make_strands(st, roots, k);
+	make_strands(st, roots);
 	make_leaders(st);
-	shape_all(st, k);
+	shape(st);
 	let n = s_grp.len;
-	var sty = hair::Style { width: st.width * 0.001 * (unit / 0.1), .. };
+	let k = s_k;
+	let sty = hair::Style { width: st.width * 0.001 * (unit / 0.1), .. };
 	var fl f32[>..] = [];
+	fl.resize(n * k * 12, 0.0);
+	fl.clear();
 	var rows i32[>..] = [];
-	hair::strand_out(s_out, s_axes, sty, k, fl, rows);
+	rows.resize(n * (k - 1) * 4, 0);
+	rows.clear();
+	hair::strand_out(s_sh, s_axis, sty, k, fl, rows);
 	for i in n {
 		let e = unit3(s_root[i] - ctr);
-		let ln = line(e);
-		let w = ss(ln + 0.02, ln + 0.14, e.y);
-		let r0 = (64.0 + 191.0 * w) as real;
-		rows[4 * (i * (k - 1)) + 2] = (round(r0) as int * 65536) as i32;
+		let w = ss(line(e) + 0.02, line(e) + 0.14, e.y);
+		rows[4 * (i * (k - 1)) + 2] = ((round((64.0 + 191.0 * w) as real) as int) * 65536) as i32;
 		if k > 4 {
-			let r1 = (64.0 + 80.0 * w) as real;
-			rows[4 * (i * (k - 1) + 1) + 2] = (round(r1) as int * 65536) as i32;
+			rows[4 * (i * (k - 1) + 1) + 2] = ((round((64.0 + 80.0 * w) as real) as int) * 65536) as i32;
 		}
 		if s_grp[i] == 2 {
-			var first = 1;
-			if k > 4 { first = 2; }
-			for sg in first..k - 1 {
-				rows[4 * (i * (k - 1) + sg) + 2] = (150 * 65536) as i32;
+			for j in 1..k - 1 {
+				rows[4 * (i * (k - 1) + j) + 2] = (150 * 65536) as i32;
 			}
 		}
+	}
+	if data.len == 0 {
+		data.resize(16 + 4 * fl.len + 4 * rows.len, 0);
+		data.clear();
 	}
 	data.append("HMG2");
 	hair::put_i32(data, n);

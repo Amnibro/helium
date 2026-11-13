@@ -2571,7 +2571,7 @@ Every check grows the styles on a ball of 0.1 m with seed 7.
 | --- | --- | --- | --- |
 | HD1 every default grows | 30 of 30 styles give a well-formed groom; the fewest guides are 1.006 x the asked count; 22 shades | all styles, at least 0.7 x | PASS |
 | HD2 no point inside the head | nearest point of any style is 1.0 radii from the center | at least 0.999 | PASS |
-| HD2 control, hair on the skin | 293,590 points lie within 5% of the skin | above 1,000 | PASS |
+| HD2 control, hair on the skin | 290,061 points lie within 5% of the skin | above 1,000 | PASS |
 | HD3 the same seed gives the same bytes | equal for seed 7 twice, different for seed 8 | equal, then different | PASS |
 | HD4 blunt cut | the bob ends 1.331 units below the center (cut 1.25); 3,251 of 3,260 tips are at the cut | at most cut + 0.15; at least 30% | PASS |
 | HD4 control, long straight | reaches 6.546 units below | above 3 | PASS |
