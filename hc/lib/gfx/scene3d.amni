@@ -203,6 +203,7 @@ var furnace_scale f32 = 1.0;
 // F0 = 1 in the specular lobe only, 2 weights diffuse by the older per-light 1 - F(v.h).
 var furnace_mode = 0;
 var test_rect_naive = false;
+var rect_detail = 3;
 var test_all_lights = false;
 var test_cluster_range f32 = 1.0;
 var alpha_to_coverage = false;
@@ -2387,7 +2388,7 @@ fn light_upload() {
 		light_data.push(x4(linalg::unit3(l.dir), if spot { linalg::f(cos(co as real)) } else { -2.0 }));
 		light_data.push(if k < MAX_LIGHTS { frame_u.light_shd[k] } else { f4(-1.0, 0.0, 0.0, 0.0) });
 		light_data.push(f4(l.radius, l.length, l.width, l.height));
-		light_data.push(x4(rect_axis(l), if test_rect_naive { 1.0 } else { 0.0 }));
+		light_data.push(x4(rect_axis(l), if test_rect_naive { 1.0 } else if rect_detail <= 1 { 0.4 } else if rect_detail == 2 { 0.2 } else { 0.0 }));
 	}
 	if light_data.len == 0 { light_data.push(f4(0.0, 0.0, 0.0, 0.0)); }
 	frame_u.decal = f4(light_data.len as f32, decals.len as f32, if test_all_lights { lights.len as f32 } else { 0.0 }, 0.0);

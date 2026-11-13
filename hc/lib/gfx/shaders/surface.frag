@@ -460,7 +460,7 @@ void rect_light(vec3 d, vec3 ld, vec4 la, vec4 lr, vec3 n, vec3 v, vec3 f0, floa
 	float nv = max(dot(n, v), 1e-4);
 	float al = max(rough * rough, 0.002);
 	float a2 = al * al;
-	int sub = naive ? 1 : 3;
+	int sub = naive || lr.w > 0.3 ? 1 : (lr.w > 0.15 ? 2 : 3);
 	vec3 rf = 2.0 * dot(n, v) * n - v;
 	vec3 o[5];
 	vec3 fv = vec3(0.0);
@@ -480,7 +480,7 @@ void rect_light(vec3 d, vec3 ld, vec4 la, vec4 lr, vec3 n, vec3 v, vec3 f0, floa
 			if (da >= 0.0) { o[k] = a; k++; }
 			if ((da >= 0.0 && db < 0.0) || (da < 0.0 && db >= 0.0)) { o[k] = a + (b - a) * (da / (da - db)); k++; }
 		}
-		if (k < 3) continue;
+		if (k < 3) { if (s < 0) break; continue; }
 		if (s < 0) {
 			if (naive) {
 				vec3 l0 = normalize(d);
@@ -1223,6 +1223,7 @@ void main() {
 			if (rect && dot(d, lx.xyz) >= 0.0) continue;
 			float fall = rect ? fq * fq / (la.z * la.w) : (la.x > 0.0 ? fq * fq / (dist * dist + la.x * la.x) : range_falloff(dist, lp.w));
 			vec3 le = lc.rgb * fall * spot_cone(lc.w, lx.w, lx.xyz, ld) * local_visibility(lrec[i + 3], lp.xyz, lx.xyz, in_world, gn) * cast_vis(in_world, i / 6 + 1);
+			if (le.r == 0.0 && le.g == 0.0 && le.b == 0.0) continue;
 			if (rect) {
 				vec4 rd;
 				vec3 rs;

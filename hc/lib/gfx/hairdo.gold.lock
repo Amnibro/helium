@@ -530,7 +530,7 @@ fn comb_dir(cm int, st Do, e float3, s f32) float3 {
 	if length3(r) < 0.00001 { return float3 { 0.0, -1.0, 0.0 }; }
 	return unit3(r);
 }
-=== -2e7f05917f67a228
+=== 4e8c9e3fd5bd9ac2
 fn loose(st Do, d float3, fr bool, s f32, lay f32, lv f32, path float3[>..]&) f32 {
 	path.clear();
 	var cm = st.comb;
@@ -556,23 +556,30 @@ fn loose(st Do, d float3, fr bool, s f32, lay f32, lv f32, path float3[>..]&) f3
 			q = p + dir * h;
 		} else {
 			let tg = unit3(comb_dir(cm, st, e, s) * o + float3 { 0.0, -1.0, 0.0 } * (1.0 - o));
-			if i == 1 { dir = unit3(d * (0.15 + 2.0 * st.lift) + tg); }
+			if i == 1 {
+				dir = unit3(d * (0.15 + 2.0 * st.lift) + tg);
+			}
 			let kk = mix(0.55 + 0.4 * st.stiff, 0.6, o);
 			dir = unit3(dir * kk + tg * (1.0 - kk));
 			q = p + dir * h;
-			if (cm == 0 || cm == 1 || cm == 5) && st.face > 0.0 && q.z > ctr.z + 0.1 * unit && q.y > ctr.y - 1.6 * unit && q.y < ctr.y + 0.1 * unit {
-				let dx = q.x - ctr.x;
-				let ax = abs(dx);
-				let lim = st.face * unit;
+			if (cm == 0 || cm == 1 || cm == 5) && st.face > 0.0 && q.z > ctr.z + 0.1 * unit && q.y >= ctr.y - 1.6 * unit && q.y <= ctr.y + 0.5 * unit {
+				let ax = abs(q.x - ctr.x);
+				let lim = st.face * unit * (1.0 - ss(0.1, 0.5, (q.y - ctr.y) / unit));
 				if ax < lim {
-					var sg f32 = s;
-					if dx > 0.0 { sg = 1.0; } else if dx < 0.0 { sg = -1.0; }
-					q.x = ctr.x + sg * (ax + (lim - ax) * 0.5);
+					var sgn = s;
+					if q.x - ctr.x > 0.0 {
+						sgn = 1.0;
+					} else if q.x - ctr.x < 0.0 {
+						sgn = -1.0;
+					}
+					q.x = ctr.x + sgn * (ax + (lim - ax) * 0.7);
 				}
 			}
 			let fi = i as f32;
 			q = keep(q, unit * (0.012 + st.lift * (0.3 + 0.7 * lay) * min(fi / 5.0, 1.0) + 0.02 * min(fi * 0.03, 1.0)));
-			if length3(q - p) > 0.000001 { dir = unit3(q - p); }
+			if length3(q - p) > 0.000001 {
+				dir = unit3(q - p);
+			}
 		}
 		p = q;
 		path.push(p);
@@ -582,15 +589,19 @@ fn loose(st Do, d float3, fr bool, s f32, lay f32, lv f32, path float3[>..]&) f3
 	if path.len > 5 {
 		for pass in 2 {
 			let cp = copy(path);
-			for i in 3..path.len - 1 {
-				var np = (cp[i - 1] + cp[i] * 2.0 + cp[i + 1]) * 0.25;
-				if cm != 3 { np = keep(np, unit * (0.012 + st.lift * (0.3 + 0.7 * lay))); }
-				path[i] = np;
+			for idx in 3..cp.len - 1 {
+				var np = (cp[idx - 1] + cp[idx] * 2.0 + cp[idx + 1]) * 0.25;
+				if cm != 3 {
+					np = keep(np, unit * (0.012 + st.lift * (0.3 + 0.7 * lay)));
+				}
+				path[idx] = np;
 			}
 		}
 	}
 	var total f32 = 0.0;
-	for i in path.len - 1 { total += length3(path[i + 1] - path[i]); }
+	for i in path.len - 1 {
+		total += length3(path[i + 1] - path[i]);
+	}
 	return total / unit;
 }
 === 5ab6a12a8dd3ce86

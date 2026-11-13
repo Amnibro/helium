@@ -39,18 +39,25 @@ vec2 lightD(vec3 P, mat4 vp, float fw, uint s) {
 	return vec2(d, d * c.w / max(params.w * seg_w * fw, 1e-9));
 }
 vec3 lit1(vec3 P, vec3 T, vec3 V, vec3 L, vec3 sig, vec3 cms, float h, float bm, float ex, vec2 ld, float sb) {
+	float nf = min(ld.y * look.y, 60.0), tr = exp(-ld.x * light.z);
+	if (tr < 0.002 && nf >= 59.0) return vec3(0.0);
 	vec3 af, ab, fs = chiang(T, L, V, sig, h, bm, mel.z, 0.035, ex, af, ab);
-	float nf = min(ld.y * look.y, 60.0), sl = dot(T, L) + dot(T, V), sf2 = bm * bm * (1.0 + nf) + ex;
+	float sl = dot(T, L) + dot(T, V), sf2 = bm * bm * (1.0 + nf) + ex;
 	vec3 tf = pow(max(af + ab * 0.5, vec3(1e-3)), vec3(nf)) * sb;
-	return exp(-ld.x * light.z) * sb * fs + tf * cms * exp(-0.5 * sl * sl / sf2) * inversesqrt(6.2831853 * sf2) * 0.1591549 * 2.0 * look.w;
+	return tr * sb * fs + tf * cms * exp(-0.5 * sl * sl / sf2) * inversesqrt(6.2831853 * sf2) * 0.1591549 * 2.0 * look.w;
 }
 vec3 shadeAt(vec3 P, vec3 T, vec3 sig0, vec3 cms, float h, float bm) {
 	vec3 sig = sig0 * 1.7, V = normalize(cam.xyz - P);
-	vec3 col = sun_rgb.rgb * params.y * seg_g * lit1(P, T, V, to_sun.xyz, sig, cms, h, bm, 0.0, lightD(P, light_vp, light.w, 0u), bodyT(P));
+	vec3 col = vec3(0.0);
+	if (sun_rgb.r + sun_rgb.g + sun_rgb.b > 0.0) {
+		float sb = bodyT(P);
+		if (sb > 0.0) col = sun_rgb.rgb * params.y * seg_g * lit1(P, T, V, to_sun.xyz, sig, cms, h, bm, 0.0, lightD(P, light_vp, light.w, 0u), sb);
+	}
 	for (int i = 0; i < 4; i++) {
 		if (float(i) >= mel.w) break;
 		vec3 dl = pl[i * 2].xyz - P;
 		float dd = length(dl), q = clamp(1.0 - dd * dd / (pl[i * 2].w * pl[i * 2].w), 0.0, 1.0), ar = min(plx[i].y / dd, 1.2), tc = dot(core.xyz - P, dl) / dd, oc = tc <= 0.0 || core.w <= 0.0 ? 1.0 : smoothstep(core.w * 0.8, core.w, length(core.xyz - P - dl / dd * tc));
+		if (q * oc <= 0.0) continue;
 		col += params.y * seg_g * pl[i * 2 + 1].rgb * q * q / (1.0 + dd * dd * cam.w * cam.w) * lit1(P, T, V, dl / dd, sig, cms, h, bm, 0.25 * ar * ar, lightD(P, plvp[i], plx[i].x, uint(i) + 1u), oc);
 	}
 	return col + sky.rgb * cms;
@@ -96,6 +103,12 @@ void main() {
 	if (ca.w < 0.02 || cb.w < 0.02) return;
 	vec2 sa = vec2(ca.x / ca.w * 0.5 + 0.5, 0.5 - ca.y / ca.w * 0.5) * SZ, sb = vec2(cb.x / cb.w * 0.5 + 0.5, 0.5 - cb.y / cb.w * 0.5) * SZ;
 	vec2 d = sb - sa;
+	if (max(sa.x, sb.x) < -2.0 || max(sa.y, sb.y) < -2.0 || min(sa.x, sb.x) > SZ.x + 2.0 || min(sa.y, sb.y) > SZ.y + 2.0) return;
+	if (!lit) {
+		ivec2 hi = ivec2(SZ) - 1;
+		float da = texelFetch(tex_nd, clamp(ivec2(sa), ivec2(0), hi), 0).w, db = texelFetch(tex_nd, clamp(ivec2(sb), ivec2(0), hi), 0).w, dm = texelFetch(tex_nd, clamp(ivec2((sa + sb) * 0.5), ivec2(0), hi), 0).w, mg = 0.03 * ws;
+		if (da > 0.0 && db > 0.0 && dm > 0.0 && ca.w > da + mg && cb.w > db + mg && (ca.w + cb.w) * 0.5 > dm + mg) return;
+	}
 	float len = length(d);
 	int n = int(clamp(ceil(max(abs(d.x), abs(d.y))), 1.0, 512.0));
 	bool xm = abs(d.x) >= abs(d.y);
@@ -135,7 +148,8 @@ void main() {
 			int sl = clamp(int((vz - fd) / (params.x * ws)), 0, 3);
 			uint o = (pi * 4u + uint(sl)) * 4u;
 			if (lit) { atomicAdd(acc[pi * 4u + uint(sl)], uint(cov * w * 4096.0)); continue; }
-			float ao = mix(1.0, mix(occ0, occ1, f), 0.35) * exp(-(vz - fd) * sky.w / ws);
+			float dv = max(vz - fd, 0.0) / ws;
+			float ao = mix(1.0, mix(occ0, occ1, f), 0.35) * mix(exp(-dv * sky.w), 1.0, smoothstep(0.04, 0.08, dv));
 			vec3 col = mix(colA, colB, f) * ao * look.x;
 			float cw = cov * w;
 			atomicAdd(acc[o], uint(min(col.r, 64.0) * cw * 4096.0));

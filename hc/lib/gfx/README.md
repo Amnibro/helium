@@ -652,6 +652,14 @@ outline the panel makes in that plane. Fresnel and masking come from each piece'
 lobe-weighted center. The method was chosen on a CPU sweep of 1829 panel, view and
 roughness setups against brute-force integration: worst error 5.2 %, one setup over 5 %.
 
+`s3d::rect_detail` (3) sets that split: 3 is the 3 x 3 pieces above, 2 uses 2 x 2 and 1
+uses the whole panel as one piece. Diffuse light is the same at every setting; only the
+shape of highlights changes. On a lit character the frame differs from setting 3 by at
+most 7 of 255 at setting 2 and 19 of 255 at setting 1 (a thin metal edge), and a face
+close-up with five panels draws in 14 ms and 9 ms instead of 23 ms. A panel that is
+wholly below a surface's horizon, and a light that is fully shadowed there, cost that
+pixel nothing.
+
 ### Cut-out edges, mip bias, morph motion and light falloff
 
 ```
@@ -1164,7 +1172,7 @@ is shown again. `hair::grooms[g].look` (`hair::Look`) holds the appearance:
 | `scatter` | 0.7 | strength of the light that reaches a strand through other strands |
 | `density` | 1.0 | how many real fibers a drawn strand stands for in that scattered light |
 | `ambient` | 0.22, 0.22, 0.22 | share of the scene's sky light (the mean of zenith and horizon times `sky.ambient`) the hair picks up |
-| `falloff` | 40 | how fast that sky light fades with depth into the hair, per meter |
+| `falloff` | 40 | how fast the hair darkens with depth below its nearest strand, per meter. This works inside one layer of hair: hair more than 4 cm behind the nearest strand is a layer of its own (a lock in front of the hair down the back) and is back to full brightness by 8 cm, so a lock or a stray hair in front draws no dark outline on the hair behind it |
 | `frizz` | 0 | stray single hairs: at 1, about one strand in seven leaves the surface in an arc that reaches about 1.5 cm at the tip, which catches back light the way real flyaways do |
 | `dye` | 0 | 0 colors the hair with natural pigment, which suits blacks, browns, reds, blondes and grays; 1 absorbs light by `color` directly, for dyed colors such as blue, green or pink |
 | `cast` | 1 | how strongly the hair shades the meshes around it (face, shoulders, floor) from the sun and the first four lamps; 0 turns that off |
@@ -1244,6 +1252,8 @@ around), `curl` and `wave`, `tie` (one or two tails or buns, with their place an
 `frizz` and more; the rows are the table at the top of `hairdo.gold`. Hair grows above a
 hairline fitted to adult heads, lies flat on the scalp, stays outside the head, the neck
 and the shoulders, and its roots are drawn thicker so the scalp does not show through.
+A fringe ends above the brows, and long loose hair is combed to the sides from the
+hairline down (`face`, the half width kept clear, in head units), so the eyes stay clear.
 
 ### Foliage
 
