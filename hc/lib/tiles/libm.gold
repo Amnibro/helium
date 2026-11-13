@@ -124,6 +124,16 @@ Constants: PIO2_HI = 1.57079632679489655800e+00, PIO2_LO = 6.1232339957367660358
 - Otherwise: z = (1.0 - x)*0.5, s = sqrt(z), df = s with low word zeroed, c = (z - df*df)/(s + df), w = R(z)*s + c, and the result is 2.0*(df + w).
 
 `hypot(x, y)`:
+A fused multiply-add fast path for the correctly rounded result, used only when rt_simd256() is true. rt_simd256() and rt_fma(a, b, c) are runtime prelude functions (lib/rt.he) that every module already sees: call them directly and never declare or define them. Let ea and eb be the exponent fields of x's and y's bit patterns ((bits >> 52) & 0x7ff). When ea and eb are both from 0x3ff - 450 to 0x3ff + 510:
+- hx = x*x, lx = rt_fma(x, x, -hx), hy = y*y, ly = rt_fma(y, y, -hy).
+- s = hx + hy, bb = s - hx, t = ((hx - (s - bb)) + (hy - bb)) + (lx + ly).
+- r = sqrt(s + t), rh = r*r, d = (s - rh) + (t - rt_fma(r, r, -rh)).
+- u = hy_up(r), v = hy_dn(r), m = s*HY_M96 where the module constant HY_M96 is 2^-96.
+- bu = r*u + u*u*0.25 and bd = v*v*0.25 - r*v.
+- Return r when d < bu - m and d > bd + m; return r + u when d > bu + m; return r - v when d < bd - m.
+In every other case return hypot_cr(x, y).
+
+`hypot_cr(x, y)`:
 Clear the sign bits of both bit patterns and swap so x's is the larger. ex and ey are those patterns shifted right 52, and x and y are rebuilt from the patterns.
 - If ey is 0x7ff, return y.
 - If ex is 0x7ff or y's pattern is 0, return x.
