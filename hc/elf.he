@@ -3,7 +3,6 @@ EBASE := 0x400000
 var RO byte[>..<]
 var DA byte[>..<]
 var BSS int
-var LBL i32[>..<]
 var FOFF i32[>..<]
 DYNG ~= -1
 eb(o byte[>..]&, v int, n int):

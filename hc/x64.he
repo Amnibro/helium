@@ -37,6 +37,7 @@ lea_g(r int, off int):
 lea_rip(r int, k int, to int): xrex(true, r, 0, 0); xb(0x8D); xb((r & 7) << 3 | 5); XFIX.push(Fix{XC.len, to, k}); x32(0);
 alu(op int, d int, s int): xrr(op, s, d);
 imul(d int, s int): xrex(true, d, 0, s); xb(0x0F); xb(0xAF); xb(0xC0 | (d & 7) << 3 | s & 7);
+imul_m(d int, base int, o int): xrex(true, d, 0, base); xb(0x0F); xb(0xAF); xmem(d, base, o)
 grp3(ext int, r int): xrex(true, 0, 0, r); xb(0xF7); xb(0xC0 | ext << 3 | r & 7);
 shcl(ext int, r int): xrex(true, 0, 0, r); xb(0xD3); xb(0xC0 | ext << 3 | r & 7);
 cqo(): xb(0x48); xb(0x99);
@@ -45,8 +46,14 @@ setcc(cc int, r int): xrexb(0, r); xb(0x0F); xb(0x90 + cc); xb(0xC0 | r & 7); xr
 test_rr(a int, b int): xrr(0x85, b, a);
 lg2(v int) int: k ~= 0; while (1 << k) < v { k++ } k
 cmov(cc int, d int, s int): xrex(true, d, 0, s); xb(0x0F); xb(0x40 + cc); xb(0xC0 | (d & 7) << 3 | s & 7)
-jmp_l(to int): xb(0xE9); XFIX.push(Fix{XC.len, to, 0}); x32(0);
-jcc_l(cc int, to int): xb(0x0F); xb(0x80 + cc); XFIX.push(Fix{XC.len, to, 0}); x32(0);
+var LBL i32[>..<]; var LBS i32[>..<]; var JAT i32[>..<]; var JTO i32[>..<]; var JLN i8[>..<]; var JSH i8[>..<]; var JBAD i8[>..<]
+PST ~= 0; RLX ~= true
+jx(op int, to int):
+	k := JAT.len; bk := to < LBS.len && LBS[to] == PST as i32; d := LBL[to] as int - (XC.len + 2); sh := RLX && (if bk { d >= -128 } else { k < JSH.len && JSH[k] != 0 })
+	if sh: xb(if op < 0 { 0xEB } else { 0x70 + op }); JAT.push(XC.len as i32); JTO.push(to as i32); JLN.push(2); xb(if bk { d & 255 } else { 0 }); return
+	if op < 0 { xb(0xE9) } else { xb(0x0F); xb(0x80 + op) } JAT.push(XC.len as i32); JTO.push(to as i32); JLN.push(if op < 0 { 5 } else { 6 }); XFIX.push(Fix{XC.len, to, 0}); x32(0);
+jmp_l(to int): jx(-1, to)
+jcc_l(cc int, to int): jx(cc, to)
 call_f(f int): xb(0xE8); XFIX.push(Fix{XC.len, f, 1}); x32(0);
 call_r(r int): xrex(false, 0, 0, r); xb(0xFF); xb(0xD0 | r & 7);
 push_r(r int): xrex(false, 0, 0, r); xb(0x50 + (r & 7));
