@@ -131,6 +131,24 @@ float at_n(vec2 p) { vec2 i = floor(p); vec2 f = fract(p); f = f * f * (3.0 - 2.
 void at_setup(vec3 p) { vec2 q = p.xz + p.y * vec2(0.71, -0.53); float l = (at_n(q * 0.031) * 0.7 + at_n(q * 0.11) * 0.3) * 8.0; float ia = floor(l); at_t = smoothstep(0.3, 0.7, fract(l)); at_a = sin(vec2(3.0, 7.0) * ia); at_b = sin(vec2(3.0, 7.0) * (ia + 1.0)); at_on = true; }
 vec4 ats(sampler2D s, vec2 u) { if (!at_on) return smp(s, u); vec2 dx = dFdx(u) * xo2.z; vec2 dy = dFdy(u) * xo2.z; return mix(textureGrad(s, u + at_a, dx, dy), textureGrad(s, u + at_b, dx, dy), at_t); }
 vec4 atsa(sampler2DArray s, vec2 u, float l, vec2 dx, vec2 dy) { if (!at_on) return smpa(s, vec3(u, l)); return mix(textureGrad(s, vec3(u + at_a, l), dx * xo2.z, dy * xo2.z), textureGrad(s, vec3(u + at_b, l), dx * xo2.z, dy * xo2.z), at_t); }
+vec3 sp_w = vec3(0.0, 1.0, 0.0);
+vec3 sp_g = vec3(0.0, 1.0, 0.0);
+vec3 sp_dx = vec3(0.0);
+vec3 sp_dy = vec3(0.0);
+vec4 atst(sampler2DArray s, float sc, float l) {
+	vec4 c = vec4(0.0);
+	if (sp_w.x > 0.0) c += atsa(s, in_world.zy * sc, l, sp_dx.zy * sc, sp_dy.zy * sc) * sp_w.x;
+	if (sp_w.y > 0.0) c += atsa(s, in_world.xz * sc, l, sp_dx.xz * sc, sp_dy.xz * sc) * sp_w.y;
+	if (sp_w.z > 0.0) c += atsa(s, in_world.xy * sc, l, sp_dx.xy * sc, sp_dy.xy * sc) * sp_w.z;
+	return c;
+}
+vec3 atsn(sampler2DArray s, float sc, float l, float ns) {
+	vec3 r = vec3(0.0);
+	if (sp_w.x > 0.0) { vec3 t = atsa(s, in_world.zy * sc, l, sp_dx.zy * sc, sp_dy.zy * sc).xyz * 2.0 - 1.0; t.xy *= ns; r += vec3(abs(t.z) * sp_g.x, t.y + sp_g.y, t.x + sp_g.z) * sp_w.x; }
+	if (sp_w.y > 0.0) { vec3 t = atsa(s, in_world.xz * sc, l, sp_dx.xz * sc, sp_dy.xz * sc).xyz * 2.0 - 1.0; t.xy *= ns; r += vec3(t.x + sp_g.x, abs(t.z) * sp_g.y, t.y + sp_g.z) * sp_w.y; }
+	if (sp_w.z > 0.0) { vec3 t = atsa(s, in_world.xy * sc, l, sp_dx.xy * sc, sp_dy.xy * sc).xyz * 2.0 - 1.0; t.xy *= ns; r += vec3(t.x + sp_g.x, t.y + sp_g.y, abs(t.z) * sp_g.z) * sp_w.z; }
+	return normalize(r);
+}
 vec2 pick_uv(float set) { return (set > 0.5 ? in_uv.zw : in_uv.xy) + pom_off; }
 vec2 water_grad_w(vec2 p, float tm, vec3 wb) {
 	vec2 g = vec2(0.0);
@@ -707,6 +725,8 @@ void main() {
 	vec4 vc = sp ? (mod(sp_p.w, 2.0) > 0.5 ? vec4(in_tan.xyz, 1.0) : vec4(1.0)) : in_col;
 	vec2 at_dx = dFdx(in_world.xz);
 	vec2 at_dy = dFdy(in_world.xz);
+	sp_dx = dFdx(in_world);
+	sp_dy = dFdy(in_world);
 	if (sp_p.w > 1.5) at_setup(in_world);
 	vec4 tint = base * vc * smp(tex_base, buv);
 	if (model == 2) tint.rgb *= eye_ring(buv);
@@ -715,6 +735,9 @@ void main() {
 	bool tp = tri.x > 0.0;
 	vec3 tw = pow(abs(gw), vec3(4.0));
 	tw /= tw.x + tw.y + tw.z;
+	sp_g = gw;
+	sp_w = tw * step(vec3(0.03), tw);
+	sp_w /= max(sp_w.x + sp_w.y + sp_w.z, 1e-4);
 	vec2 ux = in_world.zy * tri.x;
 	vec2 uy = in_world.xz * tri.x;
 	vec2 uz = in_world.xy * tri.x;
@@ -733,7 +756,7 @@ void main() {
 		for (int k = 0; k < 4; k++) {
 			sa[k] = vec3(0.0);
 			if (sp_s[k] > 0.0 && w[k] > 0.001) {
-				vec3 tx = atsa(tex_ext_s, in_world.xz * sp_s[k], sp_a[k], at_dx * sp_s[k], at_dy * sp_s[k]).rgb;
+				vec3 tx = atst(tex_ext_s, sp_s[k], sp_a[k]).rgb;
 				sa[k] = sp_tint(k).rgb * vc.rgb * mix(tx, vec3(dot(tx, vec3(0.2126, 0.7152, 0.0722))), sp_p.z);
 				e[k] = w[k] + dot(sa[k], vec3(0.333)) * 0.5;
 				mx = max(mx, e[k]);
@@ -836,11 +859,8 @@ void main() {
 		vec4 sm = mr * spb;
 		for (int k = 0; k < 4; k++) {
 			if (spf[k] <= 0.0) continue;
-			vec2 u = in_world.xz * sp_s[k];
-			vec3 nt = atsa(tex_ext_l, u, sp_n[k], at_dx * sp_s[k], at_dy * sp_s[k]).xyz * 2.0 - 1.0;
-			nt.xy *= params.z;
-			sn += normalize(vec3(nt.x + gw.x, abs(nt.z) * gw.y, nt.y + gw.z)) * spf[k];
-			sm += (sp_m[k] < 0.0 ? mr : atsa(tex_ext_l, u, sp_m[k], at_dx * sp_s[k], at_dy * sp_s[k])) * spf[k];
+			sn += atsn(tex_ext_l, sp_s[k], sp_n[k], params.z) * spf[k];
+			sm += (sp_m[k] < 0.0 ? mr : atst(tex_ext_l, sp_s[k], sp_m[k])) * spf[k];
 		}
 		n = normalize(sn);
 		mr = sm;
