@@ -204,7 +204,7 @@ fn paint_stage_screen(g int, screen int) {
 }
 
 fn paint_screen(g int, screen int) {
-	if g == 0 { paint_stage_screen(g, screen); return; }
+	if g == 0 || g == 2 { paint_stage_screen(g, screen); return; }
 	var dir byte[>..] = [];
 	dir.append("docs/ui-gallery/");
 	dir.append(uikit::genre_slug(g));
@@ -574,6 +574,11 @@ fn main() {
 		if which[..] == "fps" {
 			for s in 7 { paint_stage_screen(0, s); }
 			print("fps done");
+			return;
+		}
+		if which[..] == "moba" {
+			for s in 7 { paint_stage_screen(2, s); }
+			print("moba done");
 			return;
 		}
 	}

@@ -493,7 +493,7 @@ fn screen_results_real(col int, g int, mode int) {
 }
 
 fn build_panel(parent int, g int, screen int, mode int) int {
-	if g == 0 { return build_stage(parent, g, screen, mode); }
+	if g == 0 || g == 2 { return build_stage(parent, g, screen, mode); }
 	if screen == 3 { return rich_column(parent, g, mode); }
 	let col = flex(parent, DIR_COL);
 	set_w(col, 240.0);
@@ -509,7 +509,7 @@ fn build_panel(parent int, g int, screen int, mode int) int {
 }
 
 fn min_screen(g int, screen int) int {
-	if g == 0 {
+	if g == 0 || g == 2 {
 		if screen == 3 { return 14; }
 		if screen == 0 { return 7; }
 		return 4;
