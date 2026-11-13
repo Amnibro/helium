@@ -2539,7 +2539,7 @@ fn surface_of(m gltf::Material) SurfaceU {
 		sp_m: f4(ext_layer(m.sp_mr[0], 0, -1), ext_layer(m.sp_mr[1], 0, -1), ext_layer(m.sp_mr[2], 0, -1), ext_layer(m.sp_mr[3], 0, -1)),
 		sp_n: f4(ext_layer(m.sp_normal[0], 0, 1), ext_layer(m.sp_normal[1], 0, 1), ext_layer(m.sp_normal[2], 0, 1), ext_layer(m.sp_normal[3], 0, 1)),
 		sp_s: f4(if m.sp_base[0].texture < 0 { 0.0 } else { m.sp_scale.x }, if m.sp_base[1].texture < 0 { 0.0 } else { m.sp_scale.y }, if m.sp_base[2].texture < 0 { 0.0 } else { m.sp_scale.z }, if m.sp_base[3].texture < 0 { 0.0 } else { m.sp_scale.w }),
-		sp_p: f4(m.sp_flat, m.sp_depth, m.sp_desat, if m.sp_vtint { 1.0 } else { 0.0 }), sp_t0: m.sp_tint[0], sp_t1: m.sp_tint[1], sp_t2: m.sp_tint[2], sp_t3: m.sp_tint[3]
+		sp_p: f4(m.sp_flat, m.sp_depth, m.sp_desat, (if m.sp_vtint { 1.0 } else { 0.0 }) + (if m.sp_detile { 2.0 } else { 0.0 })), sp_t0: m.sp_tint[0], sp_t1: m.sp_tint[1], sp_t2: m.sp_tint[2], sp_t3: m.sp_tint[3]
 	}
 }
 

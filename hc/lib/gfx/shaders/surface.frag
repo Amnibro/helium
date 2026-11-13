@@ -123,6 +123,14 @@ layout(location = 0) out vec4 out_rgba;
 vec2 pom_off = vec2(0.0);
 vec4 smp(sampler2D s, vec2 uv) { if (xo2.z == 1.0) return texture(s, uv); return textureGrad(s, uv, dFdx(uv) * xo2.z, dFdy(uv) * xo2.z); }
 vec4 smpa(sampler2DArray s, vec3 uv) { if (xo2.z == 1.0) return texture(s, uv); return textureGrad(s, uv, dFdx(uv.xy) * xo2.z, dFdy(uv.xy) * xo2.z); }
+vec2 at_a = vec2(0.0);
+vec2 at_b = vec2(0.0);
+float at_t = 0.0;
+bool at_on = false;
+float at_n(vec2 p) { vec2 i = floor(p); vec2 f = fract(p); f = f * f * (3.0 - 2.0 * f); vec4 h = fract(sin(vec4(dot(i, vec2(127.1, 311.7)), dot(i + vec2(1.0, 0.0), vec2(127.1, 311.7)), dot(i + vec2(0.0, 1.0), vec2(127.1, 311.7)), dot(i + 1.0, vec2(127.1, 311.7)))) * 43758.5453); return mix(mix(h.x, h.y, f.x), mix(h.z, h.w, f.x), f.y); }
+void at_setup(vec3 p) { vec2 q = p.xz + p.y * vec2(0.71, -0.53); float l = (at_n(q * 0.031) * 0.7 + at_n(q * 0.11) * 0.3) * 8.0; float ia = floor(l); at_t = smoothstep(0.3, 0.7, fract(l)); at_a = sin(vec2(3.0, 7.0) * ia); at_b = sin(vec2(3.0, 7.0) * (ia + 1.0)); at_on = true; }
+vec4 ats(sampler2D s, vec2 u) { if (!at_on) return smp(s, u); vec2 dx = dFdx(u) * xo2.z; vec2 dy = dFdy(u) * xo2.z; return mix(textureGrad(s, u + at_a, dx, dy), textureGrad(s, u + at_b, dx, dy), at_t); }
+vec4 atsa(sampler2DArray s, vec2 u, float l, vec2 dx, vec2 dy) { if (!at_on) return smpa(s, vec3(u, l)); return mix(textureGrad(s, vec3(u + at_a, l), dx * xo2.z, dy * xo2.z), textureGrad(s, vec3(u + at_b, l), dx * xo2.z, dy * xo2.z), at_t); }
 vec2 pick_uv(float set) { return (set > 0.5 ? in_uv.zw : in_uv.xy) + pom_off; }
 vec2 water_grad_w(vec2 p, float tm, vec3 wb) {
 	vec2 g = vec2(0.0);
@@ -696,7 +704,10 @@ void main() {
 	vec2 buv = xuv(uv_sets.x, xm_base, xo0.xy);
 	if (model == 2) buv = eye_uv(buv, normalize(eye.xyz - in_world), normalize(in_nrm));
 	bool sp = sp_s.x + sp_s.y + sp_s.z + sp_s.w > 0.0;
-	vec4 vc = sp ? (sp_p.w > 0.5 ? vec4(in_tan.xyz, 1.0) : vec4(1.0)) : in_col;
+	vec4 vc = sp ? (mod(sp_p.w, 2.0) > 0.5 ? vec4(in_tan.xyz, 1.0) : vec4(1.0)) : in_col;
+	vec2 at_dx = dFdx(in_world.xz);
+	vec2 at_dy = dFdy(in_world.xz);
+	if (sp_p.w > 1.5) at_setup(in_world);
 	vec4 tint = base * vc * smp(tex_base, buv);
 	if (model == 2) tint.rgb *= eye_ring(buv);
 	// world-aligned layers: triplanar base and a top layer on up-facing surfaces
@@ -708,11 +719,12 @@ void main() {
 	vec2 uy = in_world.xz * tri.x;
 	vec2 uz = in_world.xy * tri.x;
 	vec2 ut = in_world.xz * tri.z;
-	if (tp) tint = base * vc * (smp(tex_base, ux) * tw.x + smp(tex_base, uy) * tw.y + smp(tex_base, uz) * tw.z);
+	if (tp) tint = base * vc * (ats(tex_base, ux) * tw.x + ats(tex_base, uy) * tw.y + ats(tex_base, uz) * tw.z);
 	vec4 spf = vec4(0.0);
 	float spb = 1.0;
 	if (sp) {
 		vec4 w = in_col * smoothstep(sp_p.x - 0.1, sp_p.x + 0.1, gw.y);
+		if (at_on) { float en = at_n(in_world.xz * 1.3) + at_n(in_world.xz * 4.7) * 0.5 - 0.75; w = clamp(w + en * w * (1.0 - w) * 2.4, 0.0, 1.0); }
 		float wb = max(1.0 - (w.x + w.y + w.z + w.w), 0.0);
 		float eb = wb > 0.001 ? wb + dot(tint.rgb, vec3(0.333)) * 0.5 : -1.0;
 		float mx = eb;
@@ -721,7 +733,7 @@ void main() {
 		for (int k = 0; k < 4; k++) {
 			sa[k] = vec3(0.0);
 			if (sp_s[k] > 0.0 && w[k] > 0.001) {
-				vec3 tx = smpa(tex_ext_s, vec3(in_world.xz * sp_s[k], sp_a[k])).rgb;
+				vec3 tx = atsa(tex_ext_s, in_world.xz * sp_s[k], sp_a[k], at_dx * sp_s[k], at_dy * sp_s[k]).rgb;
 				sa[k] = sp_tint(k).rgb * vc.rgb * mix(tx, vec3(dot(tx, vec3(0.2126, 0.7152, 0.0722))), sp_p.z);
 				e[k] = w[k] + dot(sa[k], vec3(0.333)) * 0.5;
 				mx = max(mx, e[k]);
@@ -735,6 +747,7 @@ void main() {
 		spf /= tot;
 		vec3 c = tint.rgb * spb;
 		for (int k = 0; k < 4; k++) c += sa[k] * spf[k];
+		if (at_on) c *= mix(vec3(0.8, 0.82, 0.86), vec3(1.16, 1.13, 1.08), at_n(in_world.xz * 0.045 + 17.0) * 0.65 + at_n(in_world.xz * 0.23 - 5.0) * 0.35);
 		tint.rgb = c;
 	}
 	float topf = 0.0;
@@ -801,16 +814,16 @@ void main() {
 	n = normalize(mat3(t, b, n) * tn);
 	vec4 mr = smp(tex_mr, xuv(uv_sets.y, xm_mr, xo0.zw));
 	if (tp) {
-		vec3 nx = smp(tex_normal, ux).xyz * 2.0 - 1.0;
-		vec3 ny = smp(tex_normal, uy).xyz * 2.0 - 1.0;
-		vec3 nz = smp(tex_normal, uz).xyz * 2.0 - 1.0;
+		vec3 nx = ats(tex_normal, ux).xyz * 2.0 - 1.0;
+		vec3 ny = ats(tex_normal, uy).xyz * 2.0 - 1.0;
+		vec3 nz = ats(tex_normal, uz).xyz * 2.0 - 1.0;
 		nx.xy *= params.z; ny.xy *= params.z; nz.xy *= params.z;
 		nx = vec3(nx.xy + gw.zy, abs(nx.z) * gw.x);
 		ny = vec3(ny.xy + gw.xz, abs(ny.z) * gw.y);
 		nz = vec3(nz.xy + gw.xy, abs(nz.z) * gw.z);
 		n = normalize(nx.zyx * tw.x + ny.xzy * tw.y + nz.xyz * tw.z);
 		if (!gl_FrontFacing && alpha.z > 0.5) n = -n;
-		mr = smp(tex_mr, ux) * tw.x + smp(tex_mr, uy) * tw.y + smp(tex_mr, uz) * tw.z;
+		mr = ats(tex_mr, ux) * tw.x + ats(tex_mr, uy) * tw.y + ats(tex_mr, uz) * tw.z;
 	}
 	if (topf > 0.0) {
 		vec3 nt = smpa(tex_ext_l, vec3(ut, top_lay.z)).xyz * 2.0 - 1.0;
@@ -824,10 +837,10 @@ void main() {
 		for (int k = 0; k < 4; k++) {
 			if (spf[k] <= 0.0) continue;
 			vec2 u = in_world.xz * sp_s[k];
-			vec3 nt = smpa(tex_ext_l, vec3(u, sp_n[k])).xyz * 2.0 - 1.0;
+			vec3 nt = atsa(tex_ext_l, u, sp_n[k], at_dx * sp_s[k], at_dy * sp_s[k]).xyz * 2.0 - 1.0;
 			nt.xy *= params.z;
 			sn += normalize(vec3(nt.x + gw.x, abs(nt.z) * gw.y, nt.y + gw.z)) * spf[k];
-			sm += (sp_m[k] < 0.0 ? mr : smpa(tex_ext_l, vec3(u, sp_m[k]))) * spf[k];
+			sm += (sp_m[k] < 0.0 ? mr : atsa(tex_ext_l, u, sp_m[k], at_dx * sp_s[k], at_dy * sp_s[k])) * spf[k];
 		}
 		n = normalize(sn);
 		mr = sm;
