@@ -26,11 +26,18 @@ fn vertex(p float3, n float3, u f32, v f32, t float4) {
 }
 
 // Wraps vertices [vfirst, end) and indices [ifirst, end) into an asset.
-fn finish(vfirst int, ifirst int, lo float3, hi float3, m gltf::Material) int {
+fn finish(vfirst int, ifirst int, lo float3, hi float3, m gltf::Material) int { finish_groups(vfirst, ifirst, lo, hi, [m], [gltf::indices.len - ifirst]) }
+fn finish_groups(vfirst int, ifirst int, lo float3, hi float3, ms const gltf::Material[:], counts const int[:]) int {
 	let vcount = gltf::verts.len / gltf::VERTEX_FLOATS - vfirst;
-	gltf::materials.push(m);
-	gltf::prims.push(gltf::Primitive { vfirst, vcount, ifirst, gltf::indices.len - ifirst, gltf::materials.len - 1, gltf::morphs.len / gltf::MORPH_FLOATS, 0, lo, hi, true, false });
-	gltf::meshes.push(gltf::Mesh { gltf::Span { gltf::prims.len - 1, 1 }, gltf::Span { gltf::floats.len, 0 }, gltf::Span { 0, 0 } });
+	let p0 = gltf::prims.len;
+	let m0 = gltf::materials.len;
+	var at = ifirst;
+	for m, k in ms {
+		gltf::materials.push(m);
+		gltf::prims.push(gltf::Primitive { vfirst, vcount, at, counts[k], gltf::materials.len - 1, gltf::morphs.len / gltf::MORPH_FLOATS, 0, lo, hi, true, false });
+		at += counts[k];
+	}
+	gltf::meshes.push(gltf::Mesh { gltf::Span { p0, ms.len }, gltf::Span { gltf::floats.len, 0 }, gltf::Span { 0, 0 } });
 	gltf::nodes.push(gltf::Node {
 		parent: -1, mesh: gltf::meshes.len - 1, skin: -1, children: gltf::Span { gltf::ints.len, 0 },
 		t: float3 { 0.0, 0.0, 0.0 }, r: linalg::quat_identity(), s: float3 { 1.0, 1.0, 1.0 },
@@ -39,7 +46,7 @@ fn finish(vfirst int, ifirst int, lo float3, hi float3, m gltf::Material) int {
 	gltf::ints.push(gltf::nodes.len - 1);
 	gltf::assets.push(gltf::Asset {
 		meshes: gltf::Span { gltf::meshes.len - 1, 1 }, nodes: gltf::Span { gltf::nodes.len - 1, 1 },
-		materials: gltf::Span { gltf::materials.len - 1, 1 }, textures: gltf::Span { gltf::textures.len, 0 },
+		materials: gltf::Span { m0, ms.len }, textures: gltf::Span { gltf::textures.len, 0 },
 		images: gltf::Span { gltf::images.len, 0 }, skins: gltf::Span { gltf::skins.len, 0 },
 		animations: gltf::Span { gltf::animations.len, 0 }, roots: gltf::Span { gltf::ints.len - 1, 1 }, ok: true
 	});

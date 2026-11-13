@@ -696,7 +696,7 @@ void main() {
 	vec2 buv = xuv(uv_sets.x, xm_base, xo0.xy);
 	if (model == 2) buv = eye_uv(buv, normalize(eye.xyz - in_world), normalize(in_nrm));
 	bool sp = sp_s.x + sp_s.y + sp_s.z + sp_s.w > 0.0;
-	vec4 vc = sp ? vec4(1.0) : in_col;
+	vec4 vc = sp ? (sp_p.w > 0.5 ? vec4(in_tan.xyz, 1.0) : vec4(1.0)) : in_col;
 	vec4 tint = base * vc * smp(tex_base, buv);
 	if (model == 2) tint.rgb *= eye_ring(buv);
 	// world-aligned layers: triplanar base and a top layer on up-facing surfaces
@@ -722,7 +722,7 @@ void main() {
 			sa[k] = vec3(0.0);
 			if (sp_s[k] > 0.0 && w[k] > 0.001) {
 				vec3 tx = smpa(tex_ext_s, vec3(in_world.xz * sp_s[k], sp_a[k])).rgb;
-				sa[k] = sp_tint(k).rgb * mix(tx, vec3(dot(tx, vec3(0.2126, 0.7152, 0.0722))), sp_p.z);
+				sa[k] = sp_tint(k).rgb * vc.rgb * mix(tx, vec3(dot(tx, vec3(0.2126, 0.7152, 0.0722))), sp_p.z);
 				e[k] = w[k] + dot(sa[k], vec3(0.333)) * 0.5;
 				mx = max(mx, e[k]);
 			}

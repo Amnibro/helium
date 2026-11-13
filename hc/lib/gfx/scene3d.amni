@@ -463,6 +463,10 @@ var ppush_u float4[4] = [float4 { 0.0, 0.0, 0.0, 0.0 }; 4];
 var uploaded_verts int = -1;
 var uploaded_indices int = -1;
 var uploaded_morphs int = -1;
+var vbuf_cap = 0;
+var ibuf_cap = 0;
+var verts_dirty_lo = -1;
+var verts_dirty_hi = 0;
 var joints gfx::mat4[>..] = [];
 var frame_u FrameU;
 var view_mat gfx::mat4;
@@ -913,18 +917,37 @@ fn forget() {
 	ml_dirty = true;
 }
 
+fn pool_upload(buf gfx::Buffer&, cap int&, have int, bytes const byte[:], usage int) bool {
+	if have != -1 && bytes.len <= cap && (have == -2 || bytes.len >= have) {
+		let from = if have == -2 { 0 } else { have };
+		if bytes.len > from { gfx::update_buffer(buf, from, bytes[from..]); }
+		return from == 0;
+	}
+	if have != -1 { gfx::release(buf); }
+	cap = max(128, bytes.len + bytes.len / 2);
+	buf = gfx::buffer(usage, cap, bytes);
+	true
+}
+fn touch_verts(first int, count int) {
+	verts_dirty_lo = if verts_dirty_lo < 0 { first } else { min(verts_dirty_lo, first) };
+	verts_dirty_hi = max(verts_dirty_hi, first + count);
+}
 fn upload_geometry() {
-	if gltf::verts.len != uploaded_verts {
-		if uploaded_verts >= 0 || uploaded_verts == -2 { gfx::release(vbuf); }
-		var bytes = bytes_of(gltf::verts);
-		if gltf::verts.len == 0 { vbuf = gfx::buffer(gfx::BUFFER_VERTEX, 104, []); }
-		else { vbuf = gfx::buffer(gfx::BUFFER_VERTEX, bytes.len, bytes[..]); }
+	if gltf::verts.len != uploaded_verts || verts_dirty_lo >= 0 {
+		let bytes = bytes_of(gltf::verts);
+		let old = uploaded_verts;
+		let full = pool_upload(vbuf, vbuf_cap, if old >= 0 { old * 4 } else { old }, bytes[..], gfx::BUFFER_VERTEX);
+		if !full && verts_dirty_lo >= 0 {
+			let a = verts_dirty_lo * gltf::VERTEX_FLOATS * 4;
+			let b = min(verts_dirty_hi * gltf::VERTEX_FLOATS, old) * 4;
+			if b > a { gfx::update_buffer(vbuf, a, bytes[a..b]); }
+		}
+		verts_dirty_lo = -1; verts_dirty_hi = 0;
 		uploaded_verts = gltf::verts.len;
 	}
 	if gltf::indices.len != uploaded_indices {
-		if uploaded_indices >= 0 || uploaded_indices == -2 { gfx::release(ibuf); }
-		if gltf::indices.len == 0 { ibuf = gfx::buffer(gfx::BUFFER_INDEX, 4, []); }
-		else { let bytes = bytes_of(gltf::indices); ibuf = gfx::buffer(gfx::BUFFER_INDEX, bytes.len, bytes[..]); }
+		let old = uploaded_indices;
+		pool_upload(ibuf, ibuf_cap, if old >= 0 { old * 4 } else { old }, bytes_of(gltf::indices)[..], gfx::BUFFER_INDEX);
 		uploaded_indices = gltf::indices.len;
 	}
 	if gltf::morphs.len != uploaded_morphs {
@@ -2516,7 +2539,7 @@ fn surface_of(m gltf::Material) SurfaceU {
 		sp_m: f4(ext_layer(m.sp_mr[0], 0, -1), ext_layer(m.sp_mr[1], 0, -1), ext_layer(m.sp_mr[2], 0, -1), ext_layer(m.sp_mr[3], 0, -1)),
 		sp_n: f4(ext_layer(m.sp_normal[0], 0, 1), ext_layer(m.sp_normal[1], 0, 1), ext_layer(m.sp_normal[2], 0, 1), ext_layer(m.sp_normal[3], 0, 1)),
 		sp_s: f4(if m.sp_base[0].texture < 0 { 0.0 } else { m.sp_scale.x }, if m.sp_base[1].texture < 0 { 0.0 } else { m.sp_scale.y }, if m.sp_base[2].texture < 0 { 0.0 } else { m.sp_scale.z }, if m.sp_base[3].texture < 0 { 0.0 } else { m.sp_scale.w }),
-		sp_p: f4(m.sp_flat, m.sp_depth, m.sp_desat, 0.0), sp_t0: m.sp_tint[0], sp_t1: m.sp_tint[1], sp_t2: m.sp_tint[2], sp_t3: m.sp_tint[3]
+		sp_p: f4(m.sp_flat, m.sp_depth, m.sp_desat, if m.sp_vtint { 1.0 } else { 0.0 }), sp_t0: m.sp_tint[0], sp_t1: m.sp_tint[1], sp_t2: m.sp_tint[2], sp_t3: m.sp_tint[3]
 	}
 }
 
