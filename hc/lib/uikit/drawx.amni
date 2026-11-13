@@ -195,40 +195,41 @@ fn text_pop(x int, y int, text const byte[:], size f32, fill u32, stroke u32, li
 }
 
 fn paint_minimap(x int, y int, w int, h int, seed int) {
+	if w < 16 || h < 16 { return; }
 	let cx = x + w / 2;
 	let cy = y + h / 2;
-	var r = w / 2 - 3;
-	if h / 2 - 3 < r { r = h / 2 - 3; }
-	if r < 8 { return; }
-	let fog = r * 7 / 10;
+	var rad = w / 2 - 8;
+	if h / 2 - 8 < rad { rad = h / 2 - 8; }
+	if rad < 6 { rad = 6; }
+	let rad2 = rad * rad;
+	let in2 = (rad - 3) * (rad - 3);
+	let out2 = (rad + 2) * (rad + 2);
+	let road = 4;
 	for py in y..y + h {
 		for px in x..x + w {
+			var col = 0x1B4332;
+			let n = (px * 13 + py * 7 + seed * 17) & 31;
+			if n < 6 { col = 0x245C40; }
+			if n > 27 { col = 0x143528; }
+			let rx = px - x;
+			let ry = py - y;
+			if rx > w / 10 && rx < w / 10 + w / 6 && ry > h / 8 && ry < h / 8 + h / 5 { col = 0x1A4A73; }
+			if rx > w * 3 / 5 && rx < w * 3 / 5 + w / 5 && ry > h / 2 && ry < h / 2 + h / 5 { col = 0x1A4A73; }
+			if rx > w / 2 - road && rx < w / 2 + road { col = 0xC2B280; }
+			if ry > h / 3 - road && ry < h / 3 + road { col = 0xC2B280; }
+			if ry > h * 2 / 3 - road && ry < h * 2 / 3 + road { col = 0xC2B280; }
 			let dx = px - cx;
 			let dy = py - cy;
 			let d2 = dx * dx + dy * dy;
-			if d2 > r * r { continue; }
-			var col = 0x1B4332;
-			let n = (px * 13 + py * 7 + seed * 17) & 31;
-			if n < 8 { col = 0x2D6A4F; }
-			if n > 26 { col = 0x95D5B2; }
-			if (px + seed) % 19 < 3 && (py % 13) < 5 { col = 0x1D4E89; }
-			if (px * 5 + py + seed) % 29 == 0 { col = 0x6B4F3A; }
+			if d2 > rad2 { col = 0x070B0A; }
 			put(px, py, col as u32, 255);
-			if d2 > fog * fog { put(px, py, 0x000000, 150); }
-			if d2 > (r - 2) * (r - 2) { put(px, py, 0xF4F6FB, 220); }
+			if d2 <= out2 && d2 >= in2 { put(px, py, 0xF2E35A, 235); }
 		}
 	}
-	let dirs = [0, 90, 180, 270];
-	for i in 4 {
-		let ox = cos_milli(dirs[i]) * (r - 8) / 1000;
-		let oy = sin_milli(dirs[i]) * (r - 8) / 1000;
-		let lab = if i == 0 { "E" } else if i == 1 { "N" } else if i == 2 { "W" } else { "S" };
-		draw_text(cx + ox - 4, cy - oy - 8, lab, 10.0, 0xF4F6FB, 0, -1);
-	}
-	ih_mark(cx - 10, cy - 18, 0xF2E35A);
-	ih_mark(cx + r / 3, cy - r / 4, 0xFF5A5A);
-	ih_mark(cx - r / 3, cy + r / 5, 0x7CFFB2);
-	fill_tri(cx, cy - 8, cx - 5, cy + 6, cx + 5, cy + 6, 0xFFFFFF);
+	ih_mark(cx + w / 5, cy - h / 6, 0xFF5A5A);
+	ih_mark(cx - w / 4, cy + h / 7, 0x7CFFB2);
+	ih_mark(cx + w / 8, cy + h / 4, 0x6EC8FF);
+	fill_tri(cx, cy - 7, cx - 5, cy + 6, cx + 5, cy + 6, 0xFFFFFF);
 }
 
 fn ih_mark(x int, y int, rgb u32) {
@@ -520,10 +521,34 @@ fn paint_picker(x int, y int, w int, h int, hue int, s f32, v f32) {
 	}
 }
 
-fn paint_stage_back(id int, x int, y int, w int, h int) {
-	let g = N[id].i0;
-	let screen = N[id].i1;
-	let mode = N[id].i2;
+fn back_title(g int, screen int, mode int) {
+	if screen != 0 { return; }
+	var tx = 120;
+	var ty = 260;
+	if mode == 1 { tx = 180; ty = 140; }
+	else if mode == 2 { tx = 760; ty = 150; }
+	else if mode == 3 { tx = 140; ty = 150; }
+	else if mode == 4 { tx = 1080; ty = 220; }
+	draw_text(tx, ty, genre_name(g), 84.0, THEME.ink, 0, -1);
+	draw_text(tx, ty + 96, sub_line(g), 28.0, THEME.ink, 0, -1);
+	fill_rect(tx, ty + 88, 220, 4, THEME.accent, 255);
+}
+
+fn back_disc(cx int, cy int, r int, rgb u32) {
+	var py = cy - r;
+	while py < cy + r {
+		var px = cx - r;
+		while px < cx + r {
+			let dx = px - cx;
+			let dy = py - cy;
+			if dx * dx + dy * dy < r * r { put(px, py, rgb, 255); }
+			px += 1;
+		}
+		py += 1;
+	}
+}
+
+fn back_fps(x int, y int, w int, h int, g int, screen int) {
 	let dark = contrast_ratio(THEME.ink, 0x000000) > 8.0;
 	let sky = if dark { 0x10151C } else { 0xD7DEE8 };
 	let ground = if dark { 0x1A2330 } else { 0xC5CED8 };
@@ -540,17 +565,6 @@ fn paint_stage_back(id int, x int, y int, w int, h int) {
 		fill_rect(bx, y + band - bh, bw, bh, shade as u32, 255);
 		i += 1;
 	}
-	if screen == 0 {
-		var tx = 120;
-		var ty = 260;
-		if mode == 1 { tx = 180; ty = 140; }
-		else if mode == 2 { tx = 760; ty = 150; }
-		else if mode == 3 { tx = 140; ty = 150; }
-		else if mode == 4 { tx = 1080; ty = 220; }
-		draw_text(tx, ty, genre_name(g), 84.0, THEME.ink, 0, -1);
-		draw_text(tx, ty + 96, sub_line(g), 28.0, THEME.ink, 0, -1);
-		fill_rect(tx, ty + 88, 220, 4, THEME.accent, 255);
-	}
 	if g == 0 && screen == 3 {
 		let cx = x + w / 2;
 		let cy = y + h / 2;
@@ -559,4 +573,92 @@ fn paint_stage_back(id int, x int, y int, w int, h int) {
 		fill_rect(cx - 28, cy - 2, 18, 4, THEME.ink, 255);
 		fill_rect(cx + 10, cy - 2, 18, 4, THEME.ink, 255);
 	}
+}
+
+fn back_royale(x int, y int, w int, h int) {
+	fill_rect(x, y, w, h * 2 / 3, 0x10202C, 255);
+	fill_rect(x, y + h * 2 / 3, w, h - h * 2 / 3, 0x14384C, 255);
+	fill_rect(x + w / 5, y + h / 3, w * 3 / 5, h / 3, 0x2A5A38, 255);
+	fill_rect(x + w / 3, y + h / 4, w / 3, h / 6, 0x3E6B42, 255);
+	fill_rect(x, y, w / 10, h, 0x3A2A68, 170);
+	fill_rect(x + w - w / 10, y, w / 10, h, 0x3A2A68, 170);
+	fill_rect(x, y, w, 8, 0x8A78E0, 160);
+}
+
+fn back_moba(x int, y int, w int, h int) {
+	fill_rect(x, y, w, h, 0x121A16, 255);
+	fill_rect(x, y + h / 2 - 16, w, 32, 0x1A4A6A, 255);
+	fill_rect(x + w / 2 - 10, y + 48, 20, h - 96, 0x6A5A3A, 255);
+	fill_rect(x + 48, y + 88, w - 96, 16, 0x6A5A3A, 255);
+	fill_rect(x + 48, y + h - 128, w - 96, 16, 0x6A5A3A, 255);
+	fill_rect(x + 56, y + 56, 72, 72, 0x3A6A48, 255);
+	fill_rect(x + w - 128, y + h - 168, 72, 72, 0x6A3A3A, 255);
+}
+
+fn back_jrpg(x int, y int, w int, h int) {
+	fill_rect(x, y, w, h / 2, 0x1A1430, 255);
+	fill_rect(x, y + h / 2, w, h / 4, 0x2A2048, 255);
+	fill_rect(x, y + h * 3 / 4, w, h - h * 3 / 4, 0x1E2A22, 255);
+	back_disc(x + w * 3 / 4, y + h / 5, 36, 0xF4E7C5);
+	fill_rect(x, y + h * 2 / 3, w / 3, h / 8, 0x243628, 255);
+	fill_rect(x + w / 2, y + h * 2 / 3 + 24, w / 3, h / 10, 0x1C3024, 255);
+}
+
+fn back_souls(x int, y int, w int, h int) {
+	fill_rect(x, y, w, h, 0x0C0E12, 255);
+	fill_rect(x, y + h / 3, w, 72, 0xB0B6BE, 36);
+	fill_rect(x, y + h / 2, w, 100, 0xD0D4D8, 24);
+	fill_rect(x + w / 8, y + h / 5, 32, h / 2, 0x1A1E24, 255);
+	fill_rect(x + w - w / 8 - 32, y + h / 4, 32, h / 2, 0x1A1E24, 255);
+	fill_rect(x, y + h * 2 / 3, w, 4, 0x6A6048, 255);
+}
+
+fn back_racing(x int, y int, w int, h int) {
+	fill_rect(x, y, w, h / 3, 0x1A2430, 255);
+	fill_rect(x, y + h / 3, w, h - h / 3, 0x2A2E34, 255);
+	fill_rect(x, y + h / 3, w, 6, 0xE8C840, 255);
+	var i = 0;
+	while i < 6 {
+		let bh = 40 + (i * 17) % 48;
+		fill_rect(x + 24 + i * 48, y + h / 3 - bh, 32, bh, 0x3A4450, 255);
+		i += 1;
+	}
+	var k = 0;
+	while k < 12 {
+		fill_rect(x + 80 + k * 140, y + h * 2 / 3, 56, 8, 0xE6E2D0, 255);
+		k += 1;
+	}
+}
+
+fn back_arena(x int, y int, w int, h int) {
+	fill_rect(x, y, w, h, 0x100E14, 255);
+	fill_rect(x + w / 6, y + h / 2, w * 2 / 3, h / 5, 0x3A241C, 255);
+	fill_rect(x + w / 5, y + h / 2 - 8, w * 3 / 5, 6, 0xE8D8C8, 255);
+	fill_rect(x + w / 5, y + h / 2 + 28, w * 3 / 5, 6, 0xE8D8C8, 255);
+	fill_rect(x + w / 5, y + h / 2 + 64, w * 3 / 5, 6, 0xE8D8C8, 255);
+	fill_rect(x + w / 5 - 16, y + h / 2 - 40, 16, 160, 0xC8B070, 255);
+	fill_rect(x + w - w / 5, y + h / 2 - 40, 16, 160, 0xC8B070, 255);
+}
+
+fn back_table(x int, y int, w int, h int) {
+	fill_rect(x, y, w, h, 0x14120E, 255);
+	fill_rect(x + w / 8, y + h / 4, w * 3 / 4, h / 2, 0x1E4A32, 255);
+	fill_rect(x + w / 6, y + h / 3, w * 2 / 3, h / 3, 0x246044, 255);
+	fill_rect(x + w / 8, y + h / 4, w * 3 / 4, 4, 0xC8A24A, 255);
+	fill_rect(x + w / 8, y + h / 4 + h / 2 - 4, w * 3 / 4, 4, 0xC8A24A, 255);
+}
+
+fn paint_stage_back(id int, x int, y int, w int, h int) {
+	let g = N[id].i0;
+	let screen = N[id].i1;
+	let mode = N[id].i2;
+	if g == 1 { back_royale(x, y, w, h); }
+	else if g == 2 { back_moba(x, y, w, h); }
+	else if g == 4 { back_jrpg(x, y, w, h); }
+	else if g == 5 { back_souls(x, y, w, h); }
+	else if g == 7 { back_racing(x, y, w, h); }
+	else if g == 8 { back_arena(x, y, w, h); }
+	else if g == 12 { back_table(x, y, w, h); }
+	else { back_fps(x, y, w, h, g, screen); }
+	back_title(g, screen, mode);
 }

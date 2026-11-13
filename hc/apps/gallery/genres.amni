@@ -96,6 +96,7 @@ fn check_align(g int, col int, ox int, oy int) int {
 	if col == 0 { print("worst before ", worst_b, " after ", worst_a, " ", uikit::genre_slug(g)); }
 	for i in uikit::N.len {
 		if !uikit::shown(i) || uikit::N[i].flags & uikit::FL_ANCHOR == 0 { continue; }
+		if uikit::KIDS[i].len > 0 { continue; }
 		let mid = uikit::N[i].x + uikit::N[i].w / 2.0;
 		let want = (ox as f32) + uikit::VW / 2.0;
 		var aerr = mid - want;
@@ -167,6 +168,44 @@ fn save_raw(path const byte[:], w int, h int, pix byte[>..]&) {
 	print("wrote ", path, " ", buf.len);
 }
 
+fn ink_anchor_bad(g int) int {
+	var bad = 0;
+	for i in uikit::N.len {
+		if !uikit::shown(i) || uikit::N[i].flags & uikit::FL_ANCHOR == 0 { continue; }
+		if uikit::KIDS[i].len == 0 { continue; }
+		let x0 = uikit::N[i].x as int;
+		let y0 = uikit::N[i].y as int;
+		let x1 = x0 + uikit::N[i].w as int;
+		let y1 = y0 + uikit::N[i].h as int;
+		var sw = 0;
+		var sx = 0;
+		for yy in y0..y1 {
+			for xx in x0..x1 {
+				let c = uikit::pixel(xx, yy);
+				let rr = (c >> 16) & 255;
+				let gg = (c >> 8) & 255;
+				let bb = c & 255;
+				if rr + gg + bb > 560 {
+					sw += 1;
+					sx += xx;
+				}
+			}
+		}
+		if sw < 8 {
+			print("ink empty ", uikit::genre_slug(g));
+			bad += 1;
+			continue;
+		}
+		let mid = (sx as f32) / (sw as f32) + 0.5;
+		let want = uikit::VW / 2.0;
+		var err = mid - want;
+		if err < 0.0 { err = 0.0 - err; }
+		print("ink ", uikit::genre_slug(g), " mid ", mid, " err ", err, " n ", sw);
+		if err > 1.0 { bad += 1; }
+	}
+	bad
+}
+
 fn paint_stage_screen(g int, screen int) {
 	var dir byte[>..] = [];
 	dir.append("docs/ui-gallery/");
@@ -198,6 +237,11 @@ fn paint_stage_screen(g int, screen int) {
 			abort("stage");
 		}
 		uikit::paint_roots();
+		let ink = ink_anchor_bad(g);
+		if ink != 0 {
+			print("ink fail ", uikit::genre_slug(g), " ", screen_file(screen), " v ", v);
+			abort("ink");
+		}
 		var one byte[>..] = [];
 		one.append(dir[..]);
 		one.append("/");
@@ -571,10 +615,11 @@ fn write_index() {
 	out.append("\n## Other sheets\n\n");
 	out.append("- `icons/sheet.png`\n- `text/effects-light.png`\n- `text/effects-dark.png`\n- `widgets/styles.png`\n- `fonts/pairings.png`\n- `motion.apng`\n");
 	out.append("\n## Still weak\n\n");
-	out.append("- FPS is a real 1920x1080 stage. The other game genres are still the narrow column until their pass.\n");
-	out.append("- The minimap painter is still the compass disc. Some glyphs (shield) are coarse. The skyline is block rectangles.\n");
+	out.append("- FPS, MOBA, JRPG, Souls, Royale, Racing, Fighting, and Deck are real 1920x1080 stages, each with its own pause, shop, and results. The other game genres are still the narrow column.\n");
+	out.append("- The minimap is a terrain plate (roads, water, a zone ring, pings). It is the same diagram on every screen, not a top-down of a level. MOBA map and results still use the FPS frame.\n");
+	out.append("- Backdrops differ by genre (skyline, island, lanes, dusk, fog, track, ring, table) and are still flat blocks. Shield is an armor plate and potion is a flask. Other pictograms stay coarse. The objective pip is centered on its ink.\n");
 	out.append("- Glow and backdrop rectangles are clipped to the widget. `overlap_count` also counts `note_deco` bounds, so a slab painted across another control fails the check.\n");
-	out.append("- Game sheets are seven different screens, but pause/settings still share a short menu, and every map uses the same compass painter.\n");
+	out.append("- Results are a few lines, not a full stat table. Ability icons are the nearest metaphor, not spell art.\n");
 	if uikit::icon_named() < uikit::icon_count() {
 		format(out, "- Named pictograms: ", uikit::icon_named(), " of ", uikit::icon_count(), ". The rest are still unique 5x5 silhouettes.\n");
 	} else {

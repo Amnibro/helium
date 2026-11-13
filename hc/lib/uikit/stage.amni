@@ -142,7 +142,7 @@ fn objective_pip(f int, y f32) {
 	let row = flex(f, DIR_ROW);
 	set_gap(row, 8.0);
 	set_pad(row, 0.0);
-	place_at(row, 888.0, y, 144.0, 40.0);
+	place_at(row, 920.0, y, 144.0, 40.0);
 	mark_anchor(row);
 	let pip = icon_button(row, 75, 3); set_px(pip, 40.0, 40.0);
 	let letter = label(row, "A", 2); set_px(letter, 32.0, 40.0); N[letter].i2 = 1;
@@ -1164,6 +1164,79 @@ fn stage_map_deck(f int, mode int) {
 	let d = button(f, "Boss", 5); place_at(d, x + 1080.0, y + 120.0, 280.0, 72.0); set_preset(d, 2);
 }
 
+fn stage_pause_moba(f int, mode int) {
+	var y f32 = 200.0;
+	var x f32 = 480.0;
+	if mode == 1 { y = 80.0; }
+	else if mode == 2 { x = 80.0; y = 280.0; }
+	else if mode == 3 { y = 480.0; x = 240.0; }
+	else if mode == 4 { x = 1040.0; y = 160.0; }
+	let head = label(f, "Match paused", 0); place_at(head, 700.0, y, 520.0, 56.0); mark_anchor(head);
+	let ks = label(f, "8", 1); place_at(ks, x, y + 80.0, 120.0, 48.0);
+	let tm = label(f, "12:40", 1); place_at(tm, x + 160.0, y + 80.0, 200.0, 48.0);
+	let ds = label(f, "6", 1); place_at(ds, x + 400.0, y + 80.0, 120.0, 48.0);
+	let go = button(f, "Continue", 0); place_at(go, x, y + 160.0, 280.0, 72.0); set_preset(go, 2);
+	let sur = button(f, "Surrender", 5); place_at(sur, x + 304.0, y + 160.0, 280.0, 72.0); set_preset(sur, 2);
+	let opt = button(f, "Scoreboard", 2); place_at(opt, x, y + 256.0, 180.0, 56.0); set_preset(opt, 2);
+	let shop = button(f, "Shop", 2); place_at(shop, x + 196.0, y + 256.0, 180.0, 56.0); set_preset(shop, 2);
+	let quit = button(f, "Quit", 5); place_at(quit, x + 392.0, y + 256.0, 180.0, 56.0); set_preset(quit, 2);
+}
+
+fn stage_settings_moba(f int, mode int) {
+	var y f32 = 160.0;
+	var lx f32 = 120.0;
+	var rx f32 = 1040.0;
+	if mode == 1 { y = 80.0; lx = 80.0; rx = 1000.0; }
+	else if mode == 2 { lx = 80.0; rx = 1120.0; y = 240.0; }
+	else if mode == 3 { y = 440.0; }
+	else if mode == 4 { y = 80.0; lx = 360.0; rx = 1080.0; }
+	let a = label(f, "Casting", 0); place_at(a, lx, y, 360.0, 56.0);
+	let b = label(f, "Audio", 0); place_at(b, rx, y, 360.0, 56.0);
+	let t0 = toggle(f, "Quick cast", 1, 0); place_at(t0, lx, y + 80.0, 480.0, 56.0);
+	let t1 = toggle(f, "Smart cast", 1, 2); place_at(t1, lx, y + 152.0, 480.0, 56.0);
+	let t2 = toggle(f, "Ranges", 0, 2); place_at(t2, lx, y + 224.0, 480.0, 56.0);
+	let m = label(f, "Music", 2); place_at(m, rx, y + 80.0, 200.0, 32.0);
+	let s0 = slider(f, 0.6, 0); place_at(s0, rx, y + 120.0, 480.0, 32.0);
+	let e = label(f, "Effects", 2); place_at(e, rx, y + 168.0, 200.0, 32.0);
+	let s1 = slider(f, 0.4, 2); place_at(s1, rx, y + 208.0, 480.0, 32.0);
+	let apply = button(f, "Apply", 0); place_at(apply, lx, y + 320.0, 240.0, 64.0); set_preset(apply, 2);
+}
+
+fn moba_item(col int, icon int, name const byte[:], price const byte[:]) {
+	let row = flex(col, DIR_ROW);
+	set_gap(row, 12.0);
+	set_pad(row, 0.0);
+	set_px(row, 520.0, 56.0);
+	let ic = icon_button(row, icon, 2); set_px(ic, 48.0, 48.0);
+	let n = label(row, name, 2); set_px(n, 280.0, 40.0);
+	let p = label(row, price, 2); set_px(p, 160.0, 40.0);
+}
+
+fn stage_shop_moba(f int, mode int) {
+	var x f32 = 80.0;
+	var y f32 = 160.0;
+	var gx f32 = 720.0;
+	if mode == 1 { y = 80.0; }
+	else if mode == 2 { x = 1080.0; gx = 80.0; }
+	else if mode == 3 { y = 480.0; }
+	else if mode == 4 { x = 160.0; y = 120.0; gx = 880.0; }
+	let head = label(f, "Recommended", 0); place_at(head, x, y, 400.0, 48.0);
+	let gold = label(f, "2450 g", 1); place_at(gold, 1560.0, 48.0, 280.0, 40.0);
+	let list = flex(f, DIR_COL); set_gap(list, 12.0); set_pad(list, 0.0);
+	place_at(list, x, y + 64.0, 520.0, 272.0);
+	moba_item(list, 52, "Boots", "300");
+	moba_item(list, 14, "Tome", "400");
+	moba_item(list, 0, "Sword", "350");
+	moba_item(list, 17, "Ward", "75");
+	let g0 = button(f, "Dagger", 2); place_at(g0, gx, y + 64.0, 200.0, 96.0); set_preset(g0, 2);
+	let g1 = button(f, "Cloth", 2); place_at(g1, gx + 216.0, y + 64.0, 200.0, 96.0); set_preset(g1, 2);
+	let g2 = button(f, "Ring", 2); place_at(g2, gx + 432.0, y + 64.0, 200.0, 96.0); set_preset(g2, 2);
+	let g3 = button(f, "Amp", 0); place_at(g3, gx, y + 176.0, 200.0, 96.0); set_preset(g3, 2);
+	let g4 = button(f, "Orb", 2); place_at(g4, gx + 216.0, y + 176.0, 200.0, 96.0); set_preset(g4, 2);
+	let g5 = button(f, "Stop", 5); place_at(g5, gx + 432.0, y + 176.0, 200.0, 96.0); set_preset(g5, 2);
+	let buy = button(f, "Buy", 0); place_at(buy, 1320.0, 960.0, 240.0, 64.0); set_preset(buy, 2);
+}
+
 fn build_stage(frame int, g int, screen int, mode int) int {
 	N[frame].i0 = g;
 	N[frame].i1 = screen;
@@ -1176,6 +1249,7 @@ fn build_stage(frame int, g int, screen int, mode int) int {
 		else if g == 7 { stage_pause_racing(frame, mode); }
 		else if g == 8 { stage_pause_fighting(frame, mode); }
 		else if g == 12 { stage_pause_deck(frame, mode); }
+		else if g == 2 { stage_pause_moba(frame, mode); }
 		else { stage_pause(frame, g, mode); }
 	}
 	else if screen == 2 {
@@ -1185,6 +1259,7 @@ fn build_stage(frame int, g int, screen int, mode int) int {
 		else if g == 7 { stage_settings_racing(frame, mode); }
 		else if g == 8 { stage_settings_fighting(frame, mode); }
 		else if g == 12 { stage_settings_deck(frame, mode); }
+		else if g == 2 { stage_settings_moba(frame, mode); }
 		else { stage_settings(frame, g, mode); }
 	}
 	else if screen == 3 {
@@ -1204,6 +1279,7 @@ fn build_stage(frame int, g int, screen int, mode int) int {
 		else if g == 7 { stage_shop_racing(frame, mode); }
 		else if g == 8 { stage_shop_fighting(frame, mode); }
 		else if g == 12 { stage_shop_deck(frame, mode); }
+		else if g == 2 { stage_shop_moba(frame, mode); }
 		else { stage_shop_fps(frame, g, mode); }
 	}
 	else if screen == 5 {

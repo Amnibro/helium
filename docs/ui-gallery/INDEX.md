@@ -65,11 +65,11 @@ Font pairings: 30
 
 ## Still weak
 
-- FPS, MOBA, and JRPG are real 1920x1080 stages. JRPG pause is a menu grid and the shop is a list plus a detail pane. Souls, Royale, Racing, Fighting, and Deck are still the narrow column.
-- The minimap painter is still the compass disc. The shield glyph still reads a bit like a tag. The skyline is block rectangles.
-
+- FPS, MOBA, JRPG, Souls, Royale, Racing, Fighting, and Deck are real 1920x1080 stages, each with its own pause, shop, and results. The other game genres are still the narrow column.
+- The minimap is a terrain plate (roads, water, a zone ring, pings). It is the same diagram on every screen, not a top-down of a level. MOBA map and results still use the FPS frame.
+- Backdrops differ by genre (skyline, island, lanes, dusk, fog, track, ring, table) and are still flat blocks. Shield is an armor plate and potion is a flask. Other pictograms stay coarse. The objective pip is centered on its ink.
 - Glow and backdrop rectangles are clipped to the widget. `overlap_count` also counts `note_deco` bounds, so a slab painted across another control fails the check.
-- Game sheets are seven different screens, but pause/settings still share a short menu, and every map uses the same compass painter.
+- Results are a few lines, not a full stat table. Ability icons are the nearest metaphor, not spell art. The boss bar still paints a small name on the bar as well as the large one.
 - All 500 icons are named pictograms. Thin marks (arrows, plus, minus) are geometric on purpose. A few complex metaphors are still coarse.
 - Widget styles are 20 frames on six controls (button, field, toggle, slider, card, badge), not 20 treatments of every chart and table.
 - `motion.apng` is eight frames (spring, ripple, typewriter, toast, shimmer). It is not a full transition system.
