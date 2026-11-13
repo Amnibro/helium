@@ -12,6 +12,8 @@ import uikit.drawx;
 var PIX byte[>..] = [];
 var PW = 0;
 var PH = 0;
+var HIT_GAP f32 = 0.14;
+var HIT_A = 255;
 var CX = 0; var CY = 0; var CW = 0; var CH = 0;
 var SPIN f32 = 0.0;
 var TMP byte[>..] = [];
@@ -360,12 +362,13 @@ fn bar(x int, y int, w int, h int, v f32, fill u32, look int) {
 	var fw = (w as f32 * v) as int;
 	if fw < 0 { fw = 0; }
 	if fw > w { fw = w; }
-	var trail = v + 0.14;
+	var trail = v + HIT_GAP;
 	if trail > 1.0 { trail = 1.0; }
 	var tw = (w as f32 * trail) as int;
 	if tw < fw { tw = fw; }
 	if tw > w { tw = w; }
-	if tw > fw { fill_rect(x + fw, y, tw - fw, h, 0xF0C36A, 255); }
+	let chip = if HIT_A > 200 { 0xFFE7A8 } else if HIT_A > 140 { 0xF0C36A } else { 0xC4A060 };
+	if tw > fw { fill_rect(x + fw, y, tw - fw, h, chip as u32, HIT_A); }
 	if look == 1 {
 		var i = 0;
 		while i < fw { fill_rect(x + i, y, 8, h, fill, 255); i += 12; }

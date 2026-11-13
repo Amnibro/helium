@@ -65,9 +65,10 @@ Font pairings: 30
 
 ## Still weak
 
-- FPS, Royale, MOBA, RTS, JRPG, Souls, MMO, Racing, Fighting, and Deck are real 1920x1080 stages. Sports, Platform, Roguelike, Survival, City, Horror, Space, Fantasy, Cozy, Rhythm, Puzzle, Novel, Idle, and Gacha are still the narrow column.
-- Panels have a gradient, a bevel, and an inner shadow. Bars have segment ticks and a fixed damage trail. Scene text has a one-pixel drop shadow. Results on the staged genres are three-column stat tables. The tall boss bar no longer paints a second small name.
-- The minimap is still one terrain diagram, not a top-down of a level. Backdrops are still flat blocks. Other pictograms stay coarse. Ability icons are the nearest metaphor, not spell art. The damage trail is a fixed offset, not a simulated hit.
+- All 24 game genres are 1920x1080 stages with their own HUD, pause, shop, and results. App genres are still the narrow column.
+- Panels have a gradient, a bevel, and an inner shadow. Bars have segment ticks. Scene text has a one-pixel drop shadow. Results on the staged genres are three-column stat tables. The tall boss bar no longer paints a second small name.
+- Each game genre has its own minimap diagram: roads, rooms, lanes, or nodes drawn as ellipses. It is still a diagram, not a captured level. Backdrops are a six-band sky, two silhouette layers shifted by variation, and sparse specks. They are still silhouettes, not illustrations.
+- The damage trail shrinks and fades from variation 0 to 4 (a wide bright chip, then a short dull one). It is that offset, not a simulated hit. Other pictograms stay coarse. Ability icons are the nearest metaphor, not spell art.
 - Glow and backdrop rectangles are clipped to the widget. `overlap_count` also counts `note_deco` bounds, so a slab painted across another control fails the check.
 - All 500 icons are named pictograms. Thin marks (arrows, plus, minus) are geometric on purpose. A few complex metaphors are still coarse.
 - Widget styles are 20 frames on six controls (button, field, toggle, slider, card, badge), not 20 treatments of every chart and table.
