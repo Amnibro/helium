@@ -22,6 +22,7 @@ fn menu_n(g int) int {
 	if g == 15 { return 4; }
 	if g == 16 { return 4; }
 	if g == 17 { return 4; }
+	if g == 18 { return 4; }
 	4
 }
 fn menu_at(g int, i int) const byte[:] {
@@ -67,6 +68,12 @@ fn menu_at(g int, i int) const byte[:] {
 		if i == 0 { return "Versus"; }
 		if i == 1 { return "Arcade"; }
 		if i == 2 { return "Training"; }
+		return "Options";
+	}
+	if g == 18 {
+		if i == 0 { return "Morning"; }
+		if i == 1 { return "Load"; }
+		if i == 2 { return "Album"; }
 		return "Options";
 	}
 	if g == 17 {
@@ -2370,6 +2377,103 @@ fn stage_map_fantasy(f int, mode int) {
 	let c = button(f, "Keep", 5); place_at(c, 600.0, by, 240.0, 56.0); set_preset(c, 2);
 }
 
+fn stage_hud_cozy(f int, mode int) {
+	var mx f32 = 1600.0;
+	var my f32 = 760.0;
+	if mode == 1 { mx = 48.0; }
+	else if mode == 2 { my = 400.0; }
+	else if mode == 3 { mx = 48.0; my = 400.0; }
+	else if mode == 4 { mx = 1600.0; my = 200.0; }
+	let day = label(f, "Spring  3", 0); place_at(day, 760.0, 36.0, 400.0, 48.0); mark_anchor(day);
+	let who = label(f, "Rowan", 1); place_at(who, 48.0, 36.0, 200.0, 40.0);
+	let sky = label(f, "Clear", 2); place_at(sky, 1560.0, 40.0, 200.0, 36.0);
+	let en = label(f, "Energy", 2); place_at(en, 48.0, 120.0, 160.0, 32.0);
+	let eb = health_bar(f, 0.6, 2); place_at(eb, 220.0, 124.0, 360.0, 20.0);
+	let gold = label(f, "Gold  240", 2); place_at(gold, 48.0, 168.0, 220.0, 32.0);
+	let tool = label(f, "Hoe", 1); place_at(tool, 48.0, 220.0, 160.0, 36.0);
+	let clock = label(f, "8:00", 2); place_at(clock, 760.0, 100.0, 400.0, 36.0); mark_anchor(clock);
+	let a = icon_button(f, 52, 0); place_at(a, 700.0, 920.0, 64.0, 64.0);
+	let b = icon_button(f, 4, 2); place_at(b, 780.0, 920.0, 64.0, 64.0);
+	let c = icon_button(f, 43, 2); place_at(c, 860.0, 920.0, 64.0, 64.0);
+	let d = icon_button(f, 5, 2); place_at(d, 940.0, 920.0, 64.0, 64.0);
+	let crop = label(f, "Turnips", 2); place_at(crop, 220.0, 220.0, 200.0, 32.0);
+	let map = minimap(f, 0); place_at(map, mx, my, 240.0, 200.0); N[map].i3 = 18;
+}
+
+fn stage_pause_cozy(f int, mode int) {
+	var x f32 = 760.0;
+	var y f32 = 260.0;
+	if mode == 1 { x = 80.0; }
+	else if mode == 2 { x = 1400.0; }
+	else if mode == 3 { y = 560.0; }
+	else if mode == 4 { y = 80.0; x = 480.0; }
+	let head = label(f, "Calendar", 0); place_at(head, 700.0, y - 72.0, 520.0, 56.0); mark_anchor(head);
+	let a = button(f, "Resume", 0); place_at(a, x, y, 400.0, 64.0); set_preset(a, 2);
+	let b = button(f, "Sleep", 2); place_at(b, x, y + 80.0, 400.0, 64.0); set_preset(b, 2);
+	let c = button(f, "Save", 2); place_at(c, x, y + 160.0, 400.0, 64.0); set_preset(c, 2);
+	let d = button(f, "Title", 5); place_at(d, x, y + 240.0, 400.0, 64.0); set_preset(d, 2);
+}
+
+fn stage_shop_cozy(f int, mode int) {
+	var x f32 = 200.0;
+	var y f32 = 180.0;
+	if mode == 1 { x = 80.0; }
+	else if mode == 2 { x = 1000.0; }
+	else if mode == 3 { y = 480.0; }
+	else if mode == 4 { y = 80.0; x = 400.0; }
+	let head = label(f, "General store", 0); place_at(head, x, y, 480.0, 56.0);
+	let a = button(f, "Seeds  20", 0); place_at(a, x, y + 80.0, 480.0, 64.0); set_preset(a, 2);
+	let b = button(f, "Feed  10", 2); place_at(b, x, y + 160.0, 480.0, 64.0); set_preset(b, 2);
+	let c = button(f, "Can  40", 1); place_at(c, x, y + 240.0, 480.0, 64.0); set_preset(c, 2);
+	let buy = button(f, "Buy", 0); place_at(buy, x + 520.0, y + 160.0, 240.0, 64.0); set_preset(buy, 2);
+}
+
+fn stage_results_cozy(f int, mode int) {
+	var y f32 = 160.0;
+	var x f32 = 560.0;
+	if mode == 1 { x = 80.0; }
+	else if mode == 2 { x = 1040.0; }
+	else if mode == 3 { y = 400.0; }
+	else if mode == 4 { x = 240.0; }
+	let head = label(f, "Evening", 0); place_at(head, 760.0, 36.0, 400.0, 64.0); mark_anchor(head);
+	let side = label(f, "Rowan", 2); place_at(side, 80.0, 40.0, 200.0, 36.0);
+	let tb = board(f, x, y, "Stat", "Today", "Total");
+	table_set(tb, 0, 0, "Gold"); table_set(tb, 0, 1, "80"); table_set(tb, 0, 2, "240");
+	table_set(tb, 1, 0, "Crops"); table_set(tb, 1, 1, "12"); table_set(tb, 1, 2, "40");
+	table_set(tb, 2, 0, "Energy"); table_set(tb, 2, 1, "20"); table_set(tb, 2, 2, "60");
+	table_set(tb, 3, 0, "Gifts"); table_set(tb, 3, 1, "1"); table_set(tb, 3, 2, "3");
+	table_set(tb, 4, 0, "Fish"); table_set(tb, 4, 1, "2"); table_set(tb, 4, 2, "6");
+	table_set(tb, 5, 0, "Day"); table_set(tb, 5, 1, "3"); table_set(tb, 5, 2, "3");
+	let again = button(f, "Sleep", 0); place_at(again, 80.0, 980.0, 240.0, 64.0); set_preset(again, 2);
+}
+
+fn stage_settings_cozy(f int, mode int) {
+	var x f32 = 480.0;
+	var y f32 = 220.0;
+	if mode == 1 { x = 80.0; }
+	else if mode == 2 { x = 1080.0; }
+	else if mode == 3 { y = 520.0; }
+	else if mode == 4 { y = 80.0; }
+	let head = label(f, "Farm", 0); place_at(head, x, y, 240.0, 56.0);
+	let a = toggle(f, "Season", 1, 0); place_at(a, x, y + 80.0, 480.0, 56.0);
+	let b = slider(f, 0.5, 0); place_at(b, x, y + 160.0, 480.0, 32.0);
+	let c = toggle(f, "Animals", 1, 2); place_at(c, x, y + 216.0, 480.0, 56.0);
+}
+
+fn stage_map_cozy(f int, mode int) {
+	var y f32 = 80.0;
+	var by f32 = 920.0;
+	if mode == 1 { by = 80.0; y = 200.0; }
+	else if mode == 2 { y = 120.0; }
+	else if mode == 3 { y = 48.0; by = 880.0; }
+	else if mode == 4 { by = 80.0; y = 200.0; }
+	let map = minimap(f, 0); place_at(map, 360.0, y, 1200.0, 760.0); N[map].i3 = 18;
+	if mode == 1 || mode == 4 { place_at(map, 360.0, 200.0, 1200.0, 720.0); }
+	let a = button(f, "House", 0); place_at(a, 80.0, by, 240.0, 56.0); set_preset(a, 2);
+	let b = button(f, "Field", 2); place_at(b, 340.0, by, 240.0, 56.0); set_preset(b, 2);
+	let c = button(f, "Pond", 1); place_at(c, 600.0, by, 240.0, 56.0); set_preset(c, 2);
+}
+
 fn build_stage(frame int, g int, screen int, mode int) int {
 	N[frame].i0 = g;
 	N[frame].i1 = screen;
@@ -2393,6 +2497,7 @@ fn build_stage(frame int, g int, screen int, mode int) int {
 		else if g == 15 { stage_pause_horror(frame, mode); }
 		else if g == 16 { stage_pause_space(frame, mode); }
 		else if g == 17 { stage_pause_fantasy(frame, mode); }
+		else if g == 18 { stage_pause_cozy(frame, mode); }
 		else { stage_pause(frame, g, mode); }
 	}
 	else if screen == 2 {
@@ -2413,6 +2518,7 @@ fn build_stage(frame int, g int, screen int, mode int) int {
 		else if g == 15 { stage_settings_horror(frame, mode); }
 		else if g == 16 { stage_settings_space(frame, mode); }
 		else if g == 17 { stage_settings_fantasy(frame, mode); }
+		else if g == 18 { stage_settings_cozy(frame, mode); }
 		else { stage_settings(frame, g, mode); }
 	}
 	else if screen == 3 {
@@ -2433,6 +2539,7 @@ fn build_stage(frame int, g int, screen int, mode int) int {
 		else if g == 15 { stage_hud_horror(frame, mode); }
 		else if g == 16 { stage_hud_space(frame, mode); }
 		else if g == 17 { stage_hud_fantasy(frame, mode); }
+		else if g == 18 { stage_hud_cozy(frame, mode); }
 		else { stage_hud_fps(frame, mode); }
 	}
 	else if screen == 4 {
@@ -2453,6 +2560,7 @@ fn build_stage(frame int, g int, screen int, mode int) int {
 		else if g == 15 { stage_shop_horror(frame, mode); }
 		else if g == 16 { stage_shop_space(frame, mode); }
 		else if g == 17 { stage_shop_fantasy(frame, mode); }
+		else if g == 18 { stage_shop_cozy(frame, mode); }
 		else { stage_shop_fps(frame, g, mode); }
 	}
 	else if screen == 5 {
@@ -2473,6 +2581,7 @@ fn build_stage(frame int, g int, screen int, mode int) int {
 		else if g == 15 { stage_map_horror(frame, mode); }
 		else if g == 16 { stage_map_space(frame, mode); }
 		else if g == 17 { stage_map_fantasy(frame, mode); }
+		else if g == 18 { stage_map_cozy(frame, mode); }
 		else { stage_map_fps(frame, g, mode); }
 	}
 	else if g == 4 { stage_results_jrpg(frame, mode); }
@@ -2492,6 +2601,7 @@ fn build_stage(frame int, g int, screen int, mode int) int {
 	else if g == 15 { stage_results_horror(frame, mode); }
 	else if g == 16 { stage_results_space(frame, mode); }
 	else if g == 17 { stage_results_fantasy(frame, mode); }
+	else if g == 18 { stage_results_cozy(frame, mode); }
 	else { stage_results_fps(frame, g, mode); }
 	frame
 }

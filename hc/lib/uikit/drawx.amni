@@ -592,6 +592,13 @@ fn back_royale(x int, y int, w int, h int) {
 	fill_rect(x, y, w, 8, 0x8A78E0, 160);
 }
 
+fn back_farm(x int, y int, w int, h int) {
+	fill_rect(x, y, w, h / 3, 0x1A3048, 255);
+	fill_rect(x, y + h / 3, w, h - h / 3, 0x2A5030, 255);
+	fill_rect(x + 80, y + h / 2, 200, 80, 0x6A5030, 255);
+	fill_rect(x + w - 280, y + h / 2 + 40, 160, 100, 0x1E4028, 255);
+}
+
 fn back_glen(x int, y int, w int, h int) {
 	fill_rect(x, y, w, h / 2, 0x243850, 255);
 	fill_rect(x, y + h / 2, w, h - h / 2, 0x1E4030, 255);
@@ -745,6 +752,7 @@ fn paint_stage_back(id int, x int, y int, w int, h int) {
 	else if g == 15 { back_dark(x, y, w, h); }
 	else if g == 16 { back_void(x, y, w, h); }
 	else if g == 17 { back_glen(x, y, w, h); }
+	else if g == 18 { back_farm(x, y, w, h); }
 	else if g == 2 { back_moba(x, y, w, h); }
 	else if g == 4 { back_jrpg(x, y, w, h); }
 	else if g == 5 { back_souls(x, y, w, h); }
