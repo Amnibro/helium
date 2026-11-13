@@ -136,7 +136,7 @@ fn add_flavor(col int, g int) {
 		let a = button(row, "P1", 0); set_px(a, 64.0, 32.0);
 		let b = button(row, "P2", 1); set_px(b, 64.0, 32.0);
 	} else if g == 12 {
-		let a = button(col, "Strike", 0); set_px(a, 224.0, 32.0);
+		let a = button(col, "Jab", 0); set_px(a, 224.0, 32.0);
 		let b = button(col, "Block", 2); set_px(b, 224.0, 32.0);
 	} else if g == 18 {
 		let a = button(col, "Seeds", 0); set_px(a, 224.0, 32.0);
@@ -308,8 +308,8 @@ fn shop_item(g int, i int) const byte[:] {
 		return "Turbo";
 	}
 	if g == 12 {
-		if i == 0 { return "Strike"; }
-		if i == 1 { return "Defend"; }
+		if i == 0 { return "Jab"; }
+		if i == 1 { return "Ward"; }
 		if i == 2 { return "Relic"; }
 		return "Skip";
 	}
@@ -647,7 +647,7 @@ fn screen_hud(col int, g int) {
 		scr_lab(col, "Slime 42");
 		let hp = health_bar(col, 0.62, 1); set_px(hp, 160.0, 16.0);
 		scr_lab(col, "Energy 3");
-		scr_btn(col, "Strike", 0);
+		scr_btn(col, "Jab", 0);
 		scr_btn(col, "Block", 2);
 		scr_lab(col, "Draw 5");
 	} else if g == 13 {
@@ -714,7 +714,7 @@ fn screen_hud(col int, g int) {
 fn screen_bag(col int, g int) {
 	if g == 0 || g == 1 { scr_lab(col, "BUY"); scr_lab(col, "Rifle 29"); scr_lab(col, "Vest 10"); scr_btn(col, "Buy", 0); }
 	else if g == 2 { scr_lab(col, "SHOP"); scr_lab(col, "Gold 1350"); scr_btn(col, "Boots", 0); scr_btn(col, "Tome", 2); }
-	else if g == 12 { scr_lab(col, "REWARD"); scr_btn(col, "Strike", 0); scr_btn(col, "Defend", 2); scr_btn(col, "Skip", 5); }
+	else if g == 12 { scr_lab(col, "REWARD"); scr_btn(col, "Jab", 0); scr_btn(col, "Ward", 2); scr_btn(col, "Skip", 5); }
 	else if g == 18 { scr_lab(col, "STORE"); scr_lab(col, "Seeds 20"); scr_btn(col, "Buy", 0); }
 	else if g == 22 { scr_lab(col, "UPGRADE"); scr_btn(col, "Oven", 0); scr_lab(col, "Cost 50"); }
 	else if g == 23 { scr_lab(col, "PULL"); scr_lab(col, "Pity 12"); scr_btn(col, "x10", 0); }

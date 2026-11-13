@@ -356,14 +356,21 @@ fn paint_quest(x int, y int, w int, h int, seed int) {
 }
 
 fn paint_boss(x int, y int, w int, h int, name const byte[:], v f32) {
-	draw_text(x + 4, y + 1, name, 11.0, THEME.ink, 0, -1);
+	if h <= 24 && name.len > 0 { draw_text(x + 4, y + 1, name, 11.0, THEME.ink, 0, -1); }
 	let by = y + h - 8;
 	fill_rect(x + 4, by, w - 8, 6, 0x2A1214, 255);
 	var fw = ((w - 8) as f32 * v) as int;
 	if fw < 0 { fw = 0; }
 	if fw > w - 8 { fw = w - 8; }
+	var trail = v + 0.12;
+	if trail > 1.0 { trail = 1.0; }
+	var tw = ((w - 8) as f32 * trail) as int;
+	if tw > w - 8 { tw = w - 8; }
+	if tw > fw { fill_rect(x + 4 + fw, by, tw - fw, 6, 0xF0C36A, 255); }
 	fill_rect(x + 4, by, fw, 6, 0xE23B3B, 255);
 	fill_rect(x + 4, by, fw, 2, 0xFFB4A8, 180);
+	var tick = 24;
+	while tick < w - 8 { fill_rect(x + 4 + tick, by, 1, 6, 0x000000, 120); tick += 24; }
 }
 
 fn paint_buffs(x int, y int, w int, h int, seed int) {

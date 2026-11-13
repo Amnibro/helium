@@ -65,11 +65,10 @@ Font pairings: 30
 
 ## Still weak
 
-- FPS, MOBA, JRPG, Souls, Royale, Racing, Fighting, and Deck are real 1920x1080 stages, each with its own pause, shop, and results. The other game genres are still the narrow column.
-- The minimap is a terrain plate (roads, water, a zone ring, pings). It is the same diagram on every screen, not a top-down of a level. MOBA map and results still use the FPS frame.
-- Backdrops differ by genre (skyline, island, lanes, dusk, fog, track, ring, table) and are still flat blocks. Shield is an armor plate and potion is a flask. Other pictograms stay coarse. The objective pip is centered on its ink.
+- FPS, MOBA, JRPG, Souls, Royale, Racing, Fighting, and Deck are real 1920x1080 stages. The other 16 game genres are still the narrow column.
+- Panels have a gradient, a bevel, and an inner shadow. Bars have segment ticks and a fixed damage trail. Scene text has a one-pixel drop shadow. Results on the staged genres are three-column stat tables. The tall boss bar no longer paints a second small name.
+- The minimap is still one terrain diagram, not a top-down of a level. Backdrops are still flat blocks. Other pictograms stay coarse. Ability icons are the nearest metaphor, not spell art. The damage trail is a fixed offset, not a simulated hit.
 - Glow and backdrop rectangles are clipped to the widget. `overlap_count` also counts `note_deco` bounds, so a slab painted across another control fails the check.
-- Results are a few lines, not a full stat table. Ability icons are the nearest metaphor, not spell art. The boss bar still paints a small name on the bar as well as the large one.
 - All 500 icons are named pictograms. Thin marks (arrows, plus, minus) are geometric on purpose. A few complex metaphors are still coarse.
 - Widget styles are 20 frames on six controls (button, field, toggle, slider, card, badge), not 20 treatments of every chart and table.
 - `motion.apng` is eight frames (spring, ripple, typewriter, toast, shimmer). It is not a full transition system.
