@@ -274,7 +274,7 @@ fn paint_stage_screen(g int, screen int) {
 }
 
 fn paint_screen(g int, screen int) {
-	if g < 13 && g != 11 { paint_stage_screen(g, screen); return; }
+	if g < 13 { paint_stage_screen(g, screen); return; }
 	var dir byte[>..] = [];
 	dir.append("docs/ui-gallery/");
 	dir.append(uikit::genre_slug(g));
@@ -659,6 +659,11 @@ fn main() {
 		if which[..] == "royale" {
 			for s in 7 { paint_stage_screen(1, s); }
 			print("royale done");
+			return;
+		}
+		if which[..] == "rogue" {
+			for s in 7 { paint_stage_screen(11, s); }
+			print("rogue done");
 			return;
 		}
 		if which[..] == "platform" {
