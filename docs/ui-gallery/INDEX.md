@@ -3,7 +3,7 @@
 Catalog themes: 300
 Curated themes: 35
 Genres: 41 (24 game, 17 app)
-Each game genre has 7 screens (title, pause, settings, hud, shop, map, results), 5 variations each. HUD columns include the 57dbc71a kit (boss, buffs, bars, minimap, inventory, quest, cooldowns, radial or chart, dialogue, damage, Play/Map/Bag) plus genre extras. Leaf count must be at least that commit. App genres are one sheet of 5 variations.
+Each genre has 7 screens (title, pause, settings, hud, shop, map, results), 5 variations each, on a 1920x1080 stage. Game HUD columns include the 57dbc71a kit (boss, buffs, bars, minimap, inventory, quest, cooldowns, radial or chart, dialogue, damage, Play/Map/Bag) plus genre extras. Leaf count must be at least that commit.
 Icons: 500 (500 named pictograms)
 Text effects: 100
 Widget styles: 20
@@ -36,23 +36,23 @@ Font pairings: 30
 - `novel/` — Novel title pause settings hud shop map results (ref: Steins;Gate, Doki Doki)
 - `idle/` — Idle title pause settings hud shop map results (ref: Cookie Clicker)
 - `gacha/` — Gacha title pause settings hud shop map results (ref: Genshin Impact banners)
-- `dashboard/sheet.png` — Dashboard (ref: Linear, Stripe dashboard)
-- `admin/sheet.png` — Admin (ref: Salesforce, Retool)
-- `shop/sheet.png` — Shop (ref: Shopify admin)
-- `social/sheet.png` — Social (ref: Instagram, X)
-- `chat/sheet.png` — Chat (ref: iMessage, Discord)
-- `media/sheet.png` — Player (ref: Apple Music, Spotify)
-- `editor/sheet.png` — Editor (ref: VS Code)
-- `settings/sheet.png` — Settings (ref: iOS Settings, Windows Settings)
-- `onboard/sheet.png` — Onboard (ref: Notion onboarding)
-- `auth/sheet.png` — Auth (ref: Apple ID, Google sign-in)
-- `pricing/sheet.png` — Pricing (ref: Stripe pricing)
-- `docs/sheet.png` — Docs (ref: Apple HIG, MDN)
-- `calendar/sheet.png` — Calendar (ref: Google Calendar)
-- `kanban/sheet.png` — Kanban (ref: Trello, Linear boards)
-- `maps/sheet.png` — Maps (ref: Google Maps, Apple Maps)
-- `banking/sheet.png` — Banking (ref: Revolut, Apple Cash)
-- `health/sheet.png` — Health (ref: Apple Health, Fitbit)
+- `dashboard/` — Dashboard title pause settings hud shop map results (ref: Linear, Stripe dashboard)
+- `admin/` — Admin title pause settings hud shop map results (ref: Salesforce, Retool)
+- `shop/` — Shop title pause settings hud shop map results (ref: Shopify admin)
+- `social/` — Social title pause settings hud shop map results (ref: Instagram, X)
+- `chat/` — Chat title pause settings hud shop map results (ref: iMessage, Discord)
+- `media/` — Player title pause settings hud shop map results (ref: Apple Music, Spotify)
+- `editor/` — Editor title pause settings hud shop map results (ref: VS Code)
+- `settings/` — Settings title pause settings hud shop map results (ref: iOS Settings, Windows Settings)
+- `onboard/` — Onboard title pause settings hud shop map results (ref: Notion onboarding)
+- `auth/` — Auth title pause settings hud shop map results (ref: Apple ID, Google sign-in)
+- `pricing/` — Pricing title pause settings hud shop map results (ref: Stripe pricing)
+- `docs/` — Docs title pause settings hud shop map results (ref: Apple HIG, MDN)
+- `calendar/` — Calendar title pause settings hud shop map results (ref: Google Calendar)
+- `kanban/` — Kanban title pause settings hud shop map results (ref: Trello, Linear boards)
+- `maps/` — Maps title pause settings hud shop map results (ref: Google Maps, Apple Maps)
+- `banking/` — Banking title pause settings hud shop map results (ref: Revolut, Apple Cash)
+- `health/` — Health title pause settings hud shop map results (ref: Apple Health, Fitbit)
 
 ## Other sheets
 
@@ -65,11 +65,12 @@ Font pairings: 30
 
 ## Still weak
 
-- All 24 game genres are 1920x1080 stages with their own HUD, pause, shop, and results. App genres are still the narrow column.
+- All 24 game genres and all 17 app genres are 1920x1080 stages. Each app has its own home, menu, settings, main screen, list, browse, and summary.
 - Each genre backdrop has its own sky and ground colors. Cozy is a warm pastel, sports is a bright pitch, space is deep blue with stars, gacha is saturated magenta. Silhouettes are small shapes on the horizon. Scene labels on a light sky or ground are dark. They are still flat shapes, not painted scenes.
 - Panels have a gradient, a bevel, and an inner shadow. Bars have segment ticks. Scene text has a one-pixel drop shadow. Results tables use 22px cells. Stage labels and buttons are at least 20px. The tall boss bar no longer paints a second small name.
 - Each game genre has its own minimap diagram: roads, rooms, lanes, or nodes drawn as ellipses. It is still a diagram, not a captured level.
 - The damage trail shrinks and fades from variation 0 to 4 (a wide bright chip, then a short dull one). It is that offset, not a simulated hit. Other pictograms stay coarse. Ability icons are the nearest metaphor, not spell art.
+- App home, menu, settings, list, and summary screens share a few recipes and differ mainly by copy and which side the stack sits on. The main screen is the one laid out for that app. Charts are still the simple painters.
 - Glow and backdrop rectangles are clipped to the widget. `overlap_count` also counts `note_deco` bounds, so a slab painted across another control fails the check.
 - All 500 icons are named pictograms. Thin marks (arrows, plus, minus) are geometric on purpose. A few complex metaphors are still coarse.
 - Widget styles are 20 frames on six controls (button, field, toggle, slider, card, badge), not 20 treatments of every chart and table.

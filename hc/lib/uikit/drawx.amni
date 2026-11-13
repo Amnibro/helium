@@ -857,6 +857,23 @@ fn back_depth(g int, mode int, x int, y int, w int, h int) {
 	else if g == 21 { top = 0x4A2058; bot = 0xF0A090; ground = 0x2A1828; far = 0x3A1840; near = 0x1A1020; accent = 0xF0A060; }
 	else if g == 22 { top = 0x4A3018; bot = 0xF0B050; ground = 0x2A1C10; far = 0x3A2814; near = 0x1A140C; accent = 0xF0C14A; }
 	else if g == 23 { top = 0x7A14C0; bot = 0xFF3AA8; ground = 0x4A0878; far = 0x5A1090; near = 0x2A0848; accent = 0xFFD24A; }
+	else if g == 24 { top = 0x1E3A5C; bot = 0x4A7AB0; ground = 0x16304A; far = 0x163454; near = 0x102438; accent = 0x5B8DEF; }
+	else if g == 25 { top = 0x241848; bot = 0x4A3A88; ground = 0x1A1430; far = 0x2A2058; near = 0x140E28; accent = 0x8A7AE0; }
+	else if g == 26 { top = 0xF6E6D4; bot = 0xF0C8A8; ground = 0xE8B090; far = 0xE0A888; near = 0xC88868; accent = 0xE05A3A; }
+	else if g == 27 { top = 0x3A1860; bot = 0xE04080; ground = 0x2A1048; far = 0x4A1868; near = 0x1A0830; accent = 0xFF5A9A; }
+	else if g == 28 { top = 0x14382C; bot = 0x3AAA78; ground = 0x102820; far = 0x1A4838; near = 0x0C2018; accent = 0x5AD0A0; }
+	else if g == 29 { top = 0x140818; bot = 0x6A1860; ground = 0x100610; far = 0x3A1040; near = 0x0C0810; accent = 0xE040A0; }
+	else if g == 30 { top = 0x1A1C22; bot = 0x2E3440; ground = 0x12141A; far = 0x242830; near = 0x101218; accent = 0x7AA2F7; }
+	else if g == 31 { top = 0xE8EEF4; bot = 0xD0D8E4; ground = 0xC8D0DC; far = 0xB0B8C8; near = 0x98A0B0; accent = 0x3A6FE0; }
+	else if g == 32 { top = 0xE8D8F8; bot = 0xF0C8E8; ground = 0xD8C0E8; far = 0xC8A8D8; near = 0xB090C0; accent = 0x7A4AD0; }
+	else if g == 33 { top = 0x0E1A40; bot = 0x1A3A80; ground = 0x0A1430; far = 0x142858; near = 0x081028; accent = 0x4A8AE0; }
+	else if g == 34 { top = 0xF4F7FB; bot = 0xD6E4F8; ground = 0xE8F0FA; far = 0xC0D0E8; near = 0xA8B8D0; accent = 0x635BFF; }
+	else if g == 35 { top = 0xF6F1E6; bot = 0xE8DCC8; ground = 0xEFE6D4; far = 0xD8C8B0; near = 0xC0B098; accent = 0xC45A20; }
+	else if g == 36 { top = 0xD6ECFA; bot = 0x8EC8F0; ground = 0xC8E4F4; far = 0x98C0E0; near = 0x78A8C8; accent = 0xE05A3A; }
+	else if g == 37 { top = 0xF0E6D4; bot = 0xE0C8A8; ground = 0xE8D4B8; far = 0xD0B898; near = 0xB89878; accent = 0x3A8A5A; }
+	else if g == 38 { top = 0x1A4A38; bot = 0x3A9A68; ground = 0x2A6848; far = 0x1A5838; near = 0x123828; accent = 0xE0C04A; }
+	else if g == 39 { top = 0x0E2420; bot = 0x1A4A40; ground = 0x0A1C18; far = 0x143830; near = 0x081410; accent = 0xD4B06A; }
+	else if g == 40 { top = 0xE8F6F2; bot = 0xB8E8DC; ground = 0xD4F0E8; far = 0xA0D0C0; near = 0x80B8A8; accent = 0xE04058; }
 	SKY_TOP = top; SKY_BOT = bot; SKY_GRD = ground;
 	var skyh = h * 2 / 3;
 	if g == 16 { skyh = h; }

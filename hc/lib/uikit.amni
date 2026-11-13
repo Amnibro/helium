@@ -8,5 +8,6 @@ import uikit.icons;
 import uikit.catalog;
 import uikit.screens;
 import uikit.stage;
+import uikit.apps;
 import uikit.paint;
 import uikit.input;
