@@ -246,24 +246,24 @@ fn spell_plate(x int, y int, s int, body u32, lit u32, shape int) {
 	let cx = x + s / 2;
 	let cy = y + s / 2;
 	if shape == 1 {
-		fill_tri(cx, y, x, cy, cx, y + s, 0x10141C);
-		fill_tri(cx, y, x + s, cy, cx, y + s, 0x10141C);
-		fill_tri(cx, y + 3, x + 3, cy, cx, y + s - 3, body);
-		fill_tri(cx, y + 3, x + s - 3, cy, cx, y + s - 3, body);
-		fill_ell(cx, y + s / 3, s / 5, s / 8, lit, 160);
+		fill_tri(cx, y, x, cy, cx, y + s, 0xFFF6E8);
+		fill_tri(cx, y, x + s, cy, cx, y + s, 0xFFF6E8);
+		fill_tri(cx, y + 2, x + 3, cy, cx, y + s - 3, body);
+		fill_tri(cx, y + 2, x + s - 3, cy, cx, y + s - 3, body);
+		fill_ell(cx, y + s / 3, s / 5, s / 8, lit, 200);
 	} else if shape == 2 {
-		fill_rect(x, y, s, s, 0x10141C, 255);
+		fill_rect(x, y, s, s, 0xFFF6E8, 255);
 		fill_rect(x + 2, y + 2, s - 4, s - 4, body, 255);
-		fill_rect(x + 3, y + 3, s - 6, s / 3, lit, 150);
+		fill_rect(x + 4, y + 4, s - 8, s / 3, lit, 180);
 	} else if shape == 3 {
-		fill_ell(cx, cy + s / 10, s / 2, s / 2, 0x10141C, 255);
+		fill_ell(cx, cy + s / 10, s / 2, s / 2, 0xFFF6E8, 255);
 		fill_ell(cx, cy + s / 10, s / 2 - 2, s / 2 - 3, body, 255);
 		fill_tri(cx, cy, x + s / 5, cy + s / 8, x + s - s / 5, cy + s / 8, body);
-		fill_ell(cx, cy - s / 8, s / 4, s / 6, lit, 170);
+		fill_ell(cx, cy - s / 8, s / 4, s / 6, lit, 200);
 	} else {
-		fill_ell(cx, cy, s / 2, s / 2, 0x10141C, 255);
+		fill_ell(cx, cy, s / 2, s / 2, 0xFFF6E8, 255);
 		fill_ell(cx, cy, s / 2 - 2, s / 2 - 2, body, 255);
-		fill_ell(cx, cy - s / 6, s / 3, s / 5, lit, 150);
+		fill_ell(cx, cy - s / 6, s / 3, s / 5, lit, 190);
 	}
 }
 

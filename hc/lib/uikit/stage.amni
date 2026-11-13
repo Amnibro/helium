@@ -254,7 +254,7 @@ fn objective_pip(f int, y f32) {
 	let row = flex(f, DIR_ROW);
 	set_gap(row, 8.0);
 	set_pad(row, 0.0);
-	place_at(row, 920.0, y, 144.0, 40.0);
+	place_at(row, 924.0, y, 144.0, 40.0);
 	mark_anchor(row);
 	let pip = icon_button(row, 75, 3); set_px(pip, 40.0, 40.0);
 	let letter = label(row, "A", 2); set_px(letter, 32.0, 40.0); N[letter].i2 = 1;
