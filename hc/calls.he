@@ -886,7 +886,7 @@ recursive ck_builtin(n int, b int, recv int, want int) int:
 	r := recv
 	if (b == B_PUSH || b == B_APPEND || b == B_ALLOCI || b == B_ALLOCR) && total == 2:
 		rt0 := deref(at(r)); if TY[rt0].k == TY_ARR && TY[rt0].a == T_ERRT && ND[r].k as int == N_ID && rk(r) == R_LOCAL:
-			c := arg(1); ct0 := ck(c, -1); ck0 := TY[ct0].k; e2 := if b == B_APPEND { if ck0 == TY_STRLIT { T_U8 } else { if ck0 == TY_ARRLIT { if ND[c].n > 0 { default_t(kid(c, 0)) } else { T_ERRT } } else { TY[deref(ct0)].a as int } } } else { if ck0 == TY_STRLIT { t_arr(T_U8, A_VAR, -1, 6) } else { if is_pending(ct0) { default_t(c) } else { deref_val(ct0) } } }; if e2 != T_ERRT: complete(r, e2)
+			c := arg(1); ct0 := ck(c, -1); ck0 := TY[ct0].k; e2 := if b == B_APPEND { if ck0 == TY_STRLIT { T_U8 } else { if ck0 == TY_ARRLIT { if ND[c].n > 0 { default_t(kid(c, 0)) } else { T_ERRT } } else { TY[deref(ct0)].a as int } } } else { if ck0 == TY_STRLIT { t_arr(T_U8, A_VAR, -1, 6) } else { if is_pending(ct0) { default_t(c) } else { deref_val(ct0) } } }; if e2 >= 0 && e2 != T_ERRT: complete(r, e2)
 	rt := deref(at(r))
 	e := TY[rt].a
 	if b == B_PUSH: if total != 2 { cerr(n, "push takes one value"); return set_t(n, T_ERRT) } c := arg(1); ck(c, e); conv(c, e); return set_t(n, elref(e))
