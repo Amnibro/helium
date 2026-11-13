@@ -3,8 +3,9 @@ namespace uikit;
 import uikit.icons_b0;
 import uikit.icons_b1;
 import uikit.icons_b2;
+import uikit.icons_b3;
 
-fn icon_named() int { ICON_N0 + ICON_N1 + ICON_N2 }
+fn icon_named() int { ICON_N0 + ICON_N1 + ICON_N2 + ICON_N3 }
 
 fn icon_len(id int) int {
 	if id < 0 || id >= icon_named() { return 0; }
@@ -16,6 +17,10 @@ fn icon_len(id int) int {
 	if id < ICON_N0 + ICON_N1 + ICON_N2 {
 		let j2 = id - (ICON_N0 + ICON_N1);
 		return ICON_AT2[j2 + 1] - ICON_AT2[j2];
+	}
+	if id < ICON_N0 + ICON_N1 + ICON_N2 + ICON_N3 {
+		let j3 = id - (ICON_N0 + ICON_N1 + ICON_N2);
+		return ICON_AT3[j3 + 1] - ICON_AT3[j3];
 	}
 	0
 }
@@ -31,6 +36,10 @@ fn icon_byte(id int, k int) int {
 		let j2 = id - (ICON_N0 + ICON_N1);
 		return ICON_OPS2[ICON_AT2[j2] + k] as int;
 	}
+	if id < ICON_N0 + ICON_N1 + ICON_N2 + ICON_N3 {
+		let j3 = id - (ICON_N0 + ICON_N1 + ICON_N2);
+		return ICON_OPS3[ICON_AT3[j3] + k] as int;
+	}
 	0
 }
 
@@ -39,5 +48,6 @@ fn icon_name(id int) const byte[:] {
 	if id < ICON_N0 { return icon_name_0(id); }
 	if id < ICON_N0 + ICON_N1 { return icon_name_1(id - (ICON_N0)); }
 	if id < ICON_N0 + ICON_N1 + ICON_N2 { return icon_name_2(id - (ICON_N0 + ICON_N1)); }
+	if id < ICON_N0 + ICON_N1 + ICON_N2 + ICON_N3 { return icon_name_3(id - (ICON_N0 + ICON_N1 + ICON_N2)); }
 	"blob"
 }
