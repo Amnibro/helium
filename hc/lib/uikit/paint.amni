@@ -273,7 +273,10 @@ fn chrome(x int, y int, w int, h int, look int, hot int, on int) u32, u32 {
 		blur_rect(x, y, w, h, (3.0 * SCALE) as int);
 	}
 	let a = if THEME.glass != 0 { 120 } else { 255 };
-	if THEME.family == FAM_BRUTAL || THEME.shadow == 2 { fill_rect(x + (6.0 * SCALE) as int, y + (6.0 * SCALE) as int, w, h, 0x000000, 255); }
+	if APP_UI != 0 && w >= 160 && h >= 48 {
+		round_rect(x + 4, y + 10, w - 4, h - 6, rad, 0x000000, 90);
+		blur_rect(x - 8, y + 2, w + 20, h + 20, 4);
+	} else if THEME.family == FAM_BRUTAL || THEME.shadow == 2 { fill_rect(x + (6.0 * SCALE) as int, y + (6.0 * SCALE) as int, w, h, 0x000000, 255); }
 	else if look == LOOK_ELEVATED || THEME.shadow == 1 {
 		fill_rect(x + 2, y + (3.0 * SCALE) as int, w, h, 0x000000, 28);
 		fill_rect(x + 1, y + (6.0 * SCALE) as int, w, h, 0x000000, 18);
@@ -299,6 +302,7 @@ fn chrome(x int, y int, w int, h int, look int, hot int, on int) u32, u32 {
 	}
 	let bw = if look == LOOK_SHARP || THEME.family == FAM_BRUTAL { if THEME.border_w < 2.0 { (2.0 * SCALE) as int } else { (THEME.border_w * SCALE) as int } } else { (THEME.border_w * SCALE) as int };
 	if bw > 0 && look != LOOK_FILLED { stroke_rect(x, y, w, h, if look == LOOK_OUTLINE || look == LOOK_SHARP || THEME.family == FAM_NEON { THEME.accent } else { THEME.border }, bw); }
+	if APP_UI != 0 && look == LOOK_FILLED { stroke_rect(x, y, w, h, THEME.border, 1); }
 	if THEME.glass != 0 {
 		fill_rect(x + 2, y + 2, w - 4, (2.0 * SCALE) as int, 0xFFFFFF, 110);
 		fill_rect(x + 2, y + h - 3, w - 4, 1, 0x000000, 40);
@@ -514,8 +518,11 @@ recursive fn paint_node(id int) {
 			draw_text(x + w - (20.0 * SCALE) as int, y + 8, "+", ps, THEME.ink, 0, -1);
 		} else if k == K_TABLE {
 			let cols = if N[id].i1 < 1 { 1 } else if N[id].i1 > 8 { 8 } else { N[id].i1 };
-			let rh = (36.0 * SCALE) as int;
-			let ts = 22.0 * SCALE;
+			var rowf f32 = 36.0;
+			var textf f32 = 22.0;
+			if APP_UI != 0 { rowf = 32.0; textf = 16.0; }
+			let rh = (rowf * SCALE) as int;
+			let ts = textf * SCALE;
 			let pin = if N[id].i3 < 0 { 0 } else if N[id].i3 > cols { cols } else { N[id].i3 };
 			var xs int[8] = [0; 8];
 			var acc = x + 4;

@@ -410,6 +410,23 @@ fn map_lay(seed int, x int, y int, w int, h int) {
 	}
 }
 
+fn paint_curve(x int, y int, w int, amp int, thick int, phase int, rgb u32) {
+	var i = 0;
+	while i < w {
+		let ang = phase + i * 360 / w;
+		let yy = y + sin_milli(ang) * amp / 1000;
+		fill_rect(x + i, yy, 3, thick, rgb, 255);
+		i += 2;
+	}
+}
+
+fn paint_park(cx int, cy int, rgb u32) {
+	fill_ell(cx, cy, 70, 46, rgb, 255);
+	fill_ell(cx - 36, cy + 18, 48, 34, rgb, 255);
+	fill_ell(cx + 40, cy - 10, 36, 28, rgb, 255);
+	fill_ell(cx + 8, cy + 28, 30, 22, rgb, 255);
+}
+
 fn paint_streets(x int, y int, w int, h int) {
 	var paper = 0xE7E4DA;
 	var road = 0xFBFBF8;
@@ -426,24 +443,26 @@ fn paint_streets(x int, y int, w int, h int) {
 		name = 0xD5D8DE;
 	}
 	fill_rect(x, y, w, h, paper as u32, 255);
-	fill_ell(x + w / 5, y + h / 4, w / 10, h / 8, park as u32, 255);
-	fill_ell(x + w * 3 / 4, y + h / 6, w / 12, h / 10, park as u32, 255);
-	fill_rect(x, y + h / 2 - h / 28, w, h / 14, water as u32, 255);
+	paint_park(x + w / 4, y + h / 3, park as u32);
+	paint_park(x + w * 3 / 4, y + h / 5, park as u32);
+	paint_park(x + w / 2, y + h * 3 / 4, park as u32);
+	paint_curve(x, y + h / 2, w, h / 10, h / 18, 20, water as u32);
+	paint_curve(x, y + h / 5, w, h / 12, 14, 0, road as u32);
+	paint_curve(x, y + h * 2 / 3, w, h / 9, 18, 80, major as u32);
+	paint_curve(x, y + h / 3, w, h / 14, 10, 160, road as u32);
 	var i = 0;
-	while i < 6 {
-		let yy = y + h / 10 + i * h / 7;
-		let thick = if i == 2 { h / 28 } else { 4 };
-		if thick < 4 { fill_rect(x, yy, w, 4, road as u32, 255); }
-		else { fill_rect(x, yy, w, thick, if i == 2 { major as u32 } else { road as u32 }, 255); }
-		i += 1;
+	while i < h {
+		let ang = 40 + i * 360 / h;
+		let xx = x + w / 3 + sin_milli(ang) * (w / 10) / 1000;
+		fill_rect(xx, y + i, 12, 3, road as u32, 255);
+		i += 2;
 	}
 	i = 0;
-	while i < 5 {
-		let xx = x + w / 12 + i * w / 6;
-		let thick = if i == 1 { w / 36 } else { 4 };
-		if thick < 4 { fill_rect(xx, y, 4, h, road as u32, 255); }
-		else { fill_rect(xx, y, thick, h, if i == 1 { major as u32 } else { road as u32 }, 255); }
-		i += 1;
+	while i < h {
+		let ang = i * 280 / h;
+		let xx = x + w * 2 / 3 + sin_milli(ang) * (w / 14) / 1000;
+		fill_rect(xx, y + i, 16, 3, major as u32, 255);
+		i += 2;
 	}
 	draw_text(x + 16, y + 16, "Harbor", 16.0, name as u32, 0, -1);
 	draw_text(x + w / 2, y + h / 3, "Oak", 16.0, name as u32, 0, -1);
@@ -697,12 +716,12 @@ fn chart_grid(x int, y int, w int, h int, spark int) int, int, int, int {
 			fill_rect(px, gy, pw, 1, THEME.border, 180);
 			TMP.clear();
 			format(TMP, g * 4);
-			draw_text(x + 4, gy - 8, TMP[..], 14.0, THEME.muted, 0, -1);
+			draw_text(x + 4, gy - 8, TMP[..], 16.0, THEME.muted, 0, -1);
 			g += 1;
 		}
 		var i = 0;
 		while i < 7 {
-			draw_text(px + i * pw / 7, base + 6, day_lab(i), 14.0, THEME.muted, 0, -1);
+			draw_text(px + i * pw / 7, base + 6, day_lab(i), 16.0, THEME.muted, 0, -1);
 			i += 1;
 		}
 	}
@@ -767,7 +786,38 @@ fn chart_donut(x int, y int, w int, h int) {
 	draw_text(cx - 16, cy - 10, "64", 20.0, THEME.ink, 0, -1);
 }
 
+fn paint_goods(x int, y int, w int, h int, kind int) {
+	let ink = THEME.ink;
+	let acc = THEME.accent;
+	let cx = x + w / 2;
+	let cy = y + h / 2;
+	if kind == 0 {
+		fill_rect(cx - 28, cy - 10, 56, 48, acc, 255);
+		fill_ell(cx, cy + 28, 28, 14, acc, 255);
+		fill_ell(cx + 36, cy + 8, 16, 22, ink, 255);
+		fill_ell(cx + 28, cy + 8, 10, 16, THEME.surface, 255);
+	} else if kind == 1 {
+		fill_rect(cx - 8, cy, 16, 36, ink, 255);
+		fill_ell(cx, cy + 36, 28, 8, ink, 255);
+		fill_ell(cx, cy - 8, 48, 18, acc, 255);
+	} else if kind == 2 {
+		fill_rect(cx - 36, cy - 8, 72, 56, acc, 255);
+		fill_ell(cx - 16, cy - 20, 10, 16, ink, 255);
+		fill_ell(cx + 16, cy - 20, 10, 16, ink, 255);
+	} else if kind == 3 {
+		fill_rect(cx - 40, cy - 4, 80, 8, ink, 255);
+		fill_rect(cx + 28, cy - 8, 16, 16, acc, 255);
+	} else if kind == 4 {
+		fill_ell(cx, cy + 8, 48, 22, acc, 255);
+		fill_ell(cx, cy + 4, 36, 12, THEME.surface, 255);
+	} else {
+		fill_rect(cx - 40, cy - 16, 80, 28, acc, 255);
+		fill_rect(cx - 28, cy + 8, 64, 20, ink, 180);
+	}
+}
+
 fn paint_chart(x int, y int, w int, h int, kind int) {
+	if kind >= 10 { paint_goods(x, y, w, h, kind - 10); return; }
 	let k = if kind < 0 { 0 } else { kind % 7 };
 	if k == 2 && w >= 120 && h >= 120 { chart_donut(x, y, w, h); return; }
 	let spark = if k == 4 || k == 5 || h < 96 || w < 140 { 1 } else { 0 };
