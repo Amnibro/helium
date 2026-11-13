@@ -20,6 +20,7 @@ fn menu_n(g int) int {
 	if g == 13 { return 4; }
 	if g == 14 { return 4; }
 	if g == 15 { return 4; }
+	if g == 16 { return 4; }
 	4
 }
 fn menu_at(g int, i int) const byte[:] {
@@ -65,6 +66,12 @@ fn menu_at(g int, i int) const byte[:] {
 		if i == 0 { return "Versus"; }
 		if i == 1 { return "Arcade"; }
 		if i == 2 { return "Training"; }
+		return "Options";
+	}
+	if g == 16 {
+		if i == 0 { return "Launch"; }
+		if i == 1 { return "Hangar"; }
+		if i == 2 { return "Crew"; }
 		return "Options";
 	}
 	if g == 15 {
@@ -2161,6 +2168,103 @@ fn stage_map_horror(f int, mode int) {
 	let c = button(f, "Attic", 2); place_at(c, 600.0, by, 240.0, 56.0); set_preset(c, 2);
 }
 
+fn stage_hud_space(f int, mode int) {
+	var mx f32 = 1600.0;
+	var my f32 = 760.0;
+	if mode == 1 { mx = 1600.0; my = 48.0; }
+	else if mode == 2 { mx = 48.0; my = 760.0; }
+	else if mode == 3 { mx = 48.0; my = 400.0; }
+	else if mode == 4 { mx = 1600.0; my = 400.0; }
+	let ship = label(f, "Kite", 1); place_at(ship, 48.0, 36.0, 200.0, 40.0);
+	let head = label(f, "Vesper", 0); place_at(head, 760.0, 36.0, 400.0, 48.0); mark_anchor(head);
+	let spd = label(f, "187", 0); place_at(spd, 820.0, 860.0, 160.0, 64.0);
+	let unit = label(f, "m/s", 3); place_at(unit, 1000.0, 884.0, 120.0, 32.0);
+	let hull = label(f, "Hull", 2); place_at(hull, 48.0, 120.0, 120.0, 32.0);
+	let hb = health_bar(f, 0.72, 0); place_at(hb, 180.0, 124.0, 400.0, 20.0);
+	let sh = label(f, "Shield", 2); place_at(sh, 48.0, 168.0, 120.0, 32.0);
+	let sb = health_bar(f, 0.4, 1); place_at(sb, 180.0, 172.0, 400.0, 20.0);
+	let en = label(f, "Power", 2); place_at(en, 48.0, 216.0, 120.0, 32.0);
+	let eb = health_bar(f, 0.55, 2); place_at(eb, 180.0, 220.0, 400.0, 20.0);
+	let gun = label(f, "Lance", 1); place_at(gun, 48.0, 264.0, 160.0, 36.0);
+	let heat = label(f, "Heat  20", 3); place_at(heat, 220.0, 268.0, 200.0, 32.0);
+	let lock = label(f, "Lock", 2); place_at(lock, 760.0, 100.0, 400.0, 36.0); mark_anchor(lock);
+	let map = minimap(f, 0); place_at(map, mx, my, 240.0, 200.0); N[map].i3 = 16;
+}
+
+fn stage_pause_space(f int, mode int) {
+	var y f32 = 880.0;
+	var x f32 = 200.0;
+	if mode == 1 { y = 80.0; }
+	else if mode == 2 { x = 80.0; y = 400.0; }
+	else if mode == 3 { y = 480.0; x = 360.0; }
+	else if mode == 4 { y = 200.0; }
+	let head = label(f, "All stop", 0); place_at(head, 760.0, y - 72.0, 400.0, 56.0); mark_anchor(head);
+	let a = button(f, "Resume", 0); place_at(a, x, y, 320.0, 64.0); set_preset(a, 2);
+	let b = button(f, "Nav", 2); place_at(b, x + 344.0, y, 320.0, 64.0); set_preset(b, 2);
+	let c = button(f, "Crew", 2); place_at(c, x + 688.0, y, 320.0, 64.0); set_preset(c, 2);
+	let d = button(f, "Abandon", 5); place_at(d, x + 1032.0, y, 320.0, 64.0); set_preset(d, 2);
+}
+
+fn stage_shop_space(f int, mode int) {
+	var x f32 = 200.0;
+	var y f32 = 180.0;
+	if mode == 1 { x = 80.0; }
+	else if mode == 2 { x = 1000.0; }
+	else if mode == 3 { y = 480.0; }
+	else if mode == 4 { y = 80.0; x = 400.0; }
+	let head = label(f, "Drydock", 0); place_at(head, x, y, 360.0, 56.0);
+	let a = button(f, "Plating  80", 0); place_at(a, x, y + 80.0, 480.0, 64.0); set_preset(a, 2);
+	let b = button(f, "Cell  40", 2); place_at(b, x, y + 160.0, 480.0, 64.0); set_preset(b, 2);
+	let c = button(f, "Lens  60", 1); place_at(c, x, y + 240.0, 480.0, 64.0); set_preset(c, 2);
+	let buy = button(f, "Fit", 0); place_at(buy, x + 520.0, y + 160.0, 240.0, 64.0); set_preset(buy, 2);
+}
+
+fn stage_results_space(f int, mode int) {
+	var y f32 = 160.0;
+	var x f32 = 560.0;
+	if mode == 1 { x = 80.0; }
+	else if mode == 2 { x = 1040.0; }
+	else if mode == 3 { y = 400.0; }
+	else if mode == 4 { x = 240.0; }
+	let head = label(f, "Jump", 0); place_at(head, 760.0, 36.0, 400.0, 64.0); mark_anchor(head);
+	let side = label(f, "Kite", 2); place_at(side, 80.0, 40.0, 200.0, 36.0);
+	let tb = board(f, x, y, "Stat", "Kite", "Foe");
+	table_set(tb, 0, 0, "Hull"); table_set(tb, 0, 1, "72%"); table_set(tb, 0, 2, "0%");
+	table_set(tb, 1, 0, "Kills"); table_set(tb, 1, 1, "3"); table_set(tb, 1, 2, "0");
+	table_set(tb, 2, 0, "Fuel"); table_set(tb, 2, 1, "40"); table_set(tb, 2, 2, "0");
+	table_set(tb, 3, 0, "Cargo"); table_set(tb, 3, 1, "Ore"); table_set(tb, 3, 2, "0");
+	table_set(tb, 4, 0, "Time"); table_set(tb, 4, 1, "12:04"); table_set(tb, 4, 2, "12:04");
+	table_set(tb, 5, 0, "System"); table_set(tb, 5, 1, "Vesper"); table_set(tb, 5, 2, "Vesper");
+	let again = button(f, "Depart", 0); place_at(again, 80.0, 980.0, 240.0, 64.0); set_preset(again, 2);
+}
+
+fn stage_settings_space(f int, mode int) {
+	var x f32 = 480.0;
+	var y f32 = 220.0;
+	if mode == 1 { x = 80.0; }
+	else if mode == 2 { x = 1080.0; }
+	else if mode == 3 { y = 520.0; }
+	else if mode == 4 { y = 80.0; }
+	let head = label(f, "Helm", 0); place_at(head, x, y, 240.0, 56.0);
+	let a = toggle(f, "Inertia", 1, 0); place_at(a, x, y + 80.0, 480.0, 56.0);
+	let b = slider(f, 0.5, 0); place_at(b, x, y + 160.0, 480.0, 32.0);
+	let c = toggle(f, "Gravity", 0, 2); place_at(c, x, y + 216.0, 480.0, 56.0);
+}
+
+fn stage_map_space(f int, mode int) {
+	var y f32 = 80.0;
+	var by f32 = 920.0;
+	if mode == 1 { by = 80.0; y = 200.0; }
+	else if mode == 2 { y = 120.0; }
+	else if mode == 3 { y = 48.0; by = 880.0; }
+	else if mode == 4 { by = 80.0; y = 200.0; }
+	let map = minimap(f, 0); place_at(map, 280.0, y, 1360.0, 760.0); N[map].i3 = 16;
+	if mode == 1 || mode == 4 { place_at(map, 280.0, 200.0, 1360.0, 720.0); }
+	let a = button(f, "Vesper", 0); place_at(a, 80.0, by, 240.0, 56.0); set_preset(a, 2);
+	let b = button(f, "Belt", 2); place_at(b, 340.0, by, 240.0, 56.0); set_preset(b, 2);
+	let c = button(f, "Gate", 1); place_at(c, 600.0, by, 240.0, 56.0); set_preset(c, 2);
+}
+
 fn build_stage(frame int, g int, screen int, mode int) int {
 	N[frame].i0 = g;
 	N[frame].i1 = screen;
@@ -2182,6 +2286,7 @@ fn build_stage(frame int, g int, screen int, mode int) int {
 		else if g == 13 { stage_pause_survive(frame, mode); }
 		else if g == 14 { stage_pause_city(frame, mode); }
 		else if g == 15 { stage_pause_horror(frame, mode); }
+		else if g == 16 { stage_pause_space(frame, mode); }
 		else { stage_pause(frame, g, mode); }
 	}
 	else if screen == 2 {
@@ -2200,6 +2305,7 @@ fn build_stage(frame int, g int, screen int, mode int) int {
 		else if g == 13 { stage_settings_survive(frame, mode); }
 		else if g == 14 { stage_settings_city(frame, mode); }
 		else if g == 15 { stage_settings_horror(frame, mode); }
+		else if g == 16 { stage_settings_space(frame, mode); }
 		else { stage_settings(frame, g, mode); }
 	}
 	else if screen == 3 {
@@ -2218,6 +2324,7 @@ fn build_stage(frame int, g int, screen int, mode int) int {
 		else if g == 13 { stage_hud_survive(frame, mode); }
 		else if g == 14 { stage_hud_city(frame, mode); }
 		else if g == 15 { stage_hud_horror(frame, mode); }
+		else if g == 16 { stage_hud_space(frame, mode); }
 		else { stage_hud_fps(frame, mode); }
 	}
 	else if screen == 4 {
@@ -2236,6 +2343,7 @@ fn build_stage(frame int, g int, screen int, mode int) int {
 		else if g == 13 { stage_shop_survive(frame, mode); }
 		else if g == 14 { stage_shop_city(frame, mode); }
 		else if g == 15 { stage_shop_horror(frame, mode); }
+		else if g == 16 { stage_shop_space(frame, mode); }
 		else { stage_shop_fps(frame, g, mode); }
 	}
 	else if screen == 5 {
@@ -2254,6 +2362,7 @@ fn build_stage(frame int, g int, screen int, mode int) int {
 		else if g == 13 { stage_map_survive(frame, mode); }
 		else if g == 14 { stage_map_city(frame, mode); }
 		else if g == 15 { stage_map_horror(frame, mode); }
+		else if g == 16 { stage_map_space(frame, mode); }
 		else { stage_map_fps(frame, g, mode); }
 	}
 	else if g == 4 { stage_results_jrpg(frame, mode); }
@@ -2271,6 +2380,7 @@ fn build_stage(frame int, g int, screen int, mode int) int {
 	else if g == 13 { stage_results_survive(frame, mode); }
 	else if g == 14 { stage_results_city(frame, mode); }
 	else if g == 15 { stage_results_horror(frame, mode); }
+	else if g == 16 { stage_results_space(frame, mode); }
 	else { stage_results_fps(frame, g, mode); }
 	frame
 }
