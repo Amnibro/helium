@@ -25,6 +25,7 @@ fn menu_n(g int) int {
 	if g == 18 { return 4; }
 	if g == 19 { return 4; }
 	if g == 20 { return 4; }
+	if g == 21 { return 4; }
 	4
 }
 fn menu_at(g int, i int) const byte[:] {
@@ -70,6 +71,12 @@ fn menu_at(g int, i int) const byte[:] {
 		if i == 0 { return "Versus"; }
 		if i == 1 { return "Arcade"; }
 		if i == 2 { return "Training"; }
+		return "Options";
+	}
+	if g == 21 {
+		if i == 0 { return "Start"; }
+		if i == 1 { return "Load"; }
+		if i == 2 { return "Gallery"; }
 		return "Options";
 	}
 	if g == 20 {
@@ -2683,6 +2690,104 @@ fn stage_map_puzzle(f int, mode int) {
 	let c = button(f, "Daily", 1); place_at(c, 600.0, by, 240.0, 56.0); set_preset(c, 2);
 }
 
+fn stage_hud_novel(f int, mode int) {
+	var y f32 = 640.0;
+	var mx f32 = 48.0;
+	var my f32 = 200.0;
+	if mode == 1 { y = 200.0; mx = 48.0; my = 760.0; }
+	else if mode == 2 { y = 480.0; mx = 48.0; my = 800.0; }
+	else if mode == 3 { y = 720.0; mx = 48.0; my = 200.0; }
+	else if mode == 4 { y = 360.0; mx = 48.0; my = 760.0; }
+	let ch = label(f, "Chapter  2", 0); place_at(ch, 760.0, 36.0, 400.0, 48.0); mark_anchor(ch);
+	let place = label(f, "Station", 2); place_at(place, 48.0, 40.0, 200.0, 36.0);
+	let page = label(f, "Page  12", 2); place_at(page, 1560.0, 40.0, 240.0, 36.0);
+	let name = label(f, "Ivo", 1); place_at(name, 80.0, y, 240.0, 40.0);
+	let line = label(f, "The train is late again.", 2); place_at(line, 80.0, y + 48.0, 1200.0, 48.0);
+	let a = button(f, "Wait", 0); place_at(a, 80.0, y + 120.0, 360.0, 56.0); set_preset(a, 2);
+	let b = button(f, "Call", 2); place_at(b, 460.0, y + 120.0, 360.0, 56.0); set_preset(b, 2);
+	let c = button(f, "Leave", 5); place_at(c, 840.0, y + 120.0, 360.0, 56.0); set_preset(c, 2);
+	let trust = label(f, "Trust", 2); place_at(trust, 80.0, y + 196.0, 140.0, 32.0);
+	let tb = health_bar(f, 0.4, 0); place_at(tb, 240.0, y + 200.0, 320.0, 20.0);
+	let auto = button(f, "Auto", 2); place_at(auto, 1480.0, 860.0, 140.0, 48.0); set_preset(auto, 2);
+	let log = button(f, "Log", 2); place_at(log, 1640.0, 860.0, 140.0, 48.0); set_preset(log, 2);
+	let skip = button(f, "Skip", 5); place_at(skip, 1480.0, 920.0, 300.0, 48.0); set_preset(skip, 2);
+	let map = minimap(f, 0); place_at(map, mx, my, 200.0, 140.0); N[map].i3 = 21;
+}
+
+fn stage_pause_novel(f int, mode int) {
+	var x f32 = 760.0;
+	var y f32 = 240.0;
+	if mode == 1 { x = 80.0; }
+	else if mode == 2 { x = 1400.0; }
+	else if mode == 3 { y = 560.0; }
+	else if mode == 4 { y = 80.0; x = 480.0; }
+	let head = label(f, "Story", 0); place_at(head, 760.0, y - 72.0, 400.0, 56.0); mark_anchor(head);
+	let a = button(f, "Resume", 0); place_at(a, x, y, 400.0, 64.0); set_preset(a, 2);
+	let b = button(f, "Save", 2); place_at(b, x, y + 80.0, 400.0, 64.0); set_preset(b, 2);
+	let c = button(f, "Load", 2); place_at(c, x, y + 160.0, 400.0, 64.0); set_preset(c, 2);
+	let d = button(f, "Title", 5); place_at(d, x, y + 240.0, 400.0, 64.0); set_preset(d, 2);
+}
+
+fn stage_shop_novel(f int, mode int) {
+	var x f32 = 200.0;
+	var y f32 = 180.0;
+	if mode == 1 { x = 80.0; }
+	else if mode == 2 { x = 1000.0; }
+	else if mode == 3 { y = 480.0; }
+	else if mode == 4 { y = 80.0; x = 400.0; }
+	let head = label(f, "Gallery", 0); place_at(head, x, y, 360.0, 56.0);
+	let a = button(f, "Scene  1", 0); place_at(a, x, y + 80.0, 480.0, 64.0); set_preset(a, 2);
+	let b = button(f, "Scene  2", 2); place_at(b, x, y + 160.0, 480.0, 64.0); set_preset(b, 2);
+	let c = button(f, "Music", 1); place_at(c, x, y + 240.0, 480.0, 64.0); set_preset(c, 2);
+	let buy = button(f, "View", 0); place_at(buy, x + 520.0, y + 160.0, 240.0, 64.0); set_preset(buy, 2);
+}
+
+fn stage_results_novel(f int, mode int) {
+	var y f32 = 160.0;
+	var x f32 = 560.0;
+	if mode == 1 { x = 80.0; }
+	else if mode == 2 { x = 1040.0; }
+	else if mode == 3 { y = 400.0; }
+	else if mode == 4 { x = 240.0; }
+	let head = label(f, "Ending", 0); place_at(head, 760.0, 36.0, 400.0, 64.0); mark_anchor(head);
+	let side = label(f, "Ivo", 2); place_at(side, 80.0, 40.0, 200.0, 36.0);
+	let tb = board(f, x, y, "Stat", "You", "Route");
+	table_set(tb, 0, 0, "Ending"); table_set(tb, 0, 1, "B"); table_set(tb, 0, 2, "Station");
+	table_set(tb, 1, 0, "Trust"); table_set(tb, 1, 1, "40"); table_set(tb, 1, 2, "80");
+	table_set(tb, 2, 0, "Choices"); table_set(tb, 2, 1, "12"); table_set(tb, 2, 2, "20");
+	table_set(tb, 3, 0, "Saves"); table_set(tb, 3, 1, "3"); table_set(tb, 3, 2, "3");
+	table_set(tb, 4, 0, "Time"); table_set(tb, 4, 1, "2:10"); table_set(tb, 4, 2, "4:00");
+	table_set(tb, 5, 0, "Seen"); table_set(tb, 5, 1, "8"); table_set(tb, 5, 2, "14");
+	let again = button(f, "Title", 0); place_at(again, 80.0, 980.0, 240.0, 64.0); set_preset(again, 2);
+}
+
+fn stage_settings_novel(f int, mode int) {
+	var x f32 = 480.0;
+	var y f32 = 220.0;
+	if mode == 1 { x = 80.0; }
+	else if mode == 2 { x = 1080.0; }
+	else if mode == 3 { y = 520.0; }
+	else if mode == 4 { y = 80.0; }
+	let head = label(f, "Text", 0); place_at(head, x, y, 240.0, 56.0);
+	let a = slider(f, 0.6, 0); place_at(a, x, y + 80.0, 480.0, 32.0);
+	let b = toggle(f, "Auto", 1, 0); place_at(b, x, y + 140.0, 480.0, 56.0);
+	let c = toggle(f, "Voices", 0, 2); place_at(c, x, y + 216.0, 480.0, 56.0);
+}
+
+fn stage_map_novel(f int, mode int) {
+	var y f32 = 120.0;
+	var by f32 = 920.0;
+	if mode == 1 { by = 80.0; y = 200.0; }
+	else if mode == 2 { y = 80.0; }
+	else if mode == 3 { y = 160.0; by = 880.0; }
+	else if mode == 4 { by = 80.0; y = 200.0; }
+	let map = minimap(f, 0); place_at(map, 480.0, y, 960.0, 680.0); N[map].i3 = 21;
+	if mode == 1 || mode == 4 { place_at(map, 480.0, 200.0, 960.0, 680.0); }
+	let a = button(f, "Station", 0); place_at(a, 80.0, by, 240.0, 56.0); set_preset(a, 2);
+	let b = button(f, "Home", 2); place_at(b, 340.0, by, 240.0, 56.0); set_preset(b, 2);
+	let c = button(f, "School", 2); place_at(c, 600.0, by, 240.0, 56.0); set_preset(c, 2);
+}
+
 fn build_stage(frame int, g int, screen int, mode int) int {
 	N[frame].i0 = g;
 	N[frame].i1 = screen;
@@ -2709,6 +2814,7 @@ fn build_stage(frame int, g int, screen int, mode int) int {
 		else if g == 18 { stage_pause_cozy(frame, mode); }
 		else if g == 19 { stage_pause_rhythm(frame, mode); }
 		else if g == 20 { stage_pause_puzzle(frame, mode); }
+		else if g == 21 { stage_pause_novel(frame, mode); }
 		else { stage_pause(frame, g, mode); }
 	}
 	else if screen == 2 {
@@ -2732,6 +2838,7 @@ fn build_stage(frame int, g int, screen int, mode int) int {
 		else if g == 18 { stage_settings_cozy(frame, mode); }
 		else if g == 19 { stage_settings_rhythm(frame, mode); }
 		else if g == 20 { stage_settings_puzzle(frame, mode); }
+		else if g == 21 { stage_settings_novel(frame, mode); }
 		else { stage_settings(frame, g, mode); }
 	}
 	else if screen == 3 {
@@ -2755,6 +2862,7 @@ fn build_stage(frame int, g int, screen int, mode int) int {
 		else if g == 18 { stage_hud_cozy(frame, mode); }
 		else if g == 19 { stage_hud_rhythm(frame, mode); }
 		else if g == 20 { stage_hud_puzzle(frame, mode); }
+		else if g == 21 { stage_hud_novel(frame, mode); }
 		else { stage_hud_fps(frame, mode); }
 	}
 	else if screen == 4 {
@@ -2778,6 +2886,7 @@ fn build_stage(frame int, g int, screen int, mode int) int {
 		else if g == 18 { stage_shop_cozy(frame, mode); }
 		else if g == 19 { stage_shop_rhythm(frame, mode); }
 		else if g == 20 { stage_shop_puzzle(frame, mode); }
+		else if g == 21 { stage_shop_novel(frame, mode); }
 		else { stage_shop_fps(frame, g, mode); }
 	}
 	else if screen == 5 {
@@ -2801,6 +2910,7 @@ fn build_stage(frame int, g int, screen int, mode int) int {
 		else if g == 18 { stage_map_cozy(frame, mode); }
 		else if g == 19 { stage_map_rhythm(frame, mode); }
 		else if g == 20 { stage_map_puzzle(frame, mode); }
+		else if g == 21 { stage_map_novel(frame, mode); }
 		else { stage_map_fps(frame, g, mode); }
 	}
 	else if g == 4 { stage_results_jrpg(frame, mode); }
@@ -2823,6 +2933,7 @@ fn build_stage(frame int, g int, screen int, mode int) int {
 	else if g == 18 { stage_results_cozy(frame, mode); }
 	else if g == 19 { stage_results_rhythm(frame, mode); }
 	else if g == 20 { stage_results_puzzle(frame, mode); }
+	else if g == 21 { stage_results_novel(frame, mode); }
 	else { stage_results_fps(frame, g, mode); }
 	frame
 }
