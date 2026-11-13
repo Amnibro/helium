@@ -30,6 +30,9 @@ struct RtV { b int, n int, top int, fl int, fln int, flc int }
 var RT_RSZ int; var RT_SBUD int; var RT_TIER int; var RT_TEND int; var RT_TMAX int
 var RT_FREE int[4096]
 var RT_NFREE int
+var RT_FUS int[4096]
+var RT_FR int
+var RT_FLO int
 var RT_OUT RtV; var RT_SINK int
 extern vptr(v RtV&) int = "!ptr"
 var RT_EB byte[512]
@@ -65,7 +68,7 @@ rt_nard(v int, c int, loc const byte[:]):
 	w := c >> 8; rt_es("helium runtime error: as conversion out of range (debug): "); if c & 4 != 0 { rt_ei(v) } else { rt_eu(v as! u64) }
 	rt_es(if w & 12 == 0 { " as i" } else { " as u" }); rt_ei(8 << (w & 3)); rt_fail(loc)
 rt_oob(i int, n int, loc const byte[:]): rt_es("helium runtime error: index "); rt_ei(i); rt_es(" out of bounds (length "); rt_ei(n); rt_es(")"); rt_fail(loc);
-rt_take(w int) int: if RT_TIER == 0 { if RT_NFREE > 0 { RT_NFREE -= 1; return RT_FREE[RT_NFREE] } return rt_map(0) } z := if w > 0 { w + 65535 & -65536 } else { rt_tsz() }; j ~= -1; lj ~= 0; for q RT_NFREE { l := rt_lim(RT_FREE[q]); if l >= z && (j < 0 || l < lj) { j = q; lj = l } } if j < 0 { return rt_map(z) } b := RT_FREE[j]; RT_NFREE -= 1; RT_FREE[j] = RT_FREE[RT_NFREE]; b
+rt_take(w int) int: if RT_TIER == 0 { if RT_NFREE > 0 { RT_NFREE -= 1; RT_FR -= RT_FUS[RT_NFREE]; RT_FLO = min(RT_FLO, RT_NFREE); return RT_FREE[RT_NFREE] } return rt_map(0) } z := if w > 0 { w + 65535 & -65536 } else { rt_tsz() }; j ~= -1; lj ~= 0; for q RT_NFREE { l := rt_lim(RT_FREE[q]); if l >= z && (j < 0 || l < lj) { j = q; lj = l } } if j < 0 { return rt_map(z) } b := RT_FREE[j]; RT_FR -= RT_FUS[j]; RT_NFREE -= 1; RT_FREE[j] = RT_FREE[RT_NFREE]; RT_FUS[j] = RT_FUS[RT_NFREE]; RT_FLO = min(RT_FLO, j); b
 rt_tmx() int: if RT_TMAX == 0 { q := sys3(97, 9, 0, 0); RT_TMAX = if q >= 1 << 24 && q <= 1 << 32 { q } else { 1 << 32 } } RT_TMAX
 rt_tsz() int: r := rt_tmx() - RT_TEND; if r >= RT_RSZ * 64 { return RT_RSZ } z ~= 1 << 18; while z * 128 <= r && z * 2 <= RT_RSZ { z *= 2 } z
 rt_map(w int) int:
@@ -76,7 +79,7 @@ rt_map(w int) int:
 rt_lim(b int) int: if RT_TIER != 0 { mld(b - 8) } else { RT_RSZ }
 rt_unmap(b int): h := if RT_TIER != 0 { 65536 } else { 0 }; sys3(11, b - h, rt_lim(b) + 65536 + h, 0);
 rt_tss() int: if RT_TIER == 0 { return 64 << 20 } r := rt_tmx() - RT_TEND; z ~= 1 << 20; while z * 512 <= r && z < 16 << 20 { z *= 2 } z
-rt_give(b int, used int): if b == 0 { return } if RT_DBG > 0 { for q RT_NFREE { if RT_FREE[q] == b { rt_es("helium runtime error: a region was released twice"); rt_dlx() } } } if used > 1 << 20 { sys3(28, b + 65536, min(used, rt_lim(b)) - 65536 + 4095 & -4096, 8) } if RT_NFREE < 4096: RT_FREE[RT_NFREE] = b; RT_NFREE += 1 else: rt_unmap(b);
+rt_give(b int, used int): if b == 0 { return } if RT_DBG > 0 { for q RT_NFREE { if RT_FREE[q] == b { rt_es("helium runtime error: a region was released twice"); rt_dlx() } } } if RT_NFREE >= 4096 { rt_unmap(b); return } u := if used > 1 << 20 { min(used, rt_lim(b)) } else { 0 }; RT_FREE[RT_NFREE] = b; RT_FUS[RT_NFREE] = u; RT_NFREE += 1; RT_FR += u; while RT_FR > 1 << 27 && RT_FLO < RT_NFREE { v := RT_FUS[RT_FLO]; if v > 0 { sys3(28, RT_FREE[RT_FLO] + 65536, v - 65536 + 4095 & -4096, 4); RT_FR -= v; RT_FUS[RT_FLO] = 0 } RT_FLO += 1 }
 rt_grow(va int, k int, esz int) int: if k == 0 && mld(va) == 0 { return 0 } rt_grow0(va, k, esz)
 rt_grow0(va int, k int, esz int) int: b ~= mld(va); n := mld(va + 8); w := (n + k) * esz; mst(va + 8, n + k); if b != 0 && w <= rt_lim(b) { return b + n * esz } if RT_TIER == 0 { if b == 0 { b = rt_take(0); mst(va, b) } if w > rt_lim(b) { rt_die(5, "push") } return b + n * esz } if n != 0 { rt_die(5, "push") } rt_give(b, 0); z ~= max(w, 1); if mld(va + 40) == 0 { z = rt_tsz(); while z < w { z *= 2 } } b = rt_take(z); mst(va, b); b + n * esz
 rt_rsv(va int, k int, esz int): if k <= 0 { return } b := mld(va); z := k * esz; if b != 0 && z <= rt_lim(b) { return } if RT_TIER == 0 { if z > RT_RSZ { rt_die(5, "reserve") } return } if mld(va + 8) != 0 { rt_die(5, "reserve") } if b != 0 { rt_give(b, 0) } mst(va, rt_take(z))
@@ -377,7 +380,7 @@ rt_spawn(fnp int, tmain int, pkt int, blk int, contained int) int:
 	while mld(r + 96) == 0: rt_swait(r + 96, 0)
 	id
 rt_tmain(r int):
-	RT_DS.b = 0; RT_DS.n = 0; RT_DS.top = 0; RT_DS.fl = 0; RT_DS.fln = 0; RT_DS.flc = 0; RT_NFREE = 0; RT_OUT.b = 0; RT_OUT.n = 0; RT_OUT.top = 0; RT_SINK = 0; RT_EN = 0; RT_PD = 0; RT_PLS = 0
+	RT_DS.b = 0; RT_DS.n = 0; RT_DS.top = 0; RT_DS.fl = 0; RT_DS.fln = 0; RT_DS.flc = 0; RT_NFREE = 0; RT_FR = 0; RT_FLO = 0; RT_OUT.b = 0; RT_OUT.n = 0; RT_OUT.top = 0; RT_SINK = 0; RT_EN = 0; RT_PD = 0; RT_PLS = 0
 	RT_TID = (r - mld(RT_SH + 24)) / 128; RT_REC = r
 	callp(mld(r + 40), r)
 	rt_tdone(0);
@@ -386,7 +389,7 @@ rt_tdone(ab int):
 	r := RT_REC; mst(r + 8, ab)
 	if RT_DS.b != 0 { rt_unmap(RT_DS.b) } if RT_OUT.b != 0: rt_unmap(RT_OUT.b)
 	for i RT_NFREE: rt_unmap(RT_FREE[i])
-	RT_NFREE = 0; mst(r, 1); rt_fwake(r);
+	RT_NFREE = 0; RT_FR = 0; RT_FLO = 0; mst(r, 1); rt_fwake(r);
 rt_tabort():
 	k := 22; n := max(RT_EN - k - 1, 0); p := sys6(9, 0, n + 8, 3, 0x22, -1, 0); mcopy(p, ptr(RT_EB[k..]), n)
 	mst(RT_REC + 16, p); mst(RT_REC + 24, n); rt_tdone(1); sys3(60, 0, 0, 0);
