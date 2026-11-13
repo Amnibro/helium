@@ -1,6 +1,11 @@
 import os;
 import uikit;
 import text;
+fn bytes_eq(a const byte[:], b const byte[:]) int {
+	if a.len != b.len { return 0; }
+	for i in a.len { if a[i] != b[i] { return 0; } }
+	1
+}
 fn eqi(got int, want int, name const byte[:]) int {
 	if got != want { print("FAIL ", name, " ", got, " != ", want); return 1; }
 	print("PASS ", name);
@@ -185,6 +190,16 @@ fn main() {
 		for j in i { if uikit::icon_mask(j) == a { bad_m += 1; } }
 	}
 	fail += eqi(bad_m, 0, "icon masks");
+	fail += eqi(if uikit::icon_named() >= 100 { 1 } else { 0 }, 1, "named pictograms");
+	fail += eqi(bytes_eq(uikit::icon_name(0), "sword"), 1, "icon sword");
+	var bad_name = 0;
+	let nn = uikit::icon_named();
+	for i in nn {
+		let a = uikit::icon_name(i);
+		if a.len < 2 { bad_name += 1; }
+		for j in i { if bytes_eq(a, uikit::icon_name(j)) != 0 { bad_name += 1; } }
+	}
+	fail += eqi(bad_name, 0, "icon names");
 	var bad_s = 0;
 	for g in 24 {
 		for s in 7 {

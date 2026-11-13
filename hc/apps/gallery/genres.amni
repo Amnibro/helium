@@ -206,14 +206,40 @@ fn paint_genre(g int) {
 
 fn paint_icons() {
 	make_dir("docs/ui-gallery/icons");
-	uikit::canvas(1240, 920);
-	uikit::fill_rect(0, 0, 1240, 920, 0x12141A, 255);
+	uikit::canvas(1264, 1680);
+	uikit::fill_rect(0, 0, 1264, 1680, 0x12141A, 255);
+	var name byte[>..] = [];
 	for i in uikit::icon_count() {
-		let x = (i % 25) * 48 + 10;
-		let y = (i / 25) * 44 + 8;
-		uikit::icon_draw(i, x, y, 32, 0xE8EEF6);
+		let col = i % 16;
+		let row = i / 16;
+		let x = 8 + col * 78;
+		let y = 6 + row * 52;
+		uikit::icon_draw(i, x + 23, y, 32, 0xE8EEF6);
+		if i < uikit::icon_named() {
+			name.clear();
+			name.append(uikit::icon_name(i));
+			uikit::draw_centered(x, y + 32, 78, 16, name[..], 9.0, 0xC5D0DE, 0);
+		}
 	}
 	save("docs/ui-gallery/icons/sheet.png");
+	let named = uikit::icon_named();
+	let cols = 10;
+	let rows = (named + cols - 1) / cols;
+	let pw = cols * 120 + 16;
+	let ph = rows * 132 + 16;
+	uikit::canvas(pw, ph);
+	uikit::fill_rect(0, 0, pw, ph, 0x12141A, 255);
+	for i in named {
+		let col = i % cols;
+		let row = i / cols;
+		let x = 8 + col * 120;
+		let y = 8 + row * 132;
+		uikit::icon_draw(i, x + 20, y, 80, 0xF4F7FB);
+		name.clear();
+		name.append(uikit::icon_name(i));
+		uikit::draw_centered(x, y + 86, 120, 28, name[..], 14.0, 0xD5DEEA, 0);
+	}
+	save("docs/ui-gallery/icons/named.png");
 }
 
 fn paint_effects_on(path const byte[:], bg u32, label u32, ink u32) {
@@ -410,7 +436,7 @@ fn write_index() {
 	format(out, "Curated themes: ", uikit::theme_count(), "\n");
 	format(out, "Genres: ", uikit::genre_count(), " (", uikit::game_genre_count(), " game, ", uikit::genre_count() - uikit::game_genre_count(), " app)\n");
 	format(out, "Each game genre has 7 screens (title, pause, settings, hud, shop, map, results), 5 variations each. HUD columns include the 57dbc71a kit (boss, buffs, bars, minimap, inventory, quest, cooldowns, radial or chart, dialogue, damage, Play/Map/Bag) plus genre extras. Leaf count must be at least that commit. App genres are one sheet of 5 variations.\n");
-	format(out, "Icons: ", uikit::icon_count(), "\n");
+	format(out, "Icons: ", uikit::icon_count(), " (", uikit::icon_named(), " named pictograms)\n");
 	format(out, "Text effects: ", uikit::fx_count(), "\n");
 	format(out, "Widget styles: ", uikit::style_count(), "\n");
 	format(out, "Font files in the pairing set: ", uikit::font_file_count(), "\n");
@@ -428,7 +454,11 @@ fn write_index() {
 	out.append("\n## Still weak\n\n");
 	out.append("- Glow and backdrop rectangles are clipped to the widget. `overlap_count` also counts `note_deco` bounds, so a slab painted across another control fails the check.\n");
 	out.append("- Game sheets are seven different screens, but pause/settings still share a short menu, and every map uses the same compass painter.\n");
-	out.append("- The 500 icons are unique 5x5 silhouettes, not 500 named pictograms (no separate sword, potion, and folder metaphors).\n");
+	if uikit::icon_named() < uikit::icon_count() {
+		format(out, "- Named pictograms: ", uikit::icon_named(), " of ", uikit::icon_count(), ". The rest are still unique 5x5 silhouettes.\n");
+	} else {
+		out.append("- All 500 icons are named pictograms. Thin marks (arrows, plus, minus) are geometric on purpose. A few complex metaphors are still coarse.\n");
+	}
 	out.append("- Widget styles are 20 frames on six controls (button, field, toggle, slider, card, badge), not 20 treatments of every chart and table.\n");
 	out.append("- `motion.apng` is eight frames (spring, ripple, typewriter, toast, shimmer). It is not a full transition system.\n");
 	out.append("- `ui.he` and `gfx/hud` still need SDL3, which this machine does not have.\n");
@@ -437,6 +467,16 @@ fn write_index() {
 
 fn main() {
 	uikit::set_scale(1.0);
+	if arg_count() > 1 {
+		var which byte[>..] = [];
+		arg(1, which);
+		if which[..] == "icons" {
+			paint_icons();
+			write_index();
+			print("icons done");
+			return;
+		}
+	}
 	paint_icons();
 	paint_effects();
 	paint_styles();

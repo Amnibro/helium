@@ -1,10 +1,30 @@
-// 500 connected silhouettes. Each id is a unique 5x5 mask, drawn as fused disks.
+// 500 icons. The first icon_named() ids are named vector pictograms.
+// The rest stay unique 5x5 silhouettes until a later batch replaces them.
 namespace uikit;
+import uikit.icons_b0;
 
 var ISEEN int[500] = [0; 500];
 var IREADY = false;
 
 fn icon_count() int { 500 }
+
+fn icon_named() int { ICON_N0 }
+
+fn icon_len(id int) int {
+	if id < 0 || id >= ICON_N0 { return 0; }
+	ICON_AT0[id + 1] - ICON_AT0[id]
+}
+
+fn icon_byte(id int, k int) int {
+	if id < 0 || id >= ICON_N0 { return 0; }
+	ICON_OPS0[ICON_AT0[id] + k] as int
+}
+
+fn icon_name(id int) const byte[:] {
+	if id < 0 { return "sword"; }
+	if id < ICON_N0 { return icon_name_0(id); }
+	"blob"
+}
 
 fn popcount(v int) int {
 	var n = 0;
@@ -78,13 +98,25 @@ fn build_icon_masks() {
 }
 
 fn icon_mask(id int) int {
-	build_icon_masks();
-	let i = if id < 0 { 0 } else if id >= 500 { id % 500 } else { id };
-	ISEEN[i]
+	var i = id;
+	if i < 0 { i = 0; }
+	if i >= 500 { i = i % 500; }
+	let n = icon_len(i);
+	if n <= 0 {
+		build_icon_masks();
+		return ISEEN[i];
+	}
+	var h = 0;
+	for k in n {
+		h = h & 16777215;
+		h = ((h << 5) ^ icon_byte(i, k) ^ (k * 97)) & 16777215;
+	}
+	h | 1073741824
 }
 
 fn icon_hit(id int, u int, v int) bool {
 	let m = icon_mask(id);
+	if (m & 1073741824) != 0 { return false; }
 	for gy in 5 {
 		for gx in 5 {
 			let bit = 1 << (gy * 5 + gx);
@@ -99,20 +131,149 @@ fn icon_hit(id int, u int, v int) bool {
 	false
 }
 
+fn cov_from_sd(sd f32) int {
+	let w f32 = 1.35;
+	if sd <= 0.0 - w { return 255; }
+	if sd >= w { return 0; }
+	let t = (w - sd) / (w + w);
+	(t * 255.0) as int
+}
+
+fn disc_sd(u f32, v f32, cx f32, cy f32, r f32) f32 {
+	let dx = u - cx;
+	let dy = v - cy;
+	sqrt(dx * dx + dy * dy) - r
+}
+
+fn box_sd(u f32, v f32, x f32, y f32, w f32, h f32) f32 {
+	let cx = x + w * 0.5;
+	let cy = y + h * 0.5;
+	var dx = u - cx;
+	var dy = v - cy;
+	if dx < 0.0 { dx = 0.0 - dx; }
+	if dy < 0.0 { dy = 0.0 - dy; }
+	dx = dx - w * 0.5;
+	dy = dy - h * 0.5;
+	var ax = dx;
+	var ay = dy;
+	if ax < 0.0 { ax = 0.0; }
+	if ay < 0.0 { ay = 0.0; }
+	var mx = dx;
+	if dy > mx { mx = dy; }
+	if mx < 0.0 { mx } else { sqrt(ax * ax + ay * ay) }
+}
+
+fn cross2(ax f32, ay f32, bx f32, by f32) f32 { ax * by - ay * bx }
+
+fn tri_sd(u f32, v f32, ax f32, ay f32, bx f32, by f32, cx f32, cy f32) f32 {
+	let e0x = bx - ax; let e0y = by - ay;
+	let e1x = cx - bx; let e1y = cy - by;
+	let e2x = ax - cx; let e2y = ay - cy;
+	let l0 = sqrt(e0x * e0x + e0y * e0y);
+	let l1 = sqrt(e1x * e1x + e1y * e1y);
+	let l2 = sqrt(e2x * e2x + e2y * e2y);
+	if l0 < 0.2 || l1 < 0.2 || l2 < 0.2 { return 8.0; }
+	var s0 = cross2(e0x, e0y, u - ax, v - ay) / l0;
+	var s1 = cross2(e1x, e1y, u - bx, v - by) / l1;
+	var s2 = cross2(e2x, e2y, u - cx, v - cy) / l2;
+	let area = cross2(bx - ax, by - ay, cx - ax, cy - ay);
+	if area < 0.0 { s0 = 0.0 - s0; s1 = 0.0 - s1; s2 = 0.0 - s2; }
+	var m = s0;
+	if s1 < m { m = s1; }
+	if s2 < m { m = s2; }
+	0.0 - m
+}
+
+fn seg_sd(u f32, v f32, x0 f32, y0 f32, x1 f32, y1 f32, rad f32) f32 {
+	let dx = x1 - x0;
+	let dy = y1 - y0;
+	let len2 = dx * dx + dy * dy;
+	var t f32 = 0.0;
+	if len2 > 0.01 { t = ((u - x0) * dx + (v - y0) * dy) / len2; }
+	if t < 0.0 { t = 0.0; }
+	if t > 1.0 { t = 1.0; }
+	let px = x0 + t * dx;
+	let py = y0 + t * dy;
+	let ex = u - px;
+	let ey = v - py;
+	sqrt(ex * ex + ey * ey) - rad
+}
+
+fn icon_cover(id int, u f32, v f32) int {
+	var i = 0;
+	let n = icon_len(id);
+	var cover = 0;
+	while i < n {
+		let op = icon_byte(id, i);
+		if op == 1 {
+			let a = cov_from_sd(disc_sd(u, v, icon_byte(id, i + 1) as f32, icon_byte(id, i + 2) as f32, icon_byte(id, i + 3) as f32));
+			if a > cover { cover = a; }
+			i += 4;
+		} else if op == 2 {
+			let a = cov_from_sd(box_sd(u, v, icon_byte(id, i + 1) as f32, icon_byte(id, i + 2) as f32, icon_byte(id, i + 3) as f32, icon_byte(id, i + 4) as f32));
+			if a > cover { cover = a; }
+			i += 5;
+		} else if op == 3 {
+			let a = cov_from_sd(tri_sd(u, v, icon_byte(id, i + 1) as f32, icon_byte(id, i + 2) as f32, icon_byte(id, i + 3) as f32, icon_byte(id, i + 4) as f32, icon_byte(id, i + 5) as f32, icon_byte(id, i + 6) as f32));
+			if a > cover { cover = a; }
+			i += 7;
+		} else if op == 4 {
+			let thick = icon_byte(id, i + 5) as f32 * 0.5;
+			let a = cov_from_sd(seg_sd(u, v, icon_byte(id, i + 1) as f32, icon_byte(id, i + 2) as f32, icon_byte(id, i + 3) as f32, icon_byte(id, i + 4) as f32, thick));
+			if a > cover { cover = a; }
+			i += 6;
+		} else if op == 5 {
+			let cx = icon_byte(id, i + 1) as f32;
+			let cy = icon_byte(id, i + 2) as f32;
+			let r = icon_byte(id, i + 3) as f32;
+			let thick = icon_byte(id, i + 4) as f32 * 0.5;
+			let dx = u - cx;
+			let dy = v - cy;
+			var dist = sqrt(dx * dx + dy * dy) - r;
+			if dist < 0.0 { dist = 0.0 - dist; }
+			let a = cov_from_sd(dist - thick);
+			if a > cover { cover = a; }
+			i += 5;
+		} else if op == 6 {
+			let a = cov_from_sd(disc_sd(u, v, icon_byte(id, i + 1) as f32, icon_byte(id, i + 2) as f32, icon_byte(id, i + 3) as f32));
+			cover = cover * (255 - a) / 255;
+			i += 4;
+		} else if op == 7 {
+			let a = cov_from_sd(box_sd(u, v, icon_byte(id, i + 1) as f32, icon_byte(id, i + 2) as f32, icon_byte(id, i + 3) as f32, icon_byte(id, i + 4) as f32));
+			cover = cover * (255 - a) / 255;
+			i += 5;
+		} else {
+			i += 1;
+		}
+	}
+	cover
+}
+
 fn icon_draw(id int, x int, y int, size int, rgb u32) {
 	if size < 2 { return; }
 	let n = if id < 0 { 0 } else if id >= 500 { id % 500 } else { id };
+	if icon_len(n) <= 0 {
+		for py in size {
+			for px in size {
+				var hit = 0;
+				for sy in 2 {
+					for sx in 2 {
+						let u = ((px * 2 + sx) * 1000) / (size * 2);
+						let v = ((py * 2 + sy) * 1000) / (size * 2);
+						if icon_hit(n, u, v) { hit += 1; }
+					}
+				}
+				if hit > 0 { put(x + px, y + py, rgb, hit * 63); }
+			}
+		}
+		return;
+	}
 	for py in size {
 		for px in size {
-			var hit = 0;
-			for sy in 2 {
-				for sx in 2 {
-					let u = ((px * 2 + sx) * 1000) / (size * 2);
-					let v = ((py * 2 + sy) * 1000) / (size * 2);
-					if icon_hit(n, u, v) { hit += 1; }
-				}
-			}
-			if hit > 0 { put(x + px, y + py, rgb, hit * 63); }
+			let u = (px as f32 + 0.5) * 64.0 / (size as f32);
+			let v = (py as f32 + 0.5) * 64.0 / (size as f32);
+			let a = icon_cover(n, u, v);
+			if a > 0 { put(x + px, y + py, rgb, a); }
 		}
 	}
 }
