@@ -1,0 +1,10 @@
+struct F { v real[>..], n int }
+mk(n int) F, bool:
+	f ~= F{n: n, ..}
+	f.v.resize(n, 1.5)
+	return f, n > 0
+main():
+	q ~= mk(3)
+	q.v[0] = 2.0
+	print(q.v[0] + q.v[2])
+	print(q.n)
