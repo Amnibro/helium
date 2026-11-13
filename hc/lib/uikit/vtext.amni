@@ -1,0 +1,343 @@
+// Outline text. Inter for UI, JetBrains Mono for the mono preset.
+// Coverage raster from ttf, four horizontal subpixel phases, kern/GPOS, GSUB liga.
+namespace uikit;
+import os;
+import text;
+import vec;
+import ttf;
+
+var B0 byte[>..] = [];
+var B1 byte[>..] = [];
+var B2 byte[>..] = [];
+var B3 byte[>..] = [];
+var B4 byte[>..] = [];
+var B5 byte[>..] = [];
+var F0 ttf::Info = ttf::Info { .. };
+var F1 ttf::Info = ttf::Info { .. };
+var F2 ttf::Info = ttf::Info { .. };
+var F3 ttf::Info = ttf::Info { .. };
+var F4 ttf::Info = ttf::Info { .. };
+var F5 ttf::Info = ttf::Info { .. };
+var READY = false;
+var HKEY int[4096] = [-1; 4096];
+var HIDX int[4096] = [-1; 4096];
+var C_W int[>..] = [];
+var C_H int[>..] = [];
+var C_X int[>..] = [];
+var C_Y int[>..] = [];
+var C_OFF int[>..] = [];
+var C_AL byte[>..] = [];
+var L1 int[>..] = [];
+var L2 int[>..] = [];
+var LG int[>..] = [];
+var LFONT int[>..] = [];
+var TRACK f32 = 0.0;
+var GX f32[>..] = [];
+var GY f32[>..] = [];
+var GI int[>..] = [];
+
+fn read_font(name const byte[:], out byte[>..]&) bool {
+	var p byte[>..] = [];
+	p.append("/workspace/hc/lib/uikit/fonts/");
+	p.append(name);
+	if read_file(p[..], out) { return true; }
+	out.clear();
+	var q byte[>..] = [];
+	q.append("hc/lib/uikit/fonts/");
+	q.append(name);
+	read_file(q[..], out)
+}
+
+fn open_info(bytes byte[>..]&, into ttf::Info&) bool {
+	if bytes.len < 12 { return false; }
+	into = ttf::Info { d: copy(bytes), .. };
+	ttf::init(into)
+}
+
+fn fonts_ready() bool {
+	if READY { return B0.len > 12; }
+	READY = true;
+	if !read_font("Inter-Regular.ttf", B0) { return false; }
+	if !read_font("Inter-Medium.ttf", B1) { return false; }
+	if !read_font("Inter-Bold.ttf", B2) { return false; }
+	if !read_font("Inter-Italic.ttf", B3) { return false; }
+	if !read_font("Inter-BoldItalic.ttf", B4) { return false; }
+	if !read_font("JetBrainsMono-Regular.ttf", B5) { return false; }
+	if !open_info(B0, F0) { return false; }
+	if !open_info(B1, F1) { return false; }
+	if !open_info(B2, F2) { return false; }
+	if !open_info(B3, F3) { return false; }
+	if !open_info(B4, F4) { return false; }
+	if !open_info(B5, F5) { return false; }
+	liga_font(0, F0);
+	liga_font(1, F1);
+	liga_font(2, F2);
+	liga_font(3, F3);
+	liga_font(4, F4);
+	liga_font(5, F5);
+	true
+}
+
+fn gindex(fi int, cp int) int {
+	if fi == 1 { return ttf::glyph_index(F1, cp); }
+	if fi == 2 { return ttf::glyph_index(F2, cp); }
+	if fi == 3 { return ttf::glyph_index(F3, cp); }
+	if fi == 4 { return ttf::glyph_index(F4, cp); }
+	if fi == 5 { return ttf::glyph_index(F5, cp); }
+	ttf::glyph_index(F0, cp)
+}
+fn sc_of(fi int, size f32) f32 {
+	if fi == 1 { return ttf::scale_for(F1, size); }
+	if fi == 2 { return ttf::scale_for(F2, size); }
+	if fi == 3 { return ttf::scale_for(F3, size); }
+	if fi == 4 { return ttf::scale_for(F4, size); }
+	if fi == 5 { return ttf::scale_for(F5, size); }
+	ttf::scale_for(F0, size)
+}
+fn hadv(fi int, g int) int {
+	if fi == 1 { return ttf::hmetrics(F1, g).x; }
+	if fi == 2 { return ttf::hmetrics(F2, g).x; }
+	if fi == 3 { return ttf::hmetrics(F3, g).x; }
+	if fi == 4 { return ttf::hmetrics(F4, g).x; }
+	if fi == 5 { return ttf::hmetrics(F5, g).x; }
+	ttf::hmetrics(F0, g).x
+}
+fn kpair(fi int, a int, b int) int {
+	if a <= 0 || b <= 0 { return 0; }
+	if fi == 1 { return ttf::kern(F1, a, b); }
+	if fi == 2 { return ttf::kern(F2, a, b); }
+	if fi == 3 { return ttf::kern(F3, a, b); }
+	if fi == 4 { return ttf::kern(F4, a, b); }
+	if fi == 5 { return ttf::kern(F5, a, b); }
+	ttf::kern(F0, a, b)
+}
+fn gbox_of(fi int, g int, sc f32, hx f32) ttf::B4 {
+	if fi == 1 { return ttf::bbox(F1, g, sc, sc, hx, 0.0); }
+	if fi == 2 { return ttf::bbox(F2, g, sc, sc, hx, 0.0); }
+	if fi == 3 { return ttf::bbox(F3, g, sc, sc, hx, 0.0); }
+	if fi == 4 { return ttf::bbox(F4, g, sc, sc, hx, 0.0); }
+	if fi == 5 { return ttf::bbox(F5, g, sc, sc, hx, 0.0); }
+	ttf::bbox(F0, g, sc, sc, hx, 0.0)
+}
+fn stamp(fi int, g int, px byte[>..]&, w int, h int, sc f32) {
+	if fi == 1 { ttf::glyph_bitmap(F1, px, C_AL.len - w * h, w, h, w, sc, sc, g); return; }
+	if fi == 2 { ttf::glyph_bitmap(F2, px, C_AL.len - w * h, w, h, w, sc, sc, g); return; }
+	if fi == 3 { ttf::glyph_bitmap(F3, px, C_AL.len - w * h, w, h, w, sc, sc, g); return; }
+	if fi == 4 { ttf::glyph_bitmap(F4, px, C_AL.len - w * h, w, h, w, sc, sc, g); return; }
+	if fi == 5 { ttf::glyph_bitmap(F5, px, C_AL.len - w * h, w, h, w, sc, sc, g); return; }
+	ttf::glyph_bitmap(F0, px, C_AL.len - w * h, w, h, w, sc, sc, g);
+}
+
+fn ru16(d const byte[:], o int) int { (d[o] as int) << 8 | d[o + 1] as int }
+fn ru32(d const byte[:], o int) int { ru16(d, o) << 16 | ru16(d, o + 2) }
+
+fn cov_at(d const byte[:], o int, g int) int {
+	let fm = ru16(d, o);
+	if fm == 1 {
+		let n = ru16(d, o + 2);
+		var lo = 0;
+		var hi = n - 1;
+		while lo <= hi {
+			let m = (lo + hi) / 2;
+			let v = ru16(d, o + 4 + 2 * m);
+			if v == g { return m; }
+			if v < g { lo = m + 1; } else { hi = m - 1; }
+		}
+		return -1;
+	}
+	-1
+}
+
+fn cov_glyph(d const byte[:], o int, index int) int {
+	let fm = ru16(d, o);
+	if fm == 1 {
+		if index < 0 || index >= ru16(d, o + 2) { return -1; }
+		return ru16(d, o + 4 + 2 * index);
+	}
+	if fm == 2 {
+		let n = ru16(d, o + 2);
+		for i in n {
+			let r = o + 4 + 6 * i;
+			let st = ru16(d, r);
+			let en = ru16(d, r + 2);
+			let cov0 = ru16(d, r + 4);
+			let cnt = en - st + 1;
+			if index >= cov0 && index < cov0 + cnt { return st + index - cov0; }
+		}
+	}
+	-1
+}
+
+fn liga_store(fi int, d const byte[:], st0 int) {
+	if ru16(d, st0) != 1 { return; }
+	let cov = st0 + ru16(d, st0 + 2);
+	for si in ru16(d, st0 + 4) {
+		let g1 = cov_glyph(d, cov, si);
+		if g1 < 0 { continue; }
+		let set = st0 + ru16(d, st0 + 6 + 2 * si);
+		for lig in ru16(d, set) {
+			let rec = set + ru16(d, set + 2 + 2 * lig);
+			if ru16(d, rec + 2) != 2 { continue; }
+			L1.push(g1);
+			L2.push(ru16(d, rec + 4));
+			LG.push(ru16(d, rec));
+			LFONT.push(fi);
+		}
+	}
+}
+
+fn liga_bytes(fi int, info ttf::Info&) {
+	let d = info.d[..];
+	let gp = ttf::find_table(d, info.fo, "GSUB");
+	if gp == 0 { return; }
+	let fl = gp + ru16(d, gp + 6);
+	let ll = gp + ru16(d, gp + 8);
+	for i in ru16(d, fl) {
+		let r = fl + 2 + 6 * i;
+		let liga_tag = d[r] == 108 && d[r + 1] == 105 && d[r + 2] == 103 && d[r + 3] == 97;
+		let dlig_tag = d[r] == 100 && d[r + 1] == 108 && d[r + 2] == 105 && d[r + 3] == 103;
+		let calt_tag = d[r] == 99 && d[r + 1] == 97 && d[r + 2] == 108 && d[r + 3] == 116;
+		if !liga_tag && !dlig_tag && !calt_tag { continue; }
+		let ft = fl + ru16(d, r + 4);
+		for k in ru16(d, ft + 2) {
+			let li = ru16(d, ft + 4 + 2 * k);
+			if li >= ru16(d, ll) { continue; }
+			let lk = ll + ru16(d, ll + 2 + 2 * li);
+			let ty = ru16(d, lk);
+			let nsub = ru16(d, lk + 4);
+			for s in nsub {
+				let st = lk + ru16(d, lk + 6 + 2 * s);
+				if ty == 4 { liga_store(fi, d, st); }
+				else if ty == 7 && ru16(d, st) == 1 && ru16(d, st + 2) == 4 {
+					let dest = st + ru32(d, st + 4);
+					liga_store(fi, d, dest);
+				}
+			}
+		}
+	}
+}
+
+fn liga_font(fi int, info ttf::Info&) { liga_bytes(fi, info); }
+
+fn liga_of(fi int, g1 int, g2 int) int {
+	for i in L1.len { if LFONT[i] == fi && L1[i] == g1 && L2[i] == g2 { return LG[i]; } }
+	0
+}
+
+fn face_of(mono bool, bold bool, italic bool) int {
+	if mono { return 5; }
+	if bold && italic { return 4; }
+	if italic { return 3; }
+	if bold { return 2; }
+	0
+}
+
+fn cache_get(key int) int {
+	var h = (key * 0x9E3779B1) & 4095;
+	var n = 0;
+	while n < 4096 && HKEY[h] != -1 {
+		if HKEY[h] == key { return HIDX[h]; }
+		h = (h + 1) & 4095;
+		n += 1;
+	}
+	-1
+}
+
+fn cache_put(key int, idx int) {
+	var h = (key * 0x9E3779B1) & 4095;
+	var n = 0;
+	while n < 4096 && HKEY[h] != -1 { h = (h + 1) & 4095; n += 1; }
+	if n < 4096 { HKEY[h] = key; HIDX[h] = idx; }
+}
+
+fn slot(fi int, g int, size int, phase int) int {
+	let key = g + size * 100000 + fi * 100000 * 80 + phase * 100000 * 80 * 8;
+	let hit = cache_get(key);
+	if hit >= 0 { return hit; }
+	let sc = sc_of(fi, size as f32);
+	let hx = phase as f32 * 0.25;
+	let box = gbox_of(fi, g, sc, hx);
+	var w = box.x1 - box.x0 + 2;
+	var h = box.y1 - box.y0 + 2;
+	if w < 1 { w = 1; }
+	if h < 1 { h = 1; }
+	if w > 320 { w = 320; }
+	if h > 320 { h = 320; }
+	let off = C_AL.len;
+	C_AL.resize(off + w * h, 0);
+	if g > 0 { stamp(fi, g, C_AL, w, h, sc); }
+	C_W.push(w);
+	C_H.push(h);
+	C_X.push(box.x0);
+	C_Y.push(box.y0);
+	C_OFF.push(off);
+	let idx = C_W.len - 1;
+	cache_put(key, idx);
+	idx
+}
+
+fn measure_run(s const byte[:], size f32, mono bool, bold bool, italic bool) f32 {
+	if !fonts_ready() { return s.len as f32 * size * 0.5; }
+	let fi = face_of(mono, bold, italic);
+	let sc = sc_of(fi, size);
+	var i = 0;
+	var w f32 = 0.0;
+	var prev = 0;
+	while i < s.len {
+		let cp, n = text::utf8_next(s, i);
+		var g = gindex(fi, cp);
+		var step = n;
+		if i + n < s.len {
+			let cp2, n2 = text::utf8_next(s, i + n);
+			let lig = liga_of(fi, g, gindex(fi, cp2));
+			if lig > 0 { g = lig; step = n + n2; }
+		}
+		w += kpair(fi, prev, g) as f32 * sc;
+		w += hadv(fi, g) as f32 * sc;
+		prev = g;
+		i += step;
+	}
+	w
+}
+
+fn place_run(s const byte[:], x f32, y f32, size f32, mono bool, bold bool, italic bool, limit int) int {
+	GX.clear();
+	GY.clear();
+	GI.clear();
+	if !fonts_ready() { return 0; }
+	let fi = face_of(mono, bold, italic);
+	let sc = sc_of(fi, size);
+	let sz = size as int;
+	var i = 0;
+	var pen f32 = x;
+	var prev = 0;
+	var count = 0;
+	while i < s.len {
+		if limit >= 0 && count >= limit { break; }
+		let cp, n = text::utf8_next(s, i);
+		var g = gindex(fi, cp);
+		var step = n;
+		if i + n < s.len {
+			let cp2, n2 = text::utf8_next(s, i + n);
+			let lig = liga_of(fi, g, gindex(fi, cp2));
+			if lig > 0 { g = lig; step = n + n2; }
+		}
+		pen += kpair(fi, prev, g) as f32 * sc;
+		let phase_i = ((pen - (pen as int) as f32) * 4.0) as int;
+		let phase = phase_i - (phase_i / 4) * 4;
+		let id = slot(fi, g, sz, phase);
+		GX.push(pen);
+		GY.push(y);
+		GI.push(id);
+		pen += hadv(fi, g) as f32 * sc + TRACK;
+		prev = g;
+		i += step;
+		count += 1;
+	}
+	GI.len
+}
+
+fn alpha(id int, x int, y int) int {
+	if x < 0 || y < 0 || x >= C_W[id] || y >= C_H[id] { return 0; }
+	C_AL[C_OFF[id] + y * C_W[id] + x] as int
+}

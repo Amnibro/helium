@@ -85,7 +85,11 @@ fn pointer(x f32, y f32, down int) {
 		for i in N.len { N[i].flags = bit_off(N[i].flags, FL_PRESS); }
 		return;
 	}
-	if id >= 0 { N[id].flags = N[id].flags | FL_PRESS; activate(id, x, y); }
+	if id >= 0 {
+		N[id].flags = N[id].flags | FL_PRESS;
+		if N[id].kind == K_BUTTON || N[id].kind == K_FAB || N[id].kind == K_ICON { ripple_at(id, x, y); }
+		activate(id, x, y);
+	}
 }
 
 fn key(code int, mods int) {
@@ -121,8 +125,15 @@ fn ime_commit() {
 	IME_ON = 0;
 }
 
+fn spring_step(x f32, v f32&, target f32, dt f32) f32 {
+	let accel = (target - x) * 90.0 - v * 14.0;
+	v += accel * dt;
+	x + v * dt
+}
+
 fn tick(dt f32) {
 	SPIN += dt;
+	ripple_tick(dt);
 	for i in N.len {
 		if N[i].kind == K_DIALOGUE {
 			let n = text::grapheme_count(s_text(N[i].str_i));

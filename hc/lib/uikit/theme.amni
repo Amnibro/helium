@@ -133,12 +133,12 @@ fn theme_set(family int, variant int) {
 	THEME.family = f;
 	THEME.variant = v;
 	let i = f * 5 + v;
-	if i == 0 { theme_apply(0xF4F4F8, 0xFFFFFF, 0x1C1B1F, 0x6750A4, 20.0, 0.0, 1, 0, 0, 12.0); }
+	if i == 0 { theme_apply(0xF4F4F8, 0xFFFFFF, 0x1C1B1F, 0x4A2C82, 20.0, 0.0, 1, 0, 0, 12.0); }
 	else if i == 1 { theme_apply(0xF5F5F5, 0xFFFFFF, 0x242424, 0x0F6CBD, 4.0, 1.0, 0, 0, 0, 10.0); }
 	else if i == 2 { theme_apply(0xF2F2F7, 0xFFFFFF, 0x1D1D1F, 0x007AFF, 12.0, 0.0, 1, 0, 0, 12.0); }
 	else if i == 3 { theme_apply(0xFAFAFA, 0xFFFFFF, 0x09090B, 0x18181B, 6.0, 1.0, 0, 0, 0, 10.0); }
 	else if i == 4 { theme_apply(0xF5F5F5, 0xFFFFFF, 0x141414, 0x1677FF, 2.0, 1.0, 0, 0, 0, 10.0); }
-	else if i == 5 { theme_apply(0x1B2430, 0xF7FBFF, 0xF7F8FA, 0x9BD4FF, 16.0, 1.0, 1, 1, 0, 12.0); }
+	else if i == 5 { theme_apply(0x1B2430, 0x243246, 0xF7F8FA, 0x9BD4FF, 16.0, 1.0, 1, 1, 0, 12.0); }
 	else if i == 6 { theme_apply(0x0E1116, 0x0A0D12, 0xE8EEF7, 0xC9D4E5, 14.0, 1.0, 0, 1, 0, 12.0); }
 	else if i == 7 { theme_apply(0x141026, 0x2A2150, 0xF4F0FF, 0xC4B5FD, 18.0, 1.0, 1, 1, 0, 12.0); }
 	else if i == 8 { theme_apply(0x1A140C, 0x3A2E18, 0xF8F1DE, 0xE7C27A, 10.0, 1.0, 0, 1, 0, 12.0); }
@@ -146,7 +146,7 @@ fn theme_set(family int, variant int) {
 	else if i == 10 { theme_apply(0x05070A, 0x071016, 0xD7FFF8, 0x15F5E0, 6.0, 1.0, 3, 0, 0, 10.0); }
 	else if i == 11 { theme_apply(0x0A0610, 0x140814, 0xFFE4F6, 0xFF2BD6, 8.0, 1.0, 3, 0, 0, 10.0); }
 	else if i == 12 { theme_apply(0x100C04, 0x1A1406, 0xFFE7B8, 0xFFBF1F, 4.0, 1.0, 3, 0, 0, 10.0); }
-	else if i == 13 { theme_apply(0x010A04, 0x02140A, 0xB8FFC8, 0x39FF6A, 0.0, 1.0, 3, 0, 1, 8.0); }
+	else if i == 13 { theme_apply(0x010A04, 0x02140A, 0xB8FFC8, 0x39FF6A, 2.0, 1.0, 3, 0, 0, 8.0); }
 	else if i == 14 { theme_apply(0x070616, 0x120E28, 0xE7E4FF, 0x8A7CFF, 12.0, 1.0, 3, 1, 0, 12.0); }
 	else if i == 15 { theme_apply(0xEFE4CF, 0xF7F0E1, 0x3A2A1A, 0x8C3A2F, 4.0, 2.0, 0, 0, 0, 12.0); }
 	else if i == 16 { theme_apply(0x1C1230, 0x2A1B4A, 0xF3E6C4, 0xD4AF37, 2.0, 2.0, 0, 0, 0, 12.0); }
@@ -160,7 +160,7 @@ fn theme_set(family int, variant int) {
 	else if i == 24 { theme_apply(0xF8FBFF, 0xFFFFFF, 0x334155, 0x64748B, 20.0, 0.0, 0, 0, 0, 22.0); }
 	else if i == 25 { theme_apply(0xFFFF00, 0xFFFFFF, 0x000000, 0xFF0000, 0.0, 4.0, 2, 0, 0, 10.0); }
 	else if i == 26 { theme_apply(0xF4F1EA, 0xFFFFFF, 0x111111, 0x111111, 0.0, 2.0, 2, 0, 0, 8.0); }
-	else if i == 27 { theme_apply(0xFFE500, 0x111111, 0x111111, 0xFFFFFF, 0.0, 4.0, 2, 0, 0, 8.0); }
+	else if i == 27 { theme_apply(0xFFE500, 0xFFF6D0, 0x111111, 0x111111, 0.0, 4.0, 2, 0, 0, 8.0); }
 	else if i == 28 { theme_apply(0xD9D4CC, 0xE7E2DA, 0x1A1A1A, 0xE24A2A, 0.0, 3.0, 2, 0, 0, 10.0); }
 	else if i == 29 { theme_apply(0xFFFFFF, 0xFFFFFF, 0x000000, 0x000000, 0.0, 6.0, 2, 0, 0, 6.0); }
 	else if i == 30 { theme_apply(0x031806, 0x05240A, 0x33FF66, 0x33FF66, 0.0, 1.0, 3, 0, 1, 8.0); }
@@ -179,6 +179,21 @@ fn theme_signature() int {
 fn ease_out(t f32) f32 { let u = 1.0 - t; (1.0 - u * u) as f32 }
 fn ease_in(t f32) f32 { (t * t) as f32 }
 fn ease_io(t f32) f32 { if t < 0.5 { (2.0 * t * t) as f32 } else { let m = -2.0 * t + 2.0; (1.0 - m * m / 2.0) as f32 } }
+
+fn lin_chan(c int) real {
+	let s = c as real / 255.0;
+	if s <= 0.04045 { return s / 12.92; }
+	pow((s + 0.055) / 1.055, 2.4)
+}
+fn luminance(rgb u32) real {
+	0.2126 * lin_chan(((rgb >> 16) & 255) as int) + 0.7152 * lin_chan(((rgb >> 8) & 255) as int) + 0.0722 * lin_chan((rgb & 255) as int)
+}
+fn contrast_ratio(a u32, b u32) real {
+	var l1 = luminance(a);
+	var l2 = luminance(b);
+	if l2 > l1 { let t = l1; l1 = l2; l2 = t; }
+	(l1 + 0.05) / (l2 + 0.05)
+}
 
 fn lerp_byte(a int, b int, t f32) int { (a as f32 + (b - a) as f32 * t) as int }
 fn lerp_rgb(a u32, b u32, t f32) u32 {

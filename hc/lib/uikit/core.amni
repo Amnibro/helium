@@ -79,7 +79,7 @@ fn set_dir(id int, d int) { N[id].dir = d; }
 fn set_gap(id int, g f32) { N[id].gap = g; }
 fn set_pad(id int, p f32) { N[id].inset = p; }
 fn set_cols(id int, n int) { N[id].cols = n; }
-fn set_px(id int, w f32, h f32) { N[id].wm = WM_PX; N[id].wv = w; N[id].hm = WM_PX; N[id].hv = h; }
+fn set_px(id int, w f32, h f32) { N[id].wm = WM_PX; N[id].wv = w * SCALE; N[id].hm = WM_PX; N[id].hv = h * SCALE; }
 fn set_min_bp(id int, bp int) { N[id].hide_bp = bp; }
 fn set_value(id int, v f32) { N[id].val = v; }
 fn set_value2(id int, v f32) { N[id].val2 = v; }
@@ -92,44 +92,101 @@ fn set_on(id int, on int) { if on != 0 { N[id].flags = N[id].flags | FL_ON; } el
 fn set_disabled(id int, on int) { if on != 0 { N[id].flags = N[id].flags | FL_OFF; } else { N[id].flags = bit_off(N[id].flags, FL_OFF); } }
 
 fn shown(id int) bool { N[id].vis != 0 && N[id].flags & FL_HIDE == 0 }
+var SCALE f32 = 1.0;
+fn set_scale(s f32) { SCALE = if s < 0.5 { 0.5 } else { s }; }
 fn bp_of(w f32) int { if w < 520.0 { 0 } else if w < 800.0 { 1 } else if w < 1100.0 { 2 } else { 3 } }
 
-fn label_size(id int) f32 { text::preset_size(N[id].preset) }
+fn label_size(id int) f32 { text::preset_size(N[id].preset) * SCALE }
 
-fn pref_h(id int) f32 {
-	if N[id].hm == WM_PX { return N[id].hv; }
+fn is_rowish(id int) bool {
 	let k = N[id].kind;
-	if k == K_AREA || k == K_TABLE { return 92.0; }
-	if k == K_SLIDER || k == K_RANGE { return 28.0; }
-	if k == K_LABEL { return label_size(id) * 1.35; }
-	if k == K_DIALOGUE { return 96.0; }
-	if k == K_MINI || k == K_RADIAL || k == K_INV { return 132.0; }
-	if k == K_CARD { return 110.0; }
-	if k == K_SPLIT { return 72.0; }
-	if k == K_DIV { return 8.0; }
-	if k == K_BADGE || k == K_CHIP || k == K_TAG { return 26.0; }
-	if k == K_PROGRESS || k == K_HEALTH || k == K_MANA { return 18.0; }
-	if k == K_SPIN || k == K_AVATAR { return 36.0; }
-	if k == K_DAMAGE { return 28.0; }
-	if k == K_SKELETON { return 16.0; }
-	36.0
+	N[id].dir == DIR_ROW || k == K_WRAP || k == K_TOOL || k == K_TABS || k == K_NAV
+}
+fn is_flow(k int) bool {
+	k == K_FLEX || k == K_GRID || k == K_WRAP || k == K_CARD || k == K_TABS || k == K_ACC || k == K_TREE || k == K_TOOL || k == K_NAV || k == K_SPLIT || k == K_MENU || k == K_SCROLL
 }
 
-fn pref_w(id int) f32 {
+recursive fn pref_h(id int) f32 {
+	if N[id].hm == WM_PX { return N[id].hv; }
+	let k = N[id].kind;
+	if is_flow(k) && KIDS[id].len > 0 {
+		let row = is_rowish(id);
+		var acc f32 = 0.0;
+		var mx f32 = 0.0;
+		var n = 0;
+		let kn = KIDS[id].len;
+		for i in kn {
+			let c = KIDS[id][i];
+			if !shown(c) { continue; }
+			let ch = pref_h(c);
+			if row { if ch > mx { mx = ch; } } else { acc += ch; }
+			n += 1;
+		}
+		let gaps = if n > 1 { N[id].gap * SCALE * (n - 1) as f32 } else { 0.0 };
+		let frame = N[id].inset * SCALE * 2.0;
+		if k == K_GRID {
+			let cols = if N[id].cols < 1 { 1 } else { N[id].cols };
+			let rows = (n + cols - 1) / cols;
+			return mx * rows as f32 + N[id].gap * SCALE * (if rows > 1 { (rows - 1) as f32 } else { 0.0 }) + frame;
+		}
+		if row { return mx + frame; }
+		return acc + gaps + frame;
+	}
+	if k == K_AREA || k == K_TABLE { return 92.0 * SCALE; }
+	if k == K_SLIDER || k == K_RANGE { return 28.0 * SCALE; }
+	if k == K_LABEL { return label_size(id) * 1.35; }
+	if k == K_DIALOGUE { return 96.0 * SCALE; }
+	if k == K_MINI || k == K_RADIAL || k == K_INV { return 132.0 * SCALE; }
+	if k == K_CARD { return 110.0 * SCALE; }
+	if k == K_SPLIT { return 72.0 * SCALE; }
+	if k == K_DIV { return 8.0 * SCALE; }
+	if k == K_BADGE || k == K_CHIP || k == K_TAG { return 26.0 * SCALE; }
+	if k == K_PROGRESS || k == K_HEALTH || k == K_MANA { return 18.0 * SCALE; }
+	if k == K_SPIN || k == K_AVATAR { return 36.0 * SCALE; }
+	if k == K_DAMAGE { return 28.0 * SCALE; }
+	if k == K_SKELETON { return 16.0 * SCALE; }
+	36.0 * SCALE
+}
+
+recursive fn pref_w(id int) f32 {
 	if N[id].wm == WM_PX { return N[id].wv; }
 	let k = N[id].kind;
+	if is_flow(k) && KIDS[id].len > 0 {
+		let row = is_rowish(id);
+		var acc f32 = 0.0;
+		var mx f32 = 0.0;
+		var n = 0;
+		let kn = KIDS[id].len;
+		for i in kn {
+			let c = KIDS[id][i];
+			if !shown(c) { continue; }
+			let cw = pref_w(c);
+			if row { acc += cw; } else if cw > mx { mx = cw; }
+			n += 1;
+		}
+		let gaps = if n > 1 { N[id].gap * SCALE * (n - 1) as f32 } else { 0.0 };
+		let frame = N[id].inset * SCALE * 2.0;
+		if k == K_GRID {
+			let cols0 = if N[id].cols < 1 { 1 } else { N[id].cols };
+			let cols = if cols0 > n { n } else { cols0 };
+			let cg = if cols > 1 { N[id].gap * SCALE * (cols - 1) as f32 } else { 0.0 };
+			return mx * cols as f32 + cg + frame;
+		}
+		if row { return acc + gaps + frame; }
+		return mx + frame;
+	}
 	if N[id].str_i >= 0 {
 		let tw = text_advance(s_text(N[id].str_i), label_size(id));
-		let extra = if k == K_BUTTON || k == K_CHIP || k == K_TAG || k == K_BADGE { 28.0 } else { 8.0 };
+		let extra = if k == K_BUTTON || k == K_CHIP || k == K_TAG || k == K_BADGE { 28.0 * SCALE } else { 8.0 * SCALE };
 		let w = tw + extra;
-		if w < 48.0 { return 48.0; }
+		if w < 48.0 * SCALE { return 48.0 * SCALE; }
 		return w;
 	}
-	if k == K_ICON || k == K_AVATAR || k == K_SPIN { return 36.0; }
-	if k == K_CHECK || k == K_RADIO || k == K_TOGGLE { return 160.0; }
-	if k == K_SLIDER || k == K_RANGE || k == K_FIELD || k == K_SELECT { return 180.0; }
-	if k == K_DIV { return 8.0; }
-	120.0
+	if k == K_ICON || k == K_AVATAR || k == K_SPIN { return 36.0 * SCALE; }
+	if k == K_CHECK || k == K_RADIO || k == K_TOGGLE { return 160.0 * SCALE; }
+	if k == K_SLIDER || k == K_RANGE || k == K_FIELD || k == K_SELECT { return 180.0 * SCALE; }
+	if k == K_DIV { return 8.0 * SCALE; }
+	120.0 * SCALE
 }
 
 fn is_leaf(k int) bool { k >= K_LABEL }
@@ -141,8 +198,8 @@ fn layout(id int, x f32, y f32, w f32, h f32) {
 		return;
 	}
 	let knd = N[id].kind;
-	let inset = N[id].inset;
-	let gap = N[id].gap;
+	let inset = N[id].inset * SCALE;
+	let gap = N[id].gap * SCALE;
 	let inner_w = if w > inset * 2.0 { w - inset * 2.0 } else { 0.0 };
 	let inner_h = if h > inset * 2.0 { h - inset * 2.0 } else { 0.0 };
 	var kids int[>..] = [];
@@ -220,8 +277,44 @@ fn layout(id int, x f32, y f32, w f32, h f32) {
 }
 
 fn layout_root(id int, x f32, y f32, w f32, h f32) {
-	VW = w;
-	layout(id, x, y, w, h);
+	VW = w * SCALE;
+	layout(id, x * SCALE, y * SCALE, w * SCALE, h * SCALE);
+}
+
+fn a11y_export(out byte[>..]&) {
+	for i in N.len {
+		if !shown(i) || N[i].w < 1.0 { continue; }
+		format(out, role_name(i), "\t");
+		if N[i].str_i >= 0 { out.append(s_text(N[i].str_i)); }
+		format(out, "\t", N[i].x as int, "\t", N[i].y as int, "\t", N[i].w as int, "\t", N[i].h as int);
+		if N[i].flags & FL_ON != 0 { out.append("\tchecked"); }
+		if N[i].flags & FL_OFF != 0 { out.append("\tdisabled"); }
+		out.push(10);
+	}
+}
+
+recursive fn box_hit(a int, b int) bool {
+	if !shown(a) || !shown(b) || N[a].w < 2.0 || N[a].h < 2.0 || N[b].w < 2.0 || N[b].h < 2.0 { return false; }
+	let x0 = if N[a].x > N[b].x { N[a].x } else { N[b].x };
+	let y0 = if N[a].y > N[b].y { N[a].y } else { N[b].y };
+	let x1 = if N[a].x + N[a].w < N[b].x + N[b].w { N[a].x + N[a].w } else { N[b].x + N[b].w };
+	let y1 = if N[a].y + N[a].h < N[b].y + N[b].h { N[a].y + N[a].h } else { N[b].y + N[b].h };
+	x1 - x0 > 1.0 && y1 - y0 > 1.0
+}
+
+fn overlap_count() int {
+	var n = 0;
+	for i in N.len {
+		let k = N[i].kind;
+		if k == K_STACK || k == K_MODAL || k == K_DRAWER { continue; }
+		let kn = KIDS[i].len;
+		for a in kn {
+			for b in a + 1..kn {
+				if box_hit(KIDS[i][a], KIDS[i][b]) { n += 1; }
+			}
+		}
+	}
+	n
 }
 
 recursive fn hit_rec(id int, x f32, y f32) int {

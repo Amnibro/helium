@@ -1,5 +1,6 @@
 namespace uikit;
 import uikit.font;
+import uikit.vtext;
 import uikit.theme;
 import uikit.core;
 import uikit.widgets;

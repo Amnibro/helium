@@ -39,7 +39,10 @@ Public names in `std` and `ui` are unchanged.
 - Themes: 7 families × 5 variations = 35 (flat, glass, neon, fantasy, minimal, brutalist, retro). Tokens cover color, radius, border, shadow/glow, glass fill, pixel snap, padding.
 - Input: hit testing, click behavior, focus order, field insert/backspace, undo snapshot, IME composition commit, ticks for typewriter, damage float, and toasts.
 - Roles: button, switch, checkbox, radio, slider, textbox, listbox, tablist, grid, dialog, progressbar, navigation, tooltip.
-- A software painter and `hc/apps/gallery` write `docs/ui-gallery/*.png` with no GPU and no third-party art.
+- A software painter and `hc/apps/gallery` write `docs/ui-gallery/*.png` at 2× with no GPU and no third-party art.
+- Vector text in `uikit/vtext.amni`: an original coverage raster on top of `ttf` (four horizontal subpixel phases), `kern` / GPOS pair kerning, and GSUB type-4 pair ligatures from `liga`, `dlig`, and `calt`. Faces are Inter Regular, Medium, Bold, Italic, and Bold Italic, plus JetBrains Mono. Licenses are in `hc/lib/uikit/fonts/`. The 5×7 bitmap is used only when a theme sets the pixel flag (the retro family).
+- Theme drawing: glass blurs the pixels already in the framebuffer and adds a highlight; neon stacks translucent glow rings; fantasy draws a procedural grain and corner brackets; brutalist draws a hard offset shadow; retro draws scanlines. Material, Fluent, and Apple variants keep their radii and elevation. Ripple, `ease_*`, and `spring_step` drive `docs/ui-gallery/motion.png`.
+- Table filter, column pin, and column resize. `overlap_count` fails a test if sibling boxes intersect. `a11y_export` writes a role/name/bounds tree. `docs/ui-contrast.md` is a WCAG relative-luminance audit of all 35 themes (body pairs at 4.5:1, accent buttons at 3:1).
 
 ## Comparison
 
@@ -97,7 +100,7 @@ Those catalogs are screenshots, not libraries. The genres Helium now paints, eac
 
 Against that class, Helium now has more named themes (35) and a first-class HUD set than Dear ImGui's default style or egui's one theme. It does not have their font atlases, docking, or plot widgets (`ui` still has the charts).
 
-Against Slint, Qt Quick, Flutter, and CSS, Helium's flex/grid/stack/wrap is a small layout engine, not a full style language. There is no constraint solver like Cassowary, no CSS cascade, and no Flutter compositor. Word wrap and span layout exist; glyph shaping does not.
+Against Slint, Qt Quick, Flutter, and CSS, Helium's flex/grid/stack/wrap is a small layout engine, not a full style language. There is no constraint solver like Cassowary, no CSS cascade, and no Flutter compositor. Word wrap and span layout exist. Glyph drawing is a coverage raster with pair kerning, not a full shaper.
 
 ### HarfBuzz, ICU, fmt, Python `str`
 
@@ -111,16 +114,16 @@ Against Slint, Qt Quick, Flutter, and CSS, Helium's flex/grid/stack/wrap is a sm
 | Format | Width, align, grouping, float, currency, date | Locales, plural rules, ICU calendars |
 | Regex | Code points, groups, bounded repeats | Unicode properties, lazy quantifiers (those stay in `regex`) |
 | Rope | Piece table insert/delete | Persistent snapshots, very large files |
-| Shaping | Bitmap advances and a measurement hook | HarfBuzz: GSUB/GPOS, Arabic, Indic, kerning |
+| Shaping | Coverage raster of Inter and JetBrains Mono, pair kerning, type-4 pair ligatures | HarfBuzz: contextual `calt`, mark positioning, Arabic, Indic. Inter's `fi` ligature is contextual, so it does not collapse |
 
 fmt and Python `str.format` are the model for the `{index:spec}` syntax. Helium covers the spec subset above and not format localization.
 
 ## Still open, in priority order
 
-1. Complex-script shaping and a real font backend. The gallery font is an original 5×7 bitmap; lowercase is small caps. SDF/TTF in `gfx` is not wired to `uikit`.
+1. Complex-script shaping. Pair kerning and type-4 ligatures are in. There is no mark attachment, no Arabic or Indic shaping, and Inter's `fi`/`fl` ligatures do not fire because they live in contextual lookups. The raster is coverage with four x-phases, not an MSDF atlas.
 2. Full Unicode data tables (case, line break, bidi brackets, normalization exclusions).
-3. Layout polish: the gallery still clips long labels and stacks some HUD panels tightly. There is no baseline grid or intrinsic min-content pass like CSS.
-4. Widget depth: no column filters, column resize, tree table, upload, carousel, or form validation messages.
-5. Accessibility beyond role names and a focus order. No screen reader, no contrast check, no reduced-motion switch (the web host already exposes `prefers_dark` and `reduced_motion`).
-6. Motion: easing functions exist; there is no shared transition on theme or layout.
+3. Theme drawing is still a software approximation. Glass is a box blur of what is already in the buffer, neon bloom is three expanded rects, fantasy frames are corner brackets plus a hash grain rather than a sampled 9-slice, and the ripple is a growing disc. Static sheets do not show hover and pressed for every control.
+4. The data grid can filter, pin, and resize in the model (tested). The gallery does not draw a filter field or a drag handle, and there is no tree table, upload, carousel, or validation message.
+5. Accessibility is a text tree and a contrast report. There is no platform screen reader, no live announcements, and no non-text contrast pass for icons.
+6. Motion is an 8-frame strip (`motion.png`): spring, typewriter, and ripple. There is no GIF, and layout changes do not interpolate.
 7. The GPU `ui` and `gfx.hud` paths are unchanged. `uikit` does not draw through SDL.

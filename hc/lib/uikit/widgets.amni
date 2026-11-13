@@ -1,5 +1,6 @@
 // Constructors. Every interactive kind has six looks (filled through sharp).
 namespace uikit;
+import text;
 import uikit.core;
 
 var CELL_N int[>..] = [];
@@ -113,6 +114,37 @@ fn table_get(id int, row int, col int) const byte[:] {
 	for i in CELL_N.len { if CELL_N[i] == id && CELL_R[i] == row && CELL_C[i] == col { return s_text(CELL_S[i]); } }
 	""
 }
+var FILT_ID int[>..] = [];
+var FILT_S byte[>..][>..] = [];
+var COLW f32[>..][>..] = [];
+
+fn table_filter(id int, text const byte[:]) {
+	for i in FILT_ID.len { if FILT_ID[i] == id { FILT_S[i].clear(); FILT_S[i].append(text); return; } }
+	FILT_ID.push(id);
+	var s byte[>..] = [];
+	s.append(text);
+	FILT_S.push(copy(s));
+}
+fn table_filtered(id int, row int) bool {
+	var q const byte[:] = "";
+	for i in FILT_ID.len { if FILT_ID[i] == id { q = FILT_S[i][..]; } }
+	if q.len == 0 { return true; }
+	let cols = if N[id].i1 < 1 { 1 } else { N[id].i1 };
+	for c in cols { if text::contains(table_get(id, row, c), q) { return true; } }
+	false
+}
+fn table_pin(id int, cols int) { N[id].i3 = cols; }
+fn table_resize(id int, col int, w f32) {
+	while COLW.len <= id { COLW.push([]); }
+	while COLW[id].len <= col { COLW[id].push(0.0); }
+	COLW[id][col] = w;
+}
+fn col_width(id int, col int, total int, cols int) int {
+	if id < COLW.len && col < COLW[id].len && COLW[id][col] > 1.0 { return (COLW[id][col] * SCALE) as int; }
+	if cols < 1 { return total; }
+	total / cols
+}
+
 fn table_row(id int, slot int) int {
 	if id < TORD.len && slot >= 0 && slot < TORD[id].len { return TORD[id][slot]; }
 	slot
