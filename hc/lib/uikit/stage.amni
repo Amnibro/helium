@@ -23,6 +23,7 @@ fn menu_n(g int) int {
 	if g == 16 { return 4; }
 	if g == 17 { return 4; }
 	if g == 18 { return 4; }
+	if g == 19 { return 4; }
 	4
 }
 fn menu_at(g int, i int) const byte[:] {
@@ -68,6 +69,12 @@ fn menu_at(g int, i int) const byte[:] {
 		if i == 0 { return "Versus"; }
 		if i == 1 { return "Arcade"; }
 		if i == 2 { return "Training"; }
+		return "Options";
+	}
+	if g == 19 {
+		if i == 0 { return "Play"; }
+		if i == 1 { return "Setlist"; }
+		if i == 2 { return "Practice"; }
 		return "Options";
 	}
 	if g == 18 {
@@ -2474,6 +2481,104 @@ fn stage_map_cozy(f int, mode int) {
 	let c = button(f, "Pond", 1); place_at(c, 600.0, by, 240.0, 56.0); set_preset(c, 2);
 }
 
+fn stage_hud_rhythm(f int, mode int) {
+	var mx f32 = 48.0;
+	var my f32 = 760.0;
+	var ly f32 = 860.0;
+	if mode == 1 { mx = 1600.0; ly = 720.0; }
+	else if mode == 2 { my = 200.0; ly = 860.0; }
+	else if mode == 3 { mx = 1600.0; my = 400.0; ly = 900.0; }
+	else if mode == 4 { my = 480.0; ly = 800.0; }
+	let song = label(f, "Glass", 1); place_at(song, 48.0, 36.0, 200.0, 40.0);
+	let score = label(f, "24800", 0); place_at(score, 760.0, 36.0, 400.0, 56.0); mark_anchor(score);
+	let bpm = label(f, "BPM  120", 2); place_at(bpm, 1560.0, 40.0, 240.0, 36.0);
+	let judge = label(f, "Great", 0); place_at(judge, 760.0, 112.0, 400.0, 48.0); mark_anchor(judge);
+	let combo = label(f, "Combo  42", 2); place_at(combo, 48.0, 120.0, 240.0, 32.0);
+	let miss = label(f, "Miss  1", 3); place_at(miss, 48.0, 160.0, 200.0, 32.0);
+	let acc = health_bar(f, 0.92, 2); place_at(acc, 480.0, 180.0, 960.0, 16.0);
+	let mult = label(f, "x4", 1); place_at(mult, 1560.0, 120.0, 160.0, 40.0);
+	let sync = label(f, "Sync", 3); place_at(sync, 1560.0, 180.0, 160.0, 32.0);
+	let a = button(f, "L", 2); place_at(a, 560.0, ly, 160.0, 120.0); set_preset(a, 2);
+	let b = button(f, "D", 0); place_at(b, 760.0, ly, 160.0, 120.0); set_preset(b, 2);
+	let c = button(f, "K", 2); place_at(c, 960.0, ly, 160.0, 120.0); set_preset(c, 2);
+	let d = button(f, "R", 2); place_at(d, 1160.0, ly, 160.0, 120.0); set_preset(d, 2);
+	let map = minimap(f, 0); place_at(map, mx, my, 240.0, 160.0); N[map].i3 = 19;
+}
+
+fn stage_pause_rhythm(f int, mode int) {
+	var x f32 = 760.0;
+	var y f32 = 280.0;
+	if mode == 1 { x = 80.0; }
+	else if mode == 2 { x = 1400.0; }
+	else if mode == 3 { y = 560.0; }
+	else if mode == 4 { y = 80.0; x = 480.0; }
+	let head = label(f, "Paused", 0); place_at(head, 760.0, y - 72.0, 400.0, 56.0); mark_anchor(head);
+	let a = button(f, "Resume", 0); place_at(a, x, y, 400.0, 64.0); set_preset(a, 2);
+	let b = button(f, "Retry", 2); place_at(b, x, y + 80.0, 400.0, 64.0); set_preset(b, 2);
+	let c = button(f, "Song", 2); place_at(c, x, y + 160.0, 400.0, 64.0); set_preset(c, 2);
+	let d = button(f, "Quit", 5); place_at(d, x, y + 240.0, 400.0, 64.0); set_preset(d, 2);
+}
+
+fn stage_shop_rhythm(f int, mode int) {
+	var x f32 = 200.0;
+	var y f32 = 180.0;
+	if mode == 1 { x = 80.0; }
+	else if mode == 2 { x = 1000.0; }
+	else if mode == 3 { y = 480.0; }
+	else if mode == 4 { y = 80.0; x = 400.0; }
+	let head = label(f, "Setlist", 0); place_at(head, x, y, 360.0, 56.0);
+	let a = button(f, "Glass  0", 0); place_at(a, x, y + 80.0, 480.0, 64.0); set_preset(a, 2);
+	let b = button(f, "Ember  0", 2); place_at(b, x, y + 160.0, 480.0, 64.0); set_preset(b, 2);
+	let c = button(f, "Tide  0", 1); place_at(c, x, y + 240.0, 480.0, 64.0); set_preset(c, 2);
+	let buy = button(f, "Play", 0); place_at(buy, x + 520.0, y + 160.0, 240.0, 64.0); set_preset(buy, 2);
+}
+
+fn stage_results_rhythm(f int, mode int) {
+	var y f32 = 160.0;
+	var x f32 = 560.0;
+	if mode == 1 { x = 80.0; }
+	else if mode == 2 { x = 1040.0; }
+	else if mode == 3 { y = 400.0; }
+	else if mode == 4 { x = 240.0; }
+	let head = label(f, "Rank A", 0); place_at(head, 760.0, 36.0, 400.0, 64.0); mark_anchor(head);
+	let side = label(f, "Glass", 2); place_at(side, 80.0, 40.0, 200.0, 36.0);
+	let tb = board(f, x, y, "Judge", "Count", "Score");
+	table_set(tb, 0, 0, "Perfect"); table_set(tb, 0, 1, "80"); table_set(tb, 0, 2, "16000");
+	table_set(tb, 1, 0, "Great"); table_set(tb, 1, 1, "40"); table_set(tb, 1, 2, "6000");
+	table_set(tb, 2, 0, "Good"); table_set(tb, 2, 1, "12"); table_set(tb, 2, 2, "1200");
+	table_set(tb, 3, 0, "Miss"); table_set(tb, 3, 1, "1"); table_set(tb, 3, 2, "0");
+	table_set(tb, 4, 0, "Combo"); table_set(tb, 4, 1, "42"); table_set(tb, 4, 2, "42");
+	table_set(tb, 5, 0, "Total"); table_set(tb, 5, 1, "133"); table_set(tb, 5, 2, "24800");
+	let again = button(f, "Retry", 0); place_at(again, 80.0, 980.0, 240.0, 64.0); set_preset(again, 2);
+}
+
+fn stage_settings_rhythm(f int, mode int) {
+	var x f32 = 480.0;
+	var y f32 = 220.0;
+	if mode == 1 { x = 80.0; }
+	else if mode == 2 { x = 1080.0; }
+	else if mode == 3 { y = 520.0; }
+	else if mode == 4 { y = 80.0; }
+	let head = label(f, "Offset", 0); place_at(head, x, y, 240.0, 56.0);
+	let a = slider(f, 0.5, 0); place_at(a, x, y + 80.0, 480.0, 32.0);
+	let b = toggle(f, "Assist", 0, 2); place_at(b, x, y + 140.0, 480.0, 56.0);
+	let c = slider(f, 0.7, 2); place_at(c, x, y + 220.0, 480.0, 32.0);
+}
+
+fn stage_map_rhythm(f int, mode int) {
+	var y f32 = 160.0;
+	var by f32 = 920.0;
+	if mode == 1 { by = 80.0; y = 240.0; }
+	else if mode == 2 { y = 80.0; }
+	else if mode == 3 { y = 200.0; by = 880.0; }
+	else if mode == 4 { by = 80.0; y = 240.0; }
+	let map = minimap(f, 0); place_at(map, 480.0, y, 960.0, 640.0); N[map].i3 = 19;
+	if mode == 1 || mode == 4 { place_at(map, 480.0, 240.0, 960.0, 640.0); }
+	let a = button(f, "Glass", 0); place_at(a, 80.0, by, 240.0, 56.0); set_preset(a, 2);
+	let b = button(f, "Ember", 2); place_at(b, 340.0, by, 240.0, 56.0); set_preset(b, 2);
+	let c = button(f, "Tide", 1); place_at(c, 600.0, by, 240.0, 56.0); set_preset(c, 2);
+}
+
 fn build_stage(frame int, g int, screen int, mode int) int {
 	N[frame].i0 = g;
 	N[frame].i1 = screen;
@@ -2498,6 +2603,7 @@ fn build_stage(frame int, g int, screen int, mode int) int {
 		else if g == 16 { stage_pause_space(frame, mode); }
 		else if g == 17 { stage_pause_fantasy(frame, mode); }
 		else if g == 18 { stage_pause_cozy(frame, mode); }
+		else if g == 19 { stage_pause_rhythm(frame, mode); }
 		else { stage_pause(frame, g, mode); }
 	}
 	else if screen == 2 {
@@ -2519,6 +2625,7 @@ fn build_stage(frame int, g int, screen int, mode int) int {
 		else if g == 16 { stage_settings_space(frame, mode); }
 		else if g == 17 { stage_settings_fantasy(frame, mode); }
 		else if g == 18 { stage_settings_cozy(frame, mode); }
+		else if g == 19 { stage_settings_rhythm(frame, mode); }
 		else { stage_settings(frame, g, mode); }
 	}
 	else if screen == 3 {
@@ -2540,6 +2647,7 @@ fn build_stage(frame int, g int, screen int, mode int) int {
 		else if g == 16 { stage_hud_space(frame, mode); }
 		else if g == 17 { stage_hud_fantasy(frame, mode); }
 		else if g == 18 { stage_hud_cozy(frame, mode); }
+		else if g == 19 { stage_hud_rhythm(frame, mode); }
 		else { stage_hud_fps(frame, mode); }
 	}
 	else if screen == 4 {
@@ -2561,6 +2669,7 @@ fn build_stage(frame int, g int, screen int, mode int) int {
 		else if g == 16 { stage_shop_space(frame, mode); }
 		else if g == 17 { stage_shop_fantasy(frame, mode); }
 		else if g == 18 { stage_shop_cozy(frame, mode); }
+		else if g == 19 { stage_shop_rhythm(frame, mode); }
 		else { stage_shop_fps(frame, g, mode); }
 	}
 	else if screen == 5 {
@@ -2582,6 +2691,7 @@ fn build_stage(frame int, g int, screen int, mode int) int {
 		else if g == 16 { stage_map_space(frame, mode); }
 		else if g == 17 { stage_map_fantasy(frame, mode); }
 		else if g == 18 { stage_map_cozy(frame, mode); }
+		else if g == 19 { stage_map_rhythm(frame, mode); }
 		else { stage_map_fps(frame, g, mode); }
 	}
 	else if g == 4 { stage_results_jrpg(frame, mode); }
@@ -2602,6 +2712,7 @@ fn build_stage(frame int, g int, screen int, mode int) int {
 	else if g == 16 { stage_results_space(frame, mode); }
 	else if g == 17 { stage_results_fantasy(frame, mode); }
 	else if g == 18 { stage_results_cozy(frame, mode); }
+	else if g == 19 { stage_results_rhythm(frame, mode); }
 	else { stage_results_fps(frame, g, mode); }
 	frame
 }
