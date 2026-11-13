@@ -249,6 +249,271 @@ fn rich_app(parent int, g int, mode int) int {
 	col
 }
 
+fn sub_line(g int) const byte[:] {
+	if g == 0 { return "Tactical"; }
+	if g == 1 { return "Squad"; }
+	if g == 2 { return "Rift"; }
+	if g == 3 { return "Command"; }
+	if g == 4 { return "Tales"; }
+	if g == 5 { return "Ash"; }
+	if g == 6 { return "Realm"; }
+	if g == 7 { return "Grid"; }
+	if g == 8 { return "Versus"; }
+	if g == 9 { return "Match"; }
+	if g == 10 { return "Peak"; }
+	if g == 11 { return "Escape"; }
+	if g == 12 { return "Climb"; }
+	if g == 13 { return "Camp"; }
+	if g == 14 { return "Budget"; }
+	if g == 15 { return "Hunt"; }
+	if g == 16 { return "Hull"; }
+	if g == 17 { return "Party"; }
+	if g == 18 { return "Farm"; }
+	if g == 19 { return "Beat"; }
+	if g == 20 { return "Lock"; }
+	if g == 21 { return "Scene"; }
+	if g == 22 { return "Idle"; }
+	"Banner"
+}
+
+fn shop_item(g int, i int) const byte[:] {
+	if g == 0 || g == 1 {
+		if i == 0 { return "Rifle 29"; }
+		if i == 1 { return "Vest 10"; }
+		if i == 2 { return "Ghost"; }
+		return "Sheriff";
+	}
+	if g == 2 {
+		if i == 0 { return "Boots"; }
+		if i == 1 { return "Tome"; }
+		if i == 2 { return "Gold"; }
+		return "Ward";
+	}
+	if g == 3 {
+		if i == 0 { return "Depot"; }
+		if i == 1 { return "Barracks"; }
+		if i == 2 { return "Supply"; }
+		return "Refinery";
+	}
+	if g == 5 {
+		if i == 0 { return "Flask"; }
+		if i == 1 { return "Rune"; }
+		if i == 2 { return "Gem"; }
+		return "Ash";
+	}
+	if g == 7 {
+		if i == 0 { return "Aero"; }
+		if i == 1 { return "Grip"; }
+		if i == 2 { return "Fuel"; }
+		return "Turbo";
+	}
+	if g == 12 {
+		if i == 0 { return "Strike"; }
+		if i == 1 { return "Defend"; }
+		if i == 2 { return "Relic"; }
+		return "Skip";
+	}
+	if g == 17 || g == 23 {
+		if i == 0 { return "Banner"; }
+		if i == 1 { return "Pull x1"; }
+		if i == 2 { return "Pull x10"; }
+		return "Pity 12";
+	}
+	if g == 18 {
+		if i == 0 { return "Seeds"; }
+		if i == 1 { return "Milk"; }
+		if i == 2 { return "Wood"; }
+		return "Buy";
+	}
+	if i == 0 { return "Blade"; }
+	if i == 1 { return "Potion"; }
+	if i == 2 { return "Key"; }
+	return "Map";
+}
+
+fn wide(col int, text const byte[:], look int, h f32) {
+	let b = button(col, text, look);
+	set_px(b, 224.0, h);
+}
+fn half_row(col int, a const byte[:], b const byte[:], look int) {
+	let row = scr_row(col);
+	let x = button(row, a, look); set_px(x, 108.0, 32.0);
+	let y = button(row, b, look); set_px(y, 108.0, 32.0);
+}
+
+fn screen_title_real(col int, g int, mode int) {
+	if mode == 1 {
+		wide(col, "Play", 0, 32.0);
+		wide(col, genre_name(g), mode, 40.0);
+		wide(col, sub_line(g), 2, 32.0);
+	} else if mode == 3 {
+		wide(col, genre_name(g), mode, 40.0);
+		half_row(col, "Play", "Load", 0);
+		wide(col, sub_line(g), 2, 32.0);
+	} else if mode == 4 {
+		half_row(col, "Play", "Opts", 0);
+		wide(col, genre_name(g), mode, 48.0);
+		wide(col, sub_line(g), 5, 32.0);
+	} else {
+		wide(col, genre_name(g), mode, 48.0);
+		wide(col, sub_line(g), 2, 32.0);
+		wide(col, "Play", 0, 32.0);
+		if mode == 2 { wide(col, "Load", 5, 32.0); }
+	}
+}
+
+fn screen_pause_real(col int, g int, mode int) {
+	let extra = if g == 1 { "Leave" } else if g == 14 { "Budget" } else if g == 21 { "Save" } else { "Quit" };
+	if mode == 1 {
+		wide(col, extra, 5, 32.0);
+		wide(col, "Options", 2, 32.0);
+		wide(col, "Resume", 0, 32.0);
+	} else if mode == 2 {
+		wide(col, "Resume", 0, 40.0);
+		let s = slider(col, 0.6, 0); set_px(s, 224.0, 24.0);
+		wide(col, "Options", 2, 32.0);
+		wide(col, extra, 5, 32.0);
+	} else if mode == 4 {
+		half_row(col, "Resume", extra, 0);
+		wide(col, "Options", 2, 32.0);
+	} else {
+		wide(col, "Resume", 0, 32.0);
+		wide(col, "Options", 2, 32.0);
+		wide(col, extra, 5, 32.0);
+		if mode == 3 { wide(col, sub_line(g), 1, 32.0); }
+	}
+}
+
+fn screen_settings_real(col int, g int, mode int) {
+	let a = if g == 0 { "Aim" } else if g == 7 { "ABS" } else if g == 19 { "Offset" } else { "Sound" };
+	let b = if g == 0 { "Voice" } else if g == 21 { "Auto" } else { "Music" };
+	if mode == 1 {
+		let s = slider(col, 0.7, 0); set_px(s, 224.0, 24.0);
+		let t = toggle(col, a, 1, 0); set_px(t, 224.0, 32.0);
+		let u = toggle(col, b, 0, 2); set_px(u, 224.0, 32.0);
+	} else if mode == 4 {
+		let t = toggle(col, a, 1, 5); set_px(t, 224.0, 32.0);
+		let u = toggle(col, b, 1, 5); set_px(u, 224.0, 32.0);
+		wide(col, "Apply", 0, 32.0);
+	} else {
+		let t = toggle(col, a, 1, mode % 6); set_px(t, 224.0, 32.0);
+		let u = toggle(col, b, 0, 2); set_px(u, 224.0, 32.0);
+		let s = slider(col, 0.55, 0); set_px(s, 224.0, 24.0);
+		if mode == 2 { wide(col, "Apply", 0, 32.0); }
+	}
+}
+
+fn screen_shop_real(col int, g int, mode int) {
+	if mode == 1 {
+		half_row(col, shop_item(g, 0), shop_item(g, 1), 0);
+		half_row(col, shop_item(g, 2), shop_item(g, 3), 2);
+		wide(col, "Buy", 0, 32.0);
+	} else if mode == 2 {
+		wide(col, shop_item(g, 0), 0, 48.0);
+		wide(col, shop_item(g, 1), 2, 32.0);
+		wide(col, shop_item(g, 2), 2, 32.0);
+		wide(col, shop_item(g, 3), 5, 32.0);
+	} else if mode == 4 {
+		wide(col, "Buy", 0, 32.0);
+		wide(col, shop_item(g, 0), 1, 32.0);
+		wide(col, shop_item(g, 1), 1, 32.0);
+		wide(col, shop_item(g, 2), 1, 32.0);
+		wide(col, shop_item(g, 3), 1, 32.0);
+	} else {
+		wide(col, shop_item(g, 0), mode % 6, 32.0);
+		wide(col, shop_item(g, 1), 2, 32.0);
+		wide(col, shop_item(g, 2), 2, 32.0);
+		wide(col, shop_item(g, 3), 5, 32.0);
+		if mode == 3 { wide(col, "Buy", 0, 32.0); }
+	}
+}
+
+fn screen_map_real(col int, g int, mode int) {
+	if g == 12 {
+		if mode == 2 {
+			wide(col, "Shop", 1, 32.0);
+			wide(col, "Rest", 2, 32.0);
+			wide(col, "Elite", 0, 32.0);
+		} else {
+			wide(col, "Elite", 0, 32.0);
+			wide(col, "Rest", 2, 32.0);
+			wide(col, "Shop", 1, 32.0);
+		}
+		let map = minimap(col, 0); set_px(map, 224.0, 96.0); N[map].i3 = g;
+	} else if g == 18 {
+		half_row(col, "Mon", "Tue", 2);
+		half_row(col, "Wed", "Thu", 0);
+		let map = minimap(col, 0); set_px(map, 224.0, if mode == 1 { 72.0 } else { 112.0 }); N[map].i3 = g;
+	} else if g == 3 {
+		let map = minimap(col, 0); set_px(map, 224.0, 96.0); N[map].i3 = g;
+		half_row(col, "Move", "Atk", 0);
+		wide(col, "Build", 2, 32.0);
+	} else if mode == 1 {
+		half_row(col, "Pin", "Mark", 0);
+		let map = minimap(col, 0); set_px(map, 224.0, 128.0); N[map].i3 = g;
+	} else if mode == 4 {
+		let map = minimap(col, 0); set_px(map, 224.0, 160.0); N[map].i3 = g;
+		wide(col, "Ping", 0, 32.0);
+	} else {
+		let map = minimap(col, 0); set_px(map, 224.0, 144.0); N[map].i3 = g;
+		wide(col, sub_line(g), 2, 32.0);
+	}
+}
+
+fn screen_results_real(col int, g int, mode int) {
+	if g == 8 {
+		let a = health_bar(col, 0.8, 0); set_px(a, 224.0, 16.0);
+		let t = label(col, "59", 4); set_px(t, 224.0, 24.0);
+		let b = health_bar(col, 0.2, 1); set_px(b, 224.0, 16.0);
+		wide(col, "KO", 0, 40.0);
+	} else if g == 7 {
+		let t = label(col, "1:12.4", 4); set_px(t, 224.0, 24.0);
+		wide(col, "1st", 0, 32.0);
+		wide(col, "2nd", 2, 32.0);
+		wide(col, "3rd", 5, 32.0);
+	} else if g == 5 || g == 15 {
+		wide(col, "DIED", 5, 48.0);
+		wide(col, "Again", 0, 32.0);
+		let hp = health_bar(col, 0.0, 0); set_px(hp, 224.0, 16.0);
+	} else if g == 23 || g == 17 {
+		wide(col, "SSR", 0, 48.0);
+		wide(col, "5 star", 4, 32.0);
+		wide(col, "Pity 12", 2, 32.0);
+	} else if mode == 2 {
+		wide(col, "1st", 0, 32.0);
+		wide(col, "2nd", 2, 32.0);
+		wide(col, "3rd", 5, 32.0);
+		let t = label(col, "13 - 9", 7); set_px(t, 224.0, 16.0);
+	} else {
+		wide(col, if g == 0 { "WIN" } else if g == 1 { "Place 3" } else if g == 19 { "RANK S" } else { "CLEAR" }, 0, 48.0);
+		let t = label(col, if g == 0 { "13 - 9" } else if g == 4 { "XP 240" } else { "Reward" }, 7);
+		set_px(t, 224.0, 16.0);
+		wide(col, "Again", 2, 32.0);
+	}
+}
+
+fn build_panel(parent int, g int, screen int, mode int) int {
+	if screen == 3 { return rich_column(parent, g, mode); }
+	let col = flex(parent, DIR_COL);
+	set_w(col, 240.0);
+	set_gap(col, 8.0);
+	set_pad(col, 8.0);
+	if screen == 0 { screen_title_real(col, g, mode); }
+	else if screen == 1 { screen_pause_real(col, g, mode); }
+	else if screen == 2 { screen_settings_real(col, g, mode); }
+	else if screen == 4 { screen_shop_real(col, g, mode); }
+	else if screen == 5 { screen_map_real(col, g, mode); }
+	else { screen_results_real(col, g, mode); }
+	col
+}
+
+fn min_screen(g int, screen int) int {
+	if screen == 3 { return min_leaves(g); }
+	if screen == 4 { return 4; }
+	if screen == 5 { return 2; }
+	3
+}
+
 fn screen_title(col int, g int) {
 	if g == 0 || g == 1 { scr_lab(col, "STRIKE"); scr_btn(col, "Play", 0); scr_btn(col, "Range", 2); }
 	else if g == 2 { scr_lab(col, "RIFT"); scr_btn(col, "Find", 0); scr_btn(col, "Train", 2); }

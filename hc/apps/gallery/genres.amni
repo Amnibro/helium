@@ -101,6 +101,57 @@ fn check_align(g int, col int, ox int, oy int) int {
 	bad
 }
 
+fn screen_file(s int) const byte[:] {
+	if s == 0 { return "title.png"; }
+	if s == 1 { return "pause.png"; }
+	if s == 2 { return "settings.png"; }
+	if s == 3 { return "hud.png"; }
+	if s == 4 { return "shop.png"; }
+	if s == 5 { return "map.png"; }
+	"results.png"
+}
+
+fn paint_screen(g int, screen int) {
+	var dir byte[>..] = [];
+	dir.append("docs/ui-gallery/");
+	dir.append(uikit::genre_slug(g));
+	make_dir(dir[..]);
+	let tall = screen == 3;
+	let ch = if tall { 760 } else { 440 };
+	let lh = if tall { 740.0 } else { 420.0 };
+	uikit::canvas(1296, ch);
+	uikit::fill_rect(0, 0, 1296, ch, 0x101218, 255);
+	for v in 5 {
+		let x = 8 + v * 256;
+		shape_for(v);
+		uikit::reset();
+		let root = uikit::flex(-1, uikit::DIR_COL);
+		uikit::build_panel(root, g, screen, v);
+		uikit::layout_root(root, x as f32, 8.0, 248.0, lh);
+		let leaves = uikit::leaf_count();
+		let need = uikit::min_screen(g, screen);
+		let bad = check_align(g, v, x, 8);
+		if leaves < need || bad != 0 || uikit::overlap_count() != 0 || uikit::text_clip_count() != 0 {
+			print("fail ", uikit::genre_slug(g), " ", screen_file(screen), " v ", v, " leaves ", leaves, "/", need, " align ", bad);
+			abort("screen");
+		}
+		uikit::paint_roots();
+	}
+	var path byte[>..] = [];
+	path.append(dir[..]);
+	path.append("/");
+	path.append(screen_file(screen));
+	save(path[..]);
+	if screen == 3 {
+		var alias byte[>..] = [];
+		alias.append(dir[..]);
+		alias.append("/sheet.png");
+		var buf byte[>..] = [];
+		if !read_file(path[..], buf) { abort("copy hud"); }
+		if !write_file(alias[..], buf[..]) { abort("alias hud"); }
+	}
+}
+
 fn paint_genre(g int) {
 	var dir byte[>..] = [];
 	dir.append("docs/ui-gallery/");
@@ -358,7 +409,7 @@ fn write_index() {
 	format(out, "Catalog themes: ", uikit::catalog_count(), "\n");
 	format(out, "Curated themes: ", uikit::theme_count(), "\n");
 	format(out, "Genres: ", uikit::genre_count(), " (", uikit::game_genre_count(), " game, ", uikit::genre_count() - uikit::game_genre_count(), " app)\n");
-	format(out, "Each sheet: 5 layout variations. Game columns include the 57dbc71a kit (boss, buffs, bars, minimap, inventory, quest, cooldowns, radial or chart, dialogue, damage, Play/Map/Bag) plus genre extras. Leaf count must be at least that commit.\n");
+	format(out, "Each game genre has 7 screens (title, pause, settings, hud, shop, map, results), 5 variations each. HUD columns include the 57dbc71a kit (boss, buffs, bars, minimap, inventory, quest, cooldowns, radial or chart, dialogue, damage, Play/Map/Bag) plus genre extras. Leaf count must be at least that commit. App genres are one sheet of 5 variations.\n");
 	format(out, "Icons: ", uikit::icon_count(), "\n");
 	format(out, "Text effects: ", uikit::fx_count(), "\n");
 	format(out, "Widget styles: ", uikit::style_count(), "\n");
@@ -366,7 +417,11 @@ fn write_index() {
 	format(out, "Font pairings: ", uikit::pair_count(), "\n\n");
 	out.append("## Genres\n\n");
 	for g in uikit::genre_count() {
-		format(out, "- `", uikit::genre_slug(g), "/sheet.png` — ", uikit::genre_name(g), " (ref: ", uikit::genre_ref(g), ")\n");
+		if g < 24 {
+			format(out, "- `", uikit::genre_slug(g), "/` — ", uikit::genre_name(g), " title pause settings hud shop map results (ref: ", uikit::genre_ref(g), ")\n");
+		} else {
+			format(out, "- `", uikit::genre_slug(g), "/sheet.png` — ", uikit::genre_name(g), " (ref: ", uikit::genre_ref(g), ")\n");
+		}
 	}
 	out.append("\n## Other sheets\n\n");
 	out.append("- `icons/sheet.png`\n- `text/effects-light.png`\n- `text/effects-dark.png`\n- `widgets/styles.png`\n- `fonts/pairings.png`\n- `motion.apng`\n");
@@ -387,7 +442,8 @@ fn main() {
 	paint_styles();
 	paint_fonts();
 	paint_motion();
-	for g in uikit::genre_count() { paint_genre(g); }
+	for g in 24 { for s in 7 { paint_screen(g, s); } }
+	for g in 17 { paint_genre(g + 24); }
 	write_index();
 	print("genres done");
 }
