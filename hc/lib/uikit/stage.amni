@@ -842,6 +842,124 @@ fn stage_results_royale(f int, mode int) {
 	let again = button(f, "Queue", 0); place_at(again, 1520.0, 960.0, 280.0, 64.0); set_preset(again, 2);
 }
 
+fn stage_hud_racing(f int, mode int) {
+	var sx f32 = 1480.0;
+	var sy f32 = 820.0;
+	var mx f32 = 48.0;
+	var my f32 = 760.0;
+	var bx f32 = 48.0;
+	var gx f32 = 1360.0;
+	var secx f32 = 760.0;
+	if mode == 1 { sx = 800.0; sy = 880.0; gx = 680.0; secx = 48.0; }
+	else if mode == 2 { sx = 1480.0; my = 840.0; gx = 1360.0; }
+	else if mode == 3 { sx = 1480.0; sy = 160.0; bx = 400.0; gx = 1360.0; }
+	else if mode == 4 { sx = 80.0; sy = 860.0; mx = 1560.0; bx = 400.0; gx = 420.0; }
+	let pos = label(f, "P2", 0); place_at(pos, 48.0, 36.0, 160.0, 72.0);
+	let lap = label(f, "Lap  2 / 3", 1); place_at(lap, 760.0, 36.0, 400.0, 48.0); mark_anchor(lap);
+	let split = label(f, "1:12.4", 2); place_at(split, 1600.0, 36.0, 240.0, 40.0);
+	let drs = label(f, "DRS", 2); place_at(drs, 400.0, 48.0, 120.0, 40.0);
+	let board = flex(f, DIR_COL); set_gap(board, 8.0); set_pad(board, 0.0);
+	place_at(board, bx, 140.0, 240.0, 200.0);
+	let s1 = label(board, "1  Vega", 3); set_px(s1, 240.0, 36.0);
+	let s2 = label(board, "2  You", 3); set_px(s2, 240.0, 36.0);
+	let s3 = label(board, "3  Rex", 3); set_px(s3, 240.0, 36.0);
+	let s4 = label(board, "4  Ion", 3); set_px(s4, 240.0, 36.0);
+	let speed = label(f, "187", 0); place_at(speed, sx, sy, 200.0, 80.0);
+	let unit = label(f, "km/h", 3); place_at(unit, sx + 200.0, sy + 40.0, 120.0, 32.0);
+	let gear = label(f, "3", 0); place_at(gear, gx, sy, 80.0, 80.0);
+	let delta = label(f, "-0.42", 2); place_at(delta, sx, sy - 48.0, 200.0, 36.0);
+	let boost = health_bar(f, 0.7, 2); place_at(boost, sx, sy + 96.0, 320.0, 20.0);
+	let sec = label(f, "Sector 2", 2); place_at(sec, secx, 980.0, 280.0, 40.0);
+	let map = minimap(f, 0); place_at(map, mx, my, 240.0, 200.0); N[map].i3 = 7;
+}
+
+fn stage_pause_racing(f int, mode int) {
+	var y f32 = 880.0;
+	var x f32 = 160.0;
+	if mode == 1 { y = 80.0; }
+	else if mode == 2 { x = 80.0; y = 360.0; }
+	else if mode == 3 { x = 1040.0; y = 360.0; }
+	else if mode == 4 { y = 480.0; x = 360.0; }
+	let head = label(f, "Pit", 0); place_at(head, x, y - 72.0, 200.0, 56.0);
+	let row = flex(f, DIR_ROW); set_gap(row, 16.0); set_pad(row, 0.0);
+	place_at(row, x, y, 1192.0, 72.0);
+	let a = button(row, "Resume", 0); set_px(a, 280.0, 72.0); set_preset(a, 2);
+	let b = button(row, "Restart", 2); set_px(b, 280.0, 72.0); set_preset(b, 2);
+	let c = button(row, "Garage", 2); set_px(c, 280.0, 72.0); set_preset(c, 2);
+	let d = button(row, "Quit", 5); set_px(d, 280.0, 72.0); set_preset(d, 2);
+}
+
+fn upgrade_row(col int, name const byte[:], price const byte[:]) {
+	let row = flex(col, DIR_ROW);
+	set_gap(row, 16.0);
+	set_pad(row, 0.0);
+	set_px(row, 880.0, 48.0);
+	let n = label(row, name, 2); set_px(n, 160.0, 40.0);
+	let bar = health_bar(row, 0.6, 2); set_px(bar, 480.0, 20.0);
+	let p = label(row, price, 2); set_px(p, 200.0, 40.0);
+}
+
+fn stage_shop_racing(f int, mode int) {
+	var x f32 = 400.0;
+	var y f32 = 160.0;
+	if mode == 1 { x = 80.0; }
+	else if mode == 2 { x = 960.0; }
+	else if mode == 3 { y = 480.0; }
+	else if mode == 4 { y = 80.0; x = 240.0; }
+	let head = label(f, "Aero coupe", 0); place_at(head, x, y, 520.0, 64.0);
+	let list = flex(f, DIR_COL); set_gap(list, 16.0); set_pad(list, 0.0);
+	place_at(list, x, y + 88.0, 880.0, 240.0);
+	upgrade_row(list, "Aero", "1200");
+	upgrade_row(list, "Grip", "800");
+	upgrade_row(list, "Fuel", "400");
+	upgrade_row(list, "Turbo", "2000");
+	let buy = button(f, "Install", 0); place_at(buy, x, y + 360.0, 280.0, 64.0); set_preset(buy, 2);
+}
+
+fn stage_results_racing(f int, mode int) {
+	var x f32 = 280.0;
+	var y2 f32 = 360.0;
+	var y1 f32 = 200.0;
+	var y3 f32 = 440.0;
+	if mode == 1 { x = 80.0; }
+	else if mode == 2 { x = 640.0; y1 = 80.0; y2 = 240.0; y3 = 320.0; }
+	else if mode == 3 { y1 = 480.0; y2 = 640.0; y3 = 720.0; }
+	else if mode == 4 { x = 200.0; y1 = 120.0; y2 = 280.0; y3 = 360.0; }
+	let a = button(f, "2nd  1:12.8", 2); place_at(a, x, y2, 360.0, 200.0); set_preset(a, 1);
+	let b = button(f, "1st  1:12.4", 0); place_at(b, x + 400.0, y1, 360.0, 360.0); set_preset(b, 0);
+	let c = button(f, "3rd  1:13.1", 5); place_at(c, x + 800.0, y3, 360.0, 160.0); set_preset(c, 2);
+	let again = button(f, "Rematch", 0); place_at(again, 80.0, 980.0, 280.0, 64.0); set_preset(again, 2);
+}
+
+fn stage_settings_racing(f int, mode int) {
+	var x f32 = 480.0;
+	var y f32 = 240.0;
+	if mode == 1 { x = 80.0; }
+	else if mode == 2 { x = 1000.0; }
+	else if mode == 3 { y = 520.0; }
+	else if mode == 4 { y = 80.0; }
+	let head = label(f, "Assists", 0); place_at(head, x, y, 400.0, 64.0);
+	let a = toggle(f, "ABS", 1, 0); place_at(a, x, y + 88.0, 480.0, 56.0);
+	let b = toggle(f, "Traction", 1, 2); place_at(b, x, y + 160.0, 480.0, 56.0);
+	let s = slider(f, 0.5, 0); place_at(s, x, y + 240.0, 560.0, 32.0);
+	let apply = button(f, "Apply", 0); place_at(apply, x, y + 300.0, 240.0, 64.0); set_preset(apply, 2);
+}
+
+fn stage_map_racing(f int, mode int) {
+	var x f32 = 200.0;
+	var y f32 = 80.0;
+	var w f32 = 1520.0;
+	var h f32 = 800.0;
+	if mode == 1 { x = 80.0; w = 1200.0; }
+	else if mode == 2 { x = 640.0; w = 1200.0; }
+	else if mode == 3 { y = 200.0; h = 680.0; }
+	else if mode == 4 { y = 48.0; h = 720.0; }
+	let map = minimap(f, 0); place_at(map, x, y, w, h); N[map].i3 = 7;
+	let lap = label(f, "Circuit", 1); place_at(lap, 80.0, 980.0, 280.0, 48.0);
+	let best = label(f, "Best  1:11.2", 2); place_at(best, 400.0, 988.0, 320.0, 36.0);
+	let next = label(f, "Next  hairpin", 2); place_at(next, 760.0, 988.0, 320.0, 36.0);
+}
+
 fn build_stage(frame int, g int, screen int, mode int) int {
 	N[frame].i0 = g;
 	N[frame].i1 = screen;
@@ -851,12 +969,14 @@ fn build_stage(frame int, g int, screen int, mode int) int {
 		if g == 4 { stage_pause_jrpg(frame, mode); }
 		else if g == 5 { stage_pause_souls(frame, mode); }
 		else if g == 1 { stage_pause_royale(frame, mode); }
+		else if g == 7 { stage_pause_racing(frame, mode); }
 		else { stage_pause(frame, g, mode); }
 	}
 	else if screen == 2 {
 		if g == 4 { stage_settings_jrpg(frame, mode); }
 		else if g == 5 { stage_settings_souls(frame, mode); }
 		else if g == 1 { stage_settings_royale(frame, mode); }
+		else if g == 7 { stage_settings_racing(frame, mode); }
 		else { stage_settings(frame, g, mode); }
 	}
 	else if screen == 3 {
@@ -864,23 +984,27 @@ fn build_stage(frame int, g int, screen int, mode int) int {
 		else if g == 4 { stage_hud_jrpg(frame, mode); }
 		else if g == 5 { stage_hud_souls(frame, mode); }
 		else if g == 1 { stage_hud_royale(frame, mode); }
+		else if g == 7 { stage_hud_racing(frame, mode); }
 		else { stage_hud_fps(frame, mode); }
 	}
 	else if screen == 4 {
 		if g == 4 { stage_shop_jrpg(frame, mode); }
 		else if g == 5 { stage_shop_souls(frame, mode); }
 		else if g == 1 { stage_shop_royale(frame, mode); }
+		else if g == 7 { stage_shop_racing(frame, mode); }
 		else { stage_shop_fps(frame, g, mode); }
 	}
 	else if screen == 5 {
 		if g == 4 { stage_map_jrpg(frame, mode); }
 		else if g == 5 { stage_map_souls(frame, mode); }
 		else if g == 1 { stage_map_royale(frame, mode); }
+		else if g == 7 { stage_map_racing(frame, mode); }
 		else { stage_map_fps(frame, g, mode); }
 	}
 	else if g == 4 { stage_results_jrpg(frame, mode); }
 	else if g == 5 { stage_results_souls(frame, mode); }
 	else if g == 1 { stage_results_royale(frame, mode); }
+	else if g == 7 { stage_results_racing(frame, mode); }
 	else { stage_results_fps(frame, g, mode); }
 	frame
 }
