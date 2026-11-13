@@ -512,7 +512,8 @@ recursive fn paint_node(id int) {
 			draw_text(x + w - (20.0 * SCALE) as int, y + 8, "+", ps, THEME.ink, 0, -1);
 		} else if k == K_TABLE {
 			let cols = if N[id].i1 < 1 { 1 } else if N[id].i1 > 8 { 8 } else { N[id].i1 };
-			let rh = (22.0 * SCALE) as int;
+			let rh = (36.0 * SCALE) as int;
+			let ts = 22.0 * SCALE;
 			let pin = if N[id].i3 < 0 { 0 } else if N[id].i3 > cols { cols } else { N[id].i3 };
 			var xs int[8] = [0; 8];
 			var acc = x + 4;
@@ -520,14 +521,14 @@ recursive fn paint_node(id int) {
 			table_query(id, TMP);
 			var head = y + 4;
 			if TMP.len > 0 {
-				fill_rect(x + 4, y + 2, w - 8, (16.0 * SCALE) as int, THEME.surface2, 255);
-				draw_text(x + 8, y + 2, TMP[..], 11.0 * SCALE, THEME.ink, 0, -1);
-				head = y + (18.0 * SCALE) as int;
+				fill_rect(x + 4, y + 2, w - 8, (28.0 * SCALE) as int, THEME.surface2, 255);
+				draw_text(x + 8, y + 4, TMP[..], ts, THEME.ink, 0, -1);
+				head = y + (32.0 * SCALE) as int;
 			}
 			for c in cols {
 				let cap = table_get(id, -1, c);
 				let fallback = if c == 0 { "Stat" } else { "Value" };
-				draw_text(xs[c], head, if cap.len > 0 { cap } else { fallback }, 12.0 * SCALE, THEME.ink, 0, -1);
+				draw_text(xs[c], head + 6, if cap.len > 0 { cap } else { fallback }, ts, THEME.ink, 0, -1);
 				if c > 0 { fill_rect(xs[c] - 3, head, 2, rh, THEME.border, 255); fill_rect(xs[c] - 6, head + 4, 2, rh / 2, THEME.border, 255); }
 			}
 			if pin > 0 { fill_rect(x + 2, head, (4.0 * SCALE) as int, rh, THEME.accent, 255); }
@@ -542,7 +543,7 @@ recursive fn paint_node(id int) {
 				if shown % 2 == 0 { fill_rect(x + 2, yy, w - 4, rh, THEME.surface2, 80); }
 				for c in cols {
 					let cx = if c < pin { x + 4 + c * col_width(id, c, w - 8, cols) } else { xs[c] };
-					draw_text(cx, yy + 2, table_get(id, row, c), 12.0 * SCALE, THEME.ink, 0, -1);
+					draw_text(cx, yy + 6, table_get(id, row, c), ts, THEME.ink, 0, -1);
 				}
 				if pin > 0 { fill_rect(x + col_width(id, 0, w - 8, cols), yy, (2.0 * SCALE) as int, rh, THEME.border, 255); }
 				yy += rh;
@@ -565,7 +566,8 @@ recursive fn paint_node(id int) {
 			draw_text(x + 8, y + 8, tx, size, THEME.ink, N[id].effect, if N[id].effect == 6 { N[id].i0 } else { -1 });
 		}
 	} else if k == K_LABEL {
-		let col = if N[id].fg != 0 { N[id].fg } else { THEME.ink };
+		var col = if N[id].fg != 0 { N[id].fg } else { THEME.ink };
+		if N[id].fg == 0 && LIGHT_SCENE != 0 { col = title_ink(y); }
 		if N[id].flags & FL_ANCHOR != 0 || N[id].i2 == 1 {
 			draw_centered(x, y, w, h, node_text(id), label_size(id), col, N[id].effect);
 		} else {

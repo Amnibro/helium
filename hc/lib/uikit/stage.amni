@@ -3156,5 +3156,8 @@ fn build_stage(frame int, g int, screen int, mode int) int {
 	else if g == 22 { stage_results_idle(frame, mode); }
 	else if g == 23 { stage_results_gacha(frame, mode); }
 	else { stage_results_fps(frame, g, mode); }
+	for i in N.len {
+		if N[i].preset >= 4 && N[i].preset <= 10 { set_preset(i, 3); }
+	}
 	frame
 }
