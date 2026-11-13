@@ -7,7 +7,7 @@ Branch: `cursor/ui-text-aaa-702c` (not merged, no PR opened).
 - Text library: `1b8c5bbafc50b0ab6ce5c46c65d01b258d273140`
 - First UI kit and gallery: `b72ea3b7f86e41b726da57ff7f43cc0bf266c00d`
 - Report SHA note: `e6ae72db`
-- Vector text, theme materials, motion, contrast: recorded in the follow-up commit on this branch
+- Vector text, theme materials, motion, contrast: `caae46bb20216f4bf55688a971d83116d687b042`
 
 ## What landed
 
