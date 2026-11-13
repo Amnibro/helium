@@ -230,7 +230,7 @@ fn paint_stage_screen(g int, screen int) {
 }
 
 fn paint_screen(g int, screen int) {
-	if g == 0 || g == 2 || g == 4 { paint_stage_screen(g, screen); return; }
+	if g == 0 || g == 2 || g == 4 || g == 5 { paint_stage_screen(g, screen); return; }
 	var dir byte[>..] = [];
 	dir.append("docs/ui-gallery/");
 	dir.append(uikit::genre_slug(g));
@@ -610,6 +610,11 @@ fn main() {
 		if which[..] == "jrpg" {
 			for s in 7 { paint_stage_screen(4, s); }
 			print("jrpg done");
+			return;
+		}
+		if which[..] == "souls" {
+			for s in 7 { paint_stage_screen(5, s); }
+			print("souls done");
 			return;
 		}
 	}

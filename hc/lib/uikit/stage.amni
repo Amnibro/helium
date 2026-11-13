@@ -7,6 +7,7 @@ fn menu_n(g int) int {
 	if g == 0 { return 5; }
 	if g == 2 { return 5; }
 	if g == 4 { return 4; }
+	if g == 5 { return 3; }
 	4
 }
 fn menu_at(g int, i int) const byte[:] {
@@ -29,6 +30,11 @@ fn menu_at(g int, i int) const byte[:] {
 		if i == 1 { return "Continue"; }
 		if i == 2 { return "Extras"; }
 		return "Config";
+	}
+	if g == 5 {
+		if i == 0 { return "Continue"; }
+		if i == 1 { return "New Game"; }
+		return "Settings";
 	}
 	if i == 0 { return "Play"; }
 	if i == 1 { return "Continue"; }
@@ -581,6 +587,119 @@ fn stage_results_jrpg(f int, mode int) {
 	let next = button(f, "Onward", 0); place_at(next, 1520.0, 980.0, 280.0, 64.0); set_preset(next, 2);
 }
 
+fn stage_hud_souls(f int, mode int) {
+	let boss = label(f, "Asylum", 1);
+	place_at(boss, 760.0, 36.0, 400.0, 56.0);
+	mark_anchor(boss);
+	let bar = boss_bar(f, 0.64);
+	set_text(bar, "Asylum");
+	place_at(bar, 640.0, 108.0, 640.0, 36.0);
+	let souls = label(f, "1240", 1);
+	place_at(souls, 1600.0, 48.0, 240.0, 48.0);
+	var hx f32 = 48.0;
+	var hy f32 = 880.0;
+	var ex f32 = 520.0;
+	var ix f32 = 1100.0;
+	var iy f32 = 960.0;
+	if mode == 1 { hx = 760.0; ex = 48.0; ix = 1500.0; }
+	else if mode == 2 { ex = 1700.0; ix = 900.0; iy = 880.0; hy = 960.0; }
+	else if mode == 3 { iy = 800.0; }
+	else if mode == 4 { hx = 1400.0; ex = 48.0; ix = 700.0; }
+	vitals(f, hx, hy);
+	let flask = icon_button(f, 4, 0); place_at(flask, ex, hy + 8.0, 64.0, 64.0);
+	let count = label(f, "3", 1); place_at(count, ex + 80.0, hy + 20.0, 48.0, 40.0);
+	let row = flex(f, DIR_ROW);
+	set_gap(row, 12.0);
+	set_pad(row, 0.0);
+	place_at(row, ix, iy, 260.0, 56.0);
+	let a = icon_button(row, 0, 2); set_px(a, 56.0, 56.0);
+	let b = icon_button(row, 1, 2); set_px(b, 56.0, 56.0);
+	let c = icon_button(row, 4, 2); set_px(c, 56.0, 56.0);
+	let d = icon_button(row, 8, 2); set_px(d, 56.0, 56.0);
+}
+
+fn stage_pause_souls(f int, mode int) {
+	var x f32 = 80.0;
+	var y f32 = 160.0;
+	if mode == 1 { x = 1420.0; }
+	else if mode == 2 { y = 480.0; }
+	else if mode == 3 { x = 80.0; y = 80.0; }
+	else if mode == 4 { x = 760.0; y = 280.0; }
+	let head = label(f, "Ash", 0); place_at(head, x, y, 420.0, 64.0);
+	let col = flex(f, DIR_COL);
+	set_gap(col, 24.0);
+	set_pad(col, 0.0);
+	place_at(col, x, y + 88.0, 420.0, 360.0);
+	let a = button(col, "Continue", 0); set_px(a, 420.0, 72.0); set_preset(a, 2);
+	let b = button(col, "Inventory", 2); set_px(b, 420.0, 72.0); set_preset(b, 2);
+	let c = button(col, "Settings", 2); set_px(c, 420.0, 72.0); set_preset(c, 2);
+	let d = button(col, "Quit", 5); set_px(d, 420.0, 72.0); set_preset(d, 2);
+}
+
+fn stage_settings_souls(f int, mode int) {
+	var x f32 = 480.0;
+	var y f32 = 280.0;
+	if mode == 1 { x = 80.0; }
+	else if mode == 2 { x = 1100.0; }
+	else if mode == 3 { y = 560.0; }
+	else if mode == 4 { y = 80.0; }
+	let head = label(f, "Brightness", 0); place_at(head, x, y, 480.0, 64.0);
+	let s1 = slider(f, 0.45, 0); place_at(s1, x, y + 88.0, 640.0, 32.0);
+	let cam = label(f, "Camera", 1); place_at(cam, x, y + 160.0, 320.0, 48.0);
+	let s2 = slider(f, 0.7, 2); place_at(s2, x, y + 224.0, 640.0, 32.0);
+	let apply = button(f, "Accept", 0); place_at(apply, x, y + 300.0, 280.0, 64.0); set_preset(apply, 2);
+}
+
+fn stage_shop_souls(f int, mode int) {
+	var x f32 = 560.0;
+	var y f32 = 120.0;
+	if mode == 1 { x = 80.0; }
+	else if mode == 2 { x = 1120.0; }
+	else if mode == 3 { y = 360.0; }
+	else if mode == 4 { x = 320.0; y = 80.0; }
+	let head = label(f, "Vendor", 0); place_at(head, x, y, 400.0, 64.0);
+	let list = flex(f, DIR_COL);
+	set_gap(list, 16.0);
+	set_pad(list, 0.0);
+	place_at(list, x, y + 88.0, 640.0, 304.0);
+	ware(list, "Flask", "800", 4);
+	ware(list, "Rune", "1200", 43);
+	ware(list, "Gem", "2000", 13);
+	ware(list, "Ash", "400", 3);
+}
+
+fn stage_map_souls(f int, mode int) {
+	var my f32 = 48.0;
+	var mh f32 = 840.0;
+	var by f32 = 920.0;
+	if mode == 1 { my = 160.0; mh = 720.0; by = 80.0; }
+	else if mode == 2 { mh = 700.0; by = 780.0; }
+	else if mode == 3 { my = 80.0; mh = 640.0; by = 760.0; }
+	else if mode == 4 { my = 200.0; mh = 680.0; by = 920.0; }
+	let map = minimap(f, 0); place_at(map, 80.0, my, 1760.0, mh); N[map].i3 = 5;
+	let a = button(f, "Firelink", 0); place_at(a, 80.0, by, 280.0, 56.0); set_preset(a, 2);
+	let b = button(f, "Parish", 2); place_at(b, 376.0, by, 280.0, 56.0); set_preset(b, 2);
+	let c = button(f, "Depths", 5); place_at(c, 672.0, by, 280.0, 56.0); set_preset(c, 2);
+}
+
+fn stage_results_souls(f int, mode int) {
+	var y f32 = 280.0;
+	if mode == 1 { y = 80.0; }
+	else if mode == 2 { y = 520.0; }
+	else if mode == 3 { y = 160.0; }
+	else if mode == 4 { y = 400.0; }
+	let dead = label(f, "YOU DIED", 0);
+	place_at(dead, 700.0, y, 520.0, 72.0);
+	mark_anchor(dead);
+	let lost = label(f, "Souls lost  1240", 1);
+	place_at(lost, 700.0, y + 96.0, 520.0, 48.0);
+	let retry = button(f, "Retry", 0);
+	place_at(retry, 840.0, y + 180.0, 240.0, 64.0);
+	set_preset(retry, 2);
+	let hum = label(f, "Humanity  0", 2);
+	place_at(hum, 80.0, 980.0, 280.0, 40.0);
+}
+
 fn build_stage(frame int, g int, screen int, mode int) int {
 	N[frame].i0 = g;
 	N[frame].i1 = screen;
@@ -588,26 +707,32 @@ fn build_stage(frame int, g int, screen int, mode int) int {
 	if screen == 0 { stage_title(frame, g, mode); }
 	else if screen == 1 {
 		if g == 4 { stage_pause_jrpg(frame, mode); }
+		else if g == 5 { stage_pause_souls(frame, mode); }
 		else { stage_pause(frame, g, mode); }
 	}
 	else if screen == 2 {
 		if g == 4 { stage_settings_jrpg(frame, mode); }
+		else if g == 5 { stage_settings_souls(frame, mode); }
 		else { stage_settings(frame, g, mode); }
 	}
 	else if screen == 3 {
 		if g == 2 { stage_hud_moba(frame, mode); }
 		else if g == 4 { stage_hud_jrpg(frame, mode); }
+		else if g == 5 { stage_hud_souls(frame, mode); }
 		else { stage_hud_fps(frame, mode); }
 	}
 	else if screen == 4 {
 		if g == 4 { stage_shop_jrpg(frame, mode); }
+		else if g == 5 { stage_shop_souls(frame, mode); }
 		else { stage_shop_fps(frame, g, mode); }
 	}
 	else if screen == 5 {
 		if g == 4 { stage_map_jrpg(frame, mode); }
+		else if g == 5 { stage_map_souls(frame, mode); }
 		else { stage_map_fps(frame, g, mode); }
 	}
 	else if g == 4 { stage_results_jrpg(frame, mode); }
+	else if g == 5 { stage_results_souls(frame, mode); }
 	else { stage_results_fps(frame, g, mode); }
 	frame
 }
