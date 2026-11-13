@@ -1,0 +1,420 @@
+// Unicode text primitives: UTF-8, grapheme clusters (UAX #29 subset),
+// display width, and byte-safe string edits. Existing std functions stay as they are.
+namespace text;
+
+let GB_OTHER = 0;
+let GB_CR = 1;
+let GB_LF = 2;
+let GB_CONTROL = 3;
+let GB_EXTEND = 4;
+let GB_ZWJ = 5;
+let GB_RI = 6;
+let GB_PREPEND = 7;
+let GB_SPACING = 8;
+let GB_L = 9;
+let GB_V = 10;
+let GB_T = 11;
+let GB_LV = 12;
+let GB_LVT = 13;
+let GB_PICT = 14;
+
+fn utf8_next(s const byte[:], i int) int, int {
+	if i >= s.len { return 0, 0; }
+	let c0 = s[i] as int;
+	if c0 < 0x80 { return c0, 1; }
+	var need = 0;
+	var cp = 0;
+	var minv = 0;
+	if c0 < 0xC2 { return 0xFFFD, 1; }
+	if c0 < 0xE0 { need = 2; cp = c0 & 0x1F; minv = 0x80; }
+	else if c0 < 0xF0 { need = 3; cp = c0 & 0x0F; minv = 0x800; }
+	else if c0 < 0xF5 { need = 4; cp = c0 & 0x07; minv = 0x10000; }
+	else { return 0xFFFD, 1; }
+	if i + need > s.len { return 0xFFFD, 1; }
+	for k in 1..need {
+		let cc = s[i + k] as int;
+		if cc & 0xC0 != 0x80 { return 0xFFFD, 1; }
+		cp = (cp << 6) | (cc & 0x3F);
+	}
+	if cp < minv || cp > 0x10FFFF || (cp >= 0xD800 && cp <= 0xDFFF) { return 0xFFFD, 1; }
+	return cp, need;
+}
+
+fn utf8_put(out byte[>..]&, cp int) {
+	var c = cp;
+	if c < 0 || c > 0x10FFFF || (c >= 0xD800 && c <= 0xDFFF) { c = 0xFFFD; }
+	if c < 0x80 { out.push(c as! byte); return; }
+	if c < 0x800 {
+		out.push((0xC0 | (c >> 6)) as! byte);
+		out.push((0x80 | (c & 0x3F)) as! byte);
+		return;
+	}
+	if c < 0x10000 {
+		out.push((0xE0 | (c >> 12)) as! byte);
+		out.push((0x80 | ((c >> 6) & 0x3F)) as! byte);
+		out.push((0x80 | (c & 0x3F)) as! byte);
+		return;
+	}
+	out.push((0xF0 | (c >> 18)) as! byte);
+	out.push((0x80 | ((c >> 12) & 0x3F)) as! byte);
+	out.push((0x80 | ((c >> 6) & 0x3F)) as! byte);
+	out.push((0x80 | (c & 0x3F)) as! byte);
+}
+
+fn utf8_ok(s const byte[:]) bool {
+	var i = 0;
+	while i < s.len {
+		let cp, n = utf8_next(s, i);
+		if cp == 0xFFFD && (n != 3 || i + 3 > s.len || s[i] != 0xEF as byte || s[i + 1] != 0xBF as byte || s[i + 2] != 0xBD as byte) { return false; }
+		i += n;
+	}
+	true
+}
+
+fn cp_count(s const byte[:]) int {
+	var i = 0;
+	var n = 0;
+	while i < s.len { let cp, k = utf8_next(s, i); i += k; n += 1; }
+	n
+}
+
+fn is_extend_cp(cp int) bool {
+	if cp == 0x200C || cp == 0x200D { return cp == 0x200C; }
+	if cp >= 0x300 && cp <= 0x36F { return true; }
+	if cp >= 0x483 && cp <= 0x489 { return true; }
+	if cp >= 0x591 && cp <= 0x5BD { return true; }
+	if cp == 0x5BF || (cp >= 0x5C1 && cp <= 0x5C2) || (cp >= 0x5C4 && cp <= 0x5C5) || cp == 0x5C7 { return true; }
+	if cp >= 0x610 && cp <= 0x61A { return true; }
+	if cp >= 0x64B && cp <= 0x65F { return true; }
+	if cp == 0x670 { return true; }
+	if cp >= 0x6D6 && cp <= 0x6DC { return true; }
+	if cp >= 0x6DF && cp <= 0x6E4 { return true; }
+	if cp == 0x6E7 || cp == 0x6E8 || (cp >= 0x6EA && cp <= 0x6ED) { return true; }
+	if cp >= 0xFE00 && cp <= 0xFE0F { return true; }
+	if cp >= 0xFE20 && cp <= 0xFE2F { return true; }
+	if cp >= 0x1AB0 && cp <= 0x1AFF { return true; }
+	if cp >= 0x1DC0 && cp <= 0x1DFF { return true; }
+	if cp >= 0x20D0 && cp <= 0x20FF { return true; }
+	if cp >= 0x1F3FB && cp <= 0x1F3FF { return true; }
+	if cp >= 0xE0100 && cp <= 0xE01EF { return true; }
+	if cp >= 0xE0020 && cp <= 0xE007F { return true; }
+	false
+}
+
+fn is_control_cp(cp int) bool {
+	if cp == 0x0A || cp == 0x0D { return false; }
+	if cp < 0x20 || (cp >= 0x7F && cp <= 0x9F) { return true; }
+	if cp == 0x200B || cp == 0x200E || cp == 0x200F { return true; }
+	if cp == 0x2028 || cp == 0x2029 { return true; }
+	if cp >= 0x202A && cp <= 0x202E { return true; }
+	if cp >= 0x2066 && cp <= 0x2069 { return true; }
+	false
+}
+
+fn is_pict_cp(cp int) bool {
+	if cp >= 0x1F300 && cp <= 0x1F5FF { return true; }
+	if cp >= 0x1F600 && cp <= 0x1F64F { return true; }
+	if cp >= 0x1F680 && cp <= 0x1F6FF { return true; }
+	if cp >= 0x1F900 && cp <= 0x1F9FF { return true; }
+	if cp >= 0x1FA00 && cp <= 0x1FAFF { return true; }
+	if cp >= 0x2600 && cp <= 0x26FF { return true; }
+	if cp >= 0x2700 && cp <= 0x27BF { return true; }
+	false
+}
+
+fn is_spacing_cp(cp int) bool {
+	if cp == 0x0903 || (cp >= 0x093E && cp <= 0x0940) || (cp >= 0x0949 && cp <= 0x094C) { return true; }
+	if cp == 0x0982 || cp == 0x0983 || (cp >= 0x09BE && cp <= 0x09C4) { return true; }
+	if cp == 0x0A03 || cp == 0x0A83 { return true; }
+	if cp >= 0x0ABE && cp <= 0x0AC5 { return true; }
+	false
+}
+
+fn is_prepend_cp(cp int) bool {
+	if cp >= 0x0600 && cp <= 0x0605 { return true; }
+	if cp == 0x06DD || cp == 0x070F { return true; }
+	false
+}
+
+fn gb_class(cp int) int {
+	if cp == 0x0D { return GB_CR; }
+	if cp == 0x0A { return GB_LF; }
+	if cp == 0x200D { return GB_ZWJ; }
+	if cp >= 0x1F1E6 && cp <= 0x1F1FF { return GB_RI; }
+	if (cp >= 0x1100 && cp <= 0x115F) || (cp >= 0xA960 && cp <= 0xA97C) { return GB_L; }
+	if (cp >= 0x1160 && cp <= 0x11A7) || (cp >= 0xD7B0 && cp <= 0xD7C6) { return GB_V; }
+	if (cp >= 0x11A8 && cp <= 0x11FF) || (cp >= 0xD7CB && cp <= 0xD7FB) { return GB_T; }
+	if cp >= 0xAC00 && cp <= 0xD7A3 {
+		if (cp - 0xAC00) % 28 == 0 { return GB_LV; }
+		return GB_LVT;
+	}
+	if is_extend_cp(cp) { return GB_EXTEND; }
+	if is_control_cp(cp) { return GB_CONTROL; }
+	if is_prepend_cp(cp) { return GB_PREPEND; }
+	if is_spacing_cp(cp) { return GB_SPACING; }
+	if is_pict_cp(cp) { return GB_PICT; }
+	GB_OTHER
+}
+
+fn gb_break(prev int, cls int, emoji int, ri int) bool {
+	if prev == GB_CR && cls == GB_LF { return false; }
+	if prev == GB_CR || prev == GB_LF || prev == GB_CONTROL { return true; }
+	if cls == GB_CR || cls == GB_LF || cls == GB_CONTROL { return true; }
+	if prev == GB_L && (cls == GB_L || cls == GB_V || cls == GB_LV || cls == GB_LVT) { return false; }
+	if (prev == GB_LV || prev == GB_V) && (cls == GB_V || cls == GB_T) { return false; }
+	if (prev == GB_LVT || prev == GB_T) && cls == GB_T { return false; }
+	if cls == GB_EXTEND || cls == GB_ZWJ || cls == GB_SPACING { return false; }
+	if prev == GB_PREPEND { return false; }
+	if emoji == 3 && cls == GB_PICT { return false; }
+	if prev == GB_RI && cls == GB_RI && ri % 2 == 1 { return false; }
+	true
+}
+
+fn grapheme_end(s const byte[:], i0 int) int {
+	if i0 >= s.len { return i0; }
+	let cp0, n0 = utf8_next(s, i0);
+	var i = i0 + n0;
+	var prev = gb_class(cp0);
+	var emoji = if prev == GB_PICT { 1 } else { 0 };
+	var ri = if prev == GB_RI { 1 } else { 0 };
+	while i < s.len {
+		let cp, n = utf8_next(s, i);
+		let cls = gb_class(cp);
+		if gb_break(prev, cls, emoji, ri) { break; }
+		if cls == GB_EXTEND {
+			if emoji == 1 || emoji == 2 { emoji = 2; } else { emoji = 0; }
+		} else if cls == GB_ZWJ {
+			if emoji == 1 || emoji == 2 { emoji = 3; } else { emoji = 0; }
+		} else if cls == GB_PICT { emoji = 1; }
+		else { emoji = 0; }
+		if cls == GB_RI { ri += 1; } else { ri = 0; }
+		prev = cls;
+		i += n;
+	}
+	i
+}
+
+fn grapheme_count(s const byte[:]) int {
+	var i = 0;
+	var n = 0;
+	while i < s.len { i = grapheme_end(s, i); n += 1; }
+	n
+}
+
+fn graphemes_into(s const byte[:], offs int[>..]&) {
+	offs.clear();
+	var i = 0;
+	offs.push(0);
+	while i < s.len { i = grapheme_end(s, i); offs.push(i); }
+}
+
+fn is_ws(cp int) bool {
+	if cp == 0x20 || cp == 0x09 || cp == 0x0A || cp == 0x0B || cp == 0x0C || cp == 0x0D { return true; }
+	if cp == 0x85 || cp == 0xA0 || cp == 0x1680 { return true; }
+	if cp >= 0x2000 && cp <= 0x200A { return true; }
+	if cp == 0x2028 || cp == 0x2029 || cp == 0x202F || cp == 0x205F || cp == 0x3000 || cp == 0xFEFF { return true; }
+	false
+}
+
+fn ccc(cp int) int {
+	if cp == 0x0327 || cp == 0x0328 { return 202; }
+	if cp == 0x031B { return 216; }
+	if (cp >= 0x0316 && cp <= 0x0319) || cp == 0x0323 || cp == 0x0324 || cp == 0x0331 { return 220; }
+	if cp >= 0x0300 && cp <= 0x036F { return 230; }
+	if cp >= 0x0483 && cp <= 0x0489 { return 230; }
+	if cp >= 0x1AB0 && cp <= 0x1AFF { return 230; }
+	if cp >= 0x1DC0 && cp <= 0x1DFF { return 230; }
+	if cp >= 0x20D0 && cp <= 0x20FF { return 230; }
+	0
+}
+
+fn is_digit_cp(cp int) bool {
+	if cp >= 0x30 && cp <= 0x39 { return true; }
+	if cp >= 0x0660 && cp <= 0x0669 { return true; }
+	if cp >= 0x06F0 && cp <= 0x06F9 { return true; }
+	if cp >= 0xFF10 && cp <= 0xFF19 { return true; }
+	false
+}
+
+fn is_letter_cp(cp int) bool {
+	if (cp >= 0x41 && cp <= 0x5A) || (cp >= 0x61 && cp <= 0x7A) { return true; }
+	if (cp >= 0xC0 && cp <= 0xD6) || (cp >= 0xD8 && cp <= 0xF6) || (cp >= 0xF8 && cp <= 0x2FF) { return true; }
+	if cp >= 0x370 && cp <= 0x3FF { return true; }
+	if cp >= 0x400 && cp <= 0x52F { return true; }
+	if cp >= 0x3040 && cp <= 0x30FF { return true; }
+	if cp >= 0x3400 && cp <= 0x9FFF { return true; }
+	if cp >= 0xAC00 && cp <= 0xD7A3 { return true; }
+	false
+}
+
+fn cp_width(cp int) int {
+	if ccc(cp) != 0 || is_extend_cp(cp) || cp == 0x200D || cp == 0x200B || cp == 0xFEFF { return 0; }
+	if cp == 0xAD { return 0; }
+	if cp >= 0x1100 && cp <= 0x115F { return 2; }
+	if cp >= 0x2E80 && cp <= 0xA4CF { return 2; }
+	if cp >= 0xAC00 && cp <= 0xD7A3 { return 2; }
+	if cp >= 0xF900 && cp <= 0xFAFF { return 2; }
+	if cp >= 0xFE10 && cp <= 0xFE19 { return 2; }
+	if cp >= 0xFE30 && cp <= 0xFE6F { return 2; }
+	if cp >= 0xFF01 && cp <= 0xFF60 { return 2; }
+	if cp >= 0xFFE0 && cp <= 0xFFE6 { return 2; }
+	if cp >= 0x1F300 && cp <= 0x1FAFF { return 2; }
+	if cp >= 0x1F1E6 && cp <= 0x1F1FF { return 2; }
+	if cp >= 0x20000 && cp <= 0x3FFFD { return 2; }
+	1
+}
+
+fn grapheme_width(g const byte[:]) int {
+	var i = 0;
+	var w = 0;
+	while i < g.len {
+		let cp, n = utf8_next(g, i);
+		let cw = cp_width(cp);
+		if cw > w { w = cw; }
+		i += n;
+	}
+	w
+}
+
+fn display_width(s const byte[:]) int {
+	var i = 0;
+	var w = 0;
+	while i < s.len {
+		let e = grapheme_end(s, i);
+		w += grapheme_width(s[i..e]);
+		i = e;
+	}
+	w
+}
+
+fn trim_start(s const byte[:]) const byte[:] {
+	var i = 0;
+	while i < s.len {
+		let cp, n = utf8_next(s, i);
+		if !is_ws(cp) { break; }
+		i += n;
+	}
+	s[i..]
+}
+
+fn trim_end(s const byte[:]) const byte[:] {
+	var e = s.len;
+	while e > 0 {
+		var i = 0;
+		var prev = 0;
+		while i < e {
+			let cp, n = utf8_next(s, i);
+			if i + n >= e { break; }
+			prev = i;
+			i += n;
+		}
+		let cp, n = utf8_next(s, i);
+		if !is_ws(cp) { break; }
+		e = i;
+	}
+	s[..e]
+}
+
+fn trim(s const byte[:]) const byte[:] { trim_end(trim_start(s)) }
+
+fn find_at(s const byte[:], needle const byte[:], from int) int {
+	if needle.len == 0 { return from; }
+	var i = from;
+	while i + needle.len <= s.len {
+		if s[i..i + needle.len] == needle { return i; }
+		let cp, n = utf8_next(s, i);
+		i += n;
+	}
+	-1
+}
+
+fn rfind(s const byte[:], needle const byte[:]) int {
+	if needle.len == 0 { return s.len; }
+	var i = s.len - needle.len;
+	while i >= 0 {
+		if s[i..i + needle.len] == needle { return i; }
+		i -= 1;
+	}
+	-1
+}
+
+fn contains(s const byte[:], needle const byte[:]) bool { find_at(s, needle, 0) >= 0 }
+
+fn count_of(s const byte[:], needle const byte[:]) int {
+	if needle.len == 0 { return 0; }
+	var n = 0;
+	var i = 0;
+	while i + needle.len <= s.len {
+		if s[i..i + needle.len] == needle { n += 1; i += needle.len; } else { i += 1; }
+	}
+	n
+}
+
+fn has_prefix(s const byte[:], p const byte[:]) bool { p.len <= s.len && s[..p.len] == p }
+fn has_suffix(s const byte[:], p const byte[:]) bool { p.len <= s.len && s[s.len - p.len..] == p }
+
+fn split(s const byte[:], sep const byte[:]) const byte[:][>..] {
+	var out const byte[:][>..] = [];
+	if sep.len == 0 {
+		var i = 0;
+		while i < s.len { let e = grapheme_end(s, i); out.push(s[i..e]); i = e; }
+		return out;
+	}
+	var from = 0;
+	var at = 0;
+	while at + sep.len <= s.len {
+		if s[at..at + sep.len] == sep { out.push(s[from..at]); at += sep.len; from = at; }
+		else { at += 1; }
+	}
+	out.push(s[from..]);
+	out
+}
+
+fn split(s const byte[:], sep byte) const byte[:][>..] {
+	var b byte[1] = [sep];
+	split(s, b[..])
+}
+
+fn join(sep const byte[:], parts byte[>..][>..]&) byte[>..] {
+	var out byte[>..] = [];
+	for i in parts.len {
+		if i > 0 { out.append(sep); }
+		out.append(parts[i][..]);
+	}
+	out
+}
+
+fn replace_n(s const byte[:], old const byte[:], with const byte[:], limit int) byte[>..] {
+	var out byte[>..] = [];
+	if old.len == 0 { out.append(s); return out; }
+	var at = 0;
+	var n = 0;
+	while at < s.len {
+		if (limit < 0 || n < limit) && at + old.len <= s.len && s[at..at + old.len] == old {
+			out.append(with);
+			at += old.len;
+			n += 1;
+		} else { out.push(s[at]); at += 1; }
+	}
+	out
+}
+
+fn replace(s const byte[:], old const byte[:], with const byte[:]) byte[>..] { replace_n(s, old, with, -1) }
+
+fn pad_to(s const byte[:], width int, align int, fill int) byte[>..] {
+	var out byte[>..] = [];
+	let w = display_width(s);
+	var room = width - w;
+	if room < 0 { room = 0; }
+	var left = 0;
+	if align == 1 { left = room; }
+	else if align == 2 { left = room / 2; }
+	for i in left { utf8_put(out, fill); }
+	out.append(s);
+	for i in room - left { utf8_put(out, fill); }
+	out
+}
+
+fn pad_right(s const byte[:], width int, fill int) byte[>..] { pad_to(s, width, 0, fill) }
+fn pad_left(s const byte[:], width int, fill int) byte[>..] { pad_to(s, width, 1, fill) }
+fn pad_center(s const byte[:], width int, fill int) byte[>..] { pad_to(s, width, 2, fill) }

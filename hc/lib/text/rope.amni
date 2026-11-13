@@ -1,0 +1,98 @@
+// Piece-table rope and an append-only builder. Pieces never move existing bytes.
+namespace text;
+
+var RB byte[>..][>..] = [];
+var RO int[>..][>..] = [];
+var RL int[>..][>..] = [];
+var BB byte[>..][>..] = [];
+
+fn rope_new() int {
+	RB.push([]);
+	RO.push([]);
+	RL.push([]);
+	RB.len - 1
+}
+
+fn rope_len(id int) int {
+	var n = 0;
+	for i in RL[id].len { n += RL[id][i]; }
+	n
+}
+
+fn rope_flatten(id int) byte[>..] {
+	var out byte[>..] = [];
+	for i in RO[id].len {
+		let a = RO[id][i];
+		let n = RL[id][i];
+		out.append(RB[id][a..a + n]);
+	}
+	out
+}
+
+fn rope_append(id int, s const byte[:]) {
+	let off = RB[id].len;
+	RB[id].append(s);
+	RO[id].push(off);
+	RL[id].push(s.len);
+}
+
+fn rope_insert(id int, at int, s const byte[:]) {
+	if at >= rope_len(id) { rope_append(id, s); return; }
+	if at < 0 { return; }
+	var acc = 0;
+	var i = 0;
+	while i < RL[id].len && acc + RL[id][i] <= at {
+		acc += RL[id][i];
+		i += 1;
+	}
+	let off = RB[id].len;
+	RB[id].append(s);
+	if i >= RL[id].len {
+		RO[id].push(off);
+		RL[id].push(s.len);
+		return;
+	}
+	let local = at - acc;
+	// split piece i at local, then insert the new piece before the right half
+	let old_off = RO[id][i];
+	let old_len = RL[id][i];
+	var no int[>..] = [];
+	var nl int[>..] = [];
+	for k in i { no.push(RO[id][k]); nl.push(RL[id][k]); }
+	if local > 0 { no.push(old_off); nl.push(local); }
+	no.push(off);
+	nl.push(s.len);
+	if local < old_len { no.push(old_off + local); nl.push(old_len - local); }
+	for k in i + 1..RO[id].len { no.push(RO[id][k]); nl.push(RL[id][k]); }
+	RO[id].clear();
+	RL[id].clear();
+	RO[id].append(no[..]);
+	RL[id].append(nl[..]);
+}
+
+fn rope_delete(id int, at int, n int) {
+	if n <= 0 { return; }
+	let end = at + n;
+	var acc = 0;
+	var no int[>..] = [];
+	var nl int[>..] = [];
+	for i in RO[id].len {
+		let a = acc;
+		let b = acc + RL[id][i];
+		acc = b;
+		if b <= at || a >= end { no.push(RO[id][i]); nl.push(RL[id][i]); continue; }
+		if a < at { no.push(RO[id][i]); nl.push(at - a); }
+		if b > end { no.push(RO[id][i] + (end - a)); nl.push(b - end); }
+	}
+	RO[id].clear();
+	RL[id].clear();
+	RO[id].append(no[..]);
+	RL[id].append(nl[..]);
+}
+
+fn builder() int { BB.push([]); BB.len - 1 }
+fn b_add(id int, s const byte[:]) { BB[id].append(s); }
+fn b_ch(id int, c byte) { BB[id].push(c); }
+fn b_clear(id int) { BB[id].clear(); }
+fn b_len(id int) int { BB[id].len }
+fn b_text(id int) byte[>..] { var o byte[>..] = []; o.append(BB[id][..]); o }

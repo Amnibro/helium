@@ -1,0 +1,228 @@
+// Regex-lite on code points: literals, ., \d\w\s, classes, groups, |, *+? and {m,n}.
+namespace text;
+import text.utf;
+
+var GS int[18] = [0; 18];
+var GE int[18] = [0; 18];
+
+fn re_word(cp int) bool { is_letter_cp(cp) || is_digit_cp(cp) || cp == 95 }
+
+fn skip_atom(pat const byte[:], i int, end int) int {
+	if i >= end { return i; }
+	if pat[i] == 92 && i + 1 < end { return i + 2; }
+	if pat[i] == 91 {
+		var j = i + 1;
+		if j < end && pat[j] == 94 { j += 1; }
+		while j < end && pat[j] != 93 {
+			if pat[j] == 92 && j + 1 < end { j += 2; } else { j += 1; }
+		}
+		if j < end { return j + 1; }
+		return j;
+	}
+	if pat[i] == 40 {
+		var j = i + 1;
+		var d = 1;
+		while j < end && d > 0 {
+			if pat[j] == 92 && j + 1 < end { j += 2; continue; }
+			if pat[j] == 40 { d += 1; } else if pat[j] == 41 { d -= 1; }
+			j += 1;
+		}
+		return j;
+	}
+	let cp, n = utf8_next(pat, i);
+	i + n
+}
+
+fn class_match(pat const byte[:], a int, b int, cp int) bool {
+	var i = a;
+	var neg = false;
+	if i < b && pat[i] == 94 { neg = true; i += 1; }
+	var hit = false;
+	while i < b {
+		if pat[i] == 92 && i + 1 < b {
+			let e = pat[i + 1] as int;
+			if e == 100 { hit = hit || is_digit_cp(cp); }
+			else if e == 119 { hit = hit || re_word(cp); }
+			else if e == 115 { hit = hit || is_ws(cp); }
+			else { hit = hit || cp == e; }
+			i += 2;
+			continue;
+		}
+		let c1, n1 = utf8_next(pat, i);
+		i += n1;
+		if i < b && pat[i] == 45 && i + 1 < b {
+			let c2, n2 = utf8_next(pat, i + 1);
+			if cp >= c1 && cp <= c2 { hit = true; }
+			i += 1 + n2;
+		} else if cp == c1 { hit = true; }
+	}
+	if neg { !hit } else { hit }
+}
+
+fn atom_char(pat const byte[:], a int, b int, txt const byte[:], ti int) int {
+	if a >= b { return ti; }
+	if pat[a] == 94 { if ti == 0 { return ti; } return -1; }
+	if pat[a] == 36 { if ti == txt.len { return ti; } return -1; }
+	if ti >= txt.len { return -1; }
+	let cp, n = utf8_next(txt, ti);
+	if pat[a] == 46 { if cp == 10 { return -1; } return ti + n; }
+	if pat[a] == 92 && a + 1 < b {
+		let e = pat[a + 1] as int;
+		if e == 100 { if is_digit_cp(cp) { return ti + n; } return -1; }
+		if e == 68 { if !is_digit_cp(cp) && cp != 10 { return ti + n; } return -1; }
+		if e == 119 { if re_word(cp) { return ti + n; } return -1; }
+		if e == 87 { if !re_word(cp) { return ti + n; } return -1; }
+		if e == 115 { if is_ws(cp) { return ti + n; } return -1; }
+		if e == 83 { if !is_ws(cp) { return ti + n; } return -1; }
+		if e == 110 { if cp == 10 { return ti + n; } return -1; }
+		if e == 116 { if cp == 9 { return ti + n; } return -1; }
+		if cp == e { return ti + n; }
+		return -1;
+	}
+	if pat[a] == 91 {
+		var end = a + 1;
+		if end < b && pat[end] == 94 { end += 1; }
+		while end < b && pat[end] != 93 { end += 1; }
+		if class_match(pat, a + 1, end, cp) { return ti + n; }
+		return -1;
+	}
+	let lit, ln = utf8_next(pat, a);
+	if cp == lit { return ti + n; }
+	-1
+}
+
+fn group_no(pat const byte[:], at int) int {
+	var n = 0;
+	var i = 0;
+	while i < at {
+		if pat[i] == 92 { i += 2; continue; }
+		if pat[i] == 40 { n += 1; }
+		i += 1;
+	}
+	n
+}
+
+recursive fn re_once(pat const byte[:], a int, b int, txt const byte[:], ti int) int {
+	if a < pat.len && pat[a] == 40 {
+		var close = b - 1;
+		while close > a && pat[close] != 41 { close -= 1; }
+		let g = group_no(pat, a);
+		let m = re_alt(pat, a + 1, close, txt, ti);
+		if m >= 0 && g >= 0 && g < 9 { GS[g] = ti; GE[g] = m; }
+		return m;
+	}
+	atom_char(pat, a, b, txt, ti)
+}
+
+recursive fn re_concat(pat const byte[:], a int, b int, txt const byte[:], ti int) int {
+	if a >= b { return ti; }
+	let atom_end = skip_atom(pat, a, b);
+	var next = atom_end;
+	var qmin = 1;
+	var qmax = 1;
+	if next < b && (pat[next] == 42 || pat[next] == 43 || pat[next] == 63) {
+		if pat[next] == 42 { qmin = 0; qmax = 64; }
+		else if pat[next] == 43 { qmin = 1; qmax = 64; }
+		else { qmin = 0; qmax = 1; }
+		next += 1;
+	} else if next < b && pat[next] == 123 {
+		var j = next + 1;
+		var lo = 0;
+		var hi = -1;
+		while j < b && pat[j] >= 48 && pat[j] <= 57 { lo = lo * 10 + (pat[j] - 48) as int; j += 1; }
+		if j < b && pat[j] == 44 {
+			j += 1;
+			hi = 0;
+			var any = false;
+			while j < b && pat[j] >= 48 && pat[j] <= 57 { hi = hi * 10 + (pat[j] - 48) as int; j += 1; any = true; }
+			if !any { hi = 64; }
+		}
+		if j < b && pat[j] == 125 { j += 1; }
+		qmin = lo;
+		qmax = if hi < 0 { lo } else { hi };
+		if qmax > 64 { qmax = 64; }
+		next = j;
+	}
+	if qmax != 1 || qmin != 1 {
+		var ends int[64] = [0; 64];
+		var nends = 0;
+		var pos = ti;
+		while nends < qmax {
+			let m = re_once(pat, a, atom_end, txt, pos);
+			if m < 0 || m == pos { break; }
+			ends[nends] = m;
+			nends += 1;
+			pos = m;
+		}
+		var k = nends;
+		if k > qmax { k = qmax; }
+		while k >= qmin {
+			let t = if k == 0 { ti } else { ends[k - 1] };
+			var sg int[18] = GS;
+			var eg int[18] = GE;
+			let r = re_concat(pat, next, b, txt, t);
+			if r >= 0 { return r; }
+			GS = sg;
+			GE = eg;
+			k -= 1;
+		}
+		return -1;
+	}
+	let m = re_once(pat, a, atom_end, txt, ti);
+	if m < 0 { return -1; }
+	re_concat(pat, next, b, txt, m)
+}
+
+recursive fn re_alt(pat const byte[:], a int, b int, txt const byte[:], ti int) int {
+	var start = a;
+	var i = a;
+	var depth = 0;
+	while true {
+		let cut = i >= b || (depth == 0 && i < pat.len && pat[i] == 124);
+		if cut {
+			var sg int[18] = GS;
+			var eg int[18] = GE;
+			let m = re_concat(pat, start, i, txt, ti);
+			if m >= 0 { return m; }
+			GS = sg;
+			GE = eg;
+			if i >= b { return -1; }
+			i += 1;
+			start = i;
+			continue;
+		}
+		if pat[i] == 92 { i += 2; continue; }
+		if pat[i] == 40 { depth += 1; } else if pat[i] == 41 && depth > 0 { depth -= 1; }
+		i += 1;
+	}
+	-1
+}
+
+fn re_find(txt const byte[:], pat const byte[:]) int, int {
+	for k in 9 { GS[k] = -1; GE[k] = -1; }
+	var i = 0;
+	while i <= txt.len {
+		var sg int[18] = GS;
+		var eg int[18] = GE;
+		let m = re_alt(pat, 0, pat.len, txt, i);
+		if m >= 0 { return i, m; }
+		GS = sg;
+		GE = eg;
+		if i >= txt.len { break; }
+		let cp, n = utf8_next(txt, i);
+		i += n;
+	}
+	return -1, -1;
+}
+
+fn re_group(g int) int, int {
+	if g < 1 || g > 9 { return -1, -1; }
+	return GS[g - 1], GE[g - 1];
+}
+
+fn re_match(txt const byte[:], pat const byte[:]) byte[>..] {
+	let a, b = re_find(txt, pat);
+	var out byte[>..] = [];
+	if a >= 0 { out.append(txt[a..b]); }
+	out
+}
