@@ -56,7 +56,7 @@ struct Sky { zenith float3, horizon float3, ground float3, ambient f32, draw boo
 struct Look { exposure f32, white f32, bloom f32, bloom_cut f32, desaturate f32, ssao bool, ao_radius f32, ao_power f32, ao_samples int, curve int = 0, auto_exposure bool = false, ae_key f32 = 0.18, ae_low f32 = 0.5, ae_high f32 = 0.95, ae_min f32 = -4.0, ae_max f32 = 4.0, ae_up f32 = 3.0, ae_down f32 = 1.0, ae_center f32 = 3.0, lut f32 = 0.0, vignette f32 = 0.0, chroma f32 = 0.0, grain f32 = 0.0, sharpen f32 = 0.0, saturation f32 = 1.0, contrast f32 = 1.0, warmth f32 = 0.0 }
 struct NodeOv { item int, node int, t float3, r linalg::Quat, sc float3 }
 struct WeightOv { item int, node int, k int, w f32 }
-struct Item { asset int, place gfx::mat4, prev_place gfx::mat4, anim int, time f32, visible bool, anim2 int = -1, time2 f32 = 0.0, blend f32 = 1.0, bend_node int = -1, bend linalg::Quat = linalg::Quat { 0.0, 0.0, 0.0, 1.0 }, track int[4] = [-1, -1, -1, -1], tracked gfx::mat4[4] = [gfx::mat4_identity, gfx::mat4_identity, gfx::mat4_identity, gfx::mat4_identity], light_base int = -1, sway f32 = 0.0, top f32 = 0.0 }
+struct Item { asset int, place gfx::mat4, prev_place gfx::mat4, anim int, time f32, visible bool, anim2 int = -1, time2 f32 = 0.0, blend f32 = 1.0, bend_node int = -1, bend linalg::Quat = linalg::Quat { 0.0, 0.0, 0.0, 1.0 }, track int[4] = [-1, -1, -1, -1], tracked gfx::mat4[4] = [gfx::mat4_identity, gfx::mat4_identity, gfx::mat4_identity, gfx::mat4_identity], light_base int = -1, sway f32 = 0.0, top f32 = 0.0, shadow bool = true }
 struct InstSet { asset int, first int, count int, lod_asset int = -1, lod_distance f32 = 0.0, sway f32 = 0.0, visible bool = true, top f32 = 0.0, c float3 = float3 { 0.0, 0.0, 0.0 }, r f32 = 0.0, lo float3 = float3 { 0.0, 0.0, 0.0 }, hi float3 = float3 { 0.0, 0.0, 0.0 }, ia int[2] = [0, 0], na int[2] = [0, 0], iv int[2] = [0, 0], nv int[2] = [0, 0], smax f32 = 1.0 }
 struct Caustics { on bool = false, manual bool = false, strength f32 = 1.0, focus f32 = 1.0, cap f32 = 7.0, level f32 = 0.0, waves float4 = float4 { 1.1, 0.062, 1.0, 0.7 }, absorb float3 = float3 { 0.45, 0.09, 0.07 }, lo float3 = float3 { -1.0e9, 0.0, -1.0e9 }, hi float3 = float3 { 1.0e9, 0.0, 1.0e9 } }
 struct Wind { dir float3 = float3 { 1.0, 0.0, 0.0 }, strength f32 = 0.0, speed f32 = 1.0, time f32 = 0.0 }
@@ -1916,7 +1916,7 @@ fn setup_cascades() {
 	var shi = linalg::v3(-1.0e30, -1.0e30, -1.0e30);
 	if sun.fit {
 		for b in batch {
-			if b.mode == gltf::ALPHA_BLEND || material_of(b.prim).no_shadow { continue; }
+			if b.mode == gltf::ALPHA_BLEND || material_of(b.prim).no_shadow || (b.item >= 0 && !items[b.item].shadow) { continue; }
 			if b.inst >= 0 {
 				for k in 8 {
 					let q = corner(instances[b.inst].lo, instances[b.inst].hi, k);
@@ -2263,7 +2263,7 @@ fn shadow_pass() {
 		for b in batch {
 			if b.mode == gltf::ALPHA_BLEND { continue; }
 			let m = material_of(b.prim);
-			if m.no_shadow { continue; }
+			if m.no_shadow || (b.item >= 0 && !items[b.item].shadow) { continue; }
 			gfx::uniforms(gfx::VERTEX, 0, draw_uniforms(b, vp));
 			gfx::uniforms(gfx::FRAGMENT, 0, cut_of(m));
 			bind_slot(0, m.base_tex, true, white);
@@ -2293,7 +2293,7 @@ fn shelter_pass() {
 	guard gfx::begin_pass(gfx::PassDesc { color: [shelter_map, none(), none(), none()], depth: shelter_depth, color_value: f4(-1.0e30, 0.0, 0.0, 1.0), cycle: 1, .. }) else { return; }
 	gfx::bind(pipe_shelter);
 	bind_geometry();
-	for b in batch { let m = material_of(b.prim); if m.no_shadow { continue; } gfx::uniforms(gfx::VERTEX, 0, draw_uniforms(b, vp)); gfx::uniforms(gfx::FRAGMENT, 0, cut_of(m)); bind_slot(0, m.base_tex, true, white); draw_prim(b); }
+	for b in batch { let m = material_of(b.prim); if m.no_shadow || (b.item >= 0 && !items[b.item].shadow) { continue; } gfx::uniforms(gfx::VERTEX, 0, draw_uniforms(b, vp)); gfx::uniforms(gfx::FRAGMENT, 0, cut_of(m)); bind_slot(0, m.base_tex, true, white); draw_prim(b); }
 	gfx::end_pass();
 	fx::shelter_tex = shelter_map;
 	fx::shelter_box = f4(cx, cz, 0.5 / he, 1.0);
@@ -2314,7 +2314,7 @@ fn local_shadow_pass() {
 		for b in batch {
 			if b.mode == gltf::ALPHA_BLEND { continue; }
 			let m = material_of(b.prim);
-			if m.no_shadow { continue; }
+			if m.no_shadow || (b.item >= 0 && !items[b.item].shadow) { continue; }
 			let pr = gltf::prims[b.prim];
 			if b.joint_base < 0 && b.inst < 0 && !in_view(gfx::mul(vp, b.model), pr.lo, pr.hi) { continue; }
 			gfx::uniforms(gfx::VERTEX, 0, draw_uniforms(b, vp));
