@@ -190,7 +190,7 @@ fn main() {
 		for j in i { if uikit::icon_mask(j) == a { bad_m += 1; } }
 	}
 	fail += eqi(bad_m, 0, "icon masks");
-	fail += eqi(if uikit::icon_named() >= 400 { 1 } else { 0 }, 1, "named pictograms");
+	fail += eqi(uikit::icon_named(), 500, "named pictograms");
 	fail += eqi(bytes_eq(uikit::icon_name(0), "sword"), 1, "icon sword");
 	var bad_name = 0;
 	let nn = uikit::icon_named();

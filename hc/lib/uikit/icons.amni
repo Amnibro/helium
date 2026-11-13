@@ -1,5 +1,4 @@
-// 500 icons. The first icon_named() ids are named vector pictograms.
-// The rest stay unique 5x5 silhouettes until a later batch replaces them.
+// 500 named vector pictograms. icon_named() is the count with real silhouettes.
 namespace uikit;
 import uikit.icons_reg;
 
