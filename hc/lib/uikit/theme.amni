@@ -1,0 +1,189 @@
+// Theme tokens. Seven families, five variations each.
+namespace uikit;
+
+struct Tok {
+	bg u32,
+	surface u32,
+	surface2 u32,
+	ink u32,
+	muted u32,
+	accent u32,
+	on_accent u32,
+	danger u32,
+	ok u32,
+	warn u32,
+	border u32,
+	focus u32,
+	overlay u32,
+	radius f32,
+	inset f32,
+	gap f32,
+	font_px f32,
+	border_w f32,
+	shadow int,
+	glass int,
+	pixel int,
+	family int,
+	variant int,
+}
+
+var THEME = Tok {
+	bg: 0x12141A, surface: 0x1C2030, surface2: 0x262B3D, ink: 0xF4F6FB, muted: 0xA7B0C0,
+	accent: 0x7C6BF2, on_accent: 0xFFFFFF, danger: 0xE85D4C, ok: 0x3DDC97, warn: 0xE7B549,
+	border: 0x343A4D, focus: 0xC9C2FF, overlay: 0x000000,
+	radius: 10.0, inset: 12.0, gap: 8.0, font_px: 16.0, border_w: 1.0,
+	shadow: 1, glass: 0, pixel: 0, family: 0, variant: 0,
+};
+
+let FAM_FLAT = 0; let FAM_GLASS = 1; let FAM_NEON = 2; let FAM_FANTASY = 3;
+let FAM_MINIMAL = 4; let FAM_BRUTAL = 5; let FAM_RETRO = 6;
+
+fn family_count() int { 7 }
+fn variant_count() int { 5 }
+fn theme_count() int { 35 }
+fn look_count() int { 6 }
+
+fn family_name(f int) const byte[:] {
+	if f == 0 { return "flat"; }
+	if f == 1 { return "glass"; }
+	if f == 2 { return "neon"; }
+	if f == 3 { return "fantasy"; }
+	if f == 4 { return "minimal"; }
+	if f == 5 { return "brutalist"; }
+	"retro"
+}
+
+fn variant_name(f int, v int) const byte[:] {
+	if f == 0 && v == 0 { return "material"; }
+	if f == 0 && v == 1 { return "fluent"; }
+	if f == 0 && v == 2 { return "apple"; }
+	if f == 0 && v == 3 { return "shadcn"; }
+	if f == 0 && v == 4 { return "ant"; }
+	if f == 1 && v == 0 { return "frost"; }
+	if f == 1 && v == 1 { return "smoke"; }
+	if f == 1 && v == 2 { return "tint"; }
+	if f == 1 && v == 3 { return "gold"; }
+	if f == 1 && v == 4 { return "thin"; }
+	if f == 2 && v == 0 { return "cyan"; }
+	if f == 2 && v == 1 { return "magenta"; }
+	if f == 2 && v == 2 { return "amber"; }
+	if f == 2 && v == 3 { return "matrix"; }
+	if f == 2 && v == 4 { return "holo"; }
+	if f == 3 && v == 0 { return "parchment"; }
+	if f == 3 && v == 1 { return "royal"; }
+	if f == 3 && v == 2 { return "forest"; }
+	if f == 3 && v == 3 { return "ember"; }
+	if f == 3 && v == 4 { return "stone"; }
+	if f == 4 && v == 0 { return "swiss"; }
+	if f == 4 && v == 1 { return "ink"; }
+	if f == 4 && v == 2 { return "paper"; }
+	if f == 4 && v == 3 { return "mono"; }
+	if f == 4 && v == 4 { return "air"; }
+	if f == 5 && v == 0 { return "hazard"; }
+	if f == 5 && v == 1 { return "newsprint"; }
+	if f == 5 && v == 2 { return "block"; }
+	if f == 5 && v == 3 { return "concrete"; }
+	if f == 5 && v == 4 { return "stencil"; }
+	if f == 6 && v == 0 { return "crt"; }
+	if f == 6 && v == 1 { return "gameboy"; }
+	if f == 6 && v == 2 { return "c64"; }
+	if f == 6 && v == 3 { return "arcade"; }
+	"nes"
+}
+
+fn mix_rgb(a u32, b u32) u32 {
+	let ar = (a >> 16) & 255; let ag = (a >> 8) & 255; let ab = a & 255;
+	let br = (b >> 16) & 255; let bg = (b >> 8) & 255; let bb = b & 255;
+	let r = (ar + br) / 2; let g = (ag + bg) / 2; let bl = (ab + bb) / 2;
+	(r << 16) | (g << 8) | bl
+}
+
+fn on_color(c u32) u32 {
+	let r = (c >> 16) & 255; let g = (c >> 8) & 255; let b = c & 255;
+	if r * 3 + g * 6 + b > 900 { 0x161616 } else { 0xFFFFFF }
+}
+
+fn theme_apply(bg u32, surface u32, text u32, accent u32, radius f32, bw f32, shadow int, glass int, pixel int, inset f32) {
+	THEME.bg = bg;
+	THEME.surface = surface;
+	THEME.surface2 = mix_rgb(surface, accent);
+	THEME.ink = text;
+	THEME.muted = mix_rgb(text, bg);
+	THEME.accent = accent;
+	THEME.on_accent = on_color(accent);
+	THEME.danger = 0xE85D4C;
+	THEME.ok = 0x2FBF71;
+	THEME.warn = 0xE0A100;
+	THEME.border = if bw >= 3.0 { 0x111111 } else { mix_rgb(text, surface) };
+	THEME.focus = accent;
+	THEME.overlay = 0x000000;
+	THEME.radius = if pixel != 0 { 0.0 } else { radius };
+	THEME.inset = inset;
+	THEME.gap = 8.0;
+	THEME.font_px = 16.0;
+	THEME.border_w = bw;
+	THEME.shadow = shadow;
+	THEME.glass = glass;
+	THEME.pixel = pixel;
+}
+
+fn theme_set(family int, variant int) {
+	let f = if family < 0 { 0 } else if family > 6 { 6 } else { family };
+	let v = if variant < 0 { 0 } else if variant > 4 { 4 } else { variant };
+	THEME.family = f;
+	THEME.variant = v;
+	let i = f * 5 + v;
+	if i == 0 { theme_apply(0xF4F4F8, 0xFFFFFF, 0x1C1B1F, 0x6750A4, 20.0, 0.0, 1, 0, 0, 12.0); }
+	else if i == 1 { theme_apply(0xF5F5F5, 0xFFFFFF, 0x242424, 0x0F6CBD, 4.0, 1.0, 0, 0, 0, 10.0); }
+	else if i == 2 { theme_apply(0xF2F2F7, 0xFFFFFF, 0x1D1D1F, 0x007AFF, 12.0, 0.0, 1, 0, 0, 12.0); }
+	else if i == 3 { theme_apply(0xFAFAFA, 0xFFFFFF, 0x09090B, 0x18181B, 6.0, 1.0, 0, 0, 0, 10.0); }
+	else if i == 4 { theme_apply(0xF5F5F5, 0xFFFFFF, 0x141414, 0x1677FF, 2.0, 1.0, 0, 0, 0, 10.0); }
+	else if i == 5 { theme_apply(0x1B2430, 0xF7FBFF, 0xF7F8FA, 0x9BD4FF, 16.0, 1.0, 1, 1, 0, 12.0); }
+	else if i == 6 { theme_apply(0x0E1116, 0x0A0D12, 0xE8EEF7, 0xC9D4E5, 14.0, 1.0, 0, 1, 0, 12.0); }
+	else if i == 7 { theme_apply(0x141026, 0x2A2150, 0xF4F0FF, 0xC4B5FD, 18.0, 1.0, 1, 1, 0, 12.0); }
+	else if i == 8 { theme_apply(0x1A140C, 0x3A2E18, 0xF8F1DE, 0xE7C27A, 10.0, 1.0, 0, 1, 0, 12.0); }
+	else if i == 9 { theme_apply(0x101418, 0x1C242C, 0xE7EEF2, 0xD5DEE6, 8.0, 1.0, 1, 1, 0, 14.0); }
+	else if i == 10 { theme_apply(0x05070A, 0x071016, 0xD7FFF8, 0x15F5E0, 6.0, 1.0, 3, 0, 0, 10.0); }
+	else if i == 11 { theme_apply(0x0A0610, 0x140814, 0xFFE4F6, 0xFF2BD6, 8.0, 1.0, 3, 0, 0, 10.0); }
+	else if i == 12 { theme_apply(0x100C04, 0x1A1406, 0xFFE7B8, 0xFFBF1F, 4.0, 1.0, 3, 0, 0, 10.0); }
+	else if i == 13 { theme_apply(0x010A04, 0x02140A, 0xB8FFC8, 0x39FF6A, 0.0, 1.0, 3, 0, 1, 8.0); }
+	else if i == 14 { theme_apply(0x070616, 0x120E28, 0xE7E4FF, 0x8A7CFF, 12.0, 1.0, 3, 1, 0, 12.0); }
+	else if i == 15 { theme_apply(0xEFE4CF, 0xF7F0E1, 0x3A2A1A, 0x8C3A2F, 4.0, 2.0, 0, 0, 0, 12.0); }
+	else if i == 16 { theme_apply(0x1C1230, 0x2A1B4A, 0xF3E6C4, 0xD4AF37, 2.0, 2.0, 0, 0, 0, 12.0); }
+	else if i == 17 { theme_apply(0x14241A, 0x1C3326, 0xE4F2E4, 0x7DCC6A, 8.0, 2.0, 0, 0, 0, 12.0); }
+	else if i == 18 { theme_apply(0x2A1210, 0x3A1A16, 0xF8D7C4, 0xFF6A3D, 6.0, 2.0, 1, 0, 0, 12.0); }
+	else if i == 19 { theme_apply(0x3A3E44, 0x4A5058, 0xE6E8EA, 0xC5CCD3, 0.0, 3.0, 0, 0, 0, 10.0); }
+	else if i == 20 { theme_apply(0xFFFFFF, 0xFFFFFF, 0x111111, 0x111111, 0.0, 1.0, 0, 0, 0, 16.0); }
+	else if i == 21 { theme_apply(0x0E0E0E, 0x161616, 0xF2F2F2, 0xF2F2F2, 0.0, 1.0, 0, 0, 0, 16.0); }
+	else if i == 22 { theme_apply(0xF6F1E8, 0xFBF7F1, 0x2C2825, 0x8A5A44, 2.0, 0.0, 0, 0, 0, 18.0); }
+	else if i == 23 { theme_apply(0xF3F4F6, 0xFFFFFF, 0x374151, 0x6B7280, 0.0, 1.0, 0, 0, 0, 12.0); }
+	else if i == 24 { theme_apply(0xF8FBFF, 0xFFFFFF, 0x334155, 0x64748B, 20.0, 0.0, 0, 0, 0, 22.0); }
+	else if i == 25 { theme_apply(0xFFFF00, 0xFFFFFF, 0x000000, 0xFF0000, 0.0, 4.0, 2, 0, 0, 10.0); }
+	else if i == 26 { theme_apply(0xF4F1EA, 0xFFFFFF, 0x111111, 0x111111, 0.0, 2.0, 2, 0, 0, 8.0); }
+	else if i == 27 { theme_apply(0xFFE500, 0x111111, 0x111111, 0xFFFFFF, 0.0, 4.0, 2, 0, 0, 8.0); }
+	else if i == 28 { theme_apply(0xD9D4CC, 0xE7E2DA, 0x1A1A1A, 0xE24A2A, 0.0, 3.0, 2, 0, 0, 10.0); }
+	else if i == 29 { theme_apply(0xFFFFFF, 0xFFFFFF, 0x000000, 0x000000, 0.0, 6.0, 2, 0, 0, 6.0); }
+	else if i == 30 { theme_apply(0x031806, 0x05240A, 0x33FF66, 0x33FF66, 0.0, 1.0, 3, 0, 1, 8.0); }
+	else if i == 31 { theme_apply(0x9BBC0F, 0x8BAC0F, 0x0F380F, 0x0F380F, 0.0, 2.0, 0, 0, 1, 8.0); }
+	else if i == 32 { theme_apply(0x352879, 0x6C5EB5, 0xFFFFFF, 0xA8E6FF, 0.0, 2.0, 0, 0, 1, 8.0); }
+	else if i == 33 { theme_apply(0x1A0530, 0x3A0A50, 0xFFE66D, 0xFF4FD8, 0.0, 2.0, 0, 0, 1, 8.0); }
+	else { theme_apply(0xC0C0C0, 0xFCFCFC, 0x1A1A1A, 0xC40C0C, 0.0, 2.0, 0, 0, 1, 8.0); }
+}
+
+fn theme_signature() int {
+	let r = THEME.radius as int;
+	let p = THEME.inset as int;
+	(THEME.bg as int) ^ ((THEME.accent as int) << 1) ^ (r * 17) ^ (THEME.shadow * 131) ^ (THEME.glass * 257) ^ (THEME.pixel * 513) ^ (p * 19) ^ ((THEME.border_w as int) * 67)
+}
+
+fn ease_out(t f32) f32 { let u = 1.0 - t; (1.0 - u * u) as f32 }
+fn ease_in(t f32) f32 { (t * t) as f32 }
+fn ease_io(t f32) f32 { if t < 0.5 { (2.0 * t * t) as f32 } else { let m = -2.0 * t + 2.0; (1.0 - m * m / 2.0) as f32 } }
+
+fn lerp_byte(a int, b int, t f32) int { (a as f32 + (b - a) as f32 * t) as int }
+fn lerp_rgb(a u32, b u32, t f32) u32 {
+	let r = lerp_byte(((a >> 16) & 255) as int, ((b >> 16) & 255) as int, t);
+	let g = lerp_byte(((a >> 8) & 255) as int, ((b >> 8) & 255) as int, t);
+	let bl = lerp_byte((a & 255) as int, (b & 255) as int, t);
+	((r << 16) | (g << 8) | bl) as u32
+}

@@ -1,0 +1,308 @@
+// Retained widget tree: flex, grid, stack, scroll, wrap, and shared node state.
+namespace uikit;
+import text;
+import uikit.font;
+import uikit.theme;
+
+let K_FLEX = 1; let K_GRID = 2; let K_STACK = 3; let K_SCROLL = 4; let K_WRAP = 5;
+let K_LABEL = 10; let K_BUTTON = 11; let K_ICON = 12; let K_FAB = 13; let K_SEG = 14;
+let K_TOGGLE = 15; let K_CHECK = 16; let K_RADIO = 17; let K_SLIDER = 18; let K_RANGE = 19; let K_STEP = 20;
+let K_FIELD = 21; let K_AREA = 22; let K_SELECT = 23; let K_COMBO = 24; let K_DATE = 25; let K_TIME = 26; let K_COLOR = 27;
+let K_TABS = 28; let K_ACC = 29; let K_TREE = 30; let K_TABLE = 31; let K_VLIST = 32;
+let K_MENU = 33; let K_CONTEXT = 34; let K_TOOL = 35;
+let K_MODAL = 36; let K_DRAWER = 37; let K_TOAST = 38; let K_TIP = 39; let K_POP = 40;
+let K_PROGRESS = 41; let K_SPIN = 42; let K_SKELETON = 43;
+let K_BADGE = 44; let K_CHIP = 45; let K_TAG = 46; let K_AVATAR = 47; let K_CARD = 48; let K_CRUMB = 49; let K_PAGE = 50; let K_SPLIT = 51;
+let K_HEALTH = 52; let K_MANA = 53; let K_MINI = 54; let K_INV = 55; let K_RADIAL = 56; let K_DIALOGUE = 57; let K_DAMAGE = 58;
+let K_DIV = 59; let K_RATE = 60; let K_MSG = 61; let K_NAV = 62;
+
+let LOOK_FILLED = 0; let LOOK_TONAL = 1; let LOOK_OUTLINE = 2; let LOOK_GHOST = 3; let LOOK_ELEVATED = 4; let LOOK_SHARP = 5;
+let WM_AUTO = 0; let WM_PX = 1; let WM_PCT = 2;
+let DIR_ROW = 0; let DIR_COL = 1;
+
+let FL_OFF = 1; let FL_HOVER = 2; let FL_PRESS = 4; let FL_FOCUS = 8; let FL_OPEN = 16; let FL_ON = 32; let FL_HIDE = 128;
+
+struct Node {
+	parent int, kind int, look int, dir int, cols int,
+	gap f32, inset f32, grow f32,
+	wm int, wv f32, hm int, hv f32,
+	x f32, y f32, w f32, h f32,
+	str_i int, fg u32, bg u32, flags int,
+	val f32, val2 f32,
+	i0 int, i1 int, i2 int, i3 int,
+	role int, hide_bp int, effect int, preset int, opacity f32, vis int,
+}
+
+var N Node[>..] = [];
+var KIDS int[>..][>..] = [];
+var STR byte[>..][>..] = [];
+var FOCUS = -1;
+var VW f32 = 800.0;
+
+fn reset() {
+	N.clear();
+	KIDS.clear();
+	STR.clear();
+	FOCUS = -1;
+}
+
+fn s_new(t const byte[:]) int {
+	STR.push([]);
+	let i = STR.len - 1;
+	STR[i].append(t);
+	i
+}
+fn s_set(i int, t const byte[:]) { if i >= 0 && i < STR.len { STR[i].clear(); STR[i].append(t); } }
+fn s_text(i int) const byte[:] { if i < 0 || i >= STR.len { "" } else { STR[i][..] } }
+
+fn add(parent int, kind int) int {
+	N.push(Node {
+		parent: parent, kind: kind, look: 0, dir: DIR_COL, cols: 1,
+		gap: 8.0, inset: 8.0, grow: 0.0,
+		wm: 0, wv: 0.0, hm: 0, hv: 0.0,
+		x: 0.0, y: 0.0, w: 0.0, h: 0.0,
+		str_i: -1, fg: 0, bg: 0, flags: 0,
+		val: 0.0, val2: 1.0,
+		i0: 0, i1: -1, i2: 0, i3: 0,
+		role: kind, hide_bp: -1, effect: 0, preset: 5, opacity: 1.0, vis: 1,
+	});
+	KIDS.push([]);
+	let id = N.len - 1;
+	if parent >= 0 { KIDS[parent].push(id); }
+	id
+}
+
+fn set_text(id int, t const byte[:]) { if N[id].str_i < 0 { N[id].str_i = s_new(t); } else { s_set(N[id].str_i, t); } }
+fn set_look(id int, look int) { N[id].look = look; }
+fn set_grow(id int, g f32) { N[id].grow = g; }
+fn set_dir(id int, d int) { N[id].dir = d; }
+fn set_gap(id int, g f32) { N[id].gap = g; }
+fn set_pad(id int, p f32) { N[id].inset = p; }
+fn set_cols(id int, n int) { N[id].cols = n; }
+fn set_px(id int, w f32, h f32) { N[id].wm = WM_PX; N[id].wv = w; N[id].hm = WM_PX; N[id].hv = h; }
+fn set_min_bp(id int, bp int) { N[id].hide_bp = bp; }
+fn set_value(id int, v f32) { N[id].val = v; }
+fn set_value2(id int, v f32) { N[id].val2 = v; }
+fn set_index(id int, i int) { N[id].i0 = i; }
+fn set_effect(id int, e int) { N[id].effect = e; }
+fn set_preset(id int, p int) { N[id].preset = p; N[id].effect = text::preset_effect(p); }
+fn bit_off(f int, bit int) int { f & (bit ^ -1) }
+fn set_open(id int, on int) { if on != 0 { N[id].flags = N[id].flags | FL_OPEN; } else { N[id].flags = bit_off(N[id].flags, FL_OPEN); } }
+fn set_on(id int, on int) { if on != 0 { N[id].flags = N[id].flags | FL_ON; } else { N[id].flags = bit_off(N[id].flags, FL_ON); } }
+fn set_disabled(id int, on int) { if on != 0 { N[id].flags = N[id].flags | FL_OFF; } else { N[id].flags = bit_off(N[id].flags, FL_OFF); } }
+
+fn shown(id int) bool { N[id].vis != 0 && N[id].flags & FL_HIDE == 0 }
+fn bp_of(w f32) int { if w < 520.0 { 0 } else if w < 800.0 { 1 } else if w < 1100.0 { 2 } else { 3 } }
+
+fn label_size(id int) f32 { text::preset_size(N[id].preset) }
+
+fn pref_h(id int) f32 {
+	if N[id].hm == WM_PX { return N[id].hv; }
+	let k = N[id].kind;
+	if k == K_AREA || k == K_TABLE { return 92.0; }
+	if k == K_SLIDER || k == K_RANGE { return 28.0; }
+	if k == K_LABEL { return label_size(id) * 1.35; }
+	if k == K_DIALOGUE { return 96.0; }
+	if k == K_MINI || k == K_RADIAL || k == K_INV { return 132.0; }
+	if k == K_CARD { return 110.0; }
+	if k == K_SPLIT { return 72.0; }
+	if k == K_DIV { return 8.0; }
+	if k == K_BADGE || k == K_CHIP || k == K_TAG { return 26.0; }
+	if k == K_PROGRESS || k == K_HEALTH || k == K_MANA { return 18.0; }
+	if k == K_SPIN || k == K_AVATAR { return 36.0; }
+	if k == K_DAMAGE { return 28.0; }
+	if k == K_SKELETON { return 16.0; }
+	36.0
+}
+
+fn pref_w(id int) f32 {
+	if N[id].wm == WM_PX { return N[id].wv; }
+	let k = N[id].kind;
+	if N[id].str_i >= 0 {
+		let tw = text_advance(s_text(N[id].str_i), label_size(id));
+		let extra = if k == K_BUTTON || k == K_CHIP || k == K_TAG || k == K_BADGE { 28.0 } else { 8.0 };
+		let w = tw + extra;
+		if w < 48.0 { return 48.0; }
+		return w;
+	}
+	if k == K_ICON || k == K_AVATAR || k == K_SPIN { return 36.0; }
+	if k == K_CHECK || k == K_RADIO || k == K_TOGGLE { return 160.0; }
+	if k == K_SLIDER || k == K_RANGE || k == K_FIELD || k == K_SELECT { return 180.0; }
+	if k == K_DIV { return 8.0; }
+	120.0
+}
+
+fn is_leaf(k int) bool { k >= K_LABEL }
+
+fn layout(id int, x f32, y f32, w f32, h f32) {
+	N[id].x = x; N[id].y = y; N[id].w = w; N[id].h = h;
+	if N[id].hide_bp >= 0 && bp_of(VW) < N[id].hide_bp {
+		N[id].w = 0.0; N[id].h = 0.0;
+		return;
+	}
+	let knd = N[id].kind;
+	let inset = N[id].inset;
+	let gap = N[id].gap;
+	let inner_w = if w > inset * 2.0 { w - inset * 2.0 } else { 0.0 };
+	let inner_h = if h > inset * 2.0 { h - inset * 2.0 } else { 0.0 };
+	var kids int[>..] = [];
+	for c in KIDS[id] { if shown(c) { kids.push(c); } }
+	let n = kids.len;
+	if n == 0 { return; }
+	if knd == K_STACK || knd == K_MODAL || knd == K_DRAWER {
+		for c in kids { layout(c, x + inset, y + inset, inner_w, inner_h); }
+		return;
+	}
+	if knd == K_GRID {
+		let cols = if N[id].cols < 1 { 1 } else { N[id].cols };
+		let cw = (inner_w - gap * (cols - 1) as f32) / cols as f32;
+		var col = 0;
+		var row = 0;
+		let rh = pref_h(kids[0]);
+		for c in kids {
+			let cx = x + inset + (cw + gap) * col as f32;
+			let cy = y + inset + (rh + gap) * row as f32;
+			layout(c, cx, cy, cw, rh);
+			col += 1;
+			if col >= cols { col = 0; row += 1; }
+		}
+		return;
+	}
+	if knd == K_SCROLL {
+		let c = kids[0];
+		let ch = pref_h(c);
+		layout(c, x + inset, y + inset - N[id].val, inner_w, ch);
+		return;
+	}
+	let rowish = N[id].dir == DIR_ROW || knd == K_WRAP || knd == K_TOOL || knd == K_NAV || knd == K_TABS;
+	let wrap = knd == K_WRAP;
+	if rowish {
+		var cx f32 = x + inset;
+		var cy f32 = y + inset;
+		var line_h f32 = 0.0;
+		var used f32 = 0.0;
+		for i in n {
+			let c = kids[i];
+			var cw = pref_w(c);
+			if N[c].wm == WM_PCT { cw = inner_w * N[c].wv / 100.0; }
+			let ch = pref_h(c);
+			if wrap && used > 0.0 && used + cw > inner_w {
+				cy += line_h + gap;
+				cx = x + inset;
+				used = 0.0 as f32;
+				line_h = 0.0 as f32;
+			}
+			layout(c, cx, cy, cw, ch);
+			cx += cw + gap;
+			used += cw + gap;
+			if ch > line_h { line_h = ch; }
+		}
+		return;
+	}
+	// column, with grow
+	var fixed f32 = inset * 2.0 + gap * (if n > 1 { (n - 1) as f32 } else { 0.0 });
+	var grow_sum f32 = 0.0;
+	for c in kids {
+		fixed += pref_h(c);
+		grow_sum += N[c].grow;
+	}
+	var extra f32 = h - fixed;
+	if extra < 0.0 { extra = 0.0 as f32; }
+	var cy f32 = y + inset;
+	for c in kids {
+		var ch f32 = pref_h(c);
+		if grow_sum > 0.0 && N[c].grow > 0.0 { ch += extra * N[c].grow / grow_sum; }
+		var cw f32 = inner_w;
+		if N[c].wm == WM_PX { cw = N[c].wv; }
+		layout(c, x + inset, cy, cw, ch);
+		cy += ch + gap;
+	}
+}
+
+fn layout_root(id int, x f32, y f32, w f32, h f32) {
+	VW = w;
+	layout(id, x, y, w, h);
+}
+
+recursive fn hit_rec(id int, x f32, y f32) int {
+	if !shown(id) || N[id].w <= 0.0 || N[id].h <= 0.0 { return -1; }
+	if x < N[id].x || y < N[id].y || x >= N[id].x + N[id].w || y >= N[id].y + N[id].h { return -1; }
+	var i = KIDS[id].len - 1;
+	while i >= 0 {
+		let h = hit_rec(KIDS[id][i], x, y);
+		if h >= 0 { return h; }
+		i -= 1;
+	}
+	id
+}
+
+fn hit(x f32, y f32) int {
+	var best = -1;
+	var i = N.len - 1;
+	while i >= 0 {
+		if N[i].parent < 0 {
+			let h = hit_rec(i, x, y);
+			if h >= 0 { return h; }
+		}
+		i -= 1;
+	}
+	best
+}
+
+fn focusable(id int) bool {
+	if !shown(id) || N[id].flags & FL_OFF != 0 { return false; }
+	let k = N[id].kind;
+	k == K_BUTTON || k == K_ICON || k == K_FAB || k == K_TOGGLE || k == K_CHECK || k == K_RADIO || k == K_SLIDER || k == K_RANGE || k == K_STEP || k == K_FIELD || k == K_AREA || k == K_SELECT || k == K_COMBO || k == K_TABS || k == K_PAGE || k == K_SEG
+}
+
+fn focus_list(out int[>..]&) {
+	out.clear();
+	for i in N.len { if focusable(i) { out.push(i); } }
+}
+
+fn focus_set(id int) {
+	if FOCUS >= 0 && FOCUS < N.len { N[FOCUS].flags = bit_off(N[FOCUS].flags, FL_FOCUS); }
+	FOCUS = id;
+	if id >= 0 { N[id].flags = N[id].flags | FL_FOCUS; }
+}
+
+fn focus_next() int {
+	var ids int[>..] = [];
+	focus_list(ids);
+	if ids.len == 0 { return -1; }
+	var at = 0;
+	for i in ids.len { if ids[i] == FOCUS { at = i + 1; } }
+	if at >= ids.len { at = 0; }
+	focus_set(ids[at]);
+	ids[at]
+}
+
+fn focus_prev() int {
+	var ids int[>..] = [];
+	focus_list(ids);
+	if ids.len == 0 { return -1; }
+	var at = ids.len - 1;
+	for i in ids.len { if ids[i] == FOCUS { at = i - 1; } }
+	if at < 0 { at = ids.len - 1; }
+	focus_set(ids[at]);
+	ids[at]
+}
+
+fn role_name(id int) const byte[:] {
+	let k = N[id].kind;
+	if k == K_BUTTON || k == K_ICON || k == K_FAB { return "button"; }
+	if k == K_TOGGLE { return "switch"; }
+	if k == K_CHECK { return "checkbox"; }
+	if k == K_RADIO { return "radio"; }
+	if k == K_SLIDER || k == K_RANGE { return "slider"; }
+	if k == K_FIELD || k == K_AREA || k == K_COMBO { return "textbox"; }
+	if k == K_SELECT { return "listbox"; }
+	if k == K_TABS { return "tablist"; }
+	if k == K_TABLE { return "grid"; }
+	if k == K_VLIST || k == K_MENU { return "list"; }
+	if k == K_MODAL || k == K_DRAWER { return "dialog"; }
+	if k == K_PROGRESS || k == K_HEALTH || k == K_MANA { return "progressbar"; }
+	if k == K_NAV { return "navigation"; }
+	if k == K_TIP { return "tooltip"; }
+	"group"
+}

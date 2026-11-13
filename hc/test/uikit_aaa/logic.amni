@@ -1,0 +1,95 @@
+import uikit;
+import text;
+fn eqi(got int, want int, name const byte[:]) int {
+	if got != want { print("FAIL ", name, " ", got, " != ", want); return 1; }
+	print("PASS ", name);
+	0
+}
+fn main() {
+	var fail = 0;
+	fail += eqi(uikit::theme_count(), 35, "theme count");
+	fail += eqi(if uikit::look_count() >= 5 { 1 } else { 0 }, 1, "looks");
+	fail += eqi(uikit::family_count(), 7, "families");
+	var seen int[35] = [0; 35];
+	var uniq = 0;
+	for f in 7 {
+		var prev = -1;
+		var distinct = 0;
+		for v in 5 {
+			uikit::theme_set(f, v);
+			let s = uikit::theme_signature();
+			var hit = 0;
+			for i in uniq { if seen[i] == s { hit = 1; } }
+			if hit == 0 { seen[uniq] = s; uniq += 1; }
+			if s != prev { distinct += 1; }
+			prev = s;
+		}
+		fail += eqi(distinct, 5, uikit::family_name(f));
+	}
+	fail += eqi(uniq, 35, "unique themes");
+	uikit::reset();
+	uikit::widgets_reset();
+	let root = uikit::flex(-1, uikit::DIR_ROW);
+	uikit::set_pad(root, 0.0);
+	uikit::set_gap(root, 0.0);
+	let a = uikit::button(root, "One", 0);
+	let b = uikit::button(root, "Two", 1);
+	uikit::set_px(a, 40.0, 20.0);
+	uikit::set_px(b, 50.0, 20.0);
+	uikit::layout_root(root, 0.0, 0.0, 200.0, 40.0);
+	fail += eqi(uikit::N[a].x as int, 0, "row x0");
+	fail += eqi(uikit::N[b].x as int, 40, "row x1");
+	uikit::pointer(uikit::N[a].x + 2.0, uikit::N[a].y + 2.0, 1);
+	fail += eqi(uikit::N[a].i3, 1, "button click");
+	let c = uikit::checkbox(root, "Go", 0, 2);
+	uikit::layout_root(root, 0.0, 0.0, 300.0, 40.0);
+	uikit::pointer(uikit::N[c].x + 4.0, uikit::N[c].y + 4.0, 1);
+	fail += eqi(if uikit::N[c].flags & uikit::FL_ON != 0 { 1 } else { 0 }, 1, "check");
+	let s = uikit::slider(root, 0.0, 0);
+	uikit::set_px(s, 100.0, 20.0);
+	uikit::layout_root(root, 0.0, 0.0, 400.0, 40.0);
+	uikit::pointer(uikit::N[s].x + 50.0, uikit::N[s].y + 4.0, 1);
+	fail += eqi(if uikit::N[s].val > 0.3 && uikit::N[s].val < 0.7 { 1 } else { 0 }, 1, "slider");
+	let f = uikit::text_field(root, "hi", 0);
+	uikit::layout_root(root, 0.0, 0.0, 500.0, 40.0);
+	uikit::focus_set(f);
+	uikit::type_text("!");
+	fail += eqi(if uikit::s_text(uikit::N[f].str_i) == "hi!" { 1 } else { 0 }, 1, "type");
+	fail += eqi(if uikit::undo(f) { 1 } else { 0 }, 1, "undo");
+	fail += eqi(if uikit::s_text(uikit::N[f].str_i) == "hi" { 1 } else { 0 }, 1, "undo text");
+	uikit::ime_set("yo");
+	uikit::ime_commit();
+	fail += eqi(if uikit::s_text(uikit::N[f].str_i) == "hiyo" { 1 } else { 0 }, 1, "ime");
+	let tb = uikit::table(-1, 3, 2, 0);
+	uikit::table_set(tb, 0, 0, "c");
+	uikit::table_set(tb, 1, 0, "a");
+	uikit::table_set(tb, 2, 0, "b");
+	uikit::table_sort(tb, 0, 0);
+	fail += eqi(uikit::table_row(tb, 0), 1, "sort a");
+	fail += eqi(uikit::table_row(tb, 1), 2, "sort b");
+	fail += eqi(uikit::table_row(tb, 2), 0, "sort c");
+	let vl = uikit::virtual_list(-1, 1000, 0);
+	uikit::set_px(vl, 100.0, 56.0);
+	uikit::N[vl].val = 280.0;
+	uikit::N[vl].val2 = 28.0;
+	uikit::layout_root(vl, 0.0, 0.0, 100.0, 56.0);
+	let lo, hi = uikit::list_window(vl);
+	fail += eqi(lo, 10, "virt first");
+	fail += eqi(hi, 12, "virt last");
+	let d = uikit::dialogue(-1, "Hello", 0, 0);
+	uikit::tick(0.1);
+	fail += eqi(uikit::N[d].i0, 1, "typewriter");
+	let dm = uikit::damage_number(-1, "12", 1);
+	let y0 = uikit::N[dm].y;
+	uikit::tick(0.5);
+	fail += eqi(if uikit::N[dm].y < y0 { 1 } else { 0 }, 1, "damage float");
+	fail += eqi(if uikit::role_name(a) == "button" { 1 } else { 0 }, 1, "role");
+	fail += eqi(if text::effect_count() >= 5 { 1 } else { 0 }, 1, "effects");
+	uikit::reset();
+	let hid = uikit::button(-1, "Hide", 0);
+	uikit::set_min_bp(hid, 2);
+	uikit::layout_root(hid, 0.0, 0.0, 400.0, 40.0);
+	fail += eqi(uikit::N[hid].w as int, 0, "breakpoint");
+	print("ui fails ", fail);
+	if fail != 0 { abort("uikit tests failed"); }
+}
