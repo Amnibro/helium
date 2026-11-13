@@ -1,36 +1,12 @@
 // 500 icons. The first icon_named() ids are named vector pictograms.
 // The rest stay unique 5x5 silhouettes until a later batch replaces them.
 namespace uikit;
-import uikit.icons_b0;
-import uikit.icons_b1;
+import uikit.icons_reg;
 
 var ISEEN int[500] = [0; 500];
 var IREADY = false;
 
 fn icon_count() int { 500 }
-
-fn icon_named() int { ICON_N0 + ICON_N1 }
-
-fn icon_len(id int) int {
-	if id < 0 || id >= ICON_N0 + ICON_N1 { return 0; }
-	if id < ICON_N0 { return ICON_AT0[id + 1] - ICON_AT0[id]; }
-	let j = id - ICON_N0;
-	ICON_AT1[j + 1] - ICON_AT1[j]
-}
-
-fn icon_byte(id int, k int) int {
-	if id < 0 || id >= ICON_N0 + ICON_N1 { return 0; }
-	if id < ICON_N0 { return ICON_OPS0[ICON_AT0[id] + k] as int; }
-	let j = id - ICON_N0;
-	ICON_OPS1[ICON_AT1[j] + k] as int
-}
-
-fn icon_name(id int) const byte[:] {
-	if id < 0 { return "sword"; }
-	if id < ICON_N0 { return icon_name_0(id); }
-	if id < ICON_N0 + ICON_N1 { return icon_name_1(id - ICON_N0); }
-	"blob"
-}
 
 fn popcount(v int) int {
 	var n = 0;

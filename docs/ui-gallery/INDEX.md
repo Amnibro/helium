@@ -4,7 +4,7 @@ Catalog themes: 300
 Curated themes: 35
 Genres: 41 (24 game, 17 app)
 Each game genre has 7 screens (title, pause, settings, hud, shop, map, results), 5 variations each. HUD columns include the 57dbc71a kit (boss, buffs, bars, minimap, inventory, quest, cooldowns, radial or chart, dialogue, damage, Play/Map/Bag) plus genre extras. Leaf count must be at least that commit. App genres are one sheet of 5 variations.
-Icons: 500 (200 named pictograms)
+Icons: 500 (300 named pictograms)
 Text effects: 100
 Widget styles: 20
 Font files in the pairing set: 22
@@ -67,7 +67,7 @@ Font pairings: 30
 
 - Glow and backdrop rectangles are clipped to the widget. `overlap_count` also counts `note_deco` bounds, so a slab painted across another control fails the check.
 - Game sheets are seven different screens, but pause/settings still share a short menu, and every map uses the same compass painter.
-- Named pictograms: 200 of 500. The rest are still unique 5x5 silhouettes.
+- Named pictograms: 300 of 500. The rest are still unique 5x5 silhouettes.
 - Widget styles are 20 frames on six controls (button, field, toggle, slider, card, badge), not 20 treatments of every chart and table.
 - `motion.apng` is eight frames (spring, ripple, typewriter, toast, shimmer). It is not a full transition system.
 - `ui.he` and `gfx/hud` still need SDL3, which this machine does not have.
