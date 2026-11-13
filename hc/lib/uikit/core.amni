@@ -40,11 +40,31 @@ var STR byte[>..][>..] = [];
 var FOCUS = -1;
 var VW f32 = 800.0;
 
+var AX int[>..] = [];
+var AY int[>..] = [];
+var AW int[>..] = [];
+var AH int[>..] = [];
+var DECO_X f32[>..] = [];
+var DECO_Y f32[>..] = [];
+var DECO_W f32[>..] = [];
+var DECO_H f32[>..] = [];
+
 fn reset() {
 	N.clear();
 	KIDS.clear();
 	STR.clear();
 	FOCUS = -1;
+	DECO_X.clear();
+	DECO_Y.clear();
+	DECO_W.clear();
+	DECO_H.clear();
+}
+
+fn note_deco(x f32, y f32, w f32, h f32) {
+	DECO_X.push(x);
+	DECO_Y.push(y);
+	DECO_W.push(w);
+	DECO_H.push(h);
 }
 
 fn s_new(t const byte[:]) int {
@@ -305,6 +325,15 @@ recursive fn box_hit(a int, b int) bool {
 	x1 - x0 > 1.0 && y1 - y0 > 1.0
 }
 
+fn rect_hit(ax f32, ay f32, aw f32, ah f32, bx f32, by f32, bw f32, bh f32) bool {
+	if aw < 2.0 || ah < 2.0 || bw < 2.0 || bh < 2.0 { return false; }
+	let x0 = if ax > bx { ax } else { bx };
+	let y0 = if ay > by { ay } else { by };
+	let x1 = if ax + aw < bx + bw { ax + aw } else { bx + bw };
+	let y1 = if ay + ah < by + bh { ay + ah } else { by + bh };
+	x1 - x0 > 1.0 && y1 - y0 > 1.0
+}
+
 fn overlap_count() int {
 	var n = 0;
 	for i in N.len {
@@ -315,6 +344,12 @@ fn overlap_count() int {
 			for b in a + 1..kn {
 				if box_hit(KIDS[i][a], KIDS[i][b]) { n += 1; }
 			}
+		}
+	}
+	for d in DECO_X.len {
+		for i in N.len {
+			if !shown(i) || KIDS[i].len > 0 || N[i].w < 2.0 { continue; }
+			if rect_hit(DECO_X[d], DECO_Y[d], DECO_W[d], DECO_H[d], N[i].x, N[i].y, N[i].w, N[i].h) { n += 1; }
 		}
 	}
 	n

@@ -102,10 +102,10 @@ fn blit_run(rgb u32, dx int, dy int, mul int) {
 	}
 }
 
-fn draw_text(x int, y int, s const byte[:], size f32, rgb u32, effect int, limit int) {
+fn draw_text_base(x int, baseline int, s const byte[:], size f32, rgb u32, effect int, limit int) {
 	if THEME.pixel == 0 && fonts_ready() {
 		TRACK = if effect == 7 { size * 0.08 } else { 0.0 };
-		let n = place_run(s, x as f32, y as f32 + size * 0.80, size, TXT_MONO, TXT_BOLD || effect == 1, TXT_ITAL, limit);
+		let n = place_run(s, x as f32, baseline as f32, size, TXT_MONO, TXT_BOLD || effect == 1, TXT_ITAL, limit);
 		if n > 0 {
 			if effect == 2 { blit_ring(0x000000, 2, 255); blit_ring(0x000000, 1, 220); }
 			if effect == 3 { blit_shadow(0x000000); }
@@ -120,7 +120,7 @@ fn draw_text(x int, y int, s const byte[:], size f32, rgb u32, effect int, limit
 				}
 			} else { blit_run(rgb, 0, 0, 255); }
 			if effect == 8 || effect == 9 {
-				let y1 = y + (size * (if effect == 8 { 0.92 } else { 0.45 })) as int;
+				let y1 = baseline + (if effect == 8 { 2 } else { -(size * 0.3) as int });
 				let x1 = GX[0] as int;
 				let x2 = GX[n - 1] as int + 8;
 				let thick = if SCALE > 1.5 { 2 } else { 1 };
@@ -131,6 +131,7 @@ fn draw_text(x int, y int, s const byte[:], size f32, rgb u32, effect int, limit
 		return;
 	}
 	let sc = font_scale(size);
+	let y = baseline - 6 * sc;
 	var pen = x;
 	var n = 0;
 	var i = 0;
@@ -160,6 +161,39 @@ fn draw_text(x int, y int, s const byte[:], size f32, rgb u32, effect int, limit
 		n += 1;
 		i = e;
 	}
+}
+
+fn draw_text(x int, y int, s const byte[:], size f32, rgb u32, effect int, limit int) {
+	let asc, desc = em_box(size);
+	draw_text_base(x, y + (asc + 0.5) as int, s, size, rgb, effect, limit);
+}
+
+fn draw_centered(bx int, by int, bw int, bh int, s const byte[:], size f32, rgb u32, effect int) {
+	let tw = text_advance(s, size);
+	let x = (bx as f32 + (bw as f32 - tw) / 2.0 + 0.5) as int;
+	let asc, desc = em_box(size);
+	let base = (by as f32 + (bh as f32 - asc - desc) / 2.0 + asc + 0.5) as int;
+	draw_text_base(x, base, s, size, rgb, effect, -1);
+}
+
+fn label_shift(bw f32, bh f32, s const byte[:], size f32, left int, top_bias f32) f32, f32 {
+	let tw = text_advance(s, size);
+	let x = if left < 0 { bw / 2.0 - tw / 2.0 } else { left as f32 };
+	var errx = (x + tw / 2.0) - bw / 2.0;
+	let asc, desc = em_box(size);
+	let base = if top_bias < 0.0 { (bh - asc - desc) / 2.0 + asc } else { top_bias + size * 0.80 };
+	let mid = base - (asc - desc) / 2.0;
+	var erry = mid - bh / 2.0;
+	if errx < 0.0 { errx = 0.0 - errx; }
+	if erry < 0.0 { erry = 0.0 - erry; }
+	return errx, erry;
+}
+
+fn icon_center_err(cell int, glyph int) f32 {
+	let left = (cell - glyph) / 2;
+	var e = (left as f32 + glyph as f32 / 2.0) - cell as f32 / 2.0;
+	if e < 0.0 { e = 0.0 - e; }
+	e
 }
 
 fn node_text(id int) const byte[:] { if N[id].str_i < 0 { "" } else { s_text(N[id].str_i) } }
@@ -225,7 +259,14 @@ fn chrome(x int, y int, w int, h int, look int, hot int, on int) u32, u32 {
 	else if look == LOOK_OUTLINE || look == LOOK_GHOST || look == LOOK_SHARP { fill = THEME.surface; ink = THEME.ink; }
 	if on != 0 && look != LOOK_FILLED { fill = THEME.accent; ink = THEME.on_accent; }
 	if hot != 0 { fill = mix_rgb(fill, THEME.ink); }
-	if THEME.glass != 0 { blur_rect(x, y, w, h, (4.0 * SCALE) as int); }
+	if THEME.glass != 0 {
+		var yy = 6;
+		while yy < h - 6 {
+			fill_rect(x + 4, y + yy, w - 8, 3, THEME.accent, 160);
+			yy += 8;
+		}
+		blur_rect(x, y, w, h, (3.0 * SCALE) as int);
+	}
 	let a = if THEME.glass != 0 { 120 } else { 255 };
 	if THEME.family == FAM_BRUTAL || THEME.shadow == 2 { fill_rect(x + (6.0 * SCALE) as int, y + (6.0 * SCALE) as int, w, h, 0x000000, 255); }
 	else if look == LOOK_ELEVATED || THEME.shadow == 1 {
@@ -233,10 +274,10 @@ fn chrome(x int, y int, w int, h int, look int, hot int, on int) u32, u32 {
 		fill_rect(x + 1, y + (6.0 * SCALE) as int, w, h, 0x000000, 18);
 	}
 	if THEME.shadow == 3 || THEME.family == FAM_NEON {
-		round_rect(x, y, w, h, rad, THEME.accent, 255);
-		let halo = (6.0 * SCALE) as int;
-		blur_rect(x - halo, y - halo, w + halo * 2, h + halo * 2, (3.0 * SCALE) as int);
-		blur_rect(x - halo, y - halo, w + halo * 2, h + halo * 2, (2.0 * SCALE) as int);
+		round_rect(x, y, w, h, rad, THEME.accent, 220);
+		blur_rect(x, y, w, h, (3.0 * SCALE) as int);
+		let inset = (3.0 * SCALE) as int;
+		if w > inset * 2 && h > inset * 2 { round_rect(x + inset, y + inset, w - inset * 2, h - inset * 2, rad, THEME.accent, 255); }
 	}
 	if look == 6 || look == 16 { rad = h / 2; }
 	if look == 7 || look == 17 { rad = 0; }
@@ -336,7 +377,7 @@ recursive fn paint_node(id int) {
 		let tx = node_text(id);
 		let size = label_size(id);
 		if k == K_BUTTON || k == K_FAB || k == K_SEG || k == K_BADGE || k == K_CHIP || k == K_TAG || k == K_TOAST || k == K_TIP || k == K_MSG || k == K_CRUMB {
-			draw_text(x + 10, y + (h - font_scale(size) * 7) / 2, tx, size, ink, N[id].effect, -1);
+			draw_centered(x, y, w, h, tx, size, ink, N[id].effect);
 		} else if k == K_ICON {
 			icon_draw(N[id].i0, x + 4, y + 4, if h - 8 < 8 { 8 } else { h - 8 }, ink);
 		} else if k == K_LABEL {
@@ -433,8 +474,7 @@ recursive fn paint_node(id int) {
 			if N[id].flags & FL_FOCUS != 0 || shown < text::grapheme_count(tx) { fill_rect(x + w - 24, y + h - 16, 8, 8, THEME.accent, 255); }
 		} else if k == K_DAMAGE {
 			let col = if look == 1 { 0xFFE14A } else if look == 2 { 0x5DFF8A } else if look == 3 { 0xC46BFF } else if look == 4 { 0xB0B0B0 } else if look == 5 { 0xFF7A3C } else { 0xFFFFFF };
-			let stroke = if look == 2 { 0x083018 } else { 0x140800 };
-			text_pop(x + 4, y + h - 6, tx, label_size(id), col as u32, stroke as u32, 1.0 - N[id].val);
+			draw_centered(x, y, w, h, tx, size, col as u32, 2);
 		} else if k == K_STEP {
 			let ps = 14.0 * SCALE;
 			draw_text(x + 8, y + 8, "-", ps, THEME.ink, 0, -1);

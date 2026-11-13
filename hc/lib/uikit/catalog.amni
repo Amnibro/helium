@@ -449,11 +449,6 @@ fn app_kit(col int, g int, look int) {
 }
 
 fn build_genre(parent int, g int, variation int) int {
-	let col = flex(parent, DIR_COL);
-	set_w(col, 228.0);
-	set_gap(col, 4.0);
-	set_pad(col, 4.0);
-	let look = (g + variation * 3) % 20;
-	if g < 24 { game_kit(col, g, look); } else { app_kit(col, g, look); }
-	col
+	if g < 24 { build_screen(parent, g, 3); } else { app_page(parent, g); }
+	variation
 }

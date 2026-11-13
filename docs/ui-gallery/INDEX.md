@@ -3,7 +3,8 @@
 Catalog themes: 300
 Curated themes: 35
 Genres: 41 (24 game, 17 app)
-Variations per genre: 5
+Game sheets: 7 screens (title, pause, settings, HUD, bag, map, results)
+App sheets: light and dark page
 Icons: 500
 Text effects: 100
 Widget styles: 20
@@ -57,28 +58,17 @@ Font pairings: 30
 ## Other sheets
 
 - `icons/sheet.png`
-- `text/effects.png`
+- `text/effects-light.png`
+- `text/effects-dark.png`
 - `widgets/styles.png`
 - `fonts/pairings.png`
-
-## Counts against the volume target
-
-| Target | This chunk |
-| --- | --- |
-| ~300 themes, light and dark | 300 generated themes (15 families × 20 variants, 10 dark and 10 light) plus the 35 curated themes. Contrast audit: 300/300 at 4.5 body and 3.0 accent. |
-| 24 game genres × 5 | 24 sheets, 5 variations. One shared HUD kit (boss, buffs, bars, minimap, inventory, quests, cooldowns, radial or chart, dialogue, damage, Play/Map/Bag). |
-| 17 app genres × 5 | 17 sheets. Settings has the SV square and hue ring. Admin/shop show filter, pin, and a resize grip. Chat, calendar, kanban, and maps swap the middle. The rest are chart + table. |
-| ~20 styles per widget | 20 named button styles. Other widgets still use the original 6 looks. |
-| ~100 text effects | 100 named effects. Strokes, drop shadows, and colored bloom read on `text/effects.png`. |
-| 30 OFL pairings | 20 catalog families + Inter + JetBrains Mono, 30 pairings, all 30 opened and rasterized. |
-| ~500 icons | 500 antialiased glyphs from 20 silhouettes × 25 parameter sets. |
+- `motion.apng`
 
 ## Still weak
 
-- A Valorant HUD, a Slay the Spire reward screen, and a Stardew menu are not separate layouts. Genres recolor one kit.
-- The 500 icons repeat those 20 silhouettes. They are not 500 distinct metaphors.
-- Several "effects" are the same stroke or shadow with a different color. Gradients on a light page are easy to miss.
-- Glass is a box blur over flat color blocks. Neon bloom is two box blurs, not a gaussian. Fantasy frames are tick marks, grain, and corner brackets, not a parchment 9-slice.
-- No GIF/APNG yet. `ui.he` / `gfx.hud` need SDL3 (`libSDL3.so.0`); this machine has SDL2 and Vulkan, so those paths were not re-rendered.
-- Inter's static face has no `fi`/`fl` glyph. Pair kerning is still on. There is no MSDF atlas; large text is coverage plus the effect blits.
-- Variable fonts in the pairing sheet sometimes space a letter oddly. That is the default master, not a shaped instance.
+- Glow and backdrop rectangles are clipped to the widget. `overlap_count` also counts `note_deco` bounds, so a slab painted across another control fails the check.
+- Game sheets are seven different screens, but pause/settings still share a short menu, and every map uses the same compass painter.
+- The 500 icons are unique 5x5 silhouettes, not 500 named pictograms (no separate sword, potion, and folder metaphors).
+- Widget styles are 20 frames on six controls (button, field, toggle, slider, card, badge), not 20 treatments of every chart and table.
+- `motion.apng` is eight frames (spring, ripple, typewriter, toast, shimmer). It is not a full transition system.
+- `ui.he` and `gfx/hud` still need SDL3, which this machine does not have.

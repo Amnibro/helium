@@ -78,6 +78,16 @@ fn fonts_ready() bool {
 	true
 }
 
+fn em_box(size f32) f32, f32 {
+	if !fonts_ready() { return size * 0.80, size * 0.20; }
+	let vm = ttf::vmetrics(F0);
+	let sc = ttf::scale_for(F0, size);
+	let asc = vm.x as f32 * sc;
+	var desc = vm.y as f32 * sc;
+	if desc < 0.0 { desc = 0.0 - desc; }
+	return asc, desc;
+}
+
 fn gindex(fi int, cp int) int {
 	if fi == 1 { return ttf::glyph_index(F1, cp); }
 	if fi == 2 { return ttf::glyph_index(F2, cp); }

@@ -172,11 +172,43 @@ fn main() {
 	fail += eqi(uniq_c, 300, "catalog unique");
 	uikit::reset();
 	uikit::theme_set(0, 1);
-	let root = uikit::flex(-1, uikit::DIR_COL);
-	uikit::build_genre(root, 0, 0);
-	uikit::layout_root(root, 0.0, 0.0, 260.0, 900.0);
-	fail += eqi(uikit::overlap_count(), 0, "genre overlap");
-	fail += eqi(uikit::text_clip_count(), 0, "genre clip");
+	let deco_b = uikit::button(-1, "A", 0);
+	uikit::set_px(deco_b, 40.0, 20.0);
+	uikit::layout_root(deco_b, 0.0, 0.0, 80.0, 40.0);
+	uikit::note_deco(8.0, 4.0, 30.0, 16.0);
+	fail += eqi(if uikit::overlap_count() > 0 { 1 } else { 0 }, 1, "deco overlap");
+	uikit::reset();
+	fail += eqi(uikit::overlap_count(), 0, "deco clear");
+	var bad_m = 0;
+	for i in uikit::icon_count() {
+		let a = uikit::icon_mask(i);
+		for j in i { if uikit::icon_mask(j) == a { bad_m += 1; } }
+	}
+	fail += eqi(bad_m, 0, "icon masks");
+	var bad_s = 0;
+	for g in 24 {
+		for s in 7 {
+			uikit::reset();
+			uikit::theme_set(0, 1);
+			let root = uikit::flex(-1, uikit::DIR_COL);
+			uikit::build_screen(root, g, s);
+			uikit::layout_root(root, 0.0, 0.0, 200.0, 480.0);
+			let ov = uikit::overlap_count();
+			let cl = uikit::text_clip_count();
+			if ov != 0 || cl != 0 { print("screen ", g, " ", s, " ov ", ov, " cl ", cl); bad_s += 1; }
+		}
+	}
+	for g in 17 {
+		uikit::reset();
+		uikit::theme_set(0, 1);
+		let root = uikit::flex(-1, uikit::DIR_COL);
+		uikit::app_page(root, g + 24);
+		uikit::layout_root(root, 0.0, 0.0, 560.0, 640.0);
+		let ov = uikit::overlap_count();
+		let cl = uikit::text_clip_count();
+		if ov != 0 || cl != 0 { print("app ", g + 24, " ov ", ov, " cl ", cl); bad_s += 1; }
+	}
+	fail += eqi(bad_s, 0, "screens");
 	print("ui fails ", fail);
 	if fail != 0 { abort("uikit tests failed"); }
 }

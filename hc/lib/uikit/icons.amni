@@ -1,86 +1,102 @@
-// Vector icons. 500 glyphs, 20 silhouettes with 25 parameter sets, filled with 2x2 coverage.
+// 500 connected silhouettes. Each id is a unique 5x5 mask, drawn as fused disks.
 namespace uikit;
+
+var ISEEN int[500] = [0; 500];
+var IREADY = false;
 
 fn icon_count() int { 500 }
 
-fn ih_disk(u int, v int, cx int, cy int, r int) bool {
-	let dx = u - cx;
-	let dy = v - cy;
-	dx * dx + dy * dy <= r * r
+fn popcount(v int) int {
+	var n = 0;
+	var x = v;
+	while x != 0 { n += x & 1; x = x >> 1; }
+	n
 }
-fn ih_box(u int, v int, x int, y int, w int, h int) bool {
-	u >= x && v >= y && u < x + w && v < y + h
+
+fn worm_mask(id int) int {
+	var m = 0;
+	var x = id % 5;
+	var y = (id / 5) % 5;
+	var dir = (id / 25) % 4;
+	for step in 18 {
+		m = m | (1 << (y * 5 + x));
+		let turn = ((id + step * 19) >> ((step + (id & 7)) % 6)) & 3;
+		if turn == 0 { dir = (dir + 3) & 3; }
+		else if turn == 1 { dir = (dir + 1) & 3; }
+		var nx = x;
+		var ny = y;
+		if dir == 0 { nx += 1; }
+		else if dir == 1 { ny += 1; }
+		else if dir == 2 { nx -= 1; }
+		else { ny -= 1; }
+		if nx < 0 { nx = 0; dir = 0; }
+		else if nx > 4 { nx = 4; dir = 2; }
+		else if ny < 0 { ny = 0; dir = 1; }
+		else if ny > 4 { ny = 4; dir = 3; }
+		else { x = nx; y = ny; }
+	}
+	let bit = 1 << (((id / 7) % 5) * 5 + ((id / 3) % 5));
+	if (id & 1) == 0 { m = m | bit; }
+	else if popcount(m) > 6 { m = m & (bit ^ 33554431); }
+	if popcount(m) < 4 { m = m | (1 << (id % 25)); }
+	m & 33554431
 }
-fn ih_tri(u int, v int, ax int, ay int, bx int, by int, cx int, cy int) bool {
-	let c1 = (bx - ax) * (v - ay) - (by - ay) * (u - ax);
-	let c2 = (cx - bx) * (v - by) - (cy - by) * (u - bx);
-	let c3 = (ax - cx) * (v - cy) - (ay - cy) * (u - cx);
-	(c1 >= 0 && c2 >= 0 && c3 >= 0) || (c1 <= 0 && c2 <= 0 && c3 <= 0)
+
+fn build_icon_masks() {
+	if IREADY { return; }
+	var n = 0;
+	var salt = 0;
+	while n < 500 && salt < 40000 {
+		let m = worm_mask(n * 131 + salt * 17 + 3);
+		var dup = popcount(m) < 5;
+		if !dup {
+			for i in n { if ISEEN[i] == m { dup = true; } }
+		}
+		if !dup {
+			ISEEN[n] = m;
+			n += 1;
+		}
+		salt += 1;
+	}
+	while n < 500 {
+		ISEEN[n] = ((n * 97 + 13) & 33554431);
+		if ISEEN[n] == 0 { ISEEN[n] = n + 1; }
+		n += 1;
+	}
+	for n in 500 {
+		var tries = 0;
+		while tries < 80 {
+			var dup = false;
+			for i in n { if ISEEN[i] == ISEEN[n] { dup = true; } }
+			if !dup && popcount(ISEEN[n]) >= 4 { break; }
+			ISEEN[n] = (ISEEN[n] + 19 + tries * 3) & 33554431;
+			if ISEEN[n] == 0 { ISEEN[n] = tries + 1; }
+			tries += 1;
+		}
+	}
+	IREADY = true;
+}
+
+fn icon_mask(id int) int {
+	build_icon_masks();
+	let i = if id < 0 { 0 } else if id >= 500 { id % 500 } else { id };
+	ISEEN[i]
 }
 
 fn icon_hit(id int, u int, v int) bool {
-	let t = id % 20;
-	let k = id / 20;
-	let a = (k % 5) * 30;
-	let b = ((k / 5) % 5) * 24;
-	if t == 0 {
-		return ih_tri(u, v, 500, 80 + b, 430 - a, 780, 570 + a, 780) || ih_box(u, v, 470, 300, 60 + a / 5, 420) || ih_box(u, v, 400, 430, 200, 36);
+	let m = icon_mask(id);
+	for gy in 5 {
+		for gx in 5 {
+			let bit = 1 << (gy * 5 + gx);
+			if (m & bit) == 0 { continue; }
+			let cx = gx * 200 + 100;
+			let cy = gy * 200 + 100;
+			let dx = u - cx;
+			let dy = v - cy;
+			if dx * dx + dy * dy <= 125 * 125 { return true; }
+		}
 	}
-	if t == 1 {
-		return ih_tri(u, v, 500, 120, 250 + a, 820, 750 - a, 820) || ih_box(u, v, 430, 700, 140, 40);
-	}
-	if t == 2 {
-		return ih_tri(u, v, 180, 220, 820, 220, 500, 900) || ih_box(u, v, 180, 140, 640, 200) || ih_disk(u, v, 500, 340, 70 + a / 4);
-	}
-	if t == 3 {
-		return ih_tri(u, v, 160, 420, 780, 220 - b / 8, 780, 620) || ih_box(u, v, 160, 470, 360, 60);
-	}
-	if t == 4 {
-		return ih_box(u, v, 220, 420, 560, 400) || ih_tri(u, v, 140, 440, 860, 440, 500, 140 + b / 6) || ih_box(u, v, 440, 560, 120, 260);
-	}
-	if t == 5 {
-		return ih_disk(u, v, 500, 240, 120 + a / 6) || ih_box(u, v, 400, 400, 200, 280) || ih_box(u, v, 250, 460, 80, 300) || ih_box(u, v, 670, 460, 80, 300);
-	}
-	if t == 6 {
-		return ih_tri(u, v, 500, 80, 620, 420, 780, 900) || ih_tri(u, v, 500, 80, 380, 420, 220, 900) || ih_tri(u, v, 120, 380, 880, 380, 500, 780);
-	}
-	if t == 7 {
-		return ih_disk(u, v, 360, 380, 160 + a / 8) || ih_disk(u, v, 640, 380, 160 + a / 8) || ih_tri(u, v, 200, 460, 800, 460, 500, 860);
-	}
-	if t == 8 {
-		return ih_disk(u, v, 500, 500, 220) || ih_box(u, v, 460, 80, 80, 840) || ih_box(u, v, 80, 460, 840, 80) || ih_disk(u, v, 500, 500, 70);
-	}
-	if t == 9 {
-		return ih_tri(u, v, 500, 80, 900, 500, 500, 920) || ih_tri(u, v, 500, 80, 100, 500, 500, 920);
-	}
-	if t == 10 {
-		return ih_disk(u, v, 500, 500, 280) && !ih_disk(u, v, 500, 500, 200) || ih_box(u, v, 470, 160, 60, 680) || ih_box(u, v, 160, 470, 680, 60) || ih_disk(u, v, 500, 500, 40);
-	}
-	if t == 11 {
-		return ih_box(u, v, 400, 280, 200, 420) || ih_tri(u, v, 360, 300, 640, 300, 500, 160) || ih_disk(u, v, 500, 700, 150) || ih_disk(u, v, 500, 460, 28 + a / 10);
-	}
-	if t == 12 {
-		return ih_tri(u, v, 500, 60, 400, 860, 600, 860) || ih_box(u, v, 300, 620, 400, 50) || ih_box(u, v, 460, 670, 80, 220);
-	}
-	if t == 13 {
-		return ih_disk(u, v, 340, 500, 140) && !ih_disk(u, v, 340, 500, 60) || ih_box(u, v, 460, 470, 360, 60) || ih_box(u, v, 700, 470, 40, 140) || ih_box(u, v, 820, 470, 40, 100);
-	}
-	if t == 14 {
-		return ih_disk(u, v, 360, 460, 160) || ih_disk(u, v, 560, 420, 190) || ih_disk(u, v, 700, 500, 140) || ih_box(u, v, 280, 500, 520, 120);
-	}
-	if t == 15 {
-		return ih_tri(u, v, 560, 40, 300, 480, 520, 480) || ih_tri(u, v, 440, 960, 700, 500, 460, 500);
-	}
-	if t == 16 {
-		return ih_tri(u, v, 500, 60 + b / 8, 220, 520, 780, 520) || ih_tri(u, v, 500, 240, 140, 700, 860, 700) || ih_box(u, v, 450, 680, 100, 240);
-	}
-	if t == 17 {
-		return ih_box(u, v, 160, 480, 680, 160) || ih_tri(u, v, 160, 500, 300, 200, 440, 500) || ih_tri(u, v, 400, 500, 500, 160, 640, 500) || ih_tri(u, v, 600, 500, 760, 220, 840, 500);
-	}
-	if t == 18 {
-		return ih_box(u, v, 120, 160, 760, 520) || ih_tri(u, v, 240, 680, 420, 680, 280, 900);
-	}
-	ih_disk(u, v, 500, 500, 300) && !ih_disk(u, v, 500, 500, 210) || ih_disk(u, v, 500, 500, 50) || ih_tri(u, v, 500, 80, 460, 500, 540, 500)
+	false
 }
 
 fn icon_draw(id int, x int, y int, size int, rgb u32) {
