@@ -372,7 +372,7 @@ recursive fn paint_node(id int) {
 	let hot = if N[id].flags & FL_HOVER != 0 || N[id].flags & FL_PRESS != 0 { 1 } else { 0 };
 	let on = if N[id].flags & FL_ON != 0 { 1 } else { 0 };
 	let k = N[id].kind;
-	if k != K_LABEL && k != K_DIV && k != K_FLEX && k != K_GRID && k != K_STACK && k != K_WRAP && k != K_SCROLL {
+	if k != K_LABEL && k != K_DIV && k != K_FLEX && k != K_GRID && k != K_STACK && k != K_WRAP && k != K_SCROLL && k != K_FRAME {
 		let fill, ink = chrome(x, y, w, h, look, hot, on);
 		let tx = node_text(id);
 		let size = label_size(id);
@@ -473,7 +473,8 @@ recursive fn paint_node(id int) {
 			draw_text(x + 12, y + 12, tx, size, THEME.ink, 6, shown);
 			if N[id].flags & FL_FOCUS != 0 || shown < text::grapheme_count(tx) { fill_rect(x + w - 24, y + h - 16, 8, 8, THEME.accent, 255); }
 		} else if k == K_DAMAGE {
-			let col = if look == 1 { 0xFFE14A } else if look == 2 { 0x5DFF8A } else if look == 3 { 0xC46BFF } else if look == 4 { 0xB0B0B0 } else if look == 5 { 0xFF7A3C } else { 0xFFFFFF };
+			var col = if look == 1 { 0xFFE14A } else if look == 2 { 0x5DFF8A } else if look == 3 { 0xC46BFF } else if look == 4 { 0xB0B0B0 } else if look == 5 { 0xFF7A3C } else { 0xFFFFFF };
+			if contrast_ratio(col as u32, THEME.surface) < 4.5 { col = THEME.ink; }
 			draw_centered(x, y, w, h, tx, size, col as u32, 2);
 		} else if k == K_STEP {
 			let ps = 14.0 * SCALE;
@@ -497,7 +498,7 @@ recursive fn paint_node(id int) {
 				head = y + (18.0 * SCALE) as int;
 			}
 			for c in cols {
-				draw_text(xs[c], head, if c == 0 { "Name" } else { "Val" }, 12.0 * SCALE, THEME.muted, 0, -1);
+				draw_text(xs[c], head, if c == 0 { "Name" } else { "Val" }, 12.0 * SCALE, THEME.ink, 0, -1);
 				if c > 0 { fill_rect(xs[c] - 3, head, 2, rh, THEME.border, 255); fill_rect(xs[c] - 6, head + 4, 2, rh / 2, THEME.border, 255); }
 			}
 			if pin > 0 { fill_rect(x + 2, head, (4.0 * SCALE) as int, rh, THEME.accent, 255); }
@@ -562,6 +563,7 @@ recursive fn paint_node(id int) {
 	let y0 = if y > clipy { y } else { clipy };
 	let x1 = if x + w < clipx + clipw { x + w } else { clipx + clipw };
 	let y1 = if y + h < clipy + cliph { y + h } else { clipy + cliph };
+	if k == K_FRAME { paint_stage_back(id, x, y, w, h); }
 	if x1 > x0 && y1 > y0 { CX = x0; CY = y0; CW = x1 - x0; CH = y1 - y0; }
 	for c in KIDS[id] { paint_node(c); }
 	CX = clipx; CY = clipy; CW = clipw; CH = cliph;

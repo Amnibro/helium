@@ -65,6 +65,9 @@ Font pairings: 30
 
 ## Still weak
 
+- FPS is a real 1920x1080 stage (five compositions per screen, sheet is a half-scale stack). The other 23 game genres are still the narrow column.
+- The minimap painter is still the compass disc. The shield glyph still reads a bit like a tag. The skyline is block rectangles.
+
 - Glow and backdrop rectangles are clipped to the widget. `overlap_count` also counts `note_deco` bounds, so a slab painted across another control fails the check.
 - Game sheets are seven different screens, but pause/settings still share a short menu, and every map uses the same compass painter.
 - All 500 icons are named pictograms. Thin marks (arrows, plus, minus) are geometric on purpose. A few complex metaphors are still coarse.

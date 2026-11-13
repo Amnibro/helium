@@ -4,7 +4,7 @@ import text;
 import uikit.font;
 import uikit.theme;
 
-let K_FLEX = 1; let K_GRID = 2; let K_STACK = 3; let K_SCROLL = 4; let K_WRAP = 5;
+let K_FLEX = 1; let K_GRID = 2; let K_STACK = 3; let K_SCROLL = 4; let K_WRAP = 5; let K_FRAME = 6;
 let K_LABEL = 10; let K_BUTTON = 11; let K_ICON = 12; let K_FAB = 13; let K_SEG = 14;
 let K_TOGGLE = 15; let K_CHECK = 16; let K_RADIO = 17; let K_SLIDER = 18; let K_RANGE = 19; let K_STEP = 20;
 let K_FIELD = 21; let K_AREA = 22; let K_SELECT = 23; let K_COMBO = 24; let K_DATE = 25; let K_TIME = 26; let K_COLOR = 27;
@@ -44,6 +44,10 @@ var AX int[>..] = [];
 var AY int[>..] = [];
 var AW int[>..] = [];
 var AH int[>..] = [];
+var PLACE_X f32[>..] = [];
+var PLACE_Y f32[>..] = [];
+var PLACE_W f32[>..] = [];
+var PLACE_H f32[>..] = [];
 var DECO_X f32[>..] = [];
 var DECO_Y f32[>..] = [];
 var DECO_W f32[>..] = [];
@@ -58,6 +62,10 @@ fn reset() {
 	DECO_Y.clear();
 	DECO_W.clear();
 	DECO_H.clear();
+	PLACE_X.clear();
+	PLACE_Y.clear();
+	PLACE_W.clear();
+	PLACE_H.clear();
 }
 
 fn note_deco(x f32, y f32, w f32, h f32) {
@@ -90,7 +98,25 @@ fn add(parent int, kind int) int {
 	KIDS.push([]);
 	let id = N.len - 1;
 	if parent >= 0 { KIDS[parent].push(id); }
+	PLACE_X.push(0.0);
+	PLACE_Y.push(0.0);
+	PLACE_W.push(0.0);
+	PLACE_H.push(0.0);
 	id
+}
+
+fn frame(parent int) int {
+	let id = add(parent, K_FRAME);
+	set_pad(id, 0.0);
+	set_gap(id, 0.0);
+	id
+}
+
+fn place_at(id int, x real, y real, w real, h real) {
+	PLACE_X[id] = x as f32;
+	PLACE_Y[id] = y as f32;
+	PLACE_W[id] = w as f32;
+	PLACE_H[id] = h as f32;
 }
 
 fn set_text(id int, t const byte[:]) { if N[id].str_i < 0 { N[id].str_i = s_new(t); } else { s_set(N[id].str_i, t); } }
@@ -231,6 +257,10 @@ fn layout(id int, x f32, y f32, w f32, h f32) {
 	if n == 0 { return; }
 	if knd == K_STACK || knd == K_MODAL || knd == K_DRAWER {
 		for c in kids { layout(c, x + inset, y + inset, inner_w, inner_h); }
+		return;
+	}
+	if knd == K_FRAME {
+		for c in kids { layout(c, x + PLACE_X[c] * SCALE, y + PLACE_Y[c] * SCALE, PLACE_W[c] * SCALE, PLACE_H[c] * SCALE); }
 		return;
 	}
 	if knd == K_GRID {

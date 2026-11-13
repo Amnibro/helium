@@ -111,7 +111,100 @@ fn screen_file(s int) const byte[:] {
 	"results.png"
 }
 
+fn blit_half(dst byte[>..]&, dx int, dy int, dw int) {
+	for y in 540 {
+		for x in 960 {
+			var r = 0;
+			var g = 0;
+			var b = 0;
+			for sy in 2 {
+				for sx in 2 {
+					let si = ((y * 2 + sy) * 1920 + (x * 2 + sx)) * 4;
+					r += uikit::PIX[si] as int;
+					g += uikit::PIX[si + 1] as int;
+					b += uikit::PIX[si + 2] as int;
+				}
+			}
+			let di = ((dy + y) * dw + (dx + x)) * 4;
+			dst[di] = (r / 4) as! byte;
+			dst[di + 1] = (g / 4) as! byte;
+			dst[di + 2] = (b / 4) as! byte;
+			dst[di + 3] = 255 as! byte;
+		}
+	}
+}
+
+fn save_raw(path const byte[:], w int, h int, pix byte[>..]&) {
+	var buf byte[>..] = [];
+	codec_png::encode(w, h, 4, pix[..], buf);
+	if !write_file(path, buf) { print("write failed ", path); abort("sheet write"); }
+	print("wrote ", path, " ", buf.len);
+}
+
+fn paint_stage_screen(g int, screen int) {
+	var dir byte[>..] = [];
+	dir.append("docs/ui-gallery/");
+	dir.append(uikit::genre_slug(g));
+	make_dir(dir[..]);
+	let dw = 960;
+	let dh = 540 * 5;
+	var sheet byte[>..] = [];
+	sheet.resize(dw * dh * 4, 0);
+	for v in 5 {
+		uikit::canvas(1920, 1080);
+		uikit::fill_rect(0, 0, 1920, 1080, 0x101218, 255);
+		shape_for(v);
+		if uikit::text_contrast_fails() != 0 {
+			print("contrast ", uikit::genre_slug(g), " v ", v);
+			abort("contrast");
+		}
+		uikit::reset();
+		let root = uikit::frame(-1);
+		uikit::build_stage(root, g, screen, v);
+		uikit::layout_root(root, 0.0, 0.0, 1920.0, 1080.0);
+		let leaves = uikit::leaf_count();
+		let need = uikit::min_screen(g, screen);
+		let bad = check_align(g, v, 0, 0);
+		let ov = uikit::overlap_count();
+		let cl = uikit::text_clip_count();
+		if leaves < need || bad != 0 || ov != 0 || cl != 0 {
+			print("fail ", uikit::genre_slug(g), " ", screen_file(screen), " v ", v, " leaves ", leaves, "/", need, " align ", bad, " ov ", ov, " cl ", cl);
+			abort("stage");
+		}
+		uikit::paint_roots();
+		var one byte[>..] = [];
+		one.append(dir[..]);
+		one.append("/");
+		if screen == 0 { one.append("title"); }
+		else if screen == 1 { one.append("pause"); }
+		else if screen == 2 { one.append("settings"); }
+		else if screen == 3 { one.append("hud"); }
+		else if screen == 4 { one.append("shop"); }
+		else if screen == 5 { one.append("map"); }
+		else { one.append("results"); }
+		one.append("-v");
+		format(one, v);
+		one.append(".png");
+		save(one[..]);
+		blit_half(sheet, 0, v * 540, dw);
+	}
+	var path byte[>..] = [];
+	path.append(dir[..]);
+	path.append("/");
+	path.append(screen_file(screen));
+	save_raw(path[..], dw, dh, sheet);
+	if screen == 3 {
+		var alias byte[>..] = [];
+		alias.append(dir[..]);
+		alias.append("/sheet.png");
+		var buf byte[>..] = [];
+		if !read_file(path[..], buf) { abort("copy hud"); }
+		if !write_file(alias[..], buf[..]) { abort("alias hud"); }
+	}
+}
+
 fn paint_screen(g int, screen int) {
+	if g == 0 { paint_stage_screen(g, screen); return; }
 	var dir byte[>..] = [];
 	dir.append("docs/ui-gallery/");
 	dir.append(uikit::genre_slug(g));
@@ -452,6 +545,8 @@ fn write_index() {
 	out.append("\n## Other sheets\n\n");
 	out.append("- `icons/sheet.png`\n- `text/effects-light.png`\n- `text/effects-dark.png`\n- `widgets/styles.png`\n- `fonts/pairings.png`\n- `motion.apng`\n");
 	out.append("\n## Still weak\n\n");
+	out.append("- FPS is a real 1920x1080 stage. The other game genres are still the narrow column until their pass.\n");
+	out.append("- The minimap painter is still the compass disc. Some glyphs (shield) are coarse. The skyline is block rectangles.\n");
 	out.append("- Glow and backdrop rectangles are clipped to the widget. `overlap_count` also counts `note_deco` bounds, so a slab painted across another control fails the check.\n");
 	out.append("- Game sheets are seven different screens, but pause/settings still share a short menu, and every map uses the same compass painter.\n");
 	if uikit::icon_named() < uikit::icon_count() {
@@ -474,6 +569,11 @@ fn main() {
 			paint_icons();
 			write_index();
 			print("icons done");
+			return;
+		}
+		if which[..] == "fps" {
+			for s in 7 { paint_stage_screen(0, s); }
+			print("fps done");
 			return;
 		}
 	}

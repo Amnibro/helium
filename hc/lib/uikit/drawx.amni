@@ -290,7 +290,7 @@ fn paint_radial(x int, y int, w int, h int, count int, selected int, seed int) {
 		let mid = i * 360 / n + 180 / n;
 		let ox = cos_milli(mid) * (r * 2 / 3) / 1000;
 		let oy = sin_milli(mid) * (r * 2 / 3) / 1000;
-		icon_draw((seed + i) % 20, cx + ox - 8, cy - oy - 8, 16, THEME.ink);
+		icon_draw(slot_icon(seed + i), cx + ox - 8, cy - oy - 8, 16, THEME.ink);
 	}
 }
 
@@ -320,7 +320,7 @@ fn paint_inventory(x int, y int, w int, h int, cols int, rows int, seed int) {
 				if isz > 4 {
 					let ix = x0 + (cw - isz) / 2;
 					let iy = y0 + (rh - isz) / 2;
-					icon_draw((seed * 3 + xx * 5 + yy * 7) % 500, ix, iy, isz, 0xF4F6FB);
+					icon_draw(slot_icon(seed + xx + yy * 3), ix, iy, isz, 0xF4F6FB);
 				}
 				let stack = (xx + yy * 2 + seed) % 6 + 1;
 				if stack > 1 {
@@ -333,12 +333,25 @@ fn paint_inventory(x int, y int, w int, h int, cols int, rows int, seed int) {
 	}
 }
 
+fn slot_icon(i int) int {
+	let k = if i < 0 { 0 } else { i % 8 };
+	if k == 0 { return 0; }
+	if k == 1 { return 4; }
+	if k == 2 { return 1; }
+	if k == 3 { return 16; }
+	if k == 4 { return 8; }
+	if k == 5 { return 43; }
+	if k == 6 { return 5; }
+	15
+}
+
 fn paint_quest(x int, y int, w int, h int, seed int) {
-	draw_text(x + 6, y + 2, "Quests", 12.0, THEME.ink, 0, -1);
+	fill_rect(x, y, w, h, THEME.surface, 255);
+	draw_text(x + 8, y + 6, "Quests", 16.0, THEME.ink, 0, -1);
 	let a = if seed % 3 == 0 { "Find the gate" } else if seed % 3 == 1 { "Escort Mira" } else { "Light the beacon" };
 	let b = if seed % 2 == 0 { "Collect 3" } else { "Clear the camp" };
-	draw_text(x + 6, y + 18, a, 11.0, THEME.muted, 0, -1);
-	draw_text(x + 6, y + 34, b, 11.0, THEME.ok, 0, -1);
+	draw_text(x + 8, y + 28, a, 15.0, THEME.ink, 0, -1);
+	draw_text(x + 8, y + 50, b, 15.0, THEME.ink, 0, -1);
 }
 
 fn paint_boss(x int, y int, w int, h int, name const byte[:], v f32) {
@@ -358,7 +371,7 @@ fn paint_buffs(x int, y int, w int, h int, seed int) {
 	for i in n {
 		let x0 = x + 4 + i * cw;
 		round_rect(x0, y + 4, cw - 8, h - 8, 4, THEME.surface2, 255);
-		icon_draw((seed + i * 3) % 20, x0 + 2, y + 6, h - 12, THEME.accent);
+		icon_draw(slot_icon(seed + i), x0 + 2, y + 6, h - 12, THEME.ink);
 	}
 }
 
@@ -385,7 +398,7 @@ fn paint_cooldowns(x int, y int, w int, h int, seed int) {
 				if d2 > (r - 2) * (r - 2) { put(px, py, THEME.accent, 255); }
 			}
 		}
-		icon_draw((seed + i) % 20, cx - r / 2, cy - r / 2, r, THEME.ink);
+		icon_draw(slot_icon(seed + i), cx - r / 2, cy - r / 2, r, THEME.ink);
 	}
 }
 
@@ -490,7 +503,8 @@ fn paint_picker(x int, y int, w int, h int, hue int, s f32, v f32) {
 	}
 	let mx = x + 4 + (s * side as f32) as int;
 	let my = y + 4 + ((1.0 - v) * side as f32) as int;
-	stroke_rect(mx - 3, my - 3, 6, 6, 0xFFFFFF, 1);
+	let mark = if contrast_ratio(0xFFFFFF, THEME.bg) < 3.0 { THEME.ink } else { 0xFFFFFF };
+	stroke_rect(mx - 3, my - 3, 6, 6, mark, 1);
 	let rx = x + side + 14;
 	let ry = y + 4 + side / 2;
 	let rr = side / 2;
@@ -503,5 +517,46 @@ fn paint_picker(x int, y int, w int, h int, hue int, s f32, v f32) {
 			let ang = atan2_deg(dy, dx);
 			put(px, py, hsv(ang, 1.0, 1.0), 255);
 		}
+	}
+}
+
+fn paint_stage_back(id int, x int, y int, w int, h int) {
+	let g = N[id].i0;
+	let screen = N[id].i1;
+	let mode = N[id].i2;
+	let dark = contrast_ratio(THEME.ink, 0x000000) > 8.0;
+	let sky = if dark { 0x10151C } else { 0xD7DEE8 };
+	let ground = if dark { 0x1A2330 } else { 0xC5CED8 };
+	let band = h * 2 / 3;
+	fill_rect(x, y, w, band, sky as u32, 255);
+	fill_rect(x, y + band, w, h - band, ground as u32, 255);
+	fill_rect(x, y + band - 4, w, 4, THEME.accent, 255);
+	var i = 0;
+	while i < 10 {
+		let bw = 64 + (i * 37) % 100;
+		let bh = 36 + (i * 53) % 140;
+		let bx = x + 24 + i * (w / 10);
+		let shade = if dark { 0x0C1016 } else { 0xB0BAC6 };
+		fill_rect(bx, y + band - bh, bw, bh, shade as u32, 255);
+		i += 1;
+	}
+	if screen == 0 {
+		var tx = 120;
+		var ty = 260;
+		if mode == 1 { tx = 180; ty = 140; }
+		else if mode == 2 { tx = 760; ty = 150; }
+		else if mode == 3 { tx = 140; ty = 150; }
+		else if mode == 4 { tx = 1080; ty = 220; }
+		draw_text(tx, ty, genre_name(g), 84.0, THEME.ink, 0, -1);
+		draw_text(tx, ty + 96, sub_line(g), 28.0, THEME.ink, 0, -1);
+		fill_rect(tx, ty + 88, 220, 4, THEME.accent, 255);
+	}
+	if g == 0 && screen == 3 {
+		let cx = x + w / 2;
+		let cy = y + h / 2;
+		fill_rect(cx - 2, cy - 28, 4, 18, THEME.ink, 255);
+		fill_rect(cx - 2, cy + 10, 4, 18, THEME.ink, 255);
+		fill_rect(cx - 28, cy - 2, 18, 4, THEME.ink, 255);
+		fill_rect(cx + 10, cy - 2, 18, 4, THEME.ink, 255);
 	}
 }

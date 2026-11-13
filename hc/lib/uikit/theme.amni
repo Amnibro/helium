@@ -98,6 +98,14 @@ fn mix_rgb(a u32, b u32) u32 {
 	(r << 16) | (g << 8) | bl
 }
 
+fn text_contrast_fails() int {
+	var n = 0;
+	if contrast_ratio(THEME.ink, THEME.surface) < 4.5 { n += 1; }
+	if contrast_ratio(THEME.ink, THEME.bg) < 4.5 { n += 1; }
+	if contrast_ratio(THEME.on_accent, THEME.accent) < 3.0 { n += 1; }
+	n
+}
+
 fn on_color(c u32) u32 {
 	let r = (c >> 16) & 255; let g = (c >> 8) & 255; let b = c & 255;
 	if r * 3 + g * 6 + b > 900 { 0x161616 } else { 0xFFFFFF }

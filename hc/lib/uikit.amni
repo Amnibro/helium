@@ -7,5 +7,6 @@ import uikit.widgets;
 import uikit.icons;
 import uikit.catalog;
 import uikit.screens;
+import uikit.stage;
 import uikit.paint;
 import uikit.input;
