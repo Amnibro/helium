@@ -15,6 +15,7 @@ fn menu_n(g int) int {
 	if g == 3 { return 4; }
 	if g == 6 { return 4; }
 	if g == 9 { return 4; }
+	if g == 10 { return 4; }
 	4
 }
 fn menu_at(g int, i int) const byte[:] {
@@ -60,6 +61,12 @@ fn menu_at(g int, i int) const byte[:] {
 		if i == 0 { return "Versus"; }
 		if i == 1 { return "Arcade"; }
 		if i == 2 { return "Training"; }
+		return "Options";
+	}
+	if g == 10 {
+		if i == 0 { return "Start"; }
+		if i == 1 { return "Worlds"; }
+		if i == 2 { return "Badges"; }
 		return "Options";
 	}
 	if g == 9 {
@@ -1636,6 +1643,106 @@ fn stage_map_sports(f int, mode int) {
 	let c = button(f, "Tunnel", 2); place_at(c, 600.0, by, 240.0, 56.0); set_preset(c, 2);
 }
 
+fn stage_hud_platform(f int, mode int) {
+	var y f32 = 36.0;
+	var mx f32 = 1600.0;
+	var my f32 = 760.0;
+	var bx f32 = 48.0;
+	var by f32 = 860.0;
+	if mode == 1 { y = 860.0; mx = 1600.0; my = 48.0; bx = 48.0; by = 200.0; }
+	else if mode == 2 { mx = 48.0; my = 760.0; bx = 400.0; by = 200.0; }
+	else if mode == 3 { y = 160.0; mx = 48.0; my = 400.0; bx = 1480.0; by = 760.0; }
+	else if mode == 4 { mx = 1600.0; my = 760.0; bx = 48.0; by = 200.0; }
+	let world = label(f, "Grove  1-2", 1); place_at(world, 48.0, y, 280.0, 40.0);
+	let time = label(f, "1:12", 0); place_at(time, 760.0, y, 400.0, 48.0); mark_anchor(time);
+	let coins = label(f, "Coins  120", 2); place_at(coins, 1560.0, y, 280.0, 40.0);
+	let bells = label(f, "Bells  1", 2); place_at(bells, 1560.0, y + 56.0, 240.0, 32.0);
+	let h0 = icon_button(f, 2, 0); place_at(h0, 48.0, y + 56.0, 40.0, 40.0);
+	let h1 = icon_button(f, 2, 0); place_at(h1, 96.0, y + 56.0, 40.0, 40.0);
+	let h2 = icon_button(f, 2, 2); place_at(h2, 144.0, y + 56.0, 40.0, 40.0);
+	let lives = label(f, "x  3", 2); place_at(lives, 200.0, y + 60.0, 120.0, 32.0);
+	let who = label(f, "Pip", 0); place_at(who, bx, by, 160.0, 48.0);
+	let gem = icon_button(f, 43, 0); place_at(gem, bx, by + 56.0, 48.0, 48.0);
+	let gn = label(f, "4", 1); place_at(gn, bx + 64.0, by + 64.0, 80.0, 36.0);
+	let flag = label(f, "Flag  2", 2); place_at(flag, bx, by + 116.0, 200.0, 32.0);
+	let score = label(f, "Score  2400", 2); place_at(score, 760.0, y + 64.0, 400.0, 36.0); mark_anchor(score);
+	let map = minimap(f, 0); place_at(map, mx, my, 240.0, 180.0); N[map].i3 = 10;
+}
+
+fn stage_pause_platform(f int, mode int) {
+	var y f32 = 880.0;
+	var x f32 = 160.0;
+	if mode == 1 { y = 80.0; }
+	else if mode == 2 { x = 80.0; y = 400.0; }
+	else if mode == 3 { y = 480.0; x = 360.0; }
+	else if mode == 4 { y = 200.0; x = 160.0; }
+	let head = label(f, "Paused", 0); place_at(head, 760.0, y - 72.0, 400.0, 56.0); mark_anchor(head);
+	let a = button(f, "Resume", 0); place_at(a, x, y, 360.0, 64.0); set_preset(a, 2);
+	let b = button(f, "Retry", 2); place_at(b, x + 384.0, y, 360.0, 64.0); set_preset(b, 2);
+	let c = button(f, "Worlds", 2); place_at(c, x + 768.0, y, 360.0, 64.0); set_preset(c, 2);
+	let d = button(f, "Quit", 5); place_at(d, x + 1152.0, y, 360.0, 64.0); set_preset(d, 2);
+}
+
+fn stage_shop_platform(f int, mode int) {
+	var x f32 = 240.0;
+	var y f32 = 200.0;
+	if mode == 1 { x = 80.0; }
+	else if mode == 2 { x = 960.0; }
+	else if mode == 3 { y = 480.0; }
+	else if mode == 4 { y = 80.0; x = 360.0; }
+	let head = label(f, "Grove shop", 0); place_at(head, x, y, 400.0, 56.0);
+	let a = button(f, "Bell  20", 0); place_at(a, x, y + 80.0, 480.0, 64.0); set_preset(a, 2);
+	let b = button(f, "Feather  30", 2); place_at(b, x, y + 160.0, 480.0, 64.0); set_preset(b, 2);
+	let c = button(f, "Key  10", 1); place_at(c, x, y + 240.0, 480.0, 64.0); set_preset(c, 2);
+	let buy = button(f, "Take", 0); place_at(buy, x + 520.0, y + 160.0, 240.0, 64.0); set_preset(buy, 2);
+}
+
+fn stage_results_platform(f int, mode int) {
+	var y f32 = 160.0;
+	var x f32 = 560.0;
+	if mode == 1 { x = 80.0; }
+	else if mode == 2 { x = 1040.0; }
+	else if mode == 3 { y = 400.0; }
+	else if mode == 4 { x = 240.0; }
+	let head = label(f, "Clear", 0); place_at(head, 760.0, 36.0, 400.0, 64.0); mark_anchor(head);
+	let side = label(f, "Grove", 2); place_at(side, 80.0, 40.0, 200.0, 36.0);
+	let tb = board(f, x, y, "Stat", "Run", "Best");
+	table_set(tb, 0, 0, "Time"); table_set(tb, 0, 1, "1:12"); table_set(tb, 0, 2, "0:58");
+	table_set(tb, 1, 0, "Coins"); table_set(tb, 1, 1, "120"); table_set(tb, 1, 2, "140");
+	table_set(tb, 2, 0, "Deaths"); table_set(tb, 2, 1, "2"); table_set(tb, 2, 2, "0");
+	table_set(tb, 3, 0, "Gems"); table_set(tb, 3, 1, "4"); table_set(tb, 3, 2, "5");
+	table_set(tb, 4, 0, "Flags"); table_set(tb, 4, 1, "2"); table_set(tb, 4, 2, "3");
+	table_set(tb, 5, 0, "Score"); table_set(tb, 5, 1, "2400"); table_set(tb, 5, 2, "3100");
+	let again = button(f, "Next", 0); place_at(again, 80.0, 980.0, 240.0, 64.0); set_preset(again, 2);
+}
+
+fn stage_settings_platform(f int, mode int) {
+	var x f32 = 480.0;
+	var y f32 = 220.0;
+	if mode == 1 { x = 80.0; }
+	else if mode == 2 { x = 1080.0; }
+	else if mode == 3 { y = 520.0; }
+	else if mode == 4 { y = 80.0; }
+	let head = label(f, "Play", 0); place_at(head, x, y, 280.0, 56.0);
+	let a = toggle(f, "Run", 1, 0); place_at(a, x, y + 80.0, 480.0, 56.0);
+	let b = slider(f, 0.4, 0); place_at(b, x, y + 160.0, 480.0, 32.0);
+	let c = toggle(f, "Hints", 0, 2); place_at(c, x, y + 216.0, 480.0, 56.0);
+}
+
+fn stage_map_platform(f int, mode int) {
+	var y f32 = 80.0;
+	var by f32 = 920.0;
+	if mode == 1 { by = 80.0; y = 200.0; }
+	else if mode == 2 { y = 120.0; }
+	else if mode == 3 { y = 48.0; by = 880.0; }
+	else if mode == 4 { y = 160.0; by = 80.0; }
+	let map = minimap(f, 0); place_at(map, 200.0, y, 1520.0, 760.0); N[map].i3 = 10;
+	if mode == 1 || mode == 4 { place_at(map, 200.0, 200.0, 1520.0, 720.0); }
+	let a = button(f, "Grove", 0); place_at(a, 80.0, by, 240.0, 56.0); set_preset(a, 2);
+	let b = button(f, "Cave", 2); place_at(b, 340.0, by, 240.0, 56.0); set_preset(b, 2);
+	let c = button(f, "Peak", 5); place_at(c, 600.0, by, 240.0, 56.0); set_preset(c, 2);
+}
+
 fn build_stage(frame int, g int, screen int, mode int) int {
 	N[frame].i0 = g;
 	N[frame].i1 = screen;
@@ -1652,6 +1759,7 @@ fn build_stage(frame int, g int, screen int, mode int) int {
 		else if g == 3 { stage_pause_rts(frame, mode); }
 		else if g == 6 { stage_pause_mmo(frame, mode); }
 		else if g == 9 { stage_pause_sports(frame, mode); }
+		else if g == 10 { stage_pause_platform(frame, mode); }
 		else { stage_pause(frame, g, mode); }
 	}
 	else if screen == 2 {
@@ -1665,6 +1773,7 @@ fn build_stage(frame int, g int, screen int, mode int) int {
 		else if g == 3 { stage_settings_rts(frame, mode); }
 		else if g == 6 { stage_settings_mmo(frame, mode); }
 		else if g == 9 { stage_settings_sports(frame, mode); }
+		else if g == 10 { stage_settings_platform(frame, mode); }
 		else { stage_settings(frame, g, mode); }
 	}
 	else if screen == 3 {
@@ -1678,6 +1787,7 @@ fn build_stage(frame int, g int, screen int, mode int) int {
 		else if g == 3 { stage_hud_rts(frame, mode); }
 		else if g == 6 { stage_hud_mmo(frame, mode); }
 		else if g == 9 { stage_hud_sports(frame, mode); }
+		else if g == 10 { stage_hud_platform(frame, mode); }
 		else { stage_hud_fps(frame, mode); }
 	}
 	else if screen == 4 {
@@ -1691,6 +1801,7 @@ fn build_stage(frame int, g int, screen int, mode int) int {
 		else if g == 3 { stage_shop_rts(frame, mode); }
 		else if g == 6 { stage_shop_mmo(frame, mode); }
 		else if g == 9 { stage_shop_sports(frame, mode); }
+		else if g == 10 { stage_shop_platform(frame, mode); }
 		else { stage_shop_fps(frame, g, mode); }
 	}
 	else if screen == 5 {
@@ -1704,6 +1815,7 @@ fn build_stage(frame int, g int, screen int, mode int) int {
 		else if g == 3 { stage_map_rts(frame, mode); }
 		else if g == 6 { stage_map_mmo(frame, mode); }
 		else if g == 9 { stage_map_sports(frame, mode); }
+		else if g == 10 { stage_map_platform(frame, mode); }
 		else { stage_map_fps(frame, g, mode); }
 	}
 	else if g == 4 { stage_results_jrpg(frame, mode); }
@@ -1716,6 +1828,7 @@ fn build_stage(frame int, g int, screen int, mode int) int {
 	else if g == 3 { stage_results_rts(frame, mode); }
 	else if g == 6 { stage_results_mmo(frame, mode); }
 	else if g == 9 { stage_results_sports(frame, mode); }
+	else if g == 10 { stage_results_platform(frame, mode); }
 	else { stage_results_fps(frame, g, mode); }
 	frame
 }
