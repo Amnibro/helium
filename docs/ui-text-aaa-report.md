@@ -5,7 +5,7 @@ Branch: `cursor/ui-text-aaa-702c` (not merged, no PR opened).
 ## Commits
 
 - Text library: `1b8c5bbafc50b0ab6ce5c46c65d01b258d273140`
-- UI kit, gallery, and these notes: the next commit on this branch (filled in after that commit lands).
+- UI kit, gallery, and these notes: `b72ea3b7f86e41b726da57ff7f43cc0bf266c00d`
 
 ## What landed
 
